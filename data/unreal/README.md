@@ -8,10 +8,13 @@
 
 | CSV | 대응 구조체 | 헤더 |
 |---|---|---|
-| npc_archetypes_v0.csv | FFF_ArchetypeRow | Source/FestaFiesta/DataTables/FF_ArchetypeRow.h |
-| companion_type_modifier_v0.csv | FFF_CompanionModifierRow | Source/FestaFiesta/DataTables/FF_CompanionModifierRow.h |
-| utility_coefficients_v0.csv | FFF_UtilityCoefficientRow | Source/FestaFiesta/DataTables/FF_UtilityCoefficientRow.h |
+| npc_archetypes_v0.csv | FFF_ArchetypeRow | Source/FestaFiesta/Public/DataTables/FF_ArchetypeRow.h |
+| companion_type_modifier_v0.csv | FFF_CompanionModifierRow | Source/FestaFiesta/Public/DataTables/FF_CompanionModifierRow.h |
+| utility_coefficients_v0.csv | FFF_UtilityCoefficientRow | Source/FestaFiesta/Public/DataTables/FF_UtilityCoefficientRow.h |
+| individual_variation_knobs_v0.csv | FFF_IndividualVariationRow | Source/FestaFiesta/Public/DataTables/FF_IndividualVariationRow.h |
 
 재생성: `node Tools/data/build_unreal_datatables.mjs`
 
 아키타입 5종·주축 구조는 2026-08-04 확정됐다. 다만 표시 명칭(`ArchetypeLabelDraft`, `CompanionLabelDraft`)은 UI 담당자 논의 전까지 가칭이고, 활동→카테고리 매핑과 카테고리 delta 수치도 여전히 `assumption`/`draft_assumption`이다.
+
+`individual_variation_knobs_v0.csv`의 6개 multiplier 범위와 `leisureliness_axis`는 초안이다. 자세한 설계는 `data/metadata/individual_variation_spec.md` 참조.
