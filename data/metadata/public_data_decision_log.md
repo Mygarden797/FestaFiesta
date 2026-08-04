@@ -162,7 +162,7 @@ ResidentPopulationPrior (confirmed)
 | 가정 | `group_3_plus` 그룹은 최소 1명이 성인 아키타입이어야 한다는 최소 제약만 건다(v0). 그 이상의 가구 구성 모델은 범위 밖. |
 | 버그 발견 | `build_npc_archetypes.mjs`가 `life_stage_teen`에 `age_10_or_under`(0~19세 통합) 인구 세그먼트 전체를 매핑하고 있어서, `dependent_child_npc_spec.md`의 "확률 0.4로 아동 추가" 메커닉과 겹치면 아동이 이중으로 계산되는 문제가 있었다. |
 | 해결 | "방식 A"(사람 수를 먼저 맞춘다) 채택: 원본 단일세 인구 데이터에서 0~14세 목표 아동 수를 직접 계산하고, `life_stage_teen`은 15~19세만으로 다시 계산한다. 아동 부착 확률·평균 수 노브는 이 목표치에 맞게 조정되는 파생값으로 재정의했다. |
-| 미착수 | `build_npc_archetypes.mjs`의 `life_stage_teen popSegments` 수정, 그룹 생성·아동 배치를 실제로 수행하는 스크립트 — 둘 다 아직 결정·문서화만 하고 구현 전이다. |
+| ~~미착수~~ 완료 | `build_npc_archetypes.mjs`의 `life_stage_teen popSegments` 수정 — 원본 단일세 인구로 0~14/15~19세 분리, `dependent_child_population_target_v0.csv` 신설(목표 아동 비율: resident 7.9193% / datalab 3.8925%). 그룹 생성·아동 배치 실제 코드는 여전히 미착수. |
 
 ### 후속 결정 — 그룹 세부 규칙 (같은 날)
 

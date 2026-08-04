@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-04",
+  "dataset_id": "dependent_child_population_target_v0",
+  "status": "derived — population_group_generation_spec.md 2.2절 \"방식 A\"의 목표 아동 수 입력값",
+  "method": "age_10_or_under(0~19세 통합) 세그먼트의 visitor_share_pct 중, 원본 단일세 인구(saha_population_age_sex_2026_07.csv)로 계산한 0~14세 인구비만큼을 떼어낸 값. life_stage_teen의 population_share_pct(15~19세 몫)와 합치면 age_10_or_under의 원래 visitor_share_pct와 같아진다 — 이중 계산 없음.",
+  "independence_assumption": "0~14세와 15~19세의 방문 성향이 같다고 가정한다(데이터랩 해상도가 age_10_or_under 통합이라 더 세밀한 신호가 없다).",
+  "columns": {
+    "target_child_visitor_share_pct": "이 시나리오에서 방문객 중 0~14세가 차지해야 하는 비율(%). dependent_child_npc_spec.md 3절의 부착 확률·평균 수 노브가 이 값에 맞게 조정돼야 한다"
+  },
+  "regenerate_with": "Tools/data/build_npc_archetypes.mjs"
+}
