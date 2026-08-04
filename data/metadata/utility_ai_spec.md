@@ -26,15 +26,23 @@
 ```text
 Utility(i, j, t) =
       weight_attraction  * attraction_norm(j, t)
-    + lambda_affinity    * affinity_norm(segment(i), category(j))
+    + lambda_affinity    * preference_norm(i, category(j))
     - weight_distance    * distance_norm(i, j)
     - weight_wait        * wait_norm(j, t)
     - weight_density     * density_norm(j, t)
 ```
 
 - `i` = NPC 한 명, `j` = 목적지 한 곳, `t` = 시각
-- 모든 `*_norm` 항은 0~1 (affinity만 -1~1)
+- 모든 `*_norm` 항은 0~1 (preference만 -1~1)
 - 계수는 전부 `data/unreal/utility_coefficients_v0.csv` 에서 읽는다. 코드에 숫자를 박지 않는다.
+
+**2026-08-04 결정 (개체 변주 작업 중 확정)**: `preference_match` 항은 `preference_norm(i, category(j))` 하나로 확정했다. 원래 이 자리는 세그먼트(성·연령) 기반 `affinity_norm(segment(i), category(j))`(데이터랩 관광지 관측치)이었는데, 같은 날 아키타입 구조가 확정되면서 `preference_vector`(아키타입+동반유형 delta, 3.3절)와 같은 자리를 두고 정의가 겹쳤다. v0에서는 축제 부스 선택에 더 직접적인 `preference_vector`(Tour_Stat 활동 데이터 기반, 축제 카테고리 단위)를 채택하고, **`affinity_norm`은 v0 목적지 선택에서 사용하지 않는다** — 세그먼트 단위 보정이 필요해지면 그때 별도 항으로 추가한다.
+
+```text
+preference_norm(i, c) = clamp(preference_vector(i)[c] / preference_vector_scale_ref, -1, 1)
+```
+
+`preference_vector(i)[c]`는 3.3절 합성식(아키타입 delta + 동반유형 delta)에 개체 변주 `preference_strength_multiplier`(`individual_variation_spec.md` 5절)를 곱한 값이다. `preference_vector_scale_ref`(17.0)는 `affinity_scale_ref`와 같은 방식 — 산출물 관측 최대 절대값(16.80pp, `life_stage_teen`×`group_3_plus`×`ambience_photo_zone`)에서 정했다.
 
 ### no-choice 대안
 
@@ -61,8 +69,9 @@ P(i가 j를 고를 확률) = exp(U_ij / σ) / Σ_k exp(U_ik / σ)
 | 항 | 정규화 | 데이터 출처 | 상태 |
 |---|---|---|---|
 | `attraction_norm` | `base_attraction` 을 0~1로 | 부스 설정 (설계 필요) | 미정 |
-| `affinity_norm` | `centered_log_share_ratio / affinity_scale_ref`, [-1,1] 클램프 | `data/derived/affinity_prior_equal_site_v0.csv` | assumption |
-| `distance_norm` | `min(보행거리 / distance_ref_meters, 1)` | 축제장 레이아웃 (미확정) | 미정 |
+| `preference_norm` | `preference_vector(i)[category(j)] / preference_vector_scale_ref`, [-1,1] 클램프 | `npc_archetypes_v0.csv` + `companion_type_modifier_v0.csv` + 개체 변주 | draft_assumption |
+| `affinity_norm` (v0 미사용) | `centered_log_share_ratio / affinity_scale_ref`, [-1,1] 클램프 | `data/derived/affinity_prior_equal_site_v0.csv` | assumption, 보류 |
+| `distance_norm` | `min(직선거리 / distance_ref_meters, 1)` — v0는 실제 보행거리 아닌 직선거리 근사, 레이아웃·내비메시 확정 후 교체 | NPC/목적지 월드 위치 | 근사값 |
 | `wait_norm` | `min(estimated_wait / wait_ref_minutes, 1)` | 런타임 동적 상태 | 계산값 |
 | `density_norm` | `min((현재인원/정원) / density_ref_ratio, 1)` | 런타임 동적 상태 | 계산값 |
 
@@ -110,9 +119,9 @@ preference_vector[category] =
 
 | 자료 | CSV | USTRUCT |
 |---|---|---|
-| 아키타입 | `data/unreal/npc_archetypes_v0.csv` | `FFF_ArchetypeRow` (`Source/FestaFiesta/DataTables/FF_ArchetypeRow.h`) |
-| 동반유형 오버레이 | `data/unreal/companion_type_modifier_v0.csv` | `FFF_CompanionModifierRow` (`Source/FestaFiesta/DataTables/FF_CompanionModifierRow.h`) |
-| Utility 계수 | `data/unreal/utility_coefficients_v0.csv` | `FFF_UtilityCoefficientRow` (`Source/FestaFiesta/DataTables/FF_UtilityCoefficientRow.h`) |
+| 아키타입 | `data/unreal/npc_archetypes_v0.csv` | `FFF_ArchetypeRow` (`Source/FestaFiesta/Public/DataTables/FF_ArchetypeRow.h`) |
+| 동반유형 오버레이 | `data/unreal/companion_type_modifier_v0.csv` | `FFF_CompanionModifierRow` (`Source/FestaFiesta/Public/DataTables/FF_CompanionModifierRow.h`) |
+| Utility 계수 | `data/unreal/utility_coefficients_v0.csv` | `FFF_UtilityCoefficientRow` (`Source/FestaFiesta/Public/DataTables/FF_UtilityCoefficientRow.h`) |
 
 구조체 이름은 프로젝트 태그 `FF`(FestaFiesta)와 Unreal 구조체 필수 접두 `F`를 합쳐 `FFF_`로 시작한다. CSV는 `data/derived/`의 계산 결과를 손대지 않고 헤더만 구조체 프로퍼티명에 맞춰 재배열한 것이며, `Tools/data/build_unreal_datatables.mjs`로 재생성한다.
 

@@ -6,9 +6,10 @@
  * 어겨서 utility_coefficients_v0.csv 가 재실행 때마다 빈 값으로 깨졌었다).
  *
  * 출력 (data/unreal/) — 헤더가 C++ USTRUCT 프로퍼티명과 정확히 일치해야 UE CSV 임포트가 된다.
- *   npc_archetypes_v0.csv          -> FFF_ArchetypeRow
- *   companion_type_modifier_v0.csv -> FFF_CompanionModifierRow
- *   utility_coefficients_v0.csv    -> FFF_UtilityCoefficientRow
+ *   npc_archetypes_v0.csv            -> FFF_ArchetypeRow
+ *   companion_type_modifier_v0.csv   -> FFF_CompanionModifierRow
+ *   utility_coefficients_v0.csv      -> FFF_UtilityCoefficientRow
+ *   individual_variation_knobs_v0.csv -> FFF_IndividualVariationRow
  */
 // 카테고리 키 → 구조체 필드명 매핑은 이 스크립트와 C++ 헤더 양쪽에서 동일해야 한다.
 // 값은 전부 delta_vs_all_pp(전체 대비 percentage-point 차이)이며 효용계수가 아니다.
@@ -107,6 +108,27 @@ writeCsv('data/unreal/utility_coefficients_v0.csv',
   coefOut);
 console.log(`갱신: data/unreal/utility_coefficients_v0.csv (${coefOut.length}행, Name 열 추가)`);
 
+// ---------- 4. individual_variation_knobs_v0 (이미 wide, 열 이름만 구조체에 맞춤) ----------
+const variation = readCsv('data/derived/individual_variation_knobs_v0.csv');
+const variationOut = variation.map(r => ({
+  Name: r.trait_key,
+  TraitKey: r.trait_key,
+  DistributionType: r.distribution_type,
+  MinValue: r.min_value,
+  ModeValue: r.mode_value,
+  MaxValue: r.max_value,
+  Unit: r.unit,
+  RandomPurpose: r.random_purpose,
+  AffectsField: r.affects_field,
+  CorrelatedWith: r.correlated_with,
+  Status: r.status,
+  Description: r.description,
+}));
+writeCsv('data/unreal/individual_variation_knobs_v0.csv',
+  ['Name', 'TraitKey', 'DistributionType', 'MinValue', 'ModeValue', 'MaxValue', 'Unit', 'RandomPurpose', 'AffectsField', 'CorrelatedWith', 'Status', 'Description'],
+  variationOut);
+console.log(`생성: data/unreal/individual_variation_knobs_v0.csv (${variationOut.length}행)`);
+
 writeFileSync('data/unreal/README.md', `# Unreal DataTable CSV
 
 이 폴더의 CSV는 UE5 \`Import as DataTable\` 로 바로 임포트할 수 있도록 헤더를 구조체 프로퍼티명과 일치시킨 파일이다.
@@ -117,12 +139,15 @@ writeFileSync('data/unreal/README.md', `# Unreal DataTable CSV
 
 | CSV | 대응 구조체 | 헤더 |
 |---|---|---|
-| npc_archetypes_v0.csv | FFF_ArchetypeRow | Source/FestaFiesta/DataTables/FF_ArchetypeRow.h |
-| companion_type_modifier_v0.csv | FFF_CompanionModifierRow | Source/FestaFiesta/DataTables/FF_CompanionModifierRow.h |
-| utility_coefficients_v0.csv | FFF_UtilityCoefficientRow | Source/FestaFiesta/DataTables/FF_UtilityCoefficientRow.h |
+| npc_archetypes_v0.csv | FFF_ArchetypeRow | Source/FestaFiesta/Public/DataTables/FF_ArchetypeRow.h |
+| companion_type_modifier_v0.csv | FFF_CompanionModifierRow | Source/FestaFiesta/Public/DataTables/FF_CompanionModifierRow.h |
+| utility_coefficients_v0.csv | FFF_UtilityCoefficientRow | Source/FestaFiesta/Public/DataTables/FF_UtilityCoefficientRow.h |
+| individual_variation_knobs_v0.csv | FFF_IndividualVariationRow | Source/FestaFiesta/Public/DataTables/FF_IndividualVariationRow.h |
 
 재생성: \`node Tools/data/build_unreal_datatables.mjs\`
 
 아키타입 5종·주축 구조는 2026-08-04 확정됐다. 다만 표시 명칭(\`ArchetypeLabelDraft\`, \`CompanionLabelDraft\`)은 UI 담당자 논의 전까지 가칭이고, 활동→카테고리 매핑과 카테고리 delta 수치도 여전히 \`assumption\`/\`draft_assumption\`이다.
+
+\`individual_variation_knobs_v0.csv\`의 6개 multiplier 범위와 \`leisureliness_axis\`는 초안이다. 자세한 설계는 \`data/metadata/individual_variation_spec.md\` 참조.
 `, 'utf8');
 console.log('생성: data/unreal/README.md');
