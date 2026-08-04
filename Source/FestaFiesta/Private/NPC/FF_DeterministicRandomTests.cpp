@@ -6,6 +6,7 @@
 
 #include "NPC/FF_DeterministicRandom.h"
 #include "DataTables/FF_IndividualVariationRow.h"
+#include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"
 
 // 6개 완료 조건(individual_variation_spec.md 8절)을 그대로 테스트 6개로 옮긴다.
@@ -35,6 +36,24 @@ namespace FFF_DeterministicRandomTestHelpers
 		AddVariationRow(Table, TEXT("stay_duration_multiplier"), 0.70f, 0.90f, 1.60f);
 		AddVariationRow(Table, TEXT("reevaluate_interval_multiplier"), 0.80f, 1.00f, 1.20f);
 		AddVariationRow(Table, TEXT("leisureliness_axis"), 0.00f, 0.50f, 1.00f);
+		return Table;
+	}
+
+	UDataTable* MakeTestCoefficientTable()
+	{
+		UDataTable* Table = NewObject<UDataTable>();
+		Table->RowStruct = FFF_UtilityCoefficientRow::StaticStruct();
+
+		auto AddRow = [Table](FName Id, float DefaultValue)
+		{
+			FFF_UtilityCoefficientRow Row;
+			Row.CoefficientId = Id;
+			Row.DefaultValue = DefaultValue;
+			Table->AddRow(Id, Row);
+		};
+		AddRow(TEXT("wait_threshold_minutes"), 15.f);
+		AddRow(TEXT("density_threshold_ratio"), 0.85f);
+		AddRow(TEXT("reevaluate_interval_seconds"), 120.f);
 		return Table;
 	}
 }
@@ -156,6 +175,24 @@ bool FFF_DeterministicRandom_ZeroCorrelationMatchesIndependent::RunTest(const FS
 		FFF_DeterministicRandom::MakeTraitSeed(42, 7, TEXT("stay_duration_multiplier"), 0, TEXT("Generation")));
 	const float ExpectedStay = FFF_DeterministicRandom::SampleTriangularFromFraction(0.70f, 0.90f, 1.60f, IndependentStayFraction);
 	TestEqual(TEXT("correlation_strength=0이면 StayDurationMultiplier가 완전 독립 계산과 같다"), Traits.StayDurationMultiplier, ExpectedStay);
+	return true;
+}
+
+// 개인화 임계값: 전역 계수 * 개체 변주 multiplier로 정확히 계산되는지 확인
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariationResolver_ResolvesPersonalThresholds, "FestaFiesta.NPC.DeterministicRandom.ResolvesPersonalThresholds", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariationResolver_ResolvesPersonalThresholds::RunTest(const FString& Parameters)
+{
+	FFF_ResolvedIndividualTraits Traits;
+	Traits.PatienceMultiplier = 1.2f;
+	Traits.CrowdToleranceMultiplier = 0.8f;
+	Traits.ReevaluateIntervalMultiplier = 1.1f;
+
+	UDataTable* CoefficientTable = FFF_DeterministicRandomTestHelpers::MakeTestCoefficientTable();
+	const FFF_PersonalReevaluationThresholds Thresholds = FFF_IndividualVariationResolver::ResolvePersonalThresholds(Traits, CoefficientTable);
+
+	TestTrue(TEXT("WaitThresholdMinutes = 15 * 1.2"), FMath::IsNearlyEqual(Thresholds.WaitThresholdMinutes, 18.f, 0.01f));
+	TestTrue(TEXT("DensityThresholdRatio = 0.85 * 0.8"), FMath::IsNearlyEqual(Thresholds.DensityThresholdRatio, 0.68f, 0.01f));
+	TestTrue(TEXT("ReevaluateIntervalSeconds = 120 * 1.1"), FMath::IsNearlyEqual(Thresholds.ReevaluateIntervalSeconds, 132.f, 0.01f));
 	return true;
 }
 

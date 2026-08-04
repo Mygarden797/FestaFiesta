@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "NPC/FF_DeterministicRandom.h"
+#include "NPC/FF_UtilityCoefficientHelpers.h"
 #include "DataTables/FF_IndividualVariationRow.h"
 #include "Engine/DataTable.h"
 #include "Math/RandomStream.h"
@@ -101,5 +102,20 @@ FFF_ResolvedIndividualTraits FFF_IndividualVariationResolver::Resolve(
 	Out.ReevaluateIntervalMultiplier = ShapeWithRow(VariationTable, TEXT("reevaluate_interval_multiplier"),
 		ResolveUniformFraction(GlobalSimulationSeed, StableAgentId, TEXT("reevaluate_interval_multiplier"), SpawnGeneration), 1.f);
 
+	return Out;
+}
+
+FFF_PersonalReevaluationThresholds FFF_IndividualVariationResolver::ResolvePersonalThresholds(
+	const FFF_ResolvedIndividualTraits& Traits,
+	const UDataTable* UtilityCoefficientTable)
+{
+	FFF_PersonalReevaluationThresholds Out;
+	const float GlobalWaitThreshold = FFF_UtilityCoefficientHelpers::GetCoefficient(UtilityCoefficientTable, TEXT("wait_threshold_minutes"), 15.f);
+	const float GlobalDensityThreshold = FFF_UtilityCoefficientHelpers::GetCoefficient(UtilityCoefficientTable, TEXT("density_threshold_ratio"), 0.85f);
+	const float GlobalReevaluateInterval = FFF_UtilityCoefficientHelpers::GetCoefficient(UtilityCoefficientTable, TEXT("reevaluate_interval_seconds"), 120.f);
+
+	Out.WaitThresholdMinutes = GlobalWaitThreshold * Traits.PatienceMultiplier;
+	Out.DensityThresholdRatio = GlobalDensityThreshold * Traits.CrowdToleranceMultiplier;
+	Out.ReevaluateIntervalSeconds = GlobalReevaluateInterval * Traits.ReevaluateIntervalMultiplier;
 	return Out;
 }

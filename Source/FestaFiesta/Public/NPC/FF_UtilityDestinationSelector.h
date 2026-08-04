@@ -7,6 +7,10 @@
 
 class UDataTable;
 
+// 항별 점수·최종 선택 이유 디버그 로그. 기본은 출력 안 함 — 콘솔에서
+// `Log LogFestaFiestaNpc Verbose` 로 켠다 (방문객 규모가 커서 기본 노출 시 로그가 넘칠 수 있음).
+DECLARE_LOG_CATEGORY_EXTERN(LogFestaFiestaNpc, Log, All);
+
 /**
  * 목적지 후보 하나의 런타임 입력. DataTable Row가 아니다 — 매 평가마다 호출부가 채워서 넘긴다.
  * DistanceMeters는 v0에서 NPC-목적지 월드 위치의 직선거리 근사다. 축제장 레이아웃·내비메시

@@ -2,19 +2,16 @@
 
 #include "NPC/FF_UtilityDestinationSelector.h"
 #include "NPC/FF_DeterministicRandom.h"
-#include "DataTables/FF_UtilityCoefficientRow.h"
+#include "NPC/FF_UtilityCoefficientHelpers.h"
 #include "Engine/DataTable.h"
+
+DEFINE_LOG_CATEGORY(LogFestaFiestaNpc);
 
 namespace
 {
 	float GetCoefficient(const UDataTable* Table, FName CoefficientId, float DefaultValue)
 	{
-		if (!Table)
-		{
-			return DefaultValue;
-		}
-		const FFF_UtilityCoefficientRow* Row = Table->FindRow<FFF_UtilityCoefficientRow>(CoefficientId, TEXT("FFF_UtilityDestinationSelector::Choose"), /*bWarnIfRowMissing=*/false);
-		return Row ? Row->DefaultValue : DefaultValue;
+		return FFF_UtilityCoefficientHelpers::GetCoefficient(Table, CoefficientId, DefaultValue);
 	}
 
 	float NormalizeUpper(float Value, float Ref)
@@ -122,6 +119,18 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 	Decision.AllCandidateScores = MoveTemp(Breakdowns);
 	Decision.ChosenDestinationId = Decision.AllCandidateScores[ChosenIndex].DestinationId;
 	Decision.bIsNoChoice = (Decision.ChosenDestinationId == NAME_None);
+
+	UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[목적지 선택] Agent=%d Round=%d 선택=%s (no_choice=%d, U=%.4f)"),
+		StableAgentId, ChoiceRoundIndex,
+		Decision.bIsNoChoice ? TEXT("no_choice") : *Decision.ChosenDestinationId.ToString(),
+		Decision.bIsNoChoice, U);
+	for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+	{
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Total=%.3f Prob=%.3f"),
+			B.DestinationId.IsNone() ? TEXT("no_choice") : *B.DestinationId.ToString(),
+			B.AttractionTerm, B.PreferenceTerm, B.DistanceCostTerm, B.WaitCostTerm, B.DensityCostTerm, B.TotalUtility, B.ChoiceProbability);
+	}
+
 	return Decision;
 }
 

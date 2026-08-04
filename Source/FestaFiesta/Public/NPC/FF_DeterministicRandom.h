@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "FF_DeterministicRandom.generated.h"
 
+class UDataTable;
+
 /**
  * 고정 Seed 기반 개체 변주 — 순수 해시·분포 수학. DataTable 의존성 없음.
  * 설계는 data/metadata/individual_variation_spec.md 참조.
@@ -59,6 +61,25 @@ struct FFF_ResolvedIndividualTraits
 };
 
 /**
+ * FFF_UtilityDestinationSelector::ShouldReevaluate가 받는 "이 개인의" 재평가 임계값.
+ * 전역 계수(wait_threshold_minutes 등)에 개체 변주 multiplier를 곱해서 만든다.
+ */
+USTRUCT(BlueprintType)
+struct FFF_PersonalReevaluationThresholds
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
+	float WaitThresholdMinutes = 15.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
+	float DensityThresholdRatio = 0.85f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
+	float ReevaluateIntervalSeconds = 120.f;
+};
+
+/**
  * data/unreal/individual_variation_knobs_v0.csv 로 임포트한 FFF_IndividualVariationRow
  * DataTable을 읽어 NPC 한 명의 확정된 개체 변주값을 만든다.
  *
@@ -74,4 +95,13 @@ public:
 		int32 StableAgentId,
 		int32 SpawnGeneration,
 		float CorrelationStrength);
+
+	/**
+	 * Resolve()가 만든 개체 변주값을 전역 재평가 계수(UtilityCoefficientTable의
+	 * wait_threshold_minutes/density_threshold_ratio/reevaluate_interval_seconds)에
+	 * 곱해서 "이 개인의" 임계값을 만든다. individual_variation_spec.md 5절 매핑 그대로.
+	 */
+	static FFF_PersonalReevaluationThresholds ResolvePersonalThresholds(
+		const FFF_ResolvedIndividualTraits& Traits,
+		const UDataTable* UtilityCoefficientTable);
 };

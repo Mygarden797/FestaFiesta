@@ -123,6 +123,12 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 
 테스트 구현: `Source/FestaFiesta/Private/NPC/FF_DeterministicRandomTests.cpp` (Unreal Automation Test).
 
+## 8-A. 그룹 단위로 공유되는 특성 (2026-08-04 추가)
+
+`population_group_generation_spec.md` 1.6절 결정: 그룹(동반유형 `pair`/`group_3_plus`)으로 묶인 NPC는 `walk_speed_multiplier`와 `stay_duration_multiplier`만 개체별 독립을 깨고 **그룹 전체가 같은 값을 공유**한다 — 그룹 리더의 `StableAgentId` 대신 그룹의 `GroupId`를 시드 재료로 넣어서 `Resolve()`를 한 번 더 호출하고, 그 결과에서 이 두 필드만 가져다 쓴다. `Resolve()` 시그니처 자체는 바뀌지 않는다 — 호출부가 두 번 불러서 합치는 방식이다.
+
+나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 그룹이어도 계속 개체별 독립 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
+
 ## 9. 남은 의존성
 
 1. `live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체. 담당: 강민서/`FF_FestivalStageSubsystem`.
