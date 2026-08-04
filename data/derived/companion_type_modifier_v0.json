@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-04",
+  "dataset_id": "companion_type_modifier_v0",
+  "status": "draft — 사용자 확인 전, 이름·필드 확정 아님",
+  "design_rule": "이 표의 보정값은 모든 생애주기 아키타입에 동일한 공식으로 적용되는 개체 오버레이다 (2026-08-04 확정: 옵션 1). 나이×동반유형 교차표가 없으므로 생애주기별로 다르게 적용하지 않는다.",
+  "row_unit": "한 동반유형",
+  "independence_assumption": "동반유형 효과가 생애주기와 무관하게 일정하다고 가정한다. 실제로는 상호작용이 있을 수 있으나 이를 관측한 자료가 없다.",
+  "columns": {
+    "{category}_response_rate_pct": "해당 동반유형의 카테고리 매핑 항목 평균 응답률(%)",
+    "{category}_delta_vs_all_pp": "전체 대비 percentage-point 차이. 효용계수가 아니라 경향 신호",
+    "top_reason_delta_1": "전체 대비 편차가 가장 큰 방문지 선택 이유 (참고용)"
+  },
+  "prohibited_uses": [
+    "이 표의 delta 값을 그대로 weight_* 계수에 대입하는 것",
+    "label_draft를 최종 명칭으로 사용하는 것"
+  ],
+  "source_id": "tourism_legacy_tables_2018"
+}
