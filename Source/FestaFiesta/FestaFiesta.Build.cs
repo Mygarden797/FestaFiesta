@@ -15,6 +15,7 @@ public class FestaFiesta : ModuleRules
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 			"AIModule",
 			"UMG","Slate","SlateCore",
+			"CommonUI","CommonInput",
 			"Niagara","NiagaraCore",
 			"FF_ZoneSystem"
 		});
