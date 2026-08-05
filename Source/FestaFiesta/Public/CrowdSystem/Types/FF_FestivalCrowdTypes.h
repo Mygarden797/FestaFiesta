@@ -19,3 +19,15 @@ struct FUnitData
 	
 	int32 InstanceIndex = INDEX_NONE;
 };
+
+USTRUCT(BlueprintType)
+struct FCrowdGroupTypes
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Crowd|Group")
+	int32 GroupID;
+	
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Crowd|Group")
+	FName GroupName;
+};

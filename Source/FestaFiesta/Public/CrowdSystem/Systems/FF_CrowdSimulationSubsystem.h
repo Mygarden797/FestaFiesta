@@ -19,13 +19,12 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	
-	void SpawnUnits(int32 Count, UInstancedStaticMeshComponent* InISMComponent);
+
+	void SpawnNPC(int32 Count,UWorld* SpawnWorld);
+
 	
 private:
-	TArray<FUnitData> Units;
-	
-	UPROPERTY()
-	TObjectPtr<UInstancedStaticMeshComponent> ISMComponent;
+
 	
 	
 	
