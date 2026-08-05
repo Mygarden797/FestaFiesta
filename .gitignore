@@ -50,9 +50,8 @@ Client/x64
 *.VC.db
 *.VC.opendb
 
-# Precompiled Assets
-SourceArt/**/*.png
-SourceArt/**/*.tga
+# 로컬 제작 원본·외부 원본 에셋. 가공 후 Unreal 에셋만 Content/에서 관리한다.
+/SourceArt/
 
 # Binary Files
 Binaries/*
@@ -88,4 +87,17 @@ DerivedDataCache/*
 
 # Prerequisites
 *.d
-cesium-request-cache.sqlite*
+.gstack/
+
+# Public-data source files are large and may have redistribution restrictions.
+# Keep the catalog in Git, but keep downloaded originals local.
+data/raw/
+data/extracted/
+
+# AI 세션 간 작업 인수인계 로그. 로컬 작업 기록이라 커밋에서 제외.
+data/metadata/session_log/
+
+# 로컬 전용 AI 컨텍스트 문서. 팀 공유 원본이 아니라 개인 작업 요약이라 커밋에서 제외.
+/AGENTS.md
+/CLAUDE.md
+/docs/
