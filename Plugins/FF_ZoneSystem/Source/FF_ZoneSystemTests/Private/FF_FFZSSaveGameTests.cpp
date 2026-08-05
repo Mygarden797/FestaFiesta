@@ -138,7 +138,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
 {
     UFFZSSaveGameTestObject* SaveObject = NewObject<UFFZSSaveGameTestObject>(GetTransientPackage());
-    if (!TestNotNull(TEXT("SaveGame wrapper"), SaveObject))
+    if (!TestNotNull(TEXT("세이브 게임 래퍼가 생성된다"), SaveObject))
     {
         return false;
     }
@@ -147,16 +147,16 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     SaveObject->Snapshot = MakeDistinctSnapshot();
     TArray<uint8> Bytes;
     if (!TestTrue(
-            TEXT("UGameplayStatics serializes the SaveGame to bytes"),
+            TEXT("UGameplayStatics가 세이브 게임을 바이트로 직렬화한다"),
             UGameplayStatics::SaveGameToMemory(SaveObject, Bytes)) ||
-        !TestTrue(TEXT("Serialized SaveGame contains bytes"), !Bytes.IsEmpty()))
+        !TestTrue(TEXT("직렬화된 세이브 게임에 바이트 데이터가 있다"), !Bytes.IsEmpty()))
     {
         return false;
     }
 
     USaveGame* LoadedBase = UGameplayStatics::LoadGameFromMemory(Bytes);
     UFFZSSaveGameTestObject* LoadedObject = Cast<UFFZSSaveGameTestObject>(LoadedBase);
-    if (!TestNotNull(TEXT("UGameplayStatics reconstructs the typed SaveGame"), LoadedObject))
+    if (!TestNotNull(TEXT("UGameplayStatics가 지정된 세이브 게임 타입을 복원한다"), LoadedObject))
     {
         return false;
     }
@@ -165,14 +165,14 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     const FFFZSWorldSnapshot& Source = SaveObject->Snapshot;
     const FFFZSWorldSnapshot& Loaded = LoadedObject->Snapshot;
     TestTrue(
-        TEXT("The complete reflected world snapshot survives the byte round trip"),
+        TEXT("리플렉션된 전체 월드 스냅샷이 바이트 왕복 후에도 보존된다"),
         FFFZSWorldSnapshot::StaticStruct()->CompareScriptStruct(&Loaded, &Source, 0));
 
-    TestEqual(TEXT("World schema version survives"), Loaded.SchemaVersion, Source.SchemaVersion);
-    TestEqual(TEXT("World revision survives"), Loaded.WorldRevision, Source.WorldRevision);
-    TestEqual(TEXT("Change phase survives"), Loaded.CurrentPhase, Source.CurrentPhase);
-    TestEqual(TEXT("Facility array survives"), Loaded.Facilities.Num(), Source.Facilities.Num());
-    TestEqual(TEXT("Receipt array survives"), Loaded.CommandReceipts.Num(), Source.CommandReceipts.Num());
+    TestEqual(TEXT("월드 스키마 버전이 보존된다"), Loaded.SchemaVersion, Source.SchemaVersion);
+    TestEqual(TEXT("월드 리비전이 보존된다"), Loaded.WorldRevision, Source.WorldRevision);
+    TestEqual(TEXT("변경 단계가 보존된다"), Loaded.CurrentPhase, Source.CurrentPhase);
+    TestEqual(TEXT("시설 배열이 보존된다"), Loaded.Facilities.Num(), Source.Facilities.Num());
+    TestEqual(TEXT("영수증 배열이 보존된다"), Loaded.CommandReceipts.Num(), Source.CommandReceipts.Num());
     if (Loaded.Facilities.Num() != 1 || Loaded.CommandReceipts.Num() != 1)
     {
         return false;
@@ -181,72 +181,72 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     const FFFZSFacilityInstanceSnapshot& SourceFacility = Source.Facilities[0];
     const FFFZSFacilityInstanceSnapshot& LoadedFacility = Loaded.Facilities[0];
     TestTrue(
-        TEXT("The complete facility specification survives"),
+        TEXT("전체 시설 명세가 보존된다"),
         FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(
             &LoadedFacility.FacilitySpec,
             &SourceFacility.FacilitySpec,
             0));
-    TestTrue(TEXT("Facility ID survives"),
+    TestTrue(TEXT("시설 ID가 보존된다"),
         LoadedFacility.FacilityInstanceId == SourceFacility.FacilityInstanceId);
-    TestTrue(TEXT("Grid placement survives"), LoadedFacility.Placement == SourceFacility.Placement);
-    TestEqual(TEXT("Facility state survives"), LoadedFacility.State, SourceFacility.State);
-    TestTrue(TEXT("Facility transform survives"),
+    TestTrue(TEXT("격자 배치가 보존된다"), LoadedFacility.Placement == SourceFacility.Placement);
+    TestEqual(TEXT("시설 상태가 보존된다"), LoadedFacility.State, SourceFacility.State);
+    TestTrue(TEXT("시설 트랜스폼이 보존된다"),
         LoadedFacility.WorldTransform.Equals(SourceFacility.WorldTransform));
-    TestEqual(TEXT("Relocation flag survives"),
+    TestEqual(TEXT("재배치 플래그가 보존된다"),
         LoadedFacility.bNeedsRelocation, SourceFacility.bNeedsRelocation);
 
     const FFFZSFacilitySpec& SourceSpec = SourceFacility.FacilitySpec;
     const FFFZSFacilitySpec& LoadedSpec = LoadedFacility.FacilitySpec;
-    TestEqual(TEXT("Facility spec schema survives"), LoadedSpec.SchemaVersion, SourceSpec.SchemaVersion);
-    TestEqual(TEXT("Facility definition ID survives"),
+    TestEqual(TEXT("시설 명세 스키마가 보존된다"), LoadedSpec.SchemaVersion, SourceSpec.SchemaVersion);
+    TestEqual(TEXT("시설 정의 ID가 보존된다"),
         LoadedSpec.FacilityDefinitionId, SourceSpec.FacilityDefinitionId);
-    TestEqual(TEXT("Facility display name survives"),
+    TestEqual(TEXT("시설 표시 이름이 보존된다"),
         LoadedSpec.DisplayName.ToString(), SourceSpec.DisplayName.ToString());
-    TestTrue(TEXT("Compressed queue reservation rects survive"),
+    TestTrue(TEXT("압축된 대기열 예약 사각형이 보존된다"),
         LoadedSpec.QueueReservedRects == SourceSpec.QueueReservedRects);
-    TestTrue(TEXT("Legacy small queue reserved cells survive"),
+    TestTrue(TEXT("레거시 소규모 대기열 예약 셀이 보존된다"),
         LoadedSpec.QueueReservedCells == SourceSpec.QueueReservedCells);
-    TestTrue(TEXT("Queue spline points survive"),
+    TestTrue(TEXT("대기열 스플라인 지점이 보존된다"),
         LoadedSpec.QueueSplinePointsCm == SourceSpec.QueueSplinePointsCm);
-    TestEqual(TEXT("Queue rule spacing survives"),
+    TestEqual(TEXT("대기열 규칙의 슬롯 간격이 보존된다"),
         LoadedSpec.QueueRules.SlotSpacingCm, SourceSpec.QueueRules.SlotSpacingCm);
-    TestEqual(TEXT("Queue rule capacity survives"),
+    TestEqual(TEXT("대기열 규칙의 서비스 용량이 보존된다"),
         LoadedSpec.QueueRules.ServiceCapacity, SourceSpec.QueueRules.ServiceCapacity);
-    TestEqual(TEXT("Anchor array survives"), LoadedSpec.Anchors.Num(), SourceSpec.Anchors.Num());
+    TestEqual(TEXT("앵커 배열이 보존된다"), LoadedSpec.Anchors.Num(), SourceSpec.Anchors.Num());
     if (LoadedSpec.Anchors.Num() == 1)
     {
-        TestEqual(TEXT("Anchor type survives"), LoadedSpec.Anchors[0].Type, SourceSpec.Anchors[0].Type);
-        TestEqual(TEXT("Anchor index survives"), LoadedSpec.Anchors[0].Index, SourceSpec.Anchors[0].Index);
-        TestTrue(TEXT("Anchor transform survives"),
+        TestEqual(TEXT("앵커 타입이 보존된다"), LoadedSpec.Anchors[0].Type, SourceSpec.Anchors[0].Type);
+        TestEqual(TEXT("앵커 인덱스가 보존된다"), LoadedSpec.Anchors[0].Index, SourceSpec.Anchors[0].Index);
+        TestTrue(TEXT("앵커 트랜스폼이 보존된다"),
             LoadedSpec.Anchors[0].LocalTransform.Equals(SourceSpec.Anchors[0].LocalTransform));
     }
-    TestTrue(TEXT("Allowed Zone IDs survive"), LoadedSpec.AllowedZoneIds == SourceSpec.AllowedZoneIds);
-    TestTrue(TEXT("Visual mesh soft path survives"),
+    TestTrue(TEXT("허용된 구역 ID가 보존된다"), LoadedSpec.AllowedZoneIds == SourceSpec.AllowedZoneIds);
+    TestTrue(TEXT("비주얼 메시 소프트 경로가 보존된다"),
         LoadedSpec.VisualMesh.ToSoftObjectPath() == SourceSpec.VisualMesh.ToSoftObjectPath());
 
     // Assert 2: Queue는 배열 순서와 transient drain/repath 값이 의미이므로 단순 개수만 비교하지 않는다.
     const FFFZSQueueSnapshot& SourceQueue = SourceFacility.Queue;
     const FFFZSQueueSnapshot& LoadedQueue = LoadedFacility.Queue;
-    TestEqual(TEXT("Queue state survives"), LoadedQueue.State, SourceQueue.State);
-    TestEqual(TEXT("Pre-block queue state survives"),
+    TestEqual(TEXT("대기열 상태가 보존된다"), LoadedQueue.State, SourceQueue.State);
+    TestEqual(TEXT("차단 전 대기열 상태가 보존된다"),
         LoadedQueue.StateBeforeBlocked, SourceQueue.StateBeforeBlocked);
-    TestEqual(TEXT("Queue entry array survives"), LoadedQueue.Entries.Num(), SourceQueue.Entries.Num());
-    TestEqual(TEXT("Next join sequence survives"),
+    TestEqual(TEXT("대기열 항목 배열이 보존된다"), LoadedQueue.Entries.Num(), SourceQueue.Entries.Num());
+    TestEqual(TEXT("다음 참가 시퀀스가 보존된다"),
         LoadedQueue.NextJoinSequence, SourceQueue.NextJoinSequence);
-    TestEqual(TEXT("Queue aggregate metrics survive"),
+    TestEqual(TEXT("대기열 집계 지표가 보존된다"),
         LoadedQueue.TotalCompletedWaitSeconds, SourceQueue.TotalCompletedWaitSeconds);
-    TestEqual(TEXT("Drain request survives"), LoadedQueue.bDrainRequested, SourceQueue.bDrainRequested);
+    TestEqual(TEXT("배수 요청이 보존된다"), LoadedQueue.bDrainRequested, SourceQueue.bDrainRequested);
     if (LoadedQueue.Entries.Num() == 2)
     {
         const FFFZSQueueEntrySnapshot& SourceEntry = SourceQueue.Entries[0];
         const FFFZSQueueEntrySnapshot& LoadedEntry = LoadedQueue.Entries[0];
         TestTrue(
-            TEXT("The complete first queue entry survives"),
+            TEXT("첫 번째 대기열 항목 전체가 보존된다"),
             FFFZSQueueEntrySnapshot::StaticStruct()->CompareScriptStruct(
                 &LoadedEntry,
                 &SourceEntry,
                 0));
-        TestTrue(TEXT("Queue entry ordering survives"),
+        TestTrue(TEXT("대기열 항목 순서가 보존된다"),
             LoadedQueue.Entries[1].TicketId == SourceQueue.Entries[1].TicketId &&
             LoadedQueue.Entries[1].AgentId == SourceQueue.Entries[1].AgentId &&
             LoadedQueue.Entries[1].JoinSequence == SourceQueue.Entries[1].JoinSequence);
@@ -256,16 +256,16 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     const FFFZSCommandReceiptSnapshot& SourceReceipt = Source.CommandReceipts[0];
     const FFFZSCommandReceiptSnapshot& LoadedReceipt = Loaded.CommandReceipts[0];
     TestTrue(
-        TEXT("The complete command receipt survives"),
+        TEXT("명령 영수증 전체가 보존된다"),
         FFFZSCommandReceiptSnapshot::StaticStruct()->CompareScriptStruct(
             &LoadedReceipt,
             &SourceReceipt,
             0));
-    TestEqual(TEXT("Receipt fingerprint survives"),
+    TestEqual(TEXT("영수증 지문이 보존된다"),
         LoadedReceipt.PayloadFingerprint, SourceReceipt.PayloadFingerprint);
-    TestEqual(TEXT("Receipt result revision survives"),
+    TestEqual(TEXT("영수증 결과 리비전이 보존된다"),
         LoadedReceipt.ResultWorldRevision, SourceReceipt.ResultWorldRevision);
-    TestTrue(TEXT("Receipt facility reference survives"),
+    TestTrue(TEXT("영수증의 시설 참조가 보존된다"),
         LoadedReceipt.FacilityInstanceId == SourceReceipt.FacilityInstanceId &&
         LoadedReceipt.bResultReferencesFacility == SourceReceipt.bResultReferencesFacility);
 

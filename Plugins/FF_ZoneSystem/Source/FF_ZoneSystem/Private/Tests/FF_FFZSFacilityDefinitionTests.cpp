@@ -124,42 +124,42 @@ bool FFFZSOneCentimeterBuiltInDefinitionsTest::RunTest(const FString& Parameters
             UFFZSGridLibrary::MakeBuiltInFacilitySpec(Expected.Preset);
         TArray<FText> Errors;
 
-        TestTrue(FString::Printf(TEXT("%s is valid Schema 2 data"), *Label),
+        TestTrue(FString::Printf(TEXT("%s가 유효한 Schema 2 데이터다"), *Label),
             Spec.IsValid(Errors));
-        TestEqual(*FString::Printf(TEXT("%s schema"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 스키마가 일치한다"), *Label),
             Spec.SchemaVersion, 2);
-        TestEqual(*FString::Printf(TEXT("%s definition ID"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 정의 ID가 일치한다"), *Label),
             Spec.FacilityDefinitionId, Expected.DefinitionId);
-        TestTrue(FString::Printf(TEXT("%s category"), *Label),
+        TestTrue(FString::Printf(TEXT("%s의 카테고리가 유효하다"), *Label),
             Spec.Category == Expected.Category);
-        TestEqual(*FString::Printf(TEXT("%s one-centimeter footprint"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 1센티미터 점유 영역이 일치한다"), *Label),
             Spec.FootprintSizeCells, Expected.Footprint);
-        TestEqual(*FString::Printf(TEXT("%s one-meter clearance"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 1미터 여유 영역이 일치한다"), *Label),
             Spec.ClearanceCells, 100);
-        TestEqual(*FString::Printf(TEXT("%s compressed queue Rect count"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 압축 대기열 Rect 개수가 일치한다"), *Label),
             Spec.QueueReservedRects.Num(), Expected.QueueRectCount);
-        TestEqual(*FString::Printf(TEXT("%s compressed queue area"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 압축 대기열 면적이 일치한다"), *Label),
             UFFZSGridLibrary::GetCellRectArea(Spec.QueueReservedRects),
             Expected.QueueAreaCells);
-        TestTrue(FString::Printf(TEXT("%s does not author legacy queue Cells"), *Label),
+        TestTrue(FString::Printf(TEXT("%s는 레거시 대기열 Cell을 작성하지 않는다"), *Label),
             Spec.QueueReservedCells.IsEmpty());
-        TestTrue(FString::Printf(TEXT("%s stays inside the conservative Region budget"), *Label),
+        TestTrue(FString::Printf(TEXT("%s는 보수적 Region 작업 예산 이내다"), *Label),
             UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
-        TestEqual(*FString::Printf(TEXT("%s maximum queue"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 최대 대기 인원이 일치한다"), *Label),
             Spec.QueueRules.MaxWaitingAgents, Expected.MaxWaitingAgents);
-        TestEqual(*FString::Printf(TEXT("%s service capacity"), *Label),
+        TestEqual(*FString::Printf(TEXT("%s의 서비스 수용량이 일치한다"), *Label),
             Spec.QueueRules.ServiceCapacity, Expected.ServiceCapacity);
-        TestTrue(FString::Printf(TEXT("%s has a queue spline"), *Label),
+        TestTrue(FString::Printf(TEXT("%s에 대기열 스플라인이 있다"), *Label),
             Spec.QueueSplinePointsCm.Num() >= 2);
-        TestTrue(FString::Printf(TEXT("%s has required anchors"), *Label),
+        TestTrue(FString::Printf(TEXT("%s에 필수 앵커가 있다"), *Label),
             Spec.Anchors.Num() >= Expected.ServiceCapacity + 2);
-        TestFalse(FString::Printf(TEXT("%s install key"), *Label),
+        TestFalse(FString::Printf(TEXT("%s의 설치 비용 키가 설정되어 있다"), *Label),
             Spec.InstallCostKey.IsNone());
-        TestFalse(FString::Printf(TEXT("%s revenue key"), *Label),
+        TestFalse(FString::Printf(TEXT("%s의 수익 키가 설정되어 있다"), *Label),
             Spec.RevenueRuleKey.IsNone());
-        TestFalse(FString::Printf(TEXT("%s experience key"), *Label),
+        TestFalse(FString::Printf(TEXT("%s의 경험치 키가 설정되어 있다"), *Label),
             Spec.ExperienceEffectKey.IsNone());
-        TestFalse(FString::Printf(TEXT("%s ID is unique"), *Label),
+        TestFalse(FString::Printf(TEXT("%s의 ID가 고유하다"), *Label),
             UniqueDefinitionIds.Contains(Spec.FacilityDefinitionId));
         UniqueDefinitionIds.Add(Spec.FacilityDefinitionId);
     }
@@ -168,52 +168,52 @@ bool FFFZSOneCentimeterBuiltInDefinitionsTest::RunTest(const FString& Parameters
     const FFFZSFacilitySpec FoodTruck =
         UFFZSGridLibrary::MakeBuiltInFacilitySpec(
             EFFZSBuiltInFacilityPreset::FoodTruckBasic);
-    TestEqual(TEXT("Accepted Food Truck clearance is one hundred 1 cm Cells"),
+    TestEqual(TEXT("승인된 푸드 트럭의 여유 영역은 1cm Cell 100개다"),
         FoodTruck.ClearanceCells, 100);
-    TestEqual(TEXT("Accepted Food Truck queue uses three compressed Rects"),
+    TestEqual(TEXT("승인된 푸드 트럭의 대기열은 압축 Rect 3개를 사용한다"),
         FoodTruck.QueueReservedRects.Num(), 3);
-    TestEqual(TEXT("Accepted Food Truck queue preserves sixteen square-meter Cells"),
+    TestEqual(TEXT("승인된 푸드 트럭의 대기열은 제곱미터 Cell 16개를 보존한다"),
         UFFZSGridLibrary::GetCellRectArea(FoodTruck.QueueReservedRects),
         static_cast<int64>(160'000));
-    TestTrue(TEXT("Accepted Food Truck right queue arm is preserved"),
+    TestTrue(TEXT("승인된 푸드 트럭의 오른쪽 대기열 구간이 보존된다"),
         FoodTruck.QueueReservedRects.Contains(
             FFFZSCellRect(FIntPoint(500, 300), FIntPoint(600, 900))));
-    TestTrue(TEXT("Accepted Food Truck top queue arm is preserved"),
+    TestTrue(TEXT("승인된 푸드 트럭의 위쪽 대기열 구간이 보존된다"),
         FoodTruck.QueueReservedRects.Contains(
             FFFZSCellRect(FIntPoint(0, 800), FIntPoint(500, 900))));
-    TestTrue(TEXT("Accepted Food Truck left queue arm is preserved"),
+    TestTrue(TEXT("승인된 푸드 트럭의 왼쪽 대기열 구간이 보존된다"),
         FoodTruck.QueueReservedRects.Contains(
             FFFZSCellRect(FIntPoint(0, 300), FIntPoint(100, 800))));
-    TestEqual(TEXT("Accepted Food Truck spline points"),
+    TestEqual(TEXT("승인된 푸드 트럭의 스플라인 포인트 수가 일치한다"),
         FoodTruck.QueueSplinePointsCm.Num(), 4);
-    TestEqual(TEXT("Accepted Food Truck anchors"),
+    TestEqual(TEXT("승인된 푸드 트럭의 앵커 수가 일치한다"),
         FoodTruck.Anchors.Num(), 3);
-    TestEqual(TEXT("Accepted Food Truck service duration remains seconds"),
+    TestEqual(TEXT("승인된 푸드 트럭의 서비스 시간이 초 단위로 유지된다"),
         FoodTruck.QueueRules.ServiceDurationSeconds, 6.0f);
-    TestEqual(TEXT("Accepted Food Truck slot spacing remains centimeters"),
+    TestEqual(TEXT("승인된 푸드 트럭의 슬롯 간격이 센티미터 단위로 유지된다"),
         FoodTruck.QueueRules.SlotSpacingCm, 115.0f);
 
     const FFFZSFacilitySpec Toilet =
         UFFZSGridLibrary::MakeBuiltInFacilitySpec(
             EFFZSBuiltInFacilityPreset::ToiletBasic);
-    TestEqual(TEXT("Accepted Restroom clearance is one hundred 1 cm Cells"),
+    TestEqual(TEXT("승인된 화장실의 여유 영역은 1cm Cell 100개다"),
         Toilet.ClearanceCells, 100);
-    TestEqual(TEXT("Accepted Restroom queue uses one compressed Rect"),
+    TestEqual(TEXT("승인된 화장실의 대기열은 압축 Rect 1개를 사용한다"),
         Toilet.QueueReservedRects.Num(), 1);
-    TestTrue(TEXT("Accepted Restroom two-meter by twelve-meter queue is preserved"),
+    TestTrue(TEXT("승인된 화장실의 2m x 12m 대기열이 보존된다"),
         Toilet.QueueReservedRects.Num() == 1 &&
         Toilet.QueueReservedRects[0] ==
             FFFZSCellRect(FIntPoint(100, 400), FIntPoint(300, 1600)));
-    TestEqual(TEXT("Accepted Restroom compressed queue area"),
+    TestEqual(TEXT("승인된 화장실의 압축 대기열 면적이 일치한다"),
         UFFZSGridLibrary::GetCellRectArea(Toilet.QueueReservedRects),
         static_cast<int64>(240'000));
-    TestEqual(TEXT("Accepted Restroom spline points"),
+    TestEqual(TEXT("승인된 화장실의 스플라인 포인트 수가 일치한다"),
         Toilet.QueueSplinePointsCm.Num(), 2);
-    TestEqual(TEXT("Accepted Restroom anchors"),
+    TestEqual(TEXT("승인된 화장실의 앵커 수가 일치한다"),
         Toilet.Anchors.Num(), 4);
-    TestEqual(TEXT("Accepted Restroom service duration remains seconds"),
+    TestEqual(TEXT("승인된 화장실의 서비스 시간이 초 단위로 유지된다"),
         Toilet.QueueRules.ServiceDurationSeconds, 4.0f);
-    TestEqual(TEXT("Accepted Restroom slot spacing remains centimeters"),
+    TestEqual(TEXT("승인된 화장실의 슬롯 간격이 센티미터 단위로 유지된다"),
         Toilet.QueueRules.SlotSpacingCm, 115.0f);
     return true;
 }
@@ -238,22 +238,22 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
     {
         TGuardValue<int32> LimitGuard(
             MutableSettings->MaxEnumeratedCellsPerFacility, 64);
-        TestEqual(TEXT("Owner setting drives the effective Region work limit"),
+        TestEqual(TEXT("담당자 설정이 유효 Region 작업 제한을 결정한다"),
             UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 64);
-        TestFalse(TEXT("An 82-work-unit synthetic Region exceeds a limit of 64"),
+        TestFalse(TEXT("작업 단위 82인 합성 Region은 제한 64를 초과한다"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(MakeSmallBudgetSpec()));
     }
     {
         TGuardValue<int32> LowerClampGuard(
             MutableSettings->MaxEnumeratedCellsPerFacility, 0);
-        TestEqual(TEXT("Region work limit clamps to at least one"),
+        TestEqual(TEXT("Region 작업 제한은 최소 1로 제한된다"),
             UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 1);
     }
     {
         TGuardValue<int32> UpperClampGuard(
             MutableSettings->MaxEnumeratedCellsPerFacility,
             TNumericLimits<int32>::Max());
-        TestEqual(TEXT("Region work limit clamps to the hard safety ceiling"),
+        TestEqual(TEXT("Region 작업 제한은 최대 안전 한도로 제한된다"),
             UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility(), 1'000'000);
     }
 
@@ -262,52 +262,52 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
             EFFZSBuiltInFacilityPreset::FoodTruckBasic);
 
     // 유효한 압축 Spec에서 한 경계만 바꿔 오류 원인을 독립적으로 확인한다.
-    TestTrue(TEXT("Empty AllowedZoneIds remains portable and valid"),
+    TestTrue(TEXT("빈 AllowedZoneIds는 이식 가능하며 유효하다"),
         Spec.IsValid(Errors));
     Spec.AllowedZoneIds = {
         FName(TEXT("PartnerVenue_Main")),
         FName(TEXT("Prototype.Zone.02"))
     };
-    TestTrue(TEXT("Unique non-Festa Zone IDs are valid"),
+    TestTrue(TEXT("Festa 외부의 고유한 Zone ID도 유효하다"),
         Spec.IsValid(Errors));
 
     Spec.AllowedZoneIds = {
         FName(TEXT("PartnerVenue_Main")),
         FName(TEXT("PartnerVenue_Main"))
     };
-    TestFalse(TEXT("Duplicate allowed Zone IDs are rejected"),
+    TestFalse(TEXT("중복된 허용 Zone ID는 거부된다"),
         Spec.IsValid(Errors));
-    TestTrue(TEXT("Duplicate Zone error is actionable"),
-        ContainsErrorText(Errors, TEXT("unique")));
+    TestTrue(TEXT("중복 Zone 오류에 해결 가능한 정보가 포함된다"),
+        ContainsErrorText(Errors, TEXT("고유")));
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Spec.AllowedZoneIds = { NAME_None };
-    TestFalse(TEXT("NAME_None allowed Zone ID is rejected"),
+    TestFalse(TEXT("NAME_None 허용 Zone ID는 거부된다"),
         Spec.IsValid(Errors));
-    TestTrue(TEXT("Empty Zone error is actionable"),
+    TestTrue(TEXT("빈 Zone 오류에 해결 가능한 정보가 포함된다"),
         ContainsErrorText(Errors, TEXT("NAME_None")));
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Spec.SchemaVersion = 1;
-    TestFalse(TEXT("Legacy one-meter FacilitySpec schema is rejected"),
+    TestFalse(TEXT("레거시 1미터 FacilitySpec 스키마는 거부된다"),
         Spec.IsValid(Errors));
-    TestTrue(TEXT("Schema error names the one-centimeter Schema 2 contract"),
+    TestTrue(TEXT("스키마 오류가 1센티미터 Schema 2 계약을 명시한다"),
         ContainsErrorText(Errors, TEXT("SchemaVersion 2")));
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Spec.FootprintSizeCells = FIntPoint(0, 1);
-    TestFalse(TEXT("Zero-width one-centimeter footprint is rejected"),
+    TestFalse(TEXT("폭이 0인 1센티미터 점유 영역은 거부된다"),
         Spec.IsValid(Errors));
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Spec.QueueReservedRects[0].Max = Spec.QueueReservedRects[0].Min;
-    TestFalse(TEXT("Zero-area QueueReservedRect is rejected"),
+    TestFalse(TEXT("면적이 0인 QueueReservedRect는 거부된다"),
         Spec.IsValid(Errors));
-    TestTrue(TEXT("Invalid compressed Rect error explains half-open bounds"),
+    TestTrue(TEXT("잘못된 압축 Rect 오류가 반개방 경계를 설명한다"),
         ContainsErrorText(Errors, TEXT("Min.X < Max.X")));
 
     // 겹치거나 중복된 유효 Rect는 저작 오류가 아니라 결정적 합집합 입력이다.
@@ -317,61 +317,61 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
         UFFZSGridLibrary::GetCellRectArea(Spec.QueueReservedRects);
     const FFFZSCellRect DuplicateQueueRect = Spec.QueueReservedRects[0];
     Spec.QueueReservedRects.Add(DuplicateQueueRect);
-    TestTrue(TEXT("Duplicate valid Queue Rects canonicalize without changing validity"),
+    TestTrue(TEXT("유효한 중복 Queue Rect는 유효성을 유지한 채 정규화된다"),
         Spec.IsValid(Errors));
-    TestEqual(TEXT("Duplicate valid Queue Rects do not double-count area"),
+    TestEqual(TEXT("유효한 중복 Queue Rect의 면적은 중복 계산되지 않는다"),
         UFFZSGridLibrary::GetCellRectArea(Spec.QueueReservedRects),
         OriginalQueueArea);
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::InfoBasic);
     Spec.QueueReservedRects.Reset();
-    TestFalse(TEXT("New Schema 2 data requires a compressed queue Region"),
+    TestFalse(TEXT("새 Schema 2 데이터에는 압축 대기열 Region이 필요하다"),
         Spec.IsValid(Errors));
-    TestTrue(TEXT("Missing Region error names QueueReservedRects"),
+    TestTrue(TEXT("Region 누락 오류가 QueueReservedRects를 명시한다"),
         ContainsErrorText(Errors, TEXT("QueueReservedRects")));
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::InfoBasic);
-    TestTrue(TEXT("Straight prototype contains every 115 cm-spaced slot"),
+    TestTrue(TEXT("직선 프로토타입에 115cm 간격의 모든 슬롯이 포함된다"),
         Spec.IsValid(Errors));
     Spec.QueueReservedRects[0].Max.Y =
         Spec.QueueReservedRects[0].Min.Y + 100;
-    TestFalse(TEXT("A compressed Region shorter than the queue tail is rejected"),
+    TestFalse(TEXT("대기열 끝보다 짧은 압축 Region은 거부된다"),
         Spec.IsValid(Errors));
-    TestTrue(TEXT("Queue tail error is actionable"),
-        ContainsErrorText(Errors, TEXT("Queue slot")));
+    TestTrue(TEXT("대기열 끝 오류에 해결 가능한 정보가 포함된다"),
+        ContainsErrorText(Errors, TEXT("Queue 슬롯")));
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Spec.FootprintSizeCells =
         FIntPoint(TNumericLimits<int32>::Max(), TNumericLimits<int32>::Max());
-    TestFalse(TEXT("Overflow-sized one-centimeter footprint exceeds the Region budget"),
+    TestFalse(TEXT("오버플로 크기의 1센티미터 점유 영역은 Region 예산을 초과한다"),
         UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
-    TestFalse(TEXT("Overflow-sized one-centimeter footprint is invalid"),
+    TestFalse(TEXT("오버플로 크기의 1센티미터 점유 영역은 유효하지 않다"),
         Spec.IsValid(Errors));
     const FString EffectiveLimitText =
         FText::AsNumber(
             UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility()).ToString();
-    TestTrue(TEXT("Overflow error names the effective owner setting"),
+    TestTrue(TEXT("오버플로 오류가 담당자의 유효 설정을 명시한다"),
         ContainsErrorText(Errors, *EffectiveLimitText));
-    TestTrue(TEXT("Compressed Region API fails fast for overflow data"),
+    TestTrue(TEXT("압축 Region API는 오버플로 데이터에 조기 실패한다"),
         UFFZSGridLibrary::GetReservedRects(
             Spec, FFFZSGridPlacement()).IsEmpty());
 
     Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(
         EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Spec.ClearanceCells = TNumericLimits<int32>::Max();
-    TestFalse(TEXT("Overflow-sized one-centimeter clearance exceeds the Region budget"),
+    TestFalse(TEXT("오버플로 크기의 1센티미터 여유 영역은 Region 예산을 초과한다"),
         UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
-    TestFalse(TEXT("Overflow-sized one-centimeter clearance is invalid"),
+    TestFalse(TEXT("오버플로 크기의 1센티미터 여유 영역은 유효하지 않다"),
         Spec.IsValid(Errors));
 
     const FFFZSFacilitySpec InvalidPreset =
         UFFZSGridLibrary::MakeBuiltInFacilitySpec(
             static_cast<EFFZSBuiltInFacilityPreset>(
                 TNumericLimits<uint8>::Max()));
-    TestFalse(TEXT("Unknown one-centimeter built-in preset fails closed"),
+    TestFalse(TEXT("알 수 없는 1센티미터 기본 프리셋은 안전 차단으로 실패한다"),
         InvalidPreset.IsValid(Errors));
     return true;
 }
@@ -398,19 +398,19 @@ bool FFFZSOneCentimeterFacilityDefinitionEditorValidationTest::RunTest(
         EFFZSBuiltInFacilityPreset::InfoBasic);
 
     FDataValidationContext ValidContext;
-    TestTrue(TEXT("Valid one-centimeter Data Asset reports Valid"),
+    TestTrue(TEXT("유효한 1센티미터 Data Asset은 Valid를 보고한다"),
         Definition->IsDataValid(ValidContext) ==
             EDataValidationResult::Valid);
-    TestEqual(TEXT("Valid compressed Data Asset has no validation errors"),
+    TestEqual(TEXT("유효한 압축 Data Asset에는 검증 오류가 없다"),
         ValidContext.GetNumErrors(), 0U);
 
     // 필수 ID 하나를 제거하면 같은 도메인 오류가 Editor 저작 UI까지 전달되어야 한다.
     Definition->Spec.FacilityDefinitionId = NAME_None;
     FDataValidationContext InvalidContext;
-    TestTrue(TEXT("Invalid one-centimeter Data Asset reports Invalid"),
+    TestTrue(TEXT("유효하지 않은 1센티미터 Data Asset은 Invalid를 보고한다"),
         Definition->IsDataValid(InvalidContext) ==
             EDataValidationResult::Invalid);
-    TestTrue(TEXT("Invalid Data Asset exposes authoring errors"),
+    TestTrue(TEXT("유효하지 않은 Data Asset이 작성 오류를 제공한다"),
         InvalidContext.GetNumErrors() > 0U);
     return true;
 }

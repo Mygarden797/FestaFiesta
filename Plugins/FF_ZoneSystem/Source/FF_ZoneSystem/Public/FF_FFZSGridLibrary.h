@@ -25,8 +25,8 @@ class FF_ZONESYSTEM_API UFFZSGridLibrary : public UBlueprintFunctionLibrary
 
 public:
     /**
-     * Fail-fast guard for every grid enumerator. The effective owner-facing setting is clamped
-     * to a hard one-million-cell ceiling so malformed data cannot overflow or stall the game thread.
+     * 모든 격자 열거기에 적용되는 조기 실패 안전장치다. 담당자에게 노출되는 유효 설정값은
+     * 잘못된 데이터가 오버플로를 일으키거나 Game Thread를 멈추지 않도록 최대 100만 Cell로 강제 제한된다.
      */
     /**
      * footprint 확장 면적 + queue 압축 영역의 이론 셀 수가 안전 상한 이내인지 빠르게 확인한다.

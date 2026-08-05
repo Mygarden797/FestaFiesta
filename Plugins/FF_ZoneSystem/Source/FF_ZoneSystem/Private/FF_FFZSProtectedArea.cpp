@@ -107,7 +107,7 @@ bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
 
     FVector LocalExtent = AreaBounds->GetScaledBoxExtent();
     const double RequiredHalfWidth = FMath::Max(0.0, static_cast<double>(GetEffectiveRequiredClearWidthCm()) * 0.5);
-    // RequiredClearWidth expands the protected actor's local short axis, not a world AABB axis.
+    // RequiredClearWidth는 World AABB 축이 아니라 보호 Actor의 Local 단축 방향을 확장한다.
     if (LocalExtent.X <= LocalExtent.Y)
     {
         LocalExtent.X = FMath::Max(LocalExtent.X, RequiredHalfWidth);
@@ -171,35 +171,35 @@ bool AFFZSProtectedArea::ValidateProtectedAreaData(TArray<FText>& OutErrors) con
     OutErrors.Reset();
     if (ProtectedAreaId.IsNone())
     {
-        OutErrors.Add(LOCTEXT("MissingProtectedAreaId", "ProtectedAreaId is required."));
+        OutErrors.Add(LOCTEXT("MissingProtectedAreaId", "ProtectedAreaId가 필요합니다."));
     }
     if (!AreaBounds || AreaBounds->GetUnscaledBoxExtent().X <= 0.0f || AreaBounds->GetUnscaledBoxExtent().Y <= 0.0f)
     {
-        OutErrors.Add(LOCTEXT("InvalidProtectedBounds", "Protected Area bounds must have positive horizontal extents."));
+        OutErrors.Add(LOCTEXT("InvalidProtectedBounds", "Protected Area의 Bounds는 수평 Extent가 양수여야 합니다."));
     }
     if (!GetActorScale3D().Equals(FVector::OneVector, 0.001f))
     {
-        OutErrors.Add(LOCTEXT("ScaledProtectedArea", "Protected Area actor scale must remain 1; edit Box Extent instead."));
+        OutErrors.Add(LOCTEXT("ScaledProtectedArea", "Protected Area Actor의 Scale은 1이어야 합니다. 대신 Box Extent를 편집하십시오."));
     }
     const FRotator BoundsRotation = AreaBounds ? AreaBounds->GetComponentRotation() : GetActorRotation();
     if (!FMath::IsNearlyZero(BoundsRotation.Pitch, 0.01) || !FMath::IsNearlyZero(BoundsRotation.Roll, 0.01))
     {
-        OutErrors.Add(LOCTEXT("TiltedProtectedArea", "Protected Area rotation supports yaw only; pitch and roll must remain zero."));
+        OutErrors.Add(LOCTEXT("TiltedProtectedArea", "Protected Area는 Yaw 회전만 지원합니다. Pitch와 Roll은 0이어야 합니다."));
     }
     if (!FMath::IsFinite(RequiredClearWidthCm) || RequiredClearWidthCm < 0.0f)
     {
-        OutErrors.Add(LOCTEXT("InvalidProtectedWidth", "RequiredClearWidthCm must be finite and non-negative."));
+        OutErrors.Add(LOCTEXT("InvalidProtectedWidth", "RequiredClearWidthCm은 유한한 0 이상의 값이어야 합니다."));
     }
     if (AreaType != EFFZSProtectedAreaType::NoBuild && GetEffectiveRequiredClearWidthCm() <= 0.0f)
     {
         OutErrors.Add(LOCTEXT(
             "MissingProtectedWidth",
-            "Route and viewing Protected Areas require a positive actor override or project default width."));
+            "Route 및 Viewing Protected Area에는 양수인 Actor Override 또는 Project Default Width가 필요합니다."));
     }
     if (ProtectedAreaId == TEXT("PA_AccessibleFireworksViewing") &&
         (LinkedZoneId != TEXT("GZ_Operations") || AreaType != EFFZSProtectedAreaType::ViewingArea))
     {
-        OutErrors.Add(LOCTEXT("AccessibleViewingOwnership", "PA_AccessibleFireworksViewing must be a ViewingArea linked to GZ_Operations."));
+        OutErrors.Add(LOCTEXT("AccessibleViewingOwnership", "PA_AccessibleFireworksViewing은 GZ_Operations에 연결된 ViewingArea여야 합니다."));
     }
     return OutErrors.IsEmpty();
 }

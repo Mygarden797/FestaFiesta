@@ -361,7 +361,7 @@ bool AFFZSGameplayZone::ApplyAcceptedZonePreset(const FName AcceptedZoneId)
     {
         if (const UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>())
         {
-            // Changing ZoneId after registration would make the authoritative registry key stale.
+            // 등록 후 ZoneId를 변경하면 권위 레지스트리 키가 오래된 값으로 남는다.
             if (Subsystem->FindZone(ZoneId) == this)
             {
                 return false;
@@ -383,17 +383,17 @@ bool AFFZSGameplayZone::ValidateZoneData(TArray<FText>& OutErrors) const
     OutErrors.Reset();
     if (ZoneId.IsNone())
     {
-        OutErrors.Add(LOCTEXT("MissingZoneId", "ZoneId is required."));
+        OutErrors.Add(LOCTEXT("MissingZoneId", "ZoneId가 필요합니다."));
     }
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
     if (!ZoneId.IsNone() && Settings->bRestrictZoneIdsToProjectPresets &&
         !Settings->ProjectZoneIds.Contains(ZoneId))
     {
-        OutErrors.Add(LOCTEXT("UnknownZoneId", "ZoneId is not present in Project Settings > FF Zone System > Project Zone Ids."));
+        OutErrors.Add(LOCTEXT("UnknownZoneId", "ZoneId가 Project Settings > FF Zone System > Project Zone Ids에 없습니다."));
     }
     if (!BoundarySpline || BoundarySpline->GetNumberOfSplinePoints() < 3 || !BoundarySpline->IsClosedLoop())
     {
-        OutErrors.Add(LOCTEXT("InvalidBoundary", "BoundarySpline must be a closed polygon with at least three points."));
+        OutErrors.Add(LOCTEXT("InvalidBoundary", "BoundarySpline은 Point가 3개 이상인 닫힌 다각형이어야 합니다."));
     }
     if (BoundarySpline)
     {
@@ -404,16 +404,16 @@ bool AFFZSGameplayZone::ValidateZoneData(TArray<FText>& OutErrors) const
         }
         if (!bAllLinear)
         {
-            OutErrors.Add(LOCTEXT("CurvedBoundary", "Every Gameplay Zone BoundarySpline point must use Linear interpolation."));
+            OutErrors.Add(LOCTEXT("CurvedBoundary", "Gameplay Zone의 모든 BoundarySpline Point는 Linear 보간을 사용해야 합니다."));
         }
         if (!IsSimpleNonDegeneratePolygon(GetBoundaryPolygonLocalCm()))
         {
-            OutErrors.Add(LOCTEXT("NonSimpleBoundary", "Gameplay Zone boundary must be a simple, non-self-intersecting polygon with no duplicate edge points."));
+            OutErrors.Add(LOCTEXT("NonSimpleBoundary", "Gameplay Zone 경계는 자기 교차와 중복 Edge Point가 없는 단순 다각형이어야 합니다."));
         }
     }
     if (!GetActorScale3D().Equals(FVector::OneVector, 0.001f))
     {
-        OutErrors.Add(LOCTEXT("ScaledZone", "Gameplay Zone actor scale must remain 1. Edit spline points instead of scaling the actor."));
+        OutErrors.Add(LOCTEXT("ScaledZone", "Gameplay Zone Actor의 Scale은 1이어야 합니다. Actor의 Scale 대신 Spline Point를 편집하십시오."));
     }
     const FVector ActorLocation = GetActorLocation();
     constexpr double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
@@ -421,7 +421,7 @@ bool AFFZSGameplayZone::ValidateZoneData(TArray<FText>& OutErrors) const
     const bool bAlignedY = FMath::IsNearlyEqual(ActorLocation.Y, FMath::GridSnap(ActorLocation.Y, CellSizeCm), 0.1);
     if (!bAlignedX || !bAlignedY)
     {
-        OutErrors.Add(LOCTEXT("UnalignedZoneOrigin", "Gameplay Zone X/Y origin must align to the fixed 1 cm placement grid."));
+        OutErrors.Add(LOCTEXT("UnalignedZoneOrigin", "Gameplay Zone의 X/Y 원점은 고정 1cm 배치 Grid에 맞아야 합니다."));
     }
 
     const FRotator ActorRotation = GetActorRotation();
@@ -430,23 +430,23 @@ bool AFFZSGameplayZone::ValidateZoneData(TArray<FText>& OutErrors) const
     if (!FMath::IsNearlyZero(ActorRotation.Pitch, 0.01) || !FMath::IsNearlyZero(ActorRotation.Roll, 0.01) ||
         !FMath::IsNearlyZero(FMath::FindDeltaAngleDegrees(NormalizedYaw, CardinalYaw), 0.01))
     {
-        OutErrors.Add(LOCTEXT("NonCardinalZone", "Gameplay Zone rotation must use 0/90/180/270 yaw with zero pitch and roll."));
+        OutErrors.Add(LOCTEXT("NonCardinalZone", "Gameplay Zone 회전은 Pitch와 Roll이 0인 상태에서 Yaw 0/90/180/270도만 사용해야 합니다."));
     }
 
     if (!bAllowAllFacilityCategories && AllowedFacilityCategories.IsEmpty())
     {
-        OutErrors.Add(LOCTEXT("NoCategories", "The Zone allows no facility categories."));
+        OutErrors.Add(LOCTEXT("NoCategories", "Zone에 허용된 Facility 카테고리가 없습니다."));
     }
     if (NeighborZoneIds.Contains(ZoneId))
     {
-        OutErrors.Add(LOCTEXT("SelfNeighbor", "A Zone cannot list itself as a neighbor."));
+        OutErrors.Add(LOCTEXT("SelfNeighbor", "Zone은 자기 자신을 인접 Zone으로 지정할 수 없습니다."));
     }
     TSet<FName> UniqueNeighbors;
     for (const FName NeighborId : NeighborZoneIds)
     {
         if (NeighborId.IsNone() || UniqueNeighbors.Contains(NeighborId))
         {
-            OutErrors.Add(LOCTEXT("DuplicateNeighbor", "NeighborZoneIds cannot contain empty or duplicate IDs."));
+            OutErrors.Add(LOCTEXT("DuplicateNeighbor", "NeighborZoneIds에는 비어 있거나 중복된 ID가 있을 수 없습니다."));
         }
         UniqueNeighbors.Add(NeighborId);
     }
