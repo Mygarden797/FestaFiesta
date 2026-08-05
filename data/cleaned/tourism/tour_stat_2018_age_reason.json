@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-04",
+  "dataset_id": "tour_stat_2018_age_reason",
+  "row_unit": "한 그룹 × 한 응답 항목 → 응답률(%)",
+  "output_row_count": 105,
+  "group_variable": "가로분석변수",
+  "groups": [
+    "전체",
+    "15~19세",
+    "20대",
+    "30대",
+    "40대",
+    "50대",
+    "60세 이상"
+  ],
+  "item_count": 15,
+  "note": "복수응답 가능한 설문이므로 그룹 내 항목 합계가 100%가 아니다. 구성비가 아니라 개별 응답률이다.",
+  "caution": [
+    "2018년 전국 표본이며 사하구·2025년 자료가 아니다",
+    "연령 구간이 '60세 이상' 하나로 묶여 60대/70대+를 구분하지 못한다"
+  ],
+  "sources": [
+    {
+      "source_id": "tourism_legacy_tables_2018",
+      "file": "Tour_Stat (4).xls",
+      "sha256": "F460BB8FF08C4E732E124FB96F8DC62C490EFEFDED8B8D5863756C97F3A4F18F",
+      "bytes": 2570
+    }
+  ],
+  "status": "confirmed"
+}

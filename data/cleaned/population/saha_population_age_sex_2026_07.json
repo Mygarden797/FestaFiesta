@@ -1,0 +1,58 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-03",
+  "dataset_id": "saha_population_age_sex_2026_07",
+  "source_id": "population_mois_saha_age_sex_2026_07",
+  "source_file": "data/raw/population/202607_202607_연령별인구현황_월간.csv",
+  "source_sha256": "00804C2EA3914335507DD79AE884D3168BA80C89023ECA2A6DC48F0C33D93AFE",
+  "reference_month": "2026-07",
+  "row_unit": "한 지역 × 한 성별 × 한 살 나이 조합",
+  "output_row_count": 3434,
+  "region_count": {
+    "gu": 1,
+    "dong": 16
+  },
+  "columns": {
+    "reference_month": "기준 연월 (YYYY-MM)",
+    "region_code": "행정구역 코드 (10자리)",
+    "region_name": "행정구역 이름",
+    "region_level": "gu = 사하구 합계, dong = 행정동. 두 수준을 함께 합산하면 인구를 두 번 세게 된다",
+    "sex": "male 또는 female. 원본의 계 성별은 출력하지 않고 검증에만 사용했다",
+    "age": "만 나이. 100은 100세 이상 개방구간을 뜻한다",
+    "age_is_open_interval": "age가 개방구간(100세 이상)이면 true",
+    "age_group": "데이터랩 14세그먼트와 동일한 연령 구간 키",
+    "age_group_label": "연령 구간 한글 이름",
+    "segment_key": "age_group + sex. affinity_prior_equal_site_v0.csv 의 segment_key와 조인 가능",
+    "segment_label": "세그먼트 한글 이름",
+    "population_count": "주민등록 인구 수 (명)"
+  },
+  "transformation_rules": [
+    "원본 310열 넓은 표를 long 형식으로 전개했다",
+    "성별 '계' 행은 출력하지 않았다 (남 + 여로 복원 가능하며 중복 합산 위험이 있다)",
+    "'100세 이상' 열은 age = 100, age_is_open_interval = true 로 표기했다",
+    "연령 구간 경계는 데이터랩 세그먼트 정의를 그대로 따랐다 (10대 이하 = 0~19세, 70대 이상 = 70세 이상)",
+    "천단위 구분 콤마를 제거하고 정수로 변환했다"
+  ],
+  "validation": {
+    "all_passed": true,
+    "age_sum_equals_band_total": {
+      "failures": 0
+    },
+    "male_plus_female_equals_total": {
+      "failures": 0
+    },
+    "dong_sum_equals_gu_total": {
+      "gu_total": 281665,
+      "dong_sum": 281665,
+      "difference": 0,
+      "match": true
+    }
+  },
+  "limitations": [
+    "주민등록 배후 거주인구이며 축제 방문객이 아니다",
+    "사하구 외부에서 오는 방문객은 이 자료에 전혀 포함되지 않는다",
+    "데이터랩 관광지 집중률과 직접 곱하지 않는다. VisitorPropensityAssumption 층을 반드시 거친다",
+    "주민등록 기준이므로 실거주와 다를 수 있다 (등록 지연, 학생·군인 등)"
+  ],
+  "status": "confirmed"
+}
