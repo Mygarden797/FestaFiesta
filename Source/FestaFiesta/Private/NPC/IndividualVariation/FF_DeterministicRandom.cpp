@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "NPC/FF_DeterministicRandom.h"
-#include "NPC/FF_UtilityCoefficientHelpers.h"
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
+#include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "DataTables/FF_IndividualVariationRow.h"
 #include "Engine/DataTable.h"
 #include "Math/RandomStream.h"

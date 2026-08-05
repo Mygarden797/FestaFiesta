@@ -4,7 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "NPC/FF_UtilityDestinationSelector.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"
 

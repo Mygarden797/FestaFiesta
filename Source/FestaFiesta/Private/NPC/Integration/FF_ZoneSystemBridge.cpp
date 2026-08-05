@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "NPC/FF_ZoneSystemBridge.h"
+#include "NPC/Integration/FF_ZoneSystemBridge.h"
 
 #include "Engine/AssetManager.h"
 #include "FF_FFZSFacilityDefinition.h"
