@@ -97,12 +97,13 @@ P(i가 j를 고를 확률) = exp(U_ij / σ) / Σ_k exp(U_ik / σ)
 | `npc_id` | 개체 식별자 | 런타임 생성 |
 | `archetype_id` | 생애주기 아키타입 (5종 중 하나) | `data/derived/npc_archetypes_v0.csv` |
 | `segment_key` | 성·연령 세그먼트 (인구 샘플링용) | `visitor_population_prior_v0.csv` 에서 샘플링, 아키타입 정체성 축으로는 쓰지 않음 |
-| `companion_type` | 동반유형 (solo/pair/group_3_plus) | `data/derived/companion_type_modifier_v0.csv` 에서 독립 샘플링. 아키타입과 무관하게 적용되는 오버레이 |
+| `companion_type` | 동반유형 (solo/pair/group_3_plus) | **개체 속성이 아니라 그룹 생성 규칙의 결과값** (`population_group_generation_spec.md` 1절, 2026-08-04 재정의). 개별 NPC에게 독립 샘플링하지 않는다 |
 | `preference_vector` | 축제 카테고리별 선호 | `archetype_id` 의 `{category}_delta_vs_all_pp` + `companion_type` 의 동일 카테고리 delta를 더한 값. `lambda_affinity` 로 스케일 |
-| `bIsDependent` / `DependentOfNpcId` | 종속 아동 여부 | `dependent_child_npc_spec.md`. true면 자체 Utility 계산을 스킵하고 부모 목적지를 상속 |
+| `GroupId` / `bIsGroupLeader` | 그룹 식별자 / 리더 여부 | `population_group_generation_spec.md` 1.5절. 리더만 Utility 계산, 나머지는 리더의 `current_destination` 상속 |
+| `bIsDependent` / `DependentOfNpcId` | 종속 아동 전용 노브 적용 대상 | `dependent_child_npc_spec.md`. **목적지 상속은 이제 위 `GroupId`/`bIsGroupLeader`가 담당** — 이 필드는 아동 전용 3개 노브(이동속도·주의집중·대기인내)를 누구 기준으로 적용할지에만 쓴다 |
 | `current_location` | 현재 위치 | 런타임 |
-| `arrival_time` | 도착 시각 | 도착 분포 (**미확보 — 노브**) |
-| `remaining_stay` | 남은 체류시간 | 체류 분포 (**미확보 — 노브**) |
+| `arrival_time` | 도착 시각 | **그룹 공유 필드로 재정의됨** (`population_group_generation_spec.md` 1.6절) — 개인별 노브 아님 |
+| `remaining_stay` | 남은 체류시간 | 체류 분포 (미확보 — 노브). `stay_duration_multiplier`는 그룹 멤버라면 `GroupId` 시드로 그룹 전체가 공유 (`individual_variation_spec.md` 8-A절) |
 | `current_destination` | 현재 목적지 | 런타임 |
 
 `preference_vector` 합성식(초안):

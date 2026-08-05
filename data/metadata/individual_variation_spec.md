@@ -87,7 +87,7 @@ BaseStayDurationMinutes = live_stage_duration_minutes * stay_duration_share_of_l
 FinalStayDurationMinutes(NPC) = BaseStayDurationMinutes * stay_duration_multiplier(NPC)
 ```
 
-- `live_stage_duration_minutes`: `EFF_FestivalStage::Live` 단계의 실제 길이. **코드에 아직 값이 없어 240분(4시간)을 임시로 넣었다. `Live` 단계 길이를 관리하는 담당자(강민서, `FF_FestivalStageSubsystem`) 확인 후 교체 필요 — `status: to_verify`.**
+- `live_stage_duration_minutes`: `EFF_FestivalStage::Live` 단계의 실제 길이. **단위는 게임(시뮬레이션) 시간 분이다 — 배속(x1/x2/x4)이나 플레이어 실제 체감 시간과 무관하다.** 값의 출처는 실제 축제의 실제 운영시간(현실 시간)을 그대로 게임 시계에 옮긴 것이다(2026-08-05, 강민서 작업 중인 실제 프로그램 시간표 기준: 17:00~21:00, 4시간 = 240분). 4시간(240분)이라는 숫자 자체는 바뀌지 않았다 — 처음엔 근거 없는 임시값이었는데 실제 시간표와 우연히 일치했다. **다만 강민서 님의 배속·Tick 구현이 아직 진행 중이라 다른 클래스의 시간 단위(초/분, 배율)는 아직 서로 안 맞을 수 있다 — 그쪽 작업이 끝나면 전체 재점검 필요.** `status: confirmed`(실제 운영시간 기준값 확정) — 코드상 실제 값 반영은 `FF_FestivalStageSubsystem` 담당(강민서) 완료 후.
 - `stay_duration_share_of_live_stage_mean`: 평균 NPC가 `Live` 단계 길이 중 머무는 비율의 기준값(초기값 0.5). `status: assumption`.
 - 두 값 모두 `data/derived/utility_coefficients_v0.csv`에 `individual_variation_anchor` term으로 추가했다 (전역 스칼라 노브라 기존 Utility 계수 표와 같은 자리에 둔다 — `total_visitor_count` 등 Utility 식의 항이 아닌 전역 노브도 이미 이 표에 있는 선례를 따른다).
 
@@ -131,7 +131,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 
 ## 9. 남은 의존성
 
-1. `live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체. 담당: 강민서/`FF_FestivalStageSubsystem`.
+1. ~~`live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체~~ → **2026-08-05 확정.** 실제 축제 프로그램 시간표(17:00~21:00) 기준 240분 그대로 유지. 강민서 님 `FF_FestivalStageSubsystem` 배속 구현이 끝나면 다른 시간 단위 필드들과 함께 최종 재점검.
 2. 6종 변주 범위(5절)는 실측이 아니라 초안이다. 실제 시뮬레이션을 돌려본 뒤 편차가 너무 크거나 작으면 DataTable 값만 조정한다(코드 수정 불필요).
 3. `correlation_strength_leisureliness`(0.3, 초안) — 두 특성이 부자연스럽게 조합되는지 플레이테스트로 확인 후 조정.
 4. `remaining_stay`를 실제로 채우는 NPC 런타임 로직 — 목표 4(목적지 선택기 v0)에서 구현.

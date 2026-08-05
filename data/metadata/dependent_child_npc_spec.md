@@ -32,7 +32,8 @@
 ## 3. 발생 조건
 
 - `companion_type = group_3_plus` 인 그룹(개체가 아니라 그룹 — `population_group_generation_spec.md` 1절) 중 일부에 아동을 배치한다.
-- **생성 순서가 바뀌었다**: 아래 두 노브를 먼저 정하고 그 결과로 나오는 아동 수를 받아들이는 게 아니라, `population_group_generation_spec.md` 2.2절의 "목표 아동 수"(원본 단일세 인구의 0~14세 합계)를 먼저 정하고, 이 두 노브(또는 대체 배치 로직)가 그 목표에 맞게 조정된다. 아래 값은 그 조정의 **출발점**일 뿐이다.
+- **생성 순서가 바뀌었다**: 아래 두 노브를 먼저 정하고 그 결과로 나오는 아동 수를 받아들이는 게 아니라, 목표 아동 수를 먼저 정하고 이 두 노브(또는 대체 배치 로직)가 그 목표에 맞게 조정된다. 아래 값은 그 조정의 **출발점**일 뿐이다.
+- **2026-08-04 완료**: 목표 아동 수는 더 이상 추상적인 개념이 아니라 실제 값이 있다 — `Tools/data/build_npc_archetypes.mjs`를 고쳐서 원본 단일세 인구로 0~14세/15~19세를 분리했고, 그 결과가 `data/derived/dependent_child_population_target_v0.csv`다: `resident_neutral_v0` 시나리오는 방문객의 **7.9193%**, `datalab_observed_v0`는 **3.8925%**가 목표 아동 비율이다. 그룹 생성·아동 배치 코드를 짤 때는 이 값을 실제 입력으로 쓴다.
 
 | 노브 | 기본값 | 범위 | 상태 |
 |---|---|---|---|
@@ -44,8 +45,9 @@
 ## 4. Unreal 구조 제안
 
 - 아동은 별도 `FNpcArchetypeRow`를 만들지 않는다.
+- **2026-08-04 갱신**: 목적지 상속 자체는 이제 아동 전용 로직이 아니라 `population_group_generation_spec.md` 1.5절의 **그룹 전체 규칙**(`GroupId`+`bIsGroupLeader`, 리더만 Utility 계산·나머지 상속)이 담당한다. `bIsDependent`/`DependentOfNpcId`는 목적지 상속용이 아니라 **아동 전용 3개 노브(이동속도·주의집중·대기인내)를 누구 기준으로 적용할지**만 남긴다 — 보통 `DependentOfNpcId` = 같은 그룹의 리더(부모) `StableAgentId`.
 - NPC 스폰 시 `bIsDependent`, `DependentOfNpcId` 필드만 있는 경량 구조로 생성한다.
-- Utility AI 목적지 선택 로직은 `bIsDependent == true`인 개체에 대해 스킵하고 부모의 `current_destination`을 그대로 복사한다.
+- Utility AI 목적지 선택 로직은 `bIsGroupLeader == false`인 개체 전체(아동뿐 아니라 성인 그룹원도)에 대해 스킵하고 리더의 `current_destination`을 그대로 복사한다. 그중 `bIsDependent == true`인 개체는 추가로 위 3개 노브를 적용한다.
 
 ## 5. v0에서 하지 않는 것
 

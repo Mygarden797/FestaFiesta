@@ -14,8 +14,9 @@ public class FestaFiesta : ModuleRules
 			"NavigationSystem",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 			"AIModule",
-			"UMG", "Slate", "SlateCore",
-			"Niagara", "NiagaraCore"
+			"UMG","Slate","SlateCore",
+			"Niagara","NiagaraCore",
+			"FF_ZoneSystem"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
