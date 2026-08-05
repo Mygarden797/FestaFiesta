@@ -21,7 +21,7 @@
  * - BlockedAndMovementFailure: 큐 전체/Agent별 재경로 예산
  * World 의존성을 제거한 컴포넌트 단위 테스트이며, 물리 도착은 테스트 전용 bridge로만 호출한다.
  */
-/** Narrow test-only bridge; production mutation methods remain private. */
+/** 테스트에서만 사용하는 제한된 Bridge다. 운영 변경 Method는 Private으로 유지한다. */
 struct FFFZSQueueTestAccess
 {
     static void ConfigureAndOpen(UFFZSFacilityQueueComponent& Queue, const FFFZSQueueRules& Rules)
@@ -77,30 +77,30 @@ bool FFFZSQueueFifoTest::RunTest(const FString& Parameters)
     FGuid TicketB;
     FGuid TicketC;
     FGuid TicketD;
-    TestEqual(TEXT("A joins waiting"), Queue->JoinQueue(TEXT("Agent.A"), nullptr, TicketA), EFFZSQueueJoinResult::Joined);
-    TestEqual(TEXT("Service does not start before physical slot arrival"), Queue->GetActiveServiceCount(), 0);
-    TestTrue(TEXT("A reaches FIFO slot"), ArriveAtQueueSlot(*Queue, TEXT("Agent.A"), 0));
-    TestEqual(TEXT("A is assigned to service"), Queue->GetActiveServiceCount(), 1);
-    TestTrue(TEXT("A reaches service anchor"), ArriveAtService(*Queue, TEXT("Agent.A"), 0));
+    TestEqual(TEXT("A가 대기열에 참가한다"), Queue->JoinQueue(TEXT("Agent.A"), nullptr, TicketA), EFFZSQueueJoinResult::Joined);
+    TestEqual(TEXT("실제 슬롯에 도착하기 전에는 서비스가 시작되지 않는다"), Queue->GetActiveServiceCount(), 0);
+    TestTrue(TEXT("A가 FIFO 슬롯에 도착한다"), ArriveAtQueueSlot(*Queue, TEXT("Agent.A"), 0));
+    TestEqual(TEXT("A가 서비스에 배정된다"), Queue->GetActiveServiceCount(), 1);
+    TestTrue(TEXT("A가 서비스 앵커에 도착한다"), ArriveAtService(*Queue, TEXT("Agent.A"), 0));
 
-    TestEqual(TEXT("B joins waiting"), Queue->JoinQueue(TEXT("Agent.B"), nullptr, TicketB), EFFZSQueueJoinResult::Joined);
-    TestEqual(TEXT("C joins waiting"), Queue->JoinQueue(TEXT("Agent.C"), nullptr, TicketC), EFFZSQueueJoinResult::Joined);
-    TestTrue(TEXT("B reaches queue head"), ArriveAtQueueSlot(*Queue, TEXT("Agent.B"), 0));
-    TestTrue(TEXT("C reaches second slot"), ArriveAtQueueSlot(*Queue, TEXT("Agent.C"), 1));
-    TestEqual(TEXT("Waiting list reaches max"), Queue->GetWaitingCount(), 2);
-    TestEqual(TEXT("D is rejected when full"), Queue->JoinQueue(TEXT("Agent.D"), nullptr, TicketD), EFFZSQueueJoinResult::Full);
-    TestEqual(TEXT("Duplicate Agent is rejected"), Queue->JoinQueue(TEXT("Agent.B"), nullptr, TicketD), EFFZSQueueJoinResult::DuplicateAgent);
+    TestEqual(TEXT("B가 대기열에 참가한다"), Queue->JoinQueue(TEXT("Agent.B"), nullptr, TicketB), EFFZSQueueJoinResult::Joined);
+    TestEqual(TEXT("C가 대기열에 참가한다"), Queue->JoinQueue(TEXT("Agent.C"), nullptr, TicketC), EFFZSQueueJoinResult::Joined);
+    TestTrue(TEXT("B가 대기열 맨 앞에 도착한다"), ArriveAtQueueSlot(*Queue, TEXT("Agent.B"), 0));
+    TestTrue(TEXT("C가 두 번째 슬롯에 도착한다"), ArriveAtQueueSlot(*Queue, TEXT("Agent.C"), 1));
+    TestEqual(TEXT("대기 목록이 최대 인원에 도달한다"), Queue->GetWaitingCount(), 2);
+    TestEqual(TEXT("대기열이 가득 차면 D의 참가가 거부된다"), Queue->JoinQueue(TEXT("Agent.D"), nullptr, TicketD), EFFZSQueueJoinResult::Full);
+    TestEqual(TEXT("중복 에이전트가 거부된다"), Queue->JoinQueue(TEXT("Agent.B"), nullptr, TicketD), EFFZSQueueJoinResult::DuplicateAgent);
 
     // Act/Assert: A 완료 뒤 B만 승격되고, 위치가 당겨진 C는 새 슬롯에 다시 도착해야 한다.
     Queue->AdvanceSimulation(4.0f);
-    TestEqual(TEXT("Exactly one service completed"), Queue->GetCompletedCount(), 1);
-    TestEqual(TEXT("B starts next by FIFO"), Queue->CaptureSnapshot().Entries.FilterByPredicate(
+    TestEqual(TEXT("서비스가 정확히 하나 완료된다"), Queue->GetCompletedCount(), 1);
+    TestEqual(TEXT("FIFO 순서에 따라 B가 다음 서비스를 시작한다"), Queue->CaptureSnapshot().Entries.FilterByPredicate(
         [](const FFFZSQueueEntrySnapshot& Entry) { return Entry.AgentId == TEXT("Agent.B") && Entry.bInService; }).Num(), 1);
-    TestEqual(TEXT("C shifted to head and must re-arrive"), Queue->CaptureSnapshot().Entries.FilterByPredicate(
+    TestEqual(TEXT("C가 맨 앞으로 이동하여 다시 도착해야 한다"), Queue->CaptureSnapshot().Entries.FilterByPredicate(
         [](const FFFZSQueueEntrySnapshot& Entry) { return Entry.AgentId == TEXT("Agent.C") && !Entry.bArrivedAtAssignedSlot; }).Num(), 1);
 
     TArray<FText> Errors;
-    TestTrue(TEXT("Queue invariants hold"), Queue->ValidateInvariants(Errors));
+    TestTrue(TEXT("대기열 불변 조건이 유지된다"), Queue->ValidateInvariants(Errors));
     return true;
 }
 
@@ -123,21 +123,21 @@ bool FFFZSQueueClosePoliciesTest::RunTest(const FString& Parameters)
     ArriveAtQueueSlot(*Queue, TEXT("Drain.B"), 0);
     // Act/Assert: 정상 종료는 신규 참가만 막고 기존 FIFO를 끝까지 서비스한다.
     Queue->BeginDrain();
-    TestEqual(TEXT("Normal close drains"), Queue->GetQueueState(), EFFZSQueueState::Draining);
-    TestEqual(TEXT("New joins are rejected while draining"), Queue->JoinQueue(TEXT("Drain.C"), nullptr, Ticket), EFFZSQueueJoinResult::NotOpen);
+    TestEqual(TEXT("일반 종료 시 남은 대기열을 모두 처리한다"), Queue->GetQueueState(), EFFZSQueueState::Draining);
+    TestEqual(TEXT("배수 중에는 신규 참가가 거부된다"), Queue->JoinQueue(TEXT("Drain.C"), nullptr, Ticket), EFFZSQueueJoinResult::NotOpen);
     Queue->AdvanceSimulation(1.0f);
-    TestTrue(TEXT("B reaches service after FIFO promotion"), ArriveAtService(*Queue, TEXT("Drain.B"), 0));
+    TestTrue(TEXT("FIFO 승격 후 B가 서비스 위치에 도착한다"), ArriveAtService(*Queue, TEXT("Drain.B"), 0));
     Queue->AdvanceSimulation(1.0f);
-    TestEqual(TEXT("Drain ends closed"), Queue->GetQueueState(), EFFZSQueueState::Closed);
-    TestFalse(TEXT("Drain leaves no occupants"), Queue->IsOccupied());
+    TestEqual(TEXT("배수가 끝나면 닫힘 상태가 된다"), Queue->GetQueueState(), EFFZSQueueState::Closed);
+    TestFalse(TEXT("배수 후 점유자가 남지 않는다"), Queue->IsOccupied());
 
     Queue->OpenQueue();
     // Act/Assert: 재개 후 긴급 종료는 대기/서비스를 즉시 Cancel 경로로 비운다.
     Queue->JoinQueue(TEXT("Emergency.A"), nullptr, Ticket);
     Queue->JoinQueue(TEXT("Emergency.B"), nullptr, Ticket);
     Queue->EmergencyCancel();
-    TestEqual(TEXT("Emergency close is immediate"), Queue->GetQueueState(), EFFZSQueueState::Closed);
-    TestFalse(TEXT("Emergency cancel releases everyone"), Queue->IsOccupied());
+    TestEqual(TEXT("긴급 종료가 즉시 적용된다"), Queue->GetQueueState(), EFFZSQueueState::Closed);
+    TestFalse(TEXT("긴급 취소가 모든 점유자를 해제한다"), Queue->IsOccupied());
     return true;
 }
 
@@ -164,30 +164,30 @@ bool FFFZSQueueSnapshotTest::RunTest(const FString& Parameters)
     TArray<FText> Errors;
     // Act/Assert: 새 컴포넌트에 복원해 개수뿐 아니라 물리 도착 플래그와 불변식을 비교한다.
     const FFFZSQueueSnapshot Saved = Original->CaptureSnapshot();
-    TestTrue(TEXT("Snapshot restores"), Restored->RestoreSnapshot(Saved, Errors));
-    TestEqual(TEXT("Service count preserved"), Restored->GetActiveServiceCount(), Original->GetActiveServiceCount());
-    TestEqual(TEXT("Waiting count preserved"), Restored->GetWaitingCount(), Original->GetWaitingCount());
-    TestEqual(TEXT("Movement arrival state preserved"), Restored->CaptureSnapshot().Entries[0].bArrivedAtAssignedSlot, Saved.Entries[0].bArrivedAtAssignedSlot);
-    TestTrue(TEXT("Restored invariants hold"), Restored->ValidateInvariants(Errors));
+    TestTrue(TEXT("스냅샷이 복원된다"), Restored->RestoreSnapshot(Saved, Errors));
+    TestEqual(TEXT("서비스 인원 수가 보존된다"), Restored->GetActiveServiceCount(), Original->GetActiveServiceCount());
+    TestEqual(TEXT("대기 인원 수가 보존된다"), Restored->GetWaitingCount(), Original->GetWaitingCount());
+    TestEqual(TEXT("이동 도착 상태가 보존된다"), Restored->CaptureSnapshot().Entries[0].bArrivedAtAssignedSlot, Saved.Entries[0].bArrivedAtAssignedSlot);
+    TestTrue(TEXT("복원된 대기열의 불변 조건이 유지된다"), Restored->ValidateInvariants(Errors));
 
     // Act/Assert: 게시 전 구조 검증에서 잡히는 오류는 기존 라이브 큐를 지우지 않아야 한다.
     FFFZSQueueSnapshot Invalid = Saved;
     Invalid.Entries[0].AssignedQueueIndex = 99;
     const int32 BeforeCount = Restored->CaptureSnapshot().Entries.Num();
-    TestFalse(TEXT("Invalid snapshot is rejected"), Restored->RestoreSnapshot(Invalid, Errors));
-    TestEqual(TEXT("Failed restore does not erase live queue"), Restored->CaptureSnapshot().Entries.Num(), BeforeCount);
+    TestFalse(TEXT("유효하지 않은 스냅샷이 거부된다"), Restored->RestoreSnapshot(Invalid, Errors));
+    TestEqual(TEXT("복원 실패가 현재 대기열을 지우지 않는다"), Restored->CaptureSnapshot().Entries.Num(), BeforeCount);
 
     const FFFZSQueueSnapshot BeforeDuplicateSequence = Restored->CaptureSnapshot();
     FFFZSQueueSnapshot DuplicateSequence = Saved;
     DuplicateSequence.Entries[1].JoinSequence = DuplicateSequence.Entries[0].JoinSequence;
-    TestFalse(TEXT("Duplicate JoinSequence is rejected before commit"),
+    TestFalse(TEXT("중복된 JoinSequence는 커밋 전에 거부된다"),
         Restored->RestoreSnapshot(DuplicateSequence, Errors));
     const FFFZSQueueSnapshot AfterDuplicateSequence = Restored->CaptureSnapshot();
-    TestEqual(TEXT("Duplicate-sequence failure preserves entry count"),
+    TestEqual(TEXT("중복 시퀀스 실패 후 항목 수가 보존된다"),
         AfterDuplicateSequence.Entries.Num(), BeforeDuplicateSequence.Entries.Num());
-    TestEqual(TEXT("Duplicate-sequence failure preserves first Agent"),
+    TestEqual(TEXT("중복 시퀀스 실패 후 첫 번째 에이전트가 보존된다"),
         AfterDuplicateSequence.Entries[0].AgentId, BeforeDuplicateSequence.Entries[0].AgentId);
-    TestEqual(TEXT("Duplicate-sequence failure preserves queue state"),
+    TestEqual(TEXT("중복 시퀀스 실패 후 대기열 상태가 보존된다"),
         AfterDuplicateSequence.State, BeforeDuplicateSequence.State);
 
     // Arrange/Act/Assert: 물리 Exit 소유권도 저장되며 도착 보고 후에만 최종 해제되는지 확인한다.
@@ -202,11 +202,11 @@ bool FFFZSQueueSnapshotTest::RunTest(const FString& Parameters)
     ExitingEntry.bExiting = true;
     ExitingEntry.ExitIndex = 0;
     ExitingEntry.PendingReleaseReason = EFFZSQueueReleaseReason::ServiceCompleted;
-    TestTrue(TEXT("Physical Exit state restores"), Restored->RestoreSnapshot(ExitingSnapshot, Errors));
-    TestEqual(TEXT("Restored Exit remains occupied"), Restored->GetExitingCount(), 1);
-    TestTrue(TEXT("Exit arrival finalizes restored Agent"),
+    TestTrue(TEXT("물리적 출구 상태가 복원된다"), Restored->RestoreSnapshot(ExitingSnapshot, Errors));
+    TestEqual(TEXT("복원된 출구가 계속 점유 상태로 유지된다"), Restored->GetExitingCount(), 1);
+    TestTrue(TEXT("출구 도착이 복원된 에이전트의 처리를 완료한다"),
         Restored->ReportAgentArrivedAtExit(TEXT("Save.Exiting"), Restored->GetExitWorldLocation()));
-    TestFalse(TEXT("Draining queue closes after final Exit arrival"), Restored->IsOccupied());
+    TestFalse(TEXT("최종 출구 도착 후 배수 중인 대기열이 닫힌다"), Restored->IsOccupied());
     return true;
 }
 
@@ -221,11 +221,11 @@ bool FFFZSQueueSnapshotTickTest::RunTest(const FString& Parameters)
     // Arrange: 서비스 1초가 진행된 활성 Snapshot으로 남은 시간과 Tick 복원을 동시에 관찰한다.
     UFFZSFacilityQueueComponent* ActiveSource = MakeQueue(Rules);
     FGuid Ticket;
-    TestEqual(TEXT("Agent joins source queue"),
+    TestEqual(TEXT("에이전트가 원본 대기열에 참가한다"),
         ActiveSource->JoinQueue(TEXT("TickRestore.A"), nullptr, Ticket), EFFZSQueueJoinResult::Joined);
-    TestTrue(TEXT("Agent reaches source queue slot"),
+    TestTrue(TEXT("에이전트가 원본 대기열 슬롯에 도착한다"),
         ArriveAtQueueSlot(*ActiveSource, TEXT("TickRestore.A"), 0));
-    TestTrue(TEXT("Agent reaches source service point"),
+    TestTrue(TEXT("에이전트가 원본 서비스 지점에 도착한다"),
         ArriveAtService(*ActiveSource, TEXT("TickRestore.A"), 0));
     ActiveSource->AdvanceSimulation(1.0f);
     const FFFZSQueueSnapshot ActiveSnapshot = ActiveSource->CaptureSnapshot();
@@ -233,21 +233,21 @@ bool FFFZSQueueSnapshotTickTest::RunTest(const FString& Parameters)
     UFFZSFacilityQueueComponent* Restored = NewObject<UFFZSFacilityQueueComponent>();
     Restored->Configure(Rules);
     // Act/Assert: Closed로 생성된 대상이 Active 복원 후 Tick을 켜고, Drain 완료 후 다시 꺼야 한다.
-    TestFalse(TEXT("New closed queue starts with Tick disabled"), Restored->IsComponentTickEnabled());
+    TestFalse(TEXT("새로 생성된 닫힌 대기열은 틱이 비활성화된 상태로 시작한다"), Restored->IsComponentTickEnabled());
 
     TArray<FText> Errors;
-    TestTrue(TEXT("Active snapshot restores"), Restored->RestoreSnapshot(ActiveSnapshot, Errors));
-    TestEqual(TEXT("Active state is restored"), Restored->GetQueueState(), EFFZSQueueState::Open);
-    TestTrue(TEXT("Restored active queue enables Tick"), Restored->IsComponentTickEnabled());
+    TestTrue(TEXT("활성 스냅샷이 복원된다"), Restored->RestoreSnapshot(ActiveSnapshot, Errors));
+    TestEqual(TEXT("활성 상태가 복원된다"), Restored->GetQueueState(), EFFZSQueueState::Open);
+    TestTrue(TEXT("복원된 활성 대기열이 틱을 활성화한다"), Restored->IsComponentTickEnabled());
 
     Restored->BeginDrain();
-    TestEqual(TEXT("Restored queue enters draining state"), Restored->GetQueueState(), EFFZSQueueState::Draining);
-    TestTrue(TEXT("Draining keeps Tick enabled"), Restored->IsComponentTickEnabled());
+    TestEqual(TEXT("복원된 대기열이 배수 상태로 전환된다"), Restored->GetQueueState(), EFFZSQueueState::Draining);
+    TestTrue(TEXT("배수 중에는 틱이 활성 상태로 유지된다"), Restored->IsComponentTickEnabled());
     Restored->AdvanceSimulation(2.0f);
-    TestEqual(TEXT("Restored service completes after remaining duration"), Restored->GetCompletedCount(), 1);
-    TestEqual(TEXT("Completed drain closes restored queue"), Restored->GetQueueState(), EFFZSQueueState::Closed);
-    TestFalse(TEXT("Completed drain disables Tick"), Restored->IsComponentTickEnabled());
-    TestFalse(TEXT("Completed drain has no occupants"), Restored->IsOccupied());
+    TestEqual(TEXT("남은 시간이 지나면 복원된 서비스가 완료된다"), Restored->GetCompletedCount(), 1);
+    TestEqual(TEXT("배수가 완료되면 복원된 대기열이 닫힌다"), Restored->GetQueueState(), EFFZSQueueState::Closed);
+    TestFalse(TEXT("배수 완료 후 틱이 비활성화된다"), Restored->IsComponentTickEnabled());
+    TestFalse(TEXT("배수 완료 후 점유자가 남지 않는다"), Restored->IsOccupied());
 
     // Arrange/Act/Assert: 반대 방향인 Closed Snapshot 복원도 Tick 파생 상태를 수리해야 한다.
     UFFZSFacilityQueueComponent* ClosedSource = NewObject<UFFZSFacilityQueueComponent>();
@@ -255,21 +255,21 @@ bool FFFZSQueueSnapshotTickTest::RunTest(const FString& Parameters)
     const FFFZSQueueSnapshot ClosedSnapshot = ClosedSource->CaptureSnapshot();
 
     Restored->OpenQueue();
-    TestTrue(TEXT("Reopened queue enables Tick"), Restored->IsComponentTickEnabled());
-    TestTrue(TEXT("Closed snapshot restores"), Restored->RestoreSnapshot(ClosedSnapshot, Errors));
-    TestEqual(TEXT("Closed state is restored"), Restored->GetQueueState(), EFFZSQueueState::Closed);
-    TestFalse(TEXT("Restored closed queue disables Tick"), Restored->IsComponentTickEnabled());
+    TestTrue(TEXT("다시 연 대기열이 틱을 활성화한다"), Restored->IsComponentTickEnabled());
+    TestTrue(TEXT("닫힌 상태의 스냅샷이 복원된다"), Restored->RestoreSnapshot(ClosedSnapshot, Errors));
+    TestEqual(TEXT("닫힌 상태가 복원된다"), Restored->GetQueueState(), EFFZSQueueState::Closed);
+    TestFalse(TEXT("복원된 닫힌 대기열이 틱을 비활성화한다"), Restored->IsComponentTickEnabled());
 
     Restored->OpenQueue();
     // Act/Assert: 헤더 단계에서 거절되는 Snapshot은 현재 State와 Tick을 그대로 보존한다.
     const FFFZSQueueSnapshot BeforeInvalidRestore = Restored->CaptureSnapshot();
     FFFZSQueueSnapshot InvalidSnapshot = ClosedSnapshot;
     InvalidSnapshot.CompletedCount = -1;
-    TestFalse(TEXT("Invalid snapshot is rejected before commit"),
+    TestFalse(TEXT("유효하지 않은 스냅샷이 커밋 전에 거부된다"),
         Restored->RestoreSnapshot(InvalidSnapshot, Errors));
-    TestEqual(TEXT("Rejected snapshot preserves active state"),
+    TestEqual(TEXT("스냅샷이 거부되어도 활성 상태가 보존된다"),
         Restored->GetQueueState(), BeforeInvalidRestore.State);
-    TestTrue(TEXT("Rejected snapshot preserves active Tick"), Restored->IsComponentTickEnabled());
+    TestTrue(TEXT("스냅샷이 거부되어도 활성 틱이 보존된다"), Restored->IsComponentTickEnabled());
     return true;
 }
 
@@ -304,11 +304,11 @@ bool FFFZSQueueEventStepTest::RunTest(const FString& Parameters)
     ThreeSteps->AdvanceSimulation(1.0f);
 
     // Assert: 완료 우선순위와 최종 점유 상태가 Delta 분할 방식에 의존하지 않아야 한다.
-    TestEqual(TEXT("One-step service completion"), OneStep->GetCompletedCount(), 1);
-    TestEqual(TEXT("Split-step service completion"), ThreeSteps->GetCompletedCount(), 1);
-    TestEqual(TEXT("Service completion wins abandonment tie"), OneStep->GetAbandonedCount(), 0);
-    TestEqual(TEXT("Delta partition preserves abandonment"), OneStep->GetAbandonedCount(), ThreeSteps->GetAbandonedCount());
-    TestEqual(TEXT("B promoted in both simulations"), OneStep->GetActiveServiceCount(), ThreeSteps->GetActiveServiceCount());
+    TestEqual(TEXT("단일 스텝에서 서비스가 완료된다"), OneStep->GetCompletedCount(), 1);
+    TestEqual(TEXT("분할 스텝에서 서비스가 완료된다"), ThreeSteps->GetCompletedCount(), 1);
+    TestEqual(TEXT("서비스 완료와 이탈이 동시에 발생하면 서비스 완료가 우선한다"), OneStep->GetAbandonedCount(), 0);
+    TestEqual(TEXT("델타를 분할해도 이탈 결과가 보존된다"), OneStep->GetAbandonedCount(), ThreeSteps->GetAbandonedCount());
+    TestEqual(TEXT("두 시뮬레이션 모두에서 B가 승격된다"), OneStep->GetActiveServiceCount(), ThreeSteps->GetActiveServiceCount());
     return true;
 }
 
@@ -325,23 +325,23 @@ bool FFFZSQueueBlockedAndMovementFailureTest::RunTest(const FString& Parameters)
     UFFZSFacilityQueueComponent* Closed = NewObject<UFFZSFacilityQueueComponent>();
     Closed->Configure(Rules);
     Closed->SetBlocked(true);
-    TestEqual(TEXT("Closed queue cannot be opened through Blocked"), Closed->GetQueueState(), EFFZSQueueState::Closed);
+    TestEqual(TEXT("닫힌 대기열은 차단 상태를 거쳐 열리지 않는다"), Closed->GetQueueState(), EFFZSQueueState::Closed);
 
     UFFZSFacilityQueueComponent* Queue = MakeQueue(Rules);
     Queue->SetBlocked(true);
     // Act/Assert: 큰 Delta도 제한된 두 재경로 사건을 모두 내고 Unblock 시 이전 Open을 복원한다.
     Queue->AdvanceSimulation(12.0f);
-    TestEqual(TEXT("Large Delta emits every bounded repath event"), Queue->CaptureSnapshot().RepathAttemptCount, 2);
+    TestEqual(TEXT("큰 델타에서도 제한된 모든 경로 재탐색 이벤트가 발생한다"), Queue->CaptureSnapshot().RepathAttemptCount, 2);
     Queue->SetBlocked(false);
-    TestEqual(TEXT("Unblock restores open state"), Queue->GetQueueState(), EFFZSQueueState::Open);
+    TestEqual(TEXT("차단을 해제하면 열림 상태가 복원된다"), Queue->GetQueueState(), EFFZSQueueState::Open);
 
     FGuid Ticket;
     // Act/Assert: Agent별 세 번째 실패는 추가 재경로 대신 시스템 해제로 전환된다.
     Queue->JoinQueue(TEXT("Move.Fail"), nullptr, Ticket);
-    TestTrue(TEXT("First movement failure requests repath"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
-    TestTrue(TEXT("Second movement failure requests repath"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
-    TestTrue(TEXT("Third movement failure releases Agent"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
-    TestFalse(TEXT("Released Agent no longer occupies queue"), Queue->ContainsAgent(TEXT("Move.Fail")));
+    TestTrue(TEXT("첫 번째 이동 실패가 경로 재탐색을 요청한다"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
+    TestTrue(TEXT("두 번째 이동 실패가 경로 재탐색을 요청한다"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
+    TestTrue(TEXT("세 번째 이동 실패가 에이전트를 해제한다"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
+    TestFalse(TEXT("해제된 에이전트가 더 이상 대기열을 점유하지 않는다"), Queue->ContainsAgent(TEXT("Move.Fail")));
     return true;
 }
 

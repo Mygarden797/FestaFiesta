@@ -200,20 +200,20 @@ UENUM(BlueprintType)
  */
 enum class EFFZSBuiltInFacilityPreset : uint8
 {
-    /** Accepted baseline values; keep backward-compatible unless a reviewed migration is supplied. */
+    /** 승인된 기준값이다. 검토된 마이그레이션이 제공되지 않는 한 하위 호환성을 유지한다. */
     FoodTruckBasic,
-    /** Accepted baseline values; keep backward-compatible unless a reviewed migration is supplied. */
+    /** 승인된 기준값이다. 검토된 마이그레이션이 제공되지 않는 한 하위 호환성을 유지한다. */
     ToiletBasic,
 
-    /** Prototype hypotheses. Measure queue throughput and footprint usability before production tuning. */
+    /** 프로토타입 가설이다. 운영 튜닝 전에 Queue 처리량과 Footprint 사용성을 측정한다. */
     InfoBasic,
-    /** Prototype hypotheses. Measure dwell time and accessibility before production tuning. */
+    /** 프로토타입 가설이다. 운영 튜닝 전에 체류 시간과 접근성을 측정한다. */
     RestBasic,
-    /** Prototype hypotheses. Measure ingress/egress throughput and viewing-area demand before production tuning. */
+    /** 프로토타입 가설이다. 운영 튜닝 전에 입·퇴장 처리량과 관람 영역 수요를 측정한다. */
     PerformanceBasic,
-    /** Prototype hypotheses. Measure incident demand and response throughput before production tuning. */
+    /** 프로토타입 가설이다. 운영 튜닝 전에 사고 대응 수요와 처리량을 측정한다. */
     SafetyBasic,
-    /** Prototype hypotheses. Measure interaction time and queue spillover before production tuning. */
+    /** 프로토타입 가설이다. 운영 튜닝 전에 상호작용 시간과 Queue 넘침을 측정한다. */
     PhotoSpotBasic
 };
 
@@ -243,11 +243,11 @@ struct FF_ZONESYSTEM_API FFFZSGridPlacement
 {
     GENERATED_BODY()
 
-    /** Grid coordinate of the unrotated facility footprint's lower-left corner. */
+    /** 회전하지 않은 Facility Footprint 좌하단의 Grid 좌표다. */
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System")
     FIntPoint OriginCell = FIntPoint::ZeroValue;
 
-    /** Clockwise quarter turns. Values are normalized to 0, 1, 2, or 3. */
+    /** 시계 방향 90도 회전 횟수다. 값은 0, 1, 2 또는 3으로 정규화된다. */
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (ClampMin = "0", ClampMax = "3"))
     int32 QuarterTurns = 0;
 
@@ -278,7 +278,7 @@ struct FF_ZONESYSTEM_API FFFZSAnchorDefinition
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (ClampMin = "0"))
     int32 Index = 0;
 
-    /** Centimeters, because Unreal uses 1 uu = 1 cm. */
+    /** Unreal은 1uu = 1cm를 사용하므로 단위는 센티미터다. */
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System")
     FTransform LocalTransform = FTransform::Identity;
 };
@@ -436,10 +436,10 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
      * 구 스키마/C++ 호출부를 잠시 수용하는 1 cm 단일 셀 목록이다.
      * 새 콘텐츠는 QueueReservedRects를 사용한다. 큰 영역을 이 배열로 만들면 검증에서 거부된다.
      */
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DeprecatedProperty, DeprecationMessage = "Use QueueReservedRects; individual 1 cm cells are not scalable."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DeprecatedProperty, DeprecationMessage = "QueueReservedRects를 사용하십시오. 개별 1cm Cell 목록은 확장성이 없습니다."))
     TArray<FIntPoint> QueueReservedCells;
 
-    /** Queue spline points in local centimeters, ordered from service toward queue tail. */
+    /** Service 지점에서 Queue 끝 방향으로 정렬된 Local 센티미터 단위 Queue Spline Point다. */
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue")
     TArray<FVector> QueueSplinePointsCm;
 
@@ -449,7 +449,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Anchors")
     TArray<FFFZSAnchorDefinition> Anchors;
 
-    /** Empty means this definition relies only on Zone category rules. */
+    /** 비어 있으면 이 정의는 Zone 카테고리 규칙에만 의존한다. */
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement")
     TArray<FName> AllowedZoneIds;
 

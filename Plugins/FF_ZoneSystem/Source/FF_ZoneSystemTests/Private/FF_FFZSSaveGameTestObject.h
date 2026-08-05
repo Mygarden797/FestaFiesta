@@ -13,7 +13,7 @@
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSSaveGameTestObject.generated.h"
 
-/** Test-only persistence root used to exercise Unreal's real SaveGame archive. */
+/** Unreal의 실제 SaveGame Archive를 검증하기 위한 테스트 전용 영속성 Root다. */
 UCLASS()
 class UFFZSSaveGameTestObject final : public USaveGame
 {

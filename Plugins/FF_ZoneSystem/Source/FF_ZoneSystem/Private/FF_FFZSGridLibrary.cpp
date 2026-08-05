@@ -577,9 +577,9 @@ FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFa
     Spec.QueueRules.BlockedTimeoutSeconds = 5.0f;
     Spec.QueueRules.MaxRepathAttempts = 2;
 
-    // FoodTruckBasic and ToiletBasic are accepted baselines whose approved authored field values
-    // remain compatible. Every other numeric preset value below is a prototype hypothesis that
-    // must be measured in playtests before production tuning.
+    // FoodTruckBasic과 ToiletBasic은 승인된 작성 필드 값을 유지해야 하는 기준 Preset이다.
+    // 나머지 수치 Preset 값은 모두 프로토타입 가설이며,
+    // 운영 튜닝 전에 Playtest에서 측정해야 한다.
     // FoodTruckBasic/ToiletBasic은 승인된 기준 수치이므로 저작 값의 회귀를 허용하지 않는다.
     // 나머지 프리셋 수치는 플레이테스트로 측정하고 조정해야 하는 가설이며, 공통 기본값을 먼저
     // 채운 뒤 case별 차이만 덮어써 누락 필드가 프리셋마다 달라지는 것을 막는다.
@@ -649,7 +649,7 @@ FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFa
     }
     case EFFZSBuiltInFacilityPreset::InfoBasic:
     {
-        // Prototype hypothesis: a compact single-desk booth serves six visitors without spillover.
+        // 프로토타입 가설: 소형 1인 Desk Booth는 대기열 넘침 없이 방문객 6명을 처리한다.
         Spec.FacilityDefinitionId = TEXT("FD_Info_Basic");
         Spec.DisplayName = LOCTEXT("InfoBasic", "Basic Information Booth");
         Spec.Category = EFFZSFacilityCategory::Info;
@@ -671,7 +671,7 @@ FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFa
     }
     case EFFZSBuiltInFacilityPreset::RestBasic:
     {
-        // Prototype hypothesis: two access points and four waiting places support a small rest area.
+        // 프로토타입 가설: 출입 지점 2개와 대기 위치 4개가 소형 휴게 영역을 지원한다.
         Spec.FacilityDefinitionId = TEXT("FD_Rest_Basic");
         Spec.DisplayName = LOCTEXT("RestBasic", "Basic Rest Area");
         Spec.Category = EFFZSFacilityCategory::Rest;
@@ -694,7 +694,7 @@ FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFa
     }
     case EFFZSBuiltInFacilityPreset::PerformanceBasic:
     {
-        // Prototype hypothesis: a two-gate stage footprint absorbs a sixteen-person entry queue.
+        // 프로토타입 가설: Gate가 2개인 Stage Footprint는 16명 규모의 입장 Queue를 수용한다.
         Spec.FacilityDefinitionId = TEXT("FD_Performance_Basic");
         Spec.DisplayName = LOCTEXT("PerformanceBasic", "Basic Performance Stage");
         Spec.Category = EFFZSFacilityCategory::Performance;
@@ -717,7 +717,7 @@ FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFa
     }
     case EFFZSBuiltInFacilityPreset::SafetyBasic:
     {
-        // Prototype hypothesis: two response stations serve six waiting visitors with a short timeout.
+        // 프로토타입 가설: 대응 Station 2개가 짧은 제한 시간 내에 대기 방문객 6명을 처리한다.
         Spec.FacilityDefinitionId = TEXT("FD_Safety_Basic");
         Spec.DisplayName = LOCTEXT("SafetyBasic", "Basic Safety Post");
         Spec.Category = EFFZSFacilityCategory::Safety;
@@ -740,7 +740,7 @@ FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFa
     }
     case EFFZSBuiltInFacilityPreset::PhotoSpotBasic:
     {
-        // Prototype hypothesis: one interaction point and eight slots prevent photo-queue spillover.
+        // 프로토타입 가설: 상호작용 지점 1개와 슬롯 8개가 촬영 Queue의 넘침을 방지한다.
         Spec.FacilityDefinitionId = TEXT("FD_PhotoSpot_Basic");
         Spec.DisplayName = LOCTEXT("PhotoSpotBasic", "Basic Photo Spot");
         Spec.Category = EFFZSFacilityCategory::PhotoSpot;
@@ -933,32 +933,32 @@ FText UFFZSGridLibrary::PlacementFailureToText(const EFFZSPlacementFailure Failu
 {
     switch (Failure)
     {
-    case EFFZSPlacementFailure::None: return LOCTEXT("None", "No failure");
-    case EFFZSPlacementFailure::ZoneNotFound: return LOCTEXT("ZoneNotFound", "Zone not found");
-    case EFFZSPlacementFailure::FacilityNotFound: return LOCTEXT("FacilityNotFound", "Facility not found");
-    case EFFZSPlacementFailure::DuplicateZoneId: return LOCTEXT("DuplicateZoneId", "Duplicate Zone ID");
-    case EFFZSPlacementFailure::DuplicateFacilityId: return LOCTEXT("DuplicateFacilityId", "Duplicate Facility ID");
-    case EFFZSPlacementFailure::CategoryNotAllowed: return LOCTEXT("CategoryNotAllowed", "Facility category is not allowed in this Zone");
-    case EFFZSPlacementFailure::OutsideZone: return LOCTEXT("OutsideZone", "Footprint, clearance, or maximum queue area is outside the Zone");
-    case EFFZSPlacementFailure::InvalidGround: return LOCTEXT("InvalidGround", "Required ground could not be found");
-    case EFFZSPlacementFailure::ExcessSlope: return LOCTEXT("ExcessSlope", "Ground slope exceeds the configured limit");
-    case EFFZSPlacementFailure::HeightVarianceExceeded: return LOCTEXT("HeightVariance", "Ground height variance exceeds the configured limit");
-    case EFFZSPlacementFailure::PlacementCollision: return LOCTEXT("PlacementCollision", "Facility footprint collides with an occupied cell or world obstacle");
-    case EFFZSPlacementFailure::InsufficientClearance: return LOCTEXT("InsufficientClearance", "The required clearance ring is blocked");
-    case EFFZSPlacementFailure::QueueFootprintBlocked: return LOCTEXT("QueueBlocked", "The maximum queue footprint is blocked");
-    case EFFZSPlacementFailure::ProtectedRouteBlocked: return LOCTEXT("ProtectedRoute", "Placement intersects a protected route or area");
-    case EFFZSPlacementFailure::RequiredRouteDisconnected: return LOCTEXT("RouteDisconnected", "A required navigation point is disconnected");
-    case EFFZSPlacementFailure::AccessibilityRouteBlocked: return LOCTEXT("AccessibilityBlocked", "Placement blocks an accessibility route");
-    case EFFZSPlacementFailure::WrongStage: return LOCTEXT("WrongStage", "World changes are not permitted in the current phase");
-    case EFFZSPlacementFailure::FacilityOccupied: return LOCTEXT("Occupied", "Close and drain the facility before moving or removing it");
-    case EFFZSPlacementFailure::InvalidFacilityState: return LOCTEXT("InvalidState", "Facility state does not allow this command");
-    case EFFZSPlacementFailure::StaleWorldRevision: return LOCTEXT("StaleRevision", "The world changed after this command was prepared");
-    case EFFZSPlacementFailure::DuplicatePayloadMismatch: return LOCTEXT("DuplicateMismatch", "The Command ID was reused with a different payload");
-    case EFFZSPlacementFailure::NavigationUnavailable: return LOCTEXT("NavigationUnavailable", "Navigation data is unavailable");
-    case EFFZSPlacementFailure::NavRebuildTimeout: return LOCTEXT("NavTimeout", "Navigation rebuild timed out");
-    case EFFZSPlacementFailure::DataInvalid: return LOCTEXT("DataInvalid", "Facility or Zone data is invalid");
-    case EFFZSPlacementFailure::ExternalPolicyRejected: return LOCTEXT("PolicyRejected", "An external team policy rejected the change");
-    default: return LOCTEXT("InternalError", "Internal Zone/Facility error");
+    case EFFZSPlacementFailure::None: return LOCTEXT("None", "실패 없음");
+    case EFFZSPlacementFailure::ZoneNotFound: return LOCTEXT("ZoneNotFound", "Zone을 찾을 수 없습니다");
+    case EFFZSPlacementFailure::FacilityNotFound: return LOCTEXT("FacilityNotFound", "Facility를 찾을 수 없습니다");
+    case EFFZSPlacementFailure::DuplicateZoneId: return LOCTEXT("DuplicateZoneId", "Zone ID가 중복되었습니다");
+    case EFFZSPlacementFailure::DuplicateFacilityId: return LOCTEXT("DuplicateFacilityId", "Facility ID가 중복되었습니다");
+    case EFFZSPlacementFailure::CategoryNotAllowed: return LOCTEXT("CategoryNotAllowed", "이 Zone에서는 해당 Facility 카테고리가 허용되지 않습니다");
+    case EFFZSPlacementFailure::OutsideZone: return LOCTEXT("OutsideZone", "Footprint, 여유 공간 또는 최대 Queue 영역이 Zone 밖에 있습니다");
+    case EFFZSPlacementFailure::InvalidGround: return LOCTEXT("InvalidGround", "필요한 지면을 찾을 수 없습니다");
+    case EFFZSPlacementFailure::ExcessSlope: return LOCTEXT("ExcessSlope", "지면 경사가 설정된 제한을 초과했습니다");
+    case EFFZSPlacementFailure::HeightVarianceExceeded: return LOCTEXT("HeightVariance", "지면 높이 편차가 설정된 제한을 초과했습니다");
+    case EFFZSPlacementFailure::PlacementCollision: return LOCTEXT("PlacementCollision", "Facility Footprint가 점유된 Cell 또는 World 장애물과 충돌합니다");
+    case EFFZSPlacementFailure::InsufficientClearance: return LOCTEXT("InsufficientClearance", "필요한 여유 공간이 막혀 있습니다");
+    case EFFZSPlacementFailure::QueueFootprintBlocked: return LOCTEXT("QueueBlocked", "최대 Queue Footprint가 막혀 있습니다");
+    case EFFZSPlacementFailure::ProtectedRouteBlocked: return LOCTEXT("ProtectedRoute", "배치 영역이 보호 경로 또는 보호 영역과 겹칩니다");
+    case EFFZSPlacementFailure::RequiredRouteDisconnected: return LOCTEXT("RouteDisconnected", "필수 내비게이션 지점의 경로가 끊겨 있습니다");
+    case EFFZSPlacementFailure::AccessibilityRouteBlocked: return LOCTEXT("AccessibilityBlocked", "배치 영역이 접근성 경로를 막습니다");
+    case EFFZSPlacementFailure::WrongStage: return LOCTEXT("WrongStage", "현재 Phase에서는 World 변경이 허용되지 않습니다");
+    case EFFZSPlacementFailure::FacilityOccupied: return LOCTEXT("Occupied", "Facility를 이동하거나 제거하기 전에 닫고 Queue를 비우십시오");
+    case EFFZSPlacementFailure::InvalidFacilityState: return LOCTEXT("InvalidState", "현재 Facility 상태에서는 이 명령을 실행할 수 없습니다");
+    case EFFZSPlacementFailure::StaleWorldRevision: return LOCTEXT("StaleRevision", "명령을 준비한 뒤 World가 변경되었습니다");
+    case EFFZSPlacementFailure::DuplicatePayloadMismatch: return LOCTEXT("DuplicateMismatch", "동일한 Command ID가 다른 Payload에 재사용되었습니다");
+    case EFFZSPlacementFailure::NavigationUnavailable: return LOCTEXT("NavigationUnavailable", "내비게이션 데이터를 사용할 수 없습니다");
+    case EFFZSPlacementFailure::NavRebuildTimeout: return LOCTEXT("NavTimeout", "내비게이션 재빌드 시간이 초과되었습니다");
+    case EFFZSPlacementFailure::DataInvalid: return LOCTEXT("DataInvalid", "Facility 또는 Zone 데이터가 잘못되었습니다");
+    case EFFZSPlacementFailure::ExternalPolicyRejected: return LOCTEXT("PolicyRejected", "외부 팀 Policy가 변경을 거부했습니다");
+    default: return LOCTEXT("InternalError", "Zone/Facility 내부 오류가 발생했습니다");
     }
 }
 

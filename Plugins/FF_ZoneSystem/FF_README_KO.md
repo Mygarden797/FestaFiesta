@@ -1,1562 +1,1652 @@
-# FF Zone System 완전 가이드 — 설치·설계·통합·검증·운영
+# FF_ZoneSystem 기능 상세 가이드
 
-> 문서 정본: `Plugins/FF_ZoneSystem/FF_README_KO.md`  
-> 대상: 기획자, 레벨·UI·AI 담당, Blueprint·C++ 개발자, QA, 패키징 담당  
-> 버전: `2.0.0` — 1cm Cell/압축 Region 스키마  
-> 엔진 기준: Unreal Engine `5.7.4` 설치본, 프로젝트 연결값 `5.7`  
-> 현재 검증일: **2026-08-05** — Editor Development, Game Development, Game Shipping 빌드 성공; 자동화 `20/20` 성공, 실패 `0`, 종료 코드 `0`  
-> 아직 미검증: 최신 소스의 독립 BuildPlugin, Cook/Stage/Pak/IoStore, 패키지 실행, 실제 Nav·NPC·운영 UI·다대포 맵 전체 흐름  
-> 고정 단위: `1uu=1cm`, Festa 배치 Grid `1 Cell=1cm=1uu`
+> 대상 플러그인: `Plugins/FF_ZoneSystem`<br>
+> 플러그인 버전: `2.0.0`<br>
+> 기준 단위: `1 Unreal Unit = 1 cm`, `1 배치 Cell = 1 cm`<br>
+> 문서 기준: 2026-08-05 현재 작업 트리의 Runtime/Public API와 구현
 
-이 문서는 `FF_ZoneSystem`의 의도한 경험부터 설치, 데이터 저작, 런타임 흐름, 외부 시스템
-연결, 저장·이관, 테스트, 패키징, 운영 점검까지 한 파일에서 확인하는 유일한 최신 안내서다.
-“코드에 존재”, “자동 검증”, “수동·운영 검증 대기”를 구분해 구현 결과를 과장하지 않는다.
+`FF_ZoneSystem`은 Unreal Engine 월드에서 Gameplay Zone을 정의하고, 시설의 공간 배치부터 운영 상태,
+대기열, 외부 시스템 연동, 저장·복원까지 일관된 규칙으로 관리하는 Runtime 플러그인이다.
 
-### 문서 사용 순서
+이 플러그인의 핵심은 “Zone 안에 Actor가 있는지 확인하는 기능”에 그치지 않는다. 시설 배치를 하나의
+권한 명령으로 처리하면서 다음 상태가 서로 어긋나지 않도록 묶는다.
 
-- 처음 설치·실행: [1. 목적과 P0 경계](#1-목적과-p0-경계), [2. 정본과 공존 상태](#2-정본과-기존-플러그인-공존-상태)
-- 구조·데이터·배치: [3. 모듈 구조](#3-모듈-구조)부터 [10. 배치 검증](#10-배치-검증-순서)
-- 명령·Policy·Queue·저장: [11. 명령](#11-명령과-낙관적-동시성)부터 [19. 성능](#19-성능-원칙)
-- 현재 증거·재현: [20. 자동화](#20-자동화-테스트-현황)부터 [22. 빌드·패키징](#22-빌드자동화패키징-명령)
-- 이식·스키마 변환: [23. 다른 프로젝트 이식](#23-다른-프로젝트-이식), [24. 마이그레이션](#24-마이그레이션-계약)
-- 출시 판단: [25. QA Gate](#25-qa-gate), [26. 제한 사항](#26-현재-제한-사항과-후속-작업), [27. 증거](#27-완료-보고서에-들어갈-증거)
-- 연관 기준: [28. 관련 문서](#28-관련-문서)
+- Zone 경계와 Zone 간 그래프
+- 시설 Footprint, 여유 공간, 최대 Queue 영역
+- 보호 동선과 설치 금지 영역
+- 지면, 월드 충돌, Navigation 연결성
+- 시설 설치·이동·제거·개장·폐장 상태
+- 결정론적 FIFO Queue와 NPC 이동 단계
+- 외부 Navigation·Economy·Time·UI·Safety·Experience 정책
+- Command 멱등성, 낙관적 동시성, 변경 이벤트
+- 시설·Queue·완료 명령 영수증의 Snapshot 저장과 원자적 복원
 
 ---
 
-## 1. 목적과 P0 경계
+## 1. 한눈에 보는 담당 기능
 
-시스템이 증명할 경험:
+| 기능 영역 | 플러그인이 담당하는 것 | 플러그인 밖에서 담당할 것 |
+|---|---|---|
+| Zone | 경계, Stable ID, 포함 판정, 인접 그래프 검증, 수용량·밀도 상태 | GIS 원본 수집, 레벨 디자인 승인 |
+| 시설 배치 | 1 cm 격자, 회전, 점유, 여유 공간, Queue 예약 영역, 배치 검증 | 플레이어 입력, 카메라, 최종 UX |
+| 지면·충돌 | Line Trace 표본, 경사·높이 편차, Visibility Overlap | 지형/Collision 저작 품질 |
+| Navigation | Anchor·Queue Slot 투영과 동기 경로 연결성 검사 | 실제 AI 이동, 비동기 Nav rebuild, 회피 |
+| 보호 영역 | NoBuild·일반·긴급·접근성·관람 영역과 OBB 교차 판정 | 실제 법규·현장 안전 승인 |
+| 시설 수명주기 | Install·Move·Remove·Open·Close·EmergencyClose | 경제·시간·UI 등 외부 의미 |
+| Queue | FIFO, 용량, 서비스, 포기, Drain, Blocked, Exit, 통계 | Character/Controller/StateTree 이동 구현 |
+| 외부 연동 | Policy 인터페이스와 원자적 예약·Commit·Rollback 순서 | 각 도메인의 실제 상태와 Adapter |
+| 저장 | Schema 4 Snapshot 생성, 검증, 논리적 원자 복원 | Save Slot·파일·클라우드 I/O |
+| 조회·이벤트 | 정렬된 Read Model, 성공/거절 이벤트 | 운영 UI, 분석 저장소, 텔레메트리 |
+| 멀티플레이 | 구현하지 않음 | Server Authority, RPC, Replication, 재접속 |
 
-```text
-플레이어가 시설을 놓는다
-→ 배치가 공간·통행·Queue에 미치는 영향을 미리 이해한다
-→ NPC가 선택·이동·FIFO 대기·서비스·Exit를 수행한다
-→ 대기·혼잡·운영 결과가 Read Model과 이벤트로 보인다
-→ 플레이어가 원인을 읽고 다음 배치를 수정한다
-```
+여기서 “권한”은 `UFFZSWorldSubsystem` 안에서 상태 변경 경로를 하나로 제한한다는 뜻이다.
+네트워크 서버 권한이나 Unreal Replication이 구현되어 있다는 뜻은 아니다.
 
-P0는 시설 종류를 많이 만드는 작업이 아니다. `GZ_DadaPocha`, 음식 트럭, 화장실, 고정 Seed
-NPC 20명으로 위 인과를 끝까지 연결하고, 100명·300명으로 기능과 성능을 확장하는 작업이다.
+---
 
-플레이어 권리:
+## 2. 모듈과 전체 구조
 
-- 미리보기와 실제 실행 결과가 설명 가능해야 한다.
-- 실패 시 원인과 해결 행동을 제공한다.
-- 명령 실패가 비용이나 월드 상태를 부분 변경하지 않는다.
-- Ground 관람을 강제 보상 경로로 만들지 않는다.
-- ESC·옵션에서 정지하고 안전하게 중단할 수 있어야 한다.
+`FF_ZoneSystem.uplugin`은 두 모듈을 선언한다.
 
-### 1.1 처음 실행하는 사람을 위한 빠른 시작
+| 모듈 | 유형 / Loading Phase | 역할 |
+|---|---|---|
+| `FF_ZoneSystem` | Runtime / Default | 실제 게임에서 사용하는 모든 타입과 로직 |
+| `FF_ZoneSystemTests` | Editor / PostEngineInit | World·Policy·Save 통합 자동화 |
 
-#### A. 프로젝트 연결 확인
+Runtime 모듈은 `Core`, `CoreUObject`, `Engine`, `DeveloperSettings`,
+`NavigationSystem`에 의존한다. 모듈의 `StartupModule`과 `ShutdownModule`은 전역 상태를
+만들지 않는다. 실제 상태는 월드마다 생성되는 `UFFZSWorldSubsystem`이 소유한다.
 
-1. Unreal Editor를 닫는다.
-2. 플러그인 루트가 `Plugins/FF_ZoneSystem/FF_ZoneSystem.uplugin`인지 확인한다.
-3. `FestaFiesta.uproject`의 `Plugins` 배열에서 `FF_ZoneSystem`이 `Enabled=true`인지 확인한다.
-4. 프로젝트 C++가 플러그인 API를 직접 사용하면 `Source/FestaFiesta/FestaFiesta.Build.cs`의 Runtime 의존성에 `"FF_ZoneSystem"`을 둔다.
-5. 다음 Editor 빌드가 성공해야 Editor에서 타입과 Blueprint 노드가 보인다.
+~~~mermaid
+flowchart TD
+    UI["UI / Placement Tool / Game Code"] --> CMD["FFFZSCommand"]
+    CMD --> WS["UFFZSWorldSubsystem<br/>월드별 논리 권위"]
+    PREVIEW["AFFZSPlacementPreviewActor<br/>비권위 미리보기"] --> WS
 
-```powershell
-$ffzsUE = 'C:\Program Files\Epic Games\UE_5.7'
-$ffzsProjectRoot = (Resolve-Path -LiteralPath '.').Path
-& "$ffzsUE\Engine\Build\BatchFiles\Build.bat" `
-  FestaFiestaEditor Win64 Development `
-  -Project="$ffzsProjectRoot\FestaFiesta.uproject" `
-  -WaitMutex -NoHotReload
-```
+    WS --> ZONE["AFFZSGameplayZone"]
+    WS --> FAC["AFFZSFacilityActor"]
+    WS --> PA["AFFZSProtectedArea"]
+    WS --> GRID["UFFZSGridLibrary"]
+    FAC --> QUEUE["UFFZSFacilityQueueComponent"]
 
-#### B. 준비된 개발 Slice 실행
+    WS --> POLICY["IFFZSExternalPolicy<br/>Nav·Economy·Time·UI·Safety·Experience"]
+    QUEUE --> AGENT["IFFZSQueueAgent<br/>NPC 이동 계약"]
+    WS --> SNAP["FFFZSWorldSnapshot / FFFZSReadModel"]
+~~~
 
-1. Editor에서 `/Game/FestaFiesta/FFZoneSystem/Tests/Maps/L_FFZS_PlacementTest`를 연다.
-2. **Edit → Project Settings → Game → FF Zone System**에서 고정 표시값 `Placement Cell Size Cm = 1`을 확인한다.
-3. **Play**를 누른다. 프로젝트 설정의 map allow-list 때문에 배치 도구는 이 테스트 맵에서만 자동 활성화된다.
-4. 화면 안내에 따라 시설 선택, 회전, 설치, 철거를 시험한다.
-5. 초록 Preview는 “현재 시점의 검증 통과”일 뿐이다. 커밋은 최신 Revision·공간·Policy를 다시 검증한다.
-6. `OnPlacementRejected`의 안정 Enum과 설명을 확인하고, 문자열 비교로 실패 원인을 분기하지 않는다.
+### 2.1 주요 타입별 책임
 
-이 Slice는 개발용 입력·C++ Widget·배치 확인 도구다. 운영 UMG, 실제 Economy, 실제 Crowd/NPC,
-Production Nav·Safety 정책, 멀티플레이 권위를 대신하지 않는다.
-
-#### C. 빈 맵에서 첫 Zone과 시설 만들기
-
-1. 빈 Level에 `FFZSGameplayZone`을 배치한다.
-2. **Details → Zone → Presets**에서 Accepted Zone ID를 적용하거나 프로젝트 Stable `ZoneId`를 입력한다.
-3. `BoundarySpline`을 닫힌 선형 단순 폴리곤으로 편집한다. Actor Scale은 `1,1,1`, Pitch/Roll은 `0`, Yaw는 90도 단위, 원점은 1cm 격자에 맞춘다.
-4. 설치 금지·통행 공간에는 `FFZSProtectedArea`를 배치한다. `LinkedZoneId=NAME_None`이면 모든 Zone에 적용되는 전역 보호영역이고, 값이 있으면 해당 Zone 전용이다.
-5. Content Browser에서 **Miscellaneous → Data Asset → FFZSFacilityDefinition**을 만들고 `Spec.SchemaVersion=2`를 확인한다.
-6. 크기는 실제 cm 수를 Cell 수로 적는다. 6m×3m는 `FootprintSizeCells=(600,300)`, 1m 여유는 `ClearanceCells=100`이다.
-7. Queue 예약은 deprecated `QueueReservedCells`가 아니라 반열림 `QueueReservedRects [Min,Max)`로 작성한다.
-8. Entry·Service·Exit Anchor와 QueueSpline을 작성하고 **Asset Actions → Validate Assets**로 모든 오류를 해결한다.
-9. `FFZSPlacementPreviewActor`에 Install 명령을 설정해 `RefreshPreview`로 읽기 검증하고 `CommitPreview`로 실행한다.
-10. 일반 Blueprint/C++ 변경은 `UFFZSWorldSubsystem::ExecuteCommand` 한 경로만 사용한다. FacilityActor나 QueueComponent의 내부 상태를 직접 바꾸지 않는다.
-
-#### D. 첫 성공 뒤 확인할 최소 항목
-
-| 확인 | 성공 기준 |
+| 타입 | 책임 |
 |---|---|
-| Zone 등록 | `FindZone(ZoneId)`가 같은 Actor를 반환 |
-| 제작 데이터 | `IsDefinitionValid` 오류 0 |
-| 통합 준비 | Prototype은 필요한 Policy만, Production Gate는 6개 도메인 정확히 1개 |
-| 설치 | `bSucceeded=true`, Revision 1 증가, `OnWorldChanged` 1회 |
-| 중복 replay | 같은 CommandId·같은 payload는 새 변경 없이 저장 결과 반환 |
-| Queue | Join → Slot 도착 → Service 도착 → 서비스 → Exit 도착 순 |
-| 저장 | Snapshot v4 캡처·복원 후 Agent Actor를 Stable AgentId로 Rebind |
-| 사용자 피드백 | 실패 Enum, 원인, 다음 해결 행동을 표시 |
-| 검증 | Editor/Development/Shipping 빌드와 자동화 20/20 |
+| `UFFZSWorldSubsystem` | Registry, 압축 점유, 명령, Policy, Queue 소유권, Snapshot, Read Model |
+| `AFFZSGameplayZone` | 경계 Spline, Zone 규칙, 좌표 변환, 수용량과 밀도 |
+| `AFFZSProtectedArea` | 설치 금지·보호 동선 볼륨과 교차 판정 |
+| `UFFZSFacilityDefinition` | 시설 `FFFZSFacilitySpec`을 담는 Primary Data Asset |
+| `AFFZSFacilityActor` | 설치된 시설의 Runtime 상태와 표현 Component |
+| `UFFZSFacilityQueueComponent` | 시설별 FIFO Queue와 서비스 시뮬레이션 |
+| `UFFZSGridLibrary` | 상태 없는 1 cm 격자·압축 Rect 계산과 명령 생성 |
+| `AFFZSPlacementPreviewActor` | 검증 결과와 Ghost를 보여 주는 비권위 Preview |
+| `IFFZSExternalPolicy` | 외부 시스템의 사전 검증·임시 적용·Commit·Rollback 계약 |
+| `IFFZSQueueAgent` | NPC의 Stable ID와 Queue 이동 Callback 계약 |
+| `UFFZSPhase0Bridge` | 병렬 개발용 “항상 수락” 비권위 Stub |
 
 ---
 
-## 2. 정본과 기존 플러그인 공존 상태
+## 3. 월드 권한과 초기화
 
-현재 저장소의 정본 플러그인은 `Plugins/FF_ZoneSystem` 하나다.
-`FestaFiesta.Build.cs`와 `FestaFiesta.uproject`도 이 Runtime 모듈을 참조한다.
-중복 `ZoneFacilityPlaytest` 소스·설정·맵·재질·생성 스크립트와 100cm 레거시 문서는 제거했다.
+### 3.1 지원 월드
 
-그러나 소스 삭제와 직렬화 자산 이관은 다른 작업이다. 기본 맵
-`/Game/FestaFiesta/Maps/L_Dadaepo_DigitalTwin`에는 아직 `/Script/ZoneFacilitySystem`과
-`ZFFacilityActor_1` export가 남아 최신 자동화 시작 로그에서 로드 경고가 발생한다.
-이 맵은 프로젝트 기본 Game/Editor 맵이므로 삭제하거나, 누락 Actor가 열린 상태에서 무심코
-저장하지 않는다. 먼저 백업·Reference Viewer·Asset Audit으로 참조를 식별하고 다음 순서로
-이관한다.
+`UFFZSWorldSubsystem`은 다음 World Type에서 생성된다.
 
-1. 구 class·property·ID와 새 `AFFZSGameplayZone`·`AFFZSFacilityActor`·Spec v2의 명시적 변환표를 승인한다.
-2. 필요한 경우 한정된 Core Redirect를 작성하고 Editor 로드 로그로 실제 적용 범위를 확인한다.
-3. 별도 복제 맵에서 Actor·Data Asset·SaveGame을 변환한다.
-4. `UFFZSWorldSubsystem` 명령 한 경로로 설치·Queue·저장 흐름을 재연결한다.
-5. Reference Viewer와 로그에서 레거시 script import가 0인지 확인한 뒤에만 정본 맵을 저장한다.
-6. Editor·Development·Shipping 빌드, 자동화, 대표 Slice, 20→100→300명 Gate를 다시 검증한다.
+- Game
+- PIE
+- Editor
+- Editor Preview
+- Game Preview
 
-Core Redirect나 승인된 Save migration 없이 이름만 비슷한 새 타입으로 자동 추측 변환하지 않는다.
+### 3.2 초기 등록
 
-### 2.1 정리 manifest — 2026-08-05
+Subsystem 초기화 순서는 다음과 같다.
 
-삭제:
+1. Project Settings의 `InitialPhase`를 읽는다.
+2. 월드에 이미 존재하는 `AFFZSGameplayZone`을 검색해 등록한다.
+3. `AFFZSProtectedArea`를 검색해 등록한다.
+4. 유효한 `FacilityInstanceId`를 가진 `AFFZSFacilityActor`를 검색해 등록한다.
 
-- `Source/FestaFiesta/ZoneFacilityPlaytest/`, `Content/FestaFiesta/ZoneFacility/`, 구 생성 Script와 설정 block
-- `Docs/ZONE_FACILITY_*`, 관련 PNG, 분산 `Docs/FF_ZONE_SYSTEM_*.md`; 유효 내용은 이 정본에 흡수
-- 구 패키지·Cook 결과만 있던 Git 미추적 `BuildArtifacts/`
-- 외부 참조 0인 `Maps/test.umap`, `Maps/wraewqwdasdasadwqd.umap`
-- 재생성 가능한 `Plugins/FF_ZoneSystem/Binaries/`, `Intermediate/`
+각 Zone과 Protected Area도 `BeginPlay`에서 자신을 등록하고 `EndPlay`에서 해제한다.
+Facility는 Install 과정에서 Spawn된 직후에는 GUID가 아직 없기 때문에 자동 등록되지 않고,
+`InitializeFacility`가 끝난 뒤 Subsystem이 명시적으로 등록한다. 따라서 초기화되지 않은 시설이
+권위 Registry에 잠시 노출되지 않는다.
 
-보존:
+### 3.3 Registry와 점유 상태
 
-- `Plugins/FF_ZoneSystem`의 `Source/`, `Config/`, `.uplugin`, `FF_README_KO.md`
-- 현재 Slice의 `Content/FestaFiesta/FFZoneSystem/`, `Source/FestaFiesta/FFZoneSystemPlaytest/`,
-  `Content/Python/build_ff_zone_system_playtest.py`
-- 프로젝트 기본 맵 `L_Dadaepo_DigitalTwin.umap`과 기존 사용자 변경; 레거시 import 이관 전 재저장 금지
+Subsystem이 유지하는 핵심 Registry는 다음과 같다.
 
-`Binaries/Intermediate/BuildArtifacts`는 source distribution에 넣지 않고 필요할 때 빈 경로에
-재생성한다. `Saved` 로그는 검증 증거로만 로컬 보관하며 배포물·정본으로 취급하지 않는다.
+- `ZoneId -> GameplayZone`
+- `FacilityInstanceId -> FacilityActor`
+- `FacilityInstanceId -> ZoneId + ReservedRects`
+- 등록된 Protected Area 목록
+- 등록 순서가 결정적으로 정렬된 External Policy 목록
+- `AgentId -> FacilityInstanceId` 전역 Queue 소유권
+- `CommandId -> CommandReceipt` 멱등성 영수증
 
-삭제 항목은 대부분 Git 미추적이어서 Git으로 복구할 수 없다. 다대포 맵 이관에 정확한 구
-`ZoneFacilitySystem` schema가 필요하면 별도 백업이나 과거 패키지를 외부에서 확보한다.
+`UnregisterZone`은 Zone만 Registry에서 제거한다. 해당 Zone의 시설을 자동 이동하거나 제거하지 않으며,
+`WorldRevision`과 변경 이벤트도 만들지 않는다. 시설의 실제 제거는 반드시 `Remove` 명령을 사용해야 한다.
+
+### 3.4 변경 직렬화와 재진입 방지
+
+`ExecuteCommand`, `RestoreWorldSnapshot`과 mutation guard를 거치는 공개 변경 API는 Game Thread에서
+실행하며 재진입을 fail-closed한다. 내부 Facility 등록·해제도 Game Thread 수명주기에서 호출할
+계약이지만, 등록·해제 함수 자체에는 별도 Thread Guard가 없다. 다음 상황의 요청은 거부된다.
+
+- 다른 Command가 실행 중일 때
+- Snapshot 복원이 진행 중일 때
+- External Policy Callback 안에서 재귀 Command를 호출할 때
+- Policy 등록·해제 또는 Queue 변경이 권한 작업과 겹칠 때
+- Game Thread 밖에서 Command 또는 Restore를 호출할 때
+
+이 구조는 하나의 UWorld 안에서 논리 상태를 직렬화하지만, 멀티플레이 Replication을 대신하지 않는다.
 
 ---
 
-## 3. 모듈 구조
+## 4. 고정 1 cm 격자와 압축 영역
 
-```text
-FF_ZoneSystem.uplugin
-├─ Config/DefaultFF_ZoneSystem.ini  출하 기본값
-├─ Config/FilterPlugin.ini          패키지 포함 규칙
-└─ Source/
-   ├─ FF_ZoneSystem       Runtime, LoadingPhase=Default
-   └─ FF_ZoneSystemTests  Editor, LoadingPhase=PostEngineInit
-```
+### 4.1 단위 계약
 
-### 파일 이름 계약
+- `1 uu = 1 cm`
+- `1 Cell = 1 cm`
+- Zone 로컬 XY 정수 좌표가 배치 Cell 좌표다.
+- `PlacementCellSizeCm`은 설정으로 바꾸는 수치가 아니라 코드의 고정 계약이다.
 
-직접 작성하는 C++·문서 파일의 basename은 한 번만 `FF_`로 시작한다. UAT와 Unreal Config가
-고정 이름으로 찾는 `Config/FilterPlugin.ini`, `Config/DefaultFF_ZoneSystem.ini`는 예약 예외다.
-`Binaries`·`Intermediate`는 UBT/UHT 생성물이므로 직접 이름을 바꾸지 않고 필요할 때
-재생성한다.
+과거의 100 cm Cell과 혼용하면 안 된다. Cell 크기를 바꾸려면 좌표, 시설 Data Asset, Command 지문,
+Snapshot을 모두 마이그레이션해야 한다.
 
-`AFFZS*`, `UFFZS*`, `FFFZS*`, `EFFZS*`, 모듈 `FF_ZoneSystem`,
-`/Script/FF_ZoneSystem`은 현재 직렬화·API 정체성이다. 이름 변경은 Blueprint, Data Asset,
-SaveGame, Cook 결과에 영향을 주므로 Core Redirect·자산 재저장·전체 Cook을 같은 변경 단위에서
-검증한다.
+### 4.2 반열림 Rect
 
-`.uplugin`의 현재 값은 `Version=2`, `VersionName=2.0.0`,
-`CanContainContent=true`, `Installed=false`다. 플러그인 자체 Content는 현재 비어 있고,
-프로젝트 전용 검증 자산은 `/Game/FestaFiesta/FFZoneSystem`에 있다.
+권위 공간은 개별 1 cm Cell 배열이 아니라 `FFFZSCellRect`로 저장한다.
 
-### Runtime Public API
+~~~text
+[Min, Max)
+Min은 포함
+Max는 제외
+Width  = Max.X - Min.X
+Height = Max.Y - Min.Y
+~~~
 
-| 파일 | 단일 책임 |
+예를 들어 6 m x 3 m 시설은 Cell 180,000개를 저장하지 않고 보통 다음 Rect 하나로 표현한다.
+
+~~~text
+Min = (0, 0)
+Max = (600, 300)
+~~~
+
+Rect는 다음 연산을 지원한다.
+
+- 0·90·180·270도 회전
+- 겹치거나 맞닿는 Rect들의 결정적 Canonical 합집합
+- Rect 집합 간 실제 면적 겹침 검사
+- 합집합 면적 계산
+- 작은 영역에 한한 개별 Cell Materialize
+
+### 4.3 시설의 네 공간
+
+| 영역 | 의미 | 충돌 시 실패 |
+|---|---|---|
+| `FootprintRects` | 시설 본체 | `PlacementCollision` |
+| `ClearanceRects` | 본체와 Queue를 제외한 필수 여유 공간 | `InsufficientClearance` |
+| `QueueRects` | 만석일 때까지 예약하는 최대 대기 공간 | `QueueFootprintBlocked` |
+| `ReservedRects` | 위 세 영역의 정확한 합집합 | Zone 소유·보호 영역·Snapshot 판정 |
+
+정상 권위 로직은 Rect 집합만 사용한다. Blueprint 호환과 Debug용 개별 Cell 배열은 영역이
+10,000 Cell 이하일 때만 생성되며, 이를 초과하면 빈 배열을 반환한다.
+
+### 4.4 회전과 배치 원점
+
+`FFFZSGridPlacement`은 다음 두 값으로 구성된다.
+
+- `OriginCell`: 회전 전 시설 Footprint의 좌하단
+- `QuarterTurns`: 시계 방향 90도 회전 수
+
+권위 명령 생성, 시설 초기화·이동, 격자 계산 경계에서 `QuarterTurns`를 `0..3`으로 정규화한다.
+수동으로 만든 raw `FFFZSGridPlacement` 필드 자체에는 임의 정수가 들어갈 수 있다. 시설 월드
+Transform은 회전된 Footprint 중심과 Zone Actor의 Yaw를 조합하며 Actor Scale은 항상 1이다.
+
+### 4.5 안전 예산
+
+`MaxEnumeratedCellsPerFacility` 기본값은 1,000,000이다. 이 값은 대형 정상 시설을 실제 Cell로
+펼치는 한도가 아니라, 잘못된 Footprint·Clearance·Queue 입력을 빠르게 거부하기 위한 보수적 예산이다.
+설정값도 하드 상한 1,000,000으로 제한된다.
+
+---
+
+## 5. Gameplay Zone
+
+### 5.1 Zone이 보유하는 데이터
+
+`AFFZSGameplayZone`의 주요 필드는 다음과 같다.
+
+| 필드 | 의미 |
 |---|---|
-| `FF_FFZSTypes.h` | Enum, 명령, 결과, Spec, Snapshot, Read Model, Policy Context |
-| `FF_FFZSDeveloperSettings.h` | 프로젝트 공통 Prototype·기술 기본값 |
-| `FF_FFZSGridLibrary.h` | 순수 Cell 회전·예약 영역·Preset·명령 fingerprint |
-| `FF_FFZSZoneActor.h` | Gameplay Zone 경계·이웃·수용량·밀도 상태 |
-| `FF_FFZSProtectedArea.h` | 보호영역 OBB와 겹침 판정 |
-| `FF_FFZSFacilityDefinition.h` | `UPrimaryDataAsset` 기반 시설 정적 데이터; Primary Asset Type `FFZSFacilityDefinition` |
-| `FF_FFZSFacilityActor.h` | 설치 시설 인스턴스와 표현·상태·Queue 보유 |
-| `FF_FFZSFacilityAnchorComponent.h` | Entry·Service·Exit Anchor 식별 |
-| `FF_FFZSQueueComponent.h` | 결정론적 FIFO·서비스·Drain·Cancel·Snapshot |
-| `FF_FFZSQueueAgent.h` | 프로젝트 NPC에 대한 최소 Interface |
-| `FF_FFZSExternalPolicy.h` | Nav·Economy·Time·UI·Safety·Experience 원자적 Adapter |
-| `FF_FFZSPlacementPreviewActor.h` | 권위 없는 배치 Ghost와 Debug Cell |
-| `FF_FFZSWorldSubsystem.h` | Registry·점유·검증·Command·Policy·Queue·Save의 권위 |
+| `ZoneId` | Registry·저장·점유·그래프에서 사용하는 Stable ID |
+| `DisplayName` | UI 표시명 |
+| `SourceReferenceId` | 외부 참고 경계와 연결하는 비권위 ID |
+| `SchemaVersion / ContentVersion` | 데이터 구조·내용 버전 |
+| `BoundarySpline` | Zone 로컬 cm 좌표의 닫힌 선형 폴리곤 |
+| `VerticalExtentCm` | Actor 원점 중심 수직 허용 두께 |
+| `bAllowAllFacilityCategories` | 모든 시설 카테고리 허용 여부 |
+| `AllowedFacilityCategories` | 선택 허용 카테고리 |
+| `NeighborZoneIds` | 방향 없는 Zone 그래프의 이웃 |
+| `EntryExitAnchors` | Zone 단위 출입 기준점 |
+| `UsablePublicAreaSquareMeters` | 밀도 계산용 공공 면적 Override |
+| `SoftCapacityOverride` | 소프트 수용량 Override |
+
+### 5.2 저작 불변식
+
+유효한 Zone은 다음 조건을 만족해야 한다.
+
+- 비어 있지 않고 Project Settings 정책에 맞는 `ZoneId`
+- 점이 3개 이상인 Closed Loop `BoundarySpline`
+- 모든 Spline Point가 Linear 보간
+- 자기 교차, 중복 Edge Point, 퇴화 면적이 없는 단순 폴리곤
+- Actor Scale `(1,1,1)`
+- X/Y 원점이 1 cm 격자에 정렬
+- Pitch/Roll 0, Yaw 0/90/180/270도
+- 자신을 이웃으로 포함하지 않음
+- 비어 있거나 중복된 Neighbor ID가 없음
+- 전체 카테고리 허용을 끈 경우 허용 카테고리가 하나 이상 존재
+
+Zone 등록 후 `ZoneId`를 직접 바꾸면 Registry Key와 Actor 값이 달라질 수 있다.
+`ApplyAcceptedZonePreset`도 이미 등록된 Actor에는 적용되지 않는다.
+
+### 5.3 기본 Project Zone ID
+
+기본 설정은 다음 12개 ID로 Zone을 제한한다.
+
+~~~text
+GZ_SunsetBeachClub
+GZ_DadaPocha
+GZ_DadaYajang
+GZ_DadaepoForest
+GZ_FountainPirates
+GZ_SunsetLounge
+GZ_FleaMarket
+GZ_SunsetDogPark
+GZ_SunsetWellness
+GZ_PublicParkingWest
+GZ_TemporaryParkingEast
+GZ_Operations
+~~~
+
+다른 프로젝트로 이식할 때는 `ProjectZoneIds`를 자체 Stable ID로 교체하거나
+`bRestrictZoneIdsToProjectPresets`를 끌 수 있다.
+
+### 5.4 포함 판정과 Hysteresis
+
+`ContainsWorldPoint`는 월드 위치를 Zone 로컬 좌표로 바꾼 뒤 다음을 모두 검사한다.
+
+1. Z가 `VerticalExtentCm / 2` 안에 있는가
+2. XY가 폴리곤 내부 또는 경계 0.1 cm 안에 있는가
+
+`ResolveZoneAtWorldLocation`은 이전 Zone ID가 주어졌을 때 그 Zone에만
+`ZoneMembershipHysteresisCm`를 적용한다. 이전 Zone의 완충 범위에도 없으면 Zone ID 사전순으로
+정확한 경계를 검사한다. 모든 Zone의 경계를 넓히는 방식이 아니므로 새 Zone을 선점하지 않는다.
+
+### 5.5 Zone 그래프
+
+Actor 단위 `ValidateZoneData`는 자기 데이터만 검사한다. 월드 전체 `ValidateZoneGraph`는 추가로
+다음을 검사한다.
+
+- 제한 모드에서 Project Zone ID가 모두 존재하는가
+- Neighbor가 실제로 존재하는가
+- A가 B를 이웃으로 가지면 B도 A를 이웃으로 가지는가
+- Protected Area ID가 고유한가
+- Zone 전용 Protected Area가 실제 Zone을 가리키는가
+
+Zone ID 중복은 `ValidateZoneGraph`가 아니라 `RegisterZone`이 Registry 삽입 전에 거부한다.
+Zone 간 공간 겹침은 등록 시 전역 거부하지 않는다. 대신 시설 `ReservedRects`를 검증할 때 모든 영역이
+“정확히 하나의 Zone”에만 완전히 속해야 한다. 두 Zone이 겹치는 부분이나 Zone 밖 부분에 걸친 배치는
+`OutsideZone`으로 거부된다.
+
+### 5.6 수용량과 밀도
+
+Soft Capacity 계산은 다음 순서다.
+
+~~~text
+SoftCapacityOverride > 0
+    → Override 사용
+그 외
+    → (UsablePublicAreaSquareMeters 또는 폴리곤 면적) / 1인당 면적
+    → 내림
+~~~
+
+기본 1인당 면적은 4 m²다. `ReportZonePopulation`으로 외부 시뮬레이션이 인구와 DeltaSeconds를
+보고하면 다음 단계가 계산된다.
+
+| 상태 | 기본 비율 | 상승 규칙 |
+|---|---:|---|
+| Normal | 0.8 미만 | 즉시 |
+| Caution | 0.8 이상 | 즉시 |
+| Warning | 1.0 이상 | 5초 연속 유지 후 |
+| Critical | 1.25 이상 | 3초 연속 유지 후 |
+
+기준 아래로 내려가면 누적 시간이 초기화되고 현재 비율에 따라 즉시 하향 재평가된다. 별도의 하향
+Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototype용이며 실제 법정 수용량이 아니다.
 
 ---
 
-## 4. SOLID 적용
+## 6. Protected Area
 
-### S — 단일 책임
+`AFFZSProtectedArea`는 물리 Overlap 이벤트를 발생시키는 Gameplay Trigger가 아니라,
+배치 검증 시 Subsystem이 직접 질의하는 공간 규칙 Actor다.
 
-- Grid 수학은 `UFFZSGridLibrary`에만 둔다.
-- 시설 정적 데이터는 `UFFZSFacilityDefinition`에 둔다.
-- 시설 런타임 상태는 `AFFZSFacilityActor`에 둔다.
-- 전역 점유와 원자적 명령은 `UFFZSWorldSubsystem`에 둔다.
-- Queue 순서와 서비스는 `UFFZSFacilityQueueComponent`에 둔다.
-- UI는 Read Model만 읽는다.
+### 6.1 유형
 
-### O — 개방·폐쇄
+| 유형 | 의미 | 교차 실패 |
+|---|---|---|
+| `NoBuild` | 설치 금지 영역 | `ProtectedRouteBlocked` |
+| `GeneralRoute` | 일반 통행 동선 | `ProtectedRouteBlocked` |
+| `EmergencyServiceRoute` | 긴급·서비스 동선 | `ProtectedRouteBlocked` |
+| `AccessibilityRoute` | 접근성 동선 | `AccessibilityRouteBlocked` |
+| `ViewingArea` | 보호 관람 영역 | `AccessibilityRouteBlocked` |
 
-새 시설은 `FFFZSFacilitySpec` Data Asset으로 추가한다. 기존 Queue·서비스로 표현할 수 없는
-새 능력이 생길 때만 새 Component 또는 Subclass를 추가한다. Economy·Safety 공식이 바뀌어도
-플러그인 코드를 고치지 않고 Policy Adapter를 교체한다.
+### 6.2 적용 Zone
 
-현재 Snapshot 복원은 항상 정확한 `AFFZSFacilityActor`를 생성하며 Subclass factory 확장점은
-없다. Subclass를 실제 저장·복원까지 지원하려면 class 식별자, 허용 목록, 생성 factory,
-스키마 이관과 회귀 테스트를 먼저 추가한다.
+- `LinkedZoneId = NAME_None`: 모든 Zone 배치에 적용
+- Zone ID 지정: 해당 Zone의 배치에만 적용
+- 존재하지 않는 Zone ID 지정: `DataInvalid`
 
-### L — 리스코프 치환
+현재 Runtime 구현은 `NAME_None`을 전역 영역으로 처리한다. Public Header의 해당 Property 설명은
+“비어 있으면 검증 실패”라고 적혀 있어 구현과 문구가 어긋나므로, 향후 API 주석을 구현에 맞게
+정리할 필요가 있다.
 
-시설 Subclass는 `AFFZSFacilityActor`의 명령·점유·Snapshot 불변식을 깨면 안 된다.
-Queue Agent 구현은 어떤 Character·Pawn·Actor여도 같은 Stable ID와 도착 보고 계약을 지켜야
-한다.
+### 6.3 폭과 교차 판정
 
-### I — 인터페이스 분리
+`RequiredClearWidthCm`이 양수면 Actor별 Override다. 0이면 유형별 Project Settings 값을 상속한다.
 
-- NPC는 `IFFZSQueueAgent`만 구현한다.
-- 외부 규칙은 `IFFZSExternalPolicy`만 구현한다.
-- UI는 `FFFZSReadModel`과 명령 결과를 사용한다.
-
-프로젝트 Character, GameMode, Economy 클래스를 Runtime 모듈이 직접 include하지 않는다.
-
-### D — 의존 역전
-
-World Subsystem이 시리·민서·정원 등의 구체 클래스를 참조하지 않는다. 외부 Owner가
-Policy Interface를 구현하고 런타임에 등록한다.
-
----
-
-## 5. 데이터와 런타임 상태 분리
-
-### 정적 데이터
-
-`UFFZSFacilityDefinition::Spec`의 현재 `SchemaVersion`은 `2`다. 독립 Spec v1은 현재 Runtime
-등록에서 거절하고, 제한된 World Snapshot v3 복원 경로에서만 검증 후 변환한다.
-
-`Spec` 필드:
-
-```text
-SchemaVersion
-FacilityDefinitionId
-DisplayName
-Category
-FootprintSizeCells
-ClearanceCells
-QueueReservedRects              권위 표현, 반열림 [Min,Max)
-QueueReservedCells              deprecated 호환 필드, 신규 데이터 사용 금지
-QueueSplinePointsCm
-QueueRules
-Anchors
-AllowedZoneIds
-InstallCostKey
-RevenueRuleKey
-ExperienceEffectKey
-VisualMesh
-PlacementObstacleHeightCm
-```
-
-### 런타임 상태
-
-시설 인스턴스:
-
-```text
-FacilityInstanceId
-FacilitySpec snapshot
-ZoneId
-GridPlacement
-FacilityState
-WorldTransform
-NeedsRelocation
-Queue runtime state
-```
-
-### 외부 원본 데이터
-
-- 실제 잔액·거래·매출
-- Stage·Simulation Time
-- NPC 욕구·Utility·Satisfaction
-- Nav path·회피
-- Safety 공식
-- UI 화면 상태
-
-동일 값이 Data Asset, Blueprint, C++ Default에 여러 번 복사되지 않게 한다. 내장 Preset은
-테스트·초기 폴백이고, 운영 수치는 프로젝트 Data Asset이 정본이어야 한다. 현재
-`/Game/FestaFiesta/FFZoneSystem/Data/Facilities`에는 Facility Definition `.uasset`이 0개다.
-FoodTruck·Toilet을 포함한 7종은 아직 C++ built-in이며 운영 Data Asset을 별도로 만들어야 한다.
-`/Game/FestaFiesta/FFZoneSystem/Tests`는 개발 맵·머티리얼 Slice 전용이다.
-Info·Rest·Performance·Safety·PhotoSpot은 `Hypothesis`이며 측정 없이 Accepted로 취급하지 않는다.
-
----
-
-## 6. Zone 계약
-
-### 세 공간의 분리
-
-| 공간 | 판정 권한 |
+| 유형 | 기본 폭 |
 |---|---:|
-| 2025 Reference Zone | 없음 |
-| Gameplay Zone | 있음 |
-| 252m Work Cell | 없음 |
+| General Route | 300 cm |
+| Emergency/Service Route | 400 cm |
+| Accessibility Route | 150 cm |
+| Viewing Area | 150 cm |
+| NoBuild | 추가 폭 0 cm |
 
-`AFFZSGameplayZone`은 닫힌 선형 `BoundarySpline`을 사용한다. Spline 점은 cm 기준이다.
+`ApplyDefaultWidthForType`은 현재 기본값을 Actor 값으로 복사하므로 이후 전역 설정 변경을 상속하지 않는다.
 
-필드:
-
-```text
-ZoneId
-DisplayName
-SourceReferenceId
-SchemaVersion
-ContentVersion
-bAuthoritativeGISBoundary
-VerticalExtentCm
-bAllowAllFacilityCategories
-AllowedFacilityCategories
-NeighborZoneIds
-EntryExitAnchors
-UsablePublicAreaSquareMeters
-SoftCapacityOverride
-```
-
-Accepted 12개 ID는 `UFFZSGridLibrary::GetAcceptedGameplayZoneIds`와 Editor 전용
-`ApplyAcceptedZonePreset`에서 제공한다. `bRestrictZoneIdsToProjectPresets=true`가 기본이고,
-`ProjectZoneIds`는 생성자에서 이 12개로 초기화된다. Restricted mode는 Zone ID 소속과 설정된
-그래프를 검증한다. 이식 프로젝트는 목록을 자체 Stable ID로 교체하거나 제한을 꺼 사용자 등록
-그래프를 허용할 수 있다. Preset 적용 함수는 Blueprint 실행 API가 아니며, 이미 World
-Subsystem에 등록된 Zone의 ID를 바꾸려 하면 거절한다.
-
-```text
-GZ_SunsetBeachClub   GZ_DadaPocha             GZ_DadaYajang
-GZ_DadaepoForest     GZ_FountainPirates       GZ_SunsetLounge
-GZ_FleaMarket        GZ_SunsetDogPark         GZ_SunsetWellness
-GZ_PublicParkingWest GZ_TemporaryParkingEast  GZ_Operations
-```
-
-Facility `AllowedZoneIds`는 별도다. 빈 배열은 ID 제한 없음이고, 채운 배열은 None·중복을
-거절하며 Festa 12개가 아닌 이식 프로젝트 ID도 허용한다. Placement와 Snapshot restore는 대상
-Zone이 이 배열에 있는지 확인한다.
-
-불변식:
-
-- `ZoneId` 중복 금지.
-- 경계 자기 교차 금지.
-- 1 Cell = 1uu = 1cm이며 Scale은 1, Origin XY는 1cm 정수, Pitch/Roll은 0, Yaw는 90° 단위다.
-- 이웃 관계는 양방향.
-- 각 압축 예약 Rect 전체는 정확히 하나의 Gameplay Zone에 속해야 하며 경계 밖·두 Zone 중첩은
-  모두 거절한다.
-- Zone 변경 후 시설을 자동 삭제하지 않는다. `InitialSetup/Reconfigure`에서만
-  `RevalidateFacilitiesInZone`으로 `NeedsRelocation`을 갱신하고 다른 Phase의 함정은
-  17절을 따른다.
-- Zone 소속 이동에는 50cm 히스테리시스를 사용한다.
-
-Soft Capacity:
-
-```text
-SoftCapacityOverride > 0이면 Override 사용
-아니면 UsablePublicAreaM2 / SquareMetersPerPersonForSoftCapacity
-```
-
-이는 게임 수치이며 실제 법정 수용 인원이 아니다.
+교차는 Yaw가 적용된 OBB와 시설 영역의 월드 AABB를 Separating Axis Test로 검사한다.
+요구 폭은 보호 Actor의 로컬 짧은 축을 확장하며, Z 구간이 분리되면 교차하지 않는다. 경계가 맞닿는
+경우도 차단으로 본다. 정확한 판정을 위해 Scale은 1, Pitch/Roll은 0이어야 한다.
 
 ---
 
-## 7. 보호구역 계약
+## 7. 시설 정의와 Runtime 시설
 
-`AFFZSProtectedArea`는 `UBoxComponent` 기반 명시적 보호 영역이다.
+### 7.1 Data Asset
 
-`LinkedZoneId=NAME_None`은 모든 Zone에 적용되는 전역 보호영역이다. 값이 있으면 그 Zone이
-등록돼 있어야 한다. 판정은 OBB를 사용하고 경계 접촉도 차단으로 취급한다. `ViewingArea`도
-별도 override가 없으면 접근성 통로 기본 폭을 상속한다.
+`UFFZSFacilityDefinition`은 `UPrimaryDataAsset`이며 Primary Asset Type은
+`FFZSFacilityDefinition`이다. `Spec`이 유효한 경우 Primary Asset 이름은
+`FacilityDefinitionId`를 사용한다.
 
-종류:
+설치 시 `FFFZSFacilitySpec` 전체를 `AFFZSFacilityActor`에 값으로 복사한다. 따라서 다음 특징이 있다.
 
-```text
-NoBuild
-GeneralRoute
-EmergencyServiceRoute
-AccessibilityRoute
-ViewingArea
-```
+- 원본 Data Asset이 언로드되어도 설치된 시설과 Snapshot은 동작한다.
+- 원본 Data Asset을 수정해도 이미 설치된 시설에 자동 반영되지 않는다.
+- Visual Mesh는 Soft Reference라 논리 설치와 로드를 분리한다.
+- Host 프로젝트가 Asset Manager Scan/Cook 규칙을 별도로 설정해야 할 수 있다.
 
-필드:
+### 7.2 FacilitySpec 주요 필드
 
-```text
-ProtectedAreaId
-LinkedZoneId
-AreaType
-RequiredClearWidthCm
-AreaBounds
-```
-
-판정은 회전된 로컬 OBB를 사용해야 하며 단순 World AABB로 과잉 거절하지 않는다. Pitch/Roll은
-검증에서 거절하고 Yaw만 허용한다. `RequiredClearWidthCm == 0`이면 Area Type별 Project
-Settings 기본 폭을 동적으로 상속하고, 0보다 크면 Actor override다. Editor의
-`ApplyDefaultWidthForType`은 현재 기본값을 Actor에 복사해 상속을 끊는다. 보호 폭
-300/400/150cm는 Prototype 값이다.
-
----
-
-## 8. 시설과 Anchor 계약
-
-시설은 `AFFZSFacilityActor` 하나로 데이터 주도 생성한다.
-
-상태는 선형 순서가 아니다.
-
-| 명령·경로 | 허용 시작 상태 | 성공 뒤 상태 |
+| 그룹 | 필드 | 의미 |
 |---|---|---|
-| Install / Initialize | 새 Actor | `Validated` |
-| Move | Queue가 비어 있는 `Planned/Validated/Closed/MovePending` | `Validated` |
-| Open | `Validated/Closed/MovePending` | `Active` |
-| Close | 모든 non-`Removed` | `Closed` 후 비었거나 drain 완료 시 `MovePending` |
-| EmergencyClose | 모든 non-`Removed` | Facility는 즉시 `Closed`; 물리 Agent Exit는 계속될 수 있음 |
-| Remove | Queue가 비어 있는 `Planned/Validated/Closed/MovePending` | `Removed` 후 Actor destroy |
+| Identity | `SchemaVersion` | 현재 지원값 2 |
+| Identity | `FacilityDefinitionId / DisplayName / Category` | Stable ID, 표시명, 카테고리 |
+| Placement | `FootprintSizeCells` | 실제 cm와 같은 1 cm Cell 크기 |
+| Placement | `ClearanceCells` | 전 방향 여유 폭 |
+| Placement | `QueueReservedRects` | 최대 Queue 예약 영역 |
+| Queue | `QueueSplinePointsCm` | Service에서 Queue Tail 방향의 로컬 점 |
+| Queue | `QueueRules` | 용량·간격·서비스·포기·이동 규칙 |
+| Anchors | `Anchors` | Entry·Service·Exit Transform |
+| Placement | `AllowedZoneIds` | 비어 있으면 Zone ID 제한 없음 |
+| External | `InstallCostKey / RevenueRuleKey / ExperienceEffectKey` | 외부 Policy용 Key |
+| Visual | `VisualMesh` | 비동기 로드 Soft Mesh |
+| Collision | `PlacementObstacleHeightCm` | 월드 충돌과 보호영역 박스 높이 |
 
-Actor C++ 기본은 `Planned`지만 정상 Install의 `InitializeFacility` 기본 인자는 `Validated`다.
+`QueueReservedCells`는 작은 구 데이터 호환용 Deprecated 필드다. 새 데이터는
+`QueueReservedRects`를 사용해야 한다.
 
-Anchor:
+### 7.3 Spec 검증
 
-```text
-Entry      최소 1개
-Service    ServiceCapacity 이상
-Exit       최소 1개
-```
+`FFFZSFacilitySpec::IsValid`은 오류를 가능한 한 누적하되 위험한 반복 전에 값싼 조건을 먼저 검사한다.
 
-QueueSpline은 시설 로컬 cm 좌표에서 서비스 앞쪽부터 꼬리 방향으로 저장한다. 슬롯 `i`의
-중심은 Spline 거리 `i × SlotSpacingCm`에 있다. `i=0..MaxWaitingAgents-1`의 모든 중심이
-`QueueReservedRects` 안에 있어야 하고, Spline은 마지막 중심점까지 길어야 한다. 기본
-115cm는 슬롯 간격일 뿐 별도의 Agent Capsule 반경이나 꼬리를 예약하지 않으므로 실제
-Nav/동선은 별도 검증한다. 피벗은 바닥 중앙, 전방은 +X, Scale은 1이다.
+- SchemaVersion이 2인가
+- ID와 DisplayName이 존재하고 Category가 유효한가
+- Footprint가 양수, Clearance가 0 이상인가
+- 이론적 공간 작업량이 안전 예산 안인가
+- Queue 수용량, Service 수, 거리, 시간이 유효한가
+- Queue Spline이 2점 이상이고 모든 Slot을 놓을 만큼 긴가
+- `QueueReservedRects` 또는 구 호환 `QueueReservedCells`가 존재하는가
+- Rect 또는 Cell 좌표가 유효한가
+- Queue 영역이 Facility Footprint와 겹치지 않는가
+- 최대 인원의 모든 Queue Slot이 예약 영역 안에 있는가
+- Entry[0]과 Exit[0]이 존재하는가
+- Service Anchor가 `0..ServiceCapacity-1`을 연속 제공하는가
+- Anchor `Type + Index` 조합이 고유하고 Local Scale이 1인가
+- `AllowedZoneIds`에 `NAME_None`이나 중복이 없는가
+- `PlacementObstacleHeightCm`이 유한하고 10 cm 이상인가
 
-P0 내장 Preset:
+### 7.4 내장 시설 Preset
 
-| Preset | Footprint | Queue | Service | Duration |
-|---|---:|---:|---:|---:|
-| FoodTruckBasic | 600×300 Cells (6m×3m) | 12명 | 1 | 6초 |
-| ToiletBasic | 400×400 Cells (4m×4m) | 8명 | 2 | 4초 |
-
-두 시설 모두 Clearance 100 Cells(실제 1m), Slot 115cm, 도착 반경 25cm, Nav 투영 30cm,
-Blocked 5초, Repath 2회다.
-
-### FoodTruckBasic 완전 저작 예시
-
-아래 값은 C++ Accepted baseline과 동일하다.
-
-```yaml
-SchemaVersion: 2
-FacilityDefinitionId: FD_Booth_FoodTruckBasic
-DisplayName: Basic Food Truck
-Category: Booth
-FootprintSizeCells: [600, 300]
-ClearanceCells: 100
-PlacementObstacleHeightCm: 250
-AllowedZoneIds: []
-QueueReservedRects:
-  - { Min: [500, 300], Max: [600, 900] }
-  - { Min: [0, 800],   Max: [500, 900] }
-  - { Min: [0, 300],   Max: [100, 800] }
-QueueSplinePointsCm:
-  - [250, 200, 0]
-  - [250, 750, 0]
-  - [-250, 750, 0]
-  - [-250, 200, 0]
-QueueRules:
-  MaxWaitingAgents: 12
-  ServiceCapacity: 1
-  ServiceDurationSeconds: 6
-  AbandonAfterSeconds: 30
-  SlotSpacingCm: 115
-  SlotArrivalToleranceCm: 25
-  NavigationProjectionExtentCm: 30
-  BlockedTimeoutSeconds: 5
-  MaxRepathAttempts: 2
-Anchors:
-  - { Type: Entry,   Index: 0, LocationCm: [250, 200, 0],  Yaw: -90 }
-  - { Type: Service, Index: 0, LocationCm: [250, 150, 0],  Yaw: -90 }
-  - { Type: Exit,    Index: 0, LocationCm: [-250, 200, 0], Yaw: 90 }
-ExternalKeys:
-  InstallCostKey: Cost.FoodTruck.Basic
-  RevenueRuleKey: Revenue.FoodTruck.Basic
-  ExperienceEffectKey: Experience.FoodTruck.Basic
-```
-
-Rect 좌표는 시설 로컬 1cm Cell이고 `Max`는 포함하지 않는다. `VisualMesh`는 프로젝트가
-Soft Reference로 지정하며 논리 Spec 검증과 독립이다.
-
-추가 Hypothesis Preset:
-
-| Preset | ID / Category | Footprint | Wait / Service | Duration / Abandon | Key suffix |
+| Preset | Definition ID | 크기(cm) | 대기 / 서비스 | 서비스 시간 | 상태 |
 |---|---|---:|---:|---:|---|
-| InfoBasic | `FD_Info_Basic` / Info | 300×200 (3m×2m) | 6 / 1 | 4s / 25s | `Info.Basic` |
-| RestBasic | `FD_Rest_Basic` / Rest | 400×300 (4m×3m) | 4 / 2 | 12s / 60s | `Rest.Basic` |
-| PerformanceBasic | `FD_Performance_Basic` / Performance | 800×500 (8m×5m) | 16 / 2 | 10s / 45s | `Performance.Basic` |
-| SafetyBasic | `FD_Safety_Basic` / Safety | 400×300 (4m×3m) | 6 / 2 | 8s / 15s | `Safety.Basic` |
-| PhotoSpotBasic | `FD_PhotoSpot_Basic` / PhotoSpot | 500×300 (5m×3m) | 8 / 1 | 5s / 25s | `PhotoSpot.Basic` |
+| FoodTruckBasic | `FD_Booth_FoodTruckBasic` | 600 x 300 | 12 / 1 | 6초 | 승인 기준 |
+| ToiletBasic | `FD_Toilet_Basic` | 400 x 400 | 8 / 2 | 4초 | 승인 기준 |
+| InfoBasic | `FD_Info_Basic` | 300 x 200 | 6 / 1 | 4초 | Prototype 가설 |
+| RestBasic | `FD_Rest_Basic` | 400 x 300 | 4 / 2 | 12초 | Prototype 가설 |
+| PerformanceBasic | `FD_Performance_Basic` | 800 x 500 | 16 / 2 | 10초 | Prototype 가설 |
+| SafetyBasic | `FD_Safety_Basic` | 400 x 300 | 6 / 2 | 8초 | Prototype 가설 |
+| PhotoSpotBasic | `FD_PhotoSpot_Basic` | 500 x 300 | 8 / 1 | 5초 | Prototype 가설 |
 
-각 suffix는 `Cost.`, `Revenue.`, `Experience.` 세 prefix와 결합한다. 공통값은 Clearance 100 Cells(1m),
-Slot 115cm, 도착 25cm, Nav 30cm, Blocked 5s, Repath 2, obstacle height 250cm, 빈
-`AllowedZoneIds`다. Queue 예약 Rect·Spline·Entry/Service/Exit Anchor Data Validation은 통과했지만
-수동 개발 Slice의 `1`/`2` 선택은 FoodTruck/Toilet만 지원한다.
+공통 기본값은 Clearance 100 cm, Slot 간격 115 cm, 도착 허용 오차 25 cm,
+Navigation Projection 30 cm, Blocked Timeout 5초, 최대 재경로 2회다.
+Food Truck과 Toilet 외 수치는 측정 전 가설이므로 운영 수치로 그대로 확정하지 않는다.
 
----
+### 7.5 FacilityActor
 
-## 9. Grid와 예약 영역
+`AFFZSFacilityActor`는 다음 Component를 가진다.
 
-`UFFZSGridLibrary`의 계산은 World Actor를 탐색하지 않는 순수 함수여야 한다. Runtime 격자는
-`UFFZSDeveloperSettings::DefaultPlacementCellSizeCm = 1.0f` 상수만 사용한다. Project
-Settings의 `PlacementCellSizeCm`은 private UI readout이고 `.ini` override가 아니다.
+- Scene Root
+- 비동기 Soft Mesh를 표시하는 Visual Mesh
+- Footprint Bounds
+- Queue Area Bounds
+- Queue Spline
+- `UFFZSFacilityQueueComponent`
+- Spec Anchor에서 동적으로 만든 `UFFZSFacilityAnchorComponent` 목록
 
-1cm 좌표를 셀마다 배열과 맵에 저장하면 시설당 수십만 항목이 생기므로 권위 공간은
-직사각형/Span 기반 압축 Region으로 유지한다.
-
-```text
-FootprintRegion
-ClearanceRegions
-QueueRegions
-ReservedRegions = Normalize(Footprint ∪ Clearance ∪ Queue)
-```
-
-기존 Cell 배열 API가 남아 있더라도 소규모 디버그 물질화 경계로만 사용한다. 권위 배치,
-점유, Snapshot 검증과 fingerprint는 압축 Region을 사용해야 한다.
-
-압축 Rect는 `[Min,Max)` 반열림이다. `Max` 좌표는 점유에 포함되지 않으므로 인접 Rect가
-경계를 공유해도 겹치지 않는다. Region 면적은 `int64`로 계산한다.
-
-회전은 `QuarterTurns`를 0~3으로 정규화한다. 직사각형 시설은 90°/270°에서 X/Y가 바뀌며
-Queue·Anchor도 같은 방향으로 변환된다.
-
-시설 배치 성공 조건:
-
-- 모든 압축 Reserved Rect가 정확히 하나의 요청 Zone 안에 존재.
-- Zone Category와 `AllowedZoneIds`가 허용.
-- 지면·경사·높이 차 통과.
-- 기존 시설과 월드 충돌 없음.
-- 보호영역과 겹치지 않음.
-- 모든 Anchor와 `MaxWaitingAgents`개 Queue slot이 Nav에 투영 가능.
-- 첫 Entry에서 모든 투영점까지 동기 경로가 존재하고 partial path가 아님.
-- 외부 Policy가 허용.
-
-배치 한 번의 Region 검증에서는 대상 Zone과 다른 Zone의 변환된 Polygon·Bounds를 한 번만
-준비한다. Broad Phase로 후보를 줄인 뒤 Region과 Zone/시설/보호영역을 정확히 비교한다.
-Ground는 Cell 해상도와 분리된 기본 100cm 물리 표본 간격을 사용한다.
-
-Nav 투영 extent는 `max(1cm, min(Project NavigationProjectionExtentCm,
-Spec.QueueRules.NavigationProjectionExtentCm))`다. 현재 경로 검사는 Game Thread의 동기
-`FindPathToLocationSynchronously`이므로 Queue slot 수가 큰 데이터는 Preview 비용을 측정한다.
-Preview Debug는 개별 수십만 Cell이나 QueueSpline이 아니라 압축 Footprint·Clearance·Queue
+Actor 자체는 Tick하지 않는다. Mesh 로드 실패는 표현 실패일 뿐 점유·명령·비용 상태를 자동 Rollback하지
+않는다. 명령 수명주기 변경은 `UFFZSWorldSubsystem`이 호출한다. `UFFZSFacilityQueueComponent`도
+friend로서 Queue 상태가 바뀔 때 `HandleQueueStateChanged`를 호출하여 Drain 완료를
+`MovePending` 상태에 반영한다.
 
 ---
 
-## 10. 배치 검증 순서
+## 8. 배치 검증
 
-Preview와 Commit은 같은 단계 목록이 아니다.
+### 8.1 Preview와 실행의 차이
 
-```text
-Preview / ValidatePlacementLocal
-1. 명령 type·Phase·Facility ID·Spec
-2. 요청 Zone 존재·Category·AllowedZoneIds
-3. Footprint·Clearance·Queue·Reserved Rect와 Transform
-4. 요청 Zone 하나에만 완전히 속하는지
-5. 기존 시설 점유
-6. 보호영역
-7. Ground·경사·높이 차
-8. World Collision
-9. 모든 Anchor·Queue slot Nav 투영과 Entry 기준 full path
-10. local valid일 때 Policy PreValidate
-```
+`ValidatePlacement`는 현재 시점의 읽기 검증이다. 상태를 바꾸지 않는다.
+`ExecuteCommand`는 실행 직전에 같은 검증과 Policy를 다시 적용한다.
 
-Spec·Zone·빈 Region 같은 선행 오류는 조기 반환한다. 따라서 `Reasons`는 “모든 가능한 오류”가
-아니라 조기 반환 전까지 해당 단계에서 누적한 안정 순서 오류다.
+따라서 Preview가 초록색이어도 다음 사이에 다른 시설이 설치되거나 Revision, Phase, 외부 Policy가
+바뀌면 Commit은 실패할 수 있다.
 
-```text
-Commit / ExecuteCommand
-1. CommandId·FacilityInstanceId·fingerprint·receipt/in-flight
-2. Production Policy readiness
-3. ExpectedWorldRevision
-4. Install·Move·Remove Phase Gate
-5. Install·Move는 Preview/local + Policy PreValidate 재검증
-6. 명령별 Queue 점유·Actor 상태
-7. Policy tentative reservation
-8. 로컬 Actor·점유 변경
-9. Policy commit → Revision 증가 → event, 또는 역순 rollback
-```
+### 8.2 검증 순서
 
-Move의 Queue·상태 검사는 Preview의 Policy PreValidate 뒤 Commit 경로에서 수행되므로 초록
-Preview도 `FacilityOccupied`·`InvalidFacilityState`로 거절될 수 있다. Remove는 Queue·상태
-검사 뒤 Policy를 호출하고, lifecycle은 Policy tentative 뒤 Open 상태 적용을 시도한다.
+Install 또는 Move의 로컬 검증은 다음 순서로 진행된다.
 
-Public `EFFZSPlacementFailure` 전체:
+1. 명령 유형과 현재 Change Phase
+2. FacilityInstanceId와 Install 중복 / Move 대상 존재
+3. FacilitySpec 전체 데이터 계약
+4. 대상 Zone 존재와 Zone 데이터 계약
+5. Zone Category와 Facility `AllowedZoneIds`
+6. 회전 정규화와 Footprint·Clearance·Queue·Reserved Rect 생성
+7. 모든 Reserved Rect가 정확히 하나의 Zone에 완전히 포함되는지
+8. 기존 시설 점유와 Footprint 충돌
+9. 기존 시설 점유와 Clearance 충돌
+10. 기존 시설 점유와 Queue 충돌
+11. Protected Area 교차
+12. 지면 표본
+13. 월드 Collision Overlap
+14. Navigation 투영과 경로 연결성
+15. 로컬 검증 성공 시 등록된 Policy의 `PreValidate`
 
-```text
-None
-ZoneNotFound
-FacilityNotFound
-DuplicateZoneId
-DuplicateFacilityId
-CategoryNotAllowed
-OutsideZone
-InvalidGround
-ExcessSlope
-HeightVarianceExceeded
-PlacementCollision
-InsufficientClearance
-QueueFootprintBlocked
-ProtectedRouteBlocked
-RequiredRouteDisconnected
-AccessibilityRouteBlocked
-WrongStage
-FacilityOccupied
-InvalidFacilityState
-StaleWorldRevision
-DuplicatePayloadMismatch
-NavigationUnavailable
-NavRebuildTimeout
-DataInvalid
-ExternalPolicyRejected
-InternalError
-```
+Move 검증에서는 호출자가 넣은 Spec을 무시하고 기존 FacilityActor가 보유한 Spec으로 덮어쓴다.
+Move 요청으로 시설 정의를 몰래 바꿀 수 없도록 하기 위한 규칙이다.
 
-UI 해결 행동:
+### 8.3 지면 검사
 
-| 코드군 | 사용자에게 제시할 다음 행동 |
+`bEnableGroundChecks`가 켜져 있으면 Footprint를 `GroundSampleSpacingCm` 이하 간격으로 균등 표본화한다.
+각 표본에서 Visibility Line Trace를 위·아래로 수행한다.
+
+- 작은 시설도 최소 1개 표본 사용
+- 기본 표본 간격 100 cm
+- 모든 표본 요구 여부는 `bRequireEveryGroundSample`로 제어
+- 성공 표본이 없으면 `InvalidGround`
+- 최대 법선 경사가 설정값을 넘으면 `ExcessSlope`
+- 최고·최저 Z 차가 설정값을 넘으면 `HeightVarianceExceeded`
+- 통과하면 평균 지면 높이로 Placement Transform Z를 보정
+
+1 cm 점유 해상도와 물리 Trace 밀도는 의도적으로 분리되어 있다.
+
+### 8.4 월드 충돌
+
+`bEnableWorldCollisionChecks`가 켜져 있으면 각 압축 Rect를 Box Overlap으로 검사한다.
+
+- Footprint 충돌 → `PlacementCollision`
+- Clearance 충돌 → `InsufficientClearance`
+- Queue 충돌 → `QueueFootprintBlocked`
+
+Visibility Channel을 기준으로 하며 GameplayZone, ProtectedArea, FacilityActor는 이 물리 검사에서
+제외된다. 시설 간 충돌은 별도 압축 점유 Map이 판정하고, ProtectedArea는 별도 OBB 규칙이 판정한다.
+
+### 8.5 Navigation 검사
+
+`bEnableNavigationProjectionChecks`가 켜져 있으면 다음을 검사한다.
+
+1. Navigation System 존재 여부
+2. 모든 Entry·Service·Exit Anchor를 Nav에 투영할 수 있는지
+3. 최대 대기 인원의 모든 Queue Slot을 Nav에 투영할 수 있는지
+4. 첫 Entry에서 나머지 Anchor와 Queue Slot까지 완전한 비부분 경로가 있는지
+
+투영 Extent는 전역 설정과 Facility Queue 규칙 중 작은 값에 1 cm 하한을 적용한다. Navigation
+System이 없을 때 거부할지는 `bFailWhenNavigationSystemIsUnavailable`로 정한다.
+
+이 검사는 현재 Nav 데이터에서의 동기 투영·경로 확인이다. 설치 후 비동기 NavMesh 재빌드, Timeout,
+취소, AI 이동은 외부 Navigation Policy가 담당해야 한다.
+
+---
+
+## 9. Command와 시설 수명주기
+
+시설의 `Install`, `Move`, `Remove`, `Open`, `Close`, `EmergencyClose` 권위 변경은
+`UFFZSWorldSubsystem::ExecuteCommand` 한 경로로 보낸다.
+FacilityActor의 Transform이나 QueueComponent 내부 배열을 직접 수정하면 Registry, 점유, Policy,
+영수증, 이벤트가 서로 어긋날 수 있다.
+
+### 9.1 Command 데이터
+
+`FFFZSCommand`은 다음 정보를 가진다.
+
+| 필드 | 역할 |
 |---|---|
-| NotFound·Duplicate·DataInvalid | 대상 선택·Stable ID·Data Asset 오류를 수정 |
-| Outside·Ground·Collision·Clearance·Route | Preview 표시 영역으로 이동·회전하거나 원인 자산 수정 |
-| `WrongStage` | `InitialSetup/Reconfigure`에서 다시 실행 |
-| `FacilityOccupied/InvalidFacilityState` | Close 후 Waiting·Service·Exiting이 0이 될 때까지 Drain |
-| `StaleWorldRevision` | 최신 Read Model을 다시 읽고 새 확인·명령으로 재시도 |
-| `DuplicatePayloadMismatch` | 기존 ID를 재사용하지 말고 새 `CommandId` 발급 |
-| Navigation·External·Internal | 프로젝트 Owner 로그와 Policy 결과를 표시하고 안전하게 중단 |
+| `CommandId` | 멱등 재시도의 고유 Key |
+| `TransactionId` | 여러 외부 작업을 연관시키는 상위 Transaction ID |
+| `ExpectedWorldRevision` | 낙관적 동시성 조건. -1이면 최신 Revision 허용 |
+| `Type` | Install, Move, Remove, Open, Close, EmergencyClose |
+| `FacilityInstanceId` | 대상 또는 새 시설 GUID |
+| `FacilitySpec` | Install의 전체 Spec. Move에서는 기존 Spec 사용 |
+| `ZoneId` | Install·Move 대상 Zone |
+| `Placement` | Cell 원점과 사분면 회전 |
 
-`NavRebuildTimeout`은 현재 enum·현지화 문구만 있고 Runtime emit 경로는 없다.
+`MakeInstallCommand`는 새 CommandId, TransactionId, FacilityInstanceId를 만들고 회전을 정규화한다.
+다른 명령을 직접 만들 때도 CommandId와 TransactionId가 모두 유효해야 한다.
 
-UI는 C++ `Message` 문자열로 분기하지 않고 Enum으로 분기한 뒤 현지화 문구를 표시한다.
+### 9.2 Phase 규칙
 
----
+| Phase | Install | Move | Remove | Open / Close / EmergencyClose |
+|---|---:|---:|---:|---:|
+| InitialSetup | 허용 | 허용 | 허용 | 허용 |
+| Reconfigure | 허용 | 허용 | 허용 | 허용 |
+| MorningCheck | 거부 | 거부 | 거부 | 허용 |
+| LiveOperation | 거부 | 거부 | 거부 | 허용 |
+| EveningSettlement | 거부 | 거부 | 거부 | 허용 |
 
-## 11. 명령과 낙관적 동시성
+`SetChangePhase`는 Phase만 바꾼다. 그 자체로 `WorldRevision`을 증가시키거나
+`OnWorldChanged`를 방송하지 않는다.
 
-시설 설치·이동·철거·Open/Close 같은 수명주기의 공개 상태 변경 경계:
+### 9.3 Facility 상태 전이
 
-```cpp
-FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(
-    const FFFZSCommand& Command);
-```
+~~~mermaid
+stateDiagram-v2
+    [*] --> Validated: Install
+    Validated --> Active: Open
+    Closed --> Active: Open
+    MovePending --> Active: Open
+    Planned --> Validated: Move
+    Validated --> Validated: Move
+    Closed --> Validated: Move
+    MovePending --> Validated: Move
+    Planned --> Removed: Remove
+    Validated --> Removed: Remove
+    Closed --> Removed: Remove
+    MovePending --> Removed: Remove
+~~~
 
-Zone·보호영역 등록, Phase, Policy, Queue 보고도 반드시 `UFFZSWorldSubsystem`의 명명된 facade를
-사용한다. 모든 변경은 Game Thread에서 실행하며 Command·Restore·Policy Callback 재진입 중이면
-fail-closed한다.
+상태 의미:
 
-여기서 Subsystem의 “권위”는 단일 로컬 논리 소유자를 뜻하며 Unreal 네트워크 Authority 기능이
-아니다. 플러그인에는 Replication, RPC, `HasAuthority` 분기가 없다. 멀티플레이 프로젝트는
-Server가 명령을 소유하고 결과·Read Model을 복제해야 하며 Client가 독립 실행하면 안 된다.
-`WorldRevision`은 성공한 `ExecuteCommand`에서만 증가한다. Phase, Population, Queue 가입·
-도착·차단·재검증 같은 facade 변경은 현재 Revision을 올리지 않는다.
+| 상태 | 의미 |
+|---|---|
+| Planned | 아직 검증·배치 확정 전인 상태 |
+| Validated | 설치 또는 이동이 확정됐지만 영업하지 않는 상태 |
+| Active | Queue 참가와 서비스가 가능한 상태 |
+| Closed | 영업 중지. Emergency 후 또는 일반 Drain 진행 중일 수 있음 |
+| MovePending | 일반 Close 후 Queue가 완전히 비어 이동·제거 가능한 상태 |
+| Removed | 논리 제거 후 Actor 파괴 직전 상태 |
 
-Command:
+`CanMoveOrRemove`는 Queue의 Waiting·ActiveServices·Exiting이 모두 비어 있고 상태가
+Planned, Validated, Closed, MovePending 중 하나일 때만 true다. `Open`만 입력 상태를
+Validated, Closed, MovePending으로 제한한다. 현재 `Close`와 `EmergencyClose`는 Registry에
+존재하는 모든 비-Removed 상태에서 실행된다. 위 그림은 상태 제한이 명확한 Install·Open·Move·
+Remove만 표시하며, Close 계열의 Queue 연동 결과는 아래 명령 설명을 따른다.
 
-```text
-CommandId
-TransactionId
-ExpectedWorldRevision
-Type
-FacilityInstanceId
-FacilitySpec
-ZoneId
-Placement.OriginCell
-Placement.QuarterTurns
-```
+### 9.4 명령별 원자적 처리
 
-`BuildCommandFingerprint`의 “canonical”은 결정적 직렬화 형식이라는 뜻이다.
-`QuarterTurns`만 정규화하고 Queue Rect/Cell/Spline, Anchor, `AllowedZoneIds` 배열 순서는
-그대로 identity에 포함한다. 의미가 같아도 배열 순서를 바꾸면 같은 `CommandId`에서
-`DuplicatePayloadMismatch`가 되므로 새 ID를 쓴다. durable 비교는 전체 fingerprint이며
-CRC32는 진단용일 뿐 권위 비교값이 아니다.
+#### Install
 
-멱등성:
+1. 배치와 Policy 사전 검증
+2. External Policy 임시 적용
+3. `AFFZSFacilityActor` Spawn
+4. Spec·Zone·Placement로 초기화
+5. Registry와 압축 점유 등록
+6. Policy Commit
+7. Revision 증가, Receipt 저장, 이벤트 방송
 
-- 새 `CommandId`: 정상 실행.
-- 같은 ID·같은 fingerprint: 저장된 원래 결과 반환, Revision·이벤트 중복 없음.
-- 같은 ID·다른 fingerprint: `DuplicatePayloadMismatch`.
-- `ExpectedWorldRevision >= 0`이고 현재와 다름: `StaleWorldRevision`.
-- `-1`은 최신 Revision 허용이므로 경쟁 상태 검증이 필요한 UI에서는 사용을 최소화한다.
-- 유효 ID와 재진입 Guard를 통과한 뒤의 성공·실패는 모두 durable receipt가 된다.
-- 실패 원인을 수정했어도 같은 `CommandId`는 실패를 replay하므로 새 ID로 다시 요청한다.
+Actor 생성·초기화·등록 중 하나라도 실패하면 생성 Actor를 파괴하고 적용된 Policy를 역순 Rollback한다.
 
-명령 영수증이 Snapshot에 저장되므로 Save/Load 뒤 replay도 같은 결과를 내야 한다.
-`CommandId` 재사용 정책과 receipt 보존 기간은 프로젝트 Gateway가 명시한다.
+#### Move
 
-상세 상태 전이는 8절 표를 따른다. Phase Gate는 별도다.
+1. `ValidatePlacement`에서 대상 조회, 기존 Spec 기반 로컬 배치 검증, Policy `PreValidate`
+2. `ExecuteMove`에서 Queue 비점유와 Facility 상태 확인
+3. Policy `ApplyTentative`
+4. 이전 Zone·Placement·Transform·점유 보관
+5. 이전 점유 해제
+6. 새 배치 적용과 점유 등록
+7. 실패하면 이전 상태·점유 복원 후 Policy Rollback
+8. 성공하면 Policy Commit과 Revision 증가
 
-| `CurrentPhase` | Install·Move·Remove | Lifecycle 명령 |
-|---|---|---|
-| `InitialSetup`, `Reconfigure` | 허용; 나머지 검증 적용 | 모든 Phase에서 허용 |
-| `MorningCheck`, `LiveOperation`, `EveningSettlement` | `WrongStage` | 모든 Phase에서 허용 |
+#### Remove
 
-Lifecycle 중 Open만 `Validated/Closed/MovePending` 상태 제한이 있다. Close/EmergencyClose는
-등록된 non-`Removed` 시설이면 반복 호출도 성공하고 Revision을 증가시킬 수 있다.
+Queue가 완전히 비고 이동·제거 가능 상태여야 한다. Policy Transaction이 성공하면 Registry와 점유를
+해제하고 Actor를 Removed로 만든 뒤 성공 이벤트 정보를 준비하고 Actor를 파괴한다.
 
-`SetChangePhase`는 유효 enum이면 임의 단계 간 전이를 허용하며 순서 그래프를 강제하지 않는다.
-단계 순서·저장·UI 갱신·멀티플레이 전파는 프로젝트 Stage Owner 책임이다.
+#### Open
 
----
+Validated, Closed, MovePending에서 Active로 전환하고 Queue를 연다. 다른 상태는
+`InvalidFacilityState`다.
 
-## 12. 원자적 World Change와 Policy
+#### Close
 
-`IFFZSExternalPolicy` 도메인:
+현재 구현은 Active 전용으로 제한하지 않는다. 등록된 비-Removed 시설을 Closed로 만들고 신규 참가를
+막은 뒤 기존 Waiting, Service, Exiting을 계속 진행하는 Drain을 시작한다. Queue가 이미 비어 있으면
+같은 호출에서 바로 MovePending이 되고, 점유가 있으면 모두 해제된 뒤 MovePending이 된다.
 
-```text
-Navigation
-Economy
-SimulationTime
-UserInterface
-Safety
-Experience
-Custom
-```
+#### EmergencyClose
 
-Production에서는 각 필수 도메인에 정확히 하나의 Adapter를 등록하고
-`ValidateIntegrationReadiness`를 실행한다.
-`bRequireProductionPolicyDomains`의 기본값은 `false`이므로 이 Gate는 운영 통합에서
-명시적으로 켠다. 실행 목록은 `Domain + Name`으로 안정 정렬한 snapshot이며 중간 등록·해제가
-현재 순서를 바꾸지 않는다.
-
-Subsystem은 Provider를 `TWeakObjectPtr`로만 보관하므로 등록이 GC root가 아니다. 프로젝트
-Owner가 `UPROPERTY` strong reference를 수명 전체에 유지한다. Policy Name은 전역 unique이고
-non-`Custom` Domain은 도메인당 하나만 허용하며 `Custom`만 복수 등록할 수 있다. 정렬 key인
-Name·Domain은 등록 후 바꾸지 말고 변경하려면 안전한 시점에 unregister/register한다. Provider가
-소멸하면 readiness는 오류를 내며 Production Gate가 꺼진 transaction에서는 해당 항목이 건너뛰어질
-수 있으므로 운영에서는 fail-open 상태를 허용하지 않는다.
-
-호출 계약:
-
-```text
-PreValidateFFZoneSystemChange
-  읽기 전용. 여러 번 호출돼도 외부 상태 무변경.
-
-ApplyTentativeFFZoneSystemChange
-  실패 가능한 예약·임시 적용. 부분 적용 후 실패할 수 있음.
-
-CommitFFZoneSystemChange
-  실패하면 안 됨. 실패 가능 작업은 Tentative로 이동.
-
-RollbackFFZoneSystemChange
-  부분 적용 뒤에도 안전하고 여러 번 호출해도 같은 결과.
-```
-
-전체 순서:
-
-```text
-local Validate
-→ Domain + Name 안정 정렬 Policy snapshot
-→ 모든 Policy PreValidate
-→ 플러그인 상태 보존
-→ Policy별 ApplyTentative
-→ 월드·점유·시설 임시 적용
-→ 사후 무결성 확인
-→ 성공: Policy Commit + WorldRevision 증가 + OnWorldChanged
-→ 실패: 적용 Policy 역순 Rollback + 플러그인 상태 원복
-```
-
-실패한 Policy도 부분 적용했을 수 있으므로 Rollback 대상에 포함하고 실제 적용의 역순으로
-되돌린다. Callback 안에서 Zone·Protected Area·Phase·Policy 등록·Queue·Command·Snapshot
-Restore를 다시 변경하려는 호출은 `false` 또는 거절 결과로 끝난다. Adapter는 후속 쓰기를
-다음 안전한 Tick/작업 Queue로 넘긴다.
-
-Preview도 `PreValidate`를 반복 호출하므로 이 함수는 빠르고 부작용이 없어야 한다. Policy
-Callback 안에서 `BuildReadModel`이나 Snapshot을 캡처하면 tentative 중간 상태를 볼 수
-있으므로 금지한다.
-
-Economy 권장 구현:
-
-```text
-PreValidate: Key·잔액·해금 조회
-ApplyTentative: 비용 예약
-Commit: 예약을 실제 거래로 확정
-Rollback: 예약 해제
-```
-
-UI Policy는 원본 상태를 수정하기보다 입력 권한·확인 흐름을 검증하고 결과 이벤트를 소비한다.
+현재 구현은 Active 전용으로 제한하지 않는다. Facility를 Closed로 만들고 Waiting과 Service 항목을
+즉시 취소한다. 실제 QueueAgent Actor가 있으면 Exit 이동을 요청하고,
+Actor가 없는 논리 항목은 즉시 해제한다. 물리 Agent가 Exit에 도착하기 전에는 Facility가 Closed여도
+Queue 소유권이 남아 있어 이동·제거할 수 없다.
 
 ---
 
-## 13. Queue 상태와 불변식
+## 10. 멱등성, Revision, 이벤트
 
-Queue State:
+### 10.1 Command 영수증
 
-- `Open ↔ Full`: Waiting 수로 다시 계산한다.
-- Facility가 `Active`일 때만 `Blocked`를 설정할 수 있다. 해제하면 과거 상태로 복귀하는 것이
-  아니라 drain intent와 현재 Waiting 수로 `Draining/Closed/Open/Full`을 재계산하고 Service를 채운다.
-- 일반 Close는 신규 가입을 막고 `Draining → Closed`로 간다.
-- EmergencyCancel은 Actor 없는 Agent만 있으면 즉시 `Closed`다. 물리 Agent가 있으면 모두
-  `Exiting`으로 유지한 `Draining` 상태이며 Exit 도착 뒤 `Closed`가 된다.
+플러그인은 `CommandId`를 Key로 전체 의미 Payload 지문과 결과를 저장한다.
 
-Facility State와 Queue State는 서로 다른 값이므로 UI에서 하나의 상태로 합치지 않는다.
+- 같은 CommandId + 같은 Payload: 저장 결과를 반환하고 `bWasDuplicateReplay=true`
+- 같은 CommandId + 다른 Payload: `DuplicatePayloadMismatch`
+- Replay는 새 Revision, 새 Actor, 새 비용, 새 이벤트를 만들지 않음
+- 성공뿐 아니라 정식 실행 경계에서 확정된 실패 결과도 Receipt로 저장
 
-Queue Agent 흐름:
+따라서 데이터나 상황을 수정한 뒤 다시 시도할 때는 새 CommandId를 사용해야 한다.
 
-```text
-Join
-→ Queue Slot 이동
-→ Slot 도착 보고
-→ FIFO 선두와 빈 Service 선택
-→ Service Anchor 이동
-→ Service 도착 보고 후 timer 시작
-→ 완료 또는 취소
-→ Exit Anchor 이동
-→ Exit 도착 보고
-→ 전역 소유권 해제
-```
+지문에는 TransactionId, ExpectedWorldRevision, Type, Facility ID, Zone, Placement, Spec의 의미 데이터가
+들어간다. CommandId 자체는 Lookup Key이므로 지문에서 제외된다.
 
-물리 Actor가 없는 Agent는 완료 시 즉시 해제될 수 있지만, Actor가 있으면 Exit 도착까지 소유권을 유지한다.
+### 10.2 낙관적 동시성
 
-불변식:
+`ExpectedWorldRevision >= 0`이면 현재 Revision과 정확히 같아야 한다. 다르면
+`StaleWorldRevision`이다. `-1`은 실행 시점 최신 상태를 허용한다.
 
-1. 한 Agent는 전역 Queue Registry에 최대 한 번 존재한다.
-2. Waiting 순서는 가입 순서이며 Queue Index는 0부터 연속이다.
-3. 같은 Simulation Step의 순서는 JoinSequence로 결정한다.
-4. Active Service 수는 Capacity를 넘지 않는다.
-5. Service 중 Agent는 Waiting에 동시에 존재하지 않는다.
-6. Draining·Closed·Blocked·Full은 신규 가입을 받지 않는다.
-7. 이동 실패를 도착으로 처리하지 않는다.
-8. Exit 이동 중에도 Facility 점유와 전역 Queue 소유권을 유지한다.
-9. Service Anchor 도착 전에는 서비스 시간을 시작하지 않는다.
-10. Move/Remove는 Waiting·Service·Exiting 중 하나라도 있으면 거절한다.
-11. Service 배정은 도착한 FIFO 선두만, 비어 있는 가장 낮은 Service Index부터 한다.
-12. Service 완료 통계는 물리 Exit가 끝나기 전에 증가할 수 있다.
-13. Blocked는 신규 가입·새 Service 배정만 막고 기존 대기 포기·서비스 시간은 계속 진행한다.
-14. 이동 실패는 설정된 Repath 한도까지 재요청하고 초과 시 안전하게 해제한다.
+`WorldRevision`은 일반 실행 중 성공한 다음 명령에서만 1 증가한다. `RestoreWorldSnapshot`은 예외로
+Snapshot의 저장값으로 교체하므로 값이 낮아질 수도 있다.
 
-Queue Component의 공개 API는 조회 전용이고, 가입·도착·서비스·Exit·Drain·Cancel·Restore 같은
-mutation은 private다. `AFFZSFacilityActor::GetQueueComponent()`도 const 포인터만 반환한다.
-게임 코드는 `UFFZSWorldSubsystem::JoinFacilityQueue`, 도착/실패 보고, Rebind facade를 사용하고,
-통로 차단은 Facility State가 `Active`일 때만
-`SetFacilityQueueBlocked(FacilityInstanceId, bBlocked)`로 변경할 수 있다. Subsystem만
-friend 경로로 mutable Queue에 접근한다. Queue State 변경은 public delegate 구독 여부와 무관하게
-소유 Facility의 불변식을 먼저 갱신한 뒤 알림을 방송한다.
+- Install
+- Move
+- Remove
+- Open
+- Close
+- EmergencyClose
 
----
+다음 변경은 Revision을 증가시키지 않는다.
 
-## 14. Queue 시간과 현재 구현 주의
+- Preview·Validate
+- Phase 변경
+- Zone·Protected Area 등록/해제
+- Population·Density 갱신
+- Queue 내부 진행과 참가·해제
+- Policy 등록/해제
 
-현재 Component는 일반 플레이에서 Component Tick으로, 테스트·저장 시나리오에서는
-`AdvanceSimulation(DeltaSeconds)`로 진행할 수 있다. 기본
-`QueueSimulationTickIntervalSeconds=0.1`이 Component TickInterval을 정하며 `0`은 매 프레임이다.
-Agent별 판단 Tick은 없다.
+따라서 WorldRevision은 “월드의 모든 변화 버전”이 아니라 “성공한 시설 Command 버전”이다.
 
-TickInterval은 Component 초기화 때 한 번 읽는다. 실행 중 Settings를 바꿔도 이미 존재하는
-Queue Component에는 자동 반영되지 않으므로 재생성 또는 명시적 갱신 경로가 필요하다.
+### 10.3 World 이벤트
 
-필수 통합 조건:
+`OnWorldChanged`는 성공 Command에 대해 다음 정보를 전달한다.
 
-- Queue가 사용하는 Delta는 권위 있는 게임 Simulation Time과 일치해야 한다.
-- Pause 중 Delta가 0이어야 한다.
-- 배속은 프로젝트 시간 정책과 같은 배율을 사용해야 한다.
-- 서비스 완료·동률 순서가 프레임 분할에 따라 달라지면 안 된다.
-- 한 호출은 최대 4,096개 event boundary만 처리하며 상한 이후 남은 Delta는 처리하지 않는다.
-- Blocked 중에도 기존 Waiting의 포기 시계와 Active Service 시계가 진행됨을 UI가 알려야 한다.
+- EventId
+- CommandId
+- TransactionId
+- Command Type
+- FacilityInstanceId
+- PreviousZoneId
+- NewZoneId
+- 확정 WorldRevision
 
-현재 Snapshot은 대기·서비스 elapsed, JoinSequence, `CurrentPhase`, `bDrainRequested`를
-보존하지만 Close 원인은 보존하지 않는다. 상세 제약은 17절을 따른다. World Change 이벤트는
-`EventId`를 발급하지만 Queue delegate와의 durable correlation, `ParentEventId`, 외부
-authoritative `Day/Stage/PhaseElapsed`는 프로젝트 Telemetry와 Save Owner가 보강해야 한다.
+이 이벤트는 로컬 변경, Policy Commit, Receipt 준비가 끝난 뒤 방송된다.
+
+`OnPlacementRejected`는 정상 Command 실행 경계에서 최종 실패했을 때 원본 Command와 Result를
+전달한다. 다만 Game Thread 위반, 잘못된 필수 ID, 복원/Policy 재진입, 기존 Receipt Replay나
+Payload Mismatch처럼 함수 초입에서 즉시 반환하는 경우에는 이 Delegate가 방송되지 않는다.
+
+이벤트 Callback 동안에도 현재 Command Guard가 유지된다. 구독자가 동기적으로 새 Command를 실행하면
+거부되므로 다음 Frame이나 별도 안전한 진입점으로 예약해야 한다.
 
 ---
 
-## 15. `IFFZSQueueAgent` 계약
+## 11. External Policy Transaction
 
-필수 Interface 함수:
+플러그인은 실제 Economy, Simulation Time, 운영 UI, Safety 공식 등을 구현하지 않는다.
+대신 `IFFZSExternalPolicy`로 각 외부 시스템을 같은 Command Transaction에 참여시킨다.
 
-```text
-GetFFZoneSystemAgentId
-OnFFZoneSystemQueueJoined
-OnFFZoneSystemQueueIndexChanged
-OnFFZoneSystemServiceAssigned
-OnFFZoneSystemServiceStarted
-OnFFZoneSystemExitRequested
-OnFFZoneSystemQueueReleased
-```
+### 11.1 Policy Domain
 
-NPC Adapter 책임:
+- Navigation
+- Economy
+- SimulationTime
+- UserInterface
+- Safety
+- Experience
+- Custom
 
-- Stable ID 생성·저장·복원.
-- Queue Slot, Service, Exit로 실제 비동기 MoveTo.
-- 성공 시 정확한 위치를 World Subsystem에 보고.
-- 실패 시 `ReportQueueMovementFailed` 호출.
-- 순간이동 없이 안전한 Exit·재선택.
-- Load 후 새 Actor를 `RebindQueueAgentActor`로 연결.
+Policy 이름은 전체 Registry에서 고유해야 한다. Custom이 아닌 Domain은 Domain당 하나만 등록할 수 있다.
+Custom은 이름이 다르면 여러 개 등록할 수 있다.
 
-Queue는 Character·Controller·StateTree를 직접 참조하지 않는다. StateTree를 쓰더라도
-프로젝트 Adapter 내부에서 Interface 이벤트를 상태 전환으로 번역한다.
+실행 순서는 등록 호출 순서가 아니라 `Domain enum 순서 -> PolicyName 사전순`으로 정렬된다.
 
----
+### 11.2 Transaction 순서
 
-## 16. Read Model과 UI 경계
+아래 그림은 정책 단계의 개념 순서다. 로컬 상태 검사의 위치는 명령별로 다르며, 특히 Move는
+Placement와 Policy `PreValidate` 뒤에 Queue 점유·Facility 상태를 확인한다.
 
-`BuildReadModel`은 UI·디버그가 원본 Actor 배열을 순회하지 않도록 Snapshot을 제공한다. 최상위 `FFFZSReadModel::WorldRevision`으로 화면이 어떤 월드 버전을 읽었는지 비교한다.
+~~~mermaid
+sequenceDiagram
+    participant C as Caller
+    participant W as WorldSubsystem
+    participant P as External Policies
+    participant L as Local Facility State
 
-Zone:
+    C->>W: ExecuteCommand
+    W->>W: Local validation
+    W->>P: PreValidate (read only)
+    P-->>W: Allow / Reject
+    W->>P: ApplyTentative
+    P-->>W: Reserved / Reject
+    alt 로컬 적용 성공
+        W->>L: Install / Move / Remove / Lifecycle
+        W->>P: Commit (no-fail)
+        W-->>C: Success + Revision
+    else 임시 적용 또는 로컬 적용 실패
+        W->>P: Rollback in reverse order
+        W-->>C: Failure
+    end
+~~~
 
-```text
-ZoneId
-SoftCapacity
-ReportedPopulation
-DensityRatio
-DensityState
-```
+계약:
 
-Facility:
+- `PreValidate`는 외부 상태를 변경하지 않는다.
+- `ApplyTentative`에서 실패 가능한 예약을 모두 수행한다.
+- ApplyTentative가 실패한 Policy도 부분 적용했을 수 있으므로 Rollback 대상이다.
+- `Commit`은 실패하지 않아야 한다.
+- `Rollback`은 역순으로 호출되며 여러 번 호출해도 안전한 멱등 구현이어야 한다.
+- Callback은 짧고 동기적으로 끝내며, 내부에서 새 FFZS Command나 Registry 변경을 시작하지 않는다.
 
-```text
-FacilityInstanceId
-FacilityDefinitionId
-ZoneId
-Category
-State
-NeedsRelocation
-QueueState
-WaitingCount
-ActiveServiceCount
-AverageCompletedWaitSeconds
-```
+`bRequireProductionPolicyDomains=true`이면 Custom을 제외한 6개 Domain이 모두 준비되지 않은 Command를
+`ExternalPolicyRejected`로 차단한다. 기본값은 독립 Prototype을 위해 false다.
 
-UI는 Read Model을 수정하지 않는다. 버튼은 Command Request를 만들고, 성공·실패 결과와
-OnWorldChanged/OnPlacementRejected 이벤트를 소비한다. 플러그인은 운영 UMG 자산을 포함하지
-않는다. `Source/FestaFiesta/FFZoneSystemPlaytest/`의 C++ Widget은 개발 검증 Slice이며
-Shipping에서는 비활성화된다.
-
-반면 플러그인 `AFFZSPlacementPreviewActor`의 `bDrawDebugCells` 기본값은 `true`이고
-Shipping compile guard가 없다. 운영 빌드는 Preview Actor를 생성하지 않거나 Debug Draw를
-명시적으로 끄고 패키지 Smoke로 확인한다.
-
-권장 갱신:
-
-- 배치 Preview는 Cell·회전·Spec·Revision 변경 때만.
-- 시설·Queue 패널은 상태 변경 이벤트 또는 낮은 주기 Snapshot.
-- Density UI는 Crowd 표본 주기와 맞춤.
-- 디버그 Draw와 상세 로그는 Development/Editor에서만.
+Policy Registry는 약한 참조를 사용하므로 Host 프로젝트가 Provider 객체의 수명을 별도로 유지해야 한다.
 
 ---
 
-## 17. 저장·복원 경계
+## 12. 결정론적 FIFO Queue
 
-`FFFZSWorldSnapshot` 현재 SchemaVersion은 `4`다. `RestoreWorldSnapshot`은 알려진 100cm
-Schema 3 형식만 검사 후 메모리상 Schema 4로 변환한다. Schema 2에는 `CurrentPhase`가 없어
-같은 명령 허용 상태를 재구성할 수 없으므로 거절한다.
+`UFFZSFacilityQueueComponent`는 시설 하나의 Waiting, Service, Exit 흐름을 소유한다.
+Facility와 WorldSubsystem을 제외한 코드는 내부 배열을 직접 바꿀 수 없다.
+
+### 12.1 Queue 규칙
+
+| 필드 | 기본값 | 의미 |
+|---|---:|---|
+| `MaxWaitingAgents` | 12 | Waiting 배열 최대 인원 |
+| `SlotSpacingCm` | 115 cm | Queue Spline 위 Slot 간격 |
+| `ServiceCapacity` | 1 | 동시 Service Slot 수 |
+| `ServiceDurationSeconds` | 4초 | 실제 Service 도착 후 처리 시간 |
+| `AbandonAfterSeconds` | 30초 | Waiting 포기 시간. 0이면 자동 포기 없음 |
+| `SlotArrivalToleranceCm` | 25 cm | Queue·Service·Exit 도착 XY 허용 오차 |
+| `NavigationProjectionExtentCm` | 30 cm | Queue 이동 목표 Nav 투영 범위 |
+| `BlockedTimeoutSeconds` | 5초 | Queue 전체 재경로 요청 간격 |
+| `MaxRepathAttempts` | 2 | Queue/Agent별 최대 재경로 횟수 |
+
+Waiting 정원은 Active Service와 Exiting 인원을 포함하지 않는다. 전역 소유권은 세 단계 모두에서 유지된다.
+
+### 12.2 Queue 상태
+
+| 상태 | 신규 참가 | 기존 흐름 | Tick |
+|---|---:|---:|---:|
+| Open | 허용 | 진행 | 켜짐 |
+| Full | 거부 | 진행 | 켜짐 |
+| Draining | 거부 | 자연 종료 | 켜짐 |
+| Blocked | 거부 | 신규 Service 배정 정지. 기존 Service 완료·Waiting 포기·재경로 시간은 진행 | 켜짐 |
+| Closed | 거부 | 없음 | 꺼짐 |
+
+`SetBlocked(true)`는 이전 Open, Full 또는 Draining 상태를 보존한다. Blocked를 해제하면 Drain 의도가
+있으면 Draining/Closed로, 없으면 Open/Full로 돌아간다.
+
+### 12.3 Agent 흐름
+
+~~~mermaid
+stateDiagram-v2
+    [*] --> Waiting: Join
+    Waiting --> Waiting: Queue Slot 이동·도착
+    Waiting --> ServiceAssigned: FIFO 선두 + 빈 Service
+    ServiceAssigned --> InService: Service Anchor 도착 보고
+    InService --> Exiting: Service 시간 완료
+    Waiting --> Exiting: 포기·이탈·취소
+    ServiceAssigned --> Exiting: 이탈·취소
+    Exiting --> Released: Exit Anchor 도착
+    Released --> [*]
+~~~
+
+세부 규칙:
+
+1. Join 시 새 TicketId와 단조 증가 `JoinSequence`를 발급한다.
+2. Waiting 배열은 JoinSequence 순서의 절대 FIFO다.
+3. 각 Agent는 현재 QueueIndex Slot에 도착했다고 보고해야 한다.
+4. 뒤 Agent가 먼저 도착해도 앞 Agent를 추월할 수 없다.
+5. FIFO 선두가 도착했고 Service Slot이 비면 가장 낮은 ServiceIndex를 배정한다.
+6. Service 배정만으로 타이머는 흐르지 않는다.
+7. Agent가 실제 Service Anchor에 도착했다고 보고한 뒤부터 서비스 시간이 흐른다.
+8. 서비스 완료·포기·취소 후 Exit 이동을 요청한다.
+9. 실제 Agent Actor가 있으면 Exit 도착 보고 전까지 전역 Queue 소유권을 유지한다.
+10. Actor가 없는 서버/테스트 논리 Agent는 Exit 단계를 즉시 최종 해제한다.
+
+도착은 Z가 아니라 XY 거리로 판정한다. 지형 높이 보정과 실제 이동은 프로젝트 AI 계층 책임이다.
+
+### 12.4 전역 Agent 소유권
+
+`UFFZSWorldSubsystem`은 `AgentId -> FacilityInstanceId`를 관리해 한 Agent가 동시에 여러 시설 Queue에
+들어가는 것을 막는다. Join Callback의 동기 재진입에 대비해 Component에 Join을 요청하기 전에 소유권을
+먼저 예약하고, Join 실패 시 되돌린다.
+
+Join 결과:
+
+| 결과 | 의미 |
+|---|---|
+| Joined | 성공, 유효 Ticket 발급 |
+| InvalidAgent | ID가 없거나 Actor Interface ID가 다름 |
+| DuplicateAgent | 이미 어떤 시설 Queue를 소유 |
+| Full | Waiting 정원 초과 |
+| NotOpen | Facility 또는 Queue가 참가 상태가 아님 |
+| FacilityNotFound | Facility ID 없음 |
+
+### 12.5 QueueAgent Interface
+
+실제 NPC Actor는 `IFFZSQueueAgent`를 구현한다.
+
+| Callback | 프로젝트가 할 일 |
+|---|---|
+| `GetFFZoneSystemAgentId` | 저장·재바인딩 가능한 Stable ID 반환 |
+| `OnFFZoneSystemQueueJoined` | 첫 Queue Slot으로 이동 |
+| `OnFFZoneSystemQueueIndexChanged` | 앞당겨진 새 Slot으로 이동 |
+| `OnFFZoneSystemServiceAssigned` | Service Anchor로 이동 |
+| `OnFFZoneSystemServiceStarted` | 서비스 Animation/상태 시작 |
+| `OnFFZoneSystemExitRequested` | Exit Anchor로 이동 |
+| `OnFFZoneSystemQueueReleased` | Queue 상태 종료 |
+
+실제 목표에 도착하면 다음 WorldSubsystem API로 되돌려 보고한다.
+
+- `ReportQueueSlotArrival`
+- `ReportServicePointArrival`
+- `ReportExitPointArrival`
+- 이동 실패 시 `ReportQueueMovementFailed`
+
+### 12.6 Drain, Emergency, 이동 실패
+
+- 일반 Close: 새 Join을 막고 모든 기존 Agent가 나갈 때까지 Draining
+- Emergency Close: 기존 항목을 Cancelled로 전환, 물리 Agent에는 Exit 요청
+- Agent 이동 실패: Agent별 재경로 횟수 증가, 한도 안이면 같은 목표 재통지
+- 한도 초과: Waiting/Service는 `RemovedBySystem`으로 Exit, Exit 단계는 최종 해제
+- Queue 전체 Blocked Timeout: 설정 간격마다 `OnRepathRequested` 방송
+
+Agent별 `MovementRepathCount`와 Queue 전체 `RepathAttemptCount`는 서로 다른 예산이다.
+
+### 12.7 결정론적 시간 진행
+
+Queue Tick은 단순히 매 Frame 전체 Delta를 더하지 않는다. 다음 서비스 완료, Waiting 포기,
+Blocked 재경로 중 가장 가까운 사건까지 Step한다. 같은 시각에 사건이 겹치면 서비스 완료를 먼저 처리하고
+빈 Service Slot에 FIFO 선두를 올린 다음 포기를 처리한다.
+
+4,096 event-step 한도 안에서는 한 번의 큰 Delta와 여러 번의 작은 Delta가 같은 결과를 내도록
+설계됐다. 한 step에서 같은 시각의 여러 Agent 사건을 함께 처리할 수 있다. 한 Advance는 최대
+4,096 step까지만 처리하며, 한도에 도달하면 미처리 상태는 후속 Tick에서 계속되지만 남은
+`DeltaSeconds` 자체는 별도로 누적하지 않는다. Queue가 Closed일 때만 Component Tick이 꺼진다.
+
+### 12.8 Queue 이벤트와 통계
+
+Dynamic Multicast Delegate:
+
+- `OnAgentJoined`
+- `OnServiceAssigned`
+- `OnServiceStarted`
+- `OnAgentReleased`
+- `OnQueueStateChanged`
+- `OnRepathRequested`
+
+읽기 통계:
+
+- Waiting 수
+- Active Service 수
+- Exiting 수
+- 완료 수
+- 포기 수
+- 완료 Agent 평균 대기 시간
+- 불변식 검증 결과
+
+---
+
+## 13. Snapshot 저장과 복원
+
+### 13.1 현재 Schema
+
+현재 `FFFZSWorldSnapshot::SchemaVersion`은 4다.
 
 포함:
 
-- `WorldRevision`, `CurrentPhase`
-- Facility Spec·Instance ID·Zone·Grid·실제 World Transform·Facility State
-- `NeedsRelocation`
-- Queue Waiting·Active Service·Exiting·elapsed·JoinSequence·repath·`bDrainRequested`
-- Command Receipt와 canonical payload fingerprint
+- WorldRevision
+- CurrentPhase
+- FacilityInstanceId, 복사된 FacilitySpec
+- ZoneId, GridPlacement, FacilityState, WorldTransform
+- NeedsRelocation
+- Queue 상태·항목·통계·Drain/Blocked 의도
+- 완료된 Command Receipt
 
-Schema 4에는 normal Close와 EmergencyClose를 구분하는 명시적 intent 필드가 없다. 물리 Agent가
-남은 EmergencyClose도 Facility=`Closed`, Queue=`Draining`,
-`bDrainRequested=true`로 저장되며 복원은 이를 normal Close처럼 해석해 Exit 완료 뒤
-`MovePending`으로 바꿀 수 있다. 명시적 close intent 필드·새 schema·회귀 Test를 추가하기
-전에는 이 순간 저장을 금지하거나 exact restore를 약속하지 않는다.
+포함하지 않음:
 
-Snapshot 값 그래프의 저장 대상 property는 모두 `UPROPERTY(SaveGame)`다.
-Editor 자동화는 테스트용 `USaveGame` root에 Snapshot을 넣고
-`UGameplayStatics::SaveGameToMemory` → `LoadGameFromMemory` 실제 바이트 왕복 뒤 주요 필드를
-비교한다.
+- Zone Actor와 BoundarySpline
+- Protected Area
+- External Policy Provider와 외부 시스템 상태
+- Zone Population·Density 누적 상태
+- QueueAgent Actor 포인터
+- 실제 Save Slot·파일·클라우드 데이터
 
-제외:
+Host Save 시스템은 Snapshot을 SaveGame 객체에 넣어 직렬화하고, Economy·Time·NPC·UI 등 외부 상태를
+같은 상위 저장 Transaction에서 별도로 보존해야 한다.
 
-- 맵의 Gameplay Zone·보호영역 생성
-- NPC 위치·욕구·AI 상태와 Agent Actor 수명
-- Economy 잔액·예약
-- 외부 Stage·Simulation Time 원본
-- Nav path·회피 속도
-- UI 캐시
-- 디스크 파일·Save 슬롯·클라우드·서버 I/O
+### 13.2 Capture
 
-복원 순서:
+`CaptureWorldSnapshot`은 Facility와 Receipt를 ID 순으로 정렬한다. 진행 중 Receipt는 저장하지 않는다.
+UObject Agent 포인터는 저장하지 않고 Stable AgentId만 보존한다.
 
-```text
-Game Thread·재진입 Guard 확인
-→ Schema·CurrentPhase·ID·Spec·Transform·Queue·Receipt 전체 검증
-→ 임시 Actor·점유·Queue·전역 Agent Registry·Receipt staging
-→ staging 전체 무결성 확인
-→ 기존 플러그인 상태를 한 번에 atomic publish/교체
-→ WorldRevision·CurrentPhase 확정
-→ 외부 시스템 복원
-→ AgentId Rebind
-→ Policy·상호 참조 검증
-→ 플레이 재개
-```
+### 13.3 Restore 검증
 
-Command 실행 중, Policy Callback 중, 다른 Restore 중인 복원은 fail-closed한다. staging이 하나라도
-실패하면 임시 객체만 폐기하고 현재 WorldRevision·Actor·점유·Queue·Receipt·Phase를 바꾸지
-않는다. 일부 시설만 조용히 삭제하는 폴백을 사용하지 않는다. 플러그인의 byte round-trip 성공은
-프로젝트 전체 Save 슬롯과 외부 복원 orchestration 완료를 뜻하지 않는다.
+복원 전에 다음을 전체 검사한다.
 
-Restore는 저장 데이터의 구조·ID·점유 무결성을 검사하지만 현재 맵의 Ground, World Collision,
-Navigation을 다시 조회하지 않고 `OnWorldChanged`도 방송하지 않는다.
-`RevalidateFacilitiesInZone`은 현재 Move의 Phase Gate를 재사용하므로
-`InitialSetup/Reconfigure`에서만 공간 재검증에 사용한다. 다른 Phase에서 호출하면
-`WrongStage` 때문에 정상 시설도 `NeedsRelocation=true`가 될 수 있으므로, phase-neutral
-validator가 분리되기 전에는 호출하지 않는다.
+- 지원 Schema와 유효 Phase·Revision
+- Facility ID, Agent ID, Receipt CommandId의 월드 범위 고유성
+- TicketId와 JoinSequence의 개별 Queue 범위 고유성
+- FacilitySpec
+- 대상 Zone 존재와 AllowedZone
+- Transform, 1 cm Rect, 정확한 Zone 소유
+- 시설 간 점유 중복
+- Protected Area 교차
+- Queue 상태·용량·FIFO·Service Index·Drain/Blocked 일관성
+- 완료 Receipt의 구조와 참조
 
-재검증은 외부 Policy를 호출하거나 Revision·이벤트를 만들지 않는다. 맵·GIS·Nav 자산이 바뀐
-Save는 허용 Phase에서 재검증한 뒤 프로젝트 UI/Telemetry를 명시적으로 refresh하고, Agent
-Actor를 Stable AgentId로 다시 bind한다.
+복원은 현재 지면 Line Trace, World Collision, Navigation 경로를 다시 검사하지 않는다.
 
-Receipt 검증은 성공 결과가 가리키는 Facility GUID의 실재를 강제하지 않는다. 변조된 Snapshot을
-신뢰 경계 밖에서 받지 말고 프로젝트 Save 계층에서 서명·버전·소유권을 검증한다.
+### 13.4 논리적 원자 복원
 
----
+복원은 기존 Actor를 바로 지우지 않는다.
 
-## 18. 실패 피드백과 로그
+1. 숨김·Collision Off 상태의 Staging Facility Actor를 만든다.
+2. Staging Queue와 별도 Registry·점유·Agent 소유권·Receipt Map을 완성한다.
+3. 모든 실패 가능 검증과 생성 단계를 통과한다.
+4. 새 Map들을 한 번에 권위 상태로 게시한다.
+5. 새 Actor를 보이게 하고 기존 Actor를 파괴한다.
 
-현재 `FFFZSWorldChangeEvent`가 직접 제공하는 payload:
+중간에 실패하면 Staging Actor만 제거하고 기존 월드는 유지한다. 이는 Subsystem 상태가 “이전 세트 또는
+새 세트”로만 보인다는 논리적 원자성이다. UObject 생성과 파괴가 하나의 CPU 명령이라는 뜻은 아니다.
 
-```text
-EventId
-CommandId
-TransactionId
-Command Type
-FacilityInstanceId
-PreviousZoneId
-NewZoneId
-WorldRevision
-```
+Restore는 `OnWorldChanged`를 방송하지 않고 Snapshot의 WorldRevision과 Phase를 그대로 복원한다.
+외부 시스템은 Restore 성공을 별도 상위 이벤트로 처리해야 한다.
 
-Queue delegate는 더 작은 운영 신호다. 이벤트 종류에 따라 AgentId·TicketId·Queue Index 또는
-Service/Release reason만 전달하며, 위 World Change 식별자 전체를 자동으로 복사하지 않는다.
-따라서 아래는 “현재 모든 이벤트의 필드”가 아니라 프로젝트 Telemetry Adapter가 World Change,
-Command result, Queue delegate, 외부 Simulation Clock을 correlation해 만들 목표 계약이다.
+### 13.5 Queue Agent 재바인딩
 
-```text
-EventId                    World Change에는 이미 존재; Queue 이벤트는 상위 Adapter가 발급/연결
-ParentEventId
-CommandId / TransactionId
-FacilityInstanceId / FacilityDefinitionId / ZoneId / AgentId
-WorldRevision / ReasonCode
-External Day / Stage / PhaseElapsed / Simulation Time / Sequence
-ExpectedWaitAtJoin / ActualWait / ServiceTime
-```
+Snapshot에는 Actor 포인터가 없으므로 NPC를 다시 Spawn한 뒤 Stable AgentId로
+`RebindQueueAgentActor`를 호출한다. Actor는 `IFFZSQueueAgent`를 구현하고 같은 ID를 반환해야 한다.
+재바인딩되면 현재 Queue·Service·Exit 이동 목표가 다시 통지된다.
 
-Snapshot Schema 4의 `CurrentPhase`는 플러그인 변경 허용 Gate를 복원하는 값이다. 외부 authoritative
-Day·Stage clock과 같지 않으며, 외부 시간 원본은 Snapshot 범위 밖이다.
+### 13.6 Schema 3 마이그레이션
 
-필수 지표:
+제한된 Schema 3(1 Cell = 100 cm) Snapshot은 메모리에서 Schema 4로 변환할 수 있다.
 
-- 배치 검증 평균·p95
-- 명령 성공·실패·Rollback·중복 replay 수
-- ReasonCode 분포
-- Queue Join 성공률·포기율
-- 대기 p50·p95와 예측 MAE
-- Throughput·Service Capacity 활용률
-- Queue Intrusion 지속시간
-- Slot 이동 실패율·Repath·Stuck
-- Zone Density 평균·Peak·임계 지속시간
-- 중복 Queue Membership 0
-- 원자성 위반 0
-- Event lineage 누락 0
+- Footprint, Clearance, Origin Cell을 100배
+- 구 개별 Queue Cell을 100 x 100 cm 압축 Rect로 병합
+- Queue Cell이 10,000개를 넘으면 오프라인 마이그레이션 요구
+- Queue Spline·Anchor·시간처럼 이미 cm/초인 값은 유지
+- QuarterTurns가 정규화되어 있어야 함
+- 회전된 구 Cell 경계를 보존하기 위해 방향별 99 cm Origin 보정
+- 오버플로·모호한 Spec·부분 변환은 fail-closed
+
+Schema 2는 저장된 CurrentPhase가 없어 직접 복원하지 않는다.
 
 ---
 
-## 19. 성능 원칙
+## 14. Read Model과 조회 API
 
-1. Agent별 Queue 판단 Tick을 만들지 않는다.
-2. Queue Component 단위로 대기·서비스를 갱신한다.
-3. 슬롯이 변한 Agent에만 새 MoveTo를 보낸다.
-4. UI는 매 프레임 Actor를 탐색하지 않는다.
-5. Grid·Definition 같은 저비용 검증을 Collision·Nav보다 먼저 수행한다.
-6. Soft Reference Mesh는 선택 화면에서 사전 비동기 로드한다.
-7. 원거리 표현 LOD가 논리 Agent·Queue 순서를 삭제하면 안 된다.
-8. 디버그 Draw·상세 로그는 운영 프로젝트에서 명시적으로 비활성화한다. 플러그인 Preview의
-   `bDrawDebugCells`는 기본 `true`다.
-9. 20→100→300 순으로 확장하고 각 단계의 맵·Seed·빌드를 고정한다.
-10. 300명 Gate 실패 원인을 Game/Render/AI/Nav/Animation/Queue로 분해한 뒤 구조를 바꾼다.
-11. Region 면적은 `int64`로 보수 계산하고, 정상 권위 연산은 압축 Region을 유지한다.
-    `MaxEnumeratedCellsPerFacility` 기본 1,000,000은 expanded footprint 이론 면적과 canonical
-    Queue 면적을 합친 권위 입력·작업 예산이며 출력 Cell 수나 물질화 한도가 아니다.
-    legacy Blueprint/debug Cell view는 고정 10,000 상한을 넘으면 부분 결과 없이 빈 배열이고,
-    deprecated `QueueReservedCells` 변환도 같은 상한을 따른다.
+UI와 분석 계층은 가능하면 가변 Actor 전체 대신 `BuildReadModel`의 값 복사본을 사용한다.
 
-500명은 P1 Gate B 후보이며, Mass 전환은 300명 결과를 본 뒤 검토한다. 성급하게 Mass를
-전제로 Public 계약을 바꾸지 않는다.
+`FFFZSReadModel`:
+
+- 현재 WorldRevision
+- ZoneId 순으로 정렬된 Zone Read Model
+- FacilityInstanceId 순으로 정렬된 Facility Read Model
+
+Zone Read Model:
+
+- ZoneId
+- SoftCapacity
+- ReportedPopulation
+- DensityRatio
+- DensityState
+
+Facility Read Model:
+
+- FacilityInstanceId, DefinitionId, ZoneId, Category
+- FacilityState, NeedsRelocation
+- QueueState
+- WaitingCount, ActiveServiceCount
+- AverageCompletedWaitSeconds
+
+Read Model 수정은 권위 상태에 영향을 주지 않는다. Queue 참가·Population 갱신처럼 Revision을 올리지 않는
+변화도 Read Model 값에는 나타날 수 있으므로, UI 갱신을 Revision 변화에만 의존해서는 안 된다.
 
 ---
 
-## 20. 자동화 테스트 현황
+## 15. Placement Preview와 Phase 0 Stub
 
-2026-08-05 현재 소스를 UE **5.7.4-51494982**에서 다시 빌드한 뒤 `FF_ZoneSystem` 필터를
-실행했다. Unit 14 + Integration 6 = 총 20개를 발견했고 `Result={Success}` 20개,
-실패 0개, UnrealEditor-Cmd 종료 코드 `0`을 확인했다.
+### 15.1 Placement Preview
 
-검증 과정에서 실제로 발견한 결함도 먼저 수정했다.
+`AFFZSPlacementPreviewActor`는 UI와 분리된 비권위 Ghost Actor다.
 
-- UHT가 헤더의 C++ digit separator를 파싱하지 못한 문제를 일반 정수 리터럴로 교정했다.
-- 1cm 대형 영역 Test를 deprecated Cell 배열이 아닌 권위 `ReservedRects` 기준으로 교정했다.
-- 자기 배열 원소를 `TArray::Add`에 직접 넘겨 재할당 중 참조가 깨진 Test crash를 값 복사로 교정했다.
+보유 상태:
 
-XGE 라이선스 경고는 standalone executor fallback으로 처리됐고 빌드 자체는 성공했다.
+- `PreviewCommand`
+- 마지막 `FFFZSPlacementValidation`
+- 충돌 없는 Preview Mesh
+- 자동 갱신 여부와 간격
+- 압축 Rect Debug 표시 옵션
 
-검증 증거:
+`RefreshPreview`는 다음만 수행한다.
 
-| 항목 | 값 |
+1. 현재 Command를 `ValidatePlacement`로 검사
+2. LastValidation 갱신
+3. 계산된 Placement Transform으로 Ghost 이동
+4. Soft Visual Mesh 비동기 요청
+5. Custom Depth와 Debug Box 갱신
+
+현재 표현 규칙은 유효 Preview Custom Depth 1, 실패 Preview 2이며,
+Footprint는 초록, Clearance는 청록, Queue는 노랑, 실패 영역은 빨강으로 그린다.
+개별 1 cm Cell이 아니라 Canonical Rect당 Box 하나를 그린다.
+
+자동 갱신은 기본 false이고 간격 기본값은 0.1초다. 짧은 간격으로 켜면 Ground, Collision,
+Navigation, Policy PreValidate를 반복하므로 제작 도구에서만 제한적으로 사용한다.
+`CommitPreview`는 `ExecuteCommand`를 호출해 모든 조건을 다시 검증한다.
+
+### 15.2 Phase 0 Bridge
+
+`UFFZSPhase0Bridge`는 Runtime에 컴파일되는 하위 모듈 병렬 개발용 비권위 Stub이다.
+Blueprint의 `RequestWorldChangePhase0` 노드에만 `DevelopmentOnly` Metadata가 붙는다. 운영
+Command API가 아니며 C++에서도 Production 결과로 사용하면 안 된다.
+
+`RequestWorldChangePhase0`의 계약:
+
+- 입력 Command의 ID·Transaction·Revision·Type·Zone·Placement·Spec을 검증하거나 사용하지 않음
+- 현재 World Phase와 Policy Registry를 조회하지 않음
+- 항상 `bSucceeded=true`
+- 항상 `bWorldStateChanged=false`
+- 비용, Actor, 점유, Policy, WorldRevision을 변경하지 않음
+- 60 m x 40 m Prototype Core Zone의 고정 Slot 3개 반환
+
+| Slot | 로컬 좌표(cm) | 미터 표현 |
+|---|---:|---:|
+| A | (1000, 2000, 0) | (10 m, 20 m, 0) |
+| B | (3000, 2000, 0) | (30 m, 20 m, 0) |
+| C | (5000, 2000, 0) | (50 m, 20 m, 0) |
+
+여기서 성공은 “Stub이 요청을 수락했다”는 뜻일 뿐 실제 적용 성공이 아니다.
+실제 통합은 반드시 `UFFZSWorldSubsystem::ExecuteCommand`로 교체한다.
+
+---
+
+## 16. Project Settings
+
+Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한다.
+
+| 영역 | 설정 | 기본값 | 적용 의미 |
+|---|---|---:|---|
+| Units | Placement Cell Size | 1 cm 고정 | 변경 불가 좌표 계약 |
+| Performance | Max Enumerated Cells Per Facility | 1,000,000 | 손상 입력 조기 거부 예산 |
+| Performance | Ground Sample Spacing | 100 cm | 지면 Trace 간격 |
+| Performance | Queue Simulation Tick Interval | 0.1초 | 0이면 매 Frame |
+| Placement | Max Ground Slope | 5도 | 표본 법선 최대 경사 |
+| Placement | Max Ground Height Variance | 20 cm | 표본 최고·최저 Z 차 |
+| Placement | Ground Trace Above / Below | 1000 / 1000 cm | Line Trace 범위 |
+| Placement | Enable Ground Checks | true | 지면 검증 사용 |
+| Placement | Require Every Ground Sample | true | 모든 표본 Hit 요구 |
+| Placement | Enable World Collision Checks | true | Visibility Overlap 사용 |
+| Navigation | Enable Projection Checks | true | Anchor·Slot Nav 검사 |
+| Navigation | Fail When Nav Unavailable | false | 운영에서는 true 검토 |
+| Navigation | Projection Extent | 30 cm | Facility별 값과 비교하는 전역 상한, 1 cm 하한 |
+| Zone Authoring | Restrict Zone IDs | true | ProjectZoneIds만 허용 |
+| Zone Authoring | Project Zone IDs | 5.3절의 기본 12개 ID | 제한 모드에서 허용·필수인 ID 집합 |
+| Zone Membership | Hysteresis | 50 cm | 이전 Zone 유지 완충 |
+| Integration | Require Production Policy Domains | false | 6개 Domain Gate |
+| Protected Routes | General Width | 300 cm | 전역 기본 폭 |
+| Protected Routes | Emergency Width | 400 cm | 전역 기본 폭 |
+| Protected Routes | Accessibility Width | 150 cm | 접근성·관람 기본 폭 |
+| Density | Square Meters Per Person | 4 m² | 자동 SoftCapacity |
+| Density | Caution / Warning / Critical | 0.8 / 1.0 / 1.25 | 밀도 비율 |
+| Density | Warning / Critical Hold | 5 / 3초 | 상승 유지 시간 |
+| Workflow | Initial Phase | InitialSetup | 새 Subsystem의 시작 Phase |
+
+`Config/DefaultFF_ZoneSystem.ini`에는 배포 핵심값과 두 Boolean
+(`bRestrictZoneIdsToProjectPresets`, `bRequireProductionPolicyDomains`)을 명시한다. Ground/Nav
+검사 Boolean, Trace 범위, ProjectZoneIds, InitialPhase 등은 CDO 또는 생성자 기본값을 사용한다.
+
+설정이 적용되는 시점을 구분해야 한다.
+
+- InitialPhase: 새 WorldSubsystem 초기화 때 읽음
+- Queue Tick Interval: QueueComponent 생성 때 읽음
+- 배치 검사 수치: 다음 Validate 호출 때 읽음
+- Protected Area 폭 0: 다음 교차 검사 때 현재 설정을 동적 상속
+- Actor에 `ApplyDefaultWidthForType`으로 복사한 폭: 이후 전역 변경을 상속하지 않음
+
+이 기본값들은 Prototype 기준이며 행사 안전·법률 인증값이 아니다.
+
+---
+
+## 17. Blueprint와 C++ 공개 API
+
+### 17.1 WorldSubsystem
+
+Blueprint에서는 `Get World Subsystem -> FFZSWorldSubsystem`으로 접근한다.
+
+| 영역 | 주요 API |
 |---|---|
-| Engine | 5.7.4-51494982 |
-| Git 기준 | branch `MAPSDASD`, HEAD `f29a8c1fe7a1e75e7f8946ddee3903b5d231a934` |
-| Working tree | FF plugin과 관련 연결 파일이 미커밋·미추적 상태이므로 위 HEAD만으로 재현 불가 |
-| 자동화 로그 | `Saved/Logs/FestaFiesta.log`, 2026-08-05 03:25:25~03:25:28 로그 시각 |
-| 판정 | Found 20, `Result={Success}` 20, 다른 Result 0, `RequestExitWithStatus(..., 0)` |
+| Event | `OnWorldChanged`, `OnPlacementRejected` |
+| Registry | `RegisterZone`, `UnregisterZone`, `RegisterProtectedArea`, `UnregisterProtectedArea` |
+| Lookup | `FindZone`, `FindFacility` |
+| Workflow | `SetChangePhase`, `GetChangePhase`, `GetWorldRevision` |
+| Placement | `ValidatePlacement`, `ExecuteCommand` |
+| Policy | `RegisterExternalPolicy`, `UnregisterExternalPolicy`, `ValidateIntegrationReadiness` |
+| Queue | `JoinFacilityQueue`, `JoinFacilityQueueByActor`, `LeaveCurrentFacilityQueue` |
+| Queue Report | Slot·Service·Exit Arrival, Movement Failed, Agent Rebind |
+| Queue Control | `SetFacilityQueueBlocked`, `FindAgentQueueFacility` |
+| Zone | `ResolveZoneAtWorldLocation`, `ReportZonePopulation` |
+| Read | `BuildReadModel` |
+| Save | `CaptureWorldSnapshot`, `RestoreWorldSnapshot` |
+| Maintenance | `ValidateZoneGraph`, `RevalidateFacilitiesInZone` |
 
-`Saved`는 ignore되어 다음 실행에 덮어쓸 수 있다. 릴리스 Gate에서는 로그를 CI artifact로 보존한다.
+`RegisterFacility`와 `UnregisterFacility`는 C++ 내부 수명주기용이며 일반 Gameplay 변경 API가 아니다.
 
-### Unit 14개
+### 17.2 GridLibrary
 
-```text
-FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedBuiltInPresets
-FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedRegionValidation
-FF_ZoneSystem.Unit.Definitions.OneCentimeterEditorDataValidation
-FF_ZoneSystem.Unit.Units.OnePlacementCellEqualsOneCentimeter
-FF_ZoneSystem.Unit.Grid.OneCentimeterCellAndRectQuarterTurns
-FF_ZoneSystem.Unit.Grid.OneCentimeterCompressedRegions
-FF_ZoneSystem.Unit.Commands.OneCentimeterCompressedRegionPayloadIdentity
-FF_ZoneSystem.Unit.Queue.FIFOArrivalAndCapacity
-FF_ZoneSystem.Unit.Queue.DrainAndEmergencyCancel
-FF_ZoneSystem.Unit.Queue.SaveRestoreMovementState
-FF_ZoneSystem.Unit.Queue.SaveRestoreTickAndDrain
-FF_ZoneSystem.Unit.Queue.EventStepTieAndDeltaIndependence
-FF_ZoneSystem.Unit.Queue.BlockedAndMovementFailure
-FF_ZoneSystem.Unit.SaveGame.WorldSnapshotByteRoundTrip
-```
+Blueprint 노드:
 
-### Integration 6개
+- 최대 열거 예산 조회
+- QuarterTurns 정규화
+- Cell·Rect 회전
+- Debug용 Footprint·Clearance·Queue·Reserved Cell 조회
+- 내장 7종 FacilitySpec 생성
+- 기본 12개 Zone ID 조회
+- Install Command 생성
+- Placement Failure 기본 문구 변환
 
-```text
-FF_ZoneSystem.Integration.World.CommandLifecycleQueueAndSnapshot
-FF_ZoneSystem.Integration.World.ZoneExclusivityAndProtectedArea
-FF_ZoneSystem.Integration.World.InvalidFacilitySpecStopsBeforeNavigation
-FF_ZoneSystem.Integration.World.PortableZoneGraphAndPrimaryAssetType
-FF_ZoneSystem.Integration.World.SnapshotPhaseReentrancyAndDrainIntent
-FF_ZoneSystem.Integration.Policy.AtomicCommitAndReverseRollback
-```
+C++ 전용 고성능 API:
 
-테스트 소스:
+- Rect Canonicalization
+- Rect Set Overlap
+- 압축 영역 면적
+- Footprint·Clearance·Queue·Reserved Rect 생성
+- Command Fingerprint
 
-```text
-Plugins/FF_ZoneSystem/Source/FF_ZoneSystem/Private/Tests/
-Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSWorldTests.cpp
-Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSPolicyTests.cpp
-Plugins/FF_ZoneSystem/Source/FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp
-```
+### 17.3 Actor와 Component API
 
-Session Frontend 목록만 보거나 로그 일부만 보고 통과로 기록하지 않는다. `Automation Test Queue
-Empty`, Started/Success/Failed 합계, 첫 Error, UnrealEditor-Cmd 종료 코드를 함께 확인한다.
+- GameplayZone: 경계, 포함, Hysteresis, 월드/Cell 변환, 카테고리, 면적, 수용량, Population, Read Model
+- ProtectedArea: 유효 폭, World Box 교차, 데이터 검증, Editor Preset
+- FacilityDefinition: Spec 검증과 Primary Asset ID
+- FacilityActor: ID·Zone·Placement·Spec·State·Queue·Relocation·Anchor·Snapshot·Read Model 조회
+- QueueComponent: 상태·수·목표 위치·Snapshot·불변식·규칙·통계 조회와 Delegate
+- PlacementPreviewActor: Refresh, Auto Refresh, Built-in Preview, Commit, Last Validation
+
+FacilityActor와 QueueComponent의 공개 Blueprint API는 대부분 관찰용이다. 변경은 WorldSubsystem을 사용한다.
 
 ---
 
-## 21. 프로젝트 연결 절차
+## 18. 기본 사용 절차
 
-### `.uproject`
+### 18.1 플러그인 연결
 
-현재 `FestaFiesta.uproject`에는 `FF_ZoneSystem=true`가 저장돼 있고 2026-08-05 Editor 빌드로
-로드를 확인했다. 새 프로젝트에서는 기술 담당자가 Editor의 **Edit → Plugins → Festa Fiesta →
-FF_ZoneSystem → Enabled**로 활성화한다. 수치 담당자는 `.uproject` JSON을 직접 편집하지
-않는다.
+1. 프로젝트의 `Plugins/FF_ZoneSystem` 아래에 플러그인을 둔다.
+2. `.uproject`에서 `FF_ZoneSystem`을 활성화한다.
+3. 플러그인 API를 쓰는 게임 모듈의 `Build.cs`에 `FF_ZoneSystem` 의존성을 추가한다.
+4. Public 프로젝트 Header가 플러그인 타입을 노출하면 Public Dependency, cpp 내부에서만 쓰면
+   Private Dependency로 둔다.
+5. Editor Target을 빌드하고 Project Settings를 확인한다.
 
-### 게임 모듈
+현재 FestaFiesta 프로젝트는 `FestaFiesta.uproject`에서 플러그인을 활성화하고,
+게임 모듈의 Private Dependency로 연결되어 있다.
 
-프로젝트 C++가 Public API를 include할 때 `Source/FestaFiesta/FestaFiesta.Build.cs`에 다음 Runtime
-의존성이 필요하며 현재 FestaFiesta에는 이미 연결돼 있다.
+### 18.2 Zone 저작
 
-```csharp
-"FF_ZoneSystem"
-```
+1. 레벨에 `AFFZSGameplayZone`을 배치한다.
+2. Stable ZoneId를 입력하거나 `ApplyAcceptedZonePreset`을 사용한다.
+3. BoundarySpline을 닫힌 Linear 단순 폴리곤으로 편집한다.
+4. Scale 1, Pitch/Roll 0, Yaw 90도 단위, XY 원점 정수 cm를 유지한다.
+5. Allowed Category, Neighbor, 수용량 데이터를 입력한다.
+6. `ValidateZoneData`와 `ValidateZoneGraph`의 오류를 모두 해결한다.
 
-Tests 모듈을 게임 Runtime 의존성에 추가하지 않는다.
+Zone Actor는 기본 생성 시 100 m x 100 m 사각형 Spline을 제공하지만, 실제 맵 경계에 맞게 수정해야 한다.
 
-### 설정
+### 18.3 Protected Area 저작
 
-Editor의 **Edit → Project Settings → Game → FF_ZoneSystem**에서 저장한다. 찾기 어렵다면 상단 검색창에 `FF_ZoneSystem`을 입력한다.
+1. 레벨에 `AFFZSProtectedArea`를 배치한다.
+2. 고유 ProtectedAreaId를 지정한다.
+3. 모든 Zone 적용이면 LinkedZoneId를 비우고, Zone 전용이면 유효한 ID를 지정한다.
+4. AreaType과 Box Extent를 설정한다.
+5. 기본 폭 상속은 RequiredClearWidthCm=0으로 유지한다.
+6. Scale 1과 Yaw-only Transform을 유지한다.
+7. `ValidateProtectedAreaData`로 확인한다.
 
-현재 CDO 기준 필수 확인값:
+존재하지 않는 LinkedZoneId를 가진 영역 하나가 있으면 배치 검증이 DataInvalid로 실패할 수 있으므로,
+월드 전체 Graph 검증을 선행한다.
 
-| 영역 | 필드 | 기본값·단위 |
+### 18.4 Facility Definition 저작
+
+1. Content Browser에서 `UFFZSFacilityDefinition` Data Asset을 만든다.
+2. SchemaVersion 2와 Stable FacilityDefinitionId를 입력한다.
+3. 실제 cm 크기를 그대로 Footprint Cell 수에 적는다.
+4. Clearance와 반열림 QueueReservedRects를 작성한다.
+5. Queue Spline을 Service에서 Tail 방향으로 작성한다.
+6. Entry[0], Exit[0], Service[0..Capacity-1] Anchor를 만든다.
+7. 외부 Cost·Revenue·Experience Key와 Soft Mesh를 설정한다.
+8. `Validate Assets` 또는 `IsDefinitionValid`로 모든 오류를 해결한다.
+9. Asset Manager Scan과 Shipping Cook 포함 여부를 Host 프로젝트에서 검증한다.
+
+### 18.5 C++ Install 예시
+
+~~~cpp
+#include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSWorldSubsystem.h"
+
+UFFZSWorldSubsystem* ZoneSystem =
+    GetWorld()->GetSubsystem<UFFZSWorldSubsystem>();
+
+FFFZSFacilitySpec Spec =
+    UFFZSGridLibrary::MakeBuiltInFacilitySpec(
+        EFFZSBuiltInFacilityPreset::FoodTruckBasic);
+
+FFFZSGridPlacement Placement;
+Placement.OriginCell = FIntPoint(1200, 800);
+Placement.QuarterTurns = 1;
+
+FFFZSCommand Command =
+    UFFZSGridLibrary::MakeInstallCommand(
+        Spec,
+        TEXT("GZ_DadaPocha"),
+        Placement,
+        ZoneSystem->GetWorldRevision());
+
+const FFFZSPlacementValidation Preview =
+    ZoneSystem->ValidatePlacement(Command);
+
+if (Preview.bIsValid)
+{
+    const FFFZSCommandResult Result =
+        ZoneSystem->ExecuteCommand(Command);
+}
+~~~
+
+실제 코드는 Null World, Null Subsystem, Result 실패를 처리하고 `FailureReason`으로 UI를 분기해야 한다.
+
+### 18.6 Lifecycle Command 예시
+
+~~~cpp
+FFFZSCommand OpenCommand;
+OpenCommand.CommandId = FGuid::NewGuid();
+OpenCommand.TransactionId = FGuid::NewGuid();
+OpenCommand.ExpectedWorldRevision = ZoneSystem->GetWorldRevision();
+OpenCommand.Type = EFFZSCommandType::Open;
+OpenCommand.FacilityInstanceId = FacilityId;
+
+const FFFZSCommandResult OpenResult =
+    ZoneSystem->ExecuteCommand(OpenCommand);
+~~~
+
+Close, EmergencyClose, Remove도 매 요청마다 새 CommandId를 사용한다.
+
+### 18.7 Blueprint 권장 흐름
+
+~~~text
+UI 입력
+→ Make Install Command
+→ PlacementPreviewActor.PreviewCommand 설정
+→ Refresh Preview
+→ Validation.Reasons와 Summary 표시
+→ 사용자 확인
+→ Commit Preview
+→ CommandResult 확인
+→ 성공: OnWorldChanged 기반 UI 갱신
+→ 실패: FailureReason 기반 해결 행동 표시
+~~~
+
+실패 처리는 Summary 문자열 비교가 아니라 `EFFZSPlacementFailure` Enum을 사용한다.
+
+### 18.8 Queue 연결
+
+1. NPC Actor에 `IFFZSQueueAgent`를 구현한다.
+2. 저장 후에도 같은 Stable AgentId를 반환한다.
+3. `JoinFacilityQueueByActor`로 참가한다.
+4. Callback에서 실제 이동을 시작한다.
+5. 도착 시 WorldSubsystem Report API를 호출한다.
+6. Save 복원 후 NPC Spawn이 끝나면 `RebindQueueAgentActor`를 호출한다.
+
+### 18.9 프로젝트 플레이테스트
+
+현재 프로젝트에는 다음 QA Slice가 준비되어 있다.
+
+- Map: `/Game/FestaFiesta/Zone/Maps/ZoneTestMap`
+- HUD: `/Game/FestaFiesta/Zone/UI/WBP_ZoneSystemPlaytestHUD`
+- 코드: `Source/FestaFiesta/Private/Zone/FF_ZoneSystemPlaytest*`
+
+하네스는 정확히 ZoneTestMap에서만 생성되고 Standalone 로컬 QA를 전제로 한다. 현재 Queue 시험은
+Null Agent Actor와 수동 도착 보고를 사용하므로 실제 NPC 이동 통합 검증이 아니다.
+
+---
+
+## 19. 배치·명령 실패 코드
+
+배치 검증과 Facility Command의 안정 실패 코드는 `EFFZSPlacementFailure`를 사용한다. 성공이면
+`None`이고, 실패이면 `ValidatePlacement`의 `FFFZSPlacementValidation::Reasons`에 하나 이상의
+코드와 `Summary`가
+누적된다. `ExecuteCommand`는 `FFFZSCommandResult::FailureReason`과 `Message`로 대표 실패를
+반환한다. UI는 `Summary`나 `Message`를 로직 분기 값으로 고정하기보다 enum을 사용자용 번역
+키로 매핑하고, 텍스트는 표시·개발 진단 정보로 사용하는 편이 안전하다.
+
+| 분류 | 코드 | 의미와 일반적인 대응 |
 |---|---|---|
-| 격자 | `PlacementCellSizeCm` | 읽기 전용 1cm; Runtime 상수 |
-| 작업량 | `MaxEnumeratedCellsPerFacility` | 1,000,000; clamp 1..1,000,000 |
-| 지면 | `GroundSampleSpacingCm` | 100cm; clamp 1..1,000cm |
-| Queue | `QueueSimulationTickIntervalSeconds` | 0.1s; 0이면 매 프레임 |
-| 지면 | `MaxGroundSlopeDegrees` / `MaxGroundHeightVarianceCm` | 5° / 20cm |
-| Trace | `GroundTraceAboveCm` / `GroundTraceBelowCm` | 1,000cm / 1,000cm |
-| 검사 | Ground / every sample / world collision / nav projection | 모두 `true` |
-| Nav | `NavigationProjectionExtentCm` | 30cm |
-| Nav 부재 | `bFailWhenNavigationSystemIsUnavailable` | `false`; 운영은 `true` 검토 |
-| Zone | `ZoneMembershipHysteresisCm` | 50cm |
-| 보호 폭 | General / Emergency / Accessibility | 300 / 400 / 150cm |
-| 수용량 | `SquareMetersPerPersonForSoftCapacity` | 4m²/인 |
-| 밀도 | Caution / Warning / Critical | 0.8 / 1.0 / 1.25 |
-| 승격 유지 | Warning / Critical | 5s / 3s |
-| Zone ID | `bRestrictZoneIdsToProjectPresets` | `true`; Festa 기본 12개 |
-| 통합 Gate | `bRequireProductionPolicyDomains` | `false`; 운영 연결 후 `true` |
-| Workflow | `InitialPhase` | `InitialSetup` |
+| 성공 | `None` | 검증 또는 명령이 성공했다. |
+| 식별자 | `ZoneNotFound` | 지정한 Zone이 Registry에 없다. Zone 등록 시점과 ID 오타를 확인한다. |
+| 식별자 | `FacilityNotFound` | 대상 Facility가 없거나 이미 철거되었다. |
+| 식별자 | `DuplicateZoneId` | Zone ID 중복을 나타내기 위한 코드다. 현재 Zone 등록 경로는 `false`와 로그로 중복을 알리며, 일반 Command 실행에서 이 코드를 직접 반환하지는 않는다. |
+| 식별자 | `DuplicateFacilityId` | 새 시설 ID가 기존 시설과 겹친다. 자동 ID를 쓰거나 호출자가 유일한 ID를 보장해야 한다. |
+| Zone 규칙 | `CategoryNotAllowed` | Zone의 허용 Category에 시설 Category가 포함되지 않는다. |
+| Zone 규칙 | `OutsideZone` | Footprint·Clearance·Queue 전체 Reserved 영역이 한 Zone에 완전 포함되지 않거나 여러 Zone과 면적으로 겹친다. |
+| 지면 | `InvalidGround` | 지면 Trace가 유효한 지면을 찾지 못했다. Trace Channel과 지형 Collision을 확인한다. |
+| 지면 | `ExcessSlope` | 지면 경사가 허용 최대값보다 크다. |
+| 지면 | `HeightVarianceExceeded` | 여러 지면 표본의 높이 편차가 허용값을 넘었다. |
+| 점유 | `PlacementCollision` | 시설 배치 Footprint가 기존 시설 또는 차단 월드 Geometry와 충돌한다. |
+| 점유 | `InsufficientClearance` | Clearance 영역이 다른 점유 또는 장애물과 겹친다. |
+| 점유 | `QueueFootprintBlocked` | 대기열 Footprint를 확보할 수 없다. |
+| 보호 구역 | `ProtectedRouteBlocked` | 보호된 도로·출입구·비상 동선 등과 배치 영역이 충돌한다. |
+| Navigation | `RequiredRouteDisconnected` | 필수 Entry/Service/Exit 또는 Queue 목적지 사이의 경로가 연결되지 않는다. |
+| 보호 구역 | `AccessibilityRouteBlocked` | Reserved 영역이 `AccessibilityRoute` 또는 `ViewingArea` Protected Area와 교차한다. |
+| 단계 | `WrongStage` | 현재 Phase에서 허용하지 않는 명령이다. 배치는 `InitialSetup`·`Reconfigure`에서만 허용된다. |
+| 상태 | `FacilityOccupied` | 사용 중인 시설을 비활성화·철거하려 했다. Queue와 이용자를 먼저 비워야 한다. |
+| 상태 | `InvalidFacilityState` | 요청한 수명주기 전이가 현재 상태에서 유효하지 않다. |
+| 동시성 | `StaleWorldRevision` | `ExpectedWorldRevision`이 현재 Revision과 다르다. 최신 Read Model을 다시 읽고 명령을 재구성한다. |
+| 멱등성 | `DuplicatePayloadMismatch` | 같은 `CommandId`를 다른 Payload에 재사용했다. 새 CommandId를 발급해야 한다. |
+| Navigation | `NavigationUnavailable` | NavSystem이 없거나 투영·경로 계산을 수행할 수 없고, 설정상 이를 실패로 처리한다. |
+| Navigation | `NavRebuildTimeout` | Nav 재빌드 시간 초과를 표현하기 위해 예약된 코드다. 현재 동기 검증 경로에서는 직접 발생시키지 않는다. |
+| 데이터 | `DataInvalid` | Facility Definition, Spec, Rect, Anchor 등 입력 데이터의 불변식이 깨졌다. |
+| 외부 정책 | `ExternalPolicyRejected` | 필수 Production Domain 준비가 안 됐거나 `PreValidate`·`ApplyTentative`가 거부했다. `FFFZSPolicyDecision`의 코드·Message를 확인한다. |
+| 내부 | `InternalError` | Game Thread·재진입 Guard, Actor Spawn·등록, 로컬 적용 또는 Preview Subsystem 등 내부 실행 조건이 실패했다. Policy Commit은 no-fail 계약이다. |
 
-현재 권위 기본값은 `FF_FFZSDeveloperSettings.h`의 CDO initializer와 constructor다.
-`Config/DefaultFF_ZoneSystem.ini`는 배포에 필요한 일부 값만 중복 명시하며, 생략된 Trace·
-검사 bool·ProjectZoneIds·InitialPhase 등은 CDO/constructor 값을 쓴다.
-
-설정 클래스는 `UCLASS(Config=Game, DefaultConfig)`다. 이 저장소에는 Plugin ini의 비기본
-override가 실제 Editor·Cook CDO에 들어오는지 검증하는 자동화가 아직 없다. 기본값이 아닌
-설정을 배포하기 전에는 시작 시 CDO 값을 assert/log하는 Test를 추가하고, 필요하면 Config
-category와 파일 이름을 Unreal 설정 계층에 맞게 통일한다.
-
-Runtime 격자 수학은 `DefaultPlacementCellSizeCm=1.0`만 사용하며 ini로 바꿀 수 없다.
-`MaxEnumeratedCellsPerFacility`는 비정상 Spec의 expanded footprint+Queue 작업 예산을
-fail-closed하고 정상 권위 검증은 압축 Region을 사용한다. legacy Blueprint/debug Cell 보기의
-별도 고정 상한은 10,000이며 초과하면 빈 배열이다.
-Queue Tick 변경은 기존 Component 재생성 여부와 Pause·배속·동률·frame split 회귀 테스트를
-함께 확인한다.
-
-현재 프로젝트 전용 검증 Slice:
-
-```text
-Map    /Game/FestaFiesta/FFZoneSystem/Tests/Maps/L_FFZS_PlacementTest
-Code   Source/FestaFiesta/FFZoneSystemPlaytest/
-Script Content/Python/build_ff_zone_system_playtest.py
-```
-
-Editor `-game -nullrhi` 5초 Smoke에서 Map bring-up, Playtest Actor spawn, C++ UI와 Preview
-초기화만 확인했다. 수동 클릭 배치, Nav/NPC Queue 전체 흐름, 추가 5개 Preset 선택, 패키징된
-Shipping exe 실행을 검증한 결과가 아니다. 이 코드는 map allow-list와 non-Shipping guard가
-있으며 독립 BuildPlugin에는 포함되지 않는다.
-
-### 프로젝트 전용 Adapter
-
-현재 checkout에는 `FF_FestivalRuntime`, `UFF_Festival...` 클래스나 완성된 운영 Policy
-자산이 없다. 아래는 존재하는 자산 목록이 아니라 프로젝트가 구현해야 할 책임표다.
-
-| Policy Domain | 프로젝트 Owner가 연결할 것 |
-|---|---|
-| Navigation | Nav rebuild 예약·취소·완료·실패와 실제 경로 검증 |
-| Economy | 비용·환불·수익 key의 tentative reservation/commit/rollback |
-| SimulationTime | Pause·배속·Stage와 Queue Delta의 단일 시간 원본 |
-| UserInterface | 입력 권한, 확인 대화상자, 결과·ReasonCode 현지화 |
-| Safety | 통로·접근성·긴급 동선의 승인된 프로젝트 규칙 |
-| Experience | 만족도·혼잡·시설 효과의 외부 모델 |
-
-명령 Gateway는 매 요청마다 새 `CommandId`, 필요 시 같은 `TransactionId`, 읽은
-`WorldRevision`을 넣고 오직 WorldSubsystem facade만 호출한다. Adapter의
-`PreValidate`는 읽기 전용, `ApplyTentative`는 실패 가능, `Commit`은 실패 불가,
-`Rollback`은 멱등이어야 한다.
-
-등록 직후 `ValidateIntegrationReadiness`를 실행하고 누락·중복 도메인이 있으면 운영 시작을
-막는다. `RefreshWorldActors`는 현재 빈 함수이므로 자동 발견을 기대하지 말고 Zone·보호영역·
-Policy를 명시적으로 등록한다. 등록 실패 Actor는 월드에 남지만 Subsystem에는 없으므로 로그를
-오류로 승격하고 잘못된 Actor를 수정·제거한다.
+`ExecuteCommand`가 실행 Guard를 세우기 전에 끝나는 Game Thread 위반, Restore·Policy Callback 중
+호출, 무효 CommandId/TransactionId, Receipt Replay·Payload 불일치, In-flight 재진입은
+`OnPlacementRejected`를 방송하지 않으므로 반환값을 직접 확인해야 한다. Guard 이후의 정상
+Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트가 방송될 수 있다.
 
 ---
 
-## 22. 빌드·자동화·패키징 명령
+## 20. 자동화 테스트와 QA Gate
 
-2026-08-05 UE 5.7.4 현재 소스 결과:
+현재 소스에는 `FF_ZoneSystem.*` 이름으로 **21개**의 Unreal Automation Test가 선언되어 있다.
+이 숫자는 소스 선언 기준이며, 이 문서를 작성하면서 Editor에서 전부 실행해 통과를 확인했다는
+뜻은 아니다.
 
-| 검증 경로 | 현재 결과 |
-|---|---|
-| `FestaFiestaEditor Win64 Development` | 성공 |
-| `FestaFiesta Win64 Development` | 성공 |
-| `FestaFiesta Win64 Shipping` | 성공 |
-| `FF_ZoneSystem` 자동화 | 20/20 성공, 실패 0, exit 0 |
-| 현재 소스 독립 `BuildPlugin` | 이번 검증에서 미실행 |
-| 현재 소스 Cook·Pak·IoStore·패키지 exe Smoke | 이번 검증에서 미실행 |
+### 20.1 Integration 테스트
 
-아래 명령은 동일 환경에서 결과를 재현하고 릴리스 Gate를 확장하는 절차다. 프로젝트 루트에서
-PowerShell을 열고 공통 변수 block을 한 번 실행한 뒤 필요한 명령을 실행한다.
+별도 `FF_ZoneSystemTests` 모듈이 실제 `UWorld`와 Actor를 구성해 다음 흐름을 검증한다.
 
-```powershell
-$ffzsUE = 'C:\Program Files\Epic Games\UE_5.7'
-$ffzsProjectRoot = (Resolve-Path -LiteralPath '.').Path
-$ffzsArtifactRoot = Join-Path $ffzsProjectRoot 'BuildArtifacts'
-$ffzsRunTag = Get-Date -Format 'yyyyMMdd_HHmmss'
-$ffzsPluginPackage = Join-Path $ffzsArtifactRoot "FF_ZoneSystemPackage_$ffzsRunTag"
-$ffzsShippingArchive = Join-Path $ffzsArtifactRoot "FF_ZoneSystemPlaytestShipping_$ffzsRunTag"
-```
+- `FF_ZoneSystem.Integration.Policy.AtomicCommitAndReverseRollback`
+- `FF_ZoneSystem.Integration.World.CommandLifecycleQueueAndSnapshot`
+- `FF_ZoneSystem.Integration.World.ZoneExclusivityAndProtectedArea`
+- `FF_ZoneSystem.Integration.World.InvalidFacilitySpecStopsBeforeNavigation`
+- `FF_ZoneSystem.Integration.World.PortableZoneGraphAndPrimaryAssetType`
+- `FF_ZoneSystem.Integration.World.SnapshotPhaseReentrancyAndDrainIntent`
 
-### Editor
+주요 대상은 외부 정책의 원자성, Command 수명주기, Queue와 Snapshot, Zone 독점성,
+Protected Area, 잘못된 Definition의 조기 차단, Zone Graph, Phase·재진입·Drain 복원이다.
 
-```powershell
-& "$ffzsUE\Engine\Build\BatchFiles\Build.bat" `
-  FestaFiestaEditor Win64 Development `
-  -Project="$ffzsProjectRoot\FestaFiesta.uproject" `
-  -WaitMutex -FromMSBuild
-```
+### 20.2 Unit 테스트와 소속
 
-### Development Game
+아래 15개 중 14개는 Runtime 모듈 `Source/FF_ZoneSystem/Private/Tests`에 있다.
+`WorldSnapshotByteRoundTrip`은 Editor 전용 `FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp`에
+있으며, 20.1의 Integration 6개와 함께 Editor 테스트 모듈에서 실행된다.
 
-```powershell
-& "$ffzsUE\Engine\Build\BatchFiles\Build.bat" `
-  FestaFiesta Win64 Development `
-  -Project="$ffzsProjectRoot\FestaFiesta.uproject" `
-  -WaitMutex -FromMSBuild
-```
+- `FF_ZoneSystem.Unit.SaveGame.WorldSnapshotByteRoundTrip`
+- `FF_ZoneSystem.Unit.Contract.Phase0WorldChangeStub`
+- `FF_ZoneSystem.Unit.Queue.FIFOArrivalAndCapacity`
+- `FF_ZoneSystem.Unit.Queue.DrainAndEmergencyCancel`
+- `FF_ZoneSystem.Unit.Queue.SaveRestoreMovementState`
+- `FF_ZoneSystem.Unit.Queue.SaveRestoreTickAndDrain`
+- `FF_ZoneSystem.Unit.Queue.EventStepTieAndDeltaIndependence`
+- `FF_ZoneSystem.Unit.Queue.BlockedAndMovementFailure`
+- `FF_ZoneSystem.Unit.Units.OnePlacementCellEqualsOneCentimeter`
+- `FF_ZoneSystem.Unit.Grid.OneCentimeterCellAndRectQuarterTurns`
+- `FF_ZoneSystem.Unit.Grid.OneCentimeterCompressedRegions`
+- `FF_ZoneSystem.Unit.Commands.OneCentimeterCompressedRegionPayloadIdentity`
+- `FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedBuiltInPresets`
+- `FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedRegionValidation`
+- `FF_ZoneSystem.Unit.Definitions.OneCentimeterEditorDataValidation`
 
-### Shipping Game
+### 20.3 명령행 실행 예시
 
-```powershell
-& "$ffzsUE\Engine\Build\BatchFiles\Build.bat" `
-  FestaFiesta Win64 Shipping `
-  -Project="$ffzsProjectRoot\FestaFiesta.uproject" `
-  -WaitMutex -FromMSBuild
-```
+Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 형태로 실행할 수 있다.
 
-### 자동화
-
-```powershell
-& "$ffzsUE\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
-  "$ffzsProjectRoot\FestaFiesta.uproject" `
+~~~powershell
+& "$UE_ROOT\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+  "$PROJECT_ROOT\FestaFiesta.uproject" `
   -unattended -nop4 -nullrhi -nosplash -NoSound `
   -ExecCmds='Automation RunTests FF_ZoneSystem; Quit' `
   -TestExit='Automation Test Queue Empty'
-```
+~~~
 
-### 독립 플러그인
+`ZoneTestMap` 수동 QA는 자동화 테스트를 대체하지 않는다. 특히 실제 NPC가
+`IFFZSQueueAgent`를 구현한 상태의 이동, 복제 환경, 대규모 NavMesh 재빌드 비용은 별도
+통합 시험이 필요하다.
 
-```powershell
-& "$ffzsUE\Engine\Build\BatchFiles\RunUAT.bat" `
-  BuildPlugin `
-  -Plugin="$ffzsProjectRoot\Plugins\FF_ZoneSystem\FF_ZoneSystem.uplugin" `
-  -Package="$ffzsPluginPackage" `
-  -TargetPlatforms=Win64 -Rocket
-```
+### 20.4 QA Gate
 
-배포할 때만 빈 출력 경로에 새로 만들고 `HostProject/Plugins/FF_ZoneSystem`의 소스·Config·
-`FF_README_KO.md` 포함 여부와 세 Target 결과를 확인한다.
+`Config/DefaultFF_ZoneSystem.ini`가 참조하는 출하 전 승인 체크리스트다. 아래 항목은 현재 통과
+상태를 주장하는 목록이 아니라, 대상 빌드마다 로그·리포트·캡처로 증거를 남겨야 하는 Gate다.
 
-### Shipping Cook
+#### 설정·정적 데이터
 
-```powershell
-& "$ffzsUE\Engine\Build\BatchFiles\RunUAT.bat" `
-  BuildCookRun `
-  -project="$ffzsProjectRoot\FestaFiesta.uproject" `
-  -noP4 -unattended -platform=Win64 -clientconfig=Shipping `
-  -build -cook -map='/Game/FestaFiesta/FFZoneSystem/Tests/Maps/L_FFZS_PlacementTest' `
-  -AdditionalCookerOptions='-noxgeshadercompile' `
-  -stage -pak -iostore -archive `
-  -archivedirectory="$ffzsShippingArchive"
-```
+- [ ] Editor와 Cook에서 실제 CDO 설정값, ProjectZoneIds, InitialPhase, Ground/Nav Flag를 확인한다.
+- [ ] `ValidateZoneGraph`와 모든 `UFFZSFacilityDefinition` Validate Assets 결과가 오류 0건이다.
+- [ ] Production은 `ValidateIntegrationReadiness(Errors, true)`가 오류 0건이고, Custom을 제외한
+  6개 Policy Domain에 각각 정확히 한 Provider가 등록된다.
+- [ ] 실패 enum과 프로젝트 UI 현지화·해결 행동 매핑이 일치한다.
 
-현재 소스에는 이 Cook·Archive를 다시 실행하지 않았다. 성공 판정은 UAT exit 0뿐 아니라
-`Windows/FestaFiesta.exe`, Shipping binary, `.pak`, `.ucas`, `.utoc`, Global container의
-존재와 패키지 실행 Smoke를 함께 본다. 그 다음 별도 PC와 프로젝트 전체 맵 Cook을 수행한다.
-XGE ShaderCompileWorker 라이선스가 없으면 위처럼 `-noxgeshadercompile`을 유지한다.
+#### Build·자동화·패키징
 
----
+- [ ] Editor Development, Game Development, Game Shipping 구성이 모두 빌드된다.
+- [ ] `FF_ZoneSystem` 테스트 21개가 발견되고 21 성공·0 실패, Queue Empty, 프로세스 Exit 0이다.
+- [ ] 독립 Plugin 패키징과 프로젝트 Cook에서 Soft Mesh·Definition·Asset Manager Scan을 검증한다.
+- [ ] Clean PC의 Shipping 패키지에서 Plugin Mount, Map Load, Save/Restore Smoke를 통과한다.
 
-## 23. 다른 프로젝트 이식
+#### 실제 Gameplay 통합
 
-### 소스 플러그인 이식
+- [ ] `ZoneTestMap` Standalone과 실제 대상 Map에서 Install·Move·Remove·Open·Close·Emergency를 확인한다.
+- [ ] 유효 Command는 Actor·점유·Revision·외부 예약이 한 번만 반영되고, 실패 Command는 전부 원복된다.
+- [ ] 실제 NPC `IFFZSQueueAgent`가 Stable ID, 이동 도착·실패 보고, Save 후 Rebind를 검증한다.
+  Null Agent Harness는 이 항목의 대체 증거가 아니다.
+- [ ] 일반 Drain, Emergency Exit, Blocked/Repath, FIFO 비추월을 시각적으로 확인한다.
 
-```text
-<TargetProject>/Plugins/FF_ZoneSystem
-```
+#### 성능·안전·네트워크
 
-1. 양쪽 Editor를 닫는다.
-2. 현재 `Plugins/FF_ZoneSystem`을 복사하되 `Binaries`, `Intermediate`, `DerivedDataCache`는 제외한다.
-3. 대상 `.uproject`에서 프로젝트 파일을 재생성한다.
-4. 대상 `Development Editor / Win64`를 빌드한다.
-5. Plugin을 활성화하고 재시작한다.
-6. Project Settings에서 private readout `Placement Cell Size Cm = 1`과 대상 프로젝트의
-   Stable `Project Zone Ids`를 확인한다.
-7. 새 평면 테스트 맵과 Gameplay Zone을 만든다.
-8. Facility Definition·Mesh·Material·Texture를 Content Browser의 **Asset Actions → Migrate**로 옮긴다.
-9. Policy·Queue Agent·전체 Save·운영 UMG를 대상 프로젝트에 맞게 구현한다.
-10. `FF_ZoneSystem` 20개 자동화, 실제 맵 Smoke, Shipping Cook을 대상 프로젝트에서 다시 수행한다.
-
-바이너리 이식이 필요하면 기술 담당자가 현재 소스로 빈 출력 경로에 BuildPlugin을 새로 만들고,
-대상과 동일한 UE patch version·플랫폼·configuration에서 자동화와 Cook을 다시 검증한 뒤
-사용한다. 과거 BuildArtifacts를 배포 근거로 재사용하지 않는다.
-
-### Asset Manager
-
-현재 Plugin에는 Facility Definition `.uasset`이 없고 Project 설정에도
-`PrimaryAssetTypesToScan` 규칙이 없다. 7개 내장 Preset은 C++ factory 데이터이며 운영
-Content를 대신하지 않는다.
-
-Data Asset을 런타임 검색하고 Soft Reference Mesh를 Cook하려면 **Edit → Project Settings →
-Asset Manager**에서 클래스 `UFFZSFacilityDefinition`, 정확한 Primary Asset Type `FFZSFacilityDefinition` 규칙을 추가한다.
-
-권장 검색 디렉터리:
-
-```text
-/Game/FestaFiesta/FFZoneSystem/Data/Facilities
-```
-
-대상 프로젝트가 다른 경로를 쓰면 그 경로로 변경한다. Asset Audit에서 실제 Primary Asset
-Type을 확인하고 Shipping 별도 PC에서 Mesh·Material·Texture를 검증한다.
+- [ ] 실제 Agent가 연결된 뒤 동일 Map·Seed·빌드에서 20명, 100명, 300명 규모의 FPS, 1% Low,
+  Game/Render, AI/Nav, Queue 비용을 기록한다.
+- [ ] 경로 폭·밀도·경사 등 Prototype 수치를 Safety Owner가 실제 행사·법률 기준과 대조 승인한다.
+- [ ] 네트워크 기능은 미제공으로 명시한다. 멀티플레이를 추가한 프로젝트는 서버 권한, 복제,
+  재접속, 중복 Command를 별도 시험한다.
 
 ---
 
-## 24. 마이그레이션 계약
+## 21. 성능, 스레드, 네트워크 경계
 
-### 기존 100cm 플러그인
+### 21.1 성능 특성
 
-물리 크기를 보존하는 기본 변환:
+- 권위 점유·저장·압축 영역 교차는 1 cm 셀을 개별 객체로 만들지 않으므로 면적보다
+  **Rect 개수**에 더 크게 좌우된다. 전체 배치 검증에는 별도로 Ground 표본 수와
+  Navigation Anchor·Queue Slot 수도 영향을 준다.
+- 배치 점유 검사는 같은 Zone의 기존 시설과 각 Compressed Region을 비교한다. 시설 수와
+  Rect 수가 지나치게 늘어나면 공간 인덱스가 없으므로 비용도 함께 증가한다.
+- Protected Area 충돌 검사는 등록된 보호 영역을 순회한다.
+- `ResolveZoneAtWorldLocation`은 결정론을 위해 Zone ID를 정렬한 뒤 Zone을 순회한다.
+  현재 별도의 Quadtree나 Spatial Hash는 없다.
+- Navigation 검증은 첫 Entry Anchor에서 필수 Anchor와 Queue Slot까지 동기식 투영·경로
+  검사를 수행한다. 대량 배치는 Game Thread Hitch를 피하도록 작업량을 분산해야 한다.
+- Queue 시간 진행은 사건 단위이며 한 Advance에서 최대 4,096 event-step을 처리한다. 같은
+  시각의 여러 Agent 사건은 한 step에서 함께 처리될 수 있다. 한도 뒤 미처리 상태는 후속
+  Tick에서 계속되지만, 그 호출의 남은 `DeltaSeconds`는 별도로 누적하지 않는다.
+- Zone, Protected Area, FacilityActor는 기본적으로 상시 Tick하지 않는다. Queue는
+  `Closed`가 아닐 때, Preview Actor는 자동 갱신을 켰을 때만 Tick한다.
+- Debug Cell 전개는 최대 10,000개, 압축 영역의 이론적 안전 예산은 1,000,000셀이다.
+  이 값들은 정상 Gameplay 규모를 보장하는 벤치마크가 아니라 폭발적 입력을 막는 안전선이다.
 
-```text
-새 1cm Footprint/Clearance/q0 Origin = 기존 100cm Cell 정수 × 100
-기존 Queue Cell 1개 = 새 100×100 반열린 Queue Region
-```
+### 21.2 스레드와 재진입
 
-- 90°·180°·270° 배치 Origin에는 각각 필요한 99cm 보정을 적용한다.
-- `QueueSplinePointsCm`, Anchor cm, 시간·거리 cm 값은 이미 물리 단위이므로 바꾸지 않는다.
-- 타입명·클래스명이 다르면 Data Asset을 새 `UFFZSFacilityDefinition`으로 생성한다.
-- 독립 Facility Spec Schema 1은 1cm Runtime이 등록·검증에서 거절한다.
-- World Snapshot Schema 3은 Spec1·빈 새 Rect·정상 회전·안전 범위라는 알려진 형식일 때만
-  `RestoreWorldSnapshot`이 100배·Queue Region·99cm 회전 보정을 적용해 메모리상 Schema 4로 변환한다.
-  구 Queue Cell은 정렬·span 병합으로 `O(N log N)`에 압축하며 10,000개를 넘으면 오프라인 이관을 요구한다.
-- 완료 Receipt는 불투명 값으로 보존되고 외부 경제/Stage 상태는 Snapshot 밖이므로, 운영 Save는
-  프로젝트 저장 계층의 승인된 트랜잭션 이관과 복원 직후 Schema 4 재저장이 필요하다.
+World 상태를 읽고 바꾸는 공개 흐름은 **Game Thread 사용을 전제로** 한다. 명령 실행은
+Game Thread 검사를 하고, 처리 중 다시 Command를 실행하는 재진입을 거부한다. 외부 정책
+Callback과 Event Listener에서 즉시 새 명령을 호출하기보다 다음 Tick 또는 별도 Queue에
+예약해야 한다.
 
-### 과거 1cm Beta 플러그인
+일부 단순 조회 함수는 코드상 모든 호출 지점에서 명시적인 Thread Guard를 두지 않는다.
+따라서 `const` 함수라는 이유만으로 Worker Thread에서 안전하다고 가정하면 안 된다.
 
-좌표 숫자가 이미 1cm여도 타입, Queue 표현, 스키마와 영수증 지문은 새 정본과 다르다.
+### 21.3 네트워크
 
-- 위치·Footprint·Clearance·점유·명령 영수증·SaveGame을 명시적으로 매핑한다.
-- 이전 CommandId·fingerprint를 새 스키마에 임의 재사용하지 않는다.
-- 변환 전·후의 q0/q1/q2/q3 Origin, Reserved Rect, Queue 중심, Anchor Transform을 표로 저장하고
-  이 절의 공식과 자동화 Test를 정본으로 삼는다.
+이 플러그인은 현재 다음을 제공하지 않는다.
 
-### ID
+- Server RPC 또는 Client RPC
+- `Replicated` Property와 `GetLifetimeReplicatedProps` 구현
+- `HasAuthority()` 기반의 Server 권한 검사
+- Command·Queue·Snapshot의 자동 네트워크 동기화
+- Client Prediction 또는 Reconciliation
 
-- FestaFiesta 내부 이관은 승인된 12개 `GZ_` ID를 유지한다.
-- 다른 프로젝트는 자체 Stable `Project Zone Ids` 목록으로 교체하고 변환표를 저장한다.
-- Facility Definition ID와 프로젝트 Stable Agent ID를 유지한다.
-- 표시 이름 변경은 ID 변경과 분리한다.
-
----
-
-## 25. QA Gate
-
-### 정적 검증
-
-- [ ] Public 헤더가 프로젝트 전용 클래스를 참조하지 않는다.
-- [ ] Runtime이 Editor 모듈에 의존하지 않는다.
-- [ ] 거리 필드에 Cm, 격자 필드에 Cells가 명시된다.
-- [ ] 12개 Zone ID·P0 시설 ID가 일치한다.
-- [ ] Reason enum과 UI 현지화 표가 일치한다.
-
-### 기능
-
-- [ ] 유효 설치는 Actor·점유·Revision·비용이 각각 한 번 반영된다.
-- [ ] 무효 설치는 모든 외부 예약과 월드 상태를 원복한다.
-- [ ] 같은 Command replay가 중복 이벤트를 만들지 않는다.
-- [ ] 시설 이동 전 Queue Drain이 필요하다.
-- [ ] Emergency Close가 Exit 요청과 최종 해제를 구분한다.
-- [ ] Snapshot 실패가 현재 월드를 바꾸지 않는다.
-- [ ] GIS 경계 변경이 시설을 삭제하지 않고 NeedsRelocation으로 표시한다.
-
-### 사용자
-
-- [ ] 처음 보는 사용자가 Zone, Footprint, Clearance, Queue를 구분한다.
-- [ ] 실패 이유와 해결 행동을 설명할 수 있다.
-- [ ] Queue 앞·뒤와 Full·Blocked·Closed를 구분한다.
-- [ ] NPC 이동이 순간이동·새치기처럼 보이지 않는다.
-- [ ] Ground를 사용하지 않아도 손해가 없다.
-- [ ] 설치 모드와 게임을 자유롭게 중단할 수 있다.
-
-### 성능
-
-- [ ] 20명 Smoke
-- [ ] 100명 Scale
-- [ ] 300명 Gate A
-- [ ] Overview/Ground 각각 FPS·1% Low·Game·Render·AI/Nav·Queue·Animation 기록
-- [ ] 변경 전후 동일 맵·Seed·빌드 사용
+따라서 `UFFZSWorldSubsystem`의 “월드 논리 권한”은 Unreal Networking의 Server Authority와
+같은 뜻이 아니다. 멀티플레이 프로젝트에서는 서버만 변경 API를 호출하게 만들고,
+필요한 Read Model과 Event를 프로젝트 계층에서 복제해야 한다.
 
 ---
 
-## 26. 현재 제한 사항과 후속 작업
+## 22. 현재 구현 범위와 주의사항
 
-- 2026-08-05 현재 소스의 Editor Development, Game Development, Game Shipping 빌드와
-  자동화 20/20은 성공했다.
-- 현재 소스의 독립 BuildPlugin, Cook·Pak·IoStore, 패키지 exe, 별도 PC Smoke는 미검증이다.
-- 기본 맵 `L_Dadaepo_DigitalTwin.umap`에는 아직 `/Script/ZoneFacilitySystem` import와
-  `ZFFacilityActor_1` 계열 직렬화 흔적이 있다. 복제 맵에서 Reference Viewer·로그로
-  이관 완료를 확인하기 전 원본을 무작정 재저장하지 않는다.
-- 개발용 배치 입력·C++ Widget·`L_FFZS_PlacementTest`는 있으나 수동 클릭·Nav/NPC 전체 Queue,
-  운영 UMG, 기존 다대포 맵 이관은 완료되지 않았다.
-- Production Navigation·Economy·SimulationTime·UI·Safety·Experience Adapter 6종은 아직 연결되지 않았다.
-- 운영 Facility Definition Data Asset, Plugin Content, Asset Manager scan rule은 아직 없다.
-- 플러그인 Snapshot의 실제 SaveGame byte round-trip은 통과했지만 전체 게임 슬롯·파일·클라우드 I/O와 외부 상태·Agent 복원 orchestration은 없다.
-- Restore는 Ground·Collision·Nav 재검증과 `OnWorldChanged`를 수행하지 않는다.
-- Snapshot v4는 진행 중 normal Close와 물리-Agent EmergencyClose의 intent를 구분하지 못해,
-  후자를 복원하면 Exit 완료 뒤 `MovePending`으로 바뀔 수 있다.
-- `RevalidateFacilitiesInZone`은 `InitialSetup/Reconfigure` 밖에서 `WrongStage`를
-  relocation으로 기록할 수 있어 phase-neutral validator가 생기기 전 운영 Phase 호출을 금지한다.
-- World Change에는 EventId가 있지만 Queue delegate와의 correlation, ParentEventId, 외부 Day/Stage/PhaseElapsed durable telemetry는 프로젝트 통합이 필요하다.
-- `NavRebuildTimeout` enum·문구는 있으나 현재 Runtime emit 경로가 없다. 실제 비동기 rebuild의
-  Pending·취소·timeout 수명주기는 Navigation Adapter가 구현해야 한다.
-- `WorldRevision`은 Queue·Phase·Population 등 모든 변경의 전역 버전이 아니며 성공 Command만 센다.
-- 완료 Receipt의 Facility 참조를 신뢰 경계에서 추가 검증해야 한다.
-- Reference Zone·252m Work Cell이 실제 기존 맵 판정에 들어가지 않는지 아직 맵 QA가 필요하다.
-- 20/100/300 NPC 사용자·성능 Gate, 기준 PC, 목표 FPS, 1% Low가 미측정·미정이다.
-- Multiplayer Authority·Replication·RPC·재접속은 구현돼 있지 않다.
-- `RefreshWorldActors`는 비어 있고 Actor 등록은 명시적이다.
-- Soft Mesh load 실패는 논리 설치를 취소하지 않는 표현 계층 실패다.
-- Plugin ini의 비기본 override가 CDO·Cook에 반영되는 자동화는 없다.
-- 실제 행사 안전·법률 기준은 확정되지 않았다.
-- 500명은 P1 후보, 약 700명은 비약속 Stretch다.
+아래 항목은 버그 단정이 아니라, 현재 코드가 의도적으로 제공하지 않거나 호출자가 보완해야
+하는 경계다.
 
-이 제한 사항이 남아 있는 동안 “기존 다대포를 포함한 모든 시설·Zone 통합 완료”, “실제 안전
-기준 준수”, “현재 소스 전체 패키징·별도 PC 검증 완료”라고 표현하지 않는다.
+### 22.1 등록과 Zone
+
+- 서로 다른 Zone의 Geometry가 겹치는 것 자체를 전역적으로 금지하지 않는다.
+  위치 해석 시에는 정렬된 Zone ID 순서와 포함 규칙이 결과에 영향을 준다.
+- `NeighborZoneIds`와 `EntryExitAnchors`는 그래프·메타데이터다. 플러그인이 Zone 간
+  최단 경로 탐색이나 NPC 이동을 자동 수행하지는 않는다.
+- Zone을 해제해도 그 Zone의 시설을 자동 철거하지 않는다. 호출자가 시설 수명주기와
+  등록 해제 순서를 관리해야 한다.
+- 초기화 시 기존 Actor를 한 번 스캔하고 이후에는 Actor의 `BeginPlay` 등록에 의존한다.
+  Private `RefreshWorldActors()`는 현재 비어 있다.
+- Registry는 Actor를 Weak Pointer로 보관한다. Actor 생성·파괴가 비정상 순서로 일어나면
+  로그와 반환값을 확인해야 한다.
+
+### 22.2 배치와 Navigation
+
+- Zone 재검증은 현재 Phase 규칙을 통과하는 Placement Validator를 다시 사용한다.
+  `MorningCheck`, `LiveOperation`, `EveningSettlement`처럼 배치를 허용하지 않는 Phase에서
+  호출하면 공간 문제가 없어도 `WrongStage`로 Invalid 처리될 수 있다. 현 구현에서는
+  `InitialSetup` 또는 `Reconfigure`에서 호출한다.
+- Navigation 안전 검사는 Settings로 비활성화할 수 있고, NavSystem 부재를 실패로 볼지도
+  설정에 따라 달라진다. 안전·접근성·법규 준수의 최종 보증 수단으로 단독 사용하면 안 된다.
+- `NavRebuildTimeout`은 enum에 있으나 현재 비동기 Nav 재빌드 대기 Pipeline은 없다.
+- Density 경고 임계값의 상호 순서를 Runtime에서 강하게 교정하지 않는다. Settings에서
+  `DensityCautionRatio <= DensityWarningRatio <= DensityCriticalRatio` 순서를 유지해야 한다.
+
+### 22.3 Snapshot과 복원
+
+Snapshot은 Zone·Protected Area·정책·외부 시스템 상태·실제 Agent Actor를 저장하지 않는다.
+복원 전에 Snapshot의 `ZoneId`와 같은 Gameplay Zone이 등록되어 있어야 한다. 전체
+`FFFZSFacilitySpec`은 Snapshot에 들어 있으므로 원본 `UFFZSFacilityDefinition` Asset은 필요하지 않다.
+
+복원은 논리 상태를 Stage한 뒤 교체하지만 다음 작업은 다시 수행하지 않는다.
+
+- 현재 지면 Trace
+- 월드 Geometry Collision 검사
+- Nav 경로 검사 또는 NavMesh 재빌드
+- 외부 정책 PreValidate / ApplyTentative / Commit
+- `OnWorldChanged` Broadcast
+
+시설 Actor 복원은 기본 `AFFZSFacilityActor`를 생성한다. 프로젝트별 Subclass, 외형, 추가
+Component 또는 외부 저장 데이터는 별도 Factory/복원 계층에서 다시 연결해야 한다.
+
+Schema 3에서 Schema 4로의 변환은 100 cm 단위를 1 cm 단위로 바꾸는 제한적 이행 경로다.
+임의의 더 오래된 Schema나 미래 Schema를 자동 수용하지 않는다.
+
+### 22.4 Queue와 AI
+
+플러그인은 Queue의 논리적 순서와 상태를 관리하지만, 실제 Character 이동·충돌 회피·애니메이션·
+Spawn/Despawn을 구현하지 않는다. 프로젝트 NPC가 `IFFZSQueueAgent` Callback을 받아 이동하고,
+도착 또는 실패를 반드시 Report해야 한다.
+
+현재 FestaFiesta QA Harness는 Null Agent Actor와 수동 도착 보고를 사용한다. 따라서
+“Queue 상태 머신이 동작한다”는 검증과 “실제 AI가 목적지까지 이동한다”는 검증을 구분해야 한다.
+
+### 22.5 외부 연동과 콘텐츠
+
+- 프로젝트 소스에는 현재 Production `IFFZSExternalPolicy` 구현이 없다. 기본 설정
+  `bRequireProductionPolicyDomains=false`에서는 정책 없이 내부 검증만 적용된다. true이면
+  6개 필수 Domain 부재로 Command가 `ExternalPolicyRejected`된다.
+- `CanContainContent=true`지만 플러그인 자체 Content 폴더에는 운영용 Facility Asset 묶음이
+  없다. `UFFZSFacilityDefinition` Asset 생성과 Asset Manager 정책은 호스트 프로젝트 책임이다.
+- 운영용 UMG, 사용자 메시지 번역, 분석·Telemetry, 저장 슬롯 관리는 포함하지 않는다.
+- Phase 0 Bridge는 Runtime 비권위 Stub이고 Blueprint 노드만 `DevelopmentOnly`다. 항상
+  성공하며 월드를 바꾸지 않으므로 Blueprint와 C++ 모두 Production 결과로 사용하면 안 된다.
+- `WorldRevision`은 성공한 Facility Command에 대해서만 증가한다. Queue 진행, Population,
+  Phase, Registry 변화까지 포괄하는 전역 변경 번호가 아니다.
 
 ---
 
-## 27. 완료 보고서에 들어갈 증거
+## 23. 소스 탐색 지도
 
-```text
-엔진 전체 버전
-Commit/브랜치
-활성 Plugin 목록
-Project Settings 캡처
-Editor·Development·Shipping 빌드 종료 코드
-FF_ZoneSystem 테스트 총수·성공·실패
-BuildPlugin 산출물 경로
-대표 맵·Seed·시설 데이터 버전
-20/100/300 NPC 성능 표
-정상·거절·Rollback·Queue·Snapshot 영상
-Policy Adapter 등록 결과
-수치 변경 전후 KPI
-미해결 위험·Owner·기한
-```
+| 관심 영역 | 먼저 볼 파일 |
+|---|---|
+| 공통 enum, Command, Result, Snapshot 구조체 | `Source/FF_ZoneSystem/Public/FF_FFZSTypes.h`, `Source/FF_ZoneSystem/Private/FF_FFZSTypes.cpp` |
+| Registry, Placement, Command, Policy, Snapshot, Read Model | `Source/FF_ZoneSystem/Public/FF_FFZSWorldSubsystem.h`, `Source/FF_ZoneSystem/Private/FF_FFZSWorldSubsystem.cpp` |
+| Zone 경계·규칙·그래프 | `Source/FF_ZoneSystem/Public/FF_FFZSZoneActor.h`, `Source/FF_ZoneSystem/Private/FF_FFZSZoneActor.cpp` |
+| Protected Area | `Source/FF_ZoneSystem/Public/FF_FFZSProtectedArea.h`, `Source/FF_ZoneSystem/Private/FF_FFZSProtectedArea.cpp` |
+| Facility Definition 검증·Asset ID | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityDefinition.h`, `Source/FF_ZoneSystem/Private/FF_FFZSFacilityDefinition.cpp` |
+| Runtime Facility와 Anchor | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityActor.h`, `Source/FF_ZoneSystem/Public/FF_FFZSFacilityAnchorComponent.h` |
+| Queue 상태 머신 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueComponent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp` |
+| Queue Agent 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueAgent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueAgent.cpp` |
+| 1 cm 격자 연산·내장 Preset | `Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h`, `Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp` |
+| 외부 정책 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSExternalPolicy.h`, `Source/FF_ZoneSystem/Private/FF_FFZSExternalPolicy.cpp` |
+| Preview | `Source/FF_ZoneSystem/Public/FF_FFZSPlacementPreviewActor.h`, `Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp` |
+| Settings | `Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h`, `Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp` |
+| Phase 0 Runtime Stub | `Source/FF_ZoneSystem/Public/FF_FFZSPhase0Bridge.h`, `Source/FF_ZoneSystem/Private/FF_FFZSPhase0Bridge.cpp` |
+| Runtime Unit Test | `Source/FF_ZoneSystem/Private/Tests/` |
+| Editor Integration·SaveGame Test | `Source/FF_ZoneSystemTests/Private/` |
 
-결과 화면만 남기지 않고 `의도 → 규칙·데이터 → 구현 → 테스트 → 발견 → 수정`의 연결을
-보여줘야 한다.
-
----
-
-## 28. 관련 문서
-
-- [게임 디자인 강의 요약](../../GD_01_16_LECTURE_SUMMARY.md)
-- [Festa Fiesta Master GDD](../../FESTA_FIESTA_MASTER_GDD_2026-07-30.md)
-- [Queue System Design](../../FESTA_FIESTA_QUEUE_SYSTEM_DESIGN.md)
-- [다대포 좌표 기준 명세](../../Docs/Dadaepo_GeoReference_Spec.md)
-- [2025 배치 구현 명세](../../Docs/Dadaepo_2025_Layout_Spec.md)
-
-`Plugins/FF_ZoneSystem/FF_README_KO.md`가 FF_ZoneSystem의 유일한 현재 운영 정본이다. 이전
-ZoneFacility 문서와 분산된 FF Zone 보조 가이드는 이 문서에 흡수한 뒤 제거했다.
-
-문서와 Public API가 다르면 어느 한쪽을 조용히 고치지 않는다. 차이, 영향, 마이그레이션,
-테스트, 승인자를 기록하고 같은 변경 단위에서 동기화한다.
+이 문서는 현재 소스 구현을 기준으로 작성되었다. API, Snapshot Schema, 단위 계약 또는
+Phase 규칙을 바꾸면 관련 자동화 테스트와 이 문서를 같은 변경에서 함께 갱신해야 한다.

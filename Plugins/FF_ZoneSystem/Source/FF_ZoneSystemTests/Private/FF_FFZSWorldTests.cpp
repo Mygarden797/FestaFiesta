@@ -34,7 +34,7 @@
 
 namespace
 {
-    /** Keeps editor/project configuration unchanged after each automation test. */
+    /** 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다. */
     class FScopedZFTestSettings
     {
     public:
@@ -119,21 +119,21 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
 {
     FScopedZFTestSettings ScopedSettings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    if (!TestNotNull(TEXT("Automation world"), World))
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
     {
         return false;
     }
 
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    if (!TestNotNull(TEXT("Authoritative world subsystem"), Subsystem))
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
     {
         return false;
     }
 
     const FName ZoneId(TEXT("GZ_DadaPocha"));
     AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!TestNotNull(TEXT("Accepted Gameplay Zone"), Zone) ||
-        !TestTrue(TEXT("Zone registers once its accepted ID is assigned"), Subsystem->RegisterZone(Zone)))
+    if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
+        !TestTrue(TEXT("승인된 ID가 지정되면 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
         return false;
     }
@@ -147,22 +147,22 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         0);
 
     const FFFZSCommandResult FirstInstallResult = Subsystem->ExecuteCommand(InstallFirst);
-    TestTrue(TEXT("Install commits"), FirstInstallResult.bSucceeded);
-    TestEqual(TEXT("Install advances world revision once"), Subsystem->GetWorldRevision(), int64(1));
+    TestTrue(TEXT("Install이 Commit된다"), FirstInstallResult.bSucceeded);
+    TestEqual(TEXT("Install은 World Revision을 한 번 증가시킨다"), Subsystem->GetWorldRevision(), int64(1));
     AFFZSFacilityActor* FirstFacility = Subsystem->FindFacility(InstallFirst.FacilityInstanceId);
-    if (!TestNotNull(TEXT("Installed Facility is registered"), FirstFacility))
+    if (!TestNotNull(TEXT("설치된 Facility가 등록된다"), FirstFacility))
     {
         return false;
     }
 
     const FFFZSCommandResult ReplayResult = Subsystem->ExecuteCommand(InstallFirst);
-    TestTrue(TEXT("Same CommandId and payload replays successfully"), ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
-    TestEqual(TEXT("Idempotent replay does not advance revision"), Subsystem->GetWorldRevision(), int64(1));
+    TestTrue(TEXT("동일한 CommandId와 Payload가 성공적으로 Replay된다"), ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
+    TestEqual(TEXT("멱등 Replay는 Revision을 증가시키지 않는다"), Subsystem->GetWorldRevision(), int64(1));
 
     FFFZSCommand PayloadMismatch = InstallFirst;
     ++PayloadMismatch.Placement.OriginCell.X;
     const FFFZSCommandResult MismatchResult = Subsystem->ExecuteCommand(PayloadMismatch);
-    TestEqual(TEXT("Reused CommandId with changed payload is rejected"), MismatchResult.FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
+    TestEqual(TEXT("변경된 Payload로 CommandId를 재사용하면 거부된다"), MismatchResult.FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
 
     FFFZSCommand OverlapInstall = UFFZSGridLibrary::MakeInstallCommand(
         UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
@@ -170,7 +170,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         FirstPlacement,
         1);
     const FFFZSCommandResult OverlapResult = Subsystem->ExecuteCommand(OverlapInstall);
-    TestEqual(TEXT("Authoritative grid rejects overlapping footprint"), OverlapResult.FailureReason, EFFZSPlacementFailure::PlacementCollision);
+    TestEqual(TEXT("권위 Grid는 겹치는 Footprint를 거부한다"), OverlapResult.FailureReason, EFFZSPlacementFailure::PlacementCollision);
 
     FFFZSGridPlacement StalePlacement;
     StalePlacement.OriginCell = FIntPoint(7000, 1000); // q0: 기존 70m, 10m 위치를 보존한다.
@@ -180,10 +180,10 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         StalePlacement,
         0);
     const FFFZSCommandResult StaleResult = Subsystem->ExecuteCommand(StaleInstall);
-    TestEqual(TEXT("Optimistic concurrency rejects a stale revision"), StaleResult.FailureReason, EFFZSPlacementFailure::StaleWorldRevision);
+    TestEqual(TEXT("낙관적 동시성 검사는 오래된 Revision을 거부한다"), StaleResult.FailureReason, EFFZSPlacementFailure::StaleWorldRevision);
 
     const FFFZSCommand OpenFirst = MakeFacilityCommand(EFFZSCommandType::Open, InstallFirst.FacilityInstanceId, 1);
-    TestTrue(TEXT("Validated Facility opens"), Subsystem->ExecuteCommand(OpenFirst).bSucceeded);
+    TestTrue(TEXT("검증된 Facility가 Open된다"), Subsystem->ExecuteCommand(OpenFirst).bSucceeded);
 
     FFFZSGridPlacement SecondPlacement;
     SecondPlacement.OriginCell = FIntPoint(4000, 1000); // q0: 기존 40m, 10m 위치를 보존한다.
@@ -193,65 +193,65 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         SecondPlacement,
         2);
     const FFFZSCommandResult SecondInstallResult = Subsystem->ExecuteCommand(InstallSecond);
-    TestTrue(TEXT("A separated Facility installs"), SecondInstallResult.bSucceeded);
+    TestTrue(TEXT("떨어져 있는 Facility가 설치된다"), SecondInstallResult.bSucceeded);
     AFFZSFacilityActor* SecondFacility = Subsystem->FindFacility(InstallSecond.FacilityInstanceId);
-    if (!TestNotNull(TEXT("Second Facility is registered"), SecondFacility))
+    if (!TestNotNull(TEXT("두 번째 Facility가 등록된다"), SecondFacility))
     {
         return false;
     }
 
     const FFFZSCommand OpenSecond = MakeFacilityCommand(EFFZSCommandType::Open, InstallSecond.FacilityInstanceId, 3);
-    TestTrue(TEXT("Second Facility opens"), Subsystem->ExecuteCommand(OpenSecond).bSucceeded);
-    TestTrue(TEXT("Navigation/Safety adapter can block a Facility Queue through world authority"),
+    TestTrue(TEXT("두 번째 Facility가 Open된다"), Subsystem->ExecuteCommand(OpenSecond).bSucceeded);
+    TestTrue(TEXT("Navigation/Safety Adapter가 World 권위를 통해 Facility Queue를 Block할 수 있다"),
         Subsystem->SetFacilityQueueBlocked(InstallSecond.FacilityInstanceId, true));
-    TestEqual(TEXT("Blocked facade changes the Queue state"),
+    TestEqual(TEXT("Block된 Facade가 Queue 상태를 변경한다"),
         SecondFacility->GetQueueComponent()->GetQueueState(), EFFZSQueueState::Blocked);
     FGuid BlockedTicket;
-    TestEqual(TEXT("A blocked Queue rejects new Agents"),
+    TestEqual(TEXT("Block된 Queue는 새 Agent를 거부한다"),
         Subsystem->JoinFacilityQueue(InstallSecond.FacilityInstanceId, TEXT("Agent.Blocked"), nullptr, BlockedTicket),
         EFFZSQueueJoinResult::NotOpen);
-    TestTrue(TEXT("Navigation/Safety adapter can reopen the Queue through world authority"),
+    TestTrue(TEXT("Navigation/Safety Adapter가 World 권위를 통해 Queue를 다시 Open할 수 있다"),
         Subsystem->SetFacilityQueueBlocked(InstallSecond.FacilityInstanceId, false));
-    TestEqual(TEXT("Unblocked Queue returns to Open"),
+    TestEqual(TEXT("Block이 해제된 Queue는 Open 상태로 돌아간다"),
         SecondFacility->GetQueueComponent()->GetQueueState(), EFFZSQueueState::Open);
-    TestFalse(TEXT("Unknown Facility cannot be blocked"), Subsystem->SetFacilityQueueBlocked(FGuid::NewGuid(), true));
+    TestFalse(TEXT("알 수 없는 Facility는 Block할 수 없다"), Subsystem->SetFacilityQueueBlocked(FGuid::NewGuid(), true));
 
     const FName AgentId(TEXT("Agent.WorldFlow"));
     FGuid TicketId;
-    TestEqual(TEXT("Stable ID can join through world authority"),
+    TestEqual(TEXT("고정 ID는 World 권위를 통해 Join할 수 있다"),
         Subsystem->JoinFacilityQueue(InstallFirst.FacilityInstanceId, AgentId, nullptr, TicketId),
         EFFZSQueueJoinResult::Joined);
-    TestTrue(TEXT("Queue ticket is assigned"), TicketId.IsValid());
-    TestTrue(TEXT("Agent arrival at FIFO slot is accepted"),
+    TestTrue(TEXT("Queue Ticket이 할당된다"), TicketId.IsValid());
+    TestTrue(TEXT("FIFO Slot에 도착한 Agent가 승인된다"),
         Subsystem->ReportQueueSlotArrival(AgentId, FirstFacility->GetQueueComponent()->GetQueueSlotWorldLocation(0)));
-    TestEqual(TEXT("FIFO head transfers to a service slot only after queue-slot arrival"),
+    TestEqual(TEXT("Queue Slot 도착 후에만 FIFO 선두가 Service Slot으로 이동한다"),
         FirstFacility->GetQueueComponent()->GetActiveServiceCount(), 1);
-    TestTrue(TEXT("Service timer is armed only after Service-anchor arrival"),
+    TestTrue(TEXT("Service Anchor 도착 후에만 Service Timer가 시작된다"),
         Subsystem->ReportServicePointArrival(AgentId, FirstFacility->GetQueueComponent()->GetServiceWorldLocation(0)));
 
     FGuid DuplicateTicket;
-    TestEqual(TEXT("One Agent cannot own queues at two Facilities"),
+    TestEqual(TEXT("하나의 Agent는 두 Facility의 Queue를 동시에 소유할 수 없다"),
         Subsystem->JoinFacilityQueue(InstallSecond.FacilityInstanceId, AgentId, nullptr, DuplicateTicket),
         EFFZSQueueJoinResult::DuplicateAgent);
 
     const FFFZSCommand OccupiedMove = MakeMoveCommand(InstallFirst.FacilityInstanceId, ZoneId, FIntPoint(1000, 4000), 4);
-    TestEqual(TEXT("Occupied Facility cannot move"),
+    TestEqual(TEXT("점유 중인 Facility는 이동할 수 없다"),
         Subsystem->ExecuteCommand(OccupiedMove).FailureReason,
         EFFZSPlacementFailure::FacilityOccupied);
 
     const FFFZSCommand EmergencyCloseFirst = MakeFacilityCommand(EFFZSCommandType::EmergencyClose, InstallFirst.FacilityInstanceId, 4);
-    TestTrue(TEXT("Emergency close cancels the active queue"), Subsystem->ExecuteCommand(EmergencyCloseFirst).bSucceeded);
-    TestFalse(TEXT("Emergency close releases global Agent ownership"), Subsystem->FindAgentQueueFacility(AgentId).IsValid());
+    TestTrue(TEXT("Emergency Close가 활성 Queue를 취소한다"), Subsystem->ExecuteCommand(EmergencyCloseFirst).bSucceeded);
+    TestFalse(TEXT("Emergency Close가 전역 Agent 소유권을 해제한다"), Subsystem->FindAgentQueueFacility(AgentId).IsValid());
 
     const FFFZSCommand CloseSecond = MakeFacilityCommand(EFFZSCommandType::Close, InstallSecond.FacilityInstanceId, 5);
-    TestTrue(TEXT("Normal close succeeds"), Subsystem->ExecuteCommand(CloseSecond).bSucceeded);
-    TestEqual(TEXT("An empty closed Facility becomes MovePending"), SecondFacility->GetFacilityState(), EFFZSFacilityState::MovePending);
+    TestTrue(TEXT("Normal Close가 성공한다"), Subsystem->ExecuteCommand(CloseSecond).bSucceeded);
+    TestEqual(TEXT("비어 있는 Closed Facility는 MovePending 상태가 된다"), SecondFacility->GetFacilityState(), EFFZSFacilityState::MovePending);
 
     const FFFZSCommand MoveSecond = MakeMoveCommand(InstallSecond.FacilityInstanceId, ZoneId, FIntPoint(4000, 4000), 6);
     const FFFZSCommandResult MoveResult = Subsystem->ExecuteCommand(MoveSecond);
-    TestTrue(TEXT("Drained Facility moves transactionally"), MoveResult.bSucceeded);
+    TestTrue(TEXT("Drain이 끝난 Facility가 트랜잭션으로 이동한다"), MoveResult.bSucceeded);
     SecondFacility = Subsystem->FindFacility(InstallSecond.FacilityInstanceId);
-    if (!TestNotNull(TEXT("Moved Facility remains registered"), SecondFacility))
+    if (!TestNotNull(TEXT("이동된 Facility는 계속 등록되어 있다"), SecondFacility))
     {
         return false;
     }
@@ -262,19 +262,19 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     SecondFacility->SetNeedsRelocation(true);
 
     const FFFZSCommand ReopenFirst = MakeFacilityCommand(EFFZSCommandType::Open, InstallFirst.FacilityInstanceId, 7);
-    TestTrue(TEXT("Closed Facility can reopen"), Subsystem->ExecuteCommand(ReopenFirst).bSucceeded);
+    TestTrue(TEXT("Closed Facility를 다시 Open할 수 있다"), Subsystem->ExecuteCommand(ReopenFirst).bSucceeded);
     const FName SavedAgentId(TEXT("Agent.SaveRestore"));
     FGuid SavedTicket;
-    TestEqual(TEXT("Agent joins before snapshot"),
+    TestEqual(TEXT("Snapshot 생성 전에 Agent가 Join한다"),
         Subsystem->JoinFacilityQueue(InstallFirst.FacilityInstanceId, SavedAgentId, nullptr, SavedTicket),
         EFFZSQueueJoinResult::Joined);
-    TestTrue(TEXT("Saved Agent reaches its assigned queue slot"),
+    TestTrue(TEXT("저장된 Agent가 할당된 Queue Slot에 도착한다"),
         Subsystem->ReportQueueSlotArrival(SavedAgentId, FirstFacility->GetQueueComponent()->GetQueueSlotWorldLocation(0)));
 
     const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot schema is current"), Snapshot.SchemaVersion, 4);
-    TestEqual(TEXT("Snapshot captures both Facilities"), Snapshot.Facilities.Num(), 2);
-    TestTrue(TEXT("Snapshot persists durable command receipts"), Snapshot.CommandReceipts.Num() > 0);
+    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, 4);
+    TestEqual(TEXT("Snapshot이 두 Facility를 모두 캡처한다"), Snapshot.Facilities.Num(), 2);
+    TestTrue(TEXT("Snapshot이 영속 Command Receipt를 보존한다"), Snapshot.CommandReceipts.Num() > 0);
     int32 StagedFacilitySpawnCount = 0;
     const FDelegateHandle DestroySecondStagedFacilityHandle = World->AddOnActorSpawnedHandler(
         FOnActorSpawned::FDelegate::CreateLambda([&StagedFacilitySpawnCount](AActor* SpawnedActor)
@@ -285,20 +285,20 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
             }
         }));
     TArray<FText> InjectedRestoreErrors;
-    TestFalse(TEXT("A mid-stage spawn failure rejects snapshot restore"),
+    TestFalse(TEXT("준비 단계 중간의 Spawn 실패는 Snapshot 복원을 거부한다"),
         Subsystem->RestoreWorldSnapshot(Snapshot, InjectedRestoreErrors));
     World->RemoveOnActorSpawnedHandler(DestroySecondStagedFacilityHandle);
 
-    TestEqual(TEXT("Failure injection reached the second staged Facility"), StagedFacilitySpawnCount, 2);
-    TestTrue(TEXT("A staged restore failure reports an error"), !InjectedRestoreErrors.IsEmpty());
-    TestTrue(TEXT("Failed staging preserves the first live Facility Actor"),
+    TestEqual(TEXT("실패 주입이 두 번째 준비 Facility까지 도달했다"), StagedFacilitySpawnCount, 2);
+    TestTrue(TEXT("준비 중 복원 실패가 오류를 보고한다"), !InjectedRestoreErrors.IsEmpty());
+    TestTrue(TEXT("준비 실패 후 첫 번째 기존 Facility Actor가 보존된다"),
         Subsystem->FindFacility(InstallFirst.FacilityInstanceId) == FirstFacility && IsValid(FirstFacility));
-    TestTrue(TEXT("Failed staging preserves the second live Facility Actor"),
+    TestTrue(TEXT("준비 실패 후 두 번째 기존 Facility Actor가 보존된다"),
         Subsystem->FindFacility(InstallSecond.FacilityInstanceId) == SecondFacility && IsValid(SecondFacility));
-    TestEqual(TEXT("Failed staging preserves world revision"), Subsystem->GetWorldRevision(), int64(8));
-    TestEqual(TEXT("Failed staging preserves global Queue ownership"),
+    TestEqual(TEXT("준비 실패 후 World Revision이 보존된다"), Subsystem->GetWorldRevision(), int64(8));
+    TestEqual(TEXT("준비 실패 후 전역 Queue 소유권이 보존된다"),
         Subsystem->FindAgentQueueFacility(SavedAgentId), InstallFirst.FacilityInstanceId);
-    TestEqual(TEXT("Failed staging preserves durable command receipts"),
+    TestEqual(TEXT("준비 실패 후 영속 Command Receipt가 보존된다"),
         Subsystem->CaptureWorldSnapshot().CommandReceipts.Num(), Snapshot.CommandReceipts.Num());
     int32 LiveFacilityActorCount = 0;
     for (TActorIterator<AFFZSFacilityActor> It(World); It; ++It)
@@ -308,7 +308,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
             ++LiveFacilityActorCount;
         }
     }
-    TestEqual(TEXT("Failed staging destroys every temporary Facility Actor"), LiveFacilityActorCount, 2);
+    TestEqual(TEXT("준비 실패 시 모든 임시 Facility Actor가 제거된다"), LiveFacilityActorCount, 2);
 
     FFFZSWorldSnapshot InvalidStateSnapshot = Snapshot;
     if (FFFZSFacilityInstanceSnapshot* SavedFirst = InvalidStateSnapshot.Facilities.FindByPredicate(
@@ -317,9 +317,9 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         SavedFirst->State = EFFZSFacilityState::MovePending;
     }
     TArray<FText> InvalidSnapshotErrors;
-    TestFalse(TEXT("Snapshot rejects incompatible Facility/Queue states"),
+    TestFalse(TEXT("Snapshot은 호환되지 않는 Facility/Queue 상태를 거부한다"),
         Subsystem->RestoreWorldSnapshot(InvalidStateSnapshot, InvalidSnapshotErrors));
-    TestEqual(TEXT("Rejected snapshot leaves revision untouched"), Subsystem->GetWorldRevision(), int64(8));
+    TestEqual(TEXT("거부된 Snapshot은 Revision을 변경하지 않는다"), Subsystem->GetWorldRevision(), int64(8));
 
     FFFZSWorldSnapshot InvalidAllowedZoneSnapshot = Snapshot;
     if (FFFZSFacilityInstanceSnapshot* SavedFirst = InvalidAllowedZoneSnapshot.Facilities.FindByPredicate(
@@ -328,34 +328,34 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         SavedFirst->FacilitySpec.AllowedZoneIds = {TEXT("GZ_Operations")};
     }
     InvalidSnapshotErrors.Reset();
-    TestFalse(TEXT("Snapshot enforces Facility AllowedZoneIds"),
+    TestFalse(TEXT("Snapshot은 Facility AllowedZoneIds를 강제한다"),
         Subsystem->RestoreWorldSnapshot(InvalidAllowedZoneSnapshot, InvalidSnapshotErrors));
 
     const FFFZSCommand RemoveSecond = MakeFacilityCommand(EFFZSCommandType::Remove, InstallSecond.FacilityInstanceId, 8);
-    TestTrue(TEXT("Second Facility can be removed after snapshot"), Subsystem->ExecuteCommand(RemoveSecond).bSucceeded);
-    TestNull(TEXT("Removed Facility is no longer registered"), Subsystem->FindFacility(InstallSecond.FacilityInstanceId));
+    TestTrue(TEXT("Snapshot 생성 후 두 번째 Facility를 제거할 수 있다"), Subsystem->ExecuteCommand(RemoveSecond).bSucceeded);
+    TestNull(TEXT("제거된 Facility는 더 이상 등록되어 있지 않다"), Subsystem->FindFacility(InstallSecond.FacilityInstanceId));
     const FFFZSCommandResult RemovedFacilityReplay = Subsystem->ExecuteCommand(InstallSecond);
-    TestTrue(TEXT("Completed receipt still replays after its Facility is removed"), RemovedFacilityReplay.bSucceeded && RemovedFacilityReplay.bWasDuplicateReplay);
-    TestNull(TEXT("Receipt replay resolves a removed Facility reference to null"), RemovedFacilityReplay.FacilityActor);
+    TestTrue(TEXT("완료된 Receipt는 해당 Facility가 제거된 뒤에도 Replay된다"), RemovedFacilityReplay.bSucceeded && RemovedFacilityReplay.bWasDuplicateReplay);
+    TestNull(TEXT("Receipt Replay에서 제거된 Facility 참조는 null로 해석된다"), RemovedFacilityReplay.FacilityActor);
 
     TArray<FText> RestoreErrors;
-    TestTrue(TEXT("Valid world snapshot restores atomically"), Subsystem->RestoreWorldSnapshot(Snapshot, RestoreErrors));
-    TestTrue(TEXT("Snapshot restore emits no validation errors"), RestoreErrors.IsEmpty());
-    TestEqual(TEXT("Snapshot restore restores its authoritative revision"), Subsystem->GetWorldRevision(), int64(8));
+    TestTrue(TEXT("유효한 World Snapshot이 원자적으로 복원된다"), Subsystem->RestoreWorldSnapshot(Snapshot, RestoreErrors));
+    TestTrue(TEXT("Snapshot 복원은 검증 오류를 내지 않는다"), RestoreErrors.IsEmpty());
+    TestEqual(TEXT("Snapshot 복원이 권위 Revision을 복원한다"), Subsystem->GetWorldRevision(), int64(8));
 
     AFFZSFacilityActor* RestoredSecond = Subsystem->FindFacility(InstallSecond.FacilityInstanceId);
-    if (TestNotNull(TEXT("Removed Facility is recreated from snapshot"), RestoredSecond))
+    if (TestNotNull(TEXT("제거된 Facility가 Snapshot에서 다시 생성된다"), RestoredSecond))
     {
-        TestTrue(TEXT("Ground-adjusted Z is preserved exactly"), FMath::IsNearlyEqual(RestoredSecond->GetActorLocation().Z, 123.0, 0.01));
-        TestTrue(TEXT("GIS relocation flag is preserved"), RestoredSecond->NeedsRelocation());
+        TestTrue(TEXT("지면 보정된 Z 값이 정확히 보존된다"), FMath::IsNearlyEqual(RestoredSecond->GetActorLocation().Z, 123.0, 0.01));
+        TestTrue(TEXT("GIS 재배치 Flag가 보존된다"), RestoredSecond->NeedsRelocation());
     }
-    TestEqual(TEXT("Queue ownership is rebuilt from snapshot"),
+    TestEqual(TEXT("Queue 소유권이 Snapshot에서 재구축된다"),
         Subsystem->FindAgentQueueFacility(SavedAgentId),
         InstallFirst.FacilityInstanceId);
 
     const FFFZSCommandResult RestoredReplay = Subsystem->ExecuteCommand(InstallFirst);
-    TestTrue(TEXT("Command idempotency survives save/restore"), RestoredReplay.bSucceeded && RestoredReplay.bWasDuplicateReplay);
-    TestEqual(TEXT("Restored replay does not change current revision"), Subsystem->GetWorldRevision(), int64(8));
+    TestTrue(TEXT("Command 멱등성이 저장/복원 후에도 유지된다"), RestoredReplay.bSucceeded && RestoredReplay.bWasDuplicateReplay);
+    TestEqual(TEXT("복원 후 Replay는 현재 Revision을 변경하지 않는다"), Subsystem->GetWorldRevision(), int64(8));
     return true;
 }
 
@@ -369,12 +369,12 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
 {
     FScopedZFTestSettings ScopedSettings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    if (!TestNotNull(TEXT("Automation world"), World))
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
     {
         return false;
     }
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    if (!TestNotNull(TEXT("Authoritative world subsystem"), Subsystem))
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
     {
         return false;
     }
@@ -382,23 +382,23 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
     const FName ZoneId(TEXT("GZ_DadaPocha"));
     AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
     AFFZSGameplayZone* OverlappingZone = SpawnAcceptedZone(*World, TEXT("GZ_DadaYajang"));
-    if (!TestNotNull(TEXT("Primary Zone"), Zone) || !TestNotNull(TEXT("Overlapping Zone"), OverlappingZone))
+    if (!TestNotNull(TEXT("기본 Zone"), Zone) || !TestNotNull(TEXT("겹치는 Zone"), OverlappingZone))
     {
         return false;
     }
-    TestTrue(TEXT("Primary Zone registers"), Subsystem->RegisterZone(Zone));
-    TestTrue(TEXT("Distinct-ID overlapping Zone registers for validation"), Subsystem->RegisterZone(OverlappingZone));
+    TestTrue(TEXT("기본 Zone이 등록된다"), Subsystem->RegisterZone(Zone));
+    TestTrue(TEXT("서로 다른 ID를 가진 겹치는 Zone이 검증을 위해 등록된다"), Subsystem->RegisterZone(OverlappingZone));
 
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000); // q0: 기존 10m 물리 위치를 보존한다.
     const FFFZSFacilitySpec FoodTruck = UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     const FFFZSCommand AmbiguousInstall = UFFZSGridLibrary::MakeInstallCommand(FoodTruck, ZoneId, Placement, 0);
-    TestEqual(TEXT("Every reserved sample must belong to exactly one Zone"),
+    TestEqual(TEXT("모든 Reserved Sample은 정확히 하나의 Zone에 속해야 한다"),
         Subsystem->ExecuteCommand(AmbiguousInstall).FailureReason,
         EFFZSPlacementFailure::OutsideZone);
 
     const FFFZSPlacementValidation AmbiguousValidation = Subsystem->ValidatePlacement(AmbiguousInstall);
-    if (!TestTrue(TEXT("Ambiguous validation still reports its compressed reserved regions"), !AmbiguousValidation.ReservedRects.IsEmpty()))
+    if (!TestTrue(TEXT("모호성 검증도 압축된 Reserved Region을 보고한다"), !AmbiguousValidation.ReservedRects.IsEmpty()))
     {
         return false;
     }
@@ -411,14 +411,14 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
     OverlappingZone->SetActorTransform(FTransform(
         FRotator::ZeroRotator,
         FVector(MaxReservedCellExclusiveX * UFFZSDeveloperSettings::DefaultPlacementCellSizeCm, 0.0, 0.0)));
-    TestTrue(TEXT("A neighboring Zone touching only the reserved-cell boundary is not an interior overlap"),
+    TestTrue(TEXT("Reserved Cell 경계에만 닿는 인접 Zone은 내부 겹침이 아니다"),
         Subsystem->ValidatePlacement(AmbiguousInstall).bIsValid);
 
     OverlappingZone->SetActorTransform(FTransform(FRotator(0.0, 90.0, 0.0), FVector(10000.0, 0.0, 0.0)));
     const FFFZSPlacementValidation RotatedOverlapValidation = Subsystem->ValidatePlacement(AmbiguousInstall);
-    TestFalse(TEXT("A cardinal-yaw rotated Zone with coincident world geometry remains ambiguous"),
+    TestFalse(TEXT("직각 Yaw로 회전했지만 World Geometry가 일치하는 Zone은 여전히 모호하다"),
         RotatedOverlapValidation.bIsValid);
-    TestTrue(TEXT("Rotated Zone ambiguity preserves the OutsideZone failure reason"),
+    TestTrue(TEXT("회전된 Zone의 모호성은 OutsideZone 실패 원인을 유지한다"),
         RotatedOverlapValidation.Reasons.Contains(EFFZSPlacementFailure::OutsideZone));
 
     Subsystem->UnregisterZone(OverlappingZone);
@@ -430,23 +430,23 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
         AFFZSProtectedArea::StaticClass(),
         FTransform(FRotator::ZeroRotator, FVector(1050.0, 1050.0, 100.0)),
         ProtectedParameters);
-    if (!TestNotNull(TEXT("Protected Area"), ProtectedArea))
+    if (!TestNotNull(TEXT("보호 구역"), ProtectedArea))
     {
         return false;
     }
     const UFFZSDeveloperSettings* ProtectedSettings = GetDefault<UFFZSDeveloperSettings>();
     ProtectedArea->RequiredClearWidthCm = 0.0f;
     ProtectedArea->AreaType = EFFZSProtectedAreaType::GeneralRoute;
-    TestEqual(TEXT("General Route width zero inherits Project Settings"),
+    TestEqual(TEXT("General Route 폭 0은 Project Settings 값을 상속한다"),
         ProtectedArea->GetEffectiveRequiredClearWidthCm(), ProtectedSettings->GeneralRouteWidthCm);
     ProtectedArea->AreaType = EFFZSProtectedAreaType::EmergencyServiceRoute;
-    TestEqual(TEXT("Emergency Route width zero inherits Project Settings"),
+    TestEqual(TEXT("Emergency Route 폭 0은 Project Settings 값을 상속한다"),
         ProtectedArea->GetEffectiveRequiredClearWidthCm(), ProtectedSettings->EmergencyServiceRouteWidthCm);
     ProtectedArea->AreaType = EFFZSProtectedAreaType::AccessibilityRoute;
-    TestEqual(TEXT("Accessibility Route width zero inherits Project Settings"),
+    TestEqual(TEXT("Accessibility Route 폭 0은 Project Settings 값을 상속한다"),
         ProtectedArea->GetEffectiveRequiredClearWidthCm(), ProtectedSettings->AccessibilityRouteWidthCm);
     ProtectedArea->RequiredClearWidthCm = 275.0f;
-    TestEqual(TEXT("A positive per-Actor protected width overrides Project Settings"),
+    TestEqual(TEXT("양수인 Actor별 보호 폭이 Project Settings 값을 덮어쓴다"),
         ProtectedArea->GetEffectiveRequiredClearWidthCm(), 275.0f);
     ProtectedArea->ProtectedAreaId = TEXT("PA_TestNoBuild");
     ProtectedArea->LinkedZoneId = ZoneId;
@@ -456,10 +456,10 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
     Subsystem->RegisterProtectedArea(ProtectedArea);
 
     const FFFZSCommand ProtectedInstall = UFFZSGridLibrary::MakeInstallCommand(FoodTruck, ZoneId, Placement, 0);
-    TestEqual(TEXT("No-build volume rejects an intersecting Facility"),
+    TestEqual(TEXT("건축 금지 Volume은 교차하는 Facility를 거부한다"),
         Subsystem->ExecuteCommand(ProtectedInstall).FailureReason,
         EFFZSPlacementFailure::ProtectedRouteBlocked);
-    TestEqual(TEXT("Rejected commands do not advance world revision"), Subsystem->GetWorldRevision(), int64(0));
+    TestEqual(TEXT("거부된 Command는 World Revision을 증가시키지 않는다"), Subsystem->GetWorldRevision(), int64(0));
 
     Subsystem->UnregisterProtectedArea(ProtectedArea);
     ProtectedArea->AreaType = EFFZSProtectedAreaType::GeneralRoute;
@@ -467,21 +467,21 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
     ProtectedArea->AreaBounds->SetBoxExtent(FVector(40.0, 300.0, 100.0));
     ProtectedArea->SetActorRotation(FRotator(0.0, 45.0, 0.0));
     TArray<FText> ProtectedErrors;
-    TestTrue(TEXT("Yaw-rotated Protected Area data remains valid"), ProtectedArea->ValidateProtectedAreaData(ProtectedErrors));
+    TestTrue(TEXT("Yaw 회전된 보호 구역 데이터는 계속 유효하다"), ProtectedArea->ValidateProtectedAreaData(ProtectedErrors));
 
     const FVector ProtectedCenter = ProtectedArea->GetActorLocation();
     const FVector LocalShortAxis = ProtectedArea->GetActorForwardVector();
     const FVector ExpandedPoint = ProtectedCenter + LocalShortAxis * 120.0;
-    TestTrue(TEXT("Required width expands the rotated local short axis"),
+    TestTrue(TEXT("필수 폭이 회전된 Local 짧은 축을 확장한다"),
         ProtectedArea->IntersectsWorldBox(FBox(ExpandedPoint - FVector(5.0, 5.0, 10.0), ExpandedPoint + FVector(5.0, 5.0, 10.0))));
 
     const FVector AabbOnlyPoint = ProtectedCenter + FVector(300.0, 0.0, 0.0);
-    TestFalse(TEXT("Rotated OBB avoids world-AABB false positives"),
+    TestFalse(TEXT("회전된 OBB는 World AABB의 오탐을 피한다"),
         ProtectedArea->IntersectsWorldBox(FBox(AabbOnlyPoint - FVector(5.0, 5.0, 10.0), AabbOnlyPoint + FVector(5.0, 5.0, 10.0))));
 
     ProtectedArea->SetActorRotation(FRotator(5.0, 45.0, 0.0));
     ProtectedErrors.Reset();
-    TestFalse(TEXT("Protected Areas reject pitch/roll"), ProtectedArea->ValidateProtectedAreaData(ProtectedErrors));
+    TestFalse(TEXT("보호 구역은 Pitch/Roll을 거부한다"), ProtectedArea->ValidateProtectedAreaData(ProtectedErrors));
     return true;
 }
 
@@ -497,20 +497,20 @@ bool FFFZSInvalidFacilitySpecStopsBeforeNavigationTest::RunTest(const FString& P
     GetMutableDefault<UFFZSDeveloperSettings>()->bEnableNavigationProjectionChecks = true;
 
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    if (!TestNotNull(TEXT("Automation world"), World))
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
     {
         return false;
     }
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    if (!TestNotNull(TEXT("Authoritative world subsystem"), Subsystem))
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
     {
         return false;
     }
 
     const FName ZoneId(TEXT("GZ_DadaPocha"));
     AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!TestNotNull(TEXT("Accepted Gameplay Zone"), Zone) ||
-        !TestTrue(TEXT("Zone registers"), Subsystem->RegisterZone(Zone)))
+    if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
+        !TestTrue(TEXT("Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
         return false;
     }
@@ -520,12 +520,12 @@ bool FFFZSInvalidFacilitySpecStopsBeforeNavigationTest::RunTest(const FString& P
     const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(InvalidSpec, ZoneId, FFFZSGridPlacement(), 0);
     const FFFZSPlacementValidation Validation = Subsystem->ValidatePlacement(Command);
 
-    TestFalse(TEXT("Invalid Facility spec is rejected"), Validation.bIsValid);
-    TestEqual(TEXT("Validation stops at one data error"), Validation.Reasons.Num(), 1);
-    TestTrue(TEXT("Failure reason is DataInvalid"), Validation.Reasons.Contains(EFFZSPlacementFailure::DataInvalid));
-    TestTrue(TEXT("Footprint cells are not calculated"), Validation.FootprintCells.IsEmpty());
-    TestTrue(TEXT("Queue cells are not calculated"), Validation.QueueCells.IsEmpty());
-    TestTrue(TEXT("Reserved cells are not calculated"), Validation.ReservedCells.IsEmpty());
+    TestFalse(TEXT("유효하지 않은 Facility Spec이 거부된다"), Validation.bIsValid);
+    TestEqual(TEXT("검증은 데이터 오류 하나에서 중단된다"), Validation.Reasons.Num(), 1);
+    TestTrue(TEXT("실패 원인은 DataInvalid이다"), Validation.Reasons.Contains(EFFZSPlacementFailure::DataInvalid));
+    TestTrue(TEXT("Footprint Cell은 계산되지 않는다"), Validation.FootprintCells.IsEmpty());
+    TestTrue(TEXT("Queue Cell은 계산되지 않는다"), Validation.QueueCells.IsEmpty());
+    TestTrue(TEXT("Reserved Cell은 계산되지 않는다"), Validation.ReservedCells.IsEmpty());
     return true;
 }
 
@@ -543,12 +543,12 @@ bool FFFZSPortableZoneGraphAndPrimaryAssetTest::RunTest(const FString& Parameter
     Settings->ProjectZoneIds = {TEXT("GZ_NotRequiredInPortableMode")};
 
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    if (!TestNotNull(TEXT("Portable automation world"), World))
+    if (!TestNotNull(TEXT("이식성 자동화 테스트 World"), World))
     {
         return false;
     }
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    if (!TestNotNull(TEXT("Portable world subsystem"), Subsystem))
+    if (!TestNotNull(TEXT("이식성 World Subsystem"), Subsystem))
     {
         return false;
     }
@@ -557,49 +557,49 @@ bool FFFZSPortableZoneGraphAndPrimaryAssetTest::RunTest(const FString& Parameter
     SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
     AFFZSGameplayZone* CustomZone = World->SpawnActor<AFFZSGameplayZone>(
         AFFZSGameplayZone::StaticClass(), FTransform::Identity, SpawnParameters);
-    if (!TestNotNull(TEXT("Custom portable Zone"), CustomZone))
+    if (!TestNotNull(TEXT("사용자 정의 이식성 Zone"), CustomZone))
     {
         return false;
     }
     CustomZone->ZoneId = TEXT("Custom_Main");
-    TestTrue(TEXT("Unrestricted mode registers a non-Festa Zone ID"), Subsystem->RegisterZone(CustomZone));
-    TestFalse(TEXT("A registered Zone cannot replace its registry key through a preset"),
+    TestTrue(TEXT("비제한 모드에서는 Festa가 아닌 Zone ID도 등록된다"), Subsystem->RegisterZone(CustomZone));
+    TestFalse(TEXT("등록된 Zone은 Preset으로 Registry Key를 바꿀 수 없다"),
         CustomZone->ApplyAcceptedZonePreset(TEXT("GZ_Operations")));
-    TestEqual(TEXT("Rejected preset keeps the registered Zone ID"), CustomZone->ZoneId, FName(TEXT("Custom_Main")));
-    TestTrue(TEXT("Original registry key still resolves to the same Zone"),
+    TestEqual(TEXT("거부된 Preset은 등록된 Zone ID를 유지한다"), CustomZone->ZoneId, FName(TEXT("Custom_Main")));
+    TestTrue(TEXT("기존 Registry Key로 동일한 Zone이 조회된다"),
         Subsystem->FindZone(TEXT("Custom_Main")) == CustomZone);
-    TestNull(TEXT("Rejected preset does not create a stale replacement key"),
+    TestNull(TEXT("거부된 Preset은 오래된 교체 Key를 생성하지 않는다"),
         Subsystem->FindZone(TEXT("GZ_Operations")));
 
     TArray<FText> GraphErrors;
-    TestTrue(TEXT("Unrestricted mode validates only the registered graph"), Subsystem->ValidateZoneGraph(GraphErrors));
-    TestTrue(TEXT("Portable registered graph has no Festa missing-Zone errors"), GraphErrors.IsEmpty());
+    TestTrue(TEXT("비제한 모드는 등록된 Graph만 검증한다"), Subsystem->ValidateZoneGraph(GraphErrors));
+    TestTrue(TEXT("이식 가능한 등록 Graph에는 Festa Zone 누락 오류가 없다"), GraphErrors.IsEmpty());
 
     Settings->bRestrictZoneIdsToProjectPresets = true;
     Settings->ProjectZoneIds = {TEXT("Custom_Main"), TEXT("Custom_Secondary")};
     GraphErrors.Reset();
-    TestFalse(TEXT("Restricted mode requires every configured Project Zone ID"), Subsystem->ValidateZoneGraph(GraphErrors));
-    TestEqual(TEXT("Only the configured missing Zone is reported"), GraphErrors.Num(), 1);
+    TestFalse(TEXT("제한 모드는 설정된 모든 Project Zone ID를 요구한다"), Subsystem->ValidateZoneGraph(GraphErrors));
+    TestEqual(TEXT("설정된 누락 Zone만 보고된다"), GraphErrors.Num(), 1);
 
     AFFZSGameplayZone* SecondaryZone = World->SpawnActor<AFFZSGameplayZone>(
         AFFZSGameplayZone::StaticClass(), FTransform(FRotator::ZeroRotator, FVector(20000.0, 0.0, 0.0)), SpawnParameters);
-    if (!TestNotNull(TEXT("Second configured Zone"), SecondaryZone))
+    if (!TestNotNull(TEXT("두 번째 설정 Zone"), SecondaryZone))
     {
         return false;
     }
     SecondaryZone->ZoneId = TEXT("Custom_Secondary");
-    TestTrue(TEXT("Restricted mode registers an ID from Project Zone Ids"), Subsystem->RegisterZone(SecondaryZone));
+    TestTrue(TEXT("제한 모드는 Project Zone ID 목록의 ID를 등록한다"), Subsystem->RegisterZone(SecondaryZone));
     GraphErrors.Reset();
-    TestTrue(TEXT("Configured portable Zone graph validates without Festa IDs"), Subsystem->ValidateZoneGraph(GraphErrors));
-    TestTrue(TEXT("Configured portable graph emits no errors"), GraphErrors.IsEmpty());
+    TestTrue(TEXT("설정된 이식 가능 Zone Graph는 Festa ID 없이도 검증된다"), Subsystem->ValidateZoneGraph(GraphErrors));
+    TestTrue(TEXT("설정된 이식 가능 Graph는 오류를 내지 않는다"), GraphErrors.IsEmpty());
 
     UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
     Definition->Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     Definition->Spec.FacilityDefinitionId = TEXT("Facility.PortablePrimaryAsset");
     const FPrimaryAssetId PrimaryAssetId = Definition->GetPrimaryAssetId();
-    TestEqual(TEXT("Facility definitions use the plugin-unique Primary Asset type"),
+    TestEqual(TEXT("Facility Definition은 플러그인 고유 Primary Asset Type을 사용한다"),
         PrimaryAssetId.PrimaryAssetType.ToString(), FString(TEXT("FFZSFacilityDefinition")));
-    TestEqual(TEXT("Facility Definition ID remains the Primary Asset name"),
+    TestEqual(TEXT("Facility Definition ID는 Primary Asset Name으로 유지된다"),
         PrimaryAssetId.PrimaryAssetName, Definition->Spec.FacilityDefinitionId);
     return true;
 }
@@ -613,20 +613,20 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 {
     FScopedZFTestSettings ScopedSettings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    if (!TestNotNull(TEXT("Automation world"), World))
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
     {
         return false;
     }
 
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    if (!TestNotNull(TEXT("Authoritative world subsystem"), Subsystem))
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
     {
         return false;
     }
 
     const FName ZoneId(TEXT("GZ_DadaPocha"));
     AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
-    if (!TestNotNull(TEXT("Accepted Gameplay Zone"), Zone))
+    if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone))
     {
         return false;
     }
@@ -634,7 +634,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     // Schema 3 음수 Origin도 실제 복원 성공 경로에서 검증할 수 있도록 이 테스트 전용 Zone을
     // 원점 양쪽 100 m로 넓힌다. 제품 Preset이나 다른 테스트의 Zone 경계는 변경하지 않는다.
     USplineComponent* BoundarySpline = Zone->FindComponentByClass<USplineComponent>();
-    if (!TestNotNull(TEXT("Gameplay Zone boundary spline"), BoundarySpline))
+    if (!TestNotNull(TEXT("Gameplay Zone 경계 Spline"), BoundarySpline))
     {
         return false;
     }
@@ -650,13 +650,13 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             PointIndex, BoundaryPoints[PointIndex], ESplineCoordinateSpace::Local, false);
     }
     BoundarySpline->UpdateSpline();
-    if (!TestTrue(TEXT("Zone registers"), Subsystem->RegisterZone(Zone)))
+    if (!TestTrue(TEXT("Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
     {
         return false;
     }
 
-    // A restore attempted from any command callback (including a Blueprint policy callback)
-    // must fail while the command guard is active and must not alter authoritative state.
+    // 명령 Callback(Blueprint Policy Callback 포함)에서 시도한 복원은
+    // 명령 Guard가 활성화된 동안 반드시 실패해야 하며 권위 상태를 변경해서는 안 된다.
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot EmptyLiveSnapshot = Subsystem->CaptureWorldSnapshot();
     Subsystem->SetChangePhase(EFFZSChangePhase::Reconfigure);
@@ -696,38 +696,38 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
     const FFFZSCommandResult InstallResult = Subsystem->ExecuteCommand(Install);
     World->RemoveOnActorSpawnedHandler(RestoreDuringCommandHandle);
-    TestTrue(TEXT("Facility spawn reaches the reentrant restore callback"), bRestoreCallbackReached);
-    TestFalse(TEXT("Restore is rejected while a command is in flight"), bReentrantRestoreSucceeded);
-    TestTrue(TEXT("Rejected reentrant restore explains the conflict"), !ReentrantRestoreErrors.IsEmpty());
-    TestTrue(TEXT("Rejected reentrant restore leaves authoritative state unchanged"), bReentrantRestorePreservedState);
-    TestTrue(TEXT("Outer Install still commits after the rejected callback"), InstallResult.bSucceeded);
-    TestEqual(TEXT("Command guard resets after ExecuteCommand returns"), Subsystem->GetChangePhase(), EFFZSChangePhase::Reconfigure);
+    TestTrue(TEXT("Facility Spawn이 재진입 Restore Callback에 도달한다"), bRestoreCallbackReached);
+    TestFalse(TEXT("Command 실행 중에는 Restore가 거부된다"), bReentrantRestoreSucceeded);
+    TestTrue(TEXT("거부된 재진입 Restore가 충돌 원인을 설명한다"), !ReentrantRestoreErrors.IsEmpty());
+    TestTrue(TEXT("거부된 재진입 Restore는 권위 상태를 변경하지 않는다"), bReentrantRestorePreservedState);
+    TestTrue(TEXT("외부 Install은 거부된 Callback 후에도 Commit된다"), InstallResult.bSucceeded);
+    TestEqual(TEXT("Command Guard는 ExecuteCommand 반환 후 Reset된다"), Subsystem->GetChangePhase(), EFFZSChangePhase::Reconfigure);
 
     AFFZSFacilityActor* Facility = Subsystem->FindFacility(Install.FacilityInstanceId);
-    if (!TestNotNull(TEXT("Installed Facility"), Facility))
+    if (!TestNotNull(TEXT("설치된 Facility"), Facility))
     {
         return false;
     }
     const FFFZSCommand Open = MakeFacilityCommand(EFFZSCommandType::Open, Install.FacilityInstanceId, 1);
-    TestTrue(TEXT("A later command succeeds after the command guard unwinds"), Subsystem->ExecuteCommand(Open).bSucceeded);
+    TestTrue(TEXT("Command Guard 해제 후 후속 Command가 성공한다"), Subsystem->ExecuteCommand(Open).bSucceeded);
 
     const FName DrainingAgentId(TEXT("Agent.RestoredDrain"));
     FGuid DrainingTicket;
-    TestEqual(TEXT("Agent joins before normal close"),
+    TestEqual(TEXT("Normal Close 전에 Agent가 Join한다"),
         Subsystem->JoinFacilityQueue(Install.FacilityInstanceId, DrainingAgentId, nullptr, DrainingTicket),
         EFFZSQueueJoinResult::Joined);
     const FFFZSCommand Close = MakeFacilityCommand(EFFZSCommandType::Close, Install.FacilityInstanceId, 2);
-    TestTrue(TEXT("Normal Close starts a drain"), Subsystem->ExecuteCommand(Close).bSucceeded);
-    TestEqual(TEXT("Facility remains Closed while occupied"), Facility->GetFacilityState(), EFFZSFacilityState::Closed);
-    TestEqual(TEXT("Occupied normal Close uses Draining Queue state"),
+    TestTrue(TEXT("Normal Close가 Drain을 시작한다"), Subsystem->ExecuteCommand(Close).bSucceeded);
+    TestEqual(TEXT("점유 중인 Facility는 Closed 상태를 유지한다"), Facility->GetFacilityState(), EFFZSFacilityState::Closed);
+    TestEqual(TEXT("점유 상태의 Normal Close는 Draining Queue 상태를 사용한다"),
         Facility->GetQueueComponent()->GetQueueState(), EFFZSQueueState::Draining);
 
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot DrainingSnapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot schema includes phase and the 1cm Region contract"), DrainingSnapshot.SchemaVersion, 4);
-    TestEqual(TEXT("Snapshot captures non-initial phase"), DrainingSnapshot.CurrentPhase, EFFZSChangePhase::LiveOperation);
-    TestEqual(TEXT("Snapshot captures authoritative revision"), DrainingSnapshot.WorldRevision, int64(3));
-    TestTrue(TEXT("Snapshot captures normal-close drain intent"),
+    TestEqual(TEXT("Snapshot Schema는 Phase와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, 4);
+    TestEqual(TEXT("Snapshot이 초기값이 아닌 Phase를 캡처한다"), DrainingSnapshot.CurrentPhase, EFFZSChangePhase::LiveOperation);
+    TestEqual(TEXT("Snapshot이 권위 Revision을 캡처한다"), DrainingSnapshot.WorldRevision, int64(3));
+    TestTrue(TEXT("Snapshot이 Normal Close의 Drain Intent를 캡처한다"),
         DrainingSnapshot.Facilities.Num() == 1 && DrainingSnapshot.Facilities[0].Queue.bDrainRequested);
 
     // 실제 Schema 3(1 Cell=100 cm) 표본을 만든다. 원래 cm로 저장되던 spline/anchor/Transform은
@@ -736,7 +736,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     LegacyV3BaseSnapshot.SchemaVersion = 3;
     if (LegacyV3BaseSnapshot.Facilities.Num() != 1)
     {
-        AddError(TEXT("Schema 3 migration fixture requires exactly one Facility."));
+        AddError(TEXT("Schema 3 마이그레이션 Fixture에는 Facility가 정확히 하나 있어야 합니다."));
         return false;
     }
 
@@ -746,7 +746,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         LegacyBaseSpec.FootprintSizeCells.Y % 100 != 0 ||
         LegacyBaseSpec.ClearanceCells % 100 != 0)
     {
-        AddError(TEXT("Schema 3 migration fixture requires meter-aligned built-in dimensions."));
+        AddError(TEXT("Schema 3 마이그레이션 Fixture의 내장 치수는 미터 단위에 맞춰져 있어야 합니다."));
         return false;
     }
 
@@ -756,7 +756,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         if (Rect.Min.X % 100 != 0 || Rect.Min.Y % 100 != 0 ||
             Rect.Max.X % 100 != 0 || Rect.Max.Y % 100 != 0)
         {
-            AddError(TEXT("Schema 3 migration fixture requires meter-aligned Queue rectangles."));
+            AddError(TEXT("Schema 3 마이그레이션 Fixture의 Queue 사각형은 미터 단위에 맞춰져 있어야 합니다."));
             return false;
         }
         for (int32 X = Rect.Min.X; X < Rect.Max.X; X += 100)
@@ -782,7 +782,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             ReceiptIndex,
             *Receipt.CommandId.ToString());
     }
-    if (!TestFalse(TEXT("Schema 3 fixture contains opaque command receipts"),
+    if (!TestFalse(TEXT("Schema 3 Fixture에 Opaque Command Receipt가 포함되어 있다"),
         LegacyV3BaseSnapshot.CommandReceipts.IsEmpty()))
     {
         return false;
@@ -825,59 +825,59 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
         TArray<FText> LegacyV3Errors;
         const FString CaseLabel = FString::Printf(TEXT("Schema 3 q%d"), QuarterTurn);
-        if (!TestTrue(*FString::Printf(TEXT("%s migrates atomically to the 1cm contract"), *CaseLabel),
+        if (!TestTrue(*FString::Printf(TEXT("%s: 1cm 계약으로 원자적 마이그레이션에 성공한다"), *CaseLabel),
             Subsystem->RestoreWorldSnapshot(LegacyV3Snapshot, LegacyV3Errors)))
         {
             return false;
         }
-        TestTrue(*FString::Printf(TEXT("%s migration emits no errors"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: 마이그레이션은 오류를 내지 않는다"), *CaseLabel),
             LegacyV3Errors.IsEmpty());
 
         const FFFZSWorldSnapshot MigratedV4Snapshot = Subsystem->CaptureWorldSnapshot();
         if (MigratedV4Snapshot.Facilities.Num() != 1)
         {
-            AddError(FString::Printf(TEXT("%s must contain exactly one migrated Facility."), *CaseLabel));
+            AddError(FString::Printf(TEXT("%s: 마이그레이션된 Facility가 정확히 하나 있어야 합니다."), *CaseLabel));
             return false;
         }
         const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV4Snapshot.Facilities[0];
-        TestEqual(*FString::Printf(TEXT("%s saves as Schema 4"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: Schema 4로 저장된다"), *CaseLabel),
             MigratedV4Snapshot.SchemaVersion, 4);
-        TestEqual(*FString::Printf(TEXT("%s FacilitySpec uses Schema 2"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: FacilitySpec은 Schema 2를 사용한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.SchemaVersion, 2);
-        TestEqual(*FString::Printf(TEXT("%s preserves the 6m x 3m footprint"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: 6m x 3m Footprint를 보존한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.FootprintSizeCells, FIntPoint(600, 300));
-        TestEqual(*FString::Printf(TEXT("%s preserves the 1m clearance"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: 1m Clearance를 보존한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.ClearanceCells, 100);
-        TestTrue(*FString::Printf(TEXT("%s removes legacy Queue cells"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: Legacy Queue Cell을 제거한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.QueueReservedCells.IsEmpty());
 
         const TArray<FFFZSCellRect>& MigratedQueueRects =
             MigratedSaved.FacilitySpec.QueueReservedRects;
-        TestEqual(*FString::Printf(TEXT("%s compresses Queue cells into three exact bands"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: Queue Cell을 정확한 세 Band로 압축한다"), *CaseLabel),
             MigratedQueueRects.Num(), 3);
-        TestEqual(*FString::Printf(TEXT("%s preserves the exact 160,000 cm2 Queue union"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: 정확히 160,000 cm2인 Queue 합집합을 보존한다"), *CaseLabel),
             UFFZSGridLibrary::GetCellRectArea(MigratedQueueRects), static_cast<int64>(160'000));
-        TestTrue(*FString::Printf(TEXT("%s preserves the left Queue band"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: 왼쪽 Queue Band를 보존한다"), *CaseLabel),
             MigratedQueueRects.Contains(
                 FFFZSCellRect(FIntPoint(0, 300), FIntPoint(100, 800))));
-        TestTrue(*FString::Printf(TEXT("%s preserves the right Queue band"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: 오른쪽 Queue Band를 보존한다"), *CaseLabel),
             MigratedQueueRects.Contains(
                 FFFZSCellRect(FIntPoint(500, 300), FIntPoint(600, 800))));
-        TestTrue(*FString::Printf(TEXT("%s preserves the top Queue band"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: 위쪽 Queue Band를 보존한다"), *CaseLabel),
             MigratedQueueRects.Contains(
                 FFFZSCellRect(FIntPoint(0, 800), FIntPoint(600, 900))));
 
-        TestEqual(*FString::Printf(TEXT("%s applies the exact corrected Origin"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: 정확히 보정된 Origin을 적용한다"), *CaseLabel),
             MigratedSaved.Placement.OriginCell, ExpectedMigratedOrigins[QuarterTurn]);
-        TestEqual(*FString::Printf(TEXT("%s preserves its normalized rotation"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: 정규화된 Rotation을 보존한다"), *CaseLabel),
             MigratedSaved.Placement.QuarterTurns, QuarterTurn);
-        TestTrue(*FString::Printf(TEXT("%s preserves the physical center"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: 물리적 중심을 보존한다"), *CaseLabel),
             MigratedSaved.WorldTransform.GetLocation().Equals(ExpectedPhysicalCenter, 0.1));
-        TestTrue(*FString::Printf(TEXT("%s preserves the physical rotation"), *CaseLabel),
+        TestTrue(*FString::Printf(TEXT("%s: 물리적 Rotation을 보존한다"), *CaseLabel),
             MigratedSaved.WorldTransform.GetRotation().AngularDistance(ExpectedPhysicalRotation) <=
                 FMath::DegreesToRadians(0.01));
 
-        TestEqual(*FString::Printf(TEXT("%s preserves the receipt count"), *CaseLabel),
+        TestEqual(*FString::Printf(TEXT("%s: Receipt 개수를 보존한다"), *CaseLabel),
             MigratedV4Snapshot.CommandReceipts.Num(),
             LegacyV3BaseSnapshot.CommandReceipts.Num());
         for (const FFFZSCommandReceiptSnapshot& LegacyReceipt : LegacyV3BaseSnapshot.CommandReceipts)
@@ -888,7 +888,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
                     {
                         return Candidate.CommandId == LegacyReceipt.CommandId;
                     });
-            TestTrue(*FString::Printf(TEXT("%s preserves receipt %s"),
+            TestTrue(*FString::Printf(TEXT("%s: Receipt %s를 보존한다"),
                 *CaseLabel, *LegacyReceipt.CommandId.ToString()),
                 MigratedReceipt != nullptr &&
                 MigratedReceipt->PayloadFingerprint == LegacyReceipt.PayloadFingerprint);
@@ -902,11 +902,11 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             ReusedCommandId.CommandId = LegacyV3BaseSnapshot.CommandReceipts[0].CommandId;
             const int64 RevisionBeforeMismatch = Subsystem->GetWorldRevision();
             const FFFZSCommandResult MismatchResult = Subsystem->ExecuteCommand(ReusedCommandId);
-            TestFalse(TEXT("A restored Schema 3 receipt rejects a new v4 payload with the same CommandId"),
+            TestFalse(TEXT("복원된 Schema 3 Receipt는 동일 CommandId의 새 v4 Payload를 거부한다"),
                 MismatchResult.bSucceeded);
-            TestEqual(TEXT("Opaque legacy receipt mismatch has the dedicated failure code"),
+            TestEqual(TEXT("Opaque Legacy Receipt 불일치는 전용 실패 코드를 사용한다"),
                 MismatchResult.FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
-            TestEqual(TEXT("Receipt mismatch does not mutate WorldRevision"),
+            TestEqual(TEXT("Receipt 불일치는 WorldRevision을 변경하지 않는다"),
                 Subsystem->GetWorldRevision(), RevisionBeforeMismatch);
         }
     }
@@ -921,19 +921,19 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     const int64 RevisionBeforeOverflow = Subsystem->GetWorldRevision();
     const EFFZSChangePhase PhaseBeforeOverflow = Subsystem->GetChangePhase();
     TArray<FText> AdjustedOriginOverflowErrors;
-    TestFalse(TEXT("Schema 3 adjusted-Origin overflow is rejected before staging"),
+    TestFalse(TEXT("Schema 3의 보정된 Origin Overflow는 준비 전에 거부된다"),
         Subsystem->RestoreWorldSnapshot(
             AdjustedOriginOverflowSnapshot, AdjustedOriginOverflowErrors));
-    TestTrue(TEXT("Adjusted-Origin overflow reports its precise migration boundary"),
+    TestTrue(TEXT("보정된 Origin Overflow가 정확한 마이그레이션 경계를 보고한다"),
         AdjustedOriginOverflowErrors.ContainsByPredicate([](const FText& Error)
         {
-            return Error.ToString().Contains(TEXT("after rotation-origin correction"));
+            return Error.ToString().Contains(TEXT("회전 원점 보정 후"));
         }));
-    TestTrue(TEXT("Adjusted-Origin overflow preserves the registered Facility"),
+    TestTrue(TEXT("보정된 Origin Overflow 발생 후 등록된 Facility가 보존된다"),
         Subsystem->FindFacility(Install.FacilityInstanceId) == FacilityBeforeOverflow);
-    TestEqual(TEXT("Adjusted-Origin overflow preserves WorldRevision"),
+    TestEqual(TEXT("보정된 Origin Overflow 발생 후 WorldRevision이 보존된다"),
         Subsystem->GetWorldRevision(), RevisionBeforeOverflow);
-    TestEqual(TEXT("Adjusted-Origin overflow preserves phase"),
+    TestEqual(TEXT("보정된 Origin Overflow 발생 후 Phase가 보존된다"),
         Subsystem->GetChangePhase(), PhaseBeforeOverflow);
 
     // Schema 4에서도 footprint/expanded는 표현되지만 FoodTruck Queue Y Max만 int32를 넘는 표본이다.
@@ -948,18 +948,18 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             1300.0, static_cast<double>(MAX_int32) - 749.0, 0.0)),
         FVector::OneVector);
     TArray<FText> QueueOverflowV4Errors;
-    TestFalse(TEXT("Schema 4 Queue-only overflow cannot restore a partial authority Region"),
+    TestFalse(TEXT("Schema 4의 Queue 전용 Overflow는 불완전한 권위 Region을 복원할 수 없다"),
         Subsystem->RestoreWorldSnapshot(QueueOverflowV4Snapshot, QueueOverflowV4Errors));
-    TestTrue(TEXT("Schema 4 Queue-only overflow names the incomplete compressed Region"),
+    TestTrue(TEXT("Schema 4의 Queue 전용 Overflow가 불완전한 압축 Region을 명시한다"),
         QueueOverflowV4Errors.ContainsByPredicate([](const FText& Error)
         {
-            return Error.ToString().Contains(TEXT("complete compressed 1 cm placement region"));
+            return Error.ToString().Contains(TEXT("완전한 압축 1cm 배치 영역"));
         }));
-    TestTrue(TEXT("Schema 4 Queue-only overflow preserves the registered Facility"),
+    TestTrue(TEXT("Schema 4의 Queue 전용 Overflow 발생 후 등록된 Facility가 보존된다"),
         Subsystem->FindFacility(Install.FacilityInstanceId) == FacilityBeforeOverflow);
-    TestEqual(TEXT("Schema 4 Queue-only overflow preserves WorldRevision"),
+    TestEqual(TEXT("Schema 4의 Queue 전용 Overflow 발생 후 WorldRevision이 보존된다"),
         Subsystem->GetWorldRevision(), RevisionBeforeOverflow);
-    TestEqual(TEXT("Schema 4 Queue-only overflow preserves phase"),
+    TestEqual(TEXT("Schema 4의 Queue 전용 Overflow 발생 후 Phase가 보존된다"),
         Subsystem->GetChangePhase(), PhaseBeforeOverflow);
 
     Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck);
@@ -967,20 +967,20 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     FFFZSWorldSnapshot LegacySnapshot = DrainingSnapshot;
     LegacySnapshot.SchemaVersion = 2;
     TArray<FText> LegacyErrors;
-    TestFalse(TEXT("Schema 2 snapshot is explicitly rejected"), Subsystem->RestoreWorldSnapshot(LegacySnapshot, LegacyErrors));
-    TestTrue(TEXT("Schema 2 rejection explains the missing CurrentPhase"),
+    TestFalse(TEXT("Schema 2 Snapshot은 명시적으로 거부된다"), Subsystem->RestoreWorldSnapshot(LegacySnapshot, LegacyErrors));
+    TestTrue(TEXT("Schema 2 거부 사유가 누락된 CurrentPhase를 설명한다"),
         LegacyErrors.ContainsByPredicate([](const FText& Error)
         {
             return Error.ToString().Contains(TEXT("CurrentPhase"));
         }));
-    TestTrue(TEXT("Rejected legacy snapshot preserves Facility identity"),
+    TestTrue(TEXT("거부된 Legacy Snapshot은 Facility 식별자를 보존한다"),
         Subsystem->FindFacility(Install.FacilityInstanceId) == FacilityBeforeRejectedRestore);
-    TestEqual(TEXT("Rejected legacy snapshot preserves phase"), Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
-    TestEqual(TEXT("Rejected legacy snapshot preserves revision"), Subsystem->GetWorldRevision(), int64(3));
-    TestEqual(TEXT("Rejected legacy snapshot preserves Queue ownership"),
+    TestEqual(TEXT("거부된 Legacy Snapshot은 Phase를 보존한다"), Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
+    TestEqual(TEXT("거부된 Legacy Snapshot은 Revision을 보존한다"), Subsystem->GetWorldRevision(), int64(3));
+    TestEqual(TEXT("거부된 Legacy Snapshot은 Queue 소유권을 보존한다"),
         Subsystem->FindAgentQueueFacility(DrainingAgentId), Install.FacilityInstanceId);
 
-    // Off-thread restore must reject before reading subsystem/world state.
+    // Game Thread 밖의 복원 요청은 Subsystem/World 상태를 읽기 전에 거부되어야 한다.
     const TPair<bool, int32> OffThreadRestore = Async(EAsyncExecution::ThreadPool,
         [Subsystem, DrainingSnapshot]()
         {
@@ -988,21 +988,21 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             const bool bSucceeded = Subsystem->RestoreWorldSnapshot(DrainingSnapshot, Errors);
             return TPair<bool, int32>(bSucceeded, Errors.Num());
         }).Get();
-    TestFalse(TEXT("Off-Game-Thread restore is rejected"), OffThreadRestore.Key);
-    TestTrue(TEXT("Off-Game-Thread restore reports an error"), OffThreadRestore.Value > 0);
-    TestTrue(TEXT("Off-thread rejection preserves Facility identity"),
+    TestFalse(TEXT("Game Thread 밖의 Restore는 거부된다"), OffThreadRestore.Key);
+    TestTrue(TEXT("Game Thread 밖의 Restore가 오류를 보고한다"), OffThreadRestore.Value > 0);
+    TestTrue(TEXT("다른 Thread의 요청을 거부한 뒤 Facility 식별자가 보존된다"),
         Subsystem->FindFacility(Install.FacilityInstanceId) == FacilityBeforeRejectedRestore);
-    TestEqual(TEXT("Off-thread rejection preserves phase"), Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
+    TestEqual(TEXT("다른 Thread의 요청을 거부한 뒤 Phase가 보존된다"), Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
 
     FFFZSWorldSnapshot InvalidPhaseSnapshot = DrainingSnapshot;
     InvalidPhaseSnapshot.CurrentPhase = static_cast<EFFZSChangePhase>(255);
     TArray<FText> InvalidPhaseErrors;
-    TestFalse(TEXT("Snapshot rejects an invalid phase enum"),
+    TestFalse(TEXT("Snapshot은 유효하지 않은 Phase Enum을 거부한다"),
         Subsystem->RestoreWorldSnapshot(InvalidPhaseSnapshot, InvalidPhaseErrors));
-    TestEqual(TEXT("Invalid phase rejection preserves current phase"),
+    TestEqual(TEXT("유효하지 않은 Phase를 거부한 뒤 현재 Phase가 보존된다"),
         Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
 
-    // A command attempted while restore stages an Actor must fail without mutating the old world.
+    // 복원이 Actor를 준비하는 동안 시도된 명령은 기존 World를 변경하지 않고 실패해야 한다.
     const FFFZSCommand ReentrantOpen = MakeFacilityCommand(EFFZSCommandType::Open, Install.FacilityInstanceId, 3);
     FFFZSCommandResult ReentrantCommandResult;
     bool bCommandCallbackReached = false;
@@ -1031,41 +1031,41 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
             }));
 
     TArray<FText> RestoreErrors;
-    TestTrue(TEXT("Valid snapshot restores after prior validation failures"),
+    TestTrue(TEXT("앞선 검증 실패 후에도 유효한 Snapshot은 복원된다"),
         Subsystem->RestoreWorldSnapshot(DrainingSnapshot, RestoreErrors));
     World->RemoveOnActorSpawnedHandler(CommandDuringRestoreHandle);
-    TestTrue(TEXT("Staged Facility spawn reaches the reentrant command callback"), bCommandCallbackReached);
-    TestEqual(TEXT("Command is rejected while restore is in progress"),
+    TestTrue(TEXT("준비된 Facility Spawn이 재진입 Command Callback에 도달한다"), bCommandCallbackReached);
+    TestEqual(TEXT("Restore 진행 중에는 Command가 거부된다"),
         ReentrantCommandResult.FailureReason, EFFZSPlacementFailure::InternalError);
-    TestTrue(TEXT("Rejected reentrant command leaves old authoritative state unchanged"), bReentrantCommandPreservedState);
-    TestTrue(TEXT("Successful restore emits no errors"), RestoreErrors.IsEmpty());
-    TestEqual(TEXT("Restore applies the saved LiveOperation phase atomically"),
+    TestTrue(TEXT("거부된 재진입 Command는 기존 권위 상태를 변경하지 않는다"), bReentrantCommandPreservedState);
+    TestTrue(TEXT("성공한 Restore는 오류를 내지 않는다"), RestoreErrors.IsEmpty());
+    TestEqual(TEXT("Restore가 저장된 LiveOperation Phase를 원자적으로 적용한다"),
         Subsystem->GetChangePhase(), EFFZSChangePhase::LiveOperation);
-    TestEqual(TEXT("Restore applies the saved revision atomically"), Subsystem->GetWorldRevision(), int64(3));
+    TestEqual(TEXT("Restore가 저장된 Revision을 원자적으로 적용한다"), Subsystem->GetWorldRevision(), int64(3));
 
     AFFZSFacilityActor* RestoredFacility = Subsystem->FindFacility(Install.FacilityInstanceId);
-    if (!TestNotNull(TEXT("Restored Facility"), RestoredFacility))
+    if (!TestNotNull(TEXT("복원된 Facility"), RestoredFacility))
     {
         return false;
     }
-    TestTrue(TEXT("Successful restore replaces the old Facility Actor"), RestoredFacility != FacilityBeforeRejectedRestore);
-    TestEqual(TEXT("Restored normal-close Facility remains Closed while draining"),
+    TestTrue(TEXT("성공한 Restore가 기존 Facility Actor를 교체한다"), RestoredFacility != FacilityBeforeRejectedRestore);
+    TestEqual(TEXT("복원된 Normal Close Facility는 Drain 중 Closed 상태를 유지한다"),
         RestoredFacility->GetFacilityState(), EFFZSFacilityState::Closed);
-    TestEqual(TEXT("Restored Queue remains Draining"),
+    TestEqual(TEXT("복원된 Queue는 Draining 상태를 유지한다"),
         RestoredFacility->GetQueueComponent()->GetQueueState(), EFFZSQueueState::Draining);
-    TestTrue(TEXT("Restore reconstructs the transient MovePending-after-drain intent"),
+    TestTrue(TEXT("Restore가 Drain 후 MovePending으로 전환할 임시 Intent를 재구성한다"),
         RestoredFacility->bSetMovePendingWhenDrained);
 
-    TestTrue(TEXT("Restored Agent can leave through world authority"),
+    TestTrue(TEXT("복원된 Agent는 World 권위를 통해 Leave할 수 있다"),
         Subsystem->LeaveCurrentFacilityQueue(DrainingAgentId, EFFZSQueueReleaseReason::RemovedBySystem));
-    TestEqual(TEXT("Removing the final Agent closes the restored draining Queue"),
+    TestEqual(TEXT("마지막 Agent를 제거하면 복원된 Draining Queue가 닫힌다"),
         RestoredFacility->GetQueueComponent()->GetQueueState(), EFFZSQueueState::Closed);
     World->Tick(ELevelTick::LEVELTICK_All, 0.2f);
-    TestEqual(TEXT("Restored normal-close drain finishes in MovePending"),
+    TestEqual(TEXT("복원된 Normal Close Drain은 MovePending 상태로 끝난다"),
         RestoredFacility->GetFacilityState(), EFFZSFacilityState::MovePending);
 
     const FFFZSCommand ReopenAfterRestore = MakeFacilityCommand(EFFZSCommandType::Open, Install.FacilityInstanceId, 3);
-    TestTrue(TEXT("Restore guard unwinds after successful restore"),
+    TestTrue(TEXT("성공한 Restore 후 Restore Guard가 해제된다"),
         Subsystem->ExecuteCommand(ReopenAfterRestore).bSucceeded);
     return true;
 }

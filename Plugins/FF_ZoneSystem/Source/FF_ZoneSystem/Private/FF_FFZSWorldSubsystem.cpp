@@ -213,7 +213,7 @@ namespace
      * 샘플/꼭짓점/변을 검사한다. 실제 비용은 셀 수, 후보 존 수, 각 존의 변 수에 함께 좌우되므로
      * O(존 수 + 셀 수)라고 단순화해서는 안 된다. 캐시는 할당과 Transform 반복을 줄이는 역할이다.
      */
-    /** Immutable geometry prepared once for every compressed rectangle checked in one placement/snapshot validation call. */
+    /** 한 번의 배치/스냅샷 검증 호출에서 검사하는 모든 압축 사각형을 위해 한 번만 준비되는 불변 Geometry다. */
     struct FZoneCellOwnershipCache
     {
         FTransform CellSpaceWorldTransform;
@@ -523,7 +523,7 @@ namespace
     {
         if (LegacySnapshot.SchemaVersion != LegacySnapshotSchemaVersion)
         {
-            OutErrors.Add(LOCTEXT("LegacySnapshotWrongSchema", "Only Zone/Facility snapshot SchemaVersion 3 can use the 100 cm to 1 cm migration path."));
+            OutErrors.Add(LOCTEXT("LegacySnapshotWrongSchema", "Zone/Facility 스냅샷은 SchemaVersion 3일 때만 100cm에서 1cm로 변환하는 마이그레이션 경로를 사용할 수 있습니다."));
             return false;
         }
 
@@ -536,14 +536,14 @@ namespace
             if (Spec.SchemaVersion != 1 || !Spec.QueueReservedRects.IsEmpty())
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotAmbiguousSpec", "Schema 3 Facility {0} must contain an unmodified FacilitySpec SchemaVersion 1 and no 1 cm QueueReservedRects."),
+                    LOCTEXT("LegacySnapshotAmbiguousSpec", "Schema 3 Facility {0}에는 수정되지 않은 FacilitySpec SchemaVersion 1이 있어야 하며 1cm QueueReservedRects가 없어야 합니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
             if (Spec.QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxMaterializedDebugCells)
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotQueueMigrationLimit", "Schema 3 Facility {0} has too many individual Queue cells for the bounded migration path; migrate that save offline."),
+                    LOCTEXT("LegacySnapshotQueueMigrationLimit", "Schema 3 Facility {0}의 개별 Queue Cell이 제한된 마이그레이션 경로의 허용량을 초과했습니다. 해당 저장 데이터는 오프라인에서 마이그레이션하십시오."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
@@ -555,7 +555,7 @@ namespace
                 !TryScaleLegacyCellCoordinate(Spec.ClearanceCells, MigratedClearance))
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotSpecOverflow", "Schema 3 Facility {0} overflows the 1 cm coordinate range while scaling its footprint or clearance."),
+                    LOCTEXT("LegacySnapshotSpecOverflow", "Schema 3 Facility {0}의 Footprint 또는 여유 공간을 변환하는 중 1cm 좌표 범위를 초과했습니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
@@ -564,7 +564,7 @@ namespace
             if (!TryCompressLegacyQueueCells(Spec.QueueReservedCells, MigratedQueueRects))
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotQueueOverflow", "Schema 3 Facility {0} contains a Queue cell outside the 1 cm coordinate range."),
+                    LOCTEXT("LegacySnapshotQueueOverflow", "Schema 3 Facility {0}에 1cm 좌표 범위를 벗어난 Queue Cell이 있습니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
@@ -573,7 +573,7 @@ namespace
             if (Saved.Placement.QuarterTurns != QuarterTurns)
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotRotation", "Schema 3 Facility {0} has a non-normalized QuarterTurns value."),
+                    LOCTEXT("LegacySnapshotRotation", "Schema 3 Facility {0}의 QuarterTurns 값이 정규화되어 있지 않습니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
@@ -583,7 +583,7 @@ namespace
                 !TryScaleLegacyCellCoordinate(Saved.Placement.OriginCell.Y, MigratedOrigin.Y))
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotOriginOverflow", "Schema 3 Facility {0} overflows the 1 cm coordinate range while scaling its OriginCell."),
+                    LOCTEXT("LegacySnapshotOriginOverflow", "Schema 3 Facility {0}의 OriginCell을 변환하는 중 1cm 좌표 범위를 초과했습니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
@@ -596,7 +596,7 @@ namespace
             if (AdjustedX < MIN_int32 || AdjustedX > MAX_int32 || AdjustedY < MIN_int32 || AdjustedY > MAX_int32)
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("LegacySnapshotAdjustedOriginOverflow", "Schema 3 Facility {0} overflows the 1 cm coordinate range after rotation-origin correction."),
+                    LOCTEXT("LegacySnapshotAdjustedOriginOverflow", "Schema 3 Facility {0}가 회전 원점 보정 후 1cm 좌표 범위를 초과했습니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
@@ -695,15 +695,15 @@ bool UFFZSWorldSubsystem::RegisterZone(AFFZSGameplayZone* Zone)
     TArray<FText> ZoneErrors;
     if (!Zone->ValidateZoneData(ZoneErrors))
     {
-        UE_LOG(LogFFZoneSystem, Error, TEXT("Invalid Gameplay Zone %s: %s"),
-            *Zone->GetName(), ZoneErrors.IsEmpty() ? TEXT("unknown validation error") : *ZoneErrors[0].ToString());
+        UE_LOG(LogFFZoneSystem, Error, TEXT("잘못된 Gameplay Zone %s: %s"),
+            *Zone->GetName(), ZoneErrors.IsEmpty() ? TEXT("알 수 없는 검증 오류") : *ZoneErrors[0].ToString());
         return false;
     }
     if (const TWeakObjectPtr<AFFZSGameplayZone>* Existing = ZonesById.Find(Zone->ZoneId))
     {
         if (Existing->IsValid() && Existing->Get() != Zone)
         {
-            UE_LOG(LogFFZoneSystem, Error, TEXT("Duplicate Gameplay Zone ID: %s"), *Zone->ZoneId.ToString());
+            UE_LOG(LogFFZoneSystem, Error, TEXT("중복된 Gameplay Zone ID: %s"), *Zone->ZoneId.ToString());
             return false;
         }
     }
@@ -735,9 +735,9 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
     TArray<FText> SpecErrors;
     if (!Facility->GetFacilitySpec().IsValid(SpecErrors))
     {
-        UE_LOG(LogFFZoneSystem, Error, TEXT("Cannot register Facility %s: invalid 1 cm FacilitySpec: %s"),
+        UE_LOG(LogFFZoneSystem, Error, TEXT("Facility %s 등록 실패: 1cm FacilitySpec이 잘못되었습니다: %s"),
             *Facility->GetFacilityInstanceId().ToString(),
-            SpecErrors.IsEmpty() ? TEXT("unknown validation error") : *SpecErrors[0].ToString());
+            SpecErrors.IsEmpty() ? TEXT("알 수 없는 검증 오류") : *SpecErrors[0].ToString());
         return false;
     }
 
@@ -746,7 +746,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
     {
         if (Existing->IsValid() && Existing->Get() != Facility)
         {
-            UE_LOG(LogFFZoneSystem, Error, TEXT("Duplicate Facility Instance ID: %s"), *FacilityId.ToString());
+            UE_LOG(LogFFZoneSystem, Error, TEXT("중복된 Facility Instance ID: %s"), *FacilityId.ToString());
             return false;
         }
         if (Existing->Get() == Facility)
@@ -760,7 +760,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
     if (ReservedRects.IsEmpty() ||
         AreRegionsOccupiedByOther(Facility->GetZoneId(), ReservedRects, FacilityId))
     {
-        UE_LOG(LogFFZoneSystem, Error, TEXT("Cannot register Facility %s: invalid or overlapping compressed region in Zone %s"),
+        UE_LOG(LogFFZoneSystem, Error, TEXT("Facility %s 등록 실패: Zone %s의 압축 영역이 잘못되었거나 다른 영역과 겹칩니다"),
             *FacilityId.ToString(), *Facility->GetZoneId().ToString());
         return false;
     }
@@ -817,8 +817,8 @@ bool UFFZSWorldSubsystem::RegisterProtectedArea(AFFZSProtectedArea* ProtectedAre
     TArray<FText> Errors;
     if (!ProtectedArea->ValidateProtectedAreaData(Errors))
     {
-        UE_LOG(LogFFZoneSystem, Error, TEXT("Invalid Protected Area %s: %s"),
-            *ProtectedArea->GetName(), Errors.IsEmpty() ? TEXT("unknown validation error") : *Errors[0].ToString());
+        UE_LOG(LogFFZoneSystem, Error, TEXT("잘못된 Protected Area %s: %s"),
+            *ProtectedArea->GetName(), Errors.IsEmpty() ? TEXT("알 수 없는 검증 오류") : *Errors[0].ToString());
         return false;
     }
     for (const TWeakObjectPtr<AFFZSProtectedArea>& Existing : ProtectedAreas)
@@ -826,7 +826,7 @@ bool UFFZSWorldSubsystem::RegisterProtectedArea(AFFZSProtectedArea* ProtectedAre
         if (const AFFZSProtectedArea* ExistingArea = Existing.Get();
             ExistingArea && ExistingArea != ProtectedArea && ExistingArea->ProtectedAreaId == ProtectedArea->ProtectedAreaId)
         {
-            UE_LOG(LogFFZoneSystem, Error, TEXT("Duplicate Protected Area ID: %s"), *ProtectedArea->ProtectedAreaId.ToString());
+            UE_LOG(LogFFZoneSystem, Error, TEXT("중복된 Protected Area ID: %s"), *ProtectedArea->ProtectedAreaId.ToString());
             return false;
         }
     }
@@ -889,7 +889,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
         {
             Result.AddFailure(
                 Decision.FailureReason == EFFZSPlacementFailure::None ? EFFZSPlacementFailure::ExternalPolicyRejected : Decision.FailureReason,
-                Decision.Message.IsEmpty() ? LOCTEXT("PolicyRejectedPlacement", "An external policy rejected this placement.") : Decision.Message);
+                Decision.Message.IsEmpty() ? LOCTEXT("PolicyRejectedPlacement", "외부 Policy가 이 배치를 거부했습니다.") : Decision.Message);
         }
     }
     return Result;
@@ -904,51 +904,51 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
 
     if (Command.Type != EFFZSCommandType::Install && Command.Type != EFFZSCommandType::Move)
     {
-        Result.AddFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("NotPlacementCommand", "Only Install and Move commands have a placement preview."));
+        Result.AddFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("NotPlacementCommand", "Install 및 Move 명령만 배치 미리보기를 지원합니다."));
         return Result;
     }
     if (!IsWorldChangePhase(CurrentPhase))
     {
-        Result.AddFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongPhase", "Install, Move, and Remove are allowed only during InitialSetup or Reconfigure."));
+        Result.AddFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongPhase", "Install, Move 및 Remove는 InitialSetup 또는 Reconfigure Phase에서만 허용됩니다."));
     }
     if (!Command.FacilityInstanceId.IsValid())
     {
-        Result.AddFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingInstance", "FacilityInstanceId is required."));
+        Result.AddFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingInstance", "FacilityInstanceId가 필요합니다."));
     }
     if (Command.Type == EFFZSCommandType::Install && FindFacility(Command.FacilityInstanceId))
     {
-        Result.AddFailure(EFFZSPlacementFailure::DuplicateFacilityId, LOCTEXT("DuplicateFacility", "FacilityInstanceId already exists."));
+        Result.AddFailure(EFFZSPlacementFailure::DuplicateFacilityId, LOCTEXT("DuplicateFacility", "FacilityInstanceId가 이미 존재합니다."));
     }
     if (Command.Type == EFFZSCommandType::Move && !IgnoreFacility)
     {
-        Result.AddFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveMissing", "The Facility to move does not exist."));
+        Result.AddFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveMissing", "이동할 Facility가 존재하지 않습니다."));
     }
 
     TArray<FText> SpecErrors;
     if (!Command.FacilitySpec.IsValid(SpecErrors))
     {
-        Result.AddFailure(EFFZSPlacementFailure::DataInvalid, SpecErrors.IsEmpty() ? LOCTEXT("InvalidSpec", "Facility data is invalid.") : SpecErrors[0]);
+        Result.AddFailure(EFFZSPlacementFailure::DataInvalid, SpecErrors.IsEmpty() ? LOCTEXT("InvalidSpec", "Facility 데이터가 잘못되었습니다.") : SpecErrors[0]);
         return Result;
     }
 
     AFFZSGameplayZone* Zone = FindZone(Command.ZoneId);
     if (!Zone)
     {
-        Result.AddFailure(EFFZSPlacementFailure::ZoneNotFound, LOCTEXT("MissingZone", "The target Gameplay Zone does not exist."));
+        Result.AddFailure(EFFZSPlacementFailure::ZoneNotFound, LOCTEXT("MissingZone", "대상 Gameplay Zone이 존재하지 않습니다."));
         return Result;
     }
     TArray<FText> ZoneErrors;
     if (!Zone->ValidateZoneData(ZoneErrors))
     {
         Result.AddFailure(EFFZSPlacementFailure::DataInvalid,
-            ZoneErrors.IsEmpty() ? LOCTEXT("InvalidZoneData", "Target Gameplay Zone data is invalid.") : ZoneErrors[0]);
+            ZoneErrors.IsEmpty() ? LOCTEXT("InvalidZoneData", "대상 Gameplay Zone 데이터가 잘못되었습니다.") : ZoneErrors[0]);
         return Result;
     }
 
     if (!Zone->IsCategoryAllowed(Command.FacilitySpec.Category) ||
         (!Command.FacilitySpec.AllowedZoneIds.IsEmpty() && !Command.FacilitySpec.AllowedZoneIds.Contains(Command.ZoneId)))
     {
-        Result.AddFailure(EFFZSPlacementFailure::CategoryNotAllowed, LOCTEXT("CategoryDenied", "This Facility is not allowed in the target Gameplay Zone."));
+        Result.AddFailure(EFFZSPlacementFailure::CategoryNotAllowed, LOCTEXT("CategoryDenied", "대상 Gameplay Zone에서는 이 Facility가 허용되지 않습니다."));
     }
 
     FFFZSGridPlacement Placement = Command.Placement;
@@ -972,7 +972,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     if (Result.FootprintRects.IsEmpty() || Result.ReservedRects.IsEmpty())
     {
         Result.AddFailure(EFFZSPlacementFailure::DataInvalid,
-            LOCTEXT("EmptyCompressedPlacement", "Facility data could not produce a valid compressed 1 cm placement region."));
+            LOCTEXT("EmptyCompressedPlacement", "Facility 데이터에서 유효한 압축 1cm 배치 영역을 만들 수 없습니다."));
         return Result;
     }
 
@@ -983,7 +983,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
             ZoneOwnershipCache, Rect, UFFZSDeveloperSettings::DefaultPlacementCellSizeCm))
         {
             Result.AddFailure(EFFZSPlacementFailure::OutsideZone,
-                LOCTEXT("OutsideOrOverlappingZone", "Footprint, clearance, and maximum queue area must be fully inside exactly one Gameplay Zone."));
+                LOCTEXT("OutsideOrOverlappingZone", "Footprint, 여유 공간 및 최대 Queue 영역은 정확히 하나의 Gameplay Zone 안에 완전히 포함되어야 합니다."));
             break;
         }
     }
@@ -992,17 +992,17 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     if (AreRegionsOccupiedByOther(Command.ZoneId, Result.FootprintRects, IgnoreId))
     {
         Result.AddFailure(EFFZSPlacementFailure::PlacementCollision,
-            LOCTEXT("FootprintOccupied", "The Facility footprint overlaps another Facility reservation."));
+            LOCTEXT("FootprintOccupied", "Facility Footprint가 다른 Facility 예약 영역과 겹칩니다."));
     }
     if (AreRegionsOccupiedByOther(Command.ZoneId, Result.ClearanceRects, IgnoreId))
     {
         Result.AddFailure(EFFZSPlacementFailure::InsufficientClearance,
-            LOCTEXT("ClearanceOccupied", "The required clearance area is occupied."));
+            LOCTEXT("ClearanceOccupied", "필요한 여유 공간이 점유되어 있습니다."));
     }
     if (AreRegionsOccupiedByOther(Command.ZoneId, Result.QueueRects, IgnoreId))
     {
         Result.AddFailure(EFFZSPlacementFailure::QueueFootprintBlocked,
-            LOCTEXT("QueueOccupied", "The maximum queue area is occupied."));
+            LOCTEXT("QueueOccupied", "최대 Queue 영역이 점유되어 있습니다."));
     }
     ValidateProtectedAreas(Command.ZoneId, *Zone, Command.FacilitySpec, Result);
     ValidateGround(*Zone, Command.FacilitySpec, IgnoreFacility, Result);
@@ -1012,7 +1012,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     Result.bIsValid = Result.Reasons.IsEmpty();
     if (Result.bIsValid)
     {
-        Result.Summary = LOCTEXT("PlacementValid", "Placement is valid.");
+        Result.Summary = LOCTEXT("PlacementValid", "배치가 유효합니다.");
     }
     return Result;
 }
@@ -1077,7 +1077,7 @@ void UFFZSWorldSubsystem::ValidateGround(
         if (static_cast<int64>(SamplesX) * SamplesY > UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())
         {
             InOutValidation.AddFailure(EFFZSPlacementFailure::DataInvalid,
-                LOCTEXT("GroundSampleBudget", "Ground sampling exceeds the configured safety budget."));
+                LOCTEXT("GroundSampleBudget", "지면 샘플링이 설정된 안전 예산을 초과했습니다."));
             return;
         }
 
@@ -1097,7 +1097,7 @@ void UFFZSWorldSubsystem::ValidateGround(
                     if (Settings->bRequireEveryGroundSample)
                     {
                         InOutValidation.AddFailure(EFFZSPlacementFailure::InvalidGround,
-                            LOCTEXT("GroundMissing", "At least one physical footprint sample has no valid ground hit."));
+                            LOCTEXT("GroundMissing", "물리 Footprint 샘플 중 하나 이상에서 유효한 지면을 찾지 못했습니다."));
                         return;
                     }
                     continue;
@@ -1113,20 +1113,20 @@ void UFFZSWorldSubsystem::ValidateGround(
     if (Heights.IsEmpty())
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::InvalidGround,
-            LOCTEXT("NoGround", "No footprint ground samples succeeded."));
+            LOCTEXT("NoGround", "성공한 Footprint 지면 샘플이 없습니다."));
         return;
     }
     if (MaximumSlope > Settings->MaxGroundSlopeDegrees)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::ExcessSlope,
-            LOCTEXT("SlopeHigh", "Ground slope exceeds the configured prototype limit."));
+            LOCTEXT("SlopeHigh", "지면 경사가 설정된 프로토타입 제한을 초과했습니다."));
     }
     const float MinHeight = FMath::Min(Heights);
     const float MaxHeight = FMath::Max(Heights);
     if (MaxHeight - MinHeight > Settings->MaxGroundHeightVarianceCm)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::HeightVarianceExceeded,
-            LOCTEXT("HeightVar", "Ground height variation exceeds the configured prototype limit."));
+            LOCTEXT("HeightVar", "지면 높이 편차가 설정된 프로토타입 제한을 초과했습니다."));
     }
     FVector Location = InOutValidation.PlacementTransform.GetLocation();
     Location.Z = Algo::Accumulate(Heights, 0.0f) / Heights.Num();
@@ -1209,11 +1209,11 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     };
 
     ValidateRectGroup(InOutValidation.FootprintRects, EFFZSPlacementFailure::PlacementCollision,
-        LOCTEXT("WorldFootprintBlocked", "The Facility footprint overlaps a blocking world object."));
+        LOCTEXT("WorldFootprintBlocked", "Facility Footprint가 배치를 막는 World Object와 겹칩니다."));
     ValidateRectGroup(InOutValidation.ClearanceRects, EFFZSPlacementFailure::InsufficientClearance,
-        LOCTEXT("WorldClearanceBlocked", "The clearance area overlaps a blocking world object."));
+        LOCTEXT("WorldClearanceBlocked", "여유 공간이 배치를 막는 World Object와 겹칩니다."));
     ValidateRectGroup(InOutValidation.QueueRects, EFFZSPlacementFailure::QueueFootprintBlocked,
-        LOCTEXT("WorldQueueBlocked", "The maximum queue area overlaps a blocking world object."));
+        LOCTEXT("WorldQueueBlocked", "최대 Queue 영역이 배치를 막는 World Object와 겹칩니다."));
 }
 void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const
 {
@@ -1228,7 +1228,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
     {
         if (Settings->bFailWhenNavigationSystemIsUnavailable)
         {
-            InOutValidation.AddFailure(EFFZSPlacementFailure::NavigationUnavailable, LOCTEXT("NoNavigation", "Navigation validation is required but no Navigation System is available."));
+            InOutValidation.AddFailure(EFFZSPlacementFailure::NavigationUnavailable, LOCTEXT("NoNavigation", "내비게이션 검증이 필요하지만 사용할 수 있는 Navigation System이 없습니다."));
         }
         return;
     }
@@ -1262,7 +1262,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         if (!ProjectRequiredPoint(Anchor.LocalTransform.GetLocation(), Anchor.Type == EFFZSAnchorType::Entry))
         {
             InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-                LOCTEXT("AnchorOffNav", "An Entry, Service, or Exit anchor cannot be projected to navigation within the configured extent."));
+                LOCTEXT("AnchorOffNav", "Entry, Service 또는 Exit Anchor를 설정된 범위 안의 내비게이션에 투영할 수 없습니다."));
             return;
         }
     }
@@ -1294,20 +1294,20 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         if (!ProjectRequiredPoint(LocalSlot, false))
         {
             InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-                LOCTEXT("QueueSlotOffNav", "A maximum-capacity Queue slot cannot be projected to navigation."));
+                LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
             return;
         }
     }
 
     if (!bHasEntry)
     {
-        InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected, LOCTEXT("NoProjectedEntry", "No Entry anchor is available for path connectivity checks."));
+        InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected, LOCTEXT("NoProjectedEntry", "경로 연결성을 검사할 Entry Anchor가 없습니다."));
         return;
     }
     for (const FVector& RoutePoint : ProjectedRoutePoints)
     {
-        // A route point can legitimately be the projected Entry itself. Some navigation
-        // implementations do not create a path object for a zero-length request.
+        // 경로 지점은 투영된 Entry 자체일 수 있다. 일부 내비게이션 구현은
+        // 길이가 0인 요청에 대해 Path Object를 만들지 않는다.
         if (FVector::DistSquared(ProjectedEntry, RoutePoint) <= 1.0f)
         {
             continue;
@@ -1316,7 +1316,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         if (!Path || !Path->IsValid() || Path->IsPartial())
         {
             InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-                LOCTEXT("DisconnectedNavIsland", "Entry, Queue slots, Service, and Exit must share a complete navigation path."));
+                LOCTEXT("DisconnectedNavIsland", "Entry, Queue 슬롯, Service 및 Exit는 하나의 완전한 내비게이션 경로로 연결되어야 합니다."));
             return;
         }
     }
@@ -1340,7 +1340,7 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
             (!Area->LinkedZoneId.IsNone() && !FindZone(Area->LinkedZoneId)))
         {
             InOutValidation.AddFailure(EFFZSPlacementFailure::DataInvalid,
-                AreaErrors.IsEmpty() ? LOCTEXT("InvalidProtectedArea", "Protected Area references a missing Gameplay Zone.") : AreaErrors[0]);
+                AreaErrors.IsEmpty() ? LOCTEXT("InvalidProtectedArea", "Protected Area가 존재하지 않는 Gameplay Zone을 참조합니다.") : AreaErrors[0]);
             return;
         }
         if (!Area->LinkedZoneId.IsNone() && Area->LinkedZoneId != ZoneId)
@@ -1361,7 +1361,7 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
                 const bool bAccessibility = Area->AreaType == EFFZSProtectedAreaType::AccessibilityRoute || Area->AreaType == EFFZSProtectedAreaType::ViewingArea;
                 InOutValidation.AddFailure(
                     bAccessibility ? EFFZSPlacementFailure::AccessibilityRouteBlocked : EFFZSPlacementFailure::ProtectedRouteBlocked,
-                    bAccessibility ? LOCTEXT("AccessibilityArea", "Placement intersects an accessibility route or protected viewing area.") : LOCTEXT("ProtectedArea", "Placement intersects a protected route or no-build area."));
+                    bAccessibility ? LOCTEXT("AccessibilityArea", "배치 영역이 접근성 경로 또는 보호 관람 영역과 겹칩니다.") : LOCTEXT("ProtectedArea", "배치 영역이 보호 경로 또는 건설 금지 영역과 겹칩니다."));
                 break;
             }
         }
@@ -1381,7 +1381,7 @@ bool UFFZSWorldSubsystem::RunPolicyPreValidation(const FFFZSPolicyContext& Conte
     {
         OutDecision.bAllowed = false;
         OutDecision.FailureReason = EFFZSPlacementFailure::ExternalPolicyRejected;
-        OutDecision.Message = LOCTEXT("ReentrantPolicyPreValidate", "Recursive external-policy validation is not allowed.");
+        OutDecision.Message = LOCTEXT("ReentrantPolicyPreValidate", "외부 Policy 검증을 재귀적으로 실행할 수 없습니다.");
         return false;
     }
     TGuardValue<bool> PolicyCallbackGuard(bIsInvokingExternalPolicy, true);
@@ -1411,7 +1411,7 @@ bool UFFZSWorldSubsystem::ApplyTentativePolicies(const FFFZSPolicyContext& Conte
     {
         OutDecision.bAllowed = false;
         OutDecision.FailureReason = EFFZSPlacementFailure::ExternalPolicyRejected;
-        OutDecision.Message = LOCTEXT("ReentrantPolicyApply", "Recursive external-policy application is not allowed.");
+        OutDecision.Message = LOCTEXT("ReentrantPolicyApply", "외부 Policy 적용을 재귀적으로 실행할 수 없습니다.");
         return false;
     }
     TGuardValue<bool> PolicyCallbackGuard(bIsInvokingExternalPolicy, true);
@@ -1475,21 +1475,21 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
 {
     if (!IsInGameThread())
     {
-        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("GameThreadOnly", "Zone/Facility commands must execute on the Game Thread."));
+        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("GameThreadOnly", "Zone/Facility 명령은 Game Thread에서 실행해야 합니다."));
     }
     if (bIsRestoringSnapshot)
     {
-        // Restore may spawn Actors and invoke Blueprint/native callbacks. Those callbacks must
-        // never observe or mutate a half-staged authoritative world.
-        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("CommandDuringRestore", "A Zone/Facility snapshot restore is already in progress."));
+        // 복원 과정에서 Actor를 생성하고 Blueprint/Native Callback을 호출할 수 있다. 해당 Callback은
+        // 준비가 덜 된 권위 World를 관찰하거나 변경해서는 안 된다.
+        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("CommandDuringRestore", "Zone/Facility 스냅샷 복원이 이미 진행 중입니다."));
     }
     if (bIsInvokingExternalPolicy)
     {
-        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("CommandDuringPolicyCallback", "Commands cannot start recursively from an external-policy callback."));
+        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("CommandDuringPolicyCallback", "외부 Policy Callback에서는 명령을 재귀적으로 시작할 수 없습니다."));
     }
     if (!Command.CommandId.IsValid() || !Command.TransactionId.IsValid())
     {
-        return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingCommandIds", "CommandId and TransactionId are required."));
+        return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingCommandIds", "CommandId와 TransactionId가 필요합니다."));
     }
 
     const FString PayloadFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
@@ -1497,7 +1497,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     {
         if (ExistingReceipt->PayloadFingerprint != PayloadFingerprint)
         {
-            return MakeFailure(EFFZSPlacementFailure::DuplicatePayloadMismatch, LOCTEXT("CommandIdReused", "CommandId was already used with a different payload."));
+            return MakeFailure(EFFZSPlacementFailure::DuplicatePayloadMismatch, LOCTEXT("CommandIdReused", "CommandId가 이미 다른 Payload에 사용되었습니다."));
         }
         FFFZSCommandResult Replay = ExistingReceipt->Result;
         Replay.FacilityActor = CommandReceiptFacilityReferences.Contains(Command.CommandId)
@@ -1510,10 +1510,10 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     {
         if (InFlightCommandId == Command.CommandId && InFlightCommandFingerprint != PayloadFingerprint)
         {
-            return MakeFailure(EFFZSPlacementFailure::DuplicatePayloadMismatch, LOCTEXT("InFlightPayloadMismatch", "The in-flight CommandId was retried with a different payload."));
+            return MakeFailure(EFFZSPlacementFailure::DuplicatePayloadMismatch, LOCTEXT("InFlightPayloadMismatch", "실행 중인 CommandId가 다른 Payload로 다시 요청되었습니다."));
         }
-        // This transient rejection is intentionally not persisted as a durable Command receipt.
-        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("DifferentCommandInFlight", "Another Zone/Facility command is already executing."));
+        // 이 일시적 거부는 의도적으로 영구 Command 영수증에 저장하지 않는다.
+        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("DifferentCommandInFlight", "다른 Zone/Facility 명령이 이미 실행 중입니다."));
     }
 
     TGuardValue<FGuid> CommandGuard(InFlightCommandId, Command.CommandId);
@@ -1529,11 +1529,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     }
     else if (Command.ExpectedWorldRevision >= 0 && Command.ExpectedWorldRevision != WorldRevision)
     {
-        Result = MakeFailure(EFFZSPlacementFailure::StaleWorldRevision, LOCTEXT("RevisionMismatch", "ExpectedWorldRevision does not match the authoritative revision."));
+        Result = MakeFailure(EFFZSPlacementFailure::StaleWorldRevision, LOCTEXT("RevisionMismatch", "ExpectedWorldRevision이 권위 Revision과 일치하지 않습니다."));
     }
     else if (IsWorldChangeCommand(Command.Type) && !IsWorldChangePhase(CurrentPhase))
     {
-        Result = MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongCommandPhase", "Install, Move, and Remove are allowed only during InitialSetup or Reconfigure."));
+        Result = MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongCommandPhase", "Install, Move 및 Remove는 InitialSetup 또는 Reconfigure Phase에서만 허용됩니다."));
     }
     else if (Command.Type == EFFZSCommandType::Install || Command.Type == EFFZSCommandType::Move)
     {
@@ -1603,7 +1603,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteInstall(const FFFZSCommand& Comma
     if (!ApplyTentativePolicies(Context, AppliedPolicies, Decision))
     {
         return MakeFailure(Decision.FailureReason == EFFZSPlacementFailure::None ? EFFZSPlacementFailure::ExternalPolicyRejected : Decision.FailureReason,
-            Decision.Message.IsEmpty() ? LOCTEXT("InstallPolicy", "An external policy could not reserve the Install transaction.") : Decision.Message);
+            Decision.Message.IsEmpty() ? LOCTEXT("InstallPolicy", "외부 Policy가 Install Transaction을 예약하지 못했습니다.") : Decision.Message);
     }
 
     FActorSpawnParameters SpawnParameters;
@@ -1616,7 +1616,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteInstall(const FFFZSCommand& Comma
             Facility->Destroy();
         }
         RollbackPolicies(Context, AppliedPolicies);
-        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("InstallSpawnFailed", "Facility actor creation or registration failed; external reservations were rolled back."));
+        return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("InstallSpawnFailed", "Facility Actor 생성 또는 등록에 실패하여 외부 예약을 Rollback했습니다."));
     }
 
     Context.FacilityActor = Facility;
@@ -1629,15 +1629,15 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
     AFFZSFacilityActor* Facility = FindFacility(Command.FacilityInstanceId);
     if (!Facility)
     {
-        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveNotFound", "Facility to move was not found."));
+        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveNotFound", "이동할 Facility를 찾을 수 없습니다."));
     }
     if (Facility->GetQueueComponent()->IsOccupied())
     {
-        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied, LOCTEXT("MoveOccupied", "Close and drain the Facility before moving it."));
+        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied, LOCTEXT("MoveOccupied", "Facility를 이동하기 전에 닫고 Queue를 비우십시오."));
     }
     if (!Facility->CanMoveOrRemove())
     {
-        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("MoveState", "Active Facilities must be closed before moving."));
+        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("MoveState", "Active 상태의 Facility는 이동하기 전에 닫아야 합니다."));
     }
 
     FFFZSCommand EffectiveCommand = Command;
@@ -1652,7 +1652,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
     if (!ApplyTentativePolicies(Context, AppliedPolicies, Decision))
     {
         return MakeFailure(Decision.FailureReason == EFFZSPlacementFailure::None ? EFFZSPlacementFailure::ExternalPolicyRejected : Decision.FailureReason,
-            Decision.Message.IsEmpty() ? LOCTEXT("MovePolicy", "An external policy could not reserve the Move transaction.") : Decision.Message);
+            Decision.Message.IsEmpty() ? LOCTEXT("MovePolicy", "외부 Policy가 Move Transaction을 예약하지 못했습니다.") : Decision.Message);
     }
 
     const FName PreviousZoneId = Facility->GetZoneId();
@@ -1664,7 +1664,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
         Facility->ApplyPlacement(PreviousZoneId, PreviousPlacement, PreviousTransform);
         OccupyFacilityRegions(*Facility);
         RollbackPolicies(Context, AppliedPolicies);
-        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("MoveApplyFailed", "Move failed and the previous Facility placement was restored."));
+        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("MoveApplyFailed", "이동에 실패하여 이전 Facility 배치를 복원했습니다."));
     }
     OccupyFacilityRegions(*Facility);
     CommitPolicies(Context, AppliedPolicies);
@@ -1676,15 +1676,15 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteRemove(const FFFZSCommand& Comman
     AFFZSFacilityActor* Facility = FindFacility(Command.FacilityInstanceId);
     if (!Facility)
     {
-        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("RemoveNotFound", "Facility to remove was not found."));
+        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("RemoveNotFound", "제거할 Facility를 찾을 수 없습니다."));
     }
     if (Facility->GetQueueComponent()->IsOccupied())
     {
-        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied, LOCTEXT("RemoveOccupied", "Close and drain the Facility before removing it."));
+        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied, LOCTEXT("RemoveOccupied", "Facility를 제거하기 전에 닫고 Queue를 비우십시오."));
     }
     if (!Facility->CanMoveOrRemove())
     {
-        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("RemoveState", "Active Facilities must be closed before removal."));
+        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("RemoveState", "Active 상태의 Facility는 제거하기 전에 닫아야 합니다."));
     }
 
     FFFZSPolicyContext Context;
@@ -1716,7 +1716,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteLifecycleCommand(const FFFZSComma
     AFFZSFacilityActor* Facility = FindFacility(Command.FacilityInstanceId);
     if (!Facility)
     {
-        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("LifecycleNotFound", "Facility was not found."));
+        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("LifecycleNotFound", "Facility를 찾을 수 없습니다."));
     }
 
     FFFZSPolicyContext Context;
@@ -1754,7 +1754,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteLifecycleCommand(const FFFZSComma
     if (!bApplied)
     {
         RollbackPolicies(Context, AppliedPolicies);
-        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("LifecycleState", "The Facility state does not allow this lifecycle command."));
+        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("LifecycleState", "현재 Facility 상태에서는 이 Lifecycle 명령을 실행할 수 없습니다."));
     }
     CommitPolicies(Context, AppliedPolicies);
     return FinalizeSuccess(Command, Facility, Facility->GetZoneId());
@@ -1775,7 +1775,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::FinalizeSuccess(const FFFZSCommand& Comm
     ++WorldRevision;
     FFFZSCommandResult Result;
     Result.bSucceeded = true;
-    Result.Message = LOCTEXT("CommandSucceeded", "Zone/Facility command committed.");
+    Result.Message = LOCTEXT("CommandSucceeded", "Zone/Facility 명령을 Commit했습니다.");
     Result.WorldRevision = WorldRevision;
     Result.FacilityActor = Facility;
 
@@ -1812,7 +1812,7 @@ bool UFFZSWorldSubsystem::RegisterExternalPolicy(UObject* PolicyProvider)
     const EFFZSPolicyDomain PolicyDomain = IFFZSExternalPolicy::Execute_GetFFZoneSystemPolicyDomain(PolicyProvider);
     if (PolicyName.IsNone() || !StaticEnum<EFFZSPolicyDomain>()->IsValidEnumValue(static_cast<int64>(PolicyDomain)))
     {
-        UE_LOG(LogFFZoneSystem, Error, TEXT("External Zone/Facility Policy requires a valid name and domain."));
+        UE_LOG(LogFFZoneSystem, Error, TEXT("외부 Zone/Facility Policy에는 유효한 이름과 Domain이 필요합니다."));
         return false;
     }
     for (const TWeakObjectPtr<UObject>& WeakExisting : ExternalPolicies)
@@ -1830,7 +1830,7 @@ bool UFFZSWorldSubsystem::RegisterExternalPolicy(UObject* PolicyProvider)
         }
         if (ExistingName == PolicyName || (PolicyDomain != EFFZSPolicyDomain::Custom && ExistingDomain == PolicyDomain))
         {
-            UE_LOG(LogFFZoneSystem, Error, TEXT("Duplicate External Policy name/domain: %s (%d)"),
+            UE_LOG(LogFFZoneSystem, Error, TEXT("중복된 외부 Policy 이름/Domain: %s (%d)"),
                 *PolicyName.ToString(), static_cast<int32>(PolicyDomain));
             return false;
         }
@@ -1864,7 +1864,7 @@ bool UFFZSWorldSubsystem::ValidateIntegrationReadiness(TArray<FText>& OutErrors,
     OutErrors.Reset();
     if (bIsInvokingExternalPolicy)
     {
-        OutErrors.Add(LOCTEXT("ReentrantPolicyReadiness", "External-policy readiness cannot be evaluated recursively."));
+        OutErrors.Add(LOCTEXT("ReentrantPolicyReadiness", "외부 Policy 준비 상태를 재귀적으로 평가할 수 없습니다."));
         return false;
     }
     TGuardValue<bool> PolicyCallbackGuard(bIsInvokingExternalPolicy, true);
@@ -1876,14 +1876,14 @@ bool UFFZSWorldSubsystem::ValidateIntegrationReadiness(TArray<FText>& OutErrors,
         UObject* Policy = WeakPolicy.Get();
         if (!Policy || !Policy->GetClass()->ImplementsInterface(UFFZSExternalPolicy::StaticClass()))
         {
-            OutErrors.Add(LOCTEXT("InvalidPolicyProvider", "External Policy registry contains an invalid provider."));
+            OutErrors.Add(LOCTEXT("InvalidPolicyProvider", "외부 Policy 레지스트리에 잘못된 Provider가 있습니다."));
             continue;
         }
         const FName Name = IFFZSExternalPolicy::Execute_GetFFZoneSystemPolicyName(Policy);
         const EFFZSPolicyDomain Domain = IFFZSExternalPolicy::Execute_GetFFZoneSystemPolicyDomain(Policy);
         if (Name.IsNone() || Names.Contains(Name) || (Domain != EFFZSPolicyDomain::Custom && Domains.Contains(Domain)))
         {
-            OutErrors.Add(LOCTEXT("DuplicatePolicyProvider", "External Policy names and non-Custom domains must be unique."));
+            OutErrors.Add(LOCTEXT("DuplicatePolicyProvider", "외부 Policy 이름과 Custom이 아닌 Domain은 고유해야 합니다."));
         }
         Names.Add(Name);
         Domains.Add(Domain);
@@ -1903,7 +1903,7 @@ bool UFFZSWorldSubsystem::ValidateIntegrationReadiness(TArray<FText>& OutErrors,
         {
             if (!Domains.Contains(RequiredDomain))
             {
-                OutErrors.Add(FText::Format(LOCTEXT("MissingPolicyDomain", "Required External Policy domain {0} is not registered."),
+                OutErrors.Add(FText::Format(LOCTEXT("MissingPolicyDomain", "필수 외부 Policy Domain {0}이 등록되어 있지 않습니다."),
                     FText::AsNumber(static_cast<int32>(RequiredDomain))));
             }
         }
@@ -1970,7 +1970,7 @@ EFFZSQueueJoinResult UFFZSWorldSubsystem::JoinFacilityQueue(const FGuid Facility
         return EFFZSQueueJoinResult::NotOpen;
     }
 
-    // Reserve before JoinQueue because its delegates/interfaces are synchronous and may re-enter this subsystem.
+    // Delegate/Interface가 동기적으로 실행되어 이 Subsystem에 재진입할 수 있으므로 JoinQueue 전에 예약한다.
     AgentQueueOwnership.Add(AgentId, FacilityInstanceId);
     const EFFZSQueueJoinResult Result = Facility->GetMutableQueueComponent()->JoinQueue(AgentId, AgentActor, OutTicketId);
     if (Result != EFFZSQueueJoinResult::Joined)
@@ -2216,17 +2216,17 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     if (Snapshot.SchemaVersion != CurrentSnapshotSchemaVersion)
     {
         OutErrors.Add(Snapshot.SchemaVersion == 2
-            ? LOCTEXT("SnapshotSchemaV2", "Zone/Facility snapshot SchemaVersion 2 has no saved CurrentPhase and cannot be restored safely. Re-save it with a migration tool before using SchemaVersion 4.")
-            : LOCTEXT("SnapshotSchema", "Unsupported Zone/Facility snapshot SchemaVersion; this runtime validates SchemaVersion 4 after the explicit SchemaVersion 3 migration step."));
+            ? LOCTEXT("SnapshotSchemaV2", "Zone/Facility 스냅샷 SchemaVersion 2에는 저장된 CurrentPhase가 없어 안전하게 복원할 수 없습니다. SchemaVersion 4에서 사용하기 전에 마이그레이션 도구로 다시 저장하십시오.")
+            : LOCTEXT("SnapshotSchema", "지원하지 않는 Zone/Facility 스냅샷 SchemaVersion입니다. 이 Runtime은 명시적인 SchemaVersion 3 마이그레이션 후 SchemaVersion 4를 검증합니다."));
         return false;
     }
     if (Snapshot.WorldRevision < 0)
     {
-        OutErrors.Add(LOCTEXT("SnapshotRevision", "Zone/Facility snapshot WorldRevision cannot be negative."));
+        OutErrors.Add(LOCTEXT("SnapshotRevision", "Zone/Facility 스냅샷의 WorldRevision은 음수일 수 없습니다."));
     }
     if (!StaticEnum<EFFZSChangePhase>()->IsValidEnumValue(static_cast<int64>(Snapshot.CurrentPhase)))
     {
-        OutErrors.Add(LOCTEXT("SnapshotPhase", "Zone/Facility snapshot CurrentPhase is invalid."));
+        OutErrors.Add(LOCTEXT("SnapshotPhase", "Zone/Facility 스냅샷의 CurrentPhase가 잘못되었습니다."));
     }
 
     TSet<FGuid> FacilityIds;
@@ -2240,24 +2240,24 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         TArray<FText> SpecErrors;
         if (!Saved.FacilityInstanceId.IsValid() || FacilityIds.Contains(Saved.FacilityInstanceId) || !Saved.FacilitySpec.IsValid(SpecErrors))
         {
-            OutErrors.Add(LOCTEXT("SnapshotFacility", "Snapshot contains an invalid or duplicate Facility."));
+            OutErrors.Add(LOCTEXT("SnapshotFacility", "스냅샷에 잘못되었거나 중복된 Facility가 있습니다."));
             continue;
         }
         FacilityIds.Add(Saved.FacilityInstanceId);
         if (!StaticEnum<EFFZSFacilityState>()->IsValidEnumValue(static_cast<int64>(Saved.State)) ||
             Saved.State == EFFZSFacilityState::Removed)
         {
-            OutErrors.Add(LOCTEXT("SnapshotFacilityState", "Snapshot Facility state is invalid or cannot be Removed while registered."));
+            OutErrors.Add(LOCTEXT("SnapshotFacilityState", "스냅샷의 Facility 상태가 잘못되었거나, 등록된 상태에서 Removed일 수 없습니다."));
         }
         if (Saved.Placement.QuarterTurns != UFFZSGridLibrary::NormalizeQuarterTurns(Saved.Placement.QuarterTurns))
         {
-            OutErrors.Add(LOCTEXT("SnapshotPlacementRotation", "Snapshot placement QuarterTurns must already be normalized to 0..3."));
+            OutErrors.Add(LOCTEXT("SnapshotPlacementRotation", "스냅샷 배치의 QuarterTurns는 0..3 범위로 정규화되어 있어야 합니다."));
         }
 
         const AFFZSGameplayZone* Zone = FindZone(Saved.ZoneId);
         if (!Zone)
         {
-            OutErrors.Add(FText::Format(LOCTEXT("SnapshotZone", "Snapshot references missing Zone {0}."), FText::FromName(Saved.ZoneId)));
+            OutErrors.Add(FText::Format(LOCTEXT("SnapshotZone", "스냅샷이 존재하지 않는 Zone {0}을 참조합니다."), FText::FromName(Saved.ZoneId)));
             continue;
         }
         TArray<FText> ZoneErrors;
@@ -2268,12 +2268,12 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         if (!Zone->IsCategoryAllowed(Saved.FacilitySpec.Category) ||
             (!Saved.FacilitySpec.AllowedZoneIds.IsEmpty() && !Saved.FacilitySpec.AllowedZoneIds.Contains(Saved.ZoneId)))
         {
-            OutErrors.Add(LOCTEXT("SnapshotCategory", "Snapshot Facility category/AllowedZoneIds does not allow its target Gameplay Zone."));
+            OutErrors.Add(LOCTEXT("SnapshotCategory", "스냅샷 Facility의 Category/AllowedZoneIds가 대상 Gameplay Zone을 허용하지 않습니다."));
         }
 
         if (Saved.WorldTransform.ContainsNaN() || !Saved.WorldTransform.GetScale3D().Equals(FVector::OneVector, 0.001))
         {
-            OutErrors.Add(LOCTEXT("SnapshotTransform", "Snapshot Facility transform must be finite and keep scale at 1."));
+            OutErrors.Add(LOCTEXT("SnapshotTransform", "스냅샷 Facility의 Transform은 유한해야 하며 Scale은 1이어야 합니다."));
         }
         else
         {
@@ -2285,7 +2285,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
             const double RotationErrorRadians = Saved.WorldTransform.GetRotation().AngularDistance(Expected.GetRotation());
             if (HorizontalErrorCm > 0.1 || RotationErrorRadians > FMath::DegreesToRadians(0.01))
             {
-                OutErrors.Add(LOCTEXT("SnapshotGridTransform", "Snapshot Facility XY/Yaw does not match its 1 cm placement grid."));
+                OutErrors.Add(LOCTEXT("SnapshotGridTransform", "스냅샷 Facility의 XY/Yaw가 1cm 배치 Grid와 일치하지 않습니다."));
             }
         }
 
@@ -2296,7 +2296,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
             // 빈 배열은 정상 시설 영역이 아니라 좌표 변환/오버플로의 fail-closed 신호다.
             OutErrors.Add(LOCTEXT(
                 "SnapshotEmptyCompressedRegion",
-                "Snapshot Facility could not produce a complete compressed 1 cm placement region."));
+                "스냅샷 Facility에서 완전한 압축 1cm 배치 영역을 만들 수 없습니다."));
         }
         TUniquePtr<FZoneCellOwnershipCache>& ZoneOwnershipCache = ZoneOwnershipCaches.FindOrAdd(Zone);
         if (!ZoneOwnershipCache)
@@ -2318,7 +2318,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         {
             OutErrors.Add(LOCTEXT(
                 "SnapshotOverlap",
-                "Snapshot Facilities overlap in the authoritative compressed placement grid."));
+                "스냅샷 Facility들이 권위 압축 배치 Grid에서 서로 겹칩니다."));
         }
         FFFZSFacilityRegionOccupancy& RegionRecord = FacilityRegions.Add(Saved.FacilityInstanceId);
         RegionRecord.ZoneId = Saved.ZoneId;
@@ -2334,7 +2334,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         {
             OutErrors.Add(LOCTEXT(
                 "SnapshotOutside",
-                "Snapshot Facility regions must be fully inside exactly one Gameplay Zone."));
+                "스냅샷 Facility 영역은 정확히 하나의 Gameplay Zone 안에 완전히 포함되어야 합니다."));
         }
 
         FFFZSPlacementValidation ProtectedValidation;
@@ -2344,7 +2344,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         if (!ProtectedValidation.Reasons.IsEmpty())
         {
             OutErrors.Add(ProtectedValidation.Summary.IsEmpty()
-                ? LOCTEXT("SnapshotProtectedArea", "Snapshot Facility intersects a protected area.")
+                ? LOCTEXT("SnapshotProtectedArea", "스냅샷 Facility가 보호 영역과 겹칩니다.")
                 : ProtectedValidation.Summary);
         }
         UFFZSFacilityQueueComponent* QueueValidator = NewObject<UFFZSFacilityQueueComponent>();
@@ -2386,14 +2386,14 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         }
         if (!bStateCompatible)
         {
-            OutErrors.Add(LOCTEXT("SnapshotStateCompatibility", "FacilityState and QueueState are not a valid runtime combination."));
+            OutErrors.Add(LOCTEXT("SnapshotStateCompatibility", "FacilityState와 QueueState의 조합이 Runtime에서 유효하지 않습니다."));
         }
 
         for (const FFFZSQueueEntrySnapshot& Entry : Saved.Queue.Entries)
         {
             if (Entry.AgentId.IsNone() || Agents.Contains(Entry.AgentId))
             {
-                OutErrors.Add(LOCTEXT("SnapshotAgent", "An Agent appears more than once in the world snapshot."));
+                OutErrors.Add(LOCTEXT("SnapshotAgent", "World 스냅샷에 동일한 Agent가 두 번 이상 있습니다."));
             }
             Agents.Add(Entry.AgentId);
         }
@@ -2410,7 +2410,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
             SavedReceipt.ResultWorldRevision > Snapshot.WorldRevision || bInvalidOutcome ||
             (SavedReceipt.bResultReferencesFacility && !SavedReceipt.FacilityInstanceId.IsValid()))
         {
-            OutErrors.Add(LOCTEXT("SnapshotReceipt", "Snapshot contains an invalid or duplicate Command receipt."));
+            OutErrors.Add(LOCTEXT("SnapshotReceipt", "스냅샷에 잘못되었거나 중복된 Command 영수증이 있습니다."));
         }
         ReceiptIds.Add(SavedReceipt.CommandId);
     }
@@ -2433,27 +2433,27 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
     OutErrors.Reset();
     if (!IsInGameThread())
     {
-        OutErrors.Add(LOCTEXT("RestoreGameThreadOnly", "Zone/Facility snapshots must restore on the Game Thread."));
+        OutErrors.Add(LOCTEXT("RestoreGameThreadOnly", "Zone/Facility 스냅샷은 Game Thread에서 복원해야 합니다."));
         return false;
     }
     if (bIsRestoringSnapshot)
     {
-        OutErrors.Add(LOCTEXT("RestoreReentrant", "A Zone/Facility snapshot restore is already in progress."));
+        OutErrors.Add(LOCTEXT("RestoreReentrant", "Zone/Facility 스냅샷 복원이 이미 진행 중입니다."));
         return false;
     }
     if (bIsInvokingExternalPolicy)
     {
-        OutErrors.Add(LOCTEXT("RestoreDuringPolicyCallback", "Snapshot restore cannot start from an external-policy callback."));
+        OutErrors.Add(LOCTEXT("RestoreDuringPolicyCallback", "외부 Policy Callback에서는 스냅샷 복원을 시작할 수 없습니다."));
         return false;
     }
     if (InFlightCommandId.IsValid())
     {
-        // ExecuteCommand keeps this ID guarded across every policy and event callback.
-        OutErrors.Add(LOCTEXT("RestoreDuringCommand", "A Zone/Facility command is already executing; snapshot restore was rejected."));
+        // ExecuteCommand는 모든 Policy 및 Event Callback이 끝날 때까지 이 ID를 보호한다.
+        OutErrors.Add(LOCTEXT("RestoreDuringCommand", "Zone/Facility 명령이 이미 실행 중이므로 스냅샷 복원이 거부되었습니다."));
         return false;
     }
 
-    // Guard migration, validation, and staging so any callback reached by the restore path fails closed.
+    // 복원 경로에서 호출되는 모든 Callback이 안전하게 거부되도록 마이그레이션, 검증 및 준비 단계를 보호한다.
     TGuardValue<bool> RestoreGuard(bIsRestoringSnapshot, true);
 
     FFFZSWorldSnapshot MigratedSnapshot;
@@ -2481,12 +2481,12 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
     UWorld* World = GetWorld();
     if (!World)
     {
-        OutErrors.Add(LOCTEXT("RestoreMissingWorld", "Cannot restore a Zone/Facility snapshot without a valid World."));
+        OutErrors.Add(LOCTEXT("RestoreMissingWorld", "유효한 World가 없으면 Zone/Facility 스냅샷을 복원할 수 없습니다."));
         return false;
     }
 
-    // Stage the complete replacement first. Until every Actor, Queue, cell, Agent and receipt
-    // is ready, the current authoritative registries and their Actors remain untouched.
+    // 전체 대체 상태를 먼저 준비한다. 모든 Actor, Queue, Cell, Agent 및 영수증이
+    // 준비될 때까지 현재 권위 레지스트리와 Actor는 변경하지 않는다.
     TArray<TWeakObjectPtr<AFFZSFacilityActor>> StagedFacilities;
     TMap<FGuid, TWeakObjectPtr<AFFZSFacilityActor>> StagedFacilitiesById;
     TMap<FGuid, FFFZSFacilityRegionOccupancy> StagedOccupiedFacilityRegions;
@@ -2511,7 +2511,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
     {
         if (!FindZone(Saved.ZoneId))
         {
-            OutErrors.Add(LOCTEXT("RestoreMissingZone", "Zone disappeared while staging a snapshot restore."));
+            OutErrors.Add(LOCTEXT("RestoreMissingZone", "스냅샷 복원을 준비하는 동안 Zone이 사라졌습니다."));
             DestroyStagedFacilities();
             return false;
         }
@@ -2522,7 +2522,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             AFFZSFacilityActor::StaticClass(), Transform, SpawnParameters);
         if (!IsValid(Facility) || Facility->IsActorBeingDestroyed())
         {
-            OutErrors.Add(LOCTEXT("RestoreSpawn", "Failed to stage a Facility while restoring snapshot."));
+            OutErrors.Add(LOCTEXT("RestoreSpawn", "스냅샷 복원 중 Facility 준비에 실패했습니다."));
             DestroyStagedFacilities();
             return false;
         }
@@ -2538,7 +2538,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
                 Transform,
                 Saved.State))
         {
-            OutErrors.Add(LOCTEXT("RestoreInitialize", "Failed to initialize a staged Facility while restoring snapshot."));
+            OutErrors.Add(LOCTEXT("RestoreInitialize", "스냅샷 복원 중 준비된 Facility 초기화에 실패했습니다."));
             DestroyStagedFacilities();
             return false;
         }
@@ -2549,17 +2549,17 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         if (!Queue || !Queue->RestoreSnapshot(Saved.Queue, QueueErrors))
         {
             OutErrors.Append(QueueErrors);
-            OutErrors.Add(LOCTEXT("RestoreQueue", "Failed to restore a staged Facility Queue."));
+            OutErrors.Add(LOCTEXT("RestoreQueue", "준비된 Facility Queue 복원에 실패했습니다."));
             DestroyStagedFacilities();
             return false;
         }
-        // CloseFacility records this transient intent outside the Queue snapshot. Reconstruct it
-        // so the restored Actor still advances Closed -> MovePending when draining finishes.
+        // CloseFacility는 이 일시적 의도를 Queue 스냅샷 밖에 기록한다. 복원된 Actor가
+        // Drain 완료 후에도 Closed -> MovePending으로 전환되도록 다시 구성한다.
         Facility->bSetMovePendingWhenDrained =
             Saved.State == EFFZSFacilityState::Closed && Saved.Queue.bDrainRequested;
         if (StagedFacilitiesById.Contains(Saved.FacilityInstanceId))
         {
-            OutErrors.Add(LOCTEXT("RestoreDuplicateFacility", "A duplicate Facility ID appeared while staging snapshot restore."));
+            OutErrors.Add(LOCTEXT("RestoreDuplicateFacility", "스냅샷 복원을 준비하는 동안 중복된 Facility ID가 발견되었습니다."));
             DestroyStagedFacilities();
             return false;
         }
@@ -2574,7 +2574,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             {
                 OutErrors.Add(LOCTEXT(
                     "RestoreOccupiedRegion",
-                    "An overlapping compressed region appeared while staging snapshot restore."));
+                    "스냅샷 복원을 준비하는 동안 서로 겹치는 압축 영역이 발견되었습니다."));
                 DestroyStagedFacilities();
                 return false;
             }
@@ -2588,7 +2588,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         {
             if (Entry.AgentId.IsNone() || StagedAgentQueueOwnership.Contains(Entry.AgentId))
             {
-                OutErrors.Add(LOCTEXT("RestoreDuplicateAgent", "An Agent appeared in more than one staged Facility Queue."));
+                OutErrors.Add(LOCTEXT("RestoreDuplicateAgent", "동일한 Agent가 두 개 이상의 준비된 Facility Queue에서 발견되었습니다."));
                 DestroyStagedFacilities();
                 return false;
             }
@@ -2615,9 +2615,9 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         StagedCommandReceipts.Add(SavedReceipt.CommandId, MoveTemp(Receipt));
     }
 
-    // No fallible operation remains after this point: publish the staged registries together,
-    // then retire the old Actors. Their EndPlay cannot unregister the new Actors because IDs
-    // are also checked against Actor identity.
+    // 이 지점 이후에는 실패할 수 있는 작업이 없다. 준비된 레지스트리를 한 번에 게시한 뒤
+    // 기존 Actor를 정리한다. ID와 Actor 식별자를 함께 검사하므로 기존 Actor의 EndPlay가
+    // 새 Actor를 등록 해제할 수 없다.
     TArray<TWeakObjectPtr<AFFZSFacilityActor>> ExistingFacilities;
     FacilitiesById.GenerateValueArray(ExistingFacilities);
     for (const TWeakObjectPtr<AFFZSFacilityActor>& WeakFacility : ExistingFacilities)
@@ -2675,7 +2675,7 @@ bool UFFZSWorldSubsystem::ValidateZoneGraph(TArray<FText>& OutErrors) const
     {
         if (Settings->ProjectZoneIds.IsEmpty())
         {
-            OutErrors.Add(LOCTEXT("MissingProjectZoneIds", "Project Zone Ids must contain at least one stable ID while restriction is enabled."));
+            OutErrors.Add(LOCTEXT("MissingProjectZoneIds", "제한 기능이 활성화된 동안 Project Zone Ids에는 안정적인 ID가 하나 이상 있어야 합니다."));
         }
 
         TSet<FName> ConfiguredZoneIds;
@@ -2683,14 +2683,14 @@ bool UFFZSWorldSubsystem::ValidateZoneGraph(TArray<FText>& OutErrors) const
         {
             if (ProjectZoneId.IsNone() || ConfiguredZoneIds.Contains(ProjectZoneId))
             {
-                OutErrors.Add(LOCTEXT("InvalidProjectZoneId", "Project Zone Ids contains an empty or duplicate ID."));
+                OutErrors.Add(LOCTEXT("InvalidProjectZoneId", "Project Zone Ids에 비어 있거나 중복된 ID가 있습니다."));
                 continue;
             }
             ConfiguredZoneIds.Add(ProjectZoneId);
             if (!FindZone(ProjectZoneId))
             {
                 OutErrors.Add(FText::Format(
-                    LOCTEXT("MissingProjectZone", "Configured Gameplay Zone {0} is missing."),
+                    LOCTEXT("MissingProjectZone", "설정된 Gameplay Zone {0}이 없습니다."),
                     FText::FromName(ProjectZoneId)));
             }
         }
@@ -2710,11 +2710,11 @@ bool UFFZSWorldSubsystem::ValidateZoneGraph(TArray<FText>& OutErrors) const
             const AFFZSGameplayZone* Neighbor = FindZone(NeighborId);
             if (!Neighbor)
             {
-                OutErrors.Add(FText::Format(LOCTEXT("MissingNeighbor", "Zone {0} references missing neighbor {1}."), FText::FromName(Zone->ZoneId), FText::FromName(NeighborId)));
+                OutErrors.Add(FText::Format(LOCTEXT("MissingNeighbor", "Zone {0}이 존재하지 않는 인접 Zone {1}을 참조합니다."), FText::FromName(Zone->ZoneId), FText::FromName(NeighborId)));
             }
             else if (!Neighbor->NeighborZoneIds.Contains(Zone->ZoneId))
             {
-                OutErrors.Add(FText::Format(LOCTEXT("OneWayNeighbor", "Zone adjacency must be bidirectional: {0} -> {1}."), FText::FromName(Zone->ZoneId), FText::FromName(NeighborId)));
+                OutErrors.Add(FText::Format(LOCTEXT("OneWayNeighbor", "Zone 인접 관계는 양방향이어야 합니다: {0} -> {1}."), FText::FromName(Zone->ZoneId), FText::FromName(NeighborId)));
             }
         }
     }
@@ -2732,12 +2732,12 @@ bool UFFZSWorldSubsystem::ValidateZoneGraph(TArray<FText>& OutErrors) const
         OutErrors.Append(AreaErrors);
         if (ProtectedAreaIds.Contains(Area->ProtectedAreaId))
         {
-            OutErrors.Add(FText::Format(LOCTEXT("DuplicateProtectedId", "Protected Area ID {0} is duplicated."), FText::FromName(Area->ProtectedAreaId)));
+            OutErrors.Add(FText::Format(LOCTEXT("DuplicateProtectedId", "Protected Area ID {0}이 중복되었습니다."), FText::FromName(Area->ProtectedAreaId)));
         }
         ProtectedAreaIds.Add(Area->ProtectedAreaId);
         if (!Area->LinkedZoneId.IsNone() && !FindZone(Area->LinkedZoneId))
         {
-            OutErrors.Add(FText::Format(LOCTEXT("MissingProtectedZone", "Protected Area {0} references missing Zone {1}."),
+            OutErrors.Add(FText::Format(LOCTEXT("MissingProtectedZone", "Protected Area {0}이 존재하지 않는 Zone {1}을 참조합니다."),
                 FText::FromName(Area->ProtectedAreaId), FText::FromName(Area->LinkedZoneId)));
         }
     }
