@@ -57,13 +57,13 @@ bool FFFZSOneCentimeterUnitContractTest::RunTest(const FString& Parameters)
     (void)Parameters;
 
     // Arrange/Act/Assert: 월드 없이 코드 상수만 읽어 물리 단위와 안전 상한을 고정한다.
-    TestEqual(TEXT("One placement Cell is exactly one centimeter/Unreal Unit"),
+    TestEqual(TEXT("배치 Cell 하나는 정확히 1센티미터이자 Unreal Unit 1이다"),
         UFFZSDeveloperSettings::DefaultPlacementCellSizeCm, 1.0);
-    TestEqual(TEXT("Debug compatibility arrays materialize at most ten thousand Cells"),
+    TestEqual(TEXT("디버그 호환 배열은 최대 Cell 10,000개까지만 구체화한다"),
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, 10'000);
-    TestEqual(TEXT("Ground sampling remains coarser than one-centimeter occupancy"),
+    TestEqual(TEXT("지면 샘플링은 1센티미터 점유보다 더 거친 간격을 유지한다"),
         UFFZSDeveloperSettings::DefaultGroundSampleSpacingCm, 100.0f);
-    TestEqual(TEXT("Queue spacing remains a centimeter value independent of Cell storage"),
+    TestEqual(TEXT("대기열 간격은 Cell 저장 방식과 무관하게 센티미터 값을 유지한다"),
         UFFZSGridLibrary::MakeBuiltInFacilitySpec(
             EFFZSBuiltInFacilityPreset::FoodTruckBasic).QueueRules.SlotSpacingCm,
         115.0f);
@@ -85,38 +85,38 @@ bool FFFZSCellAndRectRotationTest::RunTest(const FString& Parameters)
     const FFFZSCellRect UnitRect(FIntPoint(0, 0), FIntPoint(1, 1));
     // 단일 Cell Rect는 RotateCell(0,0)의 규칙과 정확히 같아야 한다. 연속 좌표식 -Max를 쓰면
     // [-1,0)으로 한 칸 밀리는 회귀를 이 단언이 잡는다.
-    TestTrue(TEXT("Single-Cell Rect q1 matches RotateCell index semantics"),
+    TestTrue(TEXT("단일 Cell Rect의 q1이 RotateCell 인덱스 의미와 일치한다"),
         UFFZSGridLibrary::RotateRect(UnitRect, 1) == UnitRect);
     FFFZSCellRect FourTurnRect = SourceRect;
     for (int32 Turn = 0; Turn < 4; ++Turn)
     {
         FourTurnRect = UFFZSGridLibrary::RotateRect(FourTurnRect, 1);
     }
-    TestTrue(TEXT("Four successive Rect quarter-turns return exactly to the source"),
+    TestTrue(TEXT("Rect를 연속 네 번 90도 회전하면 정확히 원본으로 돌아온다"),
         FourTurnRect == SourceRect);
 
     // Act/Assert: Cell 회전은 정수 좌표, Rect 회전은 전체 [Min,Max) 영역을 보존해야 한다.
-    TestEqual(TEXT("Cell at zero quarter turns"),
+    TestEqual(TEXT("90도 회전 0회의 Cell 결과가 일치한다"),
         UFFZSGridLibrary::RotateCell(SourceCell, 0), FIntPoint(2, 1));
-    TestEqual(TEXT("Cell at one clockwise quarter turn"),
+    TestEqual(TEXT("시계 방향으로 90도 1회 회전한 Cell 결과가 일치한다"),
         UFFZSGridLibrary::RotateCell(SourceCell, 1), FIntPoint(-1, 2));
-    TestEqual(TEXT("Cell at two clockwise quarter turns"),
+    TestEqual(TEXT("시계 방향으로 90도 2회 회전한 Cell 결과가 일치한다"),
         UFFZSGridLibrary::RotateCell(SourceCell, 2), FIntPoint(-2, -1));
-    TestEqual(TEXT("Cell at three clockwise quarter turns"),
+    TestEqual(TEXT("시계 방향으로 90도 3회 회전한 Cell 결과가 일치한다"),
         UFFZSGridLibrary::RotateCell(SourceCell, 3), FIntPoint(1, -2));
-    TestEqual(TEXT("Negative Cell turns normalize to three"),
+    TestEqual(TEXT("음수 Cell 회전 횟수는 3으로 정규화된다"),
         UFFZSGridLibrary::RotateCell(SourceCell, -1), FIntPoint(1, -2));
 
     const FFFZSCellRect RotatedOnce = UFFZSGridLibrary::RotateRect(SourceRect, 1);
     const FFFZSCellRect RotatedTwice = UFFZSGridLibrary::RotateRect(SourceRect, 2);
     const FFFZSCellRect RotatedThrice = UFFZSGridLibrary::RotateRect(SourceRect, 3);
-    TestTrue(TEXT("Rect one-turn bounds preserve every covered Cell"),
+    TestTrue(TEXT("Rect 1회 회전 경계가 포함된 모든 Cell을 보존한다"),
         RotatedOnce == FFFZSCellRect(FIntPoint(-5, 1), FIntPoint(-1, 4)));
-    TestTrue(TEXT("Rect two-turn bounds preserve every covered Cell"),
+    TestTrue(TEXT("Rect 2회 회전 경계가 포함된 모든 Cell을 보존한다"),
         RotatedTwice == FFFZSCellRect(FIntPoint(-3, -5), FIntPoint(0, -1)));
-    TestTrue(TEXT("Rect three-turn bounds preserve every covered Cell"),
+    TestTrue(TEXT("Rect 3회 회전 경계가 포함된 모든 Cell을 보존한다"),
         RotatedThrice == FFFZSCellRect(FIntPoint(2, -3), FIntPoint(6, 0)));
-    TestEqual(TEXT("Rect area is invariant under rotation"),
+    TestEqual(TEXT("Rect 면적은 회전해도 변하지 않는다"),
         RotatedOnce.GetArea(), SourceRect.GetArea());
     return true;
 }
@@ -152,47 +152,47 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
         UFFZSGridLibrary::GetReservedRects(Spec, Placement);
 
     // Assert: 시계 방향 90도 회전 후 Origin을 더한 반열림 좌표를 정확히 고정한다.
-    TestEqual(TEXT("Small synthetic footprint remains one compressed Rect"),
+    TestEqual(TEXT("작은 합성 점유 영역은 압축 Rect 하나로 유지된다"),
         FootprintRects.Num(), 1);
-    TestTrue(TEXT("Rotated footprint bounds are exact"),
+    TestTrue(TEXT("회전된 점유 영역의 경계가 정확하다"),
         FootprintRects.Num() == 1 &&
         FootprintRects[0] == FFFZSCellRect(FIntPoint(9, 20), FIntPoint(11, 23)));
-    TestEqual(TEXT("Small synthetic queue remains one compressed Rect"),
+    TestEqual(TEXT("작은 합성 대기열은 압축 Rect 하나로 유지된다"),
         QueueRects.Num(), 1);
-    TestTrue(TEXT("Rotated queue bounds are exact"),
+    TestTrue(TEXT("회전된 대기열 경계가 정확하다"),
         QueueRects.Num() == 1 &&
         QueueRects[0] == FFFZSCellRect(FIntPoint(10, 23), FIntPoint(11, 25)));
 
-    TestEqual(TEXT("Footprint Region covers six one-centimeter Cells"),
+    TestEqual(TEXT("점유 Region이 1센티미터 Cell 6개를 포함한다"),
         UFFZSGridLibrary::GetCellRectArea(FootprintRects), static_cast<int64>(6));
-    TestEqual(TEXT("Queue Region covers two one-centimeter Cells"),
+    TestEqual(TEXT("대기열 Region이 1센티미터 Cell 2개를 포함한다"),
         UFFZSGridLibrary::GetCellRectArea(QueueRects), static_cast<int64>(2));
-    TestEqual(TEXT("Clearance excludes footprint and the queue overlap"),
+    TestEqual(TEXT("여유 영역에서 점유 영역과 대기열의 겹침이 제외된다"),
         UFFZSGridLibrary::GetCellRectArea(ClearanceRects), static_cast<int64>(13));
-    TestEqual(TEXT("Reserved Region is the exact union without double counting"),
+    TestEqual(TEXT("예약 Region은 중복 계산 없는 정확한 합집합이다"),
         UFFZSGridLibrary::GetCellRectArea(ReservedRects), static_cast<int64>(21));
 
-    TestFalse(TEXT("Footprint and clearance Regions are disjoint"),
+    TestFalse(TEXT("점유 영역과 여유 Region이 서로 겹치지 않는다"),
         UFFZSGridLibrary::DoCellRectSetsOverlap(FootprintRects, ClearanceRects));
-    TestFalse(TEXT("Footprint and queue Regions only touch at a boundary"),
+    TestFalse(TEXT("점유 영역과 대기열 Region은 경계에서만 맞닿는다"),
         UFFZSGridLibrary::DoCellRectSetsOverlap(FootprintRects, QueueRects));
-    TestFalse(TEXT("Clearance subtracts the queue Region"),
+    TestFalse(TEXT("여유 영역에서 대기열 Region이 제외된다"),
         UFFZSGridLibrary::DoCellRectSetsOverlap(ClearanceRects, QueueRects));
-    TestTrue(TEXT("Reserved Region contains a rotated footprint Cell"),
+    TestTrue(TEXT("예약 Region에 회전된 점유 Cell이 포함된다"),
         UFFZSGridLibrary::IsCellInRects(FIntPoint(9, 20), ReservedRects));
-    TestTrue(TEXT("Reserved Region contains the queue tail Cell"),
+    TestTrue(TEXT("예약 Region에 대기열 끝 Cell이 포함된다"),
         UFFZSGridLibrary::IsCellInRects(FIntPoint(10, 24), ReservedRects));
-    TestFalse(TEXT("Reserved Region excludes an unrelated Cell"),
+    TestFalse(TEXT("예약 Region에서 관련 없는 Cell이 제외된다"),
         UFFZSGridLibrary::IsCellInRects(FIntPoint(11, 25), ReservedRects));
 
     // 작은 합성 입력에서만 구 호환 Get*Cells를 펼쳐 Region 면적과 같은지 확인한다.
-    TestEqual(TEXT("Small debug footprint materializes all Cells"),
+    TestEqual(TEXT("작은 디버그 점유 영역의 모든 Cell이 구체화된다"),
         UFFZSGridLibrary::GetFootprintCells(Spec, Placement).Num(), 6);
-    TestEqual(TEXT("Small debug clearance materializes all Cells"),
+    TestEqual(TEXT("작은 디버그 여유 영역의 모든 Cell이 구체화된다"),
         UFFZSGridLibrary::GetClearanceCells(Spec, Placement).Num(), 13);
-    TestEqual(TEXT("Small debug queue materializes all Cells"),
+    TestEqual(TEXT("작은 디버그 대기열의 모든 Cell이 구체화된다"),
         UFFZSGridLibrary::GetQueueCells(Spec, Placement).Num(), 2);
-    TestEqual(TEXT("Small debug reservation materializes the exact union"),
+    TestEqual(TEXT("작은 디버그 예약 영역이 정확한 합집합으로 구체화된다"),
         UFFZSGridLibrary::GetReservedCells(Spec, Placement).Num(), 21);
 
     // Arrange/Act: 겹치고 맞닿는 Rect 입력을 결정적 비중첩 합집합으로 정규화한다.
@@ -201,66 +201,66 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
         FFFZSCellRect(FIntPoint(2, 0), FIntPoint(4, 2)),
         FFFZSCellRect(FIntPoint(1, 1), FIntPoint(3, 3))
     });
-    TestEqual(TEXT("Touching and overlapping Rects collapse to two deterministic bands"),
+    TestEqual(TEXT("맞닿거나 겹치는 Rect들이 결정적인 두 밴드로 합쳐진다"),
         Canonical.Num(), 2);
-    TestEqual(TEXT("Canonical union area removes overlap exactly"),
+    TestEqual(TEXT("정규 합집합 면적에서 겹침이 정확히 제거된다"),
         UFFZSGridLibrary::GetCellRectArea(Canonical), static_cast<int64>(10));
-    TestFalse(TEXT("Canonical output Rects do not overlap"),
+    TestFalse(TEXT("정규 출력 Rect들은 서로 겹치지 않는다"),
         Canonical.Num() == 2 && Canonical[0].Intersects(Canonical[1]));
 
     TArray<FIntPoint> Materialized;
-    TestTrue(TEXT("A ten-Cell canonical union materializes at its exact limit"),
+    TestTrue(TEXT("Cell 10개의 정규 합집합은 정확한 제한에서 구체화된다"),
         UFFZSGridLibrary::TryMaterializeCellRects(Canonical, 10, Materialized));
-    TestEqual(TEXT("Canonical union materializes ten unique Cells"),
+    TestEqual(TEXT("정규 합집합이 고유 Cell 10개로 구체화된다"),
         Materialized.Num(), 10);
 
     // 10,000 Cell 경계는 성공하고 단 한 Cell이라도 초과하면 출력까지 비우는 fail-closed 계약이다.
     const TArray<FFFZSCellRect> AtDebugLimit = {
         FFFZSCellRect(FIntPoint(0, 0), FIntPoint(100, 100))
     };
-    TestTrue(TEXT("Exactly ten thousand debug Cells are allowed"),
+    TestTrue(TEXT("디버그 Cell은 정확히 10,000개까지 허용된다"),
         UFFZSGridLibrary::TryMaterializeCellRects(
             AtDebugLimit,
             UFFZSDeveloperSettings::MaxMaterializedDebugCells,
             Materialized));
-    TestEqual(TEXT("Exact debug limit produces ten thousand Cells"),
+    TestEqual(TEXT("정확한 디버그 제한에서 Cell 10,000개가 생성된다"),
         Materialized.Num(), 10'000);
 
     const TArray<FFFZSCellRect> OverDebugLimit = {
         FFFZSCellRect(FIntPoint(0, 0), FIntPoint(10'001, 1))
     };
-    TestFalse(TEXT("Ten thousand and one debug Cells fail closed"),
+    TestFalse(TEXT("디버그 Cell 10,001개는 안전 차단으로 실패한다"),
         UFFZSGridLibrary::TryMaterializeCellRects(
             OverDebugLimit,
             UFFZSDeveloperSettings::MaxMaterializedDebugCells,
             Materialized));
-    TestTrue(TEXT("Failed materialization clears a previous output array"),
+    TestTrue(TEXT("구체화 실패 시 기존 출력 배열이 비워진다"),
         Materialized.IsEmpty());
 
     Materialized.Add(FIntPoint(7, 7));
     const TArray<FFFZSCellRect> InvalidRects = {
         FFFZSCellRect(FIntPoint(2, 2), FIntPoint(2, 3))
     };
-    TestFalse(TEXT("An invalid half-open Rect fails materialization instead of becoming an empty success"),
+    TestFalse(TEXT("잘못된 반개방 Rect는 빈 성공으로 처리되지 않고 구체화에 실패한다"),
         UFFZSGridLibrary::TryMaterializeCellRects(InvalidRects, 10, Materialized));
-    TestTrue(TEXT("Invalid Rect materialization also clears previous output"),
+    TestTrue(TEXT("잘못된 Rect 구체화도 기존 출력을 비운다"),
         Materialized.IsEmpty());
 
     FFFZSFacilitySpec LargeDebugSpec = MakeSmallRegionSpec();
     LargeDebugSpec.FootprintSizeCells = FIntPoint(101, 100);
     LargeDebugSpec.ClearanceCells = 0;
     LargeDebugSpec.QueueReservedRects.Reset();
-    TestTrue(TEXT("Compressed authority accepts a 10,100-Cell synthetic footprint"),
+    TestTrue(TEXT("압축 권위 데이터는 Cell 10,100개의 합성 점유 영역을 허용한다"),
         UFFZSGridLibrary::CanEnumerateFacilityCells(LargeDebugSpec));
-    TestEqual(TEXT("Compressed authority preserves the 10,100-Cell area"),
+    TestEqual(TEXT("압축 권위 데이터가 Cell 10,100개의 면적을 보존한다"),
         UFFZSGridLibrary::GetCellRectArea(
             UFFZSGridLibrary::GetFootprintRects(
                 LargeDebugSpec, FFFZSGridPlacement())),
         static_cast<int64>(10'100));
-    TestTrue(TEXT("Legacy footprint Cell view fails closed above 10,000"),
+    TestTrue(TEXT("레거시 점유 Cell 뷰는 10,000개를 초과하면 안전 차단으로 실패한다"),
         UFFZSGridLibrary::GetFootprintCells(
             LargeDebugSpec, FFFZSGridPlacement()).IsEmpty());
-    TestTrue(TEXT("Legacy reserved Cell view also fails closed above 10,000"),
+    TestTrue(TEXT("레거시 예약 Cell 뷰도 10,000개를 초과하면 안전 차단으로 실패한다"),
         UFFZSGridLibrary::GetReservedCells(
             LargeDebugSpec, FFFZSGridPlacement()).IsEmpty());
 
@@ -268,26 +268,26 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
     // 부분 권위 결과로 반환하지 않고 clearance/reserved 전체가 fail-closed해야 한다.
     FFFZSGridPlacement QueueOverflowPlacement;
     QueueOverflowPlacement.OriginCell = FIntPoint(MAX_int32 - 4, 0);
-    TestFalse(TEXT("Queue-only overflow fixture keeps a representable footprint"),
+    TestFalse(TEXT("대기열 전용 오버플로 픽스처에서도 점유 영역은 표현 가능하다"),
         UFFZSGridLibrary::GetFootprintRects(Spec, QueueOverflowPlacement).IsEmpty());
-    TestTrue(TEXT("Queue-only coordinate overflow fails the Queue Region"),
+    TestTrue(TEXT("대기열 전용 좌표 오버플로로 Queue Region 생성이 실패한다"),
         UFFZSGridLibrary::GetQueueRects(Spec, QueueOverflowPlacement).IsEmpty());
-    TestTrue(TEXT("Queue-only overflow cannot leak a partial clearance Region"),
+    TestTrue(TEXT("대기열 전용 오버플로는 불완전한 여유 Region을 노출하지 않는다"),
         UFFZSGridLibrary::GetClearanceRects(Spec, QueueOverflowPlacement).IsEmpty());
-    TestTrue(TEXT("Queue-only overflow cannot leak a partial reserved union"),
+    TestTrue(TEXT("대기열 전용 오버플로는 불완전한 예약 합집합을 노출하지 않는다"),
         UFFZSGridLibrary::GetReservedRects(Spec, QueueOverflowPlacement).IsEmpty());
 
     // 보수적 예산은 expanded footprint 20 + queue 2를 합산해 겹침과 무관하게 22로 판단한다.
     {
         TGuardValue<int32> BelowBudgetGuard(
             MutableSettings->MaxEnumeratedCellsPerFacility, 21);
-        TestFalse(TEXT("Conservative Region work budget rejects one Cell below 22"),
+        TestFalse(TEXT("보수적 Region 작업 예산은 필요한 22 Cell보다 1 부족하면 거부한다"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
     }
     {
         TGuardValue<int32> ExactBudgetGuard(
             MutableSettings->MaxEnumeratedCellsPerFacility, 22);
-        TestTrue(TEXT("Conservative Region work budget accepts its exact bound"),
+        TestTrue(TEXT("보수적 Region 작업 예산은 정확한 경곗값을 허용한다"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
     }
     return true;
@@ -312,7 +312,7 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
         0);
     const FString BaselineFingerprint =
         UFFZSGridLibrary::BuildCommandFingerprint(BaselineCommand);
-    TestEqual(TEXT("Same compressed payload fingerprints identically"),
+    TestEqual(TEXT("동일한 압축 페이로드는 같은 지문을 생성한다"),
         BaselineFingerprint,
         UFFZSGridLibrary::BuildCommandFingerprint(BaselineCommand));
 
@@ -330,58 +330,58 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
             UFFZSGridLibrary::BuildCommandFingerprint(Mutated));
     };
 
-    ExpectMutationDetected(TEXT("Expected revision participates"),
+    ExpectMutationDetected(TEXT("예상 리비전 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) { ++C.ExpectedWorldRevision; });
-    ExpectMutationDetected(TEXT("Transaction participates"),
+    ExpectMutationDetected(TEXT("트랜잭션 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) { C.TransactionId = FGuid::NewGuid(); });
-    ExpectMutationDetected(TEXT("Placement participates"),
+    ExpectMutationDetected(TEXT("배치 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) { ++C.Placement.OriginCell.X; });
-    ExpectMutationDetected(TEXT("Schema participates"),
+    ExpectMutationDetected(TEXT("스키마 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) { ++C.FacilitySpec.SchemaVersion; });
-    ExpectMutationDetected(TEXT("One-centimeter footprint participates"),
+    ExpectMutationDetected(TEXT("1센티미터 점유 영역 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) { ++C.FacilitySpec.FootprintSizeCells.X; });
-    ExpectMutationDetected(TEXT("One-centimeter clearance participates"),
+    ExpectMutationDetected(TEXT("1센티미터 여유 영역 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) { ++C.FacilitySpec.ClearanceCells; });
-    ExpectMutationDetected(TEXT("Category participates"),
+    ExpectMutationDetected(TEXT("카테고리 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.Category = EFFZSFacilityCategory::Info;
         });
-    ExpectMutationDetected(TEXT("Max waiting participates"),
+    ExpectMutationDetected(TEXT("최대 대기 인원 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             ++C.FacilitySpec.QueueRules.MaxWaitingAgents;
         });
-    ExpectMutationDetected(TEXT("Arrival tolerance participates"),
+    ExpectMutationDetected(TEXT("도착 허용 오차 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.QueueRules.SlotArrivalToleranceCm += 1.0f;
         });
-    ExpectMutationDetected(TEXT("Queue spline participates"),
+    ExpectMutationDetected(TEXT("대기열 스플라인 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.QueueSplinePointsCm[0].X += 1.0;
         });
-    ExpectMutationDetected(TEXT("Compressed queue Rect participates"),
+    ExpectMutationDetected(TEXT("압축 대기열 Rect 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             ++C.FacilitySpec.QueueReservedRects[0].Min.X;
         });
-    ExpectMutationDetected(TEXT("Anchor transform participates"),
+    ExpectMutationDetected(TEXT("앵커 트랜스폼 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.Anchors[0].LocalTransform.AddToTranslation(
                 FVector(1.0, 0.0, 0.0));
         });
-    ExpectMutationDetected(TEXT("Allowed Zones participate"),
+    ExpectMutationDetected(TEXT("허용 Zone 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.AllowedZoneIds.Add(TEXT("GZ_Operations"));
         });
-    ExpectMutationDetected(TEXT("External keys participate"),
+    ExpectMutationDetected(TEXT("외부 키 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.InstallCostKey = TEXT("Cost.Changed");
         });
-    ExpectMutationDetected(TEXT("Obstacle height participates"),
+    ExpectMutationDetected(TEXT("장애물 높이 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.PlacementObstacleHeightCm += 1.0f;
         });
 
     FFFZSCommand Same = BaselineCommand;
-    TestEqual(TEXT("CRC helper remains stable"),
+    TestEqual(TEXT("CRC 헬퍼의 결과가 안정적으로 유지된다"),
         UFFZSGridLibrary::HashCommandPayload(BaselineCommand),
         UFFZSGridLibrary::HashCommandPayload(Same));
 
@@ -396,7 +396,7 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
             UFFZSGridLibrary::BuildCommandFingerprint(CultureCommand);
         if (FInternationalization::Get().SetCurrentCulture(TEXT("fr-FR")))
         {
-            TestEqual(TEXT("FText payload identity is culture invariant"),
+            TestEqual(TEXT("FText 페이로드 식별값은 문화권에 영향을 받지 않는다"),
                 EnglishFingerprint,
                 UFFZSGridLibrary::BuildCommandFingerprint(CultureCommand));
         }

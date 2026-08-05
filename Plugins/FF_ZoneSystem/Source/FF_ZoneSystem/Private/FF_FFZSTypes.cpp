@@ -91,27 +91,27 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 
     if (SchemaVersion != 2)
     {
-        OutErrors.Add(LOCTEXT("InvalidSchema", "Only FacilitySpec SchemaVersion 2 (1 Cell = 1 cm) is supported; legacy data must be re-authored explicitly."));
+        OutErrors.Add(LOCTEXT("InvalidSchema", "FacilitySpec은 SchemaVersion 2(1 Cell = 1cm)만 지원합니다. 이전 데이터는 명시적으로 다시 작성해야 합니다."));
     }
     if (FacilityDefinitionId.IsNone())
     {
-        OutErrors.Add(LOCTEXT("MissingDefinitionId", "FacilityDefinitionId is required."));
+        OutErrors.Add(LOCTEXT("MissingDefinitionId", "FacilityDefinitionId가 필요합니다."));
     }
     if (DisplayName.IsEmpty())
     {
-        OutErrors.Add(LOCTEXT("MissingDisplayName", "Facility DisplayName is required."));
+        OutErrors.Add(LOCTEXT("MissingDisplayName", "Facility DisplayName이 필요합니다."));
     }
     if (!StaticEnum<EFFZSFacilityCategory>()->IsValidEnumValue(static_cast<int64>(Category)))
     {
-        OutErrors.Add(LOCTEXT("InvalidCategory", "Facility Category is invalid."));
+        OutErrors.Add(LOCTEXT("InvalidCategory", "Facility Category가 잘못되었습니다."));
     }
     if (FootprintSizeCells.X <= 0 || FootprintSizeCells.Y <= 0)
     {
-        OutErrors.Add(LOCTEXT("InvalidFootprint", "Footprint dimensions must both be at least one cell."));
+        OutErrors.Add(LOCTEXT("InvalidFootprint", "Footprint의 두 크기는 모두 최소 1 Cell이어야 합니다."));
     }
     if (ClearanceCells < 0)
     {
-        OutErrors.Add(LOCTEXT("InvalidClearance", "ClearanceCells cannot be negative."));
+        OutErrors.Add(LOCTEXT("InvalidClearance", "ClearanceCells는 음수일 수 없습니다."));
     }
     // 양수/비음수 조건을 먼저 통과한 경우에만 예산 계산을 호출해 오류 중복과 오버플로를 피한다.
     if (FootprintSizeCells.X > 0 && FootprintSizeCells.Y > 0 && ClearanceCells >= 0 &&
@@ -120,7 +120,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         OutErrors.Add(FText::Format(
             LOCTEXT(
                 "FacilityCellEnumerationLimit",
-                "Footprint, clearance, and queue reservations must represent at most {0} one-centimeter cells."),
+                "Footprint, 여유 공간 및 Queue 예약 영역은 최대 {0}개의 1cm Cell만 표현할 수 있습니다."),
             FText::AsNumber(UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())));
     }
 
@@ -128,13 +128,13 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         !FMath::IsFinite(QueueRules.SlotSpacingCm) || QueueRules.SlotSpacingCm <= 0.0f ||
         !FMath::IsFinite(QueueRules.ServiceDurationSeconds) || QueueRules.ServiceDurationSeconds <= 0.0f)
     {
-        OutErrors.Add(LOCTEXT("InvalidQueueRules", "Queue capacity, spacing, and service duration must be finite and positive."));
+        OutErrors.Add(LOCTEXT("InvalidQueueRules", "Queue 수용량, 간격 및 Service 시간은 유한한 양수여야 합니다."));
     }
     if (QueueRules.MaxWaitingAgents > UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())
     {
         OutErrors.Add(LOCTEXT(
             "QueueCapacitySafetyLimit",
-            "MaxWaitingAgents exceeds the configured facility cell-enumeration safety limit."));
+            "MaxWaitingAgents가 설정된 Facility Cell 열거 안전 제한을 초과했습니다."));
     }
     if (!FMath::IsFinite(QueueRules.AbandonAfterSeconds) || QueueRules.AbandonAfterSeconds < 0.0f ||
         !FMath::IsFinite(QueueRules.SlotArrivalToleranceCm) || QueueRules.SlotArrivalToleranceCm < 0.0f ||
@@ -142,12 +142,12 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         !FMath::IsFinite(QueueRules.BlockedTimeoutSeconds) || QueueRules.BlockedTimeoutSeconds < 0.0f ||
         QueueRules.MaxRepathAttempts < 0)
     {
-        OutErrors.Add(LOCTEXT("InvalidQueueMovementRules", "Queue abandonment, arrival, navigation, blocked timeout, and repath values are invalid."));
+        OutErrors.Add(LOCTEXT("InvalidQueueMovementRules", "Queue 이탈, 도착, 내비게이션, 차단 시간 제한 또는 재탐색 값이 잘못되었습니다."));
     }
 
     if (QueueSplinePointsCm.Num() < 2)
     {
-        OutErrors.Add(LOCTEXT("MissingQueueSpline", "At least two QueueSplinePointsCm are required."));
+        OutErrors.Add(LOCTEXT("MissingQueueSpline", "QueueSplinePointsCm은 최소 2개가 필요합니다."));
     }
     else
     {
@@ -156,7 +156,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         {
             if (QueueSplinePointsCm[Index].ContainsNaN())
             {
-                OutErrors.Add(LOCTEXT("InvalidQueueSplinePoint", "Queue spline points must contain finite centimeter values."));
+                OutErrors.Add(LOCTEXT("InvalidQueueSplinePoint", "Queue Spline Point에는 유한한 센티미터 값을 사용해야 합니다."));
                 break;
             }
             if (Index > 0)
@@ -167,7 +167,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         if (QueueSplineLengthCm + UE_KINDA_SMALL_NUMBER <
             (QueueRules.MaxWaitingAgents - 1) * QueueRules.SlotSpacingCm)
         {
-            OutErrors.Add(LOCTEXT("QueueSplineTooShort", "Queue spline must fit every maximum-capacity slot at SlotSpacingCm."));
+            OutErrors.Add(LOCTEXT("QueueSplineTooShort", "Queue Spline은 SlotSpacingCm 간격으로 최대 수용 인원의 모든 슬롯을 배치할 수 있을 만큼 길어야 합니다."));
         }
     }
 
@@ -176,7 +176,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT(
             "MissingQueueRects",
-            "QueueReservedRects must reserve the maximum queue area in 1 cm cells."));
+            "QueueReservedRects는 최대 Queue 영역을 1cm Cell 단위로 예약해야 합니다."));
     }
 
     for (const FFFZSCellRect& Rect : QueueReservedRects)
@@ -185,7 +185,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         {
             OutErrors.Add(LOCTEXT(
                 "InvalidQueueRect",
-                "Every QueueReservedRect must satisfy Min.X < Max.X and Min.Y < Max.Y."));
+                "모든 QueueReservedRect는 Min.X < Max.X 및 Min.Y < Max.Y 조건을 만족해야 합니다."));
         }
     }
 
@@ -196,14 +196,14 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         if (UniqueLegacyQueueCells.Contains(Cell))
         {
             OutErrors.Add(FText::Format(
-                LOCTEXT("DuplicateLegacyQueueCell", "Legacy QueueReservedCells contains duplicate cell ({0}, {1})."),
+                LOCTEXT("DuplicateLegacyQueueCell", "이전 QueueReservedCells에 중복된 Cell({0}, {1})이 있습니다."),
                 Cell.X,
                 Cell.Y));
         }
         UniqueLegacyQueueCells.Add(Cell);
         if (Cell.X == MAX_int32 || Cell.Y == MAX_int32)
         {
-            OutErrors.Add(LOCTEXT("LegacyQueueCellOverflow", "Legacy QueueReservedCells contains an unrepresentable maximum coordinate."));
+            OutErrors.Add(LOCTEXT("LegacyQueueCellOverflow", "이전 QueueReservedCells에 표현할 수 없는 최대 좌표가 있습니다."));
             continue;
         }
         LocalQueueRects.Emplace(Cell, FIntPoint(Cell.X + 1, Cell.Y + 1));
@@ -218,7 +218,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT(
             "QueueOverlapsFootprint",
-            "QueueReservedRects cannot overlap the Facility footprint."));
+            "QueueReservedRects는 Facility Footprint와 겹칠 수 없습니다."));
     }
 
     // 최대 정원 전체를 SlotSpacingCm 간격으로 샘플링한다. 일부 슬롯만 예약 영역에 들어오는
@@ -251,7 +251,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         {
             OutErrors.Add(LOCTEXT(
                 "QueueSlotOutsideReservation",
-                "Every maximum-capacity Queue slot must lie inside QueueReservedRects."));
+                "최대 수용 인원의 모든 Queue 슬롯은 QueueReservedRects 안에 있어야 합니다."));
         }
     }
 
@@ -270,14 +270,14 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             Anchor.Index < 0 || Anchor.LocalTransform.ContainsNaN() ||
             !Anchor.LocalTransform.GetScale3D().Equals(FVector::OneVector, 0.001f))
         {
-            OutErrors.Add(LOCTEXT("InvalidAnchor", "Anchor type/index/transform is invalid; local scale must remain 1."));
+            OutErrors.Add(LOCTEXT("InvalidAnchor", "Anchor의 Type/Index/Transform이 잘못되었습니다. Local Scale은 1이어야 합니다."));
             continue;
         }
 
         const uint64 AnchorKey = (static_cast<uint64>(Anchor.Type) << 32) | static_cast<uint32>(Anchor.Index);
         if (AnchorKeys.Contains(AnchorKey))
         {
-            OutErrors.Add(LOCTEXT("DuplicateAnchor", "Anchor type/index pairs must be unique."));
+            OutErrors.Add(LOCTEXT("DuplicateAnchor", "Anchor Type/Index 조합은 고유해야 합니다."));
         }
         AnchorKeys.Add(AnchorKey);
 
@@ -300,23 +300,23 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 
     if (EntryCount < 1 || !EntryIndices.Contains(0))
     {
-        OutErrors.Add(LOCTEXT("MissingEntry", "At least Entry[0] is required."));
+        OutErrors.Add(LOCTEXT("MissingEntry", "최소한 Entry[0]이 필요합니다."));
     }
     if (ServiceCount < QueueRules.ServiceCapacity)
     {
-        OutErrors.Add(LOCTEXT("MissingService", "The number of Service anchors must be at least ServiceCapacity."));
+        OutErrors.Add(LOCTEXT("MissingService", "Service Anchor 수는 ServiceCapacity 이상이어야 합니다."));
     }
     for (int32 ServiceIndex = 0; ServiceIndex < QueueRules.ServiceCapacity; ++ServiceIndex)
     {
         if (!ServiceIndices.Contains(ServiceIndex))
         {
-            OutErrors.Add(LOCTEXT("MissingIndexedService", "Service anchors must provide contiguous indices from 0 to ServiceCapacity-1."));
+            OutErrors.Add(LOCTEXT("MissingIndexedService", "Service Anchor는 0부터 ServiceCapacity-1까지 연속된 Index를 제공해야 합니다."));
             break;
         }
     }
     if (ExitCount < 1 || !ExitIndices.Contains(0))
     {
-        OutErrors.Add(LOCTEXT("MissingExit", "At least Exit[0] is required."));
+        OutErrors.Add(LOCTEXT("MissingExit", "최소한 Exit[0]이 필요합니다."));
     }
 
     TSet<FName> UniqueAllowedZones;
@@ -328,21 +328,21 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         {
             OutErrors.Add(LOCTEXT(
                 "EmptyAllowedZone",
-                "AllowedZoneIds may be empty, but populated entries must not be NAME_None."));
+                "AllowedZoneIds는 비어 있을 수 있지만, 값이 있는 항목은 NAME_None일 수 없습니다."));
             continue;
         }
         if (UniqueAllowedZones.Contains(AllowedZoneId))
         {
             OutErrors.Add(LOCTEXT(
                 "DuplicateAllowedZone",
-                "AllowedZoneIds may be empty, but populated entries must be unique."));
+                "AllowedZoneIds는 비어 있을 수 있지만, 값이 있는 항목은 고유해야 합니다."));
             continue;
         }
         UniqueAllowedZones.Add(AllowedZoneId);
     }
     if (!FMath::IsFinite(PlacementObstacleHeightCm) || PlacementObstacleHeightCm < 10.0f)
     {
-        OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm must be finite and at least 10 cm."));
+        OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm은 유한한 값이며 최소 10cm여야 합니다."));
     }
 
     return OutErrors.IsEmpty();

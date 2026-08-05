@@ -4,6 +4,7 @@
   "dataset_id": "companion_type_modifier_v0",
   "status": "draft — 사용자 확인 전, 이름·필드 확정 아님",
   "design_rule": "이 표의 보정값은 모든 생애주기 아키타입에 동일한 공식으로 적용되는 개체 오버레이다 (2026-08-04 확정: 옵션 1). 나이×동반유형 교차표가 없으므로 생애주기별로 다르게 적용하지 않는다.",
+  "generation_note_2026_08_04": "companion_type은 NPC 개인에게 독립적으로 뽑아 붙이는 속성이 아니라 그룹 생성 규칙의 결과값이다. 실제 그룹 생성(크기·유형·연령 구성)은 population_group_generation_spec.md 1절 참고. 이 표는 '그룹이 이 크기일 때 선호가 얼마나 바뀌는가'만 정의하고, '어느 NPC들이 그룹인가'는 정의하지 않는다.",
   "row_unit": "한 동반유형",
   "independence_assumption": "동반유형 효과가 생애주기와 무관하게 일정하다고 가정한다. 실제로는 상호작용이 있을 수 있으나 이를 관측한 자료가 없다.",
   "columns": {

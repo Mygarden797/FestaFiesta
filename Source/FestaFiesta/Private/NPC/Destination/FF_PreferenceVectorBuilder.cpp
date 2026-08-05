@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "NPC/FF_PreferenceVectorBuilder.h"
+#include "NPC/Destination/FF_PreferenceVectorBuilder.h"
 #include "DataTables/FF_ArchetypeRow.h"
 #include "DataTables/FF_CompanionModifierRow.h"
 #include "Engine/DataTable.h"

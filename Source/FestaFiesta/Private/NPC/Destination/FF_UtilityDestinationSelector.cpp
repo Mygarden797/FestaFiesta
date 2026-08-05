@@ -1,8 +1,8 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "NPC/FF_UtilityDestinationSelector.h"
-#include "NPC/FF_DeterministicRandom.h"
-#include "NPC/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
+#include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "Engine/DataTable.h"
 
 DEFINE_LOG_CATEGORY(LogFestaFiestaNpc);

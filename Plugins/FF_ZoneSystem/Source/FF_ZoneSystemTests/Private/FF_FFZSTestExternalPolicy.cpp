@@ -41,7 +41,7 @@ FFFZSPolicyDecision UFFZSTestExternalPolicy::PreValidateFFZoneSystemChange_Imple
             bUnregisterPolicyAttemptSucceeded = Subsystem->UnregisterExternalPolicy(PolicyToUnregister.Get());
         }
     }
-    return MakeDecision(bAllowPreValidation, TEXT("Policy rejected pre-validation."));
+    return MakeDecision(bAllowPreValidation, TEXT("Policy가 사전 검증을 거부했습니다."));
 }
 
 // 실패를 허용하는 유일한 적용 단계다. count는 실패 Policy도 이후 Rollback되는지 판정하는 증거다.
@@ -49,7 +49,7 @@ FFFZSPolicyDecision UFFZSTestExternalPolicy::ApplyTentativeFFZoneSystemChange_Im
     const FFFZSPolicyContext& Context)
 {
     ++TentativeApplyCount;
-    return MakeDecision(bAllowTentativeApply, TEXT("Policy rejected tentative application."));
+    return MakeDecision(bAllowTentativeApply, TEXT("Policy가 임시 적용을 거부했습니다."));
 }
 
 // Commit은 실패하지 않는 최종 확정 신호이며 테스트 대역은 외부 상태 대신 호출 횟수만 기록한다.

@@ -18,3 +18,5 @@
 아키타입 5종·주축 구조는 2026-08-04 확정됐다. 다만 표시 명칭(`ArchetypeLabelDraft`, `CompanionLabelDraft`)은 UI 담당자 논의 전까지 가칭이고, 활동→카테고리 매핑과 카테고리 delta 수치도 여전히 `assumption`/`draft_assumption`이다.
 
 `individual_variation_knobs_v0.csv`의 6개 multiplier 범위와 `leisureliness_axis`는 초안이다. 자세한 설계는 `data/metadata/individual_variation_spec.md` 참조.
+
+표시 명칭은 `data/ui/archetype_label_overrides.csv`·`data/ui/companion_label_overrides.csv`의 `ui_override_label`이 비어있지 않으면 그 값이 우선 적용된다. UI 담당자가 이 두 파일만 편집하고 이 스크립트를 재실행하면 된다 — DataStatus는 여전히 draft_assumption.

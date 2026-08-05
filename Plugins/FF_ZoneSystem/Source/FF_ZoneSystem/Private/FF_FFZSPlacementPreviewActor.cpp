@@ -113,7 +113,7 @@ FFFZSCommandResult AFFZSPlacementPreviewActor::CommitPreview()
     }
     FFFZSCommandResult Result;
     Result.FailureReason = EFFZSPlacementFailure::InternalError;
-    Result.Message = FText::FromString(TEXT("FF Zone System World Subsystem is unavailable."));
+    Result.Message = FText::FromString(TEXT("FF Zone System World Subsystem을 사용할 수 없습니다."));
     return Result;
 }
 

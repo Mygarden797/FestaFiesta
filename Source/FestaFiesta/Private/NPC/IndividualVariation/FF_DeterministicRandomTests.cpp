@@ -4,7 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "NPC/FF_DeterministicRandom.h"
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "DataTables/FF_IndividualVariationRow.h"
 #include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"

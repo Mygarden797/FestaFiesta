@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "NPC/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"
 

@@ -688,7 +688,7 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
         Snapshot.CompletedCount < 0 || Snapshot.AbandonedCount < 0 ||
         !FMath::IsFinite(Snapshot.TotalCompletedWaitSeconds) || Snapshot.TotalCompletedWaitSeconds < 0.0f)
     {
-        OutErrors.Add(LOCTEXT("InvalidSnapshotHeader", "Queue snapshot contains invalid state or aggregate counters."));
+        OutErrors.Add(LOCTEXT("InvalidSnapshotHeader", "Queue 스냅샷에 잘못된 상태 또는 집계 카운터가 있습니다."));
         return false;
     }
 
@@ -707,7 +707,7 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
             !FMath::IsFinite(Saved.ServiceElapsedSeconds) || Saved.ServiceElapsedSeconds < 0.0f ||
             Saved.MovementRepathCount < 0 || Saved.MovementRepathCount > Rules.MaxRepathAttempts)
         {
-            OutErrors.Add(LOCTEXT("InvalidSnapshotEntry", "Queue snapshot contains an invalid or duplicate Agent/Ticket/JoinSequence entry."));
+            OutErrors.Add(LOCTEXT("InvalidSnapshotEntry", "Queue 스냅샷에 잘못되었거나 중복된 Agent/Ticket/JoinSequence 항목이 있습니다."));
             return false;
         }
         SeenAgents.Add(Saved.AgentId);
@@ -736,7 +736,7 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
                 Entry.ExitIndex < 0 ||
                 !StaticEnum<EFFZSQueueReleaseReason>()->IsValidEnumValue(static_cast<int64>(Entry.PendingReleaseReason)))
             {
-                OutErrors.Add(LOCTEXT("InvalidExitState", "Queue snapshot contains an invalid Exit assignment."));
+                OutErrors.Add(LOCTEXT("InvalidExitState", "Queue 스냅샷에 잘못된 Exit 할당이 있습니다."));
                 return false;
             }
             NewExiting.Add(Entry);
@@ -748,7 +748,7 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
                 Entry.ExitIndex != INDEX_NONE ||
                 (!Entry.bArrivedAtServicePoint && Entry.ServiceElapsedSeconds > UE_KINDA_SMALL_NUMBER))
             {
-                OutErrors.Add(LOCTEXT("InvalidServiceSlot", "Queue snapshot contains an invalid or duplicate Service slot."));
+                OutErrors.Add(LOCTEXT("InvalidServiceSlot", "Queue 스냅샷에 잘못되었거나 중복된 Service 슬롯이 있습니다."));
                 return false;
             }
             SeenServiceIndices.Add(Entry.ServiceIndex);
@@ -760,7 +760,7 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
                 Entry.ExitIndex != INDEX_NONE || Entry.bArrivedAtServicePoint ||
                 Entry.ServiceElapsedSeconds > UE_KINDA_SMALL_NUMBER)
             {
-                OutErrors.Add(LOCTEXT("InvalidWaitingSlot", "Queue snapshot waiting indices do not match deterministic FIFO order."));
+                OutErrors.Add(LOCTEXT("InvalidWaitingSlot", "Queue 스냅샷의 대기 인덱스가 결정론적 FIFO 순서와 일치하지 않습니다."));
                 return false;
             }
             NewWaiting.Add(Entry);
@@ -771,13 +771,13 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
         (Snapshot.State == EFFZSQueueState::Closed && (!NewWaiting.IsEmpty() || !NewActiveServices.IsEmpty() || !NewExiting.IsEmpty())) ||
         (Snapshot.State == EFFZSQueueState::Full && NewWaiting.Num() < Rules.MaxWaitingAgents))
     {
-        OutErrors.Add(LOCTEXT("InvalidSnapshotCapacity", "Queue snapshot state or occupancy exceeds configured capacity."));
+        OutErrors.Add(LOCTEXT("InvalidSnapshotCapacity", "Queue 스냅샷의 상태 또는 점유 수가 설정된 수용량을 초과했습니다."));
         return false;
     }
     if (Snapshot.State == EFFZSQueueState::Blocked &&
         (Snapshot.StateBeforeBlocked == EFFZSQueueState::Blocked || Snapshot.StateBeforeBlocked == EFFZSQueueState::Closed))
     {
-        OutErrors.Add(LOCTEXT("InvalidBlockedSnapshot", "Blocked Queue snapshot must remember an Open, Full, or Draining state."));
+        OutErrors.Add(LOCTEXT("InvalidBlockedSnapshot", "Blocked Queue 스냅샷에는 이전 Open, Full 또는 Draining 상태가 기록되어야 합니다."));
         return false;
     }
 
@@ -807,19 +807,19 @@ bool UFFZSFacilityQueueComponent::ValidateInvariants(TArray<FText>& OutErrors) c
     OutErrors.Reset();
     if (ActiveServices.Num() > Rules.ServiceCapacity)
     {
-        OutErrors.Add(LOCTEXT("CapacityExceeded", "Active service count exceeds ServiceCapacity."));
+        OutErrors.Add(LOCTEXT("CapacityExceeded", "활성 Service 수가 ServiceCapacity를 초과했습니다."));
     }
     if (Waiting.Num() > Rules.MaxWaitingAgents)
     {
-        OutErrors.Add(LOCTEXT("QueueExceeded", "Waiting count exceeds MaxWaitingAgents."));
+        OutErrors.Add(LOCTEXT("QueueExceeded", "대기 인원이 MaxWaitingAgents를 초과했습니다."));
     }
     if (QueueState == EFFZSQueueState::Closed && IsOccupied())
     {
-        OutErrors.Add(LOCTEXT("ClosedOccupied", "A Closed Queue cannot contain waiting or active Agents."));
+        OutErrors.Add(LOCTEXT("ClosedOccupied", "Closed Queue에는 대기 중이거나 Service 중인 Agent가 있을 수 없습니다."));
     }
     if (QueueState == EFFZSQueueState::Full && Waiting.Num() < Rules.MaxWaitingAgents)
     {
-        OutErrors.Add(LOCTEXT("StaleFullState", "Full Queue state does not match waiting occupancy."));
+        OutErrors.Add(LOCTEXT("StaleFullState", "Full Queue 상태가 현재 대기 점유 수와 일치하지 않습니다."));
     }
 
     TSet<FName> AgentIds;
@@ -833,15 +833,15 @@ bool UFFZSFacilityQueueComponent::ValidateInvariants(TArray<FText>& OutErrors) c
         if (Entry.AgentId.IsNone() || !Entry.TicketId.IsValid() || AgentIds.Contains(Entry.AgentId) ||
             TicketIds.Contains(Entry.TicketId) || JoinSequences.Contains(Entry.JoinSequence))
         {
-            OutErrors.Add(LOCTEXT("DuplicateWaiting", "Waiting queue contains an invalid or duplicate Agent/Ticket/Sequence."));
+            OutErrors.Add(LOCTEXT("DuplicateWaiting", "대기 Queue에 잘못되었거나 중복된 Agent/Ticket/Sequence가 있습니다."));
         }
         if (Entry.JoinSequence < PreviousSequence)
         {
-            OutErrors.Add(LOCTEXT("NonFifo", "Waiting queue is not ordered by JoinSequence."));
+            OutErrors.Add(LOCTEXT("NonFifo", "대기 Queue가 JoinSequence 순서대로 정렬되어 있지 않습니다."));
         }
         if (Entry.AssignedQueueIndex != Index || Entry.ServiceIndex != INDEX_NONE)
         {
-            OutErrors.Add(LOCTEXT("WaitingAssignment", "Waiting Agent assignment does not match its FIFO index."));
+            OutErrors.Add(LOCTEXT("WaitingAssignment", "대기 Agent 할당이 FIFO 인덱스와 일치하지 않습니다."));
         }
         PreviousSequence = Entry.JoinSequence;
         AgentIds.Add(Entry.AgentId);
@@ -853,12 +853,12 @@ bool UFFZSFacilityQueueComponent::ValidateInvariants(TArray<FText>& OutErrors) c
         if (Entry.AgentId.IsNone() || !Entry.TicketId.IsValid() || AgentIds.Contains(Entry.AgentId) ||
             TicketIds.Contains(Entry.TicketId) || JoinSequences.Contains(Entry.JoinSequence))
         {
-            OutErrors.Add(LOCTEXT("DuplicateService", "An Agent/Ticket/Sequence appears more than once across Queue and Service."));
+            OutErrors.Add(LOCTEXT("DuplicateService", "Queue와 Service 전체에 동일한 Agent/Ticket/Sequence가 두 번 이상 있습니다."));
         }
         if (Entry.AssignedQueueIndex != INDEX_NONE || Entry.ServiceIndex < 0 ||
             Entry.ServiceIndex >= Rules.ServiceCapacity || ServiceIndices.Contains(Entry.ServiceIndex))
         {
-            OutErrors.Add(LOCTEXT("ServiceAssignment", "Active Agent has an invalid or duplicate Service slot."));
+            OutErrors.Add(LOCTEXT("ServiceAssignment", "활성 Agent에 잘못되었거나 중복된 Service 슬롯이 할당되었습니다."));
         }
         AgentIds.Add(Entry.AgentId);
         TicketIds.Add(Entry.TicketId);
@@ -871,17 +871,17 @@ bool UFFZSFacilityQueueComponent::ValidateInvariants(TArray<FText>& OutErrors) c
             AgentIds.Contains(Entry.AgentId) || TicketIds.Contains(Entry.TicketId) ||
             JoinSequences.Contains(Entry.JoinSequence))
         {
-            OutErrors.Add(LOCTEXT("DuplicateExit", "An Agent/Ticket/Sequence appears more than once across Queue, Service, and Exit."));
+            OutErrors.Add(LOCTEXT("DuplicateExit", "Queue, Service 및 Exit 전체에 동일한 Agent/Ticket/Sequence가 두 번 이상 있습니다."));
         }
         if (!Entry.bExiting || Entry.AssignedQueueIndex != INDEX_NONE || Entry.ServiceIndex != INDEX_NONE ||
             Entry.ExitIndex < 0 ||
             !StaticEnum<EFFZSQueueReleaseReason>()->IsValidEnumValue(static_cast<int64>(Entry.PendingReleaseReason)))
         {
-            OutErrors.Add(LOCTEXT("ExitAssignment", "Exiting Agent has an invalid Exit assignment."));
+            OutErrors.Add(LOCTEXT("ExitAssignment", "퇴장 중인 Agent의 Exit 할당이 잘못되었습니다."));
         }
         if (Entry.MovementRepathCount < 0 || Entry.MovementRepathCount > Rules.MaxRepathAttempts)
         {
-            OutErrors.Add(LOCTEXT("ExitRepath", "Exiting Agent has an invalid movement retry count."));
+            OutErrors.Add(LOCTEXT("ExitRepath", "퇴장 중인 Agent의 이동 재시도 횟수가 잘못되었습니다."));
         }
         AgentIds.Add(Entry.AgentId);
         TicketIds.Add(Entry.TicketId);
@@ -907,8 +907,8 @@ void UFFZSFacilityQueueComponent::SetQueueState(const EFFZSQueueState NewState)
     const EFFZSQueueState Previous = QueueState;
     QueueState = NewState;
 
-    // Tick state is a QueueState invariant, so repair it even when callers re-apply
-    // the same state (for example, while restoring a snapshot).
+    // Tick 상태는 QueueState 불변식이므로 호출자가 같은 상태를 다시 적용하더라도
+    // 복구한다(예: 스냅샷 복원 중).
     // Tick 활성 여부는 상태의 파생 불변식이다. 복원처럼 같은 상태를 다시 적용하는 호출에서도
     // 반드시 수리해야 하므로 상태 변경 이벤트 발생 여부와 분리한다. Closed만 Tick을 끈다.
     SetComponentTickEnabled(QueueState != EFFZSQueueState::Closed);
