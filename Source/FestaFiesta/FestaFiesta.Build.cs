@@ -15,7 +15,8 @@ public class FestaFiesta : ModuleRules
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 			"AIModule",
 			"UMG","Slate","SlateCore",
-			"Niagara","NiagaraCore"
+			"Niagara","NiagaraCore",
+			"FF_ZoneSystem"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
