@@ -33,7 +33,7 @@ TraitSeed = HashCombine(
 
 `TraitSeed`를 `FRandomStream`에 넣어 `GetFraction()`을 한 번 호출하면 `[0,1)` 균등난수 하나를 얻는다(`UniformFraction`). 특성마다 `TraitKey`가 다르므로 각 특성은 독립된 난수 스트림을 갖는다 — 하나의 스트림을 순서대로 소비하지 않으므로, 나중에 특성을 추가해도 기존 특성값이 바뀌지 않는다.
 
-구현: `Source/FestaFiesta/Public/NPC/FF_DeterministicRandom.h`의 `FFF_DeterministicRandom::MakeTraitSeed` / `MakeUniformFraction`.
+구현: `Source/FestaFiesta/Public/NPC/IndividualVariation/FF_DeterministicRandom.h`의 `FFF_DeterministicRandom::MakeTraitSeed` / `MakeUniformFraction`.
 
 ## 3. 난수 3종 분리
 
@@ -110,7 +110,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 - 블렌딩은 **균등난수(0~1) 단계에서** 하고, 그 결과를 삼각분포 공식에 한 번만 통과시킨다. 이렇게 하면 특성마다 `Min/Mode/Max`가 달라도 같은 블렌딩 로직을 재사용할 수 있고, 결정성도 그대로 유지된다(모든 입력이 여전히 순수하게 결정적).
 - `walk_speed_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`는 v0에서 상관 없이 완전 독립으로 둔다. 이는 `independence_assumption`이며, 실제로는 상호작용이 있을 수 있으나 관측 자료가 없다.
 
-구현: `FFF_IndividualVariationResolver::Resolve` (`Source/FestaFiesta/Public/NPC/FF_DeterministicRandom.h`).
+구현: `FFF_IndividualVariationResolver::Resolve` (`Source/FestaFiesta/Public/NPC/IndividualVariation/FF_DeterministicRandom.h`).
 
 ## 8. 완료 조건과 테스트
 
@@ -121,7 +121,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 - 특성을 계산하는 순서를 바꿔도 각 특성의 최종값은 같다.
 - `correlation_strength = 0`일 때 `patience_multiplier`/`stay_duration_multiplier`가 완전 독립 계산과 동일한 값을 낸다.
 
-테스트 구현: `Source/FestaFiesta/Private/NPC/FF_DeterministicRandomTests.cpp` (Unreal Automation Test).
+테스트 구현: `Source/FestaFiesta/Private/NPC/IndividualVariation/FF_DeterministicRandomTests.cpp` (Unreal Automation Test).
 
 ## 8-A. 그룹 단위로 공유되는 특성 (2026-08-04 추가)
 

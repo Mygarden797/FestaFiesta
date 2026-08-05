@@ -14,11 +14,13 @@
  * 
  * | Need | 해소 카테고리 | 비고 |
  * |---|---|---|
- * | Hunger | Booth(식음료 서브셋) | Booth가 식음료·잡화·체험을 다 덮어 서브셋 구분은 미해결(카테고리 매핑 문제) |
- * | Thirst | Booth(식음료 서브셋) | 기온 증가율 공공데이터 주입 지점 |
+ * | Hunger | Booth(FoodStall 토큰) | 실제 예: 다대포차·청춘포차의 개별 트럭(피자몬·마이야미 등) |
+ * | Thirst | Booth(FoodStall 토큰) + Rest | 8/6 리플렛 확인: 지도 범례의 "오아시스 존"이 그늘+음수대+무릎나눔 복합 시설 —
+ *   ZoneSystem 카테고리로는 Rest에 해당한다. Rest가 Fatigue만 푸는 게 아니라 Thirst도 같이 푼다 |
  * | Restroom | Toilet | 1:1 |
- * | Fatigue | Rest | 1:1 |
- * | Stimulation | Performance, PhotoSpot | 공연 관람·사진 촬영 어느 쪽으로 풀려도 됨 |
+ * | Fatigue | Rest | 오아시스 존·그늘막 등 |
+ * | Stimulation | Performance, PhotoSpot, Booth(Nightlife 토큰) | 실제 예: Performance=다대포차 스테이지(헤이즈·폴킴 콘서트),
+ *   Booth(Nightlife)=선셋클럽(EDM 비치클럽)·선셋펍(하우스DJ 라운지) — 이 둘은 무대가 아니라 바·라운지라 Booth로 본다 |
  *
  * Info·Safety는 의도적으로 뺐다. Safety는 밀집도 위험이라 이미 Utility의 density_cost 항이
  * 맡고 있다(개인 욕구가 아니라 전역 비용), 여기에 또 넣으면 이중 반영이다.
@@ -45,7 +47,7 @@ struct FFF_NeedState
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Restroom = 0.f;
 
-	// Phase 4(P0 확장 후보 아님). Booth(식음료 서브셋)로 해소. 공공데이터(기온) 주입 후보
+	// Phase 4(P0 확장 후보 아님). Booth(FoodStall) 또는 Rest(오아시스 존)로 해소. 공공데이터(기온) 주입 후보
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Thirst = 0.f;
 
@@ -53,7 +55,7 @@ struct FFF_NeedState
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Fatigue = 0.f;
 
-	// Phase 2 대상. Performance 또는 PhotoSpot으로 해소
+	// Phase 2 대상. Performance·PhotoSpot 또는 Booth(Nightlife)로 해소
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Stimulation = 0.f;
 

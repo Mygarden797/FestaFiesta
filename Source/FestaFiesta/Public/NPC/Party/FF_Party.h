@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "NPC/FF_NeedState.h"
+#include "NPC/Party/FF_NeedState.h"
 #include "FF_Party.generated.h"
 
 // 동반유형 — 데이터 축. data/derived/companion_type_modifier_v0.csv 의 companion_type 키와 1:1이다.

@@ -1,14 +1,12 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "NPC/FF_ZoneSystemBridge.h"
+#include "NPC/Integration/FF_ZoneSystemBridge.h"
 
 #include "Engine/AssetManager.h"
 #include "FF_FFZSFacilityDefinition.h"
 
-// !!! 스텁 !!! BuildCandidates 는 헤더 주석의 미해결 3(Agent ID 타입)과 Zone 그래프 노출이
-// 풀리기 전까지 실제 후보를 만들지 않는다. 카테고리 매핑·ExpectedWait·Need 해소 판정은
-// 8/6에 이미 실제 구현했다(MapToPreferenceCategory/GetServiceRatePerMinute/GetNeedReliefFlags) —
-// 여기 남은 건 그 셋을 호출해 후보 배열로 조립하는 마지막 단계뿐이다.
+// !!! 스텁 !!!
+// 카테고리 매핑·ExpectedWait·Need 해소 판정·시설 인스턴스 ID 변환은 구현되었고, 남은 건 그걸 호출해 조립하는 것뿐이다.
 
 TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	const FFFZSReadModel& ReadModel,
@@ -17,9 +15,6 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 {
 	// TODO(Zone 그래프): CurrentZoneId 의 인접 Zone 을 알아야 후보를 8~12개로 줄일 수 있다.
 	// 지금 전체 시설을 그대로 넘기면 (동시 Party 수) × (전체 시설) 이 되어 프레임이 무너진다.
-	// TODO(미해결 3): FFFZSFacilityReadModel 은 FGuid, Utility AI 는 FName/int32 를 쓴다 
-	// — 이 변환도 아직 없다. GetServiceRatePerMinute/MapToPreferenceCategory 는 FacilityDefinitionId(FName)를
-	// 받으므로 이 변환이 먼저 있어야 실제로 호출할 수 있다.
 	(void)ReadModel;
 	(void)CurrentZoneId;
 	(void)PartySize;
@@ -32,9 +27,8 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 
 namespace
 {
-	// Booth 서브타입 네이밍 컨벤션 표. 
-	// FacilityDefinitionId 가 "Booth_<Token>_<이름>" 형태일 때 두 번째 토큰을 preference_vector 키로 바꾼다. 
-	// (실제 시설 에셋이 아직 없어(8/6 기준) 예시 ID로만 검증했다)
+	// Booth 서브타입 네이밍 컨벤션 표.
+	// FacilityDefinitionId 가 "Booth_<Token>_<이름>" 형태일 때 두 번째 토큰을 preference_vector 키로 바꾼다.
 	// [주의] 새 부스를 만들 때 이 표에 없는 Token을 쓰면 조용히 NAME_None(취향 없음)으로 빠지니, 부스 만드는 담당자(한광훈/박건영)는 아래 표를 반드시 참고해야 한다.
 	const TMap<FString, FName>& GetBoothTokenToPreferenceCategory()
 	{
@@ -99,7 +93,10 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 		Flags.bRelievesRestroom = true;
 		break;
 	case EFFZSFacilityCategory::Rest:
+		// 8/6 리플렛 확인: 지도 범례의 "오아시스 존"이 그늘+음수대+무릎나눔 복합 시설이다 —
+		// 실제로는 Fatigue 뿐 아니라 Thirst도 여기서 풀린다.
 		Flags.bRelievesFatigue = true;
+		Flags.bRelievesThirst = true;
 		break;
 	case EFFZSFacilityCategory::Performance:
 	case EFFZSFacilityCategory::PhotoSpot:
@@ -108,11 +105,13 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 	case EFFZSFacilityCategory::Booth:
 	{
 		// MapToPreferenceCategory와 같은 Booth 네이밍 컨벤션을 재사용한다
-		// 두 곳에서 각자 판정하면 나중에 어긋난다. FoodStall은 배고픔·갈증 둘 다, Nightlife는 갈증만 해소.
+		// 두 곳에서 각자 판정하면 나중에 어긋난다. FoodStall은 배고픔·갈증 둘 다,
+		// Nightlife는 갈증(음주)과 자극(선셋클럽류 라운지 — 위 Booth 토큰 표 참고) 둘 다 해소.
 		const FName PreferenceCategory = ResolveBoothPreferenceCategory(FacilityDefinitionId);
 		Flags.bRelievesHunger = (PreferenceCategory == TEXT("food_stall"));
 		Flags.bRelievesThirst = (PreferenceCategory == TEXT("food_stall")
 			|| PreferenceCategory == TEXT("nightlife_entertainment"));
+		Flags.bRelievesStimulation = (PreferenceCategory == TEXT("nightlife_entertainment"));
 		break;
 	}
 	default:

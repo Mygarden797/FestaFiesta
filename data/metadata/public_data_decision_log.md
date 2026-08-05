@@ -212,3 +212,16 @@ Little's Law로 역산: `동시 체류 = N × (S/T) / (피크·평균 비율)`
 | 확정 원칙 | **수요(`total_visitor_count`)와 실제 동시 스폰 가능 에이전트 수를 코드에서 분리한다.** 전자는 시뮬레이션이 의도한 규모, 후자는 성능 실측으로 정할 별도의 자유롭게 바꿀 수 있는 런타임 값 — 서로를 강제로 일치시키지 않는다. 수요가 상한을 넘으면 초과분은 개체화하지 않고 통계 처리하거나 대기시키는 정책으로 흡수한다. |
 | 확인 | 2026-08-05 작성된 C++ 코드(FF_Party.h/FF_NeedState.h/FF_MoveCommand.h/FF_CrowdReadModel.h/FF_ZoneSystemBridge.h·cpp) 어디에도 300/500/700 같은 특정 상한이 하드코딩돼 있지 않음을 grep으로 확인. 주석에 예시로 "700"을 쓴 2곳(`FF_ZoneSystemBridge.h`/`.cpp`)은 일반화된 문구로 수정. |
 | 남음 | 실제 동시 스폰 상한은 판단(Utility AI)·이동(Crowd)·렌더링 3개 층을 분리 실측해야 나온다 — 이전 항목의 처리량 계산(판단 이론 상한 115,200)은 참고용으로 유효하나, 이동·렌더링 실측 없이는 여전히 미정. |
+
+## 2026-08-06 — Booth 카테고리 매핑을 실제 부산바다축제 자료로 검증
+
+노션 시간 테이블(다대포 개막 주간 통합 타임테이블)과 실제 리플렛(festivalbusan.com, 제30회 부산바다축제)을 대조해 `FF_ZoneSystemBridge`의 Booth 네이밍 컨벤션 토큰 5종을 검증했다.
+
+| 상태 | 내용 |
+|---|---|
+| 확인 | FoodStall(다대포차·청춘포차 트럭)·MarketGoods(다대비치마켓)·CraftExperience(웰니스 프로그램)·Nightlife(선셋클럽·선셋펍)는 전부 실제 프로그램과 정확히 대응된다. |
+| 미확인 | ActivityGame은 이번 축제 실제 프로그램에 뚜렷한 대응이 없다 — 다른 축제형(게임 부스 있는 경우)을 위해 토큰만 남겨두고, 이번 축제에서는 강제로 쓰지 않는다. |
+| 정정 | 선셋클럽·선셋펍은 처음에 Performance(무대) 대응으로 예시 들었던 것을 Booth(Nightlife)로 정정했다 — 관객이 무대를 보는 형태가 아니라 바·라운지 형태이기 때문. `FFF_NeedState`의 Stimulation이 Performance·PhotoSpot뿐 아니라 Booth(Nightlife)로도 풀리게 반영(`GetNeedReliefFlags`). |
+| 발견·반영 | 리플렛 지도 범례의 "오아시스 존"(그늘+음수대+무릎나눔)이 ZoneSystem의 `Rest` 카테고리에 해당한다는 것을 확인 — `Thirst` Need가 Booth(FoodStall)뿐 아니라 Rest로도 풀리게 `GetNeedReliefFlags`에 추가했다. |
+| 미해결 | 선셋펍은 낮엔 웰니스 체험(CraftExperience), 밤엔 DJ·라이브밴드(Nightlife)를 같은 공간에서 겸한다. 지금 네이밍 컨벤션은 시설 하나에 토큰 하나만 허용해 이 시간대별 겸용을 못 담는다 — 실제 부스 제작 시 결정 필요(`booth_naming_convention.md` 참고). |
+| 산출물 | `data/metadata/booth_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |

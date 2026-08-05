@@ -4,7 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "NPC/FF_PreferenceVectorBuilder.h"
+#include "NPC/Destination/FF_PreferenceVectorBuilder.h"
 #include "DataTables/FF_ArchetypeRow.h"
 #include "DataTables/FF_CompanionModifierRow.h"
 #include "Engine/DataTable.h"

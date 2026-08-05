@@ -6,7 +6,7 @@
 
 ## 1. 이 문서가 정하는 것
 
-`Source/FestaFiesta/Public/NPC/FF_UtilityDestinationSelector.h` 및 그 주변 글루 코드(`FF_PreferenceVectorBuilder`, `FFF_IndividualVariationResolver::ResolvePersonalThresholds`, `FF_UtilityCoefficientHelpers`)가 실제로 어떻게 조립되는지, 그리고 아직 안 된 것을 정리한다.
+`Source/FestaFiesta/Public/NPC/Destination/FF_UtilityDestinationSelector.h` 및 그 주변 글루 코드(`FF_PreferenceVectorBuilder`, `FFF_IndividualVariationResolver::ResolvePersonalThresholds`, `FF_UtilityCoefficientHelpers`)가 실제로 어떻게 조립되는지, 그리고 아직 안 된 것을 정리한다.
 
 ## 2. 전체 호출 순서 (한 NPC의 목적지 선택 1회)
 
@@ -42,7 +42,7 @@
 
 ## 3. 3층 합성 (`FFF_PreferenceVectorBuilder`)
 
-`Source/FestaFiesta/Public/NPC/FF_PreferenceVectorBuilder.h`. 카테고리 10종(`ambience_photo_zone` 등, `build_unreal_datatables.mjs`의 `CATEGORY_FIELD`와 동일한 키)에 대해:
+`Source/FestaFiesta/Public/NPC/Destination/FF_PreferenceVectorBuilder.h`. 카테고리 10종(`ambience_photo_zone` 등, `build_unreal_datatables.mjs`의 `CATEGORY_FIELD`와 동일한 키)에 대해:
 
 ```text
 PreferenceVectorByCategory[c] =
@@ -53,7 +53,7 @@ PreferenceVectorByCategory[c] =
 
 ## 4. 개인화 임계값 (`ResolvePersonalThresholds`)
 
-`Source/FestaFiesta/Public/NPC/FF_DeterministicRandom.h`의 `FFF_IndividualVariationResolver::ResolvePersonalThresholds`. individual_variation_spec.md 5절에서 정한 매핑을 그대로 코드로 옮긴 것뿐이다:
+`Source/FestaFiesta/Public/NPC/IndividualVariation/FF_DeterministicRandom.h`의 `FFF_IndividualVariationResolver::ResolvePersonalThresholds`. individual_variation_spec.md 5절에서 정한 매핑을 그대로 코드로 옮긴 것뿐이다:
 
 | Personal 필드 | 전역 계수 | 개체 변주 |
 |---|---|---|

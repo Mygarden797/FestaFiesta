@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
-#include "NPC/FF_UtilityDestinationSelector.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
 
 /**
  * FF_ZoneSystem(한광훈) → Utility AI(김시리) 변환 지점.
@@ -29,12 +29,6 @@
  *   - `EntryExitAnchors`     — Zone 출입 기준점 (거리 행렬의 시작·끝점)
  *   - `GetBoundaryAreaSquareMeters()` — 폴리곤 신발끈 공식으로 실제 면적(㎡) 산출
  *
- * ### 미해결 — Agent ID 타입이 다르다
- *
- * ZoneSystem 큐는 `FName AgentId`, 시설은 `FGuid FacilityInstanceId` 를 쓴다.
- * Utility AI 는 `int32 StableAgentId`, 목적지는 `FName DestinationId` 를 쓴다.
- * 어느 쪽에 맞출지 정하고 변환을 이 파일에 가둔다. int32 → FName 은 매 프레임 문자열을
- * 만들면 비싸므로, 스폰 시 1회 만들어 캐시하는 형태가 될 가능성이 높다.
  */
 
 
@@ -83,9 +77,10 @@ public:
 
 	/**
 	 * 이 카테고리가 해소 가능한 Need. FF_NeedState.h 매핑 표를 코드로 옮긴 것.
-	 * Restroom(Toilet)·Fatigue(Rest)·Stimulation(Performance·PhotoSpot)은 카테고리만으로 판정하고,
-	 * Hunger·Thirst(Booth)는 MapToPreferenceCategory 와 같은 네이밍 컨벤션으로 FacilityDefinitionId
-	 * 를 파싱해 판정한다.
+	 * Restroom(Toilet)은 카테고리만으로 판정. Rest는 Fatigue와 Thirst 둘 다 해소한다
+	 * (8/6 리플렛 확인 — "오아시스 존"이 그늘+음수대 복합 시설). Performance·PhotoSpot은 Stimulation만 해소.
+	 * Hunger·Thirst(Booth FoodStall)·Stimulation(Booth Nightlife)은 MapToPreferenceCategory 와
+	 * 같은 네이밍 컨벤션으로 FacilityDefinitionId 를 파싱해 판정한다.
 	 */
 	static FFF_NeedReliefFlags GetNeedReliefFlags(
 		EFFZSFacilityCategory ZoneSystemCategory,
@@ -104,4 +99,17 @@ public:
 
 	// ZoneSystem 초 → Utility AI 분. 환산은 여기서만 한다
 	static float SecondsToMinutes(float Seconds) { return Seconds / 60.f; }
+
+	// FFFZSFacilityReadModel::FacilityInstanceId(FGuid) → FFF_DestinationCandidate::DestinationId(FName)
+	static FName FacilityInstanceIdToDestinationId(const FGuid& FacilityInstanceId)
+	{
+		return FName(*FacilityInstanceId.ToString());
+	}
+
+	// 위 변환의 역방향. 실패하면(형식이 다르면) false
+	// DestinationId가 애초에 시설 인스턴스가 아닌 값(예: 잘못된 입력)일 수 있어서 호출부가 확인해야 한다.
+	static bool TryParseDestinationId(FName DestinationId, FGuid& OutFacilityInstanceId)
+	{
+		return FGuid::Parse(DestinationId.ToString(), OutFacilityInstanceId);
+	}
 };
