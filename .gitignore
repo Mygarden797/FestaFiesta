@@ -50,9 +50,8 @@ Client/x64
 *.VC.db
 *.VC.opendb
 
-# Precompiled Assets
-SourceArt/**/*.png
-SourceArt/**/*.tga
+# 로컬 제작 원본·외부 원본 에셋. 가공 후 Unreal 에셋만 Content/에서 관리한다.
+/SourceArt/
 
 # Binary Files
 Binaries/*
