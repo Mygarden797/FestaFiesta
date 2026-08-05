@@ -1,0 +1,24 @@
+{
+  "FileVersion": 3,
+  "Version": 2,
+  "VersionName": "2.0.0",
+  "FriendlyName": "FF_ZoneSystem",
+  "Description": "1 cm data-driven Gameplay Zones, compressed atomic Facility placement, protected routes, deterministic FIFO queues, save snapshots, and owner policy integration.",
+  "Category": "Festa Fiesta",
+  "CreatedBy": "Festa Fiesta Team",
+  "CanContainContent": true,
+  "IsBetaVersion": false,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "FF_ZoneSystem",
+      "Type": "Runtime",
+      "LoadingPhase": "Default"
+    },
+    {
+      "Name": "FF_ZoneSystemTests",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    }
+  ]
+}
