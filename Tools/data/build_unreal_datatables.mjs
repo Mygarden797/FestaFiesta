@@ -24,6 +24,20 @@ function readCsv(path) {
     return Object.fromEntries(cols.map((c, i) => [c, vals[i]]));
   });
 }
+
+// UI 담당자가 data/ui/*.csv 의 ui_override_label 을 채우면 여기서 우선 적용한다.
+// 파일이 없거나 override 열이 비어 있으면 엔지니어링 쪽 기본 가칭을 그대로 쓴다 — 안 깨진다.
+// 이 함수는 값만 바꾼다. DataStatus 는 그대로 draft_assumption 이다 (여전히 가칭).
+function readLabelOverrides(path, keyField) {
+  try {
+    const rows = readCsv(path);
+    return new Map(rows.map(r => [r[keyField], (r.ui_override_label ?? '').trim()]).filter(([, v]) => v !== ''));
+  } catch {
+    return new Map();
+  }
+}
+const archetypeLabelOverrides = readLabelOverrides('data/ui/archetype_label_overrides.csv', 'archetype_id');
+const companionLabelOverrides = readLabelOverrides('data/ui/companion_label_overrides.csv', 'companion_type');
 function writeCsv(path, cols, rows) {
   writeFileSync(path, '﻿' + [cols.join(','), ...rows.map(o => cols.map(c => `"${o[c] ?? ''}"`).join(','))].join('\r\n') + '\r\n', 'utf8');
 }
@@ -51,7 +65,7 @@ const archOut = archIds.map(id => {
   const row = {
     Name: id,
     ArchetypeId: id,
-    ArchetypeLabelDraft: resident.archetype_label_draft,
+    ArchetypeLabelDraft: archetypeLabelOverrides.get(id) ?? resident.archetype_label_draft,
     PopulationSharePct_ResidentNeutral: resident.population_share_pct,
     PopulationSharePct_DatalabObserved: datalab.population_share_pct,
     TourStatProxyGroups: resident.tour_stat_proxy_groups,
@@ -75,7 +89,7 @@ const compOut = comp.map(r => {
   const row = {
     Name: r.companion_type,
     CompanionType: r.companion_type,
-    CompanionLabelDraft: r.label_draft,
+    CompanionLabelDraft: companionLabelOverrides.get(r.companion_type) ?? r.label_draft,
     TopReasonDelta1: r.top_reason_delta_1,
     TopReasonDelta2: r.top_reason_delta_2,
     DataStatus: 'draft_assumption',
@@ -149,5 +163,7 @@ writeFileSync('data/unreal/README.md', `# Unreal DataTable CSV
 아키타입 5종·주축 구조는 2026-08-04 확정됐다. 다만 표시 명칭(\`ArchetypeLabelDraft\`, \`CompanionLabelDraft\`)은 UI 담당자 논의 전까지 가칭이고, 활동→카테고리 매핑과 카테고리 delta 수치도 여전히 \`assumption\`/\`draft_assumption\`이다.
 
 \`individual_variation_knobs_v0.csv\`의 6개 multiplier 범위와 \`leisureliness_axis\`는 초안이다. 자세한 설계는 \`data/metadata/individual_variation_spec.md\` 참조.
+
+표시 명칭은 \`data/ui/archetype_label_overrides.csv\`·\`data/ui/companion_label_overrides.csv\`의 \`ui_override_label\`이 비어있지 않으면 그 값이 우선 적용된다. UI 담당자가 이 두 파일만 편집하고 이 스크립트를 재실행하면 된다 — DataStatus는 여전히 draft_assumption.
 `, 'utf8');
 console.log('생성: data/unreal/README.md');

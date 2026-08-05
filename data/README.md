@@ -34,7 +34,9 @@ data/
 
 ## 현재 상태 (2026-08-04)
 
-NPC 아키타입 구조가 확정됐다: 생애주기 5종(주축) + 동반유형 오버레이(선호 delta 계산용 카테고리 3종) + 아동 종속 NPC. 아키타입 5종의 표시 명칭도 확정됐다. `derived/`, `unreal/` 아래 Row와 DataTable CSV가 그 구조를 반영한다.
+NPC 아키타입 구조가 확정됐다: 생애주기 5종(주축) + 동반유형 오버레이(선호 delta 계산용 카테고리 3종) + 아동 종속 NPC. **표시 명칭은 아직 가칭이다** — 한 차례 확정했다가 UI 담당자 논의 필요라는 피드백으로 되돌린 전례가 있으니, 여기 문장을 다시 "확정"으로 고치기 전에 먼저 그 논의 결과를 확인할 것. `derived/`, `unreal/` 아래 Row와 DataTable CSV가 그 구조를 반영한다.
+
+UI 담당자가 명칭 초안을 직접 편집하고 싶으면 `data/ui/archetype_label_overrides.csv`·`data/ui/companion_label_overrides.csv`를 쓴다 (`data/ui/README.md` 참조). `data/derived/`·`data/unreal/`을 직접 고치지 않아도 된다.
 
 **2026-08-04 갱신**: 동반유형(`companion_type`)은 NPC 개인에게 독립적으로 부여하는 속성이 아니라 **그룹 생성 규칙의 결과값**으로 재정의됐다 — 그룹 크기·유형(가족/친구 등)·연령 구성·목적지 상속(리더 모델)·시간 공유 규칙은 `metadata/population_group_generation_spec.md`를 참고한다.
 
