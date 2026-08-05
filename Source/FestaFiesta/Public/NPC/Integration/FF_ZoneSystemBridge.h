@@ -83,9 +83,10 @@ public:
 
 	/**
 	 * 이 카테고리가 해소 가능한 Need. FF_NeedState.h 매핑 표를 코드로 옮긴 것.
-	 * Restroom(Toilet)·Fatigue(Rest)·Stimulation(Performance·PhotoSpot)은 카테고리만으로 판정하고,
-	 * Hunger·Thirst(Booth)는 MapToPreferenceCategory 와 같은 네이밍 컨벤션으로 FacilityDefinitionId
-	 * 를 파싱해 판정한다.
+	 * Restroom(Toilet)은 카테고리만으로 판정. Rest는 Fatigue와 Thirst 둘 다 해소한다
+	 * (8/6 리플렛 확인 — "오아시스 존"이 그늘+음수대 복합 시설). Performance·PhotoSpot은 Stimulation만 해소.
+	 * Hunger·Thirst(Booth FoodStall)·Stimulation(Booth Nightlife)은 MapToPreferenceCategory 와
+	 * 같은 네이밍 컨벤션으로 FacilityDefinitionId 를 파싱해 판정한다.
 	 */
 	static FFF_NeedReliefFlags GetNeedReliefFlags(
 		EFFZSFacilityCategory ZoneSystemCategory,

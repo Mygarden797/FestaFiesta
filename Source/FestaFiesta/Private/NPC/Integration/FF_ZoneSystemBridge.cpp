@@ -32,9 +32,8 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 
 namespace
 {
-	// Booth 서브타입 네이밍 컨벤션 표. 
-	// FacilityDefinitionId 가 "Booth_<Token>_<이름>" 형태일 때 두 번째 토큰을 preference_vector 키로 바꾼다. 
-	// (실제 시설 에셋이 아직 없어(8/6 기준) 예시 ID로만 검증했다)
+	// Booth 서브타입 네이밍 컨벤션 표.
+	// FacilityDefinitionId 가 "Booth_<Token>_<이름>" 형태일 때 두 번째 토큰을 preference_vector 키로 바꾼다.
 	// [주의] 새 부스를 만들 때 이 표에 없는 Token을 쓰면 조용히 NAME_None(취향 없음)으로 빠지니, 부스 만드는 담당자(한광훈/박건영)는 아래 표를 반드시 참고해야 한다.
 	const TMap<FString, FName>& GetBoothTokenToPreferenceCategory()
 	{
@@ -99,7 +98,10 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 		Flags.bRelievesRestroom = true;
 		break;
 	case EFFZSFacilityCategory::Rest:
+		// 8/6 리플렛 확인: 지도 범례의 "오아시스 존"이 그늘+음수대+무릎나눔 복합 시설이다 —
+		// 실제로는 Fatigue 뿐 아니라 Thirst도 여기서 풀린다.
 		Flags.bRelievesFatigue = true;
+		Flags.bRelievesThirst = true;
 		break;
 	case EFFZSFacilityCategory::Performance:
 	case EFFZSFacilityCategory::PhotoSpot:
@@ -108,11 +110,13 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 	case EFFZSFacilityCategory::Booth:
 	{
 		// MapToPreferenceCategory와 같은 Booth 네이밍 컨벤션을 재사용한다
-		// 두 곳에서 각자 판정하면 나중에 어긋난다. FoodStall은 배고픔·갈증 둘 다, Nightlife는 갈증만 해소.
+		// 두 곳에서 각자 판정하면 나중에 어긋난다. FoodStall은 배고픔·갈증 둘 다,
+		// Nightlife는 갈증(음주)과 자극(선셋클럽류 라운지 — 위 Booth 토큰 표 참고) 둘 다 해소.
 		const FName PreferenceCategory = ResolveBoothPreferenceCategory(FacilityDefinitionId);
 		Flags.bRelievesHunger = (PreferenceCategory == TEXT("food_stall"));
 		Flags.bRelievesThirst = (PreferenceCategory == TEXT("food_stall")
 			|| PreferenceCategory == TEXT("nightlife_entertainment"));
+		Flags.bRelievesStimulation = (PreferenceCategory == TEXT("nightlife_entertainment"));
 		break;
 	}
 	default:
