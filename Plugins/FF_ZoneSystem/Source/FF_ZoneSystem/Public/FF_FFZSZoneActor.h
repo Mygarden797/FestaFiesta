@@ -113,7 +113,7 @@ public:
     /** 월드 위치를 중앙 1 cm 격자의 포함 셀로 내림 변환한다. */
     FIntPoint WorldToGridCell1Cm(const FVector& WorldLocation) const;
 
-    UFUNCTION(BlueprintPure, Category = "Zone|Grid", meta = (DeprecatedFunction, DeprecationMessage = "Cell size is fixed at 1 cm. Use GridCellCornerToWorld1Cm."))
+    UFUNCTION(BlueprintPure, Category = "Zone|Grid", meta = (DeprecatedFunction, DeprecationMessage = "Cell 크기는 1cm로 고정되어 있습니다. GridCellCornerToWorld1Cm을 사용하십시오."))
     /** 구 Blueprint/C++ 호환용이다. CellSizeCm 입력은 무시하고 중앙 1 cm 계약만 사용한다. */
     FVector GridCellCornerToWorld(FIntPoint Cell, float CellSizeCm) const;
 

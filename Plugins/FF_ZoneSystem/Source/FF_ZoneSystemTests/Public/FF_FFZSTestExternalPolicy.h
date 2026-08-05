@@ -17,7 +17,7 @@ class AFFZSGameplayZone;
 class AFFZSProtectedArea;
 class UFFZSWorldSubsystem;
 
-/** Test double that records the complete tentative/commit/rollback policy lifecycle. */
+/** 임시 적용, Commit 및 Rollback의 전체 Policy 수명주기를 기록하는 테스트 대역이다. */
 UCLASS()
 class FF_ZONESYSTEMTESTS_API UFFZSTestExternalPolicy final : public UObject, public IFFZSExternalPolicy
 {

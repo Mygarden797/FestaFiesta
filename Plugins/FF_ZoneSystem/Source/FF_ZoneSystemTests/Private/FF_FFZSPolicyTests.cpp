@@ -79,14 +79,14 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
 {
     FScopedPolicyTestSettings SettingsGuard;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    if (!TestNotNull(TEXT("Automation world"), World))
+    if (!TestNotNull(TEXT("자동화 테스트 월드가 생성된다"), World))
     {
         return false;
     }
 
     UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
-    if (!TestNotNull(TEXT("FF_ZoneSystem subsystem"), Subsystem) ||
-        !TestNotNull(TEXT("Gameplay Zone"), AddTestZone(*World, *Subsystem)))
+    if (!TestNotNull(TEXT("FF_ZoneSystem 서브시스템이 존재한다"), Subsystem) ||
+        !TestNotNull(TEXT("게임플레이 구역이 존재한다"), AddTestZone(*World, *Subsystem)))
     {
         return false;
     }
@@ -104,8 +104,8 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     SimulationTime->PolicyDomain = EFFZSPolicyDomain::SimulationTime;
     SimulationTime->bAllowTentativeApply = false;
 
-    TestTrue(TEXT("Economy policy registers"), Subsystem->RegisterExternalPolicy(Economy));
-    TestTrue(TEXT("Simulation-time policy registers"), Subsystem->RegisterExternalPolicy(SimulationTime));
+    TestTrue(TEXT("경제 정책이 등록된다"), Subsystem->RegisterExternalPolicy(Economy));
+    TestTrue(TEXT("시뮬레이션 시간 정책이 등록된다"), Subsystem->RegisterExternalPolicy(SimulationTime));
 
     const FFFZSFacilitySpec Spec =
         UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
@@ -118,16 +118,16 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
 
     // Act/Assert: 실패해도 Revision과 Facility는 확정되지 않고, 실패 Policy까지 Rollback되어야 한다.
     const FFFZSCommandResult RejectedResult = Subsystem->ExecuteCommand(Rejected);
-    TestFalse(TEXT("A tentative policy rejection fails the command"), RejectedResult.bSucceeded);
+    TestFalse(TEXT("임시 정책 거부로 명령이 실패한다"), RejectedResult.bSucceeded);
     TestEqual(
-        TEXT("Policy rejection has a stable reason"),
+        TEXT("정책 거부 사유가 일관되게 반환된다"),
         RejectedResult.FailureReason,
         EFFZSPlacementFailure::ExternalPolicyRejected);
-    TestEqual(TEXT("World revision is unchanged after rollback"), Subsystem->GetWorldRevision(), int64{0});
-    TestEqual(TEXT("Earlier policy applied once"), Economy->TentativeApplyCount, 1);
-    TestEqual(TEXT("Earlier policy rolled back once"), Economy->RollbackCount, 1);
-    TestEqual(TEXT("Rejecting policy also rolls back partial work"), SimulationTime->RollbackCount, 1);
-    TestEqual(TEXT("No policy commits on failure"), Economy->CommitCount + SimulationTime->CommitCount, 0);
+    TestEqual(TEXT("롤백 후 월드 리비전이 변경되지 않는다"), Subsystem->GetWorldRevision(), int64{0});
+    TestEqual(TEXT("앞선 정책이 한 번 적용된다"), Economy->TentativeApplyCount, 1);
+    TestEqual(TEXT("앞선 정책이 한 번 롤백된다"), Economy->RollbackCount, 1);
+    TestEqual(TEXT("거부한 정책도 부분 적용 내용을 롤백한다"), SimulationTime->RollbackCount, 1);
+    TestEqual(TEXT("실패 시 어떤 정책도 커밋되지 않는다"), Economy->CommitCount + SimulationTime->CommitCount, 0);
 
     // 두 번째 Act는 같은 Adapter를 허용 상태로 바꿔 Commit 경로가 정확히 한 번 실행되는지 분리 검증한다.
     SimulationTime->bAllowTentativeApply = true;
@@ -139,24 +139,24 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
         Subsystem->GetWorldRevision());
 
     const FFFZSCommandResult AcceptedResult = Subsystem->ExecuteCommand(Accepted);
-    TestTrue(TEXT("All policies allow an atomic install"), AcceptedResult.bSucceeded);
-    TestNotNull(TEXT("Successful command returns the Facility"), AcceptedResult.FacilityActor.Get());
-    TestEqual(TEXT("Successful command advances one revision"), Subsystem->GetWorldRevision(), int64{1});
-    TestEqual(TEXT("Economy commits exactly once"), Economy->CommitCount, 1);
-    TestEqual(TEXT("Simulation-time commits exactly once"), SimulationTime->CommitCount, 1);
-    TestEqual(TEXT("No new rollback occurs on success"), Economy->RollbackCount, 1);
+    TestTrue(TEXT("모든 정책이 원자적 설치를 허용한다"), AcceptedResult.bSucceeded);
+    TestNotNull(TEXT("성공한 명령이 시설을 반환한다"), AcceptedResult.FacilityActor.Get());
+    TestEqual(TEXT("성공한 명령이 리비전을 하나 증가시킨다"), Subsystem->GetWorldRevision(), int64{1});
+    TestEqual(TEXT("경제 정책이 정확히 한 번 커밋된다"), Economy->CommitCount, 1);
+    TestEqual(TEXT("시뮬레이션 시간 정책이 정확히 한 번 커밋된다"), SimulationTime->CommitCount, 1);
+    TestEqual(TEXT("성공 시 추가 롤백이 발생하지 않는다"), Economy->RollbackCount, 1);
 
     // Reentrancy probe: callback 안에서 registry/phase를 바꾸려 해도 안정된 Policy snapshot과 guard가 유지돼야 한다.
     AFFZSGameplayZone* CandidateZone = World->SpawnActor<AFFZSGameplayZone>();
-    TestNotNull(TEXT("Candidate Zone for reentrant registration"), CandidateZone);
+    TestNotNull(TEXT("재진입 등록용 후보 구역이 존재한다"), CandidateZone);
     if (CandidateZone)
     {
         CandidateZone->ApplyAcceptedZonePreset(TEXT("GZ_Operations"));
     }
     AFFZSProtectedArea* RegisteredArea = World->SpawnActor<AFFZSProtectedArea>();
     AFFZSProtectedArea* CandidateArea = World->SpawnActor<AFFZSProtectedArea>();
-    if (!TestNotNull(TEXT("Registered protected area"), RegisteredArea) ||
-        !TestNotNull(TEXT("Candidate protected area"), CandidateArea))
+    if (!TestNotNull(TEXT("등록된 보호 구역이 존재한다"), RegisteredArea) ||
+        !TestNotNull(TEXT("후보 보호 구역이 존재한다"), CandidateArea))
     {
         return false;
     }
@@ -166,7 +166,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     CandidateArea->ProtectedAreaId = TEXT("PA_PolicyCandidate");
     CandidateArea->LinkedZoneId = TEXT("GZ_DadaPocha");
     CandidateArea->SetActorLocation(FVector(210000.0, 210000.0, 0.0));
-    TestTrue(TEXT("Baseline protected area registers"), Subsystem->RegisterProtectedArea(RegisteredArea));
+    TestTrue(TEXT("기준 보호 구역이 등록된다"), Subsystem->RegisterProtectedArea(RegisteredArea));
 
     UFFZSTestExternalPolicy* Mutator = NewObject<UFFZSTestExternalPolicy>(GetTransientPackage());
     UFFZSTestExternalPolicy* Victim = NewObject<UFFZSTestExternalPolicy>(GetTransientPackage());
@@ -182,8 +182,8 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     Mutator->ProtectedAreaToUnregister = RegisteredArea;
     Mutator->PolicyToRegister = CandidatePolicy;
     Mutator->PolicyToUnregister = Victim;
-    TestTrue(TEXT("Reentrant mutator policy registers before the command"), Subsystem->RegisterExternalPolicy(Mutator));
-    TestTrue(TEXT("Victim policy registers before the command"), Subsystem->RegisterExternalPolicy(Victim));
+    TestTrue(TEXT("재진입 변경 정책이 명령 전에 등록된다"), Subsystem->RegisterExternalPolicy(Mutator));
+    TestTrue(TEXT("검증 대상 정책이 명령 전에 등록된다"), Subsystem->RegisterExternalPolicy(Victim));
 
     // q0, 1 Cell=1 cm: 기존 (50,10)은 같은 물리 위치를 뜻하는 (5000,1000) Cell로 이관한다.
     FFFZSCommand Guarded = UFFZSGridLibrary::MakeInstallCommand(
@@ -192,21 +192,21 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
         FFFZSGridPlacement{FIntPoint(5000, 1000), 0},
         Subsystem->GetWorldRevision());
     const FFFZSCommandResult GuardedResult = Subsystem->ExecuteCommand(Guarded);
-    TestTrue(TEXT("Blocked reentrant mutations do not invalidate the command"), GuardedResult.bSucceeded);
-    TestFalse(TEXT("Policy callback cannot register a Zone"), Mutator->bRegisterZoneAttemptSucceeded);
-    TestFalse(TEXT("Policy callback cannot unregister a Zone"), Mutator->bUnregisterZoneAttemptSucceeded);
-    TestFalse(TEXT("Policy callback cannot register a protected area"), Mutator->bRegisterProtectedAreaAttemptSucceeded);
-    TestFalse(TEXT("Policy callback cannot unregister a protected area"), Mutator->bUnregisterProtectedAreaAttemptSucceeded);
-    TestFalse(TEXT("Policy callback cannot change the workflow phase"), Mutator->bSetPhaseAttemptSucceeded);
-    TestFalse(TEXT("Policy callback cannot register another policy"), Mutator->bRegisterPolicyAttemptSucceeded);
-    TestFalse(TEXT("Policy callback cannot unregister another policy"), Mutator->bUnregisterPolicyAttemptSucceeded);
-    TestEqual(TEXT("Workflow phase remains unchanged"), Subsystem->GetChangePhase(), EFFZSChangePhase::InitialSetup);
-    TestNotNull(TEXT("Registered Zone remains in the authoritative registry"), Subsystem->FindZone(TEXT("GZ_DadaPocha")));
-    TestNull(TEXT("Candidate Zone was not injected"), Subsystem->FindZone(TEXT("GZ_Operations")));
-    TestTrue(TEXT("Registered protected area remains registered"), Subsystem->UnregisterProtectedArea(RegisteredArea));
-    TestFalse(TEXT("Candidate protected area was not injected"), Subsystem->UnregisterProtectedArea(CandidateArea));
-    TestTrue(TEXT("Victim policy remains registered"), Subsystem->UnregisterExternalPolicy(Victim));
-    TestFalse(TEXT("Candidate policy was not injected"), Subsystem->UnregisterExternalPolicy(CandidatePolicy));
+    TestTrue(TEXT("차단된 재진입 변경이 명령을 무효화하지 않는다"), GuardedResult.bSucceeded);
+    TestFalse(TEXT("정책 콜백은 구역을 등록할 수 없다"), Mutator->bRegisterZoneAttemptSucceeded);
+    TestFalse(TEXT("정책 콜백은 구역 등록을 해제할 수 없다"), Mutator->bUnregisterZoneAttemptSucceeded);
+    TestFalse(TEXT("정책 콜백은 보호 구역을 등록할 수 없다"), Mutator->bRegisterProtectedAreaAttemptSucceeded);
+    TestFalse(TEXT("정책 콜백은 보호 구역 등록을 해제할 수 없다"), Mutator->bUnregisterProtectedAreaAttemptSucceeded);
+    TestFalse(TEXT("정책 콜백은 워크플로 단계를 변경할 수 없다"), Mutator->bSetPhaseAttemptSucceeded);
+    TestFalse(TEXT("정책 콜백은 다른 정책을 등록할 수 없다"), Mutator->bRegisterPolicyAttemptSucceeded);
+    TestFalse(TEXT("정책 콜백은 다른 정책의 등록을 해제할 수 없다"), Mutator->bUnregisterPolicyAttemptSucceeded);
+    TestEqual(TEXT("워크플로 단계가 변경되지 않는다"), Subsystem->GetChangePhase(), EFFZSChangePhase::InitialSetup);
+    TestNotNull(TEXT("등록된 구역이 권위 레지스트리에 유지된다"), Subsystem->FindZone(TEXT("GZ_DadaPocha")));
+    TestNull(TEXT("후보 구역이 삽입되지 않는다"), Subsystem->FindZone(TEXT("GZ_Operations")));
+    TestTrue(TEXT("등록된 보호 구역이 계속 등록되어 있다"), Subsystem->UnregisterProtectedArea(RegisteredArea));
+    TestFalse(TEXT("후보 보호 구역이 삽입되지 않는다"), Subsystem->UnregisterProtectedArea(CandidateArea));
+    TestTrue(TEXT("검증 대상 정책이 계속 등록되어 있다"), Subsystem->UnregisterExternalPolicy(Victim));
+    TestFalse(TEXT("후보 정책이 삽입되지 않는다"), Subsystem->UnregisterExternalPolicy(CandidatePolicy));
 
     return true;
 }

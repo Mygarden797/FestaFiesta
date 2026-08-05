@@ -145,7 +145,7 @@ private:
     void MarkRemoved();
     /** 월드 서브시스템 전용 변경 포인터. 게임플레이 코드는 공개 const 접근자를 사용한다. */
     UFFZSFacilityQueueComponent* GetMutableQueueComponent() const { return QueueComponent; }
-    /** Authoritative GIS revalidation flag; the instance is preserved and never auto-deleted. */
+    /** 권위 GIS 재검증 플래그다. 인스턴스는 유지되며 자동으로 삭제되지 않는다. */
     void SetNeedsRelocation(bool bNewNeedsRelocation) { bNeedsRelocation = bNewNeedsRelocation; }
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
