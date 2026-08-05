@@ -5,10 +5,8 @@
 #include "Engine/AssetManager.h"
 #include "FF_FFZSFacilityDefinition.h"
 
-// !!! 스텁 !!! BuildCandidates 는 헤더 주석의 미해결 3(Agent ID 타입)과 Zone 그래프 노출이
-// 풀리기 전까지 실제 후보를 만들지 않는다. 카테고리 매핑·ExpectedWait·Need 해소 판정은
-// 8/6에 이미 실제 구현했다(MapToPreferenceCategory/GetServiceRatePerMinute/GetNeedReliefFlags) —
-// 여기 남은 건 그 셋을 호출해 후보 배열로 조립하는 마지막 단계뿐이다.
+// !!! 스텁 !!!
+// 카테고리 매핑·ExpectedWait·Need 해소 판정·시설 인스턴스 ID 변환은 구현되었고, 남은 건 그걸 호출해 조립하는 것뿐이다.
 
 TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	const FFFZSReadModel& ReadModel,
@@ -17,9 +15,6 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 {
 	// TODO(Zone 그래프): CurrentZoneId 의 인접 Zone 을 알아야 후보를 8~12개로 줄일 수 있다.
 	// 지금 전체 시설을 그대로 넘기면 (동시 Party 수) × (전체 시설) 이 되어 프레임이 무너진다.
-	// TODO(미해결 3): FFFZSFacilityReadModel 은 FGuid, Utility AI 는 FName/int32 를 쓴다 
-	// — 이 변환도 아직 없다. GetServiceRatePerMinute/MapToPreferenceCategory 는 FacilityDefinitionId(FName)를
-	// 받으므로 이 변환이 먼저 있어야 실제로 호출할 수 있다.
 	(void)ReadModel;
 	(void)CurrentZoneId;
 	(void)PartySize;

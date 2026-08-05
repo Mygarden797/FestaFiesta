@@ -29,12 +29,6 @@
  *   - `EntryExitAnchors`     — Zone 출입 기준점 (거리 행렬의 시작·끝점)
  *   - `GetBoundaryAreaSquareMeters()` — 폴리곤 신발끈 공식으로 실제 면적(㎡) 산출
  *
- * ### 미해결 — Agent ID 타입이 다르다
- *
- * ZoneSystem 큐는 `FName AgentId`, 시설은 `FGuid FacilityInstanceId` 를 쓴다.
- * Utility AI 는 `int32 StableAgentId`, 목적지는 `FName DestinationId` 를 쓴다.
- * 어느 쪽에 맞출지 정하고 변환을 이 파일에 가둔다. int32 → FName 은 매 프레임 문자열을
- * 만들면 비싸므로, 스폰 시 1회 만들어 캐시하는 형태가 될 가능성이 높다.
  */
 
 
@@ -105,4 +99,17 @@ public:
 
 	// ZoneSystem 초 → Utility AI 분. 환산은 여기서만 한다
 	static float SecondsToMinutes(float Seconds) { return Seconds / 60.f; }
+
+	// FFFZSFacilityReadModel::FacilityInstanceId(FGuid) → FFF_DestinationCandidate::DestinationId(FName)
+	static FName FacilityInstanceIdToDestinationId(const FGuid& FacilityInstanceId)
+	{
+		return FName(*FacilityInstanceId.ToString());
+	}
+
+	// 위 변환의 역방향. 실패하면(형식이 다르면) false
+	// DestinationId가 애초에 시설 인스턴스가 아닌 값(예: 잘못된 입력)일 수 있어서 호출부가 확인해야 한다.
+	static bool TryParseDestinationId(FName DestinationId, FGuid& OutFacilityInstanceId)
+	{
+		return FGuid::Parse(DestinationId.ToString(), OutFacilityInstanceId);
+	}
 };
