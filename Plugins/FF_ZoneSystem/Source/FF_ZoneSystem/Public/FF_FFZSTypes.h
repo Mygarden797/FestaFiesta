@@ -94,16 +94,16 @@ enum class EFFZSQueueReleaseReason : uint8
 
 UENUM(BlueprintType)
 /**
- * 운영 작업 단계. Install·Move·Remove는 InitialSetup과 Reconfigure에서만 허용한다.
+ * 운영 작업 단계. Install·Move·Remove는 InitialSetup과 MorningCheck에서만 허용한다.
  * 나머지 단계는 Open·Close·EmergencyClose 같은 운영 수명주기에 사용한다.
  */
 enum class EFFZSChangePhase : uint8
 {
-    InitialSetup,
-    Reconfigure,
-    MorningCheck,
-    LiveOperation,
-    EveningSettlement
+    InitialSetup = 0,
+    // 값 1은 제거된 이전 단계의 저장값이 다른 단계로 오해석되지 않도록 비워 둔다.
+    MorningCheck = 2,
+    LiveOperation = 3,
+    EveningSettlement = 4
 };
 
 UENUM(BlueprintType)
