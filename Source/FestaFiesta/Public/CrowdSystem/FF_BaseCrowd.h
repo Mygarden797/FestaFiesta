@@ -7,6 +7,7 @@
 #include "Types/FF_FestivalCrowdTypes.h"
 #include "FF_BaseCrowd.generated.h"
 
+class UFF_CrowdAnimInstance;
 class UFF_CrowdMovementComponent;
 class UFF_CrowdVisualComponent;
 
@@ -19,28 +20,24 @@ public:
 
 	AFF_BaseCrowd();
 	virtual void BeginPlay() override;
-	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void BindToAgent(int32 NewAgentIndex);
+	virtual void ReleaseFromAgent();
+	virtual void PushPresentation(FVector NewPosition, FRotator NewRotator, UFF_CrowdAnimInstance* AnimInstance);
+	
 protected:
 
 
 
 public:
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Component")
-	TObjectPtr<USceneComponent> SceneComponent;
-	
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Component")
 	TObjectPtr<USkeletalMeshComponent> SkeletalMeshComponent;
 	
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Component")
-	TObjectPtr<UFF_CrowdMovementComponent> CrowdMovementComponent;
-	
-	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Component")
-	TObjectPtr<UFF_CrowdVisualComponent> CrowdVisualComponent;
-	
-	TWeakPtr<FCrowdGroupTypes> CrowdGroup;
+	FUnitData UnitData;
 	
 	
+private:
+	int32 AgentIndex = INDEX_NONE;
 	
 	
 };

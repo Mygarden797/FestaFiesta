@@ -7,41 +7,50 @@
 #include "CrowdSystem/Components/FF_CrowdVisualComponent.h"
 
 
-// Sets default values
+
 AFF_BaseCrowd::AFF_BaseCrowd()
 {
 	
 	PrimaryActorTick.bCanEverTick = false;
-	SceneComponent = CreateDefaultSubobject<USceneComponent>("SceneComponent");
-	SetRootComponent(SceneComponent);
-	
 	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>("SkeletalMeshComponent");
-	SkeletalMeshComponent->SetupAttachment(SceneComponent);
-	
-	CrowdMovementComponent = CreateDefaultSubobject<UFF_CrowdMovementComponent>("CrowdMovementComponent");
-	CrowdVisualComponent = CreateDefaultSubobject<UFF_CrowdVisualComponent>("CrowdVisualComponent");
-	
-	
+	SetRootComponent(SkeletalMeshComponent);
 
 	
 }
 
-// Called when the game starts or when spawned
+
 void AFF_BaseCrowd::BeginPlay()
 {
 	Super::BeginPlay();
 	
 }
 
-// Called every frame
-void AFF_BaseCrowd::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-}
 
-// Called to bind functionality to input
+
+
 void AFF_BaseCrowd::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+}
+
+void AFF_BaseCrowd::BindToAgent(int32 NewAgentIndex)
+{
+	AgentIndex = NewAgentIndex;
+}
+
+void AFF_BaseCrowd::ReleaseFromAgent()
+{
+	AgentIndex = INDEX_NONE;
+}
+
+void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, UFF_CrowdAnimInstance* AnimInstance)
+{
+	UnitData.Position = NewPosition;
+	UnitData.Rotation = NewRotator;
+	
+	
+	
+	SetActorLocation(NewPosition);
+	SetActorRotation(NewRotator);
 }
 
