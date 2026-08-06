@@ -123,32 +123,59 @@ FText UFF_FestivalViewModelSubsystem::GetCurrentStageDisplayText() const
 	return FText::GetEmpty();
 }
 
-void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(float InSimSatisfaction, float InScoreSatisfaction, int32 InRevenue, float InSafety)
+void UFF_FestivalViewModelSubsystem::ApplyIntMetric(int32& Current, int32 NewValue, FFF_OnIntMetricChanged& ChangedDelegate)
 {
-	// 값이 실제로 바뀔 때만 통지한다. 같은 값을 계속 쏘면 위젯이 헛돈다.
-	if (!FMath::IsNearlyEqual(SimSatisfaction, InSimSatisfaction))
+	if (Current == NewValue)
 	{
-		SimSatisfaction = InSimSatisfaction;
-		OnSimSatisfactionChanged.Broadcast(SimSatisfaction);
+		return;
 	}
 
-	if (!FMath::IsNearlyEqual(ScoreSatisfaction, InScoreSatisfaction))
-	{
-		ScoreSatisfaction = InScoreSatisfaction;
-		OnScoreSatisfactionChanged.Broadcast(ScoreSatisfaction);
-	}
+	Current = NewValue;
+	ChangedDelegate.Broadcast(Current);
+}
 
-	if (Revenue != InRevenue)
-	{
-		Revenue = InRevenue;
-		OnRevenueChanged.Broadcast(Revenue);
-	}
+void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(int32 InSimSatisfaction, int32 InScoreSatisfaction, int32 InSafety)
+{
+	// 0~100 지표는 범위를 벗어난 값이 들어와도 화면이 깨지지 않게 잘라낸다.
+	// 실제 소유자 시스템이 붙어도 이 방어는 남겨둔다. 계산 실수가 UI까지 오면 원인 추적이 어렵다.
+	const auto Clamp01_100 = [](int32 Value) { return FMath::Clamp(Value, 0, MetricMax); };
 
-	if (!FMath::IsNearlyEqual(Safety, InSafety))
-	{
-		Safety = InSafety;
-		OnSafetyChanged.Broadcast(Safety);
-	}
+	ApplyIntMetric(SimSatisfaction, Clamp01_100(InSimSatisfaction), OnSimSatisfactionChanged);
+	ApplyIntMetric(ScoreSatisfaction, Clamp01_100(InScoreSatisfaction), OnScoreSatisfactionChanged);
+	ApplyIntMetric(Safety, Clamp01_100(InSafety), OnSafetyChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::Debug_SetEconomy(int32 InGold, int32 InTotalRevenue, int32 InTodayRevenue)
+{
+	// 금액이라 0~100 상한을 두지 않는다. Gold는 음수가 될 수 있는지 미확정이라 클램프하지 않는다.
+	ApplyIntMetric(Gold, InGold, OnGoldChanged);
+	ApplyIntMetric(TotalRevenue, InTotalRevenue, OnTotalRevenueChanged);
+	ApplyIntMetric(TodayRevenue, InTodayRevenue, OnTodayRevenueChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::PollMetricsFromSources()
+{
+	// !! 이건 폴백이지 목표 설계가 아니다 !!
+	//
+	// 지표를 가져오는 방법은 둘이고 우선순위가 있다.
+	//
+	//   1순위 — 푸시. 소유자가 "값이 바뀌었다"고 델리게이트를 쏜다.
+	//           그 델리게이트를 TryBind...에서 구독하고 이 함수에서는 손대지 않는다.
+	//   2순위 — 풀(여기). 소유자가 Getter만 주고 델리게이트를 안 줄 때만 쓴다.
+	//
+	// UI_API.md 원칙 3이 "폴링하지 않는다"인 이유다. 델리게이트가 없어서 어쩔 수 없이 읽는 값만
+	// 여기 둔다. 새 값을 추가할 때 습관적으로 여기 넣지 말고 소유자에게 델리게이트를 먼저 요청한다.
+	// (선례: RemainingSeconds. 강민서 쪽에 초 단위 델리게이트가 없어 Tick에서 폴링 중이고
+	//  UI_API.md에 요청으로 남겨 뒀다. 델리게이트가 생기면 폴링을 걷어낸다.)
+	//
+	// 어느 쪽이든 통지는 ApplyIntMetric을 거치므로 **위젯은 값이 실제로 바뀔 때만 갱신된다.**
+	// 폴링 주기는 소스를 확인하는 간격이지 위젯 갱신 주기가 아니다.
+	//
+	// 아직 소유자 시스템이 하나도 없어 지금은 아무것도 하지 않는다. 생기면 이렇게 된다.
+	//
+	//   ApplyIntMetric(Gold, Progression->GetGold(), OnGoldChanged);   // 델리게이트가 없을 때만
+	//
+	// 소유자 현황은 리포 루트 UI_API.md의 "UI가 필요한데 아직 없는 것" 표에 있다.
 }
 
 void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
@@ -173,4 +200,7 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 		LastBroadcastRemainingSeconds = RemainingSeconds;
 		OnRemainingSecondsChanged.Broadcast(RemainingSeconds);
 	}
+
+	// 지표도 같은 주기로 확인한다. 값이 안 바뀌면 아무것도 쏘지 않는다.
+	PollMetricsFromSources();
 }
