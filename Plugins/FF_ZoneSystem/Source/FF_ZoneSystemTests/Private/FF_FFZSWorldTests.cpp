@@ -1,18 +1,18 @@
-/**
- * @file FF_FFZSWorldTests.cpp
- * @brief WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
- *
- * 테스트 행렬:
- * 1) Command lifecycle, Queue 이동, Snapshot 복원과 동일 Command replay의 멱등성.
- * 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
- * 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
- * 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
- * 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
- * 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
- *
- * 각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
- * Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
- */
+//  FF_FFZSWorldTests.cpp
+
+// WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
+// 테스트 행렬:
+ // 1) Command lifecycle, Queue 이동, Snapshot 복원과 동일 Command replay의 멱등성.
+ // 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
+ // 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
+ // 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
+ // 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
+ // 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
+ // 7) Zone Read Model의 그래프·로컬 출입 기준점·실제 경계 면적 값 복사 계약.
+ 
+ //각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
+ // Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
+
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -35,7 +35,7 @@
 
 namespace
 {
-    /** 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다. */
+    // 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다.
     class FScopedZFTestSettings
     {
     public:
@@ -1176,4 +1176,119 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         Subsystem->ExecuteCommand(ReopenAfterRestore).bSucceeded);
     return true;
 }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSZoneReadModelSpatialMetadataTest,
+    "FF_ZoneSystem.Integration.World.ZoneReadModelSpatialMetadata",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// Read Model 계약: Actor의 로컬 그래프·앵커는 값 복사하고 면적은 수용량 Override가 아닌 경계에서 산출한다.
+bool FFFZSZoneReadModelSpatialMetadataTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Read Model 자동화 테스트 World"), World))
+    {
+        return false;
+    }
+
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!TestNotNull(TEXT("Read Model World Subsystem"), Subsystem))
+    {
+        return false;
+    }
+
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("Read Model 대상 Gameplay Zone"), Zone))
+    {
+        return false;
+    }
+
+    const TArray<FName> ExpectedNeighborZoneIds = {
+        TEXT("GZ_SunsetLounge"),
+        TEXT("GZ_FleaMarket")
+    };
+    const TArray<FTransform> ExpectedEntryExitAnchors = {
+        FTransform(FRotator(0.0, 90.0, 0.0), FVector(100.0, 250.0, 0.0)),
+        FTransform(FRotator(0.0, 180.0, 0.0), FVector(1900.0, 750.0, 50.0))
+    };
+    Zone->NeighborZoneIds = ExpectedNeighborZoneIds;
+    Zone->EntryExitAnchors = ExpectedEntryExitAnchors;
+
+    // 20m x 10m 경계는 200m²다. 수용량용 공공 면적 Override와 의도적으로 다르게 둔다.
+    USplineComponent* BoundarySpline = Zone->BoundarySpline;
+    if (!TestNotNull(TEXT("Read Model 대상 Zone 경계 Spline"), BoundarySpline))
+    {
+        return false;
+    }
+    const FVector BoundaryPoints[] = {
+        FVector(0.0, 0.0, 0.0),
+        FVector(2000.0, 0.0, 0.0),
+        FVector(2000.0, 1000.0, 0.0),
+        FVector(0.0, 1000.0, 0.0)
+    };
+    for (int32 PointIndex = 0; PointIndex < UE_ARRAY_COUNT(BoundaryPoints); ++PointIndex)
+    {
+        BoundarySpline->SetLocationAtSplinePoint(
+            PointIndex, BoundaryPoints[PointIndex], ESplineCoordinateSpace::Local, false);
+    }
+    BoundarySpline->UpdateSpline();
+    Zone->UsablePublicAreaSquareMeters = 777.0f;
+
+    if (!TestTrue(TEXT("Read Model 대상 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    constexpr float ExpectedAreaSquareMeters = 200.0f;
+    TestTrue(TEXT("20m x 10m 경계 면적은 200m²다"),
+        FMath::IsNearlyEqual(Zone->GetBoundaryAreaSquareMeters(), ExpectedAreaSquareMeters));
+
+    const FFFZSReadModel ReadModel = Subsystem->BuildReadModel();
+    TestEqual(TEXT("등록한 Zone 하나가 Read Model에 포함된다"), ReadModel.Zones.Num(), 1);
+    const FFFZSZoneReadModel* ZoneReadModel = ReadModel.Zones.FindByPredicate(
+        [ZoneId](const FFFZSZoneReadModel& Candidate)
+        {
+            return Candidate.ZoneId == ZoneId;
+        });
+    if (!TestNotNull(TEXT("Zone ID로 Read Model을 찾는다"), ZoneReadModel))
+    {
+        return false;
+    }
+
+    TestTrue(TEXT("Read Model 면적은 경계 함수 결과를 그대로 사용한다"),
+        FMath::IsNearlyEqual(ZoneReadModel->AreaSquareMeters, Zone->GetBoundaryAreaSquareMeters()));
+    TestTrue(TEXT("Read Model 면적은 200m²다"),
+        FMath::IsNearlyEqual(ZoneReadModel->AreaSquareMeters, ExpectedAreaSquareMeters));
+    TestFalse(TEXT("Read Model 면적은 SoftCapacity용 공공 면적 Override가 아니다"),
+        FMath::IsNearlyEqual(ZoneReadModel->AreaSquareMeters, Zone->UsablePublicAreaSquareMeters));
+
+    Zone->NeighborZoneIds.Reset();
+    Zone->EntryExitAnchors.Reset();
+    TestTrue(TEXT("Actor의 그래프 배열을 변경했다"), Zone->NeighborZoneIds.IsEmpty());
+    TestTrue(TEXT("Actor의 출입 기준점 배열을 변경했다"), Zone->EntryExitAnchors.IsEmpty());
+
+    TestEqual(TEXT("Read Model은 이웃 ID 배열을 값 복사한다"),
+        ZoneReadModel->NeighborZoneIds.Num(), ExpectedNeighborZoneIds.Num());
+    for (int32 Index = 0;
+         Index < FMath::Min(ZoneReadModel->NeighborZoneIds.Num(), ExpectedNeighborZoneIds.Num());
+         ++Index)
+    {
+        TestEqual(TEXT("Read Model의 이웃 ID와 순서가 보존된다"),
+            ZoneReadModel->NeighborZoneIds[Index], ExpectedNeighborZoneIds[Index]);
+    }
+
+    TestEqual(TEXT("Read Model은 출입 기준점 배열을 값 복사한다"),
+        ZoneReadModel->EntryExitAnchors.Num(), ExpectedEntryExitAnchors.Num());
+    for (int32 Index = 0;
+         Index < FMath::Min(ZoneReadModel->EntryExitAnchors.Num(), ExpectedEntryExitAnchors.Num());
+         ++Index)
+    {
+        TestTrue(TEXT("Read Model의 출입 기준점 Transform과 순서가 보존된다"),
+            ZoneReadModel->EntryExitAnchors[Index].Equals(ExpectedEntryExitAnchors[Index]));
+    }
+    return true;
+}
+
 #endif
