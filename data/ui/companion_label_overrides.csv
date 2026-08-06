@@ -1,4 +1,4 @@
 ﻿companion_type,current_default_label_draft,ui_override_label,note
-"solo","1인 동반","",""
-"pair","2인 동반","",""
-"group_3_plus","3인 이상 동반","",""
+"solo","1인 동반","혼자","'1인 동반'은 혼자인데 동반이라 모순"
+"pair","2인 동반","둘이서","커플·친구·부모자녀가 섞여 있어 관계를 특정하지 않는 표현 사용"
+"group_3_plus","3인 이상 동반","여럿이서","3~4명 규모. 인원수를 라벨에 넣지 않고 데이터로 표시"
