@@ -2,10 +2,13 @@
 
 #include "UI/FF_MetricsHudWidget.h"
 
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Texture2D.h"
 #include "UI/FF_FestivalViewModelSubsystem.h"
 #include "UI/FF_UILog.h"
+#include "UI/FF_UIMetricBandSettings.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
@@ -63,8 +66,10 @@ void UFF_MetricsHudWidget::BindViewModel()
 	// AddUniqueDynamic만 쓴다. 중복 구독을 API가 막아준다.
 	ViewModel->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleSimSatisfactionChanged);
 	ViewModel->OnScoreSatisfactionChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleScoreSatisfactionChanged);
-	ViewModel->OnRevenueChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleRevenueChanged);
 	ViewModel->OnSafetyChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleSafetyChanged);
+	ViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleGoldChanged);
+	ViewModel->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleTotalRevenueChanged);
+	ViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleTodayRevenueChanged);
 	ViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleStageViewChanged);
 	ViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_MetricsHudWidget::HandleRemainingSecondsChanged);
 }
@@ -76,8 +81,10 @@ void UFF_MetricsHudWidget::UnbindViewModel()
 	{
 		CachedViewModel->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleSimSatisfactionChanged);
 		CachedViewModel->OnScoreSatisfactionChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleScoreSatisfactionChanged);
-		CachedViewModel->OnRevenueChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleRevenueChanged);
 		CachedViewModel->OnSafetyChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleSafetyChanged);
+		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleGoldChanged);
+		CachedViewModel->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleTotalRevenueChanged);
+		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleTodayRevenueChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleStageViewChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_MetricsHudWidget::HandleRemainingSecondsChanged);
 	}
@@ -96,10 +103,50 @@ void UFF_MetricsHudWidget::RefreshAll()
 	// 이벤트가 어떤 순서로 들어와도 결과가 같아진다.
 	HandleSimSatisfactionChanged(ViewModel->GetSimSatisfaction());
 	HandleScoreSatisfactionChanged(ViewModel->GetScoreSatisfaction());
-	HandleRevenueChanged(ViewModel->GetRevenue());
 	HandleSafetyChanged(ViewModel->GetSafety());
+	HandleGoldChanged(ViewModel->GetGold());
+	HandleTotalRevenueChanged(ViewModel->GetTotalRevenue());
+	HandleTodayRevenueChanged(ViewModel->GetTodayRevenue());
 	HandleStageViewChanged(ViewModel->GetCurrentStage(), ViewModel->GetCurrentDay());
 	HandleRemainingSecondsChanged(FMath::CeilToInt(ViewModel->GetRemainingSeconds()));
+}
+
+void UFF_MetricsHudWidget::ApplyBand(int32 Value, UTextBlock* BandLabel, UImage* BandIcon)
+{
+	if (!BandLabel && !BandIcon)
+	{
+		return;
+	}
+
+	const UFF_UIMetricBandSettings* Settings = UFF_UIMetricBandSettings::Get();
+	const FFF_UIMetricBand* Band = Settings ? Settings->FindBand(Value) : nullptr;
+
+	if (BandLabel)
+	{
+		// 구간을 못 찾으면 비운다. 마지막 구간의 라벨이 남아 있으면 틀린 상태를 보여주게 된다.
+		BandLabel->SetText(Band ? Band->Label : FText::GetEmpty());
+	}
+
+	if (!BandIcon)
+	{
+		return;
+	}
+
+	if (!Band)
+	{
+		BandIcon->SetBrushFromTexture(nullptr);
+		return;
+	}
+
+	// 아이콘 에셋이 아직 없을 수 있다. 그래도 색은 반영한다.
+	// 작은 UI 아이콘이라 동기 로드로 둔다. 개수가 늘면 비동기로 바꾼다.
+	if (UTexture2D* IconTexture = Band->Icon.LoadSynchronous())
+	{
+		BandIcon->SetBrushFromTexture(IconTexture);
+	}
+
+	// 흰색 단색 텍스처를 구간 색으로 틴트한다. 텍스처를 구간마다 따로 칠하지 않는다.
+	BandIcon->SetColorAndOpacity(Band->Color);
 }
 
 void UFF_MetricsHudWidget::HandleSimSatisfactionChanged(int32 NewValue)
@@ -108,6 +155,8 @@ void UFF_MetricsHudWidget::HandleSimSatisfactionChanged(int32 NewValue)
 	{
 		Text_SimSatisfaction->SetText(FText::AsNumber(NewValue));
 	}
+
+	ApplyBand(NewValue, Text_SimSatisfactionBand, Image_SimSatisfactionBand);
 }
 
 void UFF_MetricsHudWidget::HandleScoreSatisfactionChanged(int32 NewValue)
@@ -116,6 +165,8 @@ void UFF_MetricsHudWidget::HandleScoreSatisfactionChanged(int32 NewValue)
 	{
 		Text_ScoreSatisfaction->SetText(FText::AsNumber(NewValue));
 	}
+
+	ApplyBand(NewValue, Text_ScoreSatisfactionBand, Image_ScoreSatisfactionBand);
 }
 
 void UFF_MetricsHudWidget::HandleSafetyChanged(int32 NewValue)
@@ -124,13 +175,32 @@ void UFF_MetricsHudWidget::HandleSafetyChanged(int32 NewValue)
 	{
 		Text_Safety->SetText(FText::AsNumber(NewValue));
 	}
+
+	ApplyBand(NewValue, Text_SafetyBand, Image_SafetyBand);
 }
 
-void UFF_MetricsHudWidget::HandleRevenueChanged(int32 NewValue)
+void UFF_MetricsHudWidget::HandleGoldChanged(int32 NewValue)
 {
+	if (Text_Gold)
+	{
+		Text_Gold->SetText(FText::AsNumber(NewValue));
+	}
+}
+
+void UFF_MetricsHudWidget::HandleTotalRevenueChanged(int32 NewValue)
+{
+	// 위젯 이름은 Text_Revenue지만 담기는 값은 축제 누적 매출이다. 잔액(Gold)이 아니다.
 	if (Text_Revenue)
 	{
 		Text_Revenue->SetText(FText::AsNumber(NewValue));
+	}
+}
+
+void UFF_MetricsHudWidget::HandleTodayRevenueChanged(int32 NewValue)
+{
+	if (Text_TodayRevenue)
+	{
+		Text_TodayRevenue->SetText(FText::AsNumber(NewValue));
 	}
 }
 

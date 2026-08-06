@@ -21,7 +21,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_Festiva
  * 각 시스템이 바뀌어도 위젯을 고치지 않기 위해서다.
  *
  * === 현재 상태: 스텁 ===
- * 지표 4종은 하드코딩 더미다. 실제 소유자의 구현이 생기면 이 클래스 안쪽만 교체하고
+ * 지표 6종은 하드코딩 더미다. 실제 소유자의 구현이 생기면 이 클래스 안쪽만 교체하고
  * 위젯은 그대로 둔다. 그게 이 계층을 두는 이유다.
  *
  * | 값                     | 실제 소유자      | 현재        |
@@ -30,16 +30,30 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_Festiva
  * | 남은 시간              | 강민서           | **진짜 값** |
  * | SimSatisfaction        | 김시리 · 이정원  | 더미        |
  * | ScoreSatisfaction      | 김시리           | 더미        |
- * | Revenue                | 김시리           | 더미        |
  * | Safety                 | 이정원           | 더미        |
+ * | Gold                   | 김시리           | 더미        |
+ * | TotalRevenue           | 김시리           | 더미        |
+ * | TodayRevenue           | 김시리           | 더미        |
  *
- * === 값 규격 (2026-08-06) ===
+ * === 값 규격 (2026-08-06 결정) ===
  * - Satisfaction / Safety : int32 0~100, 높을수록 좋음.
- * - Revenue : int32 금액. 0~100 상한을 적용하지 않는다.
+ * - Gold / Revenue : int32 금액. 0~100 상한을 적용하지 않는다.
+ *
+ * **Gold와 Revenue는 다른 값이다.** 헷갈리면 화면에 틀린 숫자가 뜬다.
+ * - `Gold`         : 지금 쓸 수 있는 **잔액**. 지출로 줄어든다. 초기 10,000, 축제 종료 시 초기화.
+ * - `TotalRevenue` : 축제 전체 **누적 매출**. 줄어들지 않는다. 상단 바 표시용.
+ * - `TodayRevenue` : 오늘 하루 매출. Report에서 "오늘 얼마 벌었나"에 쓴다.
+ *
+ * 대략 `Gold ≒ 초기자금 + TotalRevenue - 누적지출`이지만, **UI가 이 식을 계산하지 않는다.**
+ * 셋 다 소유자에게서 그대로 받는다. 근거: docs/design/game-overview.md 5절
  *
  * Buzz는 여기 없다. 기획서에서 Utility AI의 점수 항이며 dev-schedule 기준 9월 투입 대상이다.
- * Overview 표시 항목은 Satisfaction·Revenue·Safety 셋이다.
- * 미확인 항목(갱신 주기, 좋고 나쁨 구간)은 리포 루트 UI_API.md 참고.
+ * 좋고 나쁨 구간은 아직 미정이라 UI에서 색을 칠하지 않는다. 상세는 리포 루트 UI_API.md 참고.
+ *
+ * === 갱신 주기 (2026-08-06 결정) ===
+ * 지표는 **일정 틱마다** 바뀐다. 소스가 매 틱 흔들려도 위젯을 매 틱 갱신하면 안 되므로
+ * 여기서 `PollInterval`마다 샘플링하고 **정수값이 실제로 바뀔 때만** 델리게이트를 쏜다.
+ * 지표를 int32로 둔 것이 여기서 이득이 된다. 위젯은 이 처리를 몰라도 된다.
  *
  * === 시간을 자체 계산하지 않는다 ===
  * 시계 배율이 출처마다 달라 아직 미확정이다(30초 / 60초 / 코드 180초×4).
@@ -71,10 +85,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetSafety() const { return Safety; }
 
-	/** 금액. 0~100 상한을 적용하지 않는다. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
-	int32 GetRevenue() const { return Revenue; }
-
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionChanged;
 
@@ -84,8 +94,29 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSafetyChanged;
 
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
-	FFF_OnIntMetricChanged OnRevenueChanged;
+	// --- 경제 ---
+	// Gold(잔액)와 Revenue(매출)는 다른 값이다. 클래스 주석의 구분표를 먼저 읽는다.
+
+	/** 지금 쓸 수 있는 잔액. 지출로 줄어든다. 상단 바·Finale 구매 가능 판정에 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetGold() const { return Gold; }
+
+	/** 축제 전체 누적 매출. 줄어들지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetTotalRevenue() const { return TotalRevenue; }
+
+	/** 오늘 하루 매출. Report의 "오늘 얼마 벌었나"에 쓴다. UI가 누적값에서 빼서 만들지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetTodayRevenue() const { return TodayRevenue; }
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnGoldChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnTotalRevenueChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnTodayRevenueChanged;
 
 	// --- Stage (강민서 시스템 중계) ---
 
@@ -125,11 +156,15 @@ public:
 	// --- 스텁 전용. 실제 소유자 구현이 붙으면 삭제한다 ---
 
 	/**
-	 * 지표를 강제로 설정한다. 값이 실제로 바뀔 때만 델리게이트를 쏜다.
-	 * 0~100 지표는 자동으로 클램프된다.
+	 * 0~100 지표를 강제로 설정한다. 값이 실제로 바뀔 때만 델리게이트를 쏘고 범위를 벗어나면 클램프한다.
+	 * 경제 값은 단위가 달라 섞지 않는다. Debug_SetEconomy를 쓴다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Debug")
-	void Debug_SetMetrics(int32 InSimSatisfaction, int32 InScoreSatisfaction, int32 InSafety, int32 InRevenue);
+	void Debug_SetMetrics(int32 InSimSatisfaction, int32 InScoreSatisfaction, int32 InSafety);
+
+	/** 경제 값을 강제로 설정한다. 금액이라 클램프하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Debug")
+	void Debug_SetEconomy(int32 InGold, int32 InTotalRevenue, int32 InTodayRevenue);
 
 	// FTickableGameObject
 	virtual void Tick(float DeltaTime) override;
@@ -149,6 +184,16 @@ private:
 	/** Stage 시스템 구독을 시도한다. 아직 없으면 재시도를 예약한다. */
 	void TryBindStageSubsystem();
 
+	/**
+	 * 소유자 시스템에서 지표를 읽어 온다. PollInterval마다 Tick에서 호출된다.
+	 * 지금은 소유자가 없어 아무것도 하지 않는다 — 구현이 붙으면 **여기 한 곳만** 채운다.
+	 * 변화 감지와 통지는 ApplyIntMetric이 이미 처리하므로 위젯은 손대지 않는다.
+	 */
+	void PollMetricsFromSources();
+
+	/** 값이 실제로 바뀔 때만 통지한다. 같은 값을 계속 쏘면 위젯이 헛돈다. */
+	static void ApplyIntMetric(int32& Current, int32 NewValue, FFF_OnIntMetricChanged& ChangedDelegate);
+
 	// --- 지표 더미값 ---
 	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
 
@@ -161,8 +206,15 @@ private:
 	UPROPERTY()
 	int32 Safety = 88;
 
+	/** 초기 Gold 10,000은 game-overview.md 밸런스 시드 v0의 `assumption`이다. 확정값이 아니다. */
 	UPROPERTY()
-	int32 Revenue = 0;
+	int32 Gold = 10000;
+
+	UPROPERTY()
+	int32 TotalRevenue = 0;
+
+	UPROPERTY()
+	int32 TodayRevenue = 0;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> CachedStageSubsystem;
@@ -172,7 +224,11 @@ private:
 
 	float PollAccumulator = 0.f;
 
-	/** 폴링 주기(초). 0.1초면 초 단위 변화를 놓치지 않으면서 부하가 없다. */
+	/**
+	 * 폴링 주기(초). 0.1초면 남은 시간의 초 단위 변화를 놓치지 않으면서 부하가 없다.
+	 * 지표도 같은 주기로 샘플링하므로 위젯 갱신은 지표당 최대 초당 10회로 묶인다.
+	 * 금액처럼 자주 흔들리는 값도 여기서 걸린다.
+	 */
 	static constexpr float PollInterval = 0.1f;
 
 	/** Stage 시스템을 못 찾았을 때 재시도한 횟수. 상한을 두고 로그를 남긴다. */
