@@ -15,12 +15,12 @@ class FESTAFIESTA_API UFF_CrowdAnimInstance : public UAnimInstance
 	GENERATED_BODY()
 	
 public:
-	UPROPERTY(EditAnywhere,BlueprintReadOnly, Category = "Crowd|Animation")
-	bool IsWalk = false;
+	UFUNCTION(BlueprintCallable)
+	void SetSpeed(float NewSpeed) { Speed = NewSpeed;}
 	
-	UPROPERTY(EditAnywhere,BlueprintReadOnly, Category = "Crowd|Animation")
-	bool IsRun = false;
+	UFUNCTION(BlueprintCallable)
+	float GetSpeed() { return Speed;}
 	
-	UPROPERTY(EditAnywhere,BlueprintReadOnly, Category = "Crowd|Animation")
-	bool IsIdle = true;
+private:
+	float Speed = 0;
 };
