@@ -11,10 +11,14 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 
 	if (NewStage == EFF_FestivalStage::Live)
 	{
-		RemainingTime = LiveSlotDuration;
+		ElapsedLiveSeconds = 0.f;
+		// 날마다 길이가 달라, 시계를 0으로 리셋함
 	}
 
-	// todo: 허용 안 되는 전환 막는 검증 로직 필요
+	UE_LOG(LogTemp, Log, TEXT("[Stage] %s -> %s"),
+		*UEnum::GetValueAsString(PreviousStage),
+		*UEnum::GetValueAsString(NewStage));
+	// Stage 바뀔 때마다 Output Log에 기록
 
 	OnStageChanged.Broadcast(PreviousStage, NewStage);
 	// 바뀌었다고 알림
@@ -23,10 +27,51 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 {
 	return CurrentStage == EFF_FestivalStage::Setup
-		|| CurrentStage == EFF_FestivalStage::Reconfigure
 		|| CurrentStage == EFF_FestivalStage::MorningCheck;
 	// 이 세 단계일 때만 배치 변경 허용
 }
+
+void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
+{
+	TimeScale = NewScale;
+}
+// 배속값을 그냥 저장하는 함수
+
+const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay() const
+{
+	switch (CurrentDay)
+	{
+	case 1: return Day1Events;
+	case 2: return Day2Events;
+	default: return Day3Events;
+	}
+}
+// CurrentDay(1/2/3)에 맞는 이벤트 배열을 골라서 돌려주는 함수
+
+float UFF_FestivalStageSubsystem::GetLiveDurationForCurrentDay() const
+{
+	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
+	return Events.Num() > 0 ? Events.Last().TriggerSeconds : 0.f;
+}
+//그날 이벤트 중 마지막("전체 종료") 시각 = 그날 Live 총 길이
+
+bool UFF_FestivalStageSubsystem::IsMainProgramLocked() const
+{
+	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
+
+	for (int32 i = 0; i < Events.Num(); i++)
+	{
+		if (Events[i].bIsMainProgramLockStart)
+		{
+			const float LockStart = Events[i].TriggerSeconds - 10.f;
+			const float LockEnd = Events.IsValidIndex(i + 1) ? Events[i + 1].TriggerSeconds : Events[i].TriggerSeconds;
+			return ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd;
+		}
+	}
+	return false;
+}
+//그 시각 10초 전부터 다음 이벤트 시각까지가 배속 잠금 구간인지 판단
+
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
@@ -36,33 +81,44 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		// Live 아닐 땐 시간 안 흐르게 함
 	}
 
-	RemainingTime -= DeltaTime;
-	// 프레임마다 지나간 시간만큼 깎기
+	const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
+	// 메인 공연 구간이면 배속을 강제로 1배속으로 고정
+
+	ElapsedLiveSeconds += DeltaTime * EffectiveScale;
+	// 흐른 시간을 누적하는 방식
+
+	RemainingTime = GetLiveDurationForCurrentDay() - ElapsedLiveSeconds;
+	//오늘 총 길이 - 흐른 시간 =  남은 시간을 매번 다시 계산
 
 	if (RemainingTime <= 0.f)
 	{
-		HandleSlotEnd();
-		// 시간 다 되면 다음 처리로 넘김
+		HandleLiveEnd();
+		//함수 이름이 HandleSlotEnd에서 HandleLiveEnd로 바뀜
 	}
 }
 
-void UFF_FestivalStageSubsystem::HandleSlotEnd()
+void UFF_FestivalStageSubsystem::HandleLiveEnd()
 {
-	if (CurrentSlot < 4)
+	if (CurrentDay == 3)
 	{
-		CurrentSlot++;
-		// 아직 4타임 안 됐으면 슬롯만 올리고 계속 Live로
-
-		// todo: 지금은 바로 Live인데, 실제론 재구성 거쳐야 함
-		RequestTransition(EFF_FestivalStage::Live);
+		RequestTransition(EFF_FestivalStage::Finale);
+		// Day3만 Finale로 먼저 이동
 	}
 	else
 	{
-		CurrentSlot = 1;
-		CurrentDay++;
-		// 4타임 다 끝났으면 슬롯 리셋하고 날짜 하루 증가
-
 		RequestTransition(EFF_FestivalStage::Closing);
-		// 마감 단계로 이동
 	}
+}
+
+void UFF_FestivalStageSubsystem::AdvanceToNextDay()
+{
+	if (CurrentStage != EFF_FestivalStage::Report)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("AdvanceToNextDay called outside Report stage. Ignored."));
+		return;
+		// Report 단계가 아닐 때 잘못 호출되는 것 방지
+	}
+
+	CurrentDay++;
+	RequestTransition(EFF_FestivalStage::MorningCheck);
 }

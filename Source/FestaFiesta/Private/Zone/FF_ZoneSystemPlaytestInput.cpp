@@ -9,6 +9,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "Zone/FF_ZoneSystemPlaytestHUD.h"
 
 // 이 파일은 관찰 카메라 입력과 FF Zone System 명령을 연결한다.
@@ -341,8 +342,10 @@ void UFF_ZoneSystemPlaytestSubsystem::RestorePlaytestSnapshot()
         return;
     }
 
-    TArray<FText> Errors;
-    if (ZoneSystem->RestoreWorldSnapshot(SavedSnapshot, Errors))
+	TArray<FText> Errors;
+	UFF_ZoneSystemQueueBridgeSubsystem* Integration =
+		GetWorld() ? GetWorld()->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	if (Integration && Integration->RestoreZoneWorldSnapshotAndSynchronize(SavedSnapshot, Errors))
     {
         LastFacilityId = SavedSnapshot.Facilities.IsEmpty()
             ? FGuid()
@@ -368,8 +371,10 @@ void UFF_ZoneSystemPlaytestSubsystem::ResetPlaytest()
         return;
     }
 
-    TArray<FText> Errors;
-    if (!ZoneSystem->RestoreWorldSnapshot(InitialSnapshot, Errors))
+	TArray<FText> Errors;
+	UFF_ZoneSystemQueueBridgeSubsystem* Integration =
+		GetWorld() ? GetWorld()->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	if (!Integration || !Integration->RestoreZoneWorldSnapshotAndSynchronize(InitialSnapshot, Errors))
     {
         SetStatus(Errors.IsEmpty()
             ? TEXT("Playtest reset failed.")
