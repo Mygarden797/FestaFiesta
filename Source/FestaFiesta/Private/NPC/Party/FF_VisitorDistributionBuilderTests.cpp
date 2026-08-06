@@ -276,7 +276,7 @@ bool FFF_VisitorDistribution_ChildShareMatchesSource::RunTest(const FString& Par
 	return true;
 }
 
-// 7. 입력 테이블이 없거나 ScopeId/ScenarioId 가 안 맞으면 크래시 없이 빈 결과를 낸다.
+// 7. 입력 테이블이 없거나 ScopeId/ArchetypeScenarioId 가 안 맞으면 크래시 없이 빈 결과를 낸다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_MissingInputIsSafe, "FestaFiesta.NPC.VisitorDistribution.MissingInputIsSafe", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_VisitorDistribution_MissingInputIsSafe::RunTest(const FString& Parameters)
 {
@@ -298,7 +298,7 @@ bool FFF_VisitorDistribution_MissingInputIsSafe::RunTest(const FString& Paramete
 	return true;
 }
 
-// 8. ScenarioId 를 바꾸면 아키타입 구성이 달라진다 (인구비중 열을 실제로 갈아 쓴다).
+// 8. ArchetypeScenarioId 를 바꾸면 아키타입 구성이 달라진다 (인구비중 열을 실제로 갈아 쓴다).
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_ScenarioSwitchesArchetypeShares, "FestaFiesta.NPC.VisitorDistribution.ScenarioSwitchesArchetypeShares", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_VisitorDistribution_ScenarioSwitchesArchetypeShares::RunTest(const FString& Parameters)
 {

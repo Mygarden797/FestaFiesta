@@ -79,7 +79,7 @@ DataTable 3장의 필드별 상세와 규칙 11개 실제 값은 [부록 B](#부
 
 **비유**: 여행사 예약팀(저희)이 손님 명단을 만들어 넘긴다. 명단의 각 사람에게는 "4인 가족 중 한 명, 그중 2명은 어린이, 성인 취향은 30대형" 같은 메모(태그)가 이미 붙어 있고, "몇 인 가족이 몇 팀 있는지" 요약표도 같이 준다. 하지만 실제로 "이 4명은 한 팀, 이분이 조장"이라고 배차하는 건 현지 가이드(crowdAI) 몫이다 — 구체적 예시는 [부록 C](#부록-c-fff_visitordistributionbuilder-상세) 맨 위에 있다.
 
-`NPC/Party/FF_VisitorDistributionBuilder.h`. 순수 함수(같은 입력이면 매번 같은 출력) — 같은 `(Seed, 요청 인원, ScopeId, ScenarioId, 입력 테이블)`은 항상 같은 결과를 낸다.
+`NPC/Party/FF_VisitorDistributionBuilder.h`. 순수 함수(같은 입력이면 매번 같은 출력) — 같은 `(Seed, 요청 인원, ScopeId, ArchetypeScenarioId, 입력 테이블)`은 항상 같은 결과를 낸다.
 
 ```cpp
 FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
@@ -89,7 +89,7 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 ```
 
 - `GroupSizeTable`/`ChildCompositionTable`/`ArchetypeTable`: §2의 DataTable 애셋(`DT_VisitorGroupSizeDistribution` 등)과 아키타입 애셋(`DT_NpcArchetypes`)을 그대로 꽂으면 된다.
-- 두 번째 `TEXT("resident_neutral_v0")`는 **인구 구성 시나리오**다 — "방문객이 사하구 주민 구성과 비슷하다"는 가정. **저희(Utility AI) 쪽 결정 사항이라 신경 쓰지 말고 기본값 그대로 두면 된다.** (§4 유입 곡선의 "곡선 시나리오"와는 이름만 같은 완전히 다른 개념 — 헷갈리지 않게 주의)
+- 네 번째 인자(`resident_neutral_v0`)는 **인구 구성 시나리오**(파라미터 이름 `ArchetypeScenarioId`)다 — "방문객이 사하구 주민 구성과 비슷하다"는 가정. **저희(Utility AI) 쪽 결정 사항이라 신경 쓰지 말고 기본값 그대로 두면 된다.** (**8/6 정정**: 원래 이 파라미터도 `ScenarioId`였는데 §4 유입 곡선의 `FFF_ArrivalCurveRow::ScenarioId`와 이름이 겹쳐서 헷갈릴 수 있어 `ArchetypeScenarioId`로 바꿨다 — 순수 함수 파라미터라 애셋 재임포트 없이 이름만 바뀜)
 
 **GroupID도 그룹 소속 번호도 넣지 않는다** — 누구를 누구와 묶을지는 crowdAI 몫이다. 대신 개체마다 묶는 키 **`(TargetGroupSize, TargetGroupChildCount, ArchetypeId)`**를 붙여둔다. 같은 키의 성인 `TargetGroupSize-TargetGroupChildCount`명 + 같은 `(크기,아동수)`의 아동 `TargetGroupChildCount`명을 모으면 그룹 하나가 된다. `ArchetypeId`를 키에 넣은 덕분에 "같은 그룹 성인은 같은 아키타입"이 저절로 지켜진다.
 
@@ -109,7 +109,7 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 2. **계산은 `ProgressStart`(0~1 진행도) 기준** — `ProgressStart=0.4167`은 "Live 240분 중 41.67% 지점(=100분째)"이라는 뜻. `MinutesStartAtDefault`를 보면 "100분"이라 적혀 있겠지만 이건 Live가 지금 240분이라서 그런 것뿐 — **나중에 Live 길이가 바뀌면 이 숫자는 틀린 값이 된다.** 실제 코드는 `현재 경과분 / live_stage_duration_minutes`를 계산해서 `ProgressStart`와 비교해야 한다.
 3. **버킷별 오차는 정상, 맞춰야 하는 건 `CumulativeSharePct`(누적)** — 이 버킷에 정확히 49명을 맞추려고 애쓸 필요 없다. 그룹이 1~6명 단위로 들어와서 딱 맞추는 게 원리적으로 불가능하다. 대신 "지금까지 총 몇 명 들어왔는지"를 `48.3% × 950 ≈ 459명`과 비교해서 크게 어긋나면 다음 그룹을 더 빨리/천천히 꺼내는 식으로 보정하면 된다.
 
-**곡선 시나리오** 3종(`flat_v0`/`single_peak_v0`/`sunset_peak_v0`) 중 하나를 골라 쓴다 — 위 §3의 "인구 시나리오"와 이름(`ScenarioId`)만 같을 뿐 완전히 다른 값이다. **모양 수치는 전부 가정값**이라 특정 모양을 전제하지 않는 구현을 부탁드린다. 최종 어떤 걸 쓸지는 아직 팀 결정 전이라, 구현·테스트 중엔 `flat_v0`(균등, 가장 단순) 권장.
+**곡선 시나리오** 3종(`flat_v0`/`single_peak_v0`/`sunset_peak_v0`) 중 하나를 골라 쓴다 — 이 필드(`FFF_ArrivalCurveRow::ScenarioId`)는 §3의 `ArchetypeScenarioId`(인구 구성)와는 이름도 뜻도 다른 별개 값이다. **모양 수치는 전부 가정값**이라 특정 모양을 전제하지 않는 구현을 부탁드린다. 최종 어떤 걸 쓸지는 아직 팀 결정 전이라, 구현·테스트 중엔 `flat_v0`(균등, 가장 단순) 권장.
 
 왜 이런 형태인지(절대 인원이 아닌 이유 등)는 `visitor_arrival_curve_spec.md`, 필드 전체 목록은 [부록 D](#부록-d-유입-곡선-필드-상세) 참조.
 
@@ -127,7 +127,6 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 | `TargetDestinationId`를 월드 좌표로 바꾸는 조회는 누가 하는가 | 한광훈 님 시설 데이터와도 걸림 |
 | `CohesionRadiusMeters` 값 | 이동 스택(Detour Crowd/Mass Entity) 확정 후 |
 | 유입 곡선 누적 오차 허용 폭 | 실제로 돌려보고 정하는 게 맞다고 봄 — 정해지면 알려달라 |
-| `ScenarioId` 이름 충돌 | §3·§4 참조 — 이름은 같은데 뜻이 다른 필드 2개. 코드 주석으로 구분할지, 필드명을 바꿀지 |
 
 ---
 
@@ -302,4 +301,3 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 > 8. 개체 목록 생성 함수도 다 됐어요 — `FFF_VisitorDistributionBuilder::Build`. 태그만 보고 묶으실 수 있어요 (문서 §3, 부록 C).
 > 9. 유입 곡선 형태도 확정했어요 — `FFF_ArrivalCurveRow`. 비율(%)이지 인원이 아니에요 (문서 §4, 부록 D).
 > 10. **8/4에 드린 그룹핑 규칙 중 일부가 폐기됐어요** — 이미 구현하셨다면 §2 "폐기된 것" 참고해서 걷어내주세요.
-> 11. `ScenarioId`라는 이름이 두 군데(그룹 태그 분포 / 유입 곡선)에서 서로 다른 뜻으로 쓰여요 — §3·§4, §6 열린 질문 참고해주세요.

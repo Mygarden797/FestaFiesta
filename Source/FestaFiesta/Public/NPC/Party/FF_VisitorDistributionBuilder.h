@@ -122,7 +122,7 @@ struct FFF_VisitorDistribution
  * 사후 보정을 하지 않는다. 그래서 결과 아동 비율은 입력 분포에서 나오는 파생값이며,
  * dependent_child_population_target_v0.csv 는 검산용으로만 쓴다.
  *
- * 순수 함수다: 같은 (Seed, 요청 인원, ScopeId, ScenarioId, 입력 테이블) 조합은 항상 같은 결과를 낸다.
+ * 순수 함수다: 같은 (Seed, 요청 인원, ScopeId, ArchetypeScenarioId, 입력 테이블) 조합은 항상 같은 결과를 낸다.
  * 현재 시각·포인터·스폰 순서를 입력으로 쓰지 않는다.
  */
 class FFF_VisitorDistributionBuilder
@@ -133,7 +133,9 @@ public:
 	 * @param ChildCompositionTable FFF_GroupChildCompositionRow 테이블
 	 * @param ArchetypeTable      FFF_ArchetypeRow 테이블
 	 * @param ScopeId             그룹 분포 scope. 기본 tourism_daytrip (섞어 쓰면 안 된다)
-	 * @param ScenarioId          아키타입 인구비중 시나리오. resident_neutral_v0 또는 datalab_observed_v0
+	 * @param ArchetypeScenarioId 아키타입 인구비중 시나리오. resident_neutral_v0 또는 datalab_observed_v0
+	 *                            (FFF_ArrivalCurveRow::ScenarioId 와 이름이 겹치는 걸 피하려 8/6에 이 이름으로 정함 —
+	 *                            그쪽은 유입 곡선 모양이고 이건 인구 구성 가정으로, 서로 무관하다)
 	 * @param RequestedVisitorCount 만들고 싶은 개체 수. 그룹을 통째로만 만들어서 이보다 조금 적을 수 있다
 	 * @param GlobalSimulationSeed 재현용 시뮬레이션 Seed
 	 */
@@ -142,7 +144,7 @@ public:
 		const UDataTable* ChildCompositionTable,
 		const UDataTable* ArchetypeTable,
 		FName ScopeId,
-		FName ScenarioId,
+		FName ArchetypeScenarioId,
 		int32 RequestedVisitorCount,
 		int32 GlobalSimulationSeed);
 

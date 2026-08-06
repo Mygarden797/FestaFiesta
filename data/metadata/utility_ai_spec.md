@@ -209,3 +209,11 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 | 관광지별 방문 규모 | affinity 축소추정 불가 | 동일가중 유지 |
 | 방문 전환율 | 주민→방문객 변환 | 시나리오 2종으로 대체 |
 | 축제장 레이아웃 | 거리 행렬 전체 | 설계 대기 |
+
+## 9. 코드 구현 백로그 (미착수)
+
+crowdAI 핸드오프와 무관한, Utility AI 자체 구현 잔여 작업.
+
+- **Need를 Utility 점수식에 실제로 연결** — `FFF_NeedState` 구조체는 있고(`GetNeedReliefFlags`로 Booth·Rest 카테고리와의 매핑까지 정해짐, `booth_naming_convention.md` 참고) `preference_match` 항과 별개로 Utility 식 어디에 어떤 가중치로 들어갈지는 아직 안 정했다. §2의 Utility 식 자체를 갱신해야 함.
+- **`walk_speed_multiplier`/`stay_duration_multiplier`를 GroupId로 시드하는 실제 호출 코드** — `FFF_IndividualVariationResolver::Resolve`는 지금 `StableAgentId`만 받는다. 그룹 호출부가 리더의 `GroupId`를 "이 두 특성만" 대신 넣어서 부르는 wrapper가 필요하다(`population_group_generation_spec.md` 1.6절, 3절 항목 7). API 시그니처는 안 바뀌고 호출부에서 두 번 불러 합치는 방식이라 crowdAI 작업과 독립적으로 지금 착수 가능.
+- **`companion_type_modifier_v0.csv`의 preference delta가 `가구원수` 기반인 문제** — 그룹 크기 *비율*은 실측으로 교체했지만 이 *delta 값* 자체는 아직 그대로다(§6 경고 박스). 대체 후보는 2025 국민여행조사 통계편 표 14-2-x(동반자 유형) 또는 원자료 `A6B_1..12`.
