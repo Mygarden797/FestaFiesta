@@ -10,7 +10,6 @@
 
 class UFF_FestivalStageSubsystem;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFloatMetricChanged, float, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
 
@@ -34,11 +33,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_Festiva
  * | Revenue                | 김시리           | 더미        |
  * | Safety                 | 이정원           | 더미        |
  *
- * === 가정 (2026-08-06, 소유자 확인 전) ===
- * - SimSatisfaction / ScoreSatisfaction : float 0~100, 높을수록 좋음
- * - Revenue  : int32, 오늘 누적 매출
- * - Safety   : float 0~100, 높을수록 안전
- * 근거와 미확인 항목은 리포 루트 UI_API.md 참고.
+ * === 값 규격 (2026-08-06) ===
+ * - Satisfaction / Safety : int32 0~100, 높을수록 좋음.
+ * - Revenue : int32 금액. 0~100 상한을 적용하지 않는다.
+ *
+ * Buzz는 여기 없다. 기획서에서 Utility AI의 점수 항이며 dev-schedule 기준 9월 투입 대상이다.
+ * Overview 표시 항목은 Satisfaction·Revenue·Safety 셋이다.
+ * 미확인 항목(갱신 주기, 좋고 나쁨 구간)은 리포 루트 UI_API.md 참고.
  *
  * === 시간을 자체 계산하지 않는다 ===
  * 시계 배율이 출처마다 달라 아직 미확정이다(30초 / 60초 / 코드 180초×4).
@@ -58,29 +59,33 @@ public:
 	// 규칙: 값마다 "현재값 Getter + 변경 델리게이트"를 쌍으로 제공한다.
 	// 델리게이트만 있으면 위젯이 늦게 생성될 때 초기값을 놓친다.
 
+	/** 0~100. 대기·밀도·취향 매칭에서 나오는 순수 시뮬레이션 값. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
-	float GetSimSatisfaction() const { return SimSatisfaction; }
+	int32 GetSimSatisfaction() const { return SimSatisfaction; }
 
+	/** 0~100. SimSatisfaction + FinaleBonus + 연출 보정. 등급 산출용 게임 점수. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
-	float GetScoreSatisfaction() const { return ScoreSatisfaction; }
+	int32 GetScoreSatisfaction() const { return ScoreSatisfaction; }
 
+	/** 0~100. 높을수록 안전. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSafety() const { return Safety; }
+
+	/** 금액. 0~100 상한을 적용하지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetRevenue() const { return Revenue; }
 
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
-	float GetSafety() const { return Safety; }
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
-	FFF_OnFloatMetricChanged OnSimSatisfactionChanged;
+	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
-	FFF_OnFloatMetricChanged OnScoreSatisfactionChanged;
+	FFF_OnIntMetricChanged OnSafetyChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnRevenueChanged;
-
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
-	FFF_OnFloatMetricChanged OnSafetyChanged;
 
 	// --- Stage (강민서 시스템 중계) ---
 
@@ -119,9 +124,12 @@ public:
 
 	// --- 스텁 전용. 실제 소유자 구현이 붙으면 삭제한다 ---
 
-	/** 지표를 강제로 설정한다. 값이 실제로 바뀔 때만 델리게이트를 쏜다. */
+	/**
+	 * 지표를 강제로 설정한다. 값이 실제로 바뀔 때만 델리게이트를 쏜다.
+	 * 0~100 지표는 자동으로 클램프된다.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Debug")
-	void Debug_SetMetrics(float InSimSatisfaction, float InScoreSatisfaction, int32 InRevenue, float InSafety);
+	void Debug_SetMetrics(int32 InSimSatisfaction, int32 InScoreSatisfaction, int32 InSafety, int32 InRevenue);
 
 	// FTickableGameObject
 	virtual void Tick(float DeltaTime) override;
@@ -145,16 +153,16 @@ private:
 	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
 
 	UPROPERTY()
-	float SimSatisfaction = 62.f;
+	int32 SimSatisfaction = 72;
 
 	UPROPERTY()
-	float ScoreSatisfaction = 62.f;
+	int32 ScoreSatisfaction = 72;
+
+	UPROPERTY()
+	int32 Safety = 88;
 
 	UPROPERTY()
 	int32 Revenue = 0;
-
-	UPROPERTY()
-	float Safety = 88.f;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> CachedStageSubsystem;
@@ -170,4 +178,8 @@ private:
 	/** Stage 시스템을 못 찾았을 때 재시도한 횟수. 상한을 두고 로그를 남긴다. */
 	int32 StageBindRetryCount = 0;
 	static constexpr int32 MaxStageBindRetry = 100;
+
+public:
+	/** 0~100 지표의 상한. 위젯이 게이지 비율을 계산할 때 이 값을 쓴다. 하드코딩하지 않게 하기 위함. */
+	static constexpr int32 MetricMax = 100;
 };

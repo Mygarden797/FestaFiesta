@@ -123,31 +123,39 @@ FText UFF_FestivalViewModelSubsystem::GetCurrentStageDisplayText() const
 	return FText::GetEmpty();
 }
 
-void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(float InSimSatisfaction, float InScoreSatisfaction, int32 InRevenue, float InSafety)
+void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(int32 InSimSatisfaction, int32 InScoreSatisfaction, int32 InSafety, int32 InRevenue)
 {
+	// 0~100 지표는 범위를 벗어난 값이 들어와도 화면이 깨지지 않게 잘라낸다.
+	// 실제 소유자 시스템이 붙어도 이 방어는 남겨둔다. 계산 실수가 UI까지 오면 원인 추적이 어렵다.
+	const auto Clamp01_100 = [](int32 Value) { return FMath::Clamp(Value, 0, MetricMax); };
+
 	// 값이 실제로 바뀔 때만 통지한다. 같은 값을 계속 쏘면 위젯이 헛돈다.
-	if (!FMath::IsNearlyEqual(SimSatisfaction, InSimSatisfaction))
+	const int32 NewSim = Clamp01_100(InSimSatisfaction);
+	if (SimSatisfaction != NewSim)
 	{
-		SimSatisfaction = InSimSatisfaction;
+		SimSatisfaction = NewSim;
 		OnSimSatisfactionChanged.Broadcast(SimSatisfaction);
 	}
 
-	if (!FMath::IsNearlyEqual(ScoreSatisfaction, InScoreSatisfaction))
+	const int32 NewScore = Clamp01_100(InScoreSatisfaction);
+	if (ScoreSatisfaction != NewScore)
 	{
-		ScoreSatisfaction = InScoreSatisfaction;
+		ScoreSatisfaction = NewScore;
 		OnScoreSatisfactionChanged.Broadcast(ScoreSatisfaction);
 	}
 
+	const int32 NewSafety = Clamp01_100(InSafety);
+	if (Safety != NewSafety)
+	{
+		Safety = NewSafety;
+		OnSafetyChanged.Broadcast(Safety);
+	}
+
+	// 수익은 금액이라 상한을 두지 않는다.
 	if (Revenue != InRevenue)
 	{
 		Revenue = InRevenue;
 		OnRevenueChanged.Broadcast(Revenue);
-	}
-
-	if (!FMath::IsNearlyEqual(Safety, InSafety))
-	{
-		Safety = InSafety;
-		OnSafetyChanged.Broadcast(Safety);
 	}
 }
 

@@ -102,19 +102,27 @@ void UFF_MetricsHudWidget::RefreshAll()
 	HandleRemainingSecondsChanged(FMath::CeilToInt(ViewModel->GetRemainingSeconds()));
 }
 
-void UFF_MetricsHudWidget::HandleSimSatisfactionChanged(float NewValue)
+void UFF_MetricsHudWidget::HandleSimSatisfactionChanged(int32 NewValue)
 {
 	if (Text_SimSatisfaction)
 	{
-		Text_SimSatisfaction->SetText(FText::AsNumber(FMath::RoundToInt(NewValue)));
+		Text_SimSatisfaction->SetText(FText::AsNumber(NewValue));
 	}
 }
 
-void UFF_MetricsHudWidget::HandleScoreSatisfactionChanged(float NewValue)
+void UFF_MetricsHudWidget::HandleScoreSatisfactionChanged(int32 NewValue)
 {
 	if (Text_ScoreSatisfaction)
 	{
-		Text_ScoreSatisfaction->SetText(FText::AsNumber(FMath::RoundToInt(NewValue)));
+		Text_ScoreSatisfaction->SetText(FText::AsNumber(NewValue));
+	}
+}
+
+void UFF_MetricsHudWidget::HandleSafetyChanged(int32 NewValue)
+{
+	if (Text_Safety)
+	{
+		Text_Safety->SetText(FText::AsNumber(NewValue));
 	}
 }
 
@@ -123,14 +131,6 @@ void UFF_MetricsHudWidget::HandleRevenueChanged(int32 NewValue)
 	if (Text_Revenue)
 	{
 		Text_Revenue->SetText(FText::AsNumber(NewValue));
-	}
-}
-
-void UFF_MetricsHudWidget::HandleSafetyChanged(float NewValue)
-{
-	if (Text_Safety)
-	{
-		Text_Safety->SetText(FText::AsNumber(FMath::RoundToInt(NewValue)));
 	}
 }
 

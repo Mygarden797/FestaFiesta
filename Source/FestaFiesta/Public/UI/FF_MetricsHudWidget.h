@@ -41,16 +41,16 @@ protected:
 	// --- 델리게이트 핸들러 ---
 
 	UFUNCTION()
-	void HandleSimSatisfactionChanged(float NewValue);
+	void HandleSimSatisfactionChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleScoreSatisfactionChanged(float NewValue);
+	void HandleScoreSatisfactionChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleSafetyChanged(int32 NewValue);
 
 	UFUNCTION()
 	void HandleRevenueChanged(int32 NewValue);
-
-	UFUNCTION()
-	void HandleSafetyChanged(float NewValue);
 
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
