@@ -19,12 +19,7 @@ public class FestaFiesta : ModuleRules
 			"Niagara","NiagaraCore",
 			"FF_ZoneSystem"
 		});
-
-		PrivateDependencyModuleNames.AddRange(new string[]
-		{
-			"FF_ZoneSystem"
-		});
-
+		
 		// The WBP builder is compiled only into the Editor target. Runtime/Game
 		// packaging remains free of UnrealEd and UMGEditor dependencies.
 		if (Target.bBuildEditor)
