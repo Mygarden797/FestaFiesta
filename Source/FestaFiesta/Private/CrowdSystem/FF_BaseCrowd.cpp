@@ -3,45 +3,63 @@
 
 #include "CrowdSystem/FF_BaseCrowd.h"
 
-#include "CrowdSystem/Components/FF_CrowdMovementComponent.h"
-#include "CrowdSystem/Components/FF_CrowdVisualComponent.h"
+#include "CrowdSystem/Components/FF_CrowdAnimInstance.h"
 
 
-// Sets default values
+
+
 AFF_BaseCrowd::AFF_BaseCrowd()
 {
 	
 	PrimaryActorTick.bCanEverTick = false;
-	SceneComponent = CreateDefaultSubobject<USceneComponent>("SceneComponent");
-	SetRootComponent(SceneComponent);
-	
 	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>("SkeletalMeshComponent");
-	SkeletalMeshComponent->SetupAttachment(SceneComponent);
-	
-	CrowdMovementComponent = CreateDefaultSubobject<UFF_CrowdMovementComponent>("CrowdMovementComponent");
-	CrowdVisualComponent = CreateDefaultSubobject<UFF_CrowdVisualComponent>("CrowdVisualComponent");
-	
-	
-
-	
+	SetRootComponent(SkeletalMeshComponent);
+	CrowdAnimInstance = Cast<UFF_CrowdAnimInstance>(SkeletalMeshComponent->GetAnimInstance());
+	if (!IsValid(CrowdAnimInstance))
+	{
+		UE_LOG(LogTemp,Warning,TEXT("[AFF_BaseCrowd] SkeletalMeshComponent's AnimInstance is not CrowdAnimInstance"));
+		return;
+	}
 }
 
-// Called when the game starts or when spawned
+
 void AFF_BaseCrowd::BeginPlay()
 {
 	Super::BeginPlay();
 	
 }
 
-// Called every frame
-void AFF_BaseCrowd::Tick(float DeltaTime)
-{
-	Super::Tick(DeltaTime);
-}
 
-// Called to bind functionality to input
+
+
 void AFF_BaseCrowd::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 }
+
+void AFF_BaseCrowd::BindToAgent(int32 NewAgentIndex, FVector SpawnLocation, FRotator SpawnRotation)
+{
+	AgentIndex = NewAgentIndex;
+	SetActorLocationAndRotation(SpawnLocation,SpawnRotation);
+}
+
+void AFF_BaseCrowd::ReleaseFromAgent()
+{
+	AgentIndex = INDEX_NONE;
+}
+
+void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, float NewSpeed)
+{
+	SetActorLocationAndRotation(NewPosition,NewRotator,false);
+	
+	if (!CrowdAnimInstance)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CrowdAnimInstance is inValid"));
+		return;
+		
+	}
+	
+	CrowdAnimInstance->SetSpeed(NewSpeed);
+}
+
 
