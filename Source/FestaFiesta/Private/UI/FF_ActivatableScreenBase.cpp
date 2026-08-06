@@ -2,7 +2,31 @@
 
 #include "UI/FF_ActivatableScreenBase.h"
 
+#include "Components/Widget.h"
 #include "UI/FF_UILog.h"
+
+void UFF_ActivatableScreenBase::NativeOnActivated()
+{
+	Super::NativeOnActivated();
+
+	if (!bForceFocusOnActivate)
+	{
+		return;
+	}
+
+	UWidget* FocusTarget = NativeGetDesiredFocusTarget();
+	if (!FocusTarget)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 활성화됐지만 포커스 대상이 없다. 게임패드로 아무것도 선택할 수 없다."), *GetName());
+		return;
+	}
+
+	FocusTarget->SetFocus();
+
+	UE_LOG(LogFestaFiestaUI, Verbose,
+		TEXT("[%s] 활성화. 포커스를 %s 에 지정했다."), *GetName(), *FocusTarget->GetName());
+}
 
 TOptional<FUIInputConfig> UFF_ActivatableScreenBase::GetDesiredInputConfig() const
 {
