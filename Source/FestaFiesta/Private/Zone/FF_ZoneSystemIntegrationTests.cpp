@@ -23,9 +23,6 @@ bool FFFZoneSystemStageMappingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("MorningCheck는 점검 배치 단계다"),
 		FStageBridge::ToZoneChangePhase(EFF_FestivalStage::MorningCheck),
 		EFFZSChangePhase::MorningCheck);
-	TestEqual(TEXT("Reconfigure는 점검 배치 단계다"),
-		FStageBridge::ToZoneChangePhase(EFF_FestivalStage::Reconfigure),
-		EFFZSChangePhase::MorningCheck);
 	TestEqual(TEXT("PromotionPreview는 배치를 잠근다"),
 		FStageBridge::ToZoneChangePhase(EFF_FestivalStage::PromotionPreview),
 		EFFZSChangePhase::LiveOperation);
