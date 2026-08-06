@@ -1,7 +1,7 @@
-/**
- * @file FF_FFZSPhase0BridgeTests.cpp
- * @brief 노션 Phase 0의 항상 성공·고정 슬롯 3개 계약을 회귀 검증한다.
- */
+// FF_FFZSPhase0BridgeTests.cpp
+
+// 노션 Phase 0의 항상 성공·고정 슬롯 3개 계약을 회귀 검증한다.
+ 
 
 #if WITH_DEV_AUTOMATION_TESTS
 

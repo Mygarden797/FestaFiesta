@@ -1044,10 +1044,19 @@ UI와 분석 계층은 가능하면 가변 Actor 전체 대신 `BuildReadModel`�
 Zone Read Model:
 
 - ZoneId
+- NeighborZoneIds
+- EntryExitAnchors
+- AreaSquareMeters
 - SoftCapacity
 - ReportedPopulation
 - DensityRatio
 - DensityState
+
+`NeighborZoneIds`와 `EntryExitAnchors`는 Actor 배열의 값 복사본이며 원소 순서를 바꾸지 않는다.
+앵커 Transform은 Zone 로컬 cm 좌표계다. `AreaSquareMeters`는 현재 BoundarySpline의 로컬 XY(cm)
+점에 신발끈 공식을 적용한 `GetBoundaryAreaSquareMeters()` 결과다. 즉,
+`abs(sum(x_i * y_(i+1) - x_(i+1) * y_i)) * 0.5 / 10000`으로 계산한 실제 경계 면적(m²)이며,
+SoftCapacity 산정에만 쓰이는 `UsablePublicAreaSquareMeters` Override는 반영하지 않는다.
 
 Facility Read Model:
 
@@ -1411,7 +1420,7 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 
 ## 20. 자동화 테스트와 QA Gate
 
-현재 소스에는 `FF_ZoneSystem.*` 이름으로 **22개**의 Unreal Automation Test가 선언되어 있다.
+현재 소스에는 `FF_ZoneSystem.*` 이름으로 **23개**의 Unreal Automation Test가 선언되어 있다.
 이 숫자는 소스 선언 기준이며, 이 문서를 작성하면서 Editor에서 전부 실행해 통과를 확인했다는
 뜻은 아니다.
 
@@ -1426,16 +1435,17 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 - `FF_ZoneSystem.Integration.World.InvalidFacilitySpecStopsBeforeNavigation`
 - `FF_ZoneSystem.Integration.World.PortableZoneGraphAndPrimaryAssetType`
 - `FF_ZoneSystem.Integration.World.SnapshotPhaseReentrancyAndDrainIntent`
+- `FF_ZoneSystem.Integration.World.ZoneReadModelSpatialMetadata`
 
 주요 대상은 외부 정책의 원자성, Command 수명주기, Phase별 월드 변경 권한, Queue와 Snapshot,
 Zone 독점성, Protected Area, 잘못된 Definition의 조기 차단, Zone Graph,
-Phase·재진입·Drain 복원이다.
+Phase·재진입·Drain 복원, Zone Read Model의 공간 메타데이터 값 복사다.
 
 ### 20.2 Unit 테스트와 소속
 
 아래 15개 중 14개는 Runtime 모듈 `Source/FF_ZoneSystem/Private/Tests`에 있다.
 `WorldSnapshotByteRoundTrip`은 Editor 전용 `FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp`에
-있으며, 20.1의 Integration 7개와 함께 Editor 테스트 모듈에서 실행된다.
+있으며, 20.1의 Integration 8개와 함께 Editor 테스트 모듈에서 실행된다.
 
 - `FF_ZoneSystem.Unit.SaveGame.WorldSnapshotByteRoundTrip`
 - `FF_ZoneSystem.Unit.Contract.Phase0WorldChangeStub`
@@ -1485,7 +1495,7 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
 #### Build·자동화·패키징
 
 - [ ] Editor Development, Game Development, Game Shipping 구성이 모두 빌드된다.
-- [ ] `FF_ZoneSystem` 테스트 22개가 발견되고 22 성공·0 실패, Queue Empty, 프로세스 Exit 0이다.
+- [ ] `FF_ZoneSystem` 테스트 23개가 발견되고 23 성공·0 실패, Queue Empty, 프로세스 Exit 0이다.
 - [ ] 독립 Plugin 패키징과 프로젝트 Cook에서 Soft Mesh·Definition·Asset Manager Scan을 검증한다.
 - [ ] Clean PC의 Shipping 패키지에서 Plugin Mount, Map Load, Save/Restore Smoke를 통과한다.
 

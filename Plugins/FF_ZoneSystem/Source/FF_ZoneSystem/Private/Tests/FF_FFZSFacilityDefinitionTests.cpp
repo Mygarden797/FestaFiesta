@@ -1,11 +1,10 @@
-/**
- * @file FF_FFZSFacilityDefinitionTests.cpp
- * @brief 1 cm 내장 시설 사양, 압축 Queue Region, 예산과 Editor Data Validation 계약을 검증한다.
- *
- * 흐름: 내장 Spec은 압축 Rect 수와 면적만 읽고, 오류 경계는 작은 합성 입력이나 단일 필드 변형으로 검증한다.
- * 불변식: SchemaVersion 2, 1 Cell=1 cm, Clearance 100=1 m이며 새 콘텐츠는 QueueReservedRects를 사용한다.
- * 실패/성능: 600x300 같은 대형 내장 footprint를 Get*Cells로 펼치지 않고 Region API와 64비트 면적만 사용한다.
- */
+// FF_FFZSFacilityDefinitionTests.cpp
+
+// 1 cm 내장 시설 사양, 압축 Queue Region, 예산과 Editor Data Validation 계약을 검증.
+//흐름: 내장 Spec은 압축 Rect 수와 면적만 읽고, 오류 경계는 작은 합성 입력이나 단일 필드 변형으로 검증.
+// 불변식: SchemaVersion 2, 1 Cell=1 cm, Clearance 100=1 m이며 새 콘텐츠는 QueueReservedRects를 사용.
+// 실패/성능: 600x300 같은 대형 내장 footprint를 Get*Cells로 펼치지 않고 Region API와 64비트 면적만 사용.
+
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -18,13 +17,11 @@
 #include "Misc/DataValidation.h"
 #endif
 
-/*
- * 테스트 매트릭스
- * - BuiltInPresets: 7개 프리셋의 Schema 2, 1 cm 크기, Clearance 100, 압축 Queue Region 회귀
- * - Validation: 작은 합성 예산, Rect 유효성·정규화, Queue tail 포함, 오버플로 fail-closed
- * - EditorDataValidation: 같은 1 cm/Region 도메인 오류가 Data Asset 저작 UI까지 전달되는지 확인
- * 표 기반 Arrange로 프리셋 추가 누락을 드러내고 각 변형은 한 원인만 바꿔 오류 책임을 분리한다.
- */
+//테스트 매트릭스
+// BuiltInPresets: 7개 프리셋의 Schema 2, 1 cm 크기, Clearance 100, 압축 Queue Region 회귀
+// Validation: 작은 합성 예산, Rect 유효성·정규화, Queue tail 포함, 오버플로 fail-closed
+// EditorDataValidation: 같은 1 cm/Region 도메인 오류가 Data Asset 저작 UI까지 전달되는지 확인
+// 표 기반 Arrange로 프리셋 추가 누락을 드러내고 각 변형은 한 원인만 바꿔 오류 책임을 분리.
 namespace
 {
     struct FFFZSPresetExpectation
@@ -51,10 +48,9 @@ namespace
         return false;
     }
 
-    /**
-     * CanEnumerateFacilityCells의 보수적 예산만 검증하는 작은 합성 사양이다.
-     * expanded footprint는 9x9=81, queue는 1이므로 필요한 작업 예산은 정확히 82다.
-     */
+    // CanEnumerateFacilityCells의 보수적 예산만 검증하는 작은 합성 사양.
+    // expanded footprint는 9x9=81, queue는 1이므로 필요한 작업 예산은 정확히 82다.
+    
     FFFZSFacilitySpec MakeSmallBudgetSpec()
     {
         FFFZSFacilitySpec Spec;

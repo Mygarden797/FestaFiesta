@@ -1,0 +1,12 @@
+﻿Name,RuleId,Value,ValueType,Status,SourceBasis,Description
+"group_size_cap","group_size_cap","6","int","derived","user_decision_2026_08_06 + national_travel_survey_2025","그룹 크기 상한. 이 값을 넘는 일행은 이 값으로 합쳐서 취급한다. 실측상 초과분이 당일여행 기준 4.295%뿐이라 왜곡이 작다. 최대 관측은 80명(학교 단체)."
+"group_size_distribution_table","group_size_distribution_table","visitor_group_size_distribution_v0","table_ref","derived","national_travel_survey_2025_A6","그룹 크기를 뽑는 분포표. scope_id=tourism_daytrip 이 기본이며 tourism_all/tourism_overnight 은 민감도 비교용."
+"child_composition_table","child_composition_table","group_child_composition_v0","table_ref","derived","national_travel_survey_2025_A6A","그룹 크기별 아동 수 분포 P(아동 수 | 그룹 크기). 그룹을 만든 뒤 이 표에서 아동 수를 뽑아 그만큼 bIsDependentChildSlot 을 세운다."
+"child_age_definition","child_age_definition","under_15","enum","derived","national_travel_survey_2025_A6A","아동 슬롯의 연령 정의. 원자료 문항이 "만 15세 미만"이라 그 경계를 그대로 쓴다. 기존 문서들이 쓰던 0~14세와 같은 구간이다."
+"leader_count_per_group","leader_count_per_group","1","int","confirmed","design_decision_2026_08_04","그룹당 리더 수. 그룹 크기·유형과 무관하게 항상 1명."
+"leader_must_be_adult","leader_must_be_adult","true","bool","confirmed","design_decision_2026_08_04","리더는 아동 슬롯이 아닌 성인이어야 한다. 아동은 자체 목적지 계산을 하지 않으므로 리더가 될 수 없다."
+"destination_decision_scope","destination_decision_scope","leader_only","enum","confirmed","design_decision_2026_08_04","리더만 Utility 목적지 계산을 하고 나머지 그룹원(성인 포함) 전원이 리더의 목적지를 상속한다. "임시 분리 후 재합류"는 v1 이후."
+"non_leader_adult_archetype_rule","non_leader_adult_archetype_rule","same_as_leader","enum","assumption","none","리더가 아닌 성인 그룹원의 아키타입 결정 규칙. 실측 근거가 없다 — 실제로는 부부(같은 생애주기)와 부모+성인자녀(다른 생애주기)가 섞여 있다. companion_type_response_v0.csv 의 유형별 응답률로 나중에 정교화할 수 있다."
+"spawn_group_together","spawn_group_together","true","bool","confirmed","design_decision_2026_08_04","그룹원 전원을 시차 없이 한 번에 스폰한다. 입장 타이밍의 유일한 제약(visitor_arrival_curve_spec.md §4)과 같은 규칙."
+"group_shared_traits","group_shared_traits","walk_speed_multiplier;stay_duration_multiplier","list","confirmed","design_decision_2026_08_04","GroupID 로 시드해서 그룹 전체가 공유하는 개체 변주 특성. 나머지 4개(patience/crowd_tolerance/preference_strength/reevaluate_interval)는 개체별 독립."
+"child_trait_overrides","child_trait_overrides","movement_speed;attention_span;wait_tolerance","list","assumption","none","아동 슬롯에만 추가로 적용되는 노브 3종(이동속도 낮음·주의집중 짧음·대기인내 낮음). 값은 아직 미정 — dependent_child_npc_spec.md 2절 참조."

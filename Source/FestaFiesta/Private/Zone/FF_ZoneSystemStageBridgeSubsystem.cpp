@@ -96,7 +96,6 @@ EFFZSChangePhase UFF_ZoneSystemStageBridgeSubsystem::ToZoneChangePhase(
 	case EFF_FestivalStage::Setup:
 		return EFFZSChangePhase::InitialSetup;
 	case EFF_FestivalStage::MorningCheck:
-	case EFF_FestivalStage::Reconfigure:
 		return EFFZSChangePhase::MorningCheck;
 	case EFF_FestivalStage::PromotionPreview:
 	case EFF_FestivalStage::Live:

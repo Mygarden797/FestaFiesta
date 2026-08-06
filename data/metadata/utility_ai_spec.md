@@ -97,12 +97,12 @@ P(i가 j를 고를 확률) = exp(U_ij / σ) / Σ_k exp(U_ik / σ)
 | `npc_id` | 개체 식별자 | 런타임 생성 |
 | `archetype_id` | 생애주기 아키타입 (5종 중 하나) | `data/derived/npc_archetypes_v0.csv` |
 | `segment_key` | 성·연령 세그먼트 (인구 샘플링용) | `visitor_population_prior_v0.csv` 에서 샘플링, 아키타입 정체성 축으로는 쓰지 않음 |
-| `companion_type` | 동반유형 (solo/pair/group_3_plus) | **개체 속성이 아니라 그룹 생성 규칙의 결과값** (`population_group_generation_spec.md` 1절, 2026-08-04 재정의). 개별 NPC에게 독립 샘플링하지 않는다 |
+| `companion_type` | 동반유형 (solo/pair/group_3_plus) | **개체 속성이 아니라 그룹 생성 규칙의 결과값** (`population_group_generation_spec.md` 1절, 2026-08-04 재정의). 개별 NPC에게 독립 샘플링하지 않는다. **(8/6)** 비율 출처는 `visitor_group_size_distribution_v0.csv`(실측)이고, 크기 3~6이 전부 `group_3_plus`로 뭉치므로 그룹을 묶을 때는 `FFF_TaggedVisitor::TargetGroupSize`를 본다 |
 | `preference_vector` | 축제 카테고리별 선호 | `archetype_id` 의 `{category}_delta_vs_all_pp` + `companion_type` 의 동일 카테고리 delta를 더한 값. `lambda_affinity` 로 스케일 |
 | `GroupId` / `bIsGroupLeader` | 그룹 식별자 / 리더 여부 | `population_group_generation_spec.md` 1.5절. 리더만 Utility 계산, 나머지는 리더의 `current_destination` 상속 |
 | `bIsDependent` / `DependentOfNpcId` | 종속 아동 전용 노브 적용 대상 | `dependent_child_npc_spec.md`. **목적지 상속은 이제 위 `GroupId`/`bIsGroupLeader`가 담당** — 이 필드는 아동 전용 3개 노브(이동속도·주의집중·대기인내)를 누구 기준으로 적용할지에만 쓴다 |
 | `current_location` | 현재 위치 | 런타임 |
-| `arrival_time` | 도착 시각 | **그룹 공유 필드로 재정의됨** (`population_group_generation_spec.md` 1.6절) — 개인별 노브 아님 |
+| `arrival_time` | 도착 시각 | **그룹 공유 필드로 재정의됨** (`population_group_generation_spec.md` 1.6절) — 개인별 노브 아님. **(8/6)** 정확한 값은 Utility AI가 지정하지 않는다 — 시간대별 목표 유입 곡선(`visitor_arrival_curve_v0.csv`)만 데이터로 주고 실제 입장 시각은 crowdAI가 정한다(`visitor_arrival_curve_spec.md`) |
 | `remaining_stay` | 남은 체류시간 | 체류 분포 (미확보 — 노브). `stay_duration_multiplier`는 그룹 멤버라면 `GroupId` 시드로 그룹 전체가 공유 (`individual_variation_spec.md` 8-A절) |
 | `current_destination` | 현재 목적지 | 런타임 |
 
@@ -123,6 +123,18 @@ preference_vector[category] =
 | 아키타입 | `data/unreal/npc_archetypes_v0.csv` | `FFF_ArchetypeRow` (`Source/FestaFiesta/Public/DataTables/FF_ArchetypeRow.h`) |
 | 동반유형 오버레이 | `data/unreal/companion_type_modifier_v0.csv` | `FFF_CompanionModifierRow` (`Source/FestaFiesta/Public/DataTables/FF_CompanionModifierRow.h`) |
 | Utility 계수 | `data/unreal/utility_coefficients_v0.csv` | `FFF_UtilityCoefficientRow` (`Source/FestaFiesta/Public/DataTables/FF_UtilityCoefficientRow.h`) |
+| 그룹 크기 분포 (8/6 신설) | `data/unreal/visitor_group_size_distribution_v0.csv` | `FFF_GroupSizeDistributionRow` |
+| 그룹 아동 구성 (8/6 신설) | `data/unreal/group_child_composition_v0.csv` | `FFF_GroupChildCompositionRow` |
+| 그룹 구성 규칙 (8/6 신설) | `data/unreal/group_composition_rules_v0.csv` | `FFF_GroupCompositionRuleRow` |
+| 유입 곡선 (8/6 신설) | `data/unreal/visitor_arrival_curve_v0.csv` | `FFF_ArrivalCurveRow` |
+
+> **⚠️ `companion_type_modifier_v0.csv`의 delta 값에 대한 경고 (2026-08-06 발견, 미해결)**
+>
+> 이 표의 `{category}_delta_vs_all_pp`는 Tour_Stat 2018의 **`가구원수`**(1인/2인/3인 이상 **가구**)별 활동 응답률 차이다 — **여행 동반 인원이 아니다.** 원본 `.xls`의 가로분석변수를 다시 확인해 밝혀졌다(`build_cleaned_tourstat.mjs`의 caution에 이미 적혀 있었으나 `companion_type`이라는 이름이 이를 가렸다).
+>
+> 즉 지금 `preference_vector`에 더해지는 동반유형 delta는 "혼자 온 사람 vs 3명이 온 사람의 차이"가 아니라 "1인 가구 vs 3인 이상 가구의 차이"다. 그룹 **크기 비율**은 실측으로 교체했지만 이 **delta 값**은 아직 교체하지 않았다.
+>
+> 대체 후보: 2025 국민여행조사 통계편 표 14-2-x(동반자 유형) 또는 원자료 `A6B_1..12`. `preference_vector` 재계산이 필요해 별도 작업으로 남긴다 — `public_data_decision_log.md` 2026-08-06 항목 참조.
 
 구조체 이름은 프로젝트 태그 `FF`(FestaFiesta)와 Unreal 구조체 필수 접두 `F`를 합쳐 `FFF_`로 시작한다. CSV는 `data/derived/`의 계산 결과를 손대지 않고 헤더만 구조체 프로퍼티명에 맞춰 재배열한 것이며, `Tools/data/build_unreal_datatables.mjs`로 재생성한다.
 
@@ -192,7 +204,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 
 | 항목 | 영향 | 현재 처리 |
 |---|---|---|
-| 도착 시각 분포 | 시간대별 혼잡 패턴 전체 | 노브 |
+| 도착 시각 분포 | 시간대별 혼잡 패턴 전체 | **(8/6 해소)** 인터페이스는 확정(`visitor_arrival_curve_v0.csv`), 곡선 **모양** 수치만 여전히 노브(`draft_assumption`, 시나리오 3종) |
 | 체류시간 분포 | 동시 체류 인원 | 노브 |
 | 관광지별 방문 규모 | affinity 축소추정 불가 | 동일가중 유지 |
 | 방문 전환율 | 주민→방문객 변환 | 시나리오 2종으로 대체 |

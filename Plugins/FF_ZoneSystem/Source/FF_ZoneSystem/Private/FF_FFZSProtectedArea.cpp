@@ -1,11 +1,10 @@
-/**
- * @file FF_FFZSProtectedArea.cpp
- * @brief 보호구역의 회전된 경계와 시설 OBB 겹침 판정을 구현한다.
- *
- * 흐름: Actor Transform과 Extent를 평면 OBB로 만들고 SAT 축 투영으로 교차를 검사한다.
- * 불변식: 판정은 보호구역 의미를 저장할 뿐 실제 법률·현장 안전 인증을 뜻하지 않는다.
- * 실패/성능: 네 개 축의 상수 크기 검사라 개별 판정 비용은 일정하다.
- */
+// FF_FFZSProtectedArea.cpp
+
+///보호구역의 회전된 경계와 시설 OBB 겹침 판정을 구현한다.
+// 흐름: Actor Transform과 Extent를 평면 OBB로 만들고 SAT 축 투영으로 교차를 검사한다.
+// 불변식: 판정은 보호구역 의미를 저장할 뿐 실제 법률·현장 안전 인증을 뜻하지 않는다.
+// 실패/성능: 네 개 축의 상수 크기 검사라 개별 판정 비용은 일정하다.
+ 
 
 #include "FF_FFZSProtectedArea.h"
 #include "Engine/World.h"
@@ -15,12 +14,11 @@
 #include "FF_FFZSWorldSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFZSProtectedArea"
-/*
- * 이 Actor는 건설 금지 구역, 일반/비상/접근성 동선, 관람 구역의 공간 규칙을 데이터로 제공한다.
- * 충돌·Overlap 이벤트를 발생시키는 물리 Actor가 아니라, UFFZSWorldSubsystem이 배치 검증 때 직접
- * 질의하는 정책 경계다. ProtectedAreaId는 월드 안에서 유일해야 하며 LinkedZoneId는 존재하는 존만
- * 가리켜야 한다. 정확한 기하 판정을 위해 Actor Scale은 1, 회전은 Yaw만 허용한다.
- */
+// 이 Actor는 건설 금지 구역, 일반/비상/접근성 동선, 관람 구역의 공간 규칙을 데이터로 제공.
+// 충돌·Overlap 이벤트를 발생시키는 물리 Actor가 아니라, UFFZSWorldSubsystem이 배치 검증 때 직접
+// 질의하는 정책 경계다. ProtectedAreaId는 월드 안에서 유일해야 하며 LinkedZoneId는 존재하는 존만
+// 가리켜야 한다. 정확한 기하 판정을 위해 Actor Scale은 1, 회전은 Yaw만 허용.
+ 
 
 AFFZSProtectedArea::AFFZSProtectedArea()
 {
@@ -80,24 +78,23 @@ float AFFZSProtectedArea::GetEffectiveRequiredClearWidthCm() const
 }
 
 // 현재 프로젝트 기본값을 Actor의 명시적 값으로 복사한다. 호출 이후에는 프로젝트 기본값이 바뀌어도
-// 이 Actor의 폭이 자동으로 따라가지 않는다. 계속 상속하려면 RequiredClearWidthCm을 0으로 유지한다.
+// 이 Actor의 폭이 자동으로 따라가지 않는다. 계속 상속하려면 RequiredClearWidthCm을 0으로 유지.
 void AFFZSProtectedArea::ApplyDefaultWidthForType()
 {
     RequiredClearWidthCm = 0.0f;
     RequiredClearWidthCm = GetEffectiveRequiredClearWidthCm();
 }
 
-/*
- * 보호 구역은 Yaw가 적용된 OBB(Oriented Bounding Box), 시설 셀은 월드축 AABB로 비교한다.
- * 1) 유효하지 않은 입력을 거르고, 요구 통과 폭이 로컬 X/Y 중 짧은 축보다 크면 그 축만 확장한다.
- * 2) Z 구간이 분리되면 즉시 종료한다.
- * 3) XY 평면에서 월드 X/Y와 보호 OBB의 로컬 X/Y, 총 네 축으로 SAT를 수행한다.
- * 어느 축에서도 분리되지 않으면 교차이며, 경계가 맞닿은 경우도 안전하게 교차로 취급한다.
- *
- * GetScaledBoxExtent와 Forward/Right 축의 조합은 Scale=1, Pitch/Roll=0 불변식에 기대고 있다.
- * 그래서 ValidateProtectedAreaData는 Actor 스케일이나 기울기를 허용하지 않고, 크기는 Box Extent로만
- * 편집하게 한다. 이 함수는 월드 AABB 축으로 단순 팽창하는 검사가 아니므로 회전된 보호 동선도 보존한다.
- */
+//  보호 구역은 Yaw가 적용된 OBB(Oriented Bounding Box), 시설 셀은 월드축 AABB로 비교.
+ // 1) 유효하지 않은 입력을 거르고, 요구 통과 폭이 로컬 X/Y 중 짧은 축보다 크면 그 축만 확장.
+ // 2) Z 구간이 분리되면 즉시 종료.
+ // 3) XY 평면에서 월드 X/Y와 보호 OBB의 로컬 X/Y, 총 네 축으로 SAT를 수행.
+ // 어느 축에서도 분리되지 않으면 교차이며, 경계가 맞닿은 경우도 안전하게 교차로 취급.
+  
+ // GetScaledBoxExtent와 Forward/Right 축의 조합은 Scale=1, Pitch/Roll=0 불변식에 기대고 있다.
+ // 그래서 ValidateProtectedAreaData는 Actor 스케일이나 기울기를 허용하지 않고, 크기는 Box Extent로만
+ // 편집하게 한다. 이 함수는 월드 AABB 축으로 단순 팽창하는 검사가 아니므로 회전된 보호 동선도 보존.
+ 
 bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
 {
     if (!AreaBounds || !WorldBox.IsValid)
@@ -107,7 +104,7 @@ bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
 
     FVector LocalExtent = AreaBounds->GetScaledBoxExtent();
     const double RequiredHalfWidth = FMath::Max(0.0, static_cast<double>(GetEffectiveRequiredClearWidthCm()) * 0.5);
-    // RequiredClearWidth는 World AABB 축이 아니라 보호 Actor의 Local 단축 방향을 확장한다.
+    // RequiredClearWidth는 World AABB 축이 아니라 보호 Actor의 Local 단축 방향을 확장.
     if (LocalExtent.X <= LocalExtent.Y)
     {
         LocalExtent.X = FMath::Max(LocalExtent.X, RequiredHalfWidth);

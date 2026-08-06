@@ -1,11 +1,9 @@
-/**
- * @file FF_FFZSQueueComponent.cpp
- * @brief 시설별 결정론적 FIFO 대기열, 서비스, Drain, Cancel, Snapshot 복원을 구현한다.
- *
- * 흐름: 명시적 simulation step에서 도착·서비스·이탈을 Stable ID 순서로 갱신한다.
- * 불변식: 중복 Agent와 불법 상태를 거절하며 컴포넌트 RestoreSnapshot 자체는 완전 원자적이지 않다.
- * 실패/성능: Tick 간격과 Agent 수에 따라 비용이 늘며 월드 복원 staging이 전체 원자성을 제공한다.
- */
+// FF_FFZSQueueComponent.cpp
+
+// 시설별 결정론적 FIFO 대기열, 서비스, Drain, Cancel, Snapshot 복원을 구현한다.
+// 흐름: 명시적 simulation step에서 도착·서비스·이탈을 Stable ID 순서로 갱신한다.
+// 불변식: 중복 Agent와 불법 상태를 거절하며 컴포넌트 RestoreSnapshot 자체는 완전 원자적이지 않다.
+// 실패/성능: Tick 간격과 Agent 수에 따라 비용이 늘며 월드 복원 staging이 전체 원자성을 제공한다.
 
 #include "FF_FFZSQueueComponent.h"
 
@@ -17,15 +15,14 @@
 
 #define LOCTEXT_NAMESPACE "FFZoneSystemQueue"
 
-/*
- * 큐 상태와 물리 이동의 핵심 계약
- * - Closed: 신규 참가와 시뮬레이션이 모두 멈춘다.
- * - Open/Full: 참가 가능 여부만 다르고, 이미 입장한 Agent의 FIFO 순서는 같다.
- * - Blocked: 기존 배치를 보존한 채 시간 기반 재경로 요청만 진행한다.
- * - Draining: 신규 참가를 막고 Waiting/Service/Exit의 기존 소유권이 모두 해제될 때까지 진행한다.
- * Agent는 Waiting -> ActiveServices -> Exiting 순서로 이동하며, 실제 Exit 도착 또는 즉시 해제
- * 경로가 끝나기 전까지 큐 소유권을 유지한다. 따라서 배열 갱신과 이벤트 발행 순서가 곧 게임 규칙이다.
- */
+//큐 상태와 물리 이동의 핵심 계약
+ // Closed: 신규 참가와 시뮬레이션이 모두 멈춘다.
+ // Open/Full: 참가 가능 여부만 다르고, 이미 입장한 Agent의 FIFO 순서는 같다.
+ // Blocked: 기존 배치를 보존한 채 시간 기반 재경로 요청만 진행.
+ //  Draining: 신규 참가를 막고 Waiting/Service/Exit의 기존 소유권이 모두 해제될 때까지 진행.
+ // Agent는 Waiting -> ActiveServices -> Exiting 순서로 이동하며, 실제 Exit 도착 또는 즉시 해제
+ // 경로가 끝나기 전까지 큐 소유권을 유지한다. 따라서 배열 갱신과 이벤트 발행 순서가 곧 게임 규칙.
+ 
 UFFZSFacilityQueueComponent::UFFZSFacilityQueueComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
@@ -38,7 +35,7 @@ UFFZSFacilityQueueComponent::UFFZSFacilityQueueComponent()
 
 void UFFZSFacilityQueueComponent::Configure(const FFFZSQueueRules& NewRules)
 {
-    // 외부 Data Asset 값은 이 경계에서 한 번 정규화한다. 이후 상태 전이 코드는 양수 용량과
+    // 외부 Data Asset 값은 이 경계에서 한 번 정규화. 이후 상태 전이 코드는 양수 용량과
     // 유한한 시간/거리라는 전제를 공유하므로 각 분기에서 같은 방어 코드를 반복하지 않는다.
     Rules = NewRules;
     Rules.MaxWaitingAgents = FMath::Max(1, Rules.MaxWaitingAgents);
@@ -75,7 +72,7 @@ void UFFZSFacilityQueueComponent::BeginDrain()
 
 void UFFZSFacilityQueueComponent::EmergencyCancel()
 {
-    // 먼저 세 런타임 컨테이너에서 모든 항목을 떼어 낸 뒤 Exit/즉시 해제로 다시 분류한다.
+    // 먼저 세 런타임 컨테이너에서 모든 항목을 떼어 낸 뒤 Exit/즉시 해제로 다시 분류.
     // 이 순서를 지키면 아래 콜백이 재진입하더라도 취소 전 Waiting/Service 상태가 노출되지 않는다.
     TArray<FRuntimeEntry> ExitRequests;
     ExitRequests.Reserve(Waiting.Num() + ActiveServices.Num() + Exiting.Num());
