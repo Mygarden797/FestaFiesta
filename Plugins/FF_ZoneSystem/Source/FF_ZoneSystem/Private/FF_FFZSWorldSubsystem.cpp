@@ -87,9 +87,17 @@ namespace
         return Type == EFFZSCommandType::Install || Type == EFFZSCommandType::Move || Type == EFFZSCommandType::Remove;
     }
 
+    bool IsKnownChangePhase(const EFFZSChangePhase Phase)
+    {
+        return Phase == EFFZSChangePhase::InitialSetup ||
+            Phase == EFFZSChangePhase::MorningCheck ||
+            Phase == EFFZSChangePhase::LiveOperation ||
+            Phase == EFFZSChangePhase::EveningSettlement;
+    }
+
     bool IsWorldChangePhase(const EFFZSChangePhase Phase)
     {
-        return Phase == EFFZSChangePhase::InitialSetup || Phase == EFFZSChangePhase::Reconfigure;
+        return Phase == EFFZSChangePhase::InitialSetup || Phase == EFFZSChangePhase::MorningCheck;
     }
     bool IsPointOnSegment2D(const FVector2D& Point, const FVector2D& A, const FVector2D& B, const double ToleranceCm)
     {
@@ -673,8 +681,7 @@ bool UFFZSWorldSubsystem::IsAuthorityMutationBlocked() const
 
 bool UFFZSWorldSubsystem::SetChangePhase(const EFFZSChangePhase NewPhase)
 {
-    if (IsAuthorityMutationBlocked() ||
-        !StaticEnum<EFFZSChangePhase>()->IsValidEnumValue(static_cast<int64>(NewPhase)))
+    if (IsAuthorityMutationBlocked() || !IsKnownChangePhase(NewPhase))
     {
         return false;
     }
@@ -909,7 +916,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     }
     if (!IsWorldChangePhase(CurrentPhase))
     {
-        Result.AddFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongPhase", "Install, Move 및 Remove는 InitialSetup 또는 Reconfigure Phase에서만 허용됩니다."));
+        Result.AddFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongPhase", "Install, Move 및 Remove는 InitialSetup 또는 MorningCheck Phase에서만 허용됩니다."));
     }
     if (!Command.FacilityInstanceId.IsValid())
     {
@@ -1533,7 +1540,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     }
     else if (IsWorldChangeCommand(Command.Type) && !IsWorldChangePhase(CurrentPhase))
     {
-        Result = MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongCommandPhase", "Install, Move 및 Remove는 InitialSetup 또는 Reconfigure Phase에서만 허용됩니다."));
+        Result = MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongCommandPhase", "Install, Move 및 Remove는 InitialSetup 또는 MorningCheck Phase에서만 허용됩니다."));
     }
     else if (Command.Type == EFFZSCommandType::Install || Command.Type == EFFZSCommandType::Move)
     {
@@ -2224,7 +2231,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     {
         OutErrors.Add(LOCTEXT("SnapshotRevision", "Zone/Facility 스냅샷의 WorldRevision은 음수일 수 없습니다."));
     }
-    if (!StaticEnum<EFFZSChangePhase>()->IsValidEnumValue(static_cast<int64>(Snapshot.CurrentPhase)))
+    if (!IsKnownChangePhase(Snapshot.CurrentPhase))
     {
         OutErrors.Add(LOCTEXT("SnapshotPhase", "Zone/Facility 스냅샷의 CurrentPhase가 잘못되었습니다."));
     }
