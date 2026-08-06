@@ -1,19 +1,18 @@
-/**
- * @file FF_FFZSPolicyTests.cpp
- * @brief 외부 Policy의 사전 검증·임시 적용·Commit·Rollback 참여 계약을 검증한다.
- *
- * 테스트 행렬:
- * - 성공 경로에서 모든 Policy가 PreValidate/Tentative를 거친 뒤 한 번씩 Commit되는가.
- * - Tentative 실패를 낸 Policy도 부분 적용 가능성을 고려해 Rollback 대상에 포함되는가.
- * - 실패 전에 적용을 시도한 Policy들이 모두 Rollback에 참여하는가.
- * - Policy callback 중 Zone·보호영역·Phase·Policy registry 변경이 fail-closed되는가.
- *
- * 1 cm Cell 계약에서도 기존 100 cm Cell 테스트와 같은 물리 위치를 사용하도록 QuarterTurns=0
- * 배치 원점은 기존 셀 좌표에 100을 곱한다. 좌표 해상도만 바꾸고 Policy 시나리오 간 거리는 유지한다.
- *
- * Fixture는 지면·충돌·Nav 같은 외부 환경 변수를 잠시 끄고 종료 시 원래 CDO 값을 복구한다.
- * 따라서 이 파일은 트랜잭션 경계만 격리하며 Production Adapter 예제로 사용하지 않는다.
- */
+// FF_FFZSPolicyTests.cpp
+
+
+// 외부 Policy의 사전 검증·임시 적용·Commit·Rollback 참여 계약을 검증한다.
+// 테스트 행렬:
+ // 성공 경로에서 모든 Policy가 PreValidate/Tentative를 거친 뒤 한 번씩 Commit되는가.
+ // Tentative 실패를 낸 Policy도 부분 적용 가능성을 고려해 Rollback 대상에 포함되는가.
+ // 실패 전에 적용을 시도한 Policy들이 모두 Rollback에 참여하는가.
+ // Policy callback 중 Zone·보호영역·Phase·Policy registry 변경이 fail-closed되는가.
+
+ // 1 cm Cell 계약에서도 기존 100 cm Cell 테스트와 같은 물리 위치를 사용하도록 QuarterTurns=0
+ // 배치 원점은 기존 셀 좌표에 100을 곱한다. 좌표 해상도만 바꾸고 Policy 시나리오 간 거리는 유지한다.
+ 
+ // Fixture는 지면·충돌·Nav 같은 외부 환경 변수를 잠시 끄고 종료 시 원래 CDO 값을 복구한다.
+ // 따라서 이 파일은 트랜잭션 경계만 격리하며 Production Adapter 예제로 사용하지 않는다.
 
 #if WITH_DEV_AUTOMATION_TESTS
 

@@ -1,12 +1,11 @@
-/**
- * @file FF_FFZSGridTests.cpp
- * @brief 1 cm Grid와 압축 Cell Rect의 회전·합집합·예산·디버그 펼치기 계약을 검증한다.
- *
- * 흐름: 대형 내장 프리셋을 개별 Cell로 펼치지 않고, 작은 합성 Spec을 Region API에 넣어
- *       반열림 사각형의 좌표·면적·분리·결정적 합집합을 확인한다.
- * 불변식: 1 Unreal Unit=1 cm, 1 배치 Cell=1 cm이며 권위 계산은 FFFZSCellRect 배열을 사용한다.
- * 실패/성능: 개별 Cell 호환 보기는 최대 10,000개에서만 허용되고 초과 시 빈 결과로 fail-closed한다.
- */
+// FF_FFZSGridTests.cpp
+
+// 1 cm Grid와 압축 Cell Rect의 회전·합집합·예산·디버그 펼치기 계약을 검증한다.
+// 흐름: 대형 내장 프리셋을 개별 Cell로 펼치지 않고, 작은 합성 Spec을 Region API에 넣어
+// 반열림 사각형의 좌표·면적·분리·결정적 합집합을 확인한다.
+// 불변식: 1 Unreal Unit=1 cm, 1 배치 Cell=1 cm이며 권위 계산은 FFFZSCellRect 배열을 사용한다.
+// 실패/성능: 개별 Cell 호환 보기는 최대 10,000개에서만 허용되고 초과 시 빈 결과로 fail-closed한다.
+ 
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -18,12 +17,10 @@
 
 namespace
 {
-    /**
-     * Region 연산의 정확한 좌표와 면적을 사람이 계산할 수 있도록 만든 작은 합성 사양이다.
-     *
-     * footprint=[0,3)x[0,2), clearance=1, queue=[3,5)x[0,1)이다.
-     * 대형 1 cm 내장 프리셋은 이 테스트에서 Get*Cells로 펼치지 않는다.
-     */
+    // Region 연산의 정확한 좌표와 면적을 사람이 계산할 수 있도록 만든 작은 합성 사양이다.
+     // footprint=[0,3)x[0,2), clearance=1, queue=[3,5)x[0,1)이다.
+     // 대형 1 cm 내장 프리셋은 이 테스트에서 Get*Cells로 펼치지 않는다.
+     
     FFFZSFacilitySpec MakeSmallRegionSpec()
     {
         FFFZSFacilitySpec Spec;
@@ -38,15 +35,14 @@ namespace
     }
 }
 
-/*
- * 테스트 매트릭스
- * - Units: 1 uu=1 cm, 1 Cell=1 cm, 디버그 펼치기 10,000 Cell 상한
- * - Rotation: FIntPoint와 [Min,Max) Cell Rect의 90도 회전
- * - CompressedRegions: 작은 합성 Spec의 footprint/clearance/queue/reserved 압축 영역
- * - RegionUnion/Budget: 겹침·맞닿음 합집합, 보수적 작업 예산, 10k 초과 fail-closed
- * - Commands: QueueReservedRects를 포함한 전체 의미 필드의 문화권 독립 Payload 지문
- * 각 케이스는 Arrange -> Act -> Assert 순서를 유지하며 대형 내장 프리셋을 개별 셀로 열거하지 않는다.
- */
+// 테스트 매트릭스
+ // Units: 1 uu=1 cm, 1 Cell=1 cm, 디버그 펼치기 10,000 Cell 상한
+ // Rotation: FIntPoint와 [Min,Max) Cell Rect의 90도 회전
+ // CompressedRegions: 작은 합성 Spec의 footprint/clearance/queue/reserved 압축 영역
+ // RegionUnion/Budget: 겹침·맞닿음 합집합, 보수적 작업 예산, 10k 초과 fail-closed
+ // Commands: QueueReservedRects를 포함한 전체 의미 필드의 문화권 독립 Payload 지문
+ // 각 케이스는 Arrange -> Act -> Assert 순서를 유지하며 대형 내장 프리셋을 개별 셀로 열거하지 않는다.
+ 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSOneCentimeterUnitContractTest,
     "FF_ZoneSystem.Unit.Units.OnePlacementCellEqualsOneCentimeter",

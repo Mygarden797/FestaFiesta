@@ -1,27 +1,26 @@
-/**
- * @file FF_FFZSQueueTests.cpp
- * @brief Queue FIFO, 서비스, Blocked/Drain/Cancel, Snapshot 복원 계약을 검증한다.
- *
- * 흐름: 가짜 Agent와 명시적 step을 사용해 시간·도착·서비스 순서를 결정론적으로 재현한다.
- * 불변식: 0초 timeout은 즉시 실행이 아니라 해당 자동 동작 비활성화이며 복원 후 순서·의도를 보존한다.
- * 실패/성능: 실제 Nav/프레임 시간에 의존하지 않아 같은 입력에서 같은 결과를 내야 한다.
- */
+// FF_FFZSQueueTests.cpp
+
+
+// Queue FIFO, 서비스, Blocked/Drain/Cancel, Snapshot 복원 계약을 검증한다.
+// 흐름: 가짜 Agent와 명시적 step을 사용해 시간·도착·서비스 순서를 결정론적으로 재현한다.
+// 불변식: 0초 timeout은 즉시 실행이 아니라 해당 자동 동작 비활성화이며 복원 후 순서·의도를 보존한다.
+// 실패/성능: 실제 Nav/프레임 시간에 의존하지 않아 같은 입력에서 같은 결과를 내야 한다.
+ 
 
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 #include "FF_FFZSQueueComponent.h"
 
-/*
- * 테스트 매트릭스
- * - FIFOArrivalAndCapacity: 물리 도착 게이트, 선착순, Full/중복 거절
- * - DrainAndEmergencyCancel: 정상 배수와 긴급 취소의 서로 다른 종료 정책
- * - SaveRestoreMovementState / SaveRestoreTickAndDrain: 이동 상태·Tick 불변식·실패 전 게시 방지
- * - EventStepTieAndDeltaIndependence: 동시 사건 우선순위와 Delta 분할 독립성
- * - BlockedAndMovementFailure: 큐 전체/Agent별 재경로 예산
- * World 의존성을 제거한 컴포넌트 단위 테스트이며, 물리 도착은 테스트 전용 bridge로만 호출한다.
- */
-/** 테스트에서만 사용하는 제한된 Bridge다. 운영 변경 Method는 Private으로 유지한다. */
+// 테스트 매트릭스
+ // FIFOArrivalAndCapacity: 물리 도착 게이트, 선착순, Full/중복 거절
+ // DrainAndEmergencyCancel: 정상 배수와 긴급 취소의 서로 다른 종료 정책
+ // SaveRestoreMovementState / SaveRestoreTickAndDrain: 이동 상태·Tick 불변식·실패 전 게시 방지
+ // EventStepTieAndDeltaIndependence: 동시 사건 우선순위와 Delta 분할 독립성
+ // BlockedAndMovementFailure: 큐 전체/Agent별 재경로 예산
+ // World 의존성을 제거한 컴포넌트 단위 테스트이며, 물리 도착은 테스트 전용 bridge로만 호출한다.
+ 
+  // 테스트에서만 사용하는 제한된 Bridge다. 운영 변경 Method는 Private으로 유지한다. 
 struct FFFZSQueueTestAccess
 {
     static void ConfigureAndOpen(UFFZSFacilityQueueComponent& Queue, const FFFZSQueueRules& Rules)
