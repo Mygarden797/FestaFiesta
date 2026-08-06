@@ -64,7 +64,7 @@ namespace FFF_VisitorDistributionTestHelpers
 		return Table;
 	}
 
-	UDataTable* MakeArchetypeTable()
+	UDataTable* MakeVisitorArchetypeTable()
 	{
 		UDataTable* Table = NewObject<UDataTable>();
 		Table->RowStruct = FFF_ArchetypeRow::StaticStruct();
@@ -87,7 +87,7 @@ namespace FFF_VisitorDistributionTestHelpers
 	FFF_VisitorDistribution BuildDefault(int32 Count, int32 Seed)
 	{
 		return FFF_VisitorDistributionBuilder::Build(
-			MakeSizeTable(), MakeChildTable(), MakeArchetypeTable(), Scope, Scenario, Count, Seed);
+			MakeSizeTable(), MakeChildTable(), MakeVisitorArchetypeTable(), Scope, Scenario, Count, Seed);
 	}
 }
 
@@ -287,12 +287,12 @@ bool FFF_VisitorDistribution_MissingInputIsSafe::RunTest(const FString& Paramete
 	TestEqual(TEXT("테이블이 전부 없으면 개체가 없다"), NoTables.Visitors.Num(), 0);
 
 	const FFF_VisitorDistribution WrongScope = FFF_VisitorDistributionBuilder::Build(
-		MakeSizeTable(), MakeChildTable(), MakeArchetypeTable(), TEXT("does_not_exist"), Scenario, 100, 1);
+		MakeSizeTable(), MakeChildTable(), MakeVisitorArchetypeTable(), TEXT("does_not_exist"), Scenario, 100, 1);
 	TestEqual(TEXT("없는 ScopeId 면 개체가 없다"), WrongScope.Visitors.Num(), 0);
 
 	// 아동 테이블만 없으면 — 그룹은 만들어지고 아동만 0명이 된다 (분포 정보가 없으니 아동을 만들 수 없다)
 	const FFF_VisitorDistribution NoChildTable = FFF_VisitorDistributionBuilder::Build(
-		MakeSizeTable(), nullptr, MakeArchetypeTable(), Scope, Scenario, 100, 1);
+		MakeSizeTable(), nullptr, MakeVisitorArchetypeTable(), Scope, Scenario, 100, 1);
 	TestTrue(TEXT("아동 테이블이 없어도 그룹은 만들어진다"), NoChildTable.Visitors.Num() > 0);
 	TestEqual(TEXT("아동 테이블이 없으면 아동은 0명이다"), NoChildTable.DependentChildCount, 0);
 	return true;
@@ -315,9 +315,9 @@ bool FFF_VisitorDistribution_ScenarioSwitchesArchetypeShares::RunTest(const FStr
 	};
 
 	const FFF_VisitorDistribution Resident = FFF_VisitorDistributionBuilder::Build(
-		MakeSizeTable(), MakeChildTable(), MakeArchetypeTable(), Scope, TEXT("resident_neutral_v0"), 20000, 21);
+		MakeSizeTable(), MakeChildTable(), MakeVisitorArchetypeTable(), Scope, TEXT("resident_neutral_v0"), 20000, 21);
 	const FFF_VisitorDistribution Datalab = FFF_VisitorDistributionBuilder::Build(
-		MakeSizeTable(), MakeChildTable(), MakeArchetypeTable(), Scope, TEXT("datalab_observed_v0"), 20000, 21);
+		MakeSizeTable(), MakeChildTable(), MakeVisitorArchetypeTable(), Scope, TEXT("datalab_observed_v0"), 20000, 21);
 
 	// datalab_observed_v0 은 20대 비중이 더 높다 (9.9487 → 11.7805)
 	const int32 Resident20s = CountArchetype(Resident, TEXT("life_stage_20s"));
