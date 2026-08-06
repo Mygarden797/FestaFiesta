@@ -134,7 +134,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Zone|Density")
     FFFZSZoneReadModel GetReadModel() const;
-    // UI·분석용 ID·수용량·보고 인구·비율·밀도 상태의 값 복사본을 반환.
+    // UI·분석용 ID·인접 그래프·로컬 출입 기준점·실제 경계 면적·밀도 상태의 값 복사본을 반환.
 
     UFUNCTION(CallInEditor, Category = "Zone|Presets")
     bool ApplyAcceptedZonePreset(FName AcceptedZoneId);

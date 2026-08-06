@@ -337,6 +337,9 @@ FFFZSZoneReadModel AFFZSGameplayZone::GetReadModel() const
 {
     FFFZSZoneReadModel Result;
     Result.ZoneId = ZoneId;
+    Result.NeighborZoneIds = NeighborZoneIds;
+    Result.EntryExitAnchors = EntryExitAnchors;
+    Result.AreaSquareMeters = GetBoundaryAreaSquareMeters();
     Result.SoftCapacity = GetSoftCapacity();
     Result.ReportedPopulation = ReportedPopulation;
     Result.DensityRatio = Result.SoftCapacity > 0 ? static_cast<float>(ReportedPopulation) / Result.SoftCapacity : 0.0f;
