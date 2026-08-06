@@ -6,7 +6,7 @@
 
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Queue/FF_FacilityQueue.h"
-#include "NPC/FF_UtilityDestinationSelector.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"
 

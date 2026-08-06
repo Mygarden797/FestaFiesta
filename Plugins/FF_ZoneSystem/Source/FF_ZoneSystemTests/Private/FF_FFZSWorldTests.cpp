@@ -8,6 +8,7 @@
  * 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
  * 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
  * 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
+ * 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
  *
  * 각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
  * Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
@@ -360,6 +361,112 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSWorldChangePhasePermissionsTest,
+    "FF_ZoneSystem.Integration.World.ChangePhasePermissions",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// Phase 계약: 세 월드 변경 명령은 InitialSetup·MorningCheck에서만 성공하고 다른 운영 단계에서는 실패한다.
+bool FFFZSWorldChangePhasePermissionsTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
+    {
+        return false;
+    }
+
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
+    {
+        return false;
+    }
+
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
+        !TestTrue(TEXT("Phase 테스트 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    const auto MakeInstallAt = [ZoneId](const FIntPoint OriginCell)
+    {
+        FFFZSGridPlacement Placement;
+        Placement.OriginCell = OriginCell;
+        return UFFZSGridLibrary::MakeInstallCommand(
+            UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+            ZoneId,
+            Placement,
+            -1);
+    };
+
+    TestEqual(TEXT("Subsystem은 InitialSetup에서 시작한다"),
+        Subsystem->GetChangePhase(), EFFZSChangePhase::InitialSetup);
+    const FFFZSCommand InitialInstall = MakeInstallAt(FIntPoint(1000, 1000));
+    TestTrue(TEXT("InitialSetup에서 Install이 허용된다"),
+        Subsystem->ExecuteCommand(InitialInstall).bSucceeded);
+    TestTrue(TEXT("InitialSetup에서 Move가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(InitialInstall.FacilityInstanceId, ZoneId, FIntPoint(1000, 4000), -1)).bSucceeded);
+    TestTrue(TEXT("InitialSetup에서 Remove가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, InitialInstall.FacilityInstanceId)).bSucceeded);
+
+    TestTrue(TEXT("MorningCheck로 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck));
+    const FFFZSCommand MorningInstall = MakeInstallAt(FIntPoint(4000, 1000));
+    TestTrue(TEXT("MorningCheck에서 Install 배치 미리검증이 허용된다"),
+        Subsystem->ValidatePlacement(MorningInstall).bIsValid);
+    TestTrue(TEXT("MorningCheck에서 Install이 허용된다"),
+        Subsystem->ExecuteCommand(MorningInstall).bSucceeded);
+    TestTrue(TEXT("MorningCheck에서 Move가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(MorningInstall.FacilityInstanceId, ZoneId, FIntPoint(4000, 4000), -1)).bSucceeded);
+
+    TestTrue(TEXT("LiveOperation으로 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation));
+    const FFFZSCommand LiveInstall = MakeInstallAt(FIntPoint(7000, 1000));
+    const FFFZSPlacementValidation LiveValidation = Subsystem->ValidatePlacement(LiveInstall);
+    TestTrue(TEXT("LiveOperation에서 Install 배치 미리검증이 WrongStage로 거부된다"),
+        LiveValidation.Reasons.Contains(EFFZSPlacementFailure::WrongStage));
+    TestEqual(TEXT("LiveOperation에서 Install이 거부된다"),
+        Subsystem->ExecuteCommand(LiveInstall).FailureReason, EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("LiveOperation에서 Move가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(MorningInstall.FacilityInstanceId, ZoneId, FIntPoint(7000, 4000), -1)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("LiveOperation에서 Remove가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, MorningInstall.FacilityInstanceId)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+
+    TestTrue(TEXT("EveningSettlement로 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::EveningSettlement));
+    const FFFZSCommand EveningInstall = MakeInstallAt(FIntPoint(7000, 7000));
+    TestEqual(TEXT("EveningSettlement에서 Install이 거부된다"),
+        Subsystem->ExecuteCommand(EveningInstall).FailureReason, EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("EveningSettlement에서 Move가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(MorningInstall.FacilityInstanceId, ZoneId, FIntPoint(4000, 7000), -1)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("EveningSettlement에서 Remove가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, MorningInstall.FacilityInstanceId)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+
+    TestTrue(TEXT("MorningCheck로 다시 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck));
+    TestTrue(TEXT("MorningCheck에서 Remove가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, MorningInstall.FacilityInstanceId)).bSucceeded);
+    TestFalse(TEXT("제거된 이전 Phase 값은 설정할 수 없다"),
+        Subsystem->SetChangePhase(static_cast<EFFZSChangePhase>(1)));
+    TestEqual(TEXT("잘못된 Phase 설정은 현재 MorningCheck를 보존한다"),
+        Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSWorldZoneExclusivityProtectedAreaTest,
     "FF_ZoneSystem.Integration.World.ZoneExclusivityAndProtectedArea",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -659,7 +766,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     // 명령 Guard가 활성화된 동안 반드시 실패해야 하며 권위 상태를 변경해서는 안 된다.
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot EmptyLiveSnapshot = Subsystem->CaptureWorldSnapshot();
-    Subsystem->SetChangePhase(EFFZSChangePhase::Reconfigure);
+    Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck);
 
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000); // q0: 기존 10m 물리 위치를 보존한다.
@@ -701,7 +808,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     TestTrue(TEXT("거부된 재진입 Restore가 충돌 원인을 설명한다"), !ReentrantRestoreErrors.IsEmpty());
     TestTrue(TEXT("거부된 재진입 Restore는 권위 상태를 변경하지 않는다"), bReentrantRestorePreservedState);
     TestTrue(TEXT("외부 Install은 거부된 Callback 후에도 Commit된다"), InstallResult.bSucceeded);
-    TestEqual(TEXT("Command Guard는 ExecuteCommand 반환 후 Reset된다"), Subsystem->GetChangePhase(), EFFZSChangePhase::Reconfigure);
+    TestEqual(TEXT("Command Guard는 ExecuteCommand 반환 후 Reset된다"), Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
 
     AFFZSFacilityActor* Facility = Subsystem->FindFacility(Install.FacilityInstanceId);
     if (!TestNotNull(TEXT("설치된 Facility"), Facility))

@@ -4,14 +4,20 @@
 #include "Components/SplineComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSProtectedArea.h"
+#include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Queue/FF_QueueSubsystem.h"
+#include "Time/FF_FestivalStageSubsystem.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
+#include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
 
 // 월드 시각화, WBP 실패 시 폴백 HUD와 명령행 회귀 스모크를 분리해 둔 구현 파일이다.
 DEFINE_LOG_CATEGORY_STATIC(LogFFZonePlaytestRuntime, Log, All);
@@ -214,10 +220,31 @@ void UFF_ZoneSystemPlaytestSubsystem::RunCommandLineSmokeTest()
 {
     TArray<FString> Failures;
     UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	UWorld* World = GetWorld();
+	UFF_ZoneSystemQueueBridgeSubsystem* Integration =
+		World ? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	UFF_QueueSubsystem* ProjectQueue =
+		World ? World->GetSubsystem<UFF_QueueSubsystem>() : nullptr;
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* FestivalStage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	UFF_ZoneSystemStageBridgeSubsystem* StageIntegration =
+		World ? World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>() : nullptr;
     if (!ZoneSystem || !TestZone || ZoneSystem->FindZone(ActiveZoneId) != TestZone)
     {
         Failures.Add(TEXT("Gameplay Zone was not registered."));
     }
+	if (!FestivalStage || !StageIntegration)
+	{
+		Failures.Add(TEXT("FestivalStage integration subsystem was not initialized."));
+	}
+	else if (ZoneSystem
+		&& ZoneSystem->GetChangePhase()
+			!= UFF_ZoneSystemStageBridgeSubsystem::ToZoneChangePhase(FestivalStage->CurrentStage))
+	{
+		Failures.Add(TEXT("Initial FestivalStage was not synchronized to the Zone change phase."));
+	}
 
     bEnableFullNavigationValidation = false;
     SetPlacement(FIntPoint(1000, 1000), 0);
@@ -249,21 +276,137 @@ void UFF_ZoneSystemPlaytestSubsystem::RunCommandLineSmokeTest()
             Failures.Add(FString::Printf(TEXT("Open failed: %s"), *OpenResult.Message.ToString()));
         }
 
-        FGuid TicketId;
-        const EFFZSQueueJoinResult JoinResult = ZoneSystem->JoinFacilityQueue(
-            LastFacilityId, TEXT("SmokeAgent"), nullptr, TicketId);
-        if (JoinResult != EFFZSQueueJoinResult::Joined || !TicketId.IsValid())
-        {
-            Failures.Add(TEXT("Queue join failed."));
-        }
+		if (FestivalStage)
+		{
+			FestivalStage->RequestTransition(EFF_FestivalStage::Live);
+			if (ZoneSystem->GetChangePhase() != EFFZSChangePhase::LiveOperation)
+			{
+				Failures.Add(TEXT("FestivalStage Live did not synchronize to Zone LiveOperation."));
+			}
+		}
+		FFF_JoinRequest JoinRequest;
+		JoinRequest.PartyId = 7001;
+		JoinRequest.MemberCount = 1;
+		const FFF_QueueJoinResponse JoinResult = Integration
+			? Integration->TryJoinZoneFacility(LastFacilityId, JoinRequest)
+			: FFF_QueueJoinResponse();
+		if (!JoinResult.bAccepted)
+		{
+			Failures.Add(TEXT("Integrated Project Queue join failed."));
+		}
 
-        const FFFZSWorldSnapshot SmokeSnapshot = ZoneSystem->CaptureWorldSnapshot();
+		if (Integration && JoinResult.bAccepted)
+		{
+			const FFFZSWorldSnapshot OccupiedSnapshot = ZoneSystem->CaptureWorldSnapshot();
+			TArray<FText> OccupiedRestoreErrors;
+			if (Integration->RestoreZoneWorldSnapshotAndSynchronize(
+				OccupiedSnapshot, OccupiedRestoreErrors))
+			{
+				Failures.Add(TEXT("Zone Snapshot restore accepted an occupied Project Queue."));
+			}
+			else if (OccupiedRestoreErrors.IsEmpty())
+			{
+				Failures.Add(TEXT("Occupied Project Queue restore rejection had no diagnostic."));
+			}
+
+			const UFFZSFacilityQueueComponent* ZoneQueue =
+				InstallResult.FacilityActor->GetQueueComponent();
+			if (!ZoneQueue || ZoneQueue->GetQueueState() != EFFZSQueueState::Open)
+			{
+				Failures.Add(TEXT("Project Queue authority incorrectly hijacked FFZS Blocked state."));
+			}
+			else if (!ZoneSystem->SetFacilityQueueBlocked(LastFacilityId, true))
+			{
+				Failures.Add(TEXT("Could not simulate a Navigation/Safety queue block."));
+			}
+			else
+			{
+				JoinRequest.PartyId = 7002;
+				if (Integration->TryJoinZoneFacility(LastFacilityId, JoinRequest).bAccepted)
+				{
+					Failures.Add(TEXT("Navigation/Safety Blocked accepted another Project Queue Party."));
+				}
+				Integration->Tick(0.0f);
+				if (Integration->GetZoneFacilityQueueState(LastFacilityId).OccupiedMemberCount != 0)
+				{
+					Failures.Add(TEXT("Navigation/Safety Blocked did not fail-close the Project Queue."));
+				}
+				if (!ZoneSystem->SetFacilityQueueBlocked(LastFacilityId, false))
+				{
+					Failures.Add(TEXT("Could not clear the simulated Navigation/Safety queue block."));
+				}
+			}
+		}
+
+		JoinRequest.PartyId = 7003;
+		const FFF_QueueJoinResponse ClosingPartyJoin = Integration
+			? Integration->TryJoinZoneFacility(LastFacilityId, JoinRequest)
+			: FFF_QueueJoinResponse();
+		if (!ClosingPartyJoin.bAccepted)
+		{
+			Failures.Add(TEXT("Project Queue could not accept the Close-boundary Party."));
+		}
+
+		if (FestivalStage)
+		{
+			FestivalStage->RequestTransition(EFF_FestivalStage::Closing);
+			if (ZoneSystem->GetChangePhase() != EFFZSChangePhase::EveningSettlement)
+			{
+				Failures.Add(TEXT("FestivalStage Closing did not synchronize to Zone EveningSettlement."));
+			}
+		}
+
+		const FFFZSCommandResult CloseResult = ZoneSystem->ExecuteCommand(
+			MakeSmokeLifecycleCommand(EFFZSCommandType::Close, LastFacilityId));
+		if (!CloseResult.bSucceeded)
+		{
+			Failures.Add(FString::Printf(TEXT("Close failed: %s"), *CloseResult.Message.ToString()));
+		}
+		if (Integration)
+		{
+			const FFF_QueueState ClosedState = Integration->GetZoneFacilityQueueState(LastFacilityId);
+			if (ClosedState.bAcceptingNew || ClosedState.bIsOpen)
+			{
+				Failures.Add(TEXT("Normal Close did not expose a draining/closed Project Queue."));
+			}
+			JoinRequest.PartyId = 7004;
+			if (Integration->TryJoinZoneFacility(LastFacilityId, JoinRequest).bAccepted)
+			{
+				Failures.Add(TEXT("Normal Close accepted a new Project Queue Party."));
+			}
+			if (ClosedState.OccupiedMemberCount != 0)
+			{
+				Failures.Add(TEXT("Non-Live Close did not scope-cancel the existing Project Queue Party."));
+			}
+
+			const int32 ProjectFacilityId = Integration->FindQueueFacilityId(LastFacilityId);
+			bool bFoundScopedCancellation = false;
+			if (ProjectQueue)
+			{
+				for (const FFF_QueueLog& Log : ProjectQueue->GetQueueLogsRef())
+				{
+					if (Log.FacilityId == ProjectFacilityId
+						&& Log.PartyId == 7003
+						&& Log.ExitType == EFF_QueueExit::Cancelled)
+					{
+						bFoundScopedCancellation = true;
+						break;
+					}
+				}
+			}
+			if (!bFoundScopedCancellation)
+			{
+				Failures.Add(TEXT("Non-Live Close did not record the scoped Party cancellation."));
+			}
+		}
+
+		const FFFZSWorldSnapshot SmokeSnapshot = ZoneSystem->CaptureWorldSnapshot();
         if (SmokeSnapshot.Facilities.Num() != 1 || SmokeSnapshot.SchemaVersion != 4)
         {
             Failures.Add(TEXT("Snapshot did not capture the installed facility with schema 4."));
         }
-        TArray<FText> RestoreErrors;
-        if (!ZoneSystem->RestoreWorldSnapshot(SmokeSnapshot, RestoreErrors))
+		TArray<FText> RestoreErrors;
+		if (!Integration || !Integration->RestoreZoneWorldSnapshotAndSynchronize(SmokeSnapshot, RestoreErrors))
         {
             Failures.Add(RestoreErrors.IsEmpty()
                 ? TEXT("Snapshot restore failed.")
