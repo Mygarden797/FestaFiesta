@@ -2,7 +2,7 @@
 
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Queue/FF_QueueSubsystem.h"
-#include "NPC/FF_UtilityDestinationSelector.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
 
 float FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(const FFF_QueueState& State, int32 IncomingMemberCount)
 {
