@@ -44,6 +44,19 @@ UI 담당자가 명칭 초안을 직접 편집하고 싶으면 `data/ui/archetyp
 
 아직 확정 전인 것: 활동→축제 부스 카테고리 매핑(실제 부스 유형 미확정), 아동 부착 확률·수 노브(위 목표 아동 비율에 맞게 재조정될 파생값), 그룹 생성·아동 배치 실제 구현(스크립트는 목표 비율만 산출하고 실제 그룹/아동 생성 코드는 아직 없음). 전체 경과는 `metadata/public_data_decision_log.md`를 참고한다.
 
+**2026-08-06 갱신**: crowdAI(이정원)에게 넘길 **시간대별 목표 유입 곡선**을 확정했다 — `derived/visitor_arrival_curve_v0.csv`, `unreal/visitor_arrival_curve_v0.csv`(`FFF_ArrivalCurveRow`). 버킷별 **신규 유입 비율(%)**이며 절대 인원·동시 체류 목표가 아니다. 설계 근거와 소비 방법은 `metadata/visitor_arrival_curve_spec.md`.
+
+같은 날 **선행 블로커를 발견하고 해결했다**: `derived/companion_type_modifier_v0.csv`에는 solo/pair/group_3_plus의 **인구비중 열이 없고**, 그 출처인 Tour_Stat 2018 표의 가로분석변수는 `가구원수`(여행 동반 인원이 아님)였다. 2025 국민여행조사 원자료를 가공해 대체했다:
+
+| 산출물 | 내용 |
+|---|---|
+| `derived/visitor_group_size_distribution_v0.csv` | 그룹 크기 분포 1~6인 (문항 `A6`, **6인 상한** — 초과분 합침) |
+| `derived/group_child_composition_v0.csv` | 그룹 크기별 아동(만 15세 미만) 수 분포 (문항 `A6A`) |
+| `derived/companion_type_response_v0.csv` | 동반자 유형 응답률 (문항 `A6B`, 참고용) |
+| `derived/group_composition_rules_v0.csv` | 실측으로 대체되지 않고 남은 규칙 11개 |
+
+`tourism_daytrip` 기준 solo 3.07% / pair 35.00% / group_3_plus 61.93%, 평균 그룹 크기 3.15명. 통계편 공표표 14-1-1/2/3과 **최대오차 0.08pp**로 일치(스크립트에 0.1pp 검증 내장). 이 과정에서 `D_TRA{n}_NUM`이 "여행 인원"이 아니라 "**지출비용에 포함되는 인원수**"임을 확인해 `metadata/variable_catalog.json`을 정정했고, 미해결이던 `WT_DOM` 적용 단위도 확정했다. 폐기된 가정 4개와 남은 미해결(아동 비율 추정치 3개)은 `metadata/public_data_decision_log.md`·`metadata/population_group_generation_spec.md` 2.4절 참조.
+
 ## 국민여행조사 가중치 주의사항
 
 전체 2,419개 원자료 열은 `metadata/variable_catalog.csv`, 핵심 변수·가중치·코드 설명은 `metadata/variable_catalog.json`에 기록한다. `WT_DOM`이 가중치 후보이며, 원자료를 실제로 가공하기 전 적용 단위를 재확인해야 한다.

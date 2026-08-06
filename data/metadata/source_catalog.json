@@ -112,9 +112,22 @@
       "geography": "대한민국",
       "variables": ["XLSX 원자료", "SPSS SAV 원자료"],
       "format_note": "ZIP; contains a 419,393,276-byte XLSX and a 176,938,825-byte SAV",
-      "project_use": "연령·동반자·교통수단·활동의 가중 교차분포 산출",
-      "status": "to_verify",
-      "limitations": "변수 사전, 가중치, 비밀보호 및 재배포 조건을 확인하기 전 가공 금지.",
+      "project_use": "연령·동반자·교통수단·활동의 가중 교차분포 산출. 2026-08-06부터 그룹 크기·아동 구성 분포의 실제 출처다.",
+      "status": "confirmed",
+      "processed_2026_08_06": {
+        "authorized_by": "사용자 승인 (원자료 가공 방식 채택)",
+        "script": "Tools/data/build_visitor_group_distribution.mjs",
+        "variables_used": ["A6", "A6A", "A6B_1..12", "D_TRA{n}_CASE", "D_TRA{n}_S_Day", "D_TRA{n}_CHECK", "WT_DOM"],
+        "outputs": [
+          "data/derived/visitor_group_size_distribution_v0.csv",
+          "data/derived/group_child_composition_v0.csv",
+          "data/derived/companion_type_response_v0.csv"
+        ],
+        "variable_dictionary": "동봉 SAV 파일의 사전(레코드 타입 2/3/4/7)을 직접 파싱해 3,165개 변수의 라벨·값라벨을 확인했다. 결과는 data/metadata/variable_catalog.json 에 반영.",
+        "validation": "산출 분포를 통계편 공표표 14-1-1/2/3 과 대조해 최대오차 0.05~0.08pp 확인. 스크립트가 0.1pp 허용 오차로 매 실행 검증하며 초과 시 실패한다.",
+        "redistribution": "산출물은 집계 분포(비율)뿐이며 개별 응답 레코드를 포함하지 않는다. 원자료(xlsx/SAV) 자체는 data/extracted 아래에 있고 git 제외 대상이다."
+      },
+      "limitations": "가공 자체는 승인·검증됐으나, 산출 분포의 모집단은 전국 국내 관광여행자이며 부산바다축제 방문객이 아니다. 개별 응답 레코드를 커밋하거나 외부 공유하지 않는다.",
       "bytes": 327586272,
       "sha256": "AB7F6FC087741381B7243653058C5A9DD7BB168A705E01A8C217FBA1CF6A7CE3"
     },

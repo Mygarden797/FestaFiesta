@@ -22,7 +22,12 @@
     "population_control": "2025년 장래인구추계의 만 15세 이상 인구",
     "report_rule": "보고서의 모든 분석값은 가중치를 적용",
     "candidate_column": "WT_DOM",
-    "do_not_do": "WT_DOM 확인 전 단순 행 수 비율을 모집단 비율로 해석하지 않음"
+    "do_not_do": "WT_DOM 확인 전 단순 행 수 비율을 모집단 비율로 해석하지 않음",
+    "resolved_2026_08_06": {
+      "application_unit": "응답자 1명 × 본설문이 진행된 여행(D_TRA{n}_CHECK 로 지정) 1건. 여행 블록 6개를 모두 펼쳐서 가중치를 반복 적용하는 방식이 아니다.",
+      "how_verified": "이 단위로 A6 를 가중 집계한 결과가 통계편 표 14-1-1/2/3(관광여행/숙박/당일 동반자 수 분포)과 최대오차 0.05~0.08pp 로 일치했다. Tools/data/build_visitor_group_distribution.mjs 가 이 대조를 0.1pp 허용 오차로 매 실행마다 검증한다.",
+      "sum_caveat": "WT_DOM 합계는 557,113,176 으로 만 15세 이상 인구(약 4,500만)의 약 12배다 — 월별 조사라 연간 합계가 12개월분이 된다. 비율(분포)을 낼 때는 상쇄되지만 절대 인원을 추정하려면 12로 나누는 처리가 필요하다."
+    }
   },
   "key_variables": [
     {
@@ -120,9 +125,60 @@
     },
     {
       "source_column": "D_TRA{n}_NUM",
-      "meaning": "여행 인원 또는 동반 인원 후보",
-      "project_use": "개인·커플·가족·단체 규모 분포",
-      "status": "to_verify"
+      "meaning": "지출비용에 포함되는 인원수 (비용 분담 인원)",
+      "project_use": "1인 지출비용 산출의 분모. 그룹 크기로는 쓰지 않는다",
+      "status": "confirmed",
+      "evidence": "SAV 변수 라벨 '국내]  B_여행{n}차_지출비용에 포함되는 인원수'. ONE_COST == COST/NUM 이 28,564건 전부에서 성립",
+      "correction_2026_08_06": "이전에 '여행 인원 또는 동반 인원 후보'로 추정했던 것은 틀렸다. 이 값으로 그룹 크기 분포를 만들면 통계편 공표표 14-1-x 와 25~30pp 어긋난다(혼자 33.4% vs 공표 3.1%). 그룹 크기는 A6 를 쓴다.",
+      "warning": "여행 인원도 동반자 수도 아니다. 그룹 크기 샘플링에 쓰지 말 것"
+    },
+    {
+      "source_column": "A6",
+      "meaning": "함께 여행한 일행은 귀하를 포함하여 총 몇 명이었습니까?[단위:명]",
+      "project_use": "그룹 크기 분포 (visitor_group_size_distribution_v0)",
+      "status": "confirmed",
+      "evidence": "SAV 변수 라벨. WT_DOM 가중 집계 결과가 통계편 표 14-1-1/2/3 과 최대오차 0.08pp 로 일치",
+      "aggregation_unit": "응답자 × 본설문이 진행된 여행(D_TRA{n}_CHECK 로 지정) 1건"
+    },
+    {
+      "source_column": "A6A",
+      "meaning": "(Q6에서 2명 이상인 경우) 일행 중 만 15세 미만은 몇 명이었습니까?[단위:명]",
+      "project_use": "그룹 내 아동 슬롯 수 분포 (group_child_composition_v0). 종속 아동 NPC 배치의 근거",
+      "status": "confirmed",
+      "evidence": "SAV 변수 라벨",
+      "note": "이 문항의 연령 경계(만 15세 미만)가 아동 슬롯 정의가 됐다. 기존 문서의 0~14세와 같은 구간"
+    },
+    {
+      "source_column": "A6B_1..12",
+      "meaning": "함께 여행한 일행은 어떤 분들이었습니까? (복수응답)",
+      "codes": {
+        "1": "배우자", "2": "자녀", "3": "손자/손녀", "4": "부모", "5": "조부모", "6": "형제/자매",
+        "7": "친구", "8": "연인", "9": "(직장)동료", "10": "친목 단체/모임", "11": "학교 단체(소풍, 수학여행 등)", "12": "기타"
+      },
+      "project_use": "companion_type_response_v0 (참고용). non_leader_adult_archetype_rule 정교화의 근거 후보",
+      "status": "confirmed",
+      "evidence": "SAV 변수 라벨 + 값 라벨"
+    },
+    {
+      "source_column": "D_TRA{n}_CASE",
+      "meaning": "여행유형",
+      "codes": {
+        "1": "국내 관광/휴양 여행(단순 관광/휴양)",
+        "2": "국내 가족/친지/친구 방문 여행 - 관광/휴양 활동 포함",
+        "3": "국내 단순 가족/친지/친구 방문 - 관광/휴양 활동 미포함",
+        "4": "국내 출장/업무 여행 - 관광/휴양 활동 포함",
+        "5": "국내 단순 출장/업무 - 관광/휴양 활동 미포함"
+      },
+      "project_use": "공표표의 '관광여행' 모집단 정의 = 코드 1/2/4",
+      "status": "confirmed",
+      "evidence": "SAV 값 라벨. 코드 1/2/4 로 필터한 결과가 공표표를 재현"
+    },
+    {
+      "source_column": "D_TRA{n}_CHECK",
+      "meaning": "본설문진행여부 — A 블록(Q1~Q10)이 어느 여행 블록에 대한 응답인지 지정",
+      "project_use": "A6/A6A/A6B 를 해당 여행의 CASE·S_Day 와 연결",
+      "status": "confirmed",
+      "evidence": "SAV 변수 라벨. 값이 있는 블록이 응답자당 1개"
     },
     {
       "source_column": "D_TRA{n}_{visit}_SPOT",
@@ -252,9 +308,13 @@
   "full_inventory_csv": "data/metadata/variable_catalog.csv",
   "status": "provisional",
   "next_validation": [
-    "SAV 변수 라벨 또는 공식 코드북으로 BAGE/BSEX와 여행 문항의 실제 원자료 열 연결",
-    "워크시트 행 수와 보고서 표본 51,600명의 차이 설명",
-    "WT_DOM의 사람 단위·여행 단위 적용 방법 확인",
-    "복수 여행 블록을 long format으로 바꾸는 규칙 설계"
-  ]
+    "워크시트 행 수(52,185)와 보고서 표본 51,600명의 차이 설명",
+    "BAGE/BSEX 의 값 라벨 확인 (A6 계열은 2026-08-06에 확인 완료, 이 두 개는 아직 provisional_codes)",
+    "복수 여행 블록을 long format으로 바꾸는 규칙 설계 (A 블록만 쓰는 현재 산출물에는 불필요)"
+  ],
+  "resolved_validation": [
+    "~~SAV 변수 라벨 또는 공식 코드북으로 여행 문항의 실제 원자료 열 연결~~ → 2026-08-06 완료. SAV 사전(레코드 타입 2/3/4/7)을 직접 파싱해 3,165개 변수의 라벨·값라벨을 읽었고, A6/A6A/A6B/CASE/CHECK/NUM 을 확정했다.",
+    "~~WT_DOM의 사람 단위·여행 단위 적용 방법 확인~~ → 2026-08-06 완료. weight_method.resolved_2026_08_06 참조."
+  ],
+  "note_2026_08_06": "SAV 는 변수 3,165개, xlsx 는 열 2,419개로 다르다 — xlsx 가 일부 변수(주로 기타응답 텍스트 T*)를 빼고 내보낸 것으로 보인다. 산출물에 필요한 변수는 양쪽에 다 있다."
 }

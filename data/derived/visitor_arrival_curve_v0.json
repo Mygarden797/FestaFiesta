@@ -1,0 +1,105 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-06",
+  "dataset_id": "visitor_arrival_curve_v0",
+  "status": "draft — 곡선 인터페이스(형태·단위·도메인)는 확정, 곡선 모양 수치는 전부 draft_assumption",
+  "purpose": "crowdAI가 그룹 입장 타이밍을 정할 때 맞춰야 할 시간대별 목표 유입 분포. crowdai_handoff_note.md §4의 \"시간대별 목표 유입량\"의 실제 형태.",
+  "row_unit": "한 시나리오 × 한 시간 버킷",
+  "interface_contract": {
+    "quantity": "신규 유입(그 버킷에 새로 입장하는 인원)이다. 동시 체류 인원 목표가 아니다.",
+    "unit": "전체 유입 대비 비율(%). 시나리오별 합계 = 100. 절대 인원이 아니다.",
+    "consumer_formula": "그 버킷의 목표 인원 = arrival_share_pct / 100 × (소비자가 정한 총 유입 인원)",
+    "domain": "Live 단계의 정규화 진행도 [0,1) 을 24개 버킷으로 나눈 것. 절대 시각이 아니다.",
+    "default_bucket_minutes": 10,
+    "why_normalized": "live_stage_duration_minutes(현재 240, 범위 120~480)가 바뀌어도 곡선을 다시 만들 필요가 없다. 소비자가 진행도를 자기 시계에 곱하면 된다.",
+    "group_wholeness_tolerance": "그룹은 통째로 입장해야 하므로(§4 제약) 그룹 크기가 1~4명으로 덩어리져 버킷 목표를 정확히 맞출 수 없다. 버킷별 오차는 정상이며, 관리해야 할 것은 누적 유입이 cumulative_share_pct 를 크게 벗어나지 않는 것뿐이다."
+  },
+  "scenarios": [
+    {
+      "scenario_id": "flat_v0",
+      "label": "균등 유입",
+      "rationale": "피크가 전혀 없는 기준선. 곡선 모양이 결과에 얼마나 영향을 주는지 재는 대조군이고, crowdAI 구현이 \"가장 쉬운 입력\"에서 먼저 동작하는지 확인하는 용도다. 현실 가정이 아니다.",
+      "beta_a": 1,
+      "beta_b": 1,
+      "peak_bucket_index": 0,
+      "peak_clock_at_default": "17:05",
+      "peak_to_mean_arrival_ratio": 1,
+      "peak_concurrent_occupancy_ratio": 0.5541,
+      "peak_occupancy_bucket_index": 19,
+      "peak_occupancy_clock_at_default": "20:15",
+      "sum_check_pct": 100,
+      "status": "draft_assumption"
+    },
+    {
+      "scenario_id": "single_peak_v0",
+      "label": "초중반 완만한 피크",
+      "rationale": "개장 직후 몰렸다가 서서히 줄어드는 완만한 단봉 곡선. 평균 체류(약 128분)를 고려하면 후반 도착은 축제 종료에 잘려 비현실적이므로 피크를 앞쪽에 둔다. 실측 아님.",
+      "beta_a": 2.6,
+      "beta_b": 3.9,
+      "peak_bucket_index": 8,
+      "peak_clock_at_default": "18:25",
+      "peak_to_mean_arrival_ratio": 2.0314,
+      "peak_concurrent_occupancy_ratio": 0.8439,
+      "peak_occupancy_bucket_index": 15,
+      "peak_occupancy_clock_at_default": "19:35",
+      "sum_check_pct": 100,
+      "status": "draft_assumption"
+    },
+    {
+      "scenario_id": "sunset_peak_v0",
+      "label": "일몰 전후 뾰족한 피크",
+      "rationale": "야간 프로그램(선셋클럽·선셋펍 등 Nightlife) 시작 전에 몰리는 뾰족한 곡선. 8월 초 부산 일몰이 19:30경이라는 사실은 천문값이지만 \"그 시각에 사람이 몰린다\"는 것은 우리 추론이며 관측된 값이 아니다.",
+      "beta_a": 5,
+      "beta_b": 4.3,
+      "peak_bucket_index": 13,
+      "peak_clock_at_default": "19:15",
+      "peak_to_mean_arrival_ratio": 2.3713,
+      "peak_concurrent_occupancy_ratio": 0.9019,
+      "peak_occupancy_bucket_index": 18,
+      "peak_occupancy_clock_at_default": "20:05",
+      "sum_check_pct": 100,
+      "status": "draft_assumption"
+    }
+  ],
+  "derived_metrics_note": {
+    "peak_to_mean_arrival_ratio": "public_data_decision_log.md 2026-08-05 항목의 \"피크·평균 비율 1.4(draft_assumption)\"를 대체하는 값이다. 이제 곡선에서 계산되는 파생값이며, 따로 가정할 노브가 아니다.",
+    "peak_concurrent_occupancy_ratio": "총 유입 N명일 때 동시 체류 피크가 N의 몇 배인지. 유입 곡선과 체류시간 삼각분포(stay_duration_multiplier)를 합성해 계산했다.",
+    "prohibited_use": "peak_concurrent_occupancy_ratio 로 total_visitor_count 를 역산해 낮추지 말 것. 2026-08-05에 같은 방식(700에서 950 역산)을 시도했다가 근거 없는 숫자에서 또 역산하면 거짓 정밀도만 남는다는 이유로 되돌린 전례가 있다. 이 값은 \"수요가 스폰 상한을 넘을 때 흡수 정책이 감당해야 할 규모\"를 가늠하는 진단용이다."
+  },
+  "inputs": {
+    "live_stage_duration_minutes": {
+      "value": 240,
+      "status": "confirmed",
+      "source": "utility_coefficients_v0.csv"
+    },
+    "stay_duration_share_of_live_stage_mean": {
+      "value": 0.5,
+      "status": "assumption",
+      "source": "utility_coefficients_v0.csv"
+    },
+    "stay_duration_multiplier_triangular": {
+      "min": 0.7,
+      "mode": 0.9,
+      "max": 1.6,
+      "status": "draft_assumption",
+      "source": "individual_variation_knobs_v0.csv"
+    }
+  },
+  "shape_basis": {
+    "what_is_real": [
+      "Live 단계가 17:00~21:00(240분)이라는 것 — 실제 부산바다축제 프로그램 시간표 기준, status confirmed.",
+      "야간 Nightlife 프로그램(선셋클럽·선셋펍)이 실제로 존재한다는 것 — 리플렛 대조 확인(booth_naming_convention.md)."
+    ],
+    "what_is_assumed": [
+      "곡선이 단봉(하나의 피크)이라는 것.",
+      "피크 위치와 뾰족함(Beta a·b) 수치 전부.",
+      "\"일몰·야간 프로그램 직전에 사람이 몰린다\"는 방향성."
+    ],
+    "rejected_basis": {
+      "source_id": "transport_expressway_hourly_2025_06_30",
+      "why": "전국 고속도로 영업소 시간대별 교통량은 통행 목적이 없고 통근 통행이 지배해 16~17시에 피크를 찍고 저녁 내내 감소한다 — 저녁 축제의 유입 형태와 방향이 반대다. 탑승 인원·축제 방문 여부도 알 수 없다. 축제 유입 곡선의 근거로 쓰지 않는다."
+    }
+  },
+  "regeneration": "node Tools/data/build_arrival_curve.mjs",
+  "spec": "data/metadata/visitor_arrival_curve_spec.md"
+}
