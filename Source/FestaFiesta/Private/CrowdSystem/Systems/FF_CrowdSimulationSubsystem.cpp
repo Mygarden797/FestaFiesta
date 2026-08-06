@@ -5,7 +5,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
-#include "CrowdSystem/FF_BaseNPC.h"
+
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 
 
