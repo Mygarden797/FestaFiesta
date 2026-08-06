@@ -1,12 +1,11 @@
-/**
- * @file FF_FFZSSaveGameTests.cpp
- * @brief Schema 4 Snapshot과 1cm 압축 Region 값 그래프가 실제 SaveGame 바이트 왕복에서 손실되지 않는지 검증한다.
- *
- * Spec, Transform, FText, SoftObjectPath, Queue의 Waiting/Service/Exit, Receipt와 CurrentPhase를
- * 서로 구별되는 sentinel 값으로 채운 뒤 SaveGameToMemory/LoadGameFromMemory 결과를 비교한다.
- * 이 테스트의 SchemaVersion 97은 Runtime Restore 허용 버전이 아니라 직렬화 필드가 그대로
- * 보존되는지 찾기 쉬운 값으로 확인하기 위한 sentinel이다.
- */
+//  FF_FFZSSaveGameTests.cpp
+
+// Schema 4 Snapshot과 1cm 압축 Region 값 그래프가 실제 SaveGame 바이트 왕복에서 손실되지 않는지 검증한다.
+// Spec, Transform, FText, SoftObjectPath, Queue의 Waiting/Service/Exit, Receipt와 CurrentPhase를
+// 서로 구별되는 sentinel 값으로 채운 뒤 SaveGameToMemory/LoadGameFromMemory 결과를 비교한다.
+// 이 테스트의 SchemaVersion 97은 Runtime Restore 허용 버전이 아니라 직렬화 필드가 그대로
+// 보존되는지 찾기 쉬운 값으로 확인하기 위한 sentinel이다.
+
 
 #if WITH_DEV_AUTOMATION_TESTS
 

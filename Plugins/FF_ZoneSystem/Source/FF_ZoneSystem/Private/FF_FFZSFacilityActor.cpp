@@ -1,11 +1,10 @@
-/**
- * @file FF_FFZSFacilityActor.cpp
- * @brief 설치된 시설 한 개의 런타임 상태, Queue 컴포넌트, 비권위 화면 표현을 구현한다.
- *
- * 흐름: Subsystem이 승인한 Spec·Transform을 Actor와 컴포넌트에 반영한다.
- * 불변식: 전역 점유와 명령 확정 권한은 UFFZSWorldSubsystem에만 있으며 Actor Scale은 1을 유지한다.
- * 실패/성능: 표현 자산은 비동기로 준비하며 실패해도 권위 점유 상태를 바꾸지 않는다.
- */
+// FF_FFZSFacilityActor.cpp
+
+// 설치된 시설 한 개의 런타임 상태, Queue 컴포넌트, 비권위 화면 표현을 구현한다.
+// 흐름: Subsystem이 승인한 Spec·Transform을 Actor와 컴포넌트에 반영한다.
+// 불변식: 전역 점유와 명령 확정 권한은 UFFZSWorldSubsystem에만 있으며 Actor Scale은 1을 유지한다.
+// 실패/성능: 표현 자산은 비동기로 준비하며 실패해도 권위 점유 상태를 바꾸지 않는다.
+ 
 
 #include "FF_FFZSFacilityActor.h"
 #include "Engine/World.h"
@@ -22,19 +21,19 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
-/*
- * 이 파일의 책임
- * - 시설 한 개의 런타임 상태(배치, 운영 상태, 대기열)와 화면 표현(메시, 경계, 앵커)을 함께 유지한다.
- * - 월드 전체의 권위 데이터는 UFFZSWorldSubsystem의 시설/압축 영역 레지스트리이다. 이 Actor는 명령을
- *   임의로 확정하는 주체가 아니며, 설치·이동·제거는 Subsystem의 검증 및 트랜잭션 흐름을 거쳐야 한다.
- *
- * 핵심 불변식
- * - 등록 가능한 시설은 유효한 InstanceId/ZoneId/Spec을 가지며 QuarterTurns는 항상 0~3으로 정규화한다.
- * - Actor Scale은 항상 1이다. 크기는 FacilitySpec과 컴포넌트 Extent로 표현해야 그리드 계산과 일치한다.
- * - 대기열에 Agent가 남아 있으면 이동/제거할 수 없다. 일반 Close는 먼저 Drain하고, 비워진 뒤
- *   MovePending으로 전환한다. Emergency Close만 즉시 취소한다.
- * - RuntimeAnchors와 VisualMesh는 파생된 표시 데이터다. 이를 바꿔도 Subsystem의 점유 영역은 바뀌지 않는다.
- */
+
+//이 파일의 책임
+ // 시설 한 개의 런타임 상태(배치, 운영 상태, 대기열)와 화면 표현(메시, 경계, 앵커)을 함께 유지한다.
+ // 월드 전체의 권위 데이터는 UFFZSWorldSubsystem의 시설/압축 영역 레지스트리이다. 이 Actor는 명령을
+ //  임의로 확정하는 주체가 아니며, 설치·이동·제거는 Subsystem의 검증 및 트랜잭션 흐름을 거쳐야 한다.
+
+//핵심 불변식
+ // 등록 가능한 시설은 유효한 InstanceId/ZoneId/Spec을 가지며 QuarterTurns는 항상 0~3으로 정규화한다.
+ // Actor Scale은 항상 1이다. 크기는 FacilitySpec과 컴포넌트 Extent로 표현해야 그리드 계산과 일치한다.
+ // 대기열에 Agent가 남아 있으면 이동/제거할 수 없다. 일반 Close는 먼저 Drain하고, 비워진 뒤
+ // MovePending으로 전환한다. Emergency Close만 즉시 취소한다.
+ // RuntimeAnchors와 VisualMesh는 파생된 표시 데이터다. 이를 바꿔도 Subsystem의 점유 영역은 바뀌지 않는다.
+ 
 
 AFFZSFacilityActor::AFFZSFacilityActor()
 {
@@ -155,7 +154,7 @@ bool AFFZSFacilityActor::OpenFacility()
 }
 
 // 일반 Close는 현재 이용자를 보존한 채 Drain을 시작하고, Emergency Close만 즉시 취소한다.
-// Queue의 동기 콜백이 재진입할 수 있으므로 아래 코드는 전환 의도 플래그를 먼저 기록한다.
+// Queue의 동기 콜백이 재진입할 수 있으므로 아래 코드는 전환 의도 플래그를 먼저 기록.
 void AFFZSFacilityActor::CloseFacility(const bool bEmergency)
 {
     if (FacilityState == EFFZSFacilityState::Removed)
@@ -218,7 +217,7 @@ bool AFFZSFacilityActor::GetAnchorWorldTransform(const EFFZSAnchorType Type, con
 }
 
 // Actor와 Queue 한 개의 구성요소 스냅샷이다. 월드 전체의 원자적 저장/복원 경계는
-// UFFZSWorldSubsystem::CaptureWorldSnapshot/RestoreWorldSnapshot이 제공한다.
+// UFFZSWorldSubsystem::CaptureWorldSnapshot/RestoreWorldSnapshot이 제공.
 FFFZSFacilityInstanceSnapshot AFFZSFacilityActor::CaptureInstanceSnapshot() const
 {
     FFFZSFacilityInstanceSnapshot Snapshot;
@@ -250,7 +249,7 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
 }
 
 // 아래 컴포넌트들은 FacilitySpec에서 재생성할 수 있는 표현 캐시다. 권위 배치 판정은 이 Box/Spline의
-// 충돌 이벤트가 아니라 Subsystem의 그리드, 보호 구역, 월드 충돌 검사를 사용한다.
+// 충돌 이벤트가 아니라 Subsystem의 그리드, 보호 구역, 월드 충돌 검사를 사용.
 void AFFZSFacilityActor::RebuildRuntimePresentation()
 {
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;

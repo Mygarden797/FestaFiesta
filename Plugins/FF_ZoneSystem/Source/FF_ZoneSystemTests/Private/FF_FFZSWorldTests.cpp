@@ -1,18 +1,17 @@
-/**
- * @file FF_FFZSWorldTests.cpp
- * @brief WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
- *
- * 테스트 행렬:
- * 1) Command lifecycle, Queue 이동, Snapshot 복원과 동일 Command replay의 멱등성.
- * 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
- * 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
- * 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
- * 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
- * 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
- *
- * 각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
- * Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
- */
+//  FF_FFZSWorldTests.cpp
+
+// WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
+// 테스트 행렬:
+ // 1) Command lifecycle, Queue 이동, Snapshot 복원과 동일 Command replay의 멱등성.
+ // 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
+ // 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
+ // 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
+ // 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
+ // 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
+ 
+ //각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
+ // Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
+
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -35,7 +34,7 @@
 
 namespace
 {
-    /** 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다. */
+    // 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다.
     class FScopedZFTestSettings
     {
     public:

@@ -1,10 +1,10 @@
-/**
- * @file FF_FFZSFacilityDefinition.cpp
- * @brief 시설 Data Asset 검증과 안정적인 Primary Asset ID 생성을 구현한다.
- * 흐름: Spec 검증 오류를 에디터 데이터 검증에 전달하고 유효한 정의 ID를 Primary Asset 이름으로 사용한다.
- * 불변식: Primary Asset Type 문자열은 FFZSFacilityDefinition이며 런타임 사양 의미와 일치해야 한다.
- * 실패/성능: 모든 검증 오류를 모아 제작자에게 보여 주며 에셋이나 메시를 강제 로드하지 않는다.
- */
+// FF_FFZSFacilityDefinition.cpp
+
+// 시설 Data Asset 검증과 안정적인 Primary Asset ID 생성을 구현.
+//흐름: Spec 검증 오류를 에디터 데이터 검증에 전달하고 유효한 정의 ID를 Primary Asset 이름으로 사용.
+// 불변식: Primary Asset Type 문자열은 FFZSFacilityDefinition이며 런타임 사양 의미와 일치해야 한다.
+// 실패/성능: 모든 검증 오류를 모아 제작자에게 보여 주며 에셋이나 메시를 강제 로드하지 않는다.
+ 
 
 #include "FF_FFZSFacilityDefinition.h"
 

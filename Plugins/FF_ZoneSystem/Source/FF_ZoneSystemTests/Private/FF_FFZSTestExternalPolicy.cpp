@@ -1,11 +1,10 @@
-/**
- * @file FF_FFZSTestExternalPolicy.cpp
- * @brief Policy callback 횟수와 실패·재진입 방어를 관찰하기 위한 테스트 대역 구현이다.
- *
- * 각 callback 횟수를 기록하고, PreValidate 중 권위 API 변경을 일부러
- * 시도해 WorldSubsystem이 false를 반환하는지 확인한다. 실제 비용·Nav·안전 상태는 수정하지 않으며
- * Production Policy 구현 예제가 아니다.
- */
+// FF_FFZSTestExternalPolicy.cpp
+
+// Policy callback 횟수와 실패·재진입 방어를 관찰하기 위한 테스트 대역 구현이다.
+// 각 callback 횟수를 기록하고, PreValidate 중 권위 API 변경을 일부러
+// 시도해 WorldSubsystem이 false를 반환하는지 확인한다. 실제 비용·Nav·안전 상태는 수정하지 않으며
+// Production Policy 구현 예제가 아니다.
+
 
 #include "FF_FFZSTestExternalPolicy.h"
 

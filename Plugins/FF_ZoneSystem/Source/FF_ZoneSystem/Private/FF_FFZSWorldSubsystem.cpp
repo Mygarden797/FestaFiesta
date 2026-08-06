@@ -1,15 +1,5 @@
-/**
- * @file FF_FFZSWorldSubsystem.cpp
- * @brief 시설·Zone·보호구역 Registry, 점유, 명령, Policy, Queue, Snapshot의 월드 권위를 구현한다.
- *
- * 흐름: 로컬 검증 뒤 외부 Policy를 준비하고 승인된 상태만 단일 publish 경계에서 반영한다.
- * 불변식: 명령 실패는 부분 점유를 남기지 않으며 재진입·stale Revision·중복 Command를 방어한다.
- * 실패/성능: 공간 후보 캐시는 할당과 Transform을 재사용하지만 기하 판정 반복비용 자체를 제거하지 않는다.
- */
-
 #include "FF_FFZSWorldSubsystem.h"
 
-#include "Algo/Accumulate.h"
 #include "CollisionQueryParams.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/OverlapResult.h"
@@ -29,36 +19,12 @@
 #include "FF_FFZSZoneActor.h"
 
 #define LOCTEXT_NAMESPACE "FFZSWorldSubsystem"
-/*
- * UFFZSWorldSubsystem은 한 UWorld의 Zone/Facility 시스템을 조정하는 권위 계층이다.
- *
- * 권위 상태
- * - ZonesById / FacilitiesById: 안정 ID에서 현재 Actor로 가는 레지스트리
- * - OccupiedFacilityRegions: 시설 GUID별 ZoneId와 압축 예약 영역을 보존하는 배치 점유 원장
- * - AgentQueueOwnership: Agent 하나가 동시에 Queue 하나에만 속한다는 소유 원장
- * - WorldRevision / CommandReceipts: 낙관적 동시성 및 CommandId 멱등 재실행 기록
- * Actor의 표현 컴포넌트나 Preview 디버그 도형은 이 원장을 대신하지 않는다.
- *
- * 명령의 권위 흐름
- * 요청 -> Game Thread/재진입/ID/Revision/Phase 검사 -> 로컬 배치 및 정책 사전 검증
- * -> 외부 정책 임시 적용 -> Actor/점유 원장 변경 -> 정책 Commit -> Revision 증가 및 이벤트 발행이다.
- * 중간 실패 시 임시 정책과 변경 가능한 로컬 상태를 복구하고, 완료된 성공/실패 결과를 Receipt로 저장해 재생한다.
- *
- * 동시성 및 재진입 불변식
- * - 권위 변경은 Game Thread에서만 수행한다.
- * - Snapshot 복원, 외부 정책 콜백, 다른 Command 실행 중에는 새 권위 변경을 시작하지 않는다.
- * - 외부 정책과 Queue 델리게이트는 동기 재진입할 수 있으므로 Guard와 선점 기록을 콜백보다 먼저 둔다.
- *
- * 파일의 함수군은 순서대로 기하 도우미/캐시, 월드 수명과 레지스트리, 배치 검증, 외부 정책
- * 트랜잭션, 명령 실행, 통합 정책과 Queue, 조회 모델, 스냅샷, 그래프/점유 유지보수로 나뉜다.
- */
 
 namespace
 {
-    // [기하 도우미] Zone 로컬 압축 사각형의 네 모서리를 월드로 변환해 Z 높이를 포함한 AABB를 만든다.
-    // 사각형 한 개가 수십만 1 cm 셀을 대신하므로 보호 구역 broad-phase 호출 수도 영역 수에 비례한다.
+    // 압축 Rect 하나로 월드 AABB를 만들어 1cm 셀 열거를 피한다.
     FBox MakeCellRectWorldBox(
-        const AFFZSGameplayZone& Zone,
+        const FTransform& ZoneTransform,
         const FFFZSCellRect& Rect,
         const double CellSizeCm,
         const double BaseZ,
@@ -73,13 +39,36 @@ namespace
         };
         for (const FVector& LocalCorner : LocalCorners)
         {
-            FVector WorldCorner = Zone.GetActorTransform().TransformPosition(LocalCorner);
+            FVector WorldCorner = ZoneTransform.TransformPosition(LocalCorner);
             WorldCorner.Z = BaseZ;
             Result += WorldCorner;
             WorldCorner.Z = BaseZ + HeightCm;
             Result += WorldCorner;
         }
         return Result;
+    }
+
+    // 검증 단계의 FootprintRects를 재사용해 footprint 기하 계산을 반복하지 않는다.
+    FTransform MakePlacementTransform(
+        const AFFZSGameplayZone& Zone,
+        const FFFZSGridPlacement& Placement,
+        const TArray<FFFZSCellRect>& FootprintRects)
+    {
+        FVector Center = Zone.GetActorLocation();
+        if (!FootprintRects.IsEmpty())
+        {
+            const FFFZSCellRect& Rect = FootprintRects[0];
+            const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+            Center = Zone.GetActorTransform().TransformPosition(FVector(
+                (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
+                (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
+                0.0));
+        }
+        const FQuat Rotation = Zone.GetActorQuat() * FQuat(
+            FVector::UpVector,
+            FMath::DegreesToRadians(
+                90.0 * UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns)));
+        return FTransform(Rotation, Center, FVector::OneVector);
     }
 
     bool IsWorldChangeCommand(const EFFZSCommandType Type)
@@ -103,12 +92,13 @@ namespace
     {
         const FVector2D Segment = B - A;
         const double LengthSquared = Segment.SizeSquared();
+        const double ToleranceSquared = ToleranceCm * ToleranceCm;
         if (LengthSquared <= UE_SMALL_NUMBER)
         {
-            return FVector2D::Distance(Point, A) <= ToleranceCm;
+            return (Point - A).SizeSquared() <= ToleranceSquared;
         }
         const double T = FMath::Clamp(FVector2D::DotProduct(Point - A, Segment) / LengthSquared, 0.0, 1.0);
-        return FVector2D::Distance(Point, A + Segment * T) <= ToleranceCm;
+        return (Point - (A + Segment * T)).SizeSquared() <= ToleranceSquared;
     }
 
     bool IsPointInsidePolygon2D(const FVector2D& Point, const TArray<FVector2D>& Polygon, const bool bIncludeBoundary)
@@ -204,24 +194,13 @@ namespace
 
     struct FPreparedZoneOverlap
     {
-        bool bIsTargetZone = false;
-        double VerticalExtentCm = 0.0;
+        double HalfVerticalExtentCm = 0.0;
         FTransform WorldTransform;
+        FBox2D BoundsInCellSpace = FBox2D(EForceInit::ForceInit);
         TArray<FVector2D> PolygonInCellSpace;
     };
 
-    /*
-     * [존 소유권 기하 캐시]
-     * 한 번의 배치 검증에서는 TargetZone Transform을 셀 공간 기준으로 고정하고, 각 후보 존의 Transform과
-     * 폴리곤을 그 셀 공간으로 한 번만 변환한다. 그래서 셀마다 GetBoundaryPolygonLocalCm 배열을 다시
-     * 만들거나 모든 꼭짓점을 월드/로컬 변환하지 않는다. Snapshot 검증은 대상 Zone별로 이 캐시를 하나씩
-     * 보관하여 같은 Zone의 여러 시설에도 재사용한다.
-     *
-     * 단, 이것은 공간 인덱스가 아니다. 각 압축 사각형은 여전히 후보 존을 순회하고, 각 후보 판정은 폴리곤의
-     * 샘플/꼭짓점/변을 검사한다. 실제 비용은 셀 수, 후보 존 수, 각 존의 변 수에 함께 좌우되므로
-     * O(존 수 + 셀 수)라고 단순화해서는 안 된다. 캐시는 할당과 Transform 반복을 줄이는 역할이다.
-     */
-    /** 한 번의 배치/스냅샷 검증 호출에서 검사하는 모든 압축 사각형을 위해 한 번만 준비되는 불변 Geometry다. */
+    // 한 검증 호출 동안 후보 Zone의 Transform, 폴리곤, AABB를 대상 셀 공간에 한 번만 준비한다.
     struct FZoneCellOwnershipCache
     {
         FTransform CellSpaceWorldTransform;
@@ -232,42 +211,33 @@ namespace
             const TMap<FName, TWeakObjectPtr<AFFZSGameplayZone>>& Zones,
             const AFFZSGameplayZone& TargetZone)
             : CellSpaceWorldTransform(TargetZone.GetActorTransform())
-            , TargetPolygonInCellSpace(GetZonePolygonInCellSpace(
-                TargetZone,
-                CellSpaceWorldTransform,
-                CellSpaceWorldTransform))
+            , TargetPolygonInCellSpace(TargetZone.GetBoundaryPolygonLocalCm())
         {
             Candidates.Reserve(Zones.Num());
             for (const TPair<FName, TWeakObjectPtr<AFFZSGameplayZone>>& Pair : Zones)
             {
                 const AFFZSGameplayZone* Candidate = Pair.Value.Get();
-                if (!Candidate)
+                if (!Candidate || Candidate == &TargetZone)
                 {
                     continue;
                 }
 
                 FPreparedZoneOverlap& Prepared = Candidates.AddDefaulted_GetRef();
-                Prepared.bIsTargetZone = Candidate == &TargetZone;
-                Prepared.VerticalExtentCm = Candidate->VerticalExtentCm;
+                Prepared.HalfVerticalExtentCm = Candidate->VerticalExtentCm * 0.5;
                 Prepared.WorldTransform = Candidate->GetActorTransform();
-                if (!Prepared.bIsTargetZone)
+                Prepared.PolygonInCellSpace = GetZonePolygonInCellSpace(
+                    *Candidate,
+                    Prepared.WorldTransform,
+                    CellSpaceWorldTransform);
+                for (const FVector2D& Point : Prepared.PolygonInCellSpace)
                 {
-                    Prepared.PolygonInCellSpace = GetZonePolygonInCellSpace(
-                        *Candidate,
-                        Prepared.WorldTransform,
-                        CellSpaceWorldTransform);
+                    Prepared.BoundsInCellSpace += Point;
                 }
             }
         }
     };
 
-    /*
-     * 대상 존은 셀 네 모서리와 중심이 경계를 포함한 내부인지 확인하고, 존 경계 변이 셀의 열린 내부를
-     * 통과하지 않는지도 검사한다. 다른 존은 반대로 셀의 열린 내부와 실제로 겹칠 때만 중복 소유로 센다.
-     * 따라서 두 존이 경계선에서 맞닿기만 한 것은 중복으로 보지 않지만, 면적이 겹치면 실패한다.
-     * 이 판정은 ValidateZoneData가 보장하는 단순 폴리곤 및 Transform 불변식을 전제로 한다.
-     */
-    /** Target Zone이 압축 사각형 전체를 포함하는지 꼭짓점·중심·경계 교차로 정확히 검사한다. */
+    // 대상 Zone 경계는 포함하고, 다른 Zone과의 경계 접촉은 허용하되 면적 중첩은 거부한다.
     bool IsRectFullyInsideZone(
         const TArray<FVector2D>& Polygon,
         const FFFZSCellRect& Rect,
@@ -304,7 +274,6 @@ namespace
         return true;
     }
 
-    /** 다른 Zone이 압축 사각형의 열린 내부와 실제 면적으로 겹치는지 검사한다. 경계 접촉은 허용한다. */
     bool DoesZoneOverlapRectInterior(
         const FPreparedZoneOverlap& Candidate,
         const FTransform& CellSpaceWorldTransform,
@@ -319,10 +288,17 @@ namespace
         const double MinY = Rect.Min.Y * CellSizeCm;
         const double MaxX = Rect.Max.X * CellSizeCm;
         const double MaxY = Rect.Max.Y * CellSizeCm;
+        // 열린 내부가 AABB에서 분리되면 정밀 폴리곤 검사를 생략한다.
+        if (!Candidate.BoundsInCellSpace.bIsValid ||
+            Candidate.BoundsInCellSpace.Max.X <= MinX || Candidate.BoundsInCellSpace.Min.X >= MaxX ||
+            Candidate.BoundsInCellSpace.Max.Y <= MinY || Candidate.BoundsInCellSpace.Min.Y >= MaxY)
+        {
+            return false;
+        }
         const FVector CellCenterWorld = CellSpaceWorldTransform.TransformPosition(
             FVector((MinX + MaxX) * 0.5, (MinY + MaxY) * 0.5, 0.0));
         if (FMath::Abs(Candidate.WorldTransform.InverseTransformPosition(CellCenterWorld).Z) >
-            Candidate.VerticalExtentCm * 0.5)
+            Candidate.HalfVerticalExtentCm)
         {
             return false;
         }
@@ -353,7 +329,6 @@ namespace
         return false;
     }
 
-    /** Target 하나만 사각형 전체를 소유하고 다른 Zone과 면적 중첩이 없을 때 true다. */
     bool IsRectOwnedByExactlyOneZone(
         const FZoneCellOwnershipCache& Cache,
         const FFFZSCellRect& Rect,
@@ -364,23 +339,22 @@ namespace
             return false;
         }
 
-        int32 OverlapCount = 0;
         for (const FPreparedZoneOverlap& Candidate : Cache.Candidates)
         {
-            if (Candidate.bIsTargetZone ||
-                DoesZoneOverlapRectInterior(Candidate, Cache.CellSpaceWorldTransform, Rect, CellSizeCm))
+            if (DoesZoneOverlapRectInterior(
+                Candidate, Cache.CellSpaceWorldTransform, Rect, CellSizeCm))
             {
-                ++OverlapCount;
+                return false;
             }
         }
-        return OverlapCount == 1;
+        return true;
     }
 
     constexpr int32 LegacySnapshotSchemaVersion = 3;
     constexpr int32 CurrentSnapshotSchemaVersion = 4;
     constexpr int64 LegacyMeterCellScale = 100;
 
-    /** int32 범위의 구 Cell 값을 100배 할 때 손상 입력의 오버플로를 명시적으로 거부한다. */
+    // 구 Cell 좌표를 100배 할 때 오버플로를 fail-closed로 처리한다.
     bool TryScaleLegacyCellCoordinate(const int64 LegacyValue, int32& OutValue)
     {
         if (LegacyValue < MIN_int32 || LegacyValue > MAX_int32)
@@ -396,13 +370,7 @@ namespace
         return true;
     }
 
-    /**
-     * 구 100 cm 개별 Queue Cell을 정확한 1 cm 사각형 합집합으로 압축한다.
-     *
-     * Cell을 Y/X로 한 번 정렬한 뒤 같은 행의 연속 X를 수평 span으로 합치고, 바로 이전 행의
-     * 동일 span만 수직으로 연장한다. 따라서 10,000개 입력도 O(N log N)이며, 일반 Rect 합집합의
-     * 반복 교차 검사로 O(N^2)까지 커지는 저장 복원 지연을 피한다. 중복 Cell은 한 번만 반영한다.
-     */
+    // 구 Queue Cell을 Y/X 정렬 후 수평 span과 연속 행으로 합쳐 O(N log N)에 압축한다.
     bool TryCompressLegacyQueueCells(
         const TArray<FIntPoint>& LegacyCells,
         TArray<FFFZSCellRect>& OutRects)
@@ -410,7 +378,7 @@ namespace
         OutRects.Reset();
         TArray<FIntPoint> SortedCells = LegacyCells;
 
-        // 정렬 전에 모든 반열림 Max=(Cell+1)을 검사해 부분 결과를 남기지 않고 실패한다.
+        // 정렬 전에 모든 반열림 Max=(Cell+1)을 검사해 부분 결과를 남기지 않고 실패.
         for (const FIntPoint& Cell : SortedCells)
         {
             int32 ScaledValue = 0;
@@ -457,7 +425,6 @@ namespace
                 int64 SpanEndXExclusive = static_cast<int64>(SpanStartX) + 1;
                 ++CellIndex;
 
-                // 같은 행의 중복은 건너뛰고, 맞닿는 Cell은 하나의 수평 span으로 합친다.
                 while (CellIndex < SortedCells.Num() && SortedCells[CellIndex].Y == RowY)
                 {
                     const int32 NextX = SortedCells[CellIndex].X;
@@ -519,11 +486,7 @@ namespace
         return true;
     }
 
-    /**
-     * Schema 3(1 Cell=100 cm)을 Schema 4(1 Cell=1 cm)로 메모리에서만 변환한다.
-     * cm로 저장하던 spline/anchor/높이/queue 시간은 그대로 두고 Cell 기반 값만 100배 한다.
-     * 회전 Origin의 99 cm 보정은 구 RotateCell이 나타낸 100x100 cm 면적 경계를 정확히 보존한다.
-     */
+    // Schema 3의 Cell 기반 값만 100배해 1cm 단위 Schema 4로 변환한다.
     bool TryMigrateLegacySnapshotV3(
         const FFFZSWorldSnapshot& LegacySnapshot,
         FFFZSWorldSnapshot& OutMigratedSnapshot,
@@ -620,10 +583,6 @@ namespace
     }
 }
 
-/* [월드 수명/레지스트리]
- * Subsystem 생성 시 이미 월드에 놓인 Actor를 수집하고, 이후 Actor의 BeginPlay/EndPlay가 등록 상태를
- * 유지한다. 중복 ID, 잘못된 데이터, 점유 충돌은 등록 단계에서 거부하여 권위 맵의 불변식을 지킨다.
- */
 void UFFZSWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
@@ -669,11 +628,7 @@ bool UFFZSWorldSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType)
         WorldType == EWorldType::GamePreview;
 }
 
-/*
- * 권위 변경 공통 차단기다. Game Thread 밖, 전체 Snapshot 교체 중, 외부 정책 콜백 중, Command 실행
- * 중이면 실패 폐쇄한다. TGuardValue로 설정된 플래그/ID는 조기 반환에서도 자동 복구되어 잠금 상태가
- * 남지 않는다. 내부 명령 단계에서 필요한 전용 등록 함수는 호출 순서와 InFlightCommandId가 보호한다.
- */
+// 게임 스레드 밖이거나 Snapshot 복원, 외부 Policy 콜백, Command 실행 중이면 권위 변경을 막는다.
 bool UFFZSWorldSubsystem::IsAuthorityMutationBlocked() const
 {
     return !IsInGameThread() || bIsRestoringSnapshot || bIsInvokingExternalPolicy || InFlightCommandId.IsValid();
@@ -762,7 +717,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
         }
     }
 
-    const TArray<FFFZSCellRect> ReservedRects = UFFZSGridLibrary::GetReservedRects(
+    TArray<FFFZSCellRect> ReservedRects = UFFZSGridLibrary::GetReservedRects(
         Facility->GetFacilitySpec(), Facility->GetGridPlacement());
     if (ReservedRects.IsEmpty() ||
         AreRegionsOccupiedByOther(Facility->GetZoneId(), ReservedRects, FacilityId))
@@ -773,7 +728,11 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
     }
 
     FacilitiesById.Add(FacilityId, Facility);
-    OccupyFacilityRegions(*Facility);
+    FFFZSFacilityRegionOccupancy Occupancy;
+    Occupancy.ZoneId = Facility->GetZoneId();
+    // 등록 검증에서 계산한 예약 영역을 재사용한다.
+    Occupancy.Regions = MoveTemp(ReservedRects);
+    OccupiedFacilityRegions.Add(FacilityId, MoveTemp(Occupancy));
     if (UFFZSFacilityQueueComponent* Queue = Facility->GetMutableQueueComponent())
     {
         Queue->OnAgentReleased.AddUniqueDynamic(this, &UFFZSWorldSubsystem::HandleAgentReleased);
@@ -868,12 +827,7 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstan
     return nullptr;
 }
 
-/* [배치 검증 함수군]
- * ValidatePlacementLocal은 Spec/Zone/셀 소유권/점유/보호 구역/지면/월드 충돌/내비게이션을 검사하고,
- * 공개 ValidatePlacement는 그 결과가 유효할 때 외부 정책의 읽기 성격 사전 검증까지 덧붙인다.
- * Move 요청의 Spec은 호출자 입력이 아니라 이미 등록된 시설 Spec으로 덮어써 시설 정의 변조를 막는다.
- * 이 단계는 PlacementTransform과 실패 이유를 계산할 뿐 권위 레지스트리나 점유 셀을 변경하지 않는다.
- */
+// Move는 등록된 Spec으로 검증하며, 이 단계에서는 권위 상태를 변경하지 않는다.
 FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSCommand& Command) const
 {
     const AFFZSFacilityActor* Existing = Command.Type == EFFZSCommandType::Move ? FindFacility(Command.FacilityInstanceId) : nullptr;
@@ -905,9 +859,6 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
 FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility) const
 {
     FFFZSPlacementValidation Result;
-    Result.bIsValid = true;
-
-    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
 
     if (Command.Type != EFFZSCommandType::Install && Command.Type != EFFZSCommandType::Move)
     {
@@ -961,7 +912,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     FFFZSGridPlacement Placement = Command.Placement;
     Placement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns);
 
-    // 권위 결과는 압축 사각형이다. 구 셀 배열은 작은 디버그 대상만 materialize하며 실패해도 판정에는 영향이 없다.
+    // 판정은 압축 Rect를 사용하고 디버그 셀만 제한적으로 materialize한다.
     Result.FootprintRects = UFFZSGridLibrary::GetFootprintRects(Command.FacilitySpec, Placement);
     Result.ClearanceRects = UFFZSGridLibrary::GetClearanceRects(Command.FacilitySpec, Placement);
     Result.QueueRects = UFFZSGridLibrary::GetQueueRects(Command.FacilitySpec, Placement);
@@ -974,7 +925,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.QueueCells);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.ReservedRects,
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.ReservedCells);
-    Result.PlacementTransform = BuildPlacementTransform(*Zone, Command.FacilitySpec, Placement);
+    Result.PlacementTransform = MakePlacementTransform(*Zone, Placement, Result.FootprintRects);
 
     if (Result.FootprintRects.IsEmpty() || Result.ReservedRects.IsEmpty())
     {
@@ -996,17 +947,49 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     }
 
     const FGuid IgnoreId = IgnoreFacility ? IgnoreFacility->GetFacilityInstanceId() : FGuid();
-    if (AreRegionsOccupiedByOther(Command.ZoneId, Result.FootprintRects, IgnoreId))
+    // 점유 원장을 한 번만 순회하며 세 영역의 실패 사유는 각각 보존한다.
+    bool bFootprintOccupied = false;
+    bool bClearanceOccupied = false;
+    bool bQueueOccupied = false;
+    for (const TPair<FGuid, FFFZSFacilityRegionOccupancy>& Pair : OccupiedFacilityRegions)
+    {
+        if ((IgnoreId.IsValid() && Pair.Key == IgnoreId) ||
+            Pair.Value.ZoneId != Command.ZoneId)
+        {
+            continue;
+        }
+        if (!bFootprintOccupied)
+        {
+            bFootprintOccupied = UFFZSGridLibrary::DoCellRectSetsOverlap(
+                Result.FootprintRects, Pair.Value.Regions);
+        }
+        if (!bClearanceOccupied)
+        {
+            bClearanceOccupied = UFFZSGridLibrary::DoCellRectSetsOverlap(
+                Result.ClearanceRects, Pair.Value.Regions);
+        }
+        if (!bQueueOccupied)
+        {
+            bQueueOccupied = UFFZSGridLibrary::DoCellRectSetsOverlap(
+                Result.QueueRects, Pair.Value.Regions);
+        }
+        if (bFootprintOccupied && bClearanceOccupied && bQueueOccupied)
+        {
+            break;
+        }
+    }
+
+    if (bFootprintOccupied)
     {
         Result.AddFailure(EFFZSPlacementFailure::PlacementCollision,
             LOCTEXT("FootprintOccupied", "Facility Footprint가 다른 Facility 예약 영역과 겹칩니다."));
     }
-    if (AreRegionsOccupiedByOther(Command.ZoneId, Result.ClearanceRects, IgnoreId))
+    if (bClearanceOccupied)
     {
         Result.AddFailure(EFFZSPlacementFailure::InsufficientClearance,
             LOCTEXT("ClearanceOccupied", "필요한 여유 공간이 점유되어 있습니다."));
     }
-    if (AreRegionsOccupiedByOther(Command.ZoneId, Result.QueueRects, IgnoreId))
+    if (bQueueOccupied)
     {
         Result.AddFailure(EFFZSPlacementFailure::QueueFootprintBlocked,
             LOCTEXT("QueueOccupied", "최대 Queue 영역이 점유되어 있습니다."));
@@ -1024,28 +1007,15 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     return Result;
 }
 
-// 회전된 footprint 압축 사각형의 중점을 닫힌식으로 계산한다. 셀을 펼쳐 평균내지 않으므로
-// 600x300 같은 1 cm 사양도 O(1)이며, Zone 회전과 사분면 회전을 합성하고 Scale은 항상 1이다.
 FTransform UFFZSWorldSubsystem::BuildPlacementTransform(
     const AFFZSGameplayZone& Zone,
     const FFFZSFacilitySpec& Spec,
     const FFFZSGridPlacement& Placement) const
 {
-    const TArray<FFFZSCellRect> FootprintRects = UFFZSGridLibrary::GetFootprintRects(Spec, Placement);
-    FVector Center = Zone.GetActorLocation();
-    if (!FootprintRects.IsEmpty())
-    {
-        const FFFZSCellRect& Rect = FootprintRects[0];
-        const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-        Center = Zone.GetActorTransform().TransformPosition(FVector(
-            (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
-            (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
-            0.0));
-    }
-    const FQuat Rotation = Zone.GetActorQuat() * FQuat(
-        FVector::UpVector,
-        FMath::DegreesToRadians(90.0 * UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns)));
-    return FTransform(Rotation, Center, FVector::OneVector);
+    return MakePlacementTransform(
+        Zone,
+        Placement,
+        UFFZSGridLibrary::GetFootprintRects(Spec, Placement));
 }
 void UFFZSWorldSubsystem::ValidateGround(
     const AFFZSGameplayZone& Zone,
@@ -1070,15 +1040,23 @@ void UFFZSWorldSubsystem::ValidateGround(
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const double SampleSpacingCm = FMath::Clamp(
         static_cast<double>(Settings->GroundSampleSpacingCm), 1.0, 1000.0);
-    TArray<float> Heights;
-    float MaximumSlope = 0.0f;
+    const FTransform ZoneTransform = Zone.GetActorTransform();
+    const FVector TraceAbove = FVector::UpVector * Settings->GroundTraceAboveCm;
+    const FVector TraceBelow = FVector::UpVector * Settings->GroundTraceBelowCm;
+    // 높이 통계와 최소 UpDot을 즉시 누적해 임시 배열과 샘플별 acos를 없앤다.
+    int32 SuccessfulSampleCount = 0;
+    float HeightSum = 0.0f;
+    float MinHeight = MAX_flt;
+    float MaxHeight = -MAX_flt;
+    float MinimumUpDot = 1.0f;
 
-    // 1 cm 점유 해상도와 물리 검증 밀도를 분리한다. 각 축을 균등 분할해 간격은 기본 100 cm 이하이고
-    // 작은 시설도 중심 한 점을 검사하므로 표본 수는 실제 면적/표본간격²에 비례한다.
+    // 물리 샘플 밀도는 1cm 점유 해상도와 분리한다.
     for (const FFFZSCellRect& Rect : InOutValidation.FootprintRects)
     {
-        const double WidthCm = Rect.GetWidth() * CellSizeCm;
-        const double HeightCm = Rect.GetHeight() * CellSizeCm;
+        const double RectWidth = Rect.GetWidth();
+        const double RectHeight = Rect.GetHeight();
+        const double WidthCm = RectWidth * CellSizeCm;
+        const double HeightCm = RectHeight * CellSizeCm;
         const int32 SamplesX = FMath::Max(1, FMath::CeilToInt(WidthCm / SampleSpacingCm));
         const int32 SamplesY = FMath::Max(1, FMath::CeilToInt(HeightCm / SampleSpacingCm));
         if (static_cast<int64>(SamplesX) * SamplesY > UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())
@@ -1087,17 +1065,19 @@ void UFFZSWorldSubsystem::ValidateGround(
                 LOCTEXT("GroundSampleBudget", "지면 샘플링이 설정된 안전 예산을 초과했습니다."));
             return;
         }
+        const double StepX = RectWidth / SamplesX;
+        const double StepY = RectHeight / SamplesY;
 
         for (int32 X = 0; X < SamplesX; ++X)
         {
             for (int32 Y = 0; Y < SamplesY; ++Y)
             {
-                const double GridX = Rect.Min.X + (X + 0.5) * Rect.GetWidth() / SamplesX;
-                const double GridY = Rect.Min.Y + (Y + 0.5) * Rect.GetHeight() / SamplesY;
-                const FVector Sample = Zone.GetActorTransform().TransformPosition(
+                const double GridX = Rect.Min.X + (X + 0.5) * StepX;
+                const double GridY = Rect.Min.Y + (Y + 0.5) * StepY;
+                const FVector Sample = ZoneTransform.TransformPosition(
                     FVector(GridX * CellSizeCm, GridY * CellSizeCm, 0.0));
-                const FVector Start = Sample + FVector::UpVector * Settings->GroundTraceAboveCm;
-                const FVector End = Sample - FVector::UpVector * Settings->GroundTraceBelowCm;
+                const FVector Start = Sample + TraceAbove;
+                const FVector End = Sample - TraceBelow;
                 FHitResult Hit;
                 if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
                 {
@@ -1109,34 +1089,36 @@ void UFFZSWorldSubsystem::ValidateGround(
                     }
                     continue;
                 }
-                Heights.Add(Hit.ImpactPoint.Z);
-                MaximumSlope = FMath::Max(MaximumSlope, FMath::RadiansToDegrees(FMath::Acos(
-                    FMath::Clamp(FVector::DotProduct(
-                        Hit.ImpactNormal.GetSafeNormal(), FVector::UpVector), -1.0f, 1.0f))));
+                const float Height = static_cast<float>(Hit.ImpactPoint.Z);
+                ++SuccessfulSampleCount;
+                HeightSum += Height;
+                MinHeight = FMath::Min(MinHeight, Height);
+                MaxHeight = FMath::Max(MaxHeight, Height);
+                MinimumUpDot = FMath::Min(MinimumUpDot, FMath::Clamp(FVector::DotProduct(
+                    Hit.ImpactNormal.GetSafeNormal(), FVector::UpVector), -1.0f, 1.0f));
             }
         }
     }
 
-    if (Heights.IsEmpty())
+    if (SuccessfulSampleCount == 0)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::InvalidGround,
             LOCTEXT("NoGround", "성공한 Footprint 지면 샘플이 없습니다."));
         return;
     }
+    const float MaximumSlope = FMath::RadiansToDegrees(FMath::Acos(MinimumUpDot));
     if (MaximumSlope > Settings->MaxGroundSlopeDegrees)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::ExcessSlope,
             LOCTEXT("SlopeHigh", "지면 경사가 설정된 프로토타입 제한을 초과했습니다."));
     }
-    const float MinHeight = FMath::Min(Heights);
-    const float MaxHeight = FMath::Max(Heights);
     if (MaxHeight - MinHeight > Settings->MaxGroundHeightVarianceCm)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::HeightVarianceExceeded,
             LOCTEXT("HeightVar", "지면 높이 편차가 설정된 프로토타입 제한을 초과했습니다."));
     }
     FVector Location = InOutValidation.PlacementTransform.GetLocation();
-    Location.Z = Algo::Accumulate(Heights, 0.0f) / Heights.Num();
+    Location.Z = HeightSum / SuccessfulSampleCount;
     InOutValidation.PlacementTransform.SetLocation(Location);
 }
 void UFFZSWorldSubsystem::ValidateWorldCollision(
@@ -1159,10 +1141,15 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
         Params.AddIgnoredActor(IgnoreFacility);
     }
 
-    const auto HasBlockingOverlap = [World, &Params](
+    const FTransform ZoneTransform = Zone.GetActorTransform();
+    const FQuat ZoneRotation = ZoneTransform.GetRotation();
+    // Rect마다 새로 할당하지 않고 Overlap 결과 버퍼를 재사용한다.
+    TArray<FOverlapResult> Overlaps;
+    Overlaps.Reserve(16);
+    const auto HasBlockingOverlap = [World, &Params, &Overlaps](
         const FVector& Center, const FQuat& Rotation, const FVector& HalfExtent) -> bool
     {
-        TArray<FOverlapResult> Overlaps;
+        Overlaps.Reset();
         if (!World->OverlapMultiByChannel(
             Overlaps, Center, Rotation, ECC_Visibility, FCollisionShape::MakeBox(HalfExtent), Params))
         {
@@ -1197,17 +1184,17 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
         {
             const double HalfX = Rect.GetWidth() * CellSizeCm * 0.5;
             const double HalfY = Rect.GetHeight() * CellSizeCm * 0.5;
-            // 기존 `0.5 - 2`는 1 cm 단일 셀에서 음수였다. 최소 0.25 cm를 보장한다.
+            // 1cm Rect도 유효한 Overlap Box를 갖도록 XY HalfExtent를 최소 0.25cm로 제한한다.
             const FVector HalfExtent(
                 FMath::Max(0.25, HalfX - 2.0),
                 FMath::Max(0.25, HalfY - 2.0),
                 HalfHeight);
-            FVector Center = Zone.GetActorTransform().TransformPosition(FVector(
+            FVector Center = ZoneTransform.TransformPosition(FVector(
                 (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
                 (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
                 0.0));
             Center.Z = CenterZ;
-            if (HasBlockingOverlap(Center, Zone.GetActorQuat(), HalfExtent))
+            if (HasBlockingOverlap(Center, ZoneRotation, HalfExtent))
             {
                 InOutValidation.AddFailure(Failure, Message);
                 return;
@@ -1244,6 +1231,8 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         FMath::Min(Settings->NavigationProjectionExtentCm, Spec.QueueRules.NavigationProjectionExtentCm));
     const FVector ProjectionExtent(ExtentCm, ExtentCm, ExtentCm);
     TArray<FVector> ProjectedRoutePoints;
+    ProjectedRoutePoints.Reserve(
+        Spec.Anchors.Num() + FMath::Max(0, Spec.QueueRules.MaxWaitingAgents));
     FVector ProjectedEntry = FVector::ZeroVector;
     bool bHasEntry = false;
 
@@ -1275,6 +1264,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
     }
 
     TArray<double> SegmentLengths;
+    SegmentLengths.Reserve(FMath::Max(0, Spec.QueueSplinePointsCm.Num() - 1));
     double TotalSplineLength = 0.0;
     for (int32 Index = 1; Index < Spec.QueueSplinePointsCm.Num(); ++Index)
     {
@@ -1282,22 +1272,28 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         SegmentLengths.Add(Length);
         TotalSplineLength += Length;
     }
+    // 단조 증가하는 슬롯 거리에 맞춰 세그먼트 커서를 한 방향으로만 이동한다.
+    int32 SlotSegmentIndex = 0;
+    double SlotSegmentStartDistance = 0.0;
     for (int32 SlotIndex = 0; SlotIndex < Spec.QueueRules.MaxWaitingAgents; ++SlotIndex)
     {
-        double RemainingDistance = FMath::Clamp(
+        const double TargetDistance = FMath::Clamp(
             static_cast<double>(SlotIndex) * Spec.QueueRules.SlotSpacingCm, 0.0, TotalSplineLength);
-        FVector LocalSlot = Spec.QueueSplinePointsCm[0];
-        for (int32 SegmentIndex = 0; SegmentIndex < SegmentLengths.Num(); ++SegmentIndex)
+        while (SlotSegmentIndex < SegmentLengths.Num() - 1 &&
+            TargetDistance > SlotSegmentStartDistance + SegmentLengths[SlotSegmentIndex])
         {
-            const double SegmentLength = SegmentLengths[SegmentIndex];
-            if (RemainingDistance <= SegmentLength || SegmentIndex == SegmentLengths.Num() - 1)
-            {
-                const double Alpha = SegmentLength > UE_SMALL_NUMBER ? FMath::Clamp(RemainingDistance / SegmentLength, 0.0, 1.0) : 0.0;
-                LocalSlot = FMath::Lerp(Spec.QueueSplinePointsCm[SegmentIndex], Spec.QueueSplinePointsCm[SegmentIndex + 1], Alpha);
-                break;
-            }
-            RemainingDistance -= SegmentLength;
+            SlotSegmentStartDistance += SegmentLengths[SlotSegmentIndex];
+            ++SlotSegmentIndex;
         }
+        const double SegmentLength = SegmentLengths[SlotSegmentIndex];
+        const double DistanceOnSegment = TargetDistance - SlotSegmentStartDistance;
+        const double Alpha = SegmentLength > UE_SMALL_NUMBER
+            ? FMath::Clamp(DistanceOnSegment / SegmentLength, 0.0, 1.0)
+            : 0.0;
+        const FVector LocalSlot = FMath::Lerp(
+            Spec.QueueSplinePointsCm[SlotSegmentIndex],
+            Spec.QueueSplinePointsCm[SlotSegmentIndex + 1],
+            Alpha);
         if (!ProjectRequiredPoint(LocalSlot, false))
         {
             InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
@@ -1313,8 +1309,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
     }
     for (const FVector& RoutePoint : ProjectedRoutePoints)
     {
-        // 경로 지점은 투영된 Entry 자체일 수 있다. 일부 내비게이션 구현은
-        // 길이가 0인 요청에 대해 Path Object를 만들지 않는다.
+        // 일부 Navigation 구현은 길이 0인 경로 객체를 만들지 않는다.
         if (FVector::DistSquared(ProjectedEntry, RoutePoint) <= 1.0f)
         {
             continue;
@@ -1329,11 +1324,27 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
     }
 }
 
-// ReservedRects 각각을 월드 AABB로 만든 뒤 ProtectedArea의 Yaw OBB와 교차 검사한다. LinkedZoneId가
-// 지정된 보호 구역은 해당 Zone에만 적용되며, 유효하지 않은 보호 데이터는 안전하게 배치 실패로 처리한다.
 void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const
 {
-    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    if (ProtectedAreas.IsEmpty())
+    {
+        return;
+    }
+
+    // ProtectedArea마다 반복하지 않도록 ReservedRect 월드 박스를 한 번만 만든다.
+    TArray<FBox> RegionBoxes;
+    RegionBoxes.Reserve(InOutValidation.ReservedRects.Num());
+    const FTransform ZoneTransform = Zone.GetActorTransform();
+    for (const FFFZSCellRect& Rect : InOutValidation.ReservedRects)
+    {
+        RegionBoxes.Add(MakeCellRectWorldBox(
+            ZoneTransform,
+            Rect,
+            UFFZSDeveloperSettings::DefaultPlacementCellSizeCm,
+            InOutValidation.PlacementTransform.GetLocation().Z,
+            Spec.PlacementObstacleHeightCm));
+    }
+
     for (const TWeakObjectPtr<AFFZSProtectedArea>& WeakArea : ProtectedAreas)
     {
         const AFFZSProtectedArea* Area = WeakArea.Get();
@@ -1355,14 +1366,8 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
             continue;
         }
 
-        for (const FFFZSCellRect& Rect : InOutValidation.ReservedRects)
+        for (const FBox& RegionBox : RegionBoxes)
         {
-            const FBox RegionBox = MakeCellRectWorldBox(
-                Zone,
-                Rect,
-                UFFZSDeveloperSettings::DefaultPlacementCellSizeCm,
-                InOutValidation.PlacementTransform.GetLocation().Z,
-                Spec.PlacementObstacleHeightCm);
             if (Area->IntersectsWorldBox(RegionBox))
             {
                 const bool bAccessibility = Area->AreaType == EFFZSProtectedAreaType::AccessibilityRoute || Area->AreaType == EFFZSProtectedAreaType::ViewingArea;
@@ -1375,13 +1380,7 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
     }
 }
 
-/* [외부 정책 트랜잭션]
- * 정책 목록을 복사한 Snapshot으로 순회하여 콜백 도중 원본 배열 변화의 영향을 받지 않게 한다.
- * PreValidate는 예약 없는 허용 판정, ApplyTentative는 외부 시스템의 임시 예약, Commit은 확정이다.
- * ApplyTentative 중 하나라도 거부하면 이미 호출한 정책(거부한 정책 포함)을 역순 Rollback한다.
- * 역순 복구는 앞선 정책의 예약이 뒤 정책의 예약에 의존할 수 있는 스택 규칙을 보존한다.
- * bIsInvokingExternalPolicy Guard는 정책이 다시 Command/등록/복원을 시작하는 재진입을 실패 폐쇄한다.
- */
+// 정책 콜백의 재진입을 막고, Tentative 실패 시 적용된 정책을 역순으로 Rollback한다.
 bool UFFZSWorldSubsystem::RunPolicyPreValidation(const FFFZSPolicyContext& Context, FFFZSPolicyDecision& OutDecision) const
 {
     if (bIsInvokingExternalPolicy)
@@ -1414,6 +1413,7 @@ bool UFFZSWorldSubsystem::RunPolicyPreValidation(const FFFZSPolicyContext& Conte
 bool UFFZSWorldSubsystem::ApplyTentativePolicies(const FFFZSPolicyContext& Context, TArray<TWeakObjectPtr<UObject>>& OutAppliedPolicies, FFFZSPolicyDecision& OutDecision)
 {
     OutAppliedPolicies.Reset();
+    OutAppliedPolicies.Reserve(ExternalPolicies.Num());
     if (bIsInvokingExternalPolicy)
     {
         OutDecision.bAllowed = false;
@@ -1470,14 +1470,8 @@ void UFFZSWorldSubsystem::RollbackPolicies(const FFFZSPolicyContext& Context, co
     }
 }
 
-/* [권위 명령 진입점]
- * CommandId+PayloadFingerprint는 같은 요청의 안전한 멱등 재생을 제공한다. 같은 ID/같은 Payload면 저장된
- * 결과를 돌려주고, Payload가 다르면 거부한다. InFlight Guard는 정책 및 이벤트의 동기 콜백까지 유지되어
- * 중첩 명령이 반쯤 변경된 상태를 관찰하거나 덮어쓰지 못하게 한다.
- *
- * 성공 이벤트는 명령 결과와 Receipt가 준비된 뒤에만 발행하고, 실패는 WorldRevision을 올리지 않는다.
- * DeferredWorldChangeEvent는 Actor/점유/정책 확정 전 외부 구독자에게 중간 상태가 노출되는 것을 막는다.
- */
+// CommandId와 Payload fingerprint로 멱등 재생을 보장하고 InFlight 상태로 재진입을 막는다.
+// Receipt가 준비된 뒤 이벤트를 발행하며 실패는 WorldRevision을 올리지 않는다.
 FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Command)
 {
     if (!IsInGameThread())
@@ -1486,8 +1480,6 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     }
     if (bIsRestoringSnapshot)
     {
-        // 복원 과정에서 Actor를 생성하고 Blueprint/Native Callback을 호출할 수 있다. 해당 Callback은
-        // 준비가 덜 된 권위 World를 관찰하거나 변경해서는 안 된다.
         return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("CommandDuringRestore", "Zone/Facility 스냅샷 복원이 이미 진행 중입니다."));
     }
     if (bIsInvokingExternalPolicy)
@@ -1592,13 +1584,6 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     return Result;
 }
 
-/* [명령별 적용과 복구]
- * - Install: 정책 임시 예약 뒤 Actor 생성/초기화/등록 중 실패하면 Actor를 파기하고 정책을 Rollback한다.
- * - Move: 이전 Zone/Placement/Transform과 점유 셀을 보존한 뒤 적용하며, 실패하면 모두 이전 값으로 복원한다.
- * - Remove: Queue가 비고 상태가 허용됨을 확인한 뒤 등록 해제/제거한다.
- * - Open/Close: Actor 상태 전환이 거부되면 임시 정책을 Rollback한다.
- * 정책 Commit은 로컬 변경이 성공한 뒤 호출하며, FinalizeSuccess만 Revision과 이벤트를 만든다.
- */
 FFFZSCommandResult UFFZSWorldSubsystem::ExecuteInstall(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation)
 {
     FFFZSPolicyContext Context;
@@ -1673,7 +1658,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
         RollbackPolicies(Context, AppliedPolicies);
         return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("MoveApplyFailed", "이동에 실패하여 이전 Facility 배치를 복원했습니다."));
     }
-    OccupyFacilityRegions(*Facility);
+    // 검증된 예약 영역을 재사용해 Move 이후 기하 계산을 반복하지 않는다.
+    FFFZSFacilityRegionOccupancy NewOccupancy;
+    NewOccupancy.ZoneId = Facility->GetZoneId();
+    NewOccupancy.Regions = Validation.ReservedRects;
+    OccupiedFacilityRegions.Add(Facility->GetFacilityInstanceId(), MoveTemp(NewOccupancy));
     CommitPolicies(Context, AppliedPolicies);
     return FinalizeSuccess(Command, Facility, PreviousZoneId);
 }
@@ -1799,10 +1788,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::FinalizeSuccess(const FFFZSCommand& Comm
     return Result;
 }
 
-/* [통합 정책 레지스트리]
- * 정책 이름은 전체에서, Custom이 아닌 Domain은 Domain별로 유일하다. 정렬된 순서는 실행/롤백 순서를
- * 결정적으로 만들고, Production 모드에서는 필수 Domain이 모두 준비되어야 명령이 진행된다.
- */
+// PolicyName과 Custom 이외 Domain은 유일하며 정렬 순서로 실행한다.
 bool UFFZSWorldSubsystem::RegisterExternalPolicy(UObject* PolicyProvider)
 {
     if (IsAuthorityMutationBlocked())
@@ -1877,6 +1863,8 @@ bool UFFZSWorldSubsystem::ValidateIntegrationReadiness(TArray<FText>& OutErrors,
     TGuardValue<bool> PolicyCallbackGuard(bIsInvokingExternalPolicy, true);
     TSet<FName> Names;
     TSet<EFFZSPolicyDomain> Domains;
+    Names.Reserve(ExternalPolicies.Num());
+    Domains.Reserve(ExternalPolicies.Num());
     const TArray<TWeakObjectPtr<UObject>> PolicySnapshot = ExternalPolicies;
     for (const TWeakObjectPtr<UObject>& WeakPolicy : PolicySnapshot)
     {
@@ -1927,11 +1915,6 @@ bool UFFZSWorldSubsystem::UnregisterExternalPolicy(UObject* PolicyProvider)
     return ExternalPolicies.Remove(PolicyProvider) > 0;
 }
 
-/* [Queue 권위 연결]
- * AgentQueueOwnership은 한 Agent의 중복 입장을 막는 월드 단위 인덱스다. JoinQueue의 인터페이스/델리게이트가
- * 동기 재진입할 수 있으므로 Component 호출 전에 소유권을 선점하고, Join 실패 시 같은 소유자일 때만
- * 되돌린다. Queue가 Agent를 해제하면 HandleAgentReleased가 인덱스를 함께 정리한다.
- */
 bool UFFZSWorldSubsystem::SetFacilityQueueBlocked(const FGuid FacilityInstanceId, const bool bBlocked)
 {
     if (IsAuthorityMutationBlocked())
@@ -2099,11 +2082,7 @@ FGuid UFFZSWorldSubsystem::FindAgentQueueFacility(const FName AgentId) const
     return FGuid();
 }
 
-/* [존 소속/밀도]
- * 직전 존에는 경계 Hysteresis를 적용해 흔들림을 줄이고, 벗어났다면 ZoneId 정렬 순서로 정확한 포함 존을
- * 찾는다. 정렬은 중첩 데이터가 들어왔을 때 결과를 결정적으로 만들지만, 중첩 경계 자체의 데이터 오류를
- * 정당화하지 않는다. Population 보고는 Zone Actor의 상승 Hold 규칙을 통해 DensityState를 갱신한다.
- */
+// 이전 Zone에는 Hysteresis를 적용하고 나머지는 ZoneId 순서로 결정한다.
 FName UFFZSWorldSubsystem::ResolveZoneAtWorldLocation(const FVector& WorldLocation, const FName PreviousZoneId) const
 {
     const float HysteresisCm = GetDefault<UFFZSDeveloperSettings>()->ZoneMembershipHysteresisCm;
@@ -2137,14 +2116,12 @@ void UFFZSWorldSubsystem::ReportZonePopulation(const FName ZoneId, const int32 P
     }
 }
 
-/* [조회 모델]
- * UI/외부 시스템에는 가변 Actor/Component 전체 대신 필요한 값만 복사한 ReadModel을 제공한다.
- * ZoneId와 FacilityInstanceId로 정렬하므로 TMap 순회 순서와 무관하게 결과가 결정적이다.
- */
 FFFZSReadModel UFFZSWorldSubsystem::BuildReadModel() const
 {
     FFFZSReadModel Result;
     Result.WorldRevision = WorldRevision;
+    Result.Zones.Reserve(ZonesById.Num());
+    Result.Facilities.Reserve(FacilitiesById.Num());
     for (const TPair<FName, TWeakObjectPtr<AFFZSGameplayZone>>& Pair : ZonesById)
     {
         if (const AFFZSGameplayZone* Zone = Pair.Value.Get())
@@ -2164,17 +2141,14 @@ FFFZSReadModel UFFZSWorldSubsystem::BuildReadModel() const
     return Result;
 }
 
-/* [월드 스냅샷 저장]
- * 시설별 Actor/Queue 상태와 완료된 Command Receipt, WorldRevision, Phase를 하나의 스키마로 모은다.
- * 진행 중 Receipt는 저장하지 않고 ID로 정렬한다. 개별 Facility의 CaptureInstanceSnapshot은 구성요소
- * 데이터를 복사할 뿐이며, 이 함수가 여러 시설과 월드 메타데이터를 묶는 저장 단위다.
- */
 FFFZSWorldSnapshot UFFZSWorldSubsystem::CaptureWorldSnapshot() const
 {
     FFFZSWorldSnapshot Snapshot;
     Snapshot.SchemaVersion = CurrentSnapshotSchemaVersion;
     Snapshot.WorldRevision = WorldRevision;
     Snapshot.CurrentPhase = CurrentPhase;
+    Snapshot.Facilities.Reserve(FacilitiesById.Num());
+    Snapshot.CommandReceipts.Reserve(CommandReceipts.Num());
     for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
     {
         if (const AFFZSFacilityActor* Facility = Pair.Value.Get())
@@ -2212,11 +2186,6 @@ FFFZSWorldSnapshot UFFZSWorldSubsystem::CaptureWorldSnapshot() const
     return Snapshot;
 }
 
-/* [복원 전 전체 검증]
- * 실제 Actor를 교체하기 전에 스키마/Phase/ID/Spec/Zone/Transform/셀 중복/보호 구역/Queue 상태 조합/
- * Agent 중복/Receipt를 모두 검사한다. QueueValidator::RestoreSnapshot은 임시 Component 하나의 내부
- * 스냅샷을 검증·복원하는 기능일 뿐, 월드 레지스트리나 다른 Component까지 원자적으로 바꾸지 않는다.
- */
 bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
@@ -2237,10 +2206,15 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     }
 
     TSet<FGuid> FacilityIds;
-    TMap<FGuid, FFFZSFacilityRegionOccupancy> FacilityRegions;
+    // 시설 겹침 비교를 같은 Zone의 예약 영역으로 제한한다.
+    TMap<FName, TArray<TArray<FFFZSCellRect>>> FacilityRegionsByZone;
     TSet<FName> Agents;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     TMap<const AFFZSGameplayZone*, TUniquePtr<FZoneCellOwnershipCache>> ZoneOwnershipCaches;
+    FacilityIds.Reserve(Snapshot.Facilities.Num());
+    FacilityRegionsByZone.Reserve(FMath::Min(Snapshot.Facilities.Num(), ZonesById.Num()));
+    Agents.Reserve(Snapshot.Facilities.Num());
+    ZoneOwnershipCaches.Reserve(FMath::Min(Snapshot.Facilities.Num(), ZonesById.Num()));
 
     for (const FFFZSFacilityInstanceSnapshot& Saved : Snapshot.Facilities)
     {
@@ -2312,10 +2286,11 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         }
 
         bool bOverlapsFacility = false;
-        for (const TPair<FGuid, FFFZSFacilityRegionOccupancy>& Existing : FacilityRegions)
+        TArray<TArray<FFFZSCellRect>>& ExistingRegionSets =
+            FacilityRegionsByZone.FindOrAdd(Saved.ZoneId);
+        for (const TArray<FFFZSCellRect>& ExistingRegions : ExistingRegionSets)
         {
-            if (Existing.Value.ZoneId == Saved.ZoneId &&
-                UFFZSGridLibrary::DoCellRectSetsOverlap(ReservedRects, Existing.Value.Regions))
+            if (UFFZSGridLibrary::DoCellRectSetsOverlap(ReservedRects, ExistingRegions))
             {
                 bOverlapsFacility = true;
                 break;
@@ -2327,15 +2302,16 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 "SnapshotOverlap",
                 "스냅샷 Facility들이 권위 압축 배치 Grid에서 서로 겹칩니다."));
         }
-        FFFZSFacilityRegionOccupancy& RegionRecord = FacilityRegions.Add(Saved.FacilityInstanceId);
-        RegionRecord.ZoneId = Saved.ZoneId;
-        RegionRecord.Regions = ReservedRects;
+        ExistingRegionSets.Add(ReservedRects);
 
         bool bOutsideOrAmbiguousZone = false;
         for (const FFFZSCellRect& Rect : ReservedRects)
         {
-            bOutsideOrAmbiguousZone |= !IsRectOwnedByExactlyOneZone(
-                *ZoneOwnershipCache, Rect, CellSizeCm);
+            if (!IsRectOwnedByExactlyOneZone(*ZoneOwnershipCache, Rect, CellSizeCm))
+            {
+                bOutsideOrAmbiguousZone = true;
+                break;
+            }
         }
         if (bOutsideOrAmbiguousZone)
         {
@@ -2407,6 +2383,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     }
 
     TSet<FGuid> ReceiptIds;
+    ReceiptIds.Reserve(Snapshot.CommandReceipts.Num());
     for (const FFFZSCommandReceiptSnapshot& SavedReceipt : Snapshot.CommandReceipts)
     {
         const bool bInvalidOutcome =
@@ -2424,17 +2401,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     return OutErrors.IsEmpty();
 }
 
-/*
- * [월드 스냅샷 복원의 원자성 경계]
- * Restore Guard는 검증 시작부터 게시 완료까지 Command, 정책 등록, Queue 변경 같은 권위 재진입을 막는다.
- * 먼저 숨겨진 새 Actor와 별도 Staged 맵들을 만들고 각 Queue Component를 복원한다. 이 중 하나라도 실패하면
- * 스테이징 Actor만 파기하고 기존 FacilitiesById/OccupiedFacilityRegions/AgentQueueOwnership/Receipt는 건드리지 않는다.
- *
- * 모든 실패 가능 단계가 끝난 뒤에만 Staged 레지스트리를 MoveTemp로 함께 게시하고 이전 Actor를 폐기한다.
- * 이것이 보장하는 원자성은 "Subsystem의 권위 월드 상태가 이전 세트 또는 새 세트로만 보인다"는 논리적
- * 원자성이다. 각 UObject 생성, Queue Component 복원, Actor Destroy가 한 CPU 명령으로 실행된다는 뜻은
- * 아니다. 단일 QueueComponent::RestoreSnapshot 성공만으로도 월드 복원이 완료된 것은 아니다.
- */
+// 새 Actor와 레지스트리를 staging해 실패 시 기존 권위 상태를 유지한다.
 bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors)
 {
     OutErrors.Reset();
@@ -2455,7 +2422,6 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
     }
     if (InFlightCommandId.IsValid())
     {
-        // ExecuteCommand는 모든 Policy 및 Event Callback이 끝날 때까지 이 ID를 보호한다.
         OutErrors.Add(LOCTEXT("RestoreDuringCommand", "Zone/Facility 명령이 이미 실행 중이므로 스냅샷 복원이 거부되었습니다."));
         return false;
     }
@@ -2481,8 +2447,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
     return RestoreWorldSnapshotUnchecked(*EffectiveSnapshot, OutErrors);
 }
 
-// 호출자는 Restore Guard와 전체 사전 검증을 이미 보유해야 한다. 스테이징 Actor는 ID 없이 Spawn되어
-// BeginPlay 자동 등록을 피하고, 초기화 후에도 숨김/충돌 비활성 상태로 새 레지스트리가 게시될 때까지 격리한다.
+// ID 없이 Spawn해 BeginPlay 자동 등록을 피하고 게시 전까지 숨김·충돌 비활성 상태로 둔다.
 bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors)
 {
     UWorld* World = GetWorld();
@@ -2492,14 +2457,18 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         return false;
     }
 
-    // 전체 대체 상태를 먼저 준비한다. 모든 Actor, Queue, Cell, Agent 및 영수증이
-    // 준비될 때까지 현재 권위 레지스트리와 Actor는 변경하지 않는다.
     TArray<TWeakObjectPtr<AFFZSFacilityActor>> StagedFacilities;
     TMap<FGuid, TWeakObjectPtr<AFFZSFacilityActor>> StagedFacilitiesById;
     TMap<FGuid, FFFZSFacilityRegionOccupancy> StagedOccupiedFacilityRegions;
     TMap<FName, FGuid> StagedAgentQueueOwnership;
     TMap<FGuid, FFFZSCommandReceipt> StagedCommandReceipts;
     TSet<FGuid> StagedCommandReceiptFacilityReferences;
+    StagedFacilities.Reserve(Snapshot.Facilities.Num());
+    StagedFacilitiesById.Reserve(Snapshot.Facilities.Num());
+    StagedOccupiedFacilityRegions.Reserve(Snapshot.Facilities.Num());
+    StagedAgentQueueOwnership.Reserve(Snapshot.Facilities.Num());
+    StagedCommandReceipts.Reserve(Snapshot.CommandReceipts.Num());
+    StagedCommandReceiptFacilityReferences.Reserve(Snapshot.CommandReceipts.Num());
 
     const auto DestroyStagedFacilities = [&StagedFacilities]()
     {
@@ -2622,9 +2591,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         StagedCommandReceipts.Add(SavedReceipt.CommandId, MoveTemp(Receipt));
     }
 
-    // 이 지점 이후에는 실패할 수 있는 작업이 없다. 준비된 레지스트리를 한 번에 게시한 뒤
-    // 기존 Actor를 정리한다. ID와 Actor 식별자를 함께 검사하므로 기존 Actor의 EndPlay가
-    // 새 Actor를 등록 해제할 수 없다.
+    // Actor identity 검사는 기존 Actor의 EndPlay가 새 등록을 지우는 것을 막는다.
     TArray<TWeakObjectPtr<AFFZSFacilityActor>> ExistingFacilities;
     FacilitiesById.GenerateValueArray(ExistingFacilities);
     for (const TWeakObjectPtr<AFFZSFacilityActor>& WeakFacility : ExistingFacilities)
@@ -2669,11 +2636,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
     }
     return true;
 }
-/* [월드 유지보수 검증]
- * Actor 단위 검증을 넘어 프로젝트 필수 Zone 존재, 이웃의 실제 존재/양방향성, ProtectedArea ID와
- * LinkedZone을 검사한다. RevalidateFacilitiesInZone은 변경된 경계에 기존 시설이 맞는지 다시 계산하고
- * 자동 이동시키지 않은 채 NeedsRelocation으로 표시해 담당자의 통제권을 보존한다.
- */
+
 bool UFFZSWorldSubsystem::ValidateZoneGraph(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
@@ -2788,11 +2751,6 @@ int32 UFFZSWorldSubsystem::RevalidateFacilitiesInZone(const FName ZoneId)
     return InvalidCount;
 }
 
-/* [점유 원장 도우미]
- * GUID마다 ZoneId와 정규화된 ReservedRects를 한 번 저장한다. 겹침은 사각형 broad/narrow 비교로 정확히
- * 판정하며, 1 cm 셀 수와 무관하게 시설 수×작은 사각형 수에 비례한다. Release는 자기 GUID 키만 지워
- * 오래된 Actor의 EndPlay가 다른 시설 점유를 제거하지 못하게 한다.
- */
 void UFFZSWorldSubsystem::OccupyFacilityRegions(const AFFZSFacilityActor& Facility)
 {
     FFFZSFacilityRegionOccupancy Record;

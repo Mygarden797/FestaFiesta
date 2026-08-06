@@ -1,11 +1,9 @@
-/**
- * @file FF_FFZSZoneActor.cpp
- * @brief Gameplay Zone 경계, 이웃, 소속 히스테리시스, 수용량과 밀도 상태를 구현한다.
- *
- * 흐름: 월드 위치를 polygon에 투영하고 측정값을 설정된 hold 시간에 따라 상태로 바꾼다.
- * 불변식: 히스테리시스 거리는 설정값이며 상승은 hold를 거치고 안전한 하향은 즉시 반영한다.
- * 실패/성능: 경계 판정 비용은 polygon 꼭짓점 수에 비례하므로 불필요한 고빈도 호출을 피한다.
- */
+// FF_FFZSZoneActor.cpp
+
+// Gameplay Zone 경계, 이웃, 소속 히스테리시스, 수용량과 밀도 상태를 구현.
+// 흐름: 월드 위치를 polygon에 투영하고 측정값을 설정된 hold 시간에 따라 상태로 바꾼다.
+// 불변식: 히스테리시스 거리는 설정값이며 상승은 hold를 거치고 안전한 하향은 즉시 반영.
+// 실패/성능: 경계 판정 비용은 polygon 꼭짓점 수에 비례하므로 불필요한 고빈도 호출을 피한다.
 
 #include "FF_FFZSZoneActor.h"
 
@@ -17,22 +15,21 @@
 #include "FF_FFZSWorldSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFZoneSystemZone"
-/*
- * 이 파일의 책임
- * - Gameplay Zone 한 개의 로컬 경계 폴리곤, 허용 시설 범주, 이웃 관계, 수용량/밀도 상태를 제공한다.
- * - 존의 등록 키와 시설 점유 셀에 대한 월드 권위는 UFFZSWorldSubsystem이 가진다. Actor는 경계와
- *   계산 규칙을 제공하며, 등록 뒤 ZoneId를 임의로 바꾸어 레지스트리 키를 무효화해서는 안 된다.
- *
- * 기하 불변식
- * - BoundarySpline은 닫힌 선형 단순 폴리곤이어야 하며 중복 점, 자기 교차, 면적 0을 허용하지 않는다.
- * - Actor Scale은 1, Pitch/Roll은 0, Yaw는 90도 단위이고 원점은 배치 그리드에 맞아야 한다.
- *   이 계약 덕분에 로컬 cm 단위 폴리곤, 그리드 셀, 월드 Transform이 같은 공간 정의를 공유한다.
- */
+
+// 이 파일의 책임
+    // Gameplay Zone 한 개의 로컬 경계 폴리곤, 허용 시설 범주, 이웃 관계, 수용량/밀도 상태를 제공.
+    //존의 등록 키와 시설 점유 셀에 대한 월드 권위는 UFFZSWorldSubsystem이 가진다. Actor는 경계와
+    //계산 규칙을 제공하며, 등록 뒤 ZoneId를 임의로 바꾸어 레지스트리 키를 무효화해서는 안 된다.
+
+// 기하 불변식
+    // BoundarySpline은 닫힌 선형 단순 폴리곤이어야 하며 중복 점, 자기 교차, 면적 0을 허용하지 않는다.
+    // Actor Scale은 1, Pitch/Roll은 0, Yaw는 90도 단위이고 원점은 배치 그리드에 맞아야 한다.
+    // 이 계약 덕분에 로컬 cm 단위 폴리곤, 그리드 셀, 월드 Transform이 같은 공간 정의를 공유.
 
 namespace
 {
     // 경계 위 점을 내부로 포함하기 위한 공통 판정이다. 길이 0인 변도 방어하지만,
-    // 그런 변 자체는 아래 데이터 검증에서 잘못된 폴리곤으로 거부한다.
+    // 그런 변 자체는 아래 데이터 검증에서 잘못된 폴리곤으로 거부.
     bool IsPointOnSegment(const FVector2D Point, const FVector2D A, const FVector2D B, const float Tolerance)
     {
         const FVector2D Segment = B - A;
@@ -159,8 +156,8 @@ AFFZSGameplayZone::AFFZSGameplayZone()
     BoundarySpline->SetClosedLoop(true, true);
 }
 
-// BeginPlay/EndPlay는 Actor와 Subsystem의 약한 참조 레지스트리를 동기화한다.
-// 등록 시 ZoneId 유일성과 아래 ValidateZoneData의 전체 공간 계약을 다시 확인한다.
+// BeginPlay/EndPlay는 Actor와 Subsystem의 약한 참조 레지스트리를 동기화.
+// 등록 시 ZoneId 유일성과 아래 ValidateZoneData의 전체 공간 계약을 다시 확인.
 void AFFZSGameplayZone::BeginPlay()
 {
     Super::BeginPlay();
@@ -201,7 +198,7 @@ TArray<FVector2D> AFFZSGameplayZone::GetBoundaryPolygonLocalCm() const
 }
 
 // 월드 점을 먼저 존 로컬 공간으로 역변환한다. 수직 범위와 XY 폴리곤을 모두 통과해야 내부이며,
-// 폴리곤 변에서 0.1cm 이내인 점은 경계 흔들림을 줄이기 위해 내부로 포함한다.
+// 폴리곤 변에서 0.1cm 이내인 점은 경계 흔들림을 줄이기 위해 내부로 포함.
 bool AFFZSGameplayZone::ContainsWorldPoint(const FVector& WorldPoint) const
 {
     const FVector LocalPoint = GetActorTransform().InverseTransformPosition(WorldPoint);
@@ -212,12 +209,11 @@ bool AFFZSGameplayZone::ContainsWorldPoint(const FVector& WorldPoint) const
     return IsInsidePolygon(FVector2D(LocalPoint.X, LocalPoint.Y), GetBoundaryPolygonLocalCm(), 0.1f);
 }
 
-/*
- * 이 함수는 모든 존을 넓히는 소속 판정이 아니라 "직전 존 유지"용이다.
- * Subsystem은 먼저 PreviousZoneId에만 이 함수를 적용하고, 실패했을 때 다른 존을 정확한 경계로 찾는다.
- * 따라서 경계를 조금 벗어난 Agent가 프레임마다 두 존 사이를 튀는 현상을 줄이되, 새 존의 선점 범위를
- * 임의로 확장하지 않는다. Hysteresis는 XY 변까지의 거리만 완화하며 수직 범위는 확장하지 않는다.
- */
+//이 함수는 모든 존을 넓히는 소속 판정이 아니라 "직전 존 유지"용이다.
+// Subsystem은 먼저 PreviousZoneId에만 이 함수를 적용하고, 실패했을 때 다른 존을 정확한 경계로 찾는다.
+// 따라서 경계를 조금 벗어난 Agent가 프레임마다 두 존 사이를 튀는 현상을 줄이되, 새 존의 선점 범위를
+// 임의로 확장하지 않는다. Hysteresis는 XY 변까지의 거리만 완화하며 수직 범위는 확장하지 않는다.
+
 bool AFFZSGameplayZone::ContainsWorldPointWithHysteresis(const FVector& WorldPoint, const float HysteresisCm) const
 {
     if (ContainsWorldPoint(WorldPoint))
@@ -271,7 +267,7 @@ bool AFFZSGameplayZone::IsCategoryAllowed(const EFFZSFacilityCategory Category) 
 }
 
 // 신발끈 공식을 로컬 cm 좌표에 적용한 뒤 m²로 변환한다. Actor Scale=1 불변식이 있으므로 별도
-// 스케일 보정은 하지 않으며, 유효하지 않은 점 수는 안전하게 면적 0으로 처리한다.
+// 스케일 보정은 하지 않으며, 유효하지 않은 점 수는 안전하게 면적 0으로 처리.
 float AFFZSGameplayZone::GetBoundaryAreaSquareMeters() const
 {
     const TArray<FVector2D> Polygon = GetBoundaryPolygonLocalCm();
@@ -302,14 +298,13 @@ int32 AFFZSGameplayZone::GetSoftCapacity() const
     return FMath::Max(0, FMath::FloorToInt(AreaSquareMeters / FMath::Max(0.01f, Settings->SquareMetersPerPersonForSoftCapacity)));
 }
 
-/*
- * 밀도 상승 규칙은 의도적으로 단계별이다.
- * - Caution은 현재 비율이 기준을 넘으면 즉시 반영한다.
- * - Warning/Critical은 각 기준 이상인 시간이 연속 HoldSeconds를 채워야 올라간다.
- * - 기준 아래로 내려가면 해당 누적 시간이 0으로 초기화되고 현재 비율에 따라 즉시 하향 재평가한다.
- * 즉, 상승 지연은 있지만 별도의 하향 임계값을 둔 대칭형 히스테리시스는 아니다.
- * 음수 Population/DeltaSeconds는 0으로 보정하고, Capacity가 0이면 비율도 0으로 둔다.
- */
+// 밀도 상승 규칙은 의도적으로 단계별이다.
+// Caution은 현재 비율이 기준을 넘으면 즉시 반영한다.
+// Warning/Critical은 각 기준 이상인 시간이 연속 HoldSeconds를 채워야 올라간다.
+// 기준 아래로 내려가면 해당 누적 시간이 0으로 초기화되고 현재 비율에 따라 즉시 하향 재평가한다.
+// 즉, 상승 지연은 있지만 별도의 하향 임계값을 둔 대칭형 히스테리시스는 아니다.
+// 음수 Population/DeltaSeconds는 0으로 보정하고, Capacity가 0이면 비율도 0으로 둔다.
+
 void AFFZSGameplayZone::UpdatePopulationSample(const int32 Population, const float DeltaSeconds)
 {
     ReportedPopulation = FMath::Max(0, Population);
@@ -350,7 +345,7 @@ FFFZSZoneReadModel AFFZSGameplayZone::GetReadModel() const
 }
 
 // ZoneId는 Subsystem 맵의 키다. 이미 이 Actor가 현재 키로 등록되어 있으면 Preset 변경을 거부하여
-// Actor의 필드와 권위 레지스트리 키가 서로 달라지는 상태를 예방한다.
+// Actor의 필드와 권위 레지스트리 키가 서로 달라지는 상태를 예방.
 bool AFFZSGameplayZone::ApplyAcceptedZonePreset(const FName AcceptedZoneId)
 {
     if (!UFFZSGridLibrary::GetAcceptedGameplayZoneIds().Contains(AcceptedZoneId))
@@ -377,7 +372,7 @@ bool AFFZSGameplayZone::ApplyAcceptedZonePreset(const FName AcceptedZoneId)
 }
 
 // 이 검증은 경계 기하, 프로젝트 ID 정책, Transform, 시설 범주, 이웃 ID의 로컬 계약을 확인한다.
-// 이웃 존의 실제 존재와 양방향 연결 같은 월드 간 계약은 Subsystem::ValidateZoneGraph가 담당한다.
+// 이웃 존의 실제 존재와 양방향 연결 같은 월드 간 계약은 Subsystem::ValidateZoneGraph가 담당.
 bool AFFZSGameplayZone::ValidateZoneData(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
