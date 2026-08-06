@@ -102,6 +102,24 @@ FFFZSReadModel {
 
 **UI 사용처**: Overview 시설 상태, 대기열 길이, Morning Check 배치, 실패 사유 토스트
 
+### 브리지 2종 (2026-08-06 추가)
+
+| 클래스 | 역할 |
+| --- | --- |
+| `UFF_ZoneSystemQueueBridgeSubsystem` | Zone 시설 `FGuid` ↔ Queue `int32` ID 매핑. `TryJoinZoneFacility`가 Party 가입의 단일 진입점 |
+| `UFF_ZoneSystemStageBridgeSubsystem` | `UFF_FestivalStageSubsystem`을 구독해 Zone 변경 단계를 맞춤 |
+
+**UI는 시설과 대기열을 직접 결합하지 않습니다.** 양쪽을 각각 읽고 UI에서 합치면
+소유권이 흐려집니다. `UFF_FestivalViewModelSubsystem`에서 읽습니다.
+
+### 개발용 플레이테스트 도구 (참고)
+
+`UFF_ZoneSystemPlaytestSubsystem` + `WBP_ZoneSystemPlaytestHUD`가 있습니다.
+`Content/FestaFiesta/Zone/Maps/ZoneTestMap`에서 키보드로 시설 설치·이동·제거·개폐·큐 조작을 시험할 수 있습니다.
+
+**플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
+Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
+
 ---
 
 ## Queue — 장원재
@@ -179,11 +197,67 @@ UI 담당이 `ui_override_label` 열만 채운다. 비우면 엔지니어링 가
 
 ### `UFF_FestivalViewModelSubsystem`
 
-- **상태**: `계획` — 8/8까지 스텁 커밋 예정
+- **헤더**: `Public/UI/FF_FestivalViewModelSubsystem.h`
+- **접근**: `GameInstanceSubsystem`
+- **상태**: **`스텁`** — 지표 4종은 하드코딩 더미. Stage·Day는 진짜 값
 - **역할**: 위 모든 소스를 UI가 쓰기 좋은 형태로 합쳐서 제공
 
 UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 보지 않습니다.
 각 모듈이 바뀌어도 위젯을 안 고치게 하기 위해서입니다.
+
+| 값 | Getter | 델리게이트 | 현재 |
+| --- | --- | --- | --- |
+| SimSatisfaction | `GetSimSatisfaction()` | `OnSimSatisfactionChanged` | 더미 62 |
+| ScoreSatisfaction | `GetScoreSatisfaction()` | `OnScoreSatisfactionChanged` | 더미 62 |
+| Revenue | `GetRevenue()` | `OnRevenueChanged` | 더미 0 |
+| Safety | `GetSafety()` | `OnSafetyChanged` | 더미 88 |
+| Stage / Day | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged` | **진짜 값** |
+| 남은 시간 | `GetRemainingSeconds()` | `OnRemainingSecondsChanged` | **진짜 값** |
+
+### ⚠️ 소유자 확인 전 가정값 — 틀리면 알려주세요
+
+실제 소유자의 구현이 아직 없어 아래를 가정하고 만들었습니다.
+**확정이 아니라 제안입니다.** 다르면 편하게 말씀해 주세요. ViewModel 안쪽만 고치면 됩니다.
+
+```cpp
+float SimSatisfaction;    // 0~100, 높을수록 좋음
+float ScoreSatisfaction;  // 0~100, 높을수록 좋음 (SimSatisfaction + FinaleBonus)
+int32 Revenue;            // 오늘 누적 매출
+float Safety;             // 0~100, 높을수록 안전
+```
+
+미확인 항목:
+
+- Revenue가 오늘치인지 축제 전체 누적인지, Gold 잔액과 같은 값인지
+- Safety의 방향 (높을수록 안전인지 위험인지)
+- 갱신 주기 (매 틱 / Live 종료 시 / Report에서만)
+- 좋고 나쁨을 가르는 구간 — 정해지기 전까지 UI에서 색을 칠하지 않습니다
+
+### Slot을 노출하지 않습니다
+
+2026-08-06 12시 스크럼에서 하루 4 Slot 구조를 없애기로 했고 16:57에 `Reconfigure` 삭제도 승인됐습니다.
+`UFF_FestivalStageSubsystem::CurrentSlot`이 아직 남아 있지만 ViewModel은 참조하지 않습니다.
+**시간 담당이 실제로 제거해도 UI는 깨지지 않습니다.**
+
+### 게임 시계는 Live에서만 흐릅니다
+
+2026-08-06 16:59 시간 회의 결정입니다. UI 표시에 직접 영향이 있습니다.
+
+| Stage | 시간의 의미 |
+| --- | --- |
+| `Setup` | 게임 시각과 분리된 **UI 제한시간** |
+| `PromotionPreview` | 게임 시각 진행 안 함 |
+| `Live` | **여기서만** 게임 시계가 흐름. 축제별 `LiveStartTime`에서 시작 |
+
+`LiveStartTime`은 축제 데이터에서 받습니다. 다대포의 17:00을 공통 UI에 하드코딩하지 않습니다.
+
+### `UFF_MetricsHudWidget`
+
+- **헤더**: `Public/UI/FF_MetricsHudWidget.h`
+- **상태**: `구현완료` (Phase 0 산출물)
+
+지표를 숫자로만 표시합니다. 좋고 나쁨 구간이 정해지기 전이라 **색을 칠하지 않았습니다.**
+임의로 정하면 나중에 전부 바꿔야 하고, 색만으로 구분하면 AT-011 위반입니다.
 
 ### 이미 만든 UI 베이스 (참고용)
 

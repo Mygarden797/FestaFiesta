@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "CommonButtonBase.h"
+#include "Styling/SlateBrush.h"
 #include "FF_CommonButtonBase.generated.h"
 
 class UImage;
@@ -57,6 +58,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
 	void RefreshVisualState();
 
+	/** `IconBrush`가 지정돼 있으면 `Image_Icon`에 적용한다. 비어 있으면 WBP 설정을 유지한다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
+	void ApplyIconBrush();
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
@@ -93,11 +98,31 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UImage> Image_Chevron;
 
-	// --- 내용 ---
+	/**
+	 * 키보드·게임패드 포커스 표시.
+	 *
+	 * CBS_ 스타일의 배경 브러시는 **호버에서만** 바뀐다. 포커스는 안 바뀐다.
+	 * 그래서 포커스 표시는 별도 위젯이 필요하다. 없으면 패드로 어디가 선택됐는지 알 수 없다.
+	 * WBP에 테두리 이미지를 하나 넣고 이 이름을 주면 된다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UImage> Image_FocusRing;
+
+	// --- 내용. 버튼 인스턴스마다 다른 값 ---
 
 	/** 버튼 문구. 화면 문자열을 C++에 하드코딩하지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Content")
 	FText ButtonLabel;
+
+	/**
+	 * 버튼 아이콘.
+	 *
+	 * `Image_Icon`은 버튼 WBP 안에 있어서 부모 화면에서 인스턴스별로 편집할 수 없다.
+	 * 이 프로퍼티를 거쳐야 타이틀 화면에서 버튼마다 다른 아이콘을 줄 수 있다.
+	 * 비워 두면 WBP에 설정된 브러시를 그대로 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Content")
+	FSlateBrush IconBrush;
 
 	// --- 아이콘·Chevron 틴트. 배경과 폰트는 CBS_/CTS_가 맡고 여기서는 건드리지 않는다 ---
 
@@ -116,8 +141,8 @@ protected:
 	/**
 	 * 라벨 색까지 이 클래스가 칠할지.
 	 *
-	 * CBS_ 스타일의 상태별 텍스트 스타일이 자식 UCommonTextBlock에 자동 적용되는지 확인되면
-	 * 이걸 false로 두고 스타일에 맡긴다. 확인 전까지는 true가 안전하다.
+	 * CBS_ 스타일의 상태별 텍스트 스타일이 자식 UCommonTextBlock에 자동 적용되면
+	 * 이걸 false로 두고 스타일에 맡긴다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Tint")
 	bool bTintLabel = true;
