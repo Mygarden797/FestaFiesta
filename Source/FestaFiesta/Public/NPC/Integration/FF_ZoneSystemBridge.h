@@ -22,12 +22,14 @@
  * 환산은 이 파일에서만 한다.
  *
  *
- * ### 미해결 — Zone 인접·앵커·면적 관련
+ * ### Zone 인접·앵커·면적 입력 계약
  *
- * `AFFZSGameplayZone`(`FF_FFZSZoneActor.h`)에 있는 아래 3가지 정보를 `FFFZSZoneReadModel`(외부 공개 스냅샷)에 추가 요청함
+ * `FFFZSZoneReadModel`은 `AFFZSGameplayZone`의 아래 3가지 정보를 값 복사본으로 제공한다.
  *   - `NeighborZoneIds`      — Zone 인접 그래프 (후보 필터링에 그대로 씀)
- *   - `EntryExitAnchors`     — Zone 출입 기준점 (거리 행렬의 시작·끝점)
- *   - `GetBoundaryAreaSquareMeters()` — 폴리곤 신발끈 공식으로 실제 면적(㎡) 산출
+ *   - `EntryExitAnchors`     — Zone 로컬 cm 출입 기준점 (거리 행렬의 시작·끝점)
+ *   - `AreaSquareMeters`     — `GetBoundaryAreaSquareMeters()`의 실제 경계 면적(㎡)
+ *
+ * 이 파일의 `BuildCandidates` 조립과 로컬 앵커의 월드 좌표 변환은 별도 구현 대상이다.
  *
  */
 
@@ -51,8 +53,7 @@ public:
 	 * 후보를 전부 넣지 않는다 — Party 수가 많아질수록 매번 전체 시설을 평가하면 프레임이 무너진다.
 	 * 정확한 동시 Party 상한은 아직 실측이 없다
 	 * 현재 Zone + 인접 Zone + 전역 인기 상위 K개로 걸러 보통 8~12개로 줄인다.
-	 * 인접 Zone 정보는 AFFZSGameplayZone::NeighborZoneIds 에 이미 있다 
-	 * (ZoneReadModel에 노출만 되면 바로 쓸 수 있다.
+	 * 인접 Zone 정보는 FFFZSZoneReadModel::NeighborZoneIds에서 읽는다.
 	 *
 	 * @param ReadModel       ZoneSystem 스냅샷 (한광훈 소유)
 	 * @param CurrentZoneId   이 Party 가 지금 있는 Zone
