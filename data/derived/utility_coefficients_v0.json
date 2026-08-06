@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-04",
+  "dataset_id": "utility_coefficients_v0",
+  "row_unit": "Utility AI 계수 하나",
+  "output_row_count": 20,
+  "note": "이 파일이 계수의 원본(source of truth)이다. data/unreal/utility_coefficients_v0.csv 는 이 파일을 Name 열 추가 등 UE DataTable 형식으로 재배열한 결과이며, build_unreal_datatables.mjs 가 이 파일에서 읽어 그쪽에 쓴다. 반대 방향으로 읽지 않는다.",
+  "status": "assumption (affinity_scale_ref만 derived, live_stage_duration_minutes만 to_verify)",
+  "individual_variation_anchor_rows_added_2026_08_04": "live_stage_duration_minutes, stay_duration_share_of_live_stage_mean, correlation_strength_leisureliness — 개체 변주(individual_variation_spec.md) 계산에 쓰는 전역 스칼라 노브. Utility(i,j,t) 식의 항은 아니지만 total_visitor_count 등 기존에도 이 표에 전역 노브를 함께 두던 선례를 따랐다.",
+  "preference_match_redefined_2026_08_04": "목적지 선택기 v0 구현 시 preference_vector(아키타입+동반유형 delta)를 유일한 preference_match 항으로 확정했다. affinity_norm(관광지 데이터랩 기반)은 v0에서 사용하지 않는다. lambda_affinity는 이제 preference_norm = clamp(preference_vector/preference_vector_scale_ref, -1, 1)을 스케일한다. preference_vector_scale_ref(17.0)를 신규 추가했고 affinity_scale_ref는 미사용 상태로 남겨둔다.",
+  "regenerate_with": "Tools/data/build_unreal_datatables.mjs"
+}
