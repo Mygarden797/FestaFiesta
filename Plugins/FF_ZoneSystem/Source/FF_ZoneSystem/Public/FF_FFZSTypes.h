@@ -785,13 +785,25 @@ struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
 };
 
 USTRUCT(BlueprintType)
-// UI·분석에 필요한 존 ID·SoftCapacity·보고 인구·밀도 비율·단계의 비권한 값 복사본.
+// UI·분석에 필요한 존 그래프·출입 기준점·경계 면적·밀도 상태의 비권한 값 복사본.
 struct FF_ZONESYSTEM_API FFFZSZoneReadModel
 {
     GENERATED_BODY()
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     FName ZoneId = NAME_None;
+
+    // Actor에 저작된 방향 없는 그래프 이웃 ID의 값 복사본. 존재·양방향성은 ValidateZoneGraph가 검증한다.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    TArray<FName> NeighborZoneIds;
+
+    // 월드 좌표로 변환하지 않은 Zone 로컬 cm 기준 출입 Transform의 값 복사본.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    TArray<FTransform> EntryExitAnchors;
+
+    // 현재 BoundarySpline에 GetBoundaryAreaSquareMeters()를 적용한 실제 경계 면적(m²).
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    float AreaSquareMeters = 0.0f;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     int32 SoftCapacity = 0;

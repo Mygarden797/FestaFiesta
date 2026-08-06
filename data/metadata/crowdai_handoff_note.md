@@ -62,7 +62,7 @@ Heat Map·밀도 지표·AT-016(Fundamental Diagram 검증)에 쓸 원시 로그
 - 5m×5m 격자로 맵을 나누고, 인원 0인 칸은 기록 안 해도 됨(실측 레벨 전역이면 대부분 빈 칸).
 - 기록 주기는 `FFF_CrowdReadModel::SnapshotFrame`과 맞추면(초안 30틱) 결정 로그와 조인 가능.
 - **정해야 할 것**: 좌표 원점(레벨 원점 vs 특정 앵커), 셀 크기(5m 제안, 성능에 맞춰 조정 가능).
-- `FFF_CrowdReadModel::ZoneAreaSqm`은 이미 `AFFZSGameplayZone::GetBoundaryAreaSquareMeters()`(한광훈 플러그인)에 있어 새로 만들 필요 없음 — ZoneReadModel에 노출만 되면 됨.
+- `AFFZSGameplayZone::GetBoundaryAreaSquareMeters()` 결과는 `FFFZSZoneReadModel::AreaSquareMeters`로 노출된다. `FFF_CrowdReadModel::ZoneAreaSqm`이 필요하면 이 값을 ZoneId별로 복사한다.
 
 ## 6. 성능 숫자(300/500/700)에 의존하지 말 것
 
