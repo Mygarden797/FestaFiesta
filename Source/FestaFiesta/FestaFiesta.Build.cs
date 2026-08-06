@@ -14,15 +14,12 @@ public class FestaFiesta : ModuleRules
 			"NavigationSystem",
 			"GameplayAbilities", "GameplayTags", "GameplayTasks",
 			"AIModule",
-			"UMG", "Slate", "SlateCore",
-			"Niagara", "NiagaraCore"
-		});
-
-		PrivateDependencyModuleNames.AddRange(new string[]
-		{
+			"UMG","Slate","SlateCore",
+			"CommonUI","CommonInput",
+			"Niagara","NiagaraCore",
 			"FF_ZoneSystem"
 		});
-
+		
 		// The WBP builder is compiled only into the Editor target. Runtime/Game
 		// packaging remains free of UnrealEd and UMGEditor dependencies.
 		if (Target.bBuildEditor)

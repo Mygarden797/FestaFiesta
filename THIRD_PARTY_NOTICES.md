@@ -31,22 +31,24 @@
 
 | 에셋 | 용도 | 상태 | 라이선스 | 게임 내 표기 |
 | --- | --- | --- | --- | --- |
-| Solar System Scope Planet Textures | 지구·구름·노멀·스페큘러 텍스처 후보 | `to_verify` | CC BY 4.0 | 필요 |
-| Pretendard | 한국어·공통 UI 폰트 후보 | `assumption` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
-| Michroma | 영문 브랜드 워드마크 폰트 후보 | `assumption` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
+| Solar System Scope Planet Textures | 지구·구름·노멀·스페큘러 텍스처 | `confirmed` | CC BY 4.0 | 필요 |
+| Pretendard | 한국어·공통 UI 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
+| Michroma | 영문 브랜드 워드마크 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 
 ---
 
 ## Solar System Scope Planet Textures
 
-- 상태: `to_verify` — 라이선스는 확인했으나 실제 사용할 해상도와 파일은 아직 선택하지 않음
+- 상태: `confirmed` — 공식 배포처에서 Earth 2K·8K 텍스처 5종을 확보함. Unreal에 실제 임포트할 최종 해상도는 구현·성능 검증 후 선택
 - 제작·배포: Solar System Scope / INOVE
 - 원본: https://www.solarsystemscope.com/textures/
 - 라이선스: Creative Commons Attribution 4.0 International (`CC BY 4.0`)
 - 라이선스 원문: https://creativecommons.org/licenses/by/4.0/
 - 확인일: 2026-08-05
 - 원본 설명: 실제 천체 지도와 NASA의 고도·이미지 데이터를 바탕으로 조정한 행성 텍스처 팩
-- 사용 예정 후보:
+- 다운로드 날짜: 2026-08-05
+- 원본 보관 경로: `SourceArt/ThirdParty/SolarSystemScope/PlanetTextures/Earth/`
+- 확보한 원본:
   - Earth Day Map
   - Earth Night Map
   - Earth Clouds
@@ -75,25 +77,44 @@
 수정하지 않은 원본 파일을 그대로 사용할 경우 마지막 수정 문구는 제거한다.
 출처와 라이선스 이름은 크레딧 화면에서 각각 원본 페이지와 라이선스 원문으로 연결한다.
 
+### 확보 파일과 SHA-256
+
+| 파일 | 해상도 | SHA-256 |
+| --- | --- | --- |
+| `2k_earth_daymap.jpg` | 2048×1024 | `767EE1DC6EB3802699BFCCF6F264880F8ACD0B80DE3191CD24984FE279B07B7C` |
+| `8k_earth_daymap.jpg` | 8192×4096 | `88AB060B6E7D241CFC590C69F528FAB2B3247B738D40124CB590999A6FE44ABC` |
+| `2k_earth_nightmap.jpg` | 2048×1024 | `C16FD1BC096AB91A5C5265C6FF9847C43F489F2E2EE790CCDBCBD03251CF3A5A` |
+| `8k_earth_nightmap.jpg` | 8192×4096 | `9894E83A585A22C1C425E7CA4F987A9BA625BF08ECEE45D3C9DCACAE3C2AD5F7` |
+| `2k_earth_clouds.jpg` | 2048×1024 | `FFFD7F68D41B37274822150E54A6EF605AF1D3EC35624D9F628C3B896BFA42ED` |
+| `8k_earth_clouds.jpg` | 8192×4096 | `C792ECA228989D36EBB45D3EA6FF1198BE5E21A25D70D2FBCB2124FFD14BA7F5` |
+| `2k_earth_normal_map.tif` | 2048×1024 | `F518CE2646CA935DBC17E316041DE4FEA7A5DA0EC441E4EB22E711EABD843BA2` |
+| `8k_earth_normal_map.tif` | 8192×4096 | `79D6DBBDE340C653F435F5A012C026A9BED94BDCFD9714E77885F4CBA046635A` |
+| `2k_earth_specular_map.tif` | 2048×1024 | `6B90ECFCE248591A1ECC9A3E49ACCA1A7059B6828877E718302ED9A6B4471BD7` |
+| `8k_earth_specular_map.tif` | 8192×4096 | `194E67EF7F14DD50B402A1A6F8C7ED55810E16515B95F7736091951EFE8DC3FB` |
+
 ### 임포트 시 채울 항목
 
-- 다운로드 파일명: `to_verify`
-- 선택 해상도: `to_verify`
-- 다운로드 날짜: `to_verify`
-- SHA-256: `to_verify`
-- Unreal 에셋 경로: `to_verify`
+- 선택 해상도: 2K 우선, 최종 Day Map 8K 여부 `to_verify`
+- Unreal 에셋 경로: `/Game/FestaFiesta/UI/Title/Globe/Textures/` 예정
 - 실제 수정 내역: `to_verify`
 
 ---
 
 ## Pretendard
 
-- 상태: `assumption` — UI 기본 폰트 후보이며 아직 프로젝트에 임포트하지 않음
+- 상태: `confirmed` — 공식 v1.3.9 배포본에서 Medium·SemiBold 원본과 라이선스를 확보함. Unreal 임포트 전 단계
 - 제작자·권리자: Kil Hyung-jin 및 Pretendard가 포함하는 원본 폰트 프로젝트의 권리자들
 - 원본: https://github.com/orioncactus/pretendard
 - 라이선스: SIL Open Font License 1.1
 - 라이선스 원문: https://github.com/orioncactus/pretendard/blob/main/LICENSE
 - 확인일: 2026-08-05
+- 다운로드 날짜·버전: 2026-08-05 / v1.3.9
+- 원본 보관 경로: `SourceArt/ThirdParty/Pretendard/1.3.9/`
+- 사용 파일:
+  - `Pretendard-Medium.otf` — SHA-256 `D39E50E4BB52B4993B6A4EEB821A171254745BD824446AF01E1F616B89FFACE0`
+  - `Pretendard-SemiBold.otf` — SHA-256 `C89BC43027DC7CDE5726E96223376F8EEC09302B2FC1F8147FD5B57CFC376118`
+- 원본 압축 파일: `Pretendard-1.3.9.zip` — SHA-256 `04BE351A74D6BF7D60C480A3087E51D185485D35A52023142AF1DF19EB8C428A`
+- 보관 라이선스: `LICENSE.txt` — SHA-256 `B04538C9ABEC39A3DB75108CF0AF0FD9C77032FE8AA2CF38345B4D250E98E38E`
 - 예정 용도: 한국어 메뉴·본문·수치·옵션·접근성 UI
 
 ### 배포 메모
@@ -108,23 +129,25 @@
 
 ### 임포트 시 채울 항목
 
-- 사용 파일·굵기: `to_verify`
-- 다운로드 날짜·버전: `to_verify`
-- SHA-256: `to_verify`
-- Unreal Font Asset 경로: `to_verify`
+- Unreal Font Asset 경로: `/Game/FestaFiesta/UI/Fonts/` 예정
 - 라이선스 동봉 경로: `to_verify`
 
 ---
 
 ## Michroma
 
-- 상태: `assumption` — 영문 브랜드 폰트 후보이며 아직 프로젝트에 임포트하지 않음
+- 상태: `confirmed` — Google Fonts 공식 배포본의 Regular 원본과 라이선스를 확보함. Unreal 임포트 전 단계
 - 제작자·권리자: The Michroma Project Authors
 - 원본: https://github.com/google/fonts/tree/main/ofl/michroma
 - 라이선스: SIL Open Font License 1.1
 - 라이선스 원문: https://github.com/google/fonts/blob/main/ofl/michroma/OFL.txt
 - 저작권 고지: Copyright 2011 The Michroma Project Authors
 - 확인일: 2026-08-05
+- 다운로드 날짜: 2026-08-05
+- 원본 보관 경로: `SourceArt/ThirdParty/GoogleFonts/Michroma/`
+- 사용 파일: `Michroma-Regular.ttf` — SHA-256 `AEB90DA44B9F39FD7DF446507F4109A39E0B8FFCAD76AD428A0F737E9860E3EC`
+- 원본 압축 파일: `Michroma.zip` — SHA-256 `8F3E2B316E0BEC343E1D7EEF0574AEE46C74953722AB7A42A5AF0E1610D77049`
+- 보관 라이선스: `OFL.txt` — SHA-256 `06B63D1A13183CB7062CD44107DFAFF4757D8FB5BEBA6551A4CE46CB1AEAF1CC`
 - 예정 용도: `FESTA FIESTA` 영문 브랜드 워드마크
 
 ### 배포 메모
@@ -139,10 +162,7 @@
 
 ### 임포트 시 채울 항목
 
-- 사용 파일: `Michroma-Regular.ttf` 예정
-- 다운로드 날짜·버전: `to_verify`
-- SHA-256: `to_verify`
-- Unreal Font Asset 경로: `to_verify`
+- Unreal Font Asset 경로: `/Game/FestaFiesta/UI/Fonts/` 예정
 - 라이선스 동봉 경로: `to_verify`
 
 ---
