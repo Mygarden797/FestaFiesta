@@ -132,7 +132,7 @@ writeFileSync('data/derived/group_composition_rules_v0.json', JSON.stringify({
     still_useful: 'companion_type_response_v0.csv(동반자 유형 응답률)는 아동 배치에는 안 쓰이지만, non_leader_adult_archetype_rule 을 나중에 정교화할 때의 근거로 남긴다.',
   },
   regeneration: 'node Tools/data/build_group_composition_rules.mjs',
-  spec: 'data/metadata/population_group_generation_spec.md',
+  spec: 'data/metadata/spec/population_group_generation_spec.md',
 }, null, 2) + '\n', 'utf8');
 console.log('생성: data/derived/group_composition_rules_v0.json');
 console.log(`\n규칙 ${RULES.length}개 — status 별: ` +

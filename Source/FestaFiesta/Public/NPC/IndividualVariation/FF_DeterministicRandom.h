@@ -9,7 +9,7 @@ class UDataTable;
 
 /**
  * 고정 Seed 기반 개체 변주 — 순수 해시·분포 수학. DataTable 의존성 없음.
- * 설계는 data/metadata/individual_variation_spec.md 참조.
+ * 설계는 data/metadata/spec/individual_variation_spec.md 참조.
  *
  * 같은 (GlobalSimulationSeed, StableAgentId, TraitKey, SpawnGeneration, RandomPurpose) 조합은
  * 항상 같은 값을 낸다. 금지 입력: 현재 시각, 포인터 주소, Actor 스폰 순서, 프레임 번호.

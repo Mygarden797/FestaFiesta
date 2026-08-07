@@ -101,5 +101,5 @@
     }
   },
   "regeneration": "node Tools/data/build_arrival_curve.mjs",
-  "spec": "data/metadata/visitor_arrival_curve_spec.md"
+  "spec": "data/metadata/spec/visitor_arrival_curve_spec.md"
 }

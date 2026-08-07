@@ -110,8 +110,8 @@ struct FFF_VisitorDistribution
 /**
  * 개별 방문객 태그 분포 생성기 — 결정 로직(김시리) 쪽 산출물.
  *
- * 설계·근거: data/metadata/population_group_generation_spec.md,
- *            data/metadata/crowdai_handoff_note.md §1·§3
+ * 설계·근거: data/metadata/spec/population_group_generation_spec.md,
+ *            data/metadata/handoff/crowdai_handoff_note.md §1·§3
  *
  * 입력 DataTable 3종:
  *   FFF_GroupSizeDistributionRow   그룹 크기 분포 (문항 A6 실측)

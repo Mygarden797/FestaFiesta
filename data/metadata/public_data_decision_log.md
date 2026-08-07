@@ -89,7 +89,7 @@ ResidentPopulationPrior (confirmed)
 
 ### Utility AI v0 스펙
 
-- 스펙: `data/metadata/utility_ai_spec.md`
+- 스펙: `data/metadata/spec/utility_ai_spec.md`
 - 계수 노브 표: `data/unreal/utility_coefficients_v0.csv` (16개 계수, 전부 `status` 표기)
 - `affinity_scale_ref = 1.27` 은 산출물의 관측 최대 절대값 1.2687에서 정한 `derived` 값이다. 나머지 계수는 전부 `assumption`.
 
@@ -130,8 +130,8 @@ ResidentPopulationPrior (confirmed)
 | `data/derived/festival_activity_category_mapping_v0.csv` | Tour_Stat 21개 활동 항목 → 축제 부스 카테고리 판단 매핑 (assumption, 아트/기획팀 재검토 필요) |
 | `data/derived/npc_archetypes_v0.csv` | 생애주기 5종 × 시나리오 2종 = 10행. 인구비중 + 카테고리별 응답률/편차 |
 | `data/derived/companion_type_modifier_v0.csv` | 동반유형 3종의 카테고리별 오버레이 보정값 |
-| `data/metadata/dependent_child_npc_spec.md` | 아동 종속 NPC 메커닉 초안 |
-| `data/metadata/utility_ai_spec.md` | `preference_vector` 합성식(아키타입 delta + 동반유형 delta 단순합산) 반영 |
+| `data/metadata/spec/dependent_child_npc_spec.md` | 아동 종속 NPC 메커닉 초안 |
+| `data/metadata/spec/utility_ai_spec.md` | `preference_vector` 합성식(아키타입 delta + 동반유형 delta 단순합산) 반영 |
 
 ### 확정됨 (2026-08-04)
 
@@ -207,7 +207,7 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 | 정정 | 선셋클럽·선셋펍은 처음에 Performance(무대) 대응으로 예시 들었던 것을 Booth(Nightlife)로 정정했다 — 관객이 무대를 보는 형태가 아니라 바·라운지 형태이기 때문. `FFF_NeedState`의 Stimulation이 Performance·PhotoSpot뿐 아니라 Booth(Nightlife)로도 풀리게 반영(`GetNeedReliefFlags`). |
 | 발견·반영 | 리플렛 지도 범례의 "오아시스 존"(그늘+음수대+무릎나눔)이 ZoneSystem의 `Rest` 카테고리에 해당한다는 것을 확인 — `Thirst` Need가 Booth(FoodStall)뿐 아니라 Rest로도 풀리게 `GetNeedReliefFlags`에 추가했다. |
 | 미해결 | 선셋펍은 낮엔 웰니스 체험(CraftExperience), 밤엔 DJ·라이브밴드(Nightlife)를 같은 공간에서 겸한다. 지금 네이밍 컨벤션은 시설 하나에 토큰 하나만 허용해 이 시간대별 겸용을 못 담는다 — 실제 부스 제작 시 결정 필요(`facility_naming_convention.md` 참고). |
-| 산출물 | `data/metadata/facility_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |
+| 산출물 | `data/metadata/handoff/facility_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |
 
 ## 2026-08-06 — 시간대별 목표 유입 곡선 확정 + 동시 체류 구조 문제 정량화
 
@@ -215,13 +215,13 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 
 | 상태 | 내용 |
 |---|---|
-| 확정 | 곡선 **인터페이스** 4가지: ① 유입(신규 도착)을 넘긴다(동시 체류 목표 아님 — occupancy를 넘기면 crowdAI가 우리 쪽 체류시간 노브를 역산해야 해서 양방향 의존이 생긴다) ② 절대 인원이 아니라 비율(%), 합계 100(2026-08-05 "수요와 스폰 상한을 분리한다" 확정 원칙 유지) ③ 도메인은 Live 단계 정규화 진행도 [0,1)을 24버킷으로(절대 분으로 박으면 `live_stage_duration_minutes` 변경 시 깨짐) ④ 시나리오 3종을 함께 제공(모양이 전부 가정이므로 crowdAI가 모양에 견고한 구현을 하도록). |
+| 확정 | 곡선 **인터페이스** 4가지: ① 유입(신규 도착)을 넘긴다(동시 체류 목표 아님 — occupancy를 넘기면 crowdAI가 Utility AI 쪽 체류시간 노브를 역산해야 해서 양방향 의존이 생긴다) ② 절대 인원이 아니라 비율(%), 합계 100(2026-08-05 "수요와 스폰 상한을 분리한다" 확정 원칙 유지) ③ 도메인은 Live 단계 정규화 진행도 [0,1)을 24버킷으로(절대 분으로 박으면 `live_stage_duration_minutes` 변경 시 깨짐) ④ 시나리오 3종을 함께 제공(모양이 전부 가정이므로 crowdAI가 모양에 견고한 구현을 하도록). |
 | draft_assumption | 곡선 **모양** 수치 전부. Beta 커널 `p^(a-1)(1-p)^(b-1)`, `flat_v0`(a=b=1) / `single_peak_v0`(피크 18:25) / `sunset_peak_v0`(피크 19:15). 실제인 것은 Live 17:00~21:00과 야간 Nightlife 프로그램 존재뿐이고, 단봉 여부·피크 위치·뾰족함은 전부 추론이다. |
 | 해소 | **"피크·평균 비율 1.4(draft_assumption)"를 폐기한다** — 이제 곡선에서 계산되는 파생값이다(flat 1.00 / single_peak 2.03 / sunset_peak 2.37). 2026-08-05의 추측("평평하면 1.0, 뾰족하면 2.0 근처")은 맞았고, 1.4는 어느 시나리오에도 해당하지 않는 중간값이었다. |
 | **발견** | **동시 체류는 곡선 모양으로 낮출 수 없다.** 유입 곡선 + 체류시간 삼각분포를 합성한 결과 동시 체류 피크가 총 유입 N의 `0.554`(완전 균등)~`0.902`(뾰족)이다. 유입 창(240분)이 평균 체류(약 128분)의 1.9배뿐이라 하루 방문객 대부분이 동시에 있게 되는 **구조적 결과**다. `total_visitor_count`(20,000/일) 기준 11,082~18,038명 동시 — 300~700 체크포인트와 16~26배 차이이며, 이 간극은 곡선을 평평하게 펴서 메울 수 있는 종류가 아니다. |
 | 유지 | 위 발견으로 `total_visitor_count`를 역산해 낮추지 않는다 — 2026-08-05에 같은 방식(700→950)을 되돌린 이유가 그대로 적용된다. 이 숫자는 초과분 흡수 정책(통계 처리·대기·배경 크라우드 대체)이 감당해야 할 규모를 잡는 **진단용**이다. 즉 미해결 항목이 "얼마나 어긋나는가"에서 "어긋남을 어떤 정책으로 흡수하는가"로 좁혀졌다. |
 | 기각 | `transport_expressway_hourly_2025_06_30`(고속도로 시간대별 교통량)을 유입 곡선 근거로 쓰지 않는다 — 통행 목적이 없어 통근이 지배하고, 실제 모양이 16~17시 피크 후 저녁 내내 **감소**해 저녁 축제와 방향이 반대다. 나중에 이 파일을 발견해 다시 붙이지 않도록 spec §5에 기록했다. |
-| 산출물 | `Tools/data/build_arrival_curve.mjs`, `data/derived/visitor_arrival_curve_v0.csv`+`.json`, `data/unreal/visitor_arrival_curve_v0.csv`, `Source/FestaFiesta/Public/DataTables/FF_ArrivalCurveRow.h`, `data/metadata/visitor_arrival_curve_spec.md`. |
+| 산출물 | `Tools/data/build_arrival_curve.mjs`, `data/derived/visitor_arrival_curve_v0.csv`+`.json`, `data/unreal/visitor_arrival_curve_v0.csv`, `Source/FestaFiesta/Public/DataTables/FF_ArrivalCurveRow.h`, `data/metadata/spec/visitor_arrival_curve_spec.md`. |
 
 ## 2026-08-06 — 그룹 크기·아동 구성을 국민여행조사 원자료 실측으로 확정 (아래 블로커 해소)
 

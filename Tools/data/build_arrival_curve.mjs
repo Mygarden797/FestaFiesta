@@ -5,7 +5,7 @@
  * 데이터로 만든다. 이 곡선이 정하는 것은 "언제 얼마나 들어와야 하는가"의 목표 분포뿐이며,
  * 실제로 어떤 그룹을 언제 Pool에서 꺼낼지는 crowdAI가 자유롭게 정한다.
  *
- * 설계 결정 4가지 (자세한 근거는 data/metadata/visitor_arrival_curve_spec.md):
+ * 설계 결정 4가지 (자세한 근거는 data/metadata/spec/visitor_arrival_curve_spec.md):
  *   1. 유입(신규 도착) 곡선이다 — 동시 체류 인원 목표가 아니다.
  *   2. 절대 인원이 아니라 비율(%)이다 — 합계 100. 소비자가 자기 N을 곱해서 쓴다.
  *   3. 도메인은 Live 단계의 정규화 진행도 [0,1) — 절대 시각이 아니라서
@@ -210,7 +210,7 @@ writeFileSync('data/derived/visitor_arrival_curve_v0.json', JSON.stringify({
     },
   },
   regeneration: 'node Tools/data/build_arrival_curve.mjs',
-  spec: 'data/metadata/visitor_arrival_curve_spec.md',
+  spec: 'data/metadata/spec/visitor_arrival_curve_spec.md',
 }, null, 2) + '\n', 'utf8');
 
 // ---- Unreal DataTable CSV ----
