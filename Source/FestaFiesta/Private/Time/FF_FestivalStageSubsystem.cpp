@@ -128,6 +128,13 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 	RemainingTime = GetLiveDurationForCurrentDay() - ElapsedLiveSeconds;
 	//오늘 총 길이 - 흐른 시간 =  남은 시간을 매번 다시 계산
 
+	const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
+	if (CurrentSeconds != LastBroadcastSeconds)
+	{
+		LastBroadcastSeconds = CurrentSeconds;
+		OnRemainingSecondsChanged.Broadcast(CurrentSeconds);
+	}
+
 	if (RemainingTime <= 0.f)
 	{
 		HandleLiveEnd();
