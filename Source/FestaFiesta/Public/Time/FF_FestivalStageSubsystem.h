@@ -12,6 +12,9 @@
 // Stage 바뀌면 알림 보내는 이벤트 신호 선언
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStageChanged, EFF_FestivalStage, PreviousStage, EFF_FestivalStage, NewStage);
 
+// 초가 바뀔때 쓰는 딜리게이트
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRemainingSecondsChanged, int32, NewSeconds);
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -66,6 +69,10 @@ public:
 	FOnStageChanged OnStageChanged;
 	// 이벤트 신호 실제 변수 (다른 시스템이 여기 등록해두면 알림 받음)
 
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnRemainingSecondsChanged OnRemainingSecondsChanged;
+	//초 단위로 바뀔 때만 알림 받음
+
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);
 	// 단계 바꿔달라는 요청 함수
@@ -113,4 +120,7 @@ private:
 
 	UPROPERTY()
 	TArray<FFF_LiveTriggerEvent> CachedTodayEvents;
+
+	int32 LastBroadcastSeconds = -1;
+
 };
