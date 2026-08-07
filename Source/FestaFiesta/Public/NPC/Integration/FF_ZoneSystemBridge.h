@@ -5,13 +5,13 @@
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
+#include "NPC/Party/FF_NeedState.h"
 
 /**
  * FF_ZoneSystem(한광훈) → Utility AI(김시리) 변환 지점.
  *
  * ZoneSystem 이 가지고 있는 시설·존·큐 상태를 
  * 목적지 선택기(김시리)에서 필요한 FFF_DestinationCandidate 로 바꾸는 변환 작업을 이곳에서만 한다.
- * (여러 곳에서 하면 단위 환산과 카테고리 매핑이 제각각 어긋난다.)
  *
  * ### 미해결 — 단위 (통합 시 터지는 부분)
  *
@@ -34,16 +34,6 @@
  */
 
 
-// 시설 카테고리가 해소 가능한 FFF_NeedState 성분 플래그.
-struct FFF_NeedReliefFlags
-{
-	bool bRelievesHunger = false;
-	bool bRelievesThirst = false;
-	bool bRelievesRestroom = false;
-	bool bRelievesFatigue = false;
-	bool bRelievesStimulation = false;
-};
-
 class FFF_ZoneSystemBridge
 {
 public:
@@ -65,11 +55,15 @@ public:
 		int32 PartySize);
 
 	/**
-	 * 시설 카테고리 → preference_vector 키. 
-	 * Rest/Performance/PhotoSpot 은 1:1, 
-	 * Toilet/Info/Safety 는 취향 매칭 대상이 아니라 NAME_None. 
-	 * Booth 는 FacilityDefinitionId 를 "Booth_<PreferenceToken>_<이름>" 네이밍 컨벤션으로 파싱한다(.cpp 의 토큰 표 참고)
-	 * — 컨벤션을 안 따르거나 토큰이 표에 없으면 NAME_None. NAME_None 이면 preference 항은 0으로 계산된다
+	 * 시설 카테고리 → preference_vector 키.
+	 *
+	 * FacilityDefinitionId 는 팀 규칙 `대분류_소분류_고유이름` 형태다(대분류 = EFFZSFacilityCategory 이름).
+	 * **7개 카테고리 전부 형태를 검증하고** 위반이면 시설당 1회 Warning 을 낸다 — 지금 취향 카테고리를
+	 * 실제로 갈라내는 것은 Booth 소분류뿐이지만, 다른 카테고리 오타를 방치하면 나중에 소분류별 분기를
+	 * 추가할 때 조용히 빠진다. 규칙 전문과 토큰 표는 data/metadata/facility_naming_convention.md.
+	 *
+	 * Rest/Performance/PhotoSpot 은 소분류와 무관하게 대분류 1:1, Toilet/Info/Safety 는 취향 매칭
+	 * 대상이 아니라 NAME_None. NAME_None 이면 preference 항은 0으로 계산된다
 	 * (크래시 없이 "취향 없음"으로 동작).
 	 */
 	static FName MapToPreferenceCategory(
@@ -78,10 +72,15 @@ public:
 
 	/**
 	 * 이 카테고리가 해소 가능한 Need. FF_NeedState.h 매핑 표를 코드로 옮긴 것.
-	 * Restroom(Toilet)은 카테고리만으로 판정. Rest는 Fatigue와 Thirst 둘 다 해소한다
-	 * (8/6 리플렛 확인 — "오아시스 존"이 그늘+음수대 복합 시설). Performance·PhotoSpot은 Stimulation만 해소.
-	 * Hunger·Thirst(Booth FoodStall)·Stimulation(Booth Nightlife)은 MapToPreferenceCategory 와
-	 * 같은 네이밍 컨벤션으로 FacilityDefinitionId 를 파싱해 판정한다.
+	 *
+	 * Restroom(Toilet)·Fatigue(Rest)는 대분류만으로 판정. Performance·PhotoSpot은 Stimulation만.
+	 * 소분류를 봐야 하는 것 2가지:
+	 *   - Booth — Hunger/Thirst(FoodStall), Thirst·Stimulation(Nightlife)
+	 *   - Rest  — Thirst 는 **Cooling(무더위 쉼터)만** 해소한다 (2026-08-06 결정).
+	 *             리플렛의 "오아시스 존"(그늘+음수대)이 Rest 카테고리인데 팀 규칙의 Rest 소분류
+	 *             4종에 음수대 토큰이 없어서, 좌석만 있는 시설이 갈증을 푸는 것을 막으려고 좁혔다.
+	 *
+	 * 소분류를 못 읽으면(컨벤션 위반) Thirst 는 해소하지 않는다 — 안전한 쪽으로 뺀다.
 	 */
 	static FFF_NeedReliefFlags GetNeedReliefFlags(
 		EFFZSFacilityCategory ZoneSystemCategory,

@@ -97,6 +97,32 @@ public:
 		float CorrelationStrength);
 
 	/**
+	 * 그룹 멤버용 개체 변주. **NPC를 스폰할 때 이 함수를 부르고 결과를 캐싱하면 된다** —
+	 * 개체 변주는 자동으로 걸리지 않는다. `StableAgentId`가 만들어져도 누군가 Resolve를
+	 * 호출하지 않으면 아무 변주도 적용되지 않는다 (crowdai_handoff_note.md §1).
+	 *
+	 * Resolve()를 두 번 부른다:
+	 *   - `StableAgentId` 시드 → 개인 특성 4종 + LeisurelinessAxis
+	 *   - `GroupId` 시드       → WalkSpeedMultiplier / StayDurationMultiplier 만 가져다 덮음
+	 *
+	 * 그래서 같은 그룹은 같은 속도로 걷고 같은 시간 머문다(동행이 유지된다). 인내심·혼잡내성·
+	 * 취향강도·재평가주기까지 공유하면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이
+	 * 무의미해지므로 그 4종은 계속 개체별 독립이다 (individual_variation_spec.md 8-A절).
+	 *
+	 * Resolve()의 시그니처를 안 바꾸고 wrapper로 둔 이유: 그룹 공유는 호출부의 정책이고,
+	 * Resolve() 자체는 "이 시드로 이 값"이라는 순수 대응 관계만 알아야 한다.
+	 *
+	 * @param GroupId 그룹 식별자. `INDEX_NONE`이면 solo로 취급해 Resolve() 한 번과 완전히 같은 결과를 낸다.
+	 */
+	static FFF_ResolvedIndividualTraits ResolveWithGroupSharing(
+		const UDataTable* VariationTable,
+		int32 GlobalSimulationSeed,
+		int32 StableAgentId,
+		int32 GroupId,
+		int32 SpawnGeneration,
+		float CorrelationStrength);
+
+	/**
 	 * Resolve()가 만든 개체 변주값을 전역 재평가 계수(UtilityCoefficientTable의
 	 * wait_threshold_minutes/density_threshold_ratio/reevaluate_interval_seconds)에
 	 * 곱해서 "이 개인의" 임계값을 만든다. individual_variation_spec.md 5절 매핑 그대로.

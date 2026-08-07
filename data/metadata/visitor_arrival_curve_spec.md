@@ -85,7 +85,7 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 ### 실제로 확인된 것
 
 - Live 단계가 **17:00~21:00(240분)**: 실제 부산바다축제 프로그램 시간표 기준, `status: confirmed`.
-- **야간 Nightlife 프로그램이 실제로 존재**한다: 선셋클럽(야간 EDM 비치클럽)·선셋펍(하우스DJ+라이브밴드 라운지) — 리플렛 대조 확인(`booth_naming_convention.md`).
+- **야간 Nightlife 프로그램이 실제로 존재**한다: 선셋클럽(야간 EDM 비치클럽)·선셋펍(하우스DJ+라이브밴드 라운지) — 리플렛 대조 확인(`facility_naming_convention.md`).
 
 ### 가정인 것 (전부 `draft_assumption`)
 

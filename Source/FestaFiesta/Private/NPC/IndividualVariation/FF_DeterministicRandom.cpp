@@ -105,6 +105,32 @@ FFF_ResolvedIndividualTraits FFF_IndividualVariationResolver::Resolve(
 	return Out;
 }
 
+FFF_ResolvedIndividualTraits FFF_IndividualVariationResolver::ResolveWithGroupSharing(
+	const UDataTable* VariationTable,
+	int32 GlobalSimulationSeed,
+	int32 StableAgentId,
+	int32 GroupId,
+	int32 SpawnGeneration,
+	float CorrelationStrength)
+{
+	FFF_ResolvedIndividualTraits Out = Resolve(VariationTable, GlobalSimulationSeed, StableAgentId, SpawnGeneration, CorrelationStrength);
+
+	if (GroupId == INDEX_NONE)
+	{
+		// solo — 공유할 상대가 없다. Resolve() 한 번과 완전히 같은 결과여야 한다
+		return Out;
+	}
+
+	// GroupId를 StableAgentId 자리에 넣어 "그룹의" 값을 뽑는다. 같은 GroupId면 멤버 전원이 같은 값을 얻는다.
+	// group_composition_rules_v0.csv 의 group_shared_traits = walk_speed_multiplier;stay_duration_multiplier
+	const FFF_ResolvedIndividualTraits GroupTraits = Resolve(VariationTable, GlobalSimulationSeed, GroupId, SpawnGeneration, CorrelationStrength);
+
+	Out.WalkSpeedMultiplier = GroupTraits.WalkSpeedMultiplier;
+	Out.StayDurationMultiplier = GroupTraits.StayDurationMultiplier;
+
+	return Out;
+}
+
 FFF_PersonalReevaluationThresholds FFF_IndividualVariationResolver::ResolvePersonalThresholds(
 	const FFF_ResolvedIndividualTraits& Traits,
 	const UDataTable* UtilityCoefficientTable)

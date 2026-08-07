@@ -12,6 +12,13 @@
 
 namespace FFF_UtilityDestinationSelectorTestHelpers
 {
+	// utility_coefficients_v0.csv 의 기본값과 같게 유지한다. need 항의 기대값 계산에 쓰인다
+	constexpr float TestWeightNeed = 1.8f;
+	constexpr float TestPriorityRestroom = 1.00f;
+	constexpr float TestPriorityHunger = 0.85f;
+	constexpr float TestPriorityThirst = 0.75f;
+	constexpr float TestPriorityFatigue = 0.60f;
+
 	UDataTable* MakeTestCoefficientTable()
 	{
 		UDataTable* Table = NewObject<UDataTable>();
@@ -36,7 +43,38 @@ namespace FFF_UtilityDestinationSelectorTestHelpers
 		AddRow(TEXT("wait_ref_minutes"), 30.f);
 		AddRow(TEXT("density_ref_ratio"), 1.f);
 		AddRow(TEXT("preference_vector_scale_ref"), 17.f);
+		AddRow(TEXT("weight_need"), TestWeightNeed);
+		AddRow(TEXT("no_choice_utility_decay_per_round"), 0.03f);
+		AddRow(TEXT("no_choice_leave_patience_rounds"), 5.f);
+		AddRow(TEXT("need_priority_restroom"), TestPriorityRestroom);
+		AddRow(TEXT("need_priority_hunger"), TestPriorityHunger);
+		AddRow(TEXT("need_priority_thirst"), TestPriorityThirst);
+		AddRow(TEXT("need_priority_fatigue"), TestPriorityFatigue);
+		AddRow(TEXT("need_priority_stimulation"), 0.50f);
 		return Table;
+	}
+
+	FFF_NeedState MakeNeeds(float Hunger, float Thirst, float Restroom, float Fatigue, float Stimulation)
+	{
+		FFF_NeedState Needs;
+		Needs.Hunger = Hunger;
+		Needs.Thirst = Thirst;
+		Needs.Restroom = Restroom;
+		Needs.Fatigue = Fatigue;
+		Needs.Stimulation = Stimulation;
+		return Needs;
+	}
+
+	float FindNeedTerm(const FFF_DestinationDecision& Decision, FName Id)
+	{
+		for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+		{
+			if (B.DestinationId == Id)
+			{
+				return B.NeedTerm;
+			}
+		}
+		return -1.f;
 	}
 
 	FFF_DestinationCandidate MakeCandidate(FName Id, FName Category, float BaseAttraction, float DistanceMeters, float WaitMinutes, float Occupancy, float Capacity)
@@ -193,6 +231,189 @@ bool FFF_UtilityDestinationSelector_ShouldReevaluateTriggers::RunTest(const FStr
 		FFF_UtilityDestinationSelector::ShouldReevaluate(5.f, 15.f, 0.5f, 0.85f, 10.f, 120.f, true, false));
 	TestTrue(TEXT("라이브 이벤트 상태가 바뀌면 재평가한다"),
 		FFF_UtilityDestinationSelector::ShouldReevaluate(5.f, 15.f, 0.5f, 0.85f, 10.f, 120.f, false, true));
+	return true;
+}
+
+// --- Need 항 (2026-08-06 추가) ---
+
+// Need가 급하면 그 Need를 해소하는 시설의 효용이 올라간다. Need를 안 주면 예전과 동일해야 한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_UrgentNeedRaisesRelievingCandidate, "FestaFiesta.NPC.UtilityDestinationSelector.UrgentNeedRaisesRelievingCandidate", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_UrgentNeedRaisesRelievingCandidate::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// 취향은 화장실보다 식음료가 좋지만, 화장실 Need가 한계에 가깝다
+	FFF_DestinationCandidate Toilet = MakeCandidate(TEXT("Toilet"), NAME_None, 0.2f, 60.f, 3.f, 5.f, 20.f);
+	Toilet.NeedRelief.bRelievesRestroom = true;
+
+	FFF_DestinationCandidate Food = MakeCandidate(TEXT("Food"), TEXT("food_stall"), 0.8f, 40.f, 3.f, 5.f, 20.f);
+	Food.NeedRelief.bRelievesHunger = true;
+
+	TArray<FFF_DestinationCandidate> Candidates = { Toilet, Food };
+	TMap<FName, float> Preference;
+	Preference.Add(TEXT("food_stall"), 12.f);
+
+	// Need 없음 → 취향·매력도가 높은 식음료가 이긴다
+	const FFF_DestinationDecision WithoutNeed = FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0);
+	TestTrue(TEXT("Need가 없으면 취향·매력도가 높은 후보가 이긴다"),
+		FindProbability(WithoutNeed, TEXT("Food")) > FindProbability(WithoutNeed, TEXT("Toilet")));
+	TestEqual(TEXT("Need를 안 넘기면 need 항이 0이다 (기존 동작 보존)"), FindNeedTerm(WithoutNeed, TEXT("Food")), 0.f);
+
+	// 화장실 Need 0.95 → 취향을 뒤집는다
+	const FFF_NeedState Urgent = MakeNeeds(0.1f, 0.f, 0.95f, 0.f, 0.f);
+	const FFF_DestinationDecision WithNeed = FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, Urgent);
+	TestTrue(TEXT("화장실 Need가 급하면 취향을 이기고 화장실이 선택 확률이 높다"),
+		FindProbability(WithNeed, TEXT("Toilet")) > FindProbability(WithNeed, TEXT("Food")));
+	TestTrue(TEXT("해소하지 않는 Need는 그 후보의 need 항에 들어가지 않는다"),
+		FindNeedTerm(WithNeed, TEXT("Food")) < FindNeedTerm(WithNeed, TEXT("Toilet")));
+
+	// weight_need 보정의 반대쪽 경계 — 가벼운 Need는 취향을 뒤집지 못해야 한다.
+	// 이게 깨지면 weight_need가 너무 커서 Need가 모든 선택을 지배한다는 뜻이다.
+	const FFF_NeedState Mild = MakeNeeds(0.1f, 0.f, 0.3f, 0.f, 0.f);
+	const FFF_DestinationDecision WithMildNeed = FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, Mild);
+	TestTrue(TEXT("가벼운 화장실 Need(0.3)는 취향을 뒤집지 못한다 — Need가 모든 선택을 지배하지 않는다"),
+		FindProbability(WithMildNeed, TEXT("Food")) > FindProbability(WithMildNeed, TEXT("Toilet")));
+	return true;
+}
+
+// Need를 여러 개 해소하는 시설은 합이 아니라 "가장 급한 것"만 반영한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_NeedTermUsesMaxNotSum, "FestaFiesta.NPC.UtilityDestinationSelector.NeedTermUsesMaxNotSum", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_NeedTermUsesMaxNotSum::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// Rest는 Fatigue·Thirst 둘 다 해소한다 (오아시스 존)
+	FFF_DestinationCandidate Rest = MakeCandidate(TEXT("Rest"), TEXT("rest_area"), 0.5f, 50.f, 0.f, 0.f, 30.f);
+	Rest.NeedRelief.bRelievesFatigue = true;
+	Rest.NeedRelief.bRelievesThirst = true;
+
+	TArray<FFF_DestinationCandidate> Candidates = { Rest };
+	const TMap<FName, float> Preference;
+
+	// Fatigue 0.4(*0.60=0.24) + Thirst 0.3(*0.75=0.225). 합이면 0.465, 최대면 0.24
+	const FFF_NeedState Needs = MakeNeeds(0.f, 0.3f, 0.f, 0.4f, 0.f);
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, Needs);
+
+	const float ExpectedMax = FMath::Max(0.4f * TestPriorityFatigue, 0.3f * TestPriorityThirst);
+	const float NeedTerm = FindNeedTerm(Decision, TEXT("Rest"));
+	TestEqual(TEXT("need 항은 (성분값 * 성분우선순위)의 최대값 * weight_need 이다"), NeedTerm, TestWeightNeed * ExpectedMax, 1e-4f);
+	TestTrue(TEXT("need 항이 두 성분의 합보다 작다 — 3가지 해소 시설이 항상 이기는 것을 막는다"),
+		NeedTerm < TestWeightNeed * (0.4f * TestPriorityFatigue + 0.3f * TestPriorityThirst));
+	return true;
+}
+
+// Need를 해소한 직후에는 같은 시설의 효용이 저절로 내려간다 (재방문 문제 해결 확인)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_RelievedNeedRemovesRevisitPull, "FestaFiesta.NPC.UtilityDestinationSelector.RelievedNeedRemovesRevisitPull", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_RelievedNeedRemovesRevisitPull::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	FFF_DestinationCandidate Food = MakeCandidate(TEXT("Food"), TEXT("food_stall"), 0.5f, 50.f, 5.f, 10.f, 30.f);
+	Food.NeedRelief.bRelievesHunger = true;
+	FFF_DestinationCandidate Stage = MakeCandidate(TEXT("Stage"), TEXT("performance_stage"), 0.5f, 50.f, 5.f, 10.f, 30.f);
+
+	TArray<FFF_DestinationCandidate> Candidates = { Food, Stage };
+	const TMap<FName, float> Preference;
+
+	const FFF_DestinationDecision Hungry = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, Table, 1, 1, 0, MakeNeeds(0.9f, 0.f, 0.f, 0.f, 0.f));
+	const FFF_DestinationDecision Fed = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, Table, 1, 1, 1, MakeNeeds(0.0f, 0.f, 0.f, 0.f, 0.f));
+
+	TestTrue(TEXT("배고플 때는 식음료 부스가 무대보다 확률이 높다"),
+		FindProbability(Hungry, TEXT("Food")) > FindProbability(Hungry, TEXT("Stage")));
+	TestTrue(TEXT("배고픔이 해소되면 식음료 부스의 우위가 사라진다"),
+		FindProbability(Fed, TEXT("Food")) < FindProbability(Hungry, TEXT("Food")));
+	return true;
+}
+
+// Need 값이 같으면 성분별 우선순위가 순서를 정한다 (화장실 > 배고픔)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_NeedPriorityBreaksTies, "FestaFiesta.NPC.UtilityDestinationSelector.NeedPriorityBreaksTies", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_NeedPriorityBreaksTies::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// 거리·대기·밀집·매력도를 완전히 같게 두어 need 항만 차이가 나게 한다
+	FFF_DestinationCandidate Toilet = MakeCandidate(TEXT("Toilet"), NAME_None, 0.4f, 50.f, 3.f, 5.f, 20.f);
+	Toilet.NeedRelief.bRelievesRestroom = true;
+	FFF_DestinationCandidate Food = MakeCandidate(TEXT("Food"), NAME_None, 0.4f, 50.f, 3.f, 5.f, 20.f);
+	Food.NeedRelief.bRelievesHunger = true;
+
+	TArray<FFF_DestinationCandidate> Candidates = { Toilet, Food };
+	const TMap<FName, float> Preference;
+
+	// 두 Need가 정확히 같은 값(0.5)
+	const FFF_NeedState Tied = MakeNeeds(0.5f, 0.f, 0.5f, 0.f, 0.f);
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, Tied);
+
+	TestTrue(TEXT("Need 값이 같으면 더 급한 성분(화장실)을 해소하는 시설이 이긴다"),
+		FindProbability(Decision, TEXT("Toilet")) > FindProbability(Decision, TEXT("Food")));
+	TestEqual(TEXT("화장실 need 항 = 0.5 * 1.0 * weight_need"),
+		FindNeedTerm(Decision, TEXT("Toilet")), TestWeightNeed * 0.5f * TestPriorityRestroom, 1e-4f);
+	TestEqual(TEXT("배고픔 need 항 = 0.5 * 0.85 * weight_need"),
+		FindNeedTerm(Decision, TEXT("Food")), TestWeightNeed * 0.5f * TestPriorityHunger, 1e-4f);
+
+	// 다만 우선순위가 값 차이를 뒤집지는 않는다 — 배고픔이 훨씬 급하면 배고픔이 이겨야 한다
+	const FFF_NeedState VeryHungry = MakeNeeds(0.95f, 0.f, 0.3f, 0.f, 0.f);
+	const FFF_DestinationDecision Decision2 = FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 1, VeryHungry);
+	TestTrue(TEXT("우선순위가 낮아도 값이 훨씬 크면 이긴다 (하드 우선순위가 아니다)"),
+		FindProbability(Decision2, TEXT("Food")) > FindProbability(Decision2, TEXT("Toilet")));
+	return true;
+}
+
+// --- no_choice 감쇠·행동 (2026-08-06 추가) ---
+
+// 연속으로 아무것도 못 고를수록 no_choice의 매력이 깎인다 = 무한 배회 방지
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_NoChoiceDecaysWithConsecutiveRounds, "FestaFiesta.NPC.UtilityDestinationSelector.NoChoiceDecaysWithConsecutiveRounds", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_NoChoiceDecaysWithConsecutiveRounds::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// 전부 혼잡하고 먼 후보 — no_choice가 매력적인 상황
+	TArray<FFF_DestinationCandidate> Candidates;
+	Candidates.Add(MakeCandidate(TEXT("Crowded"), TEXT("food_stall"), 0.3f, 380.f, 28.f, 49.f, 50.f));
+	const TMap<FName, float> Preference;
+
+	const float Prob0 = FindProbability(
+		FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, FFF_NeedState(), 0), NAME_None);
+	const float Prob3 = FindProbability(
+		FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, FFF_NeedState(), 3), NAME_None);
+	const float Prob10 = FindProbability(
+		FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0, FFF_NeedState(), 10), NAME_None);
+
+	TestTrue(TEXT("연속 no_choice가 쌓이면 no_choice 확률이 내려간다"), Prob3 < Prob0);
+	TestTrue(TEXT("더 쌓이면 더 내려간다 (단조 감소)"), Prob10 < Prob3);
+	TestTrue(TEXT("효용이 0에서 멈춰 no_choice가 완전히 사라지지는 않는다"), Prob10 > 0.f);
+	return true;
+}
+
+// no_choice 행동 우선순위 캐스케이드
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_NoChoiceActionCascade, "FestaFiesta.NPC.UtilityDestinationSelector.NoChoiceActionCascade", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_NoChoiceActionCascade::RunTest(const FString& Parameters)
+{
+	// 1. 체류시간 소진이 최우선 — 혼잡하지 않아도 퇴장
+	TestTrue(TEXT("체류시간이 소진되면 Leave"),
+		FFF_UtilityDestinationSelector::ResolveNoChoiceAction(0.f, 0, 5, 0.1f, 0.85f) == EFF_NoChoiceAction::Leave);
+
+	// 2. 연속 no_choice 한계 도달 → 퇴장. 혼잡 조건보다 먼저 본다
+	TestTrue(TEXT("연속 no_choice가 한계에 도달하면 Leave"),
+		FFF_UtilityDestinationSelector::ResolveNoChoiceAction(60.f, 5, 5, 0.99f, 0.85f) == EFF_NoChoiceAction::Leave);
+
+	// 3. Zone 혼잡 → 구역 이동
+	TestTrue(TEXT("현재 Zone이 개인 임계값보다 혼잡하면 Relocate"),
+		FFF_UtilityDestinationSelector::ResolveNoChoiceAction(60.f, 1, 5, 0.9f, 0.85f) == EFF_NoChoiceAction::Relocate);
+
+	// 4. 기본값
+	TestTrue(TEXT("그 외에는 Wander"),
+		FFF_UtilityDestinationSelector::ResolveNoChoiceAction(60.f, 1, 5, 0.3f, 0.85f) == EFF_NoChoiceAction::Wander);
+
+	// 체류시간이 남아 있으면 혼잡만으로는 퇴장하지 않는다 — 인원 보존이 깨지지 않게 하는 불변식
+	TestFalse(TEXT("체류시간이 남아 있고 인내 한계 전이면 혼잡만으로 퇴장하지 않는다"),
+		FFF_UtilityDestinationSelector::ResolveNoChoiceAction(120.f, 0, 5, 1.5f, 0.85f) == EFF_NoChoiceAction::Leave);
+
+	// 인내 한계를 끄면(0 이하) 연속 횟수가 아무리 쌓여도 퇴장하지 않는다
+	TestFalse(TEXT("no_choice_leave_patience_rounds가 0이면 그 조건이 꺼진다"),
+		FFF_UtilityDestinationSelector::ResolveNoChoiceAction(120.f, 99, 0, 0.1f, 0.85f) == EFF_NoChoiceAction::Leave);
 	return true;
 }
 
