@@ -16,6 +16,7 @@ public class FestaFiesta : ModuleRules
 			"AIModule",
 			"UMG","Slate","SlateCore",
 			"CommonUI","CommonInput",
+			"DeveloperSettings",
 			"Niagara","NiagaraCore",
 			"FF_ZoneSystem"
 		});

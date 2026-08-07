@@ -1,0 +1,4 @@
+﻿Name,CompanionType,CompanionLabelDraft,AmbiencePhotoZoneDeltaPp,FoodStallDeltaPp,ActivityGameDeltaPp,RestAreaDeltaPp,MarketGoodsDeltaPp,PerformanceStageDeltaPp,FestivalEngagementBaselineDeltaPp,CraftExperienceDeltaPp,ExplorationWanderDeltaPp,NightlifeEntertainmentDeltaPp,TopReasonDelta1,TopReasonDelta2,DataStatus
+"solo","solo","1인 동반","1.30","-1.00","-0.60","-0.10","-0.80","-0.60","-1.50","-0.60","-0.40","0.10","여행 동반자 유형 (+2.7pp)","볼거리 제공 (-2.3pp)","draft_assumption"
+"pair","pair","2인 동반","2.10","2.60","-2.45","0.65","-0.20","-0.90","0.60","-0.60","-0.70","-1.80","볼거리 제공 (-1.9pp)","숙박시설 (-1.6pp)","draft_assumption"
+"group_3_plus","group_3_plus","3인 이상 동반","-1.00","-0.60","0.90","-0.15","0.20","0.30","0.10","0.20","0.40","0.60","볼거리 제공 (+0.9pp)","음식 (-0.7pp)","draft_assumption"

@@ -86,5 +86,5 @@ PreferenceVectorByCategory[c] =
 2. **`attraction_norm`(부스 기본 매력도 정규화) 설계 미정** — `FFF_DestinationCandidate::BaseAttraction`을 0~1로 누가 어떻게 정할지는 부스 설정 쪽 설계 대기 (`utility_ai_spec.md` 8절).
 3. **거리는 직선거리 근사** — 축제장 레이아웃·내비메시 확정 후 실제 보행거리(장애물 포함)로 교체.
 4. **종속 아동 분기는 selector 밖에서 처리** — `bIsDependent == true`인 개체는 이 selector를 호출하지 않고 부모의 `ChosenDestinationId`를 그대로 복사한다 (`dependent_child_npc_spec.md`).
-5. **그룹(동반유형) 배정 로직 없음** — `crowdai_handoff_note.md` 참고. `CompanionType`은 개체별 분류 태그일 뿐, 실제로 어느 NPC와 어느 NPC가 한 그룹인지 정하는 단계가 어디에도 없다.
+5. **그룹 배정(누가 누구와) — 담당이 crowdAI로 넘어갔다 (8/6 역할 재조정)**. Utility AI 쪽 몫인 **개체 태그 분포 생성은 완료**됐다(`FFF_VisitorDistributionBuilder::Build`, `NPC/Party/FF_VisitorDistributionBuilder.h`) — 개체마다 `ArchetypeId`/`CompanionSizeTag`/`TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot`을 붙여 목록으로 돌려준다. 그 태그를 보고 실제로 묶고 `GroupID`를 부여하는 것은 crowdAI다(`crowdai_handoff_note.md` §9). 즉 이 selector 입장에서 남은 미지수는 **"내가 지금 보고 있는 이 개체가 그룹 리더인지"를 어떻게 아는가** 하나이며, 그 조회 경로는 아직 미정이다(같은 노트의 열린 질문 D).
 6. **만족도(Experience) 계산 미착수** — 사용자 요청으로 홀드 중.

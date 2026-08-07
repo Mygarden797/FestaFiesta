@@ -1,0 +1,8 @@
+trait_key,distribution_type,min_value,mode_value,max_value,unit,random_purpose,affects_field,correlated_with,status,description
+walk_speed_multiplier,triangular,0.8500,1.0000,1.1500,multiplier,Generation,base_walk_speed,none,draft_assumption,"NPC 기본 이동속도에 곱하는 개체 변주. 화면에서 직접 관찰 가능한 차이"
+patience_multiplier,triangular,0.7000,1.0000,1.3000,multiplier,Generation,wait_threshold_minutes,leisureliness_axis,draft_assumption,"대기 재평가 트리거(wait_threshold_minutes)에 곱한다. weight_wait 자체는 건드리지 않는다"
+crowd_tolerance_multiplier,triangular,0.7000,1.0000,1.3000,multiplier,Generation,density_threshold_ratio,none,draft_assumption,"혼잡 재평가 트리거(density_threshold_ratio)에 곱한다. weight_density 자체는 건드리지 않는다"
+preference_strength_multiplier,triangular,0.6000,1.0000,1.4000,multiplier,Generation,preference_vector,none,draft_assumption,"아키타입+동반유형 delta 합산값(preference_vector)에 곱한다. 전역 밸런스 노브인 lambda_affinity는 개인화하지 않는다"
+stay_duration_multiplier,triangular,0.7000,0.9000,1.6000,multiplier,Generation,stay_duration_base_minutes,leisureliness_axis,draft_assumption,"체류시간 기준값(live_stage_duration_minutes * stay_duration_share_of_live_stage_mean)에 곱한다. mode를 min쪽에 붙여 우측 비대칭(소수만 아주 오래 머무름)"
+reevaluate_interval_multiplier,triangular,0.8000,1.0000,1.2000,multiplier,Generation,reevaluate_interval_seconds,none,draft_assumption,"재평가 주기(reevaluate_interval_seconds)에 곱한다"
+leisureliness_axis,triangular,0.0000,0.5000,1.0000,unitless_0to1,Generation,none,none,draft_assumption,"직접 곱하는 대상 없음. patience_multiplier·stay_duration_multiplier가 correlation_strength_leisureliness 비율로 공유하는 성격축"

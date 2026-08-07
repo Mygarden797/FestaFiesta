@@ -1,11 +1,10 @@
-/**
- * @file FF_FFZSGridLibrary.cpp
- * @brief 1 cm 좌표 변환, 압축 사각형 연산, 내장 Preset과 fingerprint를 구현한다.
- *
- * 흐름: 부작용 없는 순수 계산으로 입력 Spec을 Cell 집합과 안정 식별값으로 변환한다.
- * 불변식: 1 Cell=1cm 계약과 정수 오버플로 방어를 지키며 압축 영역은 정확한 합집합을 보존한다.
- * 실패/성능: 비용은 개별 셀 수가 아니라 사각형 수에 비례하며 비정상 면적 입력은 조기에 거절한다.
- */
+// FF_FFZSGridLibrary.cpp
+
+// 1 cm 좌표 변환, 압축 사각형 연산, 내장 Preset과 fingerprint를 구현.
+// 흐름: 부작용 없는 순수 계산으로 입력 Spec을 Cell 집합과 안정 식별값으로 변환.
+// 불변식: 1 Cell=1cm 계약과 정수 오버플로 방어를 지키며 압축 영역은 정확한 합집합을 보존.
+// 실패/성능: 비용은 개별 셀 수가 아니라 사각형 수에 비례하며 비정상 면적 입력은 조기에 거절.
+ 
 
 #include "FF_FFZSGridLibrary.h"
 
@@ -15,16 +14,15 @@
 
 #define LOCTEXT_NAMESPACE "FFZSGridLibrary"
 
-/*
- * 좌표 계약
- * - FacilitySpec 영역은 footprint 좌하단 기준 로컬 1 cm 정수 좌표이고, Placement.OriginCell을 더해 Zone 좌표가 된다.
- * - QuarterTurns는 로컬 원점 주위 90도 회전이며, 회전 후에만 OriginCell을 더한다.
- * - 거리 값은 cm(= Unreal Unit), 배치 Cell 한 칸은 고정 1 cm다.
- * 압축 함수는 exact union/subtract 뒤 결정적 정렬을 유지하며 개별 셀 materialization은 10,000개로 제한한다.
- */
+// 좌표 계약
+// FacilitySpec 영역은 footprint 좌하단 기준 로컬 1 cm 정수 좌표이고, Placement.OriginCell을 더해 Zone 좌표가 된다.
+// QuarterTurns는 로컬 원점 주위 90도 회전이며, 회전 후에만 OriginCell을 더한다.
+// 거리 값은 cm(= Unreal Unit), 배치 Cell 한 칸은 고정 1 cm다.
+// 압축 함수는 exact union/subtract 뒤 결정적 정렬을 유지하며 개별 셀 materialization은 10,000개로 제한한다.
+ 
 namespace
 {
-    /** 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다. */
+    // 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다. 
     constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 1'000'000;
     constexpr int32 LegacyMeterCellScale = 100;
 
@@ -57,7 +55,7 @@ namespace
         return FFFZSCellRect(Min, Max);
     }
 
-    /** Source에서 Cut 교집합을 빼 최대 네 개의 서로 겹치지 않는 사각형으로 분할한다. */
+    // Source에서 Cut 교집합을 빼 최대 네 개의 서로 겹치지 않는 사각형으로 분할한다. 
     TArray<FFFZSCellRect> SubtractOneRect(const FFFZSCellRect& Source, const FFFZSCellRect& Cut)
     {
         if (!Source.IsValid() || !Source.Intersects(Cut))
@@ -122,10 +120,9 @@ namespace
             FIntPoint(MaxX * LegacyMeterCellScale, MaxY * LegacyMeterCellScale));
     }
 
-    /**
-     * 이전 1 m 프리셋의 물리적 queue 폭/길이를 그대로 보존하되 단일 셀 목록 대신 한 사각형으로 저장한다.
-     * QueueSplinePointsCm와 Anchor는 원래부터 cm였으므로 값을 바꾸지 않는다.
-     */
+    // 이전 1 m 프리셋의 물리적 queue 폭/길이를 그대로 보존하되 단일 셀 목록 대신 한 사각형으로 저장한다.
+    // QueueSplinePointsCm와 Anchor는 원래부터 cm였으므로 값을 바꾸지 않는다.
+     
     void ConfigureStraightPrototypeQueue(FFFZSFacilitySpec& Spec, const int32 LegacyQueueColumn)
     {
         constexpr double LegacyCellSizeCm = 100.0;
@@ -801,13 +798,12 @@ FFFZSCommand UFFZSGridLibrary::MakeInstallCommand(const FFFZSFacilitySpec& Spec,
     return Command;
 }
 
-/*
- * 내구성 있는 Payload 동일성 문자열이다. CommandId는 영수증 조회 키이므로 의도적으로 제외하고,
- * 그 ID로 재시도했을 때 같아야 하는 Transaction/Revision/Placement/Spec 전체를 포함한다.
- * v4 문자열은 길이 접두사를 붙여 구분자 포함 값의 모호성을 없애고, float은 17자리 유효숫자,
- * FText는 문화권 비의존 직렬화로 기록한다. 배열은 저작 순서까지 의미에 포함하므로 순서 변경도
- * 다른 Payload다. format 버전 변경은 기존 영수증 호환 정책과 함께 다뤄야 한다.
- */
+// 내구성 있는 Payload 동일성 문자열이다. CommandId는 영수증 조회 키이므로 의도적으로 제외하고,
+// 그 ID로 재시도했을 때 같아야 하는 Transaction/Revision/Placement/Spec 전체를 포함한다.
+// v4 문자열은 길이 접두사를 붙여 구분자 포함 값의 모호성을 없애고, float은 17자리 유효숫자,
+// FText는 문화권 비의존 직렬화로 기록한다. 배열은 저작 순서까지 의미에 포함하므로 순서 변경도
+// 다른 Payload다. format 버전 변경은 기존 영수증 호환 정책과 함께 다뤄야 한다.
+ 
 FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
 {
     FString Canonical;

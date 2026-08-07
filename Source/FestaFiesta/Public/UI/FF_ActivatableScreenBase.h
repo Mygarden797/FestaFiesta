@@ -43,6 +43,7 @@ class FESTAFIESTA_API UFF_ActivatableScreenBase : public UCommonActivatableWidge
 	GENERATED_BODY()
 
 protected:
+	virtual void NativeOnActivated() override;
 	virtual TOptional<FUIInputConfig> GetDesiredInputConfig() const override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
@@ -68,4 +69,17 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Input")
 	bool bIgnoreInputConfig = false;
+
+	/**
+	 * 활성화될 때 포커스를 직접 지정할지.
+	 *
+	 * CommonUI의 액션 라우터가 `NativeGetDesiredFocusTarget()`을 읽어 포커스를 잡아주지만,
+	 * 2026-08-06 확인 결과 뷰포트에 직접 붙인 화면에서는 동작하지 않았다.
+	 * (버튼을 한 번 클릭해야 그때부터 방향키·Tab이 먹었다)
+	 *
+	 * 라우터가 이미 잡았다면 같은 대상을 한 번 더 지정하는 것이라 부작용이 없다.
+	 * 포커스가 필요 없는 비모달 알림·토스트는 false로 둔다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Input")
+	bool bForceFocusOnActivate = true;
 };
