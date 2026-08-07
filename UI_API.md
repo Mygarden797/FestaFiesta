@@ -52,18 +52,28 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 
 | 멤버 | 형 | 설명 |
 | --- | --- | --- |
-| `CurrentStage` | `EFF_FestivalStage` | 현재 Stage |
+| `CurrentStage` | `EFF_FestivalStage` | 현재 Stage (Reconfigure 삭제됨) |
 | `RemainingTime` | `float` | 남은 시간(초) |
 | `CurrentDay` | `int32` | 1~3일차 |
-| `CurrentSlot` | `int32` | 1~4 타임슬롯 |
-| `OnStageChanged` | `FOnStageChanged` | `(PreviousStage, NewStage)` 2인자 |
+| `ElapsedLiveSeconds` | `float` | 오늘 Live 시작 후 경과 시간 |
+| `TimeScale` | `float` | 배속값 (1/2/4) |
+| `OnStageChanged` | `FOnStageChanged` | (PreviousStage, NewStage) |
 | `RequestTransition(EFF_FestivalStage)` | | Stage 전환 요청 |
-| `IsReconfigureAllowed()` | `bool` | 배치 변경 허용 여부 |
+| `IsReconfigureAllowed()` | `bool` | 배치 변경 허용 여부 (Setup/MorningCheck만) |
+| `SetTimeScale(float)` | | 배속 변경 |
+| `IsMainProgramLocked()` | `bool` | 메인 공연 배속 잠금 구간 여부 |
+| `AdvanceToNextDay()` | | Report에서 다음 날 진입 |
 
-**UI 사용처**: 상단 바(Stage/Day/Slot/시계), Morning Check 진입 판정, 배속 제한 구간
+**삭제된 것**: `CurrentSlot` (하루 4타임 구조 없어짐, Live는 하루에 한 번)
+**UI 사용처**: 상단 바(Stage/Day/시계), Morning Check 진입 판정, 배속 버튼 활성/비활성(IsMainProgramLocked 참조)
 
 **요청** — `RemainingTime`이 매 틱 바뀌므로 UI가 폴링해야 합니다.
 초 단위로 바뀔 때만 쏘는 델리게이트가 있으면 좋겠습니다. 없으면 UI 쪽에서 0.1초 폴링 + 변화 감지로 처리하겠습니다.
+
+**답변** - 지금은 RemainingTime이 매 프레임 계속 바뀌는 방식이라, 말씀하신 대로
+초 단위로 바뀔 때만 쏘는 델리게이트(OnRemainingSecondsChanged)를 추가하겠습니다.
+내일 중 구현해서 공유드릴게요.
+그 전까지는 말씀하신 대로 UI 쪽에서 0.1초 폴링 + 변화 감지로 우선 처리해주셔도 됩니다.
 
 ---
 

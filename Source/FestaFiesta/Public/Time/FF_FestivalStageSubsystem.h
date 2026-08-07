@@ -6,15 +6,19 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "FF_FestivalStage.h"
+#include "Engine/DataTable.h" 
 #include "FF_FestivalStageSubsystem.generated.h"
 
 // Stage 바뀌면 알림 보내는 이벤트 신호 선언
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStageChanged, EFF_FestivalStage, PreviousStage, EFF_FestivalStage, NewStage);
 
 USTRUCT(BlueprintType)
-struct FFF_LiveTriggerEvent
+struct FFF_LiveTriggerEvent : public FTableRowBase
 {
 	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	int32 Day = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float TriggerSeconds = 0.f;
@@ -22,11 +26,11 @@ struct FFF_LiveTriggerEvent
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FString EventLabel;
-	// 이 이벤트의 이름 (예: "다대불꽃쇼 시작") — 로그·디버깅용 텍스트
+	// 이 이벤트의 이름 (예: "다대불꽃쇼 시작")
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	bool bIsMainProgramLockStart = false;
-	// 이 이벤트가 "메인 공연 시작"이면 true — 배속 잠금 구간을 계산하는 기준점이 됨
+	// "공연 시작"이면 true — 배속 잠금 구간을 계산하는 기준점이
 };
 
 UCLASS()
@@ -35,6 +39,9 @@ class FESTAFIESTA_API UFF_FestivalStageSubsystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 
 public:
+
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage")
 	EFF_FestivalStage CurrentStage = EFF_FestivalStage::Setup;
 	// 지금 몇 단계인지 저장 (기본값: Setup)
@@ -72,7 +79,7 @@ public:
 	// 배속 바꾸는 함수
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
-	bool IsMainProgramLocked() const;
+	bool IsMainProgramLocked();
 	// 지금 메인 공연 배속 잠금 구간인지 확인
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
@@ -95,44 +102,15 @@ private:
 	void HandleLiveEnd();
 	// 타임 하나가 다 끝났을 때 다음으로 넘기는함수
 
-	const TArray<FFF_LiveTriggerEvent>& GetEventsForCurrentDay() const;
+	const TArray<FFF_LiveTriggerEvent>& GetEventsForCurrentDay() ;
 	// 오늘 날짜에 맞는 이벤트 배열을 골라주는 함수
 
-	float GetLiveDurationForCurrentDay() const;
+	float GetLiveDurationForCurrentDay() ;
 	//오늘 Live 총 길이(마지막 이벤트 시각)를 알려주는 함수
 
 	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Schedule")
-	TArray<FFF_LiveTriggerEvent> Day1Events = {
-		{0.f,   TEXT("오픈"), false},
-		{60.f,  TEXT("파차쿠닉 / EUNA"), false},
-		{130.f, TEXT("부산대 소리터"), false},
-		{150.f, TEXT("동아대 프릭스"), false},
-		{170.f, TEXT("공식행사"), false},
-		{180.f, TEXT("다대불꽃쇼 시작"), true},
-		{210.f, TEXT("다대불꽃쇼 종료"), false},
-		{240.f, TEXT("전체 종료"), false},
-	};
-	// Day1 타임테이블 데이터
+	TObjectPtr<UDataTable> ProgramScheduleTable;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Schedule")
-	TArray<FFF_LiveTriggerEvent> Day2Events = {
-		{0.f,   TEXT("오픈"), false},
-		{60.f,  TEXT("음스 / Hyesoo"), false},
-		{120.f, TEXT("제니스 / Grupo Ouro"), false},
-		{180.f, TEXT("헤이즈 무대 시작"), true},
-		{240.f, TEXT("헤이즈 종료"), false},
-		{300.f, TEXT("전체 종료"), false},
-	};
-	//Day2 타임테이블 데이터
-
-	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Schedule")
-	TArray<FFF_LiveTriggerEvent> Day3Events = {
-		{0.f,   TEXT("오픈"), false},
-		{60.f,  TEXT("겟츠 / Danielle"), false},
-		{120.f, TEXT("밴드기린 / 쿠나"), false},
-		{180.f, TEXT("폴킴 무대 시작"), true},
-		{240.f, TEXT("폴킴 종료"), false},
-		{300.f, TEXT("전체 종료"), false},
-	};
-	// Day3 타임테이블 데이터
+	UPROPERTY()
+	TArray<FFF_LiveTriggerEvent> CachedTodayEvents;
 };
