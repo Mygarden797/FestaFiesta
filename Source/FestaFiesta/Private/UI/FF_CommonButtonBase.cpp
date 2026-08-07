@@ -68,6 +68,19 @@ void UFF_CommonButtonBase::NativeOnClicked()
 void UFF_CommonButtonBase::NativeOnHovered()
 {
 	Super::NativeOnHovered();
+
+	// 2026-08-07 결정: 상태 표시를 Image_FocusRing 하나로 모은다.
+	// 호버에서 배경을 흰색으로 덮지 않고, 마우스가 들어오면 포커스를 옮겨 링으로만 표시한다.
+	// 근거: docs/ui/glass-orbit-unreal-spec.md 7절 "마우스 진입 시 포커스 이동"
+	//
+	// 이 처리가 없으면 마우스로 A에 호버한 채 패드로 B를 선택했을 때
+	// 두 버튼이 동시에 활성으로 보인다. 표시 수단이 하나면 그 모순이 생기지 않는다.
+	if (bFocusOnHover && GetIsEnabled() && !HasAnyUserFocus())
+	{
+		// 동기로 NativeOnAddedToFocusPath가 불려 bHasFocusPath가 켜진다.
+		SetFocus();
+	}
+
 	RefreshVisualState();
 }
 
@@ -168,5 +181,7 @@ void UFF_CommonButtonBase::RefreshVisualState()
 	// 비활성은 색뿐 아니라 불투명도로도 표시한다.
 	SetRenderOpacity(bInteractable ? 1.0f : DisabledOpacity);
 
-	BP_OnVisualStateRefreshed(bHighlighted, bInteractable);
+	// 색 판정(bHighlighted)과 연출 판정(bHighlighted || bIsFocused)을 BP에서 따로 쓸 수 있도록
+	// 포커스 여부를 별도 인자로 넘긴다. bHighlighted에 포커스를 합치면 안 되는 이유는 위 주석에 있다.
+	BP_OnVisualStateRefreshed(bHighlighted, bInteractable, bInteractable && bHasFocusPath);
 }
