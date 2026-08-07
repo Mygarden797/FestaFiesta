@@ -196,4 +196,71 @@ bool FFF_IndividualVariationResolver_ResolvesPersonalThresholds::RunTest(const F
 	return true;
 }
 
+// --- 그룹 공유 특성 (individual_variation_spec.md 8-A절, 2026-08-06 구현) ---
+
+// 같은 그룹이면 walk_speed·stay_duration만 같고 나머지는 개체별로 다르다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariation_GroupSharesWalkSpeedAndStayOnly, "FestaFiesta.NPC.IndividualVariation.GroupSharesWalkSpeedAndStayOnly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariation_GroupSharesWalkSpeedAndStayOnly::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = FFF_DeterministicRandomTestHelpers::MakeTestVariationTable();
+	constexpr int32 Seed = 4242;
+	constexpr int32 GroupId = 77;
+
+	const FFF_ResolvedIndividualTraits MemberA = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, /*StableAgentId=*/101, GroupId, 0, 0.3f);
+	const FFF_ResolvedIndividualTraits MemberB = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, /*StableAgentId=*/202, GroupId, 0, 0.3f);
+
+	TestTrue(TEXT("같은 그룹은 보행속도를 공유한다 — 동행이 유지된다"),
+		FMath::IsNearlyEqual(MemberA.WalkSpeedMultiplier, MemberB.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("같은 그룹은 체류시간을 공유한다 — 같이 떠난다"),
+		FMath::IsNearlyEqual(MemberA.StayDurationMultiplier, MemberB.StayDurationMultiplier, KINDA_SMALL_NUMBER));
+
+	// 나머지 4종 + leisureliness_axis 는 개체별 독립이어야 한다.
+	// 삼각분포라 우연히 같은 값이 나올 수도 있으므로 "전부 같지는 않다"로 검증한다.
+	const bool bAnyPersonalDiffers =
+		!FMath::IsNearlyEqual(MemberA.PatienceMultiplier, MemberB.PatienceMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.CrowdToleranceMultiplier, MemberB.CrowdToleranceMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.PreferenceStrengthMultiplier, MemberB.PreferenceStrengthMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.ReevaluateIntervalMultiplier, MemberB.ReevaluateIntervalMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.LeisurelinessAxis, MemberB.LeisurelinessAxis, KINDA_SMALL_NUMBER);
+	TestTrue(TEXT("인내심·혼잡내성·취향강도·재평가주기는 그룹이어도 개체별로 다르다"), bAnyPersonalDiffers);
+
+	// 다른 그룹은 공유 특성도 달라야 한다
+	const FFF_ResolvedIndividualTraits OtherGroup = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, 101, /*GroupId=*/78, 0, 0.3f);
+	TestFalse(TEXT("다른 그룹은 보행속도가 다르다"),
+		FMath::IsNearlyEqual(MemberA.WalkSpeedMultiplier, OtherGroup.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	return true;
+}
+
+// solo(GroupId == INDEX_NONE)는 Resolve() 한 번과 완전히 같은 결과여야 한다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariation_SoloMatchesPlainResolve, "FestaFiesta.NPC.IndividualVariation.SoloMatchesPlainResolve", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariation_SoloMatchesPlainResolve::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = FFF_DeterministicRandomTestHelpers::MakeTestVariationTable();
+	constexpr int32 Seed = 909;
+	constexpr int32 AgentId = 55;
+
+	const FFF_ResolvedIndividualTraits Plain = FFF_IndividualVariationResolver::Resolve(Table, Seed, AgentId, 0, 0.3f);
+	const FFF_ResolvedIndividualTraits Solo = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, AgentId, INDEX_NONE, 0, 0.3f);
+
+	TestTrue(TEXT("solo 보행속도가 Resolve()와 같다"), FMath::IsNearlyEqual(Plain.WalkSpeedMultiplier, Solo.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("solo 체류시간이 Resolve()와 같다"), FMath::IsNearlyEqual(Plain.StayDurationMultiplier, Solo.StayDurationMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("solo 인내심이 Resolve()와 같다"), FMath::IsNearlyEqual(Plain.PatienceMultiplier, Solo.PatienceMultiplier, KINDA_SMALL_NUMBER));
+	return true;
+}
+
+// 결정성: 같은 (Seed, AgentId, GroupId)면 몇 번 불러도 같은 값
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariation_GroupSharingIsDeterministic, "FestaFiesta.NPC.IndividualVariation.GroupSharingIsDeterministic", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariation_GroupSharingIsDeterministic::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = FFF_DeterministicRandomTestHelpers::MakeTestVariationTable();
+
+	const FFF_ResolvedIndividualTraits First = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, 7, 3, 11, 0, 0.3f);
+	const FFF_ResolvedIndividualTraits Second = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, 7, 3, 11, 0, 0.3f);
+
+	TestTrue(TEXT("같은 입력이면 보행속도가 같다"), FMath::IsNearlyEqual(First.WalkSpeedMultiplier, Second.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("같은 입력이면 체류시간이 같다"), FMath::IsNearlyEqual(First.StayDurationMultiplier, Second.StayDurationMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("같은 입력이면 인내심이 같다"), FMath::IsNearlyEqual(First.PatienceMultiplier, Second.PatienceMultiplier, KINDA_SMALL_NUMBER));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

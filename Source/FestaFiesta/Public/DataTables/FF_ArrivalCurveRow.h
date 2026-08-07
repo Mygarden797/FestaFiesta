@@ -12,7 +12,7 @@
  * 이 표가 정하는 것은 "언제 얼마나 들어와야 하는가"의 목표 분포뿐이다. 실제로 어떤 그룹을
  * 언제 Pool에서 꺼내 입장시킬지는 Crowd 쪽이 자유롭게 정한다.
  *
- * 읽을 때 반드시 지킬 것 (data/metadata/visitor_arrival_curve_spec.md 참조):
+ * 읽을 때 반드시 지킬 것 (data/metadata/spec/visitor_arrival_curve_spec.md 참조):
  *  - ArrivalSharePct 는 신규 유입 비율(%)이고 동시 체류 인원이 아니다. 시나리오별 합계 = 100.
  *  - 절대 인원이 아니다. 목표 인원 = ArrivalSharePct / 100 * (소비자가 정한 총 유입 인원).
  *  - ProgressStart/End 는 Live 단계의 정규화 진행도 [0,1) 다. 절대 시각이 아니다

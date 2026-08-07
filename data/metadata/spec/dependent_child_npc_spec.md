@@ -70,6 +70,17 @@
 - NPC 스폰 시 `bIsDependent`, `DependentOfNpcId` 필드만 있는 경량 구조로 생성한다.
 - Utility AI 목적지 선택 로직은 `bIsGroupLeader == false`인 개체 전체(아동뿐 아니라 성인 그룹원도)에 대해 스킵하고 리더의 `current_destination`을 그대로 복사한다. 그중 `bIsDependent == true`인 개체는 추가로 위 3개 노브를 적용한다.
 
+**2026-08-06 갱신 — 상속해야 할 것이 2개 늘었고, 하나는 아직 미정이다.**
+
+| 상속 대상 | 규칙 |
+|---|---|
+| `ChosenDestinationId` | 리더 값을 복사 (기존) |
+| `FFF_ResolvedIndividualTraits`의 `WalkSpeedMultiplier`·`StayDurationMultiplier` | 상속이 아니라 **공유**다 — `ResolveWithGroupSharing`이 `GroupId` 시드로 뽑아 그룹원 전원에게 같은 값을 준다. 아동도 마찬가지(그래서 아동이 부모보다 느리게 걸어 뒤처지는 일이 없다). 아동 전용 이동속도 노브는 이 위에 곱하는 방식이 될 텐데 **값이 미정**이다 |
+| `FFF_NeedState` | 상속하지 않는다. 개체별로 갖고, 목적지 결정에는 `MakeAggregated`(성분별 최대)로 합친 값을 쓴다 — 한 명이라도 화장실이 급하면 일행 전체가 움직인다. **아동의 Need가 그룹 결정을 끌어당기는 경로가 이것이다** |
+| `EFF_NoChoiceAction` (Wander/Relocate/**Leave**) | **리더 값을 상속** (2026-08-06 결정). 리더가 퇴장하면 **그룹 전원이 함께 퇴장한다** — 셋 다 상속 대상이고 그룹원이 각자 다른 행동을 하는 경우는 없다. 덕분에 **아동만 장내에 남는 상태가 원리적으로 발생하지 않는다.** `spawn_group_together = true`와 대칭 — 통째로 들어오고 통째로 나간다 (`population_group_generation_spec.md` 3절 항목 8) |
+
+> ⚠️ 아동 전용 3개 노브(이동속도·주의집중·대기인내)는 여전히 **값이 없다**(`group_composition_rules_v0.csv`의 `child_trait_overrides`가 `assumption`). 지금은 성인과 같게 동작한다.
+
 ## 5. v0에서 하지 않는 것
 
 - 아동의 독립적 선호 벡터를 만들지 않는다.

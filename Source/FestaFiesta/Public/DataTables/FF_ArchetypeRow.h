@@ -13,7 +13,7 @@
  * *DeltaPp 필드는 Tour_Stat 2018 연령별 활동 응답률의 전체 평균 대비 percentage-point
  * 차이다. 효용계수(beta)가 아니다. Utility 계산 시 lambda_affinity 로 스케일한 뒤
  * FFF_CompanionModifierRow 의 동일 카테고리 값과 합산해서 쓴다.
- * (data/metadata/utility_ai_spec.md 참조)
+ * (data/metadata/spec/utility_ai_spec.md 참조)
  */
 USTRUCT(BlueprintType)
 struct FFF_ArchetypeRow : public FTableRowBase

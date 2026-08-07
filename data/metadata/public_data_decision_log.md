@@ -89,7 +89,7 @@ ResidentPopulationPrior (confirmed)
 
 ### Utility AI v0 스펙
 
-- 스펙: `data/metadata/utility_ai_spec.md`
+- 스펙: `data/metadata/spec/utility_ai_spec.md`
 - 계수 노브 표: `data/unreal/utility_coefficients_v0.csv` (16개 계수, 전부 `status` 표기)
 - `affinity_scale_ref = 1.27` 은 산출물의 관측 최대 절대값 1.2687에서 정한 `derived` 값이다. 나머지 계수는 전부 `assumption`.
 
@@ -130,8 +130,8 @@ ResidentPopulationPrior (confirmed)
 | `data/derived/festival_activity_category_mapping_v0.csv` | Tour_Stat 21개 활동 항목 → 축제 부스 카테고리 판단 매핑 (assumption, 아트/기획팀 재검토 필요) |
 | `data/derived/npc_archetypes_v0.csv` | 생애주기 5종 × 시나리오 2종 = 10행. 인구비중 + 카테고리별 응답률/편차 |
 | `data/derived/companion_type_modifier_v0.csv` | 동반유형 3종의 카테고리별 오버레이 보정값 |
-| `data/metadata/dependent_child_npc_spec.md` | 아동 종속 NPC 메커닉 초안 |
-| `data/metadata/utility_ai_spec.md` | `preference_vector` 합성식(아키타입 delta + 동반유형 delta 단순합산) 반영 |
+| `data/metadata/spec/dependent_child_npc_spec.md` | 아동 종속 NPC 메커닉 초안 |
+| `data/metadata/spec/utility_ai_spec.md` | `preference_vector` 합성식(아키타입 delta + 동반유형 delta 단순합산) 반영 |
 
 ### 확정됨 (2026-08-04)
 
@@ -206,8 +206,8 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 | 미확인 | ActivityGame은 이번 축제 실제 프로그램에 뚜렷한 대응이 없다 — 다른 축제형(게임 부스 있는 경우)을 위해 토큰만 남겨두고, 이번 축제에서는 강제로 쓰지 않는다. |
 | 정정 | 선셋클럽·선셋펍은 처음에 Performance(무대) 대응으로 예시 들었던 것을 Booth(Nightlife)로 정정했다 — 관객이 무대를 보는 형태가 아니라 바·라운지 형태이기 때문. `FFF_NeedState`의 Stimulation이 Performance·PhotoSpot뿐 아니라 Booth(Nightlife)로도 풀리게 반영(`GetNeedReliefFlags`). |
 | 발견·반영 | 리플렛 지도 범례의 "오아시스 존"(그늘+음수대+무릎나눔)이 ZoneSystem의 `Rest` 카테고리에 해당한다는 것을 확인 — `Thirst` Need가 Booth(FoodStall)뿐 아니라 Rest로도 풀리게 `GetNeedReliefFlags`에 추가했다. |
-| 미해결 | 선셋펍은 낮엔 웰니스 체험(CraftExperience), 밤엔 DJ·라이브밴드(Nightlife)를 같은 공간에서 겸한다. 지금 네이밍 컨벤션은 시설 하나에 토큰 하나만 허용해 이 시간대별 겸용을 못 담는다 — 실제 부스 제작 시 결정 필요(`booth_naming_convention.md` 참고). |
-| 산출물 | `data/metadata/booth_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |
+| 미해결 | 선셋펍은 낮엔 웰니스 체험(CraftExperience), 밤엔 DJ·라이브밴드(Nightlife)를 같은 공간에서 겸한다. 지금 네이밍 컨벤션은 시설 하나에 토큰 하나만 허용해 이 시간대별 겸용을 못 담는다 — 실제 부스 제작 시 결정 필요(`facility_naming_convention.md` 참고). |
+| 산출물 | `data/metadata/handoff/facility_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |
 
 ## 2026-08-06 — 시간대별 목표 유입 곡선 확정 + 동시 체류 구조 문제 정량화
 
@@ -215,13 +215,13 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 
 | 상태 | 내용 |
 |---|---|
-| 확정 | 곡선 **인터페이스** 4가지: ① 유입(신규 도착)을 넘긴다(동시 체류 목표 아님 — occupancy를 넘기면 crowdAI가 우리 쪽 체류시간 노브를 역산해야 해서 양방향 의존이 생긴다) ② 절대 인원이 아니라 비율(%), 합계 100(2026-08-05 "수요와 스폰 상한을 분리한다" 확정 원칙 유지) ③ 도메인은 Live 단계 정규화 진행도 [0,1)을 24버킷으로(절대 분으로 박으면 `live_stage_duration_minutes` 변경 시 깨짐) ④ 시나리오 3종을 함께 제공(모양이 전부 가정이므로 crowdAI가 모양에 견고한 구현을 하도록). |
+| 확정 | 곡선 **인터페이스** 4가지: ① 유입(신규 도착)을 넘긴다(동시 체류 목표 아님 — occupancy를 넘기면 crowdAI가 Utility AI 쪽 체류시간 노브를 역산해야 해서 양방향 의존이 생긴다) ② 절대 인원이 아니라 비율(%), 합계 100(2026-08-05 "수요와 스폰 상한을 분리한다" 확정 원칙 유지) ③ 도메인은 Live 단계 정규화 진행도 [0,1)을 24버킷으로(절대 분으로 박으면 `live_stage_duration_minutes` 변경 시 깨짐) ④ 시나리오 3종을 함께 제공(모양이 전부 가정이므로 crowdAI가 모양에 견고한 구현을 하도록). |
 | draft_assumption | 곡선 **모양** 수치 전부. Beta 커널 `p^(a-1)(1-p)^(b-1)`, `flat_v0`(a=b=1) / `single_peak_v0`(피크 18:25) / `sunset_peak_v0`(피크 19:15). 실제인 것은 Live 17:00~21:00과 야간 Nightlife 프로그램 존재뿐이고, 단봉 여부·피크 위치·뾰족함은 전부 추론이다. |
 | 해소 | **"피크·평균 비율 1.4(draft_assumption)"를 폐기한다** — 이제 곡선에서 계산되는 파생값이다(flat 1.00 / single_peak 2.03 / sunset_peak 2.37). 2026-08-05의 추측("평평하면 1.0, 뾰족하면 2.0 근처")은 맞았고, 1.4는 어느 시나리오에도 해당하지 않는 중간값이었다. |
 | **발견** | **동시 체류는 곡선 모양으로 낮출 수 없다.** 유입 곡선 + 체류시간 삼각분포를 합성한 결과 동시 체류 피크가 총 유입 N의 `0.554`(완전 균등)~`0.902`(뾰족)이다. 유입 창(240분)이 평균 체류(약 128분)의 1.9배뿐이라 하루 방문객 대부분이 동시에 있게 되는 **구조적 결과**다. `total_visitor_count`(20,000/일) 기준 11,082~18,038명 동시 — 300~700 체크포인트와 16~26배 차이이며, 이 간극은 곡선을 평평하게 펴서 메울 수 있는 종류가 아니다. |
 | 유지 | 위 발견으로 `total_visitor_count`를 역산해 낮추지 않는다 — 2026-08-05에 같은 방식(700→950)을 되돌린 이유가 그대로 적용된다. 이 숫자는 초과분 흡수 정책(통계 처리·대기·배경 크라우드 대체)이 감당해야 할 규모를 잡는 **진단용**이다. 즉 미해결 항목이 "얼마나 어긋나는가"에서 "어긋남을 어떤 정책으로 흡수하는가"로 좁혀졌다. |
 | 기각 | `transport_expressway_hourly_2025_06_30`(고속도로 시간대별 교통량)을 유입 곡선 근거로 쓰지 않는다 — 통행 목적이 없어 통근이 지배하고, 실제 모양이 16~17시 피크 후 저녁 내내 **감소**해 저녁 축제와 방향이 반대다. 나중에 이 파일을 발견해 다시 붙이지 않도록 spec §5에 기록했다. |
-| 산출물 | `Tools/data/build_arrival_curve.mjs`, `data/derived/visitor_arrival_curve_v0.csv`+`.json`, `data/unreal/visitor_arrival_curve_v0.csv`, `Source/FestaFiesta/Public/DataTables/FF_ArrivalCurveRow.h`, `data/metadata/visitor_arrival_curve_spec.md`. |
+| 산출물 | `Tools/data/build_arrival_curve.mjs`, `data/derived/visitor_arrival_curve_v0.csv`+`.json`, `data/unreal/visitor_arrival_curve_v0.csv`, `Source/FestaFiesta/Public/DataTables/FF_ArrivalCurveRow.h`, `data/metadata/spec/visitor_arrival_curve_spec.md`. |
 
 ## 2026-08-06 — 그룹 크기·아동 구성을 국민여행조사 원자료 실측으로 확정 (아래 블로커 해소)
 
@@ -240,7 +240,7 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 | **결정(같은 날)** | 아동 비율 추정치가 3개가 됐다: 주민등록 7.9193% / 데이터랩 3.8925% / **여행조사 실측 6.4506%**(신규, 기존 둘 사이에 떨어져 서로를 약하게 뒷받침). 사용자 확정: **그룹 구성이 아동 수를 결정한다** — 아동 비율은 목표치가 아니라 파생값이고 사후 보정을 하지 않는다. `dependent_child_population_target_v0.csv`는 검산용으로 격하. 구현 실측 결과 **6.4167%**(원자료 6.4506%와 0.034pp 차 — 리더 성인 불변식으로 "전원 아동" 칸을 제외·재정규화한 몫). `population_group_generation_spec.md` 2.4절. |
 | 주의 유지 | 전국 국내 관광여행자의 일행 규모이며 **부산바다축제 저녁 방문객 실측이 아니다.** "축제 방문객 그룹 크기 실측"이라고 부르면 안 된다. |
 | 산출물 | `Tools/data/build_visitor_group_distribution.mjs`(원자료 필요), `Tools/data/build_group_composition_rules.mjs`(원자료 불필요), `data/derived/visitor_group_size_distribution_v0.csv`+`.json`, `group_child_composition_v0.csv`, `companion_type_response_v0.csv`, `group_composition_rules_v0.csv`+`.json`, `data/unreal/` 3종, 구조체 3종(`FF_GroupSizeDistributionRow.h`/`FF_GroupChildCompositionRow.h`/`FF_GroupCompositionRuleRow.h`). |
-| 소비 코드 | `FFF_VisitorDistributionBuilder`(`NPC/Party/FF_VisitorDistributionBuilder.h`+`.cpp`) — 위 3종 DataTable을 읽어 개체별 태그 목록을 만드는 순수 함수. 자동화 테스트 8개(`FF_VisitorDistributionBuilderTests.cpp`), 전체 42개 테스트 통과·회귀 없음. crowdAI가 태그만 보고 묶을 수 있도록 `(TargetGroupSize, TargetGroupChildCount, ArchetypeId)` 버킷의 개체 수가 정확히 나누어떨어지는 것을 보장하고 테스트가 검증한다. `crowdai_handoff_note.md` §9. |
+| 소비 코드 | `FFF_VisitorDistributionBuilder`(`NPC/Party/FF_VisitorDistributionBuilder.h`+`.cpp`) — 위 3종 DataTable을 읽어 개체별 태그 목록을 만드는 순수 함수. 자동화 테스트 8개(`FF_VisitorDistributionBuilderTests.cpp`), 전체 42개 테스트 통과·회귀 없음. crowdAI가 태그만 보고 묶을 수 있도록 `(TargetGroupSize, TargetGroupChildCount, ArchetypeId)` 버킷의 개체 수가 정확히 나누어떨어지는 것을 보장하고 테스트가 검증한다. `crowdai_handoff_note.md` §3(8/6 문서 재구성 후 절 번호 변경됨 — 이전엔 §9). |
 
 부수 확인: `WT_DOM` 합계가 557,113,176으로 만 15세 이상 인구(약 4,500만)의 **약 12배**다 — 월별 조사라 연간 합계가 12개월분이 된다. 분포(비율)를 낼 때는 상쇄되므로 이번 산출물에는 영향이 없지만, 나중에 **절대 인원**을 이 가중치로 추정하려면 12로 나누는 처리가 필요하다.
 
@@ -249,3 +249,53 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 `FFF_VisitorDistributionBuilder` 착수 준비 중 `companion_type_modifier_v0.csv`에 solo/pair/group_3_plus 인구비중 열 자체가 없다는 것과, 그 출처인 Tour_Stat 2018 표의 가로분석변수가 여행 동반 인원이 아니라 **`가구원수`**(1인/2인/3인 이상 가구)였다는 것을 발견했다. 해결은 바로 위 항목("그룹 크기·아동 구성을 국민여행조사 원자료 실측으로 확정") 참조 — 원자료(`A6`/`A6A`) 가공으로 그룹 크기 **비율**을 대체했다.
 
 **미해결로 남은 것 하나**: 이 발견이 지적한 `preference_vector`의 동반유형 **delta 값** 자체는 아직 `가구원수` 기반 그대로다 — 그룹 크기 비율만 교체됐다. `utility_ai_spec.md` 6절 경고 박스 참조.
+
+## 2026-08-06 — 새 계수 3개는 실측이 아니라 "다른 계수와의 상대 관계"로 정했다
+
+`weight_need` / `no_choice_utility_decay_per_round` / `no_choice_leave_patience_rounds` 3개를 추가했다. **공공데이터 근거가 없다** — 그래서 이 문서에 남긴다. 근거가 없다는 사실 자체와, 그 대신 무엇을 근거로 삼았는지를 기록하는 것이 목적이다.
+
+| 계수 | 값 | 근거 |
+|---|---|---|
+| `weight_need` | 1.8 | **다른 계수와의 부등식.** `weight_attraction`(1.0) + `lambda_affinity`(0.6) = 1.6 보다 크게 잡았다 → 한계에 가까운 Need(0.95)가 "가장 매력적이고 취향에도 맞는 대안"까지 이긴다. 반대쪽 경계도 성립한다: 가벼운 Need(0.3 → 0.54)는 취향을 뒤집지 못한다. **두 경계 모두 자동화 테스트로 고정**했으므로, 나중에 다른 계수를 흔들면 테스트가 먼저 깨져 알려준다 |
+| `no_choice_utility_decay_per_round` | 0.03 | **없으면 발산한다는 구조적 사실.** 0이면 "혼잡 → 배회 → 같은 후보 → 또 배회"가 영원히 반복된다. 값의 크기 자체에는 근거가 없고, `no_choice_utility`(0.15)를 5회에 소진시키는 크기로 잡았다 |
+| `no_choice_leave_patience_rounds` | 5 | 위 감쇠가 `no_choice_utility`를 0으로 만드는 회차와 맞췄다. **0 이하로 두면 이 조건이 꺼진다** — 실측이 생기기 전까지 이 조건을 끄고 돌려볼 수 있게 남긴 탈출구다 |
+
+**이 방식의 한계**: 상대 관계로 정한 값은 기준이 되는 계수가 바뀌면 같이 바뀌어야 한다. `weight_attraction`이나 `lambda_affinity`를 조정하면 `weight_need`도 재검토해야 하고, 안 하면 "급한 사람이 취향을 포기한다"는 성질이 조용히 깨진다. 테스트가 이걸 잡아주는 유일한 장치다.
+
+**민감도 분석에서의 취급**: 3개 모두 `sensitivity_role = primary`다. `weight_need`는 특히 `lambda_affinity`·`weight_attraction`과 **함께** 흔들어야 한다 — 혼자 흔들면 부등식이 깨진 구간에서 나온 결과를 "계수 민감도"로 오해한다. `utility_ai_spec.md` 3절의 거리·affinity 이중계산 주의와 같은 성격의 문제다.
+
+**퇴장이 생겼으므로 인원 보존 검증이 실제로 필요해졌다.** 이전에는 NPC가 반드시 어딘가로 갔으므로 장내 인원이 줄지 않았다. `EFF_NoChoiceAction::Leave`가 생긴 지금은 총 방문객 = 장내 + 퇴장 + 미입장이 지켜지는지 확인해야 한다(`utility_ai_spec.md` 7절 구조 검증 1번). 그 카운터를 소유하는 주체가 아직 없다 — 경제 파트에서 매출 계산과 같이 다룬다.
+
+## 2026-08-06 (추가) — Need 성분별 우선순위 계수 5개, Rest 갈증 해소 축소
+
+### Need 성분별 우선순위 (`need_priority_*` 5개)
+
+`weight_need` 하나만으로는 **화장실 Need 0.9와 배고픔 0.9가 동시에 급할 때 둘을 똑같이 취급**했다. 그러면 행동이 Need가 아니라 시설의 거리·매력도로 결정된다. 성분별 가중치를 넣어 순서를 만들었다.
+
+| 계수 | 값 | 근거 |
+|---|---|---|
+| `need_priority_restroom` | **1.00** | **고정값.** `weight_need`(1.8)를 `weight_attraction`+`lambda_affinity`(1.6)보다 크게 잡은 계산이 "가장 급한 성분의 가중치가 1.0"을 전제한다. 이 값을 낮추면 `weight_need`도 다시 잡아야 한다 |
+| `need_priority_hunger` | 0.85 | 생리적 급함의 상식적 순서. **실측 근거 없음** |
+| `need_priority_thirst` | 0.75 | 같음. 기온 공공데이터를 주입하면 동적으로 올릴 후보 |
+| `need_priority_fatigue` | 0.60 | 같음. 참을 수 있는 욕구 |
+| `need_priority_stimulation` | 0.50 | 같음. 단 **0으로 두면 Live 후반 무대 앞 집중(AT-016)이 사라진다** — 낮추더라도 0은 안 된다 |
+
+**하드 우선순위가 아니다.** 우선순위가 낮아도 값이 훨씬 크면 이긴다(배고픔 0.95 > 화장실 0.3). 하드로 하면 확률적 선택이 깨져 "모든 NPC가 동시에 화장실로" 같은 쏠림이 생긴다. 이 성질과 그 반대쪽(값이 같으면 우선순위가 순서를 정한다) 둘 다 자동화 테스트로 고정했다.
+
+전부 0~1 범위라 `need_urgency_norm`도 0~1을 벗어나지 않는다 — 스케일은 `weight_need`가 담당하고 이 5개는 성분 간 순서만 정한다.
+
+### `Rest`의 갈증 해소를 `Cooling` 소분류로 축소
+
+8/6 오전에 리플렛의 "오아시스 존"(그늘+음수대+무릎나눔)이 ZoneSystem 카테고리로는 `Rest`라는 것을 확인해, **모든 `Rest`가 Thirst를 해소하도록** 넣었다.
+
+같은 날 오후 팀 시설 네이밍 규칙 페이지를 확인하니 `Rest` 소분류가 `Seating`/`Shade`/`Picnic`/`Cooling` 4종이고 **음수대에 해당하는 토큰이 없었다.** 좌석만 있는 시설이 갈증을 풀어주는 것은 과하므로 음수대가 있을 가능성이 가장 높은 `Cooling`(무더위 쉼터)으로 좁혔다 (사용자 확정).
+
+- 근거가 약해진 것을 인정한다 — "오아시스 존 = Rest 카테고리"는 확인된 사실이지만 "오아시스 존 = `Rest_Cooling`"은 추정이다.
+- 소분류를 못 읽으면(컨벤션 위반) Thirst는 해소하지 않는다 — 안전한 쪽으로 뺀다.
+- 노션 규칙에 음수대 전용 소분류가 추가되면 그쪽으로 옮긴다. `facility_naming_convention.md` 5.1.
+
+### 시설 `혼잡도` 태그는 Utility에서 쓰지 않는다
+
+팀 네이밍 규칙 페이지의 태그 목록에 `혼잡도`가 있는데, Utility 식에는 이미 런타임 `density_norm`(현재인원/정원)이 있다. 이 태그를 같이 넣으면 **혼잡을 두 번 세게 되고**, 정적 값과 런타임 값이 섞여 "왜 이 부스가 불리한가"를 설명할 수 없어진다. 사용자 확정: **Utility는 이 태그를 무시한다.** 태그는 UI 표시·기획용이다.
+
+거리와 affinity 이중계산 주의(`utility_ai_spec.md` 3절)와 같은 성격의 문제이고, 그때와 달리 이번에는 **애초에 안 넣는 것으로** 해결했다.

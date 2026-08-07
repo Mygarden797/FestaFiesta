@@ -10,7 +10,7 @@
  * Utility AI 목적지 선택 계수 노브 한 개. data/unreal/utility_coefficients_v0.csv 에서 Import as DataTable.
  *
  * Status 가 assumption 인 계수는 실측으로 추정된 값이 아니라 밸런스·민감도 분석용 노브다.
- * (data/metadata/utility_ai_spec.md 참조)
+ * (data/metadata/spec/utility_ai_spec.md 참조)
  */
 USTRUCT(BlueprintType)
 struct FFF_UtilityCoefficientRow : public FTableRowBase

@@ -30,19 +30,31 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 	const UDataTable* UtilityCoefficientTable,
 	int32 GlobalSimulationSeed,
 	int32 StableAgentId,
-	int32 ChoiceRoundIndex)
+	int32 ChoiceRoundIndex,
+	const FFF_NeedState& CurrentNeeds,
+	int32 ConsecutiveNoChoiceCount)
 {
 	const float WeightAttraction = GetCoefficient(UtilityCoefficientTable, TEXT("weight_attraction"), 1.f);
 	const float LambdaAffinity = GetCoefficient(UtilityCoefficientTable, TEXT("lambda_affinity"), 0.6f);
 	const float WeightDistance = GetCoefficient(UtilityCoefficientTable, TEXT("weight_distance"), 0.8f);
 	const float WeightWait = GetCoefficient(UtilityCoefficientTable, TEXT("weight_wait"), 0.7f);
 	const float WeightDensity = GetCoefficient(UtilityCoefficientTable, TEXT("weight_density"), 0.5f);
-	const float NoChoiceUtility = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility"), 0.15f);
+	const float WeightNeed = GetCoefficient(UtilityCoefficientTable, TEXT("weight_need"), 1.2f);
+	const float NoChoiceUtilityBase = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility"), 0.15f);
+	const float NoChoiceDecayPerRound = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility_decay_per_round"), 0.03f);
 	const float UtilityNoiseScale = FMath::Max(GetCoefficient(UtilityCoefficientTable, TEXT("utility_noise_scale"), 0.3f), 0.05f);
 	const float DistanceRefMeters = GetCoefficient(UtilityCoefficientTable, TEXT("distance_ref_meters"), 400.f);
 	const float WaitRefMinutes = GetCoefficient(UtilityCoefficientTable, TEXT("wait_ref_minutes"), 30.f);
 	const float DensityRefRatio = GetCoefficient(UtilityCoefficientTable, TEXT("density_ref_ratio"), 1.f);
 	const float PreferenceVectorScaleRef = GetCoefficient(UtilityCoefficientTable, TEXT("preference_vector_scale_ref"), 17.f);
+
+	// Need 성분별 급함 가중치. 기본값은 FFF_NeedPriorityWeights 선언과 같게 유지한다
+	FFF_NeedPriorityWeights NeedPriority;
+	NeedPriority.Restroom    = GetCoefficient(UtilityCoefficientTable, TEXT("need_priority_restroom"), 1.00f);
+	NeedPriority.Hunger      = GetCoefficient(UtilityCoefficientTable, TEXT("need_priority_hunger"), 0.85f);
+	NeedPriority.Thirst      = GetCoefficient(UtilityCoefficientTable, TEXT("need_priority_thirst"), 0.75f);
+	NeedPriority.Fatigue     = GetCoefficient(UtilityCoefficientTable, TEXT("need_priority_fatigue"), 0.60f);
+	NeedPriority.Stimulation = GetCoefficient(UtilityCoefficientTable, TEXT("need_priority_stimulation"), 0.50f);
 
 	TArray<FFF_DestinationUtilityBreakdown> Breakdowns;
 	Breakdowns.Reserve(Candidates.Num() + 1);
@@ -64,6 +76,11 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		const float OccupancyRatio = Candidate.Capacity > 0.f ? (Candidate.CurrentOccupancy / Candidate.Capacity) : 0.f;
 		const float DensityNorm = NormalizeUpper(OccupancyRatio, DensityRefRatio);
 
+		// need 항: 이 시설이 해소하는 Need 중 가장 급한 값. 합이 아니라 최대값인 이유는
+		// FFF_NeedReliefFlags::GetMaxUrgency 주석 참고. 이 항이 재방문 문제도 같이 해결한다 —
+		// 배고픔을 푼 직후에는 Hunger가 0이 되어 같은 식음료 부스의 효용이 저절로 내려간다.
+		const float NeedUrgencyNorm = Candidate.NeedRelief.GetMaxUrgency(CurrentNeeds, NeedPriority);
+
 		FFF_DestinationUtilityBreakdown Breakdown;
 		Breakdown.DestinationId = Candidate.DestinationId;
 		Breakdown.AttractionTerm = WeightAttraction * AttractionNorm;
@@ -71,9 +88,19 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		Breakdown.DistanceCostTerm = -WeightDistance * DistanceNorm;
 		Breakdown.WaitCostTerm = -WeightWait * WaitNorm;
 		Breakdown.DensityCostTerm = -WeightDensity * DensityNorm;
-		Breakdown.TotalUtility = Breakdown.AttractionTerm + Breakdown.PreferenceTerm + Breakdown.DistanceCostTerm + Breakdown.WaitCostTerm + Breakdown.DensityCostTerm;
+		Breakdown.NeedTerm = WeightNeed * NeedUrgencyNorm;
+		Breakdown.TotalUtility = Breakdown.AttractionTerm + Breakdown.PreferenceTerm + Breakdown.DistanceCostTerm
+			+ Breakdown.WaitCostTerm + Breakdown.DensityCostTerm + Breakdown.NeedTerm;
 		Breakdowns.Add(Breakdown);
 	}
+
+	// 연속으로 아무것도 못 골랐을수록 no_choice의 매력을 깎는다 = 인내심 소모.
+	// 없으면 "혼잡해서 배회 → 다음 재평가에 같은 후보 → 또 배회"가 영원히 반복된다.
+	// 0 아래로는 내려가지 않게 한다 — 음수가 되면 no_choice가 사실상 사라져 대기시간 클램프와
+	// 같은 상태가 되고, 이 대안을 둔 이유 자체가 무의미해진다.
+	const float NoChoiceUtility = FMath::Max(
+		NoChoiceUtilityBase - NoChoiceDecayPerRound * static_cast<float>(FMath::Max(ConsecutiveNoChoiceCount, 0)),
+		0.f);
 
 	FFF_DestinationUtilityBreakdown NoChoice;
 	NoChoice.DestinationId = NAME_None;
@@ -120,18 +147,53 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 	Decision.ChosenDestinationId = Decision.AllCandidateScores[ChosenIndex].DestinationId;
 	Decision.bIsNoChoice = (Decision.ChosenDestinationId == NAME_None);
 
-	UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[목적지 선택] Agent=%d Round=%d 선택=%s (no_choice=%d, U=%.4f)"),
+	UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[목적지 선택] Agent=%d Round=%d 선택=%s (no_choice=%d, U=%.4f, 연속no_choice=%d, no_choice효용=%.4f)"),
 		StableAgentId, ChoiceRoundIndex,
 		Decision.bIsNoChoice ? TEXT("no_choice") : *Decision.ChosenDestinationId.ToString(),
-		Decision.bIsNoChoice, U);
+		Decision.bIsNoChoice, U, ConsecutiveNoChoiceCount, NoChoiceUtility);
 	for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
 	{
-		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Total=%.3f Prob=%.3f"),
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Need=%.3f Total=%.3f Prob=%.3f"),
 			B.DestinationId.IsNone() ? TEXT("no_choice") : *B.DestinationId.ToString(),
-			B.AttractionTerm, B.PreferenceTerm, B.DistanceCostTerm, B.WaitCostTerm, B.DensityCostTerm, B.TotalUtility, B.ChoiceProbability);
+			B.AttractionTerm, B.PreferenceTerm, B.DistanceCostTerm, B.WaitCostTerm, B.DensityCostTerm, B.NeedTerm, B.TotalUtility, B.ChoiceProbability);
 	}
 
 	return Decision;
+}
+
+EFF_NoChoiceAction FFF_UtilityDestinationSelector::ResolveNoChoiceAction(
+	float RemainingStayMinutes,
+	int32 ConsecutiveNoChoiceCount,
+	int32 NoChoiceLeavePatienceRounds,
+	float CurrentZoneDensityRatio,
+	float PersonalDensityThresholdRatio)
+{
+	// 1. 체류시간 소진 — 퇴장의 주 원인. 이 게이트가 먼저 와야 인원 보존이 지켜진다
+	if (RemainingStayMinutes <= 0.f)
+	{
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[no_choice 행동] Leave (체류시간 소진)"));
+		return EFF_NoChoiceAction::Leave;
+	}
+
+	// 2. 연속 no_choice 인내 한계 — 혼잡의 간접 결과로서의 퇴장. 0 이하면 이 조건을 끈다
+	if (NoChoiceLeavePatienceRounds > 0 && ConsecutiveNoChoiceCount >= NoChoiceLeavePatienceRounds)
+	{
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[no_choice 행동] Leave (연속 no_choice %d회 >= 한계 %d회)"),
+			ConsecutiveNoChoiceCount, NoChoiceLeavePatienceRounds);
+		return EFF_NoChoiceAction::Leave;
+	}
+
+	// 3. 현재 Zone이 개인 임계값보다 혼잡 — 다른 Zone으로 옮긴다
+	if (CurrentZoneDensityRatio > PersonalDensityThresholdRatio)
+	{
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[no_choice 행동] Relocate (Zone 밀집 %.3f > 개인 임계 %.3f)"),
+			CurrentZoneDensityRatio, PersonalDensityThresholdRatio);
+		return EFF_NoChoiceAction::Relocate;
+	}
+
+	// 4. 기본값
+	UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("[no_choice 행동] Wander (연속 %d회)"), ConsecutiveNoChoiceCount);
+	return EFF_NoChoiceAction::Wander;
 }
 
 bool FFF_UtilityDestinationSelector::ShouldReevaluate(

@@ -13,9 +13,10 @@
 - 입장 타이밍용 유입 곡선 확정 — `FFF_ArrivalCurveRow` (§4)
 
 **정원 님이 하실 일**
-- [ ] `FUnitData`에 필드 5개 추가 (§1)
+- [ ] `FUnitData`에 필드 6개 추가 (§1)
 - [ ] 태그 기반 그룹핑 구현 (§2, §3)
 - [ ] `FCrowdGroupTypes::GroupID` 그대로 재사용 + 초기화 한 줄 추가 (§1)
+- [ ] **스폰 시 `ResolveWithGroupSharing()` 한 번 호출 (§1.5) — 8/6 추가. 이걸 안 하면 개체 변주가 아예 안 걸립니다**
 - [ ] 유입 곡선을 읽어 입장 타이밍 구현 (§4)
 - [ ] 셀 격자 밀도 로그 (§5)
 - [ ] 판단·이동·렌더링 3개 층 분리 실측 (§5)
@@ -23,7 +24,7 @@
 **먼저 확인해주세요**: 8/4에 드린 그룹핑 규칙 중 일부가 실측으로 대체돼 폐기됐다. 이미 구현하셨다면 §2 "폐기된 것"을 보고 걷어내달라.
 
 **지켜야 할 것 2가지**
-1. 그룹은 항상 통째로 입장한다 (일부만 먼저 들어오면 안 됨) — **어떻게 구현할지는 자유**, 저희가 요구하는 건 "쪼개지지 않는다"는 결과뿐
+1. 그룹은 항상 통째로 입장한다 (일부만 먼저 들어오면 안 됨) — **어떻게 구현할지는 자유**, 요구사항은 "쪼개지지 않는다"는 결과뿐
 2. 배정·타이밍은 자유지만 항상 **결정적**이어야 한다 — 같은 Seed면 항상 같은 결과 (`FMath::Rand()` 금지)
 
 **같이 정해야 할 것**: §6
@@ -40,12 +41,52 @@
 | `GroupID` (기존 `FCrowdGroupTypes`) | int32 | 그룹 식별자. **crowdAI가 그룹핑하며 직접 부여** — 새 필드 추가 안 함, `FF_FestivalCrowdTypes.h:29`에 초기화(`= INDEX_NONE;`)만 추가해달라 |
 | `bIsGroupLeader` (또는 `LeaderAgentId`) | bool/int32 | 목적지는 리더만 계산, 나머지는 상속. **crowdAI가 그룹핑하며 같이 지정** |
 | `StableAgentId` | int32 | 개체 안정 ID. **crowdAI가 계산** — 공식은 [부록 C](#부록-c-fff_visitordistributionbuilder-상세) 참조 |
+| `ResolvedTraits` | `FFF_ResolvedIndividualTraits` | 개체 변주 결과(보행속도·인내심 등 7개). **스폰 시 1회 계산해 캐싱** — 아래 §1.5 |
 
-색상·라벨은 crowdAI 쪽 디버그 코드에만 두고 프로덕션 DataTable에는 넣지 않는다. `ArchetypeLabelDraft`(한글 표시명)는 아직 가칭이라 플레이어 노출 UI에는 쓰지 말 것.
+색상·라벨은 crowdAI 쪽 디버그 코드에만 두고 프로덕션 DataTable에는 넣지 않는다.
+
+**(8/6 갱신)** `ArchetypeLabelDraft`/`CompanionLabelDraft`는 UI 담당(백종태)이 값을 정해 반영했다(`체험파`/`활동파`/`휴식파`/`탐방파`/`여유파`, `혼자`/`둘이서`/`여럿이서`). 열 이름에 `Draft`가 남아 있지만 이제 UI 담당이 정한 값이므로 그대로 표시해도 된다. 단 `DataStatus`는 팀 명시 합의 전까지 `draft_assumption`으로 유지된다(`data/ui/README.md` 규칙 4).
+
+## 1.5. 개체 변주는 자동으로 걸리지 않는다 — 함수 한 번 불러주세요 (8/6 추가)
+
+**이 요청이 처음 문서에 빠져 있었다.** 그룹을 만들며 `StableAgentId`를 부여하면 개체 변주의 *입력 재료*는 준비되지만, 변주 자체는 **누가 함수를 불러야** 적용된다. 지금 그 호출부가 없어서 개체 변주는 코드로만 존재하고 실제 NPC에게 적용된 적이 없다.
+
+스폰할 때 이 함수 한 번만 불러 `FUnitData`에 캐싱해 주면 된다:
+
+```cpp
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
+
+// 스폰 시 1회. 매 Tick 다시 부를 필요 없다 — 같은 입력이면 항상 같은 값이다
+Unit.ResolvedTraits = FFF_IndividualVariationResolver::ResolveWithGroupSharing(
+    VariationTable,          // DT_IndividualVariationKnobs 애셋
+    GlobalSimulationSeed,
+    Unit.StableAgentId,
+    Unit.GroupID,            // solo면 INDEX_NONE — 그러면 그룹 공유 없이 개인값만 나온다
+    /*SpawnGeneration=*/0,   // 같은 ID를 재사용하지 않으면 0
+    CorrelationStrength);    // DT_UtilityCoefficients 의 correlation_strength_leisureliness (기본 0.3)
+```
+
+**왜 crowdAI가 부르는 게 맞는가**: 스폰 시점을 소유하는 쪽이 crowdAI이고, 결과 중 `WalkSpeedMultiplier`를 실제로 쓰는 쪽도 crowdAI다(이동 담당). Utility AI는 나머지 항목만 읽는다.
+
+**이 함수가 그룹 동행을 보장한다.** 내부에서 `Resolve()`를 두 번 부른다 — `StableAgentId` 시드로 개인 특성 4종, `GroupID` 시드로 `WalkSpeedMultiplier`/`StayDurationMultiplier` 2종. 그래서 **같은 그룹은 같은 속도로 걷고 같은 시간 머문다.** 인내심·혼잡내성·취향강도·재평가주기까지 공유하면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해지므로 그 4종은 개체별 독립이다(`individual_variation_spec.md` 8-A절).
+
+`FFF_ResolvedIndividualTraits`의 7개 필드:
+
+| 필드 | 그룹 공유 | 쓰는 쪽 |
+|---|---|---|
+| `WalkSpeedMultiplier` | **공유** | crowdAI (이동) |
+| `StayDurationMultiplier` | **공유** | Utility AI (`remaining_stay`) |
+| `PatienceMultiplier` | 개체별 | Utility AI (대기 임계값) |
+| `CrowdToleranceMultiplier` | 개체별 | Utility AI (밀집 임계값) |
+| `PreferenceStrengthMultiplier` | 개체별 | Utility AI (취향 벡터) |
+| `ReevaluateIntervalMultiplier` | 개체별 | Utility AI (재평가 주기) |
+| `LeisurelinessAxis` | 개체별 | (성격축 — 직접 곱하지 않음) |
+
+아동 슬롯(`bIsDependentChildSlot == true`)에는 이 위에 아동 전용 노브 3종(이동속도·주의집중·대기인내)이 덧붙는데 **값이 아직 미정**이다(`dependent_child_npc_spec.md`). 지금은 성인과 같게 두고 나중에 곱하면 된다.
 
 ## 2. 그룹 만들기
 
-규칙은 마크다운이 아니라 **DataTable 3장**으로 제공한다 — **CSV 파일은 저희 쪽 원본·재생성용일 뿐이고, 정원 님은 아래 에디터 DataTable 애셋만 참조하면 된다**(이미 `Content/FestaFiesta/Data/`에 만들어뒀다. 전체 설계: `population_group_generation_spec.md`).
+규칙은 마크다운이 아니라 **DataTable 3장**으로 제공한다 — **CSV 파일은 Utility AI 쪽 원본·재생성용일 뿐이고, 정원 님은 아래 에디터 DataTable 애셋만 참조하면 된다**(이미 `Content/FestaFiesta/Data/`에 만들어뒀다. 전체 설계: `population_group_generation_spec.md`).
 
 | DataTable 애셋 (`Content/FestaFiesta/Data/`) | 구조체 | 무엇 |
 |---|---|---|
@@ -65,7 +106,7 @@
 5. 전원에게 같은 GroupID, StableAgentId 부여 (부록 C)
 ```
 
-**사실 위 1~3단계는 저희 함수(`FFF_VisitorDistributionBuilder::Build`, §3)가 이미 대신 해준다** — 개체마다 `TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot`이 미리 채워져서 나온다. crowdAI가 실제로 하는 건 4~5단계(리더 지정, GroupID·StableAgentId 부여)와 "누구를 누구와 묶을지"뿐이다.
+**사실 위 1~3단계는 Utility AI 쪽 함수(`FFF_VisitorDistributionBuilder::Build`, §3)가 이미 대신 해준다** — 개체마다 `TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot`이 미리 채워져서 나온다. crowdAI가 실제로 하는 건 4~5단계(리더 지정, GroupID·StableAgentId 부여)와 "누구를 누구와 묶을지"뿐이다.
 
 **중요한 구분**: `CompanionSizeTag`는 `solo`/`pair`/`group_3_plus` 3종뿐이라 3~6인이 전부 뭉친다. **그룹을 묶을 때는 정확한 인원수(1~6)를 담은 `TargetGroupSize`(§3)를 봐야 한다.**
 
@@ -77,9 +118,9 @@ DataTable 3장의 필드별 상세와 규칙 11개 실제 값은 [부록 B](#부
 
 ## 3. 개체 태그 분포 — `FFF_VisitorDistributionBuilder`
 
-**비유**: 여행사 예약팀(저희)이 손님 명단을 만들어 넘긴다. 명단의 각 사람에게는 "4인 가족 중 한 명, 그중 2명은 어린이, 성인 취향은 30대형" 같은 메모(태그)가 이미 붙어 있고, "몇 인 가족이 몇 팀 있는지" 요약표도 같이 준다. 하지만 실제로 "이 4명은 한 팀, 이분이 조장"이라고 배차하는 건 현지 가이드(crowdAI) 몫이다 — 구체적 예시는 [부록 C](#부록-c-fff_visitordistributionbuilder-상세) 맨 위에 있다.
+**비유**: 여행사 예약팀(Utility AI)이 손님 명단을 만들어 넘긴다. 명단의 각 사람에게는 "4인 가족 중 한 명, 그중 2명은 어린이, 성인 취향은 30대형" 같은 메모(태그)가 이미 붙어 있고, "몇 인 가족이 몇 팀 있는지" 요약표도 같이 준다. 하지만 실제로 "이 4명은 한 팀, 이분이 조장"이라고 배차하는 건 현지 가이드(crowdAI) 몫이다 — 구체적 예시는 [부록 C](#부록-c-fff_visitordistributionbuilder-상세) 맨 위에 있다.
 
-`NPC/Party/FF_VisitorDistributionBuilder.h`. 순수 함수(같은 입력이면 매번 같은 출력) — 같은 `(Seed, 요청 인원, ScopeId, ScenarioId, 입력 테이블)`은 항상 같은 결과를 낸다.
+`NPC/Party/FF_VisitorDistributionBuilder.h`. 순수 함수(같은 입력이면 매번 같은 출력) — 같은 `(Seed, 요청 인원, ScopeId, ArchetypeScenarioId, 입력 테이블)`은 항상 같은 결과를 낸다.
 
 ```cpp
 FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
@@ -89,11 +130,11 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 ```
 
 - `GroupSizeTable`/`ChildCompositionTable`/`ArchetypeTable`: §2의 DataTable 애셋(`DT_VisitorGroupSizeDistribution` 등)과 아키타입 애셋(`DT_NpcArchetypes`)을 그대로 꽂으면 된다.
-- 두 번째 `TEXT("resident_neutral_v0")`는 **인구 구성 시나리오**다 — "방문객이 사하구 주민 구성과 비슷하다"는 가정. **저희(Utility AI) 쪽 결정 사항이라 신경 쓰지 말고 기본값 그대로 두면 된다.** (§4 유입 곡선의 "곡선 시나리오"와는 이름만 같은 완전히 다른 개념 — 헷갈리지 않게 주의)
+- 네 번째 인자(`resident_neutral_v0`)는 **인구 구성 시나리오**(파라미터 이름 `ArchetypeScenarioId`)다 — "방문객이 사하구 주민 구성과 비슷하다"는 가정. **Utility AI 쪽 결정 사항이라 신경 쓰지 말고 기본값 그대로 두면 된다.** (**8/6 정정**: 원래 이 파라미터도 `ScenarioId`였는데 §4 유입 곡선의 `FFF_ArrivalCurveRow::ScenarioId`와 이름이 겹쳐서 헷갈릴 수 있어 `ArchetypeScenarioId`로 바꿨다 — 순수 함수 파라미터라 애셋 재임포트 없이 이름만 바뀜)
 
 **GroupID도 그룹 소속 번호도 넣지 않는다** — 누구를 누구와 묶을지는 crowdAI 몫이다. 대신 개체마다 묶는 키 **`(TargetGroupSize, TargetGroupChildCount, ArchetypeId)`**를 붙여둔다. 같은 키의 성인 `TargetGroupSize-TargetGroupChildCount`명 + 같은 `(크기,아동수)`의 아동 `TargetGroupChildCount`명을 모으면 그룹 하나가 된다. `ArchetypeId`를 키에 넣은 덕분에 "같은 그룹 성인은 같은 아키타입"이 저절로 지켜진다.
 
-**개체 수가 정확히 나누어떨어지는 것은 저희가 보장한다** — `Dist.GroupPlan`(예약 요약표에 해당)이 `(크기,아동수,아키타입)→그룹 몇 개`를 알려주고, 자동화 테스트가 검증한다. 나머지가 남거나 모자라는 일은 없다.
+**개체 수가 정확히 나누어떨어지는 것은 빌더가 보장한다** — `Dist.GroupPlan`(예약 요약표에 해당)이 `(크기,아동수,아키타입)→그룹 몇 개`를 알려주고, 자동화 테스트가 검증한다. 나머지가 남거나 모자라는 일은 없다.
 
 필드 전체 목록, 실전 코드 예시, `StableAgentId` 계산 공식은 [부록 C](#부록-c-fff_visitordistributionbuilder-상세) 참조.
 
@@ -105,11 +146,11 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 
 **핵심 3가지 — 예시로 (총 유입 N=950, 어느 버킷이 `ArrivalSharePct=5.2`, `CumulativeSharePct=48.3`, `ProgressStart=0.4167`라고 하자):**
 
-1. **비율(%)이지 인원이 아니다** — `5.2`는 인원수가 아니라 "전체 N의 5.2%"라는 뜻. `이 버킷 목표 인원 = 5.2% × 950 ≈ 49명`처럼 crowdAI가 정한 N을 곱해야 실제 인원이 나온다. N을 저희는 모른다(성능 실측으로 그쪽이 정하는 값이라서).
+1. **비율(%)이지 인원이 아니다** — `5.2`는 인원수가 아니라 "전체 N의 5.2%"라는 뜻. `이 버킷 목표 인원 = 5.2% × 950 ≈ 49명`처럼 crowdAI가 정한 N을 곱해야 실제 인원이 나온다. N은 Utility AI 쪽에서 알 수 없다(성능 실측으로 crowdAI가 정하는 값이라서).
 2. **계산은 `ProgressStart`(0~1 진행도) 기준** — `ProgressStart=0.4167`은 "Live 240분 중 41.67% 지점(=100분째)"이라는 뜻. `MinutesStartAtDefault`를 보면 "100분"이라 적혀 있겠지만 이건 Live가 지금 240분이라서 그런 것뿐 — **나중에 Live 길이가 바뀌면 이 숫자는 틀린 값이 된다.** 실제 코드는 `현재 경과분 / live_stage_duration_minutes`를 계산해서 `ProgressStart`와 비교해야 한다.
 3. **버킷별 오차는 정상, 맞춰야 하는 건 `CumulativeSharePct`(누적)** — 이 버킷에 정확히 49명을 맞추려고 애쓸 필요 없다. 그룹이 1~6명 단위로 들어와서 딱 맞추는 게 원리적으로 불가능하다. 대신 "지금까지 총 몇 명 들어왔는지"를 `48.3% × 950 ≈ 459명`과 비교해서 크게 어긋나면 다음 그룹을 더 빨리/천천히 꺼내는 식으로 보정하면 된다.
 
-**곡선 시나리오** 3종(`flat_v0`/`single_peak_v0`/`sunset_peak_v0`) 중 하나를 골라 쓴다 — 위 §3의 "인구 시나리오"와 이름(`ScenarioId`)만 같을 뿐 완전히 다른 값이다. **모양 수치는 전부 가정값**이라 특정 모양을 전제하지 않는 구현을 부탁드린다. 최종 어떤 걸 쓸지는 아직 팀 결정 전이라, 구현·테스트 중엔 `flat_v0`(균등, 가장 단순) 권장.
+**곡선 시나리오** 3종(`flat_v0`/`single_peak_v0`/`sunset_peak_v0`) 중 하나를 골라 쓴다 — 이 필드(`FFF_ArrivalCurveRow::ScenarioId`)는 §3의 `ArchetypeScenarioId`(인구 구성)와는 이름도 뜻도 다른 별개 값이다. **모양 수치는 전부 가정값**이라 특정 모양을 전제하지 않는 구현을 부탁드린다. 최종 어떤 걸 쓸지는 아직 팀 결정 전이라, 구현·테스트 중엔 `flat_v0`(균등, 가장 단순) 권장.
 
 왜 이런 형태인지(절대 인원이 아닌 이유 등)는 `visitor_arrival_curve_spec.md`, 필드 전체 목록은 [부록 D](#부록-d-유입-곡선-필드-상세) 참조.
 
@@ -127,7 +168,11 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 | `TargetDestinationId`를 월드 좌표로 바꾸는 조회는 누가 하는가 | 한광훈 님 시설 데이터와도 걸림 |
 | `CohesionRadiusMeters` 값 | 이동 스택(Detour Crowd/Mass Entity) 확정 후 |
 | 유입 곡선 누적 오차 허용 폭 | 실제로 돌려보고 정하는 게 맞다고 봄 — 정해지면 알려달라 |
-| `ScenarioId` 이름 충돌 | §3·§4 참조 — 이름은 같은데 뜻이 다른 필드 2개. 코드 주석으로 구분할지, 필드명을 바꿀지 |
+| **NPC 상태를 누가 들고 있는가** (8/6 추가) | Utility AI 쪽은 전부 순수 함수라 상태를 안 들고 있다. `remaining_stay`·`ConsecutiveNoChoiceCount`·`FFF_NeedState`·마지막 평가 시각을 `FUnitData`에 둘지 별도 층을 만들지 정해야 한다. Need 집계 지표(`UFF_NpcNeedMetricsSubsystem`)에 표본을 넣는 것도 이 층의 일이다 |
+
+**해소된 질문 (8/6 결정)**
+
+- ~~리더가 퇴장하면 그룹 전체가 퇴장하는가~~ → **전원 함께 퇴장한다.** `no_choice` 행동 3종(`Wander`/`Relocate`/`Leave`)은 목적지와 똑같이 리더가 결정하고 그룹원 전체가 상속한다. **`spawn_group_together`와 대칭 — 통째로 들어오고 통째로 나간다.** 그룹원이 각자 다른 행동을 하는 경우는 없으니, 퇴장 처리를 그룹 단위로 하시면 됩니다.
 
 ---
 
@@ -139,7 +184,7 @@ DataTable의 `Status` 열에 붙는 값. `derived`=실측 가중집계, `confirm
 
 ## 부록 B. DataTable 필드 상세
 
-`ScopeId` 값이나 `table_ref` 값(예: `visitor_group_size_distribution_v0`)은 저희 쪽 내부 데이터셋 이름(snake_case)이라 `DT_` 애셋 이름과 표기가 다르다 — 대응 관계는 아래 표 참조.
+`ScopeId` 값이나 `table_ref` 값(예: `visitor_group_size_distribution_v0`)은 Utility AI 쪽 내부 데이터셋 이름(snake_case)이라 `DT_` 애셋 이름과 표기가 다르다 — 대응 관계는 아래 표 참조.
 
 **`FFF_GroupSizeDistributionRow`**
 
@@ -292,9 +337,12 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 
 ## 요약 — crowdAI에 보낼 메시지
 
+아래 인용 블록은 **그대로 복사해 보내는 메시지 초안**이다. 문서 본문과 달리 1인칭·경어체를 쓰는 것은 의도된 것이다 — 본문은 규격이고 이건 편지다.
+
 > 1. 역할을 다시 정리했어요 — 그룹핑과 입장 타이밍은 이제 crowdAI 쪽에서 정하는 걸로 할게요. 저희는 개별 방문객 태그 분포와 그룹 구성 규칙(데이터)만 드릴게요.
 > 2. `FCrowdGroupTypes::GroupID`를 그대로 써주시면 돼요 — 새 필드 필요 없어요.
 > 3. `FUnitData`에 `ArchetypeId`/`CompanionSizeTag`/`bIsDependentChildSlot`/`bIsGroupLeader`/`StableAgentId` 필드 추가 부탁드려요 (계산 공식은 문서 부록 C).
+> 3-1. **(8/6 추가 — 제가 빠뜨렸던 부분이에요)** 스폰할 때 `FFF_IndividualVariationResolver::ResolveWithGroupSharing()`을 한 번 불러서 결과를 `FUnitData`에 캐싱해 주세요 (문서 §1.5). **그룹을 만들어도 개체 변주가 자동으로 걸리지는 않아요** — 이 함수를 안 부르면 모든 NPC가 똑같은 속도로 걷고 똑같이 참습니다. 이 함수가 "같은 그룹은 같은 속도로 걷고 같이 떠난다"도 같이 처리해줘요.
 > 4. 입장 타이밍은 자유롭게 정하셔도 됩니다 — 딱 하나, 그룹은 항상 통째로 같이 들어와야 해요.
 > 5. 목적지 이동은 `FF_MoveCommand.h`로 주고받아요. 도착/실패는 이벤트로요. 다만 "그룹 리더가 누구인지"는 같이 정해야 해요.
 > 6. 셀 격자 밀도 로그(`FFF_CrowdCellSample` 기준) 부탁드려요.
@@ -302,4 +350,3 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 > 8. 개체 목록 생성 함수도 다 됐어요 — `FFF_VisitorDistributionBuilder::Build`. 태그만 보고 묶으실 수 있어요 (문서 §3, 부록 C).
 > 9. 유입 곡선 형태도 확정했어요 — `FFF_ArrivalCurveRow`. 비율(%)이지 인원이 아니에요 (문서 §4, 부록 D).
 > 10. **8/4에 드린 그룹핑 규칙 중 일부가 폐기됐어요** — 이미 구현하셨다면 §2 "폐기된 것" 참고해서 걷어내주세요.
-> 11. `ScenarioId`라는 이름이 두 군데(그룹 태그 분포 / 유입 곡선)에서 서로 다른 뜻으로 쓰여요 — §3·§4, §6 열린 질문 참고해주세요.
