@@ -52,18 +52,28 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 
 | 멤버 | 형 | 설명 |
 | --- | --- | --- |
-| `CurrentStage` | `EFF_FestivalStage` | 현재 Stage |
+| `CurrentStage` | `EFF_FestivalStage` | 현재 Stage (Reconfigure 삭제됨) |
 | `RemainingTime` | `float` | 남은 시간(초) |
 | `CurrentDay` | `int32` | 1~3일차 |
-| `CurrentSlot` | `int32` | 1~4 타임슬롯 |
-| `OnStageChanged` | `FOnStageChanged` | `(PreviousStage, NewStage)` 2인자 |
+| `ElapsedLiveSeconds` | `float` | 오늘 Live 시작 후 경과 시간 |
+| `TimeScale` | `float` | 배속값 (1/2/4) |
+| `OnStageChanged` | `FOnStageChanged` | (PreviousStage, NewStage) |
 | `RequestTransition(EFF_FestivalStage)` | | Stage 전환 요청 |
-| `IsReconfigureAllowed()` | `bool` | 배치 변경 허용 여부 |
+| `IsReconfigureAllowed()` | `bool` | 배치 변경 허용 여부 (Setup/MorningCheck만) |
+| `SetTimeScale(float)` | | 배속 변경 |
+| `IsMainProgramLocked()` | `bool` | 메인 공연 배속 잠금 구간 여부 |
+| `AdvanceToNextDay()` | | Report에서 다음 날 진입 |
 
-**UI 사용처**: 상단 바(Stage/Day/Slot/시계), Morning Check 진입 판정, 배속 제한 구간
+**삭제된 것**: `CurrentSlot` (하루 4타임 구조 없어짐, Live는 하루에 한 번)
+**UI 사용처**: 상단 바(Stage/Day/시계), Morning Check 진입 판정, 배속 버튼 활성/비활성(IsMainProgramLocked 참조)
 
 **요청** — `RemainingTime`이 매 틱 바뀌므로 UI가 폴링해야 합니다.
 초 단위로 바뀔 때만 쏘는 델리게이트가 있으면 좋겠습니다. 없으면 UI 쪽에서 0.1초 폴링 + 변화 감지로 처리하겠습니다.
+
+**답변** - 지금은 RemainingTime이 매 프레임 계속 바뀌는 방식이라, 말씀하신 대로
+초 단위로 바뀔 때만 쏘는 델리게이트(OnRemainingSecondsChanged)를 추가하겠습니다.
+내일 중 구현해서 공유드릴게요.
+그 전까지는 말씀하신 대로 UI 쪽에서 0.1초 폴링 + 변화 감지로 우선 처리해주셔도 됩니다.
 
 ---
 
@@ -207,31 +217,58 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 
 | 값 | Getter | 델리게이트 | 현재 |
 | --- | --- | --- | --- |
-| SimSatisfaction | `GetSimSatisfaction()` | `OnSimSatisfactionChanged` | 더미 62 |
-| ScoreSatisfaction | `GetScoreSatisfaction()` | `OnScoreSatisfactionChanged` | 더미 62 |
-| Revenue | `GetRevenue()` | `OnRevenueChanged` | 더미 0 |
+| SimSatisfaction | `GetSimSatisfaction()` | `OnSimSatisfactionChanged` | 더미 72 |
+| ScoreSatisfaction | `GetScoreSatisfaction()` | `OnScoreSatisfactionChanged` | 더미 72 |
 | Safety | `GetSafety()` | `OnSafetyChanged` | 더미 88 |
+| Gold | `GetGold()` | `OnGoldChanged` | 더미 10,000 |
+| TotalRevenue | `GetTotalRevenue()` | `OnTotalRevenueChanged` | 더미 0 |
+| TodayRevenue | `GetTodayRevenue()` | `OnTodayRevenueChanged` | 더미 0 |
 | Stage / Day | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged` | **진짜 값** |
 | 남은 시간 | `GetRemainingSeconds()` | `OnRemainingSecondsChanged` | **진짜 값** |
 
-### ⚠️ 소유자 확인 전 가정값 — 틀리면 알려주세요
-
-실제 소유자의 구현이 아직 없어 아래를 가정하고 만들었습니다.
-**확정이 아니라 제안입니다.** 다르면 편하게 말씀해 주세요. ViewModel 안쪽만 고치면 됩니다.
+### 값 규격 (2026-08-06 UI 결정)
 
 ```cpp
-float SimSatisfaction;    // 0~100, 높을수록 좋음
-float ScoreSatisfaction;  // 0~100, 높을수록 좋음 (SimSatisfaction + FinaleBonus)
-int32 Revenue;            // 오늘 누적 매출
-float Safety;             // 0~100, 높을수록 안전
+int32 SimSatisfaction;    // 0~100, 높을수록 좋음. 대기·밀도·취향 매칭에서 나오는 트윈 산출물
+int32 ScoreSatisfaction;  // 0~100, 높을수록 좋음. SimSatisfaction + FinaleBonus + 연출 보정
+int32 Safety;             // 0~100, 높을수록 안전 (2026-08-06 확정)
+int32 Gold;               // 잔액. 지출로 줄어든다. 초기 10,000 (밸런스 시드 v0)
+int32 TotalRevenue;       // 축제 전체 누적 매출. 줄어들지 않는다
+int32 TodayRevenue;       // 오늘 하루 매출
 ```
 
-미확인 항목:
+**Gold와 Revenue는 다른 값입니다.** 대략 `Gold ≒ 초기자금 + TotalRevenue - 누적지출`이지만
+**UI는 이 식을 계산하지 않습니다.** 셋 다 소유자에게서 그대로 받습니다.
+`TodayRevenue`도 UI가 누적값에서 빼서 만들지 않습니다 — Report에 필요하니 따로 주세요.
 
-- Revenue가 오늘치인지 축제 전체 누적인지, Gold 잔액과 같은 값인지
-- Safety의 방향 (높을수록 안전인지 위험인지)
-- 갱신 주기 (매 틱 / Live 종료 시 / Report에서만)
-- 좋고 나쁨을 가르는 구간 — 정해지기 전까지 UI에서 색을 칠하지 않습니다
+**갱신 주기: 일정 틱마다.** ViewModel이 0.1초마다 샘플링하고 **정수값이 실제로 바뀔 때만** 델리게이트를
+쏩니다. 소스가 매 틱 흔들려도 위젯 갱신은 지표당 초당 10회로 묶입니다.
+소유자 쪽에서 별도 스로틀을 넣지 않으셔도 됩니다.
+
+**좋고 나쁨 구간 (2026-08-06 UI 결정):** 0~100 지표 셋은 방향이 같아서(높을수록 좋음) 구간을 공유합니다.
+`좋음 70~100` / `주의 40~69` / `나쁨 0~39`. 값은 `UFF_UIMetricBandSettings`에 있고
+Project Settings > Game > FestaFiesta UI Metric Bands 에서 조정합니다. 코드에 하드코딩돼 있지 않습니다.
+AT-011에 따라 색 + 라벨 + 아이콘을 함께 씁니다.
+
+`Gold` · `TotalRevenue` · `TodayRevenue`는 상한이 없어 절대 구간이 없습니다.
+Gold는 "이걸 살 수 있나"(가격 대비), 매출은 전날 대비 증감으로 표현합니다.
+
+아직 미확인:
+
+- Gold가 음수가 될 수 있는지 (지금은 클램프하지 않음)
+
+### Satisfaction 이중 지표 — 화면 배치 (2026-08-06 UI 결정)
+
+`digital-twin-pipeline.md` 7절은 "UI에서도 둘을 구분해 표시한다"까지만 정해 놨습니다. 화면은 UI에서 정했습니다.
+
+| 화면 | 표시 | 이유 |
+| --- | --- | --- |
+| Overview HUD (Live) | `SimSatisfaction` **하나만** | Live 중엔 FinaleBonus가 없어 두 값이 같습니다. 같은 숫자를 두 번 띄우지 않습니다. 이때 플레이어가 개선할 수 있는 것도 SimSatisfaction뿐입니다 |
+| Report | **둘 다, 분해식으로** — `관객 만족도 62` `+ 피날레 20` `= 평가 점수 82` | 두 지표의 관계가 화면 자체로 설명됩니다 |
+| Finale 구매 | `ScoreSatisfaction` **예상치** — "S 구매 시 → 92" | 지표를 나눈 기획 의도가 그대로 구매 판단 근거가 됩니다 |
+
+화면 라벨은 내부 이름을 그대로 쓰지 않습니다 — `SimSatisfaction` → **관객 만족도**,
+`ScoreSatisfaction` → **평가 점수**. Report 드릴다운(AT-005)은 왼쪽 항인 관객 만족도에 걸립니다.
 
 ### Slot을 노출하지 않습니다
 
@@ -279,9 +316,12 @@ float Safety;             // 0~100, 높을수록 안전
 
 | 필요한 것 | 예상 소유자 | 상태 | UI에서 쓰는 곳 |
 | --- | --- | --- | --- |
-| **Satisfaction** (`SimSatisfaction` 0~100) | 김시리 · 이정원 | ❌ 없음 | 상단 지표, Report, SNS |
-| **Revenue / Gold 잔액** | 김시리 | ❌ 없음 | 상단 지표, 구매 UI 가능 여부 |
-| **Safety** | 이정원 | ❌ 없음 | 상단 지표, 경고 |
+| **Satisfaction** (`SimSatisfaction` 0~100) | 김시리 · 이정원 | ❌ 없음 | Overview 지표, Report, SNS |
+| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리 | ❌ 없음 | Report 분해식, Finale 구매 예상치 |
+| **`Gold`** (잔액) | 김시리 | ❌ 없음 | 공통 상단 바, Finale·설치 구매 가능 판정 |
+| **`TotalRevenue`** (축제 누적 매출) | 김시리 | ❌ 없음 | 공통 상단 바 |
+| **`TodayRevenue`** (오늘 매출) | 김시리 | ❌ 없음 | Report — UI가 누적값에서 빼지 않습니다 |
+| **Safety** | 이정원 | ❌ 없음 | Overview 지표, 경고 |
 | Staff 보유·가용 인원 | 김시리 | ❌ 없음 | Event 배치 UI |
 | `CauseId` 롤업 | 김시리 | ❌ 없음 | Report 드릴다운 (AT-005) |
 | 저장 슬롯 목록 | 김시리 | ❌ 없음 | 플레이 허브 |
@@ -301,3 +341,4 @@ float Safety;             // 0~100, 높을수록 안전
 | 날짜 | 작성자 | 내용 |
 | --- | --- | --- |
 | 2026-08-06 | 백종태 | 문서 신설. 현재 리포에서 확인한 API를 초기 채움 |
+| 2026-08-06 | 백종태 | Revenue를 축제 누적으로 확정하고 `TodayRevenue`·`Gold` 분리. 갱신 주기를 일정 틱으로 확정. Satisfaction 이중 지표의 화면 배치 결정 |

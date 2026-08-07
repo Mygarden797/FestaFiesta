@@ -7,6 +7,7 @@
 #include "Time/FF_FestivalStage.h"
 #include "FF_MetricsHudWidget.generated.h"
 
+class UImage;
 class UTextBlock;
 class UFF_FestivalViewModelSubsystem;
 
@@ -41,16 +42,22 @@ protected:
 	// --- 델리게이트 핸들러 ---
 
 	UFUNCTION()
-	void HandleSimSatisfactionChanged(float NewValue);
+	void HandleSimSatisfactionChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleScoreSatisfactionChanged(float NewValue);
+	void HandleScoreSatisfactionChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleRevenueChanged(int32 NewValue);
+	void HandleSafetyChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleSafetyChanged(float NewValue);
+	void HandleGoldChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleTotalRevenueChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleTodayRevenueChanged(int32 NewValue);
 
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
@@ -64,14 +71,60 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_SimSatisfaction;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
+	/**
+	 * 2026-08-06 결정(A안): **Overview HUD는 ScoreSatisfaction을 표시하지 않는다.**
+	 * Live 중에는 FinaleBonus가 아직 없어 SimSatisfaction과 같은 숫자가 두 번 뜨고,
+	 * 플레이어가 지금 개선할 수 있는 값도 SimSatisfaction뿐이다.
+	 * ScoreSatisfaction은 Report(분해식)와 Finale 구매 화면(예상치)에서 쓴다.
+	 *
+	 * 이 스텁 HUD는 배선 확인용이라 있으면 표시하고 없어도 통과시킨다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_ScoreSatisfaction;
 
+	/** 축제 전체 누적 매출. 위젯 이름은 기존 WBP 호환을 위해 Text_Revenue로 둔다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_Revenue;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_Safety;
+
+	// Gold와 오늘 매출은 WBP에 아직 없다. 추가하면 자동으로 붙도록 Optional로 둔다.
+
+	/** 잔액. 매출과 다른 값이다. 상단 바로 옮길 예정. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UTextBlock> Text_Gold;
+
+	/** 오늘 매출. 주 사용처는 Report다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UTextBlock> Text_TodayRevenue;
+
+	// --- 구간 표시 (좋음 / 주의 / 나쁨) ---
+	//
+	// AT-011: 색만으로 구분하지 않는다. 라벨과 아이콘을 함께 놓는다.
+	// 셋 다 없어도 숫자는 뜨므로 Optional이다. WBP에 넣으면 자동으로 붙는다.
+	// 구간 값은 UFF_UIMetricBandSettings에서 읽는다. 여기 하드코딩하지 않는다.
+	//
+	// TODO: 진짜 Overview HUD를 만들 때는 (숫자 + 라벨 + 아이콘) 한 벌을 재사용 위젯으로 뽑는다.
+	//       지표가 늘 때마다 여기에 세 줄씩 늘리는 구조는 오래 못 간다.
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UTextBlock> Text_SimSatisfactionBand;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UImage> Image_SimSatisfactionBand;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UTextBlock> Text_ScoreSatisfactionBand;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UImage> Image_ScoreSatisfactionBand;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UTextBlock> Text_SafetyBand;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UImage> Image_SafetyBand;
 
 	// Stage 표시는 나중에 상단 바로 옮길 예정이라 없어도 통과시킨다.
 
@@ -93,6 +146,12 @@ private:
 
 	/** 초를 `m:ss`로 만든다. 계산은 C++에서 끝내고 위젯은 표시만 한다. */
 	static FText FormatSeconds(int32 TotalSeconds);
+
+	/**
+	 * 0~100 값에 맞는 구간을 라벨·아이콘에 반영한다. 둘 중 없는 것은 건너뛴다.
+	 * 구간을 못 찾으면 임의의 색으로 칠하지 않고 비운다 — 틀린 색이 빈 칸보다 나쁘다.
+	 */
+	static void ApplyBand(int32 Value, UTextBlock* BandLabel, UImage* BandIcon);
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;

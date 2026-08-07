@@ -3,6 +3,24 @@
 
 #include "Time/FF_FestivalStageSubsystem.h"
 
+void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	ProgramScheduleTable = LoadObject<UDataTable>(
+		nullptr,
+		TEXT("/Game/FestaFiesta/Data/DT_ProgramSchedule.DT_ProgramSchedule")
+	);
+
+	if (ProgramScheduleTable)
+	{
+		UE_LOG(LogTemp, Log, TEXT("ProgramScheduleTable 로드 성공!"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ProgramScheduleTable 로드 실패! 경로를 확인하세요."));
+	}
+}
 
 void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 {
@@ -37,25 +55,45 @@ void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 }
 // 배속값을 그냥 저장하는 함수
 
-const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay() const
+const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay()
 {
-	switch (CurrentDay)
+	CachedTodayEvents.Empty();
+
+	if (!ProgramScheduleTable)
 	{
-	case 1: return Day1Events;
-	case 2: return Day2Events;
-	default: return Day3Events;
+		UE_LOG(LogTemp, Warning, TEXT("ProgramScheduleTable이 비어있습니다!"));
+		return CachedTodayEvents;
 	}
+
+	TArray<FFF_LiveTriggerEvent*> AllRows;
+	ProgramScheduleTable->GetAllRows<FFF_LiveTriggerEvent>(TEXT("GetEventsForCurrentDay"), AllRows);
+
+	for (const FFF_LiveTriggerEvent* Row : AllRows)
+	{
+		if (Row && Row->Day == CurrentDay)
+		{
+			CachedTodayEvents.Add(*Row);
+		}
+	}
+
+	CachedTodayEvents.Sort([](const FFF_LiveTriggerEvent& A, const FFF_LiveTriggerEvent& B)
+		{
+			return A.TriggerSeconds < B.TriggerSeconds;
+		});
+
+	return CachedTodayEvents;
+
 }
 // CurrentDay(1/2/3)에 맞는 이벤트 배열을 골라서 돌려주는 함수
 
-float UFF_FestivalStageSubsystem::GetLiveDurationForCurrentDay() const
+float UFF_FestivalStageSubsystem::GetLiveDurationForCurrentDay()
 {
 	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
 	return Events.Num() > 0 ? Events.Last().TriggerSeconds : 0.f;
 }
-//그날 이벤트 중 마지막("전체 종료") 시각 = 그날 Live 총 길이
+//그날 이벤트 중 마지막 시각 = 그날 Live 총 길이
 
-bool UFF_FestivalStageSubsystem::IsMainProgramLocked() const
+bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 {
 	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
 
@@ -89,6 +127,13 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 
 	RemainingTime = GetLiveDurationForCurrentDay() - ElapsedLiveSeconds;
 	//오늘 총 길이 - 흐른 시간 =  남은 시간을 매번 다시 계산
+
+	const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
+	if (CurrentSeconds != LastBroadcastSeconds)
+	{
+		LastBroadcastSeconds = CurrentSeconds;
+		OnRemainingSecondsChanged.Broadcast(CurrentSeconds);
+	}
 
 	if (RemainingTime <= 0.f)
 	{
