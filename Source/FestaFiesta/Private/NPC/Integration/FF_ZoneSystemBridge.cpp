@@ -27,17 +27,8 @@ namespace
 
 TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	const FFFZSReadModel& ReadModel,
-	FName CurrentZoneId)
-{
-	static const TMap<FGuid, FVector> EmptyLocations;
-	return BuildCandidates(ReadModel, CurrentZoneId, FVector::ZeroVector, EmptyLocations);
-}
-
-TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
-	const FFFZSReadModel& ReadModel,
 	FName CurrentZoneId,
 	const FVector& PartyWorldLocation,
-	const TMap<FGuid, FVector>& FacilityWorldLocations,
 	int32 MaxCandidates)
 {
 	// ── 1. 현재 Zone 과 인접 Zone 확정 ────────────────────────────────────────
@@ -104,7 +95,6 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	int32 SkippedByZone = 0;
 	int32 SkippedByState = 0;
 	int32 SkippedByCategory = 0;
-	int32 MissingLocationCount = 0;
 
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
@@ -157,17 +147,9 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		// 임의의 상수(0.5 등)를 넣으면 "근거 있는 값"처럼 보이므로 넣지 않는다.
 		Candidate.BaseAttraction = 0.f;
 
-		if (const FVector* FacilityLocation = FacilityWorldLocations.Find(Facility.FacilityInstanceId))
-		{
-			// ZoneSystem 은 cm, 선택기는 m. 환산은 이 파일에서만 한다.
-			Candidate.DistanceMeters = CentimetersToMeters(
-				static_cast<float>(FVector::Dist(PartyWorldLocation, *FacilityLocation)));
-		}
-		else
-		{
-			++MissingLocationCount;
-			Candidate.DistanceMeters = 0.f;
-		}
+		// ZoneSystem 은 cm, 선택기는 m. 환산은 이 파일에서만 한다.
+		Candidate.DistanceMeters = CentimetersToMeters(
+			static_cast<float>(FVector::Dist(PartyWorldLocation, Facility.WorldLocation)));
 
 		// EstimatedWaitMinutes 는 채우지 않는다(0으로 남는다) — 소유자는 FFF_QueueWaitAdapter 다.
 		// 이유는 FF_ZoneSystemBridge.h 의 "대기시간은 이 파일에서 계산하지 않는다" 주석 참조.
@@ -226,11 +208,10 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	{
 		UE_LOG(LogFestaFiestaNpc, Verbose,
 			TEXT("BuildCandidates: Zone='%s'(인접 %d) → 후보 %d개%s. ")
-			TEXT("제외: Zone밖 %d / 카테고리 %d / 상태 %d. 위치 미상 %d개"),
+			TEXT("제외: Zone밖 %d / 카테고리 %d / 상태 %d"),
 			*CurrentZoneId.ToString(), CurrentZone->NeighborZoneIds.Num(), Candidates.Num(),
 			bNeedsTruncation ? TEXT("(상한으로 잘림)") : TEXT(""),
-			SkippedByZone, SkippedByCategory, SkippedByState,
-			MissingLocationCount);
+			SkippedByZone, SkippedByCategory, SkippedByState);
 	}
 
 	// TODO(전역 인기 상위 K): utility_ai_todo.md 2절. 현재 Zone·인접 Zone 밖의 인기 시설을 후보에

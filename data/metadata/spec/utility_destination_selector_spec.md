@@ -98,9 +98,9 @@ PreferenceVectorByCategory[c] =
 
 1-1. ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료.** 현재+인접 Zone으로 좁히고, 닫힌 시설·Info·Safety를 빼고, (같은 Zone → 가까운 순 → ID 순)으로 상한을 자른다. 테스트 10개.
 
-   **남은 구멍 3개** (전부 다른 파트 대기, 값이 없어도 크래시는 없다):
+   `DistanceMeters`는 `FFFZSFacilityReadModel::WorldLocation`과 Party 월드 위치의 직선거리를
+   cm→m로 환산해 채운다. **남은 구멍 2개** (전부 다른 파트 대기, 값이 없어도 크래시는 없다):
    - `BaseAttraction` = 0 — `attraction_norm` 설계 대기(아래 2번). 모든 후보가 0이면 항이 무력화될 뿐 특정 시설이 유리해지지 않는다
-   - `DistanceMeters` = 0 — **시설 월드 위치가 `FFFZSFacilityReadModel`에 없다.** `CaptureInstanceSnapshot()`은 `WorldTransform`을 담는데 `GetReadModel()`은 안 담는다. 지금은 `BuildCandidates`가 위치 맵을 파라미터로 받아 우회하고, 맵이 비면 거리 항이 무력화된다
    - 밀집도 — 시설 단위 점유값이 없어 Zone 밀집도(`ReportedPopulation`/`SoftCapacity`)로 근사(`assumption`). 같은 Zone 시설들의 density_cost가 전부 같아진다
 
 2. **`attraction_norm`(부스 기본 매력도 정규화) 설계 미정** — `FFF_DestinationCandidate::BaseAttraction`을 0~1로 누가 어떻게 정할지는 부스 설정 쪽 설계 대기 (`utility_ai_spec.md` 8절).
@@ -119,7 +119,7 @@ PreferenceVectorByCategory[c] =
 | 2026-08-06 | `need` 항 추가 (`weight_need` 1.8) | Need가 이동 원인이 되게 함 + 재방문 문제 해결 |
 | 2026-08-06 | `no_choice_utility_decay_per_round` 0.03 추가 | 무한 배회 루프 방지 |
 | 2026-08-06 | `no_choice_leave_patience_rounds` 5 추가 | 퇴장 판정. 체류시간 게이트가 우선 |
-| 2026-08-10 | **`revisit_penalty` 항 추가** (`weight_revisit` 0.5 / `revisit_memory_minutes` 60 / 개체 변주 `novelty_seeking_multiplier`) | `preference_vector`가 카테고리 단위라 "이 부스는 가봤으니 옆 부스로"가 안 나왔다. `attraction`·거리·밀집이 전부 0인 현재 상태에서는 같은 카테고리 부스들의 점수가 완전히 동일해 softmax가 균등 분포가 된다. **경제와 직결** — 같은 부스만 가면 매출이 한 곳에 몰린다 |
+| 2026-08-10 | **`revisit_penalty` 항 추가** (`weight_revisit` 0.5 / `revisit_memory_minutes` 60 / 개체 변주 `novelty_seeking_multiplier`) | `preference_vector`가 카테고리 단위라 "이 부스는 가봤으니 옆 부스로"가 안 나왔다. 추가 당시 `attraction`·거리·밀집 입력이 모두 같아 같은 카테고리 부스들의 점수가 완전히 동일했다. **경제와 직결** — 같은 부스만 가면 매출이 한 곳에 몰린다 |
 | 2026-08-10 | `weight_need` **코드 기본값 1.2 → 1.8** (CSV와 불일치 수정) | CSV의 1.8 근거가 `weight_need > weight_attraction + lambda_affinity(1.6)` 부등식인데 1.2는 그걸 깬다 — DataTable 없는 경로에서 급한 욕구가 취향을 못 이겼다. 부등식을 테스트로 고정 |
 | 2026-08-10 | `EstimatedWaitMinutes`를 브릿지가 채우지 않도록 변경 | 소유자를 `FFF_QueueWaitAdapter` 한 곳으로. 폴백을 만들었다가 "Queue가 모르는 시설이 없다"는 것을 확인해 제거 |
 
