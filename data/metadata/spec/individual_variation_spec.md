@@ -19,10 +19,21 @@ TraitSeed = HashCombine(
     HashCombine(
         HashCombine(
             HashCombine(GetTypeHash(GlobalSimulationSeed), GetTypeHash(StableAgentId)),
-            GetTypeHash(RandomPurpose)),
-        GetTypeHash(TraitKey)),
+            MakeStableNameHash(RandomPurpose)),      ← FName은 내용 해시(아래 경고 참조)
+        MakeStableNameHash(TraitKey)),
     GetTypeHash(SpawnGeneration))
 ```
+
+> 🔴 **`GetTypeHash(FName)`을 쓰면 안 된다 (2026-08-10 버그 수정).**
+> 엔진의 `GetTypeHash(FName)`은 `FName::GetComparisonIndex()`를 해시하고, 그 인덱스는 `NameTypes.h` 주석에 **"process specific unstable int"**로 명시돼 있다 — 전역 이름 테이블 **등록 순서**에 따라 값이 달라진다. **에셋 로딩 순서가 조금 달라지거나 프로젝트에 새 이름이 하나 추가되기만 해도 기존 NPC 전원의 시드가 바뀐다.**
+>
+> 실제로 이 문서가 아래 "금지 입력"에 *Actor 스폰 순서*를 적어놓고 정작 이름 등록 순서에 의존하고 있었다. 증상은 `VisitorDistribution.Deterministic` 테스트가 **같은 바이너리에서 실행마다 다른 결과**를 낸 것이었다.
+>
+> `MakeStableNameHash`는 FName의 **문자열 내용**을 FNV-1a로 해시한다 — 힙 할당 없고, 엔진 버전·플랫폼·실행 순서와 무관하다. FName 비교가 대소문자를 무시하므로 소문자화 후 해시한다(안 하면 FName으로는 같은 두 이름이 다른 NPC를 만든다). **TraitKey는 ASCII snake_case로만 쓴다.**
+>
+> 회귀 방지: `DeterministicRandom.NameHashIsContentBased` / `SeedsAreStableAcrossProcesses`가 **골든 값 상수**로 고정한다. 그 테스트가 깨지면 상수를 맞추기 전에 "모든 NPC의 특성값이 바뀐다"는 영향을 먼저 확인할 것.
+
+**목적지 선택 시드는 따로다** — `MakeDecisionSeed(GlobalSimulationSeed, StableAgentId, ChoiceRoundIndex)`. 회차를 정수로 접는다. 예전에는 `FName(*FString::Printf(TEXT("destination_choice_round_%d"), Round))`로 문자열에 접어넣었는데, 그러면 **매 목적지 선택마다** FString 할당과 전역 이름 테이블 조회가 발생했다(8만 명 × 회차 수). FName은 해제되지도 않는다.
 
 - `GlobalSimulationSeed` (int32): 시뮬레이션 실험 전체 Seed. 같은 시나리오 재현에 사용.
 - `StableAgentId` (int32): 실행 순서·메모리 주소가 아니라 저장·복원 가능한 NPC 고유 ID.
@@ -122,6 +133,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 ## 8. 완료 조건과 테스트
 
 - 같은 `GlobalSimulationSeed + StableAgentId`는 몇 번을 다시 생성해도 모든 변주값이 동일하다.
+- **실행(프로세스)을 바꿔도 같은 값이 나온다** — 2절의 FName 내용 해시가 이걸 보장한다. 전체 테스트 스위트를 3회 연속 돌려 같은 결과를 확인했다(2026-08-10).
 - `GlobalSimulationSeed` 또는 `StableAgentId`를 바꾸면 변주값이 달라진다.
 - 새 TraitKey를 추가해도 기존 TraitKey의 결과가 바뀌지 않는다(독립 스트림이므로 구조적으로 보장됨).
 - 모든 값은 정의된 `Min`/`Max` 범위 안에 있다.

@@ -151,9 +151,12 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		B.ChoiceProbability /= SumExp;
 	}
 
-	// Decision 시드: 회차 인덱스를 TraitKey 문자열에 접어넣어 SpawnGeneration의 의미를 건드리지 않는다.
-	const FName RoundTraitKey(*FString::Printf(TEXT("destination_choice_round_%d"), ChoiceRoundIndex));
-	const uint32 Seed = FFF_DeterministicRandom::MakeTraitSeed(GlobalSimulationSeed, StableAgentId, RoundTraitKey, 0, TEXT("Decision"));
+	// Decision 시드: 회차 인덱스를 정수로 접는다.
+	// 예전에는 FName(*FString::Printf(TEXT("destination_choice_round_%d"), Round)) 로 문자열에
+	// 접어넣었는데, 그러면 매 선택마다 FString 할당 + 전역 이름 테이블 조회가 발생했다
+	// (8만 명 × 회차 수). FName 은 해제되지도 않는다. MakeDecisionSeed 주석 참조.
+	const uint32 Seed = FFF_DeterministicRandom::MakeDecisionSeed(
+		GlobalSimulationSeed, StableAgentId, ChoiceRoundIndex);
 	const float U = FFF_DeterministicRandom::MakeUniformFraction(Seed);
 
 	float Cumulative = 0.f;

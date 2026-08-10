@@ -263,4 +263,72 @@ bool FFF_IndividualVariation_GroupSharingIsDeterministic::RunTest(const FString&
 	return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 프로세스 간 안정성 (2026-08-10 버그 수정)
+//
+// GetTypeHash(FName) 은 FName::GetComparisonIndex() 를 해시하고, 그 인덱스는 엔진 주석에
+// "process specific unstable int" 로 명시돼 있다 — 이름이 전역 테이블에 등록된 순서에 따라
+// 값이 달라진다. 그래서 에셋 로딩 순서가 조금 달라지거나 프로젝트에 새 이름이 하나 추가되기만
+// 해도 NPC 전원의 시드가 바뀌었다. 실제로 VisitorDistribution.Deterministic 이 같은 바이너리에서
+// 실행마다 다른 결과를 냈다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * !!! 골든 값 테스트 — 상수를 "고치지" 말 것 !!!
+ *
+ * 아래 기대값은 FNV-1a 로 계산된 고정 상수다. 이 테스트가 깨졌다면 둘 중 하나다:
+ *   (a) MakeStableNameHash 가 다시 프로세스 의존 해시(GetTypeHash(FName) 등)로 바뀌었다
+ *   (b) 해시 알고리즘을 의도적으로 교체했다
+ *
+ * (a)면 코드를 고쳐야 한다. (b)면 **모든 NPC 의 특성값이 바뀐다는 뜻**이므로, 상수를 갱신하기
+ * 전에 그 영향(저장된 시뮬레이션 재현 불가)을 확인할 것. 상수만 조용히 맞추면 이 테스트가
+ * 존재하는 이유가 사라진다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DeterministicRandom_NameHashIsContentBased, "FestaFiesta.NPC.DeterministicRandom.NameHashIsContentBased", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DeterministicRandom_NameHashIsContentBased::RunTest(const FString& Parameters)
+{
+	// 같은 문자열이면 같은 값 — 실행·플랫폼·이름 등록 순서와 무관하다.
+	// 이 두 값은 FNV-1a 정의대로 손으로도 계산해 교차 확인했다(엔진 함수에 의존하지 않는 상수다).
+	TestEqual(TEXT("walk_speed_multiplier 의 내용 해시(골든 값)"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("walk_speed_multiplier")), 3385677686u);
+	TestEqual(TEXT("Generation 의 내용 해시(골든 값)"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("Generation")), 1887532215u);
+
+	// FName 비교는 대소문자를 무시한다 — 해시도 같아야 한다.
+	// 안 그러면 FName 으로는 같은 두 이름이 서로 다른 NPC 를 만든다.
+	TestEqual(TEXT("대소문자가 달라도 같은 해시다"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("WALK_SPEED_MULTIPLIER")),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("walk_speed_multiplier")));
+
+	// 다른 문자열은 다른 값
+	TestNotEqual(TEXT("다른 키는 다른 해시다"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("walk_speed_multiplier")),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("patience_multiplier")));
+
+	TestEqual(TEXT("NAME_None 은 0 이다"), FFF_DeterministicRandom::MakeStableNameHash(NAME_None), 0u);
+	return true;
+}
+
+// 시드 조합도 골든 값으로 고정한다 — 위 해시가 맞아도 조합 순서가 바뀌면 값이 달라진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DeterministicRandom_SeedsAreStableAcrossProcesses, "FestaFiesta.NPC.DeterministicRandom.SeedsAreStableAcrossProcesses", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DeterministicRandom_SeedsAreStableAcrossProcesses::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("MakeTraitSeed 골든 값"),
+		FFF_DeterministicRandom::MakeTraitSeed(42, 7, TEXT("walk_speed_multiplier"), 0, TEXT("Generation")),
+		661771750u);
+	TestEqual(TEXT("MakeDecisionSeed 골든 값"),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 3), 632862417u);
+
+	// 회차가 다르면 시드가 다르다 — 같으면 매 회차 같은 선택이 나와 softmax 가 무의미해진다
+	TestNotEqual(TEXT("회차가 다르면 Decision 시드가 다르다"),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 3),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 4));
+
+	// 개체가 다르면 시드가 다르다
+	TestNotEqual(TEXT("개체가 다르면 Decision 시드가 다르다"),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 3),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 8, 3));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -7,6 +7,8 @@
 
 **바뀐 것(8/6)**: 그룹핑(누구를 누구랑 묶을지)과 입장 타이밍 결정권이 Utility AI에서 crowdAI로 넘어갔다. Utility AI는 이제 **개별 방문객 태그 분포**와 **그룹 구성 규칙(데이터)**만 만든다.
 
+**추가된 것(8/10)**: 목적지 후보 생성(`BuildCandidates`)과 욕구 증가·해소(`FFF_NeedRules`)까지 구현이 끝났다. **함수는 다 있고 부르는 쪽(L3)만 없는 상태** — 새 요청 2건(Zone 인구 보고, Need 해소 신호)은 §7.
+
 **제가 한 일**
 - 개체 태그 분포 생성 함수 완성 — `FFF_VisitorDistributionBuilder` (§3)
 - 그룹 크기·아동 구성 실측 데이터 확보, DataTable 3장으로 제공 (§2)
@@ -173,6 +175,59 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 **해소된 질문 (8/6 결정)**
 
 - ~~리더가 퇴장하면 그룹 전체가 퇴장하는가~~ → **전원 함께 퇴장한다.** `no_choice` 행동 3종(`Wander`/`Relocate`/`Leave`)은 목적지와 똑같이 리더가 결정하고 그룹원 전체가 상속한다. **`spawn_group_together`와 대칭 — 통째로 들어오고 통째로 나간다.** 그룹원이 각자 다른 행동을 하는 경우는 없으니, 퇴장 처리를 그룹 단위로 하시면 됩니다.
+
+## 7. 2026-08-10 추가 — 목적지 선택이 실제로 돌기 시작했습니다
+
+`BuildCandidates`(후보 만들기)와 `FFF_NeedRules`(욕구 증가·해소)를 구현했습니다. 이제 **함수는 다
+있고, 부르는 쪽만 없습니다.** 6절의 "NPC 상태를 누가 들고 있는가"가 유일하게 남은 막힌 지점입니다.
+
+### 7.1 새 요청 — `ReportZonePopulation`을 불러주실 수 있을까요
+
+`UFFZSWorldSubsystem::ReportZonePopulation(ZoneId, Population, DeltaSeconds)`를 부르는 코드가
+프로젝트 전체에 **0곳**입니다. 플러그인은 "외부 시뮬레이션이 Zone별 인구를 보고"하는 설계인데
+아무도 보고하지 않아서:
+
+- `FFFZSZoneReadModel::ReportedPopulation`이 항상 0
+- → Utility 식의 `- weight_density × density_norm` 항이 항상 0
+- → **NPC가 혼잡을 피하는 행동이 아예 나오지 않습니다**
+- Zone 밀도 상태(Caution/Warning/Critical)도 절대 안 올라갑니다
+
+Zone별 재실 인원은 crowdAI가 아는 값이라 이쪽에서 부르는 게 자연스러워 보입니다. 부르는 주기는
+Zone 밀도 히스테리시스(Warning 5초 / Critical 3초 연속 유지)보다 촘촘하면 되고, 매 프레임은
+필요 없습니다. **주기와 호출 주체를 정해주시면 저희는 읽기만 하겠습니다.**
+
+### 7.2 보관해야 하는 상태가 또 늘었습니다 (6절 표 갱신)
+
+Need가 실제로 움직이게 되어서, NPC(또는 그룹)마다 아래를 들고 있어야 합니다.
+
+| 값 | 언제 바뀌나 | 누가 계산하나 |
+|---|---|---|
+| `FFF_NeedState` (5개 float) | 시간 경과 + 시설 이용 완료 | `FFF_NeedRules::Advance` / `Relieve` |
+| `FFF_VisitHistory` (FName 5개 + float 5개) | 시설 이용 완료 | `RecordVisit` — 신규성 선호(가본 곳보다 새 곳)에 쓴다 |
+| `ConsecutiveNoChoiceCount` | 재평가 때마다 | 선택기 결과 |
+| `RemainingStayMinutes` | 시간 경과 | — |
+| `LastEvaluationTime` / `ChoiceRoundIndex` | 재평가 때마다 | — |
+| `FFF_ResolvedIndividualTraits` 등 | **스폰 시 1회 캐싱**(1.5절) | `Resolve`/`ResolveWithGroupSharing` |
+
+앞 4개는 매 틱 변하고 마지막 하나는 스폰 후 불변이라, 보관 위치를 다르게 두는 게 나을 수 있습니다.
+
+### 7.3 Need 규칙에서 알아두시면 좋은 것 2개
+
+- **줄에서 기다리는 동안에도 Need는 계속 쌓입니다.** 의도적입니다 — 줄이 길면 배고픔이 더 쌓여
+  다음 재평가에서 다른 선택이 나오는 게 자연스럽다고 봤습니다. 다만 실제로 어떤 쏠림을 만드는지는
+  돌려봐야 알아서, 이상한 결과가 보이면 알려주세요.
+- **해소는 "시설 이용 완료" 시점입니다.** 목적지를 고른 순간이나 도착한 순간이 아닙니다. 줄만 서고
+  포기한 NPC의 Need가 풀리면 대기열 이탈이 이득이 되어버립니다. **완료 신호가 필요합니다** —
+  Queue 쪽 `ServiceCompleted`를 쓸 수 있으면 그게 가장 깔끔할 것 같습니다.
+  **이 신호 하나로 두 가지를 처리합니다** — `FFF_NeedRules::Relieve`(욕구 해소)와
+  `FFF_VisitHistory::RecordVisit`(방문 기록). 같은 시점이라 따로 받을 필요는 없습니다.
+
+### 7.4 시간 기준 확인 요청 (강민서 님과도 걸림)
+
+`FFF_NeedRules::Advance(Needs, ElapsedMinutes, Rates)`의 `ElapsedMinutes`는 **Live 경과분**입니다
+(실시간 초가 아닙니다). 게임 시간 배속이 바뀌어도 Need는 축제 시각을 따라 쌓여야 하니까요.
+`RemainingStayMinutes`·`LastEvaluationTime`도 같은 기준입니다. 이 기준이 이동 스택 쪽과 어긋나지
+않는지 확인 부탁드립니다.
 
 ---
 
@@ -350,3 +405,12 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 > 8. 개체 목록 생성 함수도 다 됐어요 — `FFF_VisitorDistributionBuilder::Build`. 태그만 보고 묶으실 수 있어요 (문서 §3, 부록 C).
 > 9. 유입 곡선 형태도 확정했어요 — `FFF_ArrivalCurveRow`. 비율(%)이지 인원이 아니에요 (문서 §4, 부록 D).
 > 10. **8/4에 드린 그룹핑 규칙 중 일부가 폐기됐어요** — 이미 구현하셨다면 §2 "폐기된 것" 참고해서 걷어내주세요.
+
+**8/10 추가분** (§7 상세) — 위 목록 뒤에 이어 붙여 보내면 된다.
+
+> 11. 목적지 선택기가 실제로 돌 준비가 됐어요 — 후보 만들기(`BuildCandidates`)와 욕구 증가·해소(`FFF_NeedRules`)까지 다 됐습니다. **이제 함수는 다 있고 부르는 쪽만 없어요.**
+> 12. **`ReportZonePopulation`을 불러주실 수 있을까요?** ZoneSystem에 Zone별 인구를 보고하는 함수가 있는데 프로젝트 전체에서 부르는 코드가 0곳이에요. 그래서 지금 **NPC가 혼잡을 피하는 행동이 아예 안 나옵니다**(밀집 항이 항상 0). Zone별 재실 인원은 crowdAI가 아는 값이라 그쪽에서 부르는 게 자연스러울 것 같아요. 주기는 매 프레임 필요 없고 몇 초 단위면 됩니다.
+> 13. **Need 해소 신호가 필요해요** — "시설 이용 완료" 시점에 알려주셔야 배고픔·화장실이 풀립니다. 목적지를 고른 순간이나 도착한 순간이 아니라 **완료** 시점이에요(줄만 서고 포기한 NPC의 욕구가 풀리면 대기열 이탈이 이득이 돼버려서요). Queue 쪽 `ServiceCompleted`를 쓸 수 있으면 그게 가장 깔끔할 것 같아요.
+> 14. 보관해야 하는 상태에 `FFF_NeedState`(5개 float)가 추가됐어요 — §7.2 표로 정리해뒀습니다. 매 틱 변하는 값 4개와 스폰 후 불변인 값이 갈려요.
+> 15. 시간 기준 확인 부탁드려요 — Need·체류시간·재평가 주기 전부 **Live 경과분** 기준입니다(실시간 초 아님). 이동 스택 쪽과 어긋나지 않는지요.
+> 16. **"시설 이용 완료" 신호 하나로 두 가지를 처리해요** — 욕구 해소(`FFF_NeedRules::Relieve`)와 방문 기록(`FFF_VisitHistory::RecordVisit`). 방문 기록은 "가본 곳보다 새로운 곳을 선호"하는 데 쓰는데(같은 부스만 가면 매출이 한 곳에 몰려서요), 개체당 최근 5곳만 들고 있으면 됩니다. 따로 신호를 받을 필요는 없어요.

@@ -6,14 +6,52 @@
 #include "Engine/DataTable.h"
 #include "Math/RandomStream.h"
 
+uint32 FFF_DeterministicRandom::MakeStableNameHash(const FName Name)
+{
+	if (Name.IsNone())
+	{
+		// NAME_None 은 "키 없음"이다. 0 으로 고정해 두면 빈 문자열과도 같아지는데,
+		// TraitKey 로 빈 이름을 쓰는 경우가 없어서 구분할 필요가 없다.
+		return 0u;
+	}
+
+	// 힙 할당 없이 문자를 읽는다. TraitKey 는 짧아서 128 로 충분하고, 넘치면 빌더가 자동 확장한다.
+	TStringBuilder<128> Builder;
+	Name.AppendString(Builder);
+
+	// FNV-1a. 엔진 버전·플랫폼·실행 순서와 무관하게 같은 문자열이면 같은 값이 나온다.
+	uint32 Hash = 2166136261u;
+	const TCHAR* Chars = Builder.GetData();
+	for (int32 Index = 0; Index < Builder.Len(); ++Index)
+	{
+		// FName 비교가 대소문자를 무시하므로 소문자화해서 해시한다 — 안 하면 FName 으로는
+		// 같다고 취급되는 두 이름이 서로 다른 시드를 낸다.
+		Hash ^= static_cast<uint32>(FChar::ToLower(Chars[Index]));
+		Hash *= 16777619u;
+	}
+	return Hash;
+}
+
 uint32 FFF_DeterministicRandom::MakeTraitSeed(int32 GlobalSimulationSeed, int32 StableAgentId, FName TraitKey, int32 SpawnGeneration, FName RandomPurpose)
 {
+	// 정수는 GetTypeHash 가 안정적이다(항등에 가까운 변환). FName 만 내용 해시로 바꾼다 —
+	// GetTypeHash(FName) 은 프로세스마다 달라지는 인덱스를 해시한다(MakeStableNameHash 주석).
 	uint32 Seed = GetTypeHash(GlobalSimulationSeed);
 	Seed = HashCombine(Seed, GetTypeHash(StableAgentId));
-	Seed = HashCombine(Seed, GetTypeHash(RandomPurpose));
-	Seed = HashCombine(Seed, GetTypeHash(TraitKey));
+	Seed = HashCombine(Seed, MakeStableNameHash(RandomPurpose));
+	Seed = HashCombine(Seed, MakeStableNameHash(TraitKey));
 	Seed = HashCombine(Seed, GetTypeHash(SpawnGeneration));
 	return Seed;
+}
+
+uint32 FFF_DeterministicRandom::MakeDecisionSeed(int32 GlobalSimulationSeed, int32 StableAgentId, int32 ChoiceRoundIndex)
+{
+	// TraitKey 는 회차와 무관한 상수다. 회차는 아래에서 정수로 접는다.
+	static const FName DecisionTraitKey(TEXT("destination_choice"));
+	static const FName DecisionPurpose(TEXT("Decision"));
+
+	uint32 Seed = MakeTraitSeed(GlobalSimulationSeed, StableAgentId, DecisionTraitKey, 0, DecisionPurpose);
+	return HashCombine(Seed, GetTypeHash(ChoiceRoundIndex));
 }
 
 float FFF_DeterministicRandom::MakeUniformFraction(uint32 TraitSeed)

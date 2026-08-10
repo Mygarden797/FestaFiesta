@@ -17,9 +17,47 @@ class UDataTable;
 class FFF_DeterministicRandom
 {
 public:
+	/**
+	 * FName 을 **문자열 내용**으로 해시한다. 프로세스 간 안정성의 핵심이다.
+	 *
+	 * ### 왜 GetTypeHash(FName) 을 쓰면 안 되는가 (2026-08-10 버그 수정)
+	 *
+	 * 엔진의 `GetTypeHash(FName)` 은 `FName::GetComparisonIndex()` 를 해시하고, 그 인덱스는
+	 * `NameTypes.h` 주석에 **"process specific unstable int"** 로 명시돼 있다 — 전역 이름 테이블에
+	 * 등록된 **순서**에 따라 값이 달라진다. 에셋 로딩 순서가 조금 달라지거나, 프로젝트에 새 이름이
+	 * 하나 추가되기만 해도 기존 NPC 전원의 시드가 바뀐다.
+	 *
+	 * 실제로 그래서 `VisitorDistribution.Deterministic` 테스트가 **같은 바이너리에서 실행마다 다른
+	 * 결과**를 냈다. 이 문서(individual_variation_spec.md 2절)가 "금지 입력: Actor 스폰 순서"라고
+	 * 적어놓고 정작 이름 등록 순서에 의존하고 있었던 것이다.
+	 *
+	 * ### 내용 기반 해시 — FNV-1a
+	 *
+	 * 엔진 버전·플랫폼·실행 순서와 무관하게 같은 문자열이면 같은 값이 나온다. 힙 할당도 없다.
+	 * **FName 비교가 대소문자를 무시하므로 소문자화해서 해시한다** — 안 하면 FName 으로는 같다고
+	 * 취급되는 두 이름이 서로 다른 시드를 낸다.
+	 *
+	 * TraitKey 는 ASCII snake_case 로만 쓴다(비ASCII 문자의 대소문자 변환까지 보장하지 않는다).
+	 */
+	static uint32 MakeStableNameHash(FName Name);
+
 	// TraitKey마다 독립된 난수 스트림을 만든다 — 하나의 스트림을 순서대로 소비하지 않으므로
 	// 나중에 특성을 추가해도 기존 특성값이 바뀌지 않는다.
+	//
+	// FName 두 개(TraitKey/RandomPurpose)는 MakeStableNameHash 로 내용 해시한다 — 위 주석 참조.
 	static uint32 MakeTraitSeed(int32 GlobalSimulationSeed, int32 StableAgentId, FName TraitKey, int32 SpawnGeneration, FName RandomPurpose);
+
+	/**
+	 * 목적지 선택(softmax 샘플링)용 시드. 회차 인덱스를 **정수로** 접는다.
+	 *
+	 * MakeTraitSeed 와 따로 두는 이유: 예전에는 회차를 TraitKey 문자열에 접어넣었다
+	 * (`FName(*FString::Printf(TEXT("destination_choice_round_%d"), Round))`). 그러면
+	 * **매 목적지 선택마다** FString 할당과 전역 이름 테이블 조회가 발생한다 — 정수 하나를
+	 * 시드에 넣으려고 8만 명 × 회차 수만큼 문자열을 만드는 셈이다. FName 은 해제되지도 않는다.
+	 *
+	 * RandomPurpose 는 `Decision` 으로 고정이고, TraitKey 는 회차와 무관한 상수다.
+	 */
+	static uint32 MakeDecisionSeed(int32 GlobalSimulationSeed, int32 StableAgentId, int32 ChoiceRoundIndex);
 
 	// TraitSeed 하나로 [0,1) 균등난수 하나를 결정적으로 뽑는다.
 	static float MakeUniformFraction(uint32 TraitSeed);
