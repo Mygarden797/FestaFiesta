@@ -77,20 +77,47 @@ float UFF_FestivalStageSubsystem::GetLiveDurationForCurrentDay()
 
 bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 {
+	float LeadSeconds = 10.f;
+	// 표가 비어있을 때 기본값
+
+	if (TimeSettingsTable)
+		// 표가 실제로 연결되어 있는지 확인
+	{
+		TArray<FFF_TimeSettingRow*> AllSettings;
+		// 표의 모든 행을 담을 임시 배열
+
+		TimeSettingsTable->GetAllRows<FFF_TimeSettingRow>(TEXT("IsMainProgramLocked"), AllSettings);
+		// 표에 있는 모든 행을 가져와서 위 배열에 담음
+
+		if (AllSettings.Num() > 0)
+			// 행이 하나라도 있으면
+		{
+			LeadSeconds = AllSettings[0]->MainProgramLockLeadSeconds;
+			// 첫 번째 행의 리드타임 값을 실제로 가져다 씀
+		}
+	}
+
 	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
+	// 날짜에 맞는 이벤트 목록 가져오기
 
 	for (int32 i = 0; i < Events.Num(); i++)
 	{
 		if (Events[i].bIsMainProgramLockStart)
+			// 이 이벤트가 "메인 공연 시작"이면
 		{
-			const float LockStart = Events[i].TriggerSeconds - 10.f;
+			const float LockStart = Events[i].TriggerSeconds - LeadSeconds;
+			// 공연 시작 시각 -  표의 리드타임만큼 뺀 시점 = 락 시작 시점
+
 			const float LockEnd = Events.IsValidIndex(i + 1) ? Events[i + 1].TriggerSeconds : Events[i].TriggerSeconds;
+			// 다음 이벤트 시각 = 락 끝나는 시점
+
 			return ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd;
+			// 지금이 그 구간 안에 있는지 true/false로 반환
 		}
 	}
 	return false;
+	// 메인 공연 이벤트 자체가 없으면 항상 false
 }
-//그 시각 10초 전부터 다음 이벤트 시각까지가 배속 잠금 구간인지 판단
 
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
