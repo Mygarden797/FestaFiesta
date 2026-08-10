@@ -138,7 +138,7 @@ preference_norm(i, c) = clamp(preference_vector(i)[c] / preference_vector_scale_
 revisit_penalty_norm(i, j, t) = max(0, 1 − 마지막 방문 후 경과분 / revisit_memory_minutes)
 ```
 
-**왜 필요한가** — `preference_vector`는 **카테고리 단위**(`food_stall`, `rest_area`…)라 시설 인스턴스를 구분하지 못한다. "밥 먹었으니 음식 부스 매력이 내려간다"는 나오지만 **"이 부스는 가봤으니 옆 부스로"는 나오지 않는다.** 게다가 `attraction`·거리·밀집이 아직 전부 0인 현재 상태에서는 같은 카테고리 부스들의 점수가 **완전히 동일**해서 softmax가 균등 분포가 되고, 우연히 같은 곳을 또 간다.
+**왜 필요한가** — `preference_vector`는 **카테고리 단위**(`food_stall`, `rest_area`…)라 시설 인스턴스를 구분하지 못한다. "밥 먹었으니 음식 부스 매력이 내려간다"는 나오지만 **"이 부스는 가봤으니 옆 부스로"는 나오지 않는다.** 추가 당시에는 `attraction`·거리·밀집 입력이 모두 같아 같은 카테고리 부스들의 점수가 **완전히 동일**했고, softmax가 균등 분포가 되어 우연히 같은 곳을 또 갔다. 현재 거리는 시설별로 구분되지만 방문 이력 자체는 여전히 별도 입력이 필요하다.
 
 **리얼리즘이 아니라 게임 메커니즘이다** — 같은 부스만 가면 매출이 한 곳에 몰리고 여러 곳을 돌면 분산된다. 플레이어가 부스를 여럿 짓는 동기가 여기서 나온다.
 
@@ -361,7 +361,7 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 
 - **NPC 런타임 층(L3)이 없다** — 가장 큰 구조적 공백. 위 함수들을 **누가 언제 호출하는지**가 정해지지 않았다. `UFF_NpcNeedMetricsSubsystem::AddSample`을 부르는 코드도, `ResolveWithGroupSharing`을 부르는 코드도, **`FFF_NeedRules::Advance`/`Relieve`를 부르는 코드도** 없다.
 - **`ReportZonePopulation`을 부르는 코드가 0곳이다** (2026-08-10 발견) — 플러그인은 "외부 시뮬레이션이 인구와 DeltaSeconds를 보고"하면 Zone 밀도를 계산하는 설계인데 아무도 안 부른다. 그래서 `FFFZSZoneReadModel::ReportedPopulation`이 항상 0이고, `BuildCandidates`가 그걸 물려받아 **`density_cost` 항이 항상 0이다.** Zone별 재실 인원은 crowdAI가 아는 값이라 호출 주체를 이정원 님과 협의해야 한다.
-- ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료**(테스트 10개). 이제 목적지 선택이 실제로 도는 데 남은 것은 L3 하나다. 단 `BaseAttraction`·`DistanceMeters`는 아직 0이다(출처 대기) — 자세한 내용은 `utility_destination_selector_spec.md` §1-1.
+- ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료**(테스트 10개). `DistanceMeters`는 Read Model의 시설 대표 위치와 Party 위치로 계산한다. 목적지 선택이 실제로 도는 데 남은 것은 L3이며, `BaseAttraction` 출처는 아직 대기 중이다 — 자세한 내용은 `utility_destination_selector_spec.md` §1-1.
 - **`companion_type_modifier_v0.csv`의 preference delta가 `가구원수` 기반인 문제** — 그룹 크기 *비율*은 실측으로 교체했지만 이 *delta 값* 자체는 아직 그대로다(§6 경고 박스). 대체 후보는 2025 국민여행조사 통계편 표 14-2-x(동반자 유형) 또는 원자료 `A6B_1..12`.
 - **후보 집합 규칙이 계수로 노출되지 않았다** — `BuildCandidates`가 "현재 Zone + 인접 Zone + 전역 인기 상위 K"로 줄이는데, 이 "전역 인기"가 **부익부 피드백**을 만든다(인기 있으면 후보에 더 자주 들어가서 더 인기 있어진다). K와 "인기"의 정의를 계수로 빼서 민감도 분석 대상에 넣어야 한다. 안 그러면 병목이 실제 선호 때문인지 후보 필터 때문인지 구분할 수 없다.
   **"전역 인기 상위 K"는 아직 미구현이다** — 지금은 인접 Zone 밖이 절대 후보가 못 되고, 상한에 걸려 잘릴 때 "멀지만 취향에 맞는 부스"가 후보에 아예 못 들어온다.

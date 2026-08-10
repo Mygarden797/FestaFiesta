@@ -148,7 +148,28 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void SkipCurrentStage();
-	//  스킵 가능한 단계면 즉시 다음 단계로 넘기는 함수
+	//  스킵 가능한 단계면 즉시 다음 단계로 넘기는 sjarla
+
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	FText GetCurrentStageDisplayName() const;
+	// 지금 단계 이름을 한글로 반환
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	FString GetCurrentLiveClockString() const;
+	// Live일 때 지금 몇 시 몇 분인지 반환
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsLiveStage() const;
+	// 지금 Live 단계인지
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsReportStage() const;
+	// 지금 Report 단계인지
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsFinalDay() const;
+	// 지금 3일차인지
 
 	virtual void Tick(float DeltaTime) override;
 	// 매 프레임 자동으로 호출되는 함수

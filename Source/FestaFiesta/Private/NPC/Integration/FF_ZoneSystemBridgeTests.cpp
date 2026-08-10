@@ -49,6 +49,7 @@ namespace FFF_ZoneSystemBridgeTestHelpers
 		Facility.FacilityInstanceId = MakeBridgeTestFacilityId(Index);
 		Facility.FacilityDefinitionId = FacilityDefinitionId;
 		Facility.ZoneId = ZoneId;
+		Facility.WorldLocation = FVector::ZeroVector;
 		Facility.Category = Category;
 		Facility.State = EFFZSFacilityState::Active;
 		Facility.QueueState = EFFZSQueueState::Open;
@@ -84,7 +85,7 @@ bool FFF_ZoneSystemBridge_OnlyCurrentAndNeighborZones::RunTest(const FString& Pa
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(3, TEXT("ZoneC")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestEqual(TEXT("현재 Zone + 인접 Zone 의 시설 2개만 후보다"), Candidates.Num(), 2);
 	TestTrue(TEXT("현재 Zone 시설은 후보다"), ContainsFacility(Candidates, 1));
@@ -102,14 +103,14 @@ bool FFF_ZoneSystemBridge_UnknownZoneReturnsEmpty::RunTest(const FString& Parame
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneDoesNotExist"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneDoesNotExist"), FVector::ZeroVector);
 
 	TestEqual(TEXT("없는 Zone 이면 후보가 없다"), Candidates.Num(), 0);
 
 	// 빈 ReadModel 로 불러도 크래시하지 않는다
 	const FFFZSReadModel EmptyReadModel;
 	TestEqual(TEXT("빈 ReadModel 도 안전하다"),
-		FFF_ZoneSystemBridge::BuildCandidates(EmptyReadModel, TEXT("ZoneA")).Num(), 0);
+		FFF_ZoneSystemBridge::BuildCandidates(EmptyReadModel, TEXT("ZoneA"), FVector::ZeroVector).Num(), 0);
 	return true;
 }
 
@@ -154,7 +155,7 @@ bool FFF_ZoneSystemBridge_FiltersByLifecycleOnly::RunTest(const FString& Paramet
 	ReadModel.Facilities.Add(Blocked);
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestEqual(TEXT("Active + 재배치 아님인 시설 4개가 후보다"), Candidates.Num(), 4);
 	TestTrue(TEXT("정상 영업 시설은 후보다"), ContainsFacility(Candidates, 1));
@@ -188,7 +189,7 @@ bool FFF_ZoneSystemBridge_ExcludesInfoAndSafety::RunTest(const FString& Paramete
 		EFFZSFacilityCategory::Toilet, TEXT("Toilet_Standard_Test")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestEqual(TEXT("Toilet 만 후보로 남는다"), Candidates.Num(), 1);
 	TestTrue(TEXT("Toilet 은 후보다 — Need 로만 해소되지만 목적지는 될 수 있다"), ContainsFacility(Candidates, 3));
@@ -214,7 +215,7 @@ bool FFF_ZoneSystemBridge_DensityComesFromZoneAndNeverDividesByZero::RunTest(con
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(2, TEXT("ZoneB")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestEqual(TEXT("후보 2개"), Candidates.Num(), 2);
 	for (const FFF_DestinationCandidate& Candidate : Candidates)
@@ -246,7 +247,7 @@ bool FFF_ZoneSystemBridge_CandidateFieldsAreFinite::RunTest(const FString& Param
 	ReadModel.Facilities.Add(Facility);
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestEqual(TEXT("후보 1개"), Candidates.Num(), 1);
 	if (Candidates.Num() == 1)
@@ -264,32 +265,21 @@ bool FFF_ZoneSystemBridge_CandidateFieldsAreFinite::RunTest(const FString& Param
 	return true;
 }
 
-// 위치 맵이 없으면 거리는 0, 있으면 cm → m 로 환산한다.
+// Read Model의 시설 대표 위치와 Party 위치 차이를 cm → m 로 환산한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_DistanceConvertsCentimetersToMeters, "FestaFiesta.NPC.ZoneSystemBridge.DistanceConvertsCentimetersToMeters", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ZoneSystemBridge_DistanceConvertsCentimetersToMeters::RunTest(const FString& Parameters)
 {
 	FFFZSReadModel ReadModel;
 	ReadModel.Zones.Add(MakeBridgeTestZone(TEXT("ZoneA"), {}));
-	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA")));
-	ReadModel.Facilities.Add(MakeBridgeTestFacility(2, TEXT("ZoneA")));
+	FFFZSFacilityReadModel Facility = MakeBridgeTestFacility(1, TEXT("ZoneA"));
+	Facility.WorldLocation = FVector(15000.f, 0.f, 0.f); // 150m 지점(cm 단위)
+	ReadModel.Facilities.Add(Facility);
 
-	// 위치 맵이 비어 있으면 거리 항이 무력화된다(전부 0). 시설 위치가 ReadModel 에 없어서 생긴 임시 상태다
-	const TArray<FFF_DestinationCandidate> WithoutLocations =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
-	for (const FFF_DestinationCandidate& Candidate : WithoutLocations)
-	{
-		TestEqual(TEXT("위치를 모르면 거리는 0 이다"), Candidate.DistanceMeters, 0.f);
-	}
-
-	// 1번만 위치를 알려준다 — 부분적으로 아는 경우에도 크래시하지 않아야 한다
-	TMap<FGuid, FVector> Locations;
-	Locations.Add(MakeBridgeTestFacilityId(1), FVector(15000.f, 0.f, 0.f)); // 150m 지점(cm 단위)
-
-	const TArray<FFF_DestinationCandidate> WithLocations = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, TEXT("ZoneA"), FVector(5000.f, 0.f, 0.f), Locations);
+	const TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
+		ReadModel, TEXT("ZoneA"), FVector(5000.f, 0.f, 0.f));
 
 	const FName Facility1 = FFF_ZoneSystemBridge::FacilityInstanceIdToDestinationId(MakeBridgeTestFacilityId(1));
-	const FFF_DestinationCandidate* Known = WithLocations.FindByPredicate(
+	const FFF_DestinationCandidate* Known = Candidates.FindByPredicate(
 		[Facility1](const FFF_DestinationCandidate& C) { return C.DestinationId == Facility1; });
 	if (Known)
 	{
@@ -315,20 +305,29 @@ bool FFF_ZoneSystemBridge_TruncationPrefersCurrentZoneAndIsDeterministic::RunTes
 	// 현재 Zone 에 2개, 인접 Zone 에 3개 → 상한 3이면 현재 Zone 2개가 먼저 남아야 한다
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(2, TEXT("ZoneA")));
-	ReadModel.Facilities.Add(MakeBridgeTestFacility(3, TEXT("ZoneB")));
-	ReadModel.Facilities.Add(MakeBridgeTestFacility(4, TEXT("ZoneB")));
-	ReadModel.Facilities.Add(MakeBridgeTestFacility(5, TEXT("ZoneB")));
+	FFFZSFacilityReadModel FarNeighbor = MakeBridgeTestFacility(3, TEXT("ZoneB"));
+	FarNeighbor.WorldLocation = FVector(9000.f, 0.f, 0.f);
+	ReadModel.Facilities.Add(FarNeighbor);
+	FFFZSFacilityReadModel NearNeighbor = MakeBridgeTestFacility(4, TEXT("ZoneB"));
+	NearNeighbor.WorldLocation = FVector(3000.f, 0.f, 0.f);
+	ReadModel.Facilities.Add(NearNeighbor);
+	FFFZSFacilityReadModel MiddleNeighbor = MakeBridgeTestFacility(5, TEXT("ZoneB"));
+	MiddleNeighbor.WorldLocation = FVector(6000.f, 0.f, 0.f);
+	ReadModel.Facilities.Add(MiddleNeighbor);
 
 	const TArray<FFF_DestinationCandidate> Truncated = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, TEXT("ZoneA"), FVector::ZeroVector, TMap<FGuid, FVector>(), /*MaxCandidates=*/3);
+		ReadModel, TEXT("ZoneA"), FVector::ZeroVector, /*MaxCandidates=*/3);
 
 	TestEqual(TEXT("상한 3이 걸린다"), Truncated.Num(), 3);
 	TestTrue(TEXT("현재 Zone 시설 1은 살아남는다"), ContainsFacility(Truncated, 1));
 	TestTrue(TEXT("현재 Zone 시설 2도 살아남는다"), ContainsFacility(Truncated, 2));
+	TestTrue(TEXT("인접 Zone에서는 가장 가까운 시설이 살아남는다"), ContainsFacility(Truncated, 4));
+	TestFalse(TEXT("더 먼 인접 Zone 시설은 상한으로 잘린다"), ContainsFacility(Truncated, 3));
+	TestFalse(TEXT("중간 거리 인접 Zone 시설도 상한으로 잘린다"), ContainsFacility(Truncated, 5));
 
 	// 같은 입력이면 같은 결과 — 잘린 뒤 남는 집합이 호출마다 달라지면 재현이 불가능해진다
 	const TArray<FFF_DestinationCandidate> Again = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, TEXT("ZoneA"), FVector::ZeroVector, TMap<FGuid, FVector>(), /*MaxCandidates=*/3);
+		ReadModel, TEXT("ZoneA"), FVector::ZeroVector, /*MaxCandidates=*/3);
 	TestEqual(TEXT("두 번 불러도 개수가 같다"), Again.Num(), Truncated.Num());
 	for (int32 Index = 0; Index < FMath::Min(Again.Num(), Truncated.Num()); ++Index)
 	{
@@ -338,7 +337,7 @@ bool FFF_ZoneSystemBridge_TruncationPrefersCurrentZoneAndIsDeterministic::RunTes
 
 	// 상한 0 이하 = 상한 없음
 	const TArray<FFF_DestinationCandidate> Unlimited = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, TEXT("ZoneA"), FVector::ZeroVector, TMap<FGuid, FVector>(), /*MaxCandidates=*/0);
+		ReadModel, TEXT("ZoneA"), FVector::ZeroVector, /*MaxCandidates=*/0);
 	TestEqual(TEXT("MaxCandidates 0 은 상한 없음이다"), Unlimited.Num(), 5);
 	return true;
 }
@@ -355,7 +354,7 @@ bool FFF_ZoneSystemBridge_CandidateCarriesPreferenceAndNeedRelief::RunTest(const
 		EFFZSFacilityCategory::Rest, TEXT("Rest_Cooling_OasisZone")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
-		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"));
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 	TestEqual(TEXT("후보 2개"), Candidates.Num(), 2);
 
 	const FName FoodStallId = FFF_ZoneSystemBridge::FacilityInstanceIdToDestinationId(MakeBridgeTestFacilityId(1));

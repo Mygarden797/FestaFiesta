@@ -8,7 +8,7 @@
  // 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
  // 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
  // 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
- // 7) Zone Read Model의 그래프·로컬 출입 기준점·실제 경계 면적 값 복사 계약.
+ // 7) Zone/Facility Read Model의 공간 메타데이터 값 복사 계약.
  
  //각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
  // Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
@@ -155,6 +155,22 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     {
         return false;
     }
+
+    const FFFZSReadModel InstalledReadModel = Subsystem->BuildReadModel();
+    const FFFZSFacilityReadModel* InstalledFacilityModel = InstalledReadModel.Facilities.FindByPredicate(
+        [&InstallFirst](const FFFZSFacilityReadModel& Candidate)
+        {
+            return Candidate.FacilityInstanceId == InstallFirst.FacilityInstanceId;
+        });
+    if (!TestNotNull(TEXT("설치된 Facility가 Read Model에 포함된다"), InstalledFacilityModel))
+    {
+        return false;
+    }
+    TestTrue(TEXT("Facility Read Model은 Actor 대표 월드 위치(cm)를 복사한다"),
+        InstalledFacilityModel->WorldLocation.Equals(FirstFacility->GetActorLocation()));
+    TestTrue(TEXT("Facility Read Model 위치는 저장 Snapshot Transform의 위치와 같다"),
+        InstalledFacilityModel->WorldLocation.Equals(
+            FirstFacility->CaptureInstanceSnapshot().WorldTransform.GetLocation()));
 
     const FFFZSCommandResult ReplayResult = Subsystem->ExecuteCommand(InstallFirst);
     TestTrue(TEXT("동일한 CommandId와 Payload가 성공적으로 Replay된다"), ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);

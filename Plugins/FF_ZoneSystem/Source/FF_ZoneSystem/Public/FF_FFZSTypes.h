@@ -748,7 +748,7 @@ struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
 };
 
 USTRUCT(BlueprintType)
-// UI·분석에 필요한 시설 ID·수명주기·재배치 플래그·큐 규모·평균 대기 시간의 비권한 값 복사본.
+// UI·분석에 필요한 시설 ID·수명주기·재배치 플래그·큐 규모·평균 대기 시간·대표 위치의 비권한 값 복사본.
 struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
 {
     GENERATED_BODY()
@@ -782,6 +782,10 @@ struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     float AverageCompletedWaitSeconds = 0.0f;
+
+    // Facility Actor의 대표 월드 지점. Unreal 월드 좌표 단위(cm)를 그대로 노출한다.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model", meta = (Units = "cm"))
+    FVector WorldLocation = FVector::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
