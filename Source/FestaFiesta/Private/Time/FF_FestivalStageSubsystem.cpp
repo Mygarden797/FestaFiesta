@@ -35,7 +35,7 @@ void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 {
 	TimeScale = NewScale;
 }
-// 배속값을 그냥 저장하는 함수
+// 배속값을 저장하는 함수
 
 const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay()
 {
@@ -66,7 +66,7 @@ const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurr
 	return CachedTodayEvents;
 
 }
-// CurrentDay(1/2/3)에 맞는 이벤트 배열을 골라서 돌려주는 함수
+// CurrentDay(1/2/3)에 맞는 이벤트 배열을 골라주는 함수
 
 float UFF_FestivalStageSubsystem::GetLiveDurationForCurrentDay()
 {
@@ -123,6 +123,7 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
 	if (CurrentStage == EFF_FestivalStage::Live)
+		// Live 단계일 때 처리
 	{
 		const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
 		// 메인 공연 구간이면 배속을 강제로 1배속으로 고정
@@ -149,29 +150,33 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		// Live 처리 끝났으면 여기서 함수 종료
 	}
 
-	// Setup/Promotion/MorningCheck/Closing/Report 처리
 	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
 	// 지금 단계에 맞는 시간 범위를 표에서 찾아옴
 
 	if (Range.MaxSeconds <= 0.f)
 	{
 		return;
-		// 이 단계에 대한 시간 데이터가 표에 없으면 아무것도 안 함
+		
 	}
 
 	ElapsedLiveSeconds += DeltaTime;
-	// 흐른 시간 누적 (이 단계들은 배속 적용 안 함, 항상 1배속)
+	// 흐른 시간 누적 ( 항상 1배속)
 
 	RemainingTime = Range.MaxSeconds - ElapsedLiveSeconds;
 	// 이 단계의 최대 시간 - 흐른 시간 = 남은 시간
 
 	if (RemainingTime <= 0.f)
 	{
-		if (CurrentDay == 3 && CurrentStage == EFF_FestivalStage::Report)
+		if (CurrentStage == EFF_FestivalStage::Report)
+			// 시간이 다 돼도 자동 전환 안 함
 		{
-			UE_LOG(LogTemp, Log, TEXT("축제 종료!"));
-			OnFestivalEnded.Broadcast();
-			// 3일차 리포트가 끝나면 다음 단계로 안 넘어가고 종료 신호만 방송
+			if (CurrentDay == 3 && !bFestivalEndedBroadcasted)
+				// 한 번만 알림 가도록 설정
+			{
+				bFestivalEndedBroadcasted = true;
+				UE_LOG(LogTemp, Log, TEXT("축제 종료!"));
+				OnFestivalEnded.Broadcast();
+			}
 		}
 		else
 		{
