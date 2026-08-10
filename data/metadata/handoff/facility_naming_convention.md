@@ -23,7 +23,10 @@
 
 ## 2. 소분류 토큰 표
 
-코드의 `GetCategoryToKnownMinorTokens()`(`FF_ZoneSystemBridge.cpp`)와 **1:1로 유지해야 한다.** 노션에서 토큰이 추가되면 그 표도 같이 고쳐야 하고, 안 고치면 새 토큰이 "규칙 위반"으로 경고가 뜬다.
+코드의 `UFF_FacilityNamingLibrary::GetKnownMinorTokens()`
+(`Source/FestaFiesta/Private/Building/FF_FacilityNamingLibrary.cpp`)와 **1:1로 유지해야 한다.**
+이 공용 표를 건축 카탈로그와 Utility AI Bridge가 함께 사용한다. 노션에서 토큰이 추가되면
+공용 표도 같이 고쳐야 하고, 안 고치면 새 토큰이 카탈로그에서 제외되며 "규칙 위반" 경고가 뜬다.
 
 | 대분류 | 소분류 | 의미 |
 |---|---|---|
