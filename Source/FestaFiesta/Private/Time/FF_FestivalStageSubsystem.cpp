@@ -9,11 +9,9 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
 
-	if (NewStage == EFF_FestivalStage::Live)
-	{
 		ElapsedLiveSeconds = 0.f;
 		// 날마다 길이가 달라, 시계를 0으로 리셋함
-	}
+	
 
 	UE_LOG(LogTemp, Log, TEXT("[Stage] %s -> %s"),
 		*UEnum::GetValueAsString(PreviousStage),
@@ -308,4 +306,46 @@ void UFF_FestivalStageSubsystem::SkipCurrentStage()
 	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
 	RequestTransition(Range.NextStage);
 	// 스킵 가능하면 시간 안 기다리고 바로 다음 단계로
+}
+
+
+
+FText UFF_FestivalStageSubsystem::GetCurrentStageDisplayName() const
+{
+	UEnum* EnumPtr = StaticEnum<EFF_FestivalStage>();
+	if (EnumPtr)
+	{
+		return EnumPtr->GetDisplayNameTextByValue((int64)CurrentStage);
+	}
+	return FText::FromString(TEXT("알 수 없음"));
+}
+// enum에 붙여둔 UMETA(DisplayName)을 그대로 가져와서 반환
+
+FString UFF_FestivalStageSubsystem::GetCurrentLiveClockString() const
+{
+	const int32 StartHour = 17;
+	// Live 시작 시각(오후 5시). todo: 나중에 표로 빼기
+
+	const int32 TotalMinutes = StartHour * 60 + FMath::FloorToInt(ElapsedLiveSeconds);
+	const int32 Hour = (TotalMinutes / 60) % 24;
+	const int32 Minute = TotalMinutes % 60;
+
+	return FString::Printf(TEXT("%02d:%02d"), Hour, Minute);
+}
+// ElapsedLiveSeconds(경과 시간)를 그대로 "게임 속 분"으로 취급해서
+// 17:00에 더한 뒤 시:분 형식 문자열로 변환
+
+bool UFF_FestivalStageSubsystem::IsLiveStage() const
+{
+	return CurrentStage == EFF_FestivalStage::Live;
+}
+
+bool UFF_FestivalStageSubsystem::IsReportStage() const
+{
+	return CurrentStage == EFF_FestivalStage::Report;
+}
+
+bool UFF_FestivalStageSubsystem::IsFinalDay() const
+{
+	return CurrentDay == 3;
 }
