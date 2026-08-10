@@ -122,31 +122,62 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
-	if (CurrentStage != EFF_FestivalStage::Live)
+	if (CurrentStage == EFF_FestivalStage::Live)
+	{
+		const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
+		// 메인 공연 구간이면 배속을 강제로 1배속으로 고정
+
+		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
+		// 흐른 시간을 누적하는 방식
+
+		RemainingTime = GetLiveDurationForCurrentDay() - ElapsedLiveSeconds;
+		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산
+
+		const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
+		if (CurrentSeconds != LastBroadcastSeconds)
+		{
+			LastBroadcastSeconds = CurrentSeconds;
+			OnRemainingSecondsChanged.Broadcast(CurrentSeconds);
+		}
+		// 정수 초가 바뀌었을 때만 알림 보냄
+
+		if (RemainingTime <= 0.f)
+		{
+			HandleLiveEnd();
+		}
+		return;
+		// Live 처리 끝났으면 여기서 함수 종료
+	}
+
+	// Setup/Promotion/MorningCheck/Closing/Report 처리
+	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
+	// 지금 단계에 맞는 시간 범위를 표에서 찾아옴
+
+	if (Range.MaxSeconds <= 0.f)
 	{
 		return;
-		// Live 아닐 땐 시간 안 흐르게 함
+		// 이 단계에 대한 시간 데이터가 표에 없으면 아무것도 안 함
 	}
 
-	const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
-	// 메인 공연 구간이면 배속을 강제로 1배속으로 고정
+	ElapsedLiveSeconds += DeltaTime;
+	// 흐른 시간 누적 (이 단계들은 배속 적용 안 함, 항상 1배속)
 
-	ElapsedLiveSeconds += DeltaTime * EffectiveScale;
-	// 흐른 시간을 누적하는 방식
-
-	RemainingTime = GetLiveDurationForCurrentDay() - ElapsedLiveSeconds;
-	//오늘 총 길이 - 흐른 시간 =  남은 시간을 매번 다시 계산
-
-	const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
-	if (CurrentSeconds != LastBroadcastSeconds)
-	{
-		LastBroadcastSeconds = CurrentSeconds;
-		OnRemainingSecondsChanged.Broadcast(CurrentSeconds);
-	}
+	RemainingTime = Range.MaxSeconds - ElapsedLiveSeconds;
+	// 이 단계의 최대 시간 - 흐른 시간 = 남은 시간
 
 	if (RemainingTime <= 0.f)
 	{
-		HandleLiveEnd();
+		if (CurrentDay == 3 && CurrentStage == EFF_FestivalStage::Report)
+		{
+			UE_LOG(LogTemp, Log, TEXT("축제 종료!"));
+			OnFestivalEnded.Broadcast();
+			// 3일차 리포트가 끝나면 다음 단계로 안 넘어가고 종료 신호만 방송
+		}
+		else
+		{
+			RequestTransition(Range.NextStage);
+			// 그 외에는 표에 적힌 다음 단계로 자동 전환
+		}
 	}
 }
 
@@ -224,4 +255,35 @@ void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	{
 		UE_LOG(LogTemp, Warning, TEXT("DaySequenceTable 로드 실패! 경로를 확인하세요."));
 	}
+}
+
+FFF_PhaseTimeRange UFF_FestivalStageSubsystem::GetPhaseTimeRange(EFF_FestivalStage Stage)
+{
+	if (DaySequenceTable)
+		// 표가 실제로 연결되어 있는지 확인
+	{
+		TArray<FFF_PhaseTimeRange*> AllRows;
+		// 표의 모든 행을 담을 임시 배열
+		DaySequenceTable->GetAllRows<FFF_PhaseTimeRange>(TEXT("GetPhaseTimeRange"), AllRows);
+		// 표에 있는 모든 행을 가져옴
+		for (const FFF_PhaseTimeRange* Row : AllRows)
+		{
+			if (Row && Row->Day == CurrentDay && Row->Stage == Stage)
+				// 오늘 날짜 + 찾는 Stage가 일치하면
+			{
+				return *Row;
+				// 그 행을 그대로 반환
+			}
+		}
+	}
+	return FFF_PhaseTimeRange();
+	// 못 찾으면 빈 기본값 반환
+}
+
+bool UFF_FestivalStageSubsystem::IsCurrentStageSkippable()
+{
+	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
+	// 지금 Stage의 시간 정보를 가져와서
+	return Range.bSkippable;
+	// 그 안의 스킵 가능 여부만 꺼내서 반환
 }
