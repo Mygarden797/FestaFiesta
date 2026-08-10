@@ -56,6 +56,8 @@ public:
 	 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Catalog")
 	TArray<FFF_BuildCatalogEntry> GetEntries() const { return Entries; }
+	// 네이티브 UI 소유자가 즉시 복사할 때 중간 배열 복사본을 만들지 않는 읽기 전용 뷰다.
+	const TArray<FFF_BuildCatalogEntry>& GetEntriesView() const { return Entries; }
 
 	// 같은 항목들을 `대분류 > 소분류 > 항목`으로 묶어 메뉴에서 바로 순회할 수 있게 한 스냅샷입니다. 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Catalog")

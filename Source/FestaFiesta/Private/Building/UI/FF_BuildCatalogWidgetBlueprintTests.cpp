@@ -23,6 +23,8 @@
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Engine/Texture2D.h"
+#include "Input/Events.h"
+#include "InputCoreTypes.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/PackageName.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
@@ -398,8 +400,33 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 		{
 			// TakeWidget이 RebuildWidget을 실행한다. 생성된 WBP RootWidget이 있다면 네이티브 Slate 폴백이 아니라
 			// 디자이너 WidgetTree 경로를 선택해야 하므로 진단 API로 이를 명시적으로 검증한다.
-			Screen->TakeWidget();
+			// Keep the Slate wrapper alive while exercising runtime bindings. Dropping
+			// this reference immediately invokes NativeDestruct and would turn the
+			// interaction checks below into tests of a detached widget tree.
+			const TSharedRef<SWidget> ScreenSlateWidget = Screen->TakeWidget();
 			TestTrue(TEXT("Generated screen uses its Designer WidgetTree"), Screen->IsUsingDesignerWidgetTree());
+
+			bool bBuildModeKeyRequested = false;
+			const FDelegateHandle BuildModeKeyHandle = Screen->OnBuildModeKeyRequested.AddLambda(
+				[&bBuildModeKeyRequested]() { bBuildModeKeyRequested = true; });
+			const FKeyEvent BuildModeKeyEvent(
+				EKeys::B, FModifierKeysState(), 0, false, 0, 0);
+			const FReply BuildModeKeyReply = Screen->NativeOnPreviewKeyDown(
+				FGeometry(), BuildModeKeyEvent);
+			TestTrue(TEXT("Focused catalog handles B"), BuildModeKeyReply.IsEventHandled());
+			TestTrue(TEXT("Focused catalog requests BuildMode on B"), bBuildModeKeyRequested);
+			Screen->OnBuildModeKeyRequested.Remove(BuildModeKeyHandle);
+
+			bool bExitBuildModeKeyRequested = false;
+			const FDelegateHandle ExitBuildModeKeyHandle = Screen->OnExitBuildModeKeyRequested.AddLambda(
+				[&bExitBuildModeKeyRequested]() { bExitBuildModeKeyRequested = true; });
+			const FKeyEvent ExitBuildModeKeyEvent(
+				EKeys::Escape, FModifierKeysState(), 0, false, 0, 0);
+			const FReply ExitBuildModeKeyReply = Screen->NativeOnPreviewKeyDown(
+				FGeometry(), ExitBuildModeKeyEvent);
+			TestTrue(TEXT("Focused catalog handles Escape"), ExitBuildModeKeyReply.IsEventHandled());
+			TestTrue(TEXT("Focused catalog requests session exit on Escape"), bExitBuildModeKeyRequested);
+			Screen->OnExitBuildModeKeyRequested.Remove(ExitBuildModeKeyHandle);
 
 			const TCHAR* TopButtonNames[] = {
 				TEXT("BTN_BuildTab"),

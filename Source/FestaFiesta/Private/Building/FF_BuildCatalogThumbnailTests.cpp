@@ -9,9 +9,11 @@
 #include "Building/UI/FF_BuildFacilityCard.h"
 #include "Components/Image.h"
 #include "Engine/AssetManager.h"
+#include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/StrongObjectPtr.h"
 #include "UObject/UnrealType.h"
 
 namespace
@@ -159,9 +161,18 @@ bool FFF_BuildCatalogThumbnailSessionLifetimeTest::RunTest(const FString& Parame
 {
 	(void)Parameters;
 
-	UFF_BuildCatalogSubsystem* Catalog = NewObject<UFF_BuildCatalogSubsystem>();
-	TestNotNull(TEXT("A transient build catalog subsystem can be created"), Catalog);
-	if (!Catalog)
+	// GameInstanceSubsystem classes require a UGameInstance Outer. Keep both fixture objects rooted for the
+	// whole assertion sequence so an incidental automation GC cannot invalidate the isolated subsystem.
+	TStrongObjectPtr<UGameInstance> TestGameInstance(NewObject<UGameInstance>());
+	TestNotNull(TEXT("A transient game instance can own the catalog fixture"), TestGameInstance.Get());
+	if (!TestGameInstance.IsValid())
+	{
+		return false;
+	}
+	TStrongObjectPtr<UFF_BuildCatalogSubsystem> Catalog(
+		NewObject<UFF_BuildCatalogSubsystem>(TestGameInstance.Get()));
+	TestNotNull(TEXT("A transient build catalog subsystem can be created"), Catalog.Get());
+	if (!Catalog.IsValid())
 	{
 		return false;
 	}

@@ -19,8 +19,11 @@ class UHorizontalBox;
 class UTexture2D;
 class UVerticalBox;
 class UWidgetSwitcher;
+#if WITH_DEV_AUTOMATION_TESTS
+class FFF_BuildCatalogWidgetBlueprintContractTest;
+#endif
 
-// B 키로 진입하는 건설 모드에서, 배치 가능한 시설을 대분류/소분류별로 보여 주는 화면이다.
+// 건축 모드에서 B 키로 펼치며, 배치 가능한 시설을 대분류/소분류별로 보여 주는 화면이다.
  
 // 실제 게임 화면은 WBP_FF_BuildCatalogScreen의 WidgetTree를 사용한다. 이 네이티브 클래스는
 // 카탈로그 데이터를 WBP의 BindWidget 필드에 연결하고, 실행 중 생성한 분류 버튼과 시설 카드의
@@ -41,11 +44,17 @@ public:
 
 	// 시설 카드 선택 결과를 시설 정의 ID로 전달한다. 실제 배치 모드 전환은 화면 소유자가 결정한다. 
 	DECLARE_MULTICAST_DELEGATE_OneParam(FOnFacilitySelected, FName  FacilityDefinitionId );
-	// 닫기 버튼/입력에 대한 의도만 전달하며, 화면 제거 자체는 화면 스택 소유자가 수행한다. 
+	// 닫기 버튼에 대한 의도만 전달하며, 화면 제거 자체는 화면 스택 소유자가 수행한다.
 	DECLARE_MULTICAST_DELEGATE(FOnCloseRequested);
+	// 포커스된 카탈로그가 B 키를 먼저 받은 경우 건축 모드 복귀 의도를 별도로 전달한다.
+	DECLARE_MULTICAST_DELEGATE(FOnBuildModeKeyRequested);
+	// 포커스된 카탈로그가 Esc를 먼저 받은 경우 건축 세션 전체 종료 의도를 전달한다.
+	DECLARE_MULTICAST_DELEGATE(FOnExitBuildModeKeyRequested);
 
 	FOnFacilitySelected OnFacilitySelected;
 	FOnCloseRequested OnCloseRequested;
+	FOnBuildModeKeyRequested OnBuildModeKeyRequested;
+	FOnExitBuildModeKeyRequested OnExitBuildModeKeyRequested;
 
 	//화면에 표시할 스냅샷을 교체하고, 최초로 항목이 존재하는 대분류를 선택한 뒤 UI를 재구성한다.
 	// 호출 시점이 NativeConstruct보다 빠른 경우도 허용하므로 사용 가능한 BindWidget이 있으면 먼저 초기화한다.
@@ -78,6 +87,7 @@ protected:
 	virtual void NativeDestruct() override;
 	// Slate 폴백의 공유 포인터만 해제하며 UObject 기반 WBP 위젯 수명주기와 섞지 않는다. 
 	virtual void ReleaseSlateResources(bool bReleaseChildren) override;
+	// 카탈로그가 키보드 포커스를 가져도 B 키를 건축 모드 복귀 요청으로 변환한다.
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 	// Slate 폴백에서는 첫 탭으로 키보드/게임패드 포커스를 직접 전달한다. 
 	virtual FReply NativeOnFocusReceived(const FGeometry& InGeometry, const FFocusEvent& InFocusEvent) override;
@@ -85,6 +95,9 @@ protected:
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_BuildCatalogWidgetBlueprintContractTest;
+#endif
 	// 상단 탭 상태. Skin은 현재 안내 패널을 표시하고 Build만 카탈로그를 채운다. 
 	enum class ETopTab : uint8
 	{

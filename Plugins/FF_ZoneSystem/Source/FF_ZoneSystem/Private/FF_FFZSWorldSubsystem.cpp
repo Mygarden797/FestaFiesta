@@ -818,6 +818,18 @@ AFFZSGameplayZone* UFFZSWorldSubsystem::FindZone(const FName ZoneId) const
     return nullptr;
 }
 
+bool UFFZSWorldSubsystem::HasRegisteredZones() const
+{
+    for (const TPair<FName, TWeakObjectPtr<AFFZSGameplayZone>>& Pair : ZonesById)
+    {
+        if (Pair.Value.IsValid())
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstanceId) const
 {
     if (const TWeakObjectPtr<AFFZSFacilityActor>* Found = FacilitiesById.Find(FacilityInstanceId))
@@ -2634,6 +2646,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             Facility->Destroy();
         }
     }
+    OnWorldSnapshotRestored.Broadcast();
     return true;
 }
 
