@@ -34,6 +34,7 @@
 | Solar System Scope Planet Textures | 지구·구름·노멀·스페큘러 텍스처 | `confirmed` | CC BY 4.0 | 필요 |
 | Pretendard | 한국어·공통 UI 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 | Michroma | 영문 브랜드 워드마크 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
+| Dongle | 영문 브랜드 워드마크 폰트 비교 후보 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 
 ---
 
@@ -163,6 +164,36 @@
 ### 임포트 시 채울 항목
 
 - Unreal Font Asset 경로: `/Game/FestaFiesta/UI/Fonts/` 예정
+- 라이선스 동봉 경로: `to_verify`
+
+---
+
+## Dongle
+
+- 상태: `confirmed` — Google Fonts 공식 저장소의 Light·Regular·Bold 원본과 라이선스를 확보함. HTML 비교 프로토타입에 사용
+- 제작자·권리자: The Dongle Project Authors
+- 원본: https://github.com/google/fonts/tree/main/ofl/dongle
+- 라이선스: SIL Open Font License 1.1
+- 라이선스 원문: https://github.com/google/fonts/blob/main/ofl/dongle/OFL.txt
+- 저작권 고지: Copyright 2021 The Dongle Project Authors
+- 확인일: 2026-08-07
+- 다운로드 날짜: 2026-08-07
+- 원본 보관 경로: `SourceArt/ThirdParty/GoogleFonts/Dongle/`
+- 사용 파일:
+  - `Dongle-Light.ttf` — SHA-256 `BB04E03DBE44FB0C619434F31565E62B5BAC67229D5ED72EEAC69C2E74E9A45C`
+  - `Dongle-Regular.ttf` — SHA-256 `2966E7A9D312A868E2B5477BF9A3E59B8CE16BEB76E7E52305AB5897D1CE9741`
+  - `Dongle-Bold.ttf` — SHA-256 `944C498C0D1A1832AB36F173B1B3AA5AE77B2A914E00C4D79E05338FAE36472D`
+- 보관 라이선스: `OFL.txt` — SHA-256 `F9E59049E824264BFFD626D0901CFCAAC9D5BA756988B904D3E3E0E233493607`
+- 용도: HTML 프로토타입에서 `FESTA FIESTA` 영문 브랜드 워드마크 비교 후 Unreal 적용 여부 결정
+- 수정 내역: 원본 파일 수정 없음
+
+권장 크레딧 문구:
+
+> Dongle — Copyright 2021 The Dongle Project Authors. Licensed under the SIL Open Font License 1.1.
+
+### 임포트 시 채울 항목
+
+- Unreal Font Asset 경로: 실제 임포트 시 기록
 - 라이선스 동봉 경로: `to_verify`
 
 ---
