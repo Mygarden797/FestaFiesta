@@ -323,6 +323,7 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
     Result.FacilityInstanceId = FacilityInstanceId;
     Result.FacilityDefinitionId = FacilitySpec.FacilityDefinitionId;
     Result.ZoneId = ZoneId;
+    Result.WorldLocation = GetActorLocation();
     Result.Category = FacilitySpec.Category;
     Result.State = FacilityState;
     Result.QueueState = QueueComponent->GetQueueState();

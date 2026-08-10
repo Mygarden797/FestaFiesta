@@ -1065,6 +1065,7 @@ Facility Read Model:
 - QueueState
 - WaitingCount, ActiveServiceCount
 - AverageCompletedWaitSeconds
+- WorldLocation: Facility Actor의 대표 월드 지점(cm)
 
 Read Model 수정은 권위 상태에 영향을 주지 않는다. Queue 참가·Population 갱신처럼 Revision을 올리지 않는
 변화도 Read Model 값에는 나타날 수 있으므로, UI 갱신을 Revision 변화에만 의존해서는 안 된다.

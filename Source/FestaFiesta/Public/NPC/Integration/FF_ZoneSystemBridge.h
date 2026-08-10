@@ -27,14 +27,13 @@
  *   - `EntryExitAnchors`     — Zone 로컬 cm 출입 기준점 (거리 행렬의 시작·끝점)
  *   - `AreaSquareMeters`     — `GetBoundaryAreaSquareMeters()`의 실제 경계 면적(㎡)
  *
- * 이 파일의 `BuildCandidates` 조립과 로컬 앵커의 월드 좌표 변환은 별도 구현 대상이다.
+ * 현재 후보 거리는 시설 대표점까지의 직선거리이며, 앵커·NavMesh 기반 실제 보행거리 전환은 별도 과제다.
  *
  *
- * ### 미해결 — 시설 월드 위치가 ReadModel에 없다 (한광훈 확인 필요)
+ * ### 시설 거리 입력 계약
  *
- * 임시 대응: `BuildCandidates`가 `FacilityWorldLocations` 맵을 파라미터로 받는다. 
- *			  비어 있으면 거리를 0으로 두고(= 모든 후보가 같은 거리) Verbose 로그를 남긴다.
- * 근본 해결: `FFFZSFacilityReadModel`에 위치를 노출해달라고 요청하고, 그때 이 파라미터를 없앤다.
+ * `FFFZSFacilityReadModel::WorldLocation`은 시설 Actor의 대표 월드 지점(cm)이다.
+ * `BuildCandidates`는 Party 월드 위치와의 직선거리를 계산하고 이 파일에서만 m로 환산한다.
  */
 
 
@@ -86,25 +85,14 @@ public:
 	 *
 	 * @param ReadModel              ZoneSystem 스냅샷
 	 * @param CurrentZoneId          이 Party가 지금 있는 Zone. ReadModel에 없으면 빈 배열 + Warning
-	 * @param PartyWorldLocation     거리 계산 기준점. FacilityWorldLocations가 비면 쓰이지 않는다
-	 * @param FacilityWorldLocations FacilityInstanceId → 월드 위치(cm). 위 클래스 주석의 임시 대응.
-	 *                               비어 있으면 모든 DistanceMeters가 0이 된다(= 거리 항이 무력화)
-	 * @param MaxCandidates          후보 상한. 0 이하면 상한 없음
+	 * @param PartyWorldLocation 거리 계산 기준이 되는 Party 월드 위치(cm)
+	 * @param MaxCandidates      후보 상한. 0 이하면 상한 없음
 	 */
 	static TArray<FFF_DestinationCandidate> BuildCandidates(
 		const FFFZSReadModel& ReadModel,
 		FName CurrentZoneId,
 		const FVector& PartyWorldLocation,
-		const TMap<FGuid, FVector>& FacilityWorldLocations,
 		int32 MaxCandidates = DefaultMaxCandidates);
-
-	/**
-	 * 위치 정보 없이 부르는 편의 오버로드. DistanceMeters는 전부 0이 된다.
-	 * 시설 위치가 ReadModel에 노출되기 전까지 테스트·프로토타입에서 쓴다.
-	 */
-	static TArray<FFF_DestinationCandidate> BuildCandidates(
-		const FFFZSReadModel& ReadModel,
-		FName CurrentZoneId);
 
 	/**
 	 * 시설 카테고리 → preference_vector 키.
