@@ -9,6 +9,9 @@
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
+// !! class가 아니라 struct다 !! (Core/Public/HAL/IConsoleManager.h)
+// class로 쓰면 C4099가 나고, 이 프로젝트는 경고를 에러로 취급한다.
+struct IConsoleCommand;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
@@ -166,6 +169,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Debug")
 	void Debug_SetEconomy(int32 InGold, int32 InTotalRevenue, int32 InTodayRevenue);
 
+	/** 현재 값 전부를 로그에 찍는다. 위젯이 없거나 화면을 못 볼 때 확인용. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Debug")
+	void Debug_DumpToLog() const;
+
 	// FTickableGameObject
 	virtual void Tick(float DeltaTime) override;
 	virtual bool IsTickable() const override { return !IsTemplate(); }
@@ -234,6 +241,31 @@ private:
 	/** Stage 시스템을 못 찾았을 때 재시도한 횟수. 상한을 두고 로그를 남긴다. */
 	int32 StageBindRetryCount = 0;
 	static constexpr int32 MaxStageBindRetry = 100;
+
+#if !UE_BUILD_SHIPPING
+	/**
+	 * 디버그 콘솔 명령을 등록한다.
+	 *
+	 * === 왜 콘솔인가 ===
+	 * 화면이 `ECommonInputMode::Menu`면 **게임 입력이 차단**되어, 레벨 블루프린트의 키 이벤트로는
+	 * `Debug_Set*`을 부를 수 없다 (2026-08-07에 실제로 막혔다). 콘솔은 입력 모드와 무관하게 동작한다.
+	 *
+	 * === UFUNCTION(Exec)을 쓰지 않은 이유 ===
+	 * 엔진의 `UGameInstance`에 `ProcessConsoleExec`이 없어서 **콘솔이 서브시스템의 Exec 함수를
+	 * 찾아가지 않는다.** 그래서 `IConsoleManager`에 직접 등록한다.
+	 *
+	 * === 해제를 반드시 하는 이유 ===
+	 * PIE는 한 에디터 세션에서 여러 번 돌아간다. 해제하지 않으면 두 번째 PIE에서 같은 이름 등록이
+	 * 실패하고, 파괴된 this를 가리키는 델리게이트가 콘솔에 남는다.
+	 * 람다는 `CreateWeakLambda`로 묶어 두 번째 방어선을 만든다.
+	 */
+	void RegisterDebugConsoleCommands();
+	void UnregisterDebugConsoleCommands();
+
+	IConsoleCommand* SetMetricsConsoleCommand = nullptr;
+	IConsoleCommand* SetEconomyConsoleCommand = nullptr;
+	IConsoleCommand* DumpMetricsConsoleCommand = nullptr;
+#endif
 
 public:
 	/** 0~100 지표의 상한. 위젯이 게이지 비율을 계산할 때 이 값을 쓴다. 하드코딩하지 않게 하기 위함. */
