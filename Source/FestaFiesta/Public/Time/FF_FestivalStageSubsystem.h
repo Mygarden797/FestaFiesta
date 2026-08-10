@@ -146,6 +146,9 @@ public:
 	void AdvanceToNextDay();
 	//report에서 다음날로 누르면 호출
 
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	void SkipCurrentStage();
+	//  스킵 가능한 단계면 즉시 다음 단계로 넘기는 함수
 
 	virtual void Tick(float DeltaTime) override;
 	// 매 프레임 자동으로 호출되는 함수

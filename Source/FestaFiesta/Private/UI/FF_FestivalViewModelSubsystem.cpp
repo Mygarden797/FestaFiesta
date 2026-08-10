@@ -2,6 +2,7 @@
 
 #include "UI/FF_FestivalViewModelSubsystem.h"
 
+#include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/FF_UILog.h"
 
@@ -12,6 +13,10 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	// 같은 GameInstance 안의 서브시스템이라 순서가 보장되지 않는다.
 	// 지금 없으면 Tick에서 다시 시도한다.
 	TryBindStageSubsystem();
+
+#if !UE_BUILD_SHIPPING
+	RegisterDebugConsoleCommands();
+#endif
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -23,8 +28,92 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	}
 	CachedStageSubsystem = nullptr;
 
+#if !UE_BUILD_SHIPPING
+	UnregisterDebugConsoleCommands();
+#endif
+
 	Super::Deinitialize();
 }
+
+#if !UE_BUILD_SHIPPING
+void UFF_FestivalViewModelSubsystem::RegisterDebugConsoleCommands()
+{
+	IConsoleManager& ConsoleManager = IConsoleManager::Get();
+
+	// 중복 등록 방어. 어떤 이유로 해제가 안 됐어도 두 번째 PIE가 조용히 망가지지 않게 한다.
+	UnregisterDebugConsoleCommands();
+
+	SetMetricsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+		TEXT("FF.SetMetrics"),
+		TEXT("0~100 지표를 설정한다. 사용법: FF.SetMetrics <SimSatisfaction> <ScoreSatisfaction> <Safety>"),
+		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+		{
+			if (Args.Num() < 3)
+			{
+				UE_LOG(LogFestaFiestaUI, Warning,
+					TEXT("FF.SetMetrics <Sim> <Score> <Safety> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
+				return;
+			}
+
+			Debug_SetMetrics(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
+			Debug_DumpToLog();
+		}),
+		ECVF_Cheat);
+
+	SetEconomyConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+		TEXT("FF.SetEconomy"),
+		TEXT("경제 값을 설정한다. 사용법: FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue>"),
+		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+		{
+			if (Args.Num() < 3)
+			{
+				UE_LOG(LogFestaFiestaUI, Warning,
+					TEXT("FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
+				return;
+			}
+
+			Debug_SetEconomy(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
+			Debug_DumpToLog();
+		}),
+		ECVF_Cheat);
+
+	DumpMetricsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+		TEXT("FF.DumpMetrics"),
+		TEXT("현재 지표·경제·Stage 값을 로그에 찍는다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			Debug_DumpToLog();
+		}),
+		ECVF_Cheat);
+
+	UE_LOG(LogFestaFiestaUI, Log,
+		TEXT("[ViewModel] 디버그 콘솔 명령 등록 완료 — FF.SetMetrics / FF.SetEconomy / FF.DumpMetrics"));
+}
+
+void UFF_FestivalViewModelSubsystem::UnregisterDebugConsoleCommands()
+{
+	IConsoleManager& ConsoleManager = IConsoleManager::Get();
+
+	// 해제는 조건부, 정리(nullptr 대입)는 무조건.
+	if (SetMetricsConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(SetMetricsConsoleCommand);
+	}
+	SetMetricsConsoleCommand = nullptr;
+
+	if (SetEconomyConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(SetEconomyConsoleCommand);
+	}
+	SetEconomyConsoleCommand = nullptr;
+
+	if (DumpMetricsConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(DumpMetricsConsoleCommand);
+	}
+	DumpMetricsConsoleCommand = nullptr;
+}
+#endif
 
 UFF_FestivalStageSubsystem* UFF_FestivalViewModelSubsystem::GetStageSubsystem() const
 {
@@ -151,6 +240,18 @@ void UFF_FestivalViewModelSubsystem::Debug_SetEconomy(int32 InGold, int32 InTota
 	ApplyIntMetric(Gold, InGold, OnGoldChanged);
 	ApplyIntMetric(TotalRevenue, InTotalRevenue, OnTotalRevenueChanged);
 	ApplyIntMetric(TodayRevenue, InTodayRevenue, OnTodayRevenueChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::Debug_DumpToLog() const
+{
+	// 화면을 못 볼 때 값을 확인하는 유일한 경로다. 단위를 같이 적어 둔다.
+	UE_LOG(LogFestaFiestaUI, Log,
+		TEXT("[ViewModel] SimSat=%d/%d ScoreSat=%d/%d Safety=%d/%d | Gold=%d TotalRev=%d TodayRev=%d | Stage=%s Day=%d 남은=%.1f초"),
+		SimSatisfaction, MetricMax,
+		ScoreSatisfaction, MetricMax,
+		Safety, MetricMax,
+		Gold, TotalRevenue, TodayRevenue,
+		*GetCurrentStageDisplayText().ToString(), GetCurrentDay(), GetRemainingSeconds());
 }
 
 void UFF_FestivalViewModelSubsystem::PollMetricsFromSources()
