@@ -15,7 +15,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStageChanged, EFF_FestivalStage,
 // 초가 바뀔때 쓰는 딜리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRemainingSecondsChanged, int32, NewSeconds);
 
-
 // 축제가 완전히 끝났을 때 쓰는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalEnded);
 
@@ -193,5 +192,9 @@ private:
 	TArray<FFF_LiveTriggerEvent> CachedTodayEvents;
 
 	int32 LastBroadcastSeconds = -1;
+
+	bool bFestivalEndedBroadcasted = false;
+	// Day3 축제 종료 알림을 한 번만 보냄
+
 
 };
