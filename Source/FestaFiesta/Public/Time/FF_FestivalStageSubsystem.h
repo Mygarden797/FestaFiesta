@@ -33,7 +33,49 @@ struct FFF_LiveTriggerEvent : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	bool bIsMainProgramLockStart = false;
-	// "공연 시작"이면 true — 배속 잠금 구간을 계산하는 기준점이
+	// "공연 시작"이면 true — 배속 잠금 구간을 계산하는 기준점
+};
+
+USTRUCT(BlueprintType)
+// 배속 설정
+struct FFF_TimeSettingRow : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float TimeScaleValue = 1.f;
+	// 배속 후보값 (1/2/4 )
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float MainProgramLockLeadSeconds = 10.f;
+	// 메인 공연 몇 초 전부터 배속을 잠글지
+};
+
+USTRUCT(BlueprintType)
+// 셋업/모닝체크 등 단계별 시간 범위
+struct FFF_PhaseTimeRange : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	int32 Day = 1;
+	// 몇 일차 데이터인지 판단
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	EFF_FestivalStage Stage = EFF_FestivalStage::Setup;
+	// 어느 Stage에 대한 시간 범위인지
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float MinSeconds = 0.f;
+	// 이 단계 최소 진행 시간
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float MaxSeconds = 0.f;
+	// 이 단계 최대 제한 시간
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	bool bSkippable = false;
+	// 스킵 가능한 단계인지
 };
 
 UCLASS()
@@ -117,6 +159,15 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Schedule")
 	TObjectPtr<UDataTable> ProgramScheduleTable;
+	// 날짜별 공연 이벤트 시간표
+
+	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Config")
+	TObjectPtr<UDataTable> TimeSettingsTable;
+	// 배속·락 리드타임 설정 테이블
+
+	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Config")
+	TObjectPtr<UDataTable> DaySequenceTable;
+	// 셋업/모닝체크 등 단계별 시간 범위 담은 테이블
 
 	UPROPERTY()
 	TArray<FFF_LiveTriggerEvent> CachedTodayEvents;

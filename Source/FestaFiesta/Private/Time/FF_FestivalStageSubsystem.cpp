@@ -3,24 +3,6 @@
 
 #include "Time/FF_FestivalStageSubsystem.h"
 
-void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
-{
-	Super::Initialize(Collection);
-
-	ProgramScheduleTable = LoadObject<UDataTable>(
-		nullptr,
-		TEXT("/Game/FestaFiesta/Data/DT_ProgramSchedule.DT_ProgramSchedule")
-	);
-
-	if (ProgramScheduleTable)
-	{
-		UE_LOG(LogTemp, Log, TEXT("ProgramScheduleTable 로드 성공!"));
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("ProgramScheduleTable 로드 실패! 경로를 확인하세요."));
-	}
-}
 
 void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 {
@@ -138,7 +120,6 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 	if (RemainingTime <= 0.f)
 	{
 		HandleLiveEnd();
-		//함수 이름이 HandleSlotEnd에서 HandleLiveEnd로 바뀜
 	}
 }
 
@@ -166,4 +147,54 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);
+}
+
+void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	ProgramScheduleTable = LoadObject<UDataTable>(
+		nullptr,
+		TEXT("/Game/FestaFiesta/Data/Time/DT_ProgramSchedule.DT_ProgramSchedule")
+	);
+	// 날짜별 공연 이벤트 시간표 불러오기
+
+	if (ProgramScheduleTable)
+	{
+		UE_LOG(LogTemp, Log, TEXT("ProgramScheduleTable 로드 성공!"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("ProgramScheduleTable 로드 실패! 경로를 확인하세요."));
+	}
+
+	// 배속 설정 테이블 불러오기
+	TimeSettingsTable = LoadObject<UDataTable>(
+		nullptr,
+		TEXT("/Game/FestaFiesta/Data/Time/DT_TimeSettings.DT_TimeSettings")
+	);
+
+	if (TimeSettingsTable)
+	{
+		UE_LOG(LogTemp, Log, TEXT("TimeSettingsTable 로드 성공!"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TimeSettingsTable 로드 실패! 경로를 확인하세요."));
+	}
+
+	// 단계별 시간 범위 테이블 불러오기
+	DaySequenceTable = LoadObject<UDataTable>(
+		nullptr,
+		TEXT("/Game/FestaFiesta/Data/Time/DT_DaySequence.DT_DaySequence")
+	);
+
+	if (DaySequenceTable)
+	{
+		UE_LOG(LogTemp, Log, TEXT("DaySequenceTable 로드 성공!"));
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("DaySequenceTable 로드 실패! 경로를 확인하세요."));
+	}
 }
