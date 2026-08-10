@@ -32,14 +32,24 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 	int32 StableAgentId,
 	int32 ChoiceRoundIndex,
 	const FFF_NeedState& CurrentNeeds,
-	int32 ConsecutiveNoChoiceCount)
+	int32 ConsecutiveNoChoiceCount,
+	float NoveltySeekingMultiplier)
 {
 	const float WeightAttraction = GetCoefficient(UtilityCoefficientTable, TEXT("weight_attraction"), 1.f);
 	const float LambdaAffinity = GetCoefficient(UtilityCoefficientTable, TEXT("lambda_affinity"), 0.6f);
 	const float WeightDistance = GetCoefficient(UtilityCoefficientTable, TEXT("weight_distance"), 0.8f);
 	const float WeightWait = GetCoefficient(UtilityCoefficientTable, TEXT("weight_wait"), 0.7f);
 	const float WeightDensity = GetCoefficient(UtilityCoefficientTable, TEXT("weight_density"), 0.5f);
-	const float WeightNeed = GetCoefficient(UtilityCoefficientTable, TEXT("weight_need"), 1.2f);
+	// 1.8 은 임의값이 아니다 — weight_attraction(1.0) + lambda_affinity(0.6) = 1.6 보다 크게 잡은
+	// 것이고, 그래야 한계 Need 가 "가장 매력적이고 취향에도 맞는 대안"을 이긴다.
+	// 이 기본값이 1.6 이하로 내려가면 그 부등식이 깨진다(NeedBeatsBestLikedAlternative 테스트가 잡는다).
+	// utility_coefficients_v0.csv 의 weight_need 와 반드시 같게 유지할 것.
+	const float WeightNeed = GetCoefficient(UtilityCoefficientTable, TEXT("weight_need"), 1.8f);
+	const float WeightRevisit = GetCoefficient(UtilityCoefficientTable, TEXT("weight_revisit"), 0.5f);
+	// 0 이하면 방문 잔상이 즉시 사라진다 = 신규성 선호 꺼짐. 나눗셈 보호도 겸한다.
+	const float RevisitMemoryMinutes = GetCoefficient(UtilityCoefficientTable, TEXT("revisit_memory_minutes"), 60.f);
+	// 음수 배수는 "가본 곳을 더 좋아한다"가 되어 의도와 반대다. 호출부 버그로 보고 0 으로 막는다.
+	const float SafeNoveltySeeking = FMath::Max(NoveltySeekingMultiplier, 0.f);
 	const float NoChoiceUtilityBase = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility"), 0.15f);
 	const float NoChoiceDecayPerRound = GetCoefficient(UtilityCoefficientTable, TEXT("no_choice_utility_decay_per_round"), 0.03f);
 	const float UtilityNoiseScale = FMath::Max(GetCoefficient(UtilityCoefficientTable, TEXT("utility_noise_scale"), 0.3f), 0.05f);
@@ -81,6 +91,20 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		// 배고픔을 푼 직후에는 Hunger가 0이 되어 같은 식음료 부스의 효용이 저절로 내려간다.
 		const float NeedUrgencyNorm = Candidate.NeedRelief.GetMaxUrgency(CurrentNeeds, NeedPriority);
 
+		// revisit 항: 최근에 가본 곳일수록 크고 시간이 지나면 0 으로 감쇠한다(선형).
+		//
+		// 감쇠형인 이유: 영구 페널티면 "제일 좋아하는 부스에 두 번은 안 간다"가 되어 오히려
+		// 부자연스럽다. 실제로는 마음에 든 곳을 다시 가기도 한다.
+		//
+		// MinutesSinceLastVisit 음수 = 안 가본 곳이고 그게 기본값이다. 0(방금 다녀옴)과 뜻이
+		// 완전히 다르므로 여기서 갈라준다 — FFF_VisitHistory 가 안 붙어 있으면 이 항 전체가 0 이다.
+		float RevisitPenaltyNorm = 0.f;
+		if (Candidate.MinutesSinceLastVisit >= 0.f && RevisitMemoryMinutes > KINDA_SMALL_NUMBER)
+		{
+			RevisitPenaltyNorm = FMath::Clamp(
+				1.f - (Candidate.MinutesSinceLastVisit / RevisitMemoryMinutes), 0.f, 1.f);
+		}
+
 		FFF_DestinationUtilityBreakdown Breakdown;
 		Breakdown.DestinationId = Candidate.DestinationId;
 		Breakdown.AttractionTerm = WeightAttraction * AttractionNorm;
@@ -89,8 +113,10 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		Breakdown.WaitCostTerm = -WeightWait * WaitNorm;
 		Breakdown.DensityCostTerm = -WeightDensity * DensityNorm;
 		Breakdown.NeedTerm = WeightNeed * NeedUrgencyNorm;
+		Breakdown.RevisitPenaltyTerm = -WeightRevisit * RevisitPenaltyNorm * SafeNoveltySeeking;
 		Breakdown.TotalUtility = Breakdown.AttractionTerm + Breakdown.PreferenceTerm + Breakdown.DistanceCostTerm
-			+ Breakdown.WaitCostTerm + Breakdown.DensityCostTerm + Breakdown.NeedTerm;
+			+ Breakdown.WaitCostTerm + Breakdown.DensityCostTerm + Breakdown.NeedTerm
+			+ Breakdown.RevisitPenaltyTerm;
 		Breakdowns.Add(Breakdown);
 	}
 
@@ -153,9 +179,10 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		Decision.bIsNoChoice, U, ConsecutiveNoChoiceCount, NoChoiceUtility);
 	for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
 	{
-		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Need=%.3f Total=%.3f Prob=%.3f"),
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Need=%.3f Revisit=%.3f Total=%.3f Prob=%.3f"),
 			B.DestinationId.IsNone() ? TEXT("no_choice") : *B.DestinationId.ToString(),
-			B.AttractionTerm, B.PreferenceTerm, B.DistanceCostTerm, B.WaitCostTerm, B.DensityCostTerm, B.NeedTerm, B.TotalUtility, B.ChoiceProbability);
+			B.AttractionTerm, B.PreferenceTerm, B.DistanceCostTerm, B.WaitCostTerm, B.DensityCostTerm,
+			B.NeedTerm, B.RevisitPenaltyTerm, B.TotalUtility, B.ChoiceProbability);
 	}
 
 	return Decision;

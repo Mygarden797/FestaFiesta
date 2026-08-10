@@ -102,6 +102,10 @@ FFF_ResolvedIndividualTraits FFF_IndividualVariationResolver::Resolve(
 	Out.ReevaluateIntervalMultiplier = ShapeWithRow(VariationTable, TEXT("reevaluate_interval_multiplier"),
 		ResolveUniformFraction(GlobalSimulationSeed, StableAgentId, TEXT("reevaluate_interval_multiplier"), SpawnGeneration), 1.f);
 
+	// leisureliness 와 상관을 걸지 않는다 — "느긋한 사람이 새로운 걸 더 찾는다"는 근거가 없다.
+	Out.NoveltySeekingMultiplier = ShapeWithRow(VariationTable, TEXT("novelty_seeking_multiplier"),
+		ResolveUniformFraction(GlobalSimulationSeed, StableAgentId, TEXT("novelty_seeking_multiplier"), SpawnGeneration), 1.f);
+
 	return Out;
 }
 

@@ -56,6 +56,17 @@ struct FFF_ResolvedIndividualTraits
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float ReevaluateIntervalMultiplier = 1.f;
 
+	/**
+	 * 새로운 곳을 얼마나 좋아하는가. Utility 식의 revisit_penalty 항에 곱한다(2026-08-10 추가).
+	 *
+	 * 1.0 보다 크면 이미 가본 곳을 더 피하고, 작으면 익숙한 곳을 다시 가는 데 거리낌이 없다.
+	 * 0 이면 방문 이력을 아예 신경 쓰지 않는다.
+	 *
+	 * 다른 multiplier 와 달리 **페널티에 곱한다** — 값이 커질수록 그 후보의 효용이 내려간다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
+	float NoveltySeekingMultiplier = 1.f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float LeisurelinessAxis = 0.5f;
 };

@@ -50,6 +50,16 @@ struct FFF_DestinationCandidate
 	// 이 시설이 해소할 수 있는 Need 성분. FFF_ZoneSystemBridge::GetNeedReliefFlags 결과를 그대로 넣는다.
 	UPROPERTY(BlueprintReadWrite, Category = "Destination")
 	FFF_NeedReliefFlags NeedRelief;
+
+	/**
+	 * 이 개체가 이곳을 마지막으로 방문한 뒤 지난 분(Live 경과분 기준).
+	 * **음수 = 안 가본 곳**이고 그게 기본값이다 — 0 은 "방금 다녀왔다"라서 뜻이 완전히 다르다.
+	 *
+	 * FFF_VisitHistory::ApplyToCandidates 가 채운다. 안 채우면 전부 "안 가본 곳"이 되어
+	 * revisit 항이 0 이 된다(= 신규성 선호가 꺼진 상태로 동작).
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Destination")
+	float MinutesSinceLastVisit = -1.f;
 };
 
 /**
@@ -104,6 +114,10 @@ struct FFF_DestinationUtilityBreakdown
 	UPROPERTY(BlueprintReadOnly, Category = "Debug")
 	float NeedTerm = 0.f;
 
+	// -weight_revisit * 방문 잔상 * novelty_seeking_multiplier. 안 가본 곳은 0
+	UPROPERTY(BlueprintReadOnly, Category = "Debug")
+	float RevisitPenaltyTerm = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Debug")
 	float TotalUtility = 0.f;
 
@@ -144,6 +158,10 @@ public:
 	 * @param ConsecutiveNoChoiceCount 직전까지 연속으로 no_choice가 나온 횟수. 이 값이 올라가면
 	 *                                 no_choice_utility가 no_choice_utility_decay_per_round만큼 깎인다.
 	 *                                 이게 없으면 "혼잡해서 배회 → 같은 후보 → 또 배회"가 영원히 반복된다.
+	 * @param NoveltySeekingMultiplier 신규성 선호 개체 변주(`FFF_ResolvedIndividualTraits`). revisit
+	 *                                 페널티에 곱한다. 1.0이 기본, 0이면 방문 이력을 신경 쓰지 않는다.
+	 *                                 후보의 `MinutesSinceLastVisit`이 안 채워져 있으면 이 값과 무관하게
+	 *                                 revisit 항이 0이다 — 둘 다 있어야 동작한다.
 	 */
 	static FFF_DestinationDecision Choose(
 		const TArray<FFF_DestinationCandidate>& Candidates,
@@ -153,7 +171,8 @@ public:
 		int32 StableAgentId,
 		int32 ChoiceRoundIndex,
 		const FFF_NeedState& CurrentNeeds = FFF_NeedState(),
-		int32 ConsecutiveNoChoiceCount = 0);
+		int32 ConsecutiveNoChoiceCount = 0,
+		float NoveltySeekingMultiplier = 1.f);
 
 	/**
 	 * no_choice가 뽑힌 뒤 실제로 어떤 행동을 할지 정한다. Choose()와 분리한 이유는 이 판정에

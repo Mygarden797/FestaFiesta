@@ -417,4 +417,168 @@ bool FFF_UtilityDestinationSelector_NoChoiceActionCascade::RunTest(const FString
 	return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// revisit 항 — 신규성 선호 (사용자 확정, 2026-08-10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 방금 다녀온 곳은 확률이 내려가고, 시간이 지나면 회복한다.
+// 이게 없으면 같은 카테고리 부스들의 점수가 동일해져서 softmax 가 균등 분포가 되고,
+// 우연히 같은 곳을 또 간다 — 매출이 한 부스에 몰린다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_RevisitPenaltyDecaysOverTime, "FestaFiesta.NPC.UtilityDestinationSelector.RevisitPenaltyDecaysOverTime", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_RevisitPenaltyDecaysOverTime::RunTest(const FString& Parameters)
+{
+	// 완전히 동일한 두 부스. 방문 이력만 다르다
+	TArray<FFF_DestinationCandidate> Candidates = {
+		MakeCandidate(TEXT("BoothA"), TEXT("food_stall"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+		MakeCandidate(TEXT("BoothB"), TEXT("food_stall"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+	};
+	const TMap<FName, float> Preference = { { TEXT("food_stall"), 5.f } };
+
+	// 이력이 없으면 둘의 효용이 같아야 한다
+	const FFF_DestinationDecision Neutral = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, nullptr, 1, 1, 0);
+	const float NeutralA = FindProbability(Neutral, TEXT("BoothA"));
+	const float NeutralB = FindProbability(Neutral, TEXT("BoothB"));
+	TestEqual(TEXT("이력이 없으면 동일한 두 부스의 확률이 같다"), NeutralA, NeutralB, 0.0001f);
+
+	// A 를 방금 다녀왔다 → A 의 확률이 B 보다 낮아야 한다
+	Candidates[0].MinutesSinceLastVisit = 0.f;
+	const FFF_DestinationDecision JustVisited = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, nullptr, 1, 1, 0);
+	TestTrue(TEXT("방금 다녀온 곳의 확률이 더 낮다"),
+		FindProbability(JustVisited, TEXT("BoothA")) < FindProbability(JustVisited, TEXT("BoothB")));
+
+	// 30분 전(기억 60분의 절반) → 페널티가 절반으로 줄어 확률 차이도 줄어야 한다
+	Candidates[0].MinutesSinceLastVisit = 30.f;
+	const FFF_DestinationDecision HalfDecayed = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, nullptr, 1, 1, 0);
+	const float GapJustVisited =
+		FindProbability(JustVisited, TEXT("BoothB")) - FindProbability(JustVisited, TEXT("BoothA"));
+	const float GapHalf =
+		FindProbability(HalfDecayed, TEXT("BoothB")) - FindProbability(HalfDecayed, TEXT("BoothA"));
+	TestTrue(TEXT("시간이 지나면 페널티가 줄어 확률 차이가 좁혀진다"), GapHalf < GapJustVisited);
+	TestTrue(TEXT("그래도 아직 차이는 남아 있다"), GapHalf > 0.f);
+
+	// 기억 시간을 넘기면 처음 가는 곳과 같아진다 — 영구 페널티가 아니라는 것이 핵심이다.
+	// 영구 페널티면 "제일 좋아하는 부스에 두 번은 안 간다"가 되어 부자연스럽다.
+	Candidates[0].MinutesSinceLastVisit = 120.f;
+	const FFF_DestinationDecision FullyDecayed = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, nullptr, 1, 1, 0);
+	TestEqual(TEXT("기억 시간을 넘기면 안 가본 곳과 같다"),
+		FindProbability(FullyDecayed, TEXT("BoothA")),
+		FindProbability(FullyDecayed, TEXT("BoothB")), 0.0001f);
+	return true;
+}
+
+// novelty_seeking_multiplier 가 페널티 크기를 개체별로 스케일한다. 0 이면 이력을 신경 쓰지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_NoveltySeekingScalesPenalty, "FestaFiesta.NPC.UtilityDestinationSelector.NoveltySeekingScalesPenalty", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_NoveltySeekingScalesPenalty::RunTest(const FString& Parameters)
+{
+	TArray<FFF_DestinationCandidate> Candidates = {
+		MakeCandidate(TEXT("BoothA"), TEXT("food_stall"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+		MakeCandidate(TEXT("BoothB"), TEXT("food_stall"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+	};
+	Candidates[0].MinutesSinceLastVisit = 0.f;   // A 를 방금 다녀왔다
+	const TMap<FName, float> Preference = { { TEXT("food_stall"), 5.f } };
+
+	auto GapFor = [&Candidates, &Preference](float NoveltySeeking)
+	{
+		const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+			Candidates, Preference, nullptr, 1, 1, 0, FFF_NeedState(), 0, NoveltySeeking);
+		return FindProbability(Decision, TEXT("BoothB")) - FindProbability(Decision, TEXT("BoothA"));
+	};
+
+	const float GapIndifferent = GapFor(0.f);
+	const float GapAverage = GapFor(1.f);
+	const float GapSeeker = GapFor(1.6f);
+
+	TestEqual(TEXT("0 이면 방문 이력을 아예 신경 쓰지 않는다"), GapIndifferent, 0.f, 0.0001f);
+	TestTrue(TEXT("배수가 크면 가본 곳을 더 강하게 피한다"), GapSeeker > GapAverage);
+	TestTrue(TEXT("평균 개체도 가본 곳을 피한다"), GapAverage > 0.f);
+
+	// 음수는 "가본 곳을 더 좋아한다"가 되어 의도와 반대다 — 0 으로 막는다
+	TestEqual(TEXT("음수 배수는 0 으로 막는다"), GapFor(-2.f), 0.f, 0.0001f);
+	return true;
+}
+
+// 급한 Need 는 방문 이력을 무시한다. weight_revisit(0.5) × novelty(1.6) = 0.8 < weight_need(1.8).
+//
+// 두 후보의 매력도·취향·거리·밀집을 전부 같게 두고 **차이를 Need 와 방문 이력에만** 둔다.
+// (처음엔 "방금 다녀온 화장실 vs 취향에 맞는 포토존"으로 짰는데, 그건 attraction·preference 차이가
+//  섞여서 revisit 페널티를 분리하지 못했다 — 실제로 테스트가 실패했고 그게 맞는 결과였다.)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_UrgentNeedOverridesRevisitPenalty, "FestaFiesta.NPC.UtilityDestinationSelector.UrgentNeedOverridesRevisitPenalty", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_UrgentNeedOverridesRevisitPenalty::RunTest(const FString& Parameters)
+{
+	// 방금 다녀왔지만 급한 욕구를 풀어주는 화장실
+	FFF_DestinationCandidate VisitedToilet =
+		MakeCandidate(TEXT("ToiletA"), NAME_None, 0.f, 100.f, 0.f, 10.f, 100.f);
+	VisitedToilet.NeedRelief.bRelievesRestroom = true;
+	VisitedToilet.MinutesSinceLastVisit = 0.f;
+
+	// 안 가본 곳이지만 아무 Need 도 풀어주지 않는다. 그 외 조건은 위와 완전히 동일하다
+	const FFF_DestinationCandidate FreshButUseless =
+		MakeCandidate(TEXT("PlainB"), NAME_None, 0.f, 100.f, 0.f, 10.f, 100.f);
+
+	const TArray<FFF_DestinationCandidate> Candidates = { VisitedToilet, FreshButUseless };
+
+	FFF_NeedState Urgent;
+	Urgent.Restroom = 1.f;
+
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, TMap<FName, float>(), nullptr, 1, 1, 0, Urgent, 0, /*NoveltySeeking=*/1.6f);
+
+	// 화장실 = need 1.8 - revisit 0.8 = +1.0 / 대안 = 0 → 급함이 이긴다
+	TestTrue(TEXT("한계 Need 는 방금 다녀온 곳이라도 안 가본 무용지물을 이긴다"),
+		FindProbability(Decision, TEXT("ToiletA")) > FindProbability(Decision, TEXT("PlainB")));
+
+	// Need 가 없으면 뒤집힌다 — 페널티만 남으므로 안 가본 곳이 이긴다
+	const FFF_DestinationDecision NoNeed = FFF_UtilityDestinationSelector::Choose(
+		Candidates, TMap<FName, float>(), nullptr, 1, 1, 0, FFF_NeedState(), 0, 1.6f);
+	TestTrue(TEXT("Need 가 없으면 방금 다녀온 곳이 진다"),
+		FindProbability(NoNeed, TEXT("ToiletA")) < FindProbability(NoNeed, TEXT("PlainB")));
+	return true;
+}
+
+// weight_need 기본값이 부등식을 지키는지 코드 기본값만으로 검증한다.
+//
+// !!! 이 테스트가 왜 필요한가 !!!
+// 2026-08-10 에 `weight_need` 의 **코드 기본값이 1.2, CSV 값이 1.8** 로 어긋나 있는 것을 발견했다.
+// CSV 에 적힌 1.8 의 근거가 "weight_attraction(1.0) + lambda_affinity(0.6) = 1.6 보다 크다"인데
+// 1.2 는 그 부등식을 깬다 — DataTable 이 안 붙은 경로에서 급한 욕구가 취향을 못 이겼다.
+// 계수 로딩은 DataTable 이 필요해 테스트가 어렵지만, **부등식은 코드 기본값만으로 검증할 수 있다.**
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_NeedBeatsBestLikedAlternative, "FestaFiesta.NPC.UtilityDestinationSelector.NeedBeatsBestLikedAlternative", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_NeedBeatsBestLikedAlternative::RunTest(const FString& Parameters)
+{
+	// 가능한 최고의 대안: 매력도 만점(1.0) + 취향 만점(preference_vector_scale_ref 만큼)
+	const FFF_DestinationCandidate BestLiked =
+		MakeCandidate(TEXT("BestLiked"), TEXT("food_stall"), 1.0f, 0.f, 0.f, 0.f, 100.f);
+
+	// 매력도 0, 취향 없음. 오직 한계 Need 를 해소한다는 것만 다르다
+	FFF_DestinationCandidate UrgentRelief =
+		MakeCandidate(TEXT("UrgentRelief"), NAME_None, 0.f, 0.f, 0.f, 0.f, 100.f);
+	UrgentRelief.NeedRelief.bRelievesRestroom = true;
+
+	const TArray<FFF_DestinationCandidate> Candidates = { BestLiked, UrgentRelief };
+	// preference_vector_scale_ref 기본값 17 → raw 17 이면 preference_norm 이 1.0(만점)
+	const TMap<FName, float> Preference = { { TEXT("food_stall"), 17.f } };
+
+	FFF_NeedState AtLimit;
+	AtLimit.Restroom = 1.f;   // need_priority_restroom 은 1.0 고정이라 가중치가 그대로 걸린다
+
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, nullptr, 1, 1, 0, AtLimit);
+
+	TestTrue(TEXT("한계 Need 가 '가장 매력적이고 취향에도 맞는 대안'을 이긴다 — weight_need > weight_attraction + lambda_affinity"),
+		FindProbability(Decision, TEXT("UrgentRelief")) > FindProbability(Decision, TEXT("BestLiked")));
+
+	// 반대로 가벼운 Need(0.3)는 취향을 뒤집지 못한다 — 1.8 × 0.3 = 0.54 < 1.6
+	FFF_NeedState Mild;
+	Mild.Restroom = 0.3f;
+	const FFF_DestinationDecision MildDecision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, nullptr, 1, 1, 0, Mild);
+	TestTrue(TEXT("가벼운 Need 는 취향을 뒤집지 못한다"),
+		FindProbability(MildDecision, TEXT("UrgentRelief")) < FindProbability(MildDecision, TEXT("BestLiked")));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

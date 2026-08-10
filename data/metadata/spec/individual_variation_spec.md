@@ -1,8 +1,8 @@
 # 고정 Seed 기반 개체 변주 명세 (v0)
 
 - 작성일: 2026-08-04
-- 상태: 초안 — 6종 변주 범위는 `draft_assumption`, 나머지 구조(해시·분포·상관 방식)는 확정
-- 목적: 아키타입(`FFF_ArchetypeRow`)·동반유형(`FFF_CompanionModifierRow`)은 집단 평균이다. 같은 Row를 쓰는 NPC들이 복제처럼 보이지 않도록 개체별로 조금씩 다른 행동양식(보행속도·인내심·혼잡내성·선호강도·체류시간·재평가주기)을 주면서도, 같은 Seed·같은 Agent ID에는 항상 같은 값이 나오게 해서 디버깅과 실험 재현이 가능하게 한다.
+- 상태: 초안 — 7종 변주 범위는 `draft_assumption`, 나머지 구조(해시·분포·상관 방식)는 확정
+- 목적: 아키타입(`FFF_ArchetypeRow`)·동반유형(`FFF_CompanionModifierRow`)은 집단 평균이다. 같은 Row를 쓰는 NPC들이 복제처럼 보이지 않도록 개체별로 조금씩 다른 행동양식(보행속도·인내심·혼잡내성·선호강도·체류시간·재평가주기·신규성선호)을 주면서도, 같은 Seed·같은 Agent ID에는 항상 같은 값이 나오게 해서 디버깅과 실험 재현이 가능하게 한다.
 
 ## 1. 최종 개체값 구성
 
@@ -41,7 +41,7 @@ TraitSeed = HashCombine(
 
 | Purpose | 용도 | v0 사용 범위 |
 |---|---|---|
-| `Generation` | NPC 생성 시 한 번 정해지고 유지되는 성격·신체 특성 | 이 문서의 6종 multiplier + `leisureliness_axis` 전부 |
+| `Generation` | NPC 생성 시 한 번 정해지고 유지되는 성격·신체 특성 | 이 문서의 7종 multiplier + `leisureliness_axis` 전부 |
 | `Decision` | softmax 목적지 선택 샘플링. 선택 회차 인덱스를 `SpawnGeneration` 또는 별도 인자로 Seed에 포함해 재현 | 목표 4(목적지 선택기 v0)에서 사용 — 이 문서에서는 훅만 마련 |
 | `RuntimeNoise` | 애니메이션·시각적 흔들림 등 의사결정에 영향 없는 표현용 난수 | 아직 사용처 없음 |
 
@@ -60,7 +60,7 @@ U ≥ C 이면:  X = Max - sqrt((1 - U) * (Max - Min) * (Max - Mode))
 
 구현: `FFF_DeterministicRandom::SampleTriangularFromFraction`.
 
-## 5. v0 변주 6종 — 대상 필드와 범위
+## 5. v0 변주 7종 — 대상 필드와 범위
 
 각 multiplier가 **정확히 어떤 기존 필드에 곱해지는지**를 여기서 확정한다. 이 매핑이 없으면 숫자를 정해도 의미가 없다.
 
@@ -72,11 +72,18 @@ U ≥ C 이면:  X = Max - sqrt((1 - U) * (Max - Min) * (Max - Mode))
 | `preference_strength_multiplier` | `preference_vector` (아키타입+동반유형 delta 합산값 — `lambda_affinity` 자체는 건드리지 않음) | 0.60 | 1.00 | 1.40 | draft_assumption |
 | `stay_duration_multiplier` | 체류시간 기준값 (6절) | 0.70 | 0.90 | 1.60 | draft_assumption |
 | `reevaluate_interval_multiplier` | `reevaluate_interval_seconds` (기본 120초) | 0.80 | 1.00 | 1.20 | draft_assumption |
+| `novelty_seeking_multiplier` | Utility 식의 `revisit_penalty` 항 (2026-08-10 추가) | 0.40 | 1.00 | 1.60 | draft_assumption |
 | `leisureliness_axis` | 직접 곱하는 대상 없음 — 7절 상관관계용 공유 성격축 | 0.00 | 0.50 | 1.00 | draft_assumption |
+
+**`novelty_seeking_multiplier`만 성질이 다르다 — 페널티에 곱한다.** 다른 multiplier는 값이 클수록 그 특성이 강해지는데, 이건 **값이 클수록 이미 가본 곳의 효용이 더 내려간다**. 1.6이면 가본 곳을 강하게 피하고, 0.4면 익숙한 곳을 다시 가는 데 거리낌이 없고, 0이면 방문 이력을 아예 신경 쓰지 않는다.
+
+**폭(0.4~1.6)이 다른 knob(0.85~1.15)보다 넓은 것은 의도다.** 이 축은 "화면에서 보이는 행동 다양성"을 만드는 것이 목적이라 개체차가 커야 의미가 있다. 이동속도처럼 미세한 차이로는 "저 사람은 여기저기 돌아다니고 저 사람은 한 곳에 머문다"가 관찰되지 않는다.
+
+`leisureliness_axis`와 상관을 걸지 않았다 — **"느긋한 사람이 새로운 걸 더 찾는다"는 근거가 없다.** 7절의 독립 목록에 포함된다.
 
 **중요한 구분**: `weight_wait`, `weight_density`, `lambda_affinity`는 "게임 전체가 대기·혼잡·취향을 얼마나 중요하게 보는가"를 정하는 전역 밸런스 노브다. 위 multiplier들은 "이 개인이 그 전역 기준에서 얼마나 벗어나는가"를 정하는 개인차이며, 전역 가중치 자체를 개인화하지 않는다. 두 개념을 같은 계수에 합치면 밸런스 문제와 개체차 문제를 구분해 말할 수 없게 된다.
 
-CSV 원본: `data/derived/individual_variation_knobs_v0.csv` (7행). Unreal DataTable: `data/unreal/individual_variation_knobs_v0.csv` → `FFF_IndividualVariationRow`.
+CSV 원본: `data/derived/individual_variation_knobs_v0.csv` (8행). Unreal DataTable: `data/unreal/individual_variation_knobs_v0.csv` → `FFF_IndividualVariationRow`.
 
 ## 6. 체류시간 앵커 — "Live 단계 길이의 몇 %"
 
@@ -108,7 +115,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 - `correlation_strength ∈ [0,1]`: `data/derived/utility_coefficients_v0.csv`에 `correlation_strength_leisureliness` 노브로 추가했다(초기값 0.3).
 - `correlation_strength = 0`이면 완전 독립(기존 모델과 동일), `1`이면 두 특성이 같은 축에서 완전히 파생된다.
 - 블렌딩은 **균등난수(0~1) 단계에서** 하고, 그 결과를 삼각분포 공식에 한 번만 통과시킨다. 이렇게 하면 특성마다 `Min/Mode/Max`가 달라도 같은 블렌딩 로직을 재사용할 수 있고, 결정성도 그대로 유지된다(모든 입력이 여전히 순수하게 결정적).
-- `walk_speed_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`는 v0에서 상관 없이 완전 독립으로 둔다. 이는 `independence_assumption`이며, 실제로는 상호작용이 있을 수 있으나 관측 자료가 없다.
+- `walk_speed_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`, `novelty_seeking_multiplier`는 v0에서 상관 없이 완전 독립으로 둔다. 이는 `independence_assumption`이며, 실제로는 상호작용이 있을 수 있으나 관측 자료가 없다.
 
 구현: `FFF_IndividualVariationResolver::Resolve` (`Source/FestaFiesta/Public/NPC/IndividualVariation/FF_DeterministicRandom.h`).
 
@@ -136,7 +143,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 ## 9. 남은 의존성
 
 1. ~~`live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체~~ → **2026-08-05 확정.** 실제 축제 프로그램 시간표(17:00~21:00) 기준 240분 그대로 유지. 강민서 님 `FF_FestivalStageSubsystem` 배속 구현이 끝나면 다른 시간 단위 필드들과 함께 최종 재점검.
-2. 6종 변주 범위(5절)는 실측이 아니라 초안이다. 실제 시뮬레이션을 돌려본 뒤 편차가 너무 크거나 작으면 DataTable 값만 조정한다(코드 수정 불필요).
+2. 7종 변주 범위(5절)는 실측이 아니라 초안이다. 실제 시뮬레이션을 돌려본 뒤 편차가 너무 크거나 작으면 DataTable 값만 조정한다(코드 수정 불필요).
 3. `correlation_strength_leisureliness`(0.3, 초안) — 두 특성이 부자연스럽게 조합되는지 플레이테스트로 확인 후 조정.
 4. `remaining_stay`를 실제로 채우는 NPC 런타임 로직 — **아직 없다.** 목표 4(목적지 선택기)는 순수 함수까지만 구현됐고 NPC 상태를 보관하는 런타임 층이 없다. `remaining_stay`는 `no_choice` 퇴장 판정(`ResolveNoChoiceAction`)의 1순위 입력이라 이게 0으로 고정되면 모든 NPC가 즉시 퇴장한다 — 런타임 층을 만들 때 가장 먼저 채워야 하는 필드다.
 5. ~~`Decision` purpose는 훅만 마련했고 실제 사용처가 없다~~ → **2026-08-06 연결 완료.** `FFF_UtilityDestinationSelector::Choose`가 softmax 샘플링 시드에 `RandomPurpose = Decision`을 쓴다. 회차 인덱스는 `SpawnGeneration`이 아니라 `TraitKey` 문자열(`destination_choice_round_%d`)에 접어넣었다 — `SpawnGeneration`의 원래 의미(같은 ID 재사용 세대)를 건드리지 않기 위해서다.
