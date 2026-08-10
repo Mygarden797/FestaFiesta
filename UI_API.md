@@ -130,6 +130,31 @@ FFFZSReadModel {
 **플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
 Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
 
+### 완성형 시설 건축 카탈로그 (2026-08-09 추가)
+
+- **헤더**: `Public/Building/FF_BuildCatalogSubsystem.h`, `Public/Building/FF_BuildModeSubsystem.h`
+- **접근**: `GameInstanceSubsystem` 카탈로그 + `TickableWorldSubsystem` 건축 모드
+- **상태**: `구현완료` (스킨 적용 데이터는 계획)
+
+`UFF_BuildCatalogSubsystem`은 Asset Manager의 `FFZSFacilityDefinition` Primary Asset을 비동기 로드하고
+`대분류 > 소분류 > 고유이름` 읽기 모델을 만든다. 위젯은 에셋 레지스트리를 직접 조회하거나 ID를 직접
+파싱하지 않고 `GetEntries()`/`GetCategoryGroups()`와 `OnCatalogChanged`를 사용한다.
+
+`UFF_BuildModeSubsystem`은 `Closed → CatalogOpen → Placing` 상태를 소유하고, 선택한
+`UFFZSFacilityDefinition::Spec`을 기존 `AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다.
+따라서 Zone 경계·충돌·여유 공간·Queue 예약·보호구역·지면·내비게이션 검증을 우회하지 않는다.
+
+| 입력 | 동작 |
+| --- | --- |
+| `B` | 건축 카탈로그 열기 / 건축 모드 전체 종료 |
+| `Q`, `E` | 배치 시설 90도 회전 |
+| `좌클릭`, `Enter` | 검증 후 설치 |
+| `우클릭`, `Esc` | 현재 배치 취소 후 카탈로그 복귀 |
+
+- 운영 단계는 `InitialSetup`/`MorningCheck`만 설치 가능하다.
+- 상단 UI는 `건축`/`스킨` 2탭이지만, 현재 `스킨` 탭은 데이터 모델이 없어 준비중 상태다.
+- 현재 등록된 실제 시설 정의가 1개뿐이므로, 나머지 카드는 규칙에 맞는 Data Asset을 추가할 때 자동 생성된다.
+
 ---
 
 ## Queue — 장원재

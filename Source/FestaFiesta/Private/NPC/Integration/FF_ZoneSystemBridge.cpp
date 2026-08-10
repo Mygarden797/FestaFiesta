@@ -2,6 +2,7 @@
 
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "Engine/AssetManager.h"
 #include "FF_FFZSFacilityDefinition.h"
 
@@ -27,45 +28,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 
 namespace
 {
-	/**
-	 * 시설 네이밍 컨벤션: `대분류_소분류_고유이름` (팀 규칙, 2026-08-06 노션 페이지 "FacilityDefinitionId 네이밍 규칙").
-	 * 대분류는 EFFZSFacilityCategory 이름을 그대로 쓴다 — 아래 표가 그 대응이며, enum 값이 늘면 여기도 늘려야 한다.
-	 * (UEnum 리플렉션 대신 명시 표를 쓰는 이유: 플러그인 enum 이름이 바뀌어도 컴파일이 아니라 이 표에서 드러나게 하려고.)
-	 */
-	const TMap<EFFZSFacilityCategory, FString>& GetCategoryToMajorToken()
-	{
-		static const TMap<EFFZSFacilityCategory, FString> Table = {
-			{ EFFZSFacilityCategory::Booth,       TEXT("Booth") },
-			{ EFFZSFacilityCategory::Toilet,      TEXT("Toilet") },
-			{ EFFZSFacilityCategory::Info,        TEXT("Info") },
-			{ EFFZSFacilityCategory::Rest,        TEXT("Rest") },
-			{ EFFZSFacilityCategory::Performance, TEXT("Performance") },
-			{ EFFZSFacilityCategory::Safety,      TEXT("Safety") },
-			{ EFFZSFacilityCategory::PhotoSpot,   TEXT("PhotoSpot") },
-		};
-		return Table;
-	}
-
-	/**
-	 * 팀 규칙에 정의된 소분류 토큰. **이 표에 없는 소분류를 쓰면 Warning 이 뜬다.**
-	 * 지금 실제로 동작을 바꾸는 것은 Booth 뿐이지만(취향·Need 판정), 나머지 카테고리도 여기 적어
-	 * 오타를 잡는다 — 오타를 방치하면 나중에 소분류별 분기를 추가할 때 조용히 빠진다.
-	 */
-	const TMap<EFFZSFacilityCategory, TArray<FString>>& GetCategoryToKnownMinorTokens()
-	{
-		static const TMap<EFFZSFacilityCategory, TArray<FString>> Table = {
-			{ EFFZSFacilityCategory::Booth,       { TEXT("FoodStall"), TEXT("MarketGoods"), TEXT("CraftExperience"), TEXT("ActivityGame"), TEXT("Nightlife") } },
-			{ EFFZSFacilityCategory::Toilet,      { TEXT("Standard"), TEXT("Accessible"), TEXT("Family"), TEXT("Temporary") } },
-			{ EFFZSFacilityCategory::Info,        { TEXT("GeneralInfo"), TEXT("Ticketing"), TEXT("LostFound"), TEXT("Translation") } },
-			{ EFFZSFacilityCategory::Rest,        { TEXT("Seating"), TEXT("Shade"), TEXT("Picnic"), TEXT("Cooling") } },
-			{ EFFZSFacilityCategory::Performance, { TEXT("MainStage"), TEXT("SubStage"), TEXT("Busking"), TEXT("ExperienceStage") } },
-			{ EFFZSFacilityCategory::Safety,      { TEXT("FirstAid"), TEXT("Security"), TEXT("FireSafety"), TEXT("Evacuation") } },
-			{ EFFZSFacilityCategory::PhotoSpot,   { TEXT("Landmark"), TEXT("Theme"), TEXT("Scenic"), TEXT("Interactive") } },
-		};
-		return Table;
-	}
-
-	// Booth 소분류 → preference_vector 키. 위 Booth 토큰 목록과 1:1로 유지한다.
+	// Booth 소분류 → preference_vector 키. NamingLibrary의 Booth 토큰 목록과 1:1로 유지한다.
 	const TMap<FString, FName>& GetBoothTokenToPreferenceCategory()
 	{
 		static const TMap<FString, FName> Table = {
@@ -103,67 +66,30 @@ namespace
 			*FacilityDefinitionId.ToString(), *Reason, *KnownTokens);
 	}
 
-	FString JoinKnownMinorTokens(EFFZSFacilityCategory Category)
-	{
-		const TArray<FString>* Tokens = GetCategoryToKnownMinorTokens().Find(Category);
-		return Tokens ? FString::Join(*Tokens, TEXT(", ")) : TEXT("(표 없음)");
-	}
-
 	/**
-	 * `대분류_소분류_고유이름` 을 파싱하고 컨벤션을 검증한다. 위반이면 false 를 돌려주고 Warning 1회.
-	 * 소분류는 OutMinorToken 으로 나간다 — 호출부가 카테고리별로 다르게 쓴다.
-	 *
-	 * 고유이름에 `_` 가 더 있어도 된다(`Booth_FoodStall_Seafood_Grill`) — 앞의 두 토큰만 본다.
+	 * 공용 NamingLibrary의 순수 파싱 결과에 기존 시설별 Warning-once 정책을 덧씌운다.
+	 * UI와 카탈로그는 라이브러리를 직접 사용하고, 고빈도 NPC 평가만 이 래퍼를 거친다.
 	 */
 	bool TryParseFacilityId(EFFZSFacilityCategory Category, FName FacilityDefinitionId, FString& OutMinorToken)
 	{
 		OutMinorToken.Reset();
-
-		if (FacilityDefinitionId.IsNone())
+		FFF_FacilityNameParts Parts;
+		FString FailureReason;
+		if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			Category, FacilityDefinitionId, Parts, FailureReason))
 		{
-			// 시설 정의가 아직 안 붙은 상태일 수 있다 — 이건 오타가 아니므로 경고하지 않는다
+			// NAME_None은 정의가 아직 안 붙은 정상 상태일 수 있어 라이브러리가 이유를 비워 반환한다.
+			if (!FailureReason.IsEmpty())
+			{
+				const FString KnownTokens = UFF_FacilityNamingLibrary::GetMajorToken(Category).IsNone()
+					? TEXT("(없음)")
+					: UFF_FacilityNamingLibrary::JoinKnownMinorTokens(Category);
+				WarnOnceAboutNamingViolation(FacilityDefinitionId, FailureReason, KnownTokens);
+			}
 			return false;
 		}
 
-		TArray<FString> Tokens;
-		FacilityDefinitionId.ToString().ParseIntoArray(Tokens, TEXT("_"));
-
-		const FString* ExpectedMajor = GetCategoryToMajorToken().Find(Category);
-		if (!ExpectedMajor)
-		{
-			// enum 값이 늘었는데 위 표를 안 고쳤다는 뜻이다 — 데이터 문제가 아니라 코드 문제
-			WarnOnceAboutNamingViolation(FacilityDefinitionId,
-				TEXT("이 시설 카테고리에 대응하는 대분류 토큰이 코드 표에 없다(GetCategoryToMajorToken 갱신 필요)."),
-				TEXT("(없음)"));
-			return false;
-		}
-
-		if (Tokens.Num() < 3)
-		{
-			WarnOnceAboutNamingViolation(FacilityDefinitionId,
-				FString::Printf(TEXT("토큰이 %d개뿐이다(3개 이상 필요)."), Tokens.Num()),
-				JoinKnownMinorTokens(Category));
-			return false;
-		}
-
-		if (Tokens[0] != *ExpectedMajor)
-		{
-			WarnOnceAboutNamingViolation(FacilityDefinitionId,
-				FString::Printf(TEXT("대분류가 '%s'인데 이 시설의 카테고리는 '%s'다."), *Tokens[0], **ExpectedMajor),
-				JoinKnownMinorTokens(Category));
-			return false;
-		}
-
-		const TArray<FString>* KnownMinors = GetCategoryToKnownMinorTokens().Find(Category);
-		if (!KnownMinors || !KnownMinors->Contains(Tokens[1]))
-		{
-			WarnOnceAboutNamingViolation(FacilityDefinitionId,
-				FString::Printf(TEXT("소분류 '%s'가 규칙 표에 없다."), *Tokens[1]),
-				JoinKnownMinorTokens(Category));
-			return false;
-		}
-
-		OutMinorToken = Tokens[1];
+		OutMinorToken = Parts.MinorToken.ToString();
 		return true;
 	}
 
@@ -212,6 +138,7 @@ FName FFF_ZoneSystemBridge::MapToPreferenceCategory(
 		return NAME_None;
 	}
 }
+ 
 
 FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 	EFFZSFacilityCategory ZoneSystemCategory,

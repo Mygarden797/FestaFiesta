@@ -12,6 +12,8 @@
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSFacilityDefinition.generated.h"
 
+class UTexture2D;
+
 //시설 담당자가 Content Browser에서 만드는 데이터 전용 Primary Data Asset.
 // 런타임 액터는 Spec을 값으로 복사하므로 저장 게임이 이 에셋의 로드 상태에 의존하지 않는다.
  
@@ -24,6 +26,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System")
     FFFZSFacilitySpec Spec;
     // ID·크기·대기열·앵커·외부 키·소프트 메시를 포함하는 설치 시점 복사 원본.
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System|Presentation", meta = (AssetBundles = "BuildCatalogUI"))
+    TSoftObjectPtr<UTexture2D> CatalogThumbnail;
+    // 건설 카탈로그 카드에만 사용하는 선택적 이미지. 설치 사양·SaveGame 데이터에는 포함하지 않는다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System")
     bool IsDefinitionValid(TArray<FText>& OutErrors) const;
