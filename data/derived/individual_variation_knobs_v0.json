@@ -4,7 +4,7 @@
   "dataset_id": "individual_variation_knobs_v0",
   "note": "이 파일이 개체 변주 노브의 원본(source of truth)이다. data/unreal/individual_variation_knobs_v0.csv 는 이 파일을 UE DataTable 형식(FFF_IndividualVariationRow)으로 재배열한 결과이며, build_unreal_datatables.mjs 가 이 파일에서 읽어 그쪽에 쓴다. 반대 방향으로 읽지 않는다.",
   "row_unit": "개체 변주 특성(TraitKey) 하나",
-  "output_row_count": 7,
+  "output_row_count": 8,
   "status": "draft_assumption — 6개 multiplier 범위와 leisureliness_axis 전부 초안, 실측 없음",
   "design_rule": "모든 특성은 삼각분포(min, mode, max)로 통일한다. 정규분포의 clamp bias를 피하고 균등난수 하나에서 닫힌 공식으로 값을 얻기 위함 (individual_variation_spec.md 4절).",
   "distribution_formula": "C=(mode-min)/(max-min); U<C ? min+sqrt(U*(max-min)*(mode-min)) : max-sqrt((1-U)*(max-min)*(max-mode))",
@@ -23,5 +23,6 @@
     "이 표의 multiplier 범위를 실측값처럼 서술하는 것",
     "weight_wait/weight_density/lambda_affinity 등 전역 밸런스 노브를 이 표의 개인화 값으로 대체하는 것"
   ],
-  "regenerate_with": "Tools/data/build_unreal_datatables.mjs"
+  "regenerate_with": "Tools/data/build_unreal_datatables.mjs",
+  "novelty_seeking_added_2026_08_10": "novelty_seeking_multiplier(삼각 0.4/1.0/1.6) 추가. Utility 식의 revisit_penalty 항에 곱한다 — 다른 knob과 달리 페널티에 곱하므로 값이 크면 그 후보의 효용이 더 내려간다. 폭이 다른 knob(0.85~1.15)보다 넓은 것은 의도다: 관찰 가능한 행동 다양성을 만드는 것이 목적이라 개체차가 커야 의미가 있다. leisureliness_axis와 상관을 걸지 않았다 — 느긋한 사람이 새로운 걸 더 찾는다는 근거가 없다."
 }

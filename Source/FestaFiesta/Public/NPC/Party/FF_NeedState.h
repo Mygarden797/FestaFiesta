@@ -37,12 +37,18 @@ enum class EFF_NeedType : uint8
  * | Stimulation	| Performance, PhotoSpot, Booth(Nightlife 토큰)			| Performance=다대포차 스테이지(콘서트), Booth(Nightlife)=선셋클럽(EDM 비치클럽)·선셋펍(하우스DJ 라운지)
  *
  * Info는 "몰라서 헤맨다"는 욕구를 뒷받침할 근거가 없어서 제외 - 필요해지면 그때 추가한다.
- * Safety는 이중 반영을 막기 위해 제외 - 밀집도 위험이라 이미 Utility의 density_cost 항이 맡고 있다.
+ * Safety는 이중 반영을 막기 위해 제외 - 안전 Need를 만들면 그 "위험"이 결국 밀집 위험이고,
+ * 밀집은 이미 Utility의 density_cost 항이 맡고 있다.
  *
  * P0는 Hunger·Restroom만 갱신한다. 나머지는 필드만 두고 Phase 4에서 켠다.
  * Stimulation은 Live 시간이 지날수록 쌓여 메인 공연 시작 전 무대 앞으로 몰리는 유입을 만들어낸다. (Phase 2)
  *
- * !!! 스텁 !!! 증가율·해소량 규칙은 아직 없다.
+ * 증가·해소 규칙은 FFF_NeedRules(FF_NeedRules.h)에 있다. 이 구조체는 값만 들고 있고,
+ * 값을 움직이는 경로는 Advance(시간 경과)와 Relieve(시설 이용 완료) 둘뿐이다 —
+ * 그래서 여기에 Setter를 두지 않았다.
+ *
+ * "P0는 Hunger·Restroom만"은 코드 분기가 아니라 데이터다. 나머지 3종은
+ * need_*_minutes_to_limit 계수가 0이어서 안 쌓인다 — 켜는 것은 CSV 값 변경이면 된다.
  */
 USTRUCT(BlueprintType)
 struct FFF_NeedState
