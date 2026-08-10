@@ -70,10 +70,15 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 **요청** — `RemainingTime`이 매 틱 바뀌므로 UI가 폴링해야 합니다.
 초 단위로 바뀔 때만 쏘는 델리게이트가 있으면 좋겠습니다. 없으면 UI 쪽에서 0.1초 폴링 + 변화 감지로 처리하겠습니다.
 
-**답변** - 지금은 RemainingTime이 매 프레임 계속 바뀌는 방식이라, 말씀하신 대로
-초 단위로 바뀔 때만 쏘는 델리게이트(OnRemainingSecondsChanged)를 추가하겠습니다.
-내일 중 구현해서 공유드릴게요.
-그 전까지는 말씀하신 대로 UI 쪽에서 0.1초 폴링 + 변화 감지로 우선 처리해주셔도 됩니다.
+**답변** -
+
+FOnRemainingSecondsChanged (int32 NewSeconds)
+
+구독 방법:
+GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
+->OnRemainingSecondsChanged.AddDynamic(this, &YourClass::YourHandler);
+
+이거 구독하시면 폴링 없이 초 단위로 바뀔 때만 UI 갱신하시면 됩니다.
 
 ---
 
