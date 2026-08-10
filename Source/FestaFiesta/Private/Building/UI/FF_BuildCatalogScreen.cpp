@@ -386,7 +386,13 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 {
 	if (InKeyEvent.GetKey() == EKeys::B && !InKeyEvent.IsRepeat())
 	{
-		OnCloseRequested.Broadcast();
+		// UI가 먼저 처리한 B가 같은 프레임의 PlayerController 폴링과 중복되지 않도록 별도 의도로 전달한다.
+		OnBuildModeKeyRequested.Broadcast();
+		return FReply::Handled();
+	}
+	if (InKeyEvent.GetKey() == EKeys::Escape && !InKeyEvent.IsRepeat())
+	{
+		OnExitBuildModeKeyRequested.Broadcast();
 		return FReply::Handled();
 	}
 

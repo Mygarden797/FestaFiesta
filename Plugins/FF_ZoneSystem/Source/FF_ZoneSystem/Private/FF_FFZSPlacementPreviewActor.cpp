@@ -13,12 +13,13 @@
 #include "Engine/StaticMesh.h"
 
 #include "Components/SceneComponent.h"
+#include "Components/LineBatchComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "DrawDebugHelpers.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "SceneManagement.h"
 
 
 // 이 Actor는 배치 명령을 시각화하는 비권위 Preview다.
@@ -44,6 +45,14 @@ AFFZSPlacementPreviewActor::AFFZSPlacementPreviewActor()
     PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PreviewMesh->SetGenerateOverlapEvents(false);
     PreviewMesh->SetRenderCustomDepth(true);
+
+    RangeLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("RangeLines"));
+    RangeLines->SetupAttachment(SceneRoot);
+    RangeLines->SetAbsolute(true, true, true);
+    RangeLines->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    RangeLines->SetGenerateOverlapEvents(false);
+    RangeLines->SetCanEverAffectNavigation(false);
+    RangeLines->PrimaryComponentTick.bCanEverTick = false;
 }
 
 void AFFZSPlacementPreviewActor::BeginPlay()
@@ -54,6 +63,10 @@ void AFFZSPlacementPreviewActor::BeginPlay()
 
 void AFFZSPlacementPreviewActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    if (RangeLines)
+    {
+        RangeLines->Flush();
+    }
     if (VisualLoadHandle.IsValid())
     {
         VisualLoadHandle->CancelHandle();
@@ -87,10 +100,11 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
         SetActorTransform(LastValidation.PlacementTransform);
         RequestPreviewMesh();
         PreviewMesh->SetCustomDepthStencilValue(LastValidation.bIsValid ? 1 : 2);
-        if (bDrawDebugCells)
-        {
-            DrawCells();
-        }
+        RefreshRangePresentation();
+    }
+    else if (RangeLines)
+    {
+        RangeLines->Flush();
     }
     return LastValidation;
 }
@@ -169,10 +183,21 @@ void AFFZSPlacementPreviewActor::ApplyLoadedPreviewMesh()
     }
 }
 
-// 디버그 박스는 판정 결과를 설명하는 비권위 그림이다. 1 cm 셀을 수십만 개 그리지 않고
-// canonical rect 한 개당 박스 하나만 그려 실제 면적은 그대로 보여 주면서 DrawCall 폭증을 막는다.
-void AFFZSPlacementPreviewActor::DrawCells() const
+// 판정 결과를 설명하는 비권위 제품 표현이다. DrawDebug 수명과 빌드 설정에 의존하지 않고 한 개의
+// LineBatch scene proxy에 canonical rect를 보관해 커서가 멈춰도 범위가 사라지지 않는다.
+void AFFZSPlacementPreviewActor::RefreshRangePresentation()
 {
+    if (!RangeLines)
+    {
+        return;
+    }
+    RangeLines->Flush();
+    RangeLines->SetHiddenInGame(!bDrawDebugCells);
+    if (!bDrawDebugCells)
+    {
+        return;
+    }
+
     const UFFZSWorldSubsystem* Subsystem =
         GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     const AFFZSGameplayZone* Zone = Subsystem ? Subsystem->FindZone(PreviewCommand.ZoneId) : nullptr;
@@ -183,22 +208,67 @@ void AFFZSPlacementPreviewActor::DrawCells() const
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FColor BaseColor = LastValidation.bIsValid ? FColor::Green : FColor::Red;
-    const auto DrawGroup = [&](const TArray<FFFZSCellRect>& Rects, const FColor& ValidColor)
+    constexpr int32 MaxDisplayedRectsPerGroup = 1024;
+    const auto DrawRect = [this, Zone, CellSizeCm](const FFFZSCellRect& Rect, const FLinearColor& Color)
     {
+        const FVector Center = Zone->GetActorTransform().TransformPosition(FVector(
+            (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
+            (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
+            5.0));
+        const FVector Extent(
+            FMath::Max(0.25, Rect.GetWidth() * CellSizeCm * 0.5 - 0.02),
+            FMath::Max(0.25, Rect.GetHeight() * CellSizeCm * 0.5 - 0.02),
+            5.0);
+        RangeLines->DrawBox(
+            Center,
+            Extent,
+            Zone->GetActorQuat(),
+            Color,
+            0.0f,
+            SDPG_World,
+            2.0f);
+    };
+    const auto DrawGroup = [&DrawRect, BaseColor](
+        const TArray<FFFZSCellRect>& Rects,
+        const FColor& ValidColor)
+    {
+        const FLinearColor Color(BaseColor == FColor::Red ? BaseColor : ValidColor);
+        if (Rects.Num() <= MaxDisplayedRectsPerGroup)
+        {
+            for (const FFFZSCellRect& Rect : Rects)
+            {
+                if (Rect.IsValid())
+                {
+                    DrawRect(Rect, Color);
+                }
+            }
+            return;
+        }
+
+        FFFZSCellRect Bounds;
+        bool bHasBounds = false;
         for (const FFFZSCellRect& Rect : Rects)
         {
-            FVector Center = Zone->GetActorTransform().TransformPosition(FVector(
-                (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
-                (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
-                5.0));
-            const FVector Extent(
-                FMath::Max(0.25, Rect.GetWidth() * CellSizeCm * 0.5 - 0.02),
-                FMath::Max(0.25, Rect.GetHeight() * CellSizeCm * 0.5 - 0.02),
-                5.0);
-            DrawDebugBox(
-                GetWorld(), Center, Extent, Zone->GetActorQuat(),
-                LastValidation.bIsValid ? ValidColor : BaseColor,
-                false, DebugDrawLifetimeSeconds, 0, 2.0f);
+            if (!Rect.IsValid())
+            {
+                continue;
+            }
+            if (!bHasBounds)
+            {
+                Bounds = Rect;
+                bHasBounds = true;
+            }
+            else
+            {
+                Bounds.Min.X = FMath::Min(Bounds.Min.X, Rect.Min.X);
+                Bounds.Min.Y = FMath::Min(Bounds.Min.Y, Rect.Min.Y);
+                Bounds.Max.X = FMath::Max(Bounds.Max.X, Rect.Max.X);
+                Bounds.Max.Y = FMath::Max(Bounds.Max.Y, Rect.Max.Y);
+            }
+        }
+        if (bHasBounds)
+        {
+            DrawRect(Bounds, Color);
         }
     };
     DrawGroup(LastValidation.FootprintRects, FColor::Green);

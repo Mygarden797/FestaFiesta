@@ -6,18 +6,21 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
-#include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Widgets/SViewport.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
+#include "Building/UI/FF_BuildRemovalConfirmWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
 
@@ -63,24 +66,44 @@ void UFF_BuildModeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// 프리뷰/설치 명령은 Zone System의 read model과 revision을 즉시 사용하므로 초기화 순서를 보장한다.
 	Collection.InitializeDependency<UFFZSWorldSubsystem>();
 	Super::Initialize(Collection);
+	if (UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
+	{
+		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleWorldChanged);
+		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(
+			this, &ThisClass::HandleWorldSnapshotRestored);
+	}
 }
 
 void UFF_BuildModeSubsystem::Deinitialize()
 {
+	const bool bShouldRestoreInput = bBuildSessionActive;
+	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
+	State = EFF_BuildModeState::Closed;
+	bBuildSessionActive = false;
+	if (UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
+	{
+		ZoneSystem->OnWorldChanged.RemoveAll(this);
+		ZoneSystem->OnWorldSnapshotRestored.RemoveAll(this);
+	}
 	// 월드 종료 중에는 일부 협력 객체가 이미 사라졌을 수 있다. 소유한 객체부터 정리하고,
 	// 실제로 입력을 변경한 세션에서만 남아 있는 로컬 컨트롤러의 입력 모드를 복구한다.
 	RemoveCatalogScreen();
 	DestroyPlacementPreview();
+	ClearPendingRemovalSelection();
+	SetFacilityRangeVisibility(false);
 	ReleaseCatalogThumbnailSession();
-	if (bBuildSessionActive)
+	if (bShouldRestoreInput)
 	{
 		if (APlayerController* Controller = GetLocalPlayerController())
 		{
 			RestoreInputMode(*Controller);
 		}
 	}
-	State = EFF_BuildModeState::Closed;
-	bBuildSessionActive = false;
+	ResetPlacementSelection();
+	bSuppressWorldClickUntilReleased = false;
+	bSuppressPlacementConfirmUntilReleased = false;
+	bSuppressBuildToggleUntilReleased = false;
+	PreviousFocusedWidget.Reset();
 	Super::Deinitialize();
 }
 
@@ -94,13 +117,7 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	}
 
 	// 입력 처리에서 상태가 바뀔 수 있으므로 처리 직후의 State를 기준으로 아래 작업을 선택한다.
-	HandleInput();
-	if (State == EFF_BuildModeState::CatalogOpen)
-	{
-		// 카탈로그 데이터 로드는 비동기일 수 있어 준비될 때까지 매 Tick 가볍게 상태만 확인한다.
-		ApplyCatalogIfReady();
-		return;
-	}
+	HandleInput(*Controller);
 
 	if (State != EFF_BuildModeState::Placing)
 	{
@@ -112,7 +129,9 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	if (PreviewRefreshAccumulator >= PreviewRefreshIntervalSeconds)
 	{
 		PreviewRefreshAccumulator = 0.0f;
-		UpdatePlacementFromCursor();
+		const bool bForceRefresh = bPreviewWorldDirty;
+		bPreviewWorldDirty = false;
+		UpdatePlacementFromCursor(bForceRefresh);
 	}
 }
 
@@ -123,34 +142,71 @@ TStatId UFF_BuildModeSubsystem::GetStatId() const
 
 void UFF_BuildModeSubsystem::ToggleBuildMode()
 {
-	// B 키는 진입과 완전 종료만 토글한다. Placing에서 목록으로 돌아가는 동작은 Escape/우클릭이 담당한다.
-	if (State == EFF_BuildModeState::Closed)
+	if (bIsExitingBuildMode)
 	{
-		OpenCatalog();
 		return;
 	}
-	ExitBuildMode();
+	switch (FFBuildModeModel::ResolveBuildKeyState(State))
+	{
+	case EFF_BuildModeState::BuildMode:
+		EnterBuildMode();
+		break;
+	case EFF_BuildModeState::CatalogOpen:
+		OpenCatalog();
+		break;
+	default:
+		break;
+	}
+}
+
+void UFF_BuildModeSubsystem::EnterBuildMode()
+{
+	if (bIsExitingBuildMode)
+	{
+		return;
+	}
+	APlayerController* Controller = GetLocalPlayerController();
+	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	if (!Controller || !ZoneSystem)
+	{
+		ShowStatus(TEXT("건축 모드를 초기화할 수 없습니다."), true);
+		return;
+	}
+
+	BeginBuildSession(*Controller);
+
+	RemoveCatalogScreen();
+	DestroyPlacementPreview();
+	ClearPendingRemovalSelection();
+	ResetPlacementSelection();
+	State = EFF_BuildModeState::BuildMode;
+	SetFacilityRangeVisibility(true);
+	SetBuildInputMode(*Controller);
+	// UI 버튼 콜백이 mouse-up에서 오더라도 다음 Tick까지는 같은 클릭을 월드 입력으로 사용하지 않는다.
+	bSuppressWorldClickUntilReleased = true;
+	ShowStatus(TEXT("건축 모드 · 좌클릭 철거 대상 선택 · B 카탈로그 · Esc 종료"), false, 2.5f);
 }
 
 void UFF_BuildModeSubsystem::OpenCatalog()
 {
+	if (bIsExitingBuildMode)
+	{
+		return;
+	}
 	APlayerController* Controller = GetLocalPlayerController();
 	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
 	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 
-	// 카탈로그 진입은 UI 생성, 프리뷰 제거, 입력 변경을 포함하는 다단계 작업이다. 어느 선행 조건에서든
-	// 실패하면 부분 상태를 남기지 않도록 동일한 정리 경로를 사용한다. Controller는 호출 시점의 로컬 포인터다.
-	const auto AbortOpen = [this, Controller](const FString& Message)
+	// Closed에서 직접 호출한 Blueprint 경로도 첫 B와 같은 BuildMode 세션을 먼저 만든다.
+	if (State == EFF_BuildModeState::Closed)
 	{
-		RemoveCatalogScreen();
-		DestroyPlacementPreview();
-		ReleaseCatalogThumbnailSession();
-		if (bBuildSessionActive && Controller)
-		{
-			RestoreInputMode(*Controller);
-		}
-		State = EFF_BuildModeState::Closed;
-		bBuildSessionActive = false;
+		EnterBuildMode();
+		Controller = GetLocalPlayerController();
+	}
+
+	const auto AbortOpen = [this](const FString& Message)
+	{
+		EnterBuildMode();
 		ShowStatus(Message, true);
 	};
 	if (!Controller || !Catalog || !ZoneSystem)
@@ -158,23 +214,19 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 		AbortOpen(TEXT("건축 카탈로그를 초기화할 수 없습니다."));
 		return;
 	}
-	if (ZoneSystem->BuildReadModel().Zones.IsEmpty())
+	if (!ZoneSystem->HasRegisteredZones())
 	{
-		// 배치 가능한 Zone이 전혀 없으면 목록을 보여도 어떤 항목도 설치할 수 없으므로 조기에 닫는다.
+		// 전체 시설 읽기 모델을 복사·정렬하지 않고 등록 Zone 존재 여부만 확인한다.
 		AbortOpen(TEXT("이 월드에는 건축 가능한 Zone이 없습니다."));
 		return;
 	}
 
-	if (!bBuildSessionActive)
-	{
-		// Placing -> CatalogOpen 왕복 중에는 같은 세션이다. 최초 진입에서만 원래 커서 상태를 캡처해야
-		// 중간 상태의 true 값으로 덮어써져 종료 후 커서가 잘못 남는 일을 피할 수 있다.
-		bBuildSessionActive = true;
-		bPreviousShowMouseCursor = Controller->bShowMouseCursor;
-	}
+	BeginBuildSession(*Controller);
 
-	// OpenCatalog는 Closed 진입뿐 아니라 배치 취소에서도 호출되므로 두 화면의 객체가 공존하지 않게 정리한다.
+	SetFacilityRangeVisibility(true);
 	DestroyPlacementPreview();
+	ClearPendingRemovalSelection();
+	ResetPlacementSelection();
 	RemoveCatalogScreen();
 	State = EFF_BuildModeState::CatalogOpen;
 	bCatalogWasApplied = false;
@@ -182,11 +234,7 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	CreateCatalogScreen(*Controller);
 	if (!CatalogScreen)
 	{
-		// C++ 폴백까지 실패한 경우에는 사용자 입력을 가둬 두지 않고 완전 종료한다.
-		State = EFF_BuildModeState::Closed;
-		RestoreInputMode(*Controller);
-		ReleaseCatalogThumbnailSession();
-		bBuildSessionActive = false;
+		AbortOpen(TEXT("건축 카탈로그 화면을 열지 못했습니다."));
 		return;
 	}
 	Catalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogChanged);
@@ -208,7 +256,8 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 {
 	// NAME_None은 UI에서 아직 항목을 선택하지 않은 상태이므로 오류 UI 없이 단순 실패로 처리한다.
 	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
-	if (!Catalog || FacilityDefinitionId.IsNone())
+	if (bIsExitingBuildMode || State != EFF_BuildModeState::CatalogOpen ||
+		!Catalog || FacilityDefinitionId.IsNone())
 	{
 		return false;
 	}
@@ -257,6 +306,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 
 	RemoveCatalogScreen();
 	State = EFF_BuildModeState::Placing;
+	SetFacilityRangeVisibility(true);
 	SpawnPlacementPreview();
 	if (!PlacementPreview)
 	{
@@ -267,46 +317,53 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	}
 	if (APlayerController* Controller = GetLocalPlayerController())
 	{
-		SetPlacementInputMode(*Controller);
+		SetBuildInputMode(*Controller);
+		bSuppressWorldClickUntilReleased = true;
+		bSuppressPlacementConfirmUntilReleased = true;
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("Q/E 회전 · 좌클릭 설치 · 우클릭/Esc 목록 복귀 · B 종료"));
+	ShowStatus(TEXT("Q/E 회전 · 좌클릭 설치 · B/우클릭 카탈로그 · Esc 종료"));
 	return PlacementPreview != nullptr;
 }
 
 void UFF_BuildModeSubsystem::ReturnToCatalog()
 {
 	// Closed에서 호출된 늦은 UI 이벤트는 이미 끝난 세션을 다시 열지 않도록 무시한다.
-	if (State == EFF_BuildModeState::Closed)
+	if (bIsExitingBuildMode || State == EFF_BuildModeState::Closed)
 	{
 		return;
 	}
-	// 선택을 해제하되 bBuildSessionActive는 유지한다. OpenCatalog가 최초 커서 상태를 덮어쓰지 않게 하기 위함이다.
-	DestroyPlacementPreview();
-	SelectedFacilityDefinitionId = NAME_None;
-	SelectedSpec = FFFZSFacilitySpec{};
 	OpenCatalog();
 }
 
 void UFF_BuildModeSubsystem::ExitBuildMode()
 {
+	if (bIsExitingBuildMode || (!bBuildSessionActive && State == EFF_BuildModeState::Closed))
+	{
+		return;
+	}
+
+	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
 	// 어느 활성 상태에서 호출해도 같은 Closed 불변식(UI/프리뷰/선택/표적 없음)을 만든다.
+	// 아래 정리 중 썸네일 상태 방송이 동기 재진입해도 공개 전환 API는 Closed 상태와 guard를 본다.
+	State = EFF_BuildModeState::Closed;
+	bBuildSessionActive = false;
+	bSuppressWorldClickUntilReleased = false;
+	bSuppressPlacementConfirmUntilReleased = false;
+	bSuppressBuildToggleUntilReleased = false;
 	RemoveCatalogScreen();
 	DestroyPlacementPreview();
+	ClearPendingRemovalSelection();
+	SetFacilityRangeVisibility(false);
 	ReleaseCatalogThumbnailSession();
-	SelectedFacilityDefinitionId = NAME_None;
-	SelectedSpec = FFFZSFacilitySpec{};
-	CurrentZoneId = NAME_None;
-	bHasPlacementTarget = false;
-	State = EFF_BuildModeState::Closed;
+	ResetPlacementSelection();
 
 	// 컨트롤러가 월드 종료 등으로 사라졌다면 복구할 대상도 없으므로 정리만 완료한다.
 	if (APlayerController* Controller = GetLocalPlayerController())
 	{
 		RestoreInputMode(*Controller);
 	}
-	bBuildSessionActive = false;
 	ShowStatus(TEXT("건축 모드를 종료했습니다."), false, 1.2f);
 }
 
@@ -364,43 +421,96 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	return true;
 }
 
-void UFF_BuildModeSubsystem::HandleInput()
+void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
 {
-	APlayerController* Controller = GetLocalPlayerController();
-	if (!Controller)
+	// Esc는 어느 활성 하위 상태에서도 세션 전체를 닫으며 같은 프레임의 다른 입력을 실행하지 않는다.
+	if (FFBuildModeModel::ShouldExitOnEscape(State) &&
+		Controller.WasInputKeyJustPressed(EKeys::Escape))
 	{
+		ExitBuildMode();
 		return;
 	}
 
-	if (Controller->WasInputKeyJustPressed(EKeys::B))
+	const bool bBlockBuildToggleThisFrame = bSuppressBuildToggleUntilReleased;
+	if (bSuppressBuildToggleUntilReleased)
 	{
-		// B의 완전 종료를 최우선으로 처리해 같은 프레임의 클릭/회전 입력이 뒤이어 실행되지 않게 한다.
+		bSuppressBuildToggleUntilReleased = Controller.IsInputKeyDown(EKeys::B);
+	}
+	if (FFBuildModeModel::ShouldProcessRawBuildKey(
+		bBlockBuildToggleThisFrame,
+		Controller.WasInputKeyJustPressed(EKeys::B)))
+	{
 		ToggleBuildMode();
 		return;
 	}
+	if (State == EFF_BuildModeState::BuildMode && RemovalConfirmWidget &&
+		!PendingRemovalFacility.IsValid())
+	{
+		ClearPendingRemovalSelection();
+	}
+
+	const bool bBlockWorldClickThisFrame = bSuppressWorldClickUntilReleased;
+	if (bSuppressWorldClickUntilReleased)
+	{
+		bSuppressWorldClickUntilReleased = Controller.IsInputKeyDown(EKeys::LeftMouseButton);
+	}
+	const bool bBlockPlacementConfirmThisFrame = bSuppressPlacementConfirmUntilReleased;
+	if (bSuppressPlacementConfirmUntilReleased)
+	{
+		bSuppressPlacementConfirmUntilReleased =
+			Controller.IsInputKeyDown(EKeys::Enter) ||
+			Controller.IsInputKeyDown(EKeys::SpaceBar);
+	}
+
+	if (FFBuildModeModel::CanRemoveInstalledFacility(State))
+	{
+		if (Controller.WasInputKeyJustPressed(EKeys::RightMouseButton))
+		{
+			if (PendingRemovalFacility.IsValid())
+			{
+				ClearPendingRemovalSelection();
+				ShowStatus(TEXT("철거 선택을 취소했습니다."), false, 1.5f);
+			}
+			return;
+		}
+		if (Controller.WasInputKeyJustPressed(EKeys::Enter) &&
+			PendingRemovalFacility.IsValid())
+		{
+			ConfirmPendingRemoval();
+			return;
+		}
+		if (!bBlockWorldClickThisFrame &&
+			Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
+		{
+			HandleRemovalClickUnderCursor(Controller);
+		}
+		return;
+	}
+
 	if (State != EFF_BuildModeState::Placing)
 	{
 		return;
 	}
 
-	if (Controller->WasInputKeyJustPressed(EKeys::Escape) ||
-		Controller->WasInputKeyJustPressed(EKeys::RightMouseButton))
+	if (Controller.WasInputKeyJustPressed(EKeys::RightMouseButton))
 	{
-		// 배치 취소는 건축 세션 종료가 아니라 목록 복귀다. 저장한 원래 입력 상태는 유지한다.
+		// 우클릭은 세션을 끝내지 않고 새 시설을 고를 수 있도록 카탈로그로 돌아간다.
 		ReturnToCatalog();
 		return;
 	}
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 회전된 최종 배치를 설치한다.
-	if (Controller->WasInputKeyJustPressed(EKeys::Q))
+	if (Controller.WasInputKeyJustPressed(EKeys::Q))
 	{
 		RotatePlacement(-1);
 	}
-	if (Controller->WasInputKeyJustPressed(EKeys::E))
+	if (Controller.WasInputKeyJustPressed(EKeys::E))
 	{
 		RotatePlacement(1);
 	}
-	if (Controller->WasInputKeyJustPressed(EKeys::LeftMouseButton) ||
-		Controller->WasInputKeyJustPressed(EKeys::Enter))
+	if ((!bBlockWorldClickThisFrame &&
+		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton)) ||
+		(!bBlockPlacementConfirmThisFrame &&
+			Controller.WasInputKeyJustPressed(EKeys::Enter)))
 	{
 		CommitPlacement();
 	}
@@ -446,6 +556,10 @@ void UFF_BuildModeSubsystem::CreateCatalogScreen(APlayerController& Controller)
 	// AddUObject는 UObject 수명과 연결되지만, 화면을 다시 열 때 중복 구독하지 않도록 제거 함수에서도 명시 해제한다.
 	CatalogScreen->OnFacilitySelected.AddUObject(this, &UFF_BuildModeSubsystem::HandleFacilitySelected);
 	CatalogScreen->OnCloseRequested.AddUObject(this, &UFF_BuildModeSubsystem::HandleCatalogCloseRequested);
+	CatalogScreen->OnBuildModeKeyRequested.AddUObject(
+		this, &UFF_BuildModeSubsystem::HandleCatalogBuildModeKeyRequested);
+	CatalogScreen->OnExitBuildModeKeyRequested.AddUObject(
+		this, &UFF_BuildModeSubsystem::HandleCatalogExitKeyRequested);
 	CatalogScreen->AddToPlayerScreen(80);
 	CatalogScreen->ActivateWidget();
 }
@@ -465,6 +579,8 @@ void UFF_BuildModeSubsystem::RemoveCatalogScreen()
 	// 위젯 제거 과정에서 뒤늦은 선택/닫기 이벤트가 상태를 다시 바꾸지 않도록 델리게이트를 먼저 끊는다.
 	CatalogScreen->OnFacilitySelected.RemoveAll(this);
 	CatalogScreen->OnCloseRequested.RemoveAll(this);
+	CatalogScreen->OnBuildModeKeyRequested.RemoveAll(this);
+	CatalogScreen->OnExitBuildModeKeyRequested.RemoveAll(this);
 	CatalogScreen->DeactivateWidget();
 	CatalogScreen->RemoveFromParent();
 	CatalogScreen = nullptr;
@@ -498,13 +614,13 @@ void UFF_BuildModeSubsystem::ApplyCatalogIfReady()
 	}
 	if (!Catalog->IsCatalogReady())
 	{
-		// 비동기 로딩이 끝날 때까지 목록을 비어 있는 것으로 확정하지 않고 다음 Tick에서 다시 확인한다.
+		// 비동기 로딩이 끝나면 OnCatalogChanged 이벤트가 이 함수를 다시 호출한다.
 		CatalogScreen->SetStatusText(FText::FromString(TEXT("시설 목록을 불러오는 중입니다…")));
 		return;
 	}
 
 	// 준비 완료 시 값 복사본을 UI에 한 번 넘긴다. 썸네일 완료 시에는 카드만 갱신해 선택 분류를 보존한다.
-	const TArray<FFF_BuildCatalogEntry> Entries = Catalog->GetEntries();
+	const TArray<FFF_BuildCatalogEntry>& Entries = Catalog->GetEntriesView();
 	if (!bCatalogWasApplied)
 	{
 		CatalogScreen->SetCatalogEntries(Entries);
@@ -574,11 +690,29 @@ void UFF_BuildModeSubsystem::ReleaseCatalogThumbnailSession()
 		return;
 	}
 
+	// Release가 썸네일 상태 델리게이트를 동기 방송하므로 소유 플래그를 먼저 내린다. 방송 중
+	// 재진입한 새 세션은 자신의 참조를 정상적으로 다시 획득할 수 있다.
+	bThumbnailPreloadAcquired = false;
 	if (UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem())
 	{
 		Catalog->ReleaseThumbnailPreload();
 	}
-	bThumbnailPreloadAcquired = false;
+}
+
+void UFF_BuildModeSubsystem::BeginBuildSession(APlayerController& Controller)
+{
+	if (bBuildSessionActive)
+	{
+		return;
+	}
+
+	bBuildSessionActive = true;
+	bPreviousShowMouseCursor = Controller.bShowMouseCursor;
+	PreviousFocusedWidget.Reset();
+	if (FSlateApplication::IsInitialized())
+	{
+		PreviousFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+	}
 }
 
 void UFF_BuildModeSubsystem::SetCatalogInputMode(APlayerController& Controller) const
@@ -596,12 +730,20 @@ void UFF_BuildModeSubsystem::SetCatalogInputMode(APlayerController& Controller) 
 	Controller.SetInputMode(InputMode);
 }
 
-void UFF_BuildModeSubsystem::SetPlacementInputMode(APlayerController& Controller) const
+void UFF_BuildModeSubsystem::SetBuildInputMode(APlayerController& Controller) const
 {
-	// 배치 중에도 커서를 표시하고 게임 입력을 함께 받는다. 특정 위젯에 포커스를 고정하지 않아
-	// PlayerController가 Q/E/Escape/클릭을 계속 감지할 수 있다.
+	// 카탈로그 없는 건축 상태에서는 커서를 표시하고 게임 입력도 함께 받는다. 특정 위젯에 포커스를
+	// 고정하지 않아 PlayerController가 B/Escape/클릭을 계속 감지할 수 있다.
 	Controller.bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UGameViewportClient* ViewportClient = World->GetGameViewport())
+		{
+			// 제거된 카탈로그 위젯의 약한 focus path를 남기지 않고 게임 뷰포트를 명시적으로 되찾는다.
+			InputMode.SetWidgetToFocus(ViewportClient->GetGameViewportWidget());
+		}
+	}
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	InputMode.SetHideCursorDuringCapture(false);
 	Controller.SetInputMode(InputMode);
@@ -609,9 +751,31 @@ void UFF_BuildModeSubsystem::SetPlacementInputMode(APlayerController& Controller
 
 void UFF_BuildModeSubsystem::RestoreInputMode(APlayerController& Controller)
 {
-	// 커서 가시성은 세션 진입 전 값으로 되돌리되 입력 정책은 이 게임의 기본인 GameOnly로 통일한다.
+	// 커서 가시성과 진입 전 UI 포커스를 복원한다. 이전 포커스가 없거나 게임 뷰포트였다면
+	// 이 게임의 기본 GameOnly 정책으로 돌아간다.
 	Controller.bShowMouseCursor = bPreviousShowMouseCursor;
-	Controller.SetInputMode(FInputModeGameOnly());
+	const TSharedPtr<SWidget> PreviousFocus = PreviousFocusedWidget.Pin();
+	TSharedPtr<SWidget> GameViewportWidget;
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UGameViewportClient* ViewportClient = World->GetGameViewport())
+		{
+			GameViewportWidget = ViewportClient->GetGameViewportWidget();
+		}
+	}
+	if (PreviousFocus.IsValid() && PreviousFocus != GameViewportWidget)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(PreviousFocus);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		Controller.SetInputMode(InputMode);
+	}
+	else
+	{
+		Controller.SetInputMode(FInputModeGameOnly());
+	}
+	PreviousFocusedWidget.Reset();
 }
 
 void UFF_BuildModeSubsystem::SpawnPlacementPreview()
@@ -635,7 +799,7 @@ void UFF_BuildModeSubsystem::SpawnPlacementPreview()
 		// 갱신 주기와 디버그 표현은 이 서브시스템이 통제한다. 첫 유효 표적을 찾기 전까지 숨겨
 		// 월드 원점에 프리뷰가 한 프레임 나타나는 현상도 방지한다.
 		PlacementPreview->bAutoRefreshPreview = false;
-		PlacementPreview->bDrawDebugCells = false;
+		PlacementPreview->bDrawDebugCells = true;
 		PlacementPreview->SetActorHiddenInGame(true);
 	}
 }
@@ -650,53 +814,298 @@ void UFF_BuildModeSubsystem::DestroyPlacementPreview()
 	PlacementPreview = nullptr;
 }
 
-bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandRebuild)
+void UFF_BuildModeSubsystem::ResetPlacementSelection()
 {
-	// 이 함수는 Closed/CatalogOpen/Placing 상태 전환을 일으키지 않는다. 필요한 객체가 없으면
-	// 기존 배치 세션을 건드리지 않고 갱신 실패만 반환한다.
+	SelectedFacilityDefinitionId = NAME_None;
+	SelectedSpec = FFFZSFacilitySpec{};
+	CurrentPlacement = FFFZSGridPlacement{};
+	LastValidation = FFFZSPlacementValidation{};
+	CurrentZoneId = NAME_None;
+	bHasPlacementTarget = false;
+	bPreviewWorldDirty = false;
+	PreviewRefreshAccumulator = 0.0f;
+}
+
+void UFF_BuildModeSubsystem::SetFacilityRangeVisibility(const bool bVisible) const
+{
 	UWorld* World = GetWorld();
-	APlayerController* Controller = GetLocalPlayerController();
-	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
-	if (!World || !Controller || !ZoneSystem || !PlacementPreview)
+	if (!World)
+	{
+		return;
+	}
+
+	// 상태가 바뀔 때만 순회한다. 배치 프리뷰의 0.08초 갱신 경로에는 전역 액터 순회를 넣지 않는다.
+	for (TActorIterator<AFFZSFacilityActor> It(World); It; ++It)
+	{
+		if (IsValid(*It))
+		{
+			It->SetBuildModeRangeVisible(bVisible);
+		}
+	}
+}
+
+bool UFF_BuildModeSubsystem::TraceGroundUnderCursor(
+	APlayerController& Controller,
+	FHitResult& OutGroundHit) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
 	{
 		return false;
 	}
 
 	FVector RayOrigin = FVector::ZeroVector;
 	FVector RayDirection = FVector::ForwardVector;
-	if (!Controller->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+	if (!Controller.DeprojectMousePositionToWorld(RayOrigin, RayDirection))
 	{
-		// 화면 밖 커서 등으로 레이를 만들 수 없으면 이전 위치를 유효한 표적으로 재사용하지 않는다.
-		bHasPlacementTarget = false;
-		PlacementPreview->SetActorHiddenInGame(true);
 		return false;
 	}
 
-	// 바닥을 찾는 Visibility trace가 프리뷰, 기존 시설, Zone 경계/보호 영역 자체에 먼저 맞지 않도록 제외한다.
-	// 이 객체들은 배치 정책 검증에서는 고려되지만 커서가 가리키는 지면을 결정하는 장애물은 아니다.
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FFBuildPlacement), false);
+	// Facility/ProtectedArea 범위 컴포넌트는 NoCollision이며 Zone은 Spline 표현뿐이다. 이전처럼 매 갱신마다
+	// 세 액터 종류를 전부 열거해 ignore 목록을 만들지 않고 실제 충돌 가능한 프리뷰와 Pawn만 제외한다.
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FFBuildGroundTrace), false);
 	QueryParams.AddIgnoredActor(PlacementPreview);
-	if (Controller->GetPawn())
+	if (Controller.GetPawn())
 	{
-		QueryParams.AddIgnoredActor(Controller->GetPawn());
+		QueryParams.AddIgnoredActor(Controller.GetPawn());
 	}
+
+	const FVector RayEnd = RayOrigin + RayDirection * 500000.0f;
+	return World->LineTraceSingleByChannel(
+		OutGroundHit, RayOrigin, RayEnd, ECC_Visibility, QueryParams) &&
+		OutGroundHit.ImpactNormal.Z >= 0.45f;
+}
+
+AFFZSFacilityActor* UFF_BuildModeSubsystem::FindFacilityAtWorldPoint(
+	const FVector& WorldPoint,
+	const UFFZSWorldSubsystem& ZoneSystem,
+	const FName TargetZoneId) const
+{
+	UWorld* World = GetWorld();
+	if (!World || TargetZoneId.IsNone())
+	{
+		return nullptr;
+	}
+
+	AFFZSFacilityActor* BestMatch = nullptr;
+	double BestDistanceSquared = TNumericLimits<double>::Max();
 	for (TActorIterator<AFFZSFacilityActor> It(World); It; ++It)
 	{
-		QueryParams.AddIgnoredActor(*It);
+		AFFZSFacilityActor* Facility = *It;
+		if (!IsValid(Facility) || Facility->GetZoneId() != TargetZoneId ||
+			!Facility->GetFacilityInstanceId().IsValid() ||
+			ZoneSystem.FindFacility(Facility->GetFacilityInstanceId()) != Facility ||
+			!Facility->IsWorldPointInsideFootprint(WorldPoint))
+		{
+			continue;
+		}
+
+		const double DistanceSquared = FVector::DistSquared(Facility->GetActorLocation(), WorldPoint);
+		if (DistanceSquared < BestDistanceSquared)
+		{
+			BestDistanceSquared = DistanceSquared;
+			BestMatch = Facility;
+		}
 	}
-	for (TActorIterator<AFFZSGameplayZone> It(World); It; ++It)
+	return BestMatch;
+}
+
+void UFF_BuildModeSubsystem::SelectFacilityForRemoval(AFFZSFacilityActor& Facility)
+{
+	if (PendingRemovalFacility.Get() == &Facility)
 	{
-		QueryParams.AddIgnoredActor(*It);
+		return;
 	}
-	for (TActorIterator<AFFZSProtectedArea> It(World); It; ++It)
+
+	ClearPendingRemovalSelection();
+	PendingRemovalFacility = &Facility;
+	Facility.SetBuildModeRemovalSelected(true);
+	const FText FacilityDisplayName = Facility.GetFacilitySpec().DisplayName;
+	ShowRemovalConfirmation(FacilityDisplayName);
+	const FString FacilityName = FacilityDisplayName.ToString();
+	ShowStatus(FString::Printf(
+		TEXT("%s 선택됨 · 다시 좌클릭 또는 Enter: 철거 · 우클릭: 취소"),
+		*FacilityName), false, 5.0f);
+}
+
+void UFF_BuildModeSubsystem::ClearPendingRemovalSelection()
+{
+	if (AFFZSFacilityActor* Facility = PendingRemovalFacility.Get())
 	{
-		QueryParams.AddIgnoredActor(*It);
+		Facility->SetBuildModeRemovalSelected(false);
+	}
+	PendingRemovalFacility.Reset();
+	RemoveRemovalConfirmation();
+}
+
+void UFF_BuildModeSubsystem::ShowRemovalConfirmation(const FText& FacilityName)
+{
+	if (!RemovalConfirmWidget)
+	{
+		APlayerController* Controller = GetLocalPlayerController();
+		if (!Controller)
+		{
+			return;
+		}
+		RemovalConfirmWidget = CreateWidget<UFF_BuildRemovalConfirmWidget>(
+			Controller, UFF_BuildRemovalConfirmWidget::StaticClass());
+		if (RemovalConfirmWidget)
+		{
+			RemovalConfirmWidget->AddToViewport(100);
+		}
+	}
+	if (RemovalConfirmWidget)
+	{
+		RemovalConfirmWidget->SetFacilityName(FacilityName);
+	}
+}
+
+void UFF_BuildModeSubsystem::RemoveRemovalConfirmation()
+{
+	if (RemovalConfirmWidget)
+	{
+		RemovalConfirmWidget->RemoveFromParent();
+		RemovalConfirmWidget = nullptr;
+	}
+}
+
+bool UFF_BuildModeSubsystem::HandleRemovalClickUnderCursor(APlayerController& Controller)
+{
+	if (!FFBuildModeModel::CanRemoveInstalledFacility(State))
+	{
+		return false;
+	}
+	if (!CanReconfigure())
+	{
+		ShowStatus(TEXT("현재 단계에서는 시설을 철거할 수 없습니다."), true);
+		if (RemovalConfirmWidget)
+		{
+			RemovalConfirmWidget->SetFeedback(
+				FText::FromString(TEXT("현재 단계에서는 철거할 수 없습니다.")), true);
+		}
+		return false;
 	}
 
 	FHitResult GroundHit;
-	const FVector RayEnd = RayOrigin + RayDirection * 500000.0f;
-	if (!World->LineTraceSingleByChannel(GroundHit, RayOrigin, RayEnd, ECC_Visibility, QueryParams) ||
-		GroundHit.ImpactNormal.Z < 0.45f)
+	if (!TraceGroundUnderCursor(Controller, GroundHit))
+	{
+		if (PendingRemovalFacility.IsValid())
+		{
+			ClearPendingRemovalSelection();
+			ShowStatus(TEXT("철거 선택을 해제했습니다."), false, 1.5f);
+		}
+		return false;
+	}
+
+	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	if (!ZoneSystem)
+	{
+		ShowStatus(TEXT("시설 철거 시스템을 찾을 수 없습니다."), true);
+		return false;
+	}
+	const FName TargetZoneId = ZoneSystem->ResolveZoneAtWorldLocation(GroundHit.ImpactPoint);
+	AFFZSFacilityActor* Facility = FindFacilityAtWorldPoint(
+		GroundHit.ImpactPoint, *ZoneSystem, TargetZoneId);
+	if (!Facility)
+	{
+		if (PendingRemovalFacility.IsValid())
+		{
+			ClearPendingRemovalSelection();
+			ShowStatus(TEXT("철거 선택을 해제했습니다."), false, 1.5f);
+		}
+		return false;
+	}
+	if (!FFBuildModeModel::ShouldConfirmRemoval(
+		State, PendingRemovalFacility.IsValid(), PendingRemovalFacility.Get() == Facility))
+	{
+		SelectFacilityForRemoval(*Facility);
+		return true;
+	}
+
+	return ConfirmPendingRemoval();
+}
+
+bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
+{
+	if (!FFBuildModeModel::CanRemoveInstalledFacility(State))
+	{
+		return false;
+	}
+	if (!CanReconfigure())
+	{
+		ShowStatus(TEXT("현재 단계에서는 시설을 철거할 수 없습니다."), true);
+		if (RemovalConfirmWidget)
+		{
+			RemovalConfirmWidget->SetFeedback(
+				FText::FromString(TEXT("현재 단계에서는 철거할 수 없습니다.")), true);
+		}
+		return false;
+	}
+
+	AFFZSFacilityActor* Facility = PendingRemovalFacility.Get();
+	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	if (!Facility || !ZoneSystem)
+	{
+		ClearPendingRemovalSelection();
+		ShowStatus(TEXT("선택한 철거 대상을 다시 선택해 주세요."), true);
+		return false;
+	}
+
+	const FGuid FacilityInstanceId = Facility->GetFacilityInstanceId();
+	if (!FacilityInstanceId.IsValid() || ZoneSystem->FindFacility(FacilityInstanceId) != Facility)
+	{
+		ClearPendingRemovalSelection();
+		ShowStatus(TEXT("선택한 시설이 변경되었습니다. 다시 선택해 주세요."), true);
+		return false;
+	}
+	if (!Facility->CanMoveOrRemove())
+	{
+		ShowStatus(TEXT("운영 중이거나 이용객이 남아 있는 시설은 철거할 수 없습니다."), true);
+		if (RemovalConfirmWidget)
+		{
+			RemovalConfirmWidget->SetFeedback(
+				FText::FromString(TEXT("운영 중이거나 이용객이 남아 있어 철거할 수 없습니다.")), true);
+		}
+		return false;
+	}
+
+	const FString FacilityName = Facility->GetFacilitySpec().DisplayName.ToString();
+	FFFZSCommand RemoveCommand;
+	RemoveCommand.CommandId = FGuid::NewGuid();
+	RemoveCommand.TransactionId = FGuid::NewGuid();
+	RemoveCommand.ExpectedWorldRevision = ZoneSystem->GetWorldRevision();
+	RemoveCommand.Type = EFFZSCommandType::Remove;
+	RemoveCommand.FacilityInstanceId = FacilityInstanceId;
+
+	const FFFZSCommandResult Result = ZoneSystem->ExecuteCommand(RemoveCommand);
+	if (!Result.bSucceeded)
+	{
+		ShowStatus(FString::Printf(TEXT("철거 실패: %s"), *Result.Message.ToString()), true);
+		if (RemovalConfirmWidget)
+		{
+			RemovalConfirmWidget->SetFeedback(Result.Message, true);
+		}
+		return false;
+	}
+
+	ClearPendingRemovalSelection();
+	ShowStatus(FString::Printf(TEXT("%s 철거 완료"), *FacilityName), false);
+	return true;
+}
+
+bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandRebuild)
+{
+	// 이 함수는 Closed/BuildMode/CatalogOpen/Placing 상태 전환을 일으키지 않는다. 필요한 객체가 없으면
+	// 기존 배치 세션을 건드리지 않고 갱신 실패만 반환한다.
+	APlayerController* Controller = GetLocalPlayerController();
+	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	if (!Controller || !ZoneSystem || !PlacementPreview)
+	{
+		return false;
+	}
+
+	FHitResult GroundHit;
+	if (!TraceGroundUnderCursor(*Controller, GroundHit))
 	{
 		// 지면을 못 찾거나 지나치게 수직인 표면은 배치 좌표로 쓰지 않는다. 프리뷰를 숨겨 설치 가능하다는 오해를 막는다.
 		bHasPlacementTarget = false;
@@ -801,7 +1210,19 @@ void UFF_BuildModeSubsystem::HandleFacilitySelected(const FName FacilityDefiniti
 
 void UFF_BuildModeSubsystem::HandleCatalogCloseRequested()
 {
-	// UI 닫기는 배치 취소와 달리 세션 자체를 끝내 입력 모드까지 원래대로 복구한다.
+	// 닫기 버튼은 카탈로그만 접고 범위 확인/철거가 가능한 건축 상태를 유지한다. 전체 종료는 Esc 전용이다.
+	EnterBuildMode();
+}
+
+void UFF_BuildModeSubsystem::HandleCatalogBuildModeKeyRequested()
+{
+	// Slate가 처리한 B와 raw PlayerController 상태가 같은 프레임에 모두 관찰되더라도 한 번만 복귀한다.
+	bSuppressBuildToggleUntilReleased = true;
+	EnterBuildMode();
+}
+
+void UFF_BuildModeSubsystem::HandleCatalogExitKeyRequested()
+{
 	ExitBuildMode();
 }
 
@@ -827,6 +1248,55 @@ void UFF_BuildModeSubsystem::HandleCatalogThumbnailsChanged()
 
 	bCatalogThumbnailsApplied = false;
 	ApplyCatalogIfReady();
+}
+
+void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
+{
+	if (!FFBuildModeModel::IsBuildSessionActive(State))
+	{
+		return;
+	}
+
+	if (State == EFF_BuildModeState::Placing)
+	{
+		// 콜백 안에서 정책 검증에 재진입하지 않고 다음 제한 주기에서 최신 revision으로 다시 만든다.
+		bPreviewWorldDirty = true;
+	}
+	if ((Event.Type == EFFZSCommandType::Remove || Event.Type == EFFZSCommandType::Move) &&
+		PendingRemovalFacility.IsValid() &&
+		PendingRemovalFacility->GetFacilityInstanceId() == Event.FacilityInstanceId)
+	{
+		ClearPendingRemovalSelection();
+	}
+
+	if (Event.Type != EFFZSCommandType::Install && Event.Type != EFFZSCommandType::Move)
+	{
+		return;
+	}
+	if (UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
+	{
+		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
+		{
+			// 전체 시설을 다시 훑지 않고 새로 설치되거나 이동한 한 시설의 선 캐시만 동기화한다.
+			Facility->SetBuildModeRangeVisible(true);
+		}
+	}
+}
+
+void UFF_BuildModeSubsystem::HandleWorldSnapshotRestored()
+{
+	if (!FFBuildModeModel::IsBuildSessionActive(State))
+	{
+		return;
+	}
+
+	// 스냅샷 복원은 시설 Actor 레지스트리를 원자적으로 교체하므로 이전 Actor를 가리키는 확인 대상을 먼저 비운다.
+	ClearPendingRemovalSelection();
+	SetFacilityRangeVisibility(true);
+	if (State == EFF_BuildModeState::Placing)
+	{
+		bPreviewWorldDirty = true;
+	}
 }
 
 void UFF_BuildModeSubsystem::ShowStatus(

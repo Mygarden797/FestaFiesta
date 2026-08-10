@@ -24,7 +24,7 @@ namespace
 
 	
 	// 카테고리마다 두 번째 토큰으로 허용할 기능 분류 목록이다. 문자열로 보관하는 이유는 파싱한
-	// FString과 정확히 비교하고, 진단 메시지용 Join을 별도 변환 없이 수행하기 위해서다.
+	// FString과 정확히 비교하고, 진단 메시지용 Join을 별도 변환 없이 수행하기 위해서다. 
 	 
 	const TMap<EFFZSFacilityCategory, TArray<FString>>& GetCategoryToKnownMinorTokens()
 	{

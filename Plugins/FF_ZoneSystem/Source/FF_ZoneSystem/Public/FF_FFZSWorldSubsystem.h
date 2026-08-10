@@ -29,6 +29,9 @@ struct FFFZSFacilityRegionOccupancy
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
 // 성공한 권한 명령이 확정되고 WorldRevision이 증가한 뒤 방송하는 불변 이벤트.
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFFZSWorldSnapshotRestoredSignature);
+// 원자적 스냅샷 복원이 끝나 시설 Actor 레지스트리가 한 번에 교체됐음을 알리는 수명주기 이벤트.
+
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFFZSPlacementRejectedSignature, const FFFZSCommand&, Command, const FFFZSCommandResult&, Result);
 // 명령이 실패 폐쇄됐을 때 원본 명령과 실패 결과를 방송한다. 상태 변경 성공 이벤트와 상호 배타적.
@@ -56,6 +59,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
     FFFZSWorldChangedSignature OnWorldChanged;
     // 확정된 Install·Move·Remove·수명주기 변경을 UI·외부 시스템이 관찰하는 이벤트다.
+
+    UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
+    FFFZSWorldSnapshotRestoredSignature OnWorldSnapshotRestored;
+    // 명령 이벤트로 표현할 수 없는 전체 시설 레지스트리 복원이 끝난 뒤 한 번 방송한다.
     
     UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
     FFFZSPlacementRejectedSignature OnPlacementRejected;
@@ -90,6 +97,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSGameplayZone* FindZone(FName ZoneId) const;
     // 현재 유효한 등록 존을 반환한다. 키가 없거나 액터가 소멸했으면 nullptr.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    bool HasRegisteredZones() const;
+    // 전체 시설 읽기 모델을 만들지 않고 유효한 등록 Zone이 하나라도 있는지 확인한다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacility(FGuid FacilityInstanceId) const;

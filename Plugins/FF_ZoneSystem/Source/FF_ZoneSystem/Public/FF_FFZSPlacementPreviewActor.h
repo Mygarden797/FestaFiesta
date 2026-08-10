@@ -15,6 +15,7 @@
 struct FStreamableHandle;
 class USceneComponent;
 class UStaticMeshComponent;
+class ULineBatchComponent;
 
 // UI와 독립적인 비권한 배치 고스트.
 // UI가 입력과 수명주기를 소유하고 이 액터는 검증 결과·비주얼·디버그 표시만 보관.
@@ -35,6 +36,10 @@ public:
     TObjectPtr<UStaticMeshComponent> PreviewMesh;
     // 충돌과 권한이 없는 고스트 표현 컴포넌트다. 
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Preview")
+    TObjectPtr<ULineBatchComponent> RangeLines;
+    // footprint·clearance·queue 사각형을 한 Scene Proxy로 묶어 Shipping에서도 유지하는 선 표현이다.
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview")
     FFFZSCommand PreviewCommand;
     // 다음 RefreshPreview·CommitPreview에 사용할 전체 명령 복사본이다. UI 변경 뒤 새로 검증해야 한다. 
@@ -49,11 +54,11 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview")
     bool bDrawDebugCells = true;
-    // 검증된 footprint·clearance·queue 압축 영역을 디버그 월드에 그릴지 정한다. 출하 UI에는 끄는 것을 권장.
+    // 검증된 footprint·clearance·queue 압축 영역을 지속 선 컴포넌트로 표시할지 정한다.
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview", meta = (ClampMin = "0.0", Units = "s"))
     float DebugDrawLifetimeSeconds = 0.0f;
-    // 디버그 선 수명. 0은 한 프레임이며 긴 값은 누적 표시 비용을 늘린다. 
+    // 이전 DrawDebug 기반 호출자와의 직렬화 호환용 값이다. 지속 선 컴포넌트에서는 사용하지 않는다.
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Preview")
     FFFZSPlacementValidation RefreshPreview();
@@ -101,5 +106,5 @@ private:
 
     void RequestPreviewMesh();
     void ApplyLoadedPreviewMesh();
-    void DrawCells() const;
+    void RefreshRangePresentation();
 };

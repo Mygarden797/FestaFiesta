@@ -14,6 +14,7 @@
 
 struct FStreamableHandle;
 class UBoxComponent;
+class ULineBatchComponent;
 class USceneComponent;
 class USplineComponent;
 class UStaticMeshComponent;
@@ -94,6 +95,18 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility")
     bool NeedsRelocation() const { return bNeedsRelocation; }
     // GIS·콘텐츠 경계 재검증 뒤 현재 위치가 더 이상 유효하지 않아 담당자 이동이 필요한지 반환.
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
+    void SetBuildModeRangeVisible(bool bVisible);
+    // 건축 모드에서 footprint·clearance·queue 예약 범위를 정확한 압축 사각형 단위로 표시하거나 숨긴다.
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
+    void SetBuildModeRemovalSelected(bool bSelected);
+    // 철거 확인 대상으로 선택된 시설의 footprint를 빨간색 굵은 선으로 강조하거나 원래 표시로 되돌린다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Presentation")
+    bool IsWorldPointInsideFootprint(const FVector& WorldPoint) const;
+    // 충돌 설정에 의존하지 않고 월드 지면 점이 회전된 시설 footprint 안에 있는지 판정한다.
     
     const USplineComponent* GetQueueSpline() const { return QueueSpline; }
     // 대기 슬롯 월드 위치 계산에 쓰는 읽기 전용 spline을 반환.
@@ -176,6 +189,13 @@ private:
     // FacilitySpec.Anchors에서 재생성 가능한 표현 컴포넌트 캐시다. 
     TArray<TObjectPtr<UFFZSFacilityAnchorComponent>> RuntimeAnchors;
 
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Components", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<ULineBatchComponent> BuildModeRangeLines;
+    // clearance·queue 압축 사각형을 한 Scene Proxy로 묶는 비권위 범위 표현이다.
+
+    bool bBuildModeRangeVisible = false;
+    bool bBuildModeRemovalSelected = false;
+
     // 일반 폐장 콜백 재진입 뒤 큐가 완전히 비면 MovePending으로 전환하려는 의도 플래그다. 
     bool bSetMovePendingWhenDrained = false;
     // 소프트 비주얼 메시 비동기 요청의 수명과 취소를 관리한다. 
@@ -185,6 +205,8 @@ private:
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
     void RebuildAnchors();
+    void RebuildBuildModeRangePresentation();
+    void DestroyBuildModeRangePresentation();
 
     void HandleQueueStateChanged(EFFZSQueueState PreviousState, EFFZSQueueState NewState);
 };
