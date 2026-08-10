@@ -15,6 +15,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStageChanged, EFF_FestivalStage,
 // 초가 바뀔때 쓰는 딜리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRemainingSecondsChanged, int32, NewSeconds);
 
+
+// 축제가 완전히 끝났을 때 쓰는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalEnded);
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -76,6 +80,10 @@ struct FFF_PhaseTimeRange : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	bool bSkippable = false;
 	// 스킵 가능한 단계인지
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	EFF_FestivalStage NextStage = EFF_FestivalStage::Live;
+	//이 단계가 끝나면 다음에 어느 단계로 가는지
 };
 
 UCLASS()
@@ -115,6 +123,10 @@ public:
 	FOnRemainingSecondsChanged OnRemainingSecondsChanged;
 	//초 단위로 바뀔 때만 알림 받음
 
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnFestivalEnded OnFestivalEnded;
+	// 다른 파트분들이 축제 종료 시점을 알 수 있음
+
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);
 	// 단계 바꿔달라는 요청 함수
@@ -148,6 +160,14 @@ public:
 	}
 
 private:
+
+	FFF_PhaseTimeRange GetPhaseTimeRange(EFF_FestivalStage Stage);
+	// 지금 Stage에 맞는 시간 범위 + 다음단계를 표에서 찾아오는 함수
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsCurrentStageSkippable();
+	// 지금 이 단계가 스킵 가능한지 확인하는 함수
+
 	void HandleLiveEnd();
 	// 타임 하나가 다 끝났을 때 다음으로 넘기는함수
 
