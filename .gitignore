@@ -101,3 +101,7 @@ data/metadata/session_log/
 /AGENTS.md
 /CLAUDE.md
 /docs/
+
+# Cesium 플러그인은 용량이 커서 각자 GitHub 릴리스에서 받아 로컬에 설치
+Plugins/CesiumForUnreal/
+*.sqlite

@@ -15,7 +15,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnStageChanged, EFF_FestivalStage,
 // 초가 바뀔때 쓰는 딜리게이트
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRemainingSecondsChanged, int32, NewSeconds);
 
-
 // 축제가 완전히 끝났을 때 쓰는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalEnded);
 
@@ -147,6 +146,9 @@ public:
 	void AdvanceToNextDay();
 	//report에서 다음날로 누르면 호출
 
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	void SkipCurrentStage();
+	//  스킵 가능한 단계면 즉시 다음 단계로 넘기는 함수
 
 	virtual void Tick(float DeltaTime) override;
 	// 매 프레임 자동으로 호출되는 함수
@@ -193,5 +195,9 @@ private:
 	TArray<FFF_LiveTriggerEvent> CachedTodayEvents;
 
 	int32 LastBroadcastSeconds = -1;
+
+	bool bFestivalEndedBroadcasted = false;
+	// Day3 축제 종료 알림을 한 번만 보냄
+
 
 };
