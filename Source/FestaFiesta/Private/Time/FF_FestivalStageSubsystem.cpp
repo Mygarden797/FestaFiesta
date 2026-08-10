@@ -126,48 +126,50 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		// Live 단계일 때 처리
 	{
 		const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
-		// 메인 공연 구간이면 배속을 강제로 1배속으로 고정
+		// 메인 공연 구간이면 배속을 1배속으로 고정
 
 		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
 		// 흐른 시간을 누적하는 방식
 
-		RemainingTime = GetLiveDurationForCurrentDay() - ElapsedLiveSeconds;
-		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산
-
-		const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
-		if (CurrentSeconds != LastBroadcastSeconds)
-		{
-			LastBroadcastSeconds = CurrentSeconds;
-			OnRemainingSecondsChanged.Broadcast(CurrentSeconds);
-		}
-		// 정수 초가 바뀌었을 때만 알림 보냄
-
-		if (RemainingTime <= 0.f)
-		{
-			HandleLiveEnd();
-		}
-		return;
-		// Live 처리 끝났으면 여기서 함수 종료
+		RemainingTime = FMath::Max(GetLiveDurationForCurrentDay() - ElapsedLiveSeconds, 0.f);
+		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산 (0 밑으로 안 내려가게 함)
 	}
-
-	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
-	// 지금 단계에 맞는 시간 범위를 표에서 찾아옴
-
-	if (Range.MaxSeconds <= 0.f)
+	else
+		//(Setup/Promotion/MorningCheck/Closing/Report) 처리
 	{
-		return;
-		
+		FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
+		// 지금 단계에 맞는 시간 범위를 표에서 찾아옴
+
+		if (Range.MaxSeconds <= 0.f)
+		{
+			return;
+			// 이 단계에 대한 시간 데이터가 표에 없으면 아무것도 안 함
+		}
+
+		ElapsedLiveSeconds += DeltaTime;
+		// 흐른 시간 누적 (항상 1배속)
+
+		RemainingTime = FMath::Max(Range.MaxSeconds - ElapsedLiveSeconds, 0.f);
+		// 이 단계의 최대 시간 - 흐른 시간 = 남은 시간 
 	}
 
-	ElapsedLiveSeconds += DeltaTime;
-	// 흐른 시간 누적 ( 항상 1배속)
-
-	RemainingTime = Range.MaxSeconds - ElapsedLiveSeconds;
-	// 이 단계의 최대 시간 - 흐른 시간 = 남은 시간
+	const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
+	
+	if (CurrentSeconds != LastBroadcastSeconds)
+	{
+		LastBroadcastSeconds = CurrentSeconds;
+		OnRemainingSecondsChanged.Broadcast(CurrentSeconds);
+	}
+	// 정수 초가 바뀌었을 때만 알림 보냄 (이제 모든 단계에서 작동)
 
 	if (RemainingTime <= 0.f)
 	{
-		if (CurrentStage == EFF_FestivalStage::Report)
+		if (CurrentStage == EFF_FestivalStage::Live)
+			// Live면 HandleLiveEnd 호출
+		{
+			HandleLiveEnd();
+		}
+		else if (CurrentStage == EFF_FestivalStage::Report)
 			// 시간이 다 돼도 자동 전환 안 함
 		{
 			if (CurrentDay == 3 && !bFestivalEndedBroadcasted)
@@ -177,11 +179,14 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 				UE_LOG(LogTemp, Log, TEXT("축제 종료!"));
 				OnFestivalEnded.Broadcast();
 			}
+			// Day1/2 Report는 여기서 아무것도 안 함 - 대기
 		}
 		else
 		{
-			RequestTransition(Range.NextStage);
-			// 그 외에는 표에 적힌 다음 단계로 자동 전환
+			FFF_PhaseTimeRange NextRange = GetPhaseTimeRange(CurrentStage);
+			
+			RequestTransition(NextRange.NextStage);
+			// 그 외는 표에 적힌대로 실행
 		}
 	}
 }
@@ -291,4 +296,16 @@ bool UFF_FestivalStageSubsystem::IsCurrentStageSkippable()
 	// 지금 Stage의 시간 정보를 가져와서
 	return Range.bSkippable;
 	// 그 안의 스킵 가능 여부만 꺼내서 반환
+}
+
+void UFF_FestivalStageSubsystem::SkipCurrentStage()
+{
+	if (!IsCurrentStageSkippable())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("이 단계는 스킵할 수 없습니다."));
+		return;
+	}
+	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
+	RequestTransition(Range.NextStage);
+	// 스킵 가능하면 시간 안 기다리고 바로 다음 단계로
 }
