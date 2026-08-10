@@ -88,7 +88,7 @@
   "shape_basis": {
     "what_is_real": [
       "Live 단계가 17:00~21:00(240분)이라는 것 — 실제 부산바다축제 프로그램 시간표 기준, status confirmed.",
-      "야간 Nightlife 프로그램(선셋클럽·선셋펍)이 실제로 존재한다는 것 — 리플렛 대조 확인(booth_naming_convention.md)."
+      "야간 Nightlife 프로그램(선셋클럽·선셋펍)이 실제로 존재한다는 것 — 리플렛 대조 확인(facility_naming_convention.md)."
     ],
     "what_is_assumed": [
       "곡선이 단봉(하나의 피크)이라는 것.",
@@ -101,5 +101,5 @@
     }
   },
   "regeneration": "node Tools/data/build_arrival_curve.mjs",
-  "spec": "data/metadata/visitor_arrival_curve_spec.md"
+  "spec": "data/metadata/spec/visitor_arrival_curve_spec.md"
 }

@@ -117,14 +117,14 @@ namespace
 		return BySize;
 	}
 
-	TArray<FWeightedChoice> ReadArchetypeChoices(const UDataTable* Table, FName ScenarioId)
+	TArray<FWeightedChoice> ReadArchetypeChoices(const UDataTable* Table, FName ArchetypeScenarioId)
 	{
 		TArray<FWeightedChoice> Choices;
 		if (Table == nullptr)
 		{
 			return Choices;
 		}
-		const bool bUseDatalab = (ScenarioId == FName(TEXT("datalab_observed_v0")));
+		const bool bUseDatalab = (ArchetypeScenarioId == FName(TEXT("datalab_observed_v0")));
 		Table->ForeachRow<FFF_ArchetypeRow>(TEXT("FFF_VisitorDistributionBuilder"),
 			[&Choices, bUseDatalab](const FName&, const FFF_ArchetypeRow& Row)
 			{
@@ -159,7 +159,7 @@ FFF_VisitorDistribution FFF_VisitorDistributionBuilder::Build(
 	const UDataTable* ChildCompositionTable,
 	const UDataTable* ArchetypeTable,
 	FName ScopeId,
-	FName ScenarioId,
+	FName ArchetypeScenarioId,
 	int32 RequestedVisitorCount,
 	int32 GlobalSimulationSeed)
 {
@@ -173,10 +173,10 @@ FFF_VisitorDistribution FFF_VisitorDistributionBuilder::Build(
 	const TArray<FWeightedChoice> SizeChoices = ReadGroupSizeChoices(GroupSizeTable, ScopeId);
 	float ExcludedChildWeightPct = 0.f;
 	const TMap<int32, TArray<FWeightedChoice>> ChildChoicesBySize = ReadChildChoicesBySize(ChildCompositionTable, ScopeId, ExcludedChildWeightPct);
-	const TArray<FWeightedChoice> ArchetypeChoices = ReadArchetypeChoices(ArchetypeTable, ScenarioId);
+	const TArray<FWeightedChoice> ArchetypeChoices = ReadArchetypeChoices(ArchetypeTable, ArchetypeScenarioId);
 	if (SizeChoices.Num() == 0 || ArchetypeChoices.Num() == 0)
 	{
-		// 입력 테이블이 비었거나 ScopeId/ScenarioId 가 안 맞는다. 빈 결과를 돌려주고 호출부가 판단한다.
+		// 입력 테이블이 비었거나 ScopeId/ArchetypeScenarioId 가 안 맞는다. 빈 결과를 돌려주고 호출부가 판단한다.
 		return Result;
 	}
 

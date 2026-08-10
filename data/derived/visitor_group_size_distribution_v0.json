@@ -139,5 +139,5 @@
   "primary_scope_reason": "축제 방문은 숙박을 전제하지 않는 당일 방문에 가깝다. 다른 두 scope 는 민감도 비교용으로 함께 낸다.",
   "population_mismatch": "전국 국내 관광여행자의 일행 규모이며 부산바다축제 저녁 방문객을 관측한 값이 아니다. 축제 실측이 생기면 교체한다. 이 표를 \"축제 방문객 그룹 크기 실측\"이라고 부르면 안 된다.",
   "regeneration": "node Tools/data/build_visitor_group_distribution.mjs",
-  "spec": "data/metadata/population_group_generation_spec.md"
+  "spec": "data/metadata/spec/population_group_generation_spec.md"
 }
