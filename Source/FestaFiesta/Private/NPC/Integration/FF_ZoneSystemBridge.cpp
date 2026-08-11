@@ -148,6 +148,11 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		Candidate.BaseAttraction = 0.f;
 
 		// ZoneSystem 은 cm, 선택기는 m. 환산은 이 파일에서만 한다.
+		//
+		// 전제: WorldLocation 은 AFFZSFacilityActor::GetReadModel() 한 곳에서만 채워진다
+		// [주의] 다른 경로로 FFFZSFacilityReadModel 을 만들면 기본값 FVector::ZeroVector 가 남아 
+		// "Party 에서 월드 원점까지의 거리"가 조용히 들어온다 —
+		// 0 이 아니라 그럴듯한 숫자라서 테스트로도, 로그로도 안 잡힌다.
 		Candidate.DistanceMeters = CentimetersToMeters(
 			static_cast<float>(FVector::Dist(PartyWorldLocation, Facility.WorldLocation)));
 
@@ -221,6 +226,15 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	// TODO(예약 필터): reservation_program_spec.md §4.1. `예약 필요` 시설은 그 Party 가 예약을
 	// 갖고 있지 않으면 제외해야 한다. 태그 출처(한광훈)가 정해지면 위 필터 옆에 붙인다.
 
+	// TODO(예약 귀환 안전장치): reservation_program_spec.md §3.5. 예약이 있는 Party 는
+	// "그 후보에 다녀와도 프로그램 시작 전에 예약 시설로 돌아올 수 있는가"를 통과한 후보만
+	// 봐야 한다. — 필요한 입력 두 개가 아직 없다:
+	//   1. `npc_walk_speed_mps` — 소유자 : crowdAI(이정원)
+	//   2. `EstimatedWaitMinutes` — 지금 0 이다(어댑터 결선 전). 0 이면 "대기 없음"으로
+	//      계산되어 안전장치가 낙관적으로 판단한다 — 켜면 오히려 지각이 늘어난다
+	// 둘이 갖춰지면 위 카테고리·상태 필터 옆에 Party 의 예약 정보를 받는 분기로 붙인다.
+	// 그때까지는 2차 안전장치(하드 데드라인, L3 소관)만으로 동작한다.
+	
 	return Candidates;
 }
 
