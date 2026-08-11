@@ -211,6 +211,13 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 		// Report 단계가 아닐 때 잘못 호출되는 것 방지
 	}
 
+	if (CurrentDay >= 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("이미 마지막 날(Day3)입니다. AdvanceToNextDay 무시됨."));
+		return;
+	}
+
+
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);
 }
