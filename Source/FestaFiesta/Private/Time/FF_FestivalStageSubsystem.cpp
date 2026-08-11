@@ -8,8 +8,7 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 {
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
-
-		ElapsedLiveSeconds = 0.f;
+	ElapsedLiveSeconds = 0.f;
 		// 날마다 길이가 달라, 시계를 0으로 리셋함
 	
 
@@ -25,6 +24,7 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 {
 	return CurrentStage == EFF_FestivalStage::Setup
+		|| CurrentStage == EFF_FestivalStage::PromotionPreview
 		|| CurrentStage == EFF_FestivalStage::MorningCheck;
 	// 이 세 단계일 때만 배치 변경 허용
 }
