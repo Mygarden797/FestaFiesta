@@ -227,7 +227,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	// 갖고 있지 않으면 제외해야 한다. 태그 출처(한광훈)가 정해지면 위 필터 옆에 붙인다.
 
 	// TODO(예약 귀환 안전장치): 판정 함수는 이미 있다
-	// `FFF_ProgramReservationRules::EvaluateReturnTrip` (테스트 6개로 고정).
+	// `FFF_ProgramReservationReturnTrip::Evaluate` (별 파일로 파킹, 테스트 6개로 고정).
 	// `EstimatedWaitMinutes` 가 아직 0 이기 때문에 아직 호출하지 않는다.
 	// 0 이면 "줄이 없다"로 계산되어 판정이 낙관적으로 기운다 
 	// Queue 어댑터 결선(= 그 값이 실제 값이 되는 시점) 후에 잇는다.
