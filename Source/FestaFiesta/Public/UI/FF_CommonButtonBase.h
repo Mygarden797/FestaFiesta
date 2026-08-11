@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "CommonButtonBase.h"
+#include "Styling/SlateBrush.h"
 #include "FF_CommonButtonBase.generated.h"
 
 class UImage;
@@ -57,6 +58,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
 	void RefreshVisualState();
 
+	/** `IconBrush`가 지정돼 있으면 `Image_Icon`에 적용한다. 비어 있으면 WBP 설정을 유지한다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
+	void ApplyIconBrush();
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
@@ -74,9 +79,21 @@ protected:
 	/**
 	 * 추가 연출이 필요하면 BP에서 구현한다.
 	 * 이름으로 BP 함수를 찾아 호출(FindFunction+ProcessEvent)하지 않기 위해 명시적 이벤트로 둔다.
+	 *
+	 * === bIsHighlighted와 bIsFocused를 나눠 넘기는 이유 ===
+	 * `bIsHighlighted`는 **호버만** 본다. CBS_ 스타일의 배경 브러시가 호버에서만 바뀌므로,
+	 * 색 기준에 포커스를 넣으면 "어두운 배경 + 남색 글자"가 되어 글자가 사라진다
+	 * (RefreshVisualState의 주석 참고. 실제로 있었던 버그다).
+	 *
+	 * 하지만 **애니메이션은 색과 다르다.** 게임패드로 포커스를 옮길 때도 같은 연출이 돌아야 한다
+	 * (규격 10절 — 3m TV 거리에서 선택 위치가 보여야 한다).
+	 * 그래서 색 판정(`bIsHighlighted`)과 연출 판정(`bIsHighlighted || bIsFocused`)을 BP에서
+	 * 따로 쓸 수 있도록 셋을 다 넘긴다.
+	 *
+	 * 근거: docs/ui/glass-orbit-v3-wiring.md 3절
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI", meta = (DisplayName = "On Visual State Refreshed"))
-	void BP_OnVisualStateRefreshed(bool bIsHighlighted, bool bIsInteractable);
+	void BP_OnVisualStateRefreshed(bool bIsHighlighted, bool bIsInteractable, bool bIsFocused);
 
 protected:
 	// --- 위젯 바인딩. WBP의 위젯 이름이 아래와 정확히 같아야 컴파일된다 ---
@@ -93,11 +110,31 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UImage> Image_Chevron;
 
-	// --- 내용 ---
+	/**
+	 * 키보드·게임패드 포커스 표시.
+	 *
+	 * CBS_ 스타일의 배경 브러시는 **호버에서만** 바뀐다. 포커스는 안 바뀐다.
+	 * 그래서 포커스 표시는 별도 위젯이 필요하다. 없으면 패드로 어디가 선택됐는지 알 수 없다.
+	 * WBP에 테두리 이미지를 하나 넣고 이 이름을 주면 된다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UImage> Image_FocusRing;
+
+	// --- 내용. 버튼 인스턴스마다 다른 값 ---
 
 	/** 버튼 문구. 화면 문자열을 C++에 하드코딩하지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Content")
 	FText ButtonLabel;
+
+	/**
+	 * 버튼 아이콘.
+	 *
+	 * `Image_Icon`은 버튼 WBP 안에 있어서 부모 화면에서 인스턴스별로 편집할 수 없다.
+	 * 이 프로퍼티를 거쳐야 타이틀 화면에서 버튼마다 다른 아이콘을 줄 수 있다.
+	 * 비워 두면 WBP에 설정된 브러시를 그대로 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Content")
+	FSlateBrush IconBrush;
 
 	// --- 아이콘·Chevron 틴트. 배경과 폰트는 CBS_/CTS_가 맡고 여기서는 건드리지 않는다 ---
 
@@ -116,8 +153,8 @@ protected:
 	/**
 	 * 라벨 색까지 이 클래스가 칠할지.
 	 *
-	 * CBS_ 스타일의 상태별 텍스트 스타일이 자식 UCommonTextBlock에 자동 적용되는지 확인되면
-	 * 이걸 false로 두고 스타일에 맡긴다. 확인 전까지는 true가 안전하다.
+	 * CBS_ 스타일의 상태별 텍스트 스타일이 자식 UCommonTextBlock에 자동 적용되면
+	 * 이걸 false로 두고 스타일에 맡긴다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Tint")
 	bool bTintLabel = true;
@@ -125,6 +162,19 @@ protected:
 	/** 비활성 시 전체 불투명도 (규격 7절). */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Tint", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DisabledOpacity = 0.35f;
+
+	/**
+	 * 마우스가 들어올 때 이 버튼으로 포커스를 옮길지. (규격 7절 "마우스 진입 시 포커스 이동")
+	 *
+	 * 2026-08-07 결정: 상태 표시를 `Image_FocusRing` 하나로 모으기로 했다.
+	 * 호버에서 배경을 흰색으로 덮지 않고 링으로만 알린다. 그러려면 마우스 호버가
+	 * 포커스를 만들어야 한다 — 링은 `bHasFocusPath`로만 켜지기 때문이다.
+	 *
+	 * 끄면 호버와 포커스가 별개로 동작한다. 그 경우 호버 쪽에 다른 시각 표현
+	 * (CBS_ 의 Hovered 브러시 등)을 반드시 붙여야 한다. 안 그러면 마우스로는 아무 반응이 없다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Input")
+	bool bFocusOnHover = true;
 
 	/**
 	 * 포커스·호버일 때만 Chevron을 보이게 할지.

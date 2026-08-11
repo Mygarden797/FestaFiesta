@@ -1,11 +1,9 @@
-/**
- * @file FF_FFZSTypes.cpp
- * @brief FF_ZoneSystem 값 타입의 유효성 검사, 경계 정규화, 실패 누적 함수를 구현한다.
- *
- * 흐름: 각 Spec과 Snapshot 입력을 싼 구조 검사부터 순서대로 검증한다.
- * 불변식: 검증 함수는 원본을 변경하지 않고 모든 실패를 설명 가능한 결과에 누적한다.
- * 실패/성능: 무효 크기와 열거 예산을 일찍 차단해 뒤 단계의 기하·정책 비용을 피한다.
- */
+// FF_FFZSTypes.cpp
+
+// FF_ZoneSystem 값 타입의 유효성 검사, 경계 정규화, 실패 누적 함수를 구현한다.
+// 흐름: 각 Spec과 Snapshot 입력을 싼 구조 검사부터 순서대로 검증한다.
+// 불변식: 검증 함수는 원본을 변경하지 않고 모든 실패를 설명 가능한 결과에 누적한다.
+// 실패/성능: 무효 크기와 열거 예산을 일찍 차단해 뒤 단계의 기하·정책 비용을 피한다.
 
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -49,10 +47,9 @@ namespace
         return true;
     }
 
-    /**
-     * 슬롯 좌표를 시설 중심 기준 cm에서 footprint 왼쪽 아래 기준 1 cm 격자로 바꿔 압축 영역을 검사한다.
-     * 경계 위 점은 어느 한쪽 영역에 포함되면 유효하도록 0.01 cm 오차만 허용한다.
-     */
+    // 슬롯 좌표를 시설 중심 기준 cm에서 footprint 왼쪽 아래 기준 1 cm 격자로 바꿔 압축 영역을 검사.
+    // 경계 위 점은 어느 한쪽 영역에 포함되면 유효하도록 0.01 cm 오차만 허용.
+     
     bool IsLocalQueuePointReserved(
         const FVector& LocalPointCm,
         const FIntPoint FootprintSizeCells,
@@ -76,15 +73,14 @@ namespace
     }
 }
 
-/*
- * 검증 순서
- * 1) 식별자/Enum/크기 같은 값싼 기본 조건
- * 2) Cell 열거 예산과 Queue 수치
- * 3) Spline/압축 예약 영역의 공간 관계
- * 4) Anchor 인덱스와 외부 Zone/높이 계약
- * 오류를 가능한 한 모아 저작자에게 한 번에 보여 주되, 위험한 반복문은 선행 조건이 모두
- * 유효할 때만 실행한다. 따라서 잘못된 대형 입력도 실제 Cell/Slot 열거 전에 실패한다.
- */
+// 검증 순서
+    // 1) 식별자/Enum/크기 같은 값싼 기본 조건
+    // 2) Cell 열거 예산과 Queue 수치
+    // 3) Spline/압축 예약 영역의 공간 관계
+    // 4) Anchor 인덱스와 외부 Zone/높이 계약
+    // 오류를 가능한 한 모아 저작자에게 한 번에 보여 주되, 위험한 반복문은 선행 조건이 모두
+    // 유효할 때만 실행한다. 따라서 잘못된 대형 입력도 실제 Cell/Slot 열거 전에 실패한다.
+ 
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();

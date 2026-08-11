@@ -1,6 +1,6 @@
 ﻿archetype_id,current_default_label_draft,ui_override_label,note
-"life_stage_teen","주니어 체험형","",""
-"life_stage_20s","청년 유흥형","",""
-"life_stage_30_40s","청장년 휴식형","",""
-"life_stage_50s","중년 액티브형","",""
-"life_stage_60plus","시니어 여유형","",""
+"life_stage_teen","주니어 체험형","체험파","범례·배지 폭을 위해 3글자로 통일"
+"life_stage_20s","청년 유흥형","활동파","'유흥'은 유흥업소를 연상시켜 축제 톤과 맞지 않아 교체"
+"life_stage_30_40s","청장년 휴식형","휴식파","'청장년'이 일상어가 아니라 성향만 남김"
+"life_stage_50s","중년 액티브형","탐방파","외래어 '액티브'를 한국어로"
+"life_stage_60plus","시니어 여유형","여유파","외래어 '시니어'를 빼고 성향만"

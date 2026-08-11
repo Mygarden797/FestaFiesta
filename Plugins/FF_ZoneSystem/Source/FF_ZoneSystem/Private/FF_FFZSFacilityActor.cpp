@@ -1,11 +1,10 @@
-/**
- * @file FF_FFZSFacilityActor.cpp
- * @brief 설치된 시설 한 개의 런타임 상태, Queue 컴포넌트, 비권위 화면 표현을 구현한다.
- *
- * 흐름: Subsystem이 승인한 Spec·Transform을 Actor와 컴포넌트에 반영한다.
- * 불변식: 전역 점유와 명령 확정 권한은 UFFZSWorldSubsystem에만 있으며 Actor Scale은 1을 유지한다.
- * 실패/성능: 표현 자산은 비동기로 준비하며 실패해도 권위 점유 상태를 바꾸지 않는다.
- */
+// FF_FFZSFacilityActor.cpp
+
+// 설치된 시설 한 개의 런타임 상태, Queue 컴포넌트, 비권위 화면 표현을 구현한다.
+// 흐름: Subsystem이 승인한 Spec·Transform을 Actor와 컴포넌트에 반영한다.
+// 불변식: 전역 점유와 명령 확정 권한은 UFFZSWorldSubsystem에만 있으며 Actor Scale은 1을 유지한다.
+// 실패/성능: 표현 자산은 비동기로 준비하며 실패해도 권위 점유 상태를 바꾸지 않는다.
+ 
 
 #include "FF_FFZSFacilityActor.h"
 #include "Engine/World.h"
@@ -14,6 +13,7 @@
 #include "Engine/StaticMesh.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -22,19 +22,20 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
-/*
- * 이 파일의 책임
- * - 시설 한 개의 런타임 상태(배치, 운영 상태, 대기열)와 화면 표현(메시, 경계, 앵커)을 함께 유지한다.
- * - 월드 전체의 권위 데이터는 UFFZSWorldSubsystem의 시설/압축 영역 레지스트리이다. 이 Actor는 명령을
- *   임의로 확정하는 주체가 아니며, 설치·이동·제거는 Subsystem의 검증 및 트랜잭션 흐름을 거쳐야 한다.
- *
- * 핵심 불변식
- * - 등록 가능한 시설은 유효한 InstanceId/ZoneId/Spec을 가지며 QuarterTurns는 항상 0~3으로 정규화한다.
- * - Actor Scale은 항상 1이다. 크기는 FacilitySpec과 컴포넌트 Extent로 표현해야 그리드 계산과 일치한다.
- * - 대기열에 Agent가 남아 있으면 이동/제거할 수 없다. 일반 Close는 먼저 Drain하고, 비워진 뒤
- *   MovePending으로 전환한다. Emergency Close만 즉시 취소한다.
- * - RuntimeAnchors와 VisualMesh는 파생된 표시 데이터다. 이를 바꿔도 Subsystem의 점유 영역은 바뀌지 않는다.
- */
+#include "SceneManagement.h"
+
+//이 파일의 책임
+ // 시설 한 개의 런타임 상태(배치, 운영 상태, 대기열)와 화면 표현(메시, 경계, 앵커)을 함께 유지한다.
+ // 월드 전체의 권위 데이터는 UFFZSWorldSubsystem의 시설/압축 영역 레지스트리이다. 이 Actor는 명령을
+ //  임의로 확정하는 주체가 아니며, 설치·이동·제거는 Subsystem의 검증 및 트랜잭션 흐름을 거쳐야 한다.
+
+//핵심 불변식
+ // 등록 가능한 시설은 유효한 InstanceId/ZoneId/Spec을 가지며 QuarterTurns는 항상 0~3으로 정규화한다.
+ // Actor Scale은 항상 1이다. 크기는 FacilitySpec과 컴포넌트 Extent로 표현해야 그리드 계산과 일치한다.
+ // 대기열에 Agent가 남아 있으면 이동/제거할 수 없다. 일반 Close는 먼저 Drain하고, 비워진 뒤
+ // MovePending으로 전환한다. Emergency Close만 즉시 취소한다.
+ // RuntimeAnchors와 VisualMesh는 파생된 표시 데이터다. 이를 바꿔도 Subsystem의 점유 영역은 바뀌지 않는다.
+ 
 
 AFFZSFacilityActor::AFFZSFacilityActor()
 {
@@ -51,13 +52,28 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     FootprintBounds->SetupAttachment(SceneRoot);
     FootprintBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     FootprintBounds->SetGenerateOverlapEvents(false);
+    FootprintBounds->SetCanEverAffectNavigation(false);
+    FootprintBounds->ShapeColor = FColor::Green;
+    FootprintBounds->SetLineThickness(2.0f);
     FootprintBounds->SetHiddenInGame(true);
 
     QueueAreaBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("QueueAreaBounds"));
     QueueAreaBounds->SetupAttachment(SceneRoot);
     QueueAreaBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     QueueAreaBounds->SetGenerateOverlapEvents(false);
+    QueueAreaBounds->SetCanEverAffectNavigation(false);
     QueueAreaBounds->SetHiddenInGame(true);
+
+    // 범위 사각형마다 UBoxComponent를 만드는 대신 모든 선을 한 proxy에 배치한다. 선 수명은
+    // 명시적으로 Flush할 때까지 유지하므로 이 컴포넌트 자체의 매 프레임 Tick도 필요 없다.
+    BuildModeRangeLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("BuildModeRangeLines"));
+    BuildModeRangeLines->SetupAttachment(SceneRoot);
+    BuildModeRangeLines->SetAbsolute(true, true, true);
+    BuildModeRangeLines->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    BuildModeRangeLines->SetGenerateOverlapEvents(false);
+    BuildModeRangeLines->SetCanEverAffectNavigation(false);
+    BuildModeRangeLines->PrimaryComponentTick.bCanEverTick = false;
+    BuildModeRangeLines->SetHiddenInGame(true);
 
     QueueSpline = CreateDefaultSubobject<USplineComponent>(TEXT("QueueSpline"));
     QueueSpline->SetupAttachment(SceneRoot);
@@ -84,6 +100,7 @@ void AFFZSFacilityActor::BeginPlay()
 // 이어지는 등록 해제는 ID뿐 아니라 Actor 동일성도 확인하므로 교체된 Actor를 잘못 지우지 않는다.
 void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    DestroyBuildModeRangePresentation();
     if (VisualLoadHandle.IsValid())
     {
         VisualLoadHandle->CancelHandle();
@@ -139,6 +156,10 @@ bool AFFZSFacilityActor::ApplyPlacement(const FName NewZoneId, FFFZSGridPlacemen
     SetActorScale3D(FVector::OneVector);
     FacilityState = EFFZSFacilityState::Validated;
     bSetMovePendingWhenDrained = false;
+    if (bBuildModeRangeVisible)
+    {
+        RebuildBuildModeRangePresentation();
+    }
     return true;
 }
 
@@ -155,7 +176,7 @@ bool AFFZSFacilityActor::OpenFacility()
 }
 
 // 일반 Close는 현재 이용자를 보존한 채 Drain을 시작하고, Emergency Close만 즉시 취소한다.
-// Queue의 동기 콜백이 재진입할 수 있으므로 아래 코드는 전환 의도 플래그를 먼저 기록한다.
+// Queue의 동기 콜백이 재진입할 수 있으므로 아래 코드는 전환 의도 플래그를 먼저 기록.
 void AFFZSFacilityActor::CloseFacility(const bool bEmergency)
 {
     if (FacilityState == EFFZSFacilityState::Removed)
@@ -188,6 +209,8 @@ void AFFZSFacilityActor::MarkRemoved()
     }
     QueueComponent->EmergencyCancel();
     FacilityState = EFFZSFacilityState::Removed;
+    SetBuildModeRemovalSelected(false);
+    SetBuildModeRangeVisible(false);
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
 }
@@ -204,6 +227,67 @@ bool AFFZSFacilityActor::CanMoveOrRemove() const
         FacilityState == EFFZSFacilityState::MovePending;
 }
 
+void AFFZSFacilityActor::SetBuildModeRangeVisible(const bool bVisible)
+{
+    const bool bShouldShow = bVisible && FacilityState != EFFZSFacilityState::Removed;
+    if (bBuildModeRangeVisible == bShouldShow)
+    {
+        // 이동 명령은 표시 여부를 바꾸지 않지만 월드 좌표로 배치한 선 캐시는 다시 만들어야 한다.
+        if (bShouldShow)
+        {
+            RebuildBuildModeRangePresentation();
+        }
+        return;
+    }
+
+    bBuildModeRangeVisible = bShouldShow;
+    FootprintBounds->SetHiddenInGame(!bShouldShow);
+    // QueueAreaBounds는 여러 비정형 Queue 사각형의 외접 박스이므로 제품 범위로 사용하지 않는다.
+    QueueAreaBounds->SetHiddenInGame(true);
+
+    if (bShouldShow)
+    {
+        RebuildBuildModeRangePresentation();
+    }
+    else
+    {
+        DestroyBuildModeRangePresentation();
+    }
+}
+
+void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+{
+    bBuildModeRemovalSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
+    if (!FootprintBounds)
+    {
+        return;
+    }
+
+    FootprintBounds->ShapeColor = bBuildModeRemovalSelected ? FColor::Red : FColor::Green;
+    FootprintBounds->SetLineThickness(bBuildModeRemovalSelected ? 5.0f : 2.0f);
+    FootprintBounds->MarkRenderStateDirty();
+}
+
+bool AFFZSFacilityActor::IsWorldPointInsideFootprint(const FVector& WorldPoint) const
+{
+    if (!FootprintBounds || FacilityState == EFFZSFacilityState::Removed)
+    {
+        return false;
+    }
+
+    const FVector LocalPoint = FootprintBounds->GetComponentTransform().InverseTransformPosition(WorldPoint);
+    const FVector Extent = FootprintBounds->GetUnscaledBoxExtent();
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    // Actor 높이는 footprint 지면 표본의 평균이다. 허용된 지면 높이 편차만큼은 선택에 포함하되,
+    // Zone 필터와 함께 수직 거리를 제한해 같은 XY의 다른 층 시설을 잘못 고르지 않는다.
+    constexpr double HorizontalSelectionToleranceCm = 2.0;
+    const double VerticalSelectionToleranceCm = 2.0 +
+        (Settings ? FMath::Max(0.0f, Settings->MaxGroundHeightVarianceCm) : 20.0f);
+    return FMath::Abs(LocalPoint.X) <= Extent.X + HorizontalSelectionToleranceCm &&
+        FMath::Abs(LocalPoint.Y) <= Extent.Y + HorizontalSelectionToleranceCm &&
+        FMath::Abs(LocalPoint.Z) <= Extent.Z + VerticalSelectionToleranceCm;
+}
+
 bool AFFZSFacilityActor::GetAnchorWorldTransform(const EFFZSAnchorType Type, const int32 Index, FTransform& OutTransform) const
 {
     for (const UFFZSFacilityAnchorComponent* Anchor : RuntimeAnchors)
@@ -218,7 +302,7 @@ bool AFFZSFacilityActor::GetAnchorWorldTransform(const EFFZSAnchorType Type, con
 }
 
 // Actor와 Queue 한 개의 구성요소 스냅샷이다. 월드 전체의 원자적 저장/복원 경계는
-// UFFZSWorldSubsystem::CaptureWorldSnapshot/RestoreWorldSnapshot이 제공한다.
+// UFFZSWorldSubsystem::CaptureWorldSnapshot/RestoreWorldSnapshot이 제공.
 FFFZSFacilityInstanceSnapshot AFFZSFacilityActor::CaptureInstanceSnapshot() const
 {
     FFFZSFacilityInstanceSnapshot Snapshot;
@@ -239,6 +323,7 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
     Result.FacilityInstanceId = FacilityInstanceId;
     Result.FacilityDefinitionId = FacilitySpec.FacilityDefinitionId;
     Result.ZoneId = ZoneId;
+    Result.WorldLocation = GetActorLocation();
     Result.Category = FacilitySpec.Category;
     Result.State = FacilityState;
     Result.QueueState = QueueComponent->GetQueueState();
@@ -250,7 +335,7 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
 }
 
 // 아래 컴포넌트들은 FacilitySpec에서 재생성할 수 있는 표현 캐시다. 권위 배치 판정은 이 Box/Spline의
-// 충돌 이벤트가 아니라 Subsystem의 그리드, 보호 구역, 월드 충돌 검사를 사용한다.
+// 충돌 이벤트가 아니라 Subsystem의 그리드, 보호 구역, 월드 충돌 검사를 사용.
 void AFFZSFacilityActor::RebuildRuntimePresentation()
 {
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
@@ -303,6 +388,107 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     }
 
     RebuildAnchors();
+
+    if (bBuildModeRangeVisible)
+    {
+        RebuildBuildModeRangePresentation();
+    }
+}
+
+void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
+{
+    DestroyBuildModeRangePresentation();
+    if (!bBuildModeRangeVisible || !BuildModeRangeLines || !FootprintBounds)
+    {
+        return;
+    }
+
+    constexpr float RangeHeightCm = 10.0f;
+    // 비정상적으로 조각난 콘텐츠도 건축 모드 진입을 멈추지 않게 한다. 일반 콘텐츠는 정확한
+    // canonical rect를 모두 그리고, 상한을 넘는 그룹만 합집합 외접 박스로 안전하게 축약한다.
+    constexpr int32 MaxDisplayedRectsPerGroup = 1024;
+    const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+    const FVector FootprintExtent = FootprintBounds->GetUnscaledBoxExtent();
+    const FTransform ActorTransform = GetActorTransform();
+    BuildModeRangeLines->SetHiddenInGame(false);
+
+    const auto DrawRect = [this, CellSizeCm, FootprintExtent, RangeHeightCm, ActorTransform](
+        const FFFZSCellRect& Rect,
+        const FLinearColor& Color)
+    {
+        const FVector LowerLeft(
+            Rect.Min.X * CellSizeCm - FootprintExtent.X,
+            Rect.Min.Y * CellSizeCm - FootprintExtent.Y,
+            0.0f);
+        const FVector UpperRight(
+            Rect.Max.X * CellSizeCm - FootprintExtent.X,
+            Rect.Max.Y * CellSizeCm - FootprintExtent.Y,
+            RangeHeightCm);
+        BuildModeRangeLines->DrawBox(
+            ActorTransform.TransformPosition((LowerLeft + UpperRight) * 0.5),
+            (UpperRight - LowerLeft) * 0.5,
+            ActorTransform.GetRotation(),
+            Color,
+            0.0f,
+            SDPG_World,
+            2.0f);
+    };
+
+    const auto AddRangeGroup = [&DrawRect](
+        const TArray<FFFZSCellRect>& Rects,
+        const FColor Color)
+    {
+        if (Rects.Num() <= MaxDisplayedRectsPerGroup)
+        {
+            for (const FFFZSCellRect& Rect : Rects)
+            {
+                if (Rect.IsValid())
+                {
+                    DrawRect(Rect, FLinearColor(Color));
+                }
+            }
+            return;
+        }
+
+        FFFZSCellRect Bounds;
+        bool bHasBounds = false;
+        for (const FFFZSCellRect& Rect : Rects)
+        {
+            if (!Rect.IsValid())
+            {
+                continue;
+            }
+            if (!bHasBounds)
+            {
+                Bounds = Rect;
+                bHasBounds = true;
+            }
+            else
+            {
+                Bounds.Min.X = FMath::Min(Bounds.Min.X, Rect.Min.X);
+                Bounds.Min.Y = FMath::Min(Bounds.Min.Y, Rect.Min.Y);
+                Bounds.Max.X = FMath::Max(Bounds.Max.X, Rect.Max.X);
+                Bounds.Max.Y = FMath::Max(Bounds.Max.Y, Rect.Max.Y);
+            }
+        }
+        if (bHasBounds)
+        {
+            DrawRect(Bounds, FLinearColor(Color));
+        }
+    };
+
+    const FFFZSGridPlacement LocalPlacement;
+    AddRangeGroup(UFFZSGridLibrary::GetClearanceRects(FacilitySpec, LocalPlacement), FColor::Cyan);
+    AddRangeGroup(UFFZSGridLibrary::GetQueueRects(FacilitySpec, LocalPlacement), FColor::Yellow);
+}
+
+void AFFZSFacilityActor::DestroyBuildModeRangePresentation()
+{
+    if (BuildModeRangeLines)
+    {
+        BuildModeRangeLines->Flush();
+        BuildModeRangeLines->SetHiddenInGame(true);
+    }
 }
 
 // 비동기 경합 방어: 새 요청 전에 기존 Handle을 취소하고 화면을 비운다. 취소는 자원 절약과 수명

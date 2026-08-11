@@ -575,8 +575,7 @@ FacilityActor의 Transform이나 QueueComponent 내부 배열을 직접 수정�
 | Phase | Install | Move | Remove | Open / Close / EmergencyClose |
 |---|---:|---:|---:|---:|
 | InitialSetup | 허용 | 허용 | 허용 | 허용 |
-| Reconfigure | 허용 | 허용 | 허용 | 허용 |
-| MorningCheck | 거부 | 거부 | 거부 | 허용 |
+| MorningCheck | 허용 | 허용 | 허용 | 허용 |
 | LiveOperation | 거부 | 거부 | 거부 | 허용 |
 | EveningSettlement | 거부 | 거부 | 거부 | 허용 |
 
@@ -1045,10 +1044,19 @@ UI와 분석 계층은 가능하면 가변 Actor 전체 대신 `BuildReadModel`�
 Zone Read Model:
 
 - ZoneId
+- NeighborZoneIds
+- EntryExitAnchors
+- AreaSquareMeters
 - SoftCapacity
 - ReportedPopulation
 - DensityRatio
 - DensityState
+
+`NeighborZoneIds`와 `EntryExitAnchors`는 Actor 배열의 값 복사본이며 원소 순서를 바꾸지 않는다.
+앵커 Transform은 Zone 로컬 cm 좌표계다. `AreaSquareMeters`는 현재 BoundarySpline의 로컬 XY(cm)
+점에 신발끈 공식을 적용한 `GetBoundaryAreaSquareMeters()` 결과다. 즉,
+`abs(sum(x_i * y_(i+1) - x_(i+1) * y_i)) * 0.5 / 10000`으로 계산한 실제 경계 면적(m²)이며,
+SoftCapacity 산정에만 쓰이는 `UsablePublicAreaSquareMeters` Override는 반영하지 않는다.
 
 Facility Read Model:
 
@@ -1057,6 +1065,7 @@ Facility Read Model:
 - QueueState
 - WaitingCount, ActiveServiceCount
 - AverageCompletedWaitSeconds
+- WorldLocation: Facility Actor의 대표 월드 지점(cm)
 
 Read Model 수정은 권위 상태에 영향을 주지 않는다. Queue 참가·Population 갱신처럼 Revision을 올리지 않는
 변화도 Read Model 값에는 나타날 수 있으므로, UI 갱신을 Revision 변화에만 의존해서는 안 된다.
@@ -1392,7 +1401,7 @@ Null Agent Actor와 수동 도착 보고를 사용하므로 실제 NPC 이동 �
 | 보호 구역 | `ProtectedRouteBlocked` | 보호된 도로·출입구·비상 동선 등과 배치 영역이 충돌한다. |
 | Navigation | `RequiredRouteDisconnected` | 필수 Entry/Service/Exit 또는 Queue 목적지 사이의 경로가 연결되지 않는다. |
 | 보호 구역 | `AccessibilityRouteBlocked` | Reserved 영역이 `AccessibilityRoute` 또는 `ViewingArea` Protected Area와 교차한다. |
-| 단계 | `WrongStage` | 현재 Phase에서 허용하지 않는 명령이다. 배치는 `InitialSetup`·`Reconfigure`에서만 허용된다. |
+| 단계 | `WrongStage` | 현재 Phase에서 허용하지 않는 명령이다. 배치는 `InitialSetup`·`MorningCheck`에서만 허용된다. |
 | 상태 | `FacilityOccupied` | 사용 중인 시설을 비활성화·철거하려 했다. Queue와 이용자를 먼저 비워야 한다. |
 | 상태 | `InvalidFacilityState` | 요청한 수명주기 전이가 현재 상태에서 유효하지 않다. |
 | 동시성 | `StaleWorldRevision` | `ExpectedWorldRevision`이 현재 Revision과 다르다. 최신 Read Model을 다시 읽고 명령을 재구성한다. |
@@ -1412,7 +1421,7 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 
 ## 20. 자동화 테스트와 QA Gate
 
-현재 소스에는 `FF_ZoneSystem.*` 이름으로 **21개**의 Unreal Automation Test가 선언되어 있다.
+현재 소스에는 `FF_ZoneSystem.*` 이름으로 **23개**의 Unreal Automation Test가 선언되어 있다.
 이 숫자는 소스 선언 기준이며, 이 문서를 작성하면서 Editor에서 전부 실행해 통과를 확인했다는
 뜻은 아니다.
 
@@ -1422,19 +1431,22 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 
 - `FF_ZoneSystem.Integration.Policy.AtomicCommitAndReverseRollback`
 - `FF_ZoneSystem.Integration.World.CommandLifecycleQueueAndSnapshot`
+- `FF_ZoneSystem.Integration.World.ChangePhasePermissions`
 - `FF_ZoneSystem.Integration.World.ZoneExclusivityAndProtectedArea`
 - `FF_ZoneSystem.Integration.World.InvalidFacilitySpecStopsBeforeNavigation`
 - `FF_ZoneSystem.Integration.World.PortableZoneGraphAndPrimaryAssetType`
 - `FF_ZoneSystem.Integration.World.SnapshotPhaseReentrancyAndDrainIntent`
+- `FF_ZoneSystem.Integration.World.ZoneReadModelSpatialMetadata`
 
-주요 대상은 외부 정책의 원자성, Command 수명주기, Queue와 Snapshot, Zone 독점성,
-Protected Area, 잘못된 Definition의 조기 차단, Zone Graph, Phase·재진입·Drain 복원이다.
+주요 대상은 외부 정책의 원자성, Command 수명주기, Phase별 월드 변경 권한, Queue와 Snapshot,
+Zone 독점성, Protected Area, 잘못된 Definition의 조기 차단, Zone Graph,
+Phase·재진입·Drain 복원, Zone Read Model의 공간 메타데이터 값 복사다.
 
 ### 20.2 Unit 테스트와 소속
 
 아래 15개 중 14개는 Runtime 모듈 `Source/FF_ZoneSystem/Private/Tests`에 있다.
 `WorldSnapshotByteRoundTrip`은 Editor 전용 `FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp`에
-있으며, 20.1의 Integration 6개와 함께 Editor 테스트 모듈에서 실행된다.
+있으며, 20.1의 Integration 8개와 함께 Editor 테스트 모듈에서 실행된다.
 
 - `FF_ZoneSystem.Unit.SaveGame.WorldSnapshotByteRoundTrip`
 - `FF_ZoneSystem.Unit.Contract.Phase0WorldChangeStub`
@@ -1484,7 +1496,7 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
 #### Build·자동화·패키징
 
 - [ ] Editor Development, Game Development, Game Shipping 구성이 모두 빌드된다.
-- [ ] `FF_ZoneSystem` 테스트 21개가 발견되고 21 성공·0 실패, Queue Empty, 프로세스 Exit 0이다.
+- [ ] `FF_ZoneSystem` 테스트 23개가 발견되고 23 성공·0 실패, Queue Empty, 프로세스 Exit 0이다.
 - [ ] 독립 Plugin 패키징과 프로젝트 Cook에서 Soft Mesh·Definition·Asset Manager Scan을 검증한다.
 - [ ] Clean PC의 Shipping 패키지에서 Plugin Mount, Map Load, Save/Restore Smoke를 통과한다.
 
@@ -1575,9 +1587,9 @@ Callback과 Event Listener에서 즉시 새 명령을 호출하기보다 다음 
 ### 22.2 배치와 Navigation
 
 - Zone 재검증은 현재 Phase 규칙을 통과하는 Placement Validator를 다시 사용한다.
-  `MorningCheck`, `LiveOperation`, `EveningSettlement`처럼 배치를 허용하지 않는 Phase에서
-  호출하면 공간 문제가 없어도 `WrongStage`로 Invalid 처리될 수 있다. 현 구현에서는
-  `InitialSetup` 또는 `Reconfigure`에서 호출한다.
+  `LiveOperation`, `EveningSettlement`처럼 배치를 허용하지 않는 Phase에서 호출하면
+  공간 문제가 없어도 `WrongStage`로 Invalid 처리될 수 있다. 현 구현에서는
+  `InitialSetup` 또는 `MorningCheck`에서 호출한다.
 - Navigation 안전 검사는 Settings로 비활성화할 수 있고, NavSystem 부재를 실패로 볼지도
   설정에 따라 달라진다. 안전·접근성·법규 준수의 최종 보증 수단으로 단독 사용하면 안 된다.
 - `NavRebuildTimeout`은 enum에 있으나 현재 비동기 Nav 재빌드 대기 Pipeline은 없다.

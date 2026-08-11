@@ -12,7 +12,7 @@
  *
  * AffectsField 는 이 특성이 실제로 곱해지는 필드/계수 이름을 적어둔 감사용 문자열이며
  * 런타임 로직은 이 열 자체를 참조하지 않는다. 실제 매핑은 FFF_IndividualVariationResolver
- * 와 data/metadata/individual_variation_spec.md 5절에 있다.
+ * 와 data/metadata/spec/individual_variation_spec.md 5절에 있다.
  */
 USTRUCT(BlueprintType)
 struct FFF_IndividualVariationRow : public FTableRowBase

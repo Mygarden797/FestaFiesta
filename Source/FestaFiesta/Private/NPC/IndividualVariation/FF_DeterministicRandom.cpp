@@ -6,14 +6,52 @@
 #include "Engine/DataTable.h"
 #include "Math/RandomStream.h"
 
+uint32 FFF_DeterministicRandom::MakeStableNameHash(const FName Name)
+{
+	if (Name.IsNone())
+	{
+		// NAME_None 은 "키 없음"이다. 0 으로 고정해 두면 빈 문자열과도 같아지는데,
+		// TraitKey 로 빈 이름을 쓰는 경우가 없어서 구분할 필요가 없다.
+		return 0u;
+	}
+
+	// 힙 할당 없이 문자를 읽는다. TraitKey 는 짧아서 128 로 충분하고, 넘치면 빌더가 자동 확장한다.
+	TStringBuilder<128> Builder;
+	Name.AppendString(Builder);
+
+	// FNV-1a. 엔진 버전·플랫폼·실행 순서와 무관하게 같은 문자열이면 같은 값이 나온다.
+	uint32 Hash = 2166136261u;
+	const TCHAR* Chars = Builder.GetData();
+	for (int32 Index = 0; Index < Builder.Len(); ++Index)
+	{
+		// FName 비교가 대소문자를 무시하므로 소문자화해서 해시한다 — 안 하면 FName 으로는
+		// 같다고 취급되는 두 이름이 서로 다른 시드를 낸다.
+		Hash ^= static_cast<uint32>(FChar::ToLower(Chars[Index]));
+		Hash *= 16777619u;
+	}
+	return Hash;
+}
+
 uint32 FFF_DeterministicRandom::MakeTraitSeed(int32 GlobalSimulationSeed, int32 StableAgentId, FName TraitKey, int32 SpawnGeneration, FName RandomPurpose)
 {
+	// 정수는 GetTypeHash 가 안정적이다(항등에 가까운 변환). FName 만 내용 해시로 바꾼다 —
+	// GetTypeHash(FName) 은 프로세스마다 달라지는 인덱스를 해시한다(MakeStableNameHash 주석).
 	uint32 Seed = GetTypeHash(GlobalSimulationSeed);
 	Seed = HashCombine(Seed, GetTypeHash(StableAgentId));
-	Seed = HashCombine(Seed, GetTypeHash(RandomPurpose));
-	Seed = HashCombine(Seed, GetTypeHash(TraitKey));
+	Seed = HashCombine(Seed, MakeStableNameHash(RandomPurpose));
+	Seed = HashCombine(Seed, MakeStableNameHash(TraitKey));
 	Seed = HashCombine(Seed, GetTypeHash(SpawnGeneration));
 	return Seed;
+}
+
+uint32 FFF_DeterministicRandom::MakeDecisionSeed(int32 GlobalSimulationSeed, int32 StableAgentId, int32 ChoiceRoundIndex)
+{
+	// TraitKey 는 회차와 무관한 상수다. 회차는 아래에서 정수로 접는다.
+	static const FName DecisionTraitKey(TEXT("destination_choice"));
+	static const FName DecisionPurpose(TEXT("Decision"));
+
+	uint32 Seed = MakeTraitSeed(GlobalSimulationSeed, StableAgentId, DecisionTraitKey, 0, DecisionPurpose);
+	return HashCombine(Seed, GetTypeHash(ChoiceRoundIndex));
 }
 
 float FFF_DeterministicRandom::MakeUniformFraction(uint32 TraitSeed)
@@ -101,6 +139,36 @@ FFF_ResolvedIndividualTraits FFF_IndividualVariationResolver::Resolve(
 
 	Out.ReevaluateIntervalMultiplier = ShapeWithRow(VariationTable, TEXT("reevaluate_interval_multiplier"),
 		ResolveUniformFraction(GlobalSimulationSeed, StableAgentId, TEXT("reevaluate_interval_multiplier"), SpawnGeneration), 1.f);
+
+	// leisureliness 와 상관을 걸지 않는다 — "느긋한 사람이 새로운 걸 더 찾는다"는 근거가 없다.
+	Out.NoveltySeekingMultiplier = ShapeWithRow(VariationTable, TEXT("novelty_seeking_multiplier"),
+		ResolveUniformFraction(GlobalSimulationSeed, StableAgentId, TEXT("novelty_seeking_multiplier"), SpawnGeneration), 1.f);
+
+	return Out;
+}
+
+FFF_ResolvedIndividualTraits FFF_IndividualVariationResolver::ResolveWithGroupSharing(
+	const UDataTable* VariationTable,
+	int32 GlobalSimulationSeed,
+	int32 StableAgentId,
+	int32 GroupId,
+	int32 SpawnGeneration,
+	float CorrelationStrength)
+{
+	FFF_ResolvedIndividualTraits Out = Resolve(VariationTable, GlobalSimulationSeed, StableAgentId, SpawnGeneration, CorrelationStrength);
+
+	if (GroupId == INDEX_NONE)
+	{
+		// solo — 공유할 상대가 없다. Resolve() 한 번과 완전히 같은 결과여야 한다
+		return Out;
+	}
+
+	// GroupId를 StableAgentId 자리에 넣어 "그룹의" 값을 뽑는다. 같은 GroupId면 멤버 전원이 같은 값을 얻는다.
+	// group_composition_rules_v0.csv 의 group_shared_traits = walk_speed_multiplier;stay_duration_multiplier
+	const FFF_ResolvedIndividualTraits GroupTraits = Resolve(VariationTable, GlobalSimulationSeed, GroupId, SpawnGeneration, CorrelationStrength);
+
+	Out.WalkSpeedMultiplier = GroupTraits.WalkSpeedMultiplier;
+	Out.StayDurationMultiplier = GroupTraits.StayDurationMultiplier;
 
 	return Out;
 }

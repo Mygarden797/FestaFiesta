@@ -16,15 +16,11 @@ public class FestaFiesta : ModuleRules
 			"AIModule",
 			"UMG","Slate","SlateCore",
 			"CommonUI","CommonInput",
+			"DeveloperSettings",
 			"Niagara","NiagaraCore",
 			"FF_ZoneSystem"
 		});
-
-		PrivateDependencyModuleNames.AddRange(new string[]
-		{
-			"FF_ZoneSystem"
-		});
-
+		
 		// The WBP builder is compiled only into the Editor target. Runtime/Game
 		// packaging remains free of UnrealEd and UMGEditor dependencies.
 		if (Target.bBuildEditor)

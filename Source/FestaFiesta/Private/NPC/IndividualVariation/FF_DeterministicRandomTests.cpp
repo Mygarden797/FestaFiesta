@@ -196,4 +196,139 @@ bool FFF_IndividualVariationResolver_ResolvesPersonalThresholds::RunTest(const F
 	return true;
 }
 
+// --- 그룹 공유 특성 (individual_variation_spec.md 8-A절, 2026-08-06 구현) ---
+
+// 같은 그룹이면 walk_speed·stay_duration만 같고 나머지는 개체별로 다르다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariation_GroupSharesWalkSpeedAndStayOnly, "FestaFiesta.NPC.IndividualVariation.GroupSharesWalkSpeedAndStayOnly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariation_GroupSharesWalkSpeedAndStayOnly::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = FFF_DeterministicRandomTestHelpers::MakeTestVariationTable();
+	constexpr int32 Seed = 4242;
+	constexpr int32 GroupId = 77;
+
+	const FFF_ResolvedIndividualTraits MemberA = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, /*StableAgentId=*/101, GroupId, 0, 0.3f);
+	const FFF_ResolvedIndividualTraits MemberB = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, /*StableAgentId=*/202, GroupId, 0, 0.3f);
+
+	TestTrue(TEXT("같은 그룹은 보행속도를 공유한다 — 동행이 유지된다"),
+		FMath::IsNearlyEqual(MemberA.WalkSpeedMultiplier, MemberB.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("같은 그룹은 체류시간을 공유한다 — 같이 떠난다"),
+		FMath::IsNearlyEqual(MemberA.StayDurationMultiplier, MemberB.StayDurationMultiplier, KINDA_SMALL_NUMBER));
+
+	// 나머지 4종 + leisureliness_axis 는 개체별 독립이어야 한다.
+	// 삼각분포라 우연히 같은 값이 나올 수도 있으므로 "전부 같지는 않다"로 검증한다.
+	const bool bAnyPersonalDiffers =
+		!FMath::IsNearlyEqual(MemberA.PatienceMultiplier, MemberB.PatienceMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.CrowdToleranceMultiplier, MemberB.CrowdToleranceMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.PreferenceStrengthMultiplier, MemberB.PreferenceStrengthMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.ReevaluateIntervalMultiplier, MemberB.ReevaluateIntervalMultiplier, KINDA_SMALL_NUMBER)
+		|| !FMath::IsNearlyEqual(MemberA.LeisurelinessAxis, MemberB.LeisurelinessAxis, KINDA_SMALL_NUMBER);
+	TestTrue(TEXT("인내심·혼잡내성·취향강도·재평가주기는 그룹이어도 개체별로 다르다"), bAnyPersonalDiffers);
+
+	// 다른 그룹은 공유 특성도 달라야 한다
+	const FFF_ResolvedIndividualTraits OtherGroup = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, 101, /*GroupId=*/78, 0, 0.3f);
+	TestFalse(TEXT("다른 그룹은 보행속도가 다르다"),
+		FMath::IsNearlyEqual(MemberA.WalkSpeedMultiplier, OtherGroup.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	return true;
+}
+
+// solo(GroupId == INDEX_NONE)는 Resolve() 한 번과 완전히 같은 결과여야 한다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariation_SoloMatchesPlainResolve, "FestaFiesta.NPC.IndividualVariation.SoloMatchesPlainResolve", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariation_SoloMatchesPlainResolve::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = FFF_DeterministicRandomTestHelpers::MakeTestVariationTable();
+	constexpr int32 Seed = 909;
+	constexpr int32 AgentId = 55;
+
+	const FFF_ResolvedIndividualTraits Plain = FFF_IndividualVariationResolver::Resolve(Table, Seed, AgentId, 0, 0.3f);
+	const FFF_ResolvedIndividualTraits Solo = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, Seed, AgentId, INDEX_NONE, 0, 0.3f);
+
+	TestTrue(TEXT("solo 보행속도가 Resolve()와 같다"), FMath::IsNearlyEqual(Plain.WalkSpeedMultiplier, Solo.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("solo 체류시간이 Resolve()와 같다"), FMath::IsNearlyEqual(Plain.StayDurationMultiplier, Solo.StayDurationMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("solo 인내심이 Resolve()와 같다"), FMath::IsNearlyEqual(Plain.PatienceMultiplier, Solo.PatienceMultiplier, KINDA_SMALL_NUMBER));
+	return true;
+}
+
+// 결정성: 같은 (Seed, AgentId, GroupId)면 몇 번 불러도 같은 값
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_IndividualVariation_GroupSharingIsDeterministic, "FestaFiesta.NPC.IndividualVariation.GroupSharingIsDeterministic", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_IndividualVariation_GroupSharingIsDeterministic::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = FFF_DeterministicRandomTestHelpers::MakeTestVariationTable();
+
+	const FFF_ResolvedIndividualTraits First = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, 7, 3, 11, 0, 0.3f);
+	const FFF_ResolvedIndividualTraits Second = FFF_IndividualVariationResolver::ResolveWithGroupSharing(Table, 7, 3, 11, 0, 0.3f);
+
+	TestTrue(TEXT("같은 입력이면 보행속도가 같다"), FMath::IsNearlyEqual(First.WalkSpeedMultiplier, Second.WalkSpeedMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("같은 입력이면 체류시간이 같다"), FMath::IsNearlyEqual(First.StayDurationMultiplier, Second.StayDurationMultiplier, KINDA_SMALL_NUMBER));
+	TestTrue(TEXT("같은 입력이면 인내심이 같다"), FMath::IsNearlyEqual(First.PatienceMultiplier, Second.PatienceMultiplier, KINDA_SMALL_NUMBER));
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 프로세스 간 안정성 (2026-08-10 버그 수정)
+//
+// GetTypeHash(FName) 은 FName::GetComparisonIndex() 를 해시하고, 그 인덱스는 엔진 주석에
+// "process specific unstable int" 로 명시돼 있다 — 이름이 전역 테이블에 등록된 순서에 따라
+// 값이 달라진다. 그래서 에셋 로딩 순서가 조금 달라지거나 프로젝트에 새 이름이 하나 추가되기만
+// 해도 NPC 전원의 시드가 바뀌었다. 실제로 VisitorDistribution.Deterministic 이 같은 바이너리에서
+// 실행마다 다른 결과를 냈다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * !!! 골든 값 테스트 — 상수를 "고치지" 말 것 !!!
+ *
+ * 아래 기대값은 FNV-1a 로 계산된 고정 상수다. 이 테스트가 깨졌다면 둘 중 하나다:
+ *   (a) MakeStableNameHash 가 다시 프로세스 의존 해시(GetTypeHash(FName) 등)로 바뀌었다
+ *   (b) 해시 알고리즘을 의도적으로 교체했다
+ *
+ * (a)면 코드를 고쳐야 한다. (b)면 **모든 NPC 의 특성값이 바뀐다는 뜻**이므로, 상수를 갱신하기
+ * 전에 그 영향(저장된 시뮬레이션 재현 불가)을 확인할 것. 상수만 조용히 맞추면 이 테스트가
+ * 존재하는 이유가 사라진다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DeterministicRandom_NameHashIsContentBased, "FestaFiesta.NPC.DeterministicRandom.NameHashIsContentBased", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DeterministicRandom_NameHashIsContentBased::RunTest(const FString& Parameters)
+{
+	// 같은 문자열이면 같은 값 — 실행·플랫폼·이름 등록 순서와 무관하다.
+	// 이 두 값은 FNV-1a 정의대로 손으로도 계산해 교차 확인했다(엔진 함수에 의존하지 않는 상수다).
+	TestEqual(TEXT("walk_speed_multiplier 의 내용 해시(골든 값)"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("walk_speed_multiplier")), 3385677686u);
+	TestEqual(TEXT("Generation 의 내용 해시(골든 값)"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("Generation")), 1887532215u);
+
+	// FName 비교는 대소문자를 무시한다 — 해시도 같아야 한다.
+	// 안 그러면 FName 으로는 같은 두 이름이 서로 다른 NPC 를 만든다.
+	TestEqual(TEXT("대소문자가 달라도 같은 해시다"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("WALK_SPEED_MULTIPLIER")),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("walk_speed_multiplier")));
+
+	// 다른 문자열은 다른 값
+	TestNotEqual(TEXT("다른 키는 다른 해시다"),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("walk_speed_multiplier")),
+		FFF_DeterministicRandom::MakeStableNameHash(TEXT("patience_multiplier")));
+
+	TestEqual(TEXT("NAME_None 은 0 이다"), FFF_DeterministicRandom::MakeStableNameHash(NAME_None), 0u);
+	return true;
+}
+
+// 시드 조합도 골든 값으로 고정한다 — 위 해시가 맞아도 조합 순서가 바뀌면 값이 달라진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DeterministicRandom_SeedsAreStableAcrossProcesses, "FestaFiesta.NPC.DeterministicRandom.SeedsAreStableAcrossProcesses", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DeterministicRandom_SeedsAreStableAcrossProcesses::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("MakeTraitSeed 골든 값"),
+		FFF_DeterministicRandom::MakeTraitSeed(42, 7, TEXT("walk_speed_multiplier"), 0, TEXT("Generation")),
+		661771750u);
+	TestEqual(TEXT("MakeDecisionSeed 골든 값"),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 3), 632862417u);
+
+	// 회차가 다르면 시드가 다르다 — 같으면 매 회차 같은 선택이 나와 softmax 가 무의미해진다
+	TestNotEqual(TEXT("회차가 다르면 Decision 시드가 다르다"),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 3),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 4));
+
+	// 개체가 다르면 시드가 다르다
+	TestNotEqual(TEXT("개체가 다르면 Decision 시드가 다르다"),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 7, 3),
+		FFF_DeterministicRandom::MakeDecisionSeed(42, 8, 3));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -5,70 +5,105 @@
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
+#include "NPC/Party/FF_NeedState.h"
 
 /**
  * FF_ZoneSystem(한광훈) → Utility AI(김시리) 변환 지점.
  *
  * ZoneSystem 이 가지고 있는 시설·존·큐 상태를 
  * 목적지 선택기(김시리)에서 필요한 FFF_DestinationCandidate 로 바꾸는 변환 작업을 이곳에서만 한다.
- * (여러 곳에서 하면 단위 환산과 카테고리 매핑이 제각각 어긋난다.)
  *
- * ### 미해결 — 단위 (통합 시 터지는 부분)
+ * ### 단위 환산은 이 파일에서만 한다.
  *
  * |			| ZoneSystem							| Utility AI				|
  * | 길이		| cm									| m (`distance_ref_meters`) |
  * | 시간		| 초 (`AverageCompletedWaitSeconds`)	| 분 (`wait_ref_minutes`)	|
  *
- * 환산은 이 파일에서만 한다.
+ * 
+ * ### Zone 인접·앵커·면적 입력 계약
  *
- *
- * ### 미해결 — Zone 인접·앵커·면적 관련
- *
- * `AFFZSGameplayZone`(`FF_FFZSZoneActor.h`)에 있는 아래 3가지 정보를 `FFFZSZoneReadModel`(외부 공개 스냅샷)에 추가 요청함
+ * `FFFZSZoneReadModel`은 `AFFZSGameplayZone`의 아래 3가지 정보를 값 복사본으로 제공한다.
  *   - `NeighborZoneIds`      — Zone 인접 그래프 (후보 필터링에 그대로 씀)
- *   - `EntryExitAnchors`     — Zone 출입 기준점 (거리 행렬의 시작·끝점)
- *   - `GetBoundaryAreaSquareMeters()` — 폴리곤 신발끈 공식으로 실제 면적(㎡) 산출
+ *   - `EntryExitAnchors`     — Zone 로컬 cm 출입 기준점 (거리 행렬의 시작·끝점)
+ *   - `AreaSquareMeters`     — `GetBoundaryAreaSquareMeters()`의 실제 경계 면적(㎡)
  *
+ * 현재 후보 거리는 시설 대표점까지의 직선거리이며, 앵커·NavMesh 기반 실제 보행거리 전환은 별도 과제다.
+ *
+ *
+ * ### 시설 거리 입력 계약
+ *
+ * `FFFZSFacilityReadModel::WorldLocation`은 시설 Actor의 대표 월드 지점(cm)이다.
+ * `BuildCandidates`는 Party 월드 위치와의 직선거리를 계산하고 이 파일에서만 m로 환산한다.
  */
 
-
-// 시설 카테고리가 해소 가능한 FFF_NeedState 성분 플래그.
-struct FFF_NeedReliefFlags
-{
-	bool bRelievesHunger = false;
-	bool bRelievesThirst = false;
-	bool bRelievesRestroom = false;
-	bool bRelievesFatigue = false;
-	bool bRelievesStimulation = false;
-};
 
 class FFF_ZoneSystemBridge
 {
 public:
+	// !!! 실측 근거 없음 !!! - 실측하면 이 값을 계수 CSV로 옮긴다.
+	// 동시 Party 수 × 후보 수가 매 재평가마다 도는 비용이라 프레임 예산이 여기 걸려 있다.
+	static constexpr int32 DefaultMaxCandidates = 12;
+
 	/**
 	 * ZoneSystem 읽기 모델을 목적지 후보 배열로 바꾼다.
 	 *
-	 * 후보를 전부 넣지 않는다 — Party 수가 많아질수록 매번 전체 시설을 평가하면 프레임이 무너진다.
-	 * 정확한 동시 Party 상한은 아직 실측이 없다
-	 * 현재 Zone + 인접 Zone + 전역 인기 상위 K개로 걸러 보통 8~12개로 줄인다.
-	 * 인접 Zone 정보는 AFFZSGameplayZone::NeighborZoneIds 에 이미 있다 
-	 * (ZoneReadModel에 노출만 되면 바로 쓸 수 있다.
+	 * ### 이 함수는 "점수를 매기지 않는다" — 목적지 결정은 2단계다
 	 *
-	 * @param ReadModel       ZoneSystem 스냅샷 (한광훈 소유)
-	 * @param CurrentZoneId   이 Party 가 지금 있는 Zone
-	 * @param PartySize       ExpectedWait 계산에 필요 — 4인 가족은 줄이 4칸 더 필요하다
+	 *   1단계 BuildCandidates : 전체 시설 → MaxCandidates 개.  **Zone·거리만 본다**
+	 *   2단계 Choose()        : 후보 → 목적지 1개.              6항(매력·취향·Need·거리·대기·밀집) 전부 본다
+	 *
+	 * 1단계에서 취향·Need를 보지 않는 것은 의도다. 그것들을 보려면 후보마다 preference_vector 조회를
+	 * 해야 하고, 그러면 걸러내는 비용이 점수 계산 비용과 같아져서 걸러낼 이유가 사라진다.
+	 *
+	 * **그래서 생기는 한계**: 상한에 걸려 잘릴 때 "멀지만 내 취향에 딱 맞는 부스"가 후보에 아예
+	 * 들어오지 못한다. 2단계에서 취향을 봐도 이미 늦다. 이걸 메우는 것이 아직 미구현인
+	 * "전역 인기 상위 K"(utility_ai_todo.md 2절)이고, 지금은 인접 Zone 밖이 절대 후보가 못 된다.
+	 *
+	 * ### 좁히는 방법
+	 *
+	 * 현재 Zone + 인접 Zone(FFFZSZoneReadModel::NeighborZoneIds)으로 먼저 좁힌다.
+	 * **그 결과가 MaxCandidates 이하면 정렬조차 하지 않고 전부 돌려준다** — 자르기와 거리 우선순위는
+	 * 후보가 상한을 넘을 때만 개입한다. 넘을 때의 기준은 (같은 Zone 우선 → 가까운 순 → ID 순)이고,
+	 * 마지막 ID 단계는 재현성을 위한 것이다(같은 스냅샷이면 항상 같은 후보가 남아야 한다).
+	 *
+	 * ### 무엇을 걸러내는가
+	 * (1) 닫힌 시설 — Choose()가 bIsOpen == false 를 건너뛰므로 넣어두면 상한만 잡아먹는다
+	 * (2) Info·Safety 카테고리 — 취향 카테고리도 없고 해소하는 Need도 없어서 점수가 모든 NPC에게
+	 *     항상 같다. 고를 이유가 생기지 않는데 상한 한 칸을 먹으므로 뺀다.
+	 *
+	 * ### EstimatedWaitMinutes는 폴백이다 (이중 계산 주의)
+	 *
+	 * 여기서 채우는 값은 ReadModel 스냅샷 기반 근사다. Queue에 등록된 시설은
+	 * `FFF_QueueWaitAdapter::ApplyToCandidates`가 권위 있는 값으로 덮어쓴다.
+	 * 이 함수의 계산은 "Queue가 모르는 시설"용이므로, 여기서 Queue 모델을 다시 구현하지 말 것.
+	 *
+	 * ### PartySize를 받지 않는다
+	 *
+	 * 일행 수는 대기시간 계산(줄을 몇 칸 먹는가)에만 필요했고, 그 계산은 Queue가 소유한다 —
+	 * `FFF_QueueWaitAdapter::ApplyToCandidates`의 `IncomingMemberCount`로 L3가 넘긴다.
+	 * 후보를 고르는 데는 일행 수가 쓰이지 않으므로 파라미터로 받지 않는다.
+	 *
+	 * @param ReadModel              ZoneSystem 스냅샷
+	 * @param CurrentZoneId          이 Party가 지금 있는 Zone. ReadModel에 없으면 빈 배열 + Warning
+	 * @param PartyWorldLocation 거리 계산 기준이 되는 Party 월드 위치(cm)
+	 * @param MaxCandidates      후보 상한. 0 이하면 상한 없음
 	 */
 	static TArray<FFF_DestinationCandidate> BuildCandidates(
 		const FFFZSReadModel& ReadModel,
 		FName CurrentZoneId,
-		int32 PartySize);
+		const FVector& PartyWorldLocation,
+		int32 MaxCandidates = DefaultMaxCandidates);
 
 	/**
-	 * 시설 카테고리 → preference_vector 키. 
-	 * Rest/Performance/PhotoSpot 은 1:1, 
-	 * Toilet/Info/Safety 는 취향 매칭 대상이 아니라 NAME_None. 
-	 * Booth 는 FacilityDefinitionId 를 "Booth_<PreferenceToken>_<이름>" 네이밍 컨벤션으로 파싱한다(.cpp 의 토큰 표 참고)
-	 * — 컨벤션을 안 따르거나 토큰이 표에 없으면 NAME_None. NAME_None 이면 preference 항은 0으로 계산된다
+	 * 시설 카테고리 → preference_vector 키.
+	 *
+	 * FacilityDefinitionId 는 팀 규칙 `대분류_소분류_고유이름` 형태다(대분류 = EFFZSFacilityCategory 이름).
+	 * **7개 카테고리 전부 형태를 검증하고** 위반이면 시설당 1회 Warning 을 낸다 — 지금 취향 카테고리를
+	 * 실제로 갈라내는 것은 Booth 소분류뿐이지만, 다른 카테고리 오타를 방치하면 나중에 소분류별 분기를
+	 * 추가할 때 조용히 빠진다. 규칙 전문과 토큰 표는 data/metadata/handoff/facility_naming_convention.md.
+	 *
+	 * Rest/Performance/PhotoSpot 은 소분류와 무관하게 대분류 1:1, Toilet/Info/Safety 는 취향 매칭
+	 * 대상이 아니라 NAME_None. NAME_None 이면 preference 항은 0으로 계산된다
 	 * (크래시 없이 "취향 없음"으로 동작).
 	 */
 	static FName MapToPreferenceCategory(
@@ -77,20 +112,26 @@ public:
 
 	/**
 	 * 이 카테고리가 해소 가능한 Need. FF_NeedState.h 매핑 표를 코드로 옮긴 것.
-	 * Restroom(Toilet)은 카테고리만으로 판정. Rest는 Fatigue와 Thirst 둘 다 해소한다
-	 * (8/6 리플렛 확인 — "오아시스 존"이 그늘+음수대 복합 시설). Performance·PhotoSpot은 Stimulation만 해소.
-	 * Hunger·Thirst(Booth FoodStall)·Stimulation(Booth Nightlife)은 MapToPreferenceCategory 와
-	 * 같은 네이밍 컨벤션으로 FacilityDefinitionId 를 파싱해 판정한다.
+	 *
+	 * Restroom(Toilet)·Fatigue(Rest)는 대분류만으로 판정. Performance·PhotoSpot은 Stimulation만.
+	 * 소분류를 봐야 하는 것 2가지:
+	 *   - Booth — Hunger/Thirst(FoodStall), Thirst·Stimulation(Nightlife)
+	 *   - Rest  — Thirst 는 Cooling(무더위 쉼터)만 해소한다 (2026-08-06 결정).
+	 *             리플렛의 "오아시스 존"(그늘+음수대)이 Rest 카테고리인데 팀 규칙의 Rest 소분류
+	 *             4종에 음수대 토큰이 없어서, 좌석만 있는 시설이 갈증을 푸는 것을 막으려고 좁혔다.
+	 *
+	 * 소분류를 못 읽으면(컨벤션 위반) Thirst 는 해소하지 않는다 — 안전한 쪽으로 뺀다.
 	 */
 	static FFF_NeedReliefFlags GetNeedReliefFlags(
 		EFFZSFacilityCategory ZoneSystemCategory,
 		FName FacilityDefinitionId);
 
 	/**
-	 * 시설의 분당 처리율. ExpectedWait = (대기인원 + PartySize) / 이 값.
-	 * FacilityDefinitionId 로 UFFZSFacilityDefinition(PrimaryDataAsset)을 Asset Manager로
-	 * 조회해 QueueRules.ServiceCapacity/ServiceDurationSeconds 를 분 단위로 환산한다.
+	 * 시설의 분당 처리율(ServiceCapacity / 분 단위 서비스시간).
+	 * FacilityDefinitionId 로 UFFZSFacilityDefinition(PrimaryDataAsset)을 Asset Manager로 조회한다.
 	 * 자산이 아직 로드되지 않았으면 0을 반환한다 — 호출부가 0을 "모름"으로 처리할 것.
+	 *
+	 * !!! 현재 호출부가 없다 !!!
 	 */
 	static float GetServiceRatePerMinute(FName FacilityDefinitionId);
 

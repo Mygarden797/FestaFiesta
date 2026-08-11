@@ -1,0 +1,143 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-06",
+  "dataset_id": "visitor_group_size_distribution_v0",
+  "status": "derived — 공표표로 검증된 가중 집계값. 다만 모집단이 축제 방문객이 아니라 전국 국내 관광여행자다(아래 population_mismatch).",
+  "source": {
+    "source_id": "tourism_national_travel_2025_microdata",
+    "file": "data/extracted/tourism/national_travel_2025/2025년 국민여행조사 원자료(국내여행).xlsx",
+    "variables": {
+      "A6": "함께 여행한 일행은 귀하를 포함하여 총 몇 명이었습니까?[단위:명] — 그룹 크기의 근거",
+      "A6A": "(2명 이상인 경우) 일행 중 만 15세 미만은 몇 명이었습니까?[단위:명] — 아동 슬롯의 근거",
+      "A6B_1..12": "함께 여행한 일행은 어떤 분들이었습니까? (복수응답) — 참고용",
+      "D_TRA{n}_CASE": "여행유형. 1/2/4 = 관광·휴양 활동 포함(공표표의 \"관광여행\"), 3/5 = 단순 방문·출장",
+      "D_TRA{n}_S_Day": "여행일수(박). 0 이면 당일여행",
+      "D_TRA{n}_CHECK": "본설문진행여부 — A 블록이 어느 여행에 대한 응답인지 지정",
+      "WT_DOM": "국내여행 분석 가중치. 응답자 × 본설문 여행 1건 단위로 적용"
+    },
+    "variable_labels_read_from": "동봉된 SAV 파일의 변수 사전(레코드 타입 2/3/4/7)에서 직접 읽었다"
+  },
+  "do_not_use": {
+    "D_TRA{n}_NUM": "\"지출비용에 포함되는 인원수\"(비용 분담 인원)이며 여행 인원도 동반자 수도 아니다. ONE_COST == COST/NUM 이 28,564건 전부에서 성립해 확인했다. 이 값으로 그룹 크기를 만들면 공표표와 25~30pp 어긋난다. variable_catalog.json 이 \"여행 인원 또는 동반 인원 후보\"로 추정해둔 것은 틀렸다."
+  },
+  "validation": {
+    "method": "산출 분포를 통계편 표 14-1-1/2/3(관광여행/숙박/당일 동반자 수 분포, 본인 포함 기준)의 공표 버킷(1/2~3/4~5/6~10/11~20/21+)으로 묶어 대조",
+    "tolerance_pp": 0.1,
+    "results": [
+      {
+        "scope": "tourism_all",
+        "published_table": "14-1-1 관광여행",
+        "sample_trips": 23988,
+        "computed": [
+          3.06,
+          54.72,
+          35.1,
+          5.16,
+          0.85,
+          1.12
+        ],
+        "published": [
+          3.1,
+          54.7,
+          35.1,
+          5.2,
+          0.9,
+          1.1
+        ],
+        "max_abs_diff_pp": 0.05
+      },
+      {
+        "scope": "tourism_overnight",
+        "published_table": "14-1-2 관광 숙박여행",
+        "sample_trips": 9973,
+        "computed": [
+          3.03,
+          49.9,
+          38.4,
+          7.24,
+          0.91,
+          0.52
+        ],
+        "published": [
+          3,
+          49.9,
+          38.4,
+          7.2,
+          0.9,
+          0.6
+        ],
+        "max_abs_diff_pp": 0.078
+      },
+      {
+        "scope": "tourism_daytrip",
+        "published_table": "14-1-3 관광 당일여행",
+        "sample_trips": 14015,
+        "computed": [
+          3.07,
+          58.16,
+          32.74,
+          3.67,
+          0.81,
+          1.55
+        ],
+        "published": [
+          3.1,
+          58.2,
+          32.7,
+          3.7,
+          0.8,
+          1.6
+        ],
+        "max_abs_diff_pp": 0.05
+      }
+    ],
+    "what_this_confirms": [
+      "A6 가 공표 동반자 수 표의 근거 변수다",
+      "WT_DOM 을 응답자 × 본설문 여행 1건 단위로 적용하는 것이 공표값을 재현한다 — variable_catalog.json 의 미해결 항목(\"WT_DOM 의 사람 단위·여행 단위 적용 방법 확인\")이 이것으로 해소된다",
+      "공표표의 \"관광여행\" 모집단 = 여행유형 코드 1/2/4"
+    ]
+  },
+  "group_size_cap": {
+    "value": 6,
+    "rule": "6명 초과 일행은 6명으로 합친다",
+    "decided_at": "2026-08-06",
+    "rationale": "상한을 없애는 것이 크리티컬하지 않다는 판단. 실측상 6명 초과는 당일여행 기준 4.295% 뿐이라 잘라내도 분포 왜곡이 작다. 최대 일행은 80명(학교 단체 소풍 — A6B 에 \"학교 단체(소풍, 수학여행 등)\" 코드가 있고 조사 정의상 같은 반 학생 수를 기준으로 산정한다)까지 관측된다.",
+    "supersedes": "population_group_generation_spec.md 1.4절의 \"group_3_plus 는 3명 70% / 4명 30%\" draft_assumption"
+  },
+  "scope_stats": {
+    "tourism_daytrip": {
+      "sample_trips": 14015,
+      "over_cap_share_pct": 4.295,
+      "mean_group_size": 3.1506,
+      "solo_pct": 3.0715,
+      "pair_pct": 34.9961,
+      "group_3_plus_pct": 61.9324
+    },
+    "tourism_all": {
+      "sample_trips": 23988,
+      "over_cap_share_pct": 4.6219,
+      "mean_group_size": 3.2347,
+      "solo_pct": 3.0551,
+      "pair_pct": 32.3062,
+      "group_3_plus_pct": 64.6387
+    },
+    "tourism_overnight": {
+      "sample_trips": 9973,
+      "over_cap_share_pct": 5.0797,
+      "mean_group_size": 3.3524,
+      "solo_pct": 3.0322,
+      "pair_pct": 28.5384,
+      "group_3_plus_pct": 68.4294
+    }
+  },
+  "child_share_of_all_visitors_pct": {
+    "tourism_daytrip": 6.4506,
+    "tourism_all": 7.5483,
+    "tourism_overnight": 8.9934
+  },
+  "primary_scope": "tourism_daytrip",
+  "primary_scope_reason": "축제 방문은 숙박을 전제하지 않는 당일 방문에 가깝다. 다른 두 scope 는 민감도 비교용으로 함께 낸다.",
+  "population_mismatch": "전국 국내 관광여행자의 일행 규모이며 부산바다축제 저녁 방문객을 관측한 값이 아니다. 축제 실측이 생기면 교체한다. 이 표를 \"축제 방문객 그룹 크기 실측\"이라고 부르면 안 된다.",
+  "regeneration": "node Tools/data/build_visitor_group_distribution.mjs",
+  "spec": "data/metadata/spec/population_group_generation_spec.md"
+}

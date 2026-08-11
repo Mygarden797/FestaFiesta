@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-08-06",
+  "dataset_id": "group_composition_rules_v0",
+  "status": "mixed — rule_id 별 status 열 참조",
+  "purpose": "population_group_generation_spec.md 의 그룹 구성 규칙을 crowdAI 가 마크다운이 아니라 데이터로 읽게 한다. 규칙이 바뀔 때 crowdAI 코드를 고치지 않아도 되게 하는 것이 목적이다.",
+  "row_unit": "규칙 한 개",
+  "consumer_note": "value 열은 전부 문자열이다. value_type 을 보고 파싱한다(int/bool/enum/list/table_ref). list 는 세미콜론 구분. table_ref 는 data/derived 또는 data/unreal 의 dataset_id.",
+  "superseded_by_measurement_2026_08_06": {
+    "note": "아래 draft_assumption 들은 2025 국민여행조사 실측으로 대체돼 이 표에 없다.",
+    "removed": [
+      "solo/pair/group_3_plus 비율 (출처 자체가 없었음) → visitor_group_size_distribution_v0",
+      "group_3_plus 내부 3명 70% / 4명 30% → visitor_group_size_distribution_v0 (3~6인 실측)",
+      "pair 유형 couple_or_friends 80% / parent_and_child 20% → group_child_composition_v0",
+      "group_3_plus 유형 family 50% / friends 50% → group_child_composition_v0",
+      "child_attach_probability_given_group3plus 0.4 / child_count_mean_given_attached 1.5 → group_child_composition_v0"
+    ],
+    "why_simpler": "\"그룹 유형을 먼저 뽑고(가족/친구) 그 유형에 자녀 슬롯이 있는지 정한다\"는 2단 구조가 P(아동 수 | 그룹 크기) 한 장으로 대체됐다. 아동 배치에 필요한 정보가 그 표에 이미 다 있어서 중간 단계인 \"유형\"을 거칠 필요가 없다.",
+    "still_useful": "companion_type_response_v0.csv(동반자 유형 응답률)는 아동 배치에는 안 쓰이지만, non_leader_adult_archetype_rule 을 나중에 정교화할 때의 근거로 남긴다."
+  },
+  "regeneration": "node Tools/data/build_group_composition_rules.mjs",
+  "spec": "data/metadata/spec/population_group_generation_spec.md"
+}

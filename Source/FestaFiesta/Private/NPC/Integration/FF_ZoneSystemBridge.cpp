@@ -2,34 +2,231 @@
 
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "Engine/AssetManager.h"
 #include "FF_FFZSFacilityDefinition.h"
 
-// !!! 스텁 !!!
-// 카테고리 매핑·ExpectedWait·Need 해소 판정·시설 인스턴스 ID 변환은 구현되었고, 남은 건 그걸 호출해 조립하는 것뿐이다.
+namespace
+{
+	// 후보 정렬용. FFF_DestinationCandidate 에는 ZoneId 가 없어서(선택기가 안 쓴다) 여기서만 들고 있는다.
+	struct FRankedCandidate
+	{
+		FFF_DestinationCandidate Candidate;
+
+		// 0 = 현재 Zone, 1 = 인접 Zone. 낮은 쪽이 먼저 남는다
+		int32 ZoneRank = 0;
+	};
+
+	// 목적지 후보가 될 수 없는 카테고리.
+	bool IsSelectableCategory(EFFZSFacilityCategory Category)
+	{
+		return Category != EFFZSFacilityCategory::Info
+			&& Category != EFFZSFacilityCategory::Safety;
+	}
+}
 
 TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	const FFFZSReadModel& ReadModel,
 	FName CurrentZoneId,
-	int32 PartySize)
+	const FVector& PartyWorldLocation,
+	int32 MaxCandidates)
 {
-	// TODO(Zone 그래프): CurrentZoneId 의 인접 Zone 을 알아야 후보를 8~12개로 줄일 수 있다.
-	// 지금 전체 시설을 그대로 넘기면 (동시 Party 수) × (전체 시설) 이 되어 프레임이 무너진다.
-	(void)ReadModel;
-	(void)CurrentZoneId;
-	(void)PartySize;
+	// ── 1. 현재 Zone 과 인접 Zone 확정 ────────────────────────────────────────
+	const FFFZSZoneReadModel* CurrentZone = ReadModel.Zones.FindByPredicate(
+		[CurrentZoneId](const FFFZSZoneReadModel& Zone) { return Zone.ZoneId == CurrentZoneId; });
 
-	UE_LOG(LogFestaFiestaNpc, Verbose,
-		TEXT("FFF_ZoneSystemBridge::BuildCandidates 는 아직 스텁이다 — 빈 후보를 돌려준다."));
+	if (!CurrentZone)
+	{
+		// 조용히 빈 배열을 돌려주면 "후보가 없어서 no_choice"와 "Zone 을 못 찾아서 no_choice"가
+		// 구분되지 않는다. 이건 호출부가 잘못된 ZoneId 를 넘긴 것이므로 Warning 이다.
+		UE_LOG(LogFestaFiestaNpc, Warning,
+			TEXT("BuildCandidates: CurrentZoneId='%s' 가 ReadModel 에 없다(Zone %d개). ")
+			TEXT("빈 후보를 돌려준다 — 호출부가 넘긴 ZoneId 를 확인할 것."),
+			*CurrentZoneId.ToString(), ReadModel.Zones.Num());
+		return TArray<FFF_DestinationCandidate>();
+	}
 
-	return TArray<FFF_DestinationCandidate>();
+	// ZoneId → 정렬 우선순위. 현재 Zone 0, 인접 Zone 1.
+	TMap<FName, int32> ZoneRankById;
+	ZoneRankById.Reserve(CurrentZone->NeighborZoneIds.Num() + 1);
+	ZoneRankById.Add(CurrentZoneId, 0);
+	for (const FName NeighborId : CurrentZone->NeighborZoneIds)
+	{
+		// 자기 자신이 이웃 목록에 들어 있어도 rank 0 을 덮어쓰지 않는다.
+		if (!ZoneRankById.Contains(NeighborId))
+		{
+			ZoneRankById.Add(NeighborId, 1);
+		}
+	}
+
+	// ── 2. 밀집도 입력 — Zone 단위 값을 시설에 그대로 물려준다 ────────────────
+	//
+	// !!! assumption !!! FFFZSFacilityReadModel 에는 시설 단위 점유·수용 값이 없다
+	// (WaitingCount·ActiveServiceCount 는 대기열이고 밀집도가 아니다). 그래서 v0 은
+	// "시설 앞 밀집도 ≈ 그 시설이 속한 Zone 의 밀집도"로 근사한다.
+	// 같은 Zone 안 시설들의 density_cost 항이 전부 같아진다는 뜻이다 — Zone 안에서 사람이 어디에
+	// 몰려 있는지는 반영되지 않는다. 셀 격자 밀도(이정원)가 붙으면 그걸로 교체한다.
+	struct FZoneDensity
+	{
+		float Occupancy = 0.f;
+		float Capacity = 1.f;
+	};
+	TMap<FName, FZoneDensity> DensityByZoneId;
+	DensityByZoneId.Reserve(ZoneRankById.Num());
+	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
+	{
+		if (!ZoneRankById.Contains(Zone.ZoneId))
+		{
+			continue;
+		}
+		FZoneDensity Density;
+		Density.Occupancy = static_cast<float>(Zone.ReportedPopulation);
+		// SoftCapacity 0 은 "아직 설정 안 됨"이다. 선택기가 Capacity 로 나누므로 최소 1 을 보장한다.
+		Density.Capacity = static_cast<float>(FMath::Max(Zone.SoftCapacity, 1));
+		DensityByZoneId.Add(Zone.ZoneId, Density);
+	}
+
+	// ── 3. 시설 순회 ─────────────────────────────────────────────────────────
+	TArray<FRankedCandidate> Ranked;
+	Ranked.Reserve(FMath::Min(ReadModel.Facilities.Num(), 64));
+
+	// 왜 세는가: 후보가 0개로 나왔을 때 "시설이 없다"와 "전부 닫혀 있다"와 "카테고리가 다 제외됐다"를
+	// 로그만 보고 구분할 수 있어야 한다.
+	int32 SkippedByZone = 0;
+	int32 SkippedByState = 0;
+	int32 SkippedByCategory = 0;
+
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		const int32* ZoneRank = ZoneRankById.Find(Facility.ZoneId);
+		if (!ZoneRank)
+		{
+			++SkippedByZone;
+			continue;
+		}
+
+		if (!IsSelectableCategory(Facility.Category))
+		{
+			++SkippedByCategory;
+			continue;
+		}
+
+		// Active 가 아니면 아직 안 지어졌거나(Planned/Validated) 닫혔거나(Closed/MovePending/Removed) 다.
+		if (Facility.State != EFFZSFacilityState::Active)
+		{
+			++SkippedByState;
+			continue;
+		}
+
+		// [의도적으로 비워둔 자리]
+		// !!! QueueState 로 후보를 자르지 않는다 !!!
+		//
+		// 여기서는 ZoneSystem 이 말하는 사실만 본다 — State(수명주기)와 bNeedsRelocation.
+		// "지금 이용 가능한가"의 판정은 Queue 쪽 한 곳에 맡긴다.
+		// 결정되면 handoff/queue_requests.md 를 보고 여기 또는 어댑터 한쪽에만 넣는다.
+
+		if (Facility.bNeedsRelocation)
+		{
+			++SkippedByState;
+			continue;
+		}
+
+		FRankedCandidate Entry;
+		Entry.ZoneRank = *ZoneRank;
+
+		FFF_DestinationCandidate& Candidate = Entry.Candidate;
+		Candidate.DestinationId = FacilityInstanceIdToDestinationId(Facility.FacilityInstanceId);
+		Candidate.Category = MapToPreferenceCategory(Facility.Category, Facility.FacilityDefinitionId);
+		Candidate.NeedRelief = GetNeedReliefFlags(Facility.Category, Facility.FacilityDefinitionId);
+
+		// 수명주기상 운영 중이라는 뜻이다. "지금 줄에 들어갈 수 있는가"는 Queue 어댑터가 AND 로 닫는다.
+		Candidate.bIsOpen = true;
+
+		// !!! 출처 없음 !!! attraction_norm(0~1) 정규화 설계가 부스 쪽에서 아직 안 나왔다.
+		// 0 으로 두면 모든 후보의 attraction 항이 같아져 항이 무력화될 뿐, 특정 시설이 유리해지지 않는다.
+		// 임의의 상수(0.5 등)를 넣으면 "근거 있는 값"처럼 보이므로 넣지 않는다.
+		Candidate.BaseAttraction = 0.f;
+
+		// ZoneSystem 은 cm, 선택기는 m. 환산은 이 파일에서만 한다.
+		Candidate.DistanceMeters = CentimetersToMeters(
+			static_cast<float>(FVector::Dist(PartyWorldLocation, Facility.WorldLocation)));
+
+		// EstimatedWaitMinutes 는 채우지 않는다(0으로 남는다) — 소유자는 FFF_QueueWaitAdapter 다.
+		// 이유는 FF_ZoneSystemBridge.h 의 "대기시간은 이 파일에서 계산하지 않는다" 주석 참조.
+		// 0 은 Choose()에서 "대기 없음"으로 계산되므로, 어댑터 결선 전 wait_cost 는 신뢰할 수 없다.
+
+		if (const FZoneDensity* Density = DensityByZoneId.Find(Facility.ZoneId))
+		{
+			Candidate.CurrentOccupancy = Density->Occupancy;
+			Candidate.Capacity = Density->Capacity;
+		}
+
+		Ranked.Add(MoveTemp(Entry));
+	}
+
+	// ── 4. 상한 적용 ─────────────────────────────────────────────────────────
+	//
+	// 정렬 기준을 세 단계로 두는 이유: 같은 Zone 을 인접 Zone 보다 먼저 남기고(도달 비용이 낮다),
+	// 그다음 가까운 순으로 남기고, 마지막에 DestionationId 로 동점을 깬다.
+	// 마지막 단계가 없으면 같은 스냅샷에서 호출 순서에 따라 다른 후보가 잘려 재현성이 깨진다.
+	const bool bNeedsTruncation = MaxCandidates > 0 && Ranked.Num() > MaxCandidates;
+	if (bNeedsTruncation)
+	{
+		Ranked.Sort([](const FRankedCandidate& A, const FRankedCandidate& B)
+		{
+			if (A.ZoneRank != B.ZoneRank)
+			{
+				return A.ZoneRank < B.ZoneRank;
+			}
+			if (!FMath::IsNearlyEqual(A.Candidate.DistanceMeters, B.Candidate.DistanceMeters))
+			{
+				return A.Candidate.DistanceMeters < B.Candidate.DistanceMeters;
+			}
+			return A.Candidate.DestinationId.Compare(B.Candidate.DestinationId) < 0;
+		});
+		Ranked.SetNum(MaxCandidates);
+	}
+
+	TArray<FFF_DestinationCandidate> Candidates;
+	Candidates.Reserve(Ranked.Num());
+	for (FRankedCandidate& Entry : Ranked)
+	{
+		Candidates.Add(MoveTemp(Entry.Candidate));
+	}
+
+	// ── 5. 진단 ──────────────────────────────────────────────────────────────
+	if (Candidates.IsEmpty())
+	{
+		// 후보 0개는 항상 no_choice 를 만든다. 원인이 데이터인지 필터인지 여기서 갈라준다.
+		UE_LOG(LogFestaFiestaNpc, Warning,
+			TEXT("BuildCandidates: Zone='%s' 후보가 0개다 — 이 Party 는 반드시 no_choice 가 된다. ")
+			TEXT("제외 내역: Zone밖 %d / 카테고리 %d / 상태 %d (전체 시설 %d개)"),
+			*CurrentZoneId.ToString(), SkippedByZone, SkippedByCategory, SkippedByState,
+			ReadModel.Facilities.Num());
+	}
+	else
+	{
+		UE_LOG(LogFestaFiestaNpc, Verbose,
+			TEXT("BuildCandidates: Zone='%s'(인접 %d) → 후보 %d개%s. ")
+			TEXT("제외: Zone밖 %d / 카테고리 %d / 상태 %d"),
+			*CurrentZoneId.ToString(), CurrentZone->NeighborZoneIds.Num(), Candidates.Num(),
+			bNeedsTruncation ? TEXT("(상한으로 잘림)") : TEXT(""),
+			SkippedByZone, SkippedByCategory, SkippedByState);
+	}
+
+	// TODO(전역 인기 상위 K): utility_ai_todo.md 2절. 현재 Zone·인접 Zone 밖의 인기 시설을 후보에
+	// 섞어야 "멀지만 유명한 곳"으로 가는 행동이 나온다. 지금은 인접 Zone 밖이 절대 후보가 안 된다.
+	// 계수화가 선행 조건이다 — 안 하면 병목이 취향 때문인지 후보 필터 때문인지 구분할 수 없다.
+
+	// TODO(예약 필터): reservation_program_spec.md §4.1. `예약 필요` 시설은 그 Party 가 예약을
+	// 갖고 있지 않으면 제외해야 한다. 태그 출처(한광훈)가 정해지면 위 필터 옆에 붙인다.
+
+	return Candidates;
 }
 
 namespace
 {
-	// Booth 서브타입 네이밍 컨벤션 표.
-	// FacilityDefinitionId 가 "Booth_<Token>_<이름>" 형태일 때 두 번째 토큰을 preference_vector 키로 바꾼다.
-	// [주의] 새 부스를 만들 때 이 표에 없는 Token을 쓰면 조용히 NAME_None(취향 없음)으로 빠지니, 부스 만드는 담당자(한광훈/박건영)는 아래 표를 반드시 참고해야 한다.
+	// Booth 소분류 → preference_vector 키. NamingLibrary의 Booth 토큰 목록과 1:1로 유지한다.
 	const TMap<FString, FName>& GetBoothTokenToPreferenceCategory()
 	{
 		static const TMap<FString, FName> Table = {
@@ -42,16 +239,68 @@ namespace
 		return Table;
 	}
 
+	/**
+	 * 컨벤션을 안 지킨 시설을 하나당 딱 한 번만 Warning 으로 알린다.
+	 *
+	 * 왜 필요한가: 컨벤션 위반은 크래시가 아니라 조용한 오작동을 낸다. Booth 라면 "그 부스는 영구히
+	 * 취향 없음"이 되어 아무도 취향으로 가지 않고 Need 도 해소하지 못하는데, 부스를 만든 사람은
+	 * 그 사실을 알 방법이 없었다.
+	 *
+	 * 매 평가마다 찍으면 방문객 8만 명 규모에서 로그가 감당이 안 되므로 시설별 1회로 제한한다.
+	 */
+	void WarnOnceAboutNamingViolation(FName FacilityDefinitionId, const FString& Reason, const FString& KnownTokens)
+	{
+		static TSet<FName> AlreadyWarned;
+		if (AlreadyWarned.Contains(FacilityDefinitionId))
+		{
+			return;
+		}
+		AlreadyWarned.Add(FacilityDefinitionId);
+
+		UE_LOG(LogFestaFiestaNpc, Warning,
+			TEXT("[시설 네이밍 컨벤션 위반] FacilityDefinitionId='%s' — %s ")
+			TEXT("형태는 '대분류_소분류_고유이름'이어야 한다(대분류 = EFFZSFacilityCategory 이름). ")
+			TEXT("이 카테고리의 아는 소분류: %s. 규칙 전문은 data/metadata/handoff/facility_naming_convention.md."),
+			*FacilityDefinitionId.ToString(), *Reason, *KnownTokens);
+	}
+
+	/**
+	 * 공용 NamingLibrary의 순수 파싱 결과에 기존 시설별 Warning-once 정책을 덧씌운다.
+	 * UI와 카탈로그는 라이브러리를 직접 사용하고, 고빈도 NPC 평가만 이 래퍼를 거친다.
+	 */
+	bool TryParseFacilityId(EFFZSFacilityCategory Category, FName FacilityDefinitionId, FString& OutMinorToken)
+	{
+		OutMinorToken.Reset();
+		FFF_FacilityNameParts Parts;
+		FString FailureReason;
+		if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			Category, FacilityDefinitionId, Parts, FailureReason))
+		{
+			// NAME_None은 정의가 아직 안 붙은 정상 상태일 수 있어 라이브러리가 이유를 비워 반환한다.
+			if (!FailureReason.IsEmpty())
+			{
+				const FString KnownTokens = UFF_FacilityNamingLibrary::GetMajorToken(Category).IsNone()
+					? TEXT("(없음)")
+					: UFF_FacilityNamingLibrary::JoinKnownMinorTokens(Category);
+				WarnOnceAboutNamingViolation(FacilityDefinitionId, FailureReason, KnownTokens);
+			}
+			return false;
+		}
+
+		OutMinorToken = Parts.MinorToken.ToString();
+		return true;
+	}
+
+	// Booth 소분류 → preference_vector 키. 컨벤션 위반이면 NAME_None(취향 없음)으로 동작한다.
 	FName ResolveBoothPreferenceCategory(FName FacilityDefinitionId)
 	{
-		TArray<FString> Tokens;
-		FacilityDefinitionId.ToString().ParseIntoArray(Tokens, TEXT("_"));
-		if (Tokens.Num() < 2 || Tokens[0] != TEXT("Booth"))
+		FString MinorToken;
+		if (!TryParseFacilityId(EFFZSFacilityCategory::Booth, FacilityDefinitionId, MinorToken))
 		{
 			return NAME_None;
 		}
 
-		const FName* Found = GetBoothTokenToPreferenceCategory().Find(Tokens[1]);
+		const FName* Found = GetBoothTokenToPreferenceCategory().Find(MinorToken);
 		return Found ? *Found : NAME_None;
 	}
 }
@@ -60,11 +309,18 @@ FName FFF_ZoneSystemBridge::MapToPreferenceCategory(
 	EFFZSFacilityCategory ZoneSystemCategory,
 	FName FacilityDefinitionId)
 {
+	// Booth 가 아닌 카테고리도 컨벤션을 검증한다 — 지금은 소분류가 취향 카테고리를 바꾸지 않지만,
+	// 오타를 방치하면 나중에 소분류별 분기를 추가할 때 조용히 빠진다. 반환값은 안 쓰고 경고만 노린다.
+	FString UnusedMinorToken;
+	TryParseFacilityId(ZoneSystemCategory, FacilityDefinitionId, UnusedMinorToken);
+
 	switch (ZoneSystemCategory)
 	{
 	case EFFZSFacilityCategory::Rest:
+		// 소분류 4종(Seating/Shade/Picnic/Cooling) 전부 rest_area 로 본다 — 취향 단위에서는 구분하지 않는다.
 		return TEXT("rest_area");
 	case EFFZSFacilityCategory::Performance:
+		// TODO(합의): ExperienceStage(참여형 공연)는 activity_game 에 더 가까울 수 있다. 현재는 전부 performance_stage.
 		return TEXT("performance_stage");
 	case EFFZSFacilityCategory::PhotoSpot:
 		return TEXT("ambience_photo_zone");
@@ -80,6 +336,7 @@ FName FFF_ZoneSystemBridge::MapToPreferenceCategory(
 		return NAME_None;
 	}
 }
+ 
 
 FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 	EFFZSFacilityCategory ZoneSystemCategory,
@@ -93,20 +350,23 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 		Flags.bRelievesRestroom = true;
 		break;
 	case EFFZSFacilityCategory::Rest:
-		// 8/6 리플렛 확인: 지도 범례의 "오아시스 존"이 그늘+음수대+무릎나눔 복합 시설이다 —
-		// 실제로는 Fatigue 뿐 아니라 Thirst도 여기서 풀린다.
+	{
+		// Rest 4종(Seating/Shade/Picnic/Cooling) 전부 피로를 풀어준다.
 		Flags.bRelievesFatigue = true;
-		Flags.bRelievesThirst = true;
+
+		FString MinorToken;
+		if (TryParseFacilityId(EFFZSFacilityCategory::Rest, FacilityDefinitionId, MinorToken))
+		{
+			Flags.bRelievesThirst = (MinorToken == TEXT("Cooling"));
+		}
 		break;
+	}
 	case EFFZSFacilityCategory::Performance:
 	case EFFZSFacilityCategory::PhotoSpot:
 		Flags.bRelievesStimulation = true;
 		break;
 	case EFFZSFacilityCategory::Booth:
 	{
-		// MapToPreferenceCategory와 같은 Booth 네이밍 컨벤션을 재사용한다
-		// 두 곳에서 각자 판정하면 나중에 어긋난다. FoodStall은 배고픔·갈증 둘 다,
-		// Nightlife는 갈증(음주)과 자극(선셋클럽류 라운지 — 위 Booth 토큰 표 참고) 둘 다 해소.
 		const FName PreferenceCategory = ResolveBoothPreferenceCategory(FacilityDefinitionId);
 		Flags.bRelievesHunger = (PreferenceCategory == TEXT("food_stall"));
 		Flags.bRelievesThirst = (PreferenceCategory == TEXT("food_stall")

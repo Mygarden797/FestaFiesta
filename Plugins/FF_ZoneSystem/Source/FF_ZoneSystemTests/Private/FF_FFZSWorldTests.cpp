@@ -1,17 +1,18 @@
-/**
- * @file FF_FFZSWorldTests.cpp
- * @brief WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
- *
- * 테스트 행렬:
- * 1) Command lifecycle, Queue 이동, Snapshot 복원과 동일 Command replay의 멱등성.
- * 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
- * 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
- * 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
- * 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
- *
- * 각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
- * Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
- */
+//  FF_FFZSWorldTests.cpp
+
+// WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
+// 테스트 행렬:
+ // 1) Command lifecycle, Queue 이동, Snapshot 복원과 동일 Command replay의 멱등성.
+ // 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
+ // 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
+ // 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
+ // 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
+ // 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
+ // 7) Zone/Facility Read Model의 공간 메타데이터 값 복사 계약.
+ 
+ //각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
+ // Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
+
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -34,7 +35,7 @@
 
 namespace
 {
-    /** 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다. */
+    // 각 자동화 테스트가 끝난 뒤 Editor/Project 설정을 원래 상태로 유지한다.
     class FScopedZFTestSettings
     {
     public:
@@ -154,6 +155,22 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     {
         return false;
     }
+
+    const FFFZSReadModel InstalledReadModel = Subsystem->BuildReadModel();
+    const FFFZSFacilityReadModel* InstalledFacilityModel = InstalledReadModel.Facilities.FindByPredicate(
+        [&InstallFirst](const FFFZSFacilityReadModel& Candidate)
+        {
+            return Candidate.FacilityInstanceId == InstallFirst.FacilityInstanceId;
+        });
+    if (!TestNotNull(TEXT("설치된 Facility가 Read Model에 포함된다"), InstalledFacilityModel))
+    {
+        return false;
+    }
+    TestTrue(TEXT("Facility Read Model은 Actor 대표 월드 위치(cm)를 복사한다"),
+        InstalledFacilityModel->WorldLocation.Equals(FirstFacility->GetActorLocation()));
+    TestTrue(TEXT("Facility Read Model 위치는 저장 Snapshot Transform의 위치와 같다"),
+        InstalledFacilityModel->WorldLocation.Equals(
+            FirstFacility->CaptureInstanceSnapshot().WorldTransform.GetLocation()));
 
     const FFFZSCommandResult ReplayResult = Subsystem->ExecuteCommand(InstallFirst);
     TestTrue(TEXT("동일한 CommandId와 Payload가 성공적으로 Replay된다"), ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
@@ -356,6 +373,112 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     const FFFZSCommandResult RestoredReplay = Subsystem->ExecuteCommand(InstallFirst);
     TestTrue(TEXT("Command 멱등성이 저장/복원 후에도 유지된다"), RestoredReplay.bSucceeded && RestoredReplay.bWasDuplicateReplay);
     TestEqual(TEXT("복원 후 Replay는 현재 Revision을 변경하지 않는다"), Subsystem->GetWorldRevision(), int64(8));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSWorldChangePhasePermissionsTest,
+    "FF_ZoneSystem.Integration.World.ChangePhasePermissions",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// Phase 계약: 세 월드 변경 명령은 InitialSetup·MorningCheck에서만 성공하고 다른 운영 단계에서는 실패한다.
+bool FFFZSWorldChangePhasePermissionsTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
+    {
+        return false;
+    }
+
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
+    {
+        return false;
+    }
+
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("승인된 Gameplay Zone"), Zone) ||
+        !TestTrue(TEXT("Phase 테스트 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    const auto MakeInstallAt = [ZoneId](const FIntPoint OriginCell)
+    {
+        FFFZSGridPlacement Placement;
+        Placement.OriginCell = OriginCell;
+        return UFFZSGridLibrary::MakeInstallCommand(
+            UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+            ZoneId,
+            Placement,
+            -1);
+    };
+
+    TestEqual(TEXT("Subsystem은 InitialSetup에서 시작한다"),
+        Subsystem->GetChangePhase(), EFFZSChangePhase::InitialSetup);
+    const FFFZSCommand InitialInstall = MakeInstallAt(FIntPoint(1000, 1000));
+    TestTrue(TEXT("InitialSetup에서 Install이 허용된다"),
+        Subsystem->ExecuteCommand(InitialInstall).bSucceeded);
+    TestTrue(TEXT("InitialSetup에서 Move가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(InitialInstall.FacilityInstanceId, ZoneId, FIntPoint(1000, 4000), -1)).bSucceeded);
+    TestTrue(TEXT("InitialSetup에서 Remove가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, InitialInstall.FacilityInstanceId)).bSucceeded);
+
+    TestTrue(TEXT("MorningCheck로 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck));
+    const FFFZSCommand MorningInstall = MakeInstallAt(FIntPoint(4000, 1000));
+    TestTrue(TEXT("MorningCheck에서 Install 배치 미리검증이 허용된다"),
+        Subsystem->ValidatePlacement(MorningInstall).bIsValid);
+    TestTrue(TEXT("MorningCheck에서 Install이 허용된다"),
+        Subsystem->ExecuteCommand(MorningInstall).bSucceeded);
+    TestTrue(TEXT("MorningCheck에서 Move가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(MorningInstall.FacilityInstanceId, ZoneId, FIntPoint(4000, 4000), -1)).bSucceeded);
+
+    TestTrue(TEXT("LiveOperation으로 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation));
+    const FFFZSCommand LiveInstall = MakeInstallAt(FIntPoint(7000, 1000));
+    const FFFZSPlacementValidation LiveValidation = Subsystem->ValidatePlacement(LiveInstall);
+    TestTrue(TEXT("LiveOperation에서 Install 배치 미리검증이 WrongStage로 거부된다"),
+        LiveValidation.Reasons.Contains(EFFZSPlacementFailure::WrongStage));
+    TestEqual(TEXT("LiveOperation에서 Install이 거부된다"),
+        Subsystem->ExecuteCommand(LiveInstall).FailureReason, EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("LiveOperation에서 Move가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(MorningInstall.FacilityInstanceId, ZoneId, FIntPoint(7000, 4000), -1)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("LiveOperation에서 Remove가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, MorningInstall.FacilityInstanceId)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+
+    TestTrue(TEXT("EveningSettlement로 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::EveningSettlement));
+    const FFFZSCommand EveningInstall = MakeInstallAt(FIntPoint(7000, 7000));
+    TestEqual(TEXT("EveningSettlement에서 Install이 거부된다"),
+        Subsystem->ExecuteCommand(EveningInstall).FailureReason, EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("EveningSettlement에서 Move가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeMoveCommand(MorningInstall.FacilityInstanceId, ZoneId, FIntPoint(4000, 7000), -1)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+    TestEqual(TEXT("EveningSettlement에서 Remove가 거부된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, MorningInstall.FacilityInstanceId)).FailureReason,
+        EFFZSPlacementFailure::WrongStage);
+
+    TestTrue(TEXT("MorningCheck로 다시 전환된다"),
+        Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck));
+    TestTrue(TEXT("MorningCheck에서 Remove가 허용된다"),
+        Subsystem->ExecuteCommand(
+            MakeFacilityCommand(EFFZSCommandType::Remove, MorningInstall.FacilityInstanceId)).bSucceeded);
+    TestFalse(TEXT("제거된 이전 Phase 값은 설정할 수 없다"),
+        Subsystem->SetChangePhase(static_cast<EFFZSChangePhase>(1)));
+    TestEqual(TEXT("잘못된 Phase 설정은 현재 MorningCheck를 보존한다"),
+        Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
     return true;
 }
 
@@ -659,7 +782,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     // 명령 Guard가 활성화된 동안 반드시 실패해야 하며 권위 상태를 변경해서는 안 된다.
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot EmptyLiveSnapshot = Subsystem->CaptureWorldSnapshot();
-    Subsystem->SetChangePhase(EFFZSChangePhase::Reconfigure);
+    Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck);
 
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000); // q0: 기존 10m 물리 위치를 보존한다.
@@ -701,7 +824,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     TestTrue(TEXT("거부된 재진입 Restore가 충돌 원인을 설명한다"), !ReentrantRestoreErrors.IsEmpty());
     TestTrue(TEXT("거부된 재진입 Restore는 권위 상태를 변경하지 않는다"), bReentrantRestorePreservedState);
     TestTrue(TEXT("외부 Install은 거부된 Callback 후에도 Commit된다"), InstallResult.bSucceeded);
-    TestEqual(TEXT("Command Guard는 ExecuteCommand 반환 후 Reset된다"), Subsystem->GetChangePhase(), EFFZSChangePhase::Reconfigure);
+    TestEqual(TEXT("Command Guard는 ExecuteCommand 반환 후 Reset된다"), Subsystem->GetChangePhase(), EFFZSChangePhase::MorningCheck);
 
     AFFZSFacilityActor* Facility = Subsystem->FindFacility(Install.FacilityInstanceId);
     if (!TestNotNull(TEXT("설치된 Facility"), Facility))
@@ -1069,4 +1192,119 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         Subsystem->ExecuteCommand(ReopenAfterRestore).bSucceeded);
     return true;
 }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSZoneReadModelSpatialMetadataTest,
+    "FF_ZoneSystem.Integration.World.ZoneReadModelSpatialMetadata",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// Read Model 계약: Actor의 로컬 그래프·앵커는 값 복사하고 면적은 수용량 Override가 아닌 경계에서 산출한다.
+bool FFFZSZoneReadModelSpatialMetadataTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Read Model 자동화 테스트 World"), World))
+    {
+        return false;
+    }
+
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!TestNotNull(TEXT("Read Model World Subsystem"), Subsystem))
+    {
+        return false;
+    }
+
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("Read Model 대상 Gameplay Zone"), Zone))
+    {
+        return false;
+    }
+
+    const TArray<FName> ExpectedNeighborZoneIds = {
+        TEXT("GZ_SunsetLounge"),
+        TEXT("GZ_FleaMarket")
+    };
+    const TArray<FTransform> ExpectedEntryExitAnchors = {
+        FTransform(FRotator(0.0, 90.0, 0.0), FVector(100.0, 250.0, 0.0)),
+        FTransform(FRotator(0.0, 180.0, 0.0), FVector(1900.0, 750.0, 50.0))
+    };
+    Zone->NeighborZoneIds = ExpectedNeighborZoneIds;
+    Zone->EntryExitAnchors = ExpectedEntryExitAnchors;
+
+    // 20m x 10m 경계는 200m²다. 수용량용 공공 면적 Override와 의도적으로 다르게 둔다.
+    USplineComponent* BoundarySpline = Zone->BoundarySpline;
+    if (!TestNotNull(TEXT("Read Model 대상 Zone 경계 Spline"), BoundarySpline))
+    {
+        return false;
+    }
+    const FVector BoundaryPoints[] = {
+        FVector(0.0, 0.0, 0.0),
+        FVector(2000.0, 0.0, 0.0),
+        FVector(2000.0, 1000.0, 0.0),
+        FVector(0.0, 1000.0, 0.0)
+    };
+    for (int32 PointIndex = 0; PointIndex < UE_ARRAY_COUNT(BoundaryPoints); ++PointIndex)
+    {
+        BoundarySpline->SetLocationAtSplinePoint(
+            PointIndex, BoundaryPoints[PointIndex], ESplineCoordinateSpace::Local, false);
+    }
+    BoundarySpline->UpdateSpline();
+    Zone->UsablePublicAreaSquareMeters = 777.0f;
+
+    if (!TestTrue(TEXT("Read Model 대상 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    constexpr float ExpectedAreaSquareMeters = 200.0f;
+    TestTrue(TEXT("20m x 10m 경계 면적은 200m²다"),
+        FMath::IsNearlyEqual(Zone->GetBoundaryAreaSquareMeters(), ExpectedAreaSquareMeters));
+
+    const FFFZSReadModel ReadModel = Subsystem->BuildReadModel();
+    TestEqual(TEXT("등록한 Zone 하나가 Read Model에 포함된다"), ReadModel.Zones.Num(), 1);
+    const FFFZSZoneReadModel* ZoneReadModel = ReadModel.Zones.FindByPredicate(
+        [ZoneId](const FFFZSZoneReadModel& Candidate)
+        {
+            return Candidate.ZoneId == ZoneId;
+        });
+    if (!TestNotNull(TEXT("Zone ID로 Read Model을 찾는다"), ZoneReadModel))
+    {
+        return false;
+    }
+
+    TestTrue(TEXT("Read Model 면적은 경계 함수 결과를 그대로 사용한다"),
+        FMath::IsNearlyEqual(ZoneReadModel->AreaSquareMeters, Zone->GetBoundaryAreaSquareMeters()));
+    TestTrue(TEXT("Read Model 면적은 200m²다"),
+        FMath::IsNearlyEqual(ZoneReadModel->AreaSquareMeters, ExpectedAreaSquareMeters));
+    TestFalse(TEXT("Read Model 면적은 SoftCapacity용 공공 면적 Override가 아니다"),
+        FMath::IsNearlyEqual(ZoneReadModel->AreaSquareMeters, Zone->UsablePublicAreaSquareMeters));
+
+    Zone->NeighborZoneIds.Reset();
+    Zone->EntryExitAnchors.Reset();
+    TestTrue(TEXT("Actor의 그래프 배열을 변경했다"), Zone->NeighborZoneIds.IsEmpty());
+    TestTrue(TEXT("Actor의 출입 기준점 배열을 변경했다"), Zone->EntryExitAnchors.IsEmpty());
+
+    TestEqual(TEXT("Read Model은 이웃 ID 배열을 값 복사한다"),
+        ZoneReadModel->NeighborZoneIds.Num(), ExpectedNeighborZoneIds.Num());
+    for (int32 Index = 0;
+         Index < FMath::Min(ZoneReadModel->NeighborZoneIds.Num(), ExpectedNeighborZoneIds.Num());
+         ++Index)
+    {
+        TestEqual(TEXT("Read Model의 이웃 ID와 순서가 보존된다"),
+            ZoneReadModel->NeighborZoneIds[Index], ExpectedNeighborZoneIds[Index]);
+    }
+
+    TestEqual(TEXT("Read Model은 출입 기준점 배열을 값 복사한다"),
+        ZoneReadModel->EntryExitAnchors.Num(), ExpectedEntryExitAnchors.Num());
+    for (int32 Index = 0;
+         Index < FMath::Min(ZoneReadModel->EntryExitAnchors.Num(), ExpectedEntryExitAnchors.Num());
+         ++Index)
+    {
+        TestTrue(TEXT("Read Model의 출입 기준점 Transform과 순서가 보존된다"),
+            ZoneReadModel->EntryExitAnchors[Index].Equals(ExpectedEntryExitAnchors[Index]));
+    }
+    return true;
+}
+
 #endif
