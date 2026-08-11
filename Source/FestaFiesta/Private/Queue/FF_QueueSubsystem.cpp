@@ -223,7 +223,14 @@ float UFF_QueueSubsystem::GetExpectedWaitSeconds(int32 FacilityId, int32 Incomin
 
 float UFF_QueueSubsystem::GetExpectedWaitMinutes(int32 FacilityId, int32 IncomingMemberCount) const
 {
-	return GetExpectedWaitSeconds(FacilityId, IncomingMemberCount) / 60.f;
+	return GetExpectedWaitSeconds(FacilityId, IncomingMemberCount) / FFF_QueueUnits::SecondsPerDecisionMinute;
+}
+
+float UFF_QueueSubsystem::GetFacilityServiceRatePerMinute(int32 FacilityId) const
+{
+	const FFF_FacilityQueue* Queue = FindQueue(FacilityId);
+	// 0은 "모름"이다. 호출부는 이걸로 나누면 안 된다.
+	return Queue ? Queue->GetServiceRate() * FFF_QueueUnits::SecondsPerDecisionMinute : 0.f;
 }
 
 FVector UFF_QueueSubsystem::GetFacilityExitLocation(int32 FacilityId) const

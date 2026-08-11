@@ -249,11 +249,23 @@ struct FFF_QueueState
 	float ServiceRate = 0.f;
 
 	// 운영 중이고 최소 1인 이상 들어갈 자리가 남았는지. 만석·폐쇄면 false.
+	//
+	// ⚠ 목적지 후보를 거르는 게이트로 쓰지 말 것.
+	//   이 값은 "지금 이 순간 TryJoin 이 성공하는가"라서 폐쇄와 '잠깐 만석'이 뭉쳐 있다.
+	//   폐쇄는 몇 분~영원이지만 만석은 앞 Party 하나 빠지면 풀린다. 후보에서 빼버리면
+	//   붐비는 부스가 결정 시점마다 사라졌다 나타났다 한다.
+	//   후보 게이트는 bIsOpen 을, 혼잡도는 예상 대기시간을 쓸 것.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	bool bAcceptingNew = true;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	bool bIsOpen = true;
+
+	// ── 단위를 이름에 박은 접근자 ───────────────────────────────────────────
+	// ServiceRate 라는 이름만 보고 단위를 짐작하면 안 된다. 프로젝트에는 분당 처리율을
+	// 돌려주는 동명 함수가 따로 있어서(시설 정적 규칙 기반), 둘을 섞으면 60배가 조용히 들어간다.
+	float GetServiceRatePerSecond() const { return ServiceRate; }
+	float GetServiceRatePerMinute() const { return ServiceRate * FFF_QueueUnits::SecondsPerDecisionMinute; }
 };
 
 /**
@@ -299,6 +311,17 @@ struct FFF_QueueLog
 	// TODO(3자 합의): FFF_CauseId 확정 시 치환
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	FName CauseId;
+
+	// ── 분 단위 뷰 ──────────────────────────────────────────────────────────
+	// 시간 필드는 전부 초다(CSV 컬럼명도 _s 로 끝난다). 결정 측은 분을 쓰므로
+	// (FFF_CrowdReadModel::SimTimeMinutes, FFF_DestinationCandidate::MinutesSinceLastVisit)
+	// 두 로그를 시각으로 조인할 때 호출부가 매번 60으로 나누게 두면 언젠가 한 군데가 빠진다.
+	// 저장은 초 하나만 한다 — 분을 필드로 중복 저장하면 둘이 어긋날 수 있다.
+	float GetJoinSimTimeMinutes() const { return JoinSimTime / FFF_QueueUnits::SecondsPerDecisionMinute; }
+	float GetExitSimTimeMinutes() const { return ExitSimTime / FFF_QueueUnits::SecondsPerDecisionMinute; }
+	float GetEstimatedWaitAtJoinMinutes() const { return EstimatedWaitAtJoinSeconds / FFF_QueueUnits::SecondsPerDecisionMinute; }
+	float GetActualWaitMinutes() const { return ActualWaitSeconds / FFF_QueueUnits::SecondsPerDecisionMinute; }
+	float GetServiceMinutes() const { return ServiceSeconds / FFF_QueueUnits::SecondsPerDecisionMinute; }
 };
 
 /**
