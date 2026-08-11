@@ -114,8 +114,22 @@ bool FFF_VisitorDistribution_Deterministic::RunTest(const FString& Parameters)
 		TestTrue(TEXT("모든 개체의 태그가 순서까지 동일하다"), bAllSame);
 	}
 
+	// Seed를 바꾸면 구성이 달라진다.
+	//
+	// !!! PlannedGroupCount 하나만 비교하면 안 된다 !!! (2026-08-10 수정)
+	// 예전엔 TestNotEqual(DifferentSeed.PlannedGroupCount, First.PlannedGroupCount) 였는데,
+	// 그룹 개수는 정수 하나라 서로 다른 Seed 가 우연히 같은 값을 낼 수 있다 — 실제로 그래서
+	// 실패했다. 구성이 달라졌는지는 **개체 태그 자체**를 비교해야 알 수 있다.
 	const FFF_VisitorDistribution DifferentSeed = FFF_VisitorDistributionTestHelpers::BuildDefault(500, 99);
-	TestNotEqual(TEXT("Seed를 바꾸면 그룹 구성이 달라진다"), DifferentSeed.PlannedGroupCount, First.PlannedGroupCount);
+	bool bAnyTagDiffers = (DifferentSeed.Visitors.Num() != First.Visitors.Num());
+	for (int32 i = 0; !bAnyTagDiffers && i < First.Visitors.Num(); ++i)
+	{
+		bAnyTagDiffers = First.Visitors[i].ArchetypeId != DifferentSeed.Visitors[i].ArchetypeId
+			|| First.Visitors[i].TargetGroupSize != DifferentSeed.Visitors[i].TargetGroupSize
+			|| First.Visitors[i].TargetGroupChildCount != DifferentSeed.Visitors[i].TargetGroupChildCount
+			|| First.Visitors[i].bIsDependentChildSlot != DifferentSeed.Visitors[i].bIsDependentChildSlot;
+	}
+	TestTrue(TEXT("Seed를 바꾸면 개체 태그 구성이 달라진다"), bAnyTagDiffers);
 	return true;
 }
 

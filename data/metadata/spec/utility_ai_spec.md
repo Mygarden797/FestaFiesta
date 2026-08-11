@@ -31,11 +31,14 @@ Utility(i, j, t) =
     - weight_distance    * distance_norm(i, j)
     - weight_wait        * wait_norm(j, t)
     - weight_density     * density_norm(j, t)
+    - weight_revisit     * revisit_penalty_norm(i, j, t) * novelty_seeking(i)
 ```
 
 - `i` = NPC 한 명, `j` = 목적지 한 곳, `t` = 시각
 - 모든 `*_norm` 항은 0~1 (preference만 -1~1)
 - 계수는 전부 `data/unreal/utility_coefficients_v0.csv` 에서 읽는다. 코드에 숫자를 박지 않는다.
+
+> ⚠️ **다만 `GetCoefficient`의 3번째 인자가 코드 기본값이고, 그게 CSV와 어긋날 수 있다.** 2026-08-10에 `weight_need`가 코드 1.2 / CSV 1.8로 어긋나 있는 것을 발견했다 — DataTable이 안 붙은 경로에서 아래 부등식이 깨져 있었다. 부등식 자체를 테스트로 고정했으니(`NeedBeatsBestLikedAlternative`) 같은 종류의 드리프트는 이제 잡힌다.
 
 ### need 항 (2026-08-06 추가)
 
@@ -59,6 +62,54 @@ need_urgency_norm(i, j) = max{ Need_i[n] * need_priority[n] : n 은 j 가 해소
 | `Fatigue` | 0.60 | 참을 수 있는 욕구 |
 | `Stimulation` | 0.50 | 생리적 욕구가 아니라 가장 낮다. 단 **0으로 두면 Live 후반 무대 앞 집중(AT-016)이 사라진다** |
 
+#### Need가 실제로 움직이는 규칙 (2026-08-10 추가)
+
+`FFF_NeedRules`(`NPC/Party/FF_NeedRules.h`) — 순수 함수 2개뿐이다.
+
+| 함수 | 언제 | 무엇을 |
+|---|---|---|
+| `Advance(Needs, ElapsedMinutes, Rates)` | 시간이 지날 때 | 성분별로 올리고 0~1로 clamp |
+| `Relieve(Needs, ReliefFlags, Amounts)` | **시설 이용을 마쳤을 때** | 플래그가 켜진 성분만 깎고 0 하한 |
+
+**증가 속도를 "분당 증가량"이 아니라 "한계(1.0)에 닿는 분"으로 표현한다.** 분당 0.00417은 밸런싱할 때 아무 의미도 읽히지 않지만, "4시간이면 배고픔이 한계에 닿는다"는 근거를 붙일 수도 반박할 수도 있는 문장이 된다.
+
+| 계수 | 기본값 | 근거 |
+|---|---:|---|
+| `need_hunger_minutes_to_limit` | 240 | 성인 식사 간격 4시간 가정. `draft_assumption`. **식음료 매출의 주 노브** — 늘리면 아무도 안 가고 줄이면 전원이 간다 |
+| `need_restroom_minutes_to_limit` | 150 | 주간 배뇨 간격 2.5시간 가정. `draft_assumption`. 축제라 음료 섭취가 많다는 상식적 판단으로 식사보다 짧게 잡았다 |
+| `need_{thirst,fatigue,stimulation}_minutes_to_limit` | **0** | 미정이 아니라 **Phase 게이트**다. 0이면 안 쌓인다 |
+| `need_hunger_relief_amount` | 0.8 | **부분 해소** — 아래 참고 |
+| `need_restroom_relief_amount` | 1.0 | 완전 해소. 재방문은 `minutes_to_limit`이 다시 쌓아주는 쪽에서 나온다 |
+| `need_initial_fraction_mode` | 0.15 | 입장 시점 Need 흩뿌리기 최빈값 |
+| `need_initial_fraction_max` | 0.50 | 같은 것의 상한. 0이면 흩뿌리기가 꺼진다 |
+
+**"P0는 Hunger·Restroom만"이 코드 분기가 아니라 데이터다.** 나머지 3종은 `minutes_to_limit = 0`이라 안 쌓이므로, Phase를 켜는 것은 코드 수정이 아니라 CSV 값 변경이다.
+
+#### 해소량이 재방문을 만드는 것이 아니다 (2026-08-10 정정)
+
+`Relieve`는 `max(0, Need − ReliefAmount)`로 clamp한다. **그래서 Need가 해소량보다 작으면 0.8과 1.0의 결과가 완전히 같다** — 둘 다 0이 된다. 값이 갈리는 것은 Need가 0.8을 넘긴 상태에서 이용했을 때뿐이다.
+
+재방문을 만드는 것은 **① `minutes_to_limit`이 다시 쌓아주는 것**과 **② 입장 시점 초기값**이다. 이전 판에 적어뒀던 *"완전 해소면 4시간 체류 NPC가 한 번만 먹어 식음료 매출이 인원 × 1회로 고정된다"*는 틀렸다 — 식사 횟수를 정하는 것은 `need_hunger_minutes_to_limit` 대 체류시간이고, 해소량이 얼마든 240분 한계 / 240분 체류면 한 번만 먹는다.
+
+**그래도 Hunger를 0.8로 두는 이유**: 아래 초기값 흩뿌리기가 있으므로 *한계까지 굶은 채 먹는 개체*가 생기고, 그때 잔여 0.2가 남아 남은 체류시간 안에 두 번째 식사가 가능해진다. 초기값 0에서 시작하는 개체에게는 아무 영향이 없다 — **전체가 아니라 꼬리에만 작용하는 레버**이고, 그 성질은 테스트(`HungryArrivalCanEatTwice`)로 고정했다.
+
+#### 확정된 결정 2건 (사용자, 2026-08-10)
+
+**① 줄에서 기다리는 동안에도 Need는 쌓인다.** `Advance`를 부르는 쪽이 대기 중 여부로 분기하지 않는다. 줄이 길면 배고픔이 더 쌓여 다음 재평가에서 다른 선택이 나오고, 그게 reneging(줄 이탈)의 동기가 된다. **L3가 "대기 중에는 `Advance`를 건너뛰는" 최적화를 넣으면 동작이 바뀐다.**
+
+**② 입장 시점 Need는 0이 아니다** — `FFF_NeedRules::MakeInitialNeeds`가 개체별로 흩뿌린다.
+
+```text
+초기값 = Triangular(0, need_initial_fraction_mode, need_initial_fraction_max)
+```
+
+Need는 한계까지 0→1로 선형이므로 **"한계 대비 비율"이 곧 Need 값**이다. 성분마다 별도 계수를 두지 않아도, 이후 `Advance`가 각 성분의 한계 시간(화장실 150분 / 배고픔 240분)대로 올려준다.
+
+- **없으면 무엇이 깨지나**: 전원이 0에서 출발하면 배고픔 곡선이 장내에서 동기화된다. 입장 시각만 다를 뿐 "몇 분 뒤에 배고파지는가"가 모두 같아서 식음료 쏠림이 계단처럼 한 번에 몰린다.
+- **성분별 독립 난수 스트림**을 쓴다 — 배고픈 사람이 화장실도 급하다는 상관을 넣을 근거가 없다. 넣으려면 개체 변주의 `leisureliness_axis` 상관처럼 명시적으로 한다.
+- **모양의 근거**: 값 자체는 `draft_assumption`이지만 낮은 쪽에 몰린 모양에는 이유가 있다 — 사람들은 보통 식사·화장실을 해결하고 나온다. 상한 0.5는 입장 직후 곧바로 화장실로 직행하는 개체를 v0에서 만들지 않기 위한 것이다.
+- **꺼진 Need는 0에서 시작한다.** 안 쌓이는데 초기값이 있으면 영원히 그 값에 머문다.
+
 전부 0~1이라 `need_urgency_norm`도 0~1을 벗어나지 않는다 — 스케일은 `weight_need` 하나가 담당하고 여기서는 성분 간 순서만 정한다.
 
 **하드 우선순위가 아니다.** 우선순위가 낮아도 값이 훨씬 크면 이긴다(배고픔 0.95 > 화장실 0.3). 하드 우선순위로 하면 확률적 선택이 깨져 "모든 NPC가 동시에 화장실로" 같은 쏠림이 생긴다. 두 성질 모두 테스트로 고정했다(`NeedPriorityBreaksTies`).
@@ -80,6 +131,28 @@ preference_norm(i, c) = clamp(preference_vector(i)[c] / preference_vector_scale_
 ```
 
 `preference_vector(i)[c]`는 3.3절 합성식(아키타입 delta + 동반유형 delta)에 개체 변주 `preference_strength_multiplier`(`individual_variation_spec.md` 5절)를 곱한 값이다. `preference_vector_scale_ref`(17.0)는 `affinity_scale_ref`와 같은 방식 — 산출물 관측 최대 절대값(16.80pp, `life_stage_teen`×`group_3_plus`×`ambience_photo_zone`)에서 정했다.
+
+### revisit 항 — 신규성 선호 (2026-08-10 추가, 사용자 확정)
+
+```text
+revisit_penalty_norm(i, j, t) = max(0, 1 − 마지막 방문 후 경과분 / revisit_memory_minutes)
+```
+
+**왜 필요한가** — `preference_vector`는 **카테고리 단위**(`food_stall`, `rest_area`…)라 시설 인스턴스를 구분하지 못한다. "밥 먹었으니 음식 부스 매력이 내려간다"는 나오지만 **"이 부스는 가봤으니 옆 부스로"는 나오지 않는다.** 추가 당시에는 `attraction`·거리·밀집 입력이 모두 같아 같은 카테고리 부스들의 점수가 **완전히 동일**했고, softmax가 균등 분포가 되어 우연히 같은 곳을 또 갔다. 현재 거리는 시설별로 구분되지만 방문 이력 자체는 여전히 별도 입력이 필요하다.
+
+**리얼리즘이 아니라 게임 메커니즘이다** — 같은 부스만 가면 매출이 한 곳에 몰리고 여러 곳을 돌면 분산된다. 플레이어가 부스를 여럿 짓는 동기가 여기서 나온다.
+
+| 계수 | 기본값 | 근거 |
+|---|---:|---|
+| `weight_revisit` | 0.5 | **상대 관계로 정한 값.** `lambda_affinity`(0.6)보다 작게 잡아 "취향에 딱 맞는 부스는 방금 갔어도 다시 이길 수 있다"를, `weight_need`(1.8)보다 훨씬 작게 두어 "급한 욕구는 방문 이력을 무시한다"를 보장한다 |
+| `revisit_memory_minutes` | 60 | 잔상이 0으로 감쇠하는 데 걸리는 분(선형). **영구 페널티로 두지 않은 이유**: "제일 좋아하는 부스에 두 번은 안 간다"가 되어 오히려 부자연스럽다 |
+| `novelty_seeking_multiplier` | 0.4~1.6 (삼각) | 개체 변주 8번째 축. 폭이 다른 knob(0.85~1.15)보다 넓은 것은 의도 — 관찰 가능한 행동 다양성이 목적이라 개체차가 커야 의미가 있다 |
+
+**입력 경로**: `FFF_DestinationCandidate::MinutesSinceLastVisit`. **음수 = 안 가본 곳**이고 그게 기본값이다 — 0은 "방금 다녀왔다"라서 뜻이 완전히 다르다. `FFF_VisitHistory::ApplyToCandidates`가 채우며, 안 채우면 항 전체가 0이 되어 신규성 선호가 꺼진 상태로 동작한다.
+
+**`FFF_VisitHistory`는 개체당 최근 5곳만 기억한다**(고정 용량 링). 8만 명 규모에서 무한 이력은 감당이 안 되고, 감쇠 때문에 오래된 방문은 어차피 페널티가 0에 가깝다. 단 `revisit_memory_minutes`(60분) 안에 5곳보다 많이 갈 수 있으면 **기억이 감쇠보다 용량 때문에 먼저 지워진다** — 재평가 주기가 확정되면 함께 조정해야 한다.
+
+**기록 시점은 "시설 이용 완료"**다 — `FFF_NeedRules::Relieve`와 같은 시점. 도착만 하고 포기한 곳을 "가봤다"로 세면 줄만 서다 떠난 시설을 다시 안 가게 된다. `no_choice`(`NAME_None`)는 기록하지 않는다.
 
 ### no-choice 대안
 
@@ -286,10 +359,14 @@ arrival_flow[j] += P(i가 j를 고를 확률)
 
 ### 미착수
 
-- **NPC 런타임 층(L3)이 없다** — 가장 큰 구조적 공백. 위 함수들을 **누가 언제 호출하는지**가 정해지지 않았다. `UFF_NpcNeedMetricsSubsystem::AddSample`을 부르는 코드도, `ResolveWithGroupSharing`을 부르는 코드도 없다.
-- **`FFF_ZoneSystemBridge::BuildCandidates`가 스텁** — 목적지 선택이 실제로 돌지 않는 직접 원인. Zone 인접 그래프(`NeighborZoneIds`)는 이미 노출돼 있다.
+- **NPC 런타임 층(L3)이 없다** — 가장 큰 구조적 공백. 위 함수들을 **누가 언제 호출하는지**가 정해지지 않았다. `UFF_NpcNeedMetricsSubsystem::AddSample`을 부르는 코드도, `ResolveWithGroupSharing`을 부르는 코드도, **`FFF_NeedRules::Advance`/`Relieve`를 부르는 코드도** 없다.
+- **`ReportZonePopulation`을 부르는 코드가 0곳이다** (2026-08-10 발견) — 플러그인은 "외부 시뮬레이션이 인구와 DeltaSeconds를 보고"하면 Zone 밀도를 계산하는 설계인데 아무도 안 부른다. 그래서 `FFFZSZoneReadModel::ReportedPopulation`이 항상 0이고, `BuildCandidates`가 그걸 물려받아 **`density_cost` 항이 항상 0이다.** Zone별 재실 인원은 crowdAI가 아는 값이라 호출 주체를 이정원 님과 협의해야 한다.
+- ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료**(테스트 10개). `DistanceMeters`는 Read Model의 시설 대표 위치와 Party 위치로 계산한다. 목적지 선택이 실제로 도는 데 남은 것은 L3이며, `BaseAttraction` 출처는 아직 대기 중이다 — 자세한 내용은 `utility_destination_selector_spec.md` §1-1.
 - **`companion_type_modifier_v0.csv`의 preference delta가 `가구원수` 기반인 문제** — 그룹 크기 *비율*은 실측으로 교체했지만 이 *delta 값* 자체는 아직 그대로다(§6 경고 박스). 대체 후보는 2025 국민여행조사 통계편 표 14-2-x(동반자 유형) 또는 원자료 `A6B_1..12`.
 - **후보 집합 규칙이 계수로 노출되지 않았다** — `BuildCandidates`가 "현재 Zone + 인접 Zone + 전역 인기 상위 K"로 줄이는데, 이 "전역 인기"가 **부익부 피드백**을 만든다(인기 있으면 후보에 더 자주 들어가서 더 인기 있어진다). K와 "인기"의 정의를 계수로 빼서 민감도 분석 대상에 넣어야 한다. 안 그러면 병목이 실제 선호 때문인지 후보 필터 때문인지 구분할 수 없다.
+  **"전역 인기 상위 K"는 아직 미구현이다** — 지금은 인접 Zone 밖이 절대 후보가 못 되고, 상한에 걸려 잘릴 때 "멀지만 취향에 맞는 부스"가 후보에 아예 못 들어온다.
+- **Need가 퇴장에 걸려 있지 않다** (2026-08-10 제기, 사용자 결정 대기) — 퇴장 조건은 체류시간 소진과 연속 `no_choice` 2개뿐이다. "모든 Need 해소 = 퇴장"은 방향이 거꾸로다(해소는 정상 상태다). 빈 자리는 **해소하지 못한 Need가 쌓였을 때의 이탈**이고, 지금은 화장실이 멀거나 붐벼도 계속 그쪽을 고르며 버틴다 — `no_choice`가 안 나오면 이탈이 생기지 않아 **"줄이 너무 길어서 축제를 떠났다"가 모델에 없다.**
+  추천은 퇴장 게이트를 늘리지 않고 **체류시간을 Need로 깎는 것**이다(§2 no-choice 대안의 진동 경고를 피한다). 보류 중인 Experience(만족도)와 겹치므로 그 홀드를 풀지 먼저 정해야 한다.
 
 ### 합의 필요 (다른 파트와 걸림)
 

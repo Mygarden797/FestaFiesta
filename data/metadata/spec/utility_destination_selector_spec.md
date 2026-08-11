@@ -96,7 +96,12 @@ PreferenceVectorByCategory[c] =
 
    **(8/6) 보관해야 하는 상태가 늘었다.** `Choose()`가 `FFF_NeedState`와 `ConsecutiveNoChoiceCount`를 받고, `ResolveNoChoiceAction()`이 `RemainingStayMinutes`를 받는다. 둘 다 기본값이 있어서 안 넘겨도 컴파일은 되지만 — 안 넘기면 need 항이 0이 되고 무한 배회 방지도 동작하지 않는다.
 
-1-1. **`FFF_ZoneSystemBridge::BuildCandidates`가 스텁** — 빈 배열을 돌려준다. 1번과 별개의, **더 직접적인** 원인이다: 런타임 층을 만들어도 후보가 비어 있으면 항상 `no_choice`가 나온다. Zone 인접 그래프(`NeighborZoneIds`)·면적·앵커는 이미 `FFFZSZoneReadModel`에 노출돼 있고, 단위 환산과 Need 해소 판정 함수도 다 있다 — 남은 건 조립뿐이다.
+1-1. ~~**`FFF_ZoneSystemBridge::BuildCandidates`가 스텁**~~ — **2026-08-10 구현 완료.** 현재+인접 Zone으로 좁히고, 닫힌 시설·Info·Safety를 빼고, (같은 Zone → 가까운 순 → ID 순)으로 상한을 자른다. 테스트 10개.
+
+   `DistanceMeters`는 `FFFZSFacilityReadModel::WorldLocation`과 Party 월드 위치의 직선거리를
+   cm→m로 환산해 채운다. **남은 구멍 2개** (전부 다른 파트 대기, 값이 없어도 크래시는 없다):
+   - `BaseAttraction` = 0 — `attraction_norm` 설계 대기(아래 2번). 모든 후보가 0이면 항이 무력화될 뿐 특정 시설이 유리해지지 않는다
+   - 밀집도 — 시설 단위 점유값이 없어 Zone 밀집도(`ReportedPopulation`/`SoftCapacity`)로 근사(`assumption`). 같은 Zone 시설들의 density_cost가 전부 같아진다
 
 2. **`attraction_norm`(부스 기본 매력도 정규화) 설계 미정** — `FFF_DestinationCandidate::BaseAttraction`을 0~1로 누가 어떻게 정할지는 부스 설정 쪽 설계 대기 (`utility_ai_spec.md` 8절).
 3. **거리는 직선거리 근사** — 축제장 레이아웃·내비메시 확정 후 실제 보행거리(장애물 포함)로 교체.
@@ -114,3 +119,20 @@ PreferenceVectorByCategory[c] =
 | 2026-08-06 | `need` 항 추가 (`weight_need` 1.8) | Need가 이동 원인이 되게 함 + 재방문 문제 해결 |
 | 2026-08-06 | `no_choice_utility_decay_per_round` 0.03 추가 | 무한 배회 루프 방지 |
 | 2026-08-06 | `no_choice_leave_patience_rounds` 5 추가 | 퇴장 판정. 체류시간 게이트가 우선 |
+| 2026-08-10 | **`revisit_penalty` 항 추가** (`weight_revisit` 0.5 / `revisit_memory_minutes` 60 / 개체 변주 `novelty_seeking_multiplier`) | `preference_vector`가 카테고리 단위라 "이 부스는 가봤으니 옆 부스로"가 안 나왔다. 추가 당시 `attraction`·거리·밀집 입력이 모두 같아 같은 카테고리 부스들의 점수가 완전히 동일했다. **경제와 직결** — 같은 부스만 가면 매출이 한 곳에 몰린다 |
+| 2026-08-10 | `weight_need` **코드 기본값 1.2 → 1.8** (CSV와 불일치 수정) | CSV의 1.8 근거가 `weight_need > weight_attraction + lambda_affinity(1.6)` 부등식인데 1.2는 그걸 깬다 — DataTable 없는 경로에서 급한 욕구가 취향을 못 이겼다. 부등식을 테스트로 고정 |
+| 2026-08-10 | `EstimatedWaitMinutes`를 브릿지가 채우지 않도록 변경 | 소유자를 `FFF_QueueWaitAdapter` 한 곳으로. 폴백을 만들었다가 "Queue가 모르는 시설이 없다"는 것을 확인해 제거 |
+
+### `revisit_penalty` 항의 입력 경로
+
+```text
+revisit_penalty_norm = max(0, 1 − MinutesSinceLastVisit / revisit_memory_minutes)
+```
+
+`FFF_DestinationCandidate::MinutesSinceLastVisit`로 들어온다. **음수 = 안 가본 곳**이고 그게 기본값이다 — `0`은 "방금 다녀왔다"라서 뜻이 완전히 다르다.
+
+채우는 것은 `FFF_VisitHistory::ApplyToCandidates`이고, `FFF_QueueWaitAdapter::ApplyToCandidates`와 같은 "후보 채우기" 형태다 — 선택기가 이력 구조를 몰라도 되게 하려는 것이다. **안 채우면 항 전체가 0이 되어 신규성 선호가 꺼진 상태로 동작한다**(크래시 없음).
+
+`FFF_VisitHistory`는 개체당 최근 5곳만 기억하고, 기록 시점은 **"시설 이용 완료"**다(`FFF_NeedRules::Relieve`와 같은 시점). 도착만 하고 포기한 곳을 "가봤다"로 세면 줄만 서다 떠난 시설을 다시 안 가게 된다.
+
+자세한 근거와 계수 표는 `utility_ai_spec.md` §2 "revisit 항".
