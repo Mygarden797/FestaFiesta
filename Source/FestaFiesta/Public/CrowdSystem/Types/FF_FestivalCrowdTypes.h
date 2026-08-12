@@ -66,9 +66,9 @@ struct FCrowdGroupTypes
 	GENERATED_BODY()
 	
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Crowd|Group")
-	int32 GroupID;
+	int32 GroupID = 0;
 	
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Crowd|Group")
-	FName GroupName;
+	FName GroupName = NAME_None;
 };
 

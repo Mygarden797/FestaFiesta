@@ -12,6 +12,7 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSQueueAgent.h"
+#include "FF_FFZSQueueGeometry.h"
 
 #define LOCTEXT_NAMESPACE "FFZoneSystemQueue"
 
@@ -45,7 +46,10 @@ void UFFZSFacilityQueueComponent::Configure(const FFFZSQueueRules& NewRules)
     Rules.SlotArrivalToleranceCm = FMath::Max(0.0f, Rules.SlotArrivalToleranceCm);
     Rules.NavigationProjectionExtentCm = FMath::Max(0.0f, Rules.NavigationProjectionExtentCm);
     Rules.BlockedTimeoutSeconds = FMath::Max(0.0f, Rules.BlockedTimeoutSeconds);
-    Rules.MaxRepathAttempts = FMath::Max(0, Rules.MaxRepathAttempts);
+    Rules.MaxRepathAttempts = FMath::Clamp(
+        Rules.MaxRepathAttempts,
+        0,
+        UFFZSDeveloperSettings::MaxQueueRepathAttempts);
     if (QueueState == EFFZSQueueState::Open || QueueState == EFFZSQueueState::Full)
     {
         RefreshOpenOrFullState();
@@ -170,11 +174,20 @@ EFFZSQueueJoinResult UFFZSFacilityQueueComponent::JoinQueue(const FName AgentId,
     {
         return EFFZSQueueJoinResult::DuplicateAgent;
     }
+    if (Waiting.Num() + ActiveServices.Num() + Exiting.Num() >=
+        UFFZSDeveloperSettings::MaxQueueRuntimeEntries)
+    {
+        return EFFZSQueueJoinResult::Full;
+    }
     if (QueueState == EFFZSQueueState::Full || Waiting.Num() >= Rules.MaxWaitingAgents)
     {
         return EFFZSQueueJoinResult::Full;
     }
     if (QueueState != EFFZSQueueState::Open)
+    {
+        return EFFZSQueueJoinResult::NotOpen;
+    }
+    if (NextJoinSequence <= 0 || NextJoinSequence == MAX_int64)
     {
         return EFFZSQueueJoinResult::NotOpen;
     }
@@ -320,7 +333,8 @@ void UFFZSFacilityQueueComponent::AdvanceSimulation(const float DeltaSeconds)
             {
                 FRuntimeEntry Entry = ActiveServices[Index];
                 ActiveServices.RemoveAt(Index);
-                ++CompletedCount;
+                CompletedCount = static_cast<int32>(FMath::Min<int64>(
+                    static_cast<int64>(CompletedCount) + 1, MAX_int32));
                 TotalCompletedWaitSeconds += Entry.WaitSeconds;
                 CompletedEntries.Add(MoveTemp(Entry));
                 bProcessedEvent = true;
@@ -344,7 +358,8 @@ void UFFZSFacilityQueueComponent::AdvanceSimulation(const float DeltaSeconds)
                 {
                     FRuntimeEntry Entry = Waiting[Index];
                     Waiting.RemoveAt(Index);
-                    ++AbandonedCount;
+                    AbandonedCount = static_cast<int32>(FMath::Min<int64>(
+                        static_cast<int64>(AbandonedCount) + 1, MAX_int32));
                     AbandonedEntries.Add(MoveTemp(Entry));
                     bProcessedEvent = true;
                 }
@@ -401,6 +416,10 @@ bool UFFZSFacilityQueueComponent::ContainsAgent(const FName AgentId) const
 // 현재 FIFO 인덱스와 실제 할당 인덱스가 모두 맞아야 이전 목표에 대한 늦은 응답을 거부한다.
 bool UFFZSFacilityQueueComponent::ReportAgentArrivedAtQueueSlot(const FName AgentId, const FVector ActualWorldLocation)
 {
+    if (ActualWorldLocation.ContainsNaN())
+    {
+        return false;
+    }
     for (int32 Index = 0; Index < Waiting.Num(); ++Index)
     {
         FRuntimeEntry& Entry = Waiting[Index];
@@ -426,6 +445,10 @@ bool UFFZSFacilityQueueComponent::ReportAgentArrivedAtQueueSlot(const FName Agen
 // 보고에서만 시작 이벤트를 기록하며, 같은 도착 보고의 재전송은 멱등 성공이다.
 bool UFFZSFacilityQueueComponent::ReportAgentArrivedAtServicePoint(const FName AgentId, const FVector ActualWorldLocation)
 {
+    if (ActualWorldLocation.ContainsNaN())
+    {
+        return false;
+    }
     const int32 Index = ActiveServices.IndexOfByPredicate(
         [AgentId](const FRuntimeEntry& Entry) { return Entry.AgentId == AgentId; });
     if (Index == INDEX_NONE || ActiveServices[Index].ServiceIndex == INDEX_NONE)
@@ -461,6 +484,10 @@ bool UFFZSFacilityQueueComponent::ReportAgentArrivedAtServicePoint(const FName A
 // 확정한 다음 Release 이벤트를 보내므로 콜백에서 조회해도 이미 최종 상태가 보인다.
 bool UFFZSFacilityQueueComponent::ReportAgentArrivedAtExit(const FName AgentId, const FVector ActualWorldLocation)
 {
+    if (ActualWorldLocation.ContainsNaN())
+    {
+        return false;
+    }
     const int32 Index = Exiting.IndexOfByPredicate(
         [AgentId](const FRuntimeEntry& Entry) { return Entry.AgentId == AgentId; });
     if (Index == INDEX_NONE || Exiting[Index].ExitIndex == INDEX_NONE)
@@ -498,9 +525,9 @@ bool UFFZSFacilityQueueComponent::ReportAgentMovementFailed(const FName AgentId)
     {
         FRuntimeEntry& Entry = Waiting[WaitingIndex];
         Entry.bArrivedAtAssignedSlot = false;
-        ++Entry.MovementRepathCount;
-        if (Entry.MovementRepathCount <= Rules.MaxRepathAttempts)
+        if (Entry.MovementRepathCount < Rules.MaxRepathAttempts)
         {
+            ++Entry.MovementRepathCount;
             const FRuntimeEntry Notification = Entry;
             NotifyCurrentMovementTarget(Notification);
             return true;
@@ -519,9 +546,9 @@ bool UFFZSFacilityQueueComponent::ReportAgentMovementFailed(const FName AgentId)
     {
         FRuntimeEntry& Entry = ActiveServices[ServiceIndex];
         Entry.bArrivedAtServicePoint = false;
-        ++Entry.MovementRepathCount;
-        if (Entry.MovementRepathCount <= Rules.MaxRepathAttempts)
+        if (Entry.MovementRepathCount < Rules.MaxRepathAttempts)
         {
+            ++Entry.MovementRepathCount;
             const FRuntimeEntry Notification = Entry;
             NotifyCurrentMovementTarget(Notification);
             return true;
@@ -539,9 +566,9 @@ bool UFFZSFacilityQueueComponent::ReportAgentMovementFailed(const FName AgentId)
     if (ExitIndex != INDEX_NONE)
     {
         FRuntimeEntry& Entry = Exiting[ExitIndex];
-        ++Entry.MovementRepathCount;
-        if (Entry.MovementRepathCount <= Rules.MaxRepathAttempts)
+        if (Entry.MovementRepathCount < Rules.MaxRepathAttempts)
         {
+            ++Entry.MovementRepathCount;
             const FRuntimeEntry Notification = Entry;
             NotifyCurrentMovementTarget(Notification);
             return true;
@@ -592,8 +619,16 @@ FVector UFFZSFacilityQueueComponent::GetQueueSlotWorldLocation(const int32 Queue
     {
         return GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
     }
-    const float Distance = FMath::Clamp(QueueIndex * Rules.SlotSpacingCm, 0.0f, QueueSpline->GetSplineLength());
-    return QueueSpline->GetLocationAtDistanceAlongSpline(Distance, ESplineCoordinateSpace::World);
+    FVector LocalSlotPoint = FVector::ZeroVector;
+    const double DistanceCm = static_cast<double>(QueueIndex) * Rules.SlotSpacingCm;
+    if (!FFFZSQueueGeometry::TrySampleLinearPolylineAtDistance(
+            Facility->GetFacilitySpec().QueueSplinePointsCm,
+            DistanceCm,
+            LocalSlotPoint))
+    {
+        return GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+    }
+    return QueueSpline->GetComponentTransform().TransformPosition(LocalSlotPoint);
 }
 FVector UFFZSFacilityQueueComponent::GetServiceWorldLocation(const int32 ServiceIndex) const
 {
@@ -671,6 +706,13 @@ FFFZSQueueSnapshot UFFZSFacilityQueueComponent::CaptureSnapshot() const
 bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snapshot, TArray<FText>& OutErrors)
 {
     OutErrors.Reset();
+    if (Snapshot.Entries.Num() > UFFZSDeveloperSettings::MaxQueueRuntimeEntries)
+    {
+        OutErrors.Add(LOCTEXT(
+            "SnapshotEntrySafetyLimit",
+            "Queue snapshot entry count exceeds the runtime safety limit."));
+        return false;
+    }
     TArray<FRuntimeEntry> NewWaiting;
     TArray<FRuntimeEntry> NewActiveServices;
     TArray<FRuntimeEntry> NewExiting;
@@ -683,7 +725,9 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
     if (!StaticEnum<EFFZSQueueState>()->IsValidEnumValue(static_cast<int64>(Snapshot.State)) ||
         !StaticEnum<EFFZSQueueState>()->IsValidEnumValue(static_cast<int64>(Snapshot.StateBeforeBlocked)) ||
         Snapshot.CompletedCount < 0 || Snapshot.AbandonedCount < 0 ||
-        !FMath::IsFinite(Snapshot.TotalCompletedWaitSeconds) || Snapshot.TotalCompletedWaitSeconds < 0.0f)
+        Snapshot.NextJoinSequence <= 0 ||
+        !FMath::IsFinite(Snapshot.TotalCompletedWaitSeconds) || Snapshot.TotalCompletedWaitSeconds < 0.0f ||
+        !FMath::IsFinite(Snapshot.BlockedElapsedSeconds) || Snapshot.BlockedElapsedSeconds < 0.0f)
     {
         OutErrors.Add(LOCTEXT("InvalidSnapshotHeader", "Queue 스냅샷에 잘못된 상태 또는 집계 카운터가 있습니다."));
         return false;
@@ -700,7 +744,8 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
     {
         if (Saved.AgentId.IsNone() || !Saved.TicketId.IsValid() || SeenAgents.Contains(Saved.AgentId) ||
             SeenTickets.Contains(Saved.TicketId) || SeenJoinSequences.Contains(Saved.JoinSequence) ||
-            Saved.JoinSequence <= 0 || !FMath::IsFinite(Saved.WaitSeconds) || Saved.WaitSeconds < 0.0f ||
+            Saved.JoinSequence <= 0 || Saved.JoinSequence == MAX_int64 ||
+            !FMath::IsFinite(Saved.WaitSeconds) || Saved.WaitSeconds < 0.0f ||
             !FMath::IsFinite(Saved.ServiceElapsedSeconds) || Saved.ServiceElapsedSeconds < 0.0f ||
             Saved.MovementRepathCount < 0 || Saved.MovementRepathCount > Rules.MaxRepathAttempts)
         {
@@ -787,7 +832,10 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
     Exiting = MoveTemp(NewExiting);
     StateBeforeBlocked = Snapshot.StateBeforeBlocked;
     bDrainRequested = Snapshot.bDrainRequested || Snapshot.State == EFFZSQueueState::Draining || Snapshot.State == EFFZSQueueState::Closed;
-    NextJoinSequence = FMath::Max<int64>(FMath::Max<int64>(1, Snapshot.NextJoinSequence), MaximumJoinSequence + 1);
+    const int64 MinimumNextSequence = MaximumJoinSequence == MAX_int64
+        ? MAX_int64
+        : MaximumJoinSequence + 1;
+    NextJoinSequence = FMath::Max<int64>(Snapshot.NextJoinSequence, MinimumNextSequence);
     CompletedCount = Snapshot.CompletedCount;
     AbandonedCount = Snapshot.AbandonedCount;
     TotalCompletedWaitSeconds = Snapshot.TotalCompletedWaitSeconds;
@@ -802,6 +850,14 @@ bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snap
 bool UFFZSFacilityQueueComponent::ValidateInvariants(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
+    if (Waiting.Num() + ActiveServices.Num() + Exiting.Num() >
+        UFFZSDeveloperSettings::MaxQueueRuntimeEntries)
+    {
+        OutErrors.Add(LOCTEXT(
+            "RuntimeEntrySafetyLimit",
+            "Queue runtime entry count exceeds the safety limit."));
+        return false;
+    }
     if (ActiveServices.Num() > Rules.ServiceCapacity)
     {
         OutErrors.Add(LOCTEXT("CapacityExceeded", "활성 Service 수가 ServiceCapacity를 초과했습니다."));

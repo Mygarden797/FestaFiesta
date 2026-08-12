@@ -1,7 +1,7 @@
 // FF_FFZSGridTests.cpp
 
 // 1 cm Grid와 압축 Cell Rect의 회전·합집합·예산·디버그 펼치기 계약을 검증한다.
-// 흐름: 대형 내장 프리셋을 개별 Cell로 펼치지 않고, 작은 합성 Spec을 Region API에 넣어
+// 흐름: 대형 테스트 fixture를 개별 Cell로 펼치지 않고, 작은 합성 Spec을 Region API에 넣어
 // 반열림 사각형의 좌표·면적·분리·결정적 합집합을 확인한다.
 // 불변식: 1 Unreal Unit=1 cm, 1 배치 Cell=1 cm이며 권위 계산은 FFFZSCellRect 배열을 사용한다.
 // 실패/성능: 개별 Cell 호환 보기는 최대 10,000개에서만 허용되고 초과 시 빈 결과로 fail-closed한다.
@@ -14,12 +14,13 @@
 #include "Internationalization/Internationalization.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
+#include "Tests/FF_FFZSTestFixtures.h"
 
 namespace
 {
     // Region 연산의 정확한 좌표와 면적을 사람이 계산할 수 있도록 만든 작은 합성 사양이다.
      // footprint=[0,3)x[0,2), clearance=1, queue=[3,5)x[0,1)이다.
-     // 대형 1 cm 내장 프리셋은 이 테스트에서 Get*Cells로 펼치지 않는다.
+     // 대형 1 cm fixture는 이 테스트에서 Get*Cells로 펼치지 않는다.
      
     FFFZSFacilitySpec MakeSmallRegionSpec()
     {
@@ -41,7 +42,7 @@ namespace
  // CompressedRegions: 작은 합성 Spec의 footprint/clearance/queue/reserved 압축 영역
  // RegionUnion/Budget: 겹침·맞닿음 합집합, 보수적 작업 예산, 10k 초과 fail-closed
  // Commands: QueueReservedRects를 포함한 전체 의미 필드의 문화권 독립 Payload 지문
- // 각 케이스는 Arrange -> Act -> Assert 순서를 유지하며 대형 내장 프리셋을 개별 셀로 열거하지 않는다.
+ // 각 케이스는 Arrange -> Act -> Assert 순서를 유지하며 대형 fixture를 개별 셀로 열거하지 않는다.
  
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSOneCentimeterUnitContractTest,
@@ -60,8 +61,8 @@ bool FFFZSOneCentimeterUnitContractTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("지면 샘플링은 1센티미터 점유보다 더 거친 간격을 유지한다"),
         UFFZSDeveloperSettings::DefaultGroundSampleSpacingCm, 100.0f);
     TestEqual(TEXT("대기열 간격은 Cell 저장 방식과 무관하게 센티미터 값을 유지한다"),
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(
-            EFFZSBuiltInFacilityPreset::FoodTruckBasic).QueueRules.SlotSpacingCm,
+        FFZSTest::MakeValidFacilitySpec(
+            EFFZSTestFacilityVariant::FoodTruck).QueueRules.SlotSpacingCm,
         115.0f);
     return true;
 }
@@ -102,6 +103,30 @@ bool FFFZSCellAndRectRotationTest::RunTest(const FString& Parameters)
         UFFZSGridLibrary::RotateCell(SourceCell, 3), FIntPoint(1, -2));
     TestEqual(TEXT("음수 Cell 회전 횟수는 3으로 정규화된다"),
         UFFZSGridLibrary::RotateCell(SourceCell, -1), FIntPoint(1, -2));
+
+    // Negating MIN_int32 is not representable by int32. The checked API must reject the
+    // operation without mutating the caller's output, while identity remains representable.
+    FIntPoint CheckedRotation(77, 88);
+    TestTrue(TEXT("MIN_int32 coordinates remain valid when no negation is required"),
+        UFFZSGridLibrary::TryRotateCell(
+            FIntPoint(MIN_int32, 42), 0, CheckedRotation));
+    TestEqual(TEXT("The checked identity rotation preserves MIN_int32 exactly"),
+        CheckedRotation, FIntPoint(MIN_int32, 42));
+
+    CheckedRotation = FIntPoint(77, 88);
+    TestFalse(TEXT("A quarter turn rejects negating a MIN_int32 Y coordinate"),
+        UFFZSGridLibrary::TryRotateCell(
+            FIntPoint(42, MIN_int32), 1, CheckedRotation));
+    TestEqual(TEXT("A failed checked rotation leaves the output untouched"),
+        CheckedRotation, FIntPoint(77, 88));
+
+    CheckedRotation = FIntPoint(77, 88);
+    TestFalse(TEXT("A half turn rejects negating a MIN_int32 X coordinate"),
+        UFFZSGridLibrary::TryRotateCell(
+            FIntPoint(MIN_int32, 42), 2, CheckedRotation));
+    TestEqual(TEXT("The legacy value-returning API fails closed at the integer boundary"),
+        UFFZSGridLibrary::RotateCell(FIntPoint(MIN_int32, 42), 2),
+        FIntPoint::ZeroValue);
 
     const FFFZSCellRect RotatedOnce = UFFZSGridLibrary::RotateRect(SourceRect, 1);
     const FFFZSCellRect RotatedTwice = UFFZSGridLibrary::RotateRect(SourceRect, 2);
@@ -233,6 +258,16 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("구체화 실패 시 기존 출력 배열이 비워진다"),
         Materialized.IsEmpty());
 
+    const TArray<FFFZSCellRect> MaximumCoordinateRect = {
+        FFFZSCellRect(FIntPoint(MAX_int32 - 1, 0), FIntPoint(MAX_int32, 1))
+    };
+    TestTrue(TEXT("Materialization handles a valid rect adjacent to MAX_int32"),
+        UFFZSGridLibrary::TryMaterializeCellRects(
+            MaximumCoordinateRect, 1, Materialized));
+    TestTrue(TEXT("The materialized boundary cell is exact and does not wrap"),
+        Materialized.Num() == 1 &&
+        Materialized[0] == FIntPoint(MAX_int32 - 1, 0));
+
     Materialized.Add(FIntPoint(7, 7));
     const TArray<FFFZSCellRect> InvalidRects = {
         FFFZSCellRect(FIntPoint(2, 2), FIntPoint(2, 3))
@@ -299,10 +334,10 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
     (void)Parameters;
 
     FFFZSGridPlacement Placement;
-    // Arrange: 내장 프리셋은 값 복사와 Fingerprint에만 사용하고 개별 Cell로 펼치지 않는다.
+    // Arrange: 테스트 fixture는 값 복사와 Fingerprint에만 사용하고 개별 Cell로 펼치지 않는다.
     const FFFZSCommand BaselineCommand = UFFZSGridLibrary::MakeInstallCommand(
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(
-            EFFZSBuiltInFacilityPreset::ToiletBasic),
+        FFZSTest::MakeValidFacilitySpec(
+            EFFZSTestFacilityVariant::Toilet),
         TEXT("GZ_DadaPocha"),
         Placement,
         0);
@@ -370,6 +405,14 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
     ExpectMutationDetected(TEXT("외부 키 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.InstallCostKey = TEXT("Cost.Changed");
+        });
+    ExpectMutationDetected(TEXT("매우 작은 비영 시각 오프셋도 지문에 반영된다"),
+        [](FFFZSCommand& C) {
+            C.FacilitySpec.VisualOffsetCm.X = UE_DOUBLE_KINDA_SMALL_NUMBER * 0.5;
+        });
+    ExpectMutationDetected(TEXT("매우 작은 비영 시각 회전도 지문에 반영된다"),
+        [](FFFZSCommand& C) {
+            C.FacilitySpec.VisualRotation.Yaw = UE_KINDA_SMALL_NUMBER * 0.5f;
         });
     ExpectMutationDetected(TEXT("장애물 높이 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {
