@@ -32,6 +32,7 @@
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Tests/FF_FFZSTestFixtures.h"
 
 namespace
 {
@@ -142,7 +143,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     FFFZSGridPlacement FirstPlacement;
     FirstPlacement.OriginCell = FIntPoint(1000, 1000); // q0: 기존 10m 위치를 1cm Cell로 보존한다.
     FFFZSCommand InstallFirst = UFFZSGridLibrary::MakeInstallCommand(
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
         ZoneId,
         FirstPlacement,
         0);
@@ -182,7 +183,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("변경된 Payload로 CommandId를 재사용하면 거부된다"), MismatchResult.FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
 
     FFFZSCommand OverlapInstall = UFFZSGridLibrary::MakeInstallCommand(
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
         ZoneId,
         FirstPlacement,
         1);
@@ -192,7 +193,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     FFFZSGridPlacement StalePlacement;
     StalePlacement.OriginCell = FIntPoint(7000, 1000); // q0: 기존 70m, 10m 위치를 보존한다.
     const FFFZSCommand StaleInstall = UFFZSGridLibrary::MakeInstallCommand(
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
         ZoneId,
         StalePlacement,
         0);
@@ -205,7 +206,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     FFFZSGridPlacement SecondPlacement;
     SecondPlacement.OriginCell = FIntPoint(4000, 1000); // q0: 기존 40m, 10m 위치를 보존한다.
     const FFFZSCommand InstallSecond = UFFZSGridLibrary::MakeInstallCommand(
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::ToiletBasic),
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Toilet),
         ZoneId,
         SecondPlacement,
         2);
@@ -252,6 +253,9 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         EFFZSQueueJoinResult::DuplicateAgent);
 
     const FFFZSCommand OccupiedMove = MakeMoveCommand(InstallFirst.FacilityInstanceId, ZoneId, FIntPoint(1000, 4000), 4);
+    const FFFZSPlacementValidation OccupiedMovePreview = Subsystem->ValidatePlacement(OccupiedMove);
+    TestTrue(TEXT("점유 중인 Facility의 이동 미리보기도 거부된다"),
+        OccupiedMovePreview.Reasons.Contains(EFFZSPlacementFailure::FacilityOccupied));
     TestEqual(TEXT("점유 중인 Facility는 이동할 수 없다"),
         Subsystem->ExecuteCommand(OccupiedMove).FailureReason,
         EFFZSPlacementFailure::FacilityOccupied);
@@ -410,7 +414,7 @@ bool FFFZSWorldChangePhasePermissionsTest::RunTest(const FString& Parameters)
         FFFZSGridPlacement Placement;
         Placement.OriginCell = OriginCell;
         return UFFZSGridLibrary::MakeInstallCommand(
-            UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+            FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
             ZoneId,
             Placement,
             -1);
@@ -514,7 +518,7 @@ bool FFFZSWorldZoneExclusivityProtectedAreaTest::RunTest(const FString& Paramete
 
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000); // q0: 기존 10m 물리 위치를 보존한다.
-    const FFFZSFacilitySpec FoodTruck = UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
+    const FFFZSFacilitySpec FoodTruck = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     const FFFZSCommand AmbiguousInstall = UFFZSGridLibrary::MakeInstallCommand(FoodTruck, ZoneId, Placement, 0);
     TestEqual(TEXT("모든 Reserved Sample은 정확히 하나의 Zone에 속해야 한다"),
         Subsystem->ExecuteCommand(AmbiguousInstall).FailureReason,
@@ -638,7 +642,7 @@ bool FFFZSInvalidFacilitySpecStopsBeforeNavigationTest::RunTest(const FString& P
         return false;
     }
 
-    FFFZSFacilitySpec InvalidSpec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
+    FFFZSFacilitySpec InvalidSpec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     InvalidSpec.QueueSplinePointsCm.Reset();
     const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(InvalidSpec, ZoneId, FFFZSGridPlacement(), 0);
     const FFFZSPlacementValidation Validation = Subsystem->ValidatePlacement(Command);
@@ -717,7 +721,7 @@ bool FFFZSPortableZoneGraphAndPrimaryAssetTest::RunTest(const FString& Parameter
     TestTrue(TEXT("설정된 이식 가능 Graph는 오류를 내지 않는다"), GraphErrors.IsEmpty());
 
     UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
-    Definition->Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
+    Definition->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     Definition->Spec.FacilityDefinitionId = TEXT("Facility.PortablePrimaryAsset");
     const FPrimaryAssetId PrimaryAssetId = Definition->GetPrimaryAssetId();
     TestEqual(TEXT("Facility Definition은 플러그인 고유 Primary Asset Type을 사용한다"),
@@ -787,7 +791,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     FFFZSGridPlacement Placement;
     Placement.OriginCell = FIntPoint(1000, 1000); // q0: 기존 10m 물리 위치를 보존한다.
     const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
-        UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic),
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
         ZoneId,
         Placement,
         0);
@@ -869,7 +873,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         LegacyBaseSpec.FootprintSizeCells.Y % 100 != 0 ||
         LegacyBaseSpec.ClearanceCells % 100 != 0)
     {
-        AddError(TEXT("Schema 3 마이그레이션 Fixture의 내장 치수는 미터 단위에 맞춰져 있어야 합니다."));
+        AddError(TEXT("Schema 3 마이그레이션 Fixture의 치수는 미터 단위에 맞춰져 있어야 합니다."));
         return false;
     }
 

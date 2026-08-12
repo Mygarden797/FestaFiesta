@@ -87,7 +87,7 @@ struct FCrowdGroupTypes
 	// "IntProperty ... is not initialized properly" 에러를 띄운다.
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Crowd|Group")
 	int32 GroupID = INDEX_NONE;
-
+	
 	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly,Category="Crowd|Group")
 	FName GroupName = NAME_None;
 };

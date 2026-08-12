@@ -21,6 +21,7 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
+#include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "SceneManagement.h"
 
@@ -209,7 +210,7 @@ void AFFZSFacilityActor::MarkRemoved()
     }
     QueueComponent->EmergencyCancel();
     FacilityState = EFFZSFacilityState::Removed;
-    SetBuildModeRemovalSelected(false);
+    SetBuildModeActionSelected(false);
     SetBuildModeRangeVisible(false);
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
@@ -255,17 +256,22 @@ void AFFZSFacilityActor::SetBuildModeRangeVisible(const bool bVisible)
     }
 }
 
-void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+void AFFZSFacilityActor::SetBuildModeActionSelected(const bool bSelected)
 {
-    bBuildModeRemovalSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
+    bBuildModeActionSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
     if (!FootprintBounds)
     {
         return;
     }
 
-    FootprintBounds->ShapeColor = bBuildModeRemovalSelected ? FColor::Red : FColor::Green;
-    FootprintBounds->SetLineThickness(bBuildModeRemovalSelected ? 5.0f : 2.0f);
+    FootprintBounds->ShapeColor = bBuildModeActionSelected ? FColor(64, 200, 255) : FColor::Green;
+    FootprintBounds->SetLineThickness(bBuildModeActionSelected ? 5.0f : 2.0f);
     FootprintBounds->MarkRenderStateDirty();
+}
+
+void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+{
+    SetBuildModeActionSelected(bSelected);
 }
 
 bool AFFZSFacilityActor::IsWorldPointInsideFootprint(const FVector& WorldPoint) const
@@ -503,6 +509,8 @@ void AFFZSFacilityActor::RequestVisualMesh()
     }
 
     VisualMesh->SetStaticMesh(nullptr);
+    VisualMesh->SetRelativeTransform(
+        FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, nullptr));
     if (FacilitySpec.VisualMesh.IsNull())
     {
         return;
@@ -510,6 +518,8 @@ void AFFZSFacilityActor::RequestVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
+        VisualMesh->SetRelativeTransform(
+            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
         return;
     }
 
@@ -526,6 +536,8 @@ void AFFZSFacilityActor::ApplyLoadedVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
+        VisualMesh->SetRelativeTransform(
+            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
     }
 }
 

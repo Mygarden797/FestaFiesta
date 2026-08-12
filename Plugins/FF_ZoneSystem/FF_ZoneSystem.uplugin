@@ -16,9 +16,20 @@
       "LoadingPhase": "Default"
     },
     {
+      "Name": "FF_ZoneSystemEditor",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    },
+    {
       "Name": "FF_ZoneSystemTests",
       "Type": "Editor",
       "LoadingPhase": "PostEngineInit"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "DataValidation",
+      "Enabled": true
     }
   ]
 }
