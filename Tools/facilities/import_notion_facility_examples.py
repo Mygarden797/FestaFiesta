@@ -1,16 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Import only missing Notion facility example meshes and thumbnails.
+"""Import only missing Notion reference-art meshes and thumbnails.
 
-Run inside Unreal Editor 5.7 (preferred while the project is already open) or
-from UnrealEditor-Cmd with the editor closed.  Existing packages and the shared
-material palette are never replaced.
+Run only from an unattended UnrealEditor-Cmd Python commandlet. Existing
+packages and the shared material palette are never replaced. The whole batch
+is preflighted and saved through a recoverable package transaction.
+
+These assets live under Test_Asset and are visual references only.  They never
+define placement, queue, or obstacle dimensions; UFFZSFacilityDefinition::Spec
+is the sole source for those runtime values.
 """
 
 import json
 import os
+import re
 import struct
+import sys
 
 import unreal
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from ffzs_asset_save_transaction import AssetSaveTransaction
+from ffzs_definition_source import require_unattended_commandlet
 
 
 MESH_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
@@ -76,6 +89,12 @@ def make_fbx_options():
 
 
 def import_asset(source, destination, asset_name, options=None, factory=None):
+    before_packages = {
+        str(path).split(".", 1)[0]
+        for path in unreal.EditorAssetLibrary.list_assets(
+            destination, recursive=False, include_folder=False
+        )
+    }
     task = unreal.AssetImportTask()
     task.set_editor_property("filename", source)
     task.set_editor_property("destination_path", destination)
@@ -93,7 +112,37 @@ def import_asset(source, destination, asset_name, options=None, factory=None):
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
 
     expected = destination + "/" + asset_name
-    return unreal.EditorAssetLibrary.load_asset(expected)
+    expected_object = expected + "." + asset_name
+    imported_paths = list(task.get_editor_property("imported_object_paths") or [])
+    normalized_paths = {str(path).split(":", 1)[0] for path in imported_paths}
+    unexpected = [path for path in normalized_paths if path != expected_object]
+    if unexpected:
+        for object_path in unexpected:
+            package_path = object_path.split(".", 1)[0]
+            if package_path not in before_packages and package_path.startswith(
+                destination.rstrip("/") + "/"
+            ):
+                if not unreal.EditorAssetLibrary.delete_asset(package_path):
+                    raise RuntimeError(
+                        "Could not remove unexpected imported package: " + package_path
+                    )
+        raise RuntimeError(
+            "Importer created unexpected assets: " + ", ".join(sorted(unexpected))
+        )
+    if expected_object not in normalized_paths:
+        raise RuntimeError(
+            "Importer did not report expected asset {0} (reported={1})".format(
+                expected_object, ", ".join(sorted(normalized_paths)) or "<none>"
+            )
+        )
+    asset = unreal.EditorAssetLibrary.load_asset(expected)
+    if not asset or asset.get_path_name() != expected_object:
+        raise RuntimeError(
+            "Imported asset path mismatch: expected {0}, got {1}".format(
+                expected_object, asset.get_path_name() if asset else "<none>"
+            )
+        )
+    return asset
 
 
 def material_for_slot(slot_name):
@@ -163,7 +212,7 @@ def configure_mesh(mesh, definition_id, source_rel):
     unreal.EditorAssetLibrary.set_metadata_tag(
         mesh,
         "FFZS.FacilityVisualContract",
-        "600x300x250cm;PivotGroundCenter;Front+Y",
+        "ReferenceArtOnly;PivotGroundCenter;Front+Y;NoRuntimePlacementAuthority",
     )
     unreal.EditorAssetLibrary.set_metadata_tag(
         mesh, "FFZS.GeneratedSource", source_rel.replace("\\", "/")
@@ -171,7 +220,6 @@ def configure_mesh(mesh, definition_id, source_rel):
     unreal.EditorAssetLibrary.set_metadata_tag(
         mesh, "FFZS.NotionFacilityDefinitionId", definition_id
     )
-    unreal.EditorAssetLibrary.save_loaded_asset(mesh, only_if_is_dirty=False)
     return assignments, simple_collisions
 
 
@@ -193,7 +241,36 @@ def configure_texture(texture, definition_id, source_rel):
     unreal.EditorAssetLibrary.set_metadata_tag(
         texture, "FFZS.NotionFacilityDefinitionId", definition_id
     )
-    unreal.EditorAssetLibrary.save_loaded_asset(texture, only_if_is_dirty=False)
+
+
+def metadata_value(asset, key):
+    return str(unreal.EditorAssetLibrary.get_metadata_tag(asset, key) or "")
+
+
+def validate_existing_mesh(mesh, definition_id, source_rel):
+    expected_contract = (
+        "ReferenceArtOnly;PivotGroundCenter;Front+Y;NoRuntimePlacementAuthority"
+    )
+    actual_contract = metadata_value(mesh, "FFZS.FacilityVisualContract")
+    legacy_reference_contract = bool(
+        re.fullmatch(
+            r"[0-9]+(?:\.[0-9]+)?x[0-9]+(?:\.[0-9]+)?x[0-9]+(?:\.[0-9]+)?cm;PivotGroundCenter;Front\+Y",
+            actual_contract,
+        )
+    )
+    if actual_contract != expected_contract and not legacy_reference_contract:
+        raise RuntimeError("Existing reference mesh ownership contract mismatch")
+    if metadata_value(mesh, "FFZS.GeneratedSource").replace("\\", "/") != source_rel.replace("\\", "/"):
+        raise RuntimeError("Existing reference mesh source marker mismatch")
+    if metadata_value(mesh, "FFZS.NotionFacilityDefinitionId") != definition_id:
+        raise RuntimeError("Existing reference mesh Definition marker mismatch")
+
+
+def validate_existing_texture(texture, definition_id, source_rel):
+    if metadata_value(texture, "FFZS.GeneratedSource").replace("\\", "/") != source_rel.replace("\\", "/"):
+        raise RuntimeError("Existing reference texture source marker mismatch")
+    if metadata_value(texture, "FFZS.NotionFacilityDefinitionId") != definition_id:
+        raise RuntimeError("Existing reference texture Definition marker mismatch")
 
 
 def png_dimensions(path):
@@ -205,8 +282,8 @@ def png_dimensions(path):
 
 
 def run():
-    # UE 5.7 commandlets need the commandlet-safe legacy FBX importer.  These
-    # flags are harmless when this script is executed inside the open editor.
+    require_unattended_commandlet()
+    # UE 5.7 commandlets need the commandlet-safe legacy FBX importer.
     unreal.SystemLibrary.execute_console_command(
         None, "Interchange.FeatureFlags.Import.FBX 0"
     )
@@ -219,13 +296,14 @@ def run():
         manifest = json.load(handle)
     existing = manifest["existing_representatives"]
 
-    imported = []
-    skipped = []
+    ready_entries = []
+    skipped_representatives = []
     failures = []
+    preflight = []
     for entry in manifest["examples"]:
         definition_id = entry["definition_id"]
         if definition_id in existing:
-            skipped.append(
+            skipped_representatives.append(
                 {
                     "definition_id": definition_id,
                     "reason": "existing_subcategory_representative",
@@ -233,7 +311,6 @@ def run():
                 }
             )
             continue
-
         mesh_name, texture_name = canonical_names(entry)
         mesh_asset_path = MESH_DESTINATION + "/" + mesh_name
         texture_asset_path = TEXTURE_DESTINATION + "/" + texture_name
@@ -242,49 +319,110 @@ def run():
         fbx_path = os.path.join(root, fbx_rel)
         png_path = os.path.join(root, png_rel)
 
-        try:
-            if not os.path.isfile(fbx_path):
-                raise RuntimeError("Missing FBX source: " + fbx_path)
-            if not os.path.isfile(png_path):
-                raise RuntimeError("Missing PNG source: " + png_path)
-            if png_dimensions(png_path) != (324, 260):
-                raise RuntimeError("Thumbnail is not 324x260: " + png_path)
+        if not os.path.isfile(fbx_path):
+            failures.append("Missing FBX source: " + fbx_path)
+        if not os.path.isfile(png_path):
+            failures.append("Missing PNG source: " + png_path)
+        elif png_dimensions(png_path) != (324, 260):
+            failures.append("Thumbnail is not 324x260: " + png_path)
 
-            mesh_created = False
-            if unreal.EditorAssetLibrary.does_asset_exist(mesh_asset_path):
-                mesh = unreal.EditorAssetLibrary.load_asset(mesh_asset_path)
-            else:
-                mesh = import_asset(
-                    fbx_path, MESH_DESTINATION, mesh_name, make_fbx_options()
-                )
-                mesh_created = True
+        mesh_exists = unreal.EditorAssetLibrary.does_asset_exist(mesh_asset_path)
+        texture_exists = unreal.EditorAssetLibrary.does_asset_exist(texture_asset_path)
+        if mesh_exists:
+            mesh = unreal.EditorAssetLibrary.load_asset(mesh_asset_path)
             if not isinstance(mesh, unreal.StaticMesh):
-                raise RuntimeError("StaticMesh import failed: " + mesh_asset_path)
-
-            texture_created = False
-            if unreal.EditorAssetLibrary.does_asset_exist(texture_asset_path):
-                texture = unreal.EditorAssetLibrary.load_asset(texture_asset_path)
+                failures.append("Existing asset is not a StaticMesh: " + mesh_asset_path)
             else:
-                texture = import_asset(
-                    png_path,
+                try:
+                    validate_existing_mesh(mesh, definition_id, fbx_rel)
+                except Exception as error:
+                    failures.append("{0}: {1}".format(definition_id, error))
+        if texture_exists:
+            texture = unreal.EditorAssetLibrary.load_asset(texture_asset_path)
+            if not isinstance(texture, unreal.Texture2D):
+                failures.append("Existing asset is not a Texture2D: " + texture_asset_path)
+            else:
+                try:
+                    validate_existing_texture(texture, definition_id, png_rel)
+                except Exception as error:
+                    failures.append("{0}: {1}".format(definition_id, error))
+        preflight.append(
+            {
+                "definition_id": definition_id,
+                "mesh_name": mesh_name,
+                "texture_name": texture_name,
+                "mesh_asset_path": mesh_asset_path,
+                "texture_asset_path": texture_asset_path,
+                "fbx_path": fbx_path,
+                "png_path": png_path,
+                "fbx_rel": fbx_rel,
+                "png_rel": png_rel,
+                "mesh_exists": mesh_exists,
+                "texture_exists": texture_exists,
+            }
+        )
+
+    if failures:
+        raise RuntimeError(
+            "Notion facility import preflight failed before mutation: "
+            + " | ".join(failures)
+        )
+
+    transaction_targets = []
+    for item in preflight:
+        if not item["mesh_exists"]:
+            transaction_targets.append(item["mesh_asset_path"])
+        if not item["texture_exists"]:
+            transaction_targets.append(item["texture_asset_path"])
+    transaction = (
+        AssetSaveTransaction(transaction_targets, "NotionFacilityImport")
+        if transaction_targets
+        else None
+    )
+    report_path = os.path.join(saved_dir(), REPORT_NAME)
+    pending_report_path = report_path + ".pending"
+    try:
+        pending_saves = []
+        for item in preflight:
+            definition_id = item["definition_id"]
+            mesh_created = not item["mesh_exists"]
+            texture_created = not item["texture_exists"]
+            mesh = (
+                unreal.EditorAssetLibrary.load_asset(item["mesh_asset_path"])
+                if item["mesh_exists"]
+                else import_asset(
+                    item["fbx_path"],
+                    MESH_DESTINATION,
+                    item["mesh_name"],
+                    make_fbx_options(),
+                )
+            )
+            texture = (
+                unreal.EditorAssetLibrary.load_asset(item["texture_asset_path"])
+                if item["texture_exists"]
+                else import_asset(
+                    item["png_path"],
                     TEXTURE_DESTINATION,
-                    texture_name,
+                    item["texture_name"],
                     factory=unreal.TextureFactory(),
                 )
-                texture_created = True
+            )
+            if not isinstance(mesh, unreal.StaticMesh):
+                raise RuntimeError("StaticMesh import failed: " + item["mesh_asset_path"])
             if not isinstance(texture, unreal.Texture2D):
-                raise RuntimeError("Texture2D import failed: " + texture_asset_path)
+                raise RuntimeError("Texture2D import failed: " + item["texture_asset_path"])
 
             assignments = []
             simple_collisions = collision_count(mesh)
             if mesh_created:
                 assignments, simple_collisions = configure_mesh(
-                    mesh, definition_id, fbx_rel
+                    mesh, definition_id, item["fbx_rel"]
                 )
+                pending_saves.append(mesh)
             if texture_created:
-                configure_texture(texture, definition_id, png_rel)
-
-            imported.append(
+                configure_texture(texture, definition_id, item["png_rel"])
+                pending_saves.append(texture)
+            ready_entries.append(
                 {
                     "definition_id": definition_id,
                     "mesh": mesh.get_path_name(),
@@ -295,37 +433,50 @@ def run():
                     "simple_collisions": simple_collisions,
                 }
             )
-            unreal.log(
-                "[FF_NOTION_IMPORT] Ready {0} mesh_new={1} texture_new={2}".format(
-                    definition_id, mesh_created, texture_created
+
+        for asset in pending_saves:
+            if not unreal.EditorAssetLibrary.save_loaded_asset(
+                asset, only_if_is_dirty=False
+            ):
+                raise RuntimeError("Could not save imported asset " + asset.get_path_name())
+
+        report = {
+            "source": manifest["source"],
+            "expected_examples": len(manifest["examples"]),
+            "existing_representatives": skipped_representatives,
+            "reference_assets": ready_entries,
+            "failures": [],
+        }
+        with open(pending_report_path, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False, indent=2)
+        if transaction:
+            transaction.commit()
+        try:
+            os.replace(pending_report_path, report_path)
+        except Exception as error:
+            unreal.log_warning(
+                "[FF_NOTION_IMPORT] Assets were committed, but the disposable "
+                "report could not be published from {0}: {1}".format(
+                    pending_report_path, error
                 )
             )
-        except Exception as error:
-            failure = "{0}: {1}".format(definition_id, error)
-            failures.append(failure)
-            unreal.log_error("[FF_NOTION_IMPORT] " + failure)
-
-    report = {
-        "source": manifest["source"],
-        "expected_examples": len(manifest["examples"]),
-        "existing_representatives": skipped,
-        "new_assets": imported,
-        "failures": failures,
-    }
-    report_path = os.path.join(saved_dir(), REPORT_NAME)
-    with open(report_path, "w", encoding="utf-8") as handle:
-        json.dump(report, handle, ensure_ascii=False, indent=2)
-
-    expected_new = len(manifest["examples"]) - len(existing)
-    if failures or len(imported) != expected_new:
-        raise RuntimeError(
-            "Notion facility import failed ({0}/{1} new pairs, {2} failures)".format(
-                len(imported), expected_new, len(failures)
+    except Exception:
+        if transaction:
+            transaction.rollback()
+        try:
+            if os.path.isfile(pending_report_path):
+                os.remove(pending_report_path)
+        except Exception as cleanup_error:
+            unreal.log_warning(
+                "[FF_NOTION_IMPORT] Could not remove pending report {0}: {1}".format(
+                    pending_report_path, cleanup_error
+                )
             )
-        )
+        raise
+
     unreal.log(
-        "[FF_NOTION_IMPORT] Complete: {0} existing representatives, {1} new pairs".format(
-            len(skipped), len(imported)
+        "[FF_NOTION_IMPORT] Complete: {0} existing representatives, {1} reference pairs".format(
+            len(skipped_representatives), len(ready_entries)
         )
     )
 

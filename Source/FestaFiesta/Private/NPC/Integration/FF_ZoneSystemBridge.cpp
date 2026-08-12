@@ -406,9 +406,9 @@ float FFF_ZoneSystemBridge::GetServiceRatePerMinute(FName FacilityDefinitionId)
 		return 0.f;
 	}
 
-	// FF_FFZSFacilityDefinition.cpp::GetPrimaryAssetId 가 쓰는 것과 동일한 Primary Asset Type 문자열이다
-	// 여기가 바뀌면 저기도 같이 바뀌어야 한다.
-	const FPrimaryAssetId AssetId(TEXT("FFZSFacilityDefinition"), FacilityDefinitionId);
+	const FPrimaryAssetId AssetId(
+		UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(),
+		FacilityDefinitionId);
 	const UFFZSFacilityDefinition* Definition =
 		UAssetManager::Get().GetPrimaryAssetObject<UFFZSFacilityDefinition>(AssetId);
 	if (!Definition)

@@ -10,8 +10,16 @@ package is saved.
 import json
 import os
 import struct
+import sys
 
 import unreal
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from ffzs_asset_save_transaction import AssetSaveTransaction
+from ffzs_definition_source import require_unattended_commandlet
 
 
 TEXTURE_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/image"
@@ -147,6 +155,7 @@ def write_report(report):
 
 
 def run():
+    require_unattended_commandlet()
     root = project_dir()
     manifest_path = os.path.join(root, MANIFEST_RELATIVE)
     with open(manifest_path, "r", encoding="utf-8") as handle:
@@ -191,6 +200,29 @@ def run():
         current = unreal.EditorAssetLibrary.load_asset(asset_path)
         if not isinstance(current, unreal.Texture2D):
             raise RuntimeError("Expected existing Texture2D: " + asset_path)
+        actual_source = str(
+            unreal.EditorAssetLibrary.get_metadata_tag(current, "FFZS.GeneratedSource")
+            or ""
+        ).replace("\\", "/")
+        expected_source = source_rel.replace("\\", "/")
+        if actual_source != expected_source:
+            raise RuntimeError(
+                "Texture source ownership mismatch for {0}: actual={1}, expected={2}".format(
+                    asset_path, actual_source or "<missing>", expected_source
+                )
+            )
+        actual_definition_id = str(
+            unreal.EditorAssetLibrary.get_metadata_tag(
+                current, "FFZS.NotionFacilityDefinitionId"
+            )
+            or ""
+        )
+        if actual_definition_id != definition_id:
+            raise RuntimeError(
+                "Texture Definition ownership mismatch for {0}: actual={1}, expected={2}".format(
+                    asset_path, actual_definition_id or "<missing>", definition_id
+                )
+            )
         preflight.append(
             {
                 "definition_id": definition_id,
@@ -246,27 +278,47 @@ def run():
             )
         )
 
-    saved = 0
-    for texture in pending_saves:
-        if not unreal.EditorAssetLibrary.save_loaded_asset(
-            texture, only_if_is_dirty=True
-        ):
-            failures.append("Failed to save " + texture.get_path_name())
-            unreal.log_error("[FF_THUMB_REFRESH] " + failures[-1])
-        else:
-            saved += 1
-    report["saved"] = saved
-    report["failures"] = failures
-    report_path = write_report(report)
-    if failures or saved != EXPECTED_REFRESH_COUNT:
-        raise RuntimeError(
-            "Thumbnail refresh save failed ({0}/{1}, {2} failures)".format(
-                saved, EXPECTED_REFRESH_COUNT, len(failures)
+    transaction = AssetSaveTransaction(
+        [item["asset_path"] for item in preflight],
+        "NotionFacilityThumbnailRefresh",
+    )
+    report_path = os.path.join(saved_dir(), REPORT_NAME)
+    pending_report_path = report_path + ".pending"
+    try:
+        for texture in pending_saves:
+            if not unreal.EditorAssetLibrary.save_loaded_asset(
+                texture, only_if_is_dirty=False
+            ):
+                raise RuntimeError("Failed to save " + texture.get_path_name())
+        report["saved"] = EXPECTED_REFRESH_COUNT
+        report["failures"] = []
+        with open(pending_report_path, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False, indent=2)
+        transaction.commit()
+        try:
+            os.replace(pending_report_path, report_path)
+        except Exception as error:
+            unreal.log_warning(
+                "[FF_THUMB_REFRESH] Assets were committed, but the disposable "
+                "report could not be published from {0}: {1}".format(
+                    pending_report_path, error
+                )
             )
-        )
+    except Exception:
+        transaction.rollback()
+        try:
+            if os.path.isfile(pending_report_path):
+                os.remove(pending_report_path)
+        except Exception as cleanup_error:
+            unreal.log_warning(
+                "[FF_THUMB_REFRESH] Could not remove pending report {0}: {1}".format(
+                    pending_report_path, cleanup_error
+                )
+            )
+        raise
     unreal.log(
         "[FF_THUMB_REFRESH] Complete: {0} Texture2D assets refreshed; report={1}".format(
-            saved, report_path
+            EXPECTED_REFRESH_COUNT, report_path
         )
     )
 

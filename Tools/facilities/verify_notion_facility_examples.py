@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Verify coverage and technical contracts for all 29 Notion examples."""
+"""Verify technical quality for all 29 Notion reference-art examples.
+
+No placement-size assertion belongs here: these assets are under Test_Asset and
+UFFZSFacilityDefinition::Spec is the only authority for facility dimensions.
+"""
 
 import json
 import os
@@ -214,12 +218,6 @@ def run():
             failures.append(
                 "Pivot/bounds origin mismatch: {0} min={1} max={2}".format(
                     definition_id, vec(minimum), vec(maximum)
-                )
-            )
-        if size_x > 600.5 or size_y > 300.5 or float(maximum.z) > 250.5:
-            failures.append(
-                "Mesh exceeds 600x300x250cm: {0} size={1}".format(
-                    definition_id, result["size_cm"]
                 )
             )
         if size_x < 100.0 or size_y < 100.0 or size_z < 100.0:

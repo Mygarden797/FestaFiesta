@@ -122,13 +122,11 @@ public:
     // 로컬 검증이 성공한 경우에만 등록 정책 스냅샷의 PreValidate를 호출.
     // @note 결과는 호출 시점 스냅샷이므로 ExecuteCommand가 최신 상태에서 다시 검증한.
 
-    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Placement")
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
      // Install·Move·Remove·Open·Close·EmergencyClose의 유일한 공개 변경 경로.
      // CommandId 지문 멱등성, ExpectedWorldRevision, 단계, 로컬 검증, 정책 트랜잭션을 적용한다.
      //실패하면 권한 상태를 확정하지 않고 FFFZSCommandResult로 이유를 반환한다.
     
-    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Commands")
     FFFZSCommandResult ExecuteCommand(const FFFZSCommand& Command);
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Policy")

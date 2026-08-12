@@ -40,7 +40,9 @@ public:
     TObjectPtr<ULineBatchComponent> RangeLines;
     // footprint·clearance·queue 사각형을 한 Scene Proxy로 묶어 Shipping에서도 유지하는 선 표현이다.
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview",
+        meta = (DevelopmentOnly, DeprecatedProperty,
+            DeprecationMessage = "Set this only from MakeInstallCommandFromDefinition."))
     FFFZSCommand PreviewCommand;
     // 다음 RefreshPreview·CommitPreview에 사용할 전체 명령 복사본이다. UI 변경 뒤 새로 검증해야 한다. 
     
@@ -70,11 +72,9 @@ public:
     void SetAutoRefreshEnabled(bool bEnabled);
     // 자동 갱신 Tick을 켜거나 끈다. 꺼도 수동 RefreshPreview와 CommitPreview는 사용할 수 있다. 
 
-    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Preview")
-    void SetBuiltInPreview(EFFZSBuiltInFacilityPreset Preset, FName ZoneId, FFFZSGridPlacement Placement, int64 ExpectedWorldRevision = -1);
-    // 내장 사양으로 Install 미리보기 명령을 새로 만들고 입력 필드를 설정한다. -1은 최신 리비전을 허용.
-
-    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Preview")
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Development",
+        meta = (DevelopmentOnly, DeprecatedFunction,
+            DeprecationMessage = "Production placement must use the catalog-backed Build Mode."))
     FFFZSCommandResult CommitPreview();
     //권한 UFFZSWorldSubsystem에 현재 명령 실행을 요청한다.
     //미리보기 후에도 최신 리비전·로컬 검증·외부 정책을 모두 다시 통과해야 한다.

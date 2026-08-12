@@ -1,11 +1,36 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Queue/FF_FacilityQueue.h"
+#include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSQueueGeometry.h"
 
 DEFINE_LOG_CATEGORY(LogFestaFiestaQueue);
 
 namespace
 {
+	bool TryResolvePolylineSlot(
+		const TArray<FVector>& Points,
+		const float DistanceAlongLaneCm,
+		FVector& OutLocation,
+		float& OutYawDegrees)
+	{
+		if (Points.Num() < 2 || !FMath::IsFinite(DistanceAlongLaneCm)
+			|| Points.ContainsByPredicate([](const FVector& Point) { return Point.ContainsNaN(); }))
+		{
+			return false;
+		}
+
+		const double DistanceCm = FMath::Max(0.0, static_cast<double>(DistanceAlongLaneCm));
+		FVector TailDirection = FVector::ZeroVector;
+		if (!FFFZSQueueGeometry::TrySampleLinearPolylineAtDistanceWithTangent(
+			Points, DistanceCm, OutLocation, TailDirection))
+		{
+			return false;
+		}
+		OutYawDegrees = (-TailDirection).Rotation().Yaw;
+		return true;
+	}
+
 	// 큰 DeltaSeconds 하나로 무한 루프에 빠지지 않게 하는 안전장치.
 	// 고정 스텝(1/30초)에서는 절대 닿지 않는다 — 닿았다면 호출자가 스텝을 안 쪼갠 것이다.
 	constexpr int32 MaxServiceCyclesPerAdvance = 64;
@@ -17,8 +42,10 @@ void FFF_FacilityQueue::Configure(int32 InFacilityId, const FFF_QueueConfig& InC
 	Config = InConfig;
 	Lane = InLane;
 
-	Config.MaxCapacityMembers = FMath::Max(Config.MaxCapacityMembers, 0);
-	Config.ConcurrentServiceSlots = FMath::Max(Config.ConcurrentServiceSlots, 1);
+	Config.MaxCapacityMembers = FMath::Clamp(
+		Config.MaxCapacityMembers, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents);
+	Config.ConcurrentServiceSlots = FMath::Clamp(
+		Config.ConcurrentServiceSlots, 1, UFFZSDeveloperSettings::MaxFacilityServiceCapacity);
 	Config.ServiceSecondsPerMember = FMath::Max(Config.ServiceSecondsPerMember, KINDA_SMALL_NUMBER);
 
 	Lane.SlotSpacingCm = FMath::Max(Lane.SlotSpacingCm, 1.f);
@@ -58,22 +85,24 @@ int32 FFF_FacilityQueue::GetOccupiedMemberCount() const
 {
 	// 서비스를 마친 멤버도 Party 전원이 끝날 때까지 슬롯을 비우지 않는다 (설계문서 9.3).
 	// 그래서 점유량은 MembersServed와 무관하게 MemberCount 총합이다.
-	int32 Total = 0;
+	int64 Total = 0;
 	for (const FFF_QueuedParty& Party : Parties)
 	{
 		Total += Party.MemberCount;
 	}
-	return Total;
+	return static_cast<int32>(FMath::Clamp<int64>(
+		Total, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents));
 }
 
 int32 FFF_FacilityQueue::GetRemainingServiceMemberCount() const
 {
-	int32 Total = 0;
+	int64 Total = 0;
 	for (const FFF_QueuedParty& Party : Parties)
 	{
 		Total += FMath::Max(0, Party.MemberCount - Party.MembersServed);
 	}
-	return Total;
+	return static_cast<int32>(FMath::Clamp<int64>(
+		Total, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents));
 }
 
 float FFF_FacilityQueue::GetServiceRate() const
@@ -93,8 +122,10 @@ float FFF_FacilityQueue::GetExpectedWaitSeconds(int32 IncomingMemberCount) const
 	{
 		return FFF_QueueTimings::UnreachableWaitSeconds;
 	}
-	const int32 Ahead = GetRemainingServiceMemberCount();
-	return static_cast<float>(Ahead + FMath::Max(0, IncomingMemberCount)) / Rate;
+	const int64 Ahead = GetRemainingServiceMemberCount();
+	const int64 Incoming = FMath::Clamp<int64>(
+		IncomingMemberCount, 0, UFFZSDeveloperSettings::MaxQueueWaitingAgents);
+	return static_cast<float>(Ahead + Incoming) / Rate;
 }
 
 FFF_QueueState FFF_FacilityQueue::GetState() const
@@ -117,6 +148,26 @@ FFF_SlotAssignment FFF_FacilityQueue::ResolveSlot(int32 AgentId, int32 PartyId, 
 	Assignment.AgentId = AgentId;
 	Assignment.PartyId = PartyId;
 	Assignment.SlotIndex = SlotIndex;
+
+	if (Lane.ExplicitSlotTransforms.IsValidIndex(SlotIndex)
+		&& !Lane.ExplicitSlotTransforms[SlotIndex].ContainsNaN())
+	{
+		const FTransform& ExplicitSlot = Lane.ExplicitSlotTransforms[SlotIndex];
+		Assignment.TargetLocation = ExplicitSlot.GetLocation();
+		Assignment.TargetYaw = ExplicitSlot.Rotator().Yaw;
+		return Assignment;
+	}
+
+	if (TryResolvePolylineSlot(
+		Lane.PolylinePoints,
+		Lane.SlotSpacingCm * static_cast<float>(SlotIndex),
+		Assignment.TargetLocation,
+		Assignment.TargetYaw))
+	{
+		return Assignment;
+	}
+
+	// Backward-compatible fallback for existing callers and serialized straight lanes.
 	Assignment.TargetLocation = Lane.HeadLocation + Lane.TailDirection * (Lane.SlotSpacingCm * static_cast<float>(SlotIndex));
 	Assignment.TargetYaw = Lane.SlotYawDegrees;
 	return Assignment;
@@ -181,7 +232,11 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 		return Reason;
 	};
 
-	if (Request.MemberCount <= 0 || Request.PartyId == INDEX_NONE)
+	if (Request.MemberCount <= 0 ||
+		Request.MemberCount > UFFZSDeveloperSettings::MaxQueueWaitingAgents ||
+		Request.PartyId == INDEX_NONE ||
+		(Request.MemberAgentIds.Num() != 0 &&
+		 Request.MemberAgentIds.Num() != Request.MemberCount))
 	{
 		return Reject(EFF_QueueJoinResult::RejectedInvalidParty);
 	}
@@ -195,7 +250,9 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	}
 
 	// 전부 아니면 전무. 부분 수락은 되돌리기 어려운 상태를 만든다.
-	if (GetOccupiedMemberCount() + Request.MemberCount > Config.MaxCapacityMembers)
+	const int32 OccupiedMemberCount = GetOccupiedMemberCount();
+	if (OccupiedMemberCount > Config.MaxCapacityMembers ||
+		Request.MemberCount > Config.MaxCapacityMembers - OccupiedMemberCount)
 	{
 		return Reject(EFF_QueueJoinResult::RejectedFull);
 	}
@@ -209,7 +266,7 @@ EFF_QueueJoinResult FFF_FacilityQueue::TryJoin(const FFF_JoinRequest& Request, f
 	Party.JoinSimTime = SimTimeSeconds;
 	Party.EstimatedWaitAtJoinSeconds = GetExpectedWaitSeconds(Request.MemberCount);
 
-	OutSlotIndex = GetOccupiedMemberCount();   // 이 Party의 선두 멤버가 설 슬롯
+	OutSlotIndex = OccupiedMemberCount;   // 이 Party의 선두 멤버가 설 슬롯
 	OutEstimatedWaitSeconds = Party.EstimatedWaitAtJoinSeconds;
 
 	FFF_QueueEvent Event;

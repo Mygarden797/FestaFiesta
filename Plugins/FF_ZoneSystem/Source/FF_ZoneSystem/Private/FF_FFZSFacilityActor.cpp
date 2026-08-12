@@ -21,6 +21,7 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
+#include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "SceneManagement.h"
 
@@ -503,6 +504,8 @@ void AFFZSFacilityActor::RequestVisualMesh()
     }
 
     VisualMesh->SetStaticMesh(nullptr);
+    VisualMesh->SetRelativeTransform(
+        FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, nullptr));
     if (FacilitySpec.VisualMesh.IsNull())
     {
         return;
@@ -510,6 +513,8 @@ void AFFZSFacilityActor::RequestVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
+        VisualMesh->SetRelativeTransform(
+            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
         return;
     }
 
@@ -526,6 +531,8 @@ void AFFZSFacilityActor::ApplyLoadedVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
+        VisualMesh->SetRelativeTransform(
+            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
     }
 }
 
