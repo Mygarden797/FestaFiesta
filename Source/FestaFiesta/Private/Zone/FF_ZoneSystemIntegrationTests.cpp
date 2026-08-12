@@ -5,7 +5,83 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Engine/World.h"
+#include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSQueueComponent.h"
+#include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSZoneActor.h"
 #include "Misc/AutomationTest.h"
+#include "Queue/FF_QueueSubsystem.h"
+#include "Tests/AutomationCommon.h"
+#include "Tests/FF_FFZSTestFixtures.h"
+
+namespace
+{
+	class FScopedQueueMoveTestSettings
+	{
+	public:
+		FScopedQueueMoveTestSettings()
+			: Settings(GetMutableDefault<UFFZSDeveloperSettings>())
+			, bGroundChecks(Settings->bEnableGroundChecks)
+			, bWorldCollisionChecks(Settings->bEnableWorldCollisionChecks)
+			, bNavigationChecks(Settings->bEnableNavigationProjectionChecks)
+			, bProductionPolicies(Settings->bRequireProductionPolicyDomains)
+			, bRestrictZoneIds(Settings->bRestrictZoneIdsToProjectPresets)
+			, InitialPhase(Settings->InitialPhase)
+			, MaxEnumeratedCells(Settings->MaxEnumeratedCellsPerFacility)
+		{
+			Settings->bEnableGroundChecks = false;
+			Settings->bEnableWorldCollisionChecks = false;
+			Settings->bEnableNavigationProjectionChecks = false;
+			Settings->bRequireProductionPolicyDomains = false;
+			Settings->bRestrictZoneIdsToProjectPresets = false;
+			Settings->InitialPhase = EFFZSChangePhase::InitialSetup;
+			Settings->MaxEnumeratedCellsPerFacility = 1'000'000;
+		}
+
+		~FScopedQueueMoveTestSettings()
+		{
+			Settings->bEnableGroundChecks = bGroundChecks;
+			Settings->bEnableWorldCollisionChecks = bWorldCollisionChecks;
+			Settings->bEnableNavigationProjectionChecks = bNavigationChecks;
+			Settings->bRequireProductionPolicyDomains = bProductionPolicies;
+			Settings->bRestrictZoneIdsToProjectPresets = bRestrictZoneIds;
+			Settings->InitialPhase = InitialPhase;
+			Settings->MaxEnumeratedCellsPerFacility = MaxEnumeratedCells;
+		}
+
+	private:
+		UFFZSDeveloperSettings* Settings;
+		bool bGroundChecks;
+		bool bWorldCollisionChecks;
+		bool bNavigationChecks;
+		bool bProductionPolicies;
+		bool bRestrictZoneIds;
+		EFFZSChangePhase InitialPhase;
+		int32 MaxEnumeratedCells;
+	};
+
+	FFFZSCommand MakeQueueMoveCommand(
+		const FGuid FacilityInstanceId,
+		const FFFZSFacilitySpec& FacilitySpec,
+		const FName ZoneId,
+		const FFFZSGridPlacement& Placement,
+		const int64 ExpectedWorldRevision)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = FGuid::NewGuid();
+		Command.ExpectedWorldRevision = ExpectedWorldRevision;
+		Command.Type = EFFZSCommandType::Move;
+		Command.FacilityInstanceId = FacilityInstanceId;
+		Command.FacilitySpec = FacilitySpec;
+		Command.ZoneId = ZoneId;
+		Command.Placement = Placement;
+		return Command;
+	}
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFFZoneSystemStageMappingTest,
@@ -45,6 +121,137 @@ bool FFFZoneSystemStageMappingTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Queue 브리지는 FFZS Policy 구현이다"),
 		UFF_ZoneSystemQueueBridgeSubsystem::StaticClass()->ImplementsInterface(
 			UFFZSExternalPolicy::StaticClass()));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemQueueMoveRefreshesProjectionTest,
+	"FestaFiesta.ZoneIntegration.Queue.MoveRefreshesProjection",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedQueueMoveTestSettings SettingsGuard;
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game))
+	{
+		TestWorld.ForwardErrorMessages(this);
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	UFFZSWorldSubsystem* ZoneSystem = World
+		? World->GetSubsystem<UFFZSWorldSubsystem>()
+		: nullptr;
+	UFF_QueueSubsystem* QueueSystem = World
+		? World->GetSubsystem<UFF_QueueSubsystem>()
+		: nullptr;
+	UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World
+		? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>()
+		: nullptr;
+	if (!TestNotNull(TEXT("Game test world is created"), World)
+		|| !TestNotNull(TEXT("The authoritative Zone subsystem exists"), ZoneSystem)
+		|| !TestNotNull(TEXT("The project Queue subsystem exists"), QueueSystem)
+		|| !TestNotNull(TEXT("The Zone-to-Queue bridge exists"), QueueBridge))
+	{
+		return false;
+	}
+
+	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	FActorSpawnParameters ZoneSpawnParameters;
+	ZoneSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>(
+		AFFZSGameplayZone::StaticClass(), FTransform::Identity, ZoneSpawnParameters);
+	if (!TestNotNull(TEXT("A Gameplay Zone is spawned"), Zone)
+		|| !TestTrue(TEXT("The accepted Zone preset is applied"),
+			Zone->ApplyAcceptedZonePreset(ZoneId))
+		|| !TestTrue(TEXT("The Gameplay Zone is registered"),
+			ZoneSystem->RegisterZone(Zone)))
+	{
+		return false;
+	}
+
+	FFFZSGridPlacement InitialPlacement;
+	InitialPlacement.OriginCell = FIntPoint(1000, 1000);
+	const FFFZSFacilitySpec FacilitySpec =
+		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
+		FacilitySpec, ZoneId, InitialPlacement, ZoneSystem->GetWorldRevision());
+	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
+	if (!TestTrue(TEXT("Install commits before the move"), InstallResult.bSucceeded))
+	{
+		return false;
+	}
+
+	AFFZSFacilityActor* Facility =
+		ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId);
+	if (!TestNotNull(TEXT("The installed Facility remains registered"), Facility)
+		|| !TestNotNull(TEXT("The installed Facility owns a Zone queue component"),
+			Facility ? Facility->GetQueueComponent() : nullptr))
+	{
+		return false;
+	}
+
+	const int32 QueueFacilityIdBefore =
+		QueueBridge->FindQueueFacilityId(InstallCommand.FacilityInstanceId);
+	if (!TestTrue(TEXT("Install allocates a project Queue ID"),
+		QueueFacilityIdBefore != INDEX_NONE)
+		|| !TestTrue(TEXT("Install registers the projected project Queue"),
+			QueueSystem->IsFacilityRegistered(QueueFacilityIdBefore)))
+	{
+		return false;
+	}
+	const FVector ExitLocationBefore =
+		QueueSystem->GetFacilityExitLocation(QueueFacilityIdBefore);
+
+	FFFZSGridPlacement MovedPlacement;
+	MovedPlacement.OriginCell = FIntPoint(5000, 1000);
+	MovedPlacement.QuarterTurns = 1;
+	const FFFZSCommand MoveCommand = MakeQueueMoveCommand(
+		InstallCommand.FacilityInstanceId,
+		FacilitySpec,
+		ZoneId,
+		MovedPlacement,
+		ZoneSystem->GetWorldRevision());
+	const FFFZSCommandResult MoveResult = ZoneSystem->ExecuteCommand(MoveCommand);
+	if (!TestTrue(TEXT("Move commits through the Zone authority"), MoveResult.bSucceeded))
+	{
+		return false;
+	}
+
+	const int32 QueueFacilityIdAfter =
+		QueueBridge->FindQueueFacilityId(InstallCommand.FacilityInstanceId);
+	TestEqual(TEXT("Move preserves the stable project Queue ID"),
+		QueueFacilityIdAfter, QueueFacilityIdBefore);
+	TestTrue(TEXT("Move leaves the refreshed project Queue registered"),
+		QueueSystem->IsFacilityRegistered(QueueFacilityIdAfter));
+
+	Facility = ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId);
+	if (!TestNotNull(TEXT("Move preserves the authoritative Facility instance"), Facility)
+		|| !TestNotNull(TEXT("The moved Facility still owns a Zone queue component"),
+			Facility ? Facility->GetQueueComponent() : nullptr))
+	{
+		return false;
+	}
+	const FVector ExpectedExitLocation =
+		Facility->GetQueueComponent()->GetExitWorldLocation(0);
+	const FVector ExitLocationAfter =
+		QueueSystem->GetFacilityExitLocation(QueueFacilityIdAfter);
+	TestFalse(TEXT("Move changes the projected Queue exit location"),
+		ExitLocationAfter.Equals(ExitLocationBefore, 0.1));
+	TestTrue(TEXT("The project Queue exit is refreshed from the moved Facility"),
+		ExitLocationAfter.Equals(ExpectedExitLocation, 0.1));
+
+	const FFF_QueueState QueueState =
+		QueueSystem->GetQueueState(QueueFacilityIdAfter);
+	TestFalse(TEXT("A moved Validated Facility keeps the project Queue closed"),
+		QueueState.bIsOpen);
+	TestFalse(TEXT("A moved Validated Facility does not accept new Parties"),
+		QueueState.bAcceptingNew);
+	TestEqual(TEXT("The closed project Queue remains empty after Move"),
+		QueueState.OccupiedMemberCount, 0);
 	return true;
 }
 

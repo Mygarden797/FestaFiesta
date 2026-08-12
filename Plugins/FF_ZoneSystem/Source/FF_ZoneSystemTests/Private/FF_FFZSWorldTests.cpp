@@ -253,6 +253,9 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         EFFZSQueueJoinResult::DuplicateAgent);
 
     const FFFZSCommand OccupiedMove = MakeMoveCommand(InstallFirst.FacilityInstanceId, ZoneId, FIntPoint(1000, 4000), 4);
+    const FFFZSPlacementValidation OccupiedMovePreview = Subsystem->ValidatePlacement(OccupiedMove);
+    TestTrue(TEXT("점유 중인 Facility의 이동 미리보기도 거부된다"),
+        OccupiedMovePreview.Reasons.Contains(EFFZSPlacementFailure::FacilityOccupied));
     TestEqual(TEXT("점유 중인 Facility는 이동할 수 없다"),
         Subsystem->ExecuteCommand(OccupiedMove).FailureReason,
         EFFZSPlacementFailure::FacilityOccupied);
