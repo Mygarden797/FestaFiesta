@@ -16,7 +16,7 @@
 #include "Components/LineBatchComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
-#include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "SceneManagement.h"
@@ -109,14 +109,6 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
     return LastValidation;
 }
 
-// 명령에는 호출자가 본 WorldRevision을 함께 넣을 수 있다. 이후 커밋 시 Revision이 달라졌다면
-// Subsystem이 StaleWorldRevision으로 거부하므로 오래된 Preview가 최신 배치를 덮어쓰지 않는다.
-void AFFZSPlacementPreviewActor::SetBuiltInPreview(const EFFZSBuiltInFacilityPreset Preset, const FName ZoneId, const FFFZSGridPlacement Placement, const int64 ExpectedWorldRevision)
-{
-    PreviewCommand = UFFZSGridLibrary::MakeInstallCommand(UFFZSGridLibrary::MakeBuiltInFacilitySpec(Preset), ZoneId, Placement, ExpectedWorldRevision);
-    RefreshPreview();
-}
-
 // 권위 변경의 유일한 진입점이다. ExecuteCommand가 Game Thread, Phase, 중복 CommandId, Revision,
 // 배치 유효성, 외부 정책, 롤백을 다시 처리하므로 LastValidation을 그대로 신뢰해 설치하지 않는다.
 FFFZSCommandResult AFFZSPlacementPreviewActor::CommitPreview()
@@ -143,6 +135,9 @@ void AFFZSPlacementPreviewActor::RequestPreviewMesh()
     const FSoftObjectPath NewPath = PreviewCommand.FacilitySpec.VisualMesh.ToSoftObjectPath();
     if (NewPath == RequestedVisualPath)
     {
+        PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
+            PreviewCommand.FacilitySpec,
+            PreviewMesh->GetStaticMesh()));
         return;
     }
 
@@ -153,6 +148,9 @@ void AFFZSPlacementPreviewActor::RequestPreviewMesh()
         VisualLoadHandle.Reset();
     }
     PreviewMesh->SetStaticMesh(nullptr);
+    PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
+        PreviewCommand.FacilitySpec,
+        nullptr));
     if (!RequestedVisualPath.IsValid())
     {
         return;
@@ -160,6 +158,9 @@ void AFFZSPlacementPreviewActor::RequestPreviewMesh()
     if (UStaticMesh* LoadedMesh = PreviewCommand.FacilitySpec.VisualMesh.Get())
     {
         PreviewMesh->SetStaticMesh(LoadedMesh);
+        PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
+            PreviewCommand.FacilitySpec,
+            LoadedMesh));
         return;
     }
 
@@ -180,6 +181,9 @@ void AFFZSPlacementPreviewActor::ApplyLoadedPreviewMesh()
     if (UStaticMesh* LoadedMesh = PreviewCommand.FacilitySpec.VisualMesh.Get())
     {
         PreviewMesh->SetStaticMesh(LoadedMesh);
+        PreviewMesh->SetRelativeTransform(FFZSVisualGeometry::ResolveVisualMeshTransform(
+            PreviewCommand.FacilitySpec,
+            LoadedMesh));
     }
 }
 

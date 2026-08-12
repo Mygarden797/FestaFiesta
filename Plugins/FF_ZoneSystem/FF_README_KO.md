@@ -88,7 +88,6 @@ flowchart TD
 | `AFFZSPlacementPreviewActor` | 검증 결과와 Ghost를 보여 주는 비권위 Preview |
 | `IFFZSExternalPolicy` | 외부 시스템의 사전 검증·임시 적용·Commit·Rollback 계약 |
 | `IFFZSQueueAgent` | NPC의 Stable ID와 Queue 이동 Callback 계약 |
-| `UFFZSPhase0Bridge` | 병렬 개발용 “항상 수락” 비권위 Stub |
 
 ---
 
@@ -409,6 +408,8 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 | Placement | `AllowedZoneIds` | 비어 있으면 Zone ID 제한 없음 |
 | External | `InstallCostKey / RevenueRuleKey / ExperienceEffectKey` | 외부 Policy용 Key |
 | Visual | `VisualMesh` | 비동기 로드 Soft Mesh |
+| Visual | `VisualSizingMode` | Production Definition은 `MatchPlacementBounds`; Footprint/ObstacleHeight가 표시 크기의 권위 |
+| Visual | `VisualOffsetCm / VisualRotation` | 표시 전용 로컬 보정. Match 모드는 Offset 0, 정확한 90도 회전만 허용 |
 | Collision | `PlacementObstacleHeightCm` | 월드 충돌과 보호영역 박스 높이 |
 
 `QueueReservedCells`는 작은 구 데이터 호환용 Deprecated 필드다. 새 데이터는
@@ -434,21 +435,41 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 - `AllowedZoneIds`에 `NAME_None`이나 중복이 없는가
 - `PlacementObstacleHeightCm`이 유한하고 10 cm 이상인가
 
-### 7.4 내장 시설 Preset
+### 7.4 FacilityDefinition Data Asset 단일 원천
 
-| Preset | Definition ID | 크기(cm) | 대기 / 서비스 | 서비스 시간 | 상태 |
-|---|---|---:|---:|---:|---|
-| FoodTruckBasic | `FD_Booth_FoodTruckBasic` | 600 x 300 | 12 / 1 | 6초 | 승인 기준 |
-| ToiletBasic | `FD_Toilet_Basic` | 400 x 400 | 8 / 2 | 4초 | 승인 기준 |
-| InfoBasic | `FD_Info_Basic` | 300 x 200 | 6 / 1 | 4초 | Prototype 가설 |
-| RestBasic | `FD_Rest_Basic` | 400 x 300 | 4 / 2 | 12초 | Prototype 가설 |
-| PerformanceBasic | `FD_Performance_Basic` | 800 x 500 | 16 / 2 | 10초 | Prototype 가설 |
-| SafetyBasic | `FD_Safety_Basic` | 400 x 300 | 6 / 2 | 8초 | Prototype 가설 |
-| PhotoSpotBasic | `FD_PhotoSpot_Basic` | 500 x 300 | 8 / 1 | 5초 | Prototype 가설 |
+프로덕션 시설의 ID, 크기, 여유 영역, Queue 영역·Spline·규칙, Anchor, 외부 Key와 Visual Mesh는
+`UFFZSFacilityDefinition::Spec`에서만 저작한다. `UFFZSGridLibrary`에는 시설별 값이나 기본 시설 생성
+함수가 없으며, Catalog·배치 Preview·Install Command·FacilityActor·Queue·SaveGame은 선택한 Data
+Asset에서 복사한 동일한 `FFFZSFacilitySpec`을 소비한다.
 
-공통 기본값은 Clearance 100 cm, Slot 간격 115 cm, 도착 허용 오차 25 cm,
-Navigation Projection 30 cm, Blocked Timeout 5초, 최대 재경로 2회다.
-Food Truck과 Toilet 외 수치는 측정 전 가설이므로 운영 수치로 그대로 확정하지 않는다.
+명령과 설치된 Actor가 Spec 복사본을 보관하는 이유는 실행 중 Asset 수정이나 비동기 언로드가 이미
+검증된 명령과 저장 게임을 바꾸지 못하게 하기 위해서다. 이 복사본은 별도 저작 원천이 아니라 해당
+명령/인스턴스가 생성된 시점의 불변 Snapshot이다. 시설 수치를 바꾸려면 C++ 상수를 수정하지 말고
+해당 `UFFZSFacilityDefinition` Data Asset을 수정하고 검증·Cook한다.
+
+자동화 테스트에 필요한 대표 모양은 `WITH_DEV_AUTOMATION_TESTS`에서만 보이는
+`Tests/FF_FFZSTestFixtures.h`의 `FFZSTest::MakeValidFacilitySpec`으로 중앙화되어 있다. 이 fixture는
+Shipping API나 Asset Manager Scan 대상이 아니며 프로덕션 시설 정의로 사용하면 안 된다.
+
+#### 공개 built-in API 제거 마이그레이션
+
+단일 원천 전환에서 공개 reflected API였던 `EFFZSBuiltInFacilityPreset`,
+`UFFZSGridLibrary::MakeBuiltInFacilitySpec`, `AFFZSPlacementPreviewActor::SetBuiltInPreview`를 제거했다.
+프로덕션 C++ 호출은 모두 Definition 경로로 이관했다. 기존 통합 테스트 Blueprint에는 deprecated 호환 노드가
+남아 있을 수 있으므로, 아래 순서로 교체하고 Compile·Save한 뒤 Data Validation 경고가 0인지 확인한다.
+
+- enum/preset 선택은 `UFF_BuildCatalogSubsystem`의 정렬된 `UFFZSFacilityDefinition` 선택으로 교체한다.
+- `MakeBuiltInFacilitySpec` 호출은 선택한 Definition을 직접 받는
+  `MakeInstallCommandFromDefinition` 경로로 교체한다. 외부 코드가 `Spec`을 별도 원천처럼 복제해서는 안 된다.
+- `SetBuiltInPreview` 호출은 선택한 `UFFZSFacilityDefinition`을
+  `MakeInstallCommandFromDefinition`에 전달하고, 그 결과를 Preview의 `PreviewCommand`에 설정한 뒤
+  `RefreshPreview`를 호출하는 흐름으로 교체한다.
+- 구 노드가 들어 있는 외부 Blueprint는 해당 노드를 교체한 뒤 전부 Compile·Save한다.
+- exact-name CI에서 구 `CompressedBuiltInPresets` 테스트를 호출했다면
+  `OneCentimeterTestFacilityFixtures` 또는 상위 `FF_ZoneSystem` prefix로 바꾼다.
+
+enum pin과 함수 시그니처가 달라 Core Redirect만으로 안전하게 자동 변환할 수 없으므로, 이 변경은
+외부 API 관점에서 명시적 마이그레이션이 필요한 breaking change다.
 
 ### 7.5 FacilityActor
 
@@ -567,8 +588,12 @@ FacilityActor의 Transform이나 QueueComponent 내부 배열을 직접 수정�
 | `ZoneId` | Install·Move 대상 Zone |
 | `Placement` | Cell 원점과 사분면 회전 |
 
-`MakeInstallCommand`는 새 CommandId, TransactionId, FacilityInstanceId를 만들고 회전을 정규화한다.
-다른 명령을 직접 만들 때도 CommandId와 TransactionId가 모두 유효해야 한다.
+신규 프로덕션 코드는 `MakeInstallCommandFromDefinition`만 사용한다. 이 함수는 선택된
+`UFFZSFacilityDefinition::Spec`으로 새 CommandId, TransactionId, FacilityInstanceId를 만들고 회전을
+정규화한다. Spec을 직접 받는 `MakeInstallCommand`는 기존 Blueprint 자산을 위한
+`DevelopmentOnly`·deprecated 호환 표면이다. 프로덕션 실행에서는 등록된 Definition을 다시 찾아 정확한
+Spec으로 정규화하므로 제2의 시설 데이터 원천으로 사용해서는 안 된다. 다른 명령을 직접 만들 때도
+CommandId와 TransactionId가 모두 유효해야 한다.
 
 ### 9.2 Phase 규칙
 
@@ -1072,7 +1097,7 @@ Read Model 수정은 권위 상태에 영향을 주지 않는다. Queue 참가·
 
 ---
 
-## 15. Placement Preview와 Phase 0 Stub
+## 15. Placement Preview
 
 ### 15.1 Placement Preview
 
@@ -1100,31 +1125,14 @@ Footprint는 초록, Clearance는 청록, Queue는 노랑, 실패 영역은 빨�
 
 자동 갱신은 기본 false이고 간격 기본값은 0.1초다. 짧은 간격으로 켜면 Ground, Collision,
 Navigation, Policy PreValidate를 반복하므로 제작 도구에서만 제한적으로 사용한다.
-`CommitPreview`는 `ExecuteCommand`를 호출해 모든 조건을 다시 검증한다.
+`CommitPreview`는 `ExecuteCommand`를 호출해 Definition 동일성, 최신 WorldRevision, 배치 정책,
+지면·충돌·Navigation, 비용을 모두 다시 검증한 뒤 실제 설치를 커밋한다. 성공하면 Facility Actor,
+예약 영역, 비용, Command Receipt와 WorldRevision이 원자적으로 갱신되고
+`bWorldStateChanged=true`가 된다. 실패하면 부분 설치 없이 원래 월드 상태를 보존한다.
 
-### 15.2 Phase 0 Bridge
-
-`UFFZSPhase0Bridge`는 Runtime에 컴파일되는 하위 모듈 병렬 개발용 비권위 Stub이다.
-Blueprint의 `RequestWorldChangePhase0` 노드에만 `DevelopmentOnly` Metadata가 붙는다. 운영
-Command API가 아니며 C++에서도 Production 결과로 사용하면 안 된다.
-
-`RequestWorldChangePhase0`의 계약:
-
-- 입력 Command의 ID·Transaction·Revision·Type·Zone·Placement·Spec을 검증하거나 사용하지 않음
-- 현재 World Phase와 Policy Registry를 조회하지 않음
-- 항상 `bSucceeded=true`
-- 항상 `bWorldStateChanged=false`
-- 비용, Actor, 점유, Policy, WorldRevision을 변경하지 않음
-- 60 m x 40 m Prototype Core Zone의 고정 Slot 3개 반환
-
-| Slot | 로컬 좌표(cm) | 미터 표현 |
-|---|---:|---:|
-| A | (1000, 2000, 0) | (10 m, 20 m, 0) |
-| B | (3000, 2000, 0) | (30 m, 20 m, 0) |
-| C | (5000, 2000, 0) | (50 m, 20 m, 0) |
-
-여기서 성공은 “Stub이 요청을 수락했다”는 뜻일 뿐 실제 적용 성공이 아니다.
-실제 통합은 반드시 `UFFZSWorldSubsystem::ExecuteCommand`로 교체한다.
+Preview는 비권위 표시지만 Commit은 권위 변경이라는 경계를 혼동하면 안 된다. 외부 Blueprint는
+deprecated raw Spec 노드를 새로 사용하지 말고, 카탈로그에서 선택한 Definition으로
+`MakeInstallCommandFromDefinition`을 호출하는 경로만 사용한다.
 
 ---
 
@@ -1207,7 +1215,6 @@ Blueprint 노드:
 - QuarterTurns 정규화
 - Cell·Rect 회전
 - Debug용 Footprint·Clearance·Queue·Reserved Cell 조회
-- 내장 7종 FacilitySpec 생성
 - 기본 12개 Zone ID 조회
 - Install Command 생성
 - Placement Failure 기본 문구 변환
@@ -1227,7 +1234,7 @@ C++ 전용 고성능 API:
 - FacilityDefinition: Spec 검증과 Primary Asset ID
 - FacilityActor: ID·Zone·Placement·Spec·State·Queue·Relocation·Anchor·Snapshot·Read Model 조회
 - QueueComponent: 상태·수·목표 위치·Snapshot·불변식·규칙·통계 조회와 Delegate
-- PlacementPreviewActor: Refresh, Auto Refresh, Built-in Preview, Commit, Last Validation
+- PlacementPreviewActor: Data Asset Spec 기반 Refresh, Auto Refresh, Commit, Last Validation
 
 FacilityActor와 QueueComponent의 공개 Blueprint API는 대부분 관찰용이다. 변경은 WorldSubsystem을 사용한다.
 
@@ -1280,40 +1287,55 @@ Zone Actor는 기본 생성 시 100 m x 100 m 사각형 Spline을 제공하지�
 5. Queue Spline을 Service에서 Tail 방향으로 작성한다.
 6. Entry[0], Exit[0], Service[0..Capacity-1] Anchor를 만든다.
 7. 외부 Cost·Revenue·Experience Key와 Soft Mesh를 설정한다.
-8. `Validate Assets` 또는 `IsDefinitionValid`로 모든 오류를 해결한다.
-9. Asset Manager Scan과 Shipping Cook 포함 여부를 Host 프로젝트에서 검증한다.
+8. VisualSizingMode는 `MatchPlacementBounds`로 유지한다. 그러면 Footprint와 PlacementObstacleHeight를 바꿀 때 메시 표시 크기도 함께 바뀐다.
+9. Details의 `Facility Authoring Tools`에서 `Show Korean Help`, `Validate Facility Definition`, `Footprint <- Loaded Mesh`, `Queue Tail <- Max Capacity`, `Max Capacity <- Queue Length`, `Fit Mesh to Placement Bounds` 버튼을 사용할 수 있다. 변경 버튼은 Undo/Redo transaction을 지원한다.
+10. 카테고리·필드·열거형·배열 요소·버튼처럼 항상 보이는 UI 이름은 영어를 사용한다. `Show Korean Help`를 누르면 핵심 사용법이 한국어 대화상자로 열리고, 개별 항목에 마우스를 올리면 단위, 좌표 원점, 포함/미포함 경계, 1,000,000셀 안전 예산, 활성 조건을 한국어 툴팁으로 확인할 수 있다. 버튼 실행 뒤 결과 알림과 검증 대화상자도 한국어로 표시한다.
+11. Content Browser의 `Validate Assets`로 Spec 내부·중복 ID·경로·메시 bounds까지 검증한다.
+12. Asset Manager Scan과 Shipping Cook 포함 여부를 Host 프로젝트에서 검증한다.
 
 ### 18.5 C++ Install 예시
 
 ~~~cpp
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 
-UFFZSWorldSubsystem* ZoneSystem =
-    GetWorld()->GetSubsystem<UFFZSWorldSubsystem>();
+bool TryInstallSelectedDefinition(
+    UWorld* World,
+    const UFFZSFacilityDefinition* SelectedDefinition)
+{
+    if (!IsValid(World) || !IsValid(SelectedDefinition))
+    {
+        return false;
+    }
 
-FFFZSFacilitySpec Spec =
-    UFFZSGridLibrary::MakeBuiltInFacilitySpec(
-        EFFZSBuiltInFacilityPreset::FoodTruckBasic);
+    UFFZSWorldSubsystem* ZoneSystem =
+        World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!IsValid(ZoneSystem))
+    {
+        return false;
+    }
 
-FFFZSGridPlacement Placement;
-Placement.OriginCell = FIntPoint(1200, 800);
-Placement.QuarterTurns = 1;
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(1200, 800);
+    Placement.QuarterTurns = 1;
 
-FFFZSCommand Command =
-    UFFZSGridLibrary::MakeInstallCommand(
-        Spec,
+    FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
+        SelectedDefinition,
         TEXT("GZ_DadaPocha"),
         Placement,
         ZoneSystem->GetWorldRevision());
 
-const FFFZSPlacementValidation Preview =
-    ZoneSystem->ValidatePlacement(Command);
+    const FFFZSPlacementValidation Preview =
+        ZoneSystem->ValidatePlacement(Command);
+    if (!Preview.bIsValid)
+    {
+        return false;
+    }
 
-if (Preview.bIsValid)
-{
     const FFFZSCommandResult Result =
         ZoneSystem->ExecuteCommand(Command);
+    return Result.bSucceeded;
 }
 ~~~
 
@@ -1339,7 +1361,7 @@ Close, EmergencyClose, Remove도 매 요청마다 새 CommandId를 사용한다.
 
 ~~~text
 UI 입력
-→ Make Install Command
+→ Make Install Command From Definition
 → PlacementPreviewActor.PreviewCommand 설정
 → Refresh Preview
 → Validation.Reasons와 Summary 표시
@@ -1421,9 +1443,9 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 
 ## 20. 자동화 테스트와 QA Gate
 
-현재 소스에는 `FF_ZoneSystem.*` 이름으로 **23개**의 Unreal Automation Test가 선언되어 있다.
-이 숫자는 소스 선언 기준이며, 이 문서를 작성하면서 Editor에서 전부 실행해 통과를 확인했다는
-뜻은 아니다.
+2026-08-12 검증 실행에서 `FF_ZoneSystem.*` Unreal Automation Test는 **35개**가 발견되었다.
+개수는 테스트가 추가·제거되면 달라질 수 있으므로, 출하 Gate의 권위 기준은
+`Automation RunTests FF_ZoneSystem`이 발견한 전체 목록이 **0 failure, Queue Empty, Exit 0**로 완료되는지이다.
 
 ### 20.1 Integration 테스트
 
@@ -1444,25 +1466,36 @@ Phase·재진입·Drain 복원, Zone Read Model의 공간 메타데이터 값 �
 
 ### 20.2 Unit 테스트와 소속
 
-아래 15개 중 14개는 Runtime 모듈 `Source/FF_ZoneSystem/Private/Tests`에 있다.
-`WorldSnapshotByteRoundTrip`은 Editor 전용 `FF_ZoneSystemTests/Private/FF_FFZSSaveGameTests.cpp`에
-있으며, 20.1의 Integration 8개와 함께 Editor 테스트 모듈에서 실행된다.
+테스트는 Runtime, Editor 테스트, Editor 저작 모듈로 나뉜다. `Automation RunTests FF_ZoneSystem`은
+세 모듈의 아래 Unit·Integration·Editor 테스트를 모두 포함한다.
 
 - `FF_ZoneSystem.Unit.SaveGame.WorldSnapshotByteRoundTrip`
-- `FF_ZoneSystem.Unit.Contract.Phase0WorldChangeStub`
 - `FF_ZoneSystem.Unit.Queue.FIFOArrivalAndCapacity`
 - `FF_ZoneSystem.Unit.Queue.DrainAndEmergencyCancel`
 - `FF_ZoneSystem.Unit.Queue.SaveRestoreMovementState`
 - `FF_ZoneSystem.Unit.Queue.SaveRestoreTickAndDrain`
 - `FF_ZoneSystem.Unit.Queue.EventStepTieAndDeltaIndependence`
 - `FF_ZoneSystem.Unit.Queue.BlockedAndMovementFailure`
+- `FF_ZoneSystem.Unit.Queue.NonFiniteArrivalAndRepathBoundary`
+- `FF_ZoneSystem.Unit.Queue.SnapshotSafetyLimitsAndSequenceExhaustion`
 - `FF_ZoneSystem.Unit.Units.OnePlacementCellEqualsOneCentimeter`
 - `FF_ZoneSystem.Unit.Grid.OneCentimeterCellAndRectQuarterTurns`
 - `FF_ZoneSystem.Unit.Grid.OneCentimeterCompressedRegions`
 - `FF_ZoneSystem.Unit.Commands.OneCentimeterCompressedRegionPayloadIdentity`
-- `FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedBuiltInPresets`
+- `FF_ZoneSystem.Unit.Definitions.OneCentimeterTestFacilityFixtures`
 - `FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedRegionValidation`
 - `FF_ZoneSystem.Unit.Definitions.OneCentimeterEditorDataValidation`
+- `FF_ZoneSystem.Unit.Definitions.CardinalitySafetyLimitsFailClosed`
+- `FF_ZoneSystem.Unit.QueueGeometry.ExactTail`
+- `FF_ZoneSystem.Unit.QueueGeometry.MultiSegmentSlots`
+- `FF_ZoneSystem.Unit.QueueGeometry.NearDegenerateSegmentsAreConsistent`
+- `FF_ZoneSystem.Unit.QueueGeometry.ReservationCoordinates`
+- `FF_ZoneSystem.Unit.QueueGeometry.SegmentTangentAtBends`
+- `FF_ZoneSystem.Unit.QueueGeometry.ZeroLengthSegment`
+- `FF_ZoneSystem.Unit.VisualGeometry.AuthoritativeSizingModes`
+- `FF_ZoneSystem.Editor.FacilityAuthoringHelpers`
+- `FF_ZoneSystem.Editor.FacilityDefinitionCrossAssetValidation`
+- `FF_ZoneSystem.Editor.FacilityKoreanTooltips`
 
 ### 20.3 명령행 실행 예시
 
@@ -1496,7 +1529,7 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
 #### Build·자동화·패키징
 
 - [ ] Editor Development, Game Development, Game Shipping 구성이 모두 빌드된다.
-- [ ] `FF_ZoneSystem` 테스트 23개가 발견되고 23 성공·0 실패, Queue Empty, 프로세스 Exit 0이다.
+- [ ] `Automation RunTests FF_ZoneSystem`이 발견한 전체 테스트가 0 실패, Queue Empty, 프로세스 Exit 0이다. 2026-08-12 기준 기대치는 35개 통과(34 clean + 1 warning 포함 성공)이다.
 - [ ] 독립 Plugin 패키징과 프로젝트 Cook에서 Soft Mesh·Definition·Asset Manager Scan을 검증한다.
 - [ ] Clean PC의 Shipping 패키지에서 Plugin Mount, Map Load, Save/Restore Smoke를 통과한다.
 
@@ -1633,8 +1666,6 @@ Spawn/Despawn을 구현하지 않는다. 프로젝트 NPC가 `IFFZSQueueAgent` C
 - `CanContainContent=true`지만 플러그인 자체 Content 폴더에는 운영용 Facility Asset 묶음이
   없다. `UFFZSFacilityDefinition` Asset 생성과 Asset Manager 정책은 호스트 프로젝트 책임이다.
 - 운영용 UMG, 사용자 메시지 번역, 분석·Telemetry, 저장 슬롯 관리는 포함하지 않는다.
-- Phase 0 Bridge는 Runtime 비권위 Stub이고 Blueprint 노드만 `DevelopmentOnly`다. 항상
-  성공하며 월드를 바꾸지 않으므로 Blueprint와 C++ 모두 Production 결과로 사용하면 안 된다.
 - `WorldRevision`은 성공한 Facility Command에 대해서만 증가한다. Queue 진행, Population,
   Phase, Registry 변화까지 포괄하는 전역 변경 번호가 아니다.
 
@@ -1652,12 +1683,12 @@ Spawn/Despawn을 구현하지 않는다. 프로젝트 NPC가 `IFFZSQueueAgent` C
 | Runtime Facility와 Anchor | `Source/FF_ZoneSystem/Public/FF_FFZSFacilityActor.h`, `Source/FF_ZoneSystem/Public/FF_FFZSFacilityAnchorComponent.h` |
 | Queue 상태 머신 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueComponent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueComponent.cpp` |
 | Queue Agent 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSQueueAgent.h`, `Source/FF_ZoneSystem/Private/FF_FFZSQueueAgent.cpp` |
-| 1 cm 격자 연산·내장 Preset | `Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h`, `Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp` |
+| 1 cm 격자 연산·명령 지문 | `Source/FF_ZoneSystem/Public/FF_FFZSGridLibrary.h`, `Source/FF_ZoneSystem/Private/FF_FFZSGridLibrary.cpp` |
 | 외부 정책 계약 | `Source/FF_ZoneSystem/Public/FF_FFZSExternalPolicy.h`, `Source/FF_ZoneSystem/Private/FF_FFZSExternalPolicy.cpp` |
 | Preview | `Source/FF_ZoneSystem/Public/FF_FFZSPlacementPreviewActor.h`, `Source/FF_ZoneSystem/Private/FF_FFZSPlacementPreviewActor.cpp` |
 | Settings | `Source/FF_ZoneSystem/Public/FF_FFZSDeveloperSettings.h`, `Source/FF_ZoneSystem/Private/FF_FFZSDeveloperSettings.cpp` |
-| Phase 0 Runtime Stub | `Source/FF_ZoneSystem/Public/FF_FFZSPhase0Bridge.h`, `Source/FF_ZoneSystem/Private/FF_FFZSPhase0Bridge.cpp` |
 | Runtime Unit Test | `Source/FF_ZoneSystem/Private/Tests/` |
+| 자동화 전용 시설 Fixture | `Source/FF_ZoneSystem/Public/Tests/FF_FFZSTestFixtures.h`, `Source/FF_ZoneSystem/Private/Tests/FF_FFZSTestFixtures.cpp` |
 | Editor Integration·SaveGame Test | `Source/FF_ZoneSystemTests/Private/` |
 
 이 문서는 현재 소스 구현을 기준으로 작성되었다. API, Snapshot Schema, 단위 계약 또는

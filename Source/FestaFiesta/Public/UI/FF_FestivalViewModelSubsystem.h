@@ -152,9 +152,57 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Stage")
 	FFF_OnStageViewChanged OnStageViewChanged;
 
-	/** 남은 시간이 1초 단위로 바뀔 때만 쏜다. 매 틱 쏘면 위젯이 초당 수십 번 갱신된다. */
+	/**
+	 * 남은 시간이 1초 단위로 바뀔 때만 쏜다. 매 틱 쏘면 위젯이 초당 수십 번 갱신된다.
+	 *
+	 * 2026-08-11부터 Stage 시스템의 `OnRemainingSecondsChanged`를 **구독해서 중계**한다.
+	 * 폴링하지 않는다. 위젯 입장에서는 바뀐 게 없다.
+	 */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Stage")
 	FFF_OnIntMetricChanged OnRemainingSecondsChanged;
+
+	// --- Command (Stage 진행 요청) ---
+	//
+	// !! 위젯은 Stage 서브시스템을 직접 부르지 않는다 !!
+	// UI 규칙 2 — "ViewModel로 읽고 Command로 요청한다". 여기가 그 Command 계층이다.
+	// 소유자 시스템이 바뀌어도 위젯을 고치지 않기 위해 한 겹 둔다.
+	//
+	// 낙관적 갱신을 하지 않는다. 요청만 보내고 화면은 결과 이벤트(OnStageViewChanged)로 갱신된다.
+
+	/** Report에서 `다음 날`을 눌렀을 때. Report가 아니거나 마지막 날이면 아무 일도 하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	void RequestAdvanceToNextDay();
+
+	/** 스킵 가능한 단계를 건너뛴다. 불가능한 단계면 Stage 시스템이 무시한다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	void RequestSkipCurrentStage();
+
+	/** `다음 날` 버튼을 켤지. Report 단계이고 마지막 날이 아닐 때만 true. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Command")
+	bool CanAdvanceToNextDay() const;
+
+	/**
+	 * 마지막 날인지. **UI가 총 일수를 알지 못하게 하려고** Stage 시스템의 판단을 그대로 중계한다.
+	 * `CanAdvanceToNextDay()`가 false인 이유를 화면이 구분해서 설명하려면 이게 필요하다
+	 * (마지막 날이라서 vs 아직 Report가 아니라서).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
+	bool IsFinalDay() const;
+
+	/** 지금 Report 단계인지. Stage enum을 위젯이 직접 비교하지 않게 한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
+	bool IsReportStage() const;
+
+	/**
+	 * `건너뛰기` 버튼을 켤지.
+	 *
+	 * !! 근사값이다 !! 실제 판정은 DaySequence 표의 `bSkippable`이고 그걸 읽는
+	 * `UFF_FestivalStageSubsystem::IsCurrentStageSkippable()`이 **private이라 C++에서 못 부른다.**
+	 * public + BlueprintPure로 열어 달라고 요청해 뒀다 (UI_API.md).
+	 * 열리면 이 함수 본문을 그 호출로 교체한다 — 위젯은 손대지 않는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Command")
+	bool CanSkipCurrentStage() const;
 
 	// --- 스텁 전용. 실제 소유자 구현이 붙으면 삭제한다 ---
 
@@ -184,6 +232,16 @@ public:
 protected:
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	/**
+	 * Stage 시스템이 초 단위로 쏘는 값을 받아 위젯에 중계한다.
+	 *
+	 * 여기서 한 번 더 중복을 걸러낸다. Stage 쪽 `LastBroadcastSeconds`가 **Stage 전환 시
+	 * 초기화되지 않아서**, 새 단계의 첫 초가 이전 값과 같으면 방송이 아예 안 오고,
+	 * 반대로 Sync와 겹쳐 같은 값이 두 번 올 수도 있다. 위젯이 그걸 몰라도 되게 한다.
+	 */
+	UFUNCTION()
+	void HandleRemainingSecondsChanged(int32 NewSeconds);
 
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
@@ -226,8 +284,11 @@ private:
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> CachedStageSubsystem;
 
-	/** 남은 시간 변화 감지용. 초 단위로 바뀔 때만 통지한다. */
+	/** 남은 시간 중복 방송 차단용. 구독 중계와 Sync가 같은 값을 두 번 쏘지 않게 한다. */
 	int32 LastBroadcastRemainingSeconds = INDEX_NONE;
+
+	/** 구독 직후 현재 남은 시간을 한 번 반영한다(Bind + Sync). 중복이면 아무것도 하지 않는다. */
+	void BroadcastRemainingSecondsIfChanged(int32 NewSeconds);
 
 	float PollAccumulator = 0.f;
 

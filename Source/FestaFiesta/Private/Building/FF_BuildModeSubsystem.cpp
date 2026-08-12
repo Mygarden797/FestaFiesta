@@ -1099,10 +1099,27 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 	// 기존 배치 세션을 건드리지 않고 갱신 실패만 반환한다.
 	APlayerController* Controller = GetLocalPlayerController();
 	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
-	if (!Controller || !ZoneSystem || !PlacementPreview)
+    if (!Controller || !ZoneSystem || !PlacementPreview)
 	{
 		return false;
-	}
+    }
+
+    // Re-read the selected Primary Data Asset before every authoritative preview rebuild.
+    // SelectedSpec is only a frame-local projection used for cursor math and UI; it is not
+    // allowed to become a second authored facility source.
+    UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
+    const UFFZSFacilityDefinition* SelectedDefinition = Catalog
+        ? Catalog->FindDefinition(SelectedFacilityDefinitionId)
+        : nullptr;
+    TArray<FText> DefinitionErrors;
+    if (!SelectedDefinition || !SelectedDefinition->IsDefinitionValid(DefinitionErrors))
+    {
+        bHasPlacementTarget = false;
+        PlacementPreview->SetActorHiddenInGame(true);
+        ShowStatus(TEXT("The selected facility Definition is unavailable or invalid."), true);
+        return false;
+    }
+    SelectedSpec = SelectedDefinition->Spec;
 
 	FHitResult GroundHit;
 	if (!TraceGroundUnderCursor(*Controller, GroundHit))
@@ -1177,14 +1194,19 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 {
 	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
-	if (!PlacementPreview || !ZoneSystem || CurrentZoneId.IsNone())
+	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
+	const UFFZSFacilityDefinition* Definition = Catalog
+		? Catalog->FindDefinition(SelectedFacilityDefinitionId)
+		: nullptr;
+	if (!PlacementPreview || !ZoneSystem || !Definition || CurrentZoneId.IsNone())
 	{
 		return;
 	}
 
 	// 월드 revision을 명령에 넣어 프리뷰 이후 다른 설치/철거가 발생한 오래된 명령이 Commit에서 통과하지 않게 한다.
-	PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommand(
-		SelectedSpec,
+	SelectedSpec = Definition->Spec;
+	PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
+		Definition,
 		CurrentZoneId,
 		CurrentPlacement,
 		ZoneSystem->GetWorldRevision());

@@ -1,6 +1,6 @@
 // FF_FFZSGridLibrary.cpp
 
-// 1 cm 좌표 변환, 압축 사각형 연산, 내장 Preset과 fingerprint를 구현.
+// 1 cm 좌표 변환, 압축 사각형 연산과 fingerprint를 구현.
 // 흐름: 부작용 없는 순수 계산으로 입력 Spec을 Cell 집합과 안정 식별값으로 변환.
 // 불변식: 1 Cell=1cm 계약과 정수 오버플로 방어를 지키며 압축 영역은 정확한 합집합을 보존.
 // 실패/성능: 비용은 개별 셀 수가 아니라 사각형 수에 비례하며 비정상 면적 입력은 조기에 거절.
@@ -9,6 +9,8 @@
 #include "FF_FFZSGridLibrary.h"
 
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSFacilityDefinition.h"
+#include "Engine/AssetManager.h"
 #include "Misc/Crc.h"
 #include "Internationalization/Text.h"
 
@@ -24,8 +26,6 @@ namespace
 {
     // 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다. 
     constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 1'000'000;
-    constexpr int32 LegacyMeterCellScale = 100;
-
     bool IsPositiveCellProductWithinLimit(const int64 Width, const int64 Height, const int64 CellLimit)
     {
         // Width*Height를 먼저 계산하지 않아 오버플로를 피한다.
@@ -96,58 +96,6 @@ namespace
         return UFFZSGridLibrary::CanonicalizeCellRects(Working);
     }
 
-    FFFZSAnchorDefinition MakeAnchor(
-        const EFFZSAnchorType Type,
-        const int32 Index,
-        const FVector& LocationCm,
-        const float YawDegrees = 0.0f)
-    {
-        FFFZSAnchorDefinition Anchor;
-        Anchor.Type = Type;
-        Anchor.Index = Index;
-        Anchor.LocalTransform = FTransform(FRotator(0.0f, YawDegrees, 0.0f), LocationCm);
-        return Anchor;
-    }
-
-    FFFZSCellRect MakeLegacyMeterRect(
-        const int32 MinX,
-        const int32 MinY,
-        const int32 MaxX,
-        const int32 MaxY)
-    {
-        return FFFZSCellRect(
-            FIntPoint(MinX * LegacyMeterCellScale, MinY * LegacyMeterCellScale),
-            FIntPoint(MaxX * LegacyMeterCellScale, MaxY * LegacyMeterCellScale));
-    }
-
-    // 이전 1 m 프리셋의 물리적 queue 폭/길이를 그대로 보존하되 단일 셀 목록 대신 한 사각형으로 저장한다.
-    // QueueSplinePointsCm와 Anchor는 원래부터 cm였으므로 값을 바꾸지 않는다.
-     
-    void ConfigureStraightPrototypeQueue(FFFZSFacilitySpec& Spec, const int32 LegacyQueueColumn)
-    {
-        constexpr double LegacyCellSizeCm = 100.0;
-        const int32 FootprintWidthMeters = Spec.FootprintSizeCells.X / LegacyMeterCellScale;
-        const int32 FootprintHeightMeters = Spec.FootprintSizeCells.Y / LegacyMeterCellScale;
-        const int32 FirstQueueRow = FootprintHeightMeters;
-        const double QueueXcm =
-            (LegacyQueueColumn + 0.5 - FootprintWidthMeters * 0.5) * LegacyCellSizeCm;
-        const double QueueStartYcm =
-            (FootprintHeightMeters * 0.5 + 0.5) * LegacyCellSizeCm;
-        const double QueueTailYcm = QueueStartYcm +
-            (Spec.QueueRules.MaxWaitingAgents - 1) * Spec.QueueRules.SlotSpacingCm;
-        const int32 LastQueueRow = FMath::FloorToInt(
-            QueueTailYcm / LegacyCellSizeCm + FootprintHeightMeters * 0.5);
-
-        Spec.QueueReservedRects.Add(MakeLegacyMeterRect(
-            LegacyQueueColumn,
-            FirstQueueRow,
-            LegacyQueueColumn + 1,
-            LastQueueRow + 1));
-        Spec.QueueSplinePointsCm = {
-            FVector(QueueXcm, QueueStartYcm, 0.0),
-            FVector(QueueXcm, QueueTailYcm, 0.0)
-        };
-    }
 }
 
 int32 UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility()
@@ -159,9 +107,21 @@ int32 UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility()
     return FMath::Clamp(ConfiguredLimit, 1, AbsoluteMaxEnumeratedCellsPerFacility);
 }
 
+bool UFFZSGridLibrary::HasSafeFacilitySpecCardinality(const FFFZSFacilitySpec& Spec)
+{
+    return Spec.QueueReservedRects.Num() <= UFFZSDeveloperSettings::MaxQueueReservedRects &&
+        Spec.QueueReservedCells.Num() <= UFFZSDeveloperSettings::MaxLegacyQueueReservedCells &&
+        Spec.QueueSplinePointsCm.Num() <= UFFZSDeveloperSettings::MaxQueueSplinePoints &&
+        Spec.Anchors.Num() <= UFFZSDeveloperSettings::MaxFacilityAnchors &&
+        Spec.AllowedZoneIds.Num() <= UFFZSDeveloperSettings::MaxAllowedZoneIds &&
+        Spec.QueueRules.MaxWaitingAgents <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+        Spec.QueueRules.ServiceCapacity <= UFFZSDeveloperSettings::MaxFacilityServiceCapacity;
+}
+
 bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
 {
-    if (Spec.FootprintSizeCells.X <= 0 || Spec.FootprintSizeCells.Y <= 0 || Spec.ClearanceCells < 0)
+    if (Spec.FootprintSizeCells.X <= 0 || Spec.FootprintSizeCells.Y <= 0 ||
+        Spec.ClearanceCells < 0 || !HasSafeFacilitySpecCardinality(Spec))
     {
         return false;
     }
@@ -175,11 +135,6 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
     }
 
     TArray<FFFZSCellRect> LocalQueue = Spec.QueueReservedRects;
-    if (Spec.QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxMaterializedDebugCells)
-    {
-        // 새 스키마가 거대한 단일 셀 배열을 다시 도입하지 못하게 명시적으로 거부한다.
-        return false;
-    }
     for (const FIntPoint& Cell : Spec.QueueReservedCells)
     {
         if (Cell.X == MAX_int32 || Cell.Y == MAX_int32)
@@ -206,15 +161,28 @@ int32 UFFZSGridLibrary::NormalizeQuarterTurns(const int32 QuarterTurns)
     return ((QuarterTurns % 4) + 4) % 4;
 }
 
-FIntPoint UFFZSGridLibrary::RotateCell(const FIntPoint Cell, const int32 QuarterTurns)
+bool UFFZSGridLibrary::TryRotateCell(
+    const FIntPoint Cell,
+    const int32 QuarterTurns,
+    FIntPoint& OutRotatedCell)
 {
+    int64 X = Cell.X;
+    int64 Y = Cell.Y;
     switch (NormalizeQuarterTurns(QuarterTurns))
     {
-    case 1: return FIntPoint(-Cell.Y, Cell.X);
-    case 2: return FIntPoint(-Cell.X, -Cell.Y);
-    case 3: return FIntPoint(Cell.Y, -Cell.X);
-    default: return Cell;
+    case 1: X = -static_cast<int64>(Cell.Y); Y = Cell.X; break;
+    case 2: X = -static_cast<int64>(Cell.X); Y = -static_cast<int64>(Cell.Y); break;
+    case 3: X = Cell.Y; Y = -static_cast<int64>(Cell.X); break;
+    default: break;
     }
+    return TryIntPoint(X, Y, OutRotatedCell);
+}
+
+FIntPoint UFFZSGridLibrary::RotateCell(const FIntPoint Cell, const int32 QuarterTurns)
+{
+    FIntPoint Rotated = FIntPoint::ZeroValue;
+    TryRotateCell(Cell, QuarterTurns, Rotated);
+    return Rotated;
 }
 
 FFFZSCellRect UFFZSGridLibrary::RotateRect(const FFFZSCellRect& Rect, const int32 QuarterTurns)
@@ -512,11 +480,11 @@ bool UFFZSGridLibrary::TryMaterializeCellRects(
     OutCells.Reserve(static_cast<int32>(Area));
     for (const FFFZSCellRect& Rect : Canonical)
     {
-        for (int32 X = Rect.Min.X; X < Rect.Max.X; ++X)
+        for (int64 X = Rect.Min.X; X < static_cast<int64>(Rect.Max.X); ++X)
         {
-            for (int32 Y = Rect.Min.Y; Y < Rect.Max.Y; ++Y)
+            for (int64 Y = Rect.Min.Y; Y < static_cast<int64>(Rect.Max.Y); ++Y)
             {
-                OutCells.Emplace(X, Y);
+                OutCells.Emplace(static_cast<int32>(X), static_cast<int32>(Y));
             }
         }
     }
@@ -563,207 +531,6 @@ TArray<FIntPoint> UFFZSGridLibrary::GetReservedCells(
     return Result;
 }
 
-FFFZSFacilitySpec UFFZSGridLibrary::MakeBuiltInFacilitySpec(const EFFZSBuiltInFacilityPreset Preset)
-{
-    FFFZSFacilitySpec Spec;
-    Spec.SchemaVersion = 2;
-    Spec.ClearanceCells = 100;
-    Spec.QueueRules.SlotSpacingCm = 115.0f;
-    Spec.QueueRules.SlotArrivalToleranceCm = 25.0f;
-    Spec.QueueRules.NavigationProjectionExtentCm = 30.0f;
-    Spec.QueueRules.BlockedTimeoutSeconds = 5.0f;
-    Spec.QueueRules.MaxRepathAttempts = 2;
-
-    // FoodTruckBasic과 ToiletBasic은 승인된 작성 필드 값을 유지해야 하는 기준 Preset이다.
-    // 나머지 수치 Preset 값은 모두 프로토타입 가설이며,
-    // 운영 튜닝 전에 Playtest에서 측정해야 한다.
-    // FoodTruckBasic/ToiletBasic은 승인된 기준 수치이므로 저작 값의 회귀를 허용하지 않는다.
-    // 나머지 프리셋 수치는 플레이테스트로 측정하고 조정해야 하는 가설이며, 공통 기본값을 먼저
-    // 채운 뒤 case별 차이만 덮어써 누락 필드가 프리셋마다 달라지는 것을 막는다.
-    switch (Preset)
-    {
-    case EFFZSBuiltInFacilityPreset::FoodTruckBasic:
-    {
-        Spec.FacilityDefinitionId = TEXT("FD_Booth_FoodTruckBasic");
-        Spec.DisplayName = LOCTEXT("FoodTruckBasic", "Basic Food Truck");
-        Spec.Category = EFFZSFacilityCategory::Booth;
-        Spec.FootprintSizeCells = FIntPoint(600, 300);
-        Spec.QueueRules.MaxWaitingAgents = 12;
-        Spec.QueueRules.ServiceCapacity = 1;
-        Spec.QueueRules.ServiceDurationSeconds = 6.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 30.0f;
-        Spec.InstallCostKey = TEXT("Cost.FoodTruck.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.FoodTruck.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.FoodTruck.Basic");
-
-        // 구 1 m 프리셋의 U자형 16셀(각 100x100 cm)을 세 압축 사각형으로 보존한다.
-        Spec.QueueReservedRects = {
-            MakeLegacyMeterRect(5, 3, 6, 9),
-            MakeLegacyMeterRect(0, 8, 5, 9),
-            MakeLegacyMeterRect(0, 3, 1, 8)
-        };
-
-        Spec.QueueSplinePointsCm = {
-            FVector(250.0f, 200.0f, 0.0f),
-            FVector(250.0f, 750.0f, 0.0f),
-            FVector(-250.0f, 750.0f, 0.0f),
-            FVector(-250.0f, 200.0f, 0.0f)
-        };
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(250.0f, 200.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(250.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-250.0f, 200.0f, 0.0f), 90.0f)
-        };
-        break;
-    }
-    case EFFZSBuiltInFacilityPreset::ToiletBasic:
-    {
-        Spec.FacilityDefinitionId = TEXT("FD_Toilet_Basic");
-        Spec.DisplayName = LOCTEXT("ToiletBasic", "Basic Restroom");
-        Spec.Category = EFFZSFacilityCategory::Toilet;
-        Spec.FootprintSizeCells = FIntPoint(400, 400);
-        Spec.QueueRules.MaxWaitingAgents = 8;
-        Spec.QueueRules.ServiceCapacity = 2;
-        Spec.QueueRules.ServiceDurationSeconds = 4.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 30.0f;
-        Spec.InstallCostKey = TEXT("Cost.Toilet.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.Toilet.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.Toilet.Basic");
-
-        // 구 1 m 프리셋의 2열 x 12행 예약 폭을 한 사각형으로 보존한다.
-        Spec.QueueReservedRects = { MakeLegacyMeterRect(1, 4, 3, 16) };
-        Spec.QueueSplinePointsCm = {
-            FVector(0.0f, 250.0f, 0.0f),
-            FVector(0.0f, 1200.0f, 0.0f)
-        };
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(0.0f, 250.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-75.0f, 200.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 1, FVector(75.0f, 200.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-200.0f, 0.0f, 0.0f), 180.0f)
-        };
-        break;
-    }
-    case EFFZSBuiltInFacilityPreset::InfoBasic:
-    {
-        // 프로토타입 가설: 소형 1인 Desk Booth는 대기열 넘침 없이 방문객 6명을 처리한다.
-        Spec.FacilityDefinitionId = TEXT("FD_Info_Basic");
-        Spec.DisplayName = LOCTEXT("InfoBasic", "Basic Information Booth");
-        Spec.Category = EFFZSFacilityCategory::Info;
-        Spec.FootprintSizeCells = FIntPoint(300, 200);
-        Spec.QueueRules.MaxWaitingAgents = 6;
-        Spec.QueueRules.ServiceCapacity = 1;
-        Spec.QueueRules.ServiceDurationSeconds = 4.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 25.0f;
-        Spec.InstallCostKey = TEXT("Cost.Info.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.Info.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.Info.Basic");
-        ConfigureStraightPrototypeQueue(Spec, 1);
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(0.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(0.0f, 100.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-150.0f, 0.0f, 0.0f), 180.0f)
-        };
-        break;
-    }
-    case EFFZSBuiltInFacilityPreset::RestBasic:
-    {
-        // 프로토타입 가설: 출입 지점 2개와 대기 위치 4개가 소형 휴게 영역을 지원한다.
-        Spec.FacilityDefinitionId = TEXT("FD_Rest_Basic");
-        Spec.DisplayName = LOCTEXT("RestBasic", "Basic Rest Area");
-        Spec.Category = EFFZSFacilityCategory::Rest;
-        Spec.FootprintSizeCells = FIntPoint(400, 300);
-        Spec.QueueRules.MaxWaitingAgents = 4;
-        Spec.QueueRules.ServiceCapacity = 2;
-        Spec.QueueRules.ServiceDurationSeconds = 12.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 60.0f;
-        Spec.InstallCostKey = TEXT("Cost.Rest.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.Rest.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.Rest.Basic");
-        ConfigureStraightPrototypeQueue(Spec, 1);
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(-50.0f, 200.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-75.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 1, FVector(75.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-200.0f, 0.0f, 0.0f), 180.0f)
-        };
-        break;
-    }
-    case EFFZSBuiltInFacilityPreset::PerformanceBasic:
-    {
-        // 프로토타입 가설: Gate가 2개인 Stage Footprint는 16명 규모의 입장 Queue를 수용한다.
-        Spec.FacilityDefinitionId = TEXT("FD_Performance_Basic");
-        Spec.DisplayName = LOCTEXT("PerformanceBasic", "Basic Performance Stage");
-        Spec.Category = EFFZSFacilityCategory::Performance;
-        Spec.FootprintSizeCells = FIntPoint(800, 500);
-        Spec.QueueRules.MaxWaitingAgents = 16;
-        Spec.QueueRules.ServiceCapacity = 2;
-        Spec.QueueRules.ServiceDurationSeconds = 10.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 45.0f;
-        Spec.InstallCostKey = TEXT("Cost.Performance.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.Performance.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.Performance.Basic");
-        ConfigureStraightPrototypeQueue(Spec, 3);
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(-50.0f, 300.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-125.0f, 250.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 1, FVector(125.0f, 250.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-400.0f, 0.0f, 0.0f), 180.0f)
-        };
-        break;
-    }
-    case EFFZSBuiltInFacilityPreset::SafetyBasic:
-    {
-        // 프로토타입 가설: 대응 Station 2개가 짧은 제한 시간 내에 대기 방문객 6명을 처리한다.
-        Spec.FacilityDefinitionId = TEXT("FD_Safety_Basic");
-        Spec.DisplayName = LOCTEXT("SafetyBasic", "Basic Safety Post");
-        Spec.Category = EFFZSFacilityCategory::Safety;
-        Spec.FootprintSizeCells = FIntPoint(400, 300);
-        Spec.QueueRules.MaxWaitingAgents = 6;
-        Spec.QueueRules.ServiceCapacity = 2;
-        Spec.QueueRules.ServiceDurationSeconds = 8.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 15.0f;
-        Spec.InstallCostKey = TEXT("Cost.Safety.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.Safety.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.Safety.Basic");
-        ConfigureStraightPrototypeQueue(Spec, 1);
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(-50.0f, 200.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-75.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 1, FVector(75.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-200.0f, 0.0f, 0.0f), 180.0f)
-        };
-        break;
-    }
-    case EFFZSBuiltInFacilityPreset::PhotoSpotBasic:
-    {
-        // 프로토타입 가설: 상호작용 지점 1개와 슬롯 8개가 촬영 Queue의 넘침을 방지한다.
-        Spec.FacilityDefinitionId = TEXT("FD_PhotoSpot_Basic");
-        Spec.DisplayName = LOCTEXT("PhotoSpotBasic", "Basic Photo Spot");
-        Spec.Category = EFFZSFacilityCategory::PhotoSpot;
-        Spec.FootprintSizeCells = FIntPoint(500, 300);
-        Spec.QueueRules.MaxWaitingAgents = 8;
-        Spec.QueueRules.ServiceCapacity = 1;
-        Spec.QueueRules.ServiceDurationSeconds = 5.0f;
-        Spec.QueueRules.AbandonAfterSeconds = 25.0f;
-        Spec.InstallCostKey = TEXT("Cost.PhotoSpot.Basic");
-        Spec.RevenueRuleKey = TEXT("Revenue.PhotoSpot.Basic");
-        Spec.ExperienceEffectKey = TEXT("Experience.PhotoSpot.Basic");
-        ConfigureStraightPrototypeQueue(Spec, 2);
-        Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(0.0f, 200.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Service, 0, FVector(0.0f, 150.0f, 0.0f), -90.0f),
-            MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-250.0f, 0.0f, 0.0f), 180.0f)
-        };
-        break;
-    }
-    default:
-        Spec.SchemaVersion = 0;
-        break;
-    }
-
-    return Spec;
-}
 
 TArray<FName> UFFZSGridLibrary::GetAcceptedGameplayZoneIds()
 {
@@ -791,11 +558,51 @@ FFFZSCommand UFFZSGridLibrary::MakeInstallCommand(const FFFZSFacilitySpec& Spec,
     Command.ExpectedWorldRevision = ExpectedWorldRevision;
     Command.Type = EFFZSCommandType::Install;
     Command.FacilityInstanceId = FGuid::NewGuid();
-    Command.FacilitySpec = Spec;
+    // Legacy Blueprint assets may still pass a copied Spec. In production the ID is
+    // only a lookup key: rebuild the command from the registered PrimaryDataAsset so
+    // this compatibility surface cannot become a second authored source.
+    const FFFZSFacilitySpec* EffectiveSpec = &Spec;
+#if WITH_DEV_AUTOMATION_TESTS
+    const bool bUseSyntheticAutomationSpec = GIsAutomationTesting;
+#else
+    constexpr bool bUseSyntheticAutomationSpec = false;
+#endif
+    if (!bUseSyntheticAutomationSpec && !Spec.FacilityDefinitionId.IsNone())
+    {
+        if (UAssetManager* AssetManager = UAssetManager::GetIfInitialized())
+        {
+            const FPrimaryAssetId AssetId(
+                UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(),
+                Spec.FacilityDefinitionId);
+            UFFZSFacilityDefinition* Definition =
+                AssetManager->GetPrimaryAssetObject<UFFZSFacilityDefinition>(AssetId);
+            if (!Definition)
+            {
+                Definition = Cast<UFFZSFacilityDefinition>(
+                    AssetManager->GetPrimaryAssetPath(AssetId).TryLoad());
+            }
+            if (Definition)
+            {
+                EffectiveSpec = &Definition->Spec;
+            }
+        }
+    }
+    Command.FacilitySpec = *EffectiveSpec;
     Command.ZoneId = ZoneId;
     Command.Placement = Placement;
     Command.Placement.QuarterTurns = NormalizeQuarterTurns(Command.Placement.QuarterTurns);
     return Command;
+}
+
+FFFZSCommand UFFZSGridLibrary::MakeInstallCommandFromDefinition(
+    const UFFZSFacilityDefinition* Definition,
+    const FName ZoneId,
+    const FFFZSGridPlacement Placement,
+    const int64 ExpectedWorldRevision)
+{
+    return Definition
+        ? MakeInstallCommand(Definition->Spec, ZoneId, Placement, ExpectedWorldRevision)
+        : FFFZSCommand{};
 }
 
 // 내구성 있는 Payload 동일성 문자열이다. CommandId는 영수증 조회 키이므로 의도적으로 제외하고,
@@ -806,6 +613,10 @@ FFFZSCommand UFFZSGridLibrary::MakeInstallCommand(const FFFZSFacilitySpec& Spec,
  
 FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
 {
+    if (!HasSafeFacilitySpecCardinality(Command.FacilitySpec))
+    {
+        return TEXT("ZFCommand.v4.InvalidUnsafeFacilitySpecCardinality");
+    }
     FString Canonical;
     Canonical.Reserve(2048);
 
@@ -914,6 +725,27 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     AppendString(TEXT("spec.revenue_rule_key"), Spec.RevenueRuleKey.ToString());
     AppendString(TEXT("spec.experience_effect_key"), Spec.ExperienceEffectKey.ToString());
     AppendString(TEXT("spec.visual_mesh"), Spec.VisualMesh.ToSoftObjectPath().ToString());
+    // 기존 Schema 2 명령/영수증은 세 필드가 없었으며 그 의미는 SourceMeshSize + identity였다.
+    // 기본값일 때 생략하면 기존 저장의 멱등성 fingerprint와 호환되고, 새 동작을 선택한 경우에만
+    // 명시적으로 확장해 서로 다른 시각 사양을 같은 명령으로 취급하지 않는다.
+    const bool bHasExactVisualOffset =
+        Spec.VisualOffsetCm.X != 0.0 ||
+        Spec.VisualOffsetCm.Y != 0.0 ||
+        Spec.VisualOffsetCm.Z != 0.0;
+    const bool bHasExactVisualRotation =
+        Spec.VisualRotation.Pitch != 0.0f ||
+        Spec.VisualRotation.Yaw != 0.0f ||
+        Spec.VisualRotation.Roll != 0.0f;
+    if (Spec.VisualSizingMode != EFFZSVisualSizingMode::SourceMeshSize ||
+        bHasExactVisualOffset ||
+        bHasExactVisualRotation)
+    {
+        AppendInt(TEXT("spec.visual_sizing_mode"), static_cast<int64>(Spec.VisualSizingMode));
+        AppendVector(TEXT("spec.visual_offset_cm"), Spec.VisualOffsetCm);
+        AppendFloat(TEXT("spec.visual_rotation.pitch"), Spec.VisualRotation.Pitch);
+        AppendFloat(TEXT("spec.visual_rotation.yaw"), Spec.VisualRotation.Yaw);
+        AppendFloat(TEXT("spec.visual_rotation.roll"), Spec.VisualRotation.Roll);
+    }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
     return Canonical;
 }

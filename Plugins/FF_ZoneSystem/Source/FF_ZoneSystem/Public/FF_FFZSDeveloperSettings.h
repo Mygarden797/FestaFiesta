@@ -35,6 +35,17 @@ public:
 	
     static constexpr int32 MaxMaterializedDebugCells = 10000;
 	// 대형 1 cm 영역을 디버그용 개별 셀 배열로 펼칠 때 허용하는 고정 상한.
+
+    // Per-Definition collection guards. These are safety contracts, not per-facility tuning data.
+    static constexpr int32 MaxQueueReservedRects = 64;
+    static constexpr int32 MaxLegacyQueueReservedCells = 256;
+    static constexpr int32 MaxQueueSplinePoints = 64;
+    static constexpr int32 MaxFacilityAnchors = 64;
+    static constexpr int32 MaxAllowedZoneIds = 64;
+    static constexpr int32 MaxQueueWaitingAgents = 512;
+    static constexpr int32 MaxFacilityServiceCapacity = 32;
+    static constexpr int32 MaxQueueRuntimeEntries = 1024;
+    static constexpr int32 MaxQueueRepathAttempts = 32;
 	
     static constexpr float DefaultGroundSampleSpacingCm = 100.0f;
 	// 지면 검증 밀도는 1 cm 점유 해상도와 분리한다. 기본 100 cm마다 대표 표본 하나를 검사.

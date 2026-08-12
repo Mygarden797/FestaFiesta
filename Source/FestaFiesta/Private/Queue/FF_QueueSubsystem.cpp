@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Queue/FF_QueueSubsystem.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -42,12 +43,32 @@ void UFF_QueueSubsystem::RebuildFacilityIndex()
 	}
 }
 
-void UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane)
+bool UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane)
 {
-	if (FacilityId == INDEX_NONE)
+	const bool bConfigValid =
+		Config.MaxCapacityMembers >= 0 &&
+		Config.MaxCapacityMembers <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+		Config.ConcurrentServiceSlots > 0 &&
+		Config.ConcurrentServiceSlots <= UFFZSDeveloperSettings::MaxFacilityServiceCapacity &&
+		FMath::IsFinite(Config.ServiceSecondsPerMember) &&
+		Config.ServiceSecondsPerMember > 0.0f &&
+		!Config.ExitLocation.ContainsNaN();
+	const bool bLaneValid =
+		Lane.PolylinePoints.Num() <= UFFZSDeveloperSettings::MaxQueueSplinePoints &&
+		Lane.ExplicitSlotTransforms.Num() <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+		FMath::IsFinite(Lane.SlotSpacingCm) && Lane.SlotSpacingCm > 0.0f &&
+		FMath::IsFinite(Lane.SlotYawDegrees) &&
+		!Lane.HeadLocation.ContainsNaN() && !Lane.TailDirection.ContainsNaN() &&
+		!Lane.PolylinePoints.ContainsByPredicate(
+			[](const FVector& Point) { return Point.ContainsNaN(); }) &&
+		!Lane.ExplicitSlotTransforms.ContainsByPredicate(
+			[](const FTransform& Transform) { return Transform.ContainsNaN(); });
+	if (FacilityId == INDEX_NONE || !bConfigValid || !bLaneValid)
 	{
 		UE_LOG(LogFestaFiestaQueue, Warning, TEXT("[대기열] FacilityId=INDEX_NONE 등록 요청을 무시했다."));
-		return;
+		UE_LOG(LogFestaFiestaQueue, Warning,
+			TEXT("[Queue] Rejected unsafe facility registration for Facility=%d."), FacilityId);
+		return false;
 	}
 
 	if (FFF_FacilityQueue* Existing = FindQueue(FacilityId))
@@ -56,7 +77,7 @@ void UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfi
 		UE_LOG(LogFestaFiestaQueue, Log, TEXT("[대기열] Facility=%d 재등록 — 기존 대기열을 초기화한다."), FacilityId);
 		Existing->Configure(FacilityId, Config, Lane);
 		DirtySlotFacilities.AddUnique(FacilityId);
-		return;
+		return true;
 	}
 
 	TUniquePtr<FFF_FacilityQueue> NewQueue = MakeUnique<FFF_FacilityQueue>();
@@ -71,6 +92,7 @@ void UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfi
 	RebuildFacilityIndex();
 
 	DirtySlotFacilities.AddUnique(FacilityId);
+	return true;
 }
 
 bool UFF_QueueSubsystem::UnregisterFacility(int32 FacilityId)
