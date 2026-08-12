@@ -59,13 +59,37 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `TimeScale`                            | `float`             | 배속값 (1/2/4)                       |
 | `OnStageChanged`                       | `FOnStageChanged`   | (PreviousStage, NewStage)         |
 | `RequestTransition(EFF_FestivalStage)` |                     | Stage 전환 요청                       |
-| `IsReconfigureAllowed()`               | `bool`              | 배치 변경 허용 여부 (Setup/MorningCheck만) |
+| `IsReconfigureAllowed()`               | `bool`              | 배치 변경 허용 여부 (Setup/PromotionPreview/MorningCheck) |
 | `SetTimeScale(float)`                  |                     | 배속 변경                             |
 | `IsMainProgramLocked()`                | `bool`              | 메인 공연 배속 잠금 구간 여부                 |
 | `AdvanceToNextDay()`                   |                     | Report에서 다음 날 진입                  |
+| `OnRemainingSecondsChanged`            | `int32 NewSeconds`  | 남은 시간이 초 단위로 바뀔 때 (2026-08-11 전 단계로 확장) |
+| `OnFestivalEnded`                      | (인자 없음)             | Day3 Report 종료 시 1회                |
+| `SkipCurrentStage()`                   |                     | 스킵 가능한 단계를 즉시 넘김 (2026-08-11 추가)   |
+| `IsLiveStage()` / `IsReportStage()`    | `bool`              | 단계 판정 (2026-08-11 추가)              |
+| `IsFinalDay()`                         | `bool`              | 마지막 날 여부. **UI가 총 일수를 하드코딩하지 않게 해줍니다** (2026-08-11 추가) |
+| `OnMainProgramStarted`                 | `FString EventLabel` | 메인 공연 관련 알림 (2026-08-11 추가). **아래 주의 3건 참고** |
+| `OnMainProgramEnded`                   | `FString EventLabel` | 메인 공연 잠금 구간 종료 (2026-08-11 추가) |
+| `GetFacilityServiceRatePerMinute()`     | `float`             | (Queue) 시설 실측 처리율. 미등록 시설은 0 — **나누지 말 것** |
+
+**`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
+
+1. **이 이벤트는 공연 "시작"이 아니라 "배속 잠금 시작" 시점입니다.**
+   잠금은 `TriggerSeconds - MainProgramLockLeadSeconds`부터 시작하고 리드타임 기본값이 10초라,
+   **실제 공연보다 10초 먼저** 옵니다. 문구를 `다대불꽃쇼 시작!`으로 쓰면 틀립니다 — `곧 시작`으로 씁니다.
+   리드타임이 60초로 바뀌면 오차가 그만큼 커집니다.
+2. **메인 공연이 그날의 마지막 이벤트면 종료 알림이 잘못 발생합니다.**
+   `IsMainProgramLocked()`의 `LockEnd`가 *다음* 이벤트 시각인데 다음이 없으면 `LockEnd = TriggerSeconds`가 되어,
+   잠금 구간이 `[시작-10초, 시작]`이 됩니다. 그러면 **공연이 시작하는 순간 `OnMainProgramEnded`가
+   빈 라벨(`""`)로 발생**합니다. `DT_ProgramSchedule`에 메인 공연 뒤 이벤트가 하나라도 있으면 문제없습니다.
+3. **`EventLabel`이 `FString`이라 현지화 대상이 아닙니다.**
+   전 세계 축제로 확장하는 제품이라 프로그램 이름은 `FText`가 맞습니다.
+   UI가 `FText::FromString`으로 감싸면 화면에는 뜨지만 번역에서 빠집니다.
+   근본 해결은 `FFF_LiveTriggerEvent::EventLabel`을 `FText`로 바꾸는 것입니다 — 강민서 확인 필요.
 
 **삭제된 것**: `CurrentSlot` (하루 4타임 구조 없어짐, Live는 하루에 한 번)
-**UI 사용처**: 상단 바(Stage/Day/시계), Morning Check 진입 판정, 배속 버튼 활성/비활성(IsMainProgramLocked 참조)
+**UI 사용처**: 상단 바(Stage/Day/시계), Morning Check 진입 판정, 배속 버튼 활성/비활성(IsMainProgramLocked 참조),
+Report의 `다음 날` 버튼(`IsReportStage` + `IsFinalDay`로 게이팅)
 
 **요청** — `RemainingTime`이 매 틱 바뀌므로 UI가 폴링해야 합니다.
 초 단위로 바뀔 때만 쏘는 델리게이트가 있으면 좋겠습니다. 없으면 UI 쪽에서 0.1초 폴링 + 변화 감지로 처리하겠습니다.
@@ -79,6 +103,22 @@ GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
 ->OnRemainingSecondsChanged.AddDynamic(this, &YourClass::YourHandler);
 
 이거 구독하시면 폴링 없이 초 단위로 바뀔 때만 UI 갱신하시면 됩니다.
+
+**✅ 처리 완료 (2026-08-11, 백종태)** — `UFF_FestivalViewModelSubsystem`이 구독으로 전환하고
+Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 바로 물렸습니다. 감사합니다.
+
+**남은 요청 2건 (백종태 → 강민서)**
+
+1. **`IsCurrentStageSkippable()`을 `public` + `BlueprintPure`로 열어주세요.**
+   지금 `private`이라 **블루프린트는 부를 수 있는데 C++에서는 못 부릅니다.**
+   그래서 ViewModel의 `CanSkipCurrentStage()`가 "Live도 Report도 아니면 true"라는 근사값을 쓰고 있습니다.
+   DaySequence 표에서 `bSkippable=false`인 단계도 버튼이 켜져 보일 수 있습니다.
+   열어주시면 ViewModel 본문만 교체하고 위젯은 손대지 않습니다.
+
+2. **`OnRemainingSecondsChanged`가 Stage 전환 직후 값을 놓칠 수 있습니다.**
+   `LastBroadcastSeconds`가 전환 시 초기화되지 않아서, 새 단계의 첫 정수 초가 이전 값과 같으면
+   방송이 오지 않습니다. `RequestTransition`에서 `LastBroadcastSeconds = -1`로 리셋하면 해결됩니다.
+   UI 쪽은 전환 시 직접 현재값을 읽어 맞추는 방어를 넣어 뒀으니 급하지는 않습니다.
 
 ---
 
@@ -275,6 +315,33 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 **요청** — 이 구조체를 UI에 넘기는 경로를 정해야 합니다. 원하는 형태 알려주시면 맞추겠습니다
 (예: "선택된 NPC 1명의 마지막 결정"을 돌려주는 Getter).
 
+### 유료 프로그램 예약 (2026-08-11 신설)
+
+- **헤더**: `Public/NPC/Party/FF_ProgramReservation.h`, `FF_ProgramReservationReturnTrip.h`
+- **스펙**: `data/metadata/spec/reservation_program_spec.md`
+- **상태**: 규칙·자료구조 `구현완료`. **UI가 읽을 창구는 아직 없습니다**
+
+`FFF_ProgramReservation`·`FFF_ReservationCandidateGroup`이 `BlueprintType` + `BlueprintReadOnly`라
+블루프린트에서 값은 볼 수 있지만, **예약 목록을 돌려주는 서브시스템 Getter가 없습니다.**
+현재 공개된 것은 정적 규칙 클래스(`FFF_ProgramReservationRules`)입니다.
+
+**이 시스템이 UI 작업을 새로 만듭니다 — 담당은 백종태입니다 (2026-08-12 확인).**
+
+> 플레이어가 프로그램을 사는 시점은 Setup·MorningCheck이고, 그때 NPC는 아직 스폰되지 않았다.
+> 그래서 예약을 개체에 붙이지 않고 슬롯을 먼저 만들어 두고 그룹을 배정한다. — 헤더 주석
+
+즉 **Setup·MorningCheck에 유료 프로그램 구매·예약 화면**이 필요합니다. 8/14 이후 일정에 넣습니다.
+
+**요청 (백종태 → 김시리)** — 화면을 만들려면 다음이 필요합니다. 형태는 맞춰 드립니다.
+
+1. 구매 가능한 프로그램 목록 (이름·가격·정원·시각) — `Setup`·`MorningCheck`에서 요청 시
+2. 현재 예약 상태 (슬롯 수, 배정된 그룹 수, 남은 자리)
+3. 구매·취소 **Command** (UI가 상태를 직접 쓰지 않습니다. 실패 시 이유를 결과로 받습니다)
+4. 예약 변경 시 알려주는 델리게이트
+
+시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
+게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
+
 ### 아직 없는 것
 
 `UFF_FestivalProgressionSubsystem`(경제·Gold·일차 결과·저장) — 아래 "UI가 필요한데 없는 것" 표 참고.
@@ -302,7 +369,20 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 | TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | 더미 0      |
 | TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | 더미 0      |
 | Stage / Day       | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged`         | **진짜 값**  |
-| 남은 시간             | `GetRemainingSeconds()`               | `OnRemainingSecondsChanged`  | **진짜 값**  |
+| 남은 시간             | `GetRemainingSeconds()`               | `OnRemainingSecondsChanged`  | **진짜 값 · 구독 중계** |
+
+### Command (2026-08-11 신설)
+
+**위젯은 다른 시스템의 함수를 직접 부르지 않습니다.** 쓰기 요청은 전부 여기를 거칩니다(원칙 1).
+낙관적 갱신을 하지 않으므로, 호출한 쪽이 화면을 직접 바꾸지 말고 결과 이벤트를 기다립니다.
+
+| Command                     | 활성 조건 Getter          | 위임 대상                                 |
+| --------------------------- | -------------------- | ------------------------------------- |
+| `RequestAdvanceToNextDay()` | `CanAdvanceToNextDay()` | `UFF_FestivalStageSubsystem::AdvanceToNextDay()` |
+| `RequestSkipCurrentStage()` | `CanSkipCurrentStage()` | `UFF_FestivalStageSubsystem::SkipCurrentStage()` |
+
+- `CanAdvanceToNextDay()` = `IsReportStage() && !IsFinalDay()`. 총 일수를 UI가 모릅니다.
+- `CanSkipCurrentStage()`는 **근사값**입니다 — 위 "남은 요청 2건" 1번 참고.
 
 ### 값 규격 (2026-08-06 UI 결정)
 
@@ -421,3 +501,5 @@ Gold는 "이걸 살 수 있나"(가격 대비), 매출은 전날 대비 증감�
 | 2026-08-06 | 백종태 | 문서 신설. 현재 리포에서 확인한 API를 초기 채움                                                                  |
 | 2026-08-06 | 백종태 | Revenue를 축제 누적으로 확정하고 `TodayRevenue`·`Gold` 분리. 갱신 주기를 일정 틱으로 확정. Satisfaction 이중 지표의 화면 배치 결정 |
 | 2026-08-06 | 김시리 | `UFF_NpcNeedMetricsSubsystem`·`FFF_DestinationDecision` 항목 추가                                  |
+| 2026-08-11 | 백종태 | Stage 표에 `SkipCurrentStage`·`IsFinalDay`·`IsLiveStage`·`IsReportStage`·`OnFestivalEnded` 반영. 남은 시간을 폴링→구독으로 전환 완료 표시. ViewModel Command 2종 신설. 강민서에게 남은 요청 2건 기록 |
+| 2026-08-12 | 백종태 | `OnMainProgramStarted`·`OnMainProgramEnded` 항목과 사용 주의 3건 추가. 유료 프로그램 예약 절 신설 — UI 담당 확정과 필요 API 4건 요청 |
