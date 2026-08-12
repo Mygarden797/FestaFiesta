@@ -10,7 +10,7 @@
 
 namespace
 {
-    constexpr int32 LegacyMeterCellScale = 100;
+    constexpr int32 TestFixtureLegacyMeterCellScale = 100;
 
     FFFZSAnchorDefinition MakeAnchor(
         const EFFZSAnchorType Type,
@@ -32,15 +32,15 @@ namespace
         const int32 MaxY)
     {
         return FFFZSCellRect(
-            FIntPoint(MinX * LegacyMeterCellScale, MinY * LegacyMeterCellScale),
-            FIntPoint(MaxX * LegacyMeterCellScale, MaxY * LegacyMeterCellScale));
+            FIntPoint(MinX * TestFixtureLegacyMeterCellScale, MinY * TestFixtureLegacyMeterCellScale),
+            FIntPoint(MaxX * TestFixtureLegacyMeterCellScale, MaxY * TestFixtureLegacyMeterCellScale));
     }
 
     void ConfigureStraightQueue(FFFZSFacilitySpec& Spec, const int32 LegacyQueueColumn)
     {
         constexpr double LegacyCellSizeCm = 100.0;
-        const int32 FootprintWidthMeters = Spec.FootprintSizeCells.X / LegacyMeterCellScale;
-        const int32 FootprintHeightMeters = Spec.FootprintSizeCells.Y / LegacyMeterCellScale;
+        const int32 FootprintWidthMeters = Spec.FootprintSizeCells.X / TestFixtureLegacyMeterCellScale;
+        const int32 FootprintHeightMeters = Spec.FootprintSizeCells.Y / TestFixtureLegacyMeterCellScale;
         const int32 FirstQueueRow = FootprintHeightMeters;
         const double QueueXcm =
             (LegacyQueueColumn + 0.5 - FootprintWidthMeters * 0.5) * LegacyCellSizeCm;
