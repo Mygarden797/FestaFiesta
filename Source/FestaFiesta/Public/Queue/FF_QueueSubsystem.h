@@ -118,6 +118,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	float GetExpectedWaitMinutes(int32 FacilityId, int32 IncomingMemberCount) const;
 
+	/**
+	 * 이 시설의 실측 처리율(분당 인원).
+	 * 시설 정적 규칙에서 처리율을 뽑는 경로가 프로젝트에 따로 있는데 그쪽은 분당이고
+	 * FFF_QueueState::ServiceRate 는 초당이다. 비교할 일이 생기면 같은 단위로 놓고 보라고 둔다.
+	 * 미등록 시설은 0("모름")이다 — 이걸로 나누지 말 것.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Queue")
+	float GetFacilityServiceRatePerMinute(int32 FacilityId) const;
+
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	FVector GetFacilityExitLocation(int32 FacilityId) const;
 

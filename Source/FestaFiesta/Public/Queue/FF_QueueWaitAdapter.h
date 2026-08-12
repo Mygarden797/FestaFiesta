@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Queue/FF_QueueTypes.h"
+#include "Templates/Function.h"
 
 struct FFF_DestinationCandidate;
 class UFF_QueueSubsystem;
@@ -57,6 +58,13 @@ public:
 	 * "설치 완료 + 운영시간 + 임시 폐쇄 아님"을 호출부가 미리 합쳐서 넣은 값이다.
 	 * 대입해 버리면 호출부가 이미 닫아둔 시설을 대기열이 열어주는 사고가 난다.
 	 *
+	 * AND 하는 대상은 State.bIsOpen 이지 State.bAcceptingNew 가 아니다. 후자는 '잠깐 만석'까지
+	 * 포함하는데, 만석은 앞 Party 하나 빠지면 풀리는 순간 상태다. 그걸로 후보를 닫으면 붐비는
+	 * 부스가 결정 시점마다 사라졌다 나타났다 하고, "줄이 길어서 딴 데 간다"는 행동 자체가
+	 * 표현되지 않는다. 설계문서 8.2① 도 도착 판정과 가입 판정을 분리하라고 정했다 —
+	 * 걸어가는 동안 자리가 날 수도, 반대로 찰 수도 있고, 후자는 RejectedFull → 재평가로 처리된다.
+	 * 만석은 후보에서 빼는 대신 EstimatedWaitMinutes 가 커지는 것으로 표현한다.
+	 *
 	 * CurrentOccupancy/Capacity 는 건드리지 않는다. 그건 Crowd 밀도 항의 입력이고,
 	 * 대기 인원은 이미 셀 밀도에 잡혀 있다 (설계문서 8.4). 여기서 또 넣으면 이중 계산이다.
 	 */
@@ -78,5 +86,34 @@ public:
 		const UFF_QueueSubsystem* QueueSubsystem,
 		TArray<FFF_DestinationCandidate>& InOutCandidates,
 		const TMap<FName, int32>& DestinationIdToFacilityId,
+		int32 IncomingMemberCount);
+
+	/**
+	 * 후보 하나에 직접 반영한다. FacilityId 를 이미 아는 호출부용(GUID→int32 매핑 소유자 등).
+	 * 배열 버전과 같은 규칙을 따른다.
+	 *
+	 * @return 반영했으면 true. 미등록 시설이면 후보를 닫고 false.
+	 */
+	static bool ApplyToCandidate(
+		const UFF_QueueSubsystem* QueueSubsystem,
+		FFF_DestinationCandidate& InOutCandidate,
+		int32 FacilityId,
+		int32 IncomingMemberCount);
+
+	/**
+	 * 매핑을 표가 아니라 함수로 받는 버전.
+	 *
+	 * 목적지→시설 대응이 TMap 한 장으로 안 끝나는 경우가 있다. 이름을 파싱해야 하거나,
+	 * 다른 서브시스템에 물어봐야 하거나, 중간에 GUID 를 한 번 거쳐야 하는 식이다.
+	 * 그때마다 임시 TMap 을 만들면 매 결정마다 할당이 생긴다.
+	 *
+	 * Resolver 는 줄이 없는 목적지(벤치·포토존)에 INDEX_NONE 을 돌려주면 된다.
+	 *
+	 * @return 실제로 대기열 정보가 반영된 후보 개수
+	 */
+	static int32 ApplyToCandidates(
+		const UFF_QueueSubsystem* QueueSubsystem,
+		TArray<FFF_DestinationCandidate>& InOutCandidates,
+		TFunctionRef<int32(FName)> ResolveFacilityId,
 		int32 IncomingMemberCount);
 };

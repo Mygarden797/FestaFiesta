@@ -6,6 +6,7 @@
 
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Queue/FF_FacilityQueue.h"
+#include "Queue/FF_QueueSubsystem.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"
@@ -15,7 +16,8 @@
 
 namespace FFF_QueueWaitAdapterTestHelpers
 {
-	FFF_QueueState MakeState(int32 RemainingMembers, float ServiceRate, bool bAcceptingNew = true)
+	FFF_QueueState MakeState(int32 RemainingMembers, float ServiceRate, bool bAcceptingNew = true,
+		bool bIsOpen = true)
 	{
 		FFF_QueueState State;
 		State.FacilityId = 1;
@@ -24,7 +26,7 @@ namespace FFF_QueueWaitAdapterTestHelpers
 		State.WaitingPartyCount = RemainingMembers;
 		State.MaxCapacityMembers = 50;
 		State.ServiceRate = ServiceRate;
-		State.bIsOpen = true;
+		State.bIsOpen = bIsOpen;
 		State.bAcceptingNew = bAcceptingNew;
 		return State;
 	}
@@ -177,10 +179,18 @@ bool FFF_QueueWaitAdapter_OpenFlagIsAndMerged::RunTest(const FString& Parameters
 	FFF_QueueWaitAdapter::ApplyQueueStateToCandidate(ClosedByCaller, Accepting, 1);
 	TestFalse(TEXT("호출부가 닫은 시설을 대기열이 열어주지 않는다"), ClosedByCaller.bIsOpen);
 
-	// 열려 있지만 대기열 만석 — 어차피 TryJoin이 전원 거절하므로 후보에서 빠져야 한다.
+	// 만석은 후보에서 빼지 않는다. 앞 Party 하나 빠지면 풀리는 순간 상태라, 이걸로 후보를 닫으면
+	// 인기 부스가 결정할 때마다 사라졌다 나타났다 한다. 혼잡은 대기시간으로 표현된다.
 	FFF_DestinationCandidate OpenButFull = MakeQueueCandidate(TEXT("B"), TEXT("food_stall"), /*bIsOpen=*/true);
 	FFF_QueueWaitAdapter::ApplyQueueStateToCandidate(OpenButFull, Full, 1);
-	TestFalse(TEXT("대기열 만석이면 후보에서 닫힌다"), OpenButFull.bIsOpen);
+	TestTrue(TEXT("만석이어도 후보에 남는다 — 폐쇄가 아니다"), OpenButFull.bIsOpen);
+	TestTrue(TEXT("대신 대기시간이 크게 잡힌다"), OpenButFull.EstimatedWaitMinutes > 5.f);
+
+	// 폐쇄는 진짜로 뺀다.
+	const FFF_QueueState Closed = MakeState(2, 0.05f, /*bAcceptingNew=*/false, /*bIsOpen=*/false);
+	FFF_DestinationCandidate ClosedFacility = MakeQueueCandidate(TEXT("D"), TEXT("food_stall"), /*bIsOpen=*/true);
+	FFF_QueueWaitAdapter::ApplyQueueStateToCandidate(ClosedFacility, Closed, 1);
+	TestFalse(TEXT("폐쇄된 시설은 후보에서 닫힌다"), ClosedFacility.bIsOpen);
 
 	FFF_DestinationCandidate BothOpen = MakeQueueCandidate(TEXT("C"), TEXT("food_stall"), /*bIsOpen=*/true);
 	FFF_QueueWaitAdapter::ApplyQueueStateToCandidate(BothOpen, Accepting, 1);
@@ -249,6 +259,79 @@ bool FFF_QueueWaitAdapter_MatchesQueueCoreFormula::RunTest(const FString& Parame
 	// (앞 7명 + 나 1명) / (1/20) = 160초. 손으로 계산한 값과도 맞아야 한다.
 	TestEqual(TEXT("실제 값이 손계산과 일치한다"),
 		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(State, 1), 160.f, 0.001f);
+	return true;
+}
+
+// 8. 단위를 이름에 박은 접근자 — 초당/분당을 섞으면 60배가 조용히 들어간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_ServiceRateAccessorsCarryUnits, "FestaFiesta.Queue.WaitAdapter.ServiceRateAccessorsCarryUnits", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueWaitAdapter_ServiceRateAccessorsCarryUnits::RunTest(const FString& Parameters)
+{
+	const FFF_QueueState State = MakeState(0, 0.05f);   // 20초에 1명
+	TestEqual(TEXT("초당 접근자는 원본 그대로다"), State.GetServiceRatePerSecond(), 0.05f, 1e-6f);
+	TestEqual(TEXT("분당 접근자는 60배 — 20초에 1명이면 분당 3명"), State.GetServiceRatePerMinute(), 3.f, 1e-4f);
+	TestTrue(TEXT("두 접근자가 같은 값을 돌려주지 않는다"),
+		!FMath::IsNearlyEqual(State.GetServiceRatePerSecond(), State.GetServiceRatePerMinute()));
+	return true;
+}
+
+// 9. QueueLog 분 단위 뷰 — 결정 측 스냅샷(분)과 조인할 때 쓴다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_QueueLogExposesMinutes, "FestaFiesta.Queue.WaitAdapter.QueueLogExposesMinutes", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueWaitAdapter_QueueLogExposesMinutes::RunTest(const FString& Parameters)
+{
+	FFF_QueueLog Log;
+	Log.JoinSimTime = 120.f;
+	Log.ExitSimTime = 300.f;
+	Log.EstimatedWaitAtJoinSeconds = 90.f;
+	Log.ActualWaitSeconds = 150.f;
+	Log.ServiceSeconds = 30.f;
+
+	TestEqual(TEXT("가입 시각 2분"), Log.GetJoinSimTimeMinutes(), 2.f, 1e-4f);
+	TestEqual(TEXT("퇴장 시각 5분"), Log.GetExitSimTimeMinutes(), 5.f, 1e-4f);
+	TestEqual(TEXT("예상 대기 1.5분"), Log.GetEstimatedWaitAtJoinMinutes(), 1.5f, 1e-4f);
+	TestEqual(TEXT("실제 대기 2.5분"), Log.GetActualWaitMinutes(), 2.5f, 1e-4f);
+	TestEqual(TEXT("서비스 0.5분"), Log.GetServiceMinutes(), 0.5f, 1e-4f);
+	// 저장은 초 하나만 한다. 분은 파생값이라 어긋날 수 없다.
+	TestEqual(TEXT("초 필드는 그대로 남는다"), Log.ActualWaitSeconds, 150.f, 1e-4f);
+	return true;
+}
+
+// 10. 미등록 시설은 fail-closed.
+//     "지금 들어갈 수 있는가"를 판정하는 곳이 이 어댑터 한 곳뿐이라, 여기서 열어두면
+//     존재하지 않는 시설이 "열려 있고 대기 0"인 최고의 후보가 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_UnregisteredFacilityFailsClosed, "FestaFiesta.Queue.WaitAdapter.UnregisteredFacilityFailsClosed", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueWaitAdapter_UnregisteredFacilityFailsClosed::RunTest(const FString& Parameters)
+{
+	// 시설을 하나도 등록하지 않은 빈 서브시스템이면 충분하다.
+	UFF_QueueSubsystem* EmptyQueue = NewObject<UFF_QueueSubsystem>();
+	TestFalse(TEXT("전제: 이 시설은 등록돼 있지 않다"), EmptyQueue->IsFacilityRegistered(42));
+
+	FFF_DestinationCandidate Ghost = MakeQueueCandidate(TEXT("ghost_booth"), TEXT("food_stall"), /*bIsOpen=*/true);
+	Ghost.EstimatedWaitMinutes = 0.f;   // 후보 생성부가 0으로 두고 소유권을 어댑터에 넘긴 상태
+
+	const bool bApplied = FFF_QueueWaitAdapter::ApplyToCandidate(EmptyQueue, Ghost, 42, 1);
+
+	TestFalse(TEXT("반영했다고 보고하지 않는다"), bApplied);
+	TestFalse(TEXT("후보에서 닫힌다 — 열어두면 유령 시설이 1등이 된다"), Ghost.bIsOpen);
+	TestTrue(TEXT("대기시간도 0으로 남지 않는다"), Ghost.EstimatedWaitMinutes > 1000.f);
+	return true;
+}
+
+// 11. Resolver 오버로드 — 줄 없는 목적지(INDEX_NONE)는 손대지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_ResolverSkipsQueuelessDestinations, "FestaFiesta.Queue.WaitAdapter.ResolverSkipsQueuelessDestinations", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueWaitAdapter_ResolverSkipsQueuelessDestinations::RunTest(const FString& Parameters)
+{
+	UFF_QueueSubsystem* EmptyQueue = NewObject<UFF_QueueSubsystem>();
+
+	TArray<FFF_DestinationCandidate> Candidates;
+	Candidates.Add(MakeQueueCandidate(TEXT("photo_zone"), TEXT("ambience_photo_zone"), /*bIsOpen=*/true));
+	const float Before = Candidates[0].EstimatedWaitMinutes;
+
+	const int32 Applied = FFF_QueueWaitAdapter::ApplyToCandidates(
+		EmptyQueue, Candidates, [](FName) { return INDEX_NONE; }, 1);
+
+	TestEqual(TEXT("줄 없는 목적지는 반영 대상이 아니다"), Applied, 0);
+	TestEqual(TEXT("대기시간을 건드리지 않는다"), Candidates[0].EstimatedWaitMinutes, Before, 1e-6f);
+	TestTrue(TEXT("열림 상태도 유지된다 — 미등록과 달리 정상 경로다"), Candidates[0].bIsOpen);
 	return true;
 }
 

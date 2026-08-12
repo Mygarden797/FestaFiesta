@@ -120,6 +120,31 @@ FFF_NeedState FFF_NeedRules::Relieve(
 	return Result;
 }
 
+FFF_StayConsumption FFF_NeedRules::ConsumeStay(
+	const FFF_NeedState& Needs,
+	float ElapsedMinutes,
+	float DrainMultiplierAtMaxNeed,
+	const FFF_NeedPriorityWeights& Priority)
+{
+	FFF_StayConsumption Result;
+
+	// 음수·0 경과는 아무것도 소모하지 않는다.
+	if (ElapsedMinutes <= 0.f)
+	{
+		return Result;
+	}
+
+	// 1.0 아래는 "Need 가 쌓이면 더 오래 머문다"가 되어 허용하지 않는다.
+	const float SafeMultiplier = FMath::Max(DrainMultiplierAtMaxNeed, 1.f);
+
+	const float Urgency = Needs.GetMaxWeightedUrgency(Priority);
+	const float Multiplier = 1.f + (SafeMultiplier - 1.f) * Urgency;
+
+	Result.ConsumedStayBudgetMinutes = ElapsedMinutes * Multiplier;
+	Result.ExtraStayBudgetFromNeed = Result.ConsumedStayBudgetMinutes - ElapsedMinutes;
+	return Result;
+}
+
 FFF_NeedState FFF_NeedRules::MakeInitialNeeds(
 	int32 GlobalSimulationSeed,
 	int32 StableAgentId,
@@ -190,6 +215,13 @@ FFF_NeedRiseRates FFF_NeedRules::LoadRiseRates(const UDataTable* UtilityCoeffici
 		TEXT("need_stimulation_minutes_to_limit"), Rates.StimulationMinutesToLimit);
 
 	return Rates;
+}
+
+float FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(const UDataTable* UtilityCoefficientTable)
+{
+	// 기본값 1.0 = 기능 꺼짐. 근거 있는 값이 없어서 중립값을 둔다 — FF_NeedRules.h ConsumeStay 주석 참조.
+	return FFF_UtilityCoefficientHelpers::GetCoefficient(
+		UtilityCoefficientTable, TEXT("stay_drain_multiplier_at_max_need"), 1.0f);
 }
 
 FFF_NeedReliefAmounts FFF_NeedRules::LoadReliefAmounts(const UDataTable* UtilityCoefficientTable)

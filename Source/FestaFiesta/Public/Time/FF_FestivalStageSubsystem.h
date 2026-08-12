@@ -18,6 +18,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRemainingSecondsChanged, int32, N
 // 축제가 완전히 끝났을 때 쓰는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalEnded);
 
+// 메인 공연 시작되는 순간 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramStarted, FString, EventLabel);
+
+// 메인 공연 끝나는 순간 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramEnded, FString, EventLabel);
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -124,7 +130,15 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnFestivalEnded OnFestivalEnded;
-	// 다른 파트분들이 축제 종료 시점을 알 수 있음
+	// 다른 파트가 축제 종료 시점을 알 수 있음
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnMainProgramStarted OnMainProgramStarted;
+	// 메인 공연 시작 시점을 알림
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnMainProgramEnded OnMainProgramEnded;
+	// 메인 공연 종료 시점을 알림
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);
@@ -220,5 +234,10 @@ private:
 	bool bFestivalEndedBroadcasted = false;
 	// Day3 축제 종료 알림을 한 번만 보냄
 
+	bool bWasMainProgramLocked = false;
+	// 공연 시작 알림을 한 번만 보내기 위한 체크용
+
+	FString CachedMainProgramEndLabel;
+	// 종료 알림에 쓸 라벨을 시작 시점에 미리 저장
 
 };
