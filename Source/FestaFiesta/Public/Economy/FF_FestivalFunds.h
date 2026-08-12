@@ -19,11 +19,8 @@ struct FFF_FestivalFunds
 	// 현재 잔액
 	int32 GetGold() const { return Gold; }
 
-	// 지금 쓸 수 있는 금액.
-	// UI 구매 버튼 판정도 GetGold() 가 아니라 이걸 봐야 한다.
-	int32 GetAvailableGold() const;
-
 	// 이 금액을 지출할 수 있는지. 상태를 바꾸지 않는다.
+	// 0 은 true (비용 0 인 명령이 있다)
 	bool CanAfford(int32 Amount) const;
 
 	// 지출한다. 성공하면 true 이고 잔액이 그만큼 줄어든다.

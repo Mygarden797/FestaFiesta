@@ -28,14 +28,13 @@ namespace FFF_FestivalFundsTestHelpers
 
 using namespace FFF_FestivalFundsTestHelpers;
 
-// 초기 자금이 그대로 잔액이 되고, 가용액도 같아야 한다(S1 에는 홀드가 없다).
+// 초기 자금이 그대로 잔액이 된다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalFunds_InitializeSetsBalance, "FestaFiesta.Economy.FestivalFunds.InitializeSetsBalance", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FestivalFunds_InitializeSetsBalance::RunTest(const FString& Parameters)
 {
 	const FFF_FestivalFunds Funds = MakeFundsWithGold(10000);
 
 	TestEqual(TEXT("초기 자금이 잔액이 된다"), Funds.GetGold(), 10000);
-	TestEqual(TEXT("S1 에서는 가용액이 잔액과 같다"), Funds.GetAvailableGold(), 10000);
 
 	// 음수 초기 자금은 0 으로 막는다 — 불변식을 이 구조체 안에서 닫는다.
 	const FFF_FestivalFunds Negative = MakeFundsWithGold(-500);
