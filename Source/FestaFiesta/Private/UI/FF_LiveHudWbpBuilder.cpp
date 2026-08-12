@@ -477,6 +477,12 @@ namespace FFLiveHudWbpBuilder
 				return false;
 			}
 			Icon->SetBrush(MakeImageBrush(LoadThemeTexture(Entry.TexturePath), FVector2D(12.f, 12.f)));
+
+			// !! 액션 아이콘은 틴트용 흰색이다 !!
+			// 원형 버튼 배경도 밝아서 틴트 없이 두면 흰색 위 흰색이 되어 아무것도 안 보인다
+			// (2026-08-12 실제 발생 — 버튼 4개가 빈 원으로 보였다).
+			Icon->SetColorAndOpacity(ColorInk);
+
 			Button->SetContent(Icon);
 
 			PlaceOnCanvas(*Root, *Button, Entry.X, 2.5f, 24.f, 24.f);
@@ -498,7 +504,11 @@ namespace FFLiveHudWbpBuilder
 			MenuBarPackage, LiveHudFolder, *UFF_LiveHudMenuBar::StaticClass(),
 			[](UWidgetBlueprint& BP, UWidgetTree& Tree) { return BuildMenuBar(BP, Tree); });
 
-		// 메뉴 바의 TabButtonClass 기본값을 채운다. 비어 있으면 런타임에 탭이 하나도 안 생긴다.
+		// TabButtonClass 기본값만 채운다. 비어 있으면 런타임에 탭이 하나도 안 생긴다.
+		//
+		// !! CompileBlueprint을 다시 부르지 않는다 !!
+		// 2026-08-12에 CDO에 값을 넣고 재컴파일했더니 그 값이 날아가 탭 아이콘이 0개가 됐다.
+		// 아이콘은 이제 UFF_LiveHudMenuBar가 enum 이름으로 직접 찾으므로 여기서 넣지 않는다.
 		if (MenuBar && MenuBar->GeneratedClass && TabButton && TabButton->GeneratedClass)
 		{
 			if (UFF_LiveHudMenuBar* Defaults = MenuBar->GeneratedClass->GetDefaultObject<UFF_LiveHudMenuBar>())
@@ -507,11 +517,18 @@ namespace FFLiveHudWbpBuilder
 				{
 					Defaults->TabButtonClass = TabButton->GeneratedClass;
 					MenuBar->Modify();
-					FKismetEditorUtilities::CompileBlueprint(MenuBar);
-					SaveNewBlueprint(*MenuBar);
+					MenuBar->MarkPackageDirty();
+
+					UPackage* Package = MenuBar->GetOutermost();
+					const FString Filename = FPackageName::LongPackageNameToFilename(
+						Package->GetName(), FPackageName::GetAssetPackageExtension());
+					FSavePackageArgs Args;
+					Args.TopLevelFlags = RF_Public | RF_Standalone;
+					Args.SaveFlags = SAVE_NoError;
+					UPackage::SavePackage(Package, MenuBar, *Filename, Args);
+
 					UE_LOG(LogFFLiveHudWbpBuilder, Display,
-						TEXT("FF_LIVEHUD_UMG_LINK: MenuBar의 TabButtonClass를 %s로 채웠다."),
-						*TabButton->GetName());
+						TEXT("FF_LIVEHUD_UMG_LINK: MenuBar의 TabButtonClass를 %s로 채웠다."), *TabButton->GetName());
 				}
 			}
 		}

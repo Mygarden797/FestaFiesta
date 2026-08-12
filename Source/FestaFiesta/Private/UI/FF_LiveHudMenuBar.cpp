@@ -32,13 +32,19 @@ void UFF_LiveHudTabButton::NativeOnInitialized()
 	RefreshVisualState();
 }
 
-void UFF_LiveHudTabButton::Configure(EFF_LiveHudTab InTab, const FText& InLabel)
+void UFF_LiveHudTabButton::Configure(EFF_LiveHudTab InTab, const FText& InLabel, const FSlateBrush& InIconBrush)
 {
 	Tab = InTab;
 
 	if (Text_Label)
 	{
 		Text_Label->SetText(InLabel);
+	}
+
+	// 리소스가 없는 브러시를 넣으면 아이콘이 빈 사각형이 된다. 그때는 WBP 기본값을 유지한다.
+	if (Image_Icon && InIconBrush.GetResourceObject())
+	{
+		Image_Icon->SetBrush(InIconBrush);
 	}
 
 	RefreshVisualState();
@@ -135,7 +141,10 @@ void UFF_LiveHudMenuBar::BuildTabs()
 			continue;
 		}
 
-		TabButton->Configure(TabValue, TabEnum->GetDisplayNameTextByIndex(Index));
+		TabButton->Configure(
+			TabValue,
+			TabEnum->GetDisplayNameTextByIndex(Index),
+			ResolveTabIcon(TabValue, TabEnum->GetNameStringByIndex(Index)));
 		TabButton->OnTabButtonClicked.BindUObject(this, &UFF_LiveHudMenuBar::HandleTabButtonClicked);
 
 		// 지역 변수 이름을 Slot으로 두면 UUserWidget::Slot을 가려 C4458이 난다(경고를 에러로 취급).
@@ -149,6 +158,41 @@ void UFF_LiveHudMenuBar::BuildTabs()
 
 		TabButtons.Add(TabButton);
 	}
+}
+
+FSlateBrush UFF_LiveHudMenuBar::ResolveTabIcon(EFF_LiveHudTab Tab, const FString& EnumName) const
+{
+	// 예외로 지정된 것이 있으면 그것을 쓴다.
+	if (const FSlateBrush* Override = TabIconOverrides.Find(Tab))
+	{
+		return *Override;
+	}
+
+	FSlateBrush Brush;
+
+	if (TabIconFolder.IsEmpty() || TabIconNameFormat.IsEmpty())
+	{
+		return Brush;
+	}
+
+	// enum 이름으로 경로를 만든다. 탭을 추가하면 아이콘 파일만 규칙에 맞춰 넣으면 된다.
+	const FString AssetName = FString::Format(*TabIconNameFormat, { EnumName });
+	const FString ObjectPath = FString::Printf(TEXT("%s/%s.%s"), *TabIconFolder, *AssetName, *AssetName);
+
+	// 작은 UI 아이콘 9개라 동기 로드로 둔다. 위젯 생성 시 한 번만 돈다.
+	UTexture2D* IconTexture = LoadObject<UTexture2D>(nullptr, *ObjectPath);
+	if (!IconTexture)
+	{
+		// 조용히 넘기면 아이콘 없는 탭이 왜 그런지 알 수 없다.
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 탭 아이콘을 찾지 못했다 — %s. TabIconFolder를 확인한다."), *GetName(), *ObjectPath);
+		return Brush;
+	}
+
+	Brush.SetResourceObject(IconTexture);
+	Brush.DrawAs = ESlateBrushDrawType::Image;
+	Brush.SetImageSize(FVector2D(TabIconSize, TabIconSize));
+	return Brush;
 }
 
 void UFF_LiveHudMenuBar::SelectTab(EFF_LiveHudTab Tab)

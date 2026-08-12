@@ -51,8 +51,12 @@ class FESTAFIESTA_API UFF_LiveHudTabButton : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	/** 이 탭이 무엇인지와 화면 문구를 함께 설정한다. 따로 두면 라벨과 탭이 어긋날 수 있다. */
-	void Configure(EFF_LiveHudTab InTab, const FText& InLabel);
+	/**
+	 * 이 탭이 무엇인지·문구·아이콘을 함께 설정한다.
+	 * 따로 두면 라벨만 바뀌고 아이콘이 남아 "시설 탭에 운영 아이콘" 같은 조합이 화면에 뜬다.
+	 * `InIconBrush`의 리소스가 비어 있으면 WBP에 설정된 브러시를 유지한다.
+	 */
+	void Configure(EFF_LiveHudTab InTab, const FText& InLabel, const FSlateBrush& InIconBrush);
 
 	/**
 	 * 선택 상태를 반영한다.
@@ -136,6 +140,31 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI")
 	TSubclassOf<UFF_LiveHudTabButton> TabButtonClass;
 
+	/**
+	 * 탭 아이콘을 찾을 폴더. 테마를 바꿀 때 이 한 줄만 고치면 9개가 함께 바뀐다.
+	 *
+	 * 파일 이름은 `TabIconNameFormat`에 enum 이름을 넣어 만든다
+	 * (`Operations` → `T_FF_LH_Icon_Operations_White_256`).
+	 * **탭 WBP에 아이콘을 하나 박아두면 9개 탭이 모두 같은 아이콘이 된다** (2026-08-12에 실제로 그랬다).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Icons")
+	FString TabIconFolder = TEXT("/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Navigation");
+
+	/** `{0}`에 `EFF_LiveHudTab`의 항목 이름이 들어간다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Icons")
+	FString TabIconNameFormat = TEXT("T_FF_LH_Icon_{0}_White_256");
+
+	/** 아이콘 표시 크기(px). 목업 기준 13. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Icons")
+	float TabIconSize = 13.f;
+
+	/**
+	 * 자동 해석을 덮어쓰고 싶은 탭만 넣는다. 보통은 비워 둔다.
+	 * 폴더 규칙에서 벗어나는 아이콘 하나를 예외로 둘 때만 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Icons")
+	TMap<EFF_LiveHudTab, FSlateBrush> TabIconOverrides;
+
 protected:
 	virtual void NativeOnInitialized() override;
 
@@ -143,6 +172,9 @@ protected:
 	void BuildTabs();
 
 	void HandleTabButtonClicked(EFF_LiveHudTab Tab);
+
+	/** 탭 아이콘 브러시를 만든다. 예외 지정이 있으면 그것을, 없으면 폴더 규칙으로 찾는다. */
+	FSlateBrush ResolveTabIcon(EFF_LiveHudTab Tab, const FString& EnumName) const;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
