@@ -5,6 +5,9 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -13,6 +16,19 @@
 
 #define LOCTEXT_NAMESPACE "FFZoneSystemQueueBridge"
 DEFINE_LOG_CATEGORY_STATIC(LogFFZoneQueueBridge, Log, All);
+
+namespace
+{
+	bool TryGetQueueTailDirectionAtDistance(
+		const TArray<FVector>& Points,
+		const double DistanceCm,
+		FVector& OutTailDirection)
+	{
+		FVector SlotPoint = FVector::ZeroVector;
+		return FFFZSQueueGeometry::TrySampleLinearPolylineAtDistanceWithTangent(
+			Points, DistanceCm, SlotPoint, OutTailDirection);
+	}
+}
 
 void UFF_ZoneSystemQueueBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -210,12 +226,17 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	const FVector& ExitLocation)
 {
 	FFF_QueueConfig Config;
-	// FFZS 정원은 Waiting만 세고 Legacy Queue 정원은 서비스 중 인원도 세므로 서비스 슬롯을 더한다.
-	const int64 LegacyCapacity = static_cast<int64>(Rules.MaxWaitingAgents) + Rules.ServiceCapacity;
-	Config.MaxCapacityMembers = static_cast<int32>(FMath::Clamp<int64>(LegacyCapacity, 1, MAX_int32));
+	// This bridge phase has exactly MaxWaitingAgents physical waiting targets. The legacy
+	// core retains a party until service completes, so using the waiting count as its
+	// conservative total cap prevents M+S members from overflowing an M-slot lane.
+	Config.MaxCapacityMembers = static_cast<int32>(FMath::Clamp<int64>(
+		static_cast<int64>(Rules.MaxWaitingAgents), 1, MAX_int32));
 
 	// Legacy Queue는 선두 Party 하나만 처리하므로 여러 FFZS 창구를 '한 개의 더 빠른 창구'로 환산한다.
 	// 이렇게 해야 예상 처리율과 실제 장기 처리율이 모두 ServiceCapacity / Duration으로 일치한다.
+	// Compatibility only: the current core services one head party and cannot represent S
+	// independently occupied anchors. Preserve historical S / Duration throughput by using
+	// one accelerated server. Setting ConcurrentServiceSlots=S as well would multiply twice.
 	const int32 ServiceCapacity = FMath::Max(1, Rules.ServiceCapacity);
 	Config.ConcurrentServiceSlots = 1;
 	Config.ServiceSecondsPerMember = FMath::Max(
@@ -226,6 +247,119 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	// 호출자가 준비되면 NotifyZoneFacilityPartyArrived façade와 함께 전환한다.
 	Config.bRequireArrivalConfirmation = false;
 	return Config;
+}
+
+bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
+	const FFFZSFacilitySpec& Spec,
+	const FTransform& FacilityTransform,
+	FFF_QueueLaneGeometry& OutLane)
+{
+	OutLane = FFF_QueueLaneGeometry();
+	const FFFZSQueueRules& Rules = Spec.QueueRules;
+	if (FacilityTransform.ContainsNaN()
+		|| Spec.QueueSplinePointsCm.Num() < 2
+		|| Rules.MaxWaitingAgents <= 0
+		|| Rules.MaxWaitingAgents > UFFZSDeveloperSettings::MaxQueueWaitingAgents
+		|| Spec.QueueSplinePointsCm.Num() > UFFZSDeveloperSettings::MaxQueueSplinePoints
+		|| !FMath::IsFinite(Rules.SlotSpacingCm)
+		|| Rules.SlotSpacingCm <= 0.0f)
+	{
+		return false;
+	}
+
+	int32 FirstNonFinitePointIndex = INDEX_NONE;
+	const double PolylineLengthCm = FFFZSQueueGeometry::GetLinearPolylineLengthCm(
+		Spec.QueueSplinePointsCm, &FirstNonFinitePointIndex);
+	const double RequiredLengthCm =
+		(static_cast<double>(Rules.MaxWaitingAgents) - 1.0) *
+		static_cast<double>(Rules.SlotSpacingCm);
+	if (FirstNonFinitePointIndex != INDEX_NONE
+		|| PolylineLengthCm + UE_KINDA_SMALL_NUMBER < RequiredLengthCm)
+	{
+		return false;
+	}
+
+	TArray<FVector> LocalSlotPoints;
+	if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
+		Spec.QueueSplinePointsCm,
+		Rules.MaxWaitingAgents,
+		Rules.SlotSpacingCm,
+		LocalSlotPoints)
+		|| LocalSlotPoints.Num() != Rules.MaxWaitingAgents)
+	{
+		return false;
+	}
+
+	OutLane.SlotSpacingCm = Rules.SlotSpacingCm;
+	OutLane.PolylinePoints.Reserve(Spec.QueueSplinePointsCm.Num());
+	for (const FVector& LocalPoint : Spec.QueueSplinePointsCm)
+	{
+		const FVector WorldPoint = FacilityTransform.TransformPosition(LocalPoint);
+		if (WorldPoint.ContainsNaN())
+		{
+			OutLane = FFF_QueueLaneGeometry();
+			return false;
+		}
+		OutLane.PolylinePoints.Add(WorldPoint);
+	}
+
+	OutLane.ExplicitSlotTransforms.Reserve(LocalSlotPoints.Num());
+	for (int32 SlotIndex = 0; SlotIndex < LocalSlotPoints.Num(); ++SlotIndex)
+	{
+		FVector LocalTailDirection = FVector::ZeroVector;
+		const double SlotDistanceCm = static_cast<double>(SlotIndex) * Rules.SlotSpacingCm;
+		if (!TryGetQueueTailDirectionAtDistance(
+			Spec.QueueSplinePointsCm, SlotDistanceCm, LocalTailDirection))
+		{
+			// Waiting 슬롯이 하나면 필요한 길이는 0이라 완전히 퇴화한 polyline도
+			// 유효하다. 위치는 명확하므로 Service[0]→slot 방향을 우선 사용하고,
+			// 둘도 같으면 시설 저작 계약의 customer-facing +Y를 결정적 yaw로 쓴다.
+			if (Rules.MaxWaitingAgents != 1)
+			{
+				OutLane = FFF_QueueLaneGeometry();
+				return false;
+			}
+
+			for (const FFFZSAnchorDefinition& Anchor : Spec.Anchors)
+			{
+				if (Anchor.Type == EFFZSAnchorType::Service && Anchor.Index == 0)
+				{
+					LocalTailDirection = LocalSlotPoints[SlotIndex]
+						- Anchor.LocalTransform.GetLocation();
+					break;
+				}
+			}
+			if (!LocalTailDirection.Normalize())
+			{
+				LocalTailDirection = FVector::YAxisVector;
+			}
+		}
+
+		FVector WorldTailDirection = FacilityTransform.TransformVectorNoScale(LocalTailDirection);
+		if (!WorldTailDirection.Normalize())
+		{
+			OutLane = FFF_QueueLaneGeometry();
+			return false;
+		}
+		const FVector WorldLocation = FacilityTransform.TransformPosition(LocalSlotPoints[SlotIndex]);
+		const float WorldYawDegrees = (-WorldTailDirection).Rotation().Yaw;
+		OutLane.ExplicitSlotTransforms.Add(FTransform(
+			FRotator(0.0f, WorldYawDegrees, 0.0f), WorldLocation));
+	}
+
+	OutLane.HeadLocation = OutLane.ExplicitSlotTransforms[0].GetLocation();
+	OutLane.TailDirection = FacilityTransform.TransformVectorNoScale(FVector::ForwardVector);
+	if (OutLane.ExplicitSlotTransforms.Num() > 1)
+	{
+		OutLane.TailDirection =
+			OutLane.ExplicitSlotTransforms[1].GetLocation() - OutLane.HeadLocation;
+	}
+	if (!OutLane.TailDirection.Normalize())
+	{
+		OutLane.TailDirection = FVector::ForwardVector;
+	}
+	OutLane.SlotYawDegrees = OutLane.ExplicitSlotTransforms[0].Rotator().Yaw;
+	return true;
 }
 
 float UFF_ZoneSystemQueueBridgeSubsystem::ToProjectMaxWaitSeconds(
@@ -272,31 +406,16 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 	const FFF_QueueConfig Config = ToProjectQueueConfig(Rules, ZoneQueue->GetExitWorldLocation(0));
 
 	FFF_QueueLaneGeometry Lane;
-	Lane.HeadLocation = ZoneQueue->GetQueueSlotWorldLocation(0);
-	const FVector SecondSlot = ZoneQueue->GetQueueSlotWorldLocation(1);
-	Lane.TailDirection = SecondSlot - Lane.HeadLocation;
-	Lane.TailDirection.Z = 0.f;
-	if (!Lane.TailDirection.Normalize())
+	if (!BuildProjectQueueLaneGeometry(Spec, Facility.GetActorTransform(), Lane))
 	{
-		Lane.TailDirection = Facility.GetActorForwardVector();
-		Lane.TailDirection.Z = 0.f;
-		if (!Lane.TailDirection.Normalize())
-		{
-			Lane.TailDirection = FVector::ForwardVector;
-		}
-	}
-	Lane.SlotSpacingCm = FMath::Max(Rules.SlotSpacingCm, 1.f);
-	Lane.SlotYawDegrees = (-Lane.TailDirection).Rotation().Yaw;
-
-	if (Spec.QueueSplinePointsCm.Num() > 2)
-	{
-		UE_LOG(LogFFZoneQueueBridge, Warning,
-			TEXT("Zone Facility %s의 곡선 Queue Spline을 UFF_QueueSubsystem의 직선 Lane으로 근사합니다."),
+		UE_LOG(LogFFZoneQueueBridge, Error,
+			TEXT("Zone Facility %s has invalid Party Queue geometry; registration failed closed."),
 			*ZoneFacilityId.ToString());
+		return false;
 	}
 
-	QueueSystem->RegisterFacility(QueueFacilityId, Config, Lane);
-	if (!QueueSystem->IsFacilityRegistered(QueueFacilityId))
+	if (!QueueSystem->RegisterFacility(QueueFacilityId, Config, Lane) ||
+		!QueueSystem->IsFacilityRegistered(QueueFacilityId))
 	{
 		return false;
 	}

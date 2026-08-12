@@ -1,6 +1,6 @@
 // FF_FFZSGridLibrary.h
 
-// 고정 1 cm 격자의 압축 영역 회전·점유·내장 프리셋·명령 지문 계산을 제공하는 순수 함수 모음.
+// 고정 1 cm 격자의 압축 영역 회전·점유·명령 지문 계산을 제공하는 순수 함수 모음.
 // 흐름: 사양과 배치를 정규화한 뒤 footprint·clearance·queue 압축 사각형과 정확한 예약 합집합을 만든다.
 //불변식: 셀 좌표는 존 로컬 격자이며 명령 지문은 멱등성 판정을 위해 의미론적 전체 페이로드를 포함.
 //실패/성능: 면적 안전 예산을 초과하면 fail-closed하고 정상 비용은 개별 셀 수가 아니라 사각형 수에 비례.
@@ -12,6 +12,8 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSGridLibrary.generated.h"
+
+class UFFZSFacilityDefinition;
 
 // 상태를 소유하지 않는 Blueprint 함수 라이브러리.
 // 모든 계산은 입력값만 사용하며 1 cm 고정 격자와 결정적 사각형 정규화 규칙을 따른다.
@@ -30,6 +32,9 @@ public:
      
     static bool CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec);
 
+    // Cheap cardinality preflight used before validation, fingerprinting, or geometry work.
+    static bool HasSafeFacilitySpecCardinality(const FFFZSFacilitySpec& Spec);
+
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Validation")
     static int32 GetMaxEnumeratedCellsPerFacility();
 	// Project Settings 값을 하드 상한 1,000,000에 제한한 실제 열거 예산을 반환.
@@ -39,6 +44,10 @@ public:
 	// 임의의 정수 회전값을 시계 방향 0..3 사분면 회전으로 정규화.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static bool TryRotateCell(FIntPoint Cell, int32 QuarterTurns, FIntPoint& OutRotatedCell);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid",
+        meta = (DeprecatedFunction, DeprecationMessage = "Use TryRotateCell so integer-boundary failure is explicit."))
     static FIntPoint RotateCell(FIntPoint Cell, int32 QuarterTurns);
 	// 원점 기준 셀 좌표를 정규화된 시계 방향 90도 단위로 회전.
 
@@ -90,15 +99,20 @@ public:
     static TArray<FIntPoint> GetReservedCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
 	// 호환/디버그용 개별 예약 셀. 10,000셀을 넘으면 빈 배열이며 권위 입력이 아니다. 
 
-    UFUNCTION(BlueprintPure, Category = "FF Zone System|Presets")
-    static FFFZSFacilitySpec MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset Preset);
-	// 선택한 내장 프리셋의 값 복사본을 만든다. Accepted 항목 외 수치는 측정 전 가설로 취급.
-
-    UFUNCTION(BlueprintPure, Category = "FF Zone System|Presets")
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Configuration")
     static TArray<FName> GetAcceptedGameplayZoneIds();
 	// 이 프로젝트의 Accepted 기본 Gameplay Zone ID 목록을 값으로 반환한다. 이식 프로젝트는 설정에서 교체할 수 있다. 
 
-    UFUNCTION(BlueprintPure, Category = "FF Zone System|Commands")
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Configuration")
+    static FFFZSCommand MakeInstallCommandFromDefinition(
+        const UFFZSFacilityDefinition* Definition,
+        FName ZoneId,
+        FFFZSGridPlacement Placement,
+        int64 ExpectedWorldRevision = -1);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Development",
+        meta = (DevelopmentOnly, DeprecatedFunction,
+            DeprecationMessage = "Use MakeInstallCommandFromDefinition. Runtime accepts only the exact registered Definition Spec."))
     static FFFZSCommand MakeInstallCommand(const FFFZSFacilitySpec& Spec, FName ZoneId, FFFZSGridPlacement Placement, int64 ExpectedWorldRevision = -1);
 	// 새 CommandId와 FacilityInstanceId를 만들고 회전을 정규화한 Install 명령을 반환한다. -1 리비전은 최신 상태를 허용.
 	

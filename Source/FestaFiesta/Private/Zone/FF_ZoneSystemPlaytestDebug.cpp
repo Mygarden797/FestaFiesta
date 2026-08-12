@@ -1,5 +1,6 @@
 #include "Zone/FF_ZoneSystemPlaytestSubsystem.h"
 
+#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "Components/SplineComponent.h"
 #include "DrawDebugHelpers.h"
@@ -174,21 +175,22 @@ void UFF_ZoneSystemPlaytestSubsystem::DrawHud() const
 
     const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
     const FFFZSReadModel ReadModel = ZoneSystem ? ZoneSystem->BuildReadModel() : FFFZSReadModel{};
-    const FString PresetName = RuntimeEnumName(
-        StaticEnum<EFFZSBuiltInFacilityPreset>(), static_cast<int64>(SelectedPreset));
+    const FString FacilityName = GetSelectedFacilityDisplayText();
     const FString NavigationMode = bEnableFullNavigationValidation
         ? TEXT("FULL NAV")
         : TEXT("CORE (Nav projection scoped off)");
-    const FString ValidationText = LastValidation.bIsValid
-        ? TEXT("VALID")
-        : FString::Printf(TEXT("INVALID: %s"), *LastValidation.Summary.ToString());
+    const FString ValidationText = !bCatalogReady
+        ? CatalogStatusMessage
+        : LastValidation.bIsValid
+            ? TEXT("VALID")
+            : FString::Printf(TEXT("INVALID: %s"), *LastValidation.Summary.ToString());
 
     GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0xFF250001), 0.2f, FColor::White,
         FString::Printf(TEXT("FF Zone System | %s | Origin=(%d,%d) Rot=%d | %s"),
-            *PresetName, CurrentPlacement.OriginCell.X, CurrentPlacement.OriginCell.Y,
+            *FacilityName, CurrentPlacement.OriginCell.X, CurrentPlacement.OriginCell.Y,
             CurrentPlacement.QuarterTurns, *NavigationMode), false);
     GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0xFF250002), 0.2f,
-        LastValidation.bIsValid ? FColor::Green : FColor::Red,
+        bCatalogReady && LastValidation.bIsValid ? FColor::Green : FColor::Red,
         FString::Printf(TEXT("Preview: %s"), *ValidationText), false);
     GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0xFF250003), 0.2f, FColor::Cyan,
         FString::Printf(TEXT("World revision=%lld | Facilities=%d | Zone=%s"),
@@ -200,7 +202,7 @@ void UFF_ZoneSystemPlaytestSubsystem::DrawHud() const
     {
         GEngine->AddOnScreenDebugMessage(static_cast<uint64>(0xFF250005), 0.2f, FColor::Silver,
             TEXT("[WASD/Arrows] Pan  [Shift] Fast pan  [Wheel] Zoom  [RMB drag] Rotate  [Home] Recenter\n")
-            TEXT("[Center marker] Target  [LMB/I/Enter] Install  [Q/E] Rotate facility  [1-7] Preset\n")
+            TEXT("[Center marker] Target  [LMB/I/Enter] Install  [Q/E] Rotate facility  [1-7] Facility\n")
             TEXT("[M] Move last  [Del] Remove  [O/C/X] Open/Close/Emergency  [K/J/B] Queue\n")
             TEXT("[F5/F9] Snapshot/Restore  [R] Reset  [N] Full Nav  [Tab] HUD  [Esc] Stop PIE"), false);
     }
@@ -219,6 +221,11 @@ void UFF_ZoneSystemPlaytestSubsystem::SetStatus(const FString& Message, const FC
 void UFF_ZoneSystemPlaytestSubsystem::RunCommandLineSmokeTest()
 {
     TArray<FString> Failures;
+    FFFZSFacilitySpec SelectedSpec;
+    if (!bCatalogReady || !TryGetSelectedFacilitySpec(SelectedSpec))
+    {
+        Failures.Add(FString::Printf(TEXT("Facility catalog was not ready: %s"), *CatalogStatusMessage));
+    }
     UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 	UWorld* World = GetWorld();
 	UFF_ZoneSystemQueueBridgeSubsystem* Integration =
@@ -267,7 +274,6 @@ void UFF_ZoneSystemPlaytestSubsystem::RunCommandLineSmokeTest()
     else
     {
         LastFacilityId = InstallResult.FacilityActor->GetFacilityInstanceId();
-        ApplyFacilityVisualScale(InstallResult.FacilityActor);
 
         const FFFZSCommandResult OpenResult = ZoneSystem->ExecuteCommand(
             MakeSmokeLifecycleCommand(EFFZSCommandType::Open, LastFacilityId));
@@ -445,6 +451,13 @@ UFFZSWorldSubsystem* UFF_ZoneSystemPlaytestSubsystem::GetZoneSystem() const
 {
     UWorld* World = GetWorld();
     return World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+}
+
+UFF_BuildCatalogSubsystem* UFF_ZoneSystemPlaytestSubsystem::GetBuildCatalog() const
+{
+    const UWorld* World = GetWorld();
+    UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+    return GameInstance ? GameInstance->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
 }
 
 AFFZSFacilityActor* UFF_ZoneSystemPlaytestSubsystem::GetLastFacility() const
