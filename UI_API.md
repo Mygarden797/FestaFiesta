@@ -350,9 +350,27 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
 게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
 
-### 아직 없는 것
+### Gold API 구현 완료 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-12)
 
-`UFF_FestivalProgressionSubsystem`(경제·Gold·일차 결과·저장) — 아래 "UI가 필요한데 없는 것" 표 참고.
+`UFF_FestivalProgressionSubsystem`의 Gold 읽기 API가 구현됐습니다.
+
+- **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
+- **접근**: `GameInstanceSubsystem`
+- `GetGold()` — 현재 잔액 `int32`, 0 이상·상한 없음
+- `CanAfford(int32 CostGold)` — 구매 가능 판정. UI가 `GetGold() >= 가격`을 직접 계산하지 않습니다
+- `OnGoldChanged(int32 NewGold)` — 값이 실제로 바뀔 때만 발행
+
+**종태님께 요청드릴 연결 작업**
+
+1. `UFF_FestivalViewModelSubsystem` 초기화 시 `UFF_FestivalProgressionSubsystem`을 가져와
+   `GetGold()`로 초기 Gold를 동기화해 주세요.
+2. `OnGoldChanged`를 구독해 ViewModel의 `Gold`와 기존 `OnGoldChanged`를 갱신하고,
+   Deinitialize에서 반드시 구독 해제해 주세요.
+3. 구매 버튼은 ViewModel에 `CanAfford(int32 CostGold)` 전달 함수를 두고 원본 판정을 그대로 사용해 주세요.
+   위젯이 ProgressionSubsystem을 직접 참조하거나 잔액과 가격을 직접 비교하지 않습니다.
+4. Gold는 소스 델리게이트가 있으므로 0.1초 폴링 대상에서 제외해도 됩니다.
+
+아직 없는 경제 값은 `TotalRevenue`, `TodayRevenue`, 일차 결과와 저장 API입니다.
 
 ---
 
@@ -373,7 +391,7 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 | SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | 더미 72     |
 | ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72     |
 | Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
-| Gold              | `GetGold()`                           | `OnGoldChanged`              | 더미 10,000 |
+| Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 API 완료 · ViewModel 연결 요청** |
 | TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | 더미 0      |
 | TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | 더미 0      |
 | Stage / Day       | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged`         | **진짜 값**  |
@@ -419,9 +437,7 @@ AT-011에 따라 색 + 라벨 + 아이콘을 함께 씁니다.
 `Gold` · `TotalRevenue` · `TodayRevenue`는 상한이 없어 절대 구간이 없습니다.
 Gold는 "이걸 살 수 있나"(가격 대비), 매출은 전날 대비 증감으로 표현합니다.
 
-아직 미확인:
-
-- Gold가 음수가 될 수 있는지 (지금은 클램프하지 않음)
+Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프하지 않고 거부되며 기존 잔액을 유지합니다.
 
 ### Satisfaction 이중 지표 — 화면 배치 (2026-08-06 UI 결정)
 
@@ -484,7 +500,7 @@ Gold는 "이걸 살 수 있나"(가격 대비), 매출은 전날 대비 증감�
 | --------------------------------------------- | --------- | --------- | ------------------------------------------------------------------ |
 | **Satisfaction** (`SimSatisfaction` 0~100)    | 김시리 · 이정원 | ❌ 없음      | Overview 지표, Report, SNS                                           |
 | **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ❌ 없음      | Report 분해식, Finale 구매 예상치                                          |
-| **`Gold`** (잔액)                               | 김시리       | ❌ 없음      | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
+| **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
 | **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ❌ 없음      | 공통 상단 바                                                            |
 | **`TodayRevenue`** (오늘 매출)                    | 김시리       | ❌ 없음      | Report — UI가 누적값에서 빼지 않습니다                                         |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
@@ -511,3 +527,4 @@ Gold는 "이걸 살 수 있나"(가격 대비), 매출은 전날 대비 증감�
 | 2026-08-06 | 김시리 | `UFF_NpcNeedMetricsSubsystem`·`FFF_DestinationDecision` 항목 추가                                  |
 | 2026-08-11 | 백종태 | Stage 표에 `SkipCurrentStage`·`IsFinalDay`·`IsLiveStage`·`IsReportStage`·`OnFestivalEnded` 반영. 남은 시간을 폴링→구독으로 전환 완료 표시. ViewModel Command 2종 신설. 강민서에게 남은 요청 2건 기록 |
 | 2026-08-12 | 백종태 | `OnMainProgramStarted`·`OnMainProgramEnded` 항목과 사용 주의 3건 추가. 유료 프로그램 예약 절 신설 — UI 담당 확정과 필요 API 4건 요청 |
+| 2026-08-12 | 김시리 | `UFF_FestivalProgressionSubsystem`의 Gold Getter·델리게이트·`CanAfford` 구현 완료. ViewModel 초기 동기화·이벤트 중계·구매 가능 판정 연결 요청 |
