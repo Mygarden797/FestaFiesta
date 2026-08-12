@@ -24,17 +24,13 @@ AFF_BaseCrowd::AFF_BaseCrowd()
 
 	PrimaryActorTick.bCanEverTick = false;
 
-	// 루트는 빈 SceneComponent다. 메시를 루트로 두면 BP에서 메시 방향을 보정할 수 없다 —
-	// 루트의 상대 트랜스폼은 곧 액터 트랜스폼이고, 매 프레임 PushPresentation이 그것을 덮어쓴다.
+
 	RootSceneComponent = CreateDefaultSubobject<USceneComponent>("RootSceneComponent");
 	SetRootComponent(RootSceneComponent);
 
 	SkeletalMeshComponent = CreateDefaultSubobject<USkeletalMeshComponent>("SkeletalMeshComponent");
 	SkeletalMeshComponent->SetupAttachment(RootSceneComponent);
-
-	// AnimInstance는 여기서 잡을 수 없다.
-	// 생성자 시점에는 SkeletalMesh도 AnimClass도 아직 설정되지 않아 GetAnimInstance()가 항상 nullptr을 반환한다.
-	// 실제 캐싱은 BeginPlay에서 한다.
+	
 
 	// 대체 표시용 원기둥. 기본은 꺼 둔다 — SkeletalMesh가 없을 때만 BeginPlay에서 켠다.
 	ProxyMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>("ProxyMeshComponent");

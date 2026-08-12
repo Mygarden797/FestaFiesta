@@ -34,34 +34,14 @@ namespace CrowdSteering
 		float MaxTurnRateDegrees = 360.f;
 	};
 
-	/**
-	 * 지수 평활 계수를 구한다. 0이면 속도가 전혀 안 변하고, 1이면 즉시 희망 속도가 된다.
-	 *
-	 * FixedDt가 고정이라 매 스텝 같은 값이 나오므로, Agent 루프 밖에서 한 번만 구해 재사용한다.
-	 * exp를 쓰는 이유: 단순히 Dt/SmoothTime을 쓰면 Dt가 SmoothTime보다 클 때 계수가 1을 넘어 발산한다.
-	 */
+
 	FESTAFIESTA_API float ComputeVelocityAlpha(float SmoothTime, float FixedDt);
 
 	/** 목적지에 도착했는지. XY 평면 거리로만 판정한다. */
 	FESTAFIESTA_API bool HasArrived(const FUnitData& Unit, float ArrivalRadiusUU);
 
-	/**
-	 * Agent를 한 고정 스텝만큼 진행시킨다.
-	 *
-	 * PrevPosition 저장 -> 희망 속도 계산 -> 속도 평활/클램프 -> 위치 적분 -> 회전 순으로 진행한다.
-	 * 도착 판정과 새 목적지 선정은 하지 않는다. 호출 전에 HasArrived로 확인하고 TargetLocation을 갱신할 것.
-	 *
-	 * @param VelocityAlpha ComputeVelocityAlpha의 결과
-	 */
+	//Agent의 스탭을 진행시킨다.
 	FESTAFIESTA_API void StepAgent(FUnitData& Unit, const FStepParams& Params, float VelocityAlpha, float FixedDt);
 
-	/**
-	 * 프레임 시간을 누산기에 넣고, 이번 프레임에 실행할 고정 스텝 수를 반환한다.
-	 * Accumulator는 소비한 만큼 줄어들고, 남은 값이 렌더링 보간 계수가 된다.
-	 *
-	 * MaxStepsPerFrame까지 돌고도 한 스텝 이상이 남아 있으면 남은 시간을 버린다.
-	 * 버리지 않으면 히칭 이후 매 프레임 한도까지 돌게 되어 영영 회복하지 못한다(death spiral).
-	 * 시뮬레이션 시간이 실시간보다 느려지는 대신 프레임률을 지키는 쪽을 택한 것이다.
-	 */
 	FESTAFIESTA_API int32 ConsumeFixedSteps(float& Accumulator, float DeltaTime, float FixedStepSeconds, int32 MaxStepsPerFrame);
 }
