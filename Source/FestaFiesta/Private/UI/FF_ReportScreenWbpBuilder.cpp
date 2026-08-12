@@ -349,7 +349,9 @@ namespace FFReportWbpBuilder
 
 		// AT-011: 구간을 색으로만 알리지 않는다. 아이콘과 라벨을 함께 놓는다.
 		// 아이콘 텍스처와 틴트는 UFF_MetricRowWidget::ApplyBand가 넣는다. 여기서 지정하지 않는다.
-		BandIcon->Brush.ImageSize = FVector2D(BandIconSize, BandIconSize);
+		FSlateBrush BandIconBrush = BandIcon->GetBrush();
+		BandIconBrush.SetImageSize(FVector2D(BandIconSize, BandIconSize));
+		BandIcon->SetBrush(BandIconBrush);
 		if (UHorizontalBoxSlot* Slot = BandBox->AddChildToHorizontalBox(BandIcon))
 		{
 			Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));

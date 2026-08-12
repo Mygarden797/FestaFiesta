@@ -137,7 +137,10 @@ enum class EFFZSPlacementFailure : uint8
     NavRebuildTimeout,
     DataInvalid,
     ExternalPolicyRejected,
-    InternalError
+    InternalError,
+    // 경제 정책이 현재 잔액으로 명령 비용을 지불할 수 없음을 구조적으로 나타낸다.
+    // 기존 SaveGame enum ordinal을 보존하기 위해 새 값은 항상 목록 끝에 추가한다.
+    InsufficientFunds
 };
 
 // 시설 내 이동 의미 지점. Entry는 진입, Service는 처리 위치, Exit는 최종 소유권 해제 전 도착 위치

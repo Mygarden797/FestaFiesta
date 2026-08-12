@@ -12,11 +12,11 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "CommonTextBlock.h"
-#include "Components/BackgroundBlur.h"
 #include "Components/Border.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/WidgetSwitcher.h"
 #include "Components/WrapBox.h"
@@ -53,10 +53,11 @@ namespace
 
 	struct FWidgetBlueprintContract
 	{
-		// 각 WBP의 저장 경로, 반드시 상속해야 할 네이티브 부모, 화면 구조상 필요한 위젯 목록을 한 묶음으로 표현한다.
+		// 각 WBP의 저장 경로, 반드시 상속해야 할 네이티브 부모, 화면 구조상 필요한/금지된 위젯 목록을 한 묶음으로 표현한다.
 		const TCHAR* PackagePath;
 		UClass* ExpectedNativeParent;
 		TArray<FRequiredWidgetContract> RequiredWidgets;
+		TArray<const TCHAR*> ForbiddenWidgets;
 	};
 
 	FString MakeAssetObjectPath(const FString& PackagePath)
@@ -231,6 +232,15 @@ namespace
 					Widget->IsA(RequiredWidget.ExpectedClass));
 			}
 		}
+		for (const TCHAR* ForbiddenWidgetName : Contract.ForbiddenWidgets)
+		{
+			Test.TestNull(
+				FString::Printf(
+					TEXT("%s does not contain removed widget '%s'"),
+					Contract.PackagePath,
+					ForbiddenWidgetName),
+				WidgetTree->FindWidget(ForbiddenWidgetName));
+		}
 
 		CheckNativeBindWidgetContract(Test, Contract, *WidgetTree);
 	}
@@ -297,7 +307,6 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen"),
 			UFF_BuildCatalogScreen::StaticClass(),
 			{
-				{ TEXT("Background_Blur"), UBackgroundBlur::StaticClass() },
 				{ TEXT("Background_Dim"), UBorder::StaticClass() },
 				{ TEXT("Catalog_Panel"), UBorder::StaticClass() },
 				{ TEXT("Top_Bar"), UHorizontalBox::StaticClass() },
@@ -311,7 +320,8 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 				{ TEXT("BOX_MinorSections"), UVerticalBox::StaticClass() },
 				{ TEXT("Status_Surface"), UBorder::StaticClass() },
 				{ TEXT("TXT_Status"), UCommonTextBlock::StaticClass() },
-			}
+			},
+			{ TEXT("Background_Blur") }
 		},
 		{
 			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildTopButton"),
@@ -405,6 +415,34 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			// interaction checks below into tests of a detached widget tree.
 			const TSharedRef<SWidget> ScreenSlateWidget = Screen->TakeWidget();
 			TestTrue(TEXT("Generated screen uses its Designer WidgetTree"), Screen->IsUsingDesignerWidgetTree());
+
+			USizeBox* GoldSize = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Gold_Size")));
+			UCommonTextBlock* GoldText = Cast<UCommonTextBlock>(
+				Screen->GetWidgetFromName(TEXT("TXT_Gold")));
+			TestNotNull(TEXT("Runtime-compatible screen provides the top-bar Gold panel"), GoldSize);
+			TestNotNull(TEXT("Runtime-compatible screen provides the current Gold text"), GoldText);
+			if (GoldSize)
+			{
+				TestTrue(TEXT("Gold panel has an explicit width"), GoldSize->IsWidthOverride());
+				TestEqual(TEXT("Gold panel occupies the requested top-right width"),
+					GoldSize->GetWidthOverride(), 320.0f);
+			}
+			if (GoldText)
+			{
+				TestEqual(TEXT("A playerless screen does not invent a Gold balance"),
+					GoldText->GetText().ToString(), FString(TEXT("—")));
+			}
+			if (UHorizontalBox* TopBar = Cast<UHorizontalBox>(
+				Screen->GetWidgetFromName(TEXT("Top_Bar")));
+				TopBar && GoldSize)
+			{
+				UWidget* CloseButton = Screen->GetWidgetFromName(TEXT("BTN_Close"));
+				if (CloseButton)
+				{
+					TestEqual(TEXT("Gold panel is immediately before the top-right Close button"),
+						TopBar->GetChildIndex(GoldSize), TopBar->GetChildIndex(CloseButton) - 1);
+				}
+			}
 
 			bool bBuildModeKeyRequested = false;
 			const FDelegateHandle BuildModeKeyHandle = Screen->OnBuildModeKeyRequested.AddLambda(
