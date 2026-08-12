@@ -8,13 +8,8 @@
 
 namespace CrowdDensity
 {
-	/** UU -> m. 언리얼 1UU = 1cm. */
 	static constexpr float UUToMeters = 0.01f;
 
-	/**
-	 * Fruin 보행로 LOS 상한 밀도, 명/m^2.
-	 * 각 값은 "이 미만이면 해당 등급"을 뜻한다. F는 상한이 없다.
-	 */
 	static constexpr float LOS_A_Max = 0.31f;
 	static constexpr float LOS_B_Max = 0.43f;
 	static constexpr float LOS_C_Max = 0.72f;

@@ -26,7 +26,6 @@
 
 namespace FFF_CrowdTestHelpers
 {
-	/** 지정 위치에 선 활성 Agent 하나. */
 	FUnitData MakeUnitAt(const FVector& Position)
 	{
 		FUnitData Unit;
@@ -36,7 +35,6 @@ namespace FFF_CrowdTestHelpers
 		return Unit;
 	}
 
-	/** 같은 위치에 Count명을 겹쳐 세운다. 한 셀에 몰아넣어 밀도를 만들 때 쓴다. */
 	void AddUnitsAt(TArray<FUnitData>& Units, const FVector& Position, int32 Count)
 	{
 		for (int32 i = 0; i < Count; ++i)
@@ -45,7 +43,6 @@ namespace FFF_CrowdTestHelpers
 		}
 	}
 
-	/** 원점 기준 10m x 10m, 셀 2m(4m^2) 그리드. 셀은 5x5 = 25개. */
 	FCrowdDensityGrid MakeTestGrid()
 	{
 		FCrowdDensityGrid Grid;
@@ -455,7 +452,6 @@ bool FFF_CrowdSteering_VelocityAlphaStaysInRange::RunTest(const FString& Paramet
 
 namespace FFF_CrowdPoolTestHelpers
 {
-	/** 불변식: (빈 슬롯 + 바인딩된 슬롯) == 전체 슬롯. 어떤 연산 뒤에도 깨지면 안 된다. */
 	bool HoldsInvariant(const FCrowdActorPoolBinding& Pool)
 	{
 		return Pool.GetFreeSlotCount() + Pool.GetBoundCount() == Pool.GetNumActorSlots();
@@ -742,7 +738,6 @@ namespace FFF_CrowdWorldTestHelpers
 		}
 	};
 
-	/** 60fps로 Seconds초만큼 Tick한다. */
 	void TickFor(UFF_CrowdSimulationSubsystem& CrowdSim, float Seconds)
 	{
 		constexpr float FrameDelta = 1.f / 60.f;
@@ -754,7 +749,6 @@ namespace FFF_CrowdWorldTestHelpers
 		}
 	}
 
-	/** 숨겨지지 않은(= 화면에 보이는) 풀 액터 수. */
 	int32 CountVisibleActors(const UFF_CrowdSimulationSubsystem& CrowdSim)
 	{
 		int32 Visible = 0;

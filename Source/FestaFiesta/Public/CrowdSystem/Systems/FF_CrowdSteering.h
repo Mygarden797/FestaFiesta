@@ -18,26 +18,21 @@ struct FUnitData;
  */
 namespace CrowdSteering
 {
-	/** 이 속도(UU/s) 아래에서는 방향을 갱신하지 않는다. 서 있는 Agent가 미세 속도로 빙빙 도는 것을 막는다. */
 	inline constexpr float FacingSpeedThresholdUU = 5.f;
 
 	/** 한 스텝 이동에 필요한 설정값. Agent마다 달라지지 않는 값들만 모았다. */
 	struct FStepParams
 	{
-		/** 목적지에 이만큼 가까워지면 도착으로 본다, UU */
 		float ArrivalRadiusUU = 150.f;
 
-		/** 목적지 앞에서 감속을 시작하는 거리, UU. 없으면 목적지를 지나쳤다 돌아오길 반복한다 */
 		float BrakingDistanceUU = 450.f;
 
-		/** 초당 회전 한계, 도 */
 		float MaxTurnRateDegrees = 360.f;
 	};
 
 
 	FESTAFIESTA_API float ComputeVelocityAlpha(float SmoothTime, float FixedDt);
 
-	/** 목적지에 도착했는지. XY 평면 거리로만 판정한다. */
 	FESTAFIESTA_API bool HasArrived(const FUnitData& Unit, float ArrivalRadiusUU);
 
 	//Agent의 스탭을 진행시킨다.

@@ -56,25 +56,10 @@ public:
 
 	// --- 시뮬레이션 ------------------------------------------------------------------------
 
-	/**
-	 * 시뮬레이션을 준비한다. 영역을 잡고, 밀도 그리드를 만들고, Actor/Agent 풀을 채운다.
-	 *
-	 * OnWorldBeginPlay에서 하지 않고 이 함수로 분리한 이유가 두 가지 있다.
-	 *   1. 어떤 Actor 클래스를 쓸지(CrowdActorClass) 서브시스템은 알 방법이 없다.
-	 *      레벨에 놓인 AFF_SpawnActor가 알려줘야 하는데, 액터의 BeginPlay는
-	 *      서브시스템의 OnWorldBeginPlay보다 나중에 돈다(UWorld::BeginPlay 순서).
-	 *   2. 군중이 없는 레벨(메뉴 등)에서까지 Actor 수백 개를 스폰할 이유가 없다.
-	 *
-	 * 두 번 이상 불러도 두 번째부터는 아무 일도 하지 않는다.
-	 */
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
 	void InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
 		int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass);
 
-	/**
-	 * 시뮬레이션 영역을 다시 지정하고 밀도 그리드를 재생성한다.
-	 * 풀은 건드리지 않는다. 영역만 바꾸고 싶을 때 쓴다.
-	 */
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
 	void ConfigureSimArea(FVector NewOrigin, float NewRadiusUU);
 
@@ -129,11 +114,6 @@ public:
 		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].PartyID : INDEX_NONE;
 	}
 
-	/**
-	 * AgentIndex가 자기 파티의 리더인지.
-	 *
-	 * 리더만 목적지를 스스로 정한다. 1인 파티는 자기 자신이 리더이므로 항상 true.
-	 */
 	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
 	bool IsPartyLeader(int32 AgentIndex) const
 	{
@@ -230,21 +210,9 @@ public:
 
 	// --- 파티(동반 그룹) 설정 --------------------------------------------------------------
 
-	/**
-	 * 끄면 전원이 1인 파티가 된다(= 종전과 같은 개별 이동).
-	 * 그룹 이동이 혼잡도에 주는 영향을 비교할 때 이 스위치로 A/B를 본다.
-	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	bool bEnablePartyGrouping = true;
 
-	/**
-	 * 파티 크기 1~6인의 추첨 가중치. 배열 N번째가 (N+1)인 파티의 가중치다.
-	 * 합이 100이 아니어도 된다 — 총합으로 정규화한다.
-	 *
-	 * 이 값은 **자리를 맞춘 임시값**이다. 실측 분포는 Utility AI 쪽
-	 * FFF_GroupSizeDistributionRow(visitor_group_size_distribution_v0.csv)에 있고,
-	 * 연동하면 이 배열을 그 테이블에서 채우게 된다. 지금은 데이터 의존 없이 눈으로 확인하는 것이 목적이다.
-	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	TArray<float> PartySizeWeights = { 22.f, 38.f, 16.f, 14.f, 6.f, 4.f };
 
@@ -252,21 +220,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartySpacingUU = 90.f;
 
-	/**
-	 * 리더와 이 거리 이상 벌어진 멤버는 목적지가 아니라 리더 자신을 향한다.
-	 *
-	 * 목적지만 물려받으면 도중에 갈라져도 각자 제 목적지로 가버려서 파티가 흩어진다.
-	 * 회피력(social force)이 붙으면 밀려서 벌어지는 일이 실제로 생기므로 이 복귀 규칙이 필요하다.
-	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyCohesionRadiusUU = 400.f;
 
-	/**
-	 * 멤버의 최고 속도 배율. 리더와 정확히 같은 속도면 한 번 벌어진 간격이 영원히 좁혀지지 않는다
-	 * — 같은 속도로 쫓으면 거리가 유지될 뿐이다. 따라가는 쪽이 조금 더 빨리 걸어야 다시 붙는다.
-	 *
-	 * 실제 그룹은 가장 느린 사람 속도에 맞춘다. 회피력이 붙어 리더가 실제로 느려지면 이 방향을 뒤집어야 한다.
-	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyMemberSpeedBoost = 1.15f;
 
@@ -297,12 +253,6 @@ private:
 	// PartySizeWeights로 파티 크기를 추첨한다. 그룹핑이 꺼져 있으면 항상 1
 	int32 PickPartySize();
 
-	/**
-	 * 파티 내 SlotIndex번 자리의 리더 기준 상대 위치.
-	 *
-	 * 황금각(137.5도) 나선 배치다. 슬롯 번호만으로 서로 겹치지 않게 퍼지고,
-	 * 난수를 쓰지 않으므로 같은 시드에서 같은 대형이 재현된다.
-	 */
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
 	// 멤버의 목적지를 리더에게서 갱신한다. 리더가 유효하지 않으면 단독으로 승격시킨다
@@ -313,23 +263,8 @@ private:
 	// 다음에 발급할 파티 ID. 슬롯 인덱스와 달리 재사용하지 않아 로그를 되짚을 수 있다
 	int32 NextPartyID = 0;
 
-	/**
-	 * 시뮬레이션 고정 스텝, 초. 30Hz.
-	 *
-	 * 프레임 DeltaTime을 그대로 쓰지 않는 이유는 두 가지다.
-	 *   1. 재현성 — 같은 시드로 돌리면 프레임률과 무관하게 같은 결과가 나와야 분석 결과를 신뢰할 수 있다
-	 *   2. 안정성 — 나중에 붙일 회피력은 스텝이 커지면 발산한다. 스텝 크기를 고정해야 튜닝값이 의미를 가진다
-	 * 30Hz면 보행 속도(1.5m/s) 기준 한 스텝에 5cm 이동이라 충분히 촘촘하다.
-	 */
 	static constexpr float FixedStepSeconds = 1.f / 30.f;
 
-	/**
-	 * 한 프레임에 허용할 최대 스텝 수.
-	 *
-	 * 없으면 히칭이 났을 때 밀린 시간을 따라잡으려 여러 스텝을 몰아 돌고,
-	 * 그게 다음 프레임을 더 늦추고, 더 많은 스텝이 밀리는 악순환(death spiral)에 빠진다.
-	 * 한도를 넘긴 잔여 시간은 버린다. 시뮬레이션 시간이 실시간보다 느려지는 대신 프레임은 살아난다.
-	 */
 	static constexpr int32 MaxStepsPerFrame = 3;
 
 	// 아직 소비하지 못한 프레임 시간, 초

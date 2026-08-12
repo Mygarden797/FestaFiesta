@@ -26,7 +26,6 @@
 
 namespace FFCrowdConsole
 {
-	/** 현재 조종 중인 폰의 위치. 없으면 원점. 스폰 기준점으로 쓴다. */
 	FVector GetViewerLocation(const UWorld* World)
 	{
 		if (const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr)
@@ -45,13 +44,6 @@ namespace FFCrowdConsole
 		return FVector::ZeroVector;
 	}
 
-	/**
-	 * 주어진 위치에서 바닥까지 내려찍어 지면 높이로 보정한다. 맞는 게 없으면 원래 위치 그대로.
-	 *
-	 * 스폰 기준점은 조종 중인 폰의 위치인데, 그 Z는 캡슐 중심(지면 +88 근처)이다.
-	 * 보정하지 않으면 군중 전원이 공중에 뜨고 밀도 그리드도 같은 높이에 그려져서
-	 * "격자가 지면에 안 붙는다"는 그림이 나온다. Z 추종은 시뮬레이션에 없으므로 여기서 한 번만 맞춘다.
-	 */
 	FVector SnapToGround(UWorld* World, const FVector& Location)
 	{
 		if (!World)
@@ -88,7 +80,6 @@ namespace FFCrowdConsole
 		return CrowdSim;
 	}
 
-	/** Args[Index]를 정수로. 없거나 파싱 실패면 DefaultValue. */
 	int32 ParseIntArg(const TArray<FString>& Args, int32 Index, int32 DefaultValue)
 	{
 		return Args.IsValidIndex(Index) ? FCString::Atoi(*Args[Index]) : DefaultValue;
@@ -106,22 +97,8 @@ namespace FFCrowdConsole
 
 namespace FFCrowdConsole
 {
-	/**
-	 * FF.Crowd.Class로 예약해 둔 Actor 클래스 경로.
-	 *
-	 * Actor 풀은 InitializeSimulation에서 한 번만 만들어지므로, 클래스는 그보다 먼저 정해져 있어야 한다.
-	 * 그래서 커맨드는 클래스를 "지금 적용"하지 않고 경로만 적어 둔다. 실제 로드는 스폰 시점이다.
-	 *
-	 * PIE 세션이 끝나도 남는다 — 한 번 지정하고 여러 번 다시 실행하는 게 일반적인 사용법이다.
-	 */
 	static FString PendingCrowdClassPath;
 
-	/**
-	 * 에셋 경로를 클래스 오브젝트 경로로 바꾼다.
-	 *
-	 * BP는 에셋(/Game/.../BP_Crowd)과 그 BP가 만드는 클래스(/Game/.../BP_Crowd.BP_Crowd_C)가 다른 오브젝트다.
-	 * 스폰에 필요한 건 후자다. 사용자가 콘텐츠 브라우저에서 복사한 경로는 대개 전자이므로 여기서 변환한다.
-	 */
 	FString BuildClassObjectPath(const FString& InPath)
 	{
 		FString Path = InPath;
@@ -153,7 +130,6 @@ namespace FFCrowdConsole
 		return Path + TEXT("_C");
 	}
 
-	/** 예약된 경로를 실제 클래스로 로드한다. 예약이 없거나 로드에 실패하면 nullptr. */
 	TSubclassOf<AFF_BaseCrowd> ResolvePendingCrowdClass()
 	{
 		if (PendingCrowdClassPath.IsEmpty())
@@ -232,7 +208,6 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdClassCommand(
 
 namespace FFCrowdConsole
 {
-	/** 스폰 본체. FF.Crowd.Spawn과 FF.Crowd.Demo가 같은 경로를 쓰도록 뽑아 두었다. */
 	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU, float SimRadiusUU)
 	{
 		UFF_CrowdSimulationSubsystem* CrowdSim = GetCrowdSim(World, Ar);
@@ -357,7 +332,6 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStatsCommand(
 
 namespace FFCrowdConsole
 {
-	/** 시점 이동 본체. FF.Crowd.View와 FF.Crowd.Demo가 공유한다. */
 	bool MoveViewAbove(UWorld* World, FOutputDevice& Ar, float HeightUU, float PitchDegrees);
 }
 

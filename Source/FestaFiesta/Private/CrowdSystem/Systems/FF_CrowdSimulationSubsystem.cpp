@@ -11,7 +11,6 @@
 
 namespace CrowdSim
 {
-	/** 목적지 추첨 시드. 고정해야 같은 조건에서 같은 결과가 재현된다. */
 	static constexpr int32 DefaultSeed = 20260812;
 }
 
