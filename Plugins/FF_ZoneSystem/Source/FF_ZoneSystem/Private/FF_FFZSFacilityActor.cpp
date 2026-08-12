@@ -210,7 +210,7 @@ void AFFZSFacilityActor::MarkRemoved()
     }
     QueueComponent->EmergencyCancel();
     FacilityState = EFFZSFacilityState::Removed;
-    SetBuildModeRemovalSelected(false);
+    SetBuildModeActionSelected(false);
     SetBuildModeRangeVisible(false);
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
@@ -256,17 +256,22 @@ void AFFZSFacilityActor::SetBuildModeRangeVisible(const bool bVisible)
     }
 }
 
-void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+void AFFZSFacilityActor::SetBuildModeActionSelected(const bool bSelected)
 {
-    bBuildModeRemovalSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
+    bBuildModeActionSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
     if (!FootprintBounds)
     {
         return;
     }
 
-    FootprintBounds->ShapeColor = bBuildModeRemovalSelected ? FColor::Red : FColor::Green;
-    FootprintBounds->SetLineThickness(bBuildModeRemovalSelected ? 5.0f : 2.0f);
+    FootprintBounds->ShapeColor = bBuildModeActionSelected ? FColor(64, 200, 255) : FColor::Green;
+    FootprintBounds->SetLineThickness(bBuildModeActionSelected ? 5.0f : 2.0f);
     FootprintBounds->MarkRenderStateDirty();
+}
+
+void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+{
+    SetBuildModeActionSelected(bSelected);
 }
 
 bool AFFZSFacilityActor::IsWorldPointInsideFootprint(const FVector& WorldPoint) const

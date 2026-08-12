@@ -852,6 +852,22 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
     }
 
     FFFZSPlacementValidation Result = ValidatePlacementLocal(EffectiveCommand, Existing);
+    if (Result.bIsValid && Command.Type == EFFZSCommandType::Move && Existing)
+    {
+        const UFFZSFacilityQueueComponent* Queue = Existing->GetQueueComponent();
+        if (Queue && Queue->IsOccupied())
+        {
+            Result.AddFailure(
+                EFFZSPlacementFailure::FacilityOccupied,
+                LOCTEXT("MovePreviewOccupied", "Facility를 이동하기 전에 닫고 Queue를 비우십시오."));
+        }
+        else if (!Existing->CanMoveOrRemove())
+        {
+            Result.AddFailure(
+                EFFZSPlacementFailure::InvalidFacilityState,
+                LOCTEXT("MovePreviewState", "Active 상태의 Facility는 이동하기 전에 닫아야 합니다."));
+        }
+    }
     if (Result.bIsValid)
     {
         FFFZSPolicyContext Context;
@@ -895,7 +911,6 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     {
         Result.AddFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveMissing", "이동할 Facility가 존재하지 않습니다."));
     }
-
     TArray<FText> SpecErrors;
     if (!Command.FacilitySpec.IsValid(SpecErrors))
     {
