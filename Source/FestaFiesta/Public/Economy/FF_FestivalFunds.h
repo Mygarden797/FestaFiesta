@@ -9,7 +9,7 @@
  * [참고] Gold 는 음수가 되지 않는다. 잔액 부족 시 "구매 거부"를 한다.
  * [참고] data/metadata/spec/economy_spec.md §3.1 / §4.2.
  * 
- * 상태 보관과 통지는 UFF_FestivalProgressionSubsystem 이 맡는다.
+ * 상태 보관과 통지는 Festival/FF_FestivalProgressionSubsystem 이 맡는다.
  */
 struct FFF_FestivalFunds
 {

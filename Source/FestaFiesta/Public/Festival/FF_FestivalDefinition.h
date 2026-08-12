@@ -125,10 +125,8 @@ public:
 
 	// --- 참조 표 ----------------------------------------------------------
 
-	/**
-	 * 시설 설치비 표. 행 구조체는 FFF_FacilityCostRow 여야 한다.
-	 * RowName 은 FFFZSFacilitySpec::InstallCostKey 에 저작한 키다.
-	 */
+	// 시설 설치비 표. 행 구조체는 FFF_FacilityCostRow 여야 한다.
+	// RowName 은 "Cost.<대분류>.<소분류>" 형태다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Tables")
 	TObjectPtr<UDataTable> FacilityCostTable;
 

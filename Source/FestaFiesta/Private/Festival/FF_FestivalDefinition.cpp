@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "Economy/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalDefinition.h"
 
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
