@@ -57,12 +57,7 @@ struct FUnitData
 	// 스폰되지 않은 빈 슬롯만 INDEX_NONE이다
 	int32 PartyID = INDEX_NONE;
 
-	/**
-	 * 이 Agent가 목적지를 물려받는 리더의 슬롯 인덱스.
-	 *
-	 * 자기 자신을 가리키면 리더다(1인 파티는 항상 자기 자신). 별도 bIsLeader를 두지 않는 이유는
-	 * 멤버가 매 스텝 리더를 찾아야 해서 어차피 인덱스가 필요하고, 두 필드가 어긋날 여지를 없애기 위해서다.
-	 */
+	//Leader가 받는 목적지 Index
 	int32 LeaderAgentIndex = INDEX_NONE;
 
 	// 파티 내 자리 번호. 0이 리더. 대형(formation) 오프셋을 이 번호로 계산한다

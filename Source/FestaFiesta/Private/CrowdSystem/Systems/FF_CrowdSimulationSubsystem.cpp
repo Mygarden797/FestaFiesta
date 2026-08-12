@@ -235,7 +235,6 @@ int32 UFF_CrowdSimulationSubsystem::PickPartySize()
 		}
 	}
 
-	// 부동소수 오차로 마지막 칸을 넘어간 경우. 마지막 크기로 본다.
 	return PartySizeWeights.Num();
 }
 
@@ -247,7 +246,6 @@ FVector UFF_CrowdSimulationSubsystem::GetPartyFormationOffset(int32 SlotIndex) c
 		return FVector::ZeroVector;
 	}
 
-	// 황금각 나선. 슬롯이 늘어도 균일하게 퍼지고 같은 반경에 두 명이 겹치지 않는다.
 	constexpr float GoldenAngleDegrees = 137.5f;
 	const float Angle = FMath::DegreesToRadians(GoldenAngleDegrees * SlotIndex);
 	const float Radius = PartySpacingUU * FMath::Sqrt(static_cast<float>(SlotIndex));
