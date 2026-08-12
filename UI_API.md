@@ -136,7 +136,7 @@ FFFZSReadModel {
 **플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
 Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
 
-### 완성형 시설 건축 카탈로그 (2026-08-10 갱신)
+### 완성형 시설 건축 카탈로그 (2026-08-12 갱신)
 
 - **헤더**: `Public/Building/FF_BuildCatalogSubsystem.h`, `Public/Building/FF_BuildModeSubsystem.h`
 - **접근**: `GameInstanceSubsystem` 카탈로그 + `TickableWorldSubsystem` 건축 모드
@@ -146,30 +146,38 @@ Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 �
 `대분류 > 소분류 > 고유이름` 읽기 모델을 만든다. 위젯은 에셋 레지스트리를 직접 조회하거나 ID를 직접
 파싱하지 않고 `GetEntries()`/`GetCategoryGroups()`와 `OnCatalogChanged`를 사용한다.
 
-`UFF_BuildModeSubsystem`은 `Closed → BuildMode ↔ CatalogOpen → Placing` 상태를 소유하고, 선택한
-`UFFZSFacilityDefinition::Spec`을 기존 `AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다.
-따라서 Zone 경계·충돌·여유 공간·Queue 예약·보호구역·지면·내비게이션 검증을 우회하지 않는다.
-활성 건축 세션(`BuildMode`·`CatalogOpen`·`Placing`)에서는 설치 시설의
-footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시하고,
-카탈로그가 닫힌 `BuildMode`에서만 첫 좌클릭으로 철거 대상을 선택한다. 선택된 시설은 footprint가
-빨간색 굵은 선으로 바뀌고 제품용 하단 패널에 시설명과 확인/취소 입력이 표시된다. 같은 시설을 다시
-좌클릭하거나 `Enter`를 눌러야 같은 권위 명령 경로의 `Remove`가 실행된다. 빈 공간 또는 우클릭은
-선택만 취소하며, 선택 뒤 대상 시설이 외부 명령으로 이동·제거되면 기존 확인도 자동으로 무효화된다.
+`UFF_BuildModeSubsystem`은 `Closed → BuildMode ↔ CatalogOpen → Placing`과
+`BuildMode → Moving → BuildMode` 상태를 소유한다. 신규 설치는 선택한
+`UFFZSFacilityDefinition::Spec`을, 이동은 기존 액터의 권위 Spec·GUID·현재 회전을
+`AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·여유 공간·
+Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우회하지 않는다.
+
+활성 건축 세션에서는 설치 시설의 footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시한다.
+카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 하단 작업 패널에
+`이동`·`철거`·`취소`가 표시된다. 이동을 시작하면 권위 액터는 기존 위치에 그대로 두고 ghost만 커서를
+따라간다. 따라서 우클릭 취소나 검증 실패 때 원위치 복구 명령이 필요 없다. 이동 성공 시 같은 시설 GUID를
+유지한 채 Zone·배치·회전만 원자적으로 갱신한다. 대상이 외부 명령이나 스냅샷 복원으로 바뀌면 열린 작업과
+이동 프리뷰는 자동 취소된다.
 
 | 입력 | 동작 |
 | --- | --- |
 | `B` | 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기 |
-| `Q`, `E` | 배치 시설 90도 회전 |
-| `좌클릭` | `BuildMode`에서는 철거 대상 선택/같은 대상 재클릭 확인, `Placing`에서는 검증 후 설치 |
-| `Enter` | `BuildMode`에서는 선택 시설 철거 확인, `Placing`에서는 검증 후 설치 |
-| `우클릭` | `BuildMode`에서는 철거 선택 취소, `Placing`에서는 배치 취소 후 카탈로그 복귀 |
+| `M` 또는 `이동` 버튼 | 선택 시설의 이동 프리뷰 시작 |
+| `Q`, `E` | 설치/이동 프리뷰를 90도 회전 |
+| `좌클릭` | `BuildMode`에서는 시설 선택, `Placing`에서는 설치, `Moving`에서는 이동 확정 |
+| `Enter` | 선택 작업 패널에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
+| `우클릭` | 시설 선택 취소, 설치는 카탈로그 복귀, 이동은 원본을 건드리지 않고 `BuildMode` 복귀 |
 | `Esc` | 어느 활성 건축 상태에서든 건축 모드 전체 종료 |
 
 카탈로그가 CommonUI 키보드 포커스를 가진 동안에는 화면의 preview-key 어댑터가 `B`/`Esc` 의도를
 서브시스템에 전달한다. UI와 PlayerController가 같은 `B`를 모두 관찰한 프레임에는 키 해제 래치가 raw
 입력을 한 번 차단하므로 `CatalogOpen → BuildMode → CatalogOpen` 이중 전환이 발생하지 않는다.
 
-- 운영 단계는 `InitialSetup`/`MorningCheck`만 설치 가능하다.
+- `Install`·`Move`·`Remove`는 `InitialSetup`/`MorningCheck`에서만 가능하다.
+- `Active` 시설 또는 FFZS/프로젝트 Queue에 이용객이 남은 시설은 이동·철거할 수 없다. 자동 폐장이나
+  강제 배출은 하지 않으며, 운영 종료 후 Queue가 비워진 것을 확인해야 한다.
+- 같은 위치·같은 방향 이동은 revision과 상태를 불필요하게 바꾸지 않도록 UI에서 차단한다.
+- 이동 성공 뒤 시설 상태는 `Validated`가 되므로 운영을 재개하려면 기존 개장 절차를 다시 수행한다.
 - 상단 UI는 `건축`/`스킨` 2탭이지만, 현재 `스킨` 탭은 데이터 모델이 없어 준비중 상태다.
 - 현재 등록된 실제 시설 정의가 1개뿐이므로, 나머지 카드는 규칙에 맞는 Data Asset을 추가할 때 자동 생성된다.
 

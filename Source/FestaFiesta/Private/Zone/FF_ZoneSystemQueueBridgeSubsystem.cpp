@@ -556,10 +556,26 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 	switch (Event.Type)
 	{
 	case EFFZSCommandType::Install:
-	case EFFZSCommandType::Move:
 		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
 		{
 			RegisterOrRefreshFacility(*Facility);
+		}
+		DrainingQueueFacilityIds.Remove(FindQueueFacilityId(Event.FacilityInstanceId));
+		break;
+
+	case EFFZSCommandType::Move:
+		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
+		{
+			if (!RegisterOrRefreshFacility(*Facility))
+			{
+				// Move는 Zone 권위 배치가 커밋된 뒤 이 이벤트를 방송한다. 새 Queue geometry를 만들지
+				// 못한 경우 이전 위치의 Queue를 남기면 다음 Open에서 잘못된 동선을 재활성화할 수 있다.
+				// 기존 등록을 제거해 fail-closed하고, 이후 Open 경로가 동일 stable ID로 재등록을 시도하게 한다.
+				UnregisterFacility(Event.FacilityInstanceId);
+				UE_LOG(LogFFZoneQueueBridge, Error,
+					TEXT("이동된 Zone Facility %s의 Party Queue 갱신에 실패해 이전 Queue를 안전하게 해제했습니다."),
+					*Event.FacilityInstanceId.ToString());
+			}
 		}
 		DrainingQueueFacilityIds.Remove(FindQueueFacilityId(Event.FacilityInstanceId));
 		break;
