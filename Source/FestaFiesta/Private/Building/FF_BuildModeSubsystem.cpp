@@ -2,8 +2,11 @@
 
 #include "Building/FF_BuildModeSubsystem.h"
 
+#include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
+#include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
@@ -15,6 +18,8 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Framework/Application/SlateApplication.h"
@@ -31,6 +36,10 @@ namespace
 	const TSoftClassPtr<UFF_BuildCatalogScreen> BuildCatalogScreenClass(
 		FSoftObjectPath(TEXT(
 			"/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C")));
+	const TSoftClassPtr<UFF_BuildPlacementFailureFeedback> PlacementFailureFeedbackClass(
+		FSoftObjectPath(TEXT(
+			"/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
+			"WBP_FF_BuildPlacementFailureFeedback_C")));
 }
 
 bool UFF_BuildModeSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -88,6 +97,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 	// 월드 종료 중에는 일부 협력 객체가 이미 사라졌을 수 있다. 소유한 객체부터 정리하고,
 	// 실제로 입력을 변경한 세션에서만 남아 있는 로컬 컨트롤러의 입력 모드를 복구한다.
 	RemoveCatalogScreen();
+	DismissPlacementFailureFeedback(true);
 	DestroyPlacementPreview();
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
@@ -175,6 +185,7 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	}
 
 	BeginBuildSession(*Controller);
+	DismissPlacementFailureFeedback();
 
 	RemoveCatalogScreen();
 	DestroyPlacementPreview();
@@ -224,6 +235,7 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	}
 
 	BeginBuildSession(*Controller);
+	DismissPlacementFailureFeedback();
 
 	SetFacilityRangeVisibility(true);
 	DestroyPlacementPreview();
@@ -302,6 +314,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 
 	// 새 선택은 이전 Zone/원점/검증 결과와 독립적이어야 한다. 선택 스펙만 복사하고 배치 표적은 초기화한다.
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
+	DismissPlacementFailureFeedback();
 	SelectedSpec = Definition->Spec;
 	CurrentPlacement = FFFZSGridPlacement{};
 	CurrentZoneId = NAME_None;
@@ -356,6 +369,7 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 	bSuppressPlacementConfirmUntilReleased = false;
 	bSuppressBuildToggleUntilReleased = false;
 	RemoveCatalogScreen();
+	DismissPlacementFailureFeedback(true);
 	DestroyPlacementPreview();
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
@@ -436,6 +450,10 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	}
 	if (!LastValidation.bIsValid)
 	{
+		const EFFZSPlacementFailure FailureReason = LastValidation.Reasons.IsEmpty()
+			? EFFZSPlacementFailure::InternalError
+			: LastValidation.Reasons[0];
+		PresentPlacementFailure(FailureReason, LastValidation.Summary);
 		ShowStatus(FString::Printf(TEXT("%s 불가: %s"),
 			bIsMoving ? TEXT("이동") : TEXT("배치"),
 			*LastValidation.Summary.ToString()), true);
@@ -491,6 +509,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 			// 실패 이벤트 구독자가 세션을 전환했다면 종료된 UI에 오류를 다시 표시하지 않는다.
 			return false;
 		}
+		PresentPlacementFailure(Result.FailureReason, Result.Message);
 		ShowStatus(FString::Printf(TEXT("%s 실패: %s"),
 			bIsMoving ? TEXT("이동") : TEXT("설치"),
 			*Result.Message.ToString()), true);
@@ -527,10 +546,12 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 			bSuppressWorldClickUntilReleased = true;
 		}
 		ShowStatus(FString::Printf(TEXT("%s 이동 완료"), *FacilityName), false);
+		DismissPlacementFailureFeedback();
 		return true;
 	}
 
 	ShowStatus(FString::Printf(TEXT("%s 설치 완료"), *SelectedSpec.DisplayName.ToString()), false);
+	DismissPlacementFailureFeedback();
 	// 연속 배치를 지원하므로 성공 후 Placing 상태를 유지한다. 설치로 revision/점유 셀이 바뀌었으므로
 	// 같은 위치의 다음 프리뷰도 즉시 다시 검증한다.
 	UpdatePlacementFromCursor(true);
@@ -753,7 +774,35 @@ void UFF_BuildModeSubsystem::ApplyCatalogIfReady()
 	const TArray<FFF_BuildCatalogEntry>& Entries = Catalog->GetEntriesView();
 	if (!bCatalogWasApplied)
 	{
-		CatalogScreen->SetCatalogEntries(Entries);
+		// GI 카탈로그 캐시는 Festival보다 오래 살 수 있으므로 가격을 영구 저장하지 않습니다.
+		// 화면을 열 때 현재 Festival의 비용표로 스냅샷을 만들어 설치 정책과 동일한 Resolver를 사용합니다.
+		TArray<FFF_BuildCatalogEntry> PricedEntries = Entries;
+		UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+		const UFF_FestivalProgressionSubsystem* Progression = GameInstance
+			? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>()
+			: nullptr;
+		const UFF_FestivalDefinition* Festival = Progression ? Progression->GetDefinition() : nullptr;
+		const UDataTable* CostTable = Progression && Progression->IsFestivalStarted() && Festival
+			? Festival->FacilityCostTable.Get()
+			: nullptr;
+
+		for (FFF_BuildCatalogEntry& Entry : PricedEntries)
+		{
+			const UFFZSFacilityDefinition* Definition = Entry.Definition.Get();
+			FString FailureReason;
+			if (FFBuildCatalogModel::ApplyInstallCost(
+				Entry, Definition, CostTable, FailureReason))
+			{
+				continue;
+			}
+
+			UE_LOG(LogFFBuildMode, Warning,
+				TEXT("시설 '%s'의 카탈로그 가격을 표시할 수 없습니다: %s"),
+				*Entry.FacilityDefinitionId.ToString(),
+				*FailureReason);
+		}
+
+		CatalogScreen->SetCatalogEntries(PricedEntries);
 		bCatalogWasApplied = true;
 		const EFF_BuildCatalogThumbnailLoadState ThumbnailState = Catalog->GetThumbnailLoadState();
 		bCatalogThumbnailsApplied = Entries.IsEmpty() ||
@@ -1672,6 +1721,78 @@ void UFF_BuildModeSubsystem::HandleWorldSnapshotRestored()
 	if (State == EFF_BuildModeState::Placing)
 	{
 		bPreviewWorldDirty = true;
+	}
+}
+
+void UFF_BuildModeSubsystem::PresentPlacementFailure(
+	const EFFZSPlacementFailure FailureReason,
+	const FText& Detail)
+{
+	UFF_BuildPlacementFailureFeedback* Feedback = GetOrCreatePlacementFailureFeedback();
+	if (!Feedback)
+	{
+		return;
+	}
+
+	const EFF_BuildPlacementFailureType FailureType =
+		UFF_BuildPlacementFailureFeedback::ClassifyFailure(FailureReason);
+	const FText Title = UFF_BuildPlacementFailureFeedback::MakeFailureTitle(
+		FailureReason, State == EFF_BuildModeState::Moving);
+
+	const FText SafeDetail = Detail.IsEmpty()
+		? UFFZSGridLibrary::PlacementFailureToText(FailureReason)
+		: Detail;
+	Feedback->PresentFailure(FailureType, Title, SafeDetail);
+}
+
+UFF_BuildPlacementFailureFeedback*
+UFF_BuildModeSubsystem::GetOrCreatePlacementFailureFeedback()
+{
+	if (PlacementFailureFeedback)
+	{
+		return PlacementFailureFeedback;
+	}
+
+	APlayerController* Controller = GetLocalPlayerController();
+	UClass* FeedbackClass = PlacementFailureFeedbackClass.LoadSynchronous();
+	if (!Controller || !FeedbackClass ||
+		!FeedbackClass->IsChildOf(UFF_BuildPlacementFailureFeedback::StaticClass()))
+	{
+		UE_LOG(LogFFBuildMode, Error,
+			TEXT("건축 실패 알림 WBP를 사용할 수 없습니다: %s"),
+			*PlacementFailureFeedbackClass.ToSoftObjectPath().ToString());
+		return nullptr;
+	}
+
+	PlacementFailureFeedback =
+		CreateWidget<UFF_BuildPlacementFailureFeedback>(Controller, FeedbackClass);
+	if (!PlacementFailureFeedback)
+	{
+		UE_LOG(LogFFBuildMode, Error, TEXT("건축 실패 알림 WBP 인스턴스 생성에 실패했습니다."));
+		return nullptr;
+	}
+
+	PlacementFailureFeedback->SetVisibility(ESlateVisibility::Collapsed);
+	if (!PlacementFailureFeedback->AddToPlayerScreen(110))
+	{
+		UE_LOG(LogFFBuildMode, Error, TEXT("건축 실패 알림 WBP를 플레이어 화면에 추가하지 못했습니다."));
+		PlacementFailureFeedback = nullptr;
+	}
+	return PlacementFailureFeedback;
+}
+
+void UFF_BuildModeSubsystem::DismissPlacementFailureFeedback(const bool bRemoveFromParent)
+{
+	if (!PlacementFailureFeedback)
+	{
+		return;
+	}
+
+	PlacementFailureFeedback->DismissFeedback();
+	if (bRemoveFromParent)
+	{
+		PlacementFailureFeedback->RemoveFromParent();
+		PlacementFailureFeedback = nullptr;
 	}
 }
 

@@ -363,11 +363,14 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 // 한 번 실패한 검증은 뒤 단계가 성공해도 다시 true가 되지 않는 단조 상태다.
 void FFFZSPlacementValidation::AddFailure(const EFFZSPlacementFailure Reason, const FText& Message)
 {
+    const bool bWasValid = bIsValid;
     if (Reason != EFFZSPlacementFailure::None)
     {
         Reasons.AddUnique(Reason);
     }
-    if (Summary.IsEmpty() && !Message.IsEmpty())
+    // ValidatePlacementLocal은 성공 시 사람이 읽는 성공 Summary를 채운다. 이후 외부 정책이
+    // 거부하면 그 성공 문구가 실패 이유를 가리지 않도록 첫 실패 메시지로 교체한다.
+    if ((bWasValid || Summary.IsEmpty()) && !Message.IsEmpty())
     {
         Summary = Message;
     }

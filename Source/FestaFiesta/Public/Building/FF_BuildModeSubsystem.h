@@ -12,6 +12,7 @@ class AFFZSPlacementPreviewActor;
 class APlayerController;
 class UFF_BuildCatalogScreen;
 class UFF_BuildCatalogSubsystem;
+class UFF_BuildPlacementFailureFeedback;
 class UFF_BuildRemovalConfirmWidget;
 class UFFZSWorldSubsystem;
 class SWidget;
@@ -202,6 +203,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildRemovalConfirmWidget> RemovalConfirmWidget;
 
+	// 기존 팀 화면과 분리된 상단 토스트. 최초 실패 때만 만들고 건축 세션 동안 재사용한다.
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildPlacementFailureFeedback> PlacementFailureFeedback;
+
 	// 카탈로그에서 선택한 정의와, 프리뷰 명령을 재구성하는 데 필요한 현재 배치 스냅샷이다.
 	FFFZSFacilitySpec SelectedSpec;
 	FFFZSGridPlacement CurrentPlacement;
@@ -339,6 +344,10 @@ private:
 	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
 	UFUNCTION()
 	void HandleWorldSnapshotRestored();
+	// 권위 실패 코드와 상세 사유를 신규 UMG 토스트에 표시한다. 프리뷰 Tick에서는 호출하지 않는다.
+	void PresentPlacementFailure(EFFZSPlacementFailure FailureReason, const FText& Detail);
+	UFF_BuildPlacementFailureFeedback* GetOrCreatePlacementFailureFeedback();
+	void DismissPlacementFailureFeedback(bool bRemoveFromParent = false);
 	// 화면 메시지를 표시하되 같은 문구는 한 번만 로그로 남긴다. 게임 상태는 변경하지 않는다. 
 	void ShowStatus(const FString& Message, bool bIsError = false, float DisplaySeconds = 2.5f) const;
 
