@@ -27,17 +27,19 @@ namespace
 		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard."
 			"WBP_FF_BuildFacilityCard_C");
 
-	class FScopedPlayerlessWidgetInitialization
+	// Keep this helper name unique because Unity builds merge anonymous namespaces from .cpp files.
+	class FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization
 	{
 	public:
-		explicit FScopedPlayerlessWidgetInitialization(UWidgetBlueprintGeneratedClass& InClass)
+		explicit FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization(
+			UWidgetBlueprintGeneratedClass& InClass)
 			: WidgetClass(InClass)
 			, bPreviousValue(InClass.bCanCallInitializedWithoutPlayerContext)
 		{
 			WidgetClass.bCanCallInitializedWithoutPlayerContext = true;
 		}
 
-		~FScopedPlayerlessWidgetInitialization()
+		~FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization()
 		{
 			WidgetClass.bCanCallInitializedWithoutPlayerContext = bPreviousValue;
 		}
@@ -115,8 +117,8 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	}
 
 	const bool bCardPackageWasDirty = CardClass->GetOutermost()->IsDirty();
-	FScopedPlayerlessWidgetInitialization TooltipGuard(*TooltipClass);
-	FScopedPlayerlessWidgetInitialization CardGuard(*CardClass);
+	FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization TooltipGuard(*TooltipClass);
+	FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization CardGuard(*CardClass);
 
 	FFF_BuildCatalogEntry Entry;
 	Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_UMGTooltipTest");

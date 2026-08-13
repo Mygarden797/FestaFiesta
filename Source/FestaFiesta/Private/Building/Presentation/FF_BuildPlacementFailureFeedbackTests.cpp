@@ -23,17 +23,19 @@ namespace
 		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback_C");
 
-	class FScopedPlayerlessWidgetInitialization
+	// Keep this helper name unique because Unity builds merge anonymous namespaces from .cpp files.
+	class FScopedBuildPlacementFailureFeedbackPlayerlessWidgetInitialization
 	{
 	public:
-		explicit FScopedPlayerlessWidgetInitialization(UWidgetBlueprintGeneratedClass& InClass)
+		explicit FScopedBuildPlacementFailureFeedbackPlayerlessWidgetInitialization(
+			UWidgetBlueprintGeneratedClass& InClass)
 			: WidgetClass(InClass)
 			, bPreviousValue(InClass.bCanCallInitializedWithoutPlayerContext)
 		{
 			WidgetClass.bCanCallInitializedWithoutPlayerContext = true;
 		}
 
-		~FScopedPlayerlessWidgetInitialization()
+		~FScopedBuildPlacementFailureFeedbackPlayerlessWidgetInitialization()
 		{
 			WidgetClass.bCanCallInitializedWithoutPlayerContext = bPreviousValue;
 		}
@@ -130,7 +132,8 @@ bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& P
 	}
 
 	const bool bPackageWasDirty = FeedbackClass->GetOutermost()->IsDirty();
-	FScopedPlayerlessWidgetInitialization Guard(*FeedbackClass);
+	FScopedBuildPlacementFailureFeedbackPlayerlessWidgetInitialization PlayerlessInitializationGuard(
+		*FeedbackClass);
 	UFF_BuildPlacementFailureFeedback* Feedback =
 		CreateWidget<UFF_BuildPlacementFailureFeedback>(EditorWorld, FeedbackClass);
 	TestNotNull(TEXT("The failure WBP can be instantiated"), Feedback);
