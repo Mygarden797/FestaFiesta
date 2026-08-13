@@ -30,7 +30,7 @@ public:
      
     static constexpr double DefaultPlacementCellSizeCm = 1.0;
 	
-    static constexpr int32 DefaultMaxEnumeratedCellsPerFacility = 1000000;
+    static constexpr int32 DefaultMaxEnumeratedCellsPerFacility = 10000000;
 	// 사용자 설정이 없을 때 적용하는 시설당 보수적 셀 열거 작업 예산.
 	
     static constexpr int32 MaxMaterializedDebugCells = 10000;
@@ -53,9 +53,9 @@ public:
     // 시설 하나를 검증할 때 허용하는 보수적 열거 작업 예산.
     // 회전 전 footprint를 clearance만큼 확장한 이론 면적과 정규화한 Queue 압축 영역 면적을 합산해
     // 비정상적으로 큰 저작 데이터를 조기에 거부한다. 권위 런타임은 영역을 개별 셀로 펼치지 않는다.
-    // 구 호환·디버그 배열은 별도 10,000셀 상한을 넘으면 비우며, 이 값은 1..1,000,000으로 제한한다.
-     
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "1", ClampMax = "1000000"))
+    // 구 호환·디버그 배열은 별도 10,000셀 상한을 넘으면 비우며, 이 값은 1..10,000,000으로 제한한다.
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "1", ClampMax = "10000000"))
     int32 MaxEnumeratedCellsPerFacility = DefaultMaxEnumeratedCellsPerFacility;
 
     // 시설 footprint 지면을 검사하는 물리 표본 간격(cm)이다.

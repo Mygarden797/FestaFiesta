@@ -12,6 +12,7 @@ class SButton;
 class STextBlock;
 class SVerticalBox;
 class UCommonTextBlock;
+class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildFacilityCard;
 class UFF_BuildMinorSection;
 class UFF_CommonButtonBase;
@@ -21,6 +22,7 @@ class UVerticalBox;
 class UWidgetSwitcher;
 #if WITH_DEV_AUTOMATION_TESTS
 class FFF_BuildCatalogWidgetBlueprintContractTest;
+class FFF_BuildCatalogCurrentGoldTest;
 #endif
 
 // 건축 모드에서 B 키로 펼치며, 배치 가능한 시설을 대분류/소분류별로 보여 주는 화면이다.
@@ -77,6 +79,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
 	bool IsUsingDesignerWidgetTree() const;
 
+	/** 현재 실제 렌더 노드에 표시된 Gold 문구. 자동화·런타임 진단용이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
+	FText GetDisplayedGoldText() const;
+
 protected:
 	// 디자이너 WidgetTree가 있으면 Super에 맡기고, 없을 때만 안전용 Slate 트리를 만든다. 
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -97,6 +103,7 @@ protected:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildCatalogWidgetBlueprintContractTest;
+	friend class FFF_BuildCatalogCurrentGoldTest;
 #endif
 	// 상단 탭 상태. Skin은 현재 안내 패널을 표시하고 Build만 카탈로그를 채운다. 
 	enum class ETopTab : uint8
@@ -115,6 +122,8 @@ private:
 	// 현재 표현 경로와 델리게이트 연결 여부를 분리해, 초기화 훅이 여러 번 와도 한 번만 바인딩한다. 
 	bool bUsingDesignerWidgetTree = false;
 	bool bDesignerBindingsInitialized = false;
+	bool bHasCurrentGold = false;
+	int32 CurrentGold = 0;
 
 	// 실제 생성 결과를 기록하는 진단 값으로, 에디터 자동화 테스트가 동적 UI 생성을 검증한다. 
 	int32 DisplayedCategoryCount = 0;
@@ -125,6 +134,7 @@ private:
 	TSharedPtr<SButton> InitialFocusButton;
 	TSharedPtr<SVerticalBox> ContentBox;
 	TSharedPtr<STextBlock> StatusTextBlock;
+	TSharedPtr<STextBlock> GoldTextBlock;
 
 	// WBP_FF_BuildCatalogScreen과의 이름 기반 계약이다. 이름/타입 변경 시 BindWidget 연결과 자동화 테스트가 실패한다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
@@ -147,6 +157,14 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> TXT_Status;
+
+	/** 기존 WBP에는 런타임 주입하고, 새로 생성되는 WBP에는 Builder가 제공하는 선택 바인딩이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> TXT_Gold;
+
+	/** 팀 공용 UI 계층을 변경하지 않는 Building 기능 소유 경제 Read Model입니다. */
+	UPROPERTY()
+	TObjectPtr<UFF_BuildCatalogEconomyReadModel> CachedEconomyReadModel;
 
 	// 실행 중 CreateWidget으로 복제할 세 가지 WBP 템플릿이다.
 	// SoftClass로 두어 화면 클래스 로드 시 강제 로드를 피하고, Class Defaults에서 아트 템플릿을 교체할 수 있게 한다.
@@ -189,6 +207,12 @@ private:
 	void RefreshTabStyles();
 	// 저장된 상태 문구를 현재 존재하는 UMG와 Slate 출력 위젯에 각각 반영한다. 
 	void ApplyStatusText();
+	// 기존 WBP의 Top_Bar에 Gold 패널이 없으면 첫 Slate 빌드 전에 비파괴적으로 추가한다.
+	void EnsureGoldDisplay();
+	// 기능 전용 Read Model 구독 수명은 화면의 Construct/Destruct와 정확히 맞춘다.
+	void BindGoldReadModel();
+	void UnbindGoldReadModel();
+	void ApplyGoldText();
 	// 빈 기본 분류 대신 실제 데이터가 존재하는 첫 분류가 처음 보이도록 선택한다. 
 	void SelectFirstPopulatedCategory();
 	// 필수 BindWidget과 Switcher의 두 페이지 계약이 모두 유효한지 검사한다. 
@@ -217,6 +241,9 @@ private:
 	UFUNCTION()
 	void HandleFacilityCardPressed(UFF_CommonButtonBase* Button);
 
+	UFUNCTION()
+	void HandleGoldChanged(int32 NewGold);
+
 	// Slate 폴백 이벤트 경로: 동일한 상태 변경 후 FReply::Handled를 반환해 입력 소비를 명시한다.
 	FReply HandleCloseClicked();
 	FReply HandleBuildTabClicked();
@@ -230,4 +257,5 @@ private:
 
 	static FText GetCategoryDisplayName(EFFZSFacilityCategory Category);
 	static FText GetMinorDisplayName(FName MinorToken);
+	FText MakeCurrentGoldText() const;
 };

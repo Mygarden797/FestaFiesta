@@ -25,7 +25,7 @@
 namespace
 {
     // 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다. 
-    constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 1'000'000;
+    constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 10'000'000;
     bool IsPositiveCellProductWithinLimit(const int64 Width, const int64 Height, const int64 CellLimit)
     {
         // Width*Height를 먼저 계산하지 않아 오버플로를 피한다.
@@ -786,6 +786,7 @@ FText UFFZSGridLibrary::PlacementFailureToText(const EFFZSPlacementFailure Failu
     case EFFZSPlacementFailure::NavRebuildTimeout: return LOCTEXT("NavTimeout", "내비게이션 재빌드 시간이 초과되었습니다");
     case EFFZSPlacementFailure::DataInvalid: return LOCTEXT("DataInvalid", "Facility 또는 Zone 데이터가 잘못되었습니다");
     case EFFZSPlacementFailure::ExternalPolicyRejected: return LOCTEXT("PolicyRejected", "외부 팀 Policy가 변경을 거부했습니다");
+    case EFFZSPlacementFailure::InsufficientFunds: return LOCTEXT("InsufficientFunds", "현재 잔액이 부족합니다");
     default: return LOCTEXT("InternalError", "Zone/Facility 내부 오류가 발생했습니다");
     }
 }

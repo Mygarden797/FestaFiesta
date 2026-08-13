@@ -17,6 +17,7 @@
 #include "ScopedTransaction.h"
 #include "UObject/UnrealType.h"
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SNumericEntryBox.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SUniformGridPanel.h"
 #include "Widgets/Notifications/SNotificationList.h"
@@ -278,6 +279,18 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
         }
     }
 
+    // 목표 크기 입력은 언제나 현재 저장된 건물 크기에서 시작한다. 변경 전 크기가 보정량의 기준이므로
+    // 담당자가 Footprint 필드를 직접 고치지 않고 이 입력만 바꾸도록 유도한다.
+    PendingFootprintWidthCells.Reset();
+    PendingFootprintDepthCells.Reset();
+    PendingObstacleHeightCm.Reset();
+    if (Definitions.Num() == 1 && Definitions[0].IsValid())
+    {
+        PendingFootprintWidthCells = Definitions[0]->Spec.FootprintSizeCells.X;
+        PendingFootprintDepthCells = Definitions[0]->Spec.FootprintSizeCells.Y;
+        PendingObstacleHeightCm = Definitions[0]->Spec.PlacementObstacleHeightCm;
+    }
+
     FFZSFacilityDefinitionCustomizationPrivate::LocalizeCategory(
         DetailBuilder, TEXT("FF Zone System"), LOCTEXT("ZoneSystemCategory", "FF Zone System"),
         LOCTEXT("ZoneSystemCategoryTip", "시설의 단일 원천 사양과 카탈로그 표시 정보를 편집합니다."));
@@ -318,6 +331,128 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             "현재 선택한 시설 정의에 등록된 전체 데이터 검증기를 실행합니다. Spec 내부 규칙, 필수 폴더, FacilityDefinitionId·PrimaryAssetId 중복, VisualMesh 참조와 Bounds를 확인하며 어떤 값도 바꾸지 않습니다."))
         .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::HasAnyEditableDefinition)
         .OnClicked(this, &FFFZSFacilityDefinitionCustomization::ValidateDefinitions)
+    ];
+
+    ToolsCategory.AddCustomRow(LOCTEXT("ResizeFootprintSearchText", "건물 크기 변경 대기열 앵커 보정 Resize Footprint Keep Queue Anchors"))
+    .WholeRowContent()
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        [
+            SNew(SBox)
+            .MinDesiredWidth(120.0f)
+            [
+                SNew(SNumericEntryBox<int32>)
+                .MinValue(1)
+                .ToolTipText(LOCTEXT(
+                    "ResizeFootprintWidthTooltip",
+                    "보정 후 적용할 회전 전 건물 가로 폭(cm)입니다. 1 단위가 1cm이므로 6m는 600입니다."))
+                .Value(this, &FFFZSFacilityDefinitionCustomization::GetPendingFootprintWidthCells)
+                .OnValueChanged(this, &FFFZSFacilityDefinitionCustomization::SetPendingFootprintWidthCells)
+                .Label()
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("ResizeFootprintWidthLabel", "New Width (X)"))
+                ]
+            ]
+        ]
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        .Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+        [
+            SNew(SBox)
+            .MinDesiredWidth(120.0f)
+            [
+                SNew(SNumericEntryBox<int32>)
+                .MinValue(1)
+                .ToolTipText(LOCTEXT(
+                    "ResizeFootprintDepthTooltip",
+                    "보정 후 적용할 회전 전 건물 세로 깊이(cm)입니다. 1 단위가 1cm이므로 3m는 300입니다."))
+                .Value(this, &FFFZSFacilityDefinitionCustomization::GetPendingFootprintDepthCells)
+                .OnValueChanged(this, &FFFZSFacilityDefinitionCustomization::SetPendingFootprintDepthCells)
+                .Label()
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("ResizeFootprintDepthLabel", "New Depth (Y)"))
+                ]
+            ]
+        ]
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        .Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+        [
+            SNew(SBox)
+            .MinDesiredWidth(120.0f)
+            [
+                SNew(SNumericEntryBox<float>)
+                .MinValue(10.0f)
+                .ToolTipText(LOCTEXT(
+                    "ResizeFootprintHeightTooltip",
+                    "보정 후 적용할 배치 장애물 높이(cm)입니다. 최소 10cm이며, 배치 충돌·보호 영역 검사와 '배치 경계에 정확히 맞춤' 모드의 표시 메시 높이에 사용됩니다. 높이는 대기열·앵커 위치에 영향을 주지 않습니다."))
+                .Value(this, &FFFZSFacilityDefinitionCustomization::GetPendingObstacleHeightCm)
+                .OnValueChanged(this, &FFFZSFacilityDefinitionCustomization::SetPendingObstacleHeightCm)
+                .Label()
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("ResizeFootprintHeightLabel", "New Height (Z)"))
+                ]
+            ]
+        ]
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+        [
+            SNew(SButton)
+            .Text(LOCTEXT("ResizeFootprintButton", "Resize Facility (Keep Queue & Anchors)"))
+            .ToolTipText(LOCTEXT(
+                "ResizeFootprintTooltip",
+                "시설 Data Asset 하나만 선택해야 합니다. 위에 입력한 가로·깊이·높이를 한 번에 적용하면서, 대기열 예약 사각형·대기열 경로 점·앵커가 각자 붙어 있던 건물 변까지의 거리를 유지하도록 함께 이동합니다. 예약 사각형은 건물 좌하단 기준이라 중심보다 바깥쪽 경계를 크기 변화량만큼, 경로 점과 앵커는 건물 중심 기준이라 변화량의 절반만큼 이동합니다. 높이는 XY 배치에 영향을 주지 않으므로 값만 교체합니다. 결과 Spec 전체가 검증을 통과할 때만 적용하며, 실패하면 아무 값도 바꾸지 않고 원인을 보여 줍니다. 구버전 Legacy Queue Reserved Cells가 남아 있으면 사용할 수 없습니다."))
+            .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanResizeFacilityKeepingLayout)
+            .OnClicked(this, &FFFZSFacilityDefinitionCustomization::ResizeFacilityKeepingLayout)
+        ]
+    ];
+
+    ToolsCategory.AddCustomRow(LOCTEXT("QueueRectsSearchText", "대기열 예약 영역 여백 회랑 굴절 Queue Reserved Rects Margin Corridor Bend"))
+    .WholeRowContent()
+    [
+        SNew(SHorizontalBox)
+        + SHorizontalBox::Slot()
+        .AutoWidth()
+        .VAlign(VAlign_Center)
+        [
+            SNew(SBox)
+            .MinDesiredWidth(120.0f)
+            [
+                SNew(SNumericEntryBox<int32>)
+                .MinValue(1)
+                .ToolTipText(LOCTEXT(
+                    "QueueMarginTooltip",
+                    "대기열 경로 양옆에 확보할 여백(cm)입니다. 손님이 실제로 차지하는 폭을 고려해 정하십시오. 0은 폭이 없는 예약 영역이 되므로 사용할 수 없습니다."))
+                .Value(this, &FFFZSFacilityDefinitionCustomization::GetPendingQueueMarginCm)
+                .OnValueChanged(this, &FFFZSFacilityDefinitionCustomization::SetPendingQueueMarginCm)
+                .Label()
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("QueueMarginLabel", "Queue Margin (cm)"))
+                ]
+            ]
+        ]
+        + SHorizontalBox::Slot()
+        .FillWidth(1.0f)
+        .Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+        [
+            SNew(SButton)
+            .Text(LOCTEXT("QueueRectsFromPathButton", "Queue Rects <- Queue Path"))
+            .ToolTipText(LOCTEXT(
+                "QueueRectsFromPathTooltip",
+                "시설 Data Asset 하나만 선택해야 합니다. 최대 대기 인원이 실제로 사용하는 경로 구간만 여백만큼 넓혀 예약 영역을 다시 만듭니다. 경로가 꺾여 있으면 구간마다 사각형을 만들어 회랑처럼 따라가므로 L자·ㄷ자 대기열도 남는 면적 없이 확보합니다. 건물 한 변 바깥을 지나는 구간은 그 변에 붙여 잘라내며, 저작 경로가 필요한 길이보다 길면 남는 꼬리는 예약하지 않습니다. 결과 Spec 전체가 검증을 통과할 때만 적용합니다."))
+            .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanBuildQueueRectsFromPath)
+            .OnClicked(this, &FFFZSFacilityDefinitionCustomization::BuildQueueRectsFromPath)
+        ]
     ];
 
     ToolsCategory.AddCustomRow(LOCTEXT("SizingActionsSearchText", "건물 크기 메시 대기열 꼬리 정원 Footprint Visual Mesh Queue Tail Capacity"))
@@ -395,9 +530,18 @@ FReply FFFZSFacilityDefinitionCustomization::ShowKoreanHelp()
             "Visual Sizing Mode는 프로덕션에서 Match Placement Bounds를 사용하고 Visual Offset은 0을 유지하십시오.\n\n"
             "[대기열]\n"
             "Queue Reserved Rects는 건물 왼쪽 아래 기준의 예약 영역이고, Queue Spline Points와 Anchor는 건물 중심 기준 cm 좌표입니다.\n"
-            "필요 경로 길이는 (Max Waiting Agents - 1) × Slot Spacing입니다. 모든 슬롯이 예약 사각형 안에 있어야 합니다.\n\n"
+            "필요 경로 길이는 (Max Waiting Agents - 1) × Slot Spacing입니다. 모든 슬롯이 예약 사각형 안에 있어야 합니다.\n"
+            "줄이 너무 길면 인원이나 간격을 줄이거나, 경로에 굴절점을 넣어 L자·ㄷ자로 접으십시오. 접어도 길이는 그대로라 정원은 유지됩니다.\n"
+            "인원·간격·경로를 고친 뒤 Queue Rects <- Queue Path를 누르면 예약 영역이 새 경로를 따라가는 회랑으로 다시 만들어집니다.\n\n"
+            "[크기를 바꿀 때]\n"
+            "예약 사각형은 건물 좌하단 기준, 대기열 경로 점과 앵커는 건물 중심 기준이라 같은 크기 변경에도 필요한 이동량이 다릅니다.\n"
+            "New Width/Depth/Height에 목표 값을 넣고 Resize Facility 버튼을 쓰면 세 값이 각자 붙어 있던 변까지의 거리를 유지한 채 함께 이동합니다.\n"
+            "높이는 XY 배치에 영향을 주지 않으므로 같은 버튼에서 값만 교체되며, 최소 10cm입니다.\n"
+            "Footprint 필드를 직접 고치면 이 보정이 일어나지 않아 예약 영역 겹침이나 건물 안쪽 앵커가 생길 수 있습니다.\n\n"
             "[버튼]\n"
             "Footprint <- Loaded Mesh: 로드된 원본 메시에서 건물 크기를 계산합니다.\n"
+            "Resize Facility (Keep Queue & Anchors): 새 가로·깊이·높이를 적용하고 예약 영역·경로 점·앵커를 함께 보정합니다.\n"
+            "Queue Rects <- Queue Path: 현재 경로와 여백에 맞는 예약 회랑을 다시 만듭니다.\n"
             "Queue Tail <- Max Capacity: 인원과 간격에 맞춰 경로 꼬리를 조정합니다.\n"
             "Max Capacity <- Queue Length: 현재 경로 길이에서 최대 인원을 계산합니다.\n"
             "Fit Mesh to Placement Bounds: 메시 표시를 권위 건물 크기와 높이에 맞춥니다.\n"
@@ -516,6 +660,145 @@ FReply FFFZSFacilityDefinitionCustomization::SetFootprintFromLoadedVisualMesh()
     ShowNotification(
         FText::Format(LOCTEXT("FootprintUpdated", "시설 정의 {0}개의 건물 크기를 갱신했습니다."), ChangedCount),
         ChangedCount > 0);
+    return FReply::Handled();
+}
+
+FReply FFFZSFacilityDefinitionCustomization::ResizeFacilityKeepingLayout()
+{
+    TArray<const FProperty*> ChangedProperties;
+    for (const FName PropertyName : {
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, FootprintSizeCells),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, PlacementObstacleHeightCm),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedRects),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueSplinePointsCm),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Anchors) })
+    {
+        ChangedProperties.Add(FFZSFacilityDefinitionCustomizationPrivate::FindSpecProperty(PropertyName));
+    }
+
+    const FIntPoint NewFootprint(
+        PendingFootprintWidthCells.Get(0),
+        PendingFootprintDepthCells.Get(0));
+    const float NewHeightCm = PendingObstacleHeightCm.Get(0.0f);
+    TArray<FText> FailureReasons;
+    const int32 ChangedCount = MutateDefinitions(
+        LOCTEXT("ResizeFootprintTransaction", "건물 크기·높이 변경에 맞춰 대기열·앵커 보정"),
+        [&ChangedProperties, NewFootprint, NewHeightCm, &FailureReasons](UFFZSFacilityDefinition& Definition)
+        {
+            // 높이는 XY 배치에 영향을 주지 않으므로 보정 없이 값만 교체하고,
+            // 크기가 그대로여도 높이만 바뀌었다면 한 번의 조작으로 함께 적용한다.
+            FFFZSFacilitySpec Candidate;
+            const bool bHeightChanged = !FMath::IsNearlyEqual(
+                NewHeightCm, Definition.Spec.PlacementObstacleHeightCm);
+            if ((NewFootprint == Definition.Spec.FootprintSizeCells && !bHeightChanged) ||
+                !FFFZSFacilityEditorHelpers::TryResizeFootprintKeepingLayout(
+                    Definition.Spec,
+                    NewFootprint,
+                    Candidate))
+            {
+                FailureReasons.Add(LOCTEXT(
+                    "ResizeFootprintNotExpressible",
+                    "새 가로·깊이·높이가 모두 현재 값과 같거나, 좌표를 표현할 수 없거나, 구버전 Legacy Queue Reserved Cells가 남아 있어 자동 보정을 계산할 수 없습니다."));
+                return false;
+            }
+            Candidate.PlacementObstacleHeightCm = NewHeightCm;
+            // 보정 결과가 사양 전체 검증을 통과할 때만 적용한다. 실패한 이유는 그대로 담당자에게 보여 준다.
+            if (!Candidate.IsValid(FailureReasons))
+            {
+                return false;
+            }
+
+            Definition.Spec = MoveTemp(Candidate);
+            for (const FProperty* ChangedProperty : ChangedProperties)
+            {
+                if (ChangedProperty)
+                {
+                    FFZSFacilityDefinitionCustomizationPrivate::NotifyPropertyChanged(Definition, ChangedProperty);
+                }
+            }
+            return true;
+        });
+
+    ShowNotification(
+        ChangedCount > 0
+            ? FText::Format(
+                LOCTEXT("FootprintResized", "건물 크기를 {0} x {1}, 높이를 {2}cm로 바꾸고 대기열·앵커를 함께 보정했습니다."),
+                NewFootprint.X,
+                NewFootprint.Y,
+                FText::AsNumber(NewHeightCm))
+            : LOCTEXT("FootprintResizeFailed", "건물 크기 보정에 실패했습니다. 상세 내용을 확인하십시오."),
+        ChangedCount > 0);
+    if (ChangedCount == 0 && !FailureReasons.IsEmpty())
+    {
+        FString Report;
+        for (const FText& Reason : FailureReasons)
+        {
+            Report += FString::Printf(TEXT("  - %s\n"), *Reason.ToString());
+        }
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::FromString(Report),
+            LOCTEXT("ResizeFootprintFailedTitle", "건물 크기 보정: 수정 필요"));
+    }
+    return FReply::Handled();
+}
+
+FReply FFFZSFacilityDefinitionCustomization::BuildQueueRectsFromPath()
+{
+    const FProperty* ChangedProperty = FFZSFacilityDefinitionCustomizationPrivate::FindSpecProperty(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedRects));
+    const int32 MarginCm = PendingQueueMarginCm.Get(0);
+    TArray<FText> FailureReasons;
+    const int32 ChangedCount = MutateDefinitions(
+        LOCTEXT("QueueRectsFromPathTransaction", "대기열 경로에 맞춰 예약 영역 재생성"),
+        [ChangedProperty, MarginCm, &FailureReasons](UFFZSFacilityDefinition& Definition)
+        {
+            TArray<FFFZSCellRect> Rects;
+            if (!FFFZSFacilityEditorHelpers::TryBuildQueueRectsFromPath(
+                    Definition.Spec, MarginCm, Rects))
+            {
+                FailureReasons.Add(LOCTEXT(
+                    "QueueRectsNotExpressible",
+                    "여백이 0 이하이거나, 대기열 경로·정원·간격이 유효하지 않거나, 구버전 Legacy Queue Reserved Cells가 남아 있어 예약 회랑을 계산할 수 없습니다."));
+                return false;
+            }
+            if (Rects == Definition.Spec.QueueReservedRects)
+            {
+                FailureReasons.Add(LOCTEXT(
+                    "QueueRectsAlreadyMinimal",
+                    "예약 영역이 이미 현재 경로와 여백에 맞는 회랑입니다."));
+                return false;
+            }
+
+            FFFZSFacilitySpec Candidate = Definition.Spec;
+            Candidate.QueueReservedRects = MoveTemp(Rects);
+            if (!Candidate.IsValid(FailureReasons))
+            {
+                return false;
+            }
+
+            Definition.Spec = MoveTemp(Candidate);
+            FFZSFacilityDefinitionCustomizationPrivate::NotifyPropertyChanged(Definition, ChangedProperty);
+            return true;
+        });
+
+    ShowNotification(
+        ChangedCount > 0
+            ? LOCTEXT("QueueRectsUpdated", "대기열 예약 영역을 현재 경로에 맞는 회랑으로 다시 만들었습니다.")
+            : LOCTEXT("QueueRectsFailed", "대기열 예약 영역 재생성에 실패했습니다. 상세 내용을 확인하십시오."),
+        ChangedCount > 0);
+    if (ChangedCount == 0 && !FailureReasons.IsEmpty())
+    {
+        FString Report;
+        for (const FText& Reason : FailureReasons)
+        {
+            Report += FString::Printf(TEXT("  - %s\n"), *Reason.ToString());
+        }
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::FromString(Report),
+            LOCTEXT("QueueRectsFailedTitle", "대기열 예약 영역: 수정 필요"));
+    }
     return FReply::Handled();
 }
 
@@ -647,6 +930,39 @@ bool FFFZSFacilityDefinitionCustomization::CanSetFootprintFromLoadedVisualMesh()
     return Definition &&
         Definition->Spec.VisualSizingMode == EFFZSVisualSizingMode::SourceMeshSize &&
         Definition->Spec.VisualMesh.Get() != nullptr;
+}
+
+bool FFFZSFacilityDefinitionCustomization::CanResizeFacilityKeepingLayout() const
+{
+    const UFFZSFacilityDefinition* Definition =
+        Definitions.Num() == 1 ? Definitions[0].Get() : nullptr;
+    if (!Definition ||
+        !Definition->Spec.QueueReservedCells.IsEmpty() ||
+        PendingFootprintWidthCells.Get(0) <= 0 ||
+        PendingFootprintDepthCells.Get(0) <= 0 ||
+        PendingObstacleHeightCm.Get(0.0f) < 10.0f)
+    {
+        return false;
+    }
+
+    // 가로·깊이·높이 중 하나라도 현재 값과 다르면 적용할 변경이 있다.
+    return FIntPoint(PendingFootprintWidthCells.Get(0), PendingFootprintDepthCells.Get(0)) !=
+            Definition->Spec.FootprintSizeCells ||
+        !FMath::IsNearlyEqual(
+            PendingObstacleHeightCm.Get(0.0f), Definition->Spec.PlacementObstacleHeightCm);
+}
+
+bool FFFZSFacilityDefinitionCustomization::CanBuildQueueRectsFromPath() const
+{
+    const UFFZSFacilityDefinition* Definition =
+        Definitions.Num() == 1 ? Definitions[0].Get() : nullptr;
+    return Definition &&
+        Definition->Spec.QueueReservedCells.IsEmpty() &&
+        Definition->Spec.QueueSplinePointsCm.Num() >= 2 &&
+        Definition->Spec.QueueRules.MaxWaitingAgents > 0 &&
+        FMath::IsFinite(Definition->Spec.QueueRules.SlotSpacingCm) &&
+        Definition->Spec.QueueRules.SlotSpacingCm > 0.0f &&
+        PendingQueueMarginCm.Get(0) > 0;
 }
 
 bool FFFZSFacilityDefinitionCustomization::CanResizeQueueTailToCapacity() const
