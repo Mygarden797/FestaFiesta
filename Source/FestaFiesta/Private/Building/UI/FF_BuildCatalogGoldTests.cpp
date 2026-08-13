@@ -19,17 +19,18 @@
 
 namespace
 {
-	class FScopedPlayerlessWidgetInitialization
+	// Keep this helper name unique because Unity builds merge anonymous namespaces from .cpp files.
+	class FScopedBuildCatalogPlayerlessWidgetInitialization
 	{
 	public:
-		explicit FScopedPlayerlessWidgetInitialization(UWidgetBlueprintGeneratedClass& InClass)
+		explicit FScopedBuildCatalogPlayerlessWidgetInitialization(UWidgetBlueprintGeneratedClass& InClass)
 			: WidgetClass(InClass)
 			, bPreviousValue(InClass.bCanCallInitializedWithoutPlayerContext)
 		{
 			WidgetClass.bCanCallInitializedWithoutPlayerContext = true;
 		}
 
-		~FScopedPlayerlessWidgetInitialization()
+		~FScopedBuildCatalogPlayerlessWidgetInitialization()
 		{
 			WidgetClass.bCanCallInitializedWithoutPlayerContext = bPreviousValue;
 		}
@@ -118,7 +119,7 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 
 	// Automation Game worlds do not create a LocalPlayer. This scoped override is restored before
 	// the class can be reused by another test or PIE session.
-	FScopedPlayerlessWidgetInitialization PlayerlessInitializationGuard(*ScreenClass);
+	FScopedBuildCatalogPlayerlessWidgetInitialization PlayerlessInitializationGuard(*ScreenClass);
 	UFF_BuildCatalogScreen* Screen = CreateWidget<UFF_BuildCatalogScreen>(World, ScreenClass);
 	TestNotNull(TEXT("Build catalog screen can be created in the isolated Game world"), Screen);
 	if (!Screen)
