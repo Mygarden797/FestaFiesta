@@ -237,7 +237,8 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 		return;
 	}
 
-	CameraPawn->AddPanInput(EdgeInput * CameraPawn->CameraSettings.EdgeScrollSpeedScale);
+	// 배율을 여기서 곱하지 않는다. 리그가 EdgeScroll 전용 속도로 처리한다.
+	CameraPawn->AddEdgeScrollInput(EdgeInput);
 }
 
 void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
