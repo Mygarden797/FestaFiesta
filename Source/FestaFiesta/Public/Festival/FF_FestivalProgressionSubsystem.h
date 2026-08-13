@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Economy/FF_FestivalFunds.h"
+#include "Economy/FF_DayLedger.h"
 #include "FF_FestivalProgressionSubsystem.generated.h"
 
 class UFF_FestivalDefinition;
@@ -54,24 +55,50 @@ public:
 	bool CanAfford(int32 Amount) const { return Funds.CanAfford(Amount); }
 
 	// 지출한다.
-	// 성공하면 true 이고 잔액이 그만큼 줄어든다.
+	// 성공하면 true 이고 잔액이 그만큼 줄어든다. DayLedger에 원인별로 기록된다.
 	// 실패하면 상태를 전혀 바꾸지 않고 델리게이트도 쏘지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
-	bool TrySpend(int32 Amount);
+	bool TrySpend(int32 Amount, EFF_SpendReason Reason);
+	
+	// 누적 매출, 상단바 노출용
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalRevenue() const { return Funds.GetTotalRevenue(); }
+	
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnTotalRevenueChanged;
+	
+	// 오늘 매출. Report 화면용 - 하루 경계마다 리셋된다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTodayRevenue() const { return Funds.GetTodayRevenue(); }
+	
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnTodayRevenueChanged;
+	
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
 
 	// 잔액을 늘린다. 시설 철거 환급이 유일한 호출자다.
-	// 실패하지 않으므로 Policy Commit 단계에서 호출해도 안전하다.
+	// TotalRevenue는 안 건드린다 — 환급은 새 매출이 아니라 이미 쓴 돈이 되돌아온 것이다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void Refund(int32 Amount);
+
+	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
+	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
 
 private:
 	// 값이 실제로 바뀔 때만 통지한다.
 	void BroadcastGoldIfChanged(int32 PreviousGold);
+	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
+	void BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue);
 
 	// 잔액 규칙의 소유자. UObject 가 아니라 값 타입이다.
 	FFF_FestivalFunds Funds;
+	
+	// 당일 원인별/시설별 분해. 여기서만 건드린다.
+	FFF_DayLedger DayLedger;
 
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UPROPERTY()
 	TObjectPtr<const UFF_FestivalDefinition> Definition;
+	
 };

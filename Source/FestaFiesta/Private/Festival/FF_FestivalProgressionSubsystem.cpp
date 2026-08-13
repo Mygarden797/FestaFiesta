@@ -46,17 +46,22 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	}
 
 	const int32 PreviousGold = Funds.GetGold();
+	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
 
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
+	DayLedger.Reset();
 
 	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 축제 시작: %s, 초기 Gold %d"),
 		*InDefinition->FestivalId.ToString(), Funds.GetGold());
 
 	BroadcastGoldIfChanged(PreviousGold);
+	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 }
 
-bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
+bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Reason)
 {
 	const int32 PreviousGold = Funds.GetGold();
 
@@ -65,26 +70,57 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
 		// 실패는 상태를 바꾸지 않으므로 델리게이트도 쏘지 않는다.
 		return false;
 	}
-
+	
+	DayLedger.RecordSpend(Reason, Amount);
+	
 	BroadcastGoldIfChanged(PreviousGold);
 	return true;
+}
+
+void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
+{
+	const int32 PreviousGold = Funds.GetGold();
+	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
+
+	Funds.AddRevenue(Amount);
+	DayLedger.RecordEarn(Reason, Amount, FacilityId);
+
+	BroadcastGoldIfChanged(PreviousGold);
+	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 }
 
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
 {
 	const int32 PreviousGold = Funds.GetGold();
+	
 	Funds.Refund(Amount);
+	DayLedger.RecordRefund(Amount);
+	
 	BroadcastGoldIfChanged(PreviousGold);
 }
 
 void UFF_FestivalProgressionSubsystem::BroadcastGoldIfChanged(int32 PreviousGold)
 {
 	const int32 CurrentGold = Funds.GetGold();
-	if (CurrentGold == PreviousGold)
-	{
-		// 비용 0 인 지출이 여기로 온다. 값이 안 바뀌었으면 위젯을 헛돌리지 않는다.
-		return;
-	}
+	if (CurrentGold == PreviousGold) return;
 
 	OnGoldChanged.Broadcast(CurrentGold);
+}
+
+void UFF_FestivalProgressionSubsystem::BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue)
+{
+	const int32 CurrentTotalRevenue = Funds.GetTotalRevenue();
+	if (CurrentTotalRevenue == PreviousTotalRevenue) return;
+	
+	OnTotalRevenueChanged.Broadcast(CurrentTotalRevenue);
+}
+
+void UFF_FestivalProgressionSubsystem::BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue)
+{
+	const int32 CurrentTodayRevenue = Funds.GetTodayRevenue();
+	if (CurrentTodayRevenue == PreviousTodayRevenue) return;
+
+	OnTodayRevenueChanged.Broadcast(CurrentTodayRevenue);
 }
