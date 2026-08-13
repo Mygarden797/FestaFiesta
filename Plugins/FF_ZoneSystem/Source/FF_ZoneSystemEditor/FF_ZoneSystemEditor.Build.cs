@@ -11,6 +11,7 @@ public class FF_ZoneSystemEditor : ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+            "InputCore",
             "Slate",
             "SlateCore",
             "UnrealEd",

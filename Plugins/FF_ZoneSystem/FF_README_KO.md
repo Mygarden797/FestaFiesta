@@ -212,9 +212,12 @@ Transform은 회전된 Footprint 중심과 Zone Actor의 Yaw를 조합하며 Act
 
 ### 4.5 안전 예산
 
-`MaxEnumeratedCellsPerFacility` 기본값은 1,000,000이다. 이 값은 대형 정상 시설을 실제 Cell로
+`MaxEnumeratedCellsPerFacility` 기본값은 10,000,000이다. 이 값은 대형 정상 시설을 실제 Cell로
 펼치는 한도가 아니라, 잘못된 Footprint·Clearance·Queue 입력을 빠르게 거부하기 위한 보수적 예산이다.
-설정값도 하드 상한 1,000,000으로 제한된다.
+설정값도 하드 상한 10,000,000으로 제한된다.
+권위 점유·충돌 판정은 Cell이 아니라 압축 사각형 단위로 동작하므로 이 예산을 올려도 메모리와
+판정 비용은 늘지 않는다. 다만 지면 표본 수는 Footprint 면적에 비례하므로
+`GroundSampleSpacingCm`을 과도하게 낮춘 채 대형 시설을 배치하면 LineTrace 비용이 급증한다.
 
 ---
 
@@ -1143,7 +1146,7 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 | 영역 | 설정 | 기본값 | 적용 의미 |
 |---|---|---:|---|
 | Units | Placement Cell Size | 1 cm 고정 | 변경 불가 좌표 계약 |
-| Performance | Max Enumerated Cells Per Facility | 1,000,000 | 손상 입력 조기 거부 예산 |
+| Performance | Max Enumerated Cells Per Facility | 10,000,000 | 손상 입력 조기 거부 예산 |
 | Performance | Ground Sample Spacing | 100 cm | 지면 Trace 간격 |
 | Performance | Queue Simulation Tick Interval | 0.1초 | 0이면 매 Frame |
 | Placement | Max Ground Slope | 5도 | 표본 법선 최대 경사 |
@@ -1288,10 +1291,12 @@ Zone Actor는 기본 생성 시 100 m x 100 m 사각형 Spline을 제공하지�
 6. Entry[0], Exit[0], Service[0..Capacity-1] Anchor를 만든다.
 7. 외부 Cost·Revenue·Experience Key와 Soft Mesh를 설정한다.
 8. VisualSizingMode는 `MatchPlacementBounds`로 유지한다. 그러면 Footprint와 PlacementObstacleHeight를 바꿀 때 메시 표시 크기도 함께 바뀐다.
-9. Details의 `Facility Authoring Tools`에서 `Show Korean Help`, `Validate Facility Definition`, `Footprint <- Loaded Mesh`, `Queue Tail <- Max Capacity`, `Max Capacity <- Queue Length`, `Fit Mesh to Placement Bounds` 버튼을 사용할 수 있다. 변경 버튼은 Undo/Redo transaction을 지원한다.
-10. 카테고리·필드·열거형·배열 요소·버튼처럼 항상 보이는 UI 이름은 영어를 사용한다. `Show Korean Help`를 누르면 핵심 사용법이 한국어 대화상자로 열리고, 개별 항목에 마우스를 올리면 단위, 좌표 원점, 포함/미포함 경계, 1,000,000셀 안전 예산, 활성 조건을 한국어 툴팁으로 확인할 수 있다. 버튼 실행 뒤 결과 알림과 검증 대화상자도 한국어로 표시한다.
-11. Content Browser의 `Validate Assets`로 Spec 내부·중복 ID·경로·메시 bounds까지 검증한다.
-12. Asset Manager Scan과 Shipping Cook 포함 여부를 Host 프로젝트에서 검증한다.
+9. 이미 작성한 시설의 크기를 바꿀 때는 Footprint 필드를 직접 고치지 말고 `Facility Authoring Tools`의 `New Width (X)`·`New Depth (Y)`·`New Height (Z)`에 목표 값을 넣고 `Resize Facility (Keep Queue & Anchors)`를 누른다. 높이는 XY 배치에 영향을 주지 않으므로 보정 없이 값만 교체되며 최소 10cm다. QueueReservedRects는 건물 좌하단 기준이고 Queue Spline Point와 Anchor는 건물 중심 기준이라, 같은 크기 변경에도 필요한 이동량이 서로 다르다. 버튼은 중심보다 바깥쪽 예약 경계를 크기 변화량만큼, 경로 점과 Anchor를 변화량의 절반만큼 옮겨 각자 붙어 있던 건물 변까지의 거리를 유지하며, 결과 Spec이 전체 검증을 통과할 때만 적용한다. 구버전 `QueueReservedCells`가 남아 있으면 자동 보정을 제공하지 않으므로 먼저 QueueReservedRects로 변환한다.
+10. 대기열이 차지하는 공간을 줄일 때는 세 값이 검증으로 묶여 있으므로 `Queue Rules` → `Queue Spline Points` → `Queue Reserved Rects` 순서로 손댄다. 필요 경로 길이는 `(Max Waiting Agents - 1) × Slot Spacing`이므로 인원이나 간격을 줄이면 길이가 줄고, 정원을 유지한 채 면적만 줄이려면 Spline에 굴절점을 넣어 L자·ㄷ자로 접는다. 길이를 바꾼 뒤에는 `Queue Tail <- Max Capacity`로 경로를 맞추고, `Queue Margin (cm)`에 통행 여백을 넣고 `Queue Rects <- Queue Path`를 누르면 예약 영역이 경로를 따라가는 회랑으로 다시 만들어진다. 접힌 경로는 구간마다 사각형이 생겨 외접 박스보다 훨씬 작은 면적만 확보하고, 최대 정원이 쓰지 않는 꼬리 구간과 건물 본체를 침범하는 부분은 자동으로 제외된다.
+11. Details의 `Facility Authoring Tools`에서 `Show Korean Help`, `Validate Facility Definition`, `Footprint <- Loaded Mesh`, `Resize Facility (Keep Queue & Anchors)`, `Queue Rects <- Queue Path`, `Queue Tail <- Max Capacity`, `Max Capacity <- Queue Length`, `Fit Mesh to Placement Bounds` 버튼을 사용할 수 있다. 변경 버튼은 Undo/Redo transaction을 지원한다.
+12. 카테고리·필드·열거형·배열 요소·버튼처럼 항상 보이는 UI 이름은 영어를 사용한다. `Show Korean Help`를 누르면 핵심 사용법이 한국어 대화상자로 열리고, 개별 항목에 마우스를 올리면 단위, 좌표 원점, 포함/미포함 경계, 10,000,000셀 안전 예산, 활성 조건을 한국어 툴팁으로 확인할 수 있다. 버튼 실행 뒤 결과 알림과 검증 대화상자도 한국어로 표시한다.
+13. Content Browser의 `Validate Assets`로 Spec 내부·중복 ID·경로·메시 bounds까지 검증한다.
+14. Asset Manager Scan과 Shipping Cook 포함 여부를 Host 프로젝트에서 검증한다.
 
 ### 18.5 C++ Install 예시
 
@@ -1570,7 +1575,7 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
   Tick에서 계속되지만, 그 호출의 남은 `DeltaSeconds`는 별도로 누적하지 않는다.
 - Zone, Protected Area, FacilityActor는 기본적으로 상시 Tick하지 않는다. Queue는
   `Closed`가 아닐 때, Preview Actor는 자동 갱신을 켰을 때만 Tick한다.
-- Debug Cell 전개는 최대 10,000개, 압축 영역의 이론적 안전 예산은 1,000,000셀이다.
+- Debug Cell 전개는 최대 10,000개, 압축 영역의 이론적 안전 예산은 10,000,000셀이다.
   이 값들은 정상 Gameplay 규모를 보장하는 벤치마크가 아니라 폭발적 입력을 막는 안전선이다.
 
 ### 21.2 스레드와 재진입

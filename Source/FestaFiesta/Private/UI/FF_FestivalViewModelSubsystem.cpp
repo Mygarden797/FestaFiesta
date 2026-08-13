@@ -2,6 +2,7 @@
 
 #include "UI/FF_FestivalViewModelSubsystem.h"
 
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/FF_UILog.h"
@@ -13,6 +14,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	// 같은 GameInstance 안의 서브시스템이라 순서가 보장되지 않는다.
 	// 지금 없으면 Tick에서 다시 시도한다.
 	TryBindStageSubsystem();
+	TryBindProgressionSubsystem();
 
 #if !UE_BUILD_SHIPPING
 	RegisterDebugConsoleCommands();
@@ -28,6 +30,12 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedStageSubsystem->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 	}
 	CachedStageSubsystem = nullptr;
+
+	if (CachedProgressionSubsystem)
+	{
+		CachedProgressionSubsystem->OnGoldChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+	}
+	CachedProgressionSubsystem = nullptr;
 
 #if !UE_BUILD_SHIPPING
 	UnregisterDebugConsoleCommands();
@@ -172,6 +180,124 @@ void UFF_FestivalViewModelSubsystem::TryBindStageSubsystem()
 		*GetCurrentStageDisplayText().ToString(), GetCurrentDay(), GetRemainingSeconds());
 }
 
+UFF_FestivalProgressionSubsystem* UFF_FestivalViewModelSubsystem::GetProgressionSubsystem() const
+{
+	if (CachedProgressionSubsystem)
+	{
+		return CachedProgressionSubsystem;
+	}
+
+	if (const UGameInstance* GI = GetGameInstance())
+	{
+		return GI->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+	}
+	return nullptr;
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
+{
+	if (CachedProgressionSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_FestivalProgressionSubsystem* Progression = GI->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+	if (!Progression)
+	{
+		++ProgressionBindRetryCount;
+		if (ProgressionBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_FestivalProgressionSubsystem을 %d회 시도해도 찾지 못했다. Gold가 더미로 남는다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedProgressionSubsystem = Progression;
+
+	// Bind + Sync. StartFestival이 이미 지나갔다면 방송을 놓쳤으므로 현재값을 직접 읽는다.
+	CachedProgressionSubsystem->OnGoldChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+
+	// !! 축제가 시작되기 전에는 소유자 값을 쓰지 않는다 !!
+	// StartFestival 전 Funds는 0이다. 그 0을 화면에 띄우면 "잔액이 없다"는 틀린 사실이 되고,
+	// 검증 중에는 HUD가 고장난 것처럼 보인다. 시작되면 OnGoldChanged가 실제 값을 가져온다.
+	if (CachedProgressionSubsystem->IsFestivalStarted())
+	{
+		HandleOwnerGoldChanged(CachedProgressionSubsystem->GetGold());
+	}
+	else
+	{
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] 경제 시스템 구독 완료. 축제가 아직 시작되지 않아 Gold는 더미 %d를 유지한다."), Gold);
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged(int32 NewValue)
+{
+	// 소유자 값이 들어오는 순간부터 더미는 의미가 없다. 변화 감지는 ApplyIntMetric이 한다.
+	ApplyIntMetric(Gold, NewValue, OnGoldChanged);
+}
+
+bool UFF_FestivalViewModelSubsystem::CanAfford(int32 Amount) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression)
+	{
+		// 소유자가 없으면 "살 수 있다"고 알리지 않는다. 잘못 눌러 실패하는 쪽이 더 나쁘다.
+		return false;
+	}
+
+	return Progression->CanAfford(Amount);
+}
+
+void UFF_FestivalViewModelSubsystem::RequestSetTimeScale(float NewScale)
+{
+	UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
+	if (!StageSubsystem)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[ViewModel] Stage 시스템이 없어 배속을 바꿀 수 없다."));
+		return;
+	}
+
+	// 잠금 구간이어도 요청은 보낸다. 무시 판정의 소유자는 Stage 시스템이다.
+	// UI가 미리 막으면 잠금 규칙이 두 곳에 생긴다.
+	StageSubsystem->SetTimeScale(NewScale);
+}
+
+float UFF_FestivalViewModelSubsystem::GetTimeScale() const
+{
+	const UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
+	return StageSubsystem ? StageSubsystem->TimeScale : 1.f;
+}
+
+bool UFF_FestivalViewModelSubsystem::IsTimeScaleLocked() const
+{
+	UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
+
+	// IsMainProgramLocked()가 const가 아니라 비const 포인터가 필요하다.
+	return StageSubsystem ? StageSubsystem->IsMainProgramLocked() : false;
+}
+
+FText UFF_FestivalViewModelSubsystem::GetLiveClockText() const
+{
+	const UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
+	if (!StageSubsystem)
+	{
+		return FText::GetEmpty();
+	}
+
+	// Stage 쪽이 FString으로 준다. 화면 문구는 FText로만 다룬다.
+	// 시각 표기(19:42)는 숫자 서식이라 현지화 대상이 아니므로 FromString으로 감싸도 손실이 없다.
+	return FText::FromString(StageSubsystem->GetCurrentLiveClockString());
+}
+
 void UFF_FestivalViewModelSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
 {
 	OnStageViewChanged.Broadcast(NewStage, GetCurrentDay());
@@ -309,6 +435,11 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	if (!CachedStageSubsystem)
 	{
 		TryBindStageSubsystem();
+	}
+
+	if (!CachedProgressionSubsystem)
+	{
+		TryBindProgressionSubsystem();
 	}
 
 	// 남은 시간은 여기서 폴링하지 않는다.
