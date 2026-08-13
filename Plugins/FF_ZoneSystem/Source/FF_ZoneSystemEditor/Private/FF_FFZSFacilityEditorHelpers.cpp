@@ -10,8 +10,9 @@ namespace FFZSFacilityEditorHelpersPrivate
     int32 CeilToPlacementCell(const double SizeCm)
     {
         // Placement bounds are authoritative. Never round a genuinely oversized mesh
-        // down: even a sub-millimetre overhang must reserve the next 1 cm cell.
-        return FMath::Max(1, static_cast<int32>(FMath::CeilToDouble(SizeCm)));
+        // down: even a sub-millimetre overhang must reserve the next cell.
+        constexpr double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+        return FMath::Max(1, static_cast<int32>(FMath::CeilToDouble(SizeCm / CellSizeCm)));
     }
 
     FBox TransformCardinalBoundsExact(

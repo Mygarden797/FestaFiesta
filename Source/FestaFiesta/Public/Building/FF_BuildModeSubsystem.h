@@ -129,7 +129,12 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	GENERATED_BODY()
 
 public:
-	// 지원 월드인지와 QA 전용 맵인지 확인해 이 서브시스템을 생성할지를 결정한다. 
+	// 1cm 단위 Zone 그리드에서 배치 원점을 맞추는 10cm 스냅 간격.
+	// 커서 입력만 양자화하며 권한 격자 자체는 1cm로 유지된다. QA 플레이테스트 경로도 같은 값을 써야
+	// 실제 건축 모드와 배치 결과가 어긋나지 않는다.
+	static constexpr int32 PlacementSnapCm = 10;
+
+	// 지원 월드인지와 QA 전용 맵인지 확인해 이 서브시스템을 생성할지를 결정한다.
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	// 실제 게임 플레이 입력을 제공하는 Game/PIE/GamePreview 월드만 허용한다. 
 	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
@@ -263,10 +268,8 @@ private:
 	// 같은 프리뷰 상태가 짧은 주기로 반복될 때 로그가 폭증하지 않도록 마지막 문구를 기억한다. 
 	mutable FString LastLoggedStatusMessage;
 
-	// 커서 추적과 전체 Zone 검증의 비용을 제한하면서도 프리뷰가 충분히 부드럽게 보이는 갱신 간격. 
+	// 커서 추적과 전체 Zone 검증의 비용을 제한하면서도 프리뷰가 충분히 부드럽게 보이는 갱신 간격.
 	static constexpr float PreviewRefreshIntervalSeconds = 0.08f;
-	// 1cm 단위 Zone 그리드에서 배치 원점을 맞추는 10cm 스냅 간격. 
-	static constexpr int32 PlacementSnapCm = 10;
 
 	// B/Escape/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다.
 	void HandleInput(APlayerController& Controller);
