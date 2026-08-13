@@ -41,7 +41,7 @@ enum class EFF_CompanionType : uint8
  *
  * 즉 이 구조체는 "crowdAI가 그룹을 형성한 뒤 그 결과를 읽어오는 뷰"다. 
  * 그룹 형성 결과를 Utility AI가 실제로 어떻게 조회/전달받을지는 아직 미정
- * — `crowdai_handoff_note.md` 열린 질문 참고.
+ * — `data/metadata/request/crowdai_integration_guide.md` §11 열린 질문 참고.
  */
 USTRUCT(BlueprintType)
 struct FFF_Party

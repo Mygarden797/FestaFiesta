@@ -148,7 +148,7 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 
 **2026-08-06 구현 완료** — `FFF_IndividualVariationResolver::ResolveWithGroupSharing(VariationTable, Seed, StableAgentId, GroupId, SpawnGeneration, CorrelationStrength)`. `GroupId == INDEX_NONE`이면 solo로 취급해 `Resolve()` 한 번과 완전히 같은 결과를 낸다(테스트로 고정).
 
-> ⚠️ **개체 변주는 자동으로 걸리지 않는다.** `StableAgentId`가 만들어져도 이 함수를 **누군가 호출해야** 적용된다. NPC 상태를 보관하는 런타임 층이 아직 없어서 지금은 호출부가 없다 — 즉 개체 변주는 코드로만 존재하고 실제 NPC에게 적용된 적이 없다. 스폰 시점을 소유하는 crowdAI가 부르는 것으로 요청했다(`crowdai_handoff_note.md` §1.5).
+> ⚠️ **개체 변주는 자동으로 걸리지 않는다.** `StableAgentId`가 만들어져도 이 함수를 **누군가 호출해야** 적용된다. NPC 상태를 보관하는 런타임 층이 아직 없어서 지금은 호출부가 없다 — 즉 개체 변주는 코드로만 존재하고 실제 NPC에게 적용된 적이 없다. 스폰 시점을 소유하는 crowdAI가 부르는 것으로 요청했다(`request/crowdai_integration_guide.md` §5.1).
 
 나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 그룹이어도 계속 개체별 독립 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
 
