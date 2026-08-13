@@ -12,6 +12,16 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogFestaFiestaCamera, Log, All);
 
+// 지금 무엇을 보고 있는가.
+UENUM(BlueprintType)
+enum class EFF_CameraViewMode : uint8
+{
+	// 축제 전체를 내려다보는 관찰 시점. 기본값이다.
+	Overview  UMETA(DisplayName = "관찰 시점"),
+	// 다른 액터의 시점을 빌려 보는 중. 관찰 카메라는 제자리에 그대로 떠 있다.
+	Actor     UMETA(DisplayName = "액터 시점")
+};
+
 // 카메라 입력을 눌러둬야 하는 이유.
 // 건축 모드가 커서와 클릭을 쓰고 있는데 카메라가 같은 입력을 먹으면
 // 배치 클릭이 드래그로 먹히거나 커서 표시가 서로 덮어써진다.
@@ -24,6 +34,8 @@ enum class EFF_CameraInputBlock : uint8
 	BuildSession    UMETA(DisplayName = "건축 세션"),
 	// 모달 UI가 떠 있음. 카메라 입력 전체를 막는다.
 	ModalUi         UMETA(DisplayName = "모달 UI"),
+	// 다른 액터 시점을 보는 중. 관찰 카메라 조작은 화면에 안 보이므로 막는다.
+	ActorView       UMETA(DisplayName = "액터 시점"),
 	// 시네마틱이나 자동 연출 중.
 	Scripted        UMETA(DisplayName = "연출 중")
 };
@@ -67,6 +79,18 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pitch", meta = (ClampMin = "0.0"))
 	float PitchSaturationArmLength = 0.f;
 
+	// 카메라가 초점 높이 기준으로 이 높이보다 아래로 내려오지 않게 한다.
+	//
+	// 줌인하면 각도가 눕는데, 그러면 카메라가 피벗과 거의 같은 높이까지 내려온다.
+	// 예를 들어 거리 800 에 피치 -35 도면 카메라 높이는 800 * sin(35) = 459cm 뿐이고,
+	// 뒤로 655cm 물러난 지점이라 거기 지형이 조금만 솟아 있어도 파고든다.
+	// 그래서 필요한 만큼 피치를 세워서 높이를 확보한다.
+	// 거리를 늘리는 방법도 있지만, 그러면 줌인을 했는데 안 당겨지는 느낌이 난다.
+	//
+	// 0 이하면 보정하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pitch", meta = (ClampMin = "0.0"))
+	float MinCameraHeightAboveFocus = 600.f;
+
 	// 최대 줌아웃 상태에서의 초당 팬 속도.
 	// 실제 속도는 현재 줌에 비례해서 줄어든다. 안 그러면 확대 상태에서 화면이 홱 날아간다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pan", meta = (ClampMin = "100.0"))
@@ -107,9 +131,22 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "1.0"))
 	float EdgeScrollMarginPixels = 24.f;
 
-	// 가장자리 스크롤의 최대 세기. 키보드 팬 대비 비율이다.
+	// 가장자리 스크롤 세기. 키보드 팬 대비 배수다. 1 보다 크면 더 빠르다.
+	//
+	// 두 조작의 역할이 다르다. 키보드는 보고 있는 곳 근처를 다듬는 세밀 조작이고,
+	// 가장자리는 멀리 있는 데로 훅 넘어가는 이동이다. 그래서 기본값을 1 이상으로 둔다.
+	// 상한을 열어둔 건 맵이 커지면 더 필요해지기 때문이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.05", ClampMax = "8.0"))
+	float EdgeScrollSpeedScale = 2.5f;
+
+	// 가장자리 스크롤이 확대 상태에서 느려지는 정도.
+	//
+	// 키보드는 확대할수록 크게 느려져야 세밀 조작이 되는데, 가장자리는 그러면 곤란하다.
+	// 부스 하나를 들여다보다가 반대편으로 넘어가려고 마우스를 끝에 댔는데 기어가면
+	// 결국 줌아웃하고 다시 줌인하게 된다. 그래서 감속을 따로 둔다.
+	// 1 이면 줌과 무관하게 항상 최대 속도다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.05", ClampMax = "1.0"))
-	float EdgeScrollSpeedScale = 0.7f;
+	float EdgeScrollMinSpeedScale = 0.6f;
 
 	// 카메라 초점이 벗어나지 못하는 영역. 유효하지 않으면 클램프하지 않는다.
 	// 축제장 밖으로 나가면 빈 지형만 보여서 길을 잃는다.

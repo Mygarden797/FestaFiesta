@@ -56,3 +56,30 @@ struct FFF_PromotionTier
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Promotion", meta = (ClampMin = "1.0"))
 	float VisitorMultiplier = 1.f;
 };
+
+// 지출 원인
+// [주의] 저장 슬롯에 들어갈 값이다 — 새 원인은 뒤에만 추가한다.
+UENUM(BlueprintType)
+enum class EFF_SpendReason : uint8
+{
+	FacilityInstall	= 0		UMETA(DisplayName = "시설 설치비"),
+	ProgramPurchase	= 1		UMETA(DisplayName = "유료 프로그램 구매"),
+	Promotion       = 2		UMETA(DisplayName = "홍보비"),
+	VenueRent       = 3		UMETA(DisplayName = "장소 임대료"),
+	StaffWages      = 4		UMETA(DisplayName = "Staff 임금"),
+	StaffHire       = 5		UMETA(DisplayName = "추가 고용"),
+	EventSupplies   = 6		UMETA(DisplayName = "Event 소모품"),
+	Cleanup         = 7		UMETA(DisplayName = "뒷정리"),
+	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽")
+};
+
+// 매출 원인
+UENUM(BlueprintType)
+enum class EFF_EarnReason : uint8
+{
+	AdmissionFee		= 0     UMETA(DisplayName = "NPC 입장료"),
+	FacilityCommission  = 1		UMETA(DisplayName = "부스 수수료"),
+	ProgramFee          = 2		UMETA(DisplayName = "유료 프로그램 체험비"),
+	DailyGoalBonus      = 3		UMETA(DisplayName = "일일 목표 보너스"),
+	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상")
+};

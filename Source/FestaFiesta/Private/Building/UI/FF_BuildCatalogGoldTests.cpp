@@ -138,7 +138,7 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 		EconomyReadModel->OnGoldChanged.IsAlreadyBound(
 			Screen, &UFF_BuildCatalogScreen::HandleGoldChanged));
 
-	TestTrue(TEXT("A production Gold spend succeeds"), Progression->TrySpend(345));
+	TestTrue(TEXT("A production Gold spend succeeds"), Progression->TrySpend(345, EFF_SpendReason::FacilityInstall));
 	TestEqual(TEXT("Building Read Model receives the Progression Gold change"),
 		EconomyReadModel->GetGold(), 12'000);
 	const FText SpentExpected = FText::Format(

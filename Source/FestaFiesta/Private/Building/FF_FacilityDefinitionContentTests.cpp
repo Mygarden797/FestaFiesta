@@ -4,6 +4,7 @@
 
 #include "Engine/AssetManager.h"
 #include "Engine/StaticMesh.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSVisualGeometry.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
@@ -16,8 +17,9 @@ namespace
     bool IsWithinAuthoritativeBounds(const FBox& Bounds, const FFFZSFacilitySpec& Spec)
     {
         constexpr double ToleranceCm = 0.5;
-        const double HalfX = Spec.FootprintSizeCells.X * 0.5;
-        const double HalfY = Spec.FootprintSizeCells.Y * 0.5;
+        constexpr double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+        const double HalfX = Spec.FootprintSizeCells.X * CellSizeCm * 0.5;
+        const double HalfY = Spec.FootprintSizeCells.Y * CellSizeCm * 0.5;
         return Bounds.IsValid &&
             Bounds.Min.X >= -HalfX - ToleranceCm &&
             Bounds.Max.X <= HalfX + ToleranceCm &&

@@ -67,6 +67,15 @@ void AFF_OverviewCameraPawn::AddPanInput(const FVector2D& ScreenInput)
 	PendingPanInput += ScreenInput;
 }
 
+void AFF_OverviewCameraPawn::AddEdgeScrollInput(const FVector2D& ScreenInput)
+{
+	if (!ScreenInput.IsNearlyZero() && FollowTarget.IsValid())
+	{
+		SetFollowTarget(nullptr);
+	}
+	PendingEdgeScrollInput += ScreenInput;
+}
+
 void AFF_OverviewCameraPawn::AddZoomInput(float Steps)
 {
 	Rig.Zoom(Steps);
@@ -140,6 +149,12 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 	{
 		Rig.Pan(PendingPanInput, DeltaSeconds);
 		PendingPanInput = FVector2D::ZeroVector;
+	}
+
+	if (!PendingEdgeScrollInput.IsNearlyZero())
+	{
+		Rig.EdgeScroll(PendingEdgeScrollInput, DeltaSeconds);
+		PendingEdgeScrollInput = FVector2D::ZeroVector;
 	}
 
 	// 추적은 팬보다 뒤에 둔다. 같은 프레임에 둘 다 들어오면 추적이 이긴다.
