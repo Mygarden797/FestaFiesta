@@ -561,8 +561,8 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 		return false;
 	}
 
-	TestEqual(TEXT("The shipped default refunds 80% of the installation cost"),
-		Harness.Definition->FacilityDemolitionRefundRate, 0.8f);
+	TestEqual(TEXT("The shipped default refunds 50% of the installation cost"),
+		Harness.Definition->FacilityDemolitionRefundRate, 0.5f);
 
 	const FFFZSCommand InstallCommand =
 		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
@@ -580,16 +580,16 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	// 400의 80%인 320만 돌아온다. 전액이면 배치 실수의 비용이 0이 되어 위치를 고민할 이유가 사라진다.
-	TestEqual(TEXT("Demolition refunds 80% of the 400 Gold installation cost"),
-		Harness.Progression->GetGold(), 920);
+	// 400의 50%인 200만 돌아온다. 전액이면 배치 실수의 비용이 0이 되어 위치를 고민할 이유가 사라진다.
+	TestEqual(TEXT("Demolition refunds 50% of the 400 Gold installation cost"),
+		Harness.Progression->GetGold(), 800);
 	TestNull(TEXT("The refunded Facility is unregistered"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
 	TestEqual(TEXT("The refund is recorded in the day ledger's refund total"),
-		Harness.Progression->GetDayLedger().GetTotalRefund(), 320);
+		Harness.Progression->GetDayLedger().GetTotalRefund(), 200);
 
-	// 기획 담당자가 에디터에서 비율만 바꾸면 환급액이 따라와야 한다. 코드에 0.8이 박혀 있으면 여기서 드러난다.
-	Harness.Definition->FacilityDemolitionRefundRate = 0.5f;
+	// 기획 담당자가 에디터에서 비율만 바꾸면 환급액이 따라와야 한다. 코드에 0.5가 박혀 있으면 여기서 드러난다.
+	Harness.Definition->FacilityDemolitionRefundRate = 0.8f;
 	const FFFZSCommand SecondInstall = MakeInstallCommand(
 		Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(5000, 1000));
 	if (!TestTrue(TEXT("A second Install succeeds after the rate change"),
@@ -598,12 +598,12 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 		return false;
 	}
 	TestEqual(TEXT("The second Install spends another 400 Gold"),
-		Harness.Progression->GetGold(), 520);
+		Harness.Progression->GetGold(), 400);
 
 	TestTrue(TEXT("Removing the second Facility succeeds"),
 		Harness.ZoneSystem->ExecuteCommand(
 			MakeRemoveCommand(Harness, SecondInstall.FacilityInstanceId)).bSucceeded);
-	TestEqual(TEXT("The edited 50% rate refunds 200 Gold, not 320"),
+	TestEqual(TEXT("The edited 80% rate refunds 320 Gold, not 200"),
 		Harness.Progression->GetGold(), 720);
 	TestEqual(TEXT("Both demolitions accumulate in the same day's refund total"),
 		Harness.Progression->GetDayLedger().GetTotalRefund(), 520);
