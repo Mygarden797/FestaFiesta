@@ -28,6 +28,8 @@ namespace FFF_OverviewCameraRigTestHelpers
 		Settings.PitchAtMaxZoom = -72.f;
 		Settings.PanSpeedAtMaxZoom = 6000.f;
 		Settings.PanSpeedMinScale = 0.18f;
+		Settings.EdgeScrollSpeedScale = 2.5f;
+		Settings.EdgeScrollMinSpeedScale = 0.6f;
 		Settings.YawSnapDegrees = 45.f;
 		Settings.YawSpeedDegrees = 120.f;
 		Settings.InterpSpeed = 0.f;   // 테스트에서는 보간 없이 즉시 반영
@@ -377,6 +379,108 @@ bool FFF_OverviewCameraRig_PitchSaturatesBeforeMaxZoom::RunTest(const FString& P
 	TestTrue(TEXT("잘못된 포화 거리에서도 각도가 범위 안에 있다"),
 		Guarded.ResolvePitchForArmLength(2000.f) <= -35.f
 		&& Guarded.ResolvePitchForArmLength(2000.f) >= -72.f);
+	return true;
+}
+
+// 14. 줌인해도 카메라가 지면으로 내려오지 않아야 한다.
+//     각도가 누우면 카메라 높이가 ArmLength * sin(피치) 로 줄어드는데,
+//     최대 줌인에서 이 값이 작으면 뒤쪽 지형에 파고든다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_KeepsMinimumHeightWhenZoomedIn, "FestaFiesta.Camera.Rig.KeepsMinimumHeightWhenZoomedIn", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_KeepsMinimumHeightWhenZoomedIn::RunTest(const FString& Parameters)
+{
+	constexpr float MinHeight = 600.f;
+
+	FFF_OverviewCameraSettings Settings = MakeSettings();
+	Settings.PitchSaturationArmLength = 4000.f;
+	Settings.MinCameraHeightAboveFocus = MinHeight;
+
+	FFF_OverviewCameraRig Rig;
+	Rig.Initialize(Settings, FVector::ZeroVector, 4000.f);
+
+	auto HeightAt = [&Rig](float Arm)
+	{
+		return Arm * FMath::Sin(FMath::DegreesToRadians(-Rig.ResolvePitchForArmLength(Arm)));
+	};
+
+	// 전 구간에서 최소 높이를 지키고, 각도가 도로 눕는 구간이 없어야 한다.
+	// 거리별로 보정하면 최대 줌인에서만 잠깐 세워졌다가 조금 물러나면 눕는 꺾임이 생긴다.
+	bool bHeightOk = true;
+	bool bMonotonic = true;
+	float PreviousPitch = Rig.ResolvePitchForArmLength(800.f);
+	for (float Arm = 800.f; Arm <= 16000.f; Arm += 50.f)
+	{
+		bHeightOk &= (HeightAt(Arm) >= MinHeight - 1.f);
+		const float Current = Rig.ResolvePitchForArmLength(Arm);
+		bMonotonic &= (Current <= PreviousPitch + KINDA_SMALL_NUMBER);
+		PreviousPitch = Current;
+	}
+	TestTrue(TEXT("전 구간에서 최소 높이를 지킨다"), bHeightOk);
+	TestTrue(TEXT("각도가 도로 눕는 꺾임이 없다"), bMonotonic);
+
+	TestEqual(TEXT("최근접에서 정확히 최소 높이"), HeightAt(800.f), MinHeight, 1.f);
+	TestTrue(TEXT("최근접 각도가 기본값보다 세워진다"),
+		Rig.ResolvePitchForArmLength(800.f) < -35.f);
+
+	// 보정을 끄면 원래 곡선 그대로여야 한다.
+	FFF_OverviewCameraSettings NoConstraint = MakeSettings();
+	NoConstraint.PitchSaturationArmLength = 4000.f;
+	NoConstraint.MinCameraHeightAboveFocus = 0.f;
+	FFF_OverviewCameraRig Plain;
+	Plain.Initialize(NoConstraint, FVector::ZeroVector, 4000.f);
+	TestEqual(TEXT("보정을 끄면 시작 각도가 그대로"), Plain.ResolvePitchForArmLength(800.f), -35.f, 0.01f);
+
+	// 요구 높이가 최소 거리보다 큰 퇴화 설정에서도 각도가 뒤집히면 안 된다.
+	FFF_OverviewCameraSettings Extreme = MakeSettings();
+	Extreme.PitchSaturationArmLength = 4000.f;
+	Extreme.MinCameraHeightAboveFocus = 5000.f;
+	FFF_OverviewCameraRig Degenerate;
+	Degenerate.Initialize(Extreme, FVector::ZeroVector, 4000.f);
+	TestTrue(TEXT("퇴화 설정에서도 각도가 단조롭다"),
+		Degenerate.ResolvePitchForArmLength(800.f) >= Degenerate.ResolvePitchForArmLength(4000.f) - KINDA_SMALL_NUMBER);
+	TestTrue(TEXT("퇴화 설정에서도 각도가 범위 안"),
+		Degenerate.ResolvePitchForArmLength(800.f) >= -90.f);
+	return true;
+}
+
+// 15. 가장자리 스크롤은 키보드보다 빨라야 하고, 그 배율이 정규화에 잘리면 안 된다.
+//     키보드는 보고 있는 곳을 다듬는 세밀 조작, 가장자리는 멀리 훅 넘어가는 이동이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_EdgeScrollIsFasterThanKeyboard, "FestaFiesta.Camera.Rig.EdgeScrollIsFasterThanKeyboard", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_EdgeScrollIsFasterThanKeyboard::RunTest(const FString& Parameters)
+{
+	// 확대 상태와 축소 상태 양쪽에서 확인한다. 확대 쪽 격차가 특히 커야 한다.
+	FFF_OverviewCameraRig Near = MakeRig(800.f);
+	FFF_OverviewCameraRig Far = MakeRig(16000.f);
+
+	TestTrue(TEXT("최근접에서 가장자리가 더 빠르다"),
+		Near.GetCurrentEdgeScrollSpeed() > Near.GetCurrentPanSpeed());
+	TestTrue(TEXT("최원거리에서도 가장자리가 더 빠르다"),
+		Far.GetCurrentEdgeScrollSpeed() > Far.GetCurrentPanSpeed());
+
+	// 확대할수록 격차가 벌어져야 한다. 키보드는 크게 느려지고 가장자리는 덜 느려진다.
+	const float NearRatio = Near.GetCurrentEdgeScrollSpeed() / Near.GetCurrentPanSpeed();
+	const float FarRatio = Far.GetCurrentEdgeScrollSpeed() / Far.GetCurrentPanSpeed();
+	TestTrue(TEXT("확대할수록 격차가 커진다"), NearRatio > FarRatio);
+
+	// 부스를 들여다보다 반대편으로 넘어갈 때 기어가면 안 된다.
+	TestTrue(TEXT("최근접에서도 가장자리 속도가 충분히 남는다"),
+		Near.GetCurrentEdgeScrollSpeed() > Far.GetCurrentPanSpeed());
+
+	// 배율이 실제 이동에 반영되는지. 예전에는 입력에 배율을 곱해서 Pan 에 넘겼는데,
+	// Pan 이 크기 1 로 정규화해버려서 1 을 넘는 배율이 통째로 사라졌다.
+	FFF_OverviewCameraRig ByKeyboard = MakeRig(4000.f);
+	FFF_OverviewCameraRig ByEdge = MakeRig(4000.f);
+	ByKeyboard.Pan(FVector2D(1.f, 0.f), 1.f);
+	ByEdge.EdgeScroll(FVector2D(1.f, 0.f), 1.f);
+
+	const double KeyboardMoved = FMath::Abs(ByKeyboard.GetTargetState().FocusLocation.Y);
+	const double EdgeMoved = FMath::Abs(ByEdge.GetTargetState().FocusLocation.Y);
+	TestTrue(TEXT("같은 입력에서 가장자리가 더 많이 이동한다"), EdgeMoved > KeyboardMoved * 1.5);
+
+	// 크기가 1 을 넘는 입력을 줘도 방향만 쓰고 속도는 설정에서 온다.
+	FFF_OverviewCameraRig Oversized = MakeRig(4000.f);
+	Oversized.EdgeScroll(FVector2D(5.f, 0.f), 1.f);
+	TestEqual(TEXT("과한 입력은 정규화되어 같은 거리만 이동한다"),
+		FMath::Abs(Oversized.GetTargetState().FocusLocation.Y), EdgeMoved, 1.0);
 	return true;
 }
 

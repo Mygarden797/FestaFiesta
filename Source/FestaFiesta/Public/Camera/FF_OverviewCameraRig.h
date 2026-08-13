@@ -21,6 +21,10 @@ public:
 	// 현재 Yaw 를 기준으로 회전시켜야 "위로 밀면 보이는 쪽으로 간다"가 성립한다.
 	void Pan(const FVector2D& ScreenInput, float DeltaSeconds);
 
+	// 화면 가장자리 스크롤. 키보드와 속도 곡선이 다르다.
+	// 배율을 입력에 곱해서 Pan 에 넘기면 안 된다 — 그쪽은 크기 1 로 정규화해서 배율이 사라진다.
+	void EdgeScroll(const FVector2D& ScreenInput, float DeltaSeconds);
+
 	// Steps 가 양수면 당겨오고 음수면 물러난다. 곱셈이라 어느 거리에서도 체감이 같다.
 	void Zoom(float Steps);
 
@@ -69,13 +73,24 @@ public:
 	// ArmLength 를 0(가장 가까움)~1(가장 멂) 로 정규화한 값.
 	float GetNormalizedZoom() const;
 
-	// 현재 줌에서의 팬 속도. 확대할수록 느려진다.
+	// 현재 줌에서의 키보드 팬 속도. 확대할수록 크게 느려진다.
 	float GetCurrentPanSpeed() const;
+
+	// 현재 줌에서의 가장자리 스크롤 속도.
+	// 감속 폭이 작아서 확대 상태에서도 멀리 넘어갈 수 있다.
+	float GetCurrentEdgeScrollSpeed() const;
 
 	// ArmLength 에 대응하는 피치. 줌과 각도를 따로 조작하게 두면 플레이어가 구도를 망친다.
 	float ResolvePitchForArmLength(float InArmLength) const;
 
 private:
+	// 화면 기준 입력을 주어진 속도로 월드 이동으로 바꾼다. Pan 과 EdgeScroll 이 공유한다.
+	void ApplyPanWithSpeed(const FVector2D& ScreenInput, float DeltaSeconds, float Speed);
+
+	// 줌인으로 각도가 누웠을 때 카메라가 지면으로 내려오는 것을 막는다.
+	// 거리마다 보정하지 않고 곡선의 시작 각도를 올린다. 거리별 보정은 꺾임을 만든다.
+	void ApplyMinHeightConstraint(float& InOutStartPitch, float& InOutEndPitch) const;
+
 	void ClampFocusToBounds(FVector& InOutFocus) const;
 	static float NormalizeYaw(float InYaw);
 
