@@ -129,8 +129,16 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 	if (CurrentStage == EFF_FestivalStage::Live)
 		// Live 단계일 때 처리
 	{
+
 		const bool bIsLockedNow = IsMainProgramLocked();
 		// 지금 메인 공연 락(1배속만가능한) 구간인지 확인
+
+		static bool bLastLoggedState = false;
+		if (bIsLockedNow != bLastLoggedState)
+		{
+			UE_LOG(LogTemp, Log, TEXT("락 상태 변화: %s, ElapsedLiveSeconds=%f"), bIsLockedNow ? TEXT("true") : TEXT("false"), ElapsedLiveSeconds);
+			bLastLoggedState = bIsLockedNow;
+		}
 
 		const TArray<FFF_LiveTriggerEvent>& TodayEvents = GetEventsForCurrentDay();
 		// 오늘 이벤트 목록 가져옴
@@ -138,6 +146,9 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		if (bIsLockedNow && !bWasMainProgramLocked)
 			
 		{
+			UE_LOG(LogTemp, Log, TEXT("공연 시작 감지! ElapsedLiveSeconds: %f"), ElapsedLiveSeconds);
+			// 디버그용
+
 			for (int32 i = 0; i < TodayEvents.Num(); i++)
 				// 이벤트들 중에서 
 			{
@@ -158,6 +169,8 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		else if (!bIsLockedNow && bWasMainProgramLocked)
 			// 방금 막 잠금 구간에서 벗어난 순간이면
 		{
+			UE_LOG(LogTemp, Log, TEXT("공연 종료 감지! 라벨: %s"), *CachedMainProgramEndLabel);
+			// 디버그용 - 실제로 이 코드가 실행되는지 확인용 로그
 			OnMainProgramEnded.Broadcast(CachedMainProgramEndLabel);
 			// 저장해둔 종료 라벨로 알림 보냄
 		}

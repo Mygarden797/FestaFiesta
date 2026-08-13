@@ -33,6 +33,9 @@ struct FFF_FestivalFunds
 	
 	int32 GetTodayRevenue() const { return TodayRevenue; }
 
+	// 잔액을 늘린다. 음수는 무시한다. 상한이 없으므로 int32 오버플로만 막는다.
+	void Refund(int32 Amount);
+
 private:
 	// 잔액 (Gold). 음수가 되지 않는다.
 	int32 Gold = 0;

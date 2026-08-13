@@ -1,0 +1,1398 @@
+{
+  "version": 2,
+  "generated_at": "2026-08-13T08:37:26.470Z",
+  "product": "FESTA FIESTA",
+  "engine_target": "Unreal Engine 5 / UMG / CommonUI",
+  "canvas_reference": "1920x1080",
+  "palette": {
+    "abyss": "#071314",
+    "navy": "#0B1D1E",
+    "panel": "#102627",
+    "panel2": "#173031",
+    "glassLine": "#335352",
+    "mint": "#57D4B8",
+    "mintBright": "#8BE9D4",
+    "mintDeep": "#238C79",
+    "ivory": "#F6F5EF",
+    "ink": "#18312E",
+    "muted": "#91AAA5",
+    "amber": "#F0B44D",
+    "coral": "#F16D5C",
+    "info": "#5BA6D9",
+    "safe": "#72C49A",
+    "transparent": "none"
+  },
+  "rules": {
+    "runtime_text": "Textures are label-free. Add localized text and project icons in UMG/CommonUI.",
+    "focus": "Use the dedicated Focus textures for keyboard/gamepad focus; never rely on color alone.",
+    "nine_slice": "Assets marked Box should use the recorded pixel margin as the source 9-slice margin.",
+    "accessibility": "Minimum 44 px interaction height at 1080p, pattern plus color for risk states."
+  },
+  "assets": [
+    {
+      "file": "Buttons/Primary/FF_DT_Button_Primary_Default_512x128.png",
+      "vector_source": "VectorSource/Buttons/Primary/FF_DT_Button_Primary_Default_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Primary button default state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Primary/FF_DT_Button_Primary_Hover_512x128.png",
+      "vector_source": "VectorSource/Buttons/Primary/FF_DT_Button_Primary_Hover_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Primary button hover state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Primary/FF_DT_Button_Primary_Pressed_512x128.png",
+      "vector_source": "VectorSource/Buttons/Primary/FF_DT_Button_Primary_Pressed_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Pressed",
+      "runtime_text": true,
+      "usage": "Primary button pressed state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Primary/FF_DT_Button_Primary_Selected_512x128.png",
+      "vector_source": "VectorSource/Buttons/Primary/FF_DT_Button_Primary_Selected_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Primary button selected state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Primary/FF_DT_Button_Primary_Focus_512x128.png",
+      "vector_source": "VectorSource/Buttons/Primary/FF_DT_Button_Primary_Focus_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Primary button focus state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Primary/FF_DT_Button_Primary_Disabled_512x128.png",
+      "vector_source": "VectorSource/Buttons/Primary/FF_DT_Button_Primary_Disabled_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Primary button disabled state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Secondary/FF_DT_Button_Secondary_Default_512x128.png",
+      "vector_source": "VectorSource/Buttons/Secondary/FF_DT_Button_Secondary_Default_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Secondary button default state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Secondary/FF_DT_Button_Secondary_Hover_512x128.png",
+      "vector_source": "VectorSource/Buttons/Secondary/FF_DT_Button_Secondary_Hover_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Secondary button hover state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Secondary/FF_DT_Button_Secondary_Pressed_512x128.png",
+      "vector_source": "VectorSource/Buttons/Secondary/FF_DT_Button_Secondary_Pressed_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Pressed",
+      "runtime_text": true,
+      "usage": "Secondary button pressed state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Secondary/FF_DT_Button_Secondary_Selected_512x128.png",
+      "vector_source": "VectorSource/Buttons/Secondary/FF_DT_Button_Secondary_Selected_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Secondary button selected state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Secondary/FF_DT_Button_Secondary_Focus_512x128.png",
+      "vector_source": "VectorSource/Buttons/Secondary/FF_DT_Button_Secondary_Focus_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Secondary button focus state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Secondary/FF_DT_Button_Secondary_Disabled_512x128.png",
+      "vector_source": "VectorSource/Buttons/Secondary/FF_DT_Button_Secondary_Disabled_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Secondary button disabled state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Ghost/FF_DT_Button_Ghost_Default_512x128.png",
+      "vector_source": "VectorSource/Buttons/Ghost/FF_DT_Button_Ghost_Default_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Ghost button default state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Ghost/FF_DT_Button_Ghost_Hover_512x128.png",
+      "vector_source": "VectorSource/Buttons/Ghost/FF_DT_Button_Ghost_Hover_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Ghost button hover state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Ghost/FF_DT_Button_Ghost_Pressed_512x128.png",
+      "vector_source": "VectorSource/Buttons/Ghost/FF_DT_Button_Ghost_Pressed_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Pressed",
+      "runtime_text": true,
+      "usage": "Ghost button pressed state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Ghost/FF_DT_Button_Ghost_Selected_512x128.png",
+      "vector_source": "VectorSource/Buttons/Ghost/FF_DT_Button_Ghost_Selected_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Ghost button selected state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Ghost/FF_DT_Button_Ghost_Focus_512x128.png",
+      "vector_source": "VectorSource/Buttons/Ghost/FF_DT_Button_Ghost_Focus_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Ghost button focus state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Ghost/FF_DT_Button_Ghost_Disabled_512x128.png",
+      "vector_source": "VectorSource/Buttons/Ghost/FF_DT_Button_Ghost_Disabled_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Ghost button disabled state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Danger/FF_DT_Button_Danger_Default_512x128.png",
+      "vector_source": "VectorSource/Buttons/Danger/FF_DT_Button_Danger_Default_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Danger button default state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Danger/FF_DT_Button_Danger_Hover_512x128.png",
+      "vector_source": "VectorSource/Buttons/Danger/FF_DT_Button_Danger_Hover_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Danger button hover state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Danger/FF_DT_Button_Danger_Pressed_512x128.png",
+      "vector_source": "VectorSource/Buttons/Danger/FF_DT_Button_Danger_Pressed_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Pressed",
+      "runtime_text": true,
+      "usage": "Danger button pressed state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Danger/FF_DT_Button_Danger_Selected_512x128.png",
+      "vector_source": "VectorSource/Buttons/Danger/FF_DT_Button_Danger_Selected_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Danger button selected state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Danger/FF_DT_Button_Danger_Focus_512x128.png",
+      "vector_source": "VectorSource/Buttons/Danger/FF_DT_Button_Danger_Focus_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Danger button focus state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Danger/FF_DT_Button_Danger_Disabled_512x128.png",
+      "vector_source": "VectorSource/Buttons/Danger/FF_DT_Button_Danger_Disabled_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 44-56 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Danger button disabled state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Tab/FF_DT_Button_Tab_Default_512x128.png",
+      "vector_source": "VectorSource/Buttons/Tab/FF_DT_Button_Tab_Default_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 40-48 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Tab button default state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Tab/FF_DT_Button_Tab_Hover_512x128.png",
+      "vector_source": "VectorSource/Buttons/Tab/FF_DT_Button_Tab_Hover_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 40-48 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Tab button hover state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Tab/FF_DT_Button_Tab_Pressed_512x128.png",
+      "vector_source": "VectorSource/Buttons/Tab/FF_DT_Button_Tab_Pressed_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 40-48 px",
+      "state": "Pressed",
+      "runtime_text": true,
+      "usage": "Tab button pressed state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Tab/FF_DT_Button_Tab_Selected_512x128.png",
+      "vector_source": "VectorSource/Buttons/Tab/FF_DT_Button_Tab_Selected_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 40-48 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Tab button selected state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Tab/FF_DT_Button_Tab_Focus_512x128.png",
+      "vector_source": "VectorSource/Buttons/Tab/FF_DT_Button_Tab_Focus_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 40-48 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Tab button focus state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/Tab/FF_DT_Button_Tab_Disabled_512x128.png",
+      "vector_source": "VectorSource/Buttons/Tab/FF_DT_Button_Tab_Disabled_512x128.svg",
+      "size": [
+        512,
+        128
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Box",
+      "margin_px": 32,
+      "recommended_1080p": "height 40-48 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Tab button disabled state; overlay icon and label in UMG/CommonUI."
+    },
+    {
+      "file": "Buttons/IconCircle/FF_DT_Button_IconCircle_Default_256.png",
+      "vector_source": "VectorSource/Buttons/IconCircle/FF_DT_Button_IconCircle_Default_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "44-52 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Circular icon button background. Place project icon in the center."
+    },
+    {
+      "file": "Buttons/IconCircle/FF_DT_Button_IconCircle_Hover_256.png",
+      "vector_source": "VectorSource/Buttons/IconCircle/FF_DT_Button_IconCircle_Hover_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "44-52 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Circular icon button background. Place project icon in the center."
+    },
+    {
+      "file": "Buttons/IconCircle/FF_DT_Button_IconCircle_Pressed_256.png",
+      "vector_source": "VectorSource/Buttons/IconCircle/FF_DT_Button_IconCircle_Pressed_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "44-52 px",
+      "state": "Pressed",
+      "runtime_text": true,
+      "usage": "Circular icon button background. Place project icon in the center."
+    },
+    {
+      "file": "Buttons/IconCircle/FF_DT_Button_IconCircle_Selected_256.png",
+      "vector_source": "VectorSource/Buttons/IconCircle/FF_DT_Button_IconCircle_Selected_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "44-52 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Circular icon button background. Place project icon in the center."
+    },
+    {
+      "file": "Buttons/IconCircle/FF_DT_Button_IconCircle_Focus_256.png",
+      "vector_source": "VectorSource/Buttons/IconCircle/FF_DT_Button_IconCircle_Focus_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "44-52 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Circular icon button background. Place project icon in the center."
+    },
+    {
+      "file": "Buttons/IconCircle/FF_DT_Button_IconCircle_Disabled_256.png",
+      "vector_source": "VectorSource/Buttons/IconCircle/FF_DT_Button_IconCircle_Disabled_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "ButtonStyle",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "44-52 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Circular icon button background. Place project icon in the center."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_Panel_Dark_512_9Slice.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_Panel_Dark_512_9Slice.svg",
+      "size": [
+        512,
+        512
+      ],
+      "type": "Panel",
+      "draw_as": "Box",
+      "margin_px": 48,
+      "recommended_1080p": "variable",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Primary dark glass workbench panel."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_Panel_Light_512_9Slice.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_Panel_Light_512_9Slice.svg",
+      "size": [
+        512,
+        512
+      ],
+      "type": "Panel",
+      "draw_as": "Box",
+      "margin_px": 48,
+      "recommended_1080p": "variable",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Ivory data panel for reports, settings, and planning."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_KPI_Card_640x240.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_KPI_Card_640x240.svg",
+      "size": [
+        640,
+        240
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "280-360 x 104-132 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Live metric card; all textual content is a UMG overlay."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_AssetStatus_Card_960x320.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_AssetStatus_Card_960x320.svg",
+      "size": [
+        960,
+        320
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "420-560 x 140-190 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Facility asset list/detail summary card."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_LayerRow_960x128.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_LayerRow_960x128.svg",
+      "size": [
+        960,
+        128
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "320-480 x 44-64 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Layer visibility, opacity, and expand row."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_TimelineController_1536x176.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_TimelineController_1536x176.svg",
+      "size": [
+        1536,
+        176
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "960-1536 x 80-96 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Simulation time scrubber with event markers and speed control."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_DensityLegend_480x920.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_DensityLegend_480x920.svg",
+      "size": [
+        480,
+        920
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "200-260 x 390-500 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Six-step crowd-density legend with redundant patterns."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_ScenarioCompare_1120x520.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_ScenarioCompare_1120x520.svg",
+      "size": [
+        1120,
+        520
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "520-720 x 240-340 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Before/after or scenario A/B comparison card."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_Toast_Warning_1024x224.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_Toast_Warning_1024x224.svg",
+      "size": [
+        1024,
+        224
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "420-580 x 92-126 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Actionable warning toast."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_Toast_Danger_1024x224.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_Toast_Danger_1024x224.svg",
+      "size": [
+        1024,
+        224
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "420-580 x 92-126 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Blocking error or safety-alert toast."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_Tooltip_720x224.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_Tooltip_720x224.svg",
+      "size": [
+        720,
+        224
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "280-420 x 92-132 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "World-pin or control tooltip background."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_InspectorPanel_720x1180.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_InspectorPanel_720x1180.svg",
+      "size": [
+        720,
+        1180
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "340-440 x viewport-height",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Selected facility inspector with preview, properties, and history."
+    },
+    {
+      "file": "Widgets/FF_DT_Widget_Modal_1280x800.png",
+      "vector_source": "VectorSource/Widgets/FF_DT_Widget_Modal_1280x800.svg",
+      "size": [
+        1280,
+        800
+      ],
+      "type": "Widget",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "640-880 x 400-560 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Confirmation/detail modal with secondary and primary actions."
+    },
+    {
+      "file": "Controls/Toggle/FF_DT_Toggle_Off_384x128.png",
+      "vector_source": "VectorSource/Controls/Toggle/FF_DT_Toggle_Off_384x128.svg",
+      "size": [
+        384,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "52-64 x 24-32 px",
+      "state": "Off",
+      "runtime_text": true,
+      "usage": "Toggle off state."
+    },
+    {
+      "file": "Controls/Toggle/FF_DT_Toggle_On_384x128.png",
+      "vector_source": "VectorSource/Controls/Toggle/FF_DT_Toggle_On_384x128.svg",
+      "size": [
+        384,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "52-64 x 24-32 px",
+      "state": "On",
+      "runtime_text": true,
+      "usage": "Toggle on state."
+    },
+    {
+      "file": "Controls/Toggle/FF_DT_Toggle_Hover_384x128.png",
+      "vector_source": "VectorSource/Controls/Toggle/FF_DT_Toggle_Hover_384x128.svg",
+      "size": [
+        384,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "52-64 x 24-32 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Toggle hover state."
+    },
+    {
+      "file": "Controls/Toggle/FF_DT_Toggle_Focus_384x128.png",
+      "vector_source": "VectorSource/Controls/Toggle/FF_DT_Toggle_Focus_384x128.svg",
+      "size": [
+        384,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "52-64 x 24-32 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Toggle focus state."
+    },
+    {
+      "file": "Controls/Toggle/FF_DT_Toggle_Disabled_384x128.png",
+      "vector_source": "VectorSource/Controls/Toggle/FF_DT_Toggle_Disabled_384x128.svg",
+      "size": [
+        384,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "52-64 x 24-32 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Toggle disabled state."
+    },
+    {
+      "file": "Controls/Checkbox/FF_DT_Checkbox_Unchecked_192.png",
+      "vector_source": "VectorSource/Controls/Checkbox/FF_DT_Checkbox_Unchecked_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Unchecked",
+      "runtime_text": true,
+      "usage": "Checkbox unchecked state."
+    },
+    {
+      "file": "Controls/Checkbox/FF_DT_Checkbox_Checked_192.png",
+      "vector_source": "VectorSource/Controls/Checkbox/FF_DT_Checkbox_Checked_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Checked",
+      "runtime_text": true,
+      "usage": "Checkbox checked state."
+    },
+    {
+      "file": "Controls/Checkbox/FF_DT_Checkbox_Indeterminate_192.png",
+      "vector_source": "VectorSource/Controls/Checkbox/FF_DT_Checkbox_Indeterminate_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Indeterminate",
+      "runtime_text": true,
+      "usage": "Checkbox indeterminate state."
+    },
+    {
+      "file": "Controls/Checkbox/FF_DT_Checkbox_Focus_192.png",
+      "vector_source": "VectorSource/Controls/Checkbox/FF_DT_Checkbox_Focus_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Checkbox focus state."
+    },
+    {
+      "file": "Controls/Checkbox/FF_DT_Checkbox_Disabled_192.png",
+      "vector_source": "VectorSource/Controls/Checkbox/FF_DT_Checkbox_Disabled_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Checkbox disabled state."
+    },
+    {
+      "file": "Controls/Radio/FF_DT_Radio_Off_192.png",
+      "vector_source": "VectorSource/Controls/Radio/FF_DT_Radio_Off_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Off",
+      "runtime_text": true,
+      "usage": "Radio off state."
+    },
+    {
+      "file": "Controls/Radio/FF_DT_Radio_On_192.png",
+      "vector_source": "VectorSource/Controls/Radio/FF_DT_Radio_On_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "On",
+      "runtime_text": true,
+      "usage": "Radio on state."
+    },
+    {
+      "file": "Controls/Radio/FF_DT_Radio_Focus_192.png",
+      "vector_source": "VectorSource/Controls/Radio/FF_DT_Radio_Focus_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Radio focus state."
+    },
+    {
+      "file": "Controls/Radio/FF_DT_Radio_Disabled_192.png",
+      "vector_source": "VectorSource/Controls/Radio/FF_DT_Radio_Disabled_192.svg",
+      "size": [
+        192,
+        192
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "24-32 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Radio disabled state."
+    },
+    {
+      "file": "Controls/Chip/FF_DT_Chip_Default_384x96.png",
+      "vector_source": "VectorSource/Controls/Chip/FF_DT_Chip_Default_384x96.svg",
+      "size": [
+        384,
+        96
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 28-36 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Filter/status chip default state; runtime text overlay."
+    },
+    {
+      "file": "Controls/Chip/FF_DT_Chip_Hover_384x96.png",
+      "vector_source": "VectorSource/Controls/Chip/FF_DT_Chip_Hover_384x96.svg",
+      "size": [
+        384,
+        96
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 28-36 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Filter/status chip hover state; runtime text overlay."
+    },
+    {
+      "file": "Controls/Chip/FF_DT_Chip_Selected_384x96.png",
+      "vector_source": "VectorSource/Controls/Chip/FF_DT_Chip_Selected_384x96.svg",
+      "size": [
+        384,
+        96
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 28-36 px",
+      "state": "Selected",
+      "runtime_text": true,
+      "usage": "Filter/status chip selected state; runtime text overlay."
+    },
+    {
+      "file": "Controls/Chip/FF_DT_Chip_Warning_384x96.png",
+      "vector_source": "VectorSource/Controls/Chip/FF_DT_Chip_Warning_384x96.svg",
+      "size": [
+        384,
+        96
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 28-36 px",
+      "state": "Warning",
+      "runtime_text": true,
+      "usage": "Filter/status chip warning state; runtime text overlay."
+    },
+    {
+      "file": "Controls/Chip/FF_DT_Chip_Disabled_384x96.png",
+      "vector_source": "VectorSource/Controls/Chip/FF_DT_Chip_Disabled_384x96.svg",
+      "size": [
+        384,
+        96
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 28-36 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Filter/status chip disabled state; runtime text overlay."
+    },
+    {
+      "file": "Controls/Input/FF_DT_Input_Default_768x128.png",
+      "vector_source": "VectorSource/Controls/Input/FF_DT_Input_Default_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 44-52 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Search/text input default state; runtime hint text overlay."
+    },
+    {
+      "file": "Controls/Input/FF_DT_Input_Focus_768x128.png",
+      "vector_source": "VectorSource/Controls/Input/FF_DT_Input_Focus_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 44-52 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Search/text input focus state; runtime hint text overlay."
+    },
+    {
+      "file": "Controls/Input/FF_DT_Input_Error_768x128.png",
+      "vector_source": "VectorSource/Controls/Input/FF_DT_Input_Error_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 44-52 px",
+      "state": "Error",
+      "runtime_text": true,
+      "usage": "Search/text input error state; runtime hint text overlay."
+    },
+    {
+      "file": "Controls/Input/FF_DT_Input_Disabled_768x128.png",
+      "vector_source": "VectorSource/Controls/Input/FF_DT_Input_Disabled_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Box",
+      "margin_px": 30,
+      "recommended_1080p": "height 44-52 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Search/text input disabled state; runtime hint text overlay."
+    },
+    {
+      "file": "Controls/Slider/FF_DT_Slider_Default_1024x128.png",
+      "vector_source": "VectorSource/Controls/Slider/FF_DT_Slider_Default_1024x128.svg",
+      "size": [
+        1024,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width variable, height 24-36 px",
+      "state": "Default",
+      "runtime_text": true,
+      "usage": "Slider default state."
+    },
+    {
+      "file": "Controls/Slider/FF_DT_Slider_Hover_1024x128.png",
+      "vector_source": "VectorSource/Controls/Slider/FF_DT_Slider_Hover_1024x128.svg",
+      "size": [
+        1024,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width variable, height 24-36 px",
+      "state": "Hover",
+      "runtime_text": true,
+      "usage": "Slider hover state."
+    },
+    {
+      "file": "Controls/Slider/FF_DT_Slider_Focus_1024x128.png",
+      "vector_source": "VectorSource/Controls/Slider/FF_DT_Slider_Focus_1024x128.svg",
+      "size": [
+        1024,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width variable, height 24-36 px",
+      "state": "Focus",
+      "runtime_text": true,
+      "usage": "Slider focus state."
+    },
+    {
+      "file": "Controls/Slider/FF_DT_Slider_Disabled_1024x128.png",
+      "vector_source": "VectorSource/Controls/Slider/FF_DT_Slider_Disabled_1024x128.svg",
+      "size": [
+        1024,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width variable, height 24-36 px",
+      "state": "Disabled",
+      "runtime_text": true,
+      "usage": "Slider disabled state."
+    },
+    {
+      "file": "Controls/Segmented/FF_DT_Segmented_Selected1_768x128.png",
+      "vector_source": "VectorSource/Controls/Segmented/FF_DT_Segmented_Selected1_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width 300-480 px, height 44-52 px",
+      "state": "Selected1",
+      "runtime_text": true,
+      "usage": "Three-way segmented control background; runtime labels overlay."
+    },
+    {
+      "file": "Controls/Segmented/FF_DT_Segmented_Selected2_768x128.png",
+      "vector_source": "VectorSource/Controls/Segmented/FF_DT_Segmented_Selected2_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width 300-480 px, height 44-52 px",
+      "state": "Selected2",
+      "runtime_text": true,
+      "usage": "Three-way segmented control background; runtime labels overlay."
+    },
+    {
+      "file": "Controls/Segmented/FF_DT_Segmented_Selected3_768x128.png",
+      "vector_source": "VectorSource/Controls/Segmented/FF_DT_Segmented_Selected3_768x128.svg",
+      "size": [
+        768,
+        128
+      ],
+      "type": "Control",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "width 300-480 px, height 44-52 px",
+      "state": "Selected3",
+      "runtime_text": true,
+      "usage": "Three-way segmented control background; runtime labels overlay."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Layers_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Layers_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Layers icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Pin_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Pin_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Pin icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Clock_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Clock_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Clock icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Asset_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Asset_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Asset icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Filter_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Filter_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Filter icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Compare_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Compare_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Compare icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Warning_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Warning_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Warning icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Search_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Search_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Search icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Eye_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Eye_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Eye icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Timeline_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Timeline_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Timeline icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Route_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Route_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Route icon. Tint in UMG."
+    },
+    {
+      "file": "Icons/FF_DT_Icon_Sensor_256.png",
+      "vector_source": "VectorSource/Icons/FF_DT_Icon_Sensor_256.svg",
+      "size": [
+        256,
+        256
+      ],
+      "type": "Icon",
+      "draw_as": "Image",
+      "margin_px": null,
+      "recommended_1080p": "18-28 px",
+      "state": null,
+      "runtime_text": true,
+      "usage": "Sensor icon. Tint in UMG."
+    }
+  ]
+}

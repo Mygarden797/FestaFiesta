@@ -11,11 +11,15 @@ class UFF_FestivalProgressionSubsystem;
 class UFFZSWorldSubsystem;
 
 /**
- * FF_ZoneSystem의 시설 설치 트랜잭션을 프로젝트 축제 자금과 연결한다.
+ * FF_ZoneSystem의 시설 설치·철거 트랜잭션을 프로젝트 축제 자금과 연결한다.
  *
  * 설치비는 PreValidate/ApplyTentative에서 읽기 전용으로 검증하고, 시설 설치가 성공한 뒤
  * Commit에서만 차감한다. FFZS 명령은 Game Thread에서 동기·비재진입으로 실행되므로 별도
- * Gold hold를 만들지 않으며, Move/Remove와 시설 수명주기 명령은 과금하지 않는다.
+ * Gold hold를 만들지 않는다.
+ *
+ * 철거는 설치비의 UFF_FestivalDefinition::FacilityDemolitionRefundRate 만큼을 Commit에서
+ * 환급한다. 환급은 잔액 검사가 필요 없어 실패할 수 없으므로 예약 단계를 두지 않는다.
+ * Move와 시설 수명주기 명령은 여전히 과금·환급하지 않는다.
  */
 UCLASS()
 class FESTAFIESTA_API UFF_ZoneSystemEconomyBridgeSubsystem final
@@ -50,6 +54,16 @@ private:
 		FName& OutMatchedCostRow,
 		int32& OutValidatedGold,
 		FString& OutCostTablePath) const;
+
+	/** 철거 대상 시설의 설치비에 환급 비율을 적용한다. 비용을 조회할 수 없으면 false이며 철거는 막지 않는다. */
+	bool ResolveDemolitionRefund(
+		const FFFZSPolicyContext& Context,
+		int32& OutRefund,
+		FName& OutMatchedCostRow,
+		FString& OutFailureReason) const;
+
+	/** 철거가 확정된 시설의 환급을 지급한다. 잔액 검사가 없어 실패하지 않는다. */
+	void CommitDemolitionRefund(const FFFZSPolicyContext& Context);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;

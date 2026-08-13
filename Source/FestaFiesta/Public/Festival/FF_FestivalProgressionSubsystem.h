@@ -77,6 +77,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
 
+	// 잔액을 늘린다. 시설 철거 환급이 유일한 호출자다.
+	// TotalRevenue는 안 건드린다 — 환급은 새 매출이 아니라 이미 쓴 돈이 되돌아온 것이다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void Refund(int32 Amount);
+
+	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
+	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
+
 private:
 	// 값이 실제로 바뀔 때만 통지한다.
 	void BroadcastGoldIfChanged(int32 PreviousGold);

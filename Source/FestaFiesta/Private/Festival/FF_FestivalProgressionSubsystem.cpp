@@ -72,6 +72,7 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Re
 	}
 	
 	DayLedger.RecordSpend(Reason, Amount);
+	
 	BroadcastGoldIfChanged(PreviousGold);
 	return true;
 }
@@ -81,13 +82,23 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	
+
 	Funds.AddRevenue(Amount);
 	DayLedger.RecordEarn(Reason, Amount, FacilityId);
 
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
+}
+
+void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
+{
+	const int32 PreviousGold = Funds.GetGold();
+	
+	Funds.Refund(Amount);
+	DayLedger.RecordRefund(Amount);
+	
+	BroadcastGoldIfChanged(PreviousGold);
 }
 
 void UFF_FestivalProgressionSubsystem::BroadcastGoldIfChanged(int32 PreviousGold)

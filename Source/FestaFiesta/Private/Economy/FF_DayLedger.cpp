@@ -1,4 +1,4 @@
-#include "../../Public/Economy/FF_DayLedger.h"
+#include "Economy/FF_DayLedger.h"
 
 namespace 
 {
@@ -42,10 +42,21 @@ void FFF_DayLedger::RecordEarn(EFF_EarnReason Reason, int32 Amount, FName Facili
 	}
 }
 
+void FFF_DayLedger::RecordRefund(int32 Amount)
+{
+	if (Amount <= 0)
+	{
+		return;
+	}
+
+	TotalRefund += Amount;
+}
+
 void FFF_DayLedger::Reset()
 {
 	for (int32& Value : SpendByReason) Value = 0;
 	for (int32& Value : EarnByReason) Value = 0;
+	TotalRefund = 0;
 	RevenueByFacility.Reset(); // 할당해둔 내부 메모리는 재사용할 수 있게 유지
 }
 

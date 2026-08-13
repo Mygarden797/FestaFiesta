@@ -195,6 +195,20 @@ namespace
 		Command.Placement = InstallCommand.Placement;
 		return Command;
 	}
+
+	FFFZSCommand MakeRemoveCommand(
+		const FZoneEconomyTestHarness& Harness,
+		const FGuid& FacilityInstanceId)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = FGuid::NewGuid();
+		Command.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+		Command.Type = EFFZSCommandType::Remove;
+		// 철거 명령은 인스턴스 ID만 싣는다. 비용 키는 브리지가 권위 액터의 Spec에서 다시 읽어야 한다.
+		Command.FacilityInstanceId = FacilityInstanceId;
+		return Command;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -502,11 +516,10 @@ bool FFFZoneSystemEconomyLifecycleCommandsAreFreeTest::RunTest(const FString& Pa
 	}
 	const int32 GoldAfterInstall = Harness.Progression->GetGold();
 
-	// Remove grants no refund and the lifecycle commands carry no price, so the economy policy
-	// passes them through untouched. Which phase may issue them is a Zone System rule, so the
-	// callbacks are driven directly here to assert the economy contract on its own.
+	// Remove now refunds a configured share of the install cost — see
+	// RemoveRefundsConfiguredShareOfInstallCost. Open/Close/EmergencyClose still carry no price,
+	// so the economy policy passes them through untouched regardless of phase.
 	const EFFZSCommandType FreeCommands[] = {
-		EFFZSCommandType::Remove,
 		EFFZSCommandType::Open,
 		EFFZSCommandType::Close,
 		EFFZSCommandType::EmergencyClose
@@ -527,8 +540,73 @@ bool FFFZoneSystemEconomyLifecycleCommandsAreFreeTest::RunTest(const FString& Pa
 		IFFZSExternalPolicy::Execute_CommitFFZoneSystemChange(Harness.EconomyBridge, Context);
 	}
 
-	TestEqual(TEXT("Remove refunds nothing and lifecycle commands spend nothing"),
+	TestEqual(TEXT("Open/Close/EmergencyClose spend nothing"),
 		Harness.Progression->GetGold(), GoldAfterInstall);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemEconomyDemolitionRefundTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.RemoveRefundsConfiguredShareOfInstallCost",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedEconomyBridgeTestSettings SettingsGuard;
+	FZoneEconomyTestHarness Harness;
+	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
+		Harness.Initialize(this, 1000)))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("The shipped default refunds 80% of the installation cost"),
+		Harness.Definition->FacilityDemolitionRefundRate, 0.8f);
+
+	const FFFZSCommand InstallCommand =
+		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	if (!TestTrue(TEXT("The paid Install succeeds before demolition"),
+		Harness.ZoneSystem->ExecuteCommand(InstallCommand).bSucceeded))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Installing the 400 Gold FoodStall leaves 600 Gold"),
+		Harness.Progression->GetGold(), 600);
+
+	const FFFZSCommandResult RemoveResult = Harness.ZoneSystem->ExecuteCommand(
+		MakeRemoveCommand(Harness, InstallCommand.FacilityInstanceId));
+	if (!TestTrue(TEXT("Removing an idle Facility succeeds"), RemoveResult.bSucceeded))
+	{
+		return false;
+	}
+	// 400의 80%인 320만 돌아온다. 전액이면 배치 실수의 비용이 0이 되어 위치를 고민할 이유가 사라진다.
+	TestEqual(TEXT("Demolition refunds 80% of the 400 Gold installation cost"),
+		Harness.Progression->GetGold(), 920);
+	TestNull(TEXT("The refunded Facility is unregistered"),
+		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+	TestEqual(TEXT("The refund is recorded in the day ledger's refund total"),
+		Harness.Progression->GetDayLedger().GetTotalRefund(), 320);
+
+	// 기획 담당자가 에디터에서 비율만 바꾸면 환급액이 따라와야 한다. 코드에 0.8이 박혀 있으면 여기서 드러난다.
+	Harness.Definition->FacilityDemolitionRefundRate = 0.5f;
+	const FFFZSCommand SecondInstall = MakeInstallCommand(
+		Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(5000, 1000));
+	if (!TestTrue(TEXT("A second Install succeeds after the rate change"),
+		Harness.ZoneSystem->ExecuteCommand(SecondInstall).bSucceeded))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The second Install spends another 400 Gold"),
+		Harness.Progression->GetGold(), 520);
+
+	TestTrue(TEXT("Removing the second Facility succeeds"),
+		Harness.ZoneSystem->ExecuteCommand(
+			MakeRemoveCommand(Harness, SecondInstall.FacilityInstanceId)).bSucceeded);
+	TestEqual(TEXT("The edited 50% rate refunds 200 Gold, not 320"),
+		Harness.Progression->GetGold(), 720);
+	TestEqual(TEXT("Both demolitions accumulate in the same day's refund total"),
+		Harness.Progression->GetDayLedger().GetTotalRefund(), 520);
 	return true;
 }
 
