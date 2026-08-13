@@ -51,6 +51,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
+	DayLedger.Reset();
 
 	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 축제 시작: %s, 초기 Gold %d"),
 		*InDefinition->FestivalId.ToString(), Funds.GetGold());
@@ -60,7 +61,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 }
 
-bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
+bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Reason)
 {
 	const int32 PreviousGold = Funds.GetGold();
 
@@ -69,18 +70,20 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
 		// 실패는 상태를 바꾸지 않으므로 델리게이트도 쏘지 않는다.
 		return false;
 	}
-
+	
+	DayLedger.RecordSpend(Reason, Amount);
 	BroadcastGoldIfChanged(PreviousGold);
 	return true;
 }
 
-void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount)
+void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
 {
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-
+	
 	Funds.AddRevenue(Amount);
+	DayLedger.RecordEarn(Reason, Amount, FacilityId);
 
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);

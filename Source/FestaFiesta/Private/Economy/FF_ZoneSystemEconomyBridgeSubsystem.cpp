@@ -11,6 +11,7 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 
 #define LOCTEXT_NAMESPACE "FFZoneSystemEconomyBridge"
 
@@ -302,7 +303,7 @@ void UFF_ZoneSystemEconomyBridgeSubsystem::CommitFFZoneSystemChange_Implementati
 		GoldAtValidation,
 		Progression->GetGold());
 
-	const bool bSpent = Progression->TrySpend(InstallCost);
+	const bool bSpent = Progression->TrySpend(InstallCost, EFF_SpendReason::FacilityInstall);
 	ensureAlwaysMsgf(
 		bSpent,
 		TEXT("검증을 통과한 시설 설치비 차감에 실패했습니다. CommandId=%s, 비용 키=%s, 비용=%d Gold, 현재 잔액=%d Gold"),
