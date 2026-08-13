@@ -207,10 +207,12 @@ public:
 	/**
 	 * `건너뛰기` 버튼을 켤지.
 	 *
-	 * !! 근사값이다 !! 실제 판정은 DaySequence 표의 `bSkippable`이고 그걸 읽는
-	 * `UFF_FestivalStageSubsystem::IsCurrentStageSkippable()`이 **private이라 C++에서 못 부른다.**
-	 * public + BlueprintPure로 열어 달라고 요청해 뒀다 (UI_API.md).
-	 * 열리면 이 함수 본문을 그 호출로 교체한다 — 위젯은 손대지 않는다.
+	 * DaySequence 표의 `bSkippable`을 읽는 `UFF_FestivalStageSubsystem::IsCurrentStageSkippable()`을
+	 * 그대로 중계한다. 2026-08-13에 강민서가 public + BlueprintPure로 열어 줘서
+	 * Stage 종류로 짐작하던 근사값을 걷어냈다.
+	 *
+	 * !! 이 값으로 요청을 막지 않는다 !! 버튼 활성/비활성 표시에만 쓴다.
+	 * 스킵 가능 여부의 최종 판정은 Stage 시스템이 소유한다 (UI 규칙 2).
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Command")
 	bool CanSkipCurrentStage() const;

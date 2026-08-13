@@ -1,12 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_ReportScreen.h"
+#include "UI/Report/FF_ReportScreen.h"
 
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_CommonButtonBase.h"
-#include "UI/FF_FestivalViewModelSubsystem.h"
-#include "UI/FF_MetricRowWidget.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
+#include "UI/Widgets/FF_MetricRowWidget.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"

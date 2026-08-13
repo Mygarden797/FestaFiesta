@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_UIMetricBandSettings.h"
+#include "UI/Data/FF_UIMetricBandSettings.h"
 
 #include "Engine/Texture2D.h"
 
