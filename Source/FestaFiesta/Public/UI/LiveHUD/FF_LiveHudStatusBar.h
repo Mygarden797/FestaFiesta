@@ -102,6 +102,21 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_NextProgram;
 
+	// --- 값이 없을 때 함께 접을 묶음 (아이콘·구분선 포함) ---
+	//
+	// 숫자만 숨기면 옆의 아이콘과 구분선이 남아 "관객 아이콘 옆에 아무것도 없는" 화면이 된다.
+	// 아이콘 + 숫자를 HorizontalBox로 싸고 그 박스를 아래 이름으로 두면 묶음째 접힌다.
+	// 없으면 예전처럼 TextBlock만 접으므로 WBP를 안 고쳐도 동작은 한다.
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UWidget> Box_VisitorCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UWidget> Box_Staff;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UWidget> Box_NextProgram;
+
 	/** 남은 운영 시간 `01:18`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_RemainingTime;
@@ -154,6 +169,12 @@ private:
 
 	/** 값이 없는 칸을 숨긴다. 빈 문자열이나 0을 넣지 않는다. */
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
+
+	/**
+	 * 값이 없으면 묶음 전체를 접는다. 묶음이 없으면 TextBlock만 접는다.
+	 * 아이콘·구분선이 숫자 없이 남는 것을 막는다.
+	 */
+	static void SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBlock, const FText& Value);
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
