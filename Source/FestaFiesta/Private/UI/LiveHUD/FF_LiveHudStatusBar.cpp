@@ -1,12 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_LiveHudStatusBar.h"
+#include "UI/LiveHUD/FF_LiveHudStatusBar.h"
 
 #include "Components/Button.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
-#include "UI/FF_FestivalViewModelSubsystem.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
@@ -111,6 +111,22 @@ void UFF_LiveHudStatusBar::SetTextOrHide(UTextBlock* TextBlock, const FText& Val
 
 	TextBlock->SetText(Value);
 	TextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UFF_LiveHudStatusBar::SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBlock, const FText& Value)
+{
+	// 숫자는 항상 채워 둔다. 묶음이 다시 보일 때 이전 값이 남아 있으면 안 된다.
+	SetTextOrHide(TextBlock, Value);
+
+	if (!Group)
+	{
+		// 묶음을 안 만든 WBP도 그대로 동작한다 — 숫자 칸만 접힌다.
+		return;
+	}
+
+	Group->SetVisibility(Value.IsEmpty()
+		? ESlateVisibility::Collapsed
+		: ESlateVisibility::SelfHitTestInvisible);
 }
 
 void UFF_LiveHudStatusBar::RefreshAll()
@@ -227,16 +243,16 @@ void UFF_LiveHudStatusBar::RefreshPlaybackControls()
 
 void UFF_LiveHudStatusBar::RefreshPlaceholders()
 {
-	// 소유자 API가 없는 값 3개. 모르면 숨긴다.
-	SetTextOrHide(Text_VisitorCount,
+	// 소유자 API가 없는 값 3개. 모르면 아이콘·구분선까지 묶음째 숨긴다.
+	SetGroupTextOrHide(Box_VisitorCount, Text_VisitorCount,
 		(VisitorCount >= 0) ? FText::AsNumber(VisitorCount) : FText::GetEmpty());
 
-	SetTextOrHide(Text_Staff,
+	SetGroupTextOrHide(Box_Staff, Text_Staff,
 		(StaffAvailable >= 0 && StaffTotal > 0)
 			? FText::Format(LOCTEXT("LiveHud_Staff", "{0} / {1}"), FText::AsNumber(StaffAvailable), FText::AsNumber(StaffTotal))
 			: FText::GetEmpty());
 
-	SetTextOrHide(Text_NextProgram, NextProgramText);
+	SetGroupTextOrHide(Box_NextProgram, Text_NextProgram, NextProgramText);
 }
 
 void UFF_LiveHudStatusBar::Debug_SetPlaceholders(int32 InVisitorCount, int32 InStaffAvailable, int32 InStaffTotal, const FText& InNextProgram)

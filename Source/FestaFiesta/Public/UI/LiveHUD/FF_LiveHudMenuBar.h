@@ -102,6 +102,15 @@ private:
 	EFF_LiveHudTab Tab = EFF_LiveHudTab::Operations;
 	bool bSelected = false;
 
+	/**
+	 * WBP가 지정한 Normal 브러시 원본.
+	 *
+	 * `RefreshVisualState()`가 Normal 슬롯을 덮어쓰므로 첫 갱신 전에 보관해 둬야 한다.
+	 * 보관하지 않으면 해제 상태로 되돌릴 브러시가 남지 않는다.
+	 */
+	FSlateBrush DefaultNormalBrush;
+	bool bCapturedDefaultNormalBrush = false;
+
 	void RefreshVisualState();
 };
 

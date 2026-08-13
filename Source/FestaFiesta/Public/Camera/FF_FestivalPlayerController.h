@@ -139,6 +139,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
 	TObjectPtr<UInputAction> ResetViewAction;
 
+	// bool. 관찰 시점과 마지막으로 본 액터 시점을 왕복한다.
+	// 되돌아갈 대상이 없으면 아무 일도 일어나지 않는다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
+	TObjectPtr<UInputAction> ToggleViewAction;
+
+	// 시점 전환에 쓸 블렌드 시간. 0 이면 즉시 전환한다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "0.0"))
+	float ViewSwitchBlendTime = 0.5f;
+
 	// 피킹 트레이스 길이.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "1000.0"))
 	float PickTraceDistance = 100000.f;
@@ -150,6 +159,7 @@ private:
 	void HandleSnapRotate(const FInputActionValue& Value);
 	void HandlePick(const FInputActionValue& Value);
 	void HandleResetView(const FInputActionValue& Value);
+	void HandleToggleView(const FInputActionValue& Value);
 
 	bool IsBuildSessionActive() const;
 
