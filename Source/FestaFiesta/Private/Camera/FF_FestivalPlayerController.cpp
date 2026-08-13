@@ -107,6 +107,11 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 	{
 		return EFF_CameraInputBlock::ModalUi;
 	}
+	// 관찰 카메라가 화면에 안 보이는 동안 조작을 받으면, 돌아왔을 때 엉뚱한 데를 보고 있다.
+	if (ViewMode == EFF_CameraViewMode::Actor)
+	{
+		return EFF_CameraInputBlock::ActorView;
+	}
 	if (IsBuildSessionActive())
 	{
 		return EFF_CameraInputBlock::BuildSession;
@@ -117,8 +122,10 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 {
 	// 건축 중에도 화면은 움직여야 한다. 부스를 놓을 자리를 봐야 하니까.
-	// 모달 UI 만 전체를 막는다.
-	return GetInputBlockReason() != EFF_CameraInputBlock::ModalUi;
+	// 모달 UI 와 액터 시점만 전체를 막는다.
+	const EFF_CameraInputBlock Reason = GetInputBlockReason();
+	return Reason != EFF_CameraInputBlock::ModalUi
+		&& Reason != EFF_CameraInputBlock::ActorView;
 }
 
 bool AFF_FestivalPlayerController::IsPickingAllowed() const
@@ -194,7 +201,78 @@ bool AFF_FestivalPlayerController::ResolveCursorWorldAnchor(FVector& OutAnchor) 
 void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
+	EnsureViewTargetAlive();
 	TickEdgeScroll(DeltaTime);
+}
+
+bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float BlendTime)
+{
+	if (!IsValid(TargetActor))
+	{
+		UE_LOG(LogFestaFiestaCamera, Warning, TEXT("[카메라] 유효하지 않은 대상으로 시점 전환을 시도했다."));
+		return false;
+	}
+
+	// 관찰 카메라를 그대로 두고 뷰타깃만 옮긴다. Possess 를 쓰면 돌아왔을 때 구도를 잃는다.
+	SetViewTargetWithBlend(TargetActor, FMath::Max(0.f, BlendTime));
+
+	ViewMode = EFF_CameraViewMode::Actor;
+	ViewedActor = TargetActor;
+	LastViewedActor = TargetActor;
+
+	OnViewModeChanged.Broadcast(ViewMode, TargetActor);
+	return true;
+}
+
+void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
+{
+	AFF_OverviewCameraPawn* CameraPawn = GetOverviewCameraPawn();
+	if (!CameraPawn)
+	{
+		UE_LOG(LogFestaFiestaCamera, Warning,
+			TEXT("[카메라] 관찰 카메라 Pawn 이 없어 시점을 되돌리지 못했다."));
+		return;
+	}
+
+	// 떠날 때 구도가 그대로 남아 있다. 리그 상태를 건드리지 않았기 때문이다.
+	SetViewTargetWithBlend(CameraPawn, FMath::Max(0.f, BlendTime));
+
+	ViewMode = EFF_CameraViewMode::Overview;
+	ViewedActor = nullptr;
+
+	OnViewModeChanged.Broadcast(ViewMode, nullptr);
+}
+
+void AFF_FestivalPlayerController::ToggleView(float BlendTime)
+{
+	if (ViewMode == EFF_CameraViewMode::Actor)
+	{
+		SwitchToOverview(BlendTime);
+		return;
+	}
+
+	// 되돌아갈 대상이 이미 사라졌으면 관찰 시점에 머문다.
+	if (AActor* Target = LastViewedActor.Get())
+	{
+		SwitchToActorView(Target, BlendTime);
+	}
+}
+
+void AFF_FestivalPlayerController::EnsureViewTargetAlive()
+{
+	if (ViewMode != EFF_CameraViewMode::Actor)
+	{
+		return;
+	}
+
+	// 보던 NPC 가 퇴장하거나 시설이 철거되면 뷰타깃이 사라진다.
+	// 그대로 두면 화면이 원점을 비추고 입력도 계속 막혀 있어서 조작 불능처럼 보인다.
+	if (!ViewedActor.IsValid())
+	{
+		UE_LOG(LogFestaFiestaCamera, Log,
+			TEXT("[카메라] 보고 있던 대상이 사라져 관찰 시점으로 되돌린다."));
+		SwitchToOverview(0.f);
+	}
 }
 
 void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)

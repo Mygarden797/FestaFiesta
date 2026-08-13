@@ -12,6 +12,16 @@
 
 DECLARE_LOG_CATEGORY_EXTERN(LogFestaFiestaCamera, Log, All);
 
+// 지금 무엇을 보고 있는가.
+UENUM(BlueprintType)
+enum class EFF_CameraViewMode : uint8
+{
+	// 축제 전체를 내려다보는 관찰 시점. 기본값이다.
+	Overview  UMETA(DisplayName = "관찰 시점"),
+	// 다른 액터의 시점을 빌려 보는 중. 관찰 카메라는 제자리에 그대로 떠 있다.
+	Actor     UMETA(DisplayName = "액터 시점")
+};
+
 // 카메라 입력을 눌러둬야 하는 이유.
 // 건축 모드가 커서와 클릭을 쓰고 있는데 카메라가 같은 입력을 먹으면
 // 배치 클릭이 드래그로 먹히거나 커서 표시가 서로 덮어써진다.
@@ -24,6 +34,8 @@ enum class EFF_CameraInputBlock : uint8
 	BuildSession    UMETA(DisplayName = "건축 세션"),
 	// 모달 UI가 떠 있음. 카메라 입력 전체를 막는다.
 	ModalUi         UMETA(DisplayName = "모달 UI"),
+	// 다른 액터 시점을 보는 중. 관찰 카메라 조작은 화면에 안 보이므로 막는다.
+	ActorView       UMETA(DisplayName = "액터 시점"),
 	// 시네마틱이나 자동 연출 중.
 	Scripted        UMETA(DisplayName = "연출 중")
 };
