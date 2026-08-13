@@ -9,6 +9,7 @@
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
+class UFF_FestivalProgressionSubsystem;
 // !! class가 아니라 struct다 !! (Core/Public/HAL/IConsoleManager.h)
 // class로 쓰면 C4099가 나고, 이 프로젝트는 경고를 에러로 취급한다.
 struct IConsoleCommand;
@@ -121,6 +122,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
 	FFF_OnIntMetricChanged OnTodayRevenueChanged;
 
+	/**
+	 * 이 금액을 지금 지출할 수 있는지. 구매 버튼 비활성 판정에 쓴다.
+	 *
+	 * UI가 `GetGold() >= Amount`로 직접 비교하지 않는다 — 잔액 규칙의 소유자는 경제 시스템이고
+	 * 나중에 예약금·할인 같은 조건이 붙으면 UI의 비교식이 조용히 틀리게 된다.
+	 * 소유자가 없으면 false를 돌려준다. "살 수 있다"고 잘못 알리는 쪽이 더 나쁘다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	bool CanAfford(int32 Amount) const;
+
 	// --- Stage (강민서 시스템 중계) ---
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
@@ -204,6 +215,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Command")
 	bool CanSkipCurrentStage() const;
 
+	// --- 배속 (Live HUD 재생 컨트롤) ---
+
+	/**
+	 * 배속을 바꿔 달라고 요청한다.
+	 *
+	 * !! UI가 시간을 소유하지 않는다 !! 메인 공연 잠금 구간에서는 Stage 시스템이 요청을 무시하고
+	 * 1배속을 유지한다. 여기서 미리 막지 않고 요청만 보낸다 — 잠금 판정의 소유자는 저쪽이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	void RequestSetTimeScale(float NewScale);
+
+	/** 현재 배속. 버튼 선택 상태 표시에 쓴다. 소유자가 없으면 1을 돌려준다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
+	float GetTimeScale() const;
+
+	/**
+	 * 지금 배속을 바꿀 수 없는 구간인지 (메인 공연 잠금).
+	 * 버튼을 비활성할 때 **이유를 문구로 함께** 보여준다. 흐려짐만으로는 왜 못 누르는지 알 수 없다 (AT-011).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
+	bool IsTimeScaleLocked() const;
+
+	/**
+	 * Live 중 게임 속 시각 문구 (예: `19:42`).
+	 *
+	 * Stage 시스템이 `FString`으로 주는 것을 `FText`로 감싸 돌려준다.
+	 * Live가 아니면 빈 값이다 — 호출하는 쪽이 비어 있으면 시계를 숨긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
+	FText GetLiveClockText() const;
+
 	// --- 스텁 전용. 실제 소유자 구현이 붙으면 삭제한다 ---
 
 	/**
@@ -243,11 +285,19 @@ protected:
 	UFUNCTION()
 	void HandleRemainingSecondsChanged(int32 NewSeconds);
 
+	/** 경제 시스템이 쏘는 Gold를 받아 위젯에 중계한다. */
+	UFUNCTION()
+	void HandleOwnerGoldChanged(int32 NewValue);
+
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
+	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
 
 	/** Stage 시스템 구독을 시도한다. 아직 없으면 재시도를 예약한다. */
 	void TryBindStageSubsystem();
+
+	/** 경제 시스템 구독을 시도한다. Stage와 같은 재시도 규칙을 쓴다. */
+	void TryBindProgressionSubsystem();
 
 	/**
 	 * 소유자 시스템에서 지표를 읽어 온다. PollInterval마다 Tick에서 호출된다.
@@ -283,6 +333,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> CachedStageSubsystem;
+
+	UPROPERTY()
+	TObjectPtr<UFF_FestivalProgressionSubsystem> CachedProgressionSubsystem;
+
+	/** 경제 시스템을 못 찾았을 때 재시도한 횟수. */
+	int32 ProgressionBindRetryCount = 0;
 
 	/** 남은 시간 중복 방송 차단용. 구독 중계와 Sync가 같은 값을 두 번 쏘지 않게 한다. */
 	int32 LastBroadcastRemainingSeconds = INDEX_NONE;
