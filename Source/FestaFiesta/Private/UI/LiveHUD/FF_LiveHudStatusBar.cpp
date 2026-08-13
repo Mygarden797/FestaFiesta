@@ -1,12 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_LiveHudStatusBar.h"
+#include "UI/LiveHUD/FF_LiveHudStatusBar.h"
 
 #include "Components/Button.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
-#include "UI/FF_FestivalViewModelSubsystem.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"

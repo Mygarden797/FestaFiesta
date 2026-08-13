@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_LiveHudMenuBar.h"
+#include "UI/LiveHUD/FF_LiveHudMenuBar.h"
 
 #include "Components/Button.h"
 #include "Components/Image.h"

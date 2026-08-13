@@ -1,6 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_FestivalViewModelSubsystem.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"

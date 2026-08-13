@@ -1,12 +1,12 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_MetricsHudWidget.h"
+#include "UI/LiveHUD/FF_MetricsHudWidget.h"
 
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
-#include "UI/FF_FestivalViewModelSubsystem.h"
-#include "UI/FF_MetricRowWidget.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
+#include "UI/Widgets/FF_MetricRowWidget.h"
 #include "UI/FF_UILog.h"
 
 // Texture2D·UIMetricBandSettings는 ApplyBand 구현이 UFF_MetricRowWidget으로 옮겨가면서 필요 없어졌다.

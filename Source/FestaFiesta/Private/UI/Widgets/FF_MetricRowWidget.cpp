@@ -1,11 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "UI/FF_MetricRowWidget.h"
+#include "UI/Widgets/FF_MetricRowWidget.h"
 
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
-#include "UI/FF_UIMetricBandSettings.h"
+#include "UI/Data/FF_UIMetricBandSettings.h"
 
 void UFF_MetricRowWidget::SetMetric(const FText& InCaption, int32 InValue)
 {
