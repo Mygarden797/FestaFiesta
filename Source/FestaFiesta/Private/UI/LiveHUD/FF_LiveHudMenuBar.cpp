@@ -76,11 +76,22 @@ void UFF_LiveHudTabButton::RefreshVisualState()
 		return;
 	}
 
+	// Normal 슬롯을 덮어쓰기 전에 WBP가 지정한 원본을 한 번만 보관한다.
+	// 이걸 안 하면 첫 갱신에서 Default 브러시가 사라져 되돌릴 수 없다.
+	if (!bCapturedDefaultNormalBrush)
+	{
+		DefaultNormalBrush = Button_Root->GetStyle().Normal;
+		bCapturedDefaultNormalBrush = true;
+	}
+
 	// 배경은 버튼 스타일이 그린다. 선택 상태에서는 Normal 브러시를 Pressed 브러시로 바꿔 끼운다.
 	// 색만 바꾸지 않고 배경 형태가 함께 바뀌어야 한다 (AT-011).
 	// **WBP에서 선택 상태 텍스처를 Pressed 슬롯에 넣어야 한다.**
+	//
+	// 해제 상태는 보관해 둔 Default로 되돌린다. 예전에는 Hovered를 끼웠는데,
+	// 그러면 9개 탭이 전부 호버처럼 보이고 Default 텍스처가 화면에 한 번도 안 나왔다.
 	FButtonStyle Style = Button_Root->GetStyle();
-	Style.SetNormal(bSelected ? Style.Pressed : Style.Hovered);
+	Style.SetNormal(bSelected ? Style.Pressed : DefaultNormalBrush);
 	Button_Root->SetStyle(Style);
 }
 
