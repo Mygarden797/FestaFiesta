@@ -12,6 +12,8 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 		// 날마다 길이가 달라, 시계를 0으로 리셋함
 	bWasMainProgramLocked = false;
 	// 날짜 바뀔 때 공연 시작 체크도 초기화
+	LastBroadcastSeconds = -1;
+	// 단계 바뀔 때마다 리셋해서 새 단계 첫 초도 반드시 방송되게 함
 	
 
 	UE_LOG(LogTemp, Log, TEXT("[Stage] %s -> %s"),
@@ -108,8 +110,10 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 			const float LockStart = Events[i].TriggerSeconds - LeadSeconds;
 			// 공연 시작 시각 -  표의 리드타임만큼 뺀 시점 = 락 시작 시점
 
-			const float LockEnd = Events.IsValidIndex(i + 1) ? Events[i + 1].TriggerSeconds : Events[i].TriggerSeconds;
-			// 다음 이벤트 시각 = 락 끝나는 시점
+			const float LockEnd = Events.IsValidIndex(i + 1)
+				? Events[i + 1].TriggerSeconds
+				: GetLiveDurationForCurrentDay();
+			// 다음 이벤트가 있으면 그 시각, 없으면 그날 Live 전체 끝까지를 락 구간으로 봄
 
 			return ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd;
 			// 지금이 그 구간 안에 있는지 true/false로 반환
