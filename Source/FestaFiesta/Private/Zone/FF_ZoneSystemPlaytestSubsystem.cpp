@@ -1,13 +1,11 @@
 #include "Zone/FF_ZoneSystemPlaytestSubsystem.h"
 
 #include "Blueprint/UserWidget.h"
-#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
-#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -41,6 +39,7 @@ namespace
     constexpr float TestZoneSizeCm = 10000.0f;
     constexpr float TestFloorScale = 100.0f;
     constexpr int32 PlacementSnapCm = 10;
+    constexpr int32 BuiltInPresetCount = 7;
 
     // 전체 Navigation 검사는 개발자 설정의 전역 값을 사용하므로 명령 실행 구간에서만 임시 변경하고
     // 소멸 시 반드시 원래 값으로 되돌리는 RAII 보호 객체를 사용한다.
@@ -69,6 +68,11 @@ namespace
         UFFZSDeveloperSettings* Settings = nullptr;
         bool bPreviousValue = false;
     };
+
+    FString EnumName(const UEnum* Enum, const int64 Value)
+    {
+        return Enum ? Enum->GetNameStringByValue(Value) : TEXT("Unknown");
+    }
 }
 
 UFF_ZoneSystemPlaytestSubsystem::UFF_ZoneSystemPlaytestSubsystem()
@@ -116,13 +120,7 @@ void UFF_ZoneSystemPlaytestSubsystem::Deinitialize()
     TestProtectedArea = nullptr;
     PlacementPreview = nullptr;
     RuntimeFloor = nullptr;
-    CatalogDefinitionIds.Reset();
-    SelectedCatalogIndex = INDEX_NONE;
     bEnvironmentReady = false;
-    bCatalogReady = false;
-    bCommandLineSmokeRequested = false;
-    bCommandLineSmokeStarted = false;
-    bExperienceSmokeRequested = false;
     Super::Deinitialize();
 }
 
@@ -146,9 +144,13 @@ void UFF_ZoneSystemPlaytestSubsystem::OnWorldBeginPlay(UWorld& InWorld)
     }
 
     InitialSnapshot = GetZoneSystem()->CaptureWorldSnapshot();
-    bCommandLineSmokeRequested = FParse::Param(FCommandLine::Get(), TEXT("FFZSPlaytestSmoke"));
+    SetStatus(TEXT("Overview ready. Pan with WASD, zoom with the wheel, and press Tab for HUD controls."), FColor::Green);
+
     bExperienceSmokeRequested = FParse::Param(FCommandLine::Get(), TEXT("FFZSPlaytestExperienceSmoke"));
-    PollBuildCatalog();
+    if (FParse::Param(FCommandLine::Get(), TEXT("FFZSPlaytestSmoke")))
+    {
+        RunCommandLineSmokeTest();
+    }
 }
 
 TStatId UFF_ZoneSystemPlaytestSubsystem::GetStatId() const
@@ -171,14 +173,7 @@ void UFF_ZoneSystemPlaytestSubsystem::Tick(const float DeltaTime)
         return;
     }
 
-    PollBuildCatalog();
     EnsurePlayerExperience();
-    if (bCatalogReady && bCommandLineSmokeRequested && !bCommandLineSmokeStarted)
-    {
-        bCommandLineSmokeStarted = true;
-        bCommandLineSmokeRequested = false;
-        RunCommandLineSmokeTest();
-    }
     HandleInput();
 
     PreviewRefreshElapsed += DeltaTime;
@@ -205,21 +200,20 @@ FFF_ZoneSystemPlaytestHudState UFF_ZoneSystemPlaytestSubsystem::GetHudState() co
     FFF_ZoneSystemPlaytestHudState State;
     const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
     const FFFZSReadModel ReadModel = ZoneSystem ? ZoneSystem->BuildReadModel() : FFFZSReadModel{};
+    const FFFZSFacilitySpec Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(SelectedPreset);
 
     State.ZoneText = FText::FromString(FString::Printf(
         TEXT("ZONE  %s    REV  %lld    FACILITIES  %d"),
         *ActiveZoneId.ToString(), ReadModel.WorldRevision, ReadModel.Facilities.Num()));
     State.PresetText = FText::FromString(FString::Printf(
-        TEXT("FACILITY  %s"), *GetSelectedFacilityDisplayText()));
+        TEXT("PRESET  %s"), *Spec.DisplayName.ToString()));
     State.PlacementText = FText::FromString(FString::Printf(
         TEXT("TARGET  X %d  Y %d    ROT %d DEG    %s"),
         CurrentPlacement.OriginCell.X,
         CurrentPlacement.OriginCell.Y,
         CurrentPlacement.QuarterTurns * 90,
         bUiInteractionMode ? TEXT("UI MODE") : TEXT("OVERVIEW MODE")));
-    State.ValidationText = !bCatalogReady
-        ? FText::FromString(CatalogStatusMessage)
-        : !bHasPlacementTarget
+    State.ValidationText = !bHasPlacementTarget
         ? FText::FromString(TEXT("NO GROUND TARGET"))
         : LastValidation.bIsValid
             ? FText::FromString(TEXT("PLACEMENT VALID"))
@@ -228,15 +222,15 @@ FFF_ZoneSystemPlaytestHudState UFF_ZoneSystemPlaytestSubsystem::GetHudState() co
     State.HelpText = FText::FromString(
         TEXT("WASD / Arrows  Pan  |  Shift  Fast Pan  |  Mouse Wheel  Zoom\n")
         TEXT("RMB Drag  Rotate View  |  Home  Recenter  |  Center Marker  Placement Target\n")
-        TEXT("LMB / I  Install  |  Q/E  Rotate Facility  |  1-7  Facility  |  Tab  HUD Controls"));
-    State.ValidationColor = bCatalogReady && bHasPlacementTarget && LastValidation.bIsValid
+        TEXT("LMB / I  Install  |  Q/E  Rotate Facility  |  1-7  Preset  |  Tab  HUD Controls"));
+    State.ValidationColor = bHasPlacementTarget && LastValidation.bIsValid
         ? FLinearColor(0.20f, 0.95f, 0.58f, 1.0f)
         : FLinearColor(1.0f, 0.25f, 0.25f, 1.0f);
     State.StatusColor = FLinearColor(StatusColor);
     State.bHasSelectedFacility = GetLastFacility() != nullptr;
     State.bHasSavedSnapshot = bHasSavedSnapshot;
     State.bHasPlacementTarget = bHasPlacementTarget;
-    State.bCanCommitPlacement = bCatalogReady && bHasPlacementTarget && LastValidation.bIsValid;
+    State.bCanCommitPlacement = bHasPlacementTarget && LastValidation.bIsValid;
     State.bShowHelp = bShowHelp;
     State.bUiInteractionMode = bUiInteractionMode;
     State.bShowWorldDebug = bShowWorldDebug;
@@ -270,7 +264,8 @@ bool UFF_ZoneSystemPlaytestSubsystem::BuildTestEnvironment(UWorld& World)
     CurrentPlacement.OriginCell = FIntPoint(1000, 1000);
     CurrentPlacement.QuarterTurns = 0;
     bHasPlacementTarget = true;
-    PlacementPreview->SetActorHiddenInGame(true);
+    RebuildPreviewCommand();
+    RefreshPreview();
     return true;
 }
 
@@ -514,7 +509,6 @@ void UFF_ZoneSystemPlaytestSubsystem::EnsurePlayerExperience()
     }
 
     if (bExperienceSmokeRequested &&
-        bCatalogReady &&
         IsValid(PlaytestPawn) &&
         Controller->GetPawn() == PlaytestPawn &&
         PlaytestPawn->HasActiveOverviewCamera() &&
@@ -645,222 +639,6 @@ void UFF_ZoneSystemPlaytestSubsystem::ApplyUiInputMode()
 // 화면 중앙 카메라 레이를 지면까지 쏜 뒤 다음 순서로 안전한 시설 좌표를 만든다.
 // 1) 수평에 가까운 표면과 Zone 내부 여부 확인, 2) 10cm 스냅,
 // 3) 회전된 footprint 중심 보정, 4) 프리뷰 명령의 좌하단 OriginCell 갱신.
-bool UFF_ZoneSystemPlaytestSubsystem::PollBuildCatalog()
-{
-    UFF_BuildCatalogSubsystem* Catalog = GetBuildCatalog();
-    if (!Catalog)
-    {
-        CatalogDefinitionIds.Reset();
-        SelectedCatalogIndex = INDEX_NONE;
-        SetCatalogUnavailable(
-            TEXT("Facility catalog subsystem is unavailable; placement is disabled."),
-            FColor::Red,
-            true);
-        return false;
-    }
-
-    if (Catalog->GetLoadState() == EFF_BuildCatalogLoadState::NotRequested)
-    {
-        Catalog->RefreshCatalog();
-    }
-
-    switch (Catalog->GetLoadState())
-    {
-    case EFF_BuildCatalogLoadState::NotRequested:
-    case EFF_BuildCatalogLoadState::Loading:
-        SetCatalogUnavailable(
-            TEXT("Facility catalog is loading; placement is disabled."),
-            FColor::Yellow,
-            false);
-        return false;
-
-    case EFF_BuildCatalogLoadState::Failed:
-    {
-        CatalogDefinitionIds.Reset();
-        SelectedCatalogIndex = INDEX_NONE;
-        const FString Error = Catalog->GetLastError().IsEmpty()
-            ? TEXT("unknown catalog load error")
-            : Catalog->GetLastError().ToString();
-        SetCatalogUnavailable(
-            FString::Printf(TEXT("Facility catalog failed: %s"), *Error),
-            FColor::Red,
-            true);
-        return false;
-    }
-
-    case EFF_BuildCatalogLoadState::Ready:
-        break;
-
-    default:
-        SetCatalogUnavailable(
-            TEXT("Facility catalog entered an unknown state; placement is disabled."),
-            FColor::Red,
-            true);
-        return false;
-    }
-
-    TArray<FName> NewDefinitionIds;
-    const TArray<FFF_BuildCatalogEntry>& Entries = Catalog->GetEntriesView();
-    NewDefinitionIds.Reserve(Entries.Num());
-    for (const FFF_BuildCatalogEntry& Entry : Entries)
-    {
-        if (!Entry.FacilityDefinitionId.IsNone())
-        {
-            NewDefinitionIds.Add(Entry.FacilityDefinitionId);
-        }
-    }
-
-    if (NewDefinitionIds.IsEmpty())
-    {
-        CatalogDefinitionIds.Reset();
-        SelectedCatalogIndex = INDEX_NONE;
-        SetCatalogUnavailable(
-            TEXT("Facility catalog is ready but contains no valid definitions; placement is disabled."),
-            FColor::Red,
-            true);
-        return false;
-    }
-
-    if (bCatalogReady &&
-        CatalogDefinitionIds == NewDefinitionIds &&
-        CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex))
-    {
-        return true;
-    }
-
-    const FName PreviousSelection = CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex)
-        ? CatalogDefinitionIds[SelectedCatalogIndex]
-        : NAME_None;
-    CatalogDefinitionIds = MoveTemp(NewDefinitionIds);
-    SelectedCatalogIndex = PreviousSelection.IsNone()
-        ? 0
-        : CatalogDefinitionIds.IndexOfByKey(PreviousSelection);
-    if (!CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex))
-    {
-        SelectedCatalogIndex = 0;
-    }
-
-    bCatalogReady = true;
-    CatalogStatusMessage = FString::Printf(
-        TEXT("Facility catalog ready: %d definition(s)."),
-        CatalogDefinitionIds.Num());
-    SetSelectedCatalogIndex(SelectedCatalogIndex);
-    return bCatalogReady;
-}
-
-void UFF_ZoneSystemPlaytestSubsystem::SetCatalogUnavailable(
-    const FString& Message,
-    const FColor& Color,
-    const bool bTerminalFailure)
-{
-    const bool bStatusChanged = bCatalogReady || CatalogStatusMessage != Message;
-    bCatalogReady = false;
-    CatalogStatusMessage = Message;
-    LastValidation = FFFZSPlacementValidation();
-    if (PlacementPreview)
-    {
-        PlacementPreview->PreviewCommand = FFFZSCommand();
-        PlacementPreview->SetActorHiddenInGame(true);
-    }
-    if (bStatusChanged)
-    {
-        SetStatus(Message, Color);
-    }
-    if (bTerminalFailure)
-    {
-        FailPendingSmokeTests(Message);
-    }
-}
-
-void UFF_ZoneSystemPlaytestSubsystem::FailPendingSmokeTests(const FString& Reason)
-{
-    bool bShouldExit = false;
-    if (bCommandLineSmokeRequested && !bCommandLineSmokeStarted)
-    {
-        bCommandLineSmokeRequested = false;
-        bCommandLineSmokeStarted = true;
-        UE_LOG(LogFFZonePlaytest, Error, TEXT("FFZS_ZONETESTMAP_SMOKE_FAILURE: %s"), *Reason);
-        UE_LOG(LogFFZonePlaytest, Error, TEXT("FFZS_ZONETESTMAP_SMOKE_FAIL: 1 failure(s)."));
-        bShouldExit = true;
-    }
-    if (bExperienceSmokeRequested)
-    {
-        bExperienceSmokeRequested = false;
-        UE_LOG(LogFFZonePlaytest, Error, TEXT("FFZS_ZONETESTMAP_EXPERIENCE_FAIL: %s"), *Reason);
-        bShouldExit = true;
-    }
-    if (bShouldExit)
-    {
-        SmokeExitCode = 1;
-        bSmokeExitPending = true;
-    }
-}
-
-void UFF_ZoneSystemPlaytestSubsystem::SetSelectedCatalogIndex(const int32 NewIndex)
-{
-    if (!bCatalogReady)
-    {
-        SetStatus(CatalogStatusMessage, FColor::Yellow);
-        return;
-    }
-    if (!CatalogDefinitionIds.IsValidIndex(NewIndex))
-    {
-        SetStatus(FString::Printf(
-            TEXT("Facility slot %d is unavailable; the catalog contains %d definition(s)."),
-            NewIndex + 1,
-            CatalogDefinitionIds.Num()), FColor::Yellow);
-        return;
-    }
-
-    UFF_BuildCatalogSubsystem* Catalog = GetBuildCatalog();
-    FFFZSFacilitySpec Spec;
-    if (!Catalog || !Catalog->TryGetDefinitionSpec(CatalogDefinitionIds[NewIndex], Spec))
-    {
-        SetCatalogUnavailable(
-            TEXT("The selected facility definition is no longer loaded; placement is disabled."),
-            FColor::Red,
-            true);
-        return;
-    }
-
-    SelectedCatalogIndex = NewIndex;
-    UpdatePlacementFromPlayer();
-    RebuildPreviewCommand();
-    RefreshPreview();
-    SetStatus(FString::Printf(
-        TEXT("Selected facility %d/%d: %s [%s]."),
-        SelectedCatalogIndex + 1,
-        CatalogDefinitionIds.Num(),
-        *Spec.DisplayName.ToString(),
-        *Spec.FacilityDefinitionId.ToString()), FColor::Green);
-}
-
-bool UFF_ZoneSystemPlaytestSubsystem::TryGetSelectedFacilitySpec(FFFZSFacilitySpec& OutSpec) const
-{
-    OutSpec = FFFZSFacilitySpec();
-    const UFF_BuildCatalogSubsystem* Catalog = GetBuildCatalog();
-    return bCatalogReady &&
-        CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex) &&
-        Catalog &&
-        Catalog->IsCatalogReady() &&
-        Catalog->TryGetDefinitionSpec(CatalogDefinitionIds[SelectedCatalogIndex], OutSpec);
-}
-
-FString UFF_ZoneSystemPlaytestSubsystem::GetSelectedFacilityDisplayText() const
-{
-    FFFZSFacilitySpec Spec;
-    if (!TryGetSelectedFacilitySpec(Spec))
-    {
-        return CatalogStatusMessage;
-    }
-    return FString::Printf(
-        TEXT("%d/%d  %s  [%s]"),
-        SelectedCatalogIndex + 1,
-        CatalogDefinitionIds.Num(),
-        *Spec.DisplayName.ToString(),
-        *Spec.FacilityDefinitionId.ToString());
-}
-
 bool UFF_ZoneSystemPlaytestSubsystem::UpdatePlacementFromPlayer()
 {
     UWorld* World = GetWorld();
@@ -900,15 +678,7 @@ bool UFF_ZoneSystemPlaytestSubsystem::UpdatePlacementFromPlayer()
     TargetCell.X = FMath::RoundToInt(static_cast<double>(TargetCell.X) / PlacementSnapCm) * PlacementSnapCm;
     TargetCell.Y = FMath::RoundToInt(static_cast<double>(TargetCell.Y) / PlacementSnapCm) * PlacementSnapCm;
 
-    FFFZSFacilitySpec Spec;
-    if (!TryGetSelectedFacilitySpec(Spec))
-    {
-        SetCatalogUnavailable(
-            TEXT("The selected facility definition could not provide a Spec; placement is disabled."),
-            FColor::Red,
-            true);
-        return false;
-    }
+    const FFFZSFacilitySpec Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(SelectedPreset);
     const FFFZSCellRect RotatedLocal = UFFZSGridLibrary::RotateRect(
         FFFZSCellRect(FIntPoint::ZeroValue, Spec.FootprintSizeCells), CurrentPlacement.QuarterTurns);
     if (!RotatedLocal.IsValid())
@@ -939,6 +709,16 @@ bool UFF_ZoneSystemPlaytestSubsystem::UpdatePlacementFromPlayer()
     return true;
 }
 
+void UFF_ZoneSystemPlaytestSubsystem::SetSelectedPreset(const EFFZSBuiltInFacilityPreset NewPreset)
+{
+    SelectedPreset = NewPreset;
+    UpdatePlacementFromPlayer();
+    RebuildPreviewCommand();
+    RefreshPreview();
+    SetStatus(FString::Printf(TEXT("Selected %s."),
+        *EnumName(StaticEnum<EFFZSBuiltInFacilityPreset>(), static_cast<int64>(SelectedPreset))));
+}
+
 void UFF_ZoneSystemPlaytestSubsystem::SetPlacement(const FIntPoint& OriginCell, const int32 QuarterTurns)
 {
     CurrentPlacement.OriginCell = OriginCell;
@@ -955,26 +735,16 @@ void UFF_ZoneSystemPlaytestSubsystem::SetPlacement(const FIntPoint& OriginCell, 
 // 선택 프리셋과 현재 좌표로 플러그인이 실제 검증할 Install 명령을 다시 만든다.
 void UFF_ZoneSystemPlaytestSubsystem::RebuildPreviewCommand()
 {
-    if (!PlacementPreview || ActiveZoneId.IsNone() || !bCatalogReady)
+    if (!PlacementPreview || ActiveZoneId.IsNone())
     {
         return;
     }
 
-    UFF_BuildCatalogSubsystem* Catalog = GetBuildCatalog();
-    const UFFZSFacilityDefinition* Definition =
-        CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex) && Catalog
-        ? Catalog->FindDefinition(CatalogDefinitionIds[SelectedCatalogIndex])
-        : nullptr;
-    if (!Definition)
-    {
-        SetCatalogUnavailable(
-            TEXT("The selected facility definition could not provide a Spec; placement is disabled."),
-            FColor::Red,
-            true);
-        return;
-    }
-    PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
-        Definition, ActiveZoneId, CurrentPlacement, -1);
+    FFFZSFacilitySpec Spec = UFFZSGridLibrary::MakeBuiltInFacilitySpec(SelectedPreset);
+    Spec.VisualMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
+    PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommand(
+        Spec, ActiveZoneId, CurrentPlacement, -1);
+    ApplyPreviewVisualScale();
 }
 
 // 중앙 레이가 지면을 잃으면 오래된 좌표가 보이지 않도록 프리뷰를 숨기고 검증도 중단한다.
@@ -984,52 +754,76 @@ void UFF_ZoneSystemPlaytestSubsystem::RefreshPreview()
     {
         return;
     }
-    if (!bCatalogReady)
-    {
-        LastValidation = FFFZSPlacementValidation();
-        PlacementPreview->SetActorHiddenInGame(true);
-        return;
-    }
     if (!bHasPlacementTarget)
     {
         PlacementPreview->SetActorHiddenInGame(true);
         return;
     }
 
-    // PIE에서 선택된 Data Asset을 편집해도 좌표가 그대로면 UpdatePlacementFromPlayer는
-    // 명령을 재생성하지 않는다. 검증/커밋 직전에 Catalog의 현재 Spec을 다시 복사해
-    // 화면과 설치 결과가 같은 UFFZSFacilityDefinition 값을 소비하게 한다.
-    RebuildPreviewCommand();
     PlacementPreview->SetActorHiddenInGame(false);
     const FScopedNavigationValidation NavigationScope(bEnableFullNavigationValidation);
     LastValidation = PlacementPreview->RefreshPreview();
+    ApplyPreviewVisualScale();
 }
 
-// Catalog의 결정적 정렬 순서에서 이전 시설 Definition을 선택한다.
-void UFF_ZoneSystemPlaytestSubsystem::SelectPreviousPreset()
+// 테스트용 단위 큐브를 시설 footprint와 장애물 높이에 맞춰 실제 점유 크기로 보이게 한다.
+void UFF_ZoneSystemPlaytestSubsystem::ApplyPreviewVisualScale()
 {
-    if (!bCatalogReady || CatalogDefinitionIds.IsEmpty())
+    if (!PlacementPreview || !PlacementPreview->PreviewMesh)
     {
-        SetStatus(CatalogStatusMessage, FColor::Yellow);
         return;
     }
-    const int32 CurrentIndex = CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex)
-        ? SelectedCatalogIndex
-        : 0;
-    SetSelectedCatalogIndex((CurrentIndex + CatalogDefinitionIds.Num() - 1) % CatalogDefinitionIds.Num());
+
+    const FFFZSFacilitySpec& Spec = PlacementPreview->PreviewCommand.FacilitySpec;
+    PlacementPreview->PreviewMesh->SetRelativeScale3D(FVector(
+        Spec.FootprintSizeCells.X / 100.0f,
+        Spec.FootprintSizeCells.Y / 100.0f,
+        Spec.PlacementObstacleHeightCm / 100.0f));
+    PlacementPreview->PreviewMesh->SetRelativeLocation(
+        FVector(0.0f, 0.0f, Spec.PlacementObstacleHeightCm * 0.5f));
+}
+
+void UFF_ZoneSystemPlaytestSubsystem::ApplyFacilityVisualScale(AFFZSFacilityActor* Facility) const
+{
+    if (!Facility || !Facility->VisualMesh)
+    {
+        return;
+    }
+
+    const FFFZSFacilitySpec& Spec = Facility->GetFacilitySpec();
+    Facility->VisualMesh->SetRelativeScale3D(FVector(
+        Spec.FootprintSizeCells.X / 100.0f,
+        Spec.FootprintSizeCells.Y / 100.0f,
+        Spec.PlacementObstacleHeightCm / 100.0f));
+    Facility->VisualMesh->SetRelativeLocation(
+        FVector(0.0f, 0.0f, Spec.PlacementObstacleHeightCm * 0.5f));
+}
+
+void UFF_ZoneSystemPlaytestSubsystem::ApplyAllFacilityVisuals() const
+{
+    const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+    if (!ZoneSystem)
+    {
+        return;
+    }
+
+    const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+    for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+    {
+        ApplyFacilityVisualScale(ZoneSystem->FindFacility(Facility.FacilityInstanceId));
+    }
+}
+
+void UFF_ZoneSystemPlaytestSubsystem::SelectPreviousPreset()
+{
+    const int32 Index = static_cast<int32>(SelectedPreset);
+    SetSelectedPreset(static_cast<EFFZSBuiltInFacilityPreset>((Index + BuiltInPresetCount - 1) % BuiltInPresetCount));
 }
 
 void UFF_ZoneSystemPlaytestSubsystem::SelectNextPreset()
 {
-    if (!bCatalogReady || CatalogDefinitionIds.IsEmpty())
-    {
-        SetStatus(CatalogStatusMessage, FColor::Yellow);
-        return;
-    }
-    const int32 CurrentIndex = CatalogDefinitionIds.IsValidIndex(SelectedCatalogIndex)
-        ? SelectedCatalogIndex
-        : 0;
-    SetSelectedCatalogIndex((CurrentIndex + 1) % CatalogDefinitionIds.Num());
+    const int32 Index = static_cast<int32>(SelectedPreset);
+    SetSelectedPreset(static_cast<EFFZSBuiltInFacilityPreset>((Index + 1) % BuiltInPresetCount));
 }
 
 void UFF_ZoneSystemPlaytestSubsystem::InstallAtPreview() { CommitPreview(); }

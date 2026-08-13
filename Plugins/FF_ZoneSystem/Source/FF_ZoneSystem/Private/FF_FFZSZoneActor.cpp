@@ -28,14 +28,6 @@
 
 namespace
 {
-    // [하드코딩 제거] 흩어져 있던 상수에 이름을 붙인다.
-    // 경계 판정 여유는 폴리곤 변 위의 점을 내부로 인정하는 폭이고, 두 접두사는
-    // Accepted Zone ID에서 표시 이름과 참고 키를 만드는 저작 규칙이다.
-    constexpr float BoundaryEdgeToleranceCm = 0.1f;
-    constexpr double GeometryToleranceCm = 0.01;
-    const TCHAR* const GameplayZoneIdPrefix = TEXT("GZ_");
-    const TCHAR* const SourceReferenceIdPrefix = TEXT("ZONE_");
-
     // 경계 위 점을 내부로 포함하기 위한 공통 판정이다. 길이 0인 변도 방어하지만,
     // 그런 변 자체는 아래 데이터 검증에서 잘못된 폴리곤으로 거부.
     bool IsPointOnSegment(const FVector2D Point, const FVector2D A, const FVector2D B, const float Tolerance)
@@ -80,20 +72,9 @@ namespace
         return (B.X - A.X) * (C.Y - A.Y) - (B.Y - A.Y) * (C.X - A.X);
     }
 
-    // [최적화] 두 변의 AABB가 떨어져 있으면 교차할 수 없다.
-    // 아래 정밀 검사는 변 쌍마다 Cross/투영을 여러 번 수행하므로, 정점이 많은 경계에서는
-    // 이 상수 시간 사전 판정이 대부분의 쌍을 즉시 걸러낸다.
-    bool DoSegmentBoundsOverlap2D(const FVector2D& A, const FVector2D& B, const FVector2D& C, const FVector2D& D)
-    {
-        return FMath::Min(A.X, B.X) - GeometryToleranceCm <= FMath::Max(C.X, D.X) &&
-            FMath::Max(A.X, B.X) + GeometryToleranceCm >= FMath::Min(C.X, D.X) &&
-            FMath::Min(A.Y, B.Y) - GeometryToleranceCm <= FMath::Max(C.Y, D.Y) &&
-            FMath::Max(A.Y, B.Y) + GeometryToleranceCm >= FMath::Min(C.Y, D.Y);
-    }
-
     bool SegmentsIntersect2D(const FVector2D& A, const FVector2D& B, const FVector2D& C, const FVector2D& D)
     {
-        constexpr double Tolerance = GeometryToleranceCm;
+        constexpr double Tolerance = 0.01;
         const double AB_C = Cross2D(A, B, C);
         const double AB_D = Cross2D(A, B, D);
         const double CD_A = Cross2D(C, D, A);
@@ -118,42 +99,34 @@ namespace
             return false;
         }
 
-        const int32 PointCount = Polygon.Num();
         double TwiceArea = 0.0;
-        for (int32 I = 0; I < PointCount; ++I)
+        for (int32 I = 0; I < Polygon.Num(); ++I)
         {
             const FVector2D& A = Polygon[I];
-            const FVector2D& B = Polygon[(I + 1) % PointCount];
-            if (A.ContainsNaN() || B.ContainsNaN() || FVector2D::Distance(A, B) <= GeometryToleranceCm)
+            const FVector2D& B = Polygon[(I + 1) % Polygon.Num()];
+            if (A.ContainsNaN() || B.ContainsNaN() || FVector2D::Distance(A, B) <= 0.01)
             {
                 return false;
             }
             TwiceArea += A.X * B.Y - B.X * A.Y;
 
-            for (int32 J = I + 1; J < PointCount; ++J)
+            for (int32 J = I + 1; J < Polygon.Num(); ++J)
             {
-                const bool bAdjacent = J == I || J == (I + 1) % PointCount ||
-                    I == (J + 1) % PointCount;
-                if (bAdjacent)
-                {
-                    continue;
-                }
-                const FVector2D& C = Polygon[J];
-                const FVector2D& D = Polygon[(J + 1) % PointCount];
-                // 값싼 AABB 분리 판정을 먼저 통과한 쌍만 정밀 교차 검사로 넘긴다.
-                if (DoSegmentBoundsOverlap2D(A, B, C, D) && SegmentsIntersect2D(A, B, C, D))
+                const bool bAdjacent = J == I || J == (I + 1) % Polygon.Num() ||
+                    I == (J + 1) % Polygon.Num();
+                if (!bAdjacent && SegmentsIntersect2D(A, B, Polygon[J], Polygon[(J + 1) % Polygon.Num()]))
                 {
                     return false;
                 }
             }
         }
-        return FMath::Abs(TwiceArea) > GeometryToleranceCm;
+        return FMath::Abs(TwiceArea) > 0.01;
     }
 
 
     FText DisplayNameForZone(const FName ZoneId)
     {
-        const FString Raw = ZoneId.ToString().Replace(GameplayZoneIdPrefix, TEXT(""));
+        const FString Raw = ZoneId.ToString().Replace(TEXT("GZ_"), TEXT(""));
         return FText::FromString(FName::NameToDisplayString(Raw, false));
     }
 }
@@ -215,10 +188,8 @@ TArray<FVector2D> AFFZSGameplayZone::GetBoundaryPolygonLocalCm() const
     {
         return Result;
     }
-    // 점 개수는 순회 중 변하지 않으므로 한 번만 조회한다.
-    const int32 PointCount = BoundarySpline->GetNumberOfSplinePoints();
-    Result.Reserve(PointCount);
-    for (int32 Index = 0; Index < PointCount; ++Index)
+    Result.Reserve(BoundarySpline->GetNumberOfSplinePoints());
+    for (int32 Index = 0; Index < BoundarySpline->GetNumberOfSplinePoints(); ++Index)
     {
         const FVector Point = BoundarySpline->GetLocationAtSplinePoint(Index, ESplineCoordinateSpace::Local);
         Result.Add(FVector2D(Point.X, Point.Y));
@@ -235,8 +206,7 @@ bool AFFZSGameplayZone::ContainsWorldPoint(const FVector& WorldPoint) const
     {
         return false;
     }
-    return IsInsidePolygon(
-        FVector2D(LocalPoint.X, LocalPoint.Y), GetBoundaryPolygonLocalCm(), BoundaryEdgeToleranceCm);
+    return IsInsidePolygon(FVector2D(LocalPoint.X, LocalPoint.Y), GetBoundaryPolygonLocalCm(), 0.1f);
 }
 
 //이 함수는 모든 존을 넓히는 소속 판정이 아니라 "직전 존 유지"용이다.
@@ -246,10 +216,11 @@ bool AFFZSGameplayZone::ContainsWorldPoint(const FVector& WorldPoint) const
 
 bool AFFZSGameplayZone::ContainsWorldPointWithHysteresis(const FVector& WorldPoint, const float HysteresisCm) const
 {
-    // [최적화] 수직 검사 -> 폴리곤 1회 생성 -> 내부 판정 -> 여유 판정 순서로 합친다.
-    // 예전에는 ContainsWorldPoint를 먼저 호출한 뒤 같은 작업을 다시 해서, 경계 밖 점 하나당
-    // 월드->로컬 변환 2회와 폴리곤 배열 할당 2회가 발생했다. 이 함수는 Agent마다 Zone 소속을
-    // 갱신하는 경로에서 호출되므로 그 중복이 그대로 프레임 비용이 된다. 판정 결과는 동일하다.
+    if (ContainsWorldPoint(WorldPoint))
+    {
+        return true;
+    }
+
     const FVector LocalPoint3D = GetActorTransform().InverseTransformPosition(WorldPoint);
     if (FMath::Abs(LocalPoint3D.Z) > VerticalExtentCm * 0.5f)
     {
@@ -258,10 +229,6 @@ bool AFFZSGameplayZone::ContainsWorldPointWithHysteresis(const FVector& WorldPoi
 
     const FVector2D LocalPoint(LocalPoint3D.X, LocalPoint3D.Y);
     const TArray<FVector2D> Polygon = GetBoundaryPolygonLocalCm();
-    if (IsInsidePolygon(LocalPoint, Polygon, BoundaryEdgeToleranceCm))
-    {
-        return true;
-    }
     for (int32 I = 0; I < Polygon.Num(); ++I)
     {
         if (IsPointOnSegment(LocalPoint, Polygon[I], Polygon[(I + 1) % Polygon.Num()], HysteresisCm))
@@ -320,27 +287,15 @@ float AFFZSGameplayZone::GetBoundaryAreaSquareMeters() const
 
 // 양의 Override가 최우선이고, 없으면 사용 가능 공공 면적(미지정 시 경계 면적)을 1인당 면적으로 나눈다.
 // 1인당 면적은 0.01m² 이상으로 방어하고 결과는 내림하므로 소프트 수용량을 과대 계산하지 않는다.
-// [최적화] 경계 면적을 이미 계산한 호출자가 그 값을 넘겨 폴리곤 재생성을 피할 수 있게 한다.
-// 계산 규칙 자체는 한 곳에만 남으므로 공식이 갈라지지 않는다.
-int32 AFFZSGameplayZone::ComputeSoftCapacity(const float BoundaryAreaSquareMeters) const
+int32 AFFZSGameplayZone::GetSoftCapacity() const
 {
     if (SoftCapacityOverride > 0)
     {
         return SoftCapacityOverride;
     }
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
-    const float AreaSquareMeters = UsablePublicAreaSquareMeters > 0.0f ? UsablePublicAreaSquareMeters : BoundaryAreaSquareMeters;
+    const float AreaSquareMeters = UsablePublicAreaSquareMeters > 0.0f ? UsablePublicAreaSquareMeters : GetBoundaryAreaSquareMeters();
     return FMath::Max(0, FMath::FloorToInt(AreaSquareMeters / FMath::Max(0.01f, Settings->SquareMetersPerPersonForSoftCapacity)));
-}
-
-int32 AFFZSGameplayZone::GetSoftCapacity() const
-{
-    // Override나 명시 면적이 있으면 경계 면적 자체가 필요 없으므로 폴리곤을 만들지 않는다.
-    if (SoftCapacityOverride > 0 || UsablePublicAreaSquareMeters > 0.0f)
-    {
-        return ComputeSoftCapacity(0.0f);
-    }
-    return ComputeSoftCapacity(GetBoundaryAreaSquareMeters());
 }
 
 // 밀도 상승 규칙은 의도적으로 단계별이다.
@@ -384,11 +339,8 @@ FFFZSZoneReadModel AFFZSGameplayZone::GetReadModel() const
     Result.ZoneId = ZoneId;
     Result.NeighborZoneIds = NeighborZoneIds;
     Result.EntryExitAnchors = EntryExitAnchors;
-    // [최적화] 경계 면적을 한 번만 계산해 수용량 계산과 함께 쓴다.
-    // 예전에는 GetBoundaryAreaSquareMeters()와 GetSoftCapacity()가 각각 폴리곤을 만들어
-    // 읽기 모델 한 건당 신발끈 계산이 두 번 돌았다. 읽기 모델은 Zone 수만큼 반복 생성된다.
     Result.AreaSquareMeters = GetBoundaryAreaSquareMeters();
-    Result.SoftCapacity = ComputeSoftCapacity(Result.AreaSquareMeters);
+    Result.SoftCapacity = GetSoftCapacity();
     Result.ReportedPopulation = ReportedPopulation;
     Result.DensityRatio = Result.SoftCapacity > 0 ? static_cast<float>(ReportedPopulation) / Result.SoftCapacity : 0.0f;
     Result.DensityState = DensityState;
@@ -399,17 +351,7 @@ FFFZSZoneReadModel AFFZSGameplayZone::GetReadModel() const
 // Actor의 필드와 권위 레지스트리 키가 서로 달라지는 상태를 예방.
 bool AFFZSGameplayZone::ApplyAcceptedZonePreset(const FName AcceptedZoneId)
 {
-    // [하드코딩 제거] 허용 여부를 코드 목록이 아니라 Project Settings 규칙으로 판단한다.
-    // 이전에는 GridLibrary의 고정 ID 12개만 통과해서, 설정에 등록해 ValidateZoneData는
-    // 통과하는 ID(예: 테스트 Zone)인데도 Preset 적용만 실패하는 모순이 있었다.
-    // 제한을 끈 이식 프로젝트에서는 비어 있지 않은 ID면 모두 허용한다.
-    if (AcceptedZoneId.IsNone())
-    {
-        return false;
-    }
-    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
-    if (Settings && Settings->bRestrictZoneIdsToProjectPresets &&
-        !UFFZSGridLibrary::GetAcceptedGameplayZoneIds().Contains(AcceptedZoneId))
+    if (!UFFZSGridLibrary::GetAcceptedGameplayZoneIds().Contains(AcceptedZoneId))
     {
         return false;
     }
@@ -426,7 +368,7 @@ bool AFFZSGameplayZone::ApplyAcceptedZonePreset(const FName AcceptedZoneId)
     }
     ZoneId = AcceptedZoneId;
     DisplayName = DisplayNameForZone(AcceptedZoneId);
-    SourceReferenceId = FName(*AcceptedZoneId.ToString().Replace(GameplayZoneIdPrefix, SourceReferenceIdPrefix));
+    SourceReferenceId = FName(*AcceptedZoneId.ToString().Replace(TEXT("GZ_"), TEXT("ZONE_")));
     SchemaVersion = 1;
     ContentVersion = 1;
     return true;

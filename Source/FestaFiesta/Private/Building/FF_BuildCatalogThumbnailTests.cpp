@@ -256,13 +256,7 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 	FFF_BuildCatalogEntry Entry;
 	Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_ThumbnailContract");
 	Entry.Thumbnail = TSoftObjectPtr<UTexture2D>(ExplicitThumbnail);
-	Entry.InstallCost = 400;
-	Entry.bHasResolvedInstallCost = true;
 	Card->Configure(Entry);
-	TestEqual(
-		TEXT("A configured facility card exposes its resolved price on hover"),
-		Card->GetToolTipText().ToString(),
-		FString(TEXT("건설 비용: 400 Gold")));
 	TestEqual(
 		TEXT("An entry-specific thumbnail takes priority over the card default"),
 		ThumbnailImage->GetBrush().GetResourceObject(),
@@ -291,14 +285,6 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 			TEXT("Refreshing with no loaded thumbnail clears the previously displayed brush"),
 			ThumbnailImage->GetBrush().GetResourceObject());
 	}
-
-	Entry.InstallCost = 0;
-	Entry.bHasResolvedInstallCost = false;
-	Card->Configure(Entry);
-	TestEqual(
-		TEXT("A card never shows a misleading zero when price data is unavailable"),
-		Card->GetToolTipText().ToString(),
-		FString(TEXT("건설 비용 정보를 확인할 수 없습니다.")));
 
 	return true;
 }

@@ -22,8 +22,6 @@ enum class EFF_NeedType : uint8
 	Count UMETA(Hidden)
 };
 
-struct FFF_NeedPriorityWeights;
-
 /**
  * NPC 욕구 상태. 0.0(해소됨) ~ 1.0(한계)로 정규화한다.
  * Need는 "화장실 Need 미해소율이 34%였다"와 같이 트윈의 진단 근거가 된다.
@@ -91,15 +89,6 @@ struct FFF_NeedState
 		}
 	}
 
-	/**
-	 * 성분 구분 없이 "지금 이 개체가 얼마나 급한가" (0~1).
-	 *
-	 * FFF_NeedReliefFlags::GetMaxUrgency 는 '특정 시설이 해소할 수 있는 성분만' 보지만,
-	 * GetMaxWeightedUrgency는 '전 성분(해소해 줄 시설이 있든 없든 쌓인 욕구 자체의 크기)'을 본다.
-	 * 그래서 "이 시설이 얼마나 매력적인가"(선택)가 아니라 "이 개체가 얼마나 지쳤나"(이탈)에 쓴다.
-	 */
-	float GetMaxWeightedUrgency(const FFF_NeedPriorityWeights& Priority) const;
-
 	// 그룹 Need 집계 — 멤버별 Need의 성분별 최대값. (평균으로 하면 한 멤버의 급한 욕구가 1/4로 희석된다)
 	// 한 명이라도 화장실이 급하면 일행 전체가 움직임
 	static FFF_NeedState MakeAggregated(const FFF_NeedState& A, const FFF_NeedState& B)
@@ -158,18 +147,6 @@ struct FFF_NeedPriorityWeights
 		}
 	}
 };
-
-// FFF_NeedPriorityWeights 가 완성된 뒤라야 정의할 수 있다. 선언은 FFF_NeedState 안에 있다.
-inline float FFF_NeedState::GetMaxWeightedUrgency(const FFF_NeedPriorityWeights& Priority) const
-{
-	float Urgency = 0.f;
-	Urgency = FMath::Max(Urgency, Hunger      * Priority.Hunger);
-	Urgency = FMath::Max(Urgency, Thirst      * Priority.Thirst);
-	Urgency = FMath::Max(Urgency, Restroom    * Priority.Restroom);
-	Urgency = FMath::Max(Urgency, Fatigue     * Priority.Fatigue);
-	Urgency = FMath::Max(Urgency, Stimulation * Priority.Stimulation);
-	return FMath::Clamp(Urgency, 0.f, 1.f);
-}
 
 /**
  * 시설 하나가 해소할 수 있는 Need 성분 플래그. 위 매핑 표를 그대로 옮긴 것이다.

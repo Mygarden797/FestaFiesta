@@ -5,11 +5,10 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Texture2D.h"
 #include "UI/FF_FestivalViewModelSubsystem.h"
-#include "UI/FF_MetricRowWidget.h"
 #include "UI/FF_UILog.h"
-
-// Texture2D·UIMetricBandSettings는 ApplyBand 구현이 UFF_MetricRowWidget으로 옮겨가면서 필요 없어졌다.
+#include "UI/FF_UIMetricBandSettings.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
@@ -114,10 +113,40 @@ void UFF_MetricsHudWidget::RefreshAll()
 
 void UFF_MetricsHudWidget::ApplyBand(int32 Value, UTextBlock* BandLabel, UImage* BandIcon)
 {
-	// 2026-08-11: 구현을 UFF_MetricRowWidget으로 옮겼다. 구간 규칙이 두 곳에 있으면 갈라진다.
-	// 이 함수는 기존 WBP_MetricsHud 호환을 위해 남겨 둔 위임이다.
-	// 이 HUD를 MetricRow 3개로 재구성하면 함께 사라진다.
-	UFF_MetricRowWidget::ApplyBand(Value, BandLabel, BandIcon);
+	if (!BandLabel && !BandIcon)
+	{
+		return;
+	}
+
+	const UFF_UIMetricBandSettings* Settings = UFF_UIMetricBandSettings::Get();
+	const FFF_UIMetricBand* Band = Settings ? Settings->FindBand(Value) : nullptr;
+
+	if (BandLabel)
+	{
+		// 구간을 못 찾으면 비운다. 마지막 구간의 라벨이 남아 있으면 틀린 상태를 보여주게 된다.
+		BandLabel->SetText(Band ? Band->Label : FText::GetEmpty());
+	}
+
+	if (!BandIcon)
+	{
+		return;
+	}
+
+	if (!Band)
+	{
+		BandIcon->SetBrushFromTexture(nullptr);
+		return;
+	}
+
+	// 아이콘 에셋이 아직 없을 수 있다. 그래도 색은 반영한다.
+	// 작은 UI 아이콘이라 동기 로드로 둔다. 개수가 늘면 비동기로 바꾼다.
+	if (UTexture2D* IconTexture = Band->Icon.LoadSynchronous())
+	{
+		BandIcon->SetBrushFromTexture(IconTexture);
+	}
+
+	// 흰색 단색 텍스처를 구간 색으로 틴트한다. 텍스처를 구간마다 따로 칠하지 않는다.
+	BandIcon->SetColorAndOpacity(Band->Color);
 }
 
 void UFF_MetricsHudWidget::HandleSimSatisfactionChanged(int32 NewValue)

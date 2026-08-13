@@ -6,9 +6,6 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
-#include "DataTables/FF_FacilityCostRow.h"
-#include "Engine/DataTable.h"
-#include "FF_FFZSFacilityDefinition.h"
 
 namespace
 {
@@ -29,53 +26,6 @@ namespace
 		Entry.DisplayName = FText::FromString(DisplayName);
 		return Entry;
 	}
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_BuildCatalogInstallCostProjectionTest,
-	"FestaFiesta.Building.Catalog.InstallCostProjection",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameters)
-{
-	(void)Parameters;
-	UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
-	UDataTable* CostTable = NewObject<UDataTable>();
-	TestNotNull(TEXT("A transient Facility Definition is available"), Definition);
-	TestNotNull(TEXT("A transient facility cost table is available"), CostTable);
-	if (!Definition || !CostTable)
-	{
-		return false;
-	}
-
-	Definition->Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_PriceProjection");
-	Definition->Spec.Category = EFFZSFacilityCategory::Booth;
-	Definition->Spec.InstallCostKey = NAME_None;
-	CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
-	FFF_FacilityCostRow CostRow;
-	CostRow.InstallCost = 400;
-	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
-
-	FFF_BuildCatalogEntry Entry;
-	Entry.FacilityDefinitionId = Definition->Spec.FacilityDefinitionId;
-	FString FailureReason;
-	TestTrue(TEXT("The UI snapshot uses the production Major.Minor price resolver"),
-		FFBuildCatalogModel::ApplyInstallCost(Entry, Definition, CostTable, FailureReason));
-	TestTrue(TEXT("The projected catalog entry marks its price as resolved"),
-		Entry.bHasResolvedInstallCost);
-	TestEqual(TEXT("The projected FoodStall price is 400 Gold"), Entry.InstallCost, 400);
-	TestEqual(TEXT("The UI snapshot records the exact matched DataTable row"),
-		Entry.MatchedInstallCostRow, FName(TEXT("Cost.Booth.FoodStall")));
-
-	CostRow.InstallCost = 0;
-	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
-	TestFalse(TEXT("A non-positive price is not displayable"),
-		FFBuildCatalogModel::ApplyInstallCost(Entry, Definition, CostTable, FailureReason));
-	TestFalse(TEXT("A failed projection clears the resolved flag"),
-		Entry.bHasResolvedInstallCost);
-	TestEqual(TEXT("A failed projection never leaves a misleading zero-price row"),
-		Entry.MatchedInstallCostRow, NAME_None);
-	return true;
 }
 
 // 에셋 발견 순서와 무관하게 평면 목록의 순서가 항상 같고, 그 정렬 결과가 메뉴 계층으로

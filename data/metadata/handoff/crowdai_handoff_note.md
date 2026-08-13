@@ -3,75 +3,47 @@
 - 대상: Crowd 시스템(`Source/FestaFiesta/*/CrowdSystem/`, PR #8로 Dev에 병합됨) 담당(이정원)
 - 배경: `FUnitData`(`CrowdSystem/Types/FF_FestivalCrowdTypes.h`) 유닛이 이 문서의 아키타입 NPC와 같은 존재다.
 
-## 한눈에 보기 (2026-08-11 기준)
+## 한눈에 보기
 
-Utility AI 쪽은 **함수가 다 있고 부르는 쪽이 없는 상태**다. 목적지 선택·욕구·개체 변주·
-예약 배정까지 구현이 끝났는데, NPC 하나하나에 적용하는 층(L3)이 없어서 **실제로는 아무 NPC도
-이 로직을 쓰고 있지 않다.** 그 층이 crowdAI 쪽 데이터와 붙어야 해서 아래를 부탁드린다.
+**바뀐 것(8/6)**: 그룹핑(누구를 누구랑 묶을지)과 입장 타이밍 결정권이 Utility AI에서 crowdAI로 넘어갔다. Utility AI는 이제 **개별 방문객 태그 분포**와 **그룹 구성 규칙(데이터)**만 만든다.
 
-### A. 막고 있는 것 — 이게 안 되면 Utility AI 가 아예 안 돈다
+**추가된 것(8/10)**: 목적지 후보 생성(`BuildCandidates`)과 욕구 증가·해소(`FFF_NeedRules`)까지 구현이 끝났다. **함수는 다 있고 부르는 쪽(L3)만 없는 상태** — 새 요청 2건(Zone 인구 보고, Need 해소 신호)은 §7.
 
-| #      | 요청                                                                                       | 지금 어떤 일이 벌어지나                                                                           |
-| ------ | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **A1** | **L3 상태 보관 위치 협의** — NPC 하나당 들고 있어야 하는 값이 있다(§7.2 표). `FUnitData` 에 넣을지 별도 배열로 둘지 정해야 한다 | 목적지 선택이 **한 번도 실행되지 않는다.** 가장 큰 공백                                                      |
-| **A2** | **스폰 시 `ResolveWithGroupSharing()` 한 번 호출** 후 결과 캐싱 (§1.5)                               | **모든 NPC 가 똑같은 속도로 걷고 똑같이 참는다.** 개체 변주가 코드로만 존재한다                                       |
-| **A3** | **`ReportZonePopulation()` 호출** — 몇 초 간격이면 된다. `DeltaSeconds` 에 실제 보고 간격을 넣어달라           | 프로젝트 전체에서 호출부가 0곳이라 **NPC 가 혼잡을 피하는 행동이 아예 안 나온다**(밀집 항이 항상 0)                          |
-| **A4** | **"시설 이용 완료" 신호** — Queue 의 `ServiceCompleted` 를 쓸 수 있으면 가장 깔끔하다                         | 배고픔·화장실이 **영원히 안 풀린다.** 도착이 아니라 **완료** 시점이어야 한다(줄만 서고 포기한 NPC 의 욕구가 풀리면 대기열 이탈이 이득이 된다) |
+**제가 한 일**
+- 개체 태그 분포 생성 함수 완성 — `FFF_VisitorDistributionBuilder` (§3)
+- 그룹 크기·아동 구성 실측 데이터 확보, DataTable 3장으로 제공 (§2)
+- 입장 타이밍용 유입 곡선 확정 — `FFF_ArrivalCurveRow` (§4)
 
-### B. `FUnitData` 필드 — 2개는 됐고 3개 남았다
+**정원 님이 하실 일**
+- [ ] `FUnitData`에 필드 6개 추가 (§1)
+- [ ] 태그 기반 그룹핑 구현 (§2, §3)
+- [ ] `FCrowdGroupTypes::GroupID` 그대로 재사용 + 초기화 한 줄 추가 (§1)
+- [ ] **스폰 시 `ResolveWithGroupSharing()` 한 번 호출 (§1.5) — 8/6 추가. 이걸 안 하면 개체 변주가 아예 안 걸립니다**
+- [ ] 유입 곡선을 읽어 입장 타이밍 구현 (§4)
+- [ ] 셀 격자 밀도 로그 (§5)
+- [ ] 판단·이동·렌더링 3개 층 분리 실측 (§5)
 
-| 필드                                                                                    | 상태               |
-| ------------------------------------------------------------------------------------- | ---------------- |
-| `ArchetypeID` / `StableAgentID`                                                       | ✅ 있음             |
-| `CompanionSizeTag` (FName) / `bIsDependentChildSlot` (bool) / `bIsGroupLeader` (bool) | ❌ 없음 — §1        |
-| 개체 변주 결과 캐싱 필드                                                                        | ❌ 없음 — A2 와 같은 건 |
+**먼저 확인해주세요**: 8/4에 드린 그룹핑 규칙 중 일부가 실측으로 대체돼 폐기됐다. 이미 구현하셨다면 §2 "폐기된 것"을 보고 걷어내달라.
 
-### C. 확인만 해주시면 되는 것
+**지켜야 할 것 2가지**
+1. 그룹은 항상 통째로 입장한다 (일부만 먼저 들어오면 안 됨) — **어떻게 구현할지는 자유**, 요구사항은 "쪼개지지 않는다"는 결과뿐
+2. 배정·타이밍은 자유지만 항상 **결정적**이어야 한다 — 같은 Seed면 항상 같은 결과 (`FMath::Rand()` 금지)
 
-| #   | 질문                                                                                                                                          |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1  | **보행 속도 150 이 확정값인가요?** `FUnitData::Speed = 150.f`(1.5 m/s)를 제 계수로 옮겨 적었는데, `Private/CrowdSystem/` 에서 이 값을 **대입하는 코드가 0곳**이라 구조체 기본값 그대로입니다 |
-| C2  | **시간 기준이 Live 경과분 맞나요?** Need·체류시간·재평가 주기 전부 Live 경과분입니다(실시간 초 아님)                                                                          |
-| C3  | **그룹 리더 조회 경로** — 목적지는 리더만 계산하고 나머지가 상속합니다                                                                                                  |
-
-### D. 새로 부탁드리는 것 (8/11)
-
-| #      | 요청                                                                                                                                                                                               |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **D1** | **퇴장을 출구 이동으로 처리** — 퇴장 판정(체류시간 소진 / 연속 no_choice)은 제 쪽입니다. 즉시 사라지면 부자연스러워서, 그룹원 전원이 출구로 이동한 뒤 소멸했으면 합니다. 출구 지점·이동·소멸 시점이 그쪽 소관이고 제 쪽은 판정과 이동 중 재평가 잠금입니다                                        |
-| **D2** | **예약 그룹의 입장은 하드 제약** — 유료 프로그램을 사면 정원만큼의 그룹이 즉시 확정됩니다(정원 10명 = 5+2+2+1처럼 크기가 섞임). 그 그룹들이 **시작 시각 전에 반드시 장내에** 있어야 합니다. 유입 곡선(비율 목표) 위에 얹히는 제약이고 프로그램이 여러 개면 제약도 여러 개라, 곡선 누적 오차 허용 폭과 충돌할 수 있습니다 |
-
-### E. 급하지 않은 것
-
-- 셀 격자 밀도 로그 (§5) / 판단·이동·렌더링 3층 분리 실측 (§5)
-- 300·500·700 은 성능 검증용 가설값이라 숫자 자체에 의미를 두지 않아도 된다
-
-### 지켜야 할 것 2가지
-
-1. **그룹은 항상 통째로 입장한다** (일부만 먼저 들어오면 안 됨) — 구현 방법은 자유,
-   요구사항은 "쪼개지지 않는다"는 결과뿐
-2. **배정·타이밍은 항상 결정적이어야 한다** — 같은 Seed 면 항상 같은 결과 (`FMath::Rand()` 금지)
-
-### 제가 드린 것 (참고)
-
-개체 태그 분포 `FFF_VisitorDistributionBuilder`(§3) / 그룹 크기·아동 구성 DataTable 3장(§2) /
-유입 곡선 `FFF_ArrivalCurveRow`(§4) / 목적지 전달 `FF_MoveCommand`(부록 E).
-그룹핑과 입장 타이밍의 결정권은 8/6에 crowdAI 로 넘어갔고, **8/4에 드린 그룹핑 규칙 일부가
-실측으로 대체돼 폐기됐다** — 이미 구현하셨다면 §2 "폐기된 것"을 보고 걷어내주시면 된다.
+**같이 정해야 할 것**: §6
 
 ---
 
 ## 1. `FUnitData`에 필요한 필드
 
-| 필드                                    | 타입                                   | 상태  | 용도                                                                                           |
-| ------------------------------------- | ------------------------------------ | --- | -------------------------------------------------------------------------------------------- |
-| `ArchetypeID`                         | FName                                | ✅   | 5종 아키타입 중 하나. preference_vector 계산과 그룹핑 둘 다에 필요                                              |
-| `StableAgentID`                       | int32                                | ✅   | 개체 안정 ID. 공식은 [부록 C](#부록-c-fff_visitordistributionbuilder-상세)                                |
-| `PartyID`                             | int32                                | ✅   | 그룹 식별자로 쓰고 있는 것으로 보인다. **예약 배정이 이 값의 안정성에 의존한다** — 스폰 순서처럼 실행마다 달라지는 값이면 같은 Seed 에서 예약자가 바뀐다 |
-| `CompanionSizeTag`                    | FName (`solo`/`pair`/`group_3_plus`) | ❌   | 목표 그룹 크기 분류 (거친 태그 — §2)                                                                     |
-| `bIsDependentChildSlot`               | bool                                 | ❌   | 종속 아동 여부. 자체 목적지 계산 없이 성인에게 상속                                                               |
-| `bIsGroupLeader` (또는 `LeaderAgentId`) | bool/int32                           | ❌   | 목적지는 리더만 계산, 나머지는 상속                                                                         |
-| 개체 변주 결과 캐싱                           | `FFF_ResolvedIndividualTraits`       | ❌   | 보행속도·인내심 등 8개. **스폰 시 1회 계산해 캐싱** — §1.5                                                     |
+| 필드 | 타입 | 용도 |
+|---|---|---|
+| `ArchetypeId` | FName | 5종 아키타입 중 하나. preference_vector 계산과 그룹핑 둘 다에 필요 |
+| `CompanionSizeTag` | FName (`solo`/`pair`/`group_3_plus`) | 목표 그룹 크기 분류 (거친 태그 — §2 참조) |
+| `bIsDependentChildSlot` | bool | 종속 아동 여부. 자체 목적지 계산 없이 성인에게 상속 |
+| `GroupID` (기존 `FCrowdGroupTypes`) | int32 | 그룹 식별자. **crowdAI가 그룹핑하며 직접 부여** — 새 필드 추가 안 함, `FF_FestivalCrowdTypes.h:29`에 초기화(`= INDEX_NONE;`)만 추가해달라 |
+| `bIsGroupLeader` (또는 `LeaderAgentId`) | bool/int32 | 목적지는 리더만 계산, 나머지는 상속. **crowdAI가 그룹핑하며 같이 지정** |
+| `StableAgentId` | int32 | 개체 안정 ID. **crowdAI가 계산** — 공식은 [부록 C](#부록-c-fff_visitordistributionbuilder-상세) 참조 |
+| `ResolvedTraits` | `FFF_ResolvedIndividualTraits` | 개체 변주 결과(보행속도·인내심 등 7개). **스폰 시 1회 계산해 캐싱** — 아래 §1.5 |
 
 색상·라벨은 crowdAI 쪽 디버그 코드에만 두고 프로덕션 DataTable에는 넣지 않는다.
 
@@ -102,15 +74,15 @@ Unit.ResolvedTraits = FFF_IndividualVariationResolver::ResolveWithGroupSharing(
 
 `FFF_ResolvedIndividualTraits`의 7개 필드:
 
-| 필드                             | 그룹 공유  | 쓰는 쪽                          |
-| ------------------------------ | ------ | ----------------------------- |
-| `WalkSpeedMultiplier`          | **공유** | crowdAI (이동)                  |
-| `StayDurationMultiplier`       | **공유** | Utility AI (`remaining_stay`) |
-| `PatienceMultiplier`           | 개체별    | Utility AI (대기 임계값)           |
-| `CrowdToleranceMultiplier`     | 개체별    | Utility AI (밀집 임계값)           |
-| `PreferenceStrengthMultiplier` | 개체별    | Utility AI (취향 벡터)            |
-| `ReevaluateIntervalMultiplier` | 개체별    | Utility AI (재평가 주기)           |
-| `LeisurelinessAxis`            | 개체별    | (성격축 — 직접 곱하지 않음)             |
+| 필드 | 그룹 공유 | 쓰는 쪽 |
+|---|---|---|
+| `WalkSpeedMultiplier` | **공유** | crowdAI (이동) |
+| `StayDurationMultiplier` | **공유** | Utility AI (`remaining_stay`) |
+| `PatienceMultiplier` | 개체별 | Utility AI (대기 임계값) |
+| `CrowdToleranceMultiplier` | 개체별 | Utility AI (밀집 임계값) |
+| `PreferenceStrengthMultiplier` | 개체별 | Utility AI (취향 벡터) |
+| `ReevaluateIntervalMultiplier` | 개체별 | Utility AI (재평가 주기) |
+| `LeisurelinessAxis` | 개체별 | (성격축 — 직접 곱하지 않음) |
 
 아동 슬롯(`bIsDependentChildSlot == true`)에는 이 위에 아동 전용 노브 3종(이동속도·주의집중·대기인내)이 덧붙는데 **값이 아직 미정**이다(`dependent_child_npc_spec.md`). 지금은 성인과 같게 두고 나중에 곱하면 된다.
 
@@ -118,11 +90,11 @@ Unit.ResolvedTraits = FFF_IndividualVariationResolver::ResolveWithGroupSharing(
 
 규칙은 마크다운이 아니라 **DataTable 3장**으로 제공한다 — **CSV 파일은 Utility AI 쪽 원본·재생성용일 뿐이고, 정원 님은 아래 에디터 DataTable 애셋만 참조하면 된다**(이미 `Content/FestaFiesta/Data/`에 만들어뒀다. 전체 설계: `population_group_generation_spec.md`).
 
-| DataTable 애셋 (`Content/FestaFiesta/Data/`) | 구조체                            | 무엇                         |
-| ------------------------------------------ | ------------------------------ | -------------------------- |
-| `DT_VisitorGroupSizeDistribution`          | `FFF_GroupSizeDistributionRow` | 그룹 크기 분포 (1~6인)            |
-| `DT_GroupChildComposition`                 | `FFF_GroupChildCompositionRow` | 그룹 크기별 아동 수 분포             |
-| `DT_GroupCompositionRules`                 | `FFF_GroupCompositionRuleRow`  | 나머지 규칙(리더 수·상속 범위·공유 특성 등) |
+| DataTable 애셋 (`Content/FestaFiesta/Data/`) | 구조체 | 무엇 |
+|---|---|---|
+| `DT_VisitorGroupSizeDistribution` | `FFF_GroupSizeDistributionRow` | 그룹 크기 분포 (1~6인) |
+| `DT_GroupChildComposition` | `FFF_GroupChildCompositionRow` | 그룹 크기별 아동 수 분포 |
+| `DT_GroupCompositionRules` | `FFF_GroupCompositionRuleRow` | 나머지 규칙(리더 수·상속 범위·공유 특성 등) |
 
 **그룹 하나 만드는 순서:**
 
@@ -141,7 +113,6 @@ Unit.ResolvedTraits = FFF_IndividualVariationResolver::ResolveWithGroupSharing(
 **중요한 구분**: `CompanionSizeTag`는 `solo`/`pair`/`group_3_plus` 3종뿐이라 3~6인이 전부 뭉친다. **그룹을 묶을 때는 정확한 인원수(1~6)를 담은 `TargetGroupSize`(§3)를 봐야 한다.**
 
 **폐기된 것** — 8/4에 드렸던 아래 규칙은 전부 실측 없는 가정이었고 2025 국민여행조사 실측으로 대체됐다. 이미 구현하셨다면 걷어내달라:
-
 - ~~`group_3_plus`는 3명 70% / 4명 30%~~ → 상한 **6인**, 실측 3명 37% / 4명 44% / 5명 9% / 6명 10%
 - ~~`pair` couple_or_friends 80%/parent_and_child 20%~~, ~~`group_3_plus` family 50%/friends 50%~~, ~~아동 부착확률 0.4·평균 1.5~~ → **그룹 유형을 뽑는 단계 자체가 없어졌다.** `DT_GroupChildComposition` 한 장으로 대체
 
@@ -193,69 +164,72 @@ FFF_VisitorDistribution Dist = FFF_VisitorDistributionBuilder::Build(
 
 ## 6. 같이 정해야 하는 열린 질문
 
-| 질문                                           | 왜 막혀 있는지                                                                                                                                                                                                    |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 그룹 **리더가 누구인지** Utility AI가 어떻게 아는가          | 목적지 결정은 리더에 대해서만 해야 하는데, 리더 지정은 crowdAI가 한다. 이벤트? 조회 API?                                                                                                                                                   |
-| `TargetDestinationId`를 월드 좌표로 바꾸는 조회는 누가 하는가 | 한광훈 님 시설 데이터와도 걸림                                                                                                                                                                                           |
-| `CohesionRadiusMeters` 값                     | 이동 스택(Detour Crowd/Mass Entity) 확정 후                                                                                                                                                                        |
-| 유입 곡선 누적 오차 허용 폭                             | 실제로 돌려보고 정하는 게 맞다고 봄 — 정해지면 알려달라                                                                                                                                                                            |
-| **NPC 상태를 누가 들고 있는가** (8/6 추가)               | Utility AI 쪽은 전부 순수 함수라 상태를 안 들고 있다. `remaining_stay`·`ConsecutiveNoChoiceCount`·`FFF_NeedState`·마지막 평가 시각을 `FUnitData`에 둘지 별도 층을 만들지 정해야 한다. Need 집계 지표(`UFF_NpcNeedMetricsSubsystem`)에 표본을 넣는 것도 이 층의 일이다 |
+| 질문 | 왜 막혀 있는지 |
+|---|---|
+| 그룹 **리더가 누구인지** Utility AI가 어떻게 아는가 | 목적지 결정은 리더에 대해서만 해야 하는데, 리더 지정은 crowdAI가 한다. 이벤트? 조회 API? |
+| `TargetDestinationId`를 월드 좌표로 바꾸는 조회는 누가 하는가 | 한광훈 님 시설 데이터와도 걸림 |
+| `CohesionRadiusMeters` 값 | 이동 스택(Detour Crowd/Mass Entity) 확정 후 |
+| 유입 곡선 누적 오차 허용 폭 | 실제로 돌려보고 정하는 게 맞다고 봄 — 정해지면 알려달라 |
+| **NPC 상태를 누가 들고 있는가** (8/6 추가) | Utility AI 쪽은 전부 순수 함수라 상태를 안 들고 있다. `remaining_stay`·`ConsecutiveNoChoiceCount`·`FFF_NeedState`·마지막 평가 시각을 `FUnitData`에 둘지 별도 층을 만들지 정해야 한다. Need 집계 지표(`UFF_NpcNeedMetricsSubsystem`)에 표본을 넣는 것도 이 층의 일이다 |
 
 **해소된 질문 (8/6 결정)**
 
 - ~~리더가 퇴장하면 그룹 전체가 퇴장하는가~~ → **전원 함께 퇴장한다.** `no_choice` 행동 3종(`Wander`/`Relocate`/`Leave`)은 목적지와 똑같이 리더가 결정하고 그룹원 전체가 상속한다. **`spawn_group_together`와 대칭 — 통째로 들어오고 통째로 나간다.** 그룹원이 각자 다른 행동을 하는 경우는 없으니, 퇴장 처리를 그룹 단위로 하시면 됩니다.
 
-## 7. NPC 하나당 보관해야 하는 상태 (A1 상세)
+## 7. 2026-08-10 추가 — 목적지 선택이 실제로 돌기 시작했습니다
 
-목적지 선택·욕구·신규성 선호가 실제로 돌려면 NPC(또는 그룹)마다 아래를 들고 있어야 합니다.
-**이걸 어디에 둘지가 A1 이고, 지금 유일하게 막힌 지점입니다.**
+`BuildCandidates`(후보 만들기)와 `FFF_NeedRules`(욕구 증가·해소)를 구현했습니다. 이제 **함수는 다
+있고, 부르는 쪽만 없습니다.** 6절의 "NPC 상태를 누가 들고 있는가"가 유일하게 남은 막힌 지점입니다.
 
-| 값                                         | 언제 바뀌나               | 누가 계산하나                              |
-| ----------------------------------------- | -------------------- | ------------------------------------ |
-| `FFF_NeedState` (5개 float)                | 시간 경과 + 시설 이용 완료     | `FFF_NeedRules::Advance` / `Relieve` |
-| `FFF_VisitHistory` (FName 5개 + float 5개)  | 시설 이용 완료             | `RecordVisit` — 신규성 선호(가본 곳보다 새 곳)   |
-| `ConsecutiveNoChoiceCount`                | 재평가 때마다              | 선택기 결과                               |
-| `RemainingStayMinutes`                    | 시간 경과                | Need 가 쌓이면 더 빨리 줄어듭니다(아래)            |
-| `LastEvaluationTime` / `ChoiceRoundIndex` | 재평가 때마다              | —                                    |
-| `FFF_ResolvedIndividualTraits`            | **스폰 시 1회 캐싱**(§1.5) | `ResolveWithGroupSharing`            |
+### 7.1 새 요청 — `ReportZonePopulation`을 불러주실 수 있을까요
 
-앞 5개는 매 틱 변하고 마지막 하나는 스폰 후 불변이라, **보관 위치를 다르게 두는 게 나을 수
-있습니다.** 매 틱 도는 배열에 불변값을 섞으면 캐시가 낭비돼서요.
+`UFFZSWorldSubsystem::ReportZonePopulation(ZoneId, Population, DeltaSeconds)`를 부르는 코드가
+프로젝트 전체에 **0곳**입니다. 플러그인은 "외부 시뮬레이션이 Zone별 인구를 보고"하는 설계인데
+아무도 보고하지 않아서:
 
-**알아두시면 좋은 것 2개**
+- `FFFZSZoneReadModel::ReportedPopulation`이 항상 0
+- → Utility 식의 `- weight_density × density_norm` 항이 항상 0
+- → **NPC가 혼잡을 피하는 행동이 아예 나오지 않습니다**
+- Zone 밀도 상태(Caution/Warning/Critical)도 절대 안 올라갑니다
 
-- **줄에서 기다리는 동안에도 Need 는 계속 쌓입니다.** 의도한 것입니다 — 줄이 길면 배고픔이 더
-  쌓여 다음 재평가에서 다른 선택이 나오는 게 자연스럽다고 봤습니다. **"대기 중엔 건너뛰기"
-  최적화를 넣으면 동작이 바뀝니다.** 실제로 어떤 쏠림을 만드는지는 돌려봐야 알아서, 이상한
-  결과가 보이면 알려주세요
-- **`RemainingStayMinutes` 는 시계가 아니라 예산입니다.** 해소 못 한 Need 가 쌓이면 시계보다
-  빨리 줄어듭니다("줄이 길어서 축제를 떠났다"를 표현하려고 8/11 에 넣었습니다).
-  그래서 이 값을 보고 "몇 분 뒤에 나가겠구나"를 읽으면 틀립니다
+Zone별 재실 인원은 crowdAI가 아는 값이라 이쪽에서 부르는 게 자연스러워 보입니다. 부르는 주기는
+Zone 밀도 히스테리시스(Warning 5초 / Critical 3초 연속 유지)보다 촘촘하면 되고, 매 프레임은
+필요 없습니다. **주기와 호출 주체를 정해주시면 저희는 읽기만 하겠습니다.**
+
+### 7.2 보관해야 하는 상태가 또 늘었습니다 (6절 표 갱신)
+
+Need가 실제로 움직이게 되어서, NPC(또는 그룹)마다 아래를 들고 있어야 합니다.
+
+| 값 | 언제 바뀌나 | 누가 계산하나 |
+|---|---|---|
+| `FFF_NeedState` (5개 float) | 시간 경과 + 시설 이용 완료 | `FFF_NeedRules::Advance` / `Relieve` |
+| `FFF_VisitHistory` (FName 5개 + float 5개) | 시설 이용 완료 | `RecordVisit` — 신규성 선호(가본 곳보다 새 곳)에 쓴다 |
+| `ConsecutiveNoChoiceCount` | 재평가 때마다 | 선택기 결과 |
+| `RemainingStayMinutes` | 시간 경과 | — |
+| `LastEvaluationTime` / `ChoiceRoundIndex` | 재평가 때마다 | — |
+| `FFF_ResolvedIndividualTraits` 등 | **스폰 시 1회 캐싱**(1.5절) | `Resolve`/`ResolveWithGroupSharing` |
+
+앞 4개는 매 틱 변하고 마지막 하나는 스폰 후 불변이라, 보관 위치를 다르게 두는 게 나을 수 있습니다.
+
+### 7.3 Need 규칙에서 알아두시면 좋은 것 2개
+
+- **줄에서 기다리는 동안에도 Need는 계속 쌓입니다.** 의도적입니다 — 줄이 길면 배고픔이 더 쌓여
+  다음 재평가에서 다른 선택이 나오는 게 자연스럽다고 봤습니다. 다만 실제로 어떤 쏠림을 만드는지는
+  돌려봐야 알아서, 이상한 결과가 보이면 알려주세요.
+- **해소는 "시설 이용 완료" 시점입니다.** 목적지를 고른 순간이나 도착한 순간이 아닙니다. 줄만 서고
+  포기한 NPC의 Need가 풀리면 대기열 이탈이 이득이 되어버립니다. **완료 신호가 필요합니다** —
+  Queue 쪽 `ServiceCompleted`를 쓸 수 있으면 그게 가장 깔끔할 것 같습니다.
+  **이 신호 하나로 두 가지를 처리합니다** — `FFF_NeedRules::Relieve`(욕구 해소)와
+  `FFF_VisitHistory::RecordVisit`(방문 기록). 같은 시점이라 따로 받을 필요는 없습니다.
+
+### 7.4 시간 기준 확인 요청 (강민서 님과도 걸림)
+
+`FFF_NeedRules::Advance(Needs, ElapsedMinutes, Rates)`의 `ElapsedMinutes`는 **Live 경과분**입니다
+(실시간 초가 아닙니다). 게임 시간 배속이 바뀌어도 Need는 축제 시각을 따라 쌓여야 하니까요.
+`RemainingStayMinutes`·`LastEvaluationTime`도 같은 기준입니다. 이 기준이 이동 스택 쪽과 어긋나지
+않는지 확인 부탁드립니다.
 
 ---
-
-## 8. 2026-08-11 추가 — 예약 배정 (D2 상세)
-
-보행 속도(C1)와 퇴장 이동(D1)은 "한눈에 보기"에 있는 내용이 전부입니다. 여기는 예약만 적습니다.
-
-**유료 프로그램을 사면 정원만큼의 그룹이 그 자리에서 확정됩니다.** 플레이어가 개별 NPC를
-배정하지 않고, 배정은 제 쪽 결정적 함수(`FFF_ProgramReservationRules::Assign`)가 합니다.
-
-- **배정 단위는 그룹**입니다. 1인도 그룹이라 예외가 없습니다
-- **정원을 그룹 크기 조합으로 정확히 채웁니다** — 정원 10명이면 `5 + 2 + 2 + 1`처럼 섞입니다.
-  크기가 다양하게 섞이는 게 자연스러워서 그렇게 정했습니다
-- 정확히 못 채우는 경우(남은 자리 1인데 1인 그룹이 없음)는 비우고 로그를 남깁니다.
-  **개인을 그룹에서 떼어내지 않습니다** — 그룹은 통째로 움직인다는 전제를 깨서요
-
-그래서 부탁드릴 것: **배정된 그룹은 프로그램 시작 시각 전에 반드시 입장해 있어야 합니다.**
-유입 곡선은 비율 목표인데 이건 "이 시각까지 이 그룹들은 반드시"라는 하드 제약이고,
-프로그램이 여러 개면 제약도 여러 개입니다.
-
-프로그램 중에는 그 그룹이 목적지 선택을 하지 않고 퇴장도 하지 않습니다(제 쪽에서 막습니다).
-시작 전에는 다른 NPC와 똑같이 자유 행동합니다.
-
-⚠️ `PartyID`가 실행마다 같은 값이어야 합니다 — 배정 순서를 정하는 값이라, 스폰 순서처럼
-프로세스마다 달라지면 **같은 Seed 인데 예약자가 바뀝니다.**
 
 # 부록 (필요할 때만 펼쳐보세요)
 
@@ -269,38 +243,38 @@ DataTable의 `Status` 열에 붙는 값. `derived`=실측 가중집계, `confirm
 
 **`FFF_GroupSizeDistributionRow`**
 
-| 필드                 | 뜻                      | 사용법                               |
-| ------------------ | ---------------------- | --------------------------------- |
-| `ScopeId`          | 모집단 구분                 | `tourism_daytrip` 행만 사용           |
-| `GroupSize`        | 그룹 인원수 1~6             | 뽑아서 그대로 그룹 크기로                    |
+| 필드 | 뜻 | 사용법 |
+|---|---|---|
+| `ScopeId` | 모집단 구분 | `tourism_daytrip` 행만 사용 |
+| `GroupSize` | 그룹 인원수 1~6 | 뽑아서 그대로 그룹 크기로 |
 | `CompanionSizeTag` | solo/pair/group_3_plus | `FUnitData::CompanionSizeTag`에 대입 |
-| `SharePct`         | 뽑힐 확률(%)               | 같은 `ScopeId` 안에서 합계 100           |
-| `bIsCapBucket`     | `GroupSize=6`에서만 true  | "6명 이상 전부"가 합쳐진 칸이라는 표시           |
-| `Status`           | 신뢰도                    | 전부 `derived`                      |
+| `SharePct` | 뽑힐 확률(%) | 같은 `ScopeId` 안에서 합계 100 |
+| `bIsCapBucket` | `GroupSize=6`에서만 true | "6명 이상 전부"가 합쳐진 칸이라는 표시 |
+| `Status` | 신뢰도 | 전부 `derived` |
 
 **`FFF_GroupChildCompositionRow`**
 
-| 필드                        | 뜻                              | 사용법                                 |
-| ------------------------- | ------------------------------ | ----------------------------------- |
-| `ScopeId`/`GroupSize`     | 위와 동일                          | 방금 뽑은 `GroupSize`와 일치하는 행만 필터       |
-| `ChildCount`              | 그룹 안 아동 수                      | 뽑아서 그대로 사용                          |
+| 필드 | 뜻 | 사용법 |
+|---|---|---|
+| `ScopeId`/`GroupSize` | 위와 동일 | 방금 뽑은 `GroupSize`와 일치하는 행만 필터 |
+| `ChildCount` | 그룹 안 아동 수 | 뽑아서 그대로 사용 |
 | `ShareWithinGroupSizePct` | 그 `GroupSize` **안에서** 뽑힐 확률(%) | 같은 `(ScopeId,GroupSize)` 안에서 합계 100 |
 
 **`FFF_GroupCompositionRuleRow`** — 현재 11개 규칙:
 
-| `RuleId`                          | `Value`                                          | `ValueType` | `Status`       | 뜻                                      |
-| --------------------------------- | ------------------------------------------------ | ----------- | -------------- | -------------------------------------- |
-| `group_size_cap`                  | `6`                                              | int         | derived        | 그룹 최대 인원                               |
-| `group_size_distribution_table`   | `visitor_group_size_distribution_v0`             | table_ref   | derived        | = `DT_VisitorGroupSizeDistribution` 애셋 |
-| `child_composition_table`         | `group_child_composition_v0`                     | table_ref   | derived        | = `DT_GroupChildComposition` 애셋        |
-| `child_age_definition`            | `under_15`                                       | enum        | derived        | 아동 슬롯 연령 기준                            |
-| `leader_count_per_group`          | `1`                                              | int         | confirmed      | 그룹당 리더 수                               |
-| `leader_must_be_adult`            | `true`                                           | bool        | confirmed      | 리더는 항상 성인                              |
-| `destination_decision_scope`      | `leader_only`                                    | enum        | confirmed      | 목적지는 리더만 계산                            |
-| `non_leader_adult_archetype_rule` | `same_as_leader`                                 | enum        | **assumption** | 리더 아닌 성인도 리더와 같은 아키타입. 실측 근거 없음        |
-| `spawn_group_together`            | `true`                                           | bool        | confirmed      | 그룹원 전원 한 번에 스폰                         |
-| `group_shared_traits`             | `walk_speed_multiplier;stay_duration_multiplier` | list        | confirmed      | 그룹이 공유하는 특성 2개                         |
-| `child_trait_overrides`           | `movement_speed;attention_span;wait_tolerance`   | list        | **assumption** | 아동 전용 노브 3개, 값 미정                      |
+| `RuleId` | `Value` | `ValueType` | `Status` | 뜻 |
+|---|---|---|---|---|
+| `group_size_cap` | `6` | int | derived | 그룹 최대 인원 |
+| `group_size_distribution_table` | `visitor_group_size_distribution_v0` | table_ref | derived | = `DT_VisitorGroupSizeDistribution` 애셋 |
+| `child_composition_table` | `group_child_composition_v0` | table_ref | derived | = `DT_GroupChildComposition` 애셋 |
+| `child_age_definition` | `under_15` | enum | derived | 아동 슬롯 연령 기준 |
+| `leader_count_per_group` | `1` | int | confirmed | 그룹당 리더 수 |
+| `leader_must_be_adult` | `true` | bool | confirmed | 리더는 항상 성인 |
+| `destination_decision_scope` | `leader_only` | enum | confirmed | 목적지는 리더만 계산 |
+| `non_leader_adult_archetype_rule` | `same_as_leader` | enum | **assumption** | 리더 아닌 성인도 리더와 같은 아키타입. 실측 근거 없음 |
+| `spawn_group_together` | `true` | bool | confirmed | 그룹원 전원 한 번에 스폰 |
+| `group_shared_traits` | `walk_speed_multiplier;stay_duration_multiplier` | list | confirmed | 그룹이 공유하는 특성 2개 |
+| `child_trait_overrides` | `movement_speed;attention_span;wait_tolerance` | list | **assumption** | 아동 전용 노브 3개, 값 미정 |
 
 `ValueType` 파싱: `int`→정수, `bool`→문자열 비교, `enum`→고정 문자열, `list`→세미콜론 split, `table_ref`→다른 DataTable 이름.
 
@@ -308,33 +282,33 @@ DataTable의 `Status` 열에 붙는 값. `derived`=실측 가중집계, `confirm
 
 ### 예시 (요청 10명)
 
-| #    | ArchetypeId       | CompanionSizeTag | TargetGroupSize | TargetGroupChildCount | bIsDependentChildSlot |
-| ---- | ----------------- | ---------------- | --------------- | --------------------- | --------------------- |
-| 1~2  | life_stage_60plus | solo             | 1               | 0                     | false                 |
-| 3~6  | life_stage_20s    | pair             | 2               | 0                     | false                 |
-| 7~8  | life_stage_30_40s | group_3_plus     | 4               | 2                     | false(성인)             |
-| 9~10 | `NAME_None`       | group_3_plus     | 4               | 2                     | true(아동)              |
+| # | ArchetypeId | CompanionSizeTag | TargetGroupSize | TargetGroupChildCount | bIsDependentChildSlot |
+|---|---|---|---|---|---|
+| 1~2 | life_stage_60plus | solo | 1 | 0 | false |
+| 3~6 | life_stage_20s | pair | 2 | 0 | false |
+| 7~8 | life_stage_30_40s | group_3_plus | 4 | 2 | false(성인) |
+| 9~10 | `NAME_None` | group_3_plus | 4 | 2 | true(아동) |
 
 이때 `GroupPlan`은 `(크기1,아동0,life_stage_60plus)→2개`, `(크기2,아동0,life_stage_20s)→2개`, `(크기4,아동2,life_stage_30_40s)→1개`. crowdAI는 이 레시피를 보고 7~10번을 모아 4인 그룹 하나를 만들면 된다 — 몇 번과 몇 번을 묶을지는 자유(위 번호는 예시일 뿐).
 
 ### `FFF_TaggedVisitor` 필드
 
-| 필드                      | 용도                              |
-| ----------------------- | ------------------------------- |
-| `ArchetypeId`           | 생애주기 5종. **아동 슬롯은 `NAME_None`** |
-| `CompanionSizeTag`      | solo/pair/group_3_plus          |
-| `TargetGroupSize`       | 1~6, 그룹핑 시 봐야 하는 값              |
-| `TargetGroupChildCount` | 그룹 내 아동 수                       |
-| `bIsDependentChildSlot` | 아동 여부                           |
+| 필드 | 용도 |
+|---|---|
+| `ArchetypeId` | 생애주기 5종. **아동 슬롯은 `NAME_None`** |
+| `CompanionSizeTag` | solo/pair/group_3_plus |
+| `TargetGroupSize` | 1~6, 그룹핑 시 봐야 하는 값 |
+| `TargetGroupChildCount` | 그룹 내 아동 수 |
+| `bIsDependentChildSlot` | 아동 여부 |
 
 ### `FFF_VisitorDistribution`(반환값) 필드
 
-| 필드                       | 뜻                          | 사용법                            |
-| ------------------------ | -------------------------- | ------------------------------ |
-| `Visitors`               | 태그 붙은 개체 목록                | 순회하며 그룹 구성                     |
-| `GroupPlan`              | `(크기,아동수,아키타입)→그룹 몇 개` 레시피 | 검산용으로도 사용 가능                   |
-| `ActualVisitorCount`     | 실제 생성 인원                   | 요청보다 최대 5명 적을 수 있음 — **정상 동작** |
-| `DependentChildSharePct` | 실제 아동 비율(%)                | **목표치 아님**, 결과값. 맞추려고 조정 불필요   |
+| 필드 | 뜻 | 사용법 |
+|---|---|---|
+| `Visitors` | 태그 붙은 개체 목록 | 순회하며 그룹 구성 |
+| `GroupPlan` | `(크기,아동수,아키타입)→그룹 몇 개` 레시피 | 검산용으로도 사용 가능 |
+| `ActualVisitorCount` | 실제 생성 인원 | 요청보다 최대 5명 적을 수 있음 — **정상 동작** |
+| `DependentChildSharePct` | 실제 아동 비율(%) | **목표치 아님**, 결과값. 맞추려고 조정 불필요 |
 
 ### `StableAgentId` 계산
 
@@ -390,19 +364,18 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 
 ## 부록 D. 유입 곡선 필드 상세
 
-| 필드                                            | 타입            | 뜻                                                              |
-| --------------------------------------------- | ------------- | -------------------------------------------------------------- |
-| `ScenarioId`                                  | FName         | flat_v0/single_peak_v0/sunset_peak_v0 중 하나만 사용 (§4의 "곡선 시나리오") |
-| `BucketIndex`/`BucketCount`                   | int32         | 버킷 순번/전체 개수(24). **상수 박지 말고 값을 읽을 것**                          |
-| `ProgressStart`/`ProgressEnd`                 | float         | Live 진행도 [0,1). 계산 기준                                          |
-| `ArrivalSharePct`                             | float         | 이 버킷 신규 유입 비율(%)                                               |
-| `CumulativeSharePct`                          | float         | 누적 유입 비율(%) — 실제로 맞춰야 하는 지표                                    |
-| `MinutesStartAtDefault`/`ClockStartAtDefault` | float/FString | 표시용, 계산에 쓰지 말 것                                                |
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `ScenarioId` | FName | flat_v0/single_peak_v0/sunset_peak_v0 중 하나만 사용 (§4의 "곡선 시나리오") |
+| `BucketIndex`/`BucketCount` | int32 | 버킷 순번/전체 개수(24). **상수 박지 말고 값을 읽을 것** |
+| `ProgressStart`/`ProgressEnd` | float | Live 진행도 [0,1). 계산 기준 |
+| `ArrivalSharePct` | float | 이 버킷 신규 유입 비율(%) |
+| `CumulativeSharePct` | float | 누적 유입 비율(%) — 실제로 맞춰야 하는 지표 |
+| `MinutesStartAtDefault`/`ClockStartAtDefault` | float/FString | 표시용, 계산에 쓰지 말 것 |
 
 ## 부록 E. 목적지 전달 상세
 
 `FFF_MoveCommand`/`FFF_MoveResultEvent` (`FF_MoveCommand.h`):
-
 - **받는 것**: `PartyId`(=`GroupID`), `TargetDestinationId`(FName, ZoneSystem 시설 `FGuid`를 문자열화한 값), `TargetEntryPointId`, `Intent`, `CommandId`.
 - **돌려줄 것**: `PartyId`, `CommandId`, `Result`, `SimTimeMinutes`. 폴링 금지 — 도착/실패 시 이벤트로.
 - `TargetEntryPointId`는 퇴장 지점과 반드시 분리 (겹치면 데드락).
@@ -410,39 +383,34 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 
 ## 부록 F. 함께 읽으면 좋을 문서
 
-| 문서                                    | 언제                                        |
-| ------------------------------------- | ----------------------------------------- |
-| `population_group_generation_spec.md` | 그룹핑 규칙 적용 코드 짤 때 — 전체 설계·근거·폐기 이력         |
-| `visitor_arrival_curve_spec.md`       | 입장 타이밍 구현할 때 — 유입 곡선 설계 결정 이유             |
-| `dependent_child_npc_spec.md`         | 아동 슬롯 관련 의문 — 왜 아키타입을 안 주는지 등             |
-| `individual_variation_spec.md`        | 그룹 공유 특성(`walk_speed_multiplier` 등) 구현할 때 |
+| 문서 | 언제 |
+|---|---|
+| `population_group_generation_spec.md` | 그룹핑 규칙 적용 코드 짤 때 — 전체 설계·근거·폐기 이력 |
+| `visitor_arrival_curve_spec.md` | 입장 타이밍 구현할 때 — 유입 곡선 설계 결정 이유 |
+| `dependent_child_npc_spec.md` | 아동 슬롯 관련 의문 — 왜 아키타입을 안 주는지 등 |
+| `individual_variation_spec.md` | 그룹 공유 특성(`walk_speed_multiplier` 등) 구현할 때 |
 
 ## 요약 — crowdAI에 보낼 메시지
 
-> **Utility AI 쪽은 함수가 다 있는데 부르는 쪽이 없어서 실제로는 아무 NPC도 이 로직을 안 쓰고 있어요.** 그 층이 crowdAI 데이터와 붙어야 해서 부탁드릴 게 있습니다. 급한 순서로 적었어요.
-> 
-> **1. NPC 하나당 들고 있어야 하는 상태를 어디에 둘지 같이 정해요** (문서 §7.2 표). `FUnitData`에 넣을지 별도 배열로 둘지요. 이게 정해져야 목적지 선택이 처음으로 실행됩니다 — 지금 제일 큰 공백이에요.
-> 
-> **2. 스폰할 때 `FFF_IndividualVariationResolver::ResolveWithGroupSharing()`을 한 번 불러서 결과를 캐싱해 주세요** (문서 §1.5). 안 부르면 **모든 NPC가 똑같은 속도로 걷고 똑같이 참습니다.**
-> 개체 변주가 코드로만 있고 적용된 적이 없어요. 이 함수가 "같은 그룹은 같은 속도로 걷고 같이 떠난다"까지 처리해줍니다.
-> 
-> **3. `ReportZonePopulation()`을 불러주실 수 있을까요?** 프로젝트 전체에서 호출부가 0곳이라 **NPC가 혼잡을 피하는 행동이 아예 안 나옵니다**(밀집 항이 항상 0). 몇 초 간격이면 되고, `DeltaSeconds`에 실제 보고 간격을 넣어주세요.
-> 
-> **4. "시설 이용 완료" 신호가 필요해요.** 안 오면 배고픔·화장실이 영원히 안 풀립니다. 도착이 아니라 **완료** 시점이에요(줄만 서고 포기한 NPC의 욕구가 풀리면 대기열 이탈이 이득이 돼버려서요).
-> Queue의 `ServiceCompleted`를 쓸 수 있으면 그게 제일 깔끔할 것 같아요. 이 신호 하나로 욕구 해소와 방문 기록 두 가지를 처리하니 따로 주실 필요는 없습니다.
-> 
-> **5. `FUnitData`에 필드 3개만 더 부탁드려요** — `CompanionSizeTag` / `bIsDependentChildSlot` / `bIsGroupLeader`. `ArchetypeID`와 `StableAgentID`는 이미 들어가 있는 것 확인했습니다.
-> 
-> **6. 확인만 해주시면 되는 것 3개**
-> 
-> - 보행 속도 `150`이 확정값인가요, 자리만 채운 임시값인가요? `Private/CrowdSystem/`에서 이 값을 대입하는 코드가 0곳이라 구조체 기본값 그대로던데, 제 계수(`npc_walk_speed_mps` = 1.5 m/s)에 그대로 옮겨 적었거든요. 임시값이면 제 쪽도 같이 바꿔야 해요
-> - 시간 기준이 Live 경과분 맞나요? Need·체류시간·재평가 주기 전부 그 기준입니다(실시간 초 아님)
-> - 그룹 리더 조회 경로 — 목적지는 리더만 계산하고 나머지가 상속합니다
-> 
-> **7. 퇴장을 출구 이동으로 처리해 주실 수 있을까요?** 퇴장 판정은 제 쪽에서 나는데 즉시 사라지면 부자연스러워서요. 그룹원 전원이 출구로 이동한 뒤 소멸하는 게 목표입니다. 출구 지점·이동·소멸 시점이 그쪽 소관이고, 제 쪽은 판정과 이동 중 재평가 잠금이에요.
-> 
-> **8. 예약 그룹은 프로그램 시작 전에 반드시 장내에 있어야 해요** (문서 §8). 유료 프로그램을 사면 정원만큼의 그룹이 그 자리에서 확정되는데(정원 10명 = 5+2+2+1처럼 크기가 섞인 조합), 유입 곡선(비율 목표) 위에 얹히는 **하드 제약**이라 곡선 누적 오차 허용 폭과 충돌할 수 있어요.
-> 그리고 `PartyID`가 실행마다 같은 값이어야 합니다 — 배정 순서를 정하는 값이라 스폰 순서처럼 달라지면 같은 Seed인데 예약자가 바뀌어요.
-> 
-> 급하지 않은 것: 셀 격자 밀도 로그, 판단·이동·렌더링 3층 분리 실측.
-> 그리고 **8/4에 드린 그룹핑 규칙 일부가 실측으로 대체돼 폐기됐어요** — 이미 구현하셨다면 문서 §2 "폐기된 것" 보고 걷어내주세요.
+아래 인용 블록은 **그대로 복사해 보내는 메시지 초안**이다. 문서 본문과 달리 1인칭·경어체를 쓰는 것은 의도된 것이다 — 본문은 규격이고 이건 편지다.
+
+> 1. 역할을 다시 정리했어요 — 그룹핑과 입장 타이밍은 이제 crowdAI 쪽에서 정하는 걸로 할게요. 저희는 개별 방문객 태그 분포와 그룹 구성 규칙(데이터)만 드릴게요.
+> 2. `FCrowdGroupTypes::GroupID`를 그대로 써주시면 돼요 — 새 필드 필요 없어요.
+> 3. `FUnitData`에 `ArchetypeId`/`CompanionSizeTag`/`bIsDependentChildSlot`/`bIsGroupLeader`/`StableAgentId` 필드 추가 부탁드려요 (계산 공식은 문서 부록 C).
+> 3-1. **(8/6 추가 — 제가 빠뜨렸던 부분이에요)** 스폰할 때 `FFF_IndividualVariationResolver::ResolveWithGroupSharing()`을 한 번 불러서 결과를 `FUnitData`에 캐싱해 주세요 (문서 §1.5). **그룹을 만들어도 개체 변주가 자동으로 걸리지는 않아요** — 이 함수를 안 부르면 모든 NPC가 똑같은 속도로 걷고 똑같이 참습니다. 이 함수가 "같은 그룹은 같은 속도로 걷고 같이 떠난다"도 같이 처리해줘요.
+> 4. 입장 타이밍은 자유롭게 정하셔도 됩니다 — 딱 하나, 그룹은 항상 통째로 같이 들어와야 해요.
+> 5. 목적지 이동은 `FF_MoveCommand.h`로 주고받아요. 도착/실패는 이벤트로요. 다만 "그룹 리더가 누구인지"는 같이 정해야 해요.
+> 6. 셀 격자 밀도 로그(`FFF_CrowdCellSample` 기준) 부탁드려요.
+> 7. 300/500/700 숫자에 큰 의미 두지 마세요 — 판단/이동/렌더링 나눠서 실측 부탁드려요.
+> 8. 개체 목록 생성 함수도 다 됐어요 — `FFF_VisitorDistributionBuilder::Build`. 태그만 보고 묶으실 수 있어요 (문서 §3, 부록 C).
+> 9. 유입 곡선 형태도 확정했어요 — `FFF_ArrivalCurveRow`. 비율(%)이지 인원이 아니에요 (문서 §4, 부록 D).
+> 10. **8/4에 드린 그룹핑 규칙 중 일부가 폐기됐어요** — 이미 구현하셨다면 §2 "폐기된 것" 참고해서 걷어내주세요.
+
+**8/10 추가분** (§7 상세) — 위 목록 뒤에 이어 붙여 보내면 된다.
+
+> 11. 목적지 선택기가 실제로 돌 준비가 됐어요 — 후보 만들기(`BuildCandidates`)와 욕구 증가·해소(`FFF_NeedRules`)까지 다 됐습니다. **이제 함수는 다 있고 부르는 쪽만 없어요.**
+> 12. **`ReportZonePopulation`을 불러주실 수 있을까요?** ZoneSystem에 Zone별 인구를 보고하는 함수가 있는데 프로젝트 전체에서 부르는 코드가 0곳이에요. 그래서 지금 **NPC가 혼잡을 피하는 행동이 아예 안 나옵니다**(밀집 항이 항상 0). Zone별 재실 인원은 crowdAI가 아는 값이라 그쪽에서 부르는 게 자연스러울 것 같아요. 주기는 매 프레임 필요 없고 몇 초 단위면 됩니다.
+> 13. **Need 해소 신호가 필요해요** — "시설 이용 완료" 시점에 알려주셔야 배고픔·화장실이 풀립니다. 목적지를 고른 순간이나 도착한 순간이 아니라 **완료** 시점이에요(줄만 서고 포기한 NPC의 욕구가 풀리면 대기열 이탈이 이득이 돼버려서요). Queue 쪽 `ServiceCompleted`를 쓸 수 있으면 그게 가장 깔끔할 것 같아요.
+> 14. 보관해야 하는 상태에 `FFF_NeedState`(5개 float)가 추가됐어요 — §7.2 표로 정리해뒀습니다. 매 틱 변하는 값 4개와 스폰 후 불변인 값이 갈려요.
+> 15. 시간 기준 확인 부탁드려요 — Need·체류시간·재평가 주기 전부 **Live 경과분** 기준입니다(실시간 초 아님). 이동 스택 쪽과 어긋나지 않는지요.
+> 16. **"시설 이용 완료" 신호 하나로 두 가지를 처리해요** — 욕구 해소(`FFF_NeedRules::Relieve`)와 방문 기록(`FFF_VisitHistory::RecordVisit`). 방문 기록은 "가본 곳보다 새로운 곳을 선호"하는 데 쓰는데(같은 부스만 가면 매출이 한 곳에 몰려서요), 개체당 최근 5곳만 들고 있으면 됩니다. 따로 신호를 받을 필요는 없어요.

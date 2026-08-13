@@ -85,12 +85,6 @@ public:
 		const FFFZSQueueRules& Rules,
 		const FVector& ExitLocation);
 
-	/** Builds the project queue's complete world-space lane from an installed actor's frozen spec. */
-	static bool BuildProjectQueueLaneGeometry(
-		const FFFZSFacilitySpec& Spec,
-		const FTransform& FacilityTransform,
-		FFF_QueueLaneGeometry& OutLane);
-
 	/** Party 개인 제한과 Zone 시설 제한 중 더 이른 양수 포기 시간을 선택한다. */
 	static float ToProjectMaxWaitSeconds(float RequestedSeconds, float ZoneAbandonSeconds);
 

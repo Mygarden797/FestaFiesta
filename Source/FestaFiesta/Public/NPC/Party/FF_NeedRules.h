@@ -125,35 +125,6 @@ struct FFF_NeedReliefAmounts
 };
 
 /**
- * 체류시간을 Need 로 깎은 결과. 빠진 예산과 그중 Need 몫을 나눠서 돌려준다.
- *
- * ### 먼저 알아야 하는 것
- * `RemainingStayMinutes` 는 시계가 아니라 "예산"이다
- * 
- *     배수 2.0, Need 한계 → 실제 10분이 지날 때마다 예산이 20 씩 빠진다
- *     체류 예산 240 으로 입장한 개체는 실제로는 120분만 머물고 나간다.
- *
- * NPC 가 앞으로 더 머물 의향이 있는 분"이고, 드레인은 이 잔량을 시계보다 빨리 깎는다.
- * 그래서 아래 값이 `ElapsedMinutes` 보다 클 수 있다.
- *
- * "체류시간 분포가 왜 짧아졌나" 진단이 용이하도록 Need 몫을 따로 준다.
- * 필드로 저장하지 않고 매번 돌려주는 값이다(누적은 호출부의 몫).
- */
-USTRUCT(BlueprintType)
-struct FFF_StayConsumption
-{
-	GENERATED_BODY()
-
-	// `RemainingStayMinutes` 에서 뺄 값. 단위는 "체류 예산 분"이다.
-	UPROPERTY(BlueprintReadOnly, Category = "Need")
-	float ConsumedStayBudgetMinutes = 0.f;
-
-	// 위 값 중 Need 때문에 추가로 빠진 예산 분. 배수가 1.0(기능 꺼짐)이면 0 이다.
-	UPROPERTY(BlueprintReadOnly, Category = "Need")
-	float ExtraStayBudgetFromNeed = 0.f;
-};
-
-/**
  * FFF_NeedState 를 실제로 움직이는 규칙. 상태를 갖지 않는 순수 함수만 제공한다 —
  * (FFF_UtilityDestinationSelector 와 같은 형태)
  * 
@@ -242,48 +213,8 @@ public:
 		float ModeFractionOfLimit = 0.15f,
 		float MaxFractionOfLimit = 0.50f);
 
-	/**
-	 * 시간이 지난 만큼 체류시간을 소모한다.
-	 * 해소하지 못한 Need 가 쌓여 있으면 더 빨리 소모된다.
-	 *
-	 * ### 왜 퇴장 조건을 늘리지 않고 체류시간을 깎는가
-	 * "Need 가 한계면 퇴장"이라는 게이트를 따로 만들면 판정 지점이 둘이 되고,
-	 * 붐빔 → 다수가 동시에 한계 → 대량 퇴장 → 붐빔 해소 → 남은 사람은 만족. 
-	 * 실제 축제에서 안 보이는 톱니 모양이 만들어진다.
-	 * 체류시간을 깎으면 퇴장 판정은 여전히 "체류시간 소진" 한 곳이고, 이탈은 개체마다
-	 * 다른 시각에 흩어져 일어난다(초기 Need 가 흩뿌려져 있으므로).
-	 *
-	 * ### 기본값 1.0 = 기능 꺼짐
-	 * `DrainMultiplierAtMaxNeed` 의 근거 있는 값이 없다. 그럴듯한 상수(1.5 등)를 기본값으로
-	 * 넣으면 "근거 있는 값"처럼 보이므로 **중립값 1.0(= 안 깎임)** 을 기본으로 둔다.
-	 * 켜는 것은 코드 수정이 아니라 CSV 값 변경이다 — P0 Need 게이트와 같은 방식이다.
-	 *
-	 * ### 선형 계산
-	 *     배수    = 1 + (DrainMultiplierAtMaxNeed - 1) × 전 성분 최대 가중 급함(0~1)
-	 *     소모 분 = ElapsedMinutes × 배수
-	 *
-	 * ### 부르지 말아야 하는 때
-	 * 예약 프로그램 잠금 중에는 부르지 않는다.
-	 * 예약은 체류시간을 프로그램 종료까지 늘려놓는데(`reservation_program_spec.md` §5 ②), 
-	 * 그 늘린 시간을 Need 가 다시 깎으면 예약자가 프로그램 도중에 나간다. 
-	 * 
-	 * Need 증가(`Advance`)는 잠금 중에도 계속 부른다.
-	 *
-	 * @param Needs                     현재 Need. Advance 를 부른 '뒤'의 값을 넣는다
-	 * @param ElapsedMinutes            Live 경과분. 음수·0 이면 아무것도 소모하지 않는다
-	 * @param DrainMultiplierAtMaxNeed  한계 Need 에서의 소모 배수. 1.0 이면 기능 꺼짐
-	 */
-	static FFF_StayConsumption ConsumeStay(
-		const FFF_NeedState& Needs,
-		float ElapsedMinutes,
-		float DrainMultiplierAtMaxNeed,
-		const FFF_NeedPriorityWeights& Priority = FFF_NeedPriorityWeights());
-
 	// utility_coefficients DataTable 에서 읽는다. 테이블이 없거나 행이 없으면 위 구조체 기본값을 쓴다.
 	static FFF_NeedRiseRates LoadRiseRates(const UDataTable* UtilityCoefficientTable);
-
-	// 기본값 1.0 = 기능 꺼짐. ConsumeStay 주석 참조.
-	static float LoadStayDrainMultiplierAtMaxNeed(const UDataTable* UtilityCoefficientTable);
 	static FFF_NeedReliefAmounts LoadReliefAmounts(const UDataTable* UtilityCoefficientTable);
 
 	// 초기값 흩뿌리기 계수 2개를 DataTable 에서 읽어 MakeInitialNeeds 에 넘길 값으로 돌려준다.

@@ -101,13 +101,8 @@ public:
     // 건축 모드에서 footprint·clearance·queue 예약 범위를 정확한 압축 사각형 단위로 표시하거나 숨긴다.
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
-    void SetBuildModeActionSelected(bool bSelected);
-    // 이동·철거 액션을 고르는 동안 선택된 시설의 footprint를 청록색 굵은 선으로 강조한다.
-
-    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation",
-        meta = (DeprecatedFunction, DeprecationMessage = "Use SetBuildModeActionSelected."))
     void SetBuildModeRemovalSelected(bool bSelected);
-    // 기존 Blueprint 호환용 이름이다. 선택 표현은 SetBuildModeActionSelected와 동일하다.
+    // 철거 확인 대상으로 선택된 시설의 footprint를 빨간색 굵은 선으로 강조하거나 원래 표시로 되돌린다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Presentation")
     bool IsWorldPointInsideFootprint(const FVector& WorldPoint) const;
@@ -199,7 +194,7 @@ private:
     // clearance·queue 압축 사각형을 한 Scene Proxy로 묶는 비권위 범위 표현이다.
 
     bool bBuildModeRangeVisible = false;
-    bool bBuildModeActionSelected = false;
+    bool bBuildModeRemovalSelected = false;
 
     // 일반 폐장 콜백 재진입 뒤 큐가 완전히 비면 MovePending으로 전환하려는 의도 플래그다. 
     bool bSetMovePendingWhenDrained = false;

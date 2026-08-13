@@ -105,11 +105,11 @@ struct FFF_QueueConfig
 	GENERATED_BODY()
 
 	// 슬롯 총량. Party 수가 아니라 "인원" 기준이다 — 4인 가족이 2칸 남은 줄에 오면 전원 거절된다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0", ClampMax = "512"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	int32 MaxCapacityMembers = 20;
 
 	// 한 사이클에 동시에 처리하는 인원. P0은 1 (설계문서 12.1).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1", ClampMax = "32"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	int32 ConcurrentServiceSlots = 1;
 
 	// 1인 서비스 소요 시간(초). 4인 가족 · 동시서비스 1명이면 이 값의 4배가 걸린다.
@@ -135,22 +135,6 @@ USTRUCT(BlueprintType)
 struct FFF_QueueLaneGeometry
 {
 	GENERATED_BODY()
-
-	/**
-	 * Head-to-tail world-space linear polyline copied from the facility definition.
-	 * Empty keeps the legacy HeadLocation/TailDirection lane. ExplicitSlotTransforms,
-	 * when present for an index, remain authoritative over this derived geometry.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
-	TArray<FVector> PolylinePoints;
-
-	/**
-	 * Exact world-space waiting targets indexed by queue slot. This is the safe path
-	 * for authored facility queues because bends and per-slot facing are preserved.
-	 * Missing indices fall back to PolylinePoints and then the legacy straight lane.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
-	TArray<FTransform> ExplicitSlotTransforms;
 
 	// 슬롯 0 = 창구 바로 앞 위치
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
@@ -214,7 +198,7 @@ struct FFF_JoinRequest
 	int32 FacilityId = INDEX_NONE;
 
 	// 슬롯 배정에 쓴다. MemberAgentIds가 비어 있으면 이 값만 보고 익명 슬롯을 만든다.
-	UPROPERTY(BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1", ClampMax = "512"))
+	UPROPERTY(BlueprintReadWrite, Category = "Queue")
 	int32 MemberCount = 1;
 
 	// Crowd에 슬롯 목표를 내려보내려면 실제 AgentId가 필요하다. 비면 SlotAssignment의 AgentId가 INDEX_NONE이 된다.

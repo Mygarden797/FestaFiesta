@@ -71,11 +71,7 @@ void UFF_TitleScreen::HandleButtonClicked(UFF_CommonButtonBase* Button)
 	{
 		UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 플레이 요청."), *GetName());
 		// TODO: 플레이 허브 화면이 만들어지면 UFF_UIRootLayout::PushScreen으로 교체한다.
-		//
-		// 둘 다 쏜다. BP 이벤트는 이 WBP 안에서 쓰는 기존 경로이고,
-		// 델리게이트는 화면을 띄운 쪽(레벨 BP·PlayerController)이 구독하는 경로다.
 		BP_OnPlayRequested();
-		OnPlayRequested.Broadcast();
 		return;
 	}
 
@@ -84,7 +80,6 @@ void UFF_TitleScreen::HandleButtonClicked(UFF_CommonButtonBase* Button)
 		UE_LOG(LogFestaFiestaUI, Log, TEXT("[%s] 옵션 요청."), *GetName());
 		// TODO: 옵션 화면이 만들어지면 UFF_UIRootLayout::PushScreen으로 교체한다.
 		BP_OnOptionsRequested();
-		OnOptionsRequested.Broadcast();
 		return;
 	}
 

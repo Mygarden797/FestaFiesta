@@ -16,17 +16,17 @@ class AFFZSFacilityActor;
 class UStaticMesh;
 
 // 존 허용 규칙과 UI 분류에 쓰는 시설의 기능 카테고리.
-// 새 값 추가 시 저장 호환성, FacilityDefinition Data Asset, 정책 어댑터, UI 표시를 함께 갱신.
+// 새 값 추가 시 저장 호환성, 프리셋, 정책 어댑터, UI 표시를 함께 갱신.
 UENUM(BlueprintType)
 enum class EFFZSFacilityCategory : uint8
 {
-    Booth UMETA(DisplayName = "Booth", ToolTip = "판매·체험·운영 부스 시설입니다."),
-    Toilet UMETA(DisplayName = "Toilet", ToolTip = "화장실과 위생 시설입니다."),
-    Info UMETA(DisplayName = "Info", ToolTip = "안내소와 정보 제공 시설입니다."),
-    Rest UMETA(DisplayName = "Rest", ToolTip = "좌석·쉼터 등 휴식 시설입니다."),
-    Performance UMETA(DisplayName = "Performance", ToolTip = "무대와 공연 운영 시설입니다."),
-    Safety UMETA(DisplayName = "Safety", ToolTip = "의무실·안전 지원 시설입니다."),
-    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다.")
+    Booth,
+    Toilet,
+    Info,
+    Rest,
+    Performance,
+    Safety,
+    PhotoSpot
 };
 
 //권한 시설 수명주기.
@@ -137,31 +137,16 @@ enum class EFFZSPlacementFailure : uint8
     NavRebuildTimeout,
     DataInvalid,
     ExternalPolicyRejected,
-    InternalError,
-    // 경제 정책이 현재 잔액으로 명령 비용을 지불할 수 없음을 구조적으로 나타낸다.
-    // 기존 SaveGame enum ordinal을 보존하기 위해 새 값은 항상 목록 끝에 추가한다.
-    InsufficientFunds
+    InternalError
 };
 
 // 시설 내 이동 의미 지점. Entry는 진입, Service는 처리 위치, Exit는 최종 소유권 해제 전 도착 위치
 UENUM(BlueprintType)
 enum class EFFZSAnchorType : uint8
 {
-    Entry UMETA(DisplayName = "Entry", ToolTip = "시설 또는 대기열로 접근할 때 사용하는 진입 지점입니다."),
-    Service UMETA(DisplayName = "Service", ToolTip = "손님이 실제 서비스를 받는 지점입니다. ServiceCapacity 수만큼 0부터 연속 인덱스가 필요합니다."),
-    Exit UMETA(DisplayName = "Exit", ToolTip = "서비스 완료 또는 이탈 후 이동하는 최종 퇴장 지점입니다.")
-};
-
-// VisualMesh의 원본 bounds를 시설의 권위 배치 크기에 맞추는 방법이다.
-// Actor 자체의 Scale은 언제나 1로 유지하고 표시 전용 메시 컴포넌트에만 이 정책을 적용한다.
-UENUM(BlueprintType)
-enum class EFFZSVisualSizingMode : uint8
-{
-    SourceMeshSize UMETA(DisplayName = "Source Mesh Size", ToolTip = "임포트된 Static Mesh 크기를 그대로 씁니다. 건물 크기를 바꿔도 화면 메시 크기는 바뀌지 않으므로 레거시·아티스트 예외에만 사용하십시오."),
-
-    UniformFit UMETA(DisplayName = "Uniform Fit", ToolTip = "메시 종횡비를 유지하면서 건물 크기와 장애물 높이 안에 들어오도록 균일하게 축소·확대합니다."),
-
-    MatchPlacementBounds UMETA(DisplayName = "Match Placement Bounds", ToolTip = "표시 메시를 건물 가로·깊이와 배치 장애물 높이에 정확히 맞춥니다. UFFZSFacilityDefinition을 유일한 크기 원천으로 쓰는 프로덕션 권장 모드입니다.")
+    Entry,
+    Service,
+    Exit
 };
 
 // 배치가 침범하면 안 되는 영역 의미.
@@ -188,6 +173,33 @@ enum class EFFZSDensityState : uint8
     Critical
 };
 
+// 빠른 프로토타입용 시설 사양 묶음.
+// FoodTruckBasic·ToiletBasic의 Accepted 기준은 마이그레이션 없이 바꾸지 않고, 나머지는 측정 후 조정할 가설이다.
+UENUM(BlueprintType)
+enum class EFFZSBuiltInFacilityPreset : uint8
+{
+    FoodTruckBasic,
+    // 승인된 기준값이다. 검토된 마이그레이션이 제공되지 않는 한 하위 호환성을 유지한다.//
+    
+    ToiletBasic,
+    // 승인된 기준값이다. 검토된 마이그레이션이 제공되지 않는 한 하위 호환성을 유지한다.//
+    
+    InfoBasic,
+    // 프로토타입 가설이다. 운영 튜닝 전에 Queue 처리량과 Footprint 사용성을 측정한다.//
+ 
+    RestBasic,
+    // 프로토타입 가설이다. 운영 튜닝 전에 체류 시간과 접근성을 측정한다.//
+    
+    PerformanceBasic,
+    // 프로토타입 가설이다. 운영 튜닝 전에 입·퇴장 처리량과 관람 영역 수요를 측정한다.//
+    
+    SafetyBasic,
+    // 프로토타입 가설이다. 운영 튜닝 전에 사고 대응 수요와 처리량을 측정한다.//
+    
+    PhotoSpotBasic
+    // 프로토타입 가설이다. 운영 튜닝 전에 상호작용 시간과 Queue 넘침을 측정한다.//
+};
+
 // 외부 협업 정책의 책임 도메인.
 // 운영 준비 모드에서는 Navigation·Economy·SimulationTime·UserInterface·Safety·Experience에
 // 각각 정확히 한 제공자가 필요하고 Custom은 여러 독립 제공자를 허용한다.
@@ -210,11 +222,11 @@ struct FF_ZONESYSTEM_API FFFZSGridPlacement
 {
     GENERATED_BODY()
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Origin Cell", ToolTip = "회전하기 전 건물 Footprint 왼쪽 아래가 놓일 Zone 로컬 1cm 셀 좌표입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System")
     FIntPoint OriginCell = FIntPoint::ZeroValue;
     // 회전하지 않은 Facility Footprint 좌하단의 Grid 좌표다.//
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Quarter Turns", ToolTip = "시계 방향 90도 회전 횟수입니다. 0·1·2·3 중 하나로 정규화됩니다.", ClampMin = "0", ClampMax = "3"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (ClampMin = "0", ClampMax = "3"))
     int32 QuarterTurns = 0;
     // 시계 방향 90도 회전 횟수다. 값은 0, 1, 2 또는 3으로 정규화된다.//
     bool operator==(const FFFZSGridPlacement& Other) const
@@ -237,14 +249,14 @@ struct FF_ZONESYSTEM_API FFFZSAnchorDefinition
 {
     GENERATED_BODY()
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Anchor Type", ToolTip = "진입·서비스·퇴장 중 이 지점의 역할입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System")
     EFFZSAnchorType Type = EFFZSAnchorType::Entry;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Anchor Index", ToolTip = "같은 종류 안에서의 번호입니다. Entry[0]·Exit[0]이 필요하고 Service는 0부터 ServiceCapacity-1까지 연속이어야 합니다.", ClampMin = "0"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (ClampMin = "0"))
     int32 Index = 0;
 
     // Unreal은 1uu = 1cm를 사용하므로 단위는 센티미터다.//
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Local Transform", ToolTip = "건물 중심을 원점으로 한 시설 로컬 cm 변환입니다. 위치·회전만 사용하며 Scale은 반드시 1이어야 합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System")
     FTransform LocalTransform = FTransform::Identity;
 };
 
@@ -256,40 +268,40 @@ struct FF_ZONESYSTEM_API FFFZSQueueRules
 {
     GENERATED_BODY()
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Max Waiting Agents", ToolTip = "줄에 동시에 기다릴 수 있는 최대 인원입니다. 서비스 중·퇴장 중 인원은 포함하지 않습니다. 경로 길이만 늘려도 이 값은 자동 증가하지 않습니다.", ClampMin = "1"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1"))
     int32 MaxWaitingAgents = 12;
     // Waiting 배열에 허용할 최대 인원. ActiveServices와 Exiting은 이 수에 포함하지 않는다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Slot Spacing (cm)", ToolTip = "대기열 경로를 따라 배치되는 인접 슬롯 중심 사이 거리(cm)입니다. 필요한 경로 길이는 (최대 대기 인원 - 1) × 슬롯 간격입니다.", ClampMin = "1.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1.0", Units = "cm"))
     float SlotSpacingCm = 115.0f;
     // queue spline 위 인접 대기 슬롯 중심 간격 cm. 115 cm는 측정이 필요한 프로토타입 기본값이다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Capacity", ToolTip = "동시에 서비스를 받을 수 있는 손님 수입니다. 같은 수의 Service 앵커를 0부터 연속 번호로 만들어야 합니다.", ClampMin = "1"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1"))
     // 동시에 ServiceIndex를 배정할 수 있는 최대 항목 수다.
     int32 ServiceCapacity = 1;
     // 동시에 ServiceIndex를 배정할 수 있는 최대 항목 수다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Duration (Seconds)", ToolTip = "손님이 Service 앵커에 도착한 뒤 서비스가 완료될 때까지 걸리는 시간(초)입니다.", ClampMin = "0.01", Units = "s"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.01", Units = "s"))
     float ServiceDurationSeconds = 4.0f;
     // Service 앵커 도착 보고 뒤 완료까지 필요한 시뮬레이션 시간이다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Abandon After (Seconds)", ToolTip = "대기 시간이 이 값(초)에 도달하면 포기 흐름을 시작합니다. 0은 자동 포기를 끕니다.", ClampMin = "0.0", Units = "s"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0", Units = "s"))
     float AbandonAfterSeconds = 30.0f;
     //양수면 Waiting 누적 시간이 이 값에 도달할 때 포기 흐름을 시작한다. 0은 자동 포기를 끈다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Slot Arrival Tolerance (cm)", ToolTip = "대기 슬롯·서비스·퇴장 목표에 도착했다고 인정하는 월드 XY 거리 오차(cm)입니다.", ClampMin = "0.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0", Units = "cm"))
     float SlotArrivalToleranceCm = 25.0f;
     // queue·service·exit 목표 도착 보고에 허용하는 월드 거리 오차다.//
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Navigation Projection Extent (cm)", ToolTip = "대기열 이동 목표를 NavMesh에 투영할 때 찾는 범위(cm)입니다. 실제 이동 경로 생성은 NPC·Navigation 시스템이 담당합니다.", ClampMin = "0.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0", Units = "cm"))
     float NavigationProjectionExtentCm = 30.0f;
     // queue 이동 목표의 NavMesh 투영 검색 범위다. 실제 경로 생성은 외부 Navigation 책임이다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Blocked Timeout (Seconds)", ToolTip = "Blocked 상태가 이 시간(초)만큼 지속될 때 재경로를 요청합니다. 0은 시간 기반 재시도를 끕니다.", ClampMin = "0.0", Units = "s"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0", Units = "s"))
     float BlockedTimeoutSeconds = 5.0f;
     // 양수면 Blocked 상태에서 주기적 재경로 요청을 만드는 누적 시간 간격이다. 0은 시간 기반 요청을 끈다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Max Repath Attempts", ToolTip = "막힘 또는 이동 실패 때 허용할 재경로 요청 최대 횟수입니다. 0은 재시도하지 않습니다.", ClampMin = "0"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0"))
     int32 MaxRepathAttempts = 2;
     // 차단 구간의 시간 기반 요청과 에이전트별 이동 실패 재시도에 적용되는 최대 횟수다. 0은 재시도하지 않는다.//
 };
@@ -303,11 +315,11 @@ struct FF_ZONESYSTEM_API FFFZSCellRect
 {
     GENERATED_BODY()
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System|Grid", meta = (DisplayName = "Min (Inclusive)", ToolTip = "사각형에 포함되는 왼쪽 아래 1cm 셀 좌표입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System|Grid")
     FIntPoint Min = FIntPoint::ZeroValue;
     // 포함되는 최소 셀 좌표다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System|Grid", meta = (DisplayName = "Max (Exclusive)", ToolTip = "사각형에 포함되지 않는 오른쪽 위 경계 좌표입니다. 실제 폭·높이는 Max - Min입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System|Grid")
     FIntPoint Max = FIntPoint::ZeroValue;
     // 포함되지 않는 최대 셀 좌표다.
 
@@ -366,80 +378,63 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 {
     GENERATED_BODY()
 
-    // 이 런타임이 해석하는 유일한 사양 저장 형식(1 Cell = 1 cm)이다.
-    // [하드코딩 제거] 기본값·검증·구 스냅샷 마이그레이션이 각자 리터럴 2를 적고 있어서
-    // 스키마를 올릴 때 한 군데를 빠뜨리기 쉬웠다. 세 곳이 이 상수를 공유한다.
-    static constexpr int32 CurrentSchemaVersion = 2;
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (ClampMin = "1"))
+    int32 SchemaVersion = 2;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Schema Version", ToolTip = "시설 정의 저장 형식 버전입니다. 마이그레이션 코드 없이 제작자가 임의로 바꾸면 안 됩니다.", ClampMin = "1"))
-    int32 SchemaVersion = CurrentSchemaVersion;
-
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Facility Definition ID", ToolTip = "카탈로그·저장·연동이 사용하는 영구 고유 ID입니다. 다른 시설과 중복할 수 없고 출시 후 변경하면 기존 저장 참조가 끊길 수 있습니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity")
     FName FacilityDefinitionId = NAME_None;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Display Name", ToolTip = "건설 카탈로그와 UI에 표시할 현지화 가능한 시설 이름입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity")
     FText DisplayName;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Category", ToolTip = "시설의 기능 분류입니다. Zone 허용 규칙과 카탈로그 분류에 사용됩니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity")
     EFFZSFacilityCategory Category = EFFZSFacilityCategory::Booth;
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. (가로+여유)×(깊이+여유)와 대기열 예약 면적의 안전 예산이 10,000,000셀을 넘으면 검증에 실패합니다.", ClampMin = "1"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (ClampMin = "1"))
     FIntPoint FootprintSizeCells = FIntPoint(100, 100);
     // 시설의 실제 바닥 크기를 1 cm 셀 수로 저장한다. 예: 6 m x 3 m는 (600, 300)이다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Clearance (cm)", ToolTip = "건물 크기 네 방향에 추가로 확보하는 안전·통행 여백입니다. 값이 커질수록 배치 필요 면적과 안전 예산 사용량이 함께 커지며, 다른 시설과 장애물에서 더 멀리 떨어져야 합니다.", ClampMin = "0"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (ClampMin = "0"))
     int32 ClearanceCells = 100;
     // 시설 둘레 확보 폭을 1 cm 셀 수로 저장한다. 예: 1 m는 100이다.//
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Queue Reserved Rects", ToolTip = "다른 시설과 장애물이 침범하지 못하도록 확보할 대기열 영역입니다. 좌표 원점은 회전 전 건물의 왼쪽 아래이고 단위는 1cm이며 Max 경계는 포함하지 않습니다. 건물 바닥과 면적으로 겹치면 안 되고, 예약 면적은 10,000,000셀 안전 예산에 포함됩니다. 영역만 늘려도 실제 대기 인원은 늘지 않습니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement")
     TArray<FFFZSCellRect> QueueReservedRects;
     // 회전 전 footprint 왼쪽 아래를 원점으로 하는 최대 대기열 예약 사각형들이다.
     // 서로 겹치거나 맞닿아도 런타임에서 결정적으로 합쳐지며 실제 좌표 단위는 1 cm 셀이다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Legacy Queue Reserved Cells", ToolTip = "구버전 호환용 개별 1cm 셀 목록입니다. 새 시설은 사용하지 말고 대기열 예약 사각형을 사용하십시오.", DeprecatedProperty, DeprecationMessage = "QueueReservedRects를 사용하십시오. 개별 1cm Cell 목록은 확장성이 없습니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DeprecatedProperty, DeprecationMessage = "QueueReservedRects를 사용하십시오. 개별 1cm Cell 목록은 확장성이 없습니다."))
     TArray<FIntPoint> QueueReservedCells;
     // 구 스키마/C++ 호출부를 잠시 수용하는 1 cm 단일 셀 목록이다.
     // 새 콘텐츠는 QueueReservedRects를 사용한다. 큰 영역을 이 배열로 만들면 검증에서 거부된다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Spline Points (cm)", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 선형 경로입니다. Index 0이 줄 머리·서비스 쪽이고 마지막 점이 줄 꼬리입니다. 모든 대기 슬롯 중심이 예약 사각형 안에 있어야 합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue")
     TArray<FVector> QueueSplinePointsCm;
     // Service 지점에서 Queue 끝 방향으로 정렬된 Local 센티미터 단위 Queue Spline Point다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue")
     FFFZSQueueRules QueueRules;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Anchors", meta = (DisplayName = "Entry / Service / Exit Anchors", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 이동 지점 목록입니다. Entry[0]·Exit[0]과 Service[0..ServiceCapacity-1]가 필요합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Anchors")
     TArray<FFFZSAnchorDefinition> Anchors;
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Allowed Zone IDs", ToolTip = "시설을 배치할 수 있는 Zone ID 제한 목록입니다. 비어 있으면 시설 분류와 Zone 정책만 사용합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement")
     TArray<FName> AllowedZoneIds;
     // 비어 있으면 이 정의는 Zone 카테고리 규칙에만 의존한다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Install Cost Key", ToolTip = "외부 경제 시스템에서 설치 비용을 조회할 키입니다. None이면 프로젝트 정책에 따라 비용이 없거나 별도 기본값을 사용합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys")
     FName InstallCostKey = NAME_None;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Revenue Rule Key", ToolTip = "외부 경제 시스템에서 시설 수익 규칙을 조회할 키입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys")
     FName RevenueRuleKey = NAME_None;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Experience Effect Key", ToolTip = "외부 경험·만족도 시스템에서 시설 효과를 조회할 키입니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys")
     FName ExperienceEffectKey = NAME_None;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Mesh", ToolTip = "월드와 배치 미리보기에 표시할 Static Mesh입니다. 배치 권위 크기는 이 메시 Collision이 아니라 건물 크기·여유 폭·대기열 예약 영역입니다.", AssetBundles = "FacilityVisual"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual")
     TSoftObjectPtr<UStaticMesh> VisualMesh;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Sizing Mode", ToolTip = "Static Mesh 원본 Bounds를 권위 배치 크기에 맞추는 방식입니다. 프로덕션 시설은 '배치 경계에 정확히 맞춤'을 사용하십시오."))
-    EFFZSVisualSizingMode VisualSizingMode = EFFZSVisualSizingMode::SourceMeshSize;
-    // SourceMeshSize는 기존 임포트 크기를 보존한다. 나머지 모드는 Footprint/ObstacleHeight를 유일한 목표 크기로 사용한다.
-
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Offset (cm)", ToolTip = "자동 중심·지면 정렬 뒤 더하는 시설 로컬 위치 보정입니다. '배치 경계에 정확히 맞춤'에서는 권위 경계 일치를 위해 0이어야 합니다.", Units = "cm"))
-    FVector VisualOffsetCm = FVector::ZeroVector;
-    // 자동 중심/지면 정렬이 끝난 뒤 더하는 시설 로컬 위치 보정값이다.
-
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Rotation", ToolTip = "메시 원본의 앞 방향을 시설 로컬 +Y 손님 방향에 맞추는 회전입니다. 정확 맞춤 모드에서는 0·90·180·270도 Yaw만 허용합니다."))
-    FRotator VisualRotation = FRotator::ZeroRotator;
-    // 메시 원본의 전면 방향을 시설 로컬 +Y 계약에 맞추는 회전이다.
-
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "10.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (ClampMin = "10.0", Units = "cm"))
     float PlacementObstacleHeightCm = 250.0f;
     
     bool IsValid(TArray<FText>& OutErrors) const;

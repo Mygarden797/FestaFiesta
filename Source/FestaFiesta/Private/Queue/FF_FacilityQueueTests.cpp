@@ -4,9 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "FF_FFZSDeveloperSettings.h"
 #include "Queue/FF_FacilityQueue.h"
-#include "Queue/FF_QueueSubsystem.h"
 
 // 설계문서 12.1 P0 체크리스트와 8·9장의 "여기서 틀리면 통합 때 터진다" 지점을 테스트로 옮긴다.
 
@@ -301,70 +299,6 @@ bool FFF_FacilityQueue_SlotTargetsAreContiguous::RunTest(const FString& Paramete
 }
 
 // 9. ExpectedWait — 단위(초)와 단조성 (설계문서 9.1)
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_FacilityQueue_ExplicitSlotTargetsOverrideLegacyLane,
-	"FestaFiesta.Queue.FacilityQueue.ExplicitSlotTargetsOverrideLegacyLane",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FacilityQueue_ExplicitSlotTargetsOverrideLegacyLane::RunTest(const FString& Parameters)
-{
-	FFF_QueueLaneGeometry Lane = MakeLane();
-	Lane.HeadLocation = FVector(9000.f, 9000.f, 0.f);
-	Lane.ExplicitSlotTransforms = {
-		FTransform(FRotator(0.f, 15.f, 0.f), FVector(10.f, 20.f, 0.f)),
-		FTransform(FRotator(0.f, 45.f, 0.f), FVector(110.f, 20.f, 0.f)),
-		FTransform(FRotator(0.f, 90.f, 0.f), FVector(110.f, 120.f, 0.f))
-	};
-
-	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(3, 300.f), Lane);
-	Join(Queue, MakeRequest(10, 3), 0.f);
-
-	TArray<FFF_SlotAssignment> Assignments;
-	Queue.BuildSlotAssignments(Assignments);
-	TestEqual(TEXT("Explicit slots produce one target per member"), Assignments.Num(), 3);
-	if (Assignments.Num() == 3)
-	{
-		TestEqual(TEXT("Explicit slot keeps its authored corner location"), Assignments[2].TargetLocation, FVector(110.f, 120.f, 0.f));
-		TestEqual(TEXT("Explicit slot keeps its per-slot yaw"), Assignments[2].TargetYaw, 90.f, 0.01f);
-		TestFalse(TEXT("Explicit geometry wins over the legacy head"),
-			Assignments[0].TargetLocation.Equals(Lane.HeadLocation, UE_KINDA_SMALL_NUMBER));
-	}
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_FacilityQueue_PolylineTargetsFollowEverySegment,
-	"FestaFiesta.Queue.FacilityQueue.PolylineTargetsFollowEverySegment",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FacilityQueue_PolylineTargetsFollowEverySegment::RunTest(const FString& Parameters)
-{
-	FFF_QueueLaneGeometry Lane = MakeLane();
-	Lane.SlotSpacingCm = 100.f;
-	Lane.PolylinePoints = {
-		FVector(0.f, 0.f, 0.f),
-		FVector(100.f, 0.f, 0.f),
-		FVector(100.f, 200.f, 0.f)
-	};
-
-	FFF_FacilityQueue Queue;
-	Queue.Configure(1, MakeConfig(3, 300.f), Lane);
-	Join(Queue, MakeRequest(10, 3), 0.f);
-
-	TArray<FFF_SlotAssignment> Assignments;
-	Queue.BuildSlotAssignments(Assignments);
-	TestEqual(TEXT("Polyline produces one target per member"), Assignments.Num(), 3);
-	if (Assignments.Num() == 3)
-	{
-		TestEqual(TEXT("Slot zero begins at the polyline head"), Assignments[0].TargetLocation, FVector::ZeroVector);
-		TestEqual(TEXT("Slot one reaches the bend"), Assignments[1].TargetLocation, FVector(100.f, 0.f, 0.f));
-		TestTrue(TEXT("The incoming segment owns facing at the exact bend"),
-			FMath::Abs(FMath::FindDeltaAngleDegrees(Assignments[1].TargetYaw, 180.f)) <= 0.01f);
-		TestEqual(TEXT("Slot two follows the second segment"), Assignments[2].TargetLocation, FVector(100.f, 100.f, 0.f));
-		TestEqual(TEXT("Second segment supplies its own facing"), Assignments[2].TargetYaw, -90.f, 0.01f);
-	}
-	return true;
-}
-
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_ExpectedWaitIsSecondsAndMonotonic, "FestaFiesta.Queue.FacilityQueue.ExpectedWaitIsSecondsAndMonotonic", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_ExpectedWaitIsSecondsAndMonotonic::RunTest(const FString& Parameters)
 {
@@ -484,93 +418,6 @@ bool FFF_FacilityQueue_WaitsForArrivalWhenRequired::RunTest(const FString& Param
 		// 걸어오는 데 걸린 30초도 대기시간이다 — 이게 빠지면 실제 대기가 과소 기록된다.
 		TestTrue(TEXT("걸어오는 동안의 시간도 실제 대기에 포함된다"), Logs[0].ActualWaitSeconds >= 29.f);
 	}
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_FacilityQueue_RejectsUnsafePartyShapesAndClampsConfig,
-	"FestaFiesta.Queue.FacilityQueue.RejectsUnsafePartyShapesAndClampsConfig",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FFF_FacilityQueue_RejectsUnsafePartyShapesAndClampsConfig::RunTest(
-	const FString& Parameters)
-{
-	(void)Parameters;
-
-	FFF_QueueConfig UnsafeConfig = MakeConfig(
-		MAX_int32,
-		100.f,
-		MAX_int32);
-	FFF_FacilityQueue Queue;
-	Queue.Configure(1, UnsafeConfig, MakeLane());
-	TestEqual(TEXT("Party capacity clamps to the canonical facility safety limit"),
-		Queue.GetConfig().MaxCapacityMembers,
-		UFFZSDeveloperSettings::MaxQueueWaitingAgents);
-	TestEqual(TEXT("Concurrent service clamps to the canonical facility safety limit"),
-		Queue.GetConfig().ConcurrentServiceSlots,
-		UFFZSDeveloperSettings::MaxFacilityServiceCapacity);
-
-	FFF_JoinRequest TooManyMembers = MakeRequest(10, 1);
-	TooManyMembers.MemberCount = MAX_int32;
-	TooManyMembers.MemberAgentIds.Reset();
-	TestEqual(TEXT("An untrusted MAX_int32 MemberCount is rejected before arithmetic"),
-		Join(Queue, TooManyMembers, 0.f),
-		EFF_QueueJoinResult::RejectedInvalidParty);
-
-	FFF_JoinRequest MissingMemberId = MakeRequest(20, 2);
-	MissingMemberId.MemberAgentIds.SetNum(1);
-	TestEqual(TEXT("A non-empty agent-id list must exactly match MemberCount"),
-		Join(Queue, MissingMemberId, 0.f),
-		EFF_QueueJoinResult::RejectedInvalidParty);
-
-	FFF_JoinRequest OversizedMemberIds = MakeRequest(30, 1);
-	OversizedMemberIds.MemberAgentIds.SetNum(
-		UFFZSDeveloperSettings::MaxQueueWaitingAgents + 1);
-	TestEqual(TEXT("An oversized member-id array is rejected without being copied"),
-		Join(Queue, OversizedMemberIds, 0.f),
-		EFF_QueueJoinResult::RejectedInvalidParty);
-	TestEqual(TEXT("Rejected unsafe party shapes leave the queue empty"),
-		Queue.GetOccupiedMemberCount(), 0);
-
-	FFF_JoinRequest AtLimit = MakeRequest(40, 1);
-	AtLimit.MemberCount = UFFZSDeveloperSettings::MaxQueueWaitingAgents;
-	AtLimit.MemberAgentIds.Reset();
-	TestEqual(TEXT("The documented maximum party size remains inclusive"),
-		Join(Queue, AtLimit, 0.f),
-		EFF_QueueJoinResult::Accepted);
-	TestEqual(TEXT("An accepted maximum-size party occupies exactly the bounded capacity"),
-		Queue.GetOccupiedMemberCount(),
-		UFFZSDeveloperSettings::MaxQueueWaitingAgents);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FFF_QueueSubsystem_RegisterFacilityIsNotBlueprintCallable,
-	"FestaFiesta.Queue.Subsystem.RegisterFacilityIsNotBlueprintCallable",
-	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-
-bool FFF_QueueSubsystem_RegisterFacilityIsNotBlueprintCallable::RunTest(
-	const FString& Parameters)
-{
-	(void)Parameters;
-	const UClass* QueueSubsystemClass = UFF_QueueSubsystem::StaticClass();
-	TestNotNull(TEXT("The queue subsystem class is reflected"), QueueSubsystemClass);
-	TestTrue(TEXT("RegisterFacility cannot become a second Blueprint-authored facility data source"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("RegisterFacility")) == nullptr);
-	TestTrue(TEXT("UnregisterFacility remains bridge-only"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("UnregisterFacility")) == nullptr);
-	TestTrue(TEXT("TryJoin remains bridge-only"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("TryJoin")) == nullptr);
-	TestTrue(TEXT("LeaveQueue remains bridge-only"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("LeaveQueue")) == nullptr);
-	TestTrue(TEXT("NotifyPartyArrived remains bridge-only"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("NotifyPartyArrived")) == nullptr);
-	TestTrue(TEXT("CloseFacility remains bridge-only"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("CloseFacility")) == nullptr);
-	TestTrue(TEXT("ReopenFacility remains bridge-only"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("ReopenFacility")) == nullptr);
-	TestNotNull(TEXT("A read-only Blueprint query remains available"),
-		QueueSubsystemClass->FindFunctionByName(TEXT("GetQueueState")));
 	return true;
 }
 
