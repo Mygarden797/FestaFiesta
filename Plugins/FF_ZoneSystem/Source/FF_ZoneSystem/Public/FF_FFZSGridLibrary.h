@@ -37,7 +37,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Validation")
     static int32 GetMaxEnumeratedCellsPerFacility();
-	// Project Settings 값을 하드 상한 1,000,000에 제한한 실제 열거 예산을 반환.
+	// Project Settings 값을 하드 상한 10,000,000에 제한한 실제 열거 예산을 반환.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static int32 NormalizeQuarterTurns(int32 QuarterTurns);
