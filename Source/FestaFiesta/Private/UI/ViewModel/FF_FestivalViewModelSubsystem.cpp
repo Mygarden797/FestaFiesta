@@ -486,7 +486,8 @@ void UFF_FestivalViewModelSubsystem::RequestSkipCurrentStage()
 	}
 
 	// 스킵 가능 여부의 최종 판정은 Stage 시스템이 한다(DaySequence 표의 bSkippable).
-	// 여기서 미리 막지 않는다 — CanSkipCurrentStage()가 근사값이라 잘못 막을 수 있다.
+	// CanSkipCurrentStage()로 여기서 미리 막지 않는다 — 판정 소유자를 두 곳에 두지 않기 위해서다.
+	// 불가능한 단계면 저쪽이 무시하고 경고를 남긴다.
 	StageSubsystem->SkipCurrentStage();
 }
 
@@ -516,15 +517,14 @@ bool UFF_FestivalViewModelSubsystem::IsReportStage() const
 
 bool UFF_FestivalViewModelSubsystem::CanSkipCurrentStage() const
 {
-	const UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
+	// IsCurrentStageSkippable()이 non-const라 포인터도 non-const여야 한다.
+	// GetStageSubsystem()은 const 함수지만 non-const 포인터를 돌려주므로 그대로 받는다.
+	UFF_FestivalStageSubsystem* StageSubsystem = GetStageSubsystem();
 	if (!StageSubsystem)
 	{
 		return false;
 	}
 
-	// !! 근사값 !! IsCurrentStageSkippable()이 private이라 C++에서 못 부른다.
-	// Live는 배속으로 넘기고 Report는 다음 날 버튼이 담당하므로 둘은 제외한다.
-	// 실제 표에서 bSkippable=false인 단계도 true로 보일 수 있다 — 그때는 Stage 시스템이 무시하고 경고만 남긴다.
-	// 헤더 주석의 교체 지침을 따른다.
-	return !StageSubsystem->IsLiveStage() && !StageSubsystem->IsReportStage();
+	// DaySequence 표의 bSkippable을 그대로 중계한다. 짐작하지 않는다.
+	return StageSubsystem->IsCurrentStageSkippable();
 }
