@@ -8,6 +8,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "CrowdSystem/Types/FF_SimulationSettings.h"
 
 namespace CrowdSim
 {
@@ -18,7 +19,6 @@ void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
 
-	Rng.Initialize(CrowdSim::DefaultSeed);
 
 	// 풀 생성은 여기서 하지 않는다. 어떤 Actor 클래스를 쓸지 아직 모르고,
 	// 군중이 없는 레벨에서까지 Actor 수백 개를 스폰할 이유도 없다.
@@ -40,7 +40,21 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 		UE_LOG(LogTemp, Warning, TEXT("[CrowdSimulationSubsystem] World is inValid"));
 		return;
 	}
+	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
+	
+	CachedVariationTable = Settings->IndividualVariationTable.LoadSynchronous();
+	CachedCorrelationStrength = Settings->VariationCorrelationStrength;
+	
+	if (!CachedVariationTable)
+	{
 
+		UE_LOG(LogTemp, Warning, TEXT("[CrowdSimulationSubsystem] IndividualVariationTable 미설정 — 개체 변주가 전부 1.0으로 동작한다"));
+	}
+	
+	float GlobalSimulationSeed = Settings->GlobalSimulationSeed;
+	Rng.Initialize(GlobalSimulationSeed);
+	
+	
 	ActorPoolSize = FMath::Max(NewActorPoolSize, 0);
 	AgentPoolSize = FMath::Max(NewAgentPoolSize, 0);
 	CrowdActorClass = InCrowdActorClass;

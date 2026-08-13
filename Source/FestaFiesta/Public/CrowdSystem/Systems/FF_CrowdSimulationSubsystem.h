@@ -238,9 +238,6 @@ public:
 	
 	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
-	int32 GetGlobalSimulationSeed() const { return GlobalSimulationSeed; }
-
-	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
 	float GetSimTimeSeconds() const { return SimTimeSeconds; }
 
 	
@@ -270,8 +267,7 @@ private:
 	void DrawDebugAgents() const;
 	
 public:
-	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	int32 GlobalSimulationSeed = 20260812;
+
 	
 	
 private:
@@ -305,6 +301,10 @@ private:
 
 	// 목적지 추첨용. 시드를 고정해야 같은 조건에서 같은 결과가 재현된다
 	FRandomStream Rng;
+	
+	TSoftObjectPtr<UDataTable> CachedVariationTable;
+	
+	float CachedCorrelationStrength = 0.3f;
 	
 
 };
