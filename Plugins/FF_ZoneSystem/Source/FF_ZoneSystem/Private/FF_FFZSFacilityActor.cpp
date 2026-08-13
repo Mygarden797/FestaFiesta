@@ -21,7 +21,6 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
-#include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "SceneManagement.h"
 
@@ -130,9 +129,7 @@ bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFF
     FacilityInstanceId = NewInstanceId;
     FacilitySpec = NewSpec;
     ZoneId = NewZoneId;
-    // [하드코딩 제거] 회전 정규화 식을 이 파일에 다시 적지 않고 격자 계약을 소유한 라이브러리를 쓴다.
-    // 같은 식이 여러 곳에 복사돼 있으면 정규화 규칙이 바뀔 때 일부만 갱신될 수 있다.
-    NewPlacement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(NewPlacement.QuarterTurns);
+    NewPlacement.QuarterTurns = ((NewPlacement.QuarterTurns % 4) + 4) % 4;
     GridPlacement = NewPlacement;
     FacilityState = InitialState;
     bNeedsRelocation = false;
@@ -152,7 +149,7 @@ bool AFFZSFacilityActor::ApplyPlacement(const FName NewZoneId, FFFZSGridPlacemen
         return false;
     }
     ZoneId = NewZoneId;
-    NewPlacement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(NewPlacement.QuarterTurns);
+    NewPlacement.QuarterTurns = ((NewPlacement.QuarterTurns % 4) + 4) % 4;
     GridPlacement = NewPlacement;
     bNeedsRelocation = false;
     SetActorTransform(WorldTransform);
@@ -212,7 +209,7 @@ void AFFZSFacilityActor::MarkRemoved()
     }
     QueueComponent->EmergencyCancel();
     FacilityState = EFFZSFacilityState::Removed;
-    SetBuildModeActionSelected(false);
+    SetBuildModeRemovalSelected(false);
     SetBuildModeRangeVisible(false);
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
@@ -258,22 +255,17 @@ void AFFZSFacilityActor::SetBuildModeRangeVisible(const bool bVisible)
     }
 }
 
-void AFFZSFacilityActor::SetBuildModeActionSelected(const bool bSelected)
+void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
 {
-    bBuildModeActionSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
+    bBuildModeRemovalSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
     if (!FootprintBounds)
     {
         return;
     }
 
-    FootprintBounds->ShapeColor = bBuildModeActionSelected ? FColor(64, 200, 255) : FColor::Green;
-    FootprintBounds->SetLineThickness(bBuildModeActionSelected ? 5.0f : 2.0f);
+    FootprintBounds->ShapeColor = bBuildModeRemovalSelected ? FColor::Red : FColor::Green;
+    FootprintBounds->SetLineThickness(bBuildModeRemovalSelected ? 5.0f : 2.0f);
     FootprintBounds->MarkRenderStateDirty();
-}
-
-void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
-{
-    SetBuildModeActionSelected(bSelected);
 }
 
 bool AFFZSFacilityActor::IsWorldPointInsideFootprint(const FVector& WorldPoint) const
@@ -414,9 +406,7 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
     constexpr float RangeHeightCm = 10.0f;
     // 비정상적으로 조각난 콘텐츠도 건축 모드 진입을 멈추지 않게 한다. 일반 콘텐츠는 정확한
     // canonical rect를 모두 그리고, 상한을 넘는 그룹만 합집합 외접 박스로 안전하게 축약한다.
-    // [하드코딩 제거] 배치 Preview와 같은 상한을 공유해 두 화면의 표시 규칙이 갈라지지 않게 한다.
-    constexpr int32 MaxDisplayedRectsPerGroup =
-        UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
+    constexpr int32 MaxDisplayedRectsPerGroup = 1024;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FVector FootprintExtent = FootprintBounds->GetUnscaledBoxExtent();
     const FTransform ActorTransform = GetActorTransform();
@@ -513,8 +503,6 @@ void AFFZSFacilityActor::RequestVisualMesh()
     }
 
     VisualMesh->SetStaticMesh(nullptr);
-    VisualMesh->SetRelativeTransform(
-        FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, nullptr));
     if (FacilitySpec.VisualMesh.IsNull())
     {
         return;
@@ -522,8 +510,6 @@ void AFFZSFacilityActor::RequestVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
-        VisualMesh->SetRelativeTransform(
-            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
         return;
     }
 
@@ -540,8 +526,6 @@ void AFFZSFacilityActor::ApplyLoadedVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
-        VisualMesh->SetRelativeTransform(
-            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
     }
 }
 

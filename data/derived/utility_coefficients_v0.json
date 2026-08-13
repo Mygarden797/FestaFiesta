@@ -3,7 +3,7 @@
   "created_at": "2026-08-04",
   "dataset_id": "utility_coefficients_v0",
   "row_unit": "Utility AI 계수 하나",
-  "output_row_count": 43,
+  "output_row_count": 39,
   "note": "이 파일이 계수의 원본(source of truth)이다. data/unreal/utility_coefficients_v0.csv 는 이 파일을 Name 열 추가 등 UE DataTable 형식으로 재배열한 결과이며, build_unreal_datatables.mjs 가 이 파일에서 읽어 그쪽에 쓴다. 반대 방향으로 읽지 않는다. [2026-08-10 주의] 빌드 스크립트가 실제로 읽는 것은 같은 폴더의 .csv 이고 이 .json 은 그 CSV 를 설명하는 사이드카다 — 값을 바꿀 때는 CSV 를 고친다.",
   "status": "assumption (affinity_scale_ref만 derived, live_stage_duration_minutes만 to_verify)",
   "individual_variation_anchor_rows_added_2026_08_04": "live_stage_duration_minutes, stay_duration_share_of_live_stage_mean, correlation_strength_leisureliness — 개체 변주(individual_variation_spec.md) 계산에 쓰는 전역 스칼라 노브. Utility(i,j,t) 식의 항은 아니지만 total_visitor_count 등 기존에도 이 표에 전역 노브를 함께 두던 선례를 따랐다.",
@@ -11,7 +11,5 @@
   "regenerate_with": "Tools/data/build_unreal_datatables.mjs",
   "need_rules_rows_added_2026_08_10": "need_{hunger,restroom,thirst,fatigue,stimulation}_minutes_to_limit 5개와 need_{hunger,restroom}_relief_amount 2개를 추가했다(FFF_NeedRules). 증가 속도를 분당 증가량이 아니라 한계(1.0)에 닿는 분으로 표현한 것은 근거를 붙이거나 반박할 수 있는 문장으로 만들기 위한 것이다. thirst/fatigue/stimulation 의 0 은 미정이 아니라 Phase 게이트다 — 켜는 것은 코드 수정이 아니라 이 값 변경이다. 기본값은 FF_NeedRules.h 의 구조체 선언과 같게 유지해야 한다(테이블 없는 경로에서 같은 행동이 나와야 함).",
   "revisit_rows_added_2026_08_10": "weight_revisit(0.5)와 revisit_memory_minutes(60), need_initial_fraction_{mode,max} 추가. weight_revisit 0.5는 상대 관계로 정한 값이다 — lambda_affinity(0.6)보다 작아 취향이 방문 이력을 이기고, weight_need(1.8)보다 훨씬 작아 급한 욕구가 방문 이력을 무시한다. revisit_memory_minutes를 무한대(영구 페널티)로 두지 않은 이유는 제일 좋아하는 부스에 두 번은 안 가게 되어 부자연스럽기 때문이다.",
-  "reservation_rows_added_2026_08_11": "npc_walk_speed_mps(1.5) / reservation_return_buffer_minutes(0) / reservation_exit_buffer_minutes(0) 추가. npc_walk_speed_mps 는 이 표에서 드문 derived 행이다 — 출처가 공공데이터가 아니라 **팀 코드**(crowdAI FUnitData::Speed = 150 cm/s)다. 내가 근거 없이 1.4 같은 값을 새로 적으면 실제 이동 속도와 갈라지므로 팀 코드 값을 그대로 옮겼다. 버퍼 두 개의 0 은 미정이 아니라 '여유 없음'이고, 직선거리 근사 때문에 0 이면 판정이 낙관적으로 기운다 — 실제 보행거리 행렬이 들어온 뒤 정한다.",
-  "stay_drain_row_added_2026_08_11": "stay_drain_multiplier_at_max_need(1.0) 추가. 사용자가 'Need를 퇴장에 연결한다'를 확정했고, 방식은 퇴장 게이트 추가가 아니라 체류시간 드레인이다(FFF_NeedRules::ConsumeStay). 기본값 1.0은 미정이 아니라 기능 꺼짐이다 — 근거 있는 배수가 없어서 중립값을 뒀고, 켜는 것은 이 값 변경이다. min_value를 1.0으로 둔 것은 코드 clamp와 같은 규칙을 표에도 적어두기 위한 것이다.",
   "weight_need_default_fixed_2026_08_10": "코드 기본값이 1.2, 이 CSV가 1.8로 어긋나 있던 것을 발견해 코드를 1.8로 맞췄다. 1.8의 근거는 weight_attraction(1.0) + lambda_affinity(0.6) = 1.6 보다 크다는 부등식이고 1.2는 그것을 깬다 — DataTable이 안 붙은 경로에서 급한 욕구가 취향을 못 이겼다. 부등식 자체를 Automation Test(NeedBeatsBestLikedAlternative)로 고정했다. 코드 기본값과 이 CSV 값은 반드시 같게 유지할 것."
 }

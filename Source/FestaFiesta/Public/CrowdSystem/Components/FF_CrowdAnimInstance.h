@@ -17,11 +17,10 @@ class FESTAFIESTA_API UFF_CrowdAnimInstance : public UAnimInstance
 public:
 	UFUNCTION(BlueprintCallable)
 	void SetSpeed(float NewSpeed) { Speed = NewSpeed;}
-
+	
 	UFUNCTION(BlueprintCallable)
 	float GetSpeed() { return Speed;}
-
-protected:
-	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Animation")
-	float Speed = 0.f;
+	
+private:
+	float Speed = 0;
 };

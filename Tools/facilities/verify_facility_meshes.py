@@ -1,30 +1,55 @@
 # -*- coding: utf-8 -*-
-"""Verify the procedurally managed representative facility meshes.
-
-This is an art-pipeline profile, not the UFFZSFacilityDefinition validity gate.
-Definitions may legally omit VisualMesh or reference other artist content; use
-the C++ DataValidation/content automation tests to validate all Definitions.
-"""
+"""Verify all generated FFZS facility StaticMeshes and VisualMesh links."""
 
 import json
 import os
-import sys
 
 import unreal
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-if SCRIPT_DIR not in sys.path:
-    sys.path.insert(0, SCRIPT_DIR)
-from ffzs_definition_source import (
-    read_facility_definitions,
-    select_managed_visual_definitions,
-)
 
+ASSET_ROOT = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
 REPORT_PATH = os.path.join(
     unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_saved_dir()),
     "FacilityMeshVerificationReport.json",
 )
-GENERATED_MESH_ROOT = "/Game/FestaFiesta/Zone/Test_Asset/Asset/"
+
+FACILITIES = [
+    (
+        "SM_FFZS_DadaPochaFoodTruck",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+        "PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck",
+    ),
+    (
+        "SM_FFZS_MainInformation",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/"
+        "PDA_FFZS_Info_GeneralInfo_MainInformation",
+    ),
+    (
+        "SM_FFZS_SunsetMainStage",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/"
+        "PDA_FFZS_Performance_MainStage_SunsetMainStage",
+    ),
+    (
+        "SM_FFZS_SunsetLandmark",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/"
+        "PDA_FFZS_PhotoSpot_Landmark_SunsetLandmark",
+    ),
+    (
+        "SM_FFZS_MainRestArea",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/"
+        "PDA_FFZS_Rest_Seating_MainRestArea",
+    ),
+    (
+        "SM_FFZS_MedicalTent",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/"
+        "PDA_FFZS_Safety_FirstAid_MedicalTent",
+    ),
+    (
+        "SM_FFZS_MainRestroom",
+        "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/"
+        "PDA_FFZS_Toilet_Standard_MainRestroom",
+    ),
+]
 
 
 def vec(value):
@@ -92,24 +117,13 @@ def run():
     entries = []
     failures = []
 
-    definitions = read_facility_definitions(require_visual_mesh=False)
-    managed_definitions = select_managed_visual_definitions(
-        definitions, GENERATED_MESH_ROOT.rstrip("/")
-    )
-    seen_mesh_paths = set()
-    for record in managed_definitions:
-        asset_name = record["visual_mesh_name"]
-        asset_path = record["visual_mesh"]
-        definition_path = record["definition"]
-        mesh = record["visual_mesh_object"]
-        definition = record["definition_object"]
+    for asset_name, definition_path in FACILITIES:
+        asset_path = "{0}/{1}".format(ASSET_ROOT, asset_name)
+        mesh = unreal.EditorAssetLibrary.load_asset(asset_path)
+        definition = unreal.EditorAssetLibrary.load_asset(definition_path)
         if not isinstance(mesh, unreal.StaticMesh):
             failures.append("Missing StaticMesh: " + asset_path)
             continue
-        if asset_path in seen_mesh_paths:
-            failures.append("Duplicate managed representative mesh: " + asset_path)
-            continue
-        seen_mesh_paths.add(asset_path)
         if definition is None:
             failures.append("Missing facility definition: " + definition_path)
             continue
@@ -133,10 +147,7 @@ def run():
             "asset": mesh.get_path_name(),
             "class": mesh.get_class().get_path_name(),
             "definition": definition_path,
-            "facility_definition_id": record["facility_definition_id"],
             "visual_mesh": configured_path,
-            "target_size_cm": record["target_size_cm"],
-            "visual_sizing_mode": record["visual_sizing_mode"],
             "bounds_min_cm": vec(minimum),
             "bounds_max_cm": vec(maximum),
             "size_cm": {
@@ -165,19 +176,10 @@ def run():
                     asset_name, vec(minimum), vec(maximum)
                 )
             )
-        target = record["target_size_cm"]
-        source_size_mode = (
-            record["visual_sizing_mode"].replace("_", "").lower()
-            == "sourcemeshsize"
-        )
-        if source_size_mode and (
-            size_x > float(target["x"]) + 0.5
-            or size_y > float(target["y"]) + 0.5
-            or float(maximum.z) > float(target["z"]) + 0.5
-        ):
+        if size_x > 600.5 or size_y > 300.5 or float(maximum.z) > 250.5:
             failures.append(
-                "SourceMeshSize exceeds Definition target for {0}: size={1}, target={2}".format(
-                    asset_name, entry["size_cm"], target
+                "Mesh exceeds 600x300x250cm contract: {0} size={1}".format(
+                    asset_name, entry["size_cm"]
                 )
             )
         if size_x < 100.0 or size_y < 100.0 or size_z < 100.0:
@@ -190,14 +192,14 @@ def run():
             failures.append("Too few material slots for representative mesh: " + asset_name)
         if any(not item["material"] for item in materials):
             failures.append("Unassigned material slot: " + asset_name)
-        # Simple collision is optional. Runtime placement and queue authority come
-        # from the Definition Spec; the VisualMesh component is always NoCollision.
+        if simple_collisions == 0:
+            failures.append("No simple collision: " + asset_name)
 
     result = {"assets": entries, "failures": failures}
     with open(REPORT_PATH, "w", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
 
-    if failures or len(entries) != len(managed_definitions):
+    if failures or len(entries) != len(FACILITIES):
         for failure in failures:
             unreal.log_error("[FF_FACILITY_MESH_VERIFY] " + failure)
         raise RuntimeError(

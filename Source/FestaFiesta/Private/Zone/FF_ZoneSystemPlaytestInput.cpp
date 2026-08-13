@@ -86,13 +86,13 @@ void UFF_ZoneSystemPlaytestSubsystem::HandleInput()
         }
     }
 
-    if (Pressed(EKeys::One)) SetSelectedCatalogIndex(0);
-    if (Pressed(EKeys::Two)) SetSelectedCatalogIndex(1);
-    if (Pressed(EKeys::Three)) SetSelectedCatalogIndex(2);
-    if (Pressed(EKeys::Four)) SetSelectedCatalogIndex(3);
-    if (Pressed(EKeys::Five)) SetSelectedCatalogIndex(4);
-    if (Pressed(EKeys::Six)) SetSelectedCatalogIndex(5);
-    if (Pressed(EKeys::Seven)) SetSelectedCatalogIndex(6);
+    if (Pressed(EKeys::One)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
+    if (Pressed(EKeys::Two)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::ToiletBasic);
+    if (Pressed(EKeys::Three)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::InfoBasic);
+    if (Pressed(EKeys::Four)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::RestBasic);
+    if (Pressed(EKeys::Five)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::PerformanceBasic);
+    if (Pressed(EKeys::Six)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::SafetyBasic);
+    if (Pressed(EKeys::Seven)) SetSelectedPreset(EFFZSBuiltInFacilityPreset::PhotoSpotBasic);
 
     if (Pressed(EKeys::Q) || Pressed(EKeys::E))
     {
@@ -133,9 +133,8 @@ void UFF_ZoneSystemPlaytestSubsystem::HandleInput()
 // 화면 중앙의 최신 지면 타깃과 플러그인 검증을 모두 통과한 경우에만 설치 명령을 커밋한다.
 void UFF_ZoneSystemPlaytestSubsystem::CommitPreview()
 {
-    if (!PlacementPreview || !bCatalogReady)
+    if (!PlacementPreview)
     {
-        SetStatus(CatalogStatusMessage, FColor::Yellow);
         return;
     }
 
@@ -164,6 +163,7 @@ void UFF_ZoneSystemPlaytestSubsystem::CommitPreview()
     if (Result.bSucceeded && Result.FacilityActor)
     {
         LastFacilityId = Result.FacilityActor->GetFacilityInstanceId();
+        ApplyFacilityVisualScale(Result.FacilityActor);
         SetStatus(FString::Printf(TEXT("Installed facility. Revision %lld."), Result.WorldRevision), FColor::Green);
         RebuildPreviewCommand();
         RefreshPreview();
@@ -232,6 +232,7 @@ void UFF_ZoneSystemPlaytestSubsystem::MoveLastFacility()
     }
     if (Result.bSucceeded)
     {
+        ApplyFacilityVisualScale(Result.FacilityActor);
         SetStatus(FString::Printf(TEXT("Moved facility. Revision %lld."), Result.WorldRevision), FColor::Green);
         RefreshPreview();
         return;
@@ -349,6 +350,7 @@ void UFF_ZoneSystemPlaytestSubsystem::RestorePlaytestSnapshot()
         LastFacilityId = SavedSnapshot.Facilities.IsEmpty()
             ? FGuid()
             : SavedSnapshot.Facilities.Last().FacilityInstanceId;
+        ApplyAllFacilityVisuals();
         RefreshPreview();
         SetStatus(FString::Printf(TEXT("Restored snapshot at revision %lld."),
             SavedSnapshot.WorldRevision), FColor::Green);

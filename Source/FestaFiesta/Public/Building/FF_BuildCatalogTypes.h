@@ -89,18 +89,6 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	// 선택적 표시용 썸네일입니다. null이면 UI가 공통 자리표시자 이미지를 사용해야 합니다. 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog")
 	TSoftObjectPtr<UTexture2D> Thumbnail;
-
-	// 현재 Festival의 FacilityCostTable에서 해석한 설치비입니다. 카탈로그 구성 시 한 번 계산해
-	// UMG/Slate 표현이 같은 가격 원천을 사용하게 하며, 실패하면 bHasResolvedInstallCost가 false입니다.
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
-	int32 InstallCost = 0;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
-	bool bHasResolvedInstallCost = false;
-
-	// 진단과 콘텐츠 QA용 실제 매칭 행입니다. UI에는 노출하지 않습니다.
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
-	FName MatchedInstallCostRow = NAME_None;
 };
 
 // 한 시설 대분류 안에서 소분류 하나를 나타내는, 결정적 순서의 메뉴 행입니다. 

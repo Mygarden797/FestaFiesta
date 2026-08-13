@@ -153,22 +153,11 @@ bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
     return true;
 }
 
-// [하드코딩 제거] Preset의 세 값을 한 곳에서만 정의한다.
-// 예전에는 같은 ID/Zone 문자열이 이 함수와 아래 검증에 따로 적혀 있어서, Preset을 옮기거나
-// 이름을 바꾸면 검증 규칙만 옛 값을 계속 요구하는 상태가 될 수 있었다.
-namespace
-{
-    const FName AccessibleFireworksViewingAreaId(TEXT("PA_AccessibleFireworksViewing"));
-    const FName AccessibleFireworksViewingZoneId(TEXT("GZ_Operations"));
-    constexpr EFFZSProtectedAreaType AccessibleFireworksViewingAreaType =
-        EFFZSProtectedAreaType::ViewingArea;
-}
-
 void AFFZSProtectedArea::ApplyAccessibleFireworksViewingPreset()
 {
-    ProtectedAreaId = AccessibleFireworksViewingAreaId;
-    LinkedZoneId = AccessibleFireworksViewingZoneId;
-    AreaType = AccessibleFireworksViewingAreaType;
+    ProtectedAreaId = TEXT("PA_AccessibleFireworksViewing");
+    LinkedZoneId = TEXT("GZ_Operations");
+    AreaType = EFFZSProtectedAreaType::ViewingArea;
     RequiredClearWidthCm = 0.0f;
 }
 
@@ -204,15 +193,10 @@ bool AFFZSProtectedArea::ValidateProtectedAreaData(TArray<FText>& OutErrors) con
             "MissingProtectedWidth",
             "Route 및 Viewing Protected Area에는 양수인 Actor Override 또는 Project Default Width가 필요합니다."));
     }
-    // Preset ID를 쓴 Actor는 Preset의 나머지 필드도 그대로 유지해야 한다.
-    if (ProtectedAreaId == AccessibleFireworksViewingAreaId &&
-        (LinkedZoneId != AccessibleFireworksViewingZoneId ||
-            AreaType != AccessibleFireworksViewingAreaType))
+    if (ProtectedAreaId == TEXT("PA_AccessibleFireworksViewing") &&
+        (LinkedZoneId != TEXT("GZ_Operations") || AreaType != EFFZSProtectedAreaType::ViewingArea))
     {
-        OutErrors.Add(FText::Format(
-            LOCTEXT("AccessibleViewingOwnership", "{0}은 {1}에 연결된 ViewingArea여야 합니다."),
-            FText::FromName(AccessibleFireworksViewingAreaId),
-            FText::FromName(AccessibleFireworksViewingZoneId)));
+        OutErrors.Add(LOCTEXT("AccessibleViewingOwnership", "PA_AccessibleFireworksViewing은 GZ_Operations에 연결된 ViewingArea여야 합니다."));
     }
     return OutErrors.IsEmpty();
 }

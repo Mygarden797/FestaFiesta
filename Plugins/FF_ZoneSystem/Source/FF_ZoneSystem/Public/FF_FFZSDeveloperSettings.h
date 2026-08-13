@@ -30,28 +30,11 @@ public:
      
     static constexpr double DefaultPlacementCellSizeCm = 1.0;
 	
-    static constexpr int32 DefaultMaxEnumeratedCellsPerFacility = 10000000;
+    static constexpr int32 DefaultMaxEnumeratedCellsPerFacility = 1000000;
 	// 사용자 설정이 없을 때 적용하는 시설당 보수적 셀 열거 작업 예산.
 	
     static constexpr int32 MaxMaterializedDebugCells = 10000;
 	// 대형 1 cm 영역을 디버그용 개별 셀 배열로 펼칠 때 허용하는 고정 상한.
-
-    // 건축 모드 범위 표시와 배치 Preview가 한 그룹에서 개별로 그리는 Rect 수 상한이다.
-    // 이 수를 넘는 조각난 그룹은 합집합 외접 박스 하나로 축약해 표시 비용을 제한한다.
-    // [하드코딩 제거] 예전에는 FacilityActor와 PlacementPreviewActor에 같은 1024가 따로 있어
-    // 한쪽만 조정하면 두 화면의 표시 규칙이 서로 달라졌다.
-    static constexpr int32 MaxDisplayedRangeRectsPerGroup = 1024;
-
-    // Per-Definition collection guards. These are safety contracts, not per-facility tuning data.
-    static constexpr int32 MaxQueueReservedRects = 64;
-    static constexpr int32 MaxLegacyQueueReservedCells = 256;
-    static constexpr int32 MaxQueueSplinePoints = 64;
-    static constexpr int32 MaxFacilityAnchors = 64;
-    static constexpr int32 MaxAllowedZoneIds = 64;
-    static constexpr int32 MaxQueueWaitingAgents = 512;
-    static constexpr int32 MaxFacilityServiceCapacity = 32;
-    static constexpr int32 MaxQueueRuntimeEntries = 1024;
-    static constexpr int32 MaxQueueRepathAttempts = 32;
 	
     static constexpr float DefaultGroundSampleSpacingCm = 100.0f;
 	// 지면 검증 밀도는 1 cm 점유 해상도와 분리한다. 기본 100 cm마다 대표 표본 하나를 검사.
@@ -59,9 +42,9 @@ public:
     // 시설 하나를 검증할 때 허용하는 보수적 열거 작업 예산.
     // 회전 전 footprint를 clearance만큼 확장한 이론 면적과 정규화한 Queue 압축 영역 면적을 합산해
     // 비정상적으로 큰 저작 데이터를 조기에 거부한다. 권위 런타임은 영역을 개별 셀로 펼치지 않는다.
-    // 구 호환·디버그 배열은 별도 10,000셀 상한을 넘으면 비우며, 이 값은 1..10,000,000으로 제한한다.
-
-    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "1", ClampMax = "10000000"))
+    // 구 호환·디버그 배열은 별도 10,000셀 상한을 넘으면 비우며, 이 값은 1..1,000,000으로 제한한다.
+     
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "1", ClampMax = "1000000"))
     int32 MaxEnumeratedCellsPerFacility = DefaultMaxEnumeratedCellsPerFacility;
 
     // 시설 footprint 지면을 검사하는 물리 표본 간격(cm)이다.

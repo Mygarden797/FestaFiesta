@@ -8,10 +8,9 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 {
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
-	ElapsedLiveSeconds = 0.f;
+
+		ElapsedLiveSeconds = 0.f;
 		// 날마다 길이가 달라, 시계를 0으로 리셋함
-	bWasMainProgramLocked = false;
-	// 날짜 바뀔 때 공연 시작 체크도 초기화
 	
 
 	UE_LOG(LogTemp, Log, TEXT("[Stage] %s -> %s"),
@@ -26,7 +25,6 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 {
 	return CurrentStage == EFF_FestivalStage::Setup
-		|| CurrentStage == EFF_FestivalStage::PromotionPreview
 		|| CurrentStage == EFF_FestivalStage::MorningCheck;
 	// 이 세 단계일 때만 배치 변경 허용
 }
@@ -125,43 +123,7 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 	if (CurrentStage == EFF_FestivalStage::Live)
 		// Live 단계일 때 처리
 	{
-		const bool bIsLockedNow = IsMainProgramLocked();
-		// 지금 메인 공연 락(1배속만가능한) 구간인지 확인
-
-		const TArray<FFF_LiveTriggerEvent>& TodayEvents = GetEventsForCurrentDay();
-		// 오늘 이벤트 목록 가져옴
-
-		if (bIsLockedNow && !bWasMainProgramLocked)
-			
-		{
-			for (int32 i = 0; i < TodayEvents.Num(); i++)
-				// 이벤트들 중에서 
-			{
-				if (TodayEvents[i].bIsMainProgramLockStart)
-					// 공연 시작 이벤트를 찾으면
-				{
-					OnMainProgramStarted.Broadcast(TodayEvents[i].EventLabel);
-					// 시작 라벨과 함께 알림 보냄
-
-					CachedMainProgramEndLabel = TodayEvents.IsValidIndex(i + 1) ? TodayEvents[i + 1].EventLabel : TEXT("");
-					// 바로 다음 이벤트를 종료 라벨로 저장해둠
-
-					break;
-					// 찾았으니 반복 종료
-				}
-			}
-		}
-		else if (!bIsLockedNow && bWasMainProgramLocked)
-			// 방금 막 잠금 구간에서 벗어난 순간이면
-		{
-			OnMainProgramEnded.Broadcast(CachedMainProgramEndLabel);
-			// 저장해둔 종료 라벨로 알림 보냄
-		}
-
-		bWasMainProgramLocked = bIsLockedNow;
-		// 다음 프레임 비교용으로 저장
-
-		const float EffectiveScale = bIsLockedNow ? 1.f : TimeScale;
+		const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
 		// 메인 공연 구간이면 배속을 1배속으로 고정
 
 		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
@@ -248,13 +210,6 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 		return;
 		// Report 단계가 아닐 때 잘못 호출되는 것 방지
 	}
-
-	if (CurrentDay >= 3)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("이미 마지막 날(Day3)입니다. AdvanceToNextDay 무시됨."));
-		return;
-	}
-
 
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);

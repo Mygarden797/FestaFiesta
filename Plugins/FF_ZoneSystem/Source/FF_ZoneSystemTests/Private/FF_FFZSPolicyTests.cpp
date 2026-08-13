@@ -24,7 +24,6 @@
 #include "FF_FFZSTestExternalPolicy.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
-#include "Tests/FF_FFZSTestFixtures.h"
 #include "Tests/AutomationEditorCommon.h"
 
 namespace
@@ -108,7 +107,7 @@ bool FFFZSExternalPolicyTransactionTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("시뮬레이션 시간 정책이 등록된다"), Subsystem->RegisterExternalPolicy(SimulationTime));
 
     const FFFZSFacilitySpec Spec =
-        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+        UFFZSGridLibrary::MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset::FoodTruckBasic);
     // q0, 1 Cell=1 cm: 기존 (10,10) 100 cm Cell 위치인 월드 (10 m,10 m)를 (1000,1000)으로 보존한다.
     FFFZSCommand Rejected = UFFZSGridLibrary::MakeInstallCommand(
         Spec,

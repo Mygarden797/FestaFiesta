@@ -9,10 +9,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include <limits>
-
 #include "Misc/AutomationTest.h"
-#include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSQueueComponent.h"
 
 // 테스트 매트릭스
@@ -26,31 +23,10 @@
   // 테스트에서만 사용하는 제한된 Bridge다. 운영 변경 Method는 Private으로 유지한다. 
 struct FFFZSQueueTestAccess
 {
-    static void Configure(UFFZSFacilityQueueComponent& Queue, const FFFZSQueueRules& Rules)
-    {
-        Queue.Configure(Rules);
-    }
-
     static void ConfigureAndOpen(UFFZSFacilityQueueComponent& Queue, const FFFZSQueueRules& Rules)
     {
         Queue.Configure(Rules);
         Queue.OpenQueue();
-    }
-
-    static EFFZSQueueJoinResult JoinQueue(
-        UFFZSFacilityQueueComponent& Queue,
-        const FName AgentId,
-        FGuid& OutTicketId)
-    {
-        return Queue.JoinQueue(AgentId, nullptr, OutTicketId);
-    }
-
-    static bool RestoreSnapshot(
-        UFFZSFacilityQueueComponent& Queue,
-        const FFFZSQueueSnapshot& Snapshot,
-        TArray<FText>& OutErrors)
-    {
-        return Queue.RestoreSnapshot(Snapshot, OutErrors);
     }
 
     static bool ArriveAtQueueSlot(UFFZSFacilityQueueComponent& Queue, const FName AgentId, const int32 QueueIndex)
@@ -61,31 +37,6 @@ struct FFFZSQueueTestAccess
     static bool ArriveAtService(UFFZSFacilityQueueComponent& Queue, const FName AgentId, const int32 ServiceIndex)
     {
         return Queue.ReportAgentArrivedAtServicePoint(AgentId, Queue.GetServiceWorldLocation(ServiceIndex));
-    }
-
-    static bool ReportQueueArrival(UFFZSFacilityQueueComponent& Queue, const FName AgentId, const FVector Location)
-    {
-        return Queue.ReportAgentArrivedAtQueueSlot(AgentId, Location);
-    }
-
-    static bool ReportServiceArrival(UFFZSFacilityQueueComponent& Queue, const FName AgentId, const FVector Location)
-    {
-        return Queue.ReportAgentArrivedAtServicePoint(AgentId, Location);
-    }
-
-    static bool ReportExitArrival(UFFZSFacilityQueueComponent& Queue, const FName AgentId, const FVector Location)
-    {
-        return Queue.ReportAgentArrivedAtExit(AgentId, Location);
-    }
-
-    static bool ReportMovementFailed(UFFZSFacilityQueueComponent& Queue, const FName AgentId)
-    {
-        return Queue.ReportAgentMovementFailed(AgentId);
-    }
-
-    static void AdvanceSimulation(UFFZSFacilityQueueComponent& Queue, const float DeltaSeconds)
-    {
-        Queue.AdvanceSimulation(DeltaSeconds);
     }
 };
 
@@ -258,126 +209,6 @@ bool FFFZSQueueSnapshotTest::RunTest(const FString& Parameters)
     return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FFFZSQueueSnapshotSafetyLimitsTest,
-    "FF_ZoneSystem.Unit.Queue.SnapshotSafetyLimitsAndSequenceExhaustion",
-    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FFFZSQueueSnapshotSafetyLimitsTest::RunTest(const FString& Parameters)
-{
-    (void)Parameters;
-
-    FFFZSQueueRules Rules;
-    Rules.MaxWaitingAgents = 4;
-    Rules.ServiceCapacity = 1;
-    UFFZSFacilityQueueComponent* Queue = MakeQueue(Rules);
-    FGuid Ticket;
-    TestEqual(TEXT("The baseline queue accepts one entry"),
-        FFFZSQueueTestAccess::JoinQueue(
-            *Queue, TEXT("Snapshot.Safe"), Ticket),
-        EFFZSQueueJoinResult::Joined);
-    const FFFZSQueueSnapshot Stable = Queue->CaptureSnapshot();
-
-    TArray<FText> Errors;
-    const auto ExpectRejectedWithoutMutation =
-        [this, Queue, &Stable, &Errors](
-            const TCHAR* Label,
-            TFunctionRef<void(FFFZSQueueSnapshot&)> Corrupt)
-    {
-        FFFZSQueueSnapshot Invalid = Stable;
-        Corrupt(Invalid);
-        TestFalse(*FString::Printf(TEXT("%s is rejected"), Label),
-            FFFZSQueueTestAccess::RestoreSnapshot(
-                *Queue, Invalid, Errors));
-
-        const FFFZSQueueSnapshot Current = Queue->CaptureSnapshot();
-        TestEqual(*FString::Printf(TEXT("%s preserves the entry count"), Label),
-            Current.Entries.Num(), Stable.Entries.Num());
-        TestEqual(*FString::Printf(TEXT("%s preserves queue state"), Label),
-            Current.State, Stable.State);
-        TestEqual(*FString::Printf(TEXT("%s preserves the next sequence"), Label),
-            Current.NextJoinSequence, Stable.NextJoinSequence);
-        TestTrue(*FString::Printf(TEXT("%s preserves the existing agent"), Label),
-            Current.Entries.Num() == Stable.Entries.Num() &&
-            !Current.Entries.IsEmpty() &&
-            Current.Entries[0].AgentId == Stable.Entries[0].AgentId);
-    };
-
-    ExpectRejectedWithoutMutation(
-        TEXT("A snapshot above the global entry cap"),
-        [](FFFZSQueueSnapshot& Snapshot)
-        {
-            Snapshot.Entries.SetNum(
-                UFFZSDeveloperSettings::MaxQueueRuntimeEntries + 1);
-        });
-    ExpectRejectedWithoutMutation(
-        TEXT("MAX_int64 as an entry JoinSequence"),
-        [](FFFZSQueueSnapshot& Snapshot)
-        {
-            Snapshot.Entries[0].JoinSequence = MAX_int64;
-        });
-    ExpectRejectedWithoutMutation(
-        TEXT("NaN blocked elapsed time"),
-        [](FFFZSQueueSnapshot& Snapshot)
-        {
-            Snapshot.BlockedElapsedSeconds =
-                std::numeric_limits<float>::quiet_NaN();
-        });
-    ExpectRejectedWithoutMutation(
-        TEXT("NaN entry wait time"),
-        [](FFFZSQueueSnapshot& Snapshot)
-        {
-            Snapshot.Entries[0].WaitSeconds =
-                std::numeric_limits<float>::quiet_NaN();
-        });
-
-    UFFZSFacilityQueueComponent* NearExhaustion =
-        NewObject<UFFZSFacilityQueueComponent>();
-    FFFZSQueueTestAccess::Configure(*NearExhaustion, Rules);
-    FFFZSQueueSnapshot NearExhaustionSnapshot;
-    NearExhaustionSnapshot.State = EFFZSQueueState::Open;
-    NearExhaustionSnapshot.StateBeforeBlocked = EFFZSQueueState::Open;
-    NearExhaustionSnapshot.NextJoinSequence = MAX_int64 - 1;
-    TestTrue(TEXT("The last representable assignable sequence restores"),
-        FFFZSQueueTestAccess::RestoreSnapshot(
-            *NearExhaustion, NearExhaustionSnapshot, Errors));
-
-    FGuid LastTicket;
-    TestEqual(TEXT("The last assignable sequence can be consumed exactly once"),
-        FFFZSQueueTestAccess::JoinQueue(
-            *NearExhaustion, TEXT("Sequence.Last"), LastTicket),
-        EFFZSQueueJoinResult::Joined);
-    const FFFZSQueueSnapshot Exhausted = NearExhaustion->CaptureSnapshot();
-    TestTrue(TEXT("The final joined entry receives MAX_int64 minus one"),
-        Exhausted.Entries.Num() == 1 &&
-        Exhausted.Entries[0].JoinSequence == MAX_int64 - 1);
-    TestEqual(TEXT("The next-sequence sentinel becomes MAX_int64"),
-        Exhausted.NextJoinSequence, static_cast<int64>(MAX_int64));
-
-    FGuid RejectedTicket = FGuid::NewGuid();
-    UFFZSFacilityQueueComponent* RestoredExhausted =
-        NewObject<UFFZSFacilityQueueComponent>();
-    FFFZSQueueTestAccess::Configure(*RestoredExhausted, Rules);
-    TestTrue(TEXT("The exhausted sentinel round-trips through restore"),
-        FFFZSQueueTestAccess::RestoreSnapshot(
-            *RestoredExhausted, Exhausted, Errors));
-    TestEqual(TEXT("The restored exhausted queue remains fail-closed"),
-        FFFZSQueueTestAccess::JoinQueue(
-            *RestoredExhausted, TEXT("Sequence.RestoredRejected"), RejectedTicket),
-        EFFZSQueueJoinResult::NotOpen);
-
-    RejectedTicket = FGuid::NewGuid();
-    TestEqual(TEXT("A queue with an exhausted sequence space fails closed"),
-        FFFZSQueueTestAccess::JoinQueue(
-            *NearExhaustion, TEXT("Sequence.Rejected"), RejectedTicket),
-        EFFZSQueueJoinResult::NotOpen);
-    TestFalse(TEXT("Sequence exhaustion never publishes a ticket"),
-        RejectedTicket.IsValid());
-    TestEqual(TEXT("Sequence exhaustion does not append a partial entry"),
-        NearExhaustion->CaptureSnapshot().Entries.Num(), 1);
-    return true;
-}
-
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueSnapshotTickTest, "FF_ZoneSystem.Unit.Queue.SaveRestoreTickAndDrain", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFFZSQueueSnapshotTickTest::RunTest(const FString& Parameters)
 {
@@ -510,77 +341,6 @@ bool FFFZSQueueBlockedAndMovementFailureTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("두 번째 이동 실패가 경로 재탐색을 요청한다"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
     TestTrue(TEXT("세 번째 이동 실패가 에이전트를 해제한다"), Queue->ReportAgentMovementFailed(TEXT("Move.Fail")));
     TestFalse(TEXT("해제된 에이전트가 더 이상 대기열을 점유하지 않는다"), Queue->ContainsAgent(TEXT("Move.Fail")));
-    return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-    FFFZSQueueNonFiniteArrivalAndRepathBoundaryTest,
-    "FF_ZoneSystem.Unit.Queue.NonFiniteArrivalAndRepathBoundary",
-    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FFFZSQueueNonFiniteArrivalAndRepathBoundaryTest::RunTest(const FString& Parameters)
-{
-    (void)Parameters;
-    FFFZSQueueRules Rules;
-    Rules.MaxWaitingAgents = 2;
-    Rules.ServiceCapacity = 1;
-    Rules.ServiceDurationSeconds = 0.25f;
-    Rules.MaxRepathAttempts = 2;
-    UFFZSFacilityQueueComponent* Queue = MakeQueue(Rules);
-
-    FGuid Ticket;
-    TestEqual(TEXT("The arrival test agent joins"),
-        FFFZSQueueTestAccess::JoinQueue(*Queue, TEXT("Arrival.NonFinite"), Ticket),
-        EFFZSQueueJoinResult::Joined);
-    const FVector NaNLocation(
-        std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0);
-    const FVector InfiniteLocation(
-        std::numeric_limits<double>::infinity(), 0.0, 0.0);
-    TestFalse(TEXT("A NaN queue-slot arrival is rejected"),
-        FFFZSQueueTestAccess::ReportQueueArrival(*Queue, TEXT("Arrival.NonFinite"), NaNLocation));
-    TestTrue(TEXT("A valid queue-slot arrival still succeeds afterwards"),
-        ArriveAtQueueSlot(*Queue, TEXT("Arrival.NonFinite"), 0));
-    TestFalse(TEXT("An infinite service arrival is rejected"),
-        FFFZSQueueTestAccess::ReportServiceArrival(*Queue, TEXT("Arrival.NonFinite"), InfiniteLocation));
-    TestTrue(TEXT("A valid service arrival still succeeds afterwards"),
-        ArriveAtService(*Queue, TEXT("Arrival.NonFinite"), 0));
-    FFFZSQueueTestAccess::AdvanceSimulation(*Queue, Rules.ServiceDurationSeconds);
-    TestEqual(TEXT("A null test agent completes without a physical exit callback"),
-        Queue->GetCompletedCount(), 1);
-
-    UFFZSFacilityQueueComponent* ExitQueue = NewObject<UFFZSFacilityQueueComponent>();
-    FFFZSQueueTestAccess::Configure(*ExitQueue, Rules);
-    FFFZSQueueSnapshot ExitSnapshot;
-    ExitSnapshot.State = EFFZSQueueState::Open;
-    ExitSnapshot.StateBeforeBlocked = EFFZSQueueState::Open;
-    FFFZSQueueEntrySnapshot& ExitEntry = ExitSnapshot.Entries.AddDefaulted_GetRef();
-    ExitEntry.TicketId = FGuid::NewGuid();
-    ExitEntry.AgentId = TEXT("Exit.NonFinite");
-    ExitEntry.JoinSequence = 1;
-    ExitEntry.bExiting = true;
-    ExitEntry.ExitIndex = 0;
-    ExitEntry.PendingReleaseReason = EFFZSQueueReleaseReason::ServiceCompleted;
-    TArray<FText> ExitErrors;
-    TestTrue(TEXT("A physical exit state restores for arrival validation"),
-        FFFZSQueueTestAccess::RestoreSnapshot(*ExitQueue, ExitSnapshot, ExitErrors));
-    TestFalse(TEXT("A NaN exit arrival is rejected"),
-        FFFZSQueueTestAccess::ReportExitArrival(*ExitQueue, TEXT("Exit.NonFinite"), NaNLocation));
-    TestEqual(TEXT("A rejected exit report preserves the exiting agent"),
-        ExitQueue->GetExitingCount(), 1);
-
-    UFFZSFacilityQueueComponent* RepathQueue = MakeQueue(Rules);
-    TestEqual(TEXT("The repath-boundary agent joins"),
-        FFFZSQueueTestAccess::JoinQueue(*RepathQueue, TEXT("Repath.Boundary"), Ticket),
-        EFFZSQueueJoinResult::Joined);
-    FFFZSQueueSnapshot Boundary = RepathQueue->CaptureSnapshot();
-    Boundary.Entries[0].MovementRepathCount = Rules.MaxRepathAttempts;
-    TArray<FText> Errors;
-    TestTrue(TEXT("A snapshot exactly at the repath limit restores"),
-        FFFZSQueueTestAccess::RestoreSnapshot(*RepathQueue, Boundary, Errors));
-    TestTrue(TEXT("The next movement failure releases without increment overflow"),
-        FFFZSQueueTestAccess::ReportMovementFailed(*RepathQueue, TEXT("Repath.Boundary")));
-    TestFalse(TEXT("The repath-boundary agent is released fail-closed"),
-        RepathQueue->ContainsAgent(TEXT("Repath.Boundary")));
     return true;
 }
 

@@ -2,13 +2,9 @@
 
 #include "Building/UI/FF_BuildFacilityCard.h"
 
-#include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
 #include "CommonTextBlock.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
-#include "UI/FF_UILog.h"
-
-#define LOCTEXT_NAMESPACE "FFBuildFacilityCard"
 
 UFF_BuildFacilityCard::UFF_BuildFacilityCard()
 {
@@ -16,10 +12,6 @@ UFF_BuildFacilityCard::UFF_BuildFacilityCard()
 	// 카드는 이 참조를 직접 로드하지 않으며, 이미 메모리에 없으면 WBP의 어두운 배경을 자리표시자로 사용한다.
 	DefaultThumbnail = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT(
 		"/Game/FestaFiesta/Zone/Test_Asset/Image/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck")));
-	// 팀 소유 Zone/UI/Building 자산과 분리된 기능 전용 WBP입니다.
-	InstallCostTooltipClass = TSoftClassPtr<UFF_BuildFacilityCostTooltip>(FSoftObjectPath(TEXT(
-		"/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
-		"WBP_FF_BuildFacilityCostTooltip_C")));
 }
 
 void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)
@@ -35,20 +27,6 @@ void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)
 	// CreateWidget 이후 Configure되는 일반 경로에서는 BindWidget이 이미 유효하므로 즉시 화면에 반영한다.
 	// 생성 순서가 다른 에디터 미리보기 경로는 아래 PreConstruct/Construct에서 같은 함수를 다시 호출한다.
 	ApplyEntryToWidgets();
-	RefreshInstallCostTooltip();
-}
-
-FText UFF_BuildFacilityCard::MakeInstallCostToolTip(
-	const FFF_BuildCatalogEntry& CatalogEntry)
-{
-	if (!CatalogEntry.bHasResolvedInstallCost || CatalogEntry.InstallCost <= 0)
-	{
-		return LOCTEXT("InstallCostUnavailable", "건설 비용 정보를 확인할 수 없습니다.");
-	}
-
-	return FText::Format(
-		LOCTEXT("InstallCostFormat", "건설 비용: {0} Gold"),
-		FText::AsNumber(CatalogEntry.InstallCost));
 }
 
 void UFF_BuildFacilityCard::RefreshThumbnail()
@@ -72,12 +50,6 @@ void UFF_BuildFacilityCard::NativePreConstruct()
 	Super::NativePreConstruct();
 	// 디자이너 미리보기와 런타임 첫 렌더 직전에 직렬화/설정된 값을 자식 위젯에 동기화한다.
 	ApplyEntryToWidgets();
-	// 디자이너 프리뷰와 순수 NewObject 테스트에서는 별도 UserWidget을 만들지 않습니다.
-	// 텍스트 폴백만 유지하면 WBP가 없는 환경에서도 가격 정보는 사라지지 않습니다.
-	if (IsDesignTime())
-	{
-		ApplyInstallCostTextFallback();
-	}
 }
 
 void UFF_BuildFacilityCard::NativeConstruct()
@@ -86,14 +58,6 @@ void UFF_BuildFacilityCard::NativeConstruct()
 	// 재부착 또는 WBP 재구성으로 자식 포인터가 새로 바인딩된 경우까지 보장한다.
 	// SetText/SetBrush 연산은 같은 값으로 반복 적용해도 안전하므로 수명주기 훅 양쪽에서 호출한다.
 	ApplyEntryToWidgets();
-	RefreshInstallCostTooltip();
-}
-
-void UFF_BuildFacilityCard::NativeDestruct()
-{
-	SetToolTip(nullptr);
-	InstallCostTooltip = nullptr;
-	Super::NativeDestruct();
 }
 
 void UFF_BuildFacilityCard::ApplyEntryToWidgets()
@@ -128,57 +92,3 @@ void UFF_BuildFacilityCard::ApplyThumbnailToWidget()
 		Image_Thumbnail->SetBrush(FSlateBrush());
 	}
 }
-
-void UFF_BuildFacilityCard::RefreshInstallCostTooltip()
-{
-	// Native NewObject 기반 단위 테스트에는 WidgetTree가 없습니다. CreateWidget(UWidget owner)는
-	// 유효한 부모 UserWidgetTree를 요구하므로 이 경로에서는 의도적으로 텍스트 폴백을 사용합니다.
-	if (IsDesignTime() || !WidgetTree)
-	{
-		ApplyInstallCostTextFallback();
-		return;
-	}
-
-	UClass* TooltipClass = InstallCostTooltipClass.Get();
-	if (!TooltipClass)
-	{
-		TooltipClass = InstallCostTooltipClass.LoadSynchronous();
-	}
-
-	if (!TooltipClass || !TooltipClass->IsChildOf(UFF_BuildFacilityCostTooltip::StaticClass()))
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 가격 툴팁 WBP를 불러오지 못해 텍스트 툴팁을 사용합니다: %s"),
-			*GetName(), *InstallCostTooltipClass.ToSoftObjectPath().ToString());
-		ApplyInstallCostTextFallback();
-		return;
-	}
-
-	if (!InstallCostTooltip || !InstallCostTooltip->IsA(TooltipClass))
-	{
-		InstallCostTooltip = CreateWidget<UFF_BuildFacilityCostTooltip>(this, TooltipClass);
-	}
-
-	if (!InstallCostTooltip)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 가격 툴팁 인스턴스 생성에 실패해 텍스트 툴팁을 사용합니다."),
-			*GetName());
-		ApplyInstallCostTextFallback();
-		return;
-	}
-
-	InstallCostTooltip->Configure(Entry);
-	// SetToolTipText가 이미 생성된 Slate 툴팁을 덮을 수 있으므로 텍스트를 먼저 비운 뒤
-	// 커스텀 UMG를 최종 툴팁으로 설정합니다.
-	SetToolTipText(FText::GetEmpty());
-	SetToolTip(InstallCostTooltip);
-}
-
-void UFF_BuildFacilityCard::ApplyInstallCostTextFallback()
-{
-	SetToolTip(nullptr);
-	SetToolTipText(MakeInstallCostToolTip(Entry));
-}
-
-#undef LOCTEXT_NAMESPACE

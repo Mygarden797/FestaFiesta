@@ -8,57 +8,9 @@
 #pragma once
 
 #include "Building/FF_BuildCatalogTypes.h"
-#include "Economy/FF_FacilityCostResolver.h"
-#include "FF_FFZSFacilityDefinition.h"
-
-class UDataTable;
 
 namespace FFBuildCatalogModel
 {
-	// 현재 Festival 비용표를 화면용 카탈로그 스냅샷에 투영합니다. 원본 GI 카탈로그 캐시는
-	// 변경하지 않으므로 Festival 교체 뒤 화면을 다시 열면 항상 최신 가격을 사용합니다.
-	inline bool ApplyInstallCost(
-		FFF_BuildCatalogEntry& Entry,
-		const UFFZSFacilityDefinition* Definition,
-		const UDataTable* CostTable,
-		FString& OutFailureReason)
-	{
-		Entry.InstallCost = 0;
-		Entry.bHasResolvedInstallCost = false;
-		Entry.MatchedInstallCostRow = NAME_None;
-		OutFailureReason.Reset();
-
-		if (!Definition)
-		{
-			OutFailureReason = TEXT("시설 정의가 로드되지 않았습니다.");
-			return false;
-		}
-		if (!CostTable)
-		{
-			OutFailureReason = TEXT("현재 Festival의 비용표가 없습니다.");
-			return false;
-		}
-
-		if (!FFF_FacilityCostResolver::FindInstallCost(
-			Definition->Spec,
-			CostTable,
-			Entry.InstallCost,
-			Entry.MatchedInstallCostRow,
-			OutFailureReason))
-		{
-			return false;
-		}
-		if (Entry.InstallCost <= 0)
-		{
-			Entry.InstallCost = 0;
-			Entry.MatchedInstallCostRow = NAME_None;
-			OutFailureReason = TEXT("설치비는 0보다 커야 합니다.");
-			return false;
-		}
-
-		Entry.bHasResolvedInstallCost = true;
-		return true;
-	}
 	 // 두 문자열을 대소문자를 구분해 비교합니다.
 	 // 문화권별 자연어 대조 규칙을 적용하는 정렬이 아니라, 현재 전달된 문자열 값에 대해 같은
 	 // 결과를 내는 내부 카탈로그 순서가 목적이므로 이후의 문자열 비교 기준을 이 함수로 통일합니다.
