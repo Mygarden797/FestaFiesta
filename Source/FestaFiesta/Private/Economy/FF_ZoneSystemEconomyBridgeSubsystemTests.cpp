@@ -178,6 +178,20 @@ namespace
 		Command.Placement.QuarterTurns = 1;
 		return Command;
 	}
+
+	FFFZSCommand MakeRemoveCommand(
+		const FZoneEconomyTestHarness& Harness,
+		const FGuid& FacilityInstanceId)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = FGuid::NewGuid();
+		Command.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+		Command.Type = EFFZSCommandType::Remove;
+		// 철거 명령은 인스턴스 ID만 싣는다. 비용 키는 브리지가 권위 액터의 Spec에서 다시 읽어야 한다.
+		Command.FacilityInstanceId = FacilityInstanceId;
+		return Command;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -457,6 +471,67 @@ bool FFFZoneSystemEconomyMissingCostTest::RunTest(const FString& Parameters)
 		Harness.Progression->GetGold(), 1000);
 	TestNull(TEXT("Cost resolution failure does not create a Facility"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemEconomyDemolitionRefundTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.RemoveRefundsConfiguredShareOfInstallCost",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedEconomyBridgeTestSettings SettingsGuard;
+	FZoneEconomyTestHarness Harness;
+	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
+		Harness.Initialize(this, 1000)))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("The shipped default refunds 80% of the installation cost"),
+		Harness.Definition->FacilityDemolitionRefundRate, 0.8f);
+
+	const FFFZSCommand InstallCommand =
+		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	if (!TestTrue(TEXT("The paid Install succeeds before demolition"),
+		Harness.ZoneSystem->ExecuteCommand(InstallCommand).bSucceeded))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Installing the 400 Gold FoodStall leaves 600 Gold"),
+		Harness.Progression->GetGold(), 600);
+
+	const FFFZSCommandResult RemoveResult = Harness.ZoneSystem->ExecuteCommand(
+		MakeRemoveCommand(Harness, InstallCommand.FacilityInstanceId));
+	if (!TestTrue(TEXT("Removing an idle Facility succeeds"), RemoveResult.bSucceeded))
+	{
+		return false;
+	}
+	// 400의 80%인 320만 돌아온다. 전액이면 배치 실수의 비용이 0이 되어 위치를 고민할 이유가 사라진다.
+	TestEqual(TEXT("Demolition refunds 80% of the 400 Gold installation cost"),
+		Harness.Progression->GetGold(), 920);
+	TestNull(TEXT("The refunded Facility is unregistered"),
+		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+
+	// 기획 담당자가 에디터에서 비율만 바꾸면 환급액이 따라와야 한다. 코드에 0.8이 박혀 있으면 여기서 드러난다.
+	Harness.Definition->FacilityDemolitionRefundRate = 0.5f;
+	const FFFZSCommand SecondInstall = MakeInstallCommand(
+		Harness, MakeDerivedCostFoodStallSpec(), FIntPoint(5000, 1000));
+	if (!TestTrue(TEXT("A second Install succeeds after the rate change"),
+		Harness.ZoneSystem->ExecuteCommand(SecondInstall).bSucceeded))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The second Install spends another 400 Gold"),
+		Harness.Progression->GetGold(), 520);
+
+	TestTrue(TEXT("Removing the second Facility succeeds"),
+		Harness.ZoneSystem->ExecuteCommand(
+			MakeRemoveCommand(Harness, SecondInstall.FacilityInstanceId)).bSucceeded);
+	TestEqual(TEXT("The edited 50% rate refunds 200 Gold, not 320"),
+		Harness.Progression->GetGold(), 720);
 	return true;
 }
 

@@ -59,6 +59,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	bool TrySpend(int32 Amount);
 
+	// 잔액을 늘린다. 시설 철거 환급이 유일한 호출자다.
+	// 실패하지 않으므로 Policy Commit 단계에서 호출해도 안전하다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void Refund(int32 Amount);
+
 private:
 	// 값이 실제로 바뀔 때만 통지한다.
 	void BroadcastGoldIfChanged(int32 PreviousGold);
