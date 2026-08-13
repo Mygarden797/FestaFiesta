@@ -80,6 +80,10 @@ void AFF_FestivalPlayerController::SetupInputComponent()
 	{
 		EnhancedInput->BindAction(ResetViewAction, ETriggerEvent::Started, this, &AFF_FestivalPlayerController::HandleResetView);
 	}
+	if (ToggleViewAction)
+	{
+		EnhancedInput->BindAction(ToggleViewAction, ETriggerEvent::Started, this, &AFF_FestivalPlayerController::HandleToggleView);
+	}
 }
 
 AFF_OverviewCameraPawn* AFF_FestivalPlayerController::GetOverviewCameraPawn() const
@@ -358,6 +362,20 @@ void AFF_FestivalPlayerController::HandleResetView(const FInputActionValue& Valu
 	{
 		CameraPawn->ResetView();
 	}
+}
+
+void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Value)
+{
+	// 여기서는 IsCameraMovementAllowed 를 보지 않는다.
+	// 액터 시점일 때 관찰 카메라 조작이 막혀 있는데, 그 판정을 그대로 쓰면
+	// 액터 시점으로 들어간 뒤 되돌아 나올 수가 없다.
+	// 다만 모달 UI 가 떠 있는 동안에는 화면이 바뀌면 안 된다.
+	if (GetInputBlockReason() == EFF_CameraInputBlock::ModalUi)
+	{
+		return;
+	}
+
+	ToggleView(ViewSwitchBlendTime);
 }
 
 void AFF_FestivalPlayerController::HandlePick(const FInputActionValue& Value)
