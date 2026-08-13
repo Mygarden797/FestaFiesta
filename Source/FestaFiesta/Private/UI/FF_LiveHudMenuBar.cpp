@@ -3,10 +3,9 @@
 #include "UI/FF_LiveHudMenuBar.h"
 
 #include "Components/Button.h"
-#include "Components/HorizontalBox.h"
-#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
@@ -77,8 +76,9 @@ void UFF_LiveHudTabButton::RefreshVisualState()
 		return;
 	}
 
-	// 배경은 버튼 스타일이 그린다. 선택 상태에서는 Normal 브러시를 Selected 브러시로 바꿔 끼운다.
+	// 배경은 버튼 스타일이 그린다. 선택 상태에서는 Normal 브러시를 Pressed 브러시로 바꿔 끼운다.
 	// 색만 바꾸지 않고 배경 형태가 함께 바뀌어야 한다 (AT-011).
+	// **WBP에서 선택 상태 텍스처를 Pressed 슬롯에 넣어야 한다.**
 	FButtonStyle Style = Button_Root->GetStyle();
 	Style.SetNormal(bSelected ? Style.Pressed : Style.Hovered);
 	Button_Root->SetStyle(Style);
@@ -96,67 +96,64 @@ void UFF_LiveHudTabButton::HandleClicked()
 void UFF_LiveHudMenuBar::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	BuildTabs();
+	CollectTabs();
 
 	// 초기 선택은 운영이다. 목업 01-operations 기준.
 	SelectTab(EFF_LiveHudTab::Operations);
 }
 
-void UFF_LiveHudMenuBar::BuildTabs()
+void UFF_LiveHudMenuBar::CollectTabs()
 {
-	if (!Box_Tabs)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning, TEXT("[%s] Box_Tabs가 없어 탭을 만들 수 없다."), *GetName());
-		return;
-	}
-
-	if (!TabButtonClass)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] TabButtonClass가 비어 있다. Class Defaults에서 WBP_FF_LiveHudTabButton을 지정한다."), *GetName());
-		return;
-	}
-
-	Box_Tabs->ClearChildren();
 	TabButtons.Reset();
 
-	// 화면 문구를 C++ 문자열로 하드코딩하지 않고 enum의 DisplayName을 읽는다.
-	// 탭을 추가·삭제할 때 enum 한 곳만 고치면 된다.
+	// 필드와 enum 값을 한 곳에서 짝짓는다. 탭을 늘리면 이 표에 한 줄만 추가한다.
+	const TPair<EFF_LiveHudTab, UFF_LiveHudTabButton*> Bindings[] = {
+		{ EFF_LiveHudTab::Operations, Tab_Operations },
+		{ EFF_LiveHudTab::Facilities, Tab_Facilities },
+		{ EFF_LiveHudTab::Guests,     Tab_Guests },
+		{ EFF_LiveHudTab::Queues,     Tab_Queues },
+		{ EFF_LiveHudTab::Density,    Tab_Density },
+		{ EFF_LiveHudTab::Events,     Tab_Events },
+		{ EFF_LiveHudTab::SNS,        Tab_SNS },
+		{ EFF_LiveHudTab::Report,     Tab_Report },
+		{ EFF_LiveHudTab::Staff,      Tab_Staff }
+	};
+
 	const UEnum* TabEnum = StaticEnum<EFF_LiveHudTab>();
 	if (!TabEnum)
 	{
 		return;
 	}
 
-	// enum의 마지막 항목은 _MAX 자동 항목이므로 제외한다.
-	const int32 TabCount = TabEnum->NumEnums() - 1;
+	TArray<FString> MissingTabs;
 
-	for (int32 Index = 0; Index < TabCount; ++Index)
+	for (const TPair<EFF_LiveHudTab, UFF_LiveHudTabButton*>& Binding : Bindings)
 	{
-		const EFF_LiveHudTab TabValue = static_cast<EFF_LiveHudTab>(TabEnum->GetValueByIndex(Index));
+		const int32 EnumIndex = TabEnum->GetIndexByValue(static_cast<int64>(Binding.Key));
+		const FString EnumName = TabEnum->GetNameStringByIndex(EnumIndex);
 
-		UFF_LiveHudTabButton* TabButton = CreateWidget<UFF_LiveHudTabButton>(this, TabButtonClass);
-		if (!TabButton)
+		if (!Binding.Value)
 		{
+			MissingTabs.Add(EnumName);
 			continue;
 		}
 
-		TabButton->Configure(
-			TabValue,
-			TabEnum->GetDisplayNameTextByIndex(Index),
-			ResolveTabIcon(TabValue, TabEnum->GetNameStringByIndex(Index)));
-		TabButton->OnTabButtonClicked.BindUObject(this, &UFF_LiveHudMenuBar::HandleTabButtonClicked);
+		// 라벨과 아이콘은 코드가 채운다. WBP에 문구를 박으면 enum과 화면이 갈라진다.
+		Binding.Value->Configure(
+			Binding.Key,
+			TabEnum->GetDisplayNameTextByIndex(EnumIndex),
+			ResolveTabIcon(Binding.Key, EnumName));
 
-		// 지역 변수 이름을 Slot으로 두면 UUserWidget::Slot을 가려 C4458이 난다(경고를 에러로 취급).
-		if (UHorizontalBoxSlot* TabSlot = Box_Tabs->AddChildToHorizontalBox(TabButton))
-		{
-			// 마지막 탭 뒤에는 간격을 두지 않는다. 레일 오른쪽 여백이 어긋난다.
-			const float RightGap = (Index == TabCount - 1) ? 0.f : TabGap;
-			TabSlot->SetPadding(FMargin(0.f, 0.f, RightGap, 0.f));
-			TabSlot->SetVerticalAlignment(VAlign_Center);
-		}
+		Binding.Value->OnTabButtonClicked.BindUObject(this, &UFF_LiveHudMenuBar::HandleTabButtonClicked);
+		TabButtons.Add(Binding.Value);
+	}
 
-		TabButtons.Add(TabButton);
+	// 빠진 탭을 조용히 넘기지 않는다. WBP에서 이름을 틀렸을 때 이 로그가 유일한 단서다.
+	if (!MissingTabs.IsEmpty())
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] WBP에 없는 탭 %d개: %s — 위젯 이름이 Tab_<enum 이름>과 같아야 한다."),
+			*GetName(), MissingTabs.Num(), *FString::Join(MissingTabs, TEXT(", ")));
 	}
 }
 
@@ -183,7 +180,6 @@ FSlateBrush UFF_LiveHudMenuBar::ResolveTabIcon(EFF_LiveHudTab Tab, const FString
 	UTexture2D* IconTexture = LoadObject<UTexture2D>(nullptr, *ObjectPath);
 	if (!IconTexture)
 	{
-		// 조용히 넘기면 아이콘 없는 탭이 왜 그런지 알 수 없다.
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 탭 아이콘을 찾지 못했다 — %s. TabIconFolder를 확인한다."), *GetName(), *ObjectPath);
 		return Brush;
