@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
 #include "Templates/UnrealTemplate.h"
+#include "UObject/StrongObjectPtr.h"
 #include "NavigationPath.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -506,7 +507,10 @@ namespace
         for (FFFZSFacilityInstanceSnapshot& Saved : OutMigratedSnapshot.Facilities)
         {
             FFFZSFacilitySpec& Spec = Saved.FacilitySpec;
-            if (Spec.SchemaVersion != 1 || !Spec.QueueReservedRects.IsEmpty())
+            // Schema 3 저장본이 담고 있던 사양 형식은 언제나 1(1 Cell = 100cm)이다.
+            // 이 값은 과거 저장 데이터의 고정 사실이므로 현재 스키마 상수에서 유도하지 않는다.
+            constexpr int32 LegacyFacilitySpecSchemaVersion = 1;
+            if (Spec.SchemaVersion != LegacyFacilitySpecSchemaVersion || !Spec.QueueReservedRects.IsEmpty())
             {
                 OutErrors.Add(FText::Format(
                     LOCTEXT("LegacySnapshotAmbiguousSpec", "Schema 3 Facility {0}에는 수정되지 않은 FacilitySpec SchemaVersion 1이 있어야 하며 1cm QueueReservedRects가 없어야 합니다."),
@@ -574,7 +578,7 @@ namespace
                 return false;
             }
 
-            Spec.SchemaVersion = 2;
+            Spec.SchemaVersion = FFFZSFacilitySpec::CurrentSchemaVersion;
             Spec.FootprintSizeCells = MigratedFootprint;
             Spec.ClearanceCells = MigratedClearance;
             Spec.QueueReservedRects = MoveTemp(MigratedQueueRects);
@@ -942,10 +946,16 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     Placement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns);
 
     // 판정은 압축 Rect를 사용하고 디버그 셀만 제한적으로 materialize한다.
-    Result.FootprintRects = UFFZSGridLibrary::GetFootprintRects(Command.FacilitySpec, Placement);
-    Result.ClearanceRects = UFFZSGridLibrary::GetClearanceRects(Command.FacilitySpec, Placement);
-    Result.QueueRects = UFFZSGridLibrary::GetQueueRects(Command.FacilitySpec, Placement);
-    Result.ReservedRects = UFFZSGridLibrary::GetReservedRects(Command.FacilitySpec, Placement);
+    // [최적화] 네 영역을 한 번의 기하 계산으로 함께 만든다. 개별 Get*Rects를 네 번 부르면
+    // 예산 검사와 Queue 정규화가 호출마다 중복 실행됐다. 이 함수는 Preview Actor가 0.1초마다
+    // 호출하는 경로라 중복 계산이 그대로 프레임 비용이 된다. 결과 값은 이전과 동일하다.
+    UFFZSGridLibrary::BuildPlacementRegions(
+        Command.FacilitySpec,
+        Placement,
+        Result.FootprintRects,
+        Result.ClearanceRects,
+        Result.QueueRects,
+        Result.ReservedRects);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.FootprintRects,
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.FootprintCells);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.ClearanceRects,
@@ -1202,8 +1212,17 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     };
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const float HalfHeight = FMath::Max(5.0f, Spec.PlacementObstacleHeightCm * 0.5f - 2.0f);
-    const float CenterZ = InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight + 3.0f;
+    // [하드코딩 제거] Overlap Box를 예약 영역보다 아주 조금 작게 만드는 여백 값들에 이름을 붙인다.
+    // 경계가 정확히 맞닿기만 한 지면/이웃 구조물을 "충돌"로 보고하지 않기 위한 수축량이며,
+    // 예전에는 5.0f/2.0f/3.0f/0.25가 설명 없는 리터럴로 흩어져 있어 의도를 알기 어려웠다.
+    constexpr double SurfaceInsetCm = 2.0;        // 각 면을 안쪽으로 당기는 거리
+    constexpr double GroundLiftCm = 3.0;          // 바닥면과의 접촉을 피하기 위한 들어올림
+    constexpr double MinHalfExtentCm = 0.25;      // 1cm Rect도 유효한 Box가 되도록 하는 최소 반치수
+    constexpr double MinHalfHeightCm = 5.0;       // 낮은 장애물 높이에서도 남기는 최소 반높이
+    const float HalfHeight = static_cast<float>(
+        FMath::Max(MinHalfHeightCm, Spec.PlacementObstacleHeightCm * 0.5 - SurfaceInsetCm));
+    const float CenterZ = static_cast<float>(
+        InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight + GroundLiftCm);
     const auto ValidateRectGroup = [&] (
         const TArray<FFFZSCellRect>& Rects,
         const EFFZSPlacementFailure Failure,
@@ -1213,10 +1232,9 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
         {
             const double HalfX = Rect.GetWidth() * CellSizeCm * 0.5;
             const double HalfY = Rect.GetHeight() * CellSizeCm * 0.5;
-            // 1cm Rect도 유효한 Overlap Box를 갖도록 XY HalfExtent를 최소 0.25cm로 제한한다.
             const FVector HalfExtent(
-                FMath::Max(0.25, HalfX - 2.0),
-                FMath::Max(0.25, HalfY - 2.0),
+                FMath::Max(MinHalfExtentCm, HalfX - SurfaceInsetCm),
+                FMath::Max(MinHalfExtentCm, HalfY - SurfaceInsetCm),
                 HalfHeight);
             FVector Center = ZoneTransform.TransformPosition(FVector(
                 (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
@@ -2257,6 +2275,8 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     TSet<FName> Agents;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     TMap<const AFFZSGameplayZone*, TUniquePtr<FZoneCellOwnershipCache>> ZoneOwnershipCaches;
+    // 모든 시설 스냅샷이 함께 쓰는 큐 검사용 컴포넌트다. 처음 필요할 때만 만든다.
+    TStrongObjectPtr<UFFZSFacilityQueueComponent> QueueValidator;
     FacilityIds.Reserve(Snapshot.Facilities.Num());
     FacilityRegionsByZone.Reserve(FMath::Min(Snapshot.Facilities.Num(), ZonesById.Num()));
     Agents.Reserve(Snapshot.Facilities.Num());
@@ -2376,7 +2396,13 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 ? LOCTEXT("SnapshotProtectedArea", "스냅샷 Facility가 보호 영역과 겹칩니다.")
                 : ProtectedValidation.Summary);
         }
-        UFFZSFacilityQueueComponent* QueueValidator = NewObject<UFFZSFacilityQueueComponent>();
+        // [최적화] 검사용 컴포넌트를 시설마다 새로 만들지 않고 하나를 재사용한다.
+        // Configure와 RestoreSnapshot이 큐 상태를 통째로 덮어쓰므로 이전 시설의 값이 남지 않는다.
+        // 예전에는 시설 수만큼 임시 UObject가 생겨 저장 검증마다 GC 부담이 커졌다.
+        if (!QueueValidator.IsValid())
+        {
+            QueueValidator.Reset(NewObject<UFFZSFacilityQueueComponent>());
+        }
         QueueValidator->Configure(Saved.FacilitySpec.QueueRules);
         TArray<FText> QueueErrors;
         if (!QueueValidator->RestoreSnapshot(Saved.Queue, QueueErrors))
