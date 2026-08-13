@@ -25,7 +25,7 @@
 namespace
 {
     // 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다. 
-    constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 1'000'000;
+    constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 10'000'000;
     bool IsPositiveCellProductWithinLimit(const int64 Width, const int64 Height, const int64 CellLimit)
     {
         // Width*Height를 먼저 계산하지 않아 오버플로를 피한다.
