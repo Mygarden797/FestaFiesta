@@ -36,6 +36,12 @@ public:
     static constexpr int32 MaxMaterializedDebugCells = 10000;
 	// 대형 1 cm 영역을 디버그용 개별 셀 배열로 펼칠 때 허용하는 고정 상한.
 
+    // 건축 모드 범위 표시와 배치 Preview가 한 그룹에서 개별로 그리는 Rect 수 상한이다.
+    // 이 수를 넘는 조각난 그룹은 합집합 외접 박스 하나로 축약해 표시 비용을 제한한다.
+    // [하드코딩 제거] 예전에는 FacilityActor와 PlacementPreviewActor에 같은 1024가 따로 있어
+    // 한쪽만 조정하면 두 화면의 표시 규칙이 서로 달라졌다.
+    static constexpr int32 MaxDisplayedRangeRectsPerGroup = 1024;
+
     // Per-Definition collection guards. These are safety contracts, not per-facility tuning data.
     static constexpr int32 MaxQueueReservedRects = 64;
     static constexpr int32 MaxLegacyQueueReservedCells = 256;

@@ -130,7 +130,9 @@ bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFF
     FacilityInstanceId = NewInstanceId;
     FacilitySpec = NewSpec;
     ZoneId = NewZoneId;
-    NewPlacement.QuarterTurns = ((NewPlacement.QuarterTurns % 4) + 4) % 4;
+    // [하드코딩 제거] 회전 정규화 식을 이 파일에 다시 적지 않고 격자 계약을 소유한 라이브러리를 쓴다.
+    // 같은 식이 여러 곳에 복사돼 있으면 정규화 규칙이 바뀔 때 일부만 갱신될 수 있다.
+    NewPlacement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(NewPlacement.QuarterTurns);
     GridPlacement = NewPlacement;
     FacilityState = InitialState;
     bNeedsRelocation = false;
@@ -150,7 +152,7 @@ bool AFFZSFacilityActor::ApplyPlacement(const FName NewZoneId, FFFZSGridPlacemen
         return false;
     }
     ZoneId = NewZoneId;
-    NewPlacement.QuarterTurns = ((NewPlacement.QuarterTurns % 4) + 4) % 4;
+    NewPlacement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(NewPlacement.QuarterTurns);
     GridPlacement = NewPlacement;
     bNeedsRelocation = false;
     SetActorTransform(WorldTransform);
@@ -412,7 +414,9 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
     constexpr float RangeHeightCm = 10.0f;
     // 비정상적으로 조각난 콘텐츠도 건축 모드 진입을 멈추지 않게 한다. 일반 콘텐츠는 정확한
     // canonical rect를 모두 그리고, 상한을 넘는 그룹만 합집합 외접 박스로 안전하게 축약한다.
-    constexpr int32 MaxDisplayedRectsPerGroup = 1024;
+    // [하드코딩 제거] 배치 Preview와 같은 상한을 공유해 두 화면의 표시 규칙이 갈라지지 않게 한다.
+    constexpr int32 MaxDisplayedRectsPerGroup =
+        UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FVector FootprintExtent = FootprintBounds->GetUnscaledBoxExtent();
     const FTransform ActorTransform = GetActorTransform();
