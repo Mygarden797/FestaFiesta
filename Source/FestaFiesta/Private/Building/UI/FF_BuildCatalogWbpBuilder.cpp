@@ -12,7 +12,6 @@
 #include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
 #include "CommonTextBlock.h"
-#include "Components/BackgroundBlur.h"
 #include "Components/Border.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -739,11 +738,10 @@ namespace FFBuildCatalogWbpBuilder
 		UWidgetTree& Tree,
 		const TSubclassOf<UFF_BuildTopButton> TopButtonClass)
 	{
-		// 전체 계층은 Overlay의 블러 -> 반투명 딤 -> 실제 패널 순으로 쌓인다. 패널 내부는
+		// 전체 계층은 Overlay의 반투명 딤 -> 실제 패널 순으로 쌓인다. 패널 내부는
 		// TopBar, 대분류 행, 구분선, Build/Skin Switcher, 상태 표시줄을 세로로 배치한다.
 		// BTN_/BOX_/SWITCHER_/TXT_Status 이름은 UFF_BuildCatalogScreen의 BindWidget 계약과 정확히 일치해야 한다.
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Root_Overlay"));
-		UBackgroundBlur* Blur = MakeWidget<UBackgroundBlur>(Blueprint, Tree, TEXT("Background_Blur"));
 		UBorder* Backdrop = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Background_Dim"));
 		UBorder* Panel = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Catalog_Panel"));
 		UVerticalBox* Layout = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Catalog_Layout"));
@@ -772,7 +770,7 @@ namespace FFBuildCatalogWbpBuilder
 		UCommonTextBlock* Status = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("TXT_Status"), true);
 		// 동적 화면 코드가 일부 필드를 필수로 가정하므로 누락된 채 저장하는 대신 레이아웃 전체를 실패시킨다.
-		if (!Root || !Blur || !Backdrop || !Panel || !Layout || !TopBar || !Title ||
+		if (!Root || !Backdrop || !Panel || !Layout || !TopBar || !Title ||
 			!BuildTab || !SkinTab || !CloseButton || !TopSpacer || !Categories || !Divider ||
 			!Switcher || !BuildScroll || !MinorSections || !SkinPanel || !SkinMessage ||
 			!StatusSurface || !Status)
@@ -780,7 +778,6 @@ namespace FFBuildCatalogWbpBuilder
 			return false;
 		}
 
-		Blur->SetBlurStrength(16.0f);
 		Backdrop->SetBrushColor(ColorBackdrop);
 		Panel->SetBrushColor(ColorPanel);
 		Panel->SetPadding(FMargin(34.0f, 18.0f, 34.0f, 14.0f));
@@ -832,8 +829,7 @@ namespace FFBuildCatalogWbpBuilder
 		AddVertical(*Layout, *StatusSurface, FMargin(0.0f, 12.0f, 0.0f, 0.0f));
 		Panel->AddChild(Layout);
 
-		// Overlay 페인트 순서를 이용해 블러와 딤을 화면 전체에 먼저 깔고 여백이 있는 패널을 가장 위에 둔다.
-		AddOverlay(*Root, *Blur);
+		// Overlay 페인트 순서를 이용해 딤을 화면 전체에 먼저 깔고 여백이 있는 패널을 가장 위에 둔다.
 		AddOverlay(*Root, *Backdrop);
 		AddOverlay(*Root, *Panel, FMargin(14.0f));
 		Tree.RootWidget = Root;

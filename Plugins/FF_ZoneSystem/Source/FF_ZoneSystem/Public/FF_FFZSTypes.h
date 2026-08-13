@@ -137,7 +137,10 @@ enum class EFFZSPlacementFailure : uint8
     NavRebuildTimeout,
     DataInvalid,
     ExternalPolicyRejected,
-    InternalError
+    InternalError,
+    // 경제 정책이 현재 잔액으로 명령 비용을 지불할 수 없음을 구조적으로 나타낸다.
+    // 기존 SaveGame enum ordinal을 보존하기 위해 새 값은 항상 목록 끝에 추가한다.
+    InsufficientFunds
 };
 
 // 시설 내 이동 의미 지점. Entry는 진입, Service는 처리 위치, Exit는 최종 소유권 해제 전 도착 위치
@@ -363,8 +366,13 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 {
     GENERATED_BODY()
 
+    // 이 런타임이 해석하는 유일한 사양 저장 형식(1 Cell = 1 cm)이다.
+    // [하드코딩 제거] 기본값·검증·구 스냅샷 마이그레이션이 각자 리터럴 2를 적고 있어서
+    // 스키마를 올릴 때 한 군데를 빠뜨리기 쉬웠다. 세 곳이 이 상수를 공유한다.
+    static constexpr int32 CurrentSchemaVersion = 2;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Schema Version", ToolTip = "시설 정의 저장 형식 버전입니다. 마이그레이션 코드 없이 제작자가 임의로 바꾸면 안 됩니다.", ClampMin = "1"))
-    int32 SchemaVersion = 2;
+    int32 SchemaVersion = CurrentSchemaVersion;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Facility Definition ID", ToolTip = "카탈로그·저장·연동이 사용하는 영구 고유 ID입니다. 다른 시설과 중복할 수 없고 출시 후 변경하면 기존 저장 참조가 끊길 수 있습니다."))
     FName FacilityDefinitionId = NAME_None;
@@ -375,7 +383,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Category", ToolTip = "시설의 기능 분류입니다. Zone 허용 규칙과 카탈로그 분류에 사용됩니다."))
     EFFZSFacilityCategory Category = EFFZSFacilityCategory::Booth;
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. (가로+여유)×(깊이+여유)와 대기열 예약 면적의 안전 예산이 1,000,000셀을 넘으면 검증에 실패합니다.", ClampMin = "1"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Footprint Size (cm)", ToolTip = "회전 전 건물이 차지하는 바닥 크기입니다. 1 Cell은 1cm이므로 X=가로 폭, Y=세로 깊이입니다. 예: 600×300은 6m×3m입니다. (가로+여유)×(깊이+여유)와 대기열 예약 면적의 안전 예산이 10,000,000셀을 넘으면 검증에 실패합니다.", ClampMin = "1"))
     FIntPoint FootprintSizeCells = FIntPoint(100, 100);
     // 시설의 실제 바닥 크기를 1 cm 셀 수로 저장한다. 예: 6 m x 3 m는 (600, 300)이다.
     
@@ -383,7 +391,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     int32 ClearanceCells = 100;
     // 시설 둘레 확보 폭을 1 cm 셀 수로 저장한다. 예: 1 m는 100이다.//
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Queue Reserved Rects", ToolTip = "다른 시설과 장애물이 침범하지 못하도록 확보할 대기열 영역입니다. 좌표 원점은 회전 전 건물의 왼쪽 아래이고 단위는 1cm이며 Max 경계는 포함하지 않습니다. 건물 바닥과 면적으로 겹치면 안 되고, 예약 면적은 1,000,000셀 안전 예산에 포함됩니다. 영역만 늘려도 실제 대기 인원은 늘지 않습니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Queue Reserved Rects", ToolTip = "다른 시설과 장애물이 침범하지 못하도록 확보할 대기열 영역입니다. 좌표 원점은 회전 전 건물의 왼쪽 아래이고 단위는 1cm이며 Max 경계는 포함하지 않습니다. 건물 바닥과 면적으로 겹치면 안 되고, 예약 면적은 10,000,000셀 안전 예산에 포함됩니다. 영역만 늘려도 실제 대기 인원은 늘지 않습니다."))
     TArray<FFFZSCellRect> QueueReservedRects;
     // 회전 전 footprint 왼쪽 아래를 원점으로 하는 최대 대기열 예약 사각형들이다.
     // 서로 겹치거나 맞닿아도 런타임에서 결정적으로 합쳐지며 실제 좌표 단위는 1 cm 셀이다.

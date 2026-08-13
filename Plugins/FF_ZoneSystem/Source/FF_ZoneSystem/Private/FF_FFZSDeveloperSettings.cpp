@@ -17,6 +17,8 @@ UFFZSDeveloperSettings::UFFZSDeveloperSettings()
 {
     CategoryName = TEXT("Game");
     SectionName = TEXT("FF_ZoneSystem");
-    // 값 복사이므로 담당자가 설정 배열을 수정해도 GridLibrary의 내장 기준 목록 자체는 바뀌지 않는다.
-    ProjectZoneIds = UFFZSGridLibrary::GetAcceptedGameplayZoneIds();
+    // 값 복사이므로 담당자가 설정 배열을 수정해도 GridLibrary의 내장 시드 목록 자체는 바뀌지 않는다.
+    // [하드코딩 제거] 시드 전용 API를 호출한다. GetAcceptedGameplayZoneIds()는 이제 이 설정을
+    // 되읽으므로, CDO 생성 중에 그 함수를 부르면 초기화되지 않은 자기 자신을 조회하게 된다.
+    ProjectZoneIds = UFFZSGridLibrary::GetDefaultProjectZoneIds();
 }

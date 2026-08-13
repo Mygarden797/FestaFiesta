@@ -94,7 +94,14 @@ Report의 `다음 날` 버튼(`IsReportStage` + `IsFinalDay`로 게이팅)
 **요청** — `RemainingTime`이 매 틱 바뀌므로 UI가 폴링해야 합니다.
 초 단위로 바뀔 때만 쏘는 델리게이트가 있으면 좋겠습니다. 없으면 UI 쪽에서 0.1초 폴링 + 변화 감지로 처리하겠습니다.
 
-**답변** -
+**답변** 1, 2번 반영 완료했습니다.
+
+문구는 {EventLabel} 곧 시작으로 수정했습니다. 지적해주신 대로 이 이벤트는 "잠금 시작" 시점이라 실제 공연 시작과 리드타임만큼 오차가 있다는 점 인지했고, 나중에 리드타임 값이 바뀌면 문구 재검토가 필요하다는 것도 기억해두겠습니다.
+IsMainProgramLocked()의 LockEnd 계산을 수정했습니다. 다음 이벤트가 없을 때 LockEnd = TriggerSeconds(자기 자신) 대신 GetLiveDurationForCurrentDay()(그날 Live 전체 길이)로 대체되도록 바꿔서, 메인 공연이 그날 마지막 이벤트여도 시작하자마자 빈 라벨로 종료 알림이 발생하는 문제를 해결했습니다.
+
+3번은 데이터 재입력 (20개 행), 델리게이트 2개 + 변수 1개 타입 변경, 코드 여러 곳 호출부 수정, 블루프린트 노드 재연결 (2곳) 이 달라집니다 그래서 지금 작업하기에는 서로 꼬일 수가 있어서 마무리 후에 시간이 된다면 작업해도 될지 의견을 말해봅니다!
+
+
 
 FOnRemainingSecondsChanged (int32 NewSeconds)
 
@@ -119,6 +126,16 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
    `LastBroadcastSeconds`가 전환 시 초기화되지 않아서, 새 단계의 첫 정수 초가 이전 값과 같으면
    방송이 오지 않습니다. `RequestTransition`에서 `LastBroadcastSeconds = -1`로 리셋하면 해결됩니다.
    UI 쪽은 전환 시 직접 현재값을 읽어 맞추는 방어를 넣어 뒀으니 급하지는 않습니다.
+
+**답변**
+
+1, 2번 둘 다 반영 완료했습니다.
+
+1. `IsCurrentStageSkippable()`을 `private`에서 `public` + `BlueprintPure`로 옮겼습니다. C++에서 바로 호출 가능하니, ViewModel의 `CanSkipCurrentStage()`에서 이 함수를 직접 쓰시면 됩니다. `bSkippable=false`인 단계에서 근사값 대신 정확한 값을 받으실 수 있습니다
+
+2. `RequestTransition()`에 `LastBroadcastSeconds = -1;` 리셋 추가했습니다. Stage 전환 시 새 단계의 첫 초도 놓치지 않고 방송되도록 처리했습니다. UI 쪽 방어 로직은 그대로 유지하셔도 되고, 걷어내셔도 상관없을 것 같습니다.
+
+두 건 다 컴파일 확인까지 마쳤습니다
 
 ---
 
@@ -528,3 +545,4 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-11 | 백종태 | Stage 표에 `SkipCurrentStage`·`IsFinalDay`·`IsLiveStage`·`IsReportStage`·`OnFestivalEnded` 반영. 남은 시간을 폴링→구독으로 전환 완료 표시. ViewModel Command 2종 신설. 강민서에게 남은 요청 2건 기록 |
 | 2026-08-12 | 백종태 | `OnMainProgramStarted`·`OnMainProgramEnded` 항목과 사용 주의 3건 추가. 유료 프로그램 예약 절 신설 — UI 담당 확정과 필요 API 4건 요청 |
 | 2026-08-12 | 김시리 | `UFF_FestivalProgressionSubsystem`의 Gold Getter·델리게이트·`CanAfford` 구현 완료. ViewModel 초기 동기화·이벤트 중계·구매 가능 판정 연결 요청 |
+| 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |

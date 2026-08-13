@@ -185,6 +185,10 @@ public:
 	bool IsFinalDay() const;
 	// 지금 3일차인지
 
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsCurrentStageSkippable();
+	// 지금 이 단계가 스킵 가능한지 확인하는 함수 (private에서 public으로 이동)
+
 	virtual void Tick(float DeltaTime) override;
 	// 매 프레임 자동으로 호출되는 함수
 
@@ -200,10 +204,6 @@ private:
 
 	FFF_PhaseTimeRange GetPhaseTimeRange(EFF_FestivalStage Stage);
 	// 지금 Stage에 맞는 시간 범위 + 다음단계를 표에서 찾아오는 함수
-
-	UFUNCTION(BlueprintPure, Category = "Festival Stage")
-	bool IsCurrentStageSkippable();
-	// 지금 이 단계가 스킵 가능한지 확인하는 함수
 
 	void HandleLiveEnd();
 	// 타임 하나가 다 끝났을 때 다음으로 넘기는함수

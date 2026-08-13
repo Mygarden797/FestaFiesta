@@ -37,7 +37,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Validation")
     static int32 GetMaxEnumeratedCellsPerFacility();
-	// Project Settings 값을 하드 상한 1,000,000에 제한한 실제 열거 예산을 반환.
+	// Project Settings 값을 하드 상한 10,000,000에 제한한 실제 열거 예산을 반환.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static int32 NormalizeQuarterTurns(int32 QuarterTurns);
@@ -77,7 +77,20 @@ public:
 	// 회전·원점을 적용한 queue 압축 사각형들을 반환한다. 한 Rect라도 오버플로면 전체가 빈 배열.
 	
     static TArray<FFFZSCellRect> GetReservedRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// footprint·clearance·queue의 정확한 압축 합집합. 하위 계산 하나라도 실패하면 부분 합집합 없이 빈 배열이다. 
+	// footprint·clearance·queue의 정확한 압축 합집합. 하위 계산 하나라도 실패하면 부분 합집합 없이 빈 배열이다.
+
+    // [최적화] 네 영역을 한 번의 계산으로 함께 만든다.
+    // 개별 Get*Rects를 네 번 부르면 예산 검사(CanEnumerateFacilityCells)와 queue 정규화가
+    // 호출마다 중복 실행된다(Reserved 하나만 해도 내부에서 footprint·queue를 다시 만든다).
+    // 배치 검증처럼 네 영역이 모두 필요한 경로는 이 API를 써서 같은 결과를 1회 계산으로 얻는다.
+    // 각 출력의 값과 fail-closed 규칙은 대응하는 Get*Rects와 완전히 동일하다.
+    static void BuildPlacementRegions(
+        const FFFZSFacilitySpec& Spec,
+        const FFFZSGridPlacement& Placement,
+        TArray<FFFZSCellRect>& OutFootprintRects,
+        TArray<FFFZSCellRect>& OutClearanceRects,
+        TArray<FFFZSCellRect>& OutQueueRects,
+        TArray<FFFZSCellRect>& OutReservedRects);
 	
     static bool TryMaterializeCellRects(const TArray<FFFZSCellRect>& Rects, int32 MaxCells, TArray<FIntPoint>& OutCells);
 	// 작은 영역만 개별 셀로 펼치는 호환/디버그 도우미다.
@@ -101,7 +114,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Configuration")
     static TArray<FName> GetAcceptedGameplayZoneIds();
-	// 이 프로젝트의 Accepted 기본 Gameplay Zone ID 목록을 값으로 반환한다. 이식 프로젝트는 설정에서 교체할 수 있다. 
+	// [하드코딩 제거] 현재 허용되는 Gameplay Zone ID를 Project Settings > FF Zone System >
+	// Project Zone Ids에서 읽어 반환한다. 이전에는 이 함수가 Festa 전용 ID 12개를 코드에 직접
+	// 담고 있어서, 설정에 추가한 ID(예: 테스트 Zone)를 Preset 적용이 거부하는 불일치가 있었다.
+	// 설정이 비어 있을 때만 GetDefaultProjectZoneIds()의 시드 목록으로 되돌아간다.
+
+    static const TArray<FName>& GetDefaultProjectZoneIds();
+	// 새 프로젝트/이식 프로젝트가 Project Zone Ids를 채우기 전에 쓰는 시드 목록이다.
+	// 설정 CDO 생성자만 이 값을 복사하며(설정 로드 중 재귀 조회를 피한다), 런타임 판정의
+	// 권위 목록은 언제나 UFFZSDeveloperSettings::ProjectZoneIds다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Configuration")
     static FFFZSCommand MakeInstallCommandFromDefinition(

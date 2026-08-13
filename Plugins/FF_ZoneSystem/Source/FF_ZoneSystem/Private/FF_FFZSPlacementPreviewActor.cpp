@@ -212,7 +212,9 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FColor BaseColor = LastValidation.bIsValid ? FColor::Green : FColor::Red;
-    constexpr int32 MaxDisplayedRectsPerGroup = 1024;
+    // [하드코딩 제거] 건축 모드 범위 표시와 같은 상한을 설정 헤더에서 공유한다.
+    constexpr int32 MaxDisplayedRectsPerGroup =
+        UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
     const auto DrawRect = [this, Zone, CellSizeCm](const FFFZSCellRect& Rect, const FLinearColor& Color)
     {
         const FVector Center = Zone->GetActorTransform().TransformPosition(FVector(

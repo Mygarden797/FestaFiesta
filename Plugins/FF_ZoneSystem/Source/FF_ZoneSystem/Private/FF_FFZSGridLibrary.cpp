@@ -24,8 +24,12 @@
  
 namespace
 {
-    // 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다. 
-    constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility = 1'000'000;
+    // 악성/손상 데이터가 64비트 면적 계산이나 게임 스레드 작업을 무한히 키우지 못하게 하는 절대 상한이다.
+    // [하드코딩 제거] 같은 값을 두 번 적지 않도록 설정 헤더의 상수를 그대로 재사용한다.
+    // 예전에는 여기와 UFFZSDeveloperSettings에 10,000,000이 따로 적혀 있어 한쪽만 바꾸면
+    // 설정 Clamp 범위와 실제 하드 상한이 조용히 어긋날 수 있었다.
+    constexpr int32 AbsoluteMaxEnumeratedCellsPerFacility =
+        UFFZSDeveloperSettings::DefaultMaxEnumeratedCellsPerFacility;
     bool IsPositiveCellProductWithinLimit(const int64 Width, const int64 Height, const int64 CellLimit)
     {
         // Width*Height를 먼저 계산하지 않아 오버플로를 피한다.
@@ -96,6 +100,144 @@ namespace
         return UFFZSGridLibrary::CanonicalizeCellRects(Working);
     }
 
+    // [최적화] 이미 정규화되어 서로 겹치지 않는 집합의 면적을 중복 정규화 없이 더한다.
+    // GetCellRectArea는 임의 입력을 받으므로 내부에서 CanonicalizeCellRects를 한 번 더 돌린다.
+    // 정규 출력이 확실한 자리(예: TryMaterializeCellRects)에서는 그 재정규화가 순수 낭비다.
+    int64 SumDisjointRectArea(const TArray<FFFZSCellRect>& CanonicalRects)
+    {
+        int64 Total = 0;
+        for (const FFFZSCellRect& Rect : CanonicalRects)
+        {
+            const int64 Area = Rect.GetArea();
+            if (Area < 0 || Total > MAX_int64 - Area)
+            {
+                return -1;
+            }
+            Total += Area;
+        }
+        return Total;
+    }
+
+    // 회전 전 로컬 사각형을 Zone 좌표로 옮긴다. 세 영역 계산이 공유하는 유일한 변환 지점이다.
+    FFFZSCellRect ToZoneRect(const FFFZSCellRect& LocalRect, const FFFZSGridPlacement& Placement)
+    {
+        return TranslateRectChecked(
+            UFFZSGridLibrary::RotateRect(LocalRect, Placement.QuarterTurns),
+            Placement.OriginCell);
+    }
+
+    FFFZSCellRect MakeZoneFootprintRect(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement)
+    {
+        return ToZoneRect(FFFZSCellRect(FIntPoint::ZeroValue, Spec.FootprintSizeCells), Placement);
+    }
+
+    FFFZSCellRect MakeZoneExpandedRect(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement)
+    {
+        return ToZoneRect(
+            FFFZSCellRect(
+                FIntPoint(-Spec.ClearanceCells, -Spec.ClearanceCells),
+                FIntPoint(
+                    Spec.FootprintSizeCells.X + Spec.ClearanceCells,
+                    Spec.FootprintSizeCells.Y + Spec.ClearanceCells)),
+            Placement);
+    }
+
+    // 압축 Queue 사각형과 "Queue 저작 데이터가 존재하는지"를 함께 만든다.
+    // 좌표가 하나라도 넘치면 부분 결과 없이 false다. 저작 데이터가 없어 결과가 비는 정상 상태와
+    // 오버플로로 비는 실패 상태를 호출자가 구분할 수 있도록 bOutHasQueueInput을 분리해 돌려준다.
+    bool TryBuildZoneQueueRects(
+        const FFFZSFacilitySpec& Spec,
+        const FFFZSGridPlacement& Placement,
+        TArray<FFFZSCellRect>& OutRects,
+        bool& bOutHasQueueInput)
+    {
+        OutRects.Reset();
+        bOutHasQueueInput = !Spec.QueueReservedRects.IsEmpty() || !Spec.QueueReservedCells.IsEmpty();
+
+        TArray<FFFZSCellRect> ZoneRects;
+        ZoneRects.Reserve(Spec.QueueReservedRects.Num() + Spec.QueueReservedCells.Num());
+        for (const FFFZSCellRect& LocalRect : Spec.QueueReservedRects)
+        {
+            const FFFZSCellRect ZoneRect = ToZoneRect(LocalRect, Placement);
+            if (!ZoneRect.IsValid())
+            {
+                return false;
+            }
+            ZoneRects.Add(ZoneRect);
+        }
+        for (const FIntPoint& Cell : Spec.QueueReservedCells)
+        {
+            if (Cell.X == MAX_int32 || Cell.Y == MAX_int32)
+            {
+                return false;
+            }
+            const FFFZSCellRect ZoneRect =
+                ToZoneRect(FFFZSCellRect(Cell, FIntPoint(Cell.X + 1, Cell.Y + 1)), Placement);
+            if (!ZoneRect.IsValid())
+            {
+                return false;
+            }
+            ZoneRects.Add(ZoneRect);
+        }
+        OutRects = UFFZSGridLibrary::CanonicalizeCellRects(ZoneRects);
+        return true;
+    }
+
+    // [최적화] 네 권위 영역을 공유 중간 결과로 한 번에 만든다.
+    // 값과 fail-closed 규칙은 개별 Get*Rects와 동일하며, 달라지는 것은 비용뿐이다.
+    // 이전 구조에서는 GetReservedRects 한 번이 CanEnumerateFacilityCells를 6회,
+    // Queue 정규화를 3회 반복 실행했다.
+    struct FFacilityZoneRegions
+    {
+        TArray<FFFZSCellRect> Footprint;
+        TArray<FFFZSCellRect> Clearance;
+        TArray<FFFZSCellRect> Queue;
+        TArray<FFFZSCellRect> Reserved;
+    };
+
+    FFacilityZoneRegions BuildFacilityZoneRegions(
+        const FFFZSFacilitySpec& Spec,
+        const FFFZSGridPlacement& Placement)
+    {
+        FFacilityZoneRegions Regions;
+        if (!UFFZSGridLibrary::CanEnumerateFacilityCells(Spec))
+        {
+            return Regions;
+        }
+
+        const FFFZSCellRect FootprintRect = MakeZoneFootprintRect(Spec, Placement);
+        if (FootprintRect.IsValid())
+        {
+            Regions.Footprint.Add(FootprintRect);
+        }
+
+        bool bHasQueueInput = false;
+        const bool bQueueResolved =
+            TryBuildZoneQueueRects(Spec, Placement, Regions.Queue, bHasQueueInput);
+        if (!bQueueResolved)
+        {
+            Regions.Queue.Reset();
+        }
+
+        // Expanded는 따로 검사한다. Clearance 합집합은 정상적으로도 빌 수 있어서
+        // 빈 배열만으로는 좌표 오버플로와 "남은 clearance 없음"을 구분할 수 없다.
+        const FFFZSCellRect ExpandedRect = MakeZoneExpandedRect(Spec, Placement);
+        if (Regions.Footprint.IsEmpty() || !ExpandedRect.IsValid() ||
+            (bHasQueueInput && !bQueueResolved))
+        {
+            return Regions;
+        }
+
+        TArray<FFFZSCellRect> Cuts = Regions.Footprint;
+        Cuts.Append(Regions.Queue);
+        Regions.Clearance = SubtractRectSets(TArray<FFFZSCellRect>{ ExpandedRect }, Cuts);
+
+        TArray<FFFZSCellRect> ReservedInput = Regions.Footprint;
+        ReservedInput.Append(Regions.Clearance);
+        ReservedInput.Append(Regions.Queue);
+        Regions.Reserved = UFFZSGridLibrary::CanonicalizeCellRects(ReservedInput);
+        return Regions;
+    }
 }
 
 int32 UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility()
@@ -244,11 +386,19 @@ TArray<FFFZSCellRect> UFFZSGridLibrary::CanonicalizeCellRects(const TArray<FFFZS
     }
 
     TArray<FFFZSCellRect> Result;
+    // [최적화] 세로 병합 대상을 "직전 밴드가 만든 Rect"로 한정한다.
+    // Y 밴드는 오름차순이고 각 밴드 Rect의 Max.Y는 그 밴드의 Y1이므로, Max.Y == Y0을 만족하는
+    // 후보는 언제나 바로 앞 밴드에만 있다. 예전에는 밴드마다 Result 전체를 선형 탐색해
+    // 조각이 많은 입력에서 출력 Rect 수의 제곱에 비례하는 비용이 났다.
+    // (X0, X1) 구간을 키로 한 밴드 단위 색인이므로 결과 Rect와 최종 정렬 순서는 이전과 같다.
+    TMap<FIntPoint, int32> PreviousBandRectIndices;
+    TMap<FIntPoint, int32> CurrentBandRectIndices;
+    TArray<FIntPoint> Intervals;
     for (int32 EdgeIndex = 1; EdgeIndex < YEdges.Num(); ++EdgeIndex)
     {
         const int32 Y0 = YEdges[EdgeIndex - 1];
         const int32 Y1 = YEdges[EdgeIndex];
-        TArray<FIntPoint> Intervals;
+        Intervals.Reset();
         for (const FFFZSCellRect& Rect : Rects)
         {
             if (Rect.IsValid() && Rect.Min.Y <= Y0 && Rect.Max.Y >= Y1)
@@ -261,6 +411,7 @@ TArray<FFFZSCellRect> UFFZSGridLibrary::CanonicalizeCellRects(const TArray<FFFZS
             return A.X != B.X ? A.X < B.X : A.Y < B.Y;
         });
 
+        CurrentBandRectIndices.Reset();
         int32 IntervalIndex = 0;
         while (IntervalIndex < Intervals.Num())
         {
@@ -273,21 +424,21 @@ TArray<FFFZSCellRect> UFFZSGridLibrary::CanonicalizeCellRects(const TArray<FFFZS
                 ++IntervalIndex;
             }
 
-            bool bExtended = false;
-            for (FFFZSCellRect& Existing : Result)
+            const FIntPoint SpanKey(X0, X1);
+            int32 RectIndex = INDEX_NONE;
+            if (const int32* PreviousRectIndex = PreviousBandRectIndices.Find(SpanKey);
+                PreviousRectIndex && Result[*PreviousRectIndex].Max.Y == Y0)
             {
-                if (Existing.Min.X == X0 && Existing.Max.X == X1 && Existing.Max.Y == Y0)
-                {
-                    Existing.Max.Y = Y1;
-                    bExtended = true;
-                    break;
-                }
+                Result[*PreviousRectIndex].Max.Y = Y1;
+                RectIndex = *PreviousRectIndex;
             }
-            if (!bExtended)
+            else
             {
-                Result.Emplace(FIntPoint(X0, Y0), FIntPoint(X1, Y1));
+                RectIndex = Result.Emplace(FIntPoint(X0, Y0), FIntPoint(X1, Y1));
             }
+            CurrentBandRectIndices.Add(SpanKey, RectIndex);
         }
+        PreviousBandRectIndices = MoveTemp(CurrentBandRectIndices);
     }
 
     Result.Sort([](const FFFZSCellRect& A, const FFFZSCellRect& B)
@@ -343,6 +494,7 @@ int64 UFFZSGridLibrary::GetCellRectArea(const TArray<FFFZSCellRect>& Rects)
     return Total;
 }
 
+// footprint 하나만 필요한 호출자(배치 Transform 계산 등)를 위해 최소 경로를 유지한다.
 TArray<FFFZSCellRect> UFFZSGridLibrary::GetFootprintRects(
     const FFFZSFacilitySpec& Spec,
     const FFFZSGridPlacement& Placement)
@@ -351,8 +503,7 @@ TArray<FFFZSCellRect> UFFZSGridLibrary::GetFootprintRects(
     {
         return {};
     }
-    const FFFZSCellRect Local(FIntPoint::ZeroValue, Spec.FootprintSizeCells);
-    const FFFZSCellRect World = TranslateRectChecked(RotateRect(Local, Placement.QuarterTurns), Placement.OriginCell);
+    const FFFZSCellRect World = MakeZoneFootprintRect(Spec, Placement);
     return World.IsValid() ? TArray<FFFZSCellRect>{ World } : TArray<FFFZSCellRect>{};
 }
 
@@ -360,101 +511,48 @@ TArray<FFFZSCellRect> UFFZSGridLibrary::GetQueueRects(
     const FFFZSFacilitySpec& Spec,
     const FFFZSGridPlacement& Placement)
 {
-    if (!CanEnumerateFacilityCells(Spec))
+    TArray<FFFZSCellRect> Result;
+    bool bHasQueueInput = false;
+    if (!CanEnumerateFacilityCells(Spec) ||
+        !TryBuildZoneQueueRects(Spec, Placement, Result, bHasQueueInput))
     {
         return {};
     }
-
-    TArray<FFFZSCellRect> LocalRects = Spec.QueueReservedRects;
-    for (const FIntPoint& Cell : Spec.QueueReservedCells)
-    {
-        if (Cell.X == MAX_int32 || Cell.Y == MAX_int32)
-        {
-            return {};
-        }
-        LocalRects.Emplace(Cell, FIntPoint(Cell.X + 1, Cell.Y + 1));
-    }
-
-    TArray<FFFZSCellRect> Result;
-    for (const FFFZSCellRect& Local : LocalRects)
-    {
-        const FFFZSCellRect World = TranslateRectChecked(RotateRect(Local, Placement.QuarterTurns), Placement.OriginCell);
-        if (!World.IsValid())
-        {
-            return {};
-        }
-        Result.Add(World);
-    }
-    return CanonicalizeCellRects(Result);
+    return Result;
 }
 
+// [최적화] Clearance/Reserved는 서로의 중간 결과를 공유하므로 공통 빌더 하나로 계산한다.
+// 예전에는 GetClearanceRects가 GetFootprintRects/GetQueueRects를 다시 호출하고,
+// GetReservedRects가 그 셋을 또 호출해 같은 예산 검사와 Queue 정규화를 여러 번 반복했다.
 TArray<FFFZSCellRect> UFFZSGridLibrary::GetClearanceRects(
     const FFFZSFacilitySpec& Spec,
     const FFFZSGridPlacement& Placement)
 {
-    if (!CanEnumerateFacilityCells(Spec))
-    {
-        return {};
-    }
-
-    const FFFZSCellRect LocalExpanded(
-        FIntPoint(-Spec.ClearanceCells, -Spec.ClearanceCells),
-        FIntPoint(Spec.FootprintSizeCells.X + Spec.ClearanceCells,
-            Spec.FootprintSizeCells.Y + Spec.ClearanceCells));
-    const FFFZSCellRect Expanded = TranslateRectChecked(
-        RotateRect(LocalExpanded, Placement.QuarterTurns), Placement.OriginCell);
-    if (!Expanded.IsValid())
-    {
-        return {};
-    }
-
-    const TArray<FFFZSCellRect> FootprintRects = GetFootprintRects(Spec, Placement);
-    const bool bHasQueueInput =
-        !Spec.QueueReservedRects.IsEmpty() || !Spec.QueueReservedCells.IsEmpty();
-    const TArray<FFFZSCellRect> QueueRects = GetQueueRects(Spec, Placement);
-    // Queue 좌표만 오버플로한 경우 이를 "Queue 없음"으로 취급하면 clearance 일부가 권위 결과로 샌다.
-    if (FootprintRects.IsEmpty() || (bHasQueueInput && QueueRects.IsEmpty()))
-    {
-        return {};
-    }
-
-    TArray<FFFZSCellRect> Cuts = FootprintRects;
-    Cuts.Append(QueueRects);
-    return SubtractRectSets(TArray<FFFZSCellRect>{ Expanded }, Cuts);
+    FFacilityZoneRegions Regions = BuildFacilityZoneRegions(Spec, Placement);
+    return MoveTemp(Regions.Clearance);
 }
 
 TArray<FFFZSCellRect> UFFZSGridLibrary::GetReservedRects(
     const FFFZSFacilitySpec& Spec,
     const FFFZSGridPlacement& Placement)
 {
-    if (!CanEnumerateFacilityCells(Spec))
-    {
-        return {};
-    }
+    FFacilityZoneRegions Regions = BuildFacilityZoneRegions(Spec, Placement);
+    return MoveTemp(Regions.Reserved);
+}
 
-    const TArray<FFFZSCellRect> FootprintRects = GetFootprintRects(Spec, Placement);
-    const bool bHasQueueInput =
-        !Spec.QueueReservedRects.IsEmpty() || !Spec.QueueReservedCells.IsEmpty();
-    const TArray<FFFZSCellRect> QueueRects = GetQueueRects(Spec, Placement);
-
-    // Expanded 자체도 별도로 검사한다. Clearance 결과는 정상적으로 빈 합집합일 수 있어
-    // 빈 배열만으로는 좌표 오버플로와 "남은 clearance 없음"을 구분할 수 없기 때문이다.
-    const FFFZSCellRect LocalExpanded(
-        FIntPoint(-Spec.ClearanceCells, -Spec.ClearanceCells),
-        FIntPoint(Spec.FootprintSizeCells.X + Spec.ClearanceCells,
-            Spec.FootprintSizeCells.Y + Spec.ClearanceCells));
-    const FFFZSCellRect Expanded = TranslateRectChecked(
-        RotateRect(LocalExpanded, Placement.QuarterTurns), Placement.OriginCell);
-    if (FootprintRects.IsEmpty() || !Expanded.IsValid() ||
-        (bHasQueueInput && QueueRects.IsEmpty()))
-    {
-        return {};
-    }
-
-    TArray<FFFZSCellRect> Result = FootprintRects;
-    Result.Append(GetClearanceRects(Spec, Placement));
-    Result.Append(QueueRects);
-    return CanonicalizeCellRects(Result);
+void UFFZSGridLibrary::BuildPlacementRegions(
+    const FFFZSFacilitySpec& Spec,
+    const FFFZSGridPlacement& Placement,
+    TArray<FFFZSCellRect>& OutFootprintRects,
+    TArray<FFFZSCellRect>& OutClearanceRects,
+    TArray<FFFZSCellRect>& OutQueueRects,
+    TArray<FFFZSCellRect>& OutReservedRects)
+{
+    FFacilityZoneRegions Regions = BuildFacilityZoneRegions(Spec, Placement);
+    OutFootprintRects = MoveTemp(Regions.Footprint);
+    OutClearanceRects = MoveTemp(Regions.Clearance);
+    OutQueueRects = MoveTemp(Regions.Queue);
+    OutReservedRects = MoveTemp(Regions.Reserved);
 }
 
 bool UFFZSGridLibrary::TryMaterializeCellRects(
@@ -471,7 +569,8 @@ bool UFFZSGridLibrary::TryMaterializeCellRects(
         return false;
     }
     const TArray<FFFZSCellRect> Canonical = CanonicalizeCellRects(Rects);
-    const int64 Area = GetCellRectArea(Canonical);
+    // [최적화] 이미 정규화된 집합이므로 GetCellRectArea가 내부에서 다시 정규화하지 않도록 한다.
+    const int64 Area = SumDisjointRectArea(Canonical);
     if (Area < 0 || Area > MaxCells || Area > MAX_int32)
     {
         return false;
@@ -532,9 +631,13 @@ TArray<FIntPoint> UFFZSGridLibrary::GetReservedCells(
 }
 
 
-TArray<FName> UFFZSGridLibrary::GetAcceptedGameplayZoneIds()
+// [하드코딩 제거] 이 목록은 이제 "새 프로젝트 시드"일 뿐 런타임 판정의 권위 목록이 아니다.
+// 권위 목록은 UFFZSDeveloperSettings::ProjectZoneIds(Config=Game)이며, 설정 CDO 생성자만
+// 여기서 초기값을 복사한다. 설정을 로드하는 도중 다시 설정을 조회하는 재귀를 피하기 위해
+// 시드 조회와 실제 조회(GetAcceptedGameplayZoneIds)를 별도 함수로 나눈다.
+const TArray<FName>& UFFZSGridLibrary::GetDefaultProjectZoneIds()
 {
-    return {
+    static const TArray<FName> DefaultProjectZoneIds = {
         TEXT("GZ_SunsetBeachClub"),
         TEXT("GZ_DadaPocha"),
         TEXT("GZ_DadaYajang"),
@@ -548,6 +651,18 @@ TArray<FName> UFFZSGridLibrary::GetAcceptedGameplayZoneIds()
         TEXT("GZ_TemporaryParkingEast"),
         TEXT("GZ_Operations")
     };
+    return DefaultProjectZoneIds;
+}
+
+TArray<FName> UFFZSGridLibrary::GetAcceptedGameplayZoneIds()
+{
+    // 담당자가 Project Settings에 추가한 ID(예: 테스트 Zone)도 그대로 허용된다.
+    // 예전처럼 코드 목록만 보면, 설정에는 있으나 코드에는 없는 ID가 Preset 적용에서만
+    // 거부되어 ValidateZoneData 결과와 어긋나는 문제가 생긴다.
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    return (Settings && !Settings->ProjectZoneIds.IsEmpty())
+        ? Settings->ProjectZoneIds
+        : GetDefaultProjectZoneIds();
 }
 
 FFFZSCommand UFFZSGridLibrary::MakeInstallCommand(const FFFZSFacilitySpec& Spec, const FName ZoneId, const FFFZSGridPlacement Placement, const int64 ExpectedWorldRevision)
@@ -620,11 +735,12 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     FString Canonical;
     Canonical.Reserve(2048);
 
+    // [최적화] 필드마다 임시 FString을 만들지 않고 결과 버퍼에 직접 이어 붙인다.
+    // 출력 바이트는 이전(`"%s=%d:" + Value + ";"`)과 완전히 동일하다. 이 문자열은 저장된
+    // 멱등성 영수증의 키이므로 형식이 1바이트라도 달라지면 안 된다.
     const auto AppendString = [&Canonical](const TCHAR* Label, const FString& Value)
     {
-        Canonical += FString::Printf(TEXT("%s=%d:"), Label, Value.Len());
-        Canonical += Value;
-        Canonical += TEXT(";");
+        Canonical.Appendf(TEXT("%s=%d:%s;"), Label, Value.Len(), *Value);
     };
     const auto AppendInt = [&AppendString](const TCHAR* Label, const int64 Value)
     {
@@ -786,6 +902,7 @@ FText UFFZSGridLibrary::PlacementFailureToText(const EFFZSPlacementFailure Failu
     case EFFZSPlacementFailure::NavRebuildTimeout: return LOCTEXT("NavTimeout", "내비게이션 재빌드 시간이 초과되었습니다");
     case EFFZSPlacementFailure::DataInvalid: return LOCTEXT("DataInvalid", "Facility 또는 Zone 데이터가 잘못되었습니다");
     case EFFZSPlacementFailure::ExternalPolicyRejected: return LOCTEXT("PolicyRejected", "외부 팀 Policy가 변경을 거부했습니다");
+    case EFFZSPlacementFailure::InsufficientFunds: return LOCTEXT("InsufficientFunds", "현재 잔액이 부족합니다");
     default: return LOCTEXT("InternalError", "Zone/Facility 내부 오류가 발생했습니다");
     }
 }

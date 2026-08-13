@@ -203,6 +203,14 @@ namespace FFZSFacilityKoreanTooltipsTestsPrivate
         TestCustomizationLocText(Test, Source, TEXT("ShowKoreanHelpButton"), TEXT("Show Korean Help"));
         TestCustomizationLocText(Test, Source, TEXT("ValidateDefinitionButton"), TEXT("Validate Facility Definition"));
         TestCustomizationLocText(Test, Source, TEXT("FootprintFromMeshButton"), TEXT("Footprint <- Loaded Mesh"));
+        TestCustomizationLocText(
+            Test, Source, TEXT("ResizeFootprintButton"), TEXT("Resize Facility (Keep Queue & Anchors)"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintWidthLabel"), TEXT("New Width (X)"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintDepthLabel"), TEXT("New Depth (Y)"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintHeightLabel"), TEXT("New Height (Z)"));
+        TestCustomizationLocText(
+            Test, Source, TEXT("QueueRectsFromPathButton"), TEXT("Queue Rects <- Queue Path"));
+        TestCustomizationLocText(Test, Source, TEXT("QueueMarginLabel"), TEXT("Queue Margin (cm)"));
         TestCustomizationLocText(Test, Source, TEXT("TailFromCapacityButton"), TEXT("Queue Tail <- Max Capacity"));
         TestCustomizationLocText(Test, Source, TEXT("CapacityFromLengthButton"), TEXT("Max Capacity <- Queue Length"));
         TestCustomizationLocText(Test, Source, TEXT("FitVisualButton"), TEXT("Fit Mesh to Placement Bounds"));
@@ -217,6 +225,12 @@ namespace FFZSFacilityKoreanTooltipsTestsPrivate
         TestCustomizationLocText(Test, Source, TEXT("ShowKoreanHelpTooltip"));
         TestCustomizationLocText(Test, Source, TEXT("ValidateDefinitionTooltip"));
         TestCustomizationLocText(Test, Source, TEXT("FootprintFromMeshTooltip"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintTooltip"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintWidthTooltip"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintDepthTooltip"));
+        TestCustomizationLocText(Test, Source, TEXT("ResizeFootprintHeightTooltip"));
+        TestCustomizationLocText(Test, Source, TEXT("QueueRectsFromPathTooltip"));
+        TestCustomizationLocText(Test, Source, TEXT("QueueMarginTooltip"));
         TestCustomizationLocText(Test, Source, TEXT("TailFromCapacityTooltip"));
         TestCustomizationLocText(Test, Source, TEXT("CapacityFromLengthTooltip"));
         TestCustomizationLocText(Test, Source, TEXT("FitVisualTooltip"));

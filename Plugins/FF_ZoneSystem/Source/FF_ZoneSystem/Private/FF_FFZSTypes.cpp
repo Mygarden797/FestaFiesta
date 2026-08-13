@@ -25,9 +25,11 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
 
-    if (SchemaVersion != 2)
+    if (SchemaVersion != CurrentSchemaVersion)
     {
-        OutErrors.Add(LOCTEXT("InvalidSchema", "FacilitySpec은 SchemaVersion 2(1 Cell = 1cm)만 지원합니다. 이전 데이터는 명시적으로 다시 작성해야 합니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("InvalidSchema", "FacilitySpec은 SchemaVersion {0}(1 Cell = 1cm)만 지원합니다. 이전 데이터는 명시적으로 다시 작성해야 합니다."),
+            FText::AsNumber(CurrentSchemaVersion)));
     }
     if (FacilityDefinitionId.IsNone())
     {
@@ -66,21 +68,25 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("InvalidQueueRules", "Queue 수용량, 간격 및 Service 시간은 유한한 양수여야 합니다."));
     }
+    // [하드코딩 제거] 안내 문구에 한계값을 직접 적지 않고 실제 상수를 넣어 만든다.
+    // 예전에는 상수를 조정해도 담당자에게는 512/32/64라는 옛 숫자가 계속 표시됐다.
     if (QueueRules.MaxWaitingAgents > UFFZSDeveloperSettings::MaxQueueWaitingAgents)
     {
-        OutErrors.Add(LOCTEXT(
-            "QueueCapacitySafetyLimit",
-            "MaxWaitingAgents가 시설당 대기열 안전 제한 512를 초과했습니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("QueueCapacitySafetyLimit", "MaxWaitingAgents가 시설당 대기열 안전 제한 {0}을 초과했습니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxQueueWaitingAgents)));
     }
     if (QueueRules.ServiceCapacity > UFFZSDeveloperSettings::MaxFacilityServiceCapacity)
     {
-        OutErrors.Add(LOCTEXT(
-            "ServiceCapacitySafetyLimit",
-            "ServiceCapacity가 시설당 서비스 안전 제한 32를 초과했습니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("ServiceCapacitySafetyLimit", "ServiceCapacity가 시설당 서비스 안전 제한 {0}을 초과했습니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxFacilityServiceCapacity)));
     }
     if (QueueReservedRects.Num() > UFFZSDeveloperSettings::MaxQueueReservedRects)
     {
-        OutErrors.Add(LOCTEXT("QueueRectCountSafetyLimit", "QueueReservedRects는 최대 64개를 허용합니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("QueueRectCountSafetyLimit", "QueueReservedRects는 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxQueueReservedRects)));
     }
     if (QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxLegacyQueueReservedCells)
     {
@@ -90,15 +96,21 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     }
     if (QueueSplinePointsCm.Num() > UFFZSDeveloperSettings::MaxQueueSplinePoints)
     {
-        OutErrors.Add(LOCTEXT("QueueSplinePointCountSafetyLimit", "QueueSplinePointsCm은 최대 64개를 허용합니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("QueueSplinePointCountSafetyLimit", "QueueSplinePointsCm은 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxQueueSplinePoints)));
     }
     if (Anchors.Num() > UFFZSDeveloperSettings::MaxFacilityAnchors)
     {
-        OutErrors.Add(LOCTEXT("AnchorCountSafetyLimit", "Anchors는 최대 64개를 허용합니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("AnchorCountSafetyLimit", "Anchors는 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxFacilityAnchors)));
     }
     if (AllowedZoneIds.Num() > UFFZSDeveloperSettings::MaxAllowedZoneIds)
     {
-        OutErrors.Add(LOCTEXT("AllowedZoneCountSafetyLimit", "AllowedZoneIds는 최대 64개를 허용합니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("AllowedZoneCountSafetyLimit", "AllowedZoneIds는 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxAllowedZoneIds)));
     }
     // Collection limits are denial-of-service guards, not tuning rules. Once one is exceeded,
     // do not copy, canonicalize, hash, or iterate attacker-sized arrays merely to accumulate
@@ -363,11 +375,14 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 // 한 번 실패한 검증은 뒤 단계가 성공해도 다시 true가 되지 않는 단조 상태다.
 void FFFZSPlacementValidation::AddFailure(const EFFZSPlacementFailure Reason, const FText& Message)
 {
+    const bool bWasValid = bIsValid;
     if (Reason != EFFZSPlacementFailure::None)
     {
         Reasons.AddUnique(Reason);
     }
-    if (Summary.IsEmpty() && !Message.IsEmpty())
+    // ValidatePlacementLocal은 성공 시 사람이 읽는 성공 Summary를 채운다. 이후 외부 정책이
+    // 거부하면 그 성공 문구가 실패 이유를 가리지 않도록 첫 실패 메시지로 교체한다.
+    if ((bWasValid || Summary.IsEmpty()) && !Message.IsEmpty())
     {
         Summary = Message;
     }

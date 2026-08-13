@@ -138,7 +138,9 @@ public:
 
     UFUNCTION(CallInEditor, Category = "Zone|Presets")
     bool ApplyAcceptedZonePreset(FName AcceptedZoneId);
-    // 내장 Accepted ID의 이름·참고 키·버전을 적용한다. 이미 등록된 액터나 알 수 없는 ID면 키 불일치를 막고 false다.
+    // Project Settings의 허용 ID에 대해 이름·참고 키·버전을 적용한다.
+    // 이미 등록된 액터, 비어 있는 ID, 제한 모드에서 목록에 없는 ID면 키 불일치를 막고 false다.
+    // 제한을 끈 이식 프로젝트에서는 비어 있지 않은 ID를 모두 허용한다.
 
     UFUNCTION(BlueprintPure, Category = "Zone|Validation")
     bool ValidateZoneData(TArray<FText>& OutErrors) const;
@@ -152,6 +154,9 @@ protected:
     //레벨 전환·파괴 시 월드 레지스트리에서 해제.
 
 private:
+    int32 ComputeSoftCapacity(float BoundaryAreaSquareMeters) const;
+    // SoftCapacity 계산 규칙의 단일 구현이다. 경계 면적을 이미 가진 호출자는 그 값을 넘겨
+    // 폴리곤 재생성을 피하고, 그렇지 않은 호출자는 GetSoftCapacity()를 그대로 사용한다.
 
     int32 ReportedPopulation = 0;
     // 외부 시뮬레이션이 마지막으로 보고한 0 이상의 인구 표본.
