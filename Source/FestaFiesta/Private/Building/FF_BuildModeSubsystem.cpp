@@ -5,6 +5,7 @@
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
+#include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
 #include "Engine/DataTable.h"
 #include "Engine/Engine.h"
@@ -40,6 +41,11 @@ namespace
 		FSoftObjectPath(TEXT(
 			"/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback_C")));
+	// FF.BuildModeGuideUMG 콘솔 명령이 만든 좌하단 조작 안내 패널. 없으면 조용히 건너뛴다.
+	const TSoftClassPtr<UFF_BuildModeGuide> BuildModeGuideClass(
+		FSoftObjectPath(TEXT(
+			"/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide."
+			"WBP_FF_BuildModeGuide_C")));
 }
 
 bool UFF_BuildModeSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -98,6 +104,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 	// 실제로 입력을 변경한 세션에서만 남아 있는 로컬 컨트롤러의 입력 모드를 복구한다.
 	RemoveCatalogScreen();
 	DismissPlacementFailureFeedback(true);
+	RemoveBuildModeGuide();
 	DestroyPlacementPreview();
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
@@ -370,6 +377,7 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 	bSuppressBuildToggleUntilReleased = false;
 	RemoveCatalogScreen();
 	DismissPlacementFailureFeedback(true);
+	RemoveBuildModeGuide();
 	DestroyPlacementPreview();
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
@@ -892,6 +900,37 @@ void UFF_BuildModeSubsystem::BeginBuildSession(APlayerController& Controller)
 	{
 		PreviousFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	}
+	CreateBuildModeGuide(Controller);
+}
+
+void UFF_BuildModeSubsystem::CreateBuildModeGuide(APlayerController& Controller)
+{
+	if (BuildModeGuideWidget)
+	{
+		return;
+	}
+
+	UClass* GuideClass = BuildModeGuideClass.LoadSynchronous();
+	if (!GuideClass || !GuideClass->IsChildOf(UFF_BuildModeGuide::StaticClass()))
+	{
+		return;
+	}
+
+	BuildModeGuideWidget = CreateWidget<UFF_BuildModeGuide>(&Controller, GuideClass);
+	if (BuildModeGuideWidget)
+	{
+		BuildModeGuideWidget->AddToPlayerScreen(90);
+	}
+}
+
+void UFF_BuildModeSubsystem::RemoveBuildModeGuide()
+{
+	if (!BuildModeGuideWidget)
+	{
+		return;
+	}
+	BuildModeGuideWidget->RemoveFromParent();
+	BuildModeGuideWidget = nullptr;
 }
 
 void UFF_BuildModeSubsystem::SetCatalogInputMode(APlayerController& Controller) const
