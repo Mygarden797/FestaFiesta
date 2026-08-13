@@ -12,10 +12,10 @@ data/
 ├─ derived/     가중치·규칙으로 계산한 게임용 분포. Utility AI 입력 후보.
 ├─ unreal/      Unreal DataTable로 바로 임포트할 CSV.
 └─ metadata/    출처 카탈로그, 버전, 가정, 검증 기록.
-   └─ session_log/   AI 세션 간 작업 인수인계 로그. 팀 공유 문서가 아니라 로컬 전용. (git 제외)
+   └─ SiriKim_Docs/   김시리 로컬 전용 폴더. (git 제외)
 ```
 
-`data/raw/`, `data/extracted/`, `data/metadata/session_log/`는 `.gitignore`로 제외한다. 원본은 용량이 크거나 재배포 조건이 불확실하고, 세션 로그는 팀 전체가 볼 문서가 아니라 작업 연속성을 위한 개인 기록이기 때문이다. 다운로드 원본의 출처·해시는 `data/metadata/source_catalog.json`에 기록해 계보를 끊지 않는다.
+`data/raw/`, `data/extracted/`, `data/metadata/SiriKim_Docs/`는 `.gitignore`로 제외한다.
 
 ## 상태 라벨
 
@@ -82,8 +82,8 @@ UI 담당자가 명칭을 편집하려면 `data/ui/archetype_label_overrides.csv
 
 ## 문서 지도
 
-| 문서                                              | 언제 본다                                     |
-| ----------------------------------------------- | ----------------------------------------- |
+| 문서                                                   | 언제 본다                                     |
+| ---------------------------------------------------- | ----------------------------------------- |
 | `metadata/spec/utility_ai_spec.md`                   | Utility 식(6항)·계수·필드 출처·검증 방법·구현 백로그       |
 | `metadata/spec/utility_destination_selector_spec.md` | 선택기를 실제로 어떤 순서로 조립하는지                     |
 | `metadata/spec/individual_variation_spec.md`         | 개체 변주 6종·Seed 규칙·삼각분포·그룹 공유               |
@@ -91,7 +91,7 @@ UI 담당자가 명칭을 편집하려면 `data/ui/archetype_label_overrides.csv
 | `metadata/spec/dependent_child_npc_spec.md`          | 아동 슬롯이 왜 아키타입을 안 받는지, 무엇을 상속하는지           |
 | `metadata/spec/visitor_arrival_curve_spec.md`        | 유입 곡선이 왜 절대 인원이 아니라 비율인지                  |
 | `metadata/spec/reservation_program_spec.md`          | 유료 프로그램 예약 규칙과 후속 작업. 결정 필요 항목 4개 포함      |
-| `metadata/handoff/facility_naming_convention.md`        | 시설 이름을 짓는 사람이 봐야 하는 규칙 + 코드가 소분류로 무엇을 하는지 |
-| `metadata/handoff/crowdai_handoff_note.md`              | crowdAI와의 계약 전체                           |
-| `metadata/public_data_decision_log.md`          | 데이터·계수 결정과 **번복** 이력. "왜 이 값인가"를 확인할 때    |
-| `../UI_API.md` (리포 루트)                          | UI가 호출·구독하는 것                             |
+| `metadata/request/facility_naming_convention.md`     | 시설 이름을 짓는 사람이 봐야 하는 규칙 + 코드가 소분류로 무엇을 하는지 |
+| `metadata/request/crowdai_integration_guide.md`           | crowdAI와의 계약 전체                           |
+| `metadata/public_data_decision_log.md`               | 데이터·계수 결정과 **번복** 이력. "왜 이 값인가"를 확인할 때    |
+| `../UI_API.md` (리포 루트)                               | UI가 호출·구독하는 것                             |

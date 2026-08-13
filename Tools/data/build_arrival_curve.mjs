@@ -1,7 +1,7 @@
 /**
  * 시간대별 목표 유입 곡선 (수요 곡선) 생성
  *
- * crowdai_handoff_note.md §4의 "시간대별 목표 유입량"을 crowdAI가 코드로 읽을 수 있는
+ * crowdai_integration_guide.md §8의 "시간대별 목표 유입량"을 crowdAI가 코드로 읽을 수 있는
  * 데이터로 만든다. 이 곡선이 정하는 것은 "언제 얼마나 들어와야 하는가"의 목표 분포뿐이며,
  * 실제로 어떤 그룹을 언제 Pool에서 꺼낼지는 crowdAI가 자유롭게 정한다.
  *
@@ -172,7 +172,7 @@ writeFileSync('data/derived/visitor_arrival_curve_v0.json', JSON.stringify({
   created_at: '2026-08-06',
   dataset_id: 'visitor_arrival_curve_v0',
   status: 'draft — 곡선 인터페이스(형태·단위·도메인)는 확정, 곡선 모양 수치는 전부 draft_assumption',
-  purpose: 'crowdAI가 그룹 입장 타이밍을 정할 때 맞춰야 할 시간대별 목표 유입 분포. crowdai_handoff_note.md §4의 "시간대별 목표 유입량"의 실제 형태.',
+  purpose: 'crowdAI가 그룹 입장 타이밍을 정할 때 맞춰야 할 시간대별 목표 유입 분포. crowdai_integration_guide.md §8의 "시간대별 목표 유입량"의 실제 형태.',
   row_unit: '한 시나리오 × 한 시간 버킷',
   interface_contract: {
     quantity: '신규 유입(그 버킷에 새로 입장하는 인원)이다. 동시 체류 인원 목표가 아니다.',

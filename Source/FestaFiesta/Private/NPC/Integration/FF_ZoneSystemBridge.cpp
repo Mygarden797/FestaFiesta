@@ -276,7 +276,7 @@ namespace
 		UE_LOG(LogFestaFiestaNpc, Warning,
 			TEXT("[시설 네이밍 컨벤션 위반] FacilityDefinitionId='%s' — %s ")
 			TEXT("형태는 '대분류_소분류_고유이름'이어야 한다(대분류 = EFFZSFacilityCategory 이름). ")
-			TEXT("이 카테고리의 아는 소분류: %s. 규칙 전문은 data/metadata/handoff/facility_naming_convention.md."),
+			TEXT("이 카테고리의 아는 소분류: %s. 규칙 전문은 data/metadata/request/facility_naming_convention.md."),
 			*FacilityDefinitionId.ToString(), *Reason, *KnownTokens);
 	}
 

@@ -10,7 +10,7 @@ class UDataTable;
 /**
  * 태그가 붙은 방문객 개체 하나. 그룹으로 묶이지 않은 상태다.
  *
- * 역할 분담(crowdai_handoff_note.md §1): Utility AI는 "몇 명이 어떤 태그를 달고 있는가"의
+ * 역할 분담(data/metadata/request/crowdai_integration_guide.md §2): Utility AI는 "몇 명이 어떤 태그를 달고 있는가"의
  * 분포만 만들고, **누구를 누구랑 묶을지는 crowdAI가 정한다.** 그래서 이 구조체에는
  * GroupID 도, "몇 번째 그룹 소속"인지도 들어 있지 않다.
  *
@@ -111,7 +111,7 @@ struct FFF_VisitorDistribution
  * 개별 방문객 태그 분포 생성기 — 결정 로직(김시리) 쪽 산출물.
  *
  * 설계·근거: data/metadata/spec/population_group_generation_spec.md,
- *            data/metadata/handoff/crowdai_handoff_note.md §1·§3
+ *            data/metadata/request/crowdai_integration_guide.md §1·§3
  *
  * 입력 DataTable 3종:
  *   FFF_GroupSizeDistributionRow   그룹 크기 분포 (문항 A6 실측)

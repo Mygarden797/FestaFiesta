@@ -100,7 +100,7 @@ public:
 	 * FacilityDefinitionId 는 팀 규칙 `대분류_소분류_고유이름` 형태다(대분류 = EFFZSFacilityCategory 이름).
 	 * **7개 카테고리 전부 형태를 검증하고** 위반이면 시설당 1회 Warning 을 낸다 — 지금 취향 카테고리를
 	 * 실제로 갈라내는 것은 Booth 소분류뿐이지만, 다른 카테고리 오타를 방치하면 나중에 소분류별 분기를
-	 * 추가할 때 조용히 빠진다. 규칙 전문과 토큰 표는 data/metadata/handoff/facility_naming_convention.md.
+	 * 추가할 때 조용히 빠진다. 규칙 전문과 토큰 표는 data/metadata/request/facility_naming_convention.md.
 	 *
 	 * Rest/Performance/PhotoSpot 은 소분류와 무관하게 대분류 1:1, Toilet/Info/Safety 는 취향 매칭
 	 * 대상이 아니라 NAME_None. NAME_None 이면 preference 항은 0으로 계산된다
