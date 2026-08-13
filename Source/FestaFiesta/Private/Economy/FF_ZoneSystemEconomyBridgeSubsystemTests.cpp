@@ -178,6 +178,23 @@ namespace
 		Command.Placement.QuarterTurns = 1;
 		return Command;
 	}
+
+	FFFZSCommand MakeLifecycleCommand(
+		const FZoneEconomyTestHarness& Harness,
+		const FFFZSCommand& InstallCommand,
+		const EFFZSCommandType Type)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = FGuid::NewGuid();
+		Command.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+		Command.Type = Type;
+		Command.FacilityInstanceId = InstallCommand.FacilityInstanceId;
+		Command.FacilitySpec = InstallCommand.FacilitySpec;
+		Command.ZoneId = TestZoneId;
+		Command.Placement = InstallCommand.Placement;
+		return Command;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -457,6 +474,61 @@ bool FFFZoneSystemEconomyMissingCostTest::RunTest(const FString& Parameters)
 		Harness.Progression->GetGold(), 1000);
 	TestNull(TEXT("Cost resolution failure does not create a Facility"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemEconomyLifecycleCommandsAreFreeTest,
+	"FestaFiesta.Economy.ZoneSystemBridge.LifecycleCommandsDoNotSpend",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemEconomyLifecycleCommandsAreFreeTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedEconomyBridgeTestSettings SettingsGuard;
+	FZoneEconomyTestHarness Harness;
+	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
+		Harness.Initialize(this, 1000)))
+	{
+		return false;
+	}
+
+	const FFFZSCommand InstallCommand =
+		MakeInstallCommand(Harness, MakeDerivedCostFoodStallSpec());
+	if (!TestTrue(TEXT("The paid Install succeeds before the free commands"),
+		Harness.ZoneSystem->ExecuteCommand(InstallCommand).bSucceeded))
+	{
+		return false;
+	}
+	const int32 GoldAfterInstall = Harness.Progression->GetGold();
+
+	// Remove grants no refund and the lifecycle commands carry no price, so the economy policy
+	// passes them through untouched. Which phase may issue them is a Zone System rule, so the
+	// callbacks are driven directly here to assert the economy contract on its own.
+	const EFFZSCommandType FreeCommands[] = {
+		EFFZSCommandType::Remove,
+		EFFZSCommandType::Open,
+		EFFZSCommandType::Close,
+		EFFZSCommandType::EmergencyClose
+	};
+
+	for (const EFFZSCommandType Type : FreeCommands)
+	{
+		FFFZSPolicyContext Context;
+		Context.Command = MakeLifecycleCommand(Harness, InstallCommand, Type);
+		Context.CurrentWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+
+		TestTrue(TEXT("The economy policy allows a command that has no install cost"),
+			IFFZSExternalPolicy::Execute_PreValidateFFZoneSystemChange(
+				Harness.EconomyBridge, Context).bAllowed);
+		TestTrue(TEXT("A command with no install cost stages without an economy reservation"),
+			IFFZSExternalPolicy::Execute_ApplyTentativeFFZoneSystemChange(
+				Harness.EconomyBridge, Context).bAllowed);
+		IFFZSExternalPolicy::Execute_CommitFFZoneSystemChange(Harness.EconomyBridge, Context);
+	}
+
+	TestEqual(TEXT("Remove refunds nothing and lifecycle commands spend nothing"),
+		Harness.Progression->GetGold(), GoldAfterInstall);
 	return true;
 }
 

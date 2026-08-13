@@ -46,6 +46,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	}
 
 	const int32 PreviousGold = Funds.GetGold();
+	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
 
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
@@ -54,6 +56,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 		*InDefinition->FestivalId.ToString(), Funds.GetGold());
 
 	BroadcastGoldIfChanged(PreviousGold);
+	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 }
 
 bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
@@ -70,14 +74,39 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
 	return true;
 }
 
+void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount)
+{
+	const int32 PreviousGold = Funds.GetGold();
+	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
+
+	Funds.AddRevenue(Amount);
+
+	BroadcastGoldIfChanged(PreviousGold);
+	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
+}
+
 void UFF_FestivalProgressionSubsystem::BroadcastGoldIfChanged(int32 PreviousGold)
 {
 	const int32 CurrentGold = Funds.GetGold();
-	if (CurrentGold == PreviousGold)
-	{
-		// 비용 0 인 지출이 여기로 온다. 값이 안 바뀌었으면 위젯을 헛돌리지 않는다.
-		return;
-	}
+	if (CurrentGold == PreviousGold) return;
 
 	OnGoldChanged.Broadcast(CurrentGold);
+}
+
+void UFF_FestivalProgressionSubsystem::BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue)
+{
+	const int32 CurrentTotalRevenue = Funds.GetTotalRevenue();
+	if (CurrentTotalRevenue == PreviousTotalRevenue) return;
+	
+	OnTotalRevenueChanged.Broadcast(CurrentTotalRevenue);
+}
+
+void UFF_FestivalProgressionSubsystem::BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue)
+{
+	const int32 CurrentTodayRevenue = Funds.GetTodayRevenue();
+	if (CurrentTodayRevenue == PreviousTodayRevenue) return;
+
+	OnTodayRevenueChanged.Broadcast(CurrentTodayRevenue);
 }

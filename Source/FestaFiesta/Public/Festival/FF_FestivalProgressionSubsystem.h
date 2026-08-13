@@ -58,10 +58,29 @@ public:
 	// 실패하면 상태를 전혀 바꾸지 않고 델리게이트도 쏘지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	bool TrySpend(int32 Amount);
+	
+	// 누적 매출, 상단바 노출용
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalRevenue() const { return Funds.GetTotalRevenue(); }
+	
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnTotalRevenueChanged;
+	
+	// 오늘 매출. Report 화면용 - 하루 경계마다 리셋된다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTodayRevenue() const { return Funds.GetTodayRevenue(); }
+	
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnTodayRevenueChanged;
+	
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void AddRevenue(int32 Amount);
 
 private:
 	// 값이 실제로 바뀔 때만 통지한다.
 	void BroadcastGoldIfChanged(int32 PreviousGold);
+	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
+	void BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue);
 
 	// 잔액 규칙의 소유자. UObject 가 아니라 값 타입이다.
 	FFF_FestivalFunds Funds;
@@ -69,4 +88,7 @@ private:
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UPROPERTY()
 	TObjectPtr<const UFF_FestivalDefinition> Definition;
+	
+private:
+	
 };
