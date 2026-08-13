@@ -130,6 +130,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Tables")
 	TObjectPtr<UDataTable> FacilityCostTable;
 
+	// --- 철거 ------------------------------------------------------------
+
+	// 시설을 철거할 때 설치비 중 되돌려받는 비율 (0.0~1.0). [밸런스]
+	// 1.0 이면 배치 실수의 비용이 0 이라 위치를 고민할 이유가 사라진다. 기본 0.8 은
+	// 철거를 부담 없이 하되 20% 는 잃게 해서 그 고민을 남긴다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Demolition", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FacilityDemolitionRefundRate = 0.8f;
+
 	// !! Event 소모품 비용은 아직 없다 !!
 	// [기획서] §8.2 에 100~300 이 있지만 UFF_FestivalEventSubsystem이 아직 미구현이다.
 	// TODO : UFF_FestivalEventSubsystem 구현 후, Event 소모품 비용 추가 

@@ -109,4 +109,28 @@ bool FFF_FestivalFunds_SequentialSpendsAccumulate::RunTest(const FString& Parame
 	return true;
 }
 
+// 철거 환급이 들어오는 유일한 통로다. 음수로 잔액을 깎을 수 없어야 하고,
+// 상한이 없는 int32 잔액이 오버플로로 음수가 되어서도 안 된다 — 음수 잔액은 "지출 거부"와 구분되지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalFunds_RefundAddsGold, "FestaFiesta.Economy.FestivalFunds.RefundAddsGold", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FestivalFunds_RefundAddsGold::RunTest(const FString& Parameters)
+{
+	FFF_FestivalFunds Funds = MakeFundsWithGold(1000);
+
+	// 설치비 500 짜리 시설을 80% 로 철거한 금액.
+	Funds.Refund(400);
+	TestEqual(TEXT("환급이 잔액에 더해진다"), Funds.GetGold(), 1400);
+
+	Funds.Refund(0);
+	TestEqual(TEXT("환급 0 은 잔액을 바꾸지 않는다"), Funds.GetGold(), 1400);
+
+	Funds.Refund(-100);
+	TestEqual(TEXT("음수 환급으로 잔액이 줄지 않는다"), Funds.GetGold(), 1400);
+
+	FFF_FestivalFunds Rich = MakeFundsWithGold(MAX_int32 - 10);
+	Rich.Refund(100);
+	TestEqual(TEXT("오버플로 대신 상한에서 멈춘다"), Rich.GetGold(), MAX_int32);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

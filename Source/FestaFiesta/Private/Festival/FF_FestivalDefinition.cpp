@@ -136,6 +136,14 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 		OutErrors.Add(LOCTEXT("NegativeRevenue", "수익원 값에 음수가 있다."));
 	}
 
+	// --- 철거 ---
+	if (FacilityDemolitionRefundRate < 0.f || FacilityDemolitionRefundRate > 1.f)
+	{
+		OutErrors.Add(FText::Format(
+			LOCTEXT("BadRefundRate", "FacilityDemolitionRefundRate 가 {0} 이다. 0.0~1.0 이어야 한다."),
+			FText::AsNumber(FacilityDemolitionRefundRate)));
+	}
+
 	// --- 홍보 ---
 	// 배열이 아니라 멤버 2개라서 "비어 있다 / 중복 / 순서 섞임" 검사가 필요 없다. 값만 본다.
 

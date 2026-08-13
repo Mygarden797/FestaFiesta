@@ -70,6 +70,13 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount)
 	return true;
 }
 
+void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
+{
+	const int32 PreviousGold = Funds.GetGold();
+	Funds.Refund(Amount);
+	BroadcastGoldIfChanged(PreviousGold);
+}
+
 void UFF_FestivalProgressionSubsystem::BroadcastGoldIfChanged(int32 PreviousGold)
 {
 	const int32 CurrentGold = Funds.GetGold();

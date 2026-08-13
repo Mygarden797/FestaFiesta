@@ -2,6 +2,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildModeSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -40,7 +41,8 @@ namespace
     constexpr float PreviewRefreshIntervalSeconds = 0.1f;
     constexpr float TestZoneSizeCm = 10000.0f;
     constexpr float TestFloorScale = 100.0f;
-    constexpr int32 PlacementSnapCm = 10;
+    // 스냅 간격은 실제 건축 모드와 반드시 같아야 하므로 UFF_BuildModeSubsystem의 값을 그대로 쓴다.
+    constexpr int32 PlacementSnapCm = UFF_BuildModeSubsystem::PlacementSnapCm;
 
     // 전체 Navigation 검사는 개발자 설정의 전역 값을 사용하므로 명령 실행 구간에서만 임시 변경하고
     // 소멸 시 반드시 원래 값으로 되돌리는 RAII 보호 객체를 사용한다.
