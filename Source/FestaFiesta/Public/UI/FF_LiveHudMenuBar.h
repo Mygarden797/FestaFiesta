@@ -7,7 +7,6 @@
 #include "FF_LiveHudMenuBar.generated.h"
 
 class UButton;
-class UHorizontalBox;
 class UImage;
 class UTextBlock;
 class UFF_LiveHudTabButton;
@@ -43,7 +42,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnLiveHudTabSelected, EFF_LiveHu
  * 화면 스택과 입력 모드가 따라붙어 Live 중 월드 조작이 막힐 수 있다.
  * 그래서 일반 `UUserWidget` + 일반 `UButton`이다. 근거: docs/ui/ui-tech-decision.md 7절
  *
- * 브러시 4종(Default/Hover/Selected/Pressed)은 생성기가 텍스처에서 조립한다.
+ * 브러시 4종(Default/Hover/Selected/Pressed)은 WBP에서 지정한다.
+ * **선택 상태 브러시는 `Pressed` 슬롯에 넣는다** — `RefreshVisualState`가 그것을 Normal에 끼운다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live HUD Tab Button"))
 class FESTAFIESTA_API UFF_LiveHudTabButton : public UUserWidget
@@ -91,7 +91,6 @@ protected:
 	TObjectPtr<UTextBlock> Text_Label;
 
 	// --- 선택 상태 표현 ---
-	// 브러시는 WBP(생성기)가 채우고, 여기서는 어느 것을 쓸지만 고른다.
 
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Tint")
 	FLinearColor NormalContentColor = FLinearColor::FromSRGBColor(FColor(0x10, 0x2B, 0x4E));
@@ -109,9 +108,16 @@ private:
 /**
  * 탭 9개를 담는 레일.
  *
- * 탭 위젯을 9개 바인딩하지 않는다 — 위젯 27개(버튼·아이콘·라벨)를 헤더에 늘어놓게 되고,
- * 탭이 늘거나 줄 때마다 헤더를 고쳐야 한다. `Box_Tabs` 하나만 바인딩하고 런타임에 채운다.
- * 같은 이유로 Report에서 `UFF_MetricRowWidget`을 뽑았다.
+ * === 배치는 WBP가 소유한다 (2026-08-13 결정) ===
+ * 탭을 런타임에 만들지 않는다. **디자이너에서 9개를 직접 놓고** 이 클래스가 이름으로 찾아
+ * 라벨·아이콘·선택 상태만 채운다. 탭마다 위치·크기를 다르게 주거나 사이에 구분선을 넣을 수 있다.
+ *
+ * 이전 판은 `Box_Tabs` 하나만 바인딩하고 9개를 런타임 생성했는데, 그러면 디자이너에서
+ * 탭이 보이지 않아 배치를 손으로 조정할 수 없었다.
+ *
+ * === 라벨과 아이콘은 여전히 코드가 채운다 ===
+ * WBP에 문구를 박아두면 enum과 화면이 갈라진다. 아이콘도 WBP에 박으면 9개가 같은 그림이 된다
+ * (2026-08-12에 실제로 그랬다). 둘 다 `EFF_LiveHudTab` 항목 이름에서 해석한다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live HUD Menu Bar"))
 class FESTAFIESTA_API UFF_LiveHudMenuBar : public UUserWidget
@@ -131,21 +137,9 @@ public:
 	EFF_LiveHudTab GetSelectedTab() const { return SelectedTab; }
 
 	/**
-	 * 탭 하나를 만들 때 쓰는 WBP 클래스.
-	 * 생성기가 `WBP_FF_LiveHudTabButton`으로 채운다. 비어 있으면 탭이 만들어지지 않고 로그가 남는다.
-	 *
-	 * public인 이유: 에셋 생성기(`FF_LiveHudWbpBuilder`)가 CDO에 기본값을 넣는다.
-	 * protected면 리플렉션으로 우회해야 하고 그게 더 나쁘다.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI")
-	TSubclassOf<UFF_LiveHudTabButton> TabButtonClass;
-
-	/**
 	 * 탭 아이콘을 찾을 폴더. 테마를 바꿀 때 이 한 줄만 고치면 9개가 함께 바뀐다.
-	 *
 	 * 파일 이름은 `TabIconNameFormat`에 enum 이름을 넣어 만든다
 	 * (`Operations` → `T_FF_LH_Icon_Operations_White_256`).
-	 * **탭 WBP에 아이콘을 하나 박아두면 9개 탭이 모두 같은 아이콘이 된다** (2026-08-12에 실제로 그랬다).
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Icons")
 	FString TabIconFolder = TEXT("/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Navigation");
@@ -168,23 +162,49 @@ public:
 protected:
 	virtual void NativeOnInitialized() override;
 
-	/** 탭 목록을 만든다. 순서는 `EFF_LiveHudTab` 선언 순서다. */
-	void BuildTabs();
-
 	void HandleTabButtonClicked(EFF_LiveHudTab Tab);
+
+protected:
+	// --- 위젯 바인딩 ---
+	//
+	// WBP에 아래 이름으로 `WBP_FF_LiveHudTabButton` 인스턴스를 놓는다. 위치는 자유다.
+	// 전부 Optional이라 일부만 만든 WBP도 통과한다 — 빠진 탭은 로그로 알린다.
+	// 탭을 늘리려면 enum에 항목을 추가하고 여기에 같은 이름의 필드를 하나 더 만든다.
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Operations;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Facilities;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Guests;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Queues;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Density;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Events;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_SNS;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Report;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Tabs")
+	TObjectPtr<UFF_LiveHudTabButton> Tab_Staff;
+
+private:
+	/** 바인딩된 탭 위젯을 enum과 짝지어 모은다. 없는 탭은 건너뛰고 로그에 남긴다. */
+	void CollectTabs();
 
 	/** 탭 아이콘 브러시를 만든다. 예외 지정이 있으면 그것을, 없으면 폴더 규칙으로 찾는다. */
 	FSlateBrush ResolveTabIcon(EFF_LiveHudTab Tab, const FString& EnumName) const;
 
-protected:
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget), Category = "FestaFiesta|UI")
-	TObjectPtr<UHorizontalBox> Box_Tabs;
-
-	/** 탭 사이 간격(px). 목업 기준 6. */
-	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI")
-	float TabGap = 6.f;
-
-private:
 	EFF_LiveHudTab SelectedTab = EFF_LiveHudTab::Operations;
 
 	UPROPERTY()
