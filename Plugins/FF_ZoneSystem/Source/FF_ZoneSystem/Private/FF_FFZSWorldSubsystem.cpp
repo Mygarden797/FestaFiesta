@@ -7,14 +7,17 @@
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
 #include "Templates/UnrealTemplate.h"
+#include "UObject/StrongObjectPtr.h"
 #include "NavigationPath.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSExternalPolicy.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSQueueAgent.h"
 #include "FF_FFZSQueueComponent.h"
+#include "FF_FFZSQueueGeometry.h"
 #include "FF_ZoneSystem.h"
 #include "FF_FFZSZoneActor.h"
 
@@ -504,14 +507,17 @@ namespace
         for (FFFZSFacilityInstanceSnapshot& Saved : OutMigratedSnapshot.Facilities)
         {
             FFFZSFacilitySpec& Spec = Saved.FacilitySpec;
-            if (Spec.SchemaVersion != 1 || !Spec.QueueReservedRects.IsEmpty())
+            // Schema 3 저장본이 담고 있던 사양 형식은 언제나 1(1 Cell = 100cm)이다.
+            // 이 값은 과거 저장 데이터의 고정 사실이므로 현재 스키마 상수에서 유도하지 않는다.
+            constexpr int32 LegacyFacilitySpecSchemaVersion = 1;
+            if (Spec.SchemaVersion != LegacyFacilitySpecSchemaVersion || !Spec.QueueReservedRects.IsEmpty())
             {
                 OutErrors.Add(FText::Format(
                     LOCTEXT("LegacySnapshotAmbiguousSpec", "Schema 3 Facility {0}에는 수정되지 않은 FacilitySpec SchemaVersion 1이 있어야 하며 1cm QueueReservedRects가 없어야 합니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
-            if (Spec.QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxMaterializedDebugCells)
+            if (Spec.QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxLegacyQueueReservedCells)
             {
                 OutErrors.Add(FText::Format(
                     LOCTEXT("LegacySnapshotQueueMigrationLimit", "Schema 3 Facility {0}의 개별 Queue Cell이 제한된 마이그레이션 경로의 허용량을 초과했습니다. 해당 저장 데이터는 오프라인에서 마이그레이션하십시오."),
@@ -572,7 +578,7 @@ namespace
                 return false;
             }
 
-            Spec.SchemaVersion = 2;
+            Spec.SchemaVersion = FFFZSFacilitySpec::CurrentSchemaVersion;
             Spec.FootprintSizeCells = MigratedFootprint;
             Spec.ClearanceCells = MigratedClearance;
             Spec.QueueReservedRects = MoveTemp(MigratedQueueRects);
@@ -850,6 +856,22 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
     }
 
     FFFZSPlacementValidation Result = ValidatePlacementLocal(EffectiveCommand, Existing);
+    if (Result.bIsValid && Command.Type == EFFZSCommandType::Move && Existing)
+    {
+        const UFFZSFacilityQueueComponent* Queue = Existing->GetQueueComponent();
+        if (Queue && Queue->IsOccupied())
+        {
+            Result.AddFailure(
+                EFFZSPlacementFailure::FacilityOccupied,
+                LOCTEXT("MovePreviewOccupied", "Facility를 이동하기 전에 닫고 Queue를 비우십시오."));
+        }
+        else if (!Existing->CanMoveOrRemove())
+        {
+            Result.AddFailure(
+                EFFZSPlacementFailure::InvalidFacilityState,
+                LOCTEXT("MovePreviewState", "Active 상태의 Facility는 이동하기 전에 닫아야 합니다."));
+        }
+    }
     if (Result.bIsValid)
     {
         FFFZSPolicyContext Context;
@@ -893,7 +915,6 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     {
         Result.AddFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveMissing", "이동할 Facility가 존재하지 않습니다."));
     }
-
     TArray<FText> SpecErrors;
     if (!Command.FacilitySpec.IsValid(SpecErrors))
     {
@@ -925,10 +946,16 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     Placement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns);
 
     // 판정은 압축 Rect를 사용하고 디버그 셀만 제한적으로 materialize한다.
-    Result.FootprintRects = UFFZSGridLibrary::GetFootprintRects(Command.FacilitySpec, Placement);
-    Result.ClearanceRects = UFFZSGridLibrary::GetClearanceRects(Command.FacilitySpec, Placement);
-    Result.QueueRects = UFFZSGridLibrary::GetQueueRects(Command.FacilitySpec, Placement);
-    Result.ReservedRects = UFFZSGridLibrary::GetReservedRects(Command.FacilitySpec, Placement);
+    // [최적화] 네 영역을 한 번의 기하 계산으로 함께 만든다. 개별 Get*Rects를 네 번 부르면
+    // 예산 검사와 Queue 정규화가 호출마다 중복 실행됐다. 이 함수는 Preview Actor가 0.1초마다
+    // 호출하는 경로라 중복 계산이 그대로 프레임 비용이 된다. 결과 값은 이전과 동일하다.
+    UFFZSGridLibrary::BuildPlacementRegions(
+        Command.FacilitySpec,
+        Placement,
+        Result.FootprintRects,
+        Result.ClearanceRects,
+        Result.QueueRects,
+        Result.ReservedRects);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.FootprintRects,
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.FootprintCells);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.ClearanceRects,
@@ -1185,8 +1212,17 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     };
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const float HalfHeight = FMath::Max(5.0f, Spec.PlacementObstacleHeightCm * 0.5f - 2.0f);
-    const float CenterZ = InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight + 3.0f;
+    // [하드코딩 제거] Overlap Box를 예약 영역보다 아주 조금 작게 만드는 여백 값들에 이름을 붙인다.
+    // 경계가 정확히 맞닿기만 한 지면/이웃 구조물을 "충돌"로 보고하지 않기 위한 수축량이며,
+    // 예전에는 5.0f/2.0f/3.0f/0.25가 설명 없는 리터럴로 흩어져 있어 의도를 알기 어려웠다.
+    constexpr double SurfaceInsetCm = 2.0;        // 각 면을 안쪽으로 당기는 거리
+    constexpr double GroundLiftCm = 3.0;          // 바닥면과의 접촉을 피하기 위한 들어올림
+    constexpr double MinHalfExtentCm = 0.25;      // 1cm Rect도 유효한 Box가 되도록 하는 최소 반치수
+    constexpr double MinHalfHeightCm = 5.0;       // 낮은 장애물 높이에서도 남기는 최소 반높이
+    const float HalfHeight = static_cast<float>(
+        FMath::Max(MinHalfHeightCm, Spec.PlacementObstacleHeightCm * 0.5 - SurfaceInsetCm));
+    const float CenterZ = static_cast<float>(
+        InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight + GroundLiftCm);
     const auto ValidateRectGroup = [&] (
         const TArray<FFFZSCellRect>& Rects,
         const EFFZSPlacementFailure Failure,
@@ -1196,10 +1232,9 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
         {
             const double HalfX = Rect.GetWidth() * CellSizeCm * 0.5;
             const double HalfY = Rect.GetHeight() * CellSizeCm * 0.5;
-            // 1cm Rect도 유효한 Overlap Box를 갖도록 XY HalfExtent를 최소 0.25cm로 제한한다.
             const FVector HalfExtent(
-                FMath::Max(0.25, HalfX - 2.0),
-                FMath::Max(0.25, HalfY - 2.0),
+                FMath::Max(MinHalfExtentCm, HalfX - SurfaceInsetCm),
+                FMath::Max(MinHalfExtentCm, HalfY - SurfaceInsetCm),
                 HalfHeight);
             FVector Center = ZoneTransform.TransformPosition(FVector(
                 (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
@@ -1275,41 +1310,26 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         }
     }
 
-    TArray<double> SegmentLengths;
-    SegmentLengths.Reserve(FMath::Max(0, Spec.QueueSplinePointsCm.Num() - 1));
-    double TotalSplineLength = 0.0;
-    for (int32 Index = 1; Index < Spec.QueueSplinePointsCm.Num(); ++Index)
+    const auto AddQueueSlotOffNavFailure = [&]()
     {
-        const double Length = FVector::Distance(Spec.QueueSplinePointsCm[Index - 1], Spec.QueueSplinePointsCm[Index]);
-        SegmentLengths.Add(Length);
-        TotalSplineLength += Length;
+        InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
+            LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
+    };
+    TArray<FVector> LocalQueueSlotPoints;
+    if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
+            Spec.QueueSplinePointsCm,
+            Spec.QueueRules.MaxWaitingAgents,
+            Spec.QueueRules.SlotSpacingCm,
+            LocalQueueSlotPoints))
+    {
+        AddQueueSlotOffNavFailure();
+        return;
     }
-    // 단조 증가하는 슬롯 거리에 맞춰 세그먼트 커서를 한 방향으로만 이동한다.
-    int32 SlotSegmentIndex = 0;
-    double SlotSegmentStartDistance = 0.0;
-    for (int32 SlotIndex = 0; SlotIndex < Spec.QueueRules.MaxWaitingAgents; ++SlotIndex)
+    for (const FVector& LocalSlot : LocalQueueSlotPoints)
     {
-        const double TargetDistance = FMath::Clamp(
-            static_cast<double>(SlotIndex) * Spec.QueueRules.SlotSpacingCm, 0.0, TotalSplineLength);
-        while (SlotSegmentIndex < SegmentLengths.Num() - 1 &&
-            TargetDistance > SlotSegmentStartDistance + SegmentLengths[SlotSegmentIndex])
-        {
-            SlotSegmentStartDistance += SegmentLengths[SlotSegmentIndex];
-            ++SlotSegmentIndex;
-        }
-        const double SegmentLength = SegmentLengths[SlotSegmentIndex];
-        const double DistanceOnSegment = TargetDistance - SlotSegmentStartDistance;
-        const double Alpha = SegmentLength > UE_SMALL_NUMBER
-            ? FMath::Clamp(DistanceOnSegment / SegmentLength, 0.0, 1.0)
-            : 0.0;
-        const FVector LocalSlot = FMath::Lerp(
-            Spec.QueueSplinePointsCm[SlotSegmentIndex],
-            Spec.QueueSplinePointsCm[SlotSegmentIndex + 1],
-            Alpha);
         if (!ProjectRequiredPoint(LocalSlot, false))
         {
-            InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-                LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
+            AddQueueSlotOffNavFailure();
             return;
         }
     }
@@ -1502,6 +1522,12 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     {
         return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingCommandIds", "CommandId와 TransactionId가 필요합니다."));
     }
+    if (!UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Command.FacilitySpec))
+    {
+        return MakeFailure(
+            EFFZSPlacementFailure::DataInvalid,
+            LOCTEXT("UnsafeFacilitySpecCardinality", "FacilitySpec 배열 크기가 시설당 안전 제한을 초과했습니다."));
+    }
 
     const FString PayloadFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
     if (const FFFZSCommandReceipt* ExistingReceipt = CommandReceipts.Find(Command.CommandId))
@@ -1515,6 +1541,32 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
             ? FindFacility(ExistingReceipt->FacilityInstanceId) : nullptr;
         Replay.bWasDuplicateReplay = true;
         return Replay;
+    }
+
+    if (Command.Type == EFFZSCommandType::Install)
+    {
+#if WITH_DEV_AUTOMATION_TESTS
+        const bool bSyntheticAutomationFixture = GIsAutomationTesting;
+#else
+        constexpr bool bSyntheticAutomationFixture = false;
+#endif
+        if (!bSyntheticAutomationFixture &&
+            !UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(
+                Command.FacilitySpec))
+        {
+            return MakeFailure(
+                EFFZSPlacementFailure::DataInvalid,
+                LOCTEXT(
+                    "DefinitionSpecMismatch",
+                    "Install requires the exact loaded UFFZSFacilityDefinition Spec."));
+        }
+    }
+
+    if (WorldRevision >= MAX_int64 - 1)
+    {
+        return MakeFailure(
+            EFFZSPlacementFailure::InternalError,
+            LOCTEXT("WorldRevisionExhausted", "WorldRevision space is exhausted; no further mutation is safe."));
     }
 
     if (InFlightCommandId.IsValid())
@@ -2208,7 +2260,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
             : LOCTEXT("SnapshotSchema", "지원하지 않는 Zone/Facility 스냅샷 SchemaVersion입니다. 이 Runtime은 명시적인 SchemaVersion 3 마이그레이션 후 SchemaVersion 4를 검증합니다."));
         return false;
     }
-    if (Snapshot.WorldRevision < 0)
+    if (Snapshot.WorldRevision < 0 || Snapshot.WorldRevision == MAX_int64)
     {
         OutErrors.Add(LOCTEXT("SnapshotRevision", "Zone/Facility 스냅샷의 WorldRevision은 음수일 수 없습니다."));
     }
@@ -2223,6 +2275,8 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     TSet<FName> Agents;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     TMap<const AFFZSGameplayZone*, TUniquePtr<FZoneCellOwnershipCache>> ZoneOwnershipCaches;
+    // 모든 시설 스냅샷이 함께 쓰는 큐 검사용 컴포넌트다. 처음 필요할 때만 만든다.
+    TStrongObjectPtr<UFFZSFacilityQueueComponent> QueueValidator;
     FacilityIds.Reserve(Snapshot.Facilities.Num());
     FacilityRegionsByZone.Reserve(FMath::Min(Snapshot.Facilities.Num(), ZonesById.Num()));
     Agents.Reserve(Snapshot.Facilities.Num());
@@ -2342,7 +2396,13 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 ? LOCTEXT("SnapshotProtectedArea", "스냅샷 Facility가 보호 영역과 겹칩니다.")
                 : ProtectedValidation.Summary);
         }
-        UFFZSFacilityQueueComponent* QueueValidator = NewObject<UFFZSFacilityQueueComponent>();
+        // [최적화] 검사용 컴포넌트를 시설마다 새로 만들지 않고 하나를 재사용한다.
+        // Configure와 RestoreSnapshot이 큐 상태를 통째로 덮어쓰므로 이전 시설의 값이 남지 않는다.
+        // 예전에는 시설 수만큼 임시 UObject가 생겨 저장 검증마다 GC 부담이 커졌다.
+        if (!QueueValidator.IsValid())
+        {
+            QueueValidator.Reset(NewObject<UFFZSFacilityQueueComponent>());
+        }
         QueueValidator->Configure(Saved.FacilitySpec.QueueRules);
         TArray<FText> QueueErrors;
         if (!QueueValidator->RestoreSnapshot(Saved.Queue, QueueErrors))

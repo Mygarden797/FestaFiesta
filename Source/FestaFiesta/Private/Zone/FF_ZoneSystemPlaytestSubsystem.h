@@ -14,6 +14,7 @@ class AFFZSPlacementPreviewActor;
 class AFFZSProtectedArea;
 class AFF_ZoneSystemPlaytestOverviewPawn;
 class UFFZSWorldSubsystem;
+class UFF_BuildCatalogSubsystem;
 class UFF_ZoneSystemPlaytestHUD;
 
 /**
@@ -87,7 +88,8 @@ private:
 
     // 선택 프리셋, 현재 배치 좌표와 플러그인 검증·스냅샷 상태를 보관한다.
     FFFZSGridPlacement CurrentPlacement;
-    EFFZSBuiltInFacilityPreset SelectedPreset = EFFZSBuiltInFacilityPreset::FoodTruckBasic;
+    TArray<FName> CatalogDefinitionIds;
+    int32 SelectedCatalogIndex = INDEX_NONE;
     FFFZSPlacementValidation LastValidation;
     FFFZSWorldSnapshot InitialSnapshot;
     FFFZSWorldSnapshot SavedSnapshot;
@@ -95,12 +97,14 @@ private:
     FGuid LastFacilityId;
     FName ActiveZoneId = NAME_None;
     FString StatusMessage;
+    FString CatalogStatusMessage = TEXT("Facility catalog has not been requested.");
     FColor StatusColor = FColor::White;
 
     // 입력 모드, HUD 표시, 디버그와 명령행 스모크의 런타임 상태다.
     float PreviewRefreshElapsed = 0.0f;
     int32 NextAgentNumber = 1;
     bool bEnvironmentReady = false;
+    bool bCatalogReady = false;
     bool bEnableFullNavigationValidation = false;
     bool bShowHelp = true;
     bool bShowWorldDebug = false;
@@ -110,6 +114,8 @@ private:
     bool bHasPlacementTarget = true;
     bool bOwnsTestZone = false;
     bool bSmokeExitPending = false;
+    bool bCommandLineSmokeRequested = false;
+    bool bCommandLineSmokeStarted = false;
     bool bExperienceSmokeRequested = false;
     int32 SmokeExitCode = 0;
 
@@ -128,13 +134,15 @@ private:
     bool UpdatePlacementFromPlayer();
 
     // 화면 중앙 타깃을 시설 좌표로 변환하고 프리뷰 명령·시각화를 갱신한다.
-    void SetSelectedPreset(EFFZSBuiltInFacilityPreset NewPreset);
+    bool PollBuildCatalog();
+    void SetCatalogUnavailable(const FString& Message, const FColor& Color, bool bTerminalFailure);
+    void FailPendingSmokeTests(const FString& Reason);
+    void SetSelectedCatalogIndex(int32 NewIndex);
+    bool TryGetSelectedFacilitySpec(FFFZSFacilitySpec& OutSpec) const;
+    FString GetSelectedFacilityDisplayText() const;
     void SetPlacement(const FIntPoint& OriginCell, int32 QuarterTurns);
     void RebuildPreviewCommand();
     void RefreshPreview();
-    void ApplyPreviewVisualScale();
-    void ApplyFacilityVisualScale(AFFZSFacilityActor* Facility) const;
-    void ApplyAllFacilityVisuals() const;
 
     // 설치, 생명주기, 대기열과 스냅샷 테스트 명령을 실행한다.
     void HandleInput();
@@ -156,6 +164,7 @@ private:
     void CompleteExperienceSmokeTest();
 
     UFFZSWorldSubsystem* GetZoneSystem() const;
+    UFF_BuildCatalogSubsystem* GetBuildCatalog() const;
     AFFZSFacilityActor* GetLastFacility() const;
 };
 

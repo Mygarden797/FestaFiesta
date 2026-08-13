@@ -148,6 +148,11 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		Candidate.BaseAttraction = 0.f;
 
 		// ZoneSystem 은 cm, 선택기는 m. 환산은 이 파일에서만 한다.
+		//
+		// 전제: WorldLocation 은 AFFZSFacilityActor::GetReadModel() 한 곳에서만 채워진다
+		// [주의] 다른 경로로 FFFZSFacilityReadModel 을 만들면 기본값 FVector::ZeroVector 가 남아 
+		// "Party 에서 월드 원점까지의 거리"가 조용히 들어온다 —
+		// 0 이 아니라 그럴듯한 숫자라서 테스트로도, 로그로도 안 잡힌다.
 		Candidate.DistanceMeters = CentimetersToMeters(
 			static_cast<float>(FVector::Dist(PartyWorldLocation, Facility.WorldLocation)));
 
@@ -221,6 +226,18 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	// TODO(예약 필터): reservation_program_spec.md §4.1. `예약 필요` 시설은 그 Party 가 예약을
 	// 갖고 있지 않으면 제외해야 한다. 태그 출처(한광훈)가 정해지면 위 필터 옆에 붙인다.
 
+	// TODO(예약 귀환 안전장치): 판정 함수는 이미 있다
+	// `FFF_ProgramReservationReturnTrip::Evaluate` (별 파일로 파킹, 테스트 6개로 고정).
+	// `EstimatedWaitMinutes` 가 아직 0 이기 때문에 아직 호출하지 않는다.
+	// 0 이면 "줄이 없다"로 계산되어 판정이 낙관적으로 기운다 
+	// Queue 어댑터 결선(= 그 값이 실제 값이 되는 시점) 후에 잇는다.
+	//
+	// [붙이는 방법]
+	// 위 카테고리·상태 필터 옆에서 Party 의 예약 정보를 받아 `bCanReturnInTime == false` 인 후보를 제외한다. 
+	// 보행 속도는 계수 `npc_walk_speed_mps`(1.5)를 쓴다 — 출처는 crowdAI 의 `FUnitData::Speed` 150 cm/s 다. 
+	// 개체 변주 `WalkSpeedMultiplier` 가 결선되면(지금은 만들기만 하고 소비하는 곳이 0곳이다) 그 배수를 곱한다.
+	// 그때까지는 2차 안전장치(하드 데드라인, L3 소관)만으로 동작한다.
+	
 	return Candidates;
 }
 
@@ -389,9 +406,9 @@ float FFF_ZoneSystemBridge::GetServiceRatePerMinute(FName FacilityDefinitionId)
 		return 0.f;
 	}
 
-	// FF_FFZSFacilityDefinition.cpp::GetPrimaryAssetId 가 쓰는 것과 동일한 Primary Asset Type 문자열이다
-	// 여기가 바뀌면 저기도 같이 바뀌어야 한다.
-	const FPrimaryAssetId AssetId(TEXT("FFZSFacilityDefinition"), FacilityDefinitionId);
+	const FPrimaryAssetId AssetId(
+		UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(),
+		FacilityDefinitionId);
 	const UFFZSFacilityDefinition* Definition =
 		UAssetManager::Get().GetPrimaryAssetObject<UFFZSFacilityDefinition>(AssetId);
 	if (!Definition)

@@ -75,6 +75,9 @@ namespace
         Spec.ExperienceEffectKey = TEXT("Experience.SaveProbe");
         Spec.VisualMesh = TSoftObjectPtr<UStaticMesh>(
             FSoftObjectPath(TEXT("/Engine/BasicShapes/Cube.Cube")));
+        Spec.VisualSizingMode = EFFZSVisualSizingMode::MatchPlacementBounds;
+        Spec.VisualOffsetCm = FVector(12.5, -33.25, 7.75);
+        Spec.VisualRotation = FRotator(0.0, 90.0, 0.0);
         Spec.PlacementObstacleHeightCm = 377.5f;
 
         Facility.Queue.State = EFFZSQueueState::Blocked;
@@ -222,6 +225,12 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("허용된 구역 ID가 보존된다"), LoadedSpec.AllowedZoneIds == SourceSpec.AllowedZoneIds);
     TestTrue(TEXT("비주얼 메시 소프트 경로가 보존된다"),
         LoadedSpec.VisualMesh.ToSoftObjectPath() == SourceSpec.VisualMesh.ToSoftObjectPath());
+    TestEqual(TEXT("비주얼 크기 모드가 보존된다"),
+        LoadedSpec.VisualSizingMode, SourceSpec.VisualSizingMode);
+    TestTrue(TEXT("비주얼 로컬 오프셋이 보존된다"),
+        LoadedSpec.VisualOffsetCm.Equals(SourceSpec.VisualOffsetCm));
+    TestTrue(TEXT("비주얼 로컬 회전이 보존된다"),
+        LoadedSpec.VisualRotation.Equals(SourceSpec.VisualRotation));
 
     // Assert 2: Queue는 배열 순서와 transient drain/repath 값이 의미이므로 단순 개수만 비교하지 않는다.
     const FFFZSQueueSnapshot& SourceQueue = SourceFacility.Queue;

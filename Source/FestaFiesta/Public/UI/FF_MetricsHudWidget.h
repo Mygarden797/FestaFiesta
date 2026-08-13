@@ -105,8 +105,10 @@ protected:
 	// 셋 다 없어도 숫자는 뜨므로 Optional이다. WBP에 넣으면 자동으로 붙는다.
 	// 구간 값은 UFF_UIMetricBandSettings에서 읽는다. 여기 하드코딩하지 않는다.
 	//
-	// TODO: 진짜 Overview HUD를 만들 때는 (숫자 + 라벨 + 아이콘) 한 벌을 재사용 위젯으로 뽑는다.
-	//       지표가 늘 때마다 여기에 세 줄씩 늘리는 구조는 오래 못 간다.
+	// 2026-08-11: 재사용 위젯 `UFF_MetricRowWidget`을 뽑았다 (캡션 + 숫자 + 라벨 + 아이콘 한 벌).
+	// 이 스텁 HUD는 기존 WBP 호환 때문에 아래 개별 바인딩을 유지한다.
+	// **새 화면(Report·Overview)은 개별 바인딩을 늘리지 말고 MetricRow를 쓴다.**
+	// 이 HUD를 MetricRow 3개로 재구성하는 것은 8/14 이후 정리 항목이다.
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_SimSatisfactionBand;
