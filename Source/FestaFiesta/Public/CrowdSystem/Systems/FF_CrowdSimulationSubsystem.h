@@ -235,8 +235,17 @@ public:
 	// 밀도 그리드를 색 박스로 그린다. 셀 수만큼 드로우콜이 나가므로 시연용으로만
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Debug")
 	bool bDrawDebugDensity = false;
+	
+	
+	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
+	int32 GetGlobalSimulationSeed() const { return GlobalSimulationSeed; }
 
+	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
+	float GetSimTimeSeconds() const { return SimTimeSeconds; }
 
+	
+	
+	
 private:
 	// 고정 스텝 한 번을 진행한다. DeltaTime이 아니라 항상 FixedStepSeconds를 받는다
 	void StepSimulation(float FixedDt);
@@ -259,9 +268,18 @@ private:
 	void UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
 
 	void DrawDebugAgents() const;
+	
+public:
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	int32 GlobalSimulationSeed = 20260812;
+	
+	
+private:
 
 	// 다음에 발급할 파티 ID. 슬롯 인덱스와 달리 재사용하지 않아 로그를 되짚을 수 있다
 	int32 NextPartyID = 0;
+	
+	int32 NextStableAgentID = 0;
 
 	static constexpr float FixedStepSeconds = 1.f / 30.f;
 
@@ -287,4 +305,6 @@ private:
 
 	// 목적지 추첨용. 시드를 고정해야 같은 조건에서 같은 결과가 재현된다
 	FRandomStream Rng;
+	
+
 };

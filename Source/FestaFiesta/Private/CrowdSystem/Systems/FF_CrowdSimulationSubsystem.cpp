@@ -398,12 +398,16 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 	int32 index = FreeAgentSlotIndex.Pop();
 
 	FUnitData& Unit = UnitDatas[index];
+	
+	Unit = FUnitData();
+	
 	Unit.Position = SpawnLocation;
 	Unit.PrevPosition = SpawnLocation;
 	Unit.Rotation = SpawnRotation;
 	Unit.Velocity = FVector::ZeroVector;
 	Unit.Force = FVector::ZeroVector;
 	Unit.TargetLocation = PickRandomDestination();
+	Unit.StableAgentID = NextStableAgentID++;
 
 	// 기본값은 1인 파티(자기 자신이 리더)다. 파티로 묶는 것은 SpawnAgents가 이 뒤에 덮어쓴다.
 	// 여기서 반드시 되돌려야 하는 이유: 슬롯은 재사용되므로, 초기화하지 않으면 재활용된 슬롯이
@@ -411,14 +415,7 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 	Unit.PartyID = NextPartyID++;
 	Unit.LeaderAgentIndex = index;
 	Unit.PartySlotIndex = 0;
-
-	// 속도도 기본값으로 되돌린다. 이전에 파티 멤버였던 슬롯은 가속 배율이 곱해진 상태이므로,
-	// 초기화하지 않으면 재사용될 때마다 배율이 누적되어 시간이 갈수록 빨라진다.
-	{
-		const FUnitData DefaultUnit;
-		Unit.Speed = DefaultUnit.Speed;
-		Unit.MaxSpeed = DefaultUnit.MaxSpeed;
-	}
+	
 
 	// 슬롯을 실제로 쓰기 시작하는 지점. 여기서 켜야 풀에 놀고 있는 슬롯이 시뮬레이션에 끌려들어가지 않는다.
 	Unit.bIsActive = true;
