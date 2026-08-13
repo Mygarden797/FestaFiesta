@@ -366,8 +366,13 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 {
     GENERATED_BODY()
 
+    // 이 런타임이 해석하는 유일한 사양 저장 형식(1 Cell = 1 cm)이다.
+    // [하드코딩 제거] 기본값·검증·구 스냅샷 마이그레이션이 각자 리터럴 2를 적고 있어서
+    // 스키마를 올릴 때 한 군데를 빠뜨리기 쉬웠다. 세 곳이 이 상수를 공유한다.
+    static constexpr int32 CurrentSchemaVersion = 2;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Schema Version", ToolTip = "시설 정의 저장 형식 버전입니다. 마이그레이션 코드 없이 제작자가 임의로 바꾸면 안 됩니다.", ClampMin = "1"))
-    int32 SchemaVersion = 2;
+    int32 SchemaVersion = CurrentSchemaVersion;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Identity", meta = (DisplayName = "Facility Definition ID", ToolTip = "카탈로그·저장·연동이 사용하는 영구 고유 ID입니다. 다른 시설과 중복할 수 없고 출시 후 변경하면 기존 저장 참조가 끊길 수 있습니다."))
     FName FacilityDefinitionId = NAME_None;
