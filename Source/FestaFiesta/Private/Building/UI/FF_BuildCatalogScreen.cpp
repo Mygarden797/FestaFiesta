@@ -1228,7 +1228,7 @@ FText UFF_BuildCatalogScreen::GetMinorDisplayName(const FName MinorToken)
 		{ TEXT("ActivityGame"), LOCTEXT("MinorActivityGame", "게임·활동 체험") },
 		{ TEXT("Nightlife"), LOCTEXT("MinorNightlife", "야간·주점") },
 		{ TEXT("Standard"), LOCTEXT("MinorStandard", "일반") },
-		{ TEXT("Accessible"), LOCTEXT("MinorAccessible", "접근 가능") },
+		{ TEXT("Accessible"), LOCTEXT("MinorAccessible", "장애인 화장실") },
 		{ TEXT("Family"), LOCTEXT("MinorFamily", "가족") },
 		{ TEXT("Temporary"), LOCTEXT("MinorTemporary", "임시") },
 		{ TEXT("GeneralInfo"), LOCTEXT("MinorGeneralInfo", "종합 안내") },
