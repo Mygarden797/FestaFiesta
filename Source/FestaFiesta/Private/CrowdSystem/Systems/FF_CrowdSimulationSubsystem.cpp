@@ -3,17 +3,14 @@
 
 
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
-
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
+#include "Engine/DataTable.h"
 
-namespace CrowdSim
-{
-	static constexpr int32 DefaultSeed = 20260812;
-}
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -51,7 +48,7 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 		UE_LOG(LogTemp, Warning, TEXT("[CrowdSimulationSubsystem] IndividualVariationTable 미설정 — 개체 변주가 전부 1.0으로 동작한다"));
 	}
 	
-	float GlobalSimulationSeed = Settings->GlobalSimulationSeed;
+	GlobalSimulationSeed = Settings->GlobalSimulationSeed;
 	Rng.Initialize(GlobalSimulationSeed);
 	
 	
@@ -97,12 +94,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Tick);
 
 	Super::Tick(DeltaTime);
-
-	if (ActiveAgentCount <= 0)
+	
+	
+	//인구가 0일 지라도 시간 계산의 정합성을 위해서 시간 계산을 하고 밀도도 갱신한다.
+	//인구 조건 조기 반환은 금지
+	if (!bSimulationInitialized)
 	{
 		return;
 	}
-
+	
 	// --- 고정 스텝 루프 --------------------------------------------------------------------
 	// 프레임 시간을 모아 두었다가 FixedStepSeconds 단위로만 소비한다.
 	// 남는 시간(SimAccumulator)은 다음 프레임으로 이월되고, 동시에 렌더링 보간 계수가 된다.
@@ -437,6 +437,8 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 
 	// 화면에 보이도록 Actor를 붙인다. 풀이 고갈되면 시뮬레이션만 된다.
 	BindAgentToPool(index);
+	
+
 
 	return index;
 }
@@ -452,7 +454,7 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 	int32 SpawnedCount = 0;
 	int32 PartiesFormed = 0;
 	bool bAgentPoolExhausted = false;
-
+	const float BaseSpeed = FUnitData().Speed;
 	// 파티 단위로 스폰한다. 개인별로 위치를 뽑으면 같은 파티가 맵 반대편에 흩어져 시작하므로
 	// 기준점은 파티당 한 번만 뽑고, 멤버는 그 기준점 주변 대형 자리에 놓는다.
 	while (SpawnedCount < Count && !bAgentPoolExhausted)
@@ -485,28 +487,39 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 			}
 
 			FUnitData& Unit = UnitDatas[AgentIndex];
-
+			
 			if (Slot == 0)
 			{
 				// 리더. SpawnAgent가 이미 자기 자신을 리더로, 새 PartyID를 부여해 뒀다.
 				LeaderIndex = AgentIndex;
 				PartyID = Unit.PartyID;
+
+
 			}
 			else
 			{
 				Unit.PartyID = PartyID;
 				Unit.LeaderAgentIndex = LeaderIndex;
 				Unit.PartySlotIndex = Slot;
-
-				// 리더보다 조금 빠르게 걸을 수 있어야 벌어진 간격을 좁힐 수 있다.
-				// Speed는 희망 속도, MaxSpeed는 상한이라 둘 다 올려야 실제로 빨라진다.
-				const float SpeedBoost = FMath::Max(PartyMemberSpeedBoost, 1.f);
-				Unit.Speed *= SpeedBoost;
-				Unit.MaxSpeed *= SpeedBoost;
-
 				// 첫 스텝에서 어차피 갱신되지만, 그 한 프레임 동안 엉뚱한 방향으로 몸이 돌아가는 것을 막는다.
 				Unit.TargetLocation = UnitDatas[LeaderIndex].TargetLocation + GetPartyFormationOffset(Slot);
 			}
+			
+			const FFF_ResolvedIndividualTraits Traits =
+	FFF_IndividualVariationResolver::ResolveWithGroupSharing(
+		CachedVariationTable.Get(),
+		GetGlobalSimulationSeed(),
+		Unit.StableAgentID,
+	Unit.PartyID,                  
+0,    
+		CachedCorrelationStrength);
+			
+			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
+				
+			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
+			Unit.MaxSpeed = Unit.Speed;
+			
+
 
 			++SpawnedCount;
 		}

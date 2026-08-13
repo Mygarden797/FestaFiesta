@@ -12,6 +12,7 @@
 #include "FF_CrowdSimulationSubsystem.generated.h"
 
 class AFF_BaseCrowd;
+class UDataTable;
 
 /**
  * 군중 시뮬레이션을 관리하는 TickableWorldSubsystem
@@ -236,9 +237,13 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Debug")
 	bool bDrawDebugDensity = false;
 	
-	
+	//해당 시뮬레이션 시간은 실제 진행한 시간(초단위)이 아니다.
+	//시뮬레이션의 정합성을 위해 30Hz로 고정시키고, 최대 MaxStepsPerFrame을 초과할 경우 실시간보다 뒤쳐진다.
 	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
 	float GetSimTimeSeconds() const { return SimTimeSeconds; }
+	
+	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
+	int32 GetGlobalSimulationSeed() const { return GlobalSimulationSeed; }
 
 	
 	
@@ -302,7 +307,10 @@ private:
 	// 목적지 추첨용. 시드를 고정해야 같은 조건에서 같은 결과가 재현된다
 	FRandomStream Rng;
 	
-	TSoftObjectPtr<UDataTable> CachedVariationTable;
+	int32 GlobalSimulationSeed = 0;
+	
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedVariationTable;
 	
 	float CachedCorrelationStrength = 0.3f;
 	
