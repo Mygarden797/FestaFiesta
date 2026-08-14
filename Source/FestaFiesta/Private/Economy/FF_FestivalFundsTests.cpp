@@ -185,4 +185,71 @@ bool FFF_FestivalFunds_RefundAddsGold::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 의무 비용(임대료)은 **거부하지 않고 있는 만큼만** 가져간다 — TrySpend 와 규칙이 반대다 (S6).
+// 두 규칙이 한 구조체에 공존하는 것이 의도다: 거부만 있으면 돈이 없을 때 임대료가 공짜가 되고,
+// 클램프만 있으면 "돈이 없는데 물건은 샀다"가 생긴다. economy_spec.md §3.7.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalFunds_MandatoryCostClampsInsteadOfRejecting, "FestaFiesta.Economy.FestivalFunds.MandatoryCostClampsInsteadOfRejecting", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FestivalFunds_MandatoryCostClampsInsteadOfRejecting::RunTest(const FString& Parameters)
+{
+	// 잔액이 넉넉하면 전액이 빠지고 그 금액이 반환된다.
+	FFF_FestivalFunds Funds = MakeFundsWithGold(3000);
+	TestEqual(TEXT("전액 낼 수 있으면 청구액이 그대로 지불된다"), Funds.PayMandatoryCost(2400), 2400);
+	TestEqual(TEXT("잔액이 그만큼 줄어든다"), Funds.GetGold(), 600);
+
+	// 잔액이 모자라면 있는 만큼만. **거부(0)가 아니다** — 이 줄이 TrySpend 와 구분한다.
+	TestEqual(TEXT("모자라면 남은 잔액만큼만 지불한다"), Funds.PayMandatoryCost(2400), 600);
+	TestEqual(TEXT("잔액은 0 이 되고 음수가 되지 않는다"), Funds.GetGold(), 0);
+
+	// 잔액 0 에서 청구해도 음수로 내려가지 않는다. 부족분 전액이 호출부의 미납이 된다.
+	TestEqual(TEXT("잔액 0 에서는 0 만 지불된다"), Funds.PayMandatoryCost(2400), 0);
+	TestEqual(TEXT("잔액이 음수가 되지 않는다"), Funds.GetGold(), 0);
+
+	// 같은 구조체의 TrySpend 는 여전히 거부해야 한다 — 두 규칙이 섞이지 않았음을 확인한다.
+	FFF_FestivalFunds Both = MakeFundsWithGold(1000);
+	TestFalse(TEXT("TrySpend 는 여전히 거부한다"), Both.TrySpend(1001));
+	TestEqual(TEXT("거부는 잔액을 바꾸지 않는다"), Both.GetGold(), 1000);
+	TestEqual(TEXT("같은 금액도 PayMandatoryCost 는 클램프한다"), Both.PayMandatoryCost(1001), 1000);
+	TestEqual(TEXT("클램프는 잔액을 0 으로 만든다"), Both.GetGold(), 0);
+
+	// 청구 0 은 상태를 바꾸지 않는다 (알바 0명인 날의 임금이 0 이다).
+	FFF_FestivalFunds Other = MakeFundsWithGold(100);
+	TestEqual(TEXT("청구 0 은 0 을 지불한다"), Other.PayMandatoryCost(0), 0);
+	TestEqual(TEXT("청구 0 은 잔액을 안 바꾼다"), Other.GetGold(), 100);
+
+	// 음수 청구로 돈을 벌 수 없다.
+	AddExpectedError(TEXT(""), EAutomationExpectedErrorFlags::Contains, 0);
+	TestEqual(TEXT("음수 청구는 0 을 지불한다"), Other.PayMandatoryCost(-500), 0);
+	TestEqual(TEXT("음수 청구로 잔액이 늘지 않는다"), Other.GetGold(), 100);
+
+	return true;
+}
+
+// 하루 경계는 TodayRevenue 만 리셋한다. 누적 매출과 잔액은 날을 넘어간다 (S6, §5.1).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalFunds_ResetTodayRevenueKeepsTotalAndGold, "FestaFiesta.Economy.FestivalFunds.ResetTodayRevenueKeepsTotalAndGold", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FestivalFunds_ResetTodayRevenueKeepsTotalAndGold::RunTest(const FString& Parameters)
+{
+	FFF_FestivalFunds Funds = MakeFundsWithGold(1000);
+	Funds.AddRevenue(700);
+
+	Funds.ResetTodayRevenue();
+
+	TestEqual(TEXT("오늘 매출만 0 이 된다"), Funds.GetTodayRevenue(), 0);
+	// 이 두 줄이 "하루 경계가 매출을 지운다"는 오해를 막는다. 어제 번 돈으로 오늘을 산다.
+	TestEqual(TEXT("누적 매출은 유지된다"), Funds.GetTotalRevenue(), 700);
+	TestEqual(TEXT("잔액은 유지된다"), Funds.GetGold(), 1700);
+
+	// 리셋 후 새로 쌓이는 매출은 오늘 것만 늘리고 누적은 이어서 쌓인다.
+	Funds.AddRevenue(200);
+	TestEqual(TEXT("리셋 후 오늘 매출이 새로 쌓인다"), Funds.GetTodayRevenue(), 200);
+	TestEqual(TEXT("누적 매출은 이어진다"), Funds.GetTotalRevenue(), 900);
+
+	// 연속 리셋은 무해하다 (같은 날 BeginNewDay 가 두 번 불려도 안전해야 한다).
+	Funds.ResetTodayRevenue();
+	Funds.ResetTodayRevenue();
+	TestEqual(TEXT("연속 리셋도 누적 매출을 안 건드린다"), Funds.GetTotalRevenue(), 900);
+	TestEqual(TEXT("연속 리셋도 잔액을 안 건드린다"), Funds.GetGold(), 1900);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

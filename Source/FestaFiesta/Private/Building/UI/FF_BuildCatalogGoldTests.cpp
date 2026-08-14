@@ -89,6 +89,11 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 
 	TestDefinition->FestivalId = TEXT("BuildCatalogGoldAutomationFestival");
 	TestDefinition->InitialGold = 12'345;
+
+	// 이 테스트는 **Read Model 이 잔액을 그대로 비추는지**만 본다. StartFestival 이 Day1
+	// 임대료를 징수하므로(economy_spec.md §5 S6) 임대료를 0 으로 두지 않으면 12,345 가 안 나온다.
+	TestDefinition->DailyVenueRentGold = 0;
+
 	Progression->StartFestival(TestDefinition);
 	TestEqual(TEXT("Building Read Model synchronously mirrors Progression initial Gold"),
 		EconomyReadModel->GetGold(), 12'345);
