@@ -9,6 +9,7 @@
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
 #include "Building/UI/FF_BuildFacilityCard.h"
 #include "CommonTextBlock.h"
+#include "Components/VerticalBox.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
 #include "Misc/AutomationTest.h"
@@ -89,8 +90,38 @@ bool FFF_BuildFacilityCostTooltipAssetContractTest::RunTest(const FString& Param
 		Tree->FindWidget(TEXT("Tooltip_Background")));
 	TestNotNull(TEXT("Designer owns the facility-name presentation"),
 		Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_FacilityName"))));
-	TestNotNull(TEXT("Designer owns the required install-cost presentation"),
-		Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_InstallCost"))));
+	const UVerticalBox* Content = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Tooltip_Content")));
+	const UWidget* CostRow = Tree->FindWidget(TEXT("Cost_Row"));
+	const UWidget* RecoveryRow = Tree->FindWidget(TEXT("Recovery_Row"));
+	const UCommonTextBlock* InstallCost =
+		Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_InstallCost")));
+	const UCommonTextBlock* RecoveryLabel =
+		Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_RecoveryLabel")));
+	const UCommonTextBlock* RecoveryCost =
+		Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_RecoveryCost")));
+	TestNotNull(TEXT("Designer owns the tooltip content hierarchy"), Content);
+	TestNotNull(TEXT("Designer owns the install-cost row"), CostRow);
+	TestNotNull(TEXT("Designer owns the required install-cost presentation"), InstallCost);
+	TestNotNull(TEXT("Designer owns the recovery-cost row"), RecoveryRow);
+	TestNotNull(TEXT("Designer owns the recovery-cost label"), RecoveryLabel);
+	TestNotNull(TEXT("Designer owns the required recovery-cost presentation"), RecoveryCost);
+	if (Content && CostRow && RecoveryRow)
+	{
+		TestEqual(TEXT("Recovery cost is directly below the install cost"),
+			Content->GetChildIndex(RecoveryRow), Content->GetChildIndex(CostRow) + 1);
+	}
+	if (InstallCost && RecoveryCost)
+	{
+		TestTrue(TEXT("The WBP does not serialize a hard-coded install-cost preview"),
+			InstallCost->GetText().IsEmpty());
+		TestTrue(TEXT("The WBP does not serialize a hard-coded recovery-cost preview"),
+			RecoveryCost->GetText().IsEmpty());
+	}
+	if (RecoveryLabel)
+	{
+		TestEqual(TEXT("The recovery row uses the requested Korean label"),
+			RecoveryLabel->GetText().ToString(), FString(TEXT("회수 비용")));
+	}
 	return true;
 }
 
@@ -125,6 +156,8 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	Entry.DisplayName = FText::FromString(TEXT("Data Pocha Food Truck"));
 	Entry.InstallCost = 400;
 	Entry.bHasResolvedInstallCost = true;
+	Entry.RecoveryCost = 200;
+	Entry.bHasResolvedRecoveryCost = true;
 
 	UFF_BuildFacilityCostTooltip* StandaloneTooltip =
 		CreateWidget<UFF_BuildFacilityCostTooltip>(EditorWorld, TooltipClass);
@@ -136,6 +169,9 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 		TestEqual(TEXT("The WBP displays the resolved 400 Gold price"),
 			StandaloneTooltip->GetDisplayedInstallCostText().ToString(),
 			FString(TEXT("400 Gold")));
+		TestEqual(TEXT("The WBP displays the resolved 200 Gold recovery cost"),
+			StandaloneTooltip->GetDisplayedRecoveryCostText().ToString(),
+			FString(TEXT("200 Gold")));
 	}
 
 	UFF_BuildFacilityCard* Card = CreateWidget<UFF_BuildFacilityCard>(EditorWorld, CardClass);
@@ -160,14 +196,29 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	TestEqual(TEXT("The card-attached WBP displays the resolved price"),
 		AttachedTooltip->GetDisplayedInstallCostText().ToString(),
 		FString(TEXT("400 Gold")));
+	TestEqual(TEXT("The card-attached WBP displays the resolved recovery cost"),
+		AttachedTooltip->GetDisplayedRecoveryCostText().ToString(),
+		FString(TEXT("200 Gold")));
+
+	Entry.RecoveryCost = 0;
+	Entry.bHasResolvedRecoveryCost = true;
+	Card->Configure(Entry);
+	TestEqual(TEXT("A resolved zero-percent recovery rate is displayed as zero Gold"),
+		AttachedTooltip->GetDisplayedRecoveryCostText().ToString(),
+		FString(TEXT("0 Gold")));
 
 	Entry.InstallCost = 0;
 	Entry.bHasResolvedInstallCost = false;
+	Entry.RecoveryCost = 0;
+	Entry.bHasResolvedRecoveryCost = false;
 	Card->Configure(Entry);
 	TestEqual(TEXT("Reconfiguration reuses the card's tooltip instance"),
 		Card->GetToolTip(), static_cast<UWidget*>(AttachedTooltip));
 	TestEqual(TEXT("Unavailable price never leaves a stale or misleading zero value"),
 		AttachedTooltip->GetDisplayedInstallCostText().ToString(),
+		FString(TEXT("가격 정보 없음")));
+	TestEqual(TEXT("Unavailable recovery cost never leaves a stale or misleading zero value"),
+		AttachedTooltip->GetDisplayedRecoveryCostText().ToString(),
 		FString(TEXT("가격 정보 없음")));
 	TestEqual(TEXT("Runtime attachment preserves the existing card WBP dirty state"),
 		CardClass->GetOutermost()->IsDirty(), bCardPackageWasDirty);

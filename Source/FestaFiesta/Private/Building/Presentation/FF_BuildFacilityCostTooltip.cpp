@@ -45,9 +45,31 @@ FText UFF_BuildFacilityCostTooltip::GetDisplayedInstallCostText() const
 	return TXT_InstallCost ? TXT_InstallCost->GetText() : FText::GetEmpty();
 }
 
+FText UFF_BuildFacilityCostTooltip::GetRecoveryCostText() const
+{
+	if (!HasResolvedRecoveryCost())
+	{
+		return LOCTEXT("RecoveryCostUnavailable", "가격 정보 없음");
+	}
+
+	return FText::Format(
+		LOCTEXT("RecoveryCostFormat", "{0} Gold"),
+		FText::AsNumber(Entry.RecoveryCost));
+}
+
+FText UFF_BuildFacilityCostTooltip::GetDisplayedRecoveryCostText() const
+{
+	return TXT_RecoveryCost ? TXT_RecoveryCost->GetText() : FText::GetEmpty();
+}
+
 bool UFF_BuildFacilityCostTooltip::HasResolvedInstallCost() const
 {
 	return bConfigured && Entry.bHasResolvedInstallCost && Entry.InstallCost > 0;
+}
+
+bool UFF_BuildFacilityCostTooltip::HasResolvedRecoveryCost() const
+{
+	return bConfigured && Entry.bHasResolvedRecoveryCost && Entry.RecoveryCost >= 0;
 }
 
 void UFF_BuildFacilityCostTooltip::NativePreConstruct()
@@ -62,11 +84,13 @@ void UFF_BuildFacilityCostTooltip::ApplyEntryToWidgets()
 	const FText FacilityName = bUseDesignerPreview
 		? DesignerPreviewFacilityName
 		: GetFacilityNameText();
+	const FText DesignerCostPlaceholder = LOCTEXT("DesignerCostPlaceholder", "— Gold");
 	const FText InstallCostText = bUseDesignerPreview
-		? FText::Format(
-			LOCTEXT("InstallCostFormat", "{0} Gold"),
-			FText::AsNumber(DesignerPreviewInstallCost))
+		? DesignerCostPlaceholder
 		: GetInstallCostText();
+	const FText RecoveryCostText = bUseDesignerPreview
+		? DesignerCostPlaceholder
+		: GetRecoveryCostText();
 
 	if (TXT_FacilityName)
 	{
@@ -76,10 +100,14 @@ void UFF_BuildFacilityCostTooltip::ApplyEntryToWidgets()
 	{
 		TXT_InstallCost->SetText(InstallCostText);
 	}
+	if (TXT_RecoveryCost)
+	{
+		TXT_RecoveryCost->SetText(RecoveryCostText);
+	}
 
 	BP_OnTooltipDataChanged(
-		bUseDesignerPreview || HasResolvedInstallCost(),
-		bUseDesignerPreview ? DesignerPreviewInstallCost : Entry.InstallCost);
+		!bUseDesignerPreview && HasResolvedInstallCost(),
+		bUseDesignerPreview ? 0 : Entry.InstallCost);
 }
 
 #undef LOCTEXT_NAMESPACE

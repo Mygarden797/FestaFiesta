@@ -21,4 +21,8 @@ public:
 		int32& OutInstallCost,
 		FName& OutMatchedRow,
 		FString& OutFailureReason);
+
+	// 설치비와 저작된 철거 환급률을 실제 지급에 사용할 정수 Gold로 변환한다.
+	// 호출자가 달라도 같은 clamp/round 규칙을 사용하도록 경제 도메인이 계산을 소유한다.
+	static int32 CalculateDemolitionRefund(int32 InstallCost, float RefundRate);
 };
