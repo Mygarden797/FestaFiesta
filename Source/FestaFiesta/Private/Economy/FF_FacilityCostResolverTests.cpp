@@ -47,4 +47,28 @@ bool FFF_FacilityCostResolverTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityDemolitionRefundCalculationTest,
+	"FestaFiesta.Economy.FacilityCostResolver.DemolitionRefundCalculation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFF_FacilityDemolitionRefundCalculationTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	TestEqual(TEXT("A zero refund rate returns zero Gold"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(400, 0.0f), 0);
+	TestEqual(TEXT("The configured half refund returns 200 of 400 Gold"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(400, 0.5f), 200);
+	TestEqual(TEXT("Half-Gold results use the authoritative nearest-integer rounding"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(401, 0.5f), 201);
+	TestEqual(TEXT("Rates above one cannot refund more than the install cost"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(400, 1.5f), 400);
+	TestEqual(TEXT("Negative rates cannot create a negative refund"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(400, -0.5f), 0);
+	TestEqual(TEXT("Negative install costs cannot create a refund"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(-400, 0.5f), 0);
+	return true;
+}
+
 #endif

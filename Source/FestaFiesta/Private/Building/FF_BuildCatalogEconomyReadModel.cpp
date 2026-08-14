@@ -2,7 +2,10 @@
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 
+#include "Building/FF_BuildCatalogModel.h"
 #include "Engine/GameInstance.h"
+#include "FF_FFZSFacilityDefinition.h"
+#include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
 #include "UI/FF_UILog.h"
@@ -42,6 +45,28 @@ void UFF_BuildCatalogEconomyReadModel::Deinitialize()
 	ProgressionSubsystem = nullptr;
 	bHasAuthoritativeGold = false;
 	Super::Deinitialize();
+}
+
+bool UFF_BuildCatalogEconomyReadModel::TryProjectFacilityCosts(
+	FFF_BuildCatalogEntry& Entry,
+	const UFFZSFacilityDefinition* Definition,
+	FString& OutFailureReason) const
+{
+	const UFF_FestivalDefinition* Festival =
+		ProgressionSubsystem && ProgressionSubsystem->IsFestivalStarted()
+		? ProgressionSubsystem->GetDefinition()
+		: nullptr;
+	const UDataTable* CostTable = Festival ? Festival->FacilityCostTable.Get() : nullptr;
+	const float DemolitionRefundRate = Festival
+		? Festival->FacilityDemolitionRefundRate
+		: 0.0f;
+
+	return FFBuildCatalogModel::ApplyFacilityCosts(
+		Entry,
+		Definition,
+		CostTable,
+		DemolitionRefundRate,
+		OutFailureReason);
 }
 
 void UFF_BuildCatalogEconomyReadModel::HandleProgressionGoldChanged(const int32 NewGold)

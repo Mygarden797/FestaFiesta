@@ -36,4 +36,20 @@ public:
 	// 레벨에 배치한 Pawn 의 위치를 그대로 쓰고 싶으면 끈다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera")
 	bool bApplyInitialFraming = true;
+
+	// 플레이어가 직접 조종할 방문객 캐릭터. 보통 BP_FestivalCharacter 를 넣는다.
+	//
+	// 레벨에 이미 배치돼 있으면 그것을 쓰고, 없으면 PlayerStart 에 스폰한다.
+	// 두 방식을 다 열어둔 이유는, 배치 쪽이 위치를 눈으로 정할 수 있어 작업 중에 편하고
+	// 스폰 쪽이 레벨마다 캐릭터를 놓지 않아도 되기 때문이다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Character")
+	TSubclassOf<APawn> VisitorCharacterClass;
+
+	// 끄면 캐릭터를 찾지도 스폰하지도 않는다. 관찰 전용 레벨에서 쓴다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Character")
+	bool bPrepareVisitorCharacter = true;
+
+private:
+	// 레벨에서 찾거나 PlayerStart 에 스폰해서 컨트롤러에 넘긴다.
+	void PrepareVisitorCharacter(class AFF_FestivalPlayerController* Controller);
 };
