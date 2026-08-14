@@ -42,6 +42,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
 	void AddPanInput(const FVector2D& ScreenInput);
 
+	// 화면 가장자리 스크롤. 키보드 팬과 속도가 달라서 따로 쌓는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void AddEdgeScrollInput(const FVector2D& ScreenInput);
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
 	void AddZoomInput(float Steps);
 
@@ -103,6 +107,7 @@ private:
 
 	// 이번 프레임에 쌓인 팬 입력. Tick 에서 소비하고 비운다.
 	FVector2D PendingPanInput = FVector2D::ZeroVector;
+	FVector2D PendingEdgeScrollInput = FVector2D::ZeroVector;
 	float PendingRotateInput = 0.f;
 
 	TWeakObjectPtr<AActor> FollowTarget;

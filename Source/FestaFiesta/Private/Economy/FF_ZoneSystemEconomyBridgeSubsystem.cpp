@@ -9,8 +9,10 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 
 #define LOCTEXT_NAMESPACE "FFZoneSystemEconomyBridge"
 
@@ -237,9 +239,94 @@ UFF_ZoneSystemEconomyBridgeSubsystem::ApplyTentativeFFZoneSystemChange_Implement
 	return FFFZSPolicyDecision();
 }
 
+bool UFF_ZoneSystemEconomyBridgeSubsystem::ResolveDemolitionRefund(
+	const FFFZSPolicyContext& Context,
+	int32& OutRefund,
+	FName& OutMatchedCostRow,
+	FString& OutFailureReason) const
+{
+	OutRefund = 0;
+	OutMatchedCostRow = NAME_None;
+	OutFailureReason.Reset();
+
+	// Remove 명령은 FacilityInstanceId만 싣고 오므로 비용 키는 권위 액터의 Spec에서 읽는다.
+	const AFFZSFacilityActor* Facility = Context.FacilityActor;
+	if (!Facility)
+	{
+		OutFailureReason = TEXT("철거 대상 시설 액터가 없습니다.");
+		return false;
+	}
+
+	const UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
+	const UFF_FestivalDefinition* Festival = Progression ? Progression->GetDefinition() : nullptr;
+	if (!Festival || !Progression->IsFestivalStarted())
+	{
+		OutFailureReason = TEXT("축제가 시작되지 않아 환급 비율을 확인할 수 없습니다.");
+		return false;
+	}
+
+	const UDataTable* CostTable = Festival->FacilityCostTable.Get();
+	if (!CostTable)
+	{
+		OutFailureReason = TEXT("축제 정의에 시설 비용 DataTable이 없습니다.");
+		return false;
+	}
+
+	int32 InstallCost = 0;
+	if (!FFF_FacilityCostResolver::FindInstallCost(
+		Facility->GetFacilitySpec(), CostTable, InstallCost, OutMatchedCostRow, OutFailureReason))
+	{
+		return false;
+	}
+
+	// 비율은 저작 데이터라 코드에서 다시 한 번 가둔다. 설치비를 넘는 환급은 철거가 수입원이 된다.
+	const float RefundRate = FMath::Clamp(Festival->FacilityDemolitionRefundRate, 0.0f, 1.0f);
+	OutRefund = FMath::RoundToInt(FMath::Max(0, InstallCost) * RefundRate);
+	return true;
+}
+
+void UFF_ZoneSystemEconomyBridgeSubsystem::CommitDemolitionRefund(const FFFZSPolicyContext& Context)
+{
+	int32 Refund = 0;
+	FName MatchedCostRow = NAME_None;
+	FString FailureReason;
+	if (!ResolveDemolitionRefund(Context, Refund, MatchedCostRow, FailureReason))
+	{
+		// 철거는 이미 확정됐다. 여기서 되돌릴 수 없으므로 환급 0으로 두고 원인만 남긴다.
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 시설 철거 환급을 계산하지 못해 0 Gold를 환급합니다: CommandId=%s, 사유=%s"),
+			*Context.Command.CommandId.ToString(),
+			*FailureReason);
+		return;
+	}
+
+	UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
+	if (!Progression)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Error,
+			TEXT("[경제] 시설 철거 환급 중 축제 경제 서브시스템을 찾을 수 없습니다: CommandId=%s, 환급=%d Gold"),
+			*Context.Command.CommandId.ToString(),
+			Refund);
+		return;
+	}
+
+	Progression->Refund(Refund);
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] 시설 철거 환급 완료: CommandId=%s, 매칭 행=%s, 환급=%d Gold, 잔액=%d Gold"),
+		*Context.Command.CommandId.ToString(),
+		*MatchedCostRow.ToString(),
+		Refund,
+		Progression->GetGold());
+}
+
 void UFF_ZoneSystemEconomyBridgeSubsystem::CommitFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
+	if (Context.Command.Type == EFFZSCommandType::Remove)
+	{
+		CommitDemolitionRefund(Context);
+		return;
+	}
 	if (Context.Command.Type != EFFZSCommandType::Install)
 	{
 		return;
@@ -302,7 +389,7 @@ void UFF_ZoneSystemEconomyBridgeSubsystem::CommitFFZoneSystemChange_Implementati
 		GoldAtValidation,
 		Progression->GetGold());
 
-	const bool bSpent = Progression->TrySpend(InstallCost);
+	const bool bSpent = Progression->TrySpend(InstallCost, EFF_SpendReason::FacilityInstall);
 	ensureAlwaysMsgf(
 		bSpent,
 		TEXT("검증을 통과한 시설 설치비 차감에 실패했습니다. CommandId=%s, 비용 키=%s, 비용=%d Gold, 현재 잔액=%d Gold"),

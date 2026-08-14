@@ -21,6 +21,7 @@
 //테스트 매트릭스
 // TestFixtures: 7개 테스트 변형의 Schema 2, 1 cm 크기, Clearance 100, 압축 Queue Region 회귀
 // Validation: 작은 합성 예산, Rect 유효성·정규화, Queue tail 포함, 오버플로 fail-closed
+// MovementTargetSeparation: Anchor/Queue 목표의 XY 간격, 도착 허용 지름, 1cm 하한과 경계 포함
 // EditorDataValidation: 같은 1 cm/Region 도메인 오류가 Data Asset 저작 UI까지 전달되는지 확인
 // 표 기반 Arrange로 fixture 추가 누락을 드러내고 각 변형은 한 원인만 바꿔 오류 책임을 분리.
 namespace
@@ -93,23 +94,23 @@ bool FFFZSOneCentimeterTestFacilityDefinitionsTest::RunTest(const FString& Param
         { EFFZSTestFacilityVariant::Info,
           FName(TEXT("FD_Info_Basic")),
           EFFZSFacilityCategory::Info,
-          FIntPoint(300, 200), 1, 70'000, 6, 1 },
+          FIntPoint(300, 200), 1, 80'000, 6, 1 },
         { EFFZSTestFacilityVariant::Rest,
           FName(TEXT("FD_Rest_Basic")),
           EFFZSFacilityCategory::Rest,
-          FIntPoint(400, 300), 1, 40'000, 4, 2 },
+          FIntPoint(400, 300), 1, 60'000, 4, 2 },
         { EFFZSTestFacilityVariant::Performance,
           FName(TEXT("FD_Performance_Basic")),
           EFFZSFacilityCategory::Performance,
-          FIntPoint(800, 500), 1, 180'000, 16, 2 },
+          FIntPoint(800, 500), 1, 190'000, 16, 2 },
         { EFFZSTestFacilityVariant::Safety,
           FName(TEXT("FD_Safety_Basic")),
           EFFZSFacilityCategory::Safety,
-          FIntPoint(400, 300), 1, 70'000, 6, 2 },
+          FIntPoint(400, 300), 1, 80'000, 6, 2 },
         { EFFZSTestFacilityVariant::PhotoSpot,
           FName(TEXT("FD_PhotoSpot_Basic")),
           EFFZSFacilityCategory::PhotoSpot,
-          FIntPoint(500, 300), 1, 90'000, 8, 1 }
+          FIntPoint(500, 300), 1, 100'000, 8, 1 }
     };
 
     // Act/Assert: 대형 fixture는 IsValid와 압축 Rect 면적만 사용하고 Get*Cells로 펼치지 않는다.
@@ -409,6 +410,189 @@ bool FFFZSOneCentimeterFacilityDefinitionValidationTest::RunTest(
                 TNumericLimits<uint8>::Max()));
     TestFalse(TEXT("알 수 없는 테스트 시설 변형은 안전 차단으로 실패한다"),
         InvalidFixture.IsValid(Errors));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSMovementTargetSeparationValidationTest,
+    "FF_ZoneSystem.Unit.Definitions.MovementTargetSeparation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSMovementTargetSeparationValidationTest::RunTest(
+    const FString& Parameters)
+{
+    (void)Parameters;
+
+    TGuardValue<int32> StableRegionBudget(
+        GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility,
+        1'000'000);
+    TArray<FText> Errors;
+
+    const auto FindAnchor = [](
+        FFFZSFacilitySpec& Spec,
+        const EFFZSAnchorType Type,
+        const int32 Index) -> FFFZSAnchorDefinition*
+    {
+        return Spec.Anchors.FindByPredicate(
+            [Type, Index](const FFFZSAnchorDefinition& Anchor)
+            {
+                return Anchor.Type == Type && Anchor.Index == Index;
+            });
+    };
+    const FVector SafeEntryLocation(1000.0, -1000.0, 0.0);
+    const FVector SafeExitLocation(-1000.0, -1000.0, 0.0);
+    const auto ConfigureSafeAnchors =
+        [&FindAnchor, &SafeEntryLocation, &SafeExitLocation](FFFZSFacilitySpec& Spec) -> bool
+    {
+        FFFZSAnchorDefinition* Entry = FindAnchor(Spec, EFFZSAnchorType::Entry, 0);
+        FFFZSAnchorDefinition* Service = FindAnchor(Spec, EFFZSAnchorType::Service, 0);
+        FFFZSAnchorDefinition* Exit = FindAnchor(Spec, EFFZSAnchorType::Exit, 0);
+        if (!Entry || !Service || !Exit || Spec.QueueSplinePointsCm.IsEmpty())
+        {
+            return false;
+        }
+        const double MinimumSeparationCm = FMath::Max(
+            1.0,
+            static_cast<double>(Spec.QueueRules.SlotArrivalToleranceCm) * 2.0);
+        Entry->LocalTransform.SetLocation(SafeEntryLocation);
+        Service->LocalTransform.SetLocation(
+            Spec.QueueSplinePointsCm[0] + FVector(0.0, -MinimumSeparationCm, 0.0));
+        Exit->LocalTransform.SetLocation(SafeExitLocation);
+        return true;
+    };
+
+    FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(
+        EFFZSTestFacilityVariant::FoodTruck);
+    if (!ConfigureSafeAnchors(Spec))
+    {
+        AddError(TEXT("이동 목표 간격 검증에 필요한 fixture Anchor 또는 Queue spline이 없습니다."));
+        return false;
+    }
+    TestTrue(TEXT("Service와 Queue 슬롯이 도착 허용 지름의 정확한 경계에 있으면 유효하다"),
+        Spec.IsValid(Errors));
+
+    FFFZSAnchorDefinition* Entry = FindAnchor(Spec, EFFZSAnchorType::Entry, 0);
+    FFFZSAnchorDefinition* Service = FindAnchor(Spec, EFFZSAnchorType::Service, 0);
+    FFFZSAnchorDefinition* Exit = FindAnchor(Spec, EFFZSAnchorType::Exit, 0);
+    if (!Entry || !Service || !Exit)
+    {
+        AddError(TEXT("안전 배치 뒤 fixture Anchor를 찾지 못했습니다."));
+        return false;
+    }
+    Entry->LocalTransform.SetLocation(Spec.QueueSplinePointsCm[0]);
+    TestFalse(TEXT("Entry[0]이 Queue Slot[0]과 겹치면 거부된다"),
+        Spec.IsValid(Errors));
+    TestTrue(TEXT("Anchor와 Queue 슬롯 오류가 도착 허용 지름 기준을 설명한다"),
+        ContainsErrorText(Errors, TEXT("2 × SlotArrivalToleranceCm")));
+
+    Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    if (!ConfigureSafeAnchors(Spec))
+    {
+        AddError(TEXT("Service와 Queue 슬롯 중첩 검증을 준비하지 못했습니다."));
+        return false;
+    }
+    Service = FindAnchor(Spec, EFFZSAnchorType::Service, 0);
+    if (!Service)
+    {
+        AddError(TEXT("Service[0] fixture Anchor가 없습니다."));
+        return false;
+    }
+    Service->LocalTransform.SetLocation(Spec.QueueSplinePointsCm[0]);
+    TestFalse(TEXT("Service Anchor가 Queue Slot[0]과 겹쳐도 예외 없이 거부된다"),
+        Spec.IsValid(Errors));
+    TestTrue(TEXT("Service와 Queue 슬롯 중첩도 Anchor-Queue 오류로 보고된다"),
+        ContainsErrorText(Errors, TEXT("모든 Entry, Service, Exit Anchor")));
+
+    Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    if (!ConfigureSafeAnchors(Spec))
+    {
+        AddError(TEXT("Anchor 상호 간격 검증을 준비하지 못했습니다."));
+        return false;
+    }
+    Service = FindAnchor(Spec, EFFZSAnchorType::Service, 0);
+    Exit = FindAnchor(Spec, EFFZSAnchorType::Exit, 0);
+    if (!Service || !Exit)
+    {
+        AddError(TEXT("Anchor 상호 간격 검증에 필요한 Service 또는 Exit Anchor가 없습니다."));
+        return false;
+    }
+    const double DefaultMinimumSeparationCm = FMath::Max(
+        1.0,
+        static_cast<double>(Spec.QueueRules.SlotArrivalToleranceCm) * 2.0);
+    Exit->LocalTransform.SetLocation(
+        Service->LocalTransform.GetLocation() +
+            FVector(DefaultMinimumSeparationCm - 1.0, 0.0, 1000.0));
+    TestFalse(TEXT("Anchor XY 간격이 도착 허용 지름보다 작으면 Z가 달라도 거부된다"),
+        Spec.IsValid(Errors));
+    TestTrue(TEXT("Anchor 상호 간격 오류가 XY 중심 기준을 설명한다"),
+        ContainsErrorText(Errors, TEXT("Anchor의 XY 중심")));
+
+    Exit->LocalTransform.SetLocation(
+        Service->LocalTransform.GetLocation() +
+            FVector(DefaultMinimumSeparationCm, 0.0, 1000.0));
+    TestTrue(TEXT("Anchor XY 간격이 정확히 도착 허용 지름이면 유효하다"),
+        Spec.IsValid(Errors));
+
+    Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Spec.QueueRules.SlotArrivalToleranceCm = 0.0f;
+    if (!ConfigureSafeAnchors(Spec))
+    {
+        AddError(TEXT("1cm 절대 하한 검증을 준비하지 못했습니다."));
+        return false;
+    }
+    Entry = FindAnchor(Spec, EFFZSAnchorType::Entry, 0);
+    Exit = FindAnchor(Spec, EFFZSAnchorType::Exit, 0);
+    if (!Entry || !Exit)
+    {
+        AddError(TEXT("1cm 절대 하한 검증에 필요한 Entry 또는 Exit Anchor가 없습니다."));
+        return false;
+    }
+    Exit->LocalTransform.SetLocation(
+        Entry->LocalTransform.GetLocation() + FVector(0.5, 0.0, 1000.0));
+    TestFalse(TEXT("도착 허용 반경이 0이어도 Anchor XY 간격 0.5cm는 거부된다"),
+        Spec.IsValid(Errors));
+    Exit->LocalTransform.SetLocation(
+        Entry->LocalTransform.GetLocation() + FVector(1.0, 0.0, 1000.0));
+    TestTrue(TEXT("도착 허용 반경이 0일 때 Anchor XY 간격 1cm 경계는 허용된다"),
+        Spec.IsValid(Errors));
+
+    Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    if (!ConfigureSafeAnchors(Spec))
+    {
+        AddError(TEXT("Queue 슬롯 상호 간격 검증을 준비하지 못했습니다."));
+        return false;
+    }
+    const FVector QueueHead = Spec.QueueSplinePointsCm[0];
+    Spec.QueueRules.MaxWaitingAgents = 2;
+    Spec.QueueRules.SlotSpacingCm = 200.0f;
+    Spec.QueueSplinePointsCm = {
+        QueueHead,
+        QueueHead + FVector(100.0, 0.0, 0.0),
+        QueueHead
+    };
+    TestFalse(TEXT("Queue 경로가 되돌아와 서로 같은 XY의 슬롯을 만들면 거부된다"),
+        Spec.IsValid(Errors));
+    TestTrue(TEXT("Queue 슬롯 상호 중첩 오류가 도착 허용 지름 기준을 설명한다"),
+        ContainsErrorText(Errors, TEXT("서로 다른 Queue 슬롯의 XY 중심")));
+
+    Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    if (!ConfigureSafeAnchors(Spec))
+    {
+        AddError(TEXT("Queue 슬롯 경계 검증을 준비하지 못했습니다."));
+        return false;
+    }
+    const double QueueBoundaryCm = FMath::Max(
+        1.0,
+        static_cast<double>(Spec.QueueRules.SlotArrivalToleranceCm) * 2.0);
+    const FVector QueueBoundaryHead = Spec.QueueSplinePointsCm[0];
+    Spec.QueueRules.MaxWaitingAgents = 2;
+    Spec.QueueRules.SlotSpacingCm = static_cast<float>(QueueBoundaryCm);
+    Spec.QueueSplinePointsCm = {
+        QueueBoundaryHead,
+        QueueBoundaryHead + FVector(0.0, QueueBoundaryCm, 0.0)
+    };
+    TestTrue(TEXT("서로 다른 Queue 슬롯의 XY 간격이 정확히 도착 허용 지름이면 유효하다"),
+        Spec.IsValid(Errors));
     return true;
 }
 

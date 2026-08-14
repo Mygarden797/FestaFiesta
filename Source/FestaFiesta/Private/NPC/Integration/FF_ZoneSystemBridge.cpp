@@ -118,12 +118,11 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 			continue;
 		}
 
-		// [의도적으로 비워둔 자리]
 		// !!! QueueState 로 후보를 자르지 않는다 !!!
 		//
 		// 여기서는 ZoneSystem 이 말하는 사실만 본다 — State(수명주기)와 bNeedsRelocation.
-		// "지금 이용 가능한가"의 판정은 Queue 쪽 한 곳에 맡긴다.
-		// 결정되면 handoff/queue_requests.md 를 보고 여기 또는 어댑터 한쪽에만 넣는다.
+		// "지금 이용 가능한가"의 판정은 FFF_QueueWaitAdapter 에만 맡긴다.
+		// "잠깐 만석"은 후보에서 빠지지 않고 대기시간이 커지는 것으로만 표현된다.
 
 		if (Facility.bNeedsRelocation)
 		{
@@ -277,7 +276,7 @@ namespace
 		UE_LOG(LogFestaFiestaNpc, Warning,
 			TEXT("[시설 네이밍 컨벤션 위반] FacilityDefinitionId='%s' — %s ")
 			TEXT("형태는 '대분류_소분류_고유이름'이어야 한다(대분류 = EFFZSFacilityCategory 이름). ")
-			TEXT("이 카테고리의 아는 소분류: %s. 규칙 전문은 data/metadata/handoff/facility_naming_convention.md."),
+			TEXT("이 카테고리의 아는 소분류: %s. 규칙 전문은 data/metadata/request/facility_naming_convention.md."),
 			*FacilityDefinitionId.ToString(), *Reason, *KnownTokens);
 	}
 

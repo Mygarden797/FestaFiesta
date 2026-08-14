@@ -148,7 +148,7 @@ public:
 	/**
 	 * 그룹 멤버용 개체 변주. **NPC를 스폰할 때 이 함수를 부르고 결과를 캐싱하면 된다** —
 	 * 개체 변주는 자동으로 걸리지 않는다. `StableAgentId`가 만들어져도 누군가 Resolve를
-	 * 호출하지 않으면 아무 변주도 적용되지 않는다 (crowdai_handoff_note.md §1).
+	 * 호출하지 않으면 아무 변주도 적용되지 않는다 (data/metadata/request/crowdai_integration_guide.md §5).
 	 *
 	 * Resolve()를 두 번 부른다:
 	 *   - `StableAgentId` 시드 → 개인 특성 4종 + LeisurelinessAxis

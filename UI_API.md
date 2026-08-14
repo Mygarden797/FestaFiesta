@@ -114,7 +114,7 @@ GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
 **✅ 처리 완료 (2026-08-11, 백종태)** — `UFF_FestivalViewModelSubsystem`이 구독으로 전환하고
 Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 바로 물렸습니다. 감사합니다.
 
-**남은 요청 2건 (백종태 → 강민서)**
+**요청 2건 (백종태 → 강민서) — ✅ 2026-08-13 둘 다 반영됨**
 
 1. **`IsCurrentStageSkippable()`을 `public` + `BlueprintPure`로 열어주세요.**
    지금 `private`이라 **블루프린트는 부를 수 있는데 C++에서는 못 부릅니다.**
@@ -158,7 +158,16 @@ FFFZSReadModel {
 
 **`FFFZSFacilityReadModel`** — `FacilityInstanceId`, `FacilityDefinitionId`, `ZoneId`, `Category`,
 `State`, `bNeedsRelocation`, `QueueState`, `WaitingCount`, `ActiveServiceCount`, `AverageCompletedWaitSeconds`,
-`WorldLocation`(시설 Actor 대표 월드 지점, cm)
+`WorldLocation`(시설 Actor 대표 월드 지점, cm),
+`bHasApproachWorldTransform`, `ApproachWorldTransform`(FacilityDefinition `Entry[0]` 기반 NPC 고정 접근점, 월드 좌표)
+
+NPC는 시설 이동 전에 `bHasApproachWorldTransform`을 확인하고 `ApproachWorldTransform`까지 이동한다.
+Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlotTargetsUpdated`가 제공하는 동적 Slot 위치를 사용한다.
+`Entry[0]`은 가입 전 admission/staging 지점이며 Queue tail로 해석하지 않는다.
+`Entry[0]`을 Slot 0과 겹쳐 저작하면 안 된다. FFZS는 이동 목표의 XY 중심을
+`max(1cm, 2 × SlotArrivalToleranceCm)` 이상 분리하고, FestaFiesta 프로덕션 콘텐츠는 기본 Crowd 반경
+34cm를 반영해 Anchor와 Queue Slot 사이에 최소 68cm를 확보한다. Entry와 Queue Slot의 NPC 몸체 원은
+`QueueReservedRects` 안에 완전히 포함되어야 한다.
 
 **`FFFZSZoneReadModel`** — `ZoneId`, `SoftCapacity`, `ReportedPopulation`, `DensityRatio`, `DensityState`
 
@@ -367,27 +376,35 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
 게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
 
-### Gold API 구현 완료 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-12)
+### Gold·매출 API 구현 완료 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-12 · 2026-08-13 갱신)
 
-`UFF_FestivalProgressionSubsystem`의 Gold 읽기 API가 구현됐습니다.
+`UFF_FestivalProgressionSubsystem`의 Gold·매출 읽기 API가 구현됐습니다.
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
 - `GetGold()` — 현재 잔액 `int32`, 0 이상·상한 없음
 - `CanAfford(int32 CostGold)` — 구매 가능 판정. UI가 `GetGold() >= 가격`을 직접 계산하지 않습니다
 - `OnGoldChanged(int32 NewGold)` — 값이 실제로 바뀔 때만 발행
+- 🆕 `GetTotalRevenue()` / `OnTotalRevenueChanged` — 축제 전체 누적 매출. **줄어들지 않습니다**
+- 🆕 `GetTodayRevenue()` / `OnTodayRevenueChanged` — 오늘 매출. **누적값에서 빼서 만들지 않습니다** — 따로 받으셔야 합니다
 
 **종태님께 요청드릴 연결 작업**
 
 1. `UFF_FestivalViewModelSubsystem` 초기화 시 `UFF_FestivalProgressionSubsystem`을 가져와
-   `GetGold()`로 초기 Gold를 동기화해 주세요.
-2. `OnGoldChanged`를 구독해 ViewModel의 `Gold`와 기존 `OnGoldChanged`를 갱신하고,
-   Deinitialize에서 반드시 구독 해제해 주세요.
+   `GetGold()`/`GetTotalRevenue()`/`GetTodayRevenue()`로 초기값을 동기화해 주세요.
+2. `OnGoldChanged`·`OnTotalRevenueChanged`·`OnTodayRevenueChanged`를 구독해 ViewModel의 동명 값과
+   델리게이트를 갱신하고, Deinitialize에서 반드시 구독 해제해 주세요. 셋 다 같은 모양(Getter+델리게이트 쌍)입니다.
 3. 구매 버튼은 ViewModel에 `CanAfford(int32 CostGold)` 전달 함수를 두고 원본 판정을 그대로 사용해 주세요.
    위젯이 ProgressionSubsystem을 직접 참조하거나 잔액과 가격을 직접 비교하지 않습니다.
-4. Gold는 소스 델리게이트가 있으므로 0.1초 폴링 대상에서 제외해도 됩니다.
+4. 셋 다 소스 델리게이트가 있으므로 0.1초 폴링 대상에서 제외해도 됩니다.
 
-아직 없는 경제 값은 `TotalRevenue`, `TodayRevenue`, 일차 결과와 저장 API입니다.
+🆕 **원인별·부스별 분해도 내부적으로 쌓이기 시작했습니다 (2026-08-13, `FFF_DayLedger`)** — `TrySpend`/`AddRevenue`를
+부를 때 지출·매출 원인(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음)과 매출은 부스 `FacilityId`까지
+같이 기록됩니다. **다만 지금은 서브시스템 내부에만 있고 UI가 읽을 Getter가 아직 없습니다** — Report 화면에서
+"원인별 표"·"부스별 매출 표" 중 어떤 형태로 필요하신지 알려주시면 그 모양대로 Getter를 만들겠습니다
+(예: `TArray<FFF_SpendBreakdownRow>` 같은 UI 친화 구조체로 감싸는 것도 가능합니다).
+
+아직 없는 경제 값은 일차 결과(등급 산출)와 저장 API입니다.
 
 ---
 
@@ -409,8 +426,8 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 | ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72     |
 | Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
 | Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 API 완료 · ViewModel 연결 요청** |
-| TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | 더미 0      |
-| TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | 더미 0      |
+| TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
+| TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
 | Stage / Day       | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged`         | **진짜 값**  |
 | 남은 시간             | `GetRemainingSeconds()`               | `OnRemainingSecondsChanged`  | **진짜 값 · 구독 중계** |
 
@@ -425,7 +442,8 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 | `RequestSkipCurrentStage()` | `CanSkipCurrentStage()` | `UFF_FestivalStageSubsystem::SkipCurrentStage()` |
 
 - `CanAdvanceToNextDay()` = `IsReportStage() && !IsFinalDay()`. 총 일수를 UI가 모릅니다.
-- `CanSkipCurrentStage()`는 **근사값**입니다 — 위 "남은 요청 2건" 1번 참고.
+- `CanSkipCurrentStage()`는 `IsCurrentStageSkippable()`을 그대로 중계합니다 (2026-08-13, 근사값 제거).
+  **버튼 표시용입니다.** `RequestSkipCurrentStage()`는 이 값으로 막지 않습니다 — 판정 소유자를 두 곳에 두지 않습니다.
 
 ### 값 규격 (2026-08-06 UI 결정)
 
@@ -433,14 +451,19 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 int32 SimSatisfaction;    // 0~100, 높을수록 좋음. 대기·밀도·취향 매칭에서 나오는 트윈 산출물
 int32 ScoreSatisfaction;  // 0~100, 높을수록 좋음. SimSatisfaction + FinaleBonus + 연출 보정
 int32 Safety;             // 0~100, 높을수록 안전 (2026-08-06 확정)
-int32 Gold;               // 잔액. 지출로 줄어든다. 초기 10,000 (밸런스 시드 v0)
+int32 Gold;               // 잔액. 지출로 줄어들고, 매출·시설 철거 환급으로 늘어난다. 초기 10,000 (밸런스 시드 v0)
 int32 TotalRevenue;       // 축제 전체 누적 매출. 줄어들지 않는다
 int32 TodayRevenue;       // 오늘 하루 매출
 ```
 
-**Gold와 Revenue는 다른 값입니다.** 대략 `Gold ≒ 초기자금 + TotalRevenue - 누적지출`이지만
-**UI는 이 식을 계산하지 않습니다.** 셋 다 소유자에게서 그대로 받습니다.
+**Gold와 Revenue는 다른 값입니다.** 대략 `Gold ≒ 초기자금 + TotalRevenue - 누적지출 + 누적환급`이지만
+**UI는 이 식을 계산하지 않습니다.** 전부 소유자에게서 그대로 받습니다.
 `TodayRevenue`도 UI가 누적값에서 빼서 만들지 않습니다 — Report에 필요하니 따로 주세요.
+
+🆕 **시설 철거가 `OnGoldChanged`를 쏩니다 (2026-08-13).** 설치비의 50%를 돌려받습니다
+(`FacilityDemolitionRefundRate`, 기획 조정 가능). **`OnTotalRevenueChanged`는 안 쏩니다** — 환급은
+매출이 아니라 이미 쓴 돈이 되돌아온 것입니다. `Gold`만 구독하고 있다면 그대로 잘 작동하지만,
+"Gold가 늘었다 = 매출이 늘었다"로 가정하는 코드가 있다면 깨집니다.
 
 **갱신 주기: 일정 틱마다.** ViewModel이 0.1초마다 샘플링하고 **정수값이 실제로 바뀔 때만** 델리게이트를
 쏩니다. 소스가 매 틱 흔들려도 위젯 갱신은 지표당 초당 10회로 묶입니다.
@@ -518,8 +541,10 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | **Satisfaction** (`SimSatisfaction` 0~100)    | 김시리 · 이정원 | ❌ 없음      | Overview 지표, Report, SNS                                           |
 | **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ❌ 없음      | Report 분해식, Finale 구매 예상치                                          |
 | **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
-| **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ❌ 없음      | 공통 상단 바                                                            |
-| **`TodayRevenue`** (오늘 매출)                    | 김시리       | ❌ 없음      | Report — UI가 누적값에서 빼지 않습니다                                         |
+| **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바                                                            |
+| **`TodayRevenue`** (오늘 매출)                    | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Report — UI가 누적값에서 빼지 않습니다                                         |
+| 🆕 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ⚠️ 내부 집계만 있음 | Report 드릴다운. UI Getter는 형태 협의 후 추가 |
+| 🆕 **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ⚠️ 내부 집계만 있음 | Report — 부스별 수익 표 |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
 | Staff 보유·가용 인원                                | 김시리       | ❌ 없음      | Event 배치 UI                                                        |
 | `CauseId` 롤업                                  | 김시리       | ⚠️ 창구만 있음 | Report 드릴다운 (AT-005) — `UFF_NpcNeedMetricsSubsystem`이 원본, 채우는 쪽 대기 |
@@ -546,3 +571,6 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-12 | 백종태 | `OnMainProgramStarted`·`OnMainProgramEnded` 항목과 사용 주의 3건 추가. 유료 프로그램 예약 절 신설 — UI 담당 확정과 필요 API 4건 요청 |
 | 2026-08-12 | 김시리 | `UFF_FestivalProgressionSubsystem`의 Gold Getter·델리게이트·`CanAfford` 구현 완료. ViewModel 초기 동기화·이벤트 중계·구매 가능 판정 연결 요청 |
 | 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |
+| 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
+| 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
+| 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |

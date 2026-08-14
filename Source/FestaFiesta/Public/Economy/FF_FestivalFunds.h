@@ -25,8 +25,25 @@ struct FFF_FestivalFunds
 
 	// 지출한다. 성공하면 true 이고 잔액이 그만큼 줄어든다.
 	bool TrySpend(int32 Amount);
+	
+	// Gold 와 TotalRevenue·TodayRevenue 를 함께 늘린다.
+	void AddRevenue(int32 Amount);
+	
+	int32 GetTotalRevenue() const { return TotalRevenue; }
+	
+	int32 GetTodayRevenue() const { return TodayRevenue; }
+
+	// 잔액을 늘린다. 음수는 무시한다. 상한이 없으므로 int32 오버플로만 막는다.
+	void Refund(int32 Amount);
 
 private:
 	// 잔액 (Gold). 음수가 되지 않는다.
 	int32 Gold = 0;
+	
+	// 누적 매출
+	int32 TotalRevenue = 0;
+	
+	// 오늘 매출
+	int32 TodayRevenue = 0;
+	
 };

@@ -3,7 +3,7 @@
 - 작성일: 2026-08-04
 - 상태: 초안 — 생성 순서와 독립가정은 확정, 정확한 계수(그룹 크기 분포·그룹 내 연령 구성 규칙)는 draft_assumption
 - 배경: 사용자 피드백으로 두 가지 구조적 문제를 발견함 — ① 동반유형(companion_type)은 NPC 개인 속성이 아니라 그룹 생성 규칙이다 ② 종속 아동 생성이 일반 인구 샘플링과 이중으로 겹칠 위험이 있다. 이 문서가 둘 다 해결한다.
-- **역할 이전(8/6)**: 이 문서의 규칙(비율·연령 구성·아동 배치 대상)은 그대로 유효하지만, 이 규칙을 적용해서 실제로 그룹을 만들어내는 코드는 Utility AI(김시리)가 아니라 crowdAI(이정원)가 짠다. Utility AI는 개별 방문객 태그(아키타입·동반유형 크기·아동 슬롯 여부) 분포만 만들어 넘긴다. 자세한 역할 분담은 `crowdai_handoff_note.md` 참고.
+- **역할 이전(8/6)**: 이 문서의 규칙(비율·연령 구성·아동 배치 대상)은 그대로 유효하지만, 이 규칙을 적용해서 실제로 그룹을 만들어내는 코드는 Utility AI(김시리)가 아니라 crowdAI(이정원)가 짠다. Utility AI는 개별 방문객 태그(아키타입·동반유형 크기·아동 슬롯 여부) 분포만 만들어 넘긴다. 자세한 역할 분담은 `crowdai_integration_guide.md` 참고.
 
 ## 1. 동반유형은 그룹 생성 규칙이다
 
@@ -101,7 +101,7 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 
 - **스폰**: 그룹원 전원을 한 번에 일괄 스폰한다(따로따로 시차를 두고 생성하지 않음).
 - **도착 시각**: `arrival_time`은 그룹 전체가 공유하는 하나의 값이다(개인별 필드가 아니라 그룹 필드).
-- **체류시간**: `stay_duration_multiplier`(개체 변주, `individual_variation_spec.md` 5절)는 그룹원마다 독립적으로 뽑지 않는다. **그룹 리더의 `StableAgentId` 대신 `GroupId`를 시드 재료로 써서** `FFF_DeterministicRandom::MakeTraitSeed`를 호출하면, 그룹 전체가 동일한 체류시간을 공유하면서도 결정성은 그대로 유지된다. `crowdai_handoff_note.md`에서 이미 제안한 "그룹 이동속도(`walk_speed_multiplier`)를 GroupId로 시드해서 공유"와 정확히 같은 방식이다 — 이 두 특성(`walk_speed_multiplier`, `stay_duration_multiplier`)만 GroupId 기반으로 바꾸고, 나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 계속 개체별 독립을 유지한다 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
+- **체류시간**: `stay_duration_multiplier`(개체 변주, `individual_variation_spec.md` 5절)는 그룹원마다 독립적으로 뽑지 않는다. **그룹 리더의 `StableAgentId` 대신 `GroupId`를 시드 재료로 써서** `FFF_DeterministicRandom::MakeTraitSeed`를 호출하면, 그룹 전체가 동일한 체류시간을 공유하면서도 결정성은 그대로 유지된다. `crowdai_integration_guide.md`에서 이미 제안한 "그룹 이동속도(`walk_speed_multiplier`)를 GroupId로 시드해서 공유"와 정확히 같은 방식이다 — 이 두 특성(`walk_speed_multiplier`, `stay_duration_multiplier`)만 GroupId 기반으로 바꾸고, 나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 계속 개체별 독립을 유지한다 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
 
 **2026-08-06 구현 완료** — `FFF_IndividualVariationResolver::ResolveWithGroupSharing`. 자세한 내용은 3절 항목 7.
 
@@ -162,10 +162,10 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 2. 그룹을 실제로 **묶는** 코드 — 8/6 역할 재조정으로 **crowdAI(이정원) 담당**이다. Utility AI 쪽 몫인 개체 태그 분포 생성(`FFF_VisitorDistributionBuilder`)은 **2026-08-06 구현 완료**(`Source/FestaFiesta/Public+Private/NPC/Party/FF_VisitorDistributionBuilder.*`, 자동화 테스트 8개). 입력 데이터 3종(`visitor_group_size_distribution_v0` / `group_child_composition_v0` / `group_composition_rules_v0`)도 준비됐다.
 3. ~~1.3절 유형별 비율(80/20, 50/50)과 1.4절 그룹 크기 비율(70/30)~~ → **2026-08-06 실측으로 교체 완료.** 남은 가정은 `non_leader_adult_archetype_rule`(리더가 아닌 성인의 아키타입) 하나뿐이다.
 4. ~~아동 비율을 무엇이 결정할지~~ → **2026-08-06 결정 완료**: 그룹 구성이 결정한다(2.4절).
-5. `GroupId`를 실제 NPC 런타임 필드로 어떻게 들고 다닐지(스폰 시 crowdAI와의 연동) — `crowdai_handoff_note.md` §1·§1.5 참고. NPC 상태를 보관하는 런타임 층 자체가 아직 없다.
+5. `GroupId`를 실제 NPC 런타임 필드로 어떻게 들고 다닐지(스폰 시 crowdAI와의 연동) — `crowdai_integration_guide.md` §1·§1.5 참고. NPC 상태를 보관하는 런타임 층 자체가 아직 없다.
 6. 1.5절 "임시 분리 후 재합류" 동작 — v1 이후 후보로 명시적으로 남김. 지금은 리더 상속 모델만 구현 대상.
 7. ~~`walk_speed_multiplier`/`stay_duration_multiplier`를 GroupId로 시드하는 실제 호출 코드~~ → **2026-08-06 구현 완료.** `FFF_IndividualVariationResolver::ResolveWithGroupSharing(VariationTable, Seed, StableAgentId, GroupId, SpawnGeneration, CorrelationStrength)`. `Resolve()` 시그니처는 안 바뀌었고 wrapper가 내부에서 두 번 불러 합친다. `GroupId == INDEX_NONE`이면 solo로 취급해 `Resolve()` 한 번과 완전히 같은 결과를 낸다.
-   > ⚠️ **함수는 있지만 부르는 코드가 없다.** 개체 변주는 자동으로 걸리지 않는다 — `GroupId`/`StableAgentId`가 만들어져도 누군가 이 함수를 호출해야 적용된다. 스폰 시점을 소유하는 crowdAI가 부르도록 요청했다(`crowdai_handoff_note.md` §1.5).
+   > ⚠️ **함수는 있지만 부르는 코드가 없다.** 개체 변주는 자동으로 걸리지 않는다 — `GroupId`/`StableAgentId`가 만들어져도 누군가 이 함수를 호출해야 적용된다. 스폰 시점을 소유하는 crowdAI가 부르도록 요청했다(`crowdai_integration_guide.md` §1.5).
 8. ~~리더가 퇴장할 때 그룹 전체가 퇴장하는지 미정~~ → **2026-08-06 결정 완료: 리더가 퇴장하면 그룹 전원이 함께 퇴장한다.** 사용자 확정.
 
    즉 `EFF_NoChoiceAction`은 목적지와 똑같이 **리더가 결정하고 그룹원 전체가 상속**한다 — `Wander`/`Relocate`/`Leave` 셋 다. 그룹원이 각자 다른 행동을 하는 경우는 없다.

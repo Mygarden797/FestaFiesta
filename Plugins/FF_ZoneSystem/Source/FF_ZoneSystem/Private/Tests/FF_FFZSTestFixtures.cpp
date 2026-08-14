@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "FF_FFZSQueueGeometry.h"
 #include "Internationalization/Text.h"
 
 #define LOCTEXT_NAMESPACE "FFZSTestFixtures"
@@ -48,8 +49,9 @@ namespace
             (FootprintHeightMeters * 0.5 + 0.5) * LegacyCellSizeCm;
         const double QueueTailYcm = QueueStartYcm +
             (Spec.QueueRules.MaxWaitingAgents - 1) * Spec.QueueRules.SlotSpacingCm;
+        const double QueueApproachYcm = QueueTailYcm + Spec.QueueRules.SlotSpacingCm;
         const int32 LastQueueRow = FMath::FloorToInt(
-            QueueTailYcm / LegacyCellSizeCm + FootprintHeightMeters * 0.5);
+            QueueApproachYcm / LegacyCellSizeCm + FootprintHeightMeters * 0.5);
 
         Spec.QueueReservedRects.Add(MakeLegacyMeterRect(
             LegacyQueueColumn,
@@ -60,6 +62,39 @@ namespace
             FVector(QueueXcm, QueueStartYcm, 0.0),
             FVector(QueueXcm, QueueTailYcm, 0.0)
         };
+    }
+
+    FFFZSAnchorDefinition MakeQueueApproachAnchor(const FFFZSFacilitySpec& Spec)
+    {
+        const double QueueLengthCm =
+            FFFZSQueueGeometry::GetLinearPolylineLengthCm(Spec.QueueSplinePointsCm);
+        const double ApproachDistanceCm =
+            static_cast<double>(Spec.QueueRules.MaxWaitingAgents) *
+            static_cast<double>(Spec.QueueRules.SlotSpacingCm);
+        const double SampleDistanceCm = FMath::Min(ApproachDistanceCm, QueueLengthCm);
+
+        FVector ApproachLocation = FVector::ZeroVector;
+        FVector QueueTangent = FVector::ZeroVector;
+        const bool bHasQueueTangent =
+            FFFZSQueueGeometry::TrySampleLinearPolylineAtDistanceWithTangent(
+                Spec.QueueSplinePointsCm,
+                SampleDistanceCm,
+                ApproachLocation,
+                QueueTangent);
+        check(bHasQueueTangent);
+        if (ApproachDistanceCm > QueueLengthCm)
+        {
+            ApproachLocation += QueueTangent * (ApproachDistanceCm - QueueLengthCm);
+        }
+
+        // Entry[0] is a pre-join staging point one authored queue spacing beyond the maximum
+        // occupied tail. It faces back into the queue and never aliases a dynamic slot.
+        const float InwardYawDegrees = static_cast<float>((-QueueTangent).Rotation().Yaw);
+        return MakeAnchor(
+            EFFZSAnchorType::Entry,
+            0,
+            ApproachLocation,
+            InwardYawDegrees);
     }
 }
 
@@ -100,7 +135,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
             FVector(-250.0f, 200.0f, 0.0f)
         };
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(250.0f, 200.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(250.0f, 150.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-250.0f, 200.0f, 0.0f), 90.0f)
         };
@@ -124,7 +159,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
             FVector(0.0f, 1200.0f, 0.0f)
         };
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(0.0f, 250.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-75.0f, 200.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Service, 1, FVector(75.0f, 200.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-200.0f, 0.0f, 0.0f), 180.0f)
@@ -145,7 +180,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
         Spec.ExperienceEffectKey = TEXT("Experience.Info.Basic");
         ConfigureStraightQueue(Spec, 1);
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(0.0f, 150.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(0.0f, 100.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-150.0f, 0.0f, 0.0f), 180.0f)
         };
@@ -165,7 +200,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
         Spec.ExperienceEffectKey = TEXT("Experience.Rest.Basic");
         ConfigureStraightQueue(Spec, 1);
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(-50.0f, 200.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-75.0f, 150.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Service, 1, FVector(75.0f, 150.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-200.0f, 0.0f, 0.0f), 180.0f)
@@ -186,7 +221,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
         Spec.ExperienceEffectKey = TEXT("Experience.Performance.Basic");
         ConfigureStraightQueue(Spec, 3);
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(-50.0f, 300.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-125.0f, 250.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Service, 1, FVector(125.0f, 250.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-400.0f, 0.0f, 0.0f), 180.0f)
@@ -207,7 +242,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
         Spec.ExperienceEffectKey = TEXT("Experience.Safety.Basic");
         ConfigureStraightQueue(Spec, 1);
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(-50.0f, 200.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(-75.0f, 150.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Service, 1, FVector(75.0f, 150.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-200.0f, 0.0f, 0.0f), 180.0f)
@@ -228,7 +263,7 @@ FFFZSFacilitySpec FFZSTest::MakeValidFacilitySpec(const EFFZSTestFacilityVariant
         Spec.ExperienceEffectKey = TEXT("Experience.PhotoSpot.Basic");
         ConfigureStraightQueue(Spec, 2);
         Spec.Anchors = {
-            MakeAnchor(EFFZSAnchorType::Entry, 0, FVector(0.0f, 200.0f, 0.0f), -90.0f),
+            MakeQueueApproachAnchor(Spec),
             MakeAnchor(EFFZSAnchorType::Service, 0, FVector(0.0f, 150.0f, 0.0f), -90.0f),
             MakeAnchor(EFFZSAnchorType::Exit, 0, FVector(-250.0f, 0.0f, 0.0f), 180.0f)
         };
