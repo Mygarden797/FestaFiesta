@@ -8,10 +8,8 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
-#include "Chaos/ImplicitQRSVD.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
-#include "Serialization/AsyncPackageLoader.h"
 
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -126,6 +124,12 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		DensityGrid.Update(UnitDatas);
 	}
 
+	// --- 결정 ------------------------------------------------------------------------------
+	// 퇴장 뒤여야 죽은 파티에 목적지를 주지 않고,
+	// 밀도 갱신 뒤여야 결정 계층이 이번 프레임의 혼잡도를 보고 판단한다.
+	// 스텝 루프 밖인 것도 의도다 — 한 프레임에 결정은 한 번이다.
+	ProcessDecisions();
+
 	// --- 표시 ------------------------------------------------------------------------------
 	// 0이면 직전 스텝 위치, 1이면 현재 스텝 위치. 그 사이를 보간해서 30Hz 시뮬을 매끄럽게 보여준다.
 	const float InterpAlpha = FMath::Clamp(SimAccumulator / FixedStepSeconds, 0.f, 1.f);
@@ -167,11 +171,12 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 		// 리더만 목적지를 정하고 멤버는 그것을 대형 오프셋만큼 옮겨 물려받는다(v0 리더 상속 모델).
 		if (Unit.LeaderAgentIndex == AgentIndex)
 		{
-			// 도착 판정과 새 목적지 선정은 여기(난수를 쥔 쪽)에서 한다.
-			// CrowdSteering은 목적지가 정해진 뒤의 이동 계산만 맡는다.
+			// 도착을 감지하기만 한다. 결정은 ProcessDecisions에서 프레임당 1회 예산 안에서 한다 —
+			// 이 루프는 한 프레임에 최대 MaxStepsPerFrame회 돌기 때문에 여기서 결정하면
+			// 같은 파티가 한 프레임에 3번 결정하고 ChoiceRoundIndex가 3배로 뛴다.
 			if (CrowdSteering::HasArrived(Unit, ArrivalRadiusUU))
 			{
-				Unit.TargetLocation = PickRandomDestination();
+				RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 			}
 		}
 		else
@@ -226,6 +231,126 @@ FVector UFF_CrowdSimulationSubsystem::PickRandomDestination()
 	return SimOrigin + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 }
 
+void UFF_CrowdSimulationSubsystem::RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex))
+	{
+		return;
+	}
+
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+
+	State.bNeedsDecision = true;
+
+	// 사유는 항상 최신 것으로 덮는다. 이미 대기 중인데 시설이 닫혔다면
+	// 그 파티는 Arrived가 아니라 Interrupted로 처리돼야 한다.
+	State.PendingReason = Reason;
+
+	// bQueued 없이 그냥 Add하면 큐가 무한히 자란다 — 목적지를 기다리는 동안 도착 판정이 계속
+	if (!State.bQueued)
+	{
+		State.bQueued = true;
+		DecisionQueue.Add(LeaderAgentIndex);
+	}
+}
+
+FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentIndex) const
+{
+	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
+	const FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+
+	// 회차 하나에서 독립된 난수 둘이 필요하므로 회차를 2배로 접어 서로 다른 시드를 만든다.
+	// 같은 회차에 같은 시드를 두 번 쓰면 각도와 반지름이 상관돼 대각선에만 목적지가 생긴다.
+	const uint32 SeedAngle = FFF_DeterministicRandom::MakeDecisionSeed(
+		GlobalSimulationSeed, Unit.StableAgentID, State.ChoiceRoundIndex * 2);
+	const uint32 SeedRadius = FFF_DeterministicRandom::MakeDecisionSeed(
+		GlobalSimulationSeed, Unit.StableAgentID, State.ChoiceRoundIndex * 2 + 1);
+
+	const float Angle = FFF_DeterministicRandom::MakeUniformFraction(SeedAngle) * 2.f * PI;
+	const float Radius = WanderRadiusUU * FMath::Sqrt(FFF_DeterministicRandom::MakeUniformFraction(SeedRadius));
+
+	FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+
+	// 시뮬 영역 밖으로 나가면 밀도 그리드가 그 사람을 세지 않는다. 경계 안으로 되접는다.
+	const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
+	if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+	{
+		Destination = SimOrigin + FromOrigin.GetSafeNormal() * SimRadiusUU;
+		Destination.Z = Unit.Position.Z;
+	}
+
+	return Destination;
+}
+
+void UFF_CrowdSimulationSubsystem::ProcessDecisions()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Decisions);
+
+	if (DecisionQueue.IsEmpty())
+	{
+		return;
+	}
+
+	// 0이나 음수로 설정되면 아무도 목적지를 받지 못해 군중 전체가 제자리에 선다.
+	// 손잡이 하나가 시뮬레이션을 정지시키는 상태를 만들지 않는다.
+	const int32 Budget = FMath::Max(MaxDecisionsPerFrame, 1);
+
+	
+	//Head는 DecisionQueue에서 진행한 정도, Proceed는 실제로 Decision이 실행된 정도를 의미한다.
+	int32 Head = 0;
+	int32 Processed = 0;
+
+	while (Head < DecisionQueue.Num() && Processed < Budget)
+	{
+		const int32 LeaderIndex = DecisionQueue[Head++];
+
+		if (!UnitDatas.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+
+		FUnitData& Unit = UnitDatas[LeaderIndex];
+		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+
+		// 큐에서 뺐으므로 무조건 내린다. 아래에서 버려지는 경우에도 내려야
+		// 다음 RequestDecision이 다시 큐에 넣을 수 있다.
+		State.bQueued = false;
+
+		// 큐에 들어간 뒤 퇴장했거나(퇴장은 지연 큐라 프레임 끝에 처리된다), 멤버로 덮인 인덱스는
+		// 버린다. 퇴장 시점에 큐를 뒤져 지우지 않는 이유는 그게 O(큐 길이)이고,
+		// 여기서 거르면 O(1)이기 때문이다.
+		if (!Unit.bIsActive || Unit.LeaderAgentIndex != LeaderIndex || !State.bNeedsDecision)
+		{
+			continue;
+		}
+
+		// 결정 계층에 묻는다. 구독자가 없거나 후보를 못 찾으면 배회로 떨어진다 —
+		// 인게임에 시설을 짓기 전에는 후보가 0개이므로 이게 정상 경로다.
+		FFF_PartyDecisionContext Context;
+		Context.PartyId = Unit.PartyID;
+		Context.StableAgentId = Unit.StableAgentID;
+		Context.ChoiceRoundIndex = State.ChoiceRoundIndex;
+		Context.PartyWorldLocation = Unit.Position;
+		Context.Reason = State.PendingReason;
+
+		FVector Destination = FVector::ZeroVector;
+		const bool bDecided = OnPartyNeedsDecision.IsBound()
+			&& OnPartyNeedsDecision.Execute(Context, Destination);
+
+		Unit.TargetLocation = bDecided ? Destination : PickWanderDestination(LeaderIndex);
+
+		// 이걸 빠뜨리면 같은 파티가 매 프레임 예산을 먹고 다른 파티가 굶는다.
+		State.bNeedsDecision = false;
+		State.LastDecisionSimTime = SimTimeSeconds;
+		++State.ChoiceRoundIndex;
+		++Processed;
+	}
+
+	// 처리한 만큼만 앞에서 잘라낸다. 남은 것이 다음 프레임 맨 앞이 되므로 FIFO가 유지된다.
+	// 용량은 유지한다 — 매 프레임 재사용되는 컨테이너다.
+	DecisionQueue.RemoveAt(0, Head, EAllowShrinking::No);
+}
+
 int32 UFF_CrowdSimulationSubsystem::PickPartySize()
 {
 	if (!bEnablePartyGrouping || PartySizeWeights.Num() == 0)
@@ -277,14 +402,15 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 {
 	const int32 LeaderIndex = Unit.LeaderAgentIndex;
 
-	// 리더가 사라졌거나 그 슬롯이 다른 파티로 재활용됐으면 단독으로 승격시킨다.
-	// 그냥 두면 없는 리더를 영원히 따라가느라 제자리에 멈춘 Agent가 생긴다.
+	// 리더가 사라졌을 경우, 해당 파티 또한 제거한다.
 	if (!UnitDatas.IsValidIndex(LeaderIndex)
 		|| !UnitDatas[LeaderIndex].bIsActive
 		|| UnitDatas[LeaderIndex].PartyID != Unit.PartyID)
 	{
-		Unit.LeaderAgentIndex = AgentIndex;
-		Unit.PartySlotIndex = 0;
+		
+		ensureMsgf(false, TEXT("고아 멤버 %d (파티 %d) — DespawnParty가 일부만 처리했다"),
+		AgentIndex, Unit.PartyID);
+		DespawnParty(Unit.PartyID);
 		return false;
 	}
 
@@ -465,12 +591,12 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 	Unit.Rotation = SpawnRotation;
 	Unit.Velocity = FVector::ZeroVector;
 	Unit.Force = FVector::ZeroVector;
-	Unit.TargetLocation = PickRandomDestination();
 	Unit.StableAgentID = NextStableAgentID++;
 
-	// 기본값은 1인 파티(자기 자신이 리더)다. 파티로 묶는 것은 SpawnAgents가 이 뒤에 덮어쓴다.
-	// 여기서 반드시 되돌려야 하는 이유: 슬롯은 재사용되므로, 초기화하지 않으면 재활용된 슬롯이
-	// 이전 파티의 리더 인덱스를 그대로 물고 남의 파티를 따라간다.
+	// 결정을 받기 전까지의 목적지는 제자리이다.
+	Unit.TargetLocation = SpawnLocation;
+
+	// 기본값은 1인 파티(자기 자신이 리더)다. 파티로 묶는 것은 SpawnAgents가 이 뒤에 덮어쓴다.다.
 	Unit.PartyID = NextPartyID++;
 	Unit.LeaderAgentIndex = index;
 	Unit.PartySlotIndex = 0;
@@ -480,10 +606,25 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 	Unit.bIsActive = true;
 	++ActiveAgentCount;
 
+	// 슬롯은 재사용되므로 결정 상태도 통째로 되돌린다. 안 하면 재입장한 방문객이
+	// 퇴장자의 결정 회차와 대기 플래그를 물려받는다.
+	if (PartyDecisionStates.IsValidIndex(index))
+	{
+		PartyDecisionStates[index] = FPartyDecisionState();
+	}
+
+	// 스폰 직후에는 아직 목적지가 없다. 파티로 묶이는 멤버의 요청은
+	// ProcessDecisions가 "리더가 아니다"로 걸러낸다.
+	RequestDecision(index, EFF_DecisionReason::Spawned);
+
 	// 화면에 보이도록 Actor를 붙인다. 풀이 고갈되면 시뮬레이션만 된다.
 	BindAgentToPool(index);
-	
 
+	// 스폰 방향에서도 인원 보존을 본다. 퇴장 쪽만 검사하면 FreeAgentSlotIndex.Pop과
+	// ++ActiveAgentCount 사이에 새 return 경로가 끼어드는 순간 조용히 어긋난다.
+	ensureMsgf(ActiveAgentCount + FreeAgentSlotIndex.Num() == UnitDatas.Num(),
+		TEXT("인원 보존 위반(스폰): active %d + free %d != pool %d"),
+		ActiveAgentCount, FreeAgentSlotIndex.Num(), UnitDatas.Num());
 
 	return index;
 }
@@ -551,14 +692,29 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 				Unit.TargetLocation = UnitDatas[LeaderIndex].TargetLocation + GetPartyFormationOffset(Slot);
 			}
 			
+			// 개체 변주는 GroupId로 PartyID를 쓴다. 멤버의 PartyID는 위 else 블록에서 확정되므로
+			// 이 호출을 if/else 앞으로 옮기면 멤버마다 다른 GroupId가 들어가 그룹 공유가 조용히 깨진다
+			// (같은 파티가 서로 다른 속도로 걸어 계속 벌어지고, PartyCohesionRadiusUU 문제로 오진하게 된다).
+			checkf(Slot == 0 || Unit.PartyID == PartyID,
+				TEXT("SpawnAgents: 멤버(Slot %d)의 PartyID가 확정되기 전에 개체 변주를 계산했다. "
+					 "ResolveWithGroupSharing 호출을 if/else 블록 뒤로 옮길 것"), Slot);
+
+			// 안 채워지면 MakeDecisionSeed(seed, -1, round)로 전원이 같은 시드를 받아
+			// 한 라운드에 모두 같은 곳으로 간다. 조용히 잘못되는 종류이므로 여기서 막는다.
+			checkf(Unit.StableAgentID != INDEX_NONE,
+				TEXT("SpawnAgents: Agent %d의 StableAgentID가 발급되지 않았다 (SpawnAgent 확인)"), AgentIndex);
+
+			checkf(Slot != 0 || Unit.LeaderAgentIndex == AgentIndex,
+				TEXT("SpawnAgents: 리더 %d가 자기 자신을 리더로 갖고 있지 않다"), AgentIndex);
+
 			const FFF_ResolvedIndividualTraits Traits =
-	FFF_IndividualVariationResolver::ResolveWithGroupSharing(
-		CachedVariationTable.Get(),
-		GetGlobalSimulationSeed(),
-		Unit.StableAgentID,
-	Unit.PartyID,                  
-0,    
-		CachedCorrelationStrength);
+				FFF_IndividualVariationResolver::ResolveWithGroupSharing(
+					CachedVariationTable.Get(),
+					GetGlobalSimulationSeed(),
+					Unit.StableAgentID,
+					Unit.PartyID,
+					0,
+					CachedCorrelationStrength);
 			
 			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
 				
@@ -655,6 +811,12 @@ void UFF_CrowdSimulationSubsystem::InitializeCrowdAgentPool(UWorld& InWorld, FVe
 		FreeAgentSlotIndex.Add(i);
 	}
 
+	// 리더 AgentIndex로 인덱싱하므로 Agent 풀과 크기가 같다.
+	// UnitDatas.Num()이 아니라 AgentPoolSize를 쓰면 스폰이 중간에 실패했을 때 어긋난다.
+	PartyDecisionStates.Reset();
+	PartyDecisionStates.SetNum(UnitDatas.Num());
+	DecisionQueue.Reset();
+
 	ActiveAgentCount = 0;
 }
 
@@ -734,6 +896,17 @@ void UFF_CrowdSimulationSubsystem::DespawnAgentInternal(int32 AgentID)
 	FreeAgentSlotIndex.Add(AgentID);
 	Unit.PartyID = INDEX_NONE;
 	Unit.LeaderAgentIndex = INDEX_NONE;
+
+	// 결정 상태도 되돌린다. DecisionQueue에는 이 인덱스가 남아 있을 수 있는데,
+	// ProcessDecisions가 bIsActive로 걸러내므로 큐를 뒤져 지우지 않는다(그건 O(큐 길이)다).
+	//
+	// 그래서 bQueued는 "큐에 있다"의 정확한 표현이 아니라 무한 증가를 막는 힌트다 —
+	// 퇴장 직후 재스폰되면 같은 인덱스가 큐에 두 번 들어갈 수 있다. 두 번째는
+	// bNeedsDecision == false로 걸러지고 예산도 소비하지 않으므로 파티당 최대 하나로 묶인다.
+	if (PartyDecisionStates.IsValidIndex(AgentID))
+	{
+		PartyDecisionStates[AgentID] = FPartyDecisionState();
+	}
 	
 	ensureMsgf(ActiveAgentCount + FreeAgentSlotIndex.Num() == UnitDatas.Num(),
 	   TEXT("인원 보존 위반: active %d + free %d != pool %d"),

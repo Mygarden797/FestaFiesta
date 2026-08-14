@@ -15,6 +15,23 @@ class AFF_BaseCrowd;
 class UDataTable;
 
 /**
+ * "이 파티에 목적지가 필요하다"를 결정 계층에 묻는다.
+ *
+ * ### 멀티캐스트가 아닌 이유
+ * 결정 권한은 하나여야 한다. 구독자가 둘이면 나중에 실행된 쪽이 먼저 실행된 쪽의 목적지를
+ * 덮어쓰는데, 어느 쪽이 이겼는지 로그에 남지 않는다.
+ *
+ * ### Crowd가 조정자를 include하지 않기 위한 장치다
+ * Crowd가 조정자를 직접 호출하면 Zone·Utility·Queue 헤더가 전이적으로 Crowd에 딸려 들어온다.
+ * 방향을 뒤집으면 Crowd는 "누가 답하는지" 모르는 상태로 남는다.
+ *
+ * @return false = 목적지를 정하지 못했다(후보 없음 등). Crowd가 배회로 폴백한다.
+ *         구독자가 아예 없을 때도 같은 경로를 탄다 — 그래서 조정자 없이도 단독으로 돌아간다.
+ */
+DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
+	const FFF_PartyDecisionContext& /*Context*/, FVector& /*OutDestination*/);
+
+/**
  * 군중 시뮬레이션을 관리하는 TickableWorldSubsystem
  * Actor 풀과 Agent 풀을 분리 관리하여 필요한 Agent에만 Actor를 바인딩하는 방식으로 동작
  *
@@ -157,8 +174,54 @@ public:
 	const FCrowdDensityGrid& GetDensityGrid() const { return DensityGrid; }
 
 	void DespawnParty(int32 PartyID);
-	
-	
+
+	// --- 결정 -----------------------------------------------------------------------------
+
+	// 조정자가 여기에 물어 목적지를 내려준다. 비어 있으면 Crowd가 배회로 폴백한다
+	FFF_OnPartyNeedsDecision OnPartyNeedsDecision;
+
+	/**
+	 * 이 파티에 새 목적지가 필요하다고 표시한다. 실제 결정은 ProcessDecisions에서 일어난다.
+	 *
+	 * 스텝 루프 안에서 바로 결정하지 않는 이유: ConsumeFixedSteps 때문에 스텝 루프는 한 프레임에
+	 * 최대 MaxStepsPerFrame회 돈다. 거기서 결정하면 같은 파티가 한 프레임에 3번 결정하고
+	 * ChoiceRoundIndex가 3배로 뛴다.
+	 *
+	 * public인 이유: 도착 말고도 결정이 필요해지는 경우(대기열 거절, 시설 폐쇄)를
+	 * 조정자가 외부에서 걸어야 한다.
+	 *
+	 * @param LeaderAgentIndex 파티 리더의 AgentIndex. 멤버 인덱스를 넣어도 ProcessDecisions가 걸러낸다
+	 */
+	void RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason);
+
+	// 결정 대기 중인 파티 수. 정상 상태에서 계속 늘어나면 예산이 모자란 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetPendingDecisionCount() const { return DecisionQueue.Num(); }
+
+	/**
+	 * 한 프레임에 처리할 결정 개수 상한.
+	 *
+	 * 개장 직후나 공연 종료 직후에는 수백~수천 파티가 동시에 목적지를 필요로 한다. 상한이 없으면
+	 * 그 프레임에 (파티 수 × 후보 생성 + 점수 계산)이 한꺼번에 돌아 프레임이 튄다.
+	 * 처리하지 못한 파티는 다음 프레임 큐 맨 앞에 남으므로 굶지 않는다.
+	 *
+	 * 64는 500명(파티 약 200개) 스폰 시 4프레임 안에 전원이 출발하는 값이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Decision")
+	int32 MaxDecisionsPerFrame = 64;
+
+	/**
+	 * 목적지를 못 받았을 때 배회할 반경, UU. 리더의 현재 위치 기준이다.
+	 *
+	 * SimRadiusUU(전역)를 쓰지 않는 이유가 둘이다.
+	 *   1. 맵 반대편까지 직진하는 배회는 축제 방문객의 동선이 아니다
+	 *   2. 도착해야 다시 결정하므로, 배회가 길면 인게임에서 새로 지은 시설을
+	 *      수십 초 동안 발견하지 못한다
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Decision")
+	float WanderRadiusUU = 2000.f;
+
+
 private:
 	void ProcessPendingDespawns();
 	
@@ -266,8 +329,28 @@ private:
 	// @param InterpAlpha 직전 스텝과 현재 스텝 사이 보간 계수, 0~1
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
 
-	// SimOrigin/SimRadiusUU 안에서 목적지를 하나 뽑는다
+	// SimOrigin/SimRadiusUU 안에서 목적지를 하나 뽑는다.
+	// Rng를 소비하므로 스폰 경로에서만 쓴다 — 결정 경로는 PickWanderDestination을 쓴다
 	FVector PickRandomDestination();
+
+	// --- 결정 내부 구현 ---------------------------------------------------------------------
+
+	// 큐에서 최대 MaxDecisionsPerFrame개를 꺼내 목적지를 확정한다. Tick에서만 부른다
+	void ProcessDecisions();
+
+	/**
+	 * 결정 계층이 목적지를 주지 못했을 때의 폴백. 리더 위치 주변 WanderRadiusUU 안에서 뽑는다.
+	 *
+	 * ### Rng(FRandomStream)를 쓰지 않는다
+	 * Rng는 스폰(파티 크기, 앵커 위치, 회전)과 같은 스트림이다. 결정이 그 스트림을 소비하면
+	 *   1. 같은 시드인데 스폰 위치·파티 구성이 달라져 골든값 테스트가 깨진다
+	 *   2. MaxDecisionsPerFrame을 바꾸면 시뮬레이션 결과가 바뀐다 — 성능 손잡이가 결과를
+	 *      바꾸면 배치 A/B 비교가 무의미해진다
+	 *   3. 프레임률이 결정 순서를 바꾸므로 재현성이 프레임률에 걸린다
+	 *
+	 * MakeDecisionSeed는 (시드, 개체, 회차)만의 함수이므로 언제 어떤 순서로 불려도 같은 값이다.
+	 */
+	FVector PickWanderDestination(int32 LeaderAgentIndex) const;
 
 	// --- 파티 내부 구현 ---------------------------------------------------------------------
 
@@ -327,8 +410,24 @@ private:
 	float CachedCorrelationStrength = 0.3f;
 	
 	TMap<int32, int32> PartyLeaderByID;
-	
+
 	TSet<int32> PendingDespawnParty;
+
+	/**
+	 * 파티별 결정 상태. **리더 AgentIndex로 인덱싱한다** (PartyID가 아니다).
+	 *
+	 * PartyID는 단조 증가하며 회수되지 않으므로 그것으로 인덱싱하면 재입장이 반복될 때 배열이
+	 * 무한히 자라고 free-list가 따로 필요해진다. 리더 인덱스는 크기가 AgentPoolSize로 고정이고,
+	 * 슬롯 리셋 지점(SpawnAgent)이 이미 있어서 수명 관리가 공짜다.
+	 *
+	 * FUnitData와 분리한 것은 StepSimulation의 캐시 지역성 때문이다 — 배열 크기가 아니라
+	 * "배열이 다르다"는 것 자체가 목적이다.
+	 */
+	TArray<FPartyDecisionState> PartyDecisionStates;
+
+	// 결정을 기다리는 리더 AgentIndex, FIFO.
+	// 앞에서 잘라내므로 예산에 걸려 밀린 파티가 다음 프레임 맨 앞이 된다 — 굶는 파티가 없다
+	TArray<int32> DecisionQueue;
 	
 
 };
