@@ -156,7 +156,13 @@ public:
 
 	const FCrowdDensityGrid& GetDensityGrid() const { return DensityGrid; }
 
-
+	void DespawnParty(int32 PartyID);
+	
+	
+private:
+	void ProcessPendingDespawns();
+	
+	
 public:
 	// 실제 스폰되어 있는 Crowd Actor들의 풀
 	UPROPERTY()
@@ -195,6 +201,10 @@ public:
 	// 목적지에 이만큼 가까워지면 도착으로 보고 새 목적지를 뽑는다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
 	float ArrivalRadiusUU = 150.f;
+	
+	// 출구의 도착 지점은 더 작은 범위에 들어올 수 있어야 한다.
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float ExitRadiusUU = 150.f;
 
 	// 희망 속도까지 붙는 데 걸리는 시간, 초. 0에 가까울수록 즉시 최고 속도가 된다.
 	// 사람은 순간적으로 1.5m/s가 되지 않으므로 이 값이 없으면 출발이 로봇처럼 보인다
@@ -267,9 +277,11 @@ private:
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
 	// 멤버의 목적지를 리더에게서 갱신한다. 리더가 유효하지 않으면 단독으로 승격시킨다
-	void UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
+	bool UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
 
 	void DrawDebugAgents() const;
+	
+	void DespawnAgentInternal(int32 AgentID);
 	
 public:
 
@@ -313,6 +325,10 @@ private:
 	TObjectPtr<UDataTable> CachedVariationTable;
 	
 	float CachedCorrelationStrength = 0.3f;
+	
+	TMap<int32, int32> PartyLeaderByID;
+	
+	TSet<int32> PendingDespawnParty;
 	
 
 };

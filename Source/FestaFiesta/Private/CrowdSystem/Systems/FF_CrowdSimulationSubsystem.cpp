@@ -8,8 +8,10 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "Chaos/ImplicitQRSVD.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
+#include "Serialization/AsyncPackageLoader.h"
 
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -114,6 +116,8 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		StepSimulation(FixedStepSeconds);
 		SimTimeSeconds += FixedStepSeconds;
 	}
+	
+	ProcessPendingDespawns();
 
 	// --- 혼잡도 계측 -----------------------------------------------------------------------
 	// 스텝이 한 번도 안 돌았어도(고프레임률) 갱신 비용은 셀 순회 한 번이라 그냥 매 프레임 돌린다.
@@ -172,7 +176,10 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 		}
 		else
 		{
-			UpdatePartyMemberTarget(AgentIndex, Unit);
+			if (!UpdatePartyMemberTarget(AgentIndex, Unit))
+			{
+				continue;
+			}
 		}
 
 		CrowdSteering::StepAgent(Unit, StepParams, VelocityAlpha, FixedDt);
@@ -266,7 +273,7 @@ FVector UFF_CrowdSimulationSubsystem::GetPartyFormationOffset(int32 SlotIndex) c
 	return FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 }
 
-void UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit)
+bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit)
 {
 	const int32 LeaderIndex = Unit.LeaderAgentIndex;
 
@@ -278,7 +285,7 @@ void UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	{
 		Unit.LeaderAgentIndex = AgentIndex;
 		Unit.PartySlotIndex = 0;
-		return;
+		return false;
 	}
 
 	const FUnitData& Leader = UnitDatas[LeaderIndex];
@@ -294,6 +301,8 @@ void UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	{
 		Unit.TargetLocation = Leader.TargetLocation + Offset;
 	}
+	
+	return true;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetActivePartyCount() const
@@ -326,6 +335,42 @@ TArray<int32> UFF_CrowdSimulationSubsystem::GetPartyMembers(int32 PartyID) const
 		}
 	}
 	return Members;
+}
+
+void UFF_CrowdSimulationSubsystem::DespawnParty(int32 PartyID)
+{
+	
+	if (PartyID == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[CrowdSimulationSubsystem] PartyID is InValid"));
+		return;
+	}
+	
+	PendingDespawnParty.Add(PartyID);
+	
+	
+	
+}
+
+void UFF_CrowdSimulationSubsystem::ProcessPendingDespawns()
+{
+	if (PendingDespawnParty.IsEmpty())
+	{
+		return;
+	}
+	
+	TSet<int32> DeleteParty = MoveTemp(PendingDespawnParty);
+	PendingDespawnParty.Reset();
+
+	for (int32 AgentIndex = 0;AgentIndex < UnitDatas.Num();++AgentIndex)
+	{
+		if (UnitDatas[AgentIndex].bIsActive && DeleteParty.Contains(UnitDatas[AgentIndex].PartyID))
+		{
+			DespawnAgentInternal(AgentIndex);
+		}
+	}
+	
+	
 }
 
 void UFF_CrowdSimulationSubsystem::SetAgentDestination(int32 AgentIndex, FVector Destination)
@@ -387,7 +432,7 @@ void UFF_CrowdSimulationSubsystem::ReleaseAgentToPool(int32 AgentIndex)
 	const int32 ActorSlot = PoolBinding.Release(AgentIndex);
 	if (ActorSlot == INDEX_NONE)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[CrowdSimulationSubsystem] Agent %d is already released"), AgentIndex);
+		UE_LOG(LogTemp, Verbose, TEXT("[CrowdSimulationSubsystem] Agent %d is already released"), AgentIndex);
 		return;
 	}
 
@@ -493,6 +538,7 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 				// 리더. SpawnAgent가 이미 자기 자신을 리더로, 새 PartyID를 부여해 뒀다.
 				LeaderIndex = AgentIndex;
 				PartyID = Unit.PartyID;
+				PartyLeaderByID.Add(PartyID, LeaderIndex);
 
 
 			}
@@ -660,4 +706,42 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 				UnitDatas[Unit.LeaderAgentIndex].Position + FVector(0, 0, 5.f), PartyColor, false, -1.f, 0, 1.5f);
 		}
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::DespawnAgentInternal(int32 AgentID)
+{
+
+	if (!UnitDatas.IsValidIndex(AgentID))
+	{
+		return;
+	}
+	
+	FUnitData& Unit = UnitDatas[AgentID];
+	
+	if (!Unit.bIsActive) return;
+	
+	ReleaseAgentToPool(AgentID);
+	
+	//리더일 경우, PartyLeaderByID를 제거한다.
+	if (PartyLeaderByID.FindRef(Unit.PartyID) == AgentID)
+	{
+		PartyLeaderByID.Remove(Unit.PartyID);
+	}
+	
+	Unit.bIsActive = false;
+	--ActiveAgentCount;
+	
+	FreeAgentSlotIndex.Add(AgentID);
+	Unit.PartyID = INDEX_NONE;
+	Unit.LeaderAgentIndex = INDEX_NONE;
+	
+	ensureMsgf(ActiveAgentCount + FreeAgentSlotIndex.Num() == UnitDatas.Num(),
+	   TEXT("인원 보존 위반: active %d + free %d != pool %d"),
+	   ActiveAgentCount, FreeAgentSlotIndex.Num(), UnitDatas.Num());
+	
+	
+	
+	
+	
+	
 }
