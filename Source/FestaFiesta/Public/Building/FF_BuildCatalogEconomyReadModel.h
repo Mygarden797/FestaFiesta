@@ -7,6 +7,8 @@
 #include "FF_BuildCatalogEconomyReadModel.generated.h"
 
 class UFF_FestivalProgressionSubsystem;
+class UFFZSFacilityDefinition;
+struct FFF_BuildCatalogEntry;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	FFF_OnBuildCatalogGoldChanged,
@@ -33,6 +35,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Economy")
 	bool HasAuthoritativeGold() const { return bHasAuthoritativeGold; }
+
+	/** Projects the active festival's authoritative facility pricing into a catalog snapshot. */
+	bool TryProjectFacilityCosts(
+		FFF_BuildCatalogEntry& Entry,
+		const UFFZSFacilityDefinition* Definition,
+		FString& OutFailureReason) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Economy")
 	FFF_OnBuildCatalogGoldChanged OnGoldChanged;

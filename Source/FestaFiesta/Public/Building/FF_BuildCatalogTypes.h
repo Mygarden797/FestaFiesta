@@ -98,6 +98,14 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
 	bool bHasResolvedInstallCost = false;
 
+	// 현재 Festival의 철거 환급률을 설치비에 적용한 회수 금액입니다.
+	// 환급률 0은 유효한 설정이므로 값이 0인지와 해석 성공 여부를 별도로 보관합니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	int32 RecoveryCost = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	bool bHasResolvedRecoveryCost = false;
+
 	// 진단과 콘텐츠 QA용 실제 매칭 행입니다. UI에는 노출하지 않습니다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
 	FName MatchedInstallCostRow = NAME_None;

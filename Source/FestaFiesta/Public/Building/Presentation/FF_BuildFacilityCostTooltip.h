@@ -31,15 +31,28 @@ public:
 	FText GetDisplayedInstallCostText() const;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
+	FText GetRecoveryCostText() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
+	FText GetDisplayedRecoveryCostText() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
 	bool HasResolvedInstallCost() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
+	bool HasResolvedRecoveryCost() const;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
 	int32 GetInstallCost() const { return Entry.InstallCost; }
 
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
+	int32 GetRecoveryCost() const { return Entry.RecoveryCost; }
+
 protected:
 	virtual void NativePreConstruct() override;
 
-	/** 디자이너가 가격 유무에 따른 색상·장식·애니메이션을 Blueprint에서 확장할 수 있습니다. */
+	/** 디자이너가 가격 유무에 따른 색상·장식·애니메이션을 Blueprint에서 확장할 수 있습니다.
+	 *  회수비용은 HasResolvedRecoveryCost/GetRecoveryCost로 조회해 기존 Blueprint 이벤트 계약을 보존합니다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Building|UI",
 		meta = (DisplayName = "On Tooltip Data Changed"))
 	void BP_OnTooltipDataChanged(bool bHasResolvedCost, int32 InstallCost);
@@ -57,6 +70,11 @@ private:
 		meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> TXT_InstallCost;
 
+	/** 파생 WBP가 건설 비용 아래에 제공해야 하는 회수 비용 표시 계약입니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI",
+		meta = (BindWidget, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> TXT_RecoveryCost;
+
 	/** 시설명을 표시하지 않는 간결한 디자인도 허용합니다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI",
 		meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
@@ -66,6 +84,4 @@ private:
 	FText DesignerPreviewFacilityName = NSLOCTEXT(
 		"FFBuildFacilityCostTooltip", "DesignerPreviewFacility", "시설 이름");
 
-	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Designer", meta = (ClampMin = "1"))
-	int32 DesignerPreviewInstallCost = 400;
 };

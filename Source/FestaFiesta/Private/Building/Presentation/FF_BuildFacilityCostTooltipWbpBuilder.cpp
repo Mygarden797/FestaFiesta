@@ -76,14 +76,20 @@ namespace FFBuildFacilityCostTooltipWbpBuilder
 			Blueprint, Tree, TEXT("TXT_CostLabel"));
 		UCommonTextBlock* InstallCost = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("TXT_InstallCost"), true);
+		UHorizontalBox* RecoveryRow = MakeWidget<UHorizontalBox>(
+			Blueprint, Tree, TEXT("Recovery_Row"));
+		UCommonTextBlock* RecoveryLabel = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("TXT_RecoveryLabel"));
+		UCommonTextBlock* RecoveryCost = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("TXT_RecoveryCost"), true);
 		if (!Root || !Background || !Content || !FacilityName || !CostRow ||
-			!CostLabel || !InstallCost)
+			!CostLabel || !InstallCost || !RecoveryRow || !RecoveryLabel || !RecoveryCost)
 		{
 			return false;
 		}
 
 		Root->SetWidthOverride(300.0f);
-		Root->SetMinDesiredHeight(78.0f);
+		Root->SetMinDesiredHeight(110.0f);
 		Root->SetVisibility(ESlateVisibility::HitTestInvisible);
 		Background->SetBrushColor(FLinearColor(0.018f, 0.047f, 0.070f, 0.98f));
 		Background->SetPadding(FMargin(16.0f, 11.0f));
@@ -95,9 +101,14 @@ namespace FFBuildFacilityCostTooltipWbpBuilder
 		StyleText(*FacilityName, 13, FLinearColor(0.72f, 0.80f, 0.88f, 1.0f));
 		CostLabel->SetText(FText::FromString(TEXT("건설 비용")));
 		StyleText(*CostLabel, 14, FLinearColor(0.91f, 0.96f, 1.0f, 1.0f));
-		InstallCost->SetText(FText::FromString(TEXT("400 Gold")));
+		InstallCost->SetText(FText::GetEmpty());
 		StyleText(
 			*InstallCost, 20, FLinearColor(0.08f, 0.95f, 0.88f, 1.0f), ETextJustify::Right);
+		RecoveryLabel->SetText(FText::FromString(TEXT("회수 비용")));
+		StyleText(*RecoveryLabel, 14, FLinearColor(0.91f, 0.96f, 1.0f, 1.0f));
+		RecoveryCost->SetText(FText::GetEmpty());
+		StyleText(
+			*RecoveryCost, 18, FLinearColor(0.98f, 0.80f, 0.28f, 1.0f), ETextJustify::Right);
 
 		if (UHorizontalBoxSlot* LabelSlot = CostRow->AddChildToHorizontalBox(CostLabel))
 		{
@@ -109,11 +120,25 @@ namespace FFBuildFacilityCostTooltipWbpBuilder
 			CostSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			CostSlot->SetVerticalAlignment(VAlign_Center);
 		}
+		if (UHorizontalBoxSlot* LabelSlot = RecoveryRow->AddChildToHorizontalBox(RecoveryLabel))
+		{
+			LabelSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			LabelSlot->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UHorizontalBoxSlot* CostSlot = RecoveryRow->AddChildToHorizontalBox(RecoveryCost))
+		{
+			CostSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			CostSlot->SetVerticalAlignment(VAlign_Center);
+		}
 		if (UVerticalBoxSlot* NameSlot = Content->AddChildToVerticalBox(FacilityName))
 		{
 			NameSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 		}
 		Content->AddChildToVerticalBox(CostRow);
+		if (UVerticalBoxSlot* RecoverySlot = Content->AddChildToVerticalBox(RecoveryRow))
+		{
+			RecoverySlot->SetPadding(FMargin(0.0f, 6.0f, 0.0f, 0.0f));
+		}
 		Background->AddChild(Content);
 		Root->AddChild(Background);
 		Tree.RootWidget = Root;
@@ -125,6 +150,33 @@ namespace FFBuildFacilityCostTooltipWbpBuilder
 		const FString AssetName = FPackageName::GetLongPackageAssetName(TooltipPackage);
 		return LoadObject<UWidgetBlueprint>(
 			nullptr, *FString::Printf(TEXT("%s.%s"), *TooltipPackage, *AssetName));
+	}
+
+	bool HasRequiredLayout(const UWidgetBlueprint& Blueprint)
+	{
+		const UWidgetTree* Tree = Blueprint.WidgetTree;
+		const UVerticalBox* Content = Tree
+			? Cast<UVerticalBox>(Tree->FindWidget(TEXT("Tooltip_Content")))
+			: nullptr;
+		const UHorizontalBox* CostRow = Tree
+			? Cast<UHorizontalBox>(Tree->FindWidget(TEXT("Cost_Row")))
+			: nullptr;
+		const UHorizontalBox* RecoveryRow = Tree
+			? Cast<UHorizontalBox>(Tree->FindWidget(TEXT("Recovery_Row")))
+			: nullptr;
+		const UCommonTextBlock* InstallCost = Tree
+			? Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_InstallCost")))
+			: nullptr;
+		const UCommonTextBlock* RecoveryLabel = Tree
+			? Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_RecoveryLabel")))
+			: nullptr;
+		const UCommonTextBlock* RecoveryCost = Tree
+			? Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("TXT_RecoveryCost")))
+			: nullptr;
+
+		return Content && CostRow && RecoveryRow && InstallCost && RecoveryLabel && RecoveryCost &&
+			Content->GetChildIndex(CostRow) != INDEX_NONE &&
+			Content->GetChildIndex(RecoveryRow) == Content->GetChildIndex(CostRow) + 1;
 	}
 
 	bool SaveNewBlueprint(UWidgetBlueprint& Blueprint)
@@ -155,7 +207,8 @@ namespace FFBuildFacilityCostTooltipWbpBuilder
 		{
 			UWidgetBlueprint* Existing = LoadExistingBlueprint();
 			if (Existing && Existing->GeneratedClass &&
-				Existing->GeneratedClass->IsChildOf(UFF_BuildFacilityCostTooltip::StaticClass()))
+				Existing->GeneratedClass->IsChildOf(UFF_BuildFacilityCostTooltip::StaticClass()) &&
+				HasRequiredLayout(*Existing))
 			{
 				UE_LOG(LogFFBuildCostTooltipWbpBuilder, Display,
 					TEXT("FF_BUILD_COST_TOOLTIP_REUSE: %s (Designer changes preserved)"),
@@ -164,7 +217,7 @@ namespace FFBuildFacilityCostTooltipWbpBuilder
 			else
 			{
 				UE_LOG(LogFFBuildCostTooltipWbpBuilder, Error,
-					TEXT("FF_BUILD_COST_TOOLTIP_FAIL: existing asset has an invalid parent: %s"),
+					TEXT("FF_BUILD_COST_TOOLTIP_FAIL: existing asset has an invalid parent or widget contract: %s"),
 					*TooltipPackage);
 			}
 			return;

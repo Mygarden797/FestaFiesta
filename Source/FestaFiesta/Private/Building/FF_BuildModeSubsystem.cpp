@@ -2,12 +2,11 @@
 
 #include "Building/FF_BuildModeSubsystem.h"
 
-#include "Building/FF_BuildCatalogModel.h"
+#include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
-#include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
@@ -19,8 +18,6 @@
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
-#include "Festival/FF_FestivalDefinition.h"
-#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Framework/Application/SlateApplication.h"
@@ -786,20 +783,16 @@ void UFF_BuildModeSubsystem::ApplyCatalogIfReady()
 		// 화면을 열 때 현재 Festival의 비용표로 스냅샷을 만들어 설치 정책과 동일한 Resolver를 사용합니다.
 		TArray<FFF_BuildCatalogEntry> PricedEntries = Entries;
 		UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
-		const UFF_FestivalProgressionSubsystem* Progression = GameInstance
-			? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>()
-			: nullptr;
-		const UFF_FestivalDefinition* Festival = Progression ? Progression->GetDefinition() : nullptr;
-		const UDataTable* CostTable = Progression && Progression->IsFestivalStarted() && Festival
-			? Festival->FacilityCostTable.Get()
+		const UFF_BuildCatalogEconomyReadModel* EconomyReadModel = GameInstance
+			? GameInstance->GetSubsystem<UFF_BuildCatalogEconomyReadModel>()
 			: nullptr;
 
 		for (FFF_BuildCatalogEntry& Entry : PricedEntries)
 		{
 			const UFFZSFacilityDefinition* Definition = Entry.Definition.Get();
-			FString FailureReason;
-			if (FFBuildCatalogModel::ApplyInstallCost(
-				Entry, Definition, CostTable, FailureReason))
+			FString FailureReason = TEXT("Build catalog economy read model is unavailable.");
+			if (EconomyReadModel && EconomyReadModel->TryProjectFacilityCosts(
+				Entry, Definition, FailureReason))
 			{
 				continue;
 			}
