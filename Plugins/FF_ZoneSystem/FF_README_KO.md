@@ -432,6 +432,7 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 - Rect 또는 Cell 좌표가 유효한가
 - Queue 영역이 Facility Footprint와 겹치지 않는가
 - 최대 인원의 모든 Queue Slot이 예약 영역 안에 있는가
+- 서로 다른 Anchor와 Queue Slot의 XY 중심이 `max(1cm, 2 × SlotArrivalToleranceCm)` 이상 떨어지는가
 - Entry[0]과 Exit[0]이 존재하는가
 - Service Anchor가 `0..ServiceCapacity-1`을 연속 제공하는가
 - Anchor `Type + Index` 조합이 고유하고 Local Scale이 1인가
@@ -1094,6 +1095,23 @@ Facility Read Model:
 - WaitingCount, ActiveServiceCount
 - AverageCompletedWaitSeconds
 - WorldLocation: Facility Actor의 대표 월드 지점(cm)
+- bHasApproachWorldTransform: 아래 접근점이 유효한지 나타내는 값
+- ApproachWorldTransform: FacilityDefinition의 Entry[0] 로컬 앵커를 설치 Actor 기준 월드 좌표로 변환한 고정 접근점
+
+`ApproachWorldTransform`은 NPC가 시설 또는 Queue 가입 지점으로 접근할 때 사용한다. 실제 Queue 가입 뒤에는
+Queue가 배정한 동적 Slot Transform이 권위이며, 접근점이나 Facility Actor 중심을 대기 Slot으로 재사용하지 않는다.
+Entry[0]은 가입 전 admission/staging 지점이며 Queue tail 자체일 필요는 없다. 대신 Entry에서 모든 동적 Slot까지
+이동 가능한 예약 동선이 있어야 하고, Join 성공 직후에는 Approach 목표를 폐기해야 한다.
+유효한 프로덕션 `FFFZSFacilitySpec`은 Entry[0]을 필수로 검증하지만, 수동 생성한 Read Model의 기본 Identity
+Transform을 월드 원점의 실제 접근점으로 오인하지 않도록 소비자는 `bHasApproachWorldTransform`도 확인한다.
+플러그인 검증은 도착 허용 반경끼리 겹치지 않는 일반 계약을 강제한다. 실제 프로젝트 콘텐츠는 여기에 더해
+사용 중인 NPC 몸체 지름도 만족해야 하며, FestaFiesta 프로덕션 Definition은 기본 Crowd 반경 34cm 기준으로
+모든 Anchor와 Queue Slot의 XY 중심을 최소 68cm 이상 분리한다. Entry와 Queue Slot의 NPC 몸체 원 전체가
+`QueueReservedRects` 안에 포함되는지도 자동화 테스트한다.
+
+2026-08-14 이동 목표 분리 규칙 도입 전 생성된 개발용 World Snapshot은 겹친 frozen FacilitySpec 때문에
+복원이 거부될 수 있다. 아직 출시 세이브 호환을 보장하는 단계가 아니므로 해당 개발 Snapshot은 재생성한다.
+출시 세이브 호환이 필요해지면 FacilitySpec/WorldSnapshot 버전 상승과 명시적 좌표 마이그레이션을 먼저 추가한다.
 
 Read Model 수정은 권위 상태에 영향을 주지 않는다. Queue 참가·Population 갱신처럼 Revision을 올리지 않는
 변화도 Read Model 값에는 나타날 수 있으므로, UI 갱신을 Revision 변화에만 의존해서는 안 된다.
@@ -1288,7 +1306,7 @@ Zone Actor는 기본 생성 시 100 m x 100 m 사각형 Spline을 제공하지�
 3. 실제 cm 크기를 그대로 Footprint Cell 수에 적는다.
 4. Clearance와 반열림 QueueReservedRects를 작성한다.
 5. Queue Spline을 Service에서 Tail 방향으로 작성한다.
-6. Entry[0], Exit[0], Service[0..Capacity-1] Anchor를 만든다.
+6. Queue 가입 전 접근점 Entry[0], 퇴장점 Exit[0], Service[0..Capacity-1] Anchor를 만든다. Entry를 Slot 0과 같은 위치에 두지 않고, 모든 Anchor와 Queue Slot의 XY 간격이 도착 허용 지름과 프로젝트 NPC 몸체 지름을 모두 만족하게 한다.
 7. 외부 Cost·Revenue·Experience Key와 Soft Mesh를 설정한다.
 8. VisualSizingMode는 `MatchPlacementBounds`로 유지한다. 그러면 Footprint와 PlacementObstacleHeight를 바꿀 때 메시 표시 크기도 함께 바뀐다.
 9. 이미 작성한 시설의 크기를 바꿀 때는 Footprint 필드를 직접 고치지 말고 `Facility Authoring Tools`의 `New Width (X)`·`New Depth (Y)`·`New Height (Z)`에 목표 값을 넣고 `Resize Facility (Keep Queue & Anchors)`를 누른다. 높이는 XY 배치에 영향을 주지 않으므로 보정 없이 값만 교체되며 최소 10cm다. QueueReservedRects는 건물 좌하단 기준이고 Queue Spline Point와 Anchor는 건물 중심 기준이라, 같은 크기 변경에도 필요한 이동량이 서로 다르다. 버튼은 중심보다 바깥쪽 예약 경계를 크기 변화량만큼, 경로 점과 Anchor를 변화량의 절반만큼 옮겨 각자 붙어 있던 건물 변까지의 거리를 유지하며, 결과 Spec이 전체 검증을 통과할 때만 적용한다. 구버전 `QueueReservedCells`가 남아 있으면 자동 보정을 제공하지 않으므로 먼저 QueueReservedRects로 변환한다.
@@ -1448,7 +1466,7 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 
 ## 20. 자동화 테스트와 QA Gate
 
-2026-08-12 검증 실행에서 `FF_ZoneSystem.*` Unreal Automation Test는 **35개**가 발견되었다.
+2026-08-14 검증 실행에서 `FF_ZoneSystem.*` Unreal Automation Test는 **36개**가 발견되었다.
 개수는 테스트가 추가·제거되면 달라질 수 있으므로, 출하 Gate의 권위 기준은
 `Automation RunTests FF_ZoneSystem`이 발견한 전체 목록이 **0 failure, Queue Empty, Exit 0**로 완료되는지이다.
 
@@ -1491,6 +1509,7 @@ Phase·재진입·Drain 복원, Zone Read Model의 공간 메타데이터 값 �
 - `FF_ZoneSystem.Unit.Definitions.OneCentimeterCompressedRegionValidation`
 - `FF_ZoneSystem.Unit.Definitions.OneCentimeterEditorDataValidation`
 - `FF_ZoneSystem.Unit.Definitions.CardinalitySafetyLimitsFailClosed`
+- `FF_ZoneSystem.Unit.Definitions.MovementTargetSeparation`
 - `FF_ZoneSystem.Unit.QueueGeometry.ExactTail`
 - `FF_ZoneSystem.Unit.QueueGeometry.MultiSegmentSlots`
 - `FF_ZoneSystem.Unit.QueueGeometry.NearDegenerateSegmentsAreConsistent`
@@ -1534,7 +1553,7 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
 #### Build·자동화·패키징
 
 - [ ] Editor Development, Game Development, Game Shipping 구성이 모두 빌드된다.
-- [ ] `Automation RunTests FF_ZoneSystem`이 발견한 전체 테스트가 0 실패, Queue Empty, 프로세스 Exit 0이다. 2026-08-12 기준 기대치는 35개 통과(34 clean + 1 warning 포함 성공)이다.
+- [ ] `Automation RunTests FF_ZoneSystem`이 발견한 전체 테스트가 0 실패, Queue Empty, 프로세스 Exit 0이다. 2026-08-14 기준 기대치는 36개 통과(35 clean + 1 warning 포함 성공)이다.
 - [ ] 독립 Plugin 패키징과 프로젝트 Cook에서 Soft Mesh·Definition·Asset Manager Scan을 검증한다.
 - [ ] Clean PC의 Shipping 패키지에서 Plugin Mount, Map Load, Save/Restore Smoke를 통과한다.
 
