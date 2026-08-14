@@ -26,6 +26,11 @@ namespace FFF_OverviewCameraRigTestHelpers
 		Settings.ZoomStepMultiplier = 1.15f;
 		Settings.PitchAtMinZoom = -35.f;
 		Settings.PitchAtMaxZoom = -72.f;
+		// 기본 헬퍼는 피치 곡선만 본다. 최소 높이 보정은 곡선의 시작 각도를 끌어올리므로
+		// 켜둔 채로 두면 각도를 보는 테스트가 전부 같이 흔들린다.
+		// 보정을 검증하는 테스트는 MakeHeightConstrainedSettings 를 따로 쓴다.
+		Settings.MinCameraHeightAboveFocus = 0.f;
+		Settings.PitchSaturationArmLength = 0.f;
 		Settings.PanSpeedAtMaxZoom = 6000.f;
 		Settings.PanSpeedMinScale = 0.18f;
 		Settings.EdgeScrollSpeedScale = 2.5f;
@@ -33,6 +38,15 @@ namespace FFF_OverviewCameraRigTestHelpers
 		Settings.YawSnapDegrees = 45.f;
 		Settings.YawSpeedDegrees = 120.f;
 		Settings.InterpSpeed = 0.f;   // 테스트에서는 보간 없이 즉시 반영
+		return Settings;
+	}
+
+	// 최소 지상고 보정을 검증할 때 쓰는 설정.
+	FFF_OverviewCameraSettings MakeHeightConstrainedSettings(float MinHeight = 600.f, float SaturationArm = 4000.f)
+	{
+		FFF_OverviewCameraSettings Settings = MakeSettings();
+		Settings.MinCameraHeightAboveFocus = MinHeight;
+		Settings.PitchSaturationArmLength = SaturationArm;
 		return Settings;
 	}
 
@@ -342,6 +356,7 @@ bool FFF_OverviewCameraRig_EdgeScrollInput::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_PitchSaturatesBeforeMaxZoom, "FestaFiesta.Camera.Rig.PitchSaturatesBeforeMaxZoom", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_OverviewCameraRig_PitchSaturatesBeforeMaxZoom::RunTest(const FString& Parameters)
 {
+	// 최소 높이 보정은 끈 채로 포화 거리만 본다. 둘을 같이 켜면 어느 쪽이 각도를 바꿨는지 모른다.
 	FFF_OverviewCameraSettings Settings = MakeSettings();
 	Settings.PitchSaturationArmLength = 4000.f;   // 줌 상한은 16000 그대로
 
@@ -390,12 +405,8 @@ bool FFF_OverviewCameraRig_KeepsMinimumHeightWhenZoomedIn::RunTest(const FString
 {
 	constexpr float MinHeight = 600.f;
 
-	FFF_OverviewCameraSettings Settings = MakeSettings();
-	Settings.PitchSaturationArmLength = 4000.f;
-	Settings.MinCameraHeightAboveFocus = MinHeight;
-
 	FFF_OverviewCameraRig Rig;
-	Rig.Initialize(Settings, FVector::ZeroVector, 4000.f);
+	Rig.Initialize(MakeHeightConstrainedSettings(MinHeight), FVector::ZeroVector, 4000.f);
 
 	auto HeightAt = [&Rig](float Arm)
 	{
@@ -422,19 +433,13 @@ bool FFF_OverviewCameraRig_KeepsMinimumHeightWhenZoomedIn::RunTest(const FString
 		Rig.ResolvePitchForArmLength(800.f) < -35.f);
 
 	// 보정을 끄면 원래 곡선 그대로여야 한다.
-	FFF_OverviewCameraSettings NoConstraint = MakeSettings();
-	NoConstraint.PitchSaturationArmLength = 4000.f;
-	NoConstraint.MinCameraHeightAboveFocus = 0.f;
 	FFF_OverviewCameraRig Plain;
-	Plain.Initialize(NoConstraint, FVector::ZeroVector, 4000.f);
+	Plain.Initialize(MakeHeightConstrainedSettings(0.f), FVector::ZeroVector, 4000.f);
 	TestEqual(TEXT("보정을 끄면 시작 각도가 그대로"), Plain.ResolvePitchForArmLength(800.f), -35.f, 0.01f);
 
 	// 요구 높이가 최소 거리보다 큰 퇴화 설정에서도 각도가 뒤집히면 안 된다.
-	FFF_OverviewCameraSettings Extreme = MakeSettings();
-	Extreme.PitchSaturationArmLength = 4000.f;
-	Extreme.MinCameraHeightAboveFocus = 5000.f;
 	FFF_OverviewCameraRig Degenerate;
-	Degenerate.Initialize(Extreme, FVector::ZeroVector, 4000.f);
+	Degenerate.Initialize(MakeHeightConstrainedSettings(5000.f), FVector::ZeroVector, 4000.f);
 	TestTrue(TEXT("퇴화 설정에서도 각도가 단조롭다"),
 		Degenerate.ResolvePitchForArmLength(800.f) >= Degenerate.ResolvePitchForArmLength(4000.f) - KINDA_SMALL_NUMBER);
 	TestTrue(TEXT("퇴화 설정에서도 각도가 범위 안"),
@@ -481,6 +486,35 @@ bool FFF_OverviewCameraRig_EdgeScrollIsFasterThanKeyboard::RunTest(const FString
 	Oversized.EdgeScroll(FVector2D(5.f, 0.f), 1.f);
 	TestEqual(TEXT("과한 입력은 정규화되어 같은 거리만 이동한다"),
 		FMath::Abs(Oversized.GetTargetState().FocusLocation.Y), EdgeMoved, 1.0);
+	return true;
+}
+
+// 16. 헬퍼가 피치에 영향을 주는 필드를 전부 명시하고 있는지.
+//
+//     이 테스트가 있는 이유: MinCameraHeightAboveFocus 를 기본값 600 으로 추가했더니,
+//     그 필드를 지정하지 않던 기존 테스트들의 각도 전제가 조용히 바뀌어 세 건이 깨졌다.
+//     설정 구조체에 기본값을 새로 넣는 것 자체는 게임플레이상 맞는 판단이었지만,
+//     테스트 헬퍼가 관련 필드를 방치하고 있으면 관계없는 테스트가 같이 흔들린다.
+//     기본값이 또 바뀌어도 여기서 먼저 걸리게 한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_TestHelperPinsPitchInputs, "FestaFiesta.Camera.Rig.TestHelperPinsPitchInputs", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_TestHelperPinsPitchInputs::RunTest(const FString& Parameters)
+{
+	const FFF_OverviewCameraSettings Settings = MakeSettings();
+
+	TestEqual(TEXT("헬퍼는 최소 높이 보정을 꺼둔다"), Settings.MinCameraHeightAboveFocus, 0.f, 0.001f);
+	TestEqual(TEXT("헬퍼는 포화 거리를 지정하지 않는다"), Settings.PitchSaturationArmLength, 0.f, 0.001f);
+
+	// 위 둘이 0 이면 피치는 PitchAtMinZoom ~ PitchAtMaxZoom 을 그대로 쓴다.
+	FFF_OverviewCameraRig Rig = MakeRig();
+	TestEqual(TEXT("최근접 각도가 설정값 그대로"), Rig.ResolvePitchForArmLength(Settings.MinArmLength),
+		Settings.PitchAtMinZoom, 0.01f);
+	TestEqual(TEXT("최원거리 각도가 설정값 그대로"), Rig.ResolvePitchForArmLength(Settings.MaxArmLength),
+		Settings.PitchAtMaxZoom, 0.01f);
+
+	// 보정 전용 헬퍼는 반대로 확실히 켜져 있어야 한다.
+	const FFF_OverviewCameraSettings Constrained = MakeHeightConstrainedSettings();
+	TestTrue(TEXT("보정 헬퍼는 최소 높이를 켠다"), Constrained.MinCameraHeightAboveFocus > 0.f);
+	TestTrue(TEXT("보정 헬퍼는 포화 거리를 지정한다"), Constrained.PitchSaturationArmLength > 0.f);
 	return true;
 }
 
