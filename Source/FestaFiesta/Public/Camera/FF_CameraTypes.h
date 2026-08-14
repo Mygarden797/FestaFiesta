@@ -18,8 +18,10 @@ enum class EFF_CameraViewMode : uint8
 {
 	// 축제 전체를 내려다보는 관찰 시점. 기본값이다.
 	Overview  UMETA(DisplayName = "관찰 시점"),
-	// 다른 액터의 시점을 빌려 보는 중. 관찰 카메라는 제자리에 그대로 떠 있다.
-	Actor     UMETA(DisplayName = "액터 시점")
+	// 다른 액터의 시점을 빌려 보는 중. 조종은 하지 않는다. 관찰 카메라는 제자리에 떠 있다.
+	Actor     UMETA(DisplayName = "액터 시점"),
+	// 캐릭터에 빙의해 직접 조종하는 중. 관찰 카메라는 월드에 남아 상태를 유지한다.
+	Character UMETA(DisplayName = "캐릭터 시점")
 };
 
 // 카메라 입력을 눌러둬야 하는 이유.
@@ -36,6 +38,8 @@ enum class EFF_CameraInputBlock : uint8
 	ModalUi         UMETA(DisplayName = "모달 UI"),
 	// 다른 액터 시점을 보는 중. 관찰 카메라 조작은 화면에 안 보이므로 막는다.
 	ActorView       UMETA(DisplayName = "액터 시점"),
+	// 캐릭터를 조종하는 중. 같은 WASD 가 카메라 팬으로도 먹으면 안 된다.
+	CharacterControl UMETA(DisplayName = "캐릭터 조종"),
 	// 시네마틱이나 자동 연출 중.
 	Scripted        UMETA(DisplayName = "연출 중")
 };

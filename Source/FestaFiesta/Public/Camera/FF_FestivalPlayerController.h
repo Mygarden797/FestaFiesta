@@ -67,6 +67,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
 	void SetModalUiActive(bool bActive);
 
+	// 빙의 대상이 바뀌어도 관찰 카메라는 월드에 그대로 남아 있다.
+	// GetPawn() 을 캐스팅하면 캐릭터에 빙의한 순간 null 이 되므로 참조를 따로 들고 있는다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	AFF_OverviewCameraPawn* GetOverviewCameraPawn() const;
 
@@ -78,6 +80,24 @@ public:
 	//
 	// 대상 폰의 조종은 이 컨트롤러가 하지 않는다. 그건 그 폰을 만든 쪽 몫이다.
 	// 여기서 제공하는 건 "무엇을 화면에 보여줄 것인가"까지다.
+
+	// 캐릭터에 빙의해 직접 조종한다. 관찰 카메라는 월드에 남아 구도를 유지한다.
+	//
+	// 관람은 SwitchToActorView, 조종은 이것이다. 둘을 하나로 합치지 않은 이유는
+	// 필요한 처리가 다르기 때문이다. 관람은 뷰타깃만 옮기면 되지만 조종은 빙의를 옮겨야 하고,
+	// 빙의를 옮기면 입력이 그 폰으로 가면서 카메라 팬이 자동으로 멈춘다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	bool PossessCharacter(APawn* TargetCharacter, float BlendTime = 0.5f);
+
+	// 전환 키가 기본으로 들어갈 캐릭터. GameMode 가 스폰하거나 찾아서 넘겨준다.
+	//
+	// 이게 없으면 ToggleView 가 되돌아갈 대상을 몰라서 조용히 아무것도 안 한다.
+	// 처음에 이 누락 때문에 V 를 눌러도 반응이 없었다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void SetVisitorCharacter(APawn* InCharacter);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
+	APawn* GetVisitorCharacter() const { return VisitorCharacter.Get(); }
 
 	// 지정한 액터의 시점으로 넘어간다. 그 액터에 카메라 컴포넌트가 있으면 그것을 쓰고,
 	// 없으면 액터 위치에서 본다. nullptr 이면 아무것도 하지 않는다.
@@ -182,4 +202,10 @@ private:
 
 	// ToggleView 로 되돌아갈 대상. 관찰 시점으로 나와도 지워지지 않는다.
 	TWeakObjectPtr<AActor> LastViewedActor;
+
+	// 관찰 카메라 참조. BeginPlay 에서 잡아두고 빙의가 바뀌어도 유지한다.
+	TWeakObjectPtr<AFF_OverviewCameraPawn> OverviewPawn;
+
+	// 전환 키의 기본 대상. LastViewedActor 가 비어 있을 때 여기로 간다.
+	TWeakObjectPtr<APawn> VisitorCharacter;
 };
