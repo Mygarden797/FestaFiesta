@@ -4,8 +4,10 @@
 
 #include "Engine/AssetManager.h"
 #include "Engine/StaticMesh.h"
+#include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
@@ -13,6 +15,38 @@ namespace
 {
     constexpr const TCHAR* DefinitionRoot =
         TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/");
+
+    constexpr double MovementTargetDistanceToleranceCm = 0.01;
+
+    bool IsLocalDiscInsideQueueReservation(
+        const FVector& LocalCenterCm,
+        const double RadiusCm,
+        const FFFZSFacilitySpec& Spec)
+    {
+        if (LocalCenterCm.ContainsNaN() ||
+            !FMath::IsFinite(RadiusCm) ||
+            RadiusCm < 0.0)
+        {
+            return false;
+        }
+
+        constexpr double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+        const FVector2D GridCenter =
+            FFFZSQueueGeometry::LocalPointCmToReservationGrid(
+                LocalCenterCm,
+                Spec.FootprintSizeCells);
+        const double RadiusCells = RadiusCm / CellSizeCm;
+        const double ToleranceCells = MovementTargetDistanceToleranceCm / CellSizeCm;
+        return Spec.QueueReservedRects.ContainsByPredicate(
+            [&GridCenter, RadiusCells, ToleranceCells](const FFFZSCellRect& Rect)
+            {
+                return Rect.IsValid() &&
+                    GridCenter.X - RadiusCells + ToleranceCells >= Rect.Min.X &&
+                    GridCenter.X + RadiusCells - ToleranceCells < Rect.Max.X &&
+                    GridCenter.Y - RadiusCells + ToleranceCells >= Rect.Min.Y &&
+                    GridCenter.Y + RadiusCells - ToleranceCells < Rect.Max.Y;
+            });
+    }
 
     bool IsWithinAuthoritativeBounds(const FBox& Bounds, const FFFZSFacilitySpec& Spec)
     {
@@ -87,6 +121,119 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
                     *AssetId.ToString(),
                     *Error.ToString()));
             }
+        }
+
+        // FFZS is project-independent, so its general validator only protects semantic target
+        // separation. Production FestaFiesta content also has to fit the actual Crowd body size.
+        // Keep this assertion next to the authoritative Definition scan so a Crowd radius change
+        // cannot silently make already-authored queue targets overlap.
+        const double MinimumCrowdTargetSeparationCm =
+            static_cast<double>(FUnitData().Radius) * 2.0;
+        TestTrue(
+            *FString::Printf(TEXT("Queue SlotSpacing fits the default Crowd diameter: %s"), *AssetId.ToString()),
+            static_cast<double>(Definition->Spec.QueueRules.SlotSpacingCm) +
+                    MovementTargetDistanceToleranceCm >=
+                MinimumCrowdTargetSeparationCm);
+
+        TArray<FVector> QueueSlotPoints;
+        TestTrue(
+            *FString::Printf(TEXT("Queue slots can be sampled for movement-target QA: %s"), *AssetId.ToString()),
+            FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
+                Definition->Spec.QueueSplinePointsCm,
+                Definition->Spec.QueueRules.MaxWaitingAgents,
+                Definition->Spec.QueueRules.SlotSpacingCm,
+                QueueSlotPoints));
+
+        for (int32 FirstSlotIndex = 0; FirstSlotIndex < QueueSlotPoints.Num(); ++FirstSlotIndex)
+        {
+            TestTrue(
+                *FString::Printf(
+                    TEXT("Queue slot %d Crowd body is protected by QueueReservedRects: %s"),
+                    FirstSlotIndex,
+                    *AssetId.ToString()),
+                IsLocalDiscInsideQueueReservation(
+                    QueueSlotPoints[FirstSlotIndex],
+                    FUnitData().Radius,
+                    Definition->Spec));
+
+            for (int32 SecondSlotIndex = FirstSlotIndex + 1;
+                 SecondSlotIndex < QueueSlotPoints.Num();
+                 ++SecondSlotIndex)
+            {
+                const double DistanceCm = FVector::Dist2D(
+                    QueueSlotPoints[FirstSlotIndex],
+                    QueueSlotPoints[SecondSlotIndex]);
+                TestTrue(
+                    *FString::Printf(
+                        TEXT("Queue slots %d/%d fit Crowd bodies: %s"),
+                        FirstSlotIndex,
+                        SecondSlotIndex,
+                        *AssetId.ToString()),
+                    DistanceCm + MovementTargetDistanceToleranceCm >=
+                        MinimumCrowdTargetSeparationCm);
+            }
+        }
+
+        const FFFZSAnchorDefinition* EntryZero = nullptr;
+        for (int32 FirstAnchorIndex = 0;
+             FirstAnchorIndex < Definition->Spec.Anchors.Num();
+             ++FirstAnchorIndex)
+        {
+            const FFFZSAnchorDefinition& FirstAnchor =
+                Definition->Spec.Anchors[FirstAnchorIndex];
+            if (FirstAnchor.Type == EFFZSAnchorType::Entry && FirstAnchor.Index == 0)
+            {
+                EntryZero = &FirstAnchor;
+            }
+
+            for (int32 SecondAnchorIndex = FirstAnchorIndex + 1;
+                 SecondAnchorIndex < Definition->Spec.Anchors.Num();
+                 ++SecondAnchorIndex)
+            {
+                const FFFZSAnchorDefinition& SecondAnchor =
+                    Definition->Spec.Anchors[SecondAnchorIndex];
+                const double DistanceCm = FVector::Dist2D(
+                    FirstAnchor.LocalTransform.GetLocation(),
+                    SecondAnchor.LocalTransform.GetLocation());
+                TestTrue(
+                    *FString::Printf(
+                        TEXT("Facility anchors %d/%d fit Crowd bodies: %s"),
+                        FirstAnchorIndex,
+                        SecondAnchorIndex,
+                        *AssetId.ToString()),
+                    DistanceCm + MovementTargetDistanceToleranceCm >=
+                        MinimumCrowdTargetSeparationCm);
+            }
+
+            for (int32 SlotIndex = 0; SlotIndex < QueueSlotPoints.Num(); ++SlotIndex)
+            {
+                const double DistanceCm = FVector::Dist2D(
+                    FirstAnchor.LocalTransform.GetLocation(),
+                    QueueSlotPoints[SlotIndex]);
+                TestTrue(
+                    *FString::Printf(
+                        TEXT("Anchor %d and Queue slot %d fit Crowd bodies: %s"),
+                        FirstAnchorIndex,
+                        SlotIndex,
+                        *AssetId.ToString()),
+                    DistanceCm + MovementTargetDistanceToleranceCm >=
+                        MinimumCrowdTargetSeparationCm);
+            }
+        }
+
+        TestNotNull(
+            *FString::Printf(TEXT("Entry[0] exists for Approach QA: %s"), *AssetId.ToString()),
+            EntryZero);
+        if (EntryZero)
+        {
+            TestTrue(
+                *FString::Printf(
+                    TEXT("Entry[0] Crowd body is protected by QueueReservedRects: %s"),
+                    *AssetId.ToString()),
+                IsLocalDiscInsideQueueReservation(
+                    EntryZero->LocalTransform.GetLocation(),
+                    FUnitData().Radius,
+                    Definition->Spec));
         }
 
         TestTrue(
