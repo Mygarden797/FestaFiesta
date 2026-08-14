@@ -7,9 +7,11 @@
 #include "Blueprint/WidgetTree.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
+#include "Building/FF_BuildCatalogTypes.h"
 #include "Components/HorizontalBox.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Festival/FF_FestivalSettings.h"
@@ -87,9 +89,59 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 
 	TestDefinition->FestivalId = TEXT("BuildCatalogGoldAutomationFestival");
 	TestDefinition->InitialGold = 12'345;
+
+	// 이 테스트는 **Read Model 이 잔액을 그대로 비추는지**만 본다. StartFestival 이 Day1
+	// 임대료를 징수하므로(economy_spec.md §5 S6) 임대료를 0 으로 두지 않으면 12,345 가 안 나온다.
+	TestDefinition->DailyVenueRentGold = 0;
+
 	Progression->StartFestival(TestDefinition);
 	TestEqual(TEXT("Building Read Model synchronously mirrors Progression initial Gold"),
 		EconomyReadModel->GetGold(), 12'345);
+
+	const UFFZSFacilityDefinition* FoodTruckDefinition =
+		LoadObject<UFFZSFacilityDefinition>(
+			nullptr,
+			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+				"PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck."
+				"PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck"));
+	TestNotNull(TEXT("The production FoodTruck definition loads for catalog pricing"),
+		FoodTruckDefinition);
+	if (!FoodTruckDefinition)
+	{
+		return false;
+	}
+
+	FFF_BuildCatalogEntry PricedEntry;
+	PricedEntry.FacilityDefinitionId = FoodTruckDefinition->Spec.FacilityDefinitionId;
+	FString PricingFailureReason;
+	TestTrue(TEXT("Building Read Model projects the active Festival's facility pricing"),
+		EconomyReadModel->TryProjectFacilityCosts(
+			PricedEntry, FoodTruckDefinition, PricingFailureReason));
+	TestEqual(TEXT("Building Read Model projects the live FoodTruck install cost"),
+		PricedEntry.InstallCost, 400);
+	TestEqual(TEXT("Building Read Model projects the configured demolition recovery cost"),
+		PricedEntry.RecoveryCost, 200);
+	TestTrue(TEXT("A zero-capable recovery cost has an independent resolved flag"),
+		PricedEntry.bHasResolvedRecoveryCost);
+
+	TestDefinition->FacilityDemolitionRefundRate = 0.25f;
+	TestTrue(TEXT("Reprojection reads the active Festival's latest recovery rate"),
+		EconomyReadModel->TryProjectFacilityCosts(
+			PricedEntry, FoodTruckDefinition, PricingFailureReason));
+	TestEqual(TEXT("A changed 25 percent rate projects a 100 Gold recovery cost"),
+		PricedEntry.RecoveryCost, 100);
+
+	UDataTable* OriginalCostTable = TestDefinition->FacilityCostTable;
+	TestDefinition->FacilityCostTable = nullptr;
+	TestFalse(TEXT("Pricing fails closed when the active Festival has no cost table"),
+		EconomyReadModel->TryProjectFacilityCosts(
+			PricedEntry, FoodTruckDefinition, PricingFailureReason));
+	TestFalse(TEXT("A failed reprojection clears the install-cost resolved flag"),
+		PricedEntry.bHasResolvedInstallCost);
+	TestFalse(TEXT("A failed reprojection clears the recovery-cost resolved flag"),
+		PricedEntry.bHasResolvedRecoveryCost);
+	TestDefinition->FacilityCostTable = OriginalCostTable;
+	TestDefinition->FacilityDemolitionRefundRate = 0.5f;
 
 	const TCHAR* ScreenClassPath =
 		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");

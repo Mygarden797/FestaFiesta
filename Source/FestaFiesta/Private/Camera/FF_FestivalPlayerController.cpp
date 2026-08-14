@@ -24,6 +24,14 @@ void AFF_FestivalPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 시작 시점의 빙의 대상이 관찰 카메라다. 이후 캐릭터로 빙의가 옮겨가도 이 참조는 유지된다.
+	OverviewPawn = Cast<AFF_OverviewCameraPawn>(GetPawn());
+	if (!OverviewPawn.IsValid())
+	{
+		UE_LOG(LogFestaFiestaCamera, Warning,
+			TEXT("[카메라] 시작 Pawn 이 관찰 카메라가 아니다. GameMode 의 DefaultPawnClass 를 확인할 것."));
+	}
+
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
@@ -88,6 +96,12 @@ void AFF_FestivalPlayerController::SetupInputComponent()
 
 AFF_OverviewCameraPawn* AFF_FestivalPlayerController::GetOverviewCameraPawn() const
 {
+	// GetPawn() 을 쓰면 캐릭터에 빙의한 순간 null 이 되어 관찰 카메라를 잃는다.
+	if (AFF_OverviewCameraPawn* Cached = OverviewPawn.Get())
+	{
+		return Cached;
+	}
+	// 아직 BeginPlay 전이거나 캐시가 끊긴 경우의 보루.
 	return Cast<AFF_OverviewCameraPawn>(GetPawn());
 }
 
@@ -116,6 +130,12 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 	{
 		return EFF_CameraInputBlock::ActorView;
 	}
+	// 캐릭터를 조종하는 동안에도 같다. 다만 빙의가 옮겨가 있어서 입력 자체가 캐릭터로 가므로
+	// 실제로 겹칠 일은 적다. 그래도 명시적으로 막아둔다.
+	if (ViewMode == EFF_CameraViewMode::Character)
+	{
+		return EFF_CameraInputBlock::CharacterControl;
+	}
 	if (IsBuildSessionActive())
 	{
 		return EFF_CameraInputBlock::BuildSession;
@@ -129,7 +149,8 @@ bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 	// 모달 UI 와 액터 시점만 전체를 막는다.
 	const EFF_CameraInputBlock Reason = GetInputBlockReason();
 	return Reason != EFF_CameraInputBlock::ModalUi
-		&& Reason != EFF_CameraInputBlock::ActorView;
+		&& Reason != EFF_CameraInputBlock::ActorView
+		&& Reason != EFF_CameraInputBlock::CharacterControl;
 }
 
 bool AFF_FestivalPlayerController::IsPickingAllowed() const
@@ -228,6 +249,32 @@ bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float 
 	return true;
 }
 
+bool AFF_FestivalPlayerController::PossessCharacter(APawn* TargetCharacter, float BlendTime)
+{
+	if (!IsValid(TargetCharacter))
+	{
+		UE_LOG(LogFestaFiestaCamera, Warning, TEXT("[카메라] 유효하지 않은 캐릭터로 빙의를 시도했다."));
+		return false;
+	}
+
+	// 관람과 달리 빙의를 옮긴다. 그래야 입력이 캐릭터로 가고 WASD 가 카메라 팬으로 새지 않는다.
+	// 관찰 카메라는 파괴되지 않고 월드에 남아 있어서, 돌아올 때 리그 상태가 그대로다.
+	Possess(TargetCharacter);
+	SetViewTargetWithBlend(TargetCharacter, FMath::Max(0.f, BlendTime));
+
+	ViewMode = EFF_CameraViewMode::Character;
+	ViewedActor = TargetCharacter;
+	LastViewedActor = TargetCharacter;
+
+	OnViewModeChanged.Broadcast(ViewMode, TargetCharacter);
+	return true;
+}
+
+void AFF_FestivalPlayerController::SetVisitorCharacter(APawn* InCharacter)
+{
+	VisitorCharacter = InCharacter;
+}
+
 void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 {
 	AFF_OverviewCameraPawn* CameraPawn = GetOverviewCameraPawn();
@@ -236,6 +283,12 @@ void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 		UE_LOG(LogFestaFiestaCamera, Warning,
 			TEXT("[카메라] 관찰 카메라 Pawn 이 없어 시점을 되돌리지 못했다."));
 		return;
+	}
+
+	// 캐릭터를 조종하다 왔으면 빙의도 되돌려야 입력이 카메라로 온다.
+	if (GetPawn() != CameraPawn)
+	{
+		Possess(CameraPawn);
 	}
 
 	// 떠날 때 구도가 그대로 남아 있다. 리그 상태를 건드리지 않았기 때문이다.
@@ -249,14 +302,36 @@ void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 
 void AFF_FestivalPlayerController::ToggleView(float BlendTime)
 {
-	if (ViewMode == EFF_CameraViewMode::Actor)
+	if (ViewMode != EFF_CameraViewMode::Overview)
 	{
 		SwitchToOverview(BlendTime);
 		return;
 	}
 
 	// 되돌아갈 대상이 이미 사라졌으면 관찰 시점에 머문다.
-	if (AActor* Target = LastViewedActor.Get())
+	AActor* Target = LastViewedActor.Get();
+
+	// 아직 아무 데도 안 가봤으면 기본 캐릭터로 들어간다.
+	// 이게 없으면 첫 전환 키가 아무 일도 하지 않아서 고장난 것처럼 보인다.
+	if (!Target)
+	{
+		Target = VisitorCharacter.Get();
+	}
+
+	if (!Target)
+	{
+		UE_LOG(LogFestaFiestaCamera, Warning,
+			TEXT("[카메라] 전환할 대상이 없다. GameMode 의 VisitorCharacterClass 를 확인하거나 ")
+			TEXT("SetVisitorCharacter 로 대상을 지정할 것."));
+		return;
+	}
+
+	// 마지막 대상이 조종 가능한 폰이었으면 빙의로, 아니면 관람으로 돌아간다.
+	if (APawn* AsPawn = Cast<APawn>(Target))
+	{
+		PossessCharacter(AsPawn, BlendTime);
+	}
+	else
 	{
 		SwitchToActorView(Target, BlendTime);
 	}
@@ -264,7 +339,7 @@ void AFF_FestivalPlayerController::ToggleView(float BlendTime)
 
 void AFF_FestivalPlayerController::EnsureViewTargetAlive()
 {
-	if (ViewMode != EFF_CameraViewMode::Actor)
+	if (ViewMode == EFF_CameraViewMode::Overview)
 	{
 		return;
 	}

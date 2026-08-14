@@ -207,11 +207,11 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 | 정정 | 선셋클럽·선셋펍은 처음에 Performance(무대) 대응으로 예시 들었던 것을 Booth(Nightlife)로 정정했다 — 관객이 무대를 보는 형태가 아니라 바·라운지 형태이기 때문. `FFF_NeedState`의 Stimulation이 Performance·PhotoSpot뿐 아니라 Booth(Nightlife)로도 풀리게 반영(`GetNeedReliefFlags`). |
 | 발견·반영 | 리플렛 지도 범례의 "오아시스 존"(그늘+음수대+무릎나눔)이 ZoneSystem의 `Rest` 카테고리에 해당한다는 것을 확인 — `Thirst` Need가 Booth(FoodStall)뿐 아니라 Rest로도 풀리게 `GetNeedReliefFlags`에 추가했다. |
 | 미해결 | 선셋펍은 낮엔 웰니스 체험(CraftExperience), 밤엔 DJ·라이브밴드(Nightlife)를 같은 공간에서 겸한다. 지금 네이밍 컨벤션은 시설 하나에 토큰 하나만 허용해 이 시간대별 겸용을 못 담는다 — 실제 부스 제작 시 결정 필요(`facility_naming_convention.md` 참고). |
-| 산출물 | `data/metadata/handoff/facility_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |
+| 산출물 | `data/metadata/request/facility_naming_convention.md` 신설 — 한광훈 님(또는 부스 콘텐츠 담당)에게 전달할 토큰 표와 실제 예시. |
 
 ## 2026-08-06 — 시간대별 목표 유입 곡선 확정 + 동시 체류 구조 문제 정량화
 
-`crowdai_handoff_note.md` §4의 열린 질문("유입 곡선 형태 미정")을 해소했다. 전체 설계는 `visitor_arrival_curve_spec.md`.
+`crowdai_integration_guide.md` §4의 열린 질문("유입 곡선 형태 미정")을 해소했다. 전체 설계는 `visitor_arrival_curve_spec.md`.
 
 | 상태 | 내용 |
 |---|---|
@@ -240,7 +240,7 @@ Little's Law로 "700 동시 체류"를 역산해 `total_visitor_count`를 20,000
 | **결정(같은 날)** | 아동 비율 추정치가 3개가 됐다: 주민등록 7.9193% / 데이터랩 3.8925% / **여행조사 실측 6.4506%**(신규, 기존 둘 사이에 떨어져 서로를 약하게 뒷받침). 사용자 확정: **그룹 구성이 아동 수를 결정한다** — 아동 비율은 목표치가 아니라 파생값이고 사후 보정을 하지 않는다. `dependent_child_population_target_v0.csv`는 검산용으로 격하. 구현 실측 결과 **6.4167%**(원자료 6.4506%와 0.034pp 차 — 리더 성인 불변식으로 "전원 아동" 칸을 제외·재정규화한 몫). `population_group_generation_spec.md` 2.4절. |
 | 주의 유지 | 전국 국내 관광여행자의 일행 규모이며 **부산바다축제 저녁 방문객 실측이 아니다.** "축제 방문객 그룹 크기 실측"이라고 부르면 안 된다. |
 | 산출물 | `Tools/data/build_visitor_group_distribution.mjs`(원자료 필요), `Tools/data/build_group_composition_rules.mjs`(원자료 불필요), `data/derived/visitor_group_size_distribution_v0.csv`+`.json`, `group_child_composition_v0.csv`, `companion_type_response_v0.csv`, `group_composition_rules_v0.csv`+`.json`, `data/unreal/` 3종, 구조체 3종(`FF_GroupSizeDistributionRow.h`/`FF_GroupChildCompositionRow.h`/`FF_GroupCompositionRuleRow.h`). |
-| 소비 코드 | `FFF_VisitorDistributionBuilder`(`NPC/Party/FF_VisitorDistributionBuilder.h`+`.cpp`) — 위 3종 DataTable을 읽어 개체별 태그 목록을 만드는 순수 함수. 자동화 테스트 8개(`FF_VisitorDistributionBuilderTests.cpp`), 전체 42개 테스트 통과·회귀 없음. crowdAI가 태그만 보고 묶을 수 있도록 `(TargetGroupSize, TargetGroupChildCount, ArchetypeId)` 버킷의 개체 수가 정확히 나누어떨어지는 것을 보장하고 테스트가 검증한다. `crowdai_handoff_note.md` §3(8/6 문서 재구성 후 절 번호 변경됨 — 이전엔 §9). |
+| 소비 코드 | `FFF_VisitorDistributionBuilder`(`NPC/Party/FF_VisitorDistributionBuilder.h`+`.cpp`) — 위 3종 DataTable을 읽어 개체별 태그 목록을 만드는 순수 함수. 자동화 테스트 8개(`FF_VisitorDistributionBuilderTests.cpp`), 전체 42개 테스트 통과·회귀 없음. crowdAI가 태그만 보고 묶을 수 있도록 `(TargetGroupSize, TargetGroupChildCount, ArchetypeId)` 버킷의 개체 수가 정확히 나누어떨어지는 것을 보장하고 테스트가 검증한다. `crowdai_integration_guide.md` §3(8/6 문서 재구성 후 절 번호 변경됨 — 이전엔 §9). |
 
 부수 확인: `WT_DOM` 합계가 557,113,176으로 만 15세 이상 인구(약 4,500만)의 **약 12배**다 — 월별 조사라 연간 합계가 12개월분이 된다. 분포(비율)를 낼 때는 상쇄되므로 이번 산출물에는 영향이 없지만, 나중에 **절대 인원**을 이 가중치로 추정하려면 12로 나누는 처리가 필요하다.
 

@@ -258,11 +258,26 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 	Entry.Thumbnail = TSoftObjectPtr<UTexture2D>(ExplicitThumbnail);
 	Entry.InstallCost = 400;
 	Entry.bHasResolvedInstallCost = true;
+	Entry.RecoveryCost = 200;
+	Entry.bHasResolvedRecoveryCost = true;
 	Card->Configure(Entry);
 	TestEqual(
-		TEXT("A configured facility card exposes its resolved price on hover"),
+		TEXT("A configured facility card exposes its resolved install and recovery costs on hover"),
 		Card->GetToolTipText().ToString(),
-		FString(TEXT("건설 비용: 400 Gold")));
+		FString(TEXT("건설 비용: 400 Gold\n회수 비용: 200 Gold")));
+
+	FFF_BuildCatalogEntry PartiallyResolvedEntry = Entry;
+	PartiallyResolvedEntry.bHasResolvedRecoveryCost = false;
+	TestEqual(
+		TEXT("An unavailable recovery cost does not hide a resolved install cost"),
+		UFF_BuildFacilityCard::MakeFacilityCostToolTip(PartiallyResolvedEntry).ToString(),
+		FString(TEXT("건설 비용: 400 Gold\n회수 비용: 가격 정보 없음")));
+	PartiallyResolvedEntry.bHasResolvedInstallCost = false;
+	PartiallyResolvedEntry.bHasResolvedRecoveryCost = true;
+	TestEqual(
+		TEXT("An unavailable install cost does not hide a resolved recovery cost"),
+		UFF_BuildFacilityCard::MakeFacilityCostToolTip(PartiallyResolvedEntry).ToString(),
+		FString(TEXT("건설 비용: 가격 정보 없음\n회수 비용: 200 Gold")));
 	TestEqual(
 		TEXT("An entry-specific thumbnail takes priority over the card default"),
 		ThumbnailImage->GetBrush().GetResourceObject(),
@@ -294,11 +309,13 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 
 	Entry.InstallCost = 0;
 	Entry.bHasResolvedInstallCost = false;
+	Entry.RecoveryCost = 0;
+	Entry.bHasResolvedRecoveryCost = false;
 	Card->Configure(Entry);
 	TestEqual(
 		TEXT("A card never shows a misleading zero when price data is unavailable"),
 		Card->GetToolTipText().ToString(),
-		FString(TEXT("건설 비용 정보를 확인할 수 없습니다.")));
+		FString(TEXT("건설 비용: 가격 정보 없음\n회수 비용: 가격 정보 없음")));
 
 	return true;
 }

@@ -6,6 +6,8 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Economy/FF_FestivalFunds.h"
 #include "Economy/FF_DayLedger.h"
+#include "Economy/FF_FixedCostArrears.h"
+#include "Economy/FF_StaffPool.h"
 #include "FF_FestivalProgressionSubsystem.generated.h"
 
 class UFF_FestivalDefinition;
@@ -84,21 +86,106 @@ public:
 
 	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
 	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
+	
+	
+	// --- 하루 경계 ---------------------------------------------------------
+	
+	/*
+	 * [1] TodayRevenue·DayLedger 를 리셋. 미납(Arrears)은 리셋하지 않는다.
+	 * [2] 임대료 납부 (하루 1회 정산)
+	 * [3] 알바 고용
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void BeginNewDay(int32 NewDay);
+	
+	// 임대료를 마지막으로 정산한 날. 축제 시작 전이면 0.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetLastProcessedDay() const { return LastProcessedDay; }
+	
+	
+	// --- Staff ------------------------------------------------------------
+	
+	// 무페이 기본 Staff.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetBaseStaffCount() const
+	{
+		return StaffPool.GetBaseStaffCount();
+	}
+
+	// 오늘 고용한 알바. 임금을 낸 만큼이다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTemporaryStaffCount() const
+	{
+		return StaffPool.GetTemporaryStaffCount();
+	}
+
+	// 오늘 실제로 일하는 전체 인원.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalStaffCount() const
+	{
+		return StaffPool.GetTotalStaffCount();
+	}
+	
+	// 오늘 알바를 RequestedCount 명 고용하고 임금 지불
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	bool TryHireTemporaryStaff(int32 RequestedCount);
+	
+	// 지금 잔액으로 추가 고용할 수 있는 최대 인원. 상태를 바꾸지 않는다.
+	// UI 슬라이더 상한과 버튼 비활성화 판정용.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetAffordableTemporaryStaffCount() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnTotalStaffCountChanged;
+	
+	
+	// --- 미납 -------------------------------------------------------------
+	
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalArrears() const { return Arrears.GetTotalArrears(); }
+
+	// 미납 총액이 바뀌면 쏜다. 자금난 경고·엔딩 평가가 붙을 자리다 (E-24).
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
 	// 값이 실제로 바뀔 때만 통지한다.
 	void BroadcastGoldIfChanged(int32 PreviousGold);
 	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
 	void BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue);
+	void BroadcastTotalArrearsIfChanged(int32 PreviousTotalArrears);
+	void BroadcastTotalStaffCountIfChanged(int32 PreviousTotalStaffCount);
+	
+	// 하루 경제 정산을 수행한다.
+	// 같은 날 이미 처리했다면 아무 작업도 하지 않고 false 를 반환한다.
+	bool TryProcessNewDay(int32 NewDay);
 
+	// 당일 임대료를 정산한다.
+	// 잔액이 부족해도 거부하지 않으며, 낼 수 있는 만큼 차감하고 부족분은 미납으로 남긴다.
+	void SettleVenueRent();
+
+	// 현재 Gold 로 기존 미납을 상환하고 실제 상환액을 반환한다.
+	// 미납이 남아 있는 동안 Gold 가 잔액으로 남지 않도록 가능한 만큼 전액 상환에 사용한다.
+	int32 RepayArrearsFromGold();
+	
+	int32 GetRemainingHireCap() const;
+	
 	// 잔액 규칙의 소유자. UObject 가 아니라 값 타입이다.
 	FFF_FestivalFunds Funds;
 	
 	// 당일 원인별/시설별 분해. 여기서만 건드린다.
 	FFF_DayLedger DayLedger;
+	
+	// 임대료 미납. 하루 경계에서 리셋되지 않는다.
+	FFF_FixedCostArrears Arrears;
 
+	// 무페이 기본 팀 + 오늘 고용한 알바.
+	FFF_StaffPool StaffPool;
+	
+	// 임대료를 마지막으로 정산한 날. 같은 날 중복 정산을 막는 수단이다.
+	int32 LastProcessedDay = 0;
+	
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UPROPERTY()
 	TObjectPtr<const UFF_FestivalDefinition> Definition;
-	
 };

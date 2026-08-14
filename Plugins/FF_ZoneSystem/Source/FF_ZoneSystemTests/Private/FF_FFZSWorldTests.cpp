@@ -172,6 +172,16 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Facility Read Model 위치는 저장 Snapshot Transform의 위치와 같다"),
         InstalledFacilityModel->WorldLocation.Equals(
             FirstFacility->CaptureInstanceSnapshot().WorldTransform.GetLocation()));
+    FTransform InstalledApproachWorldTransform;
+    TestTrue(TEXT("유효한 Facility는 필수 Entry[0] 월드 접근점을 제공한다"),
+        FirstFacility->GetAnchorWorldTransform(
+            EFFZSAnchorType::Entry,
+            0,
+            InstalledApproachWorldTransform));
+    TestTrue(TEXT("Facility Read Model은 접근점 유효성을 명시한다"),
+        InstalledFacilityModel->bHasApproachWorldTransform);
+    TestTrue(TEXT("Facility Read Model 접근점은 Actor의 Entry[0] 월드 Transform과 같다"),
+        InstalledFacilityModel->ApproachWorldTransform.Equals(InstalledApproachWorldTransform));
 
     const FFFZSCommandResult ReplayResult = Subsystem->ExecuteCommand(InstallFirst);
     TestTrue(TEXT("동일한 CommandId와 Payload가 성공적으로 Replay된다"), ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
@@ -268,6 +278,12 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Normal Close가 성공한다"), Subsystem->ExecuteCommand(CloseSecond).bSucceeded);
     TestEqual(TEXT("비어 있는 Closed Facility는 MovePending 상태가 된다"), SecondFacility->GetFacilityState(), EFFZSFacilityState::MovePending);
 
+    FTransform SecondApproachBeforeMove;
+    TestTrue(TEXT("이동 전 Facility의 Entry[0] 접근점을 조회할 수 있다"),
+        SecondFacility->GetAnchorWorldTransform(
+            EFFZSAnchorType::Entry,
+            0,
+            SecondApproachBeforeMove));
     const FFFZSCommand MoveSecond = MakeMoveCommand(InstallSecond.FacilityInstanceId, ZoneId, FIntPoint(4000, 4000), 6);
     const FFFZSCommandResult MoveResult = Subsystem->ExecuteCommand(MoveSecond);
     TestTrue(TEXT("Drain이 끝난 Facility가 트랜잭션으로 이동한다"), MoveResult.bSucceeded);
@@ -276,6 +292,29 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     {
         return false;
     }
+    FTransform SecondApproachAfterMove;
+    TestTrue(TEXT("이동 후 Facility의 Entry[0] 접근점을 다시 조회할 수 있다"),
+        SecondFacility->GetAnchorWorldTransform(
+            EFFZSAnchorType::Entry,
+            0,
+            SecondApproachAfterMove));
+    TestFalse(TEXT("시설 이동은 접근점 월드 위치를 갱신한다"),
+        SecondApproachAfterMove.GetLocation().Equals(SecondApproachBeforeMove.GetLocation()));
+
+    const FFFZSReadModel MovedReadModel = Subsystem->BuildReadModel();
+    const FFFZSFacilityReadModel* MovedFacilityModel = MovedReadModel.Facilities.FindByPredicate(
+        [&InstallSecond](const FFFZSFacilityReadModel& Candidate)
+        {
+            return Candidate.FacilityInstanceId == InstallSecond.FacilityInstanceId;
+        });
+    if (!TestNotNull(TEXT("이동된 Facility가 새 Read Model에 포함된다"), MovedFacilityModel))
+    {
+        return false;
+    }
+    TestTrue(TEXT("이동된 Facility Read Model은 접근점 유효성을 유지한다"),
+        MovedFacilityModel->bHasApproachWorldTransform);
+    TestTrue(TEXT("이동 뒤 새 Read Model은 갱신된 Entry[0] 월드 Transform을 제공한다"),
+        MovedFacilityModel->ApproachWorldTransform.Equals(SecondApproachAfterMove));
 
     FVector RaisedLocation = SecondFacility->GetActorLocation();
     RaisedLocation.Z = 123.0;

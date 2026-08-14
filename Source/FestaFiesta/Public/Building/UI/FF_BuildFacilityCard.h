@@ -47,7 +47,7 @@ public:
 	FName GetFacilityDefinitionId() const { return Entry.FacilityDefinitionId; }
 
 	// UMG와 Slate 폴백이 공유하는 지역화된 hover 가격 문구입니다.
-	static FText MakeInstallCostToolTip(const FFF_BuildCatalogEntry& CatalogEntry);
+	static FText MakeFacilityCostToolTip(const FFF_BuildCatalogEntry& CatalogEntry);
 
 	const FFF_BuildCatalogEntry& GetCatalogEntry() const { return Entry; }
 
@@ -61,8 +61,8 @@ private:
 	// Configure 호출 시점과 WidgetTree 생성 시점이 달라도 같은 결과가 되도록 바인딩을 한곳에 모은다. 
 	void ApplyEntryToWidgets();
 	void ApplyThumbnailToWidget();
-	void RefreshInstallCostTooltip();
-	void ApplyInstallCostTextFallback();
+	void RefreshFacilityCostTooltip();
+	void ApplyFacilityCostTextFallback();
 
 	// 원본 카탈로그 배열 수명과 분리된 카드별 데이터 스냅샷이다. 
 	UPROPERTY(Transient)
@@ -85,9 +85,11 @@ private:
 	 * 기존 카드 WBP를 수정하지 않고 연결하는 디자이너 편집형 가격 툴팁입니다.
 	 * 클래스가 없거나 생성에 실패하면 지역화된 기본 텍스트 툴팁으로 자동 폴백합니다.
 	 */
-	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Tooltip")
+	// 직렬화 이름은 기존 카드 WBP 호환성을 위해 유지하고 디자이너 표시명만 현재 역할에 맞춥니다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Tooltip",
+		meta = (DisplayName = "Facility Cost Tooltip Class"))
 	TSoftClassPtr<UFF_BuildFacilityCostTooltip> InstallCostTooltipClass;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UFF_BuildFacilityCostTooltip> InstallCostTooltip;
+	TObjectPtr<UFF_BuildFacilityCostTooltip> FacilityCostTooltip;
 };
