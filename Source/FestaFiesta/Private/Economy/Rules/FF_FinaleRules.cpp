@@ -1,4 +1,4 @@
-#include "../../Public/Economy/FF_FinaleRules.h"
+﻿#include "Economy/Rules/FF_FinaleRules.h"
 
 const FFF_FinaleTier* FFF_FinaleRules::FindTier(const TArray<FFF_FinaleTier>& Tiers, EFF_FinaleGrade Grade)
 {

@@ -1,10 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "Economy/FF_DayLedger.h"
+#include "Economy/Rules/FF_DayLedger.h"
 
 // 원인별로 정확히 누적되고, 다른 원인끼리는 서로 안 섞인다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayLedger_RecordSpendAccumulatesByReason, "FestaFiesta.Economy.DayLedger.RecordSpendAccumulatesByReason", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

@@ -1,9 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 
 #include "Economy/FF_EconomyLog.h"
-#include "Economy/FF_FinaleRules.h"
+#include "Economy/Rules/FF_FinaleRules.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 

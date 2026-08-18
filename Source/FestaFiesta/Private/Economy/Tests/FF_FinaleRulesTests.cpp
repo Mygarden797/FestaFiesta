@@ -1,10 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "Economy/FF_FinaleRules.h"
+#include "Economy/Rules/FF_FinaleRules.h"
 
 /**
  * 피날레 구매 판정 (S7). [참고] economy_spec.md §5.1 S7 · §3.1 · §3.4

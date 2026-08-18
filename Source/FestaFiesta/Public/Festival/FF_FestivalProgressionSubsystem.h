@@ -1,13 +1,13 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
-#include "Economy/FF_FestivalFunds.h"
-#include "Economy/FF_DayLedger.h"
-#include "Economy/FF_FixedCostArrears.h"
-#include "Economy/FF_StaffPool.h"
+#include "Economy/Rules/FF_FestivalFunds.h"
+#include "Economy/Rules/FF_DayLedger.h"
+#include "Economy/Rules/FF_FixedCostArrears.h"
+#include "Economy/Rules/FF_StaffPool.h"
 #include "FF_FestivalProgressionSubsystem.generated.h"
 
 class UFF_FestivalDefinition;
