@@ -187,9 +187,25 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		// 흐른 시간을 누적하는 방식
 
 
+		float EffectiveNightLightingTrigger = NightLightingTriggerSeconds;
+		// 일단 기본값으로 시작
+
+		if (TimeSettingsTable)
+			// 표가 실제로 연결되어 있으면
+		{
+			TArray<FFF_TimeSettingRow*> AllSettings;
+			TimeSettingsTable->GetAllRows<FFF_TimeSettingRow>(TEXT("Tick_NightLighting"), AllSettings);
+
+			if (AllSettings.Num() > 0)
+				// 행이 하나라도 있으면
+			{
+				EffectiveNightLightingTrigger = AllSettings[0]->NightLightingTriggerSeconds;
+				// 표에 있는 값으로 덮어쓰기
+			}
+		}
+
 		// 밤 조명 켤 시간이 됐는지 매 프레임 확인
-		if (!bNightLightingActivated && ElapsedLiveSeconds >= NightLightingTriggerSeconds)
-			// 아직 안 켰고, 지금까지 지난 시간이 트리거 시간 이상이면
+		if (!bNightLightingActivated && ElapsedLiveSeconds >= EffectiveNightLightingTrigger)
 		{
 			bNightLightingActivated = true;
 			// 다시 안 켜지게 표시 
