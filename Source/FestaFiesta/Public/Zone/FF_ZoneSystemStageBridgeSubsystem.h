@@ -11,6 +11,57 @@
 class UFF_FestivalStageSubsystem;
 class UFFZSWorldSubsystem;
 
+/** 한 번의 시설 개장/폐쇄 배치가 수행된 이유입니다. */
+UENUM(BlueprintType)
+enum class EFF_ZoneFacilityLifecycleAction : uint8
+{
+	None,
+	AutomaticOpen,
+	AutomaticClose,
+	ManualOpen,
+	ManualClose,
+	ManualEmergencyClose
+};
+
+/** 자동 운영과 테스트 패널이 공유하는 시설 개폐 배치 결과입니다. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_ZoneFacilityLifecycleBatchResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	EFF_ZoneFacilityLifecycleAction Action = EFF_ZoneFacilityLifecycleAction::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	int32 AttemptedCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	int32 SucceededCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	int32 FailedCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	int32 SkippedCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	int64 StartingWorldRevision = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	int64 FinalWorldRevision = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	TArray<FGuid> FailedFacilityIds;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FF Zone System|Integration|Lifecycle")
+	FText Summary;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FFF_OnZoneFacilityLifecycleBatchCompleted,
+	const FFF_ZoneFacilityLifecycleBatchResult&,
+	Result);
+
 /**
  * 프로젝트의 축제 진행 단계와 FF_ZoneSystem의 시설 변경 단계를 연결한다.
  *
@@ -40,6 +91,30 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FF Zone System|Integration|Stage")
 	static EFFZSChangePhase ToZoneChangePhase(EFF_FestivalStage FestivalStage);
 
+	/** 실제 Live 진입/이탈에서만 자동 개폐 명령을 만드는 순수 edge 판정입니다. */
+	static bool TryGetAutomaticLifecycleCommand(
+		EFF_FestivalStage PreviousStage,
+		EFF_FestivalStage NewStage,
+		EFFZSCommandType& OutCommandType);
+
+	/** Live에서 Validated/MovePending 시설을 열고, 선택적으로 수동 Closed 시설도 다시 엽니다. */
+	UFUNCTION(BlueprintCallable, Category = "FF Zone System|Integration|Lifecycle")
+	FFF_ZoneFacilityLifecycleBatchResult OpenEligibleFacilities(
+		bool bIncludeClosedFacilities = true);
+
+	/** 현재 Active 시설을 정상 폐쇄하거나 테스트 목적의 긴급 폐쇄로 전환합니다. */
+	UFUNCTION(BlueprintCallable, Category = "FF Zone System|Integration|Lifecycle")
+	FFF_ZoneFacilityLifecycleBatchResult CloseActiveFacilities(bool bEmergency = false);
+
+	UFUNCTION(BlueprintPure, Category = "FF Zone System|Integration|Lifecycle")
+	FFF_ZoneFacilityLifecycleBatchResult GetLastLifecycleBatchResult() const
+	{
+		return LastLifecycleBatchResult;
+	}
+
+	UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Integration|Lifecycle")
+	FFF_OnZoneFacilityLifecycleBatchCompleted OnFacilityLifecycleBatchCompleted;
+
 	// IFFZSExternalPolicy: Production 통합 준비도에서 SimulationTime 제공자로 참여한다.
 	virtual FName GetFFZoneSystemPolicyName_Implementation() const override;
 	virtual EFFZSPolicyDomain GetFFZoneSystemPolicyDomain_Implementation() const override;
@@ -56,6 +131,12 @@ private:
 
 	bool TrySynchronizeStage(bool bScheduleOneRetry);
 	void RetryStageSynchronization();
+	void ScheduleAutomaticLifecycle();
+	void RunScheduledAutomaticLifecycle();
+	FFF_ZoneFacilityLifecycleBatchResult ExecuteLifecycleBatch(
+		EFFZSCommandType CommandType,
+		EFF_ZoneFacilityLifecycleAction Action,
+		bool bIncludeClosedFacilities);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;
@@ -65,4 +146,10 @@ private:
 
 	bool bPolicyRegistered = false;
 	bool bStageSyncRetryScheduled = false;
+	bool bAutomaticLifecycleScheduled = false;
+	int32 AutomaticLifecycleRetryCount = 0;
+	TOptional<EFFZSCommandType> PendingAutomaticLifecycleCommand;
+
+	UPROPERTY(Transient)
+	FFF_ZoneFacilityLifecycleBatchResult LastLifecycleBatchResult;
 };
