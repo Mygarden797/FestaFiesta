@@ -90,11 +90,6 @@ public:
 	
 	// --- 하루 경계 ---------------------------------------------------------
 	
-	/*
-	 * [1] TodayRevenue·DayLedger 를 리셋. 미납(Arrears)은 리셋하지 않는다.
-	 * [2] 임대료 납부 (하루 1회 정산)
-	 * [3] 알바 고용
-	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void BeginNewDay(int32 NewDay);
 	
