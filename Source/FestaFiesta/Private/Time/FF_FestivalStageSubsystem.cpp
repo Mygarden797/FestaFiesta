@@ -12,6 +12,8 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 		// 날마다 길이가 달라, 시계를 0으로 리셋함
 	bWasMainProgramLocked = false;
 	// 날짜 바뀔 때 공연 시작 체크도 초기화
+	bNightLightingActivated = false;
+	// 단계/날짜 바뀔 때 밤 조명 트리거도 다시 켤 수 있게 초기화
 	LastBroadcastSeconds = -1;
 	// 단계 바뀔 때마다 리셋해서 새 단계 첫 초도 반드시 방송되게 함
 	
@@ -184,8 +186,38 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
 		// 흐른 시간을 누적하는 방식
 
+
+		float EffectiveNightLightingTrigger = NightLightingTriggerSeconds;
+		// 일단 기본값으로 시작
+
+		if (TimeSettingsTable)
+			// 표가 실제로 연결되어 있으면
+		{
+			TArray<FFF_TimeSettingRow*> AllSettings;
+			TimeSettingsTable->GetAllRows<FFF_TimeSettingRow>(TEXT("Tick_NightLighting"), AllSettings);
+
+			if (AllSettings.Num() > 0)
+				// 행이 하나라도 있으면
+			{
+				EffectiveNightLightingTrigger = AllSettings[0]->NightLightingTriggerSeconds;
+				// 표에 있는 값으로 덮어쓰기
+			}
+		}
+
+		// 밤 조명 켤 시간이 됐는지 매 프레임 확인
+		if (!bNightLightingActivated && ElapsedLiveSeconds >= EffectiveNightLightingTrigger)
+		{
+			bNightLightingActivated = true;
+			// 다시 안 켜지게 표시 
+
+			UE_LOG(LogTemp, Log, TEXT("밤 조명 활성화! ElapsedLiveSeconds=%f"), ElapsedLiveSeconds);
+			
+
+			OnNightLightingActivated.Broadcast();
+			//  Light Manager에게 신호 보냄
+		}
 		RemainingTime = FMath::Max(GetLiveDurationForCurrentDay() - ElapsedLiveSeconds, 0.f);
-		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산 (0 밑으로 안 내려가게 함)
+		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산
 	}
 	else
 		//(Setup/Promotion/MorningCheck/Closing/Report) 처리
@@ -272,6 +304,14 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 		return;
 	}
 
+	const float TodayLiveDuration = GetLiveDurationForCurrentDay();
+	// 오늘 Live 총 길이를 미리 구해둠 (CurrentDay가 바뀌기 전에 구해야 오늘 값이 맞음)
+
+	UE_LOG(LogTemp, Log, TEXT("Day %d 종료! TodayLiveDuration=%f"), CurrentDay, TodayLiveDuration);
+
+
+	OnDayEnded.Broadcast(CurrentDay, TodayLiveDuration);
+	// 며칠째가 끝났고, 그날 Live가 몇 초였는지 신호로 전달
 
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);
