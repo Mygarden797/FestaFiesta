@@ -39,6 +39,10 @@ public:
 	// 하루 경계 정산을 수행할 Progression 서브시스템을 지정한다.
 	void SetProgression(UFF_FestivalProgressionSubsystem* InProgression);
 
+	// 지금 피날레를 살 수 있는 단계인가 (Day3 MorningCheck).
+	// 버튼 표시용이고 구매를 막지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool CanPurchaseFinaleNow() const;
 private:
 	
 	// Stage 변경 이벤트를 받아 현재 날짜와 함께 경제 정산 처리로 전달한다.

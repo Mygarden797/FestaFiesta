@@ -13,6 +13,7 @@
 class UFF_FestivalDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
 
 /**
  * 잔액 규칙은 FFF_FestivalFunds(순수 구조체)가 갖고, 여기는 "상태 보관과 통지"만 한다.
@@ -134,6 +135,25 @@ public:
 	FFF_OnEconomyValueChanged OnTotalStaffCountChanged;
 	
 	
+	// --- 피날레 -----------------------------------------------------------
+
+	// 피날레를 구매한다. 실패 이유를 결과로 돌려주고, 실패 시 상태를 전혀 바꾸지 않는다.
+	// Day3 MorningCheck 판정은 UFF_StageEconomyBridgeSubsystem 에서 진행
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	EFF_FinalePurchaseResult TryPurchaseFinale(EFF_FinaleGrade Grade);
+
+	// 구매한 등급. 안 샀으면 None.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	EFF_FinaleGrade GetPurchasedFinaleGrade() const { return PurchasedFinaleGrade; }
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnFinaleGradeChanged OnFinaleGradeChanged;
+
+	// 구매한 등급의 만족도 가산값 (0~100 척도). 안 샀으면 0.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetFinaleSatisfactionBonus() const;
+	
+	
 	// --- 미납 -------------------------------------------------------------
 	
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
@@ -179,6 +199,9 @@ private:
 	
 	// 임대료를 마지막으로 정산한 날. 같은 날 중복 정산을 막는 수단이다.
 	int32 LastProcessedDay = 0;
+	
+	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.
+	EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
 	
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UPROPERTY()

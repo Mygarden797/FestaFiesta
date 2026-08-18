@@ -58,6 +58,15 @@ void UFF_StageEconomyBridgeSubsystem::SetProgression(UFF_FestivalProgressionSubs
 	}
 }
 
+bool UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow() const
+{
+	if (Stage == nullptr || Progression == nullptr) return false;
+	
+	if (Progression->GetPurchasedFinaleGrade() != EFF_FinaleGrade::None) return false;
+	
+	return Stage->IsFinalDay() && Stage->CurrentStage == EFF_FestivalStage::MorningCheck;
+}
+
 void UFF_StageEconomyBridgeSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
 {
 	ProcessStageEntry(NewStage, Stage != nullptr ? Stage->CurrentDay : 0);
