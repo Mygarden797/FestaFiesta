@@ -61,6 +61,10 @@ struct FFF_TimeSettingRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float MainProgramLockLeadSeconds = 10.f;
 	// 메인 공연 몇 초 전부터 배속을 잠글지
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float NightLightingTriggerSeconds = 90.f;
+	// Live 시작 후 몇 초 뒤에 밤 조명을 켤지 
 };
 
 USTRUCT(BlueprintType)
@@ -125,7 +129,7 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Config")
 	float NightLightingTriggerSeconds = 90.f;
-	// Live 시작 후 몇 초 뒤에 밤 조명을 켤지 (17:00 + 90분 = 18:30 기준, 나중에 표로 뺄 예정)
+	// 기본값이고 실제 값은 TimeSettingsTable에서 가져옴
 
 	bool bNightLightingActivated = false;
 	// 오늘 이미 밤 조명을 켰는지 여부 
