@@ -106,6 +106,13 @@ public:
     AFFZSFacilityActor* FindFacility(FGuid FacilityInstanceId) const;
     // 현재 유효한 등록 시설을 반환한다. 잘못된 GUID나 소멸한 액터면 nullptr. 
 
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    AFFZSFacilityActor* FindFacilityAtWorldPoint(
+        const FVector& WorldPoint,
+        FName ZoneId = NAME_None) const;
+    // 등록된 시설 중 월드 지점이 footprint 안에 있는 가장 가까운 시설을 반환한다.
+    // ZoneId가 비어 있으면 현재 등록 Zone 경계에서 해석하며, 같은 거리에서는 InstanceId로 결정한다.
+
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Workflow")
     bool SetChangePhase(EFFZSChangePhase NewPhase);
     // 재진입이 아니고 enum 값이 유효할 때 운영 단계를 교체한다. 이 설정 자체는 WorldRevision을 증가시키지 않는다.
