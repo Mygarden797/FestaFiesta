@@ -103,15 +103,13 @@ namespace FFF_DayBoundaryTestHelpers
 	};
 }
 
-using namespace FFF_DayBoundaryTestHelpers;
-
 // 임대료가 **날마다 정확히 1회** 징수된다. 같은 날을 두 번 열어도 두 번 빠지지 않는다.
 // RequestTransition 에 같은 단계 가드가 없어서 MorningCheck 재진입이 실제로 가능하고,
 // 이중 징수는 크래시도 로그도 없이 3일 수지(§2.5)만 조용히 깨뜨린다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RentSettlesExactlyOncePerDay, "FestaFiesta.Economy.DayBoundary.RentSettlesExactlyOncePerDay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_RentSettlesExactlyOncePerDay::RunTest(const FString& Parameters)
 {
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
 	{
 		return false;
@@ -119,25 +117,27 @@ bool FFF_DayBoundary_RentSettlesExactlyOncePerDay::RunTest(const FString& Parame
 
 	// StartFestival 이 Day1 을 정산했다. 임금은 고정비가 아니므로 임대료만 나간다.
 	TestEqual(TEXT("Day1 이 축제 시작과 함께 정산된다"),
-		Harness.Progression->GetGold(), 10000 - DailyRent);
+		Harness.Progression->GetGold(), 10000 - FFF_DayBoundaryTestHelpers::DailyRent);
 	TestEqual(TEXT("마지막 정산일이 1 이다"), Harness.Progression->GetLastProcessedDay(), 1);
 
 	// 같은 날을 다시 열어도 아무 일도 없어야 한다. 이 줄이 "정확히 1회"를 고정한다.
 	Harness.Progression->BeginNewDay(1);
 	TestEqual(TEXT("Day1 을 다시 열어도 임대료가 두 번 빠지지 않는다"),
-		Harness.Progression->GetGold(), 10000 - DailyRent);
+		Harness.Progression->GetGold(), 10000 - FFF_DayBoundaryTestHelpers::DailyRent);
 
 	// 지난 날로 되돌리는 호출도 무시된다.
 	Harness.Progression->BeginNewDay(0);
 	TestEqual(TEXT("지난 날 호출은 무시된다"),
-		Harness.Progression->GetGold(), 10000 - DailyRent);
+		Harness.Progression->GetGold(), 10000 - FFF_DayBoundaryTestHelpers::DailyRent);
 	TestEqual(TEXT("마지막 정산일이 되돌아가지 않는다"),
 		Harness.Progression->GetLastProcessedDay(), 1);
 
 	Harness.Progression->BeginNewDay(2);
-	TestEqual(TEXT("Day2 가 정산된다"), Harness.Progression->GetGold(), 10000 - DailyRent * 2);
+	TestEqual(TEXT("Day2 가 정산된다"), Harness.Progression->GetGold(),
+		10000 - FFF_DayBoundaryTestHelpers::DailyRent * 2);
 	Harness.Progression->BeginNewDay(2);
-	TestEqual(TEXT("Day2 재진입도 무시된다"), Harness.Progression->GetGold(), 10000 - DailyRent * 2);
+	TestEqual(TEXT("Day2 재진입도 무시된다"), Harness.Progression->GetGold(),
+		10000 - FFF_DayBoundaryTestHelpers::DailyRent * 2);
 
 	// 3일 임대료 합계가 7,200 이어야 한다 — §2.6 입장료 7,500 이 이를 덮는다.
 	Harness.Progression->BeginNewDay(3);
@@ -153,7 +153,7 @@ bool FFF_DayBoundary_RentSettlesExactlyOncePerDay::RunTest(const FString& Parame
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_ResetsOnlyDailyScopedValues, "FestaFiesta.Economy.DayBoundary.ResetsOnlyDailyScopedValues", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_ResetsOnlyDailyScopedValues::RunTest(const FString& Parameters)
 {
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
 	{
 		return false;
@@ -180,12 +180,13 @@ bool FFF_DayBoundary_ResetsOnlyDailyScopedValues::RunTest(const FString& Paramet
 	// --- 유지되는 것 ---
 	TestEqual(TEXT("누적 매출은 유지된다"), Harness.Progression->GetTotalRevenue(), 1200);
 	// 기본 팀이 리셋되면 잔액 0 에서 인원이 0 이 되어 회복이 불가능해진다 (§2.5.1).
-	TestEqual(TEXT("기본 Staff 는 유지된다"), Harness.Progression->GetBaseStaffCount(), BaseStaff);
+	TestEqual(TEXT("기본 Staff 는 유지된다"), Harness.Progression->GetBaseStaffCount(),
+		FFF_DayBoundaryTestHelpers::BaseStaff);
 	TestEqual(TEXT("전체 인원은 기본 팀만 남는다"),
-		Harness.Progression->GetTotalStaffCount(), BaseStaff);
+		Harness.Progression->GetTotalStaffCount(), FFF_DayBoundaryTestHelpers::BaseStaff);
 	// 잔액은 리셋되지 않는다 — 어제 번 돈으로 오늘을 산다.
 	TestEqual(TEXT("잔액은 어제 값에서 오늘 임대료만 빠진다"),
-		Harness.Progression->GetGold(), GoldBeforeNewDay - DailyRent);
+		Harness.Progression->GetGold(), GoldBeforeNewDay - FFF_DayBoundaryTestHelpers::DailyRent);
 
 	return true;
 }
@@ -196,7 +197,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_DoesNotAutoHire, "FestaFiesta.E
 bool FFF_DayBoundary_DoesNotAutoHire::RunTest(const FString& Parameters)
 {
 	// 돈이 넉넉해도 자동으로 고용하지 않아야 한다.
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(100'000)))
 	{
 		return false;
@@ -207,7 +208,7 @@ bool FFF_DayBoundary_DoesNotAutoHire::RunTest(const FString& Parameters)
 	TestEqual(TEXT("임금이 한 푼도 안 나갔다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffWages), 0);
 	TestEqual(TEXT("잔액에서 임대료만 빠졌다"),
-		Harness.Progression->GetGold(), 100'000 - DailyRent);
+		Harness.Progression->GetGold(), 100'000 - FFF_DayBoundaryTestHelpers::DailyRent);
 
 	Harness.Progression->BeginNewDay(2);
 	TestEqual(TEXT("새 날에도 자동 고용하지 않는다"),
@@ -217,7 +218,7 @@ bool FFF_DayBoundary_DoesNotAutoHire::RunTest(const FString& Parameters)
 
 	// 고용은 플레이어가 부를 때만 일어난다.
 	TestEqual(TEXT("살 수 있는 인원은 상한까지다"),
-		Harness.Progression->GetAffordableTemporaryStaffCount(), MaxHires);
+		Harness.Progression->GetAffordableTemporaryStaffCount(), FFF_DayBoundaryTestHelpers::MaxHires);
 
 	return true;
 }
@@ -228,7 +229,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RentBecomesArrearsButBaseStaffS
 bool FFF_DayBoundary_RentBecomesArrearsButBaseStaffSurvives::RunTest(const FString& Parameters)
 {
 	// 임대료 2,400 인데 1,000 뿐이다.
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(1000)))
 	{
 		return false;
@@ -241,7 +242,7 @@ bool FFF_DayBoundary_RentBecomesArrearsButBaseStaffSurvives::RunTest(const FStri
 
 	// 자금난의 바닥 — 잔액 0 이어도 기본 팀은 일한다.
 	TestEqual(TEXT("잔액 0 이어도 기본 Staff 는 일한다"),
-		Harness.Progression->GetTotalStaffCount(), BaseStaff);
+		Harness.Progression->GetTotalStaffCount(), FFF_DayBoundaryTestHelpers::BaseStaff);
 	TestEqual(TEXT("알바는 고용되지 않는다"),
 		Harness.Progression->GetTemporaryStaffCount(), 0);
 	TestEqual(TEXT("살 수 있는 알바가 0명이다"),
@@ -260,7 +261,7 @@ bool FFF_DayBoundary_RentBecomesArrearsButBaseStaffSurvives::RunTest(const FStri
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RevenueRepaysArrearsFirst, "FestaFiesta.Economy.DayBoundary.RevenueRepaysArrearsFirst", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_RevenueRepaysArrearsFirst::RunTest(const FString& Parameters)
 {
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(1000)))
 	{
 		return false;
@@ -290,7 +291,7 @@ bool FFF_DayBoundary_RevenueRepaysArrearsFirst::RunTest(const FString& Parameter
 	// 상환분까지 합쳐 임대료 지출이 하루치 2,400 이 된다 — 늦게 나갔을 뿐 같은 임대료다.
 	TestEqual(TEXT("임대료 지출이 하루치로 채워진다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::VenueRent),
-		DailyRent);
+		FFF_DayBoundaryTestHelpers::DailyRent);
 
 	// 정합성 불변식: 초기Gold + Σ매출 − Σ지출 == Gold. 환급은 매출이 아니라 별도다.
 	const int32 Refunded = Harness.Progression->GetDayLedger().GetTotalRefund();
@@ -310,7 +311,7 @@ bool FFF_DayBoundary_RevenueRepaysArrearsFirst::RunTest(const FString& Parameter
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_TodayRevenueMatchesLedgerSum, "FestaFiesta.Economy.DayBoundary.TodayRevenueMatchesLedgerSum", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_TodayRevenueMatchesLedgerSum::RunTest(const FString& Parameters)
 {
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
 	{
 		return false;
@@ -339,7 +340,7 @@ bool FFF_DayBoundary_TodayRevenueMatchesLedgerSum::RunTest(const FString& Parame
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_HireRejectsInsteadOfPartialHiring, "FestaFiesta.Economy.DayBoundary.HireRejectsInsteadOfPartialHiring", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_HireRejectsInsteadOfPartialHiring::RunTest(const FString& Parameters)
 {
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
 	{
 		return false;
@@ -349,23 +350,25 @@ bool FFF_DayBoundary_HireRejectsInsteadOfPartialHiring::RunTest(const FString& P
 
 	// 상한 초과는 거부되고 상태가 그대로다.
 	TestFalse(TEXT("상한을 넘는 요청은 거부된다"),
-		Harness.Progression->TryHireTemporaryStaff(MaxHires + 1));
+		Harness.Progression->TryHireTemporaryStaff(FFF_DayBoundaryTestHelpers::MaxHires + 1));
 	TestEqual(TEXT("거부되면 아무도 고용되지 않는다"),
 		Harness.Progression->GetTemporaryStaffCount(), 0);
 	TestEqual(TEXT("거부되면 잔액이 그대로다"), Harness.Progression->GetGold(), GoldAfterRent);
 
 	// 정상 고용.
 	TestTrue(TEXT("상한과 같은 인원은 고용된다"),
-		Harness.Progression->TryHireTemporaryStaff(MaxHires));
+		Harness.Progression->TryHireTemporaryStaff(FFF_DayBoundaryTestHelpers::MaxHires));
 	TestEqual(TEXT("고용 인원이 반영된다"),
-		Harness.Progression->GetTemporaryStaffCount(), MaxHires);
+		Harness.Progression->GetTemporaryStaffCount(), FFF_DayBoundaryTestHelpers::MaxHires);
 	TestEqual(TEXT("임금이 인원분만큼 빠진다"),
-		Harness.Progression->GetGold(), GoldAfterRent - MaxHires * WagePerStaff);
+		Harness.Progression->GetGold(), GoldAfterRent
+			- FFF_DayBoundaryTestHelpers::MaxHires * FFF_DayBoundaryTestHelpers::WagePerStaff);
 	TestEqual(TEXT("임금이 원장에 기록된다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffWages),
-		MaxHires * WagePerStaff);
+		FFF_DayBoundaryTestHelpers::MaxHires * FFF_DayBoundaryTestHelpers::WagePerStaff);
 	TestEqual(TEXT("전체 인원은 기본 + 알바다"),
-		Harness.Progression->GetTotalStaffCount(), BaseStaff + MaxHires);
+		Harness.Progression->GetTotalStaffCount(),
+		FFF_DayBoundaryTestHelpers::BaseStaff + FFF_DayBoundaryTestHelpers::MaxHires);
 
 	// 상한을 다 썼으면 1명도 더 안 된다. 누적으로 상한을 본다.
 	TestEqual(TEXT("남은 고용 여력이 0 이다"),
@@ -373,7 +376,7 @@ bool FFF_DayBoundary_HireRejectsInsteadOfPartialHiring::RunTest(const FString& P
 	TestFalse(TEXT("상한을 다 쓰면 추가 고용이 거부된다"),
 		Harness.Progression->TryHireTemporaryStaff(1));
 	TestEqual(TEXT("거부 후에도 인원이 그대로다"),
-		Harness.Progression->GetTemporaryStaffCount(), MaxHires);
+		Harness.Progression->GetTemporaryStaffCount(), FFF_DayBoundaryTestHelpers::MaxHires);
 
 	// 0 이하 요청은 거부된다 (고용 명령으로 돈을 돌려받는 경로를 만들지 않는다).
 	TestFalse(TEXT("0명 요청은 거부된다"), Harness.Progression->TryHireTemporaryStaff(0));
@@ -387,7 +390,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_HireRejectedWhenGoldIsShort, "F
 bool FFF_DayBoundary_HireRejectedWhenGoldIsShort::RunTest(const FString& Parameters)
 {
 	// 임대료 2,400 을 내고 400 이 남는다 -> 2명분(300)만 살 수 있다.
-	FDayBoundaryHarness Harness;
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(2800)))
 	{
 		return false;
@@ -410,7 +413,7 @@ bool FFF_DayBoundary_HireRejectedWhenGoldIsShort::RunTest(const FString& Paramet
 	TestTrue(TEXT("2명은 고용된다"), Harness.Progression->TryHireTemporaryStaff(2));
 	TestEqual(TEXT("2명분 임금만 빠진다"), Harness.Progression->GetGold(), 100);
 	TestEqual(TEXT("전체 인원은 기본 + 2명"),
-		Harness.Progression->GetTotalStaffCount(), BaseStaff + 2);
+		Harness.Progression->GetTotalStaffCount(), FFF_DayBoundaryTestHelpers::BaseStaff + 2);
 
 	return true;
 }
