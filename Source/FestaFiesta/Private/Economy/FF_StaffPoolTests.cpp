@@ -33,21 +33,22 @@ namespace FFF_StaffPoolTestHelpers
 	}
 }
 
-using namespace FFF_StaffPoolTestHelpers;
-
 // 기본 팀이 초기 인원이 되고, 고용 인원은 0 에서 시작한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StaffPool_InitializeSetsBaseTeam, "FestaFiesta.Economy.StaffPool.InitializeSetsBaseTeam", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StaffPool_InitializeSetsBaseTeam::RunTest(const FString& Parameters)
 {
-	const FFF_StaffPool Pool = MakeStaffPoolWithBaseTeam(BaseTeamSize);
+	const FFF_StaffPool Pool = FFF_StaffPoolTestHelpers::MakeStaffPoolWithBaseTeam(
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 
-	TestEqual(TEXT("기본 팀이 초기 인원이 된다"), Pool.GetBaseStaffCount(), BaseTeamSize);
+	TestEqual(TEXT("기본 팀이 초기 인원이 된다"), Pool.GetBaseStaffCount(),
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 	// 아직 아침이 오지 않았다. 하루 경계가 고용 인원을 정한다.
 	TestEqual(TEXT("고용 인원은 0 에서 시작한다"), Pool.GetTemporaryStaffCount(), 0);
-	TestEqual(TEXT("전체 인원은 기본 팀뿐이다"), Pool.GetTotalStaffCount(), BaseTeamSize);
+	TestEqual(TEXT("전체 인원은 기본 팀뿐이다"), Pool.GetTotalStaffCount(),
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 
 	// 음수 인원은 0 으로 막는다 — 불변식을 이 구조체 안에서 닫는다.
-	const FFF_StaffPool Negative = MakeStaffPoolWithBaseTeam(-3);
+	const FFF_StaffPool Negative = FFF_StaffPoolTestHelpers::MakeStaffPoolWithBaseTeam(-3);
 	TestEqual(TEXT("음수 기본 팀은 0 이 된다"), Negative.GetBaseStaffCount(), 0);
 	TestEqual(TEXT("기본 팀 0 이면 전체도 0"), Negative.GetTotalStaffCount(), 0);
 
@@ -58,36 +59,45 @@ bool FFF_StaffPool_InitializeSetsBaseTeam::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StaffPool_AffordableHiresShrinkWithBudget, "FestaFiesta.Economy.StaffPool.AffordableHiresShrinkWithBudget", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StaffPool_AffordableHiresShrinkWithBudget::RunTest(const FString& Parameters)
 {
-	const FFF_StaffPool Pool = MakeStaffPoolWithBaseTeam(BaseTeamSize);
+	const FFF_StaffPool Pool = FFF_StaffPoolTestHelpers::MakeStaffPoolWithBaseTeam(
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 
 	// 6명분(900)이 있으면 상한까지 고용된다.
 	TestEqual(TEXT("전액 있으면 상한까지 고용"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 900, MaxHiresPerDay), MaxHiresPerDay);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 900,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay), FFF_StaffPoolTestHelpers::MaxHiresPerDay);
 	TestEqual(TEXT("돈이 남아도 상한을 넘지 않는다"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 100'000, MaxHiresPerDay), MaxHiresPerDay);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 100'000,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay), FFF_StaffPoolTestHelpers::MaxHiresPerDay);
 
 	// 400 이면 2명분(300)만. 반명분 임금을 내는 상태를 만들지 않는다 — 정수 나눗셈이 의도다.
 	TestEqual(TEXT("400 으로는 2명만 고용된다"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 400, MaxHiresPerDay), 2);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 400,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay), 2);
 	TestEqual(TEXT("일당보다 1 적으면 아무도 고용되지 않는다"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, WagePerStaff - 1, MaxHiresPerDay), 0);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff,
+			FFF_StaffPoolTestHelpers::WagePerStaff - 1, FFF_StaffPoolTestHelpers::MaxHiresPerDay), 0);
 	TestEqual(TEXT("일당과 정확히 같으면 1명 (off-by-one 방지)"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, WagePerStaff, MaxHiresPerDay), 1);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff,
+			FFF_StaffPoolTestHelpers::WagePerStaff, FFF_StaffPoolTestHelpers::MaxHiresPerDay), 1);
 
 	TestEqual(TEXT("잔액 0 이면 고용 불가"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 0, MaxHiresPerDay), 0);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 0,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay), 0);
 	TestEqual(TEXT("잔액이 음수여도 0 이다"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, -500, MaxHiresPerDay), 0);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, -500,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay), 0);
 
 	// 상한 0 이면 돈이 아무리 많아도 고용되지 않는다.
 	TestEqual(TEXT("상한 0 이면 고용 불가"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 100'000, 0), 0);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 100'000, 0), 0);
 	TestEqual(TEXT("상한이 음수여도 0 이다"),
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 100'000, -6), 0);
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 100'000, -6), 0);
 
 	// 임금이 0 이면 상한까지 고용된다 — 공짜인데 인원을 깎으면 잔액과 무관한 페널티가 된다.
 	TestEqual(TEXT("임금 0 이면 잔액 0 에서도 상한까지 고용"),
-		Pool.CalcAffordableTemporaryStaffCount(0, 0, MaxHiresPerDay), MaxHiresPerDay);
+		Pool.CalcAffordableTemporaryStaffCount(0, 0, FFF_StaffPoolTestHelpers::MaxHiresPerDay),
+		FFF_StaffPoolTestHelpers::MaxHiresPerDay);
 
 	// 조회는 상태를 바꾸지 않는다.
 	TestEqual(TEXT("조회가 고용 인원을 바꾸지 않는다"), Pool.GetTemporaryStaffCount(), 0);
@@ -100,30 +110,38 @@ bool FFF_StaffPool_AffordableHiresShrinkWithBudget::RunTest(const FString& Param
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StaffPool_HiresAreDailyAndBaseTeamSurvives, "FestaFiesta.Economy.StaffPool.HiresAreDailyAndBaseTeamSurvives", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StaffPool_HiresAreDailyAndBaseTeamSurvives::RunTest(const FString& Parameters)
 {
-	FFF_StaffPool Pool = MakeStaffPoolWithBaseTeam(BaseTeamSize);
+	FFF_StaffPool Pool = FFF_StaffPoolTestHelpers::MakeStaffPoolWithBaseTeam(
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 
 	Pool.SetTemporaryStaffCount(4);
 	TestEqual(TEXT("고용 인원이 설정된다"), Pool.GetTemporaryStaffCount(), 4);
-	TestEqual(TEXT("전체 인원은 기본 + 고용이다"), Pool.GetTotalStaffCount(), BaseTeamSize + 4);
-	TestEqual(TEXT("기본 팀은 고용과 무관하다"), Pool.GetBaseStaffCount(), BaseTeamSize);
+	TestEqual(TEXT("전체 인원은 기본 + 고용이다"), Pool.GetTotalStaffCount(),
+		FFF_StaffPoolTestHelpers::BaseTeamSize + 4);
+	TestEqual(TEXT("기본 팀은 고용과 무관하다"), Pool.GetBaseStaffCount(),
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 
 	// 다음 날 아침에 다시 정한다 — 누적이 아니라 덮어쓰기다.
 	Pool.SetTemporaryStaffCount(1);
 	TestEqual(TEXT("다음 날 고용은 누적되지 않고 덮어쓴다"), Pool.GetTemporaryStaffCount(), 1);
-	TestEqual(TEXT("전체 인원도 새 값으로 맞는다"), Pool.GetTotalStaffCount(), BaseTeamSize + 1);
+	TestEqual(TEXT("전체 인원도 새 값으로 맞는다"), Pool.GetTotalStaffCount(),
+		FFF_StaffPoolTestHelpers::BaseTeamSize + 1);
 
 	// 돈이 없는 날 — 고용 0. 그래도 기본 팀이 살아 있어야 한다.
 	Pool.SetTemporaryStaffCount(
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 0, MaxHiresPerDay));
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 0,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay));
 	TestEqual(TEXT("잔액 0 인 날은 아무도 고용되지 않는다"), Pool.GetTemporaryStaffCount(), 0);
 	// 이 줄이 자금난의 바닥을 고정한다. 기본 팀이 줄면 회복 불가능한 스파이럴이 된다.
-	TestEqual(TEXT("잔액 0 이어도 기본 팀은 일한다"), Pool.GetTotalStaffCount(), BaseTeamSize);
+	TestEqual(TEXT("잔액 0 이어도 기본 팀은 일한다"), Pool.GetTotalStaffCount(),
+		FFF_StaffPoolTestHelpers::BaseTeamSize);
 
 	// 자금이 회복되면 다시 상한까지 고용할 수 있다.
 	Pool.SetTemporaryStaffCount(
-		Pool.CalcAffordableTemporaryStaffCount(WagePerStaff, 900, MaxHiresPerDay));
+		Pool.CalcAffordableTemporaryStaffCount(FFF_StaffPoolTestHelpers::WagePerStaff, 900,
+			FFF_StaffPoolTestHelpers::MaxHiresPerDay));
 	TestEqual(TEXT("자금이 회복되면 상한까지 복귀한다"),
-		Pool.GetTotalStaffCount(), BaseTeamSize + MaxHiresPerDay);
+		Pool.GetTotalStaffCount(), FFF_StaffPoolTestHelpers::BaseTeamSize
+			+ FFF_StaffPoolTestHelpers::MaxHiresPerDay);
 
 	// 음수는 막는다.
 	Pool.SetTemporaryStaffCount(-5);
@@ -139,21 +157,23 @@ bool FFF_StaffPool_WageIsPerHeadAndClampsOnOverflow::RunTest(const FString& Para
 {
 	// 6명 × 150 = 900. §2.5.1 의 알바 최대 지출(3일 2,700)이 이 산술 위에 있다.
 	TestEqual(TEXT("6명 일당은 900"),
-		FFF_StaffPool::CalcTemporaryStaffWage(MaxHiresPerDay, WagePerStaff), 900);
+		FFF_StaffPool::CalcTemporaryStaffWage(FFF_StaffPoolTestHelpers::MaxHiresPerDay,
+			FFF_StaffPoolTestHelpers::WagePerStaff), 900);
 	TestEqual(TEXT("1명 일당은 150"),
-		FFF_StaffPool::CalcTemporaryStaffWage(1, WagePerStaff), WagePerStaff);
+		FFF_StaffPool::CalcTemporaryStaffWage(1, FFF_StaffPoolTestHelpers::WagePerStaff),
+		FFF_StaffPoolTestHelpers::WagePerStaff);
 
 	// 0 은 정상이다 — 아무도 고용하지 않은 날의 임금은 0 이고 그것도 정산 성공이다.
 	TestEqual(TEXT("0명 임금은 0"),
-		FFF_StaffPool::CalcTemporaryStaffWage(0, WagePerStaff), 0);
+		FFF_StaffPool::CalcTemporaryStaffWage(0, FFF_StaffPoolTestHelpers::WagePerStaff), 0);
 	TestEqual(TEXT("임금 단가 0 이면 총액 0"),
-		FFF_StaffPool::CalcTemporaryStaffWage(MaxHiresPerDay, 0), 0);
+		FFF_StaffPool::CalcTemporaryStaffWage(FFF_StaffPoolTestHelpers::MaxHiresPerDay, 0), 0);
 
 	// 음수로 돈을 벌 수 없어야 한다.
 	TestEqual(TEXT("음수 인원은 0"),
-		FFF_StaffPool::CalcTemporaryStaffWage(-6, WagePerStaff), 0);
+		FFF_StaffPool::CalcTemporaryStaffWage(-6, FFF_StaffPoolTestHelpers::WagePerStaff), 0);
 	TestEqual(TEXT("음수 단가는 0"),
-		FFF_StaffPool::CalcTemporaryStaffWage(MaxHiresPerDay, -150), 0);
+		FFF_StaffPool::CalcTemporaryStaffWage(FFF_StaffPoolTestHelpers::MaxHiresPerDay, -150), 0);
 
 	// 오버플로는 ensure 로 알리고 **상한에서 멈춘다.** 캐스팅만 하면 음수가 된다.
 	// ensureMsgf 는 배너·조건식·메시지·콜스택을 여러 줄로 나눠 찍고 실행마다 어느 줄이

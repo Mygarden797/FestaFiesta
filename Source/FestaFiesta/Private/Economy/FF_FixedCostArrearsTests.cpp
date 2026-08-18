@@ -21,8 +21,6 @@ namespace FFF_FixedCostArrearsTestHelpers
 	constexpr int32 DailyRent = 2400;
 }
 
-using namespace FFF_FixedCostArrearsTestHelpers;
-
 // 미납은 이자 없이 그대로 누적된다. 0·음수는 조용히 무시한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FixedCostArrears_AccumulatesWithoutInterest, "FestaFiesta.Economy.FixedCostArrears.AccumulatesWithoutInterest", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FixedCostArrears_AccumulatesWithoutInterest::RunTest(const FString& Parameters)
@@ -33,16 +31,19 @@ bool FFF_FixedCostArrears_AccumulatesWithoutInterest::RunTest(const FString& Par
 	TestEqual(TEXT("초기 미납 총액은 0"), Arrears.GetTotalArrears(), 0);
 
 	// 이틀 연속 전액 미납 — 이자 없이 산술 합이어야 한다.
-	Arrears.AddArrears(DailyRent);
+	Arrears.AddArrears(FFF_FixedCostArrearsTestHelpers::DailyRent);
 	TestFalse(TEXT("미납이 있으면 HasNoArrears 가 false"), Arrears.HasNoArrears());
-	Arrears.AddArrears(DailyRent);
-	TestEqual(TEXT("이자 없이 산술 합으로 쌓인다"), Arrears.GetTotalArrears(), DailyRent * 2);
+	Arrears.AddArrears(FFF_FixedCostArrearsTestHelpers::DailyRent);
+	TestEqual(TEXT("이자 없이 산술 합으로 쌓인다"), Arrears.GetTotalArrears(),
+		FFF_FixedCostArrearsTestHelpers::DailyRent * 2);
 
 	// 0 이하는 조용히 무시한다 — "전액 냈다"가 정상 경로다.
 	Arrears.AddArrears(0);
-	TestEqual(TEXT("0 은 미납을 바꾸지 않는다"), Arrears.GetTotalArrears(), DailyRent * 2);
+	TestEqual(TEXT("0 은 미납을 바꾸지 않는다"), Arrears.GetTotalArrears(),
+		FFF_FixedCostArrearsTestHelpers::DailyRent * 2);
 	Arrears.AddArrears(-1000);
-	TestEqual(TEXT("음수로 미납을 깎을 수 없다"), Arrears.GetTotalArrears(), DailyRent * 2);
+	TestEqual(TEXT("음수로 미납을 깎을 수 없다"), Arrears.GetTotalArrears(),
+		FFF_FixedCostArrearsTestHelpers::DailyRent * 2);
 
 	// 축제가 바뀌면 초기화된다. 하루 경계에서는 부르지 않는다.
 	Arrears.ResetArrears();
@@ -56,7 +57,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FixedCostArrears_RepaysLesserOfBudgetAndDeb
 bool FFF_FixedCostArrears_RepaysLesserOfBudgetAndDebt::RunTest(const FString& Parameters)
 {
 	FFF_FixedCostArrears Arrears;
-	Arrears.AddArrears(DailyRent);   // 2,400
+	Arrears.AddArrears(FFF_FixedCostArrearsTestHelpers::DailyRent);   // 2,400
 
 	// 예산이 모자라면 예산만큼만.
 	TestEqual(TEXT("예산까지만 상환된다"), Arrears.RepayArrears(1000), 1000);
@@ -70,13 +71,16 @@ bool FFF_FixedCostArrears_RepaysLesserOfBudgetAndDebt::RunTest(const FString& Pa
 	TestEqual(TEXT("미납이 없으면 상환액 0"), Arrears.RepayArrears(5000), 0);
 
 	// 예산 경계.
-	Arrears.AddArrears(DailyRent);
+	Arrears.AddArrears(FFF_FixedCostArrearsTestHelpers::DailyRent);
 	TestEqual(TEXT("예산 0 으로는 갚지 못한다"), Arrears.RepayArrears(0), 0);
 	TestEqual(TEXT("예산이 음수여도 갚지 못한다"), Arrears.RepayArrears(-500), 0);
-	TestEqual(TEXT("실패한 상환이 미납을 바꾸지 않는다"), Arrears.GetTotalArrears(), DailyRent);
+	TestEqual(TEXT("실패한 상환이 미납을 바꾸지 않는다"), Arrears.GetTotalArrears(),
+		FFF_FixedCostArrearsTestHelpers::DailyRent);
 
 	// 미납과 정확히 같은 예산이면 딱 비운다 (off-by-one 방지).
-	TestEqual(TEXT("미납과 같은 예산은 전액 상환한다"), Arrears.RepayArrears(DailyRent), DailyRent);
+	TestEqual(TEXT("미납과 같은 예산은 전액 상환한다"),
+		Arrears.RepayArrears(FFF_FixedCostArrearsTestHelpers::DailyRent),
+		FFF_FixedCostArrearsTestHelpers::DailyRent);
 	TestTrue(TEXT("정확히 비워진다"), Arrears.HasNoArrears());
 
 	return true;
