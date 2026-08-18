@@ -3,8 +3,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "NPC/Party/FF_NeedState.h"
+#include "NPC/Party/FF_VisitHistory.h"
 #include "FF_FestivalCrowdTypes.generated.h"
-
 
 
 enum class EUnitAnimationState : uint8
@@ -13,7 +14,6 @@ enum class EUnitAnimationState : uint8
 	Walk,
 	Run
 };
-
 
 
 USTRUCT(BlueprintType)
@@ -51,6 +51,8 @@ struct FUnitData
 	//----Group---//
 	FName ArchetypeID = NAME_None;
 
+	bool bIsDependentChild = false;
+	FFF_NeedState Needs;
 	FName CommandType = NAME_None;
 
 	// 소속 파티. 1인 방문객도 멤버 1명짜리 파티로 처리해 코드 경로를 하나로 통일한다.
@@ -95,6 +97,22 @@ enum class EFF_DecisionReason : uint8
 	StayExpired     // 체류 시간이 끝났다                            [미사용 — 체류 도입 후]
 };
 
+UENUM()
+enum class EFF_PartyFallbackAction : uint8
+{
+	Wander,
+	Relocate,
+	Leave
+};
+USTRUCT()
+struct FFF_PartyDecisionResult
+{
+	GENERATED_BODY()
+	FVector Destination = FVector::ZeroVector;
+	FName DestinationId = NAME_None;
+	EFF_PartyFallbackAction FallbackAction = EFF_PartyFallbackAction::Wander;
+	bool bCountAsNoChoice = false;
+};
 /**
  * 결정 계층에 넘기는 파티 스냅샷.
  *
@@ -124,9 +142,14 @@ struct FFF_PartyDecisionContext
 
 	// 왜 결정이 필요해졌는지
 	EFF_DecisionReason Reason = EFF_DecisionReason::Spawned;
+	FName ArchetypeId = NAME_None;
+	int32 PartySize = 1;
+	FFF_NeedState Needs;
+	FFF_VisitHistory VisitHistory;
+	int32 ConsecutiveNoChoiceCount = 0;
+	float NowLiveMinutes = 0.f;
+	float RemainingStayMinutes = 0.f;
 };
-
-
 
 
 USTRUCT(BlueprintType)
@@ -157,5 +180,9 @@ struct FPartyDecisionState
 	int32 ChoiceRoundIndex = 0;
 	
 	EFF_DecisionReason PendingReason = EFF_DecisionReason::Spawned;
+	FName CurrentDestinationId = NAME_None;
+	int32 ConsecutiveNoChoiceCount = 0;
+	bool bIsLeaving = false;
+	float LeaveStartedSimTime = 0.f;
 };
 

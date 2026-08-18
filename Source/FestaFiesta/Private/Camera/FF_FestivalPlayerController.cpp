@@ -7,6 +7,7 @@
 #include "Camera/FF_OverviewCameraRig.h"
 #include "CollisionQueryParams.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
@@ -25,7 +26,7 @@ void AFF_FestivalPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	// 시작 시점의 빙의 대상이 관찰 카메라다. 이후 캐릭터로 빙의가 옮겨가도 이 참조는 유지된다.
-	OverviewPawn = Cast<AFF_OverviewCameraPawn>(GetPawn());
+	OverviewPawn = ResolveOverviewPawn();
 	if (!OverviewPawn.IsValid())
 	{
 		UE_LOG(LogFestaFiestaCamera, Warning,
@@ -101,8 +102,31 @@ AFF_OverviewCameraPawn* AFF_FestivalPlayerController::GetOverviewCameraPawn() co
 	{
 		return Cached;
 	}
-	// 아직 BeginPlay 전이거나 캐시가 끊긴 경우의 보루.
-	return Cast<AFF_OverviewCameraPawn>(GetPawn());
+	return ResolveOverviewPawn();
+}
+
+AFF_OverviewCameraPawn* AFF_FestivalPlayerController::ResolveOverviewPawn() const
+{
+	// 지금 빙의 중이면 그게 맞다.
+	if (AFF_OverviewCameraPawn* Current = Cast<AFF_OverviewCameraPawn>(GetPawn()))
+	{
+		return Current;
+	}
+
+	// 캐시가 낡은 경우. Zone 플레이테스트처럼 다른 시스템이 컨트롤러를 자기 Pawn 으로
+	// 빙의시키면 BeginPlay 에서 잡은 참조가 파괴되거나 무의미해질 수 있다.
+	// 그 상태로 두면 관찰 시점으로 돌아갈 방법이 없어져 조작 불능처럼 보인다.
+	if (const UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AFF_OverviewCameraPawn> It(const_cast<UWorld*>(World)); It; ++It)
+		{
+			if (IsValid(*It))
+			{
+				return *It;
+			}
+		}
+	}
+	return nullptr;
 }
 
 bool AFF_FestivalPlayerController::IsBuildSessionActive() const
@@ -281,9 +305,13 @@ void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 	if (!CameraPawn)
 	{
 		UE_LOG(LogFestaFiestaCamera, Warning,
-			TEXT("[카메라] 관찰 카메라 Pawn 이 없어 시점을 되돌리지 못했다."));
+			TEXT("[카메라] 관찰 카메라 Pawn 이 없어 시점을 되돌리지 못했다. ")
+			TEXT("레벨에 AFF_OverviewCameraPawn 이 있는지, GameMode 의 DefaultPawnClass 를 확인할 것."));
 		return;
 	}
+
+	// 탐색으로 찾았으면 캐시를 갱신해둔다. 다음부터는 순회하지 않는다.
+	OverviewPawn = CameraPawn;
 
 	// 캐릭터를 조종하다 왔으면 빙의도 되돌려야 입력이 카메라로 온다.
 	if (GetPawn() != CameraPawn)

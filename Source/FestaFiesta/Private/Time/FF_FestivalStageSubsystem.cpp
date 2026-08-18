@@ -304,6 +304,14 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 		return;
 	}
 
+	const float TodayLiveDuration = GetLiveDurationForCurrentDay();
+	// 오늘 Live 총 길이를 미리 구해둠 (CurrentDay가 바뀌기 전에 구해야 오늘 값이 맞음)
+
+	UE_LOG(LogTemp, Log, TEXT("Day %d 종료! TodayLiveDuration=%f"), CurrentDay, TodayLiveDuration);
+
+
+	OnDayEnded.Broadcast(CurrentDay, TodayLiveDuration);
+	// 며칠째가 끝났고, 그날 Live가 몇 초였는지 신호로 전달
 
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);

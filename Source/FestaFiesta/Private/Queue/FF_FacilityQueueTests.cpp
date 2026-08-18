@@ -574,4 +574,247 @@ bool FFF_QueueSubsystem_RegisterFacilityIsNotBlueprintCallable::RunTest(
 	return true;
 }
 
+// ── Crowd 결선을 위한 발행 검증 ─────────────────────────────────────────────
+//
+// 슬롯 목표는 Queue 가 발행하고 Crowd 가 구독해서 NPC 를 움직인다. 지금 구독자가 없어서
+// 통합 때 "줄이 안 선다" 가 나오면 발행 문제인지 수신 문제인지 가려야 하는데,
+// 양쪽 다 미검증이면 그 판별에만 시간이 든다.
+//
+// 아래는 발행 쪽 계약을 못박는다. 이게 통과하면 문제는 수신 쪽이다.
+
+// 17. 줄이 바뀔 때마다 슬롯 갱신 신호가 정확히 서고, 소비하면 내려간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_SlotDirtyFlagTracksEveryChange, "FestaFiesta.Queue.FacilityQueue.SlotDirtyFlagTracksEveryChange", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_SlotDirtyFlagTracksEveryChange::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(20, 10.f), MakeLane());
+	Queue.ConsumeSlotTargetsDirty();   // Configure 가 세운 초기 신호를 비운다
+
+	float SimTime = 0.f;
+
+	Join(Queue, MakeRequest(10, 2), SimTime);
+	TestTrue(TEXT("가입하면 슬롯 갱신이 필요하다"), Queue.ConsumeSlotTargetsDirty());
+	TestFalse(TEXT("소비하면 내려간다"), Queue.ConsumeSlotTargetsDirty());
+
+	Join(Queue, MakeRequest(20, 1), SimTime);
+	TestTrue(TEXT("두 번째 가입도 마찬가지"), Queue.ConsumeSlotTargetsDirty());
+	Queue.ConsumeSlotTargetsDirty();
+
+	// 서비스가 진행되는 동안에는 줄 구성이 안 바뀌므로 신호가 서면 안 된다.
+	// 매 틱 신호가 서면 Crowd 가 매 틱 목표를 다시 받아 경로를 재계산한다.
+	StepFor(Queue, 5.f, SimTime);
+	TestFalse(TEXT("서비스 중에는 불필요하게 서지 않는다"), Queue.ConsumeSlotTargetsDirty());
+
+	// 앞 Party 가 빠지면 뒷사람이 당겨지므로 반드시 서야 한다.
+	StepFor(Queue, 20.f, SimTime);
+	TestTrue(TEXT("앞 Party 가 빠지면 신호가 선다"), Queue.ConsumeSlotTargetsDirty());
+	return true;
+}
+
+// 18. 발행되는 슬롯 배열이 Crowd 가 그대로 쓸 수 있는 형태인지.
+//     AgentId 가 비거나 슬롯이 건너뛰면 Crowd 는 어느 NPC 를 어디로 보낼지 알 수 없다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_SlotAssignmentsAreConsumableByCrowd, "FestaFiesta.Queue.FacilityQueue.SlotAssignmentsAreConsumableByCrowd", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_SlotAssignmentsAreConsumableByCrowd::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(20, 300.f), MakeLane());
+
+	float SimTime = 0.f;
+	Join(Queue, MakeRequest(10, 2), SimTime);
+	Join(Queue, MakeRequest(20, 3), SimTime);
+	Join(Queue, MakeRequest(30, 1), SimTime);
+
+	TArray<FFF_SlotAssignment> Assignments;
+	Queue.BuildSlotAssignments(Assignments);
+
+	TestEqual(TEXT("총 인원만큼 배정이 나온다"), Assignments.Num(), 6);
+
+	// 슬롯이 0 부터 빈틈없이 이어져야 한다. 건너뛰면 줄에 구멍이 생긴다.
+	bool bContiguous = true;
+	bool bAllHaveAgent = true;
+	bool bAllFinite = true;
+	for (int32 Index = 0; Index < Assignments.Num(); ++Index)
+	{
+		bContiguous &= (Assignments[Index].SlotIndex == Index);
+		bAllHaveAgent &= (Assignments[Index].AgentId != INDEX_NONE);
+		bAllFinite &= !Assignments[Index].TargetLocation.ContainsNaN()
+			&& FMath::IsFinite(Assignments[Index].TargetYaw);
+	}
+	TestTrue(TEXT("슬롯 인덱스가 0 부터 빈틈없이 이어진다"), bContiguous);
+	TestTrue(TEXT("모든 배정에 AgentId 가 있다"), bAllHaveAgent);
+	TestTrue(TEXT("모든 좌표가 유한하다"), bAllFinite);
+
+	// 같은 AgentId 가 두 슬롯에 배정되면 NPC 하나가 두 곳으로 끌린다.
+	TSet<int32> SeenAgents;
+	for (const FFF_SlotAssignment& Assignment : Assignments)
+	{
+		SeenAgents.Add(Assignment.AgentId);
+	}
+	TestEqual(TEXT("AgentId 가 중복되지 않는다"), SeenAgents.Num(), Assignments.Num());
+
+	// 같은 Party 멤버는 연속된 슬롯에 있어야 포메이션이 유지된다.
+	TestEqual(TEXT("Party 10 은 슬롯 0~1"), Assignments[1].PartyId, 10);
+	TestEqual(TEXT("Party 20 은 슬롯 2~4"), Assignments[2].PartyId, 20);
+	TestEqual(TEXT("Party 30 은 슬롯 5"), Assignments[5].PartyId, 30);
+	return true;
+}
+
+// 19. Party 하나가 겪는 이벤트 순서.
+//     Decision 이 상태를 전이시키는 근거라, 순서가 뒤집히거나 빠지면 상태 머신이 어긋난다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_EventSequenceIsOrderedAndComplete, "FestaFiesta.Queue.FacilityQueue.EventSequenceIsOrderedAndComplete", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_EventSequenceIsOrderedAndComplete::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(20, 10.f), MakeLane());
+
+	float SimTime = 0.f;
+	Join(Queue, MakeRequest(10, 1, -1.f), SimTime);
+	StepFor(Queue, 15.f, SimTime);
+
+	TArray<FFF_QueueEvent> Events;
+	Queue.ConsumePendingEvents(Events);
+
+	// 가입 → 서비스 시작 → 퇴장. 이 셋이 이 순서로 정확히 한 번씩 나와야 한다.
+	TArray<EFF_QueueEventType> Sequence;
+	for (const FFF_QueueEvent& Event : Events)
+	{
+		if (Event.PartyId == 10)
+		{
+			Sequence.Add(Event.Type);
+		}
+	}
+
+	TestEqual(TEXT("이벤트가 정확히 3건"), Sequence.Num(), 3);
+	if (Sequence.Num() == 3)
+	{
+		TestEqual(TEXT("1. 가입"), Sequence[0], EFF_QueueEventType::PartyJoined);
+		TestEqual(TEXT("2. 서비스 시작"), Sequence[1], EFF_QueueEventType::ServiceStarted);
+		TestEqual(TEXT("3. 퇴장"), Sequence[2], EFF_QueueEventType::PartyExited);
+	}
+
+	// 소비하면 비어야 한다. 안 그러면 구독자가 같은 이벤트를 두 번 받는다.
+	TArray<FFF_QueueEvent> Again;
+	Queue.ConsumePendingEvents(Again);
+	TestEqual(TEXT("소비한 이벤트는 다시 나오지 않는다"), Again.Num(), 0);
+	return true;
+}
+
+// 20. 거절은 이벤트만 나가고 줄에는 아무 흔적도 남기지 않아야 한다.
+//     만석 시설을 후보에 남기기로 하면서 도착 후 거절이 늘어난다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_RejectionLeavesNoResidue, "FestaFiesta.Queue.FacilityQueue.RejectionLeavesNoResidue", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_RejectionLeavesNoResidue::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(4, 300.f), MakeLane());
+
+	float SimTime = 0.f;
+	Join(Queue, MakeRequest(10, 4), SimTime);
+	Queue.ConsumeSlotTargetsDirty();
+
+	TArray<FFF_QueueEvent> Ignored;
+	Queue.ConsumePendingEvents(Ignored);
+
+	// 만석 상태에서 거절.
+	TestEqual(TEXT("만석이면 거절된다"),
+		Join(Queue, MakeRequest(20, 2), SimTime), EFF_QueueJoinResult::RejectedFull);
+
+	TestEqual(TEXT("줄 길이가 그대로다"), Queue.GetWaitingPartyCount(), 1);
+	TestEqual(TEXT("점유 인원이 그대로다"), Queue.GetOccupiedMemberCount(), 4);
+	TestFalse(TEXT("거절은 슬롯 갱신을 유발하지 않는다"), Queue.ConsumeSlotTargetsDirty());
+
+	TArray<FFF_QueueEvent> Events;
+	Queue.ConsumePendingEvents(Events);
+	TestEqual(TEXT("거절 이벤트가 1건 나간다"), Events.Num(), 1);
+	if (Events.Num() == 1)
+	{
+		TestEqual(TEXT("유형이 거절이다"), Events[0].Type, EFF_QueueEventType::PartyRejected);
+		TestEqual(TEXT("사유가 만석이다"), Events[0].RejectReason, EFF_QueueJoinResult::RejectedFull);
+	}
+
+	// 배정 배열에도 거절된 Party 가 없어야 한다.
+	TArray<FFF_SlotAssignment> Assignments;
+	Queue.BuildSlotAssignments(Assignments);
+	bool bRejectedPresent = false;
+	for (const FFF_SlotAssignment& Assignment : Assignments)
+	{
+		bRejectedPresent |= (Assignment.PartyId == 20);
+	}
+	TestFalse(TEXT("거절된 Party 는 슬롯 배정에 없다"), bRejectedPresent);
+	return true;
+}
+
+// 21. Crowd 결선의 전제 — 슬롯 배정이 Party 별로 연속이어야 한다.
+//
+//     결선 글루는 배정 배열을 Party 경계로 잘라서 GetPartyMembers 와 짝지운다.
+//     Party 멤버가 배열 안에서 흩어져 있으면 그 방식이 통째로 깨진다.
+//     Queue 쪽 구현이 바뀌어도 이 성질만은 유지돼야 한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_AssignmentsAreGroupedByParty, "FestaFiesta.Queue.FacilityQueue.AssignmentsAreGroupedByParty", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FacilityQueue_AssignmentsAreGroupedByParty::RunTest(const FString& Parameters)
+{
+	FFF_FacilityQueue Queue;
+	Queue.Configure(1, MakeConfig(30, 300.f), MakeLane());
+
+	float SimTime = 0.f;
+	Join(Queue, MakeRequest(10, 3), SimTime);
+	Join(Queue, MakeRequest(20, 1), SimTime);
+	Join(Queue, MakeRequest(30, 4), SimTime);
+	Join(Queue, MakeRequest(40, 2), SimTime);
+
+	TArray<FFF_SlotAssignment> Assignments;
+	Queue.BuildSlotAssignments(Assignments);
+	TestEqual(TEXT("총 인원만큼 배정된다"), Assignments.Num(), 10);
+
+	// 같은 PartyId 가 한 번 끊겼다가 다시 나오면 안 된다.
+	TSet<int32> ClosedParties;
+	int32 CurrentParty = INDEX_NONE;
+	bool bGrouped = true;
+	for (const FFF_SlotAssignment& Assignment : Assignments)
+	{
+		if (Assignment.PartyId != CurrentParty)
+		{
+			bGrouped &= !ClosedParties.Contains(Assignment.PartyId);
+			if (CurrentParty != INDEX_NONE)
+			{
+				ClosedParties.Add(CurrentParty);
+			}
+			CurrentParty = Assignment.PartyId;
+		}
+	}
+	TestTrue(TEXT("같은 Party 는 한 덩어리로 연속한다"), bGrouped);
+
+	// 덩어리 크기가 가입 인원과 같아야 결선이 짝을 맞출 수 있다.
+	TMap<int32, int32> CountByParty;
+	for (const FFF_SlotAssignment& Assignment : Assignments)
+	{
+		CountByParty.FindOrAdd(Assignment.PartyId)++;
+	}
+	TestEqual(TEXT("Party 10 은 3칸"), CountByParty.FindRef(10), 3);
+	TestEqual(TEXT("Party 20 은 1칸"), CountByParty.FindRef(20), 1);
+	TestEqual(TEXT("Party 30 은 4칸"), CountByParty.FindRef(30), 4);
+	TestEqual(TEXT("Party 40 은 2칸"), CountByParty.FindRef(40), 2);
+
+	// 앞 Party 가 빠져도 나머지는 그룹을 유지해야 한다.
+	Queue.LeaveQueue(20, SimTime);
+	Queue.BuildSlotAssignments(Assignments);
+	TestEqual(TEXT("한 팀이 빠지면 그만큼 줄어든다"), Assignments.Num(), 9);
+
+	CurrentParty = INDEX_NONE;
+	ClosedParties.Reset();
+	bGrouped = true;
+	for (const FFF_SlotAssignment& Assignment : Assignments)
+	{
+		if (Assignment.PartyId != CurrentParty)
+		{
+			bGrouped &= !ClosedParties.Contains(Assignment.PartyId);
+			if (CurrentParty != INDEX_NONE)
+			{
+				ClosedParties.Add(CurrentParty);
+			}
+			CurrentParty = Assignment.PartyId;
+		}
+	}
+	TestTrue(TEXT("당겨진 뒤에도 그룹이 유지된다"), bGrouped);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

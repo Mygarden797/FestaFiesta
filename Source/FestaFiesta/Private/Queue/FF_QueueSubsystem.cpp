@@ -65,9 +65,15 @@ bool UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfi
 			[](const FTransform& Transform) { return Transform.ContainsNaN(); });
 	if (FacilityId == INDEX_NONE || !bConfigValid || !bLaneValid)
 	{
-		UE_LOG(LogFestaFiestaQueue, Warning, TEXT("[대기열] FacilityId=INDEX_NONE 등록 요청을 무시했다."));
+		// 거절 사유를 구분해서 남긴다. 조건이 셋인데 로그가 하나면
+		// 설정이 잘못된 경우에도 "ID가 잘못됐다"로 읽혀서 엉뚱한 데를 뒤지게 된다.
+		const TCHAR* Reason =
+			(FacilityId == INDEX_NONE) ? TEXT("FacilityId 가 INDEX_NONE")
+			: (!bConfigValid) ? TEXT("Config 값이 범위를 벗어남")
+			: TEXT("Lane geometry 가 유효하지 않음");
+
 		UE_LOG(LogFestaFiestaQueue, Warning,
-			TEXT("[Queue] Rejected unsafe facility registration for Facility=%d."), FacilityId);
+			TEXT("[대기열] 시설 등록을 거절했다. Facility=%d, 사유=%s"), FacilityId, Reason);
 		return false;
 	}
 

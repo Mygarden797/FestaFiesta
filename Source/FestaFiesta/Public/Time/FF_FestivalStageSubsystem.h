@@ -27,6 +27,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramEnded, FString, EventL
 //  밤 조명 켤 시간이 됐다고 알리는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
 
+// 하루가 끝날 때 다음 시스템(시설/경제)에 이월용 시간 정보를 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDayEnded, int32, EndedDay, float, TodayLiveDuration);
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -157,6 +160,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnNightLightingActivated OnNightLightingActivated;
 	// 밤 조명(글로우 프롭) 켤 시간이 됐음을 알리는 신호
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnDayEnded OnDayEnded;
+	// 하루가 끝났을 때, 다른 시스템(시설/경제)에게 이월용 시간 정보를 전달하는 신호
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);

@@ -7,6 +7,7 @@
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Queue/FF_FacilityQueue.h"
 #include "Queue/FF_QueueSubsystem.h"
+#include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "DataTables/FF_UtilityCoefficientRow.h"
 #include "Engine/DataTable.h"
@@ -327,11 +328,58 @@ bool FFF_QueueWaitAdapter_ResolverSkipsQueuelessDestinations::RunTest(const FStr
 	const float Before = Candidates[0].EstimatedWaitMinutes;
 
 	const int32 Applied = FFF_QueueWaitAdapter::ApplyToCandidates(
-		EmptyQueue, Candidates, [](FName) { return INDEX_NONE; }, 1);
+		EmptyQueue, Candidates, [](FName) -> int32 { return INDEX_NONE; }, 1);
 
 	TestEqual(TEXT("줄 없는 목적지는 반영 대상이 아니다"), Applied, 0);
 	TestEqual(TEXT("대기시간을 건드리지 않는다"), Candidates[0].EstimatedWaitMinutes, Before, 1e-6f);
 	TestTrue(TEXT("열림 상태도 유지된다 — 미등록과 달리 정상 경로다"), Candidates[0].bIsOpen);
+	return true;
+}
+
+// 12. 목적지 ID 는 시설 인스턴스 GUID 문자열이다.
+//     이 계약이 깨지면 대기시간이 통째로 반영되지 않는데, 크래시도 경고도 없이 조용히 그렇게 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_DestinationIdCarriesFacilityGuid, "FestaFiesta.Queue.WaitAdapter.DestinationIdCarriesFacilityGuid", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueWaitAdapter_DestinationIdCarriesFacilityGuid::RunTest(const FString& Parameters)
+{
+	// 결정 계층이 후보에 담는 것과 같은 형태로 왕복시킨다.
+	const FGuid Original = FGuid::NewGuid();
+	const FName DestinationId(*Original.ToString());
+
+	FGuid Parsed;
+	TestTrue(TEXT("목적지 ID 에서 GUID 를 되찾을 수 있다"),
+		FFF_ZoneSystemBridge::TryParseDestinationId(DestinationId, Parsed));
+	TestEqual(TEXT("왕복해도 같은 GUID 다"), Parsed, Original);
+
+	// GUID 가 아닌 이름은 실패해야 한다. 여기서 성공하면 엉뚱한 시설로 매핑된다.
+	FGuid Garbage;
+	TestFalse(TEXT("GUID 가 아닌 이름은 파싱되지 않는다"),
+		FFF_ZoneSystemBridge::TryParseDestinationId(TEXT("ramen_booth"), Garbage));
+	TestFalse(TEXT("빈 이름도 파싱되지 않는다"),
+		FFF_ZoneSystemBridge::TryParseDestinationId(NAME_None, Garbage));
+	return true;
+}
+
+// 13. 서브시스템이 없어도 결정은 돌아야 한다.
+//     대기열이 없는 테스트 맵에서 후보가 닫히면 NPC 가 아무 데도 못 간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_ZoneBridgePathDegradesQuietly, "FestaFiesta.Queue.WaitAdapter.ZoneBridgePathDegradesQuietly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueWaitAdapter_ZoneBridgePathDegradesQuietly::RunTest(const FString& Parameters)
+{
+	TArray<FFF_DestinationCandidate> Candidates;
+	Candidates.Add(MakeQueueCandidate(TEXT("A"), TEXT("food_stall"), /*bIsOpen=*/true));
+	const float BeforeWait = Candidates[0].EstimatedWaitMinutes;
+
+	// 월드가 없는 경우.
+	TestEqual(TEXT("월드가 없으면 0 건"),
+		FFF_QueueWaitAdapter::ApplyFromZoneBridge(nullptr, Candidates, 1), 0);
+
+	// 브리지가 없는 경우.
+	UFF_QueueSubsystem* EmptyQueue = NewObject<UFF_QueueSubsystem>();
+	TestEqual(TEXT("브리지가 없으면 0 건"),
+		FFF_QueueWaitAdapter::ApplyFromZoneBridge(EmptyQueue, nullptr, Candidates, 1), 0);
+
+	// 어느 경우에도 후보를 건드리지 않아야 한다.
+	TestEqual(TEXT("대기시간을 건드리지 않는다"), Candidates[0].EstimatedWaitMinutes, BeforeWait, 1e-6f);
+	TestTrue(TEXT("후보를 닫지 않는다"), Candidates[0].bIsOpen);
 	return true;
 }
 

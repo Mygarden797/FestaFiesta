@@ -137,7 +137,20 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 
 두 건 다 컴파일 확인까지 마쳤습니다
 
----
+
+### `OnDayEnded`
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `UFF_FestivalStageSubsystem` (GameInstanceSubsystem)
+- **시그니처**: `FOnDayEnded(int32 EndedDay, float TodayLiveDuration)`
+- **갱신 주기**: 이벤트 (AdvanceToNextDay 호출 시, 하루 종료 시점 1회)
+- **상태**: `구현완료`
+- **비고**: EndedDay는 방금 끝난 날짜(1~3), TodayLiveDuration은 그날 Live 총 진행 시간(초). 정비/청결 등 Day Modifier 이월 계산은 이 신호를 받는 쪽(시설/경제)이 담당 — 시간 시스템은 기준 파라미터 전달까지만 책임진다.
+
+| 멤버                                     | 형                   | 설명                                |
+| -------------------------------------- | ------------------- | --------------------------------- |
+| `OnDayEnded`                           | `FOnDayEnded`       |(EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달     |
+
 
 ## Zone · 시설 — 한광훈
 
@@ -483,6 +496,8 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **UI 사용처**: NPC 클릭 시 "왜 저기로 갔는가" 표시
 
 `AllCandidateScores`에 후보별 항별 점수가 다 들어 있어 그대로 표시하면 됩니다.
+⚠️ **지금 값이 들어오는 항은 `AttractionTerm`·`DistanceCostTerm`·`DensityCostTerm` 셋뿐입니다** (2026-08-18 확인).
+취향·Need·대기시간은 개체별 상태를 붙이는 작업이 남아서 **0으로 나옵니다** — 화면 버그가 아닙니다.
 
 | 필드                                                      | 뜻             |
 | ------------------------------------------------------- | ------------- |
@@ -504,16 +519,11 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **스펙**: `data/metadata/spec/reservation_program_spec.md`
 - **상태**: 규칙·자료구조 `구현완료`. **UI가 읽을 창구는 아직 없습니다**
 
-`FFF_ProgramReservation`·`FFF_ReservationCandidateGroup`이 `BlueprintType` + `BlueprintReadOnly`라
-블루프린트에서 값은 볼 수 있지만, **예약 목록을 돌려주는 서브시스템 Getter가 없습니다.**
-현재 공개된 것은 정적 규칙 클래스(`FFF_ProgramReservationRules`)입니다.
+`FFF_ProgramReservation`·`FFF_ReservationCandidateGroup`이 `BlueprintType` + `BlueprintReadOnly`라 값은 볼 수
+있지만 **예약 목록을 돌려주는 Getter가 없습니다.** 지금 공개된 것은 정적 규칙 클래스(`FFF_ProgramReservationRules`)뿐입니다.
 
-**이 시스템이 UI 작업을 새로 만듭니다 — 담당은 백종태입니다 (2026-08-12 확인).**
-
-> 플레이어가 프로그램을 사는 시점은 Setup·MorningCheck이고, 그때 NPC는 아직 스폰되지 않았다.
-> 그래서 예약을 개체에 붙이지 않고 슬롯을 먼저 만들어 두고 그룹을 배정한다. — 헤더 주석
-
-즉 **Setup·MorningCheck에 유료 프로그램 구매·예약 화면**이 필요합니다. 8/14 이후 일정에 넣습니다.
+**Setup·MorningCheck에 유료 프로그램 구매 화면이 필요하고 담당은 백종태입니다** (2026-08-12 확인).
+경제 쪽 구매 처리는 하루 경계(2026-08-18 완료) 다음 순서라 이번 주에 붙습니다.
 
 **요청 (백종태 → 김시리)** — 화면을 만들려면 다음이 필요합니다. 형태는 맞춰 드립니다.
 
@@ -525,35 +535,105 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
 게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
 
-### Gold·매출 API 구현 완료 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-12 · 2026-08-13 갱신)
-
-`UFF_FestivalProgressionSubsystem`의 Gold·매출 읽기 API가 구현됐습니다.
+### 경제 값 5종 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-18 정리)
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- `GetGold()` — 현재 잔액 `int32`, 0 이상·상한 없음
-- `CanAfford(int32 CostGold)` — 구매 가능 판정. UI가 `GetGold() >= 가격`을 직접 계산하지 않습니다
-- `OnGoldChanged(int32 NewGold)` — 값이 실제로 바뀔 때만 발행
-- 🆕 `GetTotalRevenue()` / `OnTotalRevenueChanged` — 축제 전체 누적 매출. **줄어들지 않습니다**
-- 🆕 `GetTodayRevenue()` / `OnTodayRevenueChanged` — 오늘 매출. **누적값에서 빼서 만들지 않습니다** — 따로 받으셔야 합니다
+- **상태**: 원본 API 전부 `구현완료`. **ViewModel 연결 대기** — 여기 한 곳만 붙이면 화면에 뜹니다
 
-**종태님께 요청드릴 연결 작업**
+| 값 | Getter | 델리게이트 | 단위·범위 | 화면 |
+|---|---|---|---|---|
+| 잔액 | `GetGold()` | `OnGoldChanged` | Gold, 0 이상·상한 없음 | 상단 바, 구매 판정 |
+| 누적 매출 | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | 상단 바 |
+| 오늘 매출 | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | Report |
+| 🆕 밀린 임대료 | `GetTotalArrears()` | `OnTotalArrearsChanged` | Gold, 0 이상 | 상단 바 자금난 경고, Report |
+| 🆕 오늘 일하는 인원 | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 명, 6~12 | Event 배치, 아침 고용 화면 |
 
-1. `UFF_FestivalViewModelSubsystem` 초기화 시 `UFF_FestivalProgressionSubsystem`을 가져와
-   `GetGold()`/`GetTotalRevenue()`/`GetTodayRevenue()`로 초기값을 동기화해 주세요.
-2. `OnGoldChanged`·`OnTotalRevenueChanged`·`OnTodayRevenueChanged`를 구독해 ViewModel의 동명 값과
-   델리게이트를 갱신하고, Deinitialize에서 반드시 구독 해제해 주세요. 셋 다 같은 모양(Getter+델리게이트 쌍)입니다.
-3. 구매 버튼은 ViewModel에 `CanAfford(int32 CostGold)` 전달 함수를 두고 원본 판정을 그대로 사용해 주세요.
-   위젯이 ProgressionSubsystem을 직접 참조하거나 잔액과 가격을 직접 비교하지 않습니다.
-4. 셋 다 소스 델리게이트가 있으므로 0.1초 폴링 대상에서 제외해도 됩니다.
+**연결 작업 4가지**
 
-🆕 **원인별·부스별 분해도 내부적으로 쌓이기 시작했습니다 (2026-08-13, `FFF_DayLedger`)** — `TrySpend`/`AddRevenue`를
-부를 때 지출·매출 원인(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음)과 매출은 부스 `FacilityId`까지
-같이 기록됩니다. **다만 지금은 서브시스템 내부에만 있고 UI가 읽을 Getter가 아직 없습니다** — Report 화면에서
-"원인별 표"·"부스별 매출 표" 중 어떤 형태로 필요하신지 알려주시면 그 모양대로 Getter를 만들겠습니다
-(예: `TArray<FFF_SpendBreakdownRow>` 같은 UI 친화 구조체로 감싸는 것도 가능합니다).
+1. ViewModel 초기화 때 위 5개 Getter로 초기값을 한 번 동기화해 주세요.
+2. 델리게이트 5개를 구독해 ViewModel 값을 갱신하고, `Deinitialize`에서 구독을 해제해 주세요.
+   다섯 개 다 같은 모양(Getter + 변경 델리게이트 쌍)이고 **값이 실제로 바뀔 때만 발행됩니다.**
+3. 구매 버튼은 `CanAfford(int32 CostGold)`를 그대로 중계해 주세요. 위젯이 잔액과 가격을 직접 비교하지 않습니다.
+4. 다섯 개 다 델리게이트가 있으니 0.1초 폴링 대상에서 빼도 됩니다.
 
-아직 없는 경제 값은 일차 결과(등급 산출)와 저장 API입니다.
+- 인원은 **기본 팀(`GetBaseStaffCount()`, 무페이·해고 불가) + 오늘 쓴 알바(`GetTemporaryStaffCount()`)** 로
+  쪼개서 보여주실 수 있습니다. 두 숫자 다 데이터 애셋 값이라 밸런싱으로 바뀝니다
+- **오늘 매출을 누적 매출에서 빼서 만들지 마세요.** 따로 들고 있는 값입니다 — 하루 경계에서 오늘 매출만 0이 되고
+  누적은 남기 때문에 빼서 만들면 날짜가 바뀔 때마다 어긋납니다
+
+### 🔴 화면 만들 때 알아야 하는 것 5가지 (2026-08-18)
+
+**1. "다음 날" 버튼이 이제 돈을 걷습니다. 종태님이 고치실 것은 없습니다.** 이미 만들어 두신
+`RequestAdvanceToNextDay()`가 하루치 임대료 2,400을 걷고, 오늘 매출을 0으로 되돌리고, 어제 쓴 알바를 퇴근시킵니다.
+값 4개(잔액·밀린 임대료·오늘 매출·인원)가 한꺼번에 바뀌고 전부 델리게이트가 옵니다.
+
+**2. 잔액을 UI가 직접 계산하지 말아 주세요.** 버튼 직후에 `잔액 − 2,400`을 계산하면 어긋납니다 — 잔액이 부족하면
+실제로 빠지는 금액은 2,400이 아니라 "있는 만큼"입니다. 델리게이트가 주는 값을 그리시면 항상 맞습니다.
+
+**3. 게임을 켜면 잔액이 이미 7,600입니다.** 1일차는 셋업으로 시작해 아침 단계를 지나지 않으므로 축제 시작 시점에
+정산됩니다. 초기 자금 10,000이 화면에 안 보이는 것이 정상입니다(3일 임대료 합계 7,200 = 초기 자금의 72%).
+
+**4. 잔액이 부족하면 "밀린 임대료"가 생깁니다.** 시설은 안 사면 되지만 축제장 임대료는 거절할 수가 없어서,
+있는 만큼만 내고 못 낸 금액을 따로 적어 둡니다. 이자는 없습니다.
+
+- **잔액은 음수가 되지 않습니다.** "잔액 −1,400"이 아니라 잔액 0 + 밀린 임대료 1,400입니다
+- **`GetGold()`만 보면 자금난이 안 보입니다.** 잔액 0은 "다 썼다"일 수도 "빚까지 있다"일 수도 있어서,
+  경고는 **밀린 임대료 > 0** 으로 판정해 주세요
+- 날짜가 바뀌어도 **사라지지 않고 쌓입니다.** 매일 아침 0으로 돌아가는 건 오늘 매출과 알바뿐입니다
+- 축제가 끝났을 때 남은 미납을 어떻게 처리할지는 **아직 안 정했습니다.** 결산 화면에 필요하면 같이 정하겠습니다
+
+**5. 밀린 임대료가 있는 동안에는 매출이 들어와도 잔액이 안 늘어납니다.** 들어온 돈이 잔액에 쌓이기 전에 빚을 먼저
+갚기 때문입니다. 예: 밀린 임대료 1,400인 상태에서 매출 500이 들어오면 매출 2종과 `OnTotalArrearsChanged`(1,400 →
+900)는 발행되지만 **`OnGoldChanged`는 발행되지 않습니다**(잔액 0 → 0).
+
+- 값이 바뀔 때만 발행하는 규칙 때문에 **"매출은 올랐는데 잔액 이벤트가 안 오는" 구간이 정상적으로 존재합니다.**
+  누락이 아닙니다
+- 플레이어에게는 "매출이 늘었는데 돈이 안 늘었다"로 보입니다. **밀린 임대료를 잔액 옆에 상시 노출**하시면 숫자가
+  줄어드는 게 보여서 설명이 됩니다(0일 때는 숨기셔도 됩니다)
+- `OnTotalArrearsChanged`는 하루 경계뿐 아니라 **매출·철거 환급이 들어오는 아무 시점에나** 옵니다
+- ⚠️ 같은 이유로 **Report의 임대료 지출이 2,400을 넘을 수 있습니다.** 어제 못 낸 몫을 오늘 갚으면 오늘 임대료에
+  합산됩니다(늦게 나간 임대료라 별도 항목을 만들지 않았습니다). 하루 임대료를 2,400으로 박아두지 마세요
+
+⚠️ 헤더에 `BeginNewDay()`가 보이는데 **UI에서 부르지 말아 주세요.** 날짜를 넘기는 쪽이 둘이 되면 하루에 임대료가
+두 번 빠집니다. 부르는 곳은 경제 쪽에서 한 곳으로 잡아 두었습니다.
+
+### 🆕 피날레 구매 화면이 필요합니다 (2026-08-18, 담당 백종태)
+
+Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 쪽은 다 됐습니다.
+
+- **버튼 활성화**: `UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow()` — Day3 MorningCheck이고
+  아직 안 샀을 때만 `true`. **표시용이고 구매를 막지는 않습니다**(`CanSkipCurrentStage`와 같은 성격)
+- **목록**: 등급·비용·보너스는 `GetDefinition()->FinaleTiers`에 있습니다.
+  C/B/A/S = 2,000/4,000/6,000/8,000 Gold, 만족도 +5/+12/+20/+30. UI가 쓰기 편한 Getter가 필요하시면 만들겠습니다
+- **구매**: `TryPurchaseFinale(EFF_FinaleGrade)` → `EFF_FinalePurchaseResult`.
+  실패 이유가 한글 `DisplayName`으로 들어 있어서 그대로 화면에 쓰실 수 있습니다
+  (`Gold 부족` / `이미 구매했다` / `구매할 수 없는 등급` 등)
+- **구매 결과**: `GetPurchasedFinaleGrade()` + `OnFinaleGradeChanged(EFF_FinaleGrade)`. 안 샀으면 `None`
+
+⚠️ **구매는 축제당 1회이고 되돌릴 수 없습니다.** 등급 변경·취소·환불이 없으니 **확인창을 넣어 주세요.**
+두 번째 시도는 `이미 구매했다`로 거부됩니다.
+
+**만족도 보너스는 Gold가 아닙니다.** `GetFinaleSatisfactionBonus()`가 0~100 척도의 가산점(A면 20)을
+돌려주는데, 매출에도 잔액에도 섞이지 않습니다. 최종 평가 점수(`ScoreSatisfaction` = 관객 만족도 + 이 보너스)의
+합산은 관객 만족도가 아직 없어서 붙이지 않았습니다 — 지금은 "몇 점짜리를 샀는가"까지만 보여드릴 수 있습니다.
+
+밀린 임대료가 있으면 잔액이 0이라 자연히 못 삽니다. 이때 실패 이유는 `Gold 부족`으로 옵니다.
+
+### 아직 만들 것 — 형태만 정해 주세요
+
+**아침 고용 화면**은 판정이 이미 있습니다. `GetAffordableTemporaryStaffCount()`(지금 잔액으로 가능한 최대 인원,
+값을 바꾸지 않으니 슬라이더 최대치·버튼 판정에 그대로) + `TryHireTemporaryStaff(int32 인원)`.
+**부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 전부 거부되고 아무것도 바뀌지 않습니다. 실패 이유
+(돈 부족 / 하루 상한 초과)를 화면에 띄우시려면 말씀만 주세요, 지금은 `true`/`false`만 돌려줍니다.
+
+**Report 드릴다운**은 지출·매출이 원인별(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음), 매출은
+부스별로도 쌓이고 있습니다. UI Getter를 아직 안 만들었으니 어떤 표로 필요하신지 알려주시면 그 모양대로 만들겠습니다.
+
+**시설 철거 환급은 매출이 아닙니다** (2026-08-13). 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
+`OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
+
+아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
 
 ---
 
@@ -698,7 +778,8 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 🆕 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ⚠️ 내부 집계만 있음 | Report 드릴다운. UI Getter는 형태 협의 후 추가 |
 | 🆕 **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ⚠️ 내부 집계만 있음 | Report — 부스별 수익 표 |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
-| Staff 보유·가용 인원                                | 김시리       | ❌ 없음      | Event 배치 UI                                                        |
+| Staff 보유·가용 인원                                | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Event 배치 UI, MorningCheck 고용 화면 |
+| 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 상단 바 자금난 경고, Report |
 | `CauseId` 롤업                                  | 김시리       | ⚠️ 창구만 있음 | Report 드릴다운 (AT-005) — `UFF_NpcNeedMetricsSubsystem`이 원본, 채우는 쪽 대기 |
 | 저장 슬롯 목록                                      | 김시리       | ❌ 없음      | 플레이 허브                                                             |
 
@@ -725,5 +806,8 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |
 | 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
 | 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
+| 2026-08-18 | 김시리 | 🆕 **피날레 구매가 구현됐습니다** — Day3 MorningCheck 구매 화면이 필요합니다(담당 백종태). 버튼 활성화는 `CanPurchaseFinaleNow()`, 구매는 `TryPurchaseFinale()`이고 실패 이유가 한글로 옵니다. **1회 구매·변경 불가라 확인창이 필요합니다.** 만족도 보너스는 Gold가 아니고 평가 점수 합산은 관객 만족도가 생길 때 붙입니다 |
+| 2026-08-18 | 김시리 | 🆕 **"다음 날" 버튼이 이제 하루치 임대료를 정산합니다** — `RequestAdvanceToNextDay()`를 누르면 잔액·밀린 임대료·오늘 매출·인원 4개 값이 바뀝니다(전부 기존 델리게이트로 통지). 종태님 쪽 수정은 없고, 버튼 직후 UI가 잔액을 직접 계산하지만 않으면 됩니다. 문서에 빠져 있던 밀린 임대료(`GetTotalArrears`)와 인원(`GetTotalStaffCount`) 2종 추가 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
-| 2026-08-18 | 한광훈 | 공용 시설 정보 패널·`FFF_FacilityInfoViewData`·선택 API 추가. `FacilitySelection` 전용 Trace와 `FindFacilityAtWorldPoint()` 계약, WBP AlwaysCook·BindWidget 계약, 건축 세션의 Festival Stage + FFZS Phase 교집합 진입 및 자동 종료 정책 반영 |
+
+| 2026-08-19 | 강민서 | `OnDayEnded` 델리게이트 신설. AdvanceToNextDay() 호출 시 방금 끝난 날짜와 그날 Live 진행 시간을 broadcast. 이월 데이터(정비/청결 등) 계산은 수신 측(광훈/시리) 담당 |
