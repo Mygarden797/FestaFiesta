@@ -279,9 +279,9 @@ bool UFF_ZoneSystemEconomyBridgeSubsystem::ResolveDemolitionRefund(
 		return false;
 	}
 
-	// 비율은 저작 데이터라 코드에서 다시 한 번 가둔다. 설치비를 넘는 환급은 철거가 수입원이 된다.
-	const float RefundRate = FMath::Clamp(Festival->FacilityDemolitionRefundRate, 0.0f, 1.0f);
-	OutRefund = FMath::RoundToInt(FMath::Max(0, InstallCost) * RefundRate);
+	OutRefund = FFF_FacilityCostResolver::CalculateDemolitionRefund(
+		InstallCost,
+		Festival->FacilityDemolitionRefundRate);
 	return true;
 }
 

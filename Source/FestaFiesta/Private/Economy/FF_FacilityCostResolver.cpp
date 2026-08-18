@@ -84,3 +84,11 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 		TEXT("설치비 행 '%s'와 카테고리 Default 행을 모두 찾지 못했다."), *ExactKey.ToString());
 	return false;
 }
+
+int32 FFF_FacilityCostResolver::CalculateDemolitionRefund(
+	const int32 InstallCost,
+	const float RefundRate)
+{
+	return FMath::RoundToInt(
+		FMath::Max(0, InstallCost) * FMath::Clamp(RefundRate, 0.0f, 1.0f));
+}

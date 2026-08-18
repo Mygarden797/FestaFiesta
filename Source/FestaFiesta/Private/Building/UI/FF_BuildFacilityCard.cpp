@@ -35,20 +35,32 @@ void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)
 	// CreateWidget 이후 Configure되는 일반 경로에서는 BindWidget이 이미 유효하므로 즉시 화면에 반영한다.
 	// 생성 순서가 다른 에디터 미리보기 경로는 아래 PreConstruct/Construct에서 같은 함수를 다시 호출한다.
 	ApplyEntryToWidgets();
-	RefreshInstallCostTooltip();
+	RefreshFacilityCostTooltip();
 }
 
-FText UFF_BuildFacilityCard::MakeInstallCostToolTip(
+FText UFF_BuildFacilityCard::MakeFacilityCostToolTip(
 	const FFF_BuildCatalogEntry& CatalogEntry)
 {
-	if (!CatalogEntry.bHasResolvedInstallCost || CatalogEntry.InstallCost <= 0)
-	{
-		return LOCTEXT("InstallCostUnavailable", "건설 비용 정보를 확인할 수 없습니다.");
-	}
+	const FText UnavailableText = LOCTEXT("FacilityCostUnavailable", "가격 정보 없음");
+	const FText InstallCostText =
+		CatalogEntry.bHasResolvedInstallCost && CatalogEntry.InstallCost > 0
+		? FText::Format(
+			LOCTEXT("FacilityCostGoldFormat", "{0} Gold"),
+			FText::AsNumber(CatalogEntry.InstallCost))
+		: UnavailableText;
+	const FText RecoveryCostText =
+		CatalogEntry.bHasResolvedRecoveryCost && CatalogEntry.RecoveryCost >= 0
+		? FText::Format(
+			LOCTEXT("FacilityCostGoldFormat", "{0} Gold"),
+			FText::AsNumber(CatalogEntry.RecoveryCost))
+		: UnavailableText;
 
 	return FText::Format(
-		LOCTEXT("InstallCostFormat", "건설 비용: {0} Gold"),
-		FText::AsNumber(CatalogEntry.InstallCost));
+		LOCTEXT(
+			"FacilityCostsFormat",
+			"건설 비용: {0}\n회수 비용: {1}"),
+		InstallCostText,
+		RecoveryCostText);
 }
 
 void UFF_BuildFacilityCard::RefreshThumbnail()
@@ -76,7 +88,7 @@ void UFF_BuildFacilityCard::NativePreConstruct()
 	// 텍스트 폴백만 유지하면 WBP가 없는 환경에서도 가격 정보는 사라지지 않습니다.
 	if (IsDesignTime())
 	{
-		ApplyInstallCostTextFallback();
+		ApplyFacilityCostTextFallback();
 	}
 }
 
@@ -86,13 +98,13 @@ void UFF_BuildFacilityCard::NativeConstruct()
 	// 재부착 또는 WBP 재구성으로 자식 포인터가 새로 바인딩된 경우까지 보장한다.
 	// SetText/SetBrush 연산은 같은 값으로 반복 적용해도 안전하므로 수명주기 훅 양쪽에서 호출한다.
 	ApplyEntryToWidgets();
-	RefreshInstallCostTooltip();
+	RefreshFacilityCostTooltip();
 }
 
 void UFF_BuildFacilityCard::NativeDestruct()
 {
 	SetToolTip(nullptr);
-	InstallCostTooltip = nullptr;
+	FacilityCostTooltip = nullptr;
 	Super::NativeDestruct();
 }
 
@@ -129,13 +141,13 @@ void UFF_BuildFacilityCard::ApplyThumbnailToWidget()
 	}
 }
 
-void UFF_BuildFacilityCard::RefreshInstallCostTooltip()
+void UFF_BuildFacilityCard::RefreshFacilityCostTooltip()
 {
 	// Native NewObject 기반 단위 테스트에는 WidgetTree가 없습니다. CreateWidget(UWidget owner)는
 	// 유효한 부모 UserWidgetTree를 요구하므로 이 경로에서는 의도적으로 텍스트 폴백을 사용합니다.
 	if (IsDesignTime() || !WidgetTree)
 	{
-		ApplyInstallCostTextFallback();
+		ApplyFacilityCostTextFallback();
 		return;
 	}
 
@@ -150,35 +162,35 @@ void UFF_BuildFacilityCard::RefreshInstallCostTooltip()
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 가격 툴팁 WBP를 불러오지 못해 텍스트 툴팁을 사용합니다: %s"),
 			*GetName(), *InstallCostTooltipClass.ToSoftObjectPath().ToString());
-		ApplyInstallCostTextFallback();
+		ApplyFacilityCostTextFallback();
 		return;
 	}
 
-	if (!InstallCostTooltip || !InstallCostTooltip->IsA(TooltipClass))
+	if (!FacilityCostTooltip || !FacilityCostTooltip->IsA(TooltipClass))
 	{
-		InstallCostTooltip = CreateWidget<UFF_BuildFacilityCostTooltip>(this, TooltipClass);
+		FacilityCostTooltip = CreateWidget<UFF_BuildFacilityCostTooltip>(this, TooltipClass);
 	}
 
-	if (!InstallCostTooltip)
+	if (!FacilityCostTooltip)
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 가격 툴팁 인스턴스 생성에 실패해 텍스트 툴팁을 사용합니다."),
 			*GetName());
-		ApplyInstallCostTextFallback();
+		ApplyFacilityCostTextFallback();
 		return;
 	}
 
-	InstallCostTooltip->Configure(Entry);
+	FacilityCostTooltip->Configure(Entry);
 	// SetToolTipText가 이미 생성된 Slate 툴팁을 덮을 수 있으므로 텍스트를 먼저 비운 뒤
 	// 커스텀 UMG를 최종 툴팁으로 설정합니다.
 	SetToolTipText(FText::GetEmpty());
-	SetToolTip(InstallCostTooltip);
+	SetToolTip(FacilityCostTooltip);
 }
 
-void UFF_BuildFacilityCard::ApplyInstallCostTextFallback()
+void UFF_BuildFacilityCard::ApplyFacilityCostTextFallback()
 {
 	SetToolTip(nullptr);
-	SetToolTipText(MakeInstallCostToolTip(Entry));
+	SetToolTipText(MakeFacilityCostToolTip(Entry));
 }
 
 #undef LOCTEXT_NAMESPACE

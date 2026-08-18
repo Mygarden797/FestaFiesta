@@ -30,6 +30,24 @@ bool FFF_FestivalFunds::TrySpend(int32 Amount)
 	return true;
 }
 
+int32 FFF_FestivalFunds::PayMandatoryCost(int32 CostAmount)
+{
+	if (!ensureMsgf(CostAmount >= 0, TEXT("강제 징수액은 음수일 수 없다. CostAmount=%d"), CostAmount))
+	{
+		// 음수를 허용하면 임대료 정산이 돈을 버는 경로가 된다.
+		return 0;
+	}
+	
+	const int32 Paid = FMath::Min(CostAmount, Gold);
+	Gold -= Paid;
+	return Paid;
+}
+
+void FFF_FestivalFunds::ResetTodayRevenue()
+{
+	TodayRevenue = 0;
+}
+
 void FFF_FestivalFunds::AddRevenue(int32 Amount)
 {
 	if (!ensureMsgf(Amount >= 0, TEXT("매출은 음수일 수 없다. Amount=%d"), Amount))

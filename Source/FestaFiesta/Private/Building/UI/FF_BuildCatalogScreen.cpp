@@ -959,7 +959,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 					SNew(SButton)
 					.ContentPadding(FMargin(14.0f, 12.0f))
 					.ButtonColorAndOpacity(FLinearColor::Transparent)
-					.ToolTipText(UFF_BuildFacilityCard::MakeInstallCostToolTip(*Entry))
+					.ToolTipText(UFF_BuildFacilityCard::MakeFacilityCostToolTip(*Entry))
 					// Slate 델리게이트에는 값으로 시설 ID를 캡처해 CatalogEntries 포인터 수명에 의존하지 않는다.
 					.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleFacilityClicked, Entry->FacilityDefinitionId)
 					[

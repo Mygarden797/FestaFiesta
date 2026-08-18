@@ -60,19 +60,26 @@ bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameter
 	Entry.FacilityDefinitionId = Definition->Spec.FacilityDefinitionId;
 	FString FailureReason;
 	TestTrue(TEXT("The UI snapshot uses the production Major.Minor price resolver"),
-		FFBuildCatalogModel::ApplyInstallCost(Entry, Definition, CostTable, FailureReason));
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
 	TestTrue(TEXT("The projected catalog entry marks its price as resolved"),
 		Entry.bHasResolvedInstallCost);
 	TestEqual(TEXT("The projected FoodStall price is 400 Gold"), Entry.InstallCost, 400);
+	TestTrue(TEXT("The projected catalog entry marks its recovery cost as resolved"),
+		Entry.bHasResolvedRecoveryCost);
+	TestEqual(TEXT("The configured 50 percent recovery cost is 200 Gold"),
+		Entry.RecoveryCost, 200);
 	TestEqual(TEXT("The UI snapshot records the exact matched DataTable row"),
 		Entry.MatchedInstallCostRow, FName(TEXT("Cost.Booth.FoodStall")));
 
 	CostRow.InstallCost = 0;
 	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
 	TestFalse(TEXT("A non-positive price is not displayable"),
-		FFBuildCatalogModel::ApplyInstallCost(Entry, Definition, CostTable, FailureReason));
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
 	TestFalse(TEXT("A failed projection clears the resolved flag"),
 		Entry.bHasResolvedInstallCost);
+	TestFalse(TEXT("A failed projection clears the recovery-cost resolved flag"),
+		Entry.bHasResolvedRecoveryCost);
+	TestEqual(TEXT("A failed projection clears the recovery cost"), Entry.RecoveryCost, 0);
 	TestEqual(TEXT("A failed projection never leaves a misleading zero-price row"),
 		Entry.MatchedInstallCostRow, NAME_None);
 	return true;

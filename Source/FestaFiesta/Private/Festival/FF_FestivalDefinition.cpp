@@ -61,11 +61,17 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	}
 
 	// --- 고정비 ---
-	if (DailyVenueRentGold < 0 || DailyStaffWageGold < 0 || AdditionalHireCostGold < 0)
+	if (DailyVenueRentGold < 0)
 	{
-		OutErrors.Add(LOCTEXT("NegativeRecurringCost", "고정비에 음수가 있다. 비용은 0 이상이어야 한다."));
+		OutErrors.Add(LOCTEXT("BadRecurringCost", "고정비에 음수가 있다."));
 	}
 
+	// --- 스태프 임금/고용 ---
+	if (DailyStaffWageGold < 0 || MaxHiredStaffPerDay < 0)
+	{
+		OutErrors.Add(LOCTEXT("BadWageOrHireCap", "임금·고용 상한에 음수가 있다."));
+	}
+	
 	// --- 뒷정리 ---
 	// 등급이 올라가는데 값이 더 싸면 상위 등급을 고를 이유가 사라진다.
 	if (!(CleanupCostMinimalGold <= CleanupCostStandardGold && CleanupCostStandardGold <= CleanupCostFullGold))

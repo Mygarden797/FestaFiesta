@@ -13,6 +13,21 @@
 
 #define LOCTEXT_NAMESPACE "FFZSTypes"
 
+namespace
+{
+    // FacilitySpec의 1cm 저작 해상도를 절대 하한으로 두고, 실제 도착 판정 반경의 지름을 NPC 목표
+    // 중심 간격으로 사용한다. 프로젝트별 Capsule 크기(예: Festa의 68cm)는 콘텐츠 검증 계층의 책임이다.
+    constexpr double MinimumMovementTargetSeparationCm = 1.0;
+    constexpr double ArrivalToleranceDiameterMultiplier = 2.0;
+
+    double DistSquaredXY(const FVector& A, const FVector& B)
+    {
+        const double DeltaX = A.X - B.X;
+        const double DeltaY = A.Y - B.Y;
+        return DeltaX * DeltaX + DeltaY * DeltaY;
+    }
+}
+
 // 검증 순서
     // 1) 식별자/Enum/크기 같은 값싼 기본 조건
     // 2) Cell 열거 예산과 Queue 수치
@@ -208,6 +223,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             "QueueReservedRects는 Facility Footprint와 겹칠 수 없습니다."));
     }
 
+    TArray<FVector> LocalQueueSlotPoints;
     // 최대 정원 전체를 SlotSpacingCm 간격으로 샘플링한다. 일부 슬롯만 예약 영역에 들어오는
     // 데이터는 실제 만석 상황에서 보행 공간을 침범하므로 저작 단계에서 거부한다.
     if (QueueSplinePointsCm.Num() >= 2 &&
@@ -221,7 +237,6 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         FootprintSizeCells.Y > 0)
     {
         bool bAllQueueSlotsReserved = true;
-        TArray<FVector> LocalQueueSlotPoints;
         if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
                 QueueSplinePointsCm,
                 QueueRules.MaxWaitingAgents,
@@ -259,6 +274,8 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     TSet<int32> EntryIndices;
     TSet<int32> ServiceIndices;
     TSet<int32> ExitIndices;
+    TArray<const FFFZSAnchorDefinition*> ValidMovementAnchors;
+    ValidMovementAnchors.Reserve(Anchors.Num());
     // Anchor 배열 순서는 자유지만 (Type, Index)는 유일해야 한다. Service는 0부터 Capacity-1까지
     // 연속 인덱스를 요구해 런타임이 "가장 낮은 빈 슬롯"을 안전하게 선택할 수 있게 한다.
     for (const FFFZSAnchorDefinition& Anchor : Anchors)
@@ -271,6 +288,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             continue;
         }
 
+        ValidMovementAnchors.Add(&Anchor);
         const uint64 AnchorKey = (static_cast<uint64>(Anchor.Type) << 32) | static_cast<uint32>(Anchor.Index);
         if (AnchorKeys.Contains(AnchorKey))
         {
@@ -318,6 +336,84 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     if (ExitCount < 1 || !ExitIndices.Contains(0))
     {
         OutErrors.Add(LOCTEXT("MissingExit", "최소한 Exit[0]이 필요합니다."));
+    }
+
+    if (FMath::IsFinite(QueueRules.SlotArrivalToleranceCm) &&
+        QueueRules.SlotArrivalToleranceCm >= 0.0f)
+    {
+        const double MinimumSeparationCm =
+            FMath::Max(
+                MinimumMovementTargetSeparationCm,
+                static_cast<double>(QueueRules.SlotArrivalToleranceCm) *
+                    ArrivalToleranceDiameterMultiplier);
+        const double MinimumSeparationSquared = FMath::Square(MinimumSeparationCm);
+
+        bool bFoundOverlappingAnchors = false;
+        for (int32 FirstAnchorIndex = 0;
+             FirstAnchorIndex < ValidMovementAnchors.Num() && !bFoundOverlappingAnchors;
+             ++FirstAnchorIndex)
+        {
+            const FVector FirstLocation =
+                ValidMovementAnchors[FirstAnchorIndex]->LocalTransform.GetLocation();
+            for (int32 SecondAnchorIndex = FirstAnchorIndex + 1;
+                 SecondAnchorIndex < ValidMovementAnchors.Num();
+                 ++SecondAnchorIndex)
+            {
+                const FVector SecondLocation =
+                    ValidMovementAnchors[SecondAnchorIndex]->LocalTransform.GetLocation();
+                if (DistSquaredXY(FirstLocation, SecondLocation) < MinimumSeparationSquared)
+                {
+                    OutErrors.Add(LOCTEXT(
+                        "MovementAnchorsTooClose",
+                        "서로 다른 Entry, Service, Exit Anchor의 XY 중심은 max(1cm, 2 × SlotArrivalToleranceCm) 이상 떨어져야 합니다."));
+                    bFoundOverlappingAnchors = true;
+                    break;
+                }
+            }
+        }
+
+        bool bFoundOverlappingQueueSlots = false;
+        for (int32 FirstSlotIndex = 0;
+             FirstSlotIndex < LocalQueueSlotPoints.Num() && !bFoundOverlappingQueueSlots;
+             ++FirstSlotIndex)
+        {
+            for (int32 SecondSlotIndex = FirstSlotIndex + 1;
+                 SecondSlotIndex < LocalQueueSlotPoints.Num();
+                 ++SecondSlotIndex)
+            {
+                if (DistSquaredXY(
+                        LocalQueueSlotPoints[FirstSlotIndex],
+                        LocalQueueSlotPoints[SecondSlotIndex]) < MinimumSeparationSquared)
+                {
+                    OutErrors.Add(LOCTEXT(
+                        "QueueSlotsTooClose",
+                        "서로 다른 Queue 슬롯의 XY 중심은 max(1cm, 2 × SlotArrivalToleranceCm) 이상 떨어져야 합니다."));
+                    bFoundOverlappingQueueSlots = true;
+                    break;
+                }
+            }
+        }
+
+        bool bFoundAnchorQueueSlotOverlap = false;
+        for (const FFFZSAnchorDefinition* Anchor : ValidMovementAnchors)
+        {
+            if (!Anchor || bFoundAnchorQueueSlotOverlap)
+            {
+                break;
+            }
+            const FVector AnchorLocation = Anchor->LocalTransform.GetLocation();
+            for (const FVector& QueueSlotLocation : LocalQueueSlotPoints)
+            {
+                if (DistSquaredXY(AnchorLocation, QueueSlotLocation) < MinimumSeparationSquared)
+                {
+                    OutErrors.Add(LOCTEXT(
+                        "AnchorTooCloseToQueueSlot",
+                        "모든 Entry, Service, Exit Anchor와 Queue 슬롯의 XY 중심은 max(1cm, 2 × SlotArrivalToleranceCm) 이상 떨어져야 합니다."));
+                    bFoundAnchorQueueSlotOverlap = true;
+                    break;
+                }
+            }
+        }
     }
 
     TSet<FName> UniqueAllowedZones;

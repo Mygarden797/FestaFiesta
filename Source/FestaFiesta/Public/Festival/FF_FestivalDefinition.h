@@ -46,26 +46,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Initial", meta = (ClampMin = "0"))
 	int32 InitialGold = 10000;
 
-	// 시작 Staff. [기획서] §8.2 "중형 Event 1개 해결 가능, 2개 동시는 어려운 수준"
+	// 무페이 기본 Staff. [기획서] §8.2 "중형 Event 1개 해결 가능, 2개 동시는 어려운 수준"
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Initial", meta = (ClampMin = "0"))
 	int32 InitialStaffCount = 6;
 
 	// --- 고정비 -----------------------------------------------------------
 
-	// 임대료 + 임금이 3일 합계 7,200 이다.
-	// 초기 자금의 72% 가 가만히 있어도 나가기 때문에 "돈을 벌어야 하는 이유"가 된다.
+	// 임대료 3일 합계가 7,200 이다. 초기 자금의 72% 가 가만히 있어도 나가기 때문에
+	// "돈을 벌어야 하는 이유"가 된다.
 
 	// 장소 임대료 (Gold/일). [기획서] §8.2
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Recurring", meta = (ClampMin = "0"))
-	int32 DailyVenueRentGold = 1500;
-
+	int32 DailyVenueRentGold = 2400;
+	
+	// --- 스태프 임금 -----------------------------------------------------------
+	
+	// 기본 Staff 는 무페이이고 임금은 1일 알바에만 붙는다.
+	
 	// Staff 임금 (Gold/명·일). [기획서] §8.2
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Recurring", meta = (ClampMin = "0"))
 	int32 DailyStaffWageGold = 150;
 
-	// 추가 고용 1명당 (Gold). [기획서] §8.2 — 단 "허용 후보"이고 기능 확정이 아니다
+	// 하루에 고용할 수 있는 알바 상한 (명). [밸런스]
+	// 기본 6명 대비 +6 이면 최대 12명
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Recurring", meta = (ClampMin = "0"))
-	int32 AdditionalHireCostGold = 600;
+	int32 MaxHiredStaffPerDay = 6;
 
 	// --- 수익원 -----------------------------------------------------------
 

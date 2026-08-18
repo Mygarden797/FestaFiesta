@@ -277,9 +277,9 @@ struct FF_ZONESYSTEM_API FFFZSQueueRules
     float AbandonAfterSeconds = 30.0f;
     //양수면 Waiting 누적 시간이 이 값에 도달할 때 포기 흐름을 시작한다. 0은 자동 포기를 끈다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Slot Arrival Tolerance (cm)", ToolTip = "대기 슬롯·서비스·퇴장 목표에 도착했다고 인정하는 월드 XY 거리 오차(cm)입니다.", ClampMin = "0.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Slot Arrival Tolerance (cm)", ToolTip = "접근·대기 슬롯·서비스·퇴장 목표에 도착했다고 인정하는 월드 XY 거리 오차(cm)입니다. 서로 다른 이동 목표의 XY 중심은 이 값의 두 배 이상 떨어져야 합니다.", ClampMin = "0.0", Units = "cm"))
     float SlotArrivalToleranceCm = 25.0f;
-    // queue·service·exit 목표 도착 보고에 허용하는 월드 거리 오차다.//
+    // approach·queue·service·exit 목표 도착 보고에 허용하는 월드 거리 오차다.//
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Navigation Projection Extent (cm)", ToolTip = "대기열 이동 목표를 NavMesh에 투영할 때 찾는 범위(cm)입니다. 실제 이동 경로 생성은 NPC·Navigation 시스템이 담당합니다.", ClampMin = "0.0", Units = "cm"))
     float NavigationProjectionExtentCm = 30.0f;
@@ -401,14 +401,14 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     // 구 스키마/C++ 호출부를 잠시 수용하는 1 cm 단일 셀 목록이다.
     // 새 콘텐츠는 QueueReservedRects를 사용한다. 큰 영역을 이 배열로 만들면 검증에서 거부된다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Spline Points (cm)", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 선형 경로입니다. Index 0이 줄 머리·서비스 쪽이고 마지막 점이 줄 꼬리입니다. 모든 대기 슬롯 중심이 예약 사각형 안에 있어야 합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Spline Points (cm)", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 선형 경로입니다. Index 0이 줄 머리·서비스 쪽이고 마지막 점이 줄 꼬리입니다. 모든 대기 슬롯 중심이 예약 사각형 안에 있고 다른 이동 목표와 겹치지 않아야 합니다."))
     TArray<FVector> QueueSplinePointsCm;
     // Service 지점에서 Queue 끝 방향으로 정렬된 Local 센티미터 단위 Queue Spline Point다.
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
     FFFZSQueueRules QueueRules;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Anchors", meta = (DisplayName = "Entry / Service / Exit Anchors", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 이동 지점 목록입니다. Entry[0]·Exit[0]과 Service[0..ServiceCapacity-1]가 필요합니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Anchors", meta = (DisplayName = "Entry / Service / Exit Anchors", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 이동 지점 목록입니다. Queue 가입 전 접근점 Entry[0], 퇴장점 Exit[0], Service[0..ServiceCapacity-1]가 필요하며 서로 다른 Anchor와 Queue 슬롯의 XY 중심이 겹치면 안 됩니다."))
     TArray<FFFZSAnchorDefinition> Anchors;
     
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Allowed Zone IDs", ToolTip = "시설을 배치할 수 있는 Zone ID 제한 목록입니다. 비어 있으면 시설 분류와 Zone 정책만 사용합니다."))
@@ -753,7 +753,7 @@ struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
 };
 
 USTRUCT(BlueprintType)
-// UI·분석에 필요한 시설 ID·수명주기·재배치 플래그·큐 규모·평균 대기 시간·대표 위치의 비권한 값 복사본.
+// UI·분석·NPC 이동에 필요한 시설 ID·수명주기·큐 규모·대표 위치·접근점의 비권한 값 복사본.
 struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
 {
     GENERATED_BODY()
@@ -791,6 +791,17 @@ struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
     // Facility Actor의 대표 월드 지점. Unreal 월드 좌표 단위(cm)를 그대로 노출한다.
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model", meta = (Units = "cm"))
     FVector WorldLocation = FVector::ZeroVector;
+
+    // true면 ApproachWorldTransform이 FacilitySpec의 필수 Entry[0]에서 정상적으로 파생되었다.
+    // 수동으로 만든 기본 Read Model의 Identity Transform을 유효한 접근점으로 오인하지 않게 한다.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    bool bHasApproachWorldTransform = false;
+
+    // NPC가 Queue 가입을 시도하기 전에 먼저 도달할 고정 시설 접근점.
+    // FacilityDefinition의 Entry[0] 로컬 cm Transform에 설치 Actor Transform을 적용한 월드 값이다.
+    // Queue 가입 뒤의 동적 대기 위치는 이 값이 아니라 Queue Slot Assignment를 사용해야 한다.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    FTransform ApproachWorldTransform = FTransform::Identity;
 };
 
 USTRUCT(BlueprintType)

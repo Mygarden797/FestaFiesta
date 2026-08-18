@@ -118,6 +118,12 @@ namespace
 			Definition->FestivalId = TEXT("EconomyBridgeAutomationFestival");
 			Definition->InitialGold = InitialGold;
 			Definition->FacilityCostTable = CostTable;
+
+			// 이 테스트들은 **설치비·환급**만 본다. StartFestival 이 Day1 임대료를 징수하므로
+			// (economy_spec.md §5 S6) 임대료를 0 으로 두지 않으면 잔액 기대값에 2,400 이
+			// 섞여 들어온다. 하루 경계 정산 자체는 FF_DayBoundaryTests.cpp 가 검증한다.
+			Definition->DailyVenueRentGold = 0;
+
 			Progression->StartFestival(Definition);
 
 			FActorSpawnParameters SpawnParameters;
