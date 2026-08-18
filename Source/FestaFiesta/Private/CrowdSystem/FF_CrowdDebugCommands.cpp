@@ -326,6 +326,71 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStatsCommand(
 	TEXT("현재 군중/혼잡도 수치를 출력한다"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdStatsCommand));
 
+static void CrowdDumpTraitsCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+	TMap<FName, int32> CountByArchetype;
+	int32 ActiveCount = 0;
+	int32 NoneCount = 0;
+	float HungerSum = 0.f;
+	float HungerMin = 1.f;
+	float HungerMax = 0.f;
+	float RestroomSum = 0.f;
+	int32 CorrelatedCount = 0;
+	const int32 PoolSize = CrowdSim->GetAgentPoolSize();
+	for (int32 AgentIndex = 0; AgentIndex < PoolSize; ++AgentIndex)
+	{
+		if (!CrowdSim->IsAgentActive(AgentIndex))
+		{
+			continue;
+		}
+		++ActiveCount;
+		const FName ArchetypeId = CrowdSim->GetAgentArchetypeID(AgentIndex);
+		if (ArchetypeId.IsNone())
+		{
+			++NoneCount;
+		}
+		else
+		{
+			++CountByArchetype.FindOrAdd(ArchetypeId);
+		}
+		const FFF_NeedState Needs = CrowdSim->GetAgentNeeds(AgentIndex);
+		HungerSum += Needs.Hunger;
+		HungerMin = FMath::Min(HungerMin, Needs.Hunger);
+		HungerMax = FMath::Max(HungerMax, Needs.Hunger);
+		RestroomSum += Needs.Restroom;
+		if (FMath::IsNearlyEqual(Needs.Hunger, Needs.Restroom, UE_KINDA_SMALL_NUMBER))
+		{
+			++CorrelatedCount;
+		}
+	}
+	if (ActiveCount == 0)
+	{
+		Ar.Logf(TEXT("활성 Agent가 없다. FF.Crowd.Demo로 먼저 스폰할 것"));
+		return;
+	}
+	Ar.Logf(TEXT("--- 아키타입 분포 (활성 %d명) ---"), ActiveCount);
+	CountByArchetype.KeySort([](const FName& A, const FName& B) { return A.LexicalLess(B); });
+	for (const TPair<FName, int32>& Pair : CountByArchetype)
+	{
+		Ar.Logf(TEXT("%-24s : %5d명 (%5.1f%%)"),
+			*Pair.Key.ToString(), Pair.Value, 100.f * Pair.Value / ActiveCount);
+	}
+	Ar.Logf(TEXT("%-24s : %5d명 (%5.1f%%)"), TEXT("(NAME_None)"), NoneCount, 100.f * NoneCount / ActiveCount);
+	Ar.Logf(TEXT("--- 초기 Need 분포 ---"));
+	Ar.Logf(TEXT("Hunger   평균 %.3f  최소 %.3f  최대 %.3f"),
+		HungerSum / ActiveCount, HungerMin, HungerMax);
+	Ar.Logf(TEXT("Restroom 평균 %.3f"), RestroomSum / ActiveCount);
+	Ar.Logf(TEXT("Hunger == Restroom 인 개체 : %d명 (전원이면 TraitKey를 나누지 않은 것이다)"), CorrelatedCount);
+}
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdDumpTraitsCommand(
+	TEXT("FF.Crowd.DumpTraits"),
+	TEXT("활성 Agent의 아키타입 분포와 초기 Need 분포를 출력한다"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdDumpTraitsCommand));
 // -------------------------------------------------------------------------------------------------
 // FF.Crowd.View
 // -------------------------------------------------------------------------------------------------

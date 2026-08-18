@@ -1,7 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
@@ -10,6 +9,12 @@
 #include "DrawDebugHelpers.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
+#include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Party/FF_NeedRules.h"
+namespace
+{
+	constexpr int32 NoSpawnGeneration = 0;
+}
 
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -50,7 +55,36 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	
 	GlobalSimulationSeed = Settings->GlobalSimulationSeed;
 	Rng.Initialize(GlobalSimulationSeed);
-	
+	CachedGroupSizeTable = Settings->GroupSizeTable.LoadSynchronous();
+	CachedChildCompositionTable = Settings->ChildCompositionTable.LoadSynchronous();
+	CachedArchetypeTable = Settings->ArchetypeTable.LoadSynchronous();
+	CachedGroupScopeId = Settings->GroupScopeId;
+	CachedArchetypeScenarioId = Settings->ArchetypeScenarioId;
+	CachedCoefficientTable = Settings->UtilityCoefficientTable.LoadSynchronous();
+	if (CachedCoefficientTable)
+	{
+		NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
+		StayDrainMultiplierAtMaxNeed =
+			FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
+		FFF_NeedRules::LoadInitialNeedFractions(
+			CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] UtilityCoefficientTable 미설정 — Need·체류 계수가 손잡이 기본값으로 동작한다"));
+	}
+	if (!CachedGroupSizeTable || !CachedArchetypeTable)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] GroupSizeTable/ArchetypeTable 미설정 — 방문객 분포를 만들 수 없다. ")
+			TEXT("전원 1인 파티·ArchetypeID=NAME_None으로 스폰되고 preference 항이 꺼진다"));
+	}
+	else if (!CachedChildCompositionTable)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] ChildCompositionTable 미설정 — 아동 0명으로 구성된다"));
+	}
 	
 	ActorPoolSize = FMath::Max(NewActorPoolSize, 0);
 	AgentPoolSize = FMath::Max(NewAgentPoolSize, 0);
@@ -81,6 +115,10 @@ void UFF_CrowdSimulationSubsystem::ConfigureSimArea(FVector NewOrigin, float New
 	const FVector GridOrigin = SimOrigin - FVector(SimRadiusUU, SimRadiusUU, 0.f);
 	const FVector2D GridSize(SimRadiusUU * 2.f, SimRadiusUU * 2.f);
 	DensityGrid.Build(GridOrigin, GridSize, DensityCellSizeUU);
+	if (!bTemp_ExitLocationSet)
+	{
+		Temp_ExitWorldLocation = SimOrigin + FVector(-SimRadiusUU * 0.8f, 0.f, 0.f);
+	}
 }
 
 TStatId UFF_CrowdSimulationSubsystem::GetStatId() const
@@ -124,6 +162,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		DensityGrid.Update(UnitDatas);
 	}
 
+	AdvanceNeeds();
 	// --- 결정 ------------------------------------------------------------------------------
 	// 퇴장 뒤여야 죽은 파티에 목적지를 주지 않고,
 	// 밀도 갱신 뒤여야 결정 계층이 이번 프레임의 혼잡도를 보고 판단한다.
@@ -171,10 +210,26 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 		// 리더만 목적지를 정하고 멤버는 그것을 대형 오프셋만큼 옮겨 물려받는다(v0 리더 상속 모델).
 		if (Unit.LeaderAgentIndex == AgentIndex)
 		{
+			const FPartyDecisionState& State = PartyDecisionStates[AgentIndex];
+			if (State.bIsLeaving)
+			{
+				const bool bReachedExit = CrowdSteering::HasArrived(Unit, Temp_ExitArrivalRadiusUU);
+				const bool bTimedOut = (Temp_LeaveTimeoutSeconds > 0.f)
+					&& (SimTimeSeconds - State.LeaveStartedSimTime > Temp_LeaveTimeoutSeconds);
+				if (bReachedExit || bTimedOut)
+				{
+					DespawnParty(Unit.PartyID);
+					++LeftPartyCount;
+					if (bTimedOut)
+					{
+						++ForcedLeaveCount;
+					}
+				}
+			}
 			// 도착을 감지하기만 한다. 결정은 ProcessDecisions에서 프레임당 1회 예산 안에서 한다 —
 			// 이 루프는 한 프레임에 최대 MaxStepsPerFrame회 돌기 때문에 여기서 결정하면
 			// 같은 파티가 한 프레임에 3번 결정하고 ChoiceRoundIndex가 3배로 뛴다.
-			if (CrowdSteering::HasArrived(Unit, ArrivalRadiusUU))
+			else if (CrowdSteering::HasArrived(Unit, ArrivalRadiusUU))
 			{
 				RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 			}
@@ -240,6 +295,17 @@ void UFF_CrowdSimulationSubsystem::RequestDecision(int32 LeaderAgentIndex, EFF_D
 
 	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
 
+	if (State.bIsLeaving)
+	{
+		return;
+	}
+	if (Reason == EFF_DecisionReason::Arrived
+		&& !State.CurrentDestinationId.IsNone()
+		&& PartyVisitHistories.IsValidIndex(LeaderAgentIndex))
+	{
+		PartyVisitHistories[LeaderAgentIndex].RecordVisit(State.CurrentDestinationId, GetLiveMinutes());
+		State.CurrentDestinationId = NAME_None;
+	}
 	State.bNeedsDecision = true;
 
 	// 사유는 항상 최신 것으로 덮는다. 이미 대기 중인데 시설이 닫혔다면
@@ -332,12 +398,48 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 		Context.ChoiceRoundIndex = State.ChoiceRoundIndex;
 		Context.PartyWorldLocation = Unit.Position;
 		Context.Reason = State.PendingReason;
+		Context.ArchetypeId = Unit.ArchetypeID;
+		Context.ConsecutiveNoChoiceCount = State.ConsecutiveNoChoiceCount;
+		Context.NowLiveMinutes = GetLiveMinutes();
+		Context.Needs = PartyAggregatedNeeds.IsValidIndex(LeaderIndex)
+			? PartyAggregatedNeeds[LeaderIndex]
+			: Unit.Needs;
+		Context.PartySize = PartyMemberCounts.IsValidIndex(LeaderIndex)
+			? FMath::Max(PartyMemberCounts[LeaderIndex], 1)
+			: 1;
+		if (PartyVisitHistories.IsValidIndex(LeaderIndex))
+		{
+			Context.VisitHistory = PartyVisitHistories[LeaderIndex];
+		}
+		Context.RemainingStayMinutes = GetPartyRemainingStayMinutes(LeaderIndex);
+		FFF_PartyDecisionResult Result;
 
-		FVector Destination = FVector::ZeroVector;
 		const bool bDecided = OnPartyNeedsDecision.IsBound()
-			&& OnPartyNeedsDecision.Execute(Context, Destination);
+			&& OnPartyNeedsDecision.Execute(Context, Result);
+		if (bDecided)
+		{
+			Unit.TargetLocation = Result.Destination;
+		}
+		else if (Result.FallbackAction == EFF_PartyFallbackAction::Leave)
+		{
+			State.bIsLeaving = true;
+			State.LeaveStartedSimTime = SimTimeSeconds;
+			Unit.TargetLocation = Temp_ExitWorldLocation;
+			State.CurrentDestinationId = NAME_None;
+			State.bNeedsDecision = false;
+			State.LastDecisionSimTime = SimTimeSeconds;
+			++Processed;
+			continue;
+		}
+		else
+		{
+			Unit.TargetLocation = PickWanderDestination(LeaderIndex);
+		}
+		State.CurrentDestinationId = bDecided ? Result.DestinationId : NAME_None;
 
-		Unit.TargetLocation = bDecided ? Destination : PickWanderDestination(LeaderIndex);
+		State.ConsecutiveNoChoiceCount = bDecided
+			? 0
+			: (Result.bCountAsNoChoice ? State.ConsecutiveNoChoiceCount + 1 : State.ConsecutiveNoChoiceCount);
 
 		// 이걸 빠뜨리면 같은 파티가 매 프레임 예산을 먹고 다른 파티가 굶는다.
 		State.bNeedsDecision = false;
@@ -349,38 +451,6 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 	// 처리한 만큼만 앞에서 잘라낸다. 남은 것이 다음 프레임 맨 앞이 되므로 FIFO가 유지된다.
 	// 용량은 유지한다 — 매 프레임 재사용되는 컨테이너다.
 	DecisionQueue.RemoveAt(0, Head, EAllowShrinking::No);
-}
-
-int32 UFF_CrowdSimulationSubsystem::PickPartySize()
-{
-	if (!bEnablePartyGrouping || PartySizeWeights.Num() == 0)
-	{
-		return 1;
-	}
-
-	float TotalWeight = 0.f;
-	for (const float Weight : PartySizeWeights)
-	{
-		TotalWeight += FMath::Max(Weight, 0.f);
-	}
-
-	// 전부 0이거나 음수면 추첨할 것이 없다. 1인으로 떨어뜨린다.
-	if (TotalWeight <= 0.f)
-	{
-		return 1;
-	}
-
-	float Roll = Rng.FRandRange(0.f, TotalWeight);
-	for (int32 i = 0; i < PartySizeWeights.Num(); ++i)
-	{
-		Roll -= FMath::Max(PartySizeWeights[i], 0.f);
-		if (Roll <= 0.f)
-		{
-			return i + 1;
-		}
-	}
-
-	return PartySizeWeights.Num();
 }
 
 FVector UFF_CrowdSimulationSubsystem::GetPartyFormationOffset(int32 SlotIndex) const
@@ -572,6 +642,98 @@ void UFF_CrowdSimulationSubsystem::ReleaseAgentToPool(int32 AgentIndex)
 }
 
 
+void UFF_CrowdSimulationSubsystem::SetTemp_ExitWorldLocation(FVector NewExitWorldLocation)
+{
+	Temp_ExitWorldLocation = NewExitWorldLocation;
+	bTemp_ExitLocationSet = true;
+	if (NewExitWorldLocation.Equals(SimOrigin, 1.f))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 퇴장 지점이 스폰 원점과 같다 — 퇴장 동선이 생기지 않는다. ")
+			TEXT("AFF_SpawnActor의 Temp_ExitOffsetFromOrigin을 확인할 것"));
+	}
+}
+int32 UFF_CrowdSimulationSubsystem::GetLeavingPartyCount() const
+{
+	int32 Count = 0;
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+		if (Unit.bIsActive && Unit.LeaderAgentIndex == AgentIndex
+			&& PartyDecisionStates.IsValidIndex(AgentIndex) && PartyDecisionStates[AgentIndex].bIsLeaving)
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+FFF_VisitorDistribution UFF_CrowdSimulationSubsystem::BuildVisitorDistribution(int32 RequestedCount) const
+{
+	return FFF_VisitorDistributionBuilder::Build(
+		CachedGroupSizeTable.Get(),
+		CachedChildCompositionTable.Get(),
+		CachedArchetypeTable.Get(),
+		CachedGroupScopeId,
+		CachedArchetypeScenarioId,
+		RequestedCount,
+		GlobalSimulationSeed);
+}
+FFF_NeedState UFF_CrowdSimulationSubsystem::MakeInitialNeeds(int32 StableAgentId) const
+{
+	return FFF_NeedRules::MakeInitialNeeds(
+		GlobalSimulationSeed,
+		StableAgentId,
+		NoSpawnGeneration,
+		NeedRiseRates,
+		InitialNeedModeFraction,
+		InitialNeedMaxFraction);
+}
+void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
+	const float ElapsedMinutes =
+		(SimTimeSeconds - LastNeedAdvanceSimTime) * Temp_FestivalMinutesPerRealSecond;
+	LastNeedAdvanceSimTime = SimTimeSeconds;
+	for (FFF_NeedState& Aggregated : PartyAggregatedNeeds)
+	{
+		Aggregated = FFF_NeedState();
+	}
+	for (int32& MemberCount : PartyMemberCounts)
+	{
+		MemberCount = 0;
+	}
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		FUnitData& Unit = UnitDatas[AgentIndex];
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+		Unit.Needs = FFF_NeedRules::Advance(Unit.Needs, ElapsedMinutes, NeedRiseRates);
+		const int32 LeaderIndex = Unit.LeaderAgentIndex;
+		if (!PartyAggregatedNeeds.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+		PartyAggregatedNeeds[LeaderIndex] =
+			FFF_NeedState::MakeAggregated(PartyAggregatedNeeds[LeaderIndex], Unit.Needs);
+		++PartyMemberCounts[LeaderIndex];
+	}
+	if (ElapsedMinutes > 0.f)
+	{
+		for (int32 LeaderIndex = 0; LeaderIndex < PartyRemainingStayMinutes.Num(); ++LeaderIndex)
+		{
+			if (PartyMemberCounts[LeaderIndex] <= 0)
+			{
+				continue;
+			}
+			const FFF_StayConsumption Consumption = FFF_NeedRules::ConsumeStay(
+				PartyAggregatedNeeds[LeaderIndex], ElapsedMinutes, StayDrainMultiplierAtMaxNeed);
+			PartyRemainingStayMinutes[LeaderIndex] = FMath::Max(
+				PartyRemainingStayMinutes[LeaderIndex] - Consumption.ConsumedStayBudgetMinutes, 0.f);
+		}
+	}
+}
 int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLocation, FRotator SpawnRotation)
 {
 	if (FreeAgentSlotIndex.Num() == 0)
@@ -592,6 +754,7 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 	Unit.Velocity = FVector::ZeroVector;
 	Unit.Force = FVector::ZeroVector;
 	Unit.StableAgentID = NextStableAgentID++;
+	Unit.Needs = MakeInitialNeeds(Unit.StableAgentID);
 
 	// 결정을 받기 전까지의 목적지는 제자리이다.
 	Unit.TargetLocation = SpawnLocation;
@@ -613,6 +776,10 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 		PartyDecisionStates[index] = FPartyDecisionState();
 	}
 
+	if (PartyVisitHistories.IsValidIndex(index))
+	{
+		PartyVisitHistories[index].Reset();
+	}
 	// 스폰 직후에는 아직 목적지가 없다. 파티로 묶이는 멤버의 요청은
 	// ProcessDecisions가 "리더가 아니다"로 걸러낸다.
 	RequestDecision(index, EFF_DecisionReason::Spawned);
@@ -637,14 +804,35 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 		return 0;
 	}
 
+	const FFF_VisitorDistribution Distribution = BuildVisitorDistribution(Count);
+	if (Distribution.Visitors.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 방문객 분포가 비었다 — 입력 테이블이나 ScopeId('%s')를 확인할 것. 스폰하지 않는다"),
+			*CachedGroupScopeId.ToString());
+		return 0;
+	}
+	if (Distribution.ActualVisitorCount < Distribution.RequestedVisitorCount)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[CrowdSimulationSubsystem] 요청 %d명 중 %d명 — 그룹을 통째로만 만들어 %d명이 남았다"),
+			Distribution.RequestedVisitorCount, Distribution.ActualVisitorCount,
+			Distribution.RequestedVisitorCount - Distribution.ActualVisitorCount);
+	}
 	int32 SpawnedCount = 0;
 	int32 PartiesFormed = 0;
+	int32 ChildrenSpawned = 0;
 	bool bAgentPoolExhausted = false;
 	const float BaseSpeed = FUnitData().Speed;
-	// 파티 단위로 스폰한다. 개인별로 위치를 뽑으면 같은 파티가 맵 반대편에 흩어져 시작하므로
-	// 기준점은 파티당 한 번만 뽑고, 멤버는 그 기준점 주변 대형 자리에 놓는다.
-	while (SpawnedCount < Count && !bAgentPoolExhausted)
+	int32 VisitorCursor = 0;
+	while (VisitorCursor < Distribution.Visitors.Num() && !bAgentPoolExhausted)
 	{
+		const FFF_TaggedVisitor& LeadVisitor = Distribution.Visitors[VisitorCursor];
+		const int32 PlannedSize = bEnablePartyGrouping ? FMath::Max(LeadVisitor.TargetGroupSize, 1) : 1;
+		const int32 PartySize = FMath::Min(PlannedSize, Distribution.Visitors.Num() - VisitorCursor);
+		checkf(!LeadVisitor.bIsDependentChildSlot || !bEnablePartyGrouping,
+			TEXT("SpawnAgents: 그룹 선두가 아동 슬롯이다 — 빌더가 성인을 먼저 배출한다는 전제가 깨졌다. ")
+			TEXT("아동이 리더가 되면 목적지를 상속할 대상이 없다"));
 		// PickRandomDestination과 같은 방식 — 제곱근을 씌워 원 안에 고르게 흩뿌린다.
 		const float Angle = Rng.FRandRange(0.f, 2.f * PI);
 		const float Radius = SpawnRadiusUU * FMath::Sqrt(Rng.FRand());
@@ -653,35 +841,39 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 		// 같이 온 사람들은 같은 방향을 보고 있다. 파티당 한 번만 뽑는다.
 		const FRotator PartyRotation(0.f, Rng.FRandRange(0.f, 360.f), 0.f);
 
-		// 남은 인원보다 큰 파티는 잘라 넣는다. 요청 인원을 정확히 맞춰야 테스트와 시연 수치가 어긋나지 않는다.
-		const int32 PartySize = FMath::Min(PickPartySize(), Count - SpawnedCount);
-
 		int32 LeaderIndex = INDEX_NONE;
 		int32 PartyID = INDEX_NONE;
 
 		for (int32 Slot = 0; Slot < PartySize; ++Slot)
 		{
+			const FFF_TaggedVisitor& Visitor = Distribution.Visitors[VisitorCursor + Slot];
+			checkf(!bEnablePartyGrouping || Visitor.TargetGroupSize == LeadVisitor.TargetGroupSize,
+				TEXT("SpawnAgents: 그룹 %d번째 멤버의 TargetGroupSize(%d)가 선두(%d)와 다르다 — ")
+				TEXT("빌더의 배출 순서가 바뀌었다. 태그 기준 재조합으로 바꿀 것"),
+				Slot, Visitor.TargetGroupSize, LeadVisitor.TargetGroupSize);
 			const FVector SpawnLocation = Anchor + GetPartyFormationOffset(Slot);
 
 			const int32 AgentIndex = SpawnAgent(*World, SpawnLocation, PartyRotation);
 			if (AgentIndex == INDEX_NONE)
 			{
 				// Agent 풀이 고갈됐다. 더 시도해도 같은 결과다.
-				// 여기서 끊긴 파티는 이미 스폰된 멤버만으로 유지된다(리더는 항상 먼저 스폰되므로 리더 없는 파티는 없다).
 				bAgentPoolExhausted = true;
 				break;
 			}
 
 			FUnitData& Unit = UnitDatas[AgentIndex];
-			
+			Unit.ArchetypeID = Visitor.ArchetypeId;
+			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
+			if (Unit.bIsDependentChild)
+			{
+				++ChildrenSpawned;
+			}
 			if (Slot == 0)
 			{
 				// 리더. SpawnAgent가 이미 자기 자신을 리더로, 새 PartyID를 부여해 뒀다.
 				LeaderIndex = AgentIndex;
 				PartyID = Unit.PartyID;
 				PartyLeaderByID.Add(PartyID, LeaderIndex);
-
-
 			}
 			else
 			{
@@ -691,7 +883,6 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 				// 첫 스텝에서 어차피 갱신되지만, 그 한 프레임 동안 엉뚱한 방향으로 몸이 돌아가는 것을 막는다.
 				Unit.TargetLocation = UnitDatas[LeaderIndex].TargetLocation + GetPartyFormationOffset(Slot);
 			}
-			
 			// 개체 변주는 GroupId로 PartyID를 쓴다. 멤버의 PartyID는 위 else 블록에서 확정되므로
 			// 이 호출을 if/else 앞으로 옮기면 멤버마다 다른 GroupId가 들어가 그룹 공유가 조용히 깨진다
 			// (같은 파티가 서로 다른 속도로 걸어 계속 벌어지고, PartyCohesionRadiusUU 문제로 오진하게 된다).
@@ -715,13 +906,17 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 					Unit.PartyID,
 					0,
 					CachedCorrelationStrength);
-			
 			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
-				
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
 			Unit.MaxSpeed = Unit.Speed;
-			
 
+			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
+			{
+				const float StayShare = FFF_UtilityCoefficientHelpers::GetCoefficient(
+					CachedCoefficientTable.Get(), TEXT("stay_duration_share_of_live_stage_mean"), 0.5f);
+				PartyRemainingStayMinutes[LeaderIndex] =
+					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
+			}
 
 			++SpawnedCount;
 		}
@@ -733,10 +928,13 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter
 			// 멤버들도 SpawnAgent에서 각자 ID를 하나씩 소비했다. 그만큼 되돌려 ID가 건너뛰지 않게 한다.
 			NextPartyID = PartyID + 1;
 		}
+		VisitorCursor += PartySize;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[CrowdSimulationSubsystem] Spawned %d/%d agents in %d parties (active: %d)"),
-		SpawnedCount, Count, PartiesFormed, ActiveAgentCount);
+	UE_LOG(LogTemp, Log,
+		TEXT("[CrowdSimulationSubsystem] Spawned %d/%d agents in %d parties (아동 %d명 %.1f%%, active: %d)"),
+		SpawnedCount, Count, PartiesFormed, ChildrenSpawned,
+		SpawnedCount > 0 ? 100.f * ChildrenSpawned / SpawnedCount : 0.f, ActiveAgentCount);
 
 	return SpawnedCount;
 }
@@ -815,6 +1013,14 @@ void UFF_CrowdSimulationSubsystem::InitializeCrowdAgentPool(UWorld& InWorld, FVe
 	// UnitDatas.Num()이 아니라 AgentPoolSize를 쓰면 스폰이 중간에 실패했을 때 어긋난다.
 	PartyDecisionStates.Reset();
 	PartyDecisionStates.SetNum(UnitDatas.Num());
+	PartyVisitHistories.Reset();
+	PartyVisitHistories.SetNum(UnitDatas.Num());
+	PartyAggregatedNeeds.Reset();
+	PartyAggregatedNeeds.SetNum(UnitDatas.Num());
+	PartyMemberCounts.Reset();
+	PartyMemberCounts.SetNumZeroed(UnitDatas.Num());
+	PartyRemainingStayMinutes.Reset();
+	PartyRemainingStayMinutes.SetNumZeroed(UnitDatas.Num());
 	DecisionQueue.Reset();
 
 	ActiveAgentCount = 0;

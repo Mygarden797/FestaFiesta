@@ -3,14 +3,20 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "FF_FFZSTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_CrowdDecisionSubsystem.generated.h"
-
-struct FFF_PartyDecisionContext;
 class UDataTable;
 class UFFZSWorldSubsystem;
 
+UENUM(BlueprintType)
+enum class EFF_DecisionMode : uint8
+{
+	Random,
+	Greedy,
+	Full
+};
 /**
  * 결정이 어디서 끝났는지 세는 계수기.
  *
@@ -128,7 +134,21 @@ public:
 	FFF_CrowdDecisionStats GetDecisionStats() const { return Stats; }
 
 	UFUNCTION(BlueprintCallable, Category = "Decision")
-	void ResetStats() { Stats = FFF_CrowdDecisionStats(); }
+	void ResetStats()
+	{
+		Stats = FFF_CrowdDecisionStats();
+		LeaveByStayExpiredCount = 0;
+		LeaveByNoChoicePatienceCount = 0;
+		RelocateRequestedCount = 0;
+	}
+	UFUNCTION(BlueprintPure, Category = "Decision")
+	int32 GetLeaveByStayExpiredCount() const { return LeaveByStayExpiredCount; }
+	UFUNCTION(BlueprintPure, Category = "Decision")
+	int32 GetLeaveByNoChoicePatienceCount() const { return LeaveByNoChoicePatienceCount; }
+	UFUNCTION(BlueprintPure, Category = "Decision")
+	int32 GetRelocateRequestedCount() const { return RelocateRequestedCount; }
+	UFUNCTION(BlueprintPure, Category = "Decision")
+	int32 GetNoChoiceLeavePatienceRounds() const { return NoChoiceLeavePatienceRounds; }
 
 	/**
 	 * 결정 연결을 끊거나 다시 잇는다. 끊으면 Crowd가 배회로만 돌아간다.
@@ -176,9 +196,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision")
 	int32 MaxCandidates = 12;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision")
+	EFF_DecisionMode DecisionMode = EFF_DecisionMode::Full;
 private:
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
-	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FVector& OutDestination);
+	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
+	EFF_PartyFallbackAction ResolveFallbackAction(const FFF_PartyDecisionContext& Context);
+	const TMap<FName, float>& GetPreferenceVector(FName ArchetypeId, FName CompanionType);
 
 	/**
 	 * 이번 프레임의 ZoneSystem 스냅샷. 프레임당 한 번만 만든다.
@@ -203,4 +227,13 @@ private:
 
 	// 취향 벡터 미구현 경고는 세션 1회만. 결정마다 찍으면 로그가 못 쓰게 된다
 	bool bWarnedNoPreferenceVector = false;
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedArchetypeTable;
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedCompanionModifierTable;
+	TMap<FName, TMap<FName, float>> PreferenceVectorCache;
+	int32 NoChoiceLeavePatienceRounds = 5;
+	int32 LeaveByStayExpiredCount = 0;
+	int32 LeaveByNoChoicePatienceCount = 0;
+	int32 RelocateRequestedCount = 0;
 };

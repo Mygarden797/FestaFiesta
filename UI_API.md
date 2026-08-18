@@ -137,7 +137,20 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 
 두 건 다 컴파일 확인까지 마쳤습니다
 
----
+
+### `OnDayEnded`
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `UFF_FestivalStageSubsystem` (GameInstanceSubsystem)
+- **시그니처**: `FOnDayEnded(int32 EndedDay, float TodayLiveDuration)`
+- **갱신 주기**: 이벤트 (AdvanceToNextDay 호출 시, 하루 종료 시점 1회)
+- **상태**: `구현완료`
+- **비고**: EndedDay는 방금 끝난 날짜(1~3), TodayLiveDuration은 그날 Live 총 진행 시간(초). 정비/청결 등 Day Modifier 이월 계산은 이 신호를 받는 쪽(시설/경제)이 담당 — 시간 시스템은 기준 파라미터 전달까지만 책임진다.
+
+| 멤버                                     | 형                   | 설명                                |
+| -------------------------------------- | ------------------- | --------------------------------- |
+| `OnDayEnded`                           | `FOnDayEnded`       |(EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달     |
+
 
 ## Zone · 시설 — 한광훈
 
@@ -644,3 +657,4 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-18 | 김시리 | 🆕 **피날레 구매가 구현됐습니다** — Day3 MorningCheck 구매 화면이 필요합니다(담당 백종태). 버튼 활성화는 `CanPurchaseFinaleNow()`, 구매는 `TryPurchaseFinale()`이고 실패 이유가 한글로 옵니다. **1회 구매·변경 불가라 확인창이 필요합니다.** 만족도 보너스는 Gold가 아니고 평가 점수 합산은 관객 만족도가 생길 때 붙입니다 |
 | 2026-08-18 | 김시리 | 🆕 **"다음 날" 버튼이 이제 하루치 임대료를 정산합니다** — `RequestAdvanceToNextDay()`를 누르면 잔액·밀린 임대료·오늘 매출·인원 4개 값이 바뀝니다(전부 기존 델리게이트로 통지). 종태님 쪽 수정은 없고, 버튼 직후 UI가 잔액을 직접 계산하지만 않으면 됩니다. 문서에 빠져 있던 밀린 임대료(`GetTotalArrears`)와 인원(`GetTotalStaffCount`) 2종 추가 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
+| 2026-08-19 | 강민서 | `OnDayEnded` 델리게이트 신설. AdvanceToNextDay() 호출 시 방금 끝난 날짜와 그날 Live 진행 시간을 broadcast. 이월 데이터(정비/청결 등) 계산은 수신 측(광훈/시리) 담당 |
