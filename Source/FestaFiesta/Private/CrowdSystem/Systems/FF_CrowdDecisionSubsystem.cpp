@@ -9,8 +9,12 @@
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "NPC/Destination/FF_PreferenceVectorBuilder.h"
+#include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
+#include "NPC/Party/FF_VisitorDistributionBuilder.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCrowdDecision, Log, All);
 
@@ -47,6 +51,20 @@ void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			TEXT("동작은 하지만 계수 튜닝 결과가 반영되지 않는다"));
 	}
 
+	NoChoiceLeavePatienceRounds = FMath::RoundToInt(FFF_UtilityCoefficientHelpers::GetCoefficient(
+		CachedCoefficientTable.Get(), TEXT("no_choice_leave_patience_rounds"), 5.f));
+	CachedArchetypeTable = Settings ? Settings->ArchetypeTable.LoadSynchronous() : nullptr;
+	CachedCompanionModifierTable = Settings ? Settings->CompanionModifierTable.LoadSynchronous() : nullptr;
+	if (!CachedArchetypeTable)
+	{
+		UE_LOG(LogCrowdDecision, Warning,
+			TEXT("ArchetypeTable 미설정 — preference 항이 0으로 동작한다"));
+	}
+	else if (!CachedCompanionModifierTable)
+	{
+		UE_LOG(LogCrowdDecision, Warning,
+			TEXT("CompanionModifierTable 미설정 — 취향이 아키타입만으로 합성된다 (동반유형 보정 없음)"));
+	}
 	UE_LOG(LogCrowdDecision, Log, TEXT("목적지 결정 연결 완료 (후보 상한 %d)"), MaxCandidates);
 }
 
@@ -191,13 +209,56 @@ const FFFZSReadModel& UFF_CrowdDecisionSubsystem::GetReadModelForThisFrame()
 	return CachedReadModel;
 }
 
+const TMap<FName, float>& UFF_CrowdDecisionSubsystem::GetPreferenceVector(FName ArchetypeId, FName CompanionType)
+{
+	const FName CacheKey(*FString::Printf(TEXT("%s|%s"), *ArchetypeId.ToString(), *CompanionType.ToString()));
+	if (const TMap<FName, float>* Cached = PreferenceVectorCache.Find(CacheKey))
+	{
+		return *Cached;
+	}
+	return PreferenceVectorCache.Add(CacheKey, FFF_PreferenceVectorBuilder::Build(
+		ArchetypeId,
+		CompanionType,
+		1.f,
+		CachedArchetypeTable.Get(),
+		CachedCompanionModifierTable.Get()));
+}
+EFF_PartyFallbackAction UFF_CrowdDecisionSubsystem::ResolveFallbackAction(const FFF_PartyDecisionContext& Context)
+{
+	const float CurrentZoneDensityRatio = 0.f;
+	const float PersonalDensityThresholdRatio = 1.f;
+	const EFF_NoChoiceAction Action = FFF_UtilityDestinationSelector::ResolveNoChoiceAction(
+		Context.RemainingStayMinutes,
+		Context.ConsecutiveNoChoiceCount,
+		NoChoiceLeavePatienceRounds,
+		CurrentZoneDensityRatio,
+		PersonalDensityThresholdRatio);
+	switch (Action)
+	{
+	case EFF_NoChoiceAction::Leave:
+		if (Context.RemainingStayMinutes <= 0.f) { ++LeaveByStayExpiredCount; }
+		else { ++LeaveByNoChoicePatienceCount; }
+		return EFF_PartyFallbackAction::Leave;
+	case EFF_NoChoiceAction::Relocate:
+		++RelocateRequestedCount;
+		return EFF_PartyFallbackAction::Relocate;
+	default:
+		return EFF_PartyFallbackAction::Wander;
+	}
+}
 bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
-	const FFF_PartyDecisionContext& Context, FVector& OutDestination)
+	const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdDecision_Decide);
 
 	++Stats.Requests;
 
+	OutResult.FallbackAction = ResolveFallbackAction(Context);
+	if (DecisionMode == EFF_DecisionMode::Random)
+	{
+		++Stats.NoChoice;
+		return false;
+	}
 	const FFFZSReadModel& ReadModel = GetReadModelForThisFrame();
 
 	// 시설을 아직 짓지 않은 상태. 인게임 배치 구조에서는 이게 시작 상태이므로
@@ -248,7 +309,7 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
-	const TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
+	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
 		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates);
 
 	// 현재·인접 Zone에 열린 시설이 없다. Info·Safety는 후보에서 제외되므로
@@ -259,18 +320,33 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
-	// 취향 벡터는 아키타입에서 합성된다. FUnitData::ArchetypeID가 아직 NAME_None이라
-	// 빈 맵을 넘긴다 — Choose는 preference 항을 0으로 계산하고 크래시하지 않는다.
-	// 결과적으로 6항 중 attraction·distance·density 셋만 동작한다.
 	static const TMap<FName, float> EmptyPreferenceVector;
 
-	if (!bWarnedNoPreferenceVector)
+	const bool bFullMode = (DecisionMode == EFF_DecisionMode::Full);
+	if (bFullMode && Context.ArchetypeId.IsNone() && !bWarnedNoPreferenceVector)
 	{
 		bWarnedNoPreferenceVector = true;
 		UE_LOG(LogCrowdDecision, Warning,
-			TEXT("취향 벡터가 비어 있다 (아키타입 미구현) — preference·need·revisit 항이 0이다. ")
-			TEXT("시설 쏠림은 재현되지만 개인차는 나오지 않는다"));
+			TEXT("파티 %d의 ArchetypeId가 NAME_None이다 — preference 항이 0으로 동작한다. ")
+			TEXT("ArchetypeTable 설정을 확인할 것"), Context.PartyId);
 	}
+	if (!bFullMode)
+	{
+		for (FFF_DestinationCandidate& Candidate : Candidates)
+		{
+			Candidate.CurrentOccupancy = 0.f;
+			Candidate.EstimatedWaitMinutes = 0.f;
+		}
+	}
+	else
+	{
+		Context.VisitHistory.ApplyToCandidates(Candidates, Context.NowLiveMinutes);
+	}
+	const TMap<FName, float>& PreferenceVector = bFullMode
+		? GetPreferenceVector(
+			Context.ArchetypeId,
+			FFF_VisitorDistributionBuilder::CompanionSizeTagForGroupSize(Context.PartySize))
+		: EmptyPreferenceVector;
 
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
 	const int32 GlobalSeed = Settings ? Settings->GlobalSimulationSeed : 0;
@@ -279,17 +355,23 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	// 매번 같은 시드를 받아 같은 곳만 반복해서 고른다.
 	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
 		Candidates,
-		EmptyPreferenceVector,
+		PreferenceVector,
 		CachedCoefficientTable.Get(),
 		GlobalSeed,
 		Context.StableAgentId,
-		Context.ChoiceRoundIndex);
+		Context.ChoiceRoundIndex,
+		bFullMode ? Context.Needs : FFF_NeedState(),
+		bFullMode ? Context.ConsecutiveNoChoiceCount : 0);
 
 	// no_choice는 오류가 아니라 판단이다 — "지금은 아무 데도 안 간다".
 	// Crowd의 배회 폴백이 곧 Utility 스펙의 no_choice → Wander다.
 	if (Decision.bIsNoChoice || Decision.ChosenDestinationId.IsNone())
 	{
 		++Stats.NoChoice;
+		OutResult.bCountAsNoChoice = true;
+		FFF_PartyDecisionContext Bumped = Context;
+		Bumped.ConsecutiveNoChoiceCount = Context.ConsecutiveNoChoiceCount + 1;
+		OutResult.FallbackAction = ResolveFallbackAction(Bumped);
 		return false;
 	}
 
@@ -330,7 +412,8 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 
 	// Actor 중심(WorldLocation)이 아니라 Entry[0] 접근점을 쓴다.
 	// Actor origin은 배치·회전의 기준점일 뿐이고, 큰 무대·부스에서는 메시 내부일 수 있다.
-	OutDestination = Facility->ApproachWorldTransform.GetLocation();
+	OutResult.Destination = Facility->ApproachWorldTransform.GetLocation();
+	OutResult.DestinationId = Decision.ChosenDestinationId;
 
 	++Stats.Chosen;
 
@@ -396,6 +479,11 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 	Ar.Logf(TEXT("[문제] GUID 파싱 실패 : %d"), S.ParseFailed);
 	Ar.Logf(TEXT("[문제] 시설 소실      : %d"), S.FacilityMissing);
 	Ar.Logf(TEXT("[문제] 접근점 무효    : %d   (FacilityDefinition의 Entry[0] 확인)"), S.InvalidApproach);
+	Ar.Logf(TEXT("--- 퇴장 판정 ---"));
+	Ar.Logf(TEXT("퇴장: 체류 소진    : %d   (주 원인이어야 한다)"), Decision->GetLeaveByStayExpiredCount());
+	Ar.Logf(TEXT("퇴장: 인내 한계    : %d   (연속 no_choice %d회. 체류 소진보다 많으면 인원 보존 위험)"),
+		Decision->GetLeaveByNoChoicePatienceCount(), Decision->GetNoChoiceLeavePatienceRounds());
+	Ar.Logf(TEXT("Relocate 요청      : %d   (v0에서는 배회로 처리된다)"), Decision->GetRelocateRequestedCount());
 }
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionStatsCommand(
@@ -403,6 +491,106 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionStatsCommand(
 	TEXT("목적지 결정이 어디서 끝났는지 센다. FF.Decision.Stats [reset]"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&DecisionStatsCommand));
 
+static void DecisionBenchCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdDecisionSubsystem* Decision = FFDecisionConsole::GetDecision(World, Ar);
+	if (!Decision || !World)
+	{
+		return;
+	}
+	const int32 Mode = (Args.Num() > 0) ? FMath::Clamp(FCString::Atoi(*Args[0]), 0, 2) : 2;
+	const float WaitSeconds = (Args.Num() > 1) ? FMath::Max(FCString::Atof(*Args[1]), 1.f) : 60.f;
+	Decision->DecisionMode = static_cast<EFF_DecisionMode>(Mode);
+	Decision->ResetStats();
+	Ar.Logf(TEXT("[벤치] 모드 %d로 %.0f초 측정 시작"), Mode, WaitSeconds);
+	FTimerHandle Handle;
+	World->GetTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(Decision,
+		[World, Decision, Mode, WaitSeconds]()
+		{
+			const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+			const FFF_CrowdDecisionStats& S = Decision->GetStats();
+			UE_LOG(LogCrowdDecision, Log, TEXT("[벤치결과] 모드=%d 대기=%.0fs"), Mode, WaitSeconds);
+			if (Crowd)
+			{
+				UE_LOG(LogCrowdDecision, Log,
+					TEXT("[벤치결과] 활성=%d 최대밀도=%.3f 혼잡셀=%d"),
+					Crowd->GetActiveAgentCount(), Crowd->GetMaxDensity(), Crowd->GetCongestedCellCount());
+				float HungerSum = 0.f;
+				float RestroomSum = 0.f;
+				int32 Counted = 0;
+				for (int32 i = 0; i < Crowd->GetAgentPoolSize(); ++i)
+				{
+					if (!Crowd->IsAgentActive(i)) { continue; }
+					const FFF_NeedState N = Crowd->GetAgentNeeds(i);
+					HungerSum += N.Hunger;
+					RestroomSum += N.Restroom;
+					++Counted;
+				}
+				if (Counted > 0)
+				{
+					UE_LOG(LogCrowdDecision, Log,
+						TEXT("[벤치결과] 경과분=%.1f Hunger평균=%.4f Restroom평균=%.4f"),
+						Crowd->GetLiveMinutes(), HungerSum / Counted, RestroomSum / Counted);
+				}
+			}
+			UE_LOG(LogCrowdDecision, Log,
+				TEXT("[벤치결과] 요청=%d 지급=%d | no_choice=%d 후보0=%d 시설없음=%d 개장안됨=%d ")
+				TEXT("Zone밖=%d ZoneSys없음=%d 파싱실패=%d 시설소실=%d 접근점없음=%d"),
+				S.Requests, S.Chosen, S.NoChoice, S.NoCandidate, S.NoFacility, S.NoOpenFacility,
+				S.OutsideZone, S.NoZoneSystem, S.ParseFailed, S.FacilityMissing, S.InvalidApproach);
+			UE_LOG(LogCrowdDecision, Log,
+				TEXT("[벤치결과] 퇴장판정: 체류소진=%d 인내한계=%d(한계 %d회) | Relocate요청=%d"),
+				Decision->GetLeaveByStayExpiredCount(), Decision->GetLeaveByNoChoicePatienceCount(),
+				Decision->GetNoChoiceLeavePatienceRounds(), Decision->GetRelocateRequestedCount());
+			if (Crowd)
+			{
+				UE_LOG(LogCrowdDecision, Log,
+					TEXT("[벤치결과] 출구도착=%d 퇴장중=%d 강제퇴장=%d"),
+					Crowd->GetLeftPartyCount(), Crowd->GetLeavingPartyCount(), Crowd->GetForcedLeaveCount());
+			}
+			if (GIsEditor)
+			{
+				UE_LOG(LogCrowdDecision, Log,
+					TEXT("[벤치결과] 에디터라 종료하지 않는다 — 다음 조건은 FF.Decision.Bench로 이어서 부를 것"));
+			}
+			else
+			{
+				FPlatformMisc::RequestExit(false);
+			}
+		}), WaitSeconds, false);
+}
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionBenchCommand(
+	TEXT("FF.Decision.Bench"),
+	TEXT("모드를 정해 일정 시간 돌린 뒤 밀도·계수기를 찍고 종료한다. FF.Decision.Bench [모드=2] [초=60]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&DecisionBenchCommand));
+static void DecisionModeCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdDecisionSubsystem* Decision = FFDecisionConsole::GetDecision(World, Ar);
+	if (!Decision)
+	{
+		return;
+	}
+	static const TCHAR* ModeNames[] = {
+		TEXT("0 Random — 전원 배회"),
+		TEXT("1 Greedy — attraction + distance만"),
+		TEXT("2 Full — 6항 전부")
+	};
+	if (Args.Num() > 0)
+	{
+		const int32 Requested = FMath::Clamp(FCString::Atoi(*Args[0]), 0, 2);
+		Decision->DecisionMode = static_cast<EFF_DecisionMode>(Requested);
+		Decision->ResetStats();
+		Ar.Logf(TEXT("결정 모드: %s (계수기 초기화됨)"), ModeNames[Requested]);
+		Ar.Logf(TEXT("이미 이동 중인 파티는 다음 도착부터 반영된다 — 밀도를 재기 전에 기다릴 것"));
+		return;
+	}
+	Ar.Logf(TEXT("현재 모드: %s"), ModeNames[static_cast<int32>(Decision->DecisionMode)]);
+	Ar.Logf(TEXT("FF.Decision.Mode [0|1|2]"));
+}
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionModeCommand(
+	TEXT("FF.Decision.Mode"),
+	TEXT("결정에 넣을 입력을 고른다(3종 밀도 지도 비교). FF.Decision.Mode [0=랜덤|1=그리디|2=풀]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&DecisionModeCommand));
 static void DecisionEnableCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
 {
 	UFF_CrowdDecisionSubsystem* Decision = FFDecisionConsole::GetDecision(World, Ar);
