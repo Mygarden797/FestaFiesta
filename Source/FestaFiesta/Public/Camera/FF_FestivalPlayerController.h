@@ -206,6 +206,11 @@ private:
 	// 관찰 카메라 참조. BeginPlay 에서 잡아두고 빙의가 바뀌어도 유지한다.
 	TWeakObjectPtr<AFF_OverviewCameraPawn> OverviewPawn;
 
+	// 캐시가 비었거나 대상이 파괴됐으면 월드에서 다시 찾는다.
+	// 다른 시스템이 컨트롤러를 임의의 Pawn 으로 빙의시키는 경우가 있어서,
+	// BeginPlay 한 번만 잡아두면 그 사이에 캐시가 낡을 수 있다.
+	AFF_OverviewCameraPawn* ResolveOverviewPawn() const;
+
 	// 전환 키의 기본 대상. LastViewedActor 가 비어 있을 때 여기로 간다.
 	TWeakObjectPtr<APawn> VisitorCharacter;
 };

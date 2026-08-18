@@ -8,6 +8,7 @@
 
 struct FFF_DestinationCandidate;
 class UFF_QueueSubsystem;
+class UFF_ZoneSystemQueueBridgeSubsystem;
 
 /**
  * Queue(초) ↔ Decision(분) 부패 방지 계층.
@@ -115,5 +116,30 @@ public:
 		const UFF_QueueSubsystem* QueueSubsystem,
 		TArray<FFF_DestinationCandidate>& InOutCandidates,
 		TFunctionRef<int32(FName)> ResolveFacilityId,
+		int32 IncomingMemberCount);
+
+	/**
+	 * Zone 브리지를 통해 대기시간을 채운다. 결정 계층이 부를 최종 진입점이다.
+	 *
+	 * 목적지 ID 는 시설 인스턴스 GUID 를 문자열로 담고 있으므로, 이름을 파싱해 GUID 를 얻고
+	 * 브리지에 물어 내부 Queue ID 를 받는다. 호출부가 매핑표를 따로 들 필요가 없다.
+	 *
+	 * 월드에서 Queue 서브시스템과 브리지를 직접 찾는다. 둘 중 하나라도 없으면
+	 * 후보를 건드리지 않고 0 을 돌려준다 — 대기열이 없는 월드에서도 결정은 돌아야 한다.
+	 *
+	 * @return 실제로 대기열 정보가 반영된 후보 개수
+	 */
+	static int32 ApplyFromZoneBridge(
+		const UWorld* World,
+		TArray<FFF_DestinationCandidate>& InOutCandidates,
+		int32 IncomingMemberCount);
+
+	/**
+	 * 위와 같지만 서브시스템을 직접 받는다. 이미 들고 있는 호출부와 테스트용이다.
+	 */
+	static int32 ApplyFromZoneBridge(
+		const UFF_QueueSubsystem* QueueSubsystem,
+		const UFF_ZoneSystemQueueBridgeSubsystem* Bridge,
+		TArray<FFF_DestinationCandidate>& InOutCandidates,
 		int32 IncomingMemberCount);
 };
