@@ -115,6 +115,32 @@ bool FFFZoneSystemStageMappingTest::RunTest(const FString& Parameters)
 		FStageBridge::ToZoneChangePhase(EFF_FestivalStage::Finale),
 		EFFZSChangePhase::EveningSettlement);
 
+	EFFZSCommandType LifecycleCommand = EFFZSCommandType::Install;
+	TestTrue(TEXT("PromotionPreview에서 Live 진입은 같은 FFZS phase여도 자동 개장 edge다"),
+		FStageBridge::TryGetAutomaticLifecycleCommand(
+			EFF_FestivalStage::PromotionPreview,
+			EFF_FestivalStage::Live,
+			LifecycleCommand));
+	TestEqual(TEXT("Live 진입 edge는 Open을 만든다"),
+		LifecycleCommand, EFFZSCommandType::Open);
+	TestTrue(TEXT("Live에서 Closing 진입은 자동 폐쇄 edge다"),
+		FStageBridge::TryGetAutomaticLifecycleCommand(
+			EFF_FestivalStage::Live,
+			EFF_FestivalStage::Closing,
+			LifecycleCommand));
+	TestEqual(TEXT("Live 이탈 edge는 Close를 만든다"),
+		LifecycleCommand, EFFZSCommandType::Close);
+	TestFalse(TEXT("중복 Live 요청은 자동 개폐를 다시 만들지 않는다"),
+		FStageBridge::TryGetAutomaticLifecycleCommand(
+			EFF_FestivalStage::Live,
+			EFF_FestivalStage::Live,
+			LifecycleCommand));
+	TestFalse(TEXT("비 Live 단계 사이 전환은 자동 개폐 대상이 아니다"),
+		FStageBridge::TryGetAutomaticLifecycleCommand(
+			EFF_FestivalStage::Setup,
+			EFF_FestivalStage::MorningCheck,
+			LifecycleCommand));
+
 	TestTrue(TEXT("Stage 브리지는 FFZS Policy 구현이다"),
 		UFF_ZoneSystemStageBridgeSubsystem::StaticClass()->ImplementsInterface(
 			UFFZSExternalPolicy::StaticClass()));

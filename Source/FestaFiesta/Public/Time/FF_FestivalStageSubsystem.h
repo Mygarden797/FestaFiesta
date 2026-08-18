@@ -24,6 +24,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramStarted, FString, Even
 // 메인 공연 끝나는 순간 알리는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramEnded, FString, EventLabel);
 
+//  밤 조명 켤 시간이 됐다고 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -58,6 +61,10 @@ struct FFF_TimeSettingRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float MainProgramLockLeadSeconds = 10.f;
 	// 메인 공연 몇 초 전부터 배속을 잠글지
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float NightLightingTriggerSeconds = 90.f;
+	// Live 시작 후 몇 초 뒤에 밤 조명을 켤지 
 };
 
 USTRUCT(BlueprintType)
@@ -120,6 +127,13 @@ public:
 	float TimeScale = 1.f;
 	// 플레이어가 고른 배속값 저장
 
+	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Config")
+	float NightLightingTriggerSeconds = 90.f;
+	// 기본값이고 실제 값은 TimeSettingsTable에서 가져옴
+
+	bool bNightLightingActivated = false;
+	// 오늘 이미 밤 조명을 켰는지 여부 
+
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnStageChanged OnStageChanged;
 	// 이벤트 신호 실제 변수 (다른 시스템이 여기 등록해두면 알림 받음)
@@ -139,6 +153,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnMainProgramEnded OnMainProgramEnded;
 	// 메인 공연 종료 시점을 알림
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnNightLightingActivated OnNightLightingActivated;
+	// 밤 조명(글로우 프롭) 켤 시간이 됐음을 알리는 신호
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);

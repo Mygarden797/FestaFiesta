@@ -57,8 +57,10 @@ void UFF_ZoneSystemStageBridgeSubsystem::Deinitialize()
 	{
 		ZoneSystem->UnregisterExternalPolicy(this);
 	}
-
 	bStageSyncRetryScheduled = false;
+	bAutomaticLifecycleScheduled = false;
+	AutomaticLifecycleRetryCount = 0;
+	PendingAutomaticLifecycleCommand.Reset();
 	bPolicyRegistered = false;
 	FestivalStage = nullptr;
 	ZoneSystem = nullptr;
@@ -76,10 +78,21 @@ void UFF_ZoneSystemStageBridgeSubsystem::Tick(const float DeltaTime)
 
 	// RestoreWorldSnapshot은 단계 변경 이벤트를 방송하지 않는다. Stage가 권위이므로 값 하나만
 	// 비교해 조용한 복원이나 직접 대입 뒤에도 다음 프레임에 자동으로 다시 맞춘다.
-	if (ZoneSystem && FestivalStage
-		&& ZoneSystem->GetChangePhase() != ToZoneChangePhase(FestivalStage->CurrentStage))
+	if (!ZoneSystem || !FestivalStage)
 	{
-		TrySynchronizeStage(false);
+		return;
+	}
+
+	if (ZoneSystem->GetChangePhase() != ToZoneChangePhase(FestivalStage->CurrentStage))
+	{
+		if (TrySynchronizeStage(false))
+		{
+			ScheduleAutomaticLifecycle();
+		}
+	}
+	else if (PendingAutomaticLifecycleCommand.IsSet())
+	{
+		ScheduleAutomaticLifecycle();
 	}
 }
 
@@ -148,16 +161,221 @@ bool UFF_ZoneSystemStageBridgeSubsystem::TrySynchronizeStage(const bool bSchedul
 void UFF_ZoneSystemStageBridgeSubsystem::RetryStageSynchronization()
 {
 	bStageSyncRetryScheduled = false;
-	TrySynchronizeStage(false);
+	if (TrySynchronizeStage(false))
+	{
+		ScheduleAutomaticLifecycle();
+	}
 }
 
 void UFF_ZoneSystemStageBridgeSubsystem::HandleStageChanged(
 	const EFF_FestivalStage PreviousStage,
 	const EFF_FestivalStage NewStage)
 {
-	(void)PreviousStage;
-	(void)NewStage;
+	EFFZSCommandType LifecycleCommand = EFFZSCommandType::Open;
+	if (TryGetAutomaticLifecycleCommand(PreviousStage, NewStage, LifecycleCommand))
+	{
+		// 최신 edge가 이전에 예약된 작업을 대체합니다. Live->Live는 아무 작업도 만들지 않습니다.
+		PendingAutomaticLifecycleCommand = LifecycleCommand;
+	}
 	SynchronizeCurrentStage();
+	ScheduleAutomaticLifecycle();
+}
+
+bool UFF_ZoneSystemStageBridgeSubsystem::TryGetAutomaticLifecycleCommand(
+	const EFF_FestivalStage PreviousStage,
+	const EFF_FestivalStage NewStage,
+	EFFZSCommandType& OutCommandType)
+{
+	if (PreviousStage != EFF_FestivalStage::Live && NewStage == EFF_FestivalStage::Live)
+	{
+		OutCommandType = EFFZSCommandType::Open;
+		return true;
+	}
+	if (PreviousStage == EFF_FestivalStage::Live && NewStage != EFF_FestivalStage::Live)
+	{
+		OutCommandType = EFFZSCommandType::Close;
+		return true;
+	}
+	return false;
+}
+
+void UFF_ZoneSystemStageBridgeSubsystem::ScheduleAutomaticLifecycle()
+{
+	UWorld* World = GetWorld();
+	if (!World || !PendingAutomaticLifecycleCommand.IsSet() || bAutomaticLifecycleScheduled)
+	{
+		return;
+	}
+
+	bAutomaticLifecycleScheduled = true;
+	World->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateUObject(
+			this, &UFF_ZoneSystemStageBridgeSubsystem::RunScheduledAutomaticLifecycle));
+}
+
+void UFF_ZoneSystemStageBridgeSubsystem::RunScheduledAutomaticLifecycle()
+{
+	bAutomaticLifecycleScheduled = false;
+	if (!ZoneSystem || !FestivalStage || !PendingAutomaticLifecycleCommand.IsSet())
+	{
+		return;
+	}
+
+	const EFFZSChangePhase ExpectedPhase = ToZoneChangePhase(FestivalStage->CurrentStage);
+	if (ZoneSystem->GetChangePhase() != ExpectedPhase && !TrySynchronizeStage(false))
+	{
+		// 명령/복원 직후의 짧은 재진입 차단만 흡수하고 무한 Tick 재시도는 만들지 않습니다.
+		if (++AutomaticLifecycleRetryCount <= 3)
+		{
+			ScheduleAutomaticLifecycle();
+		}
+		else
+		{
+			UE_LOG(LogFFZoneStageBridge, Error,
+				TEXT("FestivalStage 기반 시설 개폐를 3회 재시도했지만 FFZS Phase 동기화에 실패했습니다."));
+			AutomaticLifecycleRetryCount = 0;
+			PendingAutomaticLifecycleCommand.Reset();
+		}
+		return;
+	}
+
+	AutomaticLifecycleRetryCount = 0;
+	const EFFZSCommandType CommandType = PendingAutomaticLifecycleCommand.GetValue();
+	PendingAutomaticLifecycleCommand.Reset();
+	const bool bCommandMatchesStage =
+		(CommandType == EFFZSCommandType::Open
+			&& FestivalStage->CurrentStage == EFF_FestivalStage::Live)
+		|| (CommandType == EFFZSCommandType::Close
+			&& FestivalStage->CurrentStage != EFF_FestivalStage::Live);
+	if (!bCommandMatchesStage)
+	{
+		return;
+	}
+
+	if (CommandType == EFFZSCommandType::Open)
+	{
+		ExecuteLifecycleBatch(
+			EFFZSCommandType::Open,
+			EFF_ZoneFacilityLifecycleAction::AutomaticOpen,
+			false);
+		return;
+	}
+
+	ExecuteLifecycleBatch(
+		EFFZSCommandType::Close,
+		EFF_ZoneFacilityLifecycleAction::AutomaticClose,
+		false);
+}
+
+FFF_ZoneFacilityLifecycleBatchResult
+UFF_ZoneSystemStageBridgeSubsystem::OpenEligibleFacilities(const bool bIncludeClosedFacilities)
+{
+	return ExecuteLifecycleBatch(
+		EFFZSCommandType::Open,
+		EFF_ZoneFacilityLifecycleAction::ManualOpen,
+		bIncludeClosedFacilities);
+}
+
+FFF_ZoneFacilityLifecycleBatchResult
+UFF_ZoneSystemStageBridgeSubsystem::CloseActiveFacilities(const bool bEmergency)
+{
+	return ExecuteLifecycleBatch(
+		bEmergency ? EFFZSCommandType::EmergencyClose : EFFZSCommandType::Close,
+		bEmergency
+			? EFF_ZoneFacilityLifecycleAction::ManualEmergencyClose
+			: EFF_ZoneFacilityLifecycleAction::ManualClose,
+		false);
+}
+
+FFF_ZoneFacilityLifecycleBatchResult
+UFF_ZoneSystemStageBridgeSubsystem::ExecuteLifecycleBatch(
+	const EFFZSCommandType CommandType,
+	const EFF_ZoneFacilityLifecycleAction Action,
+	const bool bIncludeClosedFacilities)
+{
+	FFF_ZoneFacilityLifecycleBatchResult Batch;
+	Batch.Action = Action;
+	if (!ZoneSystem)
+	{
+		Batch.FailedCount = 1;
+		Batch.Summary = LOCTEXT("LifecycleMissingZoneSystem", "FF_ZoneSystem을 찾을 수 없습니다.");
+		LastLifecycleBatchResult = Batch;
+		OnFacilityLifecycleBatchCompleted.Broadcast(Batch);
+		return Batch;
+	}
+
+	Batch.StartingWorldRevision = ZoneSystem->GetWorldRevision();
+	const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+	const FGuid TransactionId = FGuid::NewGuid();
+	TArray<FGuid> EligibleFacilityIds;
+	EligibleFacilityIds.Reserve(ReadModel.Facilities.Num());
+
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		bool bEligible = false;
+		if (CommandType == EFFZSCommandType::Open)
+		{
+			bEligible = !Facility.bNeedsRelocation
+				&& (Facility.State == EFFZSFacilityState::Validated
+					|| Facility.State == EFFZSFacilityState::MovePending
+					|| (bIncludeClosedFacilities
+						&& Facility.State == EFFZSFacilityState::Closed));
+		}
+		else
+		{
+			bEligible = Facility.State == EFFZSFacilityState::Active;
+		}
+
+		if (bEligible)
+		{
+			EligibleFacilityIds.Add(Facility.FacilityInstanceId);
+		}
+	}
+
+	Batch.SkippedCount = ReadModel.Facilities.Num() - EligibleFacilityIds.Num();
+	for (const FGuid FacilityId : EligibleFacilityIds)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = TransactionId;
+		Command.ExpectedWorldRevision = ZoneSystem->GetWorldRevision();
+		Command.Type = CommandType;
+		Command.FacilityInstanceId = FacilityId;
+
+		++Batch.AttemptedCount;
+		const FFFZSCommandResult Result = ZoneSystem->ExecuteCommand(Command);
+		if (Result.bSucceeded)
+		{
+			++Batch.SucceededCount;
+		}
+		else
+		{
+			++Batch.FailedCount;
+			Batch.FailedFacilityIds.Add(FacilityId);
+			UE_LOG(LogFFZoneStageBridge, Warning,
+				TEXT("시설 %s Lifecycle(%d) 명령 실패: %s"),
+				*FacilityId.ToString(),
+				static_cast<int32>(CommandType),
+				*Result.Message.ToString());
+		}
+	}
+
+	Batch.FinalWorldRevision = ZoneSystem->GetWorldRevision();
+	Batch.Summary = FText::Format(
+		LOCTEXT(
+			"LifecycleBatchSummary",
+			"처리 {0}개 / 성공 {1}개 / 실패 {2}개 / 제외 {3}개 (Revision {4} → {5})"),
+		FText::AsNumber(Batch.AttemptedCount),
+		FText::AsNumber(Batch.SucceededCount),
+		FText::AsNumber(Batch.FailedCount),
+		FText::AsNumber(Batch.SkippedCount),
+		FText::AsNumber(Batch.StartingWorldRevision),
+		FText::AsNumber(Batch.FinalWorldRevision));
+
+	LastLifecycleBatchResult = Batch;
+	OnFacilityLifecycleBatchCompleted.Broadcast(Batch);
+	UE_LOG(LogFFZoneStageBridge, Display, TEXT("%s"), *Batch.Summary.ToString());
+	return Batch;
 }
 
 FName UFF_ZoneSystemStageBridgeSubsystem::GetFFZoneSystemPolicyName_Implementation() const
