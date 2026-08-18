@@ -184,6 +184,33 @@ Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlot
 
 **UI 사용처**: Overview 시설 상태, 대기열 길이, Morning Check 배치, 실패 사유 토스트
 
+### 시설 선택 · 월드 지점 조회 (2026-08-18 추가)
+
+- **헤더**: `Plugins/FF_ZoneSystem/.../Public/FF_FFZSWorldSubsystem.h`,
+  `FF_FFZSFacilityActor.h`, `FF_FFZSCollision.h`
+- **접근**: `UFFZSWorldSubsystem` / 설치된 `AFFZSFacilityActor`
+- **시그니처**: `AFFZSFacilityActor* FindFacilityAtWorldPoint(const FVector& WorldPoint, FName ZoneId = NAME_None) const`
+- **상태**: `구현완료`
+
+`FindFacilityAtWorldPoint()`는 `BlueprintPure`다. 현재 권위 레지스트리에 등록되어 있고 `WorldPoint`가
+회전된 footprint의 XY와 시설 높이 범위(Z 허용 오차 포함)에 들어가는 시설만 반환한다. `ZoneId`가 비어
+있으면 월드 지점에서 등록 Zone을 먼저 해석하며, Zone이나 시설을 찾지 못하면 `nullptr`를 반환한다.
+footprint가 겹치면 Actor 원점까지 3차원 거리가 가장 가까운 시설을, 거리도 같으면
+`FacilityInstanceId` 문자열 오름차순의 시설을 선택한다.
+
+`AFFZSFacilityActor::SelectionProxy`는 `BlueprintReadOnly`인 선택 전용 Box다. 유효한 Spec을 적용한 뒤
+시설 footprint와 장애물 높이에 맞춰지고, `QueryOnly`·`WorldDynamic`으로 프로젝트 Trace Channel
+`FacilitySelection`만 Block한다. 물리·Navigation·Overlap에는 참여하지 않으며 `VisualMesh`는 계속
+`NoCollision`이고 Navigation에도 영향을 주지 않는다. 유효한 Spec 적용 전 Proxy는 크기 0·`NoCollision`이라
+선택되지 않는다. 프로젝트 채널의 기본 응답은 `Ignore`이므로 일반 `BlockAll` 컴포넌트는 전용 Trace를 막지 않는다.
+
+- C++ Trace는 채널 슬롯을 직접 쓰지 않고 `FFZSCollision::FacilitySelectionTraceChannel`을 사용한다.
+- Blueprint Trace는 이름이 `FacilitySelection`인 프로젝트 채널을 사용한다.
+- `FacilitySelection` Trace가 아무 것도 맞히지 않은 경우에만 호환용 지면 footprint fallback을 시도한다.
+  첫 `Visibility` hit가 `ImpactNormal.Z >= 0.45`인 지면일 때만 그 지점을 조회 API에 전달한다.
+- 전용 채널이 비등록 후보를 맞히거나 등록 Proxy가 외부 `Visibility` 장애물에 가려지면 fallback 없이
+  선택을 거부한다. `Visibility`는 시설 ID 선택 채널이 아니다.
+
 ### 브리지 2종 (2026-08-06 추가)
 
 | 클래스                                  | 역할                                                                             |
@@ -191,8 +218,9 @@ Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlot
 | `UFF_ZoneSystemQueueBridgeSubsystem` | Zone 시설 `FGuid` ↔ Queue `int32` ID 매핑. `TryJoinZoneFacility`가 Party 가입의 단일 진입점 |
 | `UFF_ZoneSystemStageBridgeSubsystem` | `UFF_FestivalStageSubsystem`을 구독해 Zone 변경 단계를 맞춤                               |
 
-**UI는 시설과 대기열을 직접 결합하지 않습니다.** 양쪽을 각각 읽고 UI에서 합치면
-소유권이 흐려집니다. `UFF_FestivalViewModelSubsystem`에서 읽습니다.
+**위젯은 시설과 대기열을 직접 결합하지 않습니다.** 양쪽을 각각 읽고 위젯에서 합치면 소유권이 흐려집니다.
+Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설 정보 패널은
+`UFF_FacilityInfoSubsystem`이 `FFF_FacilityInfoViewData`로 평탄화한 값을 제공합니다.
 
 ### 개발용 플레이테스트 도구 (참고)
 
@@ -202,7 +230,7 @@ Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlot
 **플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
 Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
 
-### 완성형 시설 건축 카탈로그 (2026-08-12 갱신)
+### 완성형 시설 건축 카탈로그 (2026-08-18 갱신)
 
 - **헤더**: `Public/Building/FF_BuildCatalogSubsystem.h`, `Public/Building/FF_BuildModeSubsystem.h`
 - **접근**: `GameInstanceSubsystem` 카탈로그 + `TickableWorldSubsystem` 건축 모드
@@ -213,25 +241,35 @@ Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 �
 파싱하지 않고 `GetEntries()`/`GetCategoryGroups()`와 `OnCatalogChanged`를 사용한다.
 
 `UFF_BuildModeSubsystem`은 `Closed → BuildMode ↔ CatalogOpen → Placing`과
-`BuildMode → Moving → BuildMode` 상태를 소유한다. 신규 설치는 선택한
-`UFFZSFacilityDefinition::Spec`을, 이동은 기존 액터의 권위 Spec·GUID·현재 회전을
+`BuildMode → Moving → BuildMode` 상태를 소유한다. 건축 세션은
+`UFF_FestivalStageSubsystem::IsReconfigureAllowed()`와 FFZS `ChangePhase`
+(`InitialSetup`/`MorningCheck`)가 모두 허용할 때만 진입할 수 있다. 활성 세션 중 어느 한 정책이
+닫히면 카탈로그·프리뷰·시설 선택·입력 상태를 정리하고 `Closed`로 자동 전환한다.
+
+신규 설치는 선택한 `UFFZSFacilityDefinition::Spec`을, 이동은 기존 액터의 권위 Spec·GUID·현재 회전을
 `AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·여유 공간·
 Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우회하지 않는다.
 
 활성 건축 세션에서는 설치 시설의 footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시한다.
-카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 하단 작업 패널에
-`이동`·`철거`·`취소`가 표시된다. 이동을 시작하면 권위 액터는 기존 위치에 그대로 두고 ghost만 커서를
+카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 공용 우측 시설 정보 패널이
+`Build` 컨텍스트로 열린다. 패널은 시설 정보와 `이동`·`철거` 액션 및 닫기를 제공하며, 패널 위 좌클릭은
+월드 시설 선택 입력으로 전달되지 않는다. 패널 버튼에서 발생한 이동·철거·닫기 요청은 패널의 시설 GUID가
+현재 건축 선택과 일치할 때만 처리한다. 이동을 시작하면 권위 액터는 기존 위치에 그대로 두고 ghost만 커서를
 따라간다. 따라서 우클릭 취소나 검증 실패 때 원위치 복구 명령이 필요 없다. 이동 성공 시 같은 시설 GUID를
 유지한 채 Zone·배치·회전만 원자적으로 갱신한다. 대상이 외부 명령이나 스냅샷 복원으로 바뀌면 열린 작업과
 이동 프리뷰는 자동 취소된다.
 
+카탈로그를 열거나 이동을 시작하거나 닫기 요청·철거 성공·건축 모드 종료가 발생하면 `Build` 선택과 패널을
+함께 닫는다. 재시도 가능한 이동·철거 실패는 선택을 유지하고 같은 패널의 `FeedbackText`와
+`bFeedbackIsError`로 사유를 표시한다.
+
 | 입력 | 동작 |
 | --- | --- |
-| `B` | 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기 |
+| `B` | 재배치 허용 단계에서 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기. 불허 단계에서는 진입하지 않음 |
 | `M` 또는 `이동` 버튼 | 선택 시설의 이동 프리뷰 시작 |
 | `Q`, `E` | 설치/이동 프리뷰를 90도 회전 |
 | `좌클릭` | `BuildMode`에서는 시설 선택, `Placing`에서는 설치, `Moving`에서는 이동 확정 |
-| `Enter` | 선택 작업 패널에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
+| `Enter` | 공용 시설 정보 패널의 건축 선택에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
 | `우클릭` | 시설 선택 취소, 설치는 카탈로그 복귀, 이동은 원본을 건드리지 않고 `BuildMode` 복귀 |
 | `Esc` | 어느 활성 건축 상태에서든 건축 모드 전체 종료 |
 
@@ -239,13 +277,124 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 서브시스템에 전달한다. UI와 PlayerController가 같은 `B`를 모두 관찰한 프레임에는 키 해제 래치가 raw
 입력을 한 번 차단하므로 `CatalogOpen → BuildMode → CatalogOpen` 이중 전환이 발생하지 않는다.
 
-- `Install`·`Move`·`Remove`는 `InitialSetup`/`MorningCheck`에서만 가능하다.
+- 건축 세션 진입은 Festival Stage의 `IsReconfigureAllowed()`와 FFZS Change Phase의
+  `InitialSetup`/`MorningCheck` 조건을 모두 만족해야 한다.
+- 활성 세션 중 둘 중 하나라도 재배치를 금지하면 건축 모드가 자동 종료된다.
+- `Install`·`Move`·`Remove` 명령도 FFZS에서 `InitialSetup`/`MorningCheck` 정책을 다시 검증한다.
 - `Active` 시설 또는 FFZS/프로젝트 Queue에 이용객이 남은 시설은 이동·철거할 수 없다. 자동 폐장이나
   강제 배출은 하지 않으며, 운영 종료 후 Queue가 비워진 것을 확인해야 한다.
 - 같은 위치·같은 방향 이동은 revision과 상태를 불필요하게 바꾸지 않도록 UI에서 차단한다.
 - 이동 성공 뒤 시설 상태는 `Validated`가 되므로 운영을 재개하려면 기존 개장 절차를 다시 수행한다.
 - 상단 UI는 `건축`/`스킨` 2탭이지만, 현재 `스킨` 탭은 데이터 모델이 없어 준비중 상태다.
 - 현재 등록된 실제 시설 정의가 1개뿐이므로, 나머지 카드는 규칙에 맞는 Data Asset을 추가할 때 자동 생성된다.
+
+### 설치 시설 공용 정보 패널 (2026-08-18 추가)
+
+- **헤더**: `Public/UI/Facility/FF_FacilityInfoTypes.h`, `FF_FacilityInfoSubsystem.h`,
+  `FF_FacilityInfoPanel.h`
+- **접근**: `UFF_FacilityInfoSubsystem` (`TickableWorldSubsystem`)
+- **기본 WBP**: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C`
+- **갱신 주기**: 선택 즉시, 선택 시설의 non-Remove World Change 다음 Tick, 선택 중 0.25초 간격.
+  Remove·World Snapshot 복원은 즉시 선택 해제
+- **상태**: `구현완료`
+
+건축 모드와 Live가 같은 비모달 우측 패널을 사용한다. 서브시스템이 Zone·Queue·Economy·Stage·Catalog를
+읽어 불변 표시 스냅샷 `FFF_FacilityInfoViewData`로 평탄화하며, WBP는 게임플레이 서브시스템을 직접
+조회하거나 값을 다시 계산하지 않는다. 0.25초 샘플링은 이 coordinator 내부에만 한정되며 위젯은 폴링하지 않는다.
+
+**`EFF_FacilityInfoContext`**
+
+| 값 | 의미 |
+| --- | --- |
+| `Build` | 건축 선택. 이동·철거 액션을 노출할 수 있음 |
+| `Live` | Live 운영 정보. `CurrentStage == Live`일 때만 선택 가능 |
+| `None` | 선택 없음. Blueprint enum 목록에서는 숨김 |
+
+**`UFF_FacilityInfoSubsystem` Blueprint API**
+
+| 시그니처 | 계약 |
+| --- | --- |
+| `bool PrimePanel(APlayerController* OwningController)` | LocalPlayer용 숨김 WBP를 미리 로드·생성. PlayerController 자동 바인딩 때 호출되며 필요하면 명시적으로 먼저 호출할 수 있음. 실패하면 `false` |
+| `bool SelectFacility(APlayerController* OwningController, AFFZSFacilityActor* Facility, EFF_FacilityInfoContext Context)` | 현재 Zone 레지스트리에 등록된 유효 시설만 선택하고 패널을 엶 |
+| `bool SelectFacilityAtWorldPoint(APlayerController* OwningController, const FVector& WorldPoint, EFF_FacilityInfoContext Context, FName ZoneId = NAME_None)` | `FindFacilityAtWorldPoint()`로 찾은 뒤 선택 |
+| `void ClearSelection()` | 선택·피드백·썸네일 세션을 비우고 패널을 접음 |
+| `AFFZSFacilityActor* GetSelectedFacility() const` | 현재도 등록된 선택 Actor. 없거나 무효면 `nullptr` |
+| `FGuid GetSelectedFacilityId() const` | 현재 선택 GUID |
+| `EFF_FacilityInfoContext GetSelectionContext() const` | 현재 `Build`/`Live`/`None` 컨텍스트 |
+| `bool HasSelection() const` | 유효한 선택 GUID 보유 여부 |
+| `bool IsPointerOverPanel() const` | 보이는 카드 위에 포인터가 있는지. 월드 좌클릭 관통 방지용 |
+| `OnSelectionChanged(FGuid FacilityInstanceId, EFF_FacilityInfoContext Context)` | 실제 ID/Context 변경 또는 선택 해제 때만 발행하는 `BlueprintAssignable` 이벤트 |
+
+`OnSelectionChanged`를 구독한 직후에는 `HasSelection()`·`GetSelectedFacilityId()`·
+`GetSelectionContext()`로 현재값을 한 번 읽는다. 같은 시설과 같은 Context를 다시 선택하면 화면은 새로 고치지만
+이벤트를 중복 발행하지 않으며 기존 피드백을 비우고 0.25초 타이머를 다시 시작한다. 선택 해제 이벤트는
+무효 GUID와 `None`을 전달한다. 선택 시설 철거,
+World Snapshot 복원, Context 무효화 때도 선택이 자동 해제된다.
+
+`Live` 선택은 `AFF_FestivalPlayerController::OnActorPicked`를 받은 뒤 전용 `FacilitySelection` Trace로
+해석한다. 전용 Trace가 아무 것도 맞히지 않고 첫 `Visibility` hit가 걸을 수 있는 지면일 때만 footprint
+fallback을 시도한다. 비등록 후보를 맞히거나 외부 장애물에 가린 시설은 fallback 없이 거부한다. 빈 곳을
+클릭하면 기존 Live 선택을 닫는다.
+
+제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
+FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
+시설 상태와 점유 여부를 다시 검증한다. Stage가 재배치를 금지하면 `OnStageChanged` 또는 다음 Tick에서
+세션 자체를 종료한다. 단, 공개 `SelectFacility(..., Build)` 함수 자체는 Stage/Phase 진입을 막지 않으므로
+제품 건축 흐름을 우회하는 진입점으로 사용하지 않는다.
+
+**`FFF_FacilityInfoViewData` (`BlueprintType`, 전 필드 `BlueprintReadOnly`)**
+
+| 묶음 | 필드 |
+| --- | --- |
+| 식별·Context | `FacilityInstanceId`, `Context`, `ContextTitle` |
+| 시설 표시 | `DisplayName`, `CategoryText`, `ZoneText`, `FacilityStateText`, `FootprintText`, `ClearanceText` |
+| 가격·정적 사양 | `InstallCostText`, `RecoveryCostText`, `QueueCapacityText`, `ServiceDurationText`, `Thumbnail`, `ThumbnailPlaceholderText` |
+| 운영·Queue | `OperationStateText`, `WaitingPartiesText`, `OccupancyText`, `RemainingServiceText`, `ExpectedWaitText`, `ThroughputText` |
+| 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `FeedbackText`, `bFeedbackIsError` |
+
+문자열 필드는 모두 표시용 `FText`다. 포맷터가 만든 수치에는 단위와 지역화된 숫자 포맷이 적용되지만,
+`ZoneText`·`DisplayName`·`FeedbackText`의 현지화 여부는 원본 데이터에 따른다. 예상 대기는 1인 진입
+기준이며 0초는 `바로 이용 가능`, 60초 미만은 `1분 미만`, 그 이상은 분 단위 올림, 도달 불가·비정상 값은
+`계산 불가`로 표시한다. 처리율은 `분당 x.x명`이다. Queue 미등록은 `준비 중`, Queue 시스템 부재는
+`사용 불가`로 구분한다.
+
+`bCanMove`와 `bCanRemove`는 같은 판정을 쓴다: `Build` Context이고, FFZS Phase가
+`InitialSetup`/`MorningCheck`이며, Queue가 연결되지 않았거나 `OccupiedMemberCount <= 0`이고,
+Actor의 `CanMoveOrRemove()`가 참이어야 한다. 버튼 상태는 안내용이며 실제 명령 경계가 다시 검증한다.
+
+**`UFF_FacilityInfoPanel` WBP 계약**
+
+- Blueprint 함수는 `ApplyViewData(const FFF_FacilityInfoViewData&)`, `SetPanelOpen(bool)`,
+  `IsPointerOverInteractivePanel()` 3종이다. 일반 호출자는 패널을 직접 만들지 않고 서브시스템을 사용한다.
+- 루트는 `CanvasPanel` + `SelfHitTestInvisible`, 실제 카드는 우측 중앙 + AutoSize다. 카드 밖 클릭은 월드로
+  통과하고 카드 좌클릭과 버튼 입력은 소비한다. 우클릭은 건축 선택 취소로 전달될 수 있다.
+- 다음 27개 `BindWidget` 이름을 유지한다.
+
+```text
+Border_Panel, Button_Close, Button_Move, Button_Remove, Image_Thumbnail,
+Text_ThumbnailPlaceholder, Panel_BuildSection, Panel_LiveSection, Text_Context,
+Text_FacilityName, Text_Category, Text_Zone, Text_FacilityState, Text_RelocationWarning,
+Text_Footprint, Text_Clearance, Text_InstallCost, Text_RecoveryCost, Text_QueueCapacity,
+Text_ServiceDuration, Text_OperationState, Text_WaitingParties, Text_Occupancy,
+Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
+```
+
+에디터 명령 `FF.BuildFacilityInfoUMG`는 에셋이 없을 때만 기본 WBP를 생성한다. 기존 디자이너 에셋은
+덮어쓰지 않고 위 상속·배치·BindWidget 계약만 검증한다.
+
+**C++ 전용 어댑터 계약**
+
+- `UFF_FacilityInfoPanel`의 `FSimpleMulticastDelegate OnMoveRequested`·`OnRemoveRequested`·
+  `OnCloseRequested`는 인자가 없다. 이동·철거는 현재 ViewData가 `Build`이고 해당 `bCan*`가 참일 때만,
+  닫기는 항상 방송한다.
+- `UFF_FacilityInfoSubsystem`의 `FFF_OnFacilityInfoActionRequested(FGuid)` 3종은 패널 이벤트를 선택 GUID로
+  변환한다. 이동·철거·닫기 모두 `Build` 선택에서만 외부로 방송하며, 닫기는 방송 후 같은 선택을 해제한다.
+- `SetFeedback(const FText&, bool)`은 선택이 없으면 no-op이고, `ClearSelectionIfMatches(FGuid, Context)`는
+  호출자 소유 선택만 닫는다. `static FSoftClassPath GetDefaultPanelClassPath()`,
+  `const FFF_FacilityInfoViewData& GetCurrentViewData() const`, `FFFacilityInfoModel` 포맷 함수도 C++ 전용이다.
+
+위 항목은 BlueprintAssignable API로 간주하지 않는다. Soft Class로 로드하는 WBP가 Shipping에서도
+포함되도록 `/Game/FestaFiesta/UI/Facility`은 `DirectoriesToAlwaysCook`에 등록되어 있다.
 
 ---
 
@@ -417,8 +566,9 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **상태**: **`스텁`** — 지표 4종은 하드코딩 더미. Stage·Day는 진짜 값
 - **역할**: 위 모든 소스를 UI가 쓰기 좋은 형태로 합쳐서 제공
 
-UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 보지 않습니다.
-각 모듈이 바뀌어도 위젯을 안 고치게 하기 위해서입니다.
+Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**하고 원본 시스템을 직접 보지 않습니다.
+각 모듈이 바뀌어도 위젯을 안 고치게 하기 위해서입니다. 설치 시설 정보 WBP는 별도 예외 경로로,
+`UFF_FacilityInfoSubsystem`이 주입한 `FFF_FacilityInfoViewData`만 렌더링하며 원본 시스템은 직접 조회하지 않습니다.
 
 | 값                 | Getter                                | 델리게이트                        | 현재        |
 | ----------------- | ------------------------------------- | ---------------------------- | --------- |
@@ -433,7 +583,9 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 
 ### Command (2026-08-11 신설)
 
-**위젯은 다른 시스템의 함수를 직접 부르지 않습니다.** 쓰기 요청은 전부 여기를 거칩니다(원칙 1).
+**이 ViewModel을 사용하는 위젯은 다른 시스템의 함수를 직접 부르지 않습니다.** 아래 쓰기 요청은 전부
+여기를 거칩니다(원칙 1). 시설 정보 패널의 이동·철거는 `UFF_FacilityInfoSubsystem`의 C++ 이벤트를 거쳐
+`UFF_BuildModeSubsystem` 명령 경계로 전달됩니다.
 낙관적 갱신을 하지 않으므로, 호출한 쪽이 화면을 직접 바꾸지 말고 결과 이벤트를 기다립니다.
 
 | Command                     | 활성 조건 Getter          | 위임 대상                                 |
@@ -574,3 +726,4 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
 | 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
+| 2026-08-18 | 한광훈 | 공용 시설 정보 패널·`FFF_FacilityInfoViewData`·선택 API 추가. `FacilitySelection` 전용 Trace와 `FindFacilityAtWorldPoint()` 계약, WBP AlwaysCook·BindWidget 계약, 건축 세션의 Festival Stage + FFZS Phase 교집합 진입 및 자동 종료 정책 반영 |

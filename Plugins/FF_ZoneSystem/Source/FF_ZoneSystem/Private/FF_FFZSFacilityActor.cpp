@@ -17,6 +17,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityAnchorComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
@@ -48,6 +49,19 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
     VisualMesh->SetupAttachment(SceneRoot);
     VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    VisualMesh->SetCanEverAffectNavigation(false);
+
+    SelectionProxy = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionProxy"));
+    SelectionProxy->SetupAttachment(SceneRoot);
+    // 유효한 FacilitySpec이 적용되기 전의 기본 Box가 선택되는 짧은 구간을 없앤다.
+    SelectionProxy->SetBoxExtent(FVector::ZeroVector);
+    SelectionProxy->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    SelectionProxy->SetGenerateOverlapEvents(false);
+    SelectionProxy->SetCanEverAffectNavigation(false);
+    SelectionProxy->SetSimulatePhysics(false);
+    SelectionProxy->SetEnableGravity(false);
+    SelectionProxy->SetNotifyRigidBodyCollision(false);
+    SelectionProxy->SetHiddenInGame(true);
 
     FootprintBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("FootprintBounds"));
     FootprintBounds->SetupAttachment(SceneRoot);
@@ -357,6 +371,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
         FacilitySpec.PlacementObstacleHeightCm * 0.5f);
     FootprintBounds->SetBoxExtent(FootprintExtent);
     FootprintBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
+    RebuildSelectionProxy(FootprintExtent);
 
     RequestVisualMesh();
 
@@ -405,6 +420,29 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     {
         RebuildBuildModeRangePresentation();
     }
+}
+
+void AFFZSFacilityActor::RebuildSelectionProxy(const FVector& FootprintExtent)
+{
+    if (!SelectionProxy)
+    {
+        return;
+    }
+
+    // Blueprint 파생 클래스의 컴포넌트 기본값과 무관하게 초기화 때 선택 계약을 다시 확정한다.
+    SelectionProxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    SelectionProxy->SetCollisionObjectType(ECC_WorldDynamic);
+    SelectionProxy->SetCollisionResponseToAllChannels(ECR_Ignore);
+    SelectionProxy->SetCollisionResponseToChannel(
+        FFZSCollision::FacilitySelectionTraceChannel,
+        ECR_Block);
+    SelectionProxy->SetGenerateOverlapEvents(false);
+    SelectionProxy->SetCanEverAffectNavigation(false);
+    SelectionProxy->SetSimulatePhysics(false);
+    SelectionProxy->SetEnableGravity(false);
+    SelectionProxy->SetNotifyRigidBodyCollision(false);
+    SelectionProxy->SetBoxExtent(FootprintExtent);
+    SelectionProxy->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
 }
 
 void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
