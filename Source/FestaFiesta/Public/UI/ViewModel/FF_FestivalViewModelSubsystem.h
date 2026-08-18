@@ -24,20 +24,30 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_Festiva
  * UI 위젯은 게임 시스템을 직접 참조하지 않고 **이것만** 본다.
  * 각 시스템이 바뀌어도 위젯을 고치지 않기 위해서다.
  *
- * === 현재 상태: 스텁 ===
- * 지표 6종은 하드코딩 더미다. 실제 소유자의 구현이 생기면 이 클래스 안쪽만 교체하고
+ * === 현재 상태: 일부만 진짜 값 (2026-08-14 기준) ===
+ * 아직 더미인 지표가 남아 있다. 실제 소유자의 구현이 생기면 이 클래스 안쪽만 교체하고
  * 위젯은 그대로 둔다. 그게 이 계층을 두는 이유다.
  *
  * | 값                     | 실제 소유자      | 현재        |
  * |------------------------|------------------|-------------|
  * | Stage / Day            | 강민서           | **진짜 값** |
  * | 남은 시간              | 강민서           | **진짜 값** |
+ * | Gold                   | 김시리           | **진짜 값** (`OnGoldChanged` 구독) |
  * | SimSatisfaction        | 김시리 · 이정원  | 더미        |
  * | ScoreSatisfaction      | 김시리           | 더미        |
- * | Safety                 | 이정원           | 더미        |
- * | Gold                   | 김시리           | 더미        |
- * | TotalRevenue           | 김시리           | 더미        |
- * | TodayRevenue           | 김시리           | 더미        |
+ * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
+ * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
+ * | TodayRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
+ *
+ * `GetTotalRevenue()`/`GetTodayRevenue()`와 `OnTotalRevenueChanged`/`OnTodayRevenueChanged`가
+ * `UFF_FestivalProgressionSubsystem`에 이미 있다. Gold와 같은 모양이므로 같은 Bind + Sync로 붙인다.
+ * 원인별·부스별 분해는 `GetDayLedger()`로 읽을 수 있다 (2026-08-18 확인). `FFF_DayLedger`는
+ * 원인별 지출·원인별 매출·부스별 매출(`GetRevenueByFacility()`)·철거 환급을 따로 쌓고 하루 경계에서
+ * `Reset()`된다. Blueprint 노출은 없고 C++ const 참조라 Report 화면이 직접 읽는다.
+ *
+ * Staff도 소유자 API가 생겼다 — `GetBaseStaffCount()`/`GetTemporaryStaffCount()`/`GetTotalStaffCount()`.
+ * 무페이 기본 팀 + 당일 알바 구성이고 임금은 알바에만 붙는다. 이 ViewModel에는 아직 Staff 필드가 없다.
+ * 임대료 미납은 `FFF_FixedCostArrears`에 누적된다. 상세는 리포 루트 `UI_API.md`.
  *
  * === 값 규격 (2026-08-06 결정) ===
  * - Satisfaction / Safety : int32 0~100, 높을수록 좋음.

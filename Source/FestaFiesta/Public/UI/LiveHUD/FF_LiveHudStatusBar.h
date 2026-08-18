@@ -144,6 +144,22 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_TimeScaleHint;
 
+	// --- 임시 자원 표시값 ---
+	// 관객/스태프 소유 모듈의 UI API가 연결되기 전까지만 사용한다.
+	// 실제 값이 들어오면 VisitorCount/StaffAvailable/StaffTotal이 우선한다.
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Placeholder")
+	bool bUsePlaceholderResourceValues = true;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Placeholder", meta = (ClampMin = "0"))
+	int32 PlaceholderVisitorCount = 284;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Placeholder", meta = (ClampMin = "0"))
+	int32 PlaceholderStaffAvailable = 4;
+
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Placeholder", meta = (ClampMin = "1"))
+	int32 PlaceholderStaffTotal = 6;
+
 	// --- 배속 값 ---
 
 	/** `▶`가 요청하는 배속. 기획 후보는 1/2/4다. 하드코딩하지 않게 노출한다. */
