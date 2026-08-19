@@ -143,6 +143,18 @@ bool AFF_FestivalPlayerController::IsBuildSessionActive() const
 	return BuildMode ? FFBuildModeModel::IsBuildSessionActive(BuildMode->GetBuildModeState()) : false;
 }
 
+bool AFF_FestivalPlayerController::IsBuildPreviewActive() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const UFF_BuildModeSubsystem* BuildMode = World->GetSubsystem<UFF_BuildModeSubsystem>();
+	return BuildMode ? FFBuildModeModel::IsPreviewActive(BuildMode->GetBuildModeState()) : false;
+}
+
 EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 {
 	if (bModalUiActive)
@@ -170,11 +182,14 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 {
 	// 건축 중에도 화면은 움직여야 한다. 부스를 놓을 자리를 봐야 하니까.
-	// 모달 UI 와 액터 시점만 전체를 막는다.
-	const EFF_CameraInputBlock Reason = GetInputBlockReason();
-	return Reason != EFF_CameraInputBlock::ModalUi
-		&& Reason != EFF_CameraInputBlock::ActorView
-		&& Reason != EFF_CameraInputBlock::CharacterControl;
+	return FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
+}
+
+bool AFF_FestivalPlayerController::IsCameraRotationAllowed() const
+{
+	return FFCameraInputModel::IsRotationAllowed(
+		GetInputBlockReason(),
+		IsBuildPreviewActive());
 }
 
 bool AFF_FestivalPlayerController::IsPickingAllowed() const
@@ -428,7 +443,7 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 
 void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraRotationAllowed())
 	{
 		return;
 	}
@@ -440,7 +455,7 @@ void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
 
 void AFF_FestivalPlayerController::HandleSnapRotate(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraRotationAllowed())
 	{
 		return;
 	}
