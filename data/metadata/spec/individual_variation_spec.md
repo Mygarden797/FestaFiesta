@@ -148,7 +148,11 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 
 **2026-08-06 구현 완료** — `FFF_IndividualVariationResolver::ResolveWithGroupSharing(VariationTable, Seed, StableAgentId, GroupId, SpawnGeneration, CorrelationStrength)`. `GroupId == INDEX_NONE`이면 solo로 취급해 `Resolve()` 한 번과 완전히 같은 결과를 낸다(테스트로 고정).
 
-> ⚠️ **개체 변주는 자동으로 걸리지 않는다.** `StableAgentId`가 만들어져도 이 함수를 **누군가 호출해야** 적용된다. NPC 상태를 보관하는 런타임 층이 아직 없어서 지금은 호출부가 없다 — 즉 개체 변주는 코드로만 존재하고 실제 NPC에게 적용된 적이 없다. 스폰 시점을 소유하는 crowdAI가 부르는 것으로 요청했다(`request/crowdai_integration_guide.md` §5.1).
+> ✅ **2026-08-19 갱신 — 개체 변주가 실제로 걸린다.** crowdAI가 스폰 경로에서 결선했다.
+> `Unit.Speed = BaseSpeed × Traits.WalkSpeedMultiplier × MemberBoost` 로 보행 속도가 개체마다 다르고,
+> `ArchetypeID`도 개체군 분포로 배정된다(표가 없을 때만 폴백 + Error 로그).
+> **이 문단은 그 전까지 "코드로만 존재하고 적용된 적이 없다"고 적혀 있었다** — 일주일 낡아 있었던 것이라
+> 같은 착각을 막기 위해 기록을 남긴다.
 
 나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 그룹이어도 계속 개체별 독립 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
 
@@ -157,6 +161,8 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 1. ~~`live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체~~ → **2026-08-05 확정.** 실제 축제 프로그램 시간표(17:00~21:00) 기준 240분 그대로 유지. 강민서 님 `FF_FestivalStageSubsystem` 배속 구현이 끝나면 다른 시간 단위 필드들과 함께 최종 재점검.
 2. 7종 변주 범위(5절)는 실측이 아니라 초안이다. 실제 시뮬레이션을 돌려본 뒤 편차가 너무 크거나 작으면 DataTable 값만 조정한다(코드 수정 불필요).
 3. `correlation_strength_leisureliness`(0.3, 초안) — 두 특성이 부자연스럽게 조합되는지 플레이테스트로 확인 후 조정.
-4. `remaining_stay`를 실제로 채우는 NPC 런타임 로직 — **아직 없다.** 목표 4(목적지 선택기)는 순수 함수까지만 구현됐고 NPC 상태를 보관하는 런타임 층이 없다. `remaining_stay`는 `no_choice` 퇴장 판정(`ResolveNoChoiceAction`)의 1순위 입력이라 이게 0으로 고정되면 모든 NPC가 즉시 퇴장한다 — 런타임 층을 만들 때 가장 먼저 채워야 하는 필드다.
+4. ~~`remaining_stay`를 실제로 채우는 NPC 런타임 로직~~ — **2026-08-19 확인: 결선됐다.** crowdAI가
+   `FFF_NeedRules::ConsumeStay`를 돌리고 `RemainingStayMinutes`를 결정 컨텍스트로 넘긴다.
+   `ResolveNoChoiceAction`의 1순위 입력이라 0으로 고정되면 전원이 즉시 퇴장하는 필드였는데, 그 위험은 없어졌다.
 5. ~~`Decision` purpose는 훅만 마련했고 실제 사용처가 없다~~ → **2026-08-06 연결 완료.** `FFF_UtilityDestinationSelector::Choose`가 softmax 샘플링 시드에 `RandomPurpose = Decision`을 쓴다. 회차 인덱스는 `SpawnGeneration`이 아니라 `TraitKey` 문자열(`destination_choice_round_%d`)에 접어넣었다 — `SpawnGeneration`의 원래 의미(같은 ID 재사용 세대)를 건드리지 않기 위해서다.
 6. `RuntimeNoise` purpose는 여전히 사용처가 없다 — 애니메이션·시각적 흔들림 담당이 정해지면 연결한다. 훅만 있어도 나중에 붙을 때 기존 특성값이 안 바뀌므로 급하지 않다(2절 `TraitKey`별 독립 스트림).
