@@ -23,7 +23,6 @@
 // 방식은 `Private/Building/UI/FF_BuildCatalogWbpBuilder.cpp`(한광훈)에서 가져왔다.
 // 그 에셋은 한광훈 담당이므로 건드리지 않고 방식만 베낀다 (AGENTS.md 규칙 3).
 
-#include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -36,24 +35,14 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "Engine/Font.h"
-#include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
-#include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
-#include "Misc/PackageName.h"
-#include "Misc/Paths.h"
-#include "Modules/ModuleManager.h"
 #include "UI/FF_CommonButtonBase.h"
 #include "UI/Widgets/FF_MetricRowWidget.h"
 #include "UI/Report/FF_ReportScreen.h"
 #include "UI/Core/FF_UIRootLayout.h"
-#include "UObject/SavePackage.h"
+#include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "Widgets/CommonActivatableWidgetContainer.h"
 #include "WidgetBlueprint.h"
-#include "WidgetBlueprintFactory.h"
-
-DEFINE_LOG_CATEGORY_STATIC(LogFFReportWbpBuilder, Log, All);
 
 namespace FFReportWbpBuilder
 {
@@ -70,7 +59,6 @@ namespace FFReportWbpBuilder
 	// 이미 만들어져 있는 타이틀 버튼을 Report의 `다음 날` 버튼으로 재사용한다.
 	// 새로 만들면 CBS_ 스타일·포커스 링·아이콘 틴트가 전부 빠진다.
 	const FString TitleButtonPackage(UiRoot / TEXT("Title/GlassOrbit/WBP_TitleMenuButton_GlassOrbit"));
-	const FString PretendardPackage(UiRoot / TEXT("Fonts/F_UI_Pretendard"));
 
 	// === 목업 레이아웃 상수 ===
 	// 원본은 SourceArt/UI/Mockups/ReportScreen/manifest.json이다.
@@ -109,188 +97,15 @@ namespace FFReportWbpBuilder
 	const FLinearColor ColorTextMuted = FLinearColor::FromSRGBColor(FColor(0xBF, 0xD0, 0xE5));
 	const FLinearColor ColorTextBody = FLinearColor::FromSRGBColor(FColor(0xEC, 0xF4, 0xFF));
 
-	using TBuildLayout = TFunction<bool(UWidgetBlueprint&, UWidgetTree&)>;
+	// 헬퍼는 FF_UIWbpBuilderCommon 을 그대로 쓴다. 이 파일이 들고 있던 사본은 2026-08-19 에 옮겼다.
+	// 세 빌더에 같은 코드가 복붙돼 있었고 앞으로 생성기가 여섯 개 더 생긴다.
+	using namespace FFUIWbpBuilder;
 
-	FString MakeObjectPath(const FString& PackageName)
-	{
-		return FString::Printf(
-			TEXT("%s.%s"),
-			*PackageName,
-			*FPackageName::GetLongPackageAssetName(PackageName));
-	}
-
-	template <typename TWidget>
-	TWidget* MakeWidget(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, const FName Name, const bool bVariable = false)
-	{
-		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			// !! 이 호출을 빼면 안 된다 !!
-			// 위젯 블루프린트 컴파일러가 WidgetVariableNameToGuidMap을 보기 때문에, 없으면 동적 생성한
-			// 트리가 컴파일·재저장 후 위젯 이름을 잃는다. 모르면 며칠 태우는 부분이다.
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
-
-	UUserWidget* MakeWidgetOfClass(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		const FName Name,
-		UClass* WidgetClass,
-		const bool bVariable = true)
-	{
-		// 생성된 WBP 클래스를 자식으로 넣을 때 쓴다. 선행 WBP 컴파일이 실패해 클래스가 없으면
-		// 잘못된 기본 타입을 대신 만들지 않고 실패를 전파한다.
-		if (!WidgetClass)
-		{
-			return nullptr;
-		}
-
-		UUserWidget* Widget = Tree.ConstructWidget<UUserWidget>(WidgetClass, Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
-
-	/** 폰트가 없어도 생성은 성공시킨다. 폰트 지정은 마감 단계에서 해도 되는 일이다. */
-	void StyleText(UTextBlock& Text, const int32 FontSize, const FLinearColor& Color, const FName TypefaceName)
-	{
-		FSlateFontInfo Font = Text.GetFont();
-
-		if (UFont* Pretendard = LoadObject<UFont>(nullptr, *MakeObjectPath(PretendardPackage)))
-		{
-			Font.FontObject = Pretendard;
-			Font.TypefaceFontName = TypefaceName;
-		}
-
-		Font.Size = FontSize;
-		Text.SetFont(Font);
-		Text.SetColorAndOpacity(FSlateColor(Color));
-	}
-
-	UCanvasPanelSlot* PlaceOnCanvas(
-		UCanvasPanel& Canvas,
-		UWidget& Child,
-		const float X,
-		const float Y,
-		const float W,
-		const float H)
-	{
-		UCanvasPanelSlot* Slot = Canvas.AddChildToCanvas(&Child);
-		if (!Slot)
-		{
-			return nullptr;
-		}
-
-		// 앵커를 점(0,0)으로 두면 Offsets의 Right·Bottom이 크기로 해석된다.
-		// 목업 좌표가 1920×1080 절대값이라 이 방식이 목업과 1:1로 대응한다.
-		// 화면 배율은 UIScaleRule=ShortestSide가 처리한다.
-		Slot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
-		Slot->SetAlignment(FVector2D(0.f, 0.f));
-		Slot->SetAutoSize(false);
-		Slot->SetOffsets(FMargin(X, Y, W, H));
-		return Slot;
-	}
-
-	UCanvasPanelSlot* StretchOnCanvas(UCanvasPanel& Canvas, UWidget& Child)
-	{
-		UCanvasPanelSlot* Slot = Canvas.AddChildToCanvas(&Child);
-		if (!Slot)
-		{
-			return nullptr;
-		}
-
-		Slot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-		Slot->SetOffsets(FMargin(0.f));
-		return Slot;
-	}
-
-	bool SaveNewBlueprint(UWidgetBlueprint& Blueprint)
-	{
-		// WidgetTree와 변수 GUID 변경을 구조 변경으로 알린 뒤 컴파일해야 GeneratedClass에 최신 트리가 반영된다.
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
-		if (Blueprint.Status == BS_Error)
-		{
-			UE_LOG(LogFFReportWbpBuilder, Error,
-				TEXT("FF_REPORT_UMG_FAIL: %s 컴파일 실패."), *Blueprint.GetPathName());
-			return false;
-		}
-
-		Blueprint.MarkPackageDirty();
-		UPackage* Package = Blueprint.GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-
-		FSavePackageArgs Args;
-		Args.TopLevelFlags = RF_Public | RF_Standalone;
-		Args.SaveFlags = SAVE_NoError;
-		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
-	}
-
-	UWidgetBlueprint* LoadExistingBlueprint(const FString& PackageName)
-	{
-		return LoadObject<UWidgetBlueprint>(nullptr, *MakeObjectPath(PackageName));
-	}
-
-	UWidgetBlueprint* EnsureWidgetBlueprint(
-		const FString& PackageName,
-		const FString& Folder,
-		UClass& ParentClass,
-		TBuildLayout&& BuildLayout)
-	{
-		// 비파괴 경로: 패키지가 있으면 레이아웃 콜백을 절대 실행하지 않는다.
-		// 명령을 여러 번 실행해도 디자이너 수정이 보존된다.
-		if (FPackageName::DoesPackageExist(PackageName))
-		{
-			UWidgetBlueprint* Existing = LoadExistingBlueprint(PackageName);
-			if (!Existing)
-			{
-				UE_LOG(LogFFReportWbpBuilder, Error,
-					TEXT("FF_REPORT_UMG_FAIL: %s 이(가) 있지만 로드할 수 없다. 수정하지 않았다."), *PackageName);
-				return nullptr;
-			}
-
-			UE_LOG(LogFFReportWbpBuilder, Display,
-				TEXT("FF_REPORT_UMG_REUSE: %s 이미 존재. 디자이너 수정을 보존했다."), *PackageName);
-			return Existing;
-		}
-
-		UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
-		Factory->ParentClass = &ParentClass;
-
-		FAssetToolsModule& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
-		const FString AssetName = FPackageName::GetLongPackageAssetName(PackageName);
-		UWidgetBlueprint* Blueprint = Cast<UWidgetBlueprint>(AssetTools.Get().CreateAsset(
-			AssetName, Folder, UWidgetBlueprint::StaticClass(), Factory));
-		if (!Blueprint || !Blueprint->WidgetTree)
-		{
-			UE_LOG(LogFFReportWbpBuilder, Error, TEXT("FF_REPORT_UMG_FAIL: %s 생성 실패."), *PackageName);
-			return nullptr;
-		}
-
-		if (!BuildLayout(*Blueprint, *Blueprint->WidgetTree))
-		{
-			UE_LOG(LogFFReportWbpBuilder, Error,
-				TEXT("FF_REPORT_UMG_FAIL: %s 레이아웃 구성 실패. 저장하지 않았다."), *PackageName);
-			return nullptr;
-		}
-
-		if (!SaveNewBlueprint(*Blueprint))
-		{
-			UE_LOG(LogFFReportWbpBuilder, Error, TEXT("FF_REPORT_UMG_FAIL: %s 저장 실패."), *PackageName);
-			return nullptr;
-		}
-
-		UE_LOG(LogFFReportWbpBuilder, Display, TEXT("FF_REPORT_UMG_CREATE: %s 생성 완료."), *PackageName);
-		return Blueprint;
-	}
+	/**
+	 * 로그 접두어. 카테고리는 `LogFFUIWbpBuilder` 하나를 공유하고 어느 빌더인지는 이걸로 구분한다.
+	 * 접두어를 공용 헬퍼에 박아두면 다른 화면에서 그대로 써서 로그가 거짓말을 한다.
+	 */
+	const TCHAR* const ReportLogPrefix = TEXT("FF_REPORT_UMG");
 
 	// =========================================================================
 	// WBP_FF_MetricRow — 캡션 + 숫자 + 구간 라벨 + 구간 아이콘
@@ -421,7 +236,7 @@ namespace FFReportWbpBuilder
 			UUserWidget* Row = MakeWidgetOfClass(Blueprint, Tree, FName(RowName), MetricRowClass);
 			if (!Row)
 			{
-				UE_LOG(LogFFReportWbpBuilder, Error,
+				UE_LOG(LogFFUIWbpBuilder, Error,
 					TEXT("FF_REPORT_UMG_FAIL: %s 을 만들 수 없다. WBP_FF_MetricRow가 먼저 컴파일돼야 한다."), RowName);
 				return false;
 			}
@@ -484,7 +299,7 @@ namespace FFReportWbpBuilder
 		{
 			// 버튼 WBP를 못 찾아도 화면 생성 자체는 통과시킨다. 없으면 에디터에서 직접 넣으면 되고,
 			// 여기서 실패시키면 나머지 골격까지 못 만든다. 다만 조용히 넘기지 않는다.
-			UE_LOG(LogFFReportWbpBuilder, Warning,
+			UE_LOG(LogFFUIWbpBuilder, Warning,
 				TEXT("FF_REPORT_UMG_WARN: %s 를 찾지 못해 Button_NextDay를 만들지 못했다. ")
 				TEXT("에디터에서 그 버튼 WBP를 Button_NextDay 이름으로 직접 넣어야 한다."),
 				*TitleButtonPackage);
@@ -534,18 +349,13 @@ namespace FFReportWbpBuilder
 		return true;
 	}
 
-	UClass* LoadGeneratedClass(const FString& PackageName)
-	{
-		const UWidgetBlueprint* Blueprint = LoadExistingBlueprint(PackageName);
-		return Blueprint ? Blueprint->GeneratedClass.Get() : nullptr;
-	}
-
 	void RunReportUmg()
 	{
-		UE_LOG(LogFFReportWbpBuilder, Display, TEXT("FF_REPORT_UMG_BEGIN: 없는 WBP만 생성한다."));
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_REPORT_UMG_BEGIN: 없는 WBP만 생성한다."));
 
 		// MetricRow가 먼저다. ReportScreen이 그 GeneratedClass를 자식으로 넣기 때문이다.
 		UWidgetBlueprint* MetricRow = EnsureWidgetBlueprint(
+			ReportLogPrefix,
 			MetricRowPackage,
 			CommonFolder,
 			*UFF_MetricRowWidget::StaticClass(),
@@ -553,7 +363,7 @@ namespace FFReportWbpBuilder
 
 		if (!MetricRow || !MetricRow->GeneratedClass)
 		{
-			UE_LOG(LogFFReportWbpBuilder, Error,
+			UE_LOG(LogFFUIWbpBuilder, Error,
 				TEXT("FF_REPORT_UMG_ABORT: WBP_FF_MetricRow가 없어 Report 화면을 만들 수 없다."));
 			return;
 		}
@@ -561,6 +371,7 @@ namespace FFReportWbpBuilder
 		UClass* ButtonClass = LoadGeneratedClass(TitleButtonPackage);
 
 		EnsureWidgetBlueprint(
+			ReportLogPrefix,
 			ReportScreenPackage,
 			ReportFolder,
 			*UFF_ReportScreen::StaticClass(),
@@ -570,12 +381,13 @@ namespace FFReportWbpBuilder
 			});
 
 		EnsureWidgetBlueprint(
+			ReportLogPrefix,
 			RootLayoutPackage,
 			UiRoot,
 			*UFF_UIRootLayout::StaticClass(),
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree) { return BuildRootLayout(Blueprint, Tree); });
 
-		UE_LOG(LogFFReportWbpBuilder, Display,
+		UE_LOG(LogFFUIWbpBuilder, Display,
 			TEXT("FF_REPORT_UMG_END: 끝났다. 색·패딩·폰트 마감은 디자이너에서 한다."));
 	}
 
