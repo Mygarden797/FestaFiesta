@@ -78,6 +78,19 @@ struct FFF_CrowdDecisionStats
 	// 실제로 시설 좌표를 내려준 횟수. 이 값이 0이면 Utility가 한 번도 안 먹은 것이다
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 Chosen = 0;
+
+	/**
+	 * 대기열 정보가 실제로 반영된 후보 수(누적).
+	 *
+	 * 이 값이 0이면 wait_cost 항은 죽어 있다 — 대기시간이 전부 0이면 Choose는 "줄이 없다"로
+	 * 계산한다. Queue 서브시스템이나 Zone 브리지가 없는 월드에서도 결정은 돌아가야 해서
+	 * 어댑터가 조용히 0을 돌려주므로, 이 계수기가 없으면 "줄이 짧다"와 "줄을 안 본다"가
+	 * 화면에서 똑같아 보인다.
+	 *
+	 * 줄이 없는 목적지(벤치·포토존)는 애초에 세지 않으므로 후보 수보다 작은 것이 정상이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 QueueWaitApplied = 0;
 };
 
 /**
@@ -106,13 +119,15 @@ struct FFF_CrowdDecisionStats
  * Crowd: 그 좌표로 이동
  * ```
  *
- * ### 아직 없는 것
- * - 취향(preference): `FUnitData::ArchetypeID`가 NAME_None이라 빈 벡터를 넘긴다
- * - Need: 실시간초 → 축제분 압축비가 정해지지 않아 연결하지 않았다
- * - 방문 이력(revisit), Queue 대기시간: 미연결
+ * ### 아직 없는 것 (2026-08-19 기준)
+ * - attraction: `FFF_ZoneSystemBridge`가 `BaseAttraction`을 0으로 둔다. `attraction_norm`
+ *   설계가 아직 없어서 근거 없는 상수를 넣지 않기로 했다 — 전부 0이면 항이 무력화될 뿐
+ *   특정 시설이 유리해지지는 않는다
+ * - density: `ReportZonePopulation`을 부르는 코드가 프로젝트에 0곳이라 `ReportedPopulation`이
+ *   항상 0이고, 그걸 물려받은 `CurrentOccupancy`도 0이다 (호출 주체는 crowdAI 협의 중)
  *
- * 그래서 현재 Choose의 6항 중 attraction·distance·density 셋만 동작한다.
- * 시설로 수렴하는 동선은 나오지만 "누가 어디에 끌리는가"의 개인차는 아직 없다.
+ * 그래서 현재 Choose의 6항 중 **preference·need·distance·wait 넷이 동작하고
+ * attraction·density 둘이 죽어 있다.** 방문 이력(신규성)은 별도로 동작한다.
  *
  * ### 대기열·서비스·퇴장은 이 단계에 없다
  * `ApproachWorldTransform`은 대기열 가입 **전** 접근점이다. 도착 후 Join·Slot 추종·
