@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "CrowdSystem/Systems/FF_CrowdActorPool.h"
 #include "CrowdSystem/Systems/FF_CrowdDensityGrid.h"
+#include "CrowdSystem/Systems/FF_CrowdForces.h"
+#include "CrowdSystem/Systems/FF_CrowdSpatialGrid.h"
+#include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
 #include "NPC/Party/FF_NeedRules.h"
@@ -187,6 +190,30 @@ public:
 
 	const FCrowdDensityGrid& GetDensityGrid() const { return DensityGrid; }
 
+	/**
+	 * 결정·UI가 읽는 밀도 스냅샷. `SnapshotIntervalSteps` 고정 스텝마다 갱신된다.
+	 *
+	 * ### 폴링 금지 — 이 사본만 읽는다
+	 * `GetDensityGrid()`를 매 틱 들여다보는 코드를 만들지 말 것. 그러면 소비자가
+	 * Crowd 내부 상태에 매 프레임 묶이고, 나중에 힘 계산을 병렬화할 때 레이스가 된다.
+	 * 스냅샷은 값 복사라 언제 읽어도 안전하고, `SnapshotFrame`이 로그에 남아
+	 * "무엇을 보고 결정했는지"를 재현할 수 있다.
+	 */
+	const FFF_CrowdReadModel& GetCrowdReadModel() const { return CrowdReadModel; }
+
+	// 발행된 스냅샷 수. 0에서 안 올라가면 발행 경로가 안 도는 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
+	int32 GetSnapshotCount() const { return SnapshotCount; }
+
+	/**
+	 * 스냅샷 발행 주기, 고정 스텝 단위. 30 = 1초(30Hz).
+	 *
+	 * 유량(Throughput)의 집계 구간이기도 하다 — 값을 바꾸면 유량의 의미가 바뀐다.
+	 * 짧게 하면 구간당 인원이 적어 잡음이 커지고, 길게 하면 순간 병목이 평균에 묻힌다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
+	int32 SnapshotIntervalSteps = 30;
+
 	void DespawnParty(int32 PartyID);
 
 	// --- 결정 -----------------------------------------------------------------------------
@@ -278,7 +305,65 @@ public:
 	// 목적지에 이만큼 가까워지면 도착으로 보고 새 목적지를 뽑는다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
 	float ArrivalRadiusUU = 150.f;
-	
+
+	/**
+	 * 목적지 앞에서 감속을 시작하는 거리, UU. 0이면 ArrivalRadiusUU * 3을 쓴다(기존 동작).
+	 *
+	 * ★ 회피와 정면으로 부딪치는 손잡이다.
+	 * 기본값(150 * 3 = 450UU)은 파티 대형 간격 90UU를 통째로 덮는다. 즉 파티원 전원이
+	 * 서로의 감속 구간 안에 들어가 목적지 앞에서 다 같이 느려지는데, 그 상태에서 회피가
+	 * 밀어내면 감속과 밀어내기가 서로 싸워 목적지 앞에서 제자리 진동이 생긴다.
+	 *
+	 * 회피를 켠 뒤 목적지 근처에서 사람들이 떨면 계수를 만지기 전에 이 값을 먼저 줄일 것.
+	 * 기본값을 0(=기존 동작)으로 둔 이유는 P0 기준선과의 회귀 비교를 깨지 않기 위해서다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
+	float BrakingDistanceUU = 0.f;
+
+	// --- 회피(사회력) ----------------------------------------------------------------------
+
+	/**
+	 * 회피를 켠다. ★ 기본값은 false다.
+	 *
+	 * 켜자마자 밀도·LOS·퇴장 타이밍이 전부 바뀐다. 그래서 A/B로 효과를 증명할 수 있어야 하고,
+	 * 문제가 생기면 즉시 되돌릴 수 있어야 한다 — FF.Decision.Mode와 같은 성질의 손잡이다.
+	 *
+	 * off일 때 기존 수치와 다르면 이식 과정에서 다른 것을 건드린 것이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
+	bool bEnableAvoidance = false;
+
+	// 사회력 계수. 전부 SI(m, kg, N) 단위다 — 자세한 이유는 구조체 주석 참고.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
+	FFF_CrowdAvoidanceConfig AvoidanceConfig;
+
+	/**
+	 * 시뮬 사각 경계(SimOrigin ± SimRadiusUU) 4벽을 벽 반발의 대상으로 넣는다.
+	 *
+	 * 지금 경계는 원형(SimRadiusUU)인데 ComputeWallForce는 선분을 받으므로 v0에서는
+	 * 그 원을 감싸는 사각형 4변을 쓴다. 부스·펜스 벽은 NavMesh 단계의 몫이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
+	bool bAvoidanceUseBoundaryWalls = true;
+
+	// 마지막 스텝에서 회피가 실제로 돌았는지. off 회귀 검증과 콘솔 출력에 쓴다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Avoidance")
+	bool WasAvoidanceAppliedLastStep() const { return bAvoidanceAppliedLastStep; }
+
+	// 마지막 스텝의 이웃 수(자기 자신 제외). 회피가 꺼져 있으면 0이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Avoidance")
+	int32 GetAvoidanceNeighbourCount(int32 AgentIndex) const
+	{
+		return AvoidanceNeighbourCounts.IsValidIndex(AgentIndex) ? AvoidanceNeighbourCounts[AgentIndex] : 0;
+	}
+
+	/**
+	 * 지금 위치로 격자를 한 번 지어 이웃 수를 세고, 실제로 격자에 들어간 개체 수를 반환한다.
+	 * bEnableAvoidance와 무관하게 동작한다 — "격자가 정말 이웃을 찾는가"를
+	 * 힘을 켜기 전에 확인하기 위한 진단용 경로다(FF.Crowd.DumpNeighbours).
+	 */
+	int32 DebugProbeAvoidanceNeighbours(TArray<int32>& OutCounts);
+
 	// 출구의 도착 지점은 더 작은 범위에 들어올 수 있어야 한다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
 	float ExitRadiusUU = 150.f;
@@ -292,9 +377,18 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
 	float MaxTurnRateDegrees = 360.f;
 
-	// 밀도 그리드 셀 한 변, UU. 200UU(2m) = 4m^2를 평균 창으로 쓴다
+	/**
+	 * 밀도 그리드 셀 한 변, UU. 200UU(2m) = 4㎡를 평균 창으로 쓴다.
+	 *
+	 * ★ 기본값을 숫자로 적지 않는다 — 지표 셀 크기의 단일 출처는 `FFF_CrowdMetrics`다.
+	 * 여기에 200을 다시 적으면 ReadModel과 격자가 따로 움직일 수 있는 틈이 생기고,
+	 * 그 순간 같은 밀도가 두 개의 면적으로 리포트된다(§FF_CrowdReadModel.h).
+	 *
+	 * 런타임에 바꿀 수는 있다. 바꾸면 ReadModel의 CellSizeMeters도 따라오지만,
+	 * **그 시점 이전에 기록한 밀도 수치는 전부 폐기해야 한다.**
+	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Metrics")
-	float DensityCellSizeUU = 200.f;
+	float DensityCellSizeUU = FFF_CrowdMetrics::AnalysisCellSizeUU;
 
 	// --- 파티(동반 그룹) 설정 --------------------------------------------------------------
 
@@ -370,6 +464,40 @@ private:
 	// @param InterpAlpha 직전 스텝과 현재 스텝 사이 보간 계수, 0~1
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
 
+	/**
+	 * 밀도 격자를 읽어 `CrowdReadModel`을 새로 만들고 유량 구간을 끊는다.
+	 *
+	 * 인원이 0인 칸은 넣지 않는다 — 실측 레벨 전역이면 대부분의 칸이 비어 있고,
+	 * 200x200 격자면 4만 칸 중 수백 칸만 유효하다. 전부 담으면 스냅샷 하나가 수백 KB다.
+	 *
+	 * ★ 유량이 0이 아닌데 인원이 0인 칸도 담는다. "지나갔지만 지금은 없는" 칸이
+	 * 통로다 — 그 칸을 버리면 유량 지도에서 동선이 끊겨 보인다.
+	 */
+	void PublishCrowdReadModel();
+
+	// --- 회피 내부 구현 ---------------------------------------------------------------------
+
+	/**
+	 * UnitDatas(AoS, UU)를 미터 단위 미러 배열로 복사한다. ★ 단위 변환은 여기서만 일어난다.
+	 *
+	 * 미러를 '전체 풀 크기'로 유지하는 것이 요점이다. 그러면 격자 인덱스 == AgentIndex가 되어
+     * 매핑 테이블이 필요 없다. 압축 배열로 만들면 인덱스 변환이 힘 계산 안쪽까지 들어가고,
+	 * 거기서 한 번 어긋나면 엉뚱한 사람을 밀어낸다.
+	 *
+	 * 스텝당 O(N) 복사 하나는 5,000명에서 무시할 수 있다. Reset만 하고 재할당하지 않으므로
+	 * 정상 상태에서 할당이 0이다.
+	 */
+	void UpdateAvoidanceMirrors();
+
+	// 격자를 짓고 회피 가속도를 계산해 Unit.Force(UU/s^2)에 담는다. ★ 역변환은 여기서만.
+	void ComputeAvoidanceForces();
+
+	// 회피가 꺼진 스텝에서 낡은 Force를 0으로 되돌린다. 안 하면 끈 뒤에도 계속 밀린다
+	void ClearAvoidanceForces();
+
+	// 시뮬 사각 경계 4벽을 미터 단위로 다시 만든다. ConfigureSimArea에서 부른다
+	void RebuildAvoidanceWalls();
+
 	// SimOrigin/SimRadiusUU 안에서 목적지를 하나 뽑는다.
 	// Rng를 소비하므로 스폰 경로에서만 쓴다 — 결정 경로는 PickWanderDestination을 쓴다
 	FVector PickRandomDestination();
@@ -440,6 +568,43 @@ private:
 
 	// 혼잡도 계측용 밀도 그리드
 	FCrowdDensityGrid DensityGrid;
+
+	// 결정·UI가 읽는 사본. 발행 주기 사이에는 값이 그대로 남아 있다
+	FFF_CrowdReadModel CrowdReadModel;
+
+	// 마지막 발행 이후 지난 고정 스텝 수. 프레임 수가 아니라 스텝 수다 —
+	// 프레임률로 세면 유량 집계 구간이 기기 성능에 따라 달라진다
+	int32 StepsSinceSnapshot = 0;
+
+	int32 SnapshotCount = 0;
+
+	// --- 회피 상태 -------------------------------------------------------------------------
+	// 미러 배열. 크기는 항상 UnitDatas.Num()이고 인덱스는 AgentIndex와 같다(§UpdateAvoidanceMirrors)
+
+	TArray<FVector2f> ScratchPos2DMeters;
+	TArray<FVector2f> ScratchVel2DMeters;
+	TArray<float> ScratchRadiusMeters;
+	TArray<uint8> ScratchActive;
+
+	// 활성 개체의 조밀 인덱스. 오름차순으로 채운다 — 힘 합산 순서가 결정성의 전제다
+	TArray<int32> ScratchActiveIds;
+
+	// 이번 스텝의 회피 가속도(m/s^2). UU 변환 전 값이다
+	TArray<FVector2f> ScratchAccelMps2;
+
+	// 진단용 이웃 수(자기 자신 제외)
+	TArray<int32> AvoidanceNeighbourCounts;
+
+	FFF_CrowdSpatialGrid AvoidanceGrid;
+
+	// 이웃 버퍼를 청크별로 들고 있으므로 스텝 간 재사용을 위해 멤버로 둔다
+	FFF_CrowdForceSolver ForceSolver;
+
+	// 경계 4벽(m). ConfigureSimArea에서 갱신된다
+	TArray<FFF_CrowdWallSegment> AvoidanceWalls;
+
+	// 직전 스텝에 회피가 실제로 적용됐는지. 껐을 때 낡은 Force를 한 번만 지우기 위한 것이다
+	bool bAvoidanceAppliedLastStep = false;
 
 	// 목적지 추첨용. 시드를 고정해야 같은 조건에서 같은 결과가 재현된다
 	FRandomStream Rng;

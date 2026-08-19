@@ -28,6 +28,15 @@ namespace CrowdSteering
 		float BrakingDistanceUU = 450.f;
 
 		float MaxTurnRateDegrees = 360.f;
+
+		/**
+		 * 이 속도(UU/s) 미만으로 실제로 이동했으면 정지로 보고 Unit.StuckSteps를 올린다.
+		 *
+		 * 목적지가 도착 반경 밖일 때만 센다 — 도착해서 서 있는 사람은 막힌 것이 아니다.
+		 * 카운터를 여기서 올리는 이유: 실제로 얼마나 움직였는지는 적분을 한 이 함수만 안다.
+		 * 소비는 회피 힘 계산(FFF_CrowdForceSolver)이 한다.
+		 */
+		float StuckSpeedThresholdUU = 20.f;
 	};
 
 

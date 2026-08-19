@@ -316,9 +316,17 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		PartyCount, AveragePartySize, CrowdSim->bEnablePartyGrouping ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("화면 표시 Actor: %d"), CrowdSim->GetBoundActorCount());
 	Ar.Logf(TEXT("밀도 집계 인원 : %d"), Grid.GetSampledUnitCount());
-	Ar.Logf(TEXT("그리드        : %d x %d 셀"), Grid.GetNumX(), Grid.GetNumY());
+	Ar.Logf(TEXT("그리드        : %d x %d 셀, 셀 %.2fm (%.2f m^2)"),
+		Grid.GetNumX(), Grid.GetNumY(), Grid.GetCellSizeMeters(), Grid.GetCellAreaSqM());
 	Ar.Logf(TEXT("최대 밀도     : %.2f 명/m^2  (LOS %s)"), MaxDensity, *LOSName);
 	Ar.Logf(TEXT("혼잡 셀(LOS D+): %d"), Grid.GetCongestedCellCount());
+
+	// 스냅샷이 0에서 안 올라가면 발행 경로가 안 도는 것이다 — 소비자(UI·결정)가
+	// 아무것도 못 읽는 상태이므로 밀도가 정상으로 보여도 지표는 죽어 있다.
+	const FFF_CrowdReadModel& ReadModel = CrowdSim->GetCrowdReadModel();
+	Ar.Logf(TEXT("스냅샷        : %d회 발행, 유효 셀 %d개, 주기 %d스텝 (셀 %.2fm)"),
+		CrowdSim->GetSnapshotCount(), ReadModel.OccupiedCells.Num(),
+		CrowdSim->SnapshotIntervalSteps, ReadModel.CellSizeMeters);
 }
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStatsCommand(
@@ -608,5 +616,224 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdDemoCommand(
 	TEXT("FF.Crowd.Demo"),
 	TEXT("스폰+디버그표시+시점이동을 한 번에. FF.Crowd.Demo [인원=500] [스폰반경UU=1500]"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdDemoCommand));
+
+// -------------------------------------------------------------------------------------------------
+// FF.Crowd.Cells
+// -------------------------------------------------------------------------------------------------
+
+// 스냅샷에서 밀도 상위 N개 셀을 인원·유량과 함께 찍는다.
+//
+// 이 명령의 목적은 밀도 하나로는 구분할 수 없는 두 상황을 가르는 것이다.
+//   인원 많음 + 유량 0    → 막혔다 (게이트 병목)
+//   인원 많음 + 유량 높음 → 흐르는 중 (그냥 붐빔)
+// "몇 명이 몰리는가"에서 "얼마나 막히는가"로 넘어가는 지점이 여기다.
+static void CrowdCellsCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	const int32 TopN = FMath::Clamp(FFCrowdConsole::ParseIntArg(Args, 0, 10), 1, 200);
+	const FFF_CrowdReadModel& ReadModel = CrowdSim->GetCrowdReadModel();
+
+	if (CrowdSim->GetSnapshotCount() == 0)
+	{
+		Ar.Logf(TEXT("아직 발행된 스냅샷이 없다. %d스텝(약 %.1f초) 기다릴 것"),
+			CrowdSim->SnapshotIntervalSteps, CrowdSim->SnapshotIntervalSteps / 30.f);
+		return;
+	}
+
+	if (ReadModel.OccupiedCells.Num() == 0)
+	{
+		Ar.Logf(TEXT("유효 셀이 없다 — 활성 Agent가 없거나 전원이 그리드 밖이다 (FF.Crowd.Stats의 '밀도 집계 인원' 확인)"));
+		return;
+	}
+
+	// 사본을 정렬한다. 스냅샷은 소비자가 읽는 값이므로 순서를 건드리지 않는다.
+	TArray<FFF_CrowdCellSample> Sorted = ReadModel.OccupiedCells;
+	Sorted.Sort([](const FFF_CrowdCellSample& A, const FFF_CrowdCellSample& B)
+	{
+		// 밀도 동률이면 셀 좌표로 가른다 — 동률에서 순서가 흔들리면
+		// 같은 상황을 두 번 찍었을 때 목록이 달라 보인다.
+		if (A.DensityPerSqm != B.DensityPerSqm) { return A.DensityPerSqm > B.DensityPerSqm; }
+		if (A.CellY != B.CellY) { return A.CellY < B.CellY; }
+		return A.CellX < B.CellX;
+	});
+
+	int32 TotalFlow = 0;
+	int32 StalledCells = 0;
+	for (const FFF_CrowdCellSample& Cell : Sorted)
+	{
+		TotalFlow += Cell.Throughput;
+		// LOS D 이상인데 아무도 들어오지 않은 칸 = 막힌 칸
+		if (Cell.Throughput == 0 && FCrowdDensityGrid::DensityToLOS(Cell.DensityPerSqm) >= ECrowdLOS::D)
+		{
+			++StalledCells;
+		}
+	}
+
+	Ar.Logf(TEXT("--- 셀 상위 %d (스냅샷 #%d, 프레임 %d, %.1f분) ---"),
+		FMath::Min(TopN, Sorted.Num()), CrowdSim->GetSnapshotCount(),
+		ReadModel.SnapshotFrame, ReadModel.SimTimeMinutes);
+	Ar.Logf(TEXT("셀 %.2fm (%.2f m^2), 유효 셀 %d개, 구간 %d스텝"),
+		ReadModel.CellSizeMeters, ReadModel.CellSizeMeters * ReadModel.CellSizeMeters,
+		Sorted.Num(), CrowdSim->SnapshotIntervalSteps);
+	Ar.Logf(TEXT("%5s %5s %6s %8s %7s  %s"), TEXT("X"), TEXT("Y"), TEXT("인원"), TEXT("명/m^2"), TEXT("유량"), TEXT("LOS"));
+
+	const UEnum* LOSEnum = StaticEnum<ECrowdLOS>();
+	for (int32 i = 0; i < FMath::Min(TopN, Sorted.Num()); ++i)
+	{
+		const FFF_CrowdCellSample& Cell = Sorted[i];
+		const ECrowdLOS LOS = FCrowdDensityGrid::DensityToLOS(Cell.DensityPerSqm);
+		const FString LOSName = LOSEnum
+			? LOSEnum->GetDisplayNameTextByValue(static_cast<int64>(LOS)).ToString() : TEXT("?");
+
+		Ar.Logf(TEXT("%5d %5d %6d %8.2f %7d  %s%s"),
+			Cell.CellX, Cell.CellY, Cell.Occupancy, Cell.DensityPerSqm, Cell.Throughput,
+			*LOSName,
+			(Cell.Throughput == 0 && LOS >= ECrowdLOS::D) ? TEXT("  <-- 막힘") : TEXT(""));
+	}
+
+	Ar.Logf(TEXT("구간 총 유량 : %d회 진입"), TotalFlow);
+	Ar.Logf(TEXT("막힌 셀      : %d개 (LOS D+ 인데 진입 0)"), StalledCells);
+
+	if (TotalFlow == 0)
+	{
+		Ar.Logf(TEXT("총 유량이 0이다 — 전원이 제자리다. 목적지가 배정됐는지(FF.Crowd.Debug 2) 확인할 것"));
+	}
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdCellsCommand(
+	TEXT("FF.Crowd.Cells"),
+	TEXT("스냅샷의 밀도 상위 셀을 인원·유량과 함께 출력한다. FF.Crowd.Cells [개수=10]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdCellsCommand));
+
+// -------------------------------------------------------------------------------------------------
+// FF.Crowd.Avoidance
+// -------------------------------------------------------------------------------------------------
+
+// 회피 on/off를 런타임에 뒤집는다. 이 커맨드가 필요한 이유는 A/B 때문이다 —
+// 회피를 켜면 밀도·LOS·퇴장 타이밍이 전부 바뀌므로, 같은 실행 안에서 껐다 켜며
+// "무엇이 얼마나 변했는가"를 보여줄 수 있어야 한다.
+static void CrowdAvoidanceCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	if (Args.Num() > 0)
+	{
+		CrowdSim->bEnableAvoidance = (FFCrowdConsole::ParseIntArg(Args, 0, 0) != 0);
+	}
+
+	const FFF_CrowdAvoidanceConfig& Config = CrowdSim->AvoidanceConfig;
+
+	FString ConfigError;
+	const bool bConfigOk = Config.Validate(ConfigError);
+
+	Ar.Logf(TEXT("--- 회피(사회력) ---"));
+	Ar.Logf(TEXT("bEnableAvoidance : %s"), CrowdSim->bEnableAvoidance ? TEXT("켬") : TEXT("끔"));
+	Ar.Logf(TEXT("경계 4벽         : %s"), CrowdSim->bAvoidanceUseBoundaryWalls ? TEXT("켬") : TEXT("끔"));
+	Ar.Logf(TEXT("이웃 반경 / 셀   : %.2fm / %.2fm  (셀 >= 반경이어야 한다)"),
+		Config.NeighbourRadiusMeters, Config.BroadphaseCellSizeMeters);
+	Ar.Logf(TEXT("MaxNeighbours    : %d"), Config.MaxNeighbours);
+	Ar.Logf(TEXT("A / B / 이방성   : %.0fN / %.3fm / %.2f"),
+		Config.RepulsionA, Config.RepulsionB, Config.Anisotropy);
+	Ar.Logf(TEXT("접촉 강성 / 마찰 : %.0f / %.0f"), Config.ContactStiffness, Config.ContactFriction);
+	Ar.Logf(TEXT("가속 상한        : %.0f m/s^2   exp 인자 상한 %.0f"),
+		Config.MaxAccelerationMps2, Config.MaxExponentArg);
+	Ar.Logf(TEXT("막힘 임계 / 탈출 : %d스텝 / %.1f m/s^2"),
+		Config.StuckDetectSteps, Config.UnstuckAccelMps2);
+
+	if (!bConfigOk)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("계수 모순: %s"), *ConfigError);
+	}
+
+	Ar.Logf(TEXT("켜기 전에 FF.Crowd.Stats / FF.Crowd.DumpTraits로 기준선을 먼저 기록할 것 —"));
+	Ar.Logf(TEXT("회피를 켠 뒤에는 이전 밀도 수치를 다시 만들 수 없다"));
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdAvoidanceCommand(
+	TEXT("FF.Crowd.Avoidance"),
+	TEXT("회피(사회력) on/off와 계수를 출력한다. FF.Crowd.Avoidance [0|1]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdAvoidanceCommand));
+
+// -------------------------------------------------------------------------------------------------
+// FF.Crowd.DumpNeighbours
+// -------------------------------------------------------------------------------------------------
+
+// "격자가 실제로 이웃을 찾는가"를 힘을 켜기 전에 확인하는 커맨드.
+// 전원 이웃 0이면 격자가 무효이거나 셀 크기가 어긋난 것이고, 그 상태로 힘을 켜면
+// 아무 일도 일어나지 않는데 원인은 힘 계수를 아무리 봐도 안 나온다.
+static void CrowdDumpNeighboursCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	TArray<int32> Counts;
+	const int32 GridItems = CrowdSim->DebugProbeAvoidanceNeighbours(Counts);
+
+	int32 ActiveCount = 0;
+	int32 Total = 0;
+	int32 MaxCount = 0;
+	int32 ZeroCount = 0;
+	TArray<int32> Histogram;
+	Histogram.SetNumZeroed(CrowdSim->AvoidanceConfig.MaxNeighbours + 2);
+
+	for (int32 AgentIndex = 0; AgentIndex < Counts.Num(); ++AgentIndex)
+	{
+		if (!CrowdSim->IsAgentActive(AgentIndex))
+		{
+			continue;
+		}
+		const int32 Count = Counts[AgentIndex];
+		++ActiveCount;
+		Total += Count;
+		MaxCount = FMath::Max(MaxCount, Count);
+		if (Count == 0)
+		{
+			++ZeroCount;
+		}
+		Histogram[FMath::Clamp(Count, 0, Histogram.Num() - 1)] += 1;
+	}
+
+	if (ActiveCount == 0)
+	{
+		Ar.Logf(TEXT("활성 Agent가 없다. FF.Crowd.Demo로 먼저 스폰할 것"));
+		return;
+	}
+
+	Ar.Logf(TEXT("--- 이웃 분포 (활성 %d명, 반경 %.2fm, 상한 %d) ---"),
+		ActiveCount, CrowdSim->AvoidanceConfig.NeighbourRadiusMeters, CrowdSim->AvoidanceConfig.MaxNeighbours);
+	Ar.Logf(TEXT("격자에 들어간 개체 : %d (활성 수와 다르면 위치에 NaN이 섞인 것이다)"), GridItems);
+	Ar.Logf(TEXT("평균 %.2f명  최대 %d명  이웃 0명 %d명(%.1f%%)"),
+		static_cast<float>(Total) / ActiveCount, MaxCount, ZeroCount, 100.f * ZeroCount / ActiveCount);
+
+	for (int32 Bucket = 0; Bucket < Histogram.Num(); ++Bucket)
+	{
+		if (Histogram[Bucket] == 0)
+		{
+			continue;
+		}
+		const bool bClamped = (Bucket == Histogram.Num() - 1);
+		Ar.Logf(TEXT("이웃 %2d%s : %5d명"), Bucket, bClamped ? TEXT("+") : TEXT(" "), Histogram[Bucket]);
+	}
+
+	// 상한에 붙어 있는 개체가 많으면 MaxNeighbours가 실제 밀도를 잘라내고 있다는 뜻이다.
+	Ar.Logf(TEXT("상한에 걸린 개체가 많으면 MaxNeighbours가 반발력을 잘라내고 있다 — 밀도 해석 시 주의"));
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdDumpNeighboursCommand(
+	TEXT("FF.Crowd.DumpNeighbours"),
+	TEXT("격자가 찾는 이웃 수 분포를 출력한다(회피 on/off와 무관)"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdDumpNeighboursCommand));
 
 #endif // !UE_BUILD_SHIPPING

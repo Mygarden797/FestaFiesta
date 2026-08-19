@@ -7,7 +7,9 @@
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdActorPool.h"
 #include "CrowdSystem/Systems/FF_CrowdDensityGrid.h"
+#include "CrowdSystem/Systems/FF_CrowdForces.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "CrowdSystem/Systems/FF_CrowdSpatialGrid.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Engine/Engine.h"
@@ -1205,6 +1207,730 @@ bool FFF_CrowdParty_MembersDoNotPickOwnDestination::RunTest(const FString& Param
 			return false;
 		}
 	}
+
+	return true;
+}
+
+// =================================================================================================
+// 회피(사회력) — 순수 함수
+//
+// 여기 있는 테스트가 "단위를 100배 틀렸다"를 잡는 유일한 조기 경보다.
+// 계수는 SI(m, kg, N)이고, 아래 모든 좌표는 미터다. UU가 등장하면 그 자체로 버그다.
+// =================================================================================================
+
+namespace FFF_AvoidanceTestHelpers
+{
+	// 성인 보행자 한 명. 반경 0.34m = 팀 레포의 Radius 34UU와 같은 사람이다.
+	constexpr float PersonRadiusMeters = 0.34f;
+	constexpr float PersonMassKg = 70.f;
+	constexpr float FixedStep = 1.f / 30.f;
+
+	FFF_CrowdAvoidanceConfig MakeConfig()
+	{
+		// 기본값이 곧 이식 계획의 초기값이다. 테스트가 기본값을 그대로 쓰는 것이 의도다 —
+		// 누가 계수를 만지면 이 테스트가 먼저 반응해야 한다.
+		return FFF_CrowdAvoidanceConfig();
+	}
+
+	/**
+	 * 2인 정면 충돌을 30Hz로 적분한다. 구동력은 넣지 않는다 —
+	 * StepAgent의 지수 평활이 그 역할을 하므로, 여기서 검증할 것은 반발·접촉항뿐이다.
+	 *
+	 * @return 시뮬 동안의 최소 거리(m). NaN이 생기면 그대로 NaN이 나온다
+	 */
+	float SimulateHeadOn(int32 NumSteps, float StartGapMeters, float ApproachSpeedMps,
+	                     const FFF_CrowdAvoidanceConfig& Config, bool* OutSawNonFinite = nullptr)
+	{
+		FVector2f PosA(-StartGapMeters * 0.5f, 0.f);
+		FVector2f PosB(StartGapMeters * 0.5f, 0.f);
+		FVector2f VelA(ApproachSpeedMps, 0.f);
+		FVector2f VelB(-ApproachSpeedMps, 0.f);
+
+		float MinDistance = (PosB - PosA).Size();
+		if (OutSawNonFinite)
+		{
+			*OutSawNonFinite = false;
+		}
+
+		for (int32 Step = 0; Step < NumSteps; ++Step)
+		{
+			// [규약] 대칭 최적화 금지. 한 쌍에 대해 두 번 계산한다 — 계산량 2배를 내고 재현성을 산다.
+			const FVector2f ForceA = FFF_CrowdForceSolver::ComputeAgentInteraction(
+				PosA, VelA, PersonRadiusMeters, PosB, VelB, PersonRadiusMeters, Config);
+			const FVector2f ForceB = FFF_CrowdForceSolver::ComputeAgentInteraction(
+				PosB, VelB, PersonRadiusMeters, PosA, VelA, PersonRadiusMeters, Config);
+
+			const FVector2f AccelA = FFF_CrowdForceSolver::ClampAcceleration(
+				ForceA / PersonMassKg, Config.MaxAccelerationMps2);
+			const FVector2f AccelB = FFF_CrowdForceSolver::ClampAcceleration(
+				ForceB / PersonMassKg, Config.MaxAccelerationMps2);
+
+			VelA += AccelA * FixedStep;
+			VelB += AccelB * FixedStep;
+
+			// MaxSpeed 클램프는 StepAgent에도 있다. 없으면 접촉 반발로 사람이 날아간다.
+			constexpr float MaxSpeedMps = 1.5f;
+			if (VelA.Size() > MaxSpeedMps) { VelA *= MaxSpeedMps / VelA.Size(); }
+			if (VelB.Size() > MaxSpeedMps) { VelB *= MaxSpeedMps / VelB.Size(); }
+
+			PosA += VelA * FixedStep;
+			PosB += VelB * FixedStep;
+
+			const float Distance = (PosB - PosA).Size();
+			if (OutSawNonFinite && (!FMath::IsFinite(Distance) || !FMath::IsFinite(VelA.X)))
+			{
+				*OutSawNonFinite = true;
+			}
+			MinDistance = FMath::Min(MinDistance, Distance);
+		}
+
+		return MinDistance;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_HeadOnDoesNotPenetrate, "FestaFiesta.Crowd.Avoidance.HeadOnDoesNotPenetrate", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_HeadOnDoesNotPenetrate::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+	const float ContactDistance = PersonRadiusMeters * 2.f;	// 0.68m
+
+	bool bSawNonFinite = false;
+	// 2m 떨어진 두 사람이 서로를 향해 1.5m/s로 걷는다. 회피가 없으면 서로를 통과한다.
+	const float MinDistance = SimulateHeadOn(120, 2.f, 1.5f, Config, &bSawNonFinite);
+
+	TestFalse(TEXT("적분 중 NaN/inf가 생기지 않았다"), bSawNonFinite);
+	TestTrue(TEXT("서로를 통과하지 않았다(거리가 0을 지나지 않음)"), MinDistance > 0.f);
+
+	// 이 테스트가 잡는 것은 '단위 오류'다. 계수를 UU로 잘못 넘기면 반발이 100배 약해져
+	// 두 사람이 그냥 겹쳐 지나가고 MinDistance가 0에 가까워진다.
+	TestTrue(
+		*FString::Printf(TEXT("인체 반경 안으로 깊게 파고들지 않았다 (최소 %.3fm, 접촉 %.3fm)"),
+			MinDistance, ContactDistance),
+		MinDistance > ContactDistance * 0.75f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_HeadOnIsDeterministic, "FestaFiesta.Crowd.Avoidance.HeadOnIsDeterministic", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_HeadOnIsDeterministic::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+
+	const float First = SimulateHeadOn(120, 2.f, 1.5f, Config);
+	const float Second = SimulateHeadOn(120, 2.f, 1.5f, Config);
+
+	// 오차 허용 없이 '완전히 같은 값'을 요구한다. 힘 계산에 RNG나 순서 의존이 섞이면 여기서 걸린다.
+	TestEqual(TEXT("같은 입력은 비트 단위로 같은 결과를 낸다"), First, Second, 0.f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_RepulsionIsInMetresNotUU, "FestaFiesta.Crowd.Avoidance.RepulsionIsInMetresNotUU", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_RepulsionIsInMetresNotUU::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+
+	// 접촉 거리(0.68m)에서는 A만큼(2000N) 나와야 한다. exp(0) = 1이므로 정확히 A다.
+	// 좌표를 UU로 넘겼다면 거리가 100배가 되어 exp가 0에 가까워지고 이 값이 0으로 떨어진다.
+	const FVector2f AtContact = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(0.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters,
+		FVector2f(PersonRadiusMeters * 2.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+
+	TestEqual(TEXT("접촉 거리에서 반발력 = RepulsionA"), AtContact.Size(), Config.RepulsionA, 1.f);
+	TestTrue(TEXT("-X 방향으로 밀려난다(상대는 +X에 있다)"), AtContact.X < 0.f);
+
+	// B(0.08m)만큼 더 떨어지면 1/e로 감쇠한다. 이 관계가 깨지면 B를 UU로 해석한 것이다.
+	const FVector2f OneB = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(0.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters,
+		FVector2f(PersonRadiusMeters * 2.f + Config.RepulsionB, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+
+	TestEqual(TEXT("B만큼 멀어지면 1/e로 감쇠한다"),
+		OneB.Size(), Config.RepulsionA * FMath::Exp(-1.f), 1.f);
+
+	// 2m(이웃 반경 끝)에서는 사실상 0이다 — 그래서 MaxNeighbours로 잘라도 정확도 손실이 없다.
+	const FVector2f AtNeighbourEdge = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(0.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters,
+		FVector2f(2.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+
+	TestTrue(TEXT("이웃 반경 끝에서는 기여가 무시할 만하다"), AtNeighbourEdge.Size() < 1.f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_AnisotropyWeakensRearApproach, "FestaFiesta.Crowd.Avoidance.AnisotropyWeakensRearApproach", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_AnisotropyWeakensRearApproach::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+	const float Gap = PersonRadiusMeters * 2.f + 0.2f;
+
+	// +X로 걷는 사람. 앞(+X)에 있는 사람과 뒤(-X)에 있는 사람에 대한 반발 크기를 비교한다.
+	const FVector2f Heading(1.f, 0.f);
+
+	const FVector2f FromFront = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(0.f, 0.f), Heading, PersonRadiusMeters,
+		FVector2f(Gap, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+
+	const FVector2f FromRear = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(0.f, 0.f), Heading, PersonRadiusMeters,
+		FVector2f(-Gap, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+
+	// 사람은 뒤에서 오는 사람을 덜 피한다. 이 비대칭이 없으면 인파가 실제보다 넓게 퍼져
+	// 밀도가 과소평가되고, 그건 이 프로젝트에서 곧 LOS 오류다.
+	TestTrue(TEXT("앞쪽 사람을 더 강하게 피한다"), FromFront.Size() > FromRear.Size());
+	TestEqual(TEXT("뒤쪽 가중치는 Anisotropy 배다"),
+		FromRear.Size(), FromFront.Size() * Config.Anisotropy, FromFront.Size() * 0.02f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_ExactOverlapStaysFinite, "FestaFiesta.Crowd.Avoidance.ExactOverlapStaysFinite", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_ExactOverlapStaysFinite::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+
+	// 완전히 같은 좌표. 스폰이 겹쳤을 때 실제로 일어나는 상황이다.
+	// exp 인자 클램프와 SafeNormalize가 없으면 여기서 inf가 나오고,
+	// 다음 스텝에 inf - inf = NaN이 되어 배열 전체로 퍼진다.
+	const FVector2f Force = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(10.f, 10.f), FVector2f::ZeroVector, PersonRadiusMeters,
+		FVector2f(10.f, 10.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+
+	TestTrue(TEXT("완전 겹침에서도 유한하다"), FMath::IsFinite(Force.X) && FMath::IsFinite(Force.Y));
+	TestTrue(TEXT("0이 아닌 힘으로 밀어낸다"), Force.Size() > 0.f);
+
+	// 클램프를 사실상 열어 둔 상태(반발이 수백만 N이 되는 상태)에서도
+	// 가속 클램프가 마지막 방어선으로 남아 있어야 한다. 방어선이 하나뿐이면
+	// 계수 하나를 잘못 만진 날 NaN이 배열 전체로 퍼진다.
+	FFF_CrowdAvoidanceConfig Loose = Config;
+	Loose.MaxExponentArg = 700.f;
+	const FVector2f LooseForce = FFF_CrowdForceSolver::ComputeAgentInteraction(
+		FVector2f(0.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters,
+		FVector2f(0.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Loose);
+
+	// 여기서 inf가 나오는 것 자체는 클램프 값을 잘못 준 결과다. 가속 클램프가 마지막 방어선이다.
+	const FVector2f Accel = FFF_CrowdForceSolver::ClampAcceleration(
+		LooseForce / PersonMassKg, Config.MaxAccelerationMps2);
+	TestTrue(TEXT("가속 클램프를 통과한 값은 유한하고 상한 안이다"),
+		FMath::IsFinite(Accel.Size()) && Accel.Size() <= Config.MaxAccelerationMps2 + 0.01f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_WallPushesInward, "FestaFiesta.Crowd.Avoidance.WallPushesInward", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_WallPushesInward::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+
+	// y = 0 위에 놓인 벽. 사람은 y = +0.3에 있다.
+	const FVector2f SegA(-10.f, 0.f);
+	const FVector2f SegB(10.f, 0.f);
+
+	const FVector2f Force = FFF_CrowdForceSolver::ComputeWallForce(
+		FVector2f(0.f, 0.3f), FVector2f(0.f, -0.5f), PersonRadiusMeters, SegA, SegB, Config);
+
+	TestTrue(TEXT("벽에서 멀어지는 방향(+Y)으로 밀어낸다"), Force.Y > 0.f);
+
+	// 선분 끝점 밖에서도 유한해야 한다. 사각 경계의 모서리가 매 스텝 이 경로를 탄다.
+	const FVector2f Corner = FFF_CrowdForceSolver::ComputeWallForce(
+		FVector2f(10.2f, 0.1f), FVector2f::ZeroVector, PersonRadiusMeters, SegA, SegB, Config);
+	TestTrue(TEXT("끝점 밖에서도 유한하다"), FMath::IsFinite(Corner.X) && FMath::IsFinite(Corner.Y));
+
+	// 충분히 떨어지면 벽은 없는 것과 같다. 아니면 열린 광장에서도 사람이 중앙으로 밀린다.
+	const FVector2f Far = FFF_CrowdForceSolver::ComputeWallForce(
+		FVector2f(0.f, 3.f), FVector2f::ZeroVector, PersonRadiusMeters, SegA, SegB, Config);
+	TestTrue(TEXT("멀리 떨어지면 벽 반발이 사라진다"), Far.Size() < 1.f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_UnstuckIsDeterministicAndDiverges, "FestaFiesta.Crowd.Avoidance.UnstuckIsDeterministicAndDiverges", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_UnstuckIsDeterministicAndDiverges::RunTest(const FString& Parameters)
+{
+	const FVector2f Suggested(1.f, 0.f);
+
+	const FVector2f A1 = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1234, Suggested);
+	const FVector2f A2 = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1234, Suggested);
+	const FVector2f B = FFF_CrowdForceSolver::ComputeUnstuckImpulse(1235, Suggested);
+
+	// RNG를 쓰면 여기서 깨진다. 같은 개체는 항상 같은 방향으로 빠져나가야 한다.
+	TestEqual(TEXT("같은 ID는 같은 방향"), A1.X, A2.X, 0.f);
+	TestEqual(TEXT("같은 ID는 같은 방향"), A1.Y, A2.Y, 0.f);
+
+	// 그러나 겹친 두 사람이 같은 방향으로 나가면 영원히 겹쳐 있다. 지터 자체는 필요하다.
+	TestTrue(TEXT("다른 ID는 다른 방향으로 흩어진다"),
+		!FMath::IsNearlyEqual(A1.Y, B.Y, 1.e-4f));
+
+	TestEqual(TEXT("단위 벡터다"), A1.Size(), 1.f, 1.e-3f);
+
+	// 제안 방향에서 ±60도 안이다. 반대로 보내면 원래 가려던 곳에서 멀어지기만 한다.
+	const float CosAngle = FVector2f::DotProduct(A1, Suggested);
+	TestTrue(TEXT("제안 방향에서 60도 이내다"), CosAngle >= FMath::Cos(PI / 3.f) - 1.e-3f);
+
+	// 제안이 없으면(완전 겹침) 전방향에서 고르되 여전히 단위 벡터여야 한다.
+	const FVector2f NoHint = FFF_CrowdForceSolver::ComputeUnstuckImpulse(7, FVector2f::ZeroVector);
+	TestEqual(TEXT("제안이 없어도 단위 벡터다"), NoHint.Size(), 1.f, 1.e-3f);
+
+	return true;
+}
+
+// =================================================================================================
+// 브로드페이즈 격자
+// =================================================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGrid_GatherIsAscendingAndBounded, "FestaFiesta.Crowd.Grid.GatherIsAscendingAndBounded", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdGrid_GatherIsAscendingAndBounded::RunTest(const FString& Parameters)
+{
+	// 0.5m 간격으로 21명을 한 줄로 세운다(-5m ~ +5m).
+	TArray<FVector2f> Pos;
+	TArray<uint8> Active;
+	TArray<int32> ActiveIds;
+	for (int32 i = 0; i < 21; ++i)
+	{
+		Pos.Add(FVector2f(-5.f + i * 0.5f, 0.f));
+		Active.Add(1);
+		ActiveIds.Add(i);
+	}
+
+	FFF_CrowdSpatialGrid Grid;
+	Grid.Build(Pos, Active, ActiveIds, 2.f);
+
+	TestTrue(TEXT("격자가 유효하다"), Grid.IsValid());
+	TestEqual(TEXT("전원이 격자에 들어갔다"), Grid.GetNumItems(), 21);
+
+	// 가운데 사람(인덱스 10, x=0) 주변 2m. 좌우 4명씩 + 자기 자신 = 9명이 반경 안이다.
+	TArray<int32> Neighbours;
+	Grid.GatherNearest(Pos, Pos[10], 2.f, 32, Neighbours);
+
+	TestEqual(TEXT("반경 2m 안의 인원(자기 포함)"), Neighbours.Num(), 9);
+	TestTrue(TEXT("자기 자신이 포함된다(호출자가 건너뛴다)"), Neighbours.Contains(10));
+
+	// [중요] 오름차순이어야 한다. 힘을 더하는 순서가 다르면 부동소수 합산의 마지막 비트가
+	// 달라지고, 그 차이가 60초 뒤엔 눈에 보이는 위치 차이가 된다.
+	for (int32 k = 1; k < Neighbours.Num(); ++k)
+	{
+		if (Neighbours[k] <= Neighbours[k - 1])
+		{
+			AddError(TEXT("GatherNearest 결과가 인덱스 오름차순이 아니다 — 결정성이 깨진다"));
+			return false;
+		}
+	}
+
+	// 상한을 걸면 가까운 것부터 남고, 결과는 여전히 오름차순이다.
+	Grid.GatherNearest(Pos, Pos[10], 2.f, 5, Neighbours);
+	TestEqual(TEXT("상한을 넘지 않는다"), Neighbours.Num(), 5);
+	TestTrue(TEXT("가장 가까운 쪽(자기 자신)이 남는다"), Neighbours.Contains(10));
+	for (int32 k = 1; k < Neighbours.Num(); ++k)
+	{
+		if (Neighbours[k] <= Neighbours[k - 1])
+		{
+			AddError(TEXT("상한을 걸어 자른 뒤에도 오름차순이어야 한다"));
+			return false;
+		}
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGrid_InactiveIsFilteredAtBuild, "FestaFiesta.Crowd.Grid.InactiveIsFilteredAtBuild", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdGrid_InactiveIsFilteredAtBuild::RunTest(const FString& Parameters)
+{
+	TArray<FVector2f> Pos;
+	TArray<uint8> Active;
+	TArray<int32> ActiveIds;
+	for (int32 i = 0; i < 5; ++i)
+	{
+		Pos.Add(FVector2f(i * 0.4f, 0.f));
+		// 홀수 번호는 죽은 슬롯이다. 미러 배열은 압축하지 않으므로 자리는 남아 있다.
+		Active.Add((i % 2 == 0) ? 1 : 0);
+		ActiveIds.Add(i);
+	}
+
+	FFF_CrowdSpatialGrid Grid;
+	Grid.Build(Pos, Active, ActiveIds, 2.f);
+
+	TArray<int32> Neighbours;
+	Grid.GatherNearest(Pos, Pos[0], 2.f, 32, Neighbours);
+
+	// Active 필터링을 Build에서 하는 이유: GatherNearest 시점에 거르면 죽은 에이전트의
+	// 낡은 위치가 "가장 가까운 N개" 자리를 차지해 살아있는 개체의 반발력이 조용히 약해진다.
+	TestEqual(TEXT("살아있는 3명만 잡힌다"), Neighbours.Num(), 3);
+	TestFalse(TEXT("죽은 슬롯은 들어오지 않는다"), Neighbours.Contains(1));
+
+	// 무효 격자는 빈 결과를 낸다 — 여기서 어정쩡하게 진행하면 음수 인덱스 접근이 난다.
+	FFF_CrowdSpatialGrid Empty;
+	TestFalse(TEXT("빈 격자는 무효다"), Empty.IsValid());
+	Empty.GatherNearest(Pos, Pos[0], 2.f, 32, Neighbours);
+	TestEqual(TEXT("무효 격자는 빈 결과"), Neighbours.Num(), 0);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdGrid_LeastCrowdedNeighbourIsStable, "FestaFiesta.Crowd.Grid.LeastCrowdedNeighbourIsStable", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdGrid_LeastCrowdedNeighbourIsStable::RunTest(const FString& Parameters)
+{
+	// 왼쪽 셀에 여러 명, 오른쪽은 비어 있게 만든다.
+	TArray<FVector2f> Pos;
+	TArray<uint8> Active;
+	TArray<int32> ActiveIds;
+	for (int32 i = 0; i < 12; ++i)
+	{
+		Pos.Add(FVector2f(-3.f + (i % 3) * 0.1f, 0.f));
+		Active.Add(1);
+		ActiveIds.Add(i);
+	}
+	// 오른쪽 끝에 한 명만 두어 격자 폭을 넓힌다.
+	Pos.Add(FVector2f(5.f, 0.f));
+	Active.Add(1);
+	ActiveIds.Add(12);
+
+	FFF_CrowdSpatialGrid Grid;
+	Grid.Build(Pos, Active, ActiveIds, 2.f);
+
+	FVector2f First, Second;
+	const bool bOk1 = Grid.FindLeastCrowdedNeighbourCell(Pos[0], First);
+	const bool bOk2 = Grid.FindLeastCrowdedNeighbourCell(Pos[0], Second);
+
+	TestTrue(TEXT("인접 셀을 찾았다"), bOk1 && bOk2);
+	// 동률에서 순서가 흔들리면 같은 상황에서 다른 방향으로 빠져나가 재현성이 깨진다.
+	TestEqual(TEXT("같은 상황에서 항상 같은 셀을 고른다"), First.X, Second.X, 0.f);
+	TestEqual(TEXT("같은 상황에서 항상 같은 셀을 고른다"), First.Y, Second.Y, 0.f);
+
+	return true;
+}
+
+// =================================================================================================
+// StepAgent <-> 회피 배선
+// =================================================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_ZeroForceChangesNothing, "FestaFiesta.Crowd.Steering.ZeroForceChangesNothing", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdSteering_ZeroForceChangesNothing::RunTest(const FString& Parameters)
+{
+	constexpr float FixedStep = 1.f / 30.f;
+	const float Alpha = CrowdSteering::ComputeVelocityAlpha(0.35f, FixedStep);
+
+	CrowdSteering::FStepParams Params;
+
+	// 회피가 꺼진 실행(Force = 0)은 이식 전과 완전히 같은 결과여야 한다.
+	// 이 테스트가 "off 회귀"의 코드 레벨 근거다 — P0 기준선과 어긋나면 다른 것을 건드린 것이다.
+	FUnitData WithZeroForce = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	WithZeroForce.TargetLocation = FVector(5000.f, 0.f, 0.f);
+
+	for (int32 i = 0; i < 60; ++i)
+	{
+		CrowdSteering::StepAgent(WithZeroForce, Params, Alpha, FixedStep);
+	}
+
+	TestEqual(TEXT("Force가 0이면 옆으로 새지 않는다"),
+		static_cast<float>(WithZeroForce.Position.Y), 0.f, 0.f);
+	TestEqual(TEXT("Force는 스스로 바뀌지 않는다"),
+		static_cast<float>(WithZeroForce.Force.SizeSquared()), 0.f, 0.f);
+
+	// 같은 개체에 +Y 회피 가속도를 주면 옆으로 밀려야 한다. 안 밀리면 배선이 끊긴 것이다.
+	FUnitData Pushed = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Pushed.TargetLocation = FVector(5000.f, 0.f, 0.f);
+	for (int32 i = 0; i < 60; ++i)
+	{
+		Pushed.Force = FVector(0.f, 500.f, 0.f);	// 5 m/s^2를 UU/s^2로
+		CrowdSteering::StepAgent(Pushed, Params, Alpha, FixedStep);
+	}
+
+	TestTrue(TEXT("회피 가속도가 실제로 속도에 반영된다"), Pushed.Position.Y > 1.f);
+	TestTrue(TEXT("그래도 MaxSpeed는 넘지 않는다"), Pushed.Velocity.Size() <= Pushed.MaxSpeed + 0.01f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_StuckCounterOnlyCountsBlockedAgents, "FestaFiesta.Crowd.Steering.StuckCounterOnlyCountsBlockedAgents", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdSteering_StuckCounterOnlyCountsBlockedAgents::RunTest(const FString& Parameters)
+{
+	constexpr float FixedStep = 1.f / 30.f;
+	const float Alpha = CrowdSteering::ComputeVelocityAlpha(0.35f, FixedStep);
+	CrowdSteering::FStepParams Params;
+
+	// 1) 정상적으로 걷는 사람은 막힌 것이 아니다.
+	FUnitData Walking = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Walking.TargetLocation = FVector(5000.f, 0.f, 0.f);
+	for (int32 i = 0; i < 30; ++i)
+	{
+		CrowdSteering::StepAgent(Walking, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("걷는 사람의 막힘 카운터는 0이다"), Walking.StuckSteps, 0);
+
+	// 2) 도착해서 서 있는 사람도 막힌 것이 아니다.
+	//    이걸 구분하지 않으면 체류·대기 중인 사람에게까지 탈출 가속이 걸린다.
+	FUnitData Arrived = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Arrived.TargetLocation = FVector::ZeroVector;
+	for (int32 i = 0; i < 30; ++i)
+	{
+		CrowdSteering::StepAgent(Arrived, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("도착해서 서 있는 사람의 카운터는 0이다"), Arrived.StuckSteps, 0);
+
+	// 3) 갈 곳은 남았는데 못 움직이는 사람. 희망 속도를 0으로 만들어 재현한다
+	//    (실제로는 사방이 막혀 반발력이 상쇄되는 상황이다).
+	FUnitData Blocked = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Blocked.TargetLocation = FVector(5000.f, 0.f, 0.f);
+	Blocked.Speed = 0.f;
+	for (int32 i = 0; i < 30; ++i)
+	{
+		CrowdSteering::StepAgent(Blocked, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("막힌 사람은 스텝마다 카운터가 오른다"), Blocked.StuckSteps, 30);
+
+	// 다시 움직이면 즉시 0으로 돌아간다. 안 그러면 한 번 막힌 사람이 계속 탈출 가속을 받는다.
+	Blocked.Speed = 150.f;
+	for (int32 i = 0; i < 5; ++i)
+	{
+		CrowdSteering::StepAgent(Blocked, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("다시 움직이면 카운터가 초기화된다"), Blocked.StuckSteps, 0);
+
+	return true;
+}
+
+// =================================================================================================
+// 지표 — 셀 크기 단일 출처 + 유량(Throughput)
+//
+// 이 절의 테스트가 지키는 것은 "같은 밀도가 두 개의 면적으로 리포트되지 않는다"다.
+// 셀 크기가 두 곳에 적혀 있으면 컴파일도 되고 크래시도 없고, 리포트만 조용히 틀린다.
+// =================================================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_CellSizeHasSingleSource, "FestaFiesta.Crowd.Metrics.CellSizeHasSingleSource", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdMetrics_CellSizeHasSingleSource::RunTest(const FString& Parameters)
+{
+	// m와 UU 표현이 서로 100배여야 한다. 둘을 따로 적어 두었으므로 어긋날 수 있다 —
+	// 어긋나면 격자는 2m로 짓고 리포트는 5m로 나가는, 정확히 막으려던 상태가 된다.
+	TestEqual(TEXT("m와 UU 표현이 100배 관계다"),
+		FFF_CrowdMetrics::AnalysisCellSizeUU,
+		FFF_CrowdMetrics::AnalysisCellSizeMeters * 100.f, 0.001f);
+
+	// ReadModel 기본값이 단일 출처를 그대로 쓴다.
+	const FFF_CrowdReadModel DefaultModel;
+	TestEqual(TEXT("ReadModel 기본 셀 크기 = 단일 출처"),
+		DefaultModel.CellSizeMeters, FFF_CrowdMetrics::AnalysisCellSizeMeters, 0.f);
+
+	// 격자 기본값도 같은 곳에서 온다.
+	FCrowdDensityGrid Grid;
+	Grid.Build(FVector::ZeroVector, FVector2D(1000.f, 1000.f), FFF_CrowdMetrics::AnalysisCellSizeUU);
+
+	TestEqual(TEXT("격자 셀 크기(m) = 단일 출처"),
+		Grid.GetCellSizeMeters(), FFF_CrowdMetrics::AnalysisCellSizeMeters, 0.001f);
+	TestEqual(TEXT("셀 면적 = 셀 크기의 제곱"),
+		Grid.GetCellAreaSqM(),
+		FFF_CrowdMetrics::AnalysisCellSizeMeters * FFF_CrowdMetrics::AnalysisCellSizeMeters, 0.001f);
+
+	// 2m 격자에서 한 칸에 4명이면 1.00 명/㎡다. 5m 격자였다면 0.16이 되어 LOS가 A로 떨어진다 —
+	// 이 숫자가 "면적이 6.25배 다르면 등급이 통째로 달라진다"의 실제 크기다.
+	FCrowdDensityGrid Counted;
+	Counted.Build(FVector::ZeroVector, FVector2D(1000.f, 1000.f), FFF_CrowdMetrics::AnalysisCellSizeUU);
+	TArray<FUnitData> Units;
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(100.f, 100.f, 0.f), 4);
+	Counted.Update(Units);
+
+	TestEqual(TEXT("4㎡에 4명 = 1.00 명/m^2"),
+		Counted.GetDensityAtLocation(FVector(100.f, 100.f, 0.f)), 1.f, 0.001f);
+	TestEqual(TEXT("그 밀도의 LOS는 D다(2m 격자 기준)"),
+		static_cast<int32>(FCrowdDensityGrid::DensityToLOS(1.f)), static_cast<int32>(ECrowdLOS::D));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_ThroughputCountsCrossingsOnly, "FestaFiesta.Crowd.Metrics.ThroughputCountsCrossingsOnly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdMetrics_ThroughputCountsCrossingsOnly::RunTest(const FString& Parameters)
+{
+	FCrowdDensityGrid Grid;
+	Grid.Build(FVector::ZeroVector, FVector2D(1000.f, 1000.f), 200.f);
+
+	TArray<FUnitData> Units;
+	Units.Add(FFF_CrowdTestHelpers::MakeUnitAt(FVector(50.f, 50.f, 0.f)));	// 셀 (0,0)
+
+	// 1) 첫 등장은 진입이다. 축제에 들어온 사람이 그 칸을 처음 밟은 것이다.
+	Grid.Update(Units);
+	TestEqual(TEXT("첫 등장이 진입 1회로 잡힌다"), Grid.GetCellThroughput()[0], 1);
+
+	// 2) 같은 칸 안에서 움직여도 진입이 아니다. 프레임을 여러 번 돌려도 늘지 않는다.
+	//    이게 성립해야 "인원 많음 + 유량 0 = 막힘" 판정이 의미를 갖는다.
+	Units[0].Position = FVector(150.f, 150.f, 0.f);
+	Grid.Update(Units);
+	Grid.Update(Units);
+	Grid.Update(Units);
+	TestEqual(TEXT("같은 칸에 머무는 동안은 늘지 않는다"), Grid.GetCellThroughput()[0], 1);
+
+	// 3) 옆 칸으로 넘어가면 '목적 칸'에서 1 오른다. 떠난 칸은 그대로다.
+	Units[0].Position = FVector(250.f, 50.f, 0.f);	// 셀 (1,0)
+	Grid.Update(Units);
+	TestEqual(TEXT("목적 칸의 진입이 1"), Grid.GetCellThroughput()[1], 1);
+	TestEqual(TEXT("떠난 칸은 변하지 않는다"), Grid.GetCellThroughput()[0], 1);
+
+	// 4) 되돌아오면 다시 진입이다. 왕복하는 사람은 양쪽 유량을 모두 올린다.
+	Units[0].Position = FVector(50.f, 50.f, 0.f);
+	Grid.Update(Units);
+	TestEqual(TEXT("되돌아온 칸의 진입이 2"), Grid.GetCellThroughput()[0], 2);
+
+	// 5) 인원(순간값)은 항상 1명이다 — 유량과 초기화 주기가 다르다는 것의 확인
+	TestEqual(TEXT("점유는 누적되지 않는다"), Grid.GetCellCounts()[0], 1);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_ThroughputWindowResetsWithoutFakeFlow, "FestaFiesta.Crowd.Metrics.ThroughputWindowResetsWithoutFakeFlow", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdMetrics_ThroughputWindowResetsWithoutFakeFlow::RunTest(const FString& Parameters)
+{
+	FCrowdDensityGrid Grid;
+	Grid.Build(FVector::ZeroVector, FVector2D(1000.f, 1000.f), 200.f);
+
+	TArray<FUnitData> Units;
+	Units.Add(FFF_CrowdTestHelpers::MakeUnitAt(FVector(50.f, 50.f, 0.f)));
+	Grid.Update(Units);
+	TestEqual(TEXT("구간 안에서 진입 1"), Grid.GetCellThroughput()[0], 1);
+
+	// 구간을 끊는다(스냅샷 발행 시점).
+	Grid.ResetThroughputWindow();
+	TestEqual(TEXT("구간을 끊으면 0"), Grid.GetCellThroughput()[0], 0);
+
+	// ★ 구간을 끊은 뒤 제자리에 있는 사람이 다시 진입으로 세어지면 안 된다.
+	// 직전 셀 기억까지 지웠다면 여기서 1이 되고, 유량이 구간마다 인원수만큼 부풀려진다.
+	Grid.Update(Units);
+	Grid.Update(Units);
+	TestEqual(TEXT("제자리인 사람은 새 구간에서도 0이다"), Grid.GetCellThroughput()[0], 0);
+
+	// 점유는 계속 잡힌다 — 유량 0인데 인원이 있는 상태, 즉 '막힘'의 신호다
+	TestEqual(TEXT("점유는 그대로 1"), Grid.GetCellCounts()[0], 1);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_SlotReuseIsCountedAsNewEntry, "FestaFiesta.Crowd.Metrics.SlotReuseIsCountedAsNewEntry", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdMetrics_SlotReuseIsCountedAsNewEntry::RunTest(const FString& Parameters)
+{
+	FCrowdDensityGrid Grid;
+	Grid.Build(FVector::ZeroVector, FVector2D(1000.f, 1000.f), 200.f);
+
+	TArray<FUnitData> Units;
+	Units.Add(FFF_CrowdTestHelpers::MakeUnitAt(FVector(50.f, 50.f, 0.f)));	// 셀 (0,0)
+	Grid.Update(Units);
+
+	// 퇴장. 슬롯은 남는다(Agent 풀은 슬롯을 재사용한다).
+	Units[0].bIsActive = false;
+	Grid.Update(Units);
+	TestEqual(TEXT("퇴장자는 점유에서 빠진다"), Grid.GetCellCounts()[0], 0);
+
+	// ★ 같은 슬롯을 같은 칸에서 재사용. 다른 사람이 그 칸에 들어온 것이므로 진입이다.
+	// 비활성 시점에 직전 셀 기억을 지우지 않으면 "이미 그 칸에 있던 사람"으로 보여
+	// 이 진입이 통째로 누락된다 — 스폰 지점의 유량이 항상 0으로 나오는 증상이 된다.
+	Units[0].bIsActive = true;
+	Grid.Update(Units);
+	TestEqual(TEXT("슬롯 재사용이 새 진입으로 잡힌다"), Grid.GetCellThroughput()[0], 2);
+
+	// 반대 방향 오염도 없어야 한다: 퇴장자의 마지막 칸에서 '이동해 온' 것으로 잡히면
+	// 맵 반대편 칸의 유량이 엉뚱하게 오른다.
+	Units[0].bIsActive = false;
+	Grid.Update(Units);
+	Units[0].Position = FVector(850.f, 850.f, 0.f);	// 멀리 떨어진 칸에서 재스폰
+	Units[0].bIsActive = true;
+	Grid.Update(Units);
+
+	const int32 FarCell = 4 * Grid.GetNumX() + 4;	// (4,4)
+	TestEqual(TEXT("재스폰 칸에 진입 1"), Grid.GetCellThroughput()[FarCell], 1);
+	TestEqual(TEXT("옛 칸의 유량은 그대로다"), Grid.GetCellThroughput()[0], 2);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_RebuildClearsStaleCellMemory, "FestaFiesta.Crowd.Metrics.RebuildClearsStaleCellMemory", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdMetrics_RebuildClearsStaleCellMemory::RunTest(const FString& Parameters)
+{
+	FCrowdDensityGrid Grid;
+	Grid.Build(FVector::ZeroVector, FVector2D(1000.f, 1000.f), 200.f);
+
+	TArray<FUnitData> Units;
+	Units.Add(FFF_CrowdTestHelpers::MakeUnitAt(FVector(50.f, 50.f, 0.f)));
+	Grid.Update(Units);
+
+	// 시뮬 영역이 바뀌면(ConfigureSimArea) 격자를 다시 짓는다.
+	// 셀 인덱스 공간 자체가 달라지므로 직전 셀 기억이 남아 있으면 엉뚱한 셀을 가리킨다.
+	Grid.Build(FVector::ZeroVector, FVector2D(2000.f, 2000.f), 400.f);
+
+	TestEqual(TEXT("재구축하면 유량이 비어 있다"), Grid.GetCellThroughput()[0], 0);
+
+	Grid.Update(Units);
+	TestEqual(TEXT("재구축 후 첫 갱신은 새 진입으로 잡힌다"), Grid.GetCellThroughput()[0], 1);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWorld_ReadModelIsPublishedOnInterval, "FestaFiesta.Crowd.World.ReadModelIsPublishedOnInterval", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdWorld_ReadModelIsPublishedOnInterval::RunTest(const FString& Parameters)
+{
+	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
+	if (!TestWorld.World)
+	{
+		AddError(TEXT("테스트 월드를 만들지 못했다"));
+		return false;
+	}
+
+	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
+	if (!CrowdSim)
+	{
+		AddError(TEXT("CrowdSimulationSubsystem이 없다"));
+		return false;
+	}
+
+	CrowdSim->InitializeSimulation(FVector::ZeroVector, 5000.f, 8, 32, AFF_BaseCrowd::StaticClass());
+	CrowdSim->SpawnAgents(8, FVector::ZeroVector, 500.f);
+
+	// 발행 전. 스냅샷은 아직 비어 있어야 한다 — 기본값이 이미 채워진 것처럼 보이면
+	// 소비자가 "0회 발행"과 "빈 격자"를 구별할 수 없다.
+	TestEqual(TEXT("Tick 전에는 발행 0회"), CrowdSim->GetSnapshotCount(), 0);
+
+	// 주기를 짧게 해서 테스트 시간을 줄인다. 손잡이가 실제로 먹는지도 같이 본다.
+	CrowdSim->SnapshotIntervalSteps = 10;
+	FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 1.0f);	// 30Hz면 약 30스텝 = 3회 발행
+
+	TestTrue(TEXT("주기마다 발행된다"), CrowdSim->GetSnapshotCount() >= 2);
+
+	const FFF_CrowdReadModel& ReadModel = CrowdSim->GetCrowdReadModel();
+
+	// ★ 셀 크기는 격자에서 읽어 채워야 한다. 상수를 다시 적었다면 여기서 어긋난다.
+	TestEqual(TEXT("스냅샷 셀 크기 = 격자 셀 크기"),
+		ReadModel.CellSizeMeters, CrowdSim->GetDensityGrid().GetCellSizeMeters(), 0.001f);
+	// FVector는 double 기반이라 float 기대값과 섞으면 TestEqual 오버로드가 모호해진다. 명시적으로 맞춘다.
+	TestEqual(TEXT("스냅샷 원점 = 격자 원점"),
+		static_cast<float>(ReadModel.GridOriginUU.X),
+		static_cast<float>(CrowdSim->GetDensityGrid().GetOriginUU().X), 0.01f);
+
+	TestTrue(TEXT("유효 셀이 담겼다"), ReadModel.OccupiedCells.Num() > 0);
+	TestTrue(TEXT("스냅샷 프레임이 기록됐다"), ReadModel.SnapshotFrame != INDEX_NONE);
+
+	// 인원 0 + 유량 0인 칸은 담기지 않는다. 그리드는 수천 칸인데
+	// 8명이 만드는 유효 칸은 한 자리 수여야 한다.
+	TestTrue(TEXT("빈 칸은 담기지 않는다"),
+		ReadModel.OccupiedCells.Num() < CrowdSim->GetDensityGrid().GetNumX() * CrowdSim->GetDensityGrid().GetNumY());
+
+	int32 SumOccupancy = 0;
+	for (const FFF_CrowdCellSample& Cell : ReadModel.OccupiedCells)
+	{
+		SumOccupancy += Cell.Occupancy;
+
+		// 밀도는 인원/면적이어야 한다. 여기가 틀리면 면적을 두 번 나눈 것이다.
+		const float Expected = Cell.Occupancy / (ReadModel.CellSizeMeters * ReadModel.CellSizeMeters);
+		TestEqual(TEXT("밀도 = 인원 / 셀 면적"), Cell.DensityPerSqm, Expected, 0.001f);
+	}
+
+	TestEqual(TEXT("스냅샷 인원 합 = 격자 집계 인원"),
+		SumOccupancy, CrowdSim->GetDensityGrid().GetSampledUnitCount());
 
 	return true;
 }

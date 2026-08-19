@@ -86,6 +86,17 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 			TEXT("[CrowdSimulationSubsystem] ChildCompositionTable 미설정 — 아동 0명으로 구성된다"));
 	}
 	
+	// 회피 계수 검증. 셀 크기 < 이웃 반경 같은 모순은 크래시가 아니라
+	// "회피가 좀 약한" 상태로 조용히 끝나므로 진입점에서 로그로 남긴다.
+	{
+		FString AvoidanceError;
+		if (!AvoidanceConfig.Validate(AvoidanceError))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[CrowdSimulationSubsystem] AvoidanceConfig가 모순이다 — %s"), *AvoidanceError);
+		}
+	}
+
 	ActorPoolSize = FMath::Max(NewActorPoolSize, 0);
 	AgentPoolSize = FMath::Max(NewAgentPoolSize, 0);
 	CrowdActorClass = InCrowdActorClass;
@@ -115,6 +126,11 @@ void UFF_CrowdSimulationSubsystem::ConfigureSimArea(FVector NewOrigin, float New
 	const FVector GridOrigin = SimOrigin - FVector(SimRadiusUU, SimRadiusUU, 0.f);
 	const FVector2D GridSize(SimRadiusUU * 2.f, SimRadiusUU * 2.f);
 	DensityGrid.Build(GridOrigin, GridSize, DensityCellSizeUU);
+
+	// 회피 경계 벽은 시뮬 영역에서 파생되므로 여기서 같이 갱신한다.
+	// 따로 두면 ConfigureSimArea를 다시 부른 뒤에도 벽이 옛 위치에 남는다.
+	RebuildAvoidanceWalls();
+
 	if (!bTemp_ExitLocationSet)
 	{
 		Temp_ExitWorldLocation = SimOrigin + FVector(-SimRadiusUU * 0.8f, 0.f, 0.f);
@@ -162,6 +178,16 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		DensityGrid.Update(UnitDatas);
 	}
 
+	// --- 지표 스냅샷 -----------------------------------------------------------------------
+	// 스텝 수로 센다. 프레임 수로 세면 유량 집계 구간이 기기 성능에 따라 달라져
+	// 조건 간 비교(A/B)가 무의미해진다.
+	StepsSinceSnapshot += StepsThisFrame;
+	if (StepsSinceSnapshot >= FMath::Max(1, SnapshotIntervalSteps))
+	{
+		PublishCrowdReadModel();
+		StepsSinceSnapshot = 0;
+	}
+
 	AdvanceNeeds();
 	// --- 결정 ------------------------------------------------------------------------------
 	// 퇴장 뒤여야 죽은 파티에 목적지를 주지 않고,
@@ -196,7 +222,27 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 	StepParams.ArrivalRadiusUU = ArrivalRadiusUU;
 	StepParams.MaxTurnRateDegrees = MaxTurnRateDegrees;
 	// 목적지 앞에서 감속을 시작하는 거리. 도착 반경의 3배면 한 번에 멈추지 않고 자연스럽게 줄어든다.
-	StepParams.BrakingDistanceUU = FMath::Max(ArrivalRadiusUU * 3.f, 1.f);
+	// BrakingDistanceUU를 명시하면 그 값을 쓴다 — 회피와 충돌할 때 만지는 손잡이다(헤더 주석 참고).
+	StepParams.BrakingDistanceUU = (BrakingDistanceUU > 0.f)
+		? BrakingDistanceUU
+		: FMath::Max(ArrivalRadiusUU * 3.f, 1.f);
+	StepParams.StuckSpeedThresholdUU = AvoidanceConfig.StuckSpeedThresholdUU;
+
+	// --- 회피 ------------------------------------------------------------------------------
+	// 순서가 정해져 있다: 미러 갱신 -> 격자 -> 힘 -> StepAgent.
+	// 전원의 Force를 먼저 다 채워야 한다. 개체별로 "계산하고 바로 움직이기"를 하면
+	// 앞 번호가 이미 움직인 위치를 뒷 번호가 보게 되어 인덱스 순서가 결과에 새어 들어간다.
+	if (bEnableAvoidance)
+	{
+		ComputeAvoidanceForces();
+		bAvoidanceAppliedLastStep = true;
+	}
+	else if (bAvoidanceAppliedLastStep)
+	{
+		// 끈 직후 한 번만. 안 지우면 마지막 스텝의 가속도가 영원히 남아 계속 밀린다.
+		ClearAvoidanceForces();
+		bAvoidanceAppliedLastStep = false;
+	}
 
 	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
 	{
@@ -244,6 +290,202 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 
 		CrowdSteering::StepAgent(Unit, StepParams, VelocityAlpha, FixedDt);
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::PublishCrowdReadModel()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_PublishReadModel);
+
+	// ★ 셀 크기·원점은 격자에서 읽는다. 상수를 다시 적으면 격자가 바뀌는 날
+	// 리포트만 조용히 옛 면적으로 남는다.
+	CrowdReadModel.CellSizeMeters = DensityGrid.GetCellSizeMeters();
+	CrowdReadModel.GridOriginUU = DensityGrid.GetOriginUU();
+	CrowdReadModel.SnapshotFrame = GFrameNumber;
+	CrowdReadModel.SimTimeMinutes = GetLiveMinutes();
+
+	// Reset은 용량을 유지한다. 정상 상태에서 재할당이 없다
+	CrowdReadModel.OccupiedCells.Reset();
+
+	const TArray<int32>& Counts = DensityGrid.GetCellCounts();
+	const TArray<int32>& Throughput = DensityGrid.GetCellThroughput();
+	const TArray<float>& Density = DensityGrid.GetDensityField();
+	const int32 NumX = FMath::Max(1, DensityGrid.GetNumX());
+
+	for (int32 CellIndex = 0; CellIndex < Counts.Num(); ++CellIndex)
+	{
+		const int32 Occupancy = Counts[CellIndex];
+		const int32 Flow = Throughput.IsValidIndex(CellIndex) ? Throughput[CellIndex] : 0;
+
+		// 인원 0 + 유량 0인 칸만 버린다. 유량만 있는 칸은 통로다 —
+		// 그걸 버리면 유량 지도에서 동선이 끊겨 보인다.
+		if (Occupancy == 0 && Flow == 0)
+		{
+			continue;
+		}
+
+		FFF_CrowdCellSample& Sample = CrowdReadModel.OccupiedCells.AddDefaulted_GetRef();
+		Sample.CellX = CellIndex % NumX;
+		Sample.CellY = CellIndex / NumX;
+		Sample.Occupancy = Occupancy;
+		Sample.Throughput = Flow;
+		Sample.DensityPerSqm = Density.IsValidIndex(CellIndex) ? Density[CellIndex] : 0.f;
+	}
+
+	// 발행한 뒤에 구간을 끊는다. 먼저 끊으면 방금 담은 유량이 항상 0이 된다.
+	DensityGrid.ResetThroughputWindow();
+
+	++SnapshotCount;
+}
+
+//======================================================================
+// 회피(사회력)
+//
+// ★ 단위 경계가 이 세 함수에 갇혀 있다.
+//   UpdateAvoidanceMirrors : UU -> m      (입력 변환, 딱 한 번)
+//   ComputeAvoidanceForces : m/s^2 -> UU/s^2 (출력 변환, 딱 한 번)
+//   RebuildAvoidanceWalls  : UU -> m      (벽, 시뮬 영역이 바뀔 때만)
+// 그 사이의 FFF_CrowdForceSolver / FFF_CrowdSpatialGrid에는 UU가 한 번도 등장하지 않는다.
+// 변환 지점을 늘리지 말 것 — 힘이 100배 어긋나면 계수 조정으로는 절대 못 잡는다.
+//======================================================================
+
+void UFF_CrowdSimulationSubsystem::UpdateAvoidanceMirrors()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_AvoidanceMirrors);
+
+	const int32 PoolSize = UnitDatas.Num();
+
+	// 전체 풀 크기를 유지한다 -> 미러 인덱스 == AgentIndex. 매핑 테이블이 필요 없어진다.
+	// Reset은 용량을 유지하므로 정상 상태에서 할당이 0이다.
+	ScratchPos2DMeters.Reset();
+	ScratchPos2DMeters.SetNumUninitialized(PoolSize);
+	ScratchVel2DMeters.Reset();
+	ScratchVel2DMeters.SetNumUninitialized(PoolSize);
+	ScratchRadiusMeters.Reset();
+	ScratchRadiusMeters.SetNumUninitialized(PoolSize);
+	ScratchActive.Reset();
+	ScratchActive.SetNumUninitialized(PoolSize);
+	ScratchActiveIds.Reset(PoolSize);
+
+	for (int32 AgentIndex = 0; AgentIndex < PoolSize; ++AgentIndex)
+	{
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+
+		// 비활성 슬롯도 자리를 채워 둔다. 인덱스를 밀지 않는 것이 이 배열의 존재 이유다.
+		ScratchActive[AgentIndex] = Unit.bIsActive ? 1 : 0;
+		ScratchPos2DMeters[AgentIndex] = FVector2f(
+			static_cast<float>(Unit.Position.X) * FFF_CrowdUnits::MetersPerUU,
+			static_cast<float>(Unit.Position.Y) * FFF_CrowdUnits::MetersPerUU);
+		ScratchVel2DMeters[AgentIndex] = FVector2f(
+			static_cast<float>(Unit.Velocity.X) * FFF_CrowdUnits::MetersPerUU,
+			static_cast<float>(Unit.Velocity.Y) * FFF_CrowdUnits::MetersPerUU);
+		ScratchRadiusMeters[AgentIndex] = Unit.Radius * FFF_CrowdUnits::MetersPerUU;
+
+		if (Unit.bIsActive)
+		{
+			// 오름차순으로 쌓인다. 힘을 더하는 순서가 결정성의 전제이므로 이 순서를 흔들지 말 것.
+			ScratchActiveIds.Add(AgentIndex);
+		}
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Avoidance);
+
+	UpdateAvoidanceMirrors();
+
+	AvoidanceGrid.Build(ScratchPos2DMeters, ScratchActive, ScratchActiveIds,
+		AvoidanceConfig.BroadphaseCellSizeMeters);
+
+	FFF_CrowdForceInput Input;
+	Input.PosMeters = &ScratchPos2DMeters;
+	Input.VelMeters = &ScratchVel2DMeters;
+	Input.RadiusMeters = &ScratchRadiusMeters;
+	Input.ActiveIds = &ScratchActiveIds;
+
+	static const TArray<FFF_CrowdWallSegment> NoWalls;
+	const TArray<FFF_CrowdWallSegment>& Walls = bAvoidanceUseBoundaryWalls ? AvoidanceWalls : NoWalls;
+
+	ForceSolver.ComputeAll(UnitDatas, Input, AvoidanceGrid, Walls,
+		AvoidanceConfig, ScratchAccelMps2, &AvoidanceNeighbourCounts);
+
+	// m/s^2 -> UU/s^2. ★ 역변환 지점은 여기 한 곳이다.
+	// 활성 개체만 쓴다 — 비활성 슬롯의 Force는 스폰 시 FUnitData()로 어차피 0이 된다.
+	for (const int32 AgentIndex : ScratchActiveIds)
+	{
+		if (!ScratchAccelMps2.IsValidIndex(AgentIndex))
+		{
+			continue;
+		}
+		const FVector2f& Accel = ScratchAccelMps2[AgentIndex];
+		UnitDatas[AgentIndex].Force = FVector(
+			Accel.X * FFF_CrowdUnits::UUPerMeter,
+			Accel.Y * FFF_CrowdUnits::UUPerMeter,
+			0.f);
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::ClearAvoidanceForces()
+{
+	for (FUnitData& Unit : UnitDatas)
+	{
+		Unit.Force = FVector::ZeroVector;
+		Unit.StuckSteps = 0;
+	}
+	AvoidanceNeighbourCounts.Reset();
+}
+
+void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
+{
+	AvoidanceWalls.Reset(4);
+
+	// 경계는 원형(SimRadiusUU)인데 ComputeWallForce는 선분을 받는다.
+	// v0에서는 그 원을 감싸는 사각형 4변을 쓴다 — 부스·펜스 벽은 NavMesh 단계의 몫이다.
+	const float CX = static_cast<float>(SimOrigin.X) * FFF_CrowdUnits::MetersPerUU;
+	const float CY = static_cast<float>(SimOrigin.Y) * FFF_CrowdUnits::MetersPerUU;
+	const float H = SimRadiusUU * FFF_CrowdUnits::MetersPerUU;
+
+	const FVector2f Corners[4] = {
+		FVector2f(CX - H, CY - H), FVector2f(CX + H, CY - H),
+		FVector2f(CX + H, CY + H), FVector2f(CX - H, CY + H)
+	};
+
+	for (int32 i = 0; i < 4; ++i)
+	{
+		FFF_CrowdWallSegment Wall;
+		Wall.A = Corners[i];
+		Wall.B = Corners[(i + 1) % 4];
+		AvoidanceWalls.Add(Wall);
+	}
+}
+
+int32 UFF_CrowdSimulationSubsystem::DebugProbeAvoidanceNeighbours(TArray<int32>& OutCounts)
+{
+	// bEnableAvoidance와 무관하게 돈다. "격자가 정말 이웃을 찾는가"를
+	// 힘을 켜기 전에 확인하는 것이 목적이다(이식 P1 검증).
+	UpdateAvoidanceMirrors();
+	AvoidanceGrid.Build(ScratchPos2DMeters, ScratchActive, ScratchActiveIds,
+		AvoidanceConfig.BroadphaseCellSizeMeters);
+
+	OutCounts.Reset();
+	OutCounts.SetNumZeroed(UnitDatas.Num());
+
+	if (!AvoidanceGrid.IsValid())
+	{
+		return 0;
+	}
+
+	TArray<int32> Neighbours;
+	for (const int32 AgentIndex : ScratchActiveIds)
+	{
+		AvoidanceGrid.GatherNearest(ScratchPos2DMeters, ScratchPos2DMeters[AgentIndex],
+			AvoidanceConfig.NeighbourRadiusMeters, AvoidanceConfig.MaxNeighbours + 1, Neighbours);
+
+		// 자기 자신이 포함되므로 하나 뺀다. 격자가 무효면 0개가 나와 바로 드러난다.
+		OutCounts[AgentIndex] = FMath::Max(0, Neighbours.Num() - 1);
+	}
+
+	return AvoidanceGrid.GetNumItems();
 }
 
 void UFF_CrowdSimulationSubsystem::PushPresentationToActors(float DeltaTime, float InterpAlpha)
