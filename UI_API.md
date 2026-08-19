@@ -496,8 +496,13 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **UI 사용처**: NPC 클릭 시 "왜 저기로 갔는가" 표시
 
 `AllCandidateScores`에 후보별 항별 점수가 다 들어 있어 그대로 표시하면 됩니다.
-⚠️ **지금 값이 들어오는 항은 `AttractionTerm`·`DistanceCostTerm`·`DensityCostTerm` 셋뿐입니다** (2026-08-18 확인).
-취향·Need·대기시간은 개체별 상태를 붙이는 작업이 남아서 **0으로 나옵니다** — 화면 버그가 아닙니다.
+⚠️ **여섯 항 중 넷만 값이 움직입니다** (2026-08-18 저녁 기준). 나머지 둘이 0으로 나오는 것은 화면 버그가 아닙니다.
+
+| 항 | 상태 |
+|---|---|
+| `PreferenceTerm` · `NeedTerm` · `DistanceCostTerm` · `WaitCostTerm` | ✅ 값이 들어옵니다 |
+| `AttractionTerm` | ❌ **항상 0** — 시설 기본 매력도를 무엇으로 정할지가 아직 설계 전입니다. 근거 없는 상수를 넣지 않기로 해서 전부 0이고, 그래서 이 항은 순위에 영향을 주지 않습니다 |
+| `DensityCostTerm` | ❌ **항상 0** — Zone 혼잡도를 보고하는 코드가 아직 없습니다(crowdAI 협의 중) |
 
 | 필드                                                      | 뜻             |
 | ------------------------------------------------------- | ------------- |
@@ -805,7 +810,7 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 필요한 것                                         | 예상 소유자    | 상태        | UI에서 쓰는 곳                                                          |
 | --------------------------------------------- | --------- | --------- | ------------------------------------------------------------------ |
 | **Satisfaction** (`SimSatisfaction` 0~100)    | 김시리 · 이정원 | ❌ 없음      | Overview 지표, Report, SNS                                           |
-| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ❌ 없음      | Report 분해식, Finale 구매 예상치                                          |
+| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ⚠️ **FinaleBonus 는 완료**(`GetFinaleSatisfactionBonus`), `SimSatisfaction` 이 없어 합산 불가 | Report 분해식, Finale 구매 예상치 |
 | **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
 | **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바                                                            |
 | **`TodayRevenue`** (오늘 매출)                    | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Report — UI가 누적값에서 빼지 않습니다                                         |
