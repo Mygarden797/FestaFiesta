@@ -1,8 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 
 #include "Economy/FF_EconomyLog.h"
+#include "Economy/Rules/FF_FinaleRules.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 
@@ -56,6 +57,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	DayLedger.Reset();
 	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
+	PurchasedFinaleGrade = EFF_FinaleGrade::None;
 	
 	// 새 축제
 	LastProcessedDay = 0;
@@ -190,6 +192,47 @@ int32 UFF_FestivalProgressionSubsystem::GetAffordableTemporaryStaffCount() const
 
 	return StaffPool.CalcAffordableTemporaryStaffCount(
 		Definition->DailyStaffWageGold, Funds.GetGold(), GetRemainingHireCap());
+}
+
+EFF_FinalePurchaseResult UFF_FestivalProgressionSubsystem::TryPurchaseFinale(EFF_FinaleGrade Grade)
+{
+	if (Definition == nullptr) return EFF_FinalePurchaseResult::FestivalNotStarted;
+	
+	FFF_FinaleTier Tier;
+	const EFF_FinalePurchaseResult Result = FFF_FinaleRules::EvaluatePurchase(
+		Definition->FinaleTiers, Grade, PurchasedFinaleGrade, Funds.GetGold(), Tier);
+	
+	if (Result != EFF_FinalePurchaseResult::Success)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 피날레 구매 거부: %s (요청 등급 %s, 잔액 %d)"),
+			*UEnum::GetValueAsString(Result), *UEnum::GetValueAsString(Grade), Funds.GetGold());
+		return Result;
+	}
+
+	// 판정이 통과했으므로 차감이 실패할 수 없다. (이상 상황)
+	if (!ensureMsgf(TrySpend(Tier.CostGold, EFF_SpendReason::FinaleFireworks),
+		TEXT("피날레 비용 %d 차감이 판정 통과 후 실패했다. 잔액 %d"), Tier.CostGold, Funds.GetGold()))
+	{
+		return EFF_FinalePurchaseResult::InsufficientGold;
+	}
+
+	PurchasedFinaleGrade = Grade;
+
+	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 피날레 %s 구매. 비용 %d, 남은 Gold %d, 만족도 보너스 +%d"),
+		*UEnum::GetValueAsString(Grade), Tier.CostGold, Funds.GetGold(), Tier.SatisfactionBonus);
+
+	OnFinaleGradeChanged.Broadcast(PurchasedFinaleGrade);
+	return EFF_FinalePurchaseResult::Success;
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetFinaleSatisfactionBonus() const
+{
+	if (Definition == nullptr) return 0;
+
+	const FFF_FinaleTier* Tier =
+		FFF_FinaleRules::FindTier(Definition->FinaleTiers, PurchasedFinaleGrade);
+
+	return Tier != nullptr ? Tier->SatisfactionBonus : 0;
 }
 
 void UFF_FestivalProgressionSubsystem::BroadcastGoldIfChanged(int32 PreviousGold)

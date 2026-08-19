@@ -21,9 +21,10 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "Widgets/SViewport.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
-#include "Building/UI/FF_BuildRemovalConfirmWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
 
@@ -77,12 +78,27 @@ void UFF_BuildModeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	// 프리뷰/설치 명령은 Zone System의 read model과 revision을 즉시 사용하므로 초기화 순서를 보장한다.
 	Collection.InitializeDependency<UFFZSWorldSubsystem>();
+	Collection.InitializeDependency<UFF_FacilityInfoSubsystem>();
 	Super::Initialize(Collection);
 	if (UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
 	{
 		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleWorldChanged);
 		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(
 			this, &ThisClass::HandleWorldSnapshotRestored);
+	}
+	if (UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem())
+	{
+		FacilityInfo->OnMoveRequested.AddUObject(this, &ThisClass::HandleMoveRequested);
+		FacilityInfo->OnRemoveRequested.AddUObject(this, &ThisClass::HandleRemoveRequested);
+		FacilityInfo->OnCloseRequested.AddUObject(this, &ThisClass::HandleRemovalCancelRequested);
+	}
+	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (UFF_FestivalStageSubsystem* Stage =
+			GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnStageChanged.AddUniqueDynamic(this, &ThisClass::HandleFestivalStageChanged);
+		}
 	}
 }
 
@@ -96,6 +112,20 @@ void UFF_BuildModeSubsystem::Deinitialize()
 	{
 		ZoneSystem->OnWorldChanged.RemoveAll(this);
 		ZoneSystem->OnWorldSnapshotRestored.RemoveAll(this);
+	}
+	if (UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem())
+	{
+		FacilityInfo->OnMoveRequested.RemoveAll(this);
+		FacilityInfo->OnRemoveRequested.RemoveAll(this);
+		FacilityInfo->OnCloseRequested.RemoveAll(this);
+	}
+	if (UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (UFF_FestivalStageSubsystem* Stage =
+			GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnStageChanged.RemoveAll(this);
+		}
 	}
 	// 월드 종료 중에는 일부 협력 객체가 이미 사라졌을 수 있다. 소유한 객체부터 정리하고,
 	// 실제로 입력을 변경한 세션에서만 남아 있는 로컬 컨트롤러의 입력 모드를 복구한다.
@@ -128,6 +158,12 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	APlayerController* Controller = GetLocalPlayerController();
 	if (!Controller)
 	{
+		return;
+	}
+	if (FFBuildModeModel::IsBuildSessionActive(State) && !IsBuildEntryAllowed())
+	{
+		// Stage/Zone 이벤트 순서와 관계없이 Live에서 건축 입력이 남지 않게 한다.
+		ExitBuildMode();
 		return;
 	}
 
@@ -180,6 +216,15 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	{
 		return;
 	}
+	if (!IsBuildEntryAllowed())
+	{
+		if (FFBuildModeModel::IsBuildSessionActive(State))
+		{
+			ExitBuildMode();
+		}
+		ShowStatus(TEXT("현재 단계에서는 건축 모드에 들어갈 수 없습니다."), true);
+		return;
+	}
 	APlayerController* Controller = GetLocalPlayerController();
 	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 	if (!Controller || !ZoneSystem)
@@ -208,6 +253,15 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 {
 	if (bIsExitingBuildMode)
 	{
+		return;
+	}
+	if (!IsBuildEntryAllowed())
+	{
+		if (FFBuildModeModel::IsBuildSessionActive(State))
+		{
+			ExitBuildMode();
+		}
+		ShowStatus(TEXT("현재 단계에서는 건축 카탈로그를 열 수 없습니다."), true);
 		return;
 	}
 	APlayerController* Controller = GetLocalPlayerController();
@@ -585,12 +639,6 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
 		ToggleBuildMode();
 		return;
 	}
-	if (State == EFF_BuildModeState::BuildMode && RemovalConfirmWidget &&
-		!PendingRemovalFacility.IsValid())
-	{
-		ClearPendingRemovalSelection();
-	}
-
 	const bool bBlockWorldClickThisFrame = bSuppressWorldClickUntilReleased;
 	if (bSuppressWorldClickUntilReleased)
 	{
@@ -628,7 +676,9 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
 			ConfirmPendingRemoval();
 			return;
 		}
-		if (!bBlockWorldClickThisFrame &&
+		const UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem();
+		const bool bPointerOverFacilityPanel = FacilityInfo && FacilityInfo->IsPointerOverPanel();
+		if (!bBlockWorldClickThisFrame && !bPointerOverFacilityPanel &&
 			Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
 		{
 			HandleRemovalClickUnderCursor(Controller);
@@ -1098,40 +1148,6 @@ bool UFF_BuildModeSubsystem::TraceGroundUnderCursor(
 		OutGroundHit.ImpactNormal.Z >= 0.45f;
 }
 
-AFFZSFacilityActor* UFF_BuildModeSubsystem::FindFacilityAtWorldPoint(
-	const FVector& WorldPoint,
-	const UFFZSWorldSubsystem& ZoneSystem,
-	const FName TargetZoneId) const
-{
-	UWorld* World = GetWorld();
-	if (!World || TargetZoneId.IsNone())
-	{
-		return nullptr;
-	}
-
-	AFFZSFacilityActor* BestMatch = nullptr;
-	double BestDistanceSquared = TNumericLimits<double>::Max();
-	for (TActorIterator<AFFZSFacilityActor> It(World); It; ++It)
-	{
-		AFFZSFacilityActor* Facility = *It;
-		if (!IsValid(Facility) || Facility->GetZoneId() != TargetZoneId ||
-			!Facility->GetFacilityInstanceId().IsValid() ||
-			ZoneSystem.FindFacility(Facility->GetFacilityInstanceId()) != Facility ||
-			!Facility->IsWorldPointInsideFootprint(WorldPoint))
-		{
-			continue;
-		}
-
-		const double DistanceSquared = FVector::DistSquared(Facility->GetActorLocation(), WorldPoint);
-		if (DistanceSquared < BestDistanceSquared)
-		{
-			BestDistanceSquared = DistanceSquared;
-			BestMatch = Facility;
-		}
-	}
-	return BestMatch;
-}
-
 void UFF_BuildModeSubsystem::SelectFacilityForRemoval(AFFZSFacilityActor& Facility)
 {
 	if (PendingRemovalFacility.Get() == &Facility)
@@ -1152,51 +1168,52 @@ void UFF_BuildModeSubsystem::SelectFacilityForRemoval(AFFZSFacilityActor& Facili
 
 void UFF_BuildModeSubsystem::ClearPendingRemovalSelection()
 {
-	if (AFFZSFacilityActor* Facility = PendingRemovalFacility.Get())
+	AFFZSFacilityActor* ClearingFacility = PendingRemovalFacility.Get();
+	FGuid ClearingFacilityId;
+	if (ClearingFacility)
 	{
-		Facility->SetBuildModeActionSelected(false);
+		ClearingFacilityId = ClearingFacility->GetFacilityInstanceId();
 	}
 	PendingRemovalFacility.Reset();
-	RemoveRemovalConfirmation();
+	if (ClearingFacility)
+	{
+		ClearingFacility->SetBuildModeActionSelected(false);
+	}
+	RemoveRemovalConfirmation(ClearingFacilityId);
 }
 
 void UFF_BuildModeSubsystem::ShowRemovalConfirmation(const FText& FacilityName)
 {
-	if (!RemovalConfirmWidget)
+	(void)FacilityName;
+	APlayerController* Controller = GetLocalPlayerController();
+	AFFZSFacilityActor* Facility = PendingRemovalFacility.Get();
+	UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem();
+	if (!Controller || !Facility || !FacilityInfo ||
+		!FacilityInfo->SelectFacility(Controller, Facility, EFF_FacilityInfoContext::Build))
 	{
-		APlayerController* Controller = GetLocalPlayerController();
-		if (!Controller)
-		{
-			return;
-		}
-		RemovalConfirmWidget = CreateWidget<UFF_BuildRemovalConfirmWidget>(
-			Controller, UFF_BuildRemovalConfirmWidget::StaticClass());
-		if (RemovalConfirmWidget)
-		{
-			RemovalConfirmWidget->OnMoveRequested.AddUObject(
-				this, &ThisClass::HandleMoveRequested);
-			RemovalConfirmWidget->OnRemoveRequested.AddUObject(
-				this, &ThisClass::HandleRemoveRequested);
-			RemovalConfirmWidget->OnCancelRequested.AddUObject(
-				this, &ThisClass::HandleRemovalCancelRequested);
-			RemovalConfirmWidget->AddToViewport(100);
-		}
-	}
-	if (RemovalConfirmWidget)
-	{
-		RemovalConfirmWidget->SetFacilityName(FacilityName);
+		ShowStatus(TEXT("시설 정보 패널을 열 수 없습니다."), true);
 	}
 }
 
-void UFF_BuildModeSubsystem::RemoveRemovalConfirmation()
+void UFF_BuildModeSubsystem::RemoveRemovalConfirmation(const FGuid FacilityInstanceId)
 {
-	if (RemovalConfirmWidget)
+	if (FacilityInstanceId.IsValid())
 	{
-		RemovalConfirmWidget->OnMoveRequested.Clear();
-		RemovalConfirmWidget->OnRemoveRequested.Clear();
-		RemovalConfirmWidget->OnCancelRequested.Clear();
-		RemovalConfirmWidget->RemoveFromParent();
-		RemovalConfirmWidget = nullptr;
+		if (UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem())
+		{
+			FacilityInfo->ClearSelectionIfMatches(
+				FacilityInstanceId, EFF_FacilityInfoContext::Build);
+		}
+	}
+}
+
+void UFF_BuildModeSubsystem::ShowFacilityInfoFeedback(
+	const FText& Feedback,
+	const bool bIsError) const
+{
+	if (UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem())
+	{
+		FacilityInfo->SetFeedback(Feedback, bIsError);
 	}
 }
 
@@ -1209,11 +1226,8 @@ bool UFF_BuildModeSubsystem::HandleRemovalClickUnderCursor(APlayerController& Co
 	if (!CanReconfigure())
 	{
 		ShowStatus(TEXT("현재 단계에서는 시설을 철거할 수 없습니다."), true);
-		if (RemovalConfirmWidget)
-		{
-			RemovalConfirmWidget->SetFeedback(
-				FText::FromString(TEXT("현재 단계에서는 철거할 수 없습니다.")), true);
-		}
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("현재 단계에서는 철거할 수 없습니다.")), true);
 		return false;
 	}
 
@@ -1235,8 +1249,8 @@ bool UFF_BuildModeSubsystem::HandleRemovalClickUnderCursor(APlayerController& Co
 		return false;
 	}
 	const FName TargetZoneId = ZoneSystem->ResolveZoneAtWorldLocation(GroundHit.ImpactPoint);
-	AFFZSFacilityActor* Facility = FindFacilityAtWorldPoint(
-		GroundHit.ImpactPoint, *ZoneSystem, TargetZoneId);
+	AFFZSFacilityActor* Facility = ZoneSystem->FindFacilityAtWorldPoint(
+		GroundHit.ImpactPoint, TargetZoneId);
 	if (!Facility)
 	{
 		if (PendingRemovalFacility.IsValid())
@@ -1269,11 +1283,8 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 	if (!CanReconfigure())
 	{
 		ShowStatus(TEXT("현재 단계에서는 시설을 철거할 수 없습니다."), true);
-		if (RemovalConfirmWidget)
-		{
-			RemovalConfirmWidget->SetFeedback(
-				FText::FromString(TEXT("현재 단계에서는 철거할 수 없습니다.")), true);
-		}
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("현재 단계에서는 철거할 수 없습니다.")), true);
 		return false;
 	}
 
@@ -1296,11 +1307,8 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 	if (!Facility->CanMoveOrRemove())
 	{
 		ShowStatus(TEXT("운영 중이거나 이용객이 남아 있는 시설은 철거할 수 없습니다."), true);
-		if (RemovalConfirmWidget)
-		{
-			RemovalConfirmWidget->SetFeedback(
-				FText::FromString(TEXT("운영 중이거나 이용객이 남아 있어 철거할 수 없습니다.")), true);
-		}
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("운영 중이거나 이용객이 남아 있어 철거할 수 없습니다.")), true);
 		return false;
 	}
 
@@ -1316,10 +1324,7 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 	if (!Result.bSucceeded)
 	{
 		ShowStatus(FString::Printf(TEXT("철거 실패: %s"), *Result.Message.ToString()), true);
-		if (RemovalConfirmWidget)
-		{
-			RemovalConfirmWidget->SetFeedback(Result.Message, true);
-		}
+		ShowFacilityInfoFeedback(Result.Message, true);
 		return false;
 	}
 
@@ -1337,10 +1342,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 
 	const auto ReportFailure = [this](const FString& Message, const bool bClearSelection)
 	{
-		if (RemovalConfirmWidget)
-		{
-			RemovalConfirmWidget->SetFeedback(FText::FromString(Message), true);
-		}
+		ShowFacilityInfoFeedback(FText::FromString(Message), true);
 		ShowStatus(Message, true);
 		if (bClearSelection)
 		{
@@ -1439,22 +1441,37 @@ void UFF_BuildModeSubsystem::CancelMovingToBuildMode(
 	}
 }
 
-void UFF_BuildModeSubsystem::HandleMoveRequested()
+void UFF_BuildModeSubsystem::HandleMoveRequested(const FGuid FacilityInstanceId)
 {
+	if (!PendingRemovalFacility.IsValid() ||
+		PendingRemovalFacility->GetFacilityInstanceId() != FacilityInstanceId)
+	{
+		return;
+	}
 	bSuppressWorldClickUntilReleased = true;
 	bSuppressPlacementConfirmUntilReleased = true;
 	StartMovingSelectedFacility();
 }
 
-void UFF_BuildModeSubsystem::HandleRemoveRequested()
+void UFF_BuildModeSubsystem::HandleRemoveRequested(const FGuid FacilityInstanceId)
 {
+	if (!PendingRemovalFacility.IsValid() ||
+		PendingRemovalFacility->GetFacilityInstanceId() != FacilityInstanceId)
+	{
+		return;
+	}
 	bSuppressWorldClickUntilReleased = true;
 	bSuppressPlacementConfirmUntilReleased = true;
 	ConfirmPendingRemoval();
 }
 
-void UFF_BuildModeSubsystem::HandleRemovalCancelRequested()
+void UFF_BuildModeSubsystem::HandleRemovalCancelRequested(const FGuid FacilityInstanceId)
 {
+	if (!PendingRemovalFacility.IsValid() ||
+		PendingRemovalFacility->GetFacilityInstanceId() != FacilityInstanceId)
+	{
+		return;
+	}
 	bSuppressWorldClickUntilReleased = true;
 	bSuppressPlacementConfirmUntilReleased = true;
 	ClearPendingRemovalSelection();
@@ -1639,6 +1656,16 @@ bool UFF_BuildModeSubsystem::CanReconfigure() const
 	// 시설 변경 가능 단계는 Zone System이 소유한 정책을 그대로 따른다. UI에서 별도 규칙을 만들지 않는다.
 	const EFFZSChangePhase Phase = ZoneSystem->GetChangePhase();
 	return Phase == EFFZSChangePhase::InitialSetup || Phase == EFFZSChangePhase::MorningCheck;
+}
+
+bool UFF_BuildModeSubsystem::IsBuildEntryAllowed() const
+{
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	return FFBuildModeModel::CanEnterBuildSession(
+		Stage && Stage->IsReconfigureAllowed(), CanReconfigure());
 }
 
 void UFF_BuildModeSubsystem::HandleFacilitySelected(const FName FacilityDefinitionId)
@@ -1871,4 +1898,25 @@ UFFZSWorldSubsystem* UFF_BuildModeSubsystem::GetZoneSystem() const
 	// Zone 상태와 revision은 월드별이므로 현재 월드의 WorldSubsystem을 사용한다.
 	UWorld* World = GetWorld();
 	return World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+}
+
+void UFF_BuildModeSubsystem::HandleFestivalStageChanged(
+	const EFF_FestivalStage PreviousStage,
+	const EFF_FestivalStage NewStage)
+{
+	(void)PreviousStage;
+	(void)NewStage;
+	if (FFBuildModeModel::ShouldExitWhenReconfigureCloses(
+		State, IsBuildEntryAllowed()))
+	{
+		// Live picking is intentionally blocked while a build session owns the mouse. The stage
+		// transition therefore closes the whole session atomically instead of leaving stale build UI.
+		ExitBuildMode();
+	}
+}
+
+UFF_FacilityInfoSubsystem* UFF_BuildModeSubsystem::GetFacilityInfoSubsystem() const
+{
+	UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
 }

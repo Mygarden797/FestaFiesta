@@ -55,14 +55,11 @@ protected:
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	float SimRadiusUU = 10000.f;
 
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Temp")
+	FVector Temp_ExitOffsetFromOrigin = FVector(-4000.f, 0.f, 0.f);
 	//같이 온 사람들을 전부 묶어서 이동시킬 것일까?
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Party")
 	bool bEnablePartyGrouping = true;
-
-	// 파티 크기 1~6인의 추첨 가중치. 비워 두면 서브시스템 기본값을 쓴다.
-	// 실측 분포(FFF_GroupSizeDistributionRow) 연동 전까지의 임시 손잡이다
-	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Party")
-	TArray<float> PartySizeWeights;
 
 	// 에디터에서 Agent 위치/목적지 선을 그린다
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Debug")

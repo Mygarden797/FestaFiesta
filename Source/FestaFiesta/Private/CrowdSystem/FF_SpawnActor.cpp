@@ -1,7 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
-
 #include "CrowdSystem/FF_SpawnActor.h"
 
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
@@ -39,10 +38,7 @@ void AFF_SpawnActor::BeginPlay()
 
 	// 파티 설정은 SpawnAgents보다 먼저 넘겨야 한다. 파티 구성은 스폰 시점에 확정되기 때문이다.
 	CrowdSim->bEnablePartyGrouping = bEnablePartyGrouping;
-	if (PartySizeWeights.Num() > 0)
-	{
-		CrowdSim->PartySizeWeights = PartySizeWeights;
-	}
+	CrowdSim->SetTemp_ExitWorldLocation(Origin + Temp_ExitOffsetFromOrigin);
 
 	CrowdSim->SpawnAgents(UnitCount, Origin, SpawnRadiusUU);
 }

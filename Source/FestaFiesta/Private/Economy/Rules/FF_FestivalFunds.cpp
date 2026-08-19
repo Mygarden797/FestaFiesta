@@ -1,6 +1,6 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "Economy/FF_FestivalFunds.h"
+#include "Economy/Rules/FF_FestivalFunds.h"
 
 void FFF_FestivalFunds::Initialize(int32 InInitialGold)
 {

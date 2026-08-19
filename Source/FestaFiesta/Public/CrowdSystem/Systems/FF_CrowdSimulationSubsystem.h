@@ -7,6 +7,8 @@
 #include "CrowdSystem/Systems/FF_CrowdDensityGrid.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
+#include "NPC/Party/FF_NeedRules.h"
+#include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Templates/SubclassOf.h"
 #include "FF_CrowdSimulationSubsystem.generated.h"
@@ -29,7 +31,7 @@ class UDataTable;
  *         구독자가 아예 없을 때도 같은 경로를 탄다 — 그래서 조정자 없이도 단독으로 돌아간다.
  */
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
-	const FFF_PartyDecisionContext& /*Context*/, FVector& /*OutDestination*/);
+	const FFF_PartyDecisionContext& , FFF_PartyDecisionResult& );
 
 /**
  * 군중 시뮬레이션을 관리하는 TickableWorldSubsystem
@@ -123,6 +125,18 @@ public:
 		return UnitDatas.IsValidIndex(AgentIndex) && UnitDatas[AgentIndex].bIsActive;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Crowd")
+	int32 GetAgentPoolSize() const { return UnitDatas.Num(); }
+	UFUNCTION(BlueprintPure, Category = "Crowd")
+	FName GetAgentArchetypeID(int32 AgentIndex) const
+	{
+		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].ArchetypeID : NAME_None;
+	}
+	UFUNCTION(BlueprintPure, Category = "Crowd")
+	FFF_NeedState GetAgentNeeds(int32 AgentIndex) const
+	{
+		return UnitDatas.IsValidIndex(AgentIndex) ? UnitDatas[AgentIndex].Needs : FFF_NeedState();
+	}
 	// --- 파티 조회 -------------------------------------------------------------------------
 
 	// AgentIndex의 소속 파티 ID. 없으면 INDEX_NONE
@@ -287,9 +301,6 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	bool bEnablePartyGrouping = true;
 
-	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
-	TArray<float> PartySizeWeights = { 22.f, 38.f, 16.f, 14.f, 6.f, 4.f };
-
 	// 파티원 간 대형 간격, UU. Radius(34UU)의 2배 이상이어야 서로 겹쳐 보이지 않는다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartySpacingUU = 90.f;
@@ -299,6 +310,36 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyMemberSpeedBoost = 1.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite,Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float InitialNeedMaxFraction = 0.5f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float InitialNeedModeFraction = 0.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need")
+	FFF_NeedRiseRates NeedRiseRates;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Stay")
+	float Temp_LiveStageMinutes = 240.f;
+	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
+	float GetPartyRemainingStayMinutes(int32 LeaderAgentIndex) const
+	{
+		return PartyRemainingStayMinutes.IsValidIndex(LeaderAgentIndex)
+			? PartyRemainingStayMinutes[LeaderAgentIndex] : 0.f;
+	}
+	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
+	int32 GetLeftPartyCount() const { return LeftPartyCount; }
+	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
+	int32 GetLeavingPartyCount() const;
+	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
+	int32 GetForcedLeaveCount() const { return ForcedLeaveCount; }
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Temp")
+	void SetTemp_ExitWorldLocation(FVector NewExitWorldLocation);
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Temp")
+	float Temp_ExitArrivalRadiusUU = 60.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Temp")
+	float Temp_LeaveTimeoutSeconds = 180.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need")
+	float Temp_FestivalMinutesPerRealSecond = 1.f;
+	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
+	float GetLiveMinutes() const { return SimTimeSeconds * Temp_FestivalMinutesPerRealSecond; }
 
 	// --- 디버그 ---------------------------------------------------------------------------
 
@@ -354,8 +395,9 @@ private:
 
 	// --- 파티 내부 구현 ---------------------------------------------------------------------
 
-	// PartySizeWeights로 파티 크기를 추첨한다. 그룹핑이 꺼져 있으면 항상 1
-	int32 PickPartySize();
+	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount) const;
+	FFF_NeedState MakeInitialNeeds(int32 StableAgentId) const;
+	void AdvanceNeeds();
 
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
@@ -407,6 +449,26 @@ private:
 	UPROPERTY()
 	TObjectPtr<UDataTable> CachedVariationTable;
 	
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedGroupSizeTable;
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedChildCompositionTable;
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedArchetypeTable;
+	FName CachedGroupScopeId;
+	FName CachedArchetypeScenarioId;
+	TArray<FFF_VisitHistory> PartyVisitHistories;
+	TArray<FFF_NeedState> PartyAggregatedNeeds;
+	TArray<int32> PartyMemberCounts;
+	TArray<float> PartyRemainingStayMinutes;
+	UPROPERTY()
+	TObjectPtr<UDataTable> CachedCoefficientTable;
+	float StayDrainMultiplierAtMaxNeed = 1.f;
+	int32 LeftPartyCount = 0;
+	int32 ForcedLeaveCount = 0;
+	FVector Temp_ExitWorldLocation = FVector::ZeroVector;
+	bool bTemp_ExitLocationSet = false;
+	float LastNeedAdvanceSimTime = 0.f;
 	float CachedCorrelationStrength = 0.3f;
 	
 	TMap<int32, int32> PartyLeaderByID;

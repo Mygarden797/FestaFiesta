@@ -113,9 +113,11 @@ protected:
 	/**
 	 * 분해식의 가운데 항 — 피날레 보너스.
 	 *
-	 * !! 임시 계산이다 !! `ScoreSatisfaction - SimSatisfaction`으로 만든다.
-	 * FinaleBonus를 소유자(김시리)가 별도 값으로 주면 그걸 받아 이 계산을 지운다.
-	 * 지금은 두 지표가 같은 더미라 `62 + 0 = 62`로 보인다. `FF.SetMetrics 62 82 88`로 검증한다.
+	 * !! 아직 임시 계산이다 !! `ScoreSatisfaction - SimSatisfaction`으로 만든다.
+	 * **소유자 값이 2026-08-18에 생겼다** — `UFF_FestivalProgressionSubsystem::GetFinaleSatisfactionBonus()`
+	 * (`BlueprintPure`, 0~100 척도, 안 샀으면 0)와 `OnFinaleGradeChanged` 델리게이트다.
+	 * ViewModel이 이 값을 중계하도록 붙인 뒤 위 임시 계산을 지운다.
+	 * 그 전까지는 두 지표가 같은 더미라 `62 + 0 = 62`로 보인다. `FF.SetMetrics 62 82 88`로 검증한다.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_FinaleBonus;

@@ -845,6 +845,46 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstan
     return nullptr;
 }
 
+AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacilityAtWorldPoint(
+    const FVector& WorldPoint,
+    const FName ZoneId) const
+{
+    const FName TargetZoneId = ZoneId.IsNone()
+        ? ResolveZoneAtWorldLocation(WorldPoint)
+        : ZoneId;
+    if (TargetZoneId.IsNone())
+    {
+        return nullptr;
+    }
+
+    AFFZSFacilityActor* BestMatch = nullptr;
+    double BestDistanceSquared = TNumericLimits<double>::Max();
+    FString BestFacilityIdKey;
+    for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+    {
+        AFFZSFacilityActor* Facility = Pair.Value.Get();
+        if (!IsValid(Facility) || !Pair.Key.IsValid() ||
+            Facility->GetFacilityInstanceId() != Pair.Key ||
+            Facility->GetZoneId() != TargetZoneId ||
+            !Facility->IsWorldPointInsideFootprint(WorldPoint))
+        {
+            continue;
+        }
+
+        const double DistanceSquared = FVector::DistSquared(
+            Facility->GetActorLocation(), WorldPoint);
+        const FString FacilityIdKey = Pair.Key.ToString(EGuidFormats::Digits);
+        if (!BestMatch || DistanceSquared < BestDistanceSquared ||
+            (DistanceSquared == BestDistanceSquared && FacilityIdKey < BestFacilityIdKey))
+        {
+            BestMatch = Facility;
+            BestDistanceSquared = DistanceSquared;
+            BestFacilityIdKey = FacilityIdKey;
+        }
+    }
+    return BestMatch;
+}
+
 // Move는 등록된 Spec으로 검증하며, 이 단계에서는 권위 상태를 변경하지 않는다.
 FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSCommand& Command) const
 {

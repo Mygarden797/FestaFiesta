@@ -25,7 +25,15 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 
 	OnStageChanged.Broadcast(PreviousStage, NewStage);
 	// 바뀌었다고 알림
+
+	// Live에 진입하는 순간, 오늘 확정된 날씨를 다른 시스템에 알림
+	if (NewStage == EFF_FestivalStage::Live)
+	{
+		OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
+		// 이 시점엔 아직 밤이 아니니 bIsNight는 false로 나감 
+	}
 }
+
 
 bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 {
@@ -40,6 +48,25 @@ void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 	TimeScale = NewScale;
 }
 // 배속값을 저장하는 함수
+
+void UFF_FestivalStageSubsystem::SetSelectedWeather(EFF_WeatherType NewWeather)
+{
+	if (!IsReconfigureAllowed())
+		// Setup / PromotionPreview / MorningCheck가 아니면
+	{
+		UE_LOG(LogTemp, Warning, TEXT("지금은 날씨를 바꿀 수 없는 단계입니다."));
+		return;
+		// 아무것도 안 하고 함수 종료
+	}
+
+	SelectedWeather = NewWeather;
+	// 선택한 날씨를 저장
+
+	UE_LOG(LogTemp, Log, TEXT("날씨 선택됨: %s"), *UEnum::GetValueAsString(SelectedWeather));
+	
+	OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
+	// Setup/MorningCheck에서 고른 순간 바로 화면에 반영되게 함
+}
 
 const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay()
 {
@@ -215,6 +242,9 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 
 			OnNightLightingActivated.Broadcast();
 			//  Light Manager에게 신호 보냄
+
+			
+			OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
 		}
 		RemainingTime = FMath::Max(GetLiveDurationForCurrentDay() - ElapsedLiveSeconds, 0.f);
 		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산
@@ -304,6 +334,14 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 		return;
 	}
 
+	const float TodayLiveDuration = GetLiveDurationForCurrentDay();
+	// 오늘 Live 총 길이를 미리 구해둠 (CurrentDay가 바뀌기 전에 구해야 오늘 값이 맞음)
+
+	UE_LOG(LogTemp, Log, TEXT("Day %d 종료! TodayLiveDuration=%f"), CurrentDay, TodayLiveDuration);
+
+
+	OnDayEnded.Broadcast(CurrentDay, TodayLiveDuration);
+	// 며칠째가 끝났고, 그날 Live가 몇 초였는지 신호로 전달
 
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);

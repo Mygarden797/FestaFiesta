@@ -149,6 +149,48 @@ bool FFF_UtilityDestinationSelector_FarAndSlowReducesProbability::RunTest(const 
 	return true;
 }
 
+// 2-1. 대기시간 **하나만** 달라도 선택이 갈린다.
+//
+// 위 2번은 거리와 대기를 같이 흔들어서 wait 항 단독의 기여를 보지 못한다. 이 테스트가 필요한
+// 이유는 wait 가 실제로 죽어 있던 항이기 때문이다 — 2026-08-18 전까지 EstimatedWaitMinutes 를
+// 채우는 호출부가 없어서 전 후보가 0 이었고, 그래도 "붐비는 곳을 피하는 것처럼 보이는" 동선은
+// 거리 항만으로 나왔다. 그래서 항이 죽은 것을 눈으로 알아챌 수 없었다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_WaitAloneChangesChoice, "FestaFiesta.NPC.UtilityDestinationSelector.WaitAloneChangesChoice", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_WaitAloneChangesChoice::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+	TMap<FName, float> Preference;
+	Preference.Add(TEXT("food_stall"), 8.f);
+
+	// 매력도·거리·혼잡도·취향이 전부 같고 대기시간만 다르다.
+	TArray<FFF_DestinationCandidate> Candidates;
+	Candidates.Add(MakeCandidate(TEXT("ShortQueue"), TEXT("food_stall"), 0.5f, 100.f, 2.f, 10.f, 50.f));
+	Candidates.Add(MakeCandidate(TEXT("LongQueue"), TEXT("food_stall"), 0.5f, 100.f, 25.f, 10.f, 50.f));
+
+	const FFF_DestinationDecision Decision =
+		FFF_UtilityDestinationSelector::Choose(Candidates, Preference, Table, 1, 1, 0);
+
+	const float ShortProb = FindProbability(Decision, TEXT("ShortQueue"));
+	const float LongProb = FindProbability(Decision, TEXT("LongQueue"));
+
+	TestTrue(TEXT("줄이 짧은 쪽의 선택 확률이 더 높다"), ShortProb > LongProb);
+
+	// 전부 0 이면(= 결선 전 상태) 두 후보가 구분되지 않는다. 이 줄이 "wait 를 채우는 것이
+	// 왜 필요한가"를 고정한다 — 채우지 않으면 위 부등식이 성립하지 않는다.
+	TArray<FFF_DestinationCandidate> Unfilled;
+	Unfilled.Add(MakeCandidate(TEXT("ShortQueue"), TEXT("food_stall"), 0.5f, 100.f, 0.f, 10.f, 50.f));
+	Unfilled.Add(MakeCandidate(TEXT("LongQueue"), TEXT("food_stall"), 0.5f, 100.f, 0.f, 10.f, 50.f));
+
+	const FFF_DestinationDecision UnfilledDecision =
+		FFF_UtilityDestinationSelector::Choose(Unfilled, Preference, Table, 1, 1, 0);
+
+	TestEqual(TEXT("대기시간을 안 채우면 두 후보의 확률이 같아진다"),
+		FindProbability(UnfilledDecision, TEXT("ShortQueue")),
+		FindProbability(UnfilledDecision, TEXT("LongQueue")));
+
+	return true;
+}
+
 // 3. 모든 목적지 효용이 낮음 → no-choice 선택 가능
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_AllLowUtilityFavorsNoChoice, "FestaFiesta.NPC.UtilityDestinationSelector.AllLowUtilityFavorsNoChoice", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_UtilityDestinationSelector_AllLowUtilityFavorsNoChoice::RunTest(const FString& Parameters)

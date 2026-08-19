@@ -386,7 +386,10 @@ void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(int32 InSimSatisfaction, i
 
 void UFF_FestivalViewModelSubsystem::Debug_SetEconomy(int32 InGold, int32 InTotalRevenue, int32 InTodayRevenue)
 {
-	// 금액이라 0~100 상한을 두지 않는다. Gold는 음수가 될 수 있는지 미확정이라 클램프하지 않는다.
+	// 금액이라 0~100 상한을 두지 않는다.
+	// Gold는 음수가 되지 않는 것으로 확정됐다 (2026-08-18, `FFF_FestivalFunds` 주석) — 잔액이 모자라면
+	// 구매를 거부한다. 임대료처럼 거절할 수 없는 의무비용만 있는 만큼 내고 부족분이
+	// `FFF_FixedCostArrears`에 미납으로 쌓인다. 그래도 여기서 클램프하지는 않는다 — 값의 주인은 소유자다.
 	ApplyIntMetric(Gold, InGold, OnGoldChanged);
 	ApplyIntMetric(TotalRevenue, InTotalRevenue, OnTotalRevenueChanged);
 	ApplyIntMetric(TodayRevenue, InTodayRevenue, OnTodayRevenueChanged);
