@@ -496,8 +496,13 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **UI 사용처**: NPC 클릭 시 "왜 저기로 갔는가" 표시
 
 `AllCandidateScores`에 후보별 항별 점수가 다 들어 있어 그대로 표시하면 됩니다.
-⚠️ **지금 값이 들어오는 항은 `AttractionTerm`·`DistanceCostTerm`·`DensityCostTerm` 셋뿐입니다** (2026-08-18 확인).
-취향·Need·대기시간은 개체별 상태를 붙이는 작업이 남아서 **0으로 나옵니다** — 화면 버그가 아닙니다.
+⚠️ **여섯 항 중 넷만 값이 움직입니다** (2026-08-18 저녁 기준). 나머지 둘이 0으로 나오는 것은 화면 버그가 아닙니다.
+
+| 항 | 상태 |
+|---|---|
+| `PreferenceTerm` · `NeedTerm` · `DistanceCostTerm` · `WaitCostTerm` | ✅ 값이 들어옵니다 |
+| `AttractionTerm` | ❌ **항상 0** — 시설 기본 매력도를 무엇으로 정할지가 아직 설계 전입니다. 근거 없는 상수를 넣지 않기로 해서 전부 0이고, 그래서 이 항은 순위에 영향을 주지 않습니다 |
+| `DensityCostTerm` | ❌ **항상 0** — Zone 혼잡도를 보고하는 코드가 아직 없습니다(crowdAI 협의 중) |
 
 | 필드                                                      | 뜻             |
 | ------------------------------------------------------- | ------------- |
@@ -525,12 +530,22 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 **Setup·MorningCheck에 유료 프로그램 구매 화면이 필요하고 담당은 백종태입니다** (2026-08-12 확인).
 경제 쪽 구매 처리는 하루 경계(2026-08-18 완료) 다음 순서라 이번 주에 붙습니다.
 
-**요청 (백종태 → 김시리)** — 화면을 만들려면 다음이 필요합니다. 형태는 맞춰 드립니다.
+**요청 4건 중 3건이 열렸습니다 (2026-08-18)** — `UFF_ProgramReservationSubsystem` 신설.
+헤더는 `Public/NPC/Party/FF_ProgramReservationSubsystem.h`, 접근은 `GameInstanceSubsystem`입니다.
 
-1. 구매 가능한 프로그램 목록 (이름·가격·정원·시각) — `Setup`·`MorningCheck`에서 요청 시
-2. 현재 예약 상태 (슬롯 수, 배정된 그룹 수, 남은 자리)
-3. 구매·취소 **Command** (UI가 상태를 직접 쓰지 않습니다. 실패 시 이유를 결과로 받습니다)
-4. 예약 변경 시 알려주는 델리게이트
+| 요청 | 상태 | API |
+|---|---|---|
+| ① 프로그램 목록 | ✅ | `GetReservationIds()` + `FindReservation(Id, Out)`. **시작 시각 오름차순으로 정렬해서 드립니다** — 순서가 실행마다 바뀌지 않습니다 |
+| ② 예약 상태 | ✅ | `FFF_ProgramReservation`에 `Capacity`·`AssignedGroupIds`·`AssignedHeadcount`·`UnfilledSeats`. 남은 자리는 `GetRemainingSeats(Id)` |
+| ③ 구매·취소 Command | ⬜ | 구매가 Gold를 쓰는 일이라 경제(S8)와 같이 붙입니다. 그때 실패 이유를 열거형으로 드립니다 |
+| ④ 변경 델리게이트 | ✅ | `OnReservationChanged(FGuid ReservationId)` — 바뀐 예약의 핸들이 옵니다 |
+
+- 시간 필드(`StartMinutes`·`EndMinutes`)는 **Live 경과분**입니다. 화면에 시각으로 표시하시려면
+  변환 지점을 한 곳으로 두시는 게 좋습니다.
+- `UnfilledSeats`가 0보다 크면 **정원을 다 못 채운 것**입니다. 오류가 아니라 정상 결과입니다 —
+  정원을 그룹 크기 조합으로 정확히 채우는 규칙이라(4명 정원에 3인 그룹만 남으면 1자리가 빕니다)
+  남을 수 있습니다. 화면에 "남은 자리"로 그대로 보여주시면 됩니다.
+- 아직 **구매 화면이 없어서 실제 예약이 0건**입니다. 목록이 비어 보이는 것이 지금은 정상입니다.
 
 시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
 게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
@@ -795,7 +810,7 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 필요한 것                                         | 예상 소유자    | 상태        | UI에서 쓰는 곳                                                          |
 | --------------------------------------------- | --------- | --------- | ------------------------------------------------------------------ |
 | **Satisfaction** (`SimSatisfaction` 0~100)    | 김시리 · 이정원 | ❌ 없음      | Overview 지표, Report, SNS                                           |
-| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ❌ 없음      | Report 분해식, Finale 구매 예상치                                          |
+| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ⚠️ **FinaleBonus 는 완료**(`GetFinaleSatisfactionBonus`), `SimSatisfaction` 이 없어 합산 불가 | Report 분해식, Finale 구매 예상치 |
 | **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
 | **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바                                                            |
 | **`TodayRevenue`** (오늘 매출)                    | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Report — UI가 누적값에서 빼지 않습니다                                         |
@@ -850,6 +865,7 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |
 | 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
 | 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
+| 2026-08-18 | 김시리 | 🆕 **예약 요청 4건 중 3건이 열렸습니다** — `UFF_ProgramReservationSubsystem` 신설로 프로그램 목록(시작 시각 순 정렬)·예약 상태·변경 델리게이트가 생겼습니다. 남은 하나(구매·취소 Command)는 Gold를 쓰는 일이라 경제 S8과 같이 붙입니다. 지금은 구매 화면이 없어 **목록이 비어 있는 것이 정상**입니다 |
 | 2026-08-18 | 김시리 | 🆕 **피날레 구매가 구현됐습니다** — Day3 MorningCheck 구매 화면이 필요합니다(담당 백종태). 버튼 활성화는 `CanPurchaseFinaleNow()`, 구매는 `TryPurchaseFinale()`이고 실패 이유가 한글로 옵니다. **1회 구매·변경 불가라 확인창이 필요합니다.** 만족도 보너스는 Gold가 아니고 평가 점수 합산은 관객 만족도가 생길 때 붙입니다 |
 | 2026-08-18 | 김시리 | 🆕 **"다음 날" 버튼이 이제 하루치 임대료를 정산합니다** — `RequestAdvanceToNextDay()`를 누르면 잔액·밀린 임대료·오늘 매출·인원 4개 값이 바뀝니다(전부 기존 델리게이트로 통지). 종태님 쪽 수정은 없고, 버튼 직후 UI가 잔액을 직접 계산하지만 않으면 됩니다. 문서에 빠져 있던 밀린 임대료(`GetTotalArrears`)와 인원(`GetTotalStaffCount`) 2종 추가 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
