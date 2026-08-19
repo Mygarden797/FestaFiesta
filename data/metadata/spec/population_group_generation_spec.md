@@ -167,7 +167,7 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
    예약 배정의 `AssignedGroupIds`도 같은 값이다(`UFF_ProgramReservationSubsystem` 참고).
 6. 1.5절 "임시 분리 후 재합류" 동작 — v1 이후 후보로 명시적으로 남김. 지금은 리더 상속 모델만 구현 대상.
 7. ~~`walk_speed_multiplier`/`stay_duration_multiplier`를 GroupId로 시드하는 실제 호출 코드~~ → **2026-08-06 구현 완료.** `FFF_IndividualVariationResolver::ResolveWithGroupSharing(VariationTable, Seed, StableAgentId, GroupId, SpawnGeneration, CorrelationStrength)`. `Resolve()` 시그니처는 안 바뀌었고 wrapper가 내부에서 두 번 불러 합친다. `GroupId == INDEX_NONE`이면 solo로 취급해 `Resolve()` 한 번과 완전히 같은 결과를 낸다.
-   > ⚠️ **함수는 있지만 부르는 코드가 없다.** 개체 변주는 자동으로 걸리지 않는다 — `GroupId`/`StableAgentId`가 만들어져도 누군가 이 함수를 호출해야 적용된다. 스폰 시점을 소유하는 crowdAI가 부르도록 요청했다(`crowdai_integration_guide.md` §1.5).
+   > ✅ **2026-08-19 결선.** crowdAI 가 스폰 경로에서 `ResolveWithGroupSharing` 을 부르고 `WalkSpeedMultiplier` 가 `Unit.Speed` 에 곱해진다.
 8. ~~리더가 퇴장할 때 그룹 전체가 퇴장하는지 미정~~ → **2026-08-06 결정 완료: 리더가 퇴장하면 그룹 전원이 함께 퇴장한다.** 사용자 확정.
 
    즉 `EFF_NoChoiceAction`은 목적지와 똑같이 **리더가 결정하고 그룹원 전체가 상속**한다 — `Wander`/`Relocate`/`Leave` 셋 다. 그룹원이 각자 다른 행동을 하는 경우는 없다.
