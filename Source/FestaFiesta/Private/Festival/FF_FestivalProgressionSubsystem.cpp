@@ -55,6 +55,11 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
 	DayLedger.Reset();
+	// 새 축제에 이전 판 스냅샷이 남지 않게 한다.
+	// [주의] 지금은 아래 TryProcessNewDay(1) 이 어차피 덮으므로 이 두 줄이 없어도 동작이 같다
+	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
+	EndedDayLedger.Reset();
+	EndedDay = 0;
 	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
@@ -293,10 +298,18 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 		return false;
 	}
 
+	// 덮기 전에 읽는다 — 바로 아래에서 LastProcessedDay 가 NewDay 로 바뀐다.
+	const int32 JustEndedDay = LastProcessedDay;
+
 	LastProcessedDay = NewDay;
 
 	// TodayRevenue & DayLedger 리셋
 	Funds.ResetTodayRevenue();
+
+	// 리셋 직전에 직전 하루를 보관한다.
+	EndedDayLedger = DayLedger;
+	EndedDay = JustEndedDay;
+
 	DayLedger.Reset();
 	
 	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.

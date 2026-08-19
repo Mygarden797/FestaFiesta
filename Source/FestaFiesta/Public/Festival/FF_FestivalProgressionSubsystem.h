@@ -88,6 +88,17 @@ public:
 	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
 	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
 	
+	// 방금 끝난 하루의 원장 — "하루 경계를 넘은 뒤"에만 유효하다.
+	// [주의] Report 안에서는 아직 경계를 안 넘었으므로 여기엔 '어제' 값이 들어 있다.
+	//		Day1 Report 에는 스냅샷이 아예 없다 (EndedDay == 0)
+	//		Day3 뒤에는 경계가 없어서 최종 결산까지 스냅샷이 Day2 에 멈춘다.
+	// [규칙] 그리려는 날짜 == GetEndedDay() 일 때만 이것을 쓰고, 아니면 GetDayLedger() 를 쓴다.
+	const FFF_DayLedger& GetEndedDayLedger() const { return EndedDayLedger; }
+
+	// GetEndedDayLedger() 가 어느 날짜의 것인지. 0 이면 아직 끝난 하루가 없다.
+	// GetLastProcessedDay() 와 하루 어긋난다 — 이쪽은 '닫힌 날', 저쪽은 '열린 날'이다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetEndedDay() const { return EndedDay; }
 	
 	// --- 하루 경계 ---------------------------------------------------------
 	
@@ -190,6 +201,13 @@ private:
 	
 	// 당일 원인별/시설별 분해. 여기서만 건드린다.
 	FFF_DayLedger DayLedger;
+	
+	// 직전 하루의 원장 스냅샷. TryProcessNewDay 의 Reset 직전에서만 갱신한다
+	FFF_DayLedger EndedDayLedger;
+
+	// EndedDayLedger 가 담고 있는 날짜. 0 = 아직 끝난 하루 없음.
+	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.
+	int32 EndedDay = 0;
 	
 	// 임대료 미납. 하루 경계에서 리셋되지 않는다.
 	FFF_FixedCostArrears Arrears;
