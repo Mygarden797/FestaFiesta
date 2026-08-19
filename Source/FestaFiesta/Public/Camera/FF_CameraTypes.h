@@ -32,7 +32,8 @@ enum class EFF_CameraInputBlock : uint8
 {
 	// 아무도 안 막는 상태. 팬, 줌, 회전, 피킹 전부 동작한다.
 	None            UMETA(DisplayName = "없음"),
-	// 건축 세션 진행 중. 팬과 줌은 살리고 피킹만 막는다.
+	// 건축 세션 진행 중. 팬과 줌은 살리고 피킹을 막는다.
+	// 시설 프리뷰가 활성인 동안에는 별도 정책으로 카메라 회전도 막는다.
 	BuildSession    UMETA(DisplayName = "건축 세션"),
 	// 모달 UI가 떠 있음. 카메라 입력 전체를 막는다.
 	ModalUi         UMETA(DisplayName = "모달 UI"),
@@ -43,6 +44,25 @@ enum class EFF_CameraInputBlock : uint8
 	// 시네마틱이나 자동 연출 중.
 	Scripted        UMETA(DisplayName = "연출 중")
 };
+
+namespace FFCameraInputModel
+{
+	// 건축 중에도 배치 위치를 볼 수 있도록 팬과 줌은 유지한다.
+	inline bool IsMovementAllowed(const EFF_CameraInputBlock Reason)
+	{
+		return Reason != EFF_CameraInputBlock::ModalUi
+			&& Reason != EFF_CameraInputBlock::ActorView
+			&& Reason != EFF_CameraInputBlock::CharacterControl;
+	}
+
+	// 시설 배치/이동 프리뷰가 Q/E 회전을 소유하므로 그때만 카메라 회전을 추가로 막는다.
+	inline bool IsRotationAllowed(
+		const EFF_CameraInputBlock Reason,
+		const bool bBuildPreviewActive)
+	{
+		return IsMovementAllowed(Reason) && !bBuildPreviewActive;
+	}
+}
 
 // 디자이너가 조정하는 값들. 전부 게임 단위(cm, 도, 초)다.
 USTRUCT(BlueprintType)
