@@ -112,9 +112,14 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 후보 유지 = 필요 분 <= 가용 분
 ```
 
-**켤 수 없는 이유는 하나뿐**이다: `EstimatedWaitMinutes` 가 0 이라(Queue 어댑터 결선 전)
-"줄이 없다"로 계산된다. **켜면 "금방 다녀올 수 있다"고 통과시켜 놓고 실제로는 줄에 걸려
-늦으므로, 켜는 것이 오히려 지각을 늘린다.**
+~~**켤 수 없는 이유는 하나뿐**이다: `EstimatedWaitMinutes` 가 0 이라 "줄이 없다"로 계산된다.~~
+→ **2026-08-19: 그 이유가 사라졌다.** Queue 어댑터를 결정 계층에 결선해서 대기시간이 실제 값으로
+들어온다(`FFF_QueueWaitAdapter::ApplyFromZoneBridge`). 파티별 활성 예약 조회도 생겼다
+(`UFF_ProgramReservationSubsystem::FindActiveReservationForParty`).
+
+**이제 남은 것은 배선뿐이다** — 결정 컨텍스트에 예약을 실어 보내고 후보 필터를 켜는 일.
+다만 아래 §3.5 2차 안전장치(귀환 필터가 후보를 전부 비우면 `no_choice` → `Leave` 로 이어지는
+사고 경로)와 **반드시 같이** 켜야 한다. 1차만 켜면 안전장치가 스스로 사고를 만든다.
 
 판정 불가(예약 없음 / 속도 0)일 때는 **후보를 남긴다(fail-open).** 대기열 어댑터의
 fail-closed 와 반대인데 이유가 다르다 — 후보를 전부 닫으면 `no_choice` 2회 → `Leave` 이고,
@@ -135,21 +140,40 @@ fail-closed 와 반대인데 이유가 다르다 — 후보를 전부 닫으면 
 **2차 (하드 데드라인)** — 잠금이 걸리면 예약 시설로 향한다. 위치를 덮어쓰지 않는 정상 이동이고,
 늦게 도착하면 늦게 참여한다.
 
-## 5. 아직 안 만든 것
+## 5. 만든 것과 안 만든 것
+
+### 5.0 ✅ 런타임 소유자 — `UFF_ProgramReservationSubsystem` (2026-08-19 신설)
+
+**예약을 들고 도는 곳이 없어 예약이 실제로 존재하지 않던 문제를 풀었다.** GameInstance 스코프이고,
+보관·수명주기·조회만 한다(배정 계산과 잠금 판정은 계속 `FFF_ProgramReservationRules` 가 갖는다).
+
+| API | 비고 |
+|---|---|
+| `RegisterProgram` / `RemoveReservation` | 슬롯 등록·삭제. 저작 오류(정원 0·종료<시작·무효 시설)는 무효 핸들로 거부 |
+| `ClearAssignments` | **배정만** 비운다. 하루 경계용 |
+| `AssignGroups` | 규칙 함수 호출 전에 **다른 예약에 이미 배정된 그룹을 걸러낸다** |
+| `GetReservationIds` / `FindReservation` / `GetRemainingSeats` | 목록은 **시작 시각 오름차순** |
+| `FindActiveReservationForParty` / `IsPartyLockedAt` / `IsPartyExitBlockedAt` | 결정 계층·퇴장 판정이 쓰는 창구 |
+| `OnReservationChanged` | UI 갱신 |
+
+**슬롯과 배정의 수명이 다르다.** 프로그램은 남은 축제 기간 전체 구매(E-10)이고 그룹 배정은
+매일 새로 한다 — 어제 배정된 파티 ID 가 오늘까지 잠긴 채로 남으면 안 된다. 테스트 6개로 고정했다.
+
+> 위 5.1 표의 `IsGroupLockedAt`·`IsGroupExitBlockedAt`·`ClearReservations` 는 이 서브시스템의
+> `IsPartyLockedAt`·`IsPartyExitBlockedAt`·`ClearAssignments` 로 실현됐다. 이름이 Group→Party 로
+> 바뀐 것은 crowdAI 의 `PartyID` 와 같은 값이기 때문이다.
 
 ### 5.1 배선 — `UFF_FestivalProgressionSubsystem` (경제 S8)
 
 구매가 Gold 차감이고 기획서 §7 이 경제·진행을 한 소유자로 두므로,
-**차감과 배정이 한 트랜잭션**이어야 한다.
+**차감과 배정이 한 트랜잭션**이어야 한다. 배정·등록은 이제 §5.0 을 부르면 된다.
 
 | 만들 API                                                              | 쓰는 쪽                   |
 | ------------------------------------------------------------------- | ---------------------- |
 | `TryPurchaseProgram(Program, CostGold, Candidates, OutReservation)` | 타임테이블 UI               |
-| `GetReservations()` + `OnReservationsChanged`                       | 타임테이블 UI               |
-| `IsGroupLockedAt(GroupId, Now)`                                     | L3 — 매 재평가             |
-| `IsGroupExitBlockedAt(GroupId, Now)`                                | L3 — 퇴장 판정 **두 경로 모두** |
-| `GetLockedFacilityForGroup(GroupId, Now)`                           | L3 — 잠금 중 목적지 고정       |
-| `ClearReservations()`                                               | 새 축제·새 날               |
+| ~~`GetReservations()` + `OnReservationsChanged`~~ ✅ §5.0 이 제공        | 타임테이블 UI               |
+| ~~`IsGroupLockedAt` / `IsGroupExitBlockedAt` / `ClearReservations`~~ ✅ §5.0 이 제공 | L3 · 새 날 |
+| `GetLockedFacilityForGroup(GroupId, Now)`                           | L3 — 잠금 중 목적지 고정 (`FindActiveReservationForParty` 로 대체 가능) |
 
 **차감 순서**(기획서 §6.1): 검증 → 잔액 확인 → 배정 → 성공 시 1회 차감 → 등록.
 배정이 0명이면 Gold 를 건드리지 않는다(AT-003·AT-004).
