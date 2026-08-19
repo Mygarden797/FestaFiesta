@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildPlacementFailureFeedback.h
+
+// Zone 배치 실패 사유를 사용자용 분류·문구로 바꾸어 자동 소멸 토스트로 표시한다.
+// 흐름: 권위 실패 코드 분류 -> 제목/상세 설정 -> WBP 반영 -> 선택적 타이머 해제.
+// 불변식: 설정 전에도 안전한 기본 문구를 제공하고 새 실패는 같은 위젯 인스턴스를 재사용한다.
+// 실패/수명: WBP 해제 시 타이머를 취소하며 0초 설정은 자동 소멸 없이 표시 상태를 유지한다.
 
 #pragma once
 

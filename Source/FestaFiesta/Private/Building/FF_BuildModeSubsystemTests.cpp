@@ -1,5 +1,10 @@
 // FF_BuildModeSubsystemTests.cpp
 
+// B/Escape 입력에 대한 건축 모드 상태 전이와 UI 표시 정책을 표 기반으로 검증한다.
+// 흐름: 모든 상태에 B/Escape·취소·단계 조건 입력 -> 다음 상태와 허용 여부 비교.
+// 불변식: 런타임과 같은 FFBuildModeModel 함수를 호출하며 임의 월드 상태를 만들지 않는다.
+// 실패/성능: 순수 규칙만 검사해 상태 머신 회귀를 빠르게 찾고 실패 assertion을 입력별로 분리한다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildModeSubsystem.h"
@@ -14,6 +19,7 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 {
 	using namespace FFBuildModeModel;
 
+	// B 키는 Closed에서 세션을 열고 활성 세션에서는 프리뷰를 정리한 뒤 카탈로그를 토글한다.
 	TestEqual(TEXT("첫 B는 카탈로그 없는 건축 모드로 진입한다"),
 		ResolveBuildKeyState(EFF_BuildModeState::Closed),
 		EFF_BuildModeState::BuildMode);
@@ -30,6 +36,7 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		ResolveBuildKeyState(EFF_BuildModeState::Moving),
 		EFF_BuildModeState::CatalogOpen);
 
+	// 표시 정책은 전이 함수와 같은 상태 정의를 공유해야 UI가 닫힌 뒤에도 남지 않는다.
 	TestFalse(TEXT("Closed는 건축 세션이 아니다"),
 		IsBuildSessionActive(EFF_BuildModeState::Closed));
 	TestTrue(TEXT("BuildMode는 건축 세션이다"),
@@ -54,6 +61,7 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		EFF_BuildModeState::CatalogOpen);
 	const FGuid MoveFacilityId = FGuid::NewGuid();
 	const FGuid MoveTransactionId = FGuid::NewGuid();
+	// 동기 WorldChanged 이벤트가 재진입해 상태를 바꿔도 이전 Move 성공 처리가 새 세션을 덮지 않아야 한다.
 	TestTrue(TEXT("동기 이벤트 뒤에도 같은 이동 세션이면 성공 정리를 수행한다"),
 		IsCurrentMoveSession(
 			EFF_BuildModeState::Moving,
@@ -75,6 +83,7 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 			FGuid::NewGuid(),
 			MoveFacilityId,
 			MoveTransactionId));
+	// Escape와 단계 정책은 활성 세션만 닫고 이미 Closed인 상태에는 부작용을 만들지 않는다.
 	TestFalse(TEXT("Closed의 Esc는 건축 종료를 중복 실행하지 않는다"),
 		ShouldExitOnEscape(EFF_BuildModeState::Closed));
 	TestTrue(TEXT("BuildMode의 Esc는 전체 건축 모드를 종료한다"),
@@ -98,6 +107,7 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Zone Phase가 닫히면 재배치 가능 Stage에서도 건축 진입을 막는다"),
 		CanEnterBuildSession(true, false));
 
+	// 월드 시설 작업은 카탈로그·프리뷰 입력과 경쟁하지 않는 BuildMode에서만 허용한다.
 	TestTrue(TEXT("설치 시설 철거는 카탈로그 없는 BuildMode에서만 허용한다"),
 		CanRemoveInstalledFacility(EFF_BuildModeState::BuildMode));
 	TestFalse(TEXT("카탈로그에서는 시설을 철거하지 않는다"),

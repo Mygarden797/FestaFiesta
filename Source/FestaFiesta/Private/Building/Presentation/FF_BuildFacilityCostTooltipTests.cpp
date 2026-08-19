@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildFacilityCostTooltipTests.cpp
+
+// 비용 툴팁 WBP의 BindWidget 계약과 시설 카드 연결·표시 문자열을 통합 검증한다.
+// 흐름: 저장된 Blueprint 구조 검사 -> 네이티브/파생 위젯 생성 -> 비용 스냅샷 반영 확인.
+// 불변식: 테스트는 저장 에셋을 변경하지 않고 런타임과 같은 Configure 경로를 호출한다.
+// 실패/수명: 콘텐츠 검사와 transient 동작 검사를 분리하고 생성한 Slate 래퍼는 범위 끝까지 유지한다.
 
 #include "CoreMinimal.h"
 
@@ -28,7 +33,7 @@ namespace
 		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard."
 			"WBP_FF_BuildFacilityCard_C");
 
-	// Keep this helper name unique because Unity builds merge anonymous namespaces from .cpp files.
+	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
 	class FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization
 	{
 	public:
@@ -58,6 +63,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildFacilityCostTooltipAssetContractTest::RunTest(const FString& Parameters)
 {
+	// WBP의 부모 클래스와 세 BindWidget 이름·타입을 먼저 확인해 런타임 null 바인딩을 에셋 오류로 보고한다.
 	(void)Parameters;
 
 	TestFalse(TEXT("The tooltip lives outside the team-owned Zone/UI/Building path"),
@@ -132,6 +138,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Parameters)
 {
+	// 카드가 만든 툴팁까지 실제 Configure 경로로 연결해 미확정/확정 비용 표시를 함께 검증한다.
 	(void)Parameters;
 
 	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;

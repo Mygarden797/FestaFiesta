@@ -1,3 +1,10 @@
+// FF_ZoneFacilityLifecycleTests.cpp
+
+// Stage 브리지의 시설 일괄 개장·폐쇄와 Queue 상태 전파를 통합 테스트한다.
+// 흐름: 두 시설을 설치한 뒤 정상 개장, 중복 개장, 정상 폐쇄, 긴급 폐쇄와 수동 재개장을 순서대로 검증한다.
+// 불변식: 성공 명령마다 WorldRevision이 한 번 증가하고 자동 정책은 명시적으로 Closed인 시설을 보존한다.
+// 실패/성능: 테스트용 FFZS 설정은 RAII guard로 변경하며 종료 경로와 무관하게 복원한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
@@ -19,6 +26,7 @@
 
 namespace
 {
+	// 전역 개발자 설정을 테스트에 필요한 결정적 조건으로 제한하고 모든 조기 반환에서도 복원한다.
 	class FScopedLifecycleTestSettings
 	{
 	public:
@@ -72,6 +80,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FFFZoneFacilityLifecycleBatchTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
+	// Arrange: 물리·내비게이션 환경과 무관한 생명주기 계약만 검증하는 격리 World를 만든다.
 	FScopedLifecycleTestSettings SettingsGuard;
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
@@ -118,6 +127,7 @@ bool FFFZoneFacilityLifecycleBatchTest::RunTest(const FString& Parameters)
 	const FFFZSFacilitySpec FacilitySpec =
 		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	TArray<FGuid> FacilityIds;
+	// 같은 사양의 두 시설을 서로 겹치지 않게 설치해 배치 집계와 개별 상태 전파를 함께 검증한다.
 	for (const FIntPoint Origin : {FIntPoint(1000, 1000), FIntPoint(5000, 1000)})
 	{
 		FFFZSGridPlacement Placement;
@@ -157,6 +167,7 @@ bool FFFZoneFacilityLifecycleBatchTest::RunTest(const FString& Parameters)
 	const int64 RevisionBeforeOpen = ZoneSystem->GetWorldRevision();
 	const FFF_ZoneFacilityLifecycleBatchResult OpenResult =
 		StageBridge->OpenEligibleFacilities(false);
+	// Act/Assert: 배치 결과 수치, 권위 revision, 두 Queue 구현의 상태를 같은 전환에서 대조한다.
 	TestEqual(TEXT("Validated 시설 두 개를 개장 대상으로 잡는다"), OpenResult.AttemptedCount, 2);
 	TestEqual(TEXT("두 시설 개장이 성공한다"), OpenResult.SucceededCount, 2);
 	TestEqual(TEXT("개장 실패가 없다"), OpenResult.FailedCount, 0);
@@ -202,6 +213,8 @@ bool FFFZoneFacilityLifecycleBatchTest::RunTest(const FString& Parameters)
 
 	TestEqual(TEXT("MovePending 시설은 다음 개장 대상이다"),
 		StageBridge->OpenEligibleFacilities(false).SucceededCount, 2);
+	// EmergencyClose로 생긴 Closed 상태는 자동 수명주기 경로에서는 보존되고,
+	// 명시적 수동 요청으로만 다시 열린다.
 	TestEqual(TEXT("두 Active 시설 긴급 폐쇄가 성공한다"),
 		StageBridge->CloseActiveFacilities(true).SucceededCount, 2);
 	for (const FGuid FacilityId : FacilityIds)

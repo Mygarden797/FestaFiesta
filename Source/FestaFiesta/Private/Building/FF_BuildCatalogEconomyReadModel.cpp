@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildCatalogEconomyReadModel.cpp
+
+// Festival 진행 서브시스템의 비용표와 골드를 카탈로그 UI가 읽는 스냅샷으로 투영한다.
+// 흐름: 의존성 초기화·이벤트 구독 -> 요청 시 비용 계산 -> 골드 변경 이벤트 중계.
+// 불변식: 골드는 0 이상으로 정규화하고 같은 값에는 중복 변경 이벤트를 방송하지 않는다.
+// 실패/수명: 진행 서브시스템이 없으면 미확정 상태를 유지하고 해제 시 구독을 반드시 끊는다.
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 
@@ -12,6 +17,7 @@
 
 void UFF_BuildCatalogEconomyReadModel::Initialize(FSubsystemCollectionBase& Collection)
 {
+	// 비용과 잔액의 권위 소유자를 먼저 초기화해 UI 읽기 모델이 부분 상태를 방송하지 않게 한다.
 	Collection.InitializeDependency<UFF_FestivalProgressionSubsystem>();
 	Super::Initialize(Collection);
 
@@ -52,6 +58,8 @@ bool UFF_BuildCatalogEconomyReadModel::TryProjectFacilityCosts(
 	const UFFZSFacilityDefinition* Definition,
 	FString& OutFailureReason) const
 {
+	// Festival이 시작되지 않았거나 비용표가 아직 메모리에 없으면 null 입력을 그대로 순수 모델에
+	// 전달한다. 모델이 공통 실패 이유를 만들게 해 화면마다 다른 폴백 규칙이 생기지 않게 한다.
 	const UFF_FestivalDefinition* Festival =
 		ProgressionSubsystem && ProgressionSubsystem->IsFestivalStarted()
 		? ProgressionSubsystem->GetDefinition()
@@ -71,6 +79,7 @@ bool UFF_BuildCatalogEconomyReadModel::TryProjectFacilityCosts(
 
 void UFF_BuildCatalogEconomyReadModel::HandleProgressionGoldChanged(const int32 NewGold)
 {
+	// 외부 데이터 오류로 음수가 들어와도 표시와 구매 가능 판정이 서로 다른 잔액을 보지 않게 한다.
 	const int32 SanitizedGold = FMath::Max(0, NewGold);
 	const bool bValueChanged = !bHasAuthoritativeGold || Gold != SanitizedGold;
 	Gold = SanitizedGold;
