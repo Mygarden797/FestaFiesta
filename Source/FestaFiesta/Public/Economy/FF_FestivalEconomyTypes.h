@@ -97,3 +97,37 @@ enum class EFF_EarnReason : uint8
 	DailyGoalBonus      = 3		UMETA(DisplayName = "일일 목표 보너스"),
 	MinigameReward      = 4		UMETA(DisplayName = "미니게임 보상")
 };
+
+// 원인별 결산 표의 한 줄. UI 가 받아서 그대로 그린다.
+USTRUCT(BlueprintType)
+struct FFF_LedgerRow
+{
+	GENERATED_BODY()
+	
+	// 화면에 그리는 한글 이름. enum 의 UMETA(DisplayName) 이다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	FText DisplayName;
+
+	// 줄을 식별하는 키. 짧은 enum 이름이다 (VenueRent 등).
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	FName ReasonId;
+
+	// Gold. 0 인 줄은 애초에 만들지 않으므로 표에 실린 값은 항상 0 이 아니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 Amount = 0;
+	
+};
+
+// 부스별 매출 표의 한 줄.
+USTRUCT(BlueprintType)
+struct FFF_FacilityRevenueRow
+{
+	GENERATED_BODY()
+
+	// 시설 식별자. FacilityId 오름차순으로 정렬된 상태로 온다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	FName FacilityId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 Amount = 0;
+};

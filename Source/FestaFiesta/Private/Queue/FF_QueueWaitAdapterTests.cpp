@@ -99,7 +99,7 @@ bool FFF_QueueWaitAdapter_UnitConversionRoundTrips::RunTest(const FString& Param
 	return true;
 }
 
-// 2. ExpectedWait 스냅샷 계산 (설계문서 9.1)
+// 2. ExpectedWait 스냅샷 계산
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_ComputesExpectedWaitFromSnapshot, "FestaFiesta.Queue.WaitAdapter.ComputesExpectedWaitFromSnapshot", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_QueueWaitAdapter_ComputesExpectedWaitFromSnapshot::RunTest(const FString& Parameters)
 {
@@ -199,7 +199,7 @@ bool FFF_QueueWaitAdapter_OpenFlagIsAndMerged::RunTest(const FString& Parameters
 	return true;
 }
 
-// 6. 밀도 항 입력은 건드리지 않는다 — 대기 인원은 이미 셀 밀도에 잡혀 있다 (설계문서 8.4)
+// 6. 밀도 항 입력은 건드리지 않는다 — 대기 인원은 이미 셀 밀도에 잡혀 있다
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_DoesNotTouchOccupancyFields, "FestaFiesta.Queue.WaitAdapter.DoesNotTouchOccupancyFields", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_QueueWaitAdapter_DoesNotTouchOccupancyFields::RunTest(const FString& Parameters)
 {

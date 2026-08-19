@@ -64,6 +64,8 @@ void UFF_FestivalStageSubsystem::SetSelectedWeather(EFF_WeatherType NewWeather)
 
 	UE_LOG(LogTemp, Log, TEXT("날씨 선택됨: %s"), *UEnum::GetValueAsString(SelectedWeather));
 	
+	OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
+	// Setup/MorningCheck에서 고른 순간 바로 화면에 반영되게 함
 }
 
 const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay()

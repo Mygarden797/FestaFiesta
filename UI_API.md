@@ -642,37 +642,85 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 **부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 전부 거부되고 아무것도 바뀌지 않습니다. 실패 이유
 (돈 부족 / 하루 상한 초과)를 화면에 띄우시려면 말씀만 주세요, 지금은 `true`/`false`만 돌려줍니다.
 
-**Report 드릴다운**은 지출·매출이 원인별(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음), 매출은
-부스별로도 쌓이고 있습니다. UI Getter를 아직 안 만들었으니 어떤 표로 필요하신지 알려주시면 그 모양대로 만들겠습니다.
-
-**답변 (백종태, 2026-08-19) — 둘 다 필요합니다.** 프로토타입에서 결산 화면을 실제로 만들어 보니
-두 표가 같은 화면에 나란히 들어갑니다.
-
-1. **원인별 표** — `EFF_EarnReason` 5종을 먼저, `EFF_SpendReason` 9종을 뒤에 놓고 마지막에 합계 한 줄입니다.
-   값이 0인 사유는 줄 자체를 그리지 않습니다. 한글 `DisplayName` 을 그대로 쓰고 enum 이름은 작게 병기합니다.
-2. **부스별 매출 표** — `FacilityId` 오름차순 정렬 그대로 쓰겠습니다. UI가 다시 정렬하지 않습니다.
-3. **철거 환급은 따로 주세요.** `TotalRefund` 를 `EarnByReason` 에 섞으면 "매출이 늘었다"로 잘못 읽힙니다.
-   화면에서도 `매출 아님` 태그를 붙여 별도 줄로 그리고 있습니다.
-
-`TArray<FFF_SpendBreakdownRow>` 같은 UI 친화 구조체면 가장 좋습니다. 형태는 아래면 충분합니다.
-
-```cpp
-struct FFF_LedgerRow { FText DisplayName; FName ReasonId; int32 Amount; };
-// GetSpendRows() / GetEarnRows() / GetRevenueByFacilityRows() / GetTotalRefund()
-```
-
-한 가지만 더 — **하루 경계에서 `DayLedger` 가 리셋될 때 직전 날의 값을 UI가 읽을 수 있어야 합니다.**
-결산 화면은 방금 끝난 하루를 보여주는데, `RequestAdvanceToNextDay()` 가 먼저 돌면 표가 비어 버립니다.
-위 4번 설명대로 그 버튼이 이제 정산까지 하므로 더 확실해졌습니다.
-프로토타입에서는 정산 시점에 스냅샷을 떠서 피했습니다 — `GetLastDayLedger()` 같은 것이 있으면 가장 깔끔합니다.
-
-⚠️ **임대료가 2,400 을 넘을 수 있다는 점(위 5번)을 원장 표에 반영하겠습니다.** 프로토타입은 하루 임대료를
-2,400 고정으로 그리고 있어서 미납 상환이 합산되면 어긋납니다. 원장 값을 그대로 받아 그리도록 고치겠습니다.
+~~**Report 드릴다운** 형태 협의~~ → **2026-08-19 종료.** 아래 "결산 표 4종" 절로 대체됐습니다.
+(요청 3건: 원인별 표 + 부스별 표 둘 다 · 0 인 사유 제외 · 환급 분리 — 전부 반영)
 
 **시설 철거 환급은 매출이 아닙니다** (2026-08-13). 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
 
 아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
+
+### 결산 표 4종 (김시리, 2026-08-19 구현완료)
+
+- **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
+- **접근**: `GameInstanceSubsystem`. 전부 `BlueprintPure`
+
+```cpp
+bool                            HasLedgerForDay(int32 Day) const;
+TArray<FFF_LedgerRow>           GetEarnRowsForDay(int32 Day) const;
+TArray<FFF_LedgerRow>           GetSpendRowsForDay(int32 Day) const;
+TArray<FFF_FacilityRevenueRow>  GetRevenueByFacilityRowsForDay(int32 Day) const;
+int32                           GetTotalRefundForDay(int32 Day) const;
+```
+
+**요청하신 형태에서 날짜 인자 하나가 붙었습니다.** 그리려는 날짜를 넘기시면 그 날 표가 옵니다.
+
+```cpp
+const int32 DayToDraw = Stage->CurrentDay;
+if (Progression->HasLedgerForDay(DayToDraw)) { /* 4종 호출 */ }
+```
+
+**예 — Day3 Live 가 아직 진행 중일 때**
+
+| 넘긴 값 | 나오는 것 |
+|---|---|
+| `3` | Day3 의 **지금까지** 쌓인 값. 진행 중이라 계속 늘어납니다 |
+| `2` | Day2 의 최종값 |
+| `1` | 빈 표 (`HasLedgerForDay(1)` 이 `false`) |
+
+진행 중인 날도 그대로 읽으시면 됩니다 — Live 중 실시간 표시와 Report 결산이 같은 호출입니다.
+
+⚠️ **`HasLedgerForDay()` 를 먼저 확인해 주세요.** 보관하는 것은 **오늘과 어제 이틀뿐**입니다.
+없는 날짜는 빈 표가 오는데 **"그 날 매출이 0" 과 모양이 같아서** 이 함수 말고는 구분할 방법이 없습니다.
+
+**표 규칙**
+
+- 원인별 표는 `GetEarnRowsForDay()` → `GetSpendRowsForDay()` 순으로 붙이시면 요청하신 배치가 됩니다
+- 값 0 인 사유는 줄이 없습니다. 순서는 enum 선언 순서로 고정입니다
+- 부스별은 `FacilityId` 오름차순으로 드립니다
+- 환급은 `GetTotalRefundForDay()` 로 분리했습니다. 매출 표에 안 섞입니다
+- 임대료 줄은 2,400 을 넘을 수 있습니다(미납 상환 합산). 원장 값을 그대로 그려 주세요
+- 합계 줄은 따로 안 드립니다 — 0 인 줄이 빠져 있어서 `Amount` 를 더하면 정확합니다
+
+**부스별만 구조체가 다릅니다.**
+
+```cpp
+struct FFF_FacilityRevenueRow { FName FacilityId; int32 Amount; };   // DisplayName 없음
+```
+
+경제는 시설의 한글 이름을 모릅니다. **표시 이름은 Building 카탈로그에서 해석해 주세요.**
+
+⚠️ **부스별 표는 S10 까지 비어 있습니다.** 매출을 넣는 호출부(crowdAI "시설 이용 완료" 신호)가
+아직 없습니다. 예약 목록과 같은 상황이라 지금 비어 보이는 것이 정상입니다.
+
+### 🔴 정정 — enum 의 `DisplayName` 을 직접 읽지 마세요 (김시리, 2026-08-19)
+
+**2026-08-18 에 "피날레 실패 이유가 한글 `DisplayName` 으로 들어 있다"고 안내한 것이 틀렸습니다.**
+`UMETA(DisplayName)` 조회는 에디터 전용이라 **패키징 빌드에서는 `"Gold 부족"` 대신 `"InsufficientGold"`
+가 뜹니다.** 에디터에서는 정상으로 보여서 시연 빌드를 만들기 전까지 안 드러납니다.
+
+문자열 원본을 경제 쪽으로 옮겼습니다. 아래를 쓰시면 어느 빌드에서든 한글이 나옵니다.
+
+```cpp
+// Public/Economy/FF_EconomyDisplayTextLibrary.h — 전부 static BlueprintPure
+GetFinalePurchaseResultText(EFF_FinalePurchaseResult)   GetFinaleGradeText(EFF_FinaleGrade)
+GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_EarnReason)
+```
+
+**고치실 곳은 피날레 실패 이유와 등급 표시 두 군데입니다.** 결산 표의 `DisplayName` 은 이미 이
+함수로 채워 드리니 그대로 쓰시면 됩니다.
+
+⚠️ Stage 단계 이름(`FF_FestivalStageSubsystem`)도 같은 문제입니다 — 강민서 님 파일이라 그대로 뒀습니다.
 
 ---
 
@@ -814,8 +862,8 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
 | **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바                                                            |
 | **`TodayRevenue`** (오늘 매출)                    | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Report — UI가 누적값에서 빼지 않습니다                                         |
-| 🆕 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ⚠️ 내부 집계만 있음 | Report 드릴다운. UI Getter는 형태 협의 후 추가 |
-| 🆕 **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ⚠️ 내부 집계만 있음 | Report — 부스별 수익 표 |
+| 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ✅ **2026-08-19 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay` | Report 드릴다운 |
+| **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ✅ **2026-08-19 API 완료** — `GetRevenueByFacilityRowsForDay`. 단 매출을 넣는 호출부가 없어 S10 까지 빈 표 | Report — 부스별 수익 표 |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
 | Staff 보유·가용 인원                                | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Event 배치 UI, MorningCheck 고용 화면 |
 | 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 상단 바 자금난 경고, Report |
@@ -871,3 +919,5 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
 | 2026-08-19 | 강민서 | `OnDayEnded` 델리게이트 신설. AdvanceToNextDay() 호출 시 방금 끝난 날짜와 그날 Live 진행 시간을 broadcast. 이월 데이터(정비/청결 등) 계산은 수신 측(광훈/시리) 담당 |
 | 2026-08-19 | 백종태 | 전체 사이클 UI 프로토타입(타이틀→피날레→최종결산)을 한 바퀴 돌려 보고 **없어서 더미로 채운 것 8건**을 "UI가 필요한데 아직 없는 것"에 추가. `FFF_DayLedger` 노출 형태 질문에 회신(원인별 표·부스별 표 **둘 다** 필요, 환급은 분리, 하루 경계 스냅샷 필요). 시설 유지비에 대응하는 `EFF_SpendReason` 부재 보고 |
+| 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다. **부스별 표는 S10 까지 빈 표입니다** |
+| 2026-08-19 | 김시리 | 🔴 **정정: enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.** 8/18 에 "피날레 실패 이유가 한글로 온다"고 안내한 것이 틀렸습니다. `UFF_EconomyDisplayTextLibrary` 신설 — 피날레 실패 이유·등급 표시 두 군데를 이 함수로 바꿔 주세요. Stage 단계 이름도 같은 문제입니다(강민서) |

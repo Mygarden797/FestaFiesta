@@ -8,7 +8,7 @@
 #include "Queue/FF_FacilityQueue.h"
 #include "Queue/FF_QueueSubsystem.h"
 
-// 설계문서 12.1 P0 체크리스트와 8·9장의 "여기서 틀리면 통합 때 터진다" 지점을 테스트로 옮긴다.
+// 통합 시 조용히 틀리는 지점들을 테스트로 고정한다.
 
 namespace FFF_FacilityQueueTestHelpers
 {
@@ -30,8 +30,7 @@ namespace FFF_FacilityQueueTestHelpers
 		FFF_QueueLaneGeometry Lane;
 		Lane.HeadLocation = FVector::ZeroVector;
 		Lane.TailDirection = FVector(1.f, 0.f, 0.f);
-		Lane.SlotSpacingCm = 115.f;   // 설계문서 8.4
-		Lane.SlotYawDegrees = 180.f;
+		Lane.SlotSpacingCm = 115.f;   // Lane.SlotYawDegrees = 180.f;
 		return Lane;
 	}
 
@@ -84,7 +83,7 @@ namespace FFF_FacilityQueueTestHelpers
 
 using namespace FFF_FacilityQueueTestHelpers;
 
-// 1. Party 일괄 가입 · 전원 거절 (설계문서 8.2① / 12.1)
+// 1. Party 일괄 가입 · 전원 거절
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PartyJoinIsAllOrNothing, "FestaFiesta.Queue.FacilityQueue.PartyJoinIsAllOrNothing", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_PartyJoinIsAllOrNothing::RunTest(const FString& Parameters)
 {
@@ -124,7 +123,7 @@ bool FFF_FacilityQueue_RejectsDuplicateAndInvalidJoin::RunTest(const FString& Pa
 	return true;
 }
 
-// 3. 동시 서비스 1명 — 4인 가족은 4번 순차 처리 (설계문서 9.3)
+// 3. 동시 서비스 1명 — 4인 가족은 4번 순차 처리
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_PartyIsServedMemberByMember, "FestaFiesta.Queue.FacilityQueue.PartyIsServedMemberByMember", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_PartyIsServedMemberByMember::RunTest(const FString& Parameters)
 {
@@ -176,7 +175,7 @@ bool FFF_FacilityQueue_PreservesFifoOrder::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 5. MaxWaitSeconds 기반 이탈 — 폴링 없이 Queue가 타이머를 든다 (설계문서 9.2)
+// 5. MaxWaitSeconds 기반 이탈 — 폴링 없이 Queue가 타이머를 든다
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_AbandonsAfterMaxWait, "FestaFiesta.Queue.FacilityQueue.AbandonsAfterMaxWait", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_AbandonsAfterMaxWait::RunTest(const FString& Parameters)
 {
@@ -224,7 +223,7 @@ bool FFF_FacilityQueue_ServingPartyNeverAbandons::RunTest(const FString& Paramet
 	return true;
 }
 
-// 7. 시설 긴급 폐쇄 → 대기 중 전원 Cancelled (설계문서 9.3)
+// 7. 시설 긴급 폐쇄 → 대기 중 전원 Cancelled
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_EmergencyCloseCancelsEveryone, "FestaFiesta.Queue.FacilityQueue.EmergencyCloseCancelsEveryone", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_EmergencyCloseCancelsEveryone::RunTest(const FString& Parameters)
 {
@@ -261,7 +260,7 @@ bool FFF_FacilityQueue_EmergencyCloseCancelsEveryone::RunTest(const FString& Par
 	return true;
 }
 
-// 8. 슬롯 목표 위치 — 연속 배정 + 115cm 간격 (설계문서 8.2② / 8.4)
+// 8. 슬롯 목표 위치 — 연속 배정 + 115cm 간격
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_SlotTargetsAreContiguous, "FestaFiesta.Queue.FacilityQueue.SlotTargetsAreContiguous", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_SlotTargetsAreContiguous::RunTest(const FString& Parameters)
 {
@@ -300,7 +299,7 @@ bool FFF_FacilityQueue_SlotTargetsAreContiguous::RunTest(const FString& Paramete
 	return true;
 }
 
-// 9. ExpectedWait — 단위(초)와 단조성 (설계문서 9.1)
+// 9. ExpectedWait — 단위(초)와 단조성
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityQueue_ExplicitSlotTargetsOverrideLegacyLane,
 	"FestaFiesta.Queue.FacilityQueue.ExplicitSlotTargetsOverrideLegacyLane",
@@ -389,7 +388,7 @@ bool FFF_FacilityQueue_ExpectedWaitIsSecondsAndMonotonic::RunTest(const FString&
 	return true;
 }
 
-// 10. 예상 대기 vs 실제 대기 — Utility AI 튜닝의 직접 지표 (설계문서 10.2)
+// 10. 예상 대기 vs 실제 대기 — Utility AI 튜닝의 직접 지표
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_LogsEstimatedAndActualWait, "FestaFiesta.Queue.FacilityQueue.LogsEstimatedAndActualWait", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_LogsEstimatedAndActualWait::RunTest(const FString& Parameters)
 {
@@ -457,7 +456,7 @@ bool FFF_FacilityQueue_SameInputGivesSameLog::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 12. 도착 확인 게이트 — Crowd 통지 전에는 서비스가 시작되지 않는다 (설계문서 8.2①)
+// 12. 도착 확인 게이트 — Crowd 통지 전에는 서비스가 시작되지 않는다
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_WaitsForArrivalWhenRequired, "FestaFiesta.Queue.FacilityQueue.WaitsForArrivalWhenRequired", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_WaitsForArrivalWhenRequired::RunTest(const FString& Parameters)
 {
