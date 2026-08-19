@@ -31,6 +31,10 @@ namespace FFF_OverviewCameraRigTestHelpers
 		// 보정을 검증하는 테스트는 MakeHeightConstrainedSettings 를 따로 쓴다.
 		Settings.MinCameraHeightAboveFocus = 0.f;
 		Settings.PitchSaturationArmLength = 0.f;
+		// 커서 줌 세기도 고정한다. 기본값 0.85 는 앵커를 일부러 덜 붙잡는 값이라,
+		// 그대로 두면 "앵커가 화면에 고정된다" 를 검증하는 테스트가 깨진다.
+		// 세기별 동작은 아래 전용 테스트에서 따로 본다.
+		Settings.ZoomToCursorStrength = 1.f;
 		Settings.PanSpeedAtMaxZoom = 6000.f;
 		Settings.PanSpeedMinScale = 0.18f;
 		Settings.EdgeScrollSpeedScale = 2.5f;
@@ -244,7 +248,10 @@ bool FFF_OverviewCameraRig_YawInterpTakesShortestPath::RunTest(const FString& Pa
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_ZoomTowardsKeepsAnchorOnScreen, "FestaFiesta.Camera.Rig.ZoomTowardsKeepsAnchorOnScreen", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_OverviewCameraRig_ZoomTowardsKeepsAnchorOnScreen::RunTest(const FString& Parameters)
 {
+	// 세기 1 일 때만 앵커가 완전히 고정된다. 그보다 낮으면 의도적으로 덜 붙잡는다.
 	FFF_OverviewCameraRig Rig = MakeRig(8000.f);
+	TestEqual(TEXT("전제: 커서 줌 세기가 1 이다"), Rig.GetSettings().ZoomToCursorStrength, 1.f, 0.001f);
+
 	const FVector Anchor(3000.f, 0.f, 0.f);
 
 	const float BeforeRatio =
@@ -503,6 +510,7 @@ bool FFF_OverviewCameraRig_TestHelperPinsPitchInputs::RunTest(const FString& Par
 
 	TestEqual(TEXT("헬퍼는 최소 높이 보정을 꺼둔다"), Settings.MinCameraHeightAboveFocus, 0.f, 0.001f);
 	TestEqual(TEXT("헬퍼는 포화 거리를 지정하지 않는다"), Settings.PitchSaturationArmLength, 0.f, 0.001f);
+	TestEqual(TEXT("헬퍼는 커서 줌 세기를 1 로 고정한다"), Settings.ZoomToCursorStrength, 1.f, 0.001f);
 
 	// 위 둘이 0 이면 피치는 PitchAtMinZoom ~ PitchAtMaxZoom 을 그대로 쓴다.
 	FFF_OverviewCameraRig Rig = MakeRig();
@@ -515,6 +523,42 @@ bool FFF_OverviewCameraRig_TestHelperPinsPitchInputs::RunTest(const FString& Par
 	const FFF_OverviewCameraSettings Constrained = MakeHeightConstrainedSettings();
 	TestTrue(TEXT("보정 헬퍼는 최소 높이를 켠다"), Constrained.MinCameraHeightAboveFocus > 0.f);
 	TestTrue(TEXT("보정 헬퍼는 포화 거리를 지정한다"), Constrained.PitchSaturationArmLength > 0.f);
+	return true;
+}
+
+// 17. 커서 줌 세기가 실제로 앵커를 붙잡는 정도를 조절하는지.
+//
+//     기본값을 1 이 아니라 0.85 로 둔 이유가 있다. 완전히 고정하면 화면 끝을 확대할 때
+//     카메라가 크게 튀어서 멀미가 난다. 그래서 일부러 덜 붙잡는다.
+//     이 테스트는 그 "덜 붙잡음" 이 의도된 것이고 값에 따라 연속적으로 변한다는 걸 고정한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_ZoomToCursorStrengthScalesAnchoring, "FestaFiesta.Camera.Rig.ZoomToCursorStrengthScalesAnchoring", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_ZoomToCursorStrengthScalesAnchoring::RunTest(const FString& Parameters)
+{
+	const FVector Anchor(3000.f, 0.f, 0.f);
+
+	auto FocusAfterOneZoom = [&Anchor](float Strength)
+	{
+		FFF_OverviewCameraSettings Settings = MakeSettings();
+		Settings.ZoomToCursorStrength = Strength;
+
+		FFF_OverviewCameraRig Rig;
+		Rig.Initialize(Settings, FVector::ZeroVector, 8000.f);
+		Rig.ZoomTowards(1.f, Anchor);
+		return Rig.GetTargetState().FocusLocation.X;
+	};
+
+	const double Full = FocusAfterOneZoom(1.f);
+	const double Half = FocusAfterOneZoom(0.5f);
+	const double None = FocusAfterOneZoom(0.f);
+
+	TestEqual(TEXT("세기 0 이면 초점이 안 움직인다"), None, 0.0, 0.01);
+	TestTrue(TEXT("세기가 클수록 앵커 쪽으로 더 당겨진다"), Full > Half && Half > None);
+	TestEqual(TEXT("세기 0.5 는 정확히 절반이다"), Half, Full * 0.5, 0.01);
+
+	// 기본값에서도 앵커 방향으로는 움직여야 한다. 안 움직이면 커서 줌이 꺼진 것이다.
+	FFF_OverviewCameraSettings Default;
+	TestTrue(TEXT("기본 세기가 0 과 1 사이다"),
+		Default.ZoomToCursorStrength > 0.f && Default.ZoomToCursorStrength < 1.f);
 	return true;
 }
 
