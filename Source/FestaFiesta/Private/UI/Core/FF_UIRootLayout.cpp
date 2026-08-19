@@ -26,6 +26,25 @@ bool UFF_UIRootLayout::PopPanel()
 	return PopFromStack(PanelStack, TEXT("PanelStack"));
 }
 
+bool UFF_UIRootLayout::RemoveScreen(UFF_ActivatableScreenBase* Screen)
+{
+	if (!ScreenStack)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("[%s] ScreenStack 바인딩이 없어 화면을 내릴 수 없다."), *GetName());
+		return false;
+	}
+
+	if (!Screen)
+	{
+		// 이미 사라진 화면을 내리려는 것은 오류가 아니다. 레벨이 바뀌면 위젯이 먼저 죽는다.
+		return false;
+	}
+
+	ScreenStack->RemoveWidget(*Screen);
+	return true;
+}
+
 UFF_ActivatableScreenBase* UFF_UIRootLayout::PushToStack(
 	UCommonActivatableWidgetStack* TargetStack,
 	TSubclassOf<UFF_ActivatableScreenBase> WidgetClass,
