@@ -151,6 +151,43 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 | -------------------------------------- | ------------------- | --------------------------------- |
 | `OnDayEnded`                           | `FOnDayEnded`       |(EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달     |
 
+### 환경(날씨·야간) — `UFF_FestivalStageSubsystem` -강민서
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `UFF_FestivalStageSubsystem` (GameInstanceSubsystem)
+- **상태**: `구현완료`
+
+| 멤버                                     | 형                            | 설명                                  |
+| --------------------------------------- | ---------------------------- | ------------------------------------ |
+| `EFF_WeatherType`                       | `enum`                       | `Clear` / `Rain` / `Windy` 3종        |
+| `SelectedWeather`                       | `EFF_WeatherType`            | 현재 선택된 날씨                        |
+| `SetSelectedWeather(EFF_WeatherType)`   |                               | 날씨 선택 요청 (Setup/MorningCheck에서만 허용) |
+| `GetSelectedWeather()`                  | `EFF_WeatherType`            | 현재 선택된 날씨 즉시 조회                |
+| `GetIsNightActive()`                    | `bool`                        | 지금 밤(야간 조명 활성) 상태인지 즉시 조회  |
+| `OnEnvironmentStateChanged`             | `FOnEnvironmentStateChanged` | `(Weather, bIsNight)` — 환경 상태 변경 시 |
+
+### `OnEnvironmentStateChanged`
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `UFF_FestivalStageSubsystem` (GameInstanceSubsystem)
+- **시그니처**: `FOnEnvironmentStateChanged(EFF_WeatherType Weather, bool bIsNight)`
+- **갱신 주기**: 이벤트 — 다음 3개 시점에 발동
+  1. `SetSelectedWeather()` 호출 시 (Setup/MorningCheck에서 선택 즉시, 미리보기 목적)
+  2. Live 진입 시 (그날 확정된 날씨로)
+  3. 밤 조명 트리거 시점 (야간 상태만 true로 바뀌어 재발동)
+- **상태**: `구현완료`
+- **비고**: `EFF_WeatherType`은 세기(Intensity) 개념 없음. 날씨 값의 만족도·이동 영향 해석은 시간 시스템 책임이 아니며, 수신 측(이동·시설·만족도 시스템)이 자체 판단. 구독 직후 현재값이 필요하면 `GetSelectedWeather()`/`GetIsNightActive()` 사용.
+
+**구독 방법**
+```cpp
+GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
+    ->OnEnvironmentStateChanged.AddDynamic(this, &YourClass::YourHandler);
+```
+
+**시각 연출 참고 (민서 자체 구현, UI 무관)**: `BP_WeatherManager`가 이 델리게이트를 구독해 Fog Density·VolumetricCloud·`NS_Rain` 파티클·빗소리 사운드를 날씨별로 조절함. 다른 시스템이 참고할 필요는 없음
+
+
+
 
 ## Zone · 시설 — 한광훈
 
