@@ -58,6 +58,15 @@ bool FFF_FestivalCameraRotationBuildStatePolicyTest::RunTest(const FString& Para
 	TestFalse(
 		TEXT("캐릭터 조종 중에는 회전을 막는다"),
 		FFCameraInputModel::IsRotationAllowed(EFF_CameraInputBlock::CharacterControl, false));
+	TestTrue(
+		TEXT("IA_Pick이 유실된 프레임의 좌클릭은 native fallback으로 복구한다"),
+		FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(false, true));
+	TestFalse(
+		TEXT("IA_Pick이 이미 처리한 좌클릭은 같은 프레임에 중복 방송하지 않는다"),
+		FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(true, true));
+	TestFalse(
+		TEXT("좌클릭 edge가 없으면 fallback 선택을 만들지 않는다"),
+		FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(false, false));
 
 	return true;
 }
