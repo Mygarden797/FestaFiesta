@@ -85,6 +85,18 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		ShouldExitOnEscape(EFF_BuildModeState::Placing));
 	TestTrue(TEXT("Moving의 Esc는 전체 건축 모드를 종료한다"),
 		ShouldExitOnEscape(EFF_BuildModeState::Moving));
+	TestTrue(TEXT("라이브 전환으로 재배치가 닫히면 활성 건축 세션을 자동 종료한다"),
+		ShouldExitWhenReconfigureCloses(EFF_BuildModeState::BuildMode, false));
+	TestFalse(TEXT("아침 점검처럼 재배치 가능 단계에서는 건축 세션을 유지한다"),
+		ShouldExitWhenReconfigureCloses(EFF_BuildModeState::BuildMode, true));
+	TestFalse(TEXT("이미 닫힌 건축 세션은 단계 전환에서 중복 종료하지 않는다"),
+		ShouldExitWhenReconfigureCloses(EFF_BuildModeState::Closed, false));
+	TestTrue(TEXT("Festival Stage와 Zone Phase가 모두 허용할 때만 건축 세션에 진입한다"),
+		CanEnterBuildSession(true, true));
+	TestFalse(TEXT("Live Stage에서는 Zone Phase가 늦게 바뀌어도 건축 진입을 막는다"),
+		CanEnterBuildSession(false, true));
+	TestFalse(TEXT("Zone Phase가 닫히면 재배치 가능 Stage에서도 건축 진입을 막는다"),
+		CanEnterBuildSession(true, false));
 
 	TestTrue(TEXT("설치 시설 철거는 카탈로그 없는 BuildMode에서만 허용한다"),
 		CanRemoveInstalledFacility(EFF_BuildModeState::BuildMode));

@@ -78,8 +78,10 @@ protected:
 
 	/**
 	 * 2026-08-06 결정(A안): **Overview HUD는 ScoreSatisfaction을 표시하지 않는다.**
-	 * Live 중에는 FinaleBonus가 아직 없어 SimSatisfaction과 같은 숫자가 두 번 뜨고,
+	 * Live 중에는 피날레를 아직 사지 않아 보너스가 0이므로 SimSatisfaction과 같은 숫자가 두 번 뜨고,
 	 * 플레이어가 지금 개선할 수 있는 값도 SimSatisfaction뿐이다.
+	 * (피날레 구매는 Day3 MorningCheck 판정이다. 보너스 값 자체는 2026-08-18부터
+	 *  `GetFinaleSatisfactionBonus()`로 읽을 수 있다.)
 	 * ScoreSatisfaction은 Report(분해식)와 Finale 구매 화면(예상치)에서 쓴다.
 	 *
 	 * 이 스텁 HUD는 배선 확인용이라 있으면 표시하고 없어도 통과시킨다.

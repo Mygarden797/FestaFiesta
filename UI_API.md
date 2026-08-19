@@ -197,6 +197,33 @@ Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlot
 
 **UI 사용처**: Overview 시설 상태, 대기열 길이, Morning Check 배치, 실패 사유 토스트
 
+### 시설 선택 · 월드 지점 조회 (2026-08-18 추가)
+
+- **헤더**: `Plugins/FF_ZoneSystem/.../Public/FF_FFZSWorldSubsystem.h`,
+  `FF_FFZSFacilityActor.h`, `FF_FFZSCollision.h`
+- **접근**: `UFFZSWorldSubsystem` / 설치된 `AFFZSFacilityActor`
+- **시그니처**: `AFFZSFacilityActor* FindFacilityAtWorldPoint(const FVector& WorldPoint, FName ZoneId = NAME_None) const`
+- **상태**: `구현완료`
+
+`FindFacilityAtWorldPoint()`는 `BlueprintPure`다. 현재 권위 레지스트리에 등록되어 있고 `WorldPoint`가
+회전된 footprint의 XY와 시설 높이 범위(Z 허용 오차 포함)에 들어가는 시설만 반환한다. `ZoneId`가 비어
+있으면 월드 지점에서 등록 Zone을 먼저 해석하며, Zone이나 시설을 찾지 못하면 `nullptr`를 반환한다.
+footprint가 겹치면 Actor 원점까지 3차원 거리가 가장 가까운 시설을, 거리도 같으면
+`FacilityInstanceId` 문자열 오름차순의 시설을 선택한다.
+
+`AFFZSFacilityActor::SelectionProxy`는 `BlueprintReadOnly`인 선택 전용 Box다. 유효한 Spec을 적용한 뒤
+시설 footprint와 장애물 높이에 맞춰지고, `QueryOnly`·`WorldDynamic`으로 프로젝트 Trace Channel
+`FacilitySelection`만 Block한다. 물리·Navigation·Overlap에는 참여하지 않으며 `VisualMesh`는 계속
+`NoCollision`이고 Navigation에도 영향을 주지 않는다. 유효한 Spec 적용 전 Proxy는 크기 0·`NoCollision`이라
+선택되지 않는다. 프로젝트 채널의 기본 응답은 `Ignore`이므로 일반 `BlockAll` 컴포넌트는 전용 Trace를 막지 않는다.
+
+- C++ Trace는 채널 슬롯을 직접 쓰지 않고 `FFZSCollision::FacilitySelectionTraceChannel`을 사용한다.
+- Blueprint Trace는 이름이 `FacilitySelection`인 프로젝트 채널을 사용한다.
+- `FacilitySelection` Trace가 아무 것도 맞히지 않은 경우에만 호환용 지면 footprint fallback을 시도한다.
+  첫 `Visibility` hit가 `ImpactNormal.Z >= 0.45`인 지면일 때만 그 지점을 조회 API에 전달한다.
+- 전용 채널이 비등록 후보를 맞히거나 등록 Proxy가 외부 `Visibility` 장애물에 가려지면 fallback 없이
+  선택을 거부한다. `Visibility`는 시설 ID 선택 채널이 아니다.
+
 ### 브리지 2종 (2026-08-06 추가)
 
 | 클래스                                  | 역할                                                                             |
@@ -204,8 +231,9 @@ Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlot
 | `UFF_ZoneSystemQueueBridgeSubsystem` | Zone 시설 `FGuid` ↔ Queue `int32` ID 매핑. `TryJoinZoneFacility`가 Party 가입의 단일 진입점 |
 | `UFF_ZoneSystemStageBridgeSubsystem` | `UFF_FestivalStageSubsystem`을 구독해 Zone 변경 단계를 맞춤                               |
 
-**UI는 시설과 대기열을 직접 결합하지 않습니다.** 양쪽을 각각 읽고 UI에서 합치면
-소유권이 흐려집니다. `UFF_FestivalViewModelSubsystem`에서 읽습니다.
+**위젯은 시설과 대기열을 직접 결합하지 않습니다.** 양쪽을 각각 읽고 위젯에서 합치면 소유권이 흐려집니다.
+Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설 정보 패널은
+`UFF_FacilityInfoSubsystem`이 `FFF_FacilityInfoViewData`로 평탄화한 값을 제공합니다.
 
 ### 개발용 플레이테스트 도구 (참고)
 
@@ -215,7 +243,7 @@ Queue 가입 성공 후에는 이 고정 접근점이 아니라 `FFF_OnQueueSlot
 **플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
 Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
 
-### 완성형 시설 건축 카탈로그 (2026-08-12 갱신)
+### 완성형 시설 건축 카탈로그 (2026-08-18 갱신)
 
 - **헤더**: `Public/Building/FF_BuildCatalogSubsystem.h`, `Public/Building/FF_BuildModeSubsystem.h`
 - **접근**: `GameInstanceSubsystem` 카탈로그 + `TickableWorldSubsystem` 건축 모드
@@ -226,25 +254,35 @@ Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 �
 파싱하지 않고 `GetEntries()`/`GetCategoryGroups()`와 `OnCatalogChanged`를 사용한다.
 
 `UFF_BuildModeSubsystem`은 `Closed → BuildMode ↔ CatalogOpen → Placing`과
-`BuildMode → Moving → BuildMode` 상태를 소유한다. 신규 설치는 선택한
-`UFFZSFacilityDefinition::Spec`을, 이동은 기존 액터의 권위 Spec·GUID·현재 회전을
+`BuildMode → Moving → BuildMode` 상태를 소유한다. 건축 세션은
+`UFF_FestivalStageSubsystem::IsReconfigureAllowed()`와 FFZS `ChangePhase`
+(`InitialSetup`/`MorningCheck`)가 모두 허용할 때만 진입할 수 있다. 활성 세션 중 어느 한 정책이
+닫히면 카탈로그·프리뷰·시설 선택·입력 상태를 정리하고 `Closed`로 자동 전환한다.
+
+신규 설치는 선택한 `UFFZSFacilityDefinition::Spec`을, 이동은 기존 액터의 권위 Spec·GUID·현재 회전을
 `AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·여유 공간·
 Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우회하지 않는다.
 
 활성 건축 세션에서는 설치 시설의 footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시한다.
-카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 하단 작업 패널에
-`이동`·`철거`·`취소`가 표시된다. 이동을 시작하면 권위 액터는 기존 위치에 그대로 두고 ghost만 커서를
+카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 공용 우측 시설 정보 패널이
+`Build` 컨텍스트로 열린다. 패널은 시설 정보와 `이동`·`철거` 액션 및 닫기를 제공하며, 패널 위 좌클릭은
+월드 시설 선택 입력으로 전달되지 않는다. 패널 버튼에서 발생한 이동·철거·닫기 요청은 패널의 시설 GUID가
+현재 건축 선택과 일치할 때만 처리한다. 이동을 시작하면 권위 액터는 기존 위치에 그대로 두고 ghost만 커서를
 따라간다. 따라서 우클릭 취소나 검증 실패 때 원위치 복구 명령이 필요 없다. 이동 성공 시 같은 시설 GUID를
 유지한 채 Zone·배치·회전만 원자적으로 갱신한다. 대상이 외부 명령이나 스냅샷 복원으로 바뀌면 열린 작업과
 이동 프리뷰는 자동 취소된다.
 
+카탈로그를 열거나 이동을 시작하거나 닫기 요청·철거 성공·건축 모드 종료가 발생하면 `Build` 선택과 패널을
+함께 닫는다. 재시도 가능한 이동·철거 실패는 선택을 유지하고 같은 패널의 `FeedbackText`와
+`bFeedbackIsError`로 사유를 표시한다.
+
 | 입력 | 동작 |
 | --- | --- |
-| `B` | 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기 |
+| `B` | 재배치 허용 단계에서 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기. 불허 단계에서는 진입하지 않음 |
 | `M` 또는 `이동` 버튼 | 선택 시설의 이동 프리뷰 시작 |
 | `Q`, `E` | 설치/이동 프리뷰를 90도 회전 |
 | `좌클릭` | `BuildMode`에서는 시설 선택, `Placing`에서는 설치, `Moving`에서는 이동 확정 |
-| `Enter` | 선택 작업 패널에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
+| `Enter` | 공용 시설 정보 패널의 건축 선택에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
 | `우클릭` | 시설 선택 취소, 설치는 카탈로그 복귀, 이동은 원본을 건드리지 않고 `BuildMode` 복귀 |
 | `Esc` | 어느 활성 건축 상태에서든 건축 모드 전체 종료 |
 
@@ -252,13 +290,124 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 서브시스템에 전달한다. UI와 PlayerController가 같은 `B`를 모두 관찰한 프레임에는 키 해제 래치가 raw
 입력을 한 번 차단하므로 `CatalogOpen → BuildMode → CatalogOpen` 이중 전환이 발생하지 않는다.
 
-- `Install`·`Move`·`Remove`는 `InitialSetup`/`MorningCheck`에서만 가능하다.
+- 건축 세션 진입은 Festival Stage의 `IsReconfigureAllowed()`와 FFZS Change Phase의
+  `InitialSetup`/`MorningCheck` 조건을 모두 만족해야 한다.
+- 활성 세션 중 둘 중 하나라도 재배치를 금지하면 건축 모드가 자동 종료된다.
+- `Install`·`Move`·`Remove` 명령도 FFZS에서 `InitialSetup`/`MorningCheck` 정책을 다시 검증한다.
 - `Active` 시설 또는 FFZS/프로젝트 Queue에 이용객이 남은 시설은 이동·철거할 수 없다. 자동 폐장이나
   강제 배출은 하지 않으며, 운영 종료 후 Queue가 비워진 것을 확인해야 한다.
 - 같은 위치·같은 방향 이동은 revision과 상태를 불필요하게 바꾸지 않도록 UI에서 차단한다.
 - 이동 성공 뒤 시설 상태는 `Validated`가 되므로 운영을 재개하려면 기존 개장 절차를 다시 수행한다.
 - 상단 UI는 `건축`/`스킨` 2탭이지만, 현재 `스킨` 탭은 데이터 모델이 없어 준비중 상태다.
 - 현재 등록된 실제 시설 정의가 1개뿐이므로, 나머지 카드는 규칙에 맞는 Data Asset을 추가할 때 자동 생성된다.
+
+### 설치 시설 공용 정보 패널 (2026-08-18 추가)
+
+- **헤더**: `Public/UI/Facility/FF_FacilityInfoTypes.h`, `FF_FacilityInfoSubsystem.h`,
+  `FF_FacilityInfoPanel.h`
+- **접근**: `UFF_FacilityInfoSubsystem` (`TickableWorldSubsystem`)
+- **기본 WBP**: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C`
+- **갱신 주기**: 선택 즉시, 선택 시설의 non-Remove World Change 다음 Tick, 선택 중 0.25초 간격.
+  Remove·World Snapshot 복원은 즉시 선택 해제
+- **상태**: `구현완료`
+
+건축 모드와 Live가 같은 비모달 우측 패널을 사용한다. 서브시스템이 Zone·Queue·Economy·Stage·Catalog를
+읽어 불변 표시 스냅샷 `FFF_FacilityInfoViewData`로 평탄화하며, WBP는 게임플레이 서브시스템을 직접
+조회하거나 값을 다시 계산하지 않는다. 0.25초 샘플링은 이 coordinator 내부에만 한정되며 위젯은 폴링하지 않는다.
+
+**`EFF_FacilityInfoContext`**
+
+| 값 | 의미 |
+| --- | --- |
+| `Build` | 건축 선택. 이동·철거 액션을 노출할 수 있음 |
+| `Live` | Live 운영 정보. `CurrentStage == Live`일 때만 선택 가능 |
+| `None` | 선택 없음. Blueprint enum 목록에서는 숨김 |
+
+**`UFF_FacilityInfoSubsystem` Blueprint API**
+
+| 시그니처 | 계약 |
+| --- | --- |
+| `bool PrimePanel(APlayerController* OwningController)` | LocalPlayer용 숨김 WBP를 미리 로드·생성. PlayerController 자동 바인딩 때 호출되며 필요하면 명시적으로 먼저 호출할 수 있음. 실패하면 `false` |
+| `bool SelectFacility(APlayerController* OwningController, AFFZSFacilityActor* Facility, EFF_FacilityInfoContext Context)` | 현재 Zone 레지스트리에 등록된 유효 시설만 선택하고 패널을 엶 |
+| `bool SelectFacilityAtWorldPoint(APlayerController* OwningController, const FVector& WorldPoint, EFF_FacilityInfoContext Context, FName ZoneId = NAME_None)` | `FindFacilityAtWorldPoint()`로 찾은 뒤 선택 |
+| `void ClearSelection()` | 선택·피드백·썸네일 세션을 비우고 패널을 접음 |
+| `AFFZSFacilityActor* GetSelectedFacility() const` | 현재도 등록된 선택 Actor. 없거나 무효면 `nullptr` |
+| `FGuid GetSelectedFacilityId() const` | 현재 선택 GUID |
+| `EFF_FacilityInfoContext GetSelectionContext() const` | 현재 `Build`/`Live`/`None` 컨텍스트 |
+| `bool HasSelection() const` | 유효한 선택 GUID 보유 여부 |
+| `bool IsPointerOverPanel() const` | 보이는 카드 위에 포인터가 있는지. 월드 좌클릭 관통 방지용 |
+| `OnSelectionChanged(FGuid FacilityInstanceId, EFF_FacilityInfoContext Context)` | 실제 ID/Context 변경 또는 선택 해제 때만 발행하는 `BlueprintAssignable` 이벤트 |
+
+`OnSelectionChanged`를 구독한 직후에는 `HasSelection()`·`GetSelectedFacilityId()`·
+`GetSelectionContext()`로 현재값을 한 번 읽는다. 같은 시설과 같은 Context를 다시 선택하면 화면은 새로 고치지만
+이벤트를 중복 발행하지 않으며 기존 피드백을 비우고 0.25초 타이머를 다시 시작한다. 선택 해제 이벤트는
+무효 GUID와 `None`을 전달한다. 선택 시설 철거,
+World Snapshot 복원, Context 무효화 때도 선택이 자동 해제된다.
+
+`Live` 선택은 `AFF_FestivalPlayerController::OnActorPicked`를 받은 뒤 전용 `FacilitySelection` Trace로
+해석한다. 전용 Trace가 아무 것도 맞히지 않고 첫 `Visibility` hit가 걸을 수 있는 지면일 때만 footprint
+fallback을 시도한다. 비등록 후보를 맞히거나 외부 장애물에 가린 시설은 fallback 없이 거부한다. 빈 곳을
+클릭하면 기존 Live 선택을 닫는다.
+
+제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
+FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
+시설 상태와 점유 여부를 다시 검증한다. Stage가 재배치를 금지하면 `OnStageChanged` 또는 다음 Tick에서
+세션 자체를 종료한다. 단, 공개 `SelectFacility(..., Build)` 함수 자체는 Stage/Phase 진입을 막지 않으므로
+제품 건축 흐름을 우회하는 진입점으로 사용하지 않는다.
+
+**`FFF_FacilityInfoViewData` (`BlueprintType`, 전 필드 `BlueprintReadOnly`)**
+
+| 묶음 | 필드 |
+| --- | --- |
+| 식별·Context | `FacilityInstanceId`, `Context`, `ContextTitle` |
+| 시설 표시 | `DisplayName`, `CategoryText`, `ZoneText`, `FacilityStateText`, `FootprintText`, `ClearanceText` |
+| 가격·정적 사양 | `InstallCostText`, `RecoveryCostText`, `QueueCapacityText`, `ServiceDurationText`, `Thumbnail`, `ThumbnailPlaceholderText` |
+| 운영·Queue | `OperationStateText`, `WaitingPartiesText`, `OccupancyText`, `RemainingServiceText`, `ExpectedWaitText`, `ThroughputText` |
+| 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `FeedbackText`, `bFeedbackIsError` |
+
+문자열 필드는 모두 표시용 `FText`다. 포맷터가 만든 수치에는 단위와 지역화된 숫자 포맷이 적용되지만,
+`ZoneText`·`DisplayName`·`FeedbackText`의 현지화 여부는 원본 데이터에 따른다. 예상 대기는 1인 진입
+기준이며 0초는 `바로 이용 가능`, 60초 미만은 `1분 미만`, 그 이상은 분 단위 올림, 도달 불가·비정상 값은
+`계산 불가`로 표시한다. 처리율은 `분당 x.x명`이다. Queue 미등록은 `준비 중`, Queue 시스템 부재는
+`사용 불가`로 구분한다.
+
+`bCanMove`와 `bCanRemove`는 같은 판정을 쓴다: `Build` Context이고, FFZS Phase가
+`InitialSetup`/`MorningCheck`이며, Queue가 연결되지 않았거나 `OccupiedMemberCount <= 0`이고,
+Actor의 `CanMoveOrRemove()`가 참이어야 한다. 버튼 상태는 안내용이며 실제 명령 경계가 다시 검증한다.
+
+**`UFF_FacilityInfoPanel` WBP 계약**
+
+- Blueprint 함수는 `ApplyViewData(const FFF_FacilityInfoViewData&)`, `SetPanelOpen(bool)`,
+  `IsPointerOverInteractivePanel()` 3종이다. 일반 호출자는 패널을 직접 만들지 않고 서브시스템을 사용한다.
+- 루트는 `CanvasPanel` + `SelfHitTestInvisible`, 실제 카드는 우측 중앙 + AutoSize다. 카드 밖 클릭은 월드로
+  통과하고 카드 좌클릭과 버튼 입력은 소비한다. 우클릭은 건축 선택 취소로 전달될 수 있다.
+- 다음 27개 `BindWidget` 이름을 유지한다.
+
+```text
+Border_Panel, Button_Close, Button_Move, Button_Remove, Image_Thumbnail,
+Text_ThumbnailPlaceholder, Panel_BuildSection, Panel_LiveSection, Text_Context,
+Text_FacilityName, Text_Category, Text_Zone, Text_FacilityState, Text_RelocationWarning,
+Text_Footprint, Text_Clearance, Text_InstallCost, Text_RecoveryCost, Text_QueueCapacity,
+Text_ServiceDuration, Text_OperationState, Text_WaitingParties, Text_Occupancy,
+Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
+```
+
+에디터 명령 `FF.BuildFacilityInfoUMG`는 에셋이 없을 때만 기본 WBP를 생성한다. 기존 디자이너 에셋은
+덮어쓰지 않고 위 상속·배치·BindWidget 계약만 검증한다.
+
+**C++ 전용 어댑터 계약**
+
+- `UFF_FacilityInfoPanel`의 `FSimpleMulticastDelegate OnMoveRequested`·`OnRemoveRequested`·
+  `OnCloseRequested`는 인자가 없다. 이동·철거는 현재 ViewData가 `Build`이고 해당 `bCan*`가 참일 때만,
+  닫기는 항상 방송한다.
+- `UFF_FacilityInfoSubsystem`의 `FFF_OnFacilityInfoActionRequested(FGuid)` 3종은 패널 이벤트를 선택 GUID로
+  변환한다. 이동·철거·닫기 모두 `Build` 선택에서만 외부로 방송하며, 닫기는 방송 후 같은 선택을 해제한다.
+- `SetFeedback(const FText&, bool)`은 선택이 없으면 no-op이고, `ClearSelectionIfMatches(FGuid, Context)`는
+  호출자 소유 선택만 닫는다. `static FSoftClassPath GetDefaultPanelClassPath()`,
+  `const FFF_FacilityInfoViewData& GetCurrentViewData() const`, `FFFacilityInfoModel` 포맷 함수도 C++ 전용이다.
+
+위 항목은 BlueprintAssignable API로 간주하지 않는다. Soft Class로 로드하는 WBP가 Shipping에서도
+포함되도록 `/Game/FestaFiesta/UI/Facility`은 `DirectoriesToAlwaysCook`에 등록되어 있다.
 
 ---
 
@@ -347,6 +496,8 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **UI 사용처**: NPC 클릭 시 "왜 저기로 갔는가" 표시
 
 `AllCandidateScores`에 후보별 항별 점수가 다 들어 있어 그대로 표시하면 됩니다.
+⚠️ **지금 값이 들어오는 항은 `AttractionTerm`·`DistanceCostTerm`·`DensityCostTerm` 셋뿐입니다** (2026-08-18 확인).
+취향·Need·대기시간은 개체별 상태를 붙이는 작업이 남아서 **0으로 나옵니다** — 화면 버그가 아닙니다.
 
 | 필드                                                      | 뜻             |
 | ------------------------------------------------------- | ------------- |
@@ -368,16 +519,11 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **스펙**: `data/metadata/spec/reservation_program_spec.md`
 - **상태**: 규칙·자료구조 `구현완료`. **UI가 읽을 창구는 아직 없습니다**
 
-`FFF_ProgramReservation`·`FFF_ReservationCandidateGroup`이 `BlueprintType` + `BlueprintReadOnly`라
-블루프린트에서 값은 볼 수 있지만, **예약 목록을 돌려주는 서브시스템 Getter가 없습니다.**
-현재 공개된 것은 정적 규칙 클래스(`FFF_ProgramReservationRules`)입니다.
+`FFF_ProgramReservation`·`FFF_ReservationCandidateGroup`이 `BlueprintType` + `BlueprintReadOnly`라 값은 볼 수
+있지만 **예약 목록을 돌려주는 Getter가 없습니다.** 지금 공개된 것은 정적 규칙 클래스(`FFF_ProgramReservationRules`)뿐입니다.
 
-**이 시스템이 UI 작업을 새로 만듭니다 — 담당은 백종태입니다 (2026-08-12 확인).**
-
-> 플레이어가 프로그램을 사는 시점은 Setup·MorningCheck이고, 그때 NPC는 아직 스폰되지 않았다.
-> 그래서 예약을 개체에 붙이지 않고 슬롯을 먼저 만들어 두고 그룹을 배정한다. — 헤더 주석
-
-즉 **Setup·MorningCheck에 유료 프로그램 구매·예약 화면**이 필요합니다. 8/14 이후 일정에 넣습니다.
+**Setup·MorningCheck에 유료 프로그램 구매 화면이 필요하고 담당은 백종태입니다** (2026-08-12 확인).
+경제 쪽 구매 처리는 하루 경계(2026-08-18 완료) 다음 순서라 이번 주에 붙습니다.
 
 **요청 (백종태 → 김시리)** — 화면을 만들려면 다음이 필요합니다. 형태는 맞춰 드립니다.
 
@@ -389,33 +535,100 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
 게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
 
-### Gold·매출 API 구현 완료 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-12 · 2026-08-13 갱신)
-
-`UFF_FestivalProgressionSubsystem`의 Gold·매출 읽기 API가 구현됐습니다.
+### 경제 값 5종 — ViewModel 연결 요청 (김시리 → 백종태, 2026-08-18 정리)
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- `GetGold()` — 현재 잔액 `int32`, 0 이상·상한 없음
-- `CanAfford(int32 CostGold)` — 구매 가능 판정. UI가 `GetGold() >= 가격`을 직접 계산하지 않습니다
-- `OnGoldChanged(int32 NewGold)` — 값이 실제로 바뀔 때만 발행
-- 🆕 `GetTotalRevenue()` / `OnTotalRevenueChanged` — 축제 전체 누적 매출. **줄어들지 않습니다**
-- 🆕 `GetTodayRevenue()` / `OnTodayRevenueChanged` — 오늘 매출. **누적값에서 빼서 만들지 않습니다** — 따로 받으셔야 합니다
+- **상태**: 원본 API 전부 `구현완료`. **ViewModel 연결 대기** — 여기 한 곳만 붙이면 화면에 뜹니다
 
-**종태님께 요청드릴 연결 작업**
+| 값 | Getter | 델리게이트 | 단위·범위 | 화면 |
+|---|---|---|---|---|
+| 잔액 | `GetGold()` | `OnGoldChanged` | Gold, 0 이상·상한 없음 | 상단 바, 구매 판정 |
+| 누적 매출 | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | 상단 바 |
+| 오늘 매출 | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | Report |
+| 🆕 밀린 임대료 | `GetTotalArrears()` | `OnTotalArrearsChanged` | Gold, 0 이상 | 상단 바 자금난 경고, Report |
+| 🆕 오늘 일하는 인원 | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 명, 6~12 | Event 배치, 아침 고용 화면 |
 
-1. `UFF_FestivalViewModelSubsystem` 초기화 시 `UFF_FestivalProgressionSubsystem`을 가져와
-   `GetGold()`/`GetTotalRevenue()`/`GetTodayRevenue()`로 초기값을 동기화해 주세요.
-2. `OnGoldChanged`·`OnTotalRevenueChanged`·`OnTodayRevenueChanged`를 구독해 ViewModel의 동명 값과
-   델리게이트를 갱신하고, Deinitialize에서 반드시 구독 해제해 주세요. 셋 다 같은 모양(Getter+델리게이트 쌍)입니다.
-3. 구매 버튼은 ViewModel에 `CanAfford(int32 CostGold)` 전달 함수를 두고 원본 판정을 그대로 사용해 주세요.
-   위젯이 ProgressionSubsystem을 직접 참조하거나 잔액과 가격을 직접 비교하지 않습니다.
-4. 셋 다 소스 델리게이트가 있으므로 0.1초 폴링 대상에서 제외해도 됩니다.
+**연결 작업 4가지**
 
-🆕 **원인별·부스별 분해도 내부적으로 쌓이기 시작했습니다 (2026-08-13, `FFF_DayLedger`)** — `TrySpend`/`AddRevenue`를
-부를 때 지출·매출 원인(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음)과 매출은 부스 `FacilityId`까지
-같이 기록됩니다. **다만 지금은 서브시스템 내부에만 있고 UI가 읽을 Getter가 아직 없습니다** — Report 화면에서
-"원인별 표"·"부스별 매출 표" 중 어떤 형태로 필요하신지 알려주시면 그 모양대로 Getter를 만들겠습니다
-(예: `TArray<FFF_SpendBreakdownRow>` 같은 UI 친화 구조체로 감싸는 것도 가능합니다).
+1. ViewModel 초기화 때 위 5개 Getter로 초기값을 한 번 동기화해 주세요.
+2. 델리게이트 5개를 구독해 ViewModel 값을 갱신하고, `Deinitialize`에서 구독을 해제해 주세요.
+   다섯 개 다 같은 모양(Getter + 변경 델리게이트 쌍)이고 **값이 실제로 바뀔 때만 발행됩니다.**
+3. 구매 버튼은 `CanAfford(int32 CostGold)`를 그대로 중계해 주세요. 위젯이 잔액과 가격을 직접 비교하지 않습니다.
+4. 다섯 개 다 델리게이트가 있으니 0.1초 폴링 대상에서 빼도 됩니다.
+
+- 인원은 **기본 팀(`GetBaseStaffCount()`, 무페이·해고 불가) + 오늘 쓴 알바(`GetTemporaryStaffCount()`)** 로
+  쪼개서 보여주실 수 있습니다. 두 숫자 다 데이터 애셋 값이라 밸런싱으로 바뀝니다
+- **오늘 매출을 누적 매출에서 빼서 만들지 마세요.** 따로 들고 있는 값입니다 — 하루 경계에서 오늘 매출만 0이 되고
+  누적은 남기 때문에 빼서 만들면 날짜가 바뀔 때마다 어긋납니다
+
+### 🔴 화면 만들 때 알아야 하는 것 5가지 (2026-08-18)
+
+**1. "다음 날" 버튼이 이제 돈을 걷습니다. 종태님이 고치실 것은 없습니다.** 이미 만들어 두신
+`RequestAdvanceToNextDay()`가 하루치 임대료 2,400을 걷고, 오늘 매출을 0으로 되돌리고, 어제 쓴 알바를 퇴근시킵니다.
+값 4개(잔액·밀린 임대료·오늘 매출·인원)가 한꺼번에 바뀌고 전부 델리게이트가 옵니다.
+
+**2. 잔액을 UI가 직접 계산하지 말아 주세요.** 버튼 직후에 `잔액 − 2,400`을 계산하면 어긋납니다 — 잔액이 부족하면
+실제로 빠지는 금액은 2,400이 아니라 "있는 만큼"입니다. 델리게이트가 주는 값을 그리시면 항상 맞습니다.
+
+**3. 게임을 켜면 잔액이 이미 7,600입니다.** 1일차는 셋업으로 시작해 아침 단계를 지나지 않으므로 축제 시작 시점에
+정산됩니다. 초기 자금 10,000이 화면에 안 보이는 것이 정상입니다(3일 임대료 합계 7,200 = 초기 자금의 72%).
+
+**4. 잔액이 부족하면 "밀린 임대료"가 생깁니다.** 시설은 안 사면 되지만 축제장 임대료는 거절할 수가 없어서,
+있는 만큼만 내고 못 낸 금액을 따로 적어 둡니다. 이자는 없습니다.
+
+- **잔액은 음수가 되지 않습니다.** "잔액 −1,400"이 아니라 잔액 0 + 밀린 임대료 1,400입니다
+- **`GetGold()`만 보면 자금난이 안 보입니다.** 잔액 0은 "다 썼다"일 수도 "빚까지 있다"일 수도 있어서,
+  경고는 **밀린 임대료 > 0** 으로 판정해 주세요
+- 날짜가 바뀌어도 **사라지지 않고 쌓입니다.** 매일 아침 0으로 돌아가는 건 오늘 매출과 알바뿐입니다
+- 축제가 끝났을 때 남은 미납을 어떻게 처리할지는 **아직 안 정했습니다.** 결산 화면에 필요하면 같이 정하겠습니다
+
+**5. 밀린 임대료가 있는 동안에는 매출이 들어와도 잔액이 안 늘어납니다.** 들어온 돈이 잔액에 쌓이기 전에 빚을 먼저
+갚기 때문입니다. 예: 밀린 임대료 1,400인 상태에서 매출 500이 들어오면 매출 2종과 `OnTotalArrearsChanged`(1,400 →
+900)는 발행되지만 **`OnGoldChanged`는 발행되지 않습니다**(잔액 0 → 0).
+
+- 값이 바뀔 때만 발행하는 규칙 때문에 **"매출은 올랐는데 잔액 이벤트가 안 오는" 구간이 정상적으로 존재합니다.**
+  누락이 아닙니다
+- 플레이어에게는 "매출이 늘었는데 돈이 안 늘었다"로 보입니다. **밀린 임대료를 잔액 옆에 상시 노출**하시면 숫자가
+  줄어드는 게 보여서 설명이 됩니다(0일 때는 숨기셔도 됩니다)
+- `OnTotalArrearsChanged`는 하루 경계뿐 아니라 **매출·철거 환급이 들어오는 아무 시점에나** 옵니다
+- ⚠️ 같은 이유로 **Report의 임대료 지출이 2,400을 넘을 수 있습니다.** 어제 못 낸 몫을 오늘 갚으면 오늘 임대료에
+  합산됩니다(늦게 나간 임대료라 별도 항목을 만들지 않았습니다). 하루 임대료를 2,400으로 박아두지 마세요
+
+⚠️ 헤더에 `BeginNewDay()`가 보이는데 **UI에서 부르지 말아 주세요.** 날짜를 넘기는 쪽이 둘이 되면 하루에 임대료가
+두 번 빠집니다. 부르는 곳은 경제 쪽에서 한 곳으로 잡아 두었습니다.
+
+### 🆕 피날레 구매 화면이 필요합니다 (2026-08-18, 담당 백종태)
+
+Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 쪽은 다 됐습니다.
+
+- **버튼 활성화**: `UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow()` — Day3 MorningCheck이고
+  아직 안 샀을 때만 `true`. **표시용이고 구매를 막지는 않습니다**(`CanSkipCurrentStage`와 같은 성격)
+- **목록**: 등급·비용·보너스는 `GetDefinition()->FinaleTiers`에 있습니다.
+  C/B/A/S = 2,000/4,000/6,000/8,000 Gold, 만족도 +5/+12/+20/+30. UI가 쓰기 편한 Getter가 필요하시면 만들겠습니다
+- **구매**: `TryPurchaseFinale(EFF_FinaleGrade)` → `EFF_FinalePurchaseResult`.
+  실패 이유가 한글 `DisplayName`으로 들어 있어서 그대로 화면에 쓰실 수 있습니다
+  (`Gold 부족` / `이미 구매했다` / `구매할 수 없는 등급` 등)
+- **구매 결과**: `GetPurchasedFinaleGrade()` + `OnFinaleGradeChanged(EFF_FinaleGrade)`. 안 샀으면 `None`
+
+⚠️ **구매는 축제당 1회이고 되돌릴 수 없습니다.** 등급 변경·취소·환불이 없으니 **확인창을 넣어 주세요.**
+두 번째 시도는 `이미 구매했다`로 거부됩니다.
+
+**만족도 보너스는 Gold가 아닙니다.** `GetFinaleSatisfactionBonus()`가 0~100 척도의 가산점(A면 20)을
+돌려주는데, 매출에도 잔액에도 섞이지 않습니다. 최종 평가 점수(`ScoreSatisfaction` = 관객 만족도 + 이 보너스)의
+합산은 관객 만족도가 아직 없어서 붙이지 않았습니다 — 지금은 "몇 점짜리를 샀는가"까지만 보여드릴 수 있습니다.
+
+밀린 임대료가 있으면 잔액이 0이라 자연히 못 삽니다. 이때 실패 이유는 `Gold 부족`으로 옵니다.
+
+### 아직 만들 것 — 형태만 정해 주세요
+
+**아침 고용 화면**은 판정이 이미 있습니다. `GetAffordableTemporaryStaffCount()`(지금 잔액으로 가능한 최대 인원,
+값을 바꾸지 않으니 슬라이더 최대치·버튼 판정에 그대로) + `TryHireTemporaryStaff(int32 인원)`.
+**부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 전부 거부되고 아무것도 바뀌지 않습니다. 실패 이유
+(돈 부족 / 하루 상한 초과)를 화면에 띄우시려면 말씀만 주세요, 지금은 `true`/`false`만 돌려줍니다.
+
+**Report 드릴다운**은 지출·매출이 원인별(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음), 매출은
+부스별로도 쌓이고 있습니다. UI Getter를 아직 안 만들었으니 어떤 표로 필요하신지 알려주시면 그 모양대로 만들겠습니다.
 
 **답변 (백종태, 2026-08-19) — 둘 다 필요합니다.** 프로토타입에서 결산 화면을 실제로 만들어 보니
 두 표가 같은 화면에 나란히 들어갑니다.
@@ -434,10 +647,17 @@ struct FFF_LedgerRow { FText DisplayName; FName ReasonId; int32 Amount; };
 ```
 
 한 가지만 더 — **하루 경계에서 `DayLedger` 가 리셋될 때 직전 날의 값을 UI가 읽을 수 있어야 합니다.**
-결산 화면은 방금 끝난 하루를 보여주는데, `BeginNewDay` 가 먼저 돌면 표가 비어 버립니다.
-프로토타입에서는 정산 시점에 스냅샷을 떠서 피했습니다.
+결산 화면은 방금 끝난 하루를 보여주는데, `RequestAdvanceToNextDay()` 가 먼저 돌면 표가 비어 버립니다.
+위 4번 설명대로 그 버튼이 이제 정산까지 하므로 더 확실해졌습니다.
+프로토타입에서는 정산 시점에 스냅샷을 떠서 피했습니다 — `GetLastDayLedger()` 같은 것이 있으면 가장 깔끔합니다.
 
-아직 없는 경제 값은 일차 결과(등급 산출)와 저장 API입니다.
+⚠️ **임대료가 2,400 을 넘을 수 있다는 점(위 5번)을 원장 표에 반영하겠습니다.** 프로토타입은 하루 임대료를
+2,400 고정으로 그리고 있어서 미납 상환이 합산되면 어긋납니다. 원장 값을 그대로 받아 그리도록 고치겠습니다.
+
+**시설 철거 환급은 매출이 아닙니다** (2026-08-13). 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
+`OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
+
+아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
 
 ---
 
@@ -450,8 +670,9 @@ struct FFF_LedgerRow { FText DisplayName; FName ReasonId; int32 Amount; };
 - **상태**: **`스텁`** — 지표 4종은 하드코딩 더미. Stage·Day는 진짜 값
 - **역할**: 위 모든 소스를 UI가 쓰기 좋은 형태로 합쳐서 제공
 
-UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 보지 않습니다.
-각 모듈이 바뀌어도 위젯을 안 고치게 하기 위해서입니다.
+Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**하고 원본 시스템을 직접 보지 않습니다.
+각 모듈이 바뀌어도 위젯을 안 고치게 하기 위해서입니다. 설치 시설 정보 WBP는 별도 예외 경로로,
+`UFF_FacilityInfoSubsystem`이 주입한 `FFF_FacilityInfoViewData`만 렌더링하며 원본 시스템은 직접 조회하지 않습니다.
 
 | 값                 | Getter                                | 델리게이트                        | 현재        |
 | ----------------- | ------------------------------------- | ---------------------------- | --------- |
@@ -466,7 +687,9 @@ UI 위젯은 **이 서브시스템만 참조**하고 다른 시스템을 직접 
 
 ### Command (2026-08-11 신설)
 
-**위젯은 다른 시스템의 함수를 직접 부르지 않습니다.** 쓰기 요청은 전부 여기를 거칩니다(원칙 1).
+**이 ViewModel을 사용하는 위젯은 다른 시스템의 함수를 직접 부르지 않습니다.** 아래 쓰기 요청은 전부
+여기를 거칩니다(원칙 1). 시설 정보 패널의 이동·철거는 `UFF_FacilityInfoSubsystem`의 C++ 이벤트를 거쳐
+`UFF_BuildModeSubsystem` 명령 경계로 전달됩니다.
 낙관적 갱신을 하지 않으므로, 호출한 쪽이 화면을 직접 바꾸지 말고 결과 이벤트를 기다립니다.
 
 | Command                     | 활성 조건 Getter          | 위임 대상                                 |
@@ -579,7 +802,8 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 🆕 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ⚠️ 내부 집계만 있음 | Report 드릴다운. UI Getter는 형태 협의 후 추가 |
 | 🆕 **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ⚠️ 내부 집계만 있음 | Report — 부스별 수익 표 |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
-| Staff 보유·가용 인원                                | 김시리       | ❌ 없음      | Event 배치 UI                                                        |
+| Staff 보유·가용 인원                                | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Event 배치 UI, MorningCheck 고용 화면 |
+| 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 상단 바 자금난 경고, Report |
 | `CauseId` 롤업                                  | 김시리       | ⚠️ 창구만 있음 | Report 드릴다운 (AT-005) — `UFF_NpcNeedMetricsSubsystem`이 원본, 채우는 쪽 대기 |
 | 저장 슬롯 목록                                      | 김시리       | ❌ 없음      | 플레이 허브                                                             |
 
@@ -626,6 +850,8 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |
 | 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
 | 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
+| 2026-08-18 | 김시리 | 🆕 **피날레 구매가 구현됐습니다** — Day3 MorningCheck 구매 화면이 필요합니다(담당 백종태). 버튼 활성화는 `CanPurchaseFinaleNow()`, 구매는 `TryPurchaseFinale()`이고 실패 이유가 한글로 옵니다. **1회 구매·변경 불가라 확인창이 필요합니다.** 만족도 보너스는 Gold가 아니고 평가 점수 합산은 관객 만족도가 생길 때 붙입니다 |
+| 2026-08-18 | 김시리 | 🆕 **"다음 날" 버튼이 이제 하루치 임대료를 정산합니다** — `RequestAdvanceToNextDay()`를 누르면 잔액·밀린 임대료·오늘 매출·인원 4개 값이 바뀝니다(전부 기존 델리게이트로 통지). 종태님 쪽 수정은 없고, 버튼 직후 UI가 잔액을 직접 계산하지만 않으면 됩니다. 문서에 빠져 있던 밀린 임대료(`GetTotalArrears`)와 인원(`GetTotalStaffCount`) 2종 추가 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
 | 2026-08-19 | 강민서 | `OnDayEnded` 델리게이트 신설. AdvanceToNextDay() 호출 시 방금 끝난 날짜와 그날 Live 진행 시간을 broadcast. 이월 데이터(정비/청결 등) 계산은 수신 측(광훈/시리) 담당 |
 | 2026-08-19 | 백종태 | 전체 사이클 UI 프로토타입(타이틀→피날레→최종결산)을 한 바퀴 돌려 보고 **없어서 더미로 채운 것 8건**을 "UI가 필요한데 아직 없는 것"에 추가. `FFF_DayLedger` 노출 형태 질문에 회신(원인별 표·부스별 표 **둘 다** 필요, 환급은 분리, 하루 경계 스냅샷 필요). 시설 유지비에 대응하는 `EFF_SpendReason` 부재 보고 |

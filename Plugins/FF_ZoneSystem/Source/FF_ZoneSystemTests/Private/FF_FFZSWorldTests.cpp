@@ -9,6 +9,8 @@
  // 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
  // 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
  // 7) Zone/Facility Read Model의 공간 메타데이터 값 복사 계약.
+ // 8) 월드 지점의 등록 Facility 조회와 거리·InstanceId 기반 결정적 겹침 선택.
+ // 9) 선택 Proxy의 크기와 전용 Trace/비물리 충돌 계약.
  
  //각 테스트는 transient Editor World를 사용하고 설정 CDO를 RAII로 복구한다. 실제 Dadaepo 맵,
  // Production Nav/Economy Adapter 또는 성능 수치를 검증하는 테스트는 아니다.
@@ -22,8 +24,11 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/SplineComponent.h"
+#include "Engine/CollisionProfile.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/Actor.h"
+#include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -416,6 +421,224 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     const FFFZSCommandResult RestoredReplay = Subsystem->ExecuteCommand(InstallFirst);
     TestTrue(TEXT("Command 멱등성이 저장/복원 후에도 유지된다"), RestoredReplay.bSucceeded && RestoredReplay.bWasDuplicateReplay);
     TestEqual(TEXT("복원 후 Replay는 현재 Revision을 변경하지 않는다"), Subsystem->GetWorldRevision(), int64(8));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSWorldFacilityLookupAtWorldPointTest,
+    "FF_ZoneSystem.Integration.World.FacilityLookupAtWorldPoint",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("자동화 테스트 World"), World))
+    {
+        return false;
+    }
+
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!TestNotNull(TEXT("권위 World Subsystem"), Subsystem))
+    {
+        return false;
+    }
+
+    AFFZSFacilityActor* UninitializedFacility = World->SpawnActor<AFFZSFacilityActor>();
+    if (!TestNotNull(TEXT("미초기화 시설 Actor"), UninitializedFacility) ||
+        !TestNotNull(TEXT("미초기화 시설 선택 Proxy"),
+            UninitializedFacility ? UninitializedFacility->SelectionProxy.Get() : nullptr))
+    {
+        return false;
+    }
+    TestEqual(TEXT("유효 Spec 전에는 선택 Proxy 충돌이 꺼져 있다"),
+        UninitializedFacility->SelectionProxy->GetCollisionEnabled(),
+        ECollisionEnabled::NoCollision);
+    TestTrue(TEXT("유효 Spec 전에는 선택 Proxy 크기가 0이다"),
+        UninitializedFacility->SelectionProxy->GetUnscaledBoxExtent().IsNearlyZero());
+    UninitializedFacility->Destroy();
+
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("조회 테스트 Zone"), Zone) ||
+        !TestTrue(TEXT("조회 테스트 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    const FGuid HigherFacilityId(0, 0, 0, 2);
+    const FGuid LowerFacilityId(0, 0, 0, 1);
+    FFFZSGridPlacement HigherPlacement;
+    HigherPlacement.OriginCell = FIntPoint(1000, 1000);
+    FFFZSCommand InstallHigher = UFFZSGridLibrary::MakeInstallCommand(
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
+        ZoneId,
+        HigherPlacement,
+        0);
+    InstallHigher.FacilityInstanceId = HigherFacilityId;
+    if (!TestTrue(TEXT("높은 InstanceId Facility가 먼저 설치된다"),
+        Subsystem->ExecuteCommand(InstallHigher).bSucceeded))
+    {
+        return false;
+    }
+
+    FFFZSGridPlacement LowerPlacement;
+    LowerPlacement.OriginCell = FIntPoint(4000, 1000);
+    FFFZSCommand InstallLower = UFFZSGridLibrary::MakeInstallCommand(
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
+        ZoneId,
+        LowerPlacement,
+        1);
+    InstallLower.FacilityInstanceId = LowerFacilityId;
+    if (!TestTrue(TEXT("낮은 InstanceId Facility가 나중에 설치된다"),
+        Subsystem->ExecuteCommand(InstallLower).bSucceeded))
+    {
+        return false;
+    }
+
+    AFFZSFacilityActor* HigherFacility = Subsystem->FindFacility(HigherFacilityId);
+    AFFZSFacilityActor* LowerFacility = Subsystem->FindFacility(LowerFacilityId);
+    if (!TestNotNull(TEXT("높은 InstanceId Facility"), HigherFacility) ||
+        !TestNotNull(TEXT("낮은 InstanceId Facility"), LowerFacility))
+    {
+        return false;
+    }
+
+    UBoxComponent* SelectionProxy = HigherFacility->SelectionProxy;
+    if (!TestNotNull(TEXT("시설 선택 Proxy"), SelectionProxy))
+    {
+        return false;
+    }
+
+    TestEqual(TEXT("비주얼 메시에는 충돌이 없다"),
+        HigherFacility->VisualMesh->GetCollisionEnabled(),
+        ECollisionEnabled::NoCollision);
+    TestFalse(TEXT("비주얼 메시가 Navigation에 영향을 주지 않는다"),
+        HigherFacility->VisualMesh->CanEverAffectNavigation());
+    TestEqual(TEXT("선택 Proxy는 QueryOnly다"),
+        SelectionProxy->GetCollisionEnabled(),
+        ECollisionEnabled::QueryOnly);
+    TestEqual(TEXT("선택 Proxy ObjectType은 WorldDynamic이다"),
+        SelectionProxy->GetCollisionObjectType(),
+        ECC_WorldDynamic);
+    TestEqual(TEXT("공개 선택 채널 상수는 프로젝트 FacilitySelection 채널에 매핑된다"),
+        UCollisionProfile::Get()->ReturnChannelNameFromContainerIndex(
+            static_cast<int32>(FFZSCollision::FacilitySelectionTraceChannel)),
+        FName(TEXT("FacilitySelection")));
+    TestFalse(TEXT("선택 Proxy는 Overlap 이벤트를 만들지 않는다"),
+        SelectionProxy->GetGenerateOverlapEvents());
+    TestFalse(TEXT("선택 Proxy는 Navigation에 영향을 주지 않는다"),
+        SelectionProxy->CanEverAffectNavigation());
+    TestFalse(TEXT("선택 Proxy는 물리를 시뮬레이션하지 않는다"),
+        SelectionProxy->IsSimulatingPhysics());
+    TestFalse(TEXT("선택 Proxy는 중력을 사용하지 않는다"),
+        SelectionProxy->IsGravityEnabled());
+
+    for (int32 ChannelIndex = 0; ChannelIndex < static_cast<int32>(ECC_MAX); ++ChannelIndex)
+    {
+        const ECollisionChannel Channel = static_cast<ECollisionChannel>(ChannelIndex);
+        const ECollisionResponse ExpectedResponse =
+            Channel == FFZSCollision::FacilitySelectionTraceChannel ? ECR_Block : ECR_Ignore;
+        TestEqual(
+            *FString::Printf(TEXT("선택 Proxy 채널 %d 응답"), ChannelIndex),
+            SelectionProxy->GetCollisionResponseToChannel(Channel),
+            ExpectedResponse);
+    }
+
+    const FFFZSFacilitySpec& InstalledSpec = HigherFacility->GetFacilitySpec();
+    const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+    const FVector ExpectedProxyExtent(
+        InstalledSpec.FootprintSizeCells.X * CellSizeCm * 0.5f,
+        InstalledSpec.FootprintSizeCells.Y * CellSizeCm * 0.5f,
+        InstalledSpec.PlacementObstacleHeightCm * 0.5f);
+    TestTrue(TEXT("선택 Proxy 크기는 footprint와 시설 높이를 반영한다"),
+        SelectionProxy->GetUnscaledBoxExtent().Equals(ExpectedProxyExtent, KINDA_SMALL_NUMBER));
+    TestTrue(TEXT("선택 Proxy 바닥은 시설 원점에 맞는다"),
+        SelectionProxy->GetRelativeLocation().Equals(
+            FVector(0.0f, 0.0f, ExpectedProxyExtent.Z),
+            KINDA_SMALL_NUMBER));
+
+    const FVector ProxyCenter = SelectionProxy->GetComponentLocation();
+    const FVector TraceStart = ProxyCenter + FVector(0.0, 0.0, ExpectedProxyExtent.Z + 100.0);
+
+    AActor* VisibilityBlockerActor = World->SpawnActor<AActor>();
+    if (!TestNotNull(TEXT("표준 WorldStatic 차단 Actor"), VisibilityBlockerActor))
+    {
+        return false;
+    }
+    UBoxComponent* VisibilityBlocker = NewObject<UBoxComponent>(
+        VisibilityBlockerActor,
+        TEXT("FacilitySelectionConfigBlocker"));
+    if (!TestNotNull(TEXT("표준 BlockAll Box"), VisibilityBlocker))
+    {
+        return false;
+    }
+    VisibilityBlockerActor->SetRootComponent(VisibilityBlocker);
+    VisibilityBlockerActor->AddInstanceComponent(VisibilityBlocker);
+    VisibilityBlocker->SetBoxExtent(FVector(50.0f, 50.0f, 10.0f));
+    VisibilityBlocker->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+    VisibilityBlocker->SetGenerateOverlapEvents(false);
+    VisibilityBlocker->SetCanEverAffectNavigation(false);
+    VisibilityBlocker->RegisterComponent();
+    VisibilityBlockerActor->SetActorLocation(
+        ProxyCenter + FVector(0.0, 0.0, ExpectedProxyExtent.Z + 50.0));
+
+    TestEqual(TEXT("BlockAll Box는 WorldStatic이다"),
+        VisibilityBlocker->GetCollisionObjectType(),
+        ECC_WorldStatic);
+    TestEqual(TEXT("기본 BlockAll은 FacilitySelection 채널을 무시한다"),
+        VisibilityBlocker->GetCollisionResponseToChannel(
+            FFZSCollision::FacilitySelectionTraceChannel),
+        ECR_Ignore);
+    TestEqual(TEXT("기본 BlockAll은 Visibility 채널을 막는다"),
+        VisibilityBlocker->GetCollisionResponseToChannel(ECC_Visibility),
+        ECR_Block);
+
+    FHitResult SelectionHit;
+    TestTrue(TEXT("선택 전용 Trace는 BlockAll을 통과해 Proxy를 맞힌다"),
+        World->LineTraceSingleByChannel(
+            SelectionHit,
+            TraceStart,
+            ProxyCenter,
+            FFZSCollision::FacilitySelectionTraceChannel));
+    TestTrue(TEXT("선택 전용 Trace 결과는 시설 Actor다"),
+        SelectionHit.GetActor() == HigherFacility);
+    TestTrue(TEXT("선택 전용 Trace 결과 컴포넌트는 Proxy다"),
+        SelectionHit.GetComponent() == SelectionProxy);
+
+    FHitResult VisibilityHit;
+    TestTrue(TEXT("Visibility Trace는 선택 Proxy 앞 BlockAll에서 멈춘다"),
+        World->LineTraceSingleByChannel(
+            VisibilityHit,
+            TraceStart,
+            ProxyCenter,
+            ECC_Visibility));
+    TestTrue(TEXT("Visibility Trace 결과 Actor는 외부 차단 Actor다"),
+        VisibilityHit.GetActor() == VisibilityBlockerActor);
+    TestTrue(TEXT("Visibility Trace 결과 컴포넌트는 BlockAll Box다"),
+        VisibilityHit.GetComponent() == VisibilityBlocker);
+    VisibilityBlockerActor->Destroy();
+
+    const FVector QueryPoint = HigherFacility->GetActorLocation();
+    TestTrue(TEXT("ZoneId가 없으면 월드 위치에서 Zone을 해석해 Facility를 찾는다"),
+        Subsystem->FindFacilityAtWorldPoint(QueryPoint) == HigherFacility);
+    TestTrue(TEXT("명시한 ZoneId에서도 Facility를 찾는다"),
+        Subsystem->FindFacilityAtWorldPoint(QueryPoint, ZoneId) == HigherFacility);
+    TestNull(TEXT("다른 ZoneId는 Facility를 반환하지 않는다"),
+        Subsystem->FindFacilityAtWorldPoint(QueryPoint, TEXT("GZ_SunsetLounge")));
+    TestNull(TEXT("등록 Zone 안의 빈 지점은 Facility를 반환하지 않는다"),
+        Subsystem->FindFacilityAtWorldPoint(FVector(9000.0, 9000.0, 0.0)));
+
+    // 권위 배치는 겹침을 허용하지 않으므로, 조회의 방어적 결정 규칙만 검증하도록 표현 Actor를
+    // 직접 옮긴다. FacilitiesById 등록과 Grid 점유는 유지되어 TMap 순회 순서와 무관한 결과를 확인한다.
+    LowerFacility->SetActorLocation(QueryPoint + FVector(100.0, 0.0, 0.0));
+    TestTrue(TEXT("겹치는 footprint에서는 더 가까운 Facility를 우선한다"),
+        Subsystem->FindFacilityAtWorldPoint(QueryPoint, ZoneId) == HigherFacility);
+
+    LowerFacility->SetActorLocation(QueryPoint);
+    TestTrue(TEXT("거리까지 같으면 InstanceId 문자열 오름차순으로 결정한다"),
+        Subsystem->FindFacilityAtWorldPoint(QueryPoint, ZoneId) == LowerFacility);
+
     return true;
 }
 

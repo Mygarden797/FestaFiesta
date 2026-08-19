@@ -47,6 +47,10 @@ public:
     // FacilitySpec.VisualMesh를 비동기 표시하는 비권한 표현 캐시다. 
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
+    TObjectPtr<UBoxComponent> SelectionProxy;
+    // 비주얼 충돌과 분리된 선택 전용 Query Box. 물리·Nav·Overlap에는 참여하지 않는다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UBoxComponent> FootprintBounds;
     // 사양 footprint의 제작·디버그 표현. 권위 점유는 서브시스템 격자 맵이 판정한다. 
 
@@ -207,6 +211,7 @@ private:
     TSharedPtr<FStreamableHandle> VisualLoadHandle;
 
     void RebuildRuntimePresentation();
+    void RebuildSelectionProxy(const FVector& FootprintExtent);
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
     void RebuildAnchors();
