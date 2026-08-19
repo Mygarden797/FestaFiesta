@@ -76,22 +76,35 @@ void UFF_LiveHudTabButton::RefreshVisualState()
 		return;
 	}
 
-	// Normal 슬롯을 덮어쓰기 전에 WBP가 지정한 원본을 한 번만 보관한다.
-	// 이걸 안 하면 첫 갱신에서 Default 브러시가 사라져 되돌릴 수 없다.
-	if (!bCapturedDefaultNormalBrush)
+	// 선택 상태에서 버튼 스타일을 덮어쓰기 전에 WBP 원본을 한 번만 보관한다.
+	// 선택 해제 뒤 Normal·Hovered·Pressed를 모두 원래 상태로 되돌리는 데 필요하다.
+	if (!bCapturedDefaultBrushes)
 	{
-		DefaultNormalBrush = Button_Root->GetStyle().Normal;
-		bCapturedDefaultNormalBrush = true;
+		const FButtonStyle& InitialStyle = Button_Root->GetStyle();
+		DefaultNormalBrush = InitialStyle.Normal;
+		DefaultHoveredBrush = InitialStyle.Hovered;
+		DefaultPressedBrush = InitialStyle.Pressed;
+		bCapturedDefaultBrushes = true;
 	}
 
-	// 배경은 버튼 스타일이 그린다. 선택 상태에서는 Normal 브러시를 Pressed 브러시로 바꿔 끼운다.
+	// 배경은 버튼 스타일이 그린다. WBP의 Pressed 슬롯을 선택 브러시로 사용한다.
+	// 선택된 버튼은 Hovered 상태에서도 선택 브러시를 유지해야 한다. Normal만 바꾸면
+	// 마우스를 올리는 순간 WBP의 회색 Hovered 브러시로 돌아가 선택이 풀린 것처럼 보인다.
 	// 색만 바꾸지 않고 배경 형태가 함께 바뀌어야 한다 (AT-011).
 	// **WBP에서 선택 상태 텍스처를 Pressed 슬롯에 넣어야 한다.**
-	//
-	// 해제 상태는 보관해 둔 Default로 되돌린다. 예전에는 Hovered를 끼웠는데,
-	// 그러면 9개 탭이 전부 호버처럼 보이고 Default 텍스처가 화면에 한 번도 안 나왔다.
 	FButtonStyle Style = Button_Root->GetStyle();
-	Style.SetNormal(bSelected ? Style.Pressed : DefaultNormalBrush);
+	if (bSelected)
+	{
+		Style.SetNormal(DefaultPressedBrush);
+		Style.SetHovered(DefaultPressedBrush);
+		Style.SetPressed(DefaultPressedBrush);
+	}
+	else
+	{
+		Style.SetNormal(DefaultNormalBrush);
+		Style.SetHovered(DefaultHoveredBrush);
+		Style.SetPressed(DefaultPressedBrush);
+	}
 	Button_Root->SetStyle(Style);
 }
 

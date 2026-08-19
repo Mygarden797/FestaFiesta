@@ -34,7 +34,7 @@
 | Solar System Scope Planet Textures | 지구·구름·노멀·스페큘러 텍스처 | `confirmed` | CC BY 4.0 | 필요 |
 | Pretendard | 한국어·공통 UI 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 | Michroma | 영문 브랜드 워드마크 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
-| Dongle | 영문 브랜드 워드마크 폰트 비교 후보 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
+| Dongle | 영문 브랜드 워드마크 비교·Unreal UI 후보 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 
 ---
 
@@ -103,7 +103,7 @@
 
 ## Pretendard
 
-- 상태: `confirmed` — 공식 v1.3.9 배포본에서 Medium·SemiBold 원본과 라이선스를 확보함. Unreal 임포트 전 단계
+- 상태: `confirmed` — 공식 v1.3.9 배포본에서 Regular·Medium·SemiBold 원본과 라이선스를 확보하고 Unreal에 임포트함
 - 제작자·권리자: Kil Hyung-jin 및 Pretendard가 포함하는 원본 폰트 프로젝트의 권리자들
 - 원본: https://github.com/orioncactus/pretendard
 - 라이선스: SIL Open Font License 1.1
@@ -112,6 +112,7 @@
 - 다운로드 날짜·버전: 2026-08-05 / v1.3.9
 - 원본 보관 경로: `SourceArt/ThirdParty/Pretendard/1.3.9/`
 - 사용 파일:
+  - `Pretendard-Regular.otf` — SHA-256 `3FFBACDE6AB8411F1D2DB54BB9B1F0B3EE2A738932033722CF0388C06AED1C93`
   - `Pretendard-Medium.otf` — SHA-256 `D39E50E4BB52B4993B6A4EEB821A171254745BD824446AF01E1F616B89FFACE0`
   - `Pretendard-SemiBold.otf` — SHA-256 `C89BC43027DC7CDE5726E96223376F8EEC09302B2FC1F8147FD5B57CFC376118`
 - 원본 압축 파일: `Pretendard-1.3.9.zip` — SHA-256 `04BE351A74D6BF7D60C480A3087E51D185485D35A52023142AF1DF19EB8C428A`
@@ -128,9 +129,14 @@
 
 > Pretendard — Copyright (c) 2021 Kil Hyung-jin and contributors. Licensed under the SIL Open Font License 1.1.
 
-### 임포트 시 채울 항목
+### Unreal 임포트
 
-- Unreal Font Asset 경로: `/Game/FestaFiesta/UI/Fonts/` 예정
+- FontFace:
+  - `/Game/FestaFiesta/UI/Fonts/Pretendard-Regular`
+  - `/Game/FestaFiesta/UI/Fonts/Pretendard-Medium`
+  - `/Game/FestaFiesta/UI/Fonts/Pretendard-SemiBold`
+- Composite Font: `/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard`
+- 기본 Typeface 순서는 `Medium`, `SemiBold`, `Regular`이며 기존 기본값인 `Medium`을 유지함
 - 라이선스 동봉 경로: `to_verify`
 
 ---
@@ -170,7 +176,7 @@
 
 ## Dongle
 
-- 상태: `confirmed` — Google Fonts 공식 저장소의 Light·Regular·Bold 원본과 라이선스를 확보함. HTML 비교 프로토타입에 사용
+- 상태: `confirmed` — Google Fonts 공식 저장소의 Light·Regular·Bold 원본과 라이선스를 확보하고 Unreal에 임포트함
 - 제작자·권리자: The Dongle Project Authors
 - 원본: https://github.com/google/fonts/tree/main/ofl/dongle
 - 라이선스: SIL Open Font License 1.1
@@ -184,16 +190,22 @@
   - `Dongle-Regular.ttf` — SHA-256 `2966E7A9D312A868E2B5477BF9A3E59B8CE16BEB76E7E52305AB5897D1CE9741`
   - `Dongle-Bold.ttf` — SHA-256 `944C498C0D1A1832AB36F173B1B3AA5AE77B2A914E00C4D79E05338FAE36472D`
 - 보관 라이선스: `OFL.txt` — SHA-256 `F9E59049E824264BFFD626D0901CFCAAC9D5BA756988B904D3E3E0E233493607`
-- 용도: HTML 프로토타입에서 `FESTA FIESTA` 영문 브랜드 워드마크 비교 후 Unreal 적용 여부 결정
+- 용도: HTML 프로토타입과 Unreal에서 `FESTA FIESTA` 영문 브랜드 워드마크 비교. 최종 채택 여부는 별도 결정
 - 수정 내역: 원본 파일 수정 없음
 
 권장 크레딧 문구:
 
 > Dongle — Copyright 2021 The Dongle Project Authors. Licensed under the SIL Open Font License 1.1.
 
-### 임포트 시 채울 항목
+### Unreal 임포트
 
-- Unreal Font Asset 경로: 실제 임포트 시 기록
+- FontFace:
+  - `/Game/FestaFiesta/UI/Fonts/Dongle-Light`
+  - `/Game/FestaFiesta/UI/Fonts/Dongle-Regular`
+  - `/Game/FestaFiesta/UI/Fonts/Dongle-Bold`
+- Composite Font: `/Game/FestaFiesta/UI/Fonts/F_UI_Dongle`
+- 기본 Typeface 순서는 `Regular`, `Light`, `Bold`이며 기본값은 `Regular`
+- 최종 타이틀 워드마크 폰트 채택 여부: `to_verify`
 - 라이선스 동봉 경로: `to_verify`
 
 ---

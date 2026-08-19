@@ -243,16 +243,32 @@ void UFF_LiveHudStatusBar::RefreshPlaybackControls()
 
 void UFF_LiveHudStatusBar::RefreshPlaceholders()
 {
-	// 소유자 API가 없는 값 3개. 모르면 아이콘·구분선까지 묶음째 숨긴다.
+	// 실제 API 값이 아직 없으면 디자이너가 조정 가능한 임시값으로 레이아웃을 확인한다.
+	// API가 연결되어 0 이상의 값이 들어오면 임시값보다 실제 값이 우선한다.
+	const int32 DisplayVisitorCount = VisitorCount >= 0
+		? VisitorCount
+		: (bUsePlaceholderResourceValues ? PlaceholderVisitorCount : INDEX_NONE);
+	const int32 DisplayStaffAvailable = StaffAvailable >= 0
+		? StaffAvailable
+		: (bUsePlaceholderResourceValues ? PlaceholderStaffAvailable : INDEX_NONE);
+	const int32 DisplayStaffTotal = StaffTotal > 0
+		? StaffTotal
+		: (bUsePlaceholderResourceValues ? PlaceholderStaffTotal : INDEX_NONE);
+
 	SetGroupTextOrHide(Box_VisitorCount, Text_VisitorCount,
-		(VisitorCount >= 0) ? FText::AsNumber(VisitorCount) : FText::GetEmpty());
+		(DisplayVisitorCount >= 0) ? FText::AsNumber(DisplayVisitorCount) : FText::GetEmpty());
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff,
-		(StaffAvailable >= 0 && StaffTotal > 0)
-			? FText::Format(LOCTEXT("LiveHud_Staff", "{0} / {1}"), FText::AsNumber(StaffAvailable), FText::AsNumber(StaffTotal))
+		(DisplayStaffAvailable >= 0 && DisplayStaffTotal > 0)
+			? FText::Format(LOCTEXT("LiveHud_Staff", "{0} / {1}"), FText::AsNumber(DisplayStaffAvailable), FText::AsNumber(DisplayStaffTotal))
 			: FText::GetEmpty());
 
-	SetGroupTextOrHide(Box_NextProgram, Text_NextProgram, NextProgramText);
+	const FText DisplayNextProgram = !NextProgramText.IsEmpty()
+		? NextProgramText
+		: (bUsePlaceholderResourceValues
+			? LOCTEXT("LiveHud_PlaceholderNextProgram", "20:00 메인 공연")
+			: FText::GetEmpty());
+	SetGroupTextOrHide(Box_NextProgram, Text_NextProgram, DisplayNextProgram);
 }
 
 void UFF_LiveHudStatusBar::Debug_SetPlaceholders(int32 InVisitorCount, int32 InStaffAvailable, int32 InStaffTotal, const FText& InNextProgram)

@@ -43,7 +43,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnLiveHudTabSelected, EFF_LiveHu
  * 그래서 일반 `UUserWidget` + 일반 `UButton`이다. 근거: docs/ui/ui-tech-decision.md 7절
  *
  * 브러시 4종(Default/Hover/Selected/Pressed)은 WBP에서 지정한다.
- * **선택 상태 브러시는 `Pressed` 슬롯에 넣는다** — `RefreshVisualState`가 그것을 Normal에 끼운다.
+ * **선택 상태 브러시는 `Pressed` 슬롯에 넣는다** — `RefreshVisualState`가 선택 중에는
+ * 그것을 Normal·Hovered·Pressed에 함께 적용한다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Live HUD Tab Button"))
 class FESTAFIESTA_API UFF_LiveHudTabButton : public UUserWidget
@@ -103,13 +104,15 @@ private:
 	bool bSelected = false;
 
 	/**
-	 * WBP가 지정한 Normal 브러시 원본.
+	 * WBP가 지정한 버튼 브러시 원본.
 	 *
-	 * `RefreshVisualState()`가 Normal 슬롯을 덮어쓰므로 첫 갱신 전에 보관해 둬야 한다.
-	 * 보관하지 않으면 해제 상태로 되돌릴 브러시가 남지 않는다.
+	 * 선택 상태에서는 Normal·Hovered·Pressed를 선택 브러시로 함께 덮어쓴다.
+	 * 원본을 보관하지 않으면 선택 해제 뒤 기본·호버 상태로 되돌릴 수 없다.
 	 */
 	FSlateBrush DefaultNormalBrush;
-	bool bCapturedDefaultNormalBrush = false;
+	FSlateBrush DefaultHoveredBrush;
+	FSlateBrush DefaultPressedBrush;
+	bool bCapturedDefaultBrushes = false;
 
 	void RefreshVisualState();
 };
