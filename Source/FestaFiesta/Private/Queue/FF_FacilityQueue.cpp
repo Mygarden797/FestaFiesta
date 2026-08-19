@@ -83,7 +83,7 @@ bool FFF_FacilityQueue::ContainsParty(int32 PartyId) const
 
 int32 FFF_FacilityQueue::GetOccupiedMemberCount() const
 {
-	// 서비스를 마친 멤버도 Party 전원이 끝날 때까지 슬롯을 비우지 않는다 (설계문서 9.3).
+	// 서비스를 마친 멤버도 Party 전원이 끝날 때까지 슬롯을 비우지 않는다.
 	// 그래서 점유량은 MembersServed와 무관하게 MemberCount 총합이다.
 	int64 Total = 0;
 	for (const FFF_QueuedParty& Party : Parties)
@@ -436,7 +436,7 @@ void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 
 	Head.ServiceElapsedSeconds += DeltaSeconds;
 
-	// 한 사이클에 ConcurrentServiceSlots명씩 처리한다. P0은 1명이라 4인 가족이면 4사이클.
+	// 한 사이클에 ConcurrentServiceSlots 명씩 처리한다. 기본 1 명이면 4인 가족은 4사이클.
 	int32 Guard = 0;
 	while (Head.ServiceElapsedSeconds >= Config.ServiceSecondsPerMember
 		&& Head.MembersServed < Head.MemberCount
@@ -446,7 +446,7 @@ void FFF_FacilityQueue::Advance(float DeltaSeconds, float SimTimeSeconds)
 		Head.MembersServed = FMath::Min(Head.MemberCount, Head.MembersServed + Config.ConcurrentServiceSlots);
 	}
 
-	// ── 3. 전원 완료 시에만 슬롯 반납 (설계문서 9.3) ────────────────
+	// ── 3. 전원 완료 시에만 슬롯 반납 ────────────────
 	if (Head.MembersServed >= Head.MemberCount)
 	{
 		RecordExit(Head, EFF_QueueExit::Served, SimTimeSeconds);

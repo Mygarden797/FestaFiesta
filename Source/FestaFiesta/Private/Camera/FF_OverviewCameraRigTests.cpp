@@ -10,7 +10,7 @@
 // 수치 문제가 대부분이다. 그건 화면을 보면서 잡는 것보다 값을 찍어보는 게 빠르다.
 //
 // LWC 주의: UE5 에서 FVector 와 FVector2D 의 성분은 double 이다.
-// 그래서 .X / .Y / .Z 를 TestEqual 로 비교할 때 기대값과 허용오차에 f 를 붙이면
+// 그래서.X /.Y /.Z 를 TestEqual 로 비교할 때 기대값과 허용오차에 f 를 붙이면
 // float 과 double 오버로드가 모두 후보가 되어 C2666 으로 컴파일이 막힌다.
 //   안 됨: TestEqual(TEXT("..."), Location.X, 5000.f, 0.01f);
 //   됨   : TestEqual(TEXT("..."), Location.X, 5000.0, 0.01);
