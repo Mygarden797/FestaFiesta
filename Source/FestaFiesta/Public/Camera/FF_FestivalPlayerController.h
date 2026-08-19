@@ -179,6 +179,7 @@ private:
 	void HandleRotate(const FInputActionValue& Value);
 	void HandleSnapRotate(const FInputActionValue& Value);
 	void HandlePick(const FInputActionValue& Value);
+	void ProcessPickRequest();
 	void HandleResetView(const FInputActionValue& Value);
 	void HandleToggleView(const FInputActionValue& Value);
 
@@ -188,6 +189,9 @@ private:
 
 	// 커서 아래 월드 지점을 구한다. 커서가 없거나 광선이 지면을 안 만나면 false.
 	bool ResolveCursorWorldAnchor(FVector& OutAnchor) const;
+
+	// Enhanced Input과 native 좌클릭 fallback이 같은 PlayerTick에 함께 들어와도 한 번만 방송한다.
+	bool bPickRequestHandledThisTick = false;
 
 	// 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
 	void TickEdgeScroll(float DeltaTime);

@@ -14,6 +14,10 @@ class AActor;
 class APlayerController;
 class UFF_FacilityInfoPanel;
 struct FFFZSWorldChangeEvent;
+#if WITH_DEV_AUTOMATION_TESTS
+class FFF_FacilityInfoIndicatorLifecycleTest;
+class FFF_FacilityInfoSelectionGeometryTest;
+#endif
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FFF_OnFacilityInfoSelectionChanged,
@@ -95,6 +99,11 @@ public:
 	FFF_OnFacilityInfoActionRequested OnCloseRequested;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_FacilityInfoIndicatorLifecycleTest;
+	friend class FFF_FacilityInfoSelectionGeometryTest;
+#endif
+
 	bool EnsurePanel(APlayerController& OwningController);
 	bool IsContextCurrentlyAllowed(EFF_FacilityInfoContext Context) const;
 	bool BuildViewData(AFFZSFacilityActor& Facility, FFF_FacilityInfoViewData& OutViewData) const;
@@ -103,7 +112,19 @@ private:
 	void ReleaseThumbnailSession();
 	void EnsurePickControllerBinding();
 	void ReleasePickControllerBinding();
-	AFFZSFacilityActor* ResolveLiveFacilityUnderCursor(APlayerController& Controller) const;
+	AFFZSFacilityActor* ResolveLiveFacilityUnderCursor(
+		APlayerController& Controller,
+		AFFZSFacilityActor* PreferredHoveredFacility = nullptr) const;
+	AFFZSFacilityActor* ResolveLiveFacilityAlongRay(
+		const FVector& RayOrigin,
+		const FVector& RayDirection,
+		AFFZSFacilityActor* PreferredHoveredFacility,
+		const AActor* IgnoredActor = nullptr) const;
+	void UpdateLiveSelectionIndicators(float DeltaTime);
+	void ApplyLiveSelectionIndicatorTargets(
+		AFFZSFacilityActor* HoveredFacility,
+		AFFZSFacilityActor* SelectedFacility);
+	void ClearLiveSelectionIndicators();
 
 	void HandlePanelMoveRequested();
 	void HandlePanelRemoveRequested();
@@ -124,13 +145,17 @@ private:
 
 	TWeakObjectPtr<APlayerController> OwningController;
 	TWeakObjectPtr<AFF_FestivalPlayerController> BoundPickController;
+	TWeakObjectPtr<AFFZSFacilityActor> SelectionIndicatorHoverFacility;
+	TWeakObjectPtr<AFFZSFacilityActor> SelectionIndicatorSelectedFacility;
 	FGuid SelectedFacilityId;
 	EFF_FacilityInfoContext SelectionContext = EFF_FacilityInfoContext::None;
 	FText FeedbackText;
 	bool bFeedbackIsError = false;
 	bool bThumbnailSessionAcquired = false;
 	float RefreshAccumulatorSeconds = 0.0f;
+	float SelectionIndicatorRefreshAccumulatorSeconds = 0.0f;
 
 	static constexpr float RefreshIntervalSeconds = 0.25f;
+	static constexpr float SelectionIndicatorRefreshIntervalSeconds = 0.05f;
 	static constexpr int32 PanelZOrder = 95;
 };

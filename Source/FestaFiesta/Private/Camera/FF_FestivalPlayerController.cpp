@@ -11,6 +11,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 
 AFF_FestivalPlayerController::AFF_FestivalPlayerController()
@@ -264,7 +265,18 @@ bool AFF_FestivalPlayerController::ResolveCursorWorldAnchor(FVector& OutAnchor) 
 
 void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 {
+	bPickRequestHandledThisTick = false;
 	Super::PlayerTick(DeltaTime);
+
+	// CommonUI input mode나 동적으로 교체된 IMC가 IA_Pick을 소비해도 기본 포인터 클릭은
+	// 살아 있어야 한다. BuildMode가 이미 사용하는 raw key edge를 보조 경로로 읽되,
+	// Enhanced Input action이 정상 실행된 프레임에는 ProcessPickRequest가 중복을 막는다.
+	if (FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(
+			bPickRequestHandledThisTick,
+			WasInputKeyJustPressed(EKeys::LeftMouseButton)))
+	{
+		ProcessPickRequest();
+	}
 	EnsureViewTargetAlive();
 	TickEdgeScroll(DeltaTime);
 }
@@ -498,6 +510,18 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 
 void AFF_FestivalPlayerController::HandlePick(const FInputActionValue& Value)
 {
+	(void)Value;
+	ProcessPickRequest();
+}
+
+void AFF_FestivalPlayerController::ProcessPickRequest()
+{
+	if (bPickRequestHandledThisTick)
+	{
+		return;
+	}
+	bPickRequestHandledThisTick = true;
+
 	if (!IsPickingAllowed())
 	{
 		return;

@@ -56,6 +56,11 @@ public:
     static constexpr float DefaultGroundSampleSpacingCm = 100.0f;
 	// 지면 검증 밀도는 1 cm 점유 해상도와 분리한다. 기본 100 cm마다 대표 표본 하나를 검사.
 
+    // 시설별 저장 필드를 추가하지 않고 Footprint에서 선택 Query Box를 파생하는 전역 정책이다.
+    // UBoxComponent는 반치수를 사용하므로 이 값은 전체 폭 증가량이 아니라 XY 각 변의 여백이다.
+    static constexpr float DefaultFacilitySelectionPaddingCm = 75.0f;
+    static constexpr float MaxFacilitySelectionPaddingCm = 500.0f;
+
     // 시설 하나를 검증할 때 허용하는 보수적 열거 작업 예산.
     // 회전 전 footprint를 clearance만큼 확장한 이론 면적과 정규화한 Queue 압축 영역 면적을 합산해
     // 비정상적으로 큰 저작 데이터를 조기에 거부한다. 권위 런타임은 영역을 개별 셀로 펼치지 않는다.
@@ -74,6 +79,10 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Performance", meta = (ClampMin = "0.0", ClampMax = "1.0", Units = "s"))
     float QueueSimulationTickIntervalSeconds = 0.1f;
 	// Queue Component 한 개의 시뮬레이션 간격입니다. 0이면 매 프레임 실행합니다. 
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Selection", meta = (DisplayName = "Facility Selection Padding (cm)", ToolTip = "시설 Footprint의 XY 각 변에 더할 선택 전용 Query 여백입니다. FacilityDefinition과 SaveGame에는 저장하지 않으며 모든 시설에 같은 런타임 정책을 적용합니다.", ClampMin = "0.0", ClampMax = "500.0", Units = "cm", ConfigRestartRequired = true))
+    float FacilitySelectionPaddingCm = DefaultFacilitySelectionPaddingCm;
+	// 선택 편의만 넓히며 물리, Navigation, Overlap 또는 권위 배치 점유에는 영향을 주지 않는다.
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
     float MaxGroundSlopeDegrees = 5.0f;

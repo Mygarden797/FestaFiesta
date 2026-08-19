@@ -62,6 +62,15 @@ namespace FFCameraInputModel
 	{
 		return IsMovementAllowed(Reason) && !bBuildPreviewActive;
 	}
+
+	// CommonUI나 런타임 Mapping Context가 Enhanced Input action을 소비하더라도 기본 좌클릭은
+	// 선택 신호를 잃지 않아야 한다. Action이 이미 처리된 프레임에는 중복 방송하지 않는다.
+	inline bool ShouldUsePrimaryPointerPickFallback(
+		const bool bPickActionHandledThisTick,
+		const bool bPrimaryPointerJustPressed)
+	{
+		return !bPickActionHandledThisTick && bPrimaryPointerJustPressed;
+	}
 }
 
 // 디자이너가 조정하는 값들. 전부 게임 단위(cm, 도, 초)다.
