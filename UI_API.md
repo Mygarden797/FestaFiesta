@@ -235,13 +235,17 @@ footprint가 겹치면 Actor 원점까지 3차원 거리가 가장 가까운 시
 Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설 정보 패널은
 `UFF_FacilityInfoSubsystem`이 `FFF_FacilityInfoViewData`로 평탄화한 값을 제공합니다.
 
-### 개발용 플레이테스트 도구 (참고)
+### 개발용 Zone·시설 QA 도구 (참고)
 
-`UFF_ZoneSystemPlaytestSubsystem` + `WBP_ZoneSystemPlaytestHUD`가 있습니다.
-`Content/FestaFiesta/Zone/Maps/ZoneTestMap`에서 키보드로 시설 설치·이동·제거·개폐·큐 조작을 시험할 수 있습니다.
+현재 수동 통합 QA는 `Content/FestaFiesta/Maps/Test_Main`에서 프로덕션
+`UFF_BuildModeSubsystem`과 개발용 `UFF_ZoneLifecycleTestPanelSubsystem`을 함께 사용합니다.
+비 Shipping의 `Test_Main`에서는 `WBP_FF_ZoneLifecycleTestPanel`이 자동으로 표시되어 Festival 단계와
+시설 Open·Close·Emergency 권위 API를 관찰·실행하고, 설치·이동·철거는 실제 건축 모드 경로로 확인합니다.
 
-**플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
-Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
+시설 Definition과 배치용 에디터 픽스처는
+`Content/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`입니다. 이 맵은 패키징 대상이 아닙니다.
+**Lifecycle 패널과 검증 맵은 플레이어용 UI가 아니라 개발 도구입니다.** Morning Check UI를 만들 때
+동일한 시설 명령 진입점과 결과 처리 방식을 참고합니다.
 
 ### 완성형 시설 건축 카탈로그 (2026-08-18 갱신)
 

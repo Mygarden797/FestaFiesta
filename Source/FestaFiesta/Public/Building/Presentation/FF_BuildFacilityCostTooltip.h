@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildFacilityCostTooltip.h
+
+// 건설 카드의 시설명과 설치·복구 비용을 표시하는 디자이너 편집형 UMG 툴팁을 선언한다.
+// 흐름: 카탈로그 항목 스냅샷 설정 -> 표시 문자열 계산 -> 선택적 BindWidget 갱신.
+// 불변식: 비용이 해석되지 않은 항목은 숫자 대신 명시적인 미확정 문구를 보여 준다.
+// 실패/수명: BindWidget이 아직 없으면 상태만 저장하고 PreConstruct에서 안전하게 다시 적용한다.
 
 #pragma once
 

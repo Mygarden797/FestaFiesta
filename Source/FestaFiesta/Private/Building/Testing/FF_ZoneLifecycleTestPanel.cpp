@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_ZoneLifecycleTestPanel.cpp
+
+// Test_Main 개발 패널에서 Festival 단계와 시설 Lifecycle 권위 명령을 실행하고 상태를 요약한다.
+// 흐름: 버튼·이벤트 바인딩 -> 명령 요청 -> 배치 결과 기록 -> 현재 단계/시설 수 화면 갱신.
+// 불변식: 제품용 상태를 우회하지 않고 실제 Stage/Zone 서브시스템의 공개 API만 호출한다.
+// 실패/수명: 선택적 의존성이 없으면 상태에 표시하고 Destruct에서 모든 이벤트 구독을 해제한다.
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
 

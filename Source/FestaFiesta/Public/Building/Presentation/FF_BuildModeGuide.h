@@ -1,5 +1,10 @@
 // FF_BuildModeGuide.h
 
+// 건축 세션 동안 좌하단에 표시되는 조작 안내 WBP의 네이티브 클래스 계약을 선언한다.
+// 흐름: BuildModeSubsystem이 파생 클래스를 로드 -> 위젯 생성·Viewport 부착 -> 세션 종료 시 제거.
+// 불변식: 레이아웃과 문구는 파생 WBP가 소유하고 네이티브 타입은 상태를 갖지 않는다.
+// 실패/수명: WBP가 없으면 안내만 생략하며 건축 세션의 권위 상태와 입력은 계속 유지한다.
+
 #pragma once
 
 #include "Blueprint/UserWidget.h"
