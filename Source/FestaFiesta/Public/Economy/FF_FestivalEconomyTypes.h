@@ -42,6 +42,20 @@ struct FFF_FinaleTier
 	int32 SatisfactionBonus = 0;
 };
 
+
+// 피날레 구매 결과. UI 가 실패 이유를 그대로 화면에 쓸 수 있게 bool 이 아니다.
+// [참고] 저장되지 않는 값이라 순서를 바꿔도 된다.
+UENUM(BlueprintType)
+enum class EFF_FinalePurchaseResult : uint8
+{
+	Success             UMETA(DisplayName = "구매 완료"),
+	FestivalNotStarted  UMETA(DisplayName = "축제가 시작되지 않았다"),
+	InvalidGrade        UMETA(DisplayName = "구매할 수 없는 등급"),
+	UnknownGrade        UMETA(DisplayName = "저작되지 않은 등급"),
+	AlreadyPurchased    UMETA(DisplayName = "이미 구매했다"),
+	InsufficientGold    UMETA(DisplayName = "Gold 부족")
+};
+
 // 홍보 등급 1종의 비용과 효과. Promotion Stage 에서 한 번 선택하고 3일 전체에 적용된다.
 USTRUCT(BlueprintType)
 struct FFF_PromotionTier

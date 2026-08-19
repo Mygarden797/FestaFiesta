@@ -1,10 +1,10 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
-#include "Economy/FF_StaffPool.h"
+#include "Economy/Rules/FF_StaffPool.h"
 
 /**
  * FFF_StaffPool 검증 (S6).

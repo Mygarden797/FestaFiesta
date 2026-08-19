@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Time/FF_FestivalStage.h"
 #include "FF_BuildModeSubsystem.generated.h"
 
 class AFFZSFacilityActor;
@@ -14,7 +15,7 @@ class UFF_BuildCatalogScreen;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeGuide;
 class UFF_BuildPlacementFailureFeedback;
-class UFF_BuildRemovalConfirmWidget;
+class UFF_FacilityInfoSubsystem;
 class UFFZSWorldSubsystem;
 class SWidget;
 struct FHitResult;
@@ -111,6 +112,20 @@ namespace FFBuildModeModel
 	{
 		return IsBuildSessionActive(State);
 	}
+
+	inline bool ShouldExitWhenReconfigureCloses(
+		const EFF_BuildModeState State,
+		const bool bReconfigureAllowed)
+	{
+		return IsBuildSessionActive(State) && !bReconfigureAllowed;
+	}
+
+	inline bool CanEnterBuildSession(
+		const bool bFestivalStageAllowsReconfigure,
+		const bool bZonePhaseAllowsReconfigure)
+	{
+		return bFestivalStageAllowsReconfigure && bZonePhaseAllowsReconfigure;
+	}
 }
 
 // B 키, 카탈로그, 시설 배치/제거를 연결하는 플레이어용 월드 서브시스템.
@@ -205,9 +220,6 @@ private:
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;
 	// Moving 세션이 대상으로 삼은 권위 액터. 외부 이동·삭제 및 스냅샷 복원 시 무효화한다.
 	TWeakObjectPtr<AFFZSFacilityActor> MovingFacility;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UFF_BuildRemovalConfirmWidget> RemovalConfirmWidget;
 
 	// 기존 팀 화면과 분리된 상단 토스트. 최초 실패 때만 만들고 건축 세션 동안 재사용한다.
 	UPROPERTY(Transient)
@@ -306,30 +318,26 @@ private:
 	void SetFacilityRangeVisibility(bool bVisible) const;
 	// 충돌 없는 시설 표현과 무관하게 커서 아래 실제 지면을 찾는다.
 	bool TraceGroundUnderCursor(APlayerController& Controller, FHitResult& OutGroundHit) const;
-	// 같은 Zone의 권위 레지스트리 시설 중 지면 점이 3D footprint 안에 들어가는 시설을 찾는다.
-	AFFZSFacilityActor* FindFacilityAtWorldPoint(
-		const FVector& WorldPoint,
-		const UFFZSWorldSubsystem& ZoneSystem,
-		FName TargetZoneId) const;
 	// BuildMode에서 커서 아래 시설을 작업 패널 대상으로 선택한다. 같은 시설 재클릭은 no-op이다.
 	bool HandleRemovalClickUnderCursor(APlayerController& Controller);
 	// 현재 작업 대상을 범위로 강조하고, 이전 대상이 있으면 강조를 해제한다.
 	void SelectFacilityForRemoval(AFFZSFacilityActor& Facility);
 	// 선택 강조와 약한 참조를 함께 정리한다. 카탈로그/종료/스냅샷 복원에서도 호출한다.
 	void ClearPendingRemovalSelection();
-	// Shipping에서도 시설명과 이동·철거·취소를 볼 수 있는 제품용 작업 패널을 생성하거나 갱신한다.
+	// 공용 우측 시설 정보 WBP를 건축 컨텍스트로 열거나 닫는다.
 	void ShowRemovalConfirmation(const FText& FacilityName);
-	void RemoveRemovalConfirmation();
+	void RemoveRemovalConfirmation(FGuid FacilityInstanceId);
+	void ShowFacilityInfoFeedback(const FText& Feedback, bool bIsError) const;
 	// 선택 대상을 최신 단계·레지스트리·점유 상태로 재검증한 뒤 권위 Remove 명령을 실행한다.
 	bool ConfirmPendingRemoval();
 	// 현재 선택된 시설을 재검증하고 액터 Spec·GUID·회전을 복사해 Moving을 시작한다.
 	bool StartMovingSelectedFacility();
 	// 원본 시설을 변경하지 않고 프리뷰만 정리한 뒤 BuildMode로 복귀한다.
 	void CancelMovingToBuildMode(const FString& StatusMessage, bool bIsError = false);
-	// 액션 패널 native delegate 어댑터.
-	void HandleMoveRequested();
-	void HandleRemoveRequested();
-	void HandleRemovalCancelRequested();
+	// 공용 시설 정보 패널의 선택 ID를 기존 건축 명령 경계에서 다시 검증하는 어댑터.
+	void HandleMoveRequested(FGuid FacilityInstanceId);
+	void HandleRemoveRequested(FGuid FacilityInstanceId);
+	void HandleRemovalCancelRequested(FGuid FacilityInstanceId);
 	// 커서 레이를 바닥/Zone/그리드 좌표로 변환하고 필요할 때 Install/Move PreviewCommand를 다시 검증한다.
 	// bForceCommandRebuild 위치가 같아도 회전·월드 revision 변화 등을 반영할지 여부.
 	//프리뷰 명령과 LastValidation을 실제로 갱신했으면 true.
@@ -339,6 +347,8 @@ private:
 	void RebuildPreviewCommand();
 	// Zone System의 현재 단계가 시설 변경을 허용하는 InitialSetup/MorningCheck인지 확인한다. 
 	bool CanReconfigure() const;
+	// B 입력으로 세션 자체를 열 수 있는지 Festival Stage와 Zone 정책을 함께 확인한다.
+	bool IsBuildEntryAllowed() const;
 
 	// 카탈로그 델리게이트 어댑터: UI가 서브시스템의 상태 전환 API에 직접 의존하지 않게 한다.
 	void HandleFacilitySelected(FName FacilityDefinitionId);
@@ -356,9 +366,12 @@ private:
 	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
 	UFUNCTION()
 	void HandleWorldSnapshotRestored();
+	UFUNCTION()
+	void HandleFestivalStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 	// 권위 실패 코드와 상세 사유를 신규 UMG 토스트에 표시한다. 프리뷰 Tick에서는 호출하지 않는다.
 	void PresentPlacementFailure(EFFZSPlacementFailure FailureReason, const FText& Detail);
 	UFF_BuildPlacementFailureFeedback* GetOrCreatePlacementFailureFeedback();
+	UFF_FacilityInfoSubsystem* GetFacilityInfoSubsystem() const;
 	void DismissPlacementFailureFeedback(bool bRemoveFromParent = false);
 	// 화면 메시지를 표시하되 같은 문구는 한 번만 로그로 남긴다. 게임 상태는 변경하지 않는다. 
 	void ShowStatus(const FString& Message, bool bIsError = false, float DisplaySeconds = 2.5f) const;

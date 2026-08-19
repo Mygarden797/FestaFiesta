@@ -2,6 +2,10 @@
 
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Queue/FF_QueueSubsystem.h"
+
+#include "Engine/World.h"
+#include "NPC/Integration/FF_ZoneSystemBridge.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 
 float FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(const FFF_QueueState& State, int32 IncomingMemberCount)
@@ -103,10 +107,60 @@ int32 FFF_QueueWaitAdapter::ApplyToCandidates(
 {
 	// 표 버전은 함수 버전에 위임한다. 규칙이 두 벌로 갈라지면 언젠가 한쪽만 고쳐진다.
 	return ApplyToCandidates(QueueSubsystem, InOutCandidates,
-		[&DestinationIdToFacilityId](FName DestinationId)
+		[&DestinationIdToFacilityId](FName DestinationId) -> int32
 		{
 			const int32* Found = DestinationIdToFacilityId.Find(DestinationId);
-			return Found ? *Found : INDEX_NONE;
+			return Found ? *Found : static_cast<int32>(INDEX_NONE);
+		},
+		IncomingMemberCount);
+}
+
+int32 FFF_QueueWaitAdapter::ApplyFromZoneBridge(
+	const UWorld* World,
+	TArray<FFF_DestinationCandidate>& InOutCandidates,
+	int32 IncomingMemberCount)
+{
+	if (!World)
+	{
+		return 0;
+	}
+	return ApplyFromZoneBridge(
+		World->GetSubsystem<UFF_QueueSubsystem>(),
+		World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>(),
+		InOutCandidates,
+		IncomingMemberCount);
+}
+
+int32 FFF_QueueWaitAdapter::ApplyFromZoneBridge(
+	const UFF_QueueSubsystem* QueueSubsystem,
+	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge,
+	TArray<FFF_DestinationCandidate>& InOutCandidates,
+	int32 IncomingMemberCount)
+{
+	// 대기열이 없는 월드에서도 결정은 돌아야 한다. 후보를 건드리지 않고 조용히 빠진다.
+	if (!QueueSubsystem || !Bridge)
+	{
+		return 0;
+	}
+
+	return ApplyToCandidates(
+		QueueSubsystem,
+		InOutCandidates,
+		// 반환 타입을 명시한다. INDEX_NONE 은 UE 에서 익명 enum 이라,
+		// 생략하면 첫 return 이 그 타입으로 추론되어 아래 int32 반환과 충돌한다(C3487).
+		[Bridge](FName DestinationId) -> int32
+		{
+			// 목적지 ID 는 시설 인스턴스 GUID 를 문자열로 담고 있다.
+			// 파싱에 실패하면 대기열과 무관한 목적지이거나 계약 위반이다.
+			// 어느 쪽이든 여기서 후보를 닫을 일은 아니므로 조용히 건너뛴다.
+			FGuid FacilityInstanceId;
+			if (!FFF_ZoneSystemBridge::TryParseDestinationId(DestinationId, FacilityInstanceId))
+			{
+				return INDEX_NONE;
+			}
+
+			// 브리지가 모르는 시설이면 대기열이 없는 것이다(벤치·포토존 등).
+			return Bridge->FindQueueFacilityId(FacilityInstanceId);
 		},
 		IncomingMemberCount);
 }

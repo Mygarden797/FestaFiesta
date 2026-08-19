@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""LightTeal Live HUD 텍스처 103장의 임포트 결과를 검증한다."""
+"""LightTeal Live HUD 텍스처를 현재 매니페스트 기준으로 검증한다."""
 
 import json
 import os

@@ -23,7 +23,12 @@ class UFF_FestivalViewModelSubsystem;
  * === 아직 안 하는 것 ===
  * - 색상 구분: Satisfaction·Revenue·Safety의 좋고 나쁨 구간이 아직 정해지지 않았다.
  *   임의로 정해서 칠하면 나중에 전부 바꿔야 하고, 색만으로 구분하면 AT-011 위반이다.
- * - Heat Map: Fruin 구간(2/4/5 인/㎡)은 확정됐지만 원본 FFF_CrowdReadModel이 아직 스텁이다.
+ * - Heat Map: **밀도 구간이 확정되지 않았다 (2026-08-14 확인).** UI 문서는 3구간(초록 <2 / 노랑 2~4 /
+ *   빨강 >=4 명/㎡)인데, Crowd가 구현한 `ECrowdLOS`는 Fruin 보행로 LOS 6등급
+ *   (0.31 / 0.43 / 0.72 / 1.08 / 2.17 명/㎡)이라 자릿수가 다르다. 보행로 기준으로는 2.17부터 이미 최악 등급이라
+ *   "빨강 4 이상"에 도달하지 않는다. 어느 표준을 쓸지 합의 전까지 색·구간을 코드로 굳히지 않는다.
+ *   또한 원본 `FFF_CrowdReadModel::DensityPerSqm`은 아직 아무도 채우지 않는다 — 실값은 Crowd 내부
+ *   `FCrowdDensityGrid`에만 있고 UI가 읽을 경로가 없다. 상세는 open-conflicts.md의 C-028·C-029.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Metrics HUD Widget"))
 class FESTAFIESTA_API UFF_MetricsHudWidget : public UUserWidget
@@ -73,8 +78,10 @@ protected:
 
 	/**
 	 * 2026-08-06 결정(A안): **Overview HUD는 ScoreSatisfaction을 표시하지 않는다.**
-	 * Live 중에는 FinaleBonus가 아직 없어 SimSatisfaction과 같은 숫자가 두 번 뜨고,
+	 * Live 중에는 피날레를 아직 사지 않아 보너스가 0이므로 SimSatisfaction과 같은 숫자가 두 번 뜨고,
 	 * 플레이어가 지금 개선할 수 있는 값도 SimSatisfaction뿐이다.
+	 * (피날레 구매는 Day3 MorningCheck 판정이다. 보너스 값 자체는 2026-08-18부터
+	 *  `GetFinaleSatisfactionBonus()`로 읽을 수 있다.)
 	 * ScoreSatisfaction은 Report(분해식)와 Finale 구매 화면(예상치)에서 쓴다.
 	 *
 	 * 이 스텁 HUD는 배선 확인용이라 있으면 표시하고 없어도 통과시킨다.
