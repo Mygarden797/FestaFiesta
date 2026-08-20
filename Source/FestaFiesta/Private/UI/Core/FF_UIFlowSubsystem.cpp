@@ -369,17 +369,25 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 		return;
 	}
 
+	// !! 밀어 넣기 **전에** 갱신한다 !!
+	// PushScreen 이 위젯을 만드는 도중 NativeConstruct 가 돌면서 이 값을 읽는다.
+	// 뒤에서 갱신하면 새 화면이 **직전 화면 이름**을 표시한다 —
+	// 2026-08-20 에 플레이 허브 스텁에 `타이틀` 이 찍혔다.
+	const EFF_UIFlowScreen PreviousScreen = CurrentFrontendScreen;
+	CurrentFrontendScreen = Screen;
+
 	UFF_ActivatableScreenBase* Pushed = Layout->PushScreen(ScreenClass);
 	if (!Pushed)
 	{
+		// 올리지 못했으면 되돌린다. 안 그러면 뜨지도 않은 화면이 현재 화면으로 남는다.
+		CurrentFrontendScreen = PreviousScreen;
+
 		// PushScreen 이 실패 이유를 이미 남긴다. 여기서는 어느 화면이었는지만 덧붙인다.
 		UE_LOG(LogFestaFiestaUI, Error,
 			TEXT("UFF_UIFlowSubsystem::GoToScreen: %s 를 화면 스택에 올리지 못했다."),
 			*UEnum::GetValueAsString(Screen));
 		return;
 	}
-
-	CurrentFrontendScreen = Screen;
 
 	// 타이틀은 자기가 다음 화면을 모른다. 그게 설계다 — 축제가 늘 때마다 타이틀을 고치지 않게 한다.
 	// 그래서 화면을 띄운 쪽인 여기가 델리게이트를 받는다.
