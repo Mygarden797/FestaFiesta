@@ -80,6 +80,7 @@ namespace FFUIFlowStubWbpBuilder
 			CardSlot->SetHorizontalAlignment(HAlign_Center);
 			CardSlot->SetVerticalAlignment(VAlign_Center);
 		}
+		CardBox->AddChild(Card);
 
 		Card->SetBrushColor(Palette->InGame.Paper);
 		Card->SetPadding(FMargin(28.f, 24.f, 28.f, 24.f));

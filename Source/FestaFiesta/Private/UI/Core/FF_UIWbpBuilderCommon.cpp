@@ -121,6 +121,47 @@ namespace FFUIWbpBuilder
 
 	bool SaveNewBlueprint(const TCHAR* LogPrefix, UWidgetBlueprint& Blueprint)
 	{
+		// !! 부모에 붙지 않은 위젯을 먼저 잡는다 !!
+		//
+		// MakeWidget 은 이름을 WidgetVariableNameToGuidMap 에 등록한다. 그런데 AddChild 를
+		// 빼먹으면 그 위젯은 트리에 없다. 그러면 위젯 블루프린트 컴파일러가
+		//   `Variable [X] was deleted but still has a GUID referenced by WidgetBlueprint`
+		// ensure 로 터지고 **BindWidget 이 전부 실패해 화면이 통째로 안 뜬다.**
+		// ensure 는 치명적이지 않아 저장까지 성공하므로, 깨진 .uasset 이 디스크에 남고
+		// 원인은 콜스택 수십 줄 아래에 묻힌다. 2026-08-19 에 실제로 겪었다.
+		//
+		// 여기서 막으면 어느 위젯이 떠 있는지 이름으로 바로 알 수 있고, 저장하지 않는다.
+		if (Blueprint.WidgetTree)
+		{
+			TSet<FName> ReachableNames;
+			Blueprint.WidgetTree->ForEachWidget([&ReachableNames](UWidget* Widget)
+			{
+				if (Widget)
+				{
+					ReachableNames.Add(Widget->GetFName());
+				}
+			});
+
+			TArray<FString> OrphanNames;
+			for (const TPair<FName, FGuid>& Entry : Blueprint.WidgetVariableNameToGuidMap)
+			{
+				if (!ReachableNames.Contains(Entry.Key))
+				{
+					OrphanNames.Add(Entry.Key.ToString());
+				}
+			}
+
+			if (OrphanNames.Num() > 0)
+			{
+				UE_LOG(LogFFUIWbpBuilder, Error,
+					TEXT("%s_FAIL: %s — 부모에 붙지 않은 위젯이 %d개 있다: %s. "
+						 "AddChild 를 빼먹은 것이다. 저장하지 않았다."),
+					LogPrefix, *Blueprint.GetName(), OrphanNames.Num(),
+					*FString::Join(OrphanNames, TEXT(", ")));
+				return false;
+			}
+		}
+
 		// WidgetTree 와 변수 GUID 변경을 구조 변경으로 알린 뒤 컴파일해야
 		// GeneratedClass 에 최신 트리가 반영된다.
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
