@@ -5,6 +5,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "UI/Core/FF_UIFlowSettings.h"
 #include "UI/FF_UILog.h"
 
@@ -109,3 +110,37 @@ void UFF_SaveListProvider::BuildDummySlots()
 }
 
 #undef LOCTEXT_NAMESPACE
+
+// =============================================================================
+// 콘솔 명령 — 개발용
+//
+// `bUseDummySaveSlots` 는 Provider 가 Initialize 와 RefreshSlots 에서만 읽는다.
+// Project Settings 에서 체크를 바꿔도 이미 살아 있는 GameInstance 는 모른다 —
+// PIE 를 다시 시작하면 반영되지만, 그것 때문에 매번 재시작하는 것은 번거롭다.
+// =============================================================================
+#if !UE_BUILD_SHIPPING
+
+namespace FFSaveListConsole
+{
+	void RefreshSaves(const TArray<FString>& Args, UWorld* World)
+	{
+		if (UFF_SaveListProvider* Provider = UFF_SaveListProvider::Get(World))
+		{
+			// OnSaveListChanged 가 나가므로 떠 있는 저장 기록 화면도 함께 다시 그려진다.
+			Provider->RefreshSlots();
+		}
+		else
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("FF.Flow.RefreshSaves: 저장 기록 Provider 를 찾을 수 없다. PIE 중인지 확인한다."));
+		}
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs RefreshSavesCommand(
+		TEXT("FF.Flow.RefreshSaves"),
+		TEXT("저장 기록 목록을 다시 읽는다. Project Settings 의 Use Dummy Save Slots 를 바꾼 뒤 쓴다. "
+			 "PIE 재시작 없이 빈 상태와 있는 상태를 번갈아 볼 수 있다."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&RefreshSaves));
+}
+
+#endif // !UE_BUILD_SHIPPING
