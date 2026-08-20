@@ -18,6 +18,9 @@
 #include "UI/Core/FF_UIRootLayout.h"
 #include "UI/FF_ActivatableScreenBase.h"
 #include "UI/FF_UILog.h"
+#include "UI/Frontend/FF_OptionsScreen.h"
+#include "UI/Frontend/FF_PlayHubScreen.h"
+#include "UI/Frontend/FF_SaveListScreen.h"
 #include "UI/Title/FF_TitleScreen.h"
 
 void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -78,6 +81,7 @@ void UFF_UIFlowSubsystem::Deinitialize()
 	TitleScreen.Reset();
 	StageHudWidget.Reset();
 	RootLayout.Reset();
+	FrontendHistory.Reset();
 	Mode = EFF_UIFlowMode::Idle;
 	CurrentFrontendScreen = EFF_UIFlowScreen::None;
 	ActiveFestivalId = NAME_None;
@@ -304,6 +308,10 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 	StageHudWidget.Reset();
 	TitleScreen.Reset();
 
+	// 새 레이아웃은 새 화면 세션이다. 이전 레벨의 히스토리를 물고 가면
+	// 뒤로 가기가 이미 죽은 화면을 가리킨다.
+	FrontendHistory.Reset();
+
 	if (IsVerbose())
 	{
 		UE_LOG(LogFestaFiestaUI, Log,
@@ -389,13 +397,36 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 		return;
 	}
 
+	// 성공한 뒤에 기억한다. 실패한 전환을 히스토리에 남기면 뒤로 가기가 엉뚱한 곳으로 간다.
+	if (PreviousScreen != EFF_UIFlowScreen::None)
+	{
+		FrontendHistory.Push(PreviousScreen);
+	}
+
 	// 타이틀은 자기가 다음 화면을 모른다. 그게 설계다 — 축제가 늘 때마다 타이틀을 고치지 않게 한다.
 	// 그래서 화면을 띄운 쪽인 여기가 델리게이트를 받는다.
+	// 델리게이트는 **화면이** 소유한다. 화면이 죽으면 함께 사라지므로 여기서 추적하거나
+	// 해제하지 않아도 된다. 구독자(this)가 화면보다 오래 사는 방향이라 안전하다.
 	if (UFF_TitleScreen* Title = Cast<UFF_TitleScreen>(Pushed))
 	{
 		TitleScreen = Title;
 		Title->OnPlayRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleTitlePlayRequested);
 		Title->OnOptionsRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleTitleOptionsRequested);
+	}
+	else if (UFF_PlayHubScreen* PlayHub = Cast<UFF_PlayHubScreen>(Pushed))
+	{
+		PlayHub->OnContinueRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandlePlayHubContinueRequested);
+		PlayHub->OnNewFestivalRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandlePlayHubNewFestivalRequested);
+		PlayHub->OnSaveListRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandlePlayHubSaveListRequested);
+		PlayHub->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
+	}
+	else if (UFF_SaveListScreen* SaveList = Cast<UFF_SaveListScreen>(Pushed))
+	{
+		SaveList->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
+	}
+	else if (UFF_OptionsScreen* Options = Cast<UFF_OptionsScreen>(Pushed))
+	{
+		Options->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
 	}
 
 	if (IsVerbose())
@@ -408,7 +439,17 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 bool UFF_UIFlowSubsystem::GoBack()
 {
 	UFF_UIRootLayout* Layout = RootLayout.Get();
-	return Layout ? Layout->PopScreen() : false;
+	if (!Layout || !Layout->PopScreen())
+	{
+		return false;
+	}
+
+	// 스택이 위젯을 되살렸으므로 우리 쪽 표시 상태도 함께 되돌린다.
+	CurrentFrontendScreen = FrontendHistory.Num() > 0
+		? FrontendHistory.Pop()
+		: EFF_UIFlowScreen::None;
+
+	return true;
 }
 
 void UFF_UIFlowSubsystem::HandleTitlePlayRequested()
@@ -419,6 +460,36 @@ void UFF_UIFlowSubsystem::HandleTitlePlayRequested()
 void UFF_UIFlowSubsystem::HandleTitleOptionsRequested()
 {
 	GoToScreen(EFF_UIFlowScreen::Options);
+}
+
+void UFF_UIFlowSubsystem::HandlePlayHubContinueRequested()
+{
+	// 불러오기 Command 가 없다. 낙관적으로 화면을 바꾸지 않는다 —
+	// 결과 이벤트를 받은 뒤에 전환하는 것이 저장 UI 경계 규칙이다.
+	// 플레이 허브가 저장이 없으면 이 버튼을 잠그므로 보통 여기 오지 않는다.
+	UE_LOG(LogFestaFiestaUI, Log,
+		TEXT("UFF_UIFlowSubsystem: `최근 축제 계속하기` 요청. 불러오기 API 가 아직 없어 대기한다."));
+}
+
+void UFF_UIFlowSubsystem::HandlePlayHubNewFestivalRequested()
+{
+	GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
+}
+
+void UFF_UIFlowSubsystem::HandlePlayHubSaveListRequested()
+{
+	GoToScreen(EFF_UIFlowScreen::SaveList);
+}
+
+void UFF_UIFlowSubsystem::HandleFrontendBackRequested()
+{
+	// 스택이 이전 화면을 소유하므로 여기서 히스토리를 따로 들지 않는다.
+	// 닫을 것이 없으면 GoBack 이 false 를 돌려주고 아무 일도 하지 않는다.
+	if (!GoBack())
+	{
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("UFF_UIFlowSubsystem: 뒤로 갈 화면이 없다. 스택이 비어 있다."));
+	}
 }
 
 const FFF_FestivalAtlasEntry* UFF_UIFlowSubsystem::FindStartableEntry(FName FestivalId) const
@@ -583,8 +654,8 @@ void UFF_UIFlowSubsystem::RequestAdvanceFlow()
 		// 스택이 이전 화면을 소유하므로 여기서 히스토리를 따로 들지 않는다.
 		// 스텁 단계에서는 표시 상태만 플레이 허브로 맞춘다 — 둘 다 거기서 들어오는 화면이다.
 		// U2 에서 실제 화면이 각자 뒤로 가기를 갖게 되면 이 분기는 사라진다.
+		// 히스토리가 이전 화면을 알고 있으므로 여기서 짐작하지 않는다.
 		GoBack();
-		CurrentFrontendScreen = EFF_UIFlowScreen::PlayHub;
 		return;
 
 	default:
