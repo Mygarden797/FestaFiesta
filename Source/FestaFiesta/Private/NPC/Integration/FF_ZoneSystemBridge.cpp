@@ -29,8 +29,25 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	const FFFZSReadModel& ReadModel,
 	FName CurrentZoneId,
 	const FVector& PartyWorldLocation,
-	int32 MaxCandidates)
+	int32 MaxCandidates,
+	const FFF_WalkDistanceMatrix* WalkDistances)
 {
+	// 파티가 서 있는 존의 앵커까지 걸어 나가는 구간. 행렬이 없으면 쓰이지 않는다.
+	// 앵커를 못 찾으면(등록되지 않은 존) 0으로 두어 행렬 경유분만 남긴다 —
+	// 여기서 폴백을 통째로 끄면 존 하나가 빠졌을 때 모든 거리가 직선으로 되돌아가
+	// "왜 갑자기 강 건너편을 고르는가"의 원인을 찾기 어려워진다.
+	float PartyToOwnAnchorCm = 0.f;
+	if (WalkDistances)
+	{
+		FVector OwnAnchorCm;
+		if (WalkDistances->TryGetZoneAnchorCm(CurrentZoneId, OwnAnchorCm))
+		{
+			PartyToOwnAnchorCm = static_cast<float>(FVector::Dist(PartyWorldLocation, OwnAnchorCm));
+		}
+	}
+
+	// 행렬을 켰는데 경로가 없어 직선으로 되돌아간 횟수. 조용히 섞이면 안 되는 값이다
+	int32 WalkDistanceFallbacks = 0;
 	// ── 1. 현재 Zone 과 인접 Zone 확정 ────────────────────────────────────────
 	const FFFZSZoneReadModel* CurrentZone = ReadModel.Zones.FindByPredicate(
 		[CurrentZoneId](const FFFZSZoneReadModel& Zone) { return Zone.ZoneId == CurrentZoneId; });
@@ -152,8 +169,33 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		// [주의] 다른 경로로 FFFZSFacilityReadModel 을 만들면 기본값 FVector::ZeroVector 가 남아 
 		// "Party 에서 월드 원점까지의 거리"가 조용히 들어온다 —
 		// 0 이 아니라 그럴듯한 숫자라서 테스트로도, 로그로도 안 잡힌다.
-		Candidate.DistanceMeters = CentimetersToMeters(
-			static_cast<float>(FVector::Dist(PartyWorldLocation, Facility.WorldLocation)));
+		//
+		// 거리 근사: |파티 → 출발존 앵커| + M[출발존][도착존] + |도착존 앵커 → 시설|
+		// 같은 존이면 앵커를 경유하지 않는다 — 존 내부는 열린 공간이고, 경유시키면
+		// 옆 부스가 앵커까지 돌아가는 거리로 잡혀 오히려 틀린다.
+		float DistanceCm = static_cast<float>(FVector::Dist(PartyWorldLocation, Facility.WorldLocation));
+
+		if (WalkDistances && Facility.ZoneId != CurrentZoneId)
+		{
+			float ZoneToZoneCm = 0.f;
+			FVector TargetAnchorCm;
+
+			if (WalkDistances->TryGetWalkDistanceCm(CurrentZoneId, Facility.ZoneId, ZoneToZoneCm)
+				&& WalkDistances->TryGetZoneAnchorCm(Facility.ZoneId, TargetAnchorCm))
+			{
+				DistanceCm = PartyToOwnAnchorCm
+					+ ZoneToZoneCm
+					+ static_cast<float>(FVector::Dist(TargetAnchorCm, Facility.WorldLocation));
+			}
+			else
+			{
+				// 경로가 없다. 직선거리를 그대로 쓴다 — 큰 값을 넣어 후보에서 빼면
+				// "왜 저 부스가 아무도 안 가는가"가 로그에 남지 않는다.
+				++WalkDistanceFallbacks;
+			}
+		}
+
+		Candidate.DistanceMeters = CentimetersToMeters(DistanceCm);
 
 		// EstimatedWaitMinutes 는 채우지 않는다(0으로 남는다) — 소유자는 FFF_QueueWaitAdapter 다.
 		// 이유는 FF_ZoneSystemBridge.h 의 "대기시간은 이 파일에서 계산하지 않는다" 주석 참조.
@@ -199,6 +241,18 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	}
 
 	// ── 5. 진단 ──────────────────────────────────────────────────────────────
+
+	// 행렬을 켰는데 직선으로 되돌아간 후보가 있으면 알린다.
+	// 이게 조용히 섞이면 일부 후보만 다른 척도로 재진 상태가 되고, 그 상태의 결정 로그는
+	// "가까운 곳을 골랐다"고 말하면서 실제로는 강 건너편을 고른다.
+	if (WalkDistanceFallbacks > 0)
+	{
+		UE_LOG(LogFestaFiestaNpc, Warning,
+			TEXT("BuildCandidates: Zone='%s' 후보 %d개가 보행거리 없이 직선으로 계산됐다 — ")
+			TEXT("존 그래프와 NavMesh 연결성이 어긋났을 수 있다(행렬 빌드 로그의 불일치 항목 확인)"),
+			*CurrentZoneId.ToString(), WalkDistanceFallbacks);
+	}
+
 	if (Candidates.IsEmpty())
 	{
 		// 후보 0개는 항상 no_choice 를 만든다. 원인이 데이터인지 필터인지 여기서 갈라준다.

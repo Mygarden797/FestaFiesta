@@ -71,13 +71,19 @@ struct FUnitData
 	//---회피 관련 변수들 ---//
 
 	/**
-	 * 이번 스텝의 회피 가속도, UU/s^2. (이름은 Force지만 이미 질량으로 나눈 값이다)
+	 * 이번 스텝의 가속도, UU/s^2. (이름은 Force지만 이미 질량으로 나눈 값이다)
 	 *
 	 * 사회력 계산은 SI(N, m)로 하고, 질량으로 나눠 가속도로 만든 뒤 UU/s^2로 되돌려 여기 담는다.
 	 * 왜 힘(N)을 그대로 담지 않는가: 그러면 StepAgent이 질량을 알아야 하고,
 	 * 단위 변환 지점이 두 곳으로 늘어난다. 변환이 두 곳이 되는 순간 100배 오차가 숨을 자리가 생긴다.
 	 *
-	 * bEnableAvoidance가 false면 항상 0이고, StepAgent에서 0을 더하는 것은 결과를 바꾸지 않는다 —
+	 * ★ 안에 무엇이 들어 있는지는 bAvoidanceDrivesVelocity에 달려 있다.
+	 *   켜짐: 구동력 + 회피. StepAgent은 Lerp 없이 이 값만 적분한다
+	 *   꺼짐: 회피분만. 목표 추종은 StepAgent의 지수 평활이 맡는다
+	 *   판단은 CrowdSteering::FStepParams::bDrivingForceInForce로 전달된다.
+	 *
+	 * bEnableAvoidance가 false면 항상 0이고(그때는 Lerp 경로가 강제된다),
+	 * StepAgent에서 0을 더하는 것은 결과를 바꾸지 않는다 —
 	 * 그래서 회피를 껐을 때 기존 수치와 완전히 같다(회귀 판정의 근거).
 	 */
 	FVector Force = FVector::ZeroVector;
@@ -101,6 +107,27 @@ struct FUnitData
 	float MaxSpeed = 150.f;
 
 	float Radius = 34.f;
+
+	/**
+	 * 이 개체의 도착 판정 반경, UU. ★ 개체마다 다르다.
+	 *
+	 * ── 왜 전역 값이 아닌가 (실측 근거) ──
+	 *
+	 * 부스의 대기열 슬롯 간격은 90cm다(FFFZSQueueRules::SlotSpacingCm).
+	 * 전역 150UU를 쓰면 도착 반경이 슬롯 간격보다 커서, 슬롯 5번으로 걸어가던 파티가
+	 * 슬롯 3~4번 자리에서 이미 '도착'으로 판정되어 그 자리에 선다.
+	 * 인접 슬롯 두세 개가 서로의 반경 안에 들어가므로 9.9m로 펴져야 할 줄이
+	 * 1.5m 뭉치로 압축된다 — 부스 앞 덩어리의 직접 원인이다.
+	 * 큐 자신은 25cm(SlotArrivalToleranceCm)로 판정하므로 두 시스템이 6배 다른 기준을 쓰고 있었다.
+	 *
+	 * 그래서 목적지 종류에 따라 값이 달라야 한다.
+	 *   큐 슬롯·서비스 지점 : QueueSlotArrivalRadiusUU (슬롯 간격의 절반 미만)
+	 *   그 밖(접근점·배회)  : ArrivalRadiusUU
+	 *
+	 * 갱신은 UFF_CrowdSimulationSubsystem::StepSimulation이 스텝마다 한 번 한다 —
+	 * 큐 단계를 아는 것은 그쪽뿐이다. 여기 값을 직접 쓰지 말 것.
+	 */
+	float ArrivalRadiusUU = 150.f;
 	
 	//Animation
 	
@@ -193,6 +220,24 @@ struct FCrowdGroupTypes
 	FName GroupName = NAME_None;
 };
 
+/**
+ * 파티가 대기열의 어느 단계에 있는가.
+ *
+ * 이 단계가 필요한 이유는 하나다 — 줄에 서 있는 파티는 도착 판정이 매 스텝 참인데,
+ * 그때마다 재평가를 걸면 줄을 서자마자 다른 곳으로 걸어가 버린다.
+ * Queue가 파티를 소유하는 구간을 Crowd가 알아야 재평가를 멈출 수 있다.
+ */
+UENUM()
+enum class EFF_PartyQueuePhase : uint8
+{
+	// 큐와 무관하다. 도착하면 평소대로 재평가한다
+	None,
+	// 가입이 수락됐고 배정받은 슬롯으로 걸어가는 중
+	Joined,
+	// 슬롯에 도착해 서비스를 기다리는 중. 줄이 줄면 새 슬롯 좌표를 받아 앞으로 옮겨간다
+	AtSlot,
+};
+
 USTRUCT()
 struct FPartyDecisionState
 {
@@ -205,11 +250,26 @@ struct FPartyDecisionState
 	float LastDecisionSimTime = 0.f;
 	// 결정 회차 MakeDecisionSeed의 3번째 인자이다.
 	int32 ChoiceRoundIndex = 0;
-	
+
 	EFF_DecisionReason PendingReason = EFF_DecisionReason::Spawned;
 	FName CurrentDestinationId = NAME_None;
 	int32 ConsecutiveNoChoiceCount = 0;
 	bool bIsLeaving = false;
 	float LeaveStartedSimTime = 0.f;
+
+	// --- 대기열 -------------------------------------------------------------------------
+	EFF_PartyQueuePhase QueuePhase = EFF_PartyQueuePhase::None;
+
+	// 가입한 시설의 Zone GUID. QueuePhase가 None이면 무효다.
+	// int32 QueueFacilityId가 아니라 GUID를 들고 있는 이유: 결정 계층이 만들어내는 것이
+	// GUID이고, int32 대응은 브리지가 실행 중에 바꿀 수 있는 내부 배정이기 때문이다.
+	FGuid QueuedFacilityId;
+
+	// 줄에 들어간 시각(SimTimeSeconds). 탈출 타이머의 기준이다.
+	//
+	// 타이머가 필요한 이유: 줄을 벗어나는 정상 경로는 전부 Queue의 이벤트(거절·포기·서비스
+	// 완료·폐쇄 취소)인데, 그 이벤트가 하나라도 유실되면 파티가 영원히 재평가되지 않는다.
+	// 그러면 화면에는 "이유 없이 굳은 NPC 무리"로만 보이고 로그에는 아무것도 안 남는다.
+	float QueueEnteredSimTime = 0.f;
 };
 
