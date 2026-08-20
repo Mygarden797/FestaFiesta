@@ -97,7 +97,7 @@ namespace FFReportWbpBuilder
 	const FLinearColor ColorTextMuted = FLinearColor::FromSRGBColor(FColor(0xBF, 0xD0, 0xE5));
 	const FLinearColor ColorTextBody = FLinearColor::FromSRGBColor(FColor(0xEC, 0xF4, 0xFF));
 
-	// 헬퍼는 FF_UIWbpBuilderCommon 을 그대로 쓴다. 이 파일이 들고 있던 사본은 2026-08-19 에 옮겼다.
+	// 헬퍼는 FF_UIWbpBuilderCommon 을 그대로 쓴다. 이 파일이 들고 있던 사본은 2026-08-20 에 옮겼다.
 	// 세 빌더에 같은 코드가 복붙돼 있었고 앞으로 생성기가 여섯 개 더 생긴다.
 	using namespace FFUIWbpBuilder;
 

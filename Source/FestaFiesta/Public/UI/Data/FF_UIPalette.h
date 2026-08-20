@@ -18,7 +18,7 @@
  *
  * === 반드시 FromSRGBColor를 거친다 ===
  * 헥스 비율을 `FLinearColor`에 직접 넣으면 감마가 틀려 화면이 밝게 뜬다.
- * `FF_UIMetricBandSettings`가 실제로 그 상태였고 2026-08-19에 고쳤다.
+ * `FF_UIMetricBandSettings`가 실제로 그 상태였고 2026-08-20에 고쳤다.
  * 알파는 `FColor`의 4번째 인자로 넘긴다 — `FromSRGBColor`는 RGB만 감마 변환하고
  * 알파는 `A/255`로 선형 통과시킨다. 생성 뒤에 `.A`를 따로 대입하면 한쪽만 고치는 실수가 난다.
  */

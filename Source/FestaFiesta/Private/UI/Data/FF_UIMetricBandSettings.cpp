@@ -10,7 +10,7 @@ UFF_UIMetricBandSettings::UFF_UIMetricBandSettings()
 {
 	// 2026-08-06 결정: 70 / 40. 근거는 헤더 주석.
 	// 색은 `UFF_UIPalette`의 InGame.BandGood / BandCaution / BandBad와 같은 값이다 (LightTeal).
-	// 2026-08-19에 sRGB 비율을 FLinearColor에 직접 넣던 것을 FromSRGBColor로 고쳤다 —
+	// 2026-08-20에 sRGB 비율을 FLinearColor에 직접 넣던 것을 FromSRGBColor로 고쳤다 —
 	// 감마가 틀려 `좋음`이 의도한 진한 초록이 아니라 연한 민트로 떠 있었다.
 	// **경계값·라벨·아이콘은 이 파일이 소유하고 팔레트는 원색만 갖는다.** 한쪽을 바꾸면 같이 맞춘다.
 	//

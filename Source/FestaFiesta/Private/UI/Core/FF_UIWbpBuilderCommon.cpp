@@ -128,7 +128,7 @@ namespace FFUIWbpBuilder
 		//   `Variable [X] was deleted but still has a GUID referenced by WidgetBlueprint`
 		// ensure 로 터지고 **BindWidget 이 전부 실패해 화면이 통째로 안 뜬다.**
 		// ensure 는 치명적이지 않아 저장까지 성공하므로, 깨진 .uasset 이 디스크에 남고
-		// 원인은 콜스택 수십 줄 아래에 묻힌다. 2026-08-19 에 실제로 겪었다.
+		// 원인은 콜스택 수십 줄 아래에 묻힌다. 2026-08-20 에 실제로 겪었다.
 		//
 		// 여기서 막으면 어느 위젯이 떠 있는지 이름으로 바로 알 수 있고, 저장하지 않는다.
 		if (Blueprint.WidgetTree)
