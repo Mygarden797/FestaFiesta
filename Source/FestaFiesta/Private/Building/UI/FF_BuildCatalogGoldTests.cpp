@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildCatalogGoldTests.cpp
+
+// Festival 골드 변경이 카탈로그 읽기 모델과 화면 표시까지 전달되는 계약을 검증한다.
+// 흐름: 테스트 GameInstance/진행 상태 구성 -> 카탈로그 화면 생성 -> 골드 변경 전후 텍스트 확인.
+// 불변식: 저장된 WBP 유무와 무관하게 디자이너 경로와 네이티브 폴백은 같은 골드를 보여야 한다.
+// 실패/수명: 자동화용 클래스 override와 Root 객체는 테스트 범위를 벗어나기 전에 원상 복구한다.
 
 #include "Building/UI/FF_BuildCatalogScreen.h"
 
@@ -21,7 +26,7 @@
 
 namespace
 {
-	// Keep this helper name unique because Unity builds merge anonymous namespaces from .cpp files.
+	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
 	class FScopedBuildCatalogPlayerlessWidgetInitialization
 	{
 	public:
@@ -169,8 +174,8 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 		: INDEX_NONE;
 	const bool bPackageWasDirty = ScreenClass->GetOutermost()->IsDirty();
 
-	// Automation Game worlds do not create a LocalPlayer. This scoped override is restored before
-	// the class can be reused by another test or PIE session.
+	// 자동화 Game 월드는 LocalPlayer를 만들지 않는다. 다른 테스트나 PIE가 클래스를 재사용하기 전에
+	// 이 범위 한정 override를 원래 값으로 복구한다.
 	FScopedBuildCatalogPlayerlessWidgetInitialization PlayerlessInitializationGuard(*ScreenClass);
 	UFF_BuildCatalogScreen* Screen = CreateWidget<UFF_BuildCatalogScreen>(World, ScreenClass);
 	TestNotNull(TEXT("Build catalog screen can be created in the isolated Game world"), Screen);

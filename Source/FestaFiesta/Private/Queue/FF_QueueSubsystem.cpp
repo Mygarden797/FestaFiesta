@@ -263,7 +263,7 @@ float UFF_QueueSubsystem::GetFacilityServiceRatePerMinute(int32 FacilityId) cons
 
 FVector UFF_QueueSubsystem::GetFacilityExitLocation(int32 FacilityId) const
 {
-	// 퇴장 경로가 대기열 입구와 겹치면 나가는 사람과 들어오는 사람이 서로를 막는다 (설계문서 8.2③).
+	// 퇴장 경로가 대기열 입구와 겹치면 나가는 사람과 들어오는 사람이 서로를 막는다.
 	// 겹침 검증 자체는 시설 배치(한광훈) 쪽 책임이고, Queue는 받은 값을 전달만 한다.
 	const FFF_FacilityQueue* Queue = FindQueue(FacilityId);
 	return Queue ? Queue->GetConfig().ExitLocation : FVector::ZeroVector;

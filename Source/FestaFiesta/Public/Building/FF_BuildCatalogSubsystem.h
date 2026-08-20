@@ -1,5 +1,10 @@
 // FF_BuildCatalogSubsystem.h
 
+// FacilityDefinition을 비동기로 수집해 UI용 카탈로그와 썸네일 로드 상태를 관리한다.
+// 흐름: 기본 에셋 검색 -> 정의 로드/검증 -> 정렬·그룹화 -> 세션 기반 썸네일 프리로드.
+// 불변식: 요청 세대로 오래된 콜백을 무시하고 동일 정의 ID는 카탈로그에 한 번만 남긴다.
+// 실패/수명: 로드 실패는 종결 상태로 알리며 세션이 끝나면 핸들과 썸네일 강한 참조를 해제한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -20,7 +25,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildCatalogThumbnailsChanged);
 
 // 에셋 검색, 비동기 로드, ID 이름 규칙 파싱, 유효성 검증과 결정적 정렬을 한곳에서 담당합니다.
 // 따라서 건설 위젯은 Asset Registry를 직접 검색하거나 식별자 문자열을 해석할 필요가 없고,
-//권위 있는 시설 Data Asset의 수명을 위젯이 직접 소유하지 않아도 됩니다.
+// 권위 있는 시설 Data Asset의 수명을 위젯이 직접 소유하지 않아도 됩니다.
 
 // 평면 Entries와 메뉴에 바로 사용할 수 있는 CategoryGroups는 같은 유효 항목의 서로 다른
 // 표현이며, 새로고침이 끝날 때 함께 교체됩니다.
@@ -39,7 +44,7 @@ public:
 
 	// 등록된 모든 FFZSFacilityDefinition Primary Asset을 다시 열거하고 비동기로 로드합니다.
 	// 기존 진행 요청은 취소·무효화되며, 현재 결과/오류/스킵 수는 먼저 초기화됩니다.
-	//호출 직후 상태는 Loading이고, 완료 또는 실패 시 OnCatalogChanged가 한 번 방송됩니다.
+	// 호출 직후 상태는 Loading이고, 완료 또는 실패 시 OnCatalogChanged가 한 번 방송됩니다.
 	 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Catalog")
 	void RefreshCatalog();
@@ -83,13 +88,13 @@ public:
 	int32 GetSkippedAssetCount() const { return SkippedAssetCount; }
 
 	// 도메인 FacilityDefinitionId로 카탈로그 항목을 조회합니다.
-	 //OutEntry 성공하면 내부 항목의 복사본, 실패하면 기본값으로 초기화된 항목
-	 // ID가 존재하고 내부 인덱스가 유효하면 true
+	// OutEntry: 성공하면 내부 항목의 복사본, 실패하면 기본값으로 초기화된 항목
+	// ID가 존재하고 내부 인덱스가 유효하면 true
 	 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Catalog")
 	bool FindEntry(FName FacilityDefinitionId, FFF_BuildCatalogEntry& OutEntry) const;
 
-	//ID에 해당하는 이미 로드된 시설 정의 Data Asset을 반환합니다.
+	// ID에 해당하는 이미 로드된 시설 정의 Data Asset을 반환합니다.
 	// 찾을 수 없거나 객체가 현재 로드되어 있지 않으면 null이며, 이 함수는 동기 로드를 수행하지 않습니다.
 	 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Catalog")
@@ -102,7 +107,7 @@ public:
 	bool TryGetDefinitionSpec(FName FacilityDefinitionId, FFFZSFacilitySpec& OutSpec) const;
 
 	
-	//새로고침이 Ready 또는 Failed에 도달한 뒤 방송됩니다.
+	// 새로고침이 Ready 또는 Failed에 도달한 뒤 방송됩니다.
 	// 이벤트는 과거 완료를 재생하지 않으므로 늦게 구독한 UI는 즉시 LoadState도 함께 읽어야 합니다.
 	 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Catalog")

@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_ZoneLifecycleTestPanelWbpBuilder.cpp
+
+// Test_Main용 Lifecycle 패널 WBP가 없을 때 기준 컨트롤과 상태 영역을 생성한다.
+// 흐름: Blueprint 생성 -> 필수 BindWidget 이름으로 레이아웃 조립 -> 컴파일·저장.
+// 불변식: 버튼·텍스트 이름과 타입은 테스트 패널 헤더의 BindWidget 계약과 일치해야 한다.
+// 실패/수명: 에디터 콘솔 명령에서만 동작하고 기존 에셋이나 컴파일 실패 결과는 덮어쓰지 않는다.
 
 #include "CoreMinimal.h"
 

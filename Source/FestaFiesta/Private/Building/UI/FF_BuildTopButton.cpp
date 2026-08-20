@@ -1,5 +1,10 @@
 // FF_BuildTopButton.cpp
 
+// 상단 액션 버튼의 투명 스타일과 상태별 콘텐츠 색·선택 표시선을 동기화한다.
+// 흐름: 네이티브 기본 스타일 설정 -> 생성 훅 -> 선택/해제 콜백마다 표시선 갱신.
+// 불변식: PreConstruct와 런타임은 같은 갱신 함수를 사용해 동일한 선택 상태를 표현한다.
+// 실패/성능: 선택 표시 BindWidget이 없으면 갱신만 생략하고 별도 Tick이나 동적 자원을 만들지 않는다.
+
 #include "Building/UI/FF_BuildTopButton.h"
 
 #include "Building/UI/FF_BuildTopButtonStyle.h"

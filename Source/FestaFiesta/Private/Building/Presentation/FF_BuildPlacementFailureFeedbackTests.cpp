@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildPlacementFailureFeedbackTests.cpp
+
+// 배치 실패 피드백 WBP의 구조와 실패 코드별 제목·상세 표시 계약을 검증한다.
+// 흐름: 저장된 Blueprint 검사 -> transient 위젯 구성 -> 분류/표시/해제 상태 확인.
+// 불변식: 저장 에셋을 수정하지 않고 런타임과 같은 PresentFailure/DismissFeedback 경로를 호출한다.
+// 실패/수명: 에셋 누락과 로직 회귀를 별도 assertion으로 보고하고 위젯 래퍼를 검사 동안 유지한다.
 
 #include "CoreMinimal.h"
 
@@ -23,7 +28,7 @@ namespace
 		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback_C");
 
-	// Keep this helper name unique because Unity builds merge anonymous namespaces from .cpp files.
+	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
 	class FScopedBuildPlacementFailureFeedbackPlayerlessWidgetInitialization
 	{
 	public:
@@ -53,6 +58,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildPlacementFailureFeedbackAssetContractTest::RunTest(const FString& Parameters)
 {
+	// 토스트의 부모 클래스와 제목·상세 BindWidget을 검사해 디자이너 변경의 영향 범위를 고정한다.
 	(void)Parameters;
 
 	TestFalse(TEXT("The failure WBP lives outside the team-owned Zone/UI/Building path"),
@@ -97,6 +103,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& Parameters)
 {
+	// 각 권위 실패 코드의 UI 분류와 표시·해제 수명주기를 동일 위젯 인스턴스에서 확인한다.
 	(void)Parameters;
 
 	TestEqual(TEXT("Insufficient funds maps to the dedicated Gold UI state"),

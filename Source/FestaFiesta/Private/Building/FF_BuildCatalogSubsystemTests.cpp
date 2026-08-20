@@ -1,4 +1,9 @@
-// FF_BuildCatalogModel.cpp
+// FF_BuildCatalogSubsystemTests.cpp
+
+// 카탈로그 비용 투영·결정적 정렬/그룹화·비동기 요청 세대 규칙을 순수 데이터로 검증한다.
+// 흐름: 최소 입력 Fixture 구성 -> 순수 모델 호출 -> 비용·순서·그룹·세대 결과 비교.
+// 불변식: 테스트는 런타임과 같은 FFBuildCatalogModel 함수를 호출하고 외부 에셋을 변경하지 않는다.
+// 실패/성능: 엔진 비동기 로드와 분리해 실패 원인을 규칙 단위로 좁히고 실행 비용을 작게 유지한다.
 
 #include "Building/FF_BuildCatalogModel.h"
 
@@ -12,7 +17,7 @@
 
 namespace
 {
-	//정렬·그룹화 규칙에 필요한 최소 필드만 채운 테스트 항목을 만듭니다.
+	// 정렬·그룹화 규칙에 필요한 최소 필드만 채운 테스트 항목을 만듭니다.
 	// PrimaryAssetId, Definition, Thumbnail 등 해당 순수 변환에 관여하지 않는 값은 기본값으로 두어
 	// 테스트 실패가 실제 비교 키와 그룹 키에만 집중되도록 합니다.
 	 

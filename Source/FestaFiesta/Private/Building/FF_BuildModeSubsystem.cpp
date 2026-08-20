@@ -1,5 +1,10 @@
 // FF_BuildModeSubsystem.cpp
 
+// 건축 모드의 입력·UI·미리보기와 Zone System 권위 배치/이동/철거 명령을 조정한다.
+// 흐름: 세션 진입 -> 카탈로그 선택 -> 커서 기반 검증 -> 명령 커밋 또는 실패 피드백.
+// 불변식: 한 시점에는 하나의 배치/이동/철거 선택만 유지하며 월드·단계 변경 시 임시 상태를 정리한다.
+// 실패/성능: 무효 권위 조건은 커밋 전에 차단하고 커서 기반 전체 검증은 제한된 주기로 실행한다.
+
 #include "Building/FF_BuildModeSubsystem.h"
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -21,9 +26,9 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Widgets/SViewport.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
-#include "Widgets/SViewport.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
@@ -60,10 +65,7 @@ bool UFF_BuildModeSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 		return false;
 	}
 
-	// ZoneTestMap에는 QA 전용 입력/프리뷰 하네스가 따로 있다. 프로덕션 시스템까지 생성하면 B 키 한 번이
-	// 서로 독립적인 두 배치 시스템을 동시에 구동하므로, PIE 접두사를 제거한 실제 패키지명으로 예외 처리한다.
-	const FString NormalizedPackageName = UWorld::RemovePIEPrefix(World->GetPackage()->GetName());
-	return NormalizedPackageName != TEXT("/Game/FestaFiesta/Zone/Maps/ZoneTestMap");
+	return true;
 }
 
 bool UFF_BuildModeSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -1909,8 +1911,8 @@ void UFF_BuildModeSubsystem::HandleFestivalStageChanged(
 	if (FFBuildModeModel::ShouldExitWhenReconfigureCloses(
 		State, IsBuildEntryAllowed()))
 	{
-		// Live picking is intentionally blocked while a build session owns the mouse. The stage
-		// transition therefore closes the whole session atomically instead of leaving stale build UI.
+		// 건축 세션이 마우스를 소유하는 동안 Live 선택은 의도적으로 차단한다. 단계 전환 시
+		// 오래된 건축 UI를 남기지 않도록 세션 전체를 원자적으로 닫는다.
 		ExitBuildMode();
 	}
 }

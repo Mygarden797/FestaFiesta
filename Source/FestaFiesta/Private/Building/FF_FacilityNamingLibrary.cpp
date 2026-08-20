@@ -1,10 +1,15 @@
 // FF_FacilityNamingLibrary.cpp
 
+// FacilityDefinitionId의 대분류·소분류 토큰 표와 엄격한 파싱 규칙을 구현한다.
+// 흐름: 카테고리 토큰 조회 -> 소분류 허용 여부 확인 -> 세 번째 이후 토큰을 고유 이름으로 결합.
+// 불변식: 토큰 비교는 대소문자를 구분하지 않지만 결과는 규칙 표의 정규 이름으로 반환한다.
+// 실패/성능: 무효 형식은 출력 초기화 뒤 false를 반환하고 정적 규칙 표는 최초 호출에 한 번만 만든다.
+
 #include "Building/FF_FacilityNamingLibrary.h"
 
 namespace
 {
-	//Zone System의 enum 카테고리를 FacilityDefinitionId 첫 토큰으로 변환하는 규칙 표다.
+	// Zone System의 enum 카테고리를 FacilityDefinitionId 첫 토큰으로 변환하는 규칙 표다.
 	// 함수 지역 static을 사용해 최초 호출 시 한 번만 구성하고, const 참조만 노출해 실행 중 변경을 막는다.
 	// 카테고리를 추가할 때 아래 소분류 표도 함께 추가해야 TryParseFacilityDefinitionId가 성공한다.
 	

@@ -1,5 +1,10 @@
 // FF_FacilityNamingLibrary.h
 
+// `대분류_소분류_고유이름` 형식의 FacilityDefinitionId를 생성·분해하는 공용 규칙을 선언한다.
+// 흐름: Zone 카테고리를 대분류 토큰으로 매핑하고, 허용 소분류를 확인한 뒤 나머지를 고유 토큰으로 보존한다.
+// 불변식: 성공 결과는 규칙 표의 정규 토큰과 원래 underscore를 보존한 고유 이름을 가진다.
+// 실패/성능: 파싱 실패 시 출력을 초기화하고 함수 지역 const 표는 최초 호출에 한 번만 구성한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,7 +12,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "FF_FacilityNamingLibrary.generated.h"
 
-//`대분류_소분류_고유이름` FacilityDefinitionId를 UI와 게임 로직이 함께 쓰는 형태로 분해한 값이다.
+// `대분류_소분류_고유이름` FacilityDefinitionId를 UI와 게임 로직이 함께 쓰는 형태로 분해한 값이다.
 // UniqueToken은 세 번째 토큰부터 끝까지를 원래 underscore와 함께 보존한다.
 // 파싱 실패 시 구조체 전체가 기본값으로 초기화되므로 이전 호출의 일부 결과가 남지 않는다.
  
@@ -29,9 +34,9 @@ struct FESTAFIESTA_API FFF_FacilityNameParts
 	FString UniqueToken;
 };
 
-//시설 네이밍 규칙의 단일 진실 공급원.
+// 시설 네이밍 규칙의 단일 진실 공급원.
 
-//이 라이브러리는 파싱과 검증만 하고 로그를 남기지 않는다. 반복 평가 시 로그 폭증을 막는
+// 이 라이브러리는 파싱과 검증만 하고 로그를 남기지 않는다. 반복 평가 시 로그 폭증을 막는
 // Warning-once 정책은 실제 소비자인 ZoneSystemBridge가 소유한다.
 // 표에 없는 enum 값은 예외를 던지지 않고 빈 결과/실패 이유로 반환해, 신규 카테고리가 추가되었지만
 // 규칙 표가 아직 갱신되지 않은 상황을 호출자가 안전하게 진단할 수 있게 한다.
@@ -54,13 +59,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Naming")
 	static TArray<FName> GetKnownMinorTokens(EFFZSFacilityCategory Category);
 
-	//또는 개발 UI에 표시하도록 허용 소분류를 `A, B, C` 형식으로 연결한다.
+	// 또는 개발 UI에 표시하도록 허용 소분류를 `A, B, C` 형식으로 연결한다.
 	// 카테고리가 표에 없으면 빈 문자열 대신 진단 가능한 `(표 없음)`을 반환한다.
 	 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Naming")
 	static FString JoinKnownMinorTokens(EFFZSFacilityCategory Category);
 
-	//FacilityDefinitionId를 `대분류_소분류_고유이름`으로 파싱하고 ExpectedCategory와 대분류가
+	// FacilityDefinitionId를 `대분류_소분류_고유이름`으로 파싱하고 ExpectedCategory와 대분류가
 	// 일치하는지, 소분류가 규칙 표에 있는지 검증한다. 세 번째 이후 underscore는 UniqueToken에
 	// 그대로 포함한다. NAME_None은 아직 정의가 연결되지 않은 상태이므로 실패하되 오류 문자열은 비운다.
 	 

@@ -26,6 +26,14 @@ class FFFZSWorldCommandLifecycleSnapshotTest;
 class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
 #endif
 
+UENUM(BlueprintType)
+enum class EFFZSFacilitySelectionIndicatorState : uint8
+{
+    Hidden,
+    Hovered,
+    Selected
+};
+
 //데이터 주도 시설 런타임 인스턴스.
 // 새 수치나 비주얼 차이는 FFFZSFacilitySpec으로 표현하고, 실제로 새로운 행동 능력이 필요할 때만 서브클래스를 만든다.
 // 권한 수명주기 변경은 friend인 UFFZSWorldSubsystem만 호출한다.
@@ -107,6 +115,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
     void SetBuildModeActionSelected(bool bSelected);
     // 이동·철거 액션을 고르는 동안 선택된 시설의 footprint를 청록색 굵은 선으로 강조한다.
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
+    void SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState NewState);
+    // 실제 SelectionProxy를 표시해 Hover·정보 선택 상태와 클릭 가능한 범위를 같은 기하로 보여 준다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Presentation")
+    EFFZSFacilitySelectionIndicatorState GetSelectionIndicatorState() const
+    {
+        return SelectionIndicatorState;
+    }
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation",
         meta = (DeprecatedFunction, DeprecationMessage = "Use SetBuildModeActionSelected."))
@@ -204,6 +222,8 @@ private:
 
     bool bBuildModeRangeVisible = false;
     bool bBuildModeActionSelected = false;
+    EFFZSFacilitySelectionIndicatorState SelectionIndicatorState =
+        EFFZSFacilitySelectionIndicatorState::Hidden;
 
     // 일반 폐장 콜백 재진입 뒤 큐가 완전히 비면 MovePending으로 전환하려는 의도 플래그다. 
     bool bSetMovePendingWhenDrained = false;
@@ -211,7 +231,7 @@ private:
     TSharedPtr<FStreamableHandle> VisualLoadHandle;
 
     void RebuildRuntimePresentation();
-    void RebuildSelectionProxy(const FVector& FootprintExtent);
+    void RebuildSelectionProxy(const FVector& SelectionExtent);
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
     void RebuildAnchors();

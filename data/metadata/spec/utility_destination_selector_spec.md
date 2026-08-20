@@ -1,7 +1,11 @@
 # Utility AI 목적지 선택기 v0 명세
 
 - 작성일: 2026-08-04 (최종 갱신 2026-08-06)
-- 상태: 선택기 알고리즘·글루 코드는 구현·테스트 완료. **실제 NPC Pawn/AIController에 연결된 적은 없음** (그런 클래스가 아직 없음).
+- 상태: 선택기 알고리즘·글루 코드 구현·테스트 완료. **2026-08-19 갱신 — 실제 NPC에 연결됐다.**
+  `UFF_CrowdDecisionSubsystem`(조정자)이 crowdAI의 결정 델리게이트를 물고 `Choose`를 부른다.
+  Pawn/AIController가 아니라 Crowd 유닛 단위로 도는 구조다.
+  **6항 중 preference·need·distance·wait 넷이 동작하고 attraction·density 둘은 입력이 0이다**
+  (`BaseAttraction` 미저작 / `ReportZonePopulation` 호출부 0곳).
 - 관련 문서: `utility_ai_spec.md`(Utility 식·필드), `individual_variation_spec.md`(개체 변주 6종), `dependent_child_npc_spec.md`(종속 아동 처리)
 - **2026-08-06 변경**: Utility 식에 `need` 항 추가(6항), `no_choice` 행동 3종 분해 + 연속 횟수 감쇠, 개체 변주 그룹 공유 wrapper. `Choose()`에 인자 2개가 추가됐다(기본값 있음).
 

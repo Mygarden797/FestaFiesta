@@ -1,5 +1,10 @@
 // FF_BuildModeSubsystem.h
 
+// 월드의 건축·배치·이동·철거 세션과 관련 UI/입력 수명주기를 조정하는 서브시스템을 선언한다.
+// 흐름: 상태 전이 -> 카탈로그 선택 -> 배치 미리보기 검증 -> 권위 Zone 명령 커밋.
+// 불변식: 한 시점에는 하나의 배치·이동·철거 선택만 존재하고 월드 변경 시 임시 상태를 정리한다.
+// 실패/성능: 무효 단계·Zone·비용은 권위 명령 전 차단하고 커서 재검증은 제한된 주기로 수행한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -340,7 +345,7 @@ private:
 	void HandleRemovalCancelRequested(FGuid FacilityInstanceId);
 	// 커서 레이를 바닥/Zone/그리드 좌표로 변환하고 필요할 때 Install/Move PreviewCommand를 다시 검증한다.
 	// bForceCommandRebuild 위치가 같아도 회전·월드 revision 변화 등을 반영할지 여부.
-	//프리뷰 명령과 LastValidation을 실제로 갱신했으면 true.
+	// 프리뷰 명령과 LastValidation을 실제로 갱신했으면 true.
 	 
 	bool UpdatePlacementFromCursor(bool bForceCommandRebuild = false);
 	// 선택 Spec, GUID, Zone, 배치, 최신 revision으로 Install/Move PreviewCommand를 교체한다.

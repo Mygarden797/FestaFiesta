@@ -5,6 +5,7 @@
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Camera/FF_FestivalPlayerController.h"
+#include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
@@ -28,6 +29,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogFestaFiestaFacilityInfo, Log, All);
 
 namespace
 {
+	constexpr float FacilitySelectionTraceDistanceCm = 500000.0f;
+	constexpr float FacilitySelectionOcclusionEndToleranceCm = 2.0f;
+	constexpr int32 MaxFacilitySelectionCandidates = 32;
+
 	FText FormatIntegerWithSuffix(const int32 Value, const FText& Suffix)
 	{
 		return FText::Format(LOCTEXT("IntegerSuffixFormat", "{0}{1}"), FText::AsNumber(Value), Suffix);
@@ -57,6 +62,7 @@ void UFF_FacilityInfoSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UFF_FacilityInfoSubsystem::Deinitialize()
 {
+	ClearLiveSelectionIndicators();
 	ReleasePickControllerBinding();
 	if (UWorld* World = GetWorld())
 	{
@@ -94,6 +100,7 @@ void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 	// The camera controller already owns click timing and input gating. Bind to its public pick
 	// signal here so Camera source files stay untouched and controller replacement is tolerated.
 	EnsurePickControllerBinding();
+	UpdateLiveSelectionIndicators(DeltaTime);
 	if (!HasSelection())
 	{
 		RefreshAccumulatorSeconds = 0.0f;
@@ -221,6 +228,14 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 		return false;
 	}
 	Panel->SetPanelOpen(true);
+	if (Context == EFF_FacilityInfoContext::Live)
+	{
+		ApplyLiveSelectionIndicatorTargets(SelectionIndicatorHoverFacility.Get(), Facility);
+	}
+	else
+	{
+		ClearLiveSelectionIndicators();
+	}
 	if (bSelectionChanged)
 	{
 		OnSelectionChanged.Broadcast(FacilityId, Context);
@@ -250,6 +265,7 @@ void UFF_FacilityInfoSubsystem::ClearSelection()
 	FeedbackText = FText::GetEmpty();
 	bFeedbackIsError = false;
 	RefreshAccumulatorSeconds = 0.0f;
+	ApplyLiveSelectionIndicatorTargets(SelectionIndicatorHoverFacility.Get(), nullptr);
 	ReleaseThumbnailSession();
 	if (Panel)
 	{
@@ -555,70 +571,147 @@ void UFF_FacilityInfoSubsystem::ReleasePickControllerBinding()
 		Controller->OnActorPicked.RemoveAll(this);
 	}
 	BoundPickController.Reset();
+	SelectionIndicatorRefreshAccumulatorSeconds = 0.0f;
+	ApplyLiveSelectionIndicatorTargets(nullptr, nullptr);
 }
 
 AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveLiveFacilityUnderCursor(
-	APlayerController& Controller) const
+	APlayerController& Controller,
+	AFFZSFacilityActor* PreferredHoveredFacility) const
+{
+	FVector RayOrigin = FVector::ZeroVector;
+	FVector RayDirection = FVector::ZeroVector;
+	if (!Controller.DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+	{
+		return nullptr;
+	}
+	return ResolveLiveFacilityAlongRay(
+		RayOrigin,
+		RayDirection,
+		PreferredHoveredFacility,
+		Controller.GetPawn());
+}
+
+AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveLiveFacilityAlongRay(
+	const FVector& RayOrigin,
+	const FVector& RayDirection,
+	AFFZSFacilityActor* PreferredHoveredFacility,
+	const AActor* IgnoredActor) const
 {
 	UWorld* World = GetWorld();
 	UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
-	FVector RayOrigin = FVector::ZeroVector;
-	FVector RayDirection = FVector::ZeroVector;
-	if (!World || !ZoneSystem ||
-		!Controller.DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+	const FVector NormalizedRayDirection = RayDirection.GetSafeNormal();
+	if (!World || !ZoneSystem || NormalizedRayDirection.IsNearlyZero())
 	{
 		return nullptr;
 	}
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FF_FacilityInfoPick), false);
-	if (APawn* Pawn = Controller.GetPawn())
+	if (IgnoredActor)
 	{
-		QueryParams.AddIgnoredActor(Pawn);
+		QueryParams.AddIgnoredActor(IgnoredActor);
 	}
-	const FVector RayEnd = RayOrigin + RayDirection * 500000.0f;
+	const FVector RayEnd = RayOrigin + NormalizedRayDirection * FacilitySelectionTraceDistanceCm;
 
-	FHitResult SelectionProxyHit;
-	const bool bHasSelectionProxyHit = World->LineTraceSingleByChannel(
-		SelectionProxyHit,
-		RayOrigin,
-		RayEnd,
-		FFZSCollision::FacilitySelectionTraceChannel,
-		QueryParams);
-	AFFZSFacilityActor* ProxyFacility = bHasSelectionProxyHit
-		? Cast<AFFZSFacilityActor>(SelectionProxyHit.GetActor())
-		: nullptr;
-	const bool bProxyIsRegisteredFacility = IsValid(ProxyFacility) &&
-		ProxyFacility->GetFacilityInstanceId().IsValid() &&
-		ZoneSystem->FindFacility(ProxyFacility->GetFacilityInstanceId()) == ProxyFacility;
-
-	bool bOccludedByExternalBlocker = false;
-	if (bHasSelectionProxyHit && bProxyIsRegisteredFacility)
+	auto IsRegisteredCandidate = [ZoneSystem](const AFFZSFacilityActor* Facility)
 	{
-		// The facility may gain Visibility-blocking helper components later. Ignore the entire
-		// candidate actor and reject only an external blocker before its selection proxy hit.
+		return IsValid(Facility) && Facility->SelectionProxy &&
+			Facility->SelectionProxy->GetCollisionEnabled() != ECollisionEnabled::NoCollision &&
+			Facility->SelectionProxy->GetCollisionResponseToChannel(
+				FFZSCollision::FacilitySelectionTraceChannel) == ECR_Block &&
+			Facility->GetFacilityInstanceId().IsValid() &&
+			ZoneSystem->FindFacility(Facility->GetFacilityInstanceId()) == Facility;
+	};
+	auto IsExternallyOccluded = [World, &QueryParams, &RayOrigin, &NormalizedRayDirection](
+		const AFFZSFacilityActor& Facility,
+		const FHitResult& SelectionHit)
+	{
+		const float HitDistance = FVector::DotProduct(
+			SelectionHit.ImpactPoint - RayOrigin,
+			NormalizedRayDirection);
+		const float OcclusionDistance = FMath::Max(
+			0.0f,
+			HitDistance - FacilitySelectionOcclusionEndToleranceCm);
+		if (OcclusionDistance <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		// 후보 자체의 mesh/helper는 무시한다. 끝점을 proxy 표면보다 2cm 당겨 지형이나
+		// Chaos 접촉 오차가 정확한 경계 클릭을 거짓 가림으로 만들지 않게 한다.
 		FCollisionQueryParams OcclusionParams = QueryParams;
-		OcclusionParams.AddIgnoredActor(ProxyFacility);
+		OcclusionParams.AddIgnoredActor(&Facility);
 		FHitResult OcclusionHit;
-		bOccludedByExternalBlocker = World->LineTraceSingleByChannel(
+		return World->LineTraceSingleByChannel(
 			OcclusionHit,
 			RayOrigin,
-			SelectionProxyHit.ImpactPoint,
+			RayOrigin + NormalizedRayDirection * OcclusionDistance,
 			ECC_Visibility,
 			OcclusionParams);
+	};
+
+	// Hovered wire box means "clicking now selects this facility". The hover sample is throttled,
+	// so validate that exact component against the current click ray before the general world query.
+	if (IsRegisteredCandidate(PreferredHoveredFacility))
+	{
+		FHitResult PreferredHit;
+		if (PreferredHoveredFacility->SelectionProxy->LineTraceComponent(
+				PreferredHit,
+				RayOrigin,
+				RayEnd,
+				QueryParams) &&
+			!IsExternallyOccluded(*PreferredHoveredFacility, PreferredHit))
+		{
+			return PreferredHoveredFacility;
+		}
 	}
 
-	switch (FFFacilityInfoSelection::ResolveTraceDecision(
-		bHasSelectionProxyHit,
-		bProxyIsRegisteredFacility,
-		bOccludedByExternalBlocker))
+	bool bHitAnySelectionProxy = false;
+	FCollisionQueryParams CandidateQueryParams = QueryParams;
+	for (int32 CandidateIndex = 0;
+		CandidateIndex < MaxFacilitySelectionCandidates;
+		++CandidateIndex)
 	{
-	case FFFacilityInfoSelection::ETraceDecision::UseSelectionProxy:
-		return ProxyFacility;
-	case FFFacilityInfoSelection::ETraceDecision::Reject:
+		FHitResult SelectionProxyHit;
+		if (!World->LineTraceSingleByChannel(
+				SelectionProxyHit,
+				RayOrigin,
+				RayEnd,
+				FFZSCollision::FacilitySelectionTraceChannel,
+				CandidateQueryParams))
+		{
+			break;
+		}
+		bHitAnySelectionProxy = true;
+
+		AFFZSFacilityActor* ProxyFacility = Cast<AFFZSFacilityActor>(SelectionProxyHit.GetActor());
+		const bool bRegisteredSelectionProxy = IsRegisteredCandidate(ProxyFacility) &&
+			SelectionProxyHit.GetComponent() == ProxyFacility->SelectionProxy;
+		if (bRegisteredSelectionProxy &&
+			!IsExternallyOccluded(*ProxyFacility, SelectionProxyHit))
+		{
+			return ProxyFacility;
+		}
+
+		// A stale/invalid/occluded blocking proxy must not hide a valid candidate behind it. Channel
+		// MultiTrace also stops at the first Block, so advance explicitly with a bounded ignore loop.
+		if (AActor* HitActor = SelectionProxyHit.GetActor())
+		{
+			CandidateQueryParams.AddIgnoredActor(HitActor);
+		}
+		else if (UPrimitiveComponent* HitComponent = SelectionProxyHit.GetComponent())
+		{
+			CandidateQueryParams.AddIgnoredComponent(HitComponent);
+		}
+		else
+		{
+			break;
+		}
+	}
+	if (bHitAnySelectionProxy)
+	{
+		// 전용 proxy가 가려졌거나 비정상이면 뒤 지면으로 관통 선택하지 않는다.
 		return nullptr;
-	case FFFacilityInfoSelection::ETraceDecision::UseFootprintFallback:
-	default:
-		break;
 	}
 
 	// Compatibility path for installed actors that do not yet expose a selection proxy. The
@@ -636,6 +729,89 @@ AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveLiveFacilityUnderCursor(
 		return nullptr;
 	}
 	return ZoneSystem->FindFacilityAtWorldPoint(GroundHit.ImpactPoint);
+}
+
+void UFF_FacilityInfoSubsystem::UpdateLiveSelectionIndicators(const float DeltaTime)
+{
+	const bool bIsLiveStage = IsContextCurrentlyAllowed(EFF_FacilityInfoContext::Live);
+	AFFZSFacilityActor* SelectedFacility = bIsLiveStage &&
+		SelectionContext == EFF_FacilityInfoContext::Live
+		? GetSelectedFacility()
+		: nullptr;
+	AFF_FestivalPlayerController* Controller = BoundPickController.Get();
+	const bool bPickingAllowed = Controller && Controller->IsPickingAllowed();
+	const bool bCursorVisible = Controller && Controller->bShowMouseCursor;
+	const bool bPointerOverPanel = IsPointerOverPanel();
+	const bool bShouldResolveHover = FFFacilityInfoSelection::ShouldResolveLiveSelectionHover(
+		bIsLiveStage,
+		bPickingAllowed,
+		bCursorVisible,
+		bPointerOverPanel);
+	if (!bIsLiveStage || !bPickingAllowed || !bCursorVisible)
+	{
+		SelectionIndicatorRefreshAccumulatorSeconds = 0.0f;
+		ApplyLiveSelectionIndicatorTargets(nullptr, nullptr);
+		return;
+	}
+	if (!bShouldResolveHover)
+	{
+		SelectionIndicatorRefreshAccumulatorSeconds = 0.0f;
+		ApplyLiveSelectionIndicatorTargets(nullptr, SelectedFacility);
+		return;
+	}
+
+	SelectionIndicatorRefreshAccumulatorSeconds += FMath::Max(0.0f, DeltaTime);
+	if (SelectionIndicatorRefreshAccumulatorSeconds < SelectionIndicatorRefreshIntervalSeconds)
+	{
+		ApplyLiveSelectionIndicatorTargets(
+			SelectionIndicatorHoverFacility.Get(),
+			SelectedFacility);
+		return;
+	}
+	SelectionIndicatorRefreshAccumulatorSeconds = FMath::Fmod(
+		SelectionIndicatorRefreshAccumulatorSeconds,
+		SelectionIndicatorRefreshIntervalSeconds);
+	ApplyLiveSelectionIndicatorTargets(
+		ResolveLiveFacilityUnderCursor(*Controller),
+		SelectedFacility);
+}
+
+void UFF_FacilityInfoSubsystem::ApplyLiveSelectionIndicatorTargets(
+	AFFZSFacilityActor* HoveredFacility,
+	AFFZSFacilityActor* SelectedFacility)
+{
+	if (SelectionIndicatorHoverFacility.Get() == HoveredFacility &&
+		SelectionIndicatorSelectedFacility.Get() == SelectedFacility)
+	{
+		return;
+	}
+
+	TArray<AFFZSFacilityActor*, TInlineAllocator<4>> Candidates;
+	Candidates.AddUnique(SelectionIndicatorHoverFacility.Get());
+	Candidates.AddUnique(SelectionIndicatorSelectedFacility.Get());
+	Candidates.AddUnique(HoveredFacility);
+	Candidates.AddUnique(SelectedFacility);
+	Candidates.Remove(nullptr);
+
+	SelectionIndicatorHoverFacility = HoveredFacility;
+	SelectionIndicatorSelectedFacility = SelectedFacility;
+	for (AFFZSFacilityActor* Candidate : Candidates)
+	{
+		const EFFZSFacilitySelectionIndicatorState State = Candidate == SelectedFacility
+			? EFFZSFacilitySelectionIndicatorState::Selected
+			: Candidate == HoveredFacility
+				? EFFZSFacilitySelectionIndicatorState::Hovered
+				: EFFZSFacilitySelectionIndicatorState::Hidden;
+		Candidate->SetSelectionIndicatorState(State);
+	}
+}
+
+void UFF_FacilityInfoSubsystem::ClearLiveSelectionIndicators()
+{
+	SelectionIndicatorRefreshAccumulatorSeconds = 0.0f;
+	ApplyLiveSelectionIndicatorTargets(nullptr, nullptr);
+	SelectionIndicatorHoverFacility.Reset();
+	SelectionIndicatorSelectedFacility.Reset();
 }
 
 void UFF_FacilityInfoSubsystem::HandlePanelMoveRequested()
@@ -670,13 +846,26 @@ void UFF_FacilityInfoSubsystem::HandlePanelCloseRequested()
 
 void UFF_FacilityInfoSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
-	if (Event.FacilityInstanceId != SelectedFacilityId)
-	{
-		return;
-	}
 	if (Event.Type == EFFZSCommandType::Remove)
 	{
-		ClearSelection();
+		const AFFZSFacilityActor* HoveredFacility = SelectionIndicatorHoverFacility.Get();
+		if (Event.FacilityInstanceId == SelectedFacilityId)
+		{
+			ClearLiveSelectionIndicators();
+			ClearSelection();
+			return;
+		}
+		if (HoveredFacility &&
+			HoveredFacility->GetFacilityInstanceId() == Event.FacilityInstanceId)
+		{
+			ApplyLiveSelectionIndicatorTargets(
+				nullptr,
+				SelectionIndicatorSelectedFacility.Get());
+		}
+		return;
+	}
+	if (Event.FacilityInstanceId != SelectedFacilityId)
+	{
 		return;
 	}
 	// QueueBridge consumes the same world event. Refresh on the next subsystem tick so all
@@ -687,6 +876,7 @@ void UFF_FacilityInfoSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& 
 void UFF_FacilityInfoSubsystem::HandleWorldSnapshotRestored()
 {
 	// Snapshot restore replaces actor generations even when a GUID is preserved.
+	ClearLiveSelectionIndicators();
 	ClearSelection();
 }
 
@@ -709,13 +899,21 @@ void UFF_FacilityInfoSubsystem::HandleActorPicked(AActor* PickedActor)
 		return;
 	}
 
-	AFFZSFacilityActor* Facility = ResolveLiveFacilityUnderCursor(*Controller);
+	AFFZSFacilityActor* Facility = ResolveLiveFacilityUnderCursor(
+		*Controller,
+		SelectionIndicatorHoverFacility.Get());
+	ApplyLiveSelectionIndicatorTargets(
+		Facility,
+		SelectionContext == EFF_FacilityInfoContext::Live
+			? GetSelectedFacility()
+			: nullptr);
 	if (Facility && SelectFacility(Controller, Facility, EFF_FacilityInfoContext::Live))
 	{
 		return;
 	}
 	if (SelectionContext == EFF_FacilityInfoContext::Live)
 	{
+		ClearLiveSelectionIndicators();
 		ClearSelection();
 	}
 }

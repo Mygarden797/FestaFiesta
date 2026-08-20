@@ -1,5 +1,10 @@
 // FF_FacilityNamingLibraryTests.cpp
 
+// FacilityDefinitionId 규칙 표·고유 토큰 보존·거부 조건과 Zone Bridge 호환성을 검증한다.
+// 흐름: 규칙 표 열거 -> 정상 ID 파싱 -> 위반 입력 거부 -> Bridge 반환값 회귀 확인.
+// 불변식: 공개 토큰과 underscore 보존 규칙을 실제 콘텐츠 식별자 계약으로 고정한다.
+// 실패/성능: 대표 성공·실패 입력을 작은 순수 테스트로 분리해 깨진 규칙을 즉시 식별한다.
+
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -45,8 +50,8 @@ bool FFF_FacilityNamingLibrary_CategoryTables::RunTest(const FString& Parameters
 }
 
 
-//정상 ID 파싱의 출력 계약을 검증한다. 기본 3토큰뿐 아니라 고유이름 내부 underscore를 허용해야
-//기존 에셋의 상세 이름을 손실 없이 Zone/NPC 소비 코드에 전달할 수 있다.
+// 정상 ID 파싱의 출력 계약을 검증한다. 기본 3토큰뿐 아니라 고유이름 내부 underscore를 허용해야
+// 기존 에셋의 상세 이름을 손실 없이 Zone/NPC 소비 코드에 전달할 수 있다.
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityNamingLibrary_ParsesUniqueToken,
@@ -84,8 +89,8 @@ bool FFF_FacilityNamingLibrary_ParsesUniqueToken::RunTest(const FString& Paramet
 
 
 // 잘못된 ID가 조용히 허용되지 않고 호출자가 진단할 수 있는 실패 이유를 제공하는지 검증한다.
-//단, NAME_None은 로딩/연결 전의 정상 중간 상태이므로 false만 반환하고 경고 문구는 만들지 않는
-//의도적인 예외 계약도 함께 고정한다.
+// 단, NAME_None은 로딩/연결 전의 정상 중간 상태이므로 false만 반환하고 경고 문구는 만들지 않는
+// 의도적인 예외 계약도 함께 고정한다.
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityNamingLibrary_RejectsConventionViolations,
@@ -124,9 +129,9 @@ bool FFF_FacilityNamingLibrary_RejectsConventionViolations::RunTest(const FStrin
 }
 
 
-//파서 자체의 출력뿐 아니라 실제 소비자인 ZoneSystemBridge의 의미 매핑을 끝단에서 검증한다.
-//네이밍 표나 파싱 방식이 변경되어도 FoodStall의 취향 키와 Cooling의 복수 욕구 해소 효과가
-//유지되어야 하므로, 단위 테스트가 놓칠 수 있는 통합 회귀를 이 테스트가 막는다.
+// 파서 자체의 출력뿐 아니라 실제 소비자인 ZoneSystemBridge의 의미 매핑을 끝단에서 검증한다.
+// 네이밍 표나 파싱 방식이 변경되어도 FoodStall의 취향 키와 Cooling의 복수 욕구 해소 효과가
+// 유지되어야 하므로, 단위 테스트가 놓칠 수 있는 통합 회귀를 이 테스트가 막는다.
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityNamingLibrary_BridgeRegression,

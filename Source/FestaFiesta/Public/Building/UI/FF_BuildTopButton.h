@@ -1,5 +1,10 @@
 // FF_BuildTopButton.h
 
+// 건설 카탈로그 상단의 건축·스킨·닫기 액션에 사용하는 투명 버튼을 선언한다.
+// 흐름: 공용 스타일 설정 -> PreConstruct/Construct -> 선택 변경 때 표시선 동기화.
+// 불변식: 상태 브러시는 투명하고 선택 여부는 하단 표시선과 콘텐츠 색으로만 표현한다.
+// 실패/수명: 선택 표시 BindWidget이 없으면 시각 갱신만 건너뛰고 버튼 입력은 유지한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

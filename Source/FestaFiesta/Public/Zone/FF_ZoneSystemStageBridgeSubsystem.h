@@ -1,3 +1,10 @@
+// FF_ZoneSystemStageBridgeSubsystem.h
+
+// Festival Stage와 FF_ZoneSystem의 단계·시설 생명주기 계약을 선언한다.
+// 흐름: Stage 변경을 ChangePhase와 시설 개폐 배치로 변환하고 결과를 Blueprint에 전달한다.
+// 불변식: Stage가 배치 권한의 기준이며, 자동 명령은 실제 Live 진입·이탈 edge에서만 생성한다.
+// 실패/수명: 늦게 준비된 Stage를 재결합하며 종료 시 정책·delegate·예약 명령을 모두 해제한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -129,6 +136,7 @@ private:
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 
+	bool TryBindFestivalStage();
 	bool TrySynchronizeStage(bool bScheduleOneRetry);
 	void RetryStageSynchronization();
 	void ScheduleAutomaticLifecycle();
