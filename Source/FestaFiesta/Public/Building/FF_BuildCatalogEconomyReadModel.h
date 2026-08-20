@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildCatalogEconomyReadModel.h
+
+// Festival 진행 재화를 건설 카탈로그의 비용 표시용 스냅샷으로 투영하는 읽기 모델을 선언한다.
+// 흐름: 진행 서브시스템 의존성 초기화 -> 비용 투영 요청 처리 -> 골드 변경 이벤트 중계.
+// 불변식: 원본 카탈로그 캐시는 변경하지 않고 권위 골드는 항상 0 이상의 값으로 노출한다.
+// 실패/수명: 진행 서브시스템이 없으면 미확정 상태를 유지하고 Deinitialize에서 구독을 해제한다.
 
 #pragma once
 

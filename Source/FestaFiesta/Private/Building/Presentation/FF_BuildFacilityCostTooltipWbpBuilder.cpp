@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildFacilityCostTooltipWbpBuilder.cpp
+
+// 비용 툴팁 WBP가 없을 때 기준 WidgetTree를 생성하는 에디터 전용 콘솔 도구를 구현한다.
+// 흐름: 기존 에셋 보존 확인 -> Blueprint 생성 -> 필수 BindWidget 계층 구성 -> 컴파일·저장.
+// 불변식: 필수 위젯 이름과 타입은 네이티브 BindWidget 계약과 항상 일치해야 한다.
+// 실패/수명: 명시적 콘솔 명령에서만 실행하며 기존 에셋이나 컴파일 실패 패키지는 덮어쓰지 않는다.
 
 #include "CoreMinimal.h"
 

@@ -1,3 +1,10 @@
+// FF_ZoneSystemStageBridgeSubsystem.cpp
+
+// Festival Stage를 FFZS ChangePhase와 시설 자동 개폐 명령으로 동기화한다.
+// 흐름: Stage edge를 저장하고 Phase 동기화가 끝난 다음 프레임에 대상 시설을 배치 처리한다.
+// 불변식: 최신 Stage가 권위이며 Closed 시설은 명시적인 수동 개장 없이는 다시 열지 않는다.
+// 실패/성능: 늦은 Stage 생성을 재결합하고 짧은 재진입 충돌만 제한 횟수로 재시도한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
@@ -14,23 +21,18 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFZoneStageBridge, Log, All);
 
 void UFF_ZoneSystemStageBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	// Zone 의존성을 먼저 생성한 뒤 GameInstance 수명의 Stage를 조회해 서로 다른 수명 범위를 잇는다.
 	Collection.InitializeDependency<UFFZSWorldSubsystem>();
 	Super::Initialize(Collection);
 
 	UWorld* World = GetWorld();
 	ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
-	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	FestivalStage = GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
-
-	if (FestivalStage)
+	if (!TryBindFestivalStage())
 	{
-		FestivalStage->OnStageChanged.AddUniqueDynamic(
-			this, &UFF_ZoneSystemStageBridgeSubsystem::HandleStageChanged);
-	}
-	else
-	{
-		UE_LOG(LogFFZoneStageBridge, Warning,
-			TEXT("FestivalStageSubsystem이 없어 FF_ZoneSystem 단계 연동을 시작하지 못했습니다."));
+		// 일부 격리 World는 WorldSubsystem 뒤에 GameInstanceSubsystem을 붙인다. Tick 또는 명시적
+		// 동기화에서 다시 결합하므로 초기화 순서 차이가 영구적인 연동 실패가 되지 않는다.
+		UE_LOG(LogFFZoneStageBridge, Verbose,
+			TEXT("FestivalStageSubsystem이 아직 없어 다음 동기화에서 다시 결합합니다."));
 	}
 
 	if (ZoneSystem)
@@ -48,6 +50,7 @@ void UFF_ZoneSystemStageBridgeSubsystem::Initialize(FSubsystemCollectionBase& Co
 
 void UFF_ZoneSystemStageBridgeSubsystem::Deinitialize()
 {
+	// delegate와 외부 정책을 먼저 해제해 종료 중인 subsystem으로 재진입하는 콜백을 차단한다.
 	if (FestivalStage)
 	{
 		FestivalStage->OnStageChanged.RemoveDynamic(
@@ -78,7 +81,7 @@ void UFF_ZoneSystemStageBridgeSubsystem::Tick(const float DeltaTime)
 
 	// RestoreWorldSnapshot은 단계 변경 이벤트를 방송하지 않는다. Stage가 권위이므로 값 하나만
 	// 비교해 조용한 복원이나 직접 대입 뒤에도 다음 프레임에 자동으로 다시 맞춘다.
-	if (!ZoneSystem || !FestivalStage)
+	if (!ZoneSystem || !TryBindFestivalStage())
 	{
 		return;
 	}
@@ -104,6 +107,7 @@ TStatId UFF_ZoneSystemStageBridgeSubsystem::GetStatId() const
 EFFZSChangePhase UFF_ZoneSystemStageBridgeSubsystem::ToZoneChangePhase(
 	const EFF_FestivalStage FestivalStageValue)
 {
+	// 프로젝트의 세부 운영 단계는 FFZS가 허용하는 네 가지 배치 권한 단계로 축약한다.
 	switch (FestivalStageValue)
 	{
 	case EFF_FestivalStage::Setup:
@@ -124,7 +128,34 @@ EFFZSChangePhase UFF_ZoneSystemStageBridgeSubsystem::ToZoneChangePhase(
 
 bool UFF_ZoneSystemStageBridgeSubsystem::SynchronizeCurrentStage()
 {
+	if (!TryBindFestivalStage())
+	{
+		return false;
+	}
 	return TrySynchronizeStage(true);
+}
+
+bool UFF_ZoneSystemStageBridgeSubsystem::TryBindFestivalStage()
+{
+	if (FestivalStage)
+	{
+		return true;
+	}
+
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	FestivalStage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (!FestivalStage)
+	{
+		return false;
+	}
+
+	// AddUnique는 초기화와 지연 재결합이 같은 인스턴스에서 만나도 중복 방송을 막는다.
+	FestivalStage->OnStageChanged.AddUniqueDynamic(
+		this, &UFF_ZoneSystemStageBridgeSubsystem::HandleStageChanged);
+	return true;
 }
 
 bool UFF_ZoneSystemStageBridgeSubsystem::TrySynchronizeStage(const bool bScheduleOneRetry)
@@ -151,6 +182,7 @@ bool UFF_ZoneSystemStageBridgeSubsystem::TrySynchronizeStage(const bool bSchedul
 	UWorld* World = GetWorld();
 	if (bScheduleOneRetry && !bStageSyncRetryScheduled && World)
 	{
+		// 현재 FFZS 명령의 재진입 guard가 풀린 다음 Tick에 한 번만 다시 시도한다.
 		bStageSyncRetryScheduled = true;
 		World->GetTimerManager().SetTimerForNextTick(
 			FTimerDelegate::CreateUObject(this, &UFF_ZoneSystemStageBridgeSubsystem::RetryStageSynchronization));
@@ -207,6 +239,7 @@ void UFF_ZoneSystemStageBridgeSubsystem::ScheduleAutomaticLifecycle()
 		return;
 	}
 
+	// Stage delegate 안에서 시설 명령을 재진입시키지 않도록 다음 Tick으로 직렬화한다.
 	bAutomaticLifecycleScheduled = true;
 	World->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateUObject(
@@ -249,6 +282,7 @@ void UFF_ZoneSystemStageBridgeSubsystem::RunScheduledAutomaticLifecycle()
 			&& FestivalStage->CurrentStage != EFF_FestivalStage::Live);
 	if (!bCommandMatchesStage)
 	{
+		// 빠른 Stage 전환으로 이미 낡은 edge는 현재 권위 상태를 되돌리지 않게 폐기한다.
 		return;
 	}
 
@@ -310,6 +344,7 @@ UFF_ZoneSystemStageBridgeSubsystem::ExecuteLifecycleBatch(
 	TArray<FGuid> EligibleFacilityIds;
 	EligibleFacilityIds.Reserve(ReadModel.Facilities.Num());
 
+	// 먼저 고정 ReadModel에서 대상을 고르면 앞선 명령의 상태 변경이 뒤 시설의 포함 여부를 바꾸지 않는다.
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
 		bool bEligible = false;
@@ -333,6 +368,7 @@ UFF_ZoneSystemStageBridgeSubsystem::ExecuteLifecycleBatch(
 	}
 
 	Batch.SkippedCount = ReadModel.Facilities.Num() - EligibleFacilityIds.Num();
+	// 한 배치의 명령은 TransactionId를 공유하되 낙관적 동시성 revision은 성공마다 최신 값으로 갱신한다.
 	for (const FGuid FacilityId : EligibleFacilityIds)
 	{
 		FFFZSCommand Command;

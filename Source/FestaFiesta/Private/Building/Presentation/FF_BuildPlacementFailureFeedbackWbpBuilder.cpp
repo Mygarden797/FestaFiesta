@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildPlacementFailureFeedbackWbpBuilder.cpp
+
+// 배치 실패 토스트 WBP가 없을 때 기준 WidgetTree를 생성하는 에디터 전용 콘솔 도구를 구현한다.
+// 흐름: 에셋 존재 확인 -> Blueprint 생성 -> 제목/상세 BindWidget 구성 -> 컴파일·저장.
+// 불변식: 제목과 상세 위젯 이름·타입은 네이티브 BindWidget 계약과 일치해야 한다.
+// 실패/수명: 기존 에셋은 덮어쓰지 않고 생성 실패 단계마다 중단해 부분 저장을 피한다.
 
 #include "CoreMinimal.h"
 

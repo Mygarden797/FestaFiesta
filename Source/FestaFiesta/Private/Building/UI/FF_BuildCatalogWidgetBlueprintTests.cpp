@@ -1,5 +1,10 @@
 // FF_BuildCatalogWidgetBlueprintTests.cpp
 
+// 저장된 카탈로그 WBP/텍스처와 네이티브 BindWidget·동적 생성 계약을 통합 검증한다.
+// 흐름: 에셋 경로/부모 클래스/WidgetTree 검사 -> 다섯 화면 인스턴스화 -> 섹션·카드 생성 확인.
+// 불변식: 저장 콘텐츠를 변경하지 않고 런타임과 같은 클래스·바인딩·클릭 경로를 사용한다.
+// 실패/수명: 이름·타입 변경을 null 바인딩 전에 보고하고 Slate 래퍼를 상호작용 검사 끝까지 유지한다.
+
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
@@ -410,9 +415,8 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 		{
 			// TakeWidget이 RebuildWidget을 실행한다. 생성된 WBP RootWidget이 있다면 네이티브 Slate 폴백이 아니라
 			// 디자이너 WidgetTree 경로를 선택해야 하므로 진단 API로 이를 명시적으로 검증한다.
-			// Keep the Slate wrapper alive while exercising runtime bindings. Dropping
-			// this reference immediately invokes NativeDestruct and would turn the
-			// interaction checks below into tests of a detached widget tree.
+			// 런타임 바인딩을 검사하는 동안 Slate 래퍼를 유지한다. 이 참조를 즉시 놓으면
+			// NativeDestruct가 호출되어 아래 상호작용 검사가 분리된 WidgetTree를 대상으로 바뀐다.
 			const TSharedRef<SWidget> ScreenSlateWidget = Screen->TakeWidget();
 			TestTrue(TEXT("Generated screen uses its Designer WidgetTree"), Screen->IsUsingDesignerWidgetTree());
 
@@ -700,8 +704,8 @@ bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameter
 {
 	(void)Parameters;
 
-	// Keep this regression test focused on the top-bar migration. The broader reference-layout
-	// contract may legitimately report unrelated designer drift elsewhere in the catalog screen.
+	// 이 회귀 테스트는 상단 바 마이그레이션에만 집중한다. 전체 기준 레이아웃 계약은
+	// 카탈로그 화면의 다른 디자이너 변경도 별도로 보고할 수 있다.
 	CheckWidgetBlueprintContract(*this, {
 		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen"),
 		UFF_BuildCatalogScreen::StaticClass(),

@@ -1,3 +1,10 @@
+// FF_FacilityDefinitionContentTests.cpp
+
+// 프로젝트의 FacilityDefinition 콘텐츠가 배치·대기열·시각·Crowd 연동 계약을 만족하는지 검증한다.
+// 흐름: 정의 에셋 열거 -> Spec/메시/예약 영역 검사 -> Queue Bridge와 Crowd 프로필 호환성 확인.
+// 불변식: 검사 중 콘텐츠를 수정하거나 동기 마이그레이션하지 않고 저작된 권위 값을 그대로 읽는다.
+// 실패/성능: 실패를 에셋 경로와 함께 누적해 한 번의 자동화 실행에서 수정 대상을 모두 보여 준다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
@@ -123,10 +130,9 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
             }
         }
 
-        // FFZS is project-independent, so its general validator only protects semantic target
-        // separation. Production FestaFiesta content also has to fit the actual Crowd body size.
-        // Keep this assertion next to the authoritative Definition scan so a Crowd radius change
-        // cannot silently make already-authored queue targets overlap.
+        // FFZS 공용 검증은 의미상 목표점 간격만 보장한다. FestaFiesta 제품 콘텐츠는 실제 Crowd
+        // 신체 크기에도 맞아야 하므로 권위 Definition 순회에서 Capsule 지름을 추가로 확인한다.
+        // Crowd 반경이 바뀌어 기존 대기 목표가 조용히 겹치는 일을 막기 위해 이 검증을 함께 둔다.
         const double MinimumCrowdTargetSeparationCm =
             static_cast<double>(FUnitData().Radius) * 2.0;
         TestTrue(

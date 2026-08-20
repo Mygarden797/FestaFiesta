@@ -1,9 +1,9 @@
-// FF_BuildCatalogTypes.h
+// FF_BuildCatalogModel.h
 
-// 런타임 서브시스템과 자동화 테스트가 함께 사용하는 카탈로그 순수 변환 로직.
-// 에셋 검색/로드처럼 엔진 상태에 의존하는 작업은 서브시스템에 남겨 두고, 정렬·그룹화와
-// 요청 세대 비교처럼 입력만으로 결과가 결정되는 규칙을 이 네임스페이스에 모읍니다.
-// 함수들을 인라인으로 제공하므로 별도 UObject 없이도 테스트에서 실제 런타임 규칙을 그대로 검증 가능
+// 런타임 서브시스템과 자동화 테스트가 함께 사용하는 카탈로그 순수 변환 규칙을 제공한다.
+// 흐름: 비용 투영 -> 결정적 정렬 -> 인접 항목 그룹화 -> 비동기 요청 세대 비교.
+// 불변식: 입력 에셋은 변경하지 않으며 같은 입력에는 같은 항목 순서와 그룹 구조를 반환한다.
+// 실패/성능: 무효 비용은 이유를 반환하고, 정렬 뒤 그룹은 한 번의 선형 순회로 구축한다.
 
 #pragma once
 
@@ -66,10 +66,10 @@ namespace FFBuildCatalogModel
 		Entry.bHasResolvedRecoveryCost = true;
 		return true;
 	}
-	 // 두 문자열을 대소문자를 구분해 비교합니다.
-	 // 문화권별 자연어 대조 규칙을 적용하는 정렬이 아니라, 현재 전달된 문자열 값에 대해 같은
-	 // 결과를 내는 내부 카탈로그 순서가 목적이므로 이후의 문자열 비교 기준을 이 함수로 통일합니다.
-	 // 반환값은 A가 앞이면 음수, 같으면 0, 뒤면 양수입니다.
+	// 두 문자열을 대소문자를 구분해 비교한다.
+	// 문화권별 자연어 대조 규칙을 적용하는 정렬이 아니라, 현재 전달된 문자열 값에 대해 같은
+	// 결과를 내는 내부 카탈로그 순서가 목적이므로 이후의 문자열 비교 기준을 이 함수로 통일한다.
+	// 반환값은 A가 앞이면 음수, 같으면 0, 뒤면 양수다.
 	 
 	inline int32 CompareStrings(const FString& A, const FString& B)
 	{
@@ -77,10 +77,10 @@ namespace FFBuildCatalogModel
 	}
 
 	
-	 // 두 항목의 엄격한 정렬 우선순위를 판정.
-	 // 우선순위는 대분류 enum 값 -> 소분류 토큰 -> 표시 이름 -> 시설 정의 ID 순입니다.
-	 // 마지막 ID 비교는 표시 이름까지 같은 항목에도 항상 재현 가능한 타이브레이커를 제공하여,
-	 // 에셋 레지스트리가 항목을 돌려준 순서가 UI 결과에 영향을 주지 않게 합니다.
+	// 두 항목의 엄격한 정렬 우선순위를 판정한다.
+	// 우선순위는 대분류 enum 값 -> 소분류 토큰 -> 표시 이름 -> 시설 정의 ID 순이다.
+	// 마지막 ID 비교는 표시 이름까지 같은 항목에도 항상 재현 가능한 타이브레이커를 제공하여,
+	// 에셋 레지스트리가 항목을 돌려준 순서가 UI 결과에 영향을 주지 않게 한다.
 	 
 	inline bool EntrySortsBefore(const FFF_BuildCatalogEntry& A, const FFF_BuildCatalogEntry& B)
 	{
@@ -104,15 +104,13 @@ namespace FFBuildCatalogModel
 			return DisplayNameComparison < 0;
 		}
 
-		
-		return CompareStrings(A.FacilityDefinitionId.ToString(), B.FacilityDefinitionId.ToString()) < 0;
 		// 앞선 모든 키가 같은 경우에만 안정적인 최종 식별자를 비교합니다.
+		return CompareStrings(A.FacilityDefinitionId.ToString(), B.FacilityDefinitionId.ToString()) < 0;
 	}
 
-	//
-	 // Entries를 위의 카탈로그 규칙에 따라 제자리 정렬합니다.
-	 // 입력 배열 자체가 변경되며 별도 복사본을 만들지 않습니다.
-	 
+	// Entries를 위의 카탈로그 규칙에 따라 제자리 정렬합니다.
+	// 입력 배열 자체가 변경되며 별도 복사본을 만들지 않습니다.
+
 	inline void SortEntries(TArray<FFF_BuildCatalogEntry>& Entries)
 	{
 		Entries.Sort([](const FFF_BuildCatalogEntry& A, const FFF_BuildCatalogEntry& B)
@@ -121,12 +119,12 @@ namespace FFBuildCatalogModel
 		});
 	}
 	
-	 // 이미 SortEntries로 정렬된 평면 항목을 `대분류 > 소분류 > 항목` 계층으로 변환합니다.
-	 //SortedEntries 정렬 규칙상 같은 대분류/소분류가 서로 인접해 있는 입력 배열
-	 // OutGroups 기존 내용을 비운 뒤 새 계층을 기록할 출력 배열
-	 // 정렬되어 있다는 전제를 이용해 한 번만 순회하며 마지막 그룹에 이어 붙입니다. 따라서
-	 // 이 함수 안에서 다시 검색하거나 정렬하지 않으며, 각 항목은 출력 그룹에 값으로 복사됩니다.
-	 
+	// 이미 SortEntries로 정렬된 평면 항목을 `대분류 > 소분류 > 항목` 계층으로 변환합니다.
+	// SortedEntries: 정렬 규칙상 같은 대분류/소분류가 서로 인접해 있는 입력 배열
+	// OutGroups: 기존 내용을 비운 뒤 새 계층을 기록할 출력 배열
+	// 정렬되어 있다는 전제를 이용해 한 번만 순회하며 마지막 그룹에 이어 붙입니다. 따라서
+	// 이 함수 안에서 다시 검색하거나 정렬하지 않으며, 각 항목은 출력 그룹에 값으로 복사됩니다.
+
 	inline void BuildCategoryGroups(
 		const TArray<FFF_BuildCatalogEntry>& SortedEntries,
 		TArray<FFF_BuildCatalogCategoryGroup>& OutGroups)
@@ -156,10 +154,10 @@ namespace FFBuildCatalogModel
 		}
 	}
 	
-	 // 새 비동기 요청을 시작하면서 활성 세대값을 증가시키고 그 값을 반환합니다.
-	 // 반환된 세대를 캡처한 콜백만 현재 상태를 반영할 수 있으므로, 새로고침이나 종료 이후 늦게
-	 // 도착한 이전 요청의 콜백이 최신 카탈로그를 덮어쓰는 경쟁 상태를 막을 수 있습니다.
-	 // InOutGeneration은 호출의 부작용으로 갱신됩니다.
+	// 새 비동기 요청을 시작하면서 활성 세대값을 증가시키고 그 값을 반환한다.
+	// 반환된 세대를 캡처한 콜백만 현재 상태를 반영할 수 있으므로, 새로고침이나 종료 이후 늦게
+	// 도착한 이전 요청의 콜백이 최신 카탈로그를 덮어쓰는 경쟁 상태를 막을 수 있다.
+	// InOutGeneration은 호출의 부작용으로 갱신된다.
 	 
 	inline uint64 BeginNextRequest(uint64& InOutGeneration)
 	{

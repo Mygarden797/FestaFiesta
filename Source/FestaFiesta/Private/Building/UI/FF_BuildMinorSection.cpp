@@ -1,5 +1,10 @@
 // FF_BuildMinorSection.cpp
 
+// 소분류 제목과 동적으로 생성된 시설 카드를 디자이너 WBP 컨테이너에 연결한다.
+// 흐름: 제목 저장·반영 -> 유효 카드 WrapBox 추가 -> PreConstruct/Construct에서 제목 재동기화.
+// 불변식: 카드 선택과 데이터 해석은 담당하지 않고 전달받은 위젯의 패널 소유권만 넘긴다.
+// 실패/수명: BindWidget 생성 전 호출은 상태로 보존하고 무효 카드나 컨테이너는 조용히 건너뛴다.
+
 #include "Building/UI/FF_BuildMinorSection.h"
 
 #include "CommonTextBlock.h"

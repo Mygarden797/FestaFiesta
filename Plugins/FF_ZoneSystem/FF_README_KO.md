@@ -1167,6 +1167,7 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 | Performance | Max Enumerated Cells Per Facility | 10,000,000 | 손상 입력 조기 거부 예산 |
 | Performance | Ground Sample Spacing | 100 cm | 지면 Trace 간격 |
 | Performance | Queue Simulation Tick Interval | 0.1초 | 0이면 매 Frame |
+| Selection | Facility Selection Padding | 75 cm/변 | Footprint 기반 선택 Query Box의 XY 사방 여백, 전체 치수는 +150 cm |
 | Placement | Max Ground Slope | 5도 | 표본 법선 최대 경사 |
 | Placement | Max Ground Height Variance | 20 cm | 표본 최고·최저 Z 차 |
 | Placement | Ground Trace Above / Below | 1000 / 1000 cm | Line Trace 범위 |
@@ -1196,6 +1197,7 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 
 - InitialPhase: 새 WorldSubsystem 초기화 때 읽음
 - Queue Tick Interval: QueueComponent 생성 때 읽음
+- Facility Selection Padding: Facility 초기화·Snapshot 복원 때 읽음. 기존 Actor에는 즉시 재적용되지 않으므로 설정 변경 후 PIE/실행 재시작
 - 배치 검사 수치: 다음 Validate 호출 때 읽음
 - Protected Area 폭 0: 다음 교차 검사 때 현재 설정을 동적 상속
 - Actor에 `ApplyDefaultWidthForType`으로 복사한 폭: 이후 전역 변경을 상속하지 않음
@@ -1253,7 +1255,7 @@ C++ 전용 고성능 API:
 - GameplayZone: 경계, 포함, Hysteresis, 월드/Cell 변환, 카테고리, 면적, 수용량, Population, Read Model
 - ProtectedArea: 유효 폭, World Box 교차, 데이터 검증, Editor Preset
 - FacilityDefinition: Spec 검증과 Primary Asset ID
-- FacilityActor: ID·Zone·Placement·Spec·State·Queue·Relocation·Anchor·Snapshot·Read Model 조회
+- FacilityActor: ID·Zone·Placement·Spec·State·Queue·Relocation·Anchor·Snapshot·Read Model 조회와 실제 SelectionProxy 기반 `SetSelectionIndicatorState`. `Hovered`는 현재 클릭 대상, `Selected`는 열린 정보 패널 대상을 뜻하며 동시에 서로 다른 시설에 표시될 수 있음
 - QueueComponent: 상태·수·목표 위치·Snapshot·불변식·규칙·통계 조회와 Delegate
 - PlacementPreviewActor: Data Asset Spec 기반 Refresh, Auto Refresh, Commit, Last Validation
 
@@ -1410,12 +1412,15 @@ UI 입력
 
 현재 프로젝트에는 다음 QA Slice가 준비되어 있다.
 
-- Map: `/Game/FestaFiesta/Zone/Maps/ZoneTestMap`
-- HUD: `/Game/FestaFiesta/Zone/UI/WBP_ZoneSystemPlaytestHUD`
-- 코드: `Source/FestaFiesta/Private/Zone/FF_ZoneSystemPlaytest*`
+- 통합 수동 QA Map: `/Game/FestaFiesta/Maps/Test_Main`
+- Lifecycle Panel: `/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel`
+- Definition·배치 에디터 픽스처: `/Game/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`
+- Lifecycle QA 코드: `Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanel*`
 
-하네스는 정확히 ZoneTestMap에서만 생성되고 Standalone 로컬 QA를 전제로 한다. 현재 Queue 시험은
-Null Agent Actor와 수동 도착 보고를 사용하므로 실제 NPC 이동 통합 검증이 아니다.
+Lifecycle 패널은 비 Shipping의 `Test_Main` Game·PIE 월드에서만 생성되며 Festival 단계 변경과
+Open·Close·Emergency 권위 API를 관찰·수동 실행한다. Install·Move·Remove는 같은 맵의 프로덕션
+건축 모드 경로로 확인하고, Definition과 배치 픽스처는 Editor 검증에 사용한다. 이 QA Slice는
+Queue 또는 실제 NPC 이동 하네스가 아니므로 해당 통합 검증은 별도로 수행한다.
 
 ---
 
@@ -1466,7 +1471,7 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 
 ## 20. 자동화 테스트와 QA Gate
 
-2026-08-14 검증 실행에서 `FF_ZoneSystem.*` Unreal Automation Test는 **36개**가 발견되었다.
+2026-08-19 검증 실행에서 `FF_ZoneSystem.*` Unreal Automation Test는 **37개**가 발견되었다.
 개수는 테스트가 추가·제거되면 달라질 수 있으므로, 출하 Gate의 권위 기준은
 `Automation RunTests FF_ZoneSystem`이 발견한 전체 목록이 **0 failure, Queue Empty, Exit 0**로 완료되는지이다.
 
@@ -1477,15 +1482,19 @@ Validation에서 발생하는 Zone·Facility ID 오류 등은 거부 이벤트�
 - `FF_ZoneSystem.Integration.Policy.AtomicCommitAndReverseRollback`
 - `FF_ZoneSystem.Integration.World.CommandLifecycleQueueAndSnapshot`
 - `FF_ZoneSystem.Integration.World.ChangePhasePermissions`
+- `FF_ZoneSystem.Integration.World.FacilityLookupAtWorldPoint`
 - `FF_ZoneSystem.Integration.World.ZoneExclusivityAndProtectedArea`
 - `FF_ZoneSystem.Integration.World.InvalidFacilitySpecStopsBeforeNavigation`
 - `FF_ZoneSystem.Integration.World.PortableZoneGraphAndPrimaryAssetType`
 - `FF_ZoneSystem.Integration.World.SnapshotPhaseReentrancyAndDrainIntent`
 - `FF_ZoneSystem.Integration.World.ZoneReadModelSpatialMetadata`
+- `FestaFiesta.ZoneIntegration.Queue.FacadeLifecycleE2E`
 
 주요 대상은 외부 정책의 원자성, Command 수명주기, Phase별 월드 변경 권한, Queue와 Snapshot,
 Zone 독점성, Protected Area, 잘못된 Definition의 조기 차단, Zone Graph,
-Phase·재진입·Drain 복원, Zone Read Model의 공간 메타데이터 값 복사다.
+Phase·재진입·Drain 복원, Zone Read Model의 공간 메타데이터 값 복사다. 프로젝트 통합 테스트인
+`FacadeLifecycleE2E`는 Queue façade 가입, 점유 중 Snapshot 복원 거절, Blocked fail-close,
+non-Live Close의 scoped cancellation을 실제 Game test world에서 검증한다.
 
 ### 20.2 Unit 테스트와 소속
 
@@ -1533,9 +1542,9 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
   -TestExit='Automation Test Queue Empty'
 ~~~
 
-`ZoneTestMap` 수동 QA는 자동화 테스트를 대체하지 않는다. 특히 실제 NPC가
-`IFFZSQueueAgent`를 구현한 상태의 이동, 복제 환경, 대규모 NavMesh 재빌드 비용은 별도
-통합 시험이 필요하다.
+`Test_Main`의 건축·Lifecycle 수동 QA와 `FacilityDefinitionTestMap` 에디터 픽스처는 자동화 테스트를
+대체하지 않는다. 특히 실제 NPC가 `IFFZSQueueAgent`를 구현한 상태의 이동, 복제 환경, 대규모
+NavMesh 재빌드 비용은 별도 통합 시험이 필요하다.
 
 ### 20.4 QA Gate
 
@@ -1553,16 +1562,17 @@ Unreal Engine과 프로젝트 경로를 환경에 맞게 지정한 뒤 다음 �
 #### Build·자동화·패키징
 
 - [ ] Editor Development, Game Development, Game Shipping 구성이 모두 빌드된다.
-- [ ] `Automation RunTests FF_ZoneSystem`이 발견한 전체 테스트가 0 실패, Queue Empty, 프로세스 Exit 0이다. 2026-08-14 기준 기대치는 36개 통과(35 clean + 1 warning 포함 성공)이다.
+- [ ] `Automation RunTests FF_ZoneSystem`이 발견한 전체 테스트가 0 실패, Queue Empty, 프로세스 Exit 0이다. 2026-08-19 기준 기대치는 37개 통과(0 실패)이다.
 - [ ] 독립 Plugin 패키징과 프로젝트 Cook에서 Soft Mesh·Definition·Asset Manager Scan을 검증한다.
 - [ ] Clean PC의 Shipping 패키지에서 Plugin Mount, Map Load, Save/Restore Smoke를 통과한다.
 
 #### 실제 Gameplay 통합
 
-- [ ] `ZoneTestMap` Standalone과 실제 대상 Map에서 Install·Move·Remove·Open·Close·Emergency를 확인한다.
+- [ ] `Test_Main` PIE·Standalone에서 Install·Move·Remove를 실제 건축 모드로, Open·Close·Emergency를
+  Lifecycle 패널로 확인하고 실제 대상 Map에서도 같은 권위 경로를 검증한다.
 - [ ] 유효 Command는 Actor·점유·Revision·외부 예약이 한 번만 반영되고, 실패 Command는 전부 원복된다.
 - [ ] 실제 NPC `IFFZSQueueAgent`가 Stable ID, 이동 도착·실패 보고, Save 후 Rebind를 검증한다.
-  Null Agent Harness는 이 항목의 대체 증거가 아니다.
+  Lifecycle 패널과 Definition·배치 픽스처는 이 항목의 대체 증거가 아니다.
 - [ ] 일반 Drain, Emergency Exit, Blocked/Repath, FIFO 비추월을 시각적으로 확인한다.
 
 #### 성능·안전·네트워크

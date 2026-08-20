@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_ZoneLifecycleTestPanel.h
+
+// Test_Main에서 Festival 단계와 시설 개장·폐쇄 권위 API를 관찰·수동 실행하는 개발 패널을 선언한다.
+// 흐름: WBP 버튼 바인딩 -> 단계/Zone 이벤트 구독 -> 배치 명령 실행 -> 상태 요약 갱신.
+// 불변식: 제품 입력 모드는 바꾸지 않고 실제 Stage/Zone 공개 API만 호출한다.
+// 실패/수명: 선택적 서브시스템이나 BindWidget이 없으면 동작을 건너뛰고 Destruct에서 구독을 해제한다.
 
 #pragma once
 

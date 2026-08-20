@@ -1,5 +1,10 @@
 // FF_BuildCatalogScreen.cpp
 
+// 카탈로그 스냅샷을 디자이너 WBP 또는 제품용 Slate 폴백 화면에 렌더링한다.
+// 흐름: 입력 항목 저장 -> 골드/탭/분류 바인딩 -> 동적 소분류·카드 생성 -> 선택 이벤트 방송.
+// 불변식: 화면은 월드 명령을 직접 실행하지 않고 BuildModeSubsystem에 사용자 의도만 전달한다.
+// 실패/성능: WBP 계약이 불완전하면 Slate로 폴백하고 목록 갱신은 현재 분류 항목만 생성한다.
+
 #include "Building/UI/FF_BuildCatalogScreen.h"
 
 #include "Blueprint/WidgetTree.h"
@@ -66,7 +71,7 @@ namespace
 
 	void ApplyButtonIconBrush(UFF_CommonButtonBase* Button, const FSlateBrush& Brush)
 	{
-		// Preserve a WBP-authored icon when the atlas is unavailable.
+		// Atlas를 사용할 수 없으면 WBP가 저작한 기존 아이콘을 보존한다.
 		if (!IsValid(Button) || Brush.GetResourceObject() == nullptr)
 		{
 			return;
@@ -89,8 +94,8 @@ namespace
 			return;
 		}
 
-		// The generated category/card WBP has its own Border in addition to the
-		// CommonButton Slate brush. Both layers must be transparent.
+		// 생성된 분류/카드 WBP에는 CommonButton Slate 브러시 외에 별도 Border가 있으므로
+		// 두 계층을 모두 투명하게 만들어야 기본 회색 면이 남지 않는다.
 		Button->SetStyle(UFF_BuildTopButtonStyle::StaticClass());
 		if (UBorder* Surface = Cast<UBorder>(Button->GetWidgetFromName(SurfaceName)))
 		{
@@ -111,8 +116,8 @@ namespace
 		}
 		else
 		{
-			// SetIsSelected(false) only clears toggleable CommonButtons. These tabs
-			// are intentionally non-toggleable, so use the explicit reset API.
+			// SetIsSelected(false)는 토글형 CommonButton만 해제한다. 이 탭은 의도적으로
+			// 비토글형이므로 명시적인 상태 초기화 API를 사용한다.
 			Button->ClearSelection();
 		}
 		if (UImage* Indicator = Cast<UImage>(
@@ -1011,8 +1016,8 @@ void UFF_BuildCatalogScreen::RefreshTabStyles()
 	{
 		return;
 	}
-	// Keep the two non-toggleable CommonButtons mutually exclusive. The helper
-	// explicitly clears the inactive tab because SetIsSelected(false) cannot.
+	// 두 비토글형 CommonButton이 동시에 선택되지 않게 한다. SetIsSelected(false)로는
+	// 해제할 수 없으므로 보조 함수가 비활성 탭 상태를 명시적으로 초기화한다.
 	BTN_BuildTab->SetIsSelectable(true);
 	BTN_SkinTab->SetIsSelectable(true);
 	ApplyExclusiveTabSelection(BTN_BuildTab, SelectedTopTab == ETopTab::Build);

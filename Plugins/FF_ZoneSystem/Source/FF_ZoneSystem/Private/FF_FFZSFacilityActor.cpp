@@ -26,6 +26,13 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "SceneManagement.h"
 
+namespace
+{
+    const FColor LiveSelectionIndicatorColor(20, 242, 224);
+    constexpr float HoveredSelectionIndicatorThickness = 3.0f;
+    constexpr float SelectedSelectionIndicatorThickness = 5.0f;
+}
+
 //이 파일의 책임
  // 시설 한 개의 런타임 상태(배치, 운영 상태, 대기열)와 화면 표현(메시, 경계, 앵커)을 함께 유지한다.
  // 월드 전체의 권위 데이터는 UFFZSWorldSubsystem의 시설/압축 영역 레지스트리이다. 이 Actor는 명령을
@@ -61,6 +68,8 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     SelectionProxy->SetSimulatePhysics(false);
     SelectionProxy->SetEnableGravity(false);
     SelectionProxy->SetNotifyRigidBodyCollision(false);
+    SelectionProxy->bDrawOnlyIfSelected = false;
+    SelectionProxy->SetVisibility(true);
     SelectionProxy->SetHiddenInGame(true);
 
     FootprintBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("FootprintBounds"));
@@ -226,6 +235,7 @@ void AFFZSFacilityActor::MarkRemoved()
     }
     QueueComponent->EmergencyCancel();
     FacilityState = EFFZSFacilityState::Removed;
+    SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
     SetBuildModeActionSelected(false);
     SetBuildModeRangeVisible(false);
     SetActorEnableCollision(false);
@@ -283,6 +293,36 @@ void AFFZSFacilityActor::SetBuildModeActionSelected(const bool bSelected)
     FootprintBounds->ShapeColor = bBuildModeActionSelected ? FColor(64, 200, 255) : FColor::Green;
     FootprintBounds->SetLineThickness(bBuildModeActionSelected ? 5.0f : 2.0f);
     FootprintBounds->MarkRenderStateDirty();
+}
+
+void AFFZSFacilityActor::SetSelectionIndicatorState(
+    const EFFZSFacilitySelectionIndicatorState NewState)
+{
+    const EFFZSFacilitySelectionIndicatorState ResolvedState =
+        FacilityState == EFFZSFacilityState::Removed
+            ? EFFZSFacilitySelectionIndicatorState::Hidden
+            : NewState;
+    if (!SelectionProxy || SelectionIndicatorState == ResolvedState)
+    {
+        return;
+    }
+
+    SelectionIndicatorState = ResolvedState;
+    if (SelectionIndicatorState == EFFZSFacilitySelectionIndicatorState::Hidden)
+    {
+        SelectionProxy->SetHiddenInGame(true);
+        return;
+    }
+
+    // 라이브 시설 정보 UI의 Accent(#14F2E0)를 사용한다. 실제 클릭 Box의 표시 속성만
+    // 바꾸며 Extent·Transform·Collision 계약은 그대로 유지한다.
+    SelectionProxy->ShapeColor = LiveSelectionIndicatorColor;
+    SelectionProxy->SetLineThickness(
+        SelectionIndicatorState == EFFZSFacilitySelectionIndicatorState::Selected
+            ? SelectedSelectionIndicatorThickness
+            : HoveredSelectionIndicatorThickness);
+    SelectionProxy->SetHiddenInGame(false);
+    SelectionProxy->MarkRenderStateDirty();
 }
 
 void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
@@ -371,7 +411,24 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
         FacilitySpec.PlacementObstacleHeightCm * 0.5f);
     FootprintBounds->SetBoxExtent(FootprintExtent);
     FootprintBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
-    RebuildSelectionProxy(FootprintExtent);
+
+    // 선택 여백은 전역 Config 정책에서 한 번 읽어 시설별 Footprint 반치수에 더한다. 시설 데이터나
+    // SaveGame에 파생 Box를 중복 저장하지 않으므로 새 설치와 Snapshot 복원이 같은 계산 경로를 쓴다.
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const float ConfiguredSelectionPaddingCm = Settings
+        ? Settings->FacilitySelectionPaddingCm
+        : UFFZSDeveloperSettings::DefaultFacilitySelectionPaddingCm;
+    const float SelectionPaddingCm = FMath::IsFinite(ConfiguredSelectionPaddingCm)
+        ? FMath::Clamp(
+            ConfiguredSelectionPaddingCm,
+            0.0f,
+            UFFZSDeveloperSettings::MaxFacilitySelectionPaddingCm)
+        : UFFZSDeveloperSettings::DefaultFacilitySelectionPaddingCm;
+    const FVector SelectionExtent(
+        FootprintExtent.X + SelectionPaddingCm,
+        FootprintExtent.Y + SelectionPaddingCm,
+        FootprintExtent.Z);
+    RebuildSelectionProxy(SelectionExtent);
 
     RequestVisualMesh();
 
@@ -422,7 +479,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     }
 }
 
-void AFFZSFacilityActor::RebuildSelectionProxy(const FVector& FootprintExtent)
+void AFFZSFacilityActor::RebuildSelectionProxy(const FVector& SelectionExtent)
 {
     if (!SelectionProxy)
     {
@@ -441,8 +498,8 @@ void AFFZSFacilityActor::RebuildSelectionProxy(const FVector& FootprintExtent)
     SelectionProxy->SetSimulatePhysics(false);
     SelectionProxy->SetEnableGravity(false);
     SelectionProxy->SetNotifyRigidBodyCollision(false);
-    SelectionProxy->SetBoxExtent(FootprintExtent);
-    SelectionProxy->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
+    SelectionProxy->SetBoxExtent(SelectionExtent);
+    SelectionProxy->SetRelativeLocation(FVector(0.0f, 0.0f, SelectionExtent.Z));
 }
 
 void AFFZSFacilityActor::RebuildBuildModeRangePresentation()

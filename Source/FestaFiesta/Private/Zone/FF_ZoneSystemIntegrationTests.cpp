@@ -1,3 +1,10 @@
+// FF_ZoneSystemIntegrationTests.cpp
+
+// Festival Stage 매핑과 Zone-to-Queue 투영·Party façade 수명주기 계약을 자동화 테스트로 고정한다.
+// 흐름: 순수 변환 뒤 설치·이동·참가·복원 거부·차단·폐장 취소를 테스트 World의 실제 subsystem으로 실행한다.
+// 불변식: Queue ID와 권위 경계는 유지되고 잘못된 입력·복원은 부분 결과를 남기지 않는다.
+// 실패/성능: 변경한 개발자 설정은 범위 종료 시 원래 값으로 반드시 복원한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
@@ -5,6 +12,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
@@ -16,9 +24,11 @@
 #include "Queue/FF_QueueSubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 
 namespace
 {
+	// 이동·투영 로직만 검증하도록 환경 의존 검사를 잠시 끄고 테스트 종료 때 원래 설정을 복원한다.
 	class FScopedQueueMoveTestSettings
 	{
 	public:
@@ -63,6 +73,7 @@ namespace
 		int32 MaxEnumeratedCells;
 	};
 
+	// 설치 helper와 같은 revision 계약을 사용하되 기존 GUID를 보존하는 Move 명령을 만든다.
 	FFFZSCommand MakeQueueMoveCommand(
 		const FGuid FacilityInstanceId,
 		const FFFZSFacilitySpec& FacilitySpec,
@@ -92,6 +103,7 @@ bool FFFZoneSystemStageMappingTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 
+	// 대표 Stage의 권한 축약과 실제 Live 진입·이탈 edge를 각각 고정해 두 변환 계약을 분리해 검증한다.
 	using FStageBridge = UFF_ZoneSystemStageBridgeSubsystem;
 	TestEqual(TEXT("Setup은 최초 배치 단계다"),
 		FStageBridge::ToZoneChangePhase(EFF_FestivalStage::Setup),
@@ -116,6 +128,7 @@ bool FFFZoneSystemStageMappingTest::RunTest(const FString& Parameters)
 		EFFZSChangePhase::EveningSettlement);
 
 	EFFZSCommandType LifecycleCommand = EFFZSCommandType::Install;
+	// Phase 값이 같은 PromotionPreview→Live도 운영 edge이므로 별도의 개장 명령이 필요하다.
 	TestTrue(TEXT("PromotionPreview에서 Live 진입은 같은 FFZS phase여도 자동 개장 edge다"),
 		FStageBridge::TryGetAutomaticLifecycleCommand(
 			EFF_FestivalStage::PromotionPreview,
@@ -158,6 +171,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
+	// Arrange: 실제 WorldSubsystem들이 서로 delegate를 주고받는 Game World를 사용한다.
 	FScopedQueueMoveTestSettings SettingsGuard;
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
@@ -232,6 +246,7 @@ bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Param
 	const FVector ExitLocationBefore =
 		QueueSystem->GetFacilityExitLocation(QueueFacilityIdBefore);
 
+	// Act: 90도 회전을 포함한 Move가 Zone 이벤트를 통해 기존 Queue 등록을 갱신하게 한다.
 	FFFZSGridPlacement MovedPlacement;
 	MovedPlacement.OriginCell = FIntPoint(5000, 1000);
 	MovedPlacement.QuarterTurns = 1;
@@ -249,6 +264,7 @@ bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Param
 
 	const int32 QueueFacilityIdAfter =
 		QueueBridge->FindQueueFacilityId(InstallCommand.FacilityInstanceId);
+	// Assert: 외부 참조용 ID는 안정적이고 위치 의존 geometry만 새 시설 Transform을 따라야 한다.
 	TestEqual(TEXT("Move preserves the stable project Queue ID"),
 		QueueFacilityIdAfter, QueueFacilityIdBefore);
 	TestTrue(TEXT("Move leaves the refreshed project Queue registered"),
@@ -282,6 +298,204 @@ bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Param
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneSystemQueueFacadeLifecycleE2ETest,
+	"FestaFiesta.ZoneIntegration.Queue.FacadeLifecycleE2E",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedQueueMoveTestSettings SettingsGuard;
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game))
+	{
+		TestWorld.ForwardErrorMessages(this);
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	UFFZSWorldSubsystem* ZoneSystem = World
+		? World->GetSubsystem<UFFZSWorldSubsystem>()
+		: nullptr;
+	UFF_FestivalStageSubsystem* FestivalStage = World && World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	UFF_ZoneSystemStageBridgeSubsystem* StageBridge = World
+		? World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>()
+		: nullptr;
+	UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World
+		? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>()
+		: nullptr;
+	UFF_QueueSubsystem* QueueSystem = World
+		? World->GetSubsystem<UFF_QueueSubsystem>()
+		: nullptr;
+	if (!TestNotNull(TEXT("Game test world is created"), World)
+		|| !TestNotNull(TEXT("The authoritative Zone subsystem exists"), ZoneSystem)
+		|| !TestNotNull(TEXT("The Festival Stage bridge exists"), StageBridge)
+		|| !TestNotNull(TEXT("The Zone-to-Queue bridge exists"), QueueBridge)
+		|| !TestNotNull(TEXT("The project Queue subsystem exists"), QueueSystem)
+		|| !TestNotNull(TEXT("The Festival Stage subsystem exists"), FestivalStage))
+	{
+		return false;
+	}
+	// 격리 World는 GameInstanceSubsystem을 WorldSubsystem 뒤에 연결할 수 있으므로, 최초 동기화로
+	// Stage delegate 결합까지 완료한 뒤 실제 transition의 동기 전달 계약을 검증한다.
+	if (!TestTrue(TEXT("The Stage bridge binds to the test GameInstance"),
+		StageBridge->SynchronizeCurrentStage()))
+	{
+		return false;
+	}
+
+	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	FActorSpawnParameters ZoneSpawnParameters;
+	ZoneSpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>(
+		AFFZSGameplayZone::StaticClass(), FTransform::Identity, ZoneSpawnParameters);
+	if (!TestNotNull(TEXT("A Gameplay Zone is spawned"), Zone)
+		|| !TestTrue(TEXT("The accepted Zone preset is applied"),
+			Zone->ApplyAcceptedZonePreset(ZoneId))
+		|| !TestTrue(TEXT("The Gameplay Zone is registered"),
+			ZoneSystem->RegisterZone(Zone)))
+	{
+		return false;
+	}
+
+	FFFZSGridPlacement Placement;
+	Placement.OriginCell = FIntPoint(1000, 1000);
+	const FFFZSFacilitySpec FacilitySpec =
+		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
+		FacilitySpec, ZoneId, Placement, ZoneSystem->GetWorldRevision());
+	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
+	if (!TestTrue(TEXT("The test Facility installs"), InstallResult.bSucceeded))
+	{
+		return false;
+	}
+	const FGuid FacilityId = InstallCommand.FacilityInstanceId;
+	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(FacilityId);
+	if (!TestNotNull(TEXT("The installed Facility is registered"), Facility)
+		|| !TestEqual(TEXT("The Facility opens through the lifecycle bridge"),
+			StageBridge->OpenEligibleFacilities(false).SucceededCount, 1))
+	{
+		return false;
+	}
+
+	FestivalStage->RequestTransition(EFF_FestivalStage::Live);
+	if (!TestEqual(TEXT("The Stage bridge establishes the Live Zone phase"),
+		ZoneSystem->GetChangePhase(), EFFZSChangePhase::LiveOperation))
+	{
+		return false;
+	}
+	const int32 QueueFacilityId = QueueBridge->FindQueueFacilityId(FacilityId);
+	if (!TestTrue(TEXT("The bridge allocates a project Queue ID"),
+		QueueFacilityId != INDEX_NONE)
+		|| !TestTrue(TEXT("The projected Queue is registered"),
+			QueueSystem->IsFacilityRegistered(QueueFacilityId)))
+	{
+		return false;
+	}
+
+	const FFFZSWorldSnapshot OccupiedSnapshot = ZoneSystem->CaptureWorldSnapshot();
+	FFF_JoinRequest JoinRequest;
+	JoinRequest.PartyId = 7001;
+	JoinRequest.MemberCount = 1;
+	const FFF_QueueJoinResponse FirstJoin =
+		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest);
+	if (!TestTrue(TEXT("The Queue façade accepts a Party for an active Zone Facility"),
+		FirstJoin.bAccepted))
+	{
+		return false;
+	}
+	TestEqual(TEXT("The façade routes the Party into the projected Queue"),
+		QueueBridge->GetZoneFacilityQueueState(FacilityId).OccupiedMemberCount, 1);
+
+	TArray<FText> OccupiedRestoreErrors;
+	const bool bOccupiedRestoreSucceeded =
+		QueueBridge->RestoreZoneWorldSnapshotAndSynchronize(
+			OccupiedSnapshot, OccupiedRestoreErrors);
+	if (!TestFalse(TEXT("Snapshot restore rejects an occupied project Queue"),
+		bOccupiedRestoreSucceeded))
+	{
+		return false;
+	}
+	TestFalse(TEXT("Occupied restore rejection includes a diagnostic"),
+		OccupiedRestoreErrors.IsEmpty());
+	TestEqual(TEXT("Rejected restore preserves the queued Party"),
+		QueueBridge->GetZoneFacilityQueueState(FacilityId).OccupiedMemberCount, 1);
+
+	const UFFZSFacilityQueueComponent* ZoneQueue = Facility->GetQueueComponent();
+	if (!TestNotNull(TEXT("The active Facility owns an FFZS Queue"), ZoneQueue)
+		|| !TestEqual(TEXT("Project Queue authority leaves the FFZS Queue open"),
+			ZoneQueue->GetQueueState(), EFFZSQueueState::Open)
+		|| !TestTrue(TEXT("Navigation/Safety can block the FFZS Queue"),
+			ZoneSystem->SetFacilityQueueBlocked(FacilityId, true)))
+	{
+		return false;
+	}
+
+	JoinRequest.PartyId = 7002;
+	const FFF_QueueJoinResponse BlockedJoin =
+		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest);
+	TestFalse(TEXT("A blocked FFZS Queue rejects another façade Party"),
+		BlockedJoin.bAccepted);
+	TestEqual(TEXT("Blocked rejection is exposed as a closed Queue"),
+		BlockedJoin.Result, EFF_QueueJoinResult::RejectedClosed);
+	QueueBridge->Tick(0.0f);
+	const FFF_QueueState FailedClosedState =
+		QueueBridge->GetZoneFacilityQueueState(FacilityId);
+	TestFalse(TEXT("Blocked authority fail-closes the project Queue"),
+		FailedClosedState.bIsOpen);
+	TestEqual(TEXT("Blocked authority cancels the occupied project Queue"),
+		FailedClosedState.OccupiedMemberCount, 0);
+	if (!TestTrue(TEXT("The Navigation/Safety block can be cleared"),
+		ZoneSystem->SetFacilityQueueBlocked(FacilityId, false)))
+	{
+		return false;
+	}
+
+	JoinRequest.PartyId = 7003;
+	const FFF_QueueJoinResponse ClosingPartyJoin =
+		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest);
+	if (!TestTrue(TEXT("The façade reopens an unblocked active Queue on demand"),
+		ClosingPartyJoin.bAccepted))
+	{
+		return false;
+	}
+
+	FestivalStage->RequestTransition(EFF_FestivalStage::Closing);
+	if (!TestEqual(TEXT("The Stage bridge establishes the Closing Zone phase"),
+		ZoneSystem->GetChangePhase(), EFFZSChangePhase::EveningSettlement))
+	{
+		return false;
+	}
+	const FFF_ZoneFacilityLifecycleBatchResult CloseResult =
+		StageBridge->CloseActiveFacilities(false);
+	TestEqual(TEXT("Closing closes the active Facility"), CloseResult.SucceededCount, 1);
+	const FFF_QueueState ClosedState =
+		QueueBridge->GetZoneFacilityQueueState(FacilityId);
+	TestFalse(TEXT("Closing leaves the projected Queue closed"), ClosedState.bIsOpen);
+	TestFalse(TEXT("Closing stops the projected Queue accepting Parties"),
+		ClosedState.bAcceptingNew);
+	TestEqual(TEXT("Non-Live Close cancels only the Facility's occupied Queue"),
+		ClosedState.OccupiedMemberCount, 0);
+
+	JoinRequest.PartyId = 7004;
+	TestFalse(TEXT("A closed Zone Facility rejects a new façade Party"),
+		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest).bAccepted);
+	const bool bFoundScopedCancellation = QueueSystem->GetQueueLogsRef().ContainsByPredicate(
+		[QueueFacilityId](const FFF_QueueLog& Log)
+		{
+			return Log.FacilityId == QueueFacilityId
+				&& Log.PartyId == 7003
+				&& Log.ExitType == EFF_QueueExit::Cancelled;
+		});
+	TestTrue(TEXT("Closing records the scoped Party cancellation"),
+		bFoundScopedCancellation);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFFZoneSystemQueueProjectionTest,
 	"FestaFiesta.ZoneIntegration.Queue.Projection",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -290,6 +504,7 @@ bool FFFZoneSystemQueueProjectionTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 
+	// Legacy 단일 선두 처리 모델로 환산해도 FFZS의 장기 Service 처리율은 보존해야 한다.
 	FFFZSQueueRules Rules;
 	Rules.MaxWaitingAgents = 12;
 	Rules.ServiceCapacity = 4;
@@ -330,6 +545,7 @@ bool FFFZoneSystemQueueExplicitGeometryProjectionTest::RunTest(const FString& Pa
 {
 	(void)Parameters;
 
+	// 꺾인 local polyline을 사용해 위치뿐 아니라 구간별 slot 방향도 Transform되는지 확인한다.
 	FFFZSFacilitySpec Spec;
 	Spec.QueueRules.MaxWaitingAgents = 4;
 	Spec.QueueRules.SlotSpacingCm = 100.0f;
@@ -382,6 +598,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FFFZoneSystemQueueShortGeometryFailsClosedTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
+	// 네 슬롯에 필요한 길이보다 짧은 선은 부분 slot 배열을 노출하지 않고 전체 실패해야 한다.
 	FFFZSFacilitySpec Spec;
 	Spec.QueueRules.MaxWaitingAgents = 4;
 	Spec.QueueRules.SlotSpacingCm = 100.0f;
@@ -404,6 +621,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FFFZoneSystemSingleWaitingSlotDegenerateGeometryTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
+	// 슬롯 하나는 이동 거리가 0이므로 퇴화 선도 허용하고 Service[0]으로 결정적 방향을 정한다.
 	FFFZSFacilitySpec Spec;
 	Spec.QueueRules.MaxWaitingAgents = 1;
 	Spec.QueueRules.SlotSpacingCm = 100.0f;
