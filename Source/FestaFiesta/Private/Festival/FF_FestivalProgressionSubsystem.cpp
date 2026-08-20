@@ -3,9 +3,33 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 
 #include "Economy/FF_EconomyLog.h"
+#include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_FinaleRules.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
+
+namespace
+{
+	// enum 값 하나를 결산 표의 한 줄로 만든다.
+	// DisplayName 을 밖에서 받는다. (GetDisplayNameTextByValue 로 뽑으면 안 되기 때문)
+	// UMETA 조회가 통째로 `#if WITH_EDITOR` 안에 있어서 패키징 빌드에서는 짧은 enum 이름으로
+	// 폴백되고, 그러면 DisplayName 이 ReasonId 와 똑같은 값이 된다.
+	FFF_LedgerRow MakeReasonRow(const UEnum* EnumType, int64 Value, int32 Amount, const FText& DisplayName)
+	{
+		FFF_LedgerRow Row;
+		Row.Amount = Amount;
+		Row.DisplayName = DisplayName;
+
+		if (EnumType != nullptr)
+		{
+			// 코드에 작성된 enum 이름 자체를 얻는 함수
+			Row.ReasonId = FName(*EnumType->GetAuthoredNameStringByValue(Value));
+		}
+
+		return Row;
+	}
+}
+
 
 void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -55,6 +79,11 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
 	DayLedger.Reset();
+	// 새 축제에 이전 판 스냅샷이 남지 않게 한다.
+	// [주의] 지금은 아래 TryProcessNewDay(1) 이 어차피 덮으므로 이 두 줄이 없어도 동작이 같다
+	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
+	EndedDayLedger.Reset();
+	EndedDay = 0;
 	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
@@ -123,6 +152,116 @@ void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
 	
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
+}
+
+bool UFF_FestivalProgressionSubsystem::HasLedgerForDay(int32 Day) const
+{
+	return FindLedgerForDay(Day) != nullptr;
+}
+
+TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetEarnRowsForDay(int32 Day) const
+{
+	TArray<FFF_LedgerRow> Rows;
+	
+	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
+	if (Ledger == nullptr)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 빈 표를 돌려준다."),
+			Day, LastProcessedDay, EndedDay);
+		return Rows;
+	}
+	
+	// EFF_EarnReason enum의 리플렉션 정보를 가져옴.
+	// 이후 enum 값의 내부 이름/표시 이름을 얻을 때 사용.
+	const UEnum* ReasonEnum = StaticEnum<EFF_EarnReason>();
+	
+	for (int64 Value = 0; Value <= static_cast<int64>(EFF_EarnReason::MinigameReward); ++Value)
+	{
+		const int32 Amount = Ledger->GetEarnByReason(static_cast<EFF_EarnReason>(Value));
+		if (Amount == 0) continue;
+		Rows.Add(MakeReasonRow(ReasonEnum, Value, Amount,
+			UFF_EconomyDisplayTextLibrary::GetEarnReasonText(static_cast<EFF_EarnReason>(Value))));
+	}
+	
+	return Rows;
+}
+
+TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetSpendRowsForDay(int32 Day) const
+{
+	TArray<FFF_LedgerRow> Rows;
+
+	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
+	if (Ledger == nullptr)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 빈 표를 돌려준다."),
+			Day, LastProcessedDay, EndedDay);
+		return Rows;
+	}
+
+	const UEnum* ReasonEnum = StaticEnum<EFF_SpendReason>();
+
+	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FinaleFireworks); ++Value)
+	{
+		const int32 Amount = Ledger->GetSpendByReason(static_cast<EFF_SpendReason>(Value));
+		if (Amount == 0)
+		{
+			continue;
+		}
+
+		Rows.Add(MakeReasonRow(ReasonEnum, Value, Amount,
+			UFF_EconomyDisplayTextLibrary::GetSpendReasonText(static_cast<EFF_SpendReason>(Value))));
+	}
+
+	return Rows;
+}
+
+TArray<FFF_FacilityRevenueRow> UFF_FestivalProgressionSubsystem::GetRevenueByFacilityRowsForDay(int32 Day) const
+{
+	TArray<FFF_FacilityRevenueRow> Rows;
+
+	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
+	if (Ledger == nullptr)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 빈 표를 돌려준다."),
+			Day, LastProcessedDay, EndedDay);
+		return Rows;
+	}
+
+	for (const TPair<FName, int32>& Pair : Ledger->GetRevenueByFacility())
+	{
+		FFF_FacilityRevenueRow Row;
+		Row.FacilityId = Pair.Key;
+		Row.Amount = Pair.Value;
+		Rows.Add(Row);
+	}
+
+	// TMap은 순회 순서를 의미 있는 출력 순서로 보장하지 않음.
+	// 따라서 실행 환경이나 내부 상태에 따라 UI 표의 순서가 달라질 수 있음.
+	// 이를 방지하기 위해 FacilityId의 "문자열 내용"을 기준으로 명시적으로 정렬함.
+	// LexicalLess()는 FName 내부 인덱스가 아니라 이름 문자열의 사전식 순서를 비교함.
+	Rows.Sort([](const FFF_FacilityRevenueRow& A, const FFF_FacilityRevenueRow& B)
+	{
+		return A.FacilityId.LexicalLess(B.FacilityId);
+	});
+	
+	return Rows;
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetTotalRefundForDay(int32 Day) const
+{
+	const FFF_DayLedger* Ledger = FindLedgerForDay(Day);
+	if (Ledger == nullptr)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] Day %d 의 원장이 없다(진행 중 %d · 닫힌 날 %d). 0 을 돌려준다."),
+			Day, LastProcessedDay, EndedDay);
+		return 0;
+	}
+
+	return Ledger->GetTotalRefund();
 }
 
 void UFF_FestivalProgressionSubsystem::BeginNewDay(int32 NewDay)
@@ -293,10 +432,18 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 		return false;
 	}
 
+	// 덮기 전에 읽는다 — 바로 아래에서 LastProcessedDay 가 NewDay 로 바뀐다.
+	const int32 JustEndedDay = LastProcessedDay;
+
 	LastProcessedDay = NewDay;
 
 	// TodayRevenue & DayLedger 리셋
 	Funds.ResetTodayRevenue();
+
+	// 리셋 직전에 직전 하루를 보관한다.
+	EndedDayLedger = DayLedger;
+	EndedDay = JustEndedDay;
+
 	DayLedger.Reset();
 	
 	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.
@@ -317,6 +464,17 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 		StaffPool.GetTemporaryStaffCount());
 
 	return true;
+}
+
+const FFF_DayLedger* UFF_FestivalProgressionSubsystem::FindLedgerForDay(int32 Day) const
+{
+	if (Day <= 0) return nullptr;
+	
+	if (Day == LastProcessedDay) return &DayLedger;
+	
+	if (Day == EndedDay) return &EndedDayLedger;
+	
+	return nullptr;
 }
 
 void UFF_FestivalProgressionSubsystem::SettleVenueRent()

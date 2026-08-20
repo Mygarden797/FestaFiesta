@@ -11,6 +11,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 
 AFF_FestivalPlayerController::AFF_FestivalPlayerController()
@@ -143,6 +144,18 @@ bool AFF_FestivalPlayerController::IsBuildSessionActive() const
 	return BuildMode ? FFBuildModeModel::IsBuildSessionActive(BuildMode->GetBuildModeState()) : false;
 }
 
+bool AFF_FestivalPlayerController::IsBuildPreviewActive() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const UFF_BuildModeSubsystem* BuildMode = World->GetSubsystem<UFF_BuildModeSubsystem>();
+	return BuildMode ? FFBuildModeModel::IsPreviewActive(BuildMode->GetBuildModeState()) : false;
+}
+
 EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 {
 	if (bModalUiActive)
@@ -170,11 +183,14 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 {
 	// 건축 중에도 화면은 움직여야 한다. 부스를 놓을 자리를 봐야 하니까.
-	// 모달 UI 와 액터 시점만 전체를 막는다.
-	const EFF_CameraInputBlock Reason = GetInputBlockReason();
-	return Reason != EFF_CameraInputBlock::ModalUi
-		&& Reason != EFF_CameraInputBlock::ActorView
-		&& Reason != EFF_CameraInputBlock::CharacterControl;
+	return FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
+}
+
+bool AFF_FestivalPlayerController::IsCameraRotationAllowed() const
+{
+	return FFCameraInputModel::IsRotationAllowed(
+		GetInputBlockReason(),
+		IsBuildPreviewActive());
 }
 
 bool AFF_FestivalPlayerController::IsPickingAllowed() const
@@ -249,7 +265,18 @@ bool AFF_FestivalPlayerController::ResolveCursorWorldAnchor(FVector& OutAnchor) 
 
 void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 {
+	bPickRequestHandledThisTick = false;
 	Super::PlayerTick(DeltaTime);
+
+	// CommonUI input mode나 동적으로 교체된 IMC가 IA_Pick을 소비해도 기본 포인터 클릭은
+	// 살아 있어야 한다. BuildMode가 이미 사용하는 raw key edge를 보조 경로로 읽되,
+	// Enhanced Input action이 정상 실행된 프레임에는 ProcessPickRequest가 중복을 막는다.
+	if (FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(
+			bPickRequestHandledThisTick,
+			WasInputKeyJustPressed(EKeys::LeftMouseButton)))
+	{
+		ProcessPickRequest();
+	}
 	EnsureViewTargetAlive();
 	TickEdgeScroll(DeltaTime);
 }
@@ -428,7 +455,7 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 
 void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraRotationAllowed())
 	{
 		return;
 	}
@@ -440,7 +467,7 @@ void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
 
 void AFF_FestivalPlayerController::HandleSnapRotate(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraRotationAllowed())
 	{
 		return;
 	}
@@ -483,6 +510,18 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 
 void AFF_FestivalPlayerController::HandlePick(const FInputActionValue& Value)
 {
+	(void)Value;
+	ProcessPickRequest();
+}
+
+void AFF_FestivalPlayerController::ProcessPickRequest()
+{
+	if (bPickRequestHandledThisTick)
+	{
+		return;
+	}
+	bPickRequestHandledThisTick = true;
+
 	if (!IsPickingAllowed())
 	{
 		return;

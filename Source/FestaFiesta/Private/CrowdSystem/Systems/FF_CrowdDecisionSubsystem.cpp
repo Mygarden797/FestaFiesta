@@ -14,6 +14,7 @@
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
+#include "Queue/FF_QueueWaitAdapter.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCrowdDecision, Log, All);
@@ -341,6 +342,18 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	else
 	{
 		Context.VisitHistory.ApplyToCandidates(Candidates, Context.NowLiveMinutes);
+
+		// 대기시간을 채운다.
+		// 이 호출이 없으면 EstimatedWaitMinutes 는 전부 0 이고, 0 은 Choose 에서 "줄이 없다"로 
+		// 계산되어 wait_cost 항이 통째로 죽는다.
+		//
+		// IncomingMemberCount 에 파티 전원을 넘긴다. Queue 가 파티를 쪼개지 않기 때문이다 —
+		// FFF_FacilityQueue::TryJoin 이 "4인 가족인데 슬롯이 2칸 남았다면 2명만 넣지 않고
+		// 전원 거절한다" 로 동작한다. 그래서 알고 싶은 값이 "내 마지막 일행까지 끝나는 시각" 이고,
+		// 그게 (앞에 남은 인원 + 내 일행) / 처리율 이다.
+		// Queue 가 부분 가입을 허용하는 쪽으로 바뀌면 이 인자도 같이 바꿔야 한다.
+		Stats.QueueWaitApplied += FFF_QueueWaitAdapter::ApplyFromZoneBridge(
+			GetWorld(), Candidates, Context.PartySize);
 	}
 	const TMap<FName, float>& PreferenceVector = bFullMode
 		? GetPreferenceVector(

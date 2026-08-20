@@ -29,6 +29,32 @@ namespace FFF_DayBoundaryTestHelpers
 	constexpr int32 BaseStaff = 6;
 	constexpr int32 MaxHires = 6;
 
+	// 라이브 원장과 스냅샷 원장 둘 다에 써야 해서 원장을 인자로 받는다.
+	// (스냅샷 테스트가 생기기 전에는 Progression 의 라이브 원장 전용이었다)
+	inline int32 SumSpend(const FFF_DayLedger& Ledger)
+	{
+		int32 Total = 0;
+		for (int32 Index = 0;
+			Index <= static_cast<int32>(EFF_SpendReason::FinaleFireworks);
+			++Index)
+		{
+			Total += Ledger.GetSpendByReason(static_cast<EFF_SpendReason>(Index));
+		}
+		return Total;
+	}
+
+	inline int32 SumEarn(const FFF_DayLedger& Ledger)
+	{
+		int32 Total = 0;
+		for (int32 Index = 0;
+			Index <= static_cast<int32>(EFF_EarnReason::MinigameReward);
+			++Index)
+		{
+			Total += Ledger.GetEarnByReason(static_cast<EFF_EarnReason>(Index));
+		}
+		return Total;
+	}
+
 	// Unity Build 동명 헬퍼 충돌을 피하려고 파일 전용 이름을 쓴다.
 	struct FDayBoundaryHarness
 	{
@@ -71,29 +97,13 @@ namespace FFF_DayBoundaryTestHelpers
 		// 미납은 아직 안 나간 돈이라 여기 들어가지 않는다.
 		int32 CalcLedgerSpendTotal() const
 		{
-			const FFF_DayLedger& Ledger = Progression->GetDayLedger();
-			int32 Total = 0;
-			for (int32 Index = 0;
-				Index <= static_cast<int32>(EFF_SpendReason::FinaleFireworks);
-				++Index)
-			{
-				Total += Ledger.GetSpendByReason(static_cast<EFF_SpendReason>(Index));
-			}
-			return Total;
+			return SumSpend(Progression->GetDayLedger());
 		}
 
 		// Σ당일매출. TodayRevenue 와 같아야 한다 (중복 값의 불변식).
 		int32 CalcLedgerEarnTotal() const
 		{
-			const FFF_DayLedger& Ledger = Progression->GetDayLedger();
-			int32 Total = 0;
-			for (int32 Index = 0;
-				Index <= static_cast<int32>(EFF_EarnReason::MinigameReward);
-				++Index)
-			{
-				Total += Ledger.GetEarnByReason(static_cast<EFF_EarnReason>(Index));
-			}
-			return Total;
+			return SumEarn(Progression->GetDayLedger());
 		}
 
 		UGameInstance* GameInstance = nullptr;
@@ -441,6 +451,237 @@ bool FFF_DayBoundary_IgnoredBeforeFestivalStarts::RunTest(const FString& Paramet
 	TestFalse(TEXT("고용도 거부된다"), Progression->TryHireTemporaryStaff(1));
 	TestEqual(TEXT("살 수 있는 인원도 0 이다"),
 		Progression->GetAffordableTemporaryStaffCount(), 0);
+
+	return true;
+}
+
+
+// ============================================================================
+// 직전 하루 원장 스냅샷 (GetEndedDayLedger / GetEndedDay)
+//
+// 결산 화면이 "방금 끝난 하루"를 그리는데 BeginNewDay 가 DayLedger 를 리셋한다.
+// 스냅샷을 Reset 과 같은 함수(TryProcessNewDay)에 둬서 소유자를 하나로 유지한다.
+//
+// 🔴 두 Getter 는 서로를 대체하지 않는다. 유효 구간이 정확히 갈린다:
+//    · Report 단계 안(경계 넘기 전) → GetDayLedger()  (라이브)
+//    · 경계를 넘은 뒤              → GetEndedDayLedger()
+//    Day1 Report 에는 스냅샷이 아예 없고, Day3 뒤에는 경계가 없어 스냅샷이 Day2 에 멈춘다.
+//    아래 테스트들이 그 계약을 고정한다 — UI 가 한쪽으로 통일하면 Day2 만 맞는다.
+//
+// 🔴 GetEndedDay() 와 GetLastProcessedDay() 는 하루 어긋난다. BeginNewDay(2) 직후
+//    GetLastProcessedDay() == 2 (열린 날) 이고 GetEndedDay() == 1 (닫힌 날) 이다.
+//    잘못 골라도 컴파일되고 그럴듯한 숫자가 나오므로 아래 테스트들이 값으로 갈라둔다.
+// ============================================================================
+
+// 첫 경계를 넘기 전에는 "끝난 하루"가 없다.
+// 🔴 Day1 Report 함정: 여기서 결산 화면이 GetEndedDayLedger() 를 읽으면 빈 표가 뜬다.
+//    EndedDay == 0 이 그 상태를 UI 가 구분할 수 있는 유일한 신호다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_EndedDayLedgerIsEmptyBeforeFirstBoundary, "FestaFiesta.Economy.DayBoundary.EndedDayLedgerIsEmptyBeforeFirstBoundary", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_EndedDayLedgerIsEmptyBeforeFirstBoundary::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
+	{
+		return false;
+	}
+
+	Harness.Progression->AddRevenue(1200, EFF_EarnReason::AdmissionFee);
+
+	// StartFestival 이 Day1 을 정산했지만 그건 "Day1 시작"이지 "Day0 종료"가 아니다.
+	TestEqual(TEXT("끝난 하루가 아직 없다"), Harness.Progression->GetEndedDay(), 0);
+
+	const FFF_DayLedger& Snapshot = Harness.Progression->GetEndedDayLedger();
+	TestEqual(TEXT("스냅샷 지출이 비어 있다"), FFF_DayBoundaryTestHelpers::SumSpend(Snapshot), 0);
+	TestEqual(TEXT("스냅샷 매출이 비어 있다"), FFF_DayBoundaryTestHelpers::SumEarn(Snapshot), 0);
+	TestEqual(TEXT("스냅샷 환급도 비어 있다"), Snapshot.GetTotalRefund(), 0);
+	TestEqual(TEXT("스냅샷 부스별 표도 비어 있다"), Snapshot.GetRevenueByFacility().Num(), 0);
+
+	// 반면 라이브 원장에는 Day1 이 살아 있다 — Report 단계에서 봐야 할 쪽은 이것이다.
+	TestEqual(TEXT("라이브 원장에는 Day1 매출이 있다"), Harness.CalcLedgerEarnTotal(), 1200);
+	TestEqual(TEXT("라이브 원장에 Day1 임대료가 있다"),
+		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::VenueRent),
+		FFF_DayBoundaryTestHelpers::DailyRent);
+
+	return true;
+}
+
+// 경계를 넘으면 스냅샷이 끝난 하루를 통째로 들고, 라이브는 새 하루로 갈린다.
+// 원인별·부스별·환급이 전부 보존되어야 한다 — 결산 표가 그 세 가지를 그린다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_EndedDayLedgerHoldsTheClosedDay, "FestaFiesta.Economy.DayBoundary.EndedDayLedgerHoldsTheClosedDay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_EndedDayLedgerHoldsTheClosedDay::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
+	{
+		return false;
+	}
+
+	// Day1 에 세 종류를 전부 만든다: 매출(부스별 포함) · 임금 지출 · 철거 환급.
+	Harness.Progression->AddRevenue(1200, EFF_EarnReason::AdmissionFee);
+	Harness.Progression->AddRevenue(300, EFF_EarnReason::FacilityCommission, TEXT("Booth_FoodStall"));
+	TestTrue(TEXT("Day1 에 알바 2명을 고용한다"), Harness.Progression->TryHireTemporaryStaff(2));
+	Harness.Progression->Refund(500);
+
+	Harness.Progression->BeginNewDay(2);
+
+	TestEqual(TEXT("스냅샷이 Day1 의 것이다"), Harness.Progression->GetEndedDay(), 1);
+
+	const FFF_DayLedger& Snapshot = Harness.Progression->GetEndedDayLedger();
+
+	// --- 원인별 매출 ---
+	TestEqual(TEXT("스냅샷에 입장료가 남는다"),
+		Snapshot.GetEarnByReason(EFF_EarnReason::AdmissionFee), 1200);
+	TestEqual(TEXT("스냅샷에 시설 수수료가 남는다"),
+		Snapshot.GetEarnByReason(EFF_EarnReason::FacilityCommission), 300);
+	TestEqual(TEXT("스냅샷 매출 합이 1,500 이다"), FFF_DayBoundaryTestHelpers::SumEarn(Snapshot), 1500);
+
+	// --- 원인별 지출 ---
+	TestEqual(TEXT("스냅샷에 Day1 임대료가 남는다"),
+		Snapshot.GetSpendByReason(EFF_SpendReason::VenueRent),
+		FFF_DayBoundaryTestHelpers::DailyRent);
+	TestEqual(TEXT("스냅샷에 Day1 임금이 남는다"),
+		Snapshot.GetSpendByReason(EFF_SpendReason::StaffWages),
+		2 * FFF_DayBoundaryTestHelpers::WagePerStaff);
+
+	// --- 환급은 매출과 분리된 채로 보존된다 (2026-08-13 규칙) ---
+	TestEqual(TEXT("스냅샷에 환급이 남는다"), Snapshot.GetTotalRefund(), 500);
+	TestEqual(TEXT("환급이 스냅샷 매출에 섞이지 않았다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Snapshot), 1500);
+
+	// --- 부스별 표 ---
+	const int32* FoodStallRevenue = Snapshot.GetRevenueByFacility().Find(TEXT("Booth_FoodStall"));
+	if (TestNotNull(TEXT("스냅샷에 부스별 매출이 남는다"), FoodStallRevenue))
+	{
+		TestEqual(TEXT("부스별 금액이 보존된다"), *FoodStallRevenue, 300);
+	}
+
+	// --- 라이브는 새 하루다. 두 원장이 실제로 갈렸는지 지출 합으로 구분한다 ---
+	// 스냅샷 = 임대료 2,400 + 임금 300 = 2,700 / 라이브 = Day2 임대료 2,400 뿐.
+	TestEqual(TEXT("스냅샷 지출 합이 2,700 이다"), FFF_DayBoundaryTestHelpers::SumSpend(Snapshot), 2700);
+	TestEqual(TEXT("라이브 지출 합은 Day2 임대료뿐이다"), Harness.CalcLedgerSpendTotal(),
+		FFF_DayBoundaryTestHelpers::DailyRent);
+	TestEqual(TEXT("라이브에 어제 임금이 넘어오지 않는다"),
+		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffWages), 0);
+	TestEqual(TEXT("라이브 매출은 0 이다"), Harness.CalcLedgerEarnTotal(), 0);
+	TestEqual(TEXT("라이브 환급도 0 이다"),
+		Harness.Progression->GetDayLedger().GetTotalRefund(), 0);
+	TestEqual(TEXT("라이브 부스별 표도 비었다"),
+		Harness.Progression->GetDayLedger().GetRevenueByFacility().Num(), 0);
+
+	return true;
+}
+
+// 🔴 중복 정산 가드가 스냅샷도 지켜야 한다.
+// 스냅샷 갱신을 LastProcessedDay 가드 **밖**에 두면, MorningCheck 재진입 한 번에
+// 어제 결산이 "오늘 임대료만 찍힌 반쪽 원장"으로 덮인다. 크래시도 로그도 없이 표만 틀린다.
+// 그리고 스냅샷이 참조가 아니라 **값 복사**인지도 여기서 같이 고정한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_DuplicateBoundaryDoesNotOverwriteSnapshot, "FestaFiesta.Economy.DayBoundary.DuplicateBoundaryDoesNotOverwriteSnapshot", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_DuplicateBoundaryDoesNotOverwriteSnapshot::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
+	{
+		return false;
+	}
+
+	Harness.Progression->AddRevenue(1200, EFF_EarnReason::AdmissionFee);
+	Harness.Progression->BeginNewDay(2);
+
+	TestEqual(TEXT("스냅샷이 Day1 을 담았다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 1200);
+
+	// Day2 에 매출이 쌓인다. 스냅샷은 값 복사라 여기 영향을 받으면 안 된다.
+	Harness.Progression->AddRevenue(999, EFF_EarnReason::MinigameReward);
+	TestEqual(TEXT("스냅샷은 값 복사라 라이브 변경에 흔들리지 않는다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 1200);
+	TestEqual(TEXT("날짜도 그대로 1 이다"), Harness.Progression->GetEndedDay(), 1);
+
+	// MorningCheck 재진입 — 같은 날을 다시 연다. 가드가 스냅샷까지 막아야 한다.
+	Harness.Progression->BeginNewDay(2);
+	TestEqual(TEXT("같은 날 재진입이 스냅샷을 덮지 않는다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 1200);
+	TestEqual(TEXT("재진입 후에도 날짜가 1 이다"), Harness.Progression->GetEndedDay(), 1);
+	TestEqual(TEXT("재진입해도 Day2 라이브 매출이 살아 있다"),
+		Harness.CalcLedgerEarnTotal(), 999);
+
+	// 지난 날로 되돌리는 호출도 마찬가지다.
+	Harness.Progression->BeginNewDay(1);
+	TestEqual(TEXT("지난 날 호출도 스냅샷을 덮지 않는다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 1200);
+	TestEqual(TEXT("지난 날 호출 후에도 날짜가 1 이다"), Harness.Progression->GetEndedDay(), 1);
+
+	return true;
+}
+
+// 스냅샷은 **가장 최근 경계 하나**만 들고 있다. 날이 넘어가면 갱신된다.
+// 🔴 그리고 Day3 뒤에는 경계가 없다 — AdvanceToNextDay 가 CurrentDay>=3 에서 early return 한다.
+//    그래서 최종 결산 시점에 GetEndedDay() 는 2 에 멈춰 있고 Day3 은 라이브에만 있다.
+//    UI 가 결산을 GetEndedDayLedger() 로 통일하면 최종 결산에 Day2 표가 뜬다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_EndedDayLedgerTracksLatestBoundaryOnly, "FestaFiesta.Economy.DayBoundary.EndedDayLedgerTracksLatestBoundaryOnly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_EndedDayLedgerTracksLatestBoundaryOnly::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
+	{
+		return false;
+	}
+
+	// Day1 → Day2
+	Harness.Progression->AddRevenue(100, EFF_EarnReason::AdmissionFee);
+	Harness.Progression->BeginNewDay(2);
+	TestEqual(TEXT("경계 1 회 후 날짜가 1"), Harness.Progression->GetEndedDay(), 1);
+	TestEqual(TEXT("스냅샷이 Day1 매출"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 100);
+
+	// Day2 → Day3. 스냅샷이 Day2 로 갈아끼워지고 Day1 은 사라진다(누적하지 않는다).
+	Harness.Progression->AddRevenue(200, EFF_EarnReason::AdmissionFee);
+	Harness.Progression->BeginNewDay(3);
+	TestEqual(TEXT("경계 2 회 후 날짜가 2"), Harness.Progression->GetEndedDay(), 2);
+	TestEqual(TEXT("스냅샷이 Day2 로 갱신된다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 200);
+
+	// Day3 은 여기서 끝난다 — 뒤에 BeginNewDay(4) 가 없다.
+	Harness.Progression->AddRevenue(300, EFF_EarnReason::AdmissionFee);
+
+	TestEqual(TEXT("Day3 매출은 라이브에만 있다"), Harness.CalcLedgerEarnTotal(), 300);
+	// 🔴 최종 결산의 계약: 스냅샷은 Day2 에 멈춰 있다. 여기를 읽으면 틀린 표가 나온다.
+	TestEqual(TEXT("Day3 에도 스냅샷은 Day2 에 멈춘다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 200);
+	TestEqual(TEXT("Day3 에도 EndedDay 는 2 다"), Harness.Progression->GetEndedDay(), 2);
+
+	// 그래서 UI 판정은 이 형태여야 한다: 그리려는 날짜가 EndedDay 와 같을 때만 스냅샷.
+	const int32 DayToDraw = 3;
+	TestFalse(TEXT("Day3 을 그릴 때는 스냅샷이 대상이 아니다"),
+		DayToDraw == Harness.Progression->GetEndedDay());
+
+	return true;
+}
+
+// 새 축제를 시작하면 이전 판의 스냅샷이 남지 않는다.
+// StartFestival 이 다른 상태를 전부 되돌리므로 여기만 빠지면 이전 판 결산이 새 판에 보인다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_StartFestivalClearsSnapshot, "FestaFiesta.Economy.DayBoundary.StartFestivalClearsSnapshot", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_StartFestivalClearsSnapshot::RunTest(const FString& Parameters)
+{
+	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
+	{
+		return false;
+	}
+
+	Harness.Progression->AddRevenue(1200, EFF_EarnReason::AdmissionFee);
+	Harness.Progression->BeginNewDay(2);
+	TestEqual(TEXT("이전 판에 스냅샷이 쌓였다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 1200);
+	TestEqual(TEXT("이전 판 날짜가 1"), Harness.Progression->GetEndedDay(), 1);
+
+	// 같은 정의로 축제를 다시 시작한다.
+	Harness.Progression->StartFestival(Harness.Definition);
+
+	TestEqual(TEXT("새 축제에는 끝난 하루가 없다"), Harness.Progression->GetEndedDay(), 0);
+	TestEqual(TEXT("이전 판 스냅샷 매출이 남지 않는다"),
+		FFF_DayBoundaryTestHelpers::SumEarn(Harness.Progression->GetEndedDayLedger()), 0);
+	TestEqual(TEXT("이전 판 스냅샷 지출도 남지 않는다"),
+		FFF_DayBoundaryTestHelpers::SumSpend(Harness.Progression->GetEndedDayLedger()), 0);
 
 	return true;
 }

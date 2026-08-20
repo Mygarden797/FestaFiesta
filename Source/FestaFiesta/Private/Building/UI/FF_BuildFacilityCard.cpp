@@ -1,5 +1,10 @@
 // FF_BuildFacilityCard.cpp
 
+// 카탈로그 항목 스냅샷을 시설 카드의 텍스트·가격·썸네일·툴팁에 반영한다.
+// 흐름: Configure로 데이터 저장 -> 위젯 준비 시 재적용 -> 비동기 썸네일 변경만 선택 갱신.
+// 불변식: 동일 스냅샷 재적용은 멱등이며 미로드 썸네일은 동기 로드하지 않는다.
+// 실패/성능: 누락 BindWidget은 건너뛰고 썸네일이 메모리에 없으면 디자이너 자리표시자를 유지한다.
+
 #include "Building/UI/FF_BuildFacilityCard.h"
 
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"

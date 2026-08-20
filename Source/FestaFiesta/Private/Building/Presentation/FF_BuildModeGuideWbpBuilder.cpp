@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_BuildModeGuideWbpBuilder.cpp
+
+// 건축 모드 안내 WBP가 없을 때 기준 레이아웃을 생성하는 에디터 전용 콘솔 도구를 구현한다.
+// 흐름: 대상 패키지 확인 -> Blueprint/WidgetTree 구성 -> 컴파일 -> 콘텐츠 패키지 저장.
+// 불변식: 생성 클래스는 UFF_BuildModeGuide를 상속하고 안내 패널은 입력을 가로채지 않는다.
+// 실패/수명: 기존 에셋은 보존하며 생성·컴파일·저장 실패 단계마다 로그를 남기고 중단한다.
 
 #include "CoreMinimal.h"
 
@@ -65,7 +70,7 @@ namespace FFBuildModeGuideWbpBuilder
 
 		Root->SetVisibility(ESlateVisibility::HitTestInvisible);
 
-		// FF_ZoneSystemPlaytestDebug의 검증된 건축 모드 조작 문구를 좌하단 요약용으로 재사용한다.
+		// 프로덕션 건축 모드의 기본 조작 계약을 좌하단 요약으로 표시한다.
 		static const TArray<TPair<FString, FString>> RowsData = {
 			{TEXT("[Esc]"), TEXT("건축모드에서 나가기")},
 			{TEXT("[WASD]"), TEXT("카메라 이동")},

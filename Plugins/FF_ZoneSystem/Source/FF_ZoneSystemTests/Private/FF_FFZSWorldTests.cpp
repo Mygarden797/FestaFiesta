@@ -53,6 +53,7 @@ namespace
             , bProductionPolicies(Settings->bRequireProductionPolicyDomains)
             , bRestrictZoneIds(Settings->bRestrictZoneIdsToProjectPresets)
             , MaxEnumeratedCells(Settings->MaxEnumeratedCellsPerFacility)
+            , FacilitySelectionPaddingCm(Settings->FacilitySelectionPaddingCm)
             , ProjectZoneIds(Settings->ProjectZoneIds)
         {
             Settings->bEnableGroundChecks = false;
@@ -60,6 +61,8 @@ namespace
             Settings->bEnableNavigationProjectionChecks = false;
             Settings->bRequireProductionPolicyDomains = false;
             Settings->MaxEnumeratedCellsPerFacility = 1'000'000;
+            Settings->FacilitySelectionPaddingCm =
+                UFFZSDeveloperSettings::DefaultFacilitySelectionPaddingCm;
         }
 
         ~FScopedZFTestSettings()
@@ -70,6 +73,7 @@ namespace
             Settings->bRequireProductionPolicyDomains = bProductionPolicies;
             Settings->bRestrictZoneIdsToProjectPresets = bRestrictZoneIds;
             Settings->MaxEnumeratedCellsPerFacility = MaxEnumeratedCells;
+            Settings->FacilitySelectionPaddingCm = FacilitySelectionPaddingCm;
             Settings->ProjectZoneIds = ProjectZoneIds;
         }
 
@@ -81,6 +85,7 @@ namespace
         bool bProductionPolicies;
         bool bRestrictZoneIds;
         int32 MaxEnumeratedCells;
+        float FacilitySelectionPaddingCm;
         TArray<FName> ProjectZoneIds;
     };
 
@@ -413,6 +418,16 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     {
         TestTrue(TEXT("지면 보정된 Z 값이 정확히 보존된다"), FMath::IsNearlyEqual(RestoredSecond->GetActorLocation().Z, 123.0, 0.01));
         TestTrue(TEXT("GIS 재배치 Flag가 보존된다"), RestoredSecond->NeedsRelocation());
+        const FFFZSFacilitySpec& RestoredSpec = RestoredSecond->GetFacilitySpec();
+        const float PaddingCm = GetDefault<UFFZSDeveloperSettings>()->FacilitySelectionPaddingCm;
+        const FVector ExpectedRestoredProxyExtent(
+            RestoredSpec.FootprintSizeCells.X * UFFZSDeveloperSettings::DefaultPlacementCellSizeCm * 0.5f + PaddingCm,
+            RestoredSpec.FootprintSizeCells.Y * UFFZSDeveloperSettings::DefaultPlacementCellSizeCm * 0.5f + PaddingCm,
+            RestoredSpec.PlacementObstacleHeightCm * 0.5f);
+        TestTrue(TEXT("Snapshot 복원도 저장된 footprint에서 선택 Proxy를 다시 파생한다"),
+            RestoredSecond->SelectionProxy->GetUnscaledBoxExtent().Equals(
+                ExpectedRestoredProxyExtent,
+                KINDA_SMALL_NUMBER));
     }
     TestEqual(TEXT("Queue 소유권이 Snapshot에서 재구축된다"),
         Subsystem->FindAgentQueueFacility(SavedAgentId),
@@ -485,7 +500,7 @@ bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters
     FFFZSGridPlacement LowerPlacement;
     LowerPlacement.OriginCell = FIntPoint(4000, 1000);
     FFFZSCommand InstallLower = UFFZSGridLibrary::MakeInstallCommand(
-        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Performance),
         ZoneId,
         LowerPlacement,
         1);
@@ -533,6 +548,48 @@ bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters
         SelectionProxy->IsSimulatingPhysics());
     TestFalse(TEXT("선택 Proxy는 중력을 사용하지 않는다"),
         SelectionProxy->IsGravityEnabled());
+    TestEqual(TEXT("선택 표시 기본 상태는 숨김이다"),
+        HigherFacility->GetSelectionIndicatorState(),
+        EFFZSFacilitySelectionIndicatorState::Hidden);
+    TestTrue(TEXT("선택 Proxy는 기본적으로 게임에서 숨겨진다"),
+        SelectionProxy->bHiddenInGame);
+    TestFalse(TEXT("선택 표시는 에디터 Actor 선택에 의존하지 않는다"),
+        SelectionProxy->bDrawOnlyIfSelected);
+    TestTrue(TEXT("선택 Proxy의 Component visible flag는 유지된다"),
+        SelectionProxy->GetVisibleFlag());
+
+    const FVector IndicatorExtentBefore = SelectionProxy->GetUnscaledBoxExtent();
+    const FVector IndicatorLocationBefore = SelectionProxy->GetRelativeLocation();
+    HigherFacility->SetSelectionIndicatorState(
+        EFFZSFacilitySelectionIndicatorState::Hovered);
+    TestEqual(TEXT("Hover는 선택 표시 상태로 기록된다"),
+        HigherFacility->GetSelectionIndicatorState(),
+        EFFZSFacilitySelectionIndicatorState::Hovered);
+    TestFalse(TEXT("Hover된 실제 클릭 Box는 게임에 표시된다"),
+        SelectionProxy->bHiddenInGame);
+    TestEqual(TEXT("Live 선택 표시는 시설 정보 UI Accent 색을 쓴다"),
+        SelectionProxy->ShapeColor,
+        FColor(20, 242, 224));
+    HigherFacility->SetSelectionIndicatorState(
+        EFFZSFacilitySelectionIndicatorState::Selected);
+    TestEqual(TEXT("정보 패널에서 선택된 시설은 Selected 표시가 우선한다"),
+        HigherFacility->GetSelectionIndicatorState(),
+        EFFZSFacilitySelectionIndicatorState::Selected);
+    TestTrue(TEXT("표시 상태 변경은 선택 Box 크기를 바꾸지 않는다"),
+        SelectionProxy->GetUnscaledBoxExtent().Equals(
+            IndicatorExtentBefore,
+            KINDA_SMALL_NUMBER));
+    TestTrue(TEXT("표시 상태 변경은 선택 Box 위치를 바꾸지 않는다"),
+        SelectionProxy->GetRelativeLocation().Equals(
+            IndicatorLocationBefore,
+            KINDA_SMALL_NUMBER));
+    TestEqual(TEXT("표시 상태 변경은 QueryOnly 계약을 유지한다"),
+        SelectionProxy->GetCollisionEnabled(),
+        ECollisionEnabled::QueryOnly);
+    HigherFacility->SetSelectionIndicatorState(
+        EFFZSFacilitySelectionIndicatorState::Hidden);
+    TestTrue(TEXT("표시 해제 시 실제 클릭 Box가 다시 숨겨진다"),
+        SelectionProxy->bHiddenInGame);
 
     for (int32 ChannelIndex = 0; ChannelIndex < static_cast<int32>(ECC_MAX); ++ChannelIndex)
     {
@@ -547,16 +604,67 @@ bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters
 
     const FFFZSFacilitySpec& InstalledSpec = HigherFacility->GetFacilitySpec();
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const FVector ExpectedProxyExtent(
+    const float SelectionPaddingCm = GetDefault<UFFZSDeveloperSettings>()->FacilitySelectionPaddingCm;
+    constexpr float ExpectedSelectionPaddingPerSideCm = 75.0f;
+    TestEqual(TEXT("프로젝트 선택 여백 정책은 XY 각 변 75cm다"),
+        SelectionPaddingCm,
+        ExpectedSelectionPaddingPerSideCm);
+    const FVector ExpectedFootprintExtent(
         InstalledSpec.FootprintSizeCells.X * CellSizeCm * 0.5f,
         InstalledSpec.FootprintSizeCells.Y * CellSizeCm * 0.5f,
         InstalledSpec.PlacementObstacleHeightCm * 0.5f);
-    TestTrue(TEXT("선택 Proxy 크기는 footprint와 시설 높이를 반영한다"),
+    const FVector ExpectedProxyExtent(
+        ExpectedFootprintExtent.X + SelectionPaddingCm,
+        ExpectedFootprintExtent.Y + SelectionPaddingCm,
+        ExpectedFootprintExtent.Z);
+    TestTrue(TEXT("Footprint 표현은 권위 시설 크기를 그대로 유지한다"),
+        HigherFacility->FootprintBounds->GetUnscaledBoxExtent().Equals(
+            ExpectedFootprintExtent,
+            KINDA_SMALL_NUMBER));
+    TestTrue(TEXT("선택 Proxy는 footprint와 XY 75cm 여백, 시설 높이를 반영한다"),
         SelectionProxy->GetUnscaledBoxExtent().Equals(ExpectedProxyExtent, KINDA_SMALL_NUMBER));
     TestTrue(TEXT("선택 Proxy 바닥은 시설 원점에 맞는다"),
         SelectionProxy->GetRelativeLocation().Equals(
             FVector(0.0f, 0.0f, ExpectedProxyExtent.Z),
             KINDA_SMALL_NUMBER));
+
+    const FFFZSFacilitySpec& LowerSpec = LowerFacility->GetFacilitySpec();
+    const FVector ExpectedLowerProxyExtent(
+        LowerSpec.FootprintSizeCells.X * CellSizeCm * 0.5f + SelectionPaddingCm,
+        LowerSpec.FootprintSizeCells.Y * CellSizeCm * 0.5f + SelectionPaddingCm,
+        LowerSpec.PlacementObstacleHeightCm * 0.5f);
+    TestTrue(TEXT("다른 footprint 시설은 자체 크기로 선택 Proxy를 파생한다"),
+        LowerFacility->SelectionProxy->GetUnscaledBoxExtent().Equals(
+            ExpectedLowerProxyExtent,
+            KINDA_SMALL_NUMBER));
+    TestTrue(TEXT("90도 회전 시설의 선택 Proxy는 Actor 회전을 그대로 따른다"),
+        LowerFacility->SelectionProxy->GetComponentQuat().Equals(
+            LowerFacility->GetActorQuat(),
+            KINDA_SMALL_NUMBER));
+
+    const FVector PaddedTracePoint = SelectionProxy->GetComponentTransform().TransformPosition(
+        FVector(ExpectedFootprintExtent.X + SelectionPaddingCm * 0.5f, 0.0f, 0.0f));
+    FHitResult PaddedSelectionHit;
+    TestTrue(TEXT("footprint 밖이지만 75cm 선택 여백 안인 지점은 Proxy가 맞는다"),
+        World->LineTraceSingleByChannel(
+            PaddedSelectionHit,
+            PaddedTracePoint + FVector(0.0, 0.0, ExpectedProxyExtent.Z + 100.0),
+            PaddedTracePoint - FVector(0.0, 0.0, ExpectedProxyExtent.Z + 100.0),
+            FFZSCollision::FacilitySelectionTraceChannel));
+    TestTrue(TEXT("선택 여백 Trace 결과는 해당 Facility다"),
+        PaddedSelectionHit.GetActor() == HigherFacility);
+    TestFalse(TEXT("선택 여백 지점은 권위 footprint 내부로 간주하지 않는다"),
+        HigherFacility->IsWorldPointInsideFootprint(PaddedTracePoint));
+
+    const FVector OutsideTracePoint = SelectionProxy->GetComponentTransform().TransformPosition(
+        FVector(ExpectedProxyExtent.X + 5.0f, 0.0f, 0.0f));
+    FHitResult OutsideSelectionHit;
+    TestFalse(TEXT("75cm 선택 여백 밖의 지점은 Proxy가 맞지 않는다"),
+        World->LineTraceSingleByChannel(
+            OutsideSelectionHit,
+            OutsideTracePoint + FVector(0.0, 0.0, ExpectedProxyExtent.Z + 100.0),
+            OutsideTracePoint - FVector(0.0, 0.0, ExpectedProxyExtent.Z + 100.0),
+            FFZSCollision::FacilitySelectionTraceChannel));
 
     const FVector ProxyCenter = SelectionProxy->GetComponentLocation();
     const FVector TraceStart = ProxyCenter + FVector(0.0, 0.0, ExpectedProxyExtent.Z + 100.0);

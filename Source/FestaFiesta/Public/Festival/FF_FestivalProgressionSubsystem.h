@@ -8,6 +8,7 @@
 #include "Economy/Rules/FF_DayLedger.h"
 #include "Economy/Rules/FF_FixedCostArrears.h"
 #include "Economy/Rules/FF_StaffPool.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 #include "FF_FestivalProgressionSubsystem.generated.h"
 
 class UFF_FestivalDefinition;
@@ -87,6 +88,50 @@ public:
 
 	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
 	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
+	
+	// 방금 끝난 하루의 원장 — "하루 경계를 넘은 뒤"에만 유효하다.
+	// [주의] Report 안에서는 아직 경계를 안 넘었으므로 여기엔 '어제' 값이 들어 있다.
+	//		Day1 Report 에는 스냅샷이 아예 없다 (EndedDay == 0)
+	//		Day3 뒤에는 경계가 없어서 최종 결산까지 스냅샷이 Day2 에 멈춘다.
+	// [규칙] 그리려는 날짜 == GetEndedDay() 일 때만 이것을 쓰고, 아니면 GetDayLedger() 를 쓴다.
+	const FFF_DayLedger& GetEndedDayLedger() const { return EndedDayLedger; }
+
+	// GetEndedDayLedger() 가 어느 날짜의 것인지. 0 이면 아직 끝난 하루가 없다.
+	// GetLastProcessedDay() 와 하루 어긋난다 — 이쪽은 '닫힌 날', 저쪽은 '열린 날'이다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetEndedDay() const { return EndedDay; }
+	
+	
+	// --- 결산 표 (UI 읽기 모델) ---------------------------------------------
+	//
+	// 날짜를 인자로 받는다. 원장이 두 개(라이브·스냅샷)라 "어느 쪽인가"를 호출부가
+	// 판단하면 Day1·Day3 에서 조용히 틀린 표가 나온다. 그리려는 날짜만 넘기면 안쪽에서 고른다.
+	// 들고 있는 것은 두 칸뿐이다 — 진행 중인 하루와 방금 닫힌 하루.
+
+	// 그 날짜의 원장을 갖고 있는가.
+	// [주의] 아래 4종이 **빈 결과인 것과 "그 날 값이 0" 인 것을 구분하는 유일한 수단**이다.
+	//        표를 그리기 전에 이걸 먼저 물어야 한다 (NeedMetrics 의 GetSampleCount()==0 과 같은 원칙).
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool HasLedgerForDay(int32 Day) const;
+
+	// 매출 5종을 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_LedgerRow> GetEarnRowsForDay(int32 Day) const;
+
+	// 지출 9종을 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
+	// [주의] 장소 임대료는 하루치(2,400)를 넘을 수 있다 — 어제 못 낸 몫을 오늘 갚으면 합산된다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_LedgerRow> GetSpendRowsForDay(int32 Day) const;
+
+	// 부스별 매출을 FacilityId 오름차순으로. UI 가 다시 정렬하지 않는다.
+	// [주의] 표시 이름은 주지 않는다 — 경제는 시설의 한글 이름을 모른다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_FacilityRevenueRow> GetRevenueByFacilityRowsForDay(int32 Day) const;
+
+	// 시설 철거 환급 총액. **매출이 아니다** — GetEarnRowsForDay 에 섞이지 않는다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalRefundForDay(int32 Day) const;
+	
 	
 	
 	// --- 하루 경계 ---------------------------------------------------------
@@ -174,6 +219,9 @@ private:
 	// 하루 경제 정산을 수행한다.
 	// 같은 날 이미 처리했다면 아무 작업도 하지 않고 false 를 반환한다.
 	bool TryProcessNewDay(int32 NewDay);
+	
+	// Day 에 해당하는 원장을 찾는다. 안 들고 있으면 nullptr.
+	const FFF_DayLedger* FindLedgerForDay(int32 Day) const;
 
 	// 당일 임대료를 정산한다.
 	// 잔액이 부족해도 거부하지 않으며, 낼 수 있는 만큼 차감하고 부족분은 미납으로 남긴다.
@@ -190,6 +238,13 @@ private:
 	
 	// 당일 원인별/시설별 분해. 여기서만 건드린다.
 	FFF_DayLedger DayLedger;
+	
+	// 직전 하루의 원장 스냅샷. TryProcessNewDay 의 Reset 직전에서만 갱신한다
+	FFF_DayLedger EndedDayLedger;
+
+	// EndedDayLedger 가 담고 있는 날짜. 0 = 아직 끝난 하루 없음.
+	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.
+	int32 EndedDay = 0;
 	
 	// 임대료 미납. 하루 경계에서 리셋되지 않는다.
 	FFF_FixedCostArrears Arrears;

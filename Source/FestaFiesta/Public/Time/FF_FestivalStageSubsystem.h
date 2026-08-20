@@ -30,6 +30,25 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
 // 하루가 끝날 때 다음 시스템(시설/경제)에 이월용 시간 정보를 알리는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDayEnded, int32, EndedDay, float, TodayLiveDuration);
 
+// 오늘 날씨 종류를 나타내는 enum
+UENUM(BlueprintType)
+enum class EFF_WeatherType : uint8
+{
+	Clear,
+	// 맑음
+
+	Rain,
+	// 비
+
+	Windy
+	// 바람
+};
+
+// 환경 상태가 바뀔 때 다른 시스템(이동/시설/만족도)에 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnvironmentStateChanged, EFF_WeatherType, Weather, bool, bIsNight);
+// Weather : 지금 날씨 종류
+// bIsNight : 야간 조명 켜진 상태인지 여부
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -137,6 +156,10 @@ public:
 	bool bNightLightingActivated = false;
 	// 오늘 이미 밤 조명을 켰는지 여부 
 
+	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage|Environment")
+	EFF_WeatherType SelectedWeather = EFF_WeatherType::Clear;
+	// 플레이어가 Setup/MorningCheck에서 선택한 오늘의 날씨 (기본값: 맑음)
+
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnStageChanged OnStageChanged;
 	// 이벤트 신호 실제 변수 (다른 시스템이 여기 등록해두면 알림 받음)
@@ -165,6 +188,10 @@ public:
 	FOnDayEnded OnDayEnded;
 	// 하루가 끝났을 때, 다른 시스템(시설/경제)에게 이월용 시간 정보를 전달하는 신호
 
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage|Environment")
+	FOnEnvironmentStateChanged OnEnvironmentStateChanged;
+	// 날씨 상태가 바뀌었음을 다른 시스템(이동/시설/만족도)에 전달하는 신호
+
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);
 	// 단계 바꿔달라는 요청 함수
@@ -176,6 +203,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void SetTimeScale(float NewScale);
 	// 배속 바꾸는 함수
+
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage|Environment")
+	void SetSelectedWeather(EFF_WeatherType NewWeather);
+	// 플레이어가 날씨를 선택하는 함수 (Setup/MorningCheck에서만 허용)
+
+	
+	UFUNCTION(BlueprintPure, Category = "Festival Stage|Environment")
+	EFF_WeatherType GetSelectedWeather() const { return SelectedWeather; }
+	// 지금 선택된 날씨를 바로 읽어오는 Getter 
+
+	
+	UFUNCTION(BlueprintPure, Category = "Festival Stage|Environment")
+	bool GetIsNightActive() const { return bNightLightingActivated; }
+	// 지금 밤(야간 조명 켜진 상태)인지 바로 읽어오는 Getter
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMainProgramLocked();

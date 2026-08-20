@@ -183,6 +183,43 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 | -------------------------------------- | ------------------- | --------------------------------- |
 | `OnDayEnded`                           | `FOnDayEnded`       |(EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달     |
 
+### 환경(날씨·야간) — `UFF_FestivalStageSubsystem` -강민서
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `UFF_FestivalStageSubsystem` (GameInstanceSubsystem)
+- **상태**: `구현완료`
+
+| 멤버                                     | 형                            | 설명                                  |
+| --------------------------------------- | ---------------------------- | ------------------------------------ |
+| `EFF_WeatherType`                       | `enum`                       | `Clear` / `Rain` / `Windy` 3종        |
+| `SelectedWeather`                       | `EFF_WeatherType`            | 현재 선택된 날씨                        |
+| `SetSelectedWeather(EFF_WeatherType)`   |                               | 날씨 선택 요청 (Setup/MorningCheck에서만 허용) |
+| `GetSelectedWeather()`                  | `EFF_WeatherType`            | 현재 선택된 날씨 즉시 조회                |
+| `GetIsNightActive()`                    | `bool`                        | 지금 밤(야간 조명 활성) 상태인지 즉시 조회  |
+| `OnEnvironmentStateChanged`             | `FOnEnvironmentStateChanged` | `(Weather, bIsNight)` — 환경 상태 변경 시 |
+
+### `OnEnvironmentStateChanged`
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `UFF_FestivalStageSubsystem` (GameInstanceSubsystem)
+- **시그니처**: `FOnEnvironmentStateChanged(EFF_WeatherType Weather, bool bIsNight)`
+- **갱신 주기**: 이벤트 — 다음 3개 시점에 발동
+  1. `SetSelectedWeather()` 호출 시 (Setup/MorningCheck에서 선택 즉시, 미리보기 목적)
+  2. Live 진입 시 (그날 확정된 날씨로)
+  3. 밤 조명 트리거 시점 (야간 상태만 true로 바뀌어 재발동)
+- **상태**: `구현완료`
+- **비고**: `EFF_WeatherType`은 세기(Intensity) 개념 없음. 날씨 값의 만족도·이동 영향 해석은 시간 시스템 책임이 아니며, 수신 측(이동·시설·만족도 시스템)이 자체 판단. 구독 직후 현재값이 필요하면 `GetSelectedWeather()`/`GetIsNightActive()` 사용.
+
+**구독 방법**
+```cpp
+GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
+    ->OnEnvironmentStateChanged.AddDynamic(this, &YourClass::YourHandler);
+```
+
+**시각 연출 참고 (민서 자체 구현, UI 무관)**: `BP_WeatherManager`가 이 델리게이트를 구독해 Fog Density·VolumetricCloud·`NS_Rain` 파티클·빗소리 사운드를 날씨별로 조절함. 다른 시스템이 참고할 필요는 없음
+
+
+
 
 ## Zone · 시설 — 한광훈
 
@@ -244,17 +281,26 @@ footprint가 겹치면 Actor 원점까지 3차원 거리가 가장 가까운 시
 `FacilityInstanceId` 문자열 오름차순의 시설을 선택한다.
 
 `AFFZSFacilityActor::SelectionProxy`는 `BlueprintReadOnly`인 선택 전용 Box다. 유효한 Spec을 적용한 뒤
-시설 footprint와 장애물 높이에 맞춰지고, `QueryOnly`·`WorldDynamic`으로 프로젝트 Trace Channel
+시설 footprint의 XY 각 변에 기본 75cm를 더하고 장애물 높이에 맞춰지며, `QueryOnly`·`WorldDynamic`으로 프로젝트 Trace Channel
 `FacilitySelection`만 Block한다. 물리·Navigation·Overlap에는 참여하지 않으며 `VisualMesh`는 계속
 `NoCollision`이고 Navigation에도 영향을 주지 않는다. 유효한 Spec 적용 전 Proxy는 크기 0·`NoCollision`이라
 선택되지 않는다. 프로젝트 채널의 기본 응답은 `Ignore`이므로 일반 `BlockAll` 컴포넌트는 전용 Trace를 막지 않는다.
+
+`SetSelectionIndicatorState(Hidden/Hovered/Selected)`는 이 실제 클릭 Box의 렌더 표시만 바꾼다.
+Hover는 Live UI Accent `#14F2E0` 3px, 선택된 정보 패널 대상은 같은 색 5px이며 Extent·Transform·Collision은
+변경하지 않는다. `Hovered`는 **현재 클릭하면 선택될 대상**, `Selected`는 **현재 정보 패널 대상**을 뜻한다.
+두 상태는 서로 다른 시설에 동시에 표시될 수 있다. 기본 상태는 `Hidden`이고 에디터 Actor 선택 여부와
+무관하게 런타임에서 표시할 수 있다.
 
 - C++ Trace는 채널 슬롯을 직접 쓰지 않고 `FFZSCollision::FacilitySelectionTraceChannel`을 사용한다.
 - Blueprint Trace는 이름이 `FacilitySelection`인 프로젝트 채널을 사용한다.
 - `FacilitySelection` Trace가 아무 것도 맞히지 않은 경우에만 호환용 지면 footprint fallback을 시도한다.
   첫 `Visibility` hit가 `ImpactNormal.Z >= 0.45`인 지면일 때만 그 지점을 조회 API에 전달한다.
-- 전용 채널이 비등록 후보를 맞히거나 등록 Proxy가 외부 `Visibility` 장애물에 가려지면 fallback 없이
-  선택을 거부한다. `Visibility`는 시설 ID 선택 채널이 아니다.
+- 앞쪽 전용 채널 후보가 비등록·stale 상태이거나 외부 `Visibility` 장애물에 가려지면 그 Actor를 제외하고
+  최대 32개 후보까지 다음 등록 Proxy를 찾는다. 하나라도 전용 Proxy를 맞힌 뒤 유효 후보를 못 찾으면
+  지면 fallback 없이 선택을 거부한다. `Visibility`는 시설 ID 선택 채널이 아니다.
+- 가림 Trace 끝점은 Proxy 표면보다 2cm 앞에서 멈춰 Chaos 접촉 오차와 지형 경계가 정확한 클릭을
+  거짓 차단하지 않게 한다. 그보다 앞의 실제 벽·오브젝트는 계속 클릭을 차단한다.
 
 ### 브리지 2종 (2026-08-06 추가)
 
@@ -267,13 +313,17 @@ footprint가 겹치면 Actor 원점까지 3차원 거리가 가장 가까운 시
 Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설 정보 패널은
 `UFF_FacilityInfoSubsystem`이 `FFF_FacilityInfoViewData`로 평탄화한 값을 제공합니다.
 
-### 개발용 플레이테스트 도구 (참고)
+### 개발용 Zone·시설 QA 도구 (참고)
 
-`UFF_ZoneSystemPlaytestSubsystem` + `WBP_ZoneSystemPlaytestHUD`가 있습니다.
-`Content/FestaFiesta/Zone/Maps/ZoneTestMap`에서 키보드로 시설 설치·이동·제거·개폐·큐 조작을 시험할 수 있습니다.
+현재 수동 통합 QA는 `Content/FestaFiesta/Maps/Test_Main`에서 프로덕션
+`UFF_BuildModeSubsystem`과 개발용 `UFF_ZoneLifecycleTestPanelSubsystem`을 함께 사용합니다.
+비 Shipping의 `Test_Main`에서는 `WBP_FF_ZoneLifecycleTestPanel`이 자동으로 표시되어 Festival 단계와
+시설 Open·Close·Emergency 권위 API를 관찰·실행하고, 설치·이동·철거는 실제 건축 모드 경로로 확인합니다.
 
-**플레이어용 UI가 아니라 개발 도구입니다.** CommonUI·스타일 에셋을 쓰지 않는 것은 의도된 것입니다.
-Morning Check UI를 만들 때 시설 명령 호출 방식의 참고 자료로 씁니다.
+시설 Definition과 배치용 에디터 픽스처는
+`Content/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`입니다. 이 맵은 패키징 대상이 아닙니다.
+**Lifecycle 패널과 검증 맵은 플레이어용 UI가 아니라 개발 도구입니다.** Morning Check UI를 만들 때
+동일한 시설 명령 진입점과 결과 처리 방식을 참고합니다.
 
 ### 완성형 시설 건축 카탈로그 (2026-08-18 갱신)
 
@@ -378,8 +428,19 @@ World Snapshot 복원, Context 무효화 때도 선택이 자동 해제된다.
 
 `Live` 선택은 `AFF_FestivalPlayerController::OnActorPicked`를 받은 뒤 전용 `FacilitySelection` Trace로
 해석한다. 전용 Trace가 아무 것도 맞히지 않고 첫 `Visibility` hit가 걸을 수 있는 지면일 때만 footprint
-fallback을 시도한다. 비등록 후보를 맞히거나 외부 장애물에 가린 시설은 fallback 없이 거부한다. 빈 곳을
-클릭하면 기존 Live 선택을 닫는다.
+fallback을 시도한다. 앞쪽 비등록·stale·가림 후보는 건너뛰되, 전용 후보를 맞히고도 유효 시설이 없으면
+fallback 없이 거부한다. 빈 곳을 클릭하면 기존 Live 선택을 닫는다.
+
+기본 좌클릭은 `IA_Pick`의 `Started`를 사용한다. CommonUI 또는 런타임 Mapping Context 때문에 그 Action이
+같은 PlayerTick에 실행되지 않은 경우 PlayerController가 raw `LeftMouseButton` edge를 한 번만 보조 처리한다.
+따라서 `OnActorPicked`는 누락되지 않으며 Action과 fallback이 함께 들어와도 중복 방송하지 않는다.
+
+Live에서는 같은 resolver를 0.05초 간격으로 재사용해 커서 아래 실제 클릭 Box를 Hover 표시한다. 클릭 순간에는
+현재 Hovered Proxy가 새 ray와 실제로 교차하고 등록·채널·가림 검증을 통과하는지 동기 재확인해 그 시설을
+우선 선택한다. stale Hover가 ray를 벗어났으면 실제 교차 후보로 즉시 표시와 결과를 바꾼다. 별도 Actor Tick이나
+시설 전체 순회는 없으며, 커서가 패널 위에 있거나 건축·모달·ActorView·CharacterView에서 피킹이 막히면
+Hover를 즉시 정리한다. 패널이 열린 시설은 `Selected` 표시가 우선하며, Live 이탈·시설 제거·World Snapshot
+복원·Subsystem 종료 때 Hover와 Selected 표시를 모두 해제한다.
 
 제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
 FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
@@ -528,8 +589,13 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 - **UI 사용처**: NPC 클릭 시 "왜 저기로 갔는가" 표시
 
 `AllCandidateScores`에 후보별 항별 점수가 다 들어 있어 그대로 표시하면 됩니다.
-⚠️ **지금 값이 들어오는 항은 `AttractionTerm`·`DistanceCostTerm`·`DensityCostTerm` 셋뿐입니다** (2026-08-18 확인).
-취향·Need·대기시간은 개체별 상태를 붙이는 작업이 남아서 **0으로 나옵니다** — 화면 버그가 아닙니다.
+⚠️ **여섯 항 중 넷만 값이 움직입니다** (2026-08-18 저녁 기준). 나머지 둘이 0으로 나오는 것은 화면 버그가 아닙니다.
+
+| 항 | 상태 |
+|---|---|
+| `PreferenceTerm` · `NeedTerm` · `DistanceCostTerm` · `WaitCostTerm` | ✅ 값이 들어옵니다 |
+| `AttractionTerm` | ❌ **항상 0** — 시설 기본 매력도를 무엇으로 정할지가 아직 설계 전입니다. 근거 없는 상수를 넣지 않기로 해서 전부 0이고, 그래서 이 항은 순위에 영향을 주지 않습니다 |
+| `DensityCostTerm` | ❌ **항상 0** — Zone 혼잡도를 보고하는 코드가 아직 없습니다(crowdAI 협의 중) |
 
 | 필드                                                      | 뜻             |
 | ------------------------------------------------------- | ------------- |
@@ -557,12 +623,22 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 **Setup·MorningCheck에 유료 프로그램 구매 화면이 필요하고 담당은 백종태입니다** (2026-08-12 확인).
 경제 쪽 구매 처리는 하루 경계(2026-08-18 완료) 다음 순서라 이번 주에 붙습니다.
 
-**요청 (백종태 → 김시리)** — 화면을 만들려면 다음이 필요합니다. 형태는 맞춰 드립니다.
+**요청 4건 중 3건이 열렸습니다 (2026-08-18)** — `UFF_ProgramReservationSubsystem` 신설.
+헤더는 `Public/NPC/Party/FF_ProgramReservationSubsystem.h`, 접근은 `GameInstanceSubsystem`입니다.
 
-1. 구매 가능한 프로그램 목록 (이름·가격·정원·시각) — `Setup`·`MorningCheck`에서 요청 시
-2. 현재 예약 상태 (슬롯 수, 배정된 그룹 수, 남은 자리)
-3. 구매·취소 **Command** (UI가 상태를 직접 쓰지 않습니다. 실패 시 이유를 결과로 받습니다)
-4. 예약 변경 시 알려주는 델리게이트
+| 요청 | 상태 | API |
+|---|---|---|
+| ① 프로그램 목록 | ✅ | `GetReservationIds()` + `FindReservation(Id, Out)`. **시작 시각 오름차순으로 정렬해서 드립니다** — 순서가 실행마다 바뀌지 않습니다 |
+| ② 예약 상태 | ✅ | `FFF_ProgramReservation`에 `Capacity`·`AssignedGroupIds`·`AssignedHeadcount`·`UnfilledSeats`. 남은 자리는 `GetRemainingSeats(Id)` |
+| ③ 구매·취소 Command | ⬜ | 구매가 Gold를 쓰는 일이라 경제(S8)와 같이 붙입니다. 그때 실패 이유를 열거형으로 드립니다 |
+| ④ 변경 델리게이트 | ✅ | `OnReservationChanged(FGuid ReservationId)` — 바뀐 예약의 핸들이 옵니다 |
+
+- 시간 필드(`StartMinutes`·`EndMinutes`)는 **Live 경과분**입니다. 화면에 시각으로 표시하시려면
+  변환 지점을 한 곳으로 두시는 게 좋습니다.
+- `UnfilledSeats`가 0보다 크면 **정원을 다 못 채운 것**입니다. 오류가 아니라 정상 결과입니다 —
+  정원을 그룹 크기 조합으로 정확히 채우는 규칙이라(4명 정원에 3인 그룹만 남으면 1자리가 빕니다)
+  남을 수 있습니다. 화면에 "남은 자리"로 그대로 보여주시면 됩니다.
+- 아직 **구매 화면이 없어서 실제 예약이 0건**입니다. 목록이 비어 보이는 것이 지금은 정상입니다.
 
 시간 필드 기준이 **Live 경과분**이라고 헤더에 적혀 있습니다. 화면에 표시할 때
 게임 시각으로 바꿀 필요가 있으면 변환 지점을 한 곳으로 두겠습니다.
@@ -675,37 +751,85 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 **부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 전부 거부되고 아무것도 바뀌지 않습니다. 실패 이유
 (돈 부족 / 하루 상한 초과)를 화면에 띄우시려면 말씀만 주세요, 지금은 `true`/`false`만 돌려줍니다.
 
-**Report 드릴다운**은 지출·매출이 원인별(`EFF_SpendReason`/`EFF_EarnReason`, 한글 `DisplayName` 있음), 매출은
-부스별로도 쌓이고 있습니다. UI Getter를 아직 안 만들었으니 어떤 표로 필요하신지 알려주시면 그 모양대로 만들겠습니다.
-
-**답변 (백종태, 2026-08-19) — 둘 다 필요합니다.** 프로토타입에서 결산 화면을 실제로 만들어 보니
-두 표가 같은 화면에 나란히 들어갑니다.
-
-1. **원인별 표** — `EFF_EarnReason` 5종을 먼저, `EFF_SpendReason` 9종을 뒤에 놓고 마지막에 합계 한 줄입니다.
-   값이 0인 사유는 줄 자체를 그리지 않습니다. 한글 `DisplayName` 을 그대로 쓰고 enum 이름은 작게 병기합니다.
-2. **부스별 매출 표** — `FacilityId` 오름차순 정렬 그대로 쓰겠습니다. UI가 다시 정렬하지 않습니다.
-3. **철거 환급은 따로 주세요.** `TotalRefund` 를 `EarnByReason` 에 섞으면 "매출이 늘었다"로 잘못 읽힙니다.
-   화면에서도 `매출 아님` 태그를 붙여 별도 줄로 그리고 있습니다.
-
-`TArray<FFF_SpendBreakdownRow>` 같은 UI 친화 구조체면 가장 좋습니다. 형태는 아래면 충분합니다.
-
-```cpp
-struct FFF_LedgerRow { FText DisplayName; FName ReasonId; int32 Amount; };
-// GetSpendRows() / GetEarnRows() / GetRevenueByFacilityRows() / GetTotalRefund()
-```
-
-한 가지만 더 — **하루 경계에서 `DayLedger` 가 리셋될 때 직전 날의 값을 UI가 읽을 수 있어야 합니다.**
-결산 화면은 방금 끝난 하루를 보여주는데, `RequestAdvanceToNextDay()` 가 먼저 돌면 표가 비어 버립니다.
-위 4번 설명대로 그 버튼이 이제 정산까지 하므로 더 확실해졌습니다.
-프로토타입에서는 정산 시점에 스냅샷을 떠서 피했습니다 — `GetLastDayLedger()` 같은 것이 있으면 가장 깔끔합니다.
-
-⚠️ **임대료가 2,400 을 넘을 수 있다는 점(위 5번)을 원장 표에 반영하겠습니다.** 프로토타입은 하루 임대료를
-2,400 고정으로 그리고 있어서 미납 상환이 합산되면 어긋납니다. 원장 값을 그대로 받아 그리도록 고치겠습니다.
+~~**Report 드릴다운** 형태 협의~~ → **2026-08-19 종료.** 아래 "결산 표 4종" 절로 대체됐습니다.
+(요청 3건: 원인별 표 + 부스별 표 둘 다 · 0 인 사유 제외 · 환급 분리 — 전부 반영)
 
 **시설 철거 환급은 매출이 아닙니다** (2026-08-13). 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
 
 아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
+
+### 결산 표 4종 (김시리, 2026-08-19 구현완료)
+
+- **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
+- **접근**: `GameInstanceSubsystem`. 전부 `BlueprintPure`
+
+```cpp
+bool                            HasLedgerForDay(int32 Day) const;
+TArray<FFF_LedgerRow>           GetEarnRowsForDay(int32 Day) const;
+TArray<FFF_LedgerRow>           GetSpendRowsForDay(int32 Day) const;
+TArray<FFF_FacilityRevenueRow>  GetRevenueByFacilityRowsForDay(int32 Day) const;
+int32                           GetTotalRefundForDay(int32 Day) const;
+```
+
+**요청하신 형태에서 날짜 인자 하나가 붙었습니다.** 그리려는 날짜를 넘기시면 그 날 표가 옵니다.
+
+```cpp
+const int32 DayToDraw = Stage->CurrentDay;
+if (Progression->HasLedgerForDay(DayToDraw)) { /* 4종 호출 */ }
+```
+
+**예 — Day3 Live 가 아직 진행 중일 때**
+
+| 넘긴 값 | 나오는 것 |
+|---|---|
+| `3` | Day3 의 **지금까지** 쌓인 값. 진행 중이라 계속 늘어납니다 |
+| `2` | Day2 의 최종값 |
+| `1` | 빈 표 (`HasLedgerForDay(1)` 이 `false`) |
+
+진행 중인 날도 그대로 읽으시면 됩니다 — Live 중 실시간 표시와 Report 결산이 같은 호출입니다.
+
+⚠️ **`HasLedgerForDay()` 를 먼저 확인해 주세요.** 보관하는 것은 **오늘과 어제 이틀뿐**입니다.
+없는 날짜는 빈 표가 오는데 **"그 날 매출이 0" 과 모양이 같아서** 이 함수 말고는 구분할 방법이 없습니다.
+
+**표 규칙**
+
+- 원인별 표는 `GetEarnRowsForDay()` → `GetSpendRowsForDay()` 순으로 붙이시면 요청하신 배치가 됩니다
+- 값 0 인 사유는 줄이 없습니다. 순서는 enum 선언 순서로 고정입니다
+- 부스별은 `FacilityId` 오름차순으로 드립니다
+- 환급은 `GetTotalRefundForDay()` 로 분리했습니다. 매출 표에 안 섞입니다
+- 임대료 줄은 2,400 을 넘을 수 있습니다(미납 상환 합산). 원장 값을 그대로 그려 주세요
+- 합계 줄은 따로 안 드립니다 — 0 인 줄이 빠져 있어서 `Amount` 를 더하면 정확합니다
+
+**부스별만 구조체가 다릅니다.**
+
+```cpp
+struct FFF_FacilityRevenueRow { FName FacilityId; int32 Amount; };   // DisplayName 없음
+```
+
+경제는 시설의 한글 이름을 모릅니다. **표시 이름은 Building 카탈로그에서 해석해 주세요.**
+
+⚠️ **부스별 표는 S10 까지 비어 있습니다.** 매출을 넣는 호출부(crowdAI "시설 이용 완료" 신호)가
+아직 없습니다. 예약 목록과 같은 상황이라 지금 비어 보이는 것이 정상입니다.
+
+### 🔴 정정 — enum 의 `DisplayName` 을 직접 읽지 마세요 (김시리, 2026-08-19)
+
+**2026-08-18 에 "피날레 실패 이유가 한글 `DisplayName` 으로 들어 있다"고 안내한 것이 틀렸습니다.**
+`UMETA(DisplayName)` 조회는 에디터 전용이라 **패키징 빌드에서는 `"Gold 부족"` 대신 `"InsufficientGold"`
+가 뜹니다.** 에디터에서는 정상으로 보여서 시연 빌드를 만들기 전까지 안 드러납니다.
+
+문자열 원본을 경제 쪽으로 옮겼습니다. 아래를 쓰시면 어느 빌드에서든 한글이 나옵니다.
+
+```cpp
+// Public/Economy/FF_EconomyDisplayTextLibrary.h — 전부 static BlueprintPure
+GetFinalePurchaseResultText(EFF_FinalePurchaseResult)   GetFinaleGradeText(EFF_FinaleGrade)
+GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_EarnReason)
+```
+
+**고치실 곳은 피날레 실패 이유와 등급 표시 두 군데입니다.** 결산 표의 `DisplayName` 은 이미 이
+함수로 채워 드리니 그대로 쓰시면 됩니다.
+
+⚠️ Stage 단계 이름(`FF_FestivalStageSubsystem`)도 같은 문제입니다 — 강민서 님 파일이라 그대로 뒀습니다.
 
 ---
 
@@ -843,12 +967,12 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 필요한 것                                         | 예상 소유자    | 상태        | UI에서 쓰는 곳                                                          |
 | --------------------------------------------- | --------- | --------- | ------------------------------------------------------------------ |
 | **Satisfaction** (`SimSatisfaction` 0~100)    | 김시리 · 이정원 | ❌ 없음      | Overview 지표, Report, SNS                                           |
-| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ❌ 없음      | Report 분해식, Finale 구매 예상치                                          |
+| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ⚠️ **FinaleBonus 는 완료**(`GetFinaleSatisfactionBonus`), `SimSatisfaction` 이 없어 합산 불가 | Report 분해식, Finale 구매 예상치 |
 | **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
 | **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바                                                            |
 | **`TodayRevenue`** (오늘 매출)                    | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Report — UI가 누적값에서 빼지 않습니다                                         |
-| 🆕 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ⚠️ 내부 집계만 있음 | Report 드릴다운. UI Getter는 형태 협의 후 추가 |
-| 🆕 **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ⚠️ 내부 집계만 있음 | Report — 부스별 수익 표 |
+| 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ✅ **2026-08-19 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay` | Report 드릴다운 |
+| **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ✅ **2026-08-19 API 완료** — `GetRevenueByFacilityRowsForDay`. 단 매출을 넣는 호출부가 없어 S10 까지 빈 표 | Report — 부스별 수익 표 |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
 | Staff 보유·가용 인원                                | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Event 배치 UI, MorningCheck 고용 화면 |
 | 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 상단 바 자금난 경고, Report |
@@ -898,8 +1022,11 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |
 | 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
 | 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
+| 2026-08-18 | 김시리 | 🆕 **예약 요청 4건 중 3건이 열렸습니다** — `UFF_ProgramReservationSubsystem` 신설로 프로그램 목록(시작 시각 순 정렬)·예약 상태·변경 델리게이트가 생겼습니다. 남은 하나(구매·취소 Command)는 Gold를 쓰는 일이라 경제 S8과 같이 붙입니다. 지금은 구매 화면이 없어 **목록이 비어 있는 것이 정상**입니다 |
 | 2026-08-18 | 김시리 | 🆕 **피날레 구매가 구현됐습니다** — Day3 MorningCheck 구매 화면이 필요합니다(담당 백종태). 버튼 활성화는 `CanPurchaseFinaleNow()`, 구매는 `TryPurchaseFinale()`이고 실패 이유가 한글로 옵니다. **1회 구매·변경 불가라 확인창이 필요합니다.** 만족도 보너스는 Gold가 아니고 평가 점수 합산은 관객 만족도가 생길 때 붙입니다 |
 | 2026-08-18 | 김시리 | 🆕 **"다음 날" 버튼이 이제 하루치 임대료를 정산합니다** — `RequestAdvanceToNextDay()`를 누르면 잔액·밀린 임대료·오늘 매출·인원 4개 값이 바뀝니다(전부 기존 델리게이트로 통지). 종태님 쪽 수정은 없고, 버튼 직후 UI가 잔액을 직접 계산하지만 않으면 됩니다. 문서에 빠져 있던 밀린 임대료(`GetTotalArrears`)와 인원(`GetTotalStaffCount`) 2종 추가 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
 | 2026-08-19 | 강민서 | `OnDayEnded` 델리게이트 신설. AdvanceToNextDay() 호출 시 방금 끝난 날짜와 그날 Live 진행 시간을 broadcast. 이월 데이터(정비/청결 등) 계산은 수신 측(광훈/시리) 담당 |
 | 2026-08-19 | 백종태 | 전체 사이클 UI 프로토타입(타이틀→피날레→최종결산)을 한 바퀴 돌려 보고 **없어서 더미로 채운 것 8건**을 "UI가 필요한데 아직 없는 것"에 추가. `FFF_DayLedger` 노출 형태 질문에 회신(원인별 표·부스별 표 **둘 다** 필요, 환급은 분리, 하루 경계 스냅샷 필요). 시설 유지비에 대응하는 `EFF_SpendReason` 부재 보고 |
+| 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다. **부스별 표는 S10 까지 빈 표입니다** |
+| 2026-08-19 | 김시리 | 🔴 **정정: enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.** 8/18 에 "피날레 실패 이유가 한글로 온다"고 안내한 것이 틀렸습니다. `UFF_EconomyDisplayTextLibrary` 신설 — 피날레 실패 이유·등급 표시 두 군데를 이 함수로 바꿔 주세요. Stage 단계 이름도 같은 문제입니다(강민서) |

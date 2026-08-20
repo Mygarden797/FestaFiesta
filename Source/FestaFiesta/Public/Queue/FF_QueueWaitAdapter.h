@@ -42,8 +42,8 @@ public:
 	}
 
 	/**
-	 * 설계문서 9.1 식을 스냅샷만으로 재현한다. Queue 인스턴스 없이도 계산할 수 있어야
-	 * 다른 스레드에서 스냅샷을 읽는 경로가 열린다 (설계문서 원칙 3).
+	 * 식을 스냅샷만으로 재현한다. Queue 인스턴스 없이도 계산할 수 있어야
+	 * 다른 스레드에서 스냅샷을 읽는 경로가 열린다.
 	 * ServiceRate 가 0이면 영원히 안 빠지는 줄이므로 큰 값을 돌려준다.
 	 */
 	static float ComputeExpectedWaitSeconds(const FFF_QueueState& State, int32 IncomingMemberCount);
@@ -62,12 +62,12 @@ public:
 	 * AND 하는 대상은 State.bIsOpen 이지 State.bAcceptingNew 가 아니다. 후자는 '잠깐 만석'까지
 	 * 포함하는데, 만석은 앞 Party 하나 빠지면 풀리는 순간 상태다. 그걸로 후보를 닫으면 붐비는
 	 * 부스가 결정 시점마다 사라졌다 나타났다 하고, "줄이 길어서 딴 데 간다"는 행동 자체가
-	 * 표현되지 않는다. 설계문서 8.2① 도 도착 판정과 가입 판정을 분리하라고 정했다 —
+	 * 표현되지 않는다. 애초에 도착 판정과 가입 판정은 분리되어야 한다 —
 	 * 걸어가는 동안 자리가 날 수도, 반대로 찰 수도 있고, 후자는 RejectedFull → 재평가로 처리된다.
 	 * 만석은 후보에서 빼는 대신 EstimatedWaitMinutes 가 커지는 것으로 표현한다.
 	 *
 	 * CurrentOccupancy/Capacity 는 건드리지 않는다. 그건 Crowd 밀도 항의 입력이고,
-	 * 대기 인원은 이미 셀 밀도에 잡혀 있다 (설계문서 8.4). 여기서 또 넣으면 이중 계산이다.
+	 * 대기 인원은 이미 셀 밀도에 잡혀 있다. 여기서 또 넣으면 이중 계산이다.
 	 */
 	static void ApplyQueueStateToCandidate(
 		FFF_DestinationCandidate& InOutCandidate,

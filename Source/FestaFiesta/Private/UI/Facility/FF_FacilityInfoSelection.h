@@ -32,4 +32,14 @@ namespace FFFacilityInfoSelection
 		}
 		return ETraceDecision::UseSelectionProxy;
 	}
+
+	/** Hover 표시도 실제 클릭 입력과 같은 Live·입력·포인터 gate를 통과해야 한다. */
+	constexpr bool ShouldResolveLiveSelectionHover(
+		const bool bIsLiveStage,
+		const bool bPickingAllowed,
+		const bool bCursorVisible,
+		const bool bPointerOverPanel)
+	{
+		return bIsLiveStage && bPickingAllowed && bCursorVisible && !bPointerOverPanel;
+	}
 }

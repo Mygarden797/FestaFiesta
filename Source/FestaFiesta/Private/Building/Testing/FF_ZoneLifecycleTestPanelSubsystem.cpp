@@ -1,4 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// FF_ZoneLifecycleTestPanelSubsystem.cpp
+
+// Test_Main 게임 월드에서 로컬 플레이어가 준비되면 Lifecycle 개발 패널을 자동 부착한다.
+// 흐름: 월드 유형/맵 확인 -> Tick에서 생성 재시도 -> WBP 로드·Viewport 추가 -> 해제 시 제거.
+// 불변식: 패널 생성에 성공한 뒤 Tick 재시도를 멈추고 일반 콘텐츠 월드에는 객체를 만들지 않는다.
+// 실패/성능: 플레이어 준비 전만 저비용 재시도하고 클래스 로드 실패는 한 번 기록한 뒤 중단한다.
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 
