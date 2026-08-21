@@ -47,6 +47,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
 	bool PopPanel();
 
+	/**
+	 * **특정 화면만** 내린다. 최상단이 아니어도 그것만 제거한다.
+	 *
+	 * `PopScreen` 은 최상단을 내리므로, ESC 일시정지가 결산 시트 위에 올라간 상태에서 Stage 가
+	 * 바뀌면 시트가 아니라 일시정지를 내린다. 흐름 서브시스템이 Stage 화면을 교체할 때 이걸 쓴다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
+	bool RemoveScreen(UFF_ActivatableScreenBase* Screen);
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	UPanelWidget* GetHUDLayer() const { return HUDLayer; }
 

@@ -9,7 +9,10 @@
 UFF_UIMetricBandSettings::UFF_UIMetricBandSettings()
 {
 	// 2026-08-06 결정: 70 / 40. 근거는 헤더 주석.
-	// 색은 자리표시자다. Glass Orbit 팔레트가 정해지면 Project Settings에서 바꾼다.
+	// 색은 `UFF_UIPalette`의 InGame.BandGood / BandCaution / BandBad와 같은 값이다 (LightTeal).
+	// 2026-08-20에 sRGB 비율을 FLinearColor에 직접 넣던 것을 FromSRGBColor로 고쳤다 —
+	// 감마가 틀려 `좋음`이 의도한 진한 초록이 아니라 연한 민트로 떠 있었다.
+	// **경계값·라벨·아이콘은 이 파일이 소유하고 팔레트는 원색만 갖는다.** 한쪽을 바꾸면 같이 맞춘다.
 	//
 	// 아이콘은 흰색 단색이고 위에서 Color로 틴트한다. 여기서 지정하는 것은 **기본값**이며
 	// Config 프로퍼티라 DefaultGame.ini에 값이 있으면 그쪽이 이긴다.
@@ -19,19 +22,19 @@ UFF_UIMetricBandSettings::UFF_UIMetricBandSettings()
 	FFF_UIMetricBand Good;
 	Good.MinValue = 70;
 	Good.Label = LOCTEXT("MetricBandGood", "좋음");
-	Good.Color = FLinearColor(0.24f, 0.72f, 0.44f);
+	Good.Color = FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
 	Good.Icon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(FString::Printf(TEXT("%sT_UI_Band_Good.T_UI_Band_Good"), IconRoot)));
 
 	FFF_UIMetricBand Caution;
 	Caution.MinValue = 40;
 	Caution.Label = LOCTEXT("MetricBandCaution", "주의");
-	Caution.Color = FLinearColor(0.90f, 0.68f, 0.20f);
+	Caution.Color = FLinearColor::FromSRGBColor(FColor(0xE3, 0x9A, 0x22));
 	Caution.Icon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(FString::Printf(TEXT("%sT_UI_Band_Caution.T_UI_Band_Caution"), IconRoot)));
 
 	FFF_UIMetricBand Bad;
 	Bad.MinValue = 0;
 	Bad.Label = LOCTEXT("MetricBandBad", "나쁨");
-	Bad.Color = FLinearColor(0.85f, 0.31f, 0.29f);
+	Bad.Color = FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 	Bad.Icon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(FString::Printf(TEXT("%sT_UI_Band_Bad.T_UI_Band_Bad"), IconRoot)));
 
 	Bands = { Good, Caution, Bad };
