@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "FF_FFZSTypes.h"
+#include "NPC/Integration/FF_WalkDistanceMatrix.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_CrowdDecisionSubsystem.generated.h"
 class UDataTable;
@@ -80,14 +81,10 @@ struct FFF_CrowdDecisionStats
 	int32 Chosen = 0;
 
 	/**
-	 * 대기열 정보가 실제로 반영된 후보 수(누적).
+	 * 후보에 실제로 대기열 대기시간이 반영된 횟수(후보 단위 누적).
 	 *
-	 * 이 값이 0이면 wait_cost 항은 죽어 있다 — 대기시간이 전부 0이면 Choose는 "줄이 없다"로
-	 * 계산한다. Queue 서브시스템이나 Zone 브리지가 없는 월드에서도 결정은 돌아가야 해서
-	 * 어댑터가 조용히 0을 돌려주므로, 이 계수기가 없으면 "줄이 짧다"와 "줄을 안 본다"가
-	 * 화면에서 똑같아 보인다.
-	 *
-	 * 줄이 없는 목적지(벤치·포토존)는 애초에 세지 않으므로 후보 수보다 작은 것이 정상이다.
+	 * Requests가 아니라 후보 개수로 세는 이유: 대기열이 붙은 시설만 반영되므로
+	 * "결정은 돌았는데 대기시간은 하나도 안 붙었다"를 이 값 0으로 구분할 수 있다.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 QueueWaitApplied = 0;
@@ -119,15 +116,13 @@ struct FFF_CrowdDecisionStats
  * Crowd: 그 좌표로 이동
  * ```
  *
- * ### 아직 없는 것 (2026-08-19 기준)
- * - attraction: `FFF_ZoneSystemBridge`가 `BaseAttraction`을 0으로 둔다. `attraction_norm`
- *   설계가 아직 없어서 근거 없는 상수를 넣지 않기로 했다 — 전부 0이면 항이 무력화될 뿐
- *   특정 시설이 유리해지지는 않는다
- * - density: `ReportZonePopulation`을 부르는 코드가 프로젝트에 0곳이라 `ReportedPopulation`이
- *   항상 0이고, 그걸 물려받은 `CurrentOccupancy`도 0이다 (호출 주체는 crowdAI 협의 중)
+ * ### 아직 없는 것
+ * - 취향(preference): `FUnitData::ArchetypeID`가 NAME_None이라 빈 벡터를 넘긴다
+ * - Need: 실시간초 → 축제분 압축비가 정해지지 않아 연결하지 않았다
+ * - 방문 이력(revisit), Queue 대기시간: 미연결
  *
- * 그래서 현재 Choose의 6항 중 **preference·need·distance·wait 넷이 동작하고
- * attraction·density 둘이 죽어 있다.** 방문 이력(신규성)은 별도로 동작한다.
+ * 그래서 현재 Choose의 6항 중 attraction·distance·density 셋만 동작한다.
+ * 시설로 수렴하는 동선은 나오지만 "누가 어디에 끌리는가"의 개인차는 아직 없다.
  *
  * ### 대기열·서비스·퇴장은 이 단계에 없다
  * `ApproachWorldTransform`은 대기열 가입 **전** 접근점이다. 도착 후 Join·Slot 추종·
@@ -213,6 +208,37 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision")
 	EFF_DecisionMode DecisionMode = EFF_DecisionMode::Full;
+
+	/**
+	 * 후보 거리를 존 앵커 **보행거리**로 잰다. 끄면 직선거리다. ★ 기본값은 false다.
+	 *
+	 * 켜기 전에 `distance_ref_meters` 재보정이 선행 조건이다 — 보행거리는 직선보다 크므로
+	 * 기존 정규화 기준으로는 포화되어 먼 시설의 거리 항이 전부 같은 값이 된다.
+	 * 전환은 FF.Decision.WalkDistance, 상태 확인은 FF.Decision.Stats.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision|Distance")
+	bool bEnableWalkDistances = false;
+
+	// 행렬에 등록된 존 수. 2개 미만이면 행렬이 할 일이 없어 직선거리로 돌아간다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceZoneCount() const { return WalkDistances.GetZoneCount(); }
+
+	// 존 인접 그래프에는 이웃인데 NavMesh로는 경로가 없는 쌍의 수. 0이 아니면 배치와 지형이 어긋났다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceMismatchCount() const { return WalkDistanceMismatchCount; }
+
+	// EntryExitAnchors가 저작되지 않아 존 중심을 대표점으로 쓴 존 수
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetUnauthoredAnchorCount() const { return WalkDistanceUnauthoredAnchors; }
+
+	// 앵커가 NavMesh에 투영되지 않은 존 수. 그 존이 걸린 쌍은 직선거리로 폴백한다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetAnchorProjectionFailureCount() const { return WalkDistanceProjectionFailures; }
+
+	// 앵커 투영 최대 낙차(cm). 크면 존 액터가 지면에서 떠 있다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	float GetMaxAnchorProjectionDropCm() const { return WalkDistanceMaxProjectionDropCm; }
+
 private:
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
 	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
@@ -228,6 +254,14 @@ private:
 	const FFFZSReadModel& GetReadModelForThisFrame();
 
 	UFFZSWorldSubsystem* GetZoneSystem() const;
+
+	/**
+	 * 보행거리 행렬을 필요할 때만 다시 짓는다. 결정 경로에서 매번 부르되 대개 즉시 반환한다.
+	 *
+	 * 재구축 조건은 ZoneSystem의 WorldRevision 변화뿐이다 — N^2 NavMesh 질의라
+	 * 결정마다 지으면 프레임 예산이 통째로 날아간다. 끄면 행렬을 비우고 계수기도 되돌린다.
+	 */
+	void EnsureWalkDistanceMatrix(const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel);
 
 	FFFZSReadModel CachedReadModel;
 
@@ -251,4 +285,17 @@ private:
 	int32 LeaveByStayExpiredCount = 0;
 	int32 LeaveByNoChoicePatienceCount = 0;
 	int32 RelocateRequestedCount = 0;
+
+	// --- 보행거리 -------------------------------------------------------------------------
+	// USTRUCT가 아니므로 UPROPERTY로 만들 수 없다. GC가 추적할 대상도 없는 순수 계산 캐시다.
+	FFF_WalkDistanceMatrix WalkDistances;
+
+	// 행렬을 마지막으로 지은 시점의 ZoneSystem WorldRevision. -1은 "아직 짓지 않았다"
+	int64 WalkDistanceBuiltRevision = -1;
+
+	// 마지막 빌드의 진단값. 조용히 직선거리로 폴백하는 것이 가장 위험하므로 전부 남긴다
+	int32 WalkDistanceMismatchCount = 0;
+	int32 WalkDistanceUnauthoredAnchors = 0;
+	int32 WalkDistanceProjectionFailures = 0;
+	float WalkDistanceMaxProjectionDropCm = 0.f;
 };

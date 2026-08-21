@@ -32,7 +32,12 @@ void FCrowdDensityGrid::Build(const FVector& InOriginUU, const FVector2D& InSize
 
 	const int32 NumCells = NumX * NumY;
 	CellCounts.Init(0, NumCells);
+	CellThroughput.Init(0, NumCells);
 	Density.Init(0.f, NumCells);
+
+	// 격자를 다시 지으면 셀 인덱스 공간 자체가 달라진다. 직전 셀 기억을 남기면
+	// 옛 인덱스가 새 격자의 엉뚱한 셀을 가리켜 유량이 한 번 크게 튄다.
+	LastCellIndexByAgent.Reset();
 
 	MaxDensity = 0.f;
 	CongestedCellCount = 0;
@@ -54,9 +59,22 @@ void FCrowdDensityGrid::Reset()
 		Value = 0.f;
 	}
 
+	// Reset은 "격자를 비운다"이므로 유량과 직전 셀 기억까지 지운다.
+	// 구간만 끊는 것은 ResetThroughputWindow다 — 둘을 섞지 말 것.
+	ResetThroughputWindow();
+	LastCellIndexByAgent.Reset();
+
 	MaxDensity = 0.f;
 	CongestedCellCount = 0;
 	SampledUnitCount = 0;
+}
+
+void FCrowdDensityGrid::ResetThroughputWindow()
+{
+	for (int32& Value : CellThroughput)
+	{
+		Value = 0;
+	}
 }
 
 int32 FCrowdDensityGrid::WorldToCellIndex(const FVector& WorldLocation) const
@@ -93,10 +111,26 @@ void FCrowdDensityGrid::Update(const TArray<FUnitData>& Units)
 
 	SampledUnitCount = 0;
 
-	for (const FUnitData& Unit : Units)
+	// 직전 셀 기억은 AgentIndex로 인덱싱하므로 풀과 크기를 맞춘다.
+	// 풀이 커졌을 때만 늘어나고, 늘어난 자리는 INDEX_NONE이다(첫 등장 = 진입).
+	if (LastCellIndexByAgent.Num() != Units.Num())
 	{
+		LastCellIndexByAgent.SetNumUninitialized(Units.Num());
+		for (int32& Value : LastCellIndexByAgent)
+		{
+			Value = INDEX_NONE;
+		}
+	}
+
+	for (int32 AgentIndex = 0; AgentIndex < Units.Num(); ++AgentIndex)
+	{
+		const FUnitData& Unit = Units[AgentIndex];
+
 		if (!Unit.bIsActive)
 		{
+			// 퇴장한 슬롯의 기억을 지운다. 남기면 슬롯이 재사용될 때
+			// 퇴장자의 마지막 셀에서 새 방문객이 '이동해 온' 것으로 잡힌다.
+			LastCellIndexByAgent[AgentIndex] = INDEX_NONE;
 			continue;
 		}
 
@@ -105,11 +139,23 @@ void FCrowdDensityGrid::Update(const TArray<FUnitData>& Units)
 		{
 			// 그리드 밖. 집계에서 빠진다 — GetSampledUnitCount가 활성 인원보다 적다면
 			// 그리드가 실제 이동 범위를 못 덮고 있다는 뜻이다.
+			// 기억도 비운다. 밖에 나갔다 돌아오면 그건 새 진입이다.
+			LastCellIndexByAgent[AgentIndex] = INDEX_NONE;
 			continue;
 		}
 
 		++CellCounts[CellIndex];
 		++SampledUnitCount;
+
+		// --- 유량: 셀이 바뀐 순간에만 목적 셀에서 1 올린다 -----------------------------
+		// 프레임마다 세지 않고 '전이'를 세기 때문에 프레임률이 값을 부풀리지 않는다.
+		// 제자리에 서 있는 사람은 0으로 남고, 그래서
+		// "Occupancy 높음 + Throughput 0 = 막힘"이라는 판정이 성립한다.
+		if (LastCellIndexByAgent[AgentIndex] != CellIndex)
+		{
+			++CellThroughput[CellIndex];
+			LastCellIndexByAgent[AgentIndex] = CellIndex;
+		}
 	}
 
 	// 2) 카운트를 밀도로 환산하고 요약 통계를 뽑는다.
