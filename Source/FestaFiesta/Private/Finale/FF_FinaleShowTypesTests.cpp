@@ -121,4 +121,57 @@ bool FFF_FinaleShowDataMapsGrades::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 5. 스케일도 등급에 따라 커진다.
+//    발수만 늘고 크기가 그대로면 화면에서 등급 차이가 잘 안 느껴진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleScaleGrowsWithGrade, "FestaFiesta.Finale.Spec.ScaleGrowsWithGrade", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleScaleGrowsWithGrade::RunTest(const FString& Parameters)
+{
+	const TArray<EFF_FinaleGrade> Order = {
+		EFF_FinaleGrade::None, EFF_FinaleGrade::C, EFF_FinaleGrade::B,
+		EFF_FinaleGrade::A,    EFF_FinaleGrade::S
+	};
+
+	bool bScaleGrows = true;
+	bool bTrailGrows = true;
+	bool bAllPositive = true;
+
+	FFF_FinaleGradeSpec Previous = FFF_FinaleDefaults::MakeSpec(Order[0]);
+	bAllPositive &= (Previous.BurstScale > 0.f && Previous.TrailLength > 0.f);
+
+	for (int32 Index = 1; Index < Order.Num(); ++Index)
+	{
+		const FFF_FinaleGradeSpec Current = FFF_FinaleDefaults::MakeSpec(Order[Index]);
+		bScaleGrows &= (Current.BurstScale >= Previous.BurstScale);
+		bTrailGrows &= (Current.TrailLength >= Previous.TrailLength);
+		bAllPositive &= (Current.BurstScale > 0.f && Current.TrailLength > 0.f);
+		Previous = Current;
+	}
+
+	TestTrue(TEXT("등급이 오르면 폭발 크기가 줄지 않는다"), bScaleGrows);
+	TestTrue(TEXT("등급이 오르면 궤적 길이가 줄지 않는다"), bTrailGrows);
+	TestTrue(TEXT("모든 등급에서 스케일이 양수다"), bAllPositive);
+
+	// 최고와 최저 사이에 실제로 차이가 있어야 한다. 전부 1.0 이면 통과하지만 의미가 없다.
+	const FFF_FinaleGradeSpec None = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::None);
+	const FFF_FinaleGradeSpec S = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::S);
+	TestTrue(TEXT("S 가 미구매보다 확실히 크다"), S.BurstScale > None.BurstScale * 1.5f);
+	return true;
+}
+
+// 6. Niagara 파라미터 이름이 비어 있지 않은지.
+//    이름이 틀리면 값이 조용히 무시된다. 크래시도 경고도 없어서 "왜 색이 안 바뀌지" 로만 보인다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleParamNamesAreValid, "FestaFiesta.Finale.Spec.ParamNamesAreValid", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleParamNamesAreValid::RunTest(const FString& Parameters)
+{
+	TestFalse(TEXT("색 파라미터 이름이 비어 있지 않다"), FFF_FinaleParams::BurstColor.IsNone());
+	TestFalse(TEXT("크기 파라미터 이름이 비어 있지 않다"), FFF_FinaleParams::BurstScale.IsNone());
+	TestFalse(TEXT("궤적 파라미터 이름이 비어 있지 않다"), FFF_FinaleParams::TrailLength.IsNone());
+
+	// 서로 달라야 한다. 같으면 나중 값이 앞 값을 덮어쓴다.
+	TestNotEqual(TEXT("색과 크기 이름이 다르다"), FFF_FinaleParams::BurstColor, FFF_FinaleParams::BurstScale);
+	TestNotEqual(TEXT("크기와 궤적 이름이 다르다"), FFF_FinaleParams::BurstScale, FFF_FinaleParams::TrailLength);
+	TestNotEqual(TEXT("색과 궤적 이름이 다르다"), FFF_FinaleParams::BurstColor, FFF_FinaleParams::TrailLength);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

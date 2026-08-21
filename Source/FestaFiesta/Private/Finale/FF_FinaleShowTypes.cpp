@@ -27,6 +27,8 @@ namespace FFF_FinaleDefaults
 		switch (Grade)
 		{
 		case EFF_FinaleGrade::S:
+			Spec.BurstScale = 1.8f;
+			Spec.TrailLength = 1.6f;
 			Spec.BurstCount = 120;
 			Spec.DurationSeconds = 70.f;
 			Spec.SimultaneousShells = 4;
@@ -41,6 +43,8 @@ namespace FFF_FinaleDefaults
 			break;
 
 		case EFF_FinaleGrade::A:
+			Spec.BurstScale = 1.5f;
+			Spec.TrailLength = 1.4f;
 			Spec.BurstCount = 60;
 			Spec.DurationSeconds = 50.f;
 			Spec.SimultaneousShells = 3;
@@ -54,6 +58,8 @@ namespace FFF_FinaleDefaults
 			break;
 
 		case EFF_FinaleGrade::B:
+			Spec.BurstScale = 1.2f;
+			Spec.TrailLength = 1.2f;
 			Spec.BurstCount = 30;
 			Spec.DurationSeconds = 35.f;
 			Spec.SimultaneousShells = 2;
@@ -67,6 +73,8 @@ namespace FFF_FinaleDefaults
 			break;
 
 		case EFF_FinaleGrade::C:
+			Spec.BurstScale = 1.0f;
+			Spec.TrailLength = 1.0f;
 			Spec.BurstCount = 12;
 			Spec.DurationSeconds = 20.f;
 			Spec.SimultaneousShells = 1;
@@ -80,6 +88,8 @@ namespace FFF_FinaleDefaults
 
 		default:
 			// 미구매. 축제가 끝났다는 신호는 남긴다.
+			Spec.BurstScale = 0.7f;
+			Spec.TrailLength = 0.8f;
 			Spec.BurstCount = 3;
 			Spec.DurationSeconds = 10.f;
 			Spec.SimultaneousShells = 1;

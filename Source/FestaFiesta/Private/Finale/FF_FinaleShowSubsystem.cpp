@@ -5,10 +5,14 @@
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Engine/GameInstance.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "Finale/FF_FinaleLaunchSite.h"
 #include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraParameterStore.h"
 #include "NiagaraSystem.h"
 
 bool UFF_FinaleShowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
@@ -23,15 +27,205 @@ void UFF_FinaleShowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// 시드를 고정하지 않는다. 불꽃은 매번 달라 보이는 편이 낫다.
 	// 재현이 필요해지면 여기에 시드를 주입하는 경로를 열면 된다.
 	ShowRandom.GenerateNewSeed();
+
+	RegisterDebugConsoleCommands();
+	BindFestivalStage();
+}
+
+void UFF_FinaleShowSubsystem::BindFestivalStage()
+{
+	if (bStageBound)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage)
+	{
+		// 단계 시스템이 없는 테스트 맵이면 자동 시작만 못 할 뿐 콘솔 재생은 된다.
+		UE_LOG(LogFestaFiestaFinale, Log,
+			TEXT("[피날레] 축제 단계 시스템이 없어 자동 시작을 연결하지 않는다."));
+		return;
+	}
+
+	Stage->OnStageChanged.AddDynamic(this, &UFF_FinaleShowSubsystem::HandleFestivalStageChanged);
+	bStageBound = true;
+
+	// 이미 피날레 단계에서 시작한 경우. 신호는 지나갔으므로 현재 값을 직접 본다.
+	if (bAutoStartOnFinaleStage && Stage->CurrentStage == EFF_FestivalStage::Finale)
+	{
+		StartShow();
+	}
+}
+
+void UFF_FinaleShowSubsystem::UnbindFestivalStage()
+{
+	if (!bStageBound)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.RemoveDynamic(this, &UFF_FinaleShowSubsystem::HandleFestivalStageChanged);
+	}
+	bStageBound = false;
+}
+
+void UFF_FinaleShowSubsystem::HandleFestivalStageChanged(
+	const EFF_FestivalStage PreviousStage,
+	const EFF_FestivalStage NewStage)
+{
+	(void)PreviousStage;
+
+	// 피날레를 벗어나면 진행 중이던 연출을 접는다. 단계가 넘어갔는데 불꽃이
+	// 계속 터지면 다음 화면 위에 얹힌다.
+	if (NewStage != EFF_FestivalStage::Finale)
+	{
+		if (bShowInProgress)
+		{
+			StopShow();
+		}
+		return;
+	}
+
+	if (!bAutoStartOnFinaleStage)
+	{
+		return;
+	}
+	StartShow();
 }
 
 void UFF_FinaleShowSubsystem::Deinitialize()
 {
+	UnbindFestivalStage();
+	UnregisterDebugConsoleCommands();
+
 	if (bShowInProgress)
 	{
 		StopShow();
 	}
 	Super::Deinitialize();
+}
+
+bool UFF_FinaleShowSubsystem::TryParseGrade(const FString& Token, EFF_FinaleGrade& OutGrade)
+{
+	const FString Upper = Token.TrimStartAndEnd().ToUpper();
+
+	if (Upper == TEXT("S")) { OutGrade = EFF_FinaleGrade::S; return true; }
+	if (Upper == TEXT("A")) { OutGrade = EFF_FinaleGrade::A; return true; }
+	if (Upper == TEXT("B")) { OutGrade = EFF_FinaleGrade::B; return true; }
+	if (Upper == TEXT("C")) { OutGrade = EFF_FinaleGrade::C; return true; }
+	if (Upper == TEXT("NONE") || Upper == TEXT("N")) { OutGrade = EFF_FinaleGrade::None; return true; }
+
+	return false;
+}
+
+void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
+{
+	IConsoleManager& ConsoleManager = IConsoleManager::Get();
+
+	// 중복 등록 방어. 어떤 이유로 해제가 안 됐어도 두 번째 PIE 가 조용히 망가지지 않게 한다.
+	UnregisterDebugConsoleCommands();
+
+	PlayConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+		TEXT("FF.Finale.Play"),
+		TEXT("피날레 연출을 즉시 재생한다. 사용법: FF.Finale.Play [None|C|B|A|S]  등급 생략 시 구매한 등급"),
+		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+		{
+			// 이미 돌고 있으면 갈아엎는다. 등급을 바꿔가며 비교할 때 매번 멈추기 번거롭다.
+			if (bShowInProgress)
+			{
+				StopShow();
+			}
+
+			if (Args.Num() == 0)
+			{
+				StartShow();
+				return;
+			}
+
+			EFF_FinaleGrade Grade = EFF_FinaleGrade::None;
+			if (!TryParseGrade(Args[0], Grade))
+			{
+				UE_LOG(LogFestaFiestaFinale, Warning,
+					TEXT("[피날레] 알 수 없는 등급입니다: %s (None, C, B, A, S 중 하나)"), *Args[0]);
+				return;
+			}
+			StartShowWithGrade(Grade);
+		}));
+
+	StopConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+		TEXT("FF.Finale.Stop"),
+		TEXT("진행 중인 피날레 연출을 중단하고 시점을 되돌린다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			StopShow();
+		}));
+
+	StatConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+		TEXT("FF.Finale.Stat"),
+		TEXT("현재 연출 상태와 등급별 수치를 출력한다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("[피날레] 진행=%s 등급=%d 발사=%d/%d 경과=%.1fs"),
+				bShowInProgress ? TEXT("예") : TEXT("아니오"),
+				static_cast<int32>(ActiveGrade), FiredBursts, ActiveSpec.BurstCount, ElapsedSeconds);
+
+			// 등급별 수치를 같이 찍는다. 데이터 애셋을 고치고 나서 반영됐는지 바로 확인할 수 있다.
+			const TArray<EFF_FinaleGrade> All = {
+				EFF_FinaleGrade::None, EFF_FinaleGrade::C, EFF_FinaleGrade::B,
+				EFF_FinaleGrade::A, EFF_FinaleGrade::S
+			};
+			for (const EFF_FinaleGrade Grade : All)
+			{
+				const FFF_FinaleGradeSpec Spec = ResolveSpec(Grade);
+				UE_LOG(LogFestaFiestaFinale, Display,
+					TEXT("  등급 %d: %d발 / %.0f초 / 동시 %d / %d차례 / 간격 %.2fs / 색 %d개 / 이펙트 %s"),
+					static_cast<int32>(Grade), Spec.BurstCount, Spec.DurationSeconds,
+					Spec.SimultaneousShells, Spec.GetVolleyCount(), Spec.GetIntervalSeconds(),
+					Spec.Colors.Num(),
+					Spec.BurstEffect.IsNull() ? TEXT("없음") : TEXT("지정됨"));
+			}
+
+			TArray<AFF_FinaleLaunchSite*> Sites;
+			AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("  발사 지점 %d개 / 연출 시점 %s"),
+				Sites.Num(),
+				AFF_FinaleViewpoint::FindBest(GetWorld()) ? TEXT("있음") : TEXT("없음"));
+		}));
+}
+
+void UFF_FinaleShowSubsystem::UnregisterDebugConsoleCommands()
+{
+	IConsoleManager& ConsoleManager = IConsoleManager::Get();
+
+	// 해제는 조건부, 정리는 무조건.
+	if (PlayConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(PlayConsoleCommand);
+	}
+	PlayConsoleCommand = nullptr;
+
+	if (StopConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(StopConsoleCommand);
+	}
+	StopConsoleCommand = nullptr;
+
+	if (StatConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
+	}
+	StatConsoleCommand = nullptr;
 }
 
 AFF_FestivalPlayerController* UFF_FinaleShowSubsystem::GetFestivalController() const
@@ -95,6 +289,10 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	FiredVolleys = 0;
 	ColorCursor = 0;
 	TailStartedAt = -1.f;
+
+	// 연출을 새로 시작하면 검사도 다시 한다. 데이터 애셋을 고치고 재생했을 때
+	// 바뀐 이펙트를 그대로 통과시키면 안 된다.
+	VerifiedEffect = nullptr;
 
 	// 첫 발은 바로 쏜다. 간격만큼 기다리면 시점 전환 뒤 정적이 생긴다.
 	NextVolleyAt = 0.f;
@@ -231,6 +429,60 @@ FLinearColor UFF_FinaleShowSubsystem::PickColor(const int32 Index) const
 	return ActiveSpec.Colors[Index % ActiveSpec.Colors.Num()];
 }
 
+void UFF_FinaleShowSubsystem::VerifyEffectParameters(const UNiagaraSystem& Effect) const
+{
+	// 주의: 이 함수만 Niagara 내부 파라미터 조회에 의존한다.
+	// 엔진 버전에 따라 조회 API 이름이 다를 수 있는데, 그때는 이 함수 본문만
+	// 비워도 나머지 연출은 그대로 돈다. 값 전달과 재생 경로는 여기에 얽혀 있지 않다.
+	const FNiagaraUserRedirectionParameterStore& Store = Effect.GetExposedParameters();
+
+	TArray<FNiagaraVariable> Exposed;
+	Store.GetParameters(Exposed);
+
+	// 이펙트가 실제로 노출한 이름을 모은다. User. 접두사가 붙어 오는 경우가 있어 양쪽을 다 담는다.
+	TSet<FName> Available;
+	for (const FNiagaraVariable& Variable : Exposed)
+	{
+		const FString Full = Variable.GetName().ToString();
+		Available.Add(Variable.GetName());
+
+		FString Trimmed;
+		if (Full.Split(TEXT("."), nullptr, &Trimmed, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
+		{
+			Available.Add(FName(*Trimmed));
+		}
+	}
+
+	const TArray<FName> Required = {
+		FFF_FinaleParams::BurstColor,
+		FFF_FinaleParams::BurstScale,
+		FFF_FinaleParams::TrailLength
+	};
+
+	TArray<FString> Missing;
+	for (const FName& Name : Required)
+	{
+		if (!Available.Contains(Name))
+		{
+			Missing.Add(Name.ToString());
+		}
+	}
+
+	if (Missing.Num() == 0)
+	{
+		UE_LOG(LogFestaFiestaFinale, Verbose,
+			TEXT("[피날레] 이펙트 %s 의 파라미터가 모두 연결되었다."), *Effect.GetName());
+		return;
+	}
+
+	// 없어도 연출은 계속한다. 색이 안 먹을 뿐 불꽃은 터져야 한다.
+	UE_LOG(LogFestaFiestaFinale, Warning,
+		TEXT("[피날레] 이펙트 %s 에 User 파라미터가 없어 값이 무시된다: %s"),
+		*Effect.GetName(), *FString::Join(Missing, TEXT(", ")));
+	UE_LOG(LogFestaFiestaFinale, Warning,
+		TEXT("[피날레] Niagara 에서 같은 이름으로 User 파라미터를 만들면 등급별 값이 반영된다."));
+}
+
 void UFF_FinaleShowSubsystem::FireVolley()
 {
 	UWorld* World = GetWorld();
@@ -247,6 +499,13 @@ void UFF_FinaleShowSubsystem::FireVolley()
 
 	UNiagaraSystem* Effect = ActiveSpec.BurstEffect.LoadSynchronous();
 
+	// 이펙트가 바뀌었을 때만 검사한다. 첫 발에서 한 번 돌고 끝난다.
+	if (Effect && VerifiedEffect.Get() != Effect)
+	{
+		VerifyEffectParameters(*Effect);
+		VerifiedEffect = Effect;
+	}
+
 	for (int32 Shell = 0; Shell < ShellCount; ++Shell)
 	{
 		const FVector BurstLocation = PickBurstLocation(Origin);
@@ -254,7 +513,18 @@ void UFF_FinaleShowSubsystem::FireVolley()
 
 		if (Effect)
 		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, Effect, BurstLocation);
+			// 컴포넌트를 받아 파라미터를 넣는다. SpawnSystemAtLocation 자체는 값을 못 넘긴다.
+			UNiagaraComponent* Spawned = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				World, Effect, BurstLocation);
+
+			if (Spawned)
+			{
+				// 이펙트에 같은 이름의 User 파라미터가 없으면 조용히 무시된다.
+				// 크래시가 안 나는 대신 "왜 색이 안 바뀌지" 로 나타나므로, 이름은 상수로만 쓴다.
+				Spawned->SetColorParameter(FFF_FinaleParams::BurstColor, Color);
+				Spawned->SetFloatParameter(FFF_FinaleParams::BurstScale, ActiveSpec.BurstScale);
+				Spawned->SetFloatParameter(FFF_FinaleParams::TrailLength, ActiveSpec.TrailLength);
+			}
 		}
 		else if (FiredBursts == 0)
 		{

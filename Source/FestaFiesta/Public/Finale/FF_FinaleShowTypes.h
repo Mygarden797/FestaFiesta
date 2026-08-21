@@ -48,6 +48,14 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.0"))
 	float BurstHeightMax = 25000.f;
 
+	// 폭발 크기 배수. 등급이 높을수록 크게 터진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.1"))
+	float BurstScale = 1.f;
+
+	// 올라가는 궤적의 길이 배수. 크기와 따로 두면 "작지만 높이 올라가는" 연출도 만들 수 있다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.1"))
+	float TrailLength = 1.f;
+
 	// 이 등급에서 쓸 색. 비어 있으면 이펙트 자체 색을 그대로 쓴다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
 	TArray<FLinearColor> Colors;
@@ -81,6 +89,18 @@ struct FFF_FinaleGradeSpec
 		return BurstCount > 0 && DurationSeconds > 0.f;
 	}
 };
+
+// Niagara 이펙트에 넘기는 User 파라미터 이름.
+//
+// 이펙트 쪽에서 같은 이름으로 User 파라미터를 만들어두면 값이 자동으로 들어간다.
+// 이름이 다르면 조용히 무시된다 — 크래시도 경고도 없으므로 오타를 조심해야 한다.
+// 그래서 문자열을 여기 한 곳에만 두고 코드가 직접 쓰지 않게 한다.
+namespace FFF_FinaleParams
+{
+	inline const FName BurstColor(TEXT("BurstColor"));
+	inline const FName BurstScale(TEXT("BurstScale"));
+	inline const FName TrailLength(TEXT("TrailLength"));
+}
 
 // 등급별 연출 수치를 담는 데이터 애셋.
 //
