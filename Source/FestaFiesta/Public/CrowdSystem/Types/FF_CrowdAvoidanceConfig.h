@@ -66,7 +66,7 @@ struct FESTAFIESTA_API FFF_CrowdAvoidanceConfig
 
 	// 마주 오는 사람을 만났을 때 자기 오른쪽으로 비키는 세기. 반발력 크기에 대한 배율이다. 0이면 끈다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Forces", meta = (ClampMin = "0.0", ClampMax = "2.0"))
-	float LaneBiasGain = 0.f;
+	float LaneBiasGain = 0.3f;
 
 	// 희망 속도가 이 값(m/s) 미만이면 방향이 없는 것으로 보고 접선 편향을 걸지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Forces", meta = (ClampMin = "0.0"))

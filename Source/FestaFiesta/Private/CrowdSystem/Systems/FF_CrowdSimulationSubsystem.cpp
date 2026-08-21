@@ -16,6 +16,9 @@
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSFacilityActor.h"
+#include "DataTables/FF_ArrivalCurveRow.h"
+#include "Serialization/GameplayAbilityTargetingLocationInfoNetSerializer.h"
+
 namespace
 {
 	constexpr int32 NoSpawnGeneration = 0;
@@ -64,6 +67,10 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	CachedGroupScopeId = Settings->GroupScopeId;
 	CachedArchetypeScenarioId = Settings->ArchetypeScenarioId;
 	CachedCoefficientTable = Settings->UtilityCoefficientTable.LoadSynchronous();
+	CachedArrivalCurveTable = Settings->ArrivalCurveTable.LoadSynchronous();
+	CachedArrivalScenarioId = Settings->ArrivalScenarioId;
+	CachedBucketCount = 0;
+	
 	if (CachedCoefficientTable)
 	{
 		NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
@@ -87,6 +94,23 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[CrowdSimulationSubsystem] ChildCompositionTable 미설정 — 아동 0명으로 구성된다"));
+	}
+	
+	if (const UDataTable* Table = CachedArrivalCurveTable.Get())
+	{
+		const FName ProbeRow(*FString::Printf(TEXT("%s_00"),*CachedArrivalScenarioId.ToString()));
+		
+		if (const FFF_ArrivalCurveRow* Row = Table->FindRow<FFF_ArrivalCurveRow>(ProbeRow,TEXT("ArrivalCurveBootstrap")))
+		{
+			CachedBucketCount = Row->BucketCount;
+		}
+	}
+	
+	if (CachedBucketCount <=0)
+	{
+		UE_LOG(LogTemp, Error,         TEXT("[CrowdSimulationSubsystem] 입장 곡선을 읽지 못했다 (ScenarioId='%s') — ")
+		TEXT("일괄 스폰으로 폴백한다. Project Settings의 ArrivalCurveTable/ArrivalScenarioId 확인"),*CachedArrivalScenarioId.ToString());
+		
 	}
 
 	{
@@ -160,6 +184,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	}
 
 	ProcessPendingDespawns();
+	UpdateArrivalSchedule();
 
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Density);
@@ -187,6 +212,190 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		DrawDebugAgents();
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter,
+	float SpawnRadiusUU)
+{
+	CachedDistribution = BuildVisitorDistribution(TotalVisitorCount);
+	VisitorCursor = 0;
+	ArrivalTotalVisitorCount = CachedDistribution.ActualVisitorCount;
+	ArrivalSpawnCenter = SpawnCenter;
+	ArrivalSpawnRadiusUU = SpawnRadiusUU;
+	bArrivalPoolExhaustedLogged = false;
+	
+	
+	if (CachedDistribution.Visitors.Num() == 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 방문객 분포가 비었다 — 입력 테이블이나 ScopeId('%s')를 확인할 것. 스폰하지 않는다"),
+			*CachedGroupScopeId.ToString());
+		return;
+	}
+
+	
+	if (CachedDistribution.ActualVisitorCount < CachedDistribution.RequestedVisitorCount)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[CrowdSimulationSubsystem] 요청 %d명 중 %d명 — 그룹을 통째로만 만들어 %d명이 남았다"),
+			CachedDistribution.RequestedVisitorCount, CachedDistribution.ActualVisitorCount,
+			CachedDistribution.RequestedVisitorCount - CachedDistribution.ActualVisitorCount);
+	}
+	
+}
+
+int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCount)
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World)) { return 0;}
+	
+	int32 SpawnedThisCall = 0;
+	bool bAgentPoolExhausted = false;
+	
+	int32 SpawnedCount = 0;
+	int32 PartiesFormed = 0;
+	int32 ChildrenSpawned = 0;
+	const float BaseSpeed = FUnitData().Speed;
+	
+	while (VisitorCursor < CachedDistribution.Visitors.Num() && VisitorCursor < TargetCumulativeCount && !bAgentPoolExhausted)
+	{
+				const FFF_TaggedVisitor& LeadVisitor = CachedDistribution.Visitors[VisitorCursor];
+		const int32 PlannedSize = bEnablePartyGrouping ? FMath::Max(LeadVisitor.TargetGroupSize, 1) : 1;
+		const int32 PartySize = FMath::Min(PlannedSize, CachedDistribution.Visitors.Num() - VisitorCursor);
+		checkf(!LeadVisitor.bIsDependentChildSlot || !bEnablePartyGrouping,
+			TEXT("SpawnAgents: 그룹 선두가 아동 슬롯이다 — 빌더가 성인을 먼저 배출한다는 전제가 깨졌다. ")
+			TEXT("아동이 리더가 되면 목적지를 상속할 대상이 없다"));
+		const float Angle = Rng.FRandRange(0.f, 2.f * PI);
+		const float Radius = ArrivalSpawnRadiusUU * FMath::Sqrt(Rng.FRand());
+		const FVector Anchor = ArrivalSpawnCenter + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+
+		const FRotator PartyRotation(0.f, Rng.FRandRange(0.f, 360.f), 0.f);
+
+		int32 LeaderIndex = INDEX_NONE;
+		int32 PartyID = INDEX_NONE;
+
+		for (int32 Slot = 0; Slot < PartySize; ++Slot)
+		{
+			const FFF_TaggedVisitor& Visitor = CachedDistribution.Visitors[VisitorCursor + Slot];
+			checkf(!bEnablePartyGrouping || Visitor.TargetGroupSize == LeadVisitor.TargetGroupSize,
+				TEXT("SpawnAgents: 그룹 %d번째 멤버의 TargetGroupSize(%d)가 선두(%d)와 다르다 — ")
+				TEXT("빌더의 배출 순서가 바뀌었다. 태그 기준 재조합으로 바꿀 것"),
+				Slot, Visitor.TargetGroupSize, LeadVisitor.TargetGroupSize);
+			const FVector SpawnLocation = Anchor + GetPartyFormationOffset(Slot);
+
+			const int32 AgentIndex = SpawnAgent(*World, SpawnLocation, PartyRotation);
+			if (AgentIndex == INDEX_NONE)
+			{
+				bAgentPoolExhausted = true;
+				break;
+			}
+
+			FUnitData& Unit = UnitDatas[AgentIndex];
+			Unit.ArchetypeID = Visitor.ArchetypeId;
+			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
+			if (Unit.bIsDependentChild)
+			{
+				++ChildrenSpawned;
+			}
+			if (Slot == 0)
+			{
+				LeaderIndex = AgentIndex;
+				PartyID = Unit.PartyID;
+				PartyLeaderByID.Add(PartyID, LeaderIndex);
+			}
+			else
+			{
+				Unit.PartyID = PartyID;
+				Unit.LeaderAgentIndex = LeaderIndex;
+				Unit.PartySlotIndex = Slot;
+				Unit.TargetLocation = UnitDatas[LeaderIndex].TargetLocation + GetPartyFormationOffset(Slot);
+			}
+			checkf(Slot == 0 || Unit.PartyID == PartyID,
+				TEXT("SpawnAgents: 멤버(Slot %d)의 PartyID가 확정되기 전에 개체 변주를 계산했다. "
+					 "ResolveWithGroupSharing 호출을 if/else 블록 뒤로 옮길 것"), Slot);
+
+			checkf(Unit.StableAgentID != INDEX_NONE,
+				TEXT("SpawnAgents: Agent %d의 StableAgentID가 발급되지 않았다 (SpawnAgent 확인)"), AgentIndex);
+
+			checkf(Slot != 0 || Unit.LeaderAgentIndex == AgentIndex,
+				TEXT("SpawnAgents: 리더 %d가 자기 자신을 리더로 갖고 있지 않다"), AgentIndex);
+
+			const FFF_ResolvedIndividualTraits Traits =
+				FFF_IndividualVariationResolver::ResolveWithGroupSharing(
+					CachedVariationTable.Get(),
+					GetGlobalSimulationSeed(),
+					Unit.StableAgentID,
+					Unit.PartyID,
+					0,
+					CachedCorrelationStrength);
+			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
+			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
+			Unit.MaxSpeed = Unit.Speed;
+
+			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
+			{
+				const float StayShare = FFF_UtilityCoefficientHelpers::GetCoefficient(
+					CachedCoefficientTable.Get(), TEXT("stay_duration_share_of_live_stage_mean"), 0.5f);
+				PartyRemainingStayMinutes[LeaderIndex] =
+					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
+			}
+
+			
+			++SpawnedCount;
+		}
+
+		if (LeaderIndex != INDEX_NONE)
+		{
+			++PartiesFormed;
+
+			NextPartyID = PartyID + 1;
+		}
+		VisitorCursor += PartySize;
+	}
+	
+	if (bAgentPoolExhausted && !bArrivalPoolExhaustedLogged)
+	{
+		bArrivalPoolExhaustedLogged = true;
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] Agent 풀 소진 — %d/%d명에서 멈췄다. ")
+			TEXT("곡선 뒷부분이 잘려 분석 결과가 왜곡된다. AgentPoolSize를 UnitCount 이상으로 올릴 것"),
+			VisitorCursor, ArrivalTotalVisitorCount);
+	}
+	
+	return SpawnedCount;
+}
+
+void UFF_CrowdSimulationSubsystem::UpdateArrivalSchedule()
+{
+	if (CachedBucketCount <= 0 || ArrivalTotalVisitorCount <= 0) { return; }
+	if (VisitorCursor >= CachedDistribution.Visitors.Num())      { return; }
+
+	const UDataTable* Table = CachedArrivalCurveTable.Get();
+	if (!Table) { return; }
+	//현재 Progress 정도를 계산한다.
+	const float Progress = FMath::Clamp(GetLiveMinutes() / 
+		FMath::Max(Temp_LiveStageMinutes, KINDA_SMALL_NUMBER),0.f,1.f);
+	//BucketIdx 각 시간 버킷이 어디까지인지를 구한다.
+	const int32 BucketIdx = FMath::Min(FMath::FloorToInt(Progress*CachedBucketCount), CachedBucketCount -1);
+	
+	const FName RowName(*FString::Printf(TEXT("%s_%02d"), *CachedArrivalScenarioId.ToString(), BucketIdx));
+	const FFF_ArrivalCurveRow* Row = Table->FindRow<FFF_ArrivalCurveRow>(RowName, TEXT("ArrivalCurve"));
+	if (!Row) { return; }
+	
+	
+	//현재 버킷의 시간 길이
+	const float Span = FMath::Max(Row->ProgressEnd - Row->ProgressStart,KINDA_SMALL_NUMBER);
+	//현재 버킷에서 어디까지 진행되었는지의 정도
+	const float LocalT = FMath::Clamp((Progress - Row->ProgressStart) / Span, 0.f, 1.f);
+	//CumPct = 이번 함수 진행에서 몇 %만큼 들어와야 하는가?
+	const float CumPct = (Row->CumulativeSharePct - Row->ArrivalSharePct) + Row->ArrivalSharePct * LocalT;
+	//실제 스폰해야 하는 개수
+	const int32 Target = FMath::FloorToInt(CumPct / 100.f * ArrivalTotalVisitorCount);
+	
+	DrainVisitorUntil(Target);
+	
+	
+	
 }
 
 void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
@@ -549,7 +758,7 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		}
 	}
 
-	constexpr double TraceAboveCm = 500.0;
+	constexpr double TraceAboveCm = 0.0;
 	constexpr double TraceBelowCm = 50000.0;
 
 	const double StartZ = SimOrigin.Z + TraceAboveCm;
@@ -1471,134 +1680,10 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 
 int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter, float SpawnRadiusUU)
 {
-	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return 0;
-	}
-
-	const FFF_VisitorDistribution Distribution = BuildVisitorDistribution(Count);
-	if (Distribution.Visitors.Num() == 0)
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[CrowdSimulationSubsystem] 방문객 분포가 비었다 — 입력 테이블이나 ScopeId('%s')를 확인할 것. 스폰하지 않는다"),
-			*CachedGroupScopeId.ToString());
-		return 0;
-	}
-	if (Distribution.ActualVisitorCount < Distribution.RequestedVisitorCount)
-	{
-		UE_LOG(LogTemp, Log,
-			TEXT("[CrowdSimulationSubsystem] 요청 %d명 중 %d명 — 그룹을 통째로만 만들어 %d명이 남았다"),
-			Distribution.RequestedVisitorCount, Distribution.ActualVisitorCount,
-			Distribution.RequestedVisitorCount - Distribution.ActualVisitorCount);
-	}
-	int32 SpawnedCount = 0;
-	int32 PartiesFormed = 0;
-	int32 ChildrenSpawned = 0;
-	bool bAgentPoolExhausted = false;
-	const float BaseSpeed = FUnitData().Speed;
-	int32 VisitorCursor = 0;
-	while (VisitorCursor < Distribution.Visitors.Num() && !bAgentPoolExhausted)
-	{
-		const FFF_TaggedVisitor& LeadVisitor = Distribution.Visitors[VisitorCursor];
-		const int32 PlannedSize = bEnablePartyGrouping ? FMath::Max(LeadVisitor.TargetGroupSize, 1) : 1;
-		const int32 PartySize = FMath::Min(PlannedSize, Distribution.Visitors.Num() - VisitorCursor);
-		checkf(!LeadVisitor.bIsDependentChildSlot || !bEnablePartyGrouping,
-			TEXT("SpawnAgents: 그룹 선두가 아동 슬롯이다 — 빌더가 성인을 먼저 배출한다는 전제가 깨졌다. ")
-			TEXT("아동이 리더가 되면 목적지를 상속할 대상이 없다"));
-		const float Angle = Rng.FRandRange(0.f, 2.f * PI);
-		const float Radius = SpawnRadiusUU * FMath::Sqrt(Rng.FRand());
-		const FVector Anchor = SpawnCenter + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
-
-		const FRotator PartyRotation(0.f, Rng.FRandRange(0.f, 360.f), 0.f);
-
-		int32 LeaderIndex = INDEX_NONE;
-		int32 PartyID = INDEX_NONE;
-
-		for (int32 Slot = 0; Slot < PartySize; ++Slot)
-		{
-			const FFF_TaggedVisitor& Visitor = Distribution.Visitors[VisitorCursor + Slot];
-			checkf(!bEnablePartyGrouping || Visitor.TargetGroupSize == LeadVisitor.TargetGroupSize,
-				TEXT("SpawnAgents: 그룹 %d번째 멤버의 TargetGroupSize(%d)가 선두(%d)와 다르다 — ")
-				TEXT("빌더의 배출 순서가 바뀌었다. 태그 기준 재조합으로 바꿀 것"),
-				Slot, Visitor.TargetGroupSize, LeadVisitor.TargetGroupSize);
-			const FVector SpawnLocation = Anchor + GetPartyFormationOffset(Slot);
-
-			const int32 AgentIndex = SpawnAgent(*World, SpawnLocation, PartyRotation);
-			if (AgentIndex == INDEX_NONE)
-			{
-				bAgentPoolExhausted = true;
-				break;
-			}
-
-			FUnitData& Unit = UnitDatas[AgentIndex];
-			Unit.ArchetypeID = Visitor.ArchetypeId;
-			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
-			if (Unit.bIsDependentChild)
-			{
-				++ChildrenSpawned;
-			}
-			if (Slot == 0)
-			{
-				LeaderIndex = AgentIndex;
-				PartyID = Unit.PartyID;
-				PartyLeaderByID.Add(PartyID, LeaderIndex);
-			}
-			else
-			{
-				Unit.PartyID = PartyID;
-				Unit.LeaderAgentIndex = LeaderIndex;
-				Unit.PartySlotIndex = Slot;
-				Unit.TargetLocation = UnitDatas[LeaderIndex].TargetLocation + GetPartyFormationOffset(Slot);
-			}
-			checkf(Slot == 0 || Unit.PartyID == PartyID,
-				TEXT("SpawnAgents: 멤버(Slot %d)의 PartyID가 확정되기 전에 개체 변주를 계산했다. "
-					 "ResolveWithGroupSharing 호출을 if/else 블록 뒤로 옮길 것"), Slot);
-
-			checkf(Unit.StableAgentID != INDEX_NONE,
-				TEXT("SpawnAgents: Agent %d의 StableAgentID가 발급되지 않았다 (SpawnAgent 확인)"), AgentIndex);
-
-			checkf(Slot != 0 || Unit.LeaderAgentIndex == AgentIndex,
-				TEXT("SpawnAgents: 리더 %d가 자기 자신을 리더로 갖고 있지 않다"), AgentIndex);
-
-			const FFF_ResolvedIndividualTraits Traits =
-				FFF_IndividualVariationResolver::ResolveWithGroupSharing(
-					CachedVariationTable.Get(),
-					GetGlobalSimulationSeed(),
-					Unit.StableAgentID,
-					Unit.PartyID,
-					0,
-					CachedCorrelationStrength);
-			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
-			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
-			Unit.MaxSpeed = Unit.Speed;
-
-			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
-			{
-				const float StayShare = FFF_UtilityCoefficientHelpers::GetCoefficient(
-					CachedCoefficientTable.Get(), TEXT("stay_duration_share_of_live_stage_mean"), 0.5f);
-				PartyRemainingStayMinutes[LeaderIndex] =
-					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
-			}
-
-			++SpawnedCount;
-		}
-
-		if (LeaderIndex != INDEX_NONE)
-		{
-			++PartiesFormed;
-
-			NextPartyID = PartyID + 1;
-		}
-		VisitorCursor += PartySize;
-	}
-
-	UE_LOG(LogTemp, Log,
-		TEXT("[CrowdSimulationSubsystem] Spawned %d/%d agents in %d parties (아동 %d명 %.1f%%, active: %d)"),
-		SpawnedCount, Count, PartiesFormed, ChildrenSpawned,
-		SpawnedCount > 0 ? 100.f * ChildrenSpawned / SpawnedCount : 0.f, ActiveAgentCount);
-
-	return SpawnedCount;
+	BeginArrivalSchedule(Count, SpawnCenter, SpawnRadiusUU);
+	
+	return DrainVisitorUntil(MAX_int32);
+	
 }
 
 void UFF_CrowdSimulationSubsystem::InitializeCrowdActorPool(UWorld& InWorld, FVector PoolLocation)

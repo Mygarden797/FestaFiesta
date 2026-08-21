@@ -353,7 +353,7 @@ public:
 
 	// 목표 추종을 사회력의 **구동력**으로 계산한다. bEnableAvoidance가 켜져 있을 때만 의미가 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bAvoidanceDrivesVelocity = false;
+	bool bAvoidanceDrivesVelocity = true;
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Avoidance")
 	bool WasAvoidanceAppliedLastStep() const { return bAvoidanceAppliedLastStep; }
@@ -438,8 +438,27 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Sim")
 	int32 GetGlobalSimulationSeed() const { return GlobalSimulationSeed; }
+	
+	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
+	bool IsArrivalCurveActive() const { return CachedBucketCount > 0;}
+	
+	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
+	int32 GetArrivalSpawnedCount() const { return VisitorCursor;}
+	
+	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
+	int32 GetArrivalBucketCount() const { return CachedBucketCount;}
+	
+	void BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter, float SpawnRadiusUU);
+	
+	int32 DrainVisitorUntil(int32 TargetCumulativeCount);
+	
+	void UpdateArrivalSchedule();
 
 private:
+
+	
+	
+	
 	void StepSimulation(float FixedDt);
 
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
@@ -499,6 +518,27 @@ private:
 	
 public:
 private:
+	
+	//스케줄 관련 함수
+	TSoftObjectPtr<UDataTable> CachedArrivalCurveTable;
+	
+	FName CachedArrivalScenarioId;
+	
+	int32 CachedBucketCount = 0;
+	
+	FFF_VisitorDistribution CachedDistribution;
+	
+	int32 VisitorCursor = 0;
+	
+	int32 ArrivalTotalVisitorCount = 0;
+	
+	FVector ArrivalSpawnCenter = FVector::ZeroVector;
+	
+	float ArrivalSpawnRadiusUU = 0.f;
+	
+	bool bArrivalPoolExhaustedLogged = false;
+	
+	
 	// 다음에 발급할 파티 ID. 슬롯 인덱스와 달리 재사용하지 않아 로그를 되짚을 수 있다
 	int32 NextPartyID = 0;
 	

@@ -6,6 +6,9 @@
 #include "Engine/EngineTypes.h"
 #include "Engine/HitResult.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "CrowdSystem/Types/FF_SimulationSettings.h"
+#include "DataTables/FF_ArrivalCurveRow.h"
+#include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -927,5 +930,114 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdQueueCommand(
 	TEXT("FF.Crowd.Queue"),
 	TEXT("대기열 가입 배선 상태와 계수를 출력한다. FF.Crowd.Queue [0|1]"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdQueueCommand));
+
+static void CrowdArrivalCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	// 설정에서 표를 독립적으로 다시 읽는다. 서브시스템의 캐시를 그대로 믿고 출력하면
+	// "설정은 됐는데 캐시가 비었다"(= 부트스트랩 실패)를 이 커맨드로 진단할 수 없다.
+	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
+	const UDataTable* Table = Settings ? Settings->ArrivalCurveTable.LoadSynchronous() : nullptr;
+	const FName ScenarioId = Settings ? Settings->ArrivalScenarioId : NAME_None;
+
+	Ar.Logf(TEXT("--- 입장 곡선 ---"));
+	Ar.Logf(TEXT("설정 표          : %s"), Table ? *Table->GetName() : TEXT("<미설정>"));
+	Ar.Logf(TEXT("설정 ScenarioId  : %s"), *ScenarioId.ToString());
+	Ar.Logf(TEXT("곡선 활성        : %s"),
+		CrowdSim->IsArrivalCurveActive() ? TEXT("예") : TEXT("아니오 — 일괄 스폰으로 폴백했다"));
+	Ar.Logf(TEXT("캐시 버킷 수     : %d   <- 0이면 InitializeSimulation의 _00 행 조회가 실패했다"),
+		CrowdSim->GetArrivalBucketCount());
+
+	if (!CrowdSim->IsArrivalCurveActive())
+	{
+		// 표가 멀쩡한데 캐시가 비었다면 원인이 좁혀진다 — 대개 ScenarioId 불일치다
+		if (Table)
+		{
+			const FName ProbeRow(*FString::Printf(TEXT("%s_00"), *ScenarioId.ToString()));
+			const bool bProbeExists =
+				Table->FindRow<FFF_ArrivalCurveRow>(ProbeRow, TEXT("ArrivalConsoleProbe"), false) != nullptr;
+
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("표는 있는데 곡선이 꺼졌다. 진단 행 '%s' 존재 여부: %s"),
+				*ProbeRow.ToString(), bProbeExists ? TEXT("있음") : TEXT("없음"));
+
+			if (bProbeExists)
+			{
+				Ar.Logf(ELogVerbosity::Warning,
+					TEXT("행은 있으나 캐시가 비었다 — InitializeSimulation이 ScenarioId를 캐시하지 않았을 가능성. ")
+					TEXT("CachedArrivalScenarioId 대입 여부를 확인할 것"));
+			}
+			else
+			{
+				Ar.Logf(ELogVerbosity::Warning,
+					TEXT("ScenarioId가 표에 없다. flat_v0 / single_peak_v0 / sunset_peak_v0 중 하나여야 한다"));
+			}
+		}
+		else
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("Project Settings > Game > FestaFiesta Simulation > Arrival 에 DT_VisitorArrivalCurve를 지정할 것"));
+		}
+		return;
+	}
+
+	const int32 BucketCount = CrowdSim->GetArrivalBucketCount();
+	const float LiveMinutes = CrowdSim->GetLiveMinutes();
+	const float StageMinutes = FMath::Max(CrowdSim->Temp_LiveStageMinutes, KINDA_SMALL_NUMBER);
+	const float Progress = FMath::Clamp(LiveMinutes / StageMinutes, 0.f, 1.f);
+	const int32 BucketIdx = FMath::Min(FMath::FloorToInt(Progress * BucketCount), BucketCount - 1);
+
+	Ar.Logf(TEXT("Live 경과        : %.1f분 / %.1f분  (진행도 %.4f)"), LiveMinutes, StageMinutes, Progress);
+
+	const FName RowName(*FString::Printf(TEXT("%s_%02d"), *ScenarioId.ToString(), BucketIdx));
+	const FFF_ArrivalCurveRow* Row =
+		Table ? Table->FindRow<FFF_ArrivalCurveRow>(RowName, TEXT("ArrivalConsole")) : nullptr;
+
+	const int32 Spawned = CrowdSim->GetArrivalSpawnedCount();
+
+	if (!Row)
+	{
+		Ar.Logf(ELogVerbosity::Error,
+			TEXT("현재 버킷 행 '%s'을 찾지 못했다 — 버킷 %d/%d. 표가 중간에 잘렸을 가능성"),
+			*RowName.ToString(), BucketIdx, BucketCount);
+		Ar.Logf(TEXT("입장 누적        : %d명"), Spawned);
+		return;
+	}
+
+	// UpdateArrivalSchedule과 같은 식으로 다시 계산한다. 두 값이 벌어지면 보간이나 커서가 어긋난 것이다
+	const float Span = FMath::Max(Row->ProgressEnd - Row->ProgressStart, KINDA_SMALL_NUMBER);
+	const float LocalT = FMath::Clamp((Progress - Row->ProgressStart) / Span, 0.f, 1.f);
+	const float CumPct = (Row->CumulativeSharePct - Row->ArrivalSharePct) + Row->ArrivalSharePct * LocalT;
+
+	Ar.Logf(TEXT("현재 버킷        : %d/%d  '%s'  (기본시간표 %s)"),
+		BucketIdx, BucketCount, *RowName.ToString(), *Row->ClockStartAtDefault);
+	Ar.Logf(TEXT("버킷 내 진행     : %.3f   (유입 %.4f%%, 누적 %.4f%%)"),
+		LocalT, Row->ArrivalSharePct, Row->CumulativeSharePct);
+	Ar.Logf(TEXT("보간 누적 목표   : %.4f%%"), CumPct);
+	Ar.Logf(TEXT("입장 누적        : %d명   <- 목표는 총원 기준이라 아래 두 줄로 비교할 것"), Spawned);
+
+	// 총원은 서브시스템 내부값(ArrivalTotalVisitorCount)이라 여기서 직접 못 읽는다.
+	// 활성 인원으로 역산하면 퇴장분이 섞이므로, 오차 판정은 비율만 제시한다
+	if (Spawned > 0 && CumPct > KINDA_SMALL_NUMBER)
+	{
+		Ar.Logf(TEXT("역산 총원        : 약 %.0f명   (입장누적 / 보간목표비율)"), Spawned * 100.f / CumPct);
+	}
+	Ar.Logf(TEXT("활성 Agent       : %d명   (입장누적에서 퇴장분이 빠진 값)"), CrowdSim->GetActiveAgentCount());
+
+	if (Progress >= 1.f - KINDA_SMALL_NUMBER)
+	{
+		Ar.Logf(TEXT("진행도 1.0 도달 — 입장 누적이 총원에서 멈춰 있어야 정상이다"));
+	}
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdArrivalCommand(
+	TEXT("FF.Crowd.Arrival"),
+	TEXT("입장 곡선 진행 상태와 배선을 출력한다. 곡선이 꺼져 있으면 원인까지 좁혀준다"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdArrivalCommand));
 
 #endif // !UE_BUILD_SHIPPING

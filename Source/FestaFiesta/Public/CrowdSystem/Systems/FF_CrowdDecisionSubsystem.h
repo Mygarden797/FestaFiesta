@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "FF_FFZSTypes.h"
+#include "NPC/Integration/FF_WalkDistanceMatrix.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_CrowdDecisionSubsystem.generated.h"
 class UDataTable;
@@ -78,6 +79,15 @@ struct FFF_CrowdDecisionStats
 	// 실제로 시설 좌표를 내려준 횟수. 이 값이 0이면 Utility가 한 번도 안 먹은 것이다
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 Chosen = 0;
+
+	/**
+	 * 후보에 실제로 대기열 대기시간이 반영된 횟수(후보 단위 누적).
+	 *
+	 * Requests가 아니라 후보 개수로 세는 이유: 대기열이 붙은 시설만 반영되므로
+	 * "결정은 돌았는데 대기시간은 하나도 안 붙었다"를 이 값 0으로 구분할 수 있다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 QueueWaitApplied = 0;
 };
 
 /**
@@ -198,6 +208,37 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision")
 	EFF_DecisionMode DecisionMode = EFF_DecisionMode::Full;
+
+	/**
+	 * 후보 거리를 존 앵커 **보행거리**로 잰다. 끄면 직선거리다. ★ 기본값은 false다.
+	 *
+	 * 켜기 전에 `distance_ref_meters` 재보정이 선행 조건이다 — 보행거리는 직선보다 크므로
+	 * 기존 정규화 기준으로는 포화되어 먼 시설의 거리 항이 전부 같은 값이 된다.
+	 * 전환은 FF.Decision.WalkDistance, 상태 확인은 FF.Decision.Stats.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision|Distance")
+	bool bEnableWalkDistances = false;
+
+	// 행렬에 등록된 존 수. 2개 미만이면 행렬이 할 일이 없어 직선거리로 돌아간다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceZoneCount() const { return WalkDistances.GetZoneCount(); }
+
+	// 존 인접 그래프에는 이웃인데 NavMesh로는 경로가 없는 쌍의 수. 0이 아니면 배치와 지형이 어긋났다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceMismatchCount() const { return WalkDistanceMismatchCount; }
+
+	// EntryExitAnchors가 저작되지 않아 존 중심을 대표점으로 쓴 존 수
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetUnauthoredAnchorCount() const { return WalkDistanceUnauthoredAnchors; }
+
+	// 앵커가 NavMesh에 투영되지 않은 존 수. 그 존이 걸린 쌍은 직선거리로 폴백한다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetAnchorProjectionFailureCount() const { return WalkDistanceProjectionFailures; }
+
+	// 앵커 투영 최대 낙차(cm). 크면 존 액터가 지면에서 떠 있다
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	float GetMaxAnchorProjectionDropCm() const { return WalkDistanceMaxProjectionDropCm; }
+
 private:
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
 	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
@@ -213,6 +254,14 @@ private:
 	const FFFZSReadModel& GetReadModelForThisFrame();
 
 	UFFZSWorldSubsystem* GetZoneSystem() const;
+
+	/**
+	 * 보행거리 행렬을 필요할 때만 다시 짓는다. 결정 경로에서 매번 부르되 대개 즉시 반환한다.
+	 *
+	 * 재구축 조건은 ZoneSystem의 WorldRevision 변화뿐이다 — N^2 NavMesh 질의라
+	 * 결정마다 지으면 프레임 예산이 통째로 날아간다. 끄면 행렬을 비우고 계수기도 되돌린다.
+	 */
+	void EnsureWalkDistanceMatrix(const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel);
 
 	FFFZSReadModel CachedReadModel;
 
@@ -236,4 +285,17 @@ private:
 	int32 LeaveByStayExpiredCount = 0;
 	int32 LeaveByNoChoicePatienceCount = 0;
 	int32 RelocateRequestedCount = 0;
+
+	// --- 보행거리 -------------------------------------------------------------------------
+	// USTRUCT가 아니므로 UPROPERTY로 만들 수 없다. GC가 추적할 대상도 없는 순수 계산 캐시다.
+	FFF_WalkDistanceMatrix WalkDistances;
+
+	// 행렬을 마지막으로 지은 시점의 ZoneSystem WorldRevision. -1은 "아직 짓지 않았다"
+	int64 WalkDistanceBuiltRevision = -1;
+
+	// 마지막 빌드의 진단값. 조용히 직선거리로 폴백하는 것이 가장 위험하므로 전부 남긴다
+	int32 WalkDistanceMismatchCount = 0;
+	int32 WalkDistanceUnauthoredAnchors = 0;
+	int32 WalkDistanceProjectionFailures = 0;
+	float WalkDistanceMaxProjectionDropCm = 0.f;
 };
