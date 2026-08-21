@@ -71,4 +71,37 @@ bool FFF_FestivalCameraRotationBuildStatePolicyTest::RunTest(const FString& Para
 	return true;
 }
 
+// 연출 시점 입력 정책.
+//
+// 피날레처럼 화면을 보여주는 구간에서는 조작을 전부 막는다. 연출 중에 카메라가
+// 움직이면 보여주려던 구도가 무너지고, 관찰 카메라가 화면에 없는 동안 조작을
+// 받으면 돌아왔을 때 엉뚱한 데를 보고 있다.
+//
+// 나중에 회전만 열 수도 있다. 그때 이 테스트가 계약이 바뀐 걸 알려준다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FestivalCameraScriptedViewPolicyTest,
+	"FestaFiesta.Camera.Input.ScriptedViewPolicy",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FestivalCameraScriptedViewPolicyTest::RunTest(const FString& Parameters)
+{
+	using namespace FFCameraInputModel;
+
+	TestFalse(TEXT("연출 중에는 팬·줌이 막힌다"),
+		IsMovementAllowed(EFF_CameraInputBlock::Scripted));
+	TestFalse(TEXT("연출 중에는 회전도 막힌다"),
+		IsRotationAllowed(EFF_CameraInputBlock::Scripted, /*bBuildPreviewActive=*/false));
+
+	// 건축 프리뷰 여부와 무관하게 막혀야 한다. 두 조건이 얽히면 판정이 흔들린다.
+	TestFalse(TEXT("건축 프리뷰가 켜져 있어도 결과는 같다"),
+		IsRotationAllowed(EFF_CameraInputBlock::Scripted, /*bBuildPreviewActive=*/true));
+
+	// 연출 상태를 추가하면서 기존 정책이 흔들리지 않았는지 같이 본다.
+	TestTrue(TEXT("평상시에는 팬·줌이 열려 있다"),
+		IsMovementAllowed(EFF_CameraInputBlock::None));
+	TestTrue(TEXT("건축 세션 중에도 팬·줌은 열려 있다"),
+		IsMovementAllowed(EFF_CameraInputBlock::BuildSession));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
