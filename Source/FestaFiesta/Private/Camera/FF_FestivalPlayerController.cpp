@@ -3,6 +3,7 @@
 #include "Camera/FF_FestivalPlayerController.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Camera/FF_FinaleViewpoint.h"
 #include "Camera/FF_OverviewCameraPawn.h"
 #include "Camera/FF_OverviewCameraRig.h"
 #include "CollisionQueryParams.h"
@@ -158,6 +159,11 @@ bool AFF_FestivalPlayerController::IsBuildPreviewActive() const
 
 EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 {
+	// 연출이 모달 UI 보다 먼저다. 연출 중에 창이 떠도 화면은 연출이 소유한다.
+	if (bScriptedViewActive)
+	{
+		return EFF_CameraInputBlock::Scripted;
+	}
 	if (bModalUiActive)
 	{
 		return EFF_CameraInputBlock::ModalUi;
@@ -197,6 +203,54 @@ bool AFF_FestivalPlayerController::IsPickingAllowed() const
 {
 	// 건축 중 클릭은 배치 입력이지 선택 입력이 아니다.
 	return GetInputBlockReason() == EFF_CameraInputBlock::None;
+}
+
+bool AFF_FestivalPlayerController::EnterScriptedView(AFF_FinaleViewpoint* Viewpoint, float BlendTime)
+{
+	// 지정이 없으면 레벨에서 찾는다. 호출부가 시점 액터를 몰라도 되게 한다.
+	if (!IsValid(Viewpoint))
+	{
+		Viewpoint = AFF_FinaleViewpoint::FindBest(GetWorld());
+	}
+	if (!IsValid(Viewpoint))
+	{
+		return false;
+	}
+
+	// 빙의는 옮기지 않는다. 관찰 카메라가 계속 조종 대상으로 남아 있어야
+	// 연출이 끝났을 때 리그 상태를 그대로 이어받는다.
+	SetViewTargetWithBlend(Viewpoint, FMath::Max(0.f, BlendTime));
+	bScriptedViewActive = true;
+
+	OnViewModeChanged.Broadcast(ViewMode, Viewpoint);
+	return true;
+}
+
+void AFF_FestivalPlayerController::ExitScriptedView(float BlendTime)
+{
+	if (!bScriptedViewActive)
+	{
+		return;
+	}
+
+	bScriptedViewActive = false;
+
+	// 연출 전에 무엇을 보고 있었는지에 따라 돌아갈 곳이 다르다.
+	if (ViewMode == EFF_CameraViewMode::Overview)
+	{
+		SwitchToOverview(BlendTime);
+		return;
+	}
+
+	if (AActor* Previous = ViewedActor.Get())
+	{
+		SetViewTargetWithBlend(Previous, FMath::Max(0.f, BlendTime));
+		OnViewModeChanged.Broadcast(ViewMode, Previous);
+		return;
+	}
+
+	// 보던 대상이 사라졌으면 관찰 시점이 안전하다.
+	SwitchToOverview(BlendTime);
 }
 
 void AFF_FestivalPlayerController::SetModalUiActive(bool bActive)

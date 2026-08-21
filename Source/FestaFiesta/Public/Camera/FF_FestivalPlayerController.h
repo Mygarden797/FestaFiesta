@@ -7,6 +7,7 @@
 #include "Camera/FF_CameraTypes.h"
 #include "FF_FestivalPlayerController.generated.h"
 
+class AFF_FinaleViewpoint;
 class AFF_OverviewCameraPawn;
 class UInputAction;
 class UInputMappingContext;
@@ -63,6 +64,22 @@ public:
 	// 클릭으로 대상을 고를 수 있는 상태인가. 건축 중에는 false 다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	bool IsPickingAllowed() const;
+
+	// ── 연출 시점 ────────────────────────────────────────────────────────────
+	//
+	// 피날레처럼 화면을 보여주는 구간에서 쓴다. 관찰 카메라는 월드에 그대로 남아
+	// 있으므로, 연출이 끝나면 떠날 때 구도로 돌아온다.
+
+	// 지정한 시점으로 전환한다. nullptr 이면 레벨에서 우선순위가 가장 높은 것을 찾는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	bool EnterScriptedView(AFF_FinaleViewpoint* Viewpoint, float BlendTime = 1.5f);
+
+	// 연출을 끝내고 원래 보던 곳으로 돌아온다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void ExitScriptedView(float BlendTime = 1.5f);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
+	bool IsInScriptedView() const { return bScriptedViewActive; }
 
 	// 모달 UI 를 띄우는 쪽에서 켜고 끈다. 카메라 입력 전체가 멈춘다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
@@ -201,6 +218,9 @@ private:
 	void EnsureViewTargetAlive();
 
 	bool bModalUiActive = false;
+
+	// 연출 시점 진행 중인지. 켜져 있으면 카메라 조작이 전부 막힌다.
+	bool bScriptedViewActive = false;
 
 	EFF_CameraViewMode ViewMode = EFF_CameraViewMode::Overview;
 
