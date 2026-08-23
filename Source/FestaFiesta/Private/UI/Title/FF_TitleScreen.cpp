@@ -7,10 +7,15 @@
 #include "UI/FF_CommonButtonBase.h"
 #include "UI/FF_UILog.h"
 
-void UFF_TitleScreen::NativeOnInitialized()
+void UFF_TitleScreen::NativeConstruct()
 {
-	Super::NativeOnInitialized();
+	Super::NativeConstruct();
 
+	// 🔴 구독은 `NativeConstruct` 다 — `NativeOnInitialized` 가 아니다.
+	// CommonUI 스택이 위젯을 풀에서 재사용하므로, 인스턴스당 한 번인 `NativeOnInitialized` 에
+	// 구독하고 화면이 내려갈 때마다 도는 `NativeDestruct` 에서 해제하면
+	// **뒤로 갔다 다시 들어온 화면의 버튼이 죽는다.** 구독과 해제는 수명이 같은 짝이어야 한다.
+	//
 	// AddUniqueDynamic만 쓴다. AddDynamic은 중복 구독을 막아주지 않는다.
 	if (Btn_Play)
 	{
@@ -24,6 +29,11 @@ void UFF_TitleScreen::NativeOnInitialized()
 	{
 		Btn_Quit->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_TitleScreen::HandleButtonClicked);
 	}
+}
+
+void UFF_TitleScreen::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
 }
 
 void UFF_TitleScreen::NativeDestruct()
