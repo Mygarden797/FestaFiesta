@@ -41,7 +41,10 @@ enum class EFF_CameraInputBlock : uint8
 	ActorView       UMETA(DisplayName = "액터 시점"),
 	// 캐릭터를 조종하는 중. 같은 WASD 가 카메라 팬으로도 먹으면 안 된다.
 	CharacterControl UMETA(DisplayName = "캐릭터 조종"),
-	// 시네마틱이나 자동 연출 중.
+	// 시네마틱이나 자동 연출 중. 피날레 불꽃처럼 화면을 보여주는 구간이다.
+	//
+	// 지금은 조작을 전부 막는다. 연출을 보는 시간이라 그게 맞다고 봤는데,
+	// 나중에 "구경하면서 돌려보고 싶다" 가 되면 회전만 열어주면 된다.
 	Scripted        UMETA(DisplayName = "연출 중")
 };
 
@@ -52,7 +55,8 @@ namespace FFCameraInputModel
 	{
 		return Reason != EFF_CameraInputBlock::ModalUi
 			&& Reason != EFF_CameraInputBlock::ActorView
-			&& Reason != EFF_CameraInputBlock::CharacterControl;
+			&& Reason != EFF_CameraInputBlock::CharacterControl
+			&& Reason != EFF_CameraInputBlock::Scripted;
 	}
 
 	// 시설 배치/이동 프리뷰가 Q/E 회전을 소유하므로 그때만 카메라 회전을 추가로 막는다.

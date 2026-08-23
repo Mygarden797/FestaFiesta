@@ -48,7 +48,7 @@ protected:
 
 	// 이 액터 위치 기준 스폰 반경, UU
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
-	float SpawnRadiusUU = 3000.f;
+	float SpawnRadiusUU = 10.f;
 
 	// 시뮬레이션/밀도 그리드가 덮는 반경, UU. 목적지도 이 안에서 뽑힌다.
 	// 스폰 반경보다 넉넉해야 한다 — 좁으면 목적지가 몰려 인위적인 혼잡이 생긴다
@@ -68,4 +68,7 @@ protected:
 	// 에디터에서 밀도 그리드를 LOS 색상 박스로 그린다
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Debug")
 	bool bDrawDebugDensity = true;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
+	TObjectPtr<AActor> SpawnAchor;
 };

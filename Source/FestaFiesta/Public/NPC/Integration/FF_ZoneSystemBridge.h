@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
+#include "NPC/Integration/FF_WalkDistanceMatrix.h"
 #include "NPC/Party/FF_NeedState.h"
 
 /**
@@ -27,7 +28,13 @@
  *   - `EntryExitAnchors`     — Zone 로컬 cm 출입 기준점 (거리 행렬의 시작·끝점)
  *   - `AreaSquareMeters`     — `GetBoundaryAreaSquareMeters()`의 실제 경계 면적(㎡)
  *
- * 현재 후보 거리는 시설 대표점까지의 직선거리이며, 앵커·NavMesh 기반 실제 보행거리 전환은 별도 과제다.
+ * 후보 거리는 기본이 시설 대표점까지의 직선거리다. `WalkDistances`를 넘기면
+ * 존 앵커 보행거리 행렬을 경유한 근사로 바뀐다 — 강·무대·펜스 건너편이 멀게 나온다.
+ * 넘기지 않으면(nullptr) 직선거리 그대로이므로 기존 수치와 완전히 같다(A/B의 근거).
+ *
+ * ⛔ 이동을 NavMesh 경로 추종으로 바꿀 때는 이 행렬을 **반드시 같이 켜야 한다.**
+ *   직선거리로 "가깝다"고 고른 시설을 이동이 크게 우회하면 결정과 이동이 어긋나고,
+ *   그 상태의 혼잡은 원인 추적이 불가능하다(계획 문서 §4.2의 금지 항목).
  *
  *
  * ### 시설 거리 입력 계약
@@ -88,11 +95,18 @@ public:
 	 * @param PartyWorldLocation 거리 계산 기준이 되는 Party 월드 위치(cm)
 	 * @param MaxCandidates      후보 상한. 0 이하면 상한 없음
 	 */
+	/**
+	 * @param WalkDistances 존 앵커 보행거리 행렬. nullptr이면 직선거리를 쓴다(기존 거동).
+	 *                      소유·갱신은 호출자(UFF_CrowdDecisionSubsystem)의 몫이다 —
+	 *                      행렬을 지으려면 존 액터의 월드 트랜스폼과 NavigationSystem이 필요하고,
+	 *                      이 클래스는 월드를 모르는 순수 변환기로 남겨야 테스트가 싸다.
+	 */
 	static TArray<FFF_DestinationCandidate> BuildCandidates(
 		const FFFZSReadModel& ReadModel,
 		FName CurrentZoneId,
 		const FVector& PartyWorldLocation,
-		int32 MaxCandidates = DefaultMaxCandidates);
+		int32 MaxCandidates = DefaultMaxCandidates,
+		const FFF_WalkDistanceMatrix* WalkDistances = nullptr);
 
 	/**
 	 * 시설 카테고리 → preference_vector 키.
