@@ -5,10 +5,13 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "AbilitySystemInterface.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "FF_TriggerInteractionActor.generated.h"
+
 
 class UAbilitySystemComponent;
 class UFF_TriggerInteractionDataAsset;
+class UFF_GameplayAbility_TriggerInteraction;
 
 UCLASS()
 class FESTAFIESTA_API AFF_TriggerInteractionActor : public AActor, public IAbilitySystemInterface
@@ -18,16 +21,25 @@ class FESTAFIESTA_API AFF_TriggerInteractionActor : public AActor, public IAbili
 public:
 
 	AFF_TriggerInteractionActor();
-	// 생성자 : 이 액터가 만들어질 때 컴포넌트들을 준비하는 함수
+	
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
-	// 이 액터의 가방 - GAS 기능을 쓰려면 반드시 필요한 요소
+	// GAS 상호작용 처리를 위한 핵심 컴포넌트
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	TObjectPtr<UFF_TriggerInteractionDataAsset> InteractionData;
-	// 콘텐츠 담당자가 여기에 DataAsset을 끼워 넣으면, 이 부스의 설정값이 결정됨
+	// 상호작용 에셋 설정 값 (쿨타임, 텍스트 등 데이터 연결용)
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
-	// IAbilitySystemInterface가 요구하는 함수 
+	// GAS 인터페이스 필수 구현 함수 (외부에서 컴포넌트 접근용)
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	TSubclassOf<class UFF_GameplayAbility_TriggerInteraction> InteractionAbilityClass;
+	// 상호작용 시 실행할 기능 블루프린트 지정
+
+	UFUNCTION(BlueprintCallable, Category = "Trigger")
+	void TryStartInteraction();
+	// 상호작용 키 입력 시 기능를 직접 발동시키는 함수
+
 };
