@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "NPC/Integration/FF_CrowdReadModel.h"
 #include "FF_CrowdDensityGrid.generated.h"
 
 struct FUnitData;
@@ -44,9 +45,29 @@ struct FESTAFIESTA_API FCrowdDensityGrid
 	void Build(const FVector& InOriginUU, const FVector2D& InSizeUU, float InCellSizeUU);
 
 
+	/**
+	 * 셀 점유를 다시 세고, 셀 진입(Throughput)을 누적한다.
+	 *
+	 * 점유는 매번 새로 세고 진입은 **누적한다.** 밀도는 "지금 몇 명인가"이고
+	 * 유량은 "구간 동안 몇 명이 지나갔나"라서 초기화 주기가 다르다 —
+	 * 누적을 끊는 것은 ResetThroughputWindow(스냅샷 발행 시점)의 몫이다.
+	 *
+	 * @param Units 풀 전체. **인덱스가 AgentIndex여야 한다** — 진입 판정이
+	 *              개체별 '직전 셀'을 이 인덱스로 기억한다
+	 */
 	void Update(const TArray<FUnitData>& Units);
 
 	void Reset();
+
+	/**
+	 * 유량 집계 구간을 끊는다. 스냅샷을 발행한 직후에 부른다.
+	 *
+	 * 이걸 안 부르면 Throughput이 세션 시작부터의 누적 총량이 되어
+	 * "지금 막혀 있는가"를 판정할 수 없다 — 이미 흘려보낸 인원에 묻힌다.
+	 * 개체별 '직전 셀' 기억은 지우지 않는다. 지우면 구간이 바뀌는 프레임마다
+	 * 전원이 제자리에서 한 번씩 진입한 것으로 세어져 유량이 부풀려진다.
+	 */
+	void ResetThroughputWindow();
 
 	bool IsBuilt() const { return NumX > 0 && NumY > 0; }
 
@@ -63,7 +84,23 @@ struct FESTAFIESTA_API FCrowdDensityGrid
 	int32 GetNumX() const { return NumX; }
 	int32 GetNumY() const { return NumY; }
 	float GetCellSizeUU() const { return CellSizeUU; }
+
+	// 셀 한 변(m). ReadModel의 CellSizeMeters는 이 값으로 채운다 — 상수를 다시 적지 말 것
+	float GetCellSizeMeters() const { return CellSizeUU * 0.01f; }
+
+	// 셀 하나의 면적(㎡). 밀도 = 인원 / 이 값
+	float GetCellAreaSqM() const { return CellAreaSqM; }
+
+	// 셀 (0,0)의 좌하단 월드 좌표. Heat Map이 셀 좌표를 월드로 되돌릴 때의 기준점
+	const FVector& GetOriginUU() const { return OriginUU; }
+
 	const TArray<float>& GetDensityField() const { return Density; }
+
+	// 셀별 현재 인원. Density와 같은 인덱스 공간(Y * NumX + X)
+	const TArray<int32>& GetCellCounts() const { return CellCounts; }
+
+	// 셀별 구간 진입 인원. ResetThroughputWindow 이후 누적분이다
+	const TArray<int32>& GetCellThroughput() const { return CellThroughput; }
 
 	FVector GetCellCenterWorld(int32 X, int32 Y) const;
 
@@ -79,15 +116,29 @@ private:
 
 	FVector OriginUU = FVector::ZeroVector;
 
-	float CellSizeUU = 200.f;
+	// ★ 상수를 여기 다시 적지 않는다. 지표 셀 크기의 단일 출처는 FFF_CrowdMetrics다
+	float CellSizeUU = FFF_CrowdMetrics::AnalysisCellSizeUU;
 
-
-	float CellAreaSqM = 4.f;
+	float CellAreaSqM = FFF_CrowdMetrics::AnalysisCellSizeMeters
+		* FFF_CrowdMetrics::AnalysisCellSizeMeters;
 
 	int32 NumX = 0;
 	int32 NumY = 0;
 
 	TArray<int32> CellCounts;
+
+	// 구간 진입 인원. Update가 누적하고 ResetThroughputWindow가 끊는다
+	TArray<int32> CellThroughput;
+
+	/**
+	 * 개체별 직전 셀 인덱스. 크기 = 풀 크기, 인덱스 = AgentIndex.
+	 *
+	 * 진입 판정에 필요하다 — 셀이 바뀌었는지는 이전 값을 알아야 판단할 수 있다.
+	 * 비활성 슬롯은 INDEX_NONE으로 되돌린다. 안 그러면 슬롯이 재사용될 때
+	 * 퇴장자의 마지막 셀이 새 방문객의 '직전 셀'이 되어, 맵 반대편에서
+	 * 순간이동한 것처럼 엉뚱한 셀의 유량이 오른다.
+	 */
+	TArray<int32> LastCellIndexByAgent;
 
 	TArray<float> Density;
 

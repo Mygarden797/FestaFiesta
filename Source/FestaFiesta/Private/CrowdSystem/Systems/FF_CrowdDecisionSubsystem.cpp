@@ -2,6 +2,9 @@
 
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 
+#include "FF_FFZSZoneActor.h"
+#include "NavigationSystem.h"
+
 #include "CoreGlobals.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
@@ -31,7 +34,6 @@ void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		return;
 	}
 
-	// 단일 델리게이트다. 조용히 덮으면 어느 쪽이 결정권을 가졌는지 로그에 남지 않는다.
 	if (Crowd->OnPartyNeedsDecision.IsBound())
 	{
 		UE_LOG(LogCrowdDecision, Warning,
@@ -40,8 +42,6 @@ void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 
 	Crowd->OnPartyNeedsDecision.BindUObject(this, &UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision);
 
-	// 계수 테이블은 UFF_SimulationSettings 한 곳이 소유한다. 여기서 또 핀을 만들면
-	// 레벨마다 다른 계수가 꽂혀 같은 시드에서 다른 결과가 나온다.
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
 	CachedCoefficientTable = Settings ? Settings->UtilityCoefficientTable.LoadSynchronous() : nullptr;
 
@@ -75,7 +75,6 @@ void UFF_CrowdDecisionSubsystem::Deinitialize()
 	{
 		if (UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>())
 		{
-			// 이 객체가 물어놓은 것만 푼다. 남이 물어놨으면 그쪽 결정권을 빼앗지 않는다.
 			if (Crowd->OnPartyNeedsDecision.IsBoundToObject(this))
 			{
 				Crowd->OnPartyNeedsDecision.Unbind();
@@ -107,8 +106,6 @@ void UFF_CrowdDecisionSubsystem::SetDecisionEnabled(bool bEnabled)
 		Crowd->OnPartyNeedsDecision.Unbind();
 	}
 
-	// 이미 목적지를 받아 걸어가는 파티는 그 목적지를 유지한다. 도착해서 다음 결정을 할 때부터
-	// 새 설정이 적용되므로, 전환 직후 몇 초는 두 경로가 섞인 상태다.
 	UE_LOG(LogCrowdDecision, Display,
 		TEXT("결정 연결 %s — 이미 이동 중인 파티는 다음 도착부터 반영된다"),
 		bEnabled ? TEXT("켜짐") : TEXT("꺼짐 (배회만)"));
@@ -147,16 +144,10 @@ int32 UFF_CrowdDecisionSubsystem::Debug_OpenAllValidatedFacilities(int32& OutFai
 		Command.Type = EFFZSCommandType::Open;
 		Command.FacilityInstanceId = Facility.FacilityInstanceId;
 
-		// CommandId와 TransactionId는 **둘 다** 필수다. 하나라도 비면 ExecuteCommand가
-		// DataInvalid로 거절한다 (FF_FFZSWorldSubsystem.cpp:1521).
-		// 매번 새로 발급해야 같은 시설을 닫았다 열 때 중복 재생으로 무시되지 않는다.
 		Command.CommandId = FGuid::NewGuid();
 
-		// 시설마다 따로 발급한다 — 하나로 묶으면 한 시설이 실패할 때 나머지까지 롤백된다.
 		Command.TransactionId = FGuid::NewGuid();
 
-		// -1 = 실행 시점의 최신 리비전 허용. 연속 개장은 리비전을 매번 올리므로
-		// 고정 값을 넣으면 두 번째부터 낙관적 동시성 검사에 걸린다.
 		Command.ExpectedWorldRevision = -1;
 
 		const FFFZSCommandResult Result = ZoneSystem->ExecuteCommand(Command);
@@ -168,7 +159,6 @@ int32 UFF_CrowdDecisionSubsystem::Debug_OpenAllValidatedFacilities(int32& OutFai
 
 		++OutFailedCount;
 
-		// 숫자 코드만 남기면 헤더를 열어 enum을 세야 원인을 안다. 이름과 Message를 같이 찍는다.
 		const UEnum* StateEnum = StaticEnum<EFFZSFacilityState>();
 		const UEnum* FailureEnum = StaticEnum<EFFZSPlacementFailure>();
 
@@ -181,6 +171,170 @@ int32 UFF_CrowdDecisionSubsystem::Debug_OpenAllValidatedFacilities(int32& OutFai
 	}
 
 	return Opened;
+}
+
+void UFF_CrowdDecisionSubsystem::EnsureWalkDistanceMatrix(
+	const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel)
+{
+	if (!bEnableWalkDistances)
+	{
+		if (WalkDistances.GetZoneCount() > 0)
+		{
+			WalkDistances.Reset();
+			WalkDistanceBuiltRevision = -1;
+			WalkDistanceMismatchCount = 0;
+			WalkDistanceUnauthoredAnchors = 0;
+			WalkDistanceProjectionFailures = 0;
+			WalkDistanceMaxProjectionDropCm = 0.f;
+		}
+		return;
+	}
+
+	const int64 Revision = ZoneSystem.GetWorldRevision();
+	if (Revision == WalkDistanceBuiltRevision)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<FFF_WalkDistanceMatrix::FZoneAnchor> Anchors;
+	Anchors.Reserve(ReadModel.Zones.Num());
+
+	int32 MissingActors = 0;
+	int32 UnauthoredAnchors = 0;
+	int32 ProjectionFailures = 0;
+	double MaxProjectionDropCm = 0.0;
+
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+
+	const FVector ProjectionExtent(50.0, 50.0, 500.0);
+
+	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
+	{
+		const AFFZSGameplayZone* ZoneActor = ZoneSystem.FindZone(Zone.ZoneId);
+		if (!ZoneActor)
+		{
+			++MissingActors;
+			continue;
+		}
+
+		FFF_WalkDistanceMatrix::FZoneAnchor Anchor;
+		Anchor.ZoneId = Zone.ZoneId;
+		Anchor.NeighborZoneIds = Zone.NeighborZoneIds;
+
+		const bool bHasAuthoredAnchor = !Zone.EntryExitAnchors.IsEmpty();
+		if (!bHasAuthoredAnchor)
+		{
+			++UnauthoredAnchors;
+		}
+
+		FVector AnchorCm = bHasAuthoredAnchor
+			? ZoneActor->GetActorTransform().TransformPosition(Zone.EntryExitAnchors[0].GetLocation())
+			: ZoneActor->GetActorLocation();
+
+		if (NavSys)
+		{
+			FNavLocation Projected;
+			if (NavSys->ProjectPointToNavigation(AnchorCm, Projected, ProjectionExtent))
+			{
+				MaxProjectionDropCm = FMath::Max(MaxProjectionDropCm,
+					FMath::Abs(AnchorCm.Z - Projected.Location.Z));
+				AnchorCm = Projected.Location;
+			}
+			else
+			{
+				++ProjectionFailures;
+				UE_LOG(LogCrowdDecision, Warning,
+					TEXT("보행거리 행렬: 존 %s의 앵커가 NavMesh에 투영되지 않았다 (%.0f, %.0f, %.0f) — ")
+					TEXT("이 존이 걸린 쌍은 직선거리로 폴백한다"),
+					*Zone.ZoneId.ToString(), AnchorCm.X, AnchorCm.Y, AnchorCm.Z);
+			}
+		}
+
+		Anchor.WorldLocationCm = AnchorCm;
+
+		Anchors.Add(MoveTemp(Anchor));
+	}
+
+	auto PathLength = [World](const FVector& FromCm, const FVector& ToCm, float& OutLengthCm) -> bool
+	{
+		double LengthCm = 0.0;
+		const ENavigationQueryResult::Type Result =
+			UNavigationSystemV1::GetPathLength(World, FromCm, ToCm, LengthCm);
+
+		if (Result != ENavigationQueryResult::Success)
+		{
+			return false;
+		}
+
+		OutLengthCm = static_cast<float>(LengthCm);
+		return true;
+	};
+
+	FFF_WalkDistanceMatrix::FBuildStats BuildStats;
+	WalkDistances.Build(Anchors, PathLength, &BuildStats);
+
+	WalkDistanceBuiltRevision = Revision;
+	WalkDistanceMismatchCount = BuildStats.Mismatches.Num();
+	WalkDistanceUnauthoredAnchors = UnauthoredAnchors;
+	WalkDistanceProjectionFailures = ProjectionFailures;
+	WalkDistanceMaxProjectionDropCm = static_cast<float>(MaxProjectionDropCm);
+
+	float MaxWalkCm = 0.f;
+	for (const FFF_WalkDistanceMatrix::FZoneAnchor& From : Anchors)
+	{
+		for (const FFF_WalkDistanceMatrix::FZoneAnchor& To : Anchors)
+		{
+			float LengthCm = 0.f;
+			if (WalkDistances.TryGetWalkDistanceCm(From.ZoneId, To.ZoneId, LengthCm))
+			{
+				MaxWalkCm = FMath::Max(MaxWalkCm, LengthCm);
+			}
+		}
+	}
+
+	if (BuildStats.FailedPairs > 0 && BuildStats.FailedPairs == BuildStats.QueryCount)
+	{
+		UE_LOG(LogCrowdDecision, Warning,
+			TEXT("보행거리 행렬: 전 쌍(%d)이 실패했다. NavSys %s / 앵커 투영 실패 %d개 / ")
+			TEXT("앵커 미저작 %d개 — 결정은 직선거리로 돌아간다"),
+			BuildStats.QueryCount,
+			NavSys ? TEXT("있음") : TEXT("없음"),
+			ProjectionFailures, UnauthoredAnchors);
+	}
+	else
+	{
+		UE_LOG(LogCrowdDecision, Log,
+			TEXT("보행거리 행렬 재구축(Revision %lld): 존 %d개, 질의 %d회, 실패 %d, 액터 없음 %d, ")
+			TEXT("최대 보행거리 %.1fm — distance_ref_meters 재보정 시 이 값을 볼 것"),
+			Revision, BuildStats.ZoneCount, BuildStats.QueryCount, BuildStats.FailedPairs, MissingActors,
+			MaxWalkCm * 0.01f);
+	}
+
+	if (UnauthoredAnchors > 0)
+	{
+		UE_LOG(LogCrowdDecision, Warning,
+			TEXT("보행거리 행렬: 존 %d/%d개가 EntryExitAnchors 미저작 — 존 중심을 대표점으로 썼다. ")
+			TEXT("출입구가 아니므로 거리가 실제 동선과 다르다(저작 필요)"),
+			UnauthoredAnchors, BuildStats.ZoneCount);
+	}
+
+	if (MaxProjectionDropCm > 0.0)
+	{
+		UE_LOG(LogCrowdDecision, Log,
+			TEXT("보행거리 행렬: 앵커 투영 최대 낙차 %.0fcm — 이 값이 크면 존 액터가 지면에서 떠 있다"),
+			MaxProjectionDropCm);
+	}
+
+	for (const FString& Mismatch : BuildStats.Mismatches)
+	{
+		UE_LOG(LogCrowdDecision, Warning, TEXT("보행거리 행렬 불일치: %s"), *Mismatch);
+	}
 }
 
 UFFZSWorldSubsystem* UFF_CrowdDecisionSubsystem::GetZoneSystem() const
@@ -198,8 +352,6 @@ const FFFZSReadModel& UFF_CrowdDecisionSubsystem::GetReadModelForThisFrame()
 
 	CachedReadModelFrame = GFrameCounter;
 
-	// 실패해도 빈 스냅샷을 남긴다 — 직전 프레임의 낡은 시설 목록으로 결정하면
-	// 이미 철거된 시설로 사람을 보낸다.
 	CachedReadModel = FFFZSReadModel();
 
 	if (const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
@@ -262,24 +414,12 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	}
 	const FFFZSReadModel& ReadModel = GetReadModelForThisFrame();
 
-	// 시설을 아직 짓지 않은 상태. 인게임 배치 구조에서는 이게 시작 상태이므로
-	// 경고를 내지 않는다 — Crowd가 배회로 돌아간다.
 	if (ReadModel.Facilities.IsEmpty())
 	{
 		++Stats.NoFacility;
 		return false;
 	}
 
-	/**
-	 * 후보가 될 수 있는 시설이 하나라도 있는지 먼저 본다.
-	 *
-	 * BuildCandidates는 후보 0개일 때 시설당 Warning을 낸다. 결정은 프레임당 최대
-	 * MaxDecisionsPerFrame번 일어나므로, 개장된 시설이 없는 동안 그 경고가 초당 수천 줄
-	 * 쏟아져 로그가 못 쓰게 된다 — 정작 봐야 할 다른 경고가 묻힌다.
-	 *
-	 * 판정 기준은 BuildCandidates의 상태 필터와 같아야 한다(Active이고 재배치 대기 아님).
-	 * 어긋나면 이 사전 필터를 통과했는데 후보가 0개인 상태가 생겨 경고가 다시 새어 나온다.
-	 */
 	const bool bAnyOpenFacility = ReadModel.Facilities.ContainsByPredicate(
 		[](const FFFZSFacilityReadModel& Facility)
 		{
@@ -299,22 +439,21 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
-	// PreviousZoneId(히스테리시스)를 넘기지 않는다. 그러려면 파티별 이전 Zone을 이 계층이
-	// 들고 있어야 하는데, 조정자는 파티 퇴장을 모르므로 그 맵이 무한히 자란다.
-	// 넘기지 않아도 판정은 ZoneId 사전순으로 결정적이다 — 경계에 정확히 선 파티만 흔들린다.
 	const FName CurrentZoneId = ZoneSystem->ResolveZoneAtWorldLocation(Context.PartyWorldLocation);
 	if (CurrentZoneId.IsNone())
 	{
-		// Zone 경계 밖에 있다. Zone을 넓히거나 스폰 위치를 Zone 안으로 옮겨야 한다.
 		++Stats.OutsideZone;
 		return false;
 	}
 
-	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates);
+	EnsureWalkDistanceMatrix(*ZoneSystem, ReadModel);
 
-	// 현재·인접 Zone에 열린 시설이 없다. Info·Safety는 후보에서 제외되므로
-	// 그 둘만 지었을 때도 여기로 온다.
+	const FFF_WalkDistanceMatrix* WalkDistancesOrNull =
+		(bEnableWalkDistances && WalkDistances.IsValid()) ? &WalkDistances : nullptr;
+
+	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
+		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull);
+
 	if (Candidates.IsEmpty())
 	{
 		++Stats.NoCandidate;
@@ -364,8 +503,6 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
 	const int32 GlobalSeed = Settings ? Settings->GlobalSimulationSeed : 0;
 
-	// ChoiceRoundIndex를 그대로 넘기는 것이 중요하다. 이 값이 고정되면 같은 파티가
-	// 매번 같은 시드를 받아 같은 곳만 반복해서 고른다.
 	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
 		Candidates,
 		PreferenceVector,
@@ -376,8 +513,6 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		bFullMode ? Context.Needs : FFF_NeedState(),
 		bFullMode ? Context.ConsecutiveNoChoiceCount : 0);
 
-	// no_choice는 오류가 아니라 판단이다 — "지금은 아무 데도 안 간다".
-	// Crowd의 배회 폴백이 곧 Utility 스펙의 no_choice → Wander다.
 	if (Decision.bIsNoChoice || Decision.ChosenDestinationId.IsNone())
 	{
 		++Stats.NoChoice;
@@ -391,7 +526,6 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	FGuid FacilityInstanceId;
 	if (!FFF_ZoneSystemBridge::TryParseDestinationId(Decision.ChosenDestinationId, FacilityInstanceId))
 	{
-		// 후보를 만든 쪽과 파싱하는 쪽이 같은 규칙을 쓰지 않는다는 뜻이다. 계약 위반.
 		++Stats.ParseFailed;
 		UE_LOG(LogCrowdDecision, Warning,
 			TEXT("DestinationId '%s'를 FGuid로 파싱하지 못했다 (파티 %d)"),
@@ -407,13 +541,10 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 
 	if (!Facility)
 	{
-		// 같은 스냅샷에서 후보를 만들었으므로 정상적으로는 도달하지 않는다.
 		++Stats.FacilityMissing;
 		return false;
 	}
 
-	// ★ bHasApproachWorldTransform을 확인하지 않고 Identity로 폴백하면
-	// NPC가 조용히 월드 원점으로 걸어간다. false는 반드시 재평가로 처리한다.
 	if (!Facility->bHasApproachWorldTransform)
 	{
 		++Stats.InvalidApproach;
@@ -423,8 +554,6 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
-	// Actor 중심(WorldLocation)이 아니라 Entry[0] 접근점을 쓴다.
-	// Actor origin은 배치·회전의 기준점일 뿐이고, 큰 무대·부스에서는 메시 내부일 수 있다.
 	OutResult.Destination = Facility->ApproachWorldTransform.GetLocation();
 	OutResult.DestinationId = Decision.ChosenDestinationId;
 
@@ -439,17 +568,8 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	return true;
 }
 
-// --- 콘솔 -----------------------------------------------------------------------------------
-
 namespace FFDecisionConsole
 {
-	/**
-	 * 콘솔 명령은 UE_LOG가 아니라 FOutputDevice에 찍는다.
-	 *
-	 * UE_LOG만 쓰면 에디터 Output Log에만 남고, 명령을 입력한 인게임 콘솔에는 아무것도 안 뜬다.
-	 * 화면을 보고 있던 사람은 "명령이 먹지 않았다"고 판단한다.
-	 * 기존 FF.Crowd.* 명령들이 쓰는 패턴과 맞춘 것이기도 하다.
-	 */
 	UFF_CrowdDecisionSubsystem* GetDecision(UWorld* World, FOutputDevice& Ar)
 	{
 		UFF_CrowdDecisionSubsystem* Decision = World ? World->GetSubsystem<UFF_CrowdDecisionSubsystem>() : nullptr;
@@ -497,7 +617,76 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 	Ar.Logf(TEXT("퇴장: 인내 한계    : %d   (연속 no_choice %d회. 체류 소진보다 많으면 인원 보존 위험)"),
 		Decision->GetLeaveByNoChoicePatienceCount(), Decision->GetNoChoiceLeavePatienceRounds());
 	Ar.Logf(TEXT("Relocate 요청      : %d   (v0에서는 배회로 처리된다)"), Decision->GetRelocateRequestedCount());
+
+	Ar.Logf(TEXT("--- 거리 척도 ---"));
+	if (!Decision->bEnableWalkDistances)
+	{
+		Ar.Logf(TEXT("직선거리 (보행거리 꺼짐)"));
+		Ar.Logf(TEXT("  켜기 전에 distance_ref_meters 재보정이 선행 조건이다 —"));
+		Ar.Logf(TEXT("  보행거리는 직선보다 크므로 정규화가 포화되어 먼 시설의 거리 항이 전부 같아진다"));
+	}
+	else
+	{
+		const int32 ZoneCount = Decision->GetWalkDistanceZoneCount();
+		Ar.Logf(TEXT("존 앵커 보행거리 (존 %d개)%s"), ZoneCount,
+			(ZoneCount < 2) ? TEXT("  <- 2개 미만이라 직선거리로 돌아간다") : TEXT(""));
+
+		const int32 Unauthored = Decision->GetUnauthoredAnchorCount();
+		const int32 ProjFailures = Decision->GetAnchorProjectionFailureCount();
+
+		if (Unauthored > 0)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("  앵커 미저작   : %d개 — 존 중심을 대표점으로 썼다(출입구가 아니다). ")
+				TEXT("이 상태의 최대 보행거리로 재보정하면 값이 어긋난다"), Unauthored);
+		}
+		if (ProjFailures > 0)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("  투영 실패     : %d개 — 그 존이 걸린 쌍은 직선거리로 폴백한다"), ProjFailures);
+		}
+		Ar.Logf(TEXT("  앵커 투영 낙차: 최대 %.0fcm (0이면 앵커가 이미 NavMesh 위)"),
+			Decision->GetMaxAnchorProjectionDropCm());
+
+		const int32 Mismatches = Decision->GetWalkDistanceMismatchCount();
+		if (Mismatches > 0)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("  불일치 %d건 — 존 그래프와 NavMesh 연결성이 어긋났다. 상세는 LogCrowdDecision 로그"),
+				Mismatches);
+		}
+		else
+		{
+			Ar.Logf(TEXT("  존 그래프 ↔ NavMesh 연결성 일치"));
+		}
+	}
 }
+
+static void DecisionWalkDistanceCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdDecisionSubsystem* Decision = World ? World->GetSubsystem<UFF_CrowdDecisionSubsystem>() : nullptr;
+	if (!Decision)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("CrowdDecisionSubsystem을 찾을 수 없습니다"));
+		return;
+	}
+
+	if (Args.Num() > 0)
+	{
+		Decision->bEnableWalkDistances = (FCString::Atoi(*Args[0]) != 0);
+	}
+
+	Ar.Logf(TEXT("거리 척도: %s"), Decision->bEnableWalkDistances
+		? TEXT("존 앵커 보행거리") : TEXT("직선거리"));
+	Ar.Logf(TEXT("행렬은 다음 결정에서 지어진다(WorldRevision이 바뀔 때만 재구축). 상세는 FF.Decision.Stats"));
+
+	Ar.Logf(TEXT("이미 이동 중인 파티는 그대로다. 다음 재평가부터 적용된다"));
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionWalkDistanceCommand(
+	TEXT("FF.Decision.WalkDistance"),
+	TEXT("후보 거리를 직선/보행거리로 전환한다. FF.Decision.WalkDistance [0|1]"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&DecisionWalkDistanceCommand));
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionStatsCommand(
 	TEXT("FF.Decision.Stats"),
@@ -612,7 +801,6 @@ static void DecisionEnableCommand(const TArray<FString>& Args, UWorld* World, FO
 		return;
 	}
 
-	// 인자가 없으면 토글. 같은 명령을 반복해 A/B를 왕복하기 쉽다
 	const bool bEnable = (Args.Num() > 0)
 		? (Args[0] != TEXT("0"))
 		: !Decision->IsDecisionEnabled();
@@ -630,18 +818,6 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GDecisionEnableCommand(
 
 namespace
 {
-	/**
-	 * Validated 상태로 남아 있는 시설을 전부 개장한다.
-	 *
-	 * ### 왜 이 명령이 필요한가
-	 * 시설 수명주기는 Install → Validated → (Open 명령) → Active이고, BuildCandidates는
-	 * Active만 후보로 받는다. 그런데 빌드 모드가 발행하는 명령은 Install·Move·Remove뿐이고
-	 * **Open을 발행하는 프로덕션 코드가 없다.** 그래서 인게임에서 지은 시설은 계속 Validated에
-	 * 머물고 목적지 후보가 되지 않는다.
-	 *
-	 * 이건 임시 도구다. 개장 시점(축제 오픈 시각, 운영자 조작)은 게임플레이 설계 사안이므로
-	 * 정식 경로가 정해지면 이 명령은 지워야 한다.
-	 */
 	void OpenAllFacilities(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
 	{
 		UFF_CrowdDecisionSubsystem* Decision = FFDecisionConsole::GetDecision(World, Ar);
@@ -650,8 +826,6 @@ namespace
 			return;
 		}
 
-		// 실제 구현은 BlueprintCallable 멤버 함수에 있다. 콘솔과 데모 BP가 같은 코드를 타야
-		// "콘솔로는 되는데 BP로는 안 된다"가 생기지 않는다.
 		int32 Failed = 0;
 		const int32 Opened = Decision->Debug_OpenAllValidatedFacilities(Failed);
 

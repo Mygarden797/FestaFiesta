@@ -138,6 +138,38 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 두 건 다 컴파일 확인까지 마쳤습니다
 
 
+**요청 2건 (백종태 → 강민서, 2026-08-20) — UI 흐름 서브시스템 작업 중 발견**
+
+1. 🔴 **축제를 Day 1 부터 시작하는 API 가 필요합니다.**
+
+   `Tick()` 이 GameInstance 시작부터 돌고 `CurrentStage` 기본값이 `Setup` 이라,
+   **타이틀 화면에 앉아 있는 동안 축제 시계가 이미 진행됩니다.** `DT_DaySequence` 에 Setup 시간이
+   있으니 `RemainingTime` 이 0 이 되면 `RequestTransition(NextStage)` 로 넘어가고,
+   플레이어가 지구본에서 축제를 고르기 전에 Day 2·3 까지 갈 수 있습니다.
+
+   `RequestTransition(Setup)` 은 제가 부를 수 있는데 **`CurrentDay` 를 되돌릴 방법이 없습니다.**
+   `BlueprintReadOnly` 이고 리셋 함수가 없습니다. UI 가 남의 상태를 직접 쓰지 않는 원칙이라
+   지금은 `CurrentDay != 1` 이면 경고만 남기고 진행합니다.
+
+   `StartNewFestival()` 같은 함수 하나로 `CurrentDay = 1` · `CurrentStage = Setup` ·
+   `ElapsedLiveSeconds = 0` · `bFestivalEndedBroadcasted = false` 를 함께 초기화해 주시면
+   제 쪽은 `OpenLevel` 직후 그 함수만 부르면 됩니다.
+
+   함께 검토 부탁드리는 것 — **축제가 시작되기 전에는 Tick 이 돌지 않는 편이 맞지 않을까요?**
+   프론트엔드에서 시계가 도는 것 자체가 의도된 동작이 아니라면, 시작 전에는 멈춰 있는 쪽이
+   저장·불러오기와 반복 플레이에서도 예측하기 쉽습니다.
+
+2. **`SunsetTransition`(노을 전환) 단계의 UI 요구사항을 알려주세요.**
+
+   `EFF_FestivalStage` 는 코드에 **8종**인데 `docs/design/module-ownership.md` 3절은 7종으로 적고
+   있고, 참조는 `FF_StageEconomyBridgeTests.cpp` 한 곳뿐입니다. UI 이식 계획에도 이 단계가
+   빠져 있어서 화면 매핑에서 누락되기 쉬웠습니다.
+
+   알고 싶은 것 세 개입니다 — **지속 시간이 얼마인가 / 연출 단계라 Skip 이 필요한가 /
+   플레이어 입력을 받는 단계인가.**
+
+   지금은 `연출 자리 + Skip` 스텁으로 두고 `to_verify` 로 표시해 두었습니다.
+
 ### `OnDayEnded`
 
 - **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
@@ -249,17 +281,26 @@ footprint가 겹치면 Actor 원점까지 3차원 거리가 가장 가까운 시
 `FacilityInstanceId` 문자열 오름차순의 시설을 선택한다.
 
 `AFFZSFacilityActor::SelectionProxy`는 `BlueprintReadOnly`인 선택 전용 Box다. 유효한 Spec을 적용한 뒤
-시설 footprint와 장애물 높이에 맞춰지고, `QueryOnly`·`WorldDynamic`으로 프로젝트 Trace Channel
+시설 footprint의 XY 각 변에 기본 75cm를 더하고 장애물 높이에 맞춰지며, `QueryOnly`·`WorldDynamic`으로 프로젝트 Trace Channel
 `FacilitySelection`만 Block한다. 물리·Navigation·Overlap에는 참여하지 않으며 `VisualMesh`는 계속
 `NoCollision`이고 Navigation에도 영향을 주지 않는다. 유효한 Spec 적용 전 Proxy는 크기 0·`NoCollision`이라
 선택되지 않는다. 프로젝트 채널의 기본 응답은 `Ignore`이므로 일반 `BlockAll` 컴포넌트는 전용 Trace를 막지 않는다.
+
+`SetSelectionIndicatorState(Hidden/Hovered/Selected)`는 이 실제 클릭 Box의 렌더 표시만 바꾼다.
+Hover는 Live UI Accent `#14F2E0` 3px, 선택된 정보 패널 대상은 같은 색 5px이며 Extent·Transform·Collision은
+변경하지 않는다. `Hovered`는 **현재 클릭하면 선택될 대상**, `Selected`는 **현재 정보 패널 대상**을 뜻한다.
+두 상태는 서로 다른 시설에 동시에 표시될 수 있다. 기본 상태는 `Hidden`이고 에디터 Actor 선택 여부와
+무관하게 런타임에서 표시할 수 있다.
 
 - C++ Trace는 채널 슬롯을 직접 쓰지 않고 `FFZSCollision::FacilitySelectionTraceChannel`을 사용한다.
 - Blueprint Trace는 이름이 `FacilitySelection`인 프로젝트 채널을 사용한다.
 - `FacilitySelection` Trace가 아무 것도 맞히지 않은 경우에만 호환용 지면 footprint fallback을 시도한다.
   첫 `Visibility` hit가 `ImpactNormal.Z >= 0.45`인 지면일 때만 그 지점을 조회 API에 전달한다.
-- 전용 채널이 비등록 후보를 맞히거나 등록 Proxy가 외부 `Visibility` 장애물에 가려지면 fallback 없이
-  선택을 거부한다. `Visibility`는 시설 ID 선택 채널이 아니다.
+- 앞쪽 전용 채널 후보가 비등록·stale 상태이거나 외부 `Visibility` 장애물에 가려지면 그 Actor를 제외하고
+  최대 32개 후보까지 다음 등록 Proxy를 찾는다. 하나라도 전용 Proxy를 맞힌 뒤 유효 후보를 못 찾으면
+  지면 fallback 없이 선택을 거부한다. `Visibility`는 시설 ID 선택 채널이 아니다.
+- 가림 Trace 끝점은 Proxy 표면보다 2cm 앞에서 멈춰 Chaos 접촉 오차와 지형 경계가 정확한 클릭을
+  거짓 차단하지 않게 한다. 그보다 앞의 실제 벽·오브젝트는 계속 클릭을 차단한다.
 
 ### 브리지 2종 (2026-08-06 추가)
 
@@ -387,8 +428,19 @@ World Snapshot 복원, Context 무효화 때도 선택이 자동 해제된다.
 
 `Live` 선택은 `AFF_FestivalPlayerController::OnActorPicked`를 받은 뒤 전용 `FacilitySelection` Trace로
 해석한다. 전용 Trace가 아무 것도 맞히지 않고 첫 `Visibility` hit가 걸을 수 있는 지면일 때만 footprint
-fallback을 시도한다. 비등록 후보를 맞히거나 외부 장애물에 가린 시설은 fallback 없이 거부한다. 빈 곳을
-클릭하면 기존 Live 선택을 닫는다.
+fallback을 시도한다. 앞쪽 비등록·stale·가림 후보는 건너뛰되, 전용 후보를 맞히고도 유효 시설이 없으면
+fallback 없이 거부한다. 빈 곳을 클릭하면 기존 Live 선택을 닫는다.
+
+기본 좌클릭은 `IA_Pick`의 `Started`를 사용한다. CommonUI 또는 런타임 Mapping Context 때문에 그 Action이
+같은 PlayerTick에 실행되지 않은 경우 PlayerController가 raw `LeftMouseButton` edge를 한 번만 보조 처리한다.
+따라서 `OnActorPicked`는 누락되지 않으며 Action과 fallback이 함께 들어와도 중복 방송하지 않는다.
+
+Live에서는 같은 resolver를 0.05초 간격으로 재사용해 커서 아래 실제 클릭 Box를 Hover 표시한다. 클릭 순간에는
+현재 Hovered Proxy가 새 ray와 실제로 교차하고 등록·채널·가림 검증을 통과하는지 동기 재확인해 그 시설을
+우선 선택한다. stale Hover가 ray를 벗어났으면 실제 교차 후보로 즉시 표시와 결과를 바꾼다. 별도 Actor Tick이나
+시설 전체 순회는 없으며, 커서가 패널 위에 있거나 건축·모달·ActorView·CharacterView에서 피킹이 막히면
+Hover를 즉시 정리한다. 패널이 열린 시설은 `Selected` 표시가 우선하며, Live 이탈·시설 제거·World Snapshot
+복원·Subsystem 종료 때 Hover와 Selected 표시를 모두 해제한다.
 
 제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
 FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
@@ -629,6 +681,22 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 
 **3. 게임을 켜면 잔액이 이미 7,600입니다.** 1일차는 셋업으로 시작해 아침 단계를 지나지 않으므로 축제 시작 시점에
 정산됩니다. 초기 자금 10,000이 화면에 안 보이는 것이 정상입니다(3일 임대료 합계 7,200 = 초기 자금의 72%).
+
+> **🔴 정정 요청 (백종태, 2026-08-19) — 3번의 전제가 다릅니다.**
+>
+> **셋업 뒤에는 Day 1도 개장 준비(MorningCheck)를 지납니다.** 흐름이
+> `Setup → PromotionPreview → MorningCheck → Live` 라서 1일차만 아침 단계를 건너뛰지 않습니다.
+>
+> 그러면 정산 시점이 "축제 시작"이 아니라 **"개장 준비 진입"** 이 됩니다.
+>
+> | 시점 | 잔액 |
+> | --- | ---: |
+> | 셋업 · 홍보 | 10,000 |
+> | **개장 준비 진입** | **7,600** (임대료 2,400 선불) |
+>
+> 플레이어가 셋업에서 시설을 살 때 보는 예산이 10,000이 되므로 UI 표시가 달라집니다.
+> 프로토타입은 이 흐름으로 만들어 두었습니다. 코드가 축제 시작 시점에 걷고 있다면
+> 개장 준비 진입으로 옮겨 주시거나, 1일차만 아침 단계를 건너뛰는 것이 맞다면 알려 주세요.
 
 **4. 잔액이 부족하면 "밀린 임대료"가 생깁니다.** 시설은 안 사면 되지만 축제장 임대료는 거절할 수가 없어서,
 있는 만큼만 내고 못 낸 금액을 따로 적어 둡니다. 이자는 없습니다.

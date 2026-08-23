@@ -7,6 +7,7 @@
 #include "Camera/FF_CameraTypes.h"
 #include "FF_FestivalPlayerController.generated.h"
 
+class AFF_FinaleViewpoint;
 class AFF_OverviewCameraPawn;
 class UInputAction;
 class UInputMappingContext;
@@ -32,11 +33,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnViewModeChanged,
 //
 //   1. 건축 세션이 열려 있는 동안 이 컨트롤러는 커서 표시와 입력 모드를 건드리지 않는다.
 //      그건 건축 모드가 저장했다가 되돌리는 값이다. 양쪽이 쓰면 복원 순서 싸움이 난다.
-//   2. 건축 중에도 팬과 줌과 회전은 살린다. 부스를 놓으려면 화면을 움직여야 한다.
-//   3. 건축 중에는 피킹만 막는다. 클릭은 배치 입력이지 선택 입력이 아니다.
-//   4. 건축 모드 상태는 GetBuildModeState() 로 읽기만 한다. 건축 쪽 코드는 수정하지 않는다.
+//   2. 건축 중에도 팬과 줌은 살린다. 부스를 놓으려면 화면을 움직여야 한다.
+//   3. 시설 배치/이동 프리뷰 중에는 회전을 막는다. Q/E 는 이때 시설 회전 입력이다.
+//   4. 건축 중에는 피킹을 막는다. 클릭은 배치 입력이지 선택 입력이 아니다.
+//   5. 건축 모드 상태는 GetBuildModeState() 로 읽기만 한다. 건축 쪽 코드는 수정하지 않는다.
 //
-// 이 규칙이 깨지면 "건축 중에 카메라가 돈다"거나 "배치 클릭이 NPC 선택으로 먹힌다"로
+// 이 규칙이 깨지면 "시설과 카메라가 함께 돈다"거나 "배치 클릭이 NPC 선택으로 먹힌다"로
 // 나타난다. 둘 다 통합 데모에서야 보이는 종류라 미리 막아둔다.
 // ─────────────────────────────────────────────────────────────────────────────
 UCLASS()
@@ -55,13 +57,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	EFF_CameraInputBlock GetInputBlockReason() const;
 
-	// 팬, 줌, 회전을 받아도 되는 상태인가.
+	// 팬, 줌, 가장자리 스크롤을 받아도 되는 상태인가.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	bool IsCameraMovementAllowed() const;
 
 	// 클릭으로 대상을 고를 수 있는 상태인가. 건축 중에는 false 다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	bool IsPickingAllowed() const;
+
+	// ── 연출 시점 ────────────────────────────────────────────────────────────
+	//
+	// 피날레처럼 화면을 보여주는 구간에서 쓴다. 관찰 카메라는 월드에 그대로 남아
+	// 있으므로, 연출이 끝나면 떠날 때 구도로 돌아온다.
+
+	// 지정한 시점으로 전환한다. nullptr 이면 레벨에서 우선순위가 가장 높은 것을 찾는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	bool EnterScriptedView(AFF_FinaleViewpoint* Viewpoint, float BlendTime = 1.5f);
+
+	// 연출을 끝내고 원래 보던 곳으로 돌아온다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void ExitScriptedView(float BlendTime = 1.5f);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
+	bool IsInScriptedView() const { return bScriptedViewActive; }
 
 	// 모달 UI 를 띄우는 쪽에서 켜고 끈다. 카메라 입력 전체가 멈춘다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
@@ -178,13 +196,19 @@ private:
 	void HandleRotate(const FInputActionValue& Value);
 	void HandleSnapRotate(const FInputActionValue& Value);
 	void HandlePick(const FInputActionValue& Value);
+	void ProcessPickRequest();
 	void HandleResetView(const FInputActionValue& Value);
 	void HandleToggleView(const FInputActionValue& Value);
 
 	bool IsBuildSessionActive() const;
+	bool IsBuildPreviewActive() const;
+	bool IsCameraRotationAllowed() const;
 
 	// 커서 아래 월드 지점을 구한다. 커서가 없거나 광선이 지면을 안 만나면 false.
 	bool ResolveCursorWorldAnchor(FVector& OutAnchor) const;
+
+	// Enhanced Input과 native 좌클릭 fallback이 같은 PlayerTick에 함께 들어와도 한 번만 방송한다.
+	bool bPickRequestHandledThisTick = false;
 
 	// 마우스가 화면 가장자리에 있으면 그쪽으로 팬한다.
 	void TickEdgeScroll(float DeltaTime);
@@ -194,6 +218,9 @@ private:
 	void EnsureViewTargetAlive();
 
 	bool bModalUiActive = false;
+
+	// 연출 시점 진행 중인지. 켜져 있으면 카메라 조작이 전부 막힌다.
+	bool bScriptedViewActive = false;
 
 	EFF_CameraViewMode ViewMode = EFF_CameraViewMode::Overview;
 

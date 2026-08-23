@@ -32,7 +32,8 @@ enum class EFF_CameraInputBlock : uint8
 {
 	// 아무도 안 막는 상태. 팬, 줌, 회전, 피킹 전부 동작한다.
 	None            UMETA(DisplayName = "없음"),
-	// 건축 세션 진행 중. 팬과 줌은 살리고 피킹만 막는다.
+	// 건축 세션 진행 중. 팬과 줌은 살리고 피킹을 막는다.
+	// 시설 프리뷰가 활성인 동안에는 별도 정책으로 카메라 회전도 막는다.
 	BuildSession    UMETA(DisplayName = "건축 세션"),
 	// 모달 UI가 떠 있음. 카메라 입력 전체를 막는다.
 	ModalUi         UMETA(DisplayName = "모달 UI"),
@@ -40,9 +41,41 @@ enum class EFF_CameraInputBlock : uint8
 	ActorView       UMETA(DisplayName = "액터 시점"),
 	// 캐릭터를 조종하는 중. 같은 WASD 가 카메라 팬으로도 먹으면 안 된다.
 	CharacterControl UMETA(DisplayName = "캐릭터 조종"),
-	// 시네마틱이나 자동 연출 중.
+	// 시네마틱이나 자동 연출 중. 피날레 불꽃처럼 화면을 보여주는 구간이다.
+	//
+	// 지금은 조작을 전부 막는다. 연출을 보는 시간이라 그게 맞다고 봤는데,
+	// 나중에 "구경하면서 돌려보고 싶다" 가 되면 회전만 열어주면 된다.
 	Scripted        UMETA(DisplayName = "연출 중")
 };
+
+namespace FFCameraInputModel
+{
+	// 건축 중에도 배치 위치를 볼 수 있도록 팬과 줌은 유지한다.
+	inline bool IsMovementAllowed(const EFF_CameraInputBlock Reason)
+	{
+		return Reason != EFF_CameraInputBlock::ModalUi
+			&& Reason != EFF_CameraInputBlock::ActorView
+			&& Reason != EFF_CameraInputBlock::CharacterControl
+			&& Reason != EFF_CameraInputBlock::Scripted;
+	}
+
+	// 시설 배치/이동 프리뷰가 Q/E 회전을 소유하므로 그때만 카메라 회전을 추가로 막는다.
+	inline bool IsRotationAllowed(
+		const EFF_CameraInputBlock Reason,
+		const bool bBuildPreviewActive)
+	{
+		return IsMovementAllowed(Reason) && !bBuildPreviewActive;
+	}
+
+	// CommonUI나 런타임 Mapping Context가 Enhanced Input action을 소비하더라도 기본 좌클릭은
+	// 선택 신호를 잃지 않아야 한다. Action이 이미 처리된 프레임에는 중복 방송하지 않는다.
+	inline bool ShouldUsePrimaryPointerPickFallback(
+		const bool bPickActionHandledThisTick,
+		const bool bPrimaryPointerJustPressed)
+	{
+		return !bPickActionHandledThisTick && bPrimaryPointerJustPressed;
+	}
+}
 
 // 디자이너가 조정하는 값들. 전부 게임 단위(cm, 도, 초)다.
 USTRUCT(BlueprintType)

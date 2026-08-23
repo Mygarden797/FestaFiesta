@@ -1167,6 +1167,7 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 | Performance | Max Enumerated Cells Per Facility | 10,000,000 | 손상 입력 조기 거부 예산 |
 | Performance | Ground Sample Spacing | 100 cm | 지면 Trace 간격 |
 | Performance | Queue Simulation Tick Interval | 0.1초 | 0이면 매 Frame |
+| Selection | Facility Selection Padding | 75 cm/변 | Footprint 기반 선택 Query Box의 XY 사방 여백, 전체 치수는 +150 cm |
 | Placement | Max Ground Slope | 5도 | 표본 법선 최대 경사 |
 | Placement | Max Ground Height Variance | 20 cm | 표본 최고·최저 Z 차 |
 | Placement | Ground Trace Above / Below | 1000 / 1000 cm | Line Trace 범위 |
@@ -1196,6 +1197,7 @@ Editor의 `Edit -> Project Settings -> Game -> FF Zone System`에서 설정한�
 
 - InitialPhase: 새 WorldSubsystem 초기화 때 읽음
 - Queue Tick Interval: QueueComponent 생성 때 읽음
+- Facility Selection Padding: Facility 초기화·Snapshot 복원 때 읽음. 기존 Actor에는 즉시 재적용되지 않으므로 설정 변경 후 PIE/실행 재시작
 - 배치 검사 수치: 다음 Validate 호출 때 읽음
 - Protected Area 폭 0: 다음 교차 검사 때 현재 설정을 동적 상속
 - Actor에 `ApplyDefaultWidthForType`으로 복사한 폭: 이후 전역 변경을 상속하지 않음
@@ -1253,7 +1255,7 @@ C++ 전용 고성능 API:
 - GameplayZone: 경계, 포함, Hysteresis, 월드/Cell 변환, 카테고리, 면적, 수용량, Population, Read Model
 - ProtectedArea: 유효 폭, World Box 교차, 데이터 검증, Editor Preset
 - FacilityDefinition: Spec 검증과 Primary Asset ID
-- FacilityActor: ID·Zone·Placement·Spec·State·Queue·Relocation·Anchor·Snapshot·Read Model 조회
+- FacilityActor: ID·Zone·Placement·Spec·State·Queue·Relocation·Anchor·Snapshot·Read Model 조회와 실제 SelectionProxy 기반 `SetSelectionIndicatorState`. `Hovered`는 현재 클릭 대상, `Selected`는 열린 정보 패널 대상을 뜻하며 동시에 서로 다른 시설에 표시될 수 있음
 - QueueComponent: 상태·수·목표 위치·Snapshot·불변식·규칙·통계 조회와 Delegate
 - PlacementPreviewActor: Data Asset Spec 기반 Refresh, Auto Refresh, Commit, Last Validation
 

@@ -3,6 +3,7 @@
 #include "Camera/FF_FestivalPlayerController.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Camera/FF_FinaleViewpoint.h"
 #include "Camera/FF_OverviewCameraPawn.h"
 #include "Camera/FF_OverviewCameraRig.h"
 #include "CollisionQueryParams.h"
@@ -11,6 +12,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 
 AFF_FestivalPlayerController::AFF_FestivalPlayerController()
@@ -143,8 +145,25 @@ bool AFF_FestivalPlayerController::IsBuildSessionActive() const
 	return BuildMode ? FFBuildModeModel::IsBuildSessionActive(BuildMode->GetBuildModeState()) : false;
 }
 
+bool AFF_FestivalPlayerController::IsBuildPreviewActive() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	const UFF_BuildModeSubsystem* BuildMode = World->GetSubsystem<UFF_BuildModeSubsystem>();
+	return BuildMode ? FFBuildModeModel::IsPreviewActive(BuildMode->GetBuildModeState()) : false;
+}
+
 EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 {
+	// 연출이 모달 UI 보다 먼저다. 연출 중에 창이 떠도 화면은 연출이 소유한다.
+	if (bScriptedViewActive)
+	{
+		return EFF_CameraInputBlock::Scripted;
+	}
 	if (bModalUiActive)
 	{
 		return EFF_CameraInputBlock::ModalUi;
@@ -170,17 +189,68 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 {
 	// 건축 중에도 화면은 움직여야 한다. 부스를 놓을 자리를 봐야 하니까.
-	// 모달 UI 와 액터 시점만 전체를 막는다.
-	const EFF_CameraInputBlock Reason = GetInputBlockReason();
-	return Reason != EFF_CameraInputBlock::ModalUi
-		&& Reason != EFF_CameraInputBlock::ActorView
-		&& Reason != EFF_CameraInputBlock::CharacterControl;
+	return FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
+}
+
+bool AFF_FestivalPlayerController::IsCameraRotationAllowed() const
+{
+	return FFCameraInputModel::IsRotationAllowed(
+		GetInputBlockReason(),
+		IsBuildPreviewActive());
 }
 
 bool AFF_FestivalPlayerController::IsPickingAllowed() const
 {
 	// 건축 중 클릭은 배치 입력이지 선택 입력이 아니다.
 	return GetInputBlockReason() == EFF_CameraInputBlock::None;
+}
+
+bool AFF_FestivalPlayerController::EnterScriptedView(AFF_FinaleViewpoint* Viewpoint, float BlendTime)
+{
+	// 지정이 없으면 레벨에서 찾는다. 호출부가 시점 액터를 몰라도 되게 한다.
+	if (!IsValid(Viewpoint))
+	{
+		Viewpoint = AFF_FinaleViewpoint::FindBest(GetWorld());
+	}
+	if (!IsValid(Viewpoint))
+	{
+		return false;
+	}
+
+	// 빙의는 옮기지 않는다. 관찰 카메라가 계속 조종 대상으로 남아 있어야
+	// 연출이 끝났을 때 리그 상태를 그대로 이어받는다.
+	SetViewTargetWithBlend(Viewpoint, FMath::Max(0.f, BlendTime));
+	bScriptedViewActive = true;
+
+	OnViewModeChanged.Broadcast(ViewMode, Viewpoint);
+	return true;
+}
+
+void AFF_FestivalPlayerController::ExitScriptedView(float BlendTime)
+{
+	if (!bScriptedViewActive)
+	{
+		return;
+	}
+
+	bScriptedViewActive = false;
+
+	// 연출 전에 무엇을 보고 있었는지에 따라 돌아갈 곳이 다르다.
+	if (ViewMode == EFF_CameraViewMode::Overview)
+	{
+		SwitchToOverview(BlendTime);
+		return;
+	}
+
+	if (AActor* Previous = ViewedActor.Get())
+	{
+		SetViewTargetWithBlend(Previous, FMath::Max(0.f, BlendTime));
+		OnViewModeChanged.Broadcast(ViewMode, Previous);
+		return;
+	}
+
+	// 보던 대상이 사라졌으면 관찰 시점이 안전하다.
+	SwitchToOverview(BlendTime);
 }
 
 void AFF_FestivalPlayerController::SetModalUiActive(bool bActive)
@@ -249,7 +319,18 @@ bool AFF_FestivalPlayerController::ResolveCursorWorldAnchor(FVector& OutAnchor) 
 
 void AFF_FestivalPlayerController::PlayerTick(float DeltaTime)
 {
+	bPickRequestHandledThisTick = false;
 	Super::PlayerTick(DeltaTime);
+
+	// CommonUI input mode나 동적으로 교체된 IMC가 IA_Pick을 소비해도 기본 포인터 클릭은
+	// 살아 있어야 한다. BuildMode가 이미 사용하는 raw key edge를 보조 경로로 읽되,
+	// Enhanced Input action이 정상 실행된 프레임에는 ProcessPickRequest가 중복을 막는다.
+	if (FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(
+			bPickRequestHandledThisTick,
+			WasInputKeyJustPressed(EKeys::LeftMouseButton)))
+	{
+		ProcessPickRequest();
+	}
 	EnsureViewTargetAlive();
 	TickEdgeScroll(DeltaTime);
 }
@@ -428,7 +509,7 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 
 void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraRotationAllowed())
 	{
 		return;
 	}
@@ -440,7 +521,7 @@ void AFF_FestivalPlayerController::HandleRotate(const FInputActionValue& Value)
 
 void AFF_FestivalPlayerController::HandleSnapRotate(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraRotationAllowed())
 	{
 		return;
 	}
@@ -483,6 +564,18 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 
 void AFF_FestivalPlayerController::HandlePick(const FInputActionValue& Value)
 {
+	(void)Value;
+	ProcessPickRequest();
+}
+
+void AFF_FestivalPlayerController::ProcessPickRequest()
+{
+	if (bPickRequestHandledThisTick)
+	{
+		return;
+	}
+	bPickRequestHandledThisTick = true;
+
 	if (!IsPickingAllowed())
 	{
 		return;

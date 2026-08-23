@@ -30,16 +30,29 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Utility")
 	TSoftObjectPtr<UDataTable> UtilityCoefficientTable;
+	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	TSoftObjectPtr<UDataTable> ArchetypeTable;
+	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	FName ArchetypeScenarioId = TEXT("resident_neutral_v0");
+	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	TSoftObjectPtr<UDataTable> CompanionModifierTable;
+	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	TSoftObjectPtr<UDataTable> GroupSizeTable;
+	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	TSoftObjectPtr<UDataTable> ChildCompositionTable;
+	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	FName GroupScopeId = TEXT("tourism_daytrip");
+	
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Arrival")
+	TSoftObjectPtr<UDataTable> ArrivalCurveTable;
+	
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Arrival")
+	FName ArrivalScenarioId = TEXT("flat_v0");
+	
 };
