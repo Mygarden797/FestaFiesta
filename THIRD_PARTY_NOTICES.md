@@ -57,6 +57,37 @@
   - Earth Specular Map
 - 수정 예정: Unreal용 압축·리사이즈·색보정·머티리얼 변환 가능성 있음
 
+### 🔴 실제로 쓰는 파일은 파생물이다 (2026-08-23 추가)
+
+Unreal에 임포트해 실제로 쓰는 것은 **스타일라이즈 처리한 파생 폴더**다.
+CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3-a 구현 중 확인).
+
+⚠️ 2026-08-24 현재 `Content/FestaFiesta/UI/Atlas/Earth/` 에 **원본 2K 5장도 함께
+임포트되어 있다**(`2k_earth_*`). 머티리얼 작업 중에 들어간 것이고 파생물과 중복이다.
+둘 다 같은 팩·같은 라이선스라 표기 의무는 아래 문구로 함께 충족되지만,
+**원본을 그대로 쓰는 파일에는 "수정됨" 문구가 붙지 않아야** 한다.
+중복은 정리 대상이다 — 머티리얼이 아직 `2k_earth_daymap`·`2k_earth_nightmap` 을
+참조하므로 그래프의 미사용 노드를 지운 뒤에 에셋을 지운다.
+
+- 파생물 보관 경로: `SourceArt/ThirdParty/EarthTextures_Stylized01/`
+- 파생 원본: 같은 팩의 **2K** 판(`2k_earth_daymap.jpg` · `2k_earth_nightmap.jpg` · `2k_earth_clouds.jpg`)
+
+| 파생 파일 | 원본 | 수정 내용 |
+| --- | --- | --- |
+| `earth_day_soft_stylized.png` | `2k_earth_daymap.jpg` | 스타일라이즈 — 대비·채도를 조정해 캐주얼한 색조로. JPEG → PNG 무손실 재저장 |
+| `earth_night_soft_stylized.png` | `2k_earth_nightmap.jpg` | 같은 스타일라이즈 처리 |
+| `earth_clouds_soft_stylized.png` | `2k_earth_clouds.jpg` | 같은 스타일라이즈 처리 |
+| `earth_normal_original.tif` | `2k_earth_normal_map.tif` | **수정 없음** — 이름만 바꿔 함께 보관 |
+| `earth_specular_original.tif` | `2k_earth_specular_map.tif` | **수정 없음** — 이름만 바꿔 함께 보관 |
+
+- 파생 3종은 전부 2048×1024, 8비트 **RGB**다.
+  ⚠️ **알파 채널이 없다** — 구름 파생물도 RGB이므로 머티리얼에서 알파를 기대하지 말고
+  RGB 밝기(또는 R 채널)를 마스크로 쓴다.
+- 파일명의 `_original` 접미사가 **수정하지 않은 파일**을 뜻한다. 이 규칙을 유지한다 —
+  나중에 무엇을 고쳤는지 파일명만으로 판별할 수 있어야 크레딧 문구가 정확해진다.
+- 상태: 파생 3종은 `수정 완료`. 노멀·스페큘러는 `원본 그대로`.
+- 게임 내 표기는 **필수**다 (옵션의 `크레딧` 분류). U3-c에서 채운다.
+
 ### 지켜야 할 조건
 
 - 적절한 출처를 표시한다.
