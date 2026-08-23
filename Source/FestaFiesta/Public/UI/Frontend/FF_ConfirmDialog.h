@@ -76,6 +76,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
 	/** **항상 `취소` 다.** 되돌릴 수 없는 행동에서 기본 포커스가 `확인` 이면 사고가 난다. */

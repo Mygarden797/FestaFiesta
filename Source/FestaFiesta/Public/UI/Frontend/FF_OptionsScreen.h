@@ -60,6 +60,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeDestruct() override;
 

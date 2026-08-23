@@ -11,14 +11,25 @@
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
-void UFF_PlayHubScreen::NativeOnInitialized()
+void UFF_PlayHubScreen::NativeConstruct()
 {
-	Super::NativeOnInitialized();
+	Super::NativeConstruct();
 
-	// 버튼이 자기를 넘겨주므로 핸들러 하나로 넷을 구분한다.
+	// 🔴 구독은 `NativeConstruct` 다 — `NativeOnInitialized` 가 아니다.
+	//
+	// CommonUI 의 화면 스택은 위젯을 **풀에 넣고 재사용한다**
+	// (`UCommonActivatableWidgetContainerBase::AddWidgetInternal` → `GeneratedWidgetsPool`).
+	// `NativeOnInitialized` 는 인스턴스당 한 번뿐이고 `NativeDestruct` 는 스택에서 내려갈 때마다
+	// 돈다. 그래서 구독을 `NativeOnInitialized` 에 두면 —
+	//   ① 첫 진입: 구독됨, 버튼 동작
+	//   ② 뒤로: `NativeDestruct` 가 **해제**
+	//   ③ 다시 진입: 같은 인스턴스가 재사용되므로 `NativeOnInitialized` 가 돌지 않아 **버튼이 죽는다**
+	// 실제로 그렇게 죽었다 (2026-08-23, 플레이 허브의 `새 축제 시작`·`뒤로`).
+	// **구독과 해제의 수명이 같은 짝이어야 한다.**
 	const TArray<UFF_CommonButtonBase*> Buttons =
 		{ Button_Continue, Button_NewFestival, Button_SaveList, Button_Back };
 
+	// 버튼이 자기를 넘겨주므로 핸들러 하나로 넷을 구분한다.
 	for (UFF_CommonButtonBase* Button : Buttons)
 	{
 		if (Button)
@@ -26,8 +37,14 @@ void UFF_PlayHubScreen::NativeOnInitialized()
 			Button->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_PlayHubScreen::HandleButtonClicked);
 		}
 	}
+}
+
+void UFF_PlayHubScreen::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
 
 	// 문구를 코드에서 넣는다. WBP 마다 다르게 적히면 화면 문구가 갈라진다.
+	// 이쪽은 인스턴스에 한 번만 해도 되는 것이라 여기 남는다.
 	if (Button_Continue)
 	{
 		Button_Continue->SetButtonLabel(LOCTEXT("PlayHubContinue", "최근 축제 계속하기"));

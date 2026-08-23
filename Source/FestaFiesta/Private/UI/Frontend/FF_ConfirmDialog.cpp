@@ -10,14 +10,32 @@
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
-void UFF_ConfirmDialog::NativeOnInitialized()
+void UFF_ConfirmDialog::NativeConstruct()
 {
-	Super::NativeOnInitialized();
+	Super::NativeConstruct();
 
+	// 🔴 구독은 `NativeConstruct` 다. CommonUI 스택이 위젯을 풀에서 재사용하므로
+	// `NativeOnInitialized`(인스턴스당 한 번)에 구독하고 `NativeDestruct`(내려갈 때마다)에
+	// 해제하면 **두 번째로 띄운 확인창의 버튼이 죽는다.** 확인창은 반복해서 뜨는 화면이라
+	// 이 실수가 가장 먼저 드러나는 곳이다.
+	//
 	// 버튼이 자기를 넘겨주므로 핸들러 하나로 둘을 구분한다.
 	if (Button_Cancel)
 	{
 		Button_Cancel->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_ConfirmDialog::HandleButtonClicked);
+	}
+	if (Button_Confirm)
+	{
+		Button_Confirm->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_ConfirmDialog::HandleButtonClicked);
+	}
+}
+
+void UFF_ConfirmDialog::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	if (Button_Cancel)
+	{
 		Button_Cancel->SetButtonLabel(LOCTEXT("ConfirmDialogCancel", "취소"));
 	}
 	else
@@ -28,11 +46,7 @@ void UFF_ConfirmDialog::NativeOnInitialized()
 			*GetClass()->GetName());
 	}
 
-	if (Button_Confirm)
-	{
-		Button_Confirm->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_ConfirmDialog::HandleButtonClicked);
-	}
-	else
+	if (!Button_Confirm)
 	{
 		UE_LOG(LogFestaFiestaUI, Error,
 			TEXT("%s: Button_Confirm 바인딩이 없다."), *GetClass()->GetName());

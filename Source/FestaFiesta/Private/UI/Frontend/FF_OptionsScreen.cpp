@@ -11,12 +11,10 @@
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
-void UFF_OptionsScreen::NativeOnInitialized()
+namespace
 {
-	Super::NativeOnInitialized();
-
-	// 분류 버튼 여섯 개 + 뒤로. 버튼이 자기를 넘겨주므로 핸들러 하나로 구분한다.
-	static const EFF_OptionCategory AllCategories[] = {
+	// 옵션 분류 여섯 개. 구독과 문구 설정이 같은 목록을 봐야 한다.
+	const EFF_OptionCategory AllOptionCategories[] = {
 		EFF_OptionCategory::Language,
 		EFF_OptionCategory::Accessibility,
 		EFF_OptionCategory::Sound,
@@ -24,14 +22,40 @@ void UFF_OptionsScreen::NativeOnInitialized()
 		EFF_OptionCategory::Controls,
 		EFF_OptionCategory::Credits
 	};
+}
 
-	for (const EFF_OptionCategory Category : AllCategories)
+void UFF_OptionsScreen::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	// 🔴 구독은 `NativeConstruct` 다. CommonUI 스택이 위젯을 풀에서 재사용하므로
+	// `NativeOnInitialized`(인스턴스당 한 번)에 구독하고 `NativeDestruct`(내려갈 때마다)에
+	// 해제하면, 뒤로 갔다 다시 들어온 화면은 **버튼이 죽는다.**
+	// 버튼이 자기를 넘겨주므로 핸들러 하나로 구분한다.
+	for (const EFF_OptionCategory Category : AllOptionCategories)
 	{
 		if (UFF_CommonButtonBase* Button = GetCategoryButton(Category))
 		{
 			Button->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleCategoryClicked);
+		}
+	}
 
-			// 문구를 코드에서 넣는다. enum 의 DisplayName 이 곧 화면 문구다 —
+	if (Button_Back)
+	{
+		Button_Back->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleBackClicked);
+	}
+}
+
+void UFF_OptionsScreen::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	// 문구는 인스턴스에 한 번만 넣으면 된다.
+	for (const EFF_OptionCategory Category : AllOptionCategories)
+	{
+		if (UFF_CommonButtonBase* Button = GetCategoryButton(Category))
+		{
+			// enum 의 DisplayName 이 곧 화면 문구다 —
 			// WBP 마다 손으로 적으면 분류 이름이 갈라진다.
 			Button->SetButtonLabel(UEnum::GetDisplayValueAsText(Category));
 		}
@@ -45,7 +69,6 @@ void UFF_OptionsScreen::NativeOnInitialized()
 
 	if (Button_Back)
 	{
-		Button_Back->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_OptionsScreen::HandleBackClicked);
 		Button_Back->SetButtonLabel(LOCTEXT("OptionsBack", "뒤로"));
 	}
 }
@@ -62,17 +85,8 @@ void UFF_OptionsScreen::NativeOnActivated()
 
 void UFF_OptionsScreen::NativeDestruct()
 {
-	static const EFF_OptionCategory AllCategories[] = {
-		EFF_OptionCategory::Language,
-		EFF_OptionCategory::Accessibility,
-		EFF_OptionCategory::Sound,
-		EFF_OptionCategory::Graphics,
-		EFF_OptionCategory::Controls,
-		EFF_OptionCategory::Credits
-	};
-
 	// 해제는 조건부, 정리는 무조건.
-	for (const EFF_OptionCategory Category : AllCategories)
+	for (const EFF_OptionCategory Category : AllOptionCategories)
 	{
 		if (UFF_CommonButtonBase* Button = GetCategoryButton(Category))
 		{
@@ -192,16 +206,7 @@ void UFF_OptionsScreen::HandleReduceMotionToggled(bool bEnabled)
 
 void UFF_OptionsScreen::HandleCategoryClicked(UFF_CommonButtonBase* Button)
 {
-	static const EFF_OptionCategory AllCategories[] = {
-		EFF_OptionCategory::Language,
-		EFF_OptionCategory::Accessibility,
-		EFF_OptionCategory::Sound,
-		EFF_OptionCategory::Graphics,
-		EFF_OptionCategory::Controls,
-		EFF_OptionCategory::Credits
-	};
-
-	for (const EFF_OptionCategory Category : AllCategories)
+	for (const EFF_OptionCategory Category : AllOptionCategories)
 	{
 		if (GetCategoryButton(Category) == Button)
 		{

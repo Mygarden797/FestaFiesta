@@ -12,19 +12,35 @@
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
-void UFF_SaveListScreen::NativeOnInitialized()
+void UFF_SaveListScreen::NativeConstruct()
 {
-	Super::NativeOnInitialized();
+	Super::NativeConstruct();
 
+	// 🔴 구독은 `NativeConstruct` 다. CommonUI 스택이 위젯을 풀에서 재사용하므로
+	// `NativeOnInitialized`(인스턴스당 한 번)에 구독하고 `NativeDestruct`(내려갈 때마다)에
+	// 해제하면, 뒤로 갔다 다시 들어온 화면은 **버튼이 죽는다.**
+	//
+	// 이 화면은 특히 중요하다 — Provider 는 위젯보다 **오래 사는 서브시스템**이라
+	// 해제를 빼면 죽은 위젯을 역참조한다. 즉 해제를 없앨 수 없고, 구독을 옮기는 것이 답이다.
 	if (Button_Back)
 	{
 		Button_Back->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_SaveListScreen::HandleBackClicked);
-		Button_Back->SetButtonLabel(LOCTEXT("SaveListBack", "뒤로"));
 	}
 
 	if (UFF_SaveListProvider* Provider = UFF_SaveListProvider::Get(this))
 	{
 		Provider->OnSaveListChanged.AddUniqueDynamic(this, &UFF_SaveListScreen::HandleSaveListChanged);
+	}
+}
+
+void UFF_SaveListScreen::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	// 문구는 인스턴스에 한 번만 넣으면 된다.
+	if (Button_Back)
+	{
+		Button_Back->SetButtonLabel(LOCTEXT("SaveListBack", "뒤로"));
 	}
 }
 
