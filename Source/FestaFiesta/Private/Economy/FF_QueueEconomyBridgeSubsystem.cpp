@@ -2,7 +2,13 @@
 
 
 #include "Economy/FF_QueueEconomyBridgeSubsystem.h"
-
+#include "Building/FF_FacilityNamingLibrary.h"
+#include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "Economy/Rules/FF_BoothRevenueRules.h"
+#include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSWorldSubsystem.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "Economy/FF_EconomyLog.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -47,27 +53,73 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 	// 결제가 없는 퇴장은 여기서 끝낸다.
 	if (!IsPaidExit(ExitType)) return;
 
-	// TODO(스텝 4): 여기부터가 실제 매출 경로
-	//
+	UWorld* World = GetWorld();
+	if (World == nullptr) return;
+
+	UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
+	if (Progression == nullptr || !Progression->IsFestivalStarted()) return;
+
+	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
+	if (Definition == nullptr) return;
+
 	//   [1] Queue 의 FacilityId(int32) → Zone 의 FGuid
-	//      UFF_ZoneSystemQueueBridgeSubsystem::FindZoneFacilityId() 가 역매핑을 갖고 있다.
-	//
-	//   [2] FGuid → FacilityDefinitionId → 소분류 토큰
-	//      UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId() 가 파싱을 갖는다.
-	//
-	//   [3] 소분류 토큰 → 객단가
-	//      FFF_BoothRevenueRules::FindRevenuePerUse(). 표에 없으면 0 이고,
-	//      그때 시설당 한 번만 Warning 을 남긴다(네이밍 컨벤션 위반 진단).
-	//
-	//   [4] 인원
-	//      OnPartyExited 에는 인원이 없다. 
-	//      UFF_CrowdSimulationSubsystem::GetPartyMembers(PartyId)로 얻는다.
-	//
-	//   [5] 수수료 계산 → 원장
-	//      FFF_BoothRevenueRules::ResolveCommission() 뒤 AddRevenue(..., FacilityCommission, FacilityId).
-	//      0 이면 AddRevenue 를 부르지 않는다.
-	//
-	// WaitedSeconds 는 쓰지 않는다.
+	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge =
+			World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+	if (QueueBridge == nullptr) return;
+
+	const FGuid ZoneFacilityId = QueueBridge->FindZoneFacilityId(FacilityId);
+	if (!ZoneFacilityId.IsValid()) return;
+
+	//   [2] FGuid → 시설 사양
+	const UFFZSWorldSubsystem* ZoneSystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+	const AFFZSFacilityActor* Facility = ZoneSystem ? ZoneSystem->FindFacility(ZoneFacilityId) : nullptr;
+	if (Facility == nullptr) return;
+
+	const FFFZSFacilitySpec& Spec = Facility->GetFacilitySpec();
+	
+	//   [3] FacilityDefinitionId → 소분류 토큰
+	FFF_FacilityNameParts Parts;
+	FString FailureReason;
+	if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			Spec.Category, Spec.FacilityDefinitionId, Parts, FailureReason))
+	{
+		// 이 부스는 앞으로도 계속 매출이 0 이다. 조용히 두면 "인기 없는 부스" 로 보인다.
+		if (!WarnedNamingViolations.Contains(Spec.FacilityDefinitionId))
+		{
+			WarnedNamingViolations.Add(Spec.FacilityDefinitionId);
+			UE_LOG(LogFestaFiestaEconomy, Warning,
+				TEXT("[경제] 시설 '%s' 의 이름을 읽지 못해 수수료를 못 받는다: %s"),
+				*Spec.FacilityDefinitionId.ToString(), *FailureReason);
+		}
+		return;
+	}
+	
+	//   [4] 소분류 → 객단가. 0 은 무료 시설이라 정상 경로다(휴식·포토존·공연)
+	const int32 RevenuePerUse = FFF_BoothRevenueRules::FindRevenuePerUse(
+		Definition->RevenuePerUseByMinorToken, Parts.MinorToken);
+	if (RevenuePerUse <= 0) return;
+
+	//   [5] 인원
+	// Served 는 퇴장이 아니라 이용 종료라 이 시점에 파티가 살아 있어야 한다.
+	const UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	if (Crowd == nullptr) return;
+
+	const int32 MemberCount = Crowd->GetPartyMembers(PartyId).Num();
+	if (MemberCount <= 0)
+	{
+		// 결제 한 건이 통째로 사라진다. 여기는 매번 알린다 — 반복되면 그 자체가 신호다.
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 파티 %d 가 시설 '%s' 이용을 마쳤는데 인원을 찾을 수 없다. 수수료를 못 받는다."),
+			PartyId, *Spec.FacilityDefinitionId.ToString());
+		return;
+	}
+	
+	// [6] 수수료 → 원장.
+	const int32 Commission = FFF_BoothRevenueRules::ResolveCommission(
+		RevenuePerUse, MemberCount, Definition->BoothCommissionRate);
+	if (Commission <= 0) return;
+
+	Progression->AddRevenue(Commission, EFF_EarnReason::FacilityCommission, Spec.FacilityDefinitionId);
 }
 
 UFF_FestivalProgressionSubsystem*

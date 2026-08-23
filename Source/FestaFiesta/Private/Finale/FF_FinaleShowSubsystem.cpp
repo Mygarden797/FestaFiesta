@@ -15,6 +15,45 @@
 #include "NiagaraParameterStore.h"
 #include "NiagaraSystem.h"
 
+namespace
+{
+	// 콘솔 명령 이름은 IConsoleManager 가 **프로세스 전역**으로 들고 있는데,
+	// 이 서브시스템은 **월드마다** 만들어진다. 수명이 어긋난다.
+	//
+	// 자동화 테스트는 월드를 수십 개 만들고 부순다. 인스턴스가 무조건 등록·해제하면
+	// 같은 이름을 두 인스턴스가 나눠 갖게 되고, 앞 월드가 지운 객체를 뒤 월드가
+	// 다시 지우면서 해제된 가상 함수 테이블로 점프한다(EXCEPTION_ACCESS_VIOLATION).
+	//
+	// 그래서 규칙을 둘로 고정한다.
+	//   등록: 그 이름이 비어 있을 때만 등록하고, 아니면 포인터를 들지 않는다.
+	//   해제: 내가 등록한 그 객체가 아직 그 이름의 주인일 때만 지운다.
+	const TCHAR* const FinalePlayCommandName = TEXT("FF.Finale.Play");
+	const TCHAR* const FinaleStopCommandName = TEXT("FF.Finale.Stop");
+	const TCHAR* const FinaleStatCommandName = TEXT("FF.Finale.Stat");
+
+	bool IsConsoleNameFree(const TCHAR* Name)
+	{
+		return IConsoleManager::Get().FindConsoleObject(Name, false) == nullptr;
+	}
+
+	void UnregisterOwnedConsoleCommand(IConsoleCommand*& Command, const TCHAR* Name)
+	{
+		if (Command == nullptr)
+		{
+			return;
+		}
+
+		IConsoleManager& ConsoleManager = IConsoleManager::Get();
+		if (ConsoleManager.FindConsoleObject(Name, false) == Command)
+		{
+			ConsoleManager.UnregisterConsoleObject(Command);
+		}
+
+		// 주인이 아니어도 포인터는 반드시 버린다. 남겨두면 다음 해제에서 같은 사고가 난다.
+		Command = nullptr;
+	}
+}
+
 bool UFF_FinaleShowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
@@ -134,8 +173,15 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 	// 중복 등록 방어. 어떤 이유로 해제가 안 됐어도 두 번째 PIE 가 조용히 망가지지 않게 한다.
 	UnregisterDebugConsoleCommands();
 
+	// 세 명령은 한 인스턴스가 함께 갖는다. 다른 월드가 이미 갖고 있으면 통째로 넘긴다.
+	// 명령은 프로세스에 하나면 충분하고, 두 인스턴스가 같은 객체를 나눠 갖는 것이 사고의 원인이다.
+	if (!IsConsoleNameFree(FinalePlayCommandName))
+	{
+		return;
+	}
+
 	PlayConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.Finale.Play"),
+		FinalePlayCommandName,
 		TEXT("피날레 연출을 즉시 재생한다. 사용법: FF.Finale.Play [None|C|B|A|S]  등급 생략 시 구매한 등급"),
 		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
 		{
@@ -162,7 +208,7 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 		}));
 
 	StopConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.Finale.Stop"),
+		FinaleStopCommandName,
 		TEXT("진행 중인 피날레 연출을 중단하고 시점을 되돌린다."),
 		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
 		{
@@ -170,7 +216,7 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 		}));
 
 	StatConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.Finale.Stat"),
+		FinaleStatCommandName,
 		TEXT("현재 연출 상태와 등급별 수치를 출력한다."),
 		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
 		{
@@ -206,26 +252,12 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 
 void UFF_FinaleShowSubsystem::UnregisterDebugConsoleCommands()
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
 	// 해제는 조건부, 정리는 무조건.
-	if (PlayConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(PlayConsoleCommand);
-	}
-	PlayConsoleCommand = nullptr;
-
-	if (StopConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(StopConsoleCommand);
-	}
-	StopConsoleCommand = nullptr;
-
-	if (StatConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
-	}
-	StatConsoleCommand = nullptr;
+	// 조건이 "포인터가 있는가" 만이면 부족하다 — 다른 월드가 이미 지운 객체를 가리키고
+	// 있을 수 있어서, 그 이름의 현재 주인이 나인지까지 확인한다.
+	UnregisterOwnedConsoleCommand(PlayConsoleCommand, FinalePlayCommandName);
+	UnregisterOwnedConsoleCommand(StopConsoleCommand, FinaleStopCommandName);
+	UnregisterOwnedConsoleCommand(StatConsoleCommand, FinaleStatCommandName);
 }
 
 AFF_FestivalPlayerController* UFF_FinaleShowSubsystem::GetFestivalController() const

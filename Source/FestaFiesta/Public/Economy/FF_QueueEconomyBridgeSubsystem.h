@@ -47,4 +47,8 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UFF_QueueSubsystem> Queue;
+	
+	// 네이밍 컨벤션 위반을 시설 정의당 한 번만 알린다.
+	UPROPERTY()
+	TSet<FName> WarnedNamingViolations;
 };
