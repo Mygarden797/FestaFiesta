@@ -13,6 +13,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/Atlas/FF_AtlasCameraRig.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
 #include "UI/Core/FF_UIRootLayout.h"
@@ -429,6 +430,16 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 		Options->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
 	}
 
+	// 카메라 연출. 리그는 **없어도 되는 것**이라 못 찾아도 조용히 지나간다 (경고를 끈다) —
+	// 화면이 바뀔 때마다 부르므로 리그 없는 레벨에서 경고가 쌓이면 로그가 쓸모없어진다.
+	//
+	// 레벨이 막 열려 첫 화면을 올리는 경우(`PreviousScreen == None`)는 **즉시**다.
+	// 섞을 이전 구도가 없는데 블렌드를 걸면 엉뚱한 곳에서 날아온다.
+	if (AFF_AtlasCameraRig* CameraRig = AFF_AtlasCameraRig::Find(this, /*bLogIfMissing=*/false))
+	{
+		CameraRig->ViewForScreen(Screen, /*bInstant=*/PreviousScreen == EFF_UIFlowScreen::None);
+	}
+
 	if (IsVerbose())
 	{
 		UE_LOG(LogFestaFiestaUI, Log, TEXT("UFF_UIFlowSubsystem: 프론트엔드 화면 -> %s"),
@@ -448,6 +459,13 @@ bool UFF_UIFlowSubsystem::GoBack()
 	CurrentFrontendScreen = FrontendHistory.Num() > 0
 		? FrontendHistory.Pop()
 		: EFF_UIFlowScreen::None;
+
+	// 뒤로 갈 때 카메라도 되돌아간다. **지구 각도와 국가 선택은 유지한다** —
+	// 그건 지구 액터가 들고 있고 여기서 건드리지 않는다 (리셋하면 답답하다).
+	if (AFF_AtlasCameraRig* CameraRig = AFF_AtlasCameraRig::Find(this, /*bLogIfMissing=*/false))
+	{
+		CameraRig->ViewForScreen(CurrentFrontendScreen);
+	}
 
 	return true;
 }
