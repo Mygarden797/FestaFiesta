@@ -11,9 +11,13 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Overlay.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
+#include "Components/StaticMeshComponent.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/DataTable.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
@@ -24,6 +28,7 @@
 #include "Misc/PackageName.h"
 #include "Misc/SecureHash.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
+#include "UI/Minigame/FF_SurfingSceneActor.h"
 #include "WidgetBlueprint.h"
 
 namespace FFSurfingAssetTestHelpers
@@ -406,10 +411,12 @@ bool FFF_SurfingWidgetAssetContractTest::RunTest(const FString& Parameters)
 	(void)Parameters;
 	using namespace FFSurfingAssetTestHelpers;
 
-	TestTrue(TEXT("롤백용 legacy WBP package가 보존된다"),
-		FPackageName::DoesPackageExist(LegacyScreenPackage));
-	TestTrue(TEXT("롤백용 Edge WBP package가 보존된다"),
-		FPackageName::DoesPackageExist(EdgeScreenPackage));
+	// Rollback WBPs are optional in a clean checkout. When present, the builder's
+	// idempotence test below verifies that their exact files stay untouched.
+	AddInfo(FString::Printf(
+		TEXT("Optional rollback WBPs: legacy=%s edge=%s"),
+		FPackageName::DoesPackageExist(LegacyScreenPackage) ? TEXT("present") : TEXT("absent"),
+		FPackageName::DoesPackageExist(EdgeScreenPackage) ? TEXT("present") : TEXT("absent")));
 
 	UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, FreeRideScreenObjectPath);
 	if (!TestNotNull(TEXT("새 FreeRide Surfing WBP가 로드된다"), Blueprint))
@@ -660,6 +667,134 @@ bool FFF_SurfingNativeFallbackContractTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_Surfing3DPresentationContractTest,
+	"FestaFiesta.Minigame.Surfing.UI.ThreeDimensionalPresentationContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_Surfing3DPresentationContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("3D 서핑 계약 검증용 EditorWorld가 존재한다"), EditorWorld))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	AFF_SurfingSceneActor* SceneActor = EditorWorld->SpawnActor<AFF_SurfingSceneActor>(
+		AFF_SurfingSceneActor::StaticClass(),
+		FVector(400000.0, 400000.0, 100000.0),
+		FRotator::ZeroRotator,
+		SpawnParameters);
+	if (!TestNotNull(TEXT("transient 3D 서핑 scene actor가 생성된다"), SceneActor))
+	{
+		return false;
+	}
+
+	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(
+		SceneActor, UTextureRenderTarget2D::StaticClass(), NAME_None, RF_Transient);
+	if (!TestNotNull(TEXT("3D 서핑 전용 render target이 생성된다"), RenderTarget))
+	{
+		SceneActor->Destroy();
+		return false;
+	}
+	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
+	RenderTarget->InitAutoFormat(640, 360);
+
+	FFF_SurfingVisualStyle Style;
+	SceneActor->InitializeScene(Style, RenderTarget);
+	TestTrue(TEXT("수면, 카메라, 보드와 라이더가 3D scene을 구성한다"),
+		SceneActor->IsSceneReady());
+	TestEqual(TEXT("라이더는 몸통, 머리, 양팔, 양다리의 6개 3D 파트다"),
+		SceneActor->GetRiderMeshPartCount(), 6);
+
+	USceneCaptureComponent2D* Capture = SceneActor->GetSceneCaptureComponent();
+	if (TestNotNull(TEXT("SceneCapture2D 카메라가 존재한다"), Capture))
+	{
+		TestTrue(TEXT("SceneCapture는 자기 arena만 show-only 렌더한다"),
+			Capture->PrimitiveRenderMode
+				== ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList
+			&& Capture->ShowOnlyActors.Contains(SceneActor));
+		TestTrue(TEXT("SceneCapture는 전용 render target을 사용한다"),
+			Capture->TextureTarget == RenderTarget);
+	}
+
+	FFF_SurfingSnapshot Snapshot;
+	Snapshot.ArenaHorizontalMetricScale = 2.0f;
+	Snapshot.PlayerPositionNormalized = FVector2D(0.40f, 0.25f);
+	Snapshot.CurrentHeading = FVector2D(0.5f, 1.0f).GetSafeNormal();
+	Snapshot.bBoosting = true;
+	for (int32 Index = 0; Index < 6; ++Index)
+	{
+		FFF_SurfingObjectSnapshot& Object = Snapshot.VisibleObjects.AddDefaulted_GetRef();
+		Object.ObjectId = 100 + Index;
+		Object.Type = static_cast<EFF_SurfingObjectType>(Index);
+		Object.PositionNormalized = FVector2D(
+			-0.75f + Index * 0.30f,
+			-0.60f + Index * 0.22f);
+		Object.CollisionRadiusNormalized = 0.055f + Index * 0.005f;
+	}
+	SceneActor->ApplySnapshot(Snapshot);
+	TestEqual(TEXT("여섯 종류의 코스 객체가 모두 3D component로 생성된다"),
+		SceneActor->GetVisibleCourseObjectCount(), 6);
+
+	const FVector ExpectedPlayerLocation(362.5, 1160.0, 76.0);
+	TestTrue(TEXT("정규화 좌표는 충돌 metric을 보존한 3D 수면 좌표가 된다"),
+		SceneActor->GetPlayerSceneLocalLocation().Equals(ExpectedPlayerLocation, 0.1));
+	const FVector2D RoundTrip = SceneActor->SceneLocalToArena(
+		SceneActor->ArenaToSceneLocal(FVector2D(-0.35f, 0.65f), 0.0f));
+	TestTrue(TEXT("arena 정규화 좌표와 3D 좌표 변환은 왕복 가능하다"),
+		RoundTrip.Equals(FVector2D(-0.35f, 0.65f), 0.001f));
+
+	TArray<UStaticMeshComponent*> MeshComponents;
+	SceneActor->GetComponents<UStaticMeshComponent>(MeshComponents);
+	TestTrue(TEXT("수면, 캐릭터, 파도와 코스가 실제 3D mesh component다"),
+		MeshComponents.Num() >= 24);
+	for (const UStaticMeshComponent* MeshComponent : MeshComponents)
+	{
+		if (!MeshComponent)
+		{
+			continue;
+		}
+		TestTrue(*FString::Printf(
+			TEXT("3D mesh %s는 메인 월드가 아닌 SceneCapture에만 보인다"),
+			*MeshComponent->GetName()),
+			MeshComponent->bVisibleInSceneCaptureOnly);
+		TestEqual(*FString::Printf(
+			TEXT("3D 표현 mesh %s는 gameplay collision을 만들지 않는다"),
+			*MeshComponent->GetName()),
+			MeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+	}
+
+	const FVector BeforeMove = SceneActor->GetPlayerSceneLocalLocation();
+	Snapshot.PlayerPositionNormalized = FVector2D(-0.30f, -0.45f);
+	Snapshot.CurrentHeading = FVector2D(-0.25f, -1.0f).GetSafeNormal();
+	SceneActor->ApplySnapshot(Snapshot);
+	SceneActor->Tick(0.10f);
+	const FVector AfterMove = SceneActor->GetPlayerSceneLocalLocation();
+	TestTrue(TEXT("새 입력 snapshot을 받으면 3D 보드와 캐릭터가 함께 이동한다"),
+		!AfterMove.Equals(BeforeMove, 1.0f)
+		&& AfterMove.Equals(SceneActor->ArenaToSceneLocal(
+			Snapshot.PlayerPositionNormalized, 76.0f), 8.0f));
+
+	FVector2D CenterArenaPoint;
+	TestTrue(TEXT("마우스 capture 좌표를 3D 수면 위치로 역투영할 수 있다"),
+		SceneActor->DeprojectCapturePointToArena(
+			FVector2D(0.5f, 0.5f), CenterArenaPoint)
+		&& FMath::IsFinite(CenterArenaPoint.X)
+		&& FMath::IsFinite(CenterArenaPoint.Y));
+
+	SceneActor->ReleaseScene();
+	TestTrue(TEXT("release 시 SceneCapture와 render target 연결을 해제한다"),
+		Capture && Capture->TextureTarget == nullptr && !SceneActor->IsSceneReady());
+	TestTrue(TEXT("검증 후 transient 3D scene actor를 정리한다"), SceneActor->Destroy());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingAssetIdempotentReuseContractTest,
 	"FestaFiesta.Minigame.Surfing.Content.IdempotentReuseContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -697,13 +832,21 @@ bool FFF_SurfingAssetIdempotentReuseContractTest::RunTest(const FString& Paramet
 		return false;
 	}
 
-	const TArray<FString> PreservedPackages = {
-		LegacyScreenPackage,
-		EdgeScreenPackage,
+	const bool bLegacyExistedBefore = FPackageName::DoesPackageExist(LegacyScreenPackage);
+	const bool bEdgeExistedBefore = FPackageName::DoesPackageExist(EdgeScreenPackage);
+	TArray<FString> PreservedPackages = {
 		FreeRideScreenPackage,
 		CourseTablePackage,
 		DefinitionPackage,
 	};
+	if (bLegacyExistedBefore)
+	{
+		PreservedPackages.Insert(LegacyScreenPackage, 0);
+	}
+	if (bEdgeExistedBefore)
+	{
+		PreservedPackages.Insert(EdgeScreenPackage, bLegacyExistedBefore ? 1 : 0);
+	}
 	TArray<FDateTime> TimestampsBefore;
 	TArray<FMD5Hash> HashesBefore;
 	for (const FString& PackageName : PreservedPackages)
@@ -764,10 +907,10 @@ bool FFF_SurfingAssetIdempotentReuseContractTest::RunTest(const FString& Paramet
 				*PreservedPackages[Index]),
 			HashAfter.IsValid() && HashAfter == HashesBefore[Index]);
 	}
-	TestTrue(TEXT("재실행 후에도 legacy WBP package가 보존된다"),
-		FPackageName::DoesPackageExist(LegacyScreenPackage));
-	TestTrue(TEXT("재실행 후에도 Edge WBP package가 보존된다"),
-		FPackageName::DoesPackageExist(EdgeScreenPackage));
+	TestEqual(TEXT("재실행은 legacy WBP의 존재 상태를 바꾸지 않는다"),
+		FPackageName::DoesPackageExist(LegacyScreenPackage), bLegacyExistedBefore);
+	TestEqual(TEXT("재실행은 Edge WBP의 존재 상태를 바꾸지 않는다"),
+		FPackageName::DoesPackageExist(EdgeScreenPackage), bEdgeExistedBefore);
 	return true;
 }
 
