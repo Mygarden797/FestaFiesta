@@ -10,7 +10,7 @@
 
 namespace
 {
-	constexpr EAutomationTestFlags TestFlags =
+	constexpr EAutomationTestFlags TargetShootingTestFlags =
 		EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter;
 
 	FFF_MinigameSessionContext MakeContext(const int32 Seed = 20260824)
@@ -52,7 +52,7 @@ namespace
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_TargetShootingScoringTest,
 	"FestaFiesta.Minigame.TargetShooting.Scoring",
-	TestFlags)
+	TargetShootingTestFlags)
 
 bool FFF_TargetShootingScoringTest::RunTest(const FString& Parameters)
 {
@@ -222,7 +222,7 @@ bool FFF_TargetShootingScoringTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_TargetShootingDeterministicTargetsTest,
 	"FestaFiesta.Minigame.TargetShooting.DeterministicTargets",
-	TestFlags)
+	TargetShootingTestFlags)
 
 bool FFF_TargetShootingDeterministicTargetsTest::RunTest(const FString& Parameters)
 {
@@ -287,7 +287,7 @@ bool FFF_TargetShootingDeterministicTargetsTest::RunTest(const FString& Paramete
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_TargetShootingDuplicateInputTest,
 	"FestaFiesta.Minigame.TargetShooting.DuplicateTargetInputIgnored",
-	TestFlags)
+	TargetShootingTestFlags)
 
 bool FFF_TargetShootingDuplicateInputTest::RunTest(const FString& Parameters)
 {
@@ -342,7 +342,7 @@ bool FFF_TargetShootingDuplicateInputTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_TargetShootingSessionRewardOnceTest,
 	"FestaFiesta.Minigame.TargetShooting.SessionRewardOnce",
-	TestFlags)
+	TargetShootingTestFlags)
 
 bool FFF_TargetShootingSessionRewardOnceTest::RunTest(const FString& Parameters)
 {

@@ -13,7 +13,7 @@
 
 namespace
 {
-	constexpr EAutomationTestFlags TestFlags =
+	constexpr EAutomationTestFlags SurfingTestFlags =
 		EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter;
 	constexpr float FixedStepSeconds = 1.0f / 60.0f;
 
@@ -185,7 +185,7 @@ namespace
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingRulesTest,
 	"FestaFiesta.Minigame.Surfing.RulesAndDefinition",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 {
@@ -344,7 +344,7 @@ bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingDeterminismTest,
 	"FestaFiesta.Minigame.Surfing.FixedTickDeterminism",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingDeterminismTest::RunTest(const FString& Parameters)
 {
@@ -485,7 +485,7 @@ bool FFF_SurfingDeterminismTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingInputTest,
 	"FestaFiesta.Minigame.Surfing.ContinuousInputAndBounds",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 {
@@ -644,7 +644,7 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingArenaLayoutSweptTest,
 	"FestaFiesta.Minigame.Surfing.ArenaLayoutAndSweptCollision",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingArenaLayoutSweptTest::RunTest(const FString& Parameters)
 {
@@ -759,7 +759,7 @@ bool FFF_SurfingArenaLayoutSweptTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingCollisionPickupBoostTest,
 	"FestaFiesta.Minigame.Surfing.CollisionPickupsAndBoost",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingCollisionPickupBoostTest::RunTest(const FString& Parameters)
 {
@@ -860,7 +860,7 @@ bool FFF_SurfingCollisionPickupBoostTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingHitInvincibilityTest,
 	"FestaFiesta.Minigame.Surfing.HitInvincibilityAndZeroLives",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingHitInvincibilityTest::RunTest(const FString& Parameters)
 {
@@ -904,7 +904,7 @@ bool FFF_SurfingHitInvincibilityTest::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingEndRewardTest,
 	"FestaFiesta.Minigame.Surfing.EndAndRewardOnce",
-	TestFlags)
+	SurfingTestFlags)
 
 bool FFF_SurfingEndRewardTest::RunTest(const FString& Parameters)
 {
