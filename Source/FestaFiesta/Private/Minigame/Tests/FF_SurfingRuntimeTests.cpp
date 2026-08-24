@@ -495,7 +495,9 @@ bool FFF_SurfingDeterminismTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingInputTest,
+
 	"FestaFiesta.Minigame.Surfing.ContinuousInputAndEndlessCourse",
+
 	SurfingTestFlags)
 
 bool FFF_SurfingInputTest::RunTest(const FString& Parameters)

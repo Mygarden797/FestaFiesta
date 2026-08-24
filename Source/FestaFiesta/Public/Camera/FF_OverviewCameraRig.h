@@ -54,6 +54,16 @@ public:
 	// 탭 회전. 가장 가까운 스냅 각도로 붙인다.
 	void SnapRotate(int32 Direction);
 
+	// 지면 높이를 알려준다. 리그는 월드를 모르므로 트레이스는 Pawn 이 하고 결과만 받는다.
+	//
+	// 즉시 붙이지 않고 GroundFollowSpeed 로 따라간다. 계단이나 턱을 지날 때
+	// 초점이 순간이동하면 화면이 튄다.
+	void ApplyGroundHeight(float GroundZ, float DeltaSeconds);
+
+	// 지면을 못 찾았을 때. 마지막 높이를 유지한다.
+	// 0 으로 되돌리면 절벽이나 물 위를 지날 때 카메라가 바닥으로 떨어진다.
+	void OnGroundHeightUnavailable();
+
 	// 특정 지점을 화면 중앙에 둔다. NPC 추적이나 시설 포커스에 쓴다.
 	void FocusOn(const FVector& WorldLocation);
 
@@ -97,6 +107,9 @@ private:
 	FFF_OverviewCameraSettings Settings;
 	FFF_OverviewCameraState Target;
 	FFF_OverviewCameraState Display;
+
+	// 지면 높이를 한 번이라도 받았는지. 받기 전에는 초기 Z 를 그대로 쓴다.
+	bool bHasGroundHeight = false;
 
 	FVector InitialFocusLocation = FVector::ZeroVector;
 	float InitialArmLength = 8000.f;

@@ -12,6 +12,7 @@
 class UAbilitySystemComponent;
 class UFF_TriggerInteractionDataAsset;
 class UFF_GameplayAbility_TriggerInteraction;
+class USphereComponent;
 
 UCLASS()
 class FESTAFIESTA_API AFF_TriggerInteractionActor : public AActor, public IAbilitySystemInterface
@@ -40,6 +41,22 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Trigger")
 	void TryStartInteraction();
-	// 상호작용 키 입력 시 기능를 직접 발동시키는 함수
+	// 상호작용 키 입력 시 기능를 호출하는 함수
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	TObjectPtr<class USphereComponent> InteractionRange;
+	// 플레이어가 접근을 감지하는 범위
+
+	UPROPERTY(BlueprintReadOnly, Category = "Trigger")
+	bool bPlayerInRange = false;
+	// 지금 플레이어가 범위 안에 있는지 여부
+
+	UFUNCTION()
+	void OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	// 플레이어가 감지 범위 안으로 들어왔을 때 실행되는 이벤트
+
+	UFUNCTION()
+	void OnRangeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+	// 플레이어가 감지 범위 밖으로 벗어났을 때 실행되는 이벤트
 
 };
