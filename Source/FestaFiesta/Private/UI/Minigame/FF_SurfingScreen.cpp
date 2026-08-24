@@ -27,7 +27,7 @@ namespace
 	constexpr TCHAR SurfingBackdropPath[] =
 		TEXT("/Game/FestaFiesta/UI/Minigame/AAA/T_MG_Surfing_Backdrop_AAA.T_MG_Surfing_Backdrop_AAA");
 
-	void StyleNativeText(
+	void StyleSurfingNativeText(
 		UTextBlock* TextBlock,
 		const float FontSize,
 		const FLinearColor& Color = FLinearColor::White)
@@ -121,7 +121,7 @@ namespace
 			TextBlock->SetText(Text);
 			TextBlock->SetJustification(ETextJustify::Center);
 			TextBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
-			StyleNativeText(TextBlock, FontSize, Color);
+			StyleSurfingNativeText(TextBlock, FontSize, Color);
 		}
 		return TextBlock;
 	}
