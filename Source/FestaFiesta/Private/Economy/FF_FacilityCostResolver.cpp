@@ -6,6 +6,42 @@
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
 
+namespace
+{
+	bool ResolveConventionCostKeys(
+		const FFFZSFacilitySpec& Spec,
+		FName& OutFacilityKey,
+		FName& OutMinorKey,
+		FString& OutFailureReason)
+	{
+		OutFacilityKey = NAME_None;
+		OutMinorKey = NAME_None;
+		OutFailureReason.Reset();
+
+		FFF_FacilityNameParts Parts;
+		if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			Spec.Category, Spec.FacilityDefinitionId, Parts, OutFailureReason))
+		{
+			if (OutFailureReason.IsEmpty())
+			{
+				OutFailureReason = TEXT("FacilityDefinitionId가 비어 있어 설치비 키를 만들 수 없다.");
+			}
+			return false;
+		}
+
+		OutFacilityKey = FName(*FString::Printf(
+			TEXT("Cost.%s.%s.%s"),
+			*Parts.MajorToken.ToString(),
+			*Parts.MinorToken.ToString(),
+			*Parts.UniqueToken));
+		OutMinorKey = FName(*FString::Printf(
+			TEXT("Cost.%s.%s"),
+			*Parts.MajorToken.ToString(),
+			*Parts.MinorToken.ToString()));
+		return true;
+	}
+}
+
 bool FFF_FacilityCostResolver::ResolveCostKey(
 	const FFFZSFacilitySpec& Spec,
 	FName& OutCostKey,
@@ -21,20 +57,8 @@ bool FFF_FacilityCostResolver::ResolveCostKey(
 		return true;
 	}
 
-	FFF_FacilityNameParts Parts;
-	if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
-		Spec.Category, Spec.FacilityDefinitionId, Parts, OutFailureReason))
-	{
-		if (OutFailureReason.IsEmpty())
-		{
-			OutFailureReason = TEXT("FacilityDefinitionId가 비어 있어 설치비 키를 만들 수 없다.");
-		}
-		return false;
-	}
-
-	OutCostKey = FName(*FString::Printf(TEXT("Cost.%s.%s"),
-		*Parts.MajorToken.ToString(), *Parts.MinorToken.ToString()));
-	return true;
+	FName UnusedMinorKey;
+	return ResolveConventionCostKeys(Spec, OutCostKey, UnusedMinorKey, OutFailureReason);
 }
 
 bool FFF_FacilityCostResolver::FindInstallCost(
@@ -54,8 +78,14 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 		return false;
 	}
 
-	FName ExactKey;
-	if (!ResolveCostKey(Spec, ExactKey, OutFailureReason))
+	FName ExactKey = NAME_None;
+	FName LegacyMinorKey = NAME_None;
+	if (!Spec.InstallCostKey.IsNone())
+	{
+		ExactKey = Spec.InstallCostKey;
+	}
+	else if (!ResolveConventionCostKeys(
+		Spec, ExactKey, LegacyMinorKey, OutFailureReason))
 	{
 		return false;
 	}
@@ -66,6 +96,19 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 		OutInstallCost = ExactRow->InstallCost;
 		OutMatchedRow = ExactKey;
 		return true;
+	}
+
+	// 4단계 시설별 행이 아직 저작되지 않은 콘텐츠는 기존 3단계 소분류 가격을 계속 사용한다.
+	// 명시 InstallCostKey는 예외 가격 계약이므로 이 자동 폴백을 적용하지 않는다.
+	if (!LegacyMinorKey.IsNone())
+	{
+		if (const FFF_FacilityCostRow* MinorRow =
+			CostTable->FindRow<FFF_FacilityCostRow>(LegacyMinorKey, Context, false))
+		{
+			OutInstallCost = MinorRow->InstallCost;
+			OutMatchedRow = LegacyMinorKey;
+			return true;
+		}
 	}
 
 	const FName MajorToken = UFF_FacilityNamingLibrary::GetMajorToken(Spec.Category);
@@ -80,8 +123,14 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 		}
 	}
 
-	OutFailureReason = FString::Printf(
-		TEXT("설치비 행 '%s'와 카테고리 Default 행을 모두 찾지 못했다."), *ExactKey.ToString());
+	OutFailureReason = LegacyMinorKey.IsNone()
+		? FString::Printf(
+			TEXT("설치비 행 '%s'와 카테고리 Default 행을 모두 찾지 못했다."),
+			*ExactKey.ToString())
+		: FString::Printf(
+			TEXT("시설별 설치비 행 '%s', 소분류 호환 행 '%s', 카테고리 Default 행을 모두 찾지 못했다."),
+			*ExactKey.ToString(),
+			*LegacyMinorKey.ToString());
 	return false;
 }
 

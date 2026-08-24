@@ -960,6 +960,47 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 
 ---
 
+## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-24)
+
+`Booth_ActivityGame_Shoot` 시설에서 `TargetShooting` 미니게임을 시작합니다. 입력은
+`Border_PlayArea` 전체가 받되, 실제 명중 여부는 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로
+바꾼 뒤 Runtime이 타원 판정합니다. `Border_Target`은 표시 전용(`HitTestInvisible`)이므로 WBP를
+수정할 때 클릭을 가로채는 위젯을 플레이 영역 위에 올리지 마세요.
+
+### 기획 수치 수정
+
+`DA_Minigame_TargetShooting`의 `Rules`만 수정합니다. 코드 수정이나 SaveGame 마이그레이션은
+필요 없습니다.
+
+| 목적 | Rules 필드 |
+| --- | --- |
+| 난이도 곡선 | `TargetLifetimeStartSeconds/EndSeconds`, `TargetRadiusStartNormalized/EndNormalized` |
+| HUD·닫기 버튼 회피 | `SpawnSafeMarginNormalized` (표적 전체 외곽 기준) |
+| 기본 점수·콤보·오발 감점 | `HitBaseScore`, `ComboBonusPerHit`, `MaxComboBonus`, `MissPenalty` |
+| 정밀/정중앙 판정 | `PrecisionRadiusRatio`, `BullseyeRadiusRatio`, 각 `ScoreBonus` |
+| 반응속도 보너스 | `FastReactionSeconds`, `SlowReactionSeconds`, `MaxReactionScoreBonus` |
+| 골든 타깃 | `BonusTargetChance`, `BonusTargetScoreMultiplier`, `BonusTargetLifetimeScale` |
+
+점수는 `기본 + 콤보 + 정밀도 + 반응속도`를 먼저 계산하고 골든 타깃이면 배율을 적용합니다.
+명중하면 즉시 다음 타깃이 나오며, 빗나가면 같은 타깃을 유지해 조준을 보정할 수 있습니다.
+타깃이 시간 안에 맞지 않으면 `TOO SLOW` 피드백 후 다음 타깃으로 넘어갑니다.
+
+### UI/모션 수정
+
+`WBP_FF_TargetShooting`의 **Class Defaults → Visual Style**만 수정합니다. 색·링 두께·폰트 크기·
+스폰/긴급 투명도 펄스·피드백 상승 거리/시간·플레이 영역 플래시·커스텀 조준점이 게임 규칙과
+분리되어 있습니다. 표적 외곽·정밀·불스아이 링은 Runtime 판정 비율로 그리며, 표적 본체 크기는
+애니메이션으로 확대하지 않습니다. 따라서 보이는 타원 내부와 클릭 판정 범위가 어긋나지 않습니다.
+HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시하고 결과 화면에도 같은 성과 지표를
+요약합니다.
+
+필수 WBP 이름은 기존 계약을 유지합니다. `Text_ShotFeedback`과 `Text_Reticle`은 선택 사항이며,
+없으면 런타임이 `Canvas_PlayArea` 안에 자동 생성합니다. 따라서 기존 WBP를 깨지 않고 점진적으로
+레이아웃을 바꿀 수 있습니다. 두 선택 위젯을 다른 패널로 옮겨도 초기화 시 플레이 캔버스 직속으로
+안전하게 다시 연결하며, 연결할 수 없는 경우에는 하드웨어 커서를 숨기지 않습니다.
+
+---
+
 # UI가 필요한데 아직 없는 것
 
 기획서 6.3의 Overview 필수 표시 항목입니다.
@@ -1030,3 +1071,4 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-19 | 백종태 | 전체 사이클 UI 프로토타입(타이틀→피날레→최종결산)을 한 바퀴 돌려 보고 **없어서 더미로 채운 것 8건**을 "UI가 필요한데 아직 없는 것"에 추가. `FFF_DayLedger` 노출 형태 질문에 회신(원인별 표·부스별 표 **둘 다** 필요, 환급은 분리, 하루 경계 스냅샷 필요). 시설 유지비에 대응하는 `EFF_SpendReason` 부재 보고 |
 | 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다. **부스별 표는 S10 까지 빈 표입니다** |
 | 2026-08-19 | 김시리 | 🔴 **정정: enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.** 8/18 에 "피날레 실패 이유가 한글로 온다"고 안내한 것이 틀렸습니다. `UFF_EconomyDisplayTextLibrary` 신설 — 피날레 실패 이유·등급 표시 두 군데를 이 함수로 바꿔 주세요. Stage 단계 이름도 같은 문제입니다(강민서) |
+| 2026-08-24 | Codex | 타깃 슈팅 레퍼런스 UX 반영 — 정밀도·반응속도·골든 타깃 점수, 즉시 명중 피드백, 커스텀 조준점, TPS/명중률/평균 반응시간 HUD와 결과 요약, Rules/Visual Style 분리 튜닝 가이드 추가 |
