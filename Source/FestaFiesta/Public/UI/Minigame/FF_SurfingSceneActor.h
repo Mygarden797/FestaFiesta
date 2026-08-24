@@ -5,10 +5,13 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Minigame/Surfing/FF_SurfingTypes.h"
+#include "UI/Minigame/FF_SurfingCharacterActor.h"
 #include "FF_SurfingSceneActor.generated.h"
 
+class UChildActorComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UDirectionalLightComponent;
 class UPointLightComponent;
 class USceneCaptureComponent2D;
 class USceneComponent;
@@ -33,16 +36,21 @@ public:
 	AFF_SurfingSceneActor();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void InitializeScene(
 		const FFF_SurfingVisualStyle& VisualStyle,
 		UTextureRenderTarget2D* RenderTarget);
 	void ReleaseScene();
 	void ApplySnapshot(const FFF_SurfingSnapshot& Snapshot);
+	bool SetSurfingCharacterClass(
+		TSubclassOf<AFF_SurfingCharacterActor> InCharacterClass);
 
 	bool IsSceneReady() const;
 	int32 GetVisibleCourseObjectCount() const;
 	int32 GetRiderMeshPartCount() const;
+	int32 GetCharacterRenderablePrimitiveCount() const;
+	AFF_SurfingCharacterActor* GetSurfingCharacterActor() const;
 	FVector GetPlayerSceneLocalLocation() const;
 	FVector ArenaToSceneLocal(const FVector2D& PositionNormalized, float Height = 0.0f) const;
 	FVector2D SceneLocalToArena(const FVector& SceneLocalPosition) const;
@@ -55,6 +63,9 @@ private:
 	UMaterialInstanceDynamic* CreateColorMaterial(
 		const FName MaterialName,
 		const FLinearColor& Color);
+	UMaterialInstanceDynamic* CreateOceanSurfaceMaterial(
+		const FLinearColor& OceanColor,
+		const FLinearColor& FoamColor);
 	UStaticMeshComponent* CreateObjectPart(
 		USceneComponent& Parent,
 		int32 ObjectId,
@@ -72,6 +83,10 @@ private:
 	UMaterialInterface* GetObjectMaterial(EFF_SurfingObjectType Type) const;
 	float GetObjectHoverHeight(EFF_SurfingObjectType Type, float RadiusWorld) const;
 	void ConfigureFixedVisuals();
+	void UpdateWaterPresentation(float PresentationSeconds);
+	void ApplyCharacterPresentationState(float BankDegrees);
+	void RefreshCharacterCaptureActors();
+	void ClearCharacterCaptureActors();
 
 	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -80,7 +95,7 @@ private:
 	TObjectPtr<USceneCaptureComponent2D> SceneCapture;
 
 	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UPointLightComponent> KeyLight;
+	TObjectPtr<UDirectionalLightComponent> KeyLight;
 
 	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
 	TObjectPtr<UPointLightComponent> FillLight;
@@ -92,37 +107,13 @@ private:
 	TObjectPtr<UStaticMeshComponent> OceanSurface;
 
 	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
+	TObjectPtr<UStaticMeshComponent> SkyBackdrop;
+
+	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
 	TObjectPtr<USceneComponent> SurferRoot;
 
 	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> Surfboard;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<USceneComponent> RiderRoot;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> RiderBody;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> RiderHead;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> RiderLeftArm;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> RiderRightArm;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> RiderLeftLeg;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> RiderRightLeg;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> WakeLeft;
-
-	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
-	TObjectPtr<UStaticMeshComponent> WakeRight;
+	TObjectPtr<UChildActorComponent> SurfingCharacterHost;
 
 	UPROPERTY(VisibleAnywhere, Category = "Surfing 3D")
 	TArray<TObjectPtr<UStaticMeshComponent>> WaveBands;
@@ -153,19 +144,13 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> OceanMaterial;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OceanSurfaceMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SkyMaterial;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FoamMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> BoardMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> BoostBoardMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> RiderMaterial;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> RiderSkinMaterial;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> ObjectMaterials;
@@ -177,13 +162,16 @@ private:
 	TMap<int32, EFF_SurfingObjectType> CourseObjectTypes;
 
 	TMap<int32, FVector> CourseObjectTargetLocations;
+	TSet<int32> VisibleCourseObjectIdsLastFrame;
+	TArray<TWeakObjectPtr<AActor>> CharacterCaptureActors;
+	FFF_SurfingCharacterVisualStyle CharacterVisualStyle;
 
 	float ArenaHalfForwardWorld = 1450.0f;
 	float ArenaHorizontalMetricScale = 2.18f;
-	FVector CameraFollowOffset = FVector(-1450.0, 0.0, 900.0);
-	FVector CameraLookAtOffset = FVector(480.0, 0.0, 70.0);
+	FVector CameraFollowOffset = FVector(-1350.0, 0.0, 720.0);
+	FVector CameraLookAtOffset = FVector(950.0, 0.0, 80.0);
+	float CameraLateralFollowRatio = 0.62f;
 	float SceneSeconds = 0.0f;
-	float EventPulseRemainingSeconds = 0.0f;
 	int32 PresentedEventSerial = 0;
 	FVector PlayerTargetLocation = FVector(0.0, 0.0, 80.0);
 	float PlayerTargetYaw = 0.0f;

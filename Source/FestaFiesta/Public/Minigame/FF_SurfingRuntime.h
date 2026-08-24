@@ -9,11 +9,24 @@
 
 class UFF_SurfingDefinition;
 
-/** Runtime-only fixed arena item. UI receives an immutable snapshot copy. */
+/** One DataTable-authored template reused by the endless segment pool. */
+struct FFF_SurfingCourseTemplate
+{
+	EFF_SurfingObjectType Type = EFF_SurfingObjectType::Rock;
+	FVector2D PositionNormalized = FVector2D::ZeroVector;
+	float CollisionRadiusNormalized = 0.0f;
+	float ScoreValueOverride = 0.0f;
+};
+
+/** Runtime-only pooled course item. UI receives a camera-relative snapshot copy. */
 struct FFF_SurfingCourseObject
 {
+	uint64 ObjectKey = 0;
 	int32 ObjectId = 0;
+	int32 SegmentIndex = 0;
+	int32 TemplateIndex = 0;
 	EFF_SurfingObjectType Type = EFF_SurfingObjectType::Rock;
+	/** Absolute course coordinate; unlike the UI snapshot, Y is unbounded. */
 	FVector2D PositionNormalized = FVector2D::ZeroVector;
 	float CollisionRadiusNormalized = 0.0f;
 	float ScoreValueOverride = 0.0f;
@@ -22,7 +35,7 @@ struct FFF_SurfingCourseObject
 	int32 LastContactSimulationTick = INDEX_NONE;
 };
 
-/** Deterministic thirty-second free ride in a fixed two-dimensional arena. */
+/** Deterministic free ride over a camera-relative, endlessly recycled course. */
 UCLASS(BlueprintType)
 class FESTAFIESTA_API UFF_SurfingRuntime final : public UFF_MinigameRuntime
 {
@@ -30,8 +43,8 @@ class FESTAFIESTA_API UFF_SurfingRuntime final : public UFF_MinigameRuntime
 
 public:
 	/**
-	 * Queues finite axes in [-1, 1] for the next fixed tick. A non-zero vector
-	 * becomes the normalized heading; zero keeps the previous heading. +Y is up.
+	 * Queues finite axes in [-1, 1] for the next fixed tick. X steers while the
+	 * course always advances; Y trims speed without stopping it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Surfing")
 	EFF_SurfingSteerResult SetMovementInput(
@@ -54,6 +67,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Surfing")
 	FFF_SurfingSnapshot GetSurfingSnapshot() const;
 
+	int32 GetActiveCourseObjectCount() const { return CourseObjects.Num(); }
+	int32 GetActiveCourseSegmentCount() const;
+	int32 GetResolvedCourseObjectCount() const { return ResolvedCourseObjectKeys.Num(); }
+
 protected:
 	virtual bool OnInitialize(FString& OutFailureReason) override;
 	virtual void OnAdvancePlaying(float DeltaSeconds, float StartingElapsedSeconds) override;
@@ -61,6 +78,7 @@ protected:
 
 private:
 	bool LoadCourseLayout(FString& OutFailureReason);
+	void RefreshCourseObjectPool(double MinimumCourseY, double MaximumCourseY);
 	void SimulateFixedTick();
 	void ApplyPendingCommands();
 	void MovePlayerAndProcessCollisions(double TravelDistance);
@@ -72,6 +90,7 @@ private:
 	void RecordEvent(EFF_SurfingEventType EventType);
 	void SynchronizeScore();
 	void SynchronizeDerivedAndLegacyState();
+	int32 GetCourseSegmentIndex(double CourseY) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_SurfingDefinition> SurfingDefinition;
@@ -79,7 +98,12 @@ private:
 	UPROPERTY(Transient)
 	FFF_SurfingSnapshot SurfingSnapshot;
 
+	TArray<FFF_SurfingCourseTemplate> CourseTemplates;
 	TArray<FFF_SurfingCourseObject> CourseObjects;
+	TSet<uint64> ResolvedCourseObjectKeys;
+	FVector2D PlayerCoursePosition = FVector2D::ZeroVector;
+	int32 ActiveFirstSegment = 1;
+	int32 ActiveLastSegment = 0;
 	double DistanceMetersExact = 0.0;
 	double SimulationAccumulatorSeconds = 0.0;
 	int32 SimulationTick = 0;

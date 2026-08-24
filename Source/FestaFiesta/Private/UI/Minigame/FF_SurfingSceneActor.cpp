@@ -2,12 +2,15 @@
 
 #include "UI/Minigame/FF_SurfingSceneActor.h"
 
+#include "Components/ChildActorComponent.h"
+#include "Components/DirectionalLightComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Scene.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
@@ -15,14 +18,14 @@
 
 namespace
 {
-	constexpr TCHAR PlaneMeshPath[] = TEXT("/Engine/BasicShapes/Plane.Plane");
-	constexpr TCHAR CubeMeshPath[] = TEXT("/Engine/BasicShapes/Cube.Cube");
-	constexpr TCHAR SphereMeshPath[] = TEXT("/Engine/BasicShapes/Sphere.Sphere");
-	constexpr TCHAR CylinderMeshPath[] = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
-	constexpr TCHAR ConeMeshPath[] = TEXT("/Engine/BasicShapes/Cone.Cone");
-	constexpr TCHAR BasicShapeMaterialPath[] =
+	constexpr TCHAR SurfingScenePlaneMeshPath[] = TEXT("/Engine/BasicShapes/Plane.Plane");
+	constexpr TCHAR SurfingSceneCubeMeshPath[] = TEXT("/Engine/BasicShapes/Cube.Cube");
+	constexpr TCHAR SurfingSceneSphereMeshPath[] = TEXT("/Engine/BasicShapes/Sphere.Sphere");
+	constexpr TCHAR SurfingSceneCylinderMeshPath[] = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+	constexpr TCHAR SurfingSceneConeMeshPath[] = TEXT("/Engine/BasicShapes/Cone.Cone");
+	constexpr TCHAR SurfingSceneBasicShapeMaterialPath[] =
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
-	constexpr TCHAR ProjectSeaMaterialPath[] =
+	constexpr TCHAR SurfingSceneProjectSeaMaterialPath[] =
 		TEXT("/Game/Level/Demo_Matereal/Sea_Material/Mi_Sea_Inst.Mi_Sea_Inst");
 
 	int32 ObjectTypeIndex(const EFF_SurfingObjectType Type)
@@ -57,44 +60,37 @@ AFF_SurfingSceneActor::AFF_SurfingSceneActor()
 	SceneCapture->bUseRayTracingIfEnabled = false;
 	SceneCapture->ShowFlags.SetMotionBlur(false);
 	SceneCapture->ShowFlags.SetDepthOfField(false);
+	SceneCapture->ShowFlags.SetAtmosphere(false);
+	SceneCapture->ShowFlags.SetFog(false);
+	SceneCapture->ShowFlags.SetVolumetricFog(false);
+	SceneCapture->ShowFlags.SetSkyLighting(false);
+	SceneCapture->ShowFlags.SetReflectionEnvironment(false);
+	SceneCapture->ShowFlags.SetScreenSpaceReflections(false);
 	SceneCapture->ShowOnlyActors.Add(this);
 
-	KeyLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("KeyLight"));
+	KeyLight = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("KeyLight"));
 	KeyLight->SetupAttachment(SceneRoot);
 	KeyLight->SetMobility(EComponentMobility::Movable);
 	KeyLight->SetCastShadows(true);
+	KeyLight->SetLightingChannels(false, true, false);
 	FillLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FillLight"));
 	FillLight->SetupAttachment(SceneRoot);
 	FillLight->SetMobility(EComponentMobility::Movable);
 	FillLight->SetCastShadows(false);
+	FillLight->SetLightingChannels(false, true, false);
 
 	OceanFloor = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OceanFloor"));
 	OceanFloor->SetupAttachment(SceneRoot);
 	OceanSurface = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("OceanSurface"));
 	OceanSurface->SetupAttachment(SceneRoot);
+	SkyBackdrop = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SkyBackdrop"));
+	SkyBackdrop->SetupAttachment(SceneRoot);
 
 	SurferRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SurferRoot"));
 	SurferRoot->SetupAttachment(SceneRoot);
-	Surfboard = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Surfboard"));
-	Surfboard->SetupAttachment(SurferRoot);
-	RiderRoot = CreateDefaultSubobject<USceneComponent>(TEXT("RiderRoot"));
-	RiderRoot->SetupAttachment(SurferRoot);
-	RiderBody = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderBody"));
-	RiderBody->SetupAttachment(RiderRoot);
-	RiderHead = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderHead"));
-	RiderHead->SetupAttachment(RiderRoot);
-	RiderLeftArm = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderLeftArm"));
-	RiderLeftArm->SetupAttachment(RiderRoot);
-	RiderRightArm = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderRightArm"));
-	RiderRightArm->SetupAttachment(RiderRoot);
-	RiderLeftLeg = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderLeftLeg"));
-	RiderLeftLeg->SetupAttachment(RiderRoot);
-	RiderRightLeg = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RiderRightLeg"));
-	RiderRightLeg->SetupAttachment(RiderRoot);
-	WakeLeft = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WakeLeft"));
-	WakeLeft->SetupAttachment(SurferRoot);
-	WakeRight = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WakeRight"));
-	WakeRight->SetupAttachment(SurferRoot);
+	SurfingCharacterHost = CreateDefaultSubobject<UChildActorComponent>(
+		TEXT("SurfingCharacterHost"));
+	SurfingCharacterHost->SetupAttachment(SurferRoot);
 
 	for (int32 Index = 0; Index < 7; ++Index)
 	{
@@ -104,15 +100,20 @@ AFF_SurfingSceneActor::AFF_SurfingSceneActor()
 		WaveBands.Add(WaveBand);
 	}
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneFinder(PlaneMeshPath);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(CubeMeshPath);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereFinder(SphereMeshPath);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(CylinderMeshPath);
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeFinder(ConeMeshPath);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneFinder(
+		SurfingScenePlaneMeshPath);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeFinder(
+		SurfingSceneCubeMeshPath);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereFinder(
+		SurfingSceneSphereMeshPath);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderFinder(
+		SurfingSceneCylinderMeshPath);
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeFinder(
+		SurfingSceneConeMeshPath);
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMaterialFinder(
-		BasicShapeMaterialPath);
+		SurfingSceneBasicShapeMaterialPath);
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SeaMaterialFinder(
-		ProjectSeaMaterialPath);
+		SurfingSceneProjectSeaMaterialPath);
 
 	PlaneMesh = PlaneFinder.Object;
 	CubeMesh = CubeFinder.Object;
@@ -125,15 +126,7 @@ AFF_SurfingSceneActor::AFF_SurfingSceneActor()
 	TArray<UStaticMeshComponent*> FixedMeshes = {
 		OceanFloor,
 		OceanSurface,
-		Surfboard,
-		RiderBody,
-		RiderHead,
-		RiderLeftArm,
-		RiderRightArm,
-		RiderLeftLeg,
-		RiderRightLeg,
-		WakeLeft,
-		WakeRight,
+		SkyBackdrop,
 	};
 	for (UStaticMeshComponent* WaveBand : WaveBands)
 	{
@@ -146,11 +139,11 @@ AFF_SurfingSceneActor::AFF_SurfingSceneActor()
 		MeshComponent->SetGenerateOverlapEvents(false);
 		MeshComponent->SetCanEverAffectNavigation(false);
 		MeshComponent->SetVisibleInSceneCaptureOnly(true);
+		MeshComponent->SetLightingChannels(false, true, false);
 		MeshComponent->SetCastShadow(
 			MeshComponent != OceanFloor
 			&& MeshComponent != OceanSurface
-			&& MeshComponent != WakeLeft
-			&& MeshComponent != WakeRight
+			&& MeshComponent != SkyBackdrop
 			&& !WaveBands.Contains(MeshComponent));
 	}
 }
@@ -163,6 +156,8 @@ void AFF_SurfingSceneActor::InitializeScene(
 	ArenaHorizontalMetricScale = 2.18f;
 	CameraFollowOffset = VisualStyle.Camera3DLocation;
 	CameraLookAtOffset = VisualStyle.Camera3DLookAt;
+	CameraLateralFollowRatio = FMath::Clamp(
+		VisualStyle.CameraLateralFollowRatio, 0.0f, 0.9f);
 	SceneCapture->bCaptureEveryFrame = true;
 	SceneCapture->ShowOnlyActors.Reset();
 	SceneCapture->ShowOnlyActors.Add(this);
@@ -172,24 +167,33 @@ void AFF_SurfingSceneActor::InitializeScene(
 	SceneCapture->SetRelativeRotation(
 		(CameraLookAtOffset - CameraFollowOffset).Rotation());
 	SceneCapture->MaxViewDistanceOverride = ArenaHalfForwardWorld * 8.0f;
-	KeyLight->SetIntensity(FMath::Max(0.0f, VisualStyle.SceneKeyLightIntensity));
-	KeyLight->SetAttenuationRadius(ArenaHalfForwardWorld * 7.5f);
-	KeyLight->SetLightColor(FLinearColor(1.0f, 0.84f, 0.68f));
-	KeyLight->SetRelativeLocation(FVector(-350.0, -1250.0, 2600.0));
+	SceneCapture->PostProcessBlendWeight = 1.0f;
+	SceneCapture->PostProcessSettings.bOverride_AutoExposureMethod = true;
+	SceneCapture->PostProcessSettings.AutoExposureMethod = AEM_Manual;
+	SceneCapture->PostProcessSettings.bOverride_AutoExposureBias = true;
+	SceneCapture->PostProcessSettings.AutoExposureBias = FMath::Clamp(
+		VisualStyle.DaylightExposureBias, -2.0f, 4.0f);
+	SceneCapture->PostProcessSettings.bOverride_AutoExposureApplyPhysicalCameraExposure = true;
+	SceneCapture->PostProcessSettings.AutoExposureApplyPhysicalCameraExposure = false;
+	KeyLight->SetIntensity(FMath::Max(0.0f, VisualStyle.SceneKeyLightIntensity) / 10000.0f);
+	KeyLight->SetLightColor(FLinearColor(1.0f, 0.94f, 0.82f));
+	KeyLight->SetRelativeRotation(FRotator(-52.0f, -28.0f, 0.0f));
 	FillLight->SetIntensity(FMath::Max(0.0f, VisualStyle.SceneFillLightIntensity));
-	FillLight->SetAttenuationRadius(ArenaHalfForwardWorld * 8.5f);
-	FillLight->SetLightColor(FLinearColor(0.34f, 0.72f, 1.0f));
-	FillLight->SetRelativeLocation(FVector(1250.0, 1650.0, 1150.0));
+	FillLight->SetAttenuationRadius(ArenaHalfForwardWorld * 2.4f);
+	FillLight->SetLightColor(FLinearColor(0.55f, 0.84f, 1.0f));
+	FillLight->SetRelativeLocation(FVector(1350.0, 1550.0, 1650.0));
 
-	OceanMaterial = CreateColorMaterial(TEXT("MI_SurfingOcean"), VisualStyle.OceanColor);
+	OceanMaterial = CreateColorMaterial(
+		TEXT("MI_SurfingOceanFloor"), VisualStyle.OceanDeepColor);
+	OceanSurfaceMaterial = CreateOceanSurfaceMaterial(
+		VisualStyle.OceanColor, VisualStyle.FoamColor);
+	SkyMaterial = CreateColorMaterial(TEXT("MI_SurfingDaylightSky"), VisualStyle.DaylightSkyColor);
 	FoamMaterial = CreateColorMaterial(TEXT("MI_SurfingFoam"), VisualStyle.FoamColor);
-	BoardMaterial = CreateColorMaterial(TEXT("MI_SurfingBoard"), VisualStyle.SurferColor);
-	BoostBoardMaterial = CreateColorMaterial(
-		TEXT("MI_SurfingBoostBoard"), VisualStyle.BoostingSurferColor);
-	RiderMaterial = CreateColorMaterial(
-		TEXT("MI_SurfingRider"), FLinearColor(0.95f, 0.12f, 0.035f, 1.0f));
-	RiderSkinMaterial = CreateColorMaterial(
-		TEXT("MI_SurfingRiderSkin"), FLinearColor(0.95f, 0.55f, 0.28f, 1.0f));
+	CharacterVisualStyle.BoardColor = VisualStyle.SurferColor;
+	CharacterVisualStyle.BoostBoardColor = VisualStyle.BoostingSurferColor;
+	CharacterVisualStyle.OutfitColor = VisualStyle.RiderSuitColor;
+	CharacterVisualStyle.SkinColor = VisualStyle.RiderSkinColor;
+	CharacterVisualStyle.WakeColor = VisualStyle.FoamColor;
 
 	ObjectMaterials.Reset();
 	const FLinearColor ObjectColors[] = {
@@ -214,7 +218,9 @@ void AFF_SurfingSceneActor::InitializeScene(
 	}
 
 	ConfigureFixedVisuals();
-	bSceneInitialized = IsSceneReady();
+	const bool bCharacterReady = SetSurfingCharacterClass(
+		VisualStyle.SurfingCharacterClass);
+	bSceneInitialized = bCharacterReady && IsSceneReady();
 	SetActorTickEnabled(bSceneInitialized);
 	if (bSceneInitialized)
 	{
@@ -232,6 +238,91 @@ void AFF_SurfingSceneActor::ReleaseScene()
 		SceneCapture->TextureTarget = nullptr;
 		SceneCapture->ShowOnlyActors.Reset();
 	}
+	CharacterCaptureActors.Reset();
+	if (AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor())
+	{
+		Character->ReleaseCharacter();
+	}
+	if (SurfingCharacterHost)
+	{
+		SurfingCharacterHost->DestroyChildActor();
+		SurfingCharacterHost->SetChildActorClass(nullptr);
+	}
+	VisibleCourseObjectIdsLastFrame.Reset();
+}
+
+void AFF_SurfingSceneActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ReleaseScene();
+	Super::EndPlay(EndPlayReason);
+}
+
+bool AFF_SurfingSceneActor::SetSurfingCharacterClass(
+	TSubclassOf<AFF_SurfingCharacterActor> InCharacterClass)
+{
+	if (!SurfingCharacterHost || !SceneCapture)
+	{
+		return false;
+	}
+
+	TSubclassOf<AFF_SurfingCharacterActor> CharacterClass = InCharacterClass;
+	if (!CharacterClass
+		|| CharacterClass->HasAnyClassFlags(CLASS_Abstract | CLASS_Deprecated))
+	{
+		CharacterClass = AFF_SurfingPrimitiveCharacterActor::StaticClass();
+	}
+
+	const bool bWasCapturing = SceneCapture->bCaptureEveryFrame;
+	SceneCapture->bCaptureEveryFrame = false;
+	ClearCharacterCaptureActors();
+	if (AFF_SurfingCharacterActor* PreviousCharacter = GetSurfingCharacterActor())
+	{
+		SceneCapture->ShowOnlyActors.Remove(PreviousCharacter);
+		PreviousCharacter->ReleaseCharacter();
+	}
+	SurfingCharacterHost->DestroyChildActor();
+	SurfingCharacterHost->SetChildActorClass(CharacterClass);
+	if (!SurfingCharacterHost->GetChildActor() && SurfingCharacterHost->IsRegistered())
+	{
+		SurfingCharacterHost->CreateChildActor();
+	}
+
+	AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor();
+	bool bReady = IsValid(Character)
+		&& Character->InitializeCharacter(CharacterVisualStyle);
+	if (!bReady && CharacterClass != AFF_SurfingPrimitiveCharacterActor::StaticClass())
+	{
+		if (Character)
+		{
+			Character->ReleaseCharacter();
+		}
+		SurfingCharacterHost->DestroyChildActor();
+		SurfingCharacterHost->SetChildActorClass(
+			AFF_SurfingPrimitiveCharacterActor::StaticClass());
+		if (!SurfingCharacterHost->GetChildActor() && SurfingCharacterHost->IsRegistered())
+		{
+			SurfingCharacterHost->CreateChildActor();
+		}
+		Character = GetSurfingCharacterActor();
+		bReady = IsValid(Character)
+			&& Character->InitializeCharacter(CharacterVisualStyle);
+	}
+	if (bReady)
+	{
+		RefreshCharacterCaptureActors();
+		ApplyCharacterPresentationState(0.0f);
+	}
+	else if (bSceneInitialized)
+	{
+		bSceneInitialized = false;
+		SetActorTickEnabled(false);
+	}
+	SceneCapture->bCaptureEveryFrame = bWasCapturing;
+	if (bReady && SceneCapture->TextureTarget)
+	{
+		SceneCapture->CaptureSceneDeferred();
+	}
+	return bReady;
 }
 
 void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
@@ -264,25 +355,25 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 	{
 		SurferRoot->SetRelativeLocation(PlayerTargetLocation);
 		SurferRoot->SetRelativeRotation(FRotator(0.0f, PlayerTargetYaw, 0.0f));
-		SceneCapture->SetRelativeLocation(PlayerTargetLocation + CameraFollowOffset);
+		FVector CameraAnchor = PlayerTargetLocation;
+		CameraAnchor.Y *= CameraLateralFollowRatio;
+		SceneCapture->SetRelativeLocation(CameraAnchor + CameraFollowOffset);
 		SceneCapture->SetRelativeRotation((
-			PlayerTargetLocation + CameraLookAtOffset
+			CameraAnchor + CameraLookAtOffset
 			- SceneCapture->GetRelativeLocation()).Rotation());
 		bHasPlayerTransform = true;
 	}
 
 	bBoosting = Snapshot.bBoosting;
 	bInvincible = Snapshot.bInvincible;
-	Surfboard->SetMaterial(0, bBoosting ? BoostBoardMaterial : BoardMaterial);
-	WakeLeft->SetVisibility(true);
-	WakeRight->SetVisibility(true);
 
 	if (Snapshot.LatestEventSerial > 0
 		&& Snapshot.LatestEventSerial != PresentedEventSerial)
 	{
 		PresentedEventSerial = Snapshot.LatestEventSerial;
-		EventPulseRemainingSeconds = 0.32f;
 	}
+	ApplyCharacterPresentationState(0.0f);
+	RefreshCharacterCaptureActors();
 
 	TSet<int32> VisibleIds;
 	CourseObjectTargetLocations.Reset();
@@ -325,7 +416,12 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 			ObjectSnapshot.PositionNormalized,
 			GetObjectHoverHeight(ObjectSnapshot.Type, RadiusWorld));
 		CourseObjectTargetLocations.Add(ObjectSnapshot.ObjectId, TargetLocation);
-		if (bNewObject)
+		const bool bWasVisible = VisibleCourseObjectIdsLastFrame.Contains(
+			ObjectSnapshot.ObjectId);
+		const bool bRecycledJump = !bNewObject
+			&& FVector::DistSquared(ObjectRoot->GetRelativeLocation(), TargetLocation)
+				> FMath::Square(ArenaHalfForwardWorld * 1.5f);
+		if (bNewObject || !bWasVisible || bRecycledJump)
 		{
 			ObjectRoot->SetRelativeLocation(TargetLocation);
 		}
@@ -339,6 +435,7 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 			SetCourseObjectVisible(*Pair.Value, false);
 		}
 	}
+	VisibleCourseObjectIdsLastFrame = VisibleIds;
 	TArray<UStaticMeshComponent*> CaptureMeshes;
 	GetComponents<UStaticMeshComponent>(CaptureMeshes);
 	for (UStaticMeshComponent* MeshComponent : CaptureMeshes)
@@ -348,6 +445,7 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 			MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			MeshComponent->SetCanEverAffectNavigation(false);
 			MeshComponent->SetVisibleInSceneCaptureOnly(true);
+			MeshComponent->SetLightingChannels(false, true, false);
 		}
 	}
 	SceneCapture->CaptureSceneDeferred();
@@ -362,27 +460,8 @@ void AFF_SurfingSceneActor::Tick(const float DeltaSeconds)
 	}
 
 	SceneSeconds += DeltaSeconds;
-	EventPulseRemainingSeconds = FMath::Max(0.0f, EventPulseRemainingSeconds - DeltaSeconds);
 
-	OceanSurface->SetRelativeRotation(FRotator(
-		FMath::Sin(SceneSeconds * 0.42f) * 0.35f,
-		0.0f,
-		FMath::Cos(SceneSeconds * 0.31f) * 0.45f));
-
-	const float WaveSpan = ArenaHalfForwardWorld * 2.35f;
-	for (int32 Index = 0; Index < WaveBands.Num(); ++Index)
-	{
-		UStaticMeshComponent* WaveBand = WaveBands[Index];
-		const float Wrapped = FMath::Fmod(
-			SceneSeconds * 165.0f
-				+ static_cast<float>(Index) * WaveSpan / WaveBands.Num(),
-			WaveSpan);
-		const float X = ArenaHalfForwardWorld * 1.18f - Wrapped;
-		const float Y = FMath::Sin(SceneSeconds * 0.55f + Index * 1.37f)
-			* ArenaHalfForwardWorld * ArenaHorizontalMetricScale * 0.18f;
-		WaveBand->SetRelativeLocation(FVector(X, Y, 7.0f + (Index % 2) * 2.0f));
-		WaveBand->SetRelativeRotation(FRotator(0.0f, FMath::Sin(Index * 1.9f) * 5.0f, 0.0f));
-	}
+	UpdateWaterPresentation(SceneSeconds);
 
 	const FVector BobbedPlayerTarget = PlayerTargetLocation + FVector(
 		0.0,
@@ -400,55 +479,28 @@ void AFF_SurfingSceneActor::Tick(const float DeltaSeconds)
 		TargetBank);
 	SurferRoot->SetRelativeRotation(FMath::RInterpTo(
 		CurrentRotation, DesiredRotation, DeltaSeconds, 8.0f));
-	const FVector DesiredCameraLocation = PlayerTargetLocation + CameraFollowOffset;
+	FVector CameraAnchor = PlayerTargetLocation;
+	CameraAnchor.Y *= CameraLateralFollowRatio;
+	const FVector DesiredCameraLocation = CameraAnchor + CameraFollowOffset;
 	SceneCapture->SetRelativeLocation(FMath::VInterpTo(
 		SceneCapture->GetRelativeLocation(),
 		DesiredCameraLocation,
 		DeltaSeconds,
 		4.5f));
 	const FRotator DesiredCameraRotation = (
-		PlayerTargetLocation + CameraLookAtOffset
+		CameraAnchor + CameraLookAtOffset
 		- SceneCapture->GetRelativeLocation()).Rotation();
 	SceneCapture->SetRelativeRotation(FMath::RInterpTo(
 		SceneCapture->GetRelativeRotation(),
 		DesiredCameraRotation,
 		DeltaSeconds,
 		5.5f));
-	RiderRoot->SetRelativeRotation(FMath::RInterpTo(
-		RiderRoot->GetRelativeRotation(),
-		FRotator(
-			bBoosting ? -14.0f : -5.0f,
-			0.0f,
-			TargetBank * -0.42f),
-		DeltaSeconds,
-		7.0f));
-	const float LimbMotion = FMath::Sin(SceneSeconds * (bBoosting ? 8.0f : 4.0f))
-		* (bBoosting ? 8.0f : 3.0f);
-	RiderLeftArm->SetRelativeRotation(FRotator(18.0f + LimbMotion, 0.0f, -58.0f));
-	RiderRightArm->SetRelativeRotation(FRotator(18.0f - LimbMotion, 0.0f, 58.0f));
-
-	float SurferScale = bBoosting ? 1.08f : 1.0f;
-	if (EventPulseRemainingSeconds > 0.0f)
+	ApplyCharacterPresentationState(TargetBank);
+	if (AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor())
 	{
-		SurferScale *= FMath::Lerp(1.0f, 1.14f, EventPulseRemainingSeconds / 0.32f);
+		Character->AdvancePresentation(DeltaSeconds);
 	}
-	SurferRoot->SetRelativeScale3D(FVector(SurferScale));
-	if (bInvincible && !bBoosting)
-	{
-		Surfboard->SetMaterial(
-			0,
-			FMath::Fmod(SceneSeconds, 0.20f) < 0.10f ? BoostBoardMaterial : BoardMaterial);
-	}
-	else
-	{
-		Surfboard->SetMaterial(0, bBoosting ? BoostBoardMaterial : BoardMaterial);
-	}
-
-	const float WakeLength = bBoosting ? 2.35f : 1.45f;
-	WakeLeft->SetRelativeScale3D(FVector(WakeLength, 0.065f, 0.025f));
-	WakeRight->SetRelativeScale3D(FVector(WakeLength, 0.065f, 0.025f));
-	WakeLeft->SetRelativeLocation(FVector(-70.0f * WakeLength, -31.0f, -16.0f));
-	WakeRight->SetRelativeLocation(FVector(-70.0f * WakeLength, 31.0f, -16.0f));
+	RefreshCharacterCaptureActors();
 
 	for (const TPair<int32, FVector>& Pair : CourseObjectTargetLocations)
 	{
@@ -489,14 +541,9 @@ bool AFF_SurfingSceneActor::IsSceneReady() const
 		&& IsValid(SceneCapture->TextureTarget)
 		&& IsValid(OceanSurface)
 		&& IsValid(SurferRoot)
-		&& IsValid(Surfboard)
-		&& IsValid(RiderRoot)
-		&& IsValid(RiderBody)
-		&& IsValid(RiderHead)
-		&& IsValid(RiderLeftArm)
-		&& IsValid(RiderRightArm)
-		&& IsValid(RiderLeftLeg)
-		&& IsValid(RiderRightLeg)
+		&& IsValid(SurfingCharacterHost)
+		&& IsValid(GetSurfingCharacterActor())
+		&& GetSurfingCharacterActor()->IsCharacterReady()
 		&& IsValid(PlaneMesh)
 		&& IsValid(CubeMesh)
 		&& IsValid(SphereMesh)
@@ -504,7 +551,7 @@ bool AFF_SurfingSceneActor::IsSceneReady() const
 		&& IsValid(ConeMesh)
 		&& IsValid(BasicShapeMaterial)
 		&& IsValid(OceanMaterial)
-		&& IsValid(BoardMaterial)
+		&& IsValid(OceanSurfaceMaterial)
 		&& ObjectMaterials.Num() == 6;
 }
 
@@ -515,20 +562,57 @@ int32 AFF_SurfingSceneActor::GetVisibleCourseObjectCount() const
 
 int32 AFF_SurfingSceneActor::GetRiderMeshPartCount() const
 {
-	const UStaticMeshComponent* RiderParts[] = {
-		RiderBody,
-		RiderHead,
-		RiderLeftArm,
-		RiderRightArm,
-		RiderLeftLeg,
-		RiderRightLeg,
-	};
-	int32 Count = 0;
-	for (const UStaticMeshComponent* Part : RiderParts)
+	const AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor();
+	return Character ? Character->GetRiderMeshPartCount() : 0;
+}
+
+int32 AFF_SurfingSceneActor::GetCharacterRenderablePrimitiveCount() const
+{
+	const AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor();
+	return Character ? Character->GetRenderablePrimitiveCount() : 0;
+}
+
+AFF_SurfingCharacterActor* AFF_SurfingSceneActor::GetSurfingCharacterActor() const
+{
+	return SurfingCharacterHost
+		? Cast<AFF_SurfingCharacterActor>(SurfingCharacterHost->GetChildActor())
+		: nullptr;
+}
+
+void AFF_SurfingSceneActor::ClearCharacterCaptureActors()
+{
+	if (SceneCapture)
 	{
-		Count += IsValid(Part) && IsValid(Part->GetStaticMesh()) ? 1 : 0;
+		for (const TWeakObjectPtr<AActor>& CapturedActor : CharacterCaptureActors)
+		{
+			if (AActor* Actor = CapturedActor.Get())
+			{
+				SceneCapture->ShowOnlyActors.Remove(Actor);
+			}
+		}
 	}
-	return Count;
+	CharacterCaptureActors.Reset();
+}
+
+void AFF_SurfingSceneActor::RefreshCharacterCaptureActors()
+{
+	ClearCharacterCaptureActors();
+	AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor();
+	if (!SceneCapture || !IsValid(Character))
+	{
+		return;
+	}
+
+	TArray<AActor*> PresentationActors;
+	Character->GetPresentationActors(PresentationActors);
+	for (AActor* PresentationActor : PresentationActors)
+	{
+		if (IsValid(PresentationActor))
+		{
+			SceneCapture->ShowOnlyActors.AddUnique(PresentationActor);
+			CharacterCaptureActors.Add(PresentationActor);
+		}
+	}
 }
 
 FVector AFF_SurfingSceneActor::GetPlayerSceneLocalLocation() const
@@ -617,6 +701,44 @@ UMaterialInstanceDynamic* AFF_SurfingSceneActor::CreateColorMaterial(
 	return Material;
 }
 
+UMaterialInstanceDynamic* AFF_SurfingSceneActor::CreateOceanSurfaceMaterial(
+	const FLinearColor& OceanColor,
+	const FLinearColor& FoamColor)
+{
+	// The project sea instance was authored for a level with skylight/exponential
+	// fog and renders nearly black in this isolated capture. The bright local
+	// material plus moving foam bands gives deterministic daylight in every map.
+	UMaterialInterface* ParentMaterial = BasicShapeMaterial;
+	if (!ParentMaterial)
+	{
+		return nullptr;
+	}
+
+	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(
+		ParentMaterial, this, TEXT("MI_SurfingDaylightOcean"));
+	if (Material)
+	{
+		Material->SetVectorParameterValue(TEXT("Color"), OceanColor);
+		Material->SetVectorParameterValue(TEXT("BaseColor"), OceanColor);
+		Material->SetVectorParameterValue(TEXT("Tint"), OceanColor);
+		Material->SetVectorParameterValue(TEXT("Color_Coast"), FoamColor);
+	}
+	return Material;
+}
+
+void AFF_SurfingSceneActor::ApplyCharacterPresentationState(const float BankDegrees)
+{
+	if (AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor())
+	{
+		FFF_SurfingCharacterPresentationState State;
+		State.bBoosting = bBoosting;
+		State.bInvincible = bInvincible;
+		State.BankDegrees = BankDegrees;
+		State.EventSerial = PresentedEventSerial;
+		Character->ApplyPresentationState(State);
+	}
+}
+
 UStaticMeshComponent* AFF_SurfingSceneActor::CreateObjectPart(
 	USceneComponent& Parent,
 	const int32 ObjectId,
@@ -648,6 +770,7 @@ UStaticMeshComponent* AFF_SurfingSceneActor::CreateObjectPart(
 	Part->SetGenerateOverlapEvents(false);
 	Part->SetCanEverAffectNavigation(false);
 	Part->SetVisibleInSceneCaptureOnly(true);
+	Part->SetLightingChannels(false, true, false);
 	Part->SetCastShadow(!IsPickupType(CourseObjectTypes.FindRef(ObjectId)));
 	Part->SetStaticMesh(Mesh);
 	Part->SetMaterial(0, Material);
@@ -804,59 +927,28 @@ void AFF_SurfingSceneActor::ConfigureFixedVisuals()
 {
 	OceanFloor->SetStaticMesh(PlaneMesh);
 	OceanSurface->SetStaticMesh(PlaneMesh);
-	Surfboard->SetStaticMesh(CubeMesh);
-	RiderBody->SetStaticMesh(CylinderMesh);
-	RiderHead->SetStaticMesh(SphereMesh);
-	RiderLeftArm->SetStaticMesh(CylinderMesh);
-	RiderRightArm->SetStaticMesh(CylinderMesh);
-	RiderLeftLeg->SetStaticMesh(CylinderMesh);
-	RiderRightLeg->SetStaticMesh(CylinderMesh);
-	WakeLeft->SetStaticMesh(CubeMesh);
-	WakeRight->SetStaticMesh(CubeMesh);
+	SkyBackdrop->SetStaticMesh(CubeMesh);
 
 	OceanFloor->SetMaterial(0, OceanMaterial);
-	OceanSurface->SetMaterial(0, ProjectSeaMaterial ? ProjectSeaMaterial : OceanMaterial);
-	Surfboard->SetMaterial(0, BoardMaterial);
-	RiderBody->SetMaterial(0, RiderMaterial);
-	RiderHead->SetMaterial(0, RiderSkinMaterial);
-	RiderLeftArm->SetMaterial(0, RiderMaterial);
-	RiderRightArm->SetMaterial(0, RiderMaterial);
-	RiderLeftLeg->SetMaterial(0, RiderMaterial);
-	RiderRightLeg->SetMaterial(0, RiderMaterial);
-	WakeLeft->SetMaterial(0, FoamMaterial);
-	WakeRight->SetMaterial(0, FoamMaterial);
+	OceanSurface->SetMaterial(0, OceanSurfaceMaterial);
+	SkyBackdrop->SetMaterial(0, SkyMaterial);
 
 	const FVector OceanScale(
-		ArenaHalfForwardWorld / 50.0f * 1.35f,
-		ArenaHalfForwardWorld * ArenaHorizontalMetricScale / 50.0f * 1.12f,
+		ArenaHalfForwardWorld / 50.0f * 5.0f,
+		ArenaHalfForwardWorld * ArenaHorizontalMetricScale / 50.0f * 2.25f,
 		1.0f);
-	OceanFloor->SetRelativeLocation(FVector(0.0, 0.0, -48.0));
+	OceanFloor->SetRelativeLocation(FVector(0.0, 0.0, -180.0));
 	OceanFloor->SetRelativeScale3D(OceanScale * FVector(1.06f, 1.08f, 1.0f));
 	OceanSurface->SetRelativeLocation(FVector::ZeroVector);
 	OceanSurface->SetRelativeScale3D(OceanScale);
-
-	Surfboard->SetRelativeLocation(FVector::ZeroVector);
-	Surfboard->SetRelativeScale3D(FVector(2.65f, 0.68f, 0.10f));
-	RiderRoot->SetRelativeLocation(FVector::ZeroVector);
-	RiderBody->SetRelativeLocation(FVector(-8.0, 0.0, 88.0));
-	RiderBody->SetRelativeRotation(FRotator(0.0f, 8.0f, 0.0f));
-	RiderBody->SetRelativeScale3D(FVector(0.29f, 0.29f, 0.78f));
-	RiderHead->SetRelativeLocation(FVector(-4.0, 0.0, 148.0));
-	RiderHead->SetRelativeScale3D(FVector(0.30f));
-	RiderLeftArm->SetRelativeLocation(FVector(-4.0, -31.0, 106.0));
-	RiderLeftArm->SetRelativeRotation(FRotator(18.0f, 0.0f, -58.0f));
-	RiderLeftArm->SetRelativeScale3D(FVector(0.13f, 0.13f, 0.58f));
-	RiderRightArm->SetRelativeLocation(FVector(-4.0, 31.0, 106.0));
-	RiderRightArm->SetRelativeRotation(FRotator(18.0f, 0.0f, 58.0f));
-	RiderRightArm->SetRelativeScale3D(FVector(0.13f, 0.13f, 0.58f));
-	RiderLeftLeg->SetRelativeLocation(FVector(-39.0, -9.0, 42.0));
-	RiderLeftLeg->SetRelativeRotation(FRotator(0.0f, -34.0f, -18.0f));
-	RiderLeftLeg->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.58f));
-	RiderRightLeg->SetRelativeLocation(FVector(38.0, 9.0, 42.0));
-	RiderRightLeg->SetRelativeRotation(FRotator(0.0f, 34.0f, 18.0f));
-	RiderRightLeg->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.58f));
-	WakeLeft->SetRelativeRotation(FRotator(0.0f, -9.0f, 0.0f));
-	WakeRight->SetRelativeRotation(FRotator(0.0f, 9.0f, 0.0f));
+	SkyBackdrop->SetRelativeLocation(FVector(
+		ArenaHalfForwardWorld * 4.45f,
+		0.0f,
+		ArenaHalfForwardWorld * 1.55f));
+	SkyBackdrop->SetRelativeScale3D(FVector(
+		0.08f,
+		ArenaHalfForwardWorld * ArenaHorizontalMetricScale / 50.0f * 2.6f,
+		ArenaHalfForwardWorld / 50.0f * 1.55f));
 
 	for (int32 Index = 0; Index < WaveBands.Num(); ++Index)
 	{
@@ -864,11 +956,12 @@ void AFF_SurfingSceneActor::ConfigureFixedVisuals()
 		WaveBand->SetStaticMesh(CubeMesh);
 		WaveBand->SetMaterial(0, FoamMaterial);
 		const float WidthScale = FMath::Lerp(
-			4.5f,
-			9.0f,
+			3.0f,
+			6.0f,
 			static_cast<float>((Index * 37) % 100) / 100.0f);
-		WaveBand->SetRelativeScale3D(FVector(0.16f, WidthScale, 0.018f));
+		WaveBand->SetRelativeScale3D(FVector(0.11f, WidthScale, 0.010f));
 	}
+	UpdateWaterPresentation(SceneSeconds);
 
 	SurferRoot->SetRelativeLocation(PlayerTargetLocation);
 	TArray<UStaticMeshComponent*> CaptureMeshes;
@@ -880,6 +973,33 @@ void AFF_SurfingSceneActor::ConfigureFixedVisuals()
 			MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			MeshComponent->SetCanEverAffectNavigation(false);
 			MeshComponent->SetVisibleInSceneCaptureOnly(true);
+			MeshComponent->SetLightingChannels(false, true, false);
 		}
+	}
+}
+
+void AFF_SurfingSceneActor::UpdateWaterPresentation(const float PresentationSeconds)
+{
+	OceanSurface->SetRelativeRotation(FRotator(
+		FMath::Sin(PresentationSeconds * 0.42f) * 0.12f,
+		0.0f,
+		FMath::Cos(PresentationSeconds * 0.31f) * 0.15f));
+
+	const float WaveSpan = ArenaHalfForwardWorld * 2.35f;
+	for (int32 Index = 0; Index < WaveBands.Num(); ++Index)
+	{
+		UStaticMeshComponent* WaveBand = WaveBands[Index];
+		const float Wrapped = FMath::Fmod(
+			PresentationSeconds * 165.0f
+				+ static_cast<float>(Index) * WaveSpan / WaveBands.Num(),
+			WaveSpan);
+		const float X = ArenaHalfForwardWorld * 1.18f - Wrapped;
+		const float Y = FMath::Sin(PresentationSeconds * 0.55f + Index * 1.37f)
+			* ArenaHalfForwardWorld * ArenaHorizontalMetricScale * 0.18f;
+		WaveBand->SetRelativeLocation(FVector(X, Y, 7.0f + (Index % 2) * 2.0f));
+		WaveBand->SetRelativeRotation(FRotator(
+			0.0f,
+			FMath::Sin(Index * 1.9f) * 5.0f,
+			0.0f));
 	}
 }

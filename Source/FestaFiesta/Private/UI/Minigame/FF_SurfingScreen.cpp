@@ -21,6 +21,7 @@
 #include "InputCoreTypes.h"
 #include "Minigame/FF_SurfingRuntime.h"
 #include "UI/FF_UILog.h"
+#include "UI/Minigame/FF_SurfingCharacterActor.h"
 #include "UI/Minigame/FF_SurfingSceneActor.h"
 
 #define LOCTEXT_NAMESPACE "FFSurfingScreen"
@@ -280,6 +281,31 @@ void UFF_SurfingScreen::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 	DisplayedSnapshot = Snapshot;
 	bHasSnapshot = true;
 	RefreshPresentation();
+}
+
+bool UFF_SurfingScreen::SetSurfingCharacterClass(
+	TSubclassOf<AFF_SurfingCharacterActor> InCharacterClass)
+{
+	if (!IsValid(SurfingSceneActor))
+	{
+		VisualStyle.SurfingCharacterClass = InCharacterClass;
+		return true;
+	}
+	const bool bReady = SurfingSceneActor->SetSurfingCharacterClass(InCharacterClass);
+	AFF_SurfingCharacterActor* ActualCharacter =
+		SurfingSceneActor->GetSurfingCharacterActor();
+	if (!bReady || !IsValid(ActualCharacter))
+	{
+		bUsing3DScene = false;
+		return false;
+	}
+
+	const bool bRequestedDefault = !InCharacterClass;
+	const bool bRequestedClassInstalled = bRequestedDefault
+		|| ActualCharacter->GetClass() == InCharacterClass.Get();
+	VisualStyle.SurfingCharacterClass = ActualCharacter->GetClass();
+	bUsing3DScene = SurfingSceneActor->IsSceneReady();
+	return bRequestedClassInstalled;
 }
 
 TSharedRef<SWidget> UFF_SurfingScreen::RebuildWidget()
@@ -1123,7 +1149,7 @@ bool UFF_SurfingScreen::Initialize3DScene()
 	}
 
 	SurfingRenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
-	SurfingRenderTarget->ClearColor = FLinearColor(0.015f, 0.16f, 0.28f, 1.0f);
+	SurfingRenderTarget->ClearColor = VisualStyle.DaylightSkyColor;
 	SurfingRenderTarget->bAutoGenerateMips = false;
 	SurfingRenderTarget->InitAutoFormat(
 		FMath::Clamp(VisualStyle.RenderTargetWidth, 320, 3840),

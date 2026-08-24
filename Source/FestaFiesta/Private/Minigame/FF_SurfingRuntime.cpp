@@ -10,7 +10,8 @@ namespace
 {
 	constexpr double FixedTickToleranceSeconds = 1.0e-9;
 	constexpr double MovementTolerance = 1.0e-10;
-	constexpr int32 MaximumReflectedSegmentsPerTick = 128;
+	constexpr double VisibleCourseBehindNormalized = 1.15;
+	constexpr double VisibleCourseAheadNormalized = 1.35;
 
 	void IncrementSaturated(int32& Value)
 	{
@@ -41,6 +42,29 @@ namespace
 		int32 CourseObjectIndex = INDEX_NONE;
 		double TimeOfImpact = 0.0;
 	};
+
+	uint64 MakeCourseObjectKey(const int32 SegmentIndex, const int32 TemplateIndex)
+	{
+		return (static_cast<uint64>(static_cast<uint32>(SegmentIndex)) << 32)
+			| static_cast<uint64>(static_cast<uint32>(TemplateIndex));
+	}
+
+	int32 GetSegmentIndexFromCourseObjectKey(const uint64 ObjectKey)
+	{
+		return static_cast<int32>(static_cast<uint32>(ObjectKey >> 32));
+	}
+
+	int32 MakeCourseObjectId(
+		const int32 SegmentIndex,
+		const int32 TemplateIndex,
+		const int32 TemplateCount,
+		const int32 PoolSegmentCount)
+	{
+		const int32 SafePoolCount = FMath::Max(1, PoolSegmentCount);
+		const int32 SlotIndex = ((SegmentIndex % SafePoolCount) + SafePoolCount)
+			% SafePoolCount;
+		return SlotIndex * FMath::Max(1, TemplateCount) + TemplateIndex + 1;
+	}
 }
 
 bool UFF_SurfingRuntime::OnInitialize(FString& OutFailureReason)
@@ -55,6 +79,8 @@ bool UFF_SurfingRuntime::OnInitialize(FString& OutFailureReason)
 	SurfingSnapshot = FFF_SurfingSnapshot();
 	SurfingSnapshot.Session = GetSnapshot();
 	SurfingSnapshot.PlayerPositionNormalized = FVector2D::ZeroVector;
+	SurfingSnapshot.CourseProgressNormalized = 0.0;
+	SurfingSnapshot.CourseSegmentIndex = 0;
 	SurfingSnapshot.ArenaHorizontalMetricScale = SurfingDefinition->Rules.ArenaHorizontalMetricScale;
 	SurfingSnapshot.MovementInput = FVector2D::ZeroVector;
 	SurfingSnapshot.CurrentHeading = FVector2D(0.0, 1.0);
@@ -64,7 +90,12 @@ bool UFF_SurfingRuntime::OnInitialize(FString& OutFailureReason)
 	SurfingSnapshot.MaxBoostCharges = SurfingDefinition->Rules.MaxBoostCharges;
 	SurfingSnapshot.CurrentSpeed = SurfingDefinition->Rules.CharacterSpeedNormalizedPerSecond;
 
+	CourseTemplates.Reset();
 	CourseObjects.Reset();
+	ResolvedCourseObjectKeys.Reset();
+	PlayerCoursePosition = FVector2D::ZeroVector;
+	ActiveFirstSegment = 1;
+	ActiveLastSegment = 0;
 	DistanceMetersExact = 0.0;
 	SimulationAccumulatorSeconds = 0.0;
 	SimulationTick = 0;
@@ -82,6 +113,7 @@ bool UFF_SurfingRuntime::OnInitialize(FString& OutFailureReason)
 	{
 		return false;
 	}
+	RefreshCourseObjectPool(PlayerCoursePosition.Y, PlayerCoursePosition.Y);
 
 	SynchronizeDerivedAndLegacyState();
 	RefreshVisibleObjects();
@@ -226,6 +258,13 @@ FFF_SurfingSnapshot UFF_SurfingRuntime::GetSurfingSnapshot() const
 	return Result;
 }
 
+int32 UFF_SurfingRuntime::GetActiveCourseSegmentCount() const
+{
+	return ActiveLastSegment >= ActiveFirstSegment
+		? ActiveLastSegment - ActiveFirstSegment + 1
+		: 0;
+}
+
 bool UFF_SurfingRuntime::LoadCourseLayout(FString& OutFailureReason)
 {
 	const UDataTable* CourseTable = SurfingDefinition->CourseLayoutTable.LoadSynchronous();
@@ -251,15 +290,14 @@ bool UFF_SurfingRuntime::LoadCourseLayout(FString& OutFailureReason)
 			continue;
 		}
 
-		FFF_SurfingCourseObject& Object = CourseObjects.AddDefaulted_GetRef();
-		Object.ObjectId = CourseObjects.Num();
+		FFF_SurfingCourseTemplate& Object = CourseTemplates.AddDefaulted_GetRef();
 		Object.Type = Row->Type;
 		Object.PositionNormalized = Row->PositionNormalized;
 		Object.CollisionRadiusNormalized = Row->CollisionRadiusNormalized;
 		Object.ScoreValueOverride = Row->ScoreValueOverride;
 	}
 
-	if (CourseObjects.IsEmpty())
+	if (CourseTemplates.IsEmpty())
 	{
 		OutFailureReason = TEXT("surfing course contains no enabled objects");
 		return false;
@@ -268,13 +306,105 @@ bool UFF_SurfingRuntime::LoadCourseLayout(FString& OutFailureReason)
 	return true;
 }
 
+int32 UFF_SurfingRuntime::GetCourseSegmentIndex(const double CourseY) const
+{
+	const double SegmentLength = SurfingDefinition
+		? FMath::Max(2.01, static_cast<double>(
+			SurfingDefinition->Rules.CourseSegmentLengthNormalized))
+		: 2.4;
+	return FMath::FloorToInt((CourseY + SegmentLength * 0.5) / SegmentLength);
+}
+
+void UFF_SurfingRuntime::RefreshCourseObjectPool(
+	const double MinimumCourseY,
+	const double MaximumCourseY)
+{
+	if (!SurfingDefinition || CourseTemplates.IsEmpty())
+	{
+		CourseObjects.Reset();
+		ActiveFirstSegment = 1;
+		ActiveLastSegment = 0;
+		return;
+	}
+
+	const FFF_SurfingRules& Rules = SurfingDefinition->Rules;
+	const int32 PresentationPoolSegmentCount = Rules.CourseSegmentsBehind
+		+ Rules.CourseSegmentsAhead + 1;
+	const double SafeMinimum = FMath::Min(MinimumCourseY, MaximumCourseY);
+	const double SafeMaximum = FMath::Max(MinimumCourseY, MaximumCourseY);
+	const int32 DesiredFirst = GetCourseSegmentIndex(SafeMinimum)
+		- Rules.CourseSegmentsBehind;
+	const int32 DesiredLast = GetCourseSegmentIndex(SafeMaximum)
+		+ Rules.CourseSegmentsAhead;
+	for (auto ResolvedIt = ResolvedCourseObjectKeys.CreateIterator(); ResolvedIt; ++ResolvedIt)
+	{
+		if (GetSegmentIndexFromCourseObjectKey(*ResolvedIt) < DesiredFirst)
+		{
+			ResolvedIt.RemoveCurrent();
+		}
+	}
+	if (DesiredFirst == ActiveFirstSegment && DesiredLast == ActiveLastSegment)
+	{
+		return;
+	}
+
+	TMap<uint64, FFF_SurfingCourseObject> ExistingObjects;
+	ExistingObjects.Reserve(CourseObjects.Num());
+	for (FFF_SurfingCourseObject& Object : CourseObjects)
+	{
+		ExistingObjects.Add(Object.ObjectKey, MoveTemp(Object));
+	}
+
+	TArray<FFF_SurfingCourseObject> RecycledObjects;
+	const int32 SegmentCount = FMath::Max(0, DesiredLast - DesiredFirst + 1);
+	RecycledObjects.Reserve(SegmentCount * CourseTemplates.Num());
+	for (int32 SegmentIndex = DesiredFirst; SegmentIndex <= DesiredLast; ++SegmentIndex)
+	{
+		for (int32 TemplateIndex = 0; TemplateIndex < CourseTemplates.Num(); ++TemplateIndex)
+		{
+			const uint64 ObjectKey = MakeCourseObjectKey(SegmentIndex, TemplateIndex);
+			if (FFF_SurfingCourseObject* Existing = ExistingObjects.Find(ObjectKey))
+			{
+				RecycledObjects.Add(MoveTemp(*Existing));
+				continue;
+			}
+
+			const FFF_SurfingCourseTemplate& Template = CourseTemplates[TemplateIndex];
+			FFF_SurfingCourseObject& Object = RecycledObjects.AddDefaulted_GetRef();
+			Object.ObjectKey = ObjectKey;
+			Object.ObjectId = MakeCourseObjectId(
+				SegmentIndex,
+				TemplateIndex,
+				CourseTemplates.Num(),
+				PresentationPoolSegmentCount);
+			Object.SegmentIndex = SegmentIndex;
+			Object.TemplateIndex = TemplateIndex;
+			Object.Type = Template.Type;
+			Object.PositionNormalized = FVector2D(
+				Template.PositionNormalized.X,
+				Template.PositionNormalized.Y
+					+ static_cast<double>(SegmentIndex)
+						* static_cast<double>(Rules.CourseSegmentLengthNormalized));
+			Object.CollisionRadiusNormalized = Template.CollisionRadiusNormalized;
+			Object.ScoreValueOverride = Template.ScoreValueOverride;
+			Object.bResolved = ResolvedCourseObjectKeys.Contains(ObjectKey);
+		}
+	}
+
+	CourseObjects = MoveTemp(RecycledObjects);
+	ActiveFirstSegment = DesiredFirst;
+	ActiveLastSegment = DesiredLast;
+}
+
 void UFF_SurfingRuntime::SimulateFixedTick()
 {
 	ApplyPendingCommands();
 	const FFF_SurfingRules& Rules = SurfingDefinition->Rules;
 	const bool bBoostingThisTick = SurfingSnapshot.BoostRemainingSeconds > 0.0f;
 	const float Speed = Rules.CharacterSpeedNormalizedPerSecond
-		* (bBoostingThisTick ? Rules.BoostSpeedMultiplier : 1.0f);
+		* (bBoostingThisTick ? Rules.BoostSpeedMultiplier : 1.0f)
+		* (1.0f + static_cast<float>(SurfingSnapshot.MovementInput.Y)
+			* Rules.ForwardInputSpeedInfluence);
 	SurfingSnapshot.CurrentSpeed = Speed;
 
 	const double TravelDistance = static_cast<double>(Speed)
@@ -304,16 +434,14 @@ void UFF_SurfingRuntime::ApplyPendingCommands()
 	{
 		SurfingSnapshot.MovementInput = PendingMovementInput;
 		bHasPendingMovementInput = false;
-		if (PendingMovementInput.X != 0.0 || PendingMovementInput.Y != 0.0)
+		const FVector2D NewHeading = FFSurfingRules::NormalizeHeading(
+			static_cast<float>(PendingMovementInput.X)
+				* SurfingDefinition->Rules.SteeringStrength,
+			1.0f,
+			SurfingDefinition->Rules.ArenaHorizontalMetricScale);
+		if (!NewHeading.IsZero())
 		{
-			const FVector2D NewHeading = FFSurfingRules::NormalizeHeading(
-				static_cast<float>(PendingMovementInput.X),
-				static_cast<float>(PendingMovementInput.Y),
-				SurfingDefinition->Rules.ArenaHorizontalMetricScale);
-			if (!NewHeading.IsZero())
-			{
-				SurfingSnapshot.CurrentHeading = NewHeading;
-			}
+			SurfingSnapshot.CurrentHeading = NewHeading;
 		}
 	}
 
@@ -332,68 +460,42 @@ void UFF_SurfingRuntime::ApplyPendingCommands()
 
 void UFF_SurfingRuntime::MovePlayerAndProcessCollisions(const double TravelDistance)
 {
-	FVector2D Position = SurfingSnapshot.PlayerPositionNormalized;
-	FVector2D Heading = SurfingSnapshot.CurrentHeading;
+	FVector2D Position = PlayerCoursePosition;
+	const FVector2D Heading = SurfingSnapshot.CurrentHeading;
 	double RemainingDistance = FMath::Max(0.0, TravelDistance);
+	RefreshCourseObjectPool(Position.Y, Position.Y + RemainingDistance);
+	Position.X = FMath::Clamp(Position.X, -1.0, 1.0);
 
-	for (int32 SegmentIndex = 0;
-		SegmentIndex < MaximumReflectedSegmentsPerTick
-			&& RemainingDistance > MovementTolerance;
-		++SegmentIndex)
+	const double DistanceToVerticalWall = FMath::Abs(Heading.X) > MovementTolerance
+		? FMath::Max(
+			0.0,
+			((Heading.X > 0.0 ? 1.0 : -1.0) - Position.X) / Heading.X)
+		: TNumericLimits<double>::Max();
+	const double SegmentDistance = FMath::Min(RemainingDistance, DistanceToVerticalWall);
+	if (SegmentDistance > MovementTolerance)
 	{
-		Position.X = FMath::Clamp(Position.X, -1.0, 1.0);
-		Position.Y = FMath::Clamp(Position.Y, -1.0, 1.0);
-
-		const double DistanceToVerticalWall = FMath::Abs(Heading.X) > MovementTolerance
-			? FMath::Max(
-				0.0,
-				((Heading.X > 0.0 ? 1.0 : -1.0) - Position.X) / Heading.X)
-			: TNumericLimits<double>::Max();
-		const double DistanceToHorizontalWall = FMath::Abs(Heading.Y) > MovementTolerance
-			? FMath::Max(
-				0.0,
-				((Heading.Y > 0.0 ? 1.0 : -1.0) - Position.Y) / Heading.Y)
-			: TNumericLimits<double>::Max();
-		const double DistanceToWall = FMath::Min(
-			DistanceToVerticalWall,
-			DistanceToHorizontalWall);
-		const double SegmentDistance = FMath::Min(RemainingDistance, DistanceToWall);
-
-		if (SegmentDistance > MovementTolerance)
-		{
-			const FVector2D SegmentEnd = Position + Heading * SegmentDistance;
-			ProcessMovementSegment(Position, SegmentEnd);
-			Position = SegmentEnd;
-			RemainingDistance = FMath::Max(0.0, RemainingDistance - SegmentDistance);
-		}
-
-		const bool bReachedWall = DistanceToWall <= SegmentDistance + MovementTolerance;
-		if (!bReachedWall)
-		{
-			break;
-		}
-
-		bool bReflected = false;
-		if (DistanceToVerticalWall <= DistanceToWall + MovementTolerance)
-		{
-			Heading.X = -Heading.X;
-			bReflected = true;
-		}
-		if (DistanceToHorizontalWall <= DistanceToWall + MovementTolerance)
-		{
-			Heading.Y = -Heading.Y;
-			bReflected = true;
-		}
-		if (!bReflected)
-		{
-			break;
-		}
+		const FVector2D SegmentEnd = Position + Heading * SegmentDistance;
+		ProcessMovementSegment(Position, SegmentEnd);
+		Position = SegmentEnd;
+		RemainingDistance = FMath::Max(0.0, RemainingDistance - SegmentDistance);
 	}
 
-	SurfingSnapshot.PlayerPositionNormalized = FVector2D(
+	const bool bReachedWall = DistanceToVerticalWall <= SegmentDistance + MovementTolerance;
+	if (bReachedWall && RemainingDistance > MovementTolerance)
+	{
+		Position.X = Heading.X > 0.0 ? 1.0 : -1.0;
+		const double ForwardDirection = Heading.Y >= 0.0 ? 1.0 : -1.0;
+		const FVector2D SlideEnd(
+			Position.X,
+			Position.Y + ForwardDirection * RemainingDistance);
+		ProcessMovementSegment(Position, SlideEnd);
+		Position = SlideEnd;
+	}
+
+	PlayerCoursePosition = FVector2D(
 		FMath::Clamp(Position.X, -1.0, 1.0),
-		FMath::Clamp(Position.Y, -1.0, 1.0));
-	SurfingSnapshot.CurrentHeading = Heading;
+		Position.Y);
+	RefreshCourseObjectPool(PlayerCoursePosition.Y, PlayerCoursePosition.Y);
 }
 
 void UFF_SurfingRuntime::ProcessMovementSegment(
@@ -437,8 +539,8 @@ void UFF_SurfingRuntime::ProcessMovementSegment(
 		{
 			return A.TimeOfImpact < B.TimeOfImpact;
 		}
-		return CourseObjects[A.CourseObjectIndex].ObjectId
-			< CourseObjects[B.CourseObjectIndex].ObjectId;
+		return CourseObjects[A.CourseObjectIndex].ObjectKey
+			< CourseObjects[B.CourseObjectIndex].ObjectKey;
 	});
 
 	for (const FContactCandidate& Candidate : Candidates)
@@ -499,6 +601,7 @@ void UFF_SurfingRuntime::ProcessObjectContact(FFF_SurfingCourseObject& Object)
 	}
 
 	Object.bResolved = true;
+	ResolvedCourseObjectKeys.Add(Object.ObjectKey);
 	const float OverrideScore = Object.ScoreValueOverride;
 	switch (Object.Type)
 	{
@@ -556,17 +659,26 @@ void UFF_SurfingRuntime::RefreshVisibleObjects()
 		{
 			continue;
 		}
+		const double RelativeForward = Object.PositionNormalized.Y
+			- PlayerCoursePosition.Y;
+		if (RelativeForward < -VisibleCourseBehindNormalized
+			|| RelativeForward > VisibleCourseAheadNormalized)
+		{
+			continue;
+		}
 
 		FFF_SurfingObjectSnapshot& Visible = SurfingSnapshot.VisibleObjects.AddDefaulted_GetRef();
 		Visible.ObjectId = Object.ObjectId;
 		Visible.Type = Object.Type;
-		Visible.PositionNormalized = Object.PositionNormalized;
+		Visible.PositionNormalized = FVector2D(
+			Object.PositionNormalized.X,
+			RelativeForward);
 		Visible.CollisionRadiusNormalized = Object.CollisionRadiusNormalized;
-		Visible.LateralPositionNormalized = static_cast<float>(Object.PositionNormalized.X);
-		Visible.ForwardPositionNormalized = static_cast<float>(Object.PositionNormalized.Y);
-		Visible.DistanceAheadMeters = 0.0f;
+		Visible.LateralPositionNormalized = static_cast<float>(Visible.PositionNormalized.X);
+		Visible.ForwardPositionNormalized = static_cast<float>(Visible.PositionNormalized.Y);
+		Visible.DistanceAheadMeters = static_cast<float>(RelativeForward);
 		Visible.ForwardAlpha = static_cast<float>(
-			FMath::Clamp((Object.PositionNormalized.Y + 1.0) * 0.5, 0.0, 1.0));
+			FMath::Clamp((RelativeForward + 1.0) * 0.5, 0.0, 1.0));
 	}
 }
 
@@ -587,10 +699,14 @@ void UFF_SurfingRuntime::SynchronizeDerivedAndLegacyState()
 	SurfingSnapshot.bInvincible = SurfingSnapshot.bBoosting
 		|| SurfingSnapshot.HitInvincibilityRemainingSeconds > 0.0f;
 
+	SurfingSnapshot.PlayerPositionNormalized = FVector2D(
+		FMath::Clamp(PlayerCoursePosition.X, -1.0, 1.0),
+		0.0);
+	SurfingSnapshot.CourseProgressNormalized = PlayerCoursePosition.Y;
+	SurfingSnapshot.CourseSegmentIndex = GetCourseSegmentIndex(PlayerCoursePosition.Y);
 	SurfingSnapshot.PlayerLateralNormalized = static_cast<float>(
 		SurfingSnapshot.PlayerPositionNormalized.X);
-	SurfingSnapshot.PlayerForwardNormalized = static_cast<float>(
-		SurfingSnapshot.PlayerPositionNormalized.Y);
+	SurfingSnapshot.PlayerForwardNormalized = 0.0f;
 	SurfingSnapshot.SteerAxis = static_cast<float>(SurfingSnapshot.MovementInput.X);
 	SurfingSnapshot.ForwardAxis = static_cast<float>(SurfingSnapshot.MovementInput.Y);
 	SurfingSnapshot.Balance = SurfingSnapshot.PlayerLateralNormalized;

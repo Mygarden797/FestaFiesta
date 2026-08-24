@@ -21,12 +21,17 @@
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
+#include "ImageUtils.h"
 #include "Minigame/FF_MinigameDefinition.h"
 #include "Minigame/FF_SurfingRuntime.h"
 #include "Minigame/Surfing/FF_SurfingTypes.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
+#include "Misc/Paths.h"
 #include "Misc/SecureHash.h"
+#include "TextureResource.h"
+#include "UI/Minigame/FF_SurfingCharacterActor.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
 #include "UI/Minigame/FF_SurfingSceneActor.h"
 #include "WidgetBlueprint.h"
@@ -705,11 +710,24 @@ bool FFF_Surfing3DPresentationContractTest::RunTest(const FString& Parameters)
 	RenderTarget->InitAutoFormat(640, 360);
 
 	FFF_SurfingVisualStyle Style;
+	TestTrue(TEXT("기본 바다는 어두운 심해색이 아닌 낮 바다 색상이다"),
+		Style.OceanColor.GetLuminance() > 0.25f
+		&& Style.DaylightSkyColor.GetLuminance() > 0.45f);
+	TestTrue(TEXT("카메라는 좌우 이동을 일부만 따라 캐릭터 움직임을 보존한다"),
+		Style.CameraLateralFollowRatio > 0.0f
+		&& Style.CameraLateralFollowRatio < 0.9f);
 	SceneActor->InitializeScene(Style, RenderTarget);
 	TestTrue(TEXT("수면, 카메라, 보드와 라이더가 3D scene을 구성한다"),
 		SceneActor->IsSceneReady());
 	TestEqual(TEXT("라이더는 몸통, 머리, 양팔, 양다리의 6개 3D 파트다"),
 		SceneActor->GetRiderMeshPartCount(), 6);
+	AFF_SurfingCharacterActor* InitialCharacter = SceneActor->GetSurfingCharacterActor();
+	TestTrue(TEXT("기본 캐릭터는 교체 가능한 서핑 전용 actor다"),
+		IsValid(InitialCharacter)
+		&& InitialCharacter->IsA<AFF_SurfingPrimitiveCharacterActor>()
+		&& InitialCharacter->IsCharacterReady());
+	TestTrue(TEXT("기본 캐릭터는 보드, 라이더와 물보라를 실제 primitive로 렌더한다"),
+		SceneActor->GetCharacterRenderablePrimitiveCount() >= 9);
 
 	USceneCaptureComponent2D* Capture = SceneActor->GetSceneCaptureComponent();
 	if (TestNotNull(TEXT("SceneCapture2D 카메라가 존재한다"), Capture))
@@ -717,9 +735,15 @@ bool FFF_Surfing3DPresentationContractTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("SceneCapture는 자기 arena만 show-only 렌더한다"),
 			Capture->PrimitiveRenderMode
 				== ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList
-			&& Capture->ShowOnlyActors.Contains(SceneActor));
+			&& Capture->ShowOnlyActors.Contains(SceneActor)
+			&& Capture->ShowOnlyActors.Contains(InitialCharacter));
 		TestTrue(TEXT("SceneCapture는 전용 render target을 사용한다"),
 			Capture->TextureTarget == RenderTarget);
+		TestTrue(TEXT("SceneCapture는 자동 노출이 아닌 고정 낮 노출을 사용한다"),
+			Capture->PostProcessSettings.bOverride_AutoExposureMethod
+			&& Capture->PostProcessSettings.AutoExposureMethod == AEM_Manual
+			&& Capture->PostProcessSettings.bOverride_AutoExposureBias
+			&& Capture->PostProcessSettings.AutoExposureBias > 0.0f);
 	}
 
 	FFF_SurfingSnapshot Snapshot;
@@ -751,8 +775,8 @@ bool FFF_Surfing3DPresentationContractTest::RunTest(const FString& Parameters)
 
 	TArray<UStaticMeshComponent*> MeshComponents;
 	SceneActor->GetComponents<UStaticMeshComponent>(MeshComponents);
-	TestTrue(TEXT("수면, 캐릭터, 파도와 코스가 실제 3D mesh component다"),
-		MeshComponents.Num() >= 24);
+	TestTrue(TEXT("수면, 파도와 코스가 실제 3D mesh component다"),
+		MeshComponents.Num() >= 19);
 	for (const UStaticMeshComponent* MeshComponent : MeshComponents)
 	{
 		if (!MeshComponent)
@@ -768,17 +792,59 @@ bool FFF_Surfing3DPresentationContractTest::RunTest(const FString& Parameters)
 			*MeshComponent->GetName()),
 			MeshComponent->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 	}
+	if (InitialCharacter)
+	{
+		TArray<UPrimitiveComponent*> CharacterPrimitives;
+		InitialCharacter->GetComponents<UPrimitiveComponent>(CharacterPrimitives);
+		for (const UPrimitiveComponent* Primitive : CharacterPrimitives)
+		{
+			if (!Primitive)
+			{
+				continue;
+			}
+			TestTrue(TEXT("교체형 캐릭터 primitive는 SceneCapture에만 보인다"),
+				Primitive->bVisibleInSceneCaptureOnly);
+			TestEqual(TEXT("교체형 캐릭터 primitive는 gameplay collision이 없다"),
+				Primitive->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+		}
+	}
 
 	const FVector BeforeMove = SceneActor->GetPlayerSceneLocalLocation();
 	Snapshot.PlayerPositionNormalized = FVector2D(-0.30f, -0.45f);
 	Snapshot.CurrentHeading = FVector2D(-0.25f, -1.0f).GetSafeNormal();
 	SceneActor->ApplySnapshot(Snapshot);
-	SceneActor->Tick(0.10f);
+	for (int32 TickIndex = 0; TickIndex < 60; ++TickIndex)
+	{
+		SceneActor->Tick(0.05f);
+	}
 	const FVector AfterMove = SceneActor->GetPlayerSceneLocalLocation();
 	TestTrue(TEXT("새 입력 snapshot을 받으면 3D 보드와 캐릭터가 함께 이동한다"),
 		!AfterMove.Equals(BeforeMove, 1.0f)
 		&& AfterMove.Equals(SceneActor->ArenaToSceneLocal(
 			Snapshot.PlayerPositionNormalized, 76.0f), 8.0f));
+	const FVector CameraAfterLateralMove = Capture
+		? Capture->GetRelativeLocation()
+		: FVector::ZeroVector;
+	const float ExpectedCameraY = SceneActor->ArenaToSceneLocal(
+		Snapshot.PlayerPositionNormalized, 76.0f).Y
+		* Style.CameraLateralFollowRatio
+		+ Style.Camera3DLocation.Y;
+	TestTrue(TEXT("카메라가 수렴 후에도 설정 비율만큼만 좌우를 추적한다"),
+		Capture && FMath::IsNearlyEqual(
+			CameraAfterLateralMove.Y,
+			ExpectedCameraY,
+			2.0f));
+
+	TestTrue(TEXT("동일한 전용 캐릭터 class도 런타임에 안전하게 교체할 수 있다"),
+		SceneActor->SetSurfingCharacterClass(
+			AFF_SurfingPrimitiveCharacterActor::StaticClass()));
+	AFF_SurfingCharacterActor* ReplacedCharacter = SceneActor->GetSurfingCharacterActor();
+	TestTrue(TEXT("교체 후 새 캐릭터 한 개가 준비되고 capture 목록도 갱신된다"),
+		IsValid(ReplacedCharacter)
+		&& ReplacedCharacter != InitialCharacter
+		&& ReplacedCharacter->IsCharacterReady()
+		&& Capture->ShowOnlyActors.Contains(ReplacedCharacter)
+		&& !Capture->ShowOnlyActors.Contains(InitialCharacter));
 
 	FVector2D CenterArenaPoint;
 	TestTrue(TEXT("마우스 capture 좌표를 3D 수면 위치로 역투영할 수 있다"),
@@ -789,8 +855,149 @@ bool FFF_Surfing3DPresentationContractTest::RunTest(const FString& Parameters)
 
 	SceneActor->ReleaseScene();
 	TestTrue(TEXT("release 시 SceneCapture와 render target 연결을 해제한다"),
-		Capture && Capture->TextureTarget == nullptr && !SceneActor->IsSceneReady());
+		Capture && Capture->TextureTarget == nullptr
+		&& !SceneActor->IsSceneReady()
+		&& SceneActor->GetSurfingCharacterActor() == nullptr);
 	TestTrue(TEXT("검증 후 transient 3D scene actor를 정리한다"), SceneActor->Destroy());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_SurfingDaylightPixelContractTest,
+	"FestaFiesta.Minigame.Surfing.Visual.DaylightOceanPixelContract",
+	EAutomationTestFlags::EditorContext
+		| EAutomationTestFlags::ProductFilter
+		| EAutomationTestFlags::NonNullRHI)
+
+bool FFF_SurfingDaylightPixelContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("낮 바다 픽셀 검증용 EditorWorld가 존재한다"), EditorWorld))
+	{
+		return false;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	AFF_SurfingSceneActor* SceneActor = EditorWorld->SpawnActor<AFF_SurfingSceneActor>(
+		AFF_SurfingSceneActor::StaticClass(),
+		FVector(500000.0, 500000.0, 150000.0),
+		FRotator::ZeroRotator,
+		SpawnParameters);
+	if (!TestNotNull(TEXT("낮 바다 scene actor가 생성된다"), SceneActor))
+	{
+		return false;
+	}
+
+	constexpr int32 CaptureWidth = 640;
+	constexpr int32 CaptureHeight = 360;
+	UTextureRenderTarget2D* RenderTarget = NewObject<UTextureRenderTarget2D>(
+		SceneActor, UTextureRenderTarget2D::StaticClass(), NAME_None, RF_Transient);
+	RenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
+	FFF_SurfingVisualStyle Style;
+	RenderTarget->ClearColor = Style.DaylightSkyColor;
+	RenderTarget->InitAutoFormat(CaptureWidth, CaptureHeight);
+	RenderTarget->UpdateResourceImmediate(true);
+	SceneActor->InitializeScene(Style, RenderTarget);
+
+	FFF_SurfingSnapshot Snapshot;
+	Snapshot.PlayerPositionNormalized = FVector2D::ZeroVector;
+	Snapshot.CurrentHeading = FVector2D(0.0, 1.0);
+	Snapshot.ArenaHorizontalMetricScale = 2.18f;
+	SceneActor->ApplySnapshot(Snapshot);
+	USceneCaptureComponent2D* Capture = SceneActor->GetSceneCaptureComponent();
+	Capture->bCaptureEveryFrame = false;
+	Capture->CaptureScene();
+
+	TArray<FColor> Pixels;
+	FTextureRenderTargetResource* Resource = RenderTarget->GameThread_GetRenderTargetResource();
+	const bool bReadPixels = Resource && Resource->ReadPixels(Pixels);
+	TestTrue(TEXT("실제 RHI에서 낮 바다 render target 픽셀을 읽는다"),
+		bReadPixels && Pixels.Num() == CaptureWidth * CaptureHeight);
+
+	double LuminanceSum = 0.0;
+	double LuminanceSquaredSum = 0.0;
+	double SkyRedSum = 0.0;
+	double WaterRedSum = 0.0;
+	int32 BlackPixelCount = 0;
+	int32 OceanBluePixelCount = 0;
+	int32 OverexposedPixelCount = 0;
+	int32 WarmCharacterPixelCount = 0;
+	int32 SkyPixelCount = 0;
+	int32 WaterPixelCount = 0;
+	for (int32 PixelIndex = 0; PixelIndex < Pixels.Num(); ++PixelIndex)
+	{
+		const FColor& Pixel = Pixels[PixelIndex];
+		const double Luminance = (
+			0.2126 * Pixel.R + 0.7152 * Pixel.G + 0.0722 * Pixel.B) / 255.0;
+		LuminanceSum += Luminance;
+		LuminanceSquaredSum += Luminance * Luminance;
+		BlackPixelCount += Luminance < 0.03 ? 1 : 0;
+		OceanBluePixelCount += Pixel.B > Pixel.R * 1.15
+			&& Pixel.G > Pixel.R * 1.05 ? 1 : 0;
+		OverexposedPixelCount += Luminance > 0.97 ? 1 : 0;
+		WarmCharacterPixelCount += Pixel.R > Pixel.G * 1.08
+			&& Pixel.R > Pixel.B * 1.18
+			&& Pixel.R > 110 ? 1 : 0;
+		const int32 PixelY = PixelIndex / CaptureWidth;
+		if (PixelY < CaptureHeight / 4)
+		{
+			SkyRedSum += Pixel.R / 255.0;
+			++SkyPixelCount;
+		}
+		else if (PixelY > CaptureHeight / 3)
+		{
+			WaterRedSum += Pixel.R / 255.0;
+			++WaterPixelCount;
+		}
+	}
+	const double PixelCount = FMath::Max(1, Pixels.Num());
+	const double MeanLuminance = LuminanceSum / PixelCount;
+	const double LuminanceVariance = FMath::Max(
+		0.0,
+		LuminanceSquaredSum / PixelCount - MeanLuminance * MeanLuminance);
+	const double BlackRatio = BlackPixelCount / PixelCount;
+	const double OceanBlueRatio = OceanBluePixelCount / PixelCount;
+	const double OverexposedRatio = OverexposedPixelCount / PixelCount;
+	const double SkyMeanRed = SkyRedSum / FMath::Max(1, SkyPixelCount);
+	const double WaterMeanRed = WaterRedSum / FMath::Max(1, WaterPixelCount);
+	AddInfo(FString::Printf(
+		TEXT("Daylight ocean capture: mean %.3f, variance %.4f, black %.3f, overexposed %.3f, blue/cyan %.3f, sky-water red delta %.3f, warm rider %d"),
+		MeanLuminance,
+		LuminanceVariance,
+		BlackRatio,
+		OverexposedRatio,
+		OceanBlueRatio,
+		SkyMeanRed - WaterMeanRed,
+		WarmCharacterPixelCount));
+	TestTrue(TEXT("전체 화면이 낮 바다 범위로 밝고 과노출되지 않는다"),
+		MeanLuminance > 0.45 && MeanLuminance < 0.85);
+	TestTrue(TEXT("검은 배경 영역이 화면의 5% 미만이다"), BlackRatio < 0.05);
+	TestTrue(TEXT("화면 대부분이 파란색/청록색 바다 톤이다"), OceanBlueRatio > 0.55);
+	TestTrue(TEXT("과노출 픽셀이 화면의 8% 미만이다"), OverexposedRatio < 0.08);
+	TestTrue(TEXT("하늘과 바다가 색으로 구분되는 실제 수평선이 있다"),
+		SkyMeanRed - WaterMeanRed > 0.08);
+	TestTrue(TEXT("단색 clear 화면이 아니라 장면 명암 변화가 있다"),
+		LuminanceVariance > 0.002);
+	TestTrue(TEXT("주황색 서퍼 실루엣이 실제 픽셀에 렌더된다"),
+		WarmCharacterPixelCount > 25);
+
+	TArray64<uint8> PngData;
+	FImageUtils::PNGCompressImageArray(CaptureWidth, CaptureHeight, Pixels, PngData);
+	const FString CaptureDirectory = FPaths::Combine(
+		FPaths::ProjectSavedDir(), TEXT("Automation"));
+	IFileManager::Get().MakeDirectory(*CaptureDirectory, true);
+	const FString CapturePath = FPaths::Combine(
+		CaptureDirectory, TEXT("SurfingDaylightCapture.png"));
+	TestTrue(TEXT("검증용 낮 바다 PNG를 저장한다"),
+		FFileHelper::SaveArrayToFile(PngData, *CapturePath));
+	AddInfo(FString::Printf(TEXT("Daylight capture saved: %s"), *CapturePath));
+
+	SceneActor->ReleaseScene();
+	SceneActor->Destroy();
 	return true;
 }
 
