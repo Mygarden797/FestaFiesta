@@ -20,6 +20,14 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		{ EFF_FinaleGrade::A, 6000, 20 },
 		{ EFF_FinaleGrade::S, 8000, 30 }
 	};
+	
+	RevenuePerUseByMinorToken = {
+		{ TEXT("FoodStall"),       20 },
+		{ TEXT("MarketGoods"),     25 },
+		{ TEXT("CraftExperience"), 30 },
+		{ TEXT("ActivityGame"),    30 },
+		{ TEXT("Nightlife"),       40 },
+	};
 
 	// "안 함"은 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0)
 	PromotionBasic.CostGold = 500;

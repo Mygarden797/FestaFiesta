@@ -87,6 +87,17 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Screens")
 	TSoftClassPtr<UFF_ActivatableScreenBase> FinalReportScreenClass;
 
+	// --- 더미 ---
+
+	/**
+	 * 저장 기록 목록에 더미를 채운다.
+	 *
+	 * **기본은 꺼짐이다.** 첫 실행이 기본 상태이고 플레이 허브는 `기록 없음` 을 보여줘야 한다.
+	 * 저장 기록 화면의 카드 배치를 확인할 때만 켠다. 저장 API 가 실제로 오면 이 칸은 지운다.
+	 */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Dummy")
+	bool bUseDummySaveSlots = false;
+
 	// --- 진단 ---
 
 	/**

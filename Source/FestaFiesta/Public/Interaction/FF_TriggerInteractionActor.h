@@ -5,10 +5,14 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "AbilitySystemInterface.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "FF_TriggerInteractionActor.generated.h"
+
 
 class UAbilitySystemComponent;
 class UFF_TriggerInteractionDataAsset;
+class UFF_GameplayAbility_TriggerInteraction;
+class USphereComponent;
 
 UCLASS()
 class FESTAFIESTA_API AFF_TriggerInteractionActor : public AActor, public IAbilitySystemInterface
@@ -18,16 +22,41 @@ class FESTAFIESTA_API AFF_TriggerInteractionActor : public AActor, public IAbili
 public:
 
 	AFF_TriggerInteractionActor();
-	// 생성자 : 이 액터가 만들어질 때 컴포넌트들을 준비하는 함수
+	
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
-	// 이 액터의 가방 - GAS 기능을 쓰려면 반드시 필요한 요소
+	// GAS 상호작용 처리를 위한 핵심 컴포넌트
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
 	TObjectPtr<UFF_TriggerInteractionDataAsset> InteractionData;
-	// 콘텐츠 담당자가 여기에 DataAsset을 끼워 넣으면, 이 부스의 설정값이 결정됨
+	// 상호작용 에셋 설정 값 (쿨타임, 텍스트 등 데이터 연결용)
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
-	// IAbilitySystemInterface가 요구하는 함수 
+	// GAS 인터페이스 필수 구현 함수 (외부에서 컴포넌트 접근용)
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	TSubclassOf<class UFF_GameplayAbility_TriggerInteraction> InteractionAbilityClass;
+	// 상호작용 시 실행할 기능 블루프린트 지정
+
+	UFUNCTION(BlueprintCallable, Category = "Trigger")
+	void TryStartInteraction();
+	// 상호작용 키 입력 시 기능를 호출하는 함수
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	TObjectPtr<class USphereComponent> InteractionRange;
+	// 플레이어가 접근을 감지하는 범위
+
+	UPROPERTY(BlueprintReadOnly, Category = "Trigger")
+	bool bPlayerInRange = false;
+	// 지금 플레이어가 범위 안에 있는지 여부
+
+	UFUNCTION()
+	void OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	// 플레이어가 감지 범위 안으로 들어왔을 때 실행되는 이벤트
+
+	UFUNCTION()
+	void OnRangeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+	// 플레이어가 감지 범위 밖으로 벗어났을 때 실행되는 이벤트
+
 };

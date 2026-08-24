@@ -217,6 +217,26 @@ struct FESTAFIESTA_API FFF_UIPaletteFrontend
 };
 
 /**
+ * 전환 길이 3단계. 위젯이 숫자를 직접 고르지 않고 이 중 하나를 지정한다.
+ *
+ * 실제 초는 `UFF_UIAccessibilitySubsystem::GetMotionDuration()` 에서 받는다.
+ * **팔레트를 직접 읽지 않는다** — `접근성 > 움직임 감소` 가 켜지면 0 을 돌려줘야 하고,
+ * 그 판정을 위젯마다 두면 어디 하나가 빠진다.
+ */
+UENUM(BlueprintType)
+enum class EFF_UIMotionSpeed : uint8
+{
+	/** 호버·눌림 같은 즉각 반응. */
+	Fast	UMETA(DisplayName = "빠름"),
+
+	/** 패널 열기·닫기. */
+	Base	UMETA(DisplayName = "기본"),
+
+	/** 화면 전환. */
+	Screen	UMETA(DisplayName = "화면 전환")
+};
+
+/**
  * 전환 애니메이션 길이. **초 단위다.**
  *
  * tokens.css는 ms(`--dur-fast: 110ms`)이고 UE는 초다. 변환을 한 곳에서만 하기 위해

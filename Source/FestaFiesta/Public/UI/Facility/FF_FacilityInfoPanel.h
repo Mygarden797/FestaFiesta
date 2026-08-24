@@ -27,6 +27,7 @@ class FESTAFIESTA_API UFF_FacilityInfoPanel : public UUserWidget
 public:
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
+	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
@@ -43,7 +44,7 @@ public:
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
 protected:
-	virtual void NativeOnInitialized() override;
+	virtual void NativeOnInitialized() override;   
 	virtual FReply NativeOnMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;
@@ -57,6 +58,12 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
+
+	UFUNCTION()
+	void HandleMinigameClicked();
+
+	/** Keeps the shipped facility-info WBP compatible while designers migrate the new button. */
+	void EnsureMinigameButton();
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
 
@@ -74,6 +81,12 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_Remove;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_StartMinigame;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_StartMinigame;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;

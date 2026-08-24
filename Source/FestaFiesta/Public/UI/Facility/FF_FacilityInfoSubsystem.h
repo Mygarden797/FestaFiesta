@@ -96,6 +96,7 @@ public:
 
 	FFF_OnFacilityInfoActionRequested OnMoveRequested;
 	FFF_OnFacilityInfoActionRequested OnRemoveRequested;
+	FFF_OnFacilityInfoActionRequested OnMinigameRequested;
 	FFF_OnFacilityInfoActionRequested OnCloseRequested;
 
 private:
@@ -128,6 +129,7 @@ private:
 
 	void HandlePanelMoveRequested();
 	void HandlePanelRemoveRequested();
+	void HandlePanelMinigameRequested();
 	void HandlePanelCloseRequested();
 
 	UFUNCTION()

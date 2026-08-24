@@ -158,6 +158,19 @@ protected:
 	UFUNCTION()
 	void HandleTitleOptionsRequested();
 
+	UFUNCTION()
+	void HandlePlayHubContinueRequested();
+
+	UFUNCTION()
+	void HandlePlayHubNewFestivalRequested();
+
+	UFUNCTION()
+	void HandlePlayHubSaveListRequested();
+
+	/** 플레이 허브·저장 기록·옵션의 `뒤로` 가 모두 여기로 온다. */
+	UFUNCTION()
+	void HandleFrontendBackRequested();
+
 private:
 	/** 없으면 만들어 뷰포트에 올린다. 레벨이 바뀌면 이전 것은 이미 죽어 있다. */
 	bool EnsureRootLayout(APlayerController* Controller);
@@ -201,6 +214,15 @@ private:
 	EFF_UIFlowMode Mode = EFF_UIFlowMode::Idle;
 
 	EFF_UIFlowScreen CurrentFrontendScreen = EFF_UIFlowScreen::None;
+
+	/**
+	 * 뒤로 가기용 화면 히스토리. `GoToScreen` 이 직전 화면을 쌓고 `GoBack` 이 꺼낸다.
+	 *
+	 * 이게 없으면 "뒤로 갔는데 화면 이름이 그대로" 가 되거나, 어디서 왔는지 짐작으로
+	 * 정하게 된다 — 저장 기록은 플레이 허브에서 오는데 타이틀로 되돌리는 식이다.
+	 * CommonUI 스택이 **위젯**은 되살려 주지만 우리 쪽 표시 상태는 알려주지 않는다.
+	 */
+	TArray<EFF_UIFlowScreen> FrontendHistory;
 
 	/** 프론트엔드 레벨이 열린 뒤 띄울 화면. 첫 진입은 타이틀, `로비로` 는 국가 지도다. */
 	EFF_UIFlowScreen PendingFrontendScreen = EFF_UIFlowScreen::Title;
