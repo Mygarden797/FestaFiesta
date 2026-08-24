@@ -5,7 +5,7 @@
 namespace
 {
 	constexpr float MinTargetLifetimeSeconds = 0.05f;
-	constexpr float MinEffectiveTargetLifetimeSeconds = 0.01f;
+	constexpr float MinEffectiveRulesTargetLifetimeSeconds = 0.01f;
 
 	bool IsFinitePositiveRadius(const FVector2D& Radius)
 	{
@@ -108,7 +108,7 @@ bool FFF_TargetShootingRules::IsValid(FString* OutFailureReason) const
 		|| BonusTargetLifetimeScale < 0.1f
 		|| BonusTargetLifetimeScale > 1.0f
 		|| TargetLifetimeEndSeconds * BonusTargetLifetimeScale
-			< MinEffectiveTargetLifetimeSeconds)
+			< MinEffectiveRulesTargetLifetimeSeconds)
 	{
 		return Fail(TEXT("bonus-target chance, score multiplier and lifetime scale are invalid"));
 	}
