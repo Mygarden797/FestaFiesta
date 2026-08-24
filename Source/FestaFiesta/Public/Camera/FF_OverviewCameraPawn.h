@@ -103,6 +103,10 @@ protected:
 private:
 	void ApplyRigToComponents();
 
+	// 초점 아래 지면을 찾아 리그에 알린다. 리그는 월드를 모르므로 트레이스는 여기서 한다.
+	void UpdateGroundHeight(float DeltaSeconds);
+
+
 	FFF_OverviewCameraRig Rig;
 
 	// 이번 프레임에 쌓인 팬 입력. Tick 에서 소비하고 비운다.
