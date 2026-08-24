@@ -1094,6 +1094,47 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 
 ---
 
+## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-24)
+
+`Booth_ActivityGame_Shoot` 시설에서 `TargetShooting` 미니게임을 시작합니다. 입력은
+`Border_PlayArea` 전체가 받되, 실제 명중 여부는 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로
+바꾼 뒤 Runtime이 타원 판정합니다. `Border_Target`은 표시 전용(`HitTestInvisible`)이므로 WBP를
+수정할 때 클릭을 가로채는 위젯을 플레이 영역 위에 올리지 마세요.
+
+### 기획 수치 수정
+
+`DA_Minigame_TargetShooting`의 `Rules`만 수정합니다. 코드 수정이나 SaveGame 마이그레이션은
+필요 없습니다.
+
+| 목적 | Rules 필드 |
+| --- | --- |
+| 난이도 곡선 | `TargetLifetimeStartSeconds/EndSeconds`, `TargetRadiusStartNormalized/EndNormalized` |
+| HUD·닫기 버튼 회피 | `SpawnSafeMarginNormalized` (표적 전체 외곽 기준) |
+| 기본 점수·콤보·오발 감점 | `HitBaseScore`, `ComboBonusPerHit`, `MaxComboBonus`, `MissPenalty` |
+| 정밀/정중앙 판정 | `PrecisionRadiusRatio`, `BullseyeRadiusRatio`, 각 `ScoreBonus` |
+| 반응속도 보너스 | `FastReactionSeconds`, `SlowReactionSeconds`, `MaxReactionScoreBonus` |
+| 골든 타깃 | `BonusTargetChance`, `BonusTargetScoreMultiplier`, `BonusTargetLifetimeScale` |
+
+점수는 `기본 + 콤보 + 정밀도 + 반응속도`를 먼저 계산하고 골든 타깃이면 배율을 적용합니다.
+명중하면 즉시 다음 타깃이 나오며, 빗나가면 같은 타깃을 유지해 조준을 보정할 수 있습니다.
+타깃이 시간 안에 맞지 않으면 `TOO SLOW` 피드백 후 다음 타깃으로 넘어갑니다.
+
+### UI/모션 수정
+
+`WBP_FF_TargetShooting`의 **Class Defaults → Visual Style**만 수정합니다. 색·링 두께·폰트 크기·
+스폰/긴급 투명도 펄스·피드백 상승 거리/시간·플레이 영역 플래시·커스텀 조준점이 게임 규칙과
+분리되어 있습니다. 표적 외곽·정밀·불스아이 링은 Runtime 판정 비율로 그리며, 표적 본체 크기는
+애니메이션으로 확대하지 않습니다. 따라서 보이는 타원 내부와 클릭 판정 범위가 어긋나지 않습니다.
+HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시하고 결과 화면에도 같은 성과 지표를
+요약합니다.
+
+필수 WBP 이름은 기존 계약을 유지합니다. `Text_ShotFeedback`과 `Text_Reticle`은 선택 사항이며,
+없으면 런타임이 `Canvas_PlayArea` 안에 자동 생성합니다. 따라서 기존 WBP를 깨지 않고 점진적으로
+레이아웃을 바꿀 수 있습니다. 두 선택 위젯을 다른 패널로 옮겨도 초기화 시 플레이 캔버스 직속으로
+안전하게 다시 연결하며, 연결할 수 없는 경우에는 하드웨어 커서를 숨기지 않습니다.
+
+---
+
 # UI가 필요한데 아직 없는 것
 
 기획서 6.3의 Overview 필수 표시 항목입니다.
@@ -1165,6 +1206,7 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-19 | 백종태 | 전체 사이클 UI 프로토타입(타이틀→피날레→최종결산)을 한 바퀴 돌려 보고 **없어서 더미로 채운 것 8건**을 "UI가 필요한데 아직 없는 것"에 추가. `FFF_DayLedger` 노출 형태 질문에 회신(원인별 표·부스별 표 **둘 다** 필요, 환급은 분리, 하루 경계 스냅샷 필요). 시설 유지비에 대응하는 `EFF_SpendReason` 부재 보고 |
 | 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다. **부스별 표는 S10 까지 빈 표입니다** |
 | 2026-08-19 | 김시리 | 🔴 **정정: enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.** 8/18 에 "피날레 실패 이유가 한글로 온다"고 안내한 것이 틀렸습니다. `UFF_EconomyDisplayTextLibrary` 신설 — 피날레 실패 이유·등급 표시 두 군데를 이 함수로 바꿔 주세요. Stage 단계 이름도 같은 문제입니다(강민서) |
+| 2026-08-24 | Codex | 타깃 슈팅 레퍼런스 UX 반영 — 정밀도·반응속도·골든 타깃 점수, 즉시 명중 피드백, 커스텀 조준점, TPS/명중률/평균 반응시간 HUD와 결과 요약, Rules/Visual Style 분리 튜닝 가이드 추가 |
 | 2026-08-23 | 김시리 | ✅ **부스별 매출 표가 실제 값으로 찹니다.** NPC 파티가 부스 이용을 마치면(`Served`) 수수료가 원장에 들어갑니다. `FacilityId` 는 `FacilityDefinitionId` 라 Building 카탈로그 키와 같습니다 — 표시 이름을 그대로 해석하실 수 있습니다. **같은 정의의 부스 여러 개는 한 줄로 합쳐집니다**(인스턴스별 구분은 v1). 화면의 `잠정`·`더미` 배지를 떼셔도 됩니다 |
 | 2026-08-23 | 김시리 | ✅ **E-26 시설 유지비 종료 — 기획서에 없는 개념입니다.** `EFF_SpendReason` 에 사유를 추가하지 않습니다. 마감 화면 원장에서 **유지비 줄을 빼 주세요**. `FacilityInstall` 로 묶이는 것이 아니라 지출 자체가 발생하지 않습니다 |
 | 2026-08-23 | 김시리 | 🔴 **표시 문자열 정정이 아직 안 붙었습니다** — `FF_FestivalViewModelSubsystem.cpp:354`·`FF_LiveHudMenuBar.cpp:168` 두 곳입니다. 패키징 빌드에서만 드러나니 시연 전에 정리 필요 |
@@ -1172,3 +1214,4 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 | 2026-08-23 | 김시리 | 🔧 전체 자동화 테스트가 크래시로 중단되던 것을 고쳤습니다(피날레 콘솔 명령 수명 문제, 장원재 님 파일·별도 통지). 스위트가 55개에서 멈추던 것이 **359 통과 / 4 실패**로 복구됐습니다 |
 | 2026-08-23 | 김시리 | 문서 정리 — 종료된 협의 경위와 과거 서술을 걷어내고 **지금 필요한 것만** 남겼습니다. ViewModel 연결 5종에 실제 연결 여부를 표시했습니다 |
 | 2026-08-24 | 김시리 | 🔴 **셋업 예산 표시 제안 — A(예산 내역) + B(상단바 고정비·미납) 두 개면 닫힙니다.** 둘 다 **경제 쪽 추가 작업 0건**입니다. **B가 A보다 급하다고 봅니다** — 미납은 동작하는 기능인데 화면에 나오는 곳이 0곳이라 플레이어가 조용히 파산합니다. C(계약 카드)는 선택, D(연출용 래치)는 하시겠다고 하면 제가 만듭니다. 징수를 늦춰 셋업을 10,000으로 만드는 안과 Day1 전용 단계 추가는 **안 하는 쪽으로 정리**했습니다(이유는 3번) |
+

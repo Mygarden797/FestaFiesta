@@ -3,9 +3,11 @@
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 
 #include "CommonTextBlock.h"
+#include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
+#include "Components/VerticalBox.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 
@@ -14,6 +16,7 @@
 void UFF_FacilityInfoPanel::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	EnsureMinigameButton();
 
 	if (Button_Move)
 	{
@@ -26,6 +29,10 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	}
+	if (Button_StartMinigame)
+	{
+		Button_StartMinigame->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMinigameClicked);
 	}
 }
 
@@ -98,6 +105,19 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	{
 		Button_Remove->SetIsEnabled(bBuildContext && ViewData.bCanRemove);
 	}
+	if (Button_StartMinigame)
+	{
+		Button_StartMinigame->SetVisibility(
+			!bBuildContext && ViewData.bHasMinigame
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
+		Button_StartMinigame->SetIsEnabled(
+			!bBuildContext && ViewData.bCanStartMinigame);
+	}
+	SetText(Text_StartMinigame,
+		ViewData.MinigameActionText.IsEmpty()
+			? LOCTEXT("StartMinigame", "게임 시작")
+			: ViewData.MinigameActionText);
 
 	const bool bHasThumbnail = IsValid(ViewData.Thumbnail);
 	if (Image_Thumbnail)
@@ -151,6 +171,45 @@ void UFF_FacilityInfoPanel::HandleRemoveClicked()
 void UFF_FacilityInfoPanel::HandleCloseClicked()
 {
 	OnCloseRequested.Broadcast();
+}
+
+void UFF_FacilityInfoPanel::HandleMinigameClicked()
+{
+	if (CurrentViewData.Context == EFF_FacilityInfoContext::Live &&
+		CurrentViewData.bCanStartMinigame)
+	{
+		OnMinigameRequested.Broadcast();
+	}
+}
+
+void UFF_FacilityInfoPanel::EnsureMinigameButton()
+{
+	if (Button_StartMinigame || !WidgetTree)
+	{
+		return;
+	}
+
+	UVerticalBox* LiveSection = Cast<UVerticalBox>(Panel_LiveSection);
+	if (!LiveSection)
+	{
+		return;
+	}
+
+	Button_StartMinigame = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("Button_StartMinigame"));
+	Text_StartMinigame = WidgetTree->ConstructWidget<UCommonTextBlock>(
+		UCommonTextBlock::StaticClass(), TEXT("Text_StartMinigame"));
+	if (!Button_StartMinigame || !Text_StartMinigame)
+	{
+		Button_StartMinigame = nullptr;
+		Text_StartMinigame = nullptr;
+		return;
+	}
+
+	Text_StartMinigame->SetText(LOCTEXT("StartMinigameFallback", "게임 시작"));
+	Text_StartMinigame->SetJustification(ETextJustify::Center);
+	Button_StartMinigame->SetContent(Text_StartMinigame);
+	LiveSection->AddChildToVerticalBox(Button_StartMinigame);
 }
 
 void UFF_FacilityInfoPanel::SetText(UCommonTextBlock* Target, const FText& Text) const

@@ -6,6 +6,7 @@
 
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Economy/FF_FacilityCostResolver.h"
+#include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -27,7 +28,10 @@ namespace
 {
 	constexpr int32 FoodStallInstallCost = 400;
 	const FName TestZoneId(TEXT("GZ_DadaPocha"));
-	const FName FoodStallCostKey(TEXT("Cost.Booth.FoodStall"));
+	const FName AutomationFoodStallCostKey(
+		TEXT("Cost.Booth.FoodStall.EconomyBridgeAutomation"));
+	const FName ProductionFoodTruckCostKey(
+		TEXT("Cost.Booth.FoodStall.DadaPochaFoodTruck"));
 
 	/** Restores every mutable Zone System default changed by these integration tests. */
 	class FScopedEconomyBridgeTestSettings
@@ -113,7 +117,7 @@ namespace
 			CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
 			FFF_FacilityCostRow FoodStallRow;
 			FoodStallRow.InstallCost = FoodStallInstallCost;
-			CostTable->AddRow(FoodStallCostKey, FoodStallRow);
+			CostTable->AddRow(AutomationFoodStallCostKey, FoodStallRow);
 
 			Definition->FestivalId = TEXT("EconomyBridgeAutomationFestival");
 			Definition->InitialGold = InitialGold;
@@ -150,7 +154,7 @@ namespace
 	{
 		FFFZSFacilitySpec Spec =
 			FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
-		// A None override exercises the production Major.Minor naming convention.
+		// A None override exercises the production Major.Minor.Unique naming convention.
 		Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_EconomyBridgeAutomation");
 		Spec.InstallCostKey = NAME_None;
 		return Spec;
@@ -263,6 +267,78 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 		CostTable->GetPathName(),
 		FString(TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilityCosts.DT_FacilityCosts")));
 
+	UAssetManager& AssetManager = UAssetManager::Get();
+	TArray<FPrimaryAssetId> FacilityAssetIds;
+	AssetManager.GetPrimaryAssetIdList(
+		UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(),
+		FacilityAssetIds);
+	FacilityAssetIds.Sort([](const FPrimaryAssetId& Left, const FPrimaryAssetId& Right)
+	{
+		return Left.ToString() < Right.ToString();
+	});
+	TestTrue(TEXT("The Asset Manager exposes at least one production FacilityDefinition"),
+		!FacilityAssetIds.IsEmpty());
+
+	int32 AutomaticDefinitionCount = 0;
+	const FString CostLookupContext = TEXT("FFFZoneSystemEconomyContentContractTest");
+	for (const FPrimaryAssetId& AssetId : FacilityAssetIds)
+	{
+		const FSoftObjectPath AssetPath = AssetManager.GetPrimaryAssetPath(AssetId);
+		const UFFZSFacilityDefinition* Definition =
+			Cast<UFFZSFacilityDefinition>(AssetPath.TryLoad());
+		if (!TestNotNull(
+			*FString::Printf(TEXT("FacilityDefinition loads for cost coverage: %s"),
+				*AssetId.ToString()),
+			Definition))
+		{
+			continue;
+		}
+		if (!Definition->Spec.InstallCostKey.IsNone())
+		{
+			continue;
+		}
+
+		++AutomaticDefinitionCount;
+		FName GeneratedCostKey = NAME_None;
+		FString KeyFailureReason;
+		if (!TestTrue(
+			*FString::Printf(TEXT("Automatic four-part cost key resolves: %s"),
+				*AssetId.ToString()),
+			FFF_FacilityCostResolver::ResolveCostKey(
+				Definition->Spec,
+				GeneratedCostKey,
+				KeyFailureReason)))
+		{
+			AddError(FString::Printf(
+				TEXT("%s cost-key generation failed: %s"),
+				*AssetId.ToString(),
+				*KeyFailureReason));
+			continue;
+		}
+
+		TArray<FString> KeyParts;
+		GeneratedCostKey.ToString().ParseIntoArray(KeyParts, TEXT("."), false);
+		TestEqual(
+			*FString::Printf(TEXT("Automatic cost key has four parts: %s -> %s"),
+				*AssetId.ToString(),
+				*GeneratedCostKey.ToString()),
+			KeyParts.Num(),
+			4);
+
+		const FFF_FacilityCostRow* ExactRow =
+			CostTable->FindRow<FFF_FacilityCostRow>(
+				GeneratedCostKey,
+				CostLookupContext,
+				false);
+		TestNotNull(
+			*FString::Printf(TEXT("Canonical cost table contains the exact automatic row: %s -> %s"),
+				*AssetId.ToString(),
+				*GeneratedCostKey.ToString()),
+			ExactRow);
+	}
+	TestTrue(TEXT("At least one production FacilityDefinition uses automatic cost naming"),
+		AutomaticDefinitionCount > 0);
+
 	const UFFZSFacilityDefinition* FoodTruckDefinition =
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
@@ -292,8 +368,8 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 			*FailureReason));
 		return false;
 	}
-	TestEqual(TEXT("FoodTruck resolves to the Booth/FoodStall economy row"),
-		MatchedCostRow, FoodStallCostKey);
+	TestEqual(TEXT("FoodTruck resolves to its four-part facility-specific economy row"),
+		MatchedCostRow, ProductionFoodTruckCostKey);
 	TestEqual(TEXT("The live FoodTruck installation cost is 400 Gold"),
 		InstallCost, FoodStallInstallCost);
 	return true;
@@ -330,7 +406,7 @@ bool FFFZoneSystemEconomyInstallAndReplayTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	TestEqual(TEXT("None InstallCostKey resolves to Cost.Booth.FoodStall and spends 400 Gold"),
+	TestEqual(TEXT("None InstallCostKey resolves to the four-part automatic row and spends 400 Gold"),
 		Harness.Progression->GetGold(), 600);
 	TestNotNull(TEXT("The successful Install registers its Facility"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
