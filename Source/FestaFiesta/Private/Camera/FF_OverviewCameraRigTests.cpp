@@ -35,6 +35,9 @@ namespace FFF_OverviewCameraRigTestHelpers
 		// 그대로 두면 "앵커가 화면에 고정된다" 를 검증하는 테스트가 깨진다.
 		// 세기별 동작은 아래 전용 테스트에서 따로 본다.
 		Settings.ZoomToCursorStrength = 1.f;
+		// 지면 추종도 꺼둔다. 켜져 있으면 초점 Z 가 트레이스 결과에 따라 움직여서
+		// 위치를 검증하는 테스트가 흔들린다. 추종은 전용 테스트에서 따로 본다.
+		Settings.bFollowGroundHeight = false;
 		Settings.PanSpeedAtMaxZoom = 6000.f;
 		Settings.PanSpeedMinScale = 0.18f;
 		Settings.EdgeScrollSpeedScale = 2.5f;
@@ -511,6 +514,7 @@ bool FFF_OverviewCameraRig_TestHelperPinsPitchInputs::RunTest(const FString& Par
 	TestEqual(TEXT("헬퍼는 최소 높이 보정을 꺼둔다"), Settings.MinCameraHeightAboveFocus, 0.f, 0.001f);
 	TestEqual(TEXT("헬퍼는 포화 거리를 지정하지 않는다"), Settings.PitchSaturationArmLength, 0.f, 0.001f);
 	TestEqual(TEXT("헬퍼는 커서 줌 세기를 1 로 고정한다"), Settings.ZoomToCursorStrength, 1.f, 0.001f);
+	TestFalse(TEXT("헬퍼는 지면 추종을 꺼둔다"), Settings.bFollowGroundHeight);
 
 	// 위 둘이 0 이면 피치는 PitchAtMinZoom ~ PitchAtMaxZoom 을 그대로 쓴다.
 	FFF_OverviewCameraRig Rig = MakeRig();
@@ -559,6 +563,88 @@ bool FFF_OverviewCameraRig_ZoomToCursorStrengthScalesAnchoring::RunTest(const FS
 	FFF_OverviewCameraSettings Default;
 	TestTrue(TEXT("기본 세기가 0 과 1 사이다"),
 		Default.ZoomToCursorStrength > 0.f && Default.ZoomToCursorStrength < 1.f);
+	return true;
+}
+
+// 18. 지면 추종.
+//     초점 Z 가 고정이면 팬으로 언덕을 넘어갈 때 카메라가 지형을 파고든다.
+//     트레이스는 Pawn 이 하므로 여기서는 높이를 받았을 때의 반응만 본다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_FollowsGroundHeight, "FestaFiesta.Camera.Rig.FollowsGroundHeight", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_FollowsGroundHeight::RunTest(const FString& Parameters)
+{
+	constexpr float Offset = 100.f;
+
+	FFF_OverviewCameraSettings Settings = MakeSettings();
+	Settings.bFollowGroundHeight = true;
+	Settings.GroundFocusOffset = Offset;
+	Settings.GroundFollowSpeed = 6.f;
+
+	FFF_OverviewCameraRig Rig;
+	Rig.Initialize(Settings, FVector::ZeroVector, 8000.f);
+
+	// 첫 지면 정보는 보간 없이 즉시 붙는다.
+	// 시작하자마자 카메라가 천천히 내려오면 로딩 중처럼 보인다.
+	Rig.ApplyGroundHeight(500.f, 1.f / 60.f);
+	TestEqual(TEXT("첫 지면 높이는 즉시 반영된다"),
+		Rig.GetTargetState().FocusLocation.Z, 500.0 + Offset, 0.01);
+
+	// 이후에는 보간으로 따라간다. 계단이나 턱에서 화면이 튀면 안 된다.
+	Rig.ApplyGroundHeight(2000.f, 1.f / 60.f);
+	const double AfterOneStep = Rig.GetTargetState().FocusLocation.Z;
+	TestTrue(TEXT("한 스텝만에 목표로 점프하지 않는다"), AfterOneStep < 2000.0 + Offset);
+	TestTrue(TEXT("그래도 목표 쪽으로 움직인다"), AfterOneStep > 500.0 + Offset);
+
+	// 충분히 시간이 지나면 도달한다.
+	for (int32 Step = 0; Step < 300; ++Step)
+	{
+		Rig.ApplyGroundHeight(2000.f, 1.f / 60.f);
+	}
+	TestEqual(TEXT("결국 지면 높이에 도달한다"),
+		Rig.GetTargetState().FocusLocation.Z, 2000.0 + Offset, 1.0);
+
+	// 지면을 못 찾으면 마지막 높이를 유지한다.
+	// 0 으로 되돌리면 절벽이나 물 위에서 카메라가 바닥으로 떨어진다.
+	const double BeforeLost = Rig.GetTargetState().FocusLocation.Z;
+	Rig.OnGroundHeightUnavailable();
+	TestEqual(TEXT("지면을 놓쳐도 높이를 유지한다"),
+		Rig.GetTargetState().FocusLocation.Z, BeforeLost, 0.01);
+
+	// 꺼두면 아무 일도 일어나지 않는다.
+	FFF_OverviewCameraRig Disabled = MakeRig();
+	const double InitialZ = Disabled.GetTargetState().FocusLocation.Z;
+	Disabled.ApplyGroundHeight(9999.f, 1.f / 60.f);
+	TestEqual(TEXT("추종을 끄면 초점 Z 가 안 변한다"),
+		Disabled.GetTargetState().FocusLocation.Z, InitialZ, 0.01);
+	return true;
+}
+
+// 19. 지면 추종과 팬이 서로를 방해하지 않는지.
+//     팬은 수평만 옮기고 높이는 추종이 정한다. 둘이 같은 값을 건드리면 진동한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_PanDoesNotFightGround, "FestaFiesta.Camera.Rig.PanDoesNotFightGround", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_PanDoesNotFightGround::RunTest(const FString& Parameters)
+{
+	FFF_OverviewCameraSettings Settings = MakeSettings();
+	Settings.bFollowGroundHeight = true;
+	Settings.GroundFocusOffset = 0.f;
+	Settings.GroundFollowSpeed = 0.f;   // 즉시 반영
+
+	FFF_OverviewCameraRig Rig;
+	Rig.Initialize(Settings, FVector::ZeroVector, 8000.f);
+	Rig.ApplyGroundHeight(1000.f, 1.f / 60.f);
+
+	const double GroundZ = Rig.GetTargetState().FocusLocation.Z;
+
+	// 팬은 수평만 바꾼다.
+	Rig.Pan(FVector2D(1.f, 1.f), 1.f);
+	TestEqual(TEXT("팬이 초점 높이를 바꾸지 않는다"),
+		Rig.GetTargetState().FocusLocation.Z, GroundZ, 0.01);
+	TestTrue(TEXT("팬이 수평 위치는 바꾼다"),
+		!Rig.GetTargetState().FocusLocation.Equals(FVector(0.f, 0.f, GroundZ), 1.0));
+
+	// 줌도 높이에 영향을 주면 안 된다.
+	Rig.Zoom(3.f);
+	TestEqual(TEXT("줌이 초점 높이를 바꾸지 않는다"),
+		Rig.GetTargetState().FocusLocation.Z, GroundZ, 0.01);
 	return true;
 }
 

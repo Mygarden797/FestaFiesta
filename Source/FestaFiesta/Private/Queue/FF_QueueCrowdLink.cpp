@@ -189,8 +189,8 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 	// 나가는 사람과 들어오는 사람이 서로를 막지 않는다.
 	//
 	// 다음 목적지 결정은 여기서 걸지 않는다. Exit 에 물리적으로 도착한 뒤에 걸어야
-	// "나가면서 이미 다음 곳으로 방향을 틀어버리는" 그림이 안 나오는데,
-	// 그 도착 통지 채널이 아직 없다. Crowd 의 Arrived 가 붙으면 그때 옮긴다.
+	// "나가면서 이미 다음 곳으로 방향을 틀어버리는" 그림이 안 나온다.
+	// 도착 판정은 Crowd 가 소유하므로 그쪽 Arrived 신호에서 이어받는다.
 	if (ExitType == EFF_QueueExit::Served)
 	{
 		if (const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = GetBridge())

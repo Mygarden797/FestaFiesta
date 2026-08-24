@@ -295,6 +295,41 @@ void FFF_OverviewCameraRig::SnapRotate(int32 Direction)
 	Target.Yaw = NormalizeYaw(Next * Step);
 }
 
+void FFF_OverviewCameraRig::ApplyGroundHeight(const float GroundZ, const float DeltaSeconds)
+{
+	if (!Settings.bFollowGroundHeight)
+	{
+		return;
+	}
+
+	const float DesiredZ = GroundZ + Settings.GroundFocusOffset;
+
+	// 처음 받았으면 보간 없이 붙인다. 시작하자마자 카메라가 천천히 내려오면
+	// 레벨이 로딩 중인 것처럼 보인다.
+	if (!bHasGroundHeight || Settings.GroundFollowSpeed <= 0.f || DeltaSeconds <= 0.f)
+	{
+		Target.FocusLocation.Z = DesiredZ;
+		bHasGroundHeight = true;
+	}
+	else
+	{
+		Target.FocusLocation.Z = FMath::FInterpTo(
+			Target.FocusLocation.Z, DesiredZ, DeltaSeconds, Settings.GroundFollowSpeed);
+	}
+
+	// 경계가 Z 를 제한하고 있으면 그쪽이 이긴다. 지형을 따라가더라도
+	// 축제장 밖 높이로 나가면 안 된다.
+	ClampFocusToBounds(Target.FocusLocation);
+}
+
+void FFF_OverviewCameraRig::OnGroundHeightUnavailable()
+{
+	// 아무것도 하지 않는다. 마지막 높이가 그대로 유지된다.
+	//
+	// 지면을 못 찾는 경우는 절벽 위, 물 위, 콜리전이 없는 구역 등이다.
+	// 그때 기본 높이로 되돌리면 카메라가 갑자기 떨어지는데, 그건 파고드는 것보다 나쁘다.
+}
+
 void FFF_OverviewCameraRig::FocusOn(const FVector& WorldLocation)
 {
 	Target.FocusLocation = WorldLocation;
@@ -304,6 +339,10 @@ void FFF_OverviewCameraRig::FocusOn(const FVector& WorldLocation)
 void FFF_OverviewCameraRig::ResetToInitial()
 {
 	Target.FocusLocation = InitialFocusLocation;
+
+	// 초기 구도로 돌아가면 지면도 다시 잡는다. 안 그러면 다음 트레이스까지
+	// 초기 Z 와 현재 지형이 어긋난 채로 있다.
+	bHasGroundHeight = false;
 	Target.ArmLength = InitialArmLength;
 	Target.Yaw = 0.f;
 	Target.Pitch = ResolvePitchForArmLength(Target.ArmLength);
