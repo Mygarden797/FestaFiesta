@@ -11,6 +11,14 @@
 class UDataTable;
 class UFFZSWorldSubsystem;
 
+namespace FFF_CrowdNav
+{
+	inline FVector GetAnchorProjectionExtentCm()
+	{
+		return FVector(300.0, 300.0, 2000.0);
+	}
+}
+
 UENUM(BlueprintType)
 enum class EFF_DecisionMode : uint8
 {
@@ -88,6 +96,25 @@ struct FFF_CrowdDecisionStats
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 QueueWaitApplied = 0;
+
+	/**
+	 * 직전 목적지를 실패 후보로 표시한 횟수.
+	 *
+	 * Crowd 의 GetStuckDecisionRequests()와 짝이 맞는지로 배선을 확인한다 — 그쪽이 늘어나는데
+	 * 이 값이 0이면 사유(MoveFailed)나 직전 목적지가 컨텍스트에 안 실려 오고 있다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 FailedDestinationPenalized = 0;
+
+	/**
+	 * 이동 중 인원이 0이 아니게 실린 후보 수(후보 단위 누적).
+	 *
+	 * QueueWaitApplied 와 같은 이유로 후보 개수로 센다 — "결정은 돌았는데 이동 중 인원은
+	 * 하나도 안 붙었다"를 이 값 0으로 구분할 수 있다. Crowd 원장이 안 넘어오거나
+	 * DecisionMode 가 Full 이 아니면 0이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 InTransitApplied = 0;
 };
 
 /**

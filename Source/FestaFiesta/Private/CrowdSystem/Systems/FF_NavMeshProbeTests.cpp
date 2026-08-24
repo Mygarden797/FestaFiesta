@@ -11,6 +11,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
+#include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdHeightField.h"
 #include "Editor.h"
 #include "FileHelpers.h"
@@ -78,7 +79,7 @@ bool FFF_ProbeAnchorsInPIE::Update()
 
 		FNavLocation Projected;
 		const bool bOnMesh = NavSys->ProjectPointToNavigation(
-			AnchorCm, Projected, FVector(50.0, 50.0, 500.0));
+			AnchorCm, Projected, FFF_CrowdNav::GetAnchorProjectionExtentCm());
 
 		if (!bOnMesh)
 		{
@@ -117,6 +118,23 @@ bool FFF_ProbeAnchorsInPIE::Update()
 	double MaxRatio = 0.0;
 	FString WorstPair;
 
+	TArray<int32> Parent;
+	Parent.SetNum(AnchorsCm.Num());
+	for (int32 i = 0; i < Parent.Num(); ++i)
+	{
+		Parent[i] = i;
+	}
+
+	TFunction<int32(int32)> FindRoot = [&Parent, &FindRoot](int32 X) -> int32
+	{
+		while (Parent[X] != X)
+		{
+			Parent[X] = Parent[Parent[X]];
+			X = Parent[X];
+		}
+		return X;
+	};
+
 	for (int32 i = 0; i < AnchorsCm.Num(); ++i)
 	{
 		for (int32 j = 0; j < AnchorsCm.Num(); ++j)
@@ -136,6 +154,13 @@ bool FFF_ProbeAnchorsInPIE::Update()
 						*ZoneIds[i].ToString(), *ZoneIds[j].ToString());
 				}
 				continue;
+			}
+
+			const int32 RootI = FindRoot(i);
+			const int32 RootJ = FindRoot(j);
+			if (RootI != RootJ)
+			{
+				Parent[RootJ] = RootI;
 			}
 
 			++PairOk;
@@ -160,6 +185,51 @@ bool FFF_ProbeAnchorsInPIE::Update()
 		TEXT("[5] ★ 앵커 쌍: 성공 %d / 실패 %d, 최대 보행거리 %.1fm  <-- distance_ref_meters 재보정의 입력"),
 		PairOk, PairFail, MaxPathCm * 0.01);
 	UE_LOG(LogNavProbe, Log, TEXT("[5] 최대 보행/직선(XY) 비율 %.2f : %s"), MaxRatio, *WorstPair);
+
+	// --- NavMesh 섬 목록 -------------------------------------------------------------------
+	TMap<int32, TArray<int32>> Islands;
+	for (int32 i = 0; i < AnchorsCm.Num(); ++i)
+	{
+		Islands.FindOrAdd(FindRoot(i)).Add(i);
+	}
+
+	TArray<TArray<int32>> Sorted;
+	Islands.GenerateValueArray(Sorted);
+	Sorted.Sort([](const TArray<int32>& A, const TArray<int32>& B) { return A.Num() > B.Num(); });
+
+	UE_LOG(LogNavProbe, Log, TEXT("[6] === NavMesh 섬 %d개 (존 %d개) ==="),
+		Sorted.Num(), AnchorsCm.Num());
+
+	if (Sorted.Num() > 1)
+	{
+		UE_LOG(LogNavProbe, Warning,
+			TEXT("[6] ★ NavMesh가 %d조각으로 끊겨 있다 — 다른 섬에 있는 존끼리는 보행거리가 안 나오고 ")
+			TEXT("직선거리로 폴백한다. 경로추종도 그 사이는 우회하지 못한다. ")
+			TEXT("섬을 잇거나 NavLinkProxy 를 놓을 것"),
+			Sorted.Num());
+	}
+
+	for (int32 IslandIndex = 0; IslandIndex < Sorted.Num(); ++IslandIndex)
+	{
+		const TArray<int32>& Members = Sorted[IslandIndex];
+
+		FVector Centre = FVector::ZeroVector;
+		FString Names;
+		for (const int32 MemberIndex : Members)
+		{
+			Centre += AnchorsCm[MemberIndex];
+			if (!Names.IsEmpty())
+			{
+				Names += TEXT(", ");
+			}
+			Names += ZoneIds[MemberIndex].ToString();
+		}
+		Centre /= FMath::Max(Members.Num(), 1);
+
+		UE_LOG(LogNavProbe, Log,
+			TEXT("[6] 섬 %d: 존 %2d개  중심 (%.0f, %.0f, %.0f)  %s"),
+			IslandIndex, Members.Num(), Centre.X, Centre.Y, Centre.Z, *Names);
+	}
 
 	return true;
 }

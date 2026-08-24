@@ -212,7 +212,7 @@ void UFF_CrowdDecisionSubsystem::EnsureWalkDistanceMatrix(
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
 
-	const FVector ProjectionExtent(50.0, 50.0, 500.0);
+	const FVector ProjectionExtent = FFF_CrowdNav::GetAnchorProjectionExtentCm();
 
 	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
 	{
@@ -460,6 +460,23 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		return false;
 	}
 
+	// 실패한 사유로 온 요청만 직전 목적지를 벌한다 — Arrived(이용 완료)는 정상적인 재방문이고
+	// revisit 항이 맡는다. bFullMode 분기 밖에 두는 이유: 혼잡·대기는 모드에 따라 지우는
+	// 추정값이지만 "방금 여기 못 갔다"는 사실이다.
+	if ((Context.Reason == EFF_DecisionReason::MoveFailed
+			|| Context.Reason == EFF_DecisionReason::JoinRejected)
+		&& !Context.PreviousDestinationId.IsNone())
+	{
+		for (FFF_DestinationCandidate& Candidate : Candidates)
+		{
+			if (Candidate.DestinationId == Context.PreviousDestinationId)
+			{
+				Candidate.bFailedRecently = true;
+				++Stats.FailedDestinationPenalized;
+			}
+		}
+	}
+
 	static const TMap<FName, float> EmptyPreferenceVector;
 
 	const bool bFullMode = (DecisionMode == EFF_DecisionMode::Full);
@@ -476,6 +493,7 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		{
 			Candidate.CurrentOccupancy = 0.f;
 			Candidate.EstimatedWaitMinutes = 0.f;
+			Candidate.InTransitMemberCount = 0.f;
 		}
 	}
 	else
@@ -493,6 +511,22 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		// Queue 가 부분 가입을 허용하는 쪽으로 바뀌면 이 인자도 같이 바꿔야 한다.
 		Stats.QueueWaitApplied += FFF_QueueWaitAdapter::ApplyFromZoneBridge(
 			GetWorld(), Candidates, Context.PartySize);
+
+		// 아직 줄에 반영되지 않은 수요. 널이면 이 항은 0 으로 남는다(결선 전과 동일 동작).
+		// Crowd 가 결정 배치 안에서 누적해 주므로 같은 프레임에 결정하는 파티들이 서로를 본다.
+		if (Context.InTransitMemberCounts)
+		{
+			for (FFF_DestinationCandidate& Candidate : Candidates)
+			{
+				Candidate.InTransitMemberCount =
+					static_cast<float>(Context.InTransitMemberCounts->FindRef(Candidate.DestinationId));
+
+				if (Candidate.InTransitMemberCount > 0.f)
+				{
+					++Stats.InTransitApplied;
+				}
+			}
+		}
 	}
 	const TMap<FName, float>& PreferenceVector = bFullMode
 		? GetPreferenceVector(
@@ -557,6 +591,17 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	OutResult.Destination = Facility->ApproachWorldTransform.GetLocation();
 	OutResult.DestinationId = Decision.ChosenDestinationId;
 
+	// 고른 후보의 해소 플래그를 결과에 실어 보낸다. 여기서 GetNeedReliefFlags 를 다시 부르지 않는다 —
+	// BuildCandidates 가 이미 채운 값이고, 같은 판정을 두 번 하면 갈릴 자리가 생긴다.
+	if (const FFF_DestinationCandidate* Chosen = Candidates.FindByPredicate(
+			[&Decision](const FFF_DestinationCandidate& Candidate)
+			{
+				return Candidate.DestinationId == Decision.ChosenDestinationId;
+			}))
+	{
+		OutResult.NeedRelief = Chosen->NeedRelief;
+	}
+
 	++Stats.Chosen;
 
 	UE_LOG(LogCrowdDecision, Verbose,
@@ -612,6 +657,10 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 	Ar.Logf(TEXT("[문제] GUID 파싱 실패 : %d"), S.ParseFailed);
 	Ar.Logf(TEXT("[문제] 시설 소실      : %d"), S.FacilityMissing);
 	Ar.Logf(TEXT("[문제] 접근점 무효    : %d   (FacilityDefinition의 Entry[0] 확인)"), S.InvalidApproach);
+	Ar.Logf(TEXT("실패 목적지 감점 : %d   <- FF.Crowd.Flow의 '막혀서 포기'와 짝이 맞아야 한다"),
+		S.FailedDestinationPenalized);
+	Ar.Logf(TEXT("이동 중 인원 반영: %d   <- 0이면 Crowd 원장이 안 넘어오거나 Full 모드가 아니다"),
+		S.InTransitApplied);
 	Ar.Logf(TEXT("--- 퇴장 판정 ---"));
 	Ar.Logf(TEXT("퇴장: 체류 소진    : %d   (주 원인이어야 한다)"), Decision->GetLeaveByStayExpiredCount());
 	Ar.Logf(TEXT("퇴장: 인내 한계    : %d   (연속 no_choice %d회. 체류 소진보다 많으면 인원 보존 위험)"),

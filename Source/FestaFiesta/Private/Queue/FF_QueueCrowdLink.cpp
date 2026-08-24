@@ -193,6 +193,12 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 	// 도착 판정은 Crowd 가 소유하므로 그쪽 Arrived 신호에서 이어받는다.
 	if (ExitType == EFF_QueueExit::Served)
 	{
+		// ★ 퇴장 지점 조회보다 먼저 부른다. 아래 블록은 ExitLocation 을 못 구하면 그대로
+		// 재평가로 빠지는데, 그때도 이용은 끝난 것이므로 Need 는 풀려야 한다.
+		// 포기·취소(Abandoned·Cancelled)는 이 분기 밖이라 보상을 받지 않는다 —
+		// 그래야 "줄만 서다 나가는 것"이 이득이 되지 않는다.
+		Crowd->ApplyPartyNeedRelief(PartyId);
+
 		if (const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = GetBridge())
 		{
 			const FGuid ZoneFacilityId = Bridge->FindZoneFacilityId(FacilityId);

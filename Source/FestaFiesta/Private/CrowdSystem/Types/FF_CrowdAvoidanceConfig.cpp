@@ -36,6 +36,30 @@ bool FFF_CrowdAvoidanceConfig::Validate(FString& OutError) const
 		return false;
 	}
 
+	// 벽 컷오프는 "반발이 무시할 만해지는 거리"여야 한다. WallRepulsionB를 올려 놓고
+	// 컷오프를 그대로 두면 그 경계에서 반발이 뚝 끊겨 사람이 벽 쪽으로 튄다 —
+	// 계수를 아무리 봐도 원인이 안 보이는 종류의 버그라 여기서 잡는다.
+	// (여기 오는 시점에 WallRepulsionB > 0, MaxExponentArg > 0 은 위에서 보장된다)
+	if (WallCullRadiusMeters > 0.f)
+	{
+		// 70kg 기준 0.07 m/s^2. 구동력(3.0)의 2%면 경계에서 눈에 안 띈다.
+		constexpr float MaxDiscardedForceN = 5.f;
+		constexpr float ReferenceMassKg = 70.f;
+
+		const float ArgAtCutoff = FMath::Min(WallCullRadiusMeters / WallRepulsionB, MaxExponentArg);
+		const float DiscardedForceN = WallRepulsionA * FMath::Exp(-ArgAtCutoff);
+
+		if (DiscardedForceN > MaxDiscardedForceN)
+		{
+			OutError = FString::Printf(
+				TEXT("WallCullRadiusMeters(%.2fm)가 WallRepulsionB(%.2fm)에 비해 짧다 — ")
+				TEXT("컷오프에서 %.1fN(약 %.2f m/s^2)을 버린다. 컷오프를 늘리거나 B를 줄일 것"),
+				WallCullRadiusMeters, WallRepulsionB,
+				DiscardedForceN, DiscardedForceN / ReferenceMassKg);
+			return false;
+		}
+	}
+
 	if (MaxSocialAccelMps2 > MaxAccelerationMps2)
 	{
 		OutError = FString::Printf(

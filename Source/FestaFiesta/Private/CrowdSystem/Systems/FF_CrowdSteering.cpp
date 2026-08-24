@@ -27,7 +27,7 @@ namespace CrowdSteering
 
 	FVector ComputeDesiredVelocity(const FUnitData& Unit, const FStepParams& Params)
 	{
-		FVector ToTarget = Unit.TargetLocation - Unit.Position;
+		FVector ToTarget = Unit.GetSteerTarget() - Unit.Position;
 		ToTarget.Z = 0.f;
 
 		if (ToTarget.IsNearlyZero())
@@ -47,9 +47,11 @@ namespace CrowdSteering
 	{
 		Unit.PrevPosition = Unit.Position;
 
+		FVector ToFinal = Unit.TargetLocation - Unit.Position;
+		ToFinal.Z = 0.f;
 
-		FVector ToTarget = Unit.TargetLocation - Unit.Position;
-		ToTarget.Z = 0.f;
+		FVector ToSteer = Unit.GetSteerTarget() - Unit.Position;
+		ToSteer.Z = 0.f;
 
 		if (Params.bDrivingForceInForce)
 		{
@@ -104,13 +106,13 @@ namespace CrowdSteering
 		// 도착 반경은 개체값을 쓴다. 큐 슬롯에 서 있는 사람과 배회 중인 사람의 기준이 다르다 —
 		// 전역 값을 쓰면 슬롯 45UU 기준으로는 아직 못 온 사람이 150UU 기준으로 '도착'이 되어
 		// 막힘 집계에서 사라진다.
-		const bool bWantsToMove = ToTarget.SizeSquared() > FMath::Square(Unit.ArrivalRadiusUU);
+		const bool bWantsToMove = ToFinal.SizeSquared() > FMath::Square(Unit.ArrivalRadiusUU);
 
 		FVector Displacement = Unit.Position - Unit.PrevPosition;
 		Displacement.Z = 0.f;
 
-		// 방향 기준은 스텝 시작 시점의 ToTarget이다(적분 전에 구해 둔 값).
-		const float ProgressUU = FVector::DotProduct(Displacement, ToTarget.GetSafeNormal2D());
+		// 방향 기준은 스텝 시작 시점의 ToSteer다(적분 전에 구해 둔 값).
+		const float ProgressUU = FVector::DotProduct(Displacement, ToSteer.GetSafeNormal2D());
 
 		if (bWantsToMove && ProgressUU < Params.StuckSpeedThresholdUU * FixedDt)
 		{
