@@ -17,6 +17,8 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Minigame/FF_MinigameCatalogSubsystem.h"
+#include "Minigame/FF_MinigameDefinition.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
@@ -80,6 +82,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	{
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
+		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
@@ -147,6 +150,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		// the panel bound to a stale LocalPlayer would route input and viewport ownership incorrectly.
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
+		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
@@ -175,6 +179,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 
 	Panel->OnMoveRequested.AddUObject(this, &ThisClass::HandlePanelMoveRequested);
 	Panel->OnRemoveRequested.AddUObject(this, &ThisClass::HandlePanelRemoveRequested);
+	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
 	if (!Panel->AddToPlayerScreen(PanelZOrder))
 	{
@@ -182,6 +187,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 			TEXT("시설 정보 패널을 LocalPlayer 화면에 추가하지 못했습니다."));
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
+		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel = nullptr;
 		return false;
@@ -483,6 +489,24 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		bReconfigurePhase && bQueueEmpty && Facility.CanMoveOrRemove();
 	OutViewData.bCanMove = bCanModify;
 	OutViewData.bCanRemove = bCanModify;
+
+	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
+		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
+		: nullptr;
+	const UFF_MinigameDefinition* MinigameDefinition = MinigameCatalog
+		? MinigameCatalog->FindDefinitionForFacility(Spec.FacilityDefinitionId)
+		: nullptr;
+	OutViewData.bHasMinigame = MinigameDefinition != nullptr;
+	OutViewData.bCanStartMinigame =
+		SelectionContext == EFF_FacilityInfoContext::Live &&
+		MinigameDefinition &&
+		ReadModel.State == EFFZSFacilityState::Active &&
+		!ReadModel.bNeedsRelocation;
+	OutViewData.MinigameActionText = MinigameDefinition
+		? FText::Format(
+			LOCTEXT("StartNamedMinigame", "{0} 시작"),
+			MinigameDefinition->DisplayName)
+		: FText::GetEmpty();
 	return true;
 }
 
@@ -827,6 +851,14 @@ void UFF_FacilityInfoSubsystem::HandlePanelRemoveRequested()
 	if (SelectionContext == EFF_FacilityInfoContext::Build && SelectedFacilityId.IsValid())
 	{
 		OnRemoveRequested.Broadcast(SelectedFacilityId);
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelMinigameRequested()
+{
+	if (SelectionContext == EFF_FacilityInfoContext::Live && SelectedFacilityId.IsValid())
+	{
+		OnMinigameRequested.Broadcast(SelectedFacilityId);
 	}
 }
 

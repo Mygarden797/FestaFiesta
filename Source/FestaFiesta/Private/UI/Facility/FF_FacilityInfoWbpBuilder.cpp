@@ -143,10 +143,12 @@ namespace FFFacilityInfoWbpBuilder
 		const FName TextName,
 		const FText& Label,
 		const FLinearColor& Color,
-		const bool bVariable)
+		const bool bVariable,
+		const bool bTextVariable = false)
 	{
 		UButton* Button = MakeWidget<UButton>(Blueprint, Tree, ButtonName, bVariable);
-		UCommonTextBlock* Text = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TextName);
+		UCommonTextBlock* Text = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TextName, bTextVariable);
 		if (!Button || !Text)
 		{
 			return nullptr;
@@ -334,6 +336,17 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			return false;
 		}
+		// New facilities get the authored button. The runtime panel also creates this button when
+		// loading the already-shipped WBP, so adding the MVP never overwrites designer work.
+		UButton* StartMinigame = MakeTextButton(
+			Blueprint, Tree, TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
+			FText::FromString(TEXT("게임 시작")),
+			FLinearColor(0.02f, 0.55f, 0.72f, 1.0f), true, true);
+		if (!StartMinigame)
+		{
+			return false;
+		}
+		AddVertical(*LiveSection, *StartMinigame, FMargin(0.0f, 10.0f, 0.0f, 0.0f));
 
 		UBorder* SectionBackground = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Section_Background"));
 		UOverlay* SectionSwitcher = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Section_Switcher"));
@@ -398,7 +411,6 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			return false;
 		}
-
 		const UCanvasPanel* Root = Cast<UCanvasPanel>(Tree->RootWidget);
 		const USizeBox* PanelSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Panel_Size")));
 		const UCanvasPanelSlot* PanelSlot = PanelSize

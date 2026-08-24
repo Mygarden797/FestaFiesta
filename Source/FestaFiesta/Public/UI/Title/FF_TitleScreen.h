@@ -44,6 +44,7 @@ public:
 
 protected:
 	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
 	/** 초기 포커스는 항상 `플레이`다 (규격 7절). */
