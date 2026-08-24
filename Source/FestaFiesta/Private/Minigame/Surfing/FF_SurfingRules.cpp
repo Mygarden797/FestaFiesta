@@ -31,6 +31,24 @@ bool FFF_SurfingRules::IsValid(FString* OutFailureReason) const
 	{
 		return Fail(TEXT("arena horizontal metric scale must be finite and greater than zero"));
 	}
+	if (!FMath::IsFinite(SteeringStrength)
+		|| SteeringStrength < 0.05f
+		|| SteeringStrength > 1.0f
+		|| !FMath::IsFinite(ForwardInputSpeedInfluence)
+		|| ForwardInputSpeedInfluence < 0.0f
+		|| ForwardInputSpeedInfluence >= 1.0f)
+	{
+		return Fail(TEXT("endless steering and forward speed influence are invalid"));
+	}
+	if (!FMath::IsFinite(CourseSegmentLengthNormalized)
+		|| CourseSegmentLengthNormalized <= 2.0f
+		|| CourseSegmentsBehind < 1
+		|| CourseSegmentsBehind > 8
+		|| CourseSegmentsAhead < 2
+		|| CourseSegmentsAhead > 12)
+	{
+		return Fail(TEXT("endless course segment length and recycling window are invalid"));
+	}
 
 	if (!FMath::IsFinite(PlayerCollisionRadiusNormalized)
 		|| PlayerCollisionRadiusNormalized <= 0.0f
@@ -49,10 +67,11 @@ bool FFF_SurfingRules::IsValid(FString* OutFailureReason) const
 		return Fail(TEXT("invincibility and boost tuning must be positive, and boost must increase speed"));
 	}
 
-	// One fixed tick may contain several reflected subsegments. Keep the authored
-	// upper bound finite so collision work remains bounded even for malformed data.
+	// One fixed tick may cross several course segments. Include the maximum W input
+	// speed trim so authored tuning cannot exceed the bounded collision workload.
 	const double MaximumMetricTickTravel = static_cast<double>(CharacterSpeedNormalizedPerSecond)
 		* static_cast<double>(BoostSpeedMultiplier)
+		* (1.0 + static_cast<double>(ForwardInputSpeedInfluence))
 		* FFSurfingRules::FixedSimulationStepSeconds;
 	const double MaximumCoordinateTickTravel = MaximumMetricTickTravel
 		/ FMath::Min(static_cast<double>(ArenaHorizontalMetricScale), 1.0);

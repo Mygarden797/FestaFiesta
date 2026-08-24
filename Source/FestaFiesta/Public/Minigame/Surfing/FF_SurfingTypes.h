@@ -7,7 +7,7 @@
 #include "Minigame/FF_MinigameTypes.h"
 #include "FF_SurfingTypes.generated.h"
 
-/** Stable outcomes for continuous arena movement input. */
+/** Stable outcomes for continuous endless-course movement input. */
 UENUM(BlueprintType)
 enum class EFF_SurfingSteerResult : uint8
 {
@@ -45,10 +45,10 @@ UENUM(BlueprintType)
 enum class EFF_SurfingEventType : uint8
 {
 	None,
-	/** Legacy scrolling event; fixed arena objects are never avoided or removed. */
+	/** Legacy event kept for serialized v1 widgets. */
 	ObstacleAvoided UMETA(Hidden),
 	ObstacleHit,
-	/** A boosted contact. The fixed obstacle remains in the arena. */
+	/** A boosted contact. The obstacle remains in its current course segment. */
 	ObstacleSmashed,
 	CoinCollected,
 	HeartCollected,
@@ -56,7 +56,7 @@ enum class EFF_SurfingEventType : uint8
 	BoostActivated
 };
 
-/** One authored object in the fixed two-dimensional surfing arena. */
+/** One authored object in a repeatable two-dimensional surfing course segment. */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_SurfingCourseRow : public FTableRowBase
 {
@@ -65,7 +65,7 @@ struct FESTAFIESTA_API FFF_SurfingCourseRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Surfing Course")
 	EFF_SurfingObjectType Type = EFF_SurfingObjectType::Rock;
 
-	/** Arena location in [-1, 1] on both axes. +Y is screen-up/forward. */
+	/** Segment-local location in [-1, 1]. +Y is course-forward. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Surfing Course")
 	FVector2D PositionNormalized = FVector2D::ZeroVector;
 
@@ -81,7 +81,7 @@ struct FESTAFIESTA_API FFF_SurfingCourseRow : public FTableRowBase
 	bool bEnabled = true;
 };
 
-/** Data-authored tuning for the deterministic fixed-arena surfing runtime. */
+/** Data-authored tuning for the deterministic endless-course surfing runtime. */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_SurfingRules
 {
@@ -93,6 +93,26 @@ struct FESTAFIESTA_API FFF_SurfingRules
 	/** Display metric width per one normalized X unit (arena aspect ratio). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.01"))
 	float ArenaHorizontalMetricScale = 2.18f;
+
+	/** A/D steering contribution while the course keeps moving forward. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.05", ClampMax = "1.0"))
+	float SteeringStrength = 0.55f;
+
+	/** W/S speed adjustment. Values below one guarantee uninterrupted forward travel. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement", meta = (ClampMin = "0.0", ClampMax = "0.75"))
+	float ForwardInputSpeedInfluence = 0.25f;
+
+	/** Length of one repeatable DataTable course segment in normalized forward units. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Course", meta = (ClampMin = "2.01", ClampMax = "10.0"))
+	float CourseSegmentLengthNormalized = 2.4f;
+
+	/** Recycled segments retained behind the surfer for smooth reverse turns. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Course", meta = (ClampMin = "1", ClampMax = "8"))
+	int32 CourseSegmentsBehind = 2;
+
+	/** Recycled segments prepared in front of the surfer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Course", meta = (ClampMin = "2", ClampMax = "12"))
+	int32 CourseSegmentsAhead = 4;
 
 	/** Player radius in display-metric units, not raw normalized X distance. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collision", meta = (ClampMin = "0.001", ClampMax = "1.0"))
@@ -133,8 +153,8 @@ struct FESTAFIESTA_API FFF_SurfingRules
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Score", meta = (ClampMin = "0.0"))
 	float CollisionPenalty = 100.0f;
 
-	// Serialized scrolling-course assets remain loadable while their independent
-	// UI/data migration lands. Fixed-arena gameplay must not read these fields.
+	// Serialized v1 scrolling-course assets remain loadable while the segment
+	// based runtime uses the explicit settings above.
 	UPROPERTY(meta = (DeprecatedProperty, DeprecationMessage = "Use CharacterSpeedNormalizedPerSecond."))
 	float LateralSpeedNormalizedPerSecond = 1.6f;
 
@@ -192,7 +212,7 @@ struct FESTAFIESTA_API FFF_SurfingRules
 	bool IsValid(FString* OutFailureReason = nullptr) const;
 };
 
-/** One active fixed-arena object projected into the UI read model. */
+/** One active recycled-course object projected into camera-relative coordinates. */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_SurfingObjectSnapshot
 {
@@ -204,6 +224,7 @@ struct FESTAFIESTA_API FFF_SurfingObjectSnapshot
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
 	EFF_SurfingObjectType Type = EFF_SurfingObjectType::Rock;
 
+	/** Camera-relative position. Y=0 is the surfer and +Y is farther ahead. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
 	FVector2D PositionNormalized = FVector2D::ZeroVector;
 
@@ -224,7 +245,7 @@ struct FESTAFIESTA_API FFF_SurfingObjectSnapshot
 	float ForwardAlpha = 0.0f;
 };
 
-/** Authoritative read model for the fixed two-dimensional surfing arena. */
+/** Authoritative read model for the continuously recycled surfing course. */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_SurfingSnapshot
 {
@@ -236,15 +257,23 @@ struct FESTAFIESTA_API FFF_SurfingSnapshot
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
 	FVector2D PlayerPositionNormalized = FVector2D::ZeroVector;
 
+	/** Unbounded course-forward coordinate. Presentation remains camera-relative. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
+	double CourseProgressNormalized = 0.0;
+
+	/** Repeatable segment currently underneath the surfer. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
+	int32 CourseSegmentIndex = 0;
+
 	/** Horizontal display metric used by authoritative movement and collision. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
 	float ArenaHorizontalMetricScale = 2.18f;
 
-	/** Last raw input vector. Zero preserves CurrentHeading and never stops movement. */
+	/** Last raw input vector. Zero recentres steering while automatic forward travel continues. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
 	FVector2D MovementInput = FVector2D::ZeroVector;
 
-	/** Unit direction under sqrt((X * ArenaHorizontalMetricScale)^2 + Y^2). */
+	/** Auto-forward steering direction under the aspect-corrected arena metric. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing")
 	FVector2D CurrentHeading = FVector2D(0.0, 1.0);
 

@@ -16,9 +16,13 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/Font.h"
 #include "Engine/Texture2D.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "Engine/World.h"
 #include "InputCoreTypes.h"
 #include "Minigame/FF_SurfingRuntime.h"
 #include "UI/FF_UILog.h"
+#include "UI/Minigame/FF_SurfingCharacterActor.h"
+#include "UI/Minigame/FF_SurfingSceneActor.h"
 
 #define LOCTEXT_NAMESPACE "FFSurfingScreen"
 
@@ -180,7 +184,12 @@ bool UFF_SurfingScreen::SetRuntime(UFF_SurfingRuntime* InRuntime)
 {
 	if (!IsValid(InRuntime))
 	{
+		ReleaseAllMovementInput();
 		Runtime = nullptr;
+		SetSessionId(FGuid());
+		ResetTransientPresentationState();
+		Release3DScene();
+		RefreshPresentation();
 		return false;
 	}
 
@@ -274,6 +283,31 @@ void UFF_SurfingScreen::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 	RefreshPresentation();
 }
 
+bool UFF_SurfingScreen::SetSurfingCharacterClass(
+	TSubclassOf<AFF_SurfingCharacterActor> InCharacterClass)
+{
+	if (!IsValid(SurfingSceneActor))
+	{
+		VisualStyle.SurfingCharacterClass = InCharacterClass;
+		return true;
+	}
+	const bool bReady = SurfingSceneActor->SetSurfingCharacterClass(InCharacterClass);
+	AFF_SurfingCharacterActor* ActualCharacter =
+		SurfingSceneActor->GetSurfingCharacterActor();
+	if (!bReady || !IsValid(ActualCharacter))
+	{
+		bUsing3DScene = false;
+		return false;
+	}
+
+	const bool bRequestedDefault = !InCharacterClass;
+	const bool bRequestedClassInstalled = bRequestedDefault
+		|| ActualCharacter->GetClass() == InCharacterClass.Get();
+	VisualStyle.SurfingCharacterClass = ActualCharacter->GetClass();
+	bUsing3DScene = SurfingSceneActor->IsSceneReady();
+	return bRequestedClassInstalled;
+}
+
 TSharedRef<SWidget> UFF_SurfingScreen::RebuildWidget()
 {
 	if (!WidgetTree || !WidgetTree->RootWidget)
@@ -305,12 +339,14 @@ void UFF_SurfingScreen::NativeConstruct()
 	Super::NativeConstruct();
 	ResolveBindingsFromWidgetTree();
 	InitializeBindings();
+	Initialize3DScene();
 	RefreshPresentation();
 }
 
 void UFF_SurfingScreen::NativeDestruct()
 {
 	ReleaseAllMovementInput();
+	Release3DScene();
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.RemoveAll(this);
@@ -341,12 +377,10 @@ void UFF_SurfingScreen::NativeDestruct()
 
 	EntityWidgetsById.Reset();
 	RecycledEntityWidgets.Reset();
-	PresentedEventSerial = 0;
-	PresentedEventType = EFF_SurfingEventType::None;
-	EventPulseRemainingSeconds = 0.0f;
-	PresentedEntityHash = 0;
-	bHasPresentedEntityHash = false;
+	ResetTransientPresentationState();
 	InitialFocusTarget = nullptr;
+	Runtime = nullptr;
+	SetSessionId(FGuid());
 	bBindingsInitialized = false;
 	Super::NativeDestruct();
 }
@@ -362,10 +396,19 @@ void UFF_SurfingScreen::NativeTick(
 	const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (bUsing3DScene
+		&& (!IsValid(SurfingSceneActor) || !SurfingSceneActor->IsSceneReady()))
+	{
+		Release3DScene();
+	}
 
 	if (IsValid(Runtime))
 	{
 		ApplySnapshot(Runtime->GetSurfingSnapshot());
+	}
+	else if (bUsing3DScene && IsValid(SurfingSceneActor) && bHasSnapshot)
+	{
+		SurfingSceneActor->ApplySnapshot(DisplayedSnapshot);
 	}
 	else
 	{
@@ -523,6 +566,41 @@ FReply UFF_SurfingScreen::NativeOnMouseButtonDown(
 	const FVector2D PlayerPosition(
 		FMath::Clamp(DisplayedSnapshot.PlayerPositionNormalized.X, -1.0f, 1.0f),
 		FMath::Clamp(DisplayedSnapshot.PlayerPositionNormalized.Y, -1.0f, 1.0f));
+	if (bUsing3DScene && IsValid(SurfingSceneActor) && Border_SurfBackdrop)
+	{
+		const FGeometry& CaptureGeometry = Border_SurfBackdrop->GetCachedGeometry();
+		const FVector2D CaptureSize = CaptureGeometry.GetLocalSize();
+		if (CaptureSize.X <= UE_SMALL_NUMBER || CaptureSize.Y <= UE_SMALL_NUMBER)
+		{
+			return FReply::Handled();
+		}
+
+		const FVector2D CaptureLocal = CaptureGeometry.AbsoluteToLocal(
+			InMouseEvent.GetScreenSpacePosition());
+		if (CaptureLocal.X < 0.0 || CaptureLocal.Y < 0.0
+			|| CaptureLocal.X > CaptureSize.X || CaptureLocal.Y > CaptureSize.Y)
+		{
+			return FReply::Handled();
+		}
+
+		const FVector2D CaptureNormalized(
+			CaptureLocal.X / CaptureSize.X,
+			CaptureLocal.Y / CaptureSize.Y);
+		FVector2D TargetArenaPosition;
+		if (SurfingSceneActor->DeprojectCapturePointToArena(
+			CaptureNormalized, TargetArenaPosition))
+		{
+			FVector2D ArenaDirection = TargetArenaPosition - PlayerPosition;
+			if (!ArenaDirection.IsNearlyZero())
+			{
+				ArenaDirection.Normalize();
+				TrySetMovementInput(ArenaDirection);
+			}
+			return FReply::Handled();
+		}
+		return FReply::Handled();
+	}
+
 	const FVector2D ArenaHalfExtents = GetProjectedArenaHalfExtents(LocalSize);
 	const FVector2D PlayerAnchor(
 		VisualStyle.ArenaCenter.X + PlayerPosition.X * ArenaHalfExtents.X,
@@ -987,23 +1065,7 @@ void UFF_SurfingScreen::ResolveBindingsFromWidgetTree()
 	CloseLabel = Cast<UTextBlock>(
 		WidgetTree->FindWidget(TEXT("Text_CloseLabel")));
 
-	if (Border_SurfBackdrop)
-	{
-		if (UTexture2D* BackdropTexture = VisualStyle.BackdropTexture.IsNull()
-			? nullptr
-			: VisualStyle.BackdropTexture.LoadSynchronous())
-		{
-			FSlateBrush BackdropBrush;
-			BackdropBrush.DrawAs = ESlateBrushDrawType::Image;
-			BackdropBrush.SetResourceObject(BackdropTexture);
-			BackdropBrush.TintColor = FSlateColor(VisualStyle.BackdropTint);
-			Border_SurfBackdrop->SetBrush(BackdropBrush);
-		}
-		else
-		{
-			Border_SurfBackdrop->SetBrushColor(VisualStyle.OceanColor);
-		}
-	}
+	RefreshBackdropBrush();
 }
 
 bool UFF_SurfingScreen::HasUsableDesignerBindings() const
@@ -1059,6 +1121,181 @@ void UFF_SurfingScreen::InitializeBindings()
 	Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
 	InitialFocusTarget = NativeGetDesiredFocusTarget();
 	bBindingsInitialized = true;
+}
+
+bool UFF_SurfingScreen::Initialize3DScene()
+{
+	if (bUsing3DScene && IsValid(SurfingSceneActor)
+		&& SurfingSceneActor->IsSceneReady())
+	{
+		return true;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World || !World->IsGameWorld() || World->GetNetMode() == NM_DedicatedServer
+		|| !Border_SurfBackdrop)
+	{
+		Release3DScene();
+		return false;
+	}
+
+	Release3DScene();
+	SurfingRenderTarget = NewObject<UTextureRenderTarget2D>(
+		this, UTextureRenderTarget2D::StaticClass(), NAME_None, RF_Transient);
+	if (!SurfingRenderTarget)
+	{
+		Release3DScene();
+		return false;
+	}
+
+	SurfingRenderTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA8;
+	SurfingRenderTarget->ClearColor = VisualStyle.DaylightSkyColor;
+	SurfingRenderTarget->bAutoGenerateMips = false;
+	SurfingRenderTarget->InitAutoFormat(
+		FMath::Clamp(VisualStyle.RenderTargetWidth, 320, 3840),
+		FMath::Clamp(VisualStyle.RenderTargetHeight, 180, 2160));
+	SurfingRenderTarget->UpdateResourceImmediate(true);
+
+	const uint32 IsolationIndex = GetSessionId().IsValid()
+		? GetTypeHash(GetSessionId()) % 128u
+		: GetTypeHash(GetFName()) % 128u;
+	const FVector IsolatedArenaLocation(
+		300000.0 + static_cast<double>(IsolationIndex % 8u) * 18000.0,
+		300000.0 + static_cast<double>(IsolationIndex / 8u) * 18000.0,
+		100000.0);
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = GetOwningPlayer();
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SpawnParameters.ObjectFlags |= RF_Transient;
+	SpawnParameters.Name = MakeUniqueObjectName(
+		World,
+		AFF_SurfingSceneActor::StaticClass(),
+		TEXT("FF_Surfing3DScene"));
+	SurfingSceneActor = World->SpawnActor<AFF_SurfingSceneActor>(
+		AFF_SurfingSceneActor::StaticClass(),
+		IsolatedArenaLocation,
+		FRotator::ZeroRotator,
+		SpawnParameters);
+	if (!IsValid(SurfingSceneActor))
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] Surfing 3D scene actor 생성에 실패해 2D 안전 화면을 사용한다."),
+			*GetName());
+		Release3DScene();
+		return false;
+	}
+
+	SurfingSceneActor->SetReplicates(false);
+	SurfingSceneActor->SetReplicateMovement(false);
+	SurfingSceneActor->InitializeScene(VisualStyle, SurfingRenderTarget);
+	if (!SurfingSceneActor->IsSceneReady())
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] Surfing 3D scene resource가 준비되지 않아 2D 안전 화면을 사용한다."),
+			*GetName());
+		Release3DScene();
+		return false;
+	}
+
+	Set3DPresentationActive(true);
+	if (bHasSnapshot)
+	{
+		SurfingSceneActor->ApplySnapshot(DisplayedSnapshot);
+	}
+	return true;
+}
+
+void UFF_SurfingScreen::Release3DScene()
+{
+	Set3DPresentationActive(false);
+	if (IsValid(SurfingSceneActor))
+	{
+		SurfingSceneActor->ReleaseScene();
+		SurfingSceneActor->Destroy();
+	}
+	SurfingSceneActor = nullptr;
+	if (SurfingRenderTarget)
+	{
+		SurfingRenderTarget->ReleaseResource();
+	}
+	SurfingRenderTarget = nullptr;
+	RefreshBackdropBrush();
+}
+
+void UFF_SurfingScreen::Set3DPresentationActive(const bool bActive)
+{
+	bUsing3DScene = bActive
+		&& IsValid(SurfingSceneActor)
+		&& SurfingSceneActor->IsSceneReady()
+		&& IsValid(SurfingRenderTarget);
+	if (Canvas_EntityLayer)
+	{
+		Canvas_EntityLayer->SetVisibility(
+			bUsing3DScene
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::HitTestInvisible);
+	}
+	if (Border_SurferAvatar)
+	{
+		Border_SurferAvatar->SetVisibility(
+			bUsing3DScene
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::HitTestInvisible);
+	}
+	RefreshBackdropBrush();
+}
+
+void UFF_SurfingScreen::RefreshBackdropBrush()
+{
+	if (!Border_SurfBackdrop)
+	{
+		return;
+	}
+
+	if (bUsing3DScene && SurfingRenderTarget)
+	{
+		FSlateBrush CaptureBrush;
+		CaptureBrush.DrawAs = ESlateBrushDrawType::Image;
+		CaptureBrush.SetResourceObject(SurfingRenderTarget);
+		CaptureBrush.SetImageSize(FVector2D(
+			static_cast<double>(SurfingRenderTarget->SizeX),
+			static_cast<double>(SurfingRenderTarget->SizeY)));
+		CaptureBrush.TintColor = FSlateColor(FLinearColor::White);
+		Border_SurfBackdrop->SetBrush(CaptureBrush);
+		Border_SurfBackdrop->SetBrushColor(FLinearColor::White);
+		return;
+	}
+
+	if (UTexture2D* BackdropTexture = VisualStyle.BackdropTexture.IsNull()
+		? nullptr
+		: VisualStyle.BackdropTexture.LoadSynchronous())
+	{
+		FSlateBrush BackdropBrush;
+		BackdropBrush.DrawAs = ESlateBrushDrawType::Image;
+		BackdropBrush.SetResourceObject(BackdropTexture);
+		BackdropBrush.TintColor = FSlateColor(VisualStyle.BackdropTint);
+		Border_SurfBackdrop->SetBrush(BackdropBrush);
+		Border_SurfBackdrop->SetBrushColor(FLinearColor::White);
+	}
+	else
+	{
+		Border_SurfBackdrop->SetBrush(FSlateBrush());
+		Border_SurfBackdrop->SetBrushColor(VisualStyle.OceanColor);
+	}
+}
+
+void UFF_SurfingScreen::ResetTransientPresentationState()
+{
+	DisplayedSnapshot = FFF_SurfingSnapshot();
+	DisplayedResult = FFF_MinigameResult();
+	bHasSnapshot = false;
+	bHasResult = false;
+	PresentedEventSerial = 0;
+	PresentedEventType = EFF_SurfingEventType::None;
+	EventPulseRemainingSeconds = 0.0f;
+	PresentedEntityHash = 0;
+	bHasPresentedEntityHash = false;
 }
 
 void UFF_SurfingScreen::RefreshPresentation()
@@ -1222,8 +1459,18 @@ void UFF_SurfingScreen::RefreshPresentation()
 	InitialFocusTarget = bShowResult && Button_Close
 		? static_cast<UWidget*>(Button_Close.Get())
 		: static_cast<UWidget*>(this);
-	RefreshArenaLayout();
-	RefreshEntityWidgets();
+	if (bUsing3DScene && IsValid(SurfingSceneActor))
+	{
+		if (bHasSnapshot)
+		{
+			SurfingSceneActor->ApplySnapshot(DisplayedSnapshot);
+		}
+	}
+	else
+	{
+		RefreshArenaLayout();
+		RefreshEntityWidgets();
+	}
 	RefreshFocusPresentation();
 }
 
@@ -1242,7 +1489,7 @@ void UFF_SurfingScreen::RefreshFocusPresentation()
 
 void UFF_SurfingScreen::RefreshArenaLayout()
 {
-	if (!Border_SurferAvatar)
+	if (bUsing3DScene || !Border_SurferAvatar)
 	{
 		return;
 	}
@@ -1309,7 +1556,7 @@ void UFF_SurfingScreen::RefreshArenaLayout()
 
 void UFF_SurfingScreen::RefreshEntityWidgets()
 {
-	if (!Canvas_EntityLayer)
+	if (bUsing3DScene || !Canvas_EntityLayer)
 	{
 		return;
 	}
@@ -1597,6 +1844,29 @@ FVector2D UFF_SurfingScreen::ConvertDisplayDirectionToArenaInput(
 	if (DisplayDirection.IsNearlyZero())
 	{
 		return FVector2D::ZeroVector;
+	}
+	if (bUsing3DScene && IsValid(SurfingSceneActor))
+	{
+		const FVector2D UnitDisplayDirection = DisplayDirection.GetSafeNormal();
+		const FVector2D CenterUv(0.5f, 0.5f);
+		const FVector2D DirectionUv = CenterUv + FVector2D(
+			UnitDisplayDirection.X,
+			-UnitDisplayDirection.Y) * 0.08f;
+		FVector2D CenterArenaPosition;
+		FVector2D DirectionArenaPosition;
+		if (SurfingSceneActor->DeprojectCapturePointToArena(
+				CenterUv, CenterArenaPosition)
+			&& SurfingSceneActor->DeprojectCapturePointToArena(
+				DirectionUv, DirectionArenaPosition))
+		{
+			FVector2D CameraRelativeInput =
+				DirectionArenaPosition - CenterArenaPosition;
+			if (!CameraRelativeInput.IsNearlyZero())
+			{
+				CameraRelativeInput.Normalize();
+				return CameraRelativeInput;
+			}
+		}
 	}
 
 	const FVector2D LocalSize = GetCachedGeometry().GetLocalSize();

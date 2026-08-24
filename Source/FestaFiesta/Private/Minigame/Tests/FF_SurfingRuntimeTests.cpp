@@ -193,7 +193,7 @@ bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 
 	FFF_SurfingRules Rules;
 	FString FailureReason;
-	TestTrue(TEXT("Default fixed-arena rules validate"), Rules.IsValid(&FailureReason));
+	TestTrue(TEXT("Default endless-course rules validate"), Rules.IsValid(&FailureReason));
 	TestTrue(TEXT("Successful validation clears its reason"), FailureReason.IsEmpty());
 	TestTrue(TEXT("Both normalized movement axes validate"),
 		FFSurfingRules::IsValidMovementInput(-1.0f, 1.0f));
@@ -272,6 +272,12 @@ bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 	InvalidRules = Rules;
 	InvalidRules.ArenaHorizontalMetricScale = 0.0f;
 	TestFalse(TEXT("Non-positive arena horizontal metric is rejected"), InvalidRules.IsValid());
+	InvalidRules = Rules;
+	InvalidRules.CharacterSpeedNormalizedPerSecond = 1500.0f;
+	InvalidRules.BoostSpeedMultiplier = 2.0f;
+	InvalidRules.ForwardInputSpeedInfluence = 0.5f;
+	TestFalse(TEXT("Maximum forward trim is included in bounded tick travel"),
+		InvalidRules.IsValid());
 
 	TestTrue(TEXT("Score subtraction saturates at zero"),
 		FMath::IsNearlyZero(FFSurfingRules::AddScoreSaturated(20.0f, -100.0f)));
@@ -281,7 +287,7 @@ bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 	UFF_SurfingDefinition* Definition = MakeSurfingDefinition();
 	TestEqual(TEXT("Default ID"), Definition->MinigameId, FName(TEXT("Surfing")));
 	TestEqual(TEXT("Default duration"), Definition->DurationSeconds, 30.0f);
-	TestEqual(TEXT("Fixed-arena full-reward target"), Definition->ScoreForMaxReward, 3500);
+	TestEqual(TEXT("Endless-course full-reward target"), Definition->ScoreForMaxReward, 3500);
 	TestTrue(TEXT("Default facility is supported"),
 		Definition->SupportsFacility(TEXT("Booth_ActivityGame_Surfing")));
 	TArray<FText> Errors;
@@ -410,8 +416,13 @@ bool FFF_SurfingDeterminismTest::RunTest(const FString& Parameters)
 			SnapshotA.PlayerPositionNormalized,
 			SnapshotB.PlayerPositionNormalized,
 			1.0e-6));
-	TestTrue(TEXT("Fixed ticks keep reflected heading strictly close"),
+	TestTrue(TEXT("Fixed ticks keep steering heading strictly close"),
 		IsNearlyEqualVector(SnapshotA.CurrentHeading, SnapshotB.CurrentHeading, 1.0e-6));
+	TestTrue(TEXT("Fixed ticks keep endless course progress strictly close"),
+		FMath::IsNearlyEqual(
+			SnapshotA.CourseProgressNormalized,
+			SnapshotB.CourseProgressNormalized,
+			1.0e-6));
 	TestEqual(TEXT("Frame partition preserves latest event serial"),
 		SnapshotA.LatestEventSerial, SnapshotB.LatestEventSerial);
 	TestEqual(TEXT("Frame partition preserves visible object count"),
@@ -465,18 +476,18 @@ bool FFF_SurfingDeterminismTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	CardinalRuntime->SetMovementInput(CardinalContext.SessionId, 1.0f, 0.0f);
-	DiagonalRuntime->SetMovementInput(DiagonalContext.SessionId, 1.0f, 1.0f);
+	CardinalRuntime->SetMovementInput(CardinalContext.SessionId, 0.0f, 0.0f);
+	DiagonalRuntime->SetMovementInput(DiagonalContext.SessionId, 1.0f, 0.0f);
 	CardinalRuntime->SubmitBoost(CardinalContext.SessionId);
 	DiagonalRuntime->SubmitBoost(DiagonalContext.SessionId);
 	CardinalRuntime->Advance(30.0f);
 	DiagonalRuntime->Advance(30.0f);
-	TestTrue(TEXT("Cardinal and diagonal paths accumulate equal display-metric distance"),
+	TestTrue(TEXT("Straight and steered paths accumulate equal display-metric distance"),
 		FMath::IsNearlyEqual(
 			CardinalRuntime->GetSurfingSnapshot().DistanceMeters,
 			DiagonalRuntime->GetSurfingSnapshot().DistanceMeters,
 			1.0e-5f));
-	TestEqual(TEXT("Cardinal and diagonal paths receive equal isolated path score"),
+	TestEqual(TEXT("Straight and steered paths receive equal isolated path score"),
 		CardinalRuntime->GetSurfingSnapshot().Session.Score,
 		DiagonalRuntime->GetSurfingSnapshot().Session.Score);
 	return true;
@@ -484,7 +495,9 @@ bool FFF_SurfingDeterminismTest::RunTest(const FString& Parameters)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_SurfingInputTest,
-	"FestaFiesta.Minigame.Surfing.ContinuousInputAndBounds",
+
+	"FestaFiesta.Minigame.Surfing.ContinuousInputAndEndlessCourse",
+
 	SurfingTestFlags)
 
 bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
@@ -502,7 +515,7 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	TestTrue(TEXT("Default heading is screen-up"),
+	TestTrue(TEXT("Default heading always advances the course"),
 		IsNearlyEqualVector(Runtime->GetSurfingSnapshot().CurrentHeading, FVector2D(0.0, 1.0)));
 	TestEqual(TEXT("Wrong session is rejected"),
 		Runtime->SetMovementInput(FGuid(9, 9, 9, 9), 0.5f, 0.5f),
@@ -527,26 +540,28 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 		Runtime->GetSurfingSnapshot().MovementInput.IsZero());
 	Runtime->Advance(FixedStepSeconds);
 	const FFF_SurfingSnapshot AfterDiagonal = Runtime->GetSurfingSnapshot();
-	const double InputMetricLength = FMath::Sqrt(
-		FMath::Square(0.3 * static_cast<double>(Definition->Rules.ArenaHorizontalMetricScale))
-		+ FMath::Square(0.4));
-	const FVector2D ExpectedDiagonal(0.3 / InputMetricLength, 0.4 / InputMetricLength);
+	const FVector2D ExpectedDiagonal = FFSurfingRules::NormalizeHeading(
+		0.3f * Definition->Rules.SteeringStrength,
+		1.0f,
+		Definition->Rules.ArenaHorizontalMetricScale);
+	const double ExpectedTravel = Definition->Rules.CharacterSpeedNormalizedPerSecond
+		* (1.0 + 0.4 * Definition->Rules.ForwardInputSpeedInfluence)
+		* FixedStepSeconds;
 	TestTrue(TEXT("Snapshot exposes the authoritative arena metric"),
 		FMath::IsNearlyEqual(
 			AfterDiagonal.ArenaHorizontalMetricScale,
 			Definition->Rules.ArenaHorizontalMetricScale));
-	TestTrue(TEXT("Diagonal coordinate heading uses display-metric normalization"),
+	TestTrue(TEXT("A/D steering keeps a positive auto-forward heading"),
 		IsNearlyEqualVector(AfterDiagonal.CurrentHeading, ExpectedDiagonal, 1.0e-5));
-	TestTrue(TEXT("Diagonal movement advances one display-metric unit"),
-		IsNearlyEqualVector(
-			AfterDiagonal.PlayerPositionNormalized,
-			ExpectedDiagonal,
+	TestTrue(TEXT("Presentation stays camera-relative while logical progress advances"),
+		FMath::IsNearlyZero(AfterDiagonal.PlayerPositionNormalized.Y)
+		&& FMath::IsNearlyEqual(
+			AfterDiagonal.PlayerPositionNormalized.X,
+			ExpectedDiagonal.X * ExpectedTravel,
 			1.0e-5)
 		&& FMath::IsNearlyEqual(
-			GetArenaMetricLength(
-				AfterDiagonal.PlayerPositionNormalized,
-				AfterDiagonal.ArenaHorizontalMetricScale),
-			1.0,
+			AfterDiagonal.CourseProgressNormalized,
+			ExpectedDiagonal.Y * ExpectedTravel,
 			1.0e-5));
 
 	Runtime->SetSteerInput(Context.SessionId, -0.5f);
@@ -554,24 +569,20 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Horizontal wrapper preserves the forward input component"),
 		FMath::IsNearlyEqual(Runtime->GetSurfingSnapshot().MovementInput.Y, 0.4, 1.0e-6));
 
-	// Keep this tick away from a wall so a legitimate physical reflection cannot
-	// obscure the input contract being tested here.
 	Definition->Rules.CharacterSpeedNormalizedPerSecond = 1.0f;
 	Runtime->SetMovementInput(Context.SessionId, 0.0f, 0.0f);
-	const FVector2D HeadingBeforeZero = Runtime->GetSurfingSnapshot().CurrentHeading;
+	const double ProgressBeforeZero = Runtime->GetSurfingSnapshot().CourseProgressNormalized;
 	const float DistanceBeforeZero = Runtime->GetSurfingSnapshot().DistanceMeters;
 	Runtime->Advance(FixedStepSeconds);
-	TestTrue(TEXT("Zero input preserves the last heading"),
-		IsNearlyEqualVector(Runtime->GetSurfingSnapshot().CurrentHeading, HeadingBeforeZero));
-	TestTrue(TEXT("Zero input never stops continuous movement"),
-		Runtime->GetSurfingSnapshot().DistanceMeters > DistanceBeforeZero);
-	TestTrue(TEXT("Reflected position stays inside both arena axes"),
-		FMath::Abs(Runtime->GetSurfingSnapshot().PlayerPositionNormalized.X) <= 1.0
-		&& FMath::Abs(Runtime->GetSurfingSnapshot().PlayerPositionNormalized.Y) <= 1.0);
+	TestTrue(TEXT("Zero input recentres steering and never stops the course"),
+		IsNearlyEqualVector(
+			Runtime->GetSurfingSnapshot().CurrentHeading,
+			FVector2D(0.0, 1.0))
+		&& Runtime->GetSurfingSnapshot().DistanceMeters > DistanceBeforeZero
+		&& Runtime->GetSurfingSnapshot().CourseProgressNormalized > ProgressBeforeZero);
 
 	UFF_SurfingDefinition* BounceDefinition = MakeSurfingDefinition();
-	BounceDefinition->Rules.CharacterSpeedNormalizedPerSecond =
-		60.0f * BounceDefinition->Rules.ArenaHorizontalMetricScale + 0.1f;
+	BounceDefinition->Rules.CharacterSpeedNormalizedPerSecond = 500.0f;
 	FString BounceFailure;
 	UFF_SurfingRuntime* BounceRuntime = MakeSurfingRuntime(
 		BounceDefinition,
@@ -583,53 +594,51 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 	}
 	BounceRuntime->SetMovementInput(MakeSurfingContext(3001).SessionId, 1.0f, 0.0f);
 	BounceRuntime->Advance(FixedStepSeconds);
-	const FFF_SurfingSnapshot FirstBounce = BounceRuntime->GetSurfingSnapshot();
-	const double HorizontalMetricScale = BounceDefinition->Rules.ArenaHorizontalMetricScale;
-	const double HorizontalOvershootMetric = 0.1 / 60.0;
-	TestTrue(TEXT("Horizontal metric wall preserves exact overshoot and reflected heading"),
-		FMath::IsNearlyEqual(
-			FirstBounce.PlayerPositionNormalized.X,
-			1.0 - HorizontalOvershootMetric / HorizontalMetricScale,
-			1.0e-5)
-		&& FMath::IsNearlyEqual(
-			FirstBounce.CurrentHeading.X,
-			-1.0 / HorizontalMetricScale,
-			1.0e-5));
-	BounceRuntime->SetMovementInput(MakeSurfingContext(3001).SessionId, 1.0f, 0.0f);
+	const FFF_SurfingSnapshot FirstBoundaryContact = BounceRuntime->GetSurfingSnapshot();
+	TestTrue(TEXT("Held steering slides along the lateral boundary without reversing"),
+		FMath::IsNearlyEqual(FirstBoundaryContact.PlayerPositionNormalized.X, 1.0)
+		&& FMath::IsNearlyZero(FirstBoundaryContact.PlayerPositionNormalized.Y)
+		&& FirstBoundaryContact.CourseProgressNormalized > 1.0
+		&& FirstBoundaryContact.CurrentHeading.X > 0.0
+		&& FirstBoundaryContact.CurrentHeading.Y > 0.0);
 	BounceRuntime->Advance(FixedStepSeconds);
-	TestTrue(TEXT("Repeated identical held input does not erase reflection"),
-		BounceRuntime->GetSurfingSnapshot().PlayerPositionNormalized.X < 1.0);
+	const FFF_SurfingSnapshot HeldAtBoundary = BounceRuntime->GetSurfingSnapshot();
+	TestTrue(TEXT("Unchanged held input remains at the requested boundary and keeps advancing"),
+		FMath::IsNearlyEqual(HeldAtBoundary.PlayerPositionNormalized.X, 1.0)
+		&& HeldAtBoundary.CurrentHeading.X > 0.0
+		&& HeldAtBoundary.CourseProgressNormalized
+			> FirstBoundaryContact.CourseProgressNormalized);
 
-	UFF_SurfingDefinition* CornerDefinition = MakeSurfingDefinition();
-	const float CornerDistanceMetric = FMath::Sqrt(
-		FMath::Square(CornerDefinition->Rules.ArenaHorizontalMetricScale) + 1.0f);
-	CornerDefinition->Rules.CharacterSpeedNormalizedPerSecond =
-		60.0f * (CornerDistanceMetric + 0.25f);
-	FString CornerFailure;
-	const FFF_MinigameSessionContext CornerContext = MakeSurfingContext(3002);
-	UFF_SurfingRuntime* CornerRuntime = MakeSurfingRuntime(
-		CornerDefinition,
-		CornerContext,
-		CornerFailure);
-	if (!TestNotNull(TEXT("Corner runtime initializes"), CornerRuntime))
+	UFF_SurfingDefinition* EndlessDefinition = MakeVerticalContactDefinition(
+		EFF_SurfingObjectType::Coin);
+	EndlessDefinition->Rules.CharacterSpeedNormalizedPerSecond = 60.0f;
+	const FFF_MinigameSessionContext EndlessContext = MakeSurfingContext(3002);
+	FString EndlessFailure;
+	UFF_SurfingRuntime* EndlessRuntime = MakeSurfingRuntime(
+		EndlessDefinition,
+		EndlessContext,
+		EndlessFailure);
+	if (!TestNotNull(TEXT("Endless segment runtime initializes"), EndlessRuntime))
 	{
 		return false;
 	}
-	CornerRuntime->SetMovementInput(CornerContext.SessionId, 1.0f, 1.0f);
-	CornerRuntime->Advance(FixedStepSeconds);
-	const FFF_SurfingSnapshot Corner = CornerRuntime->GetSurfingSnapshot();
-	TestTrue(TEXT("Corner impact reflects both heading components"),
-		Corner.CurrentHeading.X < 0.0 && Corner.CurrentHeading.Y < 0.0);
-	const double ExpectedCornerCoordinate = 1.0 - 0.25 / CornerDistanceMetric;
-	TestTrue(TEXT("Corner overshoot preserves exact aspect-corrected path distance"),
-		IsNearlyEqualVector(
-			Corner.PlayerPositionNormalized,
-			FVector2D(ExpectedCornerCoordinate, ExpectedCornerCoordinate),
-			1.0e-5)
-		&& IsNearlyEqualVector(
-			Corner.CurrentHeading,
-			FVector2D(-1.0 / CornerDistanceMetric, -1.0 / CornerDistanceMetric),
-			1.0e-5));
+	const int32 InitialPoolObjects = EndlessRuntime->GetActiveCourseObjectCount();
+	const int32 InitialPoolSegments = EndlessRuntime->GetActiveCourseSegmentCount();
+	for (int32 Tick = 0; Tick < 130; ++Tick)
+	{
+		EndlessRuntime->Advance(FixedStepSeconds);
+	}
+	const FFF_SurfingSnapshot Endless = EndlessRuntime->GetSurfingSnapshot();
+	TestTrue(TEXT("Course advances beyond fifty original arena lengths"),
+		Endless.CourseProgressNormalized > 100.0);
+	TestEqual(TEXT("Segment recycling keeps the active segment count constant"),
+		EndlessRuntime->GetActiveCourseSegmentCount(), InitialPoolSegments);
+	TestEqual(TEXT("Segment recycling keeps the active object pool bounded"),
+		EndlessRuntime->GetActiveCourseObjectCount(), InitialPoolObjects);
+	TestTrue(TEXT("Repeated logical segments continue to award new pickups"),
+		Endless.CoinCount > 40);
+	TestTrue(TEXT("Resolved pickup history is pruned behind the active window"),
+		EndlessRuntime->GetResolvedCourseObjectCount() <= InitialPoolSegments);
 
 	Runtime->Cancel(EFF_MinigameEndReason::PlayerCancelled);
 	TestEqual(TEXT("Ended runtime rejects movement"),
@@ -750,9 +759,9 @@ bool FFF_SurfingArenaLayoutSweptTest::RunTest(const FString& Parameters)
 		1);
 	MetricOverlapRuntime->SetMovementInput(MetricOverlapContext.SessionId, -1.0f, 0.0f);
 	MetricOverlapRuntime->Advance(FixedStepSeconds);
-	TestEqual(TEXT("Metric-separated endpoint rearms the persistent obstacle contact"),
+	TestEqual(TEXT("Auto-forward travel prevents a duplicate hit on the passed obstacle"),
 		MetricOverlapRuntime->GetSurfingSnapshot().CollisionCount,
-		2);
+		1);
 	return true;
 }
 
@@ -782,9 +791,12 @@ bool FFF_SurfingCollisionPickupBoostTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Swept coin is collected once"), AfterCoin.CoinCount, 1);
 	TestFalse(TEXT("Collected coin is hidden"),
 		FindVisibleType(AfterCoin, EFF_SurfingObjectType::Coin));
-	CoinRuntime->Advance(6.0f * FixedStepSeconds);
-	TestEqual(TEXT("Repeated traversal cannot collect a resolved coin"),
+	CoinRuntime->Advance(FixedStepSeconds);
+	TestEqual(TEXT("A pickup cannot be collected twice inside one logical segment"),
 		CoinRuntime->GetSurfingSnapshot().CoinCount, 1);
+	CoinRuntime->Advance(FixedStepSeconds);
+	TestEqual(TEXT("The recycled slot becomes collectible in the next logical segment"),
+		CoinRuntime->GetSurfingSnapshot().CoinCount, 2);
 
 	UFF_SurfingDefinition* HeartDefinition = MakeVerticalContactDefinition(
 		EFF_SurfingObjectType::Heart,
@@ -892,9 +904,9 @@ bool FFF_SurfingHitInvincibilityTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Lives never fall below zero"),
 		Runtime->GetSurfingSnapshot().Lives, 0);
 
-	// Three more unit paths revisit y=0.5 after the short invincibility expires.
+	// Three more unit paths reach the next recycled rock after invincibility expires.
 	Runtime->Advance(3.0f * FixedStepSeconds);
-	TestEqual(TEXT("Persistent obstacle can damage again after a later re-entry"),
+	TestEqual(TEXT("A new logical segment obstacle can damage after invincibility"),
 		Runtime->GetSurfingSnapshot().CollisionCount, 2);
 	TestTrue(TEXT("Persistent obstacle is still rendered"),
 		FindVisibleType(Runtime->GetSurfingSnapshot(), EFF_SurfingObjectType::Rock));
@@ -998,13 +1010,15 @@ bool FFF_SurfingEndRewardTest::RunTest(const FString& Parameters)
 		MaximumScore = FMath::Max(MaximumScore, Sample.Session.Score);
 	}
 	AddInfo(FString::Printf(
-		TEXT("Default 30s fixed-arena simulation (8 headings, all initial boosts): distance %.2f..%.2f, score %d..%d"),
+		TEXT("Default 30s endless-course simulation (8 inputs, all initial boosts): distance %.2f..%.2f, score %d..%d"),
 		MinimumDistance,
 		MaximumDistance,
 		MinimumScore,
 		MaximumScore));
-	TestTrue(TEXT("All heading samples preserve equal display-metric path length"),
-		FMath::IsNearlyEqual(MinimumDistance, MaximumDistance, 1.0e-4f));
+	TestTrue(TEXT("All throttle samples keep uninterrupted bounded forward travel"),
+		MinimumDistance > 0.0f
+		&& MaximumDistance >= MinimumDistance
+		&& MaximumDistance / MinimumDistance < 1.8f);
 	return true;
 }
 
