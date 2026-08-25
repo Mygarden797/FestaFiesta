@@ -108,6 +108,13 @@ struct FFF_QueueConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	float ServiceSecondsPerMember = 20.f;
 
+	// 일행이 리더 주위로 뭉치는 반경. Crowd 의 포메이션 간격과 맞춰야 한다.
+	//
+	// 줄에서 일행이 몇 칸을 먹는지 계산하는 데 쓴다. 4인 가족이 한 줄로 서지는 않고
+	// 리더 주위에 뭉치므로, 인원수만큼 칸을 잡으면 줄이 실제보다 길어진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0"))
+	float PartyFormationSpacing = 90.f;
+
 	// 서비스 종료 후 Crowd가 데려갈 퇴장 지점. 대기열 입구와 겹치면 데드락이 생긴다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	FVector ExitLocation = FVector::ZeroVector;
