@@ -13,20 +13,32 @@
 
 void UFF_BuildModeGuide::SetPlacementGuideState(
 	const bool bInPlacementPreviewActive,
+	const bool bInMoving,
 	const float CurrentYawDegrees,
-	const float SnapDegrees)
+	const float RotationSnapDegrees,
+	const int32 PositionSnapCm,
+	const bool bInPlacementGridVisible)
 {
 	const float SafeYawDegrees = FMath::IsFinite(CurrentYawDegrees) ? CurrentYawDegrees : 0.0f;
-	const float SafeSnapDegrees = FMath::IsFinite(SnapDegrees) && SnapDegrees > 0.0f
-		? SnapDegrees
+	const float SafeSnapDegrees = FMath::IsFinite(RotationSnapDegrees) && RotationSnapDegrees > 0.0f
+		? RotationSnapDegrees
 		: 45.0f;
+	const int32 SafePositionSnapCm = PositionSnapCm >= 1 && PositionSnapCm <= 1000
+		? PositionSnapCm
+		: 100;
 	const bool bChanged = bPlacementPreviewActive != bInPlacementPreviewActive ||
+		bMoving != bInMoving ||
+		bPlacementGridVisible != bInPlacementGridVisible ||
 		!FMath::IsNearlyEqual(CachedYawDegrees, SafeYawDegrees, 0.005f) ||
-		!FMath::IsNearlyEqual(CachedSnapDegrees, SafeSnapDegrees, 0.005f);
+		!FMath::IsNearlyEqual(CachedSnapDegrees, SafeSnapDegrees, 0.005f) ||
+		CachedPositionSnapCm != SafePositionSnapCm;
 
 	bPlacementPreviewActive = bInPlacementPreviewActive;
+	bMoving = bInMoving;
+	bPlacementGridVisible = bInPlacementGridVisible;
 	CachedYawDegrees = SafeYawDegrees;
 	CachedSnapDegrees = SafeSnapDegrees;
+	CachedPositionSnapCm = SafePositionSnapCm;
 	if (bChanged)
 	{
 		ApplyGuideText();
@@ -62,17 +74,26 @@ void UFF_BuildModeGuide::ApplyGuideText()
 	NumberOptions.MaximumFractionalDigits = 2;
 	const FText SnapText = FText::AsNumber(CachedSnapDegrees, &NumberOptions);
 	const FText YawText = FText::AsNumber(CachedYawDegrees, &NumberOptions);
+	const FText PositionSnapText = FText::AsNumber(CachedPositionSnapCm, &NumberOptions);
 	SetNamedText(
 		TEXT("TXT_GuideRow_2"),
-		FText::Format(LOCTEXT("SnapRotation", "[Q] [E]  {0}° 스냅 회전"), SnapText));
+		FText::Format(
+			LOCTEXT("Rotation", "[Q/E]  {0}° 회전 · [Shift] 부드럽게 · 현재 {1}°"),
+			SnapText,
+			YawText));
 	SetNamedText(
 		TEXT("TXT_GuideRow_3"),
 		FText::Format(
-			LOCTEXT("FreeRotation", "[Shift]+[Q/E]  자유 회전 · 현재 {0}°"),
-			YawText));
+			LOCTEXT("PositionSnapAndGrid", "현재 {0}cm 맞춤 · [Ctrl] 정밀 · [Alt] 자유 · [G] 격자 {1}"),
+			PositionSnapText,
+			bPlacementGridVisible
+				? LOCTEXT("GridOn", "켜짐")
+				: LOCTEXT("GridOff", "꺼짐")));
 	SetNamedText(
 		TEXT("TXT_GuideRow_4"),
-		LOCTEXT("CommitOrCancel", "[좌클릭/Enter]  확정 · [우클릭]  취소"));
+		bMoving
+			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter]  이동 · [우클릭]  이동 취소")
+			: LOCTEXT("InstallOrCatalog", "[좌클릭/Enter]  설치 · [우클릭]  목록으로"));
 }
 
 #undef LOCTEXT_NAMESPACE

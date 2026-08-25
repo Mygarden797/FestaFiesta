@@ -402,7 +402,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("Q/E 스냅 회전 · Shift+Q/E 자유 회전 · 좌클릭 설치 · B/우클릭 카탈로그 · Esc 종료"));
+	ShowStatus(TEXT("좌클릭 설치 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 목록 · Esc 종료"));
 	return PlacementPreview != nullptr;
 }
 
@@ -734,6 +734,11 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ResetPlacementRotationInput();
 		return;
 	}
+	if (Controller.WasInputKeyJustPressed(EKeys::G))
+	{
+		TogglePlacementGrid();
+		return;
+	}
 
 	if (Controller.WasInputKeyJustPressed(EKeys::RightMouseButton))
 	{
@@ -757,6 +762,24 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	{
 		CommitPlacement();
 	}
+}
+
+void UFF_BuildModeSubsystem::TogglePlacementGrid()
+{
+	if (!FFBuildModeModel::ShouldShowPlacementGrid(State) || !PlacementPreview)
+	{
+		return;
+	}
+
+	bPlacementGridVisible = !bPlacementGridVisible;
+	PlacementPreview->bDrawPlacementGrid = bPlacementGridVisible;
+	// 사용자가 명시적으로 누른 토글은 다음 제한 주기를 기다리지 않고 격자만 즉시 반영한다.
+	// 권위 검증·외부 정책·메시 갱신은 위치/회전이 바뀌지 않았으므로 다시 실행하지 않는다.
+	PlacementPreview->RefreshPlacementGridVisual();
+	RefreshBuildModeGuide();
+	ShowStatus(bPlacementGridVisible
+		? TEXT("로컬 격자를 켰습니다. 배치 대상 주변에만 표시됩니다.")
+		: TEXT("로컬 격자를 숨겼습니다. 자동 맞춤은 그대로 유지됩니다."), false, 1.8f);
 }
 
 void UFF_BuildModeSubsystem::HandlePlacementRotationInput(
@@ -1052,6 +1075,8 @@ void UFF_BuildModeSubsystem::BeginBuildSession(APlayerController& Controller)
 	}
 
 	bBuildSessionActive = true;
+	bPlacementGridVisible = true;
+	CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
 	bPreviousShowMouseCursor = Controller.bShowMouseCursor;
 	PreviousFocusedWidget.Reset();
 	if (FSlateApplication::IsInitialized())
@@ -1089,10 +1114,16 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 		return;
 	}
 
+	BuildModeGuideWidget->SetVisibility(State == EFF_BuildModeState::CatalogOpen
+		? ESlateVisibility::Collapsed
+		: ESlateVisibility::HitTestInvisible);
 	BuildModeGuideWidget->SetPlacementGuideState(
 		FFBuildModeModel::IsPreviewActive(State),
+		State == EFF_BuildModeState::Moving,
 		GetPlacementYawDegrees(),
-		GetPlacementRotationSnapDegrees());
+		GetPlacementRotationSnapDegrees(),
+		GetPlacementPositionSnapCm(),
+		bPlacementGridVisible);
 }
 
 void UFF_BuildModeSubsystem::RemoveBuildModeGuide()
@@ -1190,6 +1221,9 @@ void UFF_BuildModeSubsystem::SpawnPlacementPreview()
 		// 월드 원점에 프리뷰가 한 프레임 나타나는 현상도 방지한다.
 		PlacementPreview->bAutoRefreshPreview = false;
 		PlacementPreview->bDrawDebugCells = true;
+		PlacementPreview->bDrawPlacementGrid = bPlacementGridVisible;
+		const int32 ActiveSnapCm = GetPlacementPositionSnapCm();
+		PlacementPreview->PlacementGridStepCm = GetPlacementVisualGridStepCm(ActiveSnapCm);
 		PlacementPreview->SetActorHiddenInGame(true);
 	}
 }
@@ -1214,6 +1248,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 	bHasPlacementTarget = false;
 	bPreviewWorldDirty = false;
 	PreviewRefreshAccumulator = 0.0f;
+	CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
 	ResetPlacementRotationInput();
 }
 
@@ -1542,7 +1577,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 		bSuppressPlacementConfirmUntilReleased = true;
 	}
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("Q/E 스냅 회전 · Shift+Q/E 자유 회전 · 좌클릭/Enter 이동 확정 · 우클릭 이동 취소 · B 카탈로그"));
+	ShowStatus(TEXT("좌클릭/Enter 이동 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 이동 취소"));
 	return State == EFF_BuildModeState::Moving && PlacementPreview != nullptr;
 }
 
@@ -1656,6 +1691,8 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		// 지면을 못 찾거나 지나치게 수직인 표면은 배치 좌표로 쓰지 않는다. 프리뷰를 숨겨 설치 가능하다는 오해를 막는다.
 		bHasPlacementTarget = false;
 		PlacementPreview->SetActorHiddenInGame(true);
+		ShowStatus(TEXT("바닥 위로 마우스를 옮겨 주세요."), true,
+			PreviewRefreshIntervalSeconds * 2.5f);
 		return false;
 	}
 
@@ -1668,12 +1705,21 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		bHasPlacementTarget = false;
 		CurrentZoneId = NAME_None;
 		PlacementPreview->SetActorHiddenInGame(true);
+		ShowStatus(TEXT("건축 구역 안쪽으로 옮겨 주세요."), true,
+			PreviewRefreshIntervalSeconds * 2.5f);
 		return false;
 	}
+	PlacementPreview->SetPlacementGridSurface(
+		GroundHit.ImpactPoint,
+		GroundHit.ImpactNormal);
 
 	// Zone 권위 격자는 1cm 정수 좌표를 유지하고, 커서 조작만 DeveloperSettings의 간격으로 양자화한다.
 	FIntPoint TargetCell = Zone->WorldToGridCell1Cm(GroundHit.ImpactPoint);
 	const int32 PositionSnapCm = GetPlacementPositionSnapCm();
+	const bool bSnapModeChanged = PositionSnapCm != CurrentPositionSnapCm;
+	CurrentPositionSnapCm = PositionSnapCm;
+	PlacementPreview->bDrawPlacementGrid = bPlacementGridVisible;
+	PlacementPreview->PlacementGridStepCm = GetPlacementVisualGridStepCm(PositionSnapCm);
 	TargetCell.X = FMath::RoundToInt(static_cast<double>(TargetCell.X) / PositionSnapCm) * PositionSnapCm;
 	TargetCell.Y = FMath::RoundToInt(static_cast<double>(TargetCell.Y) / PositionSnapCm) * PositionSnapCm;
 
@@ -1696,7 +1742,7 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 
 	// 표적이 한 번 끊겼다가 같은 좌표로 돌아온 경우도 다시 표시/검증해야 하므로 이전 bHasPlacementTarget을 비교한다.
 	const bool bChanged = NewOrigin != CurrentPlacement.OriginCell ||
-		NewZoneId != CurrentZoneId || !bHasPlacementTarget;
+		NewZoneId != CurrentZoneId || !bHasPlacementTarget || bSnapModeChanged;
 	CurrentPlacement.OriginCell = NewOrigin;
 	CurrentZoneId = NewZoneId;
 	bHasPlacementTarget = true;
@@ -1711,13 +1757,21 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 	RebuildPreviewCommand();
 	LastValidation = PlacementPreview->RefreshPreview();
 	const bool bIsMoving = State == EFF_BuildModeState::Moving;
+	const EFFZSPlacementFailure PrimaryFailure = LastValidation.Reasons.IsEmpty()
+		? EFFZSPlacementFailure::None
+		: LastValidation.Reasons[0];
+	const FText UserFacingFailure =
+		UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+			PrimaryFailure,
+			LastValidation.Summary,
+			bIsMoving);
 	ShowStatus(LastValidation.bIsValid
 		? bIsMoving
 			? TEXT("이동 가능 · 좌클릭/Enter로 확정")
 			: TEXT("배치 가능 · 좌클릭/Enter로 설치")
-		: FString::Printf(TEXT("%s 불가: %s"),
+		: FString::Printf(TEXT("%s 불가 · %s"),
 			bIsMoving ? TEXT("이동") : TEXT("배치"),
-			*LastValidation.Summary.ToString()),
+			*UserFacingFailure.ToString()),
 		!LastValidation.bIsValid,
 		PreviewRefreshIntervalSeconds * 2.5f);
 	return true;
@@ -1799,10 +1853,42 @@ float UFF_BuildModeSubsystem::GetFreePlacementRotationSpeedDegreesPerSecond() co
 int32 UFF_BuildModeSubsystem::GetPlacementPositionSnapCm() const
 {
 	const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
-	const int32 Value = Settings
+	const int32 DefaultSnapCm = Settings
 		? Settings->PlacementPositionSnapCm
 		: DefaultPlacementPositionSnapCm;
-	return Value >= 1 && Value <= 100 ? Value : DefaultPlacementPositionSnapCm;
+	const int32 PrecisionSnapCm = Settings
+		? Settings->PrecisionPlacementPositionSnapCm
+		: DefaultPrecisionPlacementPositionSnapCm;
+	const int32 FreeSnapCm = Settings
+		? Settings->FreePlacementPositionSnapCm
+		: DefaultFreePlacementPositionSnapCm;
+	const APlayerController* Controller = GetLocalPlayerController();
+	const bool bPrecisionModifierDown = Controller &&
+		(Controller->IsInputKeyDown(EKeys::LeftControl) ||
+			Controller->IsInputKeyDown(EKeys::RightControl));
+	const bool bFreeModifierDown = Controller &&
+		(Controller->IsInputKeyDown(EKeys::LeftAlt) ||
+			Controller->IsInputKeyDown(EKeys::RightAlt));
+	return FFBuildModeModel::ResolvePlacementPositionSnapCm(
+		bPrecisionModifierDown,
+		bFreeModifierDown,
+		DefaultSnapCm,
+		PrecisionSnapCm,
+		FreeSnapCm);
+}
+
+int32 UFF_BuildModeSubsystem::GetPlacementVisualGridStepCm(
+	const int32 ActivePositionSnapCm) const
+{
+	const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+	const int32 DefaultSnapCm = Settings
+		? FFBuildModeModel::SanitizePositionSnapCm(
+			Settings->PlacementPositionSnapCm,
+			DefaultPlacementPositionSnapCm)
+		: DefaultPlacementPositionSnapCm;
+	return FFBuildModeModel::ResolveVisualGridStepCm(
+		ActivePositionSnapCm,
+		DefaultSnapCm);
 }
 
 bool UFF_BuildModeSubsystem::CanReconfigure() const
@@ -1960,7 +2046,11 @@ void UFF_BuildModeSubsystem::PresentPlacementFailure(
 	const FText SafeDetail = Detail.IsEmpty()
 		? UFFZSGridLibrary::PlacementFailureToText(FailureReason)
 		: Detail;
-	Feedback->PresentFailure(FailureType, Title, SafeDetail);
+	const FText UserFacingDetail = UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+		FailureReason,
+		SafeDetail,
+		State == EFF_BuildModeState::Moving);
+	Feedback->PresentFailure(FailureType, Title, UserFacingDetail);
 }
 
 UFF_BuildPlacementFailureFeedback*
