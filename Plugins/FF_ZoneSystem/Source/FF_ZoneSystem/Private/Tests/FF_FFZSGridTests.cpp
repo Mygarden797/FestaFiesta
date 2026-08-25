@@ -14,6 +14,7 @@
 #include "Internationalization/Internationalization.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSOrientedGeometry.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 
 namespace
@@ -33,6 +34,27 @@ namespace
         };
         Spec.QueueReservedCells.Reset();
         return Spec;
+    }
+
+    bool AreOrientedRectArraysEquivalent(
+        const TArray<FFFZSOrientedRect>& A,
+        const TArray<FFFZSOrientedRect>& B)
+    {
+        if (A.Num() != B.Num())
+        {
+            return false;
+        }
+
+        for (int32 Index = 0; Index < A.Num(); ++Index)
+        {
+            if (!A[Index].CenterCell.Equals(B[Index].CenterCell, 1.0e-9) ||
+                !A[Index].HalfExtentCells.Equals(B[Index].HalfExtentCells, 1.0e-9) ||
+                !FMath::IsNearlyEqual(A[Index].YawDegrees, B[Index].YawDegrees, 1.0e-6f))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 }
 
@@ -321,6 +343,203 @@ bool FFFZSCompressedRegionContractTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("보수적 Region 작업 예산은 정확한 경곗값을 허용한다"),
             UFFZSGridLibrary::CanEnumerateFacilityCells(Spec));
     }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSArbitraryYawFootprintGeometryTest,
+    "FF_ZoneSystem.Unit.Grid.OrientedPlacement.FortyFiveDegreeFootprint",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSArbitraryYawFootprintGeometryTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    UFFZSDeveloperSettings* MutableSettings = GetMutableDefault<UFFZSDeveloperSettings>();
+    TGuardValue<int32> StableRegionBudget(
+        MutableSettings->MaxEnumeratedCellsPerFacility, 1'000'000);
+
+    FFFZSFacilitySpec Spec = MakeSmallRegionSpec();
+    Spec.FootprintSizeCells = FIntPoint(600, 300);
+    Spec.ClearanceCells = 0;
+    Spec.QueueReservedRects.Reset();
+
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(100, -50);
+    Placement.YawCentidegrees = 4500;
+
+    TArray<FFFZSOrientedRect> Footprint;
+    TArray<FFFZSOrientedRect> Clearance;
+    TArray<FFFZSOrientedRect> Queue;
+    TArray<FFFZSOrientedRect> Reserved;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec, Placement, Footprint, Clearance, Queue, Reserved);
+
+    TestEqual(TEXT("600x300 footprint는 단일 oriented rect로 유지된다"), Footprint.Num(), 1);
+    if (Footprint.Num() != 1)
+    {
+        return false;
+    }
+
+    const double InvSqrtTwo = FMath::Sqrt(0.5);
+    const FVector2D ExpectedCenter(
+        100.5 + 150.0 * InvSqrtTwo,
+        -49.5 + 449.0 * InvSqrtTwo);
+    TestTrue(TEXT("45도 footprint 중심은 cell(0,0) 중심 회전식을 따른다"),
+        Footprint[0].CenterCell.Equals(ExpectedCenter, 1.0e-6));
+    TestTrue(TEXT("회전해도 footprint 반크기는 300x150 Cell로 보존된다"),
+        Footprint[0].HalfExtentCells.Equals(FVector2D(300.0, 150.0), 1.0e-9));
+    TestTrue(TEXT("centidegree 4500은 oriented yaw 45도로 보존된다"),
+        FMath::IsNearlyEqual(Footprint[0].YawDegrees, 45.0f, 1.0e-6f));
+
+    const FFFZSCellRect ConservativeAabb =
+        FFZSOrientedGeometry::ToConservativeCellRect(Footprint[0]);
+    TestTrue(TEXT("600x300 45도 footprint의 보수적 Cell AABB가 정확하다"),
+        ConservativeAabb ==
+            FFFZSCellRect(FIntPoint(-112, -51), FIntPoint(525, 587)));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSOrientedBroadPhaseFalsePositiveTest,
+    "FF_ZoneSystem.Unit.Grid.OrientedPlacement.SatRejectsConservativeAabbFalsePositive",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSOrientedBroadPhaseFalsePositiveTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    UFFZSDeveloperSettings* MutableSettings = GetMutableDefault<UFFZSDeveloperSettings>();
+    TGuardValue<int32> StableRegionBudget(
+        MutableSettings->MaxEnumeratedCellsPerFacility, 1'000'000);
+
+    FFFZSFacilitySpec Spec = MakeSmallRegionSpec();
+    Spec.FootprintSizeCells = FIntPoint(600, 300);
+    Spec.ClearanceCells = 0;
+    Spec.QueueReservedRects.Reset();
+
+    FFFZSGridPlacement PlacementA;
+    PlacementA.YawCentidegrees = 4500;
+    FFFZSGridPlacement PlacementB;
+    PlacementB.OriginCell = FIntPoint(-213, 213);
+    PlacementB.YawCentidegrees = 4500;
+
+    TArray<FFFZSOrientedRect> FootprintA;
+    TArray<FFFZSOrientedRect> ClearanceA;
+    TArray<FFFZSOrientedRect> QueueA;
+    TArray<FFFZSOrientedRect> ReservedA;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec, PlacementA, FootprintA, ClearanceA, QueueA, ReservedA);
+
+    TArray<FFFZSOrientedRect> FootprintB;
+    TArray<FFFZSOrientedRect> ClearanceB;
+    TArray<FFFZSOrientedRect> QueueB;
+    TArray<FFFZSOrientedRect> ReservedB;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec, PlacementB, FootprintB, ClearanceB, QueueB, ReservedB);
+
+    TestTrue(TEXT("두 45도 시설의 oriented footprint가 모두 생성된다"),
+        FootprintA.Num() == 1 && FootprintB.Num() == 1);
+    if (FootprintA.Num() != 1 || FootprintB.Num() != 1)
+    {
+        return false;
+    }
+
+    const TArray<FFFZSCellRect> BoundsA = {
+        FFZSOrientedGeometry::ToConservativeCellRect(FootprintA[0])
+    };
+    const TArray<FFFZSCellRect> BoundsB = {
+        FFZSOrientedGeometry::ToConservativeCellRect(FootprintB[0])
+    };
+    TestTrue(TEXT("보수적 AABB만 사용하면 두 45도 시설을 겹침으로 오인한다"),
+        UFFZSGridLibrary::DoCellRectSetsOverlap(BoundsA, BoundsB));
+    TestFalse(TEXT("SAT OBB 좁은 판정은 AABB 오탐을 제거한다"),
+        UFFZSGridLibrary::DoOrientedRectSetsOverlap(FootprintA, FootprintB));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSOrientedRegionOverflowTest,
+    "FF_ZoneSystem.Unit.Grid.OrientedPlacement.QueueOverflowFailsClosed",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSOrientedRegionOverflowTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FFFZSFacilitySpec Spec = MakeSmallRegionSpec();
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(MAX_int32 - 4, 0);
+
+    const FFFZSOrientedRect Sentinel(
+        FVector2D::ZeroVector, FVector2D(1.0, 1.0), 0.0f);
+    TArray<FFFZSOrientedRect> Footprint = { Sentinel };
+    TArray<FFFZSOrientedRect> Clearance = { Sentinel };
+    TArray<FFFZSOrientedRect> Queue = { Sentinel };
+    TArray<FFFZSOrientedRect> Reserved = { Sentinel };
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec, Placement, Footprint, Clearance, Queue, Reserved);
+
+    TestTrue(TEXT("Queue Max가 int32를 넘으면 footprint 출력도 비운다"), Footprint.IsEmpty());
+    TestTrue(TEXT("Queue Max가 int32를 넘으면 clearance 출력도 비운다"), Clearance.IsEmpty());
+    TestTrue(TEXT("Queue Max가 int32를 넘으면 queue 출력도 비운다"), Queue.IsEmpty());
+    TestTrue(TEXT("Queue Max가 int32를 넘으면 reserved 출력도 비운다"), Reserved.IsEmpty());
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSCardinalYawCompatibilityTest,
+    "FF_ZoneSystem.Unit.Grid.OrientedPlacement.LegacyQuarterTurnMatchesModernYaw",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSCardinalYawCompatibilityTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+
+    const FFFZSFacilitySpec Spec = MakeSmallRegionSpec();
+    FFFZSGridPlacement LegacyPlacement;
+    LegacyPlacement.OriginCell = FIntPoint(10, 20);
+    LegacyPlacement.QuarterTurns = 1;
+
+    FFFZSGridPlacement ModernPlacement;
+    ModernPlacement.OriginCell = LegacyPlacement.OriginCell;
+    ModernPlacement.YawCentidegrees = 9000;
+
+    TArray<FFFZSOrientedRect> LegacyFootprint;
+    TArray<FFFZSOrientedRect> LegacyClearance;
+    TArray<FFFZSOrientedRect> LegacyQueue;
+    TArray<FFFZSOrientedRect> LegacyReserved;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec,
+        LegacyPlacement,
+        LegacyFootprint,
+        LegacyClearance,
+        LegacyQueue,
+        LegacyReserved);
+
+    TArray<FFFZSOrientedRect> ModernFootprint;
+    TArray<FFFZSOrientedRect> ModernClearance;
+    TArray<FFFZSOrientedRect> ModernQueue;
+    TArray<FFFZSOrientedRect> ModernReserved;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec,
+        ModernPlacement,
+        ModernFootprint,
+        ModernClearance,
+        ModernQueue,
+        ModernReserved);
+
+    TestEqual(TEXT("legacy q1은 modern yaw9000과 같은 유효 yaw를 갖는다"),
+        UFFZSGridLibrary::GetEffectiveYawCentidegrees(LegacyPlacement),
+        UFFZSGridLibrary::GetEffectiveYawCentidegrees(ModernPlacement));
+    TestTrue(TEXT("legacy q1과 yaw9000의 footprint oriented 결과가 같다"),
+        AreOrientedRectArraysEquivalent(LegacyFootprint, ModernFootprint));
+    TestTrue(TEXT("legacy q1과 yaw9000의 clearance oriented 결과가 같다"),
+        AreOrientedRectArraysEquivalent(LegacyClearance, ModernClearance));
+    TestTrue(TEXT("legacy q1과 yaw9000의 queue oriented 결과가 같다"),
+        AreOrientedRectArraysEquivalent(LegacyQueue, ModernQueue));
+    TestTrue(TEXT("legacy q1과 yaw9000의 reserved oriented 결과가 같다"),
+        AreOrientedRectArraysEquivalent(LegacyReserved, ModernReserved));
     return true;
 }
 

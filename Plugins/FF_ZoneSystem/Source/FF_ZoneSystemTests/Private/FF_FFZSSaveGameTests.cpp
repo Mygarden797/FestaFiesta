@@ -1,6 +1,6 @@
 //  FF_FFZSSaveGameTests.cpp
 
-// Schema 4 Snapshot과 1cm 압축 Region 값 그래프가 실제 SaveGame 바이트 왕복에서 손실되지 않는지 검증한다.
+// Schema 5 Snapshot의 자유 Yaw와 1cm 압축 Region 값 그래프가 실제 SaveGame 바이트 왕복에서 손실되지 않는지 검증한다.
 // Spec, Transform, FText, SoftObjectPath, Queue의 Waiting/Service/Exit, Receipt와 CurrentPhase를
 // 서로 구별되는 sentinel 값으로 채운 뒤 SaveGameToMemory/LoadGameFromMemory 결과를 비교한다.
 // 이 테스트의 SchemaVersion 97은 Runtime Restore 허용 버전이 아니라 직렬화 필드가 그대로
@@ -13,6 +13,7 @@
 
 #include "FF_FFZSSaveGameTestObject.h"
 #include "Engine/StaticMesh.h"
+#include "FF_FFZSGridLibrary.h"
 #include "Kismet/GameplayStatics.h"
 
 namespace
@@ -130,6 +131,146 @@ namespace
 
         return Snapshot;
     }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSSaveGameFreeYawByteRoundTripTest,
+    "FF_ZoneSystem.Unit.SaveGame.Schema5FreeYawByteRoundTrip",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSSaveGameFreeYawByteRoundTripTest::RunTest(const FString& Parameters)
+{
+    FFFZSWorldSnapshot Source;
+    Source.SchemaVersion = 5;
+    Source.WorldRevision = 37;
+    Source.CurrentPhase = EFFZSChangePhase::MorningCheck;
+
+    constexpr int32 YawCases[] = { 3725, 35999 };
+    for (int32 CaseIndex = 0; CaseIndex < UE_ARRAY_COUNT(YawCases); ++CaseIndex)
+    {
+        FFFZSFacilityInstanceSnapshot Facility;
+        Facility.FacilityInstanceId = FGuid(0x10000000 + CaseIndex, 0x20000000, 0x30000000, 0x40000000);
+        Facility.ZoneId = TEXT("GZ_SaveGameRoundTrip");
+        Facility.Placement.OriginCell = FIntPoint(100 + CaseIndex * 100, -50 - CaseIndex * 10);
+        Facility.Placement.YawCentidegrees = YawCases[CaseIndex];
+        Facility.Placement.QuarterTurns = 0;
+        Facility.WorldTransform = FTransform(
+            FRotator(0.0, static_cast<double>(YawCases[CaseIndex]) / 100.0, 0.0),
+            FVector(123.25 + CaseIndex * 500.0, -456.75 - CaseIndex * 250.0, 18.5 + CaseIndex),
+            FVector::OneVector);
+        Source.Facilities.Add(Facility);
+    }
+
+    UFFZSSaveGameTestObject* SaveObject = NewObject<UFFZSSaveGameTestObject>(GetTransientPackage());
+    if (!TestNotNull(TEXT("Schema 5 자유 Yaw 세이브 래퍼가 생성된다"), SaveObject))
+    {
+        return false;
+    }
+    SaveObject->Snapshot = Source;
+
+    TArray<uint8> Bytes;
+    if (!TestTrue(TEXT("Schema 5 자유 Yaw 스냅샷이 바이트로 직렬화된다"),
+            UGameplayStatics::SaveGameToMemory(SaveObject, Bytes)) ||
+        !TestTrue(TEXT("Schema 5 자유 Yaw 세이브 바이트가 비어 있지 않다"), !Bytes.IsEmpty()))
+    {
+        return false;
+    }
+
+    UFFZSSaveGameTestObject* LoadedObject = Cast<UFFZSSaveGameTestObject>(
+        UGameplayStatics::LoadGameFromMemory(Bytes));
+    if (!TestNotNull(TEXT("Schema 5 자유 Yaw 세이브가 같은 타입으로 복원된다"), LoadedObject))
+    {
+        return false;
+    }
+
+    const FFFZSWorldSnapshot& Loaded = LoadedObject->Snapshot;
+    TestEqual(TEXT("자유 Yaw 바이트 왕복은 Schema 5를 보존한다"), Loaded.SchemaVersion, 5);
+    TestEqual(TEXT("자유 Yaw 바이트 왕복은 두 시설을 보존한다"), Loaded.Facilities.Num(), 2);
+    TestTrue(TEXT("자유 Yaw 바이트 왕복은 전체 스냅샷 값을 보존한다"),
+        FFFZSWorldSnapshot::StaticStruct()->CompareScriptStruct(&Loaded, &Source, 0));
+    if (Loaded.Facilities.Num() != UE_ARRAY_COUNT(YawCases))
+    {
+        return false;
+    }
+
+    for (int32 CaseIndex = 0; CaseIndex < UE_ARRAY_COUNT(YawCases); ++CaseIndex)
+    {
+        const FString CaseLabel = FString::Printf(TEXT("Yaw %.2f도"), YawCases[CaseIndex] / 100.0);
+        const FFFZSFacilityInstanceSnapshot& LoadedFacility = Loaded.Facilities[CaseIndex];
+        TestEqual(*FString::Printf(TEXT("%s: centidegree 값이 보존된다"), *CaseLabel),
+            LoadedFacility.Placement.YawCentidegrees, YawCases[CaseIndex]);
+        TestEqual(*FString::Printf(TEXT("%s: legacy QuarterTurns는 0을 유지한다"), *CaseLabel),
+            LoadedFacility.Placement.QuarterTurns, 0);
+        TestTrue(*FString::Printf(TEXT("%s: WorldTransform이 보존된다"), *CaseLabel),
+            LoadedFacility.WorldTransform.Equals(Source.Facilities[CaseIndex].WorldTransform, 1.0e-6));
+    }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSCommandFingerprintFreeYawCanonicalizationTest,
+    "FF_ZoneSystem.Unit.SaveGame.CommandFingerprintFreeYawCanonicalization",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSCommandFingerprintFreeYawCanonicalizationTest::RunTest(const FString& Parameters)
+{
+    FFFZSCommand Baseline;
+    Baseline.TransactionId = FGuid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
+    Baseline.ExpectedWorldRevision = 17;
+    Baseline.Type = EFFZSCommandType::Install;
+    Baseline.FacilityInstanceId = FGuid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD);
+    Baseline.ZoneId = TEXT("GZ_FingerprintYaw");
+    Baseline.Placement.OriginCell = FIntPoint(125, -275);
+    Baseline.Placement.YawCentidegrees = 3725;
+
+    FFFZSCommand DifferentYaw = Baseline;
+    DifferentYaw.Placement.YawCentidegrees = 3726;
+    TestNotEqual(TEXT("0.01도 차이는 서로 다른 command fingerprint를 만든다"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Baseline),
+        UFFZSGridLibrary::BuildCommandFingerprint(DifferentYaw));
+
+    FFFZSCommand WrappedYaw = Baseline;
+    WrappedYaw.Placement.YawCentidegrees = 3725 + 2 * 36000;
+    TestEqual(TEXT("완전한 두 바퀴를 더한 Yaw는 같은 command fingerprint를 만든다"),
+        UFFZSGridLibrary::BuildCommandFingerprint(WrappedYaw),
+        UFFZSGridLibrary::BuildCommandFingerprint(Baseline));
+
+    FFFZSCommand NegativeYaw = Baseline;
+    NegativeYaw.Placement.YawCentidegrees = -1;
+    FFFZSCommand PositiveEquivalentYaw = Baseline;
+    PositiveEquivalentYaw.Placement.YawCentidegrees = 35999;
+    TestEqual(TEXT("-0.01도와 359.99도는 같은 command fingerprint를 만든다"),
+        UFFZSGridLibrary::BuildCommandFingerprint(NegativeYaw),
+        UFFZSGridLibrary::BuildCommandFingerprint(PositiveEquivalentYaw));
+
+    FFFZSCommand LegacyQuarterTurn = Baseline;
+    LegacyQuarterTurn.Placement.YawCentidegrees = 0;
+    LegacyQuarterTurn.Placement.QuarterTurns = 1;
+    FFFZSCommand ModernQuarterTurn = Baseline;
+    ModernQuarterTurn.Placement.YawCentidegrees = 9000;
+    ModernQuarterTurn.Placement.QuarterTurns = 0;
+    TestEqual(TEXT("legacy q1과 현대 90도 Yaw는 같은 command fingerprint를 만든다"),
+        UFFZSGridLibrary::BuildCommandFingerprint(LegacyQuarterTurn),
+        UFFZSGridLibrary::BuildCommandFingerprint(ModernQuarterTurn));
+
+    FFFZSGridPlacement NormalizedPlacement = WrappedYaw.Placement;
+    UFFZSGridLibrary::NormalizePlacement(NormalizedPlacement);
+    TestEqual(TEXT("NormalizePlacement는 Yaw를 0..35999로 정규화한다"),
+        NormalizedPlacement.YawCentidegrees, 3725);
+    TestEqual(TEXT("NormalizePlacement는 legacy QuarterTurns를 비운다"),
+        NormalizedPlacement.QuarterTurns, 0);
+
+    FFFZSGridPlacement NonNormalizedCommandPlacement;
+    NonNormalizedCommandPlacement.OriginCell = FIntPoint(5, 7);
+    NonNormalizedCommandPlacement.YawCentidegrees = -1;
+    NonNormalizedCommandPlacement.QuarterTurns = 0;
+    const FFFZSCommand NormalizedCommand = UFFZSGridLibrary::MakeInstallCommand(
+        FFFZSFacilitySpec{}, TEXT("GZ_FingerprintYaw"), NonNormalizedCommandPlacement, 0);
+    TestEqual(TEXT("명령 생성 경계는 음수 Yaw를 의미 동치 정규각으로 바꾼다"),
+        NormalizedCommand.Placement.YawCentidegrees, 35999);
+    TestEqual(TEXT("명령 생성 경계는 legacy QuarterTurns를 비운다"),
+        NormalizedCommand.Placement.QuarterTurns, 0);
+    return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

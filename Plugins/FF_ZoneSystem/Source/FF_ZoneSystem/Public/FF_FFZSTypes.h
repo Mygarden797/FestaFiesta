@@ -203,8 +203,9 @@ enum class EFFZSPolicyDomain : uint8
     Custom
 };
 
-// 존 로컬 고정 격자에서 시설의 원점과 시계 방향 90도 회전을 나타내는 값 타입.
-// QuarterTurns는 명령 생성·시설 적용 때 0..3으로 정규화된다.
+// 존 로컬 고정 격자에서 시설의 원점과 자유 Yaw를 나타내는 값 타입.
+// Yaw는 부동소수점 저장 오차를 피하도록 0.01도 단위 정수로 보관한다. QuarterTurns는
+// Schema 3/4 저장본과 기존 Blueprint 호출을 읽기 위한 레거시 필드이며 새 명령에서는 0으로 비운다.
 USTRUCT(BlueprintType)
 struct FF_ZONESYSTEM_API FFFZSGridPlacement
 {
@@ -214,18 +215,37 @@ struct FF_ZONESYSTEM_API FFFZSGridPlacement
     FIntPoint OriginCell = FIntPoint::ZeroValue;
     // 회전하지 않은 Facility Footprint 좌하단의 Grid 좌표다.//
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Quarter Turns", ToolTip = "시계 방향 90도 회전 횟수입니다. 0·1·2·3 중 하나로 정규화됩니다.", ClampMin = "0", ClampMax = "3"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System", meta = (DisplayName = "Yaw (Centidegrees)", ToolTip = "Unreal의 양의 Yaw 방향 배치 각도를 0.01도 단위로 저장합니다. 예: 45도는 4500입니다.", ClampMin = "0", ClampMax = "35999"))
+    int32 YawCentidegrees = 0;
+    // Schema 5부터 사용하는 유일한 회전 권위 값. 명령·시설 경계에서 0..35999로 정규화한다.
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "FF Zone System|Legacy", meta = (DisplayName = "Legacy Quarter Turns", ToolTip = "Schema 3/4 저장본 호환 전용 값입니다. 새 배치에서는 사용하지 마십시오.", ClampMin = "0", ClampMax = "3", DeprecatedProperty, DeprecationMessage = "YawCentidegrees 또는 자유 회전 API를 사용하십시오."))
     int32 QuarterTurns = 0;
-    // 시계 방향 90도 회전 횟수다. 값은 0, 1, 2 또는 3으로 정규화된다.//
+    // YawCentidegrees가 0이고 이 값이 0이 아닐 때만 구 호출을 90도 단위 Yaw로 승격한다.
+
+    int32 GetEffectiveYawCentidegrees() const
+    {
+        constexpr int32 FullTurnCentidegrees = 36000;
+        const int32 NormalizedYaw =
+            ((YawCentidegrees % FullTurnCentidegrees) + FullTurnCentidegrees) % FullTurnCentidegrees;
+        if (NormalizedYaw == 0 && QuarterTurns != 0)
+        {
+            const int32 NormalizedQuarterTurns = ((QuarterTurns % 4) + 4) % 4;
+            return NormalizedQuarterTurns * 9000;
+        }
+        return NormalizedYaw;
+    }
+
     bool operator==(const FFFZSGridPlacement& Other) const
     {
-        return OriginCell == Other.OriginCell && QuarterTurns == Other.QuarterTurns;
+        return OriginCell == Other.OriginCell &&
+            GetEffectiveYawCentidegrees() == Other.GetEffectiveYawCentidegrees();
     }
 };
 
 FORCEINLINE uint32 GetTypeHash(const FFFZSGridPlacement& Value)
 {
-    return HashCombine(GetTypeHash(Value.OriginCell), GetTypeHash(Value.QuarterTurns));
+    return HashCombine(GetTypeHash(Value.OriginCell), GetTypeHash(Value.GetEffectiveYawCentidegrees()));
 }
 // 원점과 회전값을 결합해 TMap/TSet용 해시를 만든다.//
 
@@ -298,7 +318,8 @@ USTRUCT(BlueprintType)
  // 1 cm 정수 격자에서 [Min, Max) 반열림 구간으로 표현하는 축 정렬 사각형이다.
  // 셀을 수십만 개의 FIntPoint로 펼치지 않고 네 정수만 저장하므로 600 cm x 300 cm 시설도
  // 한 개의 값으로 표현된다. Max는 포함하지 않기 때문에 폭은 Max.X-Min.X이며, 서로 맞닿기만
- // 하는 두 사각형은 겹치지 않는다. 모든 권위 점유·저장·충돌 좁은 단계가 이 타입을 사용한다.
+ // 하는 두 사각형은 겹치지 않는다. 저작·압축 연산은 이 타입을 사용하고, 배치 후 권위 충돌은
+ // FFFZSOrientedRect로 변환해 임의 Yaw를 보존한다.
 struct FF_ZONESYSTEM_API FFFZSCellRect
 {
     GENERATED_BODY()
@@ -356,6 +377,41 @@ FORCEINLINE uint32 GetTypeHash(const FFFZSCellRect& Value)
 {
     return HashCombine(GetTypeHash(Value.Min), GetTypeHash(Value.Max));
 }
+
+USTRUCT(BlueprintType)
+// 존 로컬 1cm 좌표에서 임의 Yaw를 갖는 반열림 사각형이다. 축 정렬 CellRect는 저작·압축에,
+// 이 타입은 실제 점유·존 경계·물리 충돌의 좁은 단계에 사용한다. 경계 접촉만으로는 겹치지 않는다.
+struct FF_ZONESYSTEM_API FFFZSOrientedRect
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FF Zone System|Geometry")
+    FVector2D CenterCell = FVector2D::ZeroVector;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FF Zone System|Geometry")
+    FVector2D HalfExtentCells = FVector2D::ZeroVector;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FF Zone System|Geometry")
+    float YawDegrees = 0.0f;
+
+    FFFZSOrientedRect() = default;
+    FFFZSOrientedRect(
+        const FVector2D InCenterCell,
+        const FVector2D InHalfExtentCells,
+        const float InYawDegrees)
+        : CenterCell(InCenterCell)
+        , HalfExtentCells(InHalfExtentCells)
+        , YawDegrees(InYawDegrees)
+    {
+    }
+
+    bool IsValid() const
+    {
+        return FMath::IsFinite(CenterCell.X) && FMath::IsFinite(CenterCell.Y) &&
+            FMath::IsFinite(HalfExtentCells.X) && FMath::IsFinite(HalfExtentCells.Y) &&
+            FMath::IsFinite(YawDegrees) && HalfExtentCells.X > 0.0 && HalfExtentCells.Y > 0.0;
+    }
+};
 USTRUCT(BlueprintType)
 
  // 시설 종류 하나를 완전히 설명하는 저장 가능한 값 사양.
@@ -482,7 +538,23 @@ struct FF_ZONESYSTEM_API FFFZSPlacementValidation
     
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     TArray<FFFZSCellRect> ReservedRects;
-    // FootprintRects·ClearanceRects·QueueRects의 정확한 합집합이며 점유 인덱스 입력이다.
+    // 임의 Yaw에서의 보수적 AABB 보기다. 디버그·기존 Blueprint 호환용이며 권위 좁은 판정에는 사용하지 않는다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
+    TArray<FFFZSOrientedRect> FootprintOrientedRects;
+    // 실제 시설 본체의 권위 회전 사각형이다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
+    TArray<FFFZSOrientedRect> ClearanceOrientedRects;
+    // 본체와 Queue를 제외한 실제 여유 공간의 권위 회전 사각형들이다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
+    TArray<FFFZSOrientedRect> QueueOrientedRects;
+    // 실제 최대 대기열 예약 영역의 권위 회전 사각형들이다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation|Geometry")
+    TArray<FFFZSOrientedRect> ReservedOrientedRects;
+    // 위 세 그룹의 권위 합집합 표현이며 점유 인덱스 입력이다.
     
     // 소규모 디버그/기존 Blueprint 호환용 개별 셀 보기다. 영역이 10,000셀을 넘으면 빈 배열이다.
     // 권위 판정에는 절대 사용하지 않는다.
@@ -727,7 +799,7 @@ struct FF_ZONESYSTEM_API FFFZSCommandReceiptSnapshot
 
 USTRUCT(BlueprintType)
 
- // FF_ZoneSystem이 소유하는 월드 저장 경계, 현재 스키마는 4다.
+ // FF_ZoneSystem이 소유하는 월드 저장 경계, 현재 스키마는 5다.
  // WorldRevision·CurrentPhase·시설/큐·완료 영수증만 포함하며 제작 존, 보호 영역, 정책 제공자, 외부 시스템 상태는 제외한다.
 
 struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
@@ -735,8 +807,8 @@ struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
     GENERATED_BODY()
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
-    int32 SchemaVersion = 4;
-    // 현재 지원 저장 스키마. RestoreWorldSnapshot은 구 Schema 3만 명시적으로 1cm Schema 4로 변환한다.
+    int32 SchemaVersion = 5;
+    // 현재 지원 저장 스키마. RestoreWorldSnapshot은 Schema 3/4를 Schema 5 자유 Yaw 계약으로 변환한다.
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     int64 WorldRevision = 0;
