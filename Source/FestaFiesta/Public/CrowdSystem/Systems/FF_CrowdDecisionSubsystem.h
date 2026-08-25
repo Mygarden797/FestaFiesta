@@ -266,6 +266,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
 	float GetMaxAnchorProjectionDropCm() const { return WalkDistanceMaxProjectionDropCm; }
 
+	// NavMesh 재굽기가 안 끝나 행렬 빌드를 미룬 횟수. 배치 변경 직후 몇 번 오르는 것이 정상이고,
+	// 계속 오르기만 하면 nav 빌드가 끝나지 않는다는 뜻이다(행렬이 영구히 낡은다)
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceNavBuildDeferrals() const { return WalkDistanceNavBuildDeferrals; }
+
 private:
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
 	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
@@ -325,4 +330,7 @@ private:
 	int32 WalkDistanceUnauthoredAnchors = 0;
 	int32 WalkDistanceProjectionFailures = 0;
 	float WalkDistanceMaxProjectionDropCm = 0.f;
+
+	// nav 빌드가 안 끝나 빌드를 미룬 누적 횟수. 위 진단값과 달리 빌드마다 초기화되지 않는다
+	int32 WalkDistanceNavBuildDeferrals = 0;
 };

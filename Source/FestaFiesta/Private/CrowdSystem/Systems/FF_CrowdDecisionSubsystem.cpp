@@ -186,6 +186,7 @@ void UFF_CrowdDecisionSubsystem::EnsureWalkDistanceMatrix(
 			WalkDistanceUnauthoredAnchors = 0;
 			WalkDistanceProjectionFailures = 0;
 			WalkDistanceMaxProjectionDropCm = 0.f;
+			WalkDistanceNavBuildDeferrals = 0;
 		}
 		return;
 	}
@@ -211,6 +212,19 @@ void UFF_CrowdDecisionSubsystem::EnsureWalkDistanceMatrix(
 	double MaxProjectionDropCm = 0.0;
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+
+	// 시설 nav 구멍은 dynamic modifier라 리비전이 오른 **몇 프레임 뒤에** 구워진다.
+	// 여기서 기다리지 않으면 구멍이 없는 NavMesh로 거리를 재고, WalkDistanceBuiltRevision을
+	// 찍어 버리므로 다음 리비전까지 그 틀린 값이 고정된다 — 강 건너편이 가깝게 나오는 종류의
+	// 조용한 오류다. 리비전을 기록하지 않고 빠지면 다음 결정 요청에서 다시 시도한다.
+	//
+	// 그동안 후보 거리는 직전 리비전의 행렬(없으면 직선거리)로 계산된다. 한쪽은 몇 프레임 낡고
+	// 다른 한쪽은 영구히 틀리므로, 낡은 쪽을 고른다.
+	if (NavSys && NavSys->GetNumRemainingBuildTasks() > 0)
+	{
+		++WalkDistanceNavBuildDeferrals;
+		return;
+	}
 
 	const FVector ProjectionExtent = FFF_CrowdNav::GetAnchorProjectionExtentCm();
 
@@ -696,6 +710,9 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 		}
 		Ar.Logf(TEXT("  앵커 투영 낙차: 최대 %.0fcm (0이면 앵커가 이미 NavMesh 위)"),
 			Decision->GetMaxAnchorProjectionDropCm());
+
+		Ar.Logf(TEXT("  nav빌드 대기  : %d회 미룸 (배치 변경 직후 몇 번 오르는 것이 정상)"),
+			Decision->GetWalkDistanceNavBuildDeferrals());
 
 		const int32 Mismatches = Decision->GetWalkDistanceMismatchCount();
 		if (Mismatches > 0)

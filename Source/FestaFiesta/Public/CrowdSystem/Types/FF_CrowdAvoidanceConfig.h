@@ -73,22 +73,21 @@ struct FESTAFIESTA_API FFF_CrowdAvoidanceConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Forces")
 	float WallRepulsionA = 2000.f;
 
-	// 벽 반발 감쇠 거리(m).
+	// 벽 반발 감쇠 거리(m). Helbing 원본 스케일이다.
 	//
-	// ★ RepulsionB와 같은 이유로 0.08(Helbing 패닉/접촉 스케일)에서 0.25로 올렸다.
-	// 위 RepulsionB 주석의 논증이 벽에도 그대로 적용되는데 이 값만 문헌 원본으로 남아 있었다.
+	// 한때 0.25로 올려 뒀었다. 그때는 경로추종이 부스를 관통하는 2점 직선만 받아서 우회를
+	// 힘으로 흉내내야 했고, 균형점을 0.56m까지 벌려야 사람이 벽을 스치지 않고 돌아갔다.
+	//   2000·exp(-x/0.08)/70 = 3  ->  x = 0.18m   (구동력 3.0m/s^2 기준)
 	//
-	// 0.08이면 구동력(기본 3.0m/s^2)과 균형이 맞는 지점이 접촉면에서 겨우 18cm다 —
-	//   2000·exp(-x/0.08)/70 = 3  ->  x = 0.18m
-	// 목적지가 부스 반대편이면 사람이 벽에서 18cm에 붙어 접선 방향으로 미끄러진다.
-	// 이게 "건물에 부비적거리는" 모습의 직접 원인이었다.
-	//
-	// 0.25면 같은 균형점이 0.56m로 벌어져 벽을 스치지 않고 돌아간다.
-	// ★ 이 값은 '비키는 거리'일 뿐 우회 경로가 아니다. 건물 뒤로 돌아가는 것은
-	//   경로추종(bEnablePathFollowing)의 몫이고, 둘은 같이 켜져 있어야 의미가 있다.
-	// 병목 아치·압사 재현이 목적이면 RepulsionB와 함께 0.08로 되돌릴 것.
+	// 지금은 시설이 NavMesh를 도려내므로 우회는 경로가 한다. 벽 반발에 남은 일은
+	// **부스 안으로 들어가지 않게 하는 것**뿐이고, 여기에 18cm면 충분하다.
+	// ★ 그렇다고 없애면 안 된다 — 적분은 Unit.Position += Velocity*dt 뿐이고 NavMesh는
+	//   위치를 구속하지 않는다. 코너 컷(WaypointAcceptanceRadiusUU)과 대인 반발에 밀려
+	//   부스로 들어가는 것을 막는 장치는 이 힘 하나다.
+	// 0.08은 병목 아치·압사 재현이 살아나는 값이기도 하다. 올리면 그 현상이 뭉개진다.
+	// ★ WallCullRadiusMeters와 함께 움직인다. Validate()가 그 관계를 검사한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Forces")
-	float WallRepulsionB = 0.25f;
+	float WallRepulsionB = 0.08f;
 
 	// 마주 오는 사람을 만났을 때 자기 오른쪽으로 비키는 세기. 반발력 크기에 대한 배율이다. 0이면 끈다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Forces", meta = (ClampMin = "0.0", ClampMax = "2.0"))
@@ -132,12 +131,13 @@ struct FESTAFIESTA_API FFF_CrowdAvoidanceConfig
 	//
 	// ★ WallRepulsionB와 함께 움직여야 한다 — NeighbourRadiusMeters ↔ RepulsionB와 같은 관계다.
 	// 컷오프에서 버려지는 가속도는 WallRepulsionA·exp(-이값/WallRepulsionB)/질량이다.
-	// B=0.08일 때는 1m에서 3e-5 m/s^2라 버려도 그만이었지만, B를 0.25로 올리면 같은 1m에서
-	// 0.55 m/s^2가 된다 — 구동력(3.0)의 18%다. 벽에서 1m 지점을 지날 때마다 반발이
-	// 뚝 끊겨 사람이 벽 쪽으로 튄다. 그래서 2.5m로 같이 올렸다(버리는 양 0.0015 m/s^2).
+	// 컷오프가 B에 비해 짧으면 그 경계에서 반발이 뚝 끊겨 사람이 벽 쪽으로 튄다.
+	// B=0.08에서 1m면 버리는 양이 0.0001 m/s^2라 경계가 보이지 않는다.
+	// B를 0.25로 올린다면 같은 1m에서 0.55 m/s^2(구동력의 18%)가 되므로 2.5m로 같이 올릴 것.
+	// 벽 순회는 개체×선분이라 이 반경이 곧 비용이다. B를 낮췄으면 여기도 같이 낮춘다.
 	// Validate()가 이 관계를 검사한다. 한쪽만 만지면 거기서 걸린다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Stability")
-	float WallCullRadiusMeters = 2.5f;
+	float WallCullRadiusMeters = 1.0f;
 
 	// 이 스텝 수 이상 제자리에 머물면 막힌 것으로 보고 탈출 가속을 태운다. 0이면 끈다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unstuck", meta = (ClampMin = "0"))

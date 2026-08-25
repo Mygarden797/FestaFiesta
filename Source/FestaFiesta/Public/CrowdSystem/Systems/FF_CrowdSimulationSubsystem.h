@@ -20,7 +20,6 @@
 #include "FF_CrowdSimulationSubsystem.generated.h"
 
 class AFF_BaseCrowd;
-class AFF_CrowdNavObstacle;
 class UDataTable;
 
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
@@ -385,6 +384,10 @@ public:
 	bool bAvoidanceUseFacilityWalls = true;
 
 	// 시설 벽에 여유(Clearance) 링까지 포함시킨다. 기본값은 **끔**(바닥면만).
+	//
+	// ★ 켜면 반발 벽이 ZoneSystem의 nav 구멍보다 커진다. 그쪽은 고형 footprint만 도려내므로
+	//   경로는 clearance를 통과 가능한 것으로 계획하는데 힘은 밀어내 서로 싸운다.
+	//   좁은 통로에서 웨이포인트와 반발이 평형을 이뤄 사람이 멈춰 선다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceFacilityWallsIncludeClearance = false;
 
@@ -432,11 +435,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
 	int32 GetPartialPathCount() const { return PartialPathCount; }
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Path")
-	bool bFacilityNavObstacles = true;
-
+	// 배치가 바뀌어 경로를 통째로 버린 횟수. 시설 설치·이동·철거 횟수와 맞아야 한다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
-	int32 GetFacilityNavObstacleCount() const { return FacilityNavObstacles.Num(); }
+	int32 GetPathLayoutInvalidations() const { return PathLayoutInvalidations; }
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Avoidance")
 	bool WasAvoidanceAppliedLastStep() const { return bAvoidanceAppliedLastStep; }
@@ -580,11 +581,7 @@ private:
 
 	bool BuildPathForAgent(int32 AgentIndex);
 
-	void EnsureFacilityNavObstacles();
-
-	void RebuildFacilityNavObstacles();
-
-	void DestroyFacilityNavObstacles();
+	void InvalidatePathsOnLayoutChange();
 
 	CrowdSteering::FStepParams MakeStepParams() const;
 
@@ -743,12 +740,10 @@ private:
 	int32 PathQueryBacklog = 0;
 	int32 PartialPathCount = 0;
 
-	UPROPERTY()
-	TArray<TObjectPtr<AFF_CrowdNavObstacle>> FacilityNavObstacles;
+	// 경로를 뽑을 때의 배치 리비전. 이게 바뀌면 살아 있는 모든 경로가 낡은 것이다
+	int64 PathLayoutRevision = -1;
 
-	int64 FacilityNavObstacleRevision = -1;
-
-	bool bBuiltWithNavObstacles = false;
+	int32 PathLayoutInvalidations = 0;
 
 	// --- 지형 ------------------------------------------------------------------------------
 

@@ -3,7 +3,6 @@
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
-#include "CrowdSystem/FF_CrowdNavObstacle.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
@@ -970,21 +969,24 @@ void UFF_CrowdSimulationSubsystem::EnsureFacilityWalls()
 		Revision, FacilityWallCount, AvoidanceWalls.Num());
 }
 
-void UFF_CrowdSimulationSubsystem::EnsureFacilityNavObstacles()
+// 배치가 바뀌면 살아 있는 경로를 전부 버린다.
+//
+// ── 왜 필요한가 ────────────────────────────────────────────────────────────────
+// 경로는 뽑힌 시점의 NavMesh를 찍은 사진이다. 그 뒤에 시설이 설치되면 그 자리를
+// 관통하도록 계획된 경로가 그대로 남아, 파티가 새 부스 안으로 걸어 들어간다.
+// UpdatePathFollowing의 Reset 조건은 **목적지가 움직였을 때**뿐이라 여기에 걸리지 않는다 —
+// 목적지는 그대로인데 지형만 바뀐 경우가 정확히 이 구멍이다.
+//
+// ── 왜 전부 버리는가 ───────────────────────────────────────────────────────────
+// 경로가 바뀐 시설을 지나는지 하나씩 판정하려면 선분-사각형 교차를 경로 길이만큼 돌려야 하고,
+// 그 사각형은 이미 AvoidanceWalls에 있지만 경로 점은 파티 수만큼 있다. 리비전 변경은 사람이
+// 건물을 세울 때만 일어나는 저빈도 사건이므로, 정확한 판정보다 전부 버리는 쪽이 싸고 안전하다.
+//
+// 재쿼리 폭주는 PathQueriesPerStep(기본 32건/스텝)이 이미 막는다. 버린 직후 한동안
+// GetPathQueryBacklog가 치솟는 것이 정상이고, 그 사이 개체는 최종 목적지로 직선 조향한다
+// (벽 반발이 있으므로 부스를 관통하지는 않는다).
+void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 {
-	const bool bKnobChanged = (bBuiltWithNavObstacles != bFacilityNavObstacles);
-
-	if (!bFacilityNavObstacles)
-	{
-		if (bKnobChanged)
-		{
-			DestroyFacilityNavObstacles();
-			FacilityNavObstacleRevision = -1;
-			bBuiltWithNavObstacles = false;
-		}
-		return;
-	}
-
 	const UWorld* World = GetWorld();
 	const UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 	if (!ZoneSystem)
@@ -993,97 +995,38 @@ void UFF_CrowdSimulationSubsystem::EnsureFacilityNavObstacles()
 	}
 
 	const int64 Revision = ZoneSystem->GetWorldRevision();
-	if (Revision == FacilityNavObstacleRevision && !bKnobChanged)
+	if (Revision == PathLayoutRevision)
 	{
 		return;
 	}
 
-	FacilityNavObstacleRevision = Revision;
-	bBuiltWithNavObstacles = true;
+	const bool bHadPaths = (PathLayoutRevision != -1);
+	PathLayoutRevision = Revision;
 
-	RebuildFacilityNavObstacles();
-}
-
-void UFF_CrowdSimulationSubsystem::RebuildFacilityNavObstacles()
-{
-	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_NavObstacles);
-
-	UWorld* World = GetWorld();
-	const UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
-	if (!ZoneSystem)
+	// 첫 관측은 무효화가 아니다. 버릴 경로가 아직 없으므로 리비전만 기억하고 넘어간다
+	if (!bHadPaths)
 	{
 		return;
 	}
 
-	DestroyFacilityNavObstacles();
-
-	const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
-
-	int32 MissingActors = 0;
-
-	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	int32 Dropped = 0;
+	for (FFF_CrowdPathFollower& Follower : PathFollowers)
 	{
-		const AFFZSFacilityActor* Actor = ZoneSystem->FindFacility(Facility.FacilityInstanceId);
-		if (!IsValid(Actor))
+		if (Follower.bHasPath || Follower.bQueryFailed)
 		{
-			++MissingActors;
-			continue;
+			Follower.Reset();
+			++Dropped;
 		}
-
-		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
-
-		const FVector HalfExtentCm(
-			static_cast<double>(Spec.FootprintSizeCells.X) * 0.5,
-			static_cast<double>(Spec.FootprintSizeCells.Y) * 0.5,
-			static_cast<double>(Spec.PlacementObstacleHeightCm) * 0.5);
-
-		if (HalfExtentCm.X <= 0.0 || HalfExtentCm.Y <= 0.0 || HalfExtentCm.Z <= 0.0)
-		{
-			continue;
-		}
-
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		SpawnParams.ObjectFlags |= RF_Transient;
-
-		AFF_CrowdNavObstacle* Obstacle = World->SpawnActor<AFF_CrowdNavObstacle>(
-			AFF_CrowdNavObstacle::StaticClass(), FTransform::Identity, SpawnParams);
-
-		if (!IsValid(Obstacle))
-		{
-			continue;
-		}
-
-		Obstacle->ConfigureForFacility(
-			Facility.WorldLocation,
-			static_cast<float>(Actor->GetActorRotation().Yaw),
-			HalfExtentCm);
-
-		FacilityNavObstacles.Add(Obstacle);
 	}
 
-	if (MissingActors > 0)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("시설 nav 장애물: %d개 시설의 액터를 찾지 못해 빠졌다 — 그 자리는 경로가 관통한다"),
-			MissingActors);
-	}
+	// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
+	// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다
+	PathQueryCursor = 0;
+	++PathLayoutInvalidations;
 
 	UE_LOG(LogTemp, Log,
-		TEXT("시설 nav 장애물 재구축: 리비전 %lld, 장애물 %d개"),
-		FacilityNavObstacleRevision, FacilityNavObstacles.Num());
-}
-
-void UFF_CrowdSimulationSubsystem::DestroyFacilityNavObstacles()
-{
-	for (const TObjectPtr<AFF_CrowdNavObstacle>& Obstacle : FacilityNavObstacles)
-	{
-		if (IsValid(Obstacle))
-		{
-			Obstacle->Destroy();
-		}
-	}
-	FacilityNavObstacles.Reset();
+		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
+		Revision, Dropped, PathQueriesPerStep);
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetPathFollowingCount() const
@@ -1116,7 +1059,7 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 		PathFollowers.SetNum(PoolSize);
 	}
 
-	EnsureFacilityNavObstacles();
+	InvalidatePathsOnLayoutChange();
 
 	for (FUnitData& Unit : UnitDatas)
 	{

@@ -13,6 +13,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "NavMesh/RecastNavMesh.h"
 #include "Queue/FF_QueueCrowdLink.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "TimerManager.h"
@@ -353,19 +354,21 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("--- 경로 ---"));
 	Ar.Logf(TEXT("경로추종      : %s"), CrowdSim->bEnablePathFollowing ? TEXT("켬") : TEXT("끔"));
 
-	const int32 NavObstacles = CrowdSim->GetFacilityNavObstacleCount();
-	Ar.Logf(TEXT("시설 nav 구멍 : %s, 장애물 %d개"),
-		CrowdSim->bFacilityNavObstacles ? TEXT("켬") : TEXT("끔"), NavObstacles);
+	// 시설 nav 구멍은 ZoneSystem의 FacilityNavigationObstacleBounds가 소유한다. Crowd가 확인할 수
+	// 있는 것은 그 modifier가 런타임에 반영되는 모드인지 하나뿐이고, 여기가 어긋나면 경로가 조용히
+	// 부스를 관통한다.
+	const ERuntimeGenerationType NavRuntimeMode = GetDefault<ARecastNavMesh>()->GetRuntimeGenerationMode();
+	const bool bModifiersBake = (NavRuntimeMode == ERuntimeGenerationType::DynamicModifiersOnly)
+		|| (NavRuntimeMode == ERuntimeGenerationType::Dynamic);
 
-	if (CrowdSim->bFacilityNavObstacles && NavObstacles == 0 && FacilityWalls > 0)
+	Ar.Logf(TEXT("시설 nav 구멍 : ZoneSystem 소유, 런타임 갱신 %s"),
+		bModifiersBake ? TEXT("켬") : TEXT("끔"));
+
+	if (!bModifiersBake)
 	{
 		Ar.Logf(ELogVerbosity::Warning,
-			TEXT("시설이 %d개인데 nav 장애물이 0개다 — 경로가 부스를 관통한다"), FacilityWalls);
-	}
-	else if (!CrowdSim->bFacilityNavObstacles)
-	{
-		Ar.Logf(ELogVerbosity::Warning,
-			TEXT("시설 nav 구멍이 꺼져 있다 — 벽 반발로 비켜서기만 하고 부스를 돌아가지는 못한다"));
+			TEXT("RecastNavMesh가 Static이다 — 시설 nav 구멍이 구워지지 않아 경로가 부스를 관통한다. "
+			     "DefaultEngine.ini의 RuntimeGeneration=DynamicModifiersOnly를 확인할 것"));
 	}
 
 	if (CrowdSim->bEnablePathFollowing)
@@ -377,6 +380,8 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		Ar.Logf(TEXT("부분 경로     : %d건  <-- 목적지가 NavMesh 밖. 닿는 데까지만 간다"),
 			CrowdSim->GetPartialPathCount());
 		Ar.Logf(TEXT("경로 대기     : %d명 (예산 %d건/스텝)"), Backlog, CrowdSim->PathQueriesPerStep);
+		Ar.Logf(TEXT("배치변경 폐기 : %d회  <-- 시설 설치·이동·철거 횟수와 맞아야 한다"),
+			CrowdSim->GetPathLayoutInvalidations());
 		Ar.Logf(TEXT("웨이포인트 반경: %.0fUU   재경로 허용오차 %.0fUU   최소 쿼리거리 %.0fUU"),
 			CrowdSim->WaypointAcceptanceRadiusUU, CrowdSim->RepathToleranceUU,
 			CrowdSim->MinPathQueryDistanceUU);
@@ -781,11 +786,9 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		{ TEXT("boundarywalls"), &CrowdSim->bAvoidanceUseBoundaryWalls,
 		  TEXT("시뮬 사각 경계 4벽") },
 		{ TEXT("clearance"), &CrowdSim->bAvoidanceFacilityWallsIncludeClearance,
-		  TEXT("시설 벽에 여유 1m 링 포함. 켜면 통로가 좁아진다") },
+		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
 		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
-		{ TEXT("navholes"), &CrowdSim->bFacilityNavObstacles,
-		  TEXT("시설 바닥면만큼 NavMesh를 도려낸다. 끄면 경로가 부스를 관통한다") },
 	};
 
 	struct FIntKnob
