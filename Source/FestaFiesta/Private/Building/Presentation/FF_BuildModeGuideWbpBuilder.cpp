@@ -74,9 +74,9 @@ namespace FFBuildModeGuideWbpBuilder
 		static const TArray<TPair<FString, FString>> RowsData = {
 			{TEXT("[Esc]"), TEXT("건축모드에서 나가기")},
 			{TEXT("[WASD]"), TEXT("카메라 이동")},
-			{TEXT("[Q] [E]"), TEXT("시설 90도 회전")},
-			{TEXT("[좌클릭]"), TEXT("철거/이동 대상 선택")},
-			{TEXT("[우클릭]"), TEXT("선택 취소")},
+			{TEXT("[Q] [E]"), TEXT("시설 45도 스냅 회전")},
+			{TEXT("[Shift]+[Q/E]"), TEXT("자유 회전 · 현재 0도")},
+			{TEXT("[좌클릭/Enter]"), TEXT("확정 · [우클릭] 취소")},
 		};
 
 		int32 RowIndex = 0;

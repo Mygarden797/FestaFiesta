@@ -97,7 +97,17 @@ void AFFZSProtectedArea::ApplyDefaultWidthForType()
  
 bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
 {
-    if (!AreaBounds || !WorldBox.IsValid)
+    return WorldBox.IsValid && IntersectsWorldOrientedBox(
+        WorldBox.GetCenter(), WorldBox.GetExtent(), FQuat::Identity);
+}
+
+bool AFFZSProtectedArea::IntersectsWorldOrientedBox(
+    const FVector& WorldCenter,
+    const FVector& WorldHalfExtent,
+    const FQuat& WorldRotation) const
+{
+    if (!AreaBounds || WorldCenter.ContainsNaN() || WorldHalfExtent.ContainsNaN() ||
+        WorldRotation.ContainsNaN() || WorldHalfExtent.GetMin() < 0.0)
     {
         return false;
     }
@@ -115,23 +125,28 @@ bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
     }
 
     const FVector ProtectedCenter = AreaBounds->GetComponentLocation();
-    const FVector BoxCenter = WorldBox.GetCenter();
-    const FVector BoxExtent = WorldBox.GetExtent();
-    if (FMath::Abs(ProtectedCenter.Z - BoxCenter.Z) > LocalExtent.Z + BoxExtent.Z)
+    if (FMath::Abs(ProtectedCenter.Z - WorldCenter.Z) >
+        LocalExtent.Z + WorldHalfExtent.Z)
     {
         return false;
     }
 
     const FVector2D CenterDelta(
-        BoxCenter.X - ProtectedCenter.X,
-        BoxCenter.Y - ProtectedCenter.Y);
+        WorldCenter.X - ProtectedCenter.X,
+        WorldCenter.Y - ProtectedCenter.Y);
     const FVector Forward3D = AreaBounds->GetForwardVector();
     const FVector Right3D = AreaBounds->GetRightVector();
     const FVector2D LocalX = FVector2D(Forward3D.X, Forward3D.Y).GetSafeNormal();
     const FVector2D LocalY = FVector2D(Right3D.X, Right3D.Y).GetSafeNormal();
+    const FVector FacilityForward3D = WorldRotation.GetForwardVector();
+    const FVector FacilityRight3D = WorldRotation.GetRightVector();
+    const FVector2D FacilityX =
+        FVector2D(FacilityForward3D.X, FacilityForward3D.Y).GetSafeNormal();
+    const FVector2D FacilityY =
+        FVector2D(FacilityRight3D.X, FacilityRight3D.Y).GetSafeNormal();
     const FVector2D Axes[] = {
-        FVector2D(1.0, 0.0),
-        FVector2D(0.0, 1.0),
+        FacilityX,
+        FacilityY,
         LocalX,
         LocalY
     };
@@ -143,8 +158,8 @@ bool AFFZSProtectedArea::IntersectsWorldBox(const FBox& WorldBox) const
             LocalExtent.X * FMath::Abs(FVector2D::DotProduct(LocalX, Axis)) +
             LocalExtent.Y * FMath::Abs(FVector2D::DotProduct(LocalY, Axis));
         const double BoxRadius =
-            BoxExtent.X * FMath::Abs(Axis.X) +
-            BoxExtent.Y * FMath::Abs(Axis.Y);
+            WorldHalfExtent.X * FMath::Abs(FVector2D::DotProduct(FacilityX, Axis)) +
+            WorldHalfExtent.Y * FMath::Abs(FVector2D::DotProduct(FacilityY, Axis));
         if (CenterDistance > ProtectedRadius + BoxRadius)
         {
             return false;

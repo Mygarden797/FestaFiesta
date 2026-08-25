@@ -18,4 +18,20 @@ UCLASS(Blueprintable, meta = (DisplayName = "FF Build Mode Guide"))
 class FESTAFIESTA_API UFF_BuildModeGuide : public UUserWidget
 {
 	GENERATED_BODY()
+
+public:
+	// 저장된 WBP를 다시 만들지 않고 기존 TXT_GuideRow_2~4가 있을 때만 현재 배치 조작을 반영한다.
+	// 잘못된 디자이너 계층이나 호출 시점은 조용히 건너뛰고 다음 Construct에서 캐시값을 다시 적용한다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Guide")
+	void SetPlacementGuideState(bool bInPlacementPreviewActive, float CurrentYawDegrees, float SnapDegrees);
+
+protected:
+	virtual void NativeConstruct() override;
+
+private:
+	void ApplyGuideText();
+
+	bool bPlacementPreviewActive = false;
+	float CachedYawDegrees = 0.0f;
+	float CachedSnapDegrees = 45.0f;
 };
