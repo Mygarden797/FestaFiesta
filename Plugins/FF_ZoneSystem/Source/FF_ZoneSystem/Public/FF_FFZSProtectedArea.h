@@ -56,6 +56,12 @@ public:
     UFUNCTION(BlueprintPure, Category = "Protected Area")
     bool IntersectsWorldBox(const FBox& WorldBox) const;
     // 주어진 시설 월드 박스가 보호 영역의 유효 폭을 포함한 경계와 겹치는지 반환한다. 
+
+    bool IntersectsWorldOrientedBox(
+        const FVector& WorldCenter,
+        const FVector& WorldHalfExtent,
+        const FQuat& WorldRotation) const;
+    // 임의 Yaw 시설 박스와 보호 영역 OBB를 정확한 SAT 좁은 단계로 비교한다.
     
     UFUNCTION(BlueprintPure, Category = "Protected Area|Validation")
     bool ValidateProtectedAreaData(TArray<FText>& OutErrors) const;

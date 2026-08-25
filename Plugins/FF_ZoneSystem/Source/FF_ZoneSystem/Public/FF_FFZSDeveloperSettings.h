@@ -87,6 +87,15 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
     float MaxGroundSlopeDegrees = 5.0f;
 	// 모든 지면 표본의 법선으로 허용할 최대 경사각이다. 
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Rotation Snap (Degrees)", ToolTip = "건축 모드에서 Q/E를 한 번 눌렀을 때 회전하는 각도입니다.", ClampMin = "0.01", ClampMax = "180.0", Units = "deg"))
+    float PlacementRotationSnapDegrees = 45.0f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Free Rotation Speed (Degrees/Second)", ToolTip = "건축 모드에서 Shift+Q/E를 누르고 있을 때의 자유 회전 속도입니다.", ClampMin = "1.0", ClampMax = "720.0", Units = "deg/s"))
+    float FreePlacementRotationSpeedDegreesPerSecond = 90.0f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Position Snap (cm)", ToolTip = "마우스로 시설 위치를 옮길 때 맞추는 간격입니다. 1cm가 가장 자유로운 기본값입니다.", ClampMin = "1", ClampMax = "100", Units = "cm"))
+    int32 PlacementPositionSnapCm = 1;
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", Units = "cm"))
     float MaxGroundHeightVarianceCm = 20.0f;

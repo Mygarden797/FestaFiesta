@@ -6,7 +6,7 @@
  // 2) Cell의 exactly-one Zone 소유, 회전 보호영역과 경계 접촉 판정.
  // 3) 잘못된 Facility Spec이 Nav/Policy 같은 비싼 단계 전에 중단되는가.
  // 4) 사용자 정의 Zone graph와 고유 Primary Asset Type의 다른 프로젝트 이식성.
- // 5) Schema 4의 1cm Region·CurrentPhase, 재진입 guard, Close/Drain/MovePending 의도 복원.
+ // 5) Schema 5의 자유 Yaw·1cm Region·CurrentPhase, Schema 3/4 마이그레이션과 복원 재진입 guard.
  // 6) Install·Move·Remove의 InitialSetup·MorningCheck 허용과 그 밖 Phase의 거부.
  // 7) Zone/Facility Read Model의 공간 메타데이터 값 복사 계약.
  // 8) 월드 지점의 등록 Facility 조회와 거리·InstanceId 기반 결정적 겹침 선택.
@@ -342,7 +342,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         Subsystem->ReportQueueSlotArrival(SavedAgentId, FirstFacility->GetQueueComponent()->GetQueueSlotWorldLocation(0)));
 
     const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, 4);
+    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, 5);
     TestEqual(TEXT("Snapshot이 두 Facility를 모두 캡처한다"), Snapshot.Facilities.Num(), 2);
     TestTrue(TEXT("Snapshot이 영속 Command Receipt를 보존한다"), Snapshot.CommandReceipts.Num() > 0);
     int32 StagedFacilitySpawnCount = 0;
@@ -1101,11 +1101,122 @@ bool FFFZSPortableZoneGraphAndPrimaryAssetTest::RunTest(const FString& Parameter
     return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSSchema5FreeYawSnapshotRestoreTest,
+    "FF_ZoneSystem.Integration.World.Schema5FreeYawSnapshotRestore",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+// 자유각 설치부터 schema 5 캡처와 Actor 교체 복원까지 권위 Yaw/Transform을 한 흐름으로 검증한다.
+bool FFFZSSchema5FreeYawSnapshotRestoreTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("자유 Yaw 자동화 테스트 World"), World))
+    {
+        return false;
+    }
+
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    if (!TestNotNull(TEXT("자유 Yaw 권위 World Subsystem"), Subsystem))
+    {
+        return false;
+    }
+
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("자유 Yaw 대상 Gameplay Zone"), Zone) ||
+        !TestTrue(TEXT("자유 Yaw 대상 Zone이 등록된다"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(3000, 3000);
+    Placement.YawCentidegrees = 3725;
+    Placement.QuarterTurns = 0;
+    const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
+        FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck),
+        ZoneId,
+        Placement,
+        0);
+    TestEqual(TEXT("Install 명령이 37.25도 Yaw를 정규형으로 유지한다"),
+        Install.Placement.YawCentidegrees, 3725);
+    TestEqual(TEXT("Install 명령에는 legacy QuarterTurns가 남지 않는다"),
+        Install.Placement.QuarterTurns, 0);
+
+    const FFFZSCommandResult InstallResult = Subsystem->ExecuteCommand(Install);
+    if (!TestTrue(TEXT("37.25도 Facility 설치가 Commit된다"), InstallResult.bSucceeded))
+    {
+        return false;
+    }
+
+    AFFZSFacilityActor* InstalledFacility =
+        Subsystem->FindFacility(Install.FacilityInstanceId);
+    if (!TestNotNull(TEXT("37.25도 Facility Actor가 등록된다"), InstalledFacility))
+    {
+        return false;
+    }
+    TestEqual(TEXT("설치된 Actor가 37.25도 Placement를 보존한다"),
+        InstalledFacility->GetGridPlacement().YawCentidegrees, 3725);
+    const FQuat ExpectedWorldRotation = Zone->GetActorQuat() * FQuat(
+        FVector::UpVector, FMath::DegreesToRadians(37.25));
+    TestTrue(TEXT("설치된 Actor가 정확한 37.25도 World Yaw를 사용한다"),
+        InstalledFacility->GetActorQuat().AngularDistance(ExpectedWorldRotation) <=
+            FMath::DegreesToRadians(0.01));
+
+    const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
+    if (!TestEqual(TEXT("자유 Yaw Capture는 schema 5를 사용한다"), Snapshot.SchemaVersion, 5) ||
+        !TestEqual(TEXT("자유 Yaw Capture는 Facility 하나를 저장한다"), Snapshot.Facilities.Num(), 1))
+    {
+        return false;
+    }
+    const FFFZSFacilityInstanceSnapshot& SavedFacility = Snapshot.Facilities[0];
+    TestEqual(TEXT("Capture가 37.25도 centidegree를 보존한다"),
+        SavedFacility.Placement.YawCentidegrees, 3725);
+    TestEqual(TEXT("Capture가 legacy QuarterTurns를 비운다"),
+        SavedFacility.Placement.QuarterTurns, 0);
+    TestTrue(TEXT("Capture Transform이 설치된 Actor Transform과 같다"),
+        SavedFacility.WorldTransform.Equals(InstalledFacility->GetActorTransform(), 0.001));
+
+    InstalledFacility->AddActorWorldOffset(FVector(0.0, 0.0, 123.0), false, nullptr,
+        ETeleportType::TeleportPhysics);
+    TestFalse(TEXT("복원 전 변형으로 저장 Transform과 현재 Actor를 구분한다"),
+        InstalledFacility->GetActorTransform().Equals(SavedFacility.WorldTransform, 0.001));
+
+    TArray<FText> RestoreErrors;
+    if (!TestTrue(TEXT("schema 5 자유 Yaw Snapshot이 원자적으로 복원된다"),
+        Subsystem->RestoreWorldSnapshot(Snapshot, RestoreErrors)))
+    {
+        return false;
+    }
+    TestTrue(TEXT("schema 5 자유 Yaw 복원은 오류를 내지 않는다"), RestoreErrors.IsEmpty());
+
+    AFFZSFacilityActor* RestoredFacility =
+        Subsystem->FindFacility(Install.FacilityInstanceId);
+    if (!TestNotNull(TEXT("복원된 자유 Yaw Facility Actor"), RestoredFacility))
+    {
+        return false;
+    }
+    TestTrue(TEXT("원자적 Restore가 기존 Actor를 교체한다"), RestoredFacility != InstalledFacility);
+    TestEqual(TEXT("복원된 Placement가 37.25도 centidegree를 보존한다"),
+        RestoredFacility->GetGridPlacement().YawCentidegrees, 3725);
+    TestEqual(TEXT("복원된 Placement는 legacy QuarterTurns를 비운다"),
+        RestoredFacility->GetGridPlacement().QuarterTurns, 0);
+    TestTrue(TEXT("복원된 Actor Transform이 Capture 값과 같다"),
+        RestoredFacility->GetActorTransform().Equals(SavedFacility.WorldTransform, 0.001));
+    TestTrue(TEXT("복원된 Actor가 정확한 37.25도 World Yaw를 유지한다"),
+        RestoredFacility->GetActorQuat().AngularDistance(ExpectedWorldRotation) <=
+            FMath::DegreesToRadians(0.01));
+    TestEqual(TEXT("Restore가 저장된 WorldRevision을 보존한다"),
+        Subsystem->GetWorldRevision(), Snapshot.WorldRevision);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSSnapshotPhaseReentrancyAndDrainIntentTest,
     "FF_ZoneSystem.Integration.World.SnapshotPhaseReentrancyAndDrainIntent",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-// 복원 계약: Schema 4의 1cm Region·Phase/Drain intent와 Command·Restore·Policy 재진입 차단을 함께 검증한다.
+// 복원 계약: Schema 5 자유 Yaw와 Schema 3/4 마이그레이션, Phase/Drain intent 및 재진입 차단을 함께 검증한다.
 bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Parameters)
 {
     FScopedZFTestSettings ScopedSettings;
@@ -1221,11 +1332,106 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot DrainingSnapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot Schema는 Phase와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, 4);
+    TestEqual(TEXT("Snapshot Schema는 자유 Yaw와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, 5);
     TestEqual(TEXT("Snapshot이 초기값이 아닌 Phase를 캡처한다"), DrainingSnapshot.CurrentPhase, EFFZSChangePhase::LiveOperation);
     TestEqual(TEXT("Snapshot이 권위 Revision을 캡처한다"), DrainingSnapshot.WorldRevision, int64(3));
     TestTrue(TEXT("Snapshot이 Normal Close의 Drain Intent를 캡처한다"),
         DrainingSnapshot.Facilities.Num() == 1 && DrainingSnapshot.Facilities[0].Queue.bDrainRequested);
+
+    if (DrainingSnapshot.Facilities.Num() != 1)
+    {
+        AddError(TEXT("Schema 5 Yaw 및 마이그레이션 Fixture에는 Facility가 정확히 하나 있어야 합니다."));
+        return false;
+    }
+
+    // 현재 Schema는 archive 경계에서도 정규형만 허용한다. 실패한 입력이 기존 Actor나
+    // Revision/Phase를 조금이라도 바꾸면 원자적 Restore 계약 위반이다.
+    AFFZSFacilityActor* FacilityBeforeInvalidYaw =
+        Subsystem->FindFacility(Install.FacilityInstanceId);
+    const int64 RevisionBeforeInvalidYaw = Subsystem->GetWorldRevision();
+    const EFFZSChangePhase PhaseBeforeInvalidYaw = Subsystem->GetChangePhase();
+    const int32 InvalidSchema5YawCases[] = { -1, 36000 };
+    for (const int32 InvalidYaw : InvalidSchema5YawCases)
+    {
+        FFFZSWorldSnapshot InvalidYawSnapshot = DrainingSnapshot;
+        InvalidYawSnapshot.Facilities[0].Placement.YawCentidegrees = InvalidYaw;
+        InvalidYawSnapshot.Facilities[0].Placement.QuarterTurns = 0;
+        TArray<FText> InvalidYawErrors;
+        const FString CaseLabel = FString::Printf(TEXT("Schema 5 Yaw %d"), InvalidYaw);
+        TestFalse(*FString::Printf(TEXT("%s: 비정규 자유 Yaw를 거부한다"), *CaseLabel),
+            Subsystem->RestoreWorldSnapshot(InvalidYawSnapshot, InvalidYawErrors));
+        TestTrue(*FString::Printf(TEXT("%s: 거부 사유를 반환한다"), *CaseLabel),
+            !InvalidYawErrors.IsEmpty());
+        TestTrue(*FString::Printf(TEXT("%s: 기존 Facility Actor를 보존한다"), *CaseLabel),
+            Subsystem->FindFacility(Install.FacilityInstanceId) == FacilityBeforeInvalidYaw);
+        TestEqual(*FString::Printf(TEXT("%s: WorldRevision을 보존한다"), *CaseLabel),
+            Subsystem->GetWorldRevision(), RevisionBeforeInvalidYaw);
+        TestEqual(*FString::Printf(TEXT("%s: Phase를 보존한다"), *CaseLabel),
+            Subsystem->GetChangePhase(), PhaseBeforeInvalidYaw);
+    }
+
+    // Schema 4는 QuarterTurns만 권위였고 1cm 좌표/Transform은 이미 현재 단위였다.
+    // q0..q3 모두 기존 물리 Transform을 유지한 채 Schema 5 centidegree로 승격되어야 한다.
+    FFFZSWorldSnapshot LegacyV4BaseSnapshot = DrainingSnapshot;
+    LegacyV4BaseSnapshot.SchemaVersion = 4;
+    for (int32 QuarterTurn = 0; QuarterTurn < 4; ++QuarterTurn)
+    {
+        FFFZSWorldSnapshot LegacyV4Snapshot = LegacyV4BaseSnapshot;
+        FFFZSFacilityInstanceSnapshot& LegacySaved = LegacyV4Snapshot.Facilities[0];
+        LegacySaved.Placement.YawCentidegrees = 0;
+        LegacySaved.Placement.QuarterTurns = QuarterTurn;
+
+        const TArray<FFFZSCellRect> LegacyFootprintRects =
+            UFFZSGridLibrary::GetFootprintRects(LegacySaved.FacilitySpec, LegacySaved.Placement);
+        if (LegacyFootprintRects.Num() != 1)
+        {
+            AddError(FString::Printf(
+                TEXT("Schema 4 q%d Fixture의 Footprint가 정확히 한 Rect여야 합니다."), QuarterTurn));
+            return false;
+        }
+        const FFFZSCellRect& FootprintRect = LegacyFootprintRects[0];
+        const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+        const FVector ExpectedPhysicalCenter = Zone->GetActorTransform().TransformPosition(FVector(
+            (static_cast<double>(FootprintRect.Min.X) + FootprintRect.Max.X) * 0.5 * CellSizeCm,
+            (static_cast<double>(FootprintRect.Min.Y) + FootprintRect.Max.Y) * 0.5 * CellSizeCm,
+            0.0));
+        const FQuat ExpectedPhysicalRotation = Zone->GetActorQuat() *
+            FQuat(FVector::UpVector, FMath::DegreesToRadians(90.0 * QuarterTurn));
+        const FTransform ExpectedPhysicalTransform(
+            ExpectedPhysicalRotation, ExpectedPhysicalCenter, FVector::OneVector);
+        LegacySaved.WorldTransform = ExpectedPhysicalTransform;
+
+        TArray<FText> LegacyV4Errors;
+        const FString CaseLabel = FString::Printf(TEXT("Schema 4 q%d"), QuarterTurn);
+        if (!TestTrue(*FString::Printf(TEXT("%s: Schema 5로 원자적 마이그레이션한다"), *CaseLabel),
+            Subsystem->RestoreWorldSnapshot(LegacyV4Snapshot, LegacyV4Errors)))
+        {
+            return false;
+        }
+        TestTrue(*FString::Printf(TEXT("%s: 마이그레이션 오류가 없다"), *CaseLabel),
+            LegacyV4Errors.IsEmpty());
+
+        const FFFZSWorldSnapshot MigratedV5Snapshot = Subsystem->CaptureWorldSnapshot();
+        if (MigratedV5Snapshot.Facilities.Num() != 1)
+        {
+            AddError(FString::Printf(TEXT("%s: 복원된 Facility가 정확히 하나 있어야 합니다."), *CaseLabel));
+            return false;
+        }
+        const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV5Snapshot.Facilities[0];
+        TestEqual(*FString::Printf(TEXT("%s: Schema 5로 다시 캡처된다"), *CaseLabel),
+            MigratedV5Snapshot.SchemaVersion, 5);
+        TestEqual(*FString::Printf(TEXT("%s: 정확한 centidegree Yaw로 승격된다"), *CaseLabel),
+            MigratedSaved.Placement.YawCentidegrees, QuarterTurn * 9000);
+        TestEqual(*FString::Printf(TEXT("%s: legacy QuarterTurns를 비운다"), *CaseLabel),
+            MigratedSaved.Placement.QuarterTurns, 0);
+        TestTrue(*FString::Printf(TEXT("%s: 저장 Transform을 보존한다"), *CaseLabel),
+            MigratedSaved.WorldTransform.Equals(ExpectedPhysicalTransform, 0.001));
+
+        const AFFZSFacilityActor* MigratedActor =
+            Subsystem->FindFacility(Install.FacilityInstanceId);
+        TestTrue(*FString::Printf(TEXT("%s: Actor Transform도 보존한다"), *CaseLabel),
+            MigratedActor && MigratedActor->GetActorTransform().Equals(ExpectedPhysicalTransform, 0.001));
+    }
 
     // 실제 Schema 3(1 Cell=100 cm) 표본을 만든다. 원래 cm로 저장되던 spline/anchor/Transform은
     // 그대로 두고 Cell 기반 footprint/clearance/queue만 구 단위로 되돌린다.
@@ -1270,7 +1476,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     LegacyBaseSpec.QueueReservedCells = MoveTemp(LegacyQueueCells);
     LegacyBaseSpec.QueueReservedRects.Reset();
 
-    // Schema 3 영수증은 v4 명령 지문이 아니며 런타임이 해석하지 않는 opaque 값이다.
+    // Schema 3 영수증은 v5 명령 지문이 아니며 런타임이 해석하지 않는 opaque 값이다.
     for (int32 ReceiptIndex = 0; ReceiptIndex < LegacyV3BaseSnapshot.CommandReceipts.Num(); ++ReceiptIndex)
     {
         FFFZSCommandReceiptSnapshot& Receipt = LegacyV3BaseSnapshot.CommandReceipts[ReceiptIndex];
@@ -1311,6 +1517,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         FFFZSWorldSnapshot LegacyV3Snapshot = LegacyV3BaseSnapshot;
         FFFZSFacilityInstanceSnapshot& LegacySaved = LegacyV3Snapshot.Facilities[0];
         LegacySaved.Placement.OriginCell = LegacyOrigins[QuarterTurn];
+        LegacySaved.Placement.YawCentidegrees = 0;
         LegacySaved.Placement.QuarterTurns = QuarterTurn;
 
         const FVector ExpectedPhysicalCenter = Zone->GetActorTransform().TransformPosition(
@@ -1330,15 +1537,15 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         TestTrue(*FString::Printf(TEXT("%s: 마이그레이션은 오류를 내지 않는다"), *CaseLabel),
             LegacyV3Errors.IsEmpty());
 
-        const FFFZSWorldSnapshot MigratedV4Snapshot = Subsystem->CaptureWorldSnapshot();
-        if (MigratedV4Snapshot.Facilities.Num() != 1)
+        const FFFZSWorldSnapshot MigratedV5Snapshot = Subsystem->CaptureWorldSnapshot();
+        if (MigratedV5Snapshot.Facilities.Num() != 1)
         {
             AddError(FString::Printf(TEXT("%s: 마이그레이션된 Facility가 정확히 하나 있어야 합니다."), *CaseLabel));
             return false;
         }
-        const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV4Snapshot.Facilities[0];
-        TestEqual(*FString::Printf(TEXT("%s: Schema 4로 저장된다"), *CaseLabel),
-            MigratedV4Snapshot.SchemaVersion, 4);
+        const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV5Snapshot.Facilities[0];
+        TestEqual(*FString::Printf(TEXT("%s: Schema 5로 저장된다"), *CaseLabel),
+            MigratedV5Snapshot.SchemaVersion, 5);
         TestEqual(*FString::Printf(TEXT("%s: FacilitySpec은 Schema 2를 사용한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.SchemaVersion, 2);
         TestEqual(*FString::Printf(TEXT("%s: 6m x 3m Footprint를 보존한다"), *CaseLabel),
@@ -1366,8 +1573,10 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
         TestEqual(*FString::Printf(TEXT("%s: 정확히 보정된 Origin을 적용한다"), *CaseLabel),
             MigratedSaved.Placement.OriginCell, ExpectedMigratedOrigins[QuarterTurn]);
-        TestEqual(*FString::Printf(TEXT("%s: 정규화된 Rotation을 보존한다"), *CaseLabel),
-            MigratedSaved.Placement.QuarterTurns, QuarterTurn);
+        TestEqual(*FString::Printf(TEXT("%s: 정확한 centidegree Yaw로 승격된다"), *CaseLabel),
+            MigratedSaved.Placement.YawCentidegrees, QuarterTurn * 9000);
+        TestEqual(*FString::Printf(TEXT("%s: legacy QuarterTurns를 비운다"), *CaseLabel),
+            MigratedSaved.Placement.QuarterTurns, 0);
         TestTrue(*FString::Printf(TEXT("%s: 물리적 중심을 보존한다"), *CaseLabel),
             MigratedSaved.WorldTransform.GetLocation().Equals(ExpectedPhysicalCenter, 0.1));
         TestTrue(*FString::Printf(TEXT("%s: 물리적 Rotation을 보존한다"), *CaseLabel),
@@ -1375,12 +1584,12 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
                 FMath::DegreesToRadians(0.01));
 
         TestEqual(*FString::Printf(TEXT("%s: Receipt 개수를 보존한다"), *CaseLabel),
-            MigratedV4Snapshot.CommandReceipts.Num(),
+            MigratedV5Snapshot.CommandReceipts.Num(),
             LegacyV3BaseSnapshot.CommandReceipts.Num());
         for (const FFFZSCommandReceiptSnapshot& LegacyReceipt : LegacyV3BaseSnapshot.CommandReceipts)
         {
             const FFFZSCommandReceiptSnapshot* MigratedReceipt =
-                MigratedV4Snapshot.CommandReceipts.FindByPredicate(
+                MigratedV5Snapshot.CommandReceipts.FindByPredicate(
                     [&LegacyReceipt](const FFFZSCommandReceiptSnapshot& Candidate)
                     {
                         return Candidate.CommandId == LegacyReceipt.CommandId;
@@ -1393,13 +1602,13 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
         if (QuarterTurn == 0)
         {
-            // 같은 구 CommandId를 새 v4 Payload로 재사용하면 opaque 지문을 덮지 않고 충돌로 거부한다.
+            // 같은 구 CommandId를 새 v5 Payload로 재사용하면 opaque 지문을 덮지 않고 충돌로 거부한다.
             FFFZSCommand ReusedCommandId = MakeFacilityCommand(
                 EFFZSCommandType::Open, Install.FacilityInstanceId);
             ReusedCommandId.CommandId = LegacyV3BaseSnapshot.CommandReceipts[0].CommandId;
             const int64 RevisionBeforeMismatch = Subsystem->GetWorldRevision();
             const FFFZSCommandResult MismatchResult = Subsystem->ExecuteCommand(ReusedCommandId);
-            TestFalse(TEXT("복원된 Schema 3 Receipt는 동일 CommandId의 새 v4 Payload를 거부한다"),
+            TestFalse(TEXT("복원된 Schema 3 Receipt는 동일 CommandId의 새 v5 Payload를 거부한다"),
                 MismatchResult.bSucceeded);
             TestEqual(TEXT("Opaque Legacy Receipt 불일치는 전용 실패 코드를 사용한다"),
                 MismatchResult.FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
@@ -1433,30 +1642,31 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
     TestEqual(TEXT("보정된 Origin Overflow 발생 후 Phase가 보존된다"),
         Subsystem->GetChangePhase(), PhaseBeforeOverflow);
 
-    // Schema 4에서도 footprint/expanded는 표현되지만 FoodTruck Queue Y Max만 int32를 넘는 표본이다.
-    // 빈 ReservedRects를 정상 "시설 없음"으로 오인하면 점유·Zone 검사를 우회하므로 전체 복원을 거절한다.
-    FFFZSWorldSnapshot QueueOverflowV4Snapshot = DrainingSnapshot;
-    FFFZSFacilityInstanceSnapshot& QueueOverflowV4Saved = QueueOverflowV4Snapshot.Facilities[0];
-    QueueOverflowV4Saved.Placement.OriginCell = FIntPoint(1000, MAX_int32 - 899);
-    QueueOverflowV4Saved.Placement.QuarterTurns = 0;
-    QueueOverflowV4Saved.WorldTransform = FTransform(
+    // Schema 5에서도 footprint/expanded는 표현되지만 FoodTruck Queue Y Max만 int32를 넘는 표본이다.
+    // 빈 권위 Region을 정상 "시설 없음"으로 오인하면 점유·Zone 검사를 우회하므로 전체 복원을 거절한다.
+    FFFZSWorldSnapshot QueueOverflowV5Snapshot = DrainingSnapshot;
+    FFFZSFacilityInstanceSnapshot& QueueOverflowV5Saved = QueueOverflowV5Snapshot.Facilities[0];
+    QueueOverflowV5Saved.Placement.OriginCell = FIntPoint(1000, MAX_int32 - 899);
+    QueueOverflowV5Saved.Placement.YawCentidegrees = 0;
+    QueueOverflowV5Saved.Placement.QuarterTurns = 0;
+    QueueOverflowV5Saved.WorldTransform = FTransform(
         Zone->GetActorQuat(),
         Zone->GetActorTransform().TransformPosition(FVector(
             1300.0, static_cast<double>(MAX_int32) - 749.0, 0.0)),
         FVector::OneVector);
-    TArray<FText> QueueOverflowV4Errors;
-    TestFalse(TEXT("Schema 4의 Queue 전용 Overflow는 불완전한 권위 Region을 복원할 수 없다"),
-        Subsystem->RestoreWorldSnapshot(QueueOverflowV4Snapshot, QueueOverflowV4Errors));
-    TestTrue(TEXT("Schema 4의 Queue 전용 Overflow가 불완전한 압축 Region을 명시한다"),
-        QueueOverflowV4Errors.ContainsByPredicate([](const FText& Error)
+    TArray<FText> QueueOverflowV5Errors;
+    TestFalse(TEXT("Schema 5의 Queue 전용 Overflow는 불완전한 권위 Region을 복원할 수 없다"),
+        Subsystem->RestoreWorldSnapshot(QueueOverflowV5Snapshot, QueueOverflowV5Errors));
+    TestTrue(TEXT("Schema 5의 Queue 전용 Overflow가 불완전한 압축 Region을 명시한다"),
+        QueueOverflowV5Errors.ContainsByPredicate([](const FText& Error)
         {
             return Error.ToString().Contains(TEXT("완전한 압축 1cm 배치 영역"));
         }));
-    TestTrue(TEXT("Schema 4의 Queue 전용 Overflow 발생 후 등록된 Facility가 보존된다"),
+    TestTrue(TEXT("Schema 5의 Queue 전용 Overflow 발생 후 등록된 Facility가 보존된다"),
         Subsystem->FindFacility(Install.FacilityInstanceId) == FacilityBeforeOverflow);
-    TestEqual(TEXT("Schema 4의 Queue 전용 Overflow 발생 후 WorldRevision이 보존된다"),
+    TestEqual(TEXT("Schema 5의 Queue 전용 Overflow 발생 후 WorldRevision이 보존된다"),
         Subsystem->GetWorldRevision(), RevisionBeforeOverflow);
-    TestEqual(TEXT("Schema 4의 Queue 전용 Overflow 발생 후 Phase가 보존된다"),
+    TestEqual(TEXT("Schema 5의 Queue 전용 Overflow 발생 후 Phase가 보존된다"),
         Subsystem->GetChangePhase(), PhaseBeforeOverflow);
 
     Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck);

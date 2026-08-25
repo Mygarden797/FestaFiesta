@@ -653,7 +653,7 @@ bool FFFZSFacilitySpecCardinalitySafetyLimitsTest::RunTest(
         TestEqual(
             *FString::Printf(TEXT("%s uses the bounded invalid fingerprint sentinel"), Label),
             UFFZSGridLibrary::BuildCommandFingerprint(UnsafeCommand),
-            FString(TEXT("ZFCommand.v4.InvalidUnsafeFacilitySpecCardinality")));
+            FString(TEXT("ZFCommand.v5.InvalidUnsafeFacilitySpecCardinality")));
     };
 
     // Thousands of malformed rects ensure IsValid returns at the cardinality boundary instead
