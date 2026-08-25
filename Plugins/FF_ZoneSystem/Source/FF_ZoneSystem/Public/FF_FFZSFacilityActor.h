@@ -202,7 +202,7 @@ private:
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     FFFZSGridPlacement GridPlacement;
-    // 현재 존 로컬 배치다. QuarterTurns는 항상 0..3이다. 
+    // 현재 존 로컬 배치다. YawCentidegrees는 항상 0..35999이고 레거시 QuarterTurns는 0이다.
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     EFFZSFacilityState FacilityState = EFFZSFacilityState::Planned;
@@ -220,6 +220,10 @@ private:
     TObjectPtr<ULineBatchComponent> BuildModeRangeLines;
     // clearance·queue 압축 사각형을 한 Scene Proxy로 묶는 비권위 범위 표현이다.
 
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Navigation", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UBoxComponent> NavigationObstacleBounds;
+    // 등록된 시설의 고형 footprint만 NavArea_Null로 반영하는 Nav 전용 Box다.
+
     bool bBuildModeRangeVisible = false;
     bool bBuildModeActionSelected = false;
     EFFZSFacilitySelectionIndicatorState SelectionIndicatorState =
@@ -232,6 +236,7 @@ private:
 
     void RebuildRuntimePresentation();
     void RebuildSelectionProxy(const FVector& SelectionExtent);
+    void SetNavigationObstacleEnabled(bool bEnabled);
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
     void RebuildAnchors();

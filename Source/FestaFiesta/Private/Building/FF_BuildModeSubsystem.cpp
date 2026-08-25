@@ -19,6 +19,7 @@
 #include "EngineUtils.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -150,6 +151,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 	bSuppressWorldClickUntilReleased = false;
 	bSuppressPlacementConfirmUntilReleased = false;
 	bSuppressBuildToggleUntilReleased = false;
+	ResetPlacementRotationInput();
 	PreviousFocusedWidget.Reset();
 	Super::Deinitialize();
 }
@@ -170,7 +172,8 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	}
 
 	// 입력 처리에서 상태가 바뀔 수 있으므로 처리 직후의 State를 기준으로 아래 작업을 선택한다.
-	HandleInput(*Controller);
+	HandleInput(*Controller, DeltaTime);
+	RefreshBuildModeGuide();
 
 	if (!FFBuildModeModel::IsPreviewActive(State))
 	{
@@ -399,7 +402,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("Q/E 회전 · 좌클릭 설치 · B/우클릭 카탈로그 · Esc 종료"));
+	ShowStatus(TEXT("Q/E 스냅 회전 · Shift+Q/E 자유 회전 · 좌클릭 설치 · B/우클릭 카탈로그 · Esc 종료"));
 	return PlacementPreview != nullptr;
 }
 
@@ -428,6 +431,7 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 	bSuppressWorldClickUntilReleased = false;
 	bSuppressPlacementConfirmUntilReleased = false;
 	bSuppressBuildToggleUntilReleased = false;
+	ResetPlacementRotationInput();
 	RemoveCatalogScreen();
 	DismissPlacementFailureFeedback(true);
 	RemoveBuildModeGuide();
@@ -448,15 +452,52 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 
 void UFF_BuildModeSubsystem::RotatePlacement(const int32 QuarterTurnDelta)
 {
+	RotatePlacementDegrees(static_cast<float>(QuarterTurnDelta) * 90.0f);
+}
+
+void UFF_BuildModeSubsystem::RotatePlacementDegrees(const float DeltaDegrees)
+{
 	if (!FFBuildModeModel::IsPreviewActive(State))
 	{
 		return;
 	}
-	// 임의의 증분도 허용하되 Zone System과 같은 정규화 함수를 사용해 4방향 표현을 일관되게 유지한다.
-	CurrentPlacement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(
-		CurrentPlacement.QuarterTurns + QuarterTurnDelta);
-	// 회전은 원점/Zone이 같아도 footprint와 중심 보정이 달라지므로 명령을 반드시 다시 만든다.
-	UpdatePlacementFromCursor(true);
+	if (!FMath::IsFinite(DeltaDegrees) || FMath::IsNearlyZero(DeltaDegrees))
+	{
+		return;
+	}
+
+	SetPlacementYawDegrees(GetPlacementYawDegrees() + DeltaDegrees);
+}
+
+void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
+{
+	if (!FFBuildModeModel::IsPreviewActive(State) || !FMath::IsFinite(YawDegrees))
+	{
+		return;
+	}
+
+	const int32 NewYawCentidegrees = UFFZSGridLibrary::NormalizeYawCentidegrees(
+		UFFZSGridLibrary::DegreesToYawCentidegrees(YawDegrees));
+	if (CurrentPlacement.YawCentidegrees == NewYawCentidegrees &&
+		CurrentPlacement.QuarterTurns == 0)
+	{
+		return;
+	}
+
+	// BuildMode에서는 centidegree가 canonical이다. QuarterTurns는 레거시 호출 승격에만 사용되므로
+	// 새 각도를 쓰는 순간 지워 FFZS 명령/액터 경계에서 두 표현이 경쟁하지 않게 한다.
+	CurrentPlacement.YawCentidegrees = NewYawCentidegrees;
+	CurrentPlacement.QuarterTurns = 0;
+	// 자유 회전은 매 프레임 이 함수를 호출할 수 있다. 비싼 커서 Trace와 전체 권위 검증을 여기서
+	// 강제하지 않고, Tick의 기존 0.08초 주기가 가장 최신 각도를 한 번만 반영하게 한다.
+	bPreviewWorldDirty = true;
+	RefreshBuildModeGuide();
+}
+
+float UFF_BuildModeSubsystem::GetPlacementYawDegrees() const
+{
+	return UFFZSGridLibrary::YawCentidegreesToDegrees(
+		UFFZSGridLibrary::GetEffectiveYawCentidegrees(CurrentPlacement));
 }
 
 bool UFF_BuildModeSubsystem::CommitPlacement()
@@ -619,7 +660,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	return true;
 }
 
-void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
+void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const float DeltaTime)
 {
 	// Esc는 어느 활성 하위 상태에서도 세션 전체를 닫으며 같은 프레임의 다른 입력을 실행하지 않는다.
 	if (FFBuildModeModel::ShouldExitOnEscape(State) &&
@@ -690,6 +731,7 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
 
 	if (!FFBuildModeModel::IsPreviewActive(State))
 	{
+		ResetPlacementRotationInput();
 		return;
 	}
 
@@ -706,15 +748,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
 		}
 		return;
 	}
-	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 회전된 최종 배치를 설치한다.
-	if (Controller.WasInputKeyJustPressed(EKeys::Q))
-	{
-		RotatePlacement(-1);
-	}
-	if (Controller.WasInputKeyJustPressed(EKeys::E))
-	{
-		RotatePlacement(1);
-	}
+	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
+	HandlePlacementRotationInput(Controller, DeltaTime);
 	if ((!bBlockWorldClickThisFrame &&
 		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton)) ||
 		(!bBlockPlacementConfirmThisFrame &&
@@ -722,6 +757,84 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller)
 	{
 		CommitPlacement();
 	}
+}
+
+void UFF_BuildModeSubsystem::HandlePlacementRotationInput(
+	APlayerController& Controller,
+	const float DeltaTime)
+{
+	if (!FFBuildModeModel::IsPreviewActive(State))
+	{
+		ResetPlacementRotationInput();
+		return;
+	}
+
+	const bool bShiftDown = Controller.IsInputKeyDown(EKeys::LeftShift) ||
+		Controller.IsInputKeyDown(EKeys::RightShift);
+	const bool bLeftKeyDown = Controller.IsInputKeyDown(EKeys::Q);
+	const bool bRightKeyDown = Controller.IsInputKeyDown(EKeys::E);
+	const bool bLeftJustPressed = Controller.WasInputKeyJustPressed(EKeys::Q);
+	const bool bRightJustPressed = Controller.WasInputKeyJustPressed(EKeys::E);
+
+	if (!bLeftKeyDown)
+	{
+		bFreeRotateLeftGesture = false;
+	}
+	if (!bRightKeyDown)
+	{
+		bFreeRotateRightGesture = false;
+	}
+
+	if (bLeftJustPressed)
+	{
+		bFreeRotateLeftGesture = FFBuildModeModel::ShouldStartFreeRotationGesture(
+			bLeftJustPressed, bShiftDown);
+		if (FFBuildModeModel::ShouldApplySnappedRotation(bLeftJustPressed, bShiftDown))
+		{
+			SnapPlacementRotation(-1);
+		}
+	}
+	if (bRightJustPressed)
+	{
+		bFreeRotateRightGesture = FFBuildModeModel::ShouldStartFreeRotationGesture(
+			bRightJustPressed, bShiftDown);
+		if (FFBuildModeModel::ShouldApplySnappedRotation(bRightJustPressed, bShiftDown))
+		{
+			SnapPlacementRotation(1);
+		}
+	}
+
+	const float FreeRotationDirection = FFBuildModeModel::ResolveFreeRotationDirection(
+		bFreeRotateLeftGesture,
+		bLeftKeyDown,
+		bFreeRotateRightGesture,
+		bRightKeyDown,
+		bShiftDown);
+	if (!FMath::IsNearlyZero(FreeRotationDirection) &&
+		FMath::IsFinite(DeltaTime) && DeltaTime > 0.0f)
+	{
+		RotatePlacementDegrees(
+			FreeRotationDirection * GetFreePlacementRotationSpeedDegreesPerSecond() * DeltaTime);
+	}
+}
+
+void UFF_BuildModeSubsystem::ResetPlacementRotationInput()
+{
+	bFreeRotateLeftGesture = false;
+	bFreeRotateRightGesture = false;
+}
+
+void UFF_BuildModeSubsystem::SnapPlacementRotation(const int32 Direction)
+{
+	if (!FFBuildModeModel::IsPreviewActive(State) || Direction == 0)
+	{
+		return;
+	}
+
+	SetPlacementYawDegrees(FFBuildModeModel::ResolveNextSnappedYawDegrees(
+		GetPlacementYawDegrees(),
+		GetPlacementRotationSnapDegrees(),
+		Direction));
 }
 
 void UFF_BuildModeSubsystem::CreateCatalogScreen(APlayerController& Controller)
@@ -965,7 +1078,21 @@ void UFF_BuildModeSubsystem::CreateBuildModeGuide(APlayerController& Controller)
 	if (BuildModeGuideWidget)
 	{
 		BuildModeGuideWidget->AddToPlayerScreen(90);
+		RefreshBuildModeGuide();
 	}
+}
+
+void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
+{
+	if (!BuildModeGuideWidget)
+	{
+		return;
+	}
+
+	BuildModeGuideWidget->SetPlacementGuideState(
+		FFBuildModeModel::IsPreviewActive(State),
+		GetPlacementYawDegrees(),
+		GetPlacementRotationSnapDegrees());
 }
 
 void UFF_BuildModeSubsystem::RemoveBuildModeGuide()
@@ -1087,6 +1214,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 	bHasPlacementTarget = false;
 	bPreviewWorldDirty = false;
 	PreviewRefreshAccumulator = 0.0f;
+	ResetPlacementRotationInput();
 }
 
 void UFF_BuildModeSubsystem::ResetMovingSelection()
@@ -1414,7 +1542,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 		bSuppressPlacementConfirmUntilReleased = true;
 	}
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("Q/E 회전 · 좌클릭/Enter 이동 확정 · 우클릭 이동 취소 · B 카탈로그"));
+	ShowStatus(TEXT("Q/E 스냅 회전 · Shift+Q/E 자유 회전 · 좌클릭/Enter 이동 확정 · 우클릭 이동 취소 · B 카탈로그"));
 	return State == EFF_BuildModeState::Moving && PlacementPreview != nullptr;
 }
 
@@ -1543,17 +1671,13 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		return false;
 	}
 
-	// Zone 그리드는 1cm 정수 좌표를 사용하지만 조작 안정성을 위해 커서 목표 중심을 10cm 단위로 스냅한다.
+	// Zone 권위 격자는 1cm 정수 좌표를 유지하고, 커서 조작만 DeveloperSettings의 간격으로 양자화한다.
 	FIntPoint TargetCell = Zone->WorldToGridCell1Cm(GroundHit.ImpactPoint);
-	TargetCell.X = FMath::RoundToInt(static_cast<double>(TargetCell.X) / PlacementSnapCm) * PlacementSnapCm;
-	TargetCell.Y = FMath::RoundToInt(static_cast<double>(TargetCell.Y) / PlacementSnapCm) * PlacementSnapCm;
+	const int32 PositionSnapCm = GetPlacementPositionSnapCm();
+	TargetCell.X = FMath::RoundToInt(static_cast<double>(TargetCell.X) / PositionSnapCm) * PositionSnapCm;
+	TargetCell.Y = FMath::RoundToInt(static_cast<double>(TargetCell.Y) / PositionSnapCm) * PositionSnapCm;
 
-	// 회전된 footprint의 실제 Min/Max를 구한다. 원점 기준 회전은 음수 Min을 만들 수 있으므로
-	// 단순히 크기의 절반을 빼지 않고 회전 사각형의 중심을 이용해야 커서가 시설 중심에 유지된다.
-	const FFFZSCellRect RotatedLocal = UFFZSGridLibrary::RotateRect(
-		FFFZSCellRect(FIntPoint::ZeroValue, SelectedSpec.FootprintSizeCells),
-		CurrentPlacement.QuarterTurns);
-	if (!RotatedLocal.IsValid())
+	if (SelectedSpec.FootprintSizeCells.X <= 0 || SelectedSpec.FootprintSizeCells.Y <= 0)
 	{
 		// 크기가 0 이하인 잘못된 정의는 여기서도 방어해 유효하지 않은 PreviewCommand 생성을 막는다.
 		bHasPlacementTarget = false;
@@ -1561,9 +1685,11 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		return false;
 	}
 
-	const FVector2D CenterOffset(
-		(static_cast<double>(RotatedLocal.Min.X) + RotatedLocal.Max.X) * 0.5,
-		(static_cast<double>(RotatedLocal.Min.Y) + RotatedLocal.Max.Y) * 0.5);
+	// 첫 셀 중심 (0.5, 0.5)을 기준으로 (FootprintSize - 1) / 2 벡터만 임의 yaw만큼
+	// 회전한다. QuarterTurns용 외접 Rect 중심을 사용하면 45도에서 커서와 시설 중심이 어긋난다.
+	const FVector2D CenterOffset = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
+		SelectedSpec.FootprintSizeCells,
+		GetPlacementYawDegrees());
 	const FIntPoint NewOrigin(
 		FMath::RoundToInt(static_cast<double>(TargetCell.X) - CenterOffset.X),
 		FMath::RoundToInt(static_cast<double>(TargetCell.Y) - CenterOffset.Y));
@@ -1646,6 +1772,37 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		CurrentZoneId,
 		CurrentPlacement,
 		ZoneSystem->GetWorldRevision());
+}
+
+float UFF_BuildModeSubsystem::GetPlacementRotationSnapDegrees() const
+{
+	const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+	const float Value = Settings
+		? Settings->PlacementRotationSnapDegrees
+		: DefaultPlacementRotationSnapDegrees;
+	return FMath::IsFinite(Value) && Value >= 0.01f && Value <= 180.0f
+		? Value
+		: DefaultPlacementRotationSnapDegrees;
+}
+
+float UFF_BuildModeSubsystem::GetFreePlacementRotationSpeedDegreesPerSecond() const
+{
+	const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+	const float Value = Settings
+		? Settings->FreePlacementRotationSpeedDegreesPerSecond
+		: DefaultFreePlacementRotationSpeedDegreesPerSecond;
+	return FMath::IsFinite(Value) && Value >= 1.0f && Value <= 720.0f
+		? Value
+		: DefaultFreePlacementRotationSpeedDegreesPerSecond;
+}
+
+int32 UFF_BuildModeSubsystem::GetPlacementPositionSnapCm() const
+{
+	const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+	const int32 Value = Settings
+		? Settings->PlacementPositionSnapCm
+		: DefaultPlacementPositionSnapCm;
+	return Value >= 1 && Value <= 100 ? Value : DefaultPlacementPositionSnapCm;
 }
 
 bool UFF_BuildModeSubsystem::CanReconfigure() const

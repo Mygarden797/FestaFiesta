@@ -16,6 +16,7 @@
 #include "Components/LineBatchComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
@@ -215,33 +216,36 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
     // [하드코딩 제거] 건축 모드 범위 표시와 같은 상한을 설정 헤더에서 공유한다.
     constexpr int32 MaxDisplayedRectsPerGroup =
         UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
-    const auto DrawRect = [this, Zone, CellSizeCm](const FFFZSCellRect& Rect, const FLinearColor& Color)
+    const auto DrawRect = [this, Zone, CellSizeCm](const FFFZSOrientedRect& Rect, const FLinearColor& Color)
     {
         const FVector Center = Zone->GetActorTransform().TransformPosition(FVector(
-            (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
-            (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
+            Rect.CenterCell.X * CellSizeCm,
+            Rect.CenterCell.Y * CellSizeCm,
             5.0));
         const FVector Extent(
-            FMath::Max(0.25, Rect.GetWidth() * CellSizeCm * 0.5 - 0.02),
-            FMath::Max(0.25, Rect.GetHeight() * CellSizeCm * 0.5 - 0.02),
+            FMath::Max(0.25, Rect.HalfExtentCells.X * CellSizeCm - 0.02),
+            FMath::Max(0.25, Rect.HalfExtentCells.Y * CellSizeCm - 0.02),
             5.0);
+        const FQuat Rotation = Zone->GetActorQuat() * FQuat(
+            FVector::UpVector,
+            FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees)));
         RangeLines->DrawBox(
             Center,
             Extent,
-            Zone->GetActorQuat(),
+            Rotation,
             Color,
             0.0f,
             SDPG_World,
             2.0f);
     };
     const auto DrawGroup = [&DrawRect, BaseColor](
-        const TArray<FFFZSCellRect>& Rects,
+        const TArray<FFFZSOrientedRect>& Rects,
         const FColor& ValidColor)
     {
         const FLinearColor Color(BaseColor == FColor::Red ? BaseColor : ValidColor);
         if (Rects.Num() <= MaxDisplayedRectsPerGroup)
         {
-            for (const FFFZSCellRect& Rect : Rects)
+            for (const FFFZSOrientedRect& Rect : Rects)
             {
                 if (Rect.IsValid())
                 {
@@ -251,33 +255,25 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
             return;
         }
 
-        FFFZSCellRect Bounds;
-        bool bHasBounds = false;
-        for (const FFFZSCellRect& Rect : Rects)
+        FBox2D Bounds(EForceInit::ForceInit);
+        for (const FFFZSOrientedRect& Rect : Rects)
         {
             if (!Rect.IsValid())
             {
                 continue;
             }
-            if (!bHasBounds)
+            for (const FVector2D& Corner : FFZSOrientedGeometry::GetCorners(Rect))
             {
-                Bounds = Rect;
-                bHasBounds = true;
-            }
-            else
-            {
-                Bounds.Min.X = FMath::Min(Bounds.Min.X, Rect.Min.X);
-                Bounds.Min.Y = FMath::Min(Bounds.Min.Y, Rect.Min.Y);
-                Bounds.Max.X = FMath::Max(Bounds.Max.X, Rect.Max.X);
-                Bounds.Max.Y = FMath::Max(Bounds.Max.Y, Rect.Max.Y);
+                Bounds += Corner;
             }
         }
-        if (bHasBounds)
+        if (Bounds.bIsValid)
         {
-            DrawRect(Bounds, Color);
+            DrawRect(FFFZSOrientedRect(
+                Bounds.GetCenter(), Bounds.GetExtent(), 0.0f), Color);
         }
     };
-    DrawGroup(LastValidation.FootprintRects, FColor::Green);
-    DrawGroup(LastValidation.ClearanceRects, FColor::Cyan);
-    DrawGroup(LastValidation.QueueRects, FColor::Yellow);
+    DrawGroup(LastValidation.FootprintOrientedRects, FColor::Green);
+    DrawGroup(LastValidation.ClearanceOrientedRects, FColor::Cyan);
+    DrawGroup(LastValidation.QueueOrientedRects, FColor::Yellow);
 }

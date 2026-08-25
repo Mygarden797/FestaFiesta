@@ -325,7 +325,7 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
 **Lifecycle 패널과 검증 맵은 플레이어용 UI가 아니라 개발 도구입니다.** Morning Check UI를 만들 때
 동일한 시설 명령 진입점과 결과 처리 방식을 참고합니다.
 
-### 완성형 시설 건축 카탈로그 (2026-08-18 갱신)
+### 완성형 시설 건축 카탈로그 (2026-08-25 갱신)
 
 - **헤더**: `Public/Building/FF_BuildCatalogSubsystem.h`, `Public/Building/FF_BuildModeSubsystem.h`
 - **접근**: `GameInstanceSubsystem` 카탈로그 + `TickableWorldSubsystem` 건축 모드
@@ -345,6 +345,15 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
 `AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·여유 공간·
 Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우회하지 않는다.
 
+배치 회전의 권위 표현은 `FFFZSGridPlacement::YawCentidegrees`(0.01도 단위)다. 기존
+`RotatePlacement(int32 QuarterTurnDelta)`는 Blueprint 호환을 위해 90도 증감 래퍼로 유지하고, 새 UI는
+`RotatePlacementDegrees(float)`·`SetPlacementYawDegrees(float)`·`GetPlacementYawDegrees()`를 사용한다.
+`Q/E` 스냅 간격, `Shift+Q/E` 자유 회전 속도, 위치 스냅 간격은 각각
+`UFFZSDeveloperSettings::PlacementRotationSnapDegrees`,
+`FreePlacementRotationSpeedDegreesPerSecond`, `PlacementPositionSnapCm`에서 읽는다. 유효하지 않은 config의
+안전값은 45도, 초당 90도, 1cm다. 자유 회전은 매 프레임 최신 yaw만 기록하고 전체 배치 검증은 기존
+0.08초 주기를 유지하며, 확정 직전에는 최신 커서·각도·revision을 강제 재검증한다.
+
 활성 건축 세션에서는 설치 시설의 footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시한다.
 카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 공용 우측 시설 정보 패널이
 `Build` 컨텍스트로 열린다. 패널은 시설 정보와 `이동`·`철거` 액션 및 닫기를 제공하며, 패널 위 좌클릭은
@@ -362,7 +371,8 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 | --- | --- |
 | `B` | 재배치 허용 단계에서 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기. 불허 단계에서는 진입하지 않음 |
 | `M` 또는 `이동` 버튼 | 선택 시설의 이동 프리뷰 시작 |
-| `Q`, `E` | 설치/이동 프리뷰를 90도 회전 |
+| `Q`, `E` 탭 | 설치/이동 프리뷰를 설정된 스냅 간격만큼 진행 방향의 다음 각도로 회전. 기본 45도 |
+| `Shift` + `Q`, `E` 홀드 | 설치/이동 프리뷰를 설정 속도로 연속 자유 회전. 첫 edge의 스냅 회전과 중복 실행하지 않음 |
 | `좌클릭` | `BuildMode`에서는 시설 선택, `Placing`에서는 설치, `Moving`에서는 이동 확정 |
 | `Enter` | 공용 시설 정보 패널의 건축 선택에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
 | `우클릭` | 시설 선택 취소, 설치는 카탈로그 복귀, 이동은 원본을 건드리지 않고 `BuildMode` 복귀 |
