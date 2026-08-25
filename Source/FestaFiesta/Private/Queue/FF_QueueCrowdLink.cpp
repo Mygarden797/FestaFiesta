@@ -106,39 +106,28 @@ void UFF_QueueCrowdLink::HandleSlotTargetsUpdated(int32 FacilityId, const TArray
 		return;
 	}
 
-	// 배정은 Party 별로 연속이다. Party 가 바뀌는 지점에서 끊어 한 번에 처리한다.
-	int32 Cursor = 0;
-	while (Cursor < Assignments.Num())
+	// 배정은 일행당 하나다. 멤버 배치는 Crowd 의 포메이션이 맡는다.
+	//
+	// 예전에는 멤버마다 좌표를 따로 쐈는데, Crowd 가 멤버 목적지를 리더에게 되돌리는
+	// 구조라 마지막 멤버 자리만 리더에게 남았다. 그래서 리더가 줄 맨 뒤에 혼자 서고,
+	// 나머지는 포메이션을 따라 그 옆에 붙고, 슬롯이 당겨질 때마다 목표가 튀면서
+	// 뒤처진 멤버가 일행에서 떨어져 나갔다.
+	for (const FFF_SlotAssignment& Assignment : Assignments)
 	{
-		const int32 PartyId = Assignments[Cursor].PartyId;
-
-		int32 End = Cursor;
-		while (End < Assignments.Num() && Assignments[End].PartyId == PartyId)
-		{
-			++End;
-		}
-
 		// 인덱스는 캐시하지 않고 매번 새로 받는다. 슬롯이 재사용되므로 저장하면
 		// 시간이 지난 뒤 다른 사람을 가리킨다.
-		const TArray<int32> Members = Crowd->GetPartyMembers(PartyId);
-
-		const int32 SlotCount = End - Cursor;
-		if (Members.Num() != SlotCount)
+		const TArray<int32> Members = Crowd->GetPartyMembers(Assignment.PartyId);
+		if (Members.Num() == 0)
 		{
-			// 가입 시점 인원과 현재 살아 있는 멤버 수가 다르다. 일부가 디스폰됐거나
-			// 가입 요청의 MemberCount 가 실제와 달랐다는 뜻이다.
-			// 있는 만큼만 적용한다 — 아무것도 안 하면 남은 사람들이 제자리에 얼어붙는다.
+			// 가입한 일행이 통째로 사라졌다. 줄에는 아직 남아 있다는 뜻이라 관측해둔다.
 			++MemberCountMismatches;
+			continue;
 		}
 
-		const int32 ApplyCount = FMath::Min(Members.Num(), SlotCount);
-		for (int32 Offset = 0; Offset < ApplyCount; ++Offset)
-		{
-			Crowd->SetAgentDestination(Members[Offset], Assignments[Cursor + Offset].TargetLocation);
-			++AppliedSlotTargets;
-		}
-
-		Cursor = End;
+		// 리더에게만 준다. Crowd 가 멤버 목적지를 어차피 리더로 돌리므로
+		// 여러 번 부르면 마지막 값만 남고 앞의 것은 버려진다.
+		Crowd->SetAgentDestination(Members[0], Assignment.TargetLocation);
+		++AppliedSlotTargets;
 	}
 }
 
@@ -203,11 +192,9 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 					const FVector ExitLocation = Queue->GetFacilityExitLocation(FacilityId);
 					if (!ExitLocation.IsNearlyZero())
 					{
-						for (const int32 AgentIndex : Members)
-						{
-							Crowd->SetAgentDestination(AgentIndex, ExitLocation);
-							++AppliedSlotTargets;
-						}
+						// 리더에게만 준다. 멤버는 포메이션을 따라 함께 빠져나간다.
+						Crowd->SetAgentDestination(Members[0], ExitLocation);
+						++AppliedSlotTargets;
 						return;
 					}
 				}
