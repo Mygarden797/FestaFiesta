@@ -228,6 +228,19 @@ struct FESTAFIESTA_API FFF_AtlasGeo
 	static float HorizonMinDot(float Radius, float ViewerDistance);
 
 	/**
+	 * 반지름 `SphereRadius`인 구 위로 솟은 점(`PointRadius`)이 지평선 너머에서 처음 보이는 내적 값.
+	 *
+	 * `HorizonMinDot(PointRadius, ViewerDistance)`를 쓰면 높이가 클수록 임계가 올라가 오히려
+	 * 늦게 보인다. 실제 경계는 관측자-꼭대기 선분이 안쪽 구에 접하는 순간이며 다음과 같다.
+	 *
+	 * `cos(acos(R / D) + acos(R / P))`
+	 *
+	 * `PointRadius == SphereRadius`면 `HorizonMinDot`과 정확히 같다. 관측자는 구 밖이어야 하고
+	 * 점은 구 표면 이상이어야 한다. 조건이 잘못되면 안전하게 1을 돌린다.
+	 */
+	static float ElevatedHorizonMinDot(float SphereRadius, float PointRadius, float ViewerDistance);
+
+	/**
 	 * 이 방향이 관측자를 향하고 있나. 두 벡터의 내적이 `MinDot` 이상이면 true.
 	 * 공간을 가리지 않는다 — 둘 다 로컬이거나 둘 다 월드이면 된다.
 	 */

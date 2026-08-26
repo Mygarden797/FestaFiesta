@@ -131,4 +131,12 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "0.0", ClampMax = "0.5"))
 	float PinVisibleDotMargin = 0.03f;
+
+	/**
+	 * 조형물 꼭대기의 정확한 지평선 임계에 더하는 연출 여유.
+	 * 0이 물리적으로 맞는 값이다. 음수면 메시를 조금 더 일찍 켜 팝을 줄이고, 양수면 늦춘다.
+	 * UMG 핀과 선택 조명에는 적용하지 않는다 — 뒤편 입력·빛이 지구를 뚫고 나오면 안 된다.
+	 */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "-0.5", ClampMax = "0.5"))
+	float LandmarkVisibleDotMargin = 0.f;
 };

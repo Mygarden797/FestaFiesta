@@ -1240,8 +1240,8 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시�
 | 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ✅ **2026-08-19 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay` | Report 드릴다운 |
 | **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ✅ **2026-08-23 완료** — `GetRevenueByFacilityRowsForDay` 가 이제 실제 값을 돌려줍니다(이용 완료 → 수수료 결선) | Report — 부스별 수익 표 |
 | **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
-| Staff 보유·가용 인원                                | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Event 배치 UI, MorningCheck 고용 화면 |
-| 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 상단 바 자금난 경고, Report |
+| Staff 보유·가용 인원                                | 김시리       | ✅ **2026-08-26 ViewModel 연결 완료** (`GetBaseStaffCount`/`GetTemporaryStaffCount`/`GetTotalStaffCount` + `OnTotalStaffCountChanged`) | 준비 단계 하단 바, Event 배치 UI, MorningCheck 고용 화면 |
+| 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ✅ **2026-08-26 ViewModel 연결 완료** — 준비 단계 하단 바에 **잔액 바로 옆 칸**으로 나옵니다 (0이면 숨김) | 상단 바 자금난 경고, Report |
 | `CauseId` 롤업                                  | 김시리       | ⚠️ 창구만 있음 | Report 드릴다운 (AT-005) — `UFF_NpcNeedMetricsSubsystem`이 원본, 채우는 쪽 대기 |
 | 저장 슬롯 목록                                      | 김시리       | ❌ 없음      | 플레이 허브                                                             |
 
@@ -1259,7 +1259,20 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시�
 | **최종 점수 산식·등급 가중치** | 김시리 | ❌ 없음 | 최종 결산 — 지금은 `가중치 잠정` 문구를 화면에 띄우고 있음 |
 | **저장 슬롯 저장·불러오기 Command** | 김시리 | ❌ 없음 | ESC 수동 저장, 플레이 허브 불러오기 |
 | **SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑 소유자 | 미정 | ❌ 없음 | Live `SNS` 패널 |
-| **날씨 Read Model** | 강민서 | ❌ 없음 | 개장 준비 견적서 — 지금은 `더미` 배지 |
+| ~~**날씨 Read Model**~~ | 강민서 | ✅ **2026-08-26 정정 — 이미 있습니다.** `GetSelectedWeather()` · `SetSelectedWeather()` · `OnEnvironmentStateChanged` 가 이 문서 위쪽 `환경(날씨·야간)` 절에 이미 적혀 있었는데 이 표에 `없음` 으로 남아 있었습니다 | 점검 패널 날씨 카드. **선택은 Setup·홍보·개장 준비에서만 허용**됩니다(`IsReconfigureAllowed`) — 그래서 준비 단계 패널에 들어갑니다 |
+
+### 🆕 U4 준비 단계 HUD 를 붙이며 확인된 것 (2026-08-26, 백종태)
+
+| 필요한 것 | 예상 소유자 | 상태 | UI에서 쓰는 곳 |
+| --- | --- | --- | --- |
+| **예상 방문객 (범위)** — `Min`/`Max` 와 변경 델리게이트 | 김시리 | ❌ 없음 | 준비 단계 하단 바 `예상` 칸, 홍보 패널, 개장 준비 견적서. **단일 수치가 아니라 범위**로 주세요 — 수용량 대비 `여유/주의/위험` 을 함께 그립니다 |
+| **준비 단계 관객 수** | 이정원 | ❌ 없음 (준비 단계에는 관객이 없는 것이 정상) | 하단 바 `관객` 칸. **값이 없으면 칸을 숨깁니다** — `0` 을 띄우면 틀린 사실이 됩니다 |
+
+지금은 둘 다 `UFF_PrepHudBar::Debug_SetPlaceholders()` 로만 넣을 수 있고, 넣지 않으면 칸이 숨겨집니다.
+API 가 생기면 그 함수를 지우고 ViewModel 구독으로 바꿉니다 — 위젯 트리는 그대로입니다.
+
+**시설 수는 요청하지 않습니다.** `UFFZSWorldSubsystem::BuildReadModel()` 의 `Facilities` 를 세고
+`OnWorldChanged` 로 갱신합니다 (한광훈님 API 그대로). 개장 CTA 활성 판정에 씁니다.
 
 ~~**시설 유지비에 대응하는 `EFF_SpendReason` 이 없습니다.**~~ → **2026-08-23 종료 (김시리).**
 **기획서에 시설 유지비라는 개념이 없습니다.** 경제 스펙에도 처음부터 없던 항목이라
@@ -1308,3 +1321,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시�
 | 2026-08-26 | 김시리 | 🆕 **`CanScheduleProgramNow()` 추가 — 프로그램 편성 화면의 단계 판정입니다.** `TryScheduleProgram` 은 단계를 안 봐서 Live 중에도 편성이 됩니다(그러면 비용만 빠지고 체험비 0). 피날레의 `CanPurchaseFinaleNow()` 와 같은 모양입니다. ⚠️ 허용 단계는 **Setup·MorningCheck** 이고 시설 배치(`IsReconfigureAllowed()`)와 달리 `PromotionPreview` 는 포함하지 않습니다 |
 | 2026-08-26 | 김시리 | 🔴 **정정 — 프로그램 카드 시각을 UI 에서 변환하지 말아 주세요.** 앞서 "변환 지점을 한 곳으로 두시라"고 안내했는데, 그러면 개장 시각 `17` 이 UI 에 복제됩니다(Stage 안에 "표로 빼기" todo 가 붙은 값입니다). **지금은 상대 표기(`개장 +30분`)로 해주시고**, 강민서 님께 요청한 `GetLiveClockStringAt()` 이 오면 `17:30` 으로 바꾸시면 됩니다. 참고로 공방은 17:30~18:00, 요가는 18:30~19:00 입니다 |
 | 2026-08-26 | 김시리 | 문서 정리 — 종료된 협의 경위와 뒤집힌 초안 서술을 걷어내고 **지금 필요한 것만** 남겼습니다. 셋업 예산 제안의 C·D 안은 문서에서 뺐습니다(연출이 필요해지면 말씀 주세요). 프로그램 편성 절에 **용어 표**(카드 / 편성 / 예약)를 넣었습니다 — 구조체가 셋이라 헷갈리는 지점입니다 |
+| 2026-08-26 | 백종태 | ✅ **8/24 제안의 B(상단바 고정비·미납)를 구현했습니다** — U4 준비 단계 하단 HUD(`UFF_PrepHudBar`)에 `축제 · 금화 · 밀린 임대료 · 관객 · 스태프 · 일차/단계 · 예상 방문객 · CTA` 를 넣었습니다. 미납은 **잔액 바로 옆**이고 0이면 칸을 숨깁니다. 미납·스태프 2종을 ViewModel 에 중계 연결했습니다(경제 쪽 추가 작업 0건). 새로 필요한 것은 **예상 방문객(범위)** 하나입니다 |
+| 2026-08-26 | 백종태 | 🔴 **문서 내부 모순 정정 — 날씨는 이미 읽고 쓸 수 있습니다.** `필요한데 아직 없는 것` 표의 `날씨 Read Model ❌ 없음` 행이 낡았습니다(같은 문서 `환경(날씨·야간)` 절에 API가 이미 있음). 지웠던 테스트용 날씨 버튼(`BP_StageTest`)이 부르던 것이 바로 `SetSelectedWeather` 였고, **날씨 선택은 테스트 기능이 아니라 준비 단계의 플레이어 결정**이라 U5 점검 패널로 정식 이관합니다 |
+| 2026-08-26 | 백종태 | ✅ **U5 인력 패널을 실물로 붙였습니다 — 더미 0건.** `GetAffordableTemporaryStaffCount` · `TryHireTemporaryStaff` · `MaxHiredStaffPerDay` · `DailyStaffWageGold` · `DailyVenueRentGold` 를 ViewModel 로 중계했습니다. **`TryHireTemporaryStaff` 가 부분 고용이 없어서** 화면은 낙관적 갱신을 하지 않고 결과 이벤트만 봅니다. 거부 사유가 bool 하나라 화면에서 `상한 도달`·`잔액 부족`을 구분하려고 `GetRemainingTemporaryStaffCap()` 을 따로 만들었습니다 — 경제 쪽 `GetRemainingHireCap()` 이 private 이라 같은 식을 UI 에서 한 번 더 씁니다. **public 으로 열어 주시면 그 중복을 지웁니다** |
+| 2026-08-26 | 백종태 | ✅ **U5 점검 패널(개장 견적서)을 붙였습니다.** 날씨 선택이 정식 자리를 얻었습니다 — `SetSelectedWeather` 가 `IsReconfigureAllowed()` 로 준비 단계에만 열려 있어서 준비 단계 UI 가 맞는 자리입니다. 🔴 **`OnEnvironmentStateChanged` 가 야간 전환에도 울립니다** — `(Weather, bIsNight)` 를 함께 쏘기 때문입니다. ViewModel 에서 날씨가 실제로 바뀔 때만 중계하도록 걸렀습니다. 강민서님 쪽 수정은 필요 없습니다. 남은 요청은 여전히 **예상 방문객(범위)** 하나이고, 없으면 견적표의 수입·보너스 칸이 `아직 알 수 없습니다` 로 나옵니다 |

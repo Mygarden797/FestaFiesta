@@ -5,7 +5,14 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
-#include "Time/FF_FestivalStage.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
+
+// !! 전방 선언으로는 안 된다 !!
+// `EFF_WeatherType` 이 `UFUNCTION` 반환형이라 UHT 가 전체 정의를 요구한다.
+// 그 enum 은 강민서님의 `FF_FestivalStageSubsystem.h` 에 있고, 남의 파일에서 enum 을
+// 꺼내 옮기지 않는다 (AGENTS.md 규칙 3).
+#include "Time/FF_FestivalStageSubsystem.h"
+
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
@@ -16,6 +23,7 @@ struct IConsoleCommand;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
 
 /**
  * UI용 Read Model.
@@ -131,6 +139,139 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
 	FFF_OnIntMetricChanged OnTodayRevenueChanged;
+
+	// --- 고정비 미납 (2026-08-26 추가 — U4 준비 단계 HUD) ---
+	//
+	// !! 잔액과 함께 보여야 하는 값이다 !!
+	// 미납이 남아 있으면 매출이 들어와도 잔액이 안 늘어난다(`RepayArrearsFromGold`).
+	// 이 칸이 없으면 "돈을 벌었는데 잔액이 그대로"인 화면을 설명할 방법이 없다.
+	// 0 이면 화면에서 칸을 숨긴다 — 0 을 띄우면 없는 문제를 있는 것처럼 만든다.
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetArrears() const { return Arrears; }
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnArrearsChanged;
+
+	// --- 스태프 (2026-08-26 추가 — U4 준비 단계 HUD) ---
+	//
+	// 무페이 기본 팀 + 당일 알바다. 임금은 알바에만 붙고 매일 재계약한다.
+	// **축제 시작 전에는 `INDEX_NONE`(모름)이다.** 0 을 띄우면 "스태프가 없다"는 틀린 사실이 된다.
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetBaseStaffCount() const { return BaseStaffCount; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetTemporaryStaffCount() const { return TemporaryStaffCount; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetTotalStaffCount() const { return TotalStaffCount; }
+
+	/** 전체 인원이 바뀔 때. 기본·알바 내역도 이때 함께 갱신된다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_OnIntMetricChanged OnTotalStaffCountChanged;
+
+	// --- 알바 고용 (2026-08-26 추가 — U5 인력 패널) ---
+	//
+	// 판정의 소유자는 경제 시스템이다. **UI 가 `Gold / 임금` 을 직접 계산하지 않는다** —
+	// 상한 규칙이 바뀌면 UI 의 계산식이 조용히 틀리게 된다.
+	// 값이 없으면 전부 `INDEX_NONE`(모름)이고 화면은 그 칸을 숨긴다.
+
+	/**
+	 * 지금 추가로 고용할 수 있는 최대 인원. **잔액과 하루 상한을 둘 다 반영한 값**이다.
+	 * 스텝퍼 상한과 버튼 비활성 판정에 쓴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetAffordableTemporaryStaffCount() const;
+
+	/**
+	 * 오늘 상한까지 남은 자리. 잔액은 보지 않는다.
+	 *
+	 * `GetAffordableTemporaryStaffCount()` 와 **둘 다 필요한 이유**는 막힌 이유를 구분하기
+	 * 위해서다 — `상한을 다 썼다` 와 `돈이 없다` 는 플레이어가 할 행동이 다르다 (AT-011).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetRemainingTemporaryStaffCap() const;
+
+	/** 알바 1명·1일 임금. 고정비 표와 견적에 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetDailyStaffWageGold() const;
+
+	/** 하루 알바 상한. 화면에 `오늘 최대 N명` 을 쓰기 위한 값이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetMaxTemporaryStaffPerDay() const;
+
+	/** 장소 임대료(Gold/일). 고정비 표에 임금과 함께 보여준다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetDailyVenueRentGold() const;
+
+	// --- 환경: 날씨 (2026-08-26 추가 — U5 점검 패널) ---
+	//
+	// 🔴 이 API 는 원래부터 있었다. `UI_API.md` 의 `필요한데 아직 없는 것` 표에 `날씨 없음` 으로
+	// 남아 있던 것이 낡은 기록이었다 (같은 문서 `환경(날씨·야간)` 절에 이미 적혀 있었다).
+	// **날씨 선택은 테스트 기능이 아니라 준비 단계의 플레이어 결정**이다.
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Environment")
+	EFF_WeatherType GetSelectedWeather() const;
+
+	/**
+	 * 지금 날씨를 바꿀 수 있는지. Stage 시스템의 `IsReconfigureAllowed()` 를 그대로 중계한다
+	 * (셋업·홍보·개장 준비에서만 true).
+	 *
+	 * !! 이 값으로 요청을 막지 않는다 !! 버튼 활성 표시에만 쓴다 — 최종 판정은 저쪽이 소유한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Environment")
+	bool CanChangeWeather() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Environment")
+	FFF_OnWeatherViewChanged OnWeatherChanged;
+
+	// --- 일일 목표·입장료 (2026-08-26 추가 — U5 점검 패널) ---
+	//
+	// 축제 정의의 밸런스 값이다. 모르면 `INDEX_NONE` 이고 화면은 그 칸을 숨긴다.
+
+	/** 하루 목표 방문객. 달성하면 `GetDailyGoalBonusGold()` 를 받는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetDailyVisitorGoal() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetDailyGoalBonusGold() const;
+
+	/** 1인당 입장료. 고정값이라 화면에 슬라이더를 두지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetAdmissionFeeGold() const;
+
+	// --- 피날레 (점검 패널의 마지막 날 요약용) ---
+
+	/** 구매한 등급. 안 샀으면 `None`. 구매 화면은 피날레 패널이 따로 갖는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	EFF_FinaleGrade GetPurchasedFinaleGrade() const;
+
+	/** 구매한 등급의 만족도 가산값. 안 샀으면 0 — 여기 0 은 확정 정보다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetFinaleSatisfactionBonus() const;
+
+	// --- Command ---
+
+	/**
+	 * 날씨를 바꿔 달라고 **요청한다.** 허용되지 않는 단계면 Stage 시스템이 무시한다.
+	 * 화면은 `OnWeatherChanged` 결과 이벤트로만 갱신된다 — 낙관적 갱신을 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	void RequestSetWeather(EFF_WeatherType NewWeather);
+
+	/**
+	 * 알바를 `Count` 명 고용해 달라고 **요청한다.**
+	 *
+	 * !! 부분 고용이 없다 !! 실패하면 아무것도 바뀌지 않는다. 그래서 낙관적 갱신을 하지 않고
+	 * 화면은 `OnGoldChanged`·`OnTotalStaffCountChanged` 결과 이벤트로만 갱신된다.
+	 *
+	 * 돌려주는 값은 "요청이 받아들여졌는지"일 뿐이다. **실패 이유는 이 값에 없다** —
+	 * 이유는 `GetRemainingTemporaryStaffCap()` 과 `GetAffordableTemporaryStaffCount()` 로
+	 * 화면이 구분한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	bool RequestHireTemporaryStaff(int32 Count);
 
 	/**
 	 * 이 금액을 지금 지출할 수 있는지. 구매 버튼 비활성 판정에 쓴다.
@@ -301,6 +442,26 @@ protected:
 	UFUNCTION()
 	void HandleOwnerGoldChanged(int32 NewValue);
 
+	/** 미납 총액을 받아 중계한다. */
+	UFUNCTION()
+	void HandleOwnerArrearsChanged(int32 NewValue);
+
+	/**
+	 * 환경 상태를 받아 **날씨만** 중계한다.
+	 *
+	 * 원본은 `(Weather, bIsNight)` 두 값을 함께 쏘는데 야간 전환에도 울린다. 날씨가 실제로
+	 * 바뀔 때만 방송하지 않으면 위젯이 밤이 될 때마다 헛돈다.
+	 */
+	UFUNCTION()
+	void HandleOwnerEnvironmentChanged(EFF_WeatherType NewWeather, bool bIsNight);
+
+	/**
+	 * 전체 인원을 받아 중계한다. 기본·알바 내역은 방송에 실려 오지 않으므로 여기서 다시 읽는다.
+	 * 인자 하나만 믿고 내역을 갱신하지 않으면 "총 6명인데 기본 4 + 알바 0" 같은 화면이 된다.
+	 */
+	UFUNCTION()
+	void HandleOwnerStaffCountChanged(int32 NewValue);
+
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
@@ -342,6 +503,25 @@ private:
 
 	UPROPERTY()
 	int32 TodayRevenue = 0;
+
+	/** 임대료 미납 누적. 하루 경계에서 리셋되지 않는다. */
+	UPROPERTY()
+	int32 Arrears = 0;
+
+	/** 중복 방송 차단용. 야간 전환으로 원본이 울려도 날씨가 같으면 넘긴다. */
+	UPROPERTY()
+	EFF_WeatherType LastBroadcastWeather = EFF_WeatherType::Clear;
+
+	// 스태프는 더미를 두지 않는다. 소유자에게서 오기 전에는 `모름`이고 화면은 칸을 숨긴다.
+
+	UPROPERTY()
+	int32 BaseStaffCount = INDEX_NONE;
+
+	UPROPERTY()
+	int32 TemporaryStaffCount = INDEX_NONE;
+
+	UPROPERTY()
+	int32 TotalStaffCount = INDEX_NONE;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> CachedStageSubsystem;
