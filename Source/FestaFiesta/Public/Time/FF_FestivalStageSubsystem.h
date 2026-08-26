@@ -251,9 +251,6 @@ public:
 	bool IsLiveStage() const;
 	// 지금 Live 단계인지
 
-	float GetLiveDurationForCurrentDay() ;
-	//오늘 Live 총 길이(마지막 이벤트 시각)를 알려주는 함수
-
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsReportStage() const;
 	// 지금 Report 단계인지
