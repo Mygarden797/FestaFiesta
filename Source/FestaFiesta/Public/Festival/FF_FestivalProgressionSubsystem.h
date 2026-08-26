@@ -9,12 +9,17 @@
 #include "Economy/Rules/FF_FixedCostArrears.h"
 #include "Economy/Rules/FF_StaffPool.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
+#include "NPC/Party/FF_ProgramReservation.h"
+#include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "FF_FestivalProgressionSubsystem.generated.h"
+
+class UFF_ProgramReservationSubsystem;
 
 class UFF_FestivalDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleChanged);
 
 /**
  * 잔액 규칙은 FFF_FestivalFunds(순수 구조체)가 갖고, 여기는 "상태 보관과 통지"만 한다.
@@ -197,6 +202,81 @@ public:
 	// 구매한 등급의 만족도 가산값 (0~100 척도). 안 샀으면 0.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetFinaleSatisfactionBonus() const;
+
+
+	// --- 유료 프로그램 -----------------------------------------------------
+
+	// 편성할 수 있는 카드 전체. 축제가 시작되지 않았으면 빈 배열.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_ProgramCard> GetProgramCatalog() const;
+
+	// 오늘 편성한 카드와 그 예약 핸들. 하루 경계에서 비워진다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_ScheduledProgram> GetScheduledPrograms() const { return ScheduledPrograms; }
+
+	// 오늘 프로그램에 묶여 있는 인원.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetStaffAssignedToPrograms() const;
+
+	// vent 대응에 쓸 수 있는 인원 = 전체 − 프로그램에 묶인 인원.
+	// 즉, 프로그램을 편성하면 줄어든다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetAvailableStaffCount() const;
+
+	// 편성 가능한지만 본다. 상태를 바꾸지 않으므로 버튼 활성화·툴팁에 그대로 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	EFF_ProgramPurchaseResult CanScheduleProgram(FName ProgramId) const;
+
+	/**
+	 * 프로그램을 오늘 편성한다. 실패 시 상태를 바꾸지 않는다.
+	 * 허용 단계(Setup·MorningCheck) 판정은 호출부가 한다.
+	 *
+	 * @param FacilityInstanceId 프로그램을 여는 시설. ZoneSystem 의 인스턴스 핸들이다
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	EFF_ProgramPurchaseResult TryScheduleProgram(FName ProgramId, FGuid FacilityInstanceId);
+
+	/**
+	 * 시작 시각이 지난 프로그램의 체험비를 원장에 넣는다. **정상 경로다.**
+	 *
+	 * 참가자는 스폰될 때 이미 확정된다 (`UFF_ProgramReservationSubsystem::ConfirmReservedParty`).
+	 * 프로그램을 사면 정원만큼의 손님이 추가로 방문하므로, 프로그램이 열리는 순간 체험비는
+	 * 확정값이다 — 마감까지 기다릴 이유가 없다. 부스 수수료도 이미 Live 중 실시간이다.
+	 *
+	 * 한 번 걷은 프로그램은 다시 걷지 않는다. Live 동안 매 초 불려도 안전하다.
+	 *
+	 * @param NowMinutes Live 경과 시각(분). `FFF_FestivalClock::TryGetLiveElapsedMinutes` 로 얻는다
+	 * @return 이번 호출에서 원장에 들어간 체험비 총액
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	int32 SettleStartedPrograms(float NowMinutes);
+
+	/**
+	 * 아직 안 걷은 프로그램의 체험비를 전부 걷는다. **안전망이다.**
+	 *
+	 * Closing 진입에서 한 번 부른다. 여기서 걷히는 것이 있으면 시작 시각 정산이 그 카드를
+	 * 놓쳤다는 뜻이라 Warning 을 남긴다 — 카드 시각이 그날 Live 길이를 넘었거나
+	 * Live 를 스킵한 경우다.
+	 *
+	 * @return 이번 호출에서 원장에 들어간 체험비 총액. 정상이면 0 이다
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	int32 SettleScheduledPrograms();
+
+	/**
+	 * 오늘 편성한 프로그램들이 데려올 손님의 주문서. (스폰 쪽에 넘길 목록)
+	 *
+	 * 아침에 편성이 끝난 뒤 그날 유입을 시작할 때 한 번 읽는다.
+	 * 합계 인원은 편성한 카드들의 정원 합과 같다.
+	 */
+	TArray<FFF_ReservedPartyRequest> GetReservedPartyRequests() const;
+
+	// 예약 슬롯의 소유자를 물린다.
+	void SetProgramReservations(UFF_ProgramReservationSubsystem* InReservations);
+
+	// 오늘 편성 목록이 바뀌면 쏜다. 인원 표시도 같이 갱신해야 한다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnProgramScheduleChanged OnScheduledProgramsChanged;
 	
 	
 	// --- 미납 -------------------------------------------------------------
@@ -209,6 +289,19 @@ public:
 	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
+	// 이 시설에서 이 프로그램을 열 수 있는가.
+	// 시설 종류를 ZoneSystem 에서 읽어 카드의 허용 목록과 대조한다.
+	bool IsFacilityTypeAllowedForCard(const FFF_ProgramCard& Card, const FGuid& FacilityInstanceId) const;
+
+	/**
+	 * 프로그램 하나의 체험비를 원장에 넣고 `bFeeSettled` 를 켠다.
+	 * 시작 시각 정산과 Closing 안전망이 같은 계산을 쓰게 하는 유일한 구현이다.
+	 *
+	 * @param bLateSettlement 안전망 경로인가. Warning 문구가 갈린다
+	 * @return 원장에 들어간 금액. 이미 걷었거나 카드·예약을 못 찾으면 0
+	 */
+	int32 SettleOneProgram(FFF_ScheduledProgram& Scheduled, bool bLateSettlement);
+
 	// 값이 실제로 바뀔 때만 통지한다.
 	void BroadcastGoldIfChanged(int32 PreviousGold);
 	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
@@ -257,6 +350,16 @@ private:
 	
 	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.
 	EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
+
+	// 오늘 편성한 프로그램. 카드가 하루짜리라 하루 경계에서 비운다.
+	TArray<FFF_ScheduledProgram> ScheduledPrograms;
+
+	// 예약 슬롯의 소유자. GameInstance 스코프로 수명이 같아서 캐시해도 된다.
+	UPROPERTY()
+	TObjectPtr<UFF_ProgramReservationSubsystem> ProgramReservations;
+
+	// 편성된 카드의 ProgramId 만 뽑는다. 순수 판정 함수가 그 형태를 받는다.
+	TArray<FName> GetScheduledProgramIds() const;
 	
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UPROPERTY()

@@ -41,13 +41,6 @@ namespace FFF_ProgramReservationSubsystemTestHelpers
 		UFF_ProgramReservationSubsystem* Subsystem = nullptr;
 	};
 
-	FFF_ReservationCandidateGroup MakeGroup(int32 GroupId, int32 MemberCount)
-	{
-		FFF_ReservationCandidateGroup Group;
-		Group.GroupId = GroupId;
-		Group.MemberCount = MemberCount;
-		return Group;
-	}
 }
 
 // 저작이 틀린 프로그램은 등록되지 않는다.
@@ -93,21 +86,19 @@ bool FFF_ProgramReservationSubsystem_PartyCannotBookTwoPrograms::RunTest(const F
 	const FGuid Morning = Harness.RegisterProgram(60.f, 120.f, 4);
 	const FGuid Afternoon = Harness.RegisterProgram(200.f, 260.f, 4);
 
-	TArray<FFF_ReservationCandidateGroup> Groups;
-	Groups.Add(FFF_ProgramReservationSubsystemTestHelpers::MakeGroup(10, 2));
-	Groups.Add(FFF_ProgramReservationSubsystemTestHelpers::MakeGroup(20, 2));
+	TestTrue(TEXT("파티 10 이 오전에 확정된다"),
+		Harness.Subsystem->ConfirmReservedParty(Morning, 10, 2));
+	TestTrue(TEXT("파티 20 도 오전에 확정된다"),
+		Harness.Subsystem->ConfirmReservedParty(Morning, 20, 2));
 
-	TestEqual(TEXT("오전 프로그램이 정원을 채운다"),
-		Harness.Subsystem->AssignGroups(Morning, Groups), 4);
-
-	// 같은 후보 목록을 오후에도 넘긴다. 이미 배정된 둘은 걸러져야 한다.
-	TestEqual(TEXT("이미 배정된 그룹은 오후에 배정되지 않는다"),
-		Harness.Subsystem->AssignGroups(Afternoon, Groups), 0);
+	// 같은 파티를 오후에도 넣어 본다. 스폰 쪽이 실수로 두 번 통지하는 경우다.
+	TestFalse(TEXT("이미 확정된 파티는 오후에 들어가지 않는다"),
+		Harness.Subsystem->ConfirmReservedParty(Afternoon, 10, 2));
 
 	FFF_ProgramReservation AfternoonReservation;
 	TestTrue(TEXT("오후 예약을 찾는다"),
 		Harness.Subsystem->FindReservation(Afternoon, AfternoonReservation));
-	TestEqual(TEXT("오후는 배정 인원이 0 이다"), AfternoonReservation.AssignedHeadcount, 0);
+	TestEqual(TEXT("오후는 확정 인원이 0 이다"), AfternoonReservation.AssignedHeadcount, 0);
 	TestEqual(TEXT("오후는 정원 전체가 빈자리다"), AfternoonReservation.UnfilledSeats, 4);
 
 	// 역색인도 오전만 가리켜야 한다.
@@ -131,9 +122,7 @@ bool FFF_ProgramReservationSubsystem_LockAndExitBlockDifferInWindow::RunTest(con
 	}
 
 	const FGuid Program = Harness.RegisterProgram(60.f, 120.f, 2);
-	TArray<FFF_ReservationCandidateGroup> Groups;
-	Groups.Add(FFF_ProgramReservationSubsystemTestHelpers::MakeGroup(7, 2));
-	Harness.Subsystem->AssignGroups(Program, Groups);
+	Harness.Subsystem->ConfirmReservedParty(Program, 7, 2);
 
 	// 시작 전 — 자유 행동이므로 재평가는 하고, 퇴장만 막힌다.
 	TestFalse(TEXT("시작 전에는 잠기지 않는다"), Harness.Subsystem->IsPartyLockedAt(7, 30.f));
@@ -166,9 +155,7 @@ bool FFF_ProgramReservationSubsystem_ClearAssignmentsKeepsSlots::RunTest(const F
 	}
 
 	const FGuid Program = Harness.RegisterProgram(60.f, 120.f, 3);
-	TArray<FFF_ReservationCandidateGroup> Groups;
-	Groups.Add(FFF_ProgramReservationSubsystemTestHelpers::MakeGroup(1, 3));
-	TestEqual(TEXT("정원을 채운다"), Harness.Subsystem->AssignGroups(Program, Groups), 3);
+	TestTrue(TEXT("정원을 채운다"), Harness.Subsystem->ConfirmReservedParty(Program, 1, 3));
 
 	Harness.Subsystem->ClearAssignments();
 
@@ -188,11 +175,9 @@ bool FFF_ProgramReservationSubsystem_ClearAssignmentsKeepsSlots::RunTest(const F
 	TestFalse(TEXT("어제 파티의 퇴장 금지가 풀린다"),
 		Harness.Subsystem->IsPartyExitBlockedAt(1, 90.f));
 
-	// 같은 슬롯에 오늘 방문객을 다시 배정할 수 있다.
-	TArray<FFF_ReservationCandidateGroup> TodayGroups;
-	TodayGroups.Add(FFF_ProgramReservationSubsystemTestHelpers::MakeGroup(2, 3));
-	TestEqual(TEXT("같은 슬롯에 오늘 그룹을 배정한다"),
-		Harness.Subsystem->AssignGroups(Program, TodayGroups), 3);
+	// 같은 슬롯에 오늘 스폰된 파티를 다시 확정할 수 있다.
+	TestTrue(TEXT("같은 슬롯에 오늘 파티를 확정한다"),
+		Harness.Subsystem->ConfirmReservedParty(Program, 2, 3));
 
 	return true;
 }
@@ -208,9 +193,7 @@ bool FFF_ProgramReservationSubsystem_RemoveReleasesParties::RunTest(const FStrin
 	}
 
 	const FGuid Program = Harness.RegisterProgram(60.f, 120.f, 2);
-	TArray<FFF_ReservationCandidateGroup> Groups;
-	Groups.Add(FFF_ProgramReservationSubsystemTestHelpers::MakeGroup(5, 2));
-	Harness.Subsystem->AssignGroups(Program, Groups);
+	Harness.Subsystem->ConfirmReservedParty(Program, 5, 2);
 
 	TestTrue(TEXT("지우기 전에는 퇴장이 막혀 있다"),
 		Harness.Subsystem->IsPartyExitBlockedAt(5, 30.f));
@@ -223,10 +206,10 @@ bool FFF_ProgramReservationSubsystem_RemoveReleasesParties::RunTest(const FStrin
 	TestFalse(TEXT("지운 뒤에는 잠금도 풀린다"),
 		Harness.Subsystem->IsPartyLockedAt(5, 90.f));
 
-	// 그 파티는 이제 다른 프로그램에 배정될 수 있다.
+	// 그 파티는 이제 다른 프로그램에 들어갈 수 있다.
 	const FGuid Other = Harness.RegisterProgram(200.f, 260.f, 2);
-	TestEqual(TEXT("풀린 파티는 다른 프로그램에 배정된다"),
-		Harness.Subsystem->AssignGroups(Other, Groups), 2);
+	TestTrue(TEXT("풀린 파티는 다른 프로그램에 확정된다"),
+		Harness.Subsystem->ConfirmReservedParty(Other, 5, 2));
 
 	return true;
 }
@@ -265,6 +248,131 @@ bool FFF_ProgramReservationSubsystem_ListIsSortedByStartTime::RunTest(const FStr
 		PreviousStart = Reservation.StartMinutes;
 	}
 
+	return true;
+}
+
+// 갓 만든 예약의 남은 자리는 정원 전체다.
+// 기본값 0 이면 UI 가 "자리 없음"으로 읽는다 — 아무도 배정되기 전인데도.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramReservationSubsystem_NewProgramStartsEmptyNotFull, "FestaFiesta.NPC.ProgramReservationSubsystem.NewProgramStartsEmptyNotFull", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramReservationSubsystem_NewProgramStartsEmptyNotFull::RunTest(const FString& Parameters)
+{
+	FFF_ProgramReservationSubsystemTestHelpers::FReservationHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	const FGuid Id = Harness.RegisterProgram(60.f, 120.f, 12);
+	TestEqual(TEXT("남은 자리가 정원과 같다"), Harness.Subsystem->GetRemainingSeats(Id), 12);
+	return true;
+}
+
+// 스폰이 데려온 그룹이 확정되면 정원이 그만큼 찬다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramReservationSubsystem_ConfirmFillsSeats, "FestaFiesta.NPC.ProgramReservationSubsystem.ConfirmFillsSeats", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramReservationSubsystem_ConfirmFillsSeats::RunTest(const FString& Parameters)
+{
+	FFF_ProgramReservationSubsystemTestHelpers::FReservationHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	const FGuid Id = Harness.RegisterProgram(60.f, 120.f, 10);
+
+	TestTrue(TEXT("4인 그룹이 확정된다"), Harness.Subsystem->ConfirmReservedParty(Id, 7, 4));
+	TestTrue(TEXT("6인 그룹이 확정된다"), Harness.Subsystem->ConfirmReservedParty(Id, 3, 6));
+
+	FFF_ProgramReservation Reservation;
+	if (!TestTrue(TEXT("예약을 찾는다"), Harness.Subsystem->FindReservation(Id, Reservation)))
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("인원이 정확히 정원을 채운다"), Reservation.AssignedHeadcount, 10);
+	TestEqual(TEXT("빈자리가 없다"), Reservation.UnfilledSeats, 0);
+
+	// 통지 순서(7 → 3)와 무관하게 목록이 파티 번호순으로 고정된다.
+	// 읽는 쪽이 스폰 순서에 기대면 같은 Seed 인데 화면이 달라진다.
+	if (TestEqual(TEXT("두 그룹이 배정돼 있다"), Reservation.AssignedGroupIds.Num(), 2))
+	{
+		TestEqual(TEXT("파티 번호 오름차순이다"), Reservation.AssignedGroupIds[0], 3);
+		TestEqual(TEXT("파티 번호 오름차순이다"), Reservation.AssignedGroupIds[1], 7);
+	}
+
+	// 확정된 순간부터 잠금·퇴장 금지가 걸려야 한다. 이게 ⓒ(마감 배정)에서 안 되던 것이다.
+	TestTrue(TEXT("프로그램 중에는 잠긴다"), Harness.Subsystem->IsPartyLockedAt(7, 90.f));
+	TestTrue(TEXT("시작 전에도 퇴장은 금지된다"), Harness.Subsystem->IsPartyExitBlockedAt(7, 10.f));
+	TestFalse(TEXT("시작 전에는 잠기지 않는다(자유 행동)"), Harness.Subsystem->IsPartyLockedAt(7, 10.f));
+	return true;
+}
+
+// 정원을 넘기는 확정은 거부된다 (규칙 3).
+// 받아주면 정원이 의미를 잃고 체험비가 부풀려진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramReservationSubsystem_ConfirmRejectsOverCapacity, "FestaFiesta.NPC.ProgramReservationSubsystem.ConfirmRejectsOverCapacity", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramReservationSubsystem_ConfirmRejectsOverCapacity::RunTest(const FString& Parameters)
+{
+	FFF_ProgramReservationSubsystemTestHelpers::FReservationHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	const FGuid Id = Harness.RegisterProgram(60.f, 120.f, 5);
+	TestTrue(TEXT("4인은 들어간다"), Harness.Subsystem->ConfirmReservedParty(Id, 1, 4));
+	TestFalse(TEXT("남은 1자리에 3인은 못 들어간다"), Harness.Subsystem->ConfirmReservedParty(Id, 2, 3));
+
+	FFF_ProgramReservation Reservation;
+	Harness.Subsystem->FindReservation(Id, Reservation);
+	TestEqual(TEXT("거부된 인원은 합산되지 않는다"), Reservation.AssignedHeadcount, 4);
+	TestFalse(TEXT("거부된 파티는 색인에 없다"), Harness.Subsystem->IsPartyExitBlockedAt(2, 10.f));
+	return true;
+}
+
+// 같은 통지가 두 번 와도 인원이 두 배가 되지 않는다.
+// 스폰 쪽이 재시도하거나 통지가 중복돼도 정원이 깨지면 안 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramReservationSubsystem_ConfirmIsIdempotent, "FestaFiesta.NPC.ProgramReservationSubsystem.ConfirmIsIdempotent", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramReservationSubsystem_ConfirmIsIdempotent::RunTest(const FString& Parameters)
+{
+	FFF_ProgramReservationSubsystemTestHelpers::FReservationHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	const FGuid Id = Harness.RegisterProgram(60.f, 120.f, 12);
+	TestTrue(TEXT("첫 통지가 확정된다"), Harness.Subsystem->ConfirmReservedParty(Id, 5, 4));
+	TestTrue(TEXT("같은 통지가 다시 와도 성공으로 친다"), Harness.Subsystem->ConfirmReservedParty(Id, 5, 4));
+
+	FFF_ProgramReservation Reservation;
+	Harness.Subsystem->FindReservation(Id, Reservation);
+	TestEqual(TEXT("인원이 두 배가 되지 않는다"), Reservation.AssignedHeadcount, 4);
+	TestEqual(TEXT("목록에도 한 번만 들어간다"), Reservation.AssignedGroupIds.Num(), 1);
+	return true;
+}
+
+// 없는 예약·빈 값은 거부된다.
+// 어제 산 프로그램의 핸들을 오늘 스폰이 들고 오는 경우가 첫 번째다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramReservationSubsystem_ConfirmRejectsUnknownInput, "FestaFiesta.NPC.ProgramReservationSubsystem.ConfirmRejectsUnknownInput", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramReservationSubsystem_ConfirmRejectsUnknownInput::RunTest(const FString& Parameters)
+{
+	FFF_ProgramReservationSubsystemTestHelpers::FReservationHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	const FGuid Id = Harness.RegisterProgram(60.f, 120.f, 12);
+
+	TestFalse(TEXT("없는 예약은 거부된다"),
+		Harness.Subsystem->ConfirmReservedParty(FGuid::NewGuid(), 1, 2));
+	TestFalse(TEXT("무효 파티 번호는 거부된다"),
+		Harness.Subsystem->ConfirmReservedParty(Id, INDEX_NONE, 2));
+	TestFalse(TEXT("인원 0 은 거부된다"),
+		Harness.Subsystem->ConfirmReservedParty(Id, 1, 0));
+
+	FFF_ProgramReservation Reservation;
+	Harness.Subsystem->FindReservation(Id, Reservation);
+	TestEqual(TEXT("아무것도 배정되지 않았다"), Reservation.AssignedHeadcount, 0);
 	return true;
 }
 

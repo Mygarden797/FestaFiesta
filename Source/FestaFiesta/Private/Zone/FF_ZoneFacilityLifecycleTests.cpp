@@ -73,7 +73,13 @@ namespace
 
 	// Game World 통합 테스트는 실제 프로젝트 Economy 정책을 통과해야 한다.
 	// 플러그인 범용 fixture의 레거시 키를 프로덕션 비용표의 시설별 행으로 교체한다.
-	FFFZSFacilitySpec MakeProjectFoodTruckSpec()
+	//
+	// 🔴 파일 전용 이름을 쓴다. FF_ZoneSystemIntegrationTests.cpp 에 같은 일을 하는 헬퍼가
+	// 있는데, 익명 네임스페이스는 파일 단위지만 **Unity Build 가 .cpp 들을 한 덩어리로 합치면
+	// 둘이 만나 "already has a body" 로 빌드가 막힌다.** 어느 파일들이 한 blob 에 묶이는지는
+	// 모듈에 파일이 추가·삭제될 때마다 바뀌므로, 무관한 파일을 하나 넣었을 때 갑자기 터진다
+	// (2026-08-24 에 실제로 그렇게 터졌다).
+	FFFZSFacilitySpec MakeLifecycleFoodTruckSpec()
 	{
 		FFFZSFacilitySpec Spec =
 			FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
@@ -134,7 +140,7 @@ bool FFFZoneFacilityLifecycleBatchTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
-	const FFFZSFacilitySpec FacilitySpec = MakeProjectFoodTruckSpec();
+	const FFFZSFacilitySpec FacilitySpec = MakeLifecycleFoodTruckSpec();
 	TArray<FGuid> FacilityIds;
 	// 같은 사양의 두 시설을 서로 겹치지 않게 설치해 배치 집계와 개별 상태 전파를 함께 검증한다.
 	for (const FIntPoint Origin : {FIntPoint(1000, 1000), FIntPoint(5000, 1000)})

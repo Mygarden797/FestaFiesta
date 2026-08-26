@@ -37,16 +37,16 @@ struct FFF_ProgramReservation
 	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
 	int32 Capacity = 0;
 
-	// 배정된 그룹. Assign 이 채운다. 크기 오름차순이라 입력 순서와 무관하게 고정된다
+	// 확정된 그룹. `ConfirmReservedParty` 가 스폰 통지를 받을 때마다 채운다.
+	// 파티 번호 오름차순이라 통지 순서와 무관하게 고정된다
 	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
 	TArray<int32> AssignedGroupIds;
 
-	// 배정된 인원 합. 정확히 채웠으면 Capacity 와 같다
+	// 확정된 인원 합. 스폰이 정상이면 Capacity 와 같다
 	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
 	int32 AssignedHeadcount = 0;
 
-	// 못 채운 자리(명). 0 이면 정원을 정확히 채웠다.
-	// 0 이 아니면 호출부가 로그를 남긴다
+	// 아직 안 온 자리(명). 정원만큼 스폰되므로 **마감에 0 이 아니면 스폰 배선의 결함이다**
 	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
 	int32 UnfilledSeats = 0;
 
@@ -54,30 +54,6 @@ struct FFF_ProgramReservation
 	{
 		return FacilityInstanceId.IsValid() && Capacity > 0 && EndMinutes > StartMinutes;
 	}
-
-	bool HasGroup(int32 GroupId) const { return AssignedGroupIds.Contains(GroupId); }
-};
-
-// 예약 배정 대상이 되는 그룹 하나. 배정에 필요한 최소 정보만 담는다.
-USTRUCT(BlueprintType)
-struct FFF_ReservationCandidateGroup
-{
-	GENERATED_BODY()
-
-	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
-	int32 GroupId = INDEX_NONE;
-
-	// 그룹 인원수 1~6 (아동 포함). 정원을 채우는 단위다
-	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
-	int32 MemberCount = 1;
-
-	/**
-	 * 이 프로그램에 대한 취향 일치도. 클수록 먼저 배정된다.
-	 * 호출부가 `preference_vector` 에서 프로그램의 취향 카테고리 성분을 뽑아 넣는다 —
-	 * v0 은 전부 0 이다(취향 결선 전). 그러면 GroupId 순 배정이 되고 동작은 한다.
-	 */
-	UPROPERTY(BlueprintReadOnly, Category = "Reservation")
-	float PreferenceScore = 0.f;
 };
 
 /**
@@ -89,29 +65,14 @@ struct FFF_ReservationCandidateGroup
  *
  * ### 확정된 규칙 (사용자)
  * 1. 배정 단위는 그룹이다 (1인도 그룹이라 예외가 없다)
- * 2. 정원을 그룹 크기 조합으로 정확히 채운다 (10명이면 5+2+2+1 처럼 섞인다)
+ * 2. **정원만큼의 손님이 그 프로그램 때문에 새로 방문한다** — 이미 온 사람 중에서 고르지 않는다
  * 3. 초과는 허용하지 않는다
  * 4. 예약이 확정된 뒤로는 프로그램이 끝날 때까지 퇴장하지 않는다
+ *
  */
 class FFF_ProgramReservationRules
 {
 public:
-	/**
-	 * 정원에 그룹을 배정하고 결과를 `InOutReservation` 에 채운다.
-	 *
-	 * ### 방식 — 그룹 크기(1~6)별로 묶은 유계 배낭(bounded knapsack) DP
-	 *
-	 * DP 의 목표는 취향 합 최대화다. 각 크기 안에서는 취향 내림차순으로 앞에서부터 쓰고,
-	 * 같은 점수면 먼저 계산된 조합을 유지해 결정성을 보장한다(갱신 조건이 `>` 다).
-	 * 정확히 채우는 조합이 없으면 가장 많이 채우고 `UnfilledSeats` 가 0 보다 커진다.
-	 *
-	 * @param Candidates 배정 후보. **호출부가 이미 필터링한 목록이다**
-	 *                   (예: 아동 있는 그룹을 성인 전용 프로그램에서 뺀 뒤)
-	 */
-	static void Assign(
-		FFF_ProgramReservation& InOutReservation,
-		const TArray<FFF_ReservationCandidateGroup>& Candidates);
-
 	/**
 	 * 이 시각에 예약이 활성인가 = 목적지 선택을 건너뛰어야 하는가.
 	 *

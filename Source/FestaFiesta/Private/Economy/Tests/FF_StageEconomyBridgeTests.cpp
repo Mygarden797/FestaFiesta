@@ -118,6 +118,53 @@ bool FFF_StageEconomyBridge_OnlyMorningCheckIsDayBoundary::RunTest(const FString
 	return true;
 }
 
+// 🔴 프로그램 편성은 Live 전에만 가능하다 — 특히 Live·Closing 에서는 안 된다.
+//
+// 이미 지나간 시각의 카드를 사면 예약 슬롯은 생기는데 손님이 올 시점이 없어서, 비용만 빠지고
+// 체험비 0 으로 정산된 뒤 정원 미달 Warning 이 뜬다. 크래시가 없어서 조용히 손해만 보는 함정이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_OnlyMorningStagesAllowProgramScheduling, "FestaFiesta.Economy.StageEconomyBridge.OnlyMorningStagesAllowProgramScheduling", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageEconomyBridge_OnlyMorningStagesAllowProgramScheduling::RunTest(const FString& Parameters)
+{
+	const UEnum* StageEnum = StaticEnum<EFF_FestivalStage>();
+	if (!TestNotNull(TEXT("단계 열거형을 찾는다"), StageEnum))
+	{
+		return false;
+	}
+
+	const int32 StageCount = StageEnum->NumEnums() - 1;
+
+	for (int32 Index = 0; Index < StageCount; ++Index)
+	{
+		const EFF_FestivalStage Stage =
+			static_cast<EFF_FestivalStage>(StageEnum->GetValueByIndex(Index));
+		const bool bAllowed = UFF_StageEconomyBridgeSubsystem::IsProgramSchedulingStage(Stage);
+
+		const bool bExpected = Stage == EFF_FestivalStage::Setup
+			|| Stage == EFF_FestivalStage::MorningCheck;
+
+		TestEqual(
+			*FString::Printf(TEXT("%s 에서 편성 %s"),
+				*StageEnum->GetNameStringByIndex(Index),
+				bExpected ? TEXT("가능") : TEXT("불가")),
+			bAllowed, bExpected);
+	}
+
+	// 🔴 Live 가 시작된 뒤로는 어느 단계에서도 안 된다. 위 루프에 이미 포함되지만,
+	// 이 둘이 뚫리는 것이 실제 손해로 이어지는 경로라 따로 못박는다.
+	TestFalse(TEXT("Live 중에는 편성할 수 없다"),
+		UFF_StageEconomyBridgeSubsystem::IsProgramSchedulingStage(EFF_FestivalStage::Live));
+	TestFalse(TEXT("Closing 에도 편성할 수 없다"),
+		UFF_StageEconomyBridgeSubsystem::IsProgramSchedulingStage(EFF_FestivalStage::Closing));
+
+	// 시설 배치(`IsReconfigureAllowed`)는 PromotionPreview 도 허용한다. 편성은 안 한다 —
+	// 두 규칙이 갈리는 지점이라, 나중에 합치고 싶어지면 여기가 먼저 깨져야 한다.
+	TestFalse(TEXT("PromotionPreview 는 편성 단계가 아니다"),
+		UFF_StageEconomyBridgeSubsystem::IsProgramSchedulingStage(
+			EFF_FestivalStage::PromotionPreview));
+
+	return true;
+}
+
 // Day2·3 MorningCheck 진입이 실제로 정산을 연다.
 // 3일 임대료 합계 7,200 은 §2.6 의 입장료 7,500 이 덮는 값이라 여기서 어긋나면 수지가 무너진다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_MorningCheckEntryOpensNewDay, "FestaFiesta.Economy.StageEconomyBridge.MorningCheckEntryOpensNewDay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

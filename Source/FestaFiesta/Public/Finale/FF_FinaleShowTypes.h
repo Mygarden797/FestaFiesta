@@ -102,6 +102,25 @@ namespace FFF_FinaleParams
 	inline const FName TrailLength(TEXT("TrailLength"));
 }
 
+// 낮은 등급부터 높은 등급 순. 등급을 추가하면 여기만 고치면 된다.
+//
+// 예전에는 이 배열을 쓰는 곳마다 따로 나열했다. 등급이 하나 늘면 세 군데를 고쳐야 하고,
+// 한 곳을 빠뜨려도 컴파일은 통과하므로 조용히 어긋난다.
+namespace FFF_FinaleGrades
+{
+	inline const TArray<EFF_FinaleGrade>& GetAscendingOrder()
+	{
+		static const TArray<EFF_FinaleGrade> Order = {
+			EFF_FinaleGrade::None,
+			EFF_FinaleGrade::C,
+			EFF_FinaleGrade::B,
+			EFF_FinaleGrade::A,
+			EFF_FinaleGrade::S
+		};
+		return Order;
+	}
+}
+
 // 등급별 연출 수치를 담는 데이터 애셋.
 //
 // 지정하지 않아도 동작한다. 없으면 코드에 박힌 기본값을 쓴다.

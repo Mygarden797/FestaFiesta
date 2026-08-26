@@ -43,6 +43,19 @@ public:
 	// 버튼 표시용이고 구매를 막지 않는다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	bool CanPurchaseFinaleNow() const;
+
+	// 이 단계에서 프로그램을 편성할 수 있는가.
+	// 테스트 seam 이라 public 이다.
+	static bool IsProgramSchedulingStage(EFF_FestivalStage InStage)
+	{
+		return InStage == EFF_FestivalStage::Setup
+			|| InStage == EFF_FestivalStage::MorningCheck;
+	}
+
+	// 지금 프로그램을 편성할 수 있는 단계인가 (Setup · MorningCheck).
+	// 위 규칙에 현재 단계를 넣어주는 창구다 — 판정은 저쪽 한 곳에만 있다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool CanScheduleProgramNow() const;
 private:
 	
 	// Stage 변경 이벤트를 받아 현재 날짜와 함께 경제 정산 처리로 전달한다.
