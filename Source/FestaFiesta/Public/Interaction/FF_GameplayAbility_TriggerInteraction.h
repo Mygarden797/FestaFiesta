@@ -6,6 +6,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "FF_GameplayAbility_TriggerInteraction.generated.h"
 
+class UFF_GE_TriggerCooldown;
 
 // 축제 부스/포토존 같은 트리거 상호작용의 공통 베이스 기능
 UCLASS()
@@ -17,6 +18,9 @@ public:
 
 	UFF_GameplayAbility_TriggerInteraction();
 	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	TSubclassOf<class UFF_GE_TriggerCooldown> CooldownEffectClass;
+	// 상호작용 끝나고 나타나는 쿨다운 효과
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,

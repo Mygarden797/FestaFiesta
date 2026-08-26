@@ -7,10 +7,23 @@
 
 #include "Interaction/FF_GameplayAbility_TriggerInteraction.h"
 
+#include "Components/SphereComponent.h"
+
 AFF_TriggerInteractionActor::AFF_TriggerInteractionActor()
 {
+	InteractionRange = CreateDefaultSubobject<USphereComponent>(TEXT("InteractionRange"));
+	// ⭐ 순서 변경 - InteractionRange를 먼저 만들고
+	InteractionRange->SetSphereRadius(150.f);
+
+	RootComponent = InteractionRange;
+	// ⭐ NEW - InteractionRange를 이 액터의 "뿌리 컴포넌트"로 명확히 지정
+	// 이렇게 해야 다른 컴포넌트(Cube 등)들이 여기에 붙을 기준점이 생김
+
 	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
-	// 이 액터가 만들어질 때 상호작용 기능(GAS) 부품을 자동으로 붙임
+	// 능력 가방은 위치가 필요 없어서 순서 상관없음
+
+	InteractionRange->OnComponentBeginOverlap.AddDynamic(this, &AFF_TriggerInteractionActor::OnRangeBeginOverlap);
+	InteractionRange->OnComponentEndOverlap.AddDynamic(this, &AFF_TriggerInteractionActor::OnRangeEndOverlap);
 }
 
 UAbilitySystemComponent* AFF_TriggerInteractionActor::GetAbilitySystemComponent() const
@@ -55,4 +68,28 @@ void AFF_TriggerInteractionActor::TryStartInteraction()
 
 	AbilitySystemComponent->TryActivateAbilityByClass(InteractionAbilityClass);
 	// 준비된 상호작용 기능 실행
+}
+
+void AFF_TriggerInteractionActor::OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
+		// 범위 안에 들어온 대상이 플레이어인지 확인
+	{
+		bPlayerInRange = true;
+		// 플레이어 진입 상태로 전환
+
+		UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 플레이어가 범위에 들어옴"));
+	}
+}
+
+void AFF_TriggerInteractionActor::OnRangeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+	if (OtherActor && OtherActor->IsA(APawn::StaticClass()))
+		// 범위 밖으로 나간 대상이 플레이어인지 확인
+	{
+		bPlayerInRange = false;
+		// 플레이어 이탈 상태로 전환
+
+		UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 플레이어가 범위에서 나감"));
+	}
 }

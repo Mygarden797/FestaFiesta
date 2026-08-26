@@ -45,6 +45,13 @@ public:
 		EFFZSPlacementFailure FailureReason,
 		bool bIsMoving);
 
+	/** 권위 실패 코드를 기술 용어 없이 원인과 다음 행동이 함께 있는 한 문장으로 바꿉니다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
+	static FText MakeUserFacingReason(
+		EFFZSPlacementFailure FailureReason,
+		const FText& AuthoritativeDetail,
+		bool bIsMoving);
+
 	/** 같은 인스턴스를 재사용하고 자동 숨김 시간을 처음부터 다시 시작합니다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|UI")
 	void PresentFailure(
@@ -119,7 +126,7 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Designer")
 	FText DesignerPreviewTitle = NSLOCTEXT(
-		"FFBuildPlacementFailureFeedback", "DesignerPreviewTitle", "골드 부족");
+		"FFBuildPlacementFailureFeedback", "DesignerPreviewTitle", "골드가 부족해요");
 
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Designer")
 	FText DesignerPreviewReason = NSLOCTEXT(

@@ -11,6 +11,14 @@
 class UDataTable;
 class UFFZSWorldSubsystem;
 
+namespace FFF_CrowdNav
+{
+	inline FVector GetAnchorProjectionExtentCm()
+	{
+		return FVector(300.0, 300.0, 2000.0);
+	}
+}
+
 UENUM(BlueprintType)
 enum class EFF_DecisionMode : uint8
 {
@@ -88,6 +96,25 @@ struct FFF_CrowdDecisionStats
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 QueueWaitApplied = 0;
+
+	/**
+	 * 직전 목적지를 실패 후보로 표시한 횟수.
+	 *
+	 * Crowd 의 GetStuckDecisionRequests()와 짝이 맞는지로 배선을 확인한다 — 그쪽이 늘어나는데
+	 * 이 값이 0이면 사유(MoveFailed)나 직전 목적지가 컨텍스트에 안 실려 오고 있다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 FailedDestinationPenalized = 0;
+
+	/**
+	 * 이동 중 인원이 0이 아니게 실린 후보 수(후보 단위 누적).
+	 *
+	 * QueueWaitApplied 와 같은 이유로 후보 개수로 센다 — "결정은 돌았는데 이동 중 인원은
+	 * 하나도 안 붙었다"를 이 값 0으로 구분할 수 있다. Crowd 원장이 안 넘어오거나
+	 * DecisionMode 가 Full 이 아니면 0이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 InTransitApplied = 0;
 };
 
 /**
@@ -239,6 +266,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
 	float GetMaxAnchorProjectionDropCm() const { return WalkDistanceMaxProjectionDropCm; }
 
+	// NavMesh 재굽기가 안 끝나 행렬 빌드를 미룬 횟수. 배치 변경 직후 몇 번 오르는 것이 정상이고,
+	// 계속 오르기만 하면 nav 빌드가 끝나지 않는다는 뜻이다(행렬이 영구히 낡은다)
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceNavBuildDeferrals() const { return WalkDistanceNavBuildDeferrals; }
+
 private:
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
 	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
@@ -298,4 +330,7 @@ private:
 	int32 WalkDistanceUnauthoredAnchors = 0;
 	int32 WalkDistanceProjectionFailures = 0;
 	float WalkDistanceMaxProjectionDropCm = 0.f;
+
+	// nav 빌드가 안 끝나 빌드를 미룬 누적 횟수. 위 진단값과 달리 빌드마다 초기화되지 않는다
+	int32 WalkDistanceNavBuildDeferrals = 0;
 };

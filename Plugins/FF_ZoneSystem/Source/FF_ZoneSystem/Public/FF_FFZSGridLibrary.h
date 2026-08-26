@@ -41,7 +41,21 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static int32 NormalizeQuarterTurns(int32 QuarterTurns);
-	// 임의의 정수 회전값을 시계 방향 0..3 사분면 회전으로 정규화.
+	// 임의의 정수 회전값을 Unreal 양의 Yaw 기준 0..3 사분면 회전으로 정규화.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static int32 NormalizeYawCentidegrees(int32 YawCentidegrees);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static int32 DegreesToYawCentidegrees(float YawDegrees);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static float YawCentidegreesToDegrees(int32 YawCentidegrees);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static int32 GetEffectiveYawCentidegrees(const FFFZSGridPlacement& Placement);
+
+    static void NormalizePlacement(FFFZSGridPlacement& InOutPlacement);
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static bool TryRotateCell(FIntPoint Cell, int32 QuarterTurns, FIntPoint& OutRotatedCell);
@@ -49,7 +63,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid",
         meta = (DeprecatedFunction, DeprecationMessage = "Use TryRotateCell so integer-boundary failure is explicit."))
     static FIntPoint RotateCell(FIntPoint Cell, int32 QuarterTurns);
-	// 원점 기준 셀 좌표를 정규화된 시계 방향 90도 단위로 회전.
+	// 원점 기준 셀 좌표를 정규화된 양의 Yaw 90도 단위로 회전.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static FFFZSCellRect RotateRect(const FFFZSCellRect& Rect, int32 QuarterTurns);
@@ -68,22 +82,36 @@ public:
 	// 중복을 제거한 압축 영역 합집합의 셀 수를 64비트로 반환한다. 
 	
     static TArray<FFFZSCellRect> GetFootprintRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 시설 본체를 보통 한 개의 압축 사각형으로 반환한다. 권위 런타임 API다. 
+	// 호환/디버그용 보수적 AABB다. 임의 Yaw 권위 판정에는 BuildPlacementOrientedRegions를 사용한다.
 	
     static TArray<FFFZSCellRect> GetClearanceRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// footprint와 queue를 제외한 clearance 링을 반환한다. 어느 하위 좌표라도 오버플로면 부분 결과 없이 빈 배열. 
+	// 호환/디버그용 clearance 보수적 AABB 합집합. 어느 하위 좌표라도 오버플로면 빈 배열.
 	
     static TArray<FFFZSCellRect> GetQueueRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 회전·원점을 적용한 queue 압축 사각형들을 반환한다. 한 Rect라도 오버플로면 전체가 빈 배열.
+	// 호환/디버그용 queue 보수적 AABB 합집합. 한 Rect라도 오버플로면 전체가 빈 배열.
 	
     static TArray<FFFZSCellRect> GetReservedRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// footprint·clearance·queue의 정확한 압축 합집합. 하위 계산 하나라도 실패하면 부분 합집합 없이 빈 배열이다.
+	// 호환/디버그용 전체 보수적 AABB 합집합. OBB 충돌의 좁은 단계 입력으로 사용하면 안 된다.
+
+    static void BuildPlacementOrientedRegions(
+        const FFFZSFacilitySpec& Spec,
+        const FFFZSGridPlacement& Placement,
+        TArray<FFFZSOrientedRect>& OutFootprintRects,
+        TArray<FFFZSOrientedRect>& OutClearanceRects,
+        TArray<FFFZSOrientedRect>& OutQueueRects,
+        TArray<FFFZSOrientedRect>& OutReservedRects);
+	// 자유 Yaw를 보존한 실제 권위 영역 네 그룹을 한 번에 만든다. 좌표 오버플로는 전체 fail-closed다.
+
+    static bool DoOrientedRectSetsOverlap(
+        const TArray<FFFZSOrientedRect>& A,
+        const TArray<FFFZSOrientedRect>& B);
+	// SAT 좁은 단계로 양의 면적 교집합만 검사한다. 경계 접촉은 겹침이 아니다.
 
     // [최적화] 네 영역을 한 번의 계산으로 함께 만든다.
     // 개별 Get*Rects를 네 번 부르면 예산 검사(CanEnumerateFacilityCells)와 queue 정규화가
     // 호출마다 중복 실행된다(Reserved 하나만 해도 내부에서 footprint·queue를 다시 만든다).
     // 배치 검증처럼 네 영역이 모두 필요한 경로는 이 API를 써서 같은 결과를 1회 계산으로 얻는다.
-    // 각 출력의 값과 fail-closed 규칙은 대응하는 Get*Rects와 완전히 동일하다.
+    // 출력은 임의 Yaw OBB를 감싸는 보수적 AABB이며 권위 충돌에는 사용하지 않는다.
     static void BuildPlacementRegions(
         const FFFZSFacilitySpec& Spec,
         const FFFZSGridPlacement& Placement,
@@ -98,7 +126,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static TArray<FIntPoint> GetFootprintCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 호환/디버그용 개별 본체 셀. 10,000셀을 넘으면 fail-closed로 빈 배열이다. 권위 로직은 GetFootprintRects를 사용.
+    // 호환/디버그용 보수적 AABB 개별 셀. 10,000셀을 넘으면 빈 배열이며 권위 입력이 아니다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static TArray<FIntPoint> GetClearanceCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);

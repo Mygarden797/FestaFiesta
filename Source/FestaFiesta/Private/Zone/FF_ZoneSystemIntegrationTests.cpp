@@ -92,6 +92,16 @@ namespace
 		Command.Placement = Placement;
 		return Command;
 	}
+
+	// Game World에서는 프로젝트 Economy 정책도 함께 동작하므로 플러그인 범용 fixture의
+	// 레거시 가격 키 대신 실제 DT_FacilityCosts에 존재하는 프로젝트 행을 사용한다.
+	FFFZSFacilitySpec MakeZoneIntegrationFoodTruckSpec()
+	{
+		FFFZSFacilitySpec Spec =
+			FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+		Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.DadaPochaFoodTruck");
+		return Spec;
+	}
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -215,12 +225,15 @@ bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Param
 
 	FFFZSGridPlacement InitialPlacement;
 	InitialPlacement.OriginCell = FIntPoint(1000, 1000);
-	const FFFZSFacilitySpec FacilitySpec =
-		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	const FFFZSFacilitySpec FacilitySpec = MakeZoneIntegrationFoodTruckSpec();
 	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
 		FacilitySpec, ZoneId, InitialPlacement, ZoneSystem->GetWorldRevision());
 	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
-	if (!TestTrue(TEXT("Install commits before the move"), InstallResult.bSucceeded))
+	const FString InstallDiagnostic = FString::Printf(
+		TEXT("Install commits before the move (FailureReason=%d, Message=%s)"),
+		static_cast<int32>(InstallResult.FailureReason),
+		*InstallResult.Message.ToString());
+	if (!TestTrue(*InstallDiagnostic, InstallResult.bSucceeded))
 	{
 		return false;
 	}
@@ -363,12 +376,15 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 
 	FFFZSGridPlacement Placement;
 	Placement.OriginCell = FIntPoint(1000, 1000);
-	const FFFZSFacilitySpec FacilitySpec =
-		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	const FFFZSFacilitySpec FacilitySpec = MakeZoneIntegrationFoodTruckSpec();
 	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
 		FacilitySpec, ZoneId, Placement, ZoneSystem->GetWorldRevision());
 	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
-	if (!TestTrue(TEXT("The test Facility installs"), InstallResult.bSucceeded))
+	const FString InstallDiagnostic = FString::Printf(
+		TEXT("The test Facility installs (FailureReason=%d, Message=%s)"),
+		static_cast<int32>(InstallResult.FailureReason),
+		*InstallResult.Message.ToString());
+	if (!TestTrue(*InstallDiagnostic, InstallResult.bSucceeded))
 	{
 		return false;
 	}

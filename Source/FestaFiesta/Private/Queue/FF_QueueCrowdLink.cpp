@@ -106,39 +106,28 @@ void UFF_QueueCrowdLink::HandleSlotTargetsUpdated(int32 FacilityId, const TArray
 		return;
 	}
 
-	// 배정은 Party 별로 연속이다. Party 가 바뀌는 지점에서 끊어 한 번에 처리한다.
-	int32 Cursor = 0;
-	while (Cursor < Assignments.Num())
+	// 배정은 일행당 하나다. 멤버 배치는 Crowd 의 포메이션이 맡는다.
+	//
+	// 예전에는 멤버마다 좌표를 따로 쐈는데, Crowd 가 멤버 목적지를 리더에게 되돌리는
+	// 구조라 마지막 멤버 자리만 리더에게 남았다. 그래서 리더가 줄 맨 뒤에 혼자 서고,
+	// 나머지는 포메이션을 따라 그 옆에 붙고, 슬롯이 당겨질 때마다 목표가 튀면서
+	// 뒤처진 멤버가 일행에서 떨어져 나갔다.
+	for (const FFF_SlotAssignment& Assignment : Assignments)
 	{
-		const int32 PartyId = Assignments[Cursor].PartyId;
-
-		int32 End = Cursor;
-		while (End < Assignments.Num() && Assignments[End].PartyId == PartyId)
-		{
-			++End;
-		}
-
 		// 인덱스는 캐시하지 않고 매번 새로 받는다. 슬롯이 재사용되므로 저장하면
 		// 시간이 지난 뒤 다른 사람을 가리킨다.
-		const TArray<int32> Members = Crowd->GetPartyMembers(PartyId);
-
-		const int32 SlotCount = End - Cursor;
-		if (Members.Num() != SlotCount)
+		const TArray<int32> Members = Crowd->GetPartyMembers(Assignment.PartyId);
+		if (Members.Num() == 0)
 		{
-			// 가입 시점 인원과 현재 살아 있는 멤버 수가 다르다. 일부가 디스폰됐거나
-			// 가입 요청의 MemberCount 가 실제와 달랐다는 뜻이다.
-			// 있는 만큼만 적용한다 — 아무것도 안 하면 남은 사람들이 제자리에 얼어붙는다.
+			// 가입한 일행이 통째로 사라졌다. 줄에는 아직 남아 있다는 뜻이라 관측해둔다.
 			++MemberCountMismatches;
+			continue;
 		}
 
-		const int32 ApplyCount = FMath::Min(Members.Num(), SlotCount);
-		for (int32 Offset = 0; Offset < ApplyCount; ++Offset)
-		{
-			Crowd->SetAgentDestination(Members[Offset], Assignments[Cursor + Offset].TargetLocation);
-			++AppliedSlotTargets;
-		}
-
-		Cursor = End;
+		// 리더에게만 준다. Crowd 가 멤버 목적지를 어차피 리더로 돌리므로
+		// 여러 번 부르면 마지막 값만 남고 앞의 것은 버려진다.
+		Crowd->SetAgentDestination(Members[0], Assignment.TargetLocation);
+		++AppliedSlotTargets;
 	}
 }
 
@@ -189,10 +178,16 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 	// 나가는 사람과 들어오는 사람이 서로를 막지 않는다.
 	//
 	// 다음 목적지 결정은 여기서 걸지 않는다. Exit 에 물리적으로 도착한 뒤에 걸어야
-	// "나가면서 이미 다음 곳으로 방향을 틀어버리는" 그림이 안 나오는데,
-	// 그 도착 통지 채널이 아직 없다. Crowd 의 Arrived 가 붙으면 그때 옮긴다.
+	// "나가면서 이미 다음 곳으로 방향을 틀어버리는" 그림이 안 나온다.
+	// 도착 판정은 Crowd 가 소유하므로 그쪽 Arrived 신호에서 이어받는다.
 	if (ExitType == EFF_QueueExit::Served)
 	{
+		// ★ 퇴장 지점 조회보다 먼저 부른다. 아래 블록은 ExitLocation 을 못 구하면 그대로
+		// 재평가로 빠지는데, 그때도 이용은 끝난 것이므로 Need 는 풀려야 한다.
+		// 포기·취소(Abandoned·Cancelled)는 이 분기 밖이라 보상을 받지 않는다 —
+		// 그래야 "줄만 서다 나가는 것"이 이득이 되지 않는다.
+		Crowd->ApplyPartyNeedRelief(PartyId);
+
 		if (const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = GetBridge())
 		{
 			const FGuid ZoneFacilityId = Bridge->FindZoneFacilityId(FacilityId);
@@ -203,11 +198,9 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 					const FVector ExitLocation = Queue->GetFacilityExitLocation(FacilityId);
 					if (!ExitLocation.IsNearlyZero())
 					{
-						for (const int32 AgentIndex : Members)
-						{
-							Crowd->SetAgentDestination(AgentIndex, ExitLocation);
-							++AppliedSlotTargets;
-						}
+						// 리더에게만 준다. 멤버는 포메이션을 따라 함께 빠져나간다.
+						Crowd->SetAgentDestination(Members[0], ExitLocation);
+						++AppliedSlotTargets;
 						return;
 					}
 				}

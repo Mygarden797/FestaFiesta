@@ -8,14 +8,18 @@
 
 /**
  * 시설 1종의 설치비. data/unreal/facility_costs_v0.csv 에서 Import as DataTable.
- * RowName 은 "Cost.<대분류>.<소분류>" 형태다 (예: Cost.Booth.FoodStall).
+ * 표준 RowName 은 "Cost.<대분류>.<소분류>.<고유이름>" 형태다
+ * (예: Cost.Booth.FoodStall.DadaPochaFoodTruck).
  *
- * FacilityDefinitionId가 분류의 단일 원천이다. UFF_FacilityNamingLibrary로 대·소분류를 파싱해
- * 기본 키를 만들고, FFFZSFacilitySpec::InstallCostKey가 명시된 경우에만 예외 가격 override로 우선한다.
+ * FacilityDefinitionId가 분류의 단일 원천이다. UFF_FacilityNamingLibrary로 대·소분류와 고유이름을
+ * 파싱해 표준 키를 만든다. FFFZSFacilitySpec::InstallCostKey가 명시된 경우에는 기존 계약대로
+ * 그 명시 키가 특정 시설의 예외 가격 override로 가장 먼저 적용된다.
  *
- * 조회 실패 시: 정확한 키 → 카테고리 폴백("Cost.<대분류>.Default") → 설치 거부 + Error.
- * [참고] 폴백은 예외가 아니라 공용 시설(Toilet·Info·Rest·Safety·PhotoSpot)의 정상 경로다.
- *        그 5개는 소분류 행이 없어서, 폴백 도달 자체를 Warning 으로 남기면 정상 설치마다 쌓인다.
+ * 자동 조회 순서: 표준 4-part 키 → 구형 3-part 키("Cost.<대분류>.<소분류>")
+ *                 → 카테고리 폴백("Cost.<대분류>.Default") → 설치 거부 + Error.
+ * 명시 InstallCostKey 조회 실패 시에는 자동 키로 바꾸지 않고, 기존 동작대로 카테고리 Default로 폴백한다.
+ * [참고] Default 행은 아직 4-part 행이 없는 구형·추가 시설을 위한 지원 경로다.
+ *        폴백 성공 자체는 유효한 호환 동작이므로 반복 Warning을 남기지 않는다.
  *
  * [참고] MorningCheck 에 시설 이동 기능이 없고, Setup 중 재배치는 추가 비용 없이 허용한다.
  */
