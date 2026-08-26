@@ -26,7 +26,14 @@ namespace FFF_FinalePurchaseTestHelpers
 	constexpr int32 CostS = 8000;
 
 	// §2.5 3일 수지의 순이익. Finale 를 사는 예산이 이 값이다.
-	constexpr int32 ThreeDayNetProfit = 7680;
+	//
+	// 2026-08-24 에 7,680 → 7,930 으로 바뀌었다. 유료 프로그램이 하루짜리 카드가 되면서
+	// 3일 순익 930 이 유입에 들어왔다(옛 값은 기간권 전제의 680 이었다).
+	// **정원이 3일 내내 다 찰 때의 상한**이라 실제 플레이는 이보다 낮게 나온다.
+	constexpr int32 ThreeDayNetProfit = 7930;
+
+	// S 에 얼마나 모자란가. 이 간격이 좁을수록 "한 번 더 하면 닿는다"가 된다.
+	constexpr int32 ShortfallForS = CostS - ThreeDayNetProfit;   // 70
 
 	// Unity Build 동명 헬퍼 충돌을 피하려고 파일 전용 이름을 쓴다.
 	struct FFinalePurchaseHarness
@@ -228,7 +235,7 @@ bool FFF_FinalePurchase_ArrearsBlockThroughZeroBalance::RunTest(const FString& P
 	return true;
 }
 
-// 🔴 3일 루프가 닫혔다는 증거 — §2.5 순이익 7,680 으로 A 는 사지고 S 는 320 부족하다.
+// 🔴 3일 루프가 닫혔다는 증거 — §2.5 순이익 7,930 으로 A 는 사지고 S 는 70 부족하다.
 //
 // 3일을 실제로 시뮬레이션하지 않고 순이익을 직접 넣는다. 유입·유출 순서에 따라 미납이 끼면
 // 최종 잔액이 달라져서, 검산의 결론("A 는 되고 S 는 안 된다")이 아니라 진행 순서를 테스트하게 된다.
@@ -248,18 +255,25 @@ bool FFF_FinalePurchase_ThreeDayNetProfitBuysAButNotS::RunTest(const FString& Pa
 	TestEqual(TEXT("Finale 예산이 3일 순이익과 같다"), Harness.Progression->GetGold(),
 		FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit);
 
-	// S 는 320 부족하다. 이 숫자가 §2.5 의 "S 는 −320" 이다.
-	TestEqual(TEXT("S 는 정확히 320 부족하다"),
-		FFF_FinalePurchaseTestHelpers::CostS - FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit, 320);
+	// 🔴 완벽하게 플레이해도 S 에 닿지 않는다. 이 성질이 §2.5 의 결론이다.
+	//
+	// 간격의 크기(70)가 아니라 **부호**를 고정한다. 카드 값을 밸런싱하면 70 은 움직이지만
+	// "닿지 않는다"는 움직이면 안 된다 — 움직이는 순간 상위 피날레가 공짜가 된다.
+	TestTrue(TEXT("3일 순이익으로 S 를 살 수 없다"),
+		FFF_FinalePurchaseTestHelpers::ShortfallForS > 0);
 	TestEqual(TEXT("기본 플레이로 S 는 못 산다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::S),
 		EFF_FinalePurchaseResult::InsufficientGold);
 
-	// A 는 사지고 1,680 이 남는다 — §2.5 의 "A 는 +1,680".
+	// A 는 사지고 남는다 — 반대쪽 부호도 같이 고정한다.
+	// 둘 중 하나만 보면 "전부 못 산다"나 "전부 산다"로 무너져도 통과한다.
+	TestTrue(TEXT("A 는 살 수 있는 예산이다"),
+		FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit > FFF_FinalePurchaseTestHelpers::CostA);
 	TestEqual(TEXT("기본 플레이로 A 는 산다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
 		EFF_FinalePurchaseResult::Success);
-	TestEqual(TEXT("A 를 사고 1,680 이 남는다"), Harness.Progression->GetGold(), 1680);
+	TestEqual(TEXT("A 를 사고 남는 금액이 맞는다"), Harness.Progression->GetGold(),
+		FFF_FinalePurchaseTestHelpers::ThreeDayNetProfit - FFF_FinalePurchaseTestHelpers::CostA);
 
 	return true;
 }

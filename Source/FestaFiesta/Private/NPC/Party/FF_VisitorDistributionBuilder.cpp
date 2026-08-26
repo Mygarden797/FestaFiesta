@@ -161,66 +161,26 @@ FFF_VisitorDistribution FFF_VisitorDistributionBuilder::Build(
 	FName ScopeId,
 	FName ArchetypeScenarioId,
 	int32 RequestedVisitorCount,
-	int32 GlobalSimulationSeed)
+	int32 GlobalSimulationSeed,
+	const TArray<FFF_ReservedPartyRequest>& ReservedParties)
 {
 	FFF_VisitorDistribution Result;
 	Result.RequestedVisitorCount = FMath::Max(0, RequestedVisitorCount);
-	if (Result.RequestedVisitorCount == 0)
-	{
-		return Result;
-	}
-
-	const TArray<FWeightedChoice> SizeChoices = ReadGroupSizeChoices(GroupSizeTable, ScopeId);
-	float ExcludedChildWeightPct = 0.f;
-	const TMap<int32, TArray<FWeightedChoice>> ChildChoicesBySize = ReadChildChoicesBySize(ChildCompositionTable, ScopeId, ExcludedChildWeightPct);
-	const TArray<FWeightedChoice> ArchetypeChoices = ReadArchetypeChoices(ArchetypeTable, ArchetypeScenarioId);
-	if (SizeChoices.Num() == 0 || ArchetypeChoices.Num() == 0)
-	{
-		// 입력 테이블이 비었거나 ScopeId/ArchetypeScenarioId 가 안 맞는다. 빈 결과를 돌려주고 호출부가 판단한다.
-		return Result;
-	}
 
 	// (크기, 아동수, 아키타입) → GroupPlan 인덱스
 	TMap<TTuple<int32, int32, FName>, int32> BucketIndex;
 
-	int32 GroupOrdinal = 0;
-	while (true)
+	// 그룹 하나를 개체로 펼쳐 담는다. 예약석과 일반이 같은 배출 규칙을 쓰게 한 곳에 둔다 —
+	// 갈라 놓으면 아동 슬롯 순서 같은 불변식이 한쪽에서만 지켜진다.
+	auto EmitGroup = [&Result, &BucketIndex](
+		int32 GroupSize, int32 ChildCount, FName AdultArchetypeId, const FGuid& ReservationId)
 	{
-		const int32 SizePick = PickIndexByWeight(SizeChoices, UniformFor(GlobalSimulationSeed, GroupOrdinal, TEXT("group_size")));
-		if (SizePick == INDEX_NONE)
-		{
-			break;
-		}
-		const int32 GroupSize = SizeChoices[SizePick].Value;
-
-		// 그룹은 통째로만 만든다 — 남은 자리에 다 안 들어가면 여기서 멈춘다.
-		// 요청 인원을 넘기지 않으려고 이 그룹만 건너뛰고 계속 돌면 작은 그룹 쪽으로 분포가
-		// 치우치므로(작은 그룹만 남은 자리에 들어감) 그렇게 하지 않는다.
-		if (Result.ActualVisitorCount + GroupSize > Result.RequestedVisitorCount)
-		{
-			break;
-		}
-
-		int32 ChildCount = 0;
-		if (const TArray<FWeightedChoice>* ChildChoices = ChildChoicesBySize.Find(GroupSize))
-		{
-			const int32 ChildPick = PickIndexByWeight(*ChildChoices, UniformFor(GlobalSimulationSeed, GroupOrdinal, TEXT("group_child_count")));
-			if (ChildPick != INDEX_NONE)
-			{
-				ChildCount = (*ChildChoices)[ChildPick].Value;
-			}
-		}
-		// 방어: 재정규화에서 이미 걸러지지만, 입력 데이터가 바뀌어도 리더가 성인이라는 불변식은 지킨다
-		ChildCount = FMath::Clamp(ChildCount, 0, GroupSize - 1);
-
-		const int32 ArchetypePick = PickIndexByWeight(ArchetypeChoices, UniformFor(GlobalSimulationSeed, GroupOrdinal, TEXT("group_adult_archetype")));
-		const FName AdultArchetypeId = ArchetypeChoices[ArchetypePick == INDEX_NONE ? 0 : ArchetypePick].Name;
-
 		const FName SizeTag = CompanionSizeTagForGroupSize(GroupSize);
 		const int32 AdultCount = GroupSize - ChildCount;
 
 		for (int32 Member = 0; Member < GroupSize; ++Member)
 		{
+			// 성인을 먼저 배출한다. crowdAI 가 선두를 리더로 삼으므로 순서가 계약이다.
 			const bool bIsChild = Member >= AdultCount;
 			FFF_TaggedVisitor Visitor;
 			// 아동은 ArchetypeId 를 갖지 않는다 — 헤더 주석 참조
@@ -229,6 +189,7 @@ FFF_VisitorDistribution FFF_VisitorDistributionBuilder::Build(
 			Visitor.TargetGroupSize = GroupSize;
 			Visitor.TargetGroupChildCount = ChildCount;
 			Visitor.bIsDependentChildSlot = bIsChild;
+			Visitor.ReservationId = ReservationId;
 			Result.Visitors.Add(Visitor);
 		}
 		Result.ActualVisitorCount += GroupSize;
@@ -249,6 +210,83 @@ FFF_VisitorDistribution FFF_VisitorDistributionBuilder::Build(
 			Bucket.GroupCount = 1;
 			BucketIndex.Add(Key, Result.GroupPlan.Add(Bucket));
 		}
+	};
+
+	// --- 예약석 먼저 ------------------------------------------------------
+	// 일반 분포보다 앞에 둔다. 배열 위치가 곧 도착 순서라 이래야 프로그램 시작 전에 도착한다.
+	// 입력 테이블을 안 쓰므로 표가 비어 있어도 예약석은 나온다.
+	for (const FFF_ReservedPartyRequest& Request : ReservedParties)
+	{
+		// 크기 상한 6 은 그룹 분포의 상한과 같다. 넘는 주문을 잘라서 담으면 산 정원보다
+		// 적게 오는 것을 아무도 모르므로, 자르지 않고 통째로 뺀 뒤 개수를 돌려준다.
+		const bool bValidSize = Request.GroupSize >= 1 && Request.GroupSize <= 6;
+		const bool bValidChildren = Request.ChildCount >= 0 && Request.ChildCount < Request.GroupSize;
+		if (!bValidSize || !bValidChildren)
+		{
+			++Result.RejectedReservedCount;
+			continue;
+		}
+
+		EmitGroup(Request.GroupSize, Request.ChildCount, Request.AdultArchetypeId, Request.ReservationId);
+		Result.ReservedVisitorCount += Request.GroupSize;
+		++Result.ReservedGroupCount;
+	}
+
+	if (Result.RequestedVisitorCount == 0)
+	{
+		return Result;
+	}
+
+	const TArray<FWeightedChoice> SizeChoices = ReadGroupSizeChoices(GroupSizeTable, ScopeId);
+	float ExcludedChildWeightPct = 0.f;
+	const TMap<int32, TArray<FWeightedChoice>> ChildChoicesBySize = ReadChildChoicesBySize(ChildCompositionTable, ScopeId, ExcludedChildWeightPct);
+	const TArray<FWeightedChoice> ArchetypeChoices = ReadArchetypeChoices(ArchetypeTable, ArchetypeScenarioId);
+	if (SizeChoices.Num() == 0 || ArchetypeChoices.Num() == 0)
+	{
+		// 입력 테이블이 비었거나 ScopeId/ArchetypeScenarioId 가 안 맞는다. 빈 결과를 돌려주고 호출부가 판단한다.
+		return Result;
+	}
+
+	// 일반 몫만 세는 예산 카운터. ActualVisitorCount 는 예약석을 이미 품고 있어서
+	// 그걸로 예산을 재면 예약을 산 만큼 일반 방문객이 줄어든다 — 그러면 "추가로 온다"가 아니다.
+	int32 GeneralVisitorCount = 0;
+
+	int32 GroupOrdinal = 0;
+	while (true)
+	{
+		const int32 SizePick = PickIndexByWeight(SizeChoices, UniformFor(GlobalSimulationSeed, GroupOrdinal, TEXT("group_size")));
+		if (SizePick == INDEX_NONE)
+		{
+			break;
+		}
+		const int32 GroupSize = SizeChoices[SizePick].Value;
+
+		// 그룹은 통째로만 만든다 — 남은 자리에 다 안 들어가면 여기서 멈춘다.
+		// 요청 인원을 넘기지 않으려고 이 그룹만 건너뛰고 계속 돌면 작은 그룹 쪽으로 분포가
+		// 치우치므로(작은 그룹만 남은 자리에 들어감) 그렇게 하지 않는다.
+		if (GeneralVisitorCount + GroupSize > Result.RequestedVisitorCount)
+		{
+			break;
+		}
+
+		int32 ChildCount = 0;
+		if (const TArray<FWeightedChoice>* ChildChoices = ChildChoicesBySize.Find(GroupSize))
+		{
+			const int32 ChildPick = PickIndexByWeight(*ChildChoices, UniformFor(GlobalSimulationSeed, GroupOrdinal, TEXT("group_child_count")));
+			if (ChildPick != INDEX_NONE)
+			{
+				ChildCount = (*ChildChoices)[ChildPick].Value;
+			}
+		}
+		// 방어: 재정규화에서 이미 걸러지지만, 입력 데이터가 바뀌어도 리더가 성인이라는 불변식은 지킨다
+		ChildCount = FMath::Clamp(ChildCount, 0, GroupSize - 1);
+
+		const int32 ArchetypePick = PickIndexByWeight(ArchetypeChoices, UniformFor(GlobalSimulationSeed, GroupOrdinal, TEXT("group_adult_archetype")));
+		const FName AdultArchetypeId = ArchetypeChoices[ArchetypePick == INDEX_NONE ? 0 : ArchetypePick].Name;
+
+		// 일반 방문객은 예약이 없다 — 무효 Guid 가 그 표시다.
+		EmitGroup(GroupSize, ChildCount, AdultArchetypeId, FGuid());
+		GeneralVisitorCount += GroupSize;
 
 		++GroupOrdinal;
 	}

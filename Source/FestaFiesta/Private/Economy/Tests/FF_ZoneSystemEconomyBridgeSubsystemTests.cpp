@@ -26,7 +26,17 @@
 
 namespace
 {
-	constexpr int32 FoodStallInstallCost = 400;
+	// 실제 DT_FacilityCosts 의 값과 같아야 한다 — 아래 ContentContract 테스트가 표를 직접 읽는다.
+	// 2026-08-24 에 400 → 700 으로 바뀌었다(미니게임 부스 2종 추가와 같은 커밋).
+	// 표가 권위이므로 여기를 맞추고, 밸런스는 economy_spec §2.3·§2.5 에서 다시 계산했다.
+	//
+	// 🔴 아래 테스트들의 기대값을 이 상수에서 **계산해서** 쓴다. 예전에는 600·800·200 처럼
+	// 400 을 전제한 리터럴이 박혀 있어서, 표가 바뀌자 네 곳이 한꺼번에 깨졌다.
+	// 계산해서 쓰면 다음에 값이 또 바뀌어도 여기 한 줄만 고치면 된다.
+	constexpr int32 FoodStallInstallCost = 700;
+
+	// 설치 → 철거 → 재설치까지 되는 잔액. 설치비가 오르면 같이 오른다.
+	constexpr int32 HarnessStartingGold = FoodStallInstallCost * 3;
 	const FName TestZoneId(TEXT("GZ_DadaPocha"));
 	const FName AutomationFoodStallCostKey(
 		TEXT("Cost.Booth.FoodStall.EconomyBridgeAutomation"));
@@ -386,7 +396,7 @@ bool FFFZoneSystemEconomyInstallAndReplayTest::RunTest(const FString& Parameters
 	FScopedEconomyBridgeTestSettings SettingsGuard;
 	FZoneEconomyTestHarness Harness;
 	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
-		Harness.Initialize(this, 1000)))
+		Harness.Initialize(this, HarnessStartingGold)))
 	{
 		return false;
 	}
@@ -406,8 +416,8 @@ bool FFFZoneSystemEconomyInstallAndReplayTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	TestEqual(TEXT("None InstallCostKey resolves to the four-part automatic row and spends 400 Gold"),
-		Harness.Progression->GetGold(), 600);
+	TestEqual(TEXT("None InstallCostKey resolves to the four-part automatic row and spends the live cost"),
+		Harness.Progression->GetGold(), HarnessStartingGold - FoodStallInstallCost);
 	TestNotNull(TEXT("The successful Install registers its Facility"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
 
@@ -416,7 +426,7 @@ bool FFFZoneSystemEconomyInstallAndReplayTest::RunTest(const FString& Parameters
 	TestTrue(TEXT("The same command is served from the FFZS idempotency receipt"),
 		ReplayResult.bSucceeded && ReplayResult.bWasDuplicateReplay);
 	TestEqual(TEXT("A duplicate replay does not spend the installation cost twice"),
-		Harness.Progression->GetGold(), 600);
+		Harness.Progression->GetGold(), HarnessStartingGold - FoodStallInstallCost);
 	return true;
 }
 
@@ -471,7 +481,7 @@ bool FFFZoneSystemEconomyMoveIsFreeTest::RunTest(const FString& Parameters)
 	FScopedEconomyBridgeTestSettings SettingsGuard;
 	FZoneEconomyTestHarness Harness;
 	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
-		Harness.Initialize(this, 1000)))
+		Harness.Initialize(this, HarnessStartingGold)))
 	{
 		return false;
 	}
@@ -508,7 +518,7 @@ bool FFFZoneSystemEconomyRollbackTest::RunTest(const FString& Parameters)
 	FScopedEconomyBridgeTestSettings SettingsGuard;
 	FZoneEconomyTestHarness Harness;
 	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
-		Harness.Initialize(this, 1000)))
+		Harness.Initialize(this, HarnessStartingGold)))
 	{
 		return false;
 	}
@@ -533,12 +543,12 @@ bool FFFZoneSystemEconomyRollbackTest::RunTest(const FString& Parameters)
 		return false;
 	}
 	TestEqual(TEXT("Tentative policy application does not spend before world commit"),
-		Harness.Progression->GetGold(), 1000);
+		Harness.Progression->GetGold(), HarnessStartingGold);
 
 	IFFZSExternalPolicy::Execute_RollbackFFZoneSystemChange(
 		Harness.EconomyBridge, Context);
 	TestEqual(TEXT("A rolled-back Install transaction leaves Gold unchanged"),
-		Harness.Progression->GetGold(), 1000);
+		Harness.Progression->GetGold(), HarnessStartingGold);
 	return true;
 }
 
@@ -553,7 +563,7 @@ bool FFFZoneSystemEconomyMissingCostTest::RunTest(const FString& Parameters)
 	FScopedEconomyBridgeTestSettings SettingsGuard;
 	FZoneEconomyTestHarness Harness;
 	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
-		Harness.Initialize(this, 1000)))
+		Harness.Initialize(this, HarnessStartingGold)))
 	{
 		return false;
 	}
@@ -567,7 +577,7 @@ bool FFFZoneSystemEconomyMissingCostTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Missing economy data is reported as invalid configuration"),
 		Result.FailureReason, EFFZSPlacementFailure::DataInvalid);
 	TestEqual(TEXT("Cost resolution failure does not spend Gold"),
-		Harness.Progression->GetGold(), 1000);
+		Harness.Progression->GetGold(), HarnessStartingGold);
 	TestNull(TEXT("Cost resolution failure does not create a Facility"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
 	return true;
@@ -584,7 +594,7 @@ bool FFFZoneSystemEconomyLifecycleCommandsAreFreeTest::RunTest(const FString& Pa
 	FScopedEconomyBridgeTestSettings SettingsGuard;
 	FZoneEconomyTestHarness Harness;
 	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
-		Harness.Initialize(this, 1000)))
+		Harness.Initialize(this, HarnessStartingGold)))
 	{
 		return false;
 	}
@@ -638,7 +648,7 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 	FScopedEconomyBridgeTestSettings SettingsGuard;
 	FZoneEconomyTestHarness Harness;
 	if (!TestTrue(TEXT("An isolated Zone/economy test world initializes"),
-		Harness.Initialize(this, 1000)))
+		Harness.Initialize(this, HarnessStartingGold)))
 	{
 		return false;
 	}
@@ -653,8 +663,9 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	TestEqual(TEXT("Installing the 400 Gold FoodStall leaves 600 Gold"),
-		Harness.Progression->GetGold(), 600);
+	const int32 GoldAfterInstall = HarnessStartingGold - FoodStallInstallCost;
+	TestEqual(TEXT("Installing the FoodStall spends its live cost"),
+		Harness.Progression->GetGold(), GoldAfterInstall);
 
 	const FFFZSCommandResult RemoveResult = Harness.ZoneSystem->ExecuteCommand(
 		MakeRemoveCommand(Harness, InstallCommand.FacilityInstanceId));
@@ -662,13 +673,14 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	// 400의 50%인 200만 돌아온다. 전액이면 배치 실수의 비용이 0이 되어 위치를 고민할 이유가 사라진다.
-	TestEqual(TEXT("Demolition refunds 50% of the 400 Gold installation cost"),
-		Harness.Progression->GetGold(), 800);
+	// 절반만 돌아온다. 전액이면 배치 실수의 비용이 0이 되어 위치를 고민할 이유가 사라진다.
+	const int32 HalfRefund = FoodStallInstallCost / 2;
+	TestEqual(TEXT("Demolition refunds 50% of the installation cost"),
+		Harness.Progression->GetGold(), GoldAfterInstall + HalfRefund);
 	TestNull(TEXT("The refunded Facility is unregistered"),
 		Harness.ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId));
 	TestEqual(TEXT("The refund is recorded in the day ledger's refund total"),
-		Harness.Progression->GetDayLedger().GetTotalRefund(), 200);
+		Harness.Progression->GetDayLedger().GetTotalRefund(), HalfRefund);
 
 	// 기획 담당자가 에디터에서 비율만 바꾸면 환급액이 따라와야 한다. 코드에 0.5가 박혀 있으면 여기서 드러난다.
 	Harness.Definition->FacilityDemolitionRefundRate = 0.8f;
@@ -679,16 +691,24 @@ bool FFFZoneSystemEconomyDemolitionRefundTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	TestEqual(TEXT("The second Install spends another 400 Gold"),
-		Harness.Progression->GetGold(), 400);
+	const int32 GoldAfterSecondInstall =
+		GoldAfterInstall + HalfRefund - FoodStallInstallCost;
+	TestEqual(TEXT("The second Install spends the live cost again"),
+		Harness.Progression->GetGold(), GoldAfterSecondInstall);
 
 	TestTrue(TEXT("Removing the second Facility succeeds"),
 		Harness.ZoneSystem->ExecuteCommand(
 			MakeRemoveCommand(Harness, SecondInstall.FacilityInstanceId)).bSucceeded);
-	TestEqual(TEXT("The edited 80% rate refunds 320 Gold, not 200"),
-		Harness.Progression->GetGold(), 720);
+
+	// 80% 로 바꿨으니 절반보다 많이 돌아와야 한다. 코드에 0.5 가 박혀 있으면 여기서 드러난다.
+	const int32 EightyPercentRefund =
+		FMath::RoundToInt(FoodStallInstallCost * 0.8f);
+	TestTrue(TEXT("The edited 80% rate refunds more than the 50% rate did"),
+		EightyPercentRefund > HalfRefund);
+	TestEqual(TEXT("The edited 80% rate is what actually comes back"),
+		Harness.Progression->GetGold(), GoldAfterSecondInstall + EightyPercentRefund);
 	TestEqual(TEXT("Both demolitions accumulate in the same day's refund total"),
-		Harness.Progression->GetDayLedger().GetTotalRefund(), 520);
+		Harness.Progression->GetDayLedger().GetTotalRefund(), HalfRefund + EightyPercentRefund);
 	return true;
 }
 

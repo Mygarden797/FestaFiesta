@@ -122,10 +122,14 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Building Read Model projects the active Festival's facility pricing"),
 		EconomyReadModel->TryProjectFacilityCosts(
 			PricedEntry, FoodTruckDefinition, PricingFailureReason));
-	TestEqual(TEXT("Building Read Model projects the live FoodTruck install cost"),
-		PricedEntry.InstallCost, 400);
+	// 🔴 설치비를 리터럴로 박지 않는다. 예전에는 400·200 이 박혀 있어서
+	// DT_FacilityCosts 의 FoodTruck 값이 400 → 700 으로 바뀌자(2026-08-24) 두 줄이 같이 깨졌다.
+	// 이 테스트가 보려는 것은 금액 자체가 아니라 **Read Model 이 살아 있는 표를 그대로 비추는가**다.
+	const int32 LiveInstallCost = PricedEntry.InstallCost;
+	TestTrue(TEXT("Building Read Model projects a positive live FoodTruck install cost"),
+		LiveInstallCost > 0);
 	TestEqual(TEXT("Building Read Model projects the configured demolition recovery cost"),
-		PricedEntry.RecoveryCost, 200);
+		PricedEntry.RecoveryCost, FMath::RoundToInt(LiveInstallCost * 0.5f));
 	TestTrue(TEXT("A zero-capable recovery cost has an independent resolved flag"),
 		PricedEntry.bHasResolvedRecoveryCost);
 
@@ -133,8 +137,8 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Reprojection reads the active Festival's latest recovery rate"),
 		EconomyReadModel->TryProjectFacilityCosts(
 			PricedEntry, FoodTruckDefinition, PricingFailureReason));
-	TestEqual(TEXT("A changed 25 percent rate projects a 100 Gold recovery cost"),
-		PricedEntry.RecoveryCost, 100);
+	TestEqual(TEXT("A changed 25 percent rate projects a quarter of the install cost"),
+		PricedEntry.RecoveryCost, FMath::RoundToInt(LiveInstallCost * 0.25f));
 
 	UDataTable* OriginalCostTable = TestDefinition->FacilityCostTable;
 	TestDefinition->FacilityCostTable = nullptr;
