@@ -6,6 +6,8 @@
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Time/FF_FestivalStage.h"
 #include "Finale/FF_FinaleShowTypes.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_FinaleShowSubsystem.generated.h"
 
@@ -154,6 +156,15 @@ private:
 	FLinearColor PickColor(int32 Index) const;
 
 	AFF_FestivalPlayerController* GetFestivalController() const;
+
+	// 게임 인스턴스 서브시스템을 꺼낸다. 월드와 인스턴스 널체크가 매번 반복돼서 묶었다.
+	template <typename SubsystemType>
+	SubsystemType* GetGameInstanceSubsystem() const
+	{
+		const UWorld* World = GetWorld();
+		UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<SubsystemType>() : nullptr;
+	}
 
 	bool bShowInProgress = false;
 	bool bTakeOverCamera = true;

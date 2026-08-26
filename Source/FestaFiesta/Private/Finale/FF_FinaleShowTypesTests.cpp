@@ -14,10 +14,7 @@
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleGradeScalesUpward, "FestaFiesta.Finale.Spec.GradeScalesUpward", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FinaleGradeScalesUpward::RunTest(const FString& Parameters)
 {
-	const TArray<EFF_FinaleGrade> Order = {
-		EFF_FinaleGrade::None, EFF_FinaleGrade::C, EFF_FinaleGrade::B,
-		EFF_FinaleGrade::A,    EFF_FinaleGrade::S
-	};
+	const TArray<EFF_FinaleGrade>& Order = FFF_FinaleGrades::GetAscendingOrder();
 
 	bool bBurstsIncrease = true;
 	bool bDurationIncreases = true;
@@ -126,10 +123,7 @@ bool FFF_FinaleShowDataMapsGrades::RunTest(const FString& Parameters)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleScaleGrowsWithGrade, "FestaFiesta.Finale.Spec.ScaleGrowsWithGrade", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FinaleScaleGrowsWithGrade::RunTest(const FString& Parameters)
 {
-	const TArray<EFF_FinaleGrade> Order = {
-		EFF_FinaleGrade::None, EFF_FinaleGrade::C, EFF_FinaleGrade::B,
-		EFF_FinaleGrade::A,    EFF_FinaleGrade::S
-	};
+	const TArray<EFF_FinaleGrade>& Order = FFF_FinaleGrades::GetAscendingOrder();
 
 	bool bScaleGrows = true;
 	bool bTrailGrows = true;
