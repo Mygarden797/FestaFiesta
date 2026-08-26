@@ -14,6 +14,10 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
+#include "Components/WrapBox.h"
+#include "Components/WrapBoxSlot.h"
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
 #include "Components/Spacer.h"
@@ -26,6 +30,8 @@
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
+#include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelStaff.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepHudWbpBuilder"
@@ -69,6 +75,10 @@ namespace FFPrepHudWbpBuilder
 	// ★ 이름이 계약이다. `UFF_PrepHudBar::PanelClassNameFormat`(`WBP_FF_PrepPanel{0}`) 이
 	//   `EFF_PrepHudTab` 항목 이름으로 이 에셋을 찾는다. 이름을 바꾸면 두 곳을 함께 고친다.
 	const FString StaffPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPanelStaff");
+	const FString CheckPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPanelCheck");
+
+	/** 패널 안에서 여러 개 중 하나를 고르는 버튼. 날씨 선택이 첫 사용처다. */
+	const FString ChoiceButtonPackage = PrepFolder / TEXT("WBP_FF_PrepChoiceButton");
 
 	/** 목업 규격. 메뉴 29 + 상태 29 = 58. 대략만 맞추고 마감은 에디터에서 한다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -81,6 +91,9 @@ namespace FFPrepHudWbpBuilder
 
 	/** 탭 아이콘 표시 크기. `UFF_PrepHudBar::TabIconSize` 와 같게 유지한다. */
 	constexpr float TabIconSize = 13.f;
+
+	/** 메뉴 행 칩의 모서리 반경. `UFF_PrepHudBar::MenuRowCornerRadius` 와 같게 유지한다. */
+	constexpr float MenuRowCornerRadius = 6.f;
 
 	/**
 	 * 🔴 텍스처 없이 단색을 칠하는 브러시.
@@ -176,6 +189,70 @@ namespace FFPrepHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 패널 공용 헤더
+	// =========================================================================
+
+	/**
+	 * 제목 + 오른쪽 위 닫기 버튼 한 줄. 패널 세 종이 같은 것을 쓴다.
+	 *
+	 * `Text_PanelTitle` 과 `Button_Close` 는 `UFF_PrepPanelBase` 가 이름으로 잡는다 —
+	 * 여기 이름을 바꾸면 베이스의 `BindWidgetOptional` 도 함께 고쳐야 한다.
+	 */
+	UHorizontalBox* MakePanelHeader(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const UFF_UIPalette& Palette,
+		const FText& TitlePreview)
+	{
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseLabel"));
+
+		if (!Header || !Title || !Close || !CloseLabel)
+		{
+			return nullptr;
+		}
+
+		StyleText(*Title, 22, Palette.InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(TitlePreview);
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			// 제목이 남는 폭을 먹어 닫기 버튼을 오른쪽 끝으로 민다. Spacer 를 따로 두지 않는다.
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette.InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette.InGame.Danger, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette.InGame.Danger, 4.f);
+		CloseStyle.Disabled = MakeSolidBrush(Palette.InGame.PaperSunken, 4.f);
+		CloseStyle.NormalPadding = FMargin(9.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(9.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		// ★ 글리프는 `×`(U+00D7) 다. `✕`(U+2715) 같은 기호는 한글 폰트에 없을 수 있어
+		//   **없는 글자 네모**로 나온다. 아이콘이 생기면 디자이너에서 이미지로 바꾼다.
+		StyleText(*CloseLabel, 18, Palette.InGame.InkMuted, TEXT("Medium"));
+		CloseLabel->SetText(LOCTEXT("PrepPanel_Close", "\u00D7"));
+		if (UButtonSlot* Slot_CloseLabel = Cast<UButtonSlot>(Close->AddChild(CloseLabel)))
+		{
+			Slot_CloseLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseLabel->SetPadding(FMargin(0.f));
+		}
+
+		Close->SetToolTipText(LOCTEXT("PrepPanel_CloseTooltip", "닫기"));
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		return Header;
+	}
+
+	// =========================================================================
 	// 2) 자리표시 패널
 	// =========================================================================
 
@@ -191,10 +268,11 @@ namespace FFPrepHudWbpBuilder
 
 		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
-		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UHorizontalBox* Header = MakePanelHeader(
+			Blueprint, Tree, *Palette, LOCTEXT("PrepPanel_TitlePreview", "패널 제목"));
 		UTextBlock* Message = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Placeholder"), true);
 
-		if (!Root || !Content || !Title || !Message)
+		if (!Root || !Content || !Header || !Message)
 		{
 			return false;
 		}
@@ -203,12 +281,10 @@ namespace FFPrepHudWbpBuilder
 		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 6.f));
 		Root->SetPadding(FMargin(20.f, 16.f));
 
-		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		Title->SetText(LOCTEXT("PrepPanel_TitlePreview", "패널 제목"));
-		if (UVerticalBoxSlot* Slot_Title = Content->AddChildToVerticalBox(Title))
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
 		{
-			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Title->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
 		}
 
 		StyleText(*Message, 14, Palette->InGame.InkMuted, TEXT("Medium"));
@@ -335,7 +411,8 @@ namespace FFPrepHudWbpBuilder
 
 		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
-		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UHorizontalBox* Header = MakePanelHeader(
+			Blueprint, Tree, *Palette, LOCTEXT("PrepStaff_TitlePreview", "인력"));
 
 		UTextBlock* CurrentStaff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CurrentStaff"), true);
 		UTextBlock* MaxStaff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MaxStaff"), true);
@@ -361,7 +438,7 @@ namespace FFPrepHudWbpBuilder
 		UButton* Hire = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Hire"), true);
 		UTextBlock* HireLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_HireLabel"));
 
-		if (!Root || !Content || !Title || !CurrentStaff || !MaxStaff || !StepperRow || !StepperLabel
+		if (!Root || !Content || !Header || !CurrentStaff || !MaxStaff || !StepperRow || !StepperLabel
 			|| !Decrease || !SelectedCount || !Increase || !WagePreview || !GoldAfterHire
 			|| !CostTable || !CostTableTitle || !DailyNotice
 			|| !ActionRow || !BlockReason || !Hire || !HireLabel)
@@ -373,13 +450,11 @@ namespace FFPrepHudWbpBuilder
 		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
 		Root->SetPadding(FMargin(28.f, 24.f));
 
-		StyleText(*Title, 22, Palette->InGame.Ink, TEXT("SemiBold"));
-		Title->SetText(LOCTEXT("PrepStaff_TitlePreview", "인력"));
-		if (UVerticalBoxSlot* Slot_Title = Content->AddChildToVerticalBox(Title))
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
 		{
-			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Title->SetHorizontalAlignment(HAlign_Fill);
-			Slot_Title->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
 		}
 
 		StyleText(*CurrentStaff, 28, Palette->InGame.Ink, TEXT("SemiBold"));
@@ -550,7 +625,482 @@ namespace FFPrepHudWbpBuilder
 	}
 
 	// =========================================================================
-	// 4) 하단 바
+	// 4) 선택 버튼 · 점검 패널
+	// =========================================================================
+
+	bool BuildChoiceButton(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 선택 버튼을 만들지 않았다."), PrepLogPrefix);
+			return false;
+		}
+
+		UButton* Root = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Root"), true);
+		UTextBlock* Label = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Label"), true);
+		if (!Root || !Label)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+
+		// ★ 선택 상태 브러시는 `Pressed` 슬롯이다. 베이스가 선택 중에 세 상태에 함께 적용한다.
+		//   배경이 바뀌어야 색맹 사용자도 어느 날씨가 골라졌는지 알 수 있다 (AT-011).
+		FButtonStyle Style = Root->GetStyle();
+		Style.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		Style.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		Style.Pressed = MakeSolidBrush(Palette->InGame.Teal, 4.f);
+		Style.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		Style.NormalPadding = FMargin(12.f, 4.f);
+		Style.PressedPadding = FMargin(12.f, 4.f);
+		Root->SetStyle(Style);
+
+		StyleText(*Label, 13, Palette->InGame.Ink, TEXT("Medium"));
+		Label->SetText(LOCTEXT("PrepChoice_Preview", "선택"));
+		if (UButtonSlot* Slot_Label = Cast<UButtonSlot>(Root->AddChild(Label)))
+		{
+			Slot_Label->SetHorizontalAlignment(HAlign_Center);
+			Slot_Label->SetVerticalAlignment(VAlign_Center);
+			Slot_Label->SetPadding(FMargin(0.f));
+		}
+		return true;
+	}
+
+	/**
+	 * 카드 한 장. 위에 항목 이름, 아래에 값이다.
+	 * 돌려주는 것은 카드 안쪽 상자다 — 날씨 카드처럼 값 밑에 더 붙일 것이 있는 경우에 쓴다.
+	 */
+	UVerticalBox* AddInfoCard(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		UHorizontalBox& Row,
+		const UFF_UIPalette& Palette,
+		const FName CardName,
+		const FName ValueTextName,
+		const FText& Label,
+		const FText& PreviewValue,
+		const float FillWeight = 1.f)
+	{
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, CardName, true);
+		UVerticalBox* Body = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, FName(*(CardName.ToString() + TEXT("_Body"))));
+		UTextBlock* LabelText = MakeWidget<UTextBlock>(
+			Blueprint, Tree, FName(*(CardName.ToString() + TEXT("_Label"))));
+		UTextBlock* ValueText = MakeWidget<UTextBlock>(Blueprint, Tree, ValueTextName, true);
+
+		if (!Card || !Body || !LabelText || !ValueText)
+		{
+			return nullptr;
+		}
+
+		Card->SetBrush(MakeSolidBrush(Palette.InGame.PaperSunken, 6.f));
+		Card->SetPadding(FMargin(16.f, 12.f));
+
+		StyleText(*LabelText, 12, Palette.InGame.InkMuted, TEXT("Medium"));
+		LabelText->SetText(Label);
+		if (UVerticalBoxSlot* Slot_Label = Body->AddChildToVerticalBox(LabelText))
+		{
+			Slot_Label->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Label->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 🔴 카드 폭이 좁아서 20 이면 문구가 카드를 넘어 옆 카드와 겹친다 (2026-08-26 실제 발생).
+		StyleText(*ValueText, 15, Palette.InGame.Ink, TEXT("SemiBold"));
+		ValueText->SetText(PreviewValue);
+		ValueText->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Value = Body->AddChildToVerticalBox(ValueText))
+		{
+			Slot_Value->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Value->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Value->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+		}
+
+		if (UBorderSlot* Slot_Body = Cast<UBorderSlot>(Card->AddChild(Body)))
+		{
+			Slot_Body->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Body->SetVerticalAlignment(VAlign_Top);
+		}
+
+		if (UHorizontalBoxSlot* Slot_Card = Row.AddChildToHorizontalBox(Card))
+		{
+			// 폭을 가중치로 나눈다. Automatic 으로 두면 문구 길이에 따라 들쭉날쭉해지고,
+			// 전부 1 로 두면 선택 버튼이 들어가는 날씨 카드가 좁아서 버튼이 넘친다.
+			FSlateChildSize CardSize(ESlateSizeRule::Fill);
+			CardSize.Value = FillWeight;
+			Slot_Card->SetSize(CardSize);
+			Slot_Card->SetVerticalAlignment(VAlign_Fill);
+			Slot_Card->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+		}
+		return Body;
+	}
+
+	bool BuildCheckPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, UClass& ChoiceButtonClass)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 점검 패널을 만들지 않았다."), PrepLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+
+		// === 🔴 세로 구조가 3단이다 (2026-08-26) ===
+		// 한 `VerticalBox` 에 다 넣었더니 내용이 패널 높이를 넘어 **`개장하기` 버튼이 화면
+		// 밖으로 잘려 누를 수 없었다.** 본문만 스크롤하고 버튼 행은 항상 보이게 분리한다.
+		//   Root ─ VerticalBox_Root
+		//            ├ Text_PanelTitle      (자동 높이)
+		//            ├ ScrollBox_Content    (남는 높이 전부)
+		//            └ HorizontalBox_Action (자동 높이 · 항상 보인다)
+		UVerticalBox* RootBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Root"));
+		UScrollBox* Content = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Content"));
+		UHorizontalBox* Header = MakePanelHeader(
+			Blueprint, Tree, *Palette, LOCTEXT("PrepCheck_TitlePreview", "점검"));
+		UHorizontalBox* CardRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Cards"));
+
+		if (!Root || !RootBox || !Content || !Header || !CardRow)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(28.f, 24.f));
+
+		if (UVerticalBoxSlot* Slot_Header = RootBox->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 카드 4장 ---
+		UVerticalBox* WeatherBody = AddInfoCard(Blueprint, Tree, *CardRow, *Palette,
+			TEXT("Card_Weather"), TEXT("Text_Weather"),
+			LOCTEXT("PrepCheck_WeatherLabel", "날씨"),
+			LOCTEXT("PrepCheck_WeatherPreview", "맑음"),
+			// 선택 버튼 3개가 들어가므로 다른 카드보다 넓게 잡는다.
+			/*FillWeight*/ 1.8f);
+
+		const bool bCardsOk = WeatherBody != nullptr
+			&& AddInfoCard(Blueprint, Tree, *CardRow, *Palette,
+				TEXT("Card_DailyGoal"), TEXT("Text_DailyGoal"),
+				LOCTEXT("PrepCheck_GoalLabel", "일일 목표"),
+				LOCTEXT("PrepCheck_GoalPreview", "500명 · 달성 시 +300")) != nullptr
+			&& AddInfoCard(Blueprint, Tree, *CardRow, *Palette,
+				TEXT("Card_ExpectedVisitors"), TEXT("Text_ExpectedVisitors"),
+				LOCTEXT("PrepCheck_ExpectedLabel", "예상 방문객"),
+				LOCTEXT("PrepCheck_ExpectedPreview", "아직 알 수 없습니다")) != nullptr
+			&& AddInfoCard(Blueprint, Tree, *CardRow, *Palette,
+				TEXT("Card_Gold"), TEXT("Text_Gold"),
+				LOCTEXT("PrepCheck_GoldLabel", "보유 금화"),
+				LOCTEXT("PrepCheck_GoldPreview", "7,600")) != nullptr;
+
+		if (!bCardsOk)
+		{
+			return false;
+		}
+
+		// --- 날씨 카드 안쪽에 선택지 3개 + 잠금 이유 ---
+		// 🔴 `HorizontalBox` 로 두면 카드보다 넓어질 때 **옆 카드 위로 넘쳐 나간다**
+		//    (2026-08-26 실제 발생). `WrapBox` 는 폭이 부족하면 다음 줄로 내린다.
+		UWrapBox* WeatherChoices = MakeWidget<UWrapBox>(
+			Blueprint, Tree, TEXT("WrapBox_WeatherChoices"));
+		UTextBlock* WeatherLock = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_WeatherLockReason"), true);
+
+		if (!WeatherChoices || !WeatherLock)
+		{
+			return false;
+		}
+
+		// ★ 이름이 계약이다. `UFF_PrepPanelCheck::CollectWeatherChoices` 가
+		//   `Choice_<EFF_WeatherType 항목 이름>` 으로 찾는다.
+		const TCHAR* ChoiceNames[] = { TEXT("Choice_Clear"), TEXT("Choice_Rain"), TEXT("Choice_Windy") };
+		for (const TCHAR* ChoiceName : ChoiceNames)
+		{
+			UUserWidget* Choice = MakeWidgetOfClass(Blueprint, Tree, FName(ChoiceName), &ChoiceButtonClass);
+			if (!Choice)
+			{
+				return false;
+			}
+
+			if (UWrapBoxSlot* Slot_Choice = WeatherChoices->AddChildToWrapBox(Choice))
+			{
+				Slot_Choice->SetVerticalAlignment(VAlign_Center);
+				Slot_Choice->SetPadding(FMargin(0.f, 0.f, 4.f, 4.f));
+			}
+		}
+
+		if (UVerticalBoxSlot* Slot_Choices = WeatherBody->AddChildToVerticalBox(WeatherChoices))
+		{
+			Slot_Choices->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Choices->SetHorizontalAlignment(HAlign_Left);
+			Slot_Choices->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+		}
+
+		StyleText(*WeatherLock, 11, Palette->InGame.InkMuted, TEXT("Medium"));
+		WeatherLock->SetText(LOCTEXT("PrepCheck_WeatherLockPreview", "지금 단계에서는 날씨를 바꿀 수 없습니다."));
+		WeatherLock->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Lock = WeatherBody->AddChildToVerticalBox(WeatherLock))
+		{
+			Slot_Lock->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Lock->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Lock->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+		}
+
+		if (UScrollBoxSlot* Slot_CardRow = Cast<UScrollBoxSlot>(Content->AddChild(CardRow)))
+		{
+			Slot_CardRow->SetHorizontalAlignment(HAlign_Fill);
+			Slot_CardRow->SetPadding(FMargin(0.f, 0.f, 0.f, 20.f));
+		}
+
+		// --- 수용 위험 ---
+		UBorder* RiskBox = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_CapacityRisk"), true);
+		UVerticalBox* RiskBody = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_CapacityRisk"));
+		UTextBlock* RiskText = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CapacityRisk"), true);
+		UTextBlock* RiskDetail = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CapacityDetail"), true);
+
+		if (!RiskBox || !RiskBody || !RiskText || !RiskDetail)
+		{
+			return false;
+		}
+
+		RiskBox->SetBrush(MakeSolidBrush(Palette->InGame.PaperSunken, 6.f));
+		RiskBox->SetPadding(FMargin(16.f, 12.f));
+
+		// 색은 런타임에 구간별로 갈아치울 자리다. 여기 값은 디자이너 미리보기용이다.
+		StyleText(*RiskText, 16, Palette->InGame.Ink, TEXT("SemiBold"));
+		RiskText->SetText(LOCTEXT("PrepCheck_RiskPreview", "? 판정 불가 — 예상 방문객이나 정원을 아직 읽지 못했습니다"));
+		RiskText->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Risk = RiskBody->AddChildToVerticalBox(RiskText))
+		{
+			Slot_Risk->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Risk->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*RiskDetail, 12, Palette->InGame.InkMuted, TEXT("Medium"));
+		RiskDetail->SetText(LOCTEXT("PrepCheck_RiskDetailPreview", "정원 900명 대비 최대 예상 480명"));
+		RiskDetail->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Detail = RiskBody->AddChildToVerticalBox(RiskDetail))
+		{
+			Slot_Detail->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Detail->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Detail->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+		}
+
+		if (UBorderSlot* Slot_RiskBody = Cast<UBorderSlot>(RiskBox->AddChild(RiskBody)))
+		{
+			Slot_RiskBody->SetHorizontalAlignment(HAlign_Fill);
+			Slot_RiskBody->SetVerticalAlignment(VAlign_Top);
+		}
+		if (UScrollBoxSlot* Slot_RiskBox = Cast<UScrollBoxSlot>(Content->AddChild(RiskBox)))
+		{
+			Slot_RiskBox->SetHorizontalAlignment(HAlign_Fill);
+			Slot_RiskBox->SetPadding(FMargin(0.f, 0.f, 0.f, 20.f));
+		}
+
+		// --- 요약 3줄 ---
+		UVerticalBox* SummaryTable = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Summary"));
+		UTextBlock* SummaryTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_SummaryTitle"));
+		if (!SummaryTable || !SummaryTitle)
+		{
+			return false;
+		}
+
+		StyleText(*SummaryTitle, 14, Palette->InGame.Ink, TEXT("SemiBold"));
+		SummaryTitle->SetText(LOCTEXT("PrepCheck_SummaryTitle", "준비 상황"));
+		if (UVerticalBoxSlot* Slot_SummaryTitle = SummaryTable->AddChildToVerticalBox(SummaryTitle))
+		{
+			Slot_SummaryTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_SummaryTitle->SetHorizontalAlignment(HAlign_Fill);
+			Slot_SummaryTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		const bool bSummaryOk =
+			AddCostRow(Blueprint, Tree, *SummaryTable, *Palette,
+				TEXT("Box_StaffSummaryRow"), TEXT("Text_StaffSummary"),
+				LOCTEXT("PrepCheck_StaffLabel", "인력"),
+				LOCTEXT("PrepCheck_StaffPreview", "6명 (기본 6 · 알바 0)"), Palette->InGame.Ink)
+			&& AddCostRow(Blueprint, Tree, *SummaryTable, *Palette,
+				TEXT("Box_ProgramSummaryRow"), TEXT("Text_ProgramSummary"),
+				LOCTEXT("PrepCheck_ProgramLabel", "유료 프로그램"),
+				LOCTEXT("PrepCheck_ProgramPreview", "0개 편성"), Palette->InGame.Ink)
+			// 마지막 날이 아니면 코드가 이 줄을 접는다.
+			&& AddCostRow(Blueprint, Tree, *SummaryTable, *Palette,
+				TEXT("Box_FinaleSummaryRow"), TEXT("Text_FinaleSummary"),
+				LOCTEXT("PrepCheck_FinaleLabel", "피날레"),
+				LOCTEXT("PrepCheck_FinalePreview", "미구매 — 최소 연출만 실행됩니다"), Palette->InGame.Ink);
+
+		if (!bSummaryOk)
+		{
+			return false;
+		}
+
+		if (UScrollBoxSlot* Slot_Summary = Cast<UScrollBoxSlot>(Content->AddChild(SummaryTable)))
+		{
+			Slot_Summary->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Summary->SetPadding(FMargin(0.f, 0.f, 0.f, 20.f));
+		}
+
+		// --- 견적표 ---
+		UVerticalBox* EstimateTable = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Estimate"));
+		UTextBlock* EstimateTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_EstimateTitle"));
+		UTextBlock* EstimateNotice = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_EstimateNotice"), true);
+		if (!EstimateTable || !EstimateTitle || !EstimateNotice)
+		{
+			return false;
+		}
+
+		StyleText(*EstimateTitle, 14, Palette->InGame.Ink, TEXT("SemiBold"));
+		EstimateTitle->SetText(LOCTEXT("PrepCheck_EstimateTitle", "오늘 견적"));
+		if (UVerticalBoxSlot* Slot_EstimateTitle = EstimateTable->AddChildToVerticalBox(EstimateTitle))
+		{
+			Slot_EstimateTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_EstimateTitle->SetHorizontalAlignment(HAlign_Fill);
+			Slot_EstimateTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		const bool bEstimateOk =
+			AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
+				TEXT("Box_RentRow"), TEXT("Text_RentCost"),
+				LOCTEXT("PrepCheck_RentLabel", "장소 임대료"),
+				LOCTEXT("PrepCheck_RentPreview", "2,400"), Palette->InGame.Ink)
+			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
+				TEXT("Box_WageRow"), TEXT("Text_StaffWageCost"),
+				LOCTEXT("PrepCheck_WageLabel", "알바 임금"),
+				LOCTEXT("PrepCheck_WagePreview", "0"), Palette->InGame.Ink)
+			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
+				TEXT("Box_FixedCostRow"), TEXT("Text_FixedCostTotal"),
+				LOCTEXT("PrepCheck_FixedLabel", "고정비 합계"),
+				LOCTEXT("PrepCheck_FixedPreview", "2,400"), Palette->InGame.Danger)
+			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
+				TEXT("Box_AdmissionRow"), TEXT("Text_ExpectedAdmission"),
+				LOCTEXT("PrepCheck_AdmissionLabel", "예상 입장료 수입"),
+				LOCTEXT("PrepCheck_AdmissionPreview", "아직 알 수 없습니다"), Palette->InGame.Ink)
+			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
+				TEXT("Box_GoalBonusRow"), TEXT("Text_ExpectedGoalBonus"),
+				LOCTEXT("PrepCheck_BonusLabel", "일일 목표 보너스"),
+				LOCTEXT("PrepCheck_BonusPreview", "아직 알 수 없습니다"), Palette->InGame.Ink);
+
+		if (!bEstimateOk)
+		{
+			return false;
+		}
+
+		StyleText(*EstimateNotice, 11, Palette->InGame.InkMuted, TEXT("Medium"));
+		EstimateNotice->SetText(LOCTEXT("PrepCheck_NoticePreview",
+			"부스 수수료와 미니게임 보상은 운영 결과에 따라 달라지므로 이 표에 넣지 않았습니다."));
+		EstimateNotice->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Notice = EstimateTable->AddChildToVerticalBox(EstimateNotice))
+		{
+			Slot_Notice->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Notice->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Notice->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+		}
+
+		if (UScrollBoxSlot* Slot_Estimate = Cast<UScrollBoxSlot>(Content->AddChild(EstimateTable)))
+		{
+			Slot_Estimate->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// --- 버튼 두 개 ---
+		UHorizontalBox* ActionRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Action"));
+		USpacer* ActionFill = MakeWidget<USpacer>(Blueprint, Tree, TEXT("Spacer_ActionFill"));
+		UButton* ContinueBuild = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_ContinueBuild"), true);
+		UTextBlock* ContinueLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ContinueBuildLabel"));
+		UButton* OpenGate = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_OpenGate"), true);
+		UTextBlock* OpenGateLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_OpenGateLabel"));
+
+		if (!ActionRow || !ActionFill || !ContinueBuild || !ContinueLabel || !OpenGate || !OpenGateLabel)
+		{
+			return false;
+		}
+
+		if (UHorizontalBoxSlot* Slot_Fill = ActionRow->AddChildToHorizontalBox(ActionFill))
+		{
+			Slot_Fill->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+
+		// 되돌아가는 버튼은 약하게, 진행하는 버튼은 강하게. 둘이 같은 무게면 잘못 누른다.
+		FButtonStyle ContinueStyle = ContinueBuild->GetStyle();
+		ContinueStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 6.f);
+		ContinueStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 6.f);
+		ContinueStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 6.f);
+		ContinueStyle.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, 6.f);
+		ContinueStyle.NormalPadding = FMargin(20.f, 8.f);
+		ContinueStyle.PressedPadding = FMargin(20.f, 8.f);
+		ContinueBuild->SetStyle(ContinueStyle);
+
+		StyleText(*ContinueLabel, 14, Palette->InGame.Ink, TEXT("Medium"));
+		ContinueLabel->SetText(LOCTEXT("PrepCheck_ContinueBuild", "배치 계속하기"));
+		if (UButtonSlot* Slot_ContinueLabel = Cast<UButtonSlot>(ContinueBuild->AddChild(ContinueLabel)))
+		{
+			Slot_ContinueLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_ContinueLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_ContinueLabel->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Continue = ActionRow->AddChildToHorizontalBox(ContinueBuild))
+		{
+			Slot_Continue->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Continue->SetVerticalAlignment(VAlign_Center);
+			Slot_Continue->SetPadding(FMargin(0.f, 0.f, 10.f, 0.f));
+		}
+
+		FButtonStyle OpenStyle = OpenGate->GetStyle();
+		OpenStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 6.f);
+		OpenStyle.Hovered = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		OpenStyle.Pressed = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		OpenStyle.Disabled = MakeSolidBrush(Palette->InGame.LineStrong, 6.f);
+		OpenStyle.NormalPadding = FMargin(24.f, 8.f);
+		OpenStyle.PressedPadding = FMargin(24.f, 8.f);
+		OpenGate->SetStyle(OpenStyle);
+
+		StyleText(*OpenGateLabel, 15, Palette->InGame.White, TEXT("SemiBold"));
+		OpenGateLabel->SetText(LOCTEXT("PrepCheck_OpenGate", "개장하기"));
+		if (UButtonSlot* Slot_OpenLabel = Cast<UButtonSlot>(OpenGate->AddChild(OpenGateLabel)))
+		{
+			Slot_OpenLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_OpenLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_OpenLabel->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Open = ActionRow->AddChildToHorizontalBox(OpenGate))
+		{
+			Slot_Open->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Open->SetVerticalAlignment(VAlign_Center);
+		}
+
+		// 본문 스크롤은 남는 높이를 전부 받는다. 버튼 행보다 먼저 넣어야 순서가 맞는다.
+		if (UVerticalBoxSlot* Slot_Scroll = RootBox->AddChildToVerticalBox(Content))
+		{
+			Slot_Scroll->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Scroll->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// ★ 버튼 행은 **스크롤 밖**이다. 안에 넣으면 내용이 길어질 때 다시 잘린다.
+		if (UVerticalBoxSlot* Slot_ActionRow = RootBox->AddChildToVerticalBox(ActionRow))
+		{
+			Slot_ActionRow->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ActionRow->SetHorizontalAlignment(HAlign_Fill);
+			Slot_ActionRow->SetPadding(FMargin(0.f, 16.f, 0.f, 0.f));
+		}
+
+		// `VAlign_Top` 이 아니라 `Fill` 이다. Top 이면 스크롤 상자가 높이를 못 받아
+		// 내용 전체가 그대로 늘어나고 잘림이 그대로 남는다.
+		if (UBorderSlot* Slot_RootBox = Cast<UBorderSlot>(Root->AddChild(RootBox)))
+		{
+			Slot_RootBox->SetHorizontalAlignment(HAlign_Fill);
+			Slot_RootBox->SetVerticalAlignment(VAlign_Fill);
+		}
+		return true;
+	}
+
+	// =========================================================================
+	// 5) 하단 바
 	// =========================================================================
 
 	/** 상태 행의 한 칸. 값이 없을 때 묶음째 접히도록 `Box_` + `Text_` 짝으로 만든다. */
@@ -650,12 +1200,18 @@ namespace FFPrepHudWbpBuilder
 		BarBox->AddChild(BarRows);
 
 		// --- 메뉴 행 ---
-		MenuRow->SetBrush(MakeSolidBrush(Palette->InGame.Paper));
-		MenuRow->SetPadding(FMargin(0.f));
+		//
+		// ★ 배경이 **버튼 폭까지만** 온다 (2026-08-26 결정).
+		//   `HAlign_Fill` 이면 흰 띠가 화면을 가로질러 흐르고 버튼만 가운데 떠 있어 보인다.
+		//   `HAlign_Center` 로 두면 Border 가 자식(탭 행) 크기로 줄어들어 떠 있는 칩이 된다.
+		//   탭이 조건부로 숨을 때(홍보·피날레) 칩 폭도 같이 줄어든다.
+		MenuRow->SetBrush(MakeSolidBrush(Palette->InGame.Paper, MenuRowCornerRadius));
+		MenuRow->SetPadding(FMargin(4.f, 0.f));
 		if (UVerticalBoxSlot* Slot_MenuRow = BarRows->AddChildToVerticalBox(MenuRow))
 		{
 			Slot_MenuRow->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			Slot_MenuRow->SetHorizontalAlignment(HAlign_Fill);
+			Slot_MenuRow->SetHorizontalAlignment(HAlign_Center);
+			Slot_MenuRow->SetVerticalAlignment(VAlign_Fill);
 		}
 
 		// 탭은 **디자이너에서 보이도록 여기서 직접 놓는다.** 런타임 생성으로 만들면 디자이너에
@@ -829,7 +1385,7 @@ namespace FFPrepHudWbpBuilder
 	void RunPrepHudUmg()
 	{
 		UE_LOG(LogFFUIWbpBuilder, Display,
-			TEXT("%s_BEGIN: 없는 WBP 만 만든다 (탭 버튼 → 자리표시 패널 → 인력 패널 → 하단 바)."),
+			TEXT("%s_BEGIN: 없는 WBP 만 만든다 (탭 버튼 → 자리표시 → 인력 → 선택 버튼 → 점검 → 하단 바)."),
 			PrepLogPrefix);
 
 		// 순서가 고정이다. 바가 탭 버튼의 `GeneratedClass` 를 자식으로 넣는다.
@@ -863,6 +1419,39 @@ namespace FFPrepHudWbpBuilder
 				return BuildStaffPanel(Blueprint, Tree);
 			});
 
+		EnsureWidgetBlueprint(
+			PrepLogPrefix,
+			ChoiceButtonPackage,
+			PrepFolder,
+			*UFF_PrepChoiceButton::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildChoiceButton(Blueprint, Tree);
+			});
+
+		// 점검 패널이 선택 버튼의 `GeneratedClass` 를 자식으로 넣는다. 순서가 고정이다.
+		UClass* ChoiceButtonClass = LoadGeneratedClass(ChoiceButtonPackage);
+		if (ChoiceButtonClass)
+		{
+			EnsureWidgetBlueprint(
+				PrepLogPrefix,
+				CheckPanelPackage,
+				PrepPanelsFolder,
+				*UFF_PrepPanelCheck::StaticClass(),
+				[ChoiceButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+				{
+					return BuildCheckPanel(Blueprint, Tree, *ChoiceButtonClass);
+				});
+		}
+		else
+		{
+			// 잘못된 기본 타입을 대신 넣지 않는다. 그러면 BindWidget 이 통과해 버리고
+			// 런타임에 날씨 버튼이 아무 반응도 하지 않는다.
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: 선택 버튼 클래스를 얻지 못해 점검 패널을 만들지 않았다 (%s)."),
+				PrepLogPrefix, *ChoiceButtonPackage);
+		}
+
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
 		if (!TabButtonClass)
 		{
@@ -894,7 +1483,7 @@ namespace FFPrepHudWbpBuilder
 
 	FAutoConsoleCommand PrepHudUmgCommand(
 		TEXT("FF.PrepHudUMG"),
-		TEXT("준비 단계 HUD 의 WBP 4종(탭 버튼·자리표시 패널·인력 패널·하단 바)을 만든다. "
+		TEXT("준비 단계 HUD 의 WBP 6종(탭 버튼·자리표시·인력·선택 버튼·점검·하단 바)을 만든다. "
 			 "이미 있으면 건드리지 않는다."),
 		FConsoleCommandDelegate::CreateStatic(&RunPrepHudUmg));
 }

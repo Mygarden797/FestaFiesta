@@ -80,6 +80,64 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
 	void CloseCurrentPanel();
 
+	/**
+	 * 열린 패널을 화면에서 끌어 옮긴다. 패널 베이스의 드래그가 이걸 부른다.
+	 *
+	 * @param SlateDelta **슬레이트 단위** 이동량이다. 화면 픽셀을 넣으면 UI 배율이 1 이 아닌
+	 *                   환경에서만 어긋난다 — 호출부가 배율을 한 번 나눠서 넣는다.
+	 *
+	 * 이동량은 **그 탭 레이아웃의 `Offset` 에 바로 쌓인다.** 그래서 패널을 닫고 다시 열어도
+	 * 옮긴 자리가 유지되고, `FF.PrepHud.Layout` 이 찍어 주는 숫자를 그대로 확정할 수 있다.
+	 * 늘어난 축의 이동은 버린다 — 그 방향은 화면이 정하므로 값이 커지면 반대로 밀린다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
+	void NudgePanelPosition(FVector2D SlateDelta);
+
+	/** 옮긴 것을 되돌린다. 그 탭의 `Offset` 을 0 으로 만든다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
+	void ResetPanelPosition();
+
+	// --- 화면을 보면서 맞추기 위한 창구 ---
+	//
+	// 콘솔 명령이 이걸 부른다. **바꾼 값은 이 판이 돌아가는 동안만 유지된다** —
+	// 인스턴스의 표를 고치는 것이고 에셋의 기본값은 그대로다. 확정은 WBP 기본값에 적어서 한다.
+
+	/** 지금 열린 탭의 레이아웃. 열린 것이 없으면 `DefaultPanelLayout`. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Layout")
+	FFF_PrepPanelLayout GetOpenPanelLayout() const;
+
+	/** 지금 열린 탭의 레이아웃을 바꾸고 즉시 반영한다. 열린 것이 없으면 아무것도 하지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Layout")
+	void SetOpenPanelLayout(const FFF_PrepPanelLayout& NewLayout);
+
+	/** 지금 열린 탭의 값을 `PanelLayouts` 에 적어 넣을 형태의 한 줄로 만든다. */
+	FString DescribeOpenPanelLayout() const;
+
+#if !UE_BUILD_SHIPPING
+	/**
+	 * 지금 화면에 올라와 있는 바. **콘솔 명령이 찾아갈 창구다.**
+	 *
+	 * 준비 단계 HUD 는 화면에 하나뿐이고, 콘솔 명령은 위젯 인스턴스를 인자로 받을 방법이
+	 * 없어서 이렇게 둔다. `NativeConstruct` 에서 넣고 `NativeDestruct` 에서 비운다 —
+	 * 약참조라 위젯이 죽은 뒤에 부르면 그냥 실패한다.
+	 */
+	static TWeakObjectPtr<UFF_PrepHudBar> ActiveBar;
+#endif
+
+	/** 지금 패널을 끌어 옮길 수 있는지. `디자이너 지정` 도킹에서는 코드가 자리를 안 만지므로 false. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
+	bool IsPanelDragAllowed() const;
+
+	/**
+	 * 다음 단계로 보내 달라고 요청한다. **CTA 버튼과 같은 경로다.**
+	 *
+	 * 점검 패널의 `개장하기` 처럼 패널 안에도 같은 행동을 하는 버튼이 있어서 공개해 둔다.
+	 * 패널이 Stage 시스템을 직접 부르면 두 곳이 각자 판정해, 한쪽이 막힌 상태에서 다른 쪽만
+	 * 통과하는 화면이 된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
+	void RequestStageAdvance();
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
 	FFF_PrepTabSelection GetSelection() const { return Selection; }
 
@@ -267,18 +325,24 @@ protected:
 	// =========================================================================
 
 	/**
-	 * 예외 표에 없는 탭이 열리는 쪽. 기본은 중앙이다 — 준비 단계 패널은 대부분 읽고 결정하는 화면이다.
-	 * 위젯 코드에 방향을 박지 않는다.
+	 * ★ **탭 하나 = 한 줄.** 그 탭을 열었을 때 패널이 어디에 얼마나 크게 열릴지 정한다.
+	 *
+	 * 방향마다 쓰이는 성분이 다르다 — `FFF_PrepPanelLayout` 주석의 표를 먼저 본다.
+	 * 표에 없는 탭은 `DefaultPanelLayout` 을 쓴다.
+	 *
+	 * === 화면을 보면서 맞추는 순서 ===
+	 * 1. 게임에서 그 탭을 연다
+	 * 2. 패널의 빈 곳을 끌어 자리를 잡고, 콘솔 `FF.PrepHud.SetSize <폭> <높이>` 로 크기를 바꿔 본다
+	 * 3. 마음에 들면 `FF.PrepHud.Layout` 이 찍어 주는 숫자를 이 표에 적는다
+	 *
+	 * 2번의 변경은 **이 판이 돌아가는 동안만** 유지된다. 3번을 해야 확정된다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
-	EFF_PrepPanelDock PanelDock = EFF_PrepPanelDock::Center;
+	TMap<EFF_PrepHudTab, FFF_PrepPanelLayout> PanelLayouts;
 
-	/**
-	 * ★ 탭별 예외. **월드를 만지는 탭만 여기 넣는다.**
-	 * 기본값은 생성자에서 넣는 `배치 → 하단` 하나다 — 지면이 보여야 시설을 놓을 수 있다.
-	 */
+	/** 표에 없는 탭이 쓰는 값. 크기가 0 이하로 들어온 경우의 폴백도 이것이다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
-	TMap<EFF_PrepHudTab, EFF_PrepPanelDock> PanelDockOverrides;
+	FFF_PrepPanelLayout DefaultPanelLayout;
 
 	/**
 	 * 하단 바 높이(px). 패널이 바를 덮지 않게 이만큼 띄운다.
@@ -287,36 +351,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
 	float BarHeight = 58.f;
 
-	/** 패널과 화면 가장자리 사이 여백(px). */
+	/** 패널과 화면 가장자리 사이 여백(px). 늘어나는 축에만 쓰인다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
 	float PanelMargin = 12.f;
-
-	/** `Left`·`Right` 로 열 때의 패널 폭(px). */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
-	float PanelWidthWhenSideDocked = 420.f;
-
-	/**
-	 * `Bottom` 으로 열 때의 패널 높이(px).
-	 * ★ **화면 높이의 40% 를 넘기지 않는다.** 그 이상이면 지면이 가려져 시설이 어디 있는지 안 보인다.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
-	float PanelHeightWhenBottomDocked = 320.f;
-
-	/** `Center` 로 열 때의 패널 크기(px). 1920x1080 기준이고 화면 배율은 엔진이 처리한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
-	FVector2D PanelCenterSize = FVector2D(1160.0, 640.0);
-
-	/**
-	 * `Center` 패널을 화면 정중앙에서 얼마나 밀지(px). 양수는 오른쪽·아래.
-	 *
-	 * ★ **디자이너에서 끌어 옮기는 것으로는 위치가 안 바뀐다.** 패널을 열 때마다
-	 *   `ApplyPanelDock` 이 앵커와 오프셋을 다시 쓰기 때문이다. 여기 숫자로 옮긴다.
-	 *   손으로 잡고 싶으면 `PanelDock` 을 `디자이너 지정` 으로 바꾼다.
-	 *
-	 * 기본값 Y 는 하단 바 높이의 절반만큼 위로 올린 값이다 — 그래야 바를 뺀 영역의 중앙에 온다.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
-	FVector2D PanelCenterOffset = FVector2D(0.0, -29.0);
 
 	/**
 	 * 메뉴 행·상태 행 배경을 코드가 칠할지.
@@ -327,9 +364,45 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
 	bool bPaintRowBackgrounds = true;
 
-	/** 바 모서리 반경(px). 0 이면 각진 사각형이다. */
+	/**
+	 * 상태 행 모서리 반경(px). 0 이면 각진 사각형이다.
+	 * 화면 폭을 꽉 채우는 줄이라 기본은 0 이다 — 둥글리면 양 끝이 떠 보인다.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
 	float RowCornerRadius = 0.f;
+
+	/**
+	 * 메뉴 행 칩 모서리 반경(px).
+	 *
+	 * 메뉴 행은 **버튼 폭까지만** 배경이 오는 떠 있는 칩이라 상태 행과 반경이 다르다.
+	 * 각지게 하려면 0 을 넣는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
+	float MenuRowCornerRadius = 6.f;
+
+	/**
+	 * 메뉴 행 배경을 **버튼 폭까지만** 오게 할지.
+	 *
+	 * 켜면 코드가 메뉴 행의 슬롯 정렬을 `Center` 로 맞춰 Border 가 자식(탭 행) 크기로 줄어든다.
+	 * 끄면 정렬을 건드리지 않으므로 디자이너가 잡은 대로 간다 — 화면 폭을 꽉 채우고 싶으면 끈다.
+	 *
+	 * ★ 런타임에서 맞추는 이유는 **이미 만들어진 WBP 도 고쳐지게** 하기 위해서다.
+	 *   생성기는 비파괴라 슬롯 정렬만 바꾸려고 WBP 를 지우고 다시 만들 이유가 없다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
+	bool bMenuRowHugsButtons = true;
+
+	/**
+	 * 패널을 빈 곳에서 끌어 옮길 수 있게 할지.
+	 *
+	 * 끄면 레이아웃 표의 `Offset` 값만으로 자리가 정해진다. 켜 두면 플레이어가 월드를
+	 * 보려고 패널을 잠깐 밀어 둘 수 있다 — 비모달 화면이라 그게 자연스럽다.
+	 *
+	 * ★ 옮긴 자리는 **이 위젯이 살아 있는 동안만** 유지된다. 단계가 바뀌어 HUD 가 다시 만들어지면
+	 *   설정값 자리로 돌아간다. 저장할 곳이 없어서가 아니라, 다음 단계에서 패널 구성이 달라지기 때문이다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
+	bool bAllowPanelDrag = true;
 
 	/**
 	 * 단계별 CTA 문구. **비어 있는 단계는 CTA 를 아예 숨긴다.**
@@ -442,20 +515,23 @@ private:
 	void RefreshDayStageText(EFF_FestivalStage Stage, int32 Day);
 	void RefreshCta();
 
-	/** 이 탭이 어디에 열리는지. 예외 표를 먼저 보고 없으면 `PanelDock` 을 쓴다. */
-	EFF_PrepPanelDock ResolveDock(EFF_PrepHudTab Tab) const;
+	/**
+	 * 이 탭의 레이아웃. 표를 먼저 보고 없으면 `DefaultPanelLayout` 을 쓴다.
+	 * 크기가 0 이하면 기본값으로 되돌리고 경고를 남긴다 — 0 이면 패널이 사라진다.
+	 */
+	FFF_PrepPanelLayout ResolveLayout(EFF_PrepHudTab Tab) const;
 
 	/**
 	 * 패널 자리를 이 방향으로 맞춘다. **패널을 열 때마다 부른다** — 탭마다 방향이 다르다.
 	 * 호스트가 `CanvasPanel` 자식이 아니면 아무것도 하지 않는다 (위치를 디자이너가 소유한다).
 	 */
-	void ApplyPanelDock(EFF_PrepPanelDock Dock);
+	void ApplyPanelLayout(const FFF_PrepPanelLayout& Layout);
 
 	/**
 	 * 행 배경을 칠한다. **`SetBrushColor` 만으로는 안 된다** — `UBorder` 의 기본 브러시가
 	 * `NoImage` 라 색을 넣어도 그려지지 않는다. 텍스처가 이미 지정돼 있으면 색만 덮는다.
 	 */
-	void PaintRowBackground(UBorder* Border, const FLinearColor& Color) const;
+	void PaintRowBackground(UBorder* Border, const FLinearColor& Color, float CornerRadius) const;
 
 	/** 선택을 실제 화면에 반영한다. 값이 바뀌지 않았으면 아무것도 하지 않는다. */
 	void ApplySelection(const FFF_PrepTabSelection& NewSelection);

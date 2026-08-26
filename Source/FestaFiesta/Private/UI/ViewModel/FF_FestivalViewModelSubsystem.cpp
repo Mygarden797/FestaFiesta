@@ -29,6 +29,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	{
 		CachedStageSubsystem->OnStageChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 		CachedStageSubsystem->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
+		CachedStageSubsystem->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
 	}
 	CachedStageSubsystem = nullptr;
 
@@ -174,9 +175,13 @@ void UFF_FestivalViewModelSubsystem::TryBindStageSubsystem()
 	// 이벤트는 앞으로의 변화만 알려주므로, 이미 지나간 현재 Stage를 놓치지 않으려면 필요하다.
 	CachedStageSubsystem->OnStageChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 	CachedStageSubsystem->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
+	CachedStageSubsystem->OnEnvironmentStateChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
 
 	OnStageViewChanged.Broadcast(GetCurrentStage(), GetCurrentDay());
 	BroadcastRemainingSecondsIfChanged(FMath::CeilToInt(GetRemainingSeconds()));
+
+	// 날씨는 방송을 놓쳤을 수 있으니 현재값을 한 번 반영한다. 중복이면 아무 일도 하지 않는다.
+	LastBroadcastWeather = GetSelectedWeather();
 
 	UE_LOG(LogFestaFiestaUI, Log,
 		TEXT("[ViewModel] Stage 시스템 구독 완료. 현재 Stage=%s Day=%d 남은=%.1f초"),
@@ -268,6 +273,83 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged(int32 NewValue
 	}
 
 	ApplyIntMetric(TotalStaffCount, NewValue, OnTotalStaffCountChanged);
+}
+
+EFF_WeatherType UFF_FestivalViewModelSubsystem::GetSelectedWeather() const
+{
+	const UFF_FestivalStageSubsystem* Stage = GetStageSubsystem();
+
+	// 소유자가 없으면 기본값(맑음)을 돌려준다. 날씨는 항상 하나가 정해져 있는 값이라
+	// `모름` 상태가 없다 — Stage 시스템도 `Clear` 로 시작한다.
+	return Stage ? Stage->GetSelectedWeather() : EFF_WeatherType::Clear;
+}
+
+bool UFF_FestivalViewModelSubsystem::CanChangeWeather() const
+{
+	const UFF_FestivalStageSubsystem* Stage = GetStageSubsystem();
+
+	// 소유자가 없으면 "바꿀 수 있다"고 알리지 않는다. 눌러도 아무 일이 없는 버튼이 더 나쁘다.
+	return Stage ? Stage->IsReconfigureAllowed() : false;
+}
+
+void UFF_FestivalViewModelSubsystem::RequestSetWeather(EFF_WeatherType NewWeather)
+{
+	UFF_FestivalStageSubsystem* Stage = GetStageSubsystem();
+	if (!Stage)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("[ViewModel] Stage 시스템이 없어 날씨를 바꿀 수 없다."));
+		return;
+	}
+
+	// 여기서 단계를 미리 검사하지 않는다. 허용 판정의 소유자는 Stage 시스템이고,
+	// UI 가 한 번 더 판정하면 두 곳의 규칙이 갈라진다 (UI 규칙 2).
+	Stage->SetSelectedWeather(NewWeather);
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetDailyVisitorGoal() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition ? Definition->DailyVisitorGoal : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetDailyGoalBonusGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition ? Definition->DailyGoalBonusGold : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetAdmissionFeeGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition ? Definition->AdmissionFeeGold : INDEX_NONE;
+}
+
+EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetPurchasedFinaleGrade() : EFF_FinaleGrade::None;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetFinaleSatisfactionBonus() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetFinaleSatisfactionBonus() : 0;
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged(EFF_WeatherType NewWeather, bool bIsNight)
+{
+	// 원본은 야간 전환에도 울린다. 날씨가 그대로면 위젯을 깨우지 않는다.
+	if (NewWeather == LastBroadcastWeather)
+	{
+		return;
+	}
+
+	LastBroadcastWeather = NewWeather;
+	OnWeatherChanged.Broadcast(NewWeather);
 }
 
 int32 UFF_FestivalViewModelSubsystem::GetAffordableTemporaryStaffCount() const

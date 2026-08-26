@@ -5,7 +5,14 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
-#include "Time/FF_FestivalStage.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
+
+// !! 전방 선언으로는 안 된다 !!
+// `EFF_WeatherType` 이 `UFUNCTION` 반환형이라 UHT 가 전체 정의를 요구한다.
+// 그 enum 은 강민서님의 `FF_FestivalStageSubsystem.h` 에 있고, 남의 파일에서 enum 을
+// 꺼내 옮기지 않는다 (AGENTS.md 규칙 3).
+#include "Time/FF_FestivalStageSubsystem.h"
+
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
@@ -16,6 +23,7 @@ struct IConsoleCommand;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
 
 /**
  * UI용 Read Model.
@@ -197,7 +205,60 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	int32 GetDailyVenueRentGold() const;
 
+	// --- 환경: 날씨 (2026-08-26 추가 — U5 점검 패널) ---
+	//
+	// 🔴 이 API 는 원래부터 있었다. `UI_API.md` 의 `필요한데 아직 없는 것` 표에 `날씨 없음` 으로
+	// 남아 있던 것이 낡은 기록이었다 (같은 문서 `환경(날씨·야간)` 절에 이미 적혀 있었다).
+	// **날씨 선택은 테스트 기능이 아니라 준비 단계의 플레이어 결정**이다.
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Environment")
+	EFF_WeatherType GetSelectedWeather() const;
+
+	/**
+	 * 지금 날씨를 바꿀 수 있는지. Stage 시스템의 `IsReconfigureAllowed()` 를 그대로 중계한다
+	 * (셋업·홍보·개장 준비에서만 true).
+	 *
+	 * !! 이 값으로 요청을 막지 않는다 !! 버튼 활성 표시에만 쓴다 — 최종 판정은 저쪽이 소유한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Environment")
+	bool CanChangeWeather() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Environment")
+	FFF_OnWeatherViewChanged OnWeatherChanged;
+
+	// --- 일일 목표·입장료 (2026-08-26 추가 — U5 점검 패널) ---
+	//
+	// 축제 정의의 밸런스 값이다. 모르면 `INDEX_NONE` 이고 화면은 그 칸을 숨긴다.
+
+	/** 하루 목표 방문객. 달성하면 `GetDailyGoalBonusGold()` 를 받는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetDailyVisitorGoal() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetDailyGoalBonusGold() const;
+
+	/** 1인당 입장료. 고정값이라 화면에 슬라이더를 두지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetAdmissionFeeGold() const;
+
+	// --- 피날레 (점검 패널의 마지막 날 요약용) ---
+
+	/** 구매한 등급. 안 샀으면 `None`. 구매 화면은 피날레 패널이 따로 갖는다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	EFF_FinaleGrade GetPurchasedFinaleGrade() const;
+
+	/** 구매한 등급의 만족도 가산값. 안 샀으면 0 — 여기 0 은 확정 정보다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	int32 GetFinaleSatisfactionBonus() const;
+
 	// --- Command ---
+
+	/**
+	 * 날씨를 바꿔 달라고 **요청한다.** 허용되지 않는 단계면 Stage 시스템이 무시한다.
+	 * 화면은 `OnWeatherChanged` 결과 이벤트로만 갱신된다 — 낙관적 갱신을 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	void RequestSetWeather(EFF_WeatherType NewWeather);
 
 	/**
 	 * 알바를 `Count` 명 고용해 달라고 **요청한다.**
@@ -386,6 +447,15 @@ protected:
 	void HandleOwnerArrearsChanged(int32 NewValue);
 
 	/**
+	 * 환경 상태를 받아 **날씨만** 중계한다.
+	 *
+	 * 원본은 `(Weather, bIsNight)` 두 값을 함께 쏘는데 야간 전환에도 울린다. 날씨가 실제로
+	 * 바뀔 때만 방송하지 않으면 위젯이 밤이 될 때마다 헛돈다.
+	 */
+	UFUNCTION()
+	void HandleOwnerEnvironmentChanged(EFF_WeatherType NewWeather, bool bIsNight);
+
+	/**
 	 * 전체 인원을 받아 중계한다. 기본·알바 내역은 방송에 실려 오지 않으므로 여기서 다시 읽는다.
 	 * 인자 하나만 믿고 내역을 갱신하지 않으면 "총 6명인데 기본 4 + 알바 0" 같은 화면이 된다.
 	 */
@@ -437,6 +507,10 @@ private:
 	/** 임대료 미납 누적. 하루 경계에서 리셋되지 않는다. */
 	UPROPERTY()
 	int32 Arrears = 0;
+
+	/** 중복 방송 차단용. 야간 전환으로 원본이 울려도 날씨가 같으면 넘긴다. */
+	UPROPERTY()
+	EFF_WeatherType LastBroadcastWeather = EFF_WeatherType::Clear;
 
 	// 스태프는 더미를 두지 않는다. 소유자에게서 오기 전에는 `모름`이고 화면은 칸을 숨긴다.
 

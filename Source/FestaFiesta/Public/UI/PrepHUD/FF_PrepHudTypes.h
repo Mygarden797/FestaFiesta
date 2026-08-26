@@ -62,6 +62,48 @@ enum class EFF_PrepPanelDock : uint8
 };
 
 /**
+ * 탭 하나가 열릴 자리와 크기. **탭 하나 = 한 줄**이다.
+ *
+ * === 🔴 도킹 방향마다 쓰이는 성분이 다르다 ===
+ * 늘어나는 축은 화면이 정하고, 점 앵커 축만 이 값이 정한다. 이걸 모르면 값을 바꿨는데
+ * 아무 일도 안 일어나는 것처럼 보인다.
+ *
+ * | 방향 | `Size` | `Offset` |
+ * | --- | --- | --- |
+ * | `중앙` | X=폭 · Y=높이 **둘 다 쓴다** | 정중앙에서 미는 양. 둘 다 쓴다 |
+ * | `하단` | **Y=높이만.** 가로는 화면 폭에서 여백을 뺀 값 | **Y만.** 바 위로 더 띄우는 양 |
+ * | `왼쪽`·`오른쪽` | **X=폭만.** 세로는 화면 높이에서 바와 여백을 뺀 값 | **X만.** 좌우 미세 조정 |
+ * | `디자이너 지정` | 안 쓴다 | 안 쓴다 |
+ *
+ * 좌표 기준은 1920x1080 이고 화면 배율은 엔진이 처리한다 (`UIScaleRule=ShortestSide`).
+ */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_PrepPanelLayout
+{
+	GENERATED_BODY()
+
+	/** 어디에 열지. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prep Panel Layout")
+	EFF_PrepPanelDock Dock = EFF_PrepPanelDock::Center;
+
+	/**
+	 * 크기(px). 방향에 따라 쓰이는 성분이 다르다 — 구조체 주석의 표를 본다.
+	 * 0 이하면 패널이 사라지므로 그때는 기본 레이아웃 값으로 되돌린다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prep Panel Layout")
+	FVector2D Size = FVector2D(1160.0, 640.0);
+
+	/**
+	 * 기준 위치에서 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
+	 *
+	 * ★ 게임에서 패널을 끌어 옮기면 **이 값이 바뀐다.** 마음에 드는 자리를 찾은 뒤
+	 *   `FF.PrepHud.Layout` 으로 숫자를 확인해 WBP 기본값에 적으면 확정된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Prep Panel Layout")
+	FVector2D Offset = FVector2D::ZeroVector;
+};
+
+/**
  * CTA 버튼의 상태.
  *
  * !! 비활성만 하지 않는다 !! (AT-011) 흐려짐만으로는 왜 못 누르는지 알 수 없으므로
