@@ -10,6 +10,7 @@
 
 class UFF_ActivatableScreenBase;
 class UFF_FestivalAtlasCatalog;
+class UFF_LoadingScreenWidget;
 class UFF_UIRootLayout;
 class UWorld;
 
@@ -58,6 +59,19 @@ public:
 	/** 지구본·국가 지도가 읽는 축제 목록. 레벨 참조가 여기 들어 있다. */
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Foundation")
 	TSoftObjectPtr<UFF_FestivalAtlasCatalog> AtlasCatalog;
+
+	// --- 레벨 로딩 ---
+
+	/**
+	 * 축제 레벨을 여는 동안 MoviePlayer가 보여줄 화면. 일반 화면 스택에는 올라가지 않는다.
+	 * 비어 있으면 경고만 남기고 레벨 전환은 계속한다.
+	 */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Loading")
+	TSoftClassPtr<UFF_LoadingScreenWidget> LoadingScreenClass;
+
+	/** 짧은 로드에서 한 프레임만 번쩍이지 않도록 유지할 최소 시간. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Loading", meta = (ClampMin = "0.0", ClampMax = "10.0", ForceUnits = "s"))
+	float MinimumLoadingScreenDisplayTime = 0.75f;
 
 	// --- 화면 배선 ---
 

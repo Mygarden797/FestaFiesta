@@ -560,12 +560,13 @@ FString AFF_AtlasGlobeActor::DescribeState() const
 
 	return FString::Printf(
 		TEXT("Pins=%d Front=(위도 %.2f, 경도 %.2f) Spin=%.2f Tilt=%.2f "
-			 "Focused=%s Selected=%s Transition=%s MinDot=%.3f 자동자전=%s | %s"),
+			 "Focused=%s Selected=%s Transition=%s PinMinDot=%.3f LandmarkMinDot=%.3f 자동자전=%s | %s"),
 		Pins.Num(), Front.Latitude, Front.Longitude, Orientation.Spin, Orientation.Tilt,
 		FocusedCountryId.IsNone() ? TEXT("(없음)") : *FocusedCountryId.ToString(),
 		SelectedCountryId.IsNone() ? TEXT("(없음)") : *SelectedCountryId.ToString(),
 		bTransitioning ? TEXT("진행 중") : TEXT("없음"),
 		ComputePinVisibleMinDot(),
+		ComputeLandmarkVisibleMinDot(),
 		bAutoSpinPaused ? TEXT("일시정지") : (IsAutoSpinAllowed() ? TEXT("켬") : TEXT("끔 (움직임 감소)")),
 		*FrontAxisNote);
 }
@@ -895,24 +896,56 @@ float AFF_AtlasGlobeActor::ComputePinVisibleMinDot() const
 	return FMath::Clamp(FFF_AtlasGeo::HorizonMinDot(WorldRadius, Distance) + Margin, -1.f, 1.f);
 }
 
+float AFF_AtlasGlobeActor::ComputeLandmarkVisibleMinDot(float HeightScale) const
+{
+	const float Margin = GetAtlasSettings().LandmarkVisibleDotMargin;
+
+	FVector ViewerLocation = FVector::ZeroVector;
+	if (!GetViewerLocation(ViewerLocation))
+	{
+		return Margin;
+	}
+
+	// 반지름·높이·카메라 거리를 모두 월드 단위로 맞춘다. 비등방 스케일 구체는 지원하지 않는다.
+	const float WorldScale = static_cast<float>(GetActorScale3D().GetAbsMax());
+	const float WorldRadius = GlobeRadius * WorldScale;
+	const float SafeHeightScale = FMath::Max(HeightScale, 0.f);
+	const float WorldPointRadius = WorldRadius + LandmarkHeight * SafeHeightScale * WorldScale;
+	const float Distance = static_cast<float>(FVector::Dist(ViewerLocation, GetActorLocation()));
+
+	return FMath::Clamp(
+		FFF_AtlasGeo::ElevatedHorizonMinDot(WorldRadius, WorldPointRadius, Distance) + Margin,
+		-1.f,
+		1.f);
+}
+
 void AFF_AtlasGlobeActor::UpdatePinPresentation()
 {
-	const float MinDot = ComputePinVisibleMinDot();
+	const float PinMinDot = ComputePinVisibleMinDot();
+	const float SelectedScale = GetAtlasSettings().SelectedLandmarkScale;
+	const float LandmarkMinDot = ComputeLandmarkVisibleMinDot();
+	const float SelectedLandmarkMinDot = ComputeLandmarkVisibleMinDot(SelectedScale);
 
 	for (const FFF_AtlasPinInstance& Pin : Pins)
 	{
-		const bool bVisible = FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, MinDot);
+		const bool bSelected = (Pin.CountryId == SelectedCountryId);
+		const bool bLandmarkVisible =
+			FFF_AtlasGeo::IsPinFacingFront(
+				Pin.Location, Orientation, bSelected ? SelectedLandmarkMinDot : LandmarkMinDot);
+		const bool bSurfaceVisible =
+			FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, PinMinDot);
 
 		if (Pin.Anchor)
 		{
 			// 앵커를 숨기면 자식(조형물·조명)까지 함께 숨는다.
-			Pin.Anchor->SetVisibility(bVisible, /*bPropagateToChildren=*/true);
+			Pin.Anchor->SetVisibility(bLandmarkVisible, /*bPropagateToChildren=*/true);
 		}
 
-		// 조명은 뒤편으로 넘어가면 반드시 꺼야 한다 — 숨은 조형물의 빛이 지구를 뚫고 나온다.
+		// 조형물은 높이만큼 일찍 보여도 되지만 조명은 지표 기준을 넘기 전까지 켜지 않는다.
+		// CastShadows=false인 빛이 뒤편에서 지구를 관통하는 것을 막는다.
 		if (Pin.Light)
 		{
-			Pin.Light->SetVisibility(bVisible && Pin.CountryId == SelectedCountryId);
+			Pin.Light->SetVisibility(bSurfaceVisible && bSelected);
 		}
 	}
 }

@@ -20,6 +20,9 @@ public class FestaFiesta : ModuleRules
 			"Niagara","NiagaraCore",
 			"FF_ZoneSystem"
 		});
+
+		// OpenLevel의 블로킹 구간에서도 로딩 화면을 유지한다. 런타임 cpp에서만 사용한다.
+		PrivateDependencyModuleNames.Add("MoviePlayer");
 		
 		// The WBP builder is compiled only into the Editor target. Runtime/Game
 		// packaging remains free of UnrealEd and UMGEditor dependencies.

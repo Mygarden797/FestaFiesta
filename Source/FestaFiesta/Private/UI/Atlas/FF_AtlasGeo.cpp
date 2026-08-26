@@ -161,6 +161,28 @@ float FFF_AtlasGeo::HorizonMinDot(float Radius, float ViewerDistance)
 	return FMath::Clamp(Radius / ViewerDistance, 0.f, 1.f);
 }
 
+float FFF_AtlasGeo::ElevatedHorizonMinDot(float SphereRadius, float PointRadius, float ViewerDistance)
+{
+	if (SphereRadius <= 0.f || PointRadius < SphereRadius || ViewerDistance <= SphereRadius)
+	{
+		return 1.f;
+	}
+
+	const double Radius = static_cast<double>(SphereRadius);
+	const double Point = static_cast<double>(PointRadius);
+	const double Distance = static_cast<double>(ViewerDistance);
+	const double RadiusSquared = Radius * Radius;
+
+	// 관측자-꼭대기 선분이 안쪽 구에 접하는 경계의 `-` 해다.
+	// `+` 해는 바깥 반지름 구의 가까운 쪽 교점이라 뒤편 조형물을 너무 늦게 켠다.
+	const double RootTerm = FMath::Max(
+		0.0,
+		(Distance * Distance - RadiusSquared) * (Point * Point - RadiusSquared));
+	const double MinDot = (RadiusSquared - FMath::Sqrt(RootTerm)) / (Distance * Point);
+
+	return static_cast<float>(FMath::Clamp(MinDot, -1.0, 1.0));
+}
+
 bool FFF_AtlasGeo::IsFacingViewer(const FVector& Normal, const FVector& ViewerDirection, float MinDot)
 {
 	const FVector SafeNormal = Normal.GetSafeNormal();

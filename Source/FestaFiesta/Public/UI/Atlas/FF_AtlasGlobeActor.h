@@ -450,6 +450,12 @@ private:
 	 */
 	float ComputePinVisibleMinDot() const;
 
+	/**
+	 * 솟은 조형물 꼭대기가 지평선을 넘는 정확한 가시성 기준.
+	 * `HeightScale`은 선택 확대까지 반영한다. UMG 핀·선택 조명 기준과 분리한다.
+	 */
+	float ComputeLandmarkVisibleMinDot(float HeightScale = 1.f) const;
+
 	/** 설정을 못 읽는 상황이 없도록 항상 유효한 참조를 돌려준다. */
 	const UFF_AtlasSettings& GetAtlasSettings() const;
 

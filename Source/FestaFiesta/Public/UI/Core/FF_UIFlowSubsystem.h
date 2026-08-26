@@ -12,10 +12,12 @@ class AGameModeBase;
 class APlayerController;
 class UFF_FestivalAtlasCatalog;
 class UFF_ActivatableScreenBase;
+class UFF_LoadingScreenWidget;
 class UFF_TitleScreen;
 class UFF_UIRootLayout;
 class UUserWidget;
 struct FFF_FestivalAtlasEntry;
+struct FWorldContext;
 
 /** 흐름이 지금 어디에 있는지. 프론트엔드에서 Stage 전환을 무시하기 위한 구분이다. */
 UENUM(BlueprintType)
@@ -136,6 +138,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
 	FName GetActiveFestivalId() const { return ActiveFestivalId; }
 
+	/**
+	 * 지금 고른 국가. 국가 지도 화면이 어느 나라를 그려야 하는지가 이 값이다.
+	 *
+	 * ★ **축제를 시작해도, 최종 결산에서 로비로 돌아와도 유지된다.**
+	 *   확정 요구사항이 "뒤로 갈 때 각도와 국가 선택을 유지한다" 인데,
+	 *   지구 각도는 `AFF_AtlasGlobeActor` 가 들고 있고 국가는 여기가 들고 있다.
+	 *   위젯에 두면 화면이 내려갈 때 사라지고, 액터에 두면 레벨이 바뀔 때 사라진다 —
+	 *   흐름 서브시스템만 둘 다 넘어 산다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
+	FName GetActiveCountryId() const { return ActiveCountryId; }
+
+	/**
+	 * 국가를 고른다. 지구본 화면의 `축제 둘러보기` 가 국가 지도로 넘어가기 전에 부른다.
+	 * 값이 실제로 바뀔 때만 알린다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Flow")
+	void SetActiveCountry(FName CountryId);
+
 	/** 지금 떠 있는 프론트엔드 화면. 축제 중이면 `None`. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
 	EFF_UIFlowScreen GetFrontendScreen() const { return CurrentFrontendScreen; }
@@ -167,11 +188,25 @@ protected:
 	UFUNCTION()
 	void HandlePlayHubSaveListRequested();
 
-	/** 플레이 허브·저장 기록·옵션의 `뒤로` 가 모두 여기로 온다. */
+	/** 플레이 허브·저장 기록·옵션·Atlas 화면의 `뒤로` 가 모두 여기로 온다. */
 	UFUNCTION()
 	void HandleFrontendBackRequested();
 
+	/** 지구본의 `축제 둘러보기`. 고른 나라를 기억하고 국가 지도로 넘어간다. */
+	UFUNCTION()
+	void HandleAtlasBrowseFestivals(FName CountryId);
+
+	/** 국가 지도의 `축제 시작`. 여기서 프론트엔드가 인게임으로 넘어간다. */
+	UFUNCTION()
+	void HandleAtlasStartFestival(FName FestivalId);
+
 private:
+	/** 이 GameInstance가 시작한 축제 맵 로드에만 MoviePlayer 화면을 준비한다. */
+	void HandlePreLoadMapWithContext(const FWorldContext& WorldContext, const FString& MapName);
+
+	/** MoviePlayer가 끝난 뒤 UUserWidget 강참조를 놓는다. */
+	void HandleLoadingScreenFinished();
+
 	/** 없으면 만들어 뷰포트에 올린다. 레벨이 바뀌면 이전 것은 이미 죽어 있다. */
 	bool EnsureRootLayout(APlayerController* Controller);
 
@@ -230,11 +265,30 @@ private:
 	FName ActiveFestivalId;
 
 	/**
+	 * 지금 고른 국가. **`ActiveFestivalId` 와 달리 축제가 끝나도 비우지 않는다** —
+	 * 로비로 돌아오면 그 나라의 지도를 다시 보여줘야 하기 때문이다.
+	 */
+	FName ActiveCountryId;
+
+	/**
 	 * 축제 레벨 로드를 기다리는 중인지.
 	 * `StartFestival` 에서 곧바로 `RequestTransition` 을 부르면 죽어가는 월드에 화면을 올리게 된다.
 	 * 그래서 레벨이 열린 뒤(`HandlePostLogin`)에 Stage 를 세운다.
 	 */
 	bool bPendingFestivalStart = false;
 
+	/** StartFestival이 미리 로드한 로딩 화면 클래스와 표시 문맥. PreLoadMap에서 한 번 소비한다. */
+	UPROPERTY(Transient)
+	TSubclassOf<UFF_LoadingScreenWidget> PendingLoadingScreenClass;
+
+	FText PendingLoadingFestivalName;
+	FString PendingLoadingMapPackage;
+
+	/** 맵 여행 동안 로딩 UUserWidget이 GC되지 않게 GameInstance 수명으로 붙든다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_LoadingScreenWidget> ActiveLoadingScreenWidget;
+
 	FDelegateHandle PostLoginHandle;
+	FDelegateHandle PreLoadMapHandle;
+	FDelegateHandle MoviePlaybackFinishedHandle;
 };

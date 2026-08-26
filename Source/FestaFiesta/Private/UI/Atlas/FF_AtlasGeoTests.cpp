@@ -366,6 +366,35 @@ bool FFF_AtlasGeo_FarSidePinsAreHidden::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 지표보다 솟은 조형물의 꼭대기는 밑면보다 먼저 지평선을 넘어온다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasGeo_ElevatedLandmarkAppearsBeforeSurface,
+	"FestaFiesta.UI.AtlasGeo.ElevatedLandmarkAppearsBeforeSurface",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_AtlasGeo_ElevatedLandmarkAppearsBeforeSurface::RunTest(const FString& Parameters)
+{
+	constexpr float Tolerance = 1.e-4f;
+
+	TestEqual(TEXT("높이가 0이면 표면 지평선 식과 같다"),
+		FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 3.f, 5.f), 0.6f, Tolerance);
+	TestEqual(TEXT("높이 0.75면 꼭대기가 정확히 90도에서 보이기 시작한다"),
+		FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 3.75f, 5.f), 0.f, Tolerance);
+	TestEqual(TEXT("더 높은 점은 90도 뒤편에서도 보인다"),
+		FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 5.f, 5.f), -0.28f, Tolerance);
+	TestEqual(TEXT("카메라가 꼭대기 반경 안이어도 구 밖이면 유한한 경계를 낸다"),
+		FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 5.f, 4.f), -0.07915f, Tolerance);
+
+	const float SurfaceThreshold = FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 3.f, 5.f);
+	const float TallThreshold = FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 5.f, 5.f);
+	TestTrue(TEXT("높이가 커질수록 임계가 낮아져 더 일찍 보인다"), TallThreshold < SurfaceThreshold);
+
+	TestEqual(TEXT("점이 구 안이면 안전하게 숨긴다"),
+		FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 2.f, 5.f), 1.f, Tolerance);
+	TestEqual(TEXT("관측자가 구 안이면 안전하게 숨긴다"),
+		FFF_AtlasGeo::ElevatedHorizonMinDot(3.f, 5.f, 2.f), 1.f, Tolerance);
+
+	return true;
+}
+
 // 조형물이 지표에 서고, 방향이 제멋대로 돌아가지 않는다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasGeo_LandmarkStandsOnSurface, "FestaFiesta.UI.AtlasGeo.LandmarkStandsOnSurface", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_AtlasGeo_LandmarkStandsOnSurface::RunTest(const FString& Parameters)
