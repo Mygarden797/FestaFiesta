@@ -93,7 +93,15 @@ namespace FFPrepHudWbpBuilder
 	constexpr float TabIconSize = 13.f;
 
 	/** 메뉴 행 칩의 모서리 반경. `UFF_PrepHudBar::MenuRowCornerRadius` 와 같게 유지한다. */
-	constexpr float MenuRowCornerRadius = 6.f;
+	constexpr float MenuRowCornerRadius = 0.f;
+
+	/**
+	 * 탭 버튼 모서리 반경. 각지게 하려면 0 이다.
+	 *
+	 * 이 값은 `WBP_FF_PrepHudTabButton` 의 버튼 스타일에 **구워진다** — 런타임 설정이 아니다.
+	 * 이미 만들어진 WBP 는 디자이너에서 직접 고친다 (생성기는 비파괴).
+	 */
+	constexpr float TabCornerRadius = 4.f;
 
 	/**
 	 * 🔴 텍스처 없이 단색을 칠하는 브러시.
@@ -143,15 +151,16 @@ namespace FFPrepHudWbpBuilder
 
 		// ★ 선택 상태 브러시는 `Pressed` 슬롯이다. 베이스가 선택 중에 세 상태 모두에 적용한다.
 		//   배경 형태가 바뀌어야 색맹 사용자도 선택을 구분할 수 있다 (AT-011).
+		//
+		// 🔴 **엔진 기본 버튼 텍스처를 틴트하지 않는다.** 처음엔 `TintColor` + `DrawAs = Box` 로
+		//    했는데, 그 텍스처가 둥근 9-slice 라 모서리가 우리가 정하지 않은 모양으로 나온다.
+		//    버튼 폭에 따라 9-slice 가 눌려서 **끝 버튼만 다르게 보이는** 일이 실제로 있었다
+		//    (2026-08-26). 다른 버튼들과 같이 `MakeSolidBrush` 로 모서리를 명시한다.
 		FButtonStyle Style = Root->GetStyle();
-		Style.Normal.TintColor = FSlateColor(Palette->InGame.Paper);
-		Style.Normal.DrawAs = ESlateBrushDrawType::Box;
-		Style.Hovered.TintColor = FSlateColor(Palette->InGame.Hover);
-		Style.Hovered.DrawAs = ESlateBrushDrawType::Box;
-		Style.Pressed.TintColor = FSlateColor(Palette->InGame.Teal);
-		Style.Pressed.DrawAs = ESlateBrushDrawType::Box;
-		Style.Disabled.TintColor = FSlateColor(Palette->InGame.PaperSunken);
-		Style.Disabled.DrawAs = ESlateBrushDrawType::Box;
+		Style.Normal = MakeSolidBrush(Palette->InGame.Paper, TabCornerRadius);
+		Style.Hovered = MakeSolidBrush(Palette->InGame.Hover, TabCornerRadius);
+		Style.Pressed = MakeSolidBrush(Palette->InGame.Teal, TabCornerRadius);
+		Style.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, TabCornerRadius);
 		Style.NormalPadding = FMargin(10.f, 4.f);
 		Style.PressedPadding = FMargin(10.f, 4.f);
 		Root->SetStyle(Style);

@@ -138,7 +138,7 @@ void UFF_PrepHudBar::NativePreConstruct()
 	}
 
 	// 일차·단계는 밝은 상태 행 위에서 이 한 줄만 도드라져야 한다. 어두운 판 + 흰 글씨다.
-	PaintRowBackground(Border_DayStage, Palette->InGame.TealDeep, 4.f);
+	PaintRowBackground(Border_DayStage, Palette->InGame.TealDeep, DayStageCornerRadius);
 	if (Text_DayStage)
 	{
 		Text_DayStage->SetColorAndOpacity(FSlateColor(Palette->InGame.White));
