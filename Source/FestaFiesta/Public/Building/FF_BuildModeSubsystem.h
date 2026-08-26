@@ -75,6 +75,12 @@ namespace FFBuildModeModel
 			State == EFF_BuildModeState::Moving;
 	}
 
+	// 사용자용 격자는 시설을 실제로 놓거나 옮기는 순간에만 보여 일반 플레이와 메뉴 탐색을 가리지 않는다.
+	inline bool ShouldShowPlacementGrid(const EFF_BuildModeState State)
+	{
+		return IsPreviewActive(State);
+	}
+
 	inline EFF_BuildModeState ResolvePreviewCancelState(const EFF_BuildModeState State)
 	{
 		return State == EFF_BuildModeState::Moving
@@ -130,6 +136,44 @@ namespace FFBuildModeModel
 		const bool bZonePhaseAllowsReconfigure)
 	{
 		return bFestivalStageAllowsReconfigure && bZonePhaseAllowsReconfigure;
+	}
+
+	inline int32 SanitizePositionSnapCm(const int32 ValueCm, const int32 FallbackCm)
+	{
+		return ValueCm >= 1 && ValueCm <= 100 ? ValueCm : FallbackCm;
+	}
+
+	// 자유 배치는 권위 좌표의 최소 단위인 1cm, 정밀 배치는 25cm, 기본 배치는 1m를 사용한다.
+	// Alt와 Ctrl을 동시에 누르면 더 자유로운 Alt가 우선해 사용자가 자동 맞춤을 즉시 벗어날 수 있다.
+	inline int32 ResolvePlacementPositionSnapCm(
+		const bool bPrecisionModifierDown,
+		const bool bFreeModifierDown,
+		const int32 DefaultSnapCm,
+		const int32 PrecisionSnapCm,
+		const int32 FreeSnapCm)
+	{
+		const int32 SafeDefaultSnapCm = SanitizePositionSnapCm(DefaultSnapCm, 100);
+		const int32 SafePrecisionSnapCm = SanitizePositionSnapCm(PrecisionSnapCm, 25);
+		const int32 SafeFreeSnapCm = SanitizePositionSnapCm(FreeSnapCm, 1);
+		if (bFreeModifierDown)
+		{
+			return SafeFreeSnapCm;
+		}
+		return bPrecisionModifierDown ? SafePrecisionSnapCm : SafeDefaultSnapCm;
+	}
+
+	// 1cm 자유 배치에서도 측정 기준인 1m 격자는 남겨 두되, 25cm 정밀 모드에서는 보조선을 펼친다.
+	inline int32 ResolveVisualGridStepCm(
+		const int32 ActivePositionSnapCm,
+		const int32 DefaultPositionSnapCm)
+	{
+		if (ActivePositionSnapCm >= 25 && ActivePositionSnapCm <= 1000)
+		{
+			return ActivePositionSnapCm;
+		}
+		return DefaultPositionSnapCm >= 25 && DefaultPositionSnapCm <= 1000
+			? DefaultPositionSnapCm
+			: 100;
 	}
 
 	// Q/E의 첫 edge는 스냅 또는 자유 회전 gesture 중 정확히 하나만 시작해야 한다.
@@ -213,7 +257,9 @@ public:
 	// DeveloperSettings가 없거나 런타임 config가 범위를 벗어났을 때 사용하는 조작 안전값.
 	static constexpr float DefaultPlacementRotationSnapDegrees = 45.0f;
 	static constexpr float DefaultFreePlacementRotationSpeedDegreesPerSecond = 90.0f;
-	static constexpr int32 DefaultPlacementPositionSnapCm = 1;
+	static constexpr int32 DefaultPlacementPositionSnapCm = 100;
+	static constexpr int32 DefaultPrecisionPlacementPositionSnapCm = 25;
+	static constexpr int32 DefaultFreePlacementPositionSnapCm = 1;
 
 	// 지원 월드인지와 QA 전용 맵인지 확인해 이 서브시스템을 생성할지를 결정한다.
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
@@ -350,6 +396,10 @@ private:
 	// Shift가 눌린 Q/E edge로 시작한 자유 회전 gesture다. 키 해제 전 일반 스냅으로 바뀌지 않는다.
 	bool bFreeRotateLeftGesture = false;
 	bool bFreeRotateRightGesture = false;
+	// G 토글은 현재 건축 세션 안에서 유지되고 새 세션은 친숙한 기본값인 표시 상태로 시작한다.
+	bool bPlacementGridVisible = true;
+	// Ctrl/Alt 전환도 커서 위치가 같을 때 프리뷰와 격자를 다시 그리도록 마지막 간격을 기억한다.
+	int32 CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
 	// 썸네일 해제 방송 중 공개 전환 API가 재진입해 Closed 불변식을 깨뜨리지 않게 한다.
 	bool bIsExitingBuildMode = false;
 	// 현재 CommitPreview의 Move 이벤트가 돌아오는 동안만 true다.
@@ -368,6 +418,7 @@ private:
 	void HandleInput(APlayerController& Controller, float DeltaTime);
 	// Q/E 스냅과 Shift+Q/E 자유 회전 gesture를 처리한다. 회전은 dirty 표시만 하고 검증은 Tick 주기를 따른다.
 	void HandlePlacementRotationInput(APlayerController& Controller, float DeltaTime);
+	void TogglePlacementGrid();
 	void ResetPlacementRotationInput();
 	void SnapPlacementRotation(int32 Direction);
 	// 디자이너 위젯을 생성하고 델리게이트를 연결한다. 바인딩이 깨졌으면 C++ 안전 UI로 폴백한다. 
@@ -436,6 +487,7 @@ private:
 	float GetPlacementRotationSnapDegrees() const;
 	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
 	int32 GetPlacementPositionSnapCm() const;
+	int32 GetPlacementVisualGridStepCm(int32 ActivePositionSnapCm) const;
 	// Zone System의 현재 단계가 시설 변경을 허용하는 InitialSetup/MorningCheck인지 확인한다. 
 	bool CanReconfigure() const;
 	// B 입력으로 세션 자체를 열 수 있는지 Festival Stage와 Zone 정책을 함께 확인한다.

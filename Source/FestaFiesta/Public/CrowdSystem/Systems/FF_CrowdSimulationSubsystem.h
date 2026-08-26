@@ -7,6 +7,7 @@
 #include "CrowdSystem/Systems/FF_CrowdDensityGrid.h"
 #include "CrowdSystem/Systems/FF_CrowdForces.h"
 #include "CrowdSystem/Systems/FF_CrowdHeightField.h"
+#include "CrowdSystem/Systems/FF_CrowdPathFollow.h"
 #include "CrowdSystem/Systems/FF_CrowdSpatialGrid.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
@@ -208,6 +209,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetPendingDecisionCount() const { return DecisionQueue.Num(); }
 
+	/**
+	 * 이 목적지로 지금 걸어가고 있는 인원. 줄에 들어간 파티는 세지 않는다.
+	 *
+	 * 결정 배치(ProcessDecisions) 시작 시점에 다시 지은 값이므로, 결정이 한 건도 없는
+	 * 프레임에서는 갱신되지 않는다 — 계수기가 아니라 그 배치가 본 스냅샷이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetInTransitMemberCount(FName DestinationId) const
+	{
+		return InTransitMemberCounts.FindRef(DestinationId);
+	}
+
+	// 지금 누군가 향하고 있는 목적지의 수. 0이면 전원이 배회 중이거나 줄에 있다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetInTransitDestinationCount() const { return InTransitMemberCounts.Num(); }
+
+	// 한 목적지에 몰린 최대 인원. 몰림이 잡히는지 보는 값이다 — 시설 정원보다 크면 도착 후 거절이 난다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetMaxInTransitMemberCount() const;
+
 	// 대기열 배선을 끊거나 다시 잇는다. 끄면 시설에 도착해도 줄을 서지 않고 곧바로 재평가한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue")
 	bool bEnableQueueJoin = true;
@@ -253,6 +274,29 @@ public:
 	// 한 프레임에 처리할 결정 개수 상한.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Decision")
 	int32 MaxDecisionsPerFrame = 64;
+
+	/**
+	 * 목적지 방향으로 이 스텝 수만큼 연속으로 못 나아가면 목적지를 다시 고른다. 0이면 끈다.
+	 *
+	 * ### 왜 필요한가 — 걷는 구간에만 안전장치가 없었다
+	 * 오래 걸리는 다른 두 경로에는 이미 타임아웃이 있다(퇴장은 Temp_LeaveTimeoutSeconds,
+	 * 큐는 QueueHoldTimeoutSeconds). 시설로 걸어가는 구간만 없어서, 잼에 막힌 파티는
+	 * 도착하거나 영원히 밀어붙이는 두 가지뿐이었다 — 그 사이에 흩어질 방법이 없으므로
+	 * 인기 시설 앞 병목이 스스로 풀리지 않는다.
+	 *
+	 * ### 왜 조향의 StuckDetectSteps(40)와 다른 값인가
+	 * 그쪽은 "탈출 가속을 태울 시점"이고 1.33초다. 회피는 서로 비켜가며 잠깐 막히는 것이
+	 * 정상 동작이라, 그 임계로 목적지를 바꾸면 아무도 도착하지 못한다. 이 값은 "이 목적지는
+	 * 포기한다"의 임계이므로 한 자리 크게 잡는다. 300스텝 = 10초(30Hz).
+	 *
+	 * 근거 없는 초기값이다. FF.Crowd.Stats 의 막힘 비율과 아래 계수기를 같이 보고 잡을 것.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Decision", meta = (ClampMin = "0"))
+	int32 DecisionStuckSteps = 300;
+
+	// 막힘 때문에 목적지를 다시 고른 횟수. 0이면 이 경로가 한 번도 안 걸린 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
+	int32 GetStuckDecisionRequests() const { return StuckDecisionRequests; }
 
 	// 목적지를 못 받았을 때 배회할 반경, UU. 리더의 현재 위치 기준이다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Decision")
@@ -325,7 +369,7 @@ public:
 
 	// 회피를 켠다. ★ 기본값은 false다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bEnableAvoidance = false;
+	bool bEnableAvoidance = true;
 
 	// 사회력 계수. 전부 SI(m, kg, N) 단위다 — 자세한 이유는 구조체 주석 참고.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
@@ -340,6 +384,10 @@ public:
 	bool bAvoidanceUseFacilityWalls = true;
 
 	// 시설 벽에 여유(Clearance) 링까지 포함시킨다. 기본값은 **끔**(바닥면만).
+	//
+	// ★ 켜면 반발 벽이 ZoneSystem의 nav 구멍보다 커진다. 그쪽은 고형 footprint만 도려내므로
+	//   경로는 clearance를 통과 가능한 것으로 계획하는데 힘은 밀어내 서로 싸운다.
+	//   좁은 통로에서 웨이포인트와 반발이 평형을 이뤄 사람이 멈춰 선다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceFacilityWallsIncludeClearance = false;
 
@@ -354,6 +402,42 @@ public:
 	// 목표 추종을 사회력의 **구동력**으로 계산한다. bEnableAvoidance가 켜져 있을 때만 의미가 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceDrivesVelocity = true;
+
+	// --- 경로추종 --------------------------------------------------------------------------
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Path")
+	bool bEnablePathFollowing = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Path", meta = (ClampMin = "1"))
+	int32 PathQueriesPerStep = 32;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Path", meta = (ClampMin = "1.0"))
+	float WaypointAcceptanceRadiusUU = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Path", meta = (ClampMin = "1.0"))
+	float RepathToleranceUU = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Path", meta = (ClampMin = "0.0"))
+	float MinPathQueryDistanceUU = 400.f;
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
+	int32 GetPathFollowingCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
+	int32 GetPathQueriesIssued() const { return PathQueriesIssued; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
+	int32 GetPathQueryFailures() const { return PathQueryFailures; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
+	int32 GetPathQueryBacklog() const { return PathQueryBacklog; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
+	int32 GetPartialPathCount() const { return PartialPathCount; }
+
+	// 배치가 바뀌어 경로를 통째로 버린 횟수. 시설 설치·이동·철거 횟수와 맞아야 한다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
+	int32 GetPathLayoutInvalidations() const { return PathLayoutInvalidations; }
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Avoidance")
 	bool WasAvoidanceAppliedLastStep() const { return bAvoidanceAppliedLastStep; }
@@ -400,6 +484,30 @@ public:
 	float InitialNeedModeFraction = 0.15f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need")
 	FFF_NeedRiseRates NeedRiseRates;
+
+	/**
+	 * 시설 이용 완료 시 파티 전원의 Need 를 깎고 방문을 기록한다.
+	 *
+	 * 해소와 방문 기록을 한 함수에 묶은 이유: 둘 다 "이용 완료" 한 시점에만 일어나야 하는데
+	 * 호출부가 갈리면 한쪽만 불리는 상태가 생긴다. 실제로 RecordVisit 이 RequestDecision 에
+	 * 있던 동안 거절·포기한 시설까지 "가봤음"으로 기록되고 있었다.
+	 *
+	 * 어떤 성분을 깎을지는 결정 시점에 저장해 둔 State.CurrentNeedRelief 를 쓴다.
+	 * 목적지가 없거나(NAME_None) 배회로 온 파티는 아무것도 하지 않는다.
+	 *
+	 * 파티원 전원에게 같은 해소량을 적용한다. Relieve 가 0 아래로 clamp 하므로
+	 * 원래 Need 가 낮았던 멤버는 0 이 되어 개체차가 일부 사라진다 — 의도한 단순화다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Need")
+	void ApplyPartyNeedRelief(int32 PartyID);
+
+	// 해소가 실제로 몇 번 적용됐는지. 0 에서 안 올라가면 완료 통지가 안 오는 것이다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
+	int32 GetNeedReliefApplied() const { return NeedReliefApplied; }
+
+	// 완료 통지는 왔는데 해소할 성분이 없었던 횟수(배회 목적지·플래그 미설정 시설).
+	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
+	int32 GetNeedReliefSkipped() const { return NeedReliefSkipped; }
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Stay")
 	float Temp_LiveStageMinutes = 240.f;
 	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
@@ -417,7 +525,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Temp")
 	void SetTemp_ExitWorldLocation(FVector NewExitWorldLocation);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Temp")
-	float Temp_ExitArrivalRadiusUU = 60.f;
+	float Temp_ExitArrivalRadiusUU = 400.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Temp")
 	float Temp_LeaveTimeoutSeconds = 180.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need")
@@ -469,6 +577,12 @@ private:
 
 	void ComputeAvoidanceForces(const CrowdSteering::FStepParams& Params);
 
+	void UpdatePathFollowing();
+
+	bool BuildPathForAgent(int32 AgentIndex);
+
+	void InvalidatePathsOnLayoutChange();
+
 	CrowdSteering::FStepParams MakeStepParams() const;
 
 	void ClearAvoidanceForces();
@@ -491,8 +605,6 @@ private:
 	void EnsureFacilityWalls();
 
 	int32 AppendFacilityWalls();
-
-	FVector PickRandomDestination();
 
 	void ProcessDecisions();
 
@@ -608,12 +720,28 @@ private:
 	int32 FacilityWallCount = 0;
 
 	// 마지막 재구축 때 ZoneSystem을 찾았는가. 조용히 벽 없이 도는 것이 가장 위험하다
-	bool bFacilityWallsSawZoneSystem = false;
+	bool bFacilityWallsSawZoneSystem = true;
 
 	// 마지막 재구축이 어떤 손잡이 값으로 지어졌는지.
 	bool bBuiltWithBoundaryWalls = false;
 	bool bBuiltWithFacilityWalls = false;
 	bool bBuiltWithClearance = false;
+
+	// --- 경로추종 상태 -----------------------------------------------------------------------
+
+	TArray<FFF_CrowdPathFollower> PathFollowers;
+
+	int32 PathQueryCursor = 0;
+
+	int32 PathQueriesIssued = 0;
+	int32 PathQueryFailures = 0;
+	int32 PathQueryBacklog = 0;
+	int32 PartialPathCount = 0;
+
+	// 경로를 뽑을 때의 배치 리비전. 이게 바뀌면 살아 있는 모든 경로가 낡은 것이다
+	int64 PathLayoutRevision = -1;
+
+	int32 PathLayoutInvalidations = 0;
 
 	// --- 지형 ------------------------------------------------------------------------------
 
@@ -645,6 +773,13 @@ private:
 	UPROPERTY()
 	TObjectPtr<UDataTable> CachedCoefficientTable;
 	float StayDrainMultiplierAtMaxNeed = 1.f;
+
+	// 계수 테이블에서 1회 로드. Relieve 가 성분별로 깎을 양이다.
+	FFF_NeedReliefAmounts NeedReliefAmounts;
+
+	int32 NeedReliefApplied = 0;
+	int32 NeedReliefSkipped = 0;
+
 	int32 LeftPartyCount = 0;
 	int32 ForcedLeaveCount = 0;
 
@@ -660,6 +795,10 @@ private:
 	// 결정 churn 계수기. 쿨다운이 실제로 무엇을 막았는지 보려면 둘을 같이 봐야 한다
 	int32 DecisionCooldownSkips = 0;
 	int32 DecisionsProcessed = 0;
+
+	// 막힘으로 목적지를 포기한 횟수. 위 둘과 같이 봐야 한다 — 이 값만 크면 잼이 안 풀리는 것이고,
+	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
+	int32 StuckDecisionRequests = 0;
 
 	// 큐 진행 감시. SampleQueueLiveness가 매 스텝 갱신한다
 	float LastObservedQueueSimTime = -1.f;
@@ -678,5 +817,27 @@ private:
 
 	// 결정을 기다리는 리더 AgentIndex, FIFO. 앞에서 잘라내므로 예산에 걸려 밀린 파티가 다음 프레임 맨 앞이 된다 — 굶는 파티가 없다
 	TArray<int32> DecisionQueue;
-	
+
+	/**
+	 * 목적지 → 지금 그곳으로 걸어가고 있는 인원. 결정 배치에 스냅샷으로 빌려준다.
+	 *
+	 * ### 왜 증감 원장이 아니라 매 배치 재구축인가
+	 * 목적지를 놓는 경로가 다섯이다(도착·가입 거절·큐 퇴장·퇴장 전환·디스폰). 증감으로 두면
+	 * 그중 하나만 빠져도 원장이 조용히 새고, 새는 방향은 항상 "실제보다 많다"라서
+	 * 있지도 않은 인원 때문에 아무도 그 시설을 안 가게 된다 — 화면에는 원인이 안 보인다.
+	 * 재구축은 매번 PartyDecisionStates 를 훑는 값이라 그런 상태가 한 프레임도 유지되지 않는다.
+	 *
+	 * 비용은 (결정이 있는 프레임 × 리더 수) 다. 결정이 0건인 프레임에서는 아예 돌지 않는다.
+	 */
+	TMap<FName, int32> InTransitMemberCounts;
+
+	/**
+	 * InTransitMemberCounts 를 PartyDecisionStates 로부터 다시 짓는다. 결정 배치 앞에서 한 번 부른다.
+	 *
+	 * 세는 대상은 "목적지를 들고 아직 걸어가고 있는 파티"뿐이다. 제외 조건과 이유:
+	 *   - 재평가 대기 중  : RequestDecision 이 CurrentDestinationId 를 이미 비웠다(자동 제외)
+	 *   - 큐에 들어간 파티 : 대기시간이 이미 세고 있다 → 이중 계산
+	 *   - 퇴장 중         : 시설로 가지 않는다
+	 */
+	void RebuildInTransitMemberCounts();
 };

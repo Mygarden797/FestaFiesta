@@ -173,23 +173,49 @@ FFF_SlotAssignment FFF_FacilityQueue::ResolveSlot(int32 AgentId, int32 PartyId, 
 	return Assignment;
 }
 
+int32 FFF_FacilityQueue::GetPartySlotSpan(const int32 MemberCount) const
+{
+	const int32 Members = FMath::Max(1, MemberCount);
+	if (Members <= 1)
+	{
+		return 1;
+	}
+
+	const float Spacing = FMath::Max(1.f, Lane.SlotSpacingCm);
+	const float FormationSpacing = FMath::Max(0.f, Config.PartyFormationSpacing);
+	if (FormationSpacing <= 0.f)
+	{
+		return 1;
+	}
+
+	// Crowd 포메이션은 리더를 중심으로 나선을 그리며 퍼진다. 마지막 멤버가 가장 멀고,
+	// 그 거리는 간격 곱하기 (인원 - 1) 의 제곱근이다.
+	//
+	// 지름이 아니라 반경으로 계산한다. 지름을 쓰면 리더 앞쪽까지 자리를 잡아
+	// 앞 일행과의 간격이 필요 이상으로 벌어진다.
+	const float BackwardReach = FormationSpacing * FMath::Sqrt(static_cast<float>(Members - 1));
+
+	return FMath::Max(1, FMath::CeilToInt(BackwardReach / Spacing));
+}
+
 void FFF_FacilityQueue::BuildSlotAssignments(TArray<FFF_SlotAssignment>& OutAssignments) const
 {
 	OutAssignments.Reset();
-	OutAssignments.Reserve(GetOccupiedMemberCount());
+	OutAssignments.Reserve(Parties.Num());
 
+	// 일행당 자리 하나. 멤버 배치는 Crowd 의 포메이션이 맡는다.
+	// 여기서 멤버마다 다른 좌표를 주면 그 포메이션과 싸워서 일행이 흩어진다.
 	int32 SlotCursor = 0;
 	for (const FFF_QueuedParty& Party : Parties)
 	{
-		for (int32 MemberIndex = 0; MemberIndex < Party.MemberCount; ++MemberIndex)
-		{
-			// AgentId를 못 받았으면 INDEX_NONE으로 둔다 — Crowd 쪽에서 무시하거나 경고할 수 있게.
-			const int32 AgentId = Party.MemberAgentIds.IsValidIndex(MemberIndex)
-				? Party.MemberAgentIds[MemberIndex]
-				: INDEX_NONE;
-			OutAssignments.Add(ResolveSlot(AgentId, Party.PartyId, SlotCursor));
-			++SlotCursor;
-		}
+		// 리더가 없으면 첫 멤버를 대신 쓴다. 둘 다 없으면 INDEX_NONE 이 나가고
+		// 받는 쪽이 무시한다.
+		const int32 LeaderId = Party.MemberAgentIds.Num() > 0
+			? Party.MemberAgentIds[0]
+			: INDEX_NONE;
+
+		OutAssignments.Add(ResolveSlot(LeaderId, Party.PartyId, SlotCursor));
+		SlotCursor += GetPartySlotSpan(Party.MemberCount);
 	}
 }
 

@@ -18,6 +18,9 @@ namespace FFF_UtilityDestinationSelectorTestHelpers
 	constexpr float TestPriorityHunger = 0.85f;
 	constexpr float TestPriorityThirst = 0.75f;
 	constexpr float TestPriorityFatigue = 0.60f;
+	constexpr float TestWeightFailedDestination = 1.2f;
+	constexpr float TestWeightInTransit = 0.7f;
+	constexpr float TestInTransitRefCount = 12.f;
 
 	UDataTable* MakeTestCoefficientTable()
 	{
@@ -51,6 +54,10 @@ namespace FFF_UtilityDestinationSelectorTestHelpers
 		AddRow(TEXT("need_priority_thirst"), TestPriorityThirst);
 		AddRow(TEXT("need_priority_fatigue"), TestPriorityFatigue);
 		AddRow(TEXT("need_priority_stimulation"), 0.50f);
+		AddRow(TEXT("weight_revisit"), 0.5f);
+		AddRow(TEXT("weight_failed_destination"), TestWeightFailedDestination);
+		AddRow(TEXT("weight_in_transit"), TestWeightInTransit);
+		AddRow(TEXT("in_transit_ref_count"), TestInTransitRefCount);
 		return Table;
 	}
 
@@ -620,6 +627,195 @@ bool FFF_UtilityDestinationSelector_NeedBeatsBestLikedAlternative::RunTest(const
 		Candidates, Preference, nullptr, 1, 1, 0, Mild);
 	TestTrue(TEXT("가벼운 Need 는 취향을 뒤집지 못한다"),
 		FindProbability(MildDecision, TEXT("UrgentRelief")) < FindProbability(MildDecision, TEXT("BestLiked")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_FailedDestinationLosesToAlternative, "FestaFiesta.NPC.UtilityDestinationSelector.FailedDestinationLosesToAlternative", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_FailedDestinationLosesToAlternative::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	FFF_DestinationCandidate Failed =
+		MakeCandidate(TEXT("Failed"), TEXT("food_stall"), 0.8f, 50.f, 0.f, 10.f, 100.f);
+	Failed.bFailedRecently = true;
+
+	const FFF_DestinationCandidate Alternative =
+		MakeCandidate(TEXT("Alternative"), TEXT("food_stall"), 0.8f, 50.f, 0.f, 10.f, 100.f);
+
+	const TArray<FFF_DestinationCandidate> Candidates = { Failed, Alternative };
+
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, TMap<FName, float>(), Table, 1, 1, 0);
+
+	const float FailedProb = FindProbability(Decision, TEXT("Failed"));
+	const float AlternativeProb = FindProbability(Decision, TEXT("Alternative"));
+
+	AddInfo(FString::Printf(TEXT("실패 %.4f vs 대안 %.4f"), FailedProb, AlternativeProb));
+
+	TestTrue(TEXT("나머지가 같으면 실패한 목적지의 확률이 더 낮다"), FailedProb < AlternativeProb);
+	TestTrue(TEXT("감점 폭이 확률을 10배 이상 벌린다"), AlternativeProb > FailedProb * 10.f);
+
+	for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+	{
+		if (B.DestinationId == TEXT("Failed"))
+		{
+			TestEqual(TEXT("실패 후보의 감점 항이 -weight_failed_destination 이다"),
+				B.FailedDestinationPenaltyTerm, -TestWeightFailedDestination, 0.001f);
+		}
+		else if (B.DestinationId == TEXT("Alternative"))
+		{
+			TestEqual(TEXT("대안의 감점 항은 0 이다"), B.FailedDestinationPenaltyTerm, 0.f, 0.001f);
+		}
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_FailedDestinationIsPenalizedNotExcluded, "FestaFiesta.NPC.UtilityDestinationSelector.FailedDestinationIsPenalizedNotExcluded", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_FailedDestinationIsPenalizedNotExcluded::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	FFF_DestinationCandidate Only =
+		MakeCandidate(TEXT("OnlyOne"), TEXT("food_stall"), 1.0f, 0.f, 0.f, 0.f, 100.f);
+	Only.bFailedRecently = true;
+
+	const TArray<FFF_DestinationCandidate> Candidates = { Only };
+	const TMap<FName, float> Preference = { { TEXT("food_stall"), 17.f } };
+
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, Preference, Table, 1, 1, 0);
+
+	const float OnlyProb = FindProbability(Decision, TEXT("OnlyOne"));
+	const float NoChoiceProb = FindProbability(Decision, NAME_None);
+
+	AddInfo(FString::Printf(TEXT("유일 후보 %.4f vs no_choice %.4f"), OnlyProb, NoChoiceProb));
+
+	TestTrue(TEXT("실패한 목적지도 후보로 남는다"), OnlyProb > 0.f);
+	TestTrue(TEXT("효용이 충분히 높으면 감점을 받고도 no_choice 를 이긴다"), OnlyProb > NoChoiceProb);
+
+	return true;
+}
+
+// weight_need(1.8) > weight_failed_destination(1.2) 부등식을 고정한다.
+// 한계 Need 를 해소하는 유일한 시설이 막혀 있어도 배회(no_choice)보다는 다시 시도해야 하고,
+// 가벼운 Need 면 포기해야 한다. 이 관계가 깨지면 화장실이 막힌 순간 아무도 안 간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_UrgentNeedSurvivesFailedPenalty, "FestaFiesta.NPC.UtilityDestinationSelector.UrgentNeedSurvivesFailedPenalty", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_UrgentNeedSurvivesFailedPenalty::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	FFF_DestinationCandidate FailedRestroom =
+		MakeCandidate(TEXT("FailedRestroom"), NAME_None, 0.f, 0.f, 0.f, 0.f, 100.f);
+	FailedRestroom.NeedRelief.bRelievesRestroom = true;
+	FailedRestroom.bFailedRecently = true;
+
+	const TArray<FFF_DestinationCandidate> Candidates = { FailedRestroom };
+
+	FFF_NeedState AtLimit;
+	AtLimit.Restroom = 1.f;
+
+	const FFF_DestinationDecision Urgent = FFF_UtilityDestinationSelector::Choose(
+		Candidates, TMap<FName, float>(), Table, 1, 1, 0, AtLimit);
+
+	AddInfo(FString::Printf(TEXT("한계 Need: 후보 %.4f vs no_choice %.4f"),
+		FindProbability(Urgent, TEXT("FailedRestroom")), FindProbability(Urgent, NAME_None)));
+
+	TestTrue(TEXT("한계 Need 면 막혔던 곳이라도 배회보다 낫다"),
+		FindProbability(Urgent, TEXT("FailedRestroom")) > FindProbability(Urgent, NAME_None));
+
+	FFF_NeedState Mild;
+	Mild.Restroom = 0.3f;
+	const FFF_DestinationDecision MildDecision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, TMap<FName, float>(), Table, 1, 1, 0, Mild);
+
+	AddInfo(FString::Printf(TEXT("가벼운 Need: 후보 %.4f vs no_choice %.4f"),
+		FindProbability(MildDecision, TEXT("FailedRestroom")), FindProbability(MildDecision, NAME_None)));
+
+	TestTrue(TEXT("가벼운 Need 면 막혔던 곳을 포기하고 배회한다"),
+		FindProbability(MildDecision, TEXT("FailedRestroom")) < FindProbability(MildDecision, NAME_None));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_InTransitCrowdPushesChoiceElsewhere, "FestaFiesta.NPC.UtilityDestinationSelector.InTransitCrowdPushesChoiceElsewhere", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_InTransitCrowdPushesChoiceElsewhere::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// 대기시간·혼잡도가 완전히 같다. 결정 시점 스냅샷만 보면 구분할 수 없는 두 후보다
+	FFF_DestinationCandidate Crowded =
+		MakeCandidate(TEXT("Crowded"), TEXT("food_stall"), 0.8f, 50.f, 0.f, 0.f, 100.f);
+	Crowded.InTransitMemberCount = TestInTransitRefCount;
+
+	const FFF_DestinationCandidate Quiet =
+		MakeCandidate(TEXT("Quiet"), TEXT("food_stall"), 0.8f, 50.f, 0.f, 0.f, 100.f);
+
+	const TArray<FFF_DestinationCandidate> Candidates = { Crowded, Quiet };
+
+	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+		Candidates, TMap<FName, float>(), Table, 1, 1, 0);
+
+	const float CrowdedProb = FindProbability(Decision, TEXT("Crowded"));
+	const float QuietProb = FindProbability(Decision, TEXT("Quiet"));
+
+	AddInfo(FString::Printf(TEXT("이동 중 %d명 %.4f vs 0명 %.4f"),
+		static_cast<int32>(TestInTransitRefCount), CrowdedProb, QuietProb));
+
+	TestTrue(TEXT("이미 사람이 향하고 있는 곳의 확률이 더 낮다"), CrowdedProb < QuietProb);
+
+	for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+	{
+		if (B.DestinationId == TEXT("Crowded"))
+		{
+			TestEqual(TEXT("기준 인원에서 감점이 -weight_in_transit 이다"),
+				B.InTransitCostTerm, -TestWeightInTransit, 0.001f);
+		}
+		else if (B.DestinationId == TEXT("Quiet"))
+		{
+			TestEqual(TEXT("아무도 안 가는 곳의 감점 항은 0 이다"), B.InTransitCostTerm, 0.f, 0.001f);
+		}
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_InTransitPenaltyIsMonotonicAndClamped, "FestaFiesta.NPC.UtilityDestinationSelector.InTransitPenaltyIsMonotonicAndClamped", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_InTransitPenaltyIsMonotonicAndClamped::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	auto PenaltyFor = [Table](float InTransit)
+	{
+		FFF_DestinationCandidate Candidate =
+			MakeCandidate(TEXT("Target"), TEXT("food_stall"), 0.8f, 50.f, 0.f, 0.f, 100.f);
+		Candidate.InTransitMemberCount = InTransit;
+
+		const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+			{ Candidate }, TMap<FName, float>(), Table, 1, 1, 0);
+
+		for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+		{
+			if (B.DestinationId == TEXT("Target"))
+			{
+				return B.InTransitCostTerm;
+			}
+		}
+		return 0.f;
+	};
+
+	const float None = PenaltyFor(0.f);
+	const float Half = PenaltyFor(TestInTransitRefCount * 0.5f);
+	const float AtRef = PenaltyFor(TestInTransitRefCount);
+	const float Over = PenaltyFor(TestInTransitRefCount * 10.f);
+
+	AddInfo(FString::Printf(TEXT("0명 %.3f / 절반 %.3f / 기준 %.3f / 10배 %.3f"), None, Half, AtRef, Over));
+
+	TestEqual(TEXT("0명이면 감점이 없다"), None, 0.f, 0.001f);
+	TestTrue(TEXT("인원이 늘면 감점이 커진다"), Half < None && AtRef < Half);
+	TestEqual(TEXT("기준 인원을 넘어도 감점은 -weight_in_transit 에서 멈춘다"),
+		Over, -TestWeightInTransit, 0.001f);
+
 	return true;
 }
 

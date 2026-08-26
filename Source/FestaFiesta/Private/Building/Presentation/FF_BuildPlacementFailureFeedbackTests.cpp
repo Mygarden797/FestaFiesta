@@ -117,7 +117,27 @@ bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& P
 	TestEqual(TEXT("The dedicated title is concise and localized"),
 		UFF_BuildPlacementFailureFeedback::MakeFailureTitle(
 			EFFZSPlacementFailure::InsufficientFunds, false).ToString(),
-		FString(TEXT("골드 부족")));
+		FString(TEXT("골드가 부족해요")));
+	const FString CollisionReason =
+		UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+			EFFZSPlacementFailure::PlacementCollision,
+			FText::FromString(TEXT("Placement collision in World Cell")),
+			false).ToString();
+	TestTrue(TEXT("Collision guidance explains the cause in everyday Korean"),
+		CollisionReason.Contains(TEXT("겹쳐요")));
+	TestTrue(TEXT("Collision guidance includes the next action"),
+		CollisionReason.Contains(TEXT("옮겨 주세요")));
+	TestFalse(TEXT("Technical validation terms are not exposed to players"),
+		CollisionReason.Contains(TEXT("World")) || CollisionReason.Contains(TEXT("Cell")) ||
+		CollisionReason.Contains(TEXT("Placement")));
+	TestTrue(TEXT("Slope guidance points the player toward flatter ground"),
+		UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+			EFFZSPlacementFailure::ExcessSlope, FText::GetEmpty(), false)
+			.ToString().Contains(TEXT("평평한 곳")));
+	TestTrue(TEXT("Outside-zone guidance tells the player where to move"),
+		UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+			EFFZSPlacementFailure::OutsideZone, FText::GetEmpty(), false)
+			.ToString().Contains(TEXT("경계선 안쪽")));
 
 	FFFZSPlacementValidation Validation;
 	Validation.bIsValid = true;
@@ -157,7 +177,7 @@ bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& P
 			EFFZSPlacementFailure::InsufficientFunds, false),
 		Detail);
 	TestEqual(TEXT("The actual WBP title displays Gold shortage"),
-		Feedback->GetDisplayedFailureTitle().ToString(), FString(TEXT("골드 부족")));
+		Feedback->GetDisplayedFailureTitle().ToString(), FString(TEXT("골드가 부족해요")));
 	TestEqual(TEXT("The actual WBP preserves the authoritative failure detail"),
 		Feedback->GetDisplayedFailureReason().ToString(), Detail.ToString());
 	TestEqual(TEXT("Presenting a failure makes the toast visible without blocking input"),
@@ -169,7 +189,7 @@ bool FFF_BuildPlacementFailureFeedbackPresentationTest::RunTest(const FString& P
 			EFFZSPlacementFailure::PlacementCollision, false),
 		FText::FromString(TEXT("시설이 다른 시설과 겹칩니다.")));
 	TestEqual(TEXT("Reusing the toast replaces stale title data"),
-		Feedback->GetDisplayedFailureTitle().ToString(), FString(TEXT("설치할 수 없음")));
+		Feedback->GetDisplayedFailureTitle().ToString(), FString(TEXT("여기에 설치할 수 없어요")));
 	Feedback->DismissFeedback();
 	TestEqual(TEXT("Dismiss collapses the non-blocking toast"),
 		Feedback->GetVisibility(), ESlateVisibility::Collapsed);
