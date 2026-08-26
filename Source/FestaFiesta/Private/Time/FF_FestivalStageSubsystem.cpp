@@ -467,6 +467,25 @@ FString UFF_FestivalStageSubsystem::GetCurrentLiveClockString() const
 // ElapsedLiveSeconds(경과 시간)를 그대로 "게임 속 분"으로 취급해서
 // 17:00에 더한 뒤 시:분 형식 문자열로 변환
 
+
+FString UFF_FestivalStageSubsystem::GetLiveClockStringFromMinutes(int32 LiveMinutes) const
+{
+	const int32 StartHour = 17;
+	// Live 시작 시각(오후 5시)
+
+	const int32 TotalMinutes = StartHour * 60 + LiveMinutes;
+	// 시작 시각(17:00)에 진행 시간(분)을 더함
+
+	const int32 Hour = (TotalMinutes / 60) % 24;
+	// 시 계산 (24시간 제, 24시 넘어가면 0시로 순환)
+
+	const int32 Minute = TotalMinutes % 60;
+	// 분 계산
+
+	return FString::Printf(TEXT("%02d:%02d"), Hour, Minute);
+	// "HH:MM" 형태로 반환
+}
+
 bool UFF_FestivalStageSubsystem::IsLiveStage() const
 {
 	return CurrentStage == EFF_FestivalStage::Live;

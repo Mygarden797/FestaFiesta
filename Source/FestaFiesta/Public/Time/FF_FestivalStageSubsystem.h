@@ -240,6 +240,10 @@ public:
 	// Live일 때 지금 몇 시 몇 분인지 반환
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	FString GetLiveClockStringFromMinutes(int32 LiveMinutes) const;
+	// LiveMinutes(Live 시작 후 지난 분)을 넣으면 "17:30" 같은 시계 문자열로 바꿔주는 함수
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsLiveStage() const;
 	// 지금 Live 단계인지
 
