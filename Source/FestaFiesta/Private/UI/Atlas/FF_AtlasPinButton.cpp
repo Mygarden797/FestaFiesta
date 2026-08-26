@@ -14,6 +14,7 @@ void UFF_AtlasPinButton::SetPinData(
 {
 	PinId = InPinId;
 	bSelectable = bInSelectable;
+	bSelected = false;
 	LockReason = InLockReason;
 
 	// 표시를 부분 갱신하지 않고 전부 다시 선언한다. 어떤 순서로 들어와도 결과가 같다.
@@ -28,15 +29,44 @@ void UFF_AtlasPinButton::SetPinData(
 			Badge.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
 
-	if (Image_PinLock)
-	{
-		Image_PinLock->SetVisibility(
-			bSelectable ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	}
+	RefreshPinVisual();
 
 	// 🔴 `SetIsEnabled(false)` 를 쓰지 않는다. 잠긴 핀에도 **포커스는 간다** —
 	//    비활성 버튼은 게임패드 포커스에서 빠져 그 나라가 없는 것처럼 된다.
 	//    선택을 막는 것은 화면이 사유 문구와 함께 처리한다.
+}
+
+void UFF_AtlasPinButton::SetSelectedState(bool bInSelected)
+{
+	// 잠긴 핀은 선택 상태가 될 수 없다. 포커스는 갈 수 있고 카드에서 사유를 보여준다.
+	bSelected = bInSelected && bSelectable;
+	RefreshPinVisual();
+}
+
+void UFF_AtlasPinButton::RefreshPinVisual()
+{
+	const ESlateVisibility Visible = ESlateVisibility::HitTestInvisible;
+
+	if (Image_PinDefault)
+	{
+		Image_PinDefault->SetVisibility(
+			(bSelectable && !bSelected) ? Visible : ESlateVisibility::Collapsed);
+	}
+	if (Image_PinSelected)
+	{
+		Image_PinSelected->SetVisibility(
+			(bSelectable && bSelected) ? Visible : ESlateVisibility::Collapsed);
+	}
+	if (Image_PinLock)
+	{
+		Image_PinLock->SetVisibility(
+			bSelectable ? ESlateVisibility::Collapsed : Visible);
+	}
+	if (Image_PinChevrons)
+	{
+		Image_PinChevrons->SetVisibility(
+			bSelected ? Visible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UFF_AtlasPinButton::SetPinVisible(bool bVisible)

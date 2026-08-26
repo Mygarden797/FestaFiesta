@@ -22,7 +22,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnAtlasFestivalStartRequested, F
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnAtlasCountryScreenRequest);
 
 /**
- * 국가 지도 화면. **지도가 주인공이고 UI 는 왼쪽이다** (2026-08-21 확정).
+ * 국가 지도 화면. **지도가 주인공이고 축제 카드는 오른쪽이다** (2026-08-26 확정).
  *
  * === 축제 핀을 직접 고른다 ===
  * **지역 선택 단계를 만들지 않는다.** `부산` 같은 지역 라벨은 핀에 보여주되 핀 자체는
@@ -46,6 +46,8 @@ class FESTAFIESTA_API UFF_AtlasCountryScreen : public UFF_ActivatableScreenBase
 	GENERATED_BODY()
 
 public:
+	UFF_AtlasCountryScreen(const FObjectInitializer& ObjectInitializer);
+
 	/** 어느 국가의 지도를 그릴지. 흐름 서브시스템이 화면을 올린 뒤 넣는다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
 	void SetCountry(FName InCountryId);
@@ -62,6 +64,8 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeOnActivated() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	virtual bool NativeOnHandleBackAction() override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 
 	// --- 지도 ---
@@ -74,13 +78,20 @@ protected:
 	TObjectPtr<UImage> Image_Map;
 
 	/**
+	 * 선택 축제의 행정구역 오버레이. `MapImage`와 같은 사각형을 사용한다.
+	 * 오버레이는 축제 데이터가 결정하며 화면 코드에는 부산·영남 같은 지역명이 없다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UImage> Image_SelectedRegionOverlay;
+
+	/**
 	 * 지도와 핀이 함께 올라가는 캔버스. **이 캔버스의 크기가 계산 기준**이다.
 	 * `Self Hit Test Invisible` 로 둔다 — 핀만 입력을 받아야 한다.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UCanvasPanel> CanvasPanel_Map;
 
-	// --- 왼쪽 축제 카드 ---
+	// --- 오른쪽 축제 카드 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UTextBlock> Text_CountryName;
@@ -109,6 +120,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UTextBlock> Text_LockReason;
+
+	/** `플레이 가능` 또는 잠금 상태를 글자로도 알린다 (AT-011). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UTextBlock> Text_Availability;
 
 	/** 축제를 고르기 전에 보여주는 안내. 카드가 비어 있는 이유를 적는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
@@ -145,8 +160,20 @@ private:
 	/** 지도 사각형을 계산해 이미지와 핀에 **같은 값**을 적용한다. */
 	void UpdateMapLayout();
 
-	/** 고른 축제로 왼쪽 카드를 채운다. 없으면 안내만 남긴다. */
+	/** 고른 축제로 오른쪽 카드를 채운다. 없으면 안내만 남긴다. */
 	void RefreshFestivalCard();
+
+	/** 마우스·키보드가 같은 경로로 선택 상태와 카드·핀 표현을 갱신한다. */
+	void SelectFestival(FName FestivalId, bool bMoveFocus);
+
+	/** 입력 방향의 다음 핀을 찾아 선택·포커스한다. */
+	bool MovePinFocus(const FVector2D& ScreenDirection);
+
+	/** 현재 선택이 이 국가에 속하고, 잠금 해제됐으며, 열 레벨도 있는지 재검증한다. */
+	bool CanStartSelectedFestival() const;
+
+	/** 지금 키보드·패드 포커스를 가진 축제 핀. */
+	UFF_AtlasPinButton* FindFocusedPin() const;
 
 	UFUNCTION()
 	void HandlePinClicked(UFF_CommonButtonBase* Button);
@@ -164,6 +191,9 @@ private:
 
 	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UFF_AtlasPinButton>> PinButtons;
+
+	/** TMap 순서는 비결정적이므로 방향 탐색은 카탈로그 순서를 별도로 보존한다. */
+	TArray<FName> NavigationFestivalIds;
 
 	FName CountryId;
 	FName SelectedFestivalId;

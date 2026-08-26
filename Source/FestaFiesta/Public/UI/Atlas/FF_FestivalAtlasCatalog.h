@@ -166,6 +166,17 @@ struct FESTAFIESTA_API FFF_FestivalAtlasEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FVector2D MapPosition = FVector2D(0.5, 0.5);
 
+	/**
+	 * 이 축제를 가리킬 때 지도 위에 겹치는 선택 오버레이.
+	 *
+	 * 부산 축제라면 부산 ADM1만 들어 있는 투명 PNG를 넣는다. 영남권 전체를 공통 코드에서
+	 * 칠하지 않는다. 축제마다 데이터로 들기 때문에 다른 나라·도시가 추가되어도 화면 코드는
+	 * 같은 방식으로 해당 오버레이를 읽는다. 비어 있으면 선택 핀만 강조한다.
+	 * `MapImage`와 정확히 같은 캔버스·Crop·비율을 사용해야 한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map")
+	TSoftObjectPtr<UTexture2D> SelectionOverlayImage;
+
 	// --- 카드에 표시하는 값 ---
 
 	/**

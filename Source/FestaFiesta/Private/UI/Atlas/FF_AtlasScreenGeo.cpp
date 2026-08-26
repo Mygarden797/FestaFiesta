@@ -70,6 +70,58 @@ FVector2D FFF_AtlasScreenGeo::WidgetLocalToNormalized(
 	return (WidgetLocal - ImageRect.Offset) / ImageRect.Size;
 }
 
+int32 FFF_AtlasScreenGeo::FindDirectionalPinIndex(
+	const TArray<FVector2D>& PinPositions,
+	int32 CurrentIndex,
+	const FVector2D& ScreenDirection)
+{
+	if (!PinPositions.IsValidIndex(CurrentIndex) || PinPositions.Num() < 2
+		|| ScreenDirection.IsNearlyZero())
+	{
+		return INDEX_NONE;
+	}
+
+	const FVector2D Direction = ScreenDirection.GetSafeNormal();
+	const FVector2D Current = PinPositions[CurrentIndex];
+
+	double BestScore = TNumericLimits<double>::Max();
+	int32 BestIndex = INDEX_NONE;
+
+	for (int32 CandidateIndex = 0; CandidateIndex < PinPositions.Num(); ++CandidateIndex)
+	{
+		if (CandidateIndex == CurrentIndex)
+		{
+			continue;
+		}
+
+		const FVector2D Delta = PinPositions[CandidateIndex] - Current;
+		const double DistanceSquared = Delta.SizeSquared();
+		if (DistanceSquared <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			// 같은 자리에 겹친 핀은 방향 입력만으로 구분할 수 없다.
+			continue;
+		}
+
+		const double ForwardDistance = FVector2D::DotProduct(Delta, Direction);
+		if (ForwardDistance <= UE_DOUBLE_SMALL_NUMBER)
+		{
+			// 입력 방향의 뒤쪽 또는 정확히 옆에 있는 후보는 제외한다.
+			continue;
+		}
+
+		// 거리만 보면 가까운 대각선 핀이 항상 이기고, 각도만 보면 아주 먼 핀이 이긴다.
+		// 거리 제곱을 전방 투영으로 나누면 두 성질을 함께 반영할 수 있다.
+		const double Score = DistanceSquared / ForwardDistance;
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			BestIndex = CandidateIndex;
+		}
+	}
+
+	return BestIndex;
+}
+
 // --- 드래그 추적 ---
 
 void FFF_AtlasDragTracker::Press(const FVector2D& Position)

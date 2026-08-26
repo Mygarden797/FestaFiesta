@@ -7,6 +7,7 @@
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
+#include "InputCoreTypes.h"
 #include "UI/Atlas/FF_AtlasPinButton.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
@@ -15,6 +16,13 @@
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
+
+UFF_AtlasCountryScreen::UFF_AtlasCountryScreen(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// CommonUI 기본 Deactivate가 아니라 UI Flow의 화면 히스토리로 지구본에 돌아간다.
+	bIsBackHandler = true;
+}
 
 void UFF_AtlasCountryScreen::NativeOnInitialized()
 {
@@ -26,7 +34,7 @@ void UFF_AtlasCountryScreen::NativeOnInitialized()
 	}
 	if (Button_Back)
 	{
-		Button_Back->SetButtonLabel(LOCTEXT("AtlasCountryBack", "뒤로"));
+		Button_Back->SetButtonLabel(LOCTEXT("AtlasCountryBack", "지구본"));
 	}
 	if (Text_EmptyHint)
 	{
@@ -36,6 +44,8 @@ void UFF_AtlasCountryScreen::NativeOnInitialized()
 
 void UFF_AtlasCountryScreen::NativeConstruct()
 {
+	// 기존 WBP CDO에 예전 false가 저장되어 있어도 Super가 Back 입력을 등록하기 전에 바로잡는다.
+	bIsBackHandler = true;
 	Super::NativeConstruct();
 
 	// 구독은 `NativeConstruct` 다 — CommonUI 스택이 위젯을 풀에서 재사용한다.
@@ -70,6 +80,9 @@ void UFF_AtlasCountryScreen::NativeDestruct()
 
 void UFF_AtlasCountryScreen::NativeOnActivated()
 {
+	// 재진입 때 이전 축제의 카드가 잠깐 보이지 않게 현재 국가의 첫 플레이 가능 핀부터 다시 잡는다.
+	SelectedFestivalId = NAME_None;
+
 	// 활성화될 때마다 다시 만든다. 국가가 바뀌었을 수 있고 위젯이 풀에서 재사용된다.
 	RebuildForCountry();
 
@@ -95,14 +108,85 @@ void UFF_AtlasCountryScreen::NativeTick(const FGeometry& MyGeometry, float InDel
 	}
 }
 
+FReply UFF_AtlasCountryScreen::NativeOnPreviewKeyDown(
+	const FGeometry& InGeometry,
+	const FKeyEvent& InKeyEvent)
+{
+	const FKey Key = InKeyEvent.GetKey();
+	FVector2D Direction = FVector2D::ZeroVector;
+
+	if (Key == EKeys::W || Key == EKeys::Up || Key == EKeys::Gamepad_DPad_Up)
+	{
+		Direction = FVector2D(0.0, -1.0);
+	}
+	else if (Key == EKeys::A || Key == EKeys::Left || Key == EKeys::Gamepad_DPad_Left)
+	{
+		Direction = FVector2D(-1.0, 0.0);
+	}
+	else if (Key == EKeys::S || Key == EKeys::Down || Key == EKeys::Gamepad_DPad_Down)
+	{
+		Direction = FVector2D(0.0, 1.0);
+	}
+	else if (Key == EKeys::D || Key == EKeys::Right || Key == EKeys::Gamepad_DPad_Right)
+	{
+		Direction = FVector2D(1.0, 0.0);
+	}
+
+	if (!Direction.IsNearlyZero())
+	{
+		// 한 번 누를 때 한 핀만 간다. 키 반복은 소비하되 여러 핀을 건너뛰지 않는다.
+		if (!InKeyEvent.IsRepeat())
+		{
+			MovePinFocus(Direction);
+		}
+		return FReply::Handled();
+	}
+
+	const bool bConfirmKey = Key == EKeys::Enter
+		|| Key == EKeys::Virtual_Gamepad_Accept.GetVirtualKey()
+		|| Key == EKeys::Gamepad_FaceButton_Bottom;
+	if (bConfirmKey)
+	{
+		if (UFF_AtlasPinButton* FocusedPin = FindFocusedPin())
+		{
+			SelectFestival(FocusedPin->GetPinId(), /*bMoveFocus=*/false);
+			if (CanStartSelectedFestival())
+			{
+				OnStartFestivalRequested.Broadcast(SelectedFestivalId);
+			}
+			return FReply::Handled();
+		}
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+bool UFF_AtlasCountryScreen::NativeOnHandleBackAction()
+{
+	OnBackRequested.Broadcast();
+	return true;
+}
+
 UWidget* UFF_AtlasCountryScreen::NativeGetDesiredFocusTarget() const
 {
-	// 축제를 고르기 전에는 `축제 시작` 이 막혀 있으므로 `뒤로` 로 간다 —
-	// 아무것도 할 수 없는 화면이 되지 않게 한다.
-	if (Button_StartFestival && Button_StartFestival->GetIsEnabled())
+	if (!SelectedFestivalId.IsNone())
 	{
-		return Button_StartFestival;
+		if (const TObjectPtr<UFF_AtlasPinButton>* SelectedPin = PinButtons.Find(SelectedFestivalId);
+			SelectedPin && *SelectedPin)
+		{
+			return SelectedPin->Get();
+		}
 	}
+
+	for (const FName FestivalId : NavigationFestivalIds)
+	{
+		if (const TObjectPtr<UFF_AtlasPinButton>* Pin = PinButtons.Find(FestivalId); Pin && *Pin)
+		{
+			return Pin->Get();
+		}
+	}
+
+	// 핀이 없거나 핀 WBP가 빠져도 화면에서 탈출할 수 있어야 한다.
 	if (Button_Back)
 	{
 		return Button_Back;
@@ -126,6 +210,10 @@ void UFF_AtlasCountryScreen::SetCountry(FName InCountryId)
 	if (IsActivated())
 	{
 		RebuildForCountry();
+		if (UWidget* FocusTarget = NativeGetDesiredFocusTarget())
+		{
+			FocusTarget->SetFocus();
+		}
 	}
 }
 
@@ -142,6 +230,7 @@ void UFF_AtlasCountryScreen::ClearPinButtons()
 		}
 	}
 	PinButtons.Reset();
+	NavigationFestivalIds.Reset();
 
 	if (!CanvasPanel_Map)
 	{
@@ -232,12 +321,26 @@ void UFF_AtlasCountryScreen::RebuildForCountry()
 			if (UCanvasPanelSlot* PinSlot = CanvasPanel_Map->AddChildToCanvas(Pin))
 			{
 				PinSlot->SetAnchors(FAnchors(0.f, 0.f));
-				// 핀 중심이 지도의 그 지점에 오게 한다.
-				PinSlot->SetAlignment(FVector2D(0.5, 0.5));
+				// 핀 바닥 중앙이 실제 지도 좌표에 닿는다. 자연지도 마커의 뾰족한 끝 기준이다.
+				PinSlot->SetAlignment(FVector2D(0.5, 1.0));
 				PinSlot->SetAutoSize(true);
 			}
 
 			PinButtons.Add(Festival->FestivalId, Pin);
+			NavigationFestivalIds.Add(Festival->FestivalId);
+		}
+	}
+	else if (Catalog && !CountryId.IsNone())
+	{
+		// 핀 클래스가 빠져도 카드는 데이터로 채우고 뒤로 갈 수 있게 목록 순서는 보존한다.
+		TArray<const FFF_FestivalAtlasEntry*> Festivals;
+		Catalog->GetFestivalsInCountry(CountryId, Festivals);
+		for (const FFF_FestivalAtlasEntry* Festival : Festivals)
+		{
+			if (Festival)
+			{
+				NavigationFestivalIds.Add(Festival->FestivalId);
+			}
 		}
 	}
 
@@ -245,7 +348,32 @@ void UFF_AtlasCountryScreen::RebuildForCountry()
 	LastCanvasSize = FVector2D::ZeroVector;	// 다음 Tick 에 강제로 다시 계산되게 한다
 	UpdateMapLayout();
 
-	RefreshFestivalCard();
+	// 첫 진입은 해당 국가의 첫 플레이 가능 축제를 선택한다. 전부 잠겼으면 첫 항목의
+	// 잠금 사유를 카드에 보여준다. 국가·도시 이름을 비교하지 않고 데이터만 읽는다.
+	FName DefaultFestivalId = NAME_None;
+	if (Catalog)
+	{
+		for (const FName FestivalId : NavigationFestivalIds)
+		{
+			const FFF_FestivalAtlasEntry* Festival = Catalog->FindEntry(FestivalId);
+			if (!Festival)
+			{
+				continue;
+			}
+
+			if (DefaultFestivalId.IsNone())
+			{
+				DefaultFestivalId = FestivalId;
+			}
+			if (Festival->bUnlocked && !Festival->Level.IsNull())
+			{
+				DefaultFestivalId = FestivalId;
+				break;
+			}
+		}
+	}
+
+	SelectFestival(DefaultFestivalId, /*bMoveFocus=*/false);
 }
 
 void UFF_AtlasCountryScreen::UpdateMapLayout()
@@ -276,6 +404,19 @@ void UFF_AtlasCountryScreen::UpdateMapLayout()
 			MapSlot->SetAutoSize(false);
 			MapSlot->SetPosition(MapRect.Offset);
 			MapSlot->SetSize(MapRect.Size);
+		}
+	}
+
+	if (Image_SelectedRegionOverlay)
+	{
+		if (UCanvasPanelSlot* OverlaySlot = Cast<UCanvasPanelSlot>(Image_SelectedRegionOverlay->Slot))
+		{
+			// 지도와 Crop·비율이 같은 투명 이미지이므로 사각형도 반드시 완전히 같아야 한다.
+			OverlaySlot->SetAnchors(FAnchors(0.f, 0.f));
+			OverlaySlot->SetAlignment(FVector2D::ZeroVector);
+			OverlaySlot->SetAutoSize(false);
+			OverlaySlot->SetPosition(MapRect.Offset);
+			OverlaySlot->SetSize(MapRect.Size);
 		}
 	}
 
@@ -376,6 +517,18 @@ void UFF_AtlasCountryScreen::RefreshFestivalCard()
 		Image_Preview->SetVisibility(Preview ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
+	if (Image_SelectedRegionOverlay)
+	{
+		UTexture2D* Overlay = (bHasFestival && !Festival->SelectionOverlayImage.IsNull())
+			? Festival->SelectionOverlayImage.LoadSynchronous()
+			: nullptr;
+
+		Image_SelectedRegionOverlay->SetBrushFromTexture(Overlay);
+		Image_SelectedRegionOverlay->SetColorAndOpacity(FLinearColor::White);
+		Image_SelectedRegionOverlay->SetVisibility(
+			Overlay ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
 	// 잠금 — 자물쇠 + 사유를 함께 띄운다 (AT-011). 비활성만 두면 왜 못 누르는지 모른다.
 	const bool bLocked = bHasFestival && !Festival->bUnlocked;
 
@@ -388,11 +541,137 @@ void UFF_AtlasCountryScreen::RefreshFestivalCard()
 		Text_LockReason->SetText(bLocked ? Festival->LockReason : FText::GetEmpty());
 		Text_LockReason->SetVisibility(bLocked ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
+	if (Text_Availability)
+	{
+		FText Availability;
+		if (bHasFestival)
+		{
+			Availability = bLocked
+				? LOCTEXT("AtlasCountryUnavailable", "준비 중")
+				: Festival->Level.IsNull()
+					? LOCTEXT("AtlasCountryMissingLevel", "시작 정보 확인 필요")
+					: LOCTEXT("AtlasCountryAvailable", "플레이 가능");
+		}
+
+		Text_Availability->SetText(Availability);
+		Text_Availability->SetVisibility(
+			bHasFestival ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 
 	if (Button_StartFestival)
 	{
-		Button_StartFestival->SetIsEnabled(bHasFestival && !bLocked);
+		Button_StartFestival->SetIsEnabled(CanStartSelectedFestival());
 	}
+}
+
+void UFF_AtlasCountryScreen::SelectFestival(FName FestivalId, bool bMoveFocus)
+{
+	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
+	const FFF_FestivalAtlasEntry* Festival = (Catalog && !FestivalId.IsNone())
+		? Catalog->FindEntry(FestivalId)
+		: nullptr;
+
+	if (!Festival || Festival->CountryId != CountryId)
+	{
+		FestivalId = NAME_None;
+	}
+
+	SelectedFestivalId = FestivalId;
+
+	for (const TPair<FName, TObjectPtr<UFF_AtlasPinButton>>& Pair : PinButtons)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->SetSelectedState(!SelectedFestivalId.IsNone() && Pair.Key == SelectedFestivalId);
+		}
+	}
+
+	RefreshFestivalCard();
+
+	if (bMoveFocus && !SelectedFestivalId.IsNone())
+	{
+		if (const TObjectPtr<UFF_AtlasPinButton>* Pin = PinButtons.Find(SelectedFestivalId); Pin && *Pin)
+		{
+			Pin->Get()->SetFocus();
+		}
+	}
+}
+
+bool UFF_AtlasCountryScreen::MovePinFocus(const FVector2D& ScreenDirection)
+{
+	if (NavigationFestivalIds.Num() < 2)
+	{
+		// 핀이 하나뿐이어도 WASD를 소비하되 선택 상태는 유지한다.
+		return false;
+	}
+
+	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
+	if (!Catalog)
+	{
+		return false;
+	}
+
+	int32 CurrentIndex = NavigationFestivalIds.IndexOfByKey(SelectedFestivalId);
+	if (UFF_AtlasPinButton* FocusedPin = FindFocusedPin())
+	{
+		const int32 FocusedIndex = NavigationFestivalIds.IndexOfByKey(FocusedPin->GetPinId());
+		if (FocusedIndex != INDEX_NONE)
+		{
+			CurrentIndex = FocusedIndex;
+		}
+	}
+	if (CurrentIndex == INDEX_NONE)
+	{
+		CurrentIndex = 0;
+	}
+
+	TArray<FVector2D> ScreenPositions;
+	ScreenPositions.Reserve(NavigationFestivalIds.Num());
+
+	const FVector2D MapScale(
+		MapRect.Size.X > 1.0 ? MapRect.Size.X : 1.0,
+		MapRect.Size.Y > 1.0 ? MapRect.Size.Y : 1.0);
+	for (const FName FestivalId : NavigationFestivalIds)
+	{
+		const FFF_FestivalAtlasEntry* Festival = Catalog->FindEntry(FestivalId);
+		ScreenPositions.Add(Festival ? Festival->MapPosition * MapScale : FVector2D::ZeroVector);
+	}
+
+	const int32 NextIndex = FFF_AtlasScreenGeo::FindDirectionalPinIndex(
+		ScreenPositions, CurrentIndex, ScreenDirection);
+	if (!NavigationFestivalIds.IsValidIndex(NextIndex))
+	{
+		return false;
+	}
+
+	SelectFestival(NavigationFestivalIds[NextIndex], /*bMoveFocus=*/true);
+	return true;
+}
+
+bool UFF_AtlasCountryScreen::CanStartSelectedFestival() const
+{
+	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
+	const FFF_FestivalAtlasEntry* Festival = (Catalog && !SelectedFestivalId.IsNone())
+		? Catalog->FindEntry(SelectedFestivalId)
+		: nullptr;
+
+	return Festival
+		&& Festival->CountryId == CountryId
+		&& Festival->bUnlocked
+		&& !Festival->Level.IsNull();
+}
+
+UFF_AtlasPinButton* UFF_AtlasCountryScreen::FindFocusedPin() const
+{
+	for (const FName FestivalId : NavigationFestivalIds)
+	{
+		if (const TObjectPtr<UFF_AtlasPinButton>* Pin = PinButtons.Find(FestivalId);
+			Pin && *Pin && Pin->Get()->HasAnyUserFocus())
+		{
+			return Pin->Get();
+		}
+	}
+	return nullptr;
 }
 
 // --- 핸들러 ---
@@ -407,8 +686,7 @@ void UFF_AtlasCountryScreen::HandlePinClicked(UFF_CommonButtonBase* Button)
 
 	// 잠긴 축제도 **카드는 보여준다.** 포커스는 가고 시작만 막는 것이 확정안이다 —
 	// 그래야 왜 못 하는지 카드에서 읽을 수 있다.
-	SelectedFestivalId = Pin->GetPinId();
-	RefreshFestivalCard();
+	SelectFestival(Pin->GetPinId(), /*bMoveFocus=*/false);
 
 	if (!Pin->IsSelectable())
 	{
@@ -421,10 +699,11 @@ void UFF_AtlasCountryScreen::HandlePinClicked(UFF_CommonButtonBase* Button)
 
 void UFF_AtlasCountryScreen::HandleStartClicked(UFF_CommonButtonBase* Button)
 {
-	if (SelectedFestivalId.IsNone())
+	if (!CanStartSelectedFestival())
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("UFF_AtlasCountryScreen: 고른 축제가 없어 시작하지 않는다."));
+			TEXT("UFF_AtlasCountryScreen: 현재 선택 `%s` 는 이 국가에서 시작할 수 없어 요청하지 않는다."),
+			*SelectedFestivalId.ToString());
 		return;
 	}
 
@@ -466,6 +745,8 @@ FVector2D UFF_AtlasCountryScreen::GetMapSourceSize() const
 			if (Image_Map)
 			{
 				Image_Map->SetBrushFromTexture(MapTexture);
+				// 풀에서 재사용되며 이전 국가의 placeholder tint가 남을 수 있으므로 원본색으로 복구한다.
+				Image_Map->SetColorAndOpacity(FLinearColor::White);
 			}
 			return FVector2D(MapTexture->GetSizeX(), MapTexture->GetSizeY());
 		}

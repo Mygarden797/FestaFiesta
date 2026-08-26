@@ -107,6 +107,22 @@ struct FESTAFIESTA_API FFF_AtlasScreenGeo
 	static FVector2D WidgetLocalToNormalized(
 		const FVector2D& WidgetLocal,
 		const FFF_AtlasImageRect& ImageRect);
+
+	/**
+	 * 2D 국가 지도에서 입력 방향에 가장 알맞은 다음 핀을 찾는다.
+	 *
+	 * `PinPositions` 는 **화면 로컬 좌표**여야 한다. 정규화 좌표를 그대로 넘기면
+	 * 가로·세로 비가 다른 지도에서 방향 각도가 달라지므로, 호출부가 `MapRect.Size` 를
+	 * 곱해 종횡비를 반영한다.
+	 *
+	 * 현재 핀 앞쪽 반평면에 있는 후보만 비교하고, 가까우면서 입력 방향에 잘 정렬된 핀을
+	 * 고른다. 후보가 없거나 입력이 유효하지 않으면 `INDEX_NONE` 이다. 배열 순서는
+	 * 카탈로그 순서를 유지해야 동점 결과가 재현 가능하다.
+	 */
+	static int32 FindDirectionalPinIndex(
+		const TArray<FVector2D>& PinPositions,
+		int32 CurrentIndex,
+		const FVector2D& ScreenDirection);
 };
 
 /**

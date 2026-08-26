@@ -257,7 +257,9 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - 작업 원본: 사용자 로컬 `Downloads/DEM1_SAR_DGE_30_*.zip`; 필요한 라이선스 사본과 처리 스크립트는 `SourceArt/ThirdParty/CopernicusDEM/Korea/`에 보관
 - 로컬 라이선스 사본: `SourceArt/ThirdParty/CopernicusDEM/Korea/licenses/Copernicus-WorldDEM-30-eula_F.pdf` — SHA-256 `32049914C37F14E7D53B48D13D74A49E77C030236E2ACC7A0DF426F9344FEBA2`
 - 수정 내역: 타일 병합, 대한민국 ADM1 경계 마스킹, 리샘플링, 고도 색상화, hillshade 생성 및 게임 지도용 합성
-- 사용 산출물: `docs/ui/mockups/festival-atlas-adm1/terrain-reference/`의 지형 기준 이미지와 그 파생 UI 목업
+- 사용 산출물: `docs/ui/mockups/festival-atlas-adm1/terrain-reference/`의 지형 기준 이미지와
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Map/T_FF_FA_Map_KoreaNaturalADM1_2400x2160.png`,
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Overlays/T_FF_FA_Overlay_ADM1_08_Busan_Selected_2400x2160.png`
 - 배포본 라이선스 동봉 경로: `to_verify`
 
 변형·가공 데이터 권장 크레딧 문구:
@@ -285,7 +287,9 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
   - `SourceArt/ThirdParty/CopernicusDEM/Korea/licenses/geoBoundaries-CITATION-AND-USE.txt` — SHA-256 `F6EA7572BEA6036C4CDCACF8C0CA7BF09098D4E600D19546D7432533E9A290D5`
   - `SourceArt/ThirdParty/CopernicusDEM/Korea/licenses/geoBoundaries-KOR-ADM1-metaData.json` — SHA-256 `0CA1426407D6ACC6B9BBC258F3DEFB65F17A37B424ABC93D629A16AF189549E4`
 - 수정 내역: 17개 ADM1 도형을 6개 선택 권역으로 통합·단순화하고, UI용 경계선·마스크로 변환. 독도는 원본 ADM1에 없어 별도 좌표 기준으로 보완
-- 사용 산출물: `docs/ui/mockups/festival-atlas-adm1/`의 지도 실루엣·권역 경계·파생 UI 목업
+- 사용 산출물: `docs/ui/mockups/festival-atlas-adm1/`의 지도 실루엣·권역 경계·파생 UI 목업과
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Map/T_FF_FA_Map_KoreaNaturalADM1_2400x2160.png`,
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Overlays/T_FF_FA_Overlay_ADM1_08_Busan_Selected_2400x2160.png`
 - 배포본 라이선스 동봉 경로: `to_verify`
 
 권장 크레딧 문구:

@@ -63,6 +63,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Pin")
 	FText GetLockReason() const { return LockReason; }
 
+	/** 국가 지도에서 현재 확정된 축제 핀인지 표시한다. 포커스와 별개로 유지된다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas|Pin")
+	void SetSelectedState(bool bInSelected);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Pin")
+	bool IsSelectedState() const { return bSelected; }
+
 protected:
 	// 핀 이름은 베이스의 `Text_Label`(UCommonTextBlock, 필수 바인딩)이 그린다.
 	// 여기 따로 두지 않는다 — 위젯 둘이 같은 문구를 그리면 하나만 갱신되는 사고가 난다.
@@ -75,8 +82,23 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
 	TObjectPtr<UImage> Image_PinLock;
 
+	/** 자연지도용 기본 핀. 기존 텍스트형 WBP에는 없어도 된다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
+	TObjectPtr<UImage> Image_PinDefault;
+
+	/** 자연지도용 선택 핀. `SetSelectedState`가 기본 핀과 교대한다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
+	TObjectPtr<UImage> Image_PinSelected;
+
+	/** 선택 핀 위의 이중 화살표. 색뿐 아니라 형태로 선택을 알린다 (AT-011). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
+	TObjectPtr<UImage> Image_PinChevrons;
+
 private:
+	void RefreshPinVisual();
+
 	FName PinId;
 	bool bSelectable = false;
+	bool bSelected = false;
 	FText LockReason;
 };

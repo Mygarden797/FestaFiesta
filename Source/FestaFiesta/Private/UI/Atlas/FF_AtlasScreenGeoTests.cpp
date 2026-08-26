@@ -160,6 +160,68 @@ bool FFF_AtlasScreenGeo_PinStaysOnMapAcrossSizes::RunTest(const FString& Paramet
 	return true;
 }
 
+// 국가 지도 핀은 캔버스의 자동 탐색이 아니라 지도 좌표로 이웃을 고른다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasScreenGeo_DirectionalPinNavigation, "FestaFiesta.UI.AtlasScreenGeo.DirectionalPinNavigation", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_AtlasScreenGeo_DirectionalPinNavigation::RunTest(const FString& Parameters)
+{
+	const TArray<FVector2D> Cross = {
+		FVector2D(100.0, 100.0),	// 0: 현재
+		FVector2D(100.0, 20.0),	// 1: 위
+		FVector2D(20.0, 100.0),	// 2: 왼쪽
+		FVector2D(100.0, 180.0),	// 3: 아래
+		FVector2D(180.0, 100.0)	// 4: 오른쪽
+	};
+
+	TestEqual(TEXT("W/위는 위쪽 핀"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, 0, FVector2D(0.0, -1.0)), 1);
+	TestEqual(TEXT("A/왼쪽은 왼쪽 핀"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, 0, FVector2D(-1.0, 0.0)), 2);
+	TestEqual(TEXT("S/아래는 아래쪽 핀"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, 0, FVector2D(0.0, 1.0)), 3);
+	TestEqual(TEXT("D/오른쪽은 오른쪽 핀"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, 0, FVector2D(1.0, 0.0)), 4);
+
+	// 오른쪽 끝에서는 더 오른쪽 후보가 없다. 반대편으로 순환하지 않는다.
+	TestEqual(TEXT("가장자리에서는 멈춘다"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, 4, FVector2D(1.0, 0.0)),
+		static_cast<int32>(INDEX_NONE));
+
+	// 가까운 대각선과 조금 먼 정면 후보 중 점수(거리와 방향 정렬)를 함께 본다.
+	const TArray<FVector2D> Angled = {
+		FVector2D(0.0, 0.0),
+		FVector2D(60.0, 45.0),
+		FVector2D(90.0, 5.0)
+	};
+	TestEqual(TEXT("정면에 가까운 후보를 고른다"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Angled, 0, FVector2D(1.0, 0.0)), 2);
+
+	// 겹친 핀은 방향 입력만으로 구분할 수 없고, 동점이면 앞의 카탈로그 항목이 유지된다.
+	const TArray<FVector2D> DuplicateAndTie = {
+		FVector2D(0.0, 0.0),
+		FVector2D(0.0, 0.0),
+		FVector2D(10.0, -5.0),
+		FVector2D(10.0, 5.0)
+	};
+	TestEqual(TEXT("겹친 핀은 건너뛰고 동점은 카탈로그 순서"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(DuplicateAndTie, 0, FVector2D(1.0, 0.0)), 2);
+
+	TestEqual(TEXT("빈 배열은 이동 없음"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(TArray<FVector2D>(), 0, FVector2D(1.0, 0.0)),
+		static_cast<int32>(INDEX_NONE));
+	TestEqual(TEXT("핀 하나는 이동 없음"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(
+			TArray<FVector2D>{ FVector2D::ZeroVector }, 0, FVector2D(1.0, 0.0)),
+		static_cast<int32>(INDEX_NONE));
+	TestEqual(TEXT("잘못된 현재 인덱스는 이동 없음"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, INDEX_NONE, FVector2D(1.0, 0.0)),
+		static_cast<int32>(INDEX_NONE));
+	TestEqual(TEXT("방향이 0이면 이동 없음"),
+		FFF_AtlasScreenGeo::FindDirectionalPinIndex(Cross, 0, FVector2D::ZeroVector),
+		static_cast<int32>(INDEX_NONE));
+
+	return true;
+}
+
 // 클릭과 드래그를 구분한다. 없으면 핀 클릭이 지구 회전으로도 먹힌다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasScreenGeo_DragTrackerSeparatesClick, "FestaFiesta.UI.AtlasScreenGeo.DragTrackerSeparatesClick", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_AtlasScreenGeo_DragTrackerSeparatesClick::RunTest(const FString& Parameters)
