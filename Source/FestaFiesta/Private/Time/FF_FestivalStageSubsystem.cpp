@@ -46,6 +46,7 @@ bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 {
 	TimeScale = NewScale;
+	OnTimeScaleChange.Broadcast(TimeScale);
 }
 // 배속값을 저장하는 함수
 

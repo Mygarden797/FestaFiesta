@@ -21,6 +21,7 @@
 #include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 
 namespace
 {
@@ -33,6 +34,8 @@ namespace
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
+	
+	
 
 }
 
@@ -141,6 +144,17 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 
 	UE_LOG(LogTemp, Log, TEXT("[CrowdSimulationSubsystem] Initialized: %d actors, %d agents"),
 		CrowdPool.Num(), UnitDatas.Num());
+	
+	
+	// Stage 가 없는 맵을 지원한다 — IsFestivalLive 가 같은 상황에서 true 를 돌려주는 것과 같은
+	// 취급이다(단계 게이팅 없이 군중만 도는 테스트 맵). 여기서 확인하지 않으면 그 맵이 죽는다.
+	UGameInstance* GameInstance = World->GetGameInstance();
+	if (UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		Stage->OnStageChanged.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleStageChanged);
+		Stage->OnTimeScaleChange.AddDynamic(this,&UFF_CrowdSimulationSubsystem::GetTimeScale);
+	}
 }
 
 void UFF_CrowdSimulationSubsystem::ConfigureSimArea(FVector NewOrigin, float NewRadiusUU)
@@ -170,6 +184,13 @@ TStatId UFF_CrowdSimulationSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UFF_CrowdSimulationSubsystem, STATGROUP_Tickables);
 }
 
+void UFF_CrowdSimulationSubsystem::GetTimeScale(float NewTimeScale)
+{
+	SimulationTimeScale = NewTimeScale;
+	
+	
+}
+
 void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Tick);
@@ -180,9 +201,16 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		return;
 	}
+	
+	if (!IsFestivalLive())
+	{
+		return;
+	}
+	
+	const float Time = DeltaTime * SimulationTimeScale;
 
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
-		SimAccumulator, DeltaTime, FixedStepSeconds, MaxStepsPerFrame);
+		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame);
 
 	for (int32 Step = 0; Step < StepsThisFrame; ++Step)
 	{
@@ -224,6 +252,11 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter,
 	float SpawnRadiusUU)
 {
+	// 다음 날 재개는 이 값을 그대로 다시 넘긴다. CachedDistribution.RequestedVisitorCount 를
+	// 재사용하지 않는 것은 바로 아래에서 그 구조체를 덮기 때문이고, ActualVisitorCount 를
+	// 쓰지 않는 것은 그룹을 통째로만 만드느라 요청보다 작아서 날마다 인원이 깎이기 때문이다.
+	ArrivalRequestedVisitorCount = TotalVisitorCount;
+
 	CachedDistribution = BuildVisitorDistribution(TotalVisitorCount);
 	VisitorCursor = 0;
 	ArrivalTotalVisitorCount = CachedDistribution.ActualVisitorCount;
@@ -379,9 +412,8 @@ void UFF_CrowdSimulationSubsystem::UpdateArrivalSchedule()
 
 	const UDataTable* Table = CachedArrivalCurveTable.Get();
 	if (!Table) { return; }
-	//현재 Progress 정도를 계산한다.
-	const float Progress = FMath::Clamp(GetLiveMinutes() / 
-		FMath::Max(Temp_LiveStageMinutes, KINDA_SMALL_NUMBER),0.f,1.f);
+	//현재 Progress 정도를 Stage의 시계에서 받아온다.
+	const float Progress = GetLiveProgress01();
 	//BucketIdx 각 시간 버킷이 어디까지인지를 구한다.
 	const int32 BucketIdx = FMath::Min(FMath::FloorToInt(Progress*CachedBucketCount), CachedBucketCount -1);
 	
@@ -403,6 +435,40 @@ void UFF_CrowdSimulationSubsystem::UpdateArrivalSchedule()
 	
 	
 	
+}
+
+float UFF_CrowdSimulationSubsystem::GetLiveProgress01() const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+
+	if (UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		const float LiveDurationSeconds = Stage->GetLiveDurationForCurrentDay();
+		if (LiveDurationSeconds > 0.f)
+		{
+			return FMath::Clamp(Stage->ElapsedLiveSeconds / LiveDurationSeconds, 0.f, 1.f);
+		}
+	}
+
+	return FMath::Clamp(
+		GetLiveMinutes() / FMath::Max(Temp_LiveStageMinutes, KINDA_SMALL_NUMBER), 0.f, 1.f);
+}
+
+bool UFF_CrowdSimulationSubsystem::IsFestivalLive()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World->GetGameInstance();
+	
+	if (!GameInstance)
+	{
+		return false;
+	}
+	
+	const UFF_FestivalStageSubsystem* Stage= GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>();
+	return Stage ? (Stage->CurrentStage == EFF_FestivalStage::Live 
+		|| Stage->CurrentStage == EFF_FestivalStage::Closing  ) : true;
 }
 
 void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
@@ -1655,6 +1721,24 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 	}
 }
 
+void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
+{
+	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
+	{
+		AllAgentLeavingTrigger();
+	}
+	else if (CurrentStage == EFF_FestivalStage::Live)
+	{
+		LiveStartSimTime = SimTimeSeconds;
+		BeginArrivalSchedule(ArrivalRequestedVisitorCount,ArrivalSpawnCenter,ArrivalSpawnRadiusUU);
+		
+	}
+	else if (PreviousStage == EFF_FestivalStage::Closing)
+	{
+		DespawnAllAgent();
+	}
+}
+
 void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Decisions);
@@ -2109,8 +2193,9 @@ int32 UFF_CrowdSimulationSubsystem::SpawnAgent(UWorld& InWorld, FVector SpawnLoc
 
 int32 UFF_CrowdSimulationSubsystem::SpawnAgents(int32 Count, FVector SpawnCenter, float SpawnRadiusUU)
 {
+
 	BeginArrivalSchedule(Count, SpawnCenter, SpawnRadiusUU);
-	
+
 	return DrainVisitorUntil(MAX_int32);
 	
 }
@@ -2297,4 +2382,44 @@ void UFF_CrowdSimulationSubsystem::DespawnAgentInternal(int32 AgentID)
 	   TEXT("인원 보존 위반: active %d + free %d != pool %d"),
 	   ActiveAgentCount, FreeAgentSlotIndex.Num(), UnitDatas.Num());
 
+}
+
+void UFF_CrowdSimulationSubsystem::DespawnAllAgent()
+{
+	for (int32 AgentIndex = 0;AgentIndex < UnitDatas.Num();AgentIndex++)
+	{
+		if(UnitDatas[AgentIndex].bIsActive)
+		{
+			DespawnAgentInternal(AgentIndex);
+		}
+	}
+	PendingDespawnParty.Reset();
+}
+
+void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
+{
+	for (TTuple<int, int> Party : PartyLeaderByID)
+	{
+		int PartyIndex = Party.Key;
+		int LeaderIndex = Party.Value;
+		
+		FUnitData& Unit = UnitDatas[LeaderIndex];
+		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		
+		if (State.bIsLeaving) continue;
+		
+		State.bIsLeaving = true;
+		State.LeaveStartedSimTime = SimTimeSeconds;
+		Unit.TargetLocation = Temp_ExitWorldLocation;
+		State.CurrentDestinationId = NAME_None;
+		State.bNeedsDecision = false;
+		State.LastDecisionSimTime = SimTimeSeconds;
+		State.CurrentNeedRelief = FFF_NeedReliefFlags();
+		ClearPartyQueueState(LeaderIndex, true);
+		UnitDatas[LeaderIndex].TargetLocation = Temp_ExitWorldLocation;
+		
+		
+		
+	}
+	
 }

@@ -17,6 +17,7 @@
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Templates/SubclassOf.h"
+#include "Time/FF_FestivalStage.h"
 #include "FF_CrowdSimulationSubsystem.generated.h"
 
 class AFF_BaseCrowd;
@@ -79,6 +80,11 @@ public:
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
 	virtual TStatId GetStatId() const override;
+	
+	//시간 설정을 가져오는 Wrapper Class. 다만 배속이 실행될 경우 MaxStepPerFrame에 의해 제한 될 수 있어 결정성에 원인이 될 수 있다.
+	UFUNCTION()
+	void GetTimeScale(float NewTimeScale);
+	
 
 	void BindAgentToPool(int32 AgentIndex);
 
@@ -352,6 +358,8 @@ public:
 	// 배회(시설이 아닌 목적지) 도착 판정 반경, UU.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
 	float WanderArrivalRadiusUU = 400.f;
+	
+	int32 ArrivalRequestedVisitorCount = 0;
 
 	// 같은 파티가 '도착'으로 다시 결정하기까지의 최소 간격, 초. 0이면 끈다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
@@ -508,8 +516,10 @@ public:
 	// 완료 통지는 왔는데 해소할 성분이 없었던 횟수(배회 목적지·플래그 미설정 시설).
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
 	int32 GetNeedReliefSkipped() const { return NeedReliefSkipped; }
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Stay")
 	float Temp_LiveStageMinutes = 240.f;
+	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Stay")
 	float GetPartyRemainingStayMinutes(int32 LeaderAgentIndex) const
 	{
@@ -530,8 +540,26 @@ public:
 	float Temp_LeaveTimeoutSeconds = 180.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need")
 	float Temp_FestivalMinutesPerRealSecond = 1.f;
+
+	
+	float SimulationTimeScale = 1.0f;
+	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
-	float GetLiveMinutes() const { return SimTimeSeconds * Temp_FestivalMinutesPerRealSecond; }
+	float GetLiveMinutes() const { return (SimTimeSeconds - LiveStartSimTime) * Temp_FestivalMinutesPerRealSecond; }
+
+	/**
+	 * 이번 날 Live 진행도 0~1. 입장 곡선의 버킷 선택 기준이다.
+	 *
+	 * Crowd 자체 시계로 계산하지 않는다. UFF_FestivalStageSubsystem 은 ElapsedLiveSeconds 에
+	 * 배속을 곱해 누적하고 메인 공연 구간에는 1배속으로 잠그는데, SimTimeSeconds 는 배속과
+	 * 무관한 실초다. 두 시계가 다른 속도로 흐르므로 상수 하나로 환산할 수 없다 —
+	 * 그래서 Stage 의 값을 그대로 읽는다. 그러면 배속 변경과 공연 잠금이 자동으로 따라온다.
+	 *
+	 * Stage 가 없는 맵(FF.Crowd.Spawn 으로 띄운 군중 전용 맵)에서는 자체 시계로 폴백한다.
+	 * IsFestivalLive 가 같은 상황에서 true 를 돌려주는 것과 같은 취급이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Crowd|Need")
+	float GetLiveProgress01() const;
 
 	// Agent의 목적지 선과 위치를 그린다. 에디터 확인용
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Debug")
@@ -565,7 +593,7 @@ public:
 private:
 
 	
-	
+	bool IsFestivalLive();
 	
 	void StepSimulation(float FixedDt);
 
@@ -628,10 +656,14 @@ private:
 	
 	void DespawnAgentInternal(int32 AgentID);
 	
+	void DespawnAllAgent();
+	
+	void AllAgentLeavingTrigger();
+	
 public:
 private:
 	
-	//스케줄 관련 함수
+	//스케줄 관련 변수
 	TSoftObjectPtr<UDataTable> CachedArrivalCurveTable;
 	
 	FName CachedArrivalScenarioId;
@@ -646,7 +678,7 @@ private:
 	
 	FVector ArrivalSpawnCenter = FVector::ZeroVector;
 	
-	float ArrivalSpawnRadiusUU = 0.f;
+	float ArrivalSpawnRadiusUU = 100.f;
 	
 	bool bArrivalPoolExhaustedLogged = false;
 	
@@ -665,6 +697,9 @@ private:
 
 	// 시뮬레이션 누적 시간, 초
 	float SimTimeSeconds = 0.f;
+	
+	//라이브가 시작된 시간
+	float LiveStartSimTime = 0.f;
 
 	// 각 Agent의 실제 시뮬레이션 데이터(위치, 상태 등)를 저장하는 배열
 	TArray<FUnitData> UnitDatas;
@@ -817,27 +852,11 @@ private:
 
 	// 결정을 기다리는 리더 AgentIndex, FIFO. 앞에서 잘라내므로 예산에 걸려 밀린 파티가 다음 프레임 맨 앞이 된다 — 굶는 파티가 없다
 	TArray<int32> DecisionQueue;
-
-	/**
-	 * 목적지 → 지금 그곳으로 걸어가고 있는 인원. 결정 배치에 스냅샷으로 빌려준다.
-	 *
-	 * ### 왜 증감 원장이 아니라 매 배치 재구축인가
-	 * 목적지를 놓는 경로가 다섯이다(도착·가입 거절·큐 퇴장·퇴장 전환·디스폰). 증감으로 두면
-	 * 그중 하나만 빠져도 원장이 조용히 새고, 새는 방향은 항상 "실제보다 많다"라서
-	 * 있지도 않은 인원 때문에 아무도 그 시설을 안 가게 된다 — 화면에는 원인이 안 보인다.
-	 * 재구축은 매번 PartyDecisionStates 를 훑는 값이라 그런 상태가 한 프레임도 유지되지 않는다.
-	 *
-	 * 비용은 (결정이 있는 프레임 × 리더 수) 다. 결정이 0건인 프레임에서는 아예 돌지 않는다.
-	 */
+	
 	TMap<FName, int32> InTransitMemberCounts;
-
-	/**
-	 * InTransitMemberCounts 를 PartyDecisionStates 로부터 다시 짓는다. 결정 배치 앞에서 한 번 부른다.
-	 *
-	 * 세는 대상은 "목적지를 들고 아직 걸어가고 있는 파티"뿐이다. 제외 조건과 이유:
-	 *   - 재평가 대기 중  : RequestDecision 이 CurrentDestinationId 를 이미 비웠다(자동 제외)
-	 *   - 큐에 들어간 파티 : 대기시간이 이미 세고 있다 → 이중 계산
-	 *   - 퇴장 중         : 시설로 가지 않는다
-	 */
+	
 	void RebuildInTransitMemberCounts();
+	
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage);
 };
