@@ -95,7 +95,11 @@ namespace
 
 	// Game World에서는 프로젝트 Economy 정책도 함께 동작하므로 플러그인 범용 fixture의
 	// 레거시 가격 키 대신 실제 DT_FacilityCosts에 존재하는 프로젝트 행을 사용한다.
-	FFFZSFacilitySpec MakeProjectFoodTruckSpec()
+	//
+	// ★ 이름에 파일을 박아 둔 이유: 무명 namespace라도 unity 빌드에서는 같은 번역 단위로
+	//   합쳐져 하나의 무명 namespace가 된다. FF_ZoneFacilityLifecycleTests.cpp에 같은 일을 하는
+	//   헬퍼가 따로 있어, 둘 다 MakeProjectFoodTruckSpec이면 C2084로 빌드가 깨진다.
+	FFFZSFacilitySpec MakeIntegrationFoodTruckSpec()
 	{
 		FFFZSFacilitySpec Spec =
 			FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
@@ -225,7 +229,7 @@ bool FFFZoneSystemQueueMoveRefreshesProjectionTest::RunTest(const FString& Param
 
 	FFFZSGridPlacement InitialPlacement;
 	InitialPlacement.OriginCell = FIntPoint(1000, 1000);
-	const FFFZSFacilitySpec FacilitySpec = MakeProjectFoodTruckSpec();
+	const FFFZSFacilitySpec FacilitySpec = MakeIntegrationFoodTruckSpec();
 	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
 		FacilitySpec, ZoneId, InitialPlacement, ZoneSystem->GetWorldRevision());
 	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
@@ -376,7 +380,7 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 
 	FFFZSGridPlacement Placement;
 	Placement.OriginCell = FIntPoint(1000, 1000);
-	const FFFZSFacilitySpec FacilitySpec = MakeProjectFoodTruckSpec();
+	const FFFZSFacilitySpec FacilitySpec = MakeIntegrationFoodTruckSpec();
 	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
 		FacilitySpec, ZoneId, Placement, ZoneSystem->GetWorldRevision());
 	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);

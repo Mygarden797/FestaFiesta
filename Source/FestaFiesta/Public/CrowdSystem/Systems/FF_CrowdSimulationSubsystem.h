@@ -606,8 +606,6 @@ private:
 
 	int32 AppendFacilityWalls();
 
-	FVector PickRandomDestination();
-
 	void ProcessDecisions();
 
 	FVector PickWanderDestination(int32 LeaderAgentIndex) const;

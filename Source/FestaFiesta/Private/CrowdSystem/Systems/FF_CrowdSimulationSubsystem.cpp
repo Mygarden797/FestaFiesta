@@ -1244,14 +1244,6 @@ void UFF_CrowdSimulationSubsystem::PushPresentationToActors(float DeltaTime, flo
 	}
 }
 
-FVector UFF_CrowdSimulationSubsystem::PickRandomDestination()
-{
-	const float Angle = Rng.FRandRange(0.f, 2.f * PI);
-	const float Radius = SimRadiusUU * FMath::Sqrt(Rng.FRand());
-
-	return SimOrigin + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
-}
-
 void UFF_CrowdSimulationSubsystem::RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason)
 {
 	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex))
@@ -1578,6 +1570,17 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 	QueueStalledSkips = 0;
 }
 
+// 조정자가 목적지를 못 정했을 때의 국소 배회. **살아 있는 유일한 랜덤 목적지 생성기다.**
+//
+// ★ Rng(FRandomStream)를 쓰지 않는 것이 핵심이다. 시드를 (전역시드, StableAgentID, 라운드)에서
+//   뽑으므로 같은 입력이면 항상 같은 좌표가 나오고, 호출 순서와 프레임률이 결과에 새어들지 않는다.
+//   공유 스트림에서 뽑으면 뽑는 순서가 곧 결과가 되고, 위치가 갈리면 다음 재평가의 거리가 갈려
+//   결정 자체가 갈린다(FF_WalkDistanceMatrix.h가 경고하는 그 문제다).
+//
+// ★ 예전에 PickRandomDestination()이 따로 있었다. 공유 Rng에서 뽑고 범위가 SimRadiusUU 전체라
+//   개체를 축제장 밖으로 보내면서 결정론까지 깨는 함수였고, 호출부가 없어 삭제했다.
+//   배회 범위를 넓히고 싶으면 그것을 되살리지 말고 WanderRadiusUU를 올릴 것 —
+//   그래야 결정론이 유지된다.
 FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentIndex) const
 {
 	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
