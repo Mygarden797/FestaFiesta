@@ -195,6 +195,32 @@ const UFF_FestivalAtlasCatalog* UFF_UIFlowSubsystem::LoadCatalog() const
 	return Catalog;
 }
 
+FText UFF_UIFlowSubsystem::GetActiveFestivalDisplayName() const
+{
+	if (ActiveFestivalId.IsNone())
+	{
+		return FText::GetEmpty();
+	}
+
+	const UFF_FestivalAtlasCatalog* Catalog = LoadCatalog();
+	if (!Catalog)
+	{
+		// LoadCatalog 가 이미 이유를 남긴다. 여기서 또 찍으면 같은 줄이 두 번 나온다.
+		return FText::GetEmpty();
+	}
+
+	const FFF_FestivalAtlasEntry* Entry = Catalog->FindEntry(ActiveFestivalId);
+	if (!Entry)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: 카탈로그에 `%s` 축제 항목이 없어 이름을 표시할 수 없다."),
+			*ActiveFestivalId.ToString());
+		return FText::GetEmpty();
+	}
+
+	return Entry->FestivalName;
+}
+
 FString UFF_UIFlowSubsystem::DescribeState() const
 {
 	return FString::Printf(

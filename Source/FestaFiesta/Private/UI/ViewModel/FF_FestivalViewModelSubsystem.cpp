@@ -2,6 +2,7 @@
 
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
+#include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -34,6 +35,8 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	if (CachedProgressionSubsystem)
 	{
 		CachedProgressionSubsystem->OnGoldChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+		CachedProgressionSubsystem->OnTotalArrearsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
+		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 	}
 	CachedProgressionSubsystem = nullptr;
 
@@ -224,6 +227,8 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 
 	// Bind + Sync. StartFestival이 이미 지나갔다면 방송을 놓쳤으므로 현재값을 직접 읽는다.
 	CachedProgressionSubsystem->OnGoldChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+	CachedProgressionSubsystem->OnTotalArrearsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
+	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 
 	// !! 축제가 시작되기 전에는 소유자 값을 쓰지 않는다 !!
 	// StartFestival 전 Funds는 0이다. 그 0을 화면에 띄우면 "잔액이 없다"는 틀린 사실이 되고,
@@ -231,6 +236,8 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	if (CachedProgressionSubsystem->IsFestivalStarted())
 	{
 		HandleOwnerGoldChanged(CachedProgressionSubsystem->GetGold());
+		HandleOwnerArrearsChanged(CachedProgressionSubsystem->GetTotalArrears());
+		HandleOwnerStaffCountChanged(CachedProgressionSubsystem->GetTotalStaffCount());
 	}
 	else
 	{
@@ -243,6 +250,99 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged(int32 NewValue)
 {
 	// 소유자 값이 들어오는 순간부터 더미는 의미가 없다. 변화 감지는 ApplyIntMetric이 한다.
 	ApplyIntMetric(Gold, NewValue, OnGoldChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged(int32 NewValue)
+{
+	ApplyIntMetric(Arrears, NewValue, OnArrearsChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged(int32 NewValue)
+{
+	// 내역을 먼저 채운 뒤 총원을 방송한다. 순서가 반대면 위젯이 총원 방송을 받고 다시 그릴 때
+	// 기본·알바가 아직 이전 값이라 "총 6명 · 기본 4 + 알바 0" 같은 한 프레임이 나온다.
+	if (const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem())
+	{
+		BaseStaffCount = Progression->GetBaseStaffCount();
+		TemporaryStaffCount = Progression->GetTemporaryStaffCount();
+	}
+
+	ApplyIntMetric(TotalStaffCount, NewValue, OnTotalStaffCountChanged);
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetAffordableTemporaryStaffCount() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		// 0 을 돌려주면 "고용할 수 없다"는 사실이 되어 버린다. 모르는 것과 구분한다.
+		return INDEX_NONE;
+	}
+
+	return Progression->GetAffordableTemporaryStaffCount();
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetRemainingTemporaryStaffCap() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return INDEX_NONE;
+	}
+
+	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
+	if (!Definition)
+	{
+		return INDEX_NONE;
+	}
+
+	// 경제 쪽 `GetRemainingHireCap()` 이 private 이라 같은 식을 여기서 쓴다.
+	// **고용 가능 판정은 여기서 하지 않는다** — 이 값은 막힌 이유를 화면에 쓰기 위한 것이고,
+	// 실제 허용 여부는 `TryHireTemporaryStaff` 가 정한다.
+	return FMath::Max(0, Definition->MaxHiredStaffPerDay - Progression->GetTemporaryStaffCount());
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetDailyStaffWageGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition ? Definition->DailyStaffWageGold : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetMaxTemporaryStaffPerDay() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition ? Definition->MaxHiredStaffPerDay : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetDailyVenueRentGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	return Definition ? Definition->DailyVenueRentGold : INDEX_NONE;
+}
+
+bool UFF_FestivalViewModelSubsystem::RequestHireTemporaryStaff(int32 Count)
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("[ViewModel] 경제 시스템이 없어 알바를 고용할 수 없다."));
+		return false;
+	}
+
+	// 여기서 미리 막지 않는다. 상한·잔액 판정의 소유자는 경제 시스템이고, UI 가 한 번 더
+	// 판정하면 두 곳의 규칙이 갈라진다 (UI 규칙 2).
+	const bool bAccepted = Progression->TryHireTemporaryStaff(Count);
+	if (!bAccepted)
+	{
+		// 거부 사유는 경제 쪽 로그에 남는다. 여기서는 요청이 실패한 사실만 남긴다.
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] 알바 %d명 고용 요청이 거부됐다. 상한/잔액은 경제 로그를 본다."), Count);
+	}
+	return bAccepted;
 }
 
 bool UFF_FestivalViewModelSubsystem::CanAfford(int32 Amount) const

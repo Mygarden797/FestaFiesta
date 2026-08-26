@@ -139,6 +139,19 @@ public:
 	FName GetActiveFestivalId() const { return ActiveFestivalId; }
 
 	/**
+	 * 지금 진행 중인 축제의 화면 표시 이름. 축제 중이 아니거나 카탈로그에 없으면 빈 값이다.
+	 *
+	 * === 왜 여기인가 ===
+	 * 이름은 `UFF_FestivalAtlasCatalog` 가 갖고 `UFF_FestivalDefinition` 에는 없다(김시리님 소유라
+	 * 필드를 늘리지 않는다). 카탈로그를 소프트 참조로 들고 있는 것은 흐름 서브시스템뿐이라,
+	 * 위젯마다 카탈로그를 로드하지 않게 여기서 한 번만 해석한다.
+	 *
+	 * **빈 값이면 호출부는 그 칸을 숨긴다.** 축제 이름 자리에 `None` 이 뜨면 고장으로 보인다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Flow")
+	FText GetActiveFestivalDisplayName() const;
+
+	/**
 	 * 지금 고른 국가. 국가 지도 화면이 어느 나라를 그려야 하는지가 이 값이다.
 	 *
 	 * ★ **축제를 시작해도, 최종 결산에서 로비로 돌아와도 유지된다.**
