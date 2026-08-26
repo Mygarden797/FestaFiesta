@@ -30,6 +30,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
 // 하루가 끝날 때 다음 시스템(시설/경제)에 이월용 시간 정보를 알리는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDayEnded, int32, EndedDay, float, TodayLiveDuration);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTimeScaleChange, float, TimeScale);
+
 // 오늘 날씨 종류를 나타내는 enum
 UENUM(BlueprintType)
 enum class EFF_WeatherType : uint8
@@ -203,6 +205,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void SetTimeScale(float NewScale);
 	// 배속 바꾸는 함수
+	
+	FOnTimeScaleChange OnTimeScaleChange;
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage|Environment")
 	void SetSelectedWeather(EFF_WeatherType NewWeather);
@@ -255,6 +259,10 @@ public:
 	bool IsCurrentStageSkippable();
 	// 지금 이 단계가 스킵 가능한지 확인하는 함수 (private에서 public으로 이동)
 
+	float GetLiveDurationForCurrentDay() ;
+	//그날 Live 총 길이(마지막 이벤트 시각, x1 기준 초)를 알려주는 함수
+	// Crowd의 입장 곡선이 진행도 분모로 읽는다 (private에서 public으로 이동)
+
 	virtual void Tick(float DeltaTime) override;
 	// 매 프레임 자동으로 호출되는 함수
 
@@ -276,9 +284,6 @@ private:
 
 	const TArray<FFF_LiveTriggerEvent>& GetEventsForCurrentDay() ;
 	// 오늘 날짜에 맞는 이벤트 배열을 골라주는 함수
-
-	float GetLiveDurationForCurrentDay() ;
-	//오늘 Live 총 길이(마지막 이벤트 시각)를 알려주는 함수
 
 	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Schedule")
 	TObjectPtr<UDataTable> ProgramScheduleTable;

@@ -1099,13 +1099,27 @@ static void CrowdArrivalCommand(const TArray<FString>& Args, UWorld* World, FOut
 		return;
 	}
 
+	// 진행도는 서브시스템과 같은 함수로 구한다. 여기서 식을 복제하면 둘이 갈렸을 때
+	// 이 커맨드가 거짓말을 하게 되고, 그러면 입장 곡선 진단이 통째로 무의미해진다.
 	const int32 BucketCount = CrowdSim->GetArrivalBucketCount();
-	const float LiveMinutes = CrowdSim->GetLiveMinutes();
-	const float StageMinutes = FMath::Max(CrowdSim->Temp_LiveStageMinutes, KINDA_SMALL_NUMBER);
-	const float Progress = FMath::Clamp(LiveMinutes / StageMinutes, 0.f, 1.f);
+	const float Progress = CrowdSim->GetLiveProgress01();
 	const int32 BucketIdx = FMath::Min(FMath::FloorToInt(Progress * BucketCount), BucketCount - 1);
 
-	Ar.Logf(TEXT("Live 경과        : %.1f분 / %.1f분  (진행도 %.4f)"), LiveMinutes, StageMinutes, Progress);
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* ArrivalStage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+
+	if (ArrivalStage && ArrivalStage->GetLiveDurationForCurrentDay() > 0.f)
+	{
+		Ar.Logf(TEXT("Live 경과        : %.1f초 / %.1f초  (진행도 %.4f, Stage 시계 기준)"),
+			ArrivalStage->ElapsedLiveSeconds, ArrivalStage->GetLiveDurationForCurrentDay(), Progress);
+	}
+	else
+	{
+		Ar.Logf(TEXT("Live 경과        : %.1f분 / %.1f분  (진행도 %.4f, Stage 없음 — Crowd 자체 시계로 폴백)"),
+			CrowdSim->GetLiveMinutes(),
+			FMath::Max(CrowdSim->Temp_LiveStageMinutes, KINDA_SMALL_NUMBER), Progress);
+	}
 
 	const FName RowName(*FString::Printf(TEXT("%s_%02d"), *ScenarioId.ToString(), BucketIdx));
 	const FFF_ArrivalCurveRow* Row =
