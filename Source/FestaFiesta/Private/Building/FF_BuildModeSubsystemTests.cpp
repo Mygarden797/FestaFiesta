@@ -8,6 +8,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "FF_FFZSPlacementPreviewActor.h"
 #include "Misc/AutomationTest.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -53,6 +54,16 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		IsPreviewActive(EFF_BuildModeState::Moving));
 	TestFalse(TEXT("BuildMode는 프리뷰 활성 상태가 아니다"),
 		IsPreviewActive(EFF_BuildModeState::BuildMode));
+	TestFalse(TEXT("일반 플레이에는 사용자용 격자가 없다"),
+		ShouldShowPlacementGrid(EFF_BuildModeState::Closed));
+	TestFalse(TEXT("시설 선택 전 기본 건축 상태에는 사용자용 격자가 없다"),
+		ShouldShowPlacementGrid(EFF_BuildModeState::BuildMode));
+	TestFalse(TEXT("카탈로그가 월드를 가리는 동안 사용자용 격자가 없다"),
+		ShouldShowPlacementGrid(EFF_BuildModeState::CatalogOpen));
+	TestTrue(TEXT("신규 시설 배치 중에는 로컬 격자를 표시한다"),
+		ShouldShowPlacementGrid(EFF_BuildModeState::Placing));
+	TestTrue(TEXT("기존 시설 이동 중에는 로컬 격자를 표시한다"),
+		ShouldShowPlacementGrid(EFF_BuildModeState::Moving));
 	TestEqual(TEXT("이동 취소는 선택 가능한 BuildMode로 복귀한다"),
 		ResolvePreviewCancelState(EFF_BuildModeState::Moving),
 		EFF_BuildModeState::BuildMode);
@@ -188,8 +199,47 @@ bool FFF_BuildModeRotationInputModelTest::RunTest(const FString& Parameters)
 		UFF_BuildModeSubsystem::DefaultPlacementRotationSnapDegrees, 45.0f);
 	TestEqual(TEXT("자유 회전 fallback은 초당 90도다"),
 		UFF_BuildModeSubsystem::DefaultFreePlacementRotationSpeedDegreesPerSecond, 90.0f);
-	TestEqual(TEXT("위치 스냅 fallback은 권위 격자와 같은 1cm다"),
-		UFF_BuildModeSubsystem::DefaultPlacementPositionSnapCm, 1);
+	TestEqual(TEXT("초보자용 기본 위치 스냅은 이해하기 쉬운 1m다"),
+		UFF_BuildModeSubsystem::DefaultPlacementPositionSnapCm, 100);
+	TestEqual(TEXT("정밀 위치 스냅 fallback은 1/4m다"),
+		UFF_BuildModeSubsystem::DefaultPrecisionPlacementPositionSnapCm, 25);
+	TestEqual(TEXT("자유 배치는 권위 좌표의 최소 1cm까지 허용한다"),
+		UFF_BuildModeSubsystem::DefaultFreePlacementPositionSnapCm, 1);
+	TestEqual(TEXT("기본 입력에는 1m 위치 맞춤을 사용한다"),
+		ResolvePlacementPositionSnapCm(false, false, 100, 25, 1), 100);
+	TestEqual(TEXT("Ctrl은 25cm 정밀 맞춤을 사용한다"),
+		ResolvePlacementPositionSnapCm(true, false, 100, 25, 1), 25);
+	TestEqual(TEXT("Alt는 1cm 자유 배치를 사용한다"),
+		ResolvePlacementPositionSnapCm(false, true, 100, 25, 1), 1);
+	TestEqual(TEXT("Ctrl과 Alt를 함께 누르면 더 자유로운 Alt가 우선한다"),
+		ResolvePlacementPositionSnapCm(true, true, 100, 25, 1), 1);
+	TestEqual(TEXT("1cm 자유 배치에서도 측정용 1m 격자는 유지한다"),
+		ResolveVisualGridStepCm(1, 100), 100);
+	TestEqual(TEXT("25cm 정밀 배치는 보조 격자와 실제 맞춤이 일치한다"),
+		ResolveVisualGridStepCm(25, 100), 25);
+
+	using namespace FFZSPlacementGridModel;
+	TestEqual(TEXT("음수 좌표의 격자 하한 정렬은 0 쪽으로 잘못 당기지 않는다"),
+		AlignDownToGrid(-10.0, 100), -100.0);
+	TestEqual(TEXT("음수 좌표의 격자 상한 정렬은 다음 기준선 0이다"),
+		AlignUpToGrid(-10.0, 100), 0.0);
+	const float PreviousGridHalfExtentCm = ResolveGridHalfExtentCm(
+		600, 300.0f, 1800.0f, 100);
+	const float ExpandedGridHalfExtentCm = ResolveGridHalfExtentCm(
+		600, 600.0f, 3600.0f, 100);
+	TestEqual(TEXT("600cm footprint와 확대된 600cm 여백은 반경 900cm다"),
+		ExpandedGridHalfExtentCm, 900.0f);
+	TestEqual(TEXT("시설 바깥으로 보이는 격자 여백은 기존 300cm에서 정확히 두 배다"),
+		ExpandedGridHalfExtentCm - 300.0f,
+		(PreviousGridHalfExtentCm - 300.0f) * 2.0f);
+	TestEqual(TEXT("소프트 최대 반경은 4000cm 대형 시설 자체를 자르지 않는다"),
+		ResolveGridHalfExtentCm(4000, 300.0f, 1800.0f, 100), 2000.0f);
+	TestTrue(TEXT("음수 방향 5m 기준선도 굵은 선으로 판정한다"),
+		IsMajorGridCoordinate(-500.0, 500));
+	TestEqual(TEXT("패치 중심은 완전한 격자 농도를 유지한다"),
+		ResolveEdgeOpacity(0.0, 0.0, 1000.0), 1.0f);
+	TestEqual(TEXT("패치 가장자리는 지형을 가리지 않도록 25퍼센트로 흐려진다"),
+		ResolveEdgeOpacity(1000.0, 0.0, 1000.0), 0.25f);
 
 	return true;
 }
