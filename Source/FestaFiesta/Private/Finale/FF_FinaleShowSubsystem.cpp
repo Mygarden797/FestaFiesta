@@ -78,10 +78,7 @@ void UFF_FinaleShowSubsystem::BindFestivalStage()
 		return;
 	}
 
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	UFF_FestivalStageSubsystem* Stage =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GetGameInstanceSubsystem<UFF_FestivalStageSubsystem>();
 	if (!Stage)
 	{
 		// 단계 시스템이 없는 테스트 맵이면 자동 시작만 못 할 뿐 콘솔 재생은 된다.
@@ -107,10 +104,7 @@ void UFF_FinaleShowSubsystem::UnbindFestivalStage()
 		return;
 	}
 
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	if (UFF_FestivalStageSubsystem* Stage =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	if (UFF_FestivalStageSubsystem* Stage = GetGameInstanceSubsystem<UFF_FestivalStageSubsystem>())
 	{
 		Stage->OnStageChanged.RemoveDynamic(this, &UFF_FinaleShowSubsystem::HandleFestivalStageChanged);
 	}
@@ -226,11 +220,7 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 				static_cast<int32>(ActiveGrade), FiredBursts, ActiveSpec.BurstCount, ElapsedSeconds);
 
 			// 등급별 수치를 같이 찍는다. 데이터 애셋을 고치고 나서 반영됐는지 바로 확인할 수 있다.
-			const TArray<EFF_FinaleGrade> All = {
-				EFF_FinaleGrade::None, EFF_FinaleGrade::C, EFF_FinaleGrade::B,
-				EFF_FinaleGrade::A, EFF_FinaleGrade::S
-			};
-			for (const EFF_FinaleGrade Grade : All)
+			for (const EFF_FinaleGrade Grade : FFF_FinaleGrades::GetAscendingOrder())
 			{
 				const FFF_FinaleGradeSpec Spec = ResolveSpec(Grade);
 				UE_LOG(LogFestaFiestaFinale, Display,
@@ -281,10 +271,8 @@ bool UFF_FinaleShowSubsystem::StartShow()
 	EFF_FinaleGrade Grade = EFF_FinaleGrade::None;
 
 	// 등급은 축제 진행 쪽이 소유한다. 여기서는 읽기만 한다.
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	if (const UFF_FestivalProgressionSubsystem* Progression =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr)
+		GetGameInstanceSubsystem<UFF_FestivalProgressionSubsystem>())
 	{
 		Grade = Progression->GetPurchasedFinaleGrade();
 	}

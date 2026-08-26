@@ -172,19 +172,23 @@ struct FFF_QueueLaneGeometry
  * Queue → Crowd. Queue가 하는 일은 이 배열을 갱신하고 알리는 것뿐이다.
  * Queue는 절대 트랜스폼을 직접 건드리지 않는다 — 순간이동도 Lerp도 아니고, Crowd가 걸어서 간다.
  * 그래야 앞사람 지연이 뒷사람에게 전파되고 실제 대기시간에 반영된다.
+ *
+ * 일행당 하나씩 나온다. 멤버마다 자리를 지정하지 않는 이유는 Crowd 가 일행을 리더 기준
+ * 포메이션으로 묶어 다루기 때문이다. 멤버별로 다른 목적지를 주면 그 포메이션과 싸운다.
  */
 USTRUCT(BlueprintType)
 struct FFF_SlotAssignment
 {
 	GENERATED_BODY()
 
+	// 일행의 리더. 나머지 멤버는 Crowd 포메이션이 이 주위에 배치한다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 AgentId = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 PartyId = INDEX_NONE;
 
-	// 0 = 창구 바로 앞
+	// 0 = 창구 바로 앞. 일행 인원에 따라 다음 일행과의 간격이 벌어지므로 연속이 아닐 수 있다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 SlotIndex = INDEX_NONE;
 
