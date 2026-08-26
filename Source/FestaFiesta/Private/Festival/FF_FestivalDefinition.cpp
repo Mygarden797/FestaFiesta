@@ -29,6 +29,40 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		{ TEXT("Nightlife"),       40 },
 	};
 
+	// 유료 프로그램 카드 v0. 정원·체험비는 [기획서] §9.1 값 그대로이고,
+	// 비용만 하루 기준으로 내렸다(원값 400·500 은 기간권 전제라 1일권으로는 손해다).
+	{
+		FFF_ProgramCard Workshop;
+		Workshop.ProgramId = TEXT("Program_SandArtWorkshop");
+		Workshop.DisplayName = LOCTEXT("Program_SandArtWorkshop", "바다향기 공방");
+		Workshop.CostGold = 200;
+		Workshop.RequiredStaff = 1;
+		Workshop.Capacity = 12;
+		Workshop.FeePerPerson = 30;   // 정원 다 차면 360, 확정 매출이다
+		Workshop.StartMinutes = 30.f; 
+		Workshop.EndMinutes = 60.f;
+		// 공방 체험은 아이 동반 가족층이 잡는다는 가정. 프로그램이 데려오는 손님의
+		// 아키타입이라 유입 인구 구성과 별개로 이 값이 그대로 스폰된다.
+		Workshop.PreferredArchetypeId = TEXT("life_stage_30_40s");
+		// 공예·제작 체험 부스에서만 열린다. 화장실에 공방을 여는 경로를 막는다.
+		Workshop.AllowedFacilityTypes = { TEXT("Booth_CraftExperience") };
+
+		FFF_ProgramCard Yoga;
+		Yoga.ProgramId = TEXT("Program_SunsetYoga");
+		Yoga.DisplayName = LOCTEXT("Program_SunsetYoga", "선셋 요가");
+		Yoga.CostGold = 250;
+		Yoga.RequiredStaff = 2;
+		Yoga.Capacity = 16;
+		Yoga.FeePerPerson = 25;       // 정원 다 차면 400, 확정 매출이다
+		Yoga.StartMinutes = 90.f;
+		Yoga.EndMinutes = 120.f;
+		Yoga.PreferredArchetypeId = TEXT("life_stage_20s");
+		// 참여형 무대. 관람용 무대(MainStage·SubStage)와 구분된다.
+		Yoga.AllowedFacilityTypes = { TEXT("Performance_ExperienceStage") };
+
+		ProgramCatalog = { Workshop, Yoga };
+	}
+
 	// "안 함"은 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0)
 	PromotionBasic.CostGold = 500;
 	PromotionBasic.VisitorMultiplier = 1.08f;

@@ -133,6 +133,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Finale")
 	TArray<FFF_FinaleTier> FinaleTiers;
 
+	// --- 유료 프로그램 -----------------------------------------------------
+
+	// 아침에 편성할 수 있는 프로그램 카드. 생성자가 v0 값으로 채운다.
+	// 하루짜리다.** 편성은 매일 아침 다시 하고 하루 경계에서 비워진다 
+	// 비용은 "정원을 다 채웠을 때 매출"의 55~62% 로 잡았다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Program")
+	TArray<FFF_ProgramCard> ProgramCatalog;
+
 	// --- 참조 표 ----------------------------------------------------------
 
 	// 시설 설치비 표. 행 구조체는 FFF_FacilityCostRow 여야 한다.

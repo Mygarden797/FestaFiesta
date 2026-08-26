@@ -69,4 +69,21 @@ FText UFF_EconomyDisplayTextLibrary::GetFinaleGradeText(EFF_FinaleGrade Grade)
 	return FText::GetEmpty();
 }
 
+FText UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(EFF_ProgramPurchaseResult Result)
+{
+	switch (Result)
+	{
+	case EFF_ProgramPurchaseResult::Success:            return LOCTEXT("Program_Success",            "편성 완료");
+	case EFF_ProgramPurchaseResult::FestivalNotStarted: return LOCTEXT("Program_FestivalNotStarted", "축제가 시작되지 않았다");
+	case EFF_ProgramPurchaseResult::UnknownProgram:     return LOCTEXT("Program_UnknownProgram",     "없는 프로그램");
+	case EFF_ProgramPurchaseResult::AlreadyScheduled:   return LOCTEXT("Program_AlreadyScheduled",   "오늘 이미 편성했다");
+	case EFF_ProgramPurchaseResult::NotEnoughStaff:     return LOCTEXT("Program_NotEnoughStaff",     "인원이 부족하다");
+	case EFF_ProgramPurchaseResult::InsufficientGold:   return LOCTEXT("Program_InsufficientGold",   "Gold 부족");
+	case EFF_ProgramPurchaseResult::FacilityTypeMismatch:
+		return LOCTEXT("Program_FacilityTypeMismatch", "이 시설에서는 열 수 없다");
+	}
+
+	return FText::GetEmpty();
+}
+
 #undef LOCTEXT_NAMESPACE

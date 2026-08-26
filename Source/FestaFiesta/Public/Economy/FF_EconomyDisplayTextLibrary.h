@@ -28,4 +28,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	static FText GetFinaleGradeText(EFF_FinaleGrade Grade);
+
+	// 프로그램 편성 실패 이유. UI 가 그대로 화면에 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	static FText GetProgramPurchaseResultText(EFF_ProgramPurchaseResult Result);
 };

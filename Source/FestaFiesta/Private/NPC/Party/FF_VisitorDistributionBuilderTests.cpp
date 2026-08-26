@@ -347,4 +347,186 @@ bool FFF_VisitorDistribution_ScenarioSwitchesArchetypeShares::RunTest(const FStr
 	return true;
 }
 
+namespace FFF_VisitorDistributionTestHelpers
+{
+	FFF_ReservedPartyRequest MakeReserved(
+		const FGuid& ReservationId, const TCHAR* ArchetypeId, int32 GroupSize, int32 ChildCount)
+	{
+		FFF_ReservedPartyRequest Request;
+		Request.ReservationId = ReservationId;
+		Request.AdultArchetypeId = ArchetypeId;
+		Request.GroupSize = GroupSize;
+		Request.ChildCount = ChildCount;
+		return Request;
+	}
+
+	FFF_VisitorDistribution BuildWithReserved(
+		int32 Count, int32 Seed, const TArray<FFF_ReservedPartyRequest>& Reserved)
+	{
+		return FFF_VisitorDistributionBuilder::Build(
+			MakeSizeTable(), MakeChildTable(), MakeVisitorArchetypeTable(),
+			Scope, Scenario, Count, Seed, Reserved);
+	}
+}
+
+// 예약석은 일반 방문객을 밀어내지 않고 그 위에 얹힌다.
+// 프로그램은 "오는 사람 중에서 고르는" 것이 아니라 "더 오게 만드는" 것이라(2026-08-25 확정)
+// 총원이 늘어나는 것이 이 기능의 정의다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_ReservedSeatsAddOnTopOfGeneral, "FestaFiesta.NPC.VisitorDistribution.ReservedSeatsAddOnTopOfGeneral", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_VisitorDistribution_ReservedSeatsAddOnTopOfGeneral::RunTest(const FString& Parameters)
+{
+	using namespace FFF_VisitorDistributionTestHelpers;
+
+	const FFF_VisitorDistribution Plain = BuildDefault(200, 7);
+
+	const FGuid Workshop = FGuid::NewGuid();
+	const TArray<FFF_ReservedPartyRequest> Reserved = {
+		MakeReserved(Workshop, TEXT("life_stage_30_40s"), 6, 0),
+		MakeReserved(Workshop, TEXT("life_stage_30_40s"), 6, 0),
+	};
+	const FFF_VisitorDistribution WithReserved = BuildWithReserved(200, 7, Reserved);
+
+	TestEqual(TEXT("예약 인원이 세어진다"), WithReserved.ReservedVisitorCount, 12);
+	TestEqual(TEXT("예약 그룹 수가 세어진다"), WithReserved.ReservedGroupCount, 2);
+	TestEqual(TEXT("총원이 정확히 예약분만큼 늘어난다"),
+		WithReserved.ActualVisitorCount, Plain.ActualVisitorCount + 12);
+
+	// 일반 몫이 줄지 않았다는 것을 개체 단위로도 확인한다 —
+	// 총원만 보면 "예약이 일반을 밀어내고 그만큼 다시 채운" 경우와 구분되지 않는다.
+	int32 GeneralCount = 0;
+	for (const FFF_TaggedVisitor& Visitor : WithReserved.Visitors)
+	{
+		if (!Visitor.ReservationId.IsValid())
+		{
+			++GeneralCount;
+		}
+	}
+	TestEqual(TEXT("일반 방문객 수가 그대로다"), GeneralCount, Plain.ActualVisitorCount);
+	return true;
+}
+
+// 예약석은 배열 맨 앞에 몰려 있다.
+// 유입 곡선 커서가 앞에서부터 밀기 때문에 배열 위치가 곧 도착 순서다 —
+// 뒤에 있으면 프로그램이 시작된 뒤에 도착한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_ReservedSeatsComeFirst, "FestaFiesta.NPC.VisitorDistribution.ReservedSeatsComeFirst", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_VisitorDistribution_ReservedSeatsComeFirst::RunTest(const FString& Parameters)
+{
+	using namespace FFF_VisitorDistributionTestHelpers;
+
+	const FGuid Workshop = FGuid::NewGuid();
+	const FGuid Yoga = FGuid::NewGuid();
+	const TArray<FFF_ReservedPartyRequest> Reserved = {
+		MakeReserved(Workshop, TEXT("life_stage_20s"), 4, 1),
+		MakeReserved(Yoga, TEXT("life_stage_50s"), 2, 0),
+	};
+	const FFF_VisitorDistribution Result = BuildWithReserved(200, 11, Reserved);
+
+	if (!TestTrue(TEXT("예약 6명 + 일반이 나온다"), Result.Visitors.Num() > 6))
+	{
+		return false;
+	}
+
+	for (int32 Index = 0; Index < 6; ++Index)
+	{
+		TestTrue(*FString::Printf(TEXT("%d번째가 예약자다"), Index),
+			Result.Visitors[Index].ReservationId.IsValid());
+	}
+	TestFalse(TEXT("7번째부터는 일반이다"), Result.Visitors[6].ReservationId.IsValid());
+
+	// 주문한 예약에 정확히 붙어야 한다. 섞이면 스폰 통지가 엉뚱한 프로그램으로 간다.
+	TestEqual(TEXT("앞 4명은 공방 소속"), Result.Visitors[0].ReservationId, Workshop);
+	TestEqual(TEXT("그 다음 2명은 요가 소속"), Result.Visitors[4].ReservationId, Yoga);
+
+	// 아동은 리더가 될 수 없다 — 예약석도 같은 규칙을 탄다.
+	TestFalse(TEXT("공방 그룹 선두는 성인이다"), Result.Visitors[0].bIsDependentChildSlot);
+	TestTrue(TEXT("공방 그룹 막내는 아동이다"), Result.Visitors[3].bIsDependentChildSlot);
+	TestEqual(TEXT("아동은 아키타입을 갖지 않는다"), Result.Visitors[3].ArchetypeId, FName(NAME_None));
+	TestEqual(TEXT("성인은 주문한 아키타입을 갖는다"),
+		Result.Visitors[0].ArchetypeId, FName(TEXT("life_stage_20s")));
+	return true;
+}
+
+// 규칙에 안 맞는 주문서는 잘라 담지 않고 통째로 빼고, 뺀 개수를 돌려준다.
+// 조용히 자르면 산 정원보다 적게 오는 것을 아무도 모른다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_RejectsMalformedReservedRequests, "FestaFiesta.NPC.VisitorDistribution.RejectsMalformedReservedRequests", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_VisitorDistribution_RejectsMalformedReservedRequests::RunTest(const FString& Parameters)
+{
+	using namespace FFF_VisitorDistributionTestHelpers;
+
+	const FGuid Id = FGuid::NewGuid();
+	const TArray<FFF_ReservedPartyRequest> Reserved = {
+		MakeReserved(Id, TEXT("life_stage_20s"), 7, 0),   // 그룹 상한 6 초과
+		MakeReserved(Id, TEXT("life_stage_20s"), 0, 0),   // 빈 그룹
+		MakeReserved(Id, TEXT("life_stage_20s"), 3, 3),   // 전원 아동 — 리더가 없어진다
+		MakeReserved(Id, TEXT("life_stage_20s"), 3, 1),   // 유일하게 정상
+	};
+	const FFF_VisitorDistribution Result = BuildWithReserved(100, 3, Reserved);
+
+	TestEqual(TEXT("정상 주문만 배출된다"), Result.ReservedVisitorCount, 3);
+	TestEqual(TEXT("정상 그룹은 하나다"), Result.ReservedGroupCount, 1);
+	TestEqual(TEXT("뺀 주문 수를 돌려준다"), Result.RejectedReservedCount, 3);
+	return true;
+}
+
+// 예약석이 없으면 이 인자가 생기기 전과 결과가 한 개체도 다르지 않다.
+// 기본 인자가 기존 호출부(크라우드)를 조용히 바꾸면 안 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_EmptyReservedChangesNothing, "FestaFiesta.NPC.VisitorDistribution.EmptyReservedChangesNothing", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_VisitorDistribution_EmptyReservedChangesNothing::RunTest(const FString& Parameters)
+{
+	using namespace FFF_VisitorDistributionTestHelpers;
+
+	const FFF_VisitorDistribution Plain = BuildDefault(300, 99);
+	const FFF_VisitorDistribution Explicit = BuildWithReserved(300, 99, {});
+
+	TestEqual(TEXT("예약 인원이 0 이다"), Explicit.ReservedVisitorCount, 0);
+	TestEqual(TEXT("개체 수가 같다"), Explicit.Visitors.Num(), Plain.Visitors.Num());
+	TestEqual(TEXT("그룹 수가 같다"), Explicit.PlannedGroupCount, Plain.PlannedGroupCount);
+	TestEqual(TEXT("아동 수가 같다"), Explicit.DependentChildCount, Plain.DependentChildCount);
+
+	if (Plain.Visitors.Num() == Explicit.Visitors.Num())
+	{
+		for (int32 Index = 0; Index < Plain.Visitors.Num(); ++Index)
+		{
+			if (Explicit.Visitors[Index].TargetGroupSize != Plain.Visitors[Index].TargetGroupSize
+				|| Explicit.Visitors[Index].ArchetypeId != Plain.Visitors[Index].ArchetypeId)
+			{
+				AddError(FString::Printf(TEXT("%d번째 개체가 달라졌다"), Index));
+				break;
+			}
+		}
+	}
+	return true;
+}
+
+// 예약석도 결정적이다. 같은 주문서면 항상 같은 배열이 나온다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_VisitorDistribution_ReservedSeatsAreDeterministic, "FestaFiesta.NPC.VisitorDistribution.ReservedSeatsAreDeterministic", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_VisitorDistribution_ReservedSeatsAreDeterministic::RunTest(const FString& Parameters)
+{
+	using namespace FFF_VisitorDistributionTestHelpers;
+
+	const FGuid Id = FGuid::NewGuid();
+	const TArray<FFF_ReservedPartyRequest> Reserved = {
+		MakeReserved(Id, TEXT("life_stage_60plus"), 5, 2),
+		MakeReserved(Id, TEXT("life_stage_teen"), 3, 0),
+	};
+
+	const FFF_VisitorDistribution First = BuildWithReserved(150, 21, Reserved);
+	const FFF_VisitorDistribution Second = BuildWithReserved(150, 21, Reserved);
+
+	if (!TestEqual(TEXT("개체 수가 같다"), Second.Visitors.Num(), First.Visitors.Num()))
+	{
+		return false;
+	}
+	for (int32 Index = 0; Index < First.Visitors.Num(); ++Index)
+	{
+		if (First.Visitors[Index].ReservationId != Second.Visitors[Index].ReservationId
+			|| First.Visitors[Index].ArchetypeId != Second.Visitors[Index].ArchetypeId)
+		{
+			AddError(FString::Printf(TEXT("%d번째 개체가 실행마다 다르다"), Index));
+			return false;
+		}
+	}
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

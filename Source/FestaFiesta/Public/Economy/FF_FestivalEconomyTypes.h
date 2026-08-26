@@ -56,6 +56,136 @@ enum class EFF_FinalePurchaseResult : uint8
 	InsufficientGold    UMETA(DisplayName = "Gold 부족")
 };
 
+/**
+ * 하루짜리 유료 프로그램 한 장.
+ *
+ * 아침(Setup·MorningCheck)에 Gold 와 Staff 를 걸고 편성하면, 그 프로그램을 좋아하는 손님이
+ * 정원만큼 추가로 방문한다. 정원이 보장되므로 체험비는 확정값이다 — 이 카드의 값어치는
+ * 체험비뿐 아니라 데려온 손님이 부스에서 쓰는 돈에도 있다.
+ *
+ * 대가는 묶이는 Staff 와 기회비용이다.
+ * 같은 Gold 로 부스를 지으면 남은 날 내내 벌지만, 프로그램은 그날 하루만 번다.
+ *
+ * DisplayName 을 FText 로 직접 갖는다. 카드 이름은 enum 이 아니라 데이터라
+ * UMETA 런타임 조회 함정(UFF_EconomyDisplayTextLibrary 참고)을 처음부터 피한다.
+ */
+USTRUCT(BlueprintType)
+struct FFF_ProgramCard
+{
+	GENERATED_BODY()
+
+	// 카탈로그 안에서 유일하다. 원장에 매출 출처로도 들어간다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program")
+	FName ProgramId;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program")
+	FText DisplayName;
+
+	// 편성 시 1회 차감.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
+	int32 CostGold = 0;
+
+	// 편성 동안 묶이는 인원. Event 대응에 쓸 수 있는 인원이 그만큼 줄어든다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
+	int32 RequiredStaff = 1;
+
+	// 그날 받을 수 있는 최대 참가 인원.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
+	int32 Capacity = 0;
+
+	// 참가자 1명당 받는 Gold. 부스 수수료와 달리 **전액**이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
+	int32 FeePerPerson = 0;
+
+	/**
+	 * 프로그램이 열리는 시각. Live 경과분이다 (FFF_ProgramReservation 과 같은 기준).
+	 * 편성하면 그대로 예약 슬롯으로 넘어가고, 거기서 세 가지가 갈린다:
+	 *   - 잠금       `IsLockedAt`      — Start ~ End 사이에는 목적지를 다시 안 고른다
+	 *   - 퇴장 금지   `IsExitBlockedAt` — 확정부터 End 까지 못 나간다(+ ApplyExitGrace 여유)
+	 *   - 도착 판정   `ReturnTrip::Evaluate` — 다른 곳을 들렀다 Start 까지 올 수 있는가
+	 *
+	 * 카드마다 시간대가 정해져 있다.
+	 * 플레이어가 시각을 끌어 옮기는 편집기가 아니라 "이 시간대의 이 프로그램"을 고르는 것이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "0"))
+	float StartMinutes = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "0"))
+	float EndMinutes = 0.f;
+
+	/**
+	 * 이 프로그램이 데려오는 손님의 생애주기 아키타입.
+	 *
+	 * 프로그램을 사면 정원만큼의 손님이 추가로 방문하고, 그 손님은 이 아키타입으로 태어난다.
+	 * "마침 온 사람 중에서 취향이 맞는 쪽을 고른다"가 아니라 처음부터 좋아할 사람을 만든다 —
+	 * 그래서 취향 점수 계산도 조합 최적화도 필요 없다.
+	 *
+	 * 비워 두면 아키타입 없는 손님이 온다. `DT_Archetype` 의 ArchetypeId 와 같은 값을 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program")
+	FName PreferredArchetypeId;
+
+	/**
+	 * 이 프로그램을 열 수 있는 시설 종류. 시설 이름 규칙의 `대분류_소분류` 토큰을 쓴다
+	 * (예: `Booth_CraftExperience`, `Performance_ExperienceStage`).
+	 *
+	 * 요가를 화장실에서 여는 것을 막는다. 시설의 `대분류_소분류` 는 이름 규칙이 이미
+	 * 강제하고 있어서 별도 태그 없이 이 목록만으로 판정된다.
+	 *
+	 * 비워 두면 아무 시설에서나 열린다 — 저작 실수로 비는 경우가 있어 그때는 경고를 남긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program")
+	TArray<FName> AllowedFacilityTypes;
+
+	// 정원을 다 채웠을 때 그날 매출. 정원이 보장되므로 확정 매출이기도 하다.
+	int32 CalcMaxRevenue() const { return Capacity * FeePerPerson; }
+
+	bool IsValid() const
+	{
+		return !ProgramId.IsNone()
+			&& CostGold > 0
+			&& RequiredStaff > 0
+			&& Capacity > 0
+			&& FeePerPerson > 0
+			&& EndMinutes > StartMinutes;
+	}
+};
+
+// 오늘 편성한 프로그램 하나. 카드와 그 카드가 만든 예약 슬롯을 묶는다.
+// 예약(FFF_ProgramReservation)은 ProgramId 를 모르므로, 정산할 때 체험비를 찾으려면
+// 이 짝이 있어야 한다.
+USTRUCT(BlueprintType)
+struct FFF_ScheduledProgram
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Program")
+	FName ProgramId;
+
+	// UFF_ProgramReservationSubsystem::RegisterProgram 이 돌려준 핸들.
+	UPROPERTY(BlueprintReadOnly, Category = "Program")
+	FGuid ReservationId;
+
+	// 체험비를 이미 걷었는가. 프로그램 시작 시각에 켜지고 하루 경계에서 편성과 함께 사라진다.
+	// 시작 정산과 Closing 안전망이 같은 카드를 두 번 걷지 않게 막는 수단이다.
+	UPROPERTY(BlueprintReadOnly, Category = "Program")
+	bool bFeeSettled = false;
+};
+
+// 프로그램 편성 결과. UI 가 실패 이유를 그대로 화면에 쓸 수 있게 bool 이 아니다.
+// [참고] 저장되지 않는 값이라 순서를 바꿔도 된다.
+UENUM(BlueprintType)
+enum class EFF_ProgramPurchaseResult : uint8
+{
+	Success             UMETA(DisplayName = "편성 완료"),
+	FestivalNotStarted  UMETA(DisplayName = "축제가 시작되지 않았다"),
+	UnknownProgram      UMETA(DisplayName = "없는 프로그램"),
+	AlreadyScheduled    UMETA(DisplayName = "오늘 이미 편성했다"),
+	NotEnoughStaff      UMETA(DisplayName = "인원이 부족하다"),
+	InsufficientGold    UMETA(DisplayName = "Gold 부족"),
+	FacilityTypeMismatch UMETA(DisplayName = "이 시설에서는 열 수 없다")
+};
+
 // 홍보 등급 1종의 비용과 효과. Promotion Stage 에서 한 번 선택하고 3일 전체에 적용된다.
 USTRUCT(BlueprintType)
 struct FFF_PromotionTier
