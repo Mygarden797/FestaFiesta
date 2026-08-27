@@ -9,7 +9,7 @@
  * 대기열 모듈 계약 타입 모음.
  *
  * 이 헤더는 Queue 가 소유하는 타입만 담는다. Crowd(FFF_CrowdReadModel)·
- * Decision(FFF_MoveCommand) 쪽 타입은 여기에 두지 않는다.
+ * Decision(FFF_PartyDecisionContext) 쪽 타입은 여기에 두지 않는다.
  *
  * ID 는 PartyId / AgentId 모두 int32, CauseId 는 FName 이다.
  * 세 모듈이 같은 타입을 쓰므로 여기서 별도 래퍼를 정의하지 않는다.

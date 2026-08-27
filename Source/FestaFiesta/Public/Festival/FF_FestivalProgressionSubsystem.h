@@ -181,6 +181,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetAffordableTemporaryStaffCount() const;
 
+	// 오늘 하루 상한까지 남은 고용 가능 인원. 잔액은 보지 않는다.
+	// `GetAffordableTemporaryStaffCount()`과 다르면 막은 것이 상한인지 돈인지 화면에서 구분할 수 있다.
+	// [주의] "왜 더 못 뽑는가"를 화면에 쓰기 위한 것이다. 고용 가능 판정에 쓰지 말 것. 
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetRemainingHireCap() const;
+
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnEconomyValueChanged OnTotalStaffCountChanged;
 	
@@ -323,9 +329,7 @@ private:
 	// 현재 Gold 로 기존 미납을 상환하고 실제 상환액을 반환한다.
 	// 미납이 남아 있는 동안 Gold 가 잔액으로 남지 않도록 가능한 만큼 전액 상환에 사용한다.
 	int32 RepayArrearsFromGold();
-	
-	int32 GetRemainingHireCap() const;
-	
+
 	// 잔액 규칙의 소유자. UObject 가 아니라 값 타입이다.
 	FFF_FestivalFunds Funds;
 	

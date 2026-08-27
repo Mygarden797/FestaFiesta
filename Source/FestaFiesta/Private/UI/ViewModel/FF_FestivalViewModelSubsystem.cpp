@@ -372,16 +372,17 @@ int32 UFF_FestivalViewModelSubsystem::GetRemainingTemporaryStaffCap() const
 		return INDEX_NONE;
 	}
 
-	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
-	if (!Definition)
+	// Definition 이 없으면 "모름"이다. GetRemainingHireCap() 은 그 경우 0 을 돌려주는데,
+	// 0 은 이 화면에서 "상한 도달"이라는 다른 뜻이라 여기서 걸러야 한다.
+	if (!Progression->GetDefinition())
 	{
 		return INDEX_NONE;
 	}
 
-	// 경제 쪽 `GetRemainingHireCap()` 이 private 이라 같은 식을 여기서 쓴다.
+	// 식을 여기서 다시 쓰지 않는다 — 상한 규칙의 소유자는 경제다.
 	// **고용 가능 판정은 여기서 하지 않는다** — 이 값은 막힌 이유를 화면에 쓰기 위한 것이고,
 	// 실제 허용 여부는 `TryHireTemporaryStaff` 가 정한다.
-	return FMath::Max(0, Definition->MaxHiredStaffPerDay - Progression->GetTemporaryStaffCount());
+	return Progression->GetRemainingHireCap();
 }
 
 int32 UFF_FestivalViewModelSubsystem::GetDailyStaffWageGold() const
