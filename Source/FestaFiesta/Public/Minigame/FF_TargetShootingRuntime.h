@@ -8,7 +8,7 @@
 
 class UFF_TargetShootingDefinition;
 
-/** Deterministic one-target-at-a-time flick trainer with precision and reaction scoring. */
+/** Deterministic one-target-at-a-time projectile trainer with precision and reaction scoring. */
 UCLASS(BlueprintType)
 class FESTAFIESTA_API UFF_TargetShootingRuntime final : public UFF_MinigameRuntime
 {
@@ -16,7 +16,17 @@ class FESTAFIESTA_API UFF_TargetShootingRuntime final : public UFF_MinigameRunti
 
 public:
 	/**
-	 * Accepts one shot for the currently displayed TargetSerial.
+	 * Starts one visible projectile toward the captured aim point. Scoring is deferred
+	 * until the projectile reaches that point while the same target serial is active.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Target Shooting")
+	EFF_TargetShootingShotResult FireProjectile(
+		const FGuid& SessionId,
+		const FVector2D& NormalizedPoint,
+		int32 TargetSerial);
+
+	/**
+	 * Immediately resolves one shot for integrations that do not render projectiles.
 	 * A hit consumes that serial and immediately spawns the next target. A miss keeps
 	 * the current target in place so the player can correct their aim without a random reset.
 	 */
@@ -35,6 +45,12 @@ protected:
 	virtual void OnFinished(EFF_MinigameSessionState FinalState, EFF_MinigameEndReason EndReason) override;
 
 private:
+	EFF_TargetShootingShotResult ResolveShot(
+		const FVector2D& NormalizedPoint,
+		int32 TargetSerial,
+		float SessionElapsedSeconds,
+		float ReactionSeconds);
+	void CompleteProjectile(float SessionElapsedSeconds);
 	void SpawnTarget(float SessionElapsedSeconds);
 	void ConsumeCurrentTargetAndSpawn(float SessionElapsedSeconds);
 	void RecordFeedback(

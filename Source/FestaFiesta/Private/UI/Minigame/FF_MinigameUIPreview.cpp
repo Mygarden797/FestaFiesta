@@ -17,6 +17,10 @@
 #include "HAL/PlatformMisc.h"
 #include "Minigame/FF_MinigameSubsystem.h"
 #include "Misc/Paths.h"
+#include "ShaderCompiler.h"
+#if WITH_EDITOR
+#include "TextureCompiler.h"
+#endif
 #include "UnrealClient.h"
 #include "UI/Minigame/FF_MinigameScreenBase.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
@@ -28,6 +32,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogFestaFiestaMinigameUIPreview, Log, All);
 namespace FFMinigameUIPreview
 {
 	constexpr float ScreenshotDelaySeconds = 0.20f;
+	constexpr float ScreenshotTextureSettleSeconds = 0.50f;
+	constexpr float ScreenshotTextureWaitTimeoutSeconds = 90.0f;
 	constexpr float ScreenshotVerificationIntervalSeconds = 0.05f;
 	constexpr float ScreenshotVerificationTimeoutSeconds = 3.0f;
 	constexpr float AutoExitDelaySeconds = 1.00f;
@@ -171,13 +177,23 @@ namespace FFMinigameUIPreview
 		Snapshot.TargetSerial = 17;
 		Snapshot.bTargetVisible = !bShowResult;
 		Snapshot.TargetCenterNormalized = FVector2D(0.61f, 0.47f);
-		Snapshot.TargetRadiusNormalized = FVector2D(0.047f, 0.083f);
+		Snapshot.TargetRadiusNormalized = FVector2D(0.065f, 0.110f);
 		Snapshot.PrecisionRadiusRatio = 0.58f;
 		Snapshot.BullseyeRadiusRatio = 0.26f;
 		Snapshot.TargetLifetimeSeconds = 0.92f;
 		Snapshot.TargetRemainingSeconds = bShowResult ? 0.0f : 0.58f;
 		Snapshot.TargetAgeSeconds = bShowResult ? 0.92f : 0.34f;
-		Snapshot.bBonusTarget = true;
+		Snapshot.bBonusTarget = false;
+		Snapshot.ProjectileSerial = bShowResult ? 0 : 4;
+		Snapshot.bProjectileInFlight = !bShowResult;
+		Snapshot.ProjectileTargetSerial = bShowResult ? 0 : Snapshot.TargetSerial;
+		Snapshot.ProjectileStartNormalized = FVector2D(0.5f, 0.68f);
+		Snapshot.ProjectileAimPointNormalized = Snapshot.TargetCenterNormalized;
+		Snapshot.ProjectilePositionNormalized = bShowResult
+			? Snapshot.ProjectileStartNormalized
+			: FVector2D(0.55f, 0.58f);
+		Snapshot.ProjectileTravelSeconds = bShowResult ? 0.0f : 0.28f;
+		Snapshot.ProjectileRemainingSeconds = bShowResult ? 0.0f : 0.14f;
 		Snapshot.HitCount = 16;
 		Snapshot.MissCount = 2;
 		Snapshot.EscapedTargetCount = 1;
@@ -188,9 +204,9 @@ namespace FFMinigameUIPreview
 			? EFF_TargetShootingFeedbackType::None
 			: EFF_TargetShootingFeedbackType::Bullseye;
 		Snapshot.LatestFeedbackPointNormalized = FVector2D(0.61f, 0.47f);
-		Snapshot.LatestScoreDelta = bShowResult ? 0 : 300;
+		Snapshot.LatestScoreDelta = bShowResult ? 0 : 230;
 		Snapshot.LatestReactionSeconds = bShowResult ? 0.0f : 0.16f;
-		Snapshot.bLatestFeedbackWasBonusTarget = !bShowResult;
+		Snapshot.bLatestFeedbackWasBonusTarget = false;
 		Snapshot.AccuracyPercent = 84.2f;
 		Snapshot.HitsPerSecond = 2.35f;
 		Snapshot.AverageHitReactionSeconds = 0.23f;
@@ -339,7 +355,7 @@ namespace FFMinigameUIPreview
 				Snapshot.Session.Context.SessionId,
 				Snapshot.Session.Context.MinigameId,
 				Snapshot.Session.Score,
-				420,
+				150,
 				TEXT("S RANK / ELITE SHOOTER")));
 		}
 		AdoptPreviewScreen(*Screen);
@@ -392,6 +408,12 @@ namespace FFMinigameUIPreview
 		const bool bAutoExit)
 	{
 		CancelScheduledScreenshot();
+		// Rebuild invalid Slate data before the render/texture settle window begins.
+		// Invalidating on the exact capture frame can omit volatile UViewport siblings.
+		if (FSlateApplication::IsInitialized())
+		{
+			FSlateApplication::Get().InvalidateAllWidgets(false);
+		}
 		const FString ScreenshotPath = ResolveScreenshotPath(RequestedPath);
 		const FString ScreenshotDirectory = FPaths::GetPath(ScreenshotPath);
 		if (ScreenshotDirectory.IsEmpty()
@@ -411,9 +433,42 @@ namespace FFMinigameUIPreview
 		}
 
 		ScreenshotTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
-			FTickerDelegate::CreateLambda([ScreenshotPath, bAutoExit](const float DeltaSeconds)
+			FTickerDelegate::CreateLambda(
+				[ScreenshotPath, bAutoExit, WaitedSeconds = 0.0f, ReadySeconds = 0.0f]
+				(const float DeltaSeconds) mutable
 			{
-				(void)DeltaSeconds;
+				const float SafeDeltaSeconds = FMath::Max(
+					DeltaSeconds,
+					ScreenshotVerificationIntervalSeconds);
+				WaitedSeconds += SafeDeltaSeconds;
+				int32 RemainingTextures = 0;
+#if WITH_EDITOR
+				RemainingTextures = FTextureCompilingManager::Get().GetNumRemainingTextures();
+#endif
+				const int32 RemainingShaders = GShaderCompilingManager
+					? GShaderCompilingManager->GetNumRemainingJobs()
+					: 0;
+				if ((RemainingTextures > 0 || RemainingShaders > 0)
+					&& WaitedSeconds < ScreenshotTextureWaitTimeoutSeconds)
+				{
+					ReadySeconds = 0.0f;
+					return true;
+				}
+				if (RemainingTextures == 0 && RemainingShaders == 0
+					&& ReadySeconds < ScreenshotTextureSettleSeconds)
+				{
+					ReadySeconds += SafeDeltaSeconds;
+					return true;
+				}
+				if (RemainingTextures > 0 || RemainingShaders > 0)
+				{
+					UE_LOG(LogFestaFiestaMinigameUIPreview, Warning,
+						TEXT("FF.PreviewMinigameUI: render wait timed out with %d texture(s) "
+							 "%d shader job(s); "
+							 "capturing the best available frame."),
+						RemainingTextures,
+						RemainingShaders);
+				}
 				ScreenshotTickerHandle.Reset();
 
 				UGameViewportClient* GameViewport = GEngine ? GEngine->GameViewport : nullptr;
@@ -436,7 +491,6 @@ namespace FFMinigameUIPreview
 						*ScreenshotPath);
 					return false;
 				}
-
 				// bShowUI=true is essential: a regular high-resolution scene capture omits UMG.
 				if (bAutoExit)
 				{
@@ -529,7 +583,7 @@ namespace FFMinigameUIPreview
 					TEXT("FF.PreviewMinigameUI: UI screenshot requested: %s"),
 					*ScreenshotPath);
 				return false;
-			}),
+				}),
 			ScreenshotDelaySeconds);
 	}
 

@@ -49,7 +49,7 @@ bool FFF_TargetShootingRules::IsValid(FString* OutFailureReason) const
 		|| TargetLifetimeEndSeconds < MinTargetLifetimeSeconds
 		|| TargetLifetimeEndSeconds > TargetLifetimeStartSeconds)
 	{
-		return Fail(TEXT("target lifetime must be at least 50ms and may only decrease"));
+		return Fail(TEXT("과녁 유지 시간은 0.05초 이상이어야 하며 후반 값이 초반 값보다 길 수 없습니다."));
 	}
 
 	if (!IsFinitePositiveRadius(TargetRadiusStartNormalized)
@@ -57,24 +57,35 @@ bool FFF_TargetShootingRules::IsValid(FString* OutFailureReason) const
 		|| TargetRadiusEndNormalized.X > TargetRadiusStartNormalized.X
 		|| TargetRadiusEndNormalized.Y > TargetRadiusStartNormalized.Y)
 	{
-		return Fail(TEXT("target radii must fit the play area and may only decrease"));
+		return Fail(TEXT("과녁 반지름은 0보다 크고 0.5 이하여야 하며 후반 크기가 초반 크기보다 클 수 없습니다."));
 	}
 
 	if (!IsFiniteSafeMargin(SpawnSafeMarginNormalized))
 	{
-		return Fail(TEXT("target spawn safe margins must be finite, non-negative and leave usable space"));
+		return Fail(TEXT("과녁 생성 안전 여백은 0 이상이어야 하며 실제 플레이 공간을 남겨야 합니다."));
 	}
 	if (SpawnSafeMarginNormalized.Left + SpawnSafeMarginNormalized.Right
 			+ 2.0f * TargetRadiusStartNormalized.X >= 1.0f
 		|| SpawnSafeMarginNormalized.Top + SpawnSafeMarginNormalized.Bottom
 			+ 2.0f * TargetRadiusStartNormalized.Y >= 1.0f)
 	{
-		return Fail(TEXT("target spawn safe margins must leave room for the largest full ellipse"));
+		return Fail(TEXT("과녁 생성 안전 여백 안에 가장 큰 과녁 전체가 들어갈 공간이 필요합니다."));
+	}
+
+	if (!FFTargetShootingRules::IsNormalizedCoordinate(ProjectileOriginNormalized)
+		|| !FMath::IsFinite(ProjectileSpeedNormalizedPerSecond)
+		|| ProjectileSpeedNormalizedPerSecond < 0.1f
+		|| ProjectileSpeedNormalizedPerSecond > 100.0f
+		|| !FMath::IsFinite(ProjectileMinTravelSeconds)
+		|| ProjectileMinTravelSeconds < 0.01f
+		|| ProjectileMinTravelSeconds > 0.5f)
+	{
+		return Fail(TEXT("물 탄환 시작 위치, 이동 속도 또는 최소 비행 시간이 허용 범위를 벗어났습니다."));
 	}
 
 	if (HitBaseScore <= 0 || ComboBonusPerHit < 0 || MaxComboBonus < 0 || MissPenalty < 0)
 	{
-		return Fail(TEXT("score values must be non-negative and HitBaseScore must be positive"));
+		return Fail(TEXT("명중 기본 점수는 1 이상이어야 하며 콤보·감점 값은 0 이상이어야 합니다."));
 	}
 
 	if (!FMath::IsFinite(PrecisionRadiusRatio)
@@ -86,7 +97,7 @@ bool FFF_TargetShootingRules::IsValid(FString* OutFailureReason) const
 		|| PrecisionScoreBonus < 0
 		|| BullseyeScoreBonus < PrecisionScoreBonus)
 	{
-		return Fail(TEXT("precision rings and score bonuses must increase toward the bullseye"));
+		return Fail(TEXT("정중앙 영역은 정밀 영역보다 작아야 하며 정중앙 추가 점수는 정밀 추가 점수 이상이어야 합니다."));
 	}
 
 	if (!FMath::IsFinite(FastReactionSeconds)
@@ -95,7 +106,7 @@ bool FFF_TargetShootingRules::IsValid(FString* OutFailureReason) const
 		|| SlowReactionSeconds <= FastReactionSeconds
 		|| MaxReactionScoreBonus < 0)
 	{
-		return Fail(TEXT("reaction window must be finite, positive and strictly increasing"));
+		return Fail(TEXT("반응 시간은 0보다 커야 하며 보너스 종료 시간이 최고 반응 판정 시간보다 길어야 합니다."));
 	}
 
 	if (!FMath::IsFinite(BonusTargetChance)
@@ -110,7 +121,7 @@ bool FFF_TargetShootingRules::IsValid(FString* OutFailureReason) const
 		|| TargetLifetimeEndSeconds * BonusTargetLifetimeScale
 			< MinEffectiveRulesTargetLifetimeSeconds)
 	{
-		return Fail(TEXT("bonus-target chance, score multiplier and lifetime scale are invalid"));
+		return Fail(TEXT("보너스 과녁의 등장 확률, 점수 배율 또는 유지 시간 배율이 허용 범위를 벗어났습니다."));
 	}
 
 	if (OutFailureReason)

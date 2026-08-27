@@ -29,7 +29,26 @@
 namespace
 {
 	constexpr TCHAR SurfingBackdropPath[] =
-		TEXT("/Game/FestaFiesta/UI/Minigame/AAA/T_MG_Surfing_Backdrop_AAA.T_MG_Surfing_Backdrop_AAA");
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Backdrop_UIUX_v2."
+			 "T_MG_Surfing_Backdrop_UIUX_v2");
+	constexpr TCHAR SurfingRockPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Rock_UIUX_v2."
+			 "T_MG_Surfing_Rock_UIUX_v2");
+	constexpr TCHAR SurfingLogPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Log_UIUX_v2."
+			 "T_MG_Surfing_Log_UIUX_v2");
+	constexpr TCHAR SurfingBuoyPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Buoy_UIUX_v2."
+			 "T_MG_Surfing_Buoy_UIUX_v2");
+	constexpr TCHAR SurfingCoinPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Coin_UIUX_v2."
+			 "T_MG_Surfing_Coin_UIUX_v2");
+	constexpr TCHAR SurfingHeartPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Heart_UIUX_v2."
+			 "T_MG_Surfing_Heart_UIUX_v2");
+	constexpr TCHAR SurfingBoostPickupPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_BoostPickup_UIUX_v2."
+			 "T_MG_Surfing_BoostPickup_UIUX_v2");
 
 	void StyleSurfingNativeText(
 		UTextBlock* TextBlock,
@@ -178,6 +197,18 @@ UFF_SurfingScreen::UFF_SurfingScreen(const FObjectInitializer& ObjectInitializer
 {
 	VisualStyle.BackdropTexture = TSoftObjectPtr<UTexture2D>(
 		FSoftObjectPath(SurfingBackdropPath));
+	VisualStyle.RockTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingRockPath));
+	VisualStyle.LogTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingLogPath));
+	VisualStyle.BuoyTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingBuoyPath));
+	VisualStyle.CoinTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingCoinPath));
+	VisualStyle.HeartTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingHeartPath));
+	VisualStyle.BoostPickupTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingBoostPickupPath));
 }
 
 bool UFF_SurfingScreen::SetRuntime(UFF_SurfingRuntime* InRuntime)
