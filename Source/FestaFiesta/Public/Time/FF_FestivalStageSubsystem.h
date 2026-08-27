@@ -158,7 +158,7 @@ public:
 	bool bNightLightingActivated = false;
 	// 오늘 이미 밤 조명을 켰는지 여부 
 
-	bool bFestivalStarted = false;
+	bool bFestivalStarted = true;
 	//이 값이 false면 Tick()에서 시간 진행을 아예 멈춤
 
 	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage|Environment")

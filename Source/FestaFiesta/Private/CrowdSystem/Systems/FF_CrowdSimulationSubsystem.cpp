@@ -209,6 +209,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	
 	// 조회 시점에만 쓰이는 값이라 재빌드 없이 콘솔에서 바로 듣는다
 	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+	ApplyWalkableCeiling();
 
 	const float Time = DeltaTime * SimulationTimeScale;
 
@@ -589,7 +590,40 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			}
 		}
 
+		// 통행 상한을 넘는 칸으로 들어가는 스텝은 무효로 돌린다.
+		//
+		// ★ 축을 나눠 미끄러뜨리지 않는다. 경계에 붙어 서고, 그 자리에서 StuckSteps가 임계에
+		//   닿으면 MoveFailed 재결정이 목적지를 바꿔 준다 — 그 경로가 유일한 탈출구다.
+		//
+		// ★ StuckSteps를 직접 다시 세운다. StepAgent는 되돌리기 전 변위로 진척을 재므로,
+		//   상한에 머리를 박는 개체는 매 스텝 '잘 나아갔다'로 판정되어 카운터가 0으로 리셋된다.
+		//   그러면 재결정이 영원히 안 걸려 경계에 붙은 채 갇힌다. 실제 변위는 0이므로
+		//   스텝 전 값 + 1이 맞다(도착해 서 있는 개체는 세지 않는다).
+		//
+		// ★ 스텝 전 위치가 이미 상한 밖일 때는 막지 않는다. 높은 곳에 스폰됐거나 손잡이를
+		//   플레이 중에 올린 개체가 영구히 얼어붙는 것을 막는다 — 들어오는 것만 막고
+		//   나가는 것은 허용한다. 그래서 새 위치를 먼저 보고, 막힐 때만 이전 위치를 되묻는다.
+		const FVector PreStepPosition = Unit.Position;
+		const int32 PreStepStuckSteps = Unit.StuckSteps;
+
 		CrowdSteering::StepAgent(Unit, StepParams, VelocityAlpha, FixedDt);
+
+		if (!HeightField.IsWalkable(FVector2D(Unit.Position.X, Unit.Position.Y))
+			&& HeightField.IsWalkable(FVector2D(PreStepPosition.X, PreStepPosition.Y)))
+		{
+			Unit.Position = PreStepPosition;
+			Unit.PrevPosition = PreStepPosition;
+			Unit.Velocity = FVector::ZeroVector;
+
+			FVector ToFinal = Unit.TargetLocation - PreStepPosition;
+			ToFinal.Z = 0.f;
+
+			Unit.StuckSteps = (ToFinal.SizeSquared() > FMath::Square(Unit.ArrivalRadiusUU))
+				? PreStepStuckSteps + 1
+				: 0;
+
+			++HeightBlockedSteps;
+		}
 
 		SnapUnitToGround(Unit);
 	}
@@ -827,6 +861,20 @@ void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
 	bBuiltWithClearance = bAvoidanceFacilityWallsIncludeClearance;
 }
 
+void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
+{
+	if (MaxWalkableHeightAboveOriginUU > 0.f)
+	{
+		HeightField.SetWalkableCeilingCm(SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU));
+	}
+	else
+	{
+		HeightField.ClearWalkableCeiling();
+	}
+
+	HeightField.SetBlockUnknownGround(bBlockUnknownGround);
+}
+
 void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 {
 	HeightField.Reset();
@@ -921,6 +969,7 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
 
 	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+	ApplyWalkableCeiling();
 
 	const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
 
@@ -946,6 +995,15 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		CenterCm.X, CenterCm.Y, HalfSizeCm,
 		bFittedToNav ? TEXT("NavMesh 경계에 맞춤") : TEXT("SimRadius"),
 		SpacingCm, StartZ);
+
+	if (MaxWalkableHeightAboveOriginUU > 0.f)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: 통행 상한 Z=%.0f (SimOrigin.Z %.0f + %.0f), 지면 없는 칸은 %s"),
+			SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU),
+			SimOrigin.Z, MaxWalkableHeightAboveOriginUU,
+			bBlockUnknownGround ? TEXT("통행 불가") : TEXT("통행 가능"));
+	}
 
 	if (Stats.MaxHeightCm >= StartZ - 1.0)
 	{
@@ -1697,6 +1755,17 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 //   개체를 축제장 밖으로 보내면서 결정론까지 깨는 함수였고, 호출부가 없어 삭제했다.
 //   배회 범위를 넓히고 싶으면 그것을 되살리지 말고 WanderRadiusUU를 올릴 것 —
 //   그래야 결정론이 유지된다.
+//
+// ★ 통행 상한에 걸리는 좌표는 여기서 걸러 낸다. 안 걸러도 이동 쪽이 막아 주지만, 갈 수 없는
+//   곳을 목표로 잡은 파티는 경계에 붙어 서서 StuckSteps를 채우고 MoveFailed로 다시 여기
+//   들어온다. 그 왕복이 결정 큐를 잡아먹으므로 뽑는 자리에서 끊는 것이 맞다.
+//
+// ★ 재추첨 시드는 MakeDecisionSeed의 salt를 더 쓰지 않고 기본 시드에서 갈라낸다. salt 공간이
+//   라운드당 두 칸(ChoiceRoundIndex * 2, * 2 + 1)으로 이미 꽉 차 있어, 더 쓰면 다음 라운드의
+//   시드와 겹쳐 배회 좌표가 라운드 간에 상관된다.
+//
+// ★ 전부 막히면 제자리를 돌려준다. 다음 스텝에 도착 판정이 서고 재결정이 걸리지만 쿨다운을
+//   타므로 폭주하지 않으며, 그때는 ChoiceRoundIndex가 올라 새 시드로 다시 뽑는다.
 FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentIndex) const
 {
 	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
@@ -1707,19 +1776,36 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 	const uint32 SeedRadius = FFF_DeterministicRandom::MakeDecisionSeed(
 		GlobalSimulationSeed, Unit.StableAgentID, State.ChoiceRoundIndex * 2 + 1);
 
-	const float Angle = FFF_DeterministicRandom::MakeUniformFraction(SeedAngle) * 2.f * PI;
-	const float Radius = WanderRadiusUU * FMath::Sqrt(FFF_DeterministicRandom::MakeUniformFraction(SeedRadius));
+	constexpr int32 MaxAttempts = 6;
 
-	FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
-
-	const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
-	if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+	auto DeriveAttemptSeed = [](uint32 BaseSeed, int32 Attempt) -> uint32
 	{
-		Destination = SimOrigin + FromOrigin.GetSafeNormal() * SimRadiusUU;
-		Destination.Z = Unit.Position.Z;
+		return (Attempt == 0) ? BaseSeed : HashCombine(BaseSeed, GetTypeHash(Attempt));
+	};
+
+	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
+	{
+		const float Angle =
+			FFF_DeterministicRandom::MakeUniformFraction(DeriveAttemptSeed(SeedAngle, Attempt)) * 2.f * PI;
+		const float Radius = WanderRadiusUU * FMath::Sqrt(
+			FFF_DeterministicRandom::MakeUniformFraction(DeriveAttemptSeed(SeedRadius, Attempt)));
+
+		FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+
+		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
+		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+		{
+			Destination = SimOrigin + FromOrigin.GetSafeNormal() * SimRadiusUU;
+			Destination.Z = Unit.Position.Z;
+		}
+
+		if (HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		{
+			return Destination;
+		}
 	}
 
-	return Destination;
+	return Unit.Position;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetMaxInTransitMemberCount() const

@@ -304,6 +304,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetStuckDecisionRequests() const { return StuckDecisionRequests; }
 
+	// 통행 상한에 막혀 되돌린 스텝 수. 0이면 상한이 한 번도 안 걸린 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Terrain")
+	int32 GetHeightBlockedSteps() const { return HeightBlockedSteps; }
+
 	// 목적지를 못 받았을 때 배회할 반경, UU. 리더의 현재 위치 기준이다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Decision")
 	float WanderRadiusUU = 2000.f;
@@ -422,6 +426,22 @@ public:
 	// 트레이스 시작 높이(UU). 지형 최고점보다 낮으면 그 위 지형을 못 잡아 개체가 파묻힌다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldTraceAboveUU = 5000.f;
+
+	// SimOrigin.Z 기준 상대 통행 상한(UU). 지면이 이보다 높은 곳으로는 들어가지 않는다.
+	// 0 이하면 제한이 없다.
+	//
+	// 절대 Z가 아니라 상대값인 이유는 맵을 옮기거나 SpawnActor를 다른 높이에 두어도 값이
+	// 그대로 통하기 때문이다. 기준면은 SpawnActor 위치이므로 축제장 지면이 곧 0이다.
+	//
+	// HeightFieldCliffStepUU와 혼동하지 않는다 — 그쪽은 절벽에서 Z를 끊어 올리라는 표시일
+	// 뿐이고 통행을 막지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float MaxWalkableHeightAboveOriginUU = 250.f;
+
+	// 지면을 못 찾은 격자점도 통행 불가로 본다. 구멍이면 막는 것이 맞지만 트레이스가 놓친
+	// 지형이면 없던 벽이 생긴다. 켜기 전에 빌드 로그의 '지면을 못 찾은 격자점' 수를 볼 것.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bBlockUnknownGround = false;
 
 	// 목표 추종을 사회력의 **구동력**으로 계산한다. bEnableAvoidance가 켜져 있을 때만 의미가 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
@@ -857,6 +877,10 @@ private:
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
 
+	// 통행 상한에 막혀 되돌린 스텝 수. 이 값이 계속 오르는데 StuckDecisionRequests가 안 오르면
+	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다
+	int32 HeightBlockedSteps = 0;
+
 	// 큐 진행 감시. SampleQueueLiveness가 매 스텝 갱신한다
 	float LastObservedQueueSimTime = -1.f;
 	float LastQueueAdvanceSimTime = 0.f;
@@ -878,7 +902,11 @@ private:
 	TMap<FName, int32> InTransitMemberCounts;
 	
 	void RebuildInTransitMemberCounts();
-	
+
+	// 상대 통행 상한 손잡이를 높이 격자가 쓰는 절대 Z(cm)로 환산해 밀어넣는다.
+	// 조회 시점 값이라 빌드와 Tick 양쪽에서 부르며, Tick 쪽이 콘솔 변경을 바로 듣게 한다.
+	void ApplyWalkableCeiling();
+
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage);
 };
