@@ -405,7 +405,23 @@ public:
 
 	// 높이 격자 꼭짓점 간격(UU). 작을수록 정확하고 빌드가 비싸다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
-	float HeightFieldSpacingUU = 200.f;
+	float HeightFieldSpacingUU = 500.f;
+
+	// 격자를 NavMesh 경계에 맞춘다. 끄면 SimRadius 밖이 가장자리 높이로 클램프된다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bHeightFieldFitToNavBounds = true;
+
+	// 격자 반경(UU). 0이면 SimRadiusUU. bHeightFieldFitToNavBounds가 이긴다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float HeightFieldRadiusUU = 0.f;
+
+	// 한 칸 높이 차가 이를 넘으면 보간 없이 끊어 올린다(UU). 0이면 항상 보간
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float HeightFieldCliffStepUU = 50.f;
+
+	// 트레이스 시작 높이(UU). 지형 최고점보다 낮으면 그 위 지형을 못 잡아 개체가 파묻힌다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float HeightFieldTraceAboveUU = 5000.f;
 
 	// 목표 추종을 사회력의 **구동력**으로 계산한다. bEnableAvoidance가 켜져 있을 때만 의미가 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
@@ -486,6 +502,12 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyMemberSpeedBoost = 1.15f;
+	
+	//파티 리더하고 심하게 이격 되었을 경우 SpeedBoost이상으로 빠르게 움직이기 위한 변수
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
+	float PartyMemberSpeedMultiplier = 1.3f;
+	
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite,Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float InitialNeedMaxFraction = 0.5f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))

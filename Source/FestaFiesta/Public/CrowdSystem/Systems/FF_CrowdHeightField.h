@@ -41,6 +41,13 @@ struct FESTAFIESTA_API FFF_CrowdHeightField
 
 	bool TryGetHeightCm(const FVector2D& WorldXYCm, double& OutHeightCm) const;
 
+	// 네 꼭짓점의 높이 차가 이 값을 넘으면 절벽으로 보고 보간 대신 가장 가까운 꼭짓점 값을 쓴다.
+	// 0이면 항상 보간한다.
+	//
+	// 보간만 쓰면 개체가 절벽을 지날 때 격자 한 칸(SpacingCm)을 걷는 동안 비스듬히 떠오른다.
+	// 간격이 넓을수록 그 경사가 길어져 공중을 걷는 것처럼 보인다. 계단은 계단으로 올라야 한다.
+	void SetCliffStepCm(double InCliffStepCm) { CliffStepCm = FMath::Max(InCliffStepCm, 0.0); }
+
 	const FBuildStats& GetStats() const { return Stats; }
 
 	int32 GetNumX() const { return NumX; }
@@ -55,6 +62,7 @@ private:
 
 	FVector2D MinCornerCm = FVector2D::ZeroVector;
 	double SpacingCm = 0.0;
+	double CliffStepCm = 0.0;
 	int32 NumX = 0;
 	int32 NumY = 0;
 

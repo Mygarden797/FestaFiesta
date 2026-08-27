@@ -101,6 +101,52 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 	const double W01 = (1.0 - Tx) * Ty;
 	const double W11 = Tx * Ty;
 
+	// 절벽 판정을 먼저 한다. 네 꼭짓점 높이 차가 임계를 넘으면 보간이 아니라 계단으로 다룬다 —
+	// 보간하면 개체가 한 칸을 걷는 동안 비스듬히 떠올라 공중을 걷는 것처럼 보인다.
+	if (CliffStepCm > 0.0)
+	{
+		double MinCornerZ = 0.0;
+		double MaxCornerZ = 0.0;
+		int32 CornerCount = 0;
+
+		for (const int32 Index : { I00, I10, I01, I11 })
+		{
+			if (!Valid.IsValidIndex(Index) || Valid[Index] == 0)
+			{
+				continue;
+			}
+
+			const double H = Heights[Index];
+			if (CornerCount == 0)
+			{
+				MinCornerZ = H;
+				MaxCornerZ = H;
+			}
+			else
+			{
+				MinCornerZ = FMath::Min(MinCornerZ, H);
+				MaxCornerZ = FMath::Max(MaxCornerZ, H);
+			}
+			++CornerCount;
+		}
+
+		if (CornerCount > 0 && (MaxCornerZ - MinCornerZ) > CliffStepCm)
+		{
+			const int32 NearIx = (Tx < 0.5) ? Ix : Ix + 1;
+			const int32 NearIy = (Ty < 0.5) ? Iy : Iy + 1;
+			const int32 NearIndex = NearIy * NumX + NearIx;
+
+			if (Valid.IsValidIndex(NearIndex) && Valid[NearIndex] != 0)
+			{
+				OutHeightCm = Heights[NearIndex];
+				return true;
+			}
+
+			OutHeightCm = MaxCornerZ;
+			return true;
+		}
+	}
+
 	double WeightSum = 0.0;
 	double HeightSum = 0.0;
 

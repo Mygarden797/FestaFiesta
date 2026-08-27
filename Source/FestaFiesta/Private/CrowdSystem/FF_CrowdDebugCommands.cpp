@@ -771,6 +771,8 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		{ TEXT("waypoint"),  &CrowdSim->WaypointAcceptanceRadiusUU, TEXT("웨이포인트 통과 판정 반경 UU. 작으면 맴돌고 크면 코너를 지른다") },
 		{ TEXT("repath"),    &CrowdSim->RepathToleranceUU,    TEXT("목적지가 이만큼 움직이면 경로 재계산 UU") },
 		{ TEXT("minpath"),   &CrowdSim->MinPathQueryDistanceUU, TEXT("이 거리 미만은 경로를 안 뽑는다 UU") },
+		{ TEXT("traceabove"), &CrowdSim->HeightFieldTraceAboveUU, TEXT("높이 격자 트레이스 시작 높이 UU. 지형 최고점보다 높아야 파묻히지 않는다") },
+		{ TEXT("cliffstep"), &CrowdSim->HeightFieldCliffStepUU, TEXT("이 높이 차를 넘는 격자 칸은 보간 없이 끊어 올린다 UU. 0이면 항상 보간(비스듬히 떠오름)") },
 	};
 
 	struct FSwitch
