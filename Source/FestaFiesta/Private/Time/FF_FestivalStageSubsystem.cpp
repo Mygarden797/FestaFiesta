@@ -156,6 +156,8 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
+	if (!bFestivalStarted) { return; }
+
 	if (CurrentStage == EFF_FestivalStage::Live)
 		// Live 단계일 때 처리
 	{
@@ -346,6 +348,21 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);
+}
+
+void UFF_FestivalStageSubsystem::StartNewFestival()
+{
+	CurrentDay = 1;
+	CurrentStage = EFF_FestivalStage::Setup;
+	ElapsedLiveSeconds = 0.f;
+	bFestivalEndedBroadcasted = false;
+	bNightLightingActivated = false;
+	// 밤 조명 상태도 리셋 안 하면 재시작 시 낮인데 조명 켜진 채로 남을 수 있음
+
+	bFestivalStarted = true;
+	// 이 줄이 있어야 Tick()이 다시 돌기 시작함
+
+	UE_LOG(LogTemp, Log, TEXT("[Festival] 새 축제 시작! Day=1, Stage=Setup"));
 }
 
 void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
