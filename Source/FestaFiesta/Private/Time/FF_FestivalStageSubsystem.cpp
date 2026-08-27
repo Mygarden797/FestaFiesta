@@ -363,6 +363,9 @@ void UFF_FestivalStageSubsystem::StartNewFestival()
 	// 이 줄이 있어야 Tick()이 다시 돌기 시작함
 
 	UE_LOG(LogTemp, Log, TEXT("[Festival] 새 축제 시작! Day=1, Stage=Setup"));
+
+	OnFestivalStarted.Broadcast();
+	// 축제가 시작됐다고 UI 등 구독자들에게 알림
 }
 
 void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
