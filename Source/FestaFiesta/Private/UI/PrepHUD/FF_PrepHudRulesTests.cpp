@@ -173,8 +173,11 @@ bool FFF_PrepHudRules_CtaState::RunTest(const FString& Parameters)
 		FFF_PrepHudRules::ResolveCtaState(EFF_FestivalStage::Setup, true, true, 4, true),
 		EFF_PrepCtaState::Ready);
 
+	// 준비 단계이면서 `bHasCtaLabel = false` 인 경우만 이 규칙을 고립시킨다.
+	// 예전에는 `PromotionPreview` 를 예로 썼는데 2026-08-27 에 그 단계에도 문구가 생겼다
+	// (Day 1 의 개장 준비 자리라서). 규칙 자체는 그대로다.
 	TestEqual(TEXT("문구가 없으면 버튼째 숨긴다"),
-		FFF_PrepHudRules::ResolveCtaState(EFF_FestivalStage::PromotionPreview, false, true, 4, true),
+		FFF_PrepHudRules::ResolveCtaState(EFF_FestivalStage::Setup, false, true, 4, true),
 		EFF_PrepCtaState::Hidden);
 
 	TestEqual(TEXT("준비 단계가 아니면 숨긴다"),

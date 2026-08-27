@@ -92,6 +92,18 @@ protected:
 	virtual void NativeOnPanelOpened() {}
 	virtual void NativeOnPanelClosed() {}
 
+	/**
+	 * 런타임에 만들어 넣을 자식 위젯의 클래스를 정한다 — 설정값이 있으면 그것을, 없으면 경로에서.
+	 *
+	 * C++ 기본값에 블루프린트 클래스를 넣을 수 없어서 경로 폴백이 필요하다.
+	 * `UFF_PrepHudBar::ResolvePanelClass` 가 패널을 찾는 방식과 같고, 그래서
+	 * `FF.PrepHudUMG` 로 만든 WBP 가 손으로 배선하지 않아도 붙는다.
+	 *
+	 * !! 실패해도 기본 타입으로 대체하지 않는다 !! 그러면 `BindWidget` 이 통과해 버리고
+	 * 런타임에 아무 반응이 없다. `nullptr` 을 돌려주고 호출부가 로그를 남긴다.
+	 */
+	static UClass* ResolveWidgetClass(UClass* Configured, const FString& FallbackPath);
+
 	/** BP 파생용. 이름으로 BP 함수를 찾지 않기 위해 명시적으로 선언한다 (안티패턴 17번). */
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI|Prep", meta = (DisplayName = "On Panel Opened"))
 	void K2_OnPanelOpened();

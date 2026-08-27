@@ -56,10 +56,17 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	// === CTA 문구 기본값 ===
 	// `{Day}` 는 현재 일차로 치환된다. 문구에 `Day 1` 을 박으면 2·3일차에 거짓말이 된다.
 	//
-	// 홍보(PromotionPreview)에는 CTA 가 없다. 홍보는 이미 하단 탭에 있고, 이 단계는 남은 시간이
-	// 지나면 표(`DT_DaySequence`)대로 자동으로 넘어간다.
+	// 🔴 `PromotionPreview` 는 이름과 달리 **Day 1 의 개장 준비**다 (2026-08-27 확인).
+	// Day 2·3 은 `MorningCheck` 가 그 자리인데 Day 1 에는 그게 없다 —
+	//   Day 1: Setup → PromotionPreview → SunsetTransition → Live
+	//   Day 2: MorningCheck          → SunsetTransition → Live
+	// 그래서 개장 CTA 가 있어야 한다. 예전에는 "시간이 지나면 자동으로 넘어간다"는 이유로
+	// 비워 뒀는데, 그러면 **점검 패널의 `개장하기` 버튼만 남아 바와 어긋난다.**
+	// 홍보비 선택은 이 단계가 아니라 셋업 탭에서 한다 (2026-08-27 백종태 결정).
 	CtaLabels.Add(EFF_FestivalStage::Setup,
 		LOCTEXT("PrepCta_Setup", "확정하고 Day {Day} 시작"));
+	CtaLabels.Add(EFF_FestivalStage::PromotionPreview,
+		LOCTEXT("PrepCta_PromotionPreview", "개장하기"));
 	CtaLabels.Add(EFF_FestivalStage::MorningCheck,
 		LOCTEXT("PrepCta_MorningCheck", "개장하기"));
 
@@ -266,6 +273,9 @@ void UFF_PrepHudBar::BindSources()
 		CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
+
+		// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이것까지 받아야 상태 행이 따라간다.
+		CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
 	else
 	{
@@ -301,6 +311,7 @@ void UFF_PrepHudBar::UnbindSources()
 		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
+		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 
@@ -1075,18 +1086,33 @@ void UFF_PrepHudBar::HandleArrearsChanged(int32 NewValue)
 
 void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
 {
+	// !! 인자를 쓰지 않는다 !! 이 핸들러는 전체 인원과 가용 인원 **두 델리게이트**가 함께 부른다.
+	// 인자를 믿으면 가용 인원이 울렸을 때 그 숫자가 전체 자리에 들어간다.
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
 	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
 	const int32 Temporary = ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE;
+	const int32 Available = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
 
 	FText StaffText;
-	if (NewValue >= 0)
+	if (Total >= 0)
 	{
-		StaffText = (Base >= 0 && Temporary >= 0)
-			? FText::Format(
-				LOCTEXT("PrepStatus_StaffDetailed", "{0}명 (기본 {1} · 알바 {2})"),
-				FText::AsNumber(NewValue), FText::AsNumber(Base), FText::AsNumber(Temporary))
-			: FText::Format(LOCTEXT("PrepStatus_Staff", "{0}명"), FText::AsNumber(NewValue));
+		// 바는 폭이 좁아 내역까지 다 넣으면 잘린다. 여기서는 **Event 에 쓸 수 있는 인원**을
+		// 우선한다 — 기본·알바 내역은 인력 패널에서 본다.
+		if (Available >= 0)
+		{
+			StaffText = FText::Format(
+				LOCTEXT("PrepStatus_StaffAvailable", "{0}명 중 {1}명 사용 가능"),
+				FText::AsNumber(Total), FText::AsNumber(Available));
+		}
+		else
+		{
+			StaffText = (Base >= 0 && Temporary >= 0)
+				? FText::Format(
+					LOCTEXT("PrepStatus_StaffDetailed", "{0}명 (기본 {1} · 알바 {2})"),
+					FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary))
+				: FText::Format(LOCTEXT("PrepStatus_Staff", "{0}명"), FText::AsNumber(Total));
+		}
 	}
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff, StaffText);

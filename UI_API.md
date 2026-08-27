@@ -1254,7 +1254,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시�
 | --- | --- | --- | --- |
 | **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 김시리 · 백종태 (공동) | ❌ 없음 (`FF_FestivalDefinition.h:146`) | Live 우측 상단 상시 사건 트레이 |
 | **스태프 배치 Command + 결과 이벤트** | 김시리 | ❌ 없음 | 사건 트레이의 `스태프 N명 배치` |
-| **홍보 구매 Command** | 김시리 | ⚠️ 등급 데이터만 있고 `EFF_SpendReason::Promotion` 호출부가 0곳 | 셋업 HUD `홍보` 패널 |
+| **홍보 구매 Command** | 김시리 | ⚠️ 등급 데이터만 있고 `EFF_SpendReason::Promotion` 호출부가 0곳 — **2026-08-27 에 UI 가 더미로 채웠습니다.** 아래 절 참고 | 셋업 HUD `홍보` 패널 |
 | **뒷정리 등급 효과 계수** | 김시리 | ⚠️ 가격 3개만 있음 (`FF_FestivalDefinition.h:110` TODO) | Day 마감 시트 — 지금은 `효과 계수 미확정` 배지로 표시 중 |
 | **최종 점수 산식·등급 가중치** | 김시리 | ❌ 없음 | 최종 결산 — 지금은 `가중치 잠정` 문구를 화면에 띄우고 있음 |
 | **저장 슬롯 저장·불러오기 Command** | 김시리 | ❌ 없음 | ESC 수동 저장, 플레이 허브 불러오기 |
@@ -1273,6 +1273,26 @@ API 가 생기면 그 함수를 지우고 ViewModel 구독으로 바꿉니다 �
 
 **시설 수는 요청하지 않습니다.** `UFFZSWorldSubsystem::BuildReadModel()` 의 `Facilities` 를 세고
 `OnWorldChanged` 로 갱신합니다 (한광훈님 API 그대로). 개장 CTA 활성 판정에 씁니다.
+
+### 🆕 홍보 패널 — UI 가 더미로 채운 부분 (2026-08-27, 백종태) · **김시리님께**
+
+U5 홍보 패널을 만들면서, 없는 API 를 UI 쪽 더미로 임시로 메웠습니다. **지금 화면은 동작합니다** —
+등급을 고르고 사면 Gold 가 줄고 원장에 `홍보비` 로 남습니다. 아래 표의 ❌ 만 채워 주시면
+`UFF_FestivalViewModelSubsystem` 안쪽만 갈아끼우고 위젯은 그대로 둡니다.
+
+| 조각 | 지금 | 필요한 것 |
+| --- | --- | --- |
+| 등급 비용·배수 | ✅ `PromotionBasic`(500·×1.08) · `PromotionFocused`(1,200·×1.18) 그대로 씁니다 | — |
+| Gold 차감·원장 | ✅ `TrySpend(Cost, EFF_SpendReason::Promotion)` 을 UI 가 부릅니다 | 이대로 두셔도 됩니다 |
+| **등급 enum** | ⚠️ UI 가 임시로 `EFF_PromotionChoice`(None·Basic·Focused)를 만들었습니다 | **`EFF_PromotionGrade`** — 저장에 들어가면 순서를 바꾸지 마세요 |
+| **구매 함수** | ❌ 없음 | **`TryPurchasePromotion(Grade)` → 결과 enum.** 실패 이유를 bool 이 아니라 enum 으로 (피날레와 같은 모양) |
+| **구매 상태** | ⚠️ **ViewModel 이 들고 있습니다.** 저장에 안 들어가고 축제를 다시 시작해도 안 지워집니다 | **`GetPurchasedPromotion()` + `OnPromotionChanged`** |
+| **구매 가능 단계 판정** | ⚠️ UI 가 `CurrentStage == Setup` 을 직접 봅니다 | **`CanPurchasePromotionNow()`** — 브리지에. `CanPurchaseFinaleNow()`·`CanScheduleProgramNow()` 와 같은 자리 |
+| **배수를 방문객에 적용** | ❌ **아무도 소비하지 않습니다** | 이게 제일 큽니다 — 지금은 사도 방문객이 안 늘어서, 화면에 `아직 방문객 수에 반영되지 않습니다` 를 띄우고 있습니다 |
+
+🔴 **마지막 줄이 핵심입니다.** 앞의 여섯은 UI 가 임시로 메울 수 있지만 배수의 소비자는 못 만듭니다.
+`예상 방문객 (범위)` 요청(위 표)과 짝입니다 — 그게 오면 `안 함 대비 +N명` 을 숫자로 그릴 수 있습니다.
+지금은 `×1.08` 배수만 보여줍니다.
 
 ~~**시설 유지비에 대응하는 `EFF_SpendReason` 이 없습니다.**~~ → **2026-08-23 종료 (김시리).**
 **기획서에 시설 유지비라는 개념이 없습니다.** 경제 스펙에도 처음부터 없던 항목이라

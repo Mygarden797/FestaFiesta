@@ -175,6 +175,10 @@ protected:
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
+	/** 피날레를 사면 요약의 마지막 날 줄이 `미구매` 에서 등급·보너스로 바뀐다. */
+	UFUNCTION()
+	void HandlePurchasedFinaleGradeChanged(EFF_FinaleGrade NewGrade);
+
 protected:
 	// --- 카드 4장 ---
 

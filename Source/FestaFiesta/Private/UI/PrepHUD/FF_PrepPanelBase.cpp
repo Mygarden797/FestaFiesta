@@ -156,3 +156,21 @@ void UFF_PrepPlaceholderPanel::NativeOnPanelOpened()
 		Text_Placeholder->SetText(PlaceholderMessage);
 	}
 }
+
+UClass* UFF_PrepPanelBase::ResolveWidgetClass(UClass* Configured, const FString& FallbackPath)
+{
+	if (Configured)
+	{
+		return Configured;
+	}
+
+	if (FallbackPath.IsEmpty())
+	{
+		return nullptr;
+	}
+
+	// 블루프린트 클래스는 `_C` 가 붙는다. 이걸 빼면 에셋은 있는데 못 찾는다.
+	const FString AssetName = FPaths::GetCleanFilename(FallbackPath);
+	const FString ObjectPath = FString::Printf(TEXT("%s.%s_C"), *FallbackPath, *AssetName);
+	return LoadObject<UClass>(nullptr, *ObjectPath);
+}
