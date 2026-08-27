@@ -71,6 +71,14 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `OnMainProgramStarted`                 | `FString EventLabel` | 메인 공연 관련 알림 (2026-08-11 추가). **아래 주의 3건 참고** |
 | `OnMainProgramEnded`                   | `FString EventLabel` | 메인 공연 잠금 구간 종료 (2026-08-11 추가) |
 | `GetFacilityServiceRatePerMinute()`     | `float`             | (Queue) 시설 실측 처리율. 미등록 시설은 0 — **나누지 말 것** |
+| `StartNewFestival()`                   |                     | 축제를 Day1·Setup으로 초기화하고 시계 시작 (2026-08-20 추가) — OpenLevel 직후 1회 호출 필요 |
+| `GetLiveDurationForCurrentDay()`       | `float`             | 오늘 Live 총 길이(초). Day1=240초, Day2·3=300초 |
+| `OnNightLightingActivated`             | (인자 없음)             | 밤 조명 켤 시간이 됐을 때 (환경 시스템용) |
+| `OnDayEnded`                           | `FOnDayEnded`       | (EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달 (2026-08-19 추가, 이미 별도 항목으로 아래에 있음) |
+| `GetLiveClockStringFromMinutes(int32)` | `FString`           | 임의의 LiveMinutes를 "17:30" 형식 문자열로 변환 (2026-08-26 추가) |
+| `GetCurrentLiveClockString()`          | `FString`           | 지금 시각을 "17:30" 형식으로 반환 |
+| `GetCurrentStageDisplayName()`         | `FText`             | 현재 Stage의 한글 표시 이름 (⚠️ 패키징 빌드 안전성 재검토 필요 — 아래 참고) |
+| `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨) |
 
 **`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
 
