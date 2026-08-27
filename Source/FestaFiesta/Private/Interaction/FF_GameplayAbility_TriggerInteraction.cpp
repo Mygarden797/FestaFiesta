@@ -23,6 +23,9 @@ void UFF_GameplayAbility_TriggerInteraction::ActivateAbility(
 	UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 상호작용 시작됨!"));
 	// 지금은 시작이 잘 되는지만 확인 (나중에 여기에 UI 표시, 카메라 연출 등 추가 예정)
 
+	PlayPhotoCaptureEffect();
+	// 화면 플래시 연출 실행
+
 	// TODO: 추후 Hold 타이머 로직 적용 예정 (현재는 테스트용으로 즉시 종료)
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 

@@ -158,6 +158,9 @@ public:
 	bool bNightLightingActivated = false;
 	// 오늘 이미 밤 조명을 켰는지 여부 
 
+	bool bFestivalStarted = false;
+	//이 값이 false면 Tick()에서 시간 진행을 아예 멈춤
+
 	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage|Environment")
 	EFF_WeatherType SelectedWeather = EFF_WeatherType::Clear;
 	// 플레이어가 Setup/MorningCheck에서 선택한 오늘의 날씨 (기본값: 맑음)
@@ -225,6 +228,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMainProgramLocked();
 	// 지금 메인 공연 배속 잠금 구간인지 확인
+
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	void StartNewFestival();
+	// 축제를 처음부터 다시 시작할 때 호출
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void AdvanceToNextDay();

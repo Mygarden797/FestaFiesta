@@ -170,6 +170,42 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 
    지금은 `연출 자리 + Skip` 스텁으로 두고 `to_verify` 로 표시해 두었습니다.
 
+**답변 (강민서 → 백종태, 관련 요청 2건)**
+
+## 1. StartNewFestival() API 추가 완료
+
+요청하신 대로 함수 만들었습니다.
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+void StartNewFestival();
+```
+
+호출 시 아래가 한 번에 초기화됩니다:
+- CurrentDay = 1
+- CurrentStage = Setup
+- ElapsedLiveSeconds = 0
+- bFestivalEndedBroadcasted = false
+- bNightLightingActivated = false (추가로 넣었습니다 — 안 하면 재시작해도 밤 조명이 켜진 채로 남는 버그가 생길 수 있어서요)
+
+**"시작 전엔 Tick이 안 도는 게 맞다"는 제안 — 반영했습니다.**
+`bFestivalStarted` 플래그를 추가해서, 이 값이 false면 Tick()에서 시간 진행 로직 전체를 건너뛰도록 했습니다. `StartNewFestival()` 안에서 이 값을 true로 켜기 때문에, 종태님 쪽에서는:OpenLevel 직후 → StartNewFestival() 한 번 호출
+
+
+이것만 해주시면 됩니다. 그 전까지는 GameInstance가 살아있어도 시계가 아예 안 흐릅니다.
+
+## 2. SunsetTransition 단계 UI 요구사항
+
+DT_DaySequence 확인했습니다. Day1/2/3 모두 동일한 값입니다.
+
+- **지속 시간**: 20초 고정입니다 (Min=Max=20이라 범위가 아니라 정확히 20초).
+- **Skip 필요 여부**: 불필요합니다. bSkippable = False로 설정되어 있습니다. 태양이 노을 각도로 자연스럽게 전환되는 걸 보여주는 짧은 연출 구간이라 원래도 스킵을 의도하지 않았고, 20초면 길지 않아서 스킵 버튼 없이 그냥 흘려보내도 될 것 같습니다.
+- **플레이어 입력 여부**: 받지 않습니다. Tick()에서 Live를 제외한 모든 단계가 공통 로직(경과시간 누적 → 시간 다 되면 NextStage로 자동 전환)을 타는데, SunsetTransition만 따로 처리하는 입력 코드는 없습니다. 이 구간엔 태양 Rotator를 Lerp로 회전시키는 연출(BP_EnvironmentManager)만 돌아갑니다.
+
+**정리하면 UI 쪽엔 "20초짜리 순수 연출 구간, 입력 없음, 스킵 버튼 불필요"로 반영하시면 됩니다.** `to_verify` 스텁은 이걸로 확정 처리하셔도 됩니다.
+
+**문서 불일치 건**: module-ownership.md 3절에 Stage가 7종으로 적혀있는데, 코드(EFF_FestivalStage enum) 기준 실제로는 SunsetTransition 포함 8종이 맞습니다. 
+
 ### `OnDayEnded`
 
 - **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
@@ -195,6 +231,38 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 > 이게 필요하고, 없으면 UI 가 `StartHour = 17` 을 복제해야 합니다(그 값에 "나중에 표로 빼기"
 > todo 가 붙어 있어서 복제하면 두 곳이 갈립니다). 기존 함수는
 > `return GetLiveClockStringAt(ElapsedLiveSeconds);` 한 줄이 됩니다.
+
+**답변 (강민서 → 김시리)**
+
+`GetLiveClockStringFromMinutes(int32 LiveMinutes)` 함수로 구현 완료했습니다. 요청하신 대로 임의의 시각을 문자열로 뽑을 수 있게 만들었습니다.
+
+```cpp
+UFUNCTION(BlueprintPure, Category = "Festival Stage")
+FString GetLiveClockStringFromMinutes(int32 LiveMinutes) const;
+```
+
+```cpp
+FString UFF_FestivalStageSubsystem::GetLiveClockStringFromMinutes(int32 LiveMinutes) const
+{
+    const int32 StartHour = 17;
+    const int32 TotalMinutes = StartHour * 60 + LiveMinutes;
+    const int32 Hour = (TotalMinutes / 60) % 24;
+    const int32 Minute = TotalMinutes % 60;
+    return FString::Printf(TEXT("%02d:%02d"), Hour, Minute);
+}
+```
+
+**요청과 다른 점 2가지 확인 부탁드립니다**
+
+1. 파라미터가 `float LiveMinutes`가 아니라 `int32 LiveMinutes`입니다. 분 단위는 정수로 충분할 것 같아 이렇게 했는데, float이 필요하시면 바로 맞춰드리겠습니다.
+2. 함수명이 `GetLiveClockStringAt`이 아니라 `GetLiveClockStringFromMinutes`입니다. "분(分) 단위 입력을 받는다"는 걸 명확히 하려고 이름을 다르게 지었는데, 통일이 필요하시면 이름 바꿔드릴 수 있습니다.
+
+**아직 반영 안 한 부분**
+
+요청하신 `GetCurrentLiveClockString()`을 `return GetLiveClockStringFromMinutes(ElapsedLiveSeconds);` 한 줄로 리팩터링하는 건 아직 안 했습니다. 다만 `ElapsedLiveSeconds`는 **초 단위**라, 이 함수(**분 단위** 입력)에 그대로 넣으면 결과가 틀어집니다. 초→분 변환(`ElapsedLiveSeconds / 60`)을 넣어서 리팩터링해드릴까요, 아니면 이 함수 자체를 초 단위 입력으로 바꿔드릴까요? 말씀 주시면 바로 반영하겠습니다.
+
+
+
 
 ### 환경(날씨·야간) — `UFF_FestivalStageSubsystem` -강민서
 
@@ -1056,6 +1124,14 @@ GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_Ea
 둘 다 Stage enum 이라 문자열 원본은 강민서 님이 만드셔야 합니다.
 **패키징 빌드에서만 드러나고 자동 테스트로는 안 잡히니** 시연 빌드 전에 정리가 필요합니다.
 
+**답변 (강민서)**
+
+확인했습니다. `EFF_FestivalStage`의 표시 이름은 이미 `GetCurrentStageDisplayName()`(UMETA DisplayName 기반)이 원본으로 있어요. 지적해주신 두 파일이 이 함수를 안 쓰고 자체 문자열을 쓰고 있는 것 같은데, 제가 직접 그 파일들을 고치기보다 각 담당자분이 `GetCurrentStageDisplayName()`을 호출하도록 바꾸시는 게 맞을 것 같습니다.
+
+혹시 이 두 파일에서 필요한 텍스트가 `EFF_FestivalStage` enum에 없는 값(예: 로딩중, 알 수 없음 등)이라면 말씀해주세요 — enum에 없는 케이스면 제가 값을 추가하거나 별도 함수를 만들어드릴 수 있습니다.
+
+패키징 빌드에서만 드러난다고 하신 부분은 로컬라이제이션(현지화) 검증 시점 차이 때문일 것 같은데, 혹시 어떤 문자열이 깨지는지 예시 하나만 공유해주시면 더 정확히 짚어드릴 수 있을 것 같아요.
+
 ---
 
 ## UI Read Model — 백종태
@@ -1325,3 +1401,6 @@ API 가 생기면 그 함수를 지우고 ViewModel 구독으로 바꿉니다 �
 | 2026-08-26 | 백종태 | 🔴 **문서 내부 모순 정정 — 날씨는 이미 읽고 쓸 수 있습니다.** `필요한데 아직 없는 것` 표의 `날씨 Read Model ❌ 없음` 행이 낡았습니다(같은 문서 `환경(날씨·야간)` 절에 API가 이미 있음). 지웠던 테스트용 날씨 버튼(`BP_StageTest`)이 부르던 것이 바로 `SetSelectedWeather` 였고, **날씨 선택은 테스트 기능이 아니라 준비 단계의 플레이어 결정**이라 U5 점검 패널로 정식 이관합니다 |
 | 2026-08-26 | 백종태 | ✅ **U5 인력 패널을 실물로 붙였습니다 — 더미 0건.** `GetAffordableTemporaryStaffCount` · `TryHireTemporaryStaff` · `MaxHiredStaffPerDay` · `DailyStaffWageGold` · `DailyVenueRentGold` 를 ViewModel 로 중계했습니다. **`TryHireTemporaryStaff` 가 부분 고용이 없어서** 화면은 낙관적 갱신을 하지 않고 결과 이벤트만 봅니다. 거부 사유가 bool 하나라 화면에서 `상한 도달`·`잔액 부족`을 구분하려고 `GetRemainingTemporaryStaffCap()` 을 따로 만들었습니다 — 경제 쪽 `GetRemainingHireCap()` 이 private 이라 같은 식을 UI 에서 한 번 더 씁니다. **public 으로 열어 주시면 그 중복을 지웁니다** |
 | 2026-08-26 | 백종태 | ✅ **U5 점검 패널(개장 견적서)을 붙였습니다.** 날씨 선택이 정식 자리를 얻었습니다 — `SetSelectedWeather` 가 `IsReconfigureAllowed()` 로 준비 단계에만 열려 있어서 준비 단계 UI 가 맞는 자리입니다. 🔴 **`OnEnvironmentStateChanged` 가 야간 전환에도 울립니다** — `(Weather, bIsNight)` 를 함께 쏘기 때문입니다. ViewModel 에서 날씨가 실제로 바뀔 때만 중계하도록 걸렀습니다. 강민서님 쪽 수정은 필요 없습니다. 남은 요청은 여전히 **예상 방문객(범위)** 하나이고, 없으면 견적표의 수입·보너스 칸이 `아직 알 수 없습니다` 로 나옵니다 |
+| 2026-08-26 | 강민서 | ✅ **날씨 Read Model 표 정정 확인했습니다.** `OnEnvironmentStateChanged`가 야간 전환에도 함께 울리는 부분, ViewModel에서 필터링해주셔서 제 쪽 추가 수정 없습니다. U5 점검 패널 연동 감사합니다 |
+| 2026-08-26 | 강민서 | ✅ **`GetLiveClockStringAt(float LiveMinutes)` 요청 구현 완료 — `GetLiveClockStringFromMinutes(int32 LiveMinutes)`로 만들었습니다.** 요청과 시그니처가 달라 확인 필요합니다: 파라미터가 `float`가 아닌 `int32`이고, 함수명도 다릅니다. 통일 필요하시면 말씀 주세요. `GetCurrentLiveClockString()`을 이 함수 호출 한 줄로 리팩터링하는 것도 확정되면 같이 진행하겠습니다 |
+| 2026-08-26 | 강민서 | 🔴 **`FF_FestivalViewModelSubsystem.cpp:354` · `FF_LiveHudMenuBar.cpp:168` 표시 문자열 건 — 제 담당 함수는 이미 있습니다.** `EFF_FestivalStage` 표시 이름은 `GetCurrentStageDisplayName()`(UMETA DisplayName 기반, 패키징 빌드 안전)이 원본입니다. 해당 두 파일이 이 함수를 안 쓰고 자체 문자열을 쓰는 것으로 보여, 제가 직접 두 파일을 고치기보다 각 파일에서 이 함수를 호출하도록 바꾸시길 제안드립니다. enum에 없는 특수 케이스가 필요하면 알려주시면 추가하겠습니다 |
