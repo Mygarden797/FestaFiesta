@@ -257,7 +257,6 @@ FString GetLiveClockStringFromMinutes(int32 LiveMinutes) const;
 >
 > 급하진 않지만 하시면 `StartHour = 17` 중복(`:509`·`:524`)이 한 곳으로 줄어듭니다.
 
-
 ### 환경(날씨·야간) — `UFF_FestivalStageSubsystem` -강민서
 
 - **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
@@ -674,8 +673,8 @@ FFF_CrowdCellSample {
 
 - **헤더**: `Public/NPC/Metrics/FF_NpcNeedMetricsSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- **갱신 주기**: 이벤트 (집계 주기마다, 초안 30틱). 값이 바뀐 Need만 발행
-- **상태**: 🔴 **읽는 쪽은 완성, 채우는 쪽이 아직 없어 값이 전부 0입니다.** 제 다음 작업 대상입니다
+- **갱신 주기**: **1초(고정 30스텝)마다.** 값이 바뀐 Need만 발행
+- **상태**: ✅ **`구현완료`** — 채우는 쪽이 붙어서 실제 값이 나옵니다
 - **UI 사용처**: Report 드릴다운 `CauseId` 롤업(AT-005)
 
 | 멤버                                | 형                             | 단위·범위                                       |
@@ -690,6 +689,15 @@ FFF_CrowdCellSample {
 
 > ⚠️ **`GetSampleCount() == 0`은 "데이터 없음"입니다.** 표본이 없어도 미해소율은 0을 돌려줍니다.
 > 구분하지 않으면 "아무도 배고프지 않다"로 잘못 표시됩니다.
+
+**집계는 `Live` 단계에서만 돕니다.** 준비·결산 단계에서는 마지막 확정값이 그대로 멈춰 있습니다 —
+0으로 떨어지지 않으니 "Live 가 끝나면 지표가 사라진다"고 가정하지 말아 주세요.
+
+**표본은 파티가 아니라 개인 단위입니다.** 4인 가족이면 4표입니다 — 지표 정의가
+"이 Need 가 미해소인 **방문객** 비율"이라서입니다.
+
+지금 실제로 움직이는 것은 **`Hunger`·`Restroom`·`Stimulation`** 셋입니다.
+`Thirst`·`Fatigue` 는 아직 쌓이지 않게 꺼 두어서 항상 0 입니다(계수만 켜면 되고 코드 변경은 없습니다).
 
 ### `FFF_DestinationDecision` — NPC 1명의 이동 원인
 
@@ -1053,14 +1061,35 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 
 ### 알바 고용 — API 는 다 있습니다
 
-`GetAffordableTemporaryStaffCount()`(지금 잔액으로 가능한 최대 인원. 값을 바꾸지 않으니
-슬라이더 최대치·버튼 판정에 그대로) + `TryHireTemporaryStaff(int32 인원)`.
 표시 단계는 **Day1 `Setup` 과 Day2·3 `MorningCheck`** 입니다.
 
-⚠️ **부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 전부 거부되고 아무것도 바뀌지
-않습니다. 거부 사유가 `bool` 하나라 화면에서 `상한 도달`·`잔액 부족`을 구분하시려면
-말씀해 주세요. 🔧 **`GetRemainingHireCap()` 이 private 이라 UI 가 같은 식을 다시 쓰고 있는데
-(`GetRemainingTemporaryStaffCap()`), 제가 public 으로 열어 그 중복을 지우겠습니다.**
+| 필요한 것 | 함수 | 무엇을 보는가 |
+|---|---|---|
+| 고용 실행 | `TryHireTemporaryStaff(int32 인원)` | — |
+| 슬라이더 최대치·버튼 판정 | `GetAffordableTemporaryStaffCount()` | 상한 **과** 잔액 |
+| 오늘 상한까지 남은 인원 | `GetRemainingHireCap()` | 상한만 (잔액 무시) |
+
+앞의 둘은 상태를 바꾸지 않으니 매 프레임 부르셔도 됩니다.
+
+⚠️ **부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 **전부 거부**되고 아무것도 바뀌지 않습니다.
+
+**"왜 더 못 뽑는가"를 문구로 가르는 법** — 거부 사유가 `bool` 하나뿐이라 두 값을 비교하는 것이
+유일한 구분 수단입니다:
+
+```
+GetRemainingHireCap() == 0                        →  "오늘 고용 상한에 도달했습니다"
+GetAffordable... < GetRemainingHireCap()          →  "Gold 가 부족합니다"
+```
+
+⚠️ **Definition 이 아직 안 붙은 상태에서 두 창구의 값이 갈립니다.**
+
+| 부르는 곳 | 그때 값 |
+|---|---|
+| 경제 직접 (`GetRemainingHireCap()`) | `0` |
+| ViewModel (`GetRemainingTemporaryStaffCap()`) | `INDEX_NONE` = 모름 |
+
+이 화면에서 `0` 은 이미 **"상한 도달"** 이라는 뜻을 갖고 있어서 겹칩니다.
+**ViewModel 쪽을 쓰시는 편이 안전합니다.**
 
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
@@ -1471,4 +1500,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | 2026-08-26 | 김시리 | ✅ `GetLiveClockStringFromMinutes(int32)` Dev 병합 확인. 프로그램 카드 시각은 상대 표기 임시안 대신 이 API로 `HH:MM` 표시합니다 |
 | 2026-08-26 | 김시리 | 최신 UI 코드 확인 — Gold는 ViewModel이 `OnGoldChanged`를 구독해 연결돼 있습니다. 아직 남은 것은 누적/오늘 매출 연결, 인원 칸을 `GetAvailableStaffCount()` 로 바꾸는 것, 프로그램 편성·피날레 구매 화면입니다. Day1 Setup에서도 알바 고용 가능으로 확정됐습니다 |
 | 2026-08-27 | 강민서 | 🔴 **8/26 답변 정정 — `GetCurrentStageDisplayName()`이 실제로 UMETA 직접 읽기 문제였습니다.** 하드코딩 switch문으로 교체 완료, 빌드 확인함 |
+| 2026-08-28 | 김시리 | ✅ **Need 지표가 이제 실제로 움직입니다** — `UFF_NpcNeedMetricsSubsystem` 에 표본을 넣는 코드를 붙였습니다(`AdvanceNeeds()` 순회에 얹음). `GetNeedUnmetRatio()`·`GetNeedAverage()` 가 더 이상 항상 0 이 아닙니다. **갱신은 1초(30스텝)마다**이고 `OnNeedUnmetRatioChanged` 는 값이 바뀐 Need 에 대해서만 옵니다. ⚠️ **`GetSampleCount() == 0` 은 여전히 "데이터 없음"이고 0% 와 다릅니다** — Live 단계 밖에서는 집계가 안 돌아 마지막 값이 멈춰 있습니다. 표본은 파티가 아니라 **개인** 단위입니다 |
+| 2026-08-28 | 김시리 | 🔴 **2회차 축제를 시작하면 경제가 리셋되지 않습니다.** 경제의 `StartFestival(Definition)` 이 **`Initialize()` 에서 한 번만** 불려서, GameInstance 가 살아 있는 한 다시 안 돕니다 — Gold·원장·미납·인원·예약이 1회차 마지막 값으로 남습니다. **제 쪽에서 닫겠습니다**(리셋 함수는 이미 완성돼 있고 부를 자리만 없었습니다). ❓ **여쭙고 싶은 것**: `UFF_UIFlowSubsystem` 에서 **프론트엔드 복귀 후 축제를 다시 시작하는 흐름이 지금 실제로 도는지**입니다. 도는 상태면 발표 전에, 아니면 발표 뒤에 닫겠습니다 |
+| 2026-08-28 | 김시리 | ✅ **메인 무대가 공연 시간에만 후보로 열립니다.** Live 전반에는 `Performance_MainStage_*` 가 NPC 목적지 후보에서 빠져 있다가 공연 시작 시각에 열리고, 그 순간 유휴 파티가 무대로 몰립니다. **버스킹·체험 무대는 상시 열려 있습니다.** 화면 쪽 작업은 없습니다 — 다만 "무대에 아무도 없다"가 버그가 아니라 의도라는 점만 알아 두시면 됩니다 |
 | 2026-08-27 | 김시리 | **코드 전수 대조 + 문서 정리.** 안 맞는 것을 문서 끝 `아직 안 맞는 것` 표 하나로 모으고, 이미 닫힌 항목의 경위 서술을 걷어냈습니다. 실제로 바뀐 사실 4개: ① **표시 문자열은 5개 파일에 남아 있습니다**(지목했던 2곳은 줄 번호가 낡았고, 그중 4건은 Stage enum 이 아니라 탭·옵션 enum 이라 강민서 님 수정과 무관합니다) ② **`FFF_CrowdReadModel` 은 스텁이 아니라 실값이고 셀이 2m 입니다**(5m 가정이면 Heat Map 색이 틀립니다) ③ 인원 칸에 **가용이 아니라 보유**가 붙어 있습니다 ④ 프로그램·피날레는 `EFF_PrepHudTab` 에 탭 자리가 이미 있고 패널 본체만 없습니다. **경제 쪽 추가 작업은 0건이고, 제 숙제는 `AddSample` 호출부입니다** |
