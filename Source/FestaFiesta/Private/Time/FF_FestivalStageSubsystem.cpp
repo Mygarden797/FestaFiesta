@@ -462,12 +462,45 @@ void UFF_FestivalStageSubsystem::SkipCurrentStage()
 
 FText UFF_FestivalStageSubsystem::GetCurrentStageDisplayName() const
 {
-	UEnum* EnumPtr = StaticEnum<EFF_FestivalStage>();
-	if (EnumPtr)
+	//  수정 - UMETA(DisplayName) 직접 읽기는 패키징 빌드에서 값이 사라져서 하드코딩 매핑으로 교체
+	switch (CurrentStage)
 	{
-		return EnumPtr->GetDisplayNameTextByValue((int64)CurrentStage);
+	case EFF_FestivalStage::Setup:
+		return FText::FromString(TEXT("셋업"));
+		// Setup 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::PromotionPreview:
+		return FText::FromString(TEXT("홍보 프리뷰"));
+		// PromotionPreview 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::SunsetTransition:
+		return FText::FromString(TEXT("노을 전환"));
+		// SunsetTransition 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::MorningCheck:
+		return FText::FromString(TEXT("모닝체크"));
+		// MorningCheck 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Live:
+		return FText::FromString(TEXT("라이브 운영"));
+		// Live 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Closing:
+		return FText::FromString(TEXT("마감"));
+		// Closing 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Report:
+		return FText::FromString(TEXT("리포트"));
+		// Report 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Finale:
+		return FText::FromString(TEXT("피날레"));
+		// Finale 단계일 때 반환할 한글 이름
+
+	default:
+		return FText::FromString(TEXT("알 수 없음"));
+		// 혹시 모를 예외 상황 (enum에 없는 값)
 	}
-	return FText::FromString(TEXT("알 수 없음"));
 }
 // enum에 붙여둔 UMETA(DisplayName)을 그대로 가져와서 반환
 
