@@ -207,6 +207,9 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	
+	// 조회 시점에만 쓰이는 값이라 재빌드 없이 콘솔에서 바로 듣는다
+	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+
 	const float Time = DeltaTime * SimulationTimeScale;
 
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
@@ -369,8 +372,9 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					0,
 					CachedCorrelationStrength);
 			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
+			const float MemberBoost2 = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedMultiplier,1.f);
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
-			Unit.MaxSpeed = Unit.Speed;
+			Unit.MaxSpeed = Unit.Speed * MemberBoost2;
 
 			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
 			{
@@ -862,11 +866,34 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		}
 	}
 
-	constexpr double TraceAboveCm = 0.0;
+	FVector2D CenterCm(SimOrigin.X, SimOrigin.Y);
+	double HalfSizeCm = (HeightFieldRadiusUU > 0.f)
+		? static_cast<double>(HeightFieldRadiusUU)
+		: static_cast<double>(SimRadiusUU);
+	double TopZ = SimOrigin.Z;
+	bool bFittedToNav = false;
+
+	if (bHeightFieldFitToNavBounds)
+	{
+		const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+		const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
+		const FBox NavBounds = NavData ? NavData->GetBounds() : FBox(ForceInit);
+
+		if (NavBounds.IsValid)
+		{
+			CenterCm = FVector2D(NavBounds.GetCenter().X, NavBounds.GetCenter().Y);
+			HalfSizeCm = FMath::Max(NavBounds.GetSize().X, NavBounds.GetSize().Y) * 0.5;
+			TopZ = FMath::Max(TopZ, NavBounds.Max.Z);
+			bFittedToNav = true;
+		}
+	}
+
 	constexpr double TraceBelowCm = 50000.0;
 
-	const double StartZ = SimOrigin.Z + TraceAboveCm;
-	const double EndZ = SimOrigin.Z - TraceBelowCm;
+	const double TraceAboveCm = FMath::Max(static_cast<double>(HeightFieldTraceAboveUU), 0.0);
+
+	const double StartZ = TopZ + TraceAboveCm;
+	const double EndZ = FMath::Min(SimOrigin.Z, TopZ) - TraceBelowCm;
 
 	int32 TraceCount = 0;
 
@@ -892,8 +919,10 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	};
 
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
-	const bool bBuilt = HeightField.Build(
-		FVector2D(SimOrigin.X, SimOrigin.Y), SimRadiusUU, SpacingCm, Sampler);
+
+	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+
+	const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
 
 	const FFF_CrowdHeightField::FBuildStats& Stats = HeightField.GetStats();
 
@@ -911,6 +940,27 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		Stats.HitCount, Stats.SampleCount,
 		Stats.MinHeightCm, Stats.MaxHeightCm, Stats.HeightSpanCm(),
 		IgnoredFacilities);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("높이 격자: 중심 (%.0f, %.0f) 반경 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),
+		CenterCm.X, CenterCm.Y, HalfSizeCm,
+		bFittedToNav ? TEXT("NavMesh 경계에 맞춤") : TEXT("SimRadius"),
+		SpacingCm, StartZ);
+
+	if (Stats.MaxHeightCm >= StartZ - 1.0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("높이 격자: 최고점 %.0f가 트레이스 시작면 %.0f에 닿았다 — 그보다 높은 지형은 ")
+			TEXT("표본에서 빠져 개체가 파묻힌다. HeightFieldTraceAboveUU(현재 %.0f)를 올릴 것"),
+			Stats.MaxHeightCm, StartZ, HeightFieldTraceAboveUU);
+	}
+
+	if (Stats.HitCount < Stats.SampleCount)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: 지면을 못 찾은 격자점 %d개 — 구멍이면 정상이고, 높은 지형이면 위 경고를 볼 것"),
+			Stats.SampleCount - Stats.HitCount);
+	}
 }
 
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
@@ -1886,6 +1936,7 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	if (FVector::DistSquared2D(Unit.Position, Leader.Position) > FMath::Square(PartyCohesionRadiusUU))
 	{
 		Unit.TargetLocation = Leader.Position + Offset;
+		Unit.Speed = Unit.MaxSpeed; 
 	}
 	else
 	{
