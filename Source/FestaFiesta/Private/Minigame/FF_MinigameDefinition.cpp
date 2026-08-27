@@ -28,6 +28,14 @@ bool UFF_MinigameDefinition::SupportsFacility(const FName FacilityDefinitionId) 
 		&& CompatibleFacilityDefinitionIds.Contains(FacilityDefinitionId);
 }
 
+int32 UFF_MinigameDefinition::ResolveRewardGoldAtMaxScore(
+	const int32 FestivalFallbackGold) const
+{
+	return RewardGoldAtMaxScore >= 0
+		? RewardGoldAtMaxScore
+		: FMath::Max(0, FestivalFallbackGold);
+}
+
 bool UFF_MinigameDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 {
 	const int32 ErrorCountBefore = OutErrors.Num();
@@ -55,6 +63,12 @@ void UFF_MinigameDefinition::AppendValidationErrors(TArray<FText>& OutErrors) co
 	if (ScoreForMaxReward <= 0)
 	{
 		OutErrors.Add(LOCTEXT("InvalidRewardScore", "ScoreForMaxReward must be greater than zero."));
+	}
+	if (RewardGoldAtMaxScore < -1)
+	{
+		OutErrors.Add(LOCTEXT(
+			"InvalidDefinitionRewardGold",
+			"클리어 최대 획득 골드는 -1(축제 공통값 사용) 또는 0 이상의 값이어야 합니다."));
 	}
 
 	if (!RuntimeClass)
@@ -119,10 +133,11 @@ EDataValidationResult UFF_MinigameDefinition::IsDataValid(FDataValidationContext
 UFF_TargetShootingDefinition::UFF_TargetShootingDefinition()
 {
 	MinigameId = TEXT("TargetShooting");
-	DisplayName = LOCTEXT("TargetShootingDisplayName", "Busan Sea Target Shooting");
+	DisplayName = LOCTEXT("TargetShootingDisplayName", "부산 바다 물총 사격");
 	CompatibleFacilityDefinitionIds = { TEXT("Booth_ActivityGame_Shoot") };
 	DurationSeconds = 30.0f;
 	ScoreForMaxReward = 2000;
+	RewardGoldAtMaxScore = 150;
 	RuntimeClass = UFF_TargetShootingRuntime::StaticClass();
 }
 
@@ -134,7 +149,7 @@ void UFF_TargetShootingDefinition::AppendValidationErrors(TArray<FText>& OutErro
 	if (!Rules.IsValid(&FailureReason))
 	{
 		OutErrors.Add(FText::Format(
-			LOCTEXT("InvalidTargetShootingRules", "Target-shooting rules are invalid: {0}"),
+			LOCTEXT("InvalidTargetShootingRules", "과녁 슈팅 세부 설정이 올바르지 않습니다: {0}"),
 			FText::FromString(FailureReason)));
 	}
 }

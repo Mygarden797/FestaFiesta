@@ -15,20 +15,26 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/Viewport.h"
 #include "Engine/Font.h"
 #include "Engine/Texture2D.h"
 #include "InputCoreTypes.h"
 #include "Minigame/FF_TargetShootingRuntime.h"
+#include "Minigame/TargetShooting/FF_TargetShootingRules.h"
 #include "Rendering/DrawElementTypes.h"
 #include "UI/FF_UILog.h"
+#include "UI/Minigame/FF_TargetShootingArena3D.h"
 
 #define LOCTEXT_NAMESPACE "FFTargetShootingScreen"
 
 namespace
 {
 	const TCHAR* const TargetShootingBackdropPath =
-		TEXT("/Game/FestaFiesta/UI/Minigame/AAA/T_MG_TargetShooting_Backdrop_AAA."
-			 "T_MG_TargetShooting_Backdrop_AAA");
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_TargetShooting_Backdrop_UIUX_v2."
+			 "T_MG_TargetShooting_Backdrop_UIUX_v2");
+	const TCHAR* const TargetShootingWaterBlasterPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_TargetShooting_WaterBlaster_UIUX_v2."
+			 "T_MG_TargetShooting_WaterBlaster_UIUX_v2");
 
 	void StyleNativeText(
 		UTextBlock* TextBlock,
@@ -63,13 +69,17 @@ void UFF_TargetShootingTargetVisual::Configure(
 	const FLinearColor& InBullseyeColor,
 	const float InPrecisionRatio,
 	const float InBullseyeRatio,
+	const float InRemainingLifeRatio,
+	const FLinearColor& InCountdownColor,
 	const float InLineThickness)
 {
 	if (OuterColor.Equals(InOuterColor)
 		&& PrecisionColor.Equals(InPrecisionColor)
 		&& BullseyeColor.Equals(InBullseyeColor)
+		&& CountdownColor.Equals(InCountdownColor)
 		&& FMath::IsNearlyEqual(PrecisionRatio, InPrecisionRatio)
 		&& FMath::IsNearlyEqual(BullseyeRatio, InBullseyeRatio)
+		&& FMath::IsNearlyEqual(RemainingLifeRatio, InRemainingLifeRatio)
 		&& FMath::IsNearlyEqual(LineThickness, InLineThickness))
 	{
 		return;
@@ -77,8 +87,10 @@ void UFF_TargetShootingTargetVisual::Configure(
 	OuterColor = InOuterColor;
 	PrecisionColor = InPrecisionColor;
 	BullseyeColor = InBullseyeColor;
+	CountdownColor = InCountdownColor;
 	PrecisionRatio = FMath::Clamp(InPrecisionRatio, 0.01f, 0.99f);
 	BullseyeRatio = FMath::Clamp(InBullseyeRatio, 0.01f, PrecisionRatio);
+	RemainingLifeRatio = FMath::Clamp(InRemainingLifeRatio, 0.0f, 1.0f);
 	LineThickness = FMath::Clamp(InLineThickness, 1.0f, 12.0f);
 	InvalidateLayoutAndVolatility();
 }
@@ -107,7 +119,10 @@ int32 UFF_TargetShootingTargetVisual::NativePaint(
 	}
 
 	constexpr int32 SegmentCount = 64;
-	auto PaintEllipse = [&](const float RadiusRatio, const FLinearColor& Color, const int32 RingLayer)
+	auto PaintEllipse = [&](const float RadiusRatio,
+		const FLinearColor& Color,
+		const float Thickness,
+		const int32 RingLayer)
 	{
 		TArray<FVector2f> Points;
 		Points.Reserve(SegmentCount + 1);
@@ -115,8 +130,8 @@ int32 UFF_TargetShootingTargetVisual::NativePaint(
 			static_cast<float>(LocalSize.X * 0.5),
 			static_cast<float>(LocalSize.Y * 0.5));
 		const FVector2f Radius(
-			FMath::Max(0.0f, static_cast<float>(LocalSize.X * 0.5) - LineThickness * 0.5f),
-			FMath::Max(0.0f, static_cast<float>(LocalSize.Y * 0.5) - LineThickness * 0.5f));
+			FMath::Max(0.0f, static_cast<float>(LocalSize.X * 0.5) - Thickness * 0.5f),
+			FMath::Max(0.0f, static_cast<float>(LocalSize.Y * 0.5) - Thickness * 0.5f));
 		for (int32 Index = 0; Index <= SegmentCount; ++Index)
 		{
 			const float Angle = 2.0f * UE_PI * static_cast<float>(Index) / SegmentCount;
@@ -132,12 +147,69 @@ int32 UFF_TargetShootingTargetVisual::NativePaint(
 			ESlateDrawEffect::None,
 			Color * InWidgetStyle.GetColorAndOpacityTint(),
 			true,
-			LineThickness);
+			Thickness);
+	};
+	auto PaintEllipseArc = [&](const float RadiusRatio,
+		const float ArcRatio,
+		const FLinearColor& Color,
+		const float Thickness,
+		const int32 RingLayer)
+	{
+		const float SafeArcRatio = FMath::Clamp(ArcRatio, 0.0f, 1.0f);
+		if (SafeArcRatio <= UE_SMALL_NUMBER)
+		{
+			return;
+		}
+
+		const int32 ArcSegmentCount = FMath::Clamp(
+			FMath::CeilToInt(static_cast<float>(SegmentCount) * SafeArcRatio),
+			2,
+			SegmentCount);
+		TArray<FVector2f> Points;
+		Points.Reserve(ArcSegmentCount + 1);
+		const FVector2f Center(
+			static_cast<float>(LocalSize.X * 0.5),
+			static_cast<float>(LocalSize.Y * 0.5));
+		const FVector2f Radius(
+			FMath::Max(0.0f, static_cast<float>(LocalSize.X * 0.5) - Thickness * 0.5f),
+			FMath::Max(0.0f, static_cast<float>(LocalSize.Y * 0.5) - Thickness * 0.5f));
+		for (int32 Index = 0; Index <= ArcSegmentCount; ++Index)
+		{
+			const float ArcAlpha = static_cast<float>(Index) / ArcSegmentCount;
+			const float Angle = -0.5f * UE_PI
+				+ 2.0f * UE_PI * SafeArcRatio * ArcAlpha;
+			Points.Emplace(
+				Center.X + Radius.X * RadiusRatio * FMath::Cos(Angle),
+				Center.Y + Radius.Y * RadiusRatio * FMath::Sin(Angle));
+		}
+		FSlateDrawElement::MakeLines(
+			OutDrawElements,
+			RingLayer,
+			AllottedGeometry.ToPaintGeometry(),
+			MoveTemp(Points),
+			ESlateDrawEffect::None,
+			Color * InWidgetStyle.GetColorAndOpacityTint(),
+			true,
+			Thickness);
 	};
 
-	PaintEllipse(1.0f, OuterColor, BaseLayer + 1);
-	PaintEllipse(PrecisionRatio, PrecisionColor, BaseLayer + 2);
-	PaintEllipse(BullseyeRatio, BullseyeColor, BaseLayer + 3);
+	// Dark under-strokes isolate all three scoring zones from detailed art while
+	// leaving the outer edge equal to the authoritative hit ellipse.
+	const FLinearColor TargetOutline(0.002f, 0.008f, 0.018f, 0.96f);
+	PaintEllipse(1.0f, TargetOutline, LineThickness * 3.2f, BaseLayer + 1);
+	PaintEllipse(1.0f, OuterColor, LineThickness, BaseLayer + 2);
+	PaintEllipse(PrecisionRatio, TargetOutline, LineThickness * 2.6f, BaseLayer + 3);
+	PaintEllipse(PrecisionRatio, PrecisionColor, LineThickness * 0.86f, BaseLayer + 4);
+	PaintEllipse(BullseyeRatio, TargetOutline, LineThickness * 2.8f, BaseLayer + 5);
+	PaintEllipse(BullseyeRatio, BullseyeColor, LineThickness * 1.15f, BaseLayer + 6);
+	// The bright section drains clockwise from twelve o'clock. It shares the exact
+	// outer edge instead of adding a larger halo that could imply a false hit area.
+	PaintEllipseArc(
+		1.0f,
+		RemainingLifeRatio,
+		CountdownColor,
+		FMath::Max(1.0f, LineThickness * 0.48f),
+		BaseLayer + 7);
 
 	// Crisp cardinal acquisition marks make the target readable against detailed art.
 	// They remain inside the authoritative outer ellipse and never imply a larger hit area.
@@ -164,29 +236,167 @@ int32 UFF_TargetShootingTargetVisual::NativePaint(
 	PaintTick(
 		FVector2f(Center.X - Radius.X, Center.Y),
 		FVector2f(Center.X - Radius.X * TickInnerRatio, Center.Y),
-		BaseLayer + 4);
+		BaseLayer + 8);
 	PaintTick(
 		FVector2f(Center.X + Radius.X * TickInnerRatio, Center.Y),
 		FVector2f(Center.X + Radius.X, Center.Y),
-		BaseLayer + 4);
+		BaseLayer + 8);
 	PaintTick(
 		FVector2f(Center.X, Center.Y - Radius.Y),
 		FVector2f(Center.X, Center.Y - Radius.Y * TickInnerRatio),
-		BaseLayer + 4);
+		BaseLayer + 8);
 	PaintTick(
 		FVector2f(Center.X, Center.Y + Radius.Y * TickInnerRatio),
 		FVector2f(Center.X, Center.Y + Radius.Y),
-		BaseLayer + 4);
+		BaseLayer + 8);
 	const float CenterTick = FMath::Max(3.0f, FMath::Min(LocalSize.X, LocalSize.Y) * 0.055f);
 	PaintTick(
 		FVector2f(Center.X - CenterTick, Center.Y),
 		FVector2f(Center.X + CenterTick, Center.Y),
-		BaseLayer + 5);
+		BaseLayer + 9);
 	PaintTick(
 		FVector2f(Center.X, Center.Y - CenterTick),
 		FVector2f(Center.X, Center.Y + CenterTick),
-		BaseLayer + 5);
-	return BaseLayer + 5;
+		BaseLayer + 9);
+	PaintTick(
+		FVector2f(Center.X - LineThickness, Center.Y),
+		FVector2f(Center.X + LineThickness, Center.Y),
+		BaseLayer + 10);
+	return BaseLayer + 10;
+}
+
+void UFF_TargetShootingProjectileVisual::Configure(
+	const FVector2D& InDirection,
+	const FLinearColor& InCoreColor,
+	const FLinearColor& InGlowColor,
+	const float InCoreThickness,
+	const float InTrailLength)
+{
+	const FVector2D SafeDirection = InDirection.IsNearlyZero()
+		|| !FMath::IsFinite(InDirection.X)
+		|| !FMath::IsFinite(InDirection.Y)
+		? FVector2D(0.0f, -1.0f)
+		: InDirection.GetSafeNormal();
+	if (Direction.Equals(SafeDirection)
+		&& CoreColor.Equals(InCoreColor)
+		&& GlowColor.Equals(InGlowColor)
+		&& FMath::IsNearlyEqual(CoreThickness, InCoreThickness)
+		&& FMath::IsNearlyEqual(TrailLength, InTrailLength))
+	{
+		return;
+	}
+
+	Direction = SafeDirection;
+	CoreColor = InCoreColor;
+	GlowColor = InGlowColor;
+	CoreThickness = FMath::Clamp(InCoreThickness, 1.0f, 12.0f);
+	TrailLength = FMath::Clamp(InTrailLength, 8.0f, 96.0f);
+	InvalidateLayoutAndVolatility();
+}
+
+int32 UFF_TargetShootingProjectileVisual::NativePaint(
+	const FPaintArgs& Args,
+	const FGeometry& AllottedGeometry,
+	const FSlateRect& MyCullingRect,
+	FSlateWindowElementList& OutDrawElements,
+	const int32 LayerId,
+	const FWidgetStyle& InWidgetStyle,
+	const bool bParentEnabled) const
+{
+	const int32 BaseLayer = Super::NativePaint(
+		Args,
+		AllottedGeometry,
+		MyCullingRect,
+		OutDrawElements,
+		LayerId,
+		InWidgetStyle,
+		bParentEnabled);
+	const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
+	if (LocalSize.X <= UE_SMALL_NUMBER || LocalSize.Y <= UE_SMALL_NUMBER)
+	{
+		return BaseLayer;
+	}
+
+	const FVector2f Center(
+		static_cast<float>(LocalSize.X * 0.5),
+		static_cast<float>(LocalSize.Y * 0.5));
+	const FVector2f FlightDirection(
+		static_cast<float>(Direction.X),
+		static_cast<float>(Direction.Y));
+	const FVector2f Perpendicular(-FlightDirection.Y, FlightDirection.X);
+	const float SafeTrailLength = FMath::Min(
+		TrailLength,
+		static_cast<float>(FMath::Min(LocalSize.X, LocalSize.Y) * 0.46));
+	const FLinearColor Tint = InWidgetStyle.GetColorAndOpacityTint();
+
+	auto PaintLine = [&](const FVector2f& Start,
+		const FVector2f& End,
+		const FLinearColor& Color,
+		const float Thickness,
+		const int32 LineLayer)
+	{
+		TArray<FVector2f> Points { Start, End };
+		FSlateDrawElement::MakeLines(
+			OutDrawElements,
+			LineLayer,
+			AllottedGeometry.ToPaintGeometry(),
+			MoveTemp(Points),
+			ESlateDrawEffect::None,
+			Color * Tint,
+			true,
+			Thickness);
+	};
+
+	const FVector2f TrailStart = Center - FlightDirection * SafeTrailLength;
+	const FVector2f TrailEnd = Center - FlightDirection * (CoreThickness * 0.5f);
+	FLinearColor SoftGlow = GlowColor;
+	SoftGlow.A *= 0.24f;
+	PaintLine(TrailStart, TrailEnd, SoftGlow, CoreThickness * 3.4f, BaseLayer + 1);
+	PaintLine(TrailStart, Center, GlowColor, CoreThickness, BaseLayer + 2);
+
+	const FVector2f CoreStart = Center - FlightDirection * (CoreThickness * 1.2f);
+	const FVector2f CoreEnd = Center + FlightDirection * (CoreThickness * 1.8f);
+	PaintLine(CoreStart, CoreEnd, CoreColor, CoreThickness * 1.8f, BaseLayer + 3);
+	PaintLine(
+		Center - Perpendicular * CoreThickness,
+		Center + Perpendicular * CoreThickness,
+		CoreColor,
+		CoreThickness,
+		BaseLayer + 4);
+
+	// A bright circular water capsule reads as a projectile instead of a cursor
+	// streak, even during short flights on a high-refresh display.
+	constexpr int32 BubbleSegments = 24;
+	TArray<FVector2f> Bubble;
+	Bubble.Reserve(BubbleSegments + 1);
+	const float BubbleRadius = FMath::Max(6.0f, CoreThickness * 1.65f);
+	for (int32 Index = 0; Index <= BubbleSegments; ++Index)
+	{
+		const float Angle = 2.0f * UE_PI * static_cast<float>(Index) / BubbleSegments;
+		Bubble.Emplace(
+			Center.X + BubbleRadius * FMath::Cos(Angle),
+			Center.Y + BubbleRadius * FMath::Sin(Angle));
+	}
+	FLinearColor BubbleGlow = GlowColor;
+	BubbleGlow.A *= 0.92f;
+	FSlateDrawElement::MakeLines(
+		OutDrawElements,
+		BaseLayer + 5,
+		AllottedGeometry.ToPaintGeometry(),
+		MoveTemp(Bubble),
+		ESlateDrawEffect::None,
+		BubbleGlow * Tint,
+		true,
+		FMath::Max(2.0f, CoreThickness * 0.70f));
+	PaintLine(
+		Center - Perpendicular * BubbleRadius * 0.45f
+			- FlightDirection * BubbleRadius * 0.28f,
+		Center + Perpendicular * BubbleRadius * 0.10f
+			- FlightDirection * BubbleRadius * 0.55f,
+		CoreColor,
+		FMath::Max(1.5f, CoreThickness * 0.45f),
+		BaseLayer + 6);
+	return BaseLayer + 6;
 }
 
 UFF_TargetShootingScreen::UFF_TargetShootingScreen(const FObjectInitializer& ObjectInitializer)
@@ -194,6 +404,8 @@ UFF_TargetShootingScreen::UFF_TargetShootingScreen(const FObjectInitializer& Obj
 {
 	VisualStyle.BackdropTexture = TSoftObjectPtr<UTexture2D>(
 		FSoftObjectPath(TargetShootingBackdropPath));
+	VisualStyle.WaterBlasterTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(TargetShootingWaterBlasterPath));
 }
 
 bool UFF_TargetShootingScreen::SetRuntime(UFF_TargetShootingRuntime* InRuntime)
@@ -273,6 +485,17 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 			0.0f,
 			VisualStyle.TargetSpawnPulseSeconds);
 	}
+	if (Snapshot.ProjectileSerial > 0
+		&& Snapshot.ProjectileSerial != PresentedProjectileSerial)
+	{
+		PresentedProjectileSerial = Snapshot.ProjectileSerial;
+		ReticleShotPulseRemainingSeconds = FMath::Max(
+			0.0f,
+			VisualStyle.ReticleShotPulseSeconds);
+		MuzzleFlashRemainingSeconds = FMath::Max(
+			0.0f,
+			VisualStyle.MuzzleFlashSeconds);
+	}
 	if (Snapshot.LatestFeedbackSerial > 0
 		&& Snapshot.LatestFeedbackSerial != PresentedFeedbackSerial)
 	{
@@ -324,6 +547,7 @@ void UFF_TargetShootingScreen::NativeConstruct()
 	Super::NativeConstruct();
 	ResolveBindingsFromWidgetTree();
 	InitializeBindings();
+	TryInitializeThreeDimensionalArena();
 	RefreshPresentation();
 }
 
@@ -336,6 +560,8 @@ void UFF_TargetShootingScreen::NativeDestruct()
 
 	InitialFocusTarget = nullptr;
 	Runtime = nullptr;
+	Arena3DActor = nullptr;
+	bThreeDimensionalArenaReady = false;
 	SetSessionId(FGuid());
 	ResetTransientPresentationState();
 	if (Border_PlayArea)
@@ -355,6 +581,10 @@ void UFF_TargetShootingScreen::NativeDestruct()
 void UFF_TargetShootingScreen::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!bThreeDimensionalArenaReady)
+	{
+		TryInitializeThreeDimensionalArena();
+	}
 
 	if (IsValid(Runtime))
 	{
@@ -375,7 +605,12 @@ void UFF_TargetShootingScreen::NativeTick(const FGeometry& MyGeometry, const flo
 	ReticleShotPulseRemainingSeconds = FMath::Max(
 		0.0f,
 		ReticleShotPulseRemainingSeconds - SafeDeltaSeconds);
+	MuzzleFlashRemainingSeconds = FMath::Max(
+		0.0f,
+		MuzzleFlashRemainingSeconds - SafeDeltaSeconds);
 	RefreshTargetLayout();
+	RefreshProjectilePresentation();
+	RefreshWeaponPresentation();
 	RefreshFeedbackPresentation();
 	RefreshReticlePresentation();
 }
@@ -408,9 +643,9 @@ FReply UFF_TargetShootingScreen::NativeOnMouseButtonDown(
 	ReticlePointNormalized = NormalizedPoint;
 	bReticleInsidePlayArea = true;
 
-	// UI deliberately does not branch on Hit/Miss. The runtime validates the
-	// session id, target serial and normalized point, then owns all scoring.
-	Runtime->SubmitShot(
+	// The runtime validates this fire request, advances the projectile and owns the
+	// impact-time hit test. UI never predicts Hit/Miss or mutates score.
+	Runtime->FireProjectile(
 		GetSessionId(),
 		NormalizedPoint,
 		DisplayedSnapshot.TargetSerial);
@@ -474,7 +709,7 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	UBorder* ScreenWash = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("Border_ScreenWash"));
 	UCanvasPanel* LayoutCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(
-		UCanvasPanel::StaticClass(), TEXT("Canvas_AAAHud"));
+		UCanvasPanel::StaticClass(), TEXT("Canvas_WaterBlasterHud"));
 	UBorder* ArenaFrame = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("Border_ArenaFrame"));
 	Border_PlayArea = WidgetTree->ConstructWidget<UBorder>(
@@ -543,7 +778,7 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	Border_PlayArea->SetPadding(FMargin(0.0f));
 	Border_PlayArea->SetContent(Canvas_PlayArea);
 	ArenaFrame->SetContent(Border_PlayArea);
-	if (!PlaceAnchored(ArenaFrame, FAnchors(0.17f, 0.18f, 0.91f, 0.83f), 10))
+	if (!PlaceAnchored(ArenaFrame, FAnchors(0.08f, 0.16f, 0.92f, 0.93f), -100))
 	{
 		return false;
 	}
@@ -572,6 +807,32 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	TargetSlot->SetPosition(FVector2D::ZeroVector);
 	TargetSlot->SetSize(FVector2D(112.0f, 112.0f));
 	TargetSlot->SetZOrder(1);
+
+	Text_TargetCue = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("Text_TargetCue"));
+	if (!Text_TargetCue)
+	{
+		return false;
+	}
+	Text_TargetCue->SetText(LOCTEXT("NativeTargetCue", "여기를 쏘세요"));
+	Text_TargetCue->SetJustification(ETextJustify::Center);
+	Text_TargetCue->SetVisibility(ESlateVisibility::HitTestInvisible);
+	StyleNativeText(
+		Text_TargetCue,
+		VisualStyle.TargetCueFontSize,
+		VisualStyle.TargetCueColor);
+	if (UCanvasPanelSlot* CueSlot = Canvas_PlayArea->AddChildToCanvas(Text_TargetCue))
+	{
+		CueSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+		CueSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+		CueSlot->SetPosition(FVector2D(0.0f, -72.0f));
+		CueSlot->SetSize(FVector2D(240.0f, 38.0f));
+		CueSlot->SetZOrder(7);
+	}
+	else
+	{
+		return false;
+	}
 
 	Text_ShotFeedback = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(), TEXT("Text_ShotFeedback"));
@@ -615,9 +876,9 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	{
 		return false;
 	}
-	RangeLabel->SetText(LOCTEXT("RangeLabel", "LIVE RANGE  //  ACQUIRE & ENGAGE"));
+	RangeLabel->SetText(LOCTEXT("RangeLabel", "WATER SHOT RANGE  //  과녁을 조준하세요"));
 	StyleNativeText(RangeLabel, 11.0f, VisualStyle.SecondaryTextColor, TEXT("SemiBold"));
-	RangeLabel->SetVisibility(ESlateVisibility::HitTestInvisible);
+	RangeLabel->SetVisibility(ESlateVisibility::Collapsed);
 	if (UCanvasPanelSlot* RangeSlot = Canvas_PlayArea->AddChildToCanvas(RangeLabel))
 	{
 		RangeSlot->SetAnchors(FAnchors(0.0f, 0.0f));
@@ -644,9 +905,9 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 	ConfigureCard(TitleCard, VisualStyle.HudPanelColor, FMargin(20.0f, 12.0f));
-	TitleEyebrow->SetText(LOCTEXT("TitleEyebrow", "BUSAN WATERFRONT // LIVE EVENT"));
+	TitleEyebrow->SetText(LOCTEXT("TitleEyebrow", "BUSAN WATERFRONT FESTIVAL"));
 	StyleNativeText(TitleEyebrow, 10.0f, VisualStyle.HudAccentColor, TEXT("SemiBold"));
-	TitleText->SetText(LOCTEXT("Title", "NIGHT RANGE"));
+	TitleText->SetText(LOCTEXT("Title", "WATER BLAST"));
 	StyleNativeText(TitleText, 27.0f, VisualStyle.PrimaryTextColor);
 	TitleColumn->AddChildToVerticalBox(TitleEyebrow);
 	TitleColumn->AddChildToVerticalBox(TitleText);
@@ -704,16 +965,16 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	Progress_Time->SetVisibility(ESlateVisibility::HitTestInvisible);
 	TimerGaugeSize->SetHeightOverride(5.0f);
 	TimerGaugeSize->SetContent(Progress_Time);
-	Text_Score->SetText(LOCTEXT("NativeScorePlaceholder", "SCORE  000000"));
+	Text_Score->SetText(LOCTEXT("NativeScorePlaceholder", "점수  000000"));
 	Text_Score->SetJustification(ETextJustify::Right);
 	StyleNativeText(Text_Score, 27.0f, VisualStyle.HudAmberColor);
-	Text_HitCount->SetText(LOCTEXT("NativeHitsPlaceholder", "HITS  0\nACCURACY  0%"));
+	Text_HitCount->SetText(LOCTEXT("NativeHitsPlaceholder", "명중  0\n정확도  0%"));
 	Text_HitCount->SetAutoWrapText(true);
 	StyleNativeText(Text_HitCount, 16.0f, VisualStyle.PrimaryTextColor, TEXT("SemiBold"));
-	Text_MissCount->SetText(LOCTEXT("NativePerformancePlaceholder", "RATE  0.0 /s\nREACTION  0ms\nMISS  0"));
+	Text_MissCount->SetText(LOCTEXT("NativePerformancePlaceholder", "초당  0.0발\n반응  0ms\n빗나감  0"));
 	Text_MissCount->SetAutoWrapText(true);
 	StyleNativeText(Text_MissCount, 15.0f, VisualStyle.SecondaryTextColor, TEXT("SemiBold"));
-	Text_Streak->SetText(LOCTEXT("NativeStreakPlaceholder", "COMBO x0     BEST 0"));
+	Text_Streak->SetText(LOCTEXT("NativeStreakPlaceholder", "연속 x0     최고 0"));
 	Text_Streak->SetJustification(ETextJustify::Center);
 	StyleNativeText(Text_Streak, 22.0f, VisualStyle.HudAccentColor);
 	if (UVerticalBoxSlot* TimerTextSlot = TimerColumn->AddChildToVerticalBox(Text_RemainingTime))
@@ -733,9 +994,9 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	StreakCard->SetContent(Text_Streak);
 	if (!PlaceAnchored(TimerCard, FAnchors(0.405f, 0.025f, 0.605f, 0.150f), 31)
 		|| !PlaceAnchored(ScoreCard, FAnchors(0.715f, 0.035f, 0.910f, 0.145f), 30)
-		|| !PlaceAnchored(HitCard, FAnchors(0.025f, 0.270f, 0.150f, 0.395f), 30)
-		|| !PlaceAnchored(PerformanceCard, FAnchors(0.025f, 0.420f, 0.150f, 0.590f), 30)
-		|| !PlaceAnchored(StreakCard, FAnchors(0.315f, 0.855f, 0.610f, 0.945f), 30))
+		|| !PlaceAnchored(HitCard, FAnchors(0.080f, 0.835f, 0.255f, 0.925f), 30)
+		|| !PlaceAnchored(PerformanceCard, FAnchors(0.745f, 0.835f, 0.920f, 0.925f), 30)
+		|| !PlaceAnchored(StreakCard, FAnchors(0.665f, 0.175f, 0.900f, 0.235f), 30))
 	{
 		return false;
 	}
@@ -749,14 +1010,15 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 	ConfigureCard(HintCard, VisualStyle.HudPanelMutedColor, FMargin(16.0f, 8.0f));
-	HintText->SetText(LOCTEXT("InputHint", "MOUSE  AIM     [LMB]  FIRE     [ESC]  ABORT"));
+	HintText->SetText(LOCTEXT("InputHint", "마우스로 조준  ·  클릭하여 발사  ·  ESC 나가기"));
 	HintText->SetJustification(ETextJustify::Center);
 	StyleNativeText(HintText, 13.0f, VisualStyle.SecondaryTextColor, TEXT("SemiBold"));
 	HintCard->SetContent(HintText);
-	if (!PlaceAnchored(HintCard, FAnchors(0.655f, 0.855f, 0.910f, 0.945f), 30))
+	if (!PlaceAnchored(HintCard, FAnchors(0.350f, 0.940f, 0.650f, 0.985f), 30))
 	{
 		return false;
 	}
+	HintCard->SetVisibility(ESlateVisibility::Collapsed);
 
 	Panel_Result = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("Panel_Result"));
@@ -794,7 +1056,7 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	ResultSurface->SetBrushColor(VisualStyle.HudPanelColor);
 	ResultSurface->SetPadding(FMargin(48.0f, 40.0f));
 	ResultSurface->SetContent(ResultColumn);
-	ResultEyebrow->SetText(LOCTEXT("ResultEyebrow", "AFTER ACTION REPORT  //  NIGHT RANGE"));
+	ResultEyebrow->SetText(LOCTEXT("ResultEyebrow", "WATER BLAST  //  플레이 결과"));
 	ResultEyebrow->SetJustification(ETextJustify::Center);
 	StyleNativeText(ResultEyebrow, 13.0f, VisualStyle.HudAccentColor, TEXT("SemiBold"));
 	Text_Result->SetJustification(ETextJustify::Center);
@@ -840,7 +1102,7 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 
-	NativeCloseLabel->SetText(LOCTEXT("NativeClose", "EXIT  [ESC]"));
+	NativeCloseLabel->SetText(LOCTEXT("NativeClose", "나가기  [ESC]"));
 	NativeCloseLabel->SetJustification(ETextJustify::Center);
 	StyleNativeText(NativeCloseLabel, 13.0f, VisualStyle.PrimaryTextColor, TEXT("SemiBold"));
 	Button_Close->SetContent(NativeCloseLabel);
@@ -869,9 +1131,20 @@ void UFF_TargetShootingScreen::ResolveBindingsFromWidgetTree()
 	Border_PlayArea = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Border_PlayArea")));
 	Image_Backdrop = Cast<UImage>(WidgetTree->FindWidget(TEXT("Image_Backdrop")));
 	Canvas_PlayArea = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("Canvas_PlayArea")));
+	Viewport_Arena3D = Cast<UViewport>(WidgetTree->FindWidget(TEXT("Viewport_Arena3D")));
 	Border_Target = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Border_Target")));
 	TargetVisual = Cast<UFF_TargetShootingTargetVisual>(
 		WidgetTree->FindWidget(TEXT("TargetVisual_AuthoritativeRings")));
+	ProjectileVisual = Cast<UFF_TargetShootingProjectileVisual>(
+		WidgetTree->FindWidget(TEXT("ProjectileVisual_Tracer")));
+	Image_WaterBlaster = Cast<UImage>(
+		WidgetTree->FindWidget(TEXT("Image_WaterBlaster")));
+	Text_MuzzleFlash = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("Text_MuzzleFlash")));
+	Text_WeaponStatus = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("Text_WeaponStatus")));
+	Text_TargetCue = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("Text_TargetCue")));
 	Text_ShotFeedback = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_ShotFeedback")));
 	Text_Reticle = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_Reticle")));
 	Text_RemainingTime = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_RemainingTime")));
@@ -924,9 +1197,29 @@ void UFF_TargetShootingScreen::InitializeBindings()
 	{
 		Image_Backdrop->SetColorAndOpacity(VisualStyle.BackdropTint);
 		Image_Backdrop->SetVisibility(ESlateVisibility::HitTestInvisible);
-		if (UTexture2D* BackdropTexture = VisualStyle.BackdropTexture.LoadSynchronous())
+		UTexture2D* BackdropTexture = LoadObject<UTexture2D>(nullptr, TargetShootingBackdropPath);
+		if (!BackdropTexture)
+		{
+			BackdropTexture = VisualStyle.BackdropTexture.LoadSynchronous();
+		}
+		if (BackdropTexture)
 		{
 			Image_Backdrop->SetBrushFromTexture(BackdropTexture, true);
+		}
+	}
+	if (Image_WaterBlaster)
+	{
+		Image_WaterBlaster->SetColorAndOpacity(VisualStyle.WaterBlasterTint);
+		Image_WaterBlaster->SetVisibility(ESlateVisibility::HitTestInvisible);
+		UTexture2D* WaterBlasterTexture = LoadObject<UTexture2D>(
+			nullptr, TargetShootingWaterBlasterPath);
+		if (!WaterBlasterTexture)
+		{
+			WaterBlasterTexture = VisualStyle.WaterBlasterTexture.LoadSynchronous();
+		}
+		if (WaterBlasterTexture)
+		{
+			Image_WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
 		}
 	}
 	if (!TargetVisual)
@@ -945,6 +1238,16 @@ void UFF_TargetShootingScreen::InitializeBindings()
 		Border_Target->SetBrush(NoBackground);
 	}
 	EnsureTransientPresentationWidgets();
+	if (UWidget* ArenaFrame = WidgetTree->FindWidget(TEXT("Border_ArenaFrame")))
+	{
+		if (UCanvasPanelSlot* ArenaFrameSlot = Cast<UCanvasPanelSlot>(ArenaFrame->Slot))
+		{
+			// UViewport renders a separate scene family. Keeping its containing frame
+			// far below every HUD card prevents a late viewport draw from covering UI.
+			ArenaFrameSlot->SetZOrder(-100);
+		}
+	}
+	TryInitializeThreeDimensionalArena();
 	if (!bHasBasePlayAreaBrushColor)
 	{
 		BasePlayAreaBrushColor = Border_PlayArea->GetBrushColor();
@@ -998,6 +1301,49 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 		return CanvasSlot;
 	};
 
+	if (!Viewport_Arena3D)
+	{
+		Viewport_Arena3D = WidgetTree->ConstructWidget<UViewport>(
+			UViewport::StaticClass(),
+			TEXT("Viewport_Arena3D"));
+	}
+	if (UCanvasPanelSlot* ArenaSlot = EnsureDirectCanvasChild(
+		Viewport_Arena3D,
+		FVector2D::ZeroVector,
+		-10,
+		false))
+	{
+		ArenaSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+		ArenaSlot->SetOffsets(FMargin(0.0f));
+		ArenaSlot->SetAlignment(FVector2D::ZeroVector);
+	}
+	if (Viewport_Arena3D)
+	{
+		Viewport_Arena3D->SetBackgroundColor(VisualStyle.Arena3DBackgroundColor);
+		Viewport_Arena3D->SetVisibility(ESlateVisibility::Collapsed);
+		Viewport_Arena3D->SetIsEnabled(true);
+	}
+
+	if (!Text_TargetCue)
+	{
+		Text_TargetCue = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			TEXT("Text_TargetCue"));
+	}
+	EnsureDirectCanvasChild(Text_TargetCue, FVector2D(240.0f, 38.0f), 7, false);
+	if (Text_TargetCue)
+	{
+		Text_TargetCue->SetText(LOCTEXT("TargetCue", "여기를 쏘세요"));
+		Text_TargetCue->SetJustification(ETextJustify::Center);
+		Text_TargetCue->SetShadowOffset(FVector2D(2.0f, 2.0f));
+		Text_TargetCue->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.92f));
+		StyleNativeText(
+			Text_TargetCue,
+			FMath::Clamp(VisualStyle.TargetCueFontSize, 10.0f, 32.0f),
+			VisualStyle.TargetCueColor);
+		Text_TargetCue->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	if (!Text_ShotFeedback)
 	{
 		Text_ShotFeedback = WidgetTree->ConstructWidget<UTextBlock>(
@@ -1012,6 +1358,113 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 		Text_ShotFeedback->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.72f));
 		StyleNativeText(Text_ShotFeedback, FMath::Max(8.0f, VisualStyle.FeedbackFontSize));
 		Text_ShotFeedback->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (!ProjectileVisual)
+	{
+		ProjectileVisual = WidgetTree->ConstructWidget<UFF_TargetShootingProjectileVisual>(
+			UFF_TargetShootingProjectileVisual::StaticClass(),
+			TEXT("ProjectileVisual_Tracer"));
+	}
+	const float ProjectileSize = FMath::Clamp(
+		VisualStyle.ProjectileVisualSize,
+		64.0f,
+		220.0f);
+	EnsureDirectCanvasChild(
+		ProjectileVisual,
+		FVector2D(ProjectileSize, ProjectileSize),
+		18,
+		false);
+	if (ProjectileVisual)
+	{
+		ProjectileVisual->SetVisibility(ESlateVisibility::Collapsed);
+		ProjectileVisual->Configure(
+			FVector2D(0.0f, -1.0f),
+			VisualStyle.ProjectileCoreColor,
+			VisualStyle.ProjectileGlowColor,
+			VisualStyle.ProjectileCoreThickness,
+			VisualStyle.ProjectileTrailLength);
+	}
+
+	if (!Image_WaterBlaster)
+	{
+		Image_WaterBlaster = WidgetTree->ConstructWidget<UImage>(
+			UImage::StaticClass(),
+			TEXT("Image_WaterBlaster"));
+	}
+	const float WaterBlasterSize = FMath::Clamp(
+		VisualStyle.WaterBlasterVisualSize,
+		180.0f,
+		520.0f);
+	if (UCanvasPanelSlot* WaterBlasterSlot = EnsureDirectCanvasChild(
+		Image_WaterBlaster,
+		FVector2D(WaterBlasterSize, WaterBlasterSize),
+		15,
+		false))
+	{
+		WaterBlasterSlot->SetAnchors(FAnchors(0.5f, 1.0f));
+		WaterBlasterSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+		WaterBlasterSlot->SetPosition(FVector2D(
+			0.0f,
+			FMath::Clamp(VisualStyle.WaterBlasterBottomOffsetPixels, 0.0f, 80.0f)));
+		WaterBlasterSlot->SetSize(FVector2D(WaterBlasterSize, WaterBlasterSize));
+	}
+	if (Image_WaterBlaster)
+	{
+		Image_WaterBlaster->SetColorAndOpacity(VisualStyle.WaterBlasterTint);
+		Image_WaterBlaster->SetVisibility(ESlateVisibility::Collapsed);
+		UTexture2D* WaterBlasterTexture = LoadObject<UTexture2D>(
+			nullptr, TargetShootingWaterBlasterPath);
+		if (!WaterBlasterTexture)
+		{
+			WaterBlasterTexture = VisualStyle.WaterBlasterTexture.LoadSynchronous();
+		}
+		if (WaterBlasterTexture)
+		{
+			Image_WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
+		}
+	}
+
+	if (!Text_MuzzleFlash)
+	{
+		Text_MuzzleFlash = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			TEXT("Text_MuzzleFlash"));
+	}
+	EnsureDirectCanvasChild(Text_MuzzleFlash, FVector2D(96.0f, 96.0f), 17, false);
+	if (Text_MuzzleFlash)
+	{
+		Text_MuzzleFlash->SetText(FText::FromString(TEXT("+")));
+		Text_MuzzleFlash->SetJustification(ETextJustify::Center);
+		Text_MuzzleFlash->SetColorAndOpacity(FSlateColor(VisualStyle.MuzzleFlashColor));
+		Text_MuzzleFlash->SetShadowOffset(FVector2D(0.0f, 0.0f));
+		Text_MuzzleFlash->SetShadowColorAndOpacity(FLinearColor::Transparent);
+		StyleNativeText(Text_MuzzleFlash, 54.0f, VisualStyle.MuzzleFlashColor);
+		Text_MuzzleFlash->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (!Text_WeaponStatus)
+	{
+		Text_WeaponStatus = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			TEXT("Text_WeaponStatus"));
+	}
+	if (UCanvasPanelSlot* WeaponStatusSlot = EnsureDirectCanvasChild(
+		Text_WeaponStatus,
+		FVector2D(440.0f, 42.0f),
+		19,
+		false))
+	{
+		WeaponStatusSlot->SetAnchors(FAnchors(0.5f, 0.075f));
+		WeaponStatusSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		WeaponStatusSlot->SetPosition(FVector2D::ZeroVector);
+		WeaponStatusSlot->SetSize(FVector2D(440.0f, 42.0f));
+	}
+	if (Text_WeaponStatus)
+	{
+		Text_WeaponStatus->SetJustification(ETextJustify::Center);
+		StyleNativeText(Text_WeaponStatus, 16.0f, VisualStyle.HudAmberColor, TEXT("SemiBold"));
+		Text_WeaponStatus->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (!Text_Reticle)
@@ -1033,6 +1486,40 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	}
 }
 
+bool UFF_TargetShootingScreen::TryInitializeThreeDimensionalArena()
+{
+	if (bThreeDimensionalArenaReady && IsValid(Arena3DActor))
+	{
+		return true;
+	}
+	if (!Viewport_Arena3D || !Viewport_Arena3D->GetViewportWorld())
+	{
+		return false;
+	}
+
+	Viewport_Arena3D->SetBackgroundColor(VisualStyle.Arena3DBackgroundColor);
+	Viewport_Arena3D->SetEnableAdvancedFeatures(true);
+	Viewport_Arena3D->SetLightIntensity(FMath::Max(0.1f, VisualStyle.Arena3DKeyLightIntensity));
+	Viewport_Arena3D->SetSkyIntensity(FMath::Max(0.0f, VisualStyle.Arena3DSkyIntensity));
+	Viewport_Arena3D->SetViewLocation(VisualStyle.Arena3DCameraLocation);
+	Viewport_Arena3D->SetViewRotation(VisualStyle.Arena3DCameraRotation);
+	Viewport_Arena3D->SetShowFlag(TEXT("Grid"), false);
+	Viewport_Arena3D->SetShowFlag(TEXT("SelectionOutline"), false);
+	Viewport_Arena3D->SetShowFlag(TEXT("MotionBlur"), false);
+	Viewport_Arena3D->SetShowFlag(TEXT("OnScreenDebug"), false);
+
+	Arena3DActor = Cast<AFF_TargetShootingArena3D>(
+		Viewport_Arena3D->Spawn(AFF_TargetShootingArena3D::StaticClass()));
+	bThreeDimensionalArenaReady = IsValid(Arena3DActor);
+	if (!bThreeDimensionalArenaReady)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 3D 사격장 생성에 실패해 2D 과녁 폴백을 사용한다."),
+			*GetName());
+	}
+	return bThreeDimensionalArenaReady;
+}
+
 void UFF_TargetShootingScreen::ResetTransientPresentationState()
 {
 	DisplayedSnapshot = FFF_TargetShootingSnapshot();
@@ -1041,10 +1528,12 @@ void UFF_TargetShootingScreen::ResetTransientPresentationState()
 	bHasResult = false;
 	LastPlayAreaSize = FVector2D::ZeroVector;
 	PresentedTargetSerial = 0;
+	PresentedProjectileSerial = 0;
 	PresentedFeedbackSerial = 0;
 	TargetSpawnPulseRemainingSeconds = 0.0f;
 	FeedbackRemainingSeconds = 0.0f;
 	ReticleShotPulseRemainingSeconds = 0.0f;
+	MuzzleFlashRemainingSeconds = 0.0f;
 	ReticlePointNormalized = FVector2D(0.5f, 0.5f);
 	bReticleInsidePlayArea = false;
 }
@@ -1054,6 +1543,10 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 	if (!HasUsableDesignerBindings())
 	{
 		return;
+	}
+	if (!bThreeDimensionalArenaReady)
+	{
+		TryInitializeThreeDimensionalArena();
 	}
 
 	const float RemainingSeconds = bHasSnapshot
@@ -1065,6 +1558,7 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 	const int32 Score = bHasSnapshot ? DisplayedSnapshot.Session.Score : 0;
 	const int32 HitCount = bHasSnapshot ? DisplayedSnapshot.HitCount : 0;
 	const int32 MissCount = bHasSnapshot ? DisplayedSnapshot.MissCount : 0;
+	const int32 EscapedTargetCount = bHasSnapshot ? DisplayedSnapshot.EscapedTargetCount : 0;
 	const int32 CurrentCombo = bHasSnapshot ? DisplayedSnapshot.CurrentCombo : 0;
 	const int32 BestCombo = bHasSnapshot ? DisplayedSnapshot.BestCombo : 0;
 	const int32 AccuracyPercent = bHasSnapshot
@@ -1104,24 +1598,25 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 				: VisualStyle.HudAccentColor);
 	}
 	Text_Score->SetText(FText::Format(
-		LOCTEXT("ScoreFormat", "SCORE  {0}"),
+		LOCTEXT("ScoreFormat", "점수  {0}"),
 		FText::AsNumber(Score, &SixDigits)));
 	Text_HitCount->SetText(FText::Format(
-		LOCTEXT("HitCountFormat", "HITS  {0}\nACCURACY  {1}%"),
+		LOCTEXT("HitCountFormat", "명중  {0}\n정확도  {1}%"),
 		FText::AsNumber(HitCount),
 		FText::AsNumber(AccuracyPercent)));
 	Text_MissCount->SetText(FText::Format(
-		LOCTEXT("PerformanceFormat", "RATE  {0} /s\nREACTION  {1}ms\nMISS  {2}"),
+		LOCTEXT("PerformanceFormat", "초당  {0}발\n반응  {1}ms\n빗나감  {2}   놓침  {3}"),
 		FText::AsNumber(bHasSnapshot ? DisplayedSnapshot.HitsPerSecond : 0.0f, &OneDecimal),
 		FText::AsNumber(AverageReactionMilliseconds),
-		FText::AsNumber(MissCount)));
+		FText::AsNumber(MissCount),
+		FText::AsNumber(EscapedTargetCount)));
 	Text_Streak->SetText(CurrentCombo >= 5
 		? FText::Format(
-			LOCTEXT("FeverStreakFormat", "FEVER     COMBO x{0}     BEST {1}"),
+			LOCTEXT("FeverStreakFormat", "피버!     연속 x{0}     최고 {1}"),
 			FText::AsNumber(CurrentCombo),
 			FText::AsNumber(BestCombo))
 		: FText::Format(
-			LOCTEXT("StreakFormat", "COMBO x{0}     BEST {1}"),
+			LOCTEXT("StreakFormat", "연속 x{0}     최고 {1}"),
 			FText::AsNumber(CurrentCombo),
 			FText::AsNumber(BestCombo)));
 	Text_Streak->SetColorAndOpacity(FSlateColor(
@@ -1166,11 +1661,13 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 			&OneDecimal));
 		ResultArguments.Add(TEXT("Reaction"), AverageReactionMilliseconds);
 		ResultArguments.Add(TEXT("Combo"), BestCombo);
+		ResultArguments.Add(TEXT("Escaped"), EscapedTargetCount);
 		Text_Result->SetText(FText::Format(
 			LOCTEXT(
 				"ResultWithRewardFormat",
-				"{Grade}\n\nFINAL SCORE  {Score}\nFESTIVAL GOLD  +{Reward}\n\n"
-				"ACCURACY  {Accuracy}%     RATE  {Tps}/s\nREACTION  {Reaction}ms     BEST COMBO  {Combo}"),
+				"{Grade}\n\n최종 점수  {Score}\n축제 골드  +{Reward}\n\n"
+				"정확도  {Accuracy}%     초당  {Tps}발     놓침  {Escaped}\n"
+				"평균 반응  {Reaction}ms     최고 연속  {Combo}"),
 			ResultArguments));
 	}
 	else if (bSessionFinished)
@@ -1187,19 +1684,21 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 			&OneDecimal));
 		SnapshotArguments.Add(TEXT("Reaction"), AverageReactionMilliseconds);
 		SnapshotArguments.Add(TEXT("Combo"), BestCombo);
+		SnapshotArguments.Add(TEXT("Escaped"), EscapedTargetCount);
 		Text_Result->SetText(FText::Format(
 			LOCTEXT(
 				"SnapshotResultFormat",
-				"{Title}\n\nFINAL SCORE  {Score}\n\nACCURACY  {Accuracy}%     RATE  {Tps}/s\n"
-				"REACTION  {Reaction}ms     BEST COMBO  {Combo}"),
+				"{Title}\n\n최종 점수  {Score}\n\n"
+				"정확도  {Accuracy}%     초당  {Tps}발     놓침  {Escaped}\n"
+				"평균 반응  {Reaction}ms     최고 연속  {Combo}"),
 			SnapshotArguments));
 	}
 
 	if (NativeCloseLabel)
 	{
 		NativeCloseLabel->SetText(bShowResult
-			? LOCTEXT("NativeResultClose", "CONTINUE  [ESC]")
-			: LOCTEXT("NativePlayingClose", "EXIT  [ESC]"));
+			? LOCTEXT("NativeResultClose", "확인  [ESC]")
+			: LOCTEXT("NativePlayingClose", "나가기  [ESC]"));
 		NativeCloseLabel->SetColorAndOpacity(FSlateColor(bShowResult
 			? FLinearColor(0.008f, 0.028f, 0.045f, 1.0f)
 			: VisualStyle.PrimaryTextColor));
@@ -1229,6 +1728,12 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 	const bool bPlaying = bHasSnapshot
 		&& !bHasResult
 		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing;
+	if (Viewport_Arena3D)
+	{
+		Viewport_Arena3D->SetVisibility(bPlaying && bThreeDimensionalArenaReady
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
 	if (Border_PlayArea)
 	{
 		const bool bReticleUsesPlayCanvas = Text_Reticle
@@ -1242,6 +1747,8 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 	}
 
 	RefreshTargetLayout();
+	RefreshProjectilePresentation();
+	RefreshWeaponPresentation();
 	RefreshFeedbackPresentation();
 	RefreshReticlePresentation();
 }
@@ -1257,13 +1764,39 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 		&& !bHasResult
 		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing
 		&& DisplayedSnapshot.bTargetVisible;
+	// The 3D viewport is atmospheric only. Keeping every interactive element on
+	// Canvas_PlayArea makes the visible target exactly match pointer normalization
+	// and the runtime's authoritative hit ellipse at every resolution.
+	if (IsValid(Arena3DActor))
+	{
+		Arena3DActor->SetTargetPresentation(
+			false,
+			FVector2D(0.5f, 0.5f),
+			FVector2D(0.05f, 0.09f),
+			0.58f,
+			0.26f,
+			VisualStyle.NormalTargetColor,
+			VisualStyle.PrecisionColor,
+			VisualStyle.BullseyeColor,
+			0.0f);
+	}
 	Border_Target->SetVisibility(bShowTarget
 		? ESlateVisibility::HitTestInvisible
 		: ESlateVisibility::Collapsed);
+	if (Text_TargetCue)
+	{
+		Text_TargetCue->SetVisibility(bShowTarget
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
 	if (!bShowTarget)
 	{
 		Border_Target->SetRenderScale(FVector2D(1.0f, 1.0f));
 		Border_Target->SetRenderOpacity(1.0f);
+		if (Text_TargetCue)
+		{
+			Text_TargetCue->SetRenderOpacity(1.0f);
+		}
 		return;
 	}
 
@@ -1279,6 +1812,18 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 	const FVector2D Radius(
 		FMath::Clamp(DisplayedSnapshot.TargetRadiusNormalized.X, 0.0, 0.5),
 		FMath::Clamp(DisplayedSnapshot.TargetRadiusNormalized.Y, 0.0, 0.5));
+	const float RemainingLifeRatio = DisplayedSnapshot.TargetLifetimeSeconds > UE_SMALL_NUMBER
+		? FMath::Clamp(
+			DisplayedSnapshot.TargetRemainingSeconds
+				/ DisplayedSnapshot.TargetLifetimeSeconds,
+			0.0f,
+			1.0f)
+		: 0.0f;
+	const FLinearColor CountdownColor = RemainingLifeRatio <= 0.15f
+		? VisualStyle.MissColor
+		: (RemainingLifeRatio <= 0.35f
+			? VisualStyle.HudAmberColor
+			: VisualStyle.TargetCueColor);
 
 	TargetSlot->SetAnchors(FAnchors(Center.X, Center.Y));
 	TargetSlot->SetAlignment(FVector2D(0.5f, 0.5f));
@@ -1290,6 +1835,18 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 		TargetSlot->SetSize(FVector2D(
 			Radius.X * 2.0 * PlayAreaSize.X,
 			Radius.Y * 2.0 * PlayAreaSize.Y));
+		if (UCanvasPanelSlot* CueSlot = Text_TargetCue
+			? Cast<UCanvasPanelSlot>(Text_TargetCue->Slot)
+			: nullptr)
+		{
+			CueSlot->SetAnchors(FAnchors(Center.X, Center.Y));
+			CueSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+			CueSlot->SetPosition(FVector2D(
+				0.0f,
+				-Radius.Y * PlayAreaSize.Y - 10.0f));
+			CueSlot->SetSize(FVector2D(240.0f, 38.0f));
+			CueSlot->SetZOrder(7);
+		}
 		LastPlayAreaSize = PlayAreaSize;
 	}
 
@@ -1306,13 +1863,32 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 			VisualStyle.BullseyeColor,
 			DisplayedSnapshot.PrecisionRadiusRatio,
 			DisplayedSnapshot.BullseyeRadiusRatio,
+			RemainingLifeRatio,
+			CountdownColor,
 			VisualStyle.TargetRingThickness);
 	}
+	if (Text_TargetCue)
+	{
+		Text_TargetCue->SetText(DisplayedSnapshot.bBonusTarget
+			? (RemainingLifeRatio <= 0.35f
+				? LOCTEXT("UrgentBonusTargetCue", "보너스 · 서둘러!")
+				: LOCTEXT("BonusTargetCue", "보너스 과녁!"))
+			: (RemainingLifeRatio <= 0.35f
+				? LOCTEXT("UrgentTargetCue", "서둘러!")
+				: LOCTEXT("NormalTargetCue", "여기를 쏘세요")));
+		Text_TargetCue->SetColorAndOpacity(FSlateColor(DisplayedSnapshot.bBonusTarget
+			? VisualStyle.BonusTargetColor
+			: CountdownColor));
+		Text_TargetCue->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Text_TargetCue->SetRenderScale(FVector2D(1.0f, 1.0f));
+	}
 	// Never scale the target art: the runtime judges the exact ellipse represented
-	// by this slot. Opacity-only motion prevents visible-but-unclickable edges.
+	// by this slot. The spawn fade and countdown arc stay inside the same exact
+	// ellipse, preventing visible-but-unclickable edges.
 	Border_Target->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 	Border_Target->SetRenderScale(FVector2D(1.0f, 1.0f));
 	float TargetOpacity = 1.0f;
+	float CueOpacity = 1.0f;
 	if (TargetSpawnPulseRemainingSeconds > 0.0f
 		&& VisualStyle.TargetSpawnPulseSeconds > UE_SMALL_NUMBER)
 	{
@@ -1326,24 +1902,213 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 			1.0f,
 			SpawnProgress);
 	}
-	if (DisplayedSnapshot.TargetLifetimeSeconds > UE_SMALL_NUMBER)
+	if (RemainingLifeRatio < 0.35f)
 	{
-		const float RemainingRatio = FMath::Clamp(
-			DisplayedSnapshot.TargetRemainingSeconds / DisplayedSnapshot.TargetLifetimeSeconds,
-			0.0f,
-			1.0f);
-		if (RemainingRatio < 0.35f)
-		{
-			const float UrgencyAlpha = 1.0f - RemainingRatio / 0.35f;
-			const float PulseWave = 0.5f + 0.5f * FMath::Sin(
-				DisplayedSnapshot.TargetAgeSeconds * 10.0f * UE_PI);
-			TargetOpacity *= FMath::Lerp(
-				1.0f,
-				FMath::Clamp(VisualStyle.TargetUrgencyPulseMinOpacity, 0.0f, 1.0f),
-				UrgencyAlpha * PulseWave);
-		}
+		const float UrgencyAlpha = 1.0f - RemainingLifeRatio / 0.35f;
+		const float PulseWave = 0.5f + 0.5f * FMath::Sin(
+			DisplayedSnapshot.TargetAgeSeconds * 10.0f * UE_PI);
+		// Keep the target fully readable and pulse only its helper label. The drain
+		// arc already communicates urgency without hiding valid hit pixels.
+		CueOpacity *= FMath::Lerp(
+			1.0f,
+			FMath::Clamp(VisualStyle.TargetUrgencyPulseMinOpacity, 0.0f, 1.0f),
+			UrgencyAlpha * PulseWave);
 	}
 	Border_Target->SetRenderOpacity(FMath::Clamp(TargetOpacity, 0.0f, 1.0f));
+	if (Text_TargetCue)
+	{
+		Text_TargetCue->SetRenderOpacity(FMath::Clamp(
+			TargetOpacity * CueOpacity,
+			0.0f,
+			1.0f));
+	}
+}
+
+void UFF_TargetShootingScreen::RefreshProjectilePresentation()
+{
+	const bool bShowProjectile = bHasSnapshot
+		&& !bHasResult
+		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing
+		&& DisplayedSnapshot.bProjectileInFlight;
+	const float TravelAlpha = DisplayedSnapshot.ProjectileTravelSeconds > UE_SMALL_NUMBER
+		? 1.0f - FMath::Clamp(
+			DisplayedSnapshot.ProjectileRemainingSeconds
+				/ DisplayedSnapshot.ProjectileTravelSeconds,
+			0.0f,
+			1.0f)
+		: 1.0f;
+	if (IsValid(Arena3DActor))
+	{
+		// Perspective projection is intentionally decorative; the projectile uses
+		// the same 2D coordinate space as target, reticle and hit feedback.
+		Arena3DActor->SetProjectilePresentation(
+			false,
+			FVector2D(0.5f, 0.5f),
+			FVector2D(0.5f, 0.5f),
+			0.0f,
+			VisualStyle.ProjectileCoreColor,
+			VisualStyle.ProjectileGlowColor);
+	}
+
+	UCanvasPanelSlot* ProjectileSlot = ProjectileVisual
+		? Cast<UCanvasPanelSlot>(ProjectileVisual->Slot)
+		: nullptr;
+	if (!ProjectileVisual
+		|| ProjectileVisual->GetParent() != Canvas_PlayArea
+		|| !ProjectileSlot)
+	{
+		if (ProjectileVisual)
+		{
+			ProjectileVisual->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
+	ProjectileVisual->SetVisibility(bShowProjectile
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+	if (!bShowProjectile)
+	{
+		ProjectileVisual->SetRenderOpacity(0.0f);
+		return;
+	}
+
+	const FVector2D ProjectilePoint(
+		FMath::Clamp(DisplayedSnapshot.ProjectilePositionNormalized.X, 0.0, 1.0),
+		FMath::Clamp(DisplayedSnapshot.ProjectilePositionNormalized.Y, 0.0, 1.0));
+	ProjectileSlot->SetAnchors(FAnchors(ProjectilePoint.X, ProjectilePoint.Y));
+	ProjectileSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+	ProjectileSlot->SetPosition(FVector2D::ZeroVector);
+	const float ProjectileSize = FMath::Clamp(
+		VisualStyle.ProjectileVisualSize,
+		64.0f,
+		220.0f);
+	ProjectileSlot->SetSize(FVector2D(ProjectileSize, ProjectileSize));
+
+	FVector2D PlayAreaSize = Canvas_PlayArea
+		? Canvas_PlayArea->GetCachedGeometry().GetLocalSize()
+		: FVector2D::ZeroVector;
+	if (PlayAreaSize.X <= UE_SMALL_NUMBER || PlayAreaSize.Y <= UE_SMALL_NUMBER)
+	{
+		PlayAreaSize = LastPlayAreaSize;
+	}
+	FVector2D FlightDirection = DisplayedSnapshot.ProjectileAimPointNormalized
+		- DisplayedSnapshot.ProjectileStartNormalized;
+	if (PlayAreaSize.X > UE_SMALL_NUMBER && PlayAreaSize.Y > UE_SMALL_NUMBER)
+	{
+		FlightDirection *= PlayAreaSize;
+	}
+	ProjectileVisual->Configure(
+		FlightDirection,
+		VisualStyle.ProjectileCoreColor,
+		VisualStyle.ProjectileGlowColor,
+		VisualStyle.ProjectileCoreThickness,
+		VisualStyle.ProjectileTrailLength);
+
+	ProjectileVisual->SetRenderOpacity(FMath::Lerp(0.72f, 1.0f, TravelAlpha));
+}
+
+void UFF_TargetShootingScreen::RefreshWeaponPresentation()
+{
+	const bool bPlaying = bHasSnapshot
+		&& !bHasResult
+		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing;
+	const float RecoilAlpha = VisualStyle.MuzzleFlashSeconds > UE_SMALL_NUMBER
+		? FMath::Clamp(
+			MuzzleFlashRemainingSeconds / VisualStyle.MuzzleFlashSeconds,
+			0.0f,
+			1.0f)
+		: 0.0f;
+	const float FlashAlpha = RecoilAlpha;
+	if (IsValid(Arena3DActor))
+	{
+		Arena3DActor->SetWeaponPresentation(
+			false,
+			RecoilAlpha,
+			FlashAlpha);
+	}
+
+	UCanvasPanelSlot* WaterBlasterSlot = Image_WaterBlaster
+		? Cast<UCanvasPanelSlot>(Image_WaterBlaster->Slot)
+		: nullptr;
+	if (Image_WaterBlaster)
+	{
+		const bool bValidBlaster = Image_WaterBlaster->GetParent() == Canvas_PlayArea
+			&& WaterBlasterSlot != nullptr;
+		Image_WaterBlaster->SetVisibility(bPlaying && bValidBlaster
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+		if (bPlaying && bValidBlaster)
+		{
+			const float BlasterSize = FMath::Clamp(
+				VisualStyle.WaterBlasterVisualSize,
+				180.0f,
+				520.0f);
+			WaterBlasterSlot->SetAnchors(FAnchors(0.5f, 1.0f));
+			WaterBlasterSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+			WaterBlasterSlot->SetPosition(FVector2D(
+				0.0f,
+				FMath::Clamp(VisualStyle.WaterBlasterBottomOffsetPixels, 0.0f, 80.0f)));
+			WaterBlasterSlot->SetSize(FVector2D(BlasterSize, BlasterSize));
+			Image_WaterBlaster->SetRenderTranslation(FVector2D(
+				0.0f,
+				FMath::Max(0.0f, VisualStyle.WeaponRecoilPixels) * RecoilAlpha));
+			Image_WaterBlaster->SetRenderOpacity(FMath::Lerp(1.0f, 0.90f, RecoilAlpha));
+		}
+		else
+		{
+			Image_WaterBlaster->SetRenderTranslation(FVector2D::ZeroVector);
+			Image_WaterBlaster->SetRenderOpacity(1.0f);
+		}
+	}
+
+	UCanvasPanelSlot* MuzzleSlot = Text_MuzzleFlash
+		? Cast<UCanvasPanelSlot>(Text_MuzzleFlash->Slot)
+		: nullptr;
+	const bool bShowMuzzleFlash = bPlaying
+		&& Text_MuzzleFlash
+		&& Text_MuzzleFlash->GetParent() == Canvas_PlayArea
+		&& MuzzleSlot
+		&& MuzzleFlashRemainingSeconds > 0.0f;
+	if (Text_MuzzleFlash)
+	{
+		Text_MuzzleFlash->SetVisibility(bShowMuzzleFlash
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
+	if (bShowMuzzleFlash)
+	{
+		const FVector2D MuzzlePoint(
+			FMath::Clamp(DisplayedSnapshot.ProjectileStartNormalized.X, 0.0, 1.0),
+			FMath::Clamp(DisplayedSnapshot.ProjectileStartNormalized.Y, 0.0, 1.0));
+		MuzzleSlot->SetAnchors(FAnchors(MuzzlePoint.X, MuzzlePoint.Y));
+		MuzzleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		MuzzleSlot->SetPosition(FVector2D::ZeroVector);
+		MuzzleSlot->SetSize(FVector2D(96.0f, 96.0f));
+		Text_MuzzleFlash->SetRenderOpacity(FlashAlpha);
+		Text_MuzzleFlash->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		const float FlashScale = FMath::Lerp(0.75f, 1.55f, FlashAlpha);
+		Text_MuzzleFlash->SetRenderScale(FVector2D(FlashScale, FlashScale));
+	}
+
+	if (Text_WeaponStatus)
+	{
+		const bool bValidStatus = Text_WeaponStatus->GetParent() == Canvas_PlayArea
+			&& Cast<UCanvasPanelSlot>(Text_WeaponStatus->Slot) != nullptr;
+		Text_WeaponStatus->SetVisibility(bPlaying && bValidStatus
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+		if (bPlaying && bValidStatus)
+		{
+			const bool bProjectileInFlight = DisplayedSnapshot.bProjectileInFlight;
+			Text_WeaponStatus->SetText(bProjectileInFlight
+				? LOCTEXT("ProjectileInFlightStatus", "과녁 판정 예약  ·  물 탄환 비행 중")
+				: LOCTEXT("WeaponReadyStatus", "과녁을 조준하고 클릭하여 발사!"));
+			Text_WeaponStatus->SetColorAndOpacity(FSlateColor(bProjectileInFlight
+				? VisualStyle.HudAccentColor
+				: VisualStyle.HudAmberColor));
+		}
+	}
 }
 
 void UFF_TargetShootingScreen::RefreshFeedbackPresentation()
@@ -1450,15 +2215,32 @@ void UFF_TargetShootingScreen::RefreshReticlePresentation()
 	Text_Reticle->SetText(FText::FromString(VisualStyle.ReticleGlyph));
 	const bool bMissFlash = FeedbackRemainingSeconds > 0.0f
 		&& DisplayedSnapshot.LatestFeedbackType == EFF_TargetShootingFeedbackType::Miss;
+	// Use the authoritative gameplay rule so the yellow ready state never promises
+	// a hit outside the ellipse that will be evaluated at projectile impact.
+	const bool bReticleOnTarget = DisplayedSnapshot.bTargetVisible
+		&& FFTargetShootingRules::IsInsideTarget(
+			ReticlePointNormalized,
+			DisplayedSnapshot.TargetCenterNormalized,
+			DisplayedSnapshot.TargetRadiusNormalized);
+	const bool bAimReady = bReticleOnTarget && !DisplayedSnapshot.bProjectileInFlight;
 	Text_Reticle->SetColorAndOpacity(FSlateColor(
-		bMissFlash ? VisualStyle.MissColor : VisualStyle.ReticleColor));
+		bMissFlash
+			? VisualStyle.MissColor
+			: (bAimReady ? VisualStyle.BullseyeColor : VisualStyle.ReticleColor)));
+	if (bAimReady && Text_TargetCue)
+	{
+		Text_TargetCue->SetText(LOCTEXT("AimReadyTargetCue", "발사!"));
+		Text_TargetCue->SetColorAndOpacity(FSlateColor(VisualStyle.BullseyeColor));
+		Text_TargetCue->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Text_TargetCue->SetRenderScale(FVector2D(1.12f, 1.12f));
+	}
 	ReticleSlot->SetAnchors(FAnchors(
 		FMath::Clamp(ReticlePointNormalized.X, 0.0, 1.0),
 		FMath::Clamp(ReticlePointNormalized.Y, 0.0, 1.0)));
 	ReticleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	ReticleSlot->SetPosition(FVector2D::ZeroVector);
 
-	float ReticleScale = 1.0f;
+	float ReticleScale = bAimReady ? 1.18f : 1.0f;
 	if (ReticleShotPulseRemainingSeconds > 0.0f
 		&& VisualStyle.ReticleShotPulseSeconds > UE_SMALL_NUMBER)
 	{
@@ -1466,10 +2248,10 @@ void UFF_TargetShootingScreen::RefreshReticlePresentation()
 			ReticleShotPulseRemainingSeconds / VisualStyle.ReticleShotPulseSeconds,
 			0.0f,
 			1.0f);
-		ReticleScale = FMath::Lerp(
+		ReticleScale = FMath::Max(ReticleScale, FMath::Lerp(
 			1.0f,
 			FMath::Max(1.0f, VisualStyle.ReticleShotPulseScale),
-			PulseAlpha);
+			PulseAlpha));
 	}
 	Text_Reticle->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 	Text_Reticle->SetRenderScale(FVector2D(ReticleScale, ReticleScale));
@@ -1506,40 +2288,40 @@ FText UFF_TargetShootingScreen::MakeFeedbackText() const
 {
 	if (DisplayedSnapshot.LatestFeedbackType == EFF_TargetShootingFeedbackType::Escaped)
 	{
-		return LOCTEXT("EscapedFeedback", "TOO SLOW\nCOMBO LOST");
+		return LOCTEXT("EscapedFeedback", "시간 초과\n연속 명중 종료");
 	}
 	if (DisplayedSnapshot.LatestFeedbackType == EFF_TargetShootingFeedbackType::Miss)
 	{
 		return DisplayedSnapshot.LatestScoreDelta < 0
 			? FText::Format(
-				LOCTEXT("MissPenaltyFeedback", "MISS  {0}\nCOMBO LOST"),
+				LOCTEXT("MissPenaltyFeedback", "빗나감  {0}\n연속 명중 종료"),
 				FText::AsNumber(DisplayedSnapshot.LatestScoreDelta))
-			: LOCTEXT("MissFeedback", "MISS\nCOMBO LOST");
+			: LOCTEXT("MissFeedback", "빗나감\n연속 명중 종료");
 	}
 
 	FText QualityText;
 	switch (DisplayedSnapshot.LatestFeedbackType)
 	{
 	case EFF_TargetShootingFeedbackType::Bullseye:
-		QualityText = LOCTEXT("BullseyeFeedback", "BULLSEYE");
+		QualityText = LOCTEXT("BullseyeFeedback", "정중앙!");
 		break;
 	case EFF_TargetShootingFeedbackType::Precision:
-		QualityText = LOCTEXT("PrecisionFeedback", "PRECISION");
+		QualityText = LOCTEXT("PrecisionFeedback", "정밀 명중!");
 		break;
 	default:
-		QualityText = LOCTEXT("HitFeedback", "HIT");
+		QualityText = LOCTEXT("HitFeedback", "명중!");
 		break;
 	}
 	if (DisplayedSnapshot.bLatestFeedbackWasBonusTarget)
 	{
 		QualityText = FText::Format(
-			LOCTEXT("GoldenFeedback", "GOLD {0}"),
+			LOCTEXT("GoldenFeedback", "황금 {0}"),
 			QualityText);
 	}
 
 	return DisplayedSnapshot.CurrentCombo >= 2
 		? FText::Format(
-			LOCTEXT("ScoredComboFeedback", "{0}  +{1}\nCOMBO x{2}"),
+			LOCTEXT("ScoredComboFeedback", "{0}  +{1}\n연속 x{2}"),
 			QualityText,
 			FText::AsNumber(FMath::Max(0, DisplayedSnapshot.LatestScoreDelta)),
 			FText::AsNumber(DisplayedSnapshot.CurrentCombo))

@@ -393,9 +393,19 @@ void UFF_MinigameSubsystem::CompleteActiveSession()
 	const UFF_FestivalDefinition* FestivalDefinition = Progression
 		? Progression->GetDefinition()
 		: nullptr;
-	const int32 RewardCap = FestivalDefinition
-		? FestivalDefinition->MinigameRewardMaxGold
-		: 0;
+	const UFF_MinigameDefinition* RuntimeDefinition = Runtime->GetDefinition();
+	int32 RewardCap = 0;
+	if (Progression)
+	{
+		// A non-negative value is authored per minigame. -1 preserves compatibility
+		// with older definitions by falling back to the festival-wide balance value.
+		const int32 FestivalFallbackGold = FestivalDefinition
+			? FestivalDefinition->MinigameRewardMaxGold
+			: 0;
+		RewardCap = RuntimeDefinition
+			? RuntimeDefinition->ResolveRewardGoldAtMaxScore(FestivalFallbackGold)
+			: FestivalFallbackGold;
+	}
 	const FFF_MinigameResult Result = Runtime->BuildResult(RewardCap);
 
 	if (!bRewardCommitted)

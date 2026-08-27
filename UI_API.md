@@ -1104,41 +1104,68 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 
 ---
 
-## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-24)
+## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-27)
 
 `Booth_ActivityGame_Shoot` 시설에서 `TargetShooting` 미니게임을 시작합니다. 입력은
-`Border_PlayArea` 전체가 받되, 실제 명중 여부는 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로
-바꾼 뒤 Runtime이 타원 판정합니다. `Border_Target`은 표시 전용(`HitTestInvisible`)이므로 WBP를
-수정할 때 클릭을 가로채는 위젯을 플레이 영역 위에 올리지 마세요.
+`Border_PlayArea` 전체가 받습니다. 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로 바꿔
+Runtime에 발사를 요청하면, 하단 1인칭 물총의 총구에서 해당 좌표까지 물방울 탄환이 이동하고 도착 시 Runtime이 타원
+명중 판정을 수행합니다. 비행 중에는 중복 발사를 받지 않으며 점수도 충돌 전까지 바뀌지 않습니다.
+`Viewport_Arena3D` 안의 원근 카메라·실내 사격장·조명과 그림자는 분위기용 3D 배경입니다.
+실제 과녁(`Border_Target` 안의 `UFF_TargetShootingTargetVisual`), 물 탄환, 조준점, 명중 피드백은 모두
+`Canvas_PlayArea`의 같은 2D 좌표계에 합성합니다. 따라서 3D 원근 투영이나 해상도와 무관하게 보이는 과녁 타원과
+Runtime 명중 판정이 정확히 일치합니다. 과녁 외곽의 밝은 호는 남은 노출 시간을 시계 방향으로 표시합니다.
+모든 표시 요소는 `HitTestInvisible`이므로 WBP를 수정할 때 클릭을 가로채는 위젯을 플레이 영역 위에 올리지 마세요.
+
+화면 구성은 [3D Aim Trainer](https://www.3daimtrainer.com/)의 훈련 화면에서 중앙 조준 공간,
+상단의 작은 기록 HUD, 하단 1인칭 무기라는 정보 우선순위만 참고했습니다. 배경·물총·과녁·색상은
+FestaFiesta 해안 축제 테마에 맞춰 새로 제작했으며 외부 게임의 이미지나 상표는 사용하지 않습니다.
 
 ### 기획 수치 수정
 
-`DA_Minigame_TargetShooting`의 `Rules`만 수정합니다. 코드 수정이나 SaveGame 마이그레이션은
-필요 없습니다.
+`DA_Minigame_TargetShooting`을 열면 주요 값이 한국어 카테고리로 바로 펼쳐집니다. 각 항목에 마우스를
+올리면 단위, 계산 방식, 다른 값과의 제약을 설명하는 한국어 툴팁이 표시됩니다. 유효하지 않은 조합은 Data Validation이
+저장을 검증하며, `FF.RebuildTargetShootingUI`는 이 Data Asset의 기획 수치를 덮어쓰지 않습니다.
 
-| 목적 | Rules 필드 |
+| 목적 | Data Asset 필드 |
 | --- | --- |
+| 한 판 진행 시간 | `한 판 플레이 시간` (`DurationSeconds`) |
+| 클리어 골드 | `최대 보상 달성 점수` (`ScoreForMaxReward`), `클리어 최대 획득 골드` (`RewardGoldAtMaxScore`) |
 | 난이도 곡선 | `TargetLifetimeStartSeconds/EndSeconds`, `TargetRadiusStartNormalized/EndNormalized` |
 | HUD·닫기 버튼 회피 | `SpawnSafeMarginNormalized` (표적 전체 외곽 기준) |
+| 총알 시작점·비행 속도 | `ProjectileOriginNormalized`, `ProjectileSpeedNormalizedPerSecond`, `ProjectileMinTravelSeconds` |
 | 기본 점수·콤보·오발 감점 | `HitBaseScore`, `ComboBonusPerHit`, `MaxComboBonus`, `MissPenalty` |
 | 정밀/정중앙 판정 | `PrecisionRadiusRatio`, `BullseyeRadiusRatio`, 각 `ScoreBonus` |
 | 반응속도 보너스 | `FastReactionSeconds`, `SlowReactionSeconds`, `MaxReactionScoreBonus` |
 | 골든 타깃 | `BonusTargetChance`, `BonusTargetScoreMultiplier`, `BonusTargetLifetimeScale` |
 
 점수는 `기본 + 콤보 + 정밀도 + 반응속도`를 먼저 계산하고 골든 타깃이면 배율을 적용합니다.
-명중하면 즉시 다음 타깃이 나오며, 빗나가면 같은 타깃을 유지해 조준을 보정할 수 있습니다.
-타깃이 시간 안에 맞지 않으면 `TOO SLOW` 피드백 후 다음 타깃으로 넘어갑니다.
+시간이 끝나 정상 완료되면 획득 골드는
+`round(클리어 최대 획득 골드 × clamp(점수 / 최대 보상 달성 점수, 0, 1))`로 계산합니다.
+`RewardGoldAtMaxScore=-1`은 축제 공통 보상값을 사용하고, `0`은 해당 미니게임의 골드 보상을 끕니다.
+플레이어가 취소한 세션은 항상 0 Gold입니다.
+현재 기본값은 총구 `(0.50, 0.68)`, 속도 `1.8 normalized/s`, 최소 비행시간 `0.16초`, 하단 안전 여백
+`0.24`입니다. 탄환 이동을 눈으로 확인할 수 있고 하단 물총과 과녁이 겹치지 않도록 조정한 값입니다.
+총알이 명중 지점에 도착해 명중하면 다음 타깃이 나오며, 빗나가면 같은 타깃을 유지해 조준을
+보정할 수 있습니다. 승인된 발사는 해당 과녁을 예약하고 탄환이 도착할 때까지 과녁 카운트다운을 멈춥니다.
+따라서 연출용 탄환 비행 때문에 제때 쏜 과녁이 사라지지 않습니다. 발사하지 않은 타깃이 시간 안에 맞지 않으면
+`시간 초과` 피드백 후 다음 타깃으로 넘어갑니다.
 
 ### UI/모션 수정
 
 `WBP_FF_TargetShooting`의 **Class Defaults → Visual Style**만 수정합니다. 색·링 두께·폰트 크기·
-스폰/긴급 투명도 펄스·피드백 상승 거리/시간·플레이 영역 플래시·커스텀 조준점이 게임 규칙과
-분리되어 있습니다. 표적 외곽·정밀·불스아이 링은 Runtime 판정 비율로 그리며, 표적 본체 크기는
+스폰/긴급 안내 펄스·물방울 탄환 코어/광원/트레이서·물총 크기/반동/총구 섬광·피드백 상승 거리/시간·플레이 영역 플래시·커스텀
+조준점뿐 아니라 3D 배경 카메라 위치·키라이트·스카이라이트도 게임 규칙과 분리되어 있습니다. 2D 표적 외곽·정밀·불스아이 링은 Runtime 판정 비율로 그리며, 표적 본체 크기는
 애니메이션으로 확대하지 않습니다. 따라서 보이는 타원 내부와 클릭 판정 범위가 어긋나지 않습니다.
-HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시하고 결과 화면에도 같은 성과 지표를
+HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친 과녁, 콤보를 표시하고 결과 화면에도 같은 성과 지표를
 요약합니다.
 
-필수 WBP 이름은 기존 계약을 유지합니다. `Text_ShotFeedback`과 `Text_Reticle`은 선택 사항이며,
+3D 배경 표면은 `M_MG_TargetShooting_Arena3D` 재질을 사용합니다. `Color`, `Roughness`, `Metallic`,
+`EmissiveStrength` 파라미터가 있으며 재생성 스크립트는
+`Tools/ui/create_target_shooting_3d_material.py`입니다. `Viewport_Arena3D`는 이전 WBP에 없어도 런타임이
+`Canvas_PlayArea` 최하위 레이어에 자동 생성합니다.
+
+필수 WBP 이름은 기존 계약에 `Image_WaterBlaster`, `Text_MuzzleFlash`, `Text_WeaponStatus`를 추가했습니다.
+`Text_ShotFeedback`과 `Text_Reticle`은 선택 사항이며,
 없으면 런타임이 `Canvas_PlayArea` 안에 자동 생성합니다. 따라서 기존 WBP를 깨지 않고 점진적으로
 레이아웃을 바꿀 수 있습니다. 두 선택 위젯을 다른 패널로 옮겨도 초기화 시 플레이 캔버스 직속으로
 안전하게 다시 연결하며, 연결할 수 없는 경우에는 하드웨어 커서를 숨기지 않습니다.
@@ -1217,6 +1244,9 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시�
 | 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다. **부스별 표는 S10 까지 빈 표입니다** |
 | 2026-08-19 | 김시리 | 🔴 **정정: enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.** 8/18 에 "피날레 실패 이유가 한글로 온다"고 안내한 것이 틀렸습니다. `UFF_EconomyDisplayTextLibrary` 신설 — 피날레 실패 이유·등급 표시 두 군데를 이 함수로 바꿔 주세요. Stage 단계 이름도 같은 문제입니다(강민서) |
 | 2026-08-24 | Codex | 타깃 슈팅 레퍼런스 UX 반영 — 정밀도·반응속도·골든 타깃 점수, 즉시 명중 피드백, 커스텀 조준점, TPS/명중률/평균 반응시간 HUD와 결과 요약, Rules/Visual Style 분리 튜닝 가이드 추가 |
+| 2026-08-26 | Codex | 타깃 슈팅을 물총 Aim Trainer 방식으로 교체 — 실제 WBP·DataAsset 재생성, 1인칭 물총/반동/총구 섬광, 물방울 탄환 비행, 중앙 집중형 HUD, 저장 에셋 자동화 검사 추가 |
+| 2026-08-26 | Codex | 타깃 슈팅 3D 사격장 전환 — UMG 실시간 3D viewport, 원근 카메라·조명·사격장, 이동식 금속 과녁판, 3D 물 탄환, 전용 lit 재질과 2D 자동 폴백 추가 |
+| 2026-08-27 | Codex | 타깃 슈팅 하이브리드 정리 — 3D는 배경 전용, 판정과 정확히 겹치는 2D 과녁·탄환/수명 드레인, 발사 중 과녁 예약, 놓친 과녁 지표, Data Asset 한국어 편집명·툴팁·미니게임별 클리어 골드 추가 |
 | 2026-08-23 | 김시리 | ✅ **부스별 매출 표가 실제 값으로 찹니다.** NPC 파티가 부스 이용을 마치면(`Served`) 수수료가 원장에 들어갑니다. `FacilityId` 는 `FacilityDefinitionId` 라 Building 카탈로그 키와 같습니다 — 표시 이름을 그대로 해석하실 수 있습니다. **같은 정의의 부스 여러 개는 한 줄로 합쳐집니다**(인스턴스별 구분은 v1). 화면의 `잠정`·`더미` 배지를 떼셔도 됩니다 |
 | 2026-08-23 | 김시리 | ✅ **E-26 시설 유지비 종료 — 기획서에 없는 개념입니다.** `EFF_SpendReason` 에 사유를 추가하지 않습니다. 마감 화면 원장에서 **유지비 줄을 빼 주세요**. `FacilityInstall` 로 묶이는 것이 아니라 지출 자체가 발생하지 않습니다 |
 | 2026-08-23 | 김시리 | 🔴 **표시 문자열 정정이 아직 안 붙었습니다** — `FF_FestivalViewModelSubsystem.cpp:354`·`FF_LiveHudMenuBar.cpp:168` 두 곳입니다. 패키징 빌드에서만 드러나니 시연 전에 정리 필요 |
