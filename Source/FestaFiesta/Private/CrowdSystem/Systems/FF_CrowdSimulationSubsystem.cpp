@@ -9,6 +9,7 @@
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -237,7 +238,17 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		StepsSinceSnapshot = 0;
 	}
 
-	AdvanceNeeds();
+	// Need 지표는 스냅샷과 같은 이유로 스텝 단위로 센다 — 프레임률로 세면 UI 갱신 간격이
+	// 기기 성능에 따라 달라진다.
+	StepsSinceNeedMetrics += StepsThisFrame;
+	const bool bCommitNeedMetrics =
+		StepsSinceNeedMetrics >= FMath::Max(1, NeedMetricsIntervalSteps);
+	if (bCommitNeedMetrics)
+	{
+		StepsSinceNeedMetrics = 0;
+	}
+
+	AdvanceNeeds(bCommitNeedMetrics);
 	ProcessDecisions();
 
 	const float InterpAlpha = FMath::Clamp(SimAccumulator / FixedStepSeconds, 0.f, 1.f);
@@ -1557,6 +1568,45 @@ bool UFF_CrowdSimulationSubsystem::IsQueueAdvancing() const
 	return (SimTimeSeconds - LastQueueAdvanceSimTime) <= QueueStallToleranceSeconds;
 }
 
+int32 UFF_CrowdSimulationSubsystem::RequestRedecisionForIdleParties(int32 MaxParties)
+{
+	int32 RequestedCount = 0;
+
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		if (MaxParties > 0 && RequestedCount >= MaxParties)
+		{
+			break;
+		}
+
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+
+		// 리더만 결정을 받는다. 풀에 반납된 개체(bIsActive == false)는 데이터가 남아 있어도 제외한다.
+		if (!Unit.bIsActive || Unit.LeaderAgentIndex != AgentIndex)
+		{
+			continue;
+		}
+
+		if (!PartyDecisionStates.IsValidIndex(AgentIndex))
+		{
+			continue;
+		}
+
+		const FPartyDecisionState& State = PartyDecisionStates[AgentIndex];
+
+		// 헤더 주석의 이유로 줄에 선 파티와 퇴장 중인 파티는 제외한다.
+		if (State.QueuePhase != EFF_PartyQueuePhase::None || State.bIsLeaving)
+		{
+			continue;
+		}
+
+		RequestDecision(AgentIndex, EFF_DecisionReason::DestinationOpened);
+		++RequestedCount;
+	}
+
+	return RequestedCount;
+}
+
 void UFF_CrowdSimulationSubsystem::ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue)
 {
 	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex) || !UnitDatas.IsValidIndex(LeaderAgentIndex))
@@ -2222,12 +2272,31 @@ FFF_NeedState UFF_CrowdSimulationSubsystem::MakeInitialNeeds(int32 StableAgentId
 		InitialNeedModeFraction,
 		InitialNeedMaxFraction);
 }
-void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
+void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
 	const float ElapsedMinutes =
 		(SimTimeSeconds - LastNeedAdvanceSimTime) * Temp_FestivalMinutesPerRealSecond;
 	LastNeedAdvanceSimTime = SimTimeSeconds;
+
+	// GameInstance 스코프라 캐시하지 않는다 — 이 서브시스템(World)보다 오래 산다.
+	// 집계하는 스텝에만 조회하므로 매 프레임 비용이 아니다.
+	UFF_NpcNeedMetricsSubsystem* NeedMetrics = nullptr;
+	if (bAggregateMetrics)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			if (UGameInstance* GameInstance = World->GetGameInstance())
+			{
+				NeedMetrics = GameInstance->GetSubsystem<UFF_NpcNeedMetricsSubsystem>();
+			}
+		}
+	}
+
+	if (NeedMetrics)
+	{
+		NeedMetrics->BeginAggregation();
+	}
 	for (FFF_NeedState& Aggregated : PartyAggregatedNeeds)
 	{
 		Aggregated = FFF_NeedState();
@@ -2244,6 +2313,13 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
 			continue;
 		}
 		Unit.Needs = FFF_NeedRules::Advance(Unit.Needs, ElapsedMinutes, NeedRiseRates);
+
+		// 표본은 파티가 아니라 개인 단위다 — 지표가 "이 Need 가 미해소인 방문객 비율"이다.
+		if (NeedMetrics)
+		{
+			NeedMetrics->AddSample(Unit.Needs);
+		}
+
 		const int32 LeaderIndex = Unit.LeaderAgentIndex;
 		if (!PartyAggregatedNeeds.IsValidIndex(LeaderIndex))
 		{
@@ -2253,6 +2329,13 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
 			FFF_NeedState::MakeAggregated(PartyAggregatedNeeds[LeaderIndex], Unit.Needs);
 		++PartyMemberCounts[LeaderIndex];
 	}
+
+	// 활성 개체가 0명이어도 확정한다 — 표본 0은 "데이터 없음"이라 UI 가 0% 와 구분한다.
+	if (NeedMetrics)
+	{
+		NeedMetrics->CommitAggregation();
+	}
+
 	if (ElapsedMinutes > 0.f)
 	{
 		for (int32 LeaderIndex = 0; LeaderIndex < PartyRemainingStayMinutes.Num(); ++LeaderIndex)

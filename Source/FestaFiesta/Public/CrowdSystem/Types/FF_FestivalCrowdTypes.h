@@ -165,7 +165,18 @@ enum class EFF_DecisionReason : uint8
 	 */
 	MoveFailed,
 	Interrupted,    // 시설 이동·폐쇄로 진행 중인 명령이 취소됐다      (FF_QueueCrowdLink)
-	StayExpired     // 체류 시간이 끝났다                            [미사용 — 체류 도입 후]
+	StayExpired,    // 체류 시간이 끝났다                            [미사용 — 체류 도입 후]
+	/**
+	 * 닫혀 있던 목적지가 열렸다 = 지금 고를 수 있는 것이 늘었다.
+	 *
+	 * 나머지 사유와 달리 월드 쪽에서 생긴 일이라, 도착을 기다리지 않고
+	 * 밖에서 밀어 넣는다(`RequestRedecisionForIdleParties`). 지금 유일한 발화점은
+	 * 메인 공연 시각의 무대 개장이다(UFF_CrowdDecisionSubsystem).
+	 *
+	 * 이 사유가 없으면 무대가 열려도 아무도 통지받지 못해, 각자 하던 일을 끝낼 때까지
+	 * 회전율만큼 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
+	 */
+	DestinationOpened
 };
 
 UENUM()
