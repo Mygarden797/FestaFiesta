@@ -30,6 +30,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
 // 하루가 끝날 때 다음 시스템(시설/경제)에 이월용 시간 정보를 알리는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDayEnded, int32, EndedDay, float, TodayLiveDuration);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalStarted);
+// 축제가 처음 시작됐음을 알리는 신호 (StartNewFestival 호출 시 발동)
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTimeScaleChange, float, TimeScale);
 
 // 오늘 날씨 종류를 나타내는 enum
@@ -168,6 +171,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnStageChanged OnStageChanged;
 	// 이벤트 신호 실제 변수 (다른 시스템이 여기 등록해두면 알림 받음)
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnFestivalStarted OnFestivalStarted;
+	// 축제가 새로 시작됐음을 UI 등 다른 시스템에게 알리는 신호
 
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnRemainingSecondsChanged OnRemainingSecondsChanged;
