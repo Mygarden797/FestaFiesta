@@ -37,6 +37,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera")
 	bool bApplyInitialFraming = true;
 
+	// 이 레벨에서 쓸 피날레 연출 수치.
+	//
+	// 비워두면 Project Settings 의 기본값을 쓴다. 연등축제처럼 연출이 다른 레벨에서만
+	// 여기에 따로 지정하면 되고, 보통 레벨은 건드릴 필요가 없다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Finale")
+	TSoftObjectPtr<class UFF_FinaleShowData> FinaleShowDataOverride;
+
 	// 플레이어가 직접 조종할 방문객 캐릭터. 보통 BP_FestivalCharacter 를 넣는다.
 	//
 	// 레벨에 이미 배치돼 있으면 그것을 쓰고, 없으면 PlayerStart 에 스폰한다.
