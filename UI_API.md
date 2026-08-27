@@ -1140,6 +1140,43 @@ GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_Ea
 
 패키징 빌드에서만 드러난다고 하신 부분은 로컬라이제이션(현지화) 검증 시점 차이 때문일 것 같은데, 혹시 어떤 문자열이 깨지는지 예시 하나만 공유해주시면 더 정확히 짚어드릴 수 있을 것 같아요.
 
+**정정 (강민서, 2026-08-27)**
+
+위 답변이 틀렸습니다. `GetCurrentStageDisplayName()`을 확인해보니 실제로 아래처럼 되어 있었습니다:
+
+```cpp
+FText UFF_FestivalStageSubsystem::GetCurrentStageDisplayName() const
+{
+    UEnum* EnumPtr = StaticEnum<EFF_FestivalStage>();
+    return EnumPtr->GetDisplayNameTextByValue((int64)CurrentStage);
+}
+```
+
+`GetDisplayNameTextByValue()`가 정확히 UMETA(DisplayName)를 직접 읽는 방식이라, 시리님이 지적하신 것과 똑같은 문제를 이 함수 자체가 갖고 있었습니다. "패키징 빌드 안전"이라고 안내드린 게 틀렸습니다.
+
+하드코딩된 switch문으로 교체 완료했습니다:
+
+```cpp
+FText UFF_FestivalStageSubsystem::GetCurrentStageDisplayName() const
+{
+    switch (CurrentStage)
+    {
+    case EFF_FestivalStage::Setup: return FText::FromString(TEXT("셋업"));
+    case EFF_FestivalStage::PromotionPreview: return FText::FromString(TEXT("홍보 프리뷰"));
+    case EFF_FestivalStage::SunsetTransition: return FText::FromString(TEXT("노을 전환"));
+    case EFF_FestivalStage::MorningCheck: return FText::FromString(TEXT("모닝체크"));
+    case EFF_FestivalStage::Live: return FText::FromString(TEXT("라이브 운영"));
+    case EFF_FestivalStage::Closing: return FText::FromString(TEXT("마감"));
+    case EFF_FestivalStage::Report: return FText::FromString(TEXT("리포트"));
+    case EFF_FestivalStage::Finale: return FText::FromString(TEXT("피날레"));
+    default: return FText::FromString(TEXT("알 수 없음"));
+    }
+}
+```
+
+기존 UMETA 문구와 정확히 동일하게 맞췄습니다. `FF_FestivalViewModelSubsystem.cpp:354`, `FF_LiveHudMenuBar.cpp:168`이 이 함수를 호출하는 구조라면, 두 파일 수정 없이도 이제 정상적으로 패키징 빌드에서 한글이 나옵니다. 빌드 확인 완료했습니다.
+
+
 ---
 
 ## UI Read Model — 백종태
@@ -1442,3 +1479,4 @@ API 가 생기면 그 함수를 지우고 ViewModel 구독으로 바꿉니다 �
 | 2026-08-26 | 강민서 | ✅ **날씨 Read Model 표 정정 확인했습니다.** `OnEnvironmentStateChanged`가 야간 전환에도 함께 울리는 부분, ViewModel에서 필터링해주셔서 제 쪽 추가 수정 없습니다. U5 점검 패널 연동 감사합니다 |
 | 2026-08-26 | 강민서 | ✅ **`GetLiveClockStringAt(float LiveMinutes)` 요청 구현 완료 — `GetLiveClockStringFromMinutes(int32 LiveMinutes)`로 만들었습니다.** 요청과 시그니처가 달라 확인 필요합니다: 파라미터가 `float`가 아닌 `int32`이고, 함수명도 다릅니다. 통일 필요하시면 말씀 주세요. `GetCurrentLiveClockString()`을 이 함수 호출 한 줄로 리팩터링하는 것도 확정되면 같이 진행하겠습니다 |
 | 2026-08-26 | 강민서 | 🔴 **`FF_FestivalViewModelSubsystem.cpp:354` · `FF_LiveHudMenuBar.cpp:168` 표시 문자열 건 — 제 담당 함수는 이미 있습니다.** `EFF_FestivalStage` 표시 이름은 `GetCurrentStageDisplayName()`(UMETA DisplayName 기반, 패키징 빌드 안전)이 원본입니다. 해당 두 파일이 이 함수를 안 쓰고 자체 문자열을 쓰는 것으로 보여, 제가 직접 두 파일을 고치기보다 각 파일에서 이 함수를 호출하도록 바꾸시길 제안드립니다. enum에 없는 특수 케이스가 필요하면 알려주시면 추가하겠습니다 |
+| 2026-08-27 | 강민서 | 🔴 **8/26 답변 정정 — `GetCurrentStageDisplayName()`이 실제로 UMETA 직접 읽기 문제였습니다.** 하드코딩 switch문으로 교체 완료, 빌드 확인함 |
