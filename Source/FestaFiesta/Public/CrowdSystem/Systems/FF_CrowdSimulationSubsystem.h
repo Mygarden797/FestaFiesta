@@ -205,12 +205,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 SnapshotIntervalSteps = 30;
 
+	// Need 지표(UFF_NpcNeedMetricsSubsystem) 확정 주기, 고정 스텝 단위. 30 = 1초.
+	// 매 프레임 확정하면 OnNeedUnmetRatioChanged 가 초당 수십 번 뜬다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
+	int32 NeedMetricsIntervalSteps = 30;
+
 	void DespawnParty(int32 PartyID);
 
 	// 조정자가 여기에 물어 목적지를 내려준다. 비어 있으면 Crowd가 배회로 폴백한다
 	FFF_OnPartyNeedsDecision OnPartyNeedsDecision;
 
 	void RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason);
+
+	/**
+	 * 새 목적지가 열렸을 때 유휴 파티에게만 재결정을 요청하고 요청한 파티 수를 돌려준다.
+	 *
+	 * ⛔ 줄에 서 있는 파티는 건드리지 않는다. RequestDecision 이 내부에서
+	 * ClearPartyQueueState(.., false) 를 부르는데 그 경로는 큐 상태를 **로컬에서만** 지운다 —
+	 * 줄에 선 파티에 걸면 이쪽은 "줄 안 섰음"이 되는데 Queue 는 그 파티를 계속 들고 있어
+	 * 자리가 영영 안 비고, 없는 파티를 서비스하게 된다.
+	 * 퇴장 중인 파티도 같은 이유로 제외한다(목적지가 출구로 이미 정해져 있다).
+	 *
+	 * @param MaxParties 이번에 요청할 상한. 0 이하면 상한 없음.
+	 *                   한 프레임에 결정 큐가 통째로 부풀지 않게 막는 안전판이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
+	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetPendingDecisionCount() const { return DecisionQueue.Num(); }
@@ -682,7 +702,14 @@ private:
 
 	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount) const;
 	FFF_NeedState MakeInitialNeeds(int32 StableAgentId) const;
-	void AdvanceNeeds();
+	/**
+	 * Need 를 시간만큼 올리고 파티별 체류 예산을 깎는다.
+	 *
+	 * @param bAggregateMetrics 이번 호출에서 Need 지표를 확정할 것인가.
+	 *                          켜면 이 함수의 유닛 순회에 표본 수집을 얹는다 —
+	 *                          집계 전용 순회를 따로 만들면 같은 배열을 두 번 돈다.
+	 */
+	void AdvanceNeeds(bool bAggregateMetrics);
 
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
@@ -760,6 +787,9 @@ private:
 
 	// 마지막 발행 이후 지난 고정 스텝 수. 프레임 수가 아니라 스텝 수다 — 프레임률로 세면 유량 집계 구간이 기기 성능에 따라 달라진다
 	int32 StepsSinceSnapshot = 0;
+
+	// 마지막 Need 지표 확정 이후 지난 고정 스텝 수. 위와 같은 이유로 프레임이 아니라 스텝으로 센다
+	int32 StepsSinceNeedMetrics = 0;
 
 	int32 SnapshotCount = 0;
 
