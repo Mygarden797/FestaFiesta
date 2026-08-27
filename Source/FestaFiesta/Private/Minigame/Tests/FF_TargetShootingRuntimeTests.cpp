@@ -131,6 +131,13 @@ bool FFF_TargetShootingScoringTest::RunTest(const FString& Parameters)
 	InvalidRules.SpawnSafeMarginNormalized.Top = 0.80f;
 	TestFalse(TEXT("Safe margin must leave room for the complete target ellipse"),
 		InvalidRules.IsValid());
+	InvalidRules = Rules;
+	InvalidRules.ProjectileOriginNormalized.Y = 1.1f;
+	TestFalse(TEXT("Projectile origin must stay inside normalized play space"),
+		InvalidRules.IsValid());
+	InvalidRules = Rules;
+	InvalidRules.ProjectileSpeedNormalizedPerSecond = 0.0f;
+	TestFalse(TEXT("Projectile speed must be positive"), InvalidRules.IsValid());
 
 	UFF_TargetShootingDefinition* BonusDefinition = MakeDefinition();
 	BonusDefinition->Rules.BonusTargetChance = 1.0f;
@@ -216,6 +223,15 @@ bool FFF_TargetShootingScoringTest::RunTest(const FString& Parameters)
 		FFTargetShootingRules::CalculateRewardGold(MAX_int32, 1000, 150), 150);
 	TestEqual(TEXT("Negative score never creates reward"),
 		FFTargetShootingRules::CalculateRewardGold(-1, 1000, 150), 0);
+	Definition->RewardGoldAtMaxScore = 90;
+	TestEqual(TEXT("Per-minigame DataAsset reward overrides the festival fallback"),
+		Definition->ResolveRewardGoldAtMaxScore(150), 90);
+	Definition->RewardGoldAtMaxScore = 0;
+	TestEqual(TEXT("Zero explicitly disables the minigame reward"),
+		Definition->ResolveRewardGoldAtMaxScore(150), 0);
+	Definition->RewardGoldAtMaxScore = -1;
+	TestEqual(TEXT("Minus one preserves the festival-wide reward fallback"),
+		Definition->ResolveRewardGoldAtMaxScore(150), 150);
 	return true;
 }
 
@@ -281,6 +297,236 @@ bool FFF_TargetShootingDeterministicTargetsTest::RunTest(const FString& Paramete
 			<= 1.0f - DefinitionA->Rules.SpawnSafeMarginNormalized.Bottom);
 	TestEqual(TEXT("Expired target emits explicit too-slow feedback"),
 		SnapshotA.LatestFeedbackType, EFF_TargetShootingFeedbackType::Escaped);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_TargetShootingProjectileFlightTest,
+	"FestaFiesta.Minigame.TargetShooting.ProjectileFlightAndImpact",
+	TargetShootingTestFlags)
+
+bool FFF_TargetShootingProjectileFlightTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UFF_TargetShootingDefinition* Definition = MakeDefinition();
+	Definition->Rules.BonusTargetChance = 0.0f;
+	Definition->Rules.ProjectileSpeedNormalizedPerSecond = 100.0f;
+	Definition->Rules.ProjectileMinTravelSeconds = 0.30f;
+	const FFF_MinigameSessionContext Context = MakeContext(86420);
+	FString FailureReason;
+	UFF_TargetShootingRuntime* Runtime = MakeRuntime(Definition, Context, FailureReason);
+	if (!TestNotNull(*FString::Printf(TEXT("Projectile runtime initializes: %s"), *FailureReason), Runtime))
+	{
+		return false;
+	}
+
+	const FFF_TargetShootingSnapshot Original = Runtime->GetTargetSnapshot();
+	TestEqual(TEXT("Fire request starts a projectile"),
+		Runtime->FireProjectile(
+			Context.SessionId,
+			Original.TargetCenterNormalized,
+			Original.TargetSerial),
+		EFF_TargetShootingShotResult::ProjectileFired);
+	FFF_TargetShootingSnapshot Projectile = Runtime->GetTargetSnapshot();
+	TestTrue(TEXT("Accepted projectile is in flight"), Projectile.bProjectileInFlight);
+	TestEqual(TEXT("Projectile captures the target serial"),
+		Projectile.ProjectileTargetSerial, Original.TargetSerial);
+	TestEqual(TEXT("Score is deferred until impact"), Projectile.Session.Score, 0);
+	TestEqual(TEXT("Target remains visible during projectile travel"),
+		Projectile.TargetSerial, Original.TargetSerial);
+	TestEqual(TEXT("A second projectile cannot overlap the active shot"),
+		Runtime->FireProjectile(
+			Context.SessionId,
+			Original.TargetCenterNormalized,
+			Original.TargetSerial),
+		EFF_TargetShootingShotResult::RejectedProjectileInFlight);
+	TestEqual(TEXT("Immediate resolution cannot bypass an active projectile"),
+		Runtime->SubmitShot(
+			Context.SessionId,
+			Original.TargetCenterNormalized,
+			Original.TargetSerial),
+		EFF_TargetShootingShotResult::RejectedProjectileInFlight);
+
+	Runtime->Advance(Projectile.ProjectileTravelSeconds * 0.5f);
+	const FFF_TargetShootingSnapshot MidFlight = Runtime->GetTargetSnapshot();
+	TestTrue(TEXT("Projectile remains in flight before arrival"), MidFlight.bProjectileInFlight);
+	TestEqual(TEXT("Mid-flight still has no score"), MidFlight.Session.Score, 0);
+	TestTrue(TEXT("Projectile position advances away from the muzzle"),
+		!MidFlight.ProjectilePositionNormalized.Equals(
+			MidFlight.ProjectileStartNormalized,
+			UE_KINDA_SMALL_NUMBER));
+
+	Runtime->Advance(MidFlight.ProjectileRemainingSeconds + 0.001f);
+	const FFF_TargetShootingSnapshot Impact = Runtime->GetTargetSnapshot();
+	TestFalse(TEXT("Projectile is removed after arrival"), Impact.bProjectileInFlight);
+	TestEqual(TEXT("Impact performs one authoritative hit"), Impact.HitCount, 1);
+	TestEqual(TEXT("Center impact is a bullseye"),
+		Impact.LatestFeedbackType, EFF_TargetShootingFeedbackType::Bullseye);
+	TestEqual(TEXT("Impact applies the fire-time reaction score after travel"),
+		Impact.Session.Score, 200);
+	TestTrue(TEXT("Reaction metric excludes projectile travel time"),
+		FMath::IsNearlyZero(Impact.LatestReactionSeconds));
+	TestTrue(TEXT("A hit spawns the next target after impact"),
+		Impact.TargetSerial != Original.TargetSerial);
+
+	const int32 TargetSerialBeforeMiss = Impact.TargetSerial;
+	const FVector2D MissPoint = MakeGuaranteedMissPoint(Impact);
+	TestEqual(TEXT("Miss trajectory also starts as a projectile"),
+		Runtime->FireProjectile(Context.SessionId, MissPoint, TargetSerialBeforeMiss),
+		EFF_TargetShootingShotResult::ProjectileFired);
+	Projectile = Runtime->GetTargetSnapshot();
+	Runtime->Advance(Projectile.ProjectileTravelSeconds + 0.001f);
+	const FFF_TargetShootingSnapshot MissImpact = Runtime->GetTargetSnapshot();
+	TestEqual(TEXT("Miss is counted at projectile arrival"), MissImpact.MissCount, 1);
+	TestEqual(TEXT("Miss impact keeps the same target"),
+		MissImpact.TargetSerial, TargetSerialBeforeMiss);
+	TestEqual(TEXT("Miss impact emits miss feedback"),
+		MissImpact.LatestFeedbackType, EFF_TargetShootingFeedbackType::Miss);
+
+	UFF_TargetShootingDefinition* FastDefinition = MakeDefinition();
+	UFF_TargetShootingDefinition* SlowDefinition = MakeDefinition();
+	FastDefinition->Rules.BonusTargetChance = 0.0f;
+	SlowDefinition->Rules.BonusTargetChance = 0.0f;
+	FastDefinition->Rules.ProjectileSpeedNormalizedPerSecond = 100.0f;
+	SlowDefinition->Rules.ProjectileSpeedNormalizedPerSecond = 100.0f;
+	FastDefinition->Rules.ProjectileMinTravelSeconds = 0.06f;
+	SlowDefinition->Rules.ProjectileMinTravelSeconds = 0.35f;
+	const FFF_MinigameSessionContext ReactionContext = MakeContext(24680);
+	FString FastFailure;
+	FString SlowFailure;
+	UFF_TargetShootingRuntime* FastRuntime = MakeRuntime(
+		FastDefinition, ReactionContext, FastFailure);
+	UFF_TargetShootingRuntime* SlowRuntime = MakeRuntime(
+		SlowDefinition, ReactionContext, SlowFailure);
+	if (!TestNotNull(TEXT("Fast reaction-control runtime initializes"), FastRuntime)
+		|| !TestNotNull(TEXT("Slow reaction-control runtime initializes"), SlowRuntime))
+	{
+		return false;
+	}
+	FastRuntime->Advance(0.15f);
+	SlowRuntime->Advance(0.15f);
+	const FFF_TargetShootingSnapshot FastTarget = FastRuntime->GetTargetSnapshot();
+	const FFF_TargetShootingSnapshot SlowTarget = SlowRuntime->GetTargetSnapshot();
+	FastRuntime->FireProjectile(
+		ReactionContext.SessionId,
+		FastTarget.TargetCenterNormalized,
+		FastTarget.TargetSerial);
+	SlowRuntime->FireProjectile(
+		ReactionContext.SessionId,
+		SlowTarget.TargetCenterNormalized,
+		SlowTarget.TargetSerial);
+	const float FastTravelSeconds = FastRuntime->GetTargetSnapshot().ProjectileTravelSeconds;
+	const float SlowTravelSeconds = SlowRuntime->GetTargetSnapshot().ProjectileTravelSeconds;
+	TestTrue(TEXT("Control runtimes use different projectile travel times"),
+		SlowTravelSeconds > FastTravelSeconds);
+	FastRuntime->Advance(FastTravelSeconds + 0.001f);
+	SlowRuntime->Advance(SlowTravelSeconds + 0.001f);
+	const FFF_TargetShootingSnapshot FastImpact = FastRuntime->GetTargetSnapshot();
+	const FFF_TargetShootingSnapshot SlowImpact = SlowRuntime->GetTargetSnapshot();
+	TestTrue(TEXT("Reaction metric is identical across projectile speeds"),
+		FMath::IsNearlyEqual(
+			FastImpact.LatestReactionSeconds,
+			SlowImpact.LatestReactionSeconds));
+	TestEqual(TEXT("Reaction score is identical across projectile speeds"),
+		FastImpact.Session.Score, SlowImpact.Session.Score);
+
+	UFF_TargetShootingDefinition* ExpiryDefinition = MakeDefinition();
+	ExpiryDefinition->Rules.BonusTargetChance = 0.0f;
+	ExpiryDefinition->Rules.TargetLifetimeStartSeconds = 0.1f;
+	ExpiryDefinition->Rules.TargetLifetimeEndSeconds = 0.1f;
+	ExpiryDefinition->Rules.ProjectileSpeedNormalizedPerSecond = 100.0f;
+	ExpiryDefinition->Rules.ProjectileMinTravelSeconds = 0.15f;
+	FString ExpiryFailure;
+	UFF_TargetShootingRuntime* ExpiryRuntime = MakeRuntime(
+		ExpiryDefinition,
+		MakeContext(97531),
+		ExpiryFailure);
+	if (!TestNotNull(
+		*FString::Printf(TEXT("Expiry-race runtime initializes: %s"), *ExpiryFailure),
+		ExpiryRuntime))
+	{
+		return false;
+	}
+	const FFF_TargetShootingSnapshot ExpiringTarget = ExpiryRuntime->GetTargetSnapshot();
+	ExpiryRuntime->FireProjectile(
+		ExpiringTarget.Session.Context.SessionId,
+		ExpiringTarget.TargetCenterNormalized,
+		ExpiringTarget.TargetSerial);
+	ExpiryRuntime->Advance(0.08f);
+	const FFF_TargetShootingSnapshot ReservedMidFlight = ExpiryRuntime->GetTargetSnapshot();
+	TestTrue(TEXT("Accepted projectile keeps its target reserved while travelling"),
+		ReservedMidFlight.bProjectileInFlight);
+	TestTrue(TEXT("Reserved target lifetime does not drain during cosmetic travel"),
+		FMath::IsNearlyEqual(
+			ReservedMidFlight.TargetRemainingSeconds,
+			ExpiringTarget.TargetRemainingSeconds));
+	ExpiryRuntime->Advance(0.08f);
+	const FFF_TargetShootingSnapshot ReservedImpact = ExpiryRuntime->GetTargetSnapshot();
+	TestFalse(TEXT("Reserved projectile finishes at impact"),
+		ReservedImpact.bProjectileInFlight);
+	TestEqual(TEXT("A timely shot cannot lose its target to cosmetic travel"),
+		ReservedImpact.HitCount, 1);
+	TestEqual(TEXT("Reserved target is not counted as escaped"),
+		ReservedImpact.EscapedTargetCount, 0);
+	TestEqual(TEXT("Reserved hit does not add a miss"),
+		ReservedImpact.MissCount, 0);
+
+	UFF_TargetShootingDefinition* DeadlineDefinition = MakeDefinition();
+	DeadlineDefinition->Rules.BonusTargetChance = 0.0f;
+	DeadlineDefinition->Rules.TargetLifetimeStartSeconds = 0.2f;
+	DeadlineDefinition->Rules.TargetLifetimeEndSeconds = 0.2f;
+	DeadlineDefinition->Rules.ProjectileSpeedNormalizedPerSecond = 100.0f;
+	DeadlineDefinition->Rules.ProjectileMinTravelSeconds = 0.2f;
+	FString DeadlineFailure;
+	UFF_TargetShootingRuntime* DeadlineRuntime = MakeRuntime(
+		DeadlineDefinition,
+		MakeContext(11223),
+		DeadlineFailure);
+	if (!TestNotNull(TEXT("Target-deadline runtime initializes"), DeadlineRuntime))
+	{
+		return false;
+	}
+	const FFF_TargetShootingSnapshot DeadlineTarget = DeadlineRuntime->GetTargetSnapshot();
+	DeadlineRuntime->FireProjectile(
+		DeadlineTarget.Session.Context.SessionId,
+		DeadlineTarget.TargetCenterNormalized,
+		DeadlineTarget.TargetSerial);
+	DeadlineRuntime->Advance(0.2f);
+	const FFF_TargetShootingSnapshot DeadlineImpact = DeadlineRuntime->GetTargetSnapshot();
+	TestEqual(TEXT("Projectile impact wins an exact target-deadline tie"),
+		DeadlineImpact.HitCount, 1);
+	TestEqual(TEXT("Exact-deadline hit does not also count as escaped"),
+		DeadlineImpact.EscapedTargetCount, 0);
+
+	UFF_TargetShootingDefinition* SessionEndDefinition = MakeDefinition();
+	SessionEndDefinition->DurationSeconds = 0.2f;
+	SessionEndDefinition->Rules.BonusTargetChance = 0.0f;
+	SessionEndDefinition->Rules.TargetLifetimeStartSeconds = 0.5f;
+	SessionEndDefinition->Rules.TargetLifetimeEndSeconds = 0.5f;
+	SessionEndDefinition->Rules.ProjectileSpeedNormalizedPerSecond = 100.0f;
+	SessionEndDefinition->Rules.ProjectileMinTravelSeconds = 0.2f;
+	FString SessionEndFailure;
+	UFF_TargetShootingRuntime* SessionEndRuntime = MakeRuntime(
+		SessionEndDefinition,
+		MakeContext(44556),
+		SessionEndFailure);
+	if (!TestNotNull(TEXT("Session-end boundary runtime initializes"), SessionEndRuntime))
+	{
+		return false;
+	}
+	const FFF_TargetShootingSnapshot SessionEndTarget = SessionEndRuntime->GetTargetSnapshot();
+	SessionEndRuntime->FireProjectile(
+		SessionEndTarget.Session.Context.SessionId,
+		SessionEndTarget.TargetCenterNormalized,
+		SessionEndTarget.TargetSerial);
+	SessionEndRuntime->Advance(0.2f);
+	const FFF_TargetShootingSnapshot SessionEndImpact = SessionEndRuntime->GetTargetSnapshot();
+	TestEqual(TEXT("Impact at session end still counts"), SessionEndImpact.HitCount, 1);
+	TestEqual(TEXT("Session-end impact does not spawn a phantom target"),
+		SessionEndImpact.TargetSerial, SessionEndTarget.TargetSerial);
+	TestEqual(TEXT("Session completes after exact-boundary impact"),
+		SessionEndImpact.Session.State, EFF_MinigameSessionState::Completed);
 	return true;
 }
 
