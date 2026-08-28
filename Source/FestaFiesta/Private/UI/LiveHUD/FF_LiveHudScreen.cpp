@@ -443,6 +443,41 @@ void UFF_LiveHudScreen::LogPanelGeometryNextTick(UFF_LivePanelBase& Panel)
 	}
 }
 
+bool UFF_LiveHudScreen::IsPanelDragAllowed() const
+{
+	if (!bAllowPanelDrag || !Panel_PanelHost || !Selection.bHasSelection)
+	{
+		return false;
+	}
+
+	// `Designer` 는 코드가 자리를 안 잡는다. 끌게 두면 다음에 열 때 되돌아가서 헛수고가 된다.
+	return ResolveLayout(Selection.Tab).Dock != EFF_LivePanelDock::Designer;
+}
+
+void UFF_LiveHudScreen::NudgePanelPosition(FVector2D SlateDelta)
+{
+	if (!IsPanelDragAllowed() || SlateDelta.IsNearlyZero())
+	{
+		return;
+	}
+
+	// 🔴 **표를 고쳐서 옮긴다.** 슬롯을 직접 만지면 탭을 닫았다 열 때 `ApplyPanelLayout` 이
+	// 표의 값으로 덮어써서 옮긴 자리가 사라진다. 준비 단계에서 같은 판단을 했다.
+	//
+	// 네 방향 모두 두 축이 점 앵커라 `Offset` 의 X·Y 가 그대로 화면 이동량이 된다 —
+	// 늘어난 축이 섞여 있던 준비 단계와 달리 버릴 성분이 없다.
+	FFF_LivePanelLayout Layout = ResolveLayout(Selection.Tab);
+
+	// 오른쪽 도킹은 X 부호가 뒤집혀 있다. 그대로 더하면 커서와 반대로 움직인다.
+	const float SignX = (Layout.Dock == EFF_LivePanelDock::Right) ? -1.f : 1.f;
+
+	Layout.Offset.X += SignX * SlateDelta.X;
+	Layout.Offset.Y += SlateDelta.Y;
+
+	PanelLayouts.Add(Selection.Tab, Layout);
+	ApplyPanelLayout(Layout);
+}
+
 FFF_LivePanelLayout UFF_LiveHudScreen::ResolveLayout(EFF_LiveTab Tab) const
 {
 	const FFF_LivePanelLayout* Found = PanelLayouts.Find(Tab);
@@ -501,10 +536,11 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 	// 화면에는 닫기 버튼만 한 흰 상자가 떴다. 준비 단계 패널이 멀쩡한 것은 실제로 쓰는
 	// 도킹이 전부 점 앵커 + 명시 크기라 부모 높이를 안 보기 때문이다.
 	//
-	// 세로 기준점은 어느 쪽이든 **하단 바 위**다. 바를 기준으로 잡아야 패널이 바 뒤로
-	// 들어가 탭을 가리는 일이 없다.
+	// 🔴 세로 기준점은 **상태 행 위**다. 바 전체를 비우면 패널과 탭 버튼 사이에 틈이 생기는데,
+	// 준비 단계는 패널 아래 끝이 탭 줄 밑으로 들어가서 버튼이 패널에 얹힌 것처럼 보인다.
+	// 바가 패널보다 뒤에 추가되어 있어 탭이 위에 그려지고, 가리는 자리는 패널의 빈 아래쪽이다.
 	//   Left = X 위치, Top = Y 위치(음수 = 위로), Right = 폭, Bottom = 높이
-	const float PanelTop = -(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y);
+	const float PanelTop = -StatusRowHeight + static_cast<float>(Layout.Offset.Y);
 
 	switch (Layout.Dock)
 	{

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
+#include "UI/Atlas/FF_AtlasScreenGeo.h"
 #include "FF_LivePanelBase.generated.h"
 
 class UButton;
@@ -61,6 +62,28 @@ protected:
 	UFUNCTION()
 	void HandleCloseClicked();
 
+	// =========================================================================
+	// 끌어 옮기기 — 준비 단계(`UFF_PrepPanelBase`)와 같은 조작이다
+	//
+	// 패널의 **빈 곳**을 잡아 끌면 화면이 자리를 옮긴다. 버튼·목록 위에서는 그 위젯이 먼저
+	// 입력을 먹으므로 여기까지 오지 않는다 — 그래서 별도 드래그 손잡이를 두지 않았다.
+	//
+	// 🔴 함정 두 개를 여기서 막는다 (준비 단계에서 이미 밟았다).
+	// 1. **위젯 밖으로 나가면 드래그가 끊긴다.** 마우스 커서가 보이는 입력 모드는 캡처가
+	//    `NoCapture` 다. `CaptureMouse` 를 돌려주지 않으면 커서가 패널을 벗어난 순간
+	//    이동이 멈추고 버튼을 뗀 것도 못 받는다.
+	// 2. **화면 픽셀을 슬레이트 단위로 바꿔야 한다.** 포인터 좌표는 픽셀이고 캔버스 슬롯은
+	//    슬레이트 단위다. UI 배율이 1 인 환경에서는 티가 안 나고 다른 해상도에서만 어긋난다.
+	// =========================================================================
+
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+	/** 끌어 옮기기를 이 패널에서 허용할지. 목록을 스크롤로 끄는 패널은 끈다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	bool bAllowDragToMove = true;
+
 	/** C++ 파생용. `Super::` 를 부른 뒤 자기 것을 한다. */
 	virtual void NativeOnPanelOpened() {}
 	virtual void NativeOnPanelClosed() {}
@@ -82,6 +105,9 @@ protected:
 private:
 	UPROPERTY()
 	TWeakObjectPtr<UFF_LiveHudScreen> OwningScreen;
+
+	/** 임계 판정과 이동량 누적. 아틀라스 지구본과 같은 것을 쓴다. */
+	FFF_AtlasDragTracker DragTracker;
 
 	EFF_LiveTab Tab = EFF_LiveTab::Operations;
 };

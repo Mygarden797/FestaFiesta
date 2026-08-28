@@ -276,9 +276,27 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Layout")
 	FFF_LivePanelLayout DefaultPanelLayout;
 
-	/** 하단 바 전체 높이(px). 패널이 그 위에서 끝나게 하는 데 쓴다. */
+	/** 패널의 빈 곳을 끌어 자리를 옮길 수 있게 할지. 준비 단계와 같은 조작이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Layout")
+	bool bAllowPanelDrag = true;
+
+	/** 하단 바 전체 높이(px). 메뉴 행 + 상태 행이다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Layout")
 	float BarHeight = 58.f;
+
+	/**
+	 * 하단 바 중 **상태 행**의 높이(px). 패널의 아래 끝이 여기에 맞춰진다.
+	 *
+	 * === 🔴 왜 `BarHeight` 가 아니라 이 값인가 (2026-08-28) ===
+	 * 처음에는 바 전체를 비웠더니 패널과 탭 버튼 사이에 틈이 생겼다. 준비 단계는
+	 * **패널 아래 끝이 탭 버튼 줄 밑으로 들어가서** 버튼이 패널 위에 얹힌 것처럼 보인다 —
+	 * 그래야 "이 버튼이 이 패널을 연다" 가 눈에 붙는다.
+	 *
+	 * 바가 패널보다 뒤에 추가되어 있어 탭이 위에 그려진다. 탭이 가리는 자리는 패널의
+	 * 빈 아래쪽이라 내용이 잘리지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Layout")
+	float StatusRowHeight = 29.f;
 
 	/** 화면 가장자리와 패널 사이 여백(px). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Layout")
@@ -321,6 +339,20 @@ private:
 	void ForEachTabButton(TFunctionRef<void(EFF_LiveTab, UFF_LiveTabButton&)> Visitor) const;
 
 	void ApplySelection(const FFF_LiveTabSelection& NewSelection);
+
+public:
+	/**
+	 * 열려 있는 패널을 슬레이트 단위만큼 옮긴다. 패널이 자기 빈 곳을 끌 때 부른다.
+	 *
+	 * 준비 단계와 같다 — 자리는 **화면이 소유**하고 패널은 요청만 한다. 패널이 자기 슬롯을
+	 * 직접 만지면 탭을 닫았다 열 때 값이 되돌아가서 옮긴 자리가 사라진다.
+	 */
+	void NudgePanelPosition(FVector2D SlateDelta);
+
+	/** 지금 끌어 옮길 수 있는 상태인지. `Designer` 도킹이면 코드가 자리를 안 잡으므로 막는다. */
+	bool IsPanelDragAllowed() const;
+
+private:
 
 	/** 없으면 만들어 호스트에 넣는다. 만든 것은 캐시한다. */
 	UFF_LivePanelBase* EnsurePanel(EFF_LiveTab Tab);
