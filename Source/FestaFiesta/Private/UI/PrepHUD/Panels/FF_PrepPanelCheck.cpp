@@ -138,14 +138,32 @@ void UFF_PrepPanelCheck::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
 
+	// 바가 CTA 버튼을 접은 뒤로 개장 수단은 이 패널뿐이다. 시설을 놓거나 철거하면
+	// 판정이 바뀌므로 바의 알림을 받아야 버튼이 제때 켜진다.
+	if (UFF_PrepHudBar* Bar = GetOwningBar())
+	{
+		Bar->OnCtaStateChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleCtaStateChanged);
+	}
+
 	BindViewModel();
 	RefreshAll();
 }
 
 void UFF_PrepPanelCheck::NativeOnPanelClosed()
 {
+	// 해제는 조건부, 정리는 무조건.
+	if (UFF_PrepHudBar* Bar = GetOwningBar())
+	{
+		Bar->OnCtaStateChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleCtaStateChanged);
+	}
+
 	UnbindViewModel();
 	Super::NativeOnPanelClosed();
+}
+
+void UFF_PrepPanelCheck::HandleCtaStateChanged()
+{
+	RefreshOpenGate();
 }
 
 // =============================================================================
@@ -322,6 +340,7 @@ void UFF_PrepPanelCheck::RefreshAll()
 	RefreshCapacity();
 	RefreshSummary();
 	RefreshEstimate();
+	RefreshOpenGate();
 
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
@@ -441,6 +460,37 @@ void UFF_PrepPanelCheck::RefreshSummary()
 				LOCTEXT("PrepCheck_FinalePurchased", "{0} 등급 · 만족도 +{1}"),
 				UFF_EconomyDisplayTextLibrary::GetFinaleGradeText(Grade),
 				FText::AsNumber(Bonus)));
+}
+
+void UFF_PrepPanelCheck::RefreshOpenGate()
+{
+	const UFF_PrepHudBar* Bar = GetOwningBar();
+	if (!Bar)
+	{
+		// 바 없이 이 패널이 떠 있을 수 없다. 여기 오면 배선이 끊긴 것이므로 남긴다.
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 소유 바가 없어 개장 버튼 상태를 정할 수 없다."), *GetName());
+		return;
+	}
+
+	const EFF_PrepCtaState State = Bar->GetCtaState();
+
+	// 문구는 단계마다 다르다. 셋업에서 `개장하기` 를 띄우면 하루를 건너뛰는 것처럼 읽힌다.
+	const FText Label = Bar->GetCtaLabelText();
+	if (Text_OpenGateLabel && !Label.IsEmpty())
+	{
+		Text_OpenGateLabel->SetText(Label);
+	}
+
+	if (Button_OpenGate)
+	{
+		// 막힌 이유는 하단 바가 문구로 띄우고 있다. 여기서 또 쓰지 않는다 —
+		// 같은 문장이 두 곳에 있으면 읽는 사람이 서로 다른 것으로 본다.
+		Button_OpenGate->SetIsEnabled(State == EFF_PrepCtaState::Ready);
+		Button_OpenGate->SetVisibility(State == EFF_PrepCtaState::Hidden
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::Visible);
+	}
 }
 
 void UFF_PrepPanelCheck::RefreshEstimate()

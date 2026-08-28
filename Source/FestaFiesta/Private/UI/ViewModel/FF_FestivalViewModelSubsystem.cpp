@@ -11,6 +11,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/FF_UILog.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 
 void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -892,22 +893,23 @@ float UFF_FestivalViewModelSubsystem::GetRemainingSeconds() const
 
 FText UFF_FestivalViewModelSubsystem::GetCurrentStageDisplayText() const
 {
-	// enum 값을 하드코딩 매핑하지 않는다. UMETA(DisplayName)을 리플렉션으로 읽는다.
+	// 🔴 **`UMETA(DisplayName)` 을 리플렉션으로 읽지 않는다** (2026-08-28 정정).
+	// 예전 주석은 "하드코딩 매핑하지 않는다" 였는데 그게 틀렸다 — `GetDisplayNameTextByValue` 는
+	// 에디터 메타데이터를 읽고, 그 메타데이터는 패키징 빌드에 안 들어간다. 그래서 에디터에서는
+	// `셋업` 으로 잘 보이다가 패키징하면 `1일차 · Setup` 이 됐다.
+	//
 	// 기획 7단계와 코드 8단계가 아직 다르므로, 모르는 값이 와도 빈 문자열이 되면 안 된다.
-	if (const UEnum* StageEnum = StaticEnum<EFF_FestivalStage>())
+	const EFF_FestivalStage Stage = GetCurrentStage();
+	const FText Text = UFF_UIDisplayTextLibrary::GetFestivalStageText(Stage);
+	if (!Text.IsEmpty())
 	{
-		const int64 Value = static_cast<int64>(GetCurrentStage());
-		if (StageEnum->IsValidEnumValue(Value))
-		{
-			return StageEnum->GetDisplayNameTextByValue(Value);
-		}
-
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[ViewModel] 알 수 없는 Stage 값 %lld. enum이 바뀌었을 수 있다."), Value);
-		return FText::AsNumber(Value);
+		return Text;
 	}
 
-	return FText::GetEmpty();
+	UE_LOG(LogFestaFiestaUI, Warning,
+		TEXT("[ViewModel] 표시 문구가 없는 Stage 값 %d. `UFF_UIDisplayTextLibrary` 에 항목을 더한다."),
+		static_cast<int32>(Stage));
+	return FText::AsNumber(static_cast<int32>(Stage));
 }
 
 void UFF_FestivalViewModelSubsystem::ApplyIntMetric(int32& Current, int32 NewValue, FFF_OnIntMetricChanged& ChangedDelegate)

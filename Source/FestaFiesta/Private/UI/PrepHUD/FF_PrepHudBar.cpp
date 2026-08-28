@@ -18,6 +18,7 @@
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -46,7 +47,11 @@ namespace FFPrepHudBarLocal
 
 		const int32 Index = TabEnum->GetIndexByValue(static_cast<int64>(Tab));
 		OutName = TabEnum->GetNameStringByIndex(Index);
-		OutDisplayName = TabEnum->GetDisplayNameTextByIndex(Index);
+
+		// 🔴 `GetDisplayNameTextByIndex` 를 쓰지 않는다. 그 함수는 **에디터 메타데이터**를 읽는데
+		//    패키징하면 메타데이터가 떨어져 나가서 조용히 `Build`·`Check` 같은 영문 항목 이름이
+		//    나온다. 2026-08-28 시연 패키징에서 하단 탭이 전부 영문이었다.
+		OutDisplayName = UFF_UIDisplayTextLibrary::GetPrepTabText(Tab);
 	}
 }
 
@@ -56,17 +61,18 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	// === CTA 문구 기본값 ===
 	// `{Day}` 는 현재 일차로 치환된다. 문구에 `Day 1` 을 박으면 2·3일차에 거짓말이 된다.
 	//
-	// 🔴 `PromotionPreview` 는 이름과 달리 **Day 1 의 개장 준비**다 (2026-08-27 확인).
-	// Day 2·3 은 `MorningCheck` 가 그 자리인데 Day 1 에는 그게 없다 —
-	//   Day 1: Setup → PromotionPreview → SunsetTransition → Live
-	//   Day 2: MorningCheck          → SunsetTransition → Live
-	// 그래서 개장 CTA 가 있어야 한다. 예전에는 "시간이 지나면 자동으로 넘어간다"는 이유로
-	// 비워 뒀는데, 그러면 **점검 패널의 `개장하기` 버튼만 남아 바와 어긋난다.**
-	// 홍보비 선택은 이 단계가 아니라 셋업 탭에서 한다 (2026-08-27 백종태 결정).
+	// 🔴 `PromotionPreview` 에는 CTA 를 두지 않는다 — **이 바 자체가 거기서 안 뜬다.**
+	//
+	// 2026-08-27 에 두 번 바뀐 자리라 경위를 남긴다.
+	//   ① 처음엔 CTA 가 없었다 (시간이 지나면 자동으로 넘어간다는 이유)
+	//   ② `Day 1 의 개장 준비 자리` 로 보고 `개장하기` 를 넣었다
+	//   ③ 실기에서 보니 **셋업에서 `확정하고 Day 1 시작` 을 누른 직후 준비 단계 바가
+	//      다시 나오는 것**이 이상했다. 확정했는데 왜 또 준비 화면인가.
+	//      → 홍보 프리뷰·노을 전환을 라이브 HUD 로 넘겼다 (`StageScreens`).
+	//
+	// 그래서 준비 단계 바가 뜨는 곳은 셋업과 개장 준비 둘뿐이다.
 	CtaLabels.Add(EFF_FestivalStage::Setup,
 		LOCTEXT("PrepCta_Setup", "확정하고 Day {Day} 시작"));
-	CtaLabels.Add(EFF_FestivalStage::PromotionPreview,
-		LOCTEXT("PrepCta_PromotionPreview", "개장하기"));
 	CtaLabels.Add(EFF_FestivalStage::MorningCheck,
 		LOCTEXT("PrepCta_MorningCheck", "개장하기"));
 
@@ -966,29 +972,27 @@ void UFF_PrepHudBar::RefreshCta()
 	const EFF_PrepCtaState State = FFF_PrepHudRules::ResolveCtaState(
 		Stage, bHasLabel, bCanAdvance, FacilityCount, bRequireFacilityForCta);
 
+	// 🔴 **바의 CTA 버튼은 더 이상 띄우지 않는다** (2026-08-27 백종태 결정).
+	// 점검 패널의 `개장하기` 와 같은 행동이라 화면에 버튼이 둘이었다.
+	// 진행은 점검 패널이 맡고, 바는 **막힌 이유 문구만** 남긴다 — 그건 탭을 열지 않아도
+	// 보여야 하는 정보다 (시설이 없으면 `배치` 탭으로 가야 한다).
+	//
+	// 판정은 그대로 여기서 한다. 시설 수와 단계 표를 아는 것이 바뿐이라
+	// 점검 패널은 `GetCtaState()`·`GetCtaLabelText()` 로 이 결과를 읽어 간다.
+	if (Button_Cta)
+	{
+		Button_Cta->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	if (State == EFF_PrepCtaState::Hidden)
 	{
 		if (Box_Cta)
 		{
 			Box_Cta->SetVisibility(ESlateVisibility::Collapsed);
 		}
-		else if (Button_Cta)
-		{
-			Button_Cta->SetVisibility(ESlateVisibility::Collapsed);
-		}
 		SetGroupTextOrHide(nullptr, Text_CtaReason, FText::GetEmpty());
-		LastCtaState = State;
+		SetCtaState(State);
 		return;
-	}
-
-	if (Box_Cta)
-	{
-		Box_Cta->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
-	if (Button_Cta)
-	{
-		Button_Cta->SetVisibility(ESlateVisibility::Visible);
-		Button_Cta->SetIsEnabled(State == EFF_PrepCtaState::Ready);
 	}
 
 	if (Text_CtaLabel)
@@ -1015,19 +1019,56 @@ void UFF_PrepHudBar::RefreshCta()
 	}
 	SetGroupTextOrHide(nullptr, Text_CtaReason, Reason);
 
-	// 같은 상태를 매 갱신마다 찍으면 로그가 같은 줄로 가득 찬다. 바뀔 때만 남긴다.
-	if (State != LastCtaState)
+	// 버튼을 접었으니 사유가 없으면 줄째 접는다. 안 그러면 빈 띠가 남는다.
+	if (Box_Cta)
 	{
-		if (State == EFF_PrepCtaState::BlockedStageLocked)
-		{
-			// 표가 이 단계를 못 넘기게 해 뒀다는 뜻이다. 의도한 것이 아니면 여기가 원인이다.
-			UE_LOG(LogFestaFiestaUI, Warning,
-				TEXT("[%s] `%s` 단계를 넘길 수 없어 CTA 를 막았다. "
-					 "의도한 것이 아니면 `DT_DaySequence` 의 Day%d_%s 행에서 bSkippable 을 확인한다."),
-				*GetName(), *UEnum::GetValueAsString(Stage), Day, *UEnum::GetValueAsString(Stage));
-		}
-		LastCtaState = State;
+		Box_Cta->SetVisibility(Reason.IsEmpty()
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::SelfHitTestInvisible);
 	}
+
+	// 같은 상태를 매 갱신마다 찍으면 로그가 같은 줄로 가득 찬다. 바뀔 때만 남긴다.
+	if (State != LastCtaState && State == EFF_PrepCtaState::BlockedStageLocked)
+	{
+		// 표가 이 단계를 못 넘기게 해 뒀다는 뜻이다. 의도한 것이 아니면 여기가 원인이다.
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] `%s` 단계를 넘길 수 없어 개장을 막았다. "
+				 "의도한 것이 아니면 `DT_DaySequence` 의 Day%d_%s 행에서 bSkippable 을 확인한다."),
+			*GetName(), *UEnum::GetValueAsString(Stage), Day, *UEnum::GetValueAsString(Stage));
+	}
+
+	SetCtaState(State);
+}
+
+void UFF_PrepHudBar::SetCtaState(EFF_PrepCtaState NewState)
+{
+	if (NewState == LastCtaState)
+	{
+		return;
+	}
+
+	LastCtaState = NewState;
+
+	// 점검 패널의 `개장하기` 가 이 판정을 그대로 쓴다. 바가 시설 수를 다시 세는 순간
+	// 알려 주지 않으면 패널 버튼이 예전 상태로 남는다.
+	OnCtaStateChanged.Broadcast();
+}
+
+FText UFF_PrepHudBar::GetCtaLabelText() const
+{
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Setup;
+
+	const FText* LabelFormat = CtaLabels.Find(Stage);
+	if (!LabelFormat || LabelFormat->IsEmpty())
+	{
+		return FText::GetEmpty();
+	}
+
+	// `{Day}` 는 현재 일차로 치환된다. 문구에 `Day 1` 을 박으면 2·3일차에 거짓말이 된다.
+	FFormatNamedArguments Args;
+	Args.Add(TEXT("Day"), FText::AsNumber(ViewModel ? ViewModel->GetCurrentDay() : 1));
+	return FText::Format(*LabelFormat, Args);
 }
 
 void UFF_PrepHudBar::RefreshFacilityCount()

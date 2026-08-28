@@ -264,7 +264,8 @@ namespace FFPrepHudWbpBuilder
 			Slot_CloseLabel->SetPadding(FMargin(0.f));
 		}
 
-		Close->SetToolTipText(LOCTEXT("PrepPanel_CloseTooltip", "닫기"));
+		// 🔴 닫기 버튼에 툴팁을 달지 않는다 (2026-08-29 백종태 결정).
+		// `×` 가 무엇인지 모르는 사람은 없어서, 뜨는 것은 안내가 아니라 가림이다.
 		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
 		{
 			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
