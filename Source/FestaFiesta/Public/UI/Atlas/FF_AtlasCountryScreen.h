@@ -39,6 +39,16 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnAtlasCountryScreenRequest);
  * === 지도 이미지가 없어도 동작한다 ===
  * `MapImage` 가 비면 **네모 박스 + 팔레트 색**으로 대신 그린다. 2.5D 국가 지도 이미지는
  * 아직 없고, 없다고 화면이 죽으면 그 이미지가 생길 때까지 흐름을 확인할 수 없다.
+ *
+ * === 🔴 고르기 전에는 카드가 없다 (2026-08-27 결정) ===
+ * 진입할 때 축제를 **자동으로 고르지 않는다.** 예전에는 첫 플레이 가능 축제를 미리 선택해서
+ * "부산을 누르지도 않았는데 다대포 카드가 떠 있는" 화면이 나왔다. 지금은 이렇게 간다.
+ *
+ *   진입 → 선택 없음 · 카드 숨김 · 포커스는 `Button_Back`(브레드크럼)
+ *   → 핀 호버 또는 `WASD`/`Enter` → 그 핀이 선택되고 카드가 뜬다
+ *
+ * ★ 마우스 호버를 따로 다루지 않는다. `UFF_CommonButtonBase` 가 `bFocusOnHover` 로 호버를
+ *   포커스로 바꾸므로, 핀의 `OnPinFocusReceived` 하나가 마우스·키보드·패드를 모두 받는다.
  */
 UCLASS(meta = (DisplayName = "FF Atlas Country Screen"))
 class FESTAFIESTA_API UFF_AtlasCountryScreen : public UFF_ActivatableScreenBase
@@ -85,6 +95,16 @@ protected:
 	TObjectPtr<UImage> Image_SelectedRegionOverlay;
 
 	/**
+	 * 행정구역 경계선 레이어. 지형 이미지 위에 얹는 투명 PNG다.
+	 *
+	 * 🔴 **`Image_Map` 과 반드시 같은 사각형을 쓴다.** 지형과 경계는 같은 좌표계
+	 * (WGS84 124–132°E · 33–39°N · 2400×2160)로 만들어졌으므로, 한쪽만 다른 크기로
+	 * 늘리면 경계가 해안선에서 어긋난다. `UpdateMapLayout` 이 세 레이어를 한 값으로 맞춘다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UImage> Image_MapBorders;
+
+	/**
 	 * 지도와 핀이 함께 올라가는 캔버스. **이 캔버스의 크기가 계산 기준**이다.
 	 * `Self Hit Test Invisible` 로 둔다 — 핀만 입력을 받아야 한다.
 	 */
@@ -92,6 +112,20 @@ protected:
 	TObjectPtr<UCanvasPanel> CanvasPanel_Map;
 
 	// --- 오른쪽 축제 카드 ---
+
+	/**
+	 * 카드 전체를 담는 상자. **고른 축제가 없으면 이걸 통째로 `Collapsed` 한다.**
+	 *
+	 * 자식 위젯을 하나씩 숨기지 않는 이유는, 배경 판·테두리·여백처럼 바인딩되지 않은 장식이
+	 * 카드에 남아 "빈 카드가 떠 있는" 화면이 되기 때문이다. 껍데기를 끄는 것이 유일하게
+	 * 확실한 방법이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UWidget> Panel_FestivalCard;
+
+	/** 카드 왼쪽의 `<` 장식. 카드와 함께 나타나고 사라진다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UWidget> Image_CardCaret;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UTextBlock> Text_CountryName;
@@ -118,12 +152,32 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UImage> Image_LockedIcon;
 
+	/**
+	 * 잠금 사유. **`Button_StartFestival` 과 같은 자리를 나눠 쓴다** —
+	 * 잠긴 축제에서는 시작 버튼을 `Collapsed` 하고 이 문구를 그 자리에 띄운다.
+	 * 눌리지 않는 버튼을 남겨 두는 것보다 왜 못 하는지 읽히는 편이 낫다.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UTextBlock> Text_LockReason;
 
 	/** `플레이 가능` 또는 잠금 상태를 글자로도 알린다 (AT-011). */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UTextBlock> Text_Availability;
+
+	/**
+	 * 위 문구를 감싸는 알약. 문구 길이에 맞춰 자동으로 늘어난다.
+	 * 고른 축제가 없으면 숨는다 — 빈 알약은 `-` 를 넣는 것과 같다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UWidget> Panel_AvailabilityPill;
+
+	/**
+	 * 알약 안의 `▶`. 자물쇠(`Image_LockedIcon`)와 교대한다.
+	 *
+	 * 색·문구·모양 셋으로 상태를 알린다 (AT-011). 알약 색만 바꾸면 색각 이상에서 구분되지 않는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
+	TObjectPtr<UImage> Image_PlayableIcon;
 
 	/** 축제를 고르기 전에 보여주는 안내. 카드가 비어 있는 이유를 적는다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
@@ -160,8 +214,19 @@ private:
 	/** 지도 사각형을 계산해 이미지와 핀에 **같은 값**을 적용한다. */
 	void UpdateMapLayout();
 
-	/** 고른 축제로 오른쪽 카드를 채운다. 없으면 안내만 남긴다. */
+	/** 고른 축제로 오른쪽 카드를 채운다. 없으면 카드를 통째로 숨기고 안내만 남긴다. */
 	void RefreshFestivalCard();
+
+	/**
+	 * 이 국가에서 처음 고를 만한 축제. 첫 플레이 가능 축제, 없으면 첫 항목이다.
+	 *
+	 * ★ **진입할 때 부르지 않는다.** `WASD`·`Enter` 로 플레이어가 지도에 들어올 때만 쓴다.
+	 *   진입 시 자동 선택은 2026-08-27 에 없앴다.
+	 */
+	FName FindDefaultFestivalId() const;
+
+	/** 아직 아무 핀도 고르지 않은 상태에서 지도로 들어간다. 성공하면 true. */
+	bool EnterMapFocus();
 
 	/** 마우스·키보드가 같은 경로로 선택 상태와 카드·핀 표현을 갱신한다. */
 	void SelectFestival(FName FestivalId, bool bMoveFocus);
@@ -177,6 +242,10 @@ private:
 
 	UFUNCTION()
 	void HandlePinClicked(UFF_CommonButtonBase* Button);
+
+	/** 핀에 포커스가 들어오면 그 축제를 고른다. 마우스 호버도 여기로 들어온다. */
+	UFUNCTION()
+	void HandlePinFocusReceived(UFF_AtlasPinButton* Pin);
 
 	UFUNCTION()
 	void HandleStartClicked(UFF_CommonButtonBase* Button);

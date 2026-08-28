@@ -156,6 +156,16 @@ protected:
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
 
+	/**
+	 * 가용 인원만 바뀐 경우 — 다시 그리기만 한다.
+	 *
+	 * !! `HandleStaffCountChanged` 를 재사용하면 안 된다 !! 그쪽은 "고용이 성공했다"로 보고
+	 * 스텝퍼 선택을 초기화한다. 다른 패널에서 프로그램을 편성했을 뿐인데 이 화면에서 고르던
+	 * 인원이 조용히 사라지면 안 된다.
+	 */
+	UFUNCTION()
+	void HandleAvailableStaffCountChanged(int32 NewValue);
+
 	UFUNCTION()
 	void HandleArrearsChanged(int32 NewValue);
 

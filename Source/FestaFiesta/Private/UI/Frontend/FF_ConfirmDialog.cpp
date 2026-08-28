@@ -14,6 +14,11 @@ void UFF_ConfirmDialog::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// 🔴 같은 이유로 결과 플래그도 여기서 되돌린다. 풀에서 돌아온 인스턴스는 지난번 결과를
+	// 들고 오고, `bResolved` 는 `HandleButtonClicked` 와 `NativeDestruct` 에서 true 로만 바뀐다.
+	// 리셋하지 않으면 **두 번째로 띄운 창의 확인·취소가 둘 다 죽고** 결과 이벤트도 안 나간다.
+	bResolved = false;
+
 	// 🔴 구독은 `NativeConstruct` 다. CommonUI 스택이 위젯을 풀에서 재사용하므로
 	// `NativeOnInitialized`(인스턴스당 한 번)에 구독하고 `NativeDestruct`(내려갈 때마다)에
 	// 해제하면 **두 번째로 띄운 확인창의 버튼이 죽는다.** 확인창은 반복해서 뜨는 화면이라

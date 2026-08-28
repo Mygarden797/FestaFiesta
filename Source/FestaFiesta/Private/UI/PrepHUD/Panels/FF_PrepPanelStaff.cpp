@@ -165,6 +165,10 @@ void UFF_PrepPanelStaff::BindViewModel()
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
 	CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleArrearsChanged);
+
+	// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이걸 함께 구독하지 않으면
+	// 프로그램을 편성한 뒤 `사용 가능` 숫자가 그대로 남는다.
+	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleAvailableStaffCountChanged);
 }
 
 void UFF_PrepPanelStaff::UnbindViewModel()
@@ -175,6 +179,7 @@ void UFF_PrepPanelStaff::UnbindViewModel()
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
 		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleArrearsChanged);
+		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleAvailableStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -190,6 +195,7 @@ void UFF_PrepPanelStaff::RefreshAll()
 	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
 	const int32 Temporary = ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE;
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
+	const int32 Available = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
 	const int32 MaxPerDay = ViewModel ? ViewModel->GetMaxTemporaryStaffPerDay() : INDEX_NONE;
 	const int32 Wage = ViewModel ? ViewModel->GetDailyStaffWageGold() : INDEX_NONE;
 	const int32 Rent = ViewModel ? ViewModel->GetDailyVenueRentGold() : INDEX_NONE;
@@ -204,10 +210,17 @@ void UFF_PrepPanelStaff::RefreshAll()
 		Gold);
 
 	// --- 현재 인원 ---
+	//
+	// !! 전체 인원만 띄우면 안 된다 !! 프로그램에 묶인 인원은 Event 대응에 쓸 수 없다.
+	// 내역(기본 · 알바)은 이 화면에서 플레이어가 직접 바꾸는 숫자라 지우지 않고 뒤에 덧붙인다.
 	SetTextOrHide(Text_CurrentStaff, (Total >= 0 && Base >= 0 && Temporary >= 0)
-		? FText::Format(
-			LOCTEXT("PrepStaff_Current", "{0}명 (기본 {1} · 알바 {2})"),
-			FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary))
+		? (Available >= 0
+			? FText::Format(
+				LOCTEXT("PrepStaff_CurrentWithAvailable", "{0}명 (기본 {1} · 알바 {2}) · {3}명 사용 가능"),
+				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary), FText::AsNumber(Available))
+			: FText::Format(
+				LOCTEXT("PrepStaff_Current", "{0}명 (기본 {1} · 알바 {2})"),
+				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary)))
 		: FText::GetEmpty());
 
 	// 오늘 최대는 기본 팀 + 하루 상한이다. 상한만 쓰면 "최대 6명"으로 읽혀 절반이 사라진다.
@@ -363,6 +376,12 @@ void UFF_PrepPanelStaff::HandleStaffCountChanged(int32 NewValue)
 	// 고용이 성공했으면 선택을 초기값으로 되돌린다. 그러지 않으면 같은 인원이 선택된 채로
 	// 남아 실수로 두 번 고용하기 쉽다.
 	DesiredCount = FMath::Max(0, DefaultSelectedCount);
+	RefreshAll();
+}
+
+void UFF_PrepPanelStaff::HandleAvailableStaffCountChanged(int32 NewValue)
+{
+	// 선택은 건드리지 않는다. 편성이 바뀌었을 뿐 이 화면에서 고른 인원은 그대로다.
 	RefreshAll();
 }
 

@@ -32,7 +32,11 @@
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelProgram.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelPromotion.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelStaff.h"
+#include "UI/PrepHUD/Panels/FF_PrepProgramCard.h"
+#include "UI/PrepHUD/Panels/FF_PrepPromotionCard.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepHudWbpBuilder"
 
@@ -76,6 +80,14 @@ namespace FFPrepHudWbpBuilder
 	//   `EFF_PrepHudTab` 항목 이름으로 이 에셋을 찾는다. 이름을 바꾸면 두 곳을 함께 고친다.
 	const FString StaffPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPanelStaff");
 	const FString CheckPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPanelCheck");
+	const FString ProgramPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPanelProgram");
+
+	const FString PromotionPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPanelPromotion");
+
+	// ★ 이 두 경로는 각 패널의 `CardWidgetFallbackPath` 기본값과 같아야 한다.
+	//   그래야 패널이 손으로 배선하지 않아도 카드를 찾는다.
+	const FString ProgramCardPackage = PrepFolder / TEXT("WBP_FF_PrepProgramCard");
+	const FString PromotionCardPackage = PrepFolder / TEXT("WBP_FF_PrepPromotionCard");
 
 	/** 패널 안에서 여러 개 중 하나를 고르는 버튼. 날씨 선택이 첫 사용처다. */
 	const FString ChoiceButtonPackage = PrepFolder / TEXT("WBP_FF_PrepChoiceButton");
@@ -93,7 +105,15 @@ namespace FFPrepHudWbpBuilder
 	constexpr float TabIconSize = 13.f;
 
 	/** 메뉴 행 칩의 모서리 반경. `UFF_PrepHudBar::MenuRowCornerRadius` 와 같게 유지한다. */
-	constexpr float MenuRowCornerRadius = 6.f;
+	constexpr float MenuRowCornerRadius = 0.f;
+
+	/**
+	 * 탭 버튼 모서리 반경. 각지게 하려면 0 이다.
+	 *
+	 * 이 값은 `WBP_FF_PrepHudTabButton` 의 버튼 스타일에 **구워진다** — 런타임 설정이 아니다.
+	 * 이미 만들어진 WBP 는 디자이너에서 직접 고친다 (생성기는 비파괴).
+	 */
+	constexpr float TabCornerRadius = 4.f;
 
 	/**
 	 * 🔴 텍스처 없이 단색을 칠하는 브러시.
@@ -143,15 +163,16 @@ namespace FFPrepHudWbpBuilder
 
 		// ★ 선택 상태 브러시는 `Pressed` 슬롯이다. 베이스가 선택 중에 세 상태 모두에 적용한다.
 		//   배경 형태가 바뀌어야 색맹 사용자도 선택을 구분할 수 있다 (AT-011).
+		//
+		// 🔴 **엔진 기본 버튼 텍스처를 틴트하지 않는다.** 처음엔 `TintColor` + `DrawAs = Box` 로
+		//    했는데, 그 텍스처가 둥근 9-slice 라 모서리가 우리가 정하지 않은 모양으로 나온다.
+		//    버튼 폭에 따라 9-slice 가 눌려서 **끝 버튼만 다르게 보이는** 일이 실제로 있었다
+		//    (2026-08-26). 다른 버튼들과 같이 `MakeSolidBrush` 로 모서리를 명시한다.
 		FButtonStyle Style = Root->GetStyle();
-		Style.Normal.TintColor = FSlateColor(Palette->InGame.Paper);
-		Style.Normal.DrawAs = ESlateBrushDrawType::Box;
-		Style.Hovered.TintColor = FSlateColor(Palette->InGame.Hover);
-		Style.Hovered.DrawAs = ESlateBrushDrawType::Box;
-		Style.Pressed.TintColor = FSlateColor(Palette->InGame.Teal);
-		Style.Pressed.DrawAs = ESlateBrushDrawType::Box;
-		Style.Disabled.TintColor = FSlateColor(Palette->InGame.PaperSunken);
-		Style.Disabled.DrawAs = ESlateBrushDrawType::Box;
+		Style.Normal = MakeSolidBrush(Palette->InGame.Paper, TabCornerRadius);
+		Style.Hovered = MakeSolidBrush(Palette->InGame.Hover, TabCornerRadius);
+		Style.Pressed = MakeSolidBrush(Palette->InGame.Teal, TabCornerRadius);
+		Style.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, TabCornerRadius);
 		Style.NormalPadding = FMargin(10.f, 4.f);
 		Style.PressedPadding = FMargin(10.f, 4.f);
 		Root->SetStyle(Style);
@@ -1379,13 +1400,581 @@ namespace FFPrepHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 5) 프로그램 카드 · 프로그램 패널
+	// =========================================================================
+
+	/**
+	 * 카드 한 장. `UFF_PrepProgramCard` 가 이름으로 잡는다 — 여기 이름을 바꾸면 그 헤더의
+	 * `BindWidgetOptional` 도 함께 고쳐야 한다. `Button_Root` 만 베이스가 강제한다.
+	 */
+	bool BuildProgramCard(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 프로그램 카드를 만들지 않았다."), PrepLogPrefix);
+			return false;
+		}
+
+		UButton* Root = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Root"), true);
+		USizeBox* Frame = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Card"));
+		UTextBlock* Label = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Label"), true);
+		UTextBlock* TimeRange = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_TimeRange"), true);
+		UTextBlock* Cost = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Cost"), true);
+		UTextBlock* Staff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Staff"), true);
+		UTextBlock* Capacity = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Capacity"), true);
+		UTextBlock* Badge = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Badge"), true);
+
+		if (!Root || !Frame || !Content || !Label || !TimeRange || !Cost || !Staff || !Capacity || !Badge)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+
+		// ★ 선택 상태 브러시는 `Pressed` 슬롯이다. 베이스가 선택 중에 세 상태에 함께 적용한다.
+		//   배경 형태가 바뀌어야 색맹 사용자도 어느 카드가 골라졌는지 안다 (AT-011).
+		FButtonStyle Style = Root->GetStyle();
+		Style.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 6.f);
+		Style.Hovered = MakeSolidBrush(Palette->InGame.Hover, 6.f);
+		Style.Pressed = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		Style.Disabled = MakeSolidBrush(Palette->InGame.Beige, 6.f);
+		Style.NormalPadding = FMargin(16.f, 14.f);
+		Style.PressedPadding = FMargin(16.f, 14.f);
+		Root->SetStyle(Style);
+
+		// 폭을 고정하지 않으면 카드마다 글자 길이만큼 달라져 줄이 들쭉날쭉해진다.
+		// 236 은 1160 폭 패널에서 네 장까지 한 줄에 들어가는 값이다.
+		Frame->SetWidthOverride(236.f);
+
+		// 문구는 전부 코드가 채운다. 여기 값은 디자이너 미리보기용이다.
+		StyleText(*Label, 16, Palette->InGame.Ink, TEXT("SemiBold"));
+		Label->SetText(LOCTEXT("PrepProgram_CardLabelPreview", "선셋 요가"));
+		Label->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Label = Content->AddChildToVerticalBox(Label))
+		{
+			Slot_Label->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Label->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*TimeRange, 12, Palette->InGame.InkMuted, TEXT("Medium"));
+		TimeRange->SetText(LOCTEXT("PrepProgram_TimePreview", "19:30 ~ 20:00"));
+		if (UVerticalBoxSlot* Slot_Time = Content->AddChildToVerticalBox(TimeRange))
+		{
+			Slot_Time->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Time->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Time->SetPadding(FMargin(0.f, 2.f, 0.f, 10.f));
+		}
+
+		StyleText(*Cost, 15, Palette->InGame.Ink, TEXT("SemiBold"));
+		Cost->SetText(LOCTEXT("PrepProgram_CostPreviewCard", "250 Gold"));
+		if (UVerticalBoxSlot* Slot_Cost = Content->AddChildToVerticalBox(Cost))
+		{
+			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Cost->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*Staff, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Staff->SetText(LOCTEXT("PrepProgram_StaffPreview", "인원 2명"));
+		if (UVerticalBoxSlot* Slot_Staff = Content->AddChildToVerticalBox(Staff))
+		{
+			Slot_Staff->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Staff->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Staff->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
+		}
+
+		StyleText(*Capacity, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Capacity->SetText(LOCTEXT("PrepProgram_CapacityPreview", "정원 16명 · 확정 400"));
+		Capacity->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Capacity = Content->AddChildToVerticalBox(Capacity))
+		{
+			Slot_Capacity->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Capacity->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Capacity->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
+		}
+
+		StyleText(*Badge, 12, Palette->InGame.Teal, TEXT("SemiBold"));
+		Badge->SetText(LOCTEXT("PrepProgram_BadgePreview", "✓ 편성함"));
+		if (UVerticalBoxSlot* Slot_Badge = Content->AddChildToVerticalBox(Badge))
+		{
+			Slot_Badge->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Badge->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Badge->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+		}
+
+		Frame->AddChild(Content);
+
+		if (UButtonSlot* Slot_Frame = Cast<UButtonSlot>(Root->AddChild(Frame)))
+		{
+			Slot_Frame->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Frame->SetVerticalAlignment(VAlign_Fill);
+			Slot_Frame->SetPadding(FMargin(0.f));
+		}
+		return true;
+	}
+
+	bool BuildProgramPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 프로그램 패널을 만들지 않았다."), PrepLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakePanelHeader(
+			Blueprint, Tree, *Palette, LOCTEXT("PrepProgram_TitlePreview", "프로그램"));
+
+		UTextBlock* DailyNotice = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_DailyNotice"), true);
+
+		// 🔴 스크롤을 두는 이유 — 점검 패널에서 한 `VerticalBox` 에 다 넣었더니 내용이 패널 높이를
+		//    넘어 하단 버튼이 화면 밖으로 밀렸다. 액션 행은 **스크롤 밖**에 둔다.
+		UScrollBox* Scroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Content"));
+
+		UWrapBox* Cards = MakeWidget<UWrapBox>(Blueprint, Tree, TEXT("Box_ProgramCards"), true);
+
+		UVerticalBox* FacilityRow = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_FacilityRow"), true);
+		UTextBlock* FacilityLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_FacilityLabel"));
+		UWrapBox* FacilityChoices = MakeWidget<UWrapBox>(Blueprint, Tree, TEXT("Box_FacilityChoices"), true);
+		UTextBlock* FacilityNotice = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_FacilityNotice"), true);
+
+		UVerticalBox* QuoteBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Quote"));
+		UTextBlock* CostPreview = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CostPreview"), true);
+		UTextBlock* RevenuePreview = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_RevenuePreview"), true);
+		UTextBlock* GoldAfter = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_GoldAfter"), true);
+		UTextBlock* StaffAfter = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_StaffAfter"), true);
+
+		UHorizontalBox* ActionRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Action"));
+		UTextBlock* BlockReason = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_BlockReason"), true);
+		UButton* Schedule = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Schedule"), true);
+		UTextBlock* ScheduleLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ScheduleLabel"));
+
+		if (!Root || !Content || !Header || !DailyNotice || !Scroll || !Cards
+			|| !FacilityRow || !FacilityLabel || !FacilityChoices || !FacilityNotice
+			|| !QuoteBox || !CostPreview || !RevenuePreview || !GoldAfter || !StaffAfter
+			|| !ActionRow || !BlockReason || !Schedule || !ScheduleLabel)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(28.f, 24.f));
+
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+		}
+
+		StyleText(*DailyNotice, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		DailyNotice->SetText(LOCTEXT("PrepProgram_NoticePreview",
+			"프로그램은 하루짜리입니다. 다음 날에는 다시 편성해야 합니다."));
+		DailyNotice->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Notice = Content->AddChildToVerticalBox(DailyNotice))
+		{
+			Slot_Notice->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Notice->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Notice->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+		}
+
+		// --- 카드 (런타임에 채운다) ---
+		Cards->SetInnerSlotPadding(FVector2D(12.f, 12.f));
+		if (UScrollBoxSlot* Slot_Cards = Cast<UScrollBoxSlot>(Scroll->AddChild(Cards)))
+		{
+			Slot_Cards->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Cards->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 시설 (카드를 고르기 전에는 패널이 접는다) ---
+		StyleText(*FacilityLabel, 14, Palette->InGame.Ink, TEXT("Medium"));
+		FacilityLabel->SetText(LOCTEXT("PrepProgram_FacilityLabel", "열 장소"));
+		if (UVerticalBoxSlot* Slot_FacilityLabel = FacilityRow->AddChildToVerticalBox(FacilityLabel))
+		{
+			Slot_FacilityLabel->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_FacilityLabel->SetHorizontalAlignment(HAlign_Fill);
+			Slot_FacilityLabel->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
+
+		FacilityChoices->SetInnerSlotPadding(FVector2D(8.f, 8.f));
+		if (UVerticalBoxSlot* Slot_FacilityChoices = FacilityRow->AddChildToVerticalBox(FacilityChoices))
+		{
+			Slot_FacilityChoices->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_FacilityChoices->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UScrollBoxSlot* Slot_FacilityRow = Cast<UScrollBoxSlot>(Scroll->AddChild(FacilityRow)))
+		{
+			Slot_FacilityRow->SetHorizontalAlignment(HAlign_Fill);
+			Slot_FacilityRow->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		StyleText(*FacilityNotice, 13, Palette->InGame.Amber, TEXT("Medium"));
+		FacilityNotice->SetText(LOCTEXT("PrepProgram_FacilityNoticePreview",
+			"이 프로그램을 열 수 있는 시설이 없습니다. `배치` 탭에서 먼저 지으세요."));
+		FacilityNotice->SetAutoWrapText(true);
+		if (UScrollBoxSlot* Slot_FacilityNotice = Cast<UScrollBoxSlot>(Scroll->AddChild(FacilityNotice)))
+		{
+			Slot_FacilityNotice->SetHorizontalAlignment(HAlign_Fill);
+			Slot_FacilityNotice->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+		}
+
+		// --- 견적 ---
+		StyleText(*CostPreview, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		CostPreview->SetText(LOCTEXT("PrepProgram_CostPreviewText", "250 Gold · 인원 2명"));
+		if (UVerticalBoxSlot* Slot_Cost = QuoteBox->AddChildToVerticalBox(CostPreview))
+		{
+			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Cost->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*RevenuePreview, 14, Palette->InGame.BandGood, TEXT("SemiBold"));
+		RevenuePreview->SetText(LOCTEXT("PrepProgram_RevenuePreviewText", "확정 매출 400"));
+		if (UVerticalBoxSlot* Slot_Revenue = QuoteBox->AddChildToVerticalBox(RevenuePreview))
+		{
+			Slot_Revenue->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Revenue->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Revenue->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+		}
+
+		StyleText(*GoldAfter, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		GoldAfter->SetText(LOCTEXT("PrepProgram_GoldAfterPreview", "편성 후 잔액 7,350"));
+		if (UVerticalBoxSlot* Slot_Gold = QuoteBox->AddChildToVerticalBox(GoldAfter))
+		{
+			Slot_Gold->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Gold->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Gold->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+		}
+
+		// ★ 인원이 묶이는 것이 이 카드의 진짜 대가다. 잔액 바로 아래에 둔다.
+		StyleText(*StaffAfter, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		StaffAfter->SetText(LOCTEXT("PrepProgram_StaffAfterPreview", "편성 후 사용 가능 4명"));
+		if (UVerticalBoxSlot* Slot_Staff = QuoteBox->AddChildToVerticalBox(StaffAfter))
+		{
+			Slot_Staff->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Staff->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Staff->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+		}
+
+		if (UScrollBoxSlot* Slot_Quote = Cast<UScrollBoxSlot>(Scroll->AddChild(QuoteBox)))
+		{
+			Slot_Quote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 🔴 스크롤은 남은 높이를 전부 받아야 한다. `Automatic` 이면 내용만큼 커져서
+		//    액션 행을 다시 밀어낸다 — 스크롤을 둔 이유가 사라진다.
+		if (UVerticalBoxSlot* Slot_Scroll = Content->AddChildToVerticalBox(Scroll))
+		{
+			Slot_Scroll->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Scroll->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// --- 액션 행 (스크롤 밖) ---
+		StyleText(*BlockReason, 13, Palette->InGame.Amber, TEXT("Medium"));
+		BlockReason->SetText(LOCTEXT("PrepProgram_ReasonPreview", "편성할 프로그램을 고르세요."));
+		BlockReason->SetAutoWrapText(true);
+		if (UHorizontalBoxSlot* Slot_Reason = ActionRow->AddChildToHorizontalBox(BlockReason))
+		{
+			Slot_Reason->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Reason->SetVerticalAlignment(VAlign_Center);
+			Slot_Reason->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
+		}
+
+		FButtonStyle ScheduleStyle = Schedule->GetStyle();
+		ScheduleStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 6.f);
+		ScheduleStyle.Hovered = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		ScheduleStyle.Pressed = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		ScheduleStyle.Disabled = MakeSolidBrush(Palette->InGame.LineStrong, 6.f);
+		ScheduleStyle.NormalPadding = FMargin(22.f, 8.f);
+		ScheduleStyle.PressedPadding = FMargin(22.f, 8.f);
+		Schedule->SetStyle(ScheduleStyle);
+
+		StyleText(*ScheduleLabel, 15, Palette->InGame.White, TEXT("SemiBold"));
+		ScheduleLabel->SetText(LOCTEXT("PrepProgram_ScheduleLabel", "편성하기"));
+		if (UButtonSlot* Slot_ScheduleLabel = Cast<UButtonSlot>(Schedule->AddChild(ScheduleLabel)))
+		{
+			Slot_ScheduleLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_ScheduleLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_ScheduleLabel->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Schedule = ActionRow->AddChildToHorizontalBox(Schedule))
+		{
+			Slot_Schedule->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Schedule->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_ActionRow = Content->AddChildToVerticalBox(ActionRow))
+		{
+			Slot_ActionRow->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ActionRow->SetHorizontalAlignment(HAlign_Fill);
+			Slot_ActionRow->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
+		}
+
+		// 🔴 `VAlign_Fill` 이다. `Top` 이면 스크롤이 높이를 못 받아 액션 행이 다시 밀린다.
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Fill);
+		}
+		return true;
+	}
+
+	// =========================================================================
+	// 6) 홍보 카드 · 홍보 패널
+	// =========================================================================
+
+	/** 홍보 카드 한 장. 프로그램 카드보다 줄이 적어 폭도 좁다. */
+	bool BuildPromotionCard(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 홍보 카드를 만들지 않았다."), PrepLogPrefix);
+			return false;
+		}
+
+		UButton* Root = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Root"), true);
+		USizeBox* Frame = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Card"));
+		UTextBlock* Label = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Label"), true);
+		UTextBlock* Cost = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Cost"), true);
+		UTextBlock* Effect = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Effect"), true);
+		UTextBlock* Badge = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Badge"), true);
+
+		if (!Root || !Frame || !Content || !Label || !Cost || !Effect || !Badge)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+
+		// ★ 선택 상태 브러시는 `Pressed` 슬롯이다. 베이스가 선택 중에 세 상태에 함께 적용한다 (AT-011).
+		FButtonStyle Style = Root->GetStyle();
+		Style.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 6.f);
+		Style.Hovered = MakeSolidBrush(Palette->InGame.Hover, 6.f);
+		Style.Pressed = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		Style.Disabled = MakeSolidBrush(Palette->InGame.Beige, 6.f);
+		Style.NormalPadding = FMargin(16.f, 14.f);
+		Style.PressedPadding = FMargin(16.f, 14.f);
+		Root->SetStyle(Style);
+
+		Frame->SetWidthOverride(220.f);
+
+		StyleText(*Label, 16, Palette->InGame.Ink, TEXT("SemiBold"));
+		Label->SetText(LOCTEXT("PrepPromotion_CardLabelPreview", "집중"));
+		if (UVerticalBoxSlot* Slot_Label = Content->AddChildToVerticalBox(Label))
+		{
+			Slot_Label->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Label->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*Cost, 15, Palette->InGame.Ink, TEXT("SemiBold"));
+		Cost->SetText(LOCTEXT("PrepPromotion_CardCostPreview", "1,200 Gold"));
+		if (UVerticalBoxSlot* Slot_Cost = Content->AddChildToVerticalBox(Cost))
+		{
+			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Cost->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Cost->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+		}
+
+		StyleText(*Effect, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Effect->SetText(LOCTEXT("PrepPromotion_CardEffectPreview", "방문객 ×1.18"));
+		if (UVerticalBoxSlot* Slot_Effect = Content->AddChildToVerticalBox(Effect))
+		{
+			Slot_Effect->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Effect->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Effect->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
+		}
+
+		StyleText(*Badge, 12, Palette->InGame.Teal, TEXT("SemiBold"));
+		Badge->SetText(LOCTEXT("PrepPromotion_CardBadgePreview", "✓ 구매함"));
+		if (UVerticalBoxSlot* Slot_Badge = Content->AddChildToVerticalBox(Badge))
+		{
+			Slot_Badge->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Badge->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Badge->SetPadding(FMargin(0.f, 10.f, 0.f, 0.f));
+		}
+
+		Frame->AddChild(Content);
+
+		if (UButtonSlot* Slot_Frame = Cast<UButtonSlot>(Root->AddChild(Frame)))
+		{
+			Slot_Frame->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Frame->SetVerticalAlignment(VAlign_Fill);
+			Slot_Frame->SetPadding(FMargin(0.f));
+		}
+		return true;
+	}
+
+	bool BuildPromotionPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 홍보 패널을 만들지 않았다."), PrepLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakePanelHeader(
+			Blueprint, Tree, *Palette, LOCTEXT("PrepPromotion_TitlePreview", "홍보"));
+
+		UTextBlock* OnceNotice = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_OnceNotice"), true);
+		UTextBlock* NotApplied = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_NotAppliedNotice"), true);
+
+		UScrollBox* Scroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_Content"));
+		UWrapBox* Cards = MakeWidget<UWrapBox>(Blueprint, Tree, TEXT("Box_PromotionCards"), true);
+
+		UVerticalBox* QuoteBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Quote"));
+		UTextBlock* CostPreview = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CostPreview"), true);
+		UTextBlock* GoldAfter = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_GoldAfter"), true);
+
+		UHorizontalBox* ActionRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Action"));
+		UTextBlock* BlockReason = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_BlockReason"), true);
+		UButton* Purchase = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Purchase"), true);
+		UTextBlock* PurchaseLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PurchaseLabel"));
+
+		if (!Root || !Content || !Header || !OnceNotice || !NotApplied || !Scroll || !Cards
+			|| !QuoteBox || !CostPreview || !GoldAfter
+			|| !ActionRow || !BlockReason || !Purchase || !PurchaseLabel)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(28.f, 24.f));
+
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 14.f));
+		}
+
+		StyleText(*OnceNotice, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		OnceNotice->SetText(LOCTEXT("PrepPromotion_OncePreview",
+			"홍보는 축제당 한 번만 고를 수 있고 3일 전체에 적용됩니다. 셋업이 지나면 살 수 없습니다."));
+		OnceNotice->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Once = Content->AddChildToVerticalBox(OnceNotice))
+		{
+			Slot_Once->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Once->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// ★ 아직 안 먹는다는 안내는 `Amber` 다. 흘려보내면 안 되는 사실이라 본문보다 눈에 띄어야 한다.
+		StyleText(*NotApplied, 13, Palette->InGame.Amber, TEXT("Medium"));
+		NotApplied->SetText(LOCTEXT("PrepPromotion_NotAppliedPreview",
+			"홍보 효과는 아직 방문객 수에 반영되지 않습니다. 배수만 표시합니다."));
+		NotApplied->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_NotApplied = Content->AddChildToVerticalBox(NotApplied))
+		{
+			Slot_NotApplied->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_NotApplied->SetHorizontalAlignment(HAlign_Fill);
+			Slot_NotApplied->SetPadding(FMargin(0.f, 4.f, 0.f, 16.f));
+		}
+
+		Cards->SetInnerSlotPadding(FVector2D(12.f, 12.f));
+		if (UScrollBoxSlot* Slot_Cards = Cast<UScrollBoxSlot>(Scroll->AddChild(Cards)))
+		{
+			Slot_Cards->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Cards->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		StyleText(*CostPreview, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		CostPreview->SetText(LOCTEXT("PrepPromotion_CostPreviewText", "1,200 Gold · 방문객 ×1.18"));
+		if (UVerticalBoxSlot* Slot_Cost = QuoteBox->AddChildToVerticalBox(CostPreview))
+		{
+			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Cost->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*GoldAfter, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		GoldAfter->SetText(LOCTEXT("PrepPromotion_GoldAfterPreview", "구매 후 잔액 6,400"));
+		if (UVerticalBoxSlot* Slot_Gold = QuoteBox->AddChildToVerticalBox(GoldAfter))
+		{
+			Slot_Gold->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Gold->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Gold->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
+		}
+
+		if (UScrollBoxSlot* Slot_Quote = Cast<UScrollBoxSlot>(Scroll->AddChild(QuoteBox)))
+		{
+			Slot_Quote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 🔴 스크롤이 남은 높이를 전부 받아야 액션 행이 안 밀린다.
+		if (UVerticalBoxSlot* Slot_Scroll = Content->AddChildToVerticalBox(Scroll))
+		{
+			Slot_Scroll->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Scroll->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*BlockReason, 13, Palette->InGame.Amber, TEXT("Medium"));
+		BlockReason->SetText(LOCTEXT("PrepPromotion_ReasonPreview", "살 홍보 등급을 고르세요."));
+		BlockReason->SetAutoWrapText(true);
+		if (UHorizontalBoxSlot* Slot_Reason = ActionRow->AddChildToHorizontalBox(BlockReason))
+		{
+			Slot_Reason->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Reason->SetVerticalAlignment(VAlign_Center);
+			Slot_Reason->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
+		}
+
+		FButtonStyle PurchaseStyle = Purchase->GetStyle();
+		PurchaseStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 6.f);
+		PurchaseStyle.Hovered = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		PurchaseStyle.Pressed = MakeSolidBrush(Palette->InGame.TealDeep, 6.f);
+		PurchaseStyle.Disabled = MakeSolidBrush(Palette->InGame.LineStrong, 6.f);
+		PurchaseStyle.NormalPadding = FMargin(22.f, 8.f);
+		PurchaseStyle.PressedPadding = FMargin(22.f, 8.f);
+		Purchase->SetStyle(PurchaseStyle);
+
+		StyleText(*PurchaseLabel, 15, Palette->InGame.White, TEXT("SemiBold"));
+		PurchaseLabel->SetText(LOCTEXT("PrepPromotion_PurchaseLabel", "구매하기"));
+		if (UButtonSlot* Slot_PurchaseLabel = Cast<UButtonSlot>(Purchase->AddChild(PurchaseLabel)))
+		{
+			Slot_PurchaseLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_PurchaseLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_PurchaseLabel->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Purchase = ActionRow->AddChildToHorizontalBox(Purchase))
+		{
+			Slot_Purchase->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Purchase->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_ActionRow = Content->AddChildToVerticalBox(ActionRow))
+		{
+			Slot_ActionRow->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ActionRow->SetHorizontalAlignment(HAlign_Fill);
+			Slot_ActionRow->SetPadding(FMargin(0.f, 18.f, 0.f, 0.f));
+		}
+
+		// 🔴 `VAlign_Fill` 이다. `Top` 이면 스크롤이 높이를 못 받는다.
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Fill);
+		}
+		return true;
+	}
+
+	// =========================================================================
 	// 실행
 	// =========================================================================
 
 	void RunPrepHudUmg()
 	{
 		UE_LOG(LogFFUIWbpBuilder, Display,
-			TEXT("%s_BEGIN: 없는 WBP 만 만든다 (탭 버튼 → 자리표시 → 인력 → 선택 버튼 → 점검 → 하단 바)."),
+			TEXT("%s_BEGIN: 없는 WBP 만 만든다 "
+				 "(탭 버튼 → 자리표시 → 인력 → 선택 버튼 → 점검 → 프로그램 → 홍보 → 하단 바)."),
 			PrepLogPrefix);
 
 		// 순서가 고정이다. 바가 탭 버튼의 `GeneratedClass` 를 자식으로 넣는다.
@@ -1452,6 +2041,48 @@ namespace FFPrepHudWbpBuilder
 				PrepLogPrefix, *ChoiceButtonPackage);
 		}
 
+		// 프로그램 카드와 패널. 패널은 카드를 **런타임에** 만들어 넣으므로 여기서는 순서 의존이
+		// 없다 — 패널이 이름 경로(`UFF_PrepPanelProgram::CardWidgetFallbackPath`)로 찾는다.
+		EnsureWidgetBlueprint(
+			PrepLogPrefix,
+			ProgramCardPackage,
+			PrepFolder,
+			*UFF_PrepProgramCard::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildProgramCard(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			PrepLogPrefix,
+			ProgramPanelPackage,
+			PrepPanelsFolder,
+			*UFF_PrepPanelProgram::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildProgramPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			PrepLogPrefix,
+			PromotionCardPackage,
+			PrepFolder,
+			*UFF_PrepPromotionCard::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildPromotionCard(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			PrepLogPrefix,
+			PromotionPanelPackage,
+			PrepPanelsFolder,
+			*UFF_PrepPanelPromotion::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildPromotionPanel(Blueprint, Tree);
+			});
+
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
 		if (!TabButtonClass)
 		{
@@ -1483,7 +2114,8 @@ namespace FFPrepHudWbpBuilder
 
 	FAutoConsoleCommand PrepHudUmgCommand(
 		TEXT("FF.PrepHudUMG"),
-		TEXT("준비 단계 HUD 의 WBP 6종(탭 버튼·자리표시·인력·선택 버튼·점검·하단 바)을 만든다. "
+		TEXT("준비 단계 HUD 의 WBP 10종"
+			 "(탭 버튼·자리표시·인력·선택 버튼·점검·프로그램 카드/패널·홍보 카드/패널·하단 바)을 만든다. "
 			 "이미 있으면 건드리지 않는다."),
 		FConsoleCommandDelegate::CreateStatic(&RunPrepHudUmg));
 }

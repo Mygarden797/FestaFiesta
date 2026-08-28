@@ -374,11 +374,11 @@ protected:
 	/**
 	 * 메뉴 행 칩 모서리 반경(px).
 	 *
-	 * 메뉴 행은 **버튼 폭까지만** 배경이 오는 떠 있는 칩이라 상태 행과 반경이 다르다.
-	 * 각지게 하려면 0 을 넣는다.
+	 * 메뉴 행은 **버튼 폭까지만** 배경이 오는 떠 있는 칩이다.
+	 * 기본은 0(각진 사각형)이다 — 2026-08-26 실기에서 둥근 쪽이 어색해 각진 것으로 정했다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
-	float MenuRowCornerRadius = 6.f;
+	float MenuRowCornerRadius = 0.f;
 
 	/**
 	 * 메뉴 행 배경을 **버튼 폭까지만** 오게 할지.
@@ -391,6 +391,10 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout")
 	bool bMenuRowHugsButtons = true;
+
+	/** `1일차 · 셋업` 칩 모서리 반경(px). 0 이면 각진 사각형이다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
+	float DayStageCornerRadius = 4.f;
 
 	/**
 	 * 패널을 빈 곳에서 끌어 옮길 수 있게 할지.

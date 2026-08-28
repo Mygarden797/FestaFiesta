@@ -67,11 +67,26 @@ struct FESTAFIESTA_API FFF_AtlasCountryEntry
 	TSoftObjectPtr<UStaticMesh> LandmarkMesh;
 
 	/**
-	 * 2.5D 국가 지도 배경. Two Point Campus 풍 프리렌더 이미지다.
+	 * 국가 지도 배경.
+	 *
+	 * 🔴 **알파가 있는 이미지를 넣는다.** 바다까지 칠해진 불투명 합성본을 넣으면 배경 위에
+	 * 지도 사각형의 경계선이 그대로 보인다 (2026-08-27에 실제로 그랬다). 육지만 남기고
+	 * 나머지는 투명해야 화면의 바다 배경과 이어진다.
+	 *
 	 * 비어 있으면 국가 지도 화면이 네모 박스 + 팔레트 색으로 대신 그린다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map")
 	TSoftObjectPtr<UTexture2D> MapImage;
+
+	/**
+	 * 행정구역 경계선 레이어. `MapImage` 위에 같은 사각형으로 겹쳐 그린다.
+	 *
+	 * ★ **`MapImage` 와 좌표계·크기가 같은 이미지여야 한다.** 지형에 경계를 구워 넣지 않고
+	 *   나누는 이유는, 경계 두께·색을 지형을 다시 만들지 않고 바꿀 수 있어서다.
+	 *   비어 있으면 경계 없이 지형만 그린다 — 없다고 화면이 죽지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map")
+	TSoftObjectPtr<UTexture2D> MapBordersImage;
 
 	/** 고를 수 있는지. 잠긴 국가는 자물쇠 + `LockReason` 을 함께 띄우고 진입을 막는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lock")

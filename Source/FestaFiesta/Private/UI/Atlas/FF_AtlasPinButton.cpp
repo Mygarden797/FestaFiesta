@@ -21,19 +21,28 @@ void UFF_AtlasPinButton::SetPinData(
 	// 이름은 베이스의 `Text_Label` 이 그린다.
 	SetButtonLabel(Title);
 
-	if (Text_PinBadge)
-	{
-		// 값이 없으면 칸을 숨긴다. `0` 이나 `-` 를 넣지 않는다 (ui-scope 제약 5).
-		Text_PinBadge->SetText(Badge);
-		Text_PinBadge->SetVisibility(
-			Badge.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	}
+	// 실제 표시는 `RefreshPinVisual` 이 한다 — 잠김 여부에 따라 문구가 바뀌므로
+	// 두 곳에서 쓰면 갈라진다.
+	BadgeText = Badge;
 
 	RefreshPinVisual();
 
 	// 🔴 `SetIsEnabled(false)` 를 쓰지 않는다. 잠긴 핀에도 **포커스는 간다** —
 	//    비활성 버튼은 게임패드 포커스에서 빠져 그 나라가 없는 것처럼 된다.
 	//    선택을 막는 것은 화면이 사유 문구와 함께 처리한다.
+}
+
+void UFF_AtlasPinButton::NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent)
+{
+	// 베이스가 `bHasFocusPath` 를 켜고 포커스 링을 갱신한다. 먼저 부른다.
+	Super::NativeOnAddedToFocusPath(InFocusEvent);
+
+	// `PinId` 가 아직 없는 상태(SetPinData 전)에는 알리지 않는다.
+	// 화면이 `NAME_None` 을 받으면 선택을 지우는 것으로 해석해 방금 띄운 카드를 도로 닫는다.
+	if (!PinId.IsNone())
+	{
+		OnPinFocusReceived.Broadcast(this);
+	}
 }
 
 void UFF_AtlasPinButton::SetSelectedState(bool bInSelected)
@@ -46,6 +55,21 @@ void UFF_AtlasPinButton::SetSelectedState(bool bInSelected)
 void UFF_AtlasPinButton::RefreshPinVisual()
 {
 	const ESlateVisibility Visible = ESlateVisibility::HitTestInvisible;
+
+	if (Text_PinBadge)
+	{
+		// 🔴 잠긴 핀은 배지 대신 **상태 문구**를 띄운다. 지도 위 마커는 작아서 채움/테두리
+		//    차이만으로는 구분되지 않는다 (AT-011, `icon-inventory.md` 의 `● ◐ ○` 금지와 같은 이유).
+		//    지역 이름은 카드에서 읽을 수 있으므로 여기서는 상태가 더 중요하다.
+		const FText Shown = bSelectable
+			? BadgeText
+			: NSLOCTEXT("FestaFiestaUI", "AtlasPinLockedTag", "준비 중");
+
+		// 값이 없으면 칸을 숨긴다. `0` 이나 `-` 를 넣지 않는다 (ui-scope 제약 5).
+		Text_PinBadge->SetText(Shown);
+		Text_PinBadge->SetVisibility(
+			Shown.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
 
 	if (Image_PinDefault)
 	{

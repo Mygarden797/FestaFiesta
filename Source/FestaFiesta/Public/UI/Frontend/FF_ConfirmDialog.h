@@ -29,7 +29,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnConfirmDialogResolved);
 /**
  * **되돌릴 수 없는 행동 전용** 확인창.
  *
- * 지금 쓰는 곳 — 게임 종료. 앞으로 — 피날레 구매(축제당 1회, 되돌릴 수 없음).
+ * 🔴 **아직 실사용처가 없다** (2026-08-27 확인). 타이틀의 `게임 종료` 는 이 창을 거치지 않고
+ * `QuitGame` 을 바로 부른다 — 예전 주석의 `지금 쓰는 곳 — 게임 종료` 는 낡은 기록이었다.
+ * **첫 사용처는 피날레 구매**다 (축제당 1회, 되돌릴 수 없음).
  * 되돌릴 수 있는 행동에는 쓰지 않는다. 확인창이 흔해지면 아무도 읽지 않게 된다.
  *
  * === 기본 포커스는 항상 `취소` 다 ===
@@ -52,7 +54,11 @@ class FESTAFIESTA_API UFF_ConfirmDialog : public UFF_ActivatableScreenBase
 
 public:
 	/**
-	 * 내용을 채운다. **띄우기 전에 부른다.**
+	 * 내용을 채운다. **`PushPanel` 로 인스턴스를 받은 직후에 부른다.**
+	 *
+	 * 인스턴스를 얻는 창구가 `PushPanel` 의 반환값뿐이라 물리적으로 Push 이후가 된다.
+	 * 활성화가 먼저 돌아도 안전하다 — `NativeGetDesiredFocusTarget()` 은 `Button_Cancel`
+	 * 포인터를 직접 보므로 내용이 아직 비어 있어도 포커스는 취소에 간다.
 	 *
 	 * @param InTitle        무엇을 확인하는지. `게임을 종료할까요?`
 	 * @param InBody         되돌릴 수 없다는 사실과 그 결과. 비우지 않는다
@@ -108,6 +114,10 @@ protected:
 	TSubclassOf<UFF_StatCard> RowWidgetClass;
 
 private:
-	/** 두 번 눌리는 것을 막는다. 되돌릴 수 없는 행동이 두 번 실행되면 안 된다. */
+	/**
+	 * 한 번 띄운 동안 두 번 눌리는 것을 막는다. 되돌릴 수 없는 행동이 두 번 실행되면 안 된다.
+	 *
+	 * **수명은 창 한 번이다.** 풀에서 재사용되는 인스턴스라 `NativeConstruct` 가 매번 리셋한다.
+	 */
 	bool bResolved = false;
 };

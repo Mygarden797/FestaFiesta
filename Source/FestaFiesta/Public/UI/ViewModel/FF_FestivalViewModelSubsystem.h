@@ -17,6 +17,7 @@
 
 class UFF_FestivalStageSubsystem;
 class UFF_FestivalProgressionSubsystem;
+class UFF_StageEconomyBridgeSubsystem;
 // !! class가 아니라 struct다 !! (Core/Public/HAL/IConsoleManager.h)
 // class로 쓰면 C4099가 나고, 이 프로젝트는 경고를 에러로 취급한다.
 struct IConsoleCommand;
@@ -24,6 +25,84 @@ struct IConsoleCommand;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
+
+// 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
+
+/**
+ * 홍보 등급.
+ *
+ * 🔴 **이것은 임시 UI 쪽 enum 이다.** 경제 시스템에는 홍보 등급을 가리키는 타입이 없다 —
+ * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이고
+ * 구매 함수도 없다 (2026-08-27 확인, `EFF_SpendReason::Promotion` 호출부 0곳).
+ *
+ * 김시리님이 `EFF_PromotionGrade` 와 구매 API 를 만들면 **이 enum 을 지우고 그것으로 바꾼다.**
+ * 그때 고칠 곳은 이 파일과 홍보 패널뿐이다 — 위젯 트리는 그대로다.
+ */
+UENUM(BlueprintType)
+enum class EFF_PromotionChoice : uint8
+{
+	/** 안 함. 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0). */
+	None		UMETA(DisplayName = "안 함"),
+
+	Basic		UMETA(DisplayName = "기본"),
+	Focused		UMETA(DisplayName = "집중")
+};
+
+/** 등급이 바뀌었다. 지금은 UI 안에서만 도는 값이다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPromotionViewChanged, EFF_PromotionChoice, NewChoice);
+
+/**
+ * 홍보 등급 한 줄. 화면이 `UFF_FestivalDefinition` 을 직접 읽지 않게 한다.
+ */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_PromotionOptionView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	EFF_PromotionChoice Choice = EFF_PromotionChoice::None;
+
+	/** 홍보비. `안 함` 은 0 이고 그 0 은 확정 정보다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	int32 CostGold = 0;
+
+	/** 일일 방문객에 곱한다. `안 함` 은 1.0. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Promotion")
+	float VisitorMultiplier = 1.f;
+};
+
+/**
+ * 프로그램을 열 수 있는 시설 한 곳.
+ *
+ * === 왜 UI 가 시설 종류를 직접 판정하지 않나 ===
+ * 카드의 `AllowedFacilityTypes` 와 시설 이름 규칙을 맞춰 보는 판정은 이미
+ * `FFF_ProgramScheduleRules::IsFacilityTypeAllowed` 가 소유한다. UI 가 같은 비교를 다시 쓰면
+ * 규칙이 두 곳에 생긴다 — ViewModel 은 그 함수를 **불러서** 목록만 만든다 (UI 규칙 2).
+ */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_PrepFacilityOption
+{
+	GENERATED_BODY()
+
+	/** `TryScheduleProgram` 에 그대로 넘기는 핸들. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FGuid FacilityInstanceId;
+
+	/**
+	 * 화면에 쓸 이름. 지금은 시설 식별자의 **고유 토큰**이다.
+	 *
+	 * ⚠️ 시설에 사람이 읽을 이름(`FText`)을 가진 필드가 아직 없다 — `UFFZSFacilityDefinition` 에는
+	 * 썸네일만 있다. 진짜 표시 이름이 생기면 여기만 바꾼다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FText DisplayName;
+
+	/** 어느 구역인지. 같은 종류 부스가 여러 개일 때 구분에 쓴다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Program")
+	FName ZoneId;
+};
 
 /**
  * UI용 Read Model.
@@ -171,6 +250,33 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
 	FFF_OnIntMetricChanged OnTotalStaffCountChanged;
 
+	// --- 가용 인원 (2026-08-27 추가 — 2026-08-25 김시리 지시) ---
+	//
+	// !! 전체 인원만 보여주면 안 된다 !!
+	// 프로그램을 편성하면 그만큼 인원이 묶여서 Event 대응에 쓸 수 없다. 전체만 띄우면
+	// 플레이어가 6명을 다 쓸 수 있다고 착각한다. 화면 표기는 `6명 중 3명 사용 가능` 형태다.
+	//
+	// 지금은 프로그램이 0개라 두 값이 같아서 증상이 안 보인다. 프로그램 패널이 생기는 순간
+	// 조용히 틀린 숫자가 되므로 먼저 넣어 둔다.
+
+	/** Event 대응에 쓸 수 있는 인원 = 전체 − 프로그램에 묶인 인원. 시작 전에는 `INDEX_NONE`. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetAvailableStaffCount() const { return AvailableStaffCount; }
+
+	/** 프로그램에 묶여 있는 인원. 막힌 이유를 화면이 설명할 때 쓴다. 시작 전에는 `INDEX_NONE`. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetStaffAssignedToPrograms() const;
+
+	/**
+	 * 가용 인원이 바뀔 때.
+	 *
+	 * !! `OnTotalStaffCountChanged` 하나만 구독하면 안 된다 !!
+	 * 프로그램 편성은 전체 인원을 바꾸지 않으므로 그 델리게이트가 울리지 않는다.
+	 * 반대로 알바 고용은 편성을 바꾸지 않아도 가용 인원을 늘린다 — 그래서 둘 다 필요하다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
+	FFF_OnIntMetricChanged OnAvailableStaffCountChanged;
+
 	// --- 알바 고용 (2026-08-26 추가 — U5 인력 패널) ---
 	//
 	// 판정의 소유자는 경제 시스템이다. **UI 가 `Gold / 임금` 을 직접 계산하지 않는다** —
@@ -241,15 +347,135 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	int32 GetAdmissionFeeGold() const;
 
-	// --- 피날레 (점검 패널의 마지막 날 요약용) ---
+	// --- 피날레 (점검 패널 요약 + U5 피날레 구매 패널) ---
+	//
+	// **축제당 1회이고 환불이 없다.** 그래서 이 표면은 다른 값들과 성격이 다르다 —
+	// 구매 화면은 누르기 전에 확인창을 거쳐야 하고, 한 번 사면 모든 등급이 잠긴다.
+	//
+	// 등급·가격·보너스를 UI 가 하드코딩하지 않는다. 밸런스 값이라 데이터에서 온다.
 
-	/** 구매한 등급. 안 샀으면 `None`. 구매 화면은 피날레 패널이 따로 갖는다. */
+	/** 구매한 등급. 안 샀으면 `None`. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	EFF_FinaleGrade GetPurchasedFinaleGrade() const;
 
 	/** 구매한 등급의 만족도 가산값. 안 샀으면 0 — 여기 0 은 확정 정보다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
 	int32 GetFinaleSatisfactionBonus() const;
+
+	/**
+	 * 살 수 있는 등급 전체와 각 가격·보너스. 축제가 시작되지 않았으면 빈 배열이다.
+	 *
+	 * 데이터에 `None` 등급은 들어가지 않는다 (`UFF_FestivalDefinition::Validate` 가 에러로 잡는다).
+	 * 화면의 `미구매` 카드는 이 배열이 아니라 `GetPurchasedFinaleGrade()` 로 그린다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	TArray<FFF_FinaleTier> GetFinaleTiers() const;
+
+	/**
+	 * 지금 피날레를 살 수 있는 단계인지 (마지막 날 개장 준비).
+	 *
+	 * !! 이 값으로 요청을 막지 않는다 !! 카드 잠금 표시에만 쓴다 — 최종 판정은 경제가 소유한다.
+	 * **이미 구매했어도 false 가 된다.** 막힌 이유를 화면이 구분하려면
+	 * `GetPurchasedFinaleGrade()` 를 함께 봐야 한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
+	bool CanPurchaseFinaleNow() const;
+
+	/**
+	 * 등급이 바뀔 때. 실질적으로 `None → 구매한 등급` 한 번만 울린다.
+	 * 점검 패널의 요약 줄과 피날레 패널의 카드 잠금이 이걸로 갱신된다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnFinaleGradeViewChanged OnPurchasedFinaleGradeChanged;
+
+	// --- 유료 프로그램 (2026-08-27 추가 — U5 프로그램 패널) ---
+	//
+	// 하루짜리 카드다. 아침에 Gold 와 인원을 걸고 편성하면 정원만큼 손님이 추가로 온다.
+	// **인원이 묶이는 것이 대가**라 `GetAvailableStaffCount()` 와 짝으로 봐야 한다.
+
+	/** 편성할 수 있는 카드 전체. 축제가 시작되지 않았으면 빈 배열이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FFF_ProgramCard> GetProgramCatalog() const;
+
+	/** 오늘 이미 편성한 카드 id. 하루 경계에서 비워진다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FName> GetScheduledProgramIds() const;
+
+	/**
+	 * 이 카드를 편성할 수 있는지. 상태를 바꾸지 않으므로 카드 잠금·사유 표시에 그대로 쓴다.
+	 *
+	 * !! 이 값으로 요청을 막지 않는다 !! 최종 판정은 경제가 소유한다.
+	 * **시설 종류는 보지 않는다** — 그건 `GetEligibleFacilitiesForProgram()` 이 답한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	EFF_ProgramPurchaseResult CanScheduleProgram(FName ProgramId) const;
+
+	/**
+	 * 지금이 편성할 수 있는 단계인지 (셋업 · 개장 준비).
+	 *
+	 * 🔴 **시설 배치(`IsReconfigureAllowed`)와 허용 단계가 다르다.** 홍보 프리뷰에서는 부스를
+	 * 옮길 수는 있어도 편성은 못 한다. 두 규칙을 같은 것으로 묶지 않는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	bool CanScheduleProgramNow() const;
+
+	/**
+	 * 이 카드를 열 수 있는 시설 목록. 없으면 빈 배열이고 화면은 `부스를 먼저 지으세요` 를 띄운다.
+	 *
+	 * 편성에는 **카드뿐 아니라 장소도** 필요하다 — `TryScheduleProgram` 이 시설 핸들을 받는다.
+	 * 요가를 화장실에서 여는 경로를 막기 위해서다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FFF_PrepFacilityOption> GetEligibleFacilitiesForProgram(FName ProgramId) const;
+
+	/** 오늘 편성이 바뀔 때. 가용 인원도 같이 바뀌므로 두 표시를 함께 갱신한다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
+	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
+
+	// --- 홍보 (2026-08-27 추가 — U5 홍보 패널) ---
+	//
+	// 🔴 **여기만 절반이 더미다.** 인력·프로그램·피날레와 다르다.
+	//
+	// | 조각 | 어디 것인가 |
+	// | --- | --- |
+	// | 등급 비용·배수 | 경제 데이터 (`UFF_FestivalDefinition`) — **진짜** |
+	// | Gold 차감·원장 기록 | 소유자 `TrySpend(..., EFF_SpendReason::Promotion)` — **진짜** |
+	// | 어느 등급을 샀는가 | **이 클래스가 들고 있는 더미** |
+	// | 배수가 방문객에 먹는 것 | **아무도 소비하지 않는다** |
+	//
+	// 마지막 줄이 중요하다 — 사도 방문객이 늘지 않는다. **그 사실을 화면에 적어야 한다.**
+	// 김시리님 API 가 오면 아래 넷의 구현만 갈아끼운다 (`UI_API.md` 요청 표).
+
+	/** 고를 수 있는 등급 전체. `안 함` 을 첫 줄로 포함한다. 축제 전에는 빈 배열이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Promotion")
+	TArray<FFF_PromotionOptionView> GetPromotionOptions() const;
+
+	/** 구매한 등급. 안 샀으면 `None`. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Promotion")
+	EFF_PromotionChoice GetPurchasedPromotion() const { return PurchasedPromotion; }
+
+	/**
+	 * 지금 홍보를 살 수 있는 단계인지 (셋업에서 한 번).
+	 *
+	 * ⚠️ **판정 소유자가 없어서 여기서 단계를 본다.** 프로그램의 `CanScheduleProgramNow()` 처럼
+	 * 브리지가 답해 줘야 하는 질문인데 그 API 가 없다. 생기면 중계로 바꾼다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Promotion")
+	bool CanPurchasePromotionNow() const;
+
+	/**
+	 * 홍보를 사 달라고 **요청한다.** 축제당 1회이고 3일 전체에 적용된다.
+	 *
+	 * Gold 차감은 소유자 `TrySpend` 가 하므로 실패하면 아무것도 바뀌지 않는다.
+	 * 등급 보관만 이 클래스가 임시로 한다.
+	 *
+	 * @return 요청이 받아들여졌는지. 실패 이유는 화면이 `FFF_PrepPromotionRules` 로 구분한다
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Promotion")
+	bool RequestPurchasePromotion(EFF_PromotionChoice Choice);
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Promotion")
+	FFF_OnPromotionViewChanged OnPurchasedPromotionChanged;
 
 	// --- Command ---
 
@@ -272,6 +498,36 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
 	bool RequestHireTemporaryStaff(int32 Count);
+
+	/**
+	 * 피날레를 구매해 달라고 **요청한다.** 확인창을 통과한 뒤에만 부른다 — 되돌릴 수 없다.
+	 *
+	 * 알바 고용과 달리 **실패 이유를 그대로 돌려준다.** 등급마다 막히는 이유가 다르고
+	 * (`Gold 부족` / `이미 구매` / `단계 아님`) 플레이어가 할 행동도 다르기 때문이다 (AT-011).
+	 *
+	 * !! 화면 문구를 이 enum 에서 직접 만들지 않는다 !!
+	 * `UMETA(DisplayName)` 을 런타임에 읽으면 패키징 빌드에서 영문이 뜬다 (2026-08-19 김시리 정정).
+	 * `UFF_EconomyDisplayTextLibrary::GetFinalePurchaseResultText()` 를 쓴다.
+	 *
+	 * 성공해도 화면을 직접 갱신하지 않는다. `OnPurchasedFinaleGradeChanged` · `OnGoldChanged`
+	 * 결과 이벤트로만 갱신된다 — 낙관적 갱신 금지 (UI 규칙 2).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	EFF_FinalePurchaseResult RequestPurchaseFinale(EFF_FinaleGrade Grade);
+
+	/**
+	 * 이 카드를 이 시설에 편성해 달라고 **요청한다.**
+	 *
+	 * 피날레와 달리 **확인창을 거치지 않는다.** 하루짜리이고 다음 날 다시 고를 수 있어서
+	 * 되돌릴 수 없는 결정이 아니다. 확인창을 흔하게 쓰면 아무도 읽지 않게 된다.
+	 *
+	 * 실패하면 아무것도 바뀌지 않는다 — 예약 슬롯을 못 만들면 Gold 도 차감하지 않는다.
+	 * 화면은 `OnScheduledProgramsChanged` · `OnGoldChanged` 결과 이벤트로만 갱신된다.
+	 *
+	 * 문구는 `UFF_EconomyDisplayTextLibrary` 가 소유한다. enum `DisplayName` 을 읽지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
+	EFF_ProgramPurchaseResult RequestScheduleProgram(FName ProgramId, FGuid FacilityInstanceId);
 
 	/**
 	 * 이 금액을 지금 지출할 수 있는지. 구매 버튼 비활성 판정에 쓴다.
@@ -399,6 +655,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
 	FText GetLiveClockText() const;
 
+	/**
+	 * Live 경과분을 게임 속 시각 문구로 바꾼다 (예: 90 → `19:30`).
+	 *
+	 * 프로그램 카드가 `StartMinutes`·`EndMinutes` 를 그대로 들고 있어서 필요하다.
+	 * **UI 가 시작 시각에 분을 더해 계산하지 않는다** — 개장 시각과 배율의 소유자는 Stage 시스템이다.
+	 * 소유자가 없으면 빈 값이고, 호출하는 쪽이 비어 있으면 시간 칸을 숨긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Stage")
+	FText GetLiveClockTextAtMinutes(int32 LiveMinutes) const;
+
 	// --- 스텁 전용. 실제 소유자 구현이 붙으면 삭제한다 ---
 
 	/**
@@ -462,9 +728,33 @@ protected:
 	UFUNCTION()
 	void HandleOwnerStaffCountChanged(int32 NewValue);
 
+	/**
+	 * 프로그램 편성이 바뀌었을 때 가용 인원을 다시 읽는다.
+	 *
+	 * 원본 델리게이트가 **인자를 싣지 않으므로** 핸들러도 파라미터가 없어야 한다
+	 * (`FFF_OnProgramScheduleChanged` 는 `DECLARE_DYNAMIC_MULTICAST_DELEGATE`).
+	 */
+	UFUNCTION()
+	void HandleOwnerProgramScheduleChanged();
+
+	/** 피날레 등급 변경을 위젯에 중계한다. 같은 등급이 두 번 오면 넘긴다. */
+	UFUNCTION()
+	void HandleOwnerFinaleGradeChanged(EFF_FinaleGrade NewGrade);
+
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
+
+	/** 피날레 구매 시점 판정의 소유자. Stage 와 경제를 함께 봐야 해서 브리지가 갖고 있다. */
+	UFF_StageEconomyBridgeSubsystem* GetStageEconomyBridgeSubsystem() const;
+
+	/**
+	 * 가용 인원을 소유자에게서 다시 읽어 반영한다.
+	 *
+	 * 전체 인원 변경(알바 고용)과 편성 변경(프로그램) 양쪽에서 부른다.
+	 * 축제 시작 전에는 `INDEX_NONE` 이다 — 0 을 띄우면 "쓸 사람이 없다"는 틀린 사실이 된다.
+	 */
+	void RefreshAvailableStaffCount();
 
 	/** Stage 시스템 구독을 시도한다. 아직 없으면 재시도를 예약한다. */
 	void TryBindStageSubsystem();
@@ -522,6 +812,22 @@ private:
 
 	UPROPERTY()
 	int32 TotalStaffCount = INDEX_NONE;
+
+	UPROPERTY()
+	int32 AvailableStaffCount = INDEX_NONE;
+
+	/**
+	 * 구매한 홍보 등급. **더미다** — 경제 시스템에 이 상태를 보관할 자리가 아직 없다.
+	 *
+	 * ⚠️ 저장에 안 들어가고 축제를 다시 시작해도 안 지워진다. 소유자 API 가 오면 이 필드를
+	 * 지우고 그쪽 값을 읽는다.
+	 */
+	UPROPERTY()
+	EFF_PromotionChoice PurchasedPromotion = EFF_PromotionChoice::None;
+
+	/** 중복 방송 차단용. Bind + Sync 와 실제 구매 방송이 같은 등급을 두 번 쏘지 않게 한다. */
+	UPROPERTY()
+	EFF_FinaleGrade LastBroadcastFinaleGrade = EFF_FinaleGrade::None;
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> CachedStageSubsystem;
