@@ -205,12 +205,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 SnapshotIntervalSteps = 30;
 
+	// Need 지표(UFF_NpcNeedMetricsSubsystem) 확정 주기, 고정 스텝 단위. 30 = 1초.
+	// 매 프레임 확정하면 OnNeedUnmetRatioChanged 가 초당 수십 번 뜬다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
+	int32 NeedMetricsIntervalSteps = 30;
+
 	void DespawnParty(int32 PartyID);
 
 	// 조정자가 여기에 물어 목적지를 내려준다. 비어 있으면 Crowd가 배회로 폴백한다
 	FFF_OnPartyNeedsDecision OnPartyNeedsDecision;
 
 	void RequestDecision(int32 LeaderAgentIndex, EFF_DecisionReason Reason);
+
+	/**
+	 * 새 목적지가 열렸을 때 유휴 파티에게만 재결정을 요청하고 요청한 파티 수를 돌려준다.
+	 *
+	 * ⛔ 줄에 서 있는 파티는 건드리지 않는다. RequestDecision 이 내부에서
+	 * ClearPartyQueueState(.., false) 를 부르는데 그 경로는 큐 상태를 **로컬에서만** 지운다 —
+	 * 줄에 선 파티에 걸면 이쪽은 "줄 안 섰음"이 되는데 Queue 는 그 파티를 계속 들고 있어
+	 * 자리가 영영 안 비고, 없는 파티를 서비스하게 된다.
+	 * 퇴장 중인 파티도 같은 이유로 제외한다(목적지가 출구로 이미 정해져 있다).
+	 *
+	 * @param MaxParties 이번에 요청할 상한. 0 이하면 상한 없음.
+	 *                   한 프레임에 결정 큐가 통째로 부풀지 않게 막는 안전판이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
+	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetPendingDecisionCount() const { return DecisionQueue.Num(); }
@@ -303,6 +323,10 @@ public:
 	// 막힘 때문에 목적지를 다시 고른 횟수. 0이면 이 경로가 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetStuckDecisionRequests() const { return StuckDecisionRequests; }
+
+	// 통행 상한에 막혀 되돌린 스텝 수. 0이면 상한이 한 번도 안 걸린 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Terrain")
+	int32 GetHeightBlockedSteps() const { return HeightBlockedSteps; }
 
 	// 목적지를 못 받았을 때 배회할 반경, UU. 리더의 현재 위치 기준이다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Decision")
@@ -405,7 +429,39 @@ public:
 
 	// 높이 격자 꼭짓점 간격(UU). 작을수록 정확하고 빌드가 비싸다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
-	float HeightFieldSpacingUU = 200.f;
+	float HeightFieldSpacingUU = 500.f;
+
+	// 격자를 NavMesh 경계에 맞춘다. 끄면 SimRadius 밖이 가장자리 높이로 클램프된다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bHeightFieldFitToNavBounds = true;
+
+	// 격자 반경(UU). 0이면 SimRadiusUU. bHeightFieldFitToNavBounds가 이긴다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float HeightFieldRadiusUU = 0.f;
+
+	// 한 칸 높이 차가 이를 넘으면 보간 없이 끊어 올린다(UU). 0이면 항상 보간
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float HeightFieldCliffStepUU = 50.f;
+
+	// 트레이스 시작 높이(UU). 지형 최고점보다 낮으면 그 위 지형을 못 잡아 개체가 파묻힌다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float HeightFieldTraceAboveUU = 5000.f;
+
+	// SimOrigin.Z 기준 상대 통행 상한(UU). 지면이 이보다 높은 곳으로는 들어가지 않는다.
+	// 0 이하면 제한이 없다.
+	//
+	// 절대 Z가 아니라 상대값인 이유는 맵을 옮기거나 SpawnActor를 다른 높이에 두어도 값이
+	// 그대로 통하기 때문이다. 기준면은 SpawnActor 위치이므로 축제장 지면이 곧 0이다.
+	//
+	// HeightFieldCliffStepUU와 혼동하지 않는다 — 그쪽은 절벽에서 Z를 끊어 올리라는 표시일
+	// 뿐이고 통행을 막지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	float MaxWalkableHeightAboveOriginUU = 250.f;
+
+	// 지면을 못 찾은 격자점도 통행 불가로 본다. 구멍이면 막는 것이 맞지만 트레이스가 놓친
+	// 지형이면 없던 벽이 생긴다. 켜기 전에 빌드 로그의 '지면을 못 찾은 격자점' 수를 볼 것.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
+	bool bBlockUnknownGround = false;
 
 	// 목표 추종을 사회력의 **구동력**으로 계산한다. bEnableAvoidance가 켜져 있을 때만 의미가 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
@@ -486,6 +542,12 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyMemberSpeedBoost = 1.15f;
+	
+	//파티 리더하고 심하게 이격 되었을 경우 SpeedBoost이상으로 빠르게 움직이기 위한 변수
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
+	float PartyMemberSpeedMultiplier = 1.3f;
+	
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite,Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float InitialNeedMaxFraction = 0.5f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -640,7 +702,14 @@ private:
 
 	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount) const;
 	FFF_NeedState MakeInitialNeeds(int32 StableAgentId) const;
-	void AdvanceNeeds();
+	/**
+	 * Need 를 시간만큼 올리고 파티별 체류 예산을 깎는다.
+	 *
+	 * @param bAggregateMetrics 이번 호출에서 Need 지표를 확정할 것인가.
+	 *                          켜면 이 함수의 유닛 순회에 표본 수집을 얹는다 —
+	 *                          집계 전용 순회를 따로 만들면 같은 배열을 두 번 돈다.
+	 */
+	void AdvanceNeeds(bool bAggregateMetrics);
 
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
@@ -718,6 +787,9 @@ private:
 
 	// 마지막 발행 이후 지난 고정 스텝 수. 프레임 수가 아니라 스텝 수다 — 프레임률로 세면 유량 집계 구간이 기기 성능에 따라 달라진다
 	int32 StepsSinceSnapshot = 0;
+
+	// 마지막 Need 지표 확정 이후 지난 고정 스텝 수. 위와 같은 이유로 프레임이 아니라 스텝으로 센다
+	int32 StepsSinceNeedMetrics = 0;
 
 	int32 SnapshotCount = 0;
 
@@ -835,6 +907,10 @@ private:
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
 
+	// 통행 상한에 막혀 되돌린 스텝 수. 이 값이 계속 오르는데 StuckDecisionRequests가 안 오르면
+	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다
+	int32 HeightBlockedSteps = 0;
+
 	// 큐 진행 감시. SampleQueueLiveness가 매 스텝 갱신한다
 	float LastObservedQueueSimTime = -1.f;
 	float LastQueueAdvanceSimTime = 0.f;
@@ -856,7 +932,11 @@ private:
 	TMap<FName, int32> InTransitMemberCounts;
 	
 	void RebuildInTransitMemberCounts();
-	
+
+	// 상대 통행 상한 손잡이를 높이 격자가 쓰는 절대 Z(cm)로 환산해 밀어넣는다.
+	// 조회 시점 값이라 빌드와 Tick 양쪽에서 부르며, Tick 쪽이 콘솔 변경을 바로 듣게 한다.
+	void ApplyWalkableCeiling();
+
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage);
 };

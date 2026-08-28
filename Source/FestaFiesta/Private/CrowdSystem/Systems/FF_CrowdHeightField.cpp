@@ -75,7 +75,8 @@ bool FFF_CrowdHeightField::Build(const FVector2D& CenterCm, double HalfSizeCm, d
 	return bAnyHit;
 }
 
-bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& OutHeightCm) const
+bool FFF_CrowdHeightField::TryLocateCell(const FVector2D& WorldXYCm, int32& OutIx, int32& OutIy,
+                                        double& OutTx, double& OutTy) const
 {
 	if (!IsValid())
 	{
@@ -85,11 +86,64 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 	const double Fx = FMath::Clamp((WorldXYCm.X - MinCornerCm.X) / SpacingCm, 0.0, static_cast<double>(NumX - 1));
 	const double Fy = FMath::Clamp((WorldXYCm.Y - MinCornerCm.Y) / SpacingCm, 0.0, static_cast<double>(NumY - 1));
 
-	const int32 Ix = FMath::Clamp(static_cast<int32>(FMath::FloorToDouble(Fx)), 0, NumX - 2);
-	const int32 Iy = FMath::Clamp(static_cast<int32>(FMath::FloorToDouble(Fy)), 0, NumY - 2);
+	OutIx = FMath::Clamp(static_cast<int32>(FMath::FloorToDouble(Fx)), 0, NumX - 2);
+	OutIy = FMath::Clamp(static_cast<int32>(FMath::FloorToDouble(Fy)), 0, NumY - 2);
 
-	const double Tx = FMath::Clamp(Fx - static_cast<double>(Ix), 0.0, 1.0);
-	const double Ty = FMath::Clamp(Fy - static_cast<double>(Iy), 0.0, 1.0);
+	OutTx = FMath::Clamp(Fx - static_cast<double>(OutIx), 0.0, 1.0);
+	OutTy = FMath::Clamp(Fy - static_cast<double>(OutIy), 0.0, 1.0);
+
+	return true;
+}
+
+bool FFF_CrowdHeightField::IsWalkable(const FVector2D& WorldXYCm) const
+{
+	if (!bHasWalkableCeiling)
+	{
+		return true;
+	}
+
+	int32 Ix = 0;
+	int32 Iy = 0;
+	double Tx = 0.0;
+	double Ty = 0.0;
+	if (!TryLocateCell(WorldXYCm, Ix, Iy, Tx, Ty))
+	{
+		return true;
+	}
+
+	const int32 I00 = Iy * NumX + Ix;
+
+	for (const int32 Index : { I00, I00 + 1, I00 + NumX, I00 + NumX + 1 })
+	{
+		if (!Valid.IsValidIndex(Index) || Valid[Index] == 0)
+		{
+			if (bBlockUnknownGround)
+			{
+				return false;
+			}
+
+			continue;
+		}
+
+		if (Heights[Index] > WalkableCeilingCm)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& OutHeightCm) const
+{
+	int32 Ix = 0;
+	int32 Iy = 0;
+	double Tx = 0.0;
+	double Ty = 0.0;
+	if (!TryLocateCell(WorldXYCm, Ix, Iy, Tx, Ty))
+	{
+		return false;
+	}
 
 	const int32 I00 = Iy * NumX + Ix;
 	const int32 I10 = I00 + 1;
@@ -100,6 +154,52 @@ bool FFF_CrowdHeightField::TryGetHeightCm(const FVector2D& WorldXYCm, double& Ou
 	const double W10 = Tx * (1.0 - Ty);
 	const double W01 = (1.0 - Tx) * Ty;
 	const double W11 = Tx * Ty;
+
+	// 절벽 판정을 먼저 한다. 네 꼭짓점 높이 차가 임계를 넘으면 보간이 아니라 계단으로 다룬다 —
+	// 보간하면 개체가 한 칸을 걷는 동안 비스듬히 떠올라 공중을 걷는 것처럼 보인다.
+	if (CliffStepCm > 0.0)
+	{
+		double MinCornerZ = 0.0;
+		double MaxCornerZ = 0.0;
+		int32 CornerCount = 0;
+
+		for (const int32 Index : { I00, I10, I01, I11 })
+		{
+			if (!Valid.IsValidIndex(Index) || Valid[Index] == 0)
+			{
+				continue;
+			}
+
+			const double H = Heights[Index];
+			if (CornerCount == 0)
+			{
+				MinCornerZ = H;
+				MaxCornerZ = H;
+			}
+			else
+			{
+				MinCornerZ = FMath::Min(MinCornerZ, H);
+				MaxCornerZ = FMath::Max(MaxCornerZ, H);
+			}
+			++CornerCount;
+		}
+
+		if (CornerCount > 0 && (MaxCornerZ - MinCornerZ) > CliffStepCm)
+		{
+			const int32 NearIx = (Tx < 0.5) ? Ix : Ix + 1;
+			const int32 NearIy = (Ty < 0.5) ? Iy : Iy + 1;
+			const int32 NearIndex = NearIy * NumX + NearIx;
+
+			if (Valid.IsValidIndex(NearIndex) && Valid[NearIndex] != 0)
+			{
+				OutHeightCm = Heights[NearIndex];
+				return true;
+			}
+
+			OutHeightCm = MaxCornerZ;
+			return true;
+		}
+	}
 
 	double WeightSum = 0.0;
 	double HeightSum = 0.0;

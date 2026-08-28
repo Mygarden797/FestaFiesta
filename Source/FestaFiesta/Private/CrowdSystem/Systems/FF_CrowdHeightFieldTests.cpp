@@ -187,4 +187,79 @@ bool FFF_CrowdHeightField_BuildIsDeterministic::RunTest(const FString& Parameter
 	return true;
 }
 
+// 통행 상한. 경사면(0.1 * x)이므로 상한 Z에 대응하는 x는 상한 / 0.1 이고, 판정이 네 꼭짓점의
+// 최댓값 기준이라 통행 경계는 그 x보다 한 칸(SpacingCm) 앞에 선다 — 그 보수성까지 같이 못박는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_WalkableCeilingBlocksHighGround, "FestaFiesta.Crowd.HeightField.WalkableCeilingBlocksHighGround", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_WalkableCeilingBlocksHighGround::RunTest(const FString& Parameters)
+{
+	using namespace FFF_HeightFieldTestHelpers;
+
+	FFF_CrowdHeightField Field;
+	Field.Build(FVector2D::ZeroVector, HalfSizeCm, SpacingCm, &SlopeSampler);
+
+	TestTrue(TEXT("상한을 세우기 전엔 전부 통행 가능하다"),
+		Field.IsWalkable(FVector2D(9999.0, 0.0)));
+
+	// 상한 510cm는 경사면에서 x=5100에 해당하고, 그 x는 꼭짓점 5000~5200 사이에 떨어진다.
+	Field.SetWalkableCeilingCm(510.0);
+
+	TestTrue(TEXT("낮은 쪽은 통행 가능하다"), Field.IsWalkable(FVector2D(-9999.0, 0.0)));
+	TestTrue(TEXT("상한보다 한 칸 이상 낮으면 통행 가능하다"), Field.IsWalkable(FVector2D(4000.0, 0.0)));
+	TestTrue(TEXT("상한을 넘는 꼭짓점이 없는 마지막 칸까지는 통행 가능하다"),
+		Field.IsWalkable(FVector2D(4900.0, 0.0)));
+	TestFalse(TEXT("상한을 넘는 지형은 통행 불가다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
+	TestFalse(TEXT("상한 등고선이 든 칸은 지면이 상한 아래여도 통째로 막힌다"),
+		Field.IsWalkable(FVector2D(5000.0, 0.0)));
+
+	Field.ClearWalkableCeiling();
+	TestTrue(TEXT("상한을 치우면 다시 통행 가능하다"), Field.IsWalkable(FVector2D(9999.0, 0.0)));
+
+	return true;
+}
+
+// 구멍 처리는 손잡이로 갈린다. 기본이 통과인 이유는 트레이스가 놓친 지형에 없던 벽이 생기는
+// 쪽이 더 위험하기 때문이고, 실제 구멍을 막고 싶은 맵은 켜서 쓴다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_UnknownGroundFollowsKnob, "FestaFiesta.Crowd.HeightField.UnknownGroundFollowsKnob", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_UnknownGroundFollowsKnob::RunTest(const FString& Parameters)
+{
+	using namespace FFF_HeightFieldTestHelpers;
+
+	auto HalfMissing = [](const FVector2D& QueryCm, double& OutHeightCm) -> bool
+	{
+		if (QueryCm.X > 0.0)
+		{
+			return false;
+		}
+		OutHeightCm = 100.0;
+		return true;
+	};
+
+	FFF_CrowdHeightField Field;
+	Field.Build(FVector2D::ZeroVector, HalfSizeCm, SpacingCm, HalfMissing);
+	Field.SetWalkableCeilingCm(500.0);
+
+	TestTrue(TEXT("기본값에서는 구멍도 통행 가능하다"), Field.IsWalkable(FVector2D(5000.0, 0.0)));
+
+	Field.SetBlockUnknownGround(true);
+	TestFalse(TEXT("켜면 구멍이 통행 불가가 된다"), Field.IsWalkable(FVector2D(5000.0, 0.0)));
+	TestTrue(TEXT("켜도 지면이 있는 쪽은 통행 가능하다"), Field.IsWalkable(FVector2D(-5000.0, 0.0)));
+
+	return true;
+}
+
+// 격자가 없는 맵에서 상한이 전원을 얼려버리면 안 된다 — 손잡이만 켜고 bEnableHeightField를
+// 끈 조합이 실제로 나온다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdHeightField_WalkableCeilingIsInertWithoutGrid, "FestaFiesta.Crowd.HeightField.WalkableCeilingIsInertWithoutGrid", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdHeightField_WalkableCeilingIsInertWithoutGrid::RunTest(const FString& Parameters)
+{
+	FFF_CrowdHeightField Field;
+	Field.SetWalkableCeilingCm(0.0);
+	Field.SetBlockUnknownGround(true);
+
+	TestFalse(TEXT("격자가 없다"), Field.IsValid());
+	TestTrue(TEXT("격자가 없으면 통행을 막지 않는다"), Field.IsWalkable(FVector2D::ZeroVector));
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -18,6 +18,7 @@
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Queue/FF_QueueWaitAdapter.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCrowdDecision, Log, All);
@@ -41,6 +42,25 @@ void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 
 	Crowd->OnPartyNeedsDecision.BindUObject(this, &UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision);
+
+	// 공연 시간표 게이팅. 시각의 유일한 출처가 Stage 이므로 여기서 시계를 들지 않는다.
+	// Stage 가 없는 월드(크라우드 단독 테스트 맵)에서는 게이팅이 꺼진 채로 돌아간다 —
+	// bMainStageGatingActive 가 false 로 남아 IsMainStageOpen() 이 항상 true 다.
+	if (UGameInstance* GameInstance = InWorld.GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnStageChanged.AddDynamic(this, &UFF_CrowdDecisionSubsystem::HandleStageChanged);
+			Stage->OnMainProgramStarted.AddDynamic(this, &UFF_CrowdDecisionSubsystem::HandleMainProgramStarted);
+			Stage->OnMainProgramEnded.AddDynamic(this, &UFF_CrowdDecisionSubsystem::HandleMainProgramEnded);
+		}
+		else
+		{
+			UE_LOG(LogCrowdDecision, Warning,
+				TEXT("FestivalStageSubsystem이 없다 — 공연 시간표 게이팅이 꺼진다(메인 무대가 상시 후보). ")
+				TEXT("Live 후반 무대 쏠림(AT-016)이 재현되지 않는다"));
+		}
+	}
 
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
 	CachedCoefficientTable = Settings ? Settings->UtilityCoefficientTable.LoadSynchronous() : nullptr;
@@ -80,9 +100,81 @@ void UFF_CrowdDecisionSubsystem::Deinitialize()
 				Crowd->OnPartyNeedsDecision.Unbind();
 			}
 		}
+
+		// Stage 는 GameInstance 스코프라 이 월드보다 오래 산다 — 안 끊으면 다음 월드까지
+		// 죽은 this 가 물려 있다.
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+			{
+				Stage->OnStageChanged.RemoveAll(this);
+				Stage->OnMainProgramStarted.RemoveAll(this);
+				Stage->OnMainProgramEnded.RemoveAll(this);
+			}
+		}
 	}
 
 	Super::Deinitialize();
+}
+
+void UFF_CrowdDecisionSubsystem::HandleStageChanged(
+	EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
+{
+	if (NewStage == EFF_FestivalStage::Live)
+	{
+		// Live 진입 시점은 공연 전이므로 닫고 시작한다. 여는 것은 OnMainProgramStarted 다.
+		bMainStageGatingActive = true;
+		bMainStageOpen = false;
+		bSawMainProgramThisLive = false;
+		return;
+	}
+
+	if (PreviousStage == EFF_FestivalStage::Live)
+	{
+		if (!bSawMainProgramThisLive)
+		{
+			// 표에 bIsMainProgramLockStart 행이 없으면 IsMainProgramLocked() 이 영원히 false 라
+			// 시작 신호가 안 온다. 그 경우 무대는 Live 내내 후보에서 빠져 있었고, 조용히 두면
+			// "왜 아무도 무대에 안 갔는가"의 원인이 로그에 안 남는다.
+			UE_LOG(LogCrowdDecision, Warning,
+				TEXT("Live 동안 메인 공연 시작 신호가 한 번도 오지 않았다 — 메인 무대가 하루 종일 ")
+				TEXT("후보에서 빠져 있었다. DT_ProgramSchedule 에 bIsMainProgramLockStart 행이 있는지 확인할 것"));
+		}
+
+		bMainStageGatingActive = false;
+		bMainStageOpen = false;
+		bSawMainProgramThisLive = false;
+	}
+}
+
+void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
+{
+	bSawMainProgramThisLive = true;
+	bMainStageOpen = true;
+
+	// 무대를 여는 것만으로는 아무도 모른다. 재결정 트리거가 도착·이동실패·큐거절뿐이라
+	// (ShouldReevaluate 의 주기 재평가는 아직 호출부가 없다) 밀어 넣지 않으면 회전율만큼
+	// 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
+	const UWorld* World = GetWorld();
+	UFF_CrowdSimulationSubsystem* Crowd =
+		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
+
+	const int32 RedecidedCount = Crowd
+		? Crowd->RequestRedecisionForIdleParties(MaxPartiesRedecidedOnStageOpen)
+		: 0;
+
+	UE_LOG(LogCrowdDecision, Log,
+		TEXT("메인 공연 시작('%s') — 메인 무대를 후보로 열고 유휴 파티 %d개에 재결정을 요청했다. ")
+		TEXT("줄에 선 파티는 제외했다(대기열과 어긋난다)"), *EventLabel, RedecidedCount);
+}
+
+void UFF_CrowdDecisionSubsystem::HandleMainProgramEnded(FString EventLabel)
+{
+	bMainStageOpen = false;
+
+	UE_LOG(LogCrowdDecision, Log,
+		TEXT("메인 공연 종료('%s') — 메인 무대를 후보에서 닫는다. ")
+		TEXT("이미 줄에 선 파티는 그대로 서비스를 받는다(대기열은 이 게이트와 무관하다)"), *EventLabel);
 }
 
 void UFF_CrowdDecisionSubsystem::SetDecisionEnabled(bool bEnabled)
@@ -466,7 +558,8 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		(bEnableWalkDistances && WalkDistances.IsValid()) ? &WalkDistances : nullptr;
 
 	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull);
+		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull,
+		IsMainStageOpen());
 
 	if (Candidates.IsEmpty())
 	{

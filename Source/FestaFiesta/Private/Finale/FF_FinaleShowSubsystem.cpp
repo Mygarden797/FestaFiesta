@@ -9,7 +9,10 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Camera/FF_FestivalGameMode.h"
 #include "Finale/FF_FinaleLaunchSite.h"
+#include "Finale/FF_FinaleSettings.h"
+#include "GameFramework/GameModeBase.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraParameterStore.h"
@@ -231,6 +234,13 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 					Spec.BurstEffect.IsNull() ? TEXT("없음") : TEXT("지정됨"));
 			}
 
+			// 어느 애셋이 먹었는지 같이 찍는다. 세 군데서 올 수 있어서
+			// "값을 고쳤는데 왜 안 바뀌지" 가 나오기 쉽다.
+			const UFF_FinaleShowData* Data = ResolveShowData();
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("  사용 중인 데이터: %s"),
+				Data ? *Data->GetName() : TEXT("없음 (코드 기본값)"));
+
 			TArray<AFF_FinaleLaunchSite*> Sites;
 			AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
 			UE_LOG(LogFestaFiestaFinale, Display,
@@ -256,10 +266,41 @@ AFF_FestivalPlayerController* UFF_FinaleShowSubsystem::GetFestivalController() c
 	return World ? Cast<AFF_FestivalPlayerController>(World->GetFirstPlayerController()) : nullptr;
 }
 
+const UFF_FinaleShowData* UFF_FinaleShowSubsystem::ResolveShowData() const
+{
+	// 1. 코드에서 직접 꽂은 것. 연출을 임시로 바꿔볼 때 쓴다.
+	if (const UFF_FinaleShowData* Direct = ShowData.LoadSynchronous())
+	{
+		return Direct;
+	}
+
+	// 2. 이 레벨의 GameMode 지정. 연등축제처럼 연출이 다른 레벨에서 쓴다.
+	const UWorld* World = GetWorld();
+	if (const AFF_FestivalGameMode* GameMode =
+		World ? Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) : nullptr)
+	{
+		if (const UFF_FinaleShowData* FromLevel = GameMode->FinaleShowDataOverride.LoadSynchronous())
+		{
+			return FromLevel;
+		}
+	}
+
+	// 3. 프로젝트 기본값. 대부분의 레벨은 여기까지 온다.
+	if (const UFF_FinaleSettings* Settings = UFF_FinaleSettings::Get())
+	{
+		if (const UFF_FinaleShowData* FromSettings = Settings->DefaultShowData.LoadSynchronous())
+		{
+			return FromSettings;
+		}
+	}
+
+	return nullptr;
+}
+
 FFF_FinaleGradeSpec UFF_FinaleShowSubsystem::ResolveSpec(const EFF_FinaleGrade Grade) const
 {
-	// 데이터 애셋이 지정돼 있으면 그쪽 값이 이긴다. 없으면 코드 기본값이다.
-	if (const UFF_FinaleShowData* Data = ShowData.LoadSynchronous())
+	// 데이터 애셋이 있으면 그쪽 값이 이긴다. 없으면 코드 기본값이다.
+	if (const UFF_FinaleShowData* Data = ResolveShowData())
 	{
 		return Data->GetSpec(Grade);
 	}

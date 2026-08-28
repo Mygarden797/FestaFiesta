@@ -4,7 +4,8 @@
 //
 // FF.BuildTargetShootingAssets creates only missing assets and remains non-destructive.
 // FF.RebuildTargetShootingUI is the explicit opt-in path that replaces one clean,
-// existing screen WBP with the authored AAA layout. It never touches the Definition.
+// existing screen WBP with the authored AAA layout. It validates but never rewrites
+// designer-authored balance values in DA_Minigame_TargetShooting.
 
 #include "CoreMinimal.h"
 
@@ -56,6 +57,37 @@ namespace FFTargetShootingWbpBuilder
 	const FName TargetShootingId(TEXT("TargetShooting"));
 	const FName ShootingFacilityId(TEXT("Booth_ActivityGame_Shoot"));
 
+	bool SaveNewDataAsset(UFF_TargetShootingDefinition& Definition);
+
+	bool ValidateWaterBlasterDefinition()
+	{
+		UFF_TargetShootingDefinition* Definition = Cast<UFF_TargetShootingDefinition>(
+			LoadObject<UObject>(nullptr, *MakeObjectPath(DefinitionPackage)));
+		if (!Definition || !Definition->GetOutermost()
+			|| Definition->GetOutermost()->IsDirty())
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: target-shooting definition is unavailable or has unsaved edits."),
+				LogPrefix);
+			return false;
+		}
+
+		FString RulesFailure;
+		if (!Definition->Rules.IsValid(&RulesFailure))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: designer-authored target-shooting rules are invalid: %s"),
+				LogPrefix,
+				*RulesFailure);
+			return false;
+		}
+
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_REBUILD_PRESERVE: target-shooting DataAsset balance was not modified."),
+			LogPrefix);
+		return true;
+	}
+
 	UObject* FindLoadedAssetObject(const FString& PackageName)
 	{
 		UPackage* Package = FindPackage(nullptr, *PackageName);
@@ -95,6 +127,10 @@ namespace FFTargetShootingWbpBuilder
 		const UBorder* PlayArea = Cast<UBorder>(Tree->FindWidget(TEXT("Border_PlayArea")));
 		const UCanvasPanel* PlayCanvas = Cast<UCanvasPanel>(Tree->FindWidget(TEXT("Canvas_PlayArea")));
 		const UBorder* Target = Cast<UBorder>(Tree->FindWidget(TEXT("Border_Target")));
+		const UImage* WaterBlaster = Cast<UImage>(Tree->FindWidget(TEXT("Image_WaterBlaster")));
+		const UTextBlock* MuzzleFlash = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_MuzzleFlash")));
+		const UTextBlock* WeaponStatus = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_WeaponStatus")));
+		const UTextBlock* TargetCue = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_TargetCue")));
 		const UTextBlock* RemainingTime = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_RemainingTime")));
 		const UTextBlock* Score = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_Score")));
 		const UTextBlock* HitCount = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_HitCount")));
@@ -107,6 +143,10 @@ namespace FFTargetShootingWbpBuilder
 		if (!IsVariableWidget(Blueprint, PlayArea)
 			|| !IsVariableWidget(Blueprint, PlayCanvas)
 			|| !IsVariableWidget(Blueprint, Target)
+			|| !IsVariableWidget(Blueprint, WaterBlaster)
+			|| !IsVariableWidget(Blueprint, MuzzleFlash)
+			|| !IsVariableWidget(Blueprint, WeaponStatus)
+			|| !IsVariableWidget(Blueprint, TargetCue)
 			|| !IsVariableWidget(Blueprint, RemainingTime)
 			|| !IsVariableWidget(Blueprint, Score)
 			|| !IsVariableWidget(Blueprint, HitCount)
@@ -122,7 +162,12 @@ namespace FFTargetShootingWbpBuilder
 		// Runtime pointer normalization assumes this exact ownership boundary.
 		return PlayArea->GetContent() == PlayCanvas
 			&& Target->GetParent() == PlayCanvas
+			&& WaterBlaster->GetParent() == PlayCanvas
+			&& MuzzleFlash->GetParent() == PlayCanvas
+			&& WeaponStatus->GetParent() == PlayCanvas
+			&& TargetCue->GetParent() == PlayCanvas
 			&& Cast<UCanvasPanelSlot>(Target->Slot) != nullptr
+			&& Cast<UCanvasPanelSlot>(WaterBlaster->Slot) != nullptr
 			&& Target->GetVisibility() == ESlateVisibility::HitTestInvisible;
 	}
 
@@ -142,19 +187,28 @@ namespace FFTargetShootingWbpBuilder
 		const FFF_TargetShootingVisualStyle& Style =
 			GetDefault<UFF_TargetShootingScreen>()->VisualStyle;
 		UTexture2D* BackdropTexture = Style.BackdropTexture.LoadSynchronous();
+		UTexture2D* WaterBlasterTexture = Style.WaterBlasterTexture.LoadSynchronous();
 		if (!BackdropTexture)
 		{
 			UE_LOG(LogFFUIWbpBuilder, Error,
-				TEXT("%s_FAIL: canonical AAA backdrop is missing: %s"),
+				TEXT("%s_FAIL: target-shooting backdrop is missing: %s"),
 				LogPrefix,
 				*Style.BackdropTexture.ToSoftObjectPath().ToString());
+			return false;
+		}
+		if (!WaterBlasterTexture)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: water-blaster foreground is missing: %s"),
+				LogPrefix,
+				*Style.WaterBlasterTexture.ToSoftObjectPath().ToString());
 			return false;
 		}
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Root"));
 		UImage* Backdrop = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_Backdrop"), true);
 		UBorder* ScreenWash = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ScreenWash"));
 		UCanvasPanel* LayoutCanvas = MakeWidget<UCanvasPanel>(
-			Blueprint, Tree, TEXT("Canvas_AAAHud"));
+			Blueprint, Tree, TEXT("Canvas_WaterBlasterHud"));
 		UBorder* ArenaFrame = MakeWidget<UBorder>(
 			Blueprint, Tree, TEXT("Border_ArenaFrame"));
 		UBorder* PlayArea = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PlayArea"), true);
@@ -220,7 +274,7 @@ namespace FFTargetShootingWbpBuilder
 		PlayArea->SetPadding(FMargin(0.0f));
 		PlayArea->SetContent(PlayCanvas);
 		ArenaFrame->SetContent(PlayArea);
-		if (!PlaceAnchored(ArenaFrame, FAnchors(0.17f, 0.18f, 0.91f, 0.83f), 10))
+		if (!PlaceAnchored(ArenaFrame, FAnchors(0.08f, 0.16f, 0.92f, 0.93f), -100))
 		{
 			return false;
 		}
@@ -250,6 +304,97 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 
+		UTextBlock* TargetCue = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_TargetCue"), true);
+		if (!TargetCue)
+		{
+			return false;
+		}
+		TargetCue->SetText(LOCTEXT("TargetCue", "여기를 쏘세요"));
+		TargetCue->SetJustification(ETextJustify::Center);
+		TargetCue->SetVisibility(ESlateVisibility::HitTestInvisible);
+		StyleAaaText(
+			*TargetCue,
+			FMath::RoundToInt(Style.TargetCueFontSize),
+			Style.TargetCueColor);
+		if (UCanvasPanelSlot* CueSlot = PlayCanvas->AddChildToCanvas(TargetCue))
+		{
+			CueSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+			CueSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+			CueSlot->SetPosition(FVector2D(0.0f, -72.0f));
+			CueSlot->SetSize(FVector2D(240.0f, 38.0f));
+			CueSlot->SetZOrder(7);
+		}
+		else
+		{
+			return false;
+		}
+
+		UImage* WaterBlaster = MakeWidget<UImage>(
+			Blueprint, Tree, TEXT("Image_WaterBlaster"), true);
+		UTextBlock* MuzzleFlash = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_MuzzleFlash"), true);
+		UTextBlock* WeaponStatus = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_WeaponStatus"), true);
+		if (!WaterBlaster || !MuzzleFlash || !WeaponStatus)
+		{
+			return false;
+		}
+		WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
+		WaterBlaster->SetColorAndOpacity(Style.WaterBlasterTint);
+		WaterBlaster->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UCanvasPanelSlot* BlasterSlot = PlayCanvas->AddChildToCanvas(WaterBlaster))
+		{
+			const float BlasterSize = FMath::Clamp(
+				Style.WaterBlasterVisualSize, 180.0f, 520.0f);
+			BlasterSlot->SetAnchors(FAnchors(0.5f, 1.0f));
+			BlasterSlot->SetAlignment(FVector2D(0.5f, 1.0f));
+			BlasterSlot->SetPosition(FVector2D(
+				0.0f,
+				FMath::Clamp(Style.WaterBlasterBottomOffsetPixels, 0.0f, 80.0f)));
+			BlasterSlot->SetSize(FVector2D(BlasterSize, BlasterSize));
+			BlasterSlot->SetZOrder(15);
+		}
+		else
+		{
+			return false;
+		}
+
+		MuzzleFlash->SetText(FText::FromString(TEXT("+")));
+		MuzzleFlash->SetJustification(ETextJustify::Center);
+		MuzzleFlash->SetVisibility(ESlateVisibility::Collapsed);
+		StyleAaaText(*MuzzleFlash, 54, Style.MuzzleFlashColor);
+		if (UCanvasPanelSlot* MuzzleSlot = PlayCanvas->AddChildToCanvas(MuzzleFlash))
+		{
+			MuzzleSlot->SetAnchors(FAnchors(0.5f, 0.68f));
+			MuzzleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			MuzzleSlot->SetPosition(FVector2D::ZeroVector);
+			MuzzleSlot->SetSize(FVector2D(96.0f, 96.0f));
+			MuzzleSlot->SetZOrder(17);
+		}
+		else
+		{
+			return false;
+		}
+
+		WeaponStatus->SetText(LOCTEXT(
+			"WeaponStatusPlaceholder", "과녁을 조준하고 클릭하여 발사!"));
+		WeaponStatus->SetJustification(ETextJustify::Center);
+		WeaponStatus->SetVisibility(ESlateVisibility::HitTestInvisible);
+		StyleAaaText(*WeaponStatus, 16, Style.HudAmberColor, TEXT("SemiBold"));
+		if (UCanvasPanelSlot* StatusSlot = PlayCanvas->AddChildToCanvas(WeaponStatus))
+		{
+			StatusSlot->SetAnchors(FAnchors(0.5f, 0.075f));
+			StatusSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			StatusSlot->SetPosition(FVector2D::ZeroVector);
+			StatusSlot->SetSize(FVector2D(440.0f, 42.0f));
+			StatusSlot->SetZOrder(19);
+		}
+		else
+		{
+			return false;
+		}
+
 		UTextBlock* ShotFeedback = MakeWidget<UTextBlock>(
 			Blueprint, Tree, TEXT("Text_ShotFeedback"), true);
 		UTextBlock* Reticle = MakeWidget<UTextBlock>(
@@ -258,7 +403,7 @@ namespace FFTargetShootingWbpBuilder
 		{
 			return false;
 		}
-		ShotFeedback->SetText(LOCTEXT("ShotFeedbackPlaceholder", "BULLSEYE  +200"));
+		ShotFeedback->SetText(LOCTEXT("ShotFeedbackPlaceholder", "정중앙!  +200"));
 		ShotFeedback->SetJustification(ETextJustify::Center);
 		ShotFeedback->SetVisibility(ESlateVisibility::Collapsed);
 		StyleAaaText(*ShotFeedback, 28, Style.HudAmberColor);
@@ -298,9 +443,9 @@ namespace FFTargetShootingWbpBuilder
 		{
 			return false;
 		}
-		RangeLabel->SetText(LOCTEXT("RangeLabel", "LIVE RANGE  //  ACQUIRE & ENGAGE"));
+		RangeLabel->SetText(LOCTEXT("RangeLabel", "WATER SHOT RANGE  //  과녁을 조준하세요"));
 		StyleAaaText(*RangeLabel, 11, Style.SecondaryTextColor, TEXT("SemiBold"));
-		RangeLabel->SetVisibility(ESlateVisibility::HitTestInvisible);
+		RangeLabel->SetVisibility(ESlateVisibility::Collapsed);
 		if (UCanvasPanelSlot* RangeSlot = PlayCanvas->AddChildToCanvas(RangeLabel))
 		{
 			RangeSlot->SetAnchors(FAnchors(0.0f, 0.0f));
@@ -323,9 +468,9 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 		ConfigureCard(TitleCard, Style.HudPanelColor, FMargin(20.0f, 12.0f));
-		TitleEyebrow->SetText(LOCTEXT("TitleEyebrow", "BUSAN WATERFRONT // LIVE EVENT"));
+		TitleEyebrow->SetText(LOCTEXT("TitleEyebrow", "BUSAN WATERFRONT FESTIVAL"));
 		StyleAaaText(*TitleEyebrow, 10, Style.HudAccentColor, TEXT("SemiBold"));
-		TitleText->SetText(LOCTEXT("Title", "NIGHT RANGE"));
+		TitleText->SetText(LOCTEXT("Title", "WATER BLAST"));
 		StyleAaaText(*TitleText, 27, Style.PrimaryTextColor);
 		TitleColumn->AddChildToVerticalBox(TitleEyebrow);
 		TitleColumn->AddChildToVerticalBox(TitleText);
@@ -381,16 +526,16 @@ namespace FFTargetShootingWbpBuilder
 			GaugeSlot->SetPadding(FMargin(12.0f, 0.0f, 12.0f, 4.0f));
 		}
 		TimerCard->SetContent(TimerColumn);
-		Score->SetText(LOCTEXT("Score", "SCORE  000000"));
+		Score->SetText(LOCTEXT("Score", "점수  000000"));
 		Score->SetJustification(ETextJustify::Right);
 		StyleAaaText(*Score, 27, Style.HudAmberColor);
-		HitCount->SetText(LOCTEXT("Hits", "HITS  0\nACCURACY  0%"));
+		HitCount->SetText(LOCTEXT("Hits", "명중  0\n정확도  0%"));
 		HitCount->SetAutoWrapText(true);
 		StyleAaaText(*HitCount, 16, Style.PrimaryTextColor, TEXT("SemiBold"));
-		MissCount->SetText(LOCTEXT("Performance", "RATE  0.0 /s\nREACTION  0ms\nMISS  0"));
+		MissCount->SetText(LOCTEXT("Performance", "초당  0.0발\n반응  0ms\n빗나감  0"));
 		MissCount->SetAutoWrapText(true);
 		StyleAaaText(*MissCount, 15, Style.SecondaryTextColor, TEXT("SemiBold"));
-		Streak->SetText(LOCTEXT("Streak", "COMBO x0     BEST 0"));
+		Streak->SetText(LOCTEXT("Streak", "연속 x0     최고 0"));
 		Streak->SetJustification(ETextJustify::Center);
 		StyleAaaText(*Streak, 22, Style.HudAccentColor);
 		ScoreCard->SetContent(Score);
@@ -399,9 +544,9 @@ namespace FFTargetShootingWbpBuilder
 		StreakCard->SetContent(Streak);
 		if (!PlaceAnchored(TimerCard, FAnchors(0.405f, 0.025f, 0.605f, 0.150f), 31)
 			|| !PlaceAnchored(ScoreCard, FAnchors(0.715f, 0.035f, 0.910f, 0.145f), 30)
-			|| !PlaceAnchored(HitCard, FAnchors(0.025f, 0.270f, 0.150f, 0.395f), 30)
-			|| !PlaceAnchored(PerformanceCard, FAnchors(0.025f, 0.420f, 0.150f, 0.590f), 30)
-			|| !PlaceAnchored(StreakCard, FAnchors(0.315f, 0.855f, 0.610f, 0.945f), 30))
+			|| !PlaceAnchored(HitCard, FAnchors(0.080f, 0.835f, 0.255f, 0.925f), 30)
+			|| !PlaceAnchored(PerformanceCard, FAnchors(0.745f, 0.835f, 0.920f, 0.925f), 30)
+			|| !PlaceAnchored(StreakCard, FAnchors(0.665f, 0.175f, 0.900f, 0.235f), 30))
 		{
 			return false;
 		}
@@ -413,14 +558,15 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 		ConfigureCard(HintCard, Style.HudPanelMutedColor, FMargin(16.0f, 8.0f));
-		HintText->SetText(LOCTEXT("InputHint", "MOUSE  AIM     [LMB]  FIRE     [ESC]  ABORT"));
+		HintText->SetText(LOCTEXT("InputHint", "마우스로 조준  ·  클릭하여 발사  ·  ESC 나가기"));
 		HintText->SetJustification(ETextJustify::Center);
 		StyleAaaText(*HintText, 13, Style.SecondaryTextColor, TEXT("SemiBold"));
 		HintCard->SetContent(HintText);
-		if (!PlaceAnchored(HintCard, FAnchors(0.655f, 0.855f, 0.910f, 0.945f), 30))
+		if (!PlaceAnchored(HintCard, FAnchors(0.350f, 0.940f, 0.650f, 0.985f), 30))
 		{
 			return false;
 		}
+		HintCard->SetVisibility(ESlateVisibility::Collapsed);
 
 		UBorder* ResultPanel = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Panel_Result"), true);
 		UOverlay* ResultStage = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_ResultStage"));
@@ -451,7 +597,7 @@ namespace FFTargetShootingWbpBuilder
 		ResultSurface->SetBrushColor(Style.HudPanelColor);
 		ResultSurface->SetPadding(FMargin(48.0f, 40.0f));
 		ResultSurface->SetContent(ResultColumn);
-		ResultEyebrow->SetText(LOCTEXT("ResultEyebrow", "AFTER ACTION REPORT  //  NIGHT RANGE"));
+		ResultEyebrow->SetText(LOCTEXT("ResultEyebrow", "WATER BLAST  //  플레이 결과"));
 		ResultEyebrow->SetJustification(ETextJustify::Center);
 		StyleAaaText(*ResultEyebrow, 13, Style.HudAccentColor, TEXT("SemiBold"));
 		ResultText->SetText(LOCTEXT("ResultPlaceholder", "결과를 계산 중입니다"));
@@ -494,7 +640,7 @@ namespace FFTargetShootingWbpBuilder
 		{
 			return false;
 		}
-		CloseLabel->SetText(LOCTEXT("Close", "EXIT  [ESC]"));
+		CloseLabel->SetText(LOCTEXT("Close", "나가기  [ESC]"));
 		CloseLabel->SetJustification(ETextJustify::Center);
 		StyleAaaText(*CloseLabel, 13, Style.PrimaryTextColor, TEXT("SemiBold"));
 		CloseButton->SetContent(CloseLabel);
@@ -738,6 +884,13 @@ namespace FFTargetShootingWbpBuilder
 				LogPrefix, bRolledBack ? TEXT("was restored") : TEXT("could not be restored"));
 			return;
 		}
+		if (UFF_TargetShootingScreen* RebuiltDefaults = Cast<UFF_TargetShootingScreen>(
+			Blueprint->GeneratedClass->GetDefaultObject()))
+		{
+			RebuiltDefaults->Modify();
+			RebuiltDefaults->VisualStyle =
+				GetDefault<UFF_TargetShootingScreen>()->VisualStyle;
+		}
 
 		const bool bSavedRebuild = SaveNewBlueprint(LogPrefix, *Blueprint);
 		if (!bSavedRebuild || !ValidateScreenBlueprint(*Blueprint))
@@ -754,9 +907,16 @@ namespace FFTargetShootingWbpBuilder
 			return;
 		}
 
+		if (!ValidateWaterBlasterDefinition())
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: WBP was saved, but water-blaster gameplay tuning failed."),
+				LogPrefix);
+			return;
+		}
+
 		UE_LOG(LogFFUIWbpBuilder, Display,
-			TEXT("%s_REBUILD_OK: %s now uses the AAA target-shooting layout. "
-				 "Definition and gameplay rules were untouched."),
+			TEXT("%s_REBUILD_OK: %s now uses the water-blaster target-shooting layout and tuning."),
 			LogPrefix, *ScreenPackage);
 	}
 
@@ -782,8 +942,6 @@ namespace FFTargetShootingWbpBuilder
 			&& ValidationErrors.IsEmpty()
 			&& Definition.MinigameId == TargetShootingId
 			&& Definition.CompatibleFacilityDefinitionIds.Contains(ShootingFacilityId)
-			&& FMath::IsNearlyEqual(Definition.DurationSeconds, 30.0f)
-			&& Definition.ScoreForMaxReward == 2000
 			&& Definition.RuntimeClass.Get() == UFF_TargetShootingRuntime::StaticClass()
 			&& ScreenClass
 			&& ScreenClass->IsChildOf(UFF_TargetShootingScreen::StaticClass());
@@ -833,6 +991,7 @@ namespace FFTargetShootingWbpBuilder
 		Definition->CompatibleFacilityDefinitionIds = { ShootingFacilityId };
 		Definition->DurationSeconds = 30.0f;
 		Definition->ScoreForMaxReward = 2000;
+		Definition->RewardGoldAtMaxScore = 150;
 		Definition->RuntimeClass = UFF_TargetShootingRuntime::StaticClass();
 		Definition->ScreenClass = &ResolvedScreenClass;
 

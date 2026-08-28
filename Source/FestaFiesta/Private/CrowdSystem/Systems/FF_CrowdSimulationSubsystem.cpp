@@ -9,6 +9,7 @@
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -207,6 +208,10 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	
+	// 조회 시점에만 쓰이는 값이라 재빌드 없이 콘솔에서 바로 듣는다
+	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+	ApplyWalkableCeiling();
+
 	const float Time = DeltaTime * SimulationTimeScale;
 
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
@@ -233,7 +238,17 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 		StepsSinceSnapshot = 0;
 	}
 
-	AdvanceNeeds();
+	// Need 지표는 스냅샷과 같은 이유로 스텝 단위로 센다 — 프레임률로 세면 UI 갱신 간격이
+	// 기기 성능에 따라 달라진다.
+	StepsSinceNeedMetrics += StepsThisFrame;
+	const bool bCommitNeedMetrics =
+		StepsSinceNeedMetrics >= FMath::Max(1, NeedMetricsIntervalSteps);
+	if (bCommitNeedMetrics)
+	{
+		StepsSinceNeedMetrics = 0;
+	}
+
+	AdvanceNeeds(bCommitNeedMetrics);
 	ProcessDecisions();
 
 	const float InterpAlpha = FMath::Clamp(SimAccumulator / FixedStepSeconds, 0.f, 1.f);
@@ -369,8 +384,9 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					0,
 					CachedCorrelationStrength);
 			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
+			const float MemberBoost2 = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedMultiplier,1.f);
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
-			Unit.MaxSpeed = Unit.Speed;
+			Unit.MaxSpeed = Unit.Speed * MemberBoost2;
 
 			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
 			{
@@ -585,7 +601,40 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			}
 		}
 
+		// 통행 상한을 넘는 칸으로 들어가는 스텝은 무효로 돌린다.
+		//
+		// ★ 축을 나눠 미끄러뜨리지 않는다. 경계에 붙어 서고, 그 자리에서 StuckSteps가 임계에
+		//   닿으면 MoveFailed 재결정이 목적지를 바꿔 준다 — 그 경로가 유일한 탈출구다.
+		//
+		// ★ StuckSteps를 직접 다시 세운다. StepAgent는 되돌리기 전 변위로 진척을 재므로,
+		//   상한에 머리를 박는 개체는 매 스텝 '잘 나아갔다'로 판정되어 카운터가 0으로 리셋된다.
+		//   그러면 재결정이 영원히 안 걸려 경계에 붙은 채 갇힌다. 실제 변위는 0이므로
+		//   스텝 전 값 + 1이 맞다(도착해 서 있는 개체는 세지 않는다).
+		//
+		// ★ 스텝 전 위치가 이미 상한 밖일 때는 막지 않는다. 높은 곳에 스폰됐거나 손잡이를
+		//   플레이 중에 올린 개체가 영구히 얼어붙는 것을 막는다 — 들어오는 것만 막고
+		//   나가는 것은 허용한다. 그래서 새 위치를 먼저 보고, 막힐 때만 이전 위치를 되묻는다.
+		const FVector PreStepPosition = Unit.Position;
+		const int32 PreStepStuckSteps = Unit.StuckSteps;
+
 		CrowdSteering::StepAgent(Unit, StepParams, VelocityAlpha, FixedDt);
+
+		if (!HeightField.IsWalkable(FVector2D(Unit.Position.X, Unit.Position.Y))
+			&& HeightField.IsWalkable(FVector2D(PreStepPosition.X, PreStepPosition.Y)))
+		{
+			Unit.Position = PreStepPosition;
+			Unit.PrevPosition = PreStepPosition;
+			Unit.Velocity = FVector::ZeroVector;
+
+			FVector ToFinal = Unit.TargetLocation - PreStepPosition;
+			ToFinal.Z = 0.f;
+
+			Unit.StuckSteps = (ToFinal.SizeSquared() > FMath::Square(Unit.ArrivalRadiusUU))
+				? PreStepStuckSteps + 1
+				: 0;
+
+			++HeightBlockedSteps;
+		}
 
 		SnapUnitToGround(Unit);
 	}
@@ -823,6 +872,20 @@ void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
 	bBuiltWithClearance = bAvoidanceFacilityWallsIncludeClearance;
 }
 
+void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
+{
+	if (MaxWalkableHeightAboveOriginUU > 0.f)
+	{
+		HeightField.SetWalkableCeilingCm(SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU));
+	}
+	else
+	{
+		HeightField.ClearWalkableCeiling();
+	}
+
+	HeightField.SetBlockUnknownGround(bBlockUnknownGround);
+}
+
 void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 {
 	HeightField.Reset();
@@ -862,11 +925,34 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		}
 	}
 
-	constexpr double TraceAboveCm = 0.0;
+	FVector2D CenterCm(SimOrigin.X, SimOrigin.Y);
+	double HalfSizeCm = (HeightFieldRadiusUU > 0.f)
+		? static_cast<double>(HeightFieldRadiusUU)
+		: static_cast<double>(SimRadiusUU);
+	double TopZ = SimOrigin.Z;
+	bool bFittedToNav = false;
+
+	if (bHeightFieldFitToNavBounds)
+	{
+		const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+		const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
+		const FBox NavBounds = NavData ? NavData->GetBounds() : FBox(ForceInit);
+
+		if (NavBounds.IsValid)
+		{
+			CenterCm = FVector2D(NavBounds.GetCenter().X, NavBounds.GetCenter().Y);
+			HalfSizeCm = FMath::Max(NavBounds.GetSize().X, NavBounds.GetSize().Y) * 0.5;
+			TopZ = FMath::Max(TopZ, NavBounds.Max.Z);
+			bFittedToNav = true;
+		}
+	}
+
 	constexpr double TraceBelowCm = 50000.0;
 
-	const double StartZ = SimOrigin.Z + TraceAboveCm;
-	const double EndZ = SimOrigin.Z - TraceBelowCm;
+	const double TraceAboveCm = FMath::Max(static_cast<double>(HeightFieldTraceAboveUU), 0.0);
+
+	const double StartZ = TopZ + TraceAboveCm;
+	const double EndZ = FMath::Min(SimOrigin.Z, TopZ) - TraceBelowCm;
 
 	int32 TraceCount = 0;
 
@@ -892,8 +978,11 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 	};
 
 	const double SpacingCm = FMath::Max(static_cast<double>(HeightFieldSpacingUU), 10.0);
-	const bool bBuilt = HeightField.Build(
-		FVector2D(SimOrigin.X, SimOrigin.Y), SimRadiusUU, SpacingCm, Sampler);
+
+	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
+	ApplyWalkableCeiling();
+
+	const bool bBuilt = HeightField.Build(CenterCm, HalfSizeCm, SpacingCm, Sampler);
 
 	const FFF_CrowdHeightField::FBuildStats& Stats = HeightField.GetStats();
 
@@ -911,6 +1000,36 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		Stats.HitCount, Stats.SampleCount,
 		Stats.MinHeightCm, Stats.MaxHeightCm, Stats.HeightSpanCm(),
 		IgnoredFacilities);
+
+	UE_LOG(LogTemp, Log,
+		TEXT("높이 격자: 중심 (%.0f, %.0f) 반경 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),
+		CenterCm.X, CenterCm.Y, HalfSizeCm,
+		bFittedToNav ? TEXT("NavMesh 경계에 맞춤") : TEXT("SimRadius"),
+		SpacingCm, StartZ);
+
+	if (MaxWalkableHeightAboveOriginUU > 0.f)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: 통행 상한 Z=%.0f (SimOrigin.Z %.0f + %.0f), 지면 없는 칸은 %s"),
+			SimOrigin.Z + static_cast<double>(MaxWalkableHeightAboveOriginUU),
+			SimOrigin.Z, MaxWalkableHeightAboveOriginUU,
+			bBlockUnknownGround ? TEXT("통행 불가") : TEXT("통행 가능"));
+	}
+
+	if (Stats.MaxHeightCm >= StartZ - 1.0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("높이 격자: 최고점 %.0f가 트레이스 시작면 %.0f에 닿았다 — 그보다 높은 지형은 ")
+			TEXT("표본에서 빠져 개체가 파묻힌다. HeightFieldTraceAboveUU(현재 %.0f)를 올릴 것"),
+			Stats.MaxHeightCm, StartZ, HeightFieldTraceAboveUU);
+	}
+
+	if (Stats.HitCount < Stats.SampleCount)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: 지면을 못 찾은 격자점 %d개 — 구멍이면 정상이고, 높은 지형이면 위 경고를 볼 것"),
+			Stats.SampleCount - Stats.HitCount);
+	}
 }
 
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
@@ -1449,6 +1568,45 @@ bool UFF_CrowdSimulationSubsystem::IsQueueAdvancing() const
 	return (SimTimeSeconds - LastQueueAdvanceSimTime) <= QueueStallToleranceSeconds;
 }
 
+int32 UFF_CrowdSimulationSubsystem::RequestRedecisionForIdleParties(int32 MaxParties)
+{
+	int32 RequestedCount = 0;
+
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		if (MaxParties > 0 && RequestedCount >= MaxParties)
+		{
+			break;
+		}
+
+		const FUnitData& Unit = UnitDatas[AgentIndex];
+
+		// 리더만 결정을 받는다. 풀에 반납된 개체(bIsActive == false)는 데이터가 남아 있어도 제외한다.
+		if (!Unit.bIsActive || Unit.LeaderAgentIndex != AgentIndex)
+		{
+			continue;
+		}
+
+		if (!PartyDecisionStates.IsValidIndex(AgentIndex))
+		{
+			continue;
+		}
+
+		const FPartyDecisionState& State = PartyDecisionStates[AgentIndex];
+
+		// 헤더 주석의 이유로 줄에 선 파티와 퇴장 중인 파티는 제외한다.
+		if (State.QueuePhase != EFF_PartyQueuePhase::None || State.bIsLeaving)
+		{
+			continue;
+		}
+
+		RequestDecision(AgentIndex, EFF_DecisionReason::DestinationOpened);
+		++RequestedCount;
+	}
+
+	return RequestedCount;
+}
+
 void UFF_CrowdSimulationSubsystem::ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue)
 {
 	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex) || !UnitDatas.IsValidIndex(LeaderAgentIndex))
@@ -1647,6 +1805,17 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 //   개체를 축제장 밖으로 보내면서 결정론까지 깨는 함수였고, 호출부가 없어 삭제했다.
 //   배회 범위를 넓히고 싶으면 그것을 되살리지 말고 WanderRadiusUU를 올릴 것 —
 //   그래야 결정론이 유지된다.
+//
+// ★ 통행 상한에 걸리는 좌표는 여기서 걸러 낸다. 안 걸러도 이동 쪽이 막아 주지만, 갈 수 없는
+//   곳을 목표로 잡은 파티는 경계에 붙어 서서 StuckSteps를 채우고 MoveFailed로 다시 여기
+//   들어온다. 그 왕복이 결정 큐를 잡아먹으므로 뽑는 자리에서 끊는 것이 맞다.
+//
+// ★ 재추첨 시드는 MakeDecisionSeed의 salt를 더 쓰지 않고 기본 시드에서 갈라낸다. salt 공간이
+//   라운드당 두 칸(ChoiceRoundIndex * 2, * 2 + 1)으로 이미 꽉 차 있어, 더 쓰면 다음 라운드의
+//   시드와 겹쳐 배회 좌표가 라운드 간에 상관된다.
+//
+// ★ 전부 막히면 제자리를 돌려준다. 다음 스텝에 도착 판정이 서고 재결정이 걸리지만 쿨다운을
+//   타므로 폭주하지 않으며, 그때는 ChoiceRoundIndex가 올라 새 시드로 다시 뽑는다.
 FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentIndex) const
 {
 	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
@@ -1657,19 +1826,36 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 	const uint32 SeedRadius = FFF_DeterministicRandom::MakeDecisionSeed(
 		GlobalSimulationSeed, Unit.StableAgentID, State.ChoiceRoundIndex * 2 + 1);
 
-	const float Angle = FFF_DeterministicRandom::MakeUniformFraction(SeedAngle) * 2.f * PI;
-	const float Radius = WanderRadiusUU * FMath::Sqrt(FFF_DeterministicRandom::MakeUniformFraction(SeedRadius));
+	constexpr int32 MaxAttempts = 6;
 
-	FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
-
-	const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
-	if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+	auto DeriveAttemptSeed = [](uint32 BaseSeed, int32 Attempt) -> uint32
 	{
-		Destination = SimOrigin + FromOrigin.GetSafeNormal() * SimRadiusUU;
-		Destination.Z = Unit.Position.Z;
+		return (Attempt == 0) ? BaseSeed : HashCombine(BaseSeed, GetTypeHash(Attempt));
+	};
+
+	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
+	{
+		const float Angle =
+			FFF_DeterministicRandom::MakeUniformFraction(DeriveAttemptSeed(SeedAngle, Attempt)) * 2.f * PI;
+		const float Radius = WanderRadiusUU * FMath::Sqrt(
+			FFF_DeterministicRandom::MakeUniformFraction(DeriveAttemptSeed(SeedRadius, Attempt)));
+
+		FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+
+		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
+		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+		{
+			Destination = SimOrigin + FromOrigin.GetSafeNormal() * SimRadiusUU;
+			Destination.Z = Unit.Position.Z;
+		}
+
+		if (HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		{
+			return Destination;
+		}
 	}
 
-	return Destination;
+	return Unit.Position;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetMaxInTransitMemberCount() const
@@ -1886,6 +2072,7 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	if (FVector::DistSquared2D(Unit.Position, Leader.Position) > FMath::Square(PartyCohesionRadiusUU))
 	{
 		Unit.TargetLocation = Leader.Position + Offset;
+		Unit.Speed = Unit.MaxSpeed; 
 	}
 	else
 	{
@@ -2085,12 +2272,31 @@ FFF_NeedState UFF_CrowdSimulationSubsystem::MakeInitialNeeds(int32 StableAgentId
 		InitialNeedModeFraction,
 		InitialNeedMaxFraction);
 }
-void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
+void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Needs);
 	const float ElapsedMinutes =
 		(SimTimeSeconds - LastNeedAdvanceSimTime) * Temp_FestivalMinutesPerRealSecond;
 	LastNeedAdvanceSimTime = SimTimeSeconds;
+
+	// GameInstance 스코프라 캐시하지 않는다 — 이 서브시스템(World)보다 오래 산다.
+	// 집계하는 스텝에만 조회하므로 매 프레임 비용이 아니다.
+	UFF_NpcNeedMetricsSubsystem* NeedMetrics = nullptr;
+	if (bAggregateMetrics)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			if (UGameInstance* GameInstance = World->GetGameInstance())
+			{
+				NeedMetrics = GameInstance->GetSubsystem<UFF_NpcNeedMetricsSubsystem>();
+			}
+		}
+	}
+
+	if (NeedMetrics)
+	{
+		NeedMetrics->BeginAggregation();
+	}
 	for (FFF_NeedState& Aggregated : PartyAggregatedNeeds)
 	{
 		Aggregated = FFF_NeedState();
@@ -2107,6 +2313,13 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
 			continue;
 		}
 		Unit.Needs = FFF_NeedRules::Advance(Unit.Needs, ElapsedMinutes, NeedRiseRates);
+
+		// 표본은 파티가 아니라 개인 단위다 — 지표가 "이 Need 가 미해소인 방문객 비율"이다.
+		if (NeedMetrics)
+		{
+			NeedMetrics->AddSample(Unit.Needs);
+		}
+
 		const int32 LeaderIndex = Unit.LeaderAgentIndex;
 		if (!PartyAggregatedNeeds.IsValidIndex(LeaderIndex))
 		{
@@ -2116,6 +2329,13 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds()
 			FFF_NeedState::MakeAggregated(PartyAggregatedNeeds[LeaderIndex], Unit.Needs);
 		++PartyMemberCounts[LeaderIndex];
 	}
+
+	// 활성 개체가 0명이어도 확정한다 — 표본 0은 "데이터 없음"이라 UI 가 0% 와 구분한다.
+	if (NeedMetrics)
+	{
+		NeedMetrics->CommitAggregation();
+	}
+
 	if (ElapsedMinutes > 0.f)
 	{
 		for (int32 LeaderIndex = 0; LeaderIndex < PartyRemainingStayMinutes.Num(); ++LeaderIndex)

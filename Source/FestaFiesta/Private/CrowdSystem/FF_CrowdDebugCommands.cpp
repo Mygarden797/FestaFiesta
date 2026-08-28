@@ -435,6 +435,19 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 			Ar.Logf(TEXT("  구멍         : %d곳 — 그 위를 지나는 개체는 이웃 값으로 보간된다"),
 				GroundStats.SampleCount - GroundStats.HitCount);
 		}
+
+		if (CrowdSim->MaxWalkableHeightAboveOriginUU > 0.f)
+		{
+			Ar.Logf(TEXT("  통행 상한    : 원점+%.0fUU (절대 Z %.0f), 막아 되돌린 스텝 %d회, 구멍은 %s"),
+				CrowdSim->MaxWalkableHeightAboveOriginUU,
+				CrowdSim->SimOrigin.Z + static_cast<double>(CrowdSim->MaxWalkableHeightAboveOriginUU),
+				CrowdSim->GetHeightBlockedSteps(),
+				CrowdSim->bBlockUnknownGround ? TEXT("통행 불가") : TEXT("통행 가능"));
+		}
+		else
+		{
+			Ar.Logf(TEXT("  통행 상한    : off — 지형이 아무리 높아도 올라간다 (FF.Crowd.Tune maxwalkheight <UU>)"));
+		}
 	}
 
 	Ar.Logf(TEXT("(막힘 판정: 목적지 반경 밖 + 목적지 방향 진척 %.0fUU/s 미만. 회피 on/off와 무관하게 집계된다)"),
@@ -771,6 +784,9 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		{ TEXT("waypoint"),  &CrowdSim->WaypointAcceptanceRadiusUU, TEXT("웨이포인트 통과 판정 반경 UU. 작으면 맴돌고 크면 코너를 지른다") },
 		{ TEXT("repath"),    &CrowdSim->RepathToleranceUU,    TEXT("목적지가 이만큼 움직이면 경로 재계산 UU") },
 		{ TEXT("minpath"),   &CrowdSim->MinPathQueryDistanceUU, TEXT("이 거리 미만은 경로를 안 뽑는다 UU") },
+		{ TEXT("traceabove"), &CrowdSim->HeightFieldTraceAboveUU, TEXT("높이 격자 트레이스 시작 높이 UU. 지형 최고점보다 높아야 파묻히지 않는다") },
+		{ TEXT("cliffstep"), &CrowdSim->HeightFieldCliffStepUU, TEXT("이 높이 차를 넘는 격자 칸은 보간 없이 끊어 올린다 UU. 0이면 항상 보간(비스듬히 떠오름)") },
+		{ TEXT("maxwalkheight"), &CrowdSim->MaxWalkableHeightAboveOriginUU, TEXT("SimOrigin.Z 기준 통행 상한 UU. 이보다 높은 지형에는 들어가지 않는다. 0이면 끔") },
 	};
 
 	struct FSwitch
@@ -789,6 +805,8 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
 		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
+		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,
+		  TEXT("지면을 못 찾은 격자점도 통행 불가로. maxwalkheight가 켜져 있을 때만 의미가 있다") },
 	};
 
 	struct FIntKnob

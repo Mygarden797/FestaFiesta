@@ -30,6 +30,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
 // 하루가 끝날 때 다음 시스템(시설/경제)에 이월용 시간 정보를 알리는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDayEnded, int32, EndedDay, float, TodayLiveDuration);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalStarted);
+// 축제가 처음 시작됐음을 알리는 신호 (StartNewFestival 호출 시 발동)
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTimeScaleChange, float, TimeScale);
 
 // 오늘 날씨 종류를 나타내는 enum
@@ -158,6 +161,9 @@ public:
 	bool bNightLightingActivated = false;
 	// 오늘 이미 밤 조명을 켰는지 여부 
 
+	bool bFestivalStarted = true;
+	//이 값이 false면 Tick()에서 시간 진행을 아예 멈춤
+
 	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage|Environment")
 	EFF_WeatherType SelectedWeather = EFF_WeatherType::Clear;
 	// 플레이어가 Setup/MorningCheck에서 선택한 오늘의 날씨 (기본값: 맑음)
@@ -165,6 +171,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnStageChanged OnStageChanged;
 	// 이벤트 신호 실제 변수 (다른 시스템이 여기 등록해두면 알림 받음)
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnFestivalStarted OnFestivalStarted;
+	// 축제가 새로 시작됐음을 UI 등 다른 시스템에게 알리는 신호
 
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnRemainingSecondsChanged OnRemainingSecondsChanged;
@@ -225,6 +235,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMainProgramLocked();
 	// 지금 메인 공연 배속 잠금 구간인지 확인
+
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	void StartNewFestival();
+	// 축제를 처음부터 다시 시작할 때 호출
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void AdvanceToNextDay();
