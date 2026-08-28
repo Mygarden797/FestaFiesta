@@ -321,6 +321,14 @@ private:
 	FFF_LivePanelLayout ResolveLayout(EFF_LiveTab Tab) const;
 	void ApplyPanelLayout(const FFF_LivePanelLayout& Layout);
 
+	/**
+	 * 다음 틱에 패널·호스트의 **실제 크기**를 로그로 찍는다.
+	 *
+	 * 안 보이는 원인이 색인지 크기인지 부모인지를 눈으로는 못 가른다. 숫자로 가른다.
+	 * 원인을 잡고 나면 지운다 (2026-08-28 임시).
+	 */
+	void LogPanelGeometryNextTick(UFF_LivePanelBase& Panel);
+
 	void RefreshTabs();
 	void RefreshStatusRow();
 	void RefreshSpeed();

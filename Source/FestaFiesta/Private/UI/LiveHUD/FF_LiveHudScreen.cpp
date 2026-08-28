@@ -247,6 +247,7 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 		{
 			Panel->SetVisibility(ESlateVisibility::Visible);
 			Panel->HandlePanelOpened();
+			LogPanelGeometryNextTick(*Panel);
 		}
 		else
 		{
@@ -398,6 +399,46 @@ UFF_LivePanelBase* UFF_LiveHudScreen::EnsurePanel(EFF_LiveTab Tab)
 
 	PanelWidgets.Add(Tab, Panel);
 	return Panel;
+}
+
+void UFF_LiveHudScreen::LogPanelGeometryNextTick(UFF_LivePanelBase& Panel)
+{
+	// === 왜 다음 틱인가 ===
+	// 방금 붙인 위젯의 `CachedGeometry` 는 아직 이전 프레임 값(보통 0×0)이다. 지금 찍으면
+	// 항상 `0x0` 이 나와서 "패널이 안 보인다" 의 원인을 못 가른다.
+	//
+	// 🔴 이 로그는 **크기 문제를 눈이 아니라 숫자로 가르기 위한 것**이다.
+	//   - 패널이 `520 x 8xx` 인데 안 보인다 → 색·폰트 문제
+	//   - 패널이 `30 x 30` 같이 작다      → 슬롯 정렬·부모 크기 문제
+	//   - 호스트가 `0 x 0`               → 캔버스 앵커·여백 문제
+	// 셋의 대처가 완전히 달라서 추측으로 고치면 매번 한 번씩 헛짚는다 (2026-08-28).
+	TWeakObjectPtr<UFF_LiveHudScreen> WeakThis(this);
+	TWeakObjectPtr<UFF_LivePanelBase> WeakPanel(&Panel);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([WeakThis, WeakPanel]()
+		{
+			const UFF_LiveHudScreen* Screen = WeakThis.Get();
+			const UFF_LivePanelBase* Panel = WeakPanel.Get();
+			if (!Screen || !Panel)
+			{
+				return;
+			}
+
+			const FVector2D PanelSize = Panel->GetCachedGeometry().GetLocalSize();
+			const FVector2D HostSize = Screen->Panel_PanelHost
+				? Screen->Panel_PanelHost->GetCachedGeometry().GetLocalSize()
+				: FVector2D::ZeroVector;
+
+			UE_LOG(LogFestaFiestaUI, Warning,
+				TEXT("[%s] 패널 실측 — 패널 %.0fx%.0f · 호스트 %.0fx%.0f · 패널가시성=%d · 호스트가시성=%d"),
+				*Screen->GetName(),
+				PanelSize.X, PanelSize.Y, HostSize.X, HostSize.Y,
+				static_cast<int32>(Panel->GetVisibility()),
+				Screen->Panel_PanelHost ? static_cast<int32>(Screen->Panel_PanelHost->GetVisibility()) : -1);
+		}));
+	}
 }
 
 FFF_LivePanelLayout UFF_LiveHudScreen::ResolveLayout(EFF_LiveTab Tab) const
