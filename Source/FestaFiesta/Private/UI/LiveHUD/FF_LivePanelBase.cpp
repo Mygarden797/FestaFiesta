@@ -21,6 +21,11 @@ void UFF_LivePanelBase::NativeOnInitialized()
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.AddUniqueDynamic(this, &UFF_LivePanelBase::HandleCloseClicked);
+
+		// 🔴 툴팁을 여기서 비운다. 생성기에서 빼는 것만으로는 **이미 만들어진 WBP 에 남는다** —
+		// `EnsureWidgetBlueprint` 가 기존 패키지를 건너뛰기 때문이다. 패널 6장을 지우고
+		// 다시 만드는 것보다 이쪽이 싸고, 디자이너가 실수로 다시 넣어도 같이 막힌다.
+		Button_Close->SetToolTipText(FText::GetEmpty());
 	}
 }
 
