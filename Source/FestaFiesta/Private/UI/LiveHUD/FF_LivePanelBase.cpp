@@ -7,6 +7,7 @@
 #include "UI/FF_UILog.h"
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Framework/Application/SlateApplication.h"
 
 // =============================================================================
 // UFF_LivePanelBase
@@ -106,25 +107,41 @@ FReply UFF_LivePanelBase::NativeOnMouseMove(const FGeometry& InGeometry, const F
 		return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
 	}
 
-	// 🔴 캡처를 안 하므로 **패널 밖에서 뗀 것을 못 받는다.** 그대로 두면 눌린 상태가 남아
-	//    손을 뗀 뒤에도 패널이 커서를 따라다닌다. 커서가 돌아온 첫 이동에서 정리한다.
-	if (!InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+	// 이동 자체는 `NativeTick` 이 처리한다 — 이벤트가 안 오는 구간이 있어서다.
+	// 여기서는 이벤트를 먹기만 해서 아래 월드로 새지 않게 한다.
+	return FReply::Handled();
+}
+
+void UFF_LivePanelBase::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!DragTracker.IsPressed() || !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	const FSlateApplication& Slate = FSlateApplication::Get();
+
+	// 🔴 **뗀 것을 이벤트로 기다리지 않는다.** 캡처를 안 쓰므로 패널 밖에서 떼면 그 이벤트가
+	//    이쪽으로 안 온다. 그대로 두면 손을 뗀 뒤에도 패널이 커서를 따라다닌다.
+	if (!Slate.GetPressedMouseButtons().Contains(EKeys::LeftMouseButton))
 	{
 		DragTracker.Release();
-		return FReply::Handled();
+		return;
 	}
 
 	// 임계를 넘기 전에는 0 이 온다. 넘는 순간 쌓인 이동을 몰아 적용하지 않아 툭 튀지 않는다.
-	const FVector2D PixelDelta = DragTracker.AddMove(InMouseEvent.GetScreenSpacePosition());
+	const FVector2D PixelDelta = DragTracker.AddMove(Slate.GetCursorPos());
 	if (PixelDelta.IsNearlyZero())
 	{
-		return FReply::Handled();
+		return;
 	}
 
 	UFF_LiveHudScreen* Screen = OwningScreen.Get();
 	if (!Screen)
 	{
-		return FReply::Handled();
+		return;
 	}
 
 	// 🔴 픽셀 → 슬레이트 단위. 캔버스 슬롯은 슬레이트 단위를 쓴다.
@@ -132,7 +149,6 @@ FReply UFF_LivePanelBase::NativeOnMouseMove(const FGeometry& InGeometry, const F
 	//    배율이 0 이하로 올 일은 없지만, 0 으로 나누면 좌표가 NaN 이 되어 패널이 사라진다.
 	const float ViewportScale = UWidgetLayoutLibrary::GetViewportScale(this);
 	Screen->NudgePanelPosition(ViewportScale > 0.f ? PixelDelta / ViewportScale : PixelDelta);
-	return FReply::Handled();
 }
 
 FReply UFF_LivePanelBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

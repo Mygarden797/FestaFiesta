@@ -80,6 +80,17 @@ protected:
 	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
+	/**
+	 * 🔴 **끄는 동안의 이동은 여기서 처리한다. 마우스 이동 이벤트로 하지 않는다.**
+	 *
+	 * 이 게임은 입력 모드가 `FInputModeGameOnly` 라 뷰포트가 마우스를 가져가는 구간이 있고,
+	 * 그동안 `NativeOnMouseMove` 가 위젯까지 안 온다. 그래서 이벤트로 끌면 —
+	 *   · 패널을 연 뒤 **첫 드래그가 통째로 먹힌다** (두 번째부터 되는 이유)
+	 *   · 빠르게 끌어 커서가 패널 밖으로 나가면 거기서 끊긴다 (캡처를 안 쓰므로)
+	 * 커서 위치와 버튼 상태를 매 틱 직접 읽으면 둘 다 사라진다 (2026-08-28).
+	 */
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
 	/** 끌어 옮기기를 이 패널에서 허용할지. 목록을 스크롤로 끄는 패널은 끈다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	bool bAllowDragToMove = true;
