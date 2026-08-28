@@ -10,6 +10,7 @@ enum class EFF_FestivalStage : uint8 //축제 단계를 나타내는 이름표
 {
     Setup             UMETA(DisplayName = "셋업"),
     PromotionPreview  UMETA(DisplayName = "홍보 프리뷰"),
+    SunsetTransition  UMETA(DisplayName = "노을 전환"),
     MorningCheck      UMETA(DisplayName = "모닝체크"),
     Live              UMETA(DisplayName = "라이브 운영"),
     Closing           UMETA(DisplayName = "마감"),

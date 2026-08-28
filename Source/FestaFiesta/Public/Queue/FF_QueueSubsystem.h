@@ -8,6 +8,8 @@
 #include "Queue/FF_FacilityQueue.h"
 #include "FF_QueueSubsystem.generated.h"
 
+class UFF_ZoneSystemQueueBridgeSubsystem;
+
 // ── Queue → Decision ────────────────────────────────────────────────────────
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FFF_OnQueuePartyJoined,
 	int32, FacilityId, int32, PartyId, int32, SlotIndex, float, EstimatedWaitSeconds);
@@ -72,12 +74,6 @@ class FESTAFIESTA_API UFF_QueueSubsystem : public UTickableWorldSubsystem
 public:
 	// ── 등록 ────────────────────────────────────────────────────────────────
 	// Config·Lane은 Queue가 소유하지 않는다. 시설 데이터(한광훈) 쪽에서 넘어온다.
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	void RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane);
-
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	bool UnregisterFacility(int32 FacilityId);
-
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	bool IsFacilityRegistered(int32 FacilityId) const;
 
@@ -86,23 +82,8 @@ public:
 	 * Party 단위 전부-아니면-전무 가입.
 	 * 결과는 반환값으로 즉시 온다. 이벤트는 관찰자용이라 다음 Tick에 브로드캐스트된다.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	FFF_QueueJoinResponse TryJoin(const FFF_JoinRequest& Request);
-
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	bool LeaveQueue(int32 FacilityId, int32 PartyId);
-
 	/** Crowd가 슬롯 0 도착을 알릴 때. Config.bRequireArrivalConfirmation이 true일 때만 의미가 있다. */
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	void NotifyPartyArrived(int32 FacilityId, int32 PartyId);
-
 	// ── 개폐 ────────────────────────────────────────────────────────────────
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	void CloseFacility(int32 FacilityId, EFF_QueueCloseReason Reason);
-
-	UFUNCTION(BlueprintCallable, Category = "Queue")
-	void ReopenFacility(int32 FacilityId);
-
 	// ── 조회 (Decision 스냅샷용) ────────────────────────────────────────────
 	UFUNCTION(BlueprintPure, Category = "Queue")
 	FFF_QueueState GetQueueState(int32 FacilityId) const;
@@ -209,6 +190,18 @@ public:
 	}
 
 private:
+	friend class UFF_ZoneSystemQueueBridgeSubsystem;
+
+	// Internal projection sink. Production Zone facilities are registered only by
+	// the bridge from an installed actor's frozen UFFZSFacilityDefinition Spec.
+	bool RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane);
+	bool UnregisterFacility(int32 FacilityId);
+	FFF_QueueJoinResponse TryJoin(const FFF_JoinRequest& Request);
+	bool LeaveQueue(int32 FacilityId, int32 PartyId);
+	void NotifyPartyArrived(int32 FacilityId, int32 PartyId);
+	void CloseFacility(int32 FacilityId, EFF_QueueCloseReason Reason);
+	void ReopenFacility(int32 FacilityId);
+
 	FFF_FacilityQueue* FindQueue(int32 FacilityId);
 	const FFF_FacilityQueue* FindQueue(int32 FacilityId) const;
 

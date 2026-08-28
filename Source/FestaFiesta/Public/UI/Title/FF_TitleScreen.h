@@ -8,6 +8,9 @@
 
 class UFF_CommonButtonBase;
 
+/** 타이틀 메뉴 항목 요청. 인자가 없다 — 어느 항목인지는 델리게이트가 구분한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTitleMenuRequested);
+
 /**
  * 타이틀 메인 메뉴 화면.
  *
@@ -22,6 +25,22 @@ UCLASS(Abstract, meta = (DisplayName = "FF Title Screen"))
 class FESTAFIESTA_API UFF_TitleScreen : public UFF_ActivatableScreenBase
 {
 	GENERATED_BODY()
+
+public:
+	/**
+	 * `플레이`를 눌렀을 때. **화면 밖에서 구독한다.**
+	 *
+	 * `BP_OnPlayRequested`는 이 WBP 안에서만 구현할 수 있어서, 레벨 블루프린트나
+	 * PlayerController처럼 화면을 소유한 쪽이 반응할 수 없었다. 그래서 델리게이트를 함께 둔다.
+	 *
+	 * **타이틀 화면이 자기를 제거하거나 HUD를 만들지 않는다.** 그건 화면을 띄운 쪽의 일이다.
+	 * 여기서 그걸 하면 타이틀이 게임 흐름을 알아야 하고, 축제가 늘 때마다 이 클래스를 고치게 된다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
+	FFF_OnTitleMenuRequested OnPlayRequested;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI")
+	FFF_OnTitleMenuRequested OnOptionsRequested;
 
 protected:
 	virtual void NativeOnInitialized() override;
