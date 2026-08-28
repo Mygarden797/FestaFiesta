@@ -182,6 +182,7 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 	// 도착 판정은 Crowd 가 소유하므로 그쪽 Arrived 신호에서 이어받는다.
 	if (ExitType == EFF_QueueExit::Served)
 	{
+		Crowd->ApplyPartyNeedRelief(PartyId);
 		if (const UFF_ZoneSystemQueueBridgeSubsystem* Bridge = GetBridge())
 		{
 			const FGuid ZoneFacilityId = Bridge->FindZoneFacilityId(FacilityId);

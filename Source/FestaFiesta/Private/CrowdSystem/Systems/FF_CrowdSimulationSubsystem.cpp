@@ -2025,7 +2025,8 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 			State.bIsLeaving = true;
 			State.LeaveStartedSimTime = SimTimeSeconds;
 			Unit.TargetLocation = Temp_ExitWorldLocation;
-			State.CurrentDestinationId = NAME_None;
+			State.CurrentDestinationId = bDecided ? Result.DestinationId : NAME_None;;
+			State.CurrentNeedRelief = bDecided ? Result.NeedRelief : FFF_NeedReliefFlags();
 			State.bNeedsDecision = false;
 			State.LastDecisionSimTime = SimTimeSeconds;
 			++Processed;
