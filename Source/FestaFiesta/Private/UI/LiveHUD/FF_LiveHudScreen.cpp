@@ -11,6 +11,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
@@ -30,16 +31,12 @@ namespace FFLiveHudScreenLocal
 			OutEnumName = TabEnum->GetNameStringByValue(static_cast<int64>(Tab));
 		}
 
-		switch (Tab)
+		// 문구 표는 `UFF_UIDisplayTextLibrary` 하나뿐이다. 여기 따로 두면 준비 단계 바와
+		// 갈라지고, 갈라진 쪽은 자동 테스트가 못 본다.
+		OutDisplayName = UFF_UIDisplayTextLibrary::GetLiveTabText(Tab);
+		if (OutDisplayName.IsEmpty())
 		{
-		case EFF_LiveTab::Operations:	OutDisplayName = LOCTEXT("LiveTab_Operations", "운영"); break;
-		case EFF_LiveTab::Facilities:	OutDisplayName = LOCTEXT("LiveTab_Facilities", "시설"); break;
-		case EFF_LiveTab::Guests:		OutDisplayName = LOCTEXT("LiveTab_Guests", "관객"); break;
-		case EFF_LiveTab::Queues:		OutDisplayName = LOCTEXT("LiveTab_Queues", "대기열"); break;
-		case EFF_LiveTab::SNS:			OutDisplayName = LOCTEXT("LiveTab_SNS", "SNS"); break;
-		case EFF_LiveTab::Report:		OutDisplayName = LOCTEXT("LiveTab_Report", "리포트"); break;
-		case EFF_LiveTab::Staff:		OutDisplayName = LOCTEXT("LiveTab_Staff", "스태프"); break;
-		default:						OutDisplayName = FText::FromString(OutEnumName); break;
+			OutDisplayName = FText::FromString(OutEnumName);
 		}
 	}
 }

@@ -18,6 +18,7 @@
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -46,7 +47,11 @@ namespace FFPrepHudBarLocal
 
 		const int32 Index = TabEnum->GetIndexByValue(static_cast<int64>(Tab));
 		OutName = TabEnum->GetNameStringByIndex(Index);
-		OutDisplayName = TabEnum->GetDisplayNameTextByIndex(Index);
+
+		// 🔴 `GetDisplayNameTextByIndex` 를 쓰지 않는다. 그 함수는 **에디터 메타데이터**를 읽는데
+		//    패키징하면 메타데이터가 떨어져 나가서 조용히 `Build`·`Check` 같은 영문 항목 이름이
+		//    나온다. 2026-08-28 시연 패키징에서 하단 탭이 전부 영문이었다.
+		OutDisplayName = UFF_UIDisplayTextLibrary::GetPrepTabText(Tab);
 	}
 }
 
