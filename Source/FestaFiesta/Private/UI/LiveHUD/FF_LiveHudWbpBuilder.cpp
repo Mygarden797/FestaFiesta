@@ -515,10 +515,16 @@ namespace FFLiveHudWbpBuilder
 		DayStageChip->SetBrush(MakeSolidBrush(Palette->InGame.TealDeep, 4.f));
 		DayStageChip->SetPadding(FMargin(14.f, 2.f));
 
-		// 방송 중을 뜻하는 빨간 점.
+		// 방송 중을 뜻하는 빨간 점. **카메라 녹화등처럼 아주 작다.**
 		// !! 이것만으로 상태를 말하지 않는다 !! 바로 옆에 `라이브` 라는 글자가 있다 (AT-011).
-		LiveDot->SetBrush(MakeSolidBrush(Palette->InGame.Danger, 4.f));
-		LiveDot->SetDesiredSizeOverride(FVector2D(8.f, 8.f));
+		//
+		// 🔴 크기는 `Brush.ImageSize` 로 준다. `SetDesiredSizeOverride` 는 런타임 값이라
+		//    생성기가 넣어도 WBP 에 저장되지 않는다 — 그래서 브러시 기본 32x32 가 그대로 나와
+		//    점이 아니라 빨간 상자가 됐다 (2026-08-27 실기 확인).
+		//    반경을 절반으로 두면 정원이 된다.
+		FSlateBrush DotBrush = MakeSolidBrush(Palette->InGame.Danger, 3.f);
+		DotBrush.ImageSize = FVector2D(6.f, 6.f);
+		LiveDot->SetBrush(DotBrush);
 		if (UHorizontalBoxSlot* Slot_Dot = DayStageRow->AddChildToHorizontalBox(LiveDot))
 		{
 			Slot_Dot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
