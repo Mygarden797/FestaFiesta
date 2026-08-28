@@ -12,6 +12,7 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 #include "Economy/FF_ProgramSchedulingSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
@@ -762,6 +763,10 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 			Controller.IsInputKeyDown(EKeys::Enter) ||
 			Controller.IsInputKeyDown(EKeys::SpaceBar);
 	}
+	const UFF_ZoneLifecycleTestPanelSubsystem* DebugPanel = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_ZoneLifecycleTestPanelSubsystem>()
+		: nullptr;
+	const bool bPointerOverDebugPanel = DebugPanel && DebugPanel->IsPointerOverPanel();
 
 	if (FFBuildModeModel::CanRemoveInstalledFacility(State))
 	{
@@ -789,7 +794,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		}
 		const UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem();
 		const bool bPointerOverFacilityPanel = FacilityInfo && FacilityInfo->IsPointerOverPanel();
-		if (!bBlockWorldClickThisFrame && !bPointerOverFacilityPanel &&
+		if (!bBlockWorldClickThisFrame && !bPointerOverFacilityPanel
+			&& !bPointerOverDebugPanel &&
 			Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
 		{
 			HandleRemovalClickUnderCursor(Controller);
@@ -802,7 +808,10 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ResetPlacementRotationInput();
 		return;
 	}
-	if (Controller.WasInputKeyJustPressed(EKeys::G))
+	const bool bControlDown =
+		Controller.IsInputKeyDown(EKeys::LeftControl)
+		|| Controller.IsInputKeyDown(EKeys::RightControl);
+	if (!bControlDown && Controller.WasInputKeyJustPressed(EKeys::G))
 	{
 		TogglePlacementGrid();
 		return;
@@ -823,7 +832,7 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	}
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
 	HandlePlacementRotationInput(Controller, DeltaTime);
-	if ((!bBlockWorldClickThisFrame &&
+	if ((!bBlockWorldClickThisFrame && !bPointerOverDebugPanel &&
 		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton)) ||
 		(!bBlockPlacementConfirmThisFrame &&
 			Controller.WasInputKeyJustPressed(EKeys::Enter)))

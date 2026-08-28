@@ -8,6 +8,7 @@
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
 
 #include "CommonTextBlock.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -211,6 +212,11 @@ void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 		FText::AsNumber(QueueClosed),
 		FText::AsNumber(ProjectRegistered),
 		FText::AsNumber(ProjectOpen)));
+}
+
+bool UFF_ZoneLifecycleTestPanel::IsPointerOverInteractivePanel() const
+{
+	return IsVisible() && Border_Panel && Border_Panel->IsHovered();
 }
 
 void UFF_ZoneLifecycleTestPanel::HandleSetupClicked()

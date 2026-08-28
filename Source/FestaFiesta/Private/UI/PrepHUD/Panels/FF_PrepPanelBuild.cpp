@@ -790,7 +790,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("CatalogReady", "시설을 선택하면 월드 배치 모드로 전환됩니다.");
+				: LOCTEXT("CatalogReady", "[B]키를 누르면 건축 모드로 전환됩니다 ");
 		}
 		Text_Status->SetText(Status);
 	}
@@ -816,8 +816,8 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		FText Guide;
 		switch (State)
 		{
-		case EFF_BuildModeState::Placing:
-			Guide = LOCTEXT("PlacingGuide", "배치 중 · 좌클릭 설치 · Q/E 회전 · Shift+Q/E 세밀 회전 ·우클릭 목록 복귀");
+		case EFF_BuildModeState::Placing: 
+			Guide = LOCTEXT("PlacingGuide", " [좌클릭] 설치/ 철거/이동 대상 선택 \n [Q/E] 90도 회전 \n [Shift+Q/E] 정밀 회전 \n [우클릭] 목록 복귀");
 			break;
 		case EFF_BuildModeState::Moving:
 			Guide = LOCTEXT("MovingGuide", "이동 중 · 좌클릭 확정 · 우클릭 취소");

@@ -745,32 +745,66 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 			Root->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
 	}
 	const USizeBox* PanelSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Panel_Size")));
+	TestNotNull(TEXT("카드는 고정 크기를 소유하는 SizeBox다"), PanelSize);
 	const UCanvasPanelSlot* PanelSlot = PanelSize
 		? Cast<UCanvasPanelSlot>(PanelSize->Slot)
 		: nullptr;
 	TestNotNull(TEXT("카드는 전체 화면 Canvas의 직접 자식이다"), PanelSlot);
+	constexpr float ExpectedPanelWidth = 388.0f;
+	constexpr float ExpectedPanelHeight = 500.0f;
+	constexpr float ExpectedPanelRightInset = -24.0f;
+	constexpr float ExpectedPanelTop = 72.0f;
+	if (PanelSize)
+	{
+		TestTrue(TEXT("카드 WidthOverride는 388px이다"),
+			FMath::IsNearlyEqual(PanelSize->GetWidthOverride(), ExpectedPanelWidth));
+		TestTrue(TEXT("카드 HeightOverride는 500px이다"),
+			FMath::IsNearlyEqual(PanelSize->GetHeightOverride(), ExpectedPanelHeight));
+	}
 	if (PanelSlot)
 	{
 		const FAnchors Anchors = PanelSlot->GetAnchors();
-		TestTrue(TEXT("카드 anchor는 우측 중앙이다"),
-			Anchors.Minimum.Equals(FVector2D(1.0f, 0.5f)) &&
-			Anchors.Maximum.Equals(FVector2D(1.0f, 0.5f)));
-		TestTrue(TEXT("카드 alignment는 우측 중앙이다"),
-			PanelSlot->GetAlignment().Equals(FVector2D(1.0f, 0.5f)));
+		TestTrue(TEXT("카드 anchor는 우상단이다"),
+			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) &&
+			Anchors.Maximum.Equals(FVector2D(1.0f, 0.0f)));
+		TestTrue(TEXT("카드 alignment는 우상단이다"),
+			PanelSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)));
 		const FVector2D PanelPosition = PanelSlot->GetPosition();
-		TestFalse(*FString::Printf(TEXT("카드 오프셋은 디자이너가 조정할 수 있고 유한한 값이다 (Actual: %s)"),
-			*PanelPosition.ToString()),
-			PanelPosition.ContainsNaN());
-		TestTrue(TEXT("카드 크기는 내용에 맞춰 계산된다"), PanelSlot->GetAutoSize());
+		TestTrue(TEXT("카드 위치는 우측 -24px, 상단 72px이다"),
+			PanelPosition.Equals(FVector2D(ExpectedPanelRightInset, ExpectedPanelTop)));
+		TestFalse(TEXT("카드 Canvas 슬롯은 AutoSize를 사용하지 않는다"), PanelSlot->GetAutoSize());
+		const FVector2D PanelSlotSize = PanelSlot->GetSize();
+		TestTrue(TEXT("카드 Canvas 슬롯은 388x500 고정 크기다"),
+			PanelSlotSize.Equals(FVector2D(ExpectedPanelWidth, ExpectedPanelHeight)));
+
+		constexpr float ReferenceViewportHeight = 1080.0f;
+		constexpr float PrepHudBarHeight = 58.0f;
+		constexpr float PrepHudBottomMargin = 12.0f;
+		constexpr float PrepBuildHostHeight = 320.0f;
+		constexpr float PrepBuildHudTop = ReferenceViewportHeight
+			- PrepHudBarHeight - PrepHudBottomMargin - PrepBuildHostHeight;
+		static_assert(ExpectedPanelTop + ExpectedPanelHeight == 572.0f);
+		static_assert(PrepBuildHudTop == 690.0f);
+		const float PanelBottom = PanelPosition.Y + PanelSlotSize.Y;
+		TestTrue(*FString::Printf(
+			TEXT("1080p에서 시설 카드 하단 %.0fpx는 Build HUD 상단 %.0fpx보다 위다"),
+			PanelBottom,
+			PrepBuildHudTop),
+			PanelBottom < PrepBuildHudTop);
 	}
 	TestNotNull(TEXT("카드가 명시적 Border 계약을 가진다"),
 		Cast<UBorder>(Tree->FindWidget(TEXT("Border_Panel"))));
 	TestNotNull(TEXT("닫기 버튼 계약"), Cast<UButton>(Tree->FindWidget(TEXT("Button_Close"))));
 	TestNotNull(TEXT("이동 버튼 계약"), Cast<UButton>(Tree->FindWidget(TEXT("Button_Move"))));
 	TestNotNull(TEXT("철거 버튼 계약"), Cast<UButton>(Tree->FindWidget(TEXT("Button_Remove"))));
+	TestNotNull(TEXT("상세 정보는 내부 ScrollBox를 사용한다"),
+		Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Details"))));
 	TestNotNull(TEXT("썸네일 계약"), Cast<UImage>(Tree->FindWidget(TEXT("Image_Thumbnail"))));
 	TestNotNull(TEXT("건축 섹션 계약"), Tree->FindWidget(TEXT("Panel_BuildSection")));
 	TestNotNull(TEXT("라이브 섹션 계약"), Tree->FindWidget(TEXT("Panel_LiveSection")));
+	TestNotNull(TEXT("고정 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_Actions")));
+	TestNotNull(TEXT("건축 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_BuildActions")));
+	TestNotNull(TEXT("라이브 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_LiveActions")));
 	TestNotNull(TEXT("유료 프로그램 섹션 계약"), Tree->FindWidget(TEXT("Panel_ProgramSection")));
 	TestNotNull(TEXT("유료 프로그램 편성 버튼 계약"),
 		Cast<UButton>(Tree->FindWidget(TEXT("Button_ScheduleProgram"))));
@@ -784,7 +818,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("Text_Occupancy"), TEXT("Text_RemainingService"), TEXT("Text_ExpectedWait"),
 		TEXT("Text_Throughput"), TEXT("Text_Feedback"), TEXT("Text_ProgramStatus"),
 		TEXT("Text_ScheduledProgramSummary"), TEXT("Text_ProgramScheduleReason"),
-		TEXT("Text_ScheduleProgram")
+		TEXT("Text_ScheduleProgram"), TEXT("Text_StartMinigame")
 	};
 	for (const FName Name : RequiredTextNames)
 	{
@@ -793,8 +827,9 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	}
 	TArray<FName> RequiredVariableNames = {
 		TEXT("Border_Panel"), TEXT("Button_Close"), TEXT("Button_Move"),
-		TEXT("Button_Remove"), TEXT("Image_Thumbnail"), TEXT("Panel_BuildSection"),
-		TEXT("Panel_LiveSection"), TEXT("Panel_ProgramSection"),
+		TEXT("Button_Remove"), TEXT("Button_StartMinigame"), TEXT("Image_Thumbnail"),
+		TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Panel_ProgramSection"),
+		TEXT("Panel_Actions"), TEXT("Panel_BuildActions"), TEXT("Panel_LiveActions"),
 		TEXT("Button_ScheduleProgram")
 	};
 	RequiredVariableNames.Append(RequiredTextNames);

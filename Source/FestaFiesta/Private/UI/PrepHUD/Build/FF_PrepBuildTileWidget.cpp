@@ -73,14 +73,24 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 	}
 	if (Text_Cost)
 	{
-		Text_Cost->SetText(Item->GetCostText());
+		const FText StateText = Item->GetStateText();
+		Text_Cost->SetAutoWrapText(true);
+		Text_Cost->SetText(StateText.IsEmpty()
+			? Item->GetCostText()
+			: FText::Format(
+				NSLOCTEXT("FestaFiestaPrepBuild", "CostAndBlockingState", "{0}\n{1}"),
+				Item->GetCostText(),
+				StateText));
 	}
 	if (Text_State)
 	{
 		const FText StateText = Item->GetStateText();
-		Text_State->SetText(StateText.IsEmpty()
-			? NSLOCTEXT("FestaFiestaPrepBuild", "Available", "배치 가능")
-			: StateText);
+		// 긴 실패 문구를 가격과 같은 가로 행에 두면 좁은 카드에서 두 TextBlock이
+		// 서로 침범한다. 실패 문구는 가격 아래 줄에 합쳐 표시하고 이 보조 칸은 접는다.
+		Text_State->SetVisibility(StateText.IsEmpty()
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+		Text_State->SetText(NSLOCTEXT("FestaFiestaPrepBuild", "Available", "배치 가능"));
 	}
 	if (Image_Thumbnail)
 	{

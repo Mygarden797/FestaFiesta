@@ -1417,7 +1417,8 @@ UI 입력
 - Definition·배치 에디터 픽스처: `/Game/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`
 - Lifecycle QA 코드: `Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanel*`
 
-Lifecycle 패널은 비 Shipping의 `Test_Main` Game·PIE 월드에서만 생성되며 Festival 단계 변경과
+Lifecycle 패널은 비 Shipping의 `Test_Main` Game·PIE 월드에서만 숨김 상태로 생성되며, 게임
+뷰포트에 포커스를 둔 뒤 `Ctrl+G`로 표시·숨김을 전환한다. Festival 단계 변경과
 Open·Close·Emergency 권위 API를 관찰·수동 실행한다. Install·Move·Remove는 같은 맵의 프로덕션
 건축 모드 경로로 확인하고, Definition과 배치 픽스처는 Editor 검증에 사용한다. 이 QA Slice는
 Queue 또는 실제 NPC 이동 하네스가 아니므로 해당 통합 검증은 별도로 수행한다.

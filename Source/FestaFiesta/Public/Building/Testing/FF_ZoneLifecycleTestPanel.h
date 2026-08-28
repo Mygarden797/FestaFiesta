@@ -13,6 +13,7 @@
 #include "FF_ZoneLifecycleTestPanel.generated.h"
 
 class UButton;
+class UBorder;
 class UCommonTextBlock;
 
 /**
@@ -27,6 +28,10 @@ class FESTAFIESTA_API UFF_ZoneLifecycleTestPanel : public UUserWidget
 public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Testing")
 	void RefreshStatus();
+
+	/** 표시 중인 카드 위에 포인터가 있어 raw 월드 클릭을 막아야 하는지 반환합니다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Testing")
+	bool IsPointerOverInteractivePanel() const;
 
 protected:
 	virtual void NativeConstruct() override;
@@ -69,6 +74,11 @@ private:
 	void RequestStage(EFF_FestivalStage Stage);
 	void ApplyBatchResult(const FFF_ZoneFacilityLifecycleBatchResult& Result);
 	void SetLastResult(const FText& Text);
+
+	// 새 LightTeal WBP의 상호작용 경계. 구 에셋도 로드할 수 있도록 refresh 전에는 선택 계약이다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
+		meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_Panel;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
 		meta = (BindWidget, AllowPrivateAccess = "true"))
