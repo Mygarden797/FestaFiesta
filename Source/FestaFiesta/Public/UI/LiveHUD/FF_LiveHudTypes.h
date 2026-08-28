@@ -48,19 +48,29 @@ struct FESTAFIESTA_API FFF_LivePanelLayout
 {
 	GENERATED_BODY()
 
-	/**
-	 * 패널 폭(px). 세로는 화면 높이에서 하단 바와 여백을 뺀 값이라 여기서 정하지 않는다.
-	 * 0 이하면 패널이 사라지므로 그때는 기본값으로 되돌린다.
-	 */
+	/** 패널 폭(px). 0 이하면 패널이 사라지므로 그때는 기본값으로 되돌린다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
 	float Width = 520.f;
 
 	/**
-	 * 왼쪽 기준에서 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
+	 * 패널 높이(px). 하단 바 바로 위에서 **위로** 자란다.
 	 *
-	 * 🔴 **`X` 만 자리를 옮긴다.** 세로는 화면이 정하므로 `Y` 를 키우면 위아래 여백이
-	 * 같이 줄어드는 것이 아니라 패널이 아래로 밀리고 그만큼 잘린다. 준비 단계에서 같은
-	 * 함정을 밟았다 — 늘어나는 축은 값이 아니라 화면이 정한다.
+	 * === 🔴 왜 "화면 높이에서 빼서" 쓰지 않나 (2026-08-28 실측으로 판명) ===
+	 * 처음에는 세로를 늘어난 축(`Anchors.Y = 0~1`)으로 두고 위아래 여백만 줬다. 그러면
+	 * 높이를 **부모가** 정하는데, HUD 루트가 화면 높이를 못 받고 자기 내용 크기(약 70px)만
+	 * 받고 있었다. 결과는 높이 `-12` 였고 화면에는 닫기 버튼만 한 흰 상자가 떴다.
+	 *
+	 * 준비 단계 패널이 멀쩡했던 것은 실제로 쓰는 도킹(`Bottom`·`Center`)이 전부
+	 * **점 앵커 + 명시 크기**여서 부모 높이를 안 보기 때문이다. `Right` 를 썼다면 같이 깨졌다.
+	 *
+	 * ⚠️ HUD 루트가 화면을 못 채우는 것 자체는 **따로 남은 문제**다. 여기서는 그것에
+	 * 의존하지 않게만 해 둔다 — `docs/memory/ui-session-handoff.md` 참고.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
+	float Height = 620.f;
+
+	/**
+	 * 하단 바 왼쪽 위 모서리 기준으로 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
 	FVector2D Offset = FVector2D::ZeroVector;

@@ -428,10 +428,15 @@ void UFF_LiveHudScreen::LogPanelGeometryNextTick(UFF_LivePanelBase& Panel)
 				? Screen->Panel_PanelHost->GetCachedGeometry().GetLocalSize()
 				: FVector2D::ZeroVector;
 
+			// 🔴 `화면` 크기가 실제 해상도보다 훨씬 작으면 HUD 루트가 화면을 못 채우고 있는 것이다.
+			//    패널은 그 값에 의존하지 않게 고쳤지만, 원인 자체는 아직 남아 있다.
+			const FVector2D ScreenSize = Screen->GetCachedGeometry().GetLocalSize();
+
 			UE_LOG(LogFestaFiestaUI, Warning,
-				TEXT("[%s] 패널 실측 — 패널 %.0fx%.0f · 호스트 %.0fx%.0f · 패널가시성=%d · 호스트가시성=%d"),
+				TEXT("[%s] 패널 실측 — 패널 %.0fx%.0f · 호스트 %.0fx%.0f · 화면 %.0fx%.0f · "
+					 "패널가시성=%d · 호스트가시성=%d"),
 				*Screen->GetName(),
-				PanelSize.X, PanelSize.Y, HostSize.X, HostSize.Y,
+				PanelSize.X, PanelSize.Y, HostSize.X, HostSize.Y, ScreenSize.X, ScreenSize.Y,
 				static_cast<int32>(Panel->GetVisibility()),
 				Screen->Panel_PanelHost ? static_cast<int32>(Screen->Panel_PanelHost->GetVisibility()) : -1);
 		}));
@@ -443,12 +448,19 @@ FFF_LivePanelLayout UFF_LiveHudScreen::ResolveLayout(EFF_LiveTab Tab) const
 	const FFF_LivePanelLayout* Found = PanelLayouts.Find(Tab);
 	FFF_LivePanelLayout Layout = Found ? *Found : DefaultPanelLayout;
 
-	// 폭이 0 이하면 패널이 사라진다. 값을 잘못 넣었을 때 화면이 통째로 없어지지 않게 되돌린다.
+	// 크기가 0 이하면 패널이 사라진다. 값을 잘못 넣었을 때 화면이 통째로 없어지지 않게 되돌린다.
 	if (Layout.Width <= 0.f)
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 패널 폭이 %.1f 라 기본값으로 되돌린다."), *GetName(), Layout.Width);
 		Layout.Width = DefaultPanelLayout.Width > 0.f ? DefaultPanelLayout.Width : 520.f;
+	}
+
+	if (Layout.Height <= 0.f)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 패널 높이가 %.1f 라 기본값으로 되돌린다."), *GetName(), Layout.Height);
+		Layout.Height = DefaultPanelLayout.Height > 0.f ? DefaultPanelLayout.Height : 620.f;
 	}
 	return Layout;
 }
@@ -477,16 +489,23 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 
 	// === CanvasPanelSlot 의 Offsets 는 앵커에 따라 뜻이 달라진다 ===
 	// 늘어난 축(min != max)이면 양쪽 **여백**이고, 점 앵커면 **위치와 크기**다.
-	// 라이브 패널은 왼쪽 고정이라 세로가 늘어난 축이다 —
-	//   Left = X 위치, Top = 위쪽 여백, Right = 폭, Bottom = 아래쪽 여백
-	// 아래는 하단 바를 비워 둔다. 안 그러면 패널이 바 뒤로 들어가 탭을 못 누른다.
-	CanvasSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 1.f));
-	CanvasSlot->SetAlignment(FVector2D(0.f, 0.f));
+	//
+	// 🔴 **두 축 다 점 앵커로 둔다** (2026-08-28 실측 후 변경).
+	// 전에는 세로를 늘어난 축으로 두고 위아래 여백만 줬는데, 그러면 높이를 **부모가**
+	// 정한다. 그런데 HUD 루트가 화면 높이를 못 받고 있어서 높이가 `-12` 로 나왔고
+	// 화면에는 닫기 버튼만 한 흰 상자가 떴다. 준비 단계 패널이 멀쩡한 것은 실제로 쓰는
+	// 도킹이 전부 점 앵커 + 명시 크기라 부모 높이를 안 보기 때문이다.
+	//
+	// 기준점은 **화면 왼쪽 아래**다. 거기서 바 높이만큼 띄우고 위로 자란다 —
+	// 바를 기준으로 잡아야 패널이 바 뒤로 들어가 탭을 가리는 일이 없다.
+	//   Left = X 위치, Top = Y 위치(음수 = 위로), Right = 폭, Bottom = 높이
+	CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
+	CanvasSlot->SetAlignment(FVector2D(0.f, 1.f));
 	CanvasSlot->SetOffsets(FMargin(
 		PanelMargin + static_cast<float>(Layout.Offset.X),
-		PanelMargin,
+		-(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y),
 		Layout.Width,
-		BarHeight + PanelMargin));
+		Layout.Height));
 }
 
 // =============================================================================

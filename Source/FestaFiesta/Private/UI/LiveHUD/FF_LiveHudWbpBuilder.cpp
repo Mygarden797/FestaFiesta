@@ -81,6 +81,7 @@ namespace FFLiveHudWbpBuilder
 
 	/** 패널 자리의 디자이너 미리보기 폭. 실제 값은 `UFF_LiveHudScreen` 의 레이아웃 설정이 정한다. */
 	constexpr float PanelHostWidth = 520.f;
+	constexpr float PanelHostHeight = 620.f;
 	constexpr float PanelMargin = 12.f;
 
 	constexpr float TabCornerRadius = 4.f;
@@ -611,12 +612,15 @@ namespace FFLiveHudWbpBuilder
 		// 앵커·오프셋은 패널을 열 때 `UFF_LiveHudScreen::ApplyPanelLayout` 이 다시 쓴다.
 		// 여기 값은 디자이너에서 자리를 보기 위한 기본 배치다.
 		PanelHost->SetVisibility(ESlateVisibility::Collapsed);
+		// 🔴 **두 축 다 점 앵커다.** 늘어난 축으로 두면 높이를 부모가 정하는데, HUD 루트가
+		//    화면 높이를 못 받고 있어서 높이가 음수가 됐다 (2026-08-28 실측). 기준점은
+		//    화면 왼쪽 아래이고 바 높이만큼 띄운 자리에서 위로 자란다.
 		if (UCanvasPanelSlot* Slot_PanelHost = Cast<UCanvasPanelSlot>(Root->AddChild(PanelHost)))
 		{
-			Slot_PanelHost->SetAnchors(FAnchors(0.f, 0.f, 0.f, 1.f));
-			Slot_PanelHost->SetAlignment(FVector2D(0.f, 0.f));
+			Slot_PanelHost->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
+			Slot_PanelHost->SetAlignment(FVector2D(0.f, 1.f));
 			Slot_PanelHost->SetOffsets(FMargin(
-				PanelMargin, PanelMargin, PanelHostWidth, BarHeight + PanelMargin));
+				PanelMargin, -(BarHeight + PanelMargin), PanelHostWidth, PanelHostHeight));
 		}
 
 		// --- 하단 바. 가로로 꽉 채우고 높이는 58 고정 ---
