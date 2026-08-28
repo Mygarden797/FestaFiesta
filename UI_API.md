@@ -79,6 +79,7 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `GetCurrentLiveClockString()`          | `FString`           | 지금 시각을 "17:30" 형식으로 반환 |
 | `GetCurrentStageDisplayName()`         | `FText`             | 현재 Stage의 한글 표시 이름 (⚠️ 패키징 빌드 안전성 재검토 필요 — 아래 참고) |
 | `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨) |
+| `OnFestivalStarted`                    | (인자 없음)          | 축제가 새로 시작됐음을 알리는 신호 (StartNewFestival() 호출 시 발동|
 
 **`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
 
@@ -1524,3 +1525,4 @@ U5 홍보 패널을 만들면서, 없는 API 를 UI 쪽 더미로 임시로 메�
 | 2026-08-28 | 김시리 | 🔴 **2회차 축제를 시작하면 경제가 리셋되지 않습니다.** 경제의 `StartFestival(Definition)` 이 **`Initialize()` 에서 한 번만** 불려서, GameInstance 가 살아 있는 한 다시 안 돕니다 — Gold·원장·미납·인원·예약이 1회차 마지막 값으로 남습니다. **제 쪽에서 닫겠습니다**(리셋 함수는 이미 완성돼 있고 부를 자리만 없었습니다). ❓ **여쭙고 싶은 것**: `UFF_UIFlowSubsystem` 에서 **프론트엔드 복귀 후 축제를 다시 시작하는 흐름이 지금 실제로 도는지**입니다. 도는 상태면 발표 전에, 아니면 발표 뒤에 닫겠습니다 |
 | 2026-08-28 | 김시리 | ✅ **메인 무대가 공연 시간에만 후보로 열립니다.** Live 전반에는 `Performance_MainStage_*` 가 NPC 목적지 후보에서 빠져 있다가 공연 시작 시각에 열리고, 그 순간 유휴 파티가 무대로 몰립니다. **버스킹·체험 무대는 상시 열려 있습니다.** 화면 쪽 작업은 없습니다 — 다만 "무대에 아무도 없다"가 버그가 아니라 의도라는 점만 알아 두시면 됩니다 |
 | 2026-08-27 | 김시리 | **코드 전수 대조 + 문서 정리.** 안 맞는 것을 문서 끝 `아직 안 맞는 것` 표 하나로 모으고, 이미 닫힌 항목의 경위 서술을 걷어냈습니다. 실제로 바뀐 사실 4개: ① **표시 문자열은 5개 파일에 남아 있습니다**(지목했던 2곳은 줄 번호가 낡았고, 그중 4건은 Stage enum 이 아니라 탭·옵션 enum 이라 강민서 님 수정과 무관합니다) ② **`FFF_CrowdReadModel` 은 스텁이 아니라 실값이고 셀이 2m 입니다**(5m 가정이면 Heat Map 색이 틀립니다) ③ 인원 칸에 **가용이 아니라 보유**가 붙어 있습니다 ④ 프로그램·피날레는 `EFF_PrepHudTab` 에 탭 자리가 이미 있고 패널 본체만 없습니다. **경제 쪽 추가 작업은 0건이고, 제 숙제는 `AddSample` 호출부입니다** |
+| 2026-08-28 | 강민서 | ✅ **김시리님 질문 관련 — `OnFestivalStarted` 델리게이트로 대신 구독하시는 걸 제안합니다.** `StartNewFestival()` 호출 시 Day/Stage/시계 초기화 후 마지막에 `OnFestivalStarted.Broadcast()`가 발동하도록 만들어 뒀습니다. 경제 쪽 리셋 함수를 `UFF_UIFlowSubsystem`이 직접 호출하는 방식 대신, 여기 구독해서 자체 리셋을 걸어두시면 "부를 자리가 없다"는 문제가 UI Flow 흐름 여부와 무관하게 해결될 것 같습니다. 구독 방법: `GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()->OnFestivalStarted.AddDynamic(this, &YourClass::YourResetHandler);` 이 방식이 맞을지 확인 부탁드립니다. |
