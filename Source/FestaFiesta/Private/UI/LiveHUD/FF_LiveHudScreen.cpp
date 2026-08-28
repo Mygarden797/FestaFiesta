@@ -5,6 +5,8 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
@@ -378,7 +380,22 @@ UFF_LivePanelBase* UFF_LiveHudScreen::EnsurePanel(EFF_LiveTab Tab)
 	}
 
 	Panel->SetVisibility(ESlateVisibility::Collapsed);
-	Panel_PanelHost->AddChild(Panel);
+
+	// 🔴 호스트가 `UOverlay` 면 슬롯 기본값이 `Left`·`Top` 이라 **패널이 내용 크기로 쪼그라든다.**
+	// 왼쪽 도킹 패널은 호스트를 가득 채워야 한다 — 안 그러면 자리는 잡혔는데 흰 상자만 보인다.
+	UPanelSlot* AddedSlot = Panel_PanelHost->AddChild(Panel);
+	if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(AddedSlot))
+	{
+		OverlaySlot->SetHorizontalAlignment(HAlign_Fill);
+		OverlaySlot->SetVerticalAlignment(VAlign_Fill);
+	}
+
+	UE_LOG(LogFestaFiestaUI, Log,
+		TEXT("[%s] `%s` 패널을 만들었다 (%s%s). 호스트=%s"),
+		*GetName(), *EnumName, *PanelClass->GetName(),
+		bIsPlaceholder ? TEXT(" · 자리표시") : TEXT(""),
+		*Panel_PanelHost->GetClass()->GetName());
+
 	PanelWidgets.Add(Tab, Panel);
 	return Panel;
 }
@@ -409,9 +426,14 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 	if (!CanvasSlot)
 	{
 		// 캔버스가 아니면 위치는 디자이너가 소유한다. 코드가 짐작해서 옮기지 않는다.
-		UE_LOG(LogFestaFiestaUI, Verbose,
-			TEXT("[%s] Panel_PanelHost 가 CanvasPanel 자식이 아니라 자리를 코드가 정하지 않는다."),
-			*GetName());
+		//
+		// 🔴 `Warning` 이다. 이 경우 패널이 **화면 가운데 조그맣게** 뜨는데, 원인이
+		// "코드가 자리를 안 잡았다" 라는 것이 로그 없이는 안 보인다 (2026-08-27).
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] Panel_PanelHost 가 CanvasPanel 자식이 아니라(%s) 자리를 코드가 정하지 않는다. "
+				 "WBP 에서 Canvas_Root 바로 아래에 두거나 디자이너에서 자리를 잡는다."),
+			*GetName(),
+			Panel_PanelHost->Slot ? *Panel_PanelHost->Slot->GetClass()->GetName() : TEXT("슬롯 없음"));
 		return;
 	}
 
