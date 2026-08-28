@@ -46,6 +46,12 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 	// utility_coefficients_v0.csv 의 weight_need 와 반드시 같게 유지할 것.
 	const float WeightNeed = GetCoefficient(UtilityCoefficientTable, TEXT("weight_need"), 1.8f);
 	const float WeightRevisit = GetCoefficient(UtilityCoefficientTable, TEXT("weight_revisit"), 0.5f);
+	const float WeightFailedDestination =
+		GetCoefficient(UtilityCoefficientTable, TEXT("weight_failed_destination"), 1.2f);
+	const float WeightInTransit = GetCoefficient(UtilityCoefficientTable, TEXT("weight_in_transit"), 0.7f);
+	// 시설 정원 대비 비율이 아니라 절대 인원이다. Candidate.Capacity 는 시설 정원이 아니라
+	// Zone 정원이라(FF_ZoneSystemBridge) 같은 Zone 후보끼리 구분이 안 된다.
+	const float InTransitRefCount = GetCoefficient(UtilityCoefficientTable, TEXT("in_transit_ref_count"), 12.f);
 	// 0 이하면 방문 잔상이 즉시 사라진다 = 신규성 선호 꺼짐. 나눗셈 보호도 겸한다.
 	const float RevisitMemoryMinutes = GetCoefficient(UtilityCoefficientTable, TEXT("revisit_memory_minutes"), 60.f);
 	// 음수 배수는 "가본 곳을 더 좋아한다"가 되어 의도와 반대다. 호출부 버그로 보고 0 으로 막는다.
@@ -85,6 +91,7 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		const float WaitNorm = NormalizeUpper(Candidate.EstimatedWaitMinutes, WaitRefMinutes);
 		const float OccupancyRatio = Candidate.Capacity > 0.f ? (Candidate.CurrentOccupancy / Candidate.Capacity) : 0.f;
 		const float DensityNorm = NormalizeUpper(OccupancyRatio, DensityRefRatio);
+		const float InTransitNorm = NormalizeUpper(Candidate.InTransitMemberCount, InTransitRefCount);
 
 		// need 항: 이 시설이 해소하는 Need 중 가장 급한 값. 합이 아니라 최대값인 이유는
 		// FFF_NeedReliefFlags::GetMaxUrgency 주석 참고. 이 항이 재방문 문제도 같이 해결한다 —
@@ -114,9 +121,12 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		Breakdown.DensityCostTerm = -WeightDensity * DensityNorm;
 		Breakdown.NeedTerm = WeightNeed * NeedUrgencyNorm;
 		Breakdown.RevisitPenaltyTerm = -WeightRevisit * RevisitPenaltyNorm * SafeNoveltySeeking;
+		Breakdown.FailedDestinationPenaltyTerm = Candidate.bFailedRecently ? -WeightFailedDestination : 0.f;
+		Breakdown.InTransitCostTerm = -WeightInTransit * InTransitNorm;
 		Breakdown.TotalUtility = Breakdown.AttractionTerm + Breakdown.PreferenceTerm + Breakdown.DistanceCostTerm
 			+ Breakdown.WaitCostTerm + Breakdown.DensityCostTerm + Breakdown.NeedTerm
-			+ Breakdown.RevisitPenaltyTerm;
+			+ Breakdown.RevisitPenaltyTerm + Breakdown.FailedDestinationPenaltyTerm
+			+ Breakdown.InTransitCostTerm;
 		Breakdowns.Add(Breakdown);
 	}
 
@@ -182,10 +192,11 @@ FFF_DestinationDecision FFF_UtilityDestinationSelector::Choose(
 		Decision.bIsNoChoice, U, ConsecutiveNoChoiceCount, NoChoiceUtility);
 	for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
 	{
-		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Need=%.3f Revisit=%.3f Total=%.3f Prob=%.3f"),
+		UE_LOG(LogFestaFiestaNpc, Verbose, TEXT("  - %s: Attraction=%.3f Preference=%.3f Distance=%.3f Wait=%.3f Density=%.3f Need=%.3f Revisit=%.3f Failed=%.3f InTransit=%.3f Total=%.3f Prob=%.3f"),
 			B.DestinationId.IsNone() ? TEXT("no_choice") : *B.DestinationId.ToString(),
 			B.AttractionTerm, B.PreferenceTerm, B.DistanceCostTerm, B.WaitCostTerm, B.DensityCostTerm,
-			B.NeedTerm, B.RevisitPenaltyTerm, B.TotalUtility, B.ChoiceProbability);
+			B.NeedTerm, B.RevisitPenaltyTerm, B.FailedDestinationPenaltyTerm, B.InTransitCostTerm,
+			B.TotalUtility, B.ChoiceProbability);
 	}
 
 	return Decision;

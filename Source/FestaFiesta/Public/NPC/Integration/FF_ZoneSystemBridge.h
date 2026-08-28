@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
+#include "NPC/Integration/FF_WalkDistanceMatrix.h"
 #include "NPC/Party/FF_NeedState.h"
 
 /**
@@ -27,7 +28,13 @@
  *   - `EntryExitAnchors`     — Zone 로컬 cm 출입 기준점 (거리 행렬의 시작·끝점)
  *   - `AreaSquareMeters`     — `GetBoundaryAreaSquareMeters()`의 실제 경계 면적(㎡)
  *
- * 현재 후보 거리는 시설 대표점까지의 직선거리이며, 앵커·NavMesh 기반 실제 보행거리 전환은 별도 과제다.
+ * 후보 거리는 기본이 시설 대표점까지의 직선거리다. `WalkDistances`를 넘기면
+ * 존 앵커 보행거리 행렬을 경유한 근사로 바뀐다 — 강·무대·펜스 건너편이 멀게 나온다.
+ * 넘기지 않으면(nullptr) 직선거리 그대로이므로 기존 수치와 완전히 같다(A/B의 근거).
+ *
+ * ⛔ 이동을 NavMesh 경로 추종으로 바꿀 때는 이 행렬을 **반드시 같이 켜야 한다.**
+ *   직선거리로 "가깝다"고 고른 시설을 이동이 크게 우회하면 결정과 이동이 어긋나고,
+ *   그 상태의 혼잡은 원인 추적이 불가능하다(계획 문서 §4.2의 금지 항목).
  *
  *
  * ### 시설 거리 입력 계약
@@ -70,6 +77,7 @@ public:
 	 * (1) 닫힌 시설 — Choose()가 bIsOpen == false 를 건너뛰므로 넣어두면 상한만 잡아먹는다
 	 * (2) Info·Safety 카테고리 — 취향 카테고리도 없고 해소하는 Need도 없어서 점수가 모든 NPC에게
 	 *     항상 같다. 고를 이유가 생기지 않는데 상한 한 칸을 먹으므로 뺀다.
+	 * (3) 공연 시간이 아닐 때의 메인 무대 — bMainStageOpen 참조.
 	 *
 	 * ### EstimatedWaitMinutes는 폴백이다 (이중 계산 주의)
 	 *
@@ -88,11 +96,44 @@ public:
 	 * @param PartyWorldLocation 거리 계산 기준이 되는 Party 월드 위치(cm)
 	 * @param MaxCandidates      후보 상한. 0 이하면 상한 없음
 	 */
+	/**
+	 * @param WalkDistances 존 앵커 보행거리 행렬. nullptr이면 직선거리를 쓴다(기존 거동).
+	 *                      소유·갱신은 호출자(UFF_CrowdDecisionSubsystem)의 몫이다 —
+	 *                      행렬을 지으려면 존 액터의 월드 트랜스폼과 NavigationSystem이 필요하고,
+	 *                      이 클래스는 월드를 모르는 순수 변환기로 남겨야 테스트가 싸다.
+	 *
+	 * @param bMainStageOpen 지금이 메인 공연 시간인가. false면 `Performance_MainStage_*` 시설을
+	 *                       후보에서 뺀다.
+	 *
+	 *                       "공연 시간에 무대로 몰린다"(AT-016)는 셋이 같이 만든다:
+	 *                         ① Stimulation 축적 — 무대를 고를 **이유**. 완만한 추세만 만든다
+	 *                            (FF_NeedRules.h StimulationMinutesToLimit [특징 1])
+	 *                         ② 이 게이팅 — **계단**. 직전까지 없던 고득점 후보가 갑자기 생긴다.
+	 *                            선형 누적기인 Need 계수로는 만들 수 없는 유일한 불연속이다
+	 *                         ③ `UFF_CrowdSimulationSubsystem::RequestRedecisionForIdleParties` —
+	 *                            그 계단을 **같은 순간에** 모두에게 보이게 한다. 없으면 각자
+	 *                            다음 도착 때나 무대를 보게 되어 회전율만큼 서서히 차기만 한다
+	 *
+	 *                       ②만으로는 계단이 관측되지 않고, ③만으로는 보여줄 계단이 없다.
+	 *
+	 *						[참고]
+	 *                       판정 자체는 여기서 하지 않는다. 시각의 유일한 출처는
+	 *                       UFF_FestivalStageSubsystem 이고 이 클래스는 월드를 모르므로,
+	 *                       WalkDistances 와 같은 방식으로 호출자가 읽어서 넘긴다.
+	 *
+	 *                       기본값 true = 게이팅 없음(기존 거동). 안 넘기면 기존 결과와 완전히 같다.
+	 *
+	 *                       ⛔ MainStage 소분류만 닫는다. Busking 은 상시 공연이고
+	 *                       ExperienceStage 는 유료 프로그램 시설이라(FF_FestivalDefinition의
+	 *                       AllowedFacilityTypes) 같이 닫으면 예약 참가자가 자기 시설에 못 간다.
+	 */
 	static TArray<FFF_DestinationCandidate> BuildCandidates(
 		const FFFZSReadModel& ReadModel,
 		FName CurrentZoneId,
 		const FVector& PartyWorldLocation,
-		int32 MaxCandidates = DefaultMaxCandidates);
+		int32 MaxCandidates = DefaultMaxCandidates,
+		const FFF_WalkDistanceMatrix* WalkDistances = nullptr,
+		bool bMainStageOpen = true);
 
 	/**
 	 * 시설 카테고리 → preference_vector 키.
@@ -100,7 +141,7 @@ public:
 	 * FacilityDefinitionId 는 팀 규칙 `대분류_소분류_고유이름` 형태다(대분류 = EFFZSFacilityCategory 이름).
 	 * **7개 카테고리 전부 형태를 검증하고** 위반이면 시설당 1회 Warning 을 낸다 — 지금 취향 카테고리를
 	 * 실제로 갈라내는 것은 Booth 소분류뿐이지만, 다른 카테고리 오타를 방치하면 나중에 소분류별 분기를
-	 * 추가할 때 조용히 빠진다. 규칙 전문과 토큰 표는 data/metadata/handoff/facility_naming_convention.md.
+	 * 추가할 때 조용히 빠진다. 규칙 전문과 토큰 표는 data/metadata/request/facility_naming_convention.md.
 	 *
 	 * Rest/Performance/PhotoSpot 은 소분류와 무관하게 대분류 1:1, Toilet/Info/Safety 는 취향 매칭
 	 * 대상이 아니라 NAME_None. NAME_None 이면 preference 항은 0으로 계산된다

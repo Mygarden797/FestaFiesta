@@ -8,68 +8,23 @@
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSQueueGeometry.h"
+#include "FF_FFZSVisualGeometry.h"
 
 #define LOCTEXT_NAMESPACE "FFZSTypes"
 
 namespace
 {
-    // 직선 구간들의 누적 길이를 따라 슬롯 위치를 찾는다. 길이 0인 구간은 건너뛰고, 요청 거리가
-    // 전체 길이를 넘으면 마지막 점을 반환해 별도의 배열 범위 예외 없이 "Spline이 짧음"을 검출한다.
-    bool TryGetPointAtDistanceOnLinearSpline(
-        const TArray<FVector>& Points,
-        double DistanceCm,
-        FVector& OutPoint)
+    // FacilitySpec의 1cm 저작 해상도를 절대 하한으로 두고, 실제 도착 판정 반경의 지름을 NPC 목표
+    // 중심 간격으로 사용한다. 프로젝트별 Capsule 크기(예: Festa의 68cm)는 콘텐츠 검증 계층의 책임이다.
+    constexpr double MinimumMovementTargetSeparationCm = 1.0;
+    constexpr double ArrivalToleranceDiameterMultiplier = 2.0;
+
+    double DistSquaredXY(const FVector& A, const FVector& B)
     {
-        if (Points.IsEmpty())
-        {
-            return false;
-        }
-
-        DistanceCm = FMath::Max(0.0, DistanceCm);
-        for (int32 Index = 1; Index < Points.Num(); ++Index)
-        {
-            const FVector& Start = Points[Index - 1];
-            const FVector& End = Points[Index];
-            const double SegmentLengthCm = FVector::Distance(Start, End);
-            if (SegmentLengthCm <= UE_KINDA_SMALL_NUMBER)
-            {
-                continue;
-            }
-            if (DistanceCm <= SegmentLengthCm)
-            {
-                OutPoint = FMath::Lerp(Start, End, DistanceCm / SegmentLengthCm);
-                return true;
-            }
-            DistanceCm -= SegmentLengthCm;
-        }
-
-        OutPoint = Points.Last();
-        return true;
-    }
-
-    // 슬롯 좌표를 시설 중심 기준 cm에서 footprint 왼쪽 아래 기준 1 cm 격자로 바꿔 압축 영역을 검사.
-    // 경계 위 점은 어느 한쪽 영역에 포함되면 유효하도록 0.01 cm 오차만 허용.
-     
-    bool IsLocalQueuePointReserved(
-        const FVector& LocalPointCm,
-        const FIntPoint FootprintSizeCells,
-        const TArray<FFFZSCellRect>& ReservedRects)
-    {
-        constexpr double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-        constexpr double BoundaryToleranceCm = 0.01;
-        const double GridX = LocalPointCm.X / CellSizeCm + FootprintSizeCells.X * 0.5;
-        const double GridY = LocalPointCm.Y / CellSizeCm + FootprintSizeCells.Y * 0.5;
-        const double ToleranceCells = BoundaryToleranceCm / CellSizeCm;
-        for (const FFFZSCellRect& Rect : ReservedRects)
-        {
-            if (Rect.IsValid() &&
-                GridX >= Rect.Min.X - ToleranceCells && GridX <= Rect.Max.X + ToleranceCells &&
-                GridY >= Rect.Min.Y - ToleranceCells && GridY <= Rect.Max.Y + ToleranceCells)
-            {
-                return true;
-            }
-        }
-        return false;
+        const double DeltaX = A.X - B.X;
+        const double DeltaY = A.Y - B.Y;
+        return DeltaX * DeltaX + DeltaY * DeltaY;
     }
 }
 
@@ -85,9 +40,11 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
 
-    if (SchemaVersion != 2)
+    if (SchemaVersion != CurrentSchemaVersion)
     {
-        OutErrors.Add(LOCTEXT("InvalidSchema", "FacilitySpec은 SchemaVersion 2(1 Cell = 1cm)만 지원합니다. 이전 데이터는 명시적으로 다시 작성해야 합니다."));
+        OutErrors.Add(FText::Format(
+            LOCTEXT("InvalidSchema", "FacilitySpec은 SchemaVersion {0}(1 Cell = 1cm)만 지원합니다. 이전 데이터는 명시적으로 다시 작성해야 합니다."),
+            FText::AsNumber(CurrentSchemaVersion)));
     }
     if (FacilityDefinitionId.IsNone())
     {
@@ -126,17 +83,64 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("InvalidQueueRules", "Queue 수용량, 간격 및 Service 시간은 유한한 양수여야 합니다."));
     }
-    if (QueueRules.MaxWaitingAgents > UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())
+    // [하드코딩 제거] 안내 문구에 한계값을 직접 적지 않고 실제 상수를 넣어 만든다.
+    // 예전에는 상수를 조정해도 담당자에게는 512/32/64라는 옛 숫자가 계속 표시됐다.
+    if (QueueRules.MaxWaitingAgents > UFFZSDeveloperSettings::MaxQueueWaitingAgents)
+    {
+        OutErrors.Add(FText::Format(
+            LOCTEXT("QueueCapacitySafetyLimit", "MaxWaitingAgents가 시설당 대기열 안전 제한 {0}을 초과했습니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxQueueWaitingAgents)));
+    }
+    if (QueueRules.ServiceCapacity > UFFZSDeveloperSettings::MaxFacilityServiceCapacity)
+    {
+        OutErrors.Add(FText::Format(
+            LOCTEXT("ServiceCapacitySafetyLimit", "ServiceCapacity가 시설당 서비스 안전 제한 {0}을 초과했습니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxFacilityServiceCapacity)));
+    }
+    if (QueueReservedRects.Num() > UFFZSDeveloperSettings::MaxQueueReservedRects)
+    {
+        OutErrors.Add(FText::Format(
+            LOCTEXT("QueueRectCountSafetyLimit", "QueueReservedRects는 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxQueueReservedRects)));
+    }
+    if (QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxLegacyQueueReservedCells)
     {
         OutErrors.Add(LOCTEXT(
-            "QueueCapacitySafetyLimit",
-            "MaxWaitingAgents가 설정된 Facility Cell 열거 안전 제한을 초과했습니다."));
+            "LegacyQueueCellCountSafetyLimit",
+            "Legacy QueueReservedCells exceeds the supported migration safety limit. Convert it to QueueReservedRects."));
     }
+    if (QueueSplinePointsCm.Num() > UFFZSDeveloperSettings::MaxQueueSplinePoints)
+    {
+        OutErrors.Add(FText::Format(
+            LOCTEXT("QueueSplinePointCountSafetyLimit", "QueueSplinePointsCm은 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxQueueSplinePoints)));
+    }
+    if (Anchors.Num() > UFFZSDeveloperSettings::MaxFacilityAnchors)
+    {
+        OutErrors.Add(FText::Format(
+            LOCTEXT("AnchorCountSafetyLimit", "Anchors는 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxFacilityAnchors)));
+    }
+    if (AllowedZoneIds.Num() > UFFZSDeveloperSettings::MaxAllowedZoneIds)
+    {
+        OutErrors.Add(FText::Format(
+            LOCTEXT("AllowedZoneCountSafetyLimit", "AllowedZoneIds는 최대 {0}개를 허용합니다."),
+            FText::AsNumber(UFFZSDeveloperSettings::MaxAllowedZoneIds)));
+    }
+    // Collection limits are denial-of-service guards, not tuning rules. Once one is exceeded,
+    // do not copy, canonicalize, hash, or iterate attacker-sized arrays merely to accumulate
+    // secondary diagnostics. The precise limit error above is the actionable failure.
+    if (!UFFZSGridLibrary::HasSafeFacilitySpecCardinality(*this))
+    {
+        return false;
+    }
+
     if (!FMath::IsFinite(QueueRules.AbandonAfterSeconds) || QueueRules.AbandonAfterSeconds < 0.0f ||
         !FMath::IsFinite(QueueRules.SlotArrivalToleranceCm) || QueueRules.SlotArrivalToleranceCm < 0.0f ||
         !FMath::IsFinite(QueueRules.NavigationProjectionExtentCm) || QueueRules.NavigationProjectionExtentCm <= 0.0f ||
         !FMath::IsFinite(QueueRules.BlockedTimeoutSeconds) || QueueRules.BlockedTimeoutSeconds < 0.0f ||
-        QueueRules.MaxRepathAttempts < 0)
+        QueueRules.MaxRepathAttempts < 0 ||
+        QueueRules.MaxRepathAttempts > UFFZSDeveloperSettings::MaxQueueRepathAttempts)
     {
         OutErrors.Add(LOCTEXT("InvalidQueueMovementRules", "Queue 이탈, 도착, 내비게이션, 차단 시간 제한 또는 재탐색 값이 잘못되었습니다."));
     }
@@ -147,23 +151,25 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     }
     else
     {
-        double QueueSplineLengthCm = 0.0;
-        for (int32 Index = 0; Index < QueueSplinePointsCm.Num(); ++Index)
+        int32 FirstNonFinitePointIndex = INDEX_NONE;
+        const double QueueSplineLengthCm = FFFZSQueueGeometry::GetLinearPolylineLengthCm(
+            QueueSplinePointsCm,
+            &FirstNonFinitePointIndex);
+        if (FirstNonFinitePointIndex != INDEX_NONE)
         {
-            if (QueueSplinePointsCm[Index].ContainsNaN())
-            {
-                OutErrors.Add(LOCTEXT("InvalidQueueSplinePoint", "Queue Spline Point에는 유한한 센티미터 값을 사용해야 합니다."));
-                break;
-            }
-            if (Index > 0)
-            {
-                QueueSplineLengthCm += FVector::Distance(QueueSplinePointsCm[Index - 1], QueueSplinePointsCm[Index]);
-            }
+            OutErrors.Add(LOCTEXT("InvalidQueueSplinePoint", "Queue Spline Point에는 유한한 센티미터 값을 사용해야 합니다."));
         }
-        if (QueueSplineLengthCm + UE_KINDA_SMALL_NUMBER <
-            (QueueRules.MaxWaitingAgents - 1) * QueueRules.SlotSpacingCm)
+        if (QueueRules.MaxWaitingAgents > 0 &&
+            FMath::IsFinite(QueueRules.SlotSpacingCm) &&
+            QueueRules.SlotSpacingCm > 0.0f)
         {
-            OutErrors.Add(LOCTEXT("QueueSplineTooShort", "Queue Spline은 SlotSpacingCm 간격으로 최대 수용 인원의 모든 슬롯을 배치할 수 있을 만큼 길어야 합니다."));
+            const double RequiredQueueLengthCm =
+                (static_cast<double>(QueueRules.MaxWaitingAgents) - 1.0) *
+                static_cast<double>(QueueRules.SlotSpacingCm);
+            if (QueueSplineLengthCm + UE_KINDA_SMALL_NUMBER < RequiredQueueLengthCm)
+            {
+                OutErrors.Add(LOCTEXT("QueueSplineTooShort", "Queue Spline은 SlotSpacingCm 간격으로 최대 수용 인원의 모든 슬롯을 배치할 수 있을 만큼 길어야 합니다."));
+            }
         }
     }
 
@@ -217,30 +223,40 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             "QueueReservedRects는 Facility Footprint와 겹칠 수 없습니다."));
     }
 
+    TArray<FVector> LocalQueueSlotPoints;
     // 최대 정원 전체를 SlotSpacingCm 간격으로 샘플링한다. 일부 슬롯만 예약 영역에 들어오는
     // 데이터는 실제 만석 상황에서 보행 공간을 침범하므로 저작 단계에서 거부한다.
     if (QueueSplinePointsCm.Num() >= 2 &&
         !QueueSplinePointsCm.ContainsByPredicate(
             [](const FVector& Point) { return Point.ContainsNaN(); }) &&
         QueueRules.MaxWaitingAgents > 0 &&
-        QueueRules.MaxWaitingAgents <= UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility() &&
+        QueueRules.MaxWaitingAgents <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
         FMath::IsFinite(QueueRules.SlotSpacingCm) &&
         QueueRules.SlotSpacingCm > 0.0f &&
         FootprintSizeCells.X > 0 &&
         FootprintSizeCells.Y > 0)
     {
         bool bAllQueueSlotsReserved = true;
-        for (int32 SlotIndex = 0; SlotIndex < QueueRules.MaxWaitingAgents; ++SlotIndex)
+        if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
+                QueueSplinePointsCm,
+                QueueRules.MaxWaitingAgents,
+                QueueRules.SlotSpacingCm,
+                LocalQueueSlotPoints))
         {
-            FVector LocalSlotPoint = FVector::ZeroVector;
-            if (!TryGetPointAtDistanceOnLinearSpline(
-                    QueueSplinePointsCm,
-                    static_cast<double>(SlotIndex) * QueueRules.SlotSpacingCm,
-                    LocalSlotPoint) ||
-                !IsLocalQueuePointReserved(LocalSlotPoint, FootprintSizeCells, LocalQueueRects))
+            bAllQueueSlotsReserved = false;
+        }
+        else
+        {
+            for (const FVector& LocalSlotPoint : LocalQueueSlotPoints)
             {
-                bAllQueueSlotsReserved = false;
-                break;
+                if (!FFFZSQueueGeometry::IsLocalPointInsideReservation(
+                        LocalSlotPoint,
+                        FootprintSizeCells,
+                        LocalQueueRects))
+                {
+                    bAllQueueSlotsReserved = false;
+                    break;
+                }
             }
         }
         if (!bAllQueueSlotsReserved)
@@ -258,6 +274,8 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     TSet<int32> EntryIndices;
     TSet<int32> ServiceIndices;
     TSet<int32> ExitIndices;
+    TArray<const FFFZSAnchorDefinition*> ValidMovementAnchors;
+    ValidMovementAnchors.Reserve(Anchors.Num());
     // Anchor 배열 순서는 자유지만 (Type, Index)는 유일해야 한다. Service는 0부터 Capacity-1까지
     // 연속 인덱스를 요구해 런타임이 "가장 낮은 빈 슬롯"을 안전하게 선택할 수 있게 한다.
     for (const FFFZSAnchorDefinition& Anchor : Anchors)
@@ -270,6 +288,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             continue;
         }
 
+        ValidMovementAnchors.Add(&Anchor);
         const uint64 AnchorKey = (static_cast<uint64>(Anchor.Type) << 32) | static_cast<uint32>(Anchor.Index);
         if (AnchorKeys.Contains(AnchorKey))
         {
@@ -302,17 +321,99 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("MissingService", "Service Anchor 수는 ServiceCapacity 이상이어야 합니다."));
     }
-    for (int32 ServiceIndex = 0; ServiceIndex < QueueRules.ServiceCapacity; ++ServiceIndex)
+    if (QueueRules.ServiceCapacity > 0 &&
+        QueueRules.ServiceCapacity <= UFFZSDeveloperSettings::MaxFacilityServiceCapacity)
     {
-        if (!ServiceIndices.Contains(ServiceIndex))
+        for (int32 ServiceIndex = 0; ServiceIndex < QueueRules.ServiceCapacity; ++ServiceIndex)
         {
-            OutErrors.Add(LOCTEXT("MissingIndexedService", "Service Anchor는 0부터 ServiceCapacity-1까지 연속된 Index를 제공해야 합니다."));
-            break;
+            if (!ServiceIndices.Contains(ServiceIndex))
+            {
+                OutErrors.Add(LOCTEXT("MissingIndexedService", "Service Anchor는 0부터 ServiceCapacity-1까지 연속된 Index를 제공해야 합니다."));
+                break;
+            }
         }
     }
     if (ExitCount < 1 || !ExitIndices.Contains(0))
     {
         OutErrors.Add(LOCTEXT("MissingExit", "최소한 Exit[0]이 필요합니다."));
+    }
+
+    if (FMath::IsFinite(QueueRules.SlotArrivalToleranceCm) &&
+        QueueRules.SlotArrivalToleranceCm >= 0.0f)
+    {
+        const double MinimumSeparationCm =
+            FMath::Max(
+                MinimumMovementTargetSeparationCm,
+                static_cast<double>(QueueRules.SlotArrivalToleranceCm) *
+                    ArrivalToleranceDiameterMultiplier);
+        const double MinimumSeparationSquared = FMath::Square(MinimumSeparationCm);
+
+        bool bFoundOverlappingAnchors = false;
+        for (int32 FirstAnchorIndex = 0;
+             FirstAnchorIndex < ValidMovementAnchors.Num() && !bFoundOverlappingAnchors;
+             ++FirstAnchorIndex)
+        {
+            const FVector FirstLocation =
+                ValidMovementAnchors[FirstAnchorIndex]->LocalTransform.GetLocation();
+            for (int32 SecondAnchorIndex = FirstAnchorIndex + 1;
+                 SecondAnchorIndex < ValidMovementAnchors.Num();
+                 ++SecondAnchorIndex)
+            {
+                const FVector SecondLocation =
+                    ValidMovementAnchors[SecondAnchorIndex]->LocalTransform.GetLocation();
+                if (DistSquaredXY(FirstLocation, SecondLocation) < MinimumSeparationSquared)
+                {
+                    OutErrors.Add(LOCTEXT(
+                        "MovementAnchorsTooClose",
+                        "서로 다른 Entry, Service, Exit Anchor의 XY 중심은 max(1cm, 2 × SlotArrivalToleranceCm) 이상 떨어져야 합니다."));
+                    bFoundOverlappingAnchors = true;
+                    break;
+                }
+            }
+        }
+
+        bool bFoundOverlappingQueueSlots = false;
+        for (int32 FirstSlotIndex = 0;
+             FirstSlotIndex < LocalQueueSlotPoints.Num() && !bFoundOverlappingQueueSlots;
+             ++FirstSlotIndex)
+        {
+            for (int32 SecondSlotIndex = FirstSlotIndex + 1;
+                 SecondSlotIndex < LocalQueueSlotPoints.Num();
+                 ++SecondSlotIndex)
+            {
+                if (DistSquaredXY(
+                        LocalQueueSlotPoints[FirstSlotIndex],
+                        LocalQueueSlotPoints[SecondSlotIndex]) < MinimumSeparationSquared)
+                {
+                    OutErrors.Add(LOCTEXT(
+                        "QueueSlotsTooClose",
+                        "서로 다른 Queue 슬롯의 XY 중심은 max(1cm, 2 × SlotArrivalToleranceCm) 이상 떨어져야 합니다."));
+                    bFoundOverlappingQueueSlots = true;
+                    break;
+                }
+            }
+        }
+
+        bool bFoundAnchorQueueSlotOverlap = false;
+        for (const FFFZSAnchorDefinition* Anchor : ValidMovementAnchors)
+        {
+            if (!Anchor || bFoundAnchorQueueSlotOverlap)
+            {
+                break;
+            }
+            const FVector AnchorLocation = Anchor->LocalTransform.GetLocation();
+            for (const FVector& QueueSlotLocation : LocalQueueSlotPoints)
+            {
+                if (DistSquaredXY(AnchorLocation, QueueSlotLocation) < MinimumSeparationSquared)
+                {
+                    OutErrors.Add(LOCTEXT(
+                        "AnchorTooCloseToQueueSlot",
+                        "모든 Entry, Service, Exit Anchor와 Queue 슬롯의 XY 중심은 max(1cm, 2 × SlotArrivalToleranceCm) 이상 떨어져야 합니다."));
+                    bFoundAnchorQueueSlotOverlap = true;
+                    break;
+                }
+            }
+        }
     }
 
     TSet<FName> UniqueAllowedZones;
@@ -340,6 +441,28 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm은 유한한 값이며 최소 10cm여야 합니다."));
     }
+    if (!StaticEnum<EFFZSVisualSizingMode>()->IsValidEnumValue(static_cast<int64>(VisualSizingMode)))
+    {
+        OutErrors.Add(LOCTEXT("InvalidVisualSizingMode", "VisualSizingMode 값이 잘못되었습니다."));
+    }
+    if (VisualOffsetCm.ContainsNaN() || VisualRotation.ContainsNaN())
+    {
+        OutErrors.Add(LOCTEXT("InvalidVisualTransform", "VisualOffsetCm과 VisualRotation에는 유한한 값만 사용할 수 있습니다."));
+    }
+    if (VisualSizingMode == EFFZSVisualSizingMode::MatchPlacementBounds &&
+        !FFZSVisualGeometry::IsCardinalYawRotation(VisualRotation))
+    {
+        OutErrors.Add(LOCTEXT(
+            "NonCardinalExactVisualRotation",
+            "MatchPlacementBounds는 Pitch/Roll 0도와 90도 단위 Yaw만 지원합니다. 임의 회전은 UniformFit을 사용하십시오."));
+    }
+    if (VisualSizingMode == EFFZSVisualSizingMode::MatchPlacementBounds &&
+        VisualOffsetCm != FVector::ZeroVector)
+    {
+        OutErrors.Add(LOCTEXT(
+            "OffsetExactVisualBounds",
+            "MatchPlacementBounds는 권위 배치 경계와 정확히 일치해야 하므로 VisualOffsetCm은 0이어야 합니다."));
+    }
 
     return OutErrors.IsEmpty();
 }
@@ -348,11 +471,14 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 // 한 번 실패한 검증은 뒤 단계가 성공해도 다시 true가 되지 않는 단조 상태다.
 void FFFZSPlacementValidation::AddFailure(const EFFZSPlacementFailure Reason, const FText& Message)
 {
+    const bool bWasValid = bIsValid;
     if (Reason != EFFZSPlacementFailure::None)
     {
         Reasons.AddUnique(Reason);
     }
-    if (Summary.IsEmpty() && !Message.IsEmpty())
+    // ValidatePlacementLocal은 성공 시 사람이 읽는 성공 Summary를 채운다. 이후 외부 정책이
+    // 거부하면 그 성공 문구가 실패 이유를 가리지 않도록 첫 실패 메시지로 교체한다.
+    if ((bWasValid || Summary.IsEmpty()) && !Message.IsEmpty())
     {
         Summary = Message;
     }

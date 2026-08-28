@@ -1,3 +1,10 @@
+// FF_ZoneSystemQueueBridgeSubsystem.cpp
+
+// Zone 시설 상태와 동선을 프로젝트 Party Queue 등록으로 투영하고 두 시스템의 권위를 조정한다.
+// 흐름: Zone 이벤트로 등록을 갱신하고 Tick에서 조용한 복원·drain 완료·이중 점유를 보정한다.
+// 불변식: Zone GUID별 Queue ID는 안정적으로 유지하며 실제 Party 항목은 한 Queue 구현만 소유한다.
+// 실패/성능: 무효 geometry와 권위 충돌은 해당 Queue만 fail-closed하고 이벤트는 Tick 끝에 모아 보낸다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
@@ -5,6 +12,8 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -14,8 +23,23 @@
 #define LOCTEXT_NAMESPACE "FFZoneSystemQueueBridge"
 DEFINE_LOG_CATEGORY_STATIC(LogFFZoneQueueBridge, Log, All);
 
+namespace
+{
+	// slot 위치는 호출자가 이미 계산하므로 같은 sampler에서 해당 거리의 접선만 안전하게 얻는다.
+	bool TryGetQueueTailDirectionAtDistance(
+		const TArray<FVector>& Points,
+		const double DistanceCm,
+		FVector& OutTailDirection)
+	{
+		FVector SlotPoint = FVector::ZeroVector;
+		return FFFZSQueueGeometry::TrySampleLinearPolylineAtDistanceWithTangent(
+			Points, DistanceCm, SlotPoint, OutTailDirection);
+	}
+}
+
 void UFF_ZoneSystemQueueBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	// 두 권위 subsystem을 먼저 준비한 뒤 이벤트·Actor 세대 감시·외부 정책을 한 수명에 묶는다.
 	Collection.InitializeDependency<UFFZSWorldSubsystem>();
 	Collection.InitializeDependency<UFF_QueueSubsystem>();
 	Super::Initialize(Collection);
@@ -51,6 +75,7 @@ void UFF_ZoneSystemQueueBridgeSubsystem::Initialize(FSubsystemCollectionBase& Co
 
 void UFF_ZoneSystemQueueBridgeSubsystem::Deinitialize()
 {
+	// 브리지가 등록한 handler와 Queue만 해제하고 다른 시스템이 소유한 Queue ID는 건드리지 않는다.
 	if (UWorld* World = GetWorld())
 	{
 		if (ActorSpawnedHandle.IsValid())
@@ -210,9 +235,10 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	const FVector& ExitLocation)
 {
 	FFF_QueueConfig Config;
-	// FFZS 정원은 Waiting만 세고 Legacy Queue 정원은 서비스 중 인원도 세므로 서비스 슬롯을 더한다.
-	const int64 LegacyCapacity = static_cast<int64>(Rules.MaxWaitingAgents) + Rules.ServiceCapacity;
-	Config.MaxCapacityMembers = static_cast<int32>(FMath::Clamp<int64>(LegacyCapacity, 1, MAX_int32));
+	// 물리 대기 지점은 MaxWaitingAgents개뿐이다. 서비스 중 Party도 core 용량에 남으므로 같은 값을
+	// 보수적 총원 상한으로 사용해 M개 동선에 M+S명이 들어오는 것을 막는다.
+	Config.MaxCapacityMembers = static_cast<int32>(FMath::Clamp<int64>(
+		static_cast<int64>(Rules.MaxWaitingAgents), 1, MAX_int32));
 
 	// Legacy Queue는 선두 Party 하나만 처리하므로 여러 FFZS 창구를 '한 개의 더 빠른 창구'로 환산한다.
 	// 이렇게 해야 예상 처리율과 실제 장기 처리율이 모두 ServiceCapacity / Duration으로 일치한다.
@@ -226,6 +252,122 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	// 호출자가 준비되면 NotifyZoneFacilityPartyArrived façade와 함께 전환한다.
 	Config.bRequireArrivalConfirmation = false;
 	return Config;
+}
+
+bool UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
+	const FFFZSFacilitySpec& Spec,
+	const FTransform& FacilityTransform,
+	FFF_QueueLaneGeometry& OutLane)
+{
+	// 어느 실패 경로에서도 이전 호출의 부분 geometry가 노출되지 않게 출력부터 초기화한다.
+	OutLane = FFF_QueueLaneGeometry();
+	const FFFZSQueueRules& Rules = Spec.QueueRules;
+	if (FacilityTransform.ContainsNaN()
+		|| Spec.QueueSplinePointsCm.Num() < 2
+		|| Rules.MaxWaitingAgents <= 0
+		|| Rules.MaxWaitingAgents > UFFZSDeveloperSettings::MaxQueueWaitingAgents
+		|| Spec.QueueSplinePointsCm.Num() > UFFZSDeveloperSettings::MaxQueueSplinePoints
+		|| !FMath::IsFinite(Rules.SlotSpacingCm)
+		|| Rules.SlotSpacingCm <= 0.0f)
+	{
+		return false;
+	}
+
+	int32 FirstNonFinitePointIndex = INDEX_NONE;
+	const double PolylineLengthCm = FFFZSQueueGeometry::GetLinearPolylineLengthCm(
+		Spec.QueueSplinePointsCm, &FirstNonFinitePointIndex);
+	const double RequiredLengthCm =
+		(static_cast<double>(Rules.MaxWaitingAgents) - 1.0) *
+		static_cast<double>(Rules.SlotSpacingCm);
+	if (FirstNonFinitePointIndex != INDEX_NONE
+		|| PolylineLengthCm + UE_KINDA_SMALL_NUMBER < RequiredLengthCm)
+	{
+		return false;
+	}
+
+	TArray<FVector> LocalSlotPoints;
+	if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
+		Spec.QueueSplinePointsCm,
+		Rules.MaxWaitingAgents,
+		Rules.SlotSpacingCm,
+		LocalSlotPoints)
+		|| LocalSlotPoints.Num() != Rules.MaxWaitingAgents)
+	{
+		return false;
+	}
+
+	// 저작 polyline과 파생 slot을 같은 시설 Transform으로 옮겨 두 Queue의 월드 동선을 일치시킨다.
+	OutLane.SlotSpacingCm = Rules.SlotSpacingCm;
+	OutLane.PolylinePoints.Reserve(Spec.QueueSplinePointsCm.Num());
+	for (const FVector& LocalPoint : Spec.QueueSplinePointsCm)
+	{
+		const FVector WorldPoint = FacilityTransform.TransformPosition(LocalPoint);
+		if (WorldPoint.ContainsNaN())
+		{
+			OutLane = FFF_QueueLaneGeometry();
+			return false;
+		}
+		OutLane.PolylinePoints.Add(WorldPoint);
+	}
+
+	OutLane.ExplicitSlotTransforms.Reserve(LocalSlotPoints.Num());
+	for (int32 SlotIndex = 0; SlotIndex < LocalSlotPoints.Num(); ++SlotIndex)
+	{
+		FVector LocalTailDirection = FVector::ZeroVector;
+		const double SlotDistanceCm = static_cast<double>(SlotIndex) * Rules.SlotSpacingCm;
+		if (!TryGetQueueTailDirectionAtDistance(
+			Spec.QueueSplinePointsCm, SlotDistanceCm, LocalTailDirection))
+		{
+			// Waiting 슬롯이 하나면 필요한 길이는 0이라 완전히 퇴화한 polyline도
+			// 유효하다. 위치는 명확하므로 Service[0]→slot 방향을 우선 사용하고,
+			// 둘도 같으면 시설 저작 계약의 customer-facing +Y를 결정적 yaw로 쓴다.
+			if (Rules.MaxWaitingAgents != 1)
+			{
+				OutLane = FFF_QueueLaneGeometry();
+				return false;
+			}
+
+			for (const FFFZSAnchorDefinition& Anchor : Spec.Anchors)
+			{
+				if (Anchor.Type == EFFZSAnchorType::Service && Anchor.Index == 0)
+				{
+					LocalTailDirection = LocalSlotPoints[SlotIndex]
+						- Anchor.LocalTransform.GetLocation();
+					break;
+				}
+			}
+			if (!LocalTailDirection.Normalize())
+			{
+				LocalTailDirection = FVector::YAxisVector;
+			}
+		}
+
+		FVector WorldTailDirection = FacilityTransform.TransformVectorNoScale(LocalTailDirection);
+		if (!WorldTailDirection.Normalize())
+		{
+			OutLane = FFF_QueueLaneGeometry();
+			return false;
+		}
+		const FVector WorldLocation = FacilityTransform.TransformPosition(LocalSlotPoints[SlotIndex]);
+		// Party는 대기열 머리 방향을 바라보므로 진행 접선의 반대 방향을 slot yaw로 사용한다.
+		const float WorldYawDegrees = (-WorldTailDirection).Rotation().Yaw;
+		OutLane.ExplicitSlotTransforms.Add(FTransform(
+			FRotator(0.0f, WorldYawDegrees, 0.0f), WorldLocation));
+	}
+
+	OutLane.HeadLocation = OutLane.ExplicitSlotTransforms[0].GetLocation();
+	OutLane.TailDirection = FacilityTransform.TransformVectorNoScale(FVector::ForwardVector);
+	if (OutLane.ExplicitSlotTransforms.Num() > 1)
+	{
+		OutLane.TailDirection =
+			OutLane.ExplicitSlotTransforms[1].GetLocation() - OutLane.HeadLocation;
+	}
+	if (!OutLane.TailDirection.Normalize())
+	{
+		OutLane.TailDirection = FVector::ForwardVector;
+	}
+	OutLane.SlotYawDegrees = OutLane.ExplicitSlotTransforms[0].Rotator().Yaw;
+	return true;
 }
 
 float UFF_ZoneSystemQueueBridgeSubsystem::ToProjectMaxWaitSeconds(
@@ -260,6 +402,7 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 		&& QueueSystem->IsFacilityRegistered(QueueFacilityId)
 		&& QueueSystem->GetQueueState(QueueFacilityId).OccupiedMemberCount > 0)
 	{
+		// RegisterFacility 재설정은 Party 배열을 지우므로 점유 상태에서는 호출자가 먼저 drain해야 한다.
 		UE_LOG(LogFFZoneQueueBridge, Error,
 			TEXT("점유 중인 Zone Facility %s의 Queue 재구성을 거부했습니다. Party를 먼저 비워야 합니다."),
 			*ZoneFacilityId.ToString());
@@ -272,31 +415,16 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 	const FFF_QueueConfig Config = ToProjectQueueConfig(Rules, ZoneQueue->GetExitWorldLocation(0));
 
 	FFF_QueueLaneGeometry Lane;
-	Lane.HeadLocation = ZoneQueue->GetQueueSlotWorldLocation(0);
-	const FVector SecondSlot = ZoneQueue->GetQueueSlotWorldLocation(1);
-	Lane.TailDirection = SecondSlot - Lane.HeadLocation;
-	Lane.TailDirection.Z = 0.f;
-	if (!Lane.TailDirection.Normalize())
+	if (!BuildProjectQueueLaneGeometry(Spec, Facility.GetActorTransform(), Lane))
 	{
-		Lane.TailDirection = Facility.GetActorForwardVector();
-		Lane.TailDirection.Z = 0.f;
-		if (!Lane.TailDirection.Normalize())
-		{
-			Lane.TailDirection = FVector::ForwardVector;
-		}
-	}
-	Lane.SlotSpacingCm = FMath::Max(Rules.SlotSpacingCm, 1.f);
-	Lane.SlotYawDegrees = (-Lane.TailDirection).Rotation().Yaw;
-
-	if (Spec.QueueSplinePointsCm.Num() > 2)
-	{
-		UE_LOG(LogFFZoneQueueBridge, Warning,
-			TEXT("Zone Facility %s의 곡선 Queue Spline을 UFF_QueueSubsystem의 직선 Lane으로 근사합니다."),
+		UE_LOG(LogFFZoneQueueBridge, Error,
+			TEXT("Zone Facility %s has invalid Party Queue geometry; registration failed closed."),
 			*ZoneFacilityId.ToString());
+		return false;
 	}
 
-	QueueSystem->RegisterFacility(QueueFacilityId, Config, Lane);
-	if (!QueueSystem->IsFacilityRegistered(QueueFacilityId))
+	if (!QueueSystem->RegisterFacility(QueueFacilityId, Config, Lane) ||
+		!QueueSystem->IsFacilityRegistered(QueueFacilityId))
 	{
 		return false;
 	}
@@ -392,6 +520,7 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RestoreZoneWorldSnapshotAndSynchronize(
 	const FFFZSWorldSnapshot& Snapshot,
 	TArray<FText>& OutErrors)
 {
+	// Snapshot에는 프로젝트 Party 데이터가 없으므로 점유 상태를 조용히 버리는 복원을 금지한다.
 	if (QueueSystem)
 	{
 		for (const int32 QueueFacilityId : ActiveBridgeQueueFacilityIds)
@@ -414,6 +543,7 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RestoreZoneWorldSnapshotAndSynchronize(
 		return false;
 	}
 
+	// Zone Actor 세대, Party Queue 투영, Stage phase를 같은 wrapper 호출 안에서 다시 일치시킨다.
 	RefreshQueueRegistrations();
 	bActorGenerationCheckPending = false;
 	if (UWorld* World = GetWorld())
@@ -434,13 +564,30 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 		return;
 	}
 
+	// 성공한 Zone 명령만 이 이벤트에 도달하므로 외부 Queue 변경은 이 단일 commit 지점에서 수행한다.
 	switch (Event.Type)
 	{
 	case EFFZSCommandType::Install:
-	case EFFZSCommandType::Move:
 		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
 		{
 			RegisterOrRefreshFacility(*Facility);
+		}
+		DrainingQueueFacilityIds.Remove(FindQueueFacilityId(Event.FacilityInstanceId));
+		break;
+
+	case EFFZSCommandType::Move:
+		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
+		{
+			if (!RegisterOrRefreshFacility(*Facility))
+			{
+				// Move는 Zone 권위 배치가 커밋된 뒤 이 이벤트를 방송한다. 새 Queue geometry를 만들지
+				// 못한 경우 이전 위치의 Queue를 남기면 다음 Open에서 잘못된 동선을 재활성화할 수 있다.
+				// 기존 등록을 제거해 fail-closed하고, 이후 Open 경로가 동일 stable ID로 재등록을 시도하게 한다.
+				UnregisterFacility(Event.FacilityInstanceId);
+				UE_LOG(LogFFZoneQueueBridge, Error,
+					TEXT("이동된 Zone Facility %s의 Party Queue 갱신에 실패해 이전 Queue를 안전하게 해제했습니다."),
+					*Event.FacilityInstanceId.ToString());
+			}
 		}
 		DrainingQueueFacilityIds.Remove(FindQueueFacilityId(Event.FacilityInstanceId));
 		break;
@@ -650,6 +797,7 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleActorDestroyed(AActor* Actor)
 
 bool UFF_ZoneSystemQueueBridgeSubsystem::HasObservedWorldChanged() const
 {
+	// Revision뿐 아니라 GUID가 가리키는 Actor 주소도 비교해 같은 Snapshot의 조용한 세대 교체를 찾는다.
 	if (!ZoneSystem || LastObservedWorldRevision != ZoneSystem->GetWorldRevision())
 	{
 		return ZoneSystem != nullptr;
@@ -844,6 +992,7 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::PreValidateFFZoneSystemC
 	const FFFZSPolicyContext& Context) const
 {
 	FFFZSPolicyDecision Decision;
+	// Party의 월드 동선이나 목적지가 사라지는 명령만 점유 검사가 필요하다.
 	const bool bNeedsEmptyQueue = Context.Command.Type == EFFZSCommandType::Move
 		|| Context.Command.Type == EFFZSCommandType::Remove;
 	if (!bNeedsEmptyQueue || !QueueSystem)

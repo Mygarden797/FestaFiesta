@@ -1,7 +1,18 @@
 # Utility AI 목적지 선택 v0 — 필드·계수 스펙
 
-- 작성일: 2026-08-03 (최종 갱신 2026-08-04)
+- 작성일: 2026-08-03 (설계 최종 갱신 2026-08-04 / **구현 현황 갱신 2026-08-27**)
 - 상태: 아키타입 개수·주축 구조는 2026-08-04 확정. 표시 명칭은 가칭(UI 담당자 논의 필요), 계수 값 자체는 여전히 assumption.
+
+> 🔴 **이 문서는 설계이고, 지금 코드에서는 6항 중 4항만 실제로 움직입니다** (2026-08-27 코드 확인).
+> **식을 읽을 때 이 차이를 전제해 주세요** — 계수를 조정해도 아래 두 항은 결과에 영향이 없습니다.
+>
+> | 항 | 지금 상태 |
+> |---|---|
+> | `PreferenceTerm` · `NeedTerm` · `DistanceCostTerm` · `WaitCostTerm` | ✅ 값이 움직인다 |
+> | `AttractionTerm` | ❌ 항상 0 — `BaseAttraction` 이 0이고 `attraction_norm` 정규화 설계가 남았다 |
+> | `DensityCostTerm` | ❌ 항상 0 — Zone 혼잡도를 보고하는 호출부가 0곳(`ReportZonePopulation`)이고, 개인 임계도 `1.f` 로 고정돼 있다. **양쪽이 다 비어서 한쪽만 채우면 안 움직인다** |
+>
+> 진행 상황은 `SiriKim_Docs/utility_ai_todo.md`, 판단 근거는 `SiriKim_Docs/portfolio_casebook.md`.
 - 계수 표: `data/derived/utility_coefficients_v0.csv` (원본) / `data/unreal/utility_coefficients_v0.csv` (UE DataTable용)
 
 ## 1. 이 문서가 정하는 것과 정하지 않는 것

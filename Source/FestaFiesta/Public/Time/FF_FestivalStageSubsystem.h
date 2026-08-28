@@ -18,6 +18,42 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnRemainingSecondsChanged, int32, N
 // 축제가 완전히 끝났을 때 쓰는 신호
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalEnded);
 
+// 메인 공연 시작되는 순간 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramStarted, FString, EventLabel);
+
+// 메인 공연 끝나는 순간 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnMainProgramEnded, FString, EventLabel);
+
+//  밤 조명 켤 시간이 됐다고 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnNightLightingActivated);
+
+// 하루가 끝날 때 다음 시스템(시설/경제)에 이월용 시간 정보를 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnDayEnded, int32, EndedDay, float, TodayLiveDuration);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnFestivalStarted);
+// 축제가 처음 시작됐음을 알리는 신호 (StartNewFestival 호출 시 발동)
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnTimeScaleChange, float, TimeScale);
+
+// 오늘 날씨 종류를 나타내는 enum
+UENUM(BlueprintType)
+enum class EFF_WeatherType : uint8
+{
+	Clear,
+	// 맑음
+
+	Rain,
+	// 비
+
+	Windy
+	// 바람
+};
+
+// 환경 상태가 바뀔 때 다른 시스템(이동/시설/만족도)에 알리는 신호
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnEnvironmentStateChanged, EFF_WeatherType, Weather, bool, bIsNight);
+// Weather : 지금 날씨 종류
+// bIsNight : 야간 조명 켜진 상태인지 여부
+
 USTRUCT(BlueprintType)
 struct FFF_LiveTriggerEvent : public FTableRowBase
 {
@@ -52,6 +88,10 @@ struct FFF_TimeSettingRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float MainProgramLockLeadSeconds = 10.f;
 	// 메인 공연 몇 초 전부터 배속을 잠글지
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float NightLightingTriggerSeconds = 90.f;
+	// Live 시작 후 몇 초 뒤에 밤 조명을 켤지 
 };
 
 USTRUCT(BlueprintType)
@@ -114,9 +154,27 @@ public:
 	float TimeScale = 1.f;
 	// 플레이어가 고른 배속값 저장
 
+	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Config")
+	float NightLightingTriggerSeconds = 90.f;
+	// 기본값이고 실제 값은 TimeSettingsTable에서 가져옴
+
+	bool bNightLightingActivated = false;
+	// 오늘 이미 밤 조명을 켰는지 여부 
+
+	bool bFestivalStarted = true;
+	//이 값이 false면 Tick()에서 시간 진행을 아예 멈춤
+
+	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage|Environment")
+	EFF_WeatherType SelectedWeather = EFF_WeatherType::Clear;
+	// 플레이어가 Setup/MorningCheck에서 선택한 오늘의 날씨 (기본값: 맑음)
+
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnStageChanged OnStageChanged;
 	// 이벤트 신호 실제 변수 (다른 시스템이 여기 등록해두면 알림 받음)
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnFestivalStarted OnFestivalStarted;
+	// 축제가 새로 시작됐음을 UI 등 다른 시스템에게 알리는 신호
 
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnRemainingSecondsChanged OnRemainingSecondsChanged;
@@ -124,7 +182,27 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
 	FOnFestivalEnded OnFestivalEnded;
-	// 다른 파트분들이 축제 종료 시점을 알 수 있음
+	// 다른 파트가 축제 종료 시점을 알 수 있음
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnMainProgramStarted OnMainProgramStarted;
+	// 메인 공연 시작 시점을 알림
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnMainProgramEnded OnMainProgramEnded;
+	// 메인 공연 종료 시점을 알림
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnNightLightingActivated OnNightLightingActivated;
+	// 밤 조명(글로우 프롭) 켤 시간이 됐음을 알리는 신호
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage")
+	FOnDayEnded OnDayEnded;
+	// 하루가 끝났을 때, 다른 시스템(시설/경제)에게 이월용 시간 정보를 전달하는 신호
+
+	UPROPERTY(BlueprintAssignable, Category = "Festival Stage|Environment")
+	FOnEnvironmentStateChanged OnEnvironmentStateChanged;
+	// 날씨 상태가 바뀌었음을 다른 시스템(이동/시설/만족도)에 전달하는 신호
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void RequestTransition(EFF_FestivalStage NewStage);
@@ -137,10 +215,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void SetTimeScale(float NewScale);
 	// 배속 바꾸는 함수
+	
+	FOnTimeScaleChange OnTimeScaleChange;
+
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage|Environment")
+	void SetSelectedWeather(EFF_WeatherType NewWeather);
+	// 플레이어가 날씨를 선택하는 함수 (Setup/MorningCheck에서만 허용)
+
+	
+	UFUNCTION(BlueprintPure, Category = "Festival Stage|Environment")
+	EFF_WeatherType GetSelectedWeather() const { return SelectedWeather; }
+	// 지금 선택된 날씨를 바로 읽어오는 Getter 
+
+	
+	UFUNCTION(BlueprintPure, Category = "Festival Stage|Environment")
+	bool GetIsNightActive() const { return bNightLightingActivated; }
+	// 지금 밤(야간 조명 켜진 상태)인지 바로 읽어오는 Getter
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMainProgramLocked();
 	// 지금 메인 공연 배속 잠금 구간인지 확인
+
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	void StartNewFestival();
+	// 축제를 처음부터 다시 시작할 때 호출
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void AdvanceToNextDay();
@@ -160,6 +258,10 @@ public:
 	// Live일 때 지금 몇 시 몇 분인지 반환
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	FString GetLiveClockStringFromMinutes(int32 LiveMinutes) const;
+	// LiveMinutes(Live 시작 후 지난 분)을 넣으면 "17:30" 같은 시계 문자열로 바꿔주는 함수
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsLiveStage() const;
 	// 지금 Live 단계인지
 
@@ -170,6 +272,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsFinalDay() const;
 	// 지금 3일차인지
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsCurrentStageSkippable();
+	// 지금 이 단계가 스킵 가능한지 확인하는 함수 (private에서 public으로 이동)
+
+	float GetLiveDurationForCurrentDay() ;
+	//그날 Live 총 길이(마지막 이벤트 시각, x1 기준 초)를 알려주는 함수
+	// Crowd의 입장 곡선이 진행도 분모로 읽는다 (private에서 public으로 이동)
 
 	virtual void Tick(float DeltaTime) override;
 	// 매 프레임 자동으로 호출되는 함수
@@ -187,18 +297,11 @@ private:
 	FFF_PhaseTimeRange GetPhaseTimeRange(EFF_FestivalStage Stage);
 	// 지금 Stage에 맞는 시간 범위 + 다음단계를 표에서 찾아오는 함수
 
-	UFUNCTION(BlueprintPure, Category = "Festival Stage")
-	bool IsCurrentStageSkippable();
-	// 지금 이 단계가 스킵 가능한지 확인하는 함수
-
 	void HandleLiveEnd();
 	// 타임 하나가 다 끝났을 때 다음으로 넘기는함수
 
 	const TArray<FFF_LiveTriggerEvent>& GetEventsForCurrentDay() ;
 	// 오늘 날짜에 맞는 이벤트 배열을 골라주는 함수
-
-	float GetLiveDurationForCurrentDay() ;
-	//오늘 Live 총 길이(마지막 이벤트 시각)를 알려주는 함수
 
 	UPROPERTY(EditDefaultsOnly, Category = "Festival Stage|Schedule")
 	TObjectPtr<UDataTable> ProgramScheduleTable;
@@ -220,5 +323,10 @@ private:
 	bool bFestivalEndedBroadcasted = false;
 	// Day3 축제 종료 알림을 한 번만 보냄
 
+	bool bWasMainProgramLocked = false;
+	// 공연 시작 알림을 한 번만 보내기 위한 체크용
+
+	FString CachedMainProgramEndLabel;
+	// 종료 알림에 쓸 라벨을 시작 시점에 미리 저장
 
 };

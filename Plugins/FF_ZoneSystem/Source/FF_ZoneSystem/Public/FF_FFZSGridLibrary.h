@@ -1,6 +1,6 @@
 // FF_FFZSGridLibrary.h
 
-// 고정 1 cm 격자의 압축 영역 회전·점유·내장 프리셋·명령 지문 계산을 제공하는 순수 함수 모음.
+// 고정 1 cm 격자의 압축 영역 회전·점유·명령 지문 계산을 제공하는 순수 함수 모음.
 // 흐름: 사양과 배치를 정규화한 뒤 footprint·clearance·queue 압축 사각형과 정확한 예약 합집합을 만든다.
 //불변식: 셀 좌표는 존 로컬 격자이며 명령 지문은 멱등성 판정을 위해 의미론적 전체 페이로드를 포함.
 //실패/성능: 면적 안전 예산을 초과하면 fail-closed하고 정상 비용은 개별 셀 수가 아니라 사각형 수에 비례.
@@ -12,6 +12,8 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSGridLibrary.generated.h"
+
+class UFFZSFacilityDefinition;
 
 // 상태를 소유하지 않는 Blueprint 함수 라이브러리.
 // 모든 계산은 입력값만 사용하며 1 cm 고정 격자와 결정적 사각형 정규화 규칙을 따른다.
@@ -30,17 +32,38 @@ public:
      
     static bool CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec);
 
+    // Cheap cardinality preflight used before validation, fingerprinting, or geometry work.
+    static bool HasSafeFacilitySpecCardinality(const FFFZSFacilitySpec& Spec);
+
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Validation")
     static int32 GetMaxEnumeratedCellsPerFacility();
-	// Project Settings 값을 하드 상한 1,000,000에 제한한 실제 열거 예산을 반환.
+	// Project Settings 값을 하드 상한 10,000,000에 제한한 실제 열거 예산을 반환.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static int32 NormalizeQuarterTurns(int32 QuarterTurns);
-	// 임의의 정수 회전값을 시계 방향 0..3 사분면 회전으로 정규화.
+	// 임의의 정수 회전값을 Unreal 양의 Yaw 기준 0..3 사분면 회전으로 정규화.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static int32 NormalizeYawCentidegrees(int32 YawCentidegrees);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static int32 DegreesToYawCentidegrees(float YawDegrees);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static float YawCentidegreesToDegrees(int32 YawCentidegrees);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static int32 GetEffectiveYawCentidegrees(const FFFZSGridPlacement& Placement);
+
+    static void NormalizePlacement(FFFZSGridPlacement& InOutPlacement);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
+    static bool TryRotateCell(FIntPoint Cell, int32 QuarterTurns, FIntPoint& OutRotatedCell);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid",
+        meta = (DeprecatedFunction, DeprecationMessage = "Use TryRotateCell so integer-boundary failure is explicit."))
     static FIntPoint RotateCell(FIntPoint Cell, int32 QuarterTurns);
-	// 원점 기준 셀 좌표를 정규화된 시계 방향 90도 단위로 회전.
+	// 원점 기준 셀 좌표를 정규화된 양의 Yaw 90도 단위로 회전.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static FFFZSCellRect RotateRect(const FFFZSCellRect& Rect, int32 QuarterTurns);
@@ -59,16 +82,43 @@ public:
 	// 중복을 제거한 압축 영역 합집합의 셀 수를 64비트로 반환한다. 
 	
     static TArray<FFFZSCellRect> GetFootprintRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 시설 본체를 보통 한 개의 압축 사각형으로 반환한다. 권위 런타임 API다. 
+	// 호환/디버그용 보수적 AABB다. 임의 Yaw 권위 판정에는 BuildPlacementOrientedRegions를 사용한다.
 	
     static TArray<FFFZSCellRect> GetClearanceRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// footprint와 queue를 제외한 clearance 링을 반환한다. 어느 하위 좌표라도 오버플로면 부분 결과 없이 빈 배열. 
+	// 호환/디버그용 clearance 보수적 AABB 합집합. 어느 하위 좌표라도 오버플로면 빈 배열.
 	
     static TArray<FFFZSCellRect> GetQueueRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 회전·원점을 적용한 queue 압축 사각형들을 반환한다. 한 Rect라도 오버플로면 전체가 빈 배열.
+	// 호환/디버그용 queue 보수적 AABB 합집합. 한 Rect라도 오버플로면 전체가 빈 배열.
 	
     static TArray<FFFZSCellRect> GetReservedRects(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// footprint·clearance·queue의 정확한 압축 합집합. 하위 계산 하나라도 실패하면 부분 합집합 없이 빈 배열이다. 
+	// 호환/디버그용 전체 보수적 AABB 합집합. OBB 충돌의 좁은 단계 입력으로 사용하면 안 된다.
+
+    static void BuildPlacementOrientedRegions(
+        const FFFZSFacilitySpec& Spec,
+        const FFFZSGridPlacement& Placement,
+        TArray<FFFZSOrientedRect>& OutFootprintRects,
+        TArray<FFFZSOrientedRect>& OutClearanceRects,
+        TArray<FFFZSOrientedRect>& OutQueueRects,
+        TArray<FFFZSOrientedRect>& OutReservedRects);
+	// 자유 Yaw를 보존한 실제 권위 영역 네 그룹을 한 번에 만든다. 좌표 오버플로는 전체 fail-closed다.
+
+    static bool DoOrientedRectSetsOverlap(
+        const TArray<FFFZSOrientedRect>& A,
+        const TArray<FFFZSOrientedRect>& B);
+	// SAT 좁은 단계로 양의 면적 교집합만 검사한다. 경계 접촉은 겹침이 아니다.
+
+    // [최적화] 네 영역을 한 번의 계산으로 함께 만든다.
+    // 개별 Get*Rects를 네 번 부르면 예산 검사(CanEnumerateFacilityCells)와 queue 정규화가
+    // 호출마다 중복 실행된다(Reserved 하나만 해도 내부에서 footprint·queue를 다시 만든다).
+    // 배치 검증처럼 네 영역이 모두 필요한 경로는 이 API를 써서 같은 결과를 1회 계산으로 얻는다.
+    // 출력은 임의 Yaw OBB를 감싸는 보수적 AABB이며 권위 충돌에는 사용하지 않는다.
+    static void BuildPlacementRegions(
+        const FFFZSFacilitySpec& Spec,
+        const FFFZSGridPlacement& Placement,
+        TArray<FFFZSCellRect>& OutFootprintRects,
+        TArray<FFFZSCellRect>& OutClearanceRects,
+        TArray<FFFZSCellRect>& OutQueueRects,
+        TArray<FFFZSCellRect>& OutReservedRects);
 	
     static bool TryMaterializeCellRects(const TArray<FFFZSCellRect>& Rects, int32 MaxCells, TArray<FIntPoint>& OutCells);
 	// 작은 영역만 개별 셀로 펼치는 호환/디버그 도우미다.
@@ -76,7 +126,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static TArray<FIntPoint> GetFootprintCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
-	// 호환/디버그용 개별 본체 셀. 10,000셀을 넘으면 fail-closed로 빈 배열이다. 권위 로직은 GetFootprintRects를 사용.
+    // 호환/디버그용 보수적 AABB 개별 셀. 10,000셀을 넘으면 빈 배열이며 권위 입력이 아니다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Grid")
     static TArray<FIntPoint> GetClearanceCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
@@ -90,15 +140,28 @@ public:
     static TArray<FIntPoint> GetReservedCells(const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement);
 	// 호환/디버그용 개별 예약 셀. 10,000셀을 넘으면 빈 배열이며 권위 입력이 아니다. 
 
-    UFUNCTION(BlueprintPure, Category = "FF Zone System|Presets")
-    static FFFZSFacilitySpec MakeBuiltInFacilitySpec(EFFZSBuiltInFacilityPreset Preset);
-	// 선택한 내장 프리셋의 값 복사본을 만든다. Accepted 항목 외 수치는 측정 전 가설로 취급.
-
-    UFUNCTION(BlueprintPure, Category = "FF Zone System|Presets")
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Configuration")
     static TArray<FName> GetAcceptedGameplayZoneIds();
-	// 이 프로젝트의 Accepted 기본 Gameplay Zone ID 목록을 값으로 반환한다. 이식 프로젝트는 설정에서 교체할 수 있다. 
+	// [하드코딩 제거] 현재 허용되는 Gameplay Zone ID를 Project Settings > FF Zone System >
+	// Project Zone Ids에서 읽어 반환한다. 이전에는 이 함수가 Festa 전용 ID 12개를 코드에 직접
+	// 담고 있어서, 설정에 추가한 ID(예: 테스트 Zone)를 Preset 적용이 거부하는 불일치가 있었다.
+	// 설정이 비어 있을 때만 GetDefaultProjectZoneIds()의 시드 목록으로 되돌아간다.
 
-    UFUNCTION(BlueprintPure, Category = "FF Zone System|Commands")
+    static const TArray<FName>& GetDefaultProjectZoneIds();
+	// 새 프로젝트/이식 프로젝트가 Project Zone Ids를 채우기 전에 쓰는 시드 목록이다.
+	// 설정 CDO 생성자만 이 값을 복사하며(설정 로드 중 재귀 조회를 피한다), 런타임 판정의
+	// 권위 목록은 언제나 UFFZSDeveloperSettings::ProjectZoneIds다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Configuration")
+    static FFFZSCommand MakeInstallCommandFromDefinition(
+        const UFFZSFacilityDefinition* Definition,
+        FName ZoneId,
+        FFFZSGridPlacement Placement,
+        int64 ExpectedWorldRevision = -1);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Development",
+        meta = (DevelopmentOnly, DeprecatedFunction,
+            DeprecationMessage = "Use MakeInstallCommandFromDefinition. Runtime accepts only the exact registered Definition Spec."))
     static FFFZSCommand MakeInstallCommand(const FFFZSFacilitySpec& Spec, FName ZoneId, FFFZSGridPlacement Placement, int64 ExpectedWorldRevision = -1);
 	// 새 CommandId와 FacilityInstanceId를 만들고 회전을 정규화한 Install 명령을 반환한다. -1 리비전은 최신 상태를 허용.
 	

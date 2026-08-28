@@ -654,4 +654,63 @@ bool FFF_ZoneSystemBridge_UnitConversions::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 공연 시간이 아니면 메인 무대만 후보에서 빠진다.
+//
+// Busking·ExperienceStage 가 같이 빠지면 안 되는 이유가 서로 다르다:
+// Busking 은 상시 공연이고, ExperienceStage 는 유료 프로그램이 여는 시설이라
+// (FFF_ProgramCard::AllowedFacilityTypes) 닫으면 예약 참가자가 자기 시설에 못 간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_ProgramScheduleHidesOnlyMainStage, "FestaFiesta.NPC.ZoneSystemBridge.ProgramScheduleHidesOnlyMainStage", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ZoneSystemBridge_ProgramScheduleHidesOnlyMainStage::RunTest(const FString& Parameters)
+{
+	FFFZSReadModel ReadModel;
+	ReadModel.Zones.Add(MakeBridgeTestZone(TEXT("ZoneA"), {}));
+
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_Sunset")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(2, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Performance, TEXT("Performance_Busking_Street")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(3, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Performance, TEXT("Performance_ExperienceStage_Yoga")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(4, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Performance, TEXT("Performance_SubStage_Local")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(5, TEXT("ZoneA")));
+
+	const TArray<FFF_DestinationCandidate> Closed = FFF_ZoneSystemBridge::BuildCandidates(
+		ReadModel, TEXT("ZoneA"), FVector::ZeroVector,
+		FFF_ZoneSystemBridge::DefaultMaxCandidates, nullptr, /*bMainStageOpen=*/false);
+
+	TestFalse(TEXT("공연 시간이 아니면 메인 무대가 빠진다"), ContainsFacility(Closed, 1));
+	TestTrue(TEXT("버스킹은 상시라 남는다"), ContainsFacility(Closed, 2));
+	TestTrue(TEXT("체험 무대는 예약 시설이라 남는다"), ContainsFacility(Closed, 3));
+	TestTrue(TEXT("서브 무대는 게이팅 대상이 아니다"), ContainsFacility(Closed, 4));
+	TestTrue(TEXT("무관한 카테고리는 영향 없다"), ContainsFacility(Closed, 5));
+
+	const TArray<FFF_DestinationCandidate> Open = FFF_ZoneSystemBridge::BuildCandidates(
+		ReadModel, TEXT("ZoneA"), FVector::ZeroVector,
+		FFF_ZoneSystemBridge::DefaultMaxCandidates, nullptr, /*bMainStageOpen=*/true);
+
+	TestTrue(TEXT("공연 시간이면 메인 무대가 돌아온다"), ContainsFacility(Open, 1));
+	TestEqual(TEXT("열렸을 때는 아무것도 안 빠진다"), Open.Num(), 5);
+
+	return true;
+}
+
+// 인자를 생략하면 게이팅이 없다. Stage 가 없는 월드(크라우드 단독 테스트 맵)와
+// 이 함수를 부르는 기존 호출부가 전부 이 기본값에 기대고 있다 —
+// 기본값을 false 로 뒤집으면 무대가 아무 데서도 안 보인다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_MainStageGatingDefaultsToOpen, "FestaFiesta.NPC.ZoneSystemBridge.MainStageGatingDefaultsToOpen", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ZoneSystemBridge_MainStageGatingDefaultsToOpen::RunTest(const FString& Parameters)
+{
+	FFFZSReadModel ReadModel;
+	ReadModel.Zones.Add(MakeBridgeTestZone(TEXT("ZoneA"), {}));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_Sunset")));
+
+	const TArray<FFF_DestinationCandidate> Candidates =
+		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
+
+	TestTrue(TEXT("기본값은 게이팅 없음이다"), ContainsFacility(Candidates, 1));
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

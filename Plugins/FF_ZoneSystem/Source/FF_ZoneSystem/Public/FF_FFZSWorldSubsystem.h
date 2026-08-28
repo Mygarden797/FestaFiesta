@@ -17,13 +17,13 @@ class AFFZSFacilityActor;
 class AFFZSGameplayZone;
 class AFFZSProtectedArea;
 
-// 시설 한 개의 ZoneId와 서로 겹치지 않는 예약 사각형을 묶은 권위 점유 레코드.
+// 시설 한 개의 ZoneId와 서로 겹치지 않는 회전 예약 사각형을 묶은 권위 점유 레코드.
 // GUID별 한 레코드이므로 메모리는 물리 셀 수가 아니라 시설 수와 사각형 수에 비례.
 
 struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
-    TArray<FFFZSCellRect> Regions;
+    TArray<FFFZSOrientedRect> Regions;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
@@ -105,6 +105,13 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacility(FGuid FacilityInstanceId) const;
     // 현재 유효한 등록 시설을 반환한다. 잘못된 GUID나 소멸한 액터면 nullptr. 
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    AFFZSFacilityActor* FindFacilityAtWorldPoint(
+        const FVector& WorldPoint,
+        FName ZoneId = NAME_None) const;
+    // 등록된 시설 중 월드 지점이 footprint 안에 있는 가장 가까운 시설을 반환한다.
+    // ZoneId가 비어 있으면 현재 등록 Zone 경계에서 해석하며, 같은 거리에서는 InstanceId로 결정한다.
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Workflow")
     bool SetChangePhase(EFFZSChangePhase NewPhase);
@@ -200,10 +207,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    //Schema 4의 1 cm 압축 점유 계약·운영 단계·리비전·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    //Schema 5의 1 cm 위치·0.01도 자유 Yaw 계약, 운영 단계·리비전·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
-    // Schema 4를 검증하고, 알려진 100 cm Schema 3은 안전 검사 후 메모리상 Schema 4로 변환한 뒤 시설과 운영 상태를 교체한다.
+    // Schema 5를 검증하고, 알려진 Schema 3/4는 안전 검사 후 메모리상 Schema 5로 변환한 뒤 시설과 운영 상태를 교체한다.
     // 제작 존·보호 영역·등록 정책은 유지하며 게임 스레드 밖이나 명령·정책 콜백 중에는 실패한다.
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Save")
     bool RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors);
@@ -294,7 +301,7 @@ private:
 
     void OccupyFacilityRegions(const AFFZSFacilityActor& Facility);
     void ReleaseFacilityRegions(const AFFZSFacilityActor& Facility);
-    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSCellRect>& Regions, FGuid IgnoreFacilityId) const;
+    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId) const;
     void RefreshWorldActors() const;
 
     bool ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors) const;

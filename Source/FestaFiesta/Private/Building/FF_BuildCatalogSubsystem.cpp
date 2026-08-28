@@ -1,5 +1,10 @@
 // FF_BuildCatalogSubsystem.cpp
 
+// FacilityDefinition 에셋을 비동기로 수집해 정렬된 건설 카탈로그와 썸네일 상태를 구축한다.
+// 흐름: PrimaryAsset 검색·로드 -> 항목 검증/변환 -> 그룹 재구축 -> 세션 기반 썸네일 프리로드.
+// 불변식: 세대가 지난 비동기 콜백과 중복 FacilityDefinitionId는 현재 스냅샷을 바꾸지 못한다.
+// 실패/성능: 로드는 비동기로 수행하고 Deinitialize에서 핸들과 썸네일 강한 참조를 모두 해제한다.
+
 #include "Building/FF_BuildCatalogSubsystem.h"
 
 #include "Building/FF_BuildCatalogModel.h"

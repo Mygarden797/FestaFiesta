@@ -32,10 +32,10 @@ struct FFF_QueuedParty
 /**
  * 시설 한 곳의 대기열. 순수 C++ — UObject도 Actor도 아니고 월드를 모른다.
  *
- * 소유 범위 (설계문서 2장): FIFO 순서 배열, 슬롯 배정, 서비스 타이머. 그게 전부다.
+ * 소유 범위: FIFO 순서 배열, 슬롯 배정, 서비스 타이머. 그게 전부다.
  *   - 트랜스폼을 직접 건드리지 않는다. 슬롯 목표 위치 배열만 만들어서 Crowd에 넘긴다.
  *   - 대기 중인 NPC를 Crowd 시뮬레이션에서 빼지 않는다. 빼면 Heat Map에서 부스 앞이
- *     텅 비게 나온다 (설계문서 8.4).
+ *     텅 비게 나온다.
  *   - Crowd/Decision의 내부 상태를 폴링하지 않는다. 시간은 Advance 인자로 주입받는다.
  *
  * 결정론: 시각·포인터·프레임 번호를 읽지 않는다. 같은 (등록 순서, TryJoin 호출 순서,
@@ -47,7 +47,7 @@ public:
 	void Configure(int32 InFacilityId, const FFF_QueueConfig& InConfig, const FFF_QueueLaneGeometry& InLane);
 
 	/**
-	 * Party 단위 전부-아니면-전무 가입 (설계문서 8.2①).
+	 * Party 단위 전부-아니면-전무 가입.
 	 * 4인 가족인데 슬롯이 2칸 남았다면 2명만 넣지 않고 전원 거절한다.
 	 * 도착 판정(Crowd의 Arrived)과 가입 판정은 반드시 분리되어야 한다 — 걸어가는 동안 줄이 찰 수 있다.
 	 */
@@ -68,7 +68,7 @@ public:
 	void Advance(float DeltaSeconds, float SimTimeSeconds);
 
 	/**
-	 * 대기 중인 전원을 Cancelled로 내보내고 시설을 닫는다 (설계문서 9.3).
+	 * 대기 중인 전원을 Cancelled로 내보내고 시설을 닫는다.
 	 * 12명이 동시에 재결정을 요청하게 되지만 Decision 측 예산제가 자동으로 분산시킨다.
 	 */
 	void CloseFacility(EFF_QueueCloseReason Reason, float SimTimeSeconds);
@@ -77,7 +77,7 @@ public:
 	FFF_QueueState GetState() const;
 
 	/**
-	 * 설계문서 9.1: (대기인원 + 내 일행) / 처리율. 정확할 필요는 없고,
+	 * : (대기인원 + 내 일행) / 처리율. 정확할 필요는 없고,
 	 * "결정 시점에 알 수 있는 정보로만 계산"되는 게 중요하다.
 	 */
 	float GetExpectedWaitSeconds(int32 IncomingMemberCount) const;
@@ -91,8 +91,25 @@ public:
 		return GetExpectedWaitSeconds(IncomingMemberCount) / FFF_QueueUnits::SecondsPerDecisionMinute;
 	}
 
-	/** 현재 FIFO 순서대로 슬롯 목표 위치를 만든다. Crowd가 이걸 받아서 걸어간다. */
+	/**
+	 * 현재 FIFO 순서대로 슬롯 목표 위치를 만든다. Crowd가 이걸 받아서 걸어간다.
+	 *
+	 * 일행당 하나씩 나온다. 멤버별로 자리를 지정하지 않는 이유는 Crowd 가 일행을
+	 * 리더 기준 포메이션으로 묶어 다루기 때문이다. 멤버마다 다른 목적지를 주면
+	 * 그 포메이션과 싸워서 일행이 흩어진다.
+	 *
+	 * AgentId 에는 리더가 들어간다.
+	 */
 	void BuildSlotAssignments(TArray<FFF_SlotAssignment>& OutAssignments) const;
+
+	/**
+	 * 일행 하나가 줄에서 차지하는 칸수.
+	 *
+	 * 실제로 줄을 설 때 4인 가족이 한 줄로 늘어서지는 않는다. 둘씩 짝지어 뭉치므로
+	 * 인원수만큼 칸을 잡으면 줄이 실제보다 길어지고 정원도 빨리 찬다.
+	 * 포메이션이 리더 뒤로 퍼지는 반경을 슬롯 간격으로 나눠서 구한다.
+	 */
+	int32 GetPartySlotSpan(int32 MemberCount) const;
 
 	/** 마지막 조회 이후 줄 구성이 바뀌었는지. true를 한 번 반환하면 플래그는 내려간다. */
 	bool ConsumeSlotTargetsDirty();

@@ -1,5 +1,10 @@
 // FF_BuildCatalogThumbnailTests.cpp
 
+// 썸네일 Bundle 선언, 비동기 프리로드 세대 보호, 카드 표시 폴백 계약을 검증한다.
+// 흐름: 합성 FacilityDefinition 구성 -> 카탈로그 세션 구동 -> 로드/해제 전후 상태와 UI 반영 확인.
+// 불변식: 실제 프로젝트 콘텐츠는 변경하지 않고 transient 정의·텍스처와 격리된 GameInstance만 사용한다.
+// 실패/수명: Fixture는 assertion 동안 Root에 고정하고 종료 전에 핸들·객체 참조를 모두 해제한다.
+
 #include "CoreMinimal.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -85,6 +90,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildCatalogThumbnailDefinitionContractTest::RunTest(const FString& Parameters)
 {
+	// 리플렉션 필드와 Asset Bundle 메타데이터를 함께 고정해 선언은 남고 프리로드 경로만 깨지는 회귀를 막는다.
 	(void)Parameters;
 
 	FSoftObjectProperty* CatalogThumbnailProperty = FindFProperty<FSoftObjectProperty>(
@@ -116,8 +122,8 @@ bool FFF_BuildCatalogThumbnailDefinitionContractTest::RunTest(const FString& Par
 	TestFalse(
 		TEXT("CatalogThumbnail is presentation metadata, not SaveGame state"),
 		CatalogThumbnailProperty->HasAnyPropertyFlags(CPF_SaveGame));
-	// Property metadata scanning is an editor-only Asset Manager facility. Runtime builds verify the reflected
-	// field contract above, while editor automation additionally proves the named bundle contains the soft path.
+	// 프로퍼티 메타데이터 스캔은 에디터 전용 Asset Manager 기능이다. 런타임 빌드는 위의 리플렉션
+	// 필드 계약을 검증하고, 에디터 자동화는 지정 Bundle에 Soft Path가 포함되는지 추가로 확인한다.
 #if WITH_EDITOR
 	TestEqual(
 		TEXT("CatalogThumbnail participates in the build-catalog UI asset bundle"),
@@ -159,10 +165,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildCatalogThumbnailSessionLifetimeTest::RunTest(const FString& Parameters)
 {
+	// 중첩 화면 세션의 참조 수가 0이 되는 마지막 Release에서만 썸네일 수명이 끝나는지 확인한다.
 	(void)Parameters;
 
-	// GameInstanceSubsystem classes require a UGameInstance Outer. Keep both fixture objects rooted for the
-	// whole assertion sequence so an incidental automation GC cannot invalidate the isolated subsystem.
+	// GameInstanceSubsystem은 UGameInstance Outer가 필요하다. 우발적인 자동화 GC가 격리된
+	// 서브시스템을 무효화하지 않도록 전체 assertion 동안 두 Fixture 객체를 Root에 유지한다.
 	TStrongObjectPtr<UGameInstance> TestGameInstance(NewObject<UGameInstance>());
 	TestNotNull(TEXT("A transient game instance can own the catalog fixture"), TestGameInstance.Get());
 	if (!TestGameInstance.IsValid())
@@ -211,6 +218,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Parameters)
 {
+	// 카드는 Asset Manager가 이미 올린 텍스처만 선택하고 Soft Path만 있는 상태에서는 폴백을 유지해야 한다.
 	(void)Parameters;
 
 	UFF_BuildFacilityCard* Card = NewObject<UFF_BuildFacilityCard>();
@@ -256,7 +264,28 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 	FFF_BuildCatalogEntry Entry;
 	Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_ThumbnailContract");
 	Entry.Thumbnail = TSoftObjectPtr<UTexture2D>(ExplicitThumbnail);
+	Entry.InstallCost = 400;
+	Entry.bHasResolvedInstallCost = true;
+	Entry.RecoveryCost = 200;
+	Entry.bHasResolvedRecoveryCost = true;
 	Card->Configure(Entry);
+	TestEqual(
+		TEXT("A configured facility card exposes its resolved install and recovery costs on hover"),
+		Card->GetToolTipText().ToString(),
+		FString(TEXT("건설 비용: 400 Gold\n회수 비용: 200 Gold")));
+
+	FFF_BuildCatalogEntry PartiallyResolvedEntry = Entry;
+	PartiallyResolvedEntry.bHasResolvedRecoveryCost = false;
+	TestEqual(
+		TEXT("An unavailable recovery cost does not hide a resolved install cost"),
+		UFF_BuildFacilityCard::MakeFacilityCostToolTip(PartiallyResolvedEntry).ToString(),
+		FString(TEXT("건설 비용: 400 Gold\n회수 비용: 가격 정보 없음")));
+	PartiallyResolvedEntry.bHasResolvedInstallCost = false;
+	PartiallyResolvedEntry.bHasResolvedRecoveryCost = true;
+	TestEqual(
+		TEXT("An unavailable install cost does not hide a resolved recovery cost"),
+		UFF_BuildFacilityCard::MakeFacilityCostToolTip(PartiallyResolvedEntry).ToString(),
+		FString(TEXT("건설 비용: 가격 정보 없음\n회수 비용: 200 Gold")));
 	TestEqual(
 		TEXT("An entry-specific thumbnail takes priority over the card default"),
 		ThumbnailImage->GetBrush().GetResourceObject(),
@@ -285,6 +314,16 @@ bool FFF_BuildFacilityCardThumbnailSelectionTest::RunTest(const FString& Paramet
 			TEXT("Refreshing with no loaded thumbnail clears the previously displayed brush"),
 			ThumbnailImage->GetBrush().GetResourceObject());
 	}
+
+	Entry.InstallCost = 0;
+	Entry.bHasResolvedInstallCost = false;
+	Entry.RecoveryCost = 0;
+	Entry.bHasResolvedRecoveryCost = false;
+	Card->Configure(Entry);
+	TestEqual(
+		TEXT("A card never shows a misleading zero when price data is unavailable"),
+		Card->GetToolTipText().ToString(),
+		FString(TEXT("건설 비용: 가격 정보 없음\n회수 비용: 가격 정보 없음")));
 
 	return true;
 }

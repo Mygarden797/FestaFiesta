@@ -37,24 +37,32 @@ struct FFF_NeedRiseRates
 	float FatigueMinutesToLimit = 0.f;
 
 	/**
-	 * Phase 2. 켜면 Live 후반으로 갈수록 Performance·PhotoSpot·Booth(Nightlife) 쪽 끌림이
+	 * Phase 2 — 켜져 있다. Live 후반으로 갈수록 Performance·PhotoSpot·Booth(Nightlife) 쪽 끌림이
 	 * 장내 전체에서 같이 커진다 — 무대는 수가 적고 크니 그 끌림이 한 곳에 모인다(AT-016).
 	 *
-	 * 한계에서의 세기는 weight_need(1.8) × need_priority_stimulation(0.5) = 0.9 다.
-	 * attraction(1.0) + preference(0.6) = 1.6 보다 작으므로 **취향을 뒤집지는 못한다** —
-	 * 생리적 욕구가 아니라서 의도적으로 가장 낮게 잡은 결과다.
+	 * 240 은 실측이 아니라 앵커다. live_stage_duration_minutes 와 같은 값이라
+	 * "Live 를 통째로 머문 사람이 딱 한계에 닿는다"는 문장이 근거로 선다.
 	 *
-	 * [특징 1] 특정 시각의 급증은 안 만든다. 완만히 오르는 추세이다.
-	 * 공연 시작 시각에 몰리는 것은 타임테이블·예약(reservation_program_spec.md) 또는 무대의 bIsOpen 이 만든다
+	 * 한계에서의 세기는 weight_need(1.8) × need_priority_stimulation(0.5) = 0.9 다.
+	 * 설계 의도는 attraction(1.0) + preference(0.6) = 1.6 보다 작아 취향을 뒤집지 못하는 것이었지만,
+	 * BaseAttraction 이 아직 0 이라 실제 경쟁자는 preference(0.6) 하나뿐이다 — 지금은 뒤집는다.
+	 * attraction_norm 이 들어오면 경쟁자가 1.6 으로 돌아오므로 이 값은 재조정 대상이다.
+	 *
+	 * [특징 1] 특정 시각의 급증은 이 값이 만들지 않는다. 완만히 오르는 추세뿐이다 —
+	 * 매 틱 (경과분 / 240) 을 더하는 선형 누적기라 곡선이 꺾이는 지점이 원리적으로 없고,
+	 * 초기값과 입장 시각이 개체마다 흩어져 있어 합쳐도 부드럽다.
+	 * 이 값이 만드는 것은 "무대를 고를 이유"까지이고, 공연 시각의 계단은
+	 * 무대 bIsOpen 게이팅(FFF_ZoneSystemBridge::BuildCandidates)이,
+	 * 그 계단을 같은 순간에 보이게 하는 것은
+	 * UFF_CrowdSimulationSubsystem::RequestRedecisionForIdleParties 가 만든다.
 	 * [특징 2] 무대 전용이 아니다. 포토존·나이트라이프 부스도 같이 해소하므로 끌림이 셋으로 나뉜다
 	 *
-	 * [주의] 이 값만 켜고 need_stimulation_relief_amount 를 0 으로 두면 모두의
-	 * Stimulation 이 1.0 에 붙어 영원히 안 내려온다 — 동적 끌림이 아니라 전원에게 똑같이 걸린
-	 * 상수가 되어 아무것도 구분하지 못한다.
-	 * -> 반드시 해소량과 같이 켤 것 !!
+	 * [짝] need_stimulation_relief_amount 와 함께 움직인다. 해소량이 0 이면 Relieve 가 그 성분을
+	 * 통째로 건너뛰어 모두의 Stimulation 이 1.0 에 붙고, 동적 끌림이 아니라 전원에게 똑같이 걸린
+	 * 상수가 되어 아무것도 구분하지 못한다. 한쪽만 0 으로 되돌리지 말 것.
 	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float StimulationMinutesToLimit = 0.f;
+	float StimulationMinutesToLimit = 240.f;
 
 	float GetMinutesToLimit(EFF_NeedType NeedType) const
 	{
@@ -99,7 +107,7 @@ struct FFF_NeedReliefAmounts
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Restroom = 1.0f;
 
-	// 아래 3종은 대응하는 MinutesToLimit 이 0 이라 지금은 쓰이지 않는다.
+	// 아래 2종은 대응하는 MinutesToLimit 이 0 이라 지금은 쓰이지 않는다.
 	// 값을 미리 넣어두면 "근거 있는 값"처럼 보이므로 Phase 를 켤 때 같이 정한다.
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Thirst = 0.f;
@@ -107,8 +115,11 @@ struct FFF_NeedReliefAmounts
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
 	float Fatigue = 0.f;
 
+	// 완전 해소. 공연 관람은 배고픔과 달리 한 번에 끝나는 경험이다.
+	// 재방문은 StimulationMinutesToLimit 이 다시 쌓아주는 쪽에서 나온다.
+	// 0 으로 되돌리면 Relieve 가 이 성분을 통째로 건너뛴다 — 상승 계수와 짝이다.
 	UPROPERTY(BlueprintReadWrite, Category = "Need")
-	float Stimulation = 0.f;
+	float Stimulation = 1.0f;
 
 	float Get(EFF_NeedType NeedType) const
 	{

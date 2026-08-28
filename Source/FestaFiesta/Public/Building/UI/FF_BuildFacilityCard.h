@@ -1,10 +1,9 @@
 // FF_BuildFacilityCard.h
 
-//건설 카탈로그의 시설 하나를 표현하는 클릭 가능한 UMG 카드이다.
-
-//시각적 계층과 버튼 상태 표현은 WBP_FF_BuildFacilityCard가 소유한다. 네이티브 클래스는
-// FFF_BuildCatalogEntry를 카드 내부 위젯에 바인딩하고, 화면이 클릭 결과에서 시설 정의 ID를
-// 다시 꺼낼 수 있도록 데이터 스냅샷을 보관하는 역할만 맡는다.
+// 건설 카탈로그의 시설 하나를 표현하는 클릭 가능한 UMG 카드와 데이터 바인딩 계약을 선언한다.
+// 흐름: 항목 스냅샷 설정 -> 텍스트·비용·이미지·툴팁 반영 -> 클릭 시 정의 ID 조회.
+// 불변식: 시각 계층은 WBP가 소유하고 네이티브 카드는 전달받은 항목 복사본만 표시한다.
+// 실패/성능: 썸네일은 동기 로드하지 않으며 미로드·누락 상태에서는 자리표시자를 유지한다.
 
 #pragma once
 
@@ -14,6 +13,7 @@
 #include "FF_BuildFacilityCard.generated.h"
 
 class UCommonTextBlock;
+class UFF_BuildFacilityCostTooltip;
 class UImage;
 class UTexture2D;
 
@@ -45,17 +45,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
 	FName GetFacilityDefinitionId() const { return Entry.FacilityDefinitionId; }
 
+	// UMG와 Slate 폴백이 공유하는 지역화된 hover 가격 문구입니다.
+	static FText MakeFacilityCostToolTip(const FFF_BuildCatalogEntry& CatalogEntry);
+
 	const FFF_BuildCatalogEntry& GetCatalogEntry() const { return Entry; }
 
 protected:
 	// 디자이너 미리보기와 런타임 생성 순서 모두에서 저장된 데이터를 다시 투영한다. 
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 
 private:
 	// Configure 호출 시점과 WidgetTree 생성 시점이 달라도 같은 결과가 되도록 바인딩을 한곳에 모은다. 
 	void ApplyEntryToWidgets();
 	void ApplyThumbnailToWidget();
+	void RefreshFacilityCostTooltip();
+	void ApplyFacilityCostTextFallback();
 
 	// 원본 카탈로그 배열 수명과 분리된 카드별 데이터 스냅샷이다. 
 	UPROPERTY(Transient)
@@ -73,4 +79,16 @@ private:
 	// 카드에서는 로드하지 않으므로 UI 클래스 등 다른 소유자가 이미 메모리에 올린 경우에만 사용합니다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Style")
 	TSoftObjectPtr<UTexture2D> DefaultThumbnail;
+
+	/**
+	 * 기존 카드 WBP를 수정하지 않고 연결하는 디자이너 편집형 가격 툴팁입니다.
+	 * 클래스가 없거나 생성에 실패하면 지역화된 기본 텍스트 툴팁으로 자동 폴백합니다.
+	 */
+	// 직렬화 이름은 기존 카드 WBP 호환성을 위해 유지하고 디자이너 표시명만 현재 역할에 맞춥니다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Building|UI|Tooltip",
+		meta = (DisplayName = "Facility Cost Tooltip Class"))
+	TSoftClassPtr<UFF_BuildFacilityCostTooltip> InstallCostTooltipClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildFacilityCostTooltip> FacilityCostTooltip;
 };

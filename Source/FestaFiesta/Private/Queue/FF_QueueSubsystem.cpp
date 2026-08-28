@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Queue/FF_QueueSubsystem.h"
+#include "FF_FFZSDeveloperSettings.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
@@ -42,12 +43,38 @@ void UFF_QueueSubsystem::RebuildFacilityIndex()
 	}
 }
 
-void UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane)
+bool UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane)
 {
-	if (FacilityId == INDEX_NONE)
+	const bool bConfigValid =
+		Config.MaxCapacityMembers >= 0 &&
+		Config.MaxCapacityMembers <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+		Config.ConcurrentServiceSlots > 0 &&
+		Config.ConcurrentServiceSlots <= UFFZSDeveloperSettings::MaxFacilityServiceCapacity &&
+		FMath::IsFinite(Config.ServiceSecondsPerMember) &&
+		Config.ServiceSecondsPerMember > 0.0f &&
+		!Config.ExitLocation.ContainsNaN();
+	const bool bLaneValid =
+		Lane.PolylinePoints.Num() <= UFFZSDeveloperSettings::MaxQueueSplinePoints &&
+		Lane.ExplicitSlotTransforms.Num() <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+		FMath::IsFinite(Lane.SlotSpacingCm) && Lane.SlotSpacingCm > 0.0f &&
+		FMath::IsFinite(Lane.SlotYawDegrees) &&
+		!Lane.HeadLocation.ContainsNaN() && !Lane.TailDirection.ContainsNaN() &&
+		!Lane.PolylinePoints.ContainsByPredicate(
+			[](const FVector& Point) { return Point.ContainsNaN(); }) &&
+		!Lane.ExplicitSlotTransforms.ContainsByPredicate(
+			[](const FTransform& Transform) { return Transform.ContainsNaN(); });
+	if (FacilityId == INDEX_NONE || !bConfigValid || !bLaneValid)
 	{
-		UE_LOG(LogFestaFiestaQueue, Warning, TEXT("[대기열] FacilityId=INDEX_NONE 등록 요청을 무시했다."));
-		return;
+		// 거절 사유를 구분해서 남긴다. 조건이 셋인데 로그가 하나면
+		// 설정이 잘못된 경우에도 "ID가 잘못됐다"로 읽혀서 엉뚱한 데를 뒤지게 된다.
+		const TCHAR* Reason =
+			(FacilityId == INDEX_NONE) ? TEXT("FacilityId 가 INDEX_NONE")
+			: (!bConfigValid) ? TEXT("Config 값이 범위를 벗어남")
+			: TEXT("Lane geometry 가 유효하지 않음");
+
+		UE_LOG(LogFestaFiestaQueue, Warning,
+			TEXT("[대기열] 시설 등록을 거절했다. Facility=%d, 사유=%s"), FacilityId, Reason);
+		return false;
 	}
 
 	if (FFF_FacilityQueue* Existing = FindQueue(FacilityId))
@@ -56,7 +83,7 @@ void UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfi
 		UE_LOG(LogFestaFiestaQueue, Log, TEXT("[대기열] Facility=%d 재등록 — 기존 대기열을 초기화한다."), FacilityId);
 		Existing->Configure(FacilityId, Config, Lane);
 		DirtySlotFacilities.AddUnique(FacilityId);
-		return;
+		return true;
 	}
 
 	TUniquePtr<FFF_FacilityQueue> NewQueue = MakeUnique<FFF_FacilityQueue>();
@@ -71,6 +98,7 @@ void UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfi
 	RebuildFacilityIndex();
 
 	DirtySlotFacilities.AddUnique(FacilityId);
+	return true;
 }
 
 bool UFF_QueueSubsystem::UnregisterFacility(int32 FacilityId)
@@ -235,7 +263,7 @@ float UFF_QueueSubsystem::GetFacilityServiceRatePerMinute(int32 FacilityId) cons
 
 FVector UFF_QueueSubsystem::GetFacilityExitLocation(int32 FacilityId) const
 {
-	// 퇴장 경로가 대기열 입구와 겹치면 나가는 사람과 들어오는 사람이 서로를 막는다 (설계문서 8.2③).
+	// 퇴장 경로가 대기열 입구와 겹치면 나가는 사람과 들어오는 사람이 서로를 막는다.
 	// 겹침 검증 자체는 시설 배치(한광훈) 쪽 책임이고, Queue는 받은 값을 전달만 한다.
 	const FFF_FacilityQueue* Queue = FindQueue(FacilityId);
 	return Queue ? Queue->GetConfig().ExitLocation : FVector::ZeroVector;

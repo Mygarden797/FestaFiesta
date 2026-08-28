@@ -1,5 +1,10 @@
 // FF_BuildCatalogTypes.h
 
+// 건설 카탈로그의 로드 상태와 UI가 소비하는 불변 항목·그룹 스냅샷을 정의한다.
+// 흐름: FacilityDefinition을 Entry로 투영한 뒤 소분류와 대분류 계층으로 묶어 화면에 전달한다.
+// 불변식: 표시 값은 비동기 갱신 사이에도 안정적인 값 복사본으로 유지한다.
+// 실패/수명: 런타임 소유 객체는 약한 참조로 보관해 언로드된 에셋을 스냅샷이 붙잡지 않는다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -10,7 +15,7 @@
 class UFFZSFacilityDefinition;
 class UTexture2D;
 
-//건설 카탈로그의 비동기 로드 진행 상태입니다.
+// 건설 카탈로그의 비동기 로드 진행 상태입니다.
 // UI는 이 값을 먼저 읽어 로딩 표시, 정상 목록/빈 상태, 오류 표시 중 무엇을 보여 줄지 결정합니다.
  
 UENUM(BlueprintType)
@@ -43,7 +48,7 @@ enum class EFF_BuildCatalogThumbnailLoadState : uint8
 	Failed
 };
 
-//FFZS Facility Definition Primary Asset 하나를 UI에서 선택 가능한 항목으로 변환한 읽기 모델입니다.
+// FFZS Facility Definition Primary Asset 하나를 UI에서 선택 가능한 항목으로 변환한 읽기 모델입니다.
 
 // 원본 Data Asset의 전체 데이터를 메뉴에 노출하지 않고, 분류·표시·선택에 필요한 값만 담습니다.
 // Thumbnail은 Facility Definition의 선택적 CatalogThumbnail을 전달합니다.
@@ -89,6 +94,26 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	// 선택적 표시용 썸네일입니다. null이면 UI가 공통 자리표시자 이미지를 사용해야 합니다. 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog")
 	TSoftObjectPtr<UTexture2D> Thumbnail;
+
+	// 현재 Festival의 FacilityCostTable에서 해석한 설치비입니다. 카탈로그 구성 시 한 번 계산해
+	// UMG/Slate 표현이 같은 가격 원천을 사용하게 하며, 실패하면 bHasResolvedInstallCost가 false입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	int32 InstallCost = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	bool bHasResolvedInstallCost = false;
+
+	// 현재 Festival의 철거 환급률을 설치비에 적용한 회수 금액입니다.
+	// 환급률 0은 유효한 설정이므로 값이 0인지와 해석 성공 여부를 별도로 보관합니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	int32 RecoveryCost = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	bool bHasResolvedRecoveryCost = false;
+
+	// 진단과 콘텐츠 QA용 실제 매칭 행입니다. UI에는 노출하지 않습니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
+	FName MatchedInstallCostRow = NAME_None;
 };
 
 // 한 시설 대분류 안에서 소분류 하나를 나타내는, 결정적 순서의 메뉴 행입니다. 

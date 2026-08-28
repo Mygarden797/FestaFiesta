@@ -1,5 +1,10 @@
 // FF_BuildCatalogScreen.cpp
 
+// 카탈로그 스냅샷을 디자이너 WBP 또는 제품용 Slate 폴백 화면에 렌더링한다.
+// 흐름: 입력 항목 저장 -> 골드/탭/분류 바인딩 -> 동적 소분류·카드 생성 -> 선택 이벤트 방송.
+// 불변식: 화면은 월드 명령을 직접 실행하지 않고 BuildModeSubsystem에 사용자 의도만 전달한다.
+// 실패/성능: WBP 계약이 불완전하면 Slate로 폴백하고 목록 갱신은 현재 분류 항목만 생성한다.
+
 #include "Building/UI/FF_BuildCatalogScreen.h"
 
 #include "Blueprint/WidgetTree.h"
@@ -9,14 +14,19 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
+#include "Components/Spacer.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/WidgetSwitcher.h"
+#include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
+#include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/UI/FF_BuildFacilityCard.h"
 #include "Building/UI/FF_BuildMinorSection.h"
 #include "Building/UI/FF_BuildTopButtonStyle.h"
 #include "InputCoreTypes.h"
+#include "Styling/CoreStyle.h"
 #include "UI/FF_CommonButtonBase.h"
 #include "UI/FF_UILog.h"
 #include "Widgets/Input/SButton.h"
@@ -61,7 +71,7 @@ namespace
 
 	void ApplyButtonIconBrush(UFF_CommonButtonBase* Button, const FSlateBrush& Brush)
 	{
-		// Preserve a WBP-authored icon when the atlas is unavailable.
+		// Atlas를 사용할 수 없으면 WBP가 저작한 기존 아이콘을 보존한다.
 		if (!IsValid(Button) || Brush.GetResourceObject() == nullptr)
 		{
 			return;
@@ -84,8 +94,8 @@ namespace
 			return;
 		}
 
-		// The generated category/card WBP has its own Border in addition to the
-		// CommonButton Slate brush. Both layers must be transparent.
+		// 생성된 분류/카드 WBP에는 CommonButton Slate 브러시 외에 별도 Border가 있으므로
+		// 두 계층을 모두 투명하게 만들어야 기본 회색 면이 남지 않는다.
 		Button->SetStyle(UFF_BuildTopButtonStyle::StaticClass());
 		if (UBorder* Surface = Cast<UBorder>(Button->GetWidgetFromName(SurfaceName)))
 		{
@@ -106,8 +116,8 @@ namespace
 		}
 		else
 		{
-			// SetIsSelected(false) only clears toggleable CommonButtons. These tabs
-			// are intentionally non-toggleable, so use the explicit reset API.
+			// SetIsSelected(false)는 토글형 CommonButton만 해제한다. 이 탭은 의도적으로
+			// 비토글형이므로 명시적인 상태 초기화 API를 사용한다.
 			Button->ClearSelection();
 		}
 		if (UImage* Indicator = Cast<UImage>(
@@ -117,6 +127,19 @@ namespace
 				bSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		}
 		Button->RefreshVisualState();
+	}
+
+	void StyleRuntimeGoldText(
+		UCommonTextBlock& Text,
+		const int32 FontSize,
+		const FLinearColor& Color,
+		const ETextJustify::Type Justification = ETextJustify::Left)
+	{
+		FSlateFontInfo Font = Text.GetFont();
+		Font.Size = FontSize;
+		Text.SetFont(Font);
+		Text.SetColorAndOpacity(FSlateColor(Color));
+		Text.SetJustification(Justification);
 	}
 }
 
@@ -176,6 +199,181 @@ bool UFF_BuildCatalogScreen::IsUsingDesignerWidgetTree() const
 {
 	// 초기화 플래그가 아직 서기 전(예: 자동화 테스트의 TakeWidget 직후)에도 현재 바인딩 상태를 진단할 수 있다.
 	return bUsingDesignerWidgetTree || HasUsableDesignerBindings();
+}
+
+FText UFF_BuildCatalogScreen::GetDisplayedGoldText() const
+{
+	if (TXT_Gold)
+	{
+		return TXT_Gold->GetText();
+	}
+	return GoldTextBlock.IsValid() ? GoldTextBlock->GetText() : FText::GetEmpty();
+}
+
+void UFF_BuildCatalogScreen::EnsureGoldDisplay()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	// 명시적으로 제작된 최신 WBP라면 디자이너 위젯을 그대로 사용한다.
+	if (UCommonTextBlock* ExistingGold =
+		Cast<UCommonTextBlock>(WidgetTree->FindWidget(TEXT("TXT_Gold"))))
+	{
+		TXT_Gold = ExistingGold;
+		ApplyGoldText();
+		return;
+	}
+
+	UHorizontalBox* TopBar = Cast<UHorizontalBox>(WidgetTree->FindWidget(TEXT("Top_Bar")));
+	UWidget* CloseButton = WidgetTree->FindWidget(TEXT("BTN_Close"));
+	const int32 CloseIndex = TopBar && CloseButton
+		? TopBar->GetChildIndex(CloseButton)
+		: INDEX_NONE;
+	if (!TopBar || CloseIndex == INDEX_NONE)
+	{
+		// 네이티브 Slate 폴백은 RebuildWidget에서 자체 Gold 패널을 제공한다.
+		return;
+	}
+
+	USizeBox* GoldSize = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(), TEXT("Gold_Size"));
+	UBorder* GoldPanel = WidgetTree->ConstructWidget<UBorder>(
+		UBorder::StaticClass(), TEXT("Gold_Panel"));
+	UHorizontalBox* GoldRow = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(), TEXT("Gold_Row"));
+	UCommonTextBlock* GoldLabel = WidgetTree->ConstructWidget<UCommonTextBlock>(
+		UCommonTextBlock::StaticClass(), TEXT("TXT_GoldLabel"));
+	USpacer* GoldSpacer = WidgetTree->ConstructWidget<USpacer>(
+		USpacer::StaticClass(), TEXT("Gold_ValueSpacer"));
+	UCommonTextBlock* GoldValue = WidgetTree->ConstructWidget<UCommonTextBlock>(
+		UCommonTextBlock::StaticClass(), TEXT("TXT_Gold"));
+	if (!GoldSize || !GoldPanel || !GoldRow || !GoldLabel || !GoldSpacer || !GoldValue)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("[%s] 건축 카탈로그 Gold 표시 위젯 생성에 실패했습니다."), *GetName());
+		return;
+	}
+
+	GoldSize->SetWidthOverride(320.0f);
+	GoldSize->SetHeightOverride(58.0f);
+	GoldSize->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	GoldPanel->SetBrushColor(FLinearColor(0.035f, 0.110f, 0.145f, 0.74f));
+	GoldPanel->SetPadding(FMargin(18.0f, 10.0f));
+	GoldPanel->SetHorizontalAlignment(HAlign_Fill);
+	GoldPanel->SetVerticalAlignment(VAlign_Fill);
+
+	GoldLabel->SetText(LOCTEXT("CurrentGoldLabelUMG", "현재 잔액"));
+	StyleRuntimeGoldText(
+		*GoldLabel, 13, FLinearColor(0.58f, 0.69f, 0.78f, 1.0f));
+	StyleRuntimeGoldText(
+		*GoldValue, 22, FLinearColor(0.08f, 0.95f, 0.88f, 1.0f), ETextJustify::Right);
+
+	if (UHorizontalBoxSlot* LabelSlot = GoldRow->AddChildToHorizontalBox(GoldLabel))
+	{
+		LabelSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	if (UHorizontalBoxSlot* SpacerSlot = GoldRow->AddChildToHorizontalBox(GoldSpacer))
+	{
+		SpacerSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	if (UHorizontalBoxSlot* ValueSlot = GoldRow->AddChildToHorizontalBox(GoldValue))
+	{
+		ValueSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	GoldPanel->AddChild(GoldRow);
+	GoldSize->AddChild(GoldPanel);
+
+	if (UHorizontalBoxSlot* GoldSlot =
+		Cast<UHorizontalBoxSlot>(TopBar->InsertChildAt(CloseIndex, GoldSize)))
+	{
+		GoldSlot->SetPadding(FMargin(0.0f, 0.0f, 18.0f, 0.0f));
+		GoldSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		GoldSlot->SetVerticalAlignment(VAlign_Center);
+	}
+	else
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("[%s] 건축 카탈로그 Top_Bar에 Gold 표시를 추가하지 못했습니다."), *GetName());
+		return;
+	}
+
+	TXT_Gold = GoldValue;
+	ApplyGoldText();
+}
+
+void UFF_BuildCatalogScreen::BindGoldReadModel()
+{
+	UnbindGoldReadModel();
+	bHasCurrentGold = false;
+	ApplyGoldText();
+
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (!GameInstance)
+	{
+		// 에디터의 playerless Widget 계약 테스트에는 GameInstance가 없다.
+		return;
+	}
+
+	CachedEconomyReadModel =
+		GameInstance->GetSubsystem<UFF_BuildCatalogEconomyReadModel>();
+	if (!CachedEconomyReadModel)
+	{
+		UE_LOG(LogFestaFiestaUI, Error,
+			TEXT("[%s] BuildCatalogEconomyReadModel을 찾지 못해 Gold를 표시할 수 없습니다."),
+			*GetName());
+		return;
+	}
+
+	CachedEconomyReadModel->OnGoldChanged.AddUniqueDynamic(this, &ThisClass::HandleGoldChanged);
+	// Read Model은 화면보다 오래 살고 초기 이벤트는 이미 지나갔으므로 Bind + Sync가 한 묶음입니다.
+	if (CachedEconomyReadModel->HasAuthoritativeGold())
+	{
+		HandleGoldChanged(CachedEconomyReadModel->GetGold());
+	}
+}
+
+void UFF_BuildCatalogScreen::UnbindGoldReadModel()
+{
+	if (CachedEconomyReadModel)
+	{
+		CachedEconomyReadModel->OnGoldChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
+	}
+	CachedEconomyReadModel = nullptr;
+}
+
+void UFF_BuildCatalogScreen::HandleGoldChanged(const int32 NewGold)
+{
+	CurrentGold = FMath::Max(0, NewGold);
+	bHasCurrentGold = true;
+	ApplyGoldText();
+}
+
+FText UFF_BuildCatalogScreen::MakeCurrentGoldText() const
+{
+	if (!bHasCurrentGold)
+	{
+		return LOCTEXT("CurrentGoldUnavailable", "—");
+	}
+
+	return FText::Format(
+		LOCTEXT("CurrentGoldFormat", "{0} Gold"),
+		FText::AsNumber(CurrentGold));
+}
+
+void UFF_BuildCatalogScreen::ApplyGoldText()
+{
+	const FText GoldText = MakeCurrentGoldText();
+	if (TXT_Gold)
+	{
+		TXT_Gold->SetText(GoldText);
+	}
+	if (GoldTextBlock.IsValid())
+	{
+		GoldTextBlock->SetText(GoldText);
+	}
 }
 
 TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
@@ -242,6 +440,45 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
+				.Padding(0.0f, 0.0f, 18.0f, 0.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(SBox)
+					.WidthOverride(320.0f)
+					.HeightOverride(58.0f)
+					[
+						SNew(SBorder)
+						.Padding(FMargin(18.0f, 10.0f))
+						.BorderBackgroundColor(FLinearColor(0.035f, 0.110f, 0.145f, 0.74f))
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							.VAlign(VAlign_Center)
+							[
+								SNew(STextBlock)
+								.Text(LOCTEXT("CurrentGoldLabelSlate", "현재 잔액"))
+								.ColorAndOpacity(FLinearColor(0.58f, 0.69f, 0.78f, 1.0f))
+							]
+							+ SHorizontalBox::Slot()
+							.FillWidth(1.0f)
+							[
+								SNew(SSpacer)
+							]
+							+ SHorizontalBox::Slot()
+							.AutoWidth()
+							.VAlign(VAlign_Center)
+							[
+								SAssignNew(GoldTextBlock, STextBlock)
+								.Text(MakeCurrentGoldText())
+								.Font(FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), 22))
+								.ColorAndOpacity(FLinearColor(0.08f, 0.95f, 0.88f, 1.0f))
+							]
+						]
+					]
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
 				[
 					SNew(SButton)
 					.ContentPadding(FMargin(16.0f, 8.0f))
@@ -293,6 +530,7 @@ void UFF_BuildCatalogScreen::NativeConstruct()
 	Super::NativeConstruct();
 	// PIE/런타임의 일반 생성 경로. Initialized와 호출 순서가 달라도 멱등 가드가 중복 바인딩을 막는다.
 	InitializeDesignerBindings();
+	BindGoldReadModel();
 }
 
 void UFF_BuildCatalogScreen::NativeOnInitialized()
@@ -304,6 +542,10 @@ void UFF_BuildCatalogScreen::NativeOnInitialized()
 
 void UFF_BuildCatalogScreen::InitializeDesignerBindings()
 {
+	// 현재 저장된 WBP는 Gold 패널 이전 버전이다. 첫 Slate 생성 전에 Top_Bar만 보강하고,
+	// 향후 Builder 생성본에 TXT_Gold가 있으면 그대로 재사용한다.
+	EnsureGoldDisplay();
+
 	// 두 수명주기 훅과 조기 SetCatalogEntries 호출이 모두 이 함수에 들어올 수 있으므로 반드시 한 번만 연결한다.
 	if (bDesignerBindingsInitialized)
 	{
@@ -348,6 +590,8 @@ void UFF_BuildCatalogScreen::InitializeDesignerBindings()
 
 void UFF_BuildCatalogScreen::NativeDestruct()
 {
+	UnbindGoldReadModel();
+
 	// UMG 동적 멀티캐스트 델리게이트는 UObject 수명과 별도로 연결을 보유하므로 명시적으로 제거한다.
 	// 화면이 다시 Construct될 때 이전 연결이 남아 클릭 한 번에 핸들러가 여러 번 실행되는 것도 방지한다.
 	if (BTN_BuildTab)
@@ -378,6 +622,7 @@ void UFF_BuildCatalogScreen::ReleaseSlateResources(const bool bReleaseChildren)
 	InitialFocusButton.Reset();
 	ContentBox.Reset();
 	StatusTextBlock.Reset();
+	GoldTextBlock.Reset();
 }
 
 FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
@@ -719,6 +964,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 					SNew(SButton)
 					.ContentPadding(FMargin(14.0f, 12.0f))
 					.ButtonColorAndOpacity(FLinearColor::Transparent)
+					.ToolTipText(UFF_BuildFacilityCard::MakeFacilityCostToolTip(*Entry))
 					// Slate 델리게이트에는 값으로 시설 ID를 캡처해 CatalogEntries 포인터 수명에 의존하지 않는다.
 					.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleFacilityClicked, Entry->FacilityDefinitionId)
 					[
@@ -770,8 +1016,8 @@ void UFF_BuildCatalogScreen::RefreshTabStyles()
 	{
 		return;
 	}
-	// Keep the two non-toggleable CommonButtons mutually exclusive. The helper
-	// explicitly clears the inactive tab because SetIsSelected(false) cannot.
+	// 두 비토글형 CommonButton이 동시에 선택되지 않게 한다. SetIsSelected(false)로는
+	// 해제할 수 없으므로 보조 함수가 비활성 탭 상태를 명시적으로 초기화한다.
 	BTN_BuildTab->SetIsSelectable(true);
 	BTN_SkinTab->SetIsSelectable(true);
 	ApplyExclusiveTabSelection(BTN_BuildTab, SelectedTopTab == ETopTab::Build);
@@ -987,7 +1233,7 @@ FText UFF_BuildCatalogScreen::GetMinorDisplayName(const FName MinorToken)
 		{ TEXT("ActivityGame"), LOCTEXT("MinorActivityGame", "게임·활동 체험") },
 		{ TEXT("Nightlife"), LOCTEXT("MinorNightlife", "야간·주점") },
 		{ TEXT("Standard"), LOCTEXT("MinorStandard", "일반") },
-		{ TEXT("Accessible"), LOCTEXT("MinorAccessible", "접근 가능") },
+		{ TEXT("Accessible"), LOCTEXT("MinorAccessible", "장애인 화장실") },
 		{ TEXT("Family"), LOCTEXT("MinorFamily", "가족") },
 		{ TEXT("Temporary"), LOCTEXT("MinorTemporary", "임시") },
 		{ TEXT("GeneralInfo"), LOCTEXT("MinorGeneralInfo", "종합 안내") },

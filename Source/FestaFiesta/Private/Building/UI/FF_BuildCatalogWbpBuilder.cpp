@@ -1,13 +1,13 @@
 // FF_BuildCatalogWbpBuilder.cpp
 
+// 건설 카탈로그의 다섯 UMG 에셋을 생성하거나 명시적으로 기준 디자인에 맞추는 에디터 도구다.
+// 흐름: 대상 전체 검증 -> 필요한 Blueprint/WidgetTree 구성 -> 컴파일 -> 제한된 패키지 저장.
+// 불변식: FF.BuildCatalogUMG는 없는 WBP만 만들고 기준 디자인 적용은 지정 에셋만 교체한다.
+// 실패/수명: 변경 전 원본 Tree/Slot을 보존하고 컴파일·저장 실패 시 메모리 상태까지 롤백한다.
+
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR
-
-// 건설 카탈로그 UMG 에셋을 코드로 부트스트랩하는 에디터 전용 도구이다.
-// FF.BuildCatalogUMG는 없는 WBP만 만들고 기존 디자이너 편집을 보존한다.
-// FF.ApplyBuildCatalogReferenceDesign은 사용자가 명시적으로 실행할 때에만 아래에 지정된 다섯 WBP의
-// WidgetTree를 기준 디자인으로 교체한다. 두 명령의 파괴성 차이를 유지하는 것이 이 파일의 핵심 계약이다.
 #include "AssetImportTask.h"
 #include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
@@ -917,9 +917,9 @@ namespace FFBuildCatalogWbpBuilder
 
 	void MigrateBuildCatalogTopButtons()
 	{
-		// This migration intentionally avoids ResetWidgetTree. It creates the dedicated top-button WBP
-		// when needed, then swaps only the three static top-bar children in the existing screen. The
-		// UPanelWidget slot objects stay in place, so order, padding, alignment, and size are preserved.
+		// 이 마이그레이션은 ResetWidgetTree를 의도적으로 피한다. 필요하면 상단 버튼 WBP를 만든 뒤
+		// 기존 화면의 정적 상단 바 자식 세 개만 교체한다. UPanelWidget Slot 객체는 유지되므로
+		// 순서, 여백, 정렬, 크기가 보존된다.
 		UWidgetBlueprint* TopButton = EnsureWidgetBlueprint(
 			TopButtonPackage,
 			*UFF_BuildTopButton::StaticClass(),
@@ -994,7 +994,7 @@ namespace FFBuildCatalogWbpBuilder
 		TSet<int32> TargetIndices;
 		TSet<UPanelSlot*> TargetSlots;
 
-		// Validate the complete target set before changing any object names or slots.
+		// 객체 이름이나 Slot을 바꾸기 전에 전체 대상 집합을 먼저 검증한다.
 		for (const FName TargetName : TargetNames)
 		{
 			const FObjectPropertyBase* NativeBinding = FindFProperty<FObjectPropertyBase>(
@@ -1131,7 +1131,7 @@ namespace FFBuildCatalogWbpBuilder
 
 		if (!bPreparedAll || ReplacedCount != Migrations.Num())
 		{
-			// Roll back all in-memory name/slot changes. No package save has occurred at this point.
+			// 아직 패키지를 저장하지 않았으므로 메모리의 이름/Slot 변경을 모두 되돌린다.
 			for (int32 Index = 0; Index < ReplacedCount; ++Index)
 			{
 				FTopButtonMigration& Migration = Migrations[Index];
@@ -1171,8 +1171,8 @@ namespace FFBuildCatalogWbpBuilder
 
 		if (!SaveNewBlueprint(*Screen))
 		{
-			// Restore the original in-memory tree as well. This matters when the command is run from an
-			// interactive editor session and compilation or package saving fails.
+			// 대화형 에디터에서 명령을 실행한 뒤 컴파일이나 저장이 실패할 수 있으므로
+			// 원래 메모리 WidgetTree도 함께 복구한다.
 			for (FTopButtonMigration& Migration : Migrations)
 			{
 				Migration.Parent->ReplaceChildAt(Migration.ChildIndex, Migration.OldWidget);

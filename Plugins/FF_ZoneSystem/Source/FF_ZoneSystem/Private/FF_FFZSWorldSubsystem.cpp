@@ -7,14 +7,18 @@
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
 #include "Templates/UnrealTemplate.h"
+#include "UObject/StrongObjectPtr.h"
 #include "NavigationPath.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSExternalPolicy.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSQueueAgent.h"
 #include "FF_FFZSQueueComponent.h"
+#include "FF_FFZSQueueGeometry.h"
 #include "FF_ZoneSystem.h"
 #include "FF_FFZSZoneActor.h"
 
@@ -22,52 +26,27 @@
 
 namespace
 {
-    // 압축 Rect 하나로 월드 AABB를 만들어 1cm 셀 열거를 피한다.
-    FBox MakeCellRectWorldBox(
-        const FTransform& ZoneTransform,
-        const FFFZSCellRect& Rect,
-        const double CellSizeCm,
-        const double BaseZ,
-        const double HeightCm)
-    {
-        FBox Result(EForceInit::ForceInit);
-        const FVector LocalCorners[] = {
-            FVector(Rect.Min.X * CellSizeCm, Rect.Min.Y * CellSizeCm, 0.0),
-            FVector(Rect.Max.X * CellSizeCm, Rect.Min.Y * CellSizeCm, 0.0),
-            FVector(Rect.Max.X * CellSizeCm, Rect.Max.Y * CellSizeCm, 0.0),
-            FVector(Rect.Min.X * CellSizeCm, Rect.Max.Y * CellSizeCm, 0.0)
-        };
-        for (const FVector& LocalCorner : LocalCorners)
-        {
-            FVector WorldCorner = ZoneTransform.TransformPosition(LocalCorner);
-            WorldCorner.Z = BaseZ;
-            Result += WorldCorner;
-            WorldCorner.Z = BaseZ + HeightCm;
-            Result += WorldCorner;
-        }
-        return Result;
-    }
-
-    // 검증 단계의 FootprintRects를 재사용해 footprint 기하 계산을 반복하지 않는다.
+    // 검증 단계의 권위 Footprint OBB를 재사용해 footprint 기하 계산을 반복하지 않는다.
     FTransform MakePlacementTransform(
         const AFFZSGameplayZone& Zone,
         const FFFZSGridPlacement& Placement,
-        const TArray<FFFZSCellRect>& FootprintRects)
+        const TArray<FFFZSOrientedRect>& FootprintRects)
     {
         FVector Center = Zone.GetActorLocation();
         if (!FootprintRects.IsEmpty())
         {
-            const FFFZSCellRect& Rect = FootprintRects[0];
+            const FFFZSOrientedRect& Rect = FootprintRects[0];
             const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
             Center = Zone.GetActorTransform().TransformPosition(FVector(
-                (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
-                (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
+                Rect.CenterCell.X * CellSizeCm,
+                Rect.CenterCell.Y * CellSizeCm,
                 0.0));
         }
         const FQuat Rotation = Zone.GetActorQuat() * FQuat(
             FVector::UpVector,
             FMath::DegreesToRadians(
-                90.0 * UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns)));
+                UFFZSGridLibrary::YawCentidegreesToDegrees(
+                    UFFZSGridLibrary::GetEffectiveYawCentidegrees(Placement))));
         return FTransform(Rotation, Center, FVector::OneVector);
     }
 
@@ -237,36 +216,51 @@ namespace
         }
     };
 
-    // 대상 Zone 경계는 포함하고, 다른 Zone과의 경계 접촉은 허용하되 면적 중첩은 거부한다.
-    bool IsRectFullyInsideZone(
+    FVector2D ToOrientedRectLocalCm(
+        const FVector2D& PointInZoneCm,
+        const FFFZSOrientedRect& Rect,
+        const double CellSizeCm)
+    {
+        const double Radians = FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees));
+        const FVector2D AxisX(FMath::Cos(Radians), FMath::Sin(Radians));
+        const FVector2D AxisY(-AxisX.Y, AxisX.X);
+        const FVector2D Delta = PointInZoneCm - Rect.CenterCell * CellSizeCm;
+        return FVector2D(
+            FVector2D::DotProduct(Delta, AxisX),
+            FVector2D::DotProduct(Delta, AxisY));
+    }
+
+    bool IsOrientedRectFullyInsideZone(
         const TArray<FVector2D>& Polygon,
-        const FFFZSCellRect& Rect,
+        const FFFZSOrientedRect& Rect,
         const double CellSizeCm)
     {
         if (!Rect.IsValid())
         {
             return false;
         }
-        const double MinX = Rect.Min.X * CellSizeCm;
-        const double MinY = Rect.Min.Y * CellSizeCm;
-        const double MaxX = Rect.Max.X * CellSizeCm;
-        const double MaxY = Rect.Max.Y * CellSizeCm;
-        const FVector2D Samples[] = {
-            FVector2D(MinX, MinY), FVector2D(MaxX, MinY),
-            FVector2D(MaxX, MaxY), FVector2D(MinX, MaxY),
-            FVector2D((MinX + MaxX) * 0.5, (MinY + MaxY) * 0.5)
-        };
-        for (const FVector2D& Sample : Samples)
+        const FFZSOrientedGeometry::FCornerArray Corners =
+            FFZSOrientedGeometry::GetCorners(Rect);
+        for (const FVector2D& CornerCell : Corners)
         {
-            if (!IsPointInsidePolygon2D(Sample, Polygon, true))
+            if (!IsPointInsidePolygon2D(CornerCell * CellSizeCm, Polygon, true))
             {
                 return false;
             }
         }
+        if (!IsPointInsidePolygon2D(Rect.CenterCell * CellSizeCm, Polygon, true))
+        {
+            return false;
+        }
+
+        const double HalfX = Rect.HalfExtentCells.X * CellSizeCm;
+        const double HalfY = Rect.HalfExtentCells.Y * CellSizeCm;
         for (int32 Index = 0; Index < Polygon.Num(); ++Index)
         {
-            if (SegmentIntersectsOpenRect(
-                Polygon[Index], Polygon[(Index + 1) % Polygon.Num()], MinX, MinY, MaxX, MaxY))
+            const FVector2D A = ToOrientedRectLocalCm(Polygon[Index], Rect, CellSizeCm);
+            const FVector2D B = ToOrientedRectLocalCm(
+                Polygon[(Index + 1) % Polygon.Num()], Rect, CellSizeCm);
+            if (SegmentIntersectsOpenRect(A, B, -HalfX, -HalfY, HalfX, HalfY))
             {
                 return false;
             }
@@ -274,29 +268,30 @@ namespace
         return true;
     }
 
-    bool DoesZoneOverlapRectInterior(
+    bool DoesZoneOverlapOrientedRectInterior(
         const FPreparedZoneOverlap& Candidate,
         const FTransform& CellSpaceWorldTransform,
-        const FFFZSCellRect& Rect,
+        const FFFZSOrientedRect& Rect,
         const double CellSizeCm)
     {
         if (!Rect.IsValid())
         {
             return false;
         }
-        const double MinX = Rect.Min.X * CellSizeCm;
-        const double MinY = Rect.Min.Y * CellSizeCm;
-        const double MaxX = Rect.Max.X * CellSizeCm;
-        const double MaxY = Rect.Max.Y * CellSizeCm;
-        // 열린 내부가 AABB에서 분리되면 정밀 폴리곤 검사를 생략한다.
-        if (!Candidate.BoundsInCellSpace.bIsValid ||
+        const FBox2D BoundsCell = FFZSOrientedGeometry::GetAabb(Rect);
+        const double MinX = BoundsCell.Min.X * CellSizeCm;
+        const double MinY = BoundsCell.Min.Y * CellSizeCm;
+        const double MaxX = BoundsCell.Max.X * CellSizeCm;
+        const double MaxY = BoundsCell.Max.Y * CellSizeCm;
+        if (!BoundsCell.bIsValid || !Candidate.BoundsInCellSpace.bIsValid ||
             Candidate.BoundsInCellSpace.Max.X <= MinX || Candidate.BoundsInCellSpace.Min.X >= MaxX ||
             Candidate.BoundsInCellSpace.Max.Y <= MinY || Candidate.BoundsInCellSpace.Min.Y >= MaxY)
         {
             return false;
         }
+
         const FVector CellCenterWorld = CellSpaceWorldTransform.TransformPosition(
-            FVector((MinX + MaxX) * 0.5, (MinY + MaxY) * 0.5, 0.0));
+            FVector(Rect.CenterCell.X * CellSizeCm, Rect.CenterCell.Y * CellSizeCm, 0.0));
         if (FMath::Abs(Candidate.WorldTransform.InverseTransformPosition(CellCenterWorld).Z) >
             Candidate.HalfVerticalExtentCm)
         {
@@ -304,24 +299,29 @@ namespace
         }
 
         const TArray<FVector2D>& Polygon = Candidate.PolygonInCellSpace;
-        const FVector2D Samples[] = {
-            FVector2D(MinX, MinY), FVector2D(MaxX, MinY),
-            FVector2D(MaxX, MaxY), FVector2D(MinX, MaxY),
-            FVector2D((MinX + MaxX) * 0.5, (MinY + MaxY) * 0.5)
-        };
-        for (const FVector2D& Sample : Samples)
+        for (const FVector2D& CornerCell : FFZSOrientedGeometry::GetCorners(Rect))
         {
-            if (IsPointInsidePolygon2D(Sample, Polygon, false))
+            if (IsPointInsidePolygon2D(CornerCell * CellSizeCm, Polygon, false))
             {
                 return true;
             }
         }
+        if (IsPointInsidePolygon2D(Rect.CenterCell * CellSizeCm, Polygon, false))
+        {
+            return true;
+        }
+
+        const double HalfX = Rect.HalfExtentCells.X * CellSizeCm;
+        const double HalfY = Rect.HalfExtentCells.Y * CellSizeCm;
         for (int32 Index = 0; Index < Polygon.Num(); ++Index)
         {
-            const FVector2D& Vertex = Polygon[Index];
-            if ((Vertex.X > MinX && Vertex.X < MaxX && Vertex.Y > MinY && Vertex.Y < MaxY) ||
-                SegmentIntersectsOpenRect(
-                    Vertex, Polygon[(Index + 1) % Polygon.Num()], MinX, MinY, MaxX, MaxY))
+            const FVector2D A = ToOrientedRectLocalCm(Polygon[Index], Rect, CellSizeCm);
+            const FVector2D B = ToOrientedRectLocalCm(
+                Polygon[(Index + 1) % Polygon.Num()], Rect, CellSizeCm);
+            const bool bVertexInside =
+                A.X > -HalfX && A.X < HalfX && A.Y > -HalfY && A.Y < HalfY;
+            if (bVertexInside ||
+                SegmentIntersectsOpenRect(A, B, -HalfX, -HalfY, HalfX, HalfY))
             {
                 return true;
             }
@@ -329,19 +329,18 @@ namespace
         return false;
     }
 
-    bool IsRectOwnedByExactlyOneZone(
+    bool IsOrientedRectOwnedByExactlyOneZone(
         const FZoneCellOwnershipCache& Cache,
-        const FFFZSCellRect& Rect,
+        const FFFZSOrientedRect& Rect,
         const double CellSizeCm)
     {
-        if (!IsRectFullyInsideZone(Cache.TargetPolygonInCellSpace, Rect, CellSizeCm))
+        if (!IsOrientedRectFullyInsideZone(Cache.TargetPolygonInCellSpace, Rect, CellSizeCm))
         {
             return false;
         }
-
         for (const FPreparedZoneOverlap& Candidate : Cache.Candidates)
         {
-            if (DoesZoneOverlapRectInterior(
+            if (DoesZoneOverlapOrientedRectInterior(
                 Candidate, Cache.CellSpaceWorldTransform, Rect, CellSizeCm))
             {
                 return false;
@@ -351,7 +350,8 @@ namespace
     }
 
     constexpr int32 LegacySnapshotSchemaVersion = 3;
-    constexpr int32 CurrentSnapshotSchemaVersion = 4;
+    constexpr int32 CardinalSnapshotSchemaVersion = 4;
+    constexpr int32 CurrentSnapshotSchemaVersion = 5;
     constexpr int64 LegacyMeterCellScale = 100;
 
     // 구 Cell 좌표를 100배 할 때 오버플로를 fail-closed로 처리한다.
@@ -486,7 +486,7 @@ namespace
         return true;
     }
 
-    // Schema 3의 Cell 기반 값만 100배해 1cm 단위 Schema 4로 변환한다.
+    // Schema 3의 Cell 기반 값을 100배하고 cardinal 회전을 고정소수점 Yaw로 바꿔 Schema 5로 변환한다.
     bool TryMigrateLegacySnapshotV3(
         const FFFZSWorldSnapshot& LegacySnapshot,
         FFFZSWorldSnapshot& OutMigratedSnapshot,
@@ -504,14 +504,17 @@ namespace
         for (FFFZSFacilityInstanceSnapshot& Saved : OutMigratedSnapshot.Facilities)
         {
             FFFZSFacilitySpec& Spec = Saved.FacilitySpec;
-            if (Spec.SchemaVersion != 1 || !Spec.QueueReservedRects.IsEmpty())
+            // Schema 3 저장본이 담고 있던 사양 형식은 언제나 1(1 Cell = 100cm)이다.
+            // 이 값은 과거 저장 데이터의 고정 사실이므로 현재 스키마 상수에서 유도하지 않는다.
+            constexpr int32 LegacyFacilitySpecSchemaVersion = 1;
+            if (Spec.SchemaVersion != LegacyFacilitySpecSchemaVersion || !Spec.QueueReservedRects.IsEmpty())
             {
                 OutErrors.Add(FText::Format(
                     LOCTEXT("LegacySnapshotAmbiguousSpec", "Schema 3 Facility {0}에는 수정되지 않은 FacilitySpec SchemaVersion 1이 있어야 하며 1cm QueueReservedRects가 없어야 합니다."),
                     FText::FromString(Saved.FacilityInstanceId.ToString())));
                 return false;
             }
-            if (Spec.QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxMaterializedDebugCells)
+            if (Spec.QueueReservedCells.Num() > UFFZSDeveloperSettings::MaxLegacyQueueReservedCells)
             {
                 OutErrors.Add(FText::Format(
                     LOCTEXT("LegacySnapshotQueueMigrationLimit", "Schema 3 Facility {0}의 개별 Queue Cell이 제한된 마이그레이션 경로의 허용량을 초과했습니다. 해당 저장 데이터는 오프라인에서 마이그레이션하십시오."),
@@ -572,12 +575,46 @@ namespace
                 return false;
             }
 
-            Spec.SchemaVersion = 2;
+            Spec.SchemaVersion = FFFZSFacilitySpec::CurrentSchemaVersion;
             Spec.FootprintSizeCells = MigratedFootprint;
             Spec.ClearanceCells = MigratedClearance;
             Spec.QueueReservedRects = MoveTemp(MigratedQueueRects);
             Spec.QueueReservedCells.Reset();
             Saved.Placement.OriginCell = FIntPoint(static_cast<int32>(AdjustedX), static_cast<int32>(AdjustedY));
+            Saved.Placement.YawCentidegrees = QuarterTurns * 9000;
+            Saved.Placement.QuarterTurns = 0;
+        }
+        return true;
+    }
+
+    bool TryMigrateCardinalSnapshotV4(
+        const FFFZSWorldSnapshot& CardinalSnapshot,
+        FFFZSWorldSnapshot& OutMigratedSnapshot,
+        TArray<FText>& OutErrors)
+    {
+        if (CardinalSnapshot.SchemaVersion != CardinalSnapshotSchemaVersion)
+        {
+            OutErrors.Add(LOCTEXT(
+                "CardinalSnapshotWrongSchema",
+                "Zone/Facility 스냅샷은 SchemaVersion 4일 때만 cardinal 회전 마이그레이션을 사용할 수 있습니다."));
+            return false;
+        }
+
+        OutMigratedSnapshot = CardinalSnapshot;
+        OutMigratedSnapshot.SchemaVersion = CurrentSnapshotSchemaVersion;
+        for (FFFZSFacilityInstanceSnapshot& Saved : OutMigratedSnapshot.Facilities)
+        {
+            const int32 QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(
+                Saved.Placement.QuarterTurns);
+            if (Saved.Placement.QuarterTurns != QuarterTurns)
+            {
+                OutErrors.Add(FText::Format(
+                    LOCTEXT("CardinalSnapshotRotation", "Schema 4 Facility {0}의 QuarterTurns 값이 정규화되어 있지 않습니다."),
+                    FText::FromString(Saved.FacilityInstanceId.ToString())));
+                return false;
+            }
+            Saved.Placement.YawCentidegrees = QuarterTurns * 9000;
+            Saved.Placement.QuarterTurns = 0;
         }
         return true;
     }
@@ -713,12 +750,18 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
         }
         if (Existing->Get() == Facility)
         {
+            Facility->SetNavigationObstacleEnabled(true);
             return true;
         }
     }
 
-    TArray<FFFZSCellRect> ReservedRects = UFFZSGridLibrary::GetReservedRects(
-        Facility->GetFacilitySpec(), Facility->GetGridPlacement());
+    TArray<FFFZSOrientedRect> ReservedRects;
+    TArray<FFFZSOrientedRect> IgnoredFootprint;
+    TArray<FFFZSOrientedRect> IgnoredClearance;
+    TArray<FFFZSOrientedRect> IgnoredQueue;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Facility->GetFacilitySpec(), Facility->GetGridPlacement(),
+        IgnoredFootprint, IgnoredClearance, IgnoredQueue, ReservedRects);
     if (ReservedRects.IsEmpty() ||
         AreRegionsOccupiedByOther(Facility->GetZoneId(), ReservedRects, FacilityId))
     {
@@ -744,6 +787,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
             }
         }
     }
+    Facility->SetNavigationObstacleEnabled(true);
     return true;
 }
 
@@ -758,6 +802,7 @@ void UFFZSWorldSubsystem::UnregisterFacility(AFFZSFacilityActor* Facility)
     {
         return;
     }
+    Facility->SetNavigationObstacleEnabled(false);
     ReleaseFacilityRegions(*Facility);
     FacilitiesById.Remove(FacilityId);
     if (UFFZSFacilityQueueComponent* Queue = Facility->GetMutableQueueComponent())
@@ -839,6 +884,46 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstan
     return nullptr;
 }
 
+AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacilityAtWorldPoint(
+    const FVector& WorldPoint,
+    const FName ZoneId) const
+{
+    const FName TargetZoneId = ZoneId.IsNone()
+        ? ResolveZoneAtWorldLocation(WorldPoint)
+        : ZoneId;
+    if (TargetZoneId.IsNone())
+    {
+        return nullptr;
+    }
+
+    AFFZSFacilityActor* BestMatch = nullptr;
+    double BestDistanceSquared = TNumericLimits<double>::Max();
+    FString BestFacilityIdKey;
+    for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+    {
+        AFFZSFacilityActor* Facility = Pair.Value.Get();
+        if (!IsValid(Facility) || !Pair.Key.IsValid() ||
+            Facility->GetFacilityInstanceId() != Pair.Key ||
+            Facility->GetZoneId() != TargetZoneId ||
+            !Facility->IsWorldPointInsideFootprint(WorldPoint))
+        {
+            continue;
+        }
+
+        const double DistanceSquared = FVector::DistSquared(
+            Facility->GetActorLocation(), WorldPoint);
+        const FString FacilityIdKey = Pair.Key.ToString(EGuidFormats::Digits);
+        if (!BestMatch || DistanceSquared < BestDistanceSquared ||
+            (DistanceSquared == BestDistanceSquared && FacilityIdKey < BestFacilityIdKey))
+        {
+            BestMatch = Facility;
+            BestDistanceSquared = DistanceSquared;
+            BestFacilityIdKey = FacilityIdKey;
+        }
+    }
+    return BestMatch;
+}
+
 // Move는 등록된 Spec으로 검증하며, 이 단계에서는 권위 상태를 변경하지 않는다.
 FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSCommand& Command) const
 {
@@ -850,6 +935,22 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
     }
 
     FFFZSPlacementValidation Result = ValidatePlacementLocal(EffectiveCommand, Existing);
+    if (Result.bIsValid && Command.Type == EFFZSCommandType::Move && Existing)
+    {
+        const UFFZSFacilityQueueComponent* Queue = Existing->GetQueueComponent();
+        if (Queue && Queue->IsOccupied())
+        {
+            Result.AddFailure(
+                EFFZSPlacementFailure::FacilityOccupied,
+                LOCTEXT("MovePreviewOccupied", "Facility를 이동하기 전에 닫고 Queue를 비우십시오."));
+        }
+        else if (!Existing->CanMoveOrRemove())
+        {
+            Result.AddFailure(
+                EFFZSPlacementFailure::InvalidFacilityState,
+                LOCTEXT("MovePreviewState", "Active 상태의 Facility는 이동하기 전에 닫아야 합니다."));
+        }
+    }
     if (Result.bIsValid)
     {
         FFFZSPolicyContext Context;
@@ -893,7 +994,6 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     {
         Result.AddFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("MoveMissing", "이동할 Facility가 존재하지 않습니다."));
     }
-
     TArray<FText> SpecErrors;
     if (!Command.FacilitySpec.IsValid(SpecErrors))
     {
@@ -922,13 +1022,38 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     }
 
     FFFZSGridPlacement Placement = Command.Placement;
-    Placement.QuarterTurns = UFFZSGridLibrary::NormalizeQuarterTurns(Placement.QuarterTurns);
+    UFFZSGridLibrary::NormalizePlacement(Placement);
 
     // 판정은 압축 Rect를 사용하고 디버그 셀만 제한적으로 materialize한다.
-    Result.FootprintRects = UFFZSGridLibrary::GetFootprintRects(Command.FacilitySpec, Placement);
-    Result.ClearanceRects = UFFZSGridLibrary::GetClearanceRects(Command.FacilitySpec, Placement);
-    Result.QueueRects = UFFZSGridLibrary::GetQueueRects(Command.FacilitySpec, Placement);
-    Result.ReservedRects = UFFZSGridLibrary::GetReservedRects(Command.FacilitySpec, Placement);
+    // [최적화] 네 영역을 한 번의 기하 계산으로 함께 만든다. 개별 Get*Rects를 네 번 부르면
+    // 예산 검사와 Queue 정규화가 호출마다 중복 실행됐다. 이 함수는 Preview Actor가 0.1초마다
+    // 호출하는 경로라 중복 계산이 그대로 프레임 비용이 된다. 결과 값은 이전과 동일하다.
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Command.FacilitySpec,
+        Placement,
+        Result.FootprintOrientedRects,
+        Result.ClearanceOrientedRects,
+        Result.QueueOrientedRects,
+        Result.ReservedOrientedRects);
+    const auto MakeConservative = [](const TArray<FFFZSOrientedRect>& Oriented)
+    {
+        TArray<FFFZSCellRect> Bounds;
+        Bounds.Reserve(Oriented.Num());
+        for (const FFFZSOrientedRect& Rect : Oriented)
+        {
+            const FFFZSCellRect Bound = FFZSOrientedGeometry::ToConservativeCellRect(Rect);
+            if (!Bound.IsValid())
+            {
+                return TArray<FFFZSCellRect>{};
+            }
+            Bounds.Add(Bound);
+        }
+        return UFFZSGridLibrary::CanonicalizeCellRects(Bounds);
+    };
+    Result.FootprintRects = MakeConservative(Result.FootprintOrientedRects);
+    Result.ClearanceRects = MakeConservative(Result.ClearanceOrientedRects);
+    Result.QueueRects = MakeConservative(Result.QueueOrientedRects);
+    Result.ReservedRects = MakeConservative(Result.ReservedOrientedRects);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.FootprintRects,
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.FootprintCells);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.ClearanceRects,
@@ -937,9 +1062,10 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.QueueCells);
     UFFZSGridLibrary::TryMaterializeCellRects(Result.ReservedRects,
         UFFZSDeveloperSettings::MaxMaterializedDebugCells, Result.ReservedCells);
-    Result.PlacementTransform = MakePlacementTransform(*Zone, Placement, Result.FootprintRects);
+    Result.PlacementTransform = MakePlacementTransform(
+        *Zone, Placement, Result.FootprintOrientedRects);
 
-    if (Result.FootprintRects.IsEmpty() || Result.ReservedRects.IsEmpty())
+    if (Result.FootprintOrientedRects.IsEmpty() || Result.ReservedOrientedRects.IsEmpty())
     {
         Result.AddFailure(EFFZSPlacementFailure::DataInvalid,
             LOCTEXT("EmptyCompressedPlacement", "Facility 데이터에서 유효한 압축 1cm 배치 영역을 만들 수 없습니다."));
@@ -947,9 +1073,9 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     }
 
     const FZoneCellOwnershipCache ZoneOwnershipCache(ZonesById, *Zone);
-    for (const FFFZSCellRect& Rect : Result.ReservedRects)
+    for (const FFFZSOrientedRect& Rect : Result.ReservedOrientedRects)
     {
-        if (!IsRectOwnedByExactlyOneZone(
+        if (!IsOrientedRectOwnedByExactlyOneZone(
             ZoneOwnershipCache, Rect, UFFZSDeveloperSettings::DefaultPlacementCellSizeCm))
         {
             Result.AddFailure(EFFZSPlacementFailure::OutsideZone,
@@ -972,18 +1098,18 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         }
         if (!bFootprintOccupied)
         {
-            bFootprintOccupied = UFFZSGridLibrary::DoCellRectSetsOverlap(
-                Result.FootprintRects, Pair.Value.Regions);
+            bFootprintOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
+                Result.FootprintOrientedRects, Pair.Value.Regions);
         }
         if (!bClearanceOccupied)
         {
-            bClearanceOccupied = UFFZSGridLibrary::DoCellRectSetsOverlap(
-                Result.ClearanceRects, Pair.Value.Regions);
+            bClearanceOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
+                Result.ClearanceOrientedRects, Pair.Value.Regions);
         }
         if (!bQueueOccupied)
         {
-            bQueueOccupied = UFFZSGridLibrary::DoCellRectSetsOverlap(
-                Result.QueueRects, Pair.Value.Regions);
+            bQueueOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
+                Result.QueueOrientedRects, Pair.Value.Regions);
         }
         if (bFootprintOccupied && bClearanceOccupied && bQueueOccupied)
         {
@@ -1024,10 +1150,13 @@ FTransform UFFZSWorldSubsystem::BuildPlacementTransform(
     const FFFZSFacilitySpec& Spec,
     const FFFZSGridPlacement& Placement) const
 {
-    return MakePlacementTransform(
-        Zone,
-        Placement,
-        UFFZSGridLibrary::GetFootprintRects(Spec, Placement));
+    TArray<FFFZSOrientedRect> Footprint;
+    TArray<FFFZSOrientedRect> Clearance;
+    TArray<FFFZSOrientedRect> Queue;
+    TArray<FFFZSOrientedRect> Reserved;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Spec, Placement, Footprint, Clearance, Queue, Reserved);
+    return MakePlacementTransform(Zone, Placement, Footprint);
 }
 void UFFZSWorldSubsystem::ValidateGround(
     const AFFZSGameplayZone& Zone,
@@ -1063,10 +1192,10 @@ void UFFZSWorldSubsystem::ValidateGround(
     float MinimumUpDot = 1.0f;
 
     // 물리 샘플 밀도는 1cm 점유 해상도와 분리한다.
-    for (const FFFZSCellRect& Rect : InOutValidation.FootprintRects)
+    for (const FFFZSOrientedRect& Rect : InOutValidation.FootprintOrientedRects)
     {
-        const double RectWidth = Rect.GetWidth();
-        const double RectHeight = Rect.GetHeight();
+        const double RectWidth = Rect.HalfExtentCells.X * 2.0;
+        const double RectHeight = Rect.HalfExtentCells.Y * 2.0;
         const double WidthCm = RectWidth * CellSizeCm;
         const double HeightCm = RectHeight * CellSizeCm;
         const int32 SamplesX = FMath::Max(1, FMath::CeilToInt(WidthCm / SampleSpacingCm));
@@ -1079,15 +1208,19 @@ void UFFZSWorldSubsystem::ValidateGround(
         }
         const double StepX = RectWidth / SamplesX;
         const double StepY = RectHeight / SamplesY;
+        const double YawRadians = FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees));
+        const FVector2D AxisX(FMath::Cos(YawRadians), FMath::Sin(YawRadians));
+        const FVector2D AxisY(-AxisX.Y, AxisX.X);
 
         for (int32 X = 0; X < SamplesX; ++X)
         {
             for (int32 Y = 0; Y < SamplesY; ++Y)
             {
-                const double GridX = Rect.Min.X + (X + 0.5) * StepX;
-                const double GridY = Rect.Min.Y + (Y + 0.5) * StepY;
+                const double LocalX = -Rect.HalfExtentCells.X + (X + 0.5) * StepX;
+                const double LocalY = -Rect.HalfExtentCells.Y + (Y + 0.5) * StepY;
+                const FVector2D GridPoint = Rect.CenterCell + AxisX * LocalX + AxisY * LocalY;
                 const FVector Sample = ZoneTransform.TransformPosition(
-                    FVector(GridX * CellSizeCm, GridY * CellSizeCm, 0.0));
+                    FVector(GridPoint.X * CellSizeCm, GridPoint.Y * CellSizeCm, 0.0));
                 const FVector Start = Sample + TraceAbove;
                 const FVector End = Sample - TraceBelow;
                 FHitResult Hit;
@@ -1154,7 +1287,6 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     }
 
     const FTransform ZoneTransform = Zone.GetActorTransform();
-    const FQuat ZoneRotation = ZoneTransform.GetRotation();
     // Rect마다 새로 할당하지 않고 Overlap 결과 버퍼를 재사용한다.
     TArray<FOverlapResult> Overlaps;
     Overlaps.Reserve(16);
@@ -1185,28 +1317,39 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     };
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const float HalfHeight = FMath::Max(5.0f, Spec.PlacementObstacleHeightCm * 0.5f - 2.0f);
-    const float CenterZ = InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight + 3.0f;
+    // [하드코딩 제거] Overlap Box를 예약 영역보다 아주 조금 작게 만드는 여백 값들에 이름을 붙인다.
+    // 경계가 정확히 맞닿기만 한 지면/이웃 구조물을 "충돌"로 보고하지 않기 위한 수축량이며,
+    // 예전에는 5.0f/2.0f/3.0f/0.25가 설명 없는 리터럴로 흩어져 있어 의도를 알기 어려웠다.
+    constexpr double SurfaceInsetCm = 2.0;        // 각 면을 안쪽으로 당기는 거리
+    constexpr double GroundLiftCm = 3.0;          // 바닥면과의 접촉을 피하기 위한 들어올림
+    constexpr double MinHalfExtentCm = 0.25;      // 1cm Rect도 유효한 Box가 되도록 하는 최소 반치수
+    constexpr double MinHalfHeightCm = 5.0;       // 낮은 장애물 높이에서도 남기는 최소 반높이
+    const float HalfHeight = static_cast<float>(
+        FMath::Max(MinHalfHeightCm, Spec.PlacementObstacleHeightCm * 0.5 - SurfaceInsetCm));
+    const float CenterZ = static_cast<float>(
+        InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight + GroundLiftCm);
     const auto ValidateRectGroup = [&] (
-        const TArray<FFFZSCellRect>& Rects,
+        const TArray<FFFZSOrientedRect>& Rects,
         const EFFZSPlacementFailure Failure,
         const FText& Message)
     {
-        for (const FFFZSCellRect& Rect : Rects)
+        for (const FFFZSOrientedRect& Rect : Rects)
         {
-            const double HalfX = Rect.GetWidth() * CellSizeCm * 0.5;
-            const double HalfY = Rect.GetHeight() * CellSizeCm * 0.5;
-            // 1cm Rect도 유효한 Overlap Box를 갖도록 XY HalfExtent를 최소 0.25cm로 제한한다.
+            const double HalfX = Rect.HalfExtentCells.X * CellSizeCm;
+            const double HalfY = Rect.HalfExtentCells.Y * CellSizeCm;
             const FVector HalfExtent(
-                FMath::Max(0.25, HalfX - 2.0),
-                FMath::Max(0.25, HalfY - 2.0),
+                FMath::Max(MinHalfExtentCm, HalfX - SurfaceInsetCm),
+                FMath::Max(MinHalfExtentCm, HalfY - SurfaceInsetCm),
                 HalfHeight);
             FVector Center = ZoneTransform.TransformPosition(FVector(
-                (static_cast<double>(Rect.Min.X) + Rect.Max.X) * 0.5 * CellSizeCm,
-                (static_cast<double>(Rect.Min.Y) + Rect.Max.Y) * 0.5 * CellSizeCm,
+                Rect.CenterCell.X * CellSizeCm,
+                Rect.CenterCell.Y * CellSizeCm,
                 0.0));
             Center.Z = CenterZ;
-            if (HasBlockingOverlap(Center, ZoneRotation, HalfExtent))
+            const FQuat Rotation = ZoneTransform.GetRotation() * FQuat(
+                FVector::UpVector,
+                FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees)));
+            if (HasBlockingOverlap(Center, Rotation, HalfExtent))
             {
                 InOutValidation.AddFailure(Failure, Message);
                 return;
@@ -1214,11 +1357,11 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
         }
     };
 
-    ValidateRectGroup(InOutValidation.FootprintRects, EFFZSPlacementFailure::PlacementCollision,
+    ValidateRectGroup(InOutValidation.FootprintOrientedRects, EFFZSPlacementFailure::PlacementCollision,
         LOCTEXT("WorldFootprintBlocked", "Facility Footprint가 배치를 막는 World Object와 겹칩니다."));
-    ValidateRectGroup(InOutValidation.ClearanceRects, EFFZSPlacementFailure::InsufficientClearance,
+    ValidateRectGroup(InOutValidation.ClearanceOrientedRects, EFFZSPlacementFailure::InsufficientClearance,
         LOCTEXT("WorldClearanceBlocked", "여유 공간이 배치를 막는 World Object와 겹칩니다."));
-    ValidateRectGroup(InOutValidation.QueueRects, EFFZSPlacementFailure::QueueFootprintBlocked,
+    ValidateRectGroup(InOutValidation.QueueOrientedRects, EFFZSPlacementFailure::QueueFootprintBlocked,
         LOCTEXT("WorldQueueBlocked", "최대 Queue 영역이 배치를 막는 World Object와 겹칩니다."));
 }
 void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const
@@ -1275,41 +1418,26 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
         }
     }
 
-    TArray<double> SegmentLengths;
-    SegmentLengths.Reserve(FMath::Max(0, Spec.QueueSplinePointsCm.Num() - 1));
-    double TotalSplineLength = 0.0;
-    for (int32 Index = 1; Index < Spec.QueueSplinePointsCm.Num(); ++Index)
+    const auto AddQueueSlotOffNavFailure = [&]()
     {
-        const double Length = FVector::Distance(Spec.QueueSplinePointsCm[Index - 1], Spec.QueueSplinePointsCm[Index]);
-        SegmentLengths.Add(Length);
-        TotalSplineLength += Length;
+        InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
+            LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
+    };
+    TArray<FVector> LocalQueueSlotPoints;
+    if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
+            Spec.QueueSplinePointsCm,
+            Spec.QueueRules.MaxWaitingAgents,
+            Spec.QueueRules.SlotSpacingCm,
+            LocalQueueSlotPoints))
+    {
+        AddQueueSlotOffNavFailure();
+        return;
     }
-    // 단조 증가하는 슬롯 거리에 맞춰 세그먼트 커서를 한 방향으로만 이동한다.
-    int32 SlotSegmentIndex = 0;
-    double SlotSegmentStartDistance = 0.0;
-    for (int32 SlotIndex = 0; SlotIndex < Spec.QueueRules.MaxWaitingAgents; ++SlotIndex)
+    for (const FVector& LocalSlot : LocalQueueSlotPoints)
     {
-        const double TargetDistance = FMath::Clamp(
-            static_cast<double>(SlotIndex) * Spec.QueueRules.SlotSpacingCm, 0.0, TotalSplineLength);
-        while (SlotSegmentIndex < SegmentLengths.Num() - 1 &&
-            TargetDistance > SlotSegmentStartDistance + SegmentLengths[SlotSegmentIndex])
-        {
-            SlotSegmentStartDistance += SegmentLengths[SlotSegmentIndex];
-            ++SlotSegmentIndex;
-        }
-        const double SegmentLength = SegmentLengths[SlotSegmentIndex];
-        const double DistanceOnSegment = TargetDistance - SlotSegmentStartDistance;
-        const double Alpha = SegmentLength > UE_SMALL_NUMBER
-            ? FMath::Clamp(DistanceOnSegment / SegmentLength, 0.0, 1.0)
-            : 0.0;
-        const FVector LocalSlot = FMath::Lerp(
-            Spec.QueueSplinePointsCm[SlotSegmentIndex],
-            Spec.QueueSplinePointsCm[SlotSegmentIndex + 1],
-            Alpha);
         if (!ProjectRequiredPoint(LocalSlot, false))
         {
-            InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-                LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
+            AddQueueSlotOffNavFailure();
             return;
         }
     }
@@ -1343,18 +1471,33 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
         return;
     }
 
-    // ProtectedArea마다 반복하지 않도록 ReservedRect 월드 박스를 한 번만 만든다.
-    TArray<FBox> RegionBoxes;
-    RegionBoxes.Reserve(InOutValidation.ReservedRects.Num());
-    const FTransform ZoneTransform = Zone.GetActorTransform();
-    for (const FFFZSCellRect& Rect : InOutValidation.ReservedRects)
+    struct FWorldOrientedBox
     {
-        RegionBoxes.Add(MakeCellRectWorldBox(
-            ZoneTransform,
-            Rect,
-            UFFZSDeveloperSettings::DefaultPlacementCellSizeCm,
-            InOutValidation.PlacementTransform.GetLocation().Z,
-            Spec.PlacementObstacleHeightCm));
+        FVector Center = FVector::ZeroVector;
+        FVector HalfExtent = FVector::ZeroVector;
+        FQuat Rotation = FQuat::Identity;
+    };
+    // ProtectedArea마다 반복하지 않도록 권위 Reserved OBB의 월드 값을 한 번만 만든다.
+    TArray<FWorldOrientedBox> RegionBoxes;
+    RegionBoxes.Reserve(InOutValidation.ReservedOrientedRects.Num());
+    const FTransform ZoneTransform = Zone.GetActorTransform();
+    const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+    const double HalfHeight = FMath::Max(0.0, static_cast<double>(Spec.PlacementObstacleHeightCm) * 0.5);
+    for (const FFFZSOrientedRect& Rect : InOutValidation.ReservedOrientedRects)
+    {
+        FWorldOrientedBox& Box = RegionBoxes.AddDefaulted_GetRef();
+        Box.Center = ZoneTransform.TransformPosition(FVector(
+            Rect.CenterCell.X * CellSizeCm,
+            Rect.CenterCell.Y * CellSizeCm,
+            0.0));
+        Box.Center.Z = InOutValidation.PlacementTransform.GetLocation().Z + HalfHeight;
+        Box.HalfExtent = FVector(
+            Rect.HalfExtentCells.X * CellSizeCm,
+            Rect.HalfExtentCells.Y * CellSizeCm,
+            HalfHeight);
+        Box.Rotation = ZoneTransform.GetRotation() * FQuat(
+            FVector::UpVector,
+            FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees)));
     }
 
     for (const TWeakObjectPtr<AFFZSProtectedArea>& WeakArea : ProtectedAreas)
@@ -1378,9 +1521,10 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
             continue;
         }
 
-        for (const FBox& RegionBox : RegionBoxes)
+        for (const FWorldOrientedBox& RegionBox : RegionBoxes)
         {
-            if (Area->IntersectsWorldBox(RegionBox))
+            if (Area->IntersectsWorldOrientedBox(
+                RegionBox.Center, RegionBox.HalfExtent, RegionBox.Rotation))
             {
                 const bool bAccessibility = Area->AreaType == EFFZSProtectedAreaType::AccessibilityRoute || Area->AreaType == EFFZSProtectedAreaType::ViewingArea;
                 InOutValidation.AddFailure(
@@ -1502,6 +1646,12 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     {
         return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingCommandIds", "CommandId와 TransactionId가 필요합니다."));
     }
+    if (!UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Command.FacilitySpec))
+    {
+        return MakeFailure(
+            EFFZSPlacementFailure::DataInvalid,
+            LOCTEXT("UnsafeFacilitySpecCardinality", "FacilitySpec 배열 크기가 시설당 안전 제한을 초과했습니다."));
+    }
 
     const FString PayloadFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
     if (const FFFZSCommandReceipt* ExistingReceipt = CommandReceipts.Find(Command.CommandId))
@@ -1515,6 +1665,32 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
             ? FindFacility(ExistingReceipt->FacilityInstanceId) : nullptr;
         Replay.bWasDuplicateReplay = true;
         return Replay;
+    }
+
+    if (Command.Type == EFFZSCommandType::Install)
+    {
+#if WITH_DEV_AUTOMATION_TESTS
+        const bool bSyntheticAutomationFixture = GIsAutomationTesting;
+#else
+        constexpr bool bSyntheticAutomationFixture = false;
+#endif
+        if (!bSyntheticAutomationFixture &&
+            !UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(
+                Command.FacilitySpec))
+        {
+            return MakeFailure(
+                EFFZSPlacementFailure::DataInvalid,
+                LOCTEXT(
+                    "DefinitionSpecMismatch",
+                    "Install requires the exact loaded UFFZSFacilityDefinition Spec."));
+        }
+    }
+
+    if (WorldRevision >= MAX_int64 - 1)
+    {
+        return MakeFailure(
+            EFFZSPlacementFailure::InternalError,
+            LOCTEXT("WorldRevisionExhausted", "WorldRevision space is exhausted; no further mutation is safe."));
     }
 
     if (InFlightCommandId.IsValid())
@@ -1673,7 +1849,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
     // 검증된 예약 영역을 재사용해 Move 이후 기하 계산을 반복하지 않는다.
     FFFZSFacilityRegionOccupancy NewOccupancy;
     NewOccupancy.ZoneId = Facility->GetZoneId();
-    NewOccupancy.Regions = Validation.ReservedRects;
+    NewOccupancy.Regions = Validation.ReservedOrientedRects;
     OccupiedFacilityRegions.Add(Facility->GetFacilityInstanceId(), MoveTemp(NewOccupancy));
     CommitPolicies(Context, AppliedPolicies);
     return FinalizeSuccess(Command, Facility, PreviousZoneId);
@@ -2165,7 +2341,9 @@ FFFZSWorldSnapshot UFFZSWorldSubsystem::CaptureWorldSnapshot() const
     {
         if (const AFFZSFacilityActor* Facility = Pair.Value.Get())
         {
-            Snapshot.Facilities.Add(Facility->CaptureInstanceSnapshot());
+            FFFZSFacilityInstanceSnapshot& Saved = Snapshot.Facilities.Add_GetRef(
+                Facility->CaptureInstanceSnapshot());
+            UFFZSGridLibrary::NormalizePlacement(Saved.Placement);
         }
     }
     Snapshot.Facilities.Sort([](const FFFZSFacilityInstanceSnapshot& A, const FFFZSFacilityInstanceSnapshot& B)
@@ -2204,11 +2382,11 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     if (Snapshot.SchemaVersion != CurrentSnapshotSchemaVersion)
     {
         OutErrors.Add(Snapshot.SchemaVersion == 2
-            ? LOCTEXT("SnapshotSchemaV2", "Zone/Facility 스냅샷 SchemaVersion 2에는 저장된 CurrentPhase가 없어 안전하게 복원할 수 없습니다. SchemaVersion 4에서 사용하기 전에 마이그레이션 도구로 다시 저장하십시오.")
-            : LOCTEXT("SnapshotSchema", "지원하지 않는 Zone/Facility 스냅샷 SchemaVersion입니다. 이 Runtime은 명시적인 SchemaVersion 3 마이그레이션 후 SchemaVersion 4를 검증합니다."));
+            ? LOCTEXT("SnapshotSchemaV2", "Zone/Facility 스냅샷 SchemaVersion 2에는 저장된 CurrentPhase가 없어 안전하게 복원할 수 없습니다. SchemaVersion 5에서 사용하기 전에 오프라인 마이그레이션하십시오.")
+            : LOCTEXT("SnapshotSchema", "지원하지 않는 Zone/Facility 스냅샷 SchemaVersion입니다. 이 Runtime은 SchemaVersion 3/4를 명시적으로 5로 변환한 뒤 검증합니다."));
         return false;
     }
-    if (Snapshot.WorldRevision < 0)
+    if (Snapshot.WorldRevision < 0 || Snapshot.WorldRevision == MAX_int64)
     {
         OutErrors.Add(LOCTEXT("SnapshotRevision", "Zone/Facility 스냅샷의 WorldRevision은 음수일 수 없습니다."));
     }
@@ -2219,10 +2397,12 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
 
     TSet<FGuid> FacilityIds;
     // 시설 겹침 비교를 같은 Zone의 예약 영역으로 제한한다.
-    TMap<FName, TArray<TArray<FFFZSCellRect>>> FacilityRegionsByZone;
+    TMap<FName, TArray<TArray<FFFZSOrientedRect>>> FacilityRegionsByZone;
     TSet<FName> Agents;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     TMap<const AFFZSGameplayZone*, TUniquePtr<FZoneCellOwnershipCache>> ZoneOwnershipCaches;
+    // 모든 시설 스냅샷이 함께 쓰는 큐 검사용 컴포넌트다. 처음 필요할 때만 만든다.
+    TStrongObjectPtr<UFFZSFacilityQueueComponent> QueueValidator;
     FacilityIds.Reserve(Snapshot.Facilities.Num());
     FacilityRegionsByZone.Reserve(FMath::Min(Snapshot.Facilities.Num(), ZonesById.Num()));
     Agents.Reserve(Snapshot.Facilities.Num());
@@ -2242,9 +2422,11 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         {
             OutErrors.Add(LOCTEXT("SnapshotFacilityState", "스냅샷의 Facility 상태가 잘못되었거나, 등록된 상태에서 Removed일 수 없습니다."));
         }
-        if (Saved.Placement.QuarterTurns != UFFZSGridLibrary::NormalizeQuarterTurns(Saved.Placement.QuarterTurns))
+        if (Saved.Placement.YawCentidegrees !=
+                UFFZSGridLibrary::NormalizeYawCentidegrees(Saved.Placement.YawCentidegrees) ||
+            Saved.Placement.QuarterTurns != 0)
         {
-            OutErrors.Add(LOCTEXT("SnapshotPlacementRotation", "스냅샷 배치의 QuarterTurns는 0..3 범위로 정규화되어 있어야 합니다."));
+            OutErrors.Add(LOCTEXT("SnapshotPlacementRotation", "Schema 5 스냅샷 배치의 Yaw는 0..359.99도로 정규화되고 Legacy QuarterTurns는 0이어야 합니다."));
         }
 
         const AFFZSGameplayZone* Zone = FindZone(Saved.ZoneId);
@@ -2282,8 +2464,13 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
             }
         }
 
-        const TArray<FFFZSCellRect> ReservedRects =
-            UFFZSGridLibrary::GetReservedRects(Saved.FacilitySpec, Saved.Placement);
+        TArray<FFFZSOrientedRect> FootprintRects;
+        TArray<FFFZSOrientedRect> ClearanceRects;
+        TArray<FFFZSOrientedRect> QueueRects;
+        TArray<FFFZSOrientedRect> ReservedRects;
+        UFFZSGridLibrary::BuildPlacementOrientedRegions(
+            Saved.FacilitySpec, Saved.Placement,
+            FootprintRects, ClearanceRects, QueueRects, ReservedRects);
         if (ReservedRects.IsEmpty())
         {
             // 빈 배열은 정상 시설 영역이 아니라 좌표 변환/오버플로의 fail-closed 신호다.
@@ -2298,11 +2485,11 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         }
 
         bool bOverlapsFacility = false;
-        TArray<TArray<FFFZSCellRect>>& ExistingRegionSets =
+        TArray<TArray<FFFZSOrientedRect>>& ExistingRegionSets =
             FacilityRegionsByZone.FindOrAdd(Saved.ZoneId);
-        for (const TArray<FFFZSCellRect>& ExistingRegions : ExistingRegionSets)
+        for (const TArray<FFFZSOrientedRect>& ExistingRegions : ExistingRegionSets)
         {
-            if (UFFZSGridLibrary::DoCellRectSetsOverlap(ReservedRects, ExistingRegions))
+            if (UFFZSGridLibrary::DoOrientedRectSetsOverlap(ReservedRects, ExistingRegions))
             {
                 bOverlapsFacility = true;
                 break;
@@ -2317,9 +2504,9 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         ExistingRegionSets.Add(ReservedRects);
 
         bool bOutsideOrAmbiguousZone = false;
-        for (const FFFZSCellRect& Rect : ReservedRects)
+        for (const FFFZSOrientedRect& Rect : ReservedRects)
         {
-            if (!IsRectOwnedByExactlyOneZone(*ZoneOwnershipCache, Rect, CellSizeCm))
+            if (!IsOrientedRectOwnedByExactlyOneZone(*ZoneOwnershipCache, Rect, CellSizeCm))
             {
                 bOutsideOrAmbiguousZone = true;
                 break;
@@ -2333,7 +2520,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         }
 
         FFFZSPlacementValidation ProtectedValidation;
-        ProtectedValidation.ReservedRects = ReservedRects;
+        ProtectedValidation.ReservedOrientedRects = ReservedRects;
         ProtectedValidation.PlacementTransform = Saved.WorldTransform;
         ValidateProtectedAreas(Saved.ZoneId, *Zone, Saved.FacilitySpec, ProtectedValidation);
         if (!ProtectedValidation.Reasons.IsEmpty())
@@ -2342,7 +2529,13 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 ? LOCTEXT("SnapshotProtectedArea", "스냅샷 Facility가 보호 영역과 겹칩니다.")
                 : ProtectedValidation.Summary);
         }
-        UFFZSFacilityQueueComponent* QueueValidator = NewObject<UFFZSFacilityQueueComponent>();
+        // [최적화] 검사용 컴포넌트를 시설마다 새로 만들지 않고 하나를 재사용한다.
+        // Configure와 RestoreSnapshot이 큐 상태를 통째로 덮어쓰므로 이전 시설의 값이 남지 않는다.
+        // 예전에는 시설 수만큼 임시 UObject가 생겨 저장 검증마다 GC 부담이 커졌다.
+        if (!QueueValidator.IsValid())
+        {
+            QueueValidator.Reset(NewObject<UFFZSFacilityQueueComponent>());
+        }
         QueueValidator->Configure(Saved.FacilitySpec.QueueRules);
         TArray<FText> QueueErrors;
         if (!QueueValidator->RestoreSnapshot(Saved.Queue, QueueErrors))
@@ -2451,6 +2644,14 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
         }
         EffectiveSnapshot = &MigratedSnapshot;
     }
+    else if (Snapshot.SchemaVersion == CardinalSnapshotSchemaVersion)
+    {
+        if (!TryMigrateCardinalSnapshotV4(Snapshot, MigratedSnapshot, OutErrors))
+        {
+            return false;
+        }
+        EffectiveSnapshot = &MigratedSnapshot;
+    }
 
     if (!ValidateSnapshotBeforeRestore(*EffectiveSnapshot, OutErrors))
     {
@@ -2553,12 +2754,17 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         }
         StagedFacilitiesById.Add(Saved.FacilityInstanceId, Facility);
 
-        const TArray<FFFZSCellRect> StagedRects =
-            UFFZSGridLibrary::GetReservedRects(Saved.FacilitySpec, Saved.Placement);
+        TArray<FFFZSOrientedRect> StagedFootprint;
+        TArray<FFFZSOrientedRect> StagedClearance;
+        TArray<FFFZSOrientedRect> StagedQueue;
+        TArray<FFFZSOrientedRect> StagedRects;
+        UFFZSGridLibrary::BuildPlacementOrientedRegions(
+            Saved.FacilitySpec, Saved.Placement,
+            StagedFootprint, StagedClearance, StagedQueue, StagedRects);
         for (const TPair<FGuid, FFFZSFacilityRegionOccupancy>& Existing : StagedOccupiedFacilityRegions)
         {
             if (Existing.Value.ZoneId == Saved.ZoneId &&
-                UFFZSGridLibrary::DoCellRectSetsOverlap(StagedRects, Existing.Value.Regions))
+                UFFZSGridLibrary::DoOrientedRectSetsOverlap(StagedRects, Existing.Value.Regions))
             {
                 OutErrors.Add(LOCTEXT(
                     "RestoreOccupiedRegion",
@@ -2614,6 +2820,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             {
                 Queue->OnAgentReleased.RemoveDynamic(this, &UFFZSWorldSubsystem::HandleAgentReleased);
             }
+            Facility->SetNavigationObstacleEnabled(false);
             Facility->SetActorEnableCollision(false);
             Facility->SetActorHiddenInGame(true);
         }
@@ -2637,6 +2844,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             }
             Facility->SetActorHiddenInGame(false);
             Facility->SetActorEnableCollision(true);
+            Facility->SetNavigationObstacleEnabled(true);
         }
     }
     for (const TWeakObjectPtr<AFFZSFacilityActor>& WeakFacility : ExistingFacilities)
@@ -2768,8 +2976,12 @@ void UFFZSWorldSubsystem::OccupyFacilityRegions(const AFFZSFacilityActor& Facili
 {
     FFFZSFacilityRegionOccupancy Record;
     Record.ZoneId = Facility.GetZoneId();
-    Record.Regions = UFFZSGridLibrary::GetReservedRects(
-        Facility.GetFacilitySpec(), Facility.GetGridPlacement());
+    TArray<FFFZSOrientedRect> IgnoredFootprint;
+    TArray<FFFZSOrientedRect> IgnoredClearance;
+    TArray<FFFZSOrientedRect> IgnoredQueue;
+    UFFZSGridLibrary::BuildPlacementOrientedRegions(
+        Facility.GetFacilitySpec(), Facility.GetGridPlacement(),
+        IgnoredFootprint, IgnoredClearance, IgnoredQueue, Record.Regions);
     OccupiedFacilityRegions.Add(Facility.GetFacilityInstanceId(), MoveTemp(Record));
 }
 
@@ -2780,7 +2992,7 @@ void UFFZSWorldSubsystem::ReleaseFacilityRegions(const AFFZSFacilityActor& Facil
 
 bool UFFZSWorldSubsystem::AreRegionsOccupiedByOther(
     const FName ZoneId,
-    const TArray<FFFZSCellRect>& Regions,
+    const TArray<FFFZSOrientedRect>& Regions,
     const FGuid IgnoreFacilityId) const
 {
     for (const TPair<FGuid, FFFZSFacilityRegionOccupancy>& Pair : OccupiedFacilityRegions)
@@ -2790,7 +3002,7 @@ bool UFFZSWorldSubsystem::AreRegionsOccupiedByOther(
         {
             continue;
         }
-        if (UFFZSGridLibrary::DoCellRectSetsOverlap(Regions, Pair.Value.Regions))
+        if (UFFZSGridLibrary::DoOrientedRectSetsOverlap(Regions, Pair.Value.Regions))
         {
             return true;
         }

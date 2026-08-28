@@ -255,12 +255,6 @@ FIntPoint AFFZSGameplayZone::WorldToGridCell1Cm(const FVector& WorldLocation) co
         FMath::FloorToInt(Local.Y / CellSizeCm));
 }
 
-FVector AFFZSGameplayZone::GridCellCornerToWorld(const FIntPoint Cell, const float CellSizeCm) const
-{
-    // 파라미터는 ABI/Blueprint 호환용으로만 남긴다. 서로 다른 셀 크기를 런타임에 섞지 않는다.
-    static_cast<void>(CellSizeCm);
-    return GridCellCornerToWorld1Cm(Cell);
-}
 bool AFFZSGameplayZone::IsCategoryAllowed(const EFFZSFacilityCategory Category) const
 {
     return bAllowAllFacilityCategories || AllowedFacilityCategories.Contains(Category);

@@ -8,9 +8,14 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 {
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
-
-		ElapsedLiveSeconds = 0.f;
+	ElapsedLiveSeconds = 0.f;
 		// 날마다 길이가 달라, 시계를 0으로 리셋함
+	bWasMainProgramLocked = false;
+	// 날짜 바뀔 때 공연 시작 체크도 초기화
+	bNightLightingActivated = false;
+	// 단계/날짜 바뀔 때 밤 조명 트리거도 다시 켤 수 있게 초기화
+	LastBroadcastSeconds = -1;
+	// 단계 바뀔 때마다 리셋해서 새 단계 첫 초도 반드시 방송되게 함
 	
 
 	UE_LOG(LogTemp, Log, TEXT("[Stage] %s -> %s"),
@@ -20,11 +25,20 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 
 	OnStageChanged.Broadcast(PreviousStage, NewStage);
 	// 바뀌었다고 알림
+
+	// Live에 진입하는 순간, 오늘 확정된 날씨를 다른 시스템에 알림
+	if (NewStage == EFF_FestivalStage::Live)
+	{
+		OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
+		// 이 시점엔 아직 밤이 아니니 bIsNight는 false로 나감 
+	}
 }
+
 
 bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 {
 	return CurrentStage == EFF_FestivalStage::Setup
+		|| CurrentStage == EFF_FestivalStage::PromotionPreview
 		|| CurrentStage == EFF_FestivalStage::MorningCheck;
 	// 이 세 단계일 때만 배치 변경 허용
 }
@@ -32,8 +46,28 @@ bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 {
 	TimeScale = NewScale;
+	OnTimeScaleChange.Broadcast(TimeScale);
 }
 // 배속값을 저장하는 함수
+
+void UFF_FestivalStageSubsystem::SetSelectedWeather(EFF_WeatherType NewWeather)
+{
+	if (!IsReconfigureAllowed())
+		// Setup / PromotionPreview / MorningCheck가 아니면
+	{
+		UE_LOG(LogTemp, Warning, TEXT("지금은 날씨를 바꿀 수 없는 단계입니다."));
+		return;
+		// 아무것도 안 하고 함수 종료
+	}
+
+	SelectedWeather = NewWeather;
+	// 선택한 날씨를 저장
+
+	UE_LOG(LogTemp, Log, TEXT("날씨 선택됨: %s"), *UEnum::GetValueAsString(SelectedWeather));
+	
+	OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
+	// Setup/MorningCheck에서 고른 순간 바로 화면에 반영되게 함
+}
 
 const TArray<FFF_LiveTriggerEvent>& UFF_FestivalStageSubsystem::GetEventsForCurrentDay()
 {
@@ -106,8 +140,10 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 			const float LockStart = Events[i].TriggerSeconds - LeadSeconds;
 			// 공연 시작 시각 -  표의 리드타임만큼 뺀 시점 = 락 시작 시점
 
-			const float LockEnd = Events.IsValidIndex(i + 1) ? Events[i + 1].TriggerSeconds : Events[i].TriggerSeconds;
-			// 다음 이벤트 시각 = 락 끝나는 시점
+			const float LockEnd = Events.IsValidIndex(i + 1)
+				? Events[i + 1].TriggerSeconds
+				: GetLiveDurationForCurrentDay();
+			// 다음 이벤트가 있으면 그 시각, 없으면 그날 Live 전체 끝까지를 락 구간으로 봄
 
 			return ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd;
 			// 지금이 그 구간 안에 있는지 true/false로 반환
@@ -120,17 +156,101 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
+	if (!bFestivalStarted) { return; }
+
 	if (CurrentStage == EFF_FestivalStage::Live)
 		// Live 단계일 때 처리
 	{
-		const float EffectiveScale = IsMainProgramLocked() ? 1.f : TimeScale;
+
+		const bool bIsLockedNow = IsMainProgramLocked();
+		// 지금 메인 공연 락(1배속만가능한) 구간인지 확인
+
+		static bool bLastLoggedState = false;
+		if (bIsLockedNow != bLastLoggedState)
+		{
+			UE_LOG(LogTemp, Log, TEXT("락 상태 변화: %s, ElapsedLiveSeconds=%f"), bIsLockedNow ? TEXT("true") : TEXT("false"), ElapsedLiveSeconds);
+			bLastLoggedState = bIsLockedNow;
+		}
+
+		const TArray<FFF_LiveTriggerEvent>& TodayEvents = GetEventsForCurrentDay();
+		// 오늘 이벤트 목록 가져옴
+
+		if (bIsLockedNow && !bWasMainProgramLocked)
+			
+		{
+			UE_LOG(LogTemp, Log, TEXT("공연 시작 감지! ElapsedLiveSeconds: %f"), ElapsedLiveSeconds);
+			// 디버그용
+
+			for (int32 i = 0; i < TodayEvents.Num(); i++)
+				// 이벤트들 중에서 
+			{
+				if (TodayEvents[i].bIsMainProgramLockStart)
+					// 공연 시작 이벤트를 찾으면
+				{
+					OnMainProgramStarted.Broadcast(TodayEvents[i].EventLabel);
+					// 시작 라벨과 함께 알림 보냄
+
+					CachedMainProgramEndLabel = TodayEvents.IsValidIndex(i + 1) ? TodayEvents[i + 1].EventLabel : TEXT("");
+					// 바로 다음 이벤트를 종료 라벨로 저장해둠
+
+					break;
+					// 찾았으니 반복 종료
+				}
+			}
+		}
+		else if (!bIsLockedNow && bWasMainProgramLocked)
+			// 방금 막 잠금 구간에서 벗어난 순간이면
+		{
+			UE_LOG(LogTemp, Log, TEXT("공연 종료 감지! 라벨: %s"), *CachedMainProgramEndLabel);
+			// 디버그용 - 실제로 이 코드가 실행되는지 확인용 로그
+			OnMainProgramEnded.Broadcast(CachedMainProgramEndLabel);
+			// 저장해둔 종료 라벨로 알림 보냄
+		}
+
+		bWasMainProgramLocked = bIsLockedNow;
+		// 다음 프레임 비교용으로 저장
+
+		const float EffectiveScale = bIsLockedNow ? 1.f : TimeScale;
 		// 메인 공연 구간이면 배속을 1배속으로 고정
 
 		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
 		// 흐른 시간을 누적하는 방식
 
+
+		float EffectiveNightLightingTrigger = NightLightingTriggerSeconds;
+		// 일단 기본값으로 시작
+
+		if (TimeSettingsTable)
+			// 표가 실제로 연결되어 있으면
+		{
+			TArray<FFF_TimeSettingRow*> AllSettings;
+			TimeSettingsTable->GetAllRows<FFF_TimeSettingRow>(TEXT("Tick_NightLighting"), AllSettings);
+
+			if (AllSettings.Num() > 0)
+				// 행이 하나라도 있으면
+			{
+				EffectiveNightLightingTrigger = AllSettings[0]->NightLightingTriggerSeconds;
+				// 표에 있는 값으로 덮어쓰기
+			}
+		}
+
+		// 밤 조명 켤 시간이 됐는지 매 프레임 확인
+		if (!bNightLightingActivated && ElapsedLiveSeconds >= EffectiveNightLightingTrigger)
+		{
+			bNightLightingActivated = true;
+			// 다시 안 켜지게 표시 
+
+			UE_LOG(LogTemp, Log, TEXT("밤 조명 활성화! ElapsedLiveSeconds=%f"), ElapsedLiveSeconds);
+			
+
+			OnNightLightingActivated.Broadcast();
+			//  Light Manager에게 신호 보냄
+
+			
+			OnEnvironmentStateChanged.Broadcast(SelectedWeather, bNightLightingActivated);
+		}
 		RemainingTime = FMath::Max(GetLiveDurationForCurrentDay() - ElapsedLiveSeconds, 0.f);
-		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산 (0 밑으로 안 내려가게 함)
+		// 오늘 총 길이 - 흐른 시간 = 남은 시간을 매번 다시 계산
 	}
 	else
 		//(Setup/Promotion/MorningCheck/Closing/Report) 처리
@@ -211,8 +331,41 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 		// Report 단계가 아닐 때 잘못 호출되는 것 방지
 	}
 
+	if (CurrentDay >= 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("이미 마지막 날(Day3)입니다. AdvanceToNextDay 무시됨."));
+		return;
+	}
+
+	const float TodayLiveDuration = GetLiveDurationForCurrentDay();
+	// 오늘 Live 총 길이를 미리 구해둠 (CurrentDay가 바뀌기 전에 구해야 오늘 값이 맞음)
+
+	UE_LOG(LogTemp, Log, TEXT("Day %d 종료! TodayLiveDuration=%f"), CurrentDay, TodayLiveDuration);
+
+
+	OnDayEnded.Broadcast(CurrentDay, TodayLiveDuration);
+	// 며칠째가 끝났고, 그날 Live가 몇 초였는지 신호로 전달
+
 	CurrentDay++;
 	RequestTransition(EFF_FestivalStage::MorningCheck);
+}
+
+void UFF_FestivalStageSubsystem::StartNewFestival()
+{
+	CurrentDay = 1;
+	CurrentStage = EFF_FestivalStage::Setup;
+	ElapsedLiveSeconds = 0.f;
+	bFestivalEndedBroadcasted = false;
+	bNightLightingActivated = false;
+	// 밤 조명 상태도 리셋 안 하면 재시작 시 낮인데 조명 켜진 채로 남을 수 있음
+
+	bFestivalStarted = true;
+	// 이 줄이 있어야 Tick()이 다시 돌기 시작함
+
+	UE_LOG(LogTemp, Log, TEXT("[Festival] 새 축제 시작! Day=1, Stage=Setup"));
+
+	OnFestivalStarted.Broadcast();
+	// 축제가 시작됐다고 UI 등 구독자들에게 알림
 }
 
 void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -312,12 +465,45 @@ void UFF_FestivalStageSubsystem::SkipCurrentStage()
 
 FText UFF_FestivalStageSubsystem::GetCurrentStageDisplayName() const
 {
-	UEnum* EnumPtr = StaticEnum<EFF_FestivalStage>();
-	if (EnumPtr)
+	//  수정 - UMETA(DisplayName) 직접 읽기는 패키징 빌드에서 값이 사라져서 하드코딩 매핑으로 교체
+	switch (CurrentStage)
 	{
-		return EnumPtr->GetDisplayNameTextByValue((int64)CurrentStage);
+	case EFF_FestivalStage::Setup:
+		return FText::FromString(TEXT("셋업"));
+		// Setup 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::PromotionPreview:
+		return FText::FromString(TEXT("홍보 프리뷰"));
+		// PromotionPreview 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::SunsetTransition:
+		return FText::FromString(TEXT("노을 전환"));
+		// SunsetTransition 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::MorningCheck:
+		return FText::FromString(TEXT("모닝체크"));
+		// MorningCheck 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Live:
+		return FText::FromString(TEXT("라이브 운영"));
+		// Live 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Closing:
+		return FText::FromString(TEXT("마감"));
+		// Closing 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Report:
+		return FText::FromString(TEXT("리포트"));
+		// Report 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Finale:
+		return FText::FromString(TEXT("피날레"));
+		// Finale 단계일 때 반환할 한글 이름
+
+	default:
+		return FText::FromString(TEXT("알 수 없음"));
+		// 혹시 모를 예외 상황 (enum에 없는 값)
 	}
-	return FText::FromString(TEXT("알 수 없음"));
 }
 // enum에 붙여둔 UMETA(DisplayName)을 그대로 가져와서 반환
 
@@ -334,6 +520,25 @@ FString UFF_FestivalStageSubsystem::GetCurrentLiveClockString() const
 }
 // ElapsedLiveSeconds(경과 시간)를 그대로 "게임 속 분"으로 취급해서
 // 17:00에 더한 뒤 시:분 형식 문자열로 변환
+
+
+FString UFF_FestivalStageSubsystem::GetLiveClockStringFromMinutes(int32 LiveMinutes) const
+{
+	const int32 StartHour = 17;
+	// Live 시작 시각(오후 5시)
+
+	const int32 TotalMinutes = StartHour * 60 + LiveMinutes;
+	// 시작 시각(17:00)에 진행 시간(분)을 더함
+
+	const int32 Hour = (TotalMinutes / 60) % 24;
+	// 시 계산 (24시간 제, 24시 넘어가면 0시로 순환)
+
+	const int32 Minute = TotalMinutes % 60;
+	// 분 계산
+
+	return FString::Printf(TEXT("%02d:%02d"), Hour, Minute);
+	// "HH:MM" 형태로 반환
+}
 
 bool UFF_FestivalStageSubsystem::IsLiveStage() const
 {

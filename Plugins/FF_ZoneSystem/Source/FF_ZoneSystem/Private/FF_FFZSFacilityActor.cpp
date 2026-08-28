@@ -17,12 +17,31 @@
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "NavAreas/NavArea_Null.h"
+#include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityAnchorComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
+#include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "SceneManagement.h"
+
+namespace
+{
+    const FColor LiveSelectionIndicatorColor(20, 242, 224);
+    constexpr float HoveredSelectionIndicatorThickness = 3.0f;
+    constexpr float SelectedSelectionIndicatorThickness = 5.0f;
+
+    FVector MakeFacilityFootprintExtent(const FFFZSFacilitySpec& Spec)
+    {
+        const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+        return FVector(
+            Spec.FootprintSizeCells.X * CellSizeCm * 0.5f,
+            Spec.FootprintSizeCells.Y * CellSizeCm * 0.5f,
+            Spec.PlacementObstacleHeightCm * 0.5f);
+    }
+}
 
 //이 파일의 책임
  // 시설 한 개의 런타임 상태(배치, 운영 상태, 대기열)와 화면 표현(메시, 경계, 앵커)을 함께 유지한다.
@@ -30,7 +49,7 @@
  //  임의로 확정하는 주체가 아니며, 설치·이동·제거는 Subsystem의 검증 및 트랜잭션 흐름을 거쳐야 한다.
 
 //핵심 불변식
- // 등록 가능한 시설은 유효한 InstanceId/ZoneId/Spec을 가지며 QuarterTurns는 항상 0~3으로 정규화한다.
+ // 등록 가능한 시설은 유효한 InstanceId/ZoneId/Spec을 가지며 Yaw는 항상 0..35999 centidegree로 정규화한다.
  // Actor Scale은 항상 1이다. 크기는 FacilitySpec과 컴포넌트 Extent로 표현해야 그리드 계산과 일치한다.
  // 대기열에 Agent가 남아 있으면 이동/제거할 수 없다. 일반 Close는 먼저 Drain하고, 비워진 뒤
  // MovePending으로 전환한다. Emergency Close만 즉시 취소한다.
@@ -47,6 +66,21 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
     VisualMesh->SetupAttachment(SceneRoot);
     VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    VisualMesh->SetCanEverAffectNavigation(false);
+
+    SelectionProxy = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionProxy"));
+    SelectionProxy->SetupAttachment(SceneRoot);
+    // 유효한 FacilitySpec이 적용되기 전의 기본 Box가 선택되는 짧은 구간을 없앤다.
+    SelectionProxy->SetBoxExtent(FVector::ZeroVector);
+    SelectionProxy->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    SelectionProxy->SetGenerateOverlapEvents(false);
+    SelectionProxy->SetCanEverAffectNavigation(false);
+    SelectionProxy->SetSimulatePhysics(false);
+    SelectionProxy->SetEnableGravity(false);
+    SelectionProxy->SetNotifyRigidBodyCollision(false);
+    SelectionProxy->bDrawOnlyIfSelected = false;
+    SelectionProxy->SetVisibility(true);
+    SelectionProxy->SetHiddenInGame(true);
 
     FootprintBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("FootprintBounds"));
     FootprintBounds->SetupAttachment(SceneRoot);
@@ -56,6 +90,20 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     FootprintBounds->ShapeColor = FColor::Green;
     FootprintBounds->SetLineThickness(2.0f);
     FootprintBounds->SetHiddenInGame(true);
+
+    // 물리 충돌·선택 범위와 분리한 동적 Nav modifier다. 유효한 Spec과 등록이
+    // 완료되기 전에 기본 Box가 NavMesh를 오염하지 않도록 처음에는 nav relevance를 끈다.
+    NavigationObstacleBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("FacilityNavigationObstacleBounds"));
+    NavigationObstacleBounds->SetupAttachment(SceneRoot);
+    NavigationObstacleBounds->SetBoxExtent(FVector::ZeroVector);
+    NavigationObstacleBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    NavigationObstacleBounds->SetCollisionResponseToAllChannels(ECR_Ignore);
+    NavigationObstacleBounds->SetGenerateOverlapEvents(false);
+    NavigationObstacleBounds->bDynamicObstacle = true;
+    NavigationObstacleBounds->SetAreaClassOverride(UNavArea_Null::StaticClass());
+    NavigationObstacleBounds->SetCanEverAffectNavigation(false);
+    NavigationObstacleBounds->SetVisibility(false, true);
+    NavigationObstacleBounds->SetHiddenInGame(true);
 
     QueueAreaBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("QueueAreaBounds"));
     QueueAreaBounds->SetupAttachment(SceneRoot);
@@ -100,6 +148,7 @@ void AFFZSFacilityActor::BeginPlay()
 // 이어지는 등록 해제는 ID뿐 아니라 Actor 동일성도 확인하므로 교체된 Actor를 잘못 지우지 않는다.
 void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    SetNavigationObstacleEnabled(false);
     DestroyBuildModeRangePresentation();
     if (VisualLoadHandle.IsValid())
     {
@@ -126,10 +175,13 @@ bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFF
         return false;
     }
 
+    SetNavigationObstacleEnabled(false);
     FacilityInstanceId = NewInstanceId;
     FacilitySpec = NewSpec;
     ZoneId = NewZoneId;
-    NewPlacement.QuarterTurns = ((NewPlacement.QuarterTurns % 4) + 4) % 4;
+    // [하드코딩 제거] 회전 정규화 식을 이 파일에 다시 적지 않고 격자 계약을 소유한 라이브러리를 쓴다.
+    // 같은 식이 여러 곳에 복사돼 있으면 정규화 규칙이 바뀔 때 일부만 갱신될 수 있다.
+    UFFZSGridLibrary::NormalizePlacement(NewPlacement);
     GridPlacement = NewPlacement;
     FacilityState = InitialState;
     bNeedsRelocation = false;
@@ -149,7 +201,7 @@ bool AFFZSFacilityActor::ApplyPlacement(const FName NewZoneId, FFFZSGridPlacemen
         return false;
     }
     ZoneId = NewZoneId;
-    NewPlacement.QuarterTurns = ((NewPlacement.QuarterTurns % 4) + 4) % 4;
+    UFFZSGridLibrary::NormalizePlacement(NewPlacement);
     GridPlacement = NewPlacement;
     bNeedsRelocation = false;
     SetActorTransform(WorldTransform);
@@ -208,8 +260,10 @@ void AFFZSFacilityActor::MarkRemoved()
         return;
     }
     QueueComponent->EmergencyCancel();
+    SetNavigationObstacleEnabled(false);
     FacilityState = EFFZSFacilityState::Removed;
-    SetBuildModeRemovalSelected(false);
+    SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
+    SetBuildModeActionSelected(false);
     SetBuildModeRangeVisible(false);
     SetActorEnableCollision(false);
     SetActorHiddenInGame(true);
@@ -255,17 +309,52 @@ void AFFZSFacilityActor::SetBuildModeRangeVisible(const bool bVisible)
     }
 }
 
-void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+void AFFZSFacilityActor::SetBuildModeActionSelected(const bool bSelected)
 {
-    bBuildModeRemovalSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
+    bBuildModeActionSelected = bSelected && FacilityState != EFFZSFacilityState::Removed;
     if (!FootprintBounds)
     {
         return;
     }
 
-    FootprintBounds->ShapeColor = bBuildModeRemovalSelected ? FColor::Red : FColor::Green;
-    FootprintBounds->SetLineThickness(bBuildModeRemovalSelected ? 5.0f : 2.0f);
+    FootprintBounds->ShapeColor = bBuildModeActionSelected ? FColor(64, 200, 255) : FColor::Green;
+    FootprintBounds->SetLineThickness(bBuildModeActionSelected ? 5.0f : 2.0f);
     FootprintBounds->MarkRenderStateDirty();
+}
+
+void AFFZSFacilityActor::SetSelectionIndicatorState(
+    const EFFZSFacilitySelectionIndicatorState NewState)
+{
+    const EFFZSFacilitySelectionIndicatorState ResolvedState =
+        FacilityState == EFFZSFacilityState::Removed
+            ? EFFZSFacilitySelectionIndicatorState::Hidden
+            : NewState;
+    if (!SelectionProxy || SelectionIndicatorState == ResolvedState)
+    {
+        return;
+    }
+
+    SelectionIndicatorState = ResolvedState;
+    if (SelectionIndicatorState == EFFZSFacilitySelectionIndicatorState::Hidden)
+    {
+        SelectionProxy->SetHiddenInGame(true);
+        return;
+    }
+
+    // 라이브 시설 정보 UI의 Accent(#14F2E0)를 사용한다. 실제 클릭 Box의 표시 속성만
+    // 바꾸며 Extent·Transform·Collision 계약은 그대로 유지한다.
+    SelectionProxy->ShapeColor = LiveSelectionIndicatorColor;
+    SelectionProxy->SetLineThickness(
+        SelectionIndicatorState == EFFZSFacilitySelectionIndicatorState::Selected
+            ? SelectedSelectionIndicatorThickness
+            : HoveredSelectionIndicatorThickness);
+    SelectionProxy->SetHiddenInGame(false);
+    SelectionProxy->MarkRenderStateDirty();
+}
+
+void AFFZSFacilityActor::SetBuildModeRemovalSelected(const bool bSelected)
+{
+    SetBuildModeActionSelected(bSelected);
 }
 
 bool AFFZSFacilityActor::IsWorldPointInsideFootprint(const FVector& WorldPoint) const
@@ -324,6 +413,10 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
     Result.FacilityDefinitionId = FacilitySpec.FacilityDefinitionId;
     Result.ZoneId = ZoneId;
     Result.WorldLocation = GetActorLocation();
+    Result.bHasApproachWorldTransform = GetAnchorWorldTransform(
+        EFFZSAnchorType::Entry,
+        0,
+        Result.ApproachWorldTransform);
     Result.Category = FacilitySpec.Category;
     Result.State = FacilityState;
     Result.QueueState = QueueComponent->GetQueueState();
@@ -339,12 +432,30 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
 void AFFZSFacilityActor::RebuildRuntimePresentation()
 {
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const FVector FootprintExtent(
-        FacilitySpec.FootprintSizeCells.X * CellSizeCm * 0.5f,
-        FacilitySpec.FootprintSizeCells.Y * CellSizeCm * 0.5f,
-        FacilitySpec.PlacementObstacleHeightCm * 0.5f);
+    const FVector FootprintExtent = MakeFacilityFootprintExtent(FacilitySpec);
     FootprintBounds->SetBoxExtent(FootprintExtent);
     FootprintBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
+    // Clearance·Queue 영역은 의도적 보행 공간이므로 확장 없이 고형 footprint만 복제한다.
+    NavigationObstacleBounds->SetBoxExtent(FootprintExtent);
+    NavigationObstacleBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
+
+    // 선택 여백은 전역 Config 정책에서 한 번 읽어 시설별 Footprint 반치수에 더한다. 시설 데이터나
+    // SaveGame에 파생 Box를 중복 저장하지 않으므로 새 설치와 Snapshot 복원이 같은 계산 경로를 쓴다.
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const float ConfiguredSelectionPaddingCm = Settings
+        ? Settings->FacilitySelectionPaddingCm
+        : UFFZSDeveloperSettings::DefaultFacilitySelectionPaddingCm;
+    const float SelectionPaddingCm = FMath::IsFinite(ConfiguredSelectionPaddingCm)
+        ? FMath::Clamp(
+            ConfiguredSelectionPaddingCm,
+            0.0f,
+            UFFZSDeveloperSettings::MaxFacilitySelectionPaddingCm)
+        : UFFZSDeveloperSettings::DefaultFacilitySelectionPaddingCm;
+    const FVector SelectionExtent(
+        FootprintExtent.X + SelectionPaddingCm,
+        FootprintExtent.Y + SelectionPaddingCm,
+        FootprintExtent.Z);
+    RebuildSelectionProxy(SelectionExtent);
 
     RequestVisualMesh();
 
@@ -395,6 +506,63 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     }
 }
 
+void AFFZSFacilityActor::RebuildSelectionProxy(const FVector& SelectionExtent)
+{
+    if (!SelectionProxy)
+    {
+        return;
+    }
+
+    // Blueprint 파생 클래스의 컴포넌트 기본값과 무관하게 초기화 때 선택 계약을 다시 확정한다.
+    SelectionProxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    SelectionProxy->SetCollisionObjectType(ECC_WorldDynamic);
+    SelectionProxy->SetCollisionResponseToAllChannels(ECR_Ignore);
+    SelectionProxy->SetCollisionResponseToChannel(
+        FFZSCollision::FacilitySelectionTraceChannel,
+        ECR_Block);
+    SelectionProxy->SetGenerateOverlapEvents(false);
+    SelectionProxy->SetCanEverAffectNavigation(false);
+    SelectionProxy->SetSimulatePhysics(false);
+    SelectionProxy->SetEnableGravity(false);
+    SelectionProxy->SetNotifyRigidBodyCollision(false);
+    SelectionProxy->SetBoxExtent(SelectionExtent);
+    SelectionProxy->SetRelativeLocation(FVector(0.0f, 0.0f, SelectionExtent.Z));
+}
+
+void AFFZSFacilityActor::SetNavigationObstacleEnabled(const bool bEnabled)
+{
+    if (!NavigationObstacleBounds)
+    {
+        return;
+    }
+
+    // 레벨에 이미 배치된 Actor는 현 세션에서 InitializeFacility를 거치지 않을 수 있다.
+    // 따라서 등록 시점에 권위 Spec으로 기하를 먼저 복구하고 nav relevance를 마지막에 켠다.
+    if (bEnabled)
+    {
+        const FVector ExpectedExtent = MakeFacilityFootprintExtent(FacilitySpec);
+        const FVector ExpectedLocation(0.0f, 0.0f, ExpectedExtent.Z);
+        if (!NavigationObstacleBounds->GetUnscaledBoxExtent().Equals(ExpectedExtent))
+        {
+            NavigationObstacleBounds->SetBoxExtent(ExpectedExtent);
+        }
+        if (!NavigationObstacleBounds->GetRelativeLocation().Equals(ExpectedLocation))
+        {
+            NavigationObstacleBounds->SetRelativeLocation(ExpectedLocation);
+        }
+    }
+
+    const FVector Extent = NavigationObstacleBounds->GetUnscaledBoxExtent();
+    const bool bHasValidFootprint = Extent.X > UE_KINDA_SMALL_NUMBER &&
+        Extent.Y > UE_KINDA_SMALL_NUMBER && Extent.Z > UE_KINDA_SMALL_NUMBER;
+    const bool bShouldEnable = bEnabled && FacilityInstanceId.IsValid() &&
+        FacilityState != EFFZSFacilityState::Removed && bHasValidFootprint;
+    if (NavigationObstacleBounds->CanEverAffectNavigation() != bShouldEnable)
+    {
+        NavigationObstacleBounds->SetCanEverAffectNavigation(bShouldEnable);
+    }
+}
+
 void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
 {
     DestroyBuildModeRangePresentation();
@@ -406,7 +574,9 @@ void AFFZSFacilityActor::RebuildBuildModeRangePresentation()
     constexpr float RangeHeightCm = 10.0f;
     // 비정상적으로 조각난 콘텐츠도 건축 모드 진입을 멈추지 않게 한다. 일반 콘텐츠는 정확한
     // canonical rect를 모두 그리고, 상한을 넘는 그룹만 합집합 외접 박스로 안전하게 축약한다.
-    constexpr int32 MaxDisplayedRectsPerGroup = 1024;
+    // [하드코딩 제거] 배치 Preview와 같은 상한을 공유해 두 화면의 표시 규칙이 갈라지지 않게 한다.
+    constexpr int32 MaxDisplayedRectsPerGroup =
+        UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
     const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FVector FootprintExtent = FootprintBounds->GetUnscaledBoxExtent();
     const FTransform ActorTransform = GetActorTransform();
@@ -503,6 +673,8 @@ void AFFZSFacilityActor::RequestVisualMesh()
     }
 
     VisualMesh->SetStaticMesh(nullptr);
+    VisualMesh->SetRelativeTransform(
+        FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, nullptr));
     if (FacilitySpec.VisualMesh.IsNull())
     {
         return;
@@ -510,6 +682,8 @@ void AFFZSFacilityActor::RequestVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
+        VisualMesh->SetRelativeTransform(
+            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
         return;
     }
 
@@ -526,6 +700,8 @@ void AFFZSFacilityActor::ApplyLoadedVisualMesh()
     if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
     {
         VisualMesh->SetStaticMesh(LoadedMesh);
+        VisualMesh->SetRelativeTransform(
+            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
     }
 }
 

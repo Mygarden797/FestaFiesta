@@ -1,5 +1,10 @@
 // FF_BuildCatalogScreen.h
 
+// 건설 카탈로그의 탭·분류·시설 카드·골드 상태를 표시하고 사용자 선택 이벤트를 전달한다.
+// 흐름: 카탈로그 스냅샷 수신 -> 디자이너 WBP 또는 Slate 폴백 구성 -> 동적 목록·선택 상태 갱신.
+// 불변식: 화면은 권위 배치를 직접 실행하지 않고 FacilityDefinitionId와 닫기/전환 의도만 방송한다.
+// 실패/수명: WBP 계약이 불완전하면 Slate 폴백을 사용하고 Destruct에서 동적 구독·포인터를 정리한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -56,7 +61,7 @@ public:
 	FOnBuildModeKeyRequested OnBuildModeKeyRequested;
 	FOnExitBuildModeKeyRequested OnExitBuildModeKeyRequested;
 
-	//화면에 표시할 스냅샷을 교체하고, 최초로 항목이 존재하는 대분류를 선택한 뒤 UI를 재구성한다.
+	// 화면에 표시할 스냅샷을 교체하고, 최초로 항목이 존재하는 대분류를 선택한 뒤 UI를 재구성한다.
 	// 호출 시점이 NativeConstruct보다 빠른 경우도 허용하므로 사용 가능한 BindWidget이 있으면 먼저 초기화한다.
 	 
 	void SetCatalogEntries(const TArray<FFF_BuildCatalogEntry>& InEntries);
@@ -67,7 +72,7 @@ public:
 	// UMG/Slate 중 현재 활성화된 표현 경로 양쪽에 같은 상태 문구와 오류 색상을 반영한다. 
 	void SetStatusText(const FText& InStatusText, bool bIsError = false);
 
-	// Runtime diagnostics used by automation and UI smoke tests. 
+	// 자동화와 UI 스모크 테스트가 실제 표시 경로를 확인할 때 사용하는 런타임 진단값이다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI")
 	int32 GetDisplayedCategoryCount() const { return DisplayedCategoryCount; }
 

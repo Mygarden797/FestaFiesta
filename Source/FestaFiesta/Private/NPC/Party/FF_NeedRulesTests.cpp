@@ -84,14 +84,17 @@ bool FFF_NeedRules_ZeroRateNeedsStayFlat::RunTest(const FString& Parameters)
 	const FFF_NeedRiseRates DefaultRates;
 	TestEqual(TEXT("기본값에서 갈증은 꺼져 있다"), DefaultRates.ThirstMinutesToLimit, 0.f);
 	TestEqual(TEXT("기본값에서 피로는 꺼져 있다"), DefaultRates.FatigueMinutesToLimit, 0.f);
-	TestEqual(TEXT("기본값에서 자극은 꺼져 있다"), DefaultRates.StimulationMinutesToLimit, 0.f);
 	TestEqual(TEXT("꺼진 Need 의 분당 증가량은 0 이다 — 0 으로 나누지 않는다"),
 		DefaultRates.GetRisePerMinute(EFF_NeedType::Thirst), 0.f);
+
+	// 자극은 Phase 2 로 켜졌다. 여기서 이 사실을 같이 고정하는 이유는, Phase 게이트가
+	// "코드 수정이 아니라 값 변경"이라 어느 성분이 켜져 있는지 읽을 곳이 이 표뿐이기 때문이다.
+	TestTrue(TEXT("기본값에서 자극은 켜져 있다(Phase 2)"), DefaultRates.StimulationMinutesToLimit > 0.f);
 
 	const FFF_NeedState After = FFF_NeedRules::Advance(FFF_NeedState(), 600.f, DefaultRates);
 	TestEqual(TEXT("갈증은 안 쌓인다(Phase 4)"), After.Thirst, 0.f);
 	TestEqual(TEXT("피로는 안 쌓인다(Phase 4)"), After.Fatigue, 0.f);
-	TestEqual(TEXT("자극은 안 쌓인다(Phase 2)"), After.Stimulation, 0.f);
+	TestTrue(TEXT("자극은 쌓인다(Phase 2)"), After.Stimulation > 0.f);
 	TestTrue(TEXT("반면 P0 두 개는 쌓인다"), After.Hunger > 0.f && After.Restroom > 0.f);
 
 	// 음수 MinutesToLimit 도 안전하게 "꺼짐"으로 본다
@@ -308,17 +311,23 @@ bool FFF_NeedRules_InitialNeedsStayWithinBounds::RunTest(const FString& Paramete
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_DisabledNeedsStartAtZero, "FestaFiesta.NPC.NeedRules.DisabledNeedsStartAtZero", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_NeedRules_DisabledNeedsStartAtZero::RunTest(const FString& Parameters)
 {
-	const FFF_NeedRiseRates Rates;  // Thirst/Fatigue/Stimulation 은 0(꺼짐)
+	const FFF_NeedRiseRates Rates;  // Thirst/Fatigue 는 0(꺼짐), Stimulation 은 Phase 2 로 켜져 있다
 
+	bool bAnyStimulation = false;
 	for (int32 AgentId = 1; AgentId <= 30; ++AgentId)
 	{
 		const FFF_NeedState Needs = FFF_NeedRules::MakeInitialNeeds(777, AgentId, 0, Rates);
-		if (Needs.Thirst != 0.f || Needs.Fatigue != 0.f || Needs.Stimulation != 0.f)
+		if (Needs.Thirst != 0.f || Needs.Fatigue != 0.f)
 		{
 			AddError(FString::Printf(TEXT("꺼진 Need 에 초기값이 들어갔다 (Agent %d)"), AgentId));
 			return false;
 		}
+		bAnyStimulation |= Needs.Stimulation > 0.f;
 	}
+
+	// 켜진 성분은 입장 시점부터 흩뿌려진다 — Phase 2 를 켠 순간 자극은 후반부터가 아니라
+	// 스폰 시점부터 개체마다 다른 값으로 시작한다.
+	TestTrue(TEXT("켜진 자극은 입장 시점에 흩뿌려진다"), bAnyStimulation);
 
 	// 켜면 초기값도 생긴다
 	FFF_NeedRiseRates WithThirst;
@@ -385,6 +394,243 @@ bool FFF_NeedRules_HungryArrivalCanEatTwice::RunTest(const FString& Parameters)
 	TestEqual(TEXT("0 에서 입장한 개체는 해소량이 0.8이든 1.0이든 0 이 된다(clamp)"), Fresh.Hunger, 0.f, 0.001f);
 	Fresh = FFF_NeedRules::Advance(Fresh, 120.f, Rates);
 	TestTrue(TEXT("그 개체는 퇴장 시점에도 두 번째 식사 동기가 약하다"), Fresh.Hunger < Hungry.Hunger);
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConsumeStay — Need 로 체류시간을 깎는 규칙 (사용자 확정, 2026-08-11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 기본값 1.0 은 "기능 꺼짐"이다. 근거 있는 계수가 없어서 중립값을 기본으로 뒀으므로,
+// 이 테스트가 깨지면 누군가 그럴듯한 상수를 기본값으로 넣었다는 뜻이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_StayDrainIsOffByDefault, "FestaFiesta.NPC.NeedRules.StayDrainIsOffByDefault", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_StayDrainIsOffByDefault::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("테이블 없으면 배수는 중립값 1.0 (기능 꺼짐)"),
+		FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(nullptr), 1.0f, 0.001f);
+
+	// 한계까지 쌓인 Need 라도 배수가 1.0 이면 경과분 그대로만 소모한다
+	FFF_NeedState AtLimit;
+	AtLimit.Restroom = 1.0f;
+	const FFF_StayConsumption Consumed = FFF_NeedRules::ConsumeStay(AtLimit, 30.f, 1.0f);
+	TestEqual(TEXT("배수 1.0 이면 경과분만 소모한다"), Consumed.ConsumedStayBudgetMinutes, 30.f, 0.001f);
+	TestEqual(TEXT("배수 1.0 이면 Need 몫은 0 이다"), Consumed.ExtraStayBudgetFromNeed, 0.f, 0.001f);
+	return true;
+}
+
+// 한계에서 배수만큼, 중간이면 선형으로 비례한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_StayDrainScalesLinearlyWithUrgency, "FestaFiesta.NPC.NeedRules.StayDrainScalesLinearlyWithUrgency", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_StayDrainScalesLinearlyWithUrgency::RunTest(const FString& Parameters)
+{
+	// Restroom 은 need_priority 가 1.0 고정이라 Need 값이 곧 급함이다 — 배수 검산에 쓰기 좋다
+	FFF_NeedState Needs;
+
+	Needs.Restroom = 0.f;
+	TestEqual(TEXT("Need 0 이면 배수 1.0"),
+		FFF_NeedRules::ConsumeStay(Needs, 10.f, 2.0f).ConsumedStayBudgetMinutes, 10.f, 0.001f);
+
+	Needs.Restroom = 0.5f;
+	const FFF_StayConsumption Half = FFF_NeedRules::ConsumeStay(Needs, 10.f, 2.0f);
+	TestEqual(TEXT("Need 0.5 면 배수 1.5"), Half.ConsumedStayBudgetMinutes, 15.f, 0.001f);
+	TestEqual(TEXT("Need 몫은 소모분 - 경과분이다"), Half.ExtraStayBudgetFromNeed, 5.f, 0.001f);
+
+	Needs.Restroom = 1.0f;
+	TestEqual(TEXT("Need 한계면 배수가 계수값 그대로"),
+		FFF_NeedRules::ConsumeStay(Needs, 10.f, 2.0f).ConsumedStayBudgetMinutes, 20.f, 0.001f);
+	return true;
+}
+
+// 성분별 급함(need_priority_*)이 반영된다. Stimulation 은 0.5 라 한계여도 절반만 작용한다 —
+// 생리적 욕구가 아닌 성분이 이탈을 밀어붙이지 않게 하려고 의도적으로 낮게 잡은 값이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_StayDrainRespectsPriorityWeights, "FestaFiesta.NPC.NeedRules.StayDrainRespectsPriorityWeights", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_StayDrainRespectsPriorityWeights::RunTest(const FString& Parameters)
+{
+	FFF_NeedState Bored;
+	Bored.Stimulation = 1.0f;
+
+	// 배수 3.0, 급함 0.5 → 1 + (3-1)*0.5 = 2.0
+	TestEqual(TEXT("Stimulation 한계는 급함 0.5 로 환산된다"),
+		FFF_NeedRules::ConsumeStay(Bored, 10.f, 3.0f).ConsumedStayBudgetMinutes, 20.f, 0.001f);
+
+	FFF_NeedState Bursting;
+	Bursting.Restroom = 1.0f;
+	TestTrue(TEXT("같은 한계값이면 화장실이 지루함보다 이탈을 더 밀어붙인다"),
+		FFF_NeedRules::ConsumeStay(Bursting, 10.f, 3.0f).ConsumedStayBudgetMinutes >
+		FFF_NeedRules::ConsumeStay(Bored, 10.f, 3.0f).ConsumedStayBudgetMinutes);
+	return true;
+}
+
+// 합이 아니라 최대값이다. 안 급한 욕구 여러 개가 한계에 닿은 욕구 하나를 이기면 안 된다 —
+// GetMaxUrgency 와 같은 이유이고, 합으로 바꾸면 성분을 추가할 때마다 이탈률이 조용히 올라간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_StayDrainUsesMaxNotSum, "FestaFiesta.NPC.NeedRules.StayDrainUsesMaxNotSum", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_StayDrainUsesMaxNotSum::RunTest(const FString& Parameters)
+{
+	FFF_NeedState Spread;
+	Spread.Hunger = 0.3f;
+	Spread.Thirst = 0.3f;
+	Spread.Restroom = 0.3f;
+	Spread.Fatigue = 0.3f;
+	Spread.Stimulation = 0.3f;
+
+	// 합이면 급함이 1.0 을 넘어 clamp 되어 최대 배수가 나온다. 최대값이면 0.3(Restroom) 이 이긴다.
+	const float Consumed = FFF_NeedRules::ConsumeStay(Spread, 10.f, 2.0f).ConsumedStayBudgetMinutes;
+	TestEqual(TEXT("0.3 이 다섯 개면 급함은 0.3 이다 (합이 아니다)"), Consumed, 13.f, 0.001f);
+	TestTrue(TEXT("한계 하나짜리보다 반드시 덜 깎인다"), Consumed < 20.f);
+	return true;
+}
+
+// 1.0 아래 계수는 "Need 가 쌓이면 더 오래 머문다"는 정반대 정책이다. clamp 로 막는다 —
+// CSV 오타로 0.5 가 들어갔을 때 체류시간이 늘어나는 사고를 조용히 통과시키지 않기 위한 것이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_StayDrainNeverExtendsStay, "FestaFiesta.NPC.NeedRules.StayDrainNeverExtendsStay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_StayDrainNeverExtendsStay::RunTest(const FString& Parameters)
+{
+	FFF_NeedState AtLimit;
+	AtLimit.Restroom = 1.0f;
+
+	TestEqual(TEXT("배수 0.5 는 1.0 으로 clamp 된다"),
+		FFF_NeedRules::ConsumeStay(AtLimit, 10.f, 0.5f).ConsumedStayBudgetMinutes, 10.f, 0.001f);
+	TestEqual(TEXT("배수 0 도 1.0 으로 clamp 된다"),
+		FFF_NeedRules::ConsumeStay(AtLimit, 10.f, 0.f).ConsumedStayBudgetMinutes, 10.f, 0.001f);
+	TestEqual(TEXT("음수 배수도 1.0 으로 clamp 된다"),
+		FFF_NeedRules::ConsumeStay(AtLimit, 10.f, -2.f).ConsumedStayBudgetMinutes, 10.f, 0.001f);
+	return true;
+}
+
+// 음수 경과는 아무것도 소모하지 않는다. Advance 와 같은 규칙 — 그대로 계산하면 체류시간이
+// 늘어나 "퇴장이 미뤄지는" 조용한 사고가 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_StayDrainNegativeElapsedIsNoOp, "FestaFiesta.NPC.NeedRules.StayDrainNegativeElapsedIsNoOp", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_StayDrainNegativeElapsedIsNoOp::RunTest(const FString& Parameters)
+{
+	FFF_NeedState AtLimit;
+	AtLimit.Restroom = 1.0f;
+
+	const FFF_StayConsumption Negative = FFF_NeedRules::ConsumeStay(AtLimit, -30.f, 2.0f);
+	TestEqual(TEXT("음수 경과는 소모 0"), Negative.ConsumedStayBudgetMinutes, 0.f, 0.001f);
+	TestEqual(TEXT("음수 경과는 Need 몫도 0"), Negative.ExtraStayBudgetFromNeed, 0.f, 0.001f);
+
+	const FFF_StayConsumption Zero = FFF_NeedRules::ConsumeStay(AtLimit, 0.f, 2.0f);
+	TestEqual(TEXT("0 경과는 소모 0"), Zero.ConsumedStayBudgetMinutes, 0.f, 0.001f);
+	return true;
+}
+
+// 통합 성격 — 해소 못 한 개체가 실제로 더 일찍 나가는가.
+// 화장실을 못 간 개체와 제때 간 개체를 같은 체류시간으로 출발시켜 소진 시각을 비교한다.
+// 퇴장 게이트를 늘리지 않고도 "해소 실패 → 이탈"이 표현되는지가 이 결정의 핵심이었다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_UnrelievedAgentLeavesEarlier, "FestaFiesta.NPC.NeedRules.UnrelievedAgentLeavesEarlier", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_UnrelievedAgentLeavesEarlier::RunTest(const FString& Parameters)
+{
+	const FFF_NeedRiseRates Rates = MakeNeedRulesTestRates(/*Hunger=*/240.f, /*Restroom=*/150.f);
+	const FFF_NeedReliefFlags Toilet = MakeNeedRulesTestFlags(/*bHunger=*/false, /*bRestroom=*/true);
+	const FFF_NeedReliefAmounts Amounts;
+	const float DrainMultiplier = 2.0f;
+	const float StepMinutes = 10.f;
+
+	struct FSimResult
+	{
+		// 실제로 흐른 분. 체류 예산과 다른 값이다 — 예산은 이보다 빨리 빠진다
+		float MinutesUntilExit = 0.f;
+		float ExtraStayBudgetFromNeed = 0.f;
+	};
+
+	// 30분마다 화장실을 해결하는 개체 vs 한 번도 못 가는 개체
+	const auto SimulateRemainingStay = [&](bool bRelievePeriodically) -> FSimResult
+	{
+		FFF_NeedState Needs;
+		float RemainingStay = 240.f;
+		float ExtraFromNeed = 0.f;
+		float ElapsedTotal = 0.f;
+
+		while (RemainingStay > 0.f)
+		{
+			Needs = FFF_NeedRules::Advance(Needs, StepMinutes, Rates);
+			ElapsedTotal += StepMinutes;
+
+			if (bRelievePeriodically && FMath::IsNearlyZero(FMath::Fmod(ElapsedTotal, 30.f)))
+			{
+				Needs = FFF_NeedRules::Relieve(Needs, Toilet, Amounts);
+			}
+
+			const FFF_StayConsumption Consumption =
+				FFF_NeedRules::ConsumeStay(Needs, StepMinutes, DrainMultiplier);
+			RemainingStay -= Consumption.ConsumedStayBudgetMinutes;
+			ExtraFromNeed += Consumption.ExtraStayBudgetFromNeed;
+		}
+
+		FSimResult Result;
+		Result.MinutesUntilExit = ElapsedTotal;
+		Result.ExtraStayBudgetFromNeed = ExtraFromNeed;
+		return Result;
+	};
+
+	const FSimResult Relieved = SimulateRemainingStay(/*bRelievePeriodically=*/true);
+	const FSimResult Unrelieved = SimulateRemainingStay(/*bRelievePeriodically=*/false);
+
+	TestTrue(TEXT("해소 못 한 개체가 더 일찍 퇴장한다"),
+		Unrelieved.MinutesUntilExit < Relieved.MinutesUntilExit);
+	TestTrue(TEXT("해소 못 한 개체의 Need 몫 단축분이 더 크다"),
+		Unrelieved.ExtraStayBudgetFromNeed > Relieved.ExtraStayBudgetFromNeed);
+	TestTrue(TEXT("해소한 개체도 배고픔은 쌓이므로 240분보다는 일찍 나간다"),
+		Relieved.MinutesUntilExit < 240.f);
+
+	// 체류시간은 시계가 아니라 예산이다 — 예산 240 을 배수 2.0 으로 쓰면 실제로는 그 절반 만큼만
+	// 머문다. 이 관계를 못 지키면 "ConsumedStayBudgetMinutes 가 경과분보다 크다"가 모순이 된다.
+	TestTrue(TEXT("예산 240 을 배수 2.0 으로 쓰면 실제 체류는 120분에 가까워진다(하한)"),
+		Unrelieved.MinutesUntilExit >= 120.f);
+	TestTrue(TEXT("한계 Need 가 유지되면 실제 체류가 예산의 절반 근처까지 줄어든다"),
+		Unrelieved.MinutesUntilExit <= 180.f);
+
+	// 배수가 꺼져 있으면 둘 다 정확히 체류시간만큼 머문다 — 기능을 켜야만 차이가 생긴다
+	const FFF_StayConsumption Off = FFF_NeedRules::ConsumeStay(FFF_NeedState(), StepMinutes, 1.0f);
+	TestEqual(TEXT("기능이 꺼져 있으면 Need 와 무관하게 경과분만 소모"), Off.ConsumedStayBudgetMinutes, StepMinutes, 0.001f);
+	return true;
+}
+
+/**
+ * 상승과 해소는 짝이다 — 한쪽만 켜면 그 Need 가 전원에게 똑같이 걸린 상수가 된다.
+ *
+ * Relieve 는 해소량 0 인 성분을 "Phase 대기"로 보고 통째로 건너뛴다. 그래서 상승만 켜면
+ * 그 Need 는 1.0 에 붙어 영원히 안 내려오고, 시설을 골라도 아무 변화가 없다.
+ * 동적 끌림이 아니라 상수라 아무것도 구분하지 못하는데, 로그도 경고도 안 뜬다.
+ *
+ * 성분별로 따로 쓰지 않고 전수로 도는 이유: Thirst·Fatigue 를 나중에 켤 때도 같은 함정을 밟는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_RiseAndReliefAreEnabledInPairs, "FestaFiesta.NPC.NeedRules.RiseAndReliefAreEnabledInPairs", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_RiseAndReliefAreEnabledInPairs::RunTest(const FString& Parameters)
+{
+	const FFF_NeedRiseRates Rates;
+	const FFF_NeedReliefAmounts Amounts;
+
+	const TArray<TPair<EFF_NeedType, const TCHAR*>> Components = {
+		{ EFF_NeedType::Hunger,      TEXT("Hunger") },
+		{ EFF_NeedType::Thirst,      TEXT("Thirst") },
+		{ EFF_NeedType::Restroom,    TEXT("Restroom") },
+		{ EFF_NeedType::Fatigue,     TEXT("Fatigue") },
+		{ EFF_NeedType::Stimulation, TEXT("Stimulation") },
+	};
+
+	for (const TPair<EFF_NeedType, const TCHAR*>& Component : Components)
+	{
+		if (Rates.GetMinutesToLimit(Component.Key) <= 0.f)
+		{
+			// 안 쌓이는 성분은 해소량이 있든 없든 상관없다.
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(TEXT("%s 는 상승이 켜져 있으므로 해소량도 0 이 아니어야 한다"), Component.Value),
+			Amounts.Get(Component.Key) > 0.f);
+	}
+
+	// 이 테스트가 실제로 무언가를 지키고 있다는 것을 고정한다 — 전 성분이 꺼져 있으면
+	// 위 루프가 공허하게 통과한다.
+	TestTrue(TEXT("최소 한 성분은 켜져 있다"),
+		Rates.GetMinutesToLimit(EFF_NeedType::Hunger) > 0.f);
+
+	// Phase 2 가 켜져 있다는 사실 자체를 고정한다. 0 으로 되돌아가면 무대 쏠림(AT-016)이 사라지는데,
+	// 게이팅만 남아서 "무대가 열렸는데 아무도 안 간다"로 보인다 — 원인이 여기라는 단서가 필요하다.
+	TestTrue(TEXT("Stimulation Phase 2 가 켜져 있다"),
+		Rates.GetMinutesToLimit(EFF_NeedType::Stimulation) > 0.f);
+
 	return true;
 }
 

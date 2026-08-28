@@ -72,10 +72,16 @@ private:
 /**
  * Need 집계 지표 — UI·Report(CauseId 롤업)용 읽기 창구. 위 계산기를 감싸 델리게이트만 붙인다.
  *
- * === 현재 상태: 스텁 ===
- * 읽는 쪽(UI) 계약은 완성이고, 채우는 쪽이 없다. 
- * NPC 상태를 보관하는 런타임 층이 아직 없어서 `AddSample`을 부르는 코드가 존재하지 않는다.
- * 
+ * === 누가 채우는가 ===
+ * `UFF_CrowdSimulationSubsystem::AdvanceNeeds()` 가 채운다. Need 를 올리는 유닛 순회에
+ * 표본 수집을 얹은 것이라 집계 전용 순회가 따로 돌지 않는다.
+ *
+ * 확정 주기는 `NeedMetricsIntervalSteps`(기본 30스텝 = 1초)다. 매 프레임 확정하면
+ * `OnNeedUnmetRatioChanged` 가 초당 수십 번 뜬다. 그 순회는 Live 단계에서만 도므로
+ * Live 밖에서는 값이 마지막 확정값 그대로 멈춰 있다.
+ *
+ * 표본은 파티가 아니라 개인 단위다 — 지표의 정의가 "이 Need 가 미해소인 방문객 비율"이다.
+ *
  * 표본이 0이면 모든 미해소율은 0을 돌려주고 `GetSampleCount()`가 0이다
  * UI는 `GetSampleCount() == 0`을 "데이터 없음"으로 구분해서 0%와 혼동하지 말아야 한다.
  *
@@ -115,7 +121,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|NPC|Need")
 	FFF_OnNeedUnmetRatioChanged OnNeedUnmetRatioChanged;
 
-	// --- 쓰기 (NPC 런타임 — 아직 호출부 없음) ---
+	// --- 쓰기 (UFF_CrowdSimulationSubsystem::AdvanceNeeds 가 부른다) ---
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|NPC|Need")
 	void BeginAggregation() { Aggregator.Begin(); }

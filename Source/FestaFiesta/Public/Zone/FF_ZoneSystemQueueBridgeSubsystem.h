@@ -1,3 +1,10 @@
+// FF_ZoneSystemQueueBridgeSubsystem.h
+
+// FF_ZoneSystem 시설과 프로젝트 Party Queue 사이의 정책·상태 호환 브리지를 선언한다.
+// 흐름: Zone 시설 이벤트를 Queue ID·동선으로 투영하고 Party 점유 정책을 Zone 명령 검증에 되돌린다.
+// 불변식: 시설 수명주기는 Zone이, 실제 Party 대기열은 프로젝트 Queue가 각각 권위를 가진다.
+// 실패/수명: 이중 점유와 무효 투영은 fail-closed하며 브리지가 만든 등록만 해제한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -14,7 +21,8 @@ class UFF_QueueSubsystem;
 class UFFZSWorldSubsystem;
 
 /**
- * FF_ZoneSystem 시설을 프로젝트 UFF_QueueSubsystem에 등록하는 단방향 호환 브리지다.
+ * FF_ZoneSystem 시설을 프로젝트 UFF_QueueSubsystem에 투영하고 Party 점유 정책을 Zone 명령 검증에
+ * 되돌리는 양방향 계약 브리지다.
  *
  * 권한 구분:
  * - FF_ZoneSystem: 시설 ID·배치·설정·설치/이동/개폐 수명주기

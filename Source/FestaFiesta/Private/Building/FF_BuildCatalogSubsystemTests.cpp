@@ -1,4 +1,9 @@
-// FF_BuildCatalogModel.cpp
+// FF_BuildCatalogSubsystemTests.cpp
+
+// 카탈로그 비용 투영·결정적 정렬/그룹화·비동기 요청 세대 규칙을 순수 데이터로 검증한다.
+// 흐름: 최소 입력 Fixture 구성 -> 순수 모델 호출 -> 비용·순서·그룹·세대 결과 비교.
+// 불변식: 테스트는 런타임과 같은 FFBuildCatalogModel 함수를 호출하고 외부 에셋을 변경하지 않는다.
+// 실패/성능: 엔진 비동기 로드와 분리해 실패 원인을 규칙 단위로 좁히고 실행 비용을 작게 유지한다.
 
 #include "Building/FF_BuildCatalogModel.h"
 
@@ -6,10 +11,13 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "DataTables/FF_FacilityCostRow.h"
+#include "Engine/DataTable.h"
+#include "FF_FFZSFacilityDefinition.h"
 
 namespace
 {
-	//정렬·그룹화 규칙에 필요한 최소 필드만 채운 테스트 항목을 만듭니다.
+	// 정렬·그룹화 규칙에 필요한 최소 필드만 채운 테스트 항목을 만듭니다.
 	// PrimaryAssetId, Definition, Thumbnail 등 해당 순수 변환에 관여하지 않는 값은 기본값으로 두어
 	// 테스트 실패가 실제 비교 키와 그룹 키에만 집중되도록 합니다.
 	 
@@ -26,6 +34,60 @@ namespace
 		Entry.DisplayName = FText::FromString(DisplayName);
 		return Entry;
 	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_BuildCatalogInstallCostProjectionTest,
+	"FestaFiesta.Building.Catalog.InstallCostProjection",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
+	UDataTable* CostTable = NewObject<UDataTable>();
+	TestNotNull(TEXT("A transient Facility Definition is available"), Definition);
+	TestNotNull(TEXT("A transient facility cost table is available"), CostTable);
+	if (!Definition || !CostTable)
+	{
+		return false;
+	}
+
+	Definition->Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_PriceProjection");
+	Definition->Spec.Category = EFFZSFacilityCategory::Booth;
+	Definition->Spec.InstallCostKey = NAME_None;
+	CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
+	FFF_FacilityCostRow CostRow;
+	CostRow.InstallCost = 400;
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
+
+	FFF_BuildCatalogEntry Entry;
+	Entry.FacilityDefinitionId = Definition->Spec.FacilityDefinitionId;
+	FString FailureReason;
+	TestTrue(TEXT("The UI snapshot uses the production Major.Minor price resolver"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	TestTrue(TEXT("The projected catalog entry marks its price as resolved"),
+		Entry.bHasResolvedInstallCost);
+	TestEqual(TEXT("The projected FoodStall price is 400 Gold"), Entry.InstallCost, 400);
+	TestTrue(TEXT("The projected catalog entry marks its recovery cost as resolved"),
+		Entry.bHasResolvedRecoveryCost);
+	TestEqual(TEXT("The configured 50 percent recovery cost is 200 Gold"),
+		Entry.RecoveryCost, 200);
+	TestEqual(TEXT("The UI snapshot records the exact matched DataTable row"),
+		Entry.MatchedInstallCostRow, FName(TEXT("Cost.Booth.FoodStall")));
+
+	CostRow.InstallCost = 0;
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
+	TestFalse(TEXT("A non-positive price is not displayable"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	TestFalse(TEXT("A failed projection clears the resolved flag"),
+		Entry.bHasResolvedInstallCost);
+	TestFalse(TEXT("A failed projection clears the recovery-cost resolved flag"),
+		Entry.bHasResolvedRecoveryCost);
+	TestEqual(TEXT("A failed projection clears the recovery cost"), Entry.RecoveryCost, 0);
+	TestEqual(TEXT("A failed projection never leaves a misleading zero-price row"),
+		Entry.MatchedInstallCostRow, NAME_None);
+	return true;
 }
 
 // 에셋 발견 순서와 무관하게 평면 목록의 순서가 항상 같고, 그 정렬 결과가 메뉴 계층으로

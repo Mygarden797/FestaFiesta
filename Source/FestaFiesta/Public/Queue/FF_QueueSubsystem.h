@@ -12,7 +12,7 @@
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FFF_OnQueuePartyJoined,
 	int32, FacilityId, int32, PartyId, int32, SlotIndex, float, EstimatedWaitSeconds);
 
-// 가입 실패. Decision은 이걸 받고 재평가한다 (설계문서 8.2①의 FacilityRejected).
+// 가입 실패. Decision은 이걸 받고 재평가한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FFF_OnQueuePartyRejected,
 	int32, FacilityId, int32, PartyId, EFF_QueueJoinResult, Reason);
 
@@ -25,7 +25,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FFF_OnQueuePartyExited,
 	int32, FacilityId, int32, PartyId, EFF_QueueExit, ExitType, float, WaitedSeconds);
 
 // ── Queue → Crowd ───────────────────────────────────────────────────────────
-// 슬롯 목표 위치 배열. Crowd가 이 위치까지 "걸어서" 데려간다 (설계문서 8.2②).
+// 슬롯 목표 위치 배열. Crowd가 이 위치까지 "걸어서" 데려간다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnQueueSlotTargetsUpdated,
 	int32, FacilityId, const TArray<FFF_SlotAssignment>&, Assignments);
 
@@ -49,14 +49,14 @@ struct FFF_QueueJoinResponse
 };
 
 /**
- * 모든 시설 대기열의 소유자 (설계문서 2장 · 장원재).
+ * 모든 시설 대기열의 소유자.
  *
  * WorldSubsystem인 이유: 대기열은 레벨에 배치된 시설에 붙어 있고 레벨이 바뀌면 사라져야 한다.
  * (UFF_FestivalStageSubsystem은 축제 전체 진행이라 GameInstance가 맞다 — 수명이 다르다.)
  *
  * 경계:
  *   - 트랜스폼을 건드리지 않는다. OnSlotTargetsUpdated로 목표만 알린다.
- *   - Crowd·Decision을 폴링하지 않는다. 이벤트와 스냅샷만 쓴다 (설계문서 원칙 3).
+ *   - Crowd·Decision을 폴링하지 않는다. 이벤트와 스냅샷만 쓴다.
  *   - 대기 중인 NPC를 Crowd에서 빼지 않는다. 밀도 집계에 그대로 잡혀야 한다 (8.4).
  *
  * 결정론: 실시간 Tick은 고정 스텝(SimulationStepSeconds)으로 쪼개서 코어를 돌린다.
@@ -83,7 +83,7 @@ public:
 
 	// ── 가입 · 이탈 ─────────────────────────────────────────────────────────
 	/**
-	 * Party 단위 전부-아니면-전무 가입 (설계문서 8.2①).
+	 * Party 단위 전부-아니면-전무 가입.
 	 * 결과는 반환값으로 즉시 온다. 이벤트는 관찰자용이라 다음 Tick에 브로드캐스트된다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Queue")
@@ -148,7 +148,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Queue")
 	void FlushPendingEvents();
 
-	// ── 로그 (설계문서 10.2 · P0 산출물) ────────────────────────────────────
+	// ── 로그 ────────────────────────────────────────────────────────────────
 	// UHT가 UFUNCTION의 TArray const& 반환을 허용하지 않아 값으로 돌려준다.
 	// 핫패스에서 부르지 말 것 — 로그 전량 복사다.
 	UFUNCTION(BlueprintPure, Category = "Queue|Log")
@@ -184,7 +184,7 @@ public:
 	FFF_OnQueueSlotTargetsUpdated OnSlotTargetsUpdated;
 
 	// ── 설정 ────────────────────────────────────────────────────────────────
-	// 30Hz. 설계문서 3.1의 스냅샷 권장 주기(30틱)와 맞춰뒀다.
+	// 30Hz. 스냅샷 권장 주기(30틱)와 맞춰뒀다.
 	UPROPERTY(EditDefaultsOnly, Category = "Queue|Config")
 	float SimulationStepSeconds = 1.f / 30.f;
 

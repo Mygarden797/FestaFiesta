@@ -26,6 +26,14 @@ class FFFZSWorldCommandLifecycleSnapshotTest;
 class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
 #endif
 
+UENUM(BlueprintType)
+enum class EFFZSFacilitySelectionIndicatorState : uint8
+{
+    Hidden,
+    Hovered,
+    Selected
+};
+
 //데이터 주도 시설 런타임 인스턴스.
 // 새 수치나 비주얼 차이는 FFFZSFacilitySpec으로 표현하고, 실제로 새로운 행동 능력이 필요할 때만 서브클래스를 만든다.
 // 권한 수명주기 변경은 friend인 UFFZSWorldSubsystem만 호출한다.
@@ -45,6 +53,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UStaticMeshComponent> VisualMesh;
     // FacilitySpec.VisualMesh를 비동기 표시하는 비권한 표현 캐시다. 
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
+    TObjectPtr<UBoxComponent> SelectionProxy;
+    // 비주얼 충돌과 분리된 선택 전용 Query Box. 물리·Nav·Overlap에는 참여하지 않는다.
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UBoxComponent> FootprintBounds;
@@ -101,8 +113,23 @@ public:
     // 건축 모드에서 footprint·clearance·queue 예약 범위를 정확한 압축 사각형 단위로 표시하거나 숨긴다.
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
+    void SetBuildModeActionSelected(bool bSelected);
+    // 이동·철거 액션을 고르는 동안 선택된 시설의 footprint를 청록색 굵은 선으로 강조한다.
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation")
+    void SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState NewState);
+    // 실제 SelectionProxy를 표시해 Hover·정보 선택 상태와 클릭 가능한 범위를 같은 기하로 보여 준다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Presentation")
+    EFFZSFacilitySelectionIndicatorState GetSelectionIndicatorState() const
+    {
+        return SelectionIndicatorState;
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Presentation",
+        meta = (DeprecatedFunction, DeprecationMessage = "Use SetBuildModeActionSelected."))
     void SetBuildModeRemovalSelected(bool bSelected);
-    // 철거 확인 대상으로 선택된 시설의 footprint를 빨간색 굵은 선으로 강조하거나 원래 표시로 되돌린다.
+    // 기존 Blueprint 호환용 이름이다. 선택 표현은 SetBuildModeActionSelected와 동일하다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Presentation")
     bool IsWorldPointInsideFootprint(const FVector& WorldPoint) const;
@@ -175,7 +202,7 @@ private:
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     FFFZSGridPlacement GridPlacement;
-    // 현재 존 로컬 배치다. QuarterTurns는 항상 0..3이다. 
+    // 현재 존 로컬 배치다. YawCentidegrees는 항상 0..35999이고 레거시 QuarterTurns는 0이다.
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     EFFZSFacilityState FacilityState = EFFZSFacilityState::Planned;
@@ -193,8 +220,14 @@ private:
     TObjectPtr<ULineBatchComponent> BuildModeRangeLines;
     // clearance·queue 압축 사각형을 한 Scene Proxy로 묶는 비권위 범위 표현이다.
 
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Navigation", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UBoxComponent> NavigationObstacleBounds;
+    // 등록된 시설의 고형 footprint만 NavArea_Null로 반영하는 Nav 전용 Box다.
+
     bool bBuildModeRangeVisible = false;
-    bool bBuildModeRemovalSelected = false;
+    bool bBuildModeActionSelected = false;
+    EFFZSFacilitySelectionIndicatorState SelectionIndicatorState =
+        EFFZSFacilitySelectionIndicatorState::Hidden;
 
     // 일반 폐장 콜백 재진입 뒤 큐가 완전히 비면 MovePending으로 전환하려는 의도 플래그다. 
     bool bSetMovePendingWhenDrained = false;
@@ -202,6 +235,8 @@ private:
     TSharedPtr<FStreamableHandle> VisualLoadHandle;
 
     void RebuildRuntimePresentation();
+    void RebuildSelectionProxy(const FVector& SelectionExtent);
+    void SetNavigationObstacleEnabled(bool bEnabled);
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
     void RebuildAnchors();

@@ -1,5 +1,10 @@
 // FF_BuildTopButtonStyle.h
 
+// 건설 카탈로그 상단 액션 버튼의 배경을 모든 입력 상태에서 투명하게 유지하는 스타일을 선언한다.
+// 흐름: 네이티브 생성자에서 상태 브러시·여백·크기 기본값을 한 번 구성한다.
+// 불변식: Normal·Selected·Disabled의 모든 배경 브러시는 NoDraw 상태다.
+// 실패/수명: 클릭 영역은 WBP Root_Size가 보장하며 스타일 객체는 런타임 자원을 소유하지 않는다.
+
 #pragma once
 
 #include "CoreMinimal.h"
