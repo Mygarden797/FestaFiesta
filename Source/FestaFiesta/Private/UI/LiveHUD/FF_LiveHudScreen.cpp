@@ -472,6 +472,11 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 		return;
 	}
 
+	if (Layout.Dock == EFF_LivePanelDock::Designer)
+	{
+		return;
+	}
+
 	UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Panel_PanelHost->Slot);
 	if (!CanvasSlot)
 	{
@@ -490,22 +495,46 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 	// === CanvasPanelSlot 의 Offsets 는 앵커에 따라 뜻이 달라진다 ===
 	// 늘어난 축(min != max)이면 양쪽 **여백**이고, 점 앵커면 **위치와 크기**다.
 	//
-	// 🔴 **두 축 다 점 앵커로 둔다** (2026-08-28 실측 후 변경).
+	// 🔴 **어느 방향이든 두 축 다 점 앵커로 둔다** (2026-08-28 실측 후 변경).
 	// 전에는 세로를 늘어난 축으로 두고 위아래 여백만 줬는데, 그러면 높이를 **부모가**
 	// 정한다. 그런데 HUD 루트가 화면 높이를 못 받고 있어서 높이가 `-12` 로 나왔고
 	// 화면에는 닫기 버튼만 한 흰 상자가 떴다. 준비 단계 패널이 멀쩡한 것은 실제로 쓰는
 	// 도킹이 전부 점 앵커 + 명시 크기라 부모 높이를 안 보기 때문이다.
 	//
-	// 기준점은 **화면 왼쪽 아래**다. 거기서 바 높이만큼 띄우고 위로 자란다 —
-	// 바를 기준으로 잡아야 패널이 바 뒤로 들어가 탭을 가리는 일이 없다.
+	// 세로 기준점은 어느 쪽이든 **하단 바 위**다. 바를 기준으로 잡아야 패널이 바 뒤로
+	// 들어가 탭을 가리는 일이 없다.
 	//   Left = X 위치, Top = Y 위치(음수 = 위로), Right = 폭, Bottom = 높이
-	CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
-	CanvasSlot->SetAlignment(FVector2D(0.f, 1.f));
-	CanvasSlot->SetOffsets(FMargin(
-		PanelMargin + static_cast<float>(Layout.Offset.X),
-		-(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y),
-		Layout.Width,
-		Layout.Height));
+	const float PanelTop = -(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y);
+
+	switch (Layout.Dock)
+	{
+	case EFF_LivePanelDock::Center:
+		// 가로 가운데. 준비 단계에서 탭을 눌렀을 때와 같은 자리다.
+		CanvasSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
+		CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+		CanvasSlot->SetOffsets(FMargin(
+			static_cast<float>(Layout.Offset.X), PanelTop, Layout.Width, Layout.Height));
+		break;
+
+	case EFF_LivePanelDock::Left:
+		CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));
+		CanvasSlot->SetAlignment(FVector2D(0.f, 1.f));
+		CanvasSlot->SetOffsets(FMargin(
+			PanelMargin + static_cast<float>(Layout.Offset.X), PanelTop, Layout.Width, Layout.Height));
+		break;
+
+	case EFF_LivePanelDock::Right:
+		// 오른쪽 정렬이라 X 는 음수 방향으로 민다.
+		CanvasSlot->SetAnchors(FAnchors(1.f, 1.f, 1.f, 1.f));
+		CanvasSlot->SetAlignment(FVector2D(1.f, 1.f));
+		CanvasSlot->SetOffsets(FMargin(
+			-PanelMargin + static_cast<float>(Layout.Offset.X), PanelTop, Layout.Width, Layout.Height));
+		break;
+
+	case EFF_LivePanelDock::Designer:
+		// 손으로 잡은 자리를 그대로 쓴다. 여기서 손대면 디자이너 작업이 매번 사라진다.
+		break;
+	}
 }
 
 // =============================================================================

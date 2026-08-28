@@ -34,19 +34,57 @@ enum class EFF_LiveTab : uint8
 /**
  * 라이브 패널 하나가 열릴 자리. **탭 하나 = 한 줄**이다.
  *
- * === 준비 단계와 달리 방향이 하나다 ===
- * 라이브 패널은 **전부 왼쪽에 연다** (U6 계획 · 리포트도 왼쪽이다). 운영 중에는 월드를 계속
- * 봐야 해서 화면 가운데를 덮으면 안 되고, 자리가 탭마다 다르면 눈이 매번 다시 찾아야 한다.
- * 그래서 준비 단계의 `EFF_PrepPanelDock` 같은 방향 값을 두지 않았다 — 폭만 정하면 된다.
+ * === 2026-08-28 정정 — 준비 단계와 같은 자리에서 연다 ===
+ * 원래 계획은 `전부 왼쪽` 이었다 (운영 중에는 월드를 계속 봐야 한다는 이유). 실기에서 보니
+ * **같은 동작인데 자리가 다른 것**이 더 걸렸다 — 셋업에서 탭을 누르면 버튼 위 가운데에 뜨는데
+ * 라이브만 왼쪽에서 나왔다. 화면이 바뀌었다고 조작 규칙까지 바뀌면 안 된다.
  *
- * ★ 왼쪽에 열려도 **모달이 아니다.** 시간은 계속 흐르고 하단 바도 위에 남는다 (AGENTS.md 규칙 1).
+ * 그래서 방향을 `EFF_LivePanelDock` 으로 두고 기본을 `Center` 로 한다. 월드를 계속 봐야 하는
+ * 탭이 나오면 그 줄만 `Left` 로 뺀다 — 준비 단계에서 `배치` 만 `Bottom` 인 것과 같은 기준이다.
+ *
+ * ★ 가운데에 열려도 **모달이 아니다.** 시간은 계속 흐르고 하단 바도 위에 남는다 (AGENTS.md 규칙 1).
  *
  * 좌표 기준은 1920x1080 이고 화면 배율은 엔진이 처리한다 (`UIScaleRule=ShortestSide`).
  */
+/**
+ * 라이브 패널이 열리는 쪽.
+ *
+ * === 2026-08-28 결정 — 준비 단계와 같은 자리에서 연다 ===
+ * 처음에는 왼쪽 고정이었다. 실기에서 보니 **같은 동작인데 자리가 다른 것**이 이상했다 —
+ * 셋업에서 탭을 누르면 버튼 위 가운데에 뜨는데 라이브만 왼쪽에서 나왔다.
+ * 화면이 바뀌었다고 조작 규칙까지 바뀌면 안 된다.
+ *
+ * 그래서 기본은 `Center` 다. 다만 **월드를 봐야 하는 탭은 `Left` 로 뺀다** — 준비 단계의
+ * `배치` 를 `Bottom` 으로 둔 것과 같은 기준이다 (`EFF_PrepPanelDock` 주석의 표).
+ * 지금은 `운영` 하나뿐이라 전부 기본값을 쓴다.
+ *
+ * 🔴 **어느 값이든 크기는 명시한다.** 늘어난 축으로 두면 높이를 부모가 정하는데,
+ * HUD 루트가 화면 높이를 못 받고 있어서 음수 높이가 나온 적이 있다 (2026-08-28).
+ */
+UENUM(BlueprintType)
+enum class EFF_LivePanelDock : uint8
+{
+	/** 하단 바 바로 위 가운데. 표·숫자를 읽는 탭용 — 준비 단계와 같은 자리다. */
+	Center	UMETA(DisplayName = "가운데"),
+
+	/** 왼쪽. 월드를 계속 봐야 하는 탭용 — 화면 가운데를 비워 둔다. */
+	Left	UMETA(DisplayName = "왼쪽"),
+
+	/** 오른쪽. */
+	Right	UMETA(DisplayName = "오른쪽"),
+
+	/** 코드가 자리를 건드리지 않는다. 디자이너에서 잡은 위치를 그대로 쓴다. */
+	Designer	UMETA(DisplayName = "디자이너 지정")
+};
+
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_LivePanelLayout
 {
 	GENERATED_BODY()
+
+	/** 어느 쪽에 열지. 기본은 준비 단계와 같은 `가운데` 다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
+	EFF_LivePanelDock Dock = EFF_LivePanelDock::Center;
 
 	/** 패널 폭(px). 0 이하면 패널이 사라지므로 그때는 기본값으로 되돌린다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
@@ -70,7 +108,9 @@ struct FESTAFIESTA_API FFF_LivePanelLayout
 	float Height = 620.f;
 
 	/**
-	 * 하단 바 왼쪽 위 모서리 기준으로 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
+	 * 기준점에서 미는 양(px). 양수 X 는 오른쪽, 양수 Y 는 아래.
+	 *
+	 * 기준점은 `Dock` 이 정한다 — `Center` 는 하단 바 위 가운데, `Left`·`Right` 는 그쪽 모서리.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Live Panel Layout")
 	FVector2D Offset = FVector2D::ZeroVector;
