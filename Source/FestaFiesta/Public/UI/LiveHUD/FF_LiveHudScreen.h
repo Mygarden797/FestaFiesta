@@ -9,6 +9,7 @@
 #include "FF_LiveHudScreen.generated.h"
 
 class UBorder;
+class UImage;
 class UButton;
 class UFF_FestivalViewModelSubsystem;
 class UFF_LivePanelBase;
@@ -90,10 +91,11 @@ protected:
 	void HandleTodayRevenueChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleSimSatisfactionChanged(int32 NewValue);
+	void HandleArrearsChanged(int32 NewValue);
 
+	/** 전체 인원과 가용 인원 **양쪽**이 이 핸들러를 부른다. 인자를 믿지 않는다. */
 	UFUNCTION()
-	void HandleSafetyChanged(int32 NewValue);
+	void HandleStaffCountChanged(int32 NewValue);
 
 	/** 탭 버튼 클릭. 베이스가 `int32` 로 주므로 여기서 되돌려 해석한다. */
 	void HandleTabButtonClicked(int32 TabId);
@@ -158,29 +160,36 @@ protected:
 	// 값이 없으면 `Box_*` 묶음째 접는다. 숫자만 숨기면 옆의 아이콘과 구분선이 남아
 	// "관객 아이콘 옆에 아무것도 없는" 화면이 된다.
 
-	/** 현재 관객 수. **소유자 없음** — 값이 오기 전에는 칸을 숨긴다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UTextBlock> Text_VisitorCount;
+	// === 왼쪽 묶음 — 준비 단계 바와 같은 순서다 (2026-08-27 백종태 요청) ===
+	// 축제 → 금화 → 미납 → 오늘 매출 → 인력 → 관객.
+	// 두 화면이 같은 자리에 같은 값을 두면 단계가 바뀌어도 눈이 다시 찾지 않는다.
+	//
+	// ★ 관객 만족도·안전은 여기 없다. **운영 패널로 옮겼다** (U6 계획).
+	//   바에 지표까지 늘어놓으면 왼쪽이 화면 절반을 넘어 가운데 칩과 겹친다.
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UWidget> Box_VisitorCount;
+	TObjectPtr<UTextBlock> Text_FestivalName;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UWidget> Box_FestivalName;
+
+	/** 지금 쓸 수 있는 잔액. 지출로 줄어든다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UTextBlock> Text_Gold;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UWidget> Box_Gold;
 
 	/**
-	 * ★ 라벨은 `관객 만족도` 다. **`SimSatisfaction` 하나만 쓴다.**
-	 * Live 중에는 FinaleBonus 가 없어 `ScoreSatisfaction` 과 값이 같다 — 같은 숫자를
-	 * 두 번 띄우면 다른 지표로 읽힌다 (U6 계획).
+	 * ★ 밀린 임대료. **잔액 바로 옆에 둔다.**
+	 * 미납이 있으면 매출이 들어와도 잔액이 안 늘어나므로 이 칸이 없으면 설명이 안 된다.
+	 * 0 이면 칸을 숨긴다.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UTextBlock> Text_Satisfaction;
+	TObjectPtr<UTextBlock> Text_Arrears;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UWidget> Box_Satisfaction;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UTextBlock> Text_Safety;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UWidget> Box_Safety;
+	TObjectPtr<UWidget> Box_Arrears;
 
 	/** 오늘 매출. **보유 금화와 다른 값이다** — 잔액은 지출로 줄어든다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
@@ -189,23 +198,56 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
 	TObjectPtr<UWidget> Box_TodayRevenue;
 
+	/**
+	 * `6명 중 4명 사용 가능`. **전체만 띄우지 않는다** — 프로그램에 묶인 인원은
+	 * Event 대응에 못 쓴다. 라이브에서는 그 구분이 준비 단계보다 더 중요하다.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UTextBlock> Text_Gold;
+	TObjectPtr<UTextBlock> Text_Staff;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UWidget> Box_Gold;
+	TObjectPtr<UWidget> Box_Staff;
+
+	/** 현재 관객 수. **소유자 없음** — 값이 오기 전에는 칸을 숨긴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UTextBlock> Text_VisitorCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UWidget> Box_VisitorCount;
+
+	// === 가운데 칩 — `● 1일차 · 라이브` ===
 
 	/**
-	 * 게임 속 시각 (`19:42`)과 남은 시간을 합친 한 줄. 화면 정중앙에 놓는다.
+	 * 준비 단계 바의 `1일차 · 셋업` 과 같은 자리다. 앞의 칸이 접힐 때마다 위치가
+	 * 흔들리지 않게 화면 정중앙에 고정한다.
 	 *
-	 * 준비 단계 바의 `1일차 · 셋업` 과 같은 자리다 — 앞의 칸이 접힐 때마다 위치가
-	 * 흔들리지 않게 가운데에 고정한다.
+	 * 🔴 **단계 이름을 enum 에서 읽지 않는다.** `GetCurrentStageDisplayText()` 는
+	 * `UMETA(DisplayName)` 을 런타임에 조회해서 패키징 빌드에 영문이 뜬다
+	 * (2026-08-19 김시리 정정). 이 HUD 는 라이브에서만 뜨므로 `라이브` 를 그냥 쓴다.
 	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UTextBlock> Text_DayStage;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UBorder> Border_DayStage;
+
+	/**
+	 * 방송 중을 뜻하는 빨간 점.
+	 *
+	 * !! 이것만으로 상태를 말하지 않는다 !! 바로 옆에 `라이브` 라는 글자가 함께 있다 —
+	 * 점은 그 글자를 거드는 장식이다 (AT-011).
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<UImage> Image_LiveDot;
+
+	// === 오른쪽 — 시계 · 배속 ===
+
+	/** 게임 속 시각과 남은 시간 (`19:42 · 남은 128초`). **배속 버튼 왼쪽**에 둔다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
 	TObjectPtr<UTextBlock> Text_Clock;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UBorder> Border_Clock;
+	TObjectPtr<UWidget> Box_Clock;
 
 	// --- 배속 ---
 

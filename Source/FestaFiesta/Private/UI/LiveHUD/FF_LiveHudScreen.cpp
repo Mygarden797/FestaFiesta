@@ -10,6 +10,7 @@
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
@@ -132,8 +133,12 @@ void UFF_LiveHudScreen::BindViewModel()
 	CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
-	CachedViewModel->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleSimSatisfactionChanged);
-	CachedViewModel->OnSafetyChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleSafetyChanged);
+	CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleArrearsChanged);
+
+	// 🔴 전체 인원과 가용 인원 **둘 다** 받는다. 프로그램 편성은 전체를 바꾸지 않고,
+	// 알바 고용은 편성을 바꾸지 않는다 — 하나만 받으면 한쪽 변화를 놓친다.
+	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
+	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
 }
 
 void UFF_LiveHudScreen::UnbindViewModel()
@@ -145,8 +150,9 @@ void UFF_LiveHudScreen::UnbindViewModel()
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
-		CachedViewModel->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleSimSatisfactionChanged);
-		CachedViewModel->OnSafetyChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleSafetyChanged);
+		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleArrearsChanged);
+		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
+		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -460,40 +466,59 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 		return;
 	}
 
-	// ★ 라벨은 `관객 만족도` 다. Live 중에는 FinaleBonus 가 없어 `ScoreSatisfaction` 과
-	//   값이 같으므로 같은 숫자를 두 번 띄우지 않는다 (U6 계획).
-	SetGroupTextOrHide(Box_Satisfaction, Text_Satisfaction,
-		FText::AsNumber(ViewModel->GetSimSatisfaction()));
+	// --- 왼쪽: 축제 → 금화 → 미납 → 오늘 매출 → 인력 → 관객 ---
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	SetGroupTextOrHide(Box_FestivalName, Text_FestivalName,
+		Flow ? Flow->GetActiveFestivalDisplayName() : FText::GetEmpty());
 
-	SetGroupTextOrHide(Box_Safety, Text_Safety,
-		FText::AsNumber(ViewModel->GetSafety()));
+	SetGroupTextOrHide(Box_Gold, Text_Gold,
+		FText::AsNumber(ViewModel->GetGold()));
+
+	// 미납은 0 이면 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다.
+	const int32 Arrears = ViewModel->GetArrears();
+	SetGroupTextOrHide(Box_Arrears, Text_Arrears, (Arrears > 0)
+		? FText::Format(LOCTEXT("LiveStatus_Arrears", "미납 {0}"), FText::AsNumber(Arrears))
+		: FText::GetEmpty());
 
 	SetGroupTextOrHide(Box_TodayRevenue, Text_TodayRevenue,
 		FText::AsNumber(ViewModel->GetTodayRevenue()));
 
-	SetGroupTextOrHide(Box_Gold, Text_Gold,
-		FText::AsNumber(ViewModel->GetGold()));
+	// 🔴 전체만 띄우지 않는다. 프로그램에 묶인 인원은 Event 대응에 못 쓴다 —
+	// 라이브에서는 그 구분이 준비 단계보다 더 중요하다.
+	const int32 TotalStaff = ViewModel->GetTotalStaffCount();
+	const int32 AvailableStaff = ViewModel->GetAvailableStaffCount();
+	SetGroupTextOrHide(Box_Staff, Text_Staff, (TotalStaff >= 0 && AvailableStaff >= 0)
+		? FText::Format(
+			LOCTEXT("LiveStatus_Staff", "{0}명 중 {1}명 사용 가능"),
+			FText::AsNumber(TotalStaff), FText::AsNumber(AvailableStaff))
+		: FText::GetEmpty());
 
 	// 소유자 API 가 없는 칸. **못 읽었으면 숨긴다** — 0 을 띄우면 "관객이 없다"는 틀린 사실이 된다.
 	SetGroupTextOrHide(Box_VisitorCount, Text_VisitorCount,
 		(VisitorCount >= 0) ? FText::AsNumber(VisitorCount) : FText::GetEmpty());
 
-	// 시계와 남은 시간을 한 줄로 합친다. Live 가 아니면 시계가 비어 있다.
+	// --- 가운데: `1일차 · 라이브` ---
+	//
+	// 🔴 단계 이름을 `GetCurrentStageDisplayText()` 로 읽지 않는다. 그쪽은 `UMETA(DisplayName)`
+	// 을 런타임에 조회해서 패키징 빌드에 영문이 뜬다. 이 HUD 는 라이브에서만 뜨므로 박아도 된다.
+	SetTextOrHide(Text_DayStage, FText::Format(
+		LOCTEXT("LiveStatus_DayStage", "{0}일차 · 라이브"),
+		FText::AsNumber(ViewModel->GetCurrentDay())));
+
+	if (Border_DayStage)
+	{
+		Border_DayStage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	// --- 오른쪽: 시계. 배속 버튼 왼쪽에 온다 ---
 	const FText ClockText = ViewModel->GetLiveClockText();
 	const int32 RemainingSeconds = FMath::Max(0, FMath::CeilToInt(ViewModel->GetRemainingSeconds()));
 
-	SetTextOrHide(Text_Clock, ClockText.IsEmpty()
+	SetGroupTextOrHide(Box_Clock, Text_Clock, ClockText.IsEmpty()
 		? FText::GetEmpty()
 		: FText::Format(
 			LOCTEXT("LiveStatus_Clock", "{0} · 남은 {1}초"),
 			ClockText, FText::AsNumber(RemainingSeconds)));
-
-	if (Border_Clock)
-	{
-		Border_Clock->SetVisibility(ClockText.IsEmpty()
-			? ESlateVisibility::Collapsed
-			: ESlateVisibility::SelfHitTestInvisible);
-	}
 }
 
 void UFF_LiveHudScreen::RefreshSpeed()
@@ -571,13 +596,15 @@ void UFF_LiveHudScreen::HandleTodayRevenueChanged(int32 NewValue)
 	RefreshStatusRow();
 }
 
-void UFF_LiveHudScreen::HandleSimSatisfactionChanged(int32 NewValue)
+void UFF_LiveHudScreen::HandleArrearsChanged(int32 NewValue)
 {
 	RefreshStatusRow();
 }
 
-void UFF_LiveHudScreen::HandleSafetyChanged(int32 NewValue)
+void UFF_LiveHudScreen::HandleStaffCountChanged(int32 NewValue)
 {
+	// !! 인자를 쓰지 않는다 !! 전체 인원과 가용 인원 두 델리게이트가 함께 부른다.
+	// 인자를 믿으면 가용 인원이 울렸을 때 그 숫자가 전체 자리에 들어간다.
 	RefreshStatusRow();
 }
 

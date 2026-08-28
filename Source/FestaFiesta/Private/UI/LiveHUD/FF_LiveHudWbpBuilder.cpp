@@ -350,11 +350,14 @@ namespace FFLiveHudWbpBuilder
 		UOverlay* StatusOverlay = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Status"));
 		UHorizontalBox* StatusLeft = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_StatusLeft"));
 		UHorizontalBox* StatusRight = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_StatusRight"));
-		UBorder* ClockChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Clock"), true);
-		UTextBlock* ClockText = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Clock"), true);
+		UBorder* DayStageChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_DayStage"), true);
+		UHorizontalBox* DayStageRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_DayStage"));
+		UImage* LiveDot = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_LiveDot"), true);
+		UTextBlock* DayStageText = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_DayStage"), true);
 
 		if (!Root || !PanelHost || !BarBox || !BarRows || !MenuRow || !TabRow || !StatusRow
-			|| !StatusOverlay || !StatusLeft || !StatusRight || !ClockChip || !ClockText)
+			|| !StatusOverlay || !StatusLeft || !StatusRight
+			|| !DayStageChip || !DayStageRow || !LiveDot || !DayStageText)
 		{
 			return false;
 		}
@@ -435,27 +438,35 @@ namespace FFLiveHudWbpBuilder
 			Slot_StatusRow->SetHorizontalAlignment(HAlign_Fill);
 		}
 
-		// --- 왼쪽 묶음. 관객 → 만족도 → 안전 순서. 운영 중 가장 자주 보는 셋이다 ---
+		// --- 왼쪽 묶음. **준비 단계 바와 같은 순서다** (2026-08-27 백종태 요청) ---
+		// 축제 → 금화 → 미납 → 오늘 매출 → 인력 → 관객.
+		// ★ 미납은 잔액 바로 옆이어야 "매출이 들어와도 잔액이 안 느는" 것이 설명된다.
 		const bool bLeftCellsOk =
 			AddStatusCell(Blueprint, Tree, *StatusLeft,
-				TEXT("Box_VisitorCount"), TEXT("Text_VisitorCount"),
-				LOCTEXT("LiveStatusPreview_Visitors", "1,240"), Palette->InGame.Ink)
+				TEXT("Box_FestivalName"), TEXT("Text_FestivalName"),
+				LOCTEXT("LiveStatusPreview_Festival", "다대포 바다축제"), Palette->InGame.Ink)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
-				TEXT("Box_Satisfaction"), TEXT("Text_Satisfaction"),
-				LOCTEXT("LiveStatusPreview_Satisfaction", "72"), Palette->InGame.Ink)
+				TEXT("Box_Gold"), TEXT("Text_Gold"),
+				LOCTEXT("LiveStatusPreview_Gold", "7,600"), Palette->InGame.Ink)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
-				TEXT("Box_Safety"), TEXT("Text_Safety"),
-				LOCTEXT("LiveStatusPreview_Safety", "88"), Palette->InGame.Ink);
-
-		// --- 오른쪽 묶음. 오늘 매출 → 잔액 → 배속 ---
-		// ★ 매출과 잔액은 **다른 값이다.** 나란히 두되 라벨로 구분한다.
-		const bool bRightCellsOk =
-			AddStatusCell(Blueprint, Tree, *StatusRight,
+				TEXT("Box_Arrears"), TEXT("Text_Arrears"),
+				LOCTEXT("LiveStatusPreview_Arrears", "미납 2,400"), Palette->InGame.Danger)
+			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_TodayRevenue"), TEXT("Text_TodayRevenue"),
 				LOCTEXT("LiveStatusPreview_Revenue", "3,200"), Palette->InGame.Ink)
-			&& AddStatusCell(Blueprint, Tree, *StatusRight,
-				TEXT("Box_Gold"), TEXT("Text_Gold"),
-				LOCTEXT("LiveStatusPreview_Gold", "7,600"), Palette->InGame.Ink);
+			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
+				TEXT("Box_Staff"), TEXT("Text_Staff"),
+				LOCTEXT("LiveStatusPreview_Staff", "6명 중 4명 사용 가능"), Palette->InGame.Ink)
+			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
+				TEXT("Box_VisitorCount"), TEXT("Text_VisitorCount"),
+				LOCTEXT("LiveStatusPreview_Visitors", "1,240"), Palette->InGame.Ink);
+
+		// --- 오른쪽 묶음. 시계 → 배속 ---
+		// ★ 시계를 배속 **왼쪽**에 둔다 (2026-08-27 요청). 관객 만족도·안전은 운영 패널로 갔다.
+		const bool bRightCellsOk =
+			AddStatusCell(Blueprint, Tree, *StatusRight,
+				TEXT("Box_Clock"), TEXT("Text_Clock"),
+				LOCTEXT("LiveStatusPreview_Clock", "19:42 · 남은 128초"), Palette->InGame.InkMuted);
 
 		if (!bLeftCellsOk || !bRightCellsOk)
 		{
@@ -500,17 +511,34 @@ namespace FFLiveHudWbpBuilder
 			Slot_SpeedBox->SetVerticalAlignment(VAlign_Center);
 		}
 
-		// --- 중앙 칩. 어두운 판 + 흰 글씨라 밝은 상태 행 위에서 이 한 줄만 도드라진다 ---
-		ClockChip->SetBrush(MakeSolidBrush(Palette->InGame.TealDeep, 4.f));
-		ClockChip->SetPadding(FMargin(14.f, 2.f));
+		// --- 중앙 칩 `● 1일차 · 라이브`. 어두운 판 + 흰 글씨라 이 한 줄만 도드라진다 ---
+		DayStageChip->SetBrush(MakeSolidBrush(Palette->InGame.TealDeep, 4.f));
+		DayStageChip->SetPadding(FMargin(14.f, 2.f));
 
-		StyleText(*ClockText, 12, Palette->InGame.White, TEXT("SemiBold"));
-		ClockText->SetText(LOCTEXT("LiveStatusPreview_Clock", "19:42 · 남은 128초"));
-		ClockText->SetJustification(ETextJustify::Center);
-		if (UBorderSlot* Slot_ClockText = Cast<UBorderSlot>(ClockChip->AddChild(ClockText)))
+		// 방송 중을 뜻하는 빨간 점.
+		// !! 이것만으로 상태를 말하지 않는다 !! 바로 옆에 `라이브` 라는 글자가 있다 (AT-011).
+		LiveDot->SetBrush(MakeSolidBrush(Palette->InGame.Danger, 4.f));
+		LiveDot->SetDesiredSizeOverride(FVector2D(8.f, 8.f));
+		if (UHorizontalBoxSlot* Slot_Dot = DayStageRow->AddChildToHorizontalBox(LiveDot))
 		{
-			Slot_ClockText->SetHorizontalAlignment(HAlign_Center);
-			Slot_ClockText->SetVerticalAlignment(VAlign_Center);
+			Slot_Dot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Dot->SetVerticalAlignment(VAlign_Center);
+			Slot_Dot->SetPadding(FMargin(0.f, 0.f, 8.f, 0.f));
+		}
+
+		StyleText(*DayStageText, 12, Palette->InGame.White, TEXT("SemiBold"));
+		DayStageText->SetText(LOCTEXT("LiveStatusPreview_DayStage", "1일차 · 라이브"));
+		DayStageText->SetJustification(ETextJustify::Center);
+		if (UHorizontalBoxSlot* Slot_DayStageText = DayStageRow->AddChildToHorizontalBox(DayStageText))
+		{
+			Slot_DayStageText->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_DayStageText->SetVerticalAlignment(VAlign_Center);
+		}
+
+		if (UBorderSlot* Slot_DayStageRow = Cast<UBorderSlot>(DayStageChip->AddChild(DayStageRow)))
+		{
+			Slot_DayStageRow->SetHorizontalAlignment(HAlign_Center);
+			Slot_DayStageRow->SetVerticalAlignment(VAlign_Center);
 		}
 
 		// --- 세 묶음을 겹친다. 중앙 칩이 좌우 길이와 무관하게 정중앙에 고정된다 ---
@@ -519,7 +547,7 @@ namespace FFLiveHudWbpBuilder
 			Slot_Left->SetHorizontalAlignment(HAlign_Left);
 			Slot_Left->SetVerticalAlignment(VAlign_Center);
 		}
-		if (UOverlaySlot* Slot_Chip = StatusOverlay->AddChildToOverlay(ClockChip))
+		if (UOverlaySlot* Slot_Chip = StatusOverlay->AddChildToOverlay(DayStageChip))
 		{
 			Slot_Chip->SetHorizontalAlignment(HAlign_Center);
 			Slot_Chip->SetVerticalAlignment(VAlign_Center);
