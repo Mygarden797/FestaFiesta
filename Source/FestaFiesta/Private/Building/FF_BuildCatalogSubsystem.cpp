@@ -19,8 +19,6 @@ DEFINE_LOG_CATEGORY_STATIC(LogFestaFiestaBuildCatalog, Log, All);
 
 namespace
 {
-	// Asset Manager 설정과 조회에 사용하는 시설 정의 Primary Asset 타입 이름입니다. 
-	const FPrimaryAssetType FacilityDefinitionAssetType(TEXT("FFZSFacilityDefinition"));
 	// Facility Definition의 CatalogThumbnail 프로퍼티에 선언된 UI 전용 Asset Bundle 이름입니다.
 	const FName BuildCatalogThumbnailBundle(TEXT("BuildCatalogUI"));
 }
@@ -84,6 +82,8 @@ void UFF_BuildCatalogSubsystem::RefreshCatalog()
 	UAssetManager& AssetManager = UAssetManager::Get();
 	FPrimaryAssetTypeInfo TypeInfo;
 	// 프로젝트 설정에 타입 자체가 등록되지 않은 경우에는 검색 결과 0건과 구분해 구성 오류로 처리합니다.
+	const FPrimaryAssetType& FacilityDefinitionAssetType =
+		UFFZSFacilityDefinition::GetFacilityDefinitionAssetType();
 	if (!AssetManager.GetPrimaryAssetTypeInfo(FacilityDefinitionAssetType, TypeInfo))
 	{
 		FinishRefresh(

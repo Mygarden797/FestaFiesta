@@ -1,6 +1,7 @@
 """Build low-poly FestaFiesta facility meshes and preview renders with Blender.
 
 Run from the repository root:
+    UnrealEditor-Cmd.exe FestaFiesta.uproject -ExecutePythonScript=Tools/facilities/export_facility_authoring_manifest.py
     blender --background --factory-startup --python Tools/facilities/build_facility_meshes.py
 
 The scene uses metres. FBX unit metadata lets Unreal import each metre as 100 cm.
@@ -12,6 +13,9 @@ mesh while the small shared material palette remains as named FBX slots.
 from __future__ import annotations
 
 import math
+import json
+import hashlib
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -22,6 +26,8 @@ from mathutils import Vector
 ROOT = Path(__file__).resolve().parents[2]
 FBX_DIR = ROOT / "SourceAssets" / "Zone" / "FacilityMeshes"
 PREVIEW_DIR = ROOT / "Saved" / "FacilityMeshes_Preview"
+AUTHORING_MANIFEST = ROOT / "Saved" / "FacilityDefinitionAuthoringManifest.json"
+BUILD_MANIFEST = ROOT / "Saved" / "FacilityMeshBuildManifest.json"
 
 FBX_DIR.mkdir(parents=True, exist_ok=True)
 PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
@@ -320,7 +326,7 @@ def fit_and_center(obj: bpy.types.Object, contract: tuple[float, float, float]) 
     bpy.context.view_layer.update()
 
 
-def build_food_truck() -> list[bpy.types.Object]:
+def build_dada_pocha_food_truck() -> list[bpy.types.Object]:
     p: list[bpy.types.Object] = []
     p += [
         box("TruckChassis", (0, 0, 0.44), (5.18, 2.22, 0.34), "FF_Metal", 0.045),
@@ -352,7 +358,7 @@ def build_food_truck() -> list[bpy.types.Object]:
     return p
 
 
-def build_information() -> list[bpy.types.Object]:
+def build_main_information() -> list[bpy.types.Object]:
     p: list[bpy.types.Object] = [
         box("InfoDeck", (0, 0, 0.13), (4.95, 2.38, 0.26), "FF_WoodDark", 0.04),
         box("InfoBody", (0, -0.25, 1.08), (4.35, 1.63, 1.72), "FF_WoodWarm", 0.055),
@@ -377,7 +383,7 @@ def build_information() -> list[bpy.types.Object]:
     return p
 
 
-def build_stage() -> list[bpy.types.Object]:
+def build_sunset_main_stage() -> list[bpy.types.Object]:
     p: list[bpy.types.Object] = [
         box("StageDeck", (0, -0.06, 0.26), (5.62, 2.60, 0.52), "FF_WoodDark", 0.045),
         box("StageFloor", (0, 0.06, 0.55), (5.20, 2.18, 0.13), "FF_WoodWarm", 0.018),
@@ -424,7 +430,7 @@ def half_arch(name: str, radius: float, tube: float, y: float, z: float, materia
     return mesh_from_vertices(name, verts, faces, material)
 
 
-def build_landmark() -> list[bpy.types.Object]:
+def build_sunset_landmark() -> list[bpy.types.Object]:
     p: list[bpy.types.Object] = [
         box("LandmarkDeck", (0, 0, 0.18), (5.0, 2.38, 0.36), "FF_WoodDark", 0.045),
         box("LandmarkFloor", (0, 0.18, 0.40), (4.45, 1.75, 0.12), "FF_WoodWarm", 0.02),
@@ -449,7 +455,7 @@ def build_landmark() -> list[bpy.types.Object]:
     return p
 
 
-def build_rest_area() -> list[bpy.types.Object]:
+def build_main_rest_area() -> list[bpy.types.Object]:
     p: list[bpy.types.Object] = [
         box("RestDeck", (0, 0, 0.12), (5.38, 2.58, 0.24), "FF_WoodDark", 0.04),
         box("RestFloor", (0, 0, 0.27), (5.02, 2.30, 0.10), "FF_WoodWarm", 0.018),
@@ -509,7 +515,7 @@ def person_icon(name: str, x: float, y: float, z: float, material: str) -> list[
     ]
 
 
-def build_restroom() -> list[bpy.types.Object]:
+def build_main_restroom() -> list[bpy.types.Object]:
     p: list[bpy.types.Object] = [
         box("RestroomDeck", (0, 0, 0.13), (5.38, 2.62, 0.26), "FF_WoodDark", 0.04),
         box("RestroomBody", (0, -0.12, 1.13), (4.86, 2.13, 1.82), "FF_WoodWarm", 0.05),
@@ -531,15 +537,64 @@ def build_restroom() -> list[bpy.types.Object]:
     return p
 
 
-ASSETS = [
-    ("SM_FFZS_DadaPochaFoodTruck", build_food_truck, (5.60, 2.60, 2.50)),
-    ("SM_FFZS_MainInformation", build_information, (5.20, 2.60, 2.50)),
-    ("SM_FFZS_SunsetMainStage", build_stage, (5.80, 2.80, 2.50)),
-    ("SM_FFZS_SunsetLandmark", build_landmark, (5.20, 2.60, 2.50)),
-    ("SM_FFZS_MainRestArea", build_rest_area, (5.60, 2.80, 2.30)),
-    ("SM_FFZS_MedicalTent", build_medical_tent, (5.00, 2.80, 2.50)),
-    ("SM_FFZS_MainRestroom", build_restroom, (5.60, 2.80, 2.50)),
-]
+def resolve_builder(mesh_name: str):
+    """Resolve art code by naming convention without maintaining a facility list."""
+    prefix = "SM_FFZS_"
+    if not mesh_name.startswith(prefix):
+        return None
+    suffix = mesh_name[len(prefix):]
+    snake_name = re.sub(r"(?<!^)(?=[A-Z])", "_", suffix).lower()
+    return globals().get("build_" + snake_name)
+
+
+def canonical_digest(value: object) -> str:
+    payload = json.dumps(
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def load_authoring_assets() -> tuple[str, list[tuple[str, object, tuple[float, float, float], str]]]:
+    if not AUTHORING_MANIFEST.is_file():
+        raise RuntimeError(
+            "Missing generated manifest: "
+            f"{AUTHORING_MANIFEST}. Run export_facility_authoring_manifest.py in Unreal first."
+        )
+    with AUTHORING_MANIFEST.open("r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    if manifest.get("schema_version") != 2 or manifest.get("authoritative") is not False:
+        raise RuntimeError("Unsupported or incorrectly marked facility authoring manifest")
+    entries = manifest.get("entries", [])
+    manifest_digest = canonical_digest(entries)
+    if manifest.get("projection_digest") != manifest_digest:
+        raise RuntimeError("Facility authoring manifest projection digest mismatch")
+
+    assets = []
+    seen_mesh_names = set()
+    for entry in entries:
+        projection = {key: value for key, value in entry.items() if key != "projection_digest"}
+        entry_digest = canonical_digest(projection)
+        if entry.get("projection_digest") != entry_digest:
+            raise RuntimeError(
+                f"Facility authoring entry projection digest mismatch: {entry.get('definition', '<unknown>')}"
+            )
+        mesh_name = entry.get("visual_mesh_name", "")
+        if mesh_name in seen_mesh_names:
+            raise RuntimeError(f"Duplicate VisualMesh in authoring manifest: {mesh_name}")
+        seen_mesh_names.add(mesh_name)
+        builder = resolve_builder(mesh_name)
+        if builder is None:
+            raise RuntimeError(
+                f"No procedural art builder registered for Definition VisualMesh {mesh_name}"
+            )
+        target = entry.get("target_size_cm", {})
+        bounds = tuple(float(target.get(axis, 0.0)) / 100.0 for axis in "xyz")
+        if any(not math.isfinite(value) or value <= 0.0 for value in bounds):
+            raise RuntimeError(f"Invalid Definition target bounds for {mesh_name}: {target}")
+        assets.append((mesh_name, builder, bounds, entry_digest))
+    if not assets:
+        raise RuntimeError("Generated facility authoring manifest contains no entries")
+    return manifest_digest, assets
 
 
 def add_collision(asset_name: str, bounds: tuple[float, float, float]) -> bpy.types.Object:
@@ -664,7 +719,9 @@ def material_distribution(obj: bpy.types.Object) -> dict[str, int]:
 
 
 def main() -> None:
-    for asset_name, builder, bounds in ASSETS:
+    source_manifest_digest, assets = load_authoring_assets()
+    built_entries = []
+    for asset_name, builder, bounds, projection_digest in assets:
         reset_scene()
         configure_scene()
         parts = builder()
@@ -675,12 +732,32 @@ def main() -> None:
         collision = add_collision(asset_name, bounds)
         export_fbx(asset_name, visual, collision)
         render_preview(asset_name, bounds)
+        fbx_path = FBX_DIR / f"{asset_name}.fbx"
+        fbx_digest = hashlib.sha256(fbx_path.read_bytes()).hexdigest()
+        built_entries.append(
+            {
+                "visual_mesh_name": asset_name,
+                "projection_digest": projection_digest,
+                "fbx_sha256": fbx_digest,
+            }
+        )
         print(
             f"FF_FACILITY_BUILT {asset_name} "
             f"bounds={tuple(round(v, 3) for v in visual.dimensions)} "
             f"vertices={len(visual.data.vertices)} polygons={len(visual.data.polygons)} "
             f"material_polygons={distribution}"
         )
+
+    build_manifest = {
+        "schema_version": 1,
+        "source_manifest_digest": source_manifest_digest,
+        "entries": built_entries,
+    }
+    pending_path = BUILD_MANIFEST.with_suffix(BUILD_MANIFEST.suffix + ".pending")
+    pending_path.write_text(
+        json.dumps(build_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    pending_path.replace(BUILD_MANIFEST)
 
 
 if __name__ == "__main__":
