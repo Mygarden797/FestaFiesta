@@ -478,8 +478,8 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.FacilityInstanceId = Facility.GetFacilityInstanceId();
 	OutViewData.Context = SelectionContext;
 	OutViewData.ContextTitle = SelectionContext == EFF_FacilityInfoContext::Build
-		? LOCTEXT("BuildContextTitle", "건축 시설 정보")
-		: LOCTEXT("LiveContextTitle", "라이브 시설 정보");
+		? LOCTEXT("BuildContextTitle", "배치 시설")
+		: LOCTEXT("LiveContextTitle", "운영 시설");
 	OutViewData.DisplayName = Spec.DisplayName.IsEmpty()
 		? LOCTEXT("UnknownFacility", "이름 없는 시설")
 		: Spec.DisplayName;

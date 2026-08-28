@@ -63,7 +63,7 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_Category, ViewData.CategoryText);
 	SetText(Text_Zone, ViewData.ZoneText);
 	SetText(Text_FacilityState, ViewData.FacilityStateText);
-	SetText(Text_RelocationWarning, LOCTEXT("NeedsRelocation", "재배치가 필요합니다."));
+	SetText(Text_RelocationWarning, LOCTEXT("NeedsRelocation", "! 재배치가 필요합니다."));
 	SetText(Text_Footprint, ViewData.FootprintText);
 	SetText(Text_Clearance, ViewData.ClearanceText);
 	SetText(Text_InstallCost, ViewData.InstallCostText);
@@ -90,6 +90,24 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	if (Panel_LiveSection)
 	{
 		Panel_LiveSection->SetVisibility(!bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	const bool bShowLiveActions = !bBuildContext && ViewData.bHasMinigame;
+	if (Panel_BuildActions)
+	{
+		Panel_BuildActions->SetVisibility(
+			bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (Panel_LiveActions)
+	{
+		Panel_LiveActions->SetVisibility(
+			bShowLiveActions ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (Panel_Actions)
+	{
+		Panel_Actions->SetVisibility(
+			(bBuildContext || bShowLiveActions)
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
 	}
 	if (Text_RelocationWarning)
 	{

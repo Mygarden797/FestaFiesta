@@ -8,7 +8,9 @@
 #include "Blueprint/WidgetTree.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
+#include "Components/BorderSlot.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -17,7 +19,9 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
 #include "Components/Spacer.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -28,6 +32,8 @@
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
+#include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "UI/Data/FF_UIPalette.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
@@ -51,6 +57,31 @@ namespace FFFacilityInfoWbpBuilder
 	const FLinearColor ColorMuted(0.58f, 0.70f, 0.76f, 1.0f);
 	const FLinearColor ColorAccent(0.08f, 0.95f, 0.88f, 1.0f);
 	const FLinearColor ColorWarning(1.0f, 0.73f, 0.23f, 1.0f);
+
+	constexpr float PanelWidth = 388.0f;
+	constexpr float PanelHeight = 500.0f;
+	constexpr float PanelRightMargin = 24.0f;
+	constexpr float PanelTopMargin = 72.0f;
+
+	FSlateBrush MakeSolidBrush(
+		const FLinearColor& Fill,
+		const float CornerRadius,
+		const FLinearColor& OutlineColor = FLinearColor::Transparent,
+		const float OutlineWidth = 0.0f)
+	{
+		FSlateBrush Brush;
+		Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+		Brush.TintColor = FSlateColor(Fill);
+		Brush.OutlineSettings = FSlateBrushOutlineSettings(
+			CornerRadius, FSlateColor(OutlineColor), OutlineWidth);
+		return Brush;
+	}
+
+	void PaintBorder(UBorder& Border, const FSlateBrush& Brush)
+	{
+		Border.SetBrush(Brush);
+		Border.SetBrushColor(FLinearColor::White);
+	}
 
 	template <typename TWidget>
 	TWidget* MakeWidget(
@@ -80,6 +111,17 @@ namespace FFFacilityInfoWbpBuilder
 		Font.Size = FontSize;
 		Text.SetFont(Font);
 		Text.SetColorAndOpacity(FSlateColor(Color));
+		Text.SetJustification(Justification);
+	}
+
+	void StyleLightText(
+		UCommonTextBlock& Text,
+		const int32 FontSize,
+		const FLinearColor& Color,
+		const FName Typeface = TEXT("Regular"),
+		const ETextJustify::Type Justification = ETextJustify::Left)
+	{
+		FFUIWbpBuilder::StyleText(Text, FontSize, Color, Typeface);
 		Text.SetJustification(Justification);
 	}
 
@@ -120,26 +162,33 @@ namespace FFFacilityInfoWbpBuilder
 		UWidgetBlueprint& Blueprint,
 		UWidgetTree& Tree,
 		UVerticalBox& Parent,
+		const UFF_UIPalette& Palette,
 		const TCHAR* RowName,
 		const FText& LabelText,
 		const FName ValueName,
 		UCommonTextBlock*& OutValue)
 	{
+		UBorder* Surface = MakeWidget<UBorder>(
+			Blueprint, Tree, FName(*FString::Printf(TEXT("%s_Surface"), RowName)));
 		UHorizontalBox* Row = MakeWidget<UHorizontalBox>(Blueprint, Tree, FName(RowName));
 		UCommonTextBlock* Label = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, FName(*FString::Printf(TEXT("%s_Label"), RowName)));
 		OutValue = MakeWidget<UCommonTextBlock>(Blueprint, Tree, ValueName, true);
-		if (!Row || !Label || !OutValue)
+		if (!Surface || !Row || !Label || !OutValue)
 		{
 			return false;
 		}
+		PaintBorder(*Surface, MakeSolidBrush(Palette.InGame.PaperSunken, 5.0f));
+		Surface->SetPadding(FMargin(10.0f, 6.0f));
 		Label->SetText(LabelText);
-		StyleText(*Label, 13, ColorMuted);
+		StyleLightText(*Label, 12, Palette.InGame.InkMuted, TEXT("Medium"));
 		OutValue->SetText(FText::GetEmpty());
-		StyleText(*OutValue, 14, ColorPrimary, ETextJustify::Right);
+		StyleLightText(
+			*OutValue, 13, Palette.InGame.Ink, TEXT("SemiBold"), ETextJustify::Right);
 		AddHorizontal(*Row, *Label, FMargin(0.0f), ESlateSizeRule::Fill);
 		AddHorizontal(*Row, *OutValue);
-		AddVertical(Parent, *Row, FMargin(0.0f, 4.0f));
+		Surface->AddChild(Row);
+		AddVertical(Parent, *Surface, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 		return true;
 	}
 
@@ -164,6 +213,48 @@ namespace FFFacilityInfoWbpBuilder
 		Text->SetText(Label);
 		StyleText(*Text, 14, FLinearColor::White, ETextJustify::Center);
 		Button->AddChild(Text);
+		return Button;
+	}
+
+	UButton* MakeLightTextButton(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const FName ButtonName,
+		const FName TextName,
+		const FText& Label,
+		const FLinearColor& NormalColor,
+		const FLinearColor& HoverColor,
+		const FLinearColor& PressedColor,
+		const FLinearColor& DisabledColor,
+		const FLinearColor& TextColor,
+		const bool bVariable,
+		const bool bTextVariable = false,
+		const FLinearColor& OutlineColor = FLinearColor::Transparent)
+	{
+		UButton* Button = MakeWidget<UButton>(Blueprint, Tree, ButtonName, bVariable);
+		UCommonTextBlock* Text = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TextName, bTextVariable);
+		if (!Button || !Text)
+		{
+			return nullptr;
+		}
+
+		FButtonStyle Style;
+		Style.Normal = MakeSolidBrush(NormalColor, 6.0f, OutlineColor, 1.0f);
+		Style.Hovered = MakeSolidBrush(HoverColor, 6.0f, OutlineColor, 1.0f);
+		Style.Pressed = MakeSolidBrush(PressedColor, 6.0f, OutlineColor, 1.0f);
+		Style.Disabled = MakeSolidBrush(DisabledColor, 6.0f, OutlineColor, 1.0f);
+		Style.NormalPadding = FMargin(12.0f, 8.0f);
+		Style.PressedPadding = FMargin(12.0f, 8.0f);
+		Button->SetStyle(Style);
+
+		Text->SetText(Label);
+		StyleLightText(*Text, 13, TextColor, TEXT("SemiBold"), ETextJustify::Center);
+		if (UButtonSlot* Slot = Cast<UButtonSlot>(Button->AddChild(Text)))
+		{
+			Slot->SetHorizontalAlignment(HAlign_Center);
+			Slot->SetVerticalAlignment(VAlign_Center);
+		}
 		return Button;
 	}
 
@@ -371,8 +462,13 @@ namespace FFFacilityInfoWbpBuilder
 		return HasProgramWidgetContract(Blueprint);
 	}
 
-	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	[[maybe_unused]] bool BuildLegacyLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			return false;
+		}
 		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Root_Canvas"));
 		USizeBox* PanelSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Panel_Size"));
 		UBorder* Panel = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Panel"), true);
@@ -484,17 +580,17 @@ namespace FFFacilityInfoWbpBuilder
 		BuildTitle->SetText(FText::FromString(TEXT("배치 정보")));
 		StyleText(*BuildTitle, 16, ColorAccent);
 		AddVertical(*BuildSection, *BuildTitle, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
-		if (!AddInfoRow(Blueprint, Tree, *BuildSection, TEXT("Footprint_Row"),
+		if (!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("Footprint_Row"),
 			FText::FromString(TEXT("시설 크기")), TEXT("Text_Footprint"), Footprint) ||
-			!AddInfoRow(Blueprint, Tree, *BuildSection, TEXT("Clearance_Row"),
+			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("Clearance_Row"),
 				FText::FromString(TEXT("안전 여유")), TEXT("Text_Clearance"), Clearance) ||
-			!AddInfoRow(Blueprint, Tree, *BuildSection, TEXT("InstallCost_Row"),
+			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("InstallCost_Row"),
 				FText::FromString(TEXT("설치 비용")), TEXT("Text_InstallCost"), InstallCost) ||
-			!AddInfoRow(Blueprint, Tree, *BuildSection, TEXT("RecoveryCost_Row"),
+			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("RecoveryCost_Row"),
 				FText::FromString(TEXT("철거 회수액")), TEXT("Text_RecoveryCost"), RecoveryCost) ||
-			!AddInfoRow(Blueprint, Tree, *BuildSection, TEXT("QueueCapacity_Row"),
+			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("QueueCapacity_Row"),
 				FText::FromString(TEXT("이용 규모")), TEXT("Text_QueueCapacity"), QueueCapacity) ||
-			!AddInfoRow(Blueprint, Tree, *BuildSection, TEXT("ServiceDuration_Row"),
+			!AddInfoRow(Blueprint, Tree, *BuildSection, *Palette, TEXT("ServiceDuration_Row"),
 				FText::FromString(TEXT("서비스 시간")), TEXT("Text_ServiceDuration"), ServiceDuration))
 		{
 			return false;
@@ -534,15 +630,15 @@ namespace FFFacilityInfoWbpBuilder
 		StyleText(*OperationState, 15, ColorPrimary);
 		AddVertical(*LiveSection, *LiveTitle, FMargin(0.0f, 0.0f, 0.0f, 5.0f));
 		AddVertical(*LiveSection, *OperationState, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
-		if (!AddInfoRow(Blueprint, Tree, *LiveSection, TEXT("WaitingParties_Row"),
+		if (!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("WaitingParties_Row"),
 			FText::FromString(TEXT("대기/처리 중 일행")), TEXT("Text_WaitingParties"), WaitingParties) ||
-			!AddInfoRow(Blueprint, Tree, *LiveSection, TEXT("Occupancy_Row"),
+			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("Occupancy_Row"),
 				FText::FromString(TEXT("점유 인원")), TEXT("Text_Occupancy"), Occupancy) ||
-			!AddInfoRow(Blueprint, Tree, *LiveSection, TEXT("RemainingService_Row"),
+			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("RemainingService_Row"),
 				FText::FromString(TEXT("남은 서비스 인원")), TEXT("Text_RemainingService"), RemainingService) ||
-			!AddInfoRow(Blueprint, Tree, *LiveSection, TEXT("ExpectedWait_Row"),
+			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("ExpectedWait_Row"),
 				FText::FromString(TEXT("1인 기준 예상 대기")), TEXT("Text_ExpectedWait"), ExpectedWait) ||
-			!AddInfoRow(Blueprint, Tree, *LiveSection, TEXT("Throughput_Row"),
+			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("Throughput_Row"),
 				FText::FromString(TEXT("처리 속도")), TEXT("Text_Throughput"), Throughput))
 		{
 			return false;
@@ -615,6 +711,445 @@ namespace FFFacilityInfoWbpBuilder
 		return true;
 	}
 
+	USizeBox* BuildLightHeader(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const UFF_UIPalette& Palette)
+	{
+		USizeBox* HeaderSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Header_Size"));
+		UBorder* HeaderSurface = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Header_Surface"));
+		UHorizontalBox* HeaderRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Header_Row"));
+		UVerticalBox* Identity = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Header_Identity"));
+		UCommonTextBlock* Context = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_Context"), true);
+		UCommonTextBlock* FacilityName = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_FacilityName"), true);
+		USizeBox* CloseSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Close_Size"));
+		UButton* Close = MakeLightTextButton(
+			Blueprint, Tree, TEXT("Button_Close"), TEXT("Close_Label"),
+			FText::FromString(TEXT("\u00D7")),
+			FLinearColor::Transparent, Palette.InGame.Teal, Palette.InGame.Teal,
+			FLinearColor::Transparent, Palette.InGame.White, true);
+		if (!HeaderSize || !HeaderSurface || !HeaderRow || !Identity || !Context ||
+			!FacilityName || !CloseSize || !Close)
+		{
+			return nullptr;
+		}
+
+		HeaderSize->SetHeightOverride(68.0f);
+		PaintBorder(*HeaderSurface, MakeSolidBrush(Palette.InGame.TealDeep, 7.0f));
+		HeaderSurface->SetPadding(FMargin(16.0f, 10.0f, 10.0f, 10.0f));
+		FLinearColor ContextColor = Palette.InGame.White;
+		ContextColor.A = 0.78f;
+		Context->SetText(FText::FromString(TEXT("배치 시설")));
+		StyleLightText(*Context, 11, ContextColor, TEXT("Medium"));
+		FacilityName->SetText(FText::FromString(TEXT("시설을 선택하세요")));
+		FacilityName->SetAutoWrapText(false);
+		StyleLightText(*FacilityName, 20, Palette.InGame.White, TEXT("SemiBold"));
+		AddVertical(*Identity, *Context, FMargin(0.0f, 0.0f, 0.0f, 1.0f));
+		AddVertical(*Identity, *FacilityName);
+		AddHorizontal(*HeaderRow, *Identity, FMargin(0.0f), ESlateSizeRule::Fill);
+		CloseSize->SetWidthOverride(36.0f);
+		CloseSize->SetHeightOverride(36.0f);
+		CloseSize->AddChild(Close);
+		AddHorizontal(*HeaderRow, *CloseSize);
+		HeaderSurface->AddChild(HeaderRow);
+		HeaderSize->AddChild(HeaderSurface);
+		return HeaderSize;
+	}
+
+	UBorder* BuildIdentitySummary(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const UFF_UIPalette& Palette)
+	{
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Summary_Card"));
+		UHorizontalBox* Row = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Summary_Row"));
+		USizeBox* ThumbnailSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Thumbnail_Size"));
+		UBorder* ThumbnailBackground = MakeWidget<UBorder>(
+			Blueprint, Tree, TEXT("Thumbnail_Background"));
+		UOverlay* ThumbnailOverlay = MakeWidget<UOverlay>(
+			Blueprint, Tree, TEXT("Thumbnail_Overlay"));
+		UImage* Thumbnail = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_Thumbnail"), true);
+		UCommonTextBlock* ThumbnailPlaceholder = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ThumbnailPlaceholder"), true);
+		UVerticalBox* Meta = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Summary_Meta"));
+		UHorizontalBox* MetaRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Meta_Row"));
+		UBorder* CategoryChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Category_Chip"));
+		UCommonTextBlock* Category = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_Category"), true);
+		UBorder* ZoneChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Zone_Chip"));
+		UCommonTextBlock* Zone = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_Zone"), true);
+		UBorder* StateChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("State_Chip"));
+		UCommonTextBlock* FacilityState = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_FacilityState"), true);
+		if (!Card || !Row || !ThumbnailSize || !ThumbnailBackground || !ThumbnailOverlay ||
+			!Thumbnail || !ThumbnailPlaceholder || !Meta || !MetaRow || !CategoryChip ||
+			!Category || !ZoneChip || !Zone || !StateChip || !FacilityState)
+		{
+			return nullptr;
+		}
+
+		PaintBorder(*Card, MakeSolidBrush(
+			Palette.InGame.PaperSunken, 6.0f, Palette.InGame.Line, 1.0f));
+		Card->SetPadding(FMargin(10.0f));
+		ThumbnailSize->SetWidthOverride(104.0f);
+		ThumbnailSize->SetHeightOverride(86.0f);
+		PaintBorder(*ThumbnailBackground, MakeSolidBrush(Palette.InGame.StatusBar, 5.0f));
+		ThumbnailPlaceholder->SetText(FText::FromString(TEXT("시설 이미지 준비 중")));
+		ThumbnailPlaceholder->SetAutoWrapText(true);
+		StyleLightText(
+			*ThumbnailPlaceholder, 11, Palette.InGame.InkMuted, TEXT("Medium"),
+			ETextJustify::Center);
+		if (UOverlaySlot* Slot = ThumbnailOverlay->AddChildToOverlay(Thumbnail))
+		{
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Fill);
+		}
+		if (UOverlaySlot* Slot = ThumbnailOverlay->AddChildToOverlay(ThumbnailPlaceholder))
+		{
+			Slot->SetHorizontalAlignment(HAlign_Center);
+			Slot->SetVerticalAlignment(VAlign_Center);
+		}
+		ThumbnailBackground->AddChild(ThumbnailOverlay);
+		ThumbnailSize->AddChild(ThumbnailBackground);
+		AddHorizontal(*Row, *ThumbnailSize, FMargin(0.0f, 0.0f, 10.0f, 0.0f));
+
+		PaintBorder(*CategoryChip, MakeSolidBrush(Palette.InGame.TealSoft, 4.0f));
+		CategoryChip->SetPadding(FMargin(8.0f, 3.0f));
+		Category->SetText(FText::FromString(TEXT("부스")));
+		StyleLightText(*Category, 11, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		CategoryChip->AddChild(Category);
+		PaintBorder(*ZoneChip, MakeSolidBrush(
+			Palette.InGame.Paper, 4.0f, Palette.InGame.Line, 1.0f));
+		ZoneChip->SetPadding(FMargin(8.0f, 3.0f));
+		Zone->SetText(FText::FromString(TEXT("구역 정보")));
+		StyleLightText(*Zone, 11, Palette.InGame.InkMuted, TEXT("Medium"));
+		ZoneChip->AddChild(Zone);
+		AddHorizontal(*MetaRow, *CategoryChip, FMargin(0.0f, 0.0f, 5.0f, 0.0f));
+		AddHorizontal(*MetaRow, *ZoneChip);
+		AddVertical(*Meta, *MetaRow, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+
+		PaintBorder(*StateChip, MakeSolidBrush(
+			Palette.InGame.Paper, 5.0f, Palette.InGame.LineStrong, 1.0f));
+		StateChip->SetPadding(FMargin(9.0f, 6.0f));
+		FacilityState->SetText(FText::FromString(TEXT("배치 완료")));
+		StyleLightText(*FacilityState, 12, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		StateChip->AddChild(FacilityState);
+		AddVertical(*Meta, *StateChip);
+		AddHorizontal(*Row, *Meta, FMargin(0.0f), ESlateSizeRule::Fill);
+		Card->AddChild(Row);
+		return Card;
+	}
+
+	UBorder* BuildInformationSection(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const UFF_UIPalette& Palette,
+		const bool bLive)
+	{
+		const FName PanelName = bLive ? TEXT("Panel_LiveSection") : TEXT("Panel_BuildSection");
+		const FName ContentName = bLive ? TEXT("Live_Content") : TEXT("Build_Content");
+		const FName TitleName = bLive ? TEXT("Live_Title") : TEXT("Build_Title");
+		UBorder* Section = MakeWidget<UBorder>(Blueprint, Tree, PanelName, true);
+		UVerticalBox* SectionContent = MakeWidget<UVerticalBox>(Blueprint, Tree, ContentName);
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TitleName);
+		if (!Section || !SectionContent || !Title)
+		{
+			return nullptr;
+		}
+
+		PaintBorder(*Section, MakeSolidBrush(
+			Palette.InGame.Paper, 6.0f, Palette.InGame.Line, 1.0f));
+		Section->SetPadding(FMargin(10.0f));
+		Title->SetText(FText::FromString(bLive ? TEXT("실시간 운영") : TEXT("배치 정보")));
+		StyleLightText(*Title, 14, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		AddVertical(*SectionContent, *Title, FMargin(2.0f, 0.0f, 0.0f, bLive ? 5.0f : 8.0f));
+
+		if (bLive)
+		{
+			UCommonTextBlock* OperationState = MakeWidget<UCommonTextBlock>(
+				Blueprint, Tree, TEXT("Text_OperationState"), true);
+			UCommonTextBlock* WaitingParties = nullptr;
+			UCommonTextBlock* Occupancy = nullptr;
+			UCommonTextBlock* RemainingService = nullptr;
+			UCommonTextBlock* ExpectedWait = nullptr;
+			UCommonTextBlock* Throughput = nullptr;
+			if (!OperationState)
+			{
+				return nullptr;
+			}
+			OperationState->SetText(FText::GetEmpty());
+			StyleLightText(*OperationState, 13, Palette.InGame.TealDeep, TEXT("SemiBold"));
+			AddVertical(*SectionContent, *OperationState, FMargin(2.0f, 0.0f, 0.0f, 7.0f));
+			if (!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("WaitingParties_Row"),
+					FText::FromString(TEXT("대기/처리 중 일행")), TEXT("Text_WaitingParties"), WaitingParties) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Occupancy_Row"),
+					FText::FromString(TEXT("점유 인원")), TEXT("Text_Occupancy"), Occupancy) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("RemainingService_Row"),
+					FText::FromString(TEXT("남은 서비스 인원")), TEXT("Text_RemainingService"), RemainingService) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("ExpectedWait_Row"),
+					FText::FromString(TEXT("1인 기준 예상 대기")), TEXT("Text_ExpectedWait"), ExpectedWait) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Throughput_Row"),
+					FText::FromString(TEXT("처리 속도")), TEXT("Text_Throughput"), Throughput))
+			{
+				return nullptr;
+			}
+			Section->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		else
+		{
+			UCommonTextBlock* Footprint = nullptr;
+			UCommonTextBlock* Clearance = nullptr;
+			UCommonTextBlock* InstallCost = nullptr;
+			UCommonTextBlock* RecoveryCost = nullptr;
+			UCommonTextBlock* QueueCapacity = nullptr;
+			UCommonTextBlock* ServiceDuration = nullptr;
+			if (!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Footprint_Row"),
+					FText::FromString(TEXT("시설 크기")), TEXT("Text_Footprint"), Footprint) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Clearance_Row"),
+					FText::FromString(TEXT("안전 여유")), TEXT("Text_Clearance"), Clearance) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("InstallCost_Row"),
+					FText::FromString(TEXT("설치 비용")), TEXT("Text_InstallCost"), InstallCost) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("RecoveryCost_Row"),
+					FText::FromString(TEXT("철거 회수액")), TEXT("Text_RecoveryCost"), RecoveryCost) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("QueueCapacity_Row"),
+					FText::FromString(TEXT("이용 규모")), TEXT("Text_QueueCapacity"), QueueCapacity) ||
+				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("ServiceDuration_Row"),
+					FText::FromString(TEXT("서비스 시간")), TEXT("Text_ServiceDuration"), ServiceDuration))
+			{
+				return nullptr;
+			}
+		}
+
+		Section->AddChild(SectionContent);
+		return Section;
+	}
+
+	UVerticalBox* BuildProgramSection(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const UFF_UIPalette& Palette)
+	{
+		UVerticalBox* Section = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, TEXT("Panel_ProgramSection"), true);
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Program_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Program_Content"));
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Program_Title"));
+		UCommonTextBlock* Status = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ProgramStatus"), true);
+		UCommonTextBlock* Summary = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ScheduledProgramSummary"), true);
+		UCommonTextBlock* Reason = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ProgramScheduleReason"), true);
+		UButton* Schedule = MakeLightTextButton(
+			Blueprint, Tree, TEXT("Button_ScheduleProgram"), TEXT("Text_ScheduleProgram"),
+			FText::FromString(TEXT("유료 프로그램 편성")),
+			Palette.InGame.Teal, Palette.InGame.TealDeep, Palette.InGame.TealDeep,
+			Palette.InGame.LineStrong, Palette.InGame.White, true, true);
+		if (!Section || !Card || !Content || !Title || !Status || !Summary || !Reason || !Schedule)
+		{
+			return nullptr;
+		}
+
+		PaintBorder(*Card, MakeSolidBrush(
+			Palette.InGame.Paper, 6.0f, Palette.InGame.Line, 1.0f));
+		Card->SetPadding(FMargin(10.0f));
+		Title->SetText(FText::FromString(TEXT("유료 프로그램")));
+		StyleLightText(*Title, 14, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		Status->SetText(FText::FromString(TEXT("오늘 편성 없음")));
+		StyleLightText(*Status, 13, Palette.InGame.Ink, TEXT("SemiBold"));
+		Summary->SetText(FText::GetEmpty());
+		Summary->SetAutoWrapText(true);
+		StyleLightText(*Summary, 12, Palette.InGame.InkMuted, TEXT("Medium"));
+		Reason->SetText(FText::GetEmpty());
+		Reason->SetAutoWrapText(true);
+		StyleLightText(*Reason, 11, Palette.InGame.Amber, TEXT("Medium"));
+		AddVertical(*Content, *Title, FMargin(2.0f, 0.0f, 0.0f, 7.0f));
+		AddVertical(*Content, *Status, FMargin(2.0f, 0.0f, 0.0f, 3.0f));
+		AddVertical(*Content, *Summary, FMargin(2.0f, 0.0f, 0.0f, 3.0f));
+		AddVertical(*Content, *Reason, FMargin(2.0f, 0.0f, 0.0f, 7.0f));
+		AddVertical(*Content, *Schedule);
+		Card->AddChild(Content);
+		AddVertical(*Section, *Card);
+		Section->SetVisibility(ESlateVisibility::Collapsed);
+		return Section;
+	}
+
+	UBorder* BuildActionRail(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const UFF_UIPalette& Palette)
+	{
+		UBorder* Actions = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Panel_Actions"), true);
+		UOverlay* Switcher = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Actions_Switcher"));
+		UHorizontalBox* BuildActions = MakeWidget<UHorizontalBox>(
+			Blueprint, Tree, TEXT("Panel_BuildActions"), true);
+		UVerticalBox* LiveActions = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, TEXT("Panel_LiveActions"), true);
+		FLinearColor DangerHover = Palette.InGame.Danger * 0.82f;
+		DangerHover.A = Palette.InGame.Danger.A;
+		FLinearColor DangerPressed = Palette.InGame.Danger * 0.72f;
+		DangerPressed.A = Palette.InGame.Danger.A;
+		UButton* Move = MakeLightTextButton(
+			Blueprint, Tree, TEXT("Button_Move"), TEXT("Move_Label"),
+			FText::FromString(TEXT("이동  M")),
+			Palette.InGame.PaperSunken, Palette.InGame.Hover, Palette.InGame.TealSoft,
+			Palette.InGame.PaperSunken, Palette.InGame.TealDeep, true, false,
+			Palette.InGame.Line);
+		UButton* Remove = MakeLightTextButton(
+			Blueprint, Tree, TEXT("Button_Remove"), TEXT("Remove_Label"),
+			FText::FromString(TEXT("철거  Enter")),
+			Palette.InGame.Danger, DangerHover, DangerPressed, Palette.InGame.LineStrong,
+			Palette.InGame.White, true);
+		UButton* StartMinigame = MakeLightTextButton(
+			Blueprint, Tree, TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
+			FText::FromString(TEXT("게임 시작")),
+			Palette.InGame.Teal, Palette.InGame.TealDeep, Palette.InGame.TealDeep,
+			Palette.InGame.LineStrong, Palette.InGame.White, true, true);
+		if (!Actions || !Switcher || !BuildActions || !LiveActions || !Move || !Remove ||
+			!StartMinigame)
+		{
+			return nullptr;
+		}
+
+		PaintBorder(*Actions, MakeSolidBrush(Palette.InGame.StatusBar, 0.0f));
+		Actions->SetPadding(FMargin(12.0f, 9.0f));
+		AddHorizontal(*BuildActions, *Move, FMargin(0.0f, 0.0f, 5.0f, 0.0f), ESlateSizeRule::Fill);
+		AddHorizontal(*BuildActions, *Remove, FMargin(5.0f, 0.0f, 0.0f, 0.0f), ESlateSizeRule::Fill);
+		AddVertical(*LiveActions, *StartMinigame);
+		LiveActions->SetVisibility(ESlateVisibility::Collapsed);
+		if (UOverlaySlot* Slot = Switcher->AddChildToOverlay(BuildActions))
+		{
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UOverlaySlot* Slot = Switcher->AddChildToOverlay(LiveActions))
+		{
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+			Slot->SetVerticalAlignment(VAlign_Center);
+		}
+		Actions->AddChild(Switcher);
+		return Actions;
+	}
+
+	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			return false;
+		}
+
+		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Root_Canvas"));
+		USizeBox* ShadowSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Panel_ShadowSize"));
+		UBorder* Shadow = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelShadow"));
+		USizeBox* PanelSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Panel_Size"));
+		UBorder* Panel = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Panel"), true);
+		UVerticalBox* Shell = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_Shell"));
+		USizeBox* Header = BuildLightHeader(Blueprint, Tree, *Palette);
+		UBorder* Body = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Body_Surface"));
+		UScrollBox* DetailsScroll = MakeWidget<UScrollBox>(
+			Blueprint, Tree, TEXT("ScrollBox_Details"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_Content"));
+		UBorder* Summary = BuildIdentitySummary(Blueprint, Tree, *Palette);
+		UCommonTextBlock* RelocationWarning = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_RelocationWarning"), true);
+		UBorder* BuildSection = BuildInformationSection(Blueprint, Tree, *Palette, false);
+		UBorder* LiveSection = BuildInformationSection(Blueprint, Tree, *Palette, true);
+		UVerticalBox* ProgramSection = BuildProgramSection(Blueprint, Tree, *Palette);
+		UCommonTextBlock* Feedback = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_Feedback"), true);
+		UBorder* Actions = BuildActionRail(Blueprint, Tree, *Palette);
+		if (!Root || !ShadowSize || !Shadow || !PanelSize || !Panel || !Shell || !Header ||
+			!Body || !DetailsScroll || !Content || !Summary || !RelocationWarning ||
+			!BuildSection || !LiveSection || !ProgramSection || !Feedback || !Actions)
+		{
+			return false;
+		}
+
+		Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		ShadowSize->SetWidthOverride(PanelWidth);
+		ShadowSize->SetHeightOverride(PanelHeight);
+		PaintBorder(*Shadow, MakeSolidBrush(FLinearColor(0.04f, 0.08f, 0.06f, 0.16f), 10.0f));
+		Shadow->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ShadowSize->AddChild(Shadow);
+		PanelSize->SetWidthOverride(PanelWidth);
+		PanelSize->SetHeightOverride(PanelHeight);
+		PaintBorder(*Panel, MakeSolidBrush(
+			Palette->InGame.Paper, 8.0f, Palette->InGame.Line, 1.0f));
+		Panel->SetPadding(FMargin(0.0f));
+		Panel->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+
+		PaintBorder(*Body, MakeSolidBrush(Palette->InGame.Paper, 0.0f));
+		Body->SetPadding(FMargin(12.0f, 12.0f, 12.0f, 8.0f));
+		DetailsScroll->SetAnimateWheelScrolling(true);
+		if (UScrollBoxSlot* Slot = Cast<UScrollBoxSlot>(DetailsScroll->AddChild(Content)))
+		{
+			Slot->SetPadding(FMargin(0.0f));
+			Slot->SetHorizontalAlignment(HAlign_Fill);
+		}
+		else
+		{
+			return false;
+		}
+		Body->AddChild(DetailsScroll);
+
+		AddVertical(*Content, *Summary, FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		RelocationWarning->SetText(FText::FromString(TEXT("! 재배치가 필요합니다.")));
+		RelocationWarning->SetAutoWrapText(true);
+		RelocationWarning->SetVisibility(ESlateVisibility::Collapsed);
+		StyleLightText(*RelocationWarning, 12, Palette->InGame.Amber, TEXT("SemiBold"));
+		AddVertical(*Content, *RelocationWarning, FMargin(2.0f, 0.0f, 2.0f, 8.0f));
+		AddVertical(*Content, *BuildSection, FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		AddVertical(*Content, *LiveSection, FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		AddVertical(*Content, *ProgramSection, FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		Feedback->SetText(FText::GetEmpty());
+		Feedback->SetAutoWrapText(true);
+		Feedback->SetVisibility(ESlateVisibility::Collapsed);
+		StyleLightText(
+			*Feedback, 12, Palette->InGame.Amber, TEXT("Medium"), ETextJustify::Center);
+		AddVertical(*Content, *Feedback, FMargin(2.0f, 0.0f, 2.0f, 2.0f));
+
+		AddVertical(*Shell, *Header);
+		AddVertical(*Shell, *Body, FMargin(0.0f), ESlateSizeRule::Fill);
+		AddVertical(*Shell, *Actions);
+		Panel->AddChild(Shell);
+		PanelSize->AddChild(Panel);
+
+		if (UCanvasPanelSlot* ShadowSlot = Root->AddChildToCanvas(ShadowSize))
+		{
+			ShadowSlot->SetAnchors(FAnchors(1.0f, 0.0f));
+			ShadowSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+			ShadowSlot->SetPosition(FVector2D(
+				-(PanelRightMargin - 4.0f), PanelTopMargin + 4.0f));
+			ShadowSlot->SetSize(FVector2D(PanelWidth, PanelHeight));
+			ShadowSlot->SetAutoSize(false);
+		}
+		else
+		{
+			return false;
+		}
+
+		if (UCanvasPanelSlot* PanelSlot = Root->AddChildToCanvas(PanelSize))
+		{
+			PanelSlot->SetAnchors(FAnchors(1.0f, 0.0f));
+			PanelSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+			PanelSlot->SetPosition(FVector2D(-PanelRightMargin, PanelTopMargin));
+			PanelSlot->SetSize(FVector2D(PanelWidth, PanelHeight));
+			PanelSlot->SetAutoSize(false);
+		}
+		else
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		return true;
+	}
+
 	UWidgetBlueprint* LoadExistingBlueprint()
 	{
 		const FString AssetName = FPackageName::GetLongPackageAssetName(PanelPackage);
@@ -639,19 +1174,24 @@ namespace FFFacilityInfoWbpBuilder
 			return false;
 		}
 		const FAnchors Anchors = PanelSlot->GetAnchors();
-		if (!Anchors.Minimum.Equals(FVector2D(1.0f, 0.5f)) ||
-			!Anchors.Maximum.Equals(FVector2D(1.0f, 0.5f)) ||
-			!PanelSlot->GetAlignment().Equals(FVector2D(1.0f, 0.5f)) ||
-			PanelSlot->GetPosition().ContainsNaN() ||
-			!PanelSlot->GetAutoSize())
+		if (!Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) ||
+			!Anchors.Maximum.Equals(FVector2D(1.0f, 0.0f)) ||
+			!PanelSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)) ||
+			!PanelSlot->GetPosition().Equals(FVector2D(-PanelRightMargin, PanelTopMargin)) ||
+			PanelSlot->GetAutoSize() ||
+			!PanelSlot->GetSize().Equals(FVector2D(PanelWidth, PanelHeight)) ||
+			!FMath::IsNearlyEqual(PanelSize->GetWidthOverride(), PanelWidth) ||
+			!FMath::IsNearlyEqual(PanelSize->GetHeightOverride(), PanelHeight))
 		{
 			return false;
 		}
 
 		const TArray<FName> RequiredVariables = {
 			TEXT("Border_Panel"), TEXT("Button_Close"), TEXT("Button_Move"),
-			TEXT("Button_Remove"), TEXT("Image_Thumbnail"), TEXT("Text_ThumbnailPlaceholder"),
+			TEXT("Button_Remove"), TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
+			TEXT("Image_Thumbnail"), TEXT("Text_ThumbnailPlaceholder"),
 			TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Text_Context"),
+			TEXT("Panel_Actions"), TEXT("Panel_BuildActions"), TEXT("Panel_LiveActions"),
 			TEXT("Text_FacilityName"), TEXT("Text_Category"), TEXT("Text_Zone"),
 			TEXT("Text_FacilityState"), TEXT("Text_RelocationWarning"), TEXT("Text_Footprint"),
 			TEXT("Text_Clearance"), TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"),
@@ -669,9 +1209,12 @@ namespace FFFacilityInfoWbpBuilder
 			}
 		}
 		return Cast<UBorder>(Tree->FindWidget(TEXT("Border_Panel"))) &&
+			Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Details"))) &&
+			Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content"))) &&
 			Cast<UButton>(Tree->FindWidget(TEXT("Button_Close"))) &&
 			Cast<UButton>(Tree->FindWidget(TEXT("Button_Move"))) &&
 			Cast<UButton>(Tree->FindWidget(TEXT("Button_Remove"))) &&
+			Cast<UButton>(Tree->FindWidget(TEXT("Button_StartMinigame"))) &&
 			Cast<UImage>(Tree->FindWidget(TEXT("Image_Thumbnail"))) &&
 			Tree->FindWidget(TEXT("Text_ThumbnailPlaceholder")) &&
 			Tree->FindWidget(TEXT("Panel_BuildSection")) &&
@@ -1033,10 +1576,118 @@ namespace FFFacilityInfoWbpBuilder
 			TEXT("FF_FACILITY_INFO_UMG_CREATED: %s"), *PanelPackage);
 	}
 
+	bool RefreshFacilityInfoWidgetTree(UWidgetBlueprint& Blueprint)
+	{
+		UWidgetTree* OriginalTree = Blueprint.WidgetTree;
+		if (!OriginalTree)
+		{
+			return false;
+		}
+
+		const FName OriginalTreeName = OriginalTree->GetFName();
+		const bool bOriginalTreeWasTransient = OriginalTree->HasAnyFlags(RF_Transient);
+		const auto OriginalBindings = Blueprint.Bindings;
+		const auto OriginalVariableMap = Blueprint.WidgetVariableNameToGuidMap;
+		const FName DiscardedName = MakeUniqueObjectName(
+			&Blueprint, UWidgetTree::StaticClass(), TEXT("DiscardedWidgetTree"));
+		if (!OriginalTree->Rename(
+				*DiscardedName.ToString(),
+				&Blueprint,
+				REN_DontCreateRedirectors | REN_NonTransactional))
+		{
+			return false;
+		}
+
+		Blueprint.Modify();
+		OriginalTree->SetFlags(RF_Transient);
+		Blueprint.Bindings.Reset();
+		Blueprint.WidgetVariableNameToGuidMap.Reset();
+		Blueprint.WidgetTree = NewObject<UWidgetTree>(
+			&Blueprint,
+			UWidgetTree::StaticClass(),
+			TEXT("WidgetTree"),
+			RF_Transactional);
+
+		auto Rollback = [&]()
+		{
+			if (UWidgetTree* FailedTree = Blueprint.WidgetTree)
+			{
+				const FName FailedName = MakeUniqueObjectName(
+					&Blueprint, UWidgetTree::StaticClass(), TEXT("FailedWidgetTree"));
+				FailedTree->Rename(
+					*FailedName.ToString(),
+					&Blueprint,
+					REN_DontCreateRedirectors | REN_NonTransactional);
+				FailedTree->SetFlags(RF_Transient);
+			}
+
+			if (!bOriginalTreeWasTransient)
+			{
+				OriginalTree->ClearFlags(RF_Transient);
+			}
+			OriginalTree->Rename(
+				*OriginalTreeName.ToString(),
+				&Blueprint,
+				REN_DontCreateRedirectors | REN_NonTransactional);
+			Blueprint.WidgetTree = OriginalTree;
+			Blueprint.Bindings = OriginalBindings;
+			Blueprint.WidgetVariableNameToGuidMap = OriginalVariableMap;
+			FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
+			FKismetEditorUtilities::CompileBlueprint(&Blueprint);
+		};
+
+		if (!Blueprint.WidgetTree ||
+			!BuildLayout(Blueprint, *Blueprint.WidgetTree) ||
+			!HasRequiredLayout(Blueprint) ||
+			!HasProgramWidgetContract(Blueprint) ||
+			!SaveBlueprint(Blueprint))
+		{
+			Rollback();
+			return false;
+		}
+		return true;
+	}
+
+	void RefreshFacilityInfoUmg()
+	{
+		if (!FPackageName::DoesPackageExist(PanelPackage))
+		{
+			BuildFacilityInfoUmg();
+			return;
+		}
+
+		UWidgetBlueprint* Existing = LoadExistingBlueprint();
+		if (!Existing || !Existing->GeneratedClass ||
+			!Existing->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_INFO_UMG_REFRESH_FAIL: parent contract mismatch: %s"),
+				*PanelPackage);
+			return;
+		}
+
+		if (!RefreshFacilityInfoWidgetTree(*Existing))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_INFO_UMG_REFRESH_FAIL: restored previous WidgetTree: %s"),
+				*PanelPackage);
+			return;
+		}
+
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+			TEXT("FF_FACILITY_INFO_UMG_REFRESHED: LightTeal designer layout saved: %s"),
+			*PanelPackage);
+	}
+
 	FAutoConsoleCommand BuildFacilityInfoUmgCommand(
 		TEXT("FF.BuildFacilityInfoUMG"),
 		TEXT("Creates the editable right-side installed-facility information WBP when absent."),
 		FConsoleCommandDelegate::CreateStatic(&BuildFacilityInfoUmg));
+
+	FAutoConsoleCommand RefreshFacilityInfoUmgCommand(
+		TEXT("FF.RefreshFacilityInfoUMG"),
+		TEXT("Explicitly rebuilds the facility-info WidgetTree with the editable LightTeal template."),
+		FConsoleCommandDelegate::CreateStatic(&RefreshFacilityInfoUmg));
 }
 
 #endif // WITH_EDITOR
