@@ -12,10 +12,14 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "MoviePlayer.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Atlas/FF_AtlasCameraRig.h"
+#include "UI/Atlas/FF_AtlasCountryScreen.h"
+#include "UI/Atlas/FF_AtlasGlobeScreen.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
+#include "UI/Core/FF_LoadingScreenWidget.h"
 #include "UI/Core/FF_UIRootLayout.h"
 #include "UI/FF_ActivatableScreenBase.h"
 #include "UI/FF_UILog.h"
@@ -23,6 +27,7 @@
 #include "UI/Frontend/FF_PlayHubScreen.h"
 #include "UI/Frontend/FF_SaveListScreen.h"
 #include "UI/Title/FF_TitleScreen.h"
+#include "UObject/UObjectGlobals.h"
 
 void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -37,6 +42,17 @@ void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// 그 파일은 카메라 담당 경계라 건드리지 않는다.
 	PostLoginHandle = FGameModeEvents::OnGameModePostLoginEvent().AddUObject(
 		this, &UFF_UIFlowSubsystem::HandlePostLogin);
+
+	// GameInstance를 함께 주는 델리게이트라 다른 PIE/월드 컨텍스트의 맵 로드를 가로채지 않는다.
+	// 엔진 MoviePlayer의 PreLoadMap 핸들러보다 먼저 불려 실제 재생 전에 속성을 확정할 수 있다.
+	PreLoadMapHandle = FCoreUObjectDelegates::PreLoadMapWithContext.AddUObject(
+		this, &UFF_UIFlowSubsystem::HandlePreLoadMapWithContext);
+
+	if (IGameMoviePlayer* MoviePlayer = GetMoviePlayer())
+	{
+		MoviePlaybackFinishedHandle = MoviePlayer->OnMoviePlaybackFinished().AddUObject(
+			this, &UFF_UIFlowSubsystem::HandleLoadingScreenFinished);
+	}
 
 	if (UFF_FestivalStageSubsystem* Stage = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
@@ -63,6 +79,21 @@ void UFF_UIFlowSubsystem::Deinitialize()
 	}
 	PostLoginHandle.Reset();
 
+	if (PreLoadMapHandle.IsValid())
+	{
+		FCoreUObjectDelegates::PreLoadMapWithContext.Remove(PreLoadMapHandle);
+	}
+	PreLoadMapHandle.Reset();
+
+	if (MoviePlaybackFinishedHandle.IsValid())
+	{
+		if (IGameMoviePlayer* MoviePlayer = GetMoviePlayer())
+		{
+			MoviePlayer->OnMoviePlaybackFinished().Remove(MoviePlaybackFinishedHandle);
+		}
+	}
+	MoviePlaybackFinishedHandle.Reset();
+
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
@@ -86,7 +117,12 @@ void UFF_UIFlowSubsystem::Deinitialize()
 	Mode = EFF_UIFlowMode::Idle;
 	CurrentFrontendScreen = EFF_UIFlowScreen::None;
 	ActiveFestivalId = NAME_None;
+	ActiveCountryId = NAME_None;
 	bPendingFestivalStart = false;
+	PendingLoadingScreenClass = nullptr;
+	PendingLoadingFestivalName = FText::GetEmpty();
+	PendingLoadingMapPackage.Reset();
+	ActiveLoadingScreenWidget = nullptr;
 
 	Super::Deinitialize();
 }
@@ -159,15 +195,59 @@ const UFF_FestivalAtlasCatalog* UFF_UIFlowSubsystem::LoadCatalog() const
 	return Catalog;
 }
 
+FText UFF_UIFlowSubsystem::GetActiveFestivalDisplayName() const
+{
+	if (ActiveFestivalId.IsNone())
+	{
+		return FText::GetEmpty();
+	}
+
+	const UFF_FestivalAtlasCatalog* Catalog = LoadCatalog();
+	if (!Catalog)
+	{
+		// LoadCatalog 가 이미 이유를 남긴다. 여기서 또 찍으면 같은 줄이 두 번 나온다.
+		return FText::GetEmpty();
+	}
+
+	const FFF_FestivalAtlasEntry* Entry = Catalog->FindEntry(ActiveFestivalId);
+	if (!Entry)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: 카탈로그에 `%s` 축제 항목이 없어 이름을 표시할 수 없다."),
+			*ActiveFestivalId.ToString());
+		return FText::GetEmpty();
+	}
+
+	return Entry->FestivalName;
+}
+
 FString UFF_UIFlowSubsystem::DescribeState() const
 {
 	return FString::Printf(
-		TEXT("Mode=%s Frontend=%s Festival=%s RootLayout=%s PendingStart=%s"),
+		TEXT("Mode=%s Frontend=%s Country=%s Festival=%s RootLayout=%s PendingStart=%s"),
 		*UEnum::GetValueAsString(Mode),
 		*UEnum::GetValueAsString(CurrentFrontendScreen),
+		ActiveCountryId.IsNone() ? TEXT("(없음)") : *ActiveCountryId.ToString(),
 		ActiveFestivalId.IsNone() ? TEXT("(없음)") : *ActiveFestivalId.ToString(),
 		RootLayout.IsValid() ? TEXT("있음") : TEXT("없음"),
 		bPendingFestivalStart ? TEXT("true") : TEXT("false"));
+}
+
+void UFF_UIFlowSubsystem::SetActiveCountry(FName CountryId)
+{
+	if (ActiveCountryId == CountryId)
+	{
+		// 같은 값이면 아무것도 하지 않는다. 지구본 화면이 핀을 옮길 때마다 부를 수 있다.
+		return;
+	}
+
+	ActiveCountryId = CountryId;
+
+	if (IsVerbose())
+	{
+		UE_LOG(LogFestaFiestaUI, Log, TEXT("UFF_UIFlowSubsystem: 국가 -> %s"),
+			CountryId.IsNone() ? TEXT("(없음)") : *CountryId.ToString());
+	}
 }
 
 void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerController* NewPlayer)
@@ -429,6 +509,28 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 	{
 		Options->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
 	}
+	else if (UFF_AtlasGlobeScreen* Globe = Cast<UFF_AtlasGlobeScreen>(Pushed))
+	{
+		Globe->OnBrowseFestivalsRequested.AddUniqueDynamic(
+			this, &UFF_UIFlowSubsystem::HandleAtlasBrowseFestivals);
+		Globe->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
+	}
+	else if (UFF_AtlasCountryScreen* Country = Cast<UFF_AtlasCountryScreen>(Pushed))
+	{
+		Country->OnStartFestivalRequested.AddUniqueDynamic(
+			this, &UFF_UIFlowSubsystem::HandleAtlasStartFestival);
+		Country->OnBackRequested.AddUniqueDynamic(this, &UFF_UIFlowSubsystem::HandleFrontendBackRequested);
+
+		// 어느 나라의 지도인지 알려준다. 화면이 흐름을 되묻지 않게 하는 방향이다 —
+		// 위젯이 서브시스템을 조회하기 시작하면 의존이 양방향이 된다.
+		if (ActiveCountryId.IsNone())
+		{
+			UE_LOG(LogFestaFiestaUI, Warning,
+				TEXT("UFF_UIFlowSubsystem: 국가 지도를 띄우는데 ActiveCountryId 가 없다. "
+					 "지구본에서 나라를 고르지 않고 바로 들어온 경로다 — 빈 지도가 뜬다."));
+		}
+		Country->SetCountry(ActiveCountryId);
+	}
 
 	// 카메라 연출. 리그는 **없어도 되는 것**이라 못 찾아도 조용히 지나간다 (경고를 끈다) —
 	// 화면이 바뀔 때마다 부르므로 리그 없는 레벨에서 경고가 쌓이면 로그가 쓸모없어진다.
@@ -510,6 +612,28 @@ void UFF_UIFlowSubsystem::HandleFrontendBackRequested()
 	}
 }
 
+void UFF_UIFlowSubsystem::HandleAtlasBrowseFestivals(FName CountryId)
+{
+	if (CountryId.IsNone())
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: 국가 없이 `축제 둘러보기` 가 들어왔다. 넘어가지 않는다."));
+		return;
+	}
+
+	// 국가를 먼저 기억한다. `GoToScreen` 이 국가 지도를 올리면서 이 값을 화면에 넣는다 —
+	// 순서가 반대면 빈 지도가 한 프레임 보인다.
+	SetActiveCountry(CountryId);
+	GoToScreen(EFF_UIFlowScreen::AtlasCountry);
+}
+
+void UFF_UIFlowSubsystem::HandleAtlasStartFestival(FName FestivalId)
+{
+	// 여기서 프론트엔드가 인게임으로 넘어간다. 실패하면 `StartFestival` 이 이유를 남기고
+	// 레벨을 열지 않으므로 화면은 그대로 국가 지도에 남는다.
+	StartFestival(FestivalId);
+}
+
 const FFF_FestivalAtlasEntry* UFF_UIFlowSubsystem::FindStartableEntry(FName FestivalId) const
 {
 	const UFF_FestivalAtlasCatalog* Catalog = LoadCatalog();
@@ -567,6 +691,37 @@ bool UFF_UIFlowSubsystem::StartFestival(FName FestivalId)
 	ActiveFestivalId = Entry->FestivalId;
 	Mode = EFF_UIFlowMode::Festival;
 
+	// 축제가 속한 국가를 함께 기억한다. 최종 결산에서 `로비로` 를 누르면 그 나라의 지도로
+	// 돌아가야 하는데, 그때 카탈로그를 다시 뒤져 역추적하면 CountryId 가 빈 항목에서 실패한다.
+	// 콘솔로 시작한 경우에도 여기서 자동으로 채워진다.
+	if (!Entry->CountryId.IsNone())
+	{
+		SetActiveCountry(Entry->CountryId);
+	}
+
+	// PreLoadMap 안에서 soft class를 처음 읽으면 로딩 화면을 준비하는 순간 자체가 무화면 hitch가 된다.
+	// 목적지와 표시 문맥을 지금 복사해 두고, 맵 로드 훅에서는 위젯 조립만 한다.
+	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
+	PendingLoadingMapPackage = Entry->Level.ToSoftObjectPath().GetLongPackageName();
+	PendingLoadingFestivalName = Entry->FestivalName;
+	PendingLoadingScreenClass = nullptr;
+
+	if (Settings && !Settings->LoadingScreenClass.IsNull())
+	{
+		PendingLoadingScreenClass = Settings->LoadingScreenClass.LoadSynchronous();
+		if (!PendingLoadingScreenClass)
+		{
+			UE_LOG(LogFestaFiestaUI, Warning,
+				TEXT("UFF_UIFlowSubsystem: LoadingScreenClass를 로드하지 못했다 (%s). 로딩 화면 없이 계속한다."),
+				*Settings->LoadingScreenClass.ToString());
+		}
+	}
+	else
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: LoadingScreenClass가 비어 있어 로딩 화면 없이 축제 레벨을 연다."));
+	}
+
 	// Stage 를 여기서 세우지 않는다. OpenLevel 이 월드를 파괴하므로, 지금 RequestTransition 을
 	// 부르면 죽어가는 월드의 위젯 위에 화면을 올리게 된다. 레벨이 열린 뒤에 세운다.
 	bPendingFestivalStart = true;
@@ -577,6 +732,90 @@ bool UFF_UIFlowSubsystem::StartFestival(FName FestivalId)
 
 	UGameplayStatics::OpenLevelBySoftObjectPtr(this, Entry->Level);
 	return true;
+}
+
+void UFF_UIFlowSubsystem::HandlePreLoadMapWithContext(
+	const FWorldContext& WorldContext,
+	const FString& MapName)
+{
+	if (!bPendingFestivalStart || PendingLoadingMapPackage.IsEmpty())
+	{
+		return;
+	}
+
+	// 다중 PIE나 다른 GameInstance의 여행은 건드리지 않는다.
+	if (WorldContext.OwningGameInstance.Get() != GetGameInstance())
+	{
+		return;
+	}
+
+	const FString NormalizedMapName = UWorld::RemovePIEPrefix(MapName);
+	if (NormalizedMapName != PendingLoadingMapPackage)
+	{
+		return;
+	}
+
+	// 목적지 하나에 한 번만 소비한다. bPendingFestivalStart는 새 월드의 PostLogin까지 유지해야 한다.
+	PendingLoadingMapPackage.Reset();
+	TSubclassOf<UFF_LoadingScreenWidget> LoadingClass = PendingLoadingScreenClass;
+	PendingLoadingScreenClass = nullptr;
+
+	if (!LoadingClass)
+	{
+		PendingLoadingFestivalName = FText::GetEmpty();
+		return;
+	}
+
+	// UE 5.7의 MoviePlayer는 PIE/commandlet/dedicated/null RHI/-NoLoadingScreen에서 비활성이다.
+	// 그 환경에서 안 보이는 것은 실패가 아니며 레벨 로드는 그대로 진행한다.
+	if (!IsMoviePlayerEnabled())
+	{
+		PendingLoadingFestivalName = FText::GetEmpty();
+		return;
+	}
+
+	IGameMoviePlayer* MoviePlayer = GetMoviePlayer();
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!MoviePlayer || !MoviePlayer->IsInitialized() || !GameInstance)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: MoviePlayer가 준비되지 않아 로딩 화면 없이 계속한다."));
+		PendingLoadingFestivalName = FText::GetEmpty();
+		return;
+	}
+
+	// Owner는 반드시 GameInstance다. Subsystem은 CreateWidget이 허용하는 owner 타입이 아니며,
+	// GameInstance에 두어야 월드가 파괴되는 여행 중에도 UUserWidget이 살아남는다.
+	ActiveLoadingScreenWidget = CreateWidget<UFF_LoadingScreenWidget>(GameInstance, LoadingClass);
+	if (!ActiveLoadingScreenWidget)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem: 로딩 위젯 생성 실패 (%s)."), *LoadingClass->GetName());
+		PendingLoadingFestivalName = FText::GetEmpty();
+		return;
+	}
+
+	ActiveLoadingScreenWidget->SetLoadingContext(PendingLoadingFestivalName);
+
+	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
+	FLoadingScreenAttributes Attributes;
+	Attributes.WidgetLoadingScreen = ActiveLoadingScreenWidget->TakeWidget();
+	Attributes.MinimumLoadingScreenDisplayTime = Settings
+		? FMath::Max(0.f, Settings->MinimumLoadingScreenDisplayTime)
+		: 0.75f;
+	Attributes.bAutoCompleteWhenLoadingCompletes = true;
+	Attributes.bMoviesAreSkippable = false;
+	Attributes.bWaitForManualStop = false;
+	Attributes.bAllowInEarlyStartup = false;
+	Attributes.bAllowEngineTick = false;
+
+	MoviePlayer->SetupLoadingScreen(Attributes);
+}
+
+void UFF_UIFlowSubsystem::HandleLoadingScreenFinished()
+{
+	ActiveLoadingScreenWidget = nullptr;
+	PendingLoadingFestivalName = FText::GetEmpty();
 }
 
 void UFF_UIFlowSubsystem::ReturnToAtlas()
@@ -596,7 +835,17 @@ void UFF_UIFlowSubsystem::ReturnToAtlas()
 	bPendingFestivalStart = false;
 	ClearStageHudWidget();
 
-	UE_LOG(LogFestaFiestaUI, Log, TEXT("UFF_UIFlowSubsystem: 로비로 돌아간다."));
+	// ★ `ActiveCountryId` 는 **비우지 않는다.** 국가 지도로 돌아가는데 어느 나라인지
+	//   잃으면 빈 지도가 뜬다. 확정 요구사항이 "뒤로 갈 때 국가 선택을 유지한다" 다.
+	if (ActiveCountryId.IsNone())
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_UIFlowSubsystem::ReturnToAtlas: 국가 지도로 돌아가는데 ActiveCountryId 가 없다. "
+				 "축제 항목의 CountryId 가 비어 있었을 수 있다 — 국가 지도가 무엇을 그릴지 모른다."));
+	}
+
+	UE_LOG(LogFestaFiestaUI, Log, TEXT("UFF_UIFlowSubsystem: 로비로 돌아간다 (국가 %s)."),
+		ActiveCountryId.IsNone() ? TEXT("(없음)") : *ActiveCountryId.ToString());
 	UGameplayStatics::OpenLevelBySoftObjectPtr(this, Settings->FrontendLevel);
 }
 

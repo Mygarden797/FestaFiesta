@@ -14,10 +14,12 @@ class UImage;
 class UProgressBar;
 class UTextBlock;
 class UTexture2D;
+class UViewport;
 class UWidget;
+class AFF_TargetShootingArena3D;
 class UFF_TargetShootingRuntime;
 
-/** Paint-only elliptical rings whose visible boundary is the authoritative hit ellipse. */
+/** Paint-only 2D target whose visible boundary is the authoritative hit ellipse. */
 UCLASS(NotBlueprintable)
 class FESTAFIESTA_API UFF_TargetShootingTargetVisual final : public UUserWidget
 {
@@ -30,9 +32,12 @@ public:
 		const FLinearColor& InBullseyeColor,
 		float InPrecisionRatio,
 		float InBullseyeRatio,
+		float InRemainingLifeRatio,
+		const FLinearColor& InCountdownColor,
 		float InLineThickness);
 
 	const FLinearColor& GetOuterColor() const { return OuterColor; }
+	float GetRemainingLifeRatio() const { return RemainingLifeRatio; }
 
 protected:
 	virtual int32 NativePaint(
@@ -48,9 +53,45 @@ private:
 	FLinearColor OuterColor = FLinearColor::White;
 	FLinearColor PrecisionColor = FLinearColor::White;
 	FLinearColor BullseyeColor = FLinearColor::White;
+	FLinearColor CountdownColor = FLinearColor::White;
 	float PrecisionRatio = 0.58f;
 	float BullseyeRatio = 0.26f;
+	float RemainingLifeRatio = 1.0f;
 	float LineThickness = 4.0f;
+};
+
+/** Paint-only tracer and glowing projectile core used by both WBP and native fallback. */
+UCLASS(NotBlueprintable)
+class FESTAFIESTA_API UFF_TargetShootingProjectileVisual final : public UUserWidget
+{
+	GENERATED_BODY()
+
+public:
+	void Configure(
+		const FVector2D& InDirection,
+		const FLinearColor& InCoreColor,
+		const FLinearColor& InGlowColor,
+		float InCoreThickness,
+		float InTrailLength);
+
+	const FLinearColor& GetCoreColor() const { return CoreColor; }
+
+protected:
+	virtual int32 NativePaint(
+		const FPaintArgs& Args,
+		const FGeometry& AllottedGeometry,
+		const FSlateRect& MyCullingRect,
+		FSlateWindowElementList& OutDrawElements,
+		int32 LayerId,
+		const FWidgetStyle& InWidgetStyle,
+		bool bParentEnabled) const override;
+
+private:
+	FVector2D Direction = FVector2D(0.0f, -1.0f);
+	FLinearColor CoreColor = FLinearColor::White;
+	FLinearColor GlowColor = FLinearColor(0.08f, 0.86f, 1.0f, 1.0f);
+	float CoreThickness = 4.0f;
+	float TrailLength = 34.0f;
 };
 
 /** Designer-editable colour and motion tokens; gameplay balance remains in the Definition Rules. */
@@ -63,14 +104,34 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop")
 	TSoftObjectPtr<UTexture2D> BackdropTexture;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop")
-	FLinearColor BackdropTint = FLinearColor(0.72f, 0.86f, 0.96f, 1.0f);
+	/** First-person water blaster rendered at the bottom of the shooting canvas. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TSoftObjectPtr<UTexture2D> WaterBlasterTexture;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop")
-	FLinearColor ScreenWashColor = FLinearColor(0.004f, 0.014f, 0.030f, 0.38f);
+	FLinearColor BackdropTint = FLinearColor(0.92f, 0.98f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop")
+	FLinearColor ScreenWashColor = FLinearColor(0.004f, 0.014f, 0.030f, 0.18f);
+
+	/** Clear colour behind the real-time 3D gallery viewport. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena")
+	FLinearColor Arena3DBackgroundColor = FLinearColor(0.001f, 0.004f, 0.010f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena", meta = (ClampMin = "0.1", ClampMax = "10.0"))
+	float Arena3DKeyLightIntensity = 0.78f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena", meta = (ClampMin = "0.0", ClampMax = "5.0"))
+	float Arena3DSkyIntensity = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena")
+	FVector Arena3DCameraLocation = FVector(-1100.0f, 0.0f, 190.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena")
+	FRotator Arena3DCameraRotation = FRotator::ZeroRotator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HUD")
-	FLinearColor ArenaSurfaceColor = FLinearColor(0.002f, 0.008f, 0.022f, 1.0f);
+	FLinearColor ArenaSurfaceColor = FLinearColor(0.002f, 0.012f, 0.030f, 0.50f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HUD")
 	FLinearColor ArenaFrameColor = FLinearColor(0.08f, 0.82f, 0.88f, 0.90f);
@@ -94,33 +155,72 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 	FLinearColor HudAmberColor = FLinearColor(1.0f, 0.63f, 0.12f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target")
-	FLinearColor NormalTargetColor = FLinearColor(0.08f, 0.86f, 0.92f, 1.0f);
+	FLinearColor NormalTargetColor = FLinearColor(1.0f, 0.20f, 0.08f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target")
-	FLinearColor BonusTargetColor = FLinearColor(1.0f, 0.68f, 0.08f, 1.0f);
+	FLinearColor BonusTargetColor = FLinearColor(1.0f, 0.72f, 0.04f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "1.0", ClampMax = "12.0"))
-	float TargetRingThickness = 4.0f;
+	float TargetRingThickness = 7.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target")
+	FLinearColor TargetCueColor = FLinearColor(1.0f, 0.96f, 0.82f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "10.0", ClampMax = "32.0"))
+	float TargetCueFontSize = 18.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "0.0", Units = "s"))
-	float TargetSpawnPulseSeconds = 0.16f;
+	float TargetSpawnPulseSeconds = 0.28f;
 
 	/** Keeps the visual edge identical to the authoritative hit ellipse. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float TargetSpawnMinOpacity = 0.55f;
+	float TargetSpawnMinOpacity = 0.25f;
 
 	/** Late-life pulse uses opacity, never render scale, so visible and clickable bounds stay equal. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float TargetUrgencyPulseMinOpacity = 0.80f;
+	float TargetUrgencyPulseMinOpacity = 0.60f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile")
+	FLinearColor ProjectileCoreColor = FLinearColor(0.88f, 1.0f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile")
+	FLinearColor ProjectileGlowColor = FLinearColor(0.08f, 0.86f, 1.0f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "64.0", ClampMax = "220.0"))
+	float ProjectileVisualSize = 132.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "1.0", ClampMax = "12.0"))
+	float ProjectileCoreThickness = 7.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "8.0", ClampMax = "96.0"))
+	float ProjectileTrailLength = 62.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FLinearColor WaterBlasterTint = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "180.0", ClampMax = "520.0"))
+	float WaterBlasterVisualSize = 360.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.0", ClampMax = "80.0"))
+	float WaterBlasterBottomOffsetPixels = 30.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.0", ClampMax = "60.0"))
+	float WeaponRecoilPixels = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.05", ClampMax = "0.5", Units = "s"))
+	float MuzzleFlashSeconds = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
+	FLinearColor MuzzleFlashColor = FLinearColor(0.30f, 1.0f, 0.96f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
 	FLinearColor HitColor = FLinearColor(0.18f, 0.90f, 0.94f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FLinearColor PrecisionColor = FLinearColor(0.46f, 1.0f, 0.85f, 1.0f);
+	FLinearColor PrecisionColor = FLinearColor(0.96f, 1.0f, 1.0f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
-	FLinearColor BullseyeColor = FLinearColor(1.0f, 0.88f, 0.28f, 1.0f);
+	FLinearColor BullseyeColor = FLinearColor(1.0f, 0.94f, 0.12f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feedback")
 	FLinearColor MissColor = FLinearColor(1.0f, 0.24f, 0.22f, 1.0f);
@@ -147,7 +247,7 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 	FLinearColor ReticleColor = FLinearColor(0.82f, 1.0f, 1.0f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Reticle", meta = (ClampMin = "8.0"))
-	float ReticleFontSize = 24.0f;
+	float ReticleFontSize = 38.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Reticle", meta = (ClampMin = "0.0", Units = "s"))
 	float ReticleShotPulseSeconds = 0.12f;
@@ -160,9 +260,9 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
  * DPI-independent target-shooting presentation.
  *
  * The screen converts a pointer position to play-area normalized coordinates and
- * submits that point together with the displayed TargetSerial. Hit testing,
- * scoring, target movement and time expiration all remain authoritative in the
- * runtime strategy.
+ * fires a projectile toward that point together with the displayed TargetSerial.
+ * Projectile travel, impact-time hit testing, scoring, target movement and time
+ * expiration all remain authoritative in the runtime strategy.
  *
  * A designer WBP may provide the optional named widgets below. If no WBP is
  * available, this concrete class builds a complete native UMG tree so packaged
@@ -197,6 +297,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Target Shooting")
 	bool IsUsingDesignerWidgetTree() const { return bUsingDesignerWidgetTree; }
 
+	/** True once the real-time perspective gallery has spawned in the UMG viewport. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Target Shooting")
+	bool IsThreeDimensionalArenaReady() const { return bThreeDimensionalArenaReady; }
+
 	/** WBP Class Defaults expose these tokens without changing runtime/scoring code. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Minigame|Target Shooting|Visual Style")
 	FFF_TargetShootingVisualStyle VisualStyle;
@@ -223,8 +327,11 @@ private:
 	void InitializeBindings();
 	void ResetTransientPresentationState();
 	void EnsureTransientPresentationWidgets();
+	bool TryInitializeThreeDimensionalArena();
 	void RefreshPresentation();
 	void RefreshTargetLayout();
+	void RefreshProjectilePresentation();
+	void RefreshWeaponPresentation();
 	void RefreshFeedbackPresentation();
 	void RefreshReticlePresentation();
 	FLinearColor GetFeedbackColor(EFF_TargetShootingFeedbackType FeedbackType) const;
@@ -248,18 +355,43 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_TargetShootingTargetVisual> TargetVisual;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_TargetShootingProjectileVisual> ProjectileVisual;
+
+	/** Real-time perspective shooting gallery; injected when an older WBP omits it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UViewport> Viewport_Arena3D;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AFF_TargetShootingArena3D> Arena3DActor;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UImage> Image_WaterBlaster;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UTextBlock> Text_MuzzleFlash;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UTextBlock> Text_WeaponStatus;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UTextBlock> Text_TargetCue;
+
 	bool bUsingDesignerWidgetTree = false;
 	bool bBuiltNativeWidgetTree = false;
 	bool bBindingsInitialized = false;
 	bool bResultFocusApplied = false;
 	bool bHasSnapshot = false;
 	bool bHasResult = false;
+	bool bThreeDimensionalArenaReady = false;
 	FVector2D LastPlayAreaSize = FVector2D::ZeroVector;
 	int32 PresentedTargetSerial = 0;
+	int32 PresentedProjectileSerial = 0;
 	int32 PresentedFeedbackSerial = 0;
 	float TargetSpawnPulseRemainingSeconds = 0.0f;
 	float FeedbackRemainingSeconds = 0.0f;
 	float ReticleShotPulseRemainingSeconds = 0.0f;
+	float MuzzleFlashRemainingSeconds = 0.0f;
 	FVector2D ReticlePointNormalized = FVector2D(0.5f, 0.5f);
 	bool bReticleInsidePlayArea = false;
 	FLinearColor BasePlayAreaBrushColor = FLinearColor::White;
@@ -277,7 +409,7 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UCanvasPanel> Canvas_PlayArea;
 
-	/** Visual only; must remain HitTestInvisible so the play area receives clicks. */
+	/** Authoritative 2D target visual; must remain HitTestInvisible so the play area receives clicks. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UBorder> Border_Target;
 

@@ -12,14 +12,56 @@ class UButton;
 class UCanvasPanel;
 class UTextBlock;
 class UTexture2D;
+class UTextureRenderTarget2D;
 class UWidget;
 class UFF_SurfingRuntime;
+class AFF_SurfingSceneActor;
+class AFF_SurfingCharacterActor;
 
 /** Designer-editable projection, colours and optional arena sprites. */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_SurfingVisualStyle
 {
 	GENERATED_BODY()
+
+	/** Forward half-length of the isolated capture arena in centimetres. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "500.0"))
+	float ArenaWorldHalfForward = 1450.0f;
+
+	/** Third-person camera offset in the camera-relative endless course window. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene")
+	FVector Camera3DLocation = FVector(-1350.0, 0.0, 720.0);
+
+	/** Third-person look-at offset relative to the moving surfer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene")
+	FVector Camera3DLookAt = FVector(950.0, 0.0, 80.0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "30.0", ClampMax = "120.0"))
+	float Camera3DFov = 68.0f;
+
+	/** 0 keeps the camera centred; 1 follows lateral movement completely. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "0.0", ClampMax = "0.9"))
+	float CameraLateralFollowRatio = 0.62f;
+
+	/** Fixed capture exposure for a stable daylight presentation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "-2.0", ClampMax = "4.0"))
+	float DaylightExposureBias = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "320", ClampMax = "3840"))
+	int32 RenderTargetWidth = 1280;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "180", ClampMax = "2160"))
+	int32 RenderTargetHeight = 720;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "0.0"))
+	float SceneKeyLightIntensity = 100000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "0.0"))
+	float SceneFillLightIntensity = 12000.0f;
+
+	/** Blueprint/native visual actor used for the surfer; null uses the native fallback. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Character", meta = (AllowAbstract = "false"))
+	TSubclassOf<AFF_SurfingCharacterActor> SurfingCharacterClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FVector2D ArenaCenter = FVector2D(0.5f, 0.51f);
@@ -72,7 +114,13 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
 	TSoftObjectPtr<UTexture2D> BoostPickupTexture;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
-	FLinearColor OceanColor = FLinearColor(0.015f, 0.12f, 0.20f, 1.0f);
+	FLinearColor OceanColor = FLinearColor(0.03f, 0.62f, 0.92f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
+	FLinearColor OceanDeepColor = FLinearColor(0.02f, 0.35f, 0.65f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
+	FLinearColor DaylightSkyColor = FLinearColor(0.28f, 0.78f, 1.0f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
 	FLinearColor BackdropTint = FLinearColor(0.84f, 0.98f, 1.0f, 1.0f);
@@ -93,13 +141,19 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
 	FLinearColor EntityHaloColor = FLinearColor(0.002f, 0.018f, 0.036f, 0.96f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
-	FLinearColor FoamColor = FLinearColor(0.72f, 0.98f, 0.96f, 0.20f);
+	FLinearColor FoamColor = FLinearColor(0.86f, 1.0f, 0.98f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
 	FLinearColor SurferColor = FLinearColor(1.0f, 0.52f, 0.16f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
 	FLinearColor BoostingSurferColor = FLinearColor(1.0f, 0.92f, 0.24f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
+	FLinearColor RiderSuitColor = FLinearColor(0.95f, 0.12f, 0.035f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
+	FLinearColor RiderSkinColor = FLinearColor(0.95f, 0.55f, 0.28f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Colour")
 	FLinearColor RockColor = FLinearColor(0.38f, 0.48f, 0.52f, 1.0f);
@@ -125,8 +179,9 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
  *
  * The runtime owns continuous movement, DataTable object placement, collision
  * and score. This screen only forwards direction/boost intent and projects the
- * immutable 2D snapshot into a pooled Canvas layer. The AAA HUD hierarchy stays
- * editable in WBP_FF_Surfing_FreeRide and dynamic art remains in Visual Style.
+ * immutable surface snapshot into an isolated SceneCapture-driven 3D arena.
+ * The AAA HUD hierarchy stays editable in WBP_FF_Surfing_FreeRide; the legacy
+ * Canvas projection remains available only as a fail-safe when 3D cannot start.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "FF Surfing Screen"))
 class FESTAFIESTA_API UFF_SurfingScreen : public UFF_MinigameScreenBase
@@ -145,11 +200,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Surfing")
 	void ApplySnapshot(const FFF_SurfingSnapshot& Snapshot);
 
+	/** Changes the dedicated surfing character without rebuilding gameplay state. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Surfing")
+	bool SetSurfingCharacterClass(TSubclassOf<AFF_SurfingCharacterActor> InCharacterClass);
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Surfing")
 	const FFF_SurfingSnapshot& GetDisplayedSnapshot() const { return DisplayedSnapshot; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Surfing")
 	bool IsUsingDesignerWidgetTree() const { return bUsingDesignerWidgetTree; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Surfing")
+	bool IsUsing3DScene() const { return bUsing3DScene; }
+
+	AFF_SurfingSceneActor* Get3DSceneActor() const { return SurfingSceneActor; }
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Minigame|Surfing|Visual Style")
 	FFF_SurfingVisualStyle VisualStyle;
@@ -180,6 +244,11 @@ private:
 	void ResolveBindingsFromWidgetTree();
 	bool HasUsableDesignerBindings() const;
 	void InitializeBindings();
+	bool Initialize3DScene();
+	void Release3DScene();
+	void Set3DPresentationActive(bool bActive);
+	void RefreshBackdropBrush();
+	void ResetTransientPresentationState();
 	void RefreshPresentation();
 	void RefreshFocusPresentation();
 	void RefreshArenaLayout();
@@ -223,6 +292,13 @@ private:
 	float EventPulseRemainingSeconds = 0.0f;
 	uint32 PresentedEntityHash = 0;
 	bool bHasPresentedEntityHash = false;
+	bool bUsing3DScene = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AFF_SurfingSceneActor> SurfingSceneActor;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> SurfingRenderTarget;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UCanvasPanel> Canvas_SurfArea;

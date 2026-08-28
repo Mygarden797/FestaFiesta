@@ -36,4 +36,8 @@ public:
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
 	// 기능 종료 시 호출되는 정리 로직
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Trigger")
+	void PlayPhotoCaptureEffect();
+	// 화면 플래시 연출
 };

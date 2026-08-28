@@ -84,8 +84,9 @@ struct FFF_OverviewCameraSettings
 	GENERATED_BODY()
 
 	// 가장 가까이 붙었을 때의 스프링암 길이. NPC 표정이 보이는 거리.
+	// 지형 추종이 붙으면서 더 낮춰도 파고들지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zoom", meta = (ClampMin = "100.0"))
-	float MinArmLength = 800.f;
+	float MinArmLength = 450.f;
 
 	// 가장 멀리 뺐을 때. 축제장 전체가 한 화면에 들어오는 거리.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zoom", meta = (ClampMin = "100.0"))
@@ -125,8 +126,13 @@ struct FFF_OverviewCameraSettings
 	// 거리를 늘리는 방법도 있지만, 그러면 줌인을 했는데 안 당겨지는 느낌이 난다.
 	//
 	// 0 이하면 보정하지 않는다.
+	//
+	// 초점이 지형을 따라다니게 되면서 이 값을 크게 잡을 이유가 줄었다.
+	// 예전에는 초점 Z 가 고정이라 언덕에서 파고드는 걸 각도로 막아야 했는데,
+	// 이제는 초점 자체가 올라가므로 낮춰도 안전하다.
+	// 낮출수록 NPC 를 가까이서 볼 수 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pitch", meta = (ClampMin = "0.0"))
-	float MinCameraHeightAboveFocus = 600.f;
+	float MinCameraHeightAboveFocus = 250.f;
 
 	// 최대 줌아웃 상태에서의 초당 팬 속도.
 	// 실제 속도는 현재 줌에 비례해서 줄어든다. 안 그러면 확대 상태에서 화면이 홱 날아간다.
@@ -184,6 +190,28 @@ struct FFF_OverviewCameraSettings
 	// 1 이면 줌과 무관하게 항상 최대 속도다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float EdgeScrollMinSpeedScale = 0.6f;
+
+	// 초점을 지형 표면에 붙여 다닐지.
+	//
+	// 끄면 초점 높이가 고정이라 팬으로 언덕을 넘어갈 때 카메라가 지형을 파고든다.
+	// 평지 테스트 맵에서는 안 드러나고 실제 지형에서만 나타난다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground")
+	bool bFollowGroundHeight = true;
+
+	// 지면에서 이만큼 띄운 지점을 초점으로 삼는다.
+	// 0 이면 지면에 딱 붙는데, 그러면 얕은 각도에서 카메라가 지면을 스친다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "0.0"))
+	float GroundFocusOffset = 100.f;
+
+	// 지면 높이가 갑자기 바뀔 때 따라가는 속도.
+	// 즉시 붙이면 계단이나 턱을 지날 때 화면이 튄다. 0 이하면 보간 없이 즉시 반영한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "0.0"))
+	float GroundFollowSpeed = 6.f;
+
+	// 초점 위아래로 이 범위 안에서만 지면을 찾는다.
+	// 너무 좁으면 절벽에서 지면을 놓치고, 너무 넓으면 아래층 바닥을 잡는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "100.0"))
+	float GroundTraceHalfHeight = 20000.f;
 
 	// 카메라 초점이 벗어나지 못하는 영역. 유효하지 않으면 클램프하지 않는다.
 	// 축제장 밖으로 나가면 빈 지형만 보여서 길을 잃는다.

@@ -14,11 +14,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnProgramReservationChanged, FGu
  * [참고] `data/metadata/spec/reservation_program_spec.md`.
  *
  * ### 계층
- * 이 서브시스템은 **보관·수명주기·조회**만 한다. 배정 계산은 `FFF_ProgramReservationRules::Assign`,
- * 잠금·퇴장 판정은 같은 클래스의 순수 함수가 갖는다.
+ * 이 서브시스템은 **보관·수명주기·조회**만 한다. 잠금·퇴장 판정은
+ * `FFF_ProgramReservationRules` 의 순수 함수가 갖는다.
  *
- * 프로그램은 Setup·MorningCheck 에서 사고 **남은 축제 기간 전체**에 적용된다 - GameInstance
- * 반면 그룹 배정은 매일 새로 한다 — 방문객이 날마다 새로 스폰되기 때문이다.
+ * 프로그램은 Setup·MorningCheck 에서 사고 그날치로 편성된다 - GameInstance 스코프다.
+ * 그룹 확정(`ConfirmReservedParty`)은 매일 새로 한다 — 예약 손님이 날마다 새로 스폰된다.
+ *
+ * ⚠️ **"날마다 새로 스폰된다"는 아직 확인된 사실이 아니다.** 크라우드는 레벨 BeginPlay 에
+ * 한 번만 유입을 시작하고 하루 경계를 구독하지 않는다.
+ * `crowdai_integration_guide.md` §13.3 E1 로 물어둔 상태다.
  */
 UCLASS()
 class FESTAFIESTA_API UFF_ProgramReservationSubsystem : public UGameInstanceSubsystem
@@ -47,10 +51,20 @@ public:
 
 	// --- 배정 -------------------------------------------------------------
 
-	// 후보 그룹을 이 예약에 배정한다. 계산은 `FFF_ProgramReservationRules::Assign` 이 한다.
-	// 이미 다른 예약에 배정된 그룹은 여기서 걸러낸다.
+	/**
+	 * 스폰된 예약 그룹을 확정한다. **crowdAI 가 그룹을 만든 직후 부르는 창구다.**
+	 *
+	 * 프로그램을 사면 정원만큼의 손님이 추가로 방문한다. 그 손님은
+	 * `FFF_TaggedVisitor::ReservationId` 를 달고 태어나므로, 스폰한 쪽은 선두의 그 값과
+	 * 방금 발급한 `PartyId` 만 넘기면 된다 — 몇 번째 그룹이 예약이었는지 셀 필요가 없다.
+	 *
+	 * 고를 것이 없어서 계산도 없다 — 그 그룹은 **이 프로그램 때문에 생겼다.** 검사만 한다.
+	 *
+	 * @return 확정되면 true. 없는 예약·정원 초과·다른 예약에 이미 속한 파티면 false.
+	 *         같은 예약에 같은 파티를 다시 넣는 것은 성공으로 친다(중복 통지에 안전하다).
+	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Reservation")
-	int32 AssignGroups(FGuid ReservationId, const TArray<FFF_ReservationCandidateGroup>& Candidates);
+	bool ConfirmReservedParty(FGuid ReservationId, int32 PartyId, int32 MemberCount);
 
 	// --- 조회 -------------------------------------------------------------
 

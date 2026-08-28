@@ -4,6 +4,8 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
+#include "CollisionQueryParams.h"
+#include "Engine/World.h"
 #include "GameFramework/SpringArmComponent.h"
 
 AFF_OverviewCameraPawn::AFF_OverviewCameraPawn()
@@ -163,8 +165,47 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 		Rig.FocusOn(Target->GetActorLocation());
 	}
 
+	// 팬과 추적이 초점을 옮긴 뒤에 지면을 잡는다. 순서를 바꾸면 한 프레임 늦은 위치의
+	// 지면을 따라가서 경사에서 카메라가 뒤처진다.
+	UpdateGroundHeight(DeltaSeconds);
+
 	Rig.AdvanceInterpolation(DeltaSeconds);
 	ApplyRigToComponents();
+}
+
+void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
+{
+	if (!CameraSettings.bFollowGroundHeight)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 초점의 수평 위치를 기준으로 위아래를 훑는다. 목표 위치를 쓰는 이유는
+	// 표시 위치를 쓰면 보간 중인 값을 따라가면서 서로를 쫓는 진동이 생기기 때문이다.
+	const FVector Focus = Rig.GetTargetState().FocusLocation;
+	const float HalfHeight = FMath::Max(100.f, CameraSettings.GroundTraceHalfHeight);
+
+	const FVector TraceStart(Focus.X, Focus.Y, Focus.Z + HalfHeight);
+	const FVector TraceEnd(Focus.X, Focus.Y, Focus.Z - HalfHeight);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FF_CameraGround), false);
+	QueryParams.AddIgnoredActor(this);
+
+	FHitResult Hit;
+	if (World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
+	{
+		Rig.ApplyGroundHeight(Hit.ImpactPoint.Z, DeltaSeconds);
+		return;
+	}
+
+	// 절벽, 물 위, 콜리전이 없는 구역. 마지막 높이를 유지한다.
+	Rig.OnGroundHeightUnavailable();
 }
 
 void AFF_OverviewCameraPawn::ApplyRigToComponents()

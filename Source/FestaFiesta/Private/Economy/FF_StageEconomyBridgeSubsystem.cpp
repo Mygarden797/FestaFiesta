@@ -67,6 +67,15 @@ bool UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow() const
 	return Stage->IsFinalDay() && Stage->CurrentStage == EFF_FestivalStage::MorningCheck;
 }
 
+bool UFF_StageEconomyBridgeSubsystem::CanScheduleProgramNow() const
+{
+	if (Stage == nullptr) return false;
+
+	// 남은 카드가 있는지는 보지 않는다. 그것은 CanScheduleProgram 이 카드별로 답하는 질문이고,
+	// 여기는 "지금이 그 화면을 띄울 단계인가"만 답한다.
+	return IsProgramSchedulingStage(Stage->CurrentStage);
+}
+
 void UFF_StageEconomyBridgeSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
 {
 	ProcessStageEntry(NewStage, Stage != nullptr ? Stage->CurrentDay : 0);

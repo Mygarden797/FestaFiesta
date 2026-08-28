@@ -9,7 +9,10 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Camera/FF_FestivalGameMode.h"
 #include "Finale/FF_FinaleLaunchSite.h"
+#include "Finale/FF_FinaleSettings.h"
+#include "GameFramework/GameModeBase.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraParameterStore.h"
@@ -78,10 +81,7 @@ void UFF_FinaleShowSubsystem::BindFestivalStage()
 		return;
 	}
 
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	UFF_FestivalStageSubsystem* Stage =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GetGameInstanceSubsystem<UFF_FestivalStageSubsystem>();
 	if (!Stage)
 	{
 		// 단계 시스템이 없는 테스트 맵이면 자동 시작만 못 할 뿐 콘솔 재생은 된다.
@@ -107,10 +107,7 @@ void UFF_FinaleShowSubsystem::UnbindFestivalStage()
 		return;
 	}
 
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	if (UFF_FestivalStageSubsystem* Stage =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	if (UFF_FestivalStageSubsystem* Stage = GetGameInstanceSubsystem<UFF_FestivalStageSubsystem>())
 	{
 		Stage->OnStageChanged.RemoveDynamic(this, &UFF_FinaleShowSubsystem::HandleFestivalStageChanged);
 	}
@@ -226,11 +223,7 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 				static_cast<int32>(ActiveGrade), FiredBursts, ActiveSpec.BurstCount, ElapsedSeconds);
 
 			// 등급별 수치를 같이 찍는다. 데이터 애셋을 고치고 나서 반영됐는지 바로 확인할 수 있다.
-			const TArray<EFF_FinaleGrade> All = {
-				EFF_FinaleGrade::None, EFF_FinaleGrade::C, EFF_FinaleGrade::B,
-				EFF_FinaleGrade::A, EFF_FinaleGrade::S
-			};
-			for (const EFF_FinaleGrade Grade : All)
+			for (const EFF_FinaleGrade Grade : FFF_FinaleGrades::GetAscendingOrder())
 			{
 				const FFF_FinaleGradeSpec Spec = ResolveSpec(Grade);
 				UE_LOG(LogFestaFiestaFinale, Display,
@@ -240,6 +233,13 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 					Spec.Colors.Num(),
 					Spec.BurstEffect.IsNull() ? TEXT("없음") : TEXT("지정됨"));
 			}
+
+			// 어느 애셋이 먹었는지 같이 찍는다. 세 군데서 올 수 있어서
+			// "값을 고쳤는데 왜 안 바뀌지" 가 나오기 쉽다.
+			const UFF_FinaleShowData* Data = ResolveShowData();
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("  사용 중인 데이터: %s"),
+				Data ? *Data->GetName() : TEXT("없음 (코드 기본값)"));
 
 			TArray<AFF_FinaleLaunchSite*> Sites;
 			AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
@@ -266,10 +266,41 @@ AFF_FestivalPlayerController* UFF_FinaleShowSubsystem::GetFestivalController() c
 	return World ? Cast<AFF_FestivalPlayerController>(World->GetFirstPlayerController()) : nullptr;
 }
 
+const UFF_FinaleShowData* UFF_FinaleShowSubsystem::ResolveShowData() const
+{
+	// 1. 코드에서 직접 꽂은 것. 연출을 임시로 바꿔볼 때 쓴다.
+	if (const UFF_FinaleShowData* Direct = ShowData.LoadSynchronous())
+	{
+		return Direct;
+	}
+
+	// 2. 이 레벨의 GameMode 지정. 연등축제처럼 연출이 다른 레벨에서 쓴다.
+	const UWorld* World = GetWorld();
+	if (const AFF_FestivalGameMode* GameMode =
+		World ? Cast<AFF_FestivalGameMode>(World->GetAuthGameMode()) : nullptr)
+	{
+		if (const UFF_FinaleShowData* FromLevel = GameMode->FinaleShowDataOverride.LoadSynchronous())
+		{
+			return FromLevel;
+		}
+	}
+
+	// 3. 프로젝트 기본값. 대부분의 레벨은 여기까지 온다.
+	if (const UFF_FinaleSettings* Settings = UFF_FinaleSettings::Get())
+	{
+		if (const UFF_FinaleShowData* FromSettings = Settings->DefaultShowData.LoadSynchronous())
+		{
+			return FromSettings;
+		}
+	}
+
+	return nullptr;
+}
+
 FFF_FinaleGradeSpec UFF_FinaleShowSubsystem::ResolveSpec(const EFF_FinaleGrade Grade) const
 {
-	// 데이터 애셋이 지정돼 있으면 그쪽 값이 이긴다. 없으면 코드 기본값이다.
-	if (const UFF_FinaleShowData* Data = ShowData.LoadSynchronous())
+	// 데이터 애셋이 있으면 그쪽 값이 이긴다. 없으면 코드 기본값이다.
+	if (const UFF_FinaleShowData* Data = ResolveShowData())
 	{
 		return Data->GetSpec(Grade);
 	}
@@ -281,10 +312,8 @@ bool UFF_FinaleShowSubsystem::StartShow()
 	EFF_FinaleGrade Grade = EFF_FinaleGrade::None;
 
 	// 등급은 축제 진행 쪽이 소유한다. 여기서는 읽기만 한다.
-	const UWorld* World = GetWorld();
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	if (const UFF_FestivalProgressionSubsystem* Progression =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr)
+		GetGameInstanceSubsystem<UFF_FestivalProgressionSubsystem>())
 	{
 		Grade = Progression->GetPurchasedFinaleGrade();
 	}

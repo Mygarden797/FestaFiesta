@@ -84,14 +84,17 @@ bool FFF_NeedRules_ZeroRateNeedsStayFlat::RunTest(const FString& Parameters)
 	const FFF_NeedRiseRates DefaultRates;
 	TestEqual(TEXT("기본값에서 갈증은 꺼져 있다"), DefaultRates.ThirstMinutesToLimit, 0.f);
 	TestEqual(TEXT("기본값에서 피로는 꺼져 있다"), DefaultRates.FatigueMinutesToLimit, 0.f);
-	TestEqual(TEXT("기본값에서 자극은 꺼져 있다"), DefaultRates.StimulationMinutesToLimit, 0.f);
 	TestEqual(TEXT("꺼진 Need 의 분당 증가량은 0 이다 — 0 으로 나누지 않는다"),
 		DefaultRates.GetRisePerMinute(EFF_NeedType::Thirst), 0.f);
+
+	// 자극은 Phase 2 로 켜졌다. 여기서 이 사실을 같이 고정하는 이유는, Phase 게이트가
+	// "코드 수정이 아니라 값 변경"이라 어느 성분이 켜져 있는지 읽을 곳이 이 표뿐이기 때문이다.
+	TestTrue(TEXT("기본값에서 자극은 켜져 있다(Phase 2)"), DefaultRates.StimulationMinutesToLimit > 0.f);
 
 	const FFF_NeedState After = FFF_NeedRules::Advance(FFF_NeedState(), 600.f, DefaultRates);
 	TestEqual(TEXT("갈증은 안 쌓인다(Phase 4)"), After.Thirst, 0.f);
 	TestEqual(TEXT("피로는 안 쌓인다(Phase 4)"), After.Fatigue, 0.f);
-	TestEqual(TEXT("자극은 안 쌓인다(Phase 2)"), After.Stimulation, 0.f);
+	TestTrue(TEXT("자극은 쌓인다(Phase 2)"), After.Stimulation > 0.f);
 	TestTrue(TEXT("반면 P0 두 개는 쌓인다"), After.Hunger > 0.f && After.Restroom > 0.f);
 
 	// 음수 MinutesToLimit 도 안전하게 "꺼짐"으로 본다
@@ -308,17 +311,23 @@ bool FFF_NeedRules_InitialNeedsStayWithinBounds::RunTest(const FString& Paramete
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_DisabledNeedsStartAtZero, "FestaFiesta.NPC.NeedRules.DisabledNeedsStartAtZero", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_NeedRules_DisabledNeedsStartAtZero::RunTest(const FString& Parameters)
 {
-	const FFF_NeedRiseRates Rates;  // Thirst/Fatigue/Stimulation 은 0(꺼짐)
+	const FFF_NeedRiseRates Rates;  // Thirst/Fatigue 는 0(꺼짐), Stimulation 은 Phase 2 로 켜져 있다
 
+	bool bAnyStimulation = false;
 	for (int32 AgentId = 1; AgentId <= 30; ++AgentId)
 	{
 		const FFF_NeedState Needs = FFF_NeedRules::MakeInitialNeeds(777, AgentId, 0, Rates);
-		if (Needs.Thirst != 0.f || Needs.Fatigue != 0.f || Needs.Stimulation != 0.f)
+		if (Needs.Thirst != 0.f || Needs.Fatigue != 0.f)
 		{
 			AddError(FString::Printf(TEXT("꺼진 Need 에 초기값이 들어갔다 (Agent %d)"), AgentId));
 			return false;
 		}
+		bAnyStimulation |= Needs.Stimulation > 0.f;
 	}
+
+	// 켜진 성분은 입장 시점부터 흩뿌려진다 — Phase 2 를 켠 순간 자극은 후반부터가 아니라
+	// 스폰 시점부터 개체마다 다른 값으로 시작한다.
+	TestTrue(TEXT("켜진 자극은 입장 시점에 흩뿌려진다"), bAnyStimulation);
 
 	// 켜면 초기값도 생긴다
 	FFF_NeedRiseRates WithThirst;
@@ -573,6 +582,55 @@ bool FFF_NeedRules_UnrelievedAgentLeavesEarlier::RunTest(const FString& Paramete
 	// 배수가 꺼져 있으면 둘 다 정확히 체류시간만큼 머문다 — 기능을 켜야만 차이가 생긴다
 	const FFF_StayConsumption Off = FFF_NeedRules::ConsumeStay(FFF_NeedState(), StepMinutes, 1.0f);
 	TestEqual(TEXT("기능이 꺼져 있으면 Need 와 무관하게 경과분만 소모"), Off.ConsumedStayBudgetMinutes, StepMinutes, 0.001f);
+	return true;
+}
+
+/**
+ * 상승과 해소는 짝이다 — 한쪽만 켜면 그 Need 가 전원에게 똑같이 걸린 상수가 된다.
+ *
+ * Relieve 는 해소량 0 인 성분을 "Phase 대기"로 보고 통째로 건너뛴다. 그래서 상승만 켜면
+ * 그 Need 는 1.0 에 붙어 영원히 안 내려오고, 시설을 골라도 아무 변화가 없다.
+ * 동적 끌림이 아니라 상수라 아무것도 구분하지 못하는데, 로그도 경고도 안 뜬다.
+ *
+ * 성분별로 따로 쓰지 않고 전수로 도는 이유: Thirst·Fatigue 를 나중에 켤 때도 같은 함정을 밟는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_NeedRules_RiseAndReliefAreEnabledInPairs, "FestaFiesta.NPC.NeedRules.RiseAndReliefAreEnabledInPairs", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_NeedRules_RiseAndReliefAreEnabledInPairs::RunTest(const FString& Parameters)
+{
+	const FFF_NeedRiseRates Rates;
+	const FFF_NeedReliefAmounts Amounts;
+
+	const TArray<TPair<EFF_NeedType, const TCHAR*>> Components = {
+		{ EFF_NeedType::Hunger,      TEXT("Hunger") },
+		{ EFF_NeedType::Thirst,      TEXT("Thirst") },
+		{ EFF_NeedType::Restroom,    TEXT("Restroom") },
+		{ EFF_NeedType::Fatigue,     TEXT("Fatigue") },
+		{ EFF_NeedType::Stimulation, TEXT("Stimulation") },
+	};
+
+	for (const TPair<EFF_NeedType, const TCHAR*>& Component : Components)
+	{
+		if (Rates.GetMinutesToLimit(Component.Key) <= 0.f)
+		{
+			// 안 쌓이는 성분은 해소량이 있든 없든 상관없다.
+			continue;
+		}
+
+		TestTrue(
+			*FString::Printf(TEXT("%s 는 상승이 켜져 있으므로 해소량도 0 이 아니어야 한다"), Component.Value),
+			Amounts.Get(Component.Key) > 0.f);
+	}
+
+	// 이 테스트가 실제로 무언가를 지키고 있다는 것을 고정한다 — 전 성분이 꺼져 있으면
+	// 위 루프가 공허하게 통과한다.
+	TestTrue(TEXT("최소 한 성분은 켜져 있다"),
+		Rates.GetMinutesToLimit(EFF_NeedType::Hunger) > 0.f);
+
+	// Phase 2 가 켜져 있다는 사실 자체를 고정한다. 0 으로 되돌아가면 무대 쏠림(AT-016)이 사라지는데,
+	// 게이팅만 남아서 "무대가 열렸는데 아무도 안 간다"로 보인다 — 원인이 여기라는 단서가 필요하다.
+	TestTrue(TEXT("Stimulation Phase 2 가 켜져 있다"),
+		Rates.GetMinutesToLimit(EFF_NeedType::Stimulation) > 0.f);
+
 	return true;
 }
 

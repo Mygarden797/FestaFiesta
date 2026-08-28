@@ -71,6 +71,14 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `OnMainProgramStarted`                 | `FString EventLabel` | 메인 공연 관련 알림 (2026-08-11 추가). **아래 주의 3건 참고** |
 | `OnMainProgramEnded`                   | `FString EventLabel` | 메인 공연 잠금 구간 종료 (2026-08-11 추가) |
 | `GetFacilityServiceRatePerMinute()`     | `float`             | (Queue) 시설 실측 처리율. 미등록 시설은 0 — **나누지 말 것** |
+| `StartNewFestival()`                   |                     | 축제를 Day1·Setup으로 초기화하고 시계 시작 (2026-08-20 추가) — OpenLevel 직후 1회 호출 필요 |
+| `GetLiveDurationForCurrentDay()`       | `float`             | 오늘 Live 총 길이(초). Day1=240초, Day2·3=300초 |
+| `OnNightLightingActivated`             | (인자 없음)             | 밤 조명 켤 시간이 됐을 때 (환경 시스템용) |
+| `OnDayEnded`                           | `FOnDayEnded`       | (EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달 (2026-08-19 추가, 이미 별도 항목으로 아래에 있음) |
+| `GetLiveClockStringFromMinutes(int32)` | `FString`           | 임의의 LiveMinutes를 "17:30" 형식 문자열로 변환 (2026-08-26 추가) |
+| `GetCurrentLiveClockString()`          | `FString`           | 지금 시각을 "17:30" 형식으로 반환 |
+| `GetCurrentStageDisplayName()`         | `FText`             | 현재 Stage의 한글 표시 이름 (⚠️ 패키징 빌드 안전성 재검토 필요 — 아래 참고) |
+| `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨) |
 
 **`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
 
@@ -170,6 +178,40 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 
    지금은 `연출 자리 + Skip` 스텁으로 두고 `to_verify` 로 표시해 두었습니다.
 
+**답변 (강민서 → 백종태, 관련 요청 2건)**
+
+### `StartNewFestival()`
+
+```cpp
+UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+void StartNewFestival();
+```
+
+- **상태**: `구현완료`
+
+호출 시 아래가 한 번에 초기화됩니다:
+- CurrentDay = 1
+- CurrentStage = Setup
+- ElapsedLiveSeconds = 0
+- bFestivalEndedBroadcasted = false
+- bNightLightingActivated = false (추가로 넣었습니다 — 안 하면 재시작해도 밤 조명이 켜진 채로 남는 버그가 생길 수 있어서요)
+
+🔴 **`OpenLevel` 직후 이 함수를 한 번 불러 주세요.** `bFestivalStarted` 가 false 인 동안에는
+`Tick()` 이 시간 진행 로직 전체를 건너뛰므로, 부르기 전에는 GameInstance 가 살아 있어도
+**시계가 아예 안 흐릅니다.**
+
+### `SunsetTransition` 단계 — 순수 연출 구간
+
+`DT_DaySequence` 기준으로 Day1·2·3 모두 같습니다.
+
+- **지속 시간**: **20초 고정** (Min=Max=20)
+- **스킵**: 불필요. `bSkippable = False` — 스킵 버튼을 만들지 않으셔도 됩니다
+- **플레이어 입력**: 받지 않습니다. 이 구간엔 태양 Rotator 를 Lerp 로 회전시키는
+  연출(`BP_EnvironmentManager`)만 돌아갑니다
+
+⚠️ **Stage 는 7종이 아니라 8종입니다.** `SunsetTransition` 을 포함한 `EFF_FestivalStage` enum
+기준이 맞습니다(`module-ownership.md` 3절이 7종으로 적혀 있어 어긋납니다).
+
 ### `OnDayEnded`
 
 - **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
@@ -182,6 +224,38 @@ Tick 폴링을 걷어냈습니다. `IsFinalDay()`도 `CanAdvanceToNextDay()`에 
 | 멤버                                     | 형                   | 설명                                |
 | -------------------------------------- | ------------------- | --------------------------------- |
 | `OnDayEnded`                           | `FOnDayEnded`       |(EndedDay, TodayLiveDuration) — 하루 종료 시 이월 정보 전달     |
+
+> **Live 길이는 날마다 다릅니다** (표 덤프 실측) — Day1 240초 / Day2·3 300초.
+> 밤 조명 트리거는 세 날 모두 90초입니다. 실행 중 조회는 `GetLiveDurationForCurrentDay()`.
+>
+> ⚠️ **`ElapsedLiveSeconds` 는 "현재 단계 경과"입니다.** 단계가 바뀔 때마다 0 으로 리셋되고
+> Setup·Closing 에서도 누적됩니다. Live 경과로 쓰시려면 `IsLiveStage()` 로 먼저 거르세요.
+>
+> ✅ **2026-08-26 완료: `FString GetLiveClockStringFromMinutes(int32 LiveMinutes) const`**
+> — 프로그램 카드의 임의 Live 경과분을 `17:30` 형식으로 바꿉니다. UI는 `StartHour = 17`을
+> 복제하지 않고 이 함수를 사용합니다.
+
+### `GetLiveClockStringFromMinutes` — Live 경과분 → `17:30`
+
+```cpp
+UFUNCTION(BlueprintPure, Category = "Festival Stage")
+FString GetLiveClockStringFromMinutes(int32 LiveMinutes) const;
+```
+
+- **상태**: `구현완료`
+- ⛔ **UI·경제 어느 쪽도 `StartHour = 17` 을 복제하지 않습니다.** 개장 시각의 원본은 이 함수 하나입니다
+
+> 🔧 **`GetCurrentLiveClockString()` 리팩터링 — 변환 필요 없습니다** (김시리 답변).
+> 걱정하셨던 초/분 불일치가 실제로는 없습니다. 지금 그 함수가
+> `StartHour * 60 + FMath::FloorToInt(ElapsedLiveSeconds)` 로 **경과 초를 이미 게임 분으로
+> 1:1 취급**하고 있어서(`FF_FestivalStageSubsystem.cpp:512`, 바로 아래 주석에도 그렇게 적혀
+> 있습니다) 두 함수가 같은 규약을 씁니다. 그래서 `/ 60` 없이 한 줄이면 됩니다:
+>
+> ```cpp
+> return GetLiveClockStringFromMinutes(FMath::FloorToInt(ElapsedLiveSeconds));
+> ```
+>
+> 급하진 않지만 하시면 `StartHour = 17` 중복(`:509`·`:524`)이 한 곳으로 줄어듭니다.
 
 ### 환경(날씨·야간) — `UFF_FestivalStageSubsystem` -강민서
 
@@ -325,7 +399,7 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
 **Lifecycle 패널과 검증 맵은 플레이어용 UI가 아니라 개발 도구입니다.** Morning Check UI를 만들 때
 동일한 시설 명령 진입점과 결과 처리 방식을 참고합니다.
 
-### 완성형 시설 건축 카탈로그 (2026-08-18 갱신)
+### 완성형 시설 건축 카탈로그 (2026-08-25 갱신)
 
 - **헤더**: `Public/Building/FF_BuildCatalogSubsystem.h`, `Public/Building/FF_BuildModeSubsystem.h`
 - **접근**: `GameInstanceSubsystem` 카탈로그 + `TickableWorldSubsystem` 건축 모드
@@ -345,6 +419,15 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
 `AFFZSPlacementPreviewActor`와 `ExecuteCommand()` 경로에 전달한다. 따라서 Zone 경계·충돌·여유 공간·
 Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우회하지 않는다.
 
+배치 회전의 권위 표현은 `FFFZSGridPlacement::YawCentidegrees`(0.01도 단위)다. 기존
+`RotatePlacement(int32 QuarterTurnDelta)`는 Blueprint 호환을 위해 90도 증감 래퍼로 유지하고, 새 UI는
+`RotatePlacementDegrees(float)`·`SetPlacementYawDegrees(float)`·`GetPlacementYawDegrees()`를 사용한다.
+`Q/E` 스냅 간격, `Shift+Q/E` 자유 회전 속도, 위치 스냅 간격은 각각
+`UFFZSDeveloperSettings::PlacementRotationSnapDegrees`,
+`FreePlacementRotationSpeedDegreesPerSecond`, `PlacementPositionSnapCm`에서 읽는다. 유효하지 않은 config의
+안전값은 45도, 초당 90도, 1cm다. 자유 회전은 매 프레임 최신 yaw만 기록하고 전체 배치 검증은 기존
+0.08초 주기를 유지하며, 확정 직전에는 최신 커서·각도·revision을 강제 재검증한다.
+
 활성 건축 세션에서는 설치 시설의 footprint(초록)·clearance(청록)·queue 예약 범위(노랑)를 표시한다.
 카탈로그가 닫힌 `BuildMode`에서 시설을 좌클릭하면 청록색으로 강조되고, 공용 우측 시설 정보 패널이
 `Build` 컨텍스트로 열린다. 패널은 시설 정보와 `이동`·`철거` 액션 및 닫기를 제공하며, 패널 위 좌클릭은
@@ -362,7 +445,8 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 | --- | --- |
 | `B` | 재배치 허용 단계에서 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기. 불허 단계에서는 진입하지 않음 |
 | `M` 또는 `이동` 버튼 | 선택 시설의 이동 프리뷰 시작 |
-| `Q`, `E` | 설치/이동 프리뷰를 90도 회전 |
+| `Q`, `E` 탭 | 설치/이동 프리뷰를 설정된 스냅 간격만큼 진행 방향의 다음 각도로 회전. 기본 45도 |
+| `Shift` + `Q`, `E` 홀드 | 설치/이동 프리뷰를 설정 속도로 연속 자유 회전. 첫 edge의 스냅 회전과 중복 실행하지 않음 |
 | `좌클릭` | `BuildMode`에서는 시설 선택, `Placing`에서는 설치, `Moving`에서는 이동 확정 |
 | `Enter` | 공용 시설 정보 패널의 건축 선택에서는 철거, `Placing`/`Moving`에서는 현재 프리뷰 확정 |
 | `우클릭` | 시설 선택 취소, 설치는 카탈로그 복귀, 이동은 원본을 건드리지 않고 `BuildMode` 복귀 |
@@ -531,13 +615,22 @@ Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
 
 ## Crowd · 밀집 — 이정원
 
-### `FFF_CrowdReadModel`
+### `FFF_CrowdReadModel` — ✅ 실값이 들어옵니다 (2026-08-27 갱신)
 
 - **헤더**: `Public/NPC/Integration/FF_CrowdReadModel.h`
-- **갱신 주기**: N틱 (초안 30틱)
-- **상태**: **`스텁`** — 채우는 쪽도 읽는 쪽도 아직 없음. 셀 크기·기록 주기·좌표 원점 미합의
+- **읽는 법**: `UFF_CrowdSimulationSubsystem::GetCrowdReadModel()` — const 참조
+- **갱신 주기**: **고정 30스텝 = 1초** (`SnapshotIntervalSteps = 30`, `FixedStepSeconds = 1/30`)
+- **상태**: ✅ **`PublishCrowdReadModel()` 이 채웁니다.** 스텁 아닙니다
 
 ```cpp
+FFF_CrowdReadModel {
+    float   CellSizeMeters;   // 셀 한 변(m). 지금 2.0
+    FVector GridOriginUU;     // 격자 원점(UU) — 셀 → 월드 환산의 기준
+    uint32  SnapshotFrame;    // 이 스냅샷을 만든 프레임
+    float   SimTimeMinutes;   // Live 경과(축제 분)
+    TArray<FFF_CrowdCellSample> OccupiedCells;
+}
+
 FFF_CrowdCellSample {
     int32 CellX, CellY;
     int32 Occupancy;        // 현재 인원
@@ -548,13 +641,29 @@ FFF_CrowdCellSample {
 
 **UI 사용처**: **Heat Map 색상 스케일** (2 주의 / 4 위험 / 5 심각), 밀집 지표, Report 드릴다운
 
-**UI 요청** — 이게 Heat Map의 유일한 원본입니다. 셀 크기와 좌표 원점이 정해지면 알려주세요.
-UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
+> 🔴 **셀은 5m 가 아니라 2m 입니다.** UI 초안이 5m×5m 를 가정하고 있었는데, 실제 값은
+> `FFF_CrowdMetrics::AnalysisCellSizeUU = 200UU`(2m, 4㎡)로 확정됐습니다. **숫자를 UI 에
+> 다시 적지 말고 `CellSizeMeters` 를 읽으세요** — 격자 크기는 밀도 계산의 분모라
+> 값이 갈리면 Heat Map 색이 통째로 틀립니다.
+
+> ⚠️ **`OccupiedCells` 는 사람이 있는 셀만 담습니다.** 인원 0 · 통과 0 인 셀은 배열에서
+> 빠집니다. 없는 셀을 "데이터 없음"이 아니라 **0 으로 칠하시면 됩니다** — 격자 전체를
+> 채워 오지 않는 것은 의도입니다.
+
+> 🔴 **다만 붙이시기 전에 이것부터 확인해 주세요 (2026-08-27 테스트 실측).**
+> `FestaFiesta.Crowd.World.ReadModelIsPublishedOnInterval` 이 **지금 Dev 에서 실패합니다.**
+> `스냅샷 원점 = 격자 원점` 이 `-5000` 이어야 하는데 `0` 이 나오고, `주기마다 발행된다` ·
+> `유효 셀이 담겼다` 도 같이 깨집니다. **격자 원점이 틀리면 셀 → 월드 환산이 통째로
+> 어긋나서 Heat Map 이 엉뚱한 자리에 그려집니다.**
+> 오늘 들어온 높이 격자 작업과 시점이 겹쳐서 이정원 님께 전달해 뒀습니다 —
+> **이 테스트가 초록불로 돌아온 뒤에 붙이시는 편이 안전합니다.**
 
 ### 기타
 
 `FF_BaseCrowd`, `FF_BaseNPC`, `FF_SpawnActor`, `FF_CrowdMovementComponent`,
-`FF_CrowdVisualComponent`, `FF_CrowdSimulationSubsystem` — UI 노출 API는 아직 미정.
+`FF_CrowdVisualComponent` — UI 노출 API는 아직 미정.
+
+`UFF_CrowdSimulationSubsystem` 은 위 `GetCrowdReadModel()` 하나만 UI 접점으로 보시면 됩니다.
 
 ---
 
@@ -564,8 +673,8 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 
 - **헤더**: `Public/NPC/Metrics/FF_NpcNeedMetricsSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- **갱신 주기**: 이벤트 (집계 주기마다, 초안 30틱). 값이 바뀐 Need만 발행
-- **상태**: 🔴 **읽는 쪽은 완성, 채우는 쪽이 아직 없어 값이 전부 0입니다.** 제 다음 작업 대상입니다
+- **갱신 주기**: **1초(고정 30스텝)마다.** 값이 바뀐 Need만 발행
+- **상태**: ✅ **`구현완료`** — 채우는 쪽이 붙어서 실제 값이 나옵니다
 - **UI 사용처**: Report 드릴다운 `CauseId` 롤업(AT-005)
 
 | 멤버                                | 형                             | 단위·범위                                       |
@@ -580,6 +689,15 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 
 > ⚠️ **`GetSampleCount() == 0`은 "데이터 없음"입니다.** 표본이 없어도 미해소율은 0을 돌려줍니다.
 > 구분하지 않으면 "아무도 배고프지 않다"로 잘못 표시됩니다.
+
+**집계는 `Live` 단계에서만 돕니다.** 준비·결산 단계에서는 마지막 확정값이 그대로 멈춰 있습니다 —
+0으로 떨어지지 않으니 "Live 가 끝나면 지표가 사라진다"고 가정하지 말아 주세요.
+
+**표본은 파티가 아니라 개인 단위입니다.** 4인 가족이면 4표입니다 — 지표 정의가
+"이 Need 가 미해소인 **방문객** 비율"이라서입니다.
+
+지금 실제로 움직이는 것은 **`Hunger`·`Restroom`·`Stimulation`** 셋입니다.
+`Thirst`·`Fatigue` 는 아직 쌓이지 않게 꺼 두어서 항상 0 입니다(계수만 켜면 되고 코드 변경은 없습니다).
 
 ### `FFF_DestinationDecision` — NPC 1명의 이동 원인
 
@@ -611,49 +729,222 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 **요청** — 이 구조체를 UI에 넘기는 경로를 정해야 합니다. 원하는 형태 알려주시면 맞추겠습니다
 (예: "선택된 NPC 1명의 마지막 결정"을 돌려주는 Getter).
 
-### 유료 프로그램 예약 — 요청 4건 중 3건 완료
+### 유료 프로그램 예약 — 읽기 API
 
 - **헤더**: `Public/NPC/Party/FF_ProgramReservationSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
 
-| 요청 | 상태 | API |
+| 하는 일 | API |
+|---|---|
+| 목록 | `GetReservationIds()` + `FindReservation(Id, Out)`. **시작 시각 오름차순 정렬** — 순서가 실행마다 바뀌지 않습니다 |
+| 예약 상태 | `FFF_ProgramReservation` 의 `Capacity`·`AssignedGroupIds`·`AssignedHeadcount`. 남은 자리는 `GetRemainingSeats(Id)` |
+| 갱신 통지 | `OnReservationChanged(FGuid ReservationId)` — 바뀐 예약의 핸들이 옵니다 |
+
+편성·취소는 아래 "프로그램 편성 화면" 절에 있습니다.
+
+- 시간 필드(`StartMinutes`·`EndMinutes`)는 **Live 경과분**입니다. 절대 시각으로 표시하시려면
+  아래 "프로그램 시각 표시" 절을 봐주세요 — **17 을 직접 더하지 말아 주세요.**
+- 🔴 **`UnfilledSeats` 는 화면에 붙이지 말아 주세요.** 정원은 보장되므로 배선이 끝나면 항상 0 입니다.
+  필드는 남겨 두지만 **0 이 아닌 값이 보이면 제 쪽 버그**입니다.
+
+### 🔴 프로그램 편성 화면이 필요합니다 (담당 백종태)
+
+Setup·MorningCheck 에서 **그날 열 프로그램을 고르는 화면**입니다. 경제 쪽은 다 됐습니다.
+
+> **2026-08-27 — 자리는 이미 잡혀 있습니다.** `EFF_PrepHudTab::Program`("프로그램") 탭이
+> `FF_PrepHudTypes.h` 에 있고 `Center` 도킹 대상입니다. 지금 `Panels/` 에 있는 패널은
+> `FF_PrepPanelCheck` · `FF_PrepPanelStaff` 둘뿐이라 **이 탭을 누르면 열리는 것이 없습니다.**
+> `FF_PrepPanelStaff` 와 같은 모양(`UFF_PrepPanelBase` 상속)으로 하나 더 만드시면 됩니다.
+
+**한 줄 요약** — 아침에 Gold 와 인원을 걸면 **그 프로그램을 좋아하는 손님이 정원만큼 축제에 옵니다.**
+프로그램은 "유료 광고"에 가깝습니다 — 체험비도 벌지만, 데려온 손님이 부스에서도 쓰기 때문입니다.
+
+> 🔴 **순익은 범위가 아니라 숫자 하나입니다.** 정원이 반드시 채워지므로 "정원을 못 채우면 손해"
+> 같은 상황이 없습니다.
+>
+> ⚠️ 단, **NPC 를 실제로 데려오는 배선은 아직입니다**(이정원 님 대기). 그때까지는 실제 참가
+> 인원이 정원보다 적게 나옵니다 — 곧 없어질 과도기라 **화면은 확정값 기준으로 만들어 주세요.**
+> 배선이 끝나면 알려드리겠습니다.
+
+**용어 — 구조체가 셋이라 헷갈립니다**
+
+| | 뭔가 | 수명 |
 |---|---|---|
-| ① 프로그램 목록 | ✅ | `GetReservationIds()` + `FindReservation(Id, Out)`. **시작 시각 오름차순 정렬** — 순서가 실행마다 바뀌지 않습니다 |
-| ② 예약 상태 | ✅ | `FFF_ProgramReservation` 의 `Capacity`·`AssignedGroupIds`·`AssignedHeadcount`·`UnfilledSeats`. 남은 자리는 `GetRemainingSeats(Id)` |
-| ③ **구매·취소 Command** | 🔴 **다음 작업** | Gold 를 쓰는 일이라 경제 S8 과 같이 붙입니다. 실패 이유는 피날레와 같은 방식으로 **열거형**을 드립니다 |
-| ④ 변경 델리게이트 | ✅ | `OnReservationChanged(FGuid ReservationId)` — 바뀐 예약의 핸들이 옵니다 |
+| `FFF_ProgramCard` | **메뉴판 한 줄.** 저작 데이터라 안 변합니다. 지금 두 장(공방·요가) | 축제 내내 고정 |
+| `FFF_ScheduledProgram` | **오늘 그 카드를 산 기록.** 카드 id + 예약 핸들 | **하루** |
+| `FFF_ProgramReservation` | 그 편성이 만든 **좌석표.** 정원·시각·확정 인원 | 하루 |
 
-- 시간 필드(`StartMinutes`·`EndMinutes`)는 **Live 경과분**입니다. 화면에 시각으로 표시하시려면
-  변환 지점을 한 곳으로 두시는 게 좋습니다.
-- `UnfilledSeats > 0` 은 **정원을 다 못 채운 것**이고 오류가 아닙니다 — 정원을 그룹 크기 조합으로
-  정확히 채우는 규칙이라(4명 정원에 3인 그룹만 남으면 1자리) 남을 수 있습니다. "남은 자리"로
-  그대로 보여주시면 됩니다.
-- ⚠️ **구매 화면이 없어서 실제 예약이 0건입니다.** 목록이 비어 보이는 것이 지금은 정상이고,
-  ③이 붙어야 찹니다.
+"프로그램을 산다"는 것은 **카드를 오늘 하루치로 편성하는 것**입니다. 같은 카드를 하루에 두 번은
+못 사고(`AlreadyScheduled`), 다음 날 아침이면 편성이 비워져서 **또 살 수 있습니다.**
 
-### 경제 값 5종 — ViewModel 연결 요청
+⚠️ **플레이어가 시각을 정하는 게 아닙니다.** `StartMinutes` 가 카드에 박혀 있어서 요가를 낮으로
+끌어 옮길 수 없습니다 — **"이 시간대의 이 프로그램"을 고르는 화면**입니다.
+
+- **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
+- **접근**: `GameInstanceSubsystem` (다른 경제 값과 같은 곳입니다)
+
+| 하는 일 | API |
+|---|---|
+| **화면 표시 여부** | `UFF_StageEconomyBridgeSubsystem::CanScheduleProgramNow()` — 🔴 **아래 주의** |
+| 목록 | `GetProgramCatalog()` → `TArray<FFF_ProgramCard>` |
+| 오늘 편성한 것 | `GetScheduledPrograms()` → `TArray<FFF_ScheduledProgram>`(카드 id + 예약 핸들) |
+| 버튼 활성화 | `CanScheduleProgram(ProgramId)` — **상태를 안 바꿉니다.** 매 프레임 부르셔도 됩니다 |
+| 편성 | `TryScheduleProgram(ProgramId, FacilityInstanceId)` → `EFF_ProgramPurchaseResult` |
+| 갱신 통지 | `OnScheduledProgramsChanged`(인자 없음) — 목록과 인원을 같이 다시 그려 주세요 |
+
+> 🔴 **단계 판정은 `CanScheduleProgramNow()` 로 해주세요.** `TryScheduleProgram` 은
+> **단계를 안 봅니다** — Live 중에 불러도 편성이 됩니다. 피날레의 `CanPurchaseFinaleNow()` 와
+> 같은 성격이고, 같은 이유로 **표시용이지 편성을 막지는 않습니다**(돈 규칙과 단계 규칙을 한
+> 함수에 섞으면 경제 테스트가 Stage 서브시스템을 세워야 해서요).
+>
+> **왜 막아야 하나** — Live 30분에 공방(30~60분) 카드를 사면 예약 슬롯은 생기는데 손님이 올
+> 시점이 이미 지났습니다. 그러면 **비용만 빠지고 체험비 0** 으로 정산된 뒤 정원 미달 경고가
+> 뜹니다. 크래시가 없어서 조용히 손해만 보는 함정입니다.
+>
+> 허용 단계는 **Setup · MorningCheck** 입니다. ⚠️ 시설 배치(`IsReconfigureAllowed()`)는
+> `PromotionPreview` 도 허용하지만 **편성은 안 됩니다** — 두 규칙이 다릅니다. 배치 화면과
+> 편성 화면을 같은 조건으로 묶으시면 어긋납니다.
+
+`FFF_ProgramCard` 가 화면에 필요한 값을 다 갖고 있습니다:
+
+| 필드 | 화면에서 |
+|---|---|
+| `DisplayName` | 카드 이름. **`FText` 라 그대로 쓰시면 됩니다**(enum 이 아니라 패키징 함정 없음) |
+| `CostGold` | 비용 |
+| `RequiredStaff` | 필요 인원 |
+| `Capacity` · `FeePerPerson` | 정원 · 1인당 체험비 |
+| `CalcMaxRevenue()` | 체험비 매출 = `Capacity × FeePerPerson`. **이름은 `Max` 지만 정원이 보장되므로 확정값으로 쓰시면 됩니다** (이름은 배선이 끝날 때 정리하겠습니다) |
+| `StartMinutes` · `EndMinutes` | **Live 경과분**입니다. 표시 방법은 아래 "프로그램 시각 표시" 절 |
+
+**화면 예시** — 리스트 한 줄에 이 정도면 판단이 됩니다:
+
+```
+바다향기 공방   30~60분   정원 12 · 체험비 30 · 인원 1명   비용 200   [편성]
+   순익 +160      손님 12명이 축제에 옵니다
+
+선셋 요가       90~120분  정원 16 · 체험비 25 · 인원 2명   비용 250   [편성]
+   순익 +150      손님 16명이 축제에 옵니다
+
+오늘 쓸 수 있는 인원   6명 중 6명
+```
+
+순익은 `CalcMaxRevenue() - CostGold` 하나입니다.
+
+**"손님 N명이 옵니다" 줄이 이 화면의 핵심입니다.** 체험비 순익만 보면 두 카드가 +160/+150 로
+비슷해 보이는데, 실제 값어치는 **데려오는 인원**에서 갈립니다 — 그 손님들이 부스에서도 쓰고
+그 수수료가 따로 들어오기 때문입니다. `Capacity` 를 그대로 쓰시면 됩니다.
+
+**실패 이유는 한글로 드립니다** —
+`UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(Result)`.
+`없는 프로그램` / `오늘 이미 편성했다` / `인원이 부족하다` / `Gold 부족` /
+`축제가 시작되지 않았다`. ⚠️ enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.
+
+**⚠️ 시설 핸들이 필요합니다.** `TryScheduleProgram` 의 두 번째 인자는 ZoneSystem 의
+`FacilityInstanceId` 입니다. 프로그램이 어느 시설에서 열리는지가 정해져야 NPC 가
+거기로 이동하고, 잠금·퇴장 금지·도착 판정이 그 시설 기준으로 걸립니다.
+플레이어가 시설을 고르는 흐름이 필요하고, **무효한 핸들을 넘기면 편성이 거절됩니다**
+(Gold 는 안 빠집니다).
+
+**취소 버튼은 만들지 않았습니다.** 편성은 하루짜리라 다음 날 아침이면 자동으로 비워집니다.
+되돌리기를 넣으면 "샀다 취소했다"로 인원 점유만 흔들리고 환불 규칙이 또 필요해집니다.
+필요하시면 말씀해 주세요 — 규칙(전액/부분 환불)을 정해야 합니다.
+
+#### 프로그램 시각 표시 — Stage 변환 함수를 쓰세요
+
+카드의 `StartMinutes`·`EndMinutes` 는 **Live 경과분**입니다(NPC 의 욕구·체류·잠금 판정이
+쓰는 것과 같은 축이라, 플레이어가 보는 시각과 NPC 가 느끼는 시각이 어긋나지 않습니다).
+
+**게임 시계는 이미 있습니다** — `1 Live초 = 1 게임분`, **개장 17:00**. Live HUD 의
+`GetLiveClockText()` 가 그걸 그려서 화면에 `17:30` 이 이미 떠 있습니다. 그래서 카드 값도
+같은 시각으로 보여야 합니다:
+
+| 카드 | Live 경과분 | 보여야 하는 시각 |
+|---|---|---|
+| 바다향기 공방 | 30~60 | **17:30 ~ 18:00** |
+| 선셋 요가 | 90~120 | **18:30 ~ 19:00** |
+
+`GetLiveClockStringFromMinutes(int32 LiveMinutes)`(강민서)에 `StartMinutes`·`EndMinutes` 를
+각각 넘기면 절대 시각이 나옵니다.
+
+- ⛔ UI에 `17`을 직접 더하지 않습니다. 개장 시각의 원본은 Stage 한 곳에만 둡니다
+- 카드 값은 `float`지만 현재 저작값은 정수 분입니다. 호출 시 정수 변환 정책은 UI 한 곳에서 통일합니다
+
+> 참고로 Live 총 길이가 날마다 달라서 **폐장 시각도 다릅니다** — Day1 은 21:00,
+> Day2·3 은 22:00 입니다. 카드 시각은 세 날 모두 같습니다(가장 짧은 날 안에 들어가는 것을
+> 테스트로 고정해 뒀습니다).
+
+#### 🔴 인원 표시는 `GetTotalStaffCount()` 가 아니라 `GetAvailableStaffCount()` 입니다
+
+프로그램이 인원을 묶습니다. **전체 인원만 보여주면 플레이어가 Event 에 6명을 다 쓸 수 있다고
+착각합니다.**
+
+| 값 | 뜻 |
+|---|---|
+| `GetTotalStaffCount()` | 오늘 가진 전체 인원 (기본 6 + 알바) |
+| `GetStaffAssignedToPrograms()` | 프로그램에 묶인 인원 |
+| **`GetAvailableStaffCount()`** | **지금 Event 대응에 쓸 수 있는 인원** = 전체 − 묶인 인원 |
+
+아침 화면·상단 바에는 **`GetAvailableStaffCount()`** 를 띄워 주세요. 전체 인원을 같이
+보여주시려면 `6명 중 3명 사용 가능` 처럼 두 값을 나란히 쓰시면 됩니다.
+갱신은 `OnScheduledProgramsChanged` 와 `OnTotalStaffCountChanged` 둘 다 받아야 합니다.
+
+#### 체험비는 프로그램이 **열리는 시각**에 들어옵니다
+
+카드마다 열리는 시각이 다릅니다(공방 30분 · 요가 90분). 그 시각이 되면 그 카드 몫의 체험비가
+**그때** 원장에 들어갑니다 — 부스 수수료와 같은 리듬입니다. Closing 이 아닙니다.
+
+`GetEarnRowsForDay(Day)` 의 **`유료 프로그램 체험비`** 줄이 그것입니다. 줄의 내용은 그대로이고
+**값이 채워지는 시점만** 다릅니다 — Live 중에 두 번 올라갑니다(공방 열릴 때, 요가 열릴 때).
+
+- **마감 화면만 보시는 거면 하실 일이 없습니다.** 마감 시점의 합계는 같습니다
+- **Live 중 갱신을 반영하실 거면** `OnGoldChanged` / `OnTodayRevenueChanged` 를 구독하세요
+- 마감 화면에는 **`유료 프로그램 체험비` 줄 하나면 됩니다.** `공방 8/12명 (빈자리 4)` 같은
+  빈자리 표시는 정원이 보장되므로 생길 상황이 없습니다
+
+### 경제 값 5종 — ViewModel 연결 (2026-08-27 재확인)
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- **상태**: 원본 API 전부 `구현완료`. **ViewModel 한 곳만 붙이면 화면에 뜹니다**
+- **상태**: 원본 API 전부 `구현완료`. **3/5 연결됐고 매출 2종이 남았습니다**
 
 | 값 | Getter | 델리게이트 | 단위·범위 | 연결 |
 |---|---|---|---|---|
-| 잔액 | `GetGold()` | `OnGoldChanged` | Gold, 0 이상·상한 없음 | ✅ 연결됨 |
-| 누적 매출 | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | ⬜ |
-| 오늘 매출 | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | ⬜ |
-| **밀린 임대료** | `GetTotalArrears()` | `OnTotalArrearsChanged` | Gold, 0 이상 | 🔴 **UI 참조 0곳** — 상단 바 자금난 경고가 이것에 달려 있습니다 |
-| **오늘 일하는 인원** | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 명, 6~12 | 🔴 **UI 참조 0곳** — Event 배치·아침 고용 화면 |
+| 잔액 | `GetGold()` | `OnGoldChanged` | Gold, 0 이상·상한 없음 | ✅ |
+| **누적 매출** | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | 🔴 **아직 더미** — ViewModel 이 값을 들고만 있고 원본을 안 구독합니다 |
+| **오늘 매출** | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | 🔴 **아직 더미** — 위와 같음 |
+| 밀린 임대료 | `GetTotalArrears()` | `OnTotalArrearsChanged` | Gold, 0 이상 | ✅ `HandleOwnerArrearsChanged` 로 연결 (8/26 백종태) |
+| **쓸 수 있는 인원** | `GetAvailableStaffCount()` | `OnTotalStaffCountChanged` + `OnScheduledProgramsChanged` | 명, 0~12 | ⚠️ **다른 값이 붙어 있습니다** — 아래 |
 
-(2026-08-23 코드 확인 기준입니다. 이미 붙이셨는데 표가 틀렸으면 알려주세요.)
+**⚠️ 인원 칸이 `GetTotalStaffCount()` 로 연결돼 있습니다.** ViewModel 이 구독하는 것은
+`OnTotalStaffCountChanged` 하나이고 중계하는 값도 전체 인원입니다.
+**프로그램이 인원을 묶기 때문에** 전체만 띄우면 플레이어가 Event 에 6명을 다 쓸 수 있다고
+착각합니다. 바꾸실 것은 두 가지입니다.
 
-**연결 작업 4가지**
+1. 표시 값을 `GetAvailableStaffCount()` 로
+2. `OnScheduledProgramsChanged` 도 같이 구독 — 편성/해제 때 가용 인원이 바뀌는데
+   `OnTotalStaffCountChanged` 는 그때 안 울립니다
 
-1. ViewModel 초기화 때 위 5개 Getter로 초기값을 한 번 동기화해 주세요.
-2. 델리게이트 5개를 구독해 ViewModel 값을 갱신하고, `Deinitialize`에서 구독을 해제해 주세요.
-   다섯 개 다 같은 모양(Getter + 변경 델리게이트 쌍)이고 **값이 실제로 바뀔 때만 발행됩니다.**
-3. 구매 버튼은 `CanAfford(int32 CostGold)`를 그대로 중계해 주세요. 위젯이 잔액과 가격을 직접 비교하지 않습니다.
-4. 다섯 개 다 델리게이트가 있으니 0.1초 폴링 대상에서 빼도 됩니다.
+전체는 `GetTotalStaffCount()`, 묶인 몫은 `GetStaffAssignedToPrograms()` 로 따로 있으니
+`4 / 6명 (프로그램 2명)` 같은 표시도 가능합니다.
+
+(연결 여부는 코드 확인 기준입니다. 이미 붙이셨는데 표가 틀렸으면 알려주세요.)
+
+**남은 연결 작업 — 매출 2종**
+
+Gold 와 **같은 모양**이라 `HandleOwnerGoldChanged` 를 복사하시면 됩니다.
+
+1. `Initialize` 에서 `OnTotalRevenueChanged`·`OnTodayRevenueChanged` 를 `AddUniqueDynamic`,
+   `Deinitialize` 에서 `RemoveDynamic`.
+2. 바인딩 직후 Getter 로 초기값 1회 동기화 — 위젯이 늦게 생겨도 초기값을 놓치지 않게.
+3. `ApplyIntMetric` 을 그대로 쓰시면 **값이 실제로 바뀔 때만** 발행됩니다.
+4. 붙이고 나면 매출 2종도 0.1초 폴링 대상에서 빼실 수 있습니다.
+
+구매 버튼은 `CanAfford(int32 CostGold)` 를 그대로 중계해 주세요 — 위젯이 잔액과 가격을
+직접 비교하지 않습니다.
+
+> `Public/UI/ViewModel/FF_FestivalViewModelSubsystem.h:35` 의 상태 표가 `2026-08-14 기준`
+> 이라 지금과 다릅니다(Gold·미납·Staff 항목). 헤더는 종태님 파일이라 손대지 않았습니다 —
+> 매출 연결하실 때 같이 갱신해 주시면 좋겠습니다.
 
 - 인원은 **기본 팀(`GetBaseStaffCount()`, 무페이·해고 불가) + 오늘 쓴 알바(`GetTemporaryStaffCount()`)** 로
   쪼개서 보여주실 수 있습니다. 두 숫자 다 데이터 애셋 값이라 밸런싱으로 바뀝니다
@@ -662,21 +953,19 @@ UI는 5m × 5m 격자를 가정하고 스텁을 만들어 두겠습니다.
 
 ### 🔴 화면 만들 때 알아야 하는 것 5가지
 
-**1. "다음 날" 버튼이 이제 돈을 걷습니다. 종태님이 고치실 것은 없습니다.** 이미 만들어 두신
+**1. "다음 날" 버튼이 돈을 걷습니다. 종태님이 고치실 것은 없습니다.**
 `RequestAdvanceToNextDay()`가 하루치 임대료 2,400을 걷고, 오늘 매출을 0으로 되돌리고, 어제 쓴 알바를 퇴근시킵니다.
 값 4개(잔액·밀린 임대료·오늘 매출·인원)가 한꺼번에 바뀌고 전부 델리게이트가 옵니다.
 
 **2. 잔액을 UI가 직접 계산하지 말아 주세요.** 버튼 직후에 `잔액 − 2,400`을 계산하면 어긋납니다 — 잔액이 부족하면
 실제로 빠지는 금액은 2,400이 아니라 "있는 만큼"입니다. 델리게이트가 주는 값을 그리시면 항상 맞습니다.
 
-**3. 🔴 Day1 셋업 예산은 7,600입니다. 프로토타입을 10,000으로 만들어 두셨다면 바꿔 주셔야 합니다.**
+**3. 🔴 Day1 셋업 예산은 7,600입니다.** 프로토타입이 10,000 기준이면 **셋업·홍보 구간 표시를
+바꿔 주셔야 합니다.**
 
-> 2026-08-19에 *"1일차만 아침 단계를 건너뛰는 것이 맞다면 알려 주세요"* 라고 물어봐 주셨습니다.
-> **네, 그게 맞습니다.** Day1만 개장 준비(MorningCheck)를 건너뜁니다.
-
-`DT_DaySequence` 에 **`Day1_MorningCheck` 행이 없습니다.** Day1은 준비의 날이라 아침 점검이 없고,
-팀 의도로 확정됐습니다. 그래서 Day1 임대료 2,400은 **축제 시작과 함께** 걷힙니다 —
-Day2·3처럼 아침에 걷을 자리가 없기 때문입니다. 표에 있는 각 날의 흐름입니다:
+`DT_DaySequence` 에 `Day1_MorningCheck` 행이 없습니다 — Day1만 개장 준비를 건너뜁니다(팀 의도).
+그래서 Day1 임대료 2,400은 Day2·3처럼 아침에 걷을 자리가 없어 **축제 시작과 함께** 걷힙니다.
+표에 있는 각 날의 흐름입니다:
 
 | Day | 단계 흐름 |
 |---|---|
@@ -684,135 +973,10 @@ Day2·3처럼 아침에 걷을 자리가 없기 때문입니다. 표에 있는 �
 | Day2 | `MorningCheck`(120초) → `SunsetTransition` → `Live` → `Closing` → `Report` |
 | Day3 | `MorningCheck` → `SunsetTransition` → `Live` → `Finale` → `Closing` → `Report` |
 
-흐름에 `MorningCheck` 대신 `SunsetTransition`(20초)이 `Live` 앞에 있는 것도 표 기준이니
-프로토타입 단계 순서도 같이 확인해 주세요.
+`Live` 앞에 `SunsetTransition`(20초)이 있는 것도 표 기준이니 프로토타입 단계 순서도 같이
+확인해 주세요.
 
-🔴 **그래서 플레이어가 셋업에서 시설을 고를 때 보는 예산은 7,600입니다.** 10,000이 아닙니다.
-프로토타입이 10,000 기준이면 **셋업·홍보 구간 표시를 7,600으로 바꿔 주셔야 합니다.**
-
-숫자를 옮기는 쪽(축제 시작 → 개장 준비)도 검토했는데, Day1에 개장 준비가 없으니 옮기면
-**Day1 임대료가 아예 안 걷힙니다**(3일 합계 7,200 → 4,800, 피날레 예산이 무너집니다).
-그래서 징수 시점은 그대로 두는 게 맞습니다.
-
-**Day1에 개장 준비를 새로 추가하는 방법도 있는데, 현재 경제 입장에서는 필요하지 않습니다.**
-
-⚠️ **나중에 아침에만 일어나는 일**(날씨 공개 · Event 브리핑 · 알바 고용)이 늘어나서
-Day1에도 그게 필요해지면 **추가하실 때 저에게 알려 주세요** — `Day1_MorningCheck` 행만
-생기면 경제가 저절로 따라가지는 않습니다.
-
-다만 지적해 주신 문제의식은 그대로 유효합니다 — 화면에 이유가 없으면 7,600은 그냥
-"왜 10,000이 아니지"로 읽힙니다. 임대료는 어차피 매일 나가는 돈이니 **감추지 말고 보여주는
-쪽**이 맞다고 봅니다.
-
-**제안 — 두 개를 같이 해주시면 이 건이 닫힙니다.** 아래 A·B 입니다. 둘 다 **경제 쪽 추가
-작업이 없습니다**(필요한 값이 이미 다 나가 있습니다). C·D 는 하실 필요 없고, 원하실 때
-말씀만 주시면 제가 준비합니다.
-
-⚠️ **A·B 는 델리게이트가 아니라 원장 조회로 만들어 주세요** — `HasLedgerForDay(Day)` +
-`GetSpendRowsForDay(Day)`. Day1 임대료는 `StartFestival` 안에서 걷혀 그 시점엔 ViewModel이
-구독 전이라(`FF_FestivalViewModelSubsystem.cpp:225` 주석의 그 상황) **`OnGoldChanged` 는
-Day1에 안 옵니다.** 연출을 붙이고 싶으시면 D 를 봐주세요.
-
-### A · 셋업 예산 내역 — 이것만으로 이 건이 닫힙니다
-
-셋업 화면의 예산 표시를 숫자 하나에서 세 줄로:
-
-```
-초기 자금        10,000
-장소 임대료      −2,400
-────────────────────────
-사용 가능         7,600
-```
-
-세 값이 이미 다 나가 있습니다 — **제가 추가할 것이 없습니다.**
-
-| 줄 | 어디서 |
-|---|---|
-| 초기 자금 10,000 | `GetDefinition()->InitialGold` |
-| 장소 임대료 −2,400 | `GetSpendRowsForDay(1)` 의 임대료 줄(`DisplayName` 한글 포함). 셋업 중에도 `HasLedgerForDay(1) == true` 라 조회됩니다 |
-| 사용 가능 7,600 | `GetGold()` (이미 연결돼 있습니다) |
-
-시설을 고르는 화면에 상시 붙어 있어서 토스트처럼 지나가지 않고, 3일 내내 같은 자리에서
-같은 걸 보여줄 수 있습니다.
-
-⚠️ **문구는 잠정으로 두세요.** Day1 임대료가 "오늘의 임대료"인지 **"첫날 선납·계약금"** 인지
-기획 확인 중입니다(E-27). 후자면 Day1만 `장소 임대료(첫날 선납)` 로 바뀝니다.
-
-### B · 상단바 고정비·미납 — 같이 해주시면 더 큰 게 같이 풀립니다
-
-`오늘 고정비 2,400 · 미납 0` 형태. 자금난이 오면 같은 자리가 경고로 바뀝니다.
-새 요청이 아니라 아래 "경제 값 5종" 표에서 **UI 참조가 0곳**인 두 값(밀린 임대료 · 오늘 일하는
-인원)을 붙이는 것과 같은 작업입니다. 아침 고용 화면이 어차피 이 자리를 쓰니 같이 하시면 됩니다.
-
-🔴 **이게 A보다 급하다고 봅니다.** 미납은 이미 동작하는 기능인데 **화면에 나오는 곳이
-0곳**입니다. 지금은 잔액이 0이 되고 빚이 쌓여도 플레이어가 알 방법이 없고, 매출이 들어와도
-빚을 먼저 갚아서 **"매출은 오르는데 잔액이 안 늘어나는" 구간**이 설명 없이 생깁니다
-(위 5번 항목). A는 숫자 하나를 설명하는 일이고, B는 **기능 하나를 화면에 처음 올리는 일**입니다.
-
-### C · 임대 계약 카드 (선택 — 여력 되실 때)
-
-셋업에 처음 들어올 때 한 번만 뜨는 카드입니다.
-
-```
-        축제장 임대 계약
-      다다포차 광장 · 3일
-
-  일 2,400 G × 3일 = 7,200 G
-  첫날분 2,400 G 납부 완료
-
-        잔액 7,600 G
-```
-
-A가 "지금 왜 7,600인가"를 답한다면, 이건 **"앞으로도 매일 2,400이 나간다"를 첫날에
-가르칩니다.** Day2 아침에 또 줄었을 때 놀라지 않고, 시설을 몇 개까지 지을지 판단할 때
-남은 이틀치 4,800을 감안하게 됩니다.
-
-- 값은 A와 같은 곳에서 나옵니다 + 3일치는 `GetDefinition()->DailyVenueRentGold × 3`
-- **매일 띄우지 마세요.** 첫날 1회면 충분하고, 반복되면 3일차엔 성가십니다
-  (매일 필요한 정보는 B가 상단바에서 상시로 답합니다)
-- "돈이 빠졌다"가 아니라 "계약을 했다"로 읽히는 쪽이 낫다고 봅니다 — 손실이 아니라
-  축제를 여는 첫 단계로 프레이밍됩니다
-
-### D · 연출을 붙이고 싶으시면 — 말씀만 주시면 제가 만듭니다
-
-A~C 는 정적 표시입니다. `10,000 → 7,600` 카운트다운이나 코인 이펙트 같은 **연출**을 원하시면
-Day1은 `OnGoldChanged` 로 못 받으니, "아직 안 보여준 정산"을 경제가 들고 있게 하면 됩니다:
-
-```
-bool HasPendingSettlementReveal() const;
-bool GetPendingSettlementReveal(FFF_DaySettlement& Out) const;   // 날짜·임대료·차감 전후 잔액
-void ConsumeSettlementReveal();
-```
-
-화면이 뜨는 **아무 시점에** 물어보시고, 있으면 연출을 처음부터 재생하시면 됩니다. 연출이 실제
-차감 프레임에 붙어 있을 필요가 없고, 세 날 모두 같은 방식으로 동작합니다.
-`ConsumeSettlementReveal()` 을 언제 부를지는(연출 시작 / 끝) UI 쪽 판단입니다.
-
-- 원장만으로는 **"이걸 아직 안 보여줬다"를 알 수 없습니다.** UI가 그 상태를 직접 들면
-  화면 재진입·저장 불러오기에서 두 번 뜨거나 안 뜹니다. 그래서 경제 쪽에 두는 게 안전합니다
-- 쓰실 계획이 생기시면 그때 만들어 드리겠습니다.
-
-### 안 하는 쪽으로 정한 것 — 징수를 늦춰 셋업을 10,000으로 만들기
-
-"홍보 진입에서 걷으면 셋업이 10,000이 된다"는 방법이 있습니다. 표를 안 건드리고 제 쪽에서만
-가능하고 실시간 연출도 됩니다. **그런데 안 하는 게 맞다고 봅니다.**
-
-- 플레이어가 **10,000 기준으로 예산을 세운 뒤 2,400을 빼앗깁니다.** 그러면 "사업 비용"이 아니라
-  **"페널티"** 로 읽힙니다. 처음부터 7,600으로 시작하면서 내역을 보여주는 쪽이 낫습니다
-- 셋업에서 10,000을 다 쓰면 홍보 진입에서 **즉시 미납**입니다. 그런데 미납은 지금 화면에
-  0곳이라(B 참고) **플레이어가 조용히 파산합니다.** B 없이는 버그처럼 보입니다
-- 3일 수지 검산이 셋업 가용액 7,600을 전제로 돼 있고, 임대료 2,400 자체가 아직 팀 확인
-  전입니다(E-23). 확정 안 된 숫자 위에 밸런스 변경을 더 쌓을 시점이 아닙니다
-
-### 나중에 다시 볼 것 — Day1 전용 "임대 계약" 스테이지
-
-Day1에 계약 전용 단계를 만들면 연출 자유도가 가장 크고, 경제 쪽 정산 경로도 하나로 통일됩니다
-(지금은 Day1이 `StartFestival`, Day2·3이 브리지로 경로가 둘입니다).
-
-**다만 지금은 권하지 않습니다.** 연출은 D로 되니 단계 추가의 고유 이점이 아니고, 단계 enum·
-기본 단계·`DT_DaySequence`를 같이 건드려야 하고(강민서 님 파일), 단계 표시명 버그 대상이
-3곳에서 4곳으로 늘어납니다. 중간 발표 뒤에, 그리고 **Day1 임대료가 "계약금" 성격으로
-정해지면**(E-27) 그때 다시 꺼내는 게 맞다고 봅니다.
+**Day1 알바 고용은 `Setup` 화면에서 하시면 됩니다** — Day1 에는 `MorningCheck` 가 없습니다.
 
 **4. 잔액이 부족하면 "밀린 임대료"가 생깁니다.** 시설은 안 사면 되지만 축제장 임대료는 거절할 수가 없어서,
 있는 만큼만 내고 못 낸 금액을 따로 적어 둡니다. 이자는 없습니다.
@@ -838,9 +1002,43 @@ Day1에 계약 전용 단계를 만들면 연출 자유도가 가장 크고, 경
 ⚠️ 헤더에 `BeginNewDay()`가 보이는데 **UI에서 부르지 말아 주세요.** 날짜를 넘기는 쪽이 둘이 되면 하루에 임대료가
 두 번 빠집니다. 부르는 곳은 경제 쪽에서 한 곳으로 잡아 두었습니다.
 
+### 🔴 셋업 예산 내역 — "왜 10,000이 아닌가"에 답합니다
+
+셋업 화면의 예산 표시를 숫자 하나에서 세 줄로. **경제 쪽 추가 작업은 없습니다.**
+
+```
+초기 자금        10,000
+장소 임대료      −2,400
+────────────────────────
+사용 가능         7,600
+```
+
+| 줄 | 어디서 |
+|---|---|
+| 초기 자금 10,000 | `GetDefinition()->InitialGold` |
+| 장소 임대료 −2,400 | `GetSpendRowsForDay(1)` 의 임대료 줄(`DisplayName` 한글 포함). 셋업 중에도 `HasLedgerForDay(1) == true` 라 조회됩니다 |
+| 사용 가능 7,600 | `GetGold()` (이미 연결돼 있습니다) |
+
+⚠️ **델리게이트가 아니라 원장 조회로 만들어 주세요** — `HasLedgerForDay(Day)` +
+`GetSpendRowsForDay(Day)`. Day1 임대료는 `StartFestival` 안에서 걷혀 그 시점엔 ViewModel이
+구독 전이라(`FF_FestivalViewModelSubsystem.cpp:225` 주석의 그 상황) **`OnGoldChanged` 는
+Day1에 안 옵니다.**
+
+⚠️ **문구는 잠정으로 두세요.** Day1 임대료가 "오늘의 임대료"인지 **"첫날 선납·계약금"** 인지
+기획 확인 중입니다. 후자면 Day1만 `장소 임대료(첫날 선납)` 로 바뀝니다.
+
+> `10,000 → 7,600` 카운트다운 같은 **연출**을 원하시면 Day1은 `OnGoldChanged` 로 못 받아서
+> 경제 쪽에 "아직 안 보여준 정산" API 를 하나 만들어야 합니다. **말씀만 주시면 만들어
+> 드리겠습니다** — 지금 하실 필요는 없습니다.
+
 ### 🔴 피날레 구매 화면이 필요합니다 (담당 백종태)
 
 Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 쪽은 다 됐습니다.
+
+> **2026-08-27 — 자리는 이미 잡혀 있습니다.** `EFF_PrepHudTab::Finale`("피날레") 탭이 있고,
+> `FFF_PrepHudRules::IsTabVisible` 이 **마지막 날 개장 준비에서만** 보이도록 이미 막고
+> 있습니다(`bIsFinalDay`). 탭 노출 조건과 `CanPurchaseFinaleNow()` 가 같은 판정이라
+> 패널 쪽에서 다시 판정하실 필요 없습니다 — **패널 본체만 없습니다.**
 
 - **버튼 활성화**: `UFF_StageEconomyBridgeSubsystem::CanPurchaseFinaleNow()` — Day3 MorningCheck이고
   아직 안 샀을 때만 `true`. **표시용이고 구매를 막지는 않습니다**(`CanSkipCurrentStage`와 같은 성격)
@@ -861,19 +1059,44 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 
 밀린 임대료가 있으면 잔액이 0이라 자연히 못 삽니다. 이때 실패 이유는 `Gold 부족`으로 옵니다.
 
-### 아직 만들 것 — 형태만 정해 주세요
+### 알바 고용 — API 는 다 있습니다
 
-**아침 고용 화면**은 판정이 이미 있습니다. `GetAffordableTemporaryStaffCount()`(지금 잔액으로 가능한 최대 인원,
-값을 바꾸지 않으니 슬라이더 최대치·버튼 판정에 그대로) + `TryHireTemporaryStaff(int32 인원)`.
-**부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 전부 거부되고 아무것도 바뀌지 않습니다. 실패 이유
-(돈 부족 / 하루 상한 초과)를 화면에 띄우시려면 말씀만 주세요, 지금은 `true`/`false`만 돌려줍니다.
+표시 단계는 **Day1 `Setup` 과 Day2·3 `MorningCheck`** 입니다.
+
+| 필요한 것 | 함수 | 무엇을 보는가 |
+|---|---|---|
+| 고용 실행 | `TryHireTemporaryStaff(int32 인원)` | — |
+| 슬라이더 최대치·버튼 판정 | `GetAffordableTemporaryStaffCount()` | 상한 **과** 잔액 |
+| 오늘 상한까지 남은 인원 | `GetRemainingHireCap()` | 상한만 (잔액 무시) |
+
+앞의 둘은 상태를 바꾸지 않으니 매 프레임 부르셔도 됩니다.
+
+⚠️ **부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 **전부 거부**되고 아무것도 바뀌지 않습니다.
+
+**"왜 더 못 뽑는가"를 문구로 가르는 법** — 거부 사유가 `bool` 하나뿐이라 두 값을 비교하는 것이
+유일한 구분 수단입니다:
+
+```
+GetRemainingHireCap() == 0                        →  "오늘 고용 상한에 도달했습니다"
+GetAffordable... < GetRemainingHireCap()          →  "Gold 가 부족합니다"
+```
+
+⚠️ **Definition 이 아직 안 붙은 상태에서 두 창구의 값이 갈립니다.**
+
+| 부르는 곳 | 그때 값 |
+|---|---|
+| 경제 직접 (`GetRemainingHireCap()`) | `0` |
+| ViewModel (`GetRemainingTemporaryStaffCap()`) | `INDEX_NONE` = 모름 |
+
+이 화면에서 `0` 은 이미 **"상한 도달"** 이라는 뜻을 갖고 있어서 겹칩니다.
+**ViewModel 쪽을 쓰시는 편이 안전합니다.**
 
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
 
 아직 없는 경제 값은 **일차 결과(등급 산출)와 저장 API**입니다.
 
-### 결산 표 4종 — 구현완료
+### 결산 표 4종
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`. 전부 `BlueprintPure`
@@ -886,7 +1109,7 @@ TArray<FFF_FacilityRevenueRow>  GetRevenueByFacilityRowsForDay(int32 Day) const;
 int32                           GetTotalRefundForDay(int32 Day) const;
 ```
 
-**요청하신 형태에서 날짜 인자 하나가 붙었습니다.** 그리려는 날짜를 넘기시면 그 날 표가 옵니다.
+그리려는 날짜를 넘기시면 그 날 표가 옵니다.
 
 ```cpp
 const int32 DayToDraw = Stage->CurrentDay;
@@ -908,7 +1131,7 @@ if (Progression->HasLedgerForDay(DayToDraw)) { /* 4종 호출 */ }
 
 **표 규칙**
 
-- 원인별 표는 `GetEarnRowsForDay()` → `GetSpendRowsForDay()` 순으로 붙이시면 요청하신 배치가 됩니다
+- 원인별 표는 `GetEarnRowsForDay()` → `GetSpendRowsForDay()` 순으로 붙이시면 됩니다
 - 값 0 인 사유는 줄이 없습니다. 순서는 enum 선언 순서로 고정입니다
 - 부스별은 `FacilityId` 오름차순으로 드립니다
 - 환급은 `GetTotalRefundForDay()` 로 분리했습니다. 매출 표에 안 섞입니다
@@ -923,9 +1146,8 @@ struct FFF_FacilityRevenueRow { FName FacilityId; int32 Amount; };   // DisplayN
 
 경제는 시설의 한글 이름을 모릅니다. **표시 이름은 Building 카탈로그에서 해석해 주세요.**
 
-✅ **부스별 표가 이제 실제 값으로 찹니다 (2026-08-23).** 매출을 넣는 호출부가 붙었습니다 —
-NPC 파티가 부스 이용을 마치면(`EFF_QueueExit::Served`) 수수료가 원장에 들어갑니다.
-화면에 `잠정`·`더미` 배지가 있다면 떼셔도 됩니다.
+부스별 표는 **실제 값으로 찹니다.** NPC 파티가 부스 이용을 마치면(`EFF_QueueExit::Served`)
+수수료가 원장에 들어갑니다 — 화면에 `잠정`·`더미` 배지가 남아 있으면 떼셔도 됩니다.
 
 **`FacilityId` 는 `FacilityDefinitionId`(`Booth_FoodStall_Grill` 형태)입니다.** Building
 카탈로그의 키와 같으므로 표시 이름을 그대로 해석하실 수 있습니다.
@@ -952,18 +1174,42 @@ GetFinalePurchaseResultText(EFF_FinalePurchaseResult)   GetFinaleGradeText(EFF_F
 GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_EarnReason)
 ```
 
-**고치실 곳은 피날레 실패 이유와 등급 표시 두 군데입니다.** 결산 표의 `DisplayName` 은 이미 이
-함수로 채워 드리니 그대로 쓰시면 됩니다.
+경제 쪽 표시(피날레 실패 이유·등급·결산 표 사유)는 **전부 이 함수로 나갑니다.** 그대로 쓰시면 됩니다.
 
-#### 🔴 종태님 파일 2곳이 아직 그대로입니다 (2026-08-23 코드 확인)
+#### 종료된 것
 
-| 파일 | 화면에 뜨는 것 |
-|---|---|
-| `FF_FestivalViewModelSubsystem.cpp:354` | `GetCurrentStageDisplayText()` — 단계 표시 |
-| `FF_LiveHudMenuBar.cpp:168` | Live HUD 탭 라벨 |
+- **강민서 (2026-08-27)** — `UFF_FestivalStageSubsystem::GetCurrentStageDisplayName()` 이
+  `GetDisplayNameTextByValue()` 를 쓰고 있던 것을 하드코딩 switch 로 교체, 빌드 확인.
+  8/26 에 "이 함수는 패키징 안전"이라고 안내한 것을 정정한 결과입니다.
+  → **이제 Stage 이름의 안전한 원본은 이 함수 하나입니다.**
 
-둘 다 Stage enum 이라 문자열 원본은 강민서 님이 만드셔야 합니다.
-**패키징 빌드에서만 드러나고 자동 테스트로는 안 잡히니** 시연 빌드 전에 정리가 필요합니다.
+#### 🔴 아직 남은 곳 — 2026-08-27 저장소 전체 재확인
+
+지난번에 두 곳으로 적었는데 **줄 번호가 낡았고, 실제로는 더 있었습니다.** 다시 훑은 결과입니다.
+
+| 파일:줄 | 읽는 enum | 화면에 뜨는 것 | 고치는 법 |
+|---|---|---|---|
+| `FF_FestivalViewModelSubsystem.cpp:536` | `EFF_FestivalStage` | `GetCurrentStageDisplayText()` — 단계 표시 | **`Stage->GetCurrentStageDisplayName()` 호출로 교체.** 강민서 님 쪽이 끝나서 한 줄이면 됩니다 |
+| `FF_LiveHudMenuBar.cpp:168` | **`EFF_LiveHudTab`** | Live HUD 탭 라벨 | Stage enum 이 아니라 **탭 enum 입니다** — 강민서 님 수정과 무관하고 그대로 남아 있습니다 |
+| `FF_PrepHudBar.cpp:49` | `EFF_PrepHudTab` | 준비 단계 탭 라벨 | 위와 같은 건 |
+| `FF_OptionsScreen.cpp:60·66·134` | 옵션 카테고리 | 카테고리 버튼·제목 | `UEnum::GetDisplayValueAsText` |
+| `FF_UIFlowStubScreen.cpp:81` | 프론트엔드 화면 | 스텁 화면 제목 | 개발용이라 급하지 않습니다 |
+
+> ⚠️ **`FF_FestivalViewModelSubsystem.cpp:529` 의 주석이 반대로 적혀 있습니다** —
+> *"enum 값을 하드코딩 매핑하지 않는다. UMETA(DisplayName)을 리플렉션으로 읽는다"* 가
+> 그대로 남아 있어서, 나중에 보는 사람이 이걸 규칙으로 알고 따라 쓰게 됩니다.
+> 코드와 같이 지워 주세요.
+
+**Stage 건을 뺀 나머지 4건은 경제와 무관합니다** (탭 라벨 2 · 옵션 3곳 · 스텁 1).
+문자열 원본을 어디에 둘지가 UI 쪽 결정이라
+제가 함수를 만들어 드릴 수 없습니다 — `FF_PrepPanelCheck.cpp:249` 에서 이미
+`GetDisplayNameTextByIndex` 를 피하고 별도 라벨 표를 쓰고 계시던데, 그 방식을 탭에도
+쓰시면 됩니다.
+
+> 판정 기준 한 줄: **`UMETA(DisplayName)` 은 에디터 장식입니다.** 화면에 나갈 문자열이면
+> 원본이 코드나 표에 따로 있어야 합니다. 에디터에서는 멀쩡하고 자동 테스트로도 안 잡혀서,
+> **패키징 시연 빌드를 만드는 날 한꺼번에 드러납니다.**
+
 
 ---
 
@@ -985,7 +1231,7 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 | SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | 더미 72     |
 | ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72     |
 | Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
-| Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 API 완료 · ViewModel 연결 요청** |
+| Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 연결 완료 · ViewModel 구독 중** |
 | TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
 | TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
 | Stage / Day       | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged`         | **진짜 값**  |
@@ -1094,89 +1340,133 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 
 ---
 
-## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-24)
+## 타깃 슈팅 디자인·튜닝 가이드 (2026-08-27)
 
 `Booth_ActivityGame_Shoot` 시설에서 `TargetShooting` 미니게임을 시작합니다. 입력은
-`Border_PlayArea` 전체가 받되, 실제 명중 여부는 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로
-바꾼 뒤 Runtime이 타원 판정합니다. `Border_Target`은 표시 전용(`HitTestInvisible`)이므로 WBP를
-수정할 때 클릭을 가로채는 위젯을 플레이 영역 위에 올리지 마세요.
+`Border_PlayArea` 전체가 받습니다. 화면 픽셀 좌표를 플레이 영역의 0~1 정규화 좌표로 바꿔
+Runtime에 발사를 요청하면, 하단 1인칭 물총의 총구에서 해당 좌표까지 물방울 탄환이 이동하고 도착 시 Runtime이 타원
+명중 판정을 수행합니다. 비행 중에는 중복 발사를 받지 않으며 점수도 충돌 전까지 바뀌지 않습니다.
+`Viewport_Arena3D` 안의 원근 카메라·실내 사격장·조명과 그림자는 분위기용 3D 배경입니다.
+실제 과녁(`Border_Target` 안의 `UFF_TargetShootingTargetVisual`), 물 탄환, 조준점, 명중 피드백은 모두
+`Canvas_PlayArea`의 같은 2D 좌표계에 합성합니다. 따라서 3D 원근 투영이나 해상도와 무관하게 보이는 과녁 타원과
+Runtime 명중 판정이 정확히 일치합니다. 과녁 외곽의 밝은 호는 남은 노출 시간을 시계 방향으로 표시합니다.
+모든 표시 요소는 `HitTestInvisible`이므로 WBP를 수정할 때 클릭을 가로채는 위젯을 플레이 영역 위에 올리지 마세요.
+
+화면 구성은 [3D Aim Trainer](https://www.3daimtrainer.com/)의 훈련 화면에서 중앙 조준 공간,
+상단의 작은 기록 HUD, 하단 1인칭 무기라는 정보 우선순위만 참고했습니다. 배경·물총·과녁·색상은
+FestaFiesta 해안 축제 테마에 맞춰 새로 제작했으며 외부 게임의 이미지나 상표는 사용하지 않습니다.
 
 ### 기획 수치 수정
 
-`DA_Minigame_TargetShooting`의 `Rules`만 수정합니다. 코드 수정이나 SaveGame 마이그레이션은
-필요 없습니다.
+`DA_Minigame_TargetShooting`을 열면 주요 값이 한국어 카테고리로 바로 펼쳐집니다. 각 항목에 마우스를
+올리면 단위, 계산 방식, 다른 값과의 제약을 설명하는 한국어 툴팁이 표시됩니다. 유효하지 않은 조합은 Data Validation이
+저장을 검증하며, `FF.RebuildTargetShootingUI`는 이 Data Asset의 기획 수치를 덮어쓰지 않습니다.
 
-| 목적 | Rules 필드 |
+| 목적 | Data Asset 필드 |
 | --- | --- |
+| 한 판 진행 시간 | `한 판 플레이 시간` (`DurationSeconds`) |
+| 클리어 골드 | `최대 보상 달성 점수` (`ScoreForMaxReward`), `클리어 최대 획득 골드` (`RewardGoldAtMaxScore`) |
 | 난이도 곡선 | `TargetLifetimeStartSeconds/EndSeconds`, `TargetRadiusStartNormalized/EndNormalized` |
 | HUD·닫기 버튼 회피 | `SpawnSafeMarginNormalized` (표적 전체 외곽 기준) |
+| 총알 시작점·비행 속도 | `ProjectileOriginNormalized`, `ProjectileSpeedNormalizedPerSecond`, `ProjectileMinTravelSeconds` |
 | 기본 점수·콤보·오발 감점 | `HitBaseScore`, `ComboBonusPerHit`, `MaxComboBonus`, `MissPenalty` |
 | 정밀/정중앙 판정 | `PrecisionRadiusRatio`, `BullseyeRadiusRatio`, 각 `ScoreBonus` |
 | 반응속도 보너스 | `FastReactionSeconds`, `SlowReactionSeconds`, `MaxReactionScoreBonus` |
 | 골든 타깃 | `BonusTargetChance`, `BonusTargetScoreMultiplier`, `BonusTargetLifetimeScale` |
 
 점수는 `기본 + 콤보 + 정밀도 + 반응속도`를 먼저 계산하고 골든 타깃이면 배율을 적용합니다.
-명중하면 즉시 다음 타깃이 나오며, 빗나가면 같은 타깃을 유지해 조준을 보정할 수 있습니다.
-타깃이 시간 안에 맞지 않으면 `TOO SLOW` 피드백 후 다음 타깃으로 넘어갑니다.
+시간이 끝나 정상 완료되면 획득 골드는
+`round(클리어 최대 획득 골드 × clamp(점수 / 최대 보상 달성 점수, 0, 1))`로 계산합니다.
+`RewardGoldAtMaxScore=-1`은 축제 공통 보상값을 사용하고, `0`은 해당 미니게임의 골드 보상을 끕니다.
+플레이어가 취소한 세션은 항상 0 Gold입니다.
+현재 기본값은 총구 `(0.50, 0.68)`, 속도 `1.8 normalized/s`, 최소 비행시간 `0.16초`, 하단 안전 여백
+`0.24`입니다. 탄환 이동을 눈으로 확인할 수 있고 하단 물총과 과녁이 겹치지 않도록 조정한 값입니다.
+총알이 명중 지점에 도착해 명중하면 다음 타깃이 나오며, 빗나가면 같은 타깃을 유지해 조준을
+보정할 수 있습니다. 승인된 발사는 해당 과녁을 예약하고 탄환이 도착할 때까지 과녁 카운트다운을 멈춥니다.
+따라서 연출용 탄환 비행 때문에 제때 쏜 과녁이 사라지지 않습니다. 발사하지 않은 타깃이 시간 안에 맞지 않으면
+`시간 초과` 피드백 후 다음 타깃으로 넘어갑니다.
 
 ### UI/모션 수정
 
 `WBP_FF_TargetShooting`의 **Class Defaults → Visual Style**만 수정합니다. 색·링 두께·폰트 크기·
-스폰/긴급 투명도 펄스·피드백 상승 거리/시간·플레이 영역 플래시·커스텀 조준점이 게임 규칙과
-분리되어 있습니다. 표적 외곽·정밀·불스아이 링은 Runtime 판정 비율로 그리며, 표적 본체 크기는
+스폰/긴급 안내 펄스·물방울 탄환 코어/광원/트레이서·물총 크기/반동/총구 섬광·피드백 상승 거리/시간·플레이 영역 플래시·커스텀
+조준점뿐 아니라 3D 배경 카메라 위치·키라이트·스카이라이트도 게임 규칙과 분리되어 있습니다. 2D 표적 외곽·정밀·불스아이 링은 Runtime 판정 비율로 그리며, 표적 본체 크기는
 애니메이션으로 확대하지 않습니다. 따라서 보이는 타원 내부와 클릭 판정 범위가 어긋나지 않습니다.
-HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시하고 결과 화면에도 같은 성과 지표를
+HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친 과녁, 콤보를 표시하고 결과 화면에도 같은 성과 지표를
 요약합니다.
 
-필수 WBP 이름은 기존 계약을 유지합니다. `Text_ShotFeedback`과 `Text_Reticle`은 선택 사항이며,
+3D 배경 표면은 `M_MG_TargetShooting_Arena3D` 재질을 사용합니다. `Color`, `Roughness`, `Metallic`,
+`EmissiveStrength` 파라미터가 있으며 재생성 스크립트는
+`Tools/ui/create_target_shooting_3d_material.py`입니다. `Viewport_Arena3D`는 이전 WBP에 없어도 런타임이
+`Canvas_PlayArea` 최하위 레이어에 자동 생성합니다.
+
+필수 WBP 이름은 기존 계약에 `Image_WaterBlaster`, `Text_MuzzleFlash`, `Text_WeaponStatus`를 추가했습니다.
+`Text_ShotFeedback`과 `Text_Reticle`은 선택 사항이며,
 없으면 런타임이 `Canvas_PlayArea` 안에 자동 생성합니다. 따라서 기존 WBP를 깨지 않고 점진적으로
 레이아웃을 바꿀 수 있습니다. 두 선택 위젯을 다른 패널로 옮겨도 초기화 시 플레이 캔버스 직속으로
 안전하게 다시 연결하며, 연결할 수 없는 경우에는 하드웨어 커서를 숨기지 않습니다.
 
 ---
 
-# UI가 필요한데 아직 없는 것
+# 아직 안 맞는 것 — 2026-08-27 코드 대조 기준
 
-기획서 6.3의 Overview 필수 표시 항목입니다.
+**A. 화면에 틀린 값이 뜨는 자리** (API 는 있는데 안 붙었거나 다른 값이 붙음)
 
-| 필요한 것                                         | 예상 소유자    | 상태        | UI에서 쓰는 곳                                                          |
-| --------------------------------------------- | --------- | --------- | ------------------------------------------------------------------ |
-| **Satisfaction** (`SimSatisfaction` 0~100)    | 김시리 · 이정원 | ❌ 없음      | Overview 지표, Report, SNS                                           |
-| **`ScoreSatisfaction`** (= Sim + FinaleBonus) | 김시리       | ⚠️ **FinaleBonus 는 완료**(`GetFinaleSatisfactionBonus`), `SimSatisfaction` 이 없어 합산 불가 | Report 분해식, Finale 구매 예상치 |
-| **`Gold`** (잔액)                               | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바, Finale·설치 구매 가능 판정                                        |
-| **`TotalRevenue`** (축제 누적 매출)                 | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 공통 상단 바                                                            |
-| **`TodayRevenue`** (오늘 매출)                    | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Report — UI가 누적값에서 빼지 않습니다                                         |
-| 지출·매출 **원인별 분해** (`EFF_SpendReason`/`EFF_EarnReason`) | 김시리 | ✅ **2026-08-19 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay` | Report 드릴다운 |
-| **부스별 매출 표** (`RevenueByFacility`)          | 김시리       | ✅ **2026-08-23 완료** — `GetRevenueByFacilityRowsForDay` 가 이제 실제 값을 돌려줍니다(이용 완료 → 수수료 결선) | Report — 부스별 수익 표 |
-| **Safety**                                    | 이정원       | ❌ 없음      | Overview 지표, 경고                                                    |
-| Staff 보유·가용 인원                                | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | Event 배치 UI, MorningCheck 고용 화면 |
-| 🆕 **임대료 미납 총액** (`GetTotalArrears`)          | 김시리       | ⚠️ 원본 완료·ViewModel 연결 대기 | 상단 바 자금난 경고, Report |
-| `CauseId` 롤업                                  | 김시리       | ⚠️ 창구만 있음 | Report 드릴다운 (AT-005) — `UFF_NpcNeedMetricsSubsystem`이 원본, 채우는 쪽 대기 |
-| 저장 슬롯 목록                                      | 김시리       | ❌ 없음      | 플레이 허브                                                             |
+| 무엇 | 담당 | 지금 무슨 일이 벌어지나 | 어떻게 |
+|---|---|---|---|
+| `UMETA(DisplayName)` 런타임 조회 **5개 파일** | 백종태 | 패키징 시연 빌드에서 탭 라벨·단계 이름이 **영문으로** 뜹니다 | 목록은 위 `enum 의 DisplayName` 절 |
+| Staff **가용** 인원 | 백종태 | 프로그램에 2명이 묶여 있어도 `6명`으로 보여서 Event 에 전원을 쓸 수 있다고 착각합니다 | `GetAvailableStaffCount()` + `OnScheduledProgramsChanged` |
+| `TotalRevenue` · `TodayRevenue` | 백종태 | 상단 바 누적 매출이 안 움직입니다 (ViewModel 이 더미를 들고 있음) | Gold 와 같은 모양. 위 `경제 값 5종` 절 |
+| Heat Map 셀 크기 | 백종태 | 5m 가정이면 밀도 분모가 틀려 색 구간이 통째로 어긋납니다 | `CellSizeMeters`(=2m) 를 읽기. 위 `Crowd · 밀집` 절 |
+| `CauseId` 롤업 | **김시리** | `AddSample` 프로덕션 호출부가 0곳이라 Need 미해소율이 전부 0 | 제 작업입니다 |
 
-### 🆕 전체 사이클 프로토타입에서 새로 확인된 것 (2026-08-19, 백종태)
+**B. 아직 API 자체가 없는 것** (기획서 6.3 Overview 필수 항목 + 프로토타입에서 더미로 채운 것)
 
-타이틀 → 지구본 → 셋업 → 홍보 → Day 1·2·3 → 피날레 → 최종결산까지 **한 바퀴를 실제로 돌려 보고**
-없어서 더미로 채운 것들입니다. 화면이 이미 그 모양으로 만들어져 있으니 API 모양만 맞춰 주시면 붙습니다.
+| 필요한 것 | 소유자 | UI에서 쓰는 곳 |
+| --- | --- | --- |
+| **Satisfaction** (`SimSatisfaction` 0~100) | 김시리 · 이정원 | Overview 지표, Report, SNS. **`ScoreSatisfaction` 합산도 이것 때문에 막혀 있습니다** — `GetFinaleSatisfactionBonus()` 는 이미 있습니다 |
+| **Safety** | 이정원 | Overview 지표, 경고 |
+| **예상 방문객 (범위)** — `Min`/`Max` + 델리게이트 | 김시리 | 준비 단계 하단 바 `예상` 칸, 홍보 패널, 개장 준비 견적서. **단일 수치가 아니라 범위**로 주세요 — 수용량 대비 `여유/주의/위험` 을 함께 그립니다 |
+| **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 김시리 · 백종태 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
+| **스태프 배치 Command + 결과 이벤트** | 김시리 | 사건 트레이의 `스태프 N명 배치` |
+| **홍보 구매 Command** | 김시리 | 셋업 HUD `홍보` 패널. 등급 데이터만 있고 `EFF_SpendReason::Promotion` 호출부가 0곳 — **2026-08-27 에 UI 가 더미로 채웠습니다.** 아래 `홍보 패널 — UI 가 더미로 채운 부분` 절 참고 |
+| **뒷정리 등급 효과 계수** | 김시리 | Day 마감 시트. 가격 3개만 있음(`FF_FestivalDefinition.h:110` TODO) — 지금은 `효과 계수 미확정` 배지 |
+| **최종 점수 산식·등급 가중치** | 김시리 | 최종 결산 — 지금은 `가중치 잠정` 문구 |
+| **저장 슬롯 목록 + 저장·불러오기 Command** | 김시리 | ESC 수동 저장, 플레이 허브 |
+| **SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑 | 미정 | Live `SNS` 패널 |
+| **준비 단계 관객 수** | 이정원 | 하단 바 `관객` 칸. 준비 단계에 관객이 없는 것은 정상이고, **값이 없으면 칸을 숨깁니다** — `0` 을 띄우면 틀린 사실이 됩니다 |
 
-| 필요한 것 | 예상 소유자 | 상태 | UI에서 쓰는 곳 |
-| --- | --- | --- | --- |
-| **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 김시리 · 백종태 (공동) | ❌ 없음 (`FF_FestivalDefinition.h:146`) | Live 우측 상단 상시 사건 트레이 |
-| **스태프 배치 Command + 결과 이벤트** | 김시리 | ❌ 없음 | 사건 트레이의 `스태프 N명 배치` |
-| **홍보 구매 Command** | 김시리 | ⚠️ 등급 데이터만 있고 `EFF_SpendReason::Promotion` 호출부가 0곳 | 셋업 HUD `홍보` 패널 |
-| **뒷정리 등급 효과 계수** | 김시리 | ⚠️ 가격 3개만 있음 (`FF_FestivalDefinition.h:110` TODO) | Day 마감 시트 — 지금은 `효과 계수 미확정` 배지로 표시 중 |
-| **최종 점수 산식·등급 가중치** | 김시리 | ❌ 없음 | 최종 결산 — 지금은 `가중치 잠정` 문구를 화면에 띄우고 있음 |
-| **저장 슬롯 저장·불러오기 Command** | 김시리 | ❌ 없음 | ESC 수동 저장, 플레이 허브 불러오기 |
-| **SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑 소유자 | 미정 | ❌ 없음 | Live `SNS` 패널 |
-| **날씨 Read Model** | 강민서 | ❌ 없음 | 개장 준비 견적서 — 지금은 `더미` 배지 |
+예상 방문객과 관객 수는 지금 `UFF_PrepHudBar::Debug_SetPlaceholders()` 로만 넣을 수 있고,
+넣지 않으면 칸이 숨겨집니다. API 가 생기면 그 함수를 지우고 ViewModel 구독으로 바꿉니다 —
+위젯 트리는 그대로입니다.
 
-~~**시설 유지비에 대응하는 `EFF_SpendReason` 이 없습니다.**~~ → **2026-08-23 종료 (김시리).**
-**기획서에 시설 유지비라는 개념이 없습니다.** 경제 스펙에도 처음부터 없던 항목이라
-`EFF_SpendReason` 에 사유를 추가하지 않습니다. **마감 화면 원장에서 유지비 줄을 빼 주세요** —
-`FacilityInstall` 로 묶여 들어가는 것이 아니라, 애초에 유지비 지출이 발생하지 않습니다.
+**요청하지 않는 것 2개** (다시 논의하지 않기 위해 적어 둡니다)
 
-**UI는 위 항목들을 하드코딩 더미로 먼저 만들어 8/8에 커밋합니다.**
-실제 값이 생기면 `UFF_FestivalViewModelSubsystem` 안쪽만 교체하고 위젯은 그대로 둡니다.
+- **시설 수** — `UFFZSWorldSubsystem::BuildReadModel()` 의 `Facilities` 를 세고 `OnWorldChanged`
+  로 갱신합니다(한광훈 님 API 그대로). 개장 CTA 활성 판정에 씁니다
+- **시설 유지비** — 기획서에도 경제 스펙에도 없는 개념이라 `EFF_SpendReason` 에 사유를
+  추가하지 않습니다. **마감 화면 원장에 유지비 줄이 있으면 빼 주세요** — `FacilityInstall` 로
+  묶이는 것이 아니라 지출 자체가 발생하지 않습니다
+
+### 🆕 홍보 패널 — UI 가 더미로 채운 부분 (2026-08-27, 백종태) · **김시리님께**
+
+U5 홍보 패널을 만들면서, 없는 API 를 UI 쪽 더미로 임시로 메웠습니다. **지금 화면은 동작합니다** —
+등급을 고르고 사면 Gold 가 줄고 원장에 `홍보비` 로 남습니다. 아래 표의 ❌ 만 채워 주시면
+`UFF_FestivalViewModelSubsystem` 안쪽만 갈아끼우고 위젯은 그대로 둡니다.
+
+| 조각 | 지금 | 필요한 것 |
+| --- | --- | --- |
+| 등급 비용·배수 | ✅ `PromotionBasic`(500·×1.08) · `PromotionFocused`(1,200·×1.18) 그대로 씁니다 | — |
+| Gold 차감·원장 | ✅ `TrySpend(Cost, EFF_SpendReason::Promotion)` 을 UI 가 부릅니다 | 이대로 두셔도 됩니다 |
+| **등급 enum** | ⚠️ UI 가 임시로 `EFF_PromotionChoice`(None·Basic·Focused)를 만들었습니다 | **`EFF_PromotionGrade`** — 저장에 들어가면 순서를 바꾸지 마세요 |
+| **구매 함수** | ❌ 없음 | **`TryPurchasePromotion(Grade)` → 결과 enum.** 실패 이유를 bool 이 아니라 enum 으로 (피날레와 같은 모양) |
+| **구매 상태** | ⚠️ **ViewModel 이 들고 있습니다.** 저장에 안 들어가고 축제를 다시 시작해도 안 지워집니다 | **`GetPurchasedPromotion()` + `OnPromotionChanged`** |
+| **구매 가능 단계 판정** | ⚠️ UI 가 `CurrentStage == Setup` 을 직접 봅니다 | **`CanPurchasePromotionNow()`** — 브리지에. `CanPurchaseFinaleNow()`·`CanScheduleProgramNow()` 와 같은 자리 |
+| **배수를 방문객에 적용** | ❌ **아무도 소비하지 않습니다** | 이게 제일 큽니다 — 지금은 사도 방문객이 안 늘어서, 화면에 `아직 방문객 수에 반영되지 않습니다` 를 띄우고 있습니다 |
+
+🔴 **마지막 줄이 핵심입니다.** 앞의 여섯은 UI 가 임시로 메울 수 있지만 배수의 소비자는 못 만듭니다.
+`예상 방문객 (범위)` 요청(위 표)과 짝입니다 — 그게 오면 `안 함 대비 +N명` 을 숫자로 그릴 수 있습니다.
+지금은 `×1.08` 배수만 보여줍니다.
 
 **소유자분들께** — 만드실 때 아래 두 가지만 지켜 주시면 UI가 바로 붙습니다.
 
@@ -1198,20 +1488,39 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 콤보를 표시�
 | 2026-08-13 | 강민서 | 백종태 요청 2건 반영(`IsCurrentStageSkippable()` public+BlueprintPure 전환, `RequestTransition`에 `LastBroadcastSeconds` 리셋 추가) 및 사용 주의 2건 반영(`OnMainProgramStarted` UI 문구 "곧 시작"으로 수정, `IsMainProgramLocked()` 마지막 이벤트 빈 라벨 버그 수정). `EventLabel` FText 전환은 환경 작업 마무리 후 진행 예정 |
 | 2026-08-13 | 백종태 | 강민서 반영분 수용 — `CanSkipCurrentStage()`의 근사값을 걷어내고 `IsCurrentStageSkippable()` 직접 중계로 교체. `RequestSkipCurrentStage()`는 여전히 이 값으로 막지 않음 |
 | 2026-08-13 | 김시리 | `TotalRevenue`·`TodayRevenue` 원본 API 구현 완료(`GetTotalRevenue`/`GetTodayRevenue` + 델리게이트 쌍) — ViewModel 연결 요청. `FFF_DayLedger` 신설로 지출·매출 원인별 분해와 부스별 매출 집계가 내부적으로 쌓이기 시작 — UI Getter는 필요한 형태를 확인한 뒤 추가 예정 |
-| 2026-08-18 | 김시리 | 🆕 **예약 요청 4건 중 3건이 열렸습니다** — `UFF_ProgramReservationSubsystem` 신설로 프로그램 목록(시작 시각 순 정렬)·예약 상태·변경 델리게이트가 생겼습니다. 남은 하나(구매·취소 Command)는 Gold를 쓰는 일이라 경제 S8과 같이 붙입니다. 지금은 구매 화면이 없어 **목록이 비어 있는 것이 정상**입니다 |
 | 2026-08-18 | 김시리 | 🆕 **피날레 구매가 구현됐습니다** — Day3 MorningCheck 구매 화면이 필요합니다(담당 백종태). 버튼 활성화는 `CanPurchaseFinaleNow()`, 구매는 `TryPurchaseFinale()`이고 실패 이유가 한글로 옵니다. **1회 구매·변경 불가라 확인창이 필요합니다.** 만족도 보너스는 Gold가 아니고 평가 점수 합산은 관객 만족도가 생길 때 붙입니다 |
 | 2026-08-18 | 김시리 | 🆕 **"다음 날" 버튼이 이제 하루치 임대료를 정산합니다** — `RequestAdvanceToNextDay()`를 누르면 잔액·밀린 임대료·오늘 매출·인원 4개 값이 바뀝니다(전부 기존 델리게이트로 통지). 종태님 쪽 수정은 없고, 버튼 직후 UI가 잔액을 직접 계산하지만 않으면 됩니다. 문서에 빠져 있던 밀린 임대료(`GetTotalArrears`)와 인원(`GetTotalStaffCount`) 2종 추가 |
 | 2026-08-13 | 김시리 | 🆕 시설 철거 환급 기능 수용(한광훈 구현, Dev 병합) — 철거 시 설치비 50%를 `OnGoldChanged`로 돌려받습니다. `OnTotalRevenueChanged`는 안 쏩니다(환급 ≠ 매출). "Gold 상승 = 매출 상승"으로 가정하는 UI 코드가 있다면 확인 필요 |
 | 2026-08-19 | 강민서 | `OnDayEnded` 델리게이트 신설. AdvanceToNextDay() 호출 시 방금 끝난 날짜와 그날 Live 진행 시간을 broadcast. 이월 데이터(정비/청결 등) 계산은 수신 측(광훈/시리) 담당 |
 | 2026-08-19 | 백종태 | 전체 사이클 UI 프로토타입(타이틀→피날레→최종결산)을 한 바퀴 돌려 보고 **없어서 더미로 채운 것 8건**을 "UI가 필요한데 아직 없는 것"에 추가. `FFF_DayLedger` 노출 형태 질문에 회신(원인별 표·부스별 표 **둘 다** 필요, 환급은 분리, 하루 경계 스냅샷 필요). 시설 유지비에 대응하는 `EFF_SpendReason` 부재 보고 |
-| 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다. **부스별 표는 S10 까지 빈 표입니다** |
+| 2026-08-19 | 김시리 | **결산 표 4종 구현 완료** — `GetEarnRowsForDay`/`GetSpendRowsForDay`/`GetRevenueByFacilityRowsForDay`/`GetTotalRefundForDay` + `HasLedgerForDay`. 요청하신 형태에 **날짜 인자**가 붙었습니다(진행 중인 하루와 방금 끝난 하루를 안쪽에서 고릅니다). 부스별만 `FFF_FacilityRevenueRow` 로 분리 — 경제가 시설의 한글 이름을 모릅니다 |
 | 2026-08-19 | 김시리 | 🔴 **정정: enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.** 8/18 에 "피날레 실패 이유가 한글로 온다"고 안내한 것이 틀렸습니다. `UFF_EconomyDisplayTextLibrary` 신설 — 피날레 실패 이유·등급 표시 두 군데를 이 함수로 바꿔 주세요. Stage 단계 이름도 같은 문제입니다(강민서) |
 | 2026-08-24 | Codex | 타깃 슈팅 레퍼런스 UX 반영 — 정밀도·반응속도·골든 타깃 점수, 즉시 명중 피드백, 커스텀 조준점, TPS/명중률/평균 반응시간 HUD와 결과 요약, Rules/Visual Style 분리 튜닝 가이드 추가 |
+| 2026-08-26 | Codex | 타깃 슈팅을 물총 Aim Trainer 방식으로 교체 — 실제 WBP·DataAsset 재생성, 1인칭 물총/반동/총구 섬광, 물방울 탄환 비행, 중앙 집중형 HUD, 저장 에셋 자동화 검사 추가 |
+| 2026-08-26 | Codex | 타깃 슈팅 3D 사격장 전환 — UMG 실시간 3D viewport, 원근 카메라·조명·사격장, 이동식 금속 과녁판, 3D 물 탄환, 전용 lit 재질과 2D 자동 폴백 추가 |
+| 2026-08-27 | Codex | 타깃 슈팅 하이브리드 정리 — 3D는 배경 전용, 판정과 정확히 겹치는 2D 과녁·탄환/수명 드레인, 발사 중 과녁 예약, 놓친 과녁 지표, Data Asset 한국어 편집명·툴팁·미니게임별 클리어 골드 추가 |
 | 2026-08-23 | 김시리 | ✅ **부스별 매출 표가 실제 값으로 찹니다.** NPC 파티가 부스 이용을 마치면(`Served`) 수수료가 원장에 들어갑니다. `FacilityId` 는 `FacilityDefinitionId` 라 Building 카탈로그 키와 같습니다 — 표시 이름을 그대로 해석하실 수 있습니다. **같은 정의의 부스 여러 개는 한 줄로 합쳐집니다**(인스턴스별 구분은 v1). 화면의 `잠정`·`더미` 배지를 떼셔도 됩니다 |
 | 2026-08-23 | 김시리 | ✅ **E-26 시설 유지비 종료 — 기획서에 없는 개념입니다.** `EFF_SpendReason` 에 사유를 추가하지 않습니다. 마감 화면 원장에서 **유지비 줄을 빼 주세요**. `FacilityInstall` 로 묶이는 것이 아니라 지출 자체가 발생하지 않습니다 |
 | 2026-08-23 | 김시리 | 🔴 **표시 문자열 정정이 아직 안 붙었습니다** — `FF_FestivalViewModelSubsystem.cpp:354`·`FF_LiveHudMenuBar.cpp:168` 두 곳입니다. 패키징 빌드에서만 드러나니 시연 전에 정리 필요 |
-| 2026-08-23 | 김시리 | 🔴 **8/19 정정 요청에 답변 — "1일차만 아침 단계를 건너뛴다"가 맞습니다.** `DT_DaySequence` 에 `Day1_MorningCheck` 행이 없습니다(팀 의도). 셋업 예산은 **7,600**이므로 프로토타입이 10,000 기준이면 바꿔 주세요 — "화면 만들 때 알아야 하는 것" 3번 |
-| 2026-08-23 | 김시리 | 🔧 전체 자동화 테스트가 크래시로 중단되던 것을 고쳤습니다(피날레 콘솔 명령 수명 문제, 장원재 님 파일·별도 통지). 스위트가 55개에서 멈추던 것이 **359 통과 / 4 실패**로 복구됐습니다 |
-| 2026-08-23 | 김시리 | 문서 정리 — 종료된 협의 경위와 과거 서술을 걷어내고 **지금 필요한 것만** 남겼습니다. ViewModel 연결 5종에 실제 연결 여부를 표시했습니다 |
-| 2026-08-24 | 김시리 | 🔴 **셋업 예산 표시 제안 — A(예산 내역) + B(상단바 고정비·미납) 두 개면 닫힙니다.** 둘 다 **경제 쪽 추가 작업 0건**입니다. **B가 A보다 급하다고 봅니다** — 미납은 동작하는 기능인데 화면에 나오는 곳이 0곳이라 플레이어가 조용히 파산합니다. C(계약 카드)는 선택, D(연출용 래치)는 하시겠다고 하면 제가 만듭니다. 징수를 늦춰 셋업을 10,000으로 만드는 안과 Day1 전용 단계 추가는 **안 하는 쪽으로 정리**했습니다(이유는 3번) |
-
+| 2026-08-23 | 김시리 | 🔧 전체 자동화 테스트가 크래시로 중단되던 것을 고쳤습니다(피날레 콘솔 명령 수명 문제, 장원재 님 파일·별도 통지) |
+| 2026-08-24 | 김시리 | 🔴 **셋업 예산 표시 요청 — A(예산 내역) + B(상단바 고정비·미납) 두 개면 닫힙니다.** 둘 다 **경제 쪽 추가 작업 0건**입니다. **B가 A보다 급합니다** — 미납은 동작하는 기능인데 화면에 나오는 곳이 0곳이라 플레이어가 조용히 파산합니다 |
+| 2026-08-25 | 김시리 | 🆕 **유료 프로그램 편성이 구현됐습니다 — 화면이 필요합니다**(담당 백종태). Setup·MorningCheck 에서 그날 열 프로그램을 고르는 리스트 + 버튼입니다. 아침에 Gold 와 인원을 걸면 **그 프로그램을 좋아하는 손님이 정원만큼 축제에 옵니다** — 체험비보다 **모객**이 본체라 카드에 "손님 N명이 옵니다"를 꼭 넣어 주세요. 순익은 범위가 아니라 **숫자 하나**입니다. 예약 4건 요청 중 마지막 ③이 이걸로 닫힙니다. ⚠️ `TryScheduleProgram` 이 **시설 핸들**을 받습니다 — 플레이어가 시설을 고르는 흐름이 필요합니다. 취소 버튼은 안 만들었습니다(하루짜리라 다음 날 자동으로 비워집니다) |
+| 2026-08-25 | 김시리 | 🔴 **인원 표시는 `GetTotalStaffCount()` 가 아니라 `GetAvailableStaffCount()` 입니다.** 프로그램이 인원을 묶어서, 전체 인원만 띄우면 플레이어가 Event 에 6명을 다 쓸 수 있다고 착각합니다. 갱신은 `OnScheduledProgramsChanged` 도 같이 받아야 합니다 |
+| 2026-08-26 | 김시리 | 🔴 **체험비를 걷는 시점을 바꿨습니다 — Closing 이 아니라 프로그램이 열리는 시각입니다.** 8/24 안내를 정정합니다. 카드마다 시각이 달라 Live 중에 나눠 들어옵니다. **마감 화면만 보시면 하실 일 없습니다**(마감 합계는 같습니다). Live 중 갱신을 반영하시려면 `OnGoldChanged`/`OnTodayRevenueChanged` 구독 |
+| 2026-08-26 | 김시리 | 🆕 **`CanScheduleProgramNow()` 추가 — 프로그램 편성 화면의 단계 판정입니다.** `TryScheduleProgram` 은 단계를 안 봐서 Live 중에도 편성이 됩니다(그러면 비용만 빠지고 체험비 0). 피날레의 `CanPurchaseFinaleNow()` 와 같은 모양입니다. ⚠️ 허용 단계는 **Setup·MorningCheck** 이고 시설 배치(`IsReconfigureAllowed()`)와 달리 `PromotionPreview` 는 포함하지 않습니다 |
+| 2026-08-26 | 김시리 | 🔴 **정정 — 프로그램 카드 시각을 UI 에서 변환하지 말아 주세요.** 앞서 "변환 지점을 한 곳으로 두시라"고 안내했는데, 그러면 개장 시각 `17` 이 UI 에 복제됩니다(Stage 안에 "표로 빼기" todo 가 붙은 값입니다). **지금은 상대 표기(`개장 +30분`)로 해주시고**, 강민서 님께 요청한 `GetLiveClockStringAt()` 이 오면 `17:30` 으로 바꾸시면 됩니다. 참고로 공방은 17:30~18:00, 요가는 18:30~19:00 입니다 |
+| 2026-08-26 | 김시리 | 문서 정리 — 종료된 협의 경위와 뒤집힌 초안 서술을 걷어내고 **지금 필요한 것만** 남겼습니다. 셋업 예산 제안의 C·D 안은 문서에서 뺐습니다(연출이 필요해지면 말씀 주세요). 프로그램 편성 절에 **용어 표**(카드 / 편성 / 예약)를 넣었습니다 — 구조체가 셋이라 헷갈리는 지점입니다 |
+| 2026-08-26 | 백종태 | ✅ **8/24 제안의 B(상단바 고정비·미납)를 구현했습니다** — U4 준비 단계 하단 HUD(`UFF_PrepHudBar`)에 `축제 · 금화 · 밀린 임대료 · 관객 · 스태프 · 일차/단계 · 예상 방문객 · CTA` 를 넣었습니다. 미납은 **잔액 바로 옆**이고 0이면 칸을 숨깁니다. 미납·스태프 2종을 ViewModel 에 중계 연결했습니다(경제 쪽 추가 작업 0건). 새로 필요한 것은 **예상 방문객(범위)** 하나입니다 |
+| 2026-08-26 | 백종태 | 🔴 **문서 내부 모순 정정 — 날씨는 이미 읽고 쓸 수 있습니다.** `필요한데 아직 없는 것` 표의 `날씨 Read Model ❌ 없음` 행이 낡았습니다(같은 문서 `환경(날씨·야간)` 절에 API가 이미 있음). 지웠던 테스트용 날씨 버튼(`BP_StageTest`)이 부르던 것이 바로 `SetSelectedWeather` 였고, **날씨 선택은 테스트 기능이 아니라 준비 단계의 플레이어 결정**이라 U5 점검 패널로 정식 이관합니다 |
+| 2026-08-26 | 백종태 | ✅ **U5 인력 패널을 실물로 붙였습니다 — 더미 0건.** `GetAffordableTemporaryStaffCount` · `TryHireTemporaryStaff` · `MaxHiredStaffPerDay` · `DailyStaffWageGold` · `DailyVenueRentGold` 를 ViewModel 로 중계했습니다. **`TryHireTemporaryStaff` 가 부분 고용이 없어서** 화면은 낙관적 갱신을 하지 않고 결과 이벤트만 봅니다. 거부 사유가 bool 하나라 화면에서 `상한 도달`·`잔액 부족`을 구분하려고 `GetRemainingTemporaryStaffCap()` 을 따로 만들었습니다 — 경제 쪽 `GetRemainingHireCap()` 이 private 이라 같은 식을 UI 에서 한 번 더 씁니다. **public 으로 열어 주시면 그 중복을 지웁니다** |
+| 2026-08-26 | 백종태 | ✅ **U5 점검 패널(개장 견적서)을 붙였습니다.** 날씨 선택이 정식 자리를 얻었습니다 — `SetSelectedWeather` 가 `IsReconfigureAllowed()` 로 준비 단계에만 열려 있어서 준비 단계 UI 가 맞는 자리입니다. 🔴 **`OnEnvironmentStateChanged` 가 야간 전환에도 울립니다** — `(Weather, bIsNight)` 를 함께 쏘기 때문입니다. ViewModel 에서 날씨가 실제로 바뀔 때만 중계하도록 걸렀습니다. 강민서님 쪽 수정은 필요 없습니다. 남은 요청은 여전히 **예상 방문객(범위)** 하나이고, 없으면 견적표의 수입·보너스 칸이 `아직 알 수 없습니다` 로 나옵니다 |
+| 2026-08-26 | 강민서 | ✅ **날씨 Read Model 표 정정 확인했습니다.** `OnEnvironmentStateChanged`가 야간 전환에도 함께 울리는 부분, ViewModel에서 필터링해주셔서 제 쪽 추가 수정 없습니다. U5 점검 패널 연동 감사합니다 |
+| 2026-08-26 | 강민서 | ✅ **`GetLiveClockStringAt(float LiveMinutes)` 요청 구현 완료 — `GetLiveClockStringFromMinutes(int32 LiveMinutes)`로 만들었습니다.** 요청과 시그니처가 달라 확인 필요합니다: 파라미터가 `float`가 아닌 `int32`이고, 함수명도 다릅니다. 통일 필요하시면 말씀 주세요. `GetCurrentLiveClockString()`을 이 함수 호출 한 줄로 리팩터링하는 것도 확정되면 같이 진행하겠습니다 |
+| 2026-08-26 | 강민서 | 🔴 **`FF_FestivalViewModelSubsystem.cpp:354` · `FF_LiveHudMenuBar.cpp:168` 표시 문자열 건 — 제 담당 함수는 이미 있습니다.** `EFF_FestivalStage` 표시 이름은 `GetCurrentStageDisplayName()`(UMETA DisplayName 기반, 패키징 빌드 안전)이 원본입니다. 해당 두 파일이 이 함수를 안 쓰고 자체 문자열을 쓰는 것으로 보여, 제가 직접 두 파일을 고치기보다 각 파일에서 이 함수를 호출하도록 바꾸시길 제안드립니다. enum에 없는 특수 케이스가 필요하면 알려주시면 추가하겠습니다 |
+| 2026-08-26 | 김시리 | ✅ `GetLiveClockStringFromMinutes(int32)` Dev 병합 확인. 프로그램 카드 시각은 상대 표기 임시안 대신 이 API로 `HH:MM` 표시합니다 |
+| 2026-08-26 | 김시리 | 최신 UI 코드 확인 — Gold는 ViewModel이 `OnGoldChanged`를 구독해 연결돼 있습니다. 아직 남은 것은 누적/오늘 매출 연결, 인원 칸을 `GetAvailableStaffCount()` 로 바꾸는 것, 프로그램 편성·피날레 구매 화면입니다. Day1 Setup에서도 알바 고용 가능으로 확정됐습니다 |
+| 2026-08-27 | 강민서 | 🔴 **8/26 답변 정정 — `GetCurrentStageDisplayName()`이 실제로 UMETA 직접 읽기 문제였습니다.** 하드코딩 switch문으로 교체 완료, 빌드 확인함 |
+| 2026-08-28 | 김시리 | ✅ **Need 지표가 이제 실제로 움직입니다** — `UFF_NpcNeedMetricsSubsystem` 에 표본을 넣는 코드를 붙였습니다(`AdvanceNeeds()` 순회에 얹음). `GetNeedUnmetRatio()`·`GetNeedAverage()` 가 더 이상 항상 0 이 아닙니다. **갱신은 1초(30스텝)마다**이고 `OnNeedUnmetRatioChanged` 는 값이 바뀐 Need 에 대해서만 옵니다. ⚠️ **`GetSampleCount() == 0` 은 여전히 "데이터 없음"이고 0% 와 다릅니다** — Live 단계 밖에서는 집계가 안 돌아 마지막 값이 멈춰 있습니다. 표본은 파티가 아니라 **개인** 단위입니다 |
+| 2026-08-28 | 김시리 | 🔴 **2회차 축제를 시작하면 경제가 리셋되지 않습니다.** 경제의 `StartFestival(Definition)` 이 **`Initialize()` 에서 한 번만** 불려서, GameInstance 가 살아 있는 한 다시 안 돕니다 — Gold·원장·미납·인원·예약이 1회차 마지막 값으로 남습니다. **제 쪽에서 닫겠습니다**(리셋 함수는 이미 완성돼 있고 부를 자리만 없었습니다). ❓ **여쭙고 싶은 것**: `UFF_UIFlowSubsystem` 에서 **프론트엔드 복귀 후 축제를 다시 시작하는 흐름이 지금 실제로 도는지**입니다. 도는 상태면 발표 전에, 아니면 발표 뒤에 닫겠습니다 |
+| 2026-08-28 | 김시리 | ✅ **메인 무대가 공연 시간에만 후보로 열립니다.** Live 전반에는 `Performance_MainStage_*` 가 NPC 목적지 후보에서 빠져 있다가 공연 시작 시각에 열리고, 그 순간 유휴 파티가 무대로 몰립니다. **버스킹·체험 무대는 상시 열려 있습니다.** 화면 쪽 작업은 없습니다 — 다만 "무대에 아무도 없다"가 버그가 아니라 의도라는 점만 알아 두시면 됩니다 |
+| 2026-08-27 | 김시리 | **코드 전수 대조 + 문서 정리.** 안 맞는 것을 문서 끝 `아직 안 맞는 것` 표 하나로 모으고, 이미 닫힌 항목의 경위 서술을 걷어냈습니다. 실제로 바뀐 사실 4개: ① **표시 문자열은 5개 파일에 남아 있습니다**(지목했던 2곳은 줄 번호가 낡았고, 그중 4건은 Stage enum 이 아니라 탭·옵션 enum 이라 강민서 님 수정과 무관합니다) ② **`FFF_CrowdReadModel` 은 스텁이 아니라 실값이고 셀이 2m 입니다**(5m 가정이면 Heat Map 색이 틀립니다) ③ 인원 칸에 **가용이 아니라 보유**가 붙어 있습니다 ④ 프로그램·피날레는 `EFF_PrepHudTab` 에 탭 자리가 이미 있고 패널 본체만 없습니다. **경제 쪽 추가 작업은 0건이고, 제 숙제는 `AddSample` 호출부입니다** |

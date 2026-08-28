@@ -39,6 +39,13 @@ struct FUnitData
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Data")
 	FVector TargetLocation = FVector::ZeroVector;
 
+	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Data")
+	FVector SteerTargetLocation = FVector::ZeroVector;
+
+	bool bHasSteerTarget = false;
+
+	FVector GetSteerTarget() const { return bHasSteerTarget ? SteerTargetLocation : TargetLocation; }
+
 	// 아무도 없을 때 내고 싶은 속도(희망 속도), cm/s. 150cm/s = 1.5m/s로 보통 성인 보행 속도.
 	UPROPERTY(VisibleAnywhere,BlueprintReadOnly,Category="Crowd|Data")
 	float Speed = 150.f;
@@ -145,10 +152,31 @@ enum class EFF_DecisionReason : uint8
 {
 	Spawned,        // 스폰 직후 첫 목적지
 	Arrived,        // 목적지에 도착했다
-	JoinRejected,   // 도착했으나 시설 대기열이 만석·폐쇄로 거절했다   [미사용 — Queue 연동 후]
-	MoveFailed,     // 경로 없음 / 막힘                              [미사용 — 경로탐색 도입 후]
-	Interrupted,    // 시설 이동·폐쇄로 진행 중인 명령이 취소됐다      [미사용 — Zone 연동 후]
-	StayExpired     // 체류 시간이 끝났다                            [미사용 — 체류 도입 후]
+	JoinRejected,   // 도착했으나 시설 대기열이 만석·폐쇄로 거절했다   (FF_QueueCrowdLink)
+	/**
+	 * 목적지 방향으로 DecisionStuckSteps 동안 못 나아갔다 = 이 목적지를 포기한다.
+	 *
+	 * 유일하게 **도착 전에** 발화하는 사유다. 나머지는 전부 도착이 선행 조건이라, 이 사유가
+	 * 없으면 걷는 도중 생긴 병목에 대해 파티가 할 수 있는 일이 "계속 밀어붙이기" 하나뿐이다.
+	 *
+	 * ★ 조정자에게: 이 사유로 온 요청은 직전 목적지를 감점하거나 후보에서 빼야 한다.
+	 * 안 하면 못 갔던 곳을 그대로 다시 골라 같은 잼으로 걸어 들어간다 — 이 enum 을 사유별로
+	 * 나눈 이유가 바로 그것이다(위 주석). 경로탐색이 붙으면 "경로 없음"도 이 사유를 쓴다.
+	 */
+	MoveFailed,
+	Interrupted,    // 시설 이동·폐쇄로 진행 중인 명령이 취소됐다      (FF_QueueCrowdLink)
+	StayExpired,    // 체류 시간이 끝났다                            [미사용 — 체류 도입 후]
+	/**
+	 * 닫혀 있던 목적지가 열렸다 = 지금 고를 수 있는 것이 늘었다.
+	 *
+	 * 나머지 사유와 달리 월드 쪽에서 생긴 일이라, 도착을 기다리지 않고
+	 * 밖에서 밀어 넣는다(`RequestRedecisionForIdleParties`). 지금 유일한 발화점은
+	 * 메인 공연 시각의 무대 개장이다(UFF_CrowdDecisionSubsystem).
+	 *
+	 * 이 사유가 없으면 무대가 열려도 아무도 통지받지 못해, 각자 하던 일을 끝낼 때까지
+	 * 회전율만큼 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
+	 */
+	DestinationOpened
 };
 
 UENUM()
@@ -166,6 +194,16 @@ struct FFF_PartyDecisionResult
 	FName DestinationId = NAME_None;
 	EFF_PartyFallbackAction FallbackAction = EFF_PartyFallbackAction::Wander;
 	bool bCountAsNoChoice = false;
+
+	/**
+	 * 고른 시설이 해소하는 Need 성분. 이용 완료 시점에 FFF_NeedRules::Relieve 로 넘어간다.
+	 *
+	 * 왜 결정 시점에 실어 나르는가: 완료 통지(HandlePartyExited)가 받는 것은 int32 FacilityId 뿐이라
+	 * 거기서 GetNeedReliefFlags 를 부르려면 (카테고리, DefinitionId) 역조회 경로가 새로 필요하다.
+	 * 후보에는 이미 BuildCandidates 가 채워 둔 값이 있으므로 그것을 그대로 들고 간다 —
+	 * 같은 판정이 두 곳에서 일어나지 않게 하려는 것이기도 하다(FF_NeedRules.h Relieve 주석).
+	 */
+	FFF_NeedReliefFlags NeedRelief;
 };
 /**
  * 결정 계층에 넘기는 파티 스냅샷.
@@ -196,6 +234,21 @@ struct FFF_PartyDecisionContext
 
 	// 왜 결정이 필요해졌는지
 	EFF_DecisionReason Reason = EFF_DecisionReason::Spawned;
+
+	/**
+	 * 직전 라운드에 이 파티가 들고 있던 목적지. 배회 중이었으면 NAME_None 이다.
+	 *
+	 * ### 이 값만으로 판단하지 말 것 — Reason 과 함께 읽는다
+	 * "직전 목적지"는 그 자체로 나쁜 후보가 아니다. 이용을 마치고 나온 시설도 여기 담기는데,
+	 * 그 경우 다시 고르는 것은 정상이고 억제는 revisit 항이 이미 맡고 있다.
+	 *
+	 * 빼거나 감점해야 하는 것은 **실패한 사유로 온 요청**뿐이다:
+	 *   MoveFailed   — 그 방향이 막혀서 포기했다. 다시 고르면 같은 잼으로 걸어 들어간다
+	 *   JoinRejected — 만석·폐쇄로 거절당했다. 다시 고르면 같은 거절을 받는다
+	 *
+	 * 이 구분을 안 하면 사유별로 enum 을 나눈 의미가 없어진다(EFF_DecisionReason 주석).
+	 */
+	FName PreviousDestinationId = NAME_None;
 	FName ArchetypeId = NAME_None;
 	int32 PartySize = 1;
 	FFF_NeedState Needs;
@@ -203,6 +256,25 @@ struct FFF_PartyDecisionContext
 	int32 ConsecutiveNoChoiceCount = 0;
 	float NowLiveMinutes = 0.f;
 	float RemainingStayMinutes = 0.f;
+
+	/**
+	 * 목적지별 "지금 그곳으로 걸어가고 있는 인원". 널일 수 있다 — 조정자는 널이면 이 항을 끈다.
+	 *
+	 * ### 왜 이 값이 필요한가 (시설 몰림의 직접 원인)
+	 * 후보의 혼잡·대기 값은 전부 **결정 시점의 스냅샷**이다. 같은 프레임대에 결정하는 파티들은
+	 * 모두 같은 "비어 있는" 인기 시설을 보고 동시에 출발하고, 도착해서야 만석을 확인한다
+	 * (가입 거절 → 재평가 → 또 같은 곳). 이미 그곳으로 향하고 있는 수요가 후보 점수에
+	 * 들어가지 않으면 이 몰림은 계수를 어떻게 만져도 사라지지 않는다.
+	 *
+	 * ### 왜 포인터로 넘기는가
+	 * 목적지를 들고 있는 파티를 아는 것은 Crowd 뿐이다. 그렇다고 조정자가 Crowd 를 역참조하게
+	 * 두면 이 구조체를 만든 이유(FFF_PartyDecisionContext 주석)가 무너진다. 그래서 Crowd 가
+	 * 결정 배치 앞에서 한 번 짓고 그 스냅샷을 읽기 전용으로 빌려준다.
+	 *
+	 * 수명은 이 호출 한 번이다 — 조정자가 프레임을 넘겨 들고 있으면 안 된다.
+	 * 줄에 들어간 파티는 여기서 빠진다(대기시간이 이미 세고 있어 이중 계산이 된다).
+	 */
+	const TMap<FName, int32>* InTransitMemberCounts = nullptr;
 };
 
 
@@ -253,6 +325,15 @@ struct FPartyDecisionState
 
 	EFF_DecisionReason PendingReason = EFF_DecisionReason::Spawned;
 	FName CurrentDestinationId = NAME_None;
+
+	// 포기·완료 직전에 들고 있던 목적지. RequestDecision 이 CurrentDestinationId 를 비울 때
+	// 그 값을 여기로 옮긴다 — 안 옮기면 조정자가 "무엇을 못 갔는지"를 알 방법이 없다.
+	FName PreviousDestinationId = NAME_None;
+
+	// CurrentDestinationId 와 한 쌍이다. 목적지가 NAME_None 이면 이 값도 의미가 없다.
+	// 둘을 항상 같이 세우고 같이 지울 것 — 갈리면 "A 시설에 갔는데 B 의 Need 가 풀리는" 상태가 된다.
+	FFF_NeedReliefFlags CurrentNeedRelief;
+
 	int32 ConsecutiveNoChoiceCount = 0;
 	bool bIsLeaving = false;
 	float LeaveStartedSimTime = 0.f;

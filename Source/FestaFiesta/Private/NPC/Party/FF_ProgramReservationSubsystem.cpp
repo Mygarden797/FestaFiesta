@@ -13,6 +13,11 @@ FGuid UFF_ProgramReservationSubsystem::RegisterProgram(
 	Reservation.EndMinutes = EndMinutes;
 	Reservation.Capacity = Capacity;
 
+	// 아직 아무도 안 왔으므로 빈자리는 정원 전체다. 기본값 0 으로 두면
+	// `GetRemainingSeats` 가 갓 만든 예약에 "남은 자리 없음"을 돌려준다
+	// (ClearAssignments 가 하루 경계에서 하는 것과 같은 초기화다).
+	Reservation.UnfilledSeats = Capacity;
+
 	// IsValid 가 세 조건(유효 시설·정원 양수·종료가 시작보다 뒤)을 한 곳에서 본다.
 	// 여기서 거부하지 않으면 아무도 배정되지 않는 프로그램이 조용히 목록에 남는다.
 	if (!Reservation.IsValid())
@@ -72,56 +77,65 @@ void UFF_ProgramReservationSubsystem::ResetAll()
 	PartyToReservation.Reset();
 }
 
-int32 UFF_ProgramReservationSubsystem::AssignGroups(
-	FGuid ReservationId, const TArray<FFF_ReservationCandidateGroup>& Candidates)
+bool UFF_ProgramReservationSubsystem::ConfirmReservedParty(
+	FGuid ReservationId, int32 PartyId, int32 MemberCount)
 {
 	FFF_ProgramReservation* Reservation = Reservations.Find(ReservationId);
 	if (Reservation == nullptr)
 	{
+		// 어제 산 프로그램의 예약 핸들을 오늘 스폰이 들고 오는 경우가 여기다.
 		UE_LOG(LogProgramReservation, Warning,
-			TEXT("[예약] 배정 실패: 없는 예약 %s"), *ReservationId.ToString());
-		return 0;
+			TEXT("[예약] 확정 실패: 없는 예약 %s (파티 %d)"), *ReservationId.ToString(), PartyId);
+		return false;
 	}
 
-	// 다른 예약에 이미 들어간 그룹을 뺀다. 규칙 함수는 "호출부가 이미 필터링한 목록"을
-	// 전제하고, 그 호출부가 여기다. 같은 파티가 두 프로그램에 동시에 들어가면
-	// 잠금 구간이 겹쳐서 어느 쪽 시각으로 판정할지가 없어진다.
-	TArray<FFF_ReservationCandidateGroup> Unassigned;
-	Unassigned.Reserve(Candidates.Num());
-	for (const FFF_ReservationCandidateGroup& Candidate : Candidates)
+	if (PartyId == INDEX_NONE || MemberCount <= 0)
 	{
-		const FGuid* Existing = PartyToReservation.Find(Candidate.GroupId);
-		if (Existing == nullptr || *Existing == ReservationId)
+		UE_LOG(LogProgramReservation, Warning,
+			TEXT("[예약] 확정 실패: 파티 %d, 인원 %d — 스폰이 값을 못 채웠다"), PartyId, MemberCount);
+		return false;
+	}
+
+	if (const FGuid* Existing = PartyToReservation.Find(PartyId))
+	{
+		// 같은 통지가 두 번 와도 인원이 두 배가 되면 안 된다. 스폰 쪽 재시도에 안전하게 둔다.
+		if (*Existing == ReservationId)
 		{
-			Unassigned.Add(Candidate);
+			return true;
 		}
+
+		UE_LOG(LogProgramReservation, Warning,
+			TEXT("[예약] 확정 실패: 파티 %d 는 이미 예약 %s 에 속한다"),
+			PartyId, *Existing->ToString());
+		return false;
 	}
 
-	// 재배정이면 이전 배정을 먼저 걷어낸다 — 안 그러면 색인에 옛 그룹이 남는다.
-	for (const int32 PreviousGroupId : Reservation->AssignedGroupIds)
-	{
-		PartyToReservation.Remove(PreviousGroupId);
-	}
-
-	FFF_ProgramReservationRules::Assign(*Reservation, Unassigned);
-
-	for (const int32 GroupId : Reservation->AssignedGroupIds)
-	{
-		PartyToReservation.Add(GroupId, ReservationId);
-	}
-
-	// 정원을 못 채운 것은 실패가 아니라 관찰 대상이다. 그룹 크기 조합으로 정확히 채우는
-	// 규칙이라 후보 구성에 따라 남을 수 있다(§3.4). 조용히 넘어가면 정원 설계가 틀린 것을 못 본다.
-	if (Reservation->UnfilledSeats > 0)
+	// 초과는 허용하지 않는다(규칙 3). 넘겨 받으면 정원이 의미를 잃고 체험비가 부풀려진다.
+	if (Reservation->AssignedHeadcount + MemberCount > Reservation->Capacity)
 	{
 		UE_LOG(LogProgramReservation, Warning,
-			TEXT("[예약] 정원을 다 못 채웠다: %d/%d명, 빈자리 %d (후보 %d그룹)"),
-			Reservation->AssignedHeadcount, Reservation->Capacity,
-			Reservation->UnfilledSeats, Unassigned.Num());
+			TEXT("[예약] 확정 거부: 정원 초과 %d+%d > %d (예약 %s, 파티 %d)"),
+			Reservation->AssignedHeadcount, MemberCount, Reservation->Capacity,
+			*ReservationId.ToString(), PartyId);
+		return false;
 	}
+
+	Reservation->AssignedGroupIds.Add(PartyId);
+
+	// 통지 순서가 아니라 파티 번호로 정렬해 둔다.
+	// 목록을 읽는 쪽(UI·테스트)이 스폰 순서에 의존하면 같은 Seed 인데 화면이 달라진다.
+	Reservation->AssignedGroupIds.Sort();
+
+	Reservation->AssignedHeadcount += MemberCount;
+	Reservation->UnfilledSeats = Reservation->Capacity - Reservation->AssignedHeadcount;
+	PartyToReservation.Add(PartyId, ReservationId);
+
+	UE_LOG(LogProgramReservation, Log,
+		TEXT("[예약] 파티 %d(%d명) 확정. %d/%d명"),
+		PartyId, MemberCount, Reservation->AssignedHeadcount, Reservation->Capacity);
 
 	OnReservationChanged.Broadcast(ReservationId);
-	return Reservation->AssignedHeadcount;
+	return true;
 }
 
 TArray<FGuid> UFF_ProgramReservationSubsystem::GetReservationIds() const

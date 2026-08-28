@@ -10,6 +10,7 @@
 class UImage;
 class UCommonTextBlock;
 class UFF_CommonButtonBase;
+class USizeBox;
 
 /** 클릭된 버튼 자신을 넘긴다. 화면 쪽에서 버튼별 핸들러를 따로 두지 않아도 되게 하기 위함. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFCommonButtonClicked, UFF_CommonButtonBase*, Button);
@@ -120,6 +121,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UImage> Image_FocusRing;
 
+	/**
+	 * 버튼 WBP의 바깥 크기 상자. 부모 화면에서 자식 WBP 내부를 직접 편집할 수 없으므로
+	 * 아래 `ButtonSizeOverride`를 이 슬롯에 적용한다. 없는 버튼 WBP도 허용한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<USizeBox> SizeBox_Root;
+
 	// --- 내용. 버튼 인스턴스마다 다른 값 ---
 
 	/** 버튼 문구. 화면 문자열을 C++에 하드코딩하지 않는다. */
@@ -135,6 +143,14 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Content")
 	FSlateBrush IconBrush;
+
+	/**
+	 * 이 버튼 인스턴스의 가로·세로 크기 재정의.
+	 * 각 축이 0 이하면 그 축은 WBP의 기존 SizeBox 값을 유지한다. 기본값이 (0, 0)이므로
+	 * 기존 타이틀·핀 버튼의 크기를 바꾸지 않고 Atlas 같은 특정 인스턴스만 조절할 수 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Layout", meta = (ClampMin = "0.0"))
+	FVector2D ButtonSizeOverride = FVector2D::ZeroVector;
 
 	// --- 아이콘·Chevron 틴트. 배경과 폰트는 CBS_/CTS_가 맡고 여기서는 건드리지 않는다 ---
 
@@ -185,6 +201,9 @@ protected:
 	bool bShowChevronOnlyWhenHighlighted = false;
 
 private:
+	/** `ButtonSizeOverride`의 양수 축만 `SizeBox_Root`에 적용한다. */
+	void ApplyButtonSizeOverride();
+
 	/** 키보드·게임패드 포커스 보유 여부. 마우스 호버와 합쳐 Highlighted를 만든다. */
 	bool bHasFocusPath = false;
 };

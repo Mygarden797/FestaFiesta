@@ -1,26 +1,186 @@
 # crowdAI ↔ Utility AI 연동 가이드 — 이 문서 하나로 시작하시면 됩니다
 
 - 대상: **이정원** (crowdAI — `Source/FestaFiesta/*/CrowdSystem/`)
-- 작성: 김시리 (Utility AI · 경제) / 갱신일 **2026-08-13**
+- 작성: 김시리 (Utility AI · 경제) / 갱신일 **2026-08-27**
+- 🔴 **처음 여시는 거면 바로 아래 "전달드리는 이슈 7건"만 보시면 됩니다.** 나머지는 그 이슈의
+  근거·배경이고, 급하지 않습니다
 - 목적: Utility AI 쪽 문서가 8개로 흩어져 있어서 "뭘 봐야 하는지"부터 막히는 문제를 없앤다.
   **이 문서는 코드 지도다** — 어떤 파일이 무엇을 하고, 그중 정원님이 실제로 손댈 것은 어디인지만 담는다.
-- **이 문서 하나로 연동에 필요한 건 다 담았다.** 본문(§1~§12)은 읽는 것, **부록 A~E**는 코드 쓸 때
-  찾아보는 참조표(필드 목록·의사코드)다. 설계 근거("왜 이 비율인가")가 궁금할 때만 §13의 원본 spec 을 본다
+- **이 문서 하나로 연동에 필요한 건 다 담았다.** 본문(§1~§8)은 읽는 것, **부록 A~E**는 코드 쓸 때
+  찾아보는 참조표(필드 목록·의사코드)다. 설계 근거("왜 이 비율인가")가 궁금할 때만 §9 의 원본 spec 을 본다
 
 ---
 
-## 1. 세 줄 요약
+# 🔴 이정원님께 — 전달드리는 이슈 9건 (2026-08-27, I-8·I-9 는 08-28 추가)
 
-1. **Utility AI 쪽은 함수가 다 있고 부르는 쪽이 없다.** 목적지 선택·욕구·개체 변주·예약 배정까지
-   구현과 테스트가 끝났는데, NPC 하나하나에 적용하는 층(아래 **L3**)이 비어 있어서
-   **실제로는 아무 NPC도 이 로직을 쓰고 있지 않다.**
-2. 그 L3 가 crowdAI 데이터(`FUnitData`) 와 붙어야 해서, 정원님께 부탁드릴 것이 **4개(§5)** 다.
-3. Utility AI 쪽 코드는 **전부 `static` 순수 함수 + DataTable** 이다. 상태를 안 들고 있고,
-   같은 입력이면 항상 같은 출력이 나온다. 그래서 정원님이 언제 어디서 불러도 안전하다.
+정원님, `origin/Dev`(`396319a`)를 빌드해서 코드를 읽고 전체 테스트를 돌린 결과입니다.
+**코드 작업은 3건(I-2·I-3·I-4), 결정만 주시면 되는 것 2건, 회귀 확인 1건, 확인 3건입니다.**
+
+> 🆕 **08-28 추가분 먼저 보셔도 됩니다.** I-8 은 **제가 정원님 파일 3곳을 고친 사후 통지**이고,
+> I-9 는 그 과정에서 발견한 것인데 **제 코드가 아니라 기존 경로에 관한 질문**입니다.
+
+| # | 이슈 | 종류 | 지금 무슨 일이 벌어지나 | 상세 |
+|---|---|---|---|---|
+| **I-1** | Crowd 테스트 10건이 새로 깨졌습니다 | 🔴 회귀 확인 | 스폰 부족·이동 0·밀도 0 이 한 덩어리로 나옵니다 | 아래 I-1 |
+| **I-2** | `BeginArrivalSchedule` 에 인자 하나 | 🔴 코드 | 유료 프로그램이 **손님을 못 데려옵니다** | §8.2 · §8.3 |
+| **I-3** | 스폰된 그룹 `PartyID` 통지 | 🔴 코드 | 예약 잠금·퇴장 금지를 걸 수 없습니다 | §8.2 · §8.3 |
+| **I-4** | `ReportZonePopulation()` 호출 | 🔴 코드 | **혼잡 회피 행동이 한 번도 안 나옵니다** | §4 |
+| **I-5** | `AgentPoolSize` 를 올릴지 | ⚪ 결정 | 예약 손님이 들어올 자리가 0입니다 | §8.2 |
+| **I-6** | 체류 예산의 `240` 상수 | ⚪ 결정 | Day2·3 은 **전원이 20% 짧게 머뭅니다** | §7 |
+| **I-7** | 확인만 3가지 (높이 격자 Z · 멤버 속도 · 출구 반경) | ⚪ 확인 | — | 아래 I-7 |
+| **I-8** | 🆕 **제가 정원님 파일 3곳을 고쳤습니다** (사후 통지) | ⚪ 확인 | 기존 동작 변경 없음. 전부 추가·확장입니다 | 아래 I-8 |
+| **I-9** | 🆕 **줄 선 파티에 재결정을 걸면 Queue 와 어긋납니다** | 🔴 확인 | 제 쪽은 피해 갔는데, 기존 경로도 닿는지 모르겠습니다 | 아래 I-9 |
+
+> **순서 제안** — I-1 을 먼저 봐 주시면 좋겠습니다. **나머지가 그 위에 얹히기 때문**입니다.
+> 지금 헤드리스에서 5명 요청에 2명만 스폰되는 상태라, I-2·I-3 을 넣어도 **예약 손님이
+> 제대로 들어왔는지 테스트로 확인할 방법이 없습니다.** 다만 **에디터 실플레이에서도 그런지는
+> 제가 확인 못 했습니다** — 아래에 그 판단에 필요한 것만 정리했습니다.
+
+## I-1 · 🔴 Crowd 테스트 10건 신규 실패 — 실플레이 영향 여부를 봐 주세요
+
+**실측**: `396319a` 빌드(성공) 후 전체 스위트 → **456 통과 / 15 실패**, 크래시 없음.
+(08-28 기준 **459 통과 / 15 실패** — 늘어난 3건은 제 신규 테스트고 **실패 15건은 목록이 그대로**입니다)
+경제·NPC·UI 는 전부 초록불입니다. 8/26 기준선은 5 실패였고, **늘어난 10건이 전부
+`FF_CrowdSystemTests.cpp`** 입니다. 제 변경은 없습니다.
+
+```
+Crowd.Avoidance.CounterFlowPathOpens                 Crowd.World.ActorShortageDoesNotAffectMetrics
+Crowd.Avoidance.MillingCrowdDoesNotGridlock          Crowd.World.ReadModelIsPublishedOnInterval
+Crowd.Decision.ArrivalCooldownThrottlesRechoice      Crowd.World.ReleaseReturnsActorAndHidesIt
+Crowd.Decision.InTransitCountsAccumulateWithinBatch  Crowd.World.TickMovesAgentsAndTheirActors
+Crowd.Decision.StuckPartyGivesUpDestination
+Crowd.Queue.SlotArrivalRadiusIsSmallerThanSlotSpacing
+```
+
+**증상 — 다섯 갈래로 보이지만 한 뿌리 같습니다** (원인은 제가 단정하지 않았습니다):
+
+| 무엇 | 실측값 |
+|---|---|
+| 스폰이 모자란다 | `요청한 5명` → **2명** · `37명` → 35명 · `20명` → 19명 |
+| Agent 가 안 움직인다 | `Agent가 실제로 이동했다` false · `평균 전진량이 양수다 (0UU)` |
+| 밀도가 0 | `밀도 집계는 12명 전원` → **0** · `밀도가 0보다 크다` false |
+| 격자 원점이 0 | `스냅샷 원점 = 격자 원점` 이 `-5000` 기대에 **0** |
+| 도착 반경 | `시설 ID가 없는 목적지는 배회 반경을 쓴다` 가 `400` 기대에 **150** |
+
+**판단에 도움이 될 것 같은 사실 3개**
+
+1. **`Crowd.HeightField` 8건은 전부 통과합니다.** 높이 격자 로직 자체는 초록불입니다
+2. 로그에 `높이 격자: 지면을 찾지 못했다(트레이스 1681회) — 개체 Z는 스폰 값 그대로 유지된다`
+   가 **29번** 찍힙니다. 테스트가 쓰는 빈 월드에는 지면이 없으니 당연한데,
+   **그 상태에서 스폰·이동까지 막히는 것이 의도인지**가 핵심인 것 같습니다
+3. 시점상 오늘 병합된 높이 격자 커밋(`5c46c39` · `a2f90db`)과 겹칩니다.
+   그전 커밋으로 되돌려 비교해 보진 않았습니다
+
+**그래서 여쭙는 것은 하나입니다** — **에디터 실플레이(지면 있는 레벨)에서도 스폰이 모자라나요?**
+- **아니라면** 테스트 하네스만 손보면 되는 일이고, I-2~I-4 는 그대로 진행하셔도 됩니다
+- **맞다면** 이게 최우선입니다. 스폰이 모자라면 예약 손님도 같이 잘립니다
+
+**재현** (경고를 에러로 취급하므로 빌드 통과 자체가 1차 검증입니다):
+
+```
+Build.bat FestaFiestaEditor Win64 Development -Project=<uproject> -WaitMutex
+UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests FestaFiesta;Quit" \
+  -unattended -nopause -nosplash -NullRHI -NoSound -stdout -FullStdOutLogOutput > full.log 2>&1
+```
+판정은 `full.log` 의 `Result={Success}` / `Result={Fail}` 개수로 합니다(종료 코드는 무시).
+⚠️ `-ABSLOG` 는 상위 디렉터리가 없으면 **로그가 아예 안 생기는데 종료 코드는 같습니다** —
+저는 이걸로 두 번 헛돌렸습니다. stdout 리다이렉트가 확실합니다.
+
+> ⚠️ **`ReadModelIsPublishedOnInterval` 은 백종태 님께도 걸립니다.** 그게 Heat Map 의 유일한
+> 원본이라 제가 `UI_API.md` 에 "실값이 나온다"고 적어 보냈는데, **격자 원점이 0 이면
+> 셀 → 월드 환산이 통째로 어긋나서 Heat Map 이 엉뚱한 자리에 그려집니다.**
+> 종태님께는 "이 테스트가 초록불로 돌아온 뒤에 붙이시라"고 caveat 을 달아 뒀습니다.
+
+## I-7 · 확인만 부탁드리는 것 3가지
+
+작업 요청이 아니라, 제가 코드를 읽고 **이렇게 이해했는데 맞는지**만 알려주시면 됩니다.
+
+1. **높이 격자와 Z 소유권** — 제 쪽은 목적지를 XY 로만 넘기고 Z 는 안 봅니다.
+   **`FFF_PartyDecisionResult::Destination` 의 Z 를 그쪽에서 격자로 덮으시는 것**으로
+   이해했는데 맞나요? 제가 Z 를 맞춰 드려야 하면 알려주세요
+2. **파티 멤버가 리더보다 빠릅니다** — `PartyMemberSpeedBoost`(1.15) ·
+   `PartyMemberSpeedMultiplier`(1.3) 가 비리더에만 곱해집니다(`:375~378`).
+   **대형 유지용 따라붙기**로 이해했습니다. 맞으면 제 계수 문서에 그렇게 적겠습니다
+3. **`Temp_ExitArrivalRadiusUU` 가 400 입니다.** 출구 앞에서 뭉치던 것을 푸느라 키우신 것으로
+   이해했습니다 — 맞는지만 알려주세요. 퇴장 판정은 제 쪽이라 이 값과 맞물립니다
 
 ---
 
-## 2. 담당 경계
+## I-8 · 🆕 제가 정원님 파일 3곳을 고쳤습니다 (사후 통지)
+
+메인 공연 시각에 무대로 몰리게 하는 작업(AT-016)을 붙이면서 손댔습니다.
+**기존 로직을 고친 것은 없고 전부 추가이거나 시그니처 확장입니다.** 빌드 통과했고
+전체 스위트도 실패 목록이 그대로입니다(459 통과 / 15 실패 — I-1 의 그 15건).
+
+| 파일 | 무엇 | 왜 그 파일이어야 했나 |
+|---|---|---|
+| `FF_FestivalCrowdTypes.h` | `EFF_DecisionReason::**DestinationOpened**` 를 **맨 끝에** 추가 | 기존 사유 5개가 전부 "파티 쪽에서 생긴 일"인데 "무대가 열렸다"는 **월드 쪽 사건**이라 맞는 것이 없었습니다. `Interrupted` 재활용은 "폐쇄로 취소됨"이라 로그가 거짓이 됩니다. 값 순서·번호는 안 건드렸습니다 |
+| `FF_CrowdSimulationSubsystem.h/.cpp` | `**RequestRedecisionForIdleParties(MaxParties)**` public 신설 | `UnitDatas`·`PartyDecisionStates` 가 private 이라 밖에서는 "이 파티가 줄에 섰나"를 물을 수가 없습니다. 게터만 열고 순회를 제 쪽에서 도는 것보다 데이터가 있는 곳에 두는 게 낫다고 봤습니다 |
+| `FF_CrowdSimulationSubsystem.h/.cpp` | `AdvanceNeeds()` → `AdvanceNeeds(**bool bAggregateMetrics**)` + 멤버 2개 | Need 지표에 표본을 넣는 코드를 **이미 있던 유닛 순회에 얹었습니다**(집계 전용 순회를 만들면 같은 배열을 두 번 돕니다). 주기를 프레임이 아니라 **고정 스텝**으로 세야 하는데 `StepsThisFrame` 이 `Tick` 에만 있어서 인자로 받습니다 — `StepsSinceSnapshot` 주석에 적어두신 이유 그대로입니다 |
+
+**알아두셔야 할 것 하나** — `RequestDecision` 의 쿨다운 검사가 `Arrived`·`MoveFailed` 두 사유에만
+걸려 있어서(`:1438`) **`DestinationOpened` 는 `DecisionCooldownSeconds` 를 통과합니다.**
+의도한 것입니다(그래야 같은 순간에 몰립니다). 대신 한 프레임에 몰리는 양은
+`MaxParties`(제 호출부는 64)로 막습니다.
+
+`AdvanceNeeds` 는 **`bAggregateMetrics == false` 면 기존과 완전히 같습니다** —
+호출 지점 세 곳이 전부 널 가드 뒤에 있어서 30스텝 중 29스텝은 아무 일도 안 일어납니다.
+
+---
+
+## I-9 · 🔴 줄 선 파티에 재결정을 걸면 Queue 와 어긋납니다 — 기존 경로도 닿나요
+
+I-8 작업 중에 본 것인데, **제 코드가 아니라 기존 경로에 관한 질문**입니다.
+
+`RequestDecision` 이 내부에서 `ClearPartyQueueState(idx, **false**)` 를 부릅니다(`:1447`).
+그런데 `bLeaveQueue == false` 면 `QueuePhase`·`QueuedFacilityId` 를
+**로컬에서만 지우고 `LeaveQueue` 는 안 부릅니다**(`:1573`).
+
+즉 **줄에 서 있는 파티에 재결정이 걸리면**:
+
+```
+크라우드 : QueuePhase = None      → "나 줄 안 섰음". 새 목적지로 걸어간다
+Queue    : 그 파티를 계속 들고 있음 → 자리가 안 비고, 없는 파티를 서비스한다
+```
+
+**제 `RequestRedecisionForIdleParties` 는 `QueuePhase != None` 인 파티를 아예 제외**해서
+이 경로를 피해 갑니다. 여쭙고 싶은 것은 그 다음입니다:
+
+> **이동 루프에서 오는 `Arrived`(`:558`)·`MoveFailed`(`:582`) 도 줄 선 파티에 닿을 수 있나요?**
+
+닿는다면 같은 어긋남이 **이미** 일어나고 있을 수 있고, `QueueHoldTimeoutSeconds` 강제 해제가
+그걸 덮고 있는 것일 수도 있습니다(그 Warning 이 "큐 이벤트 유실을 의심할 것"이라고 적혀 있는데,
+유실이 아니라 이쪽이 원인일 가능성입니다).
+
+🔴 **제가 확인 못 한 부분이라 단정하지 않았습니다.** 안 닿는 구조라면 이 항목은 닫습니다.
+
+> 참고로 **"공연 시작하니 줄 포기하고 무대로 간다"(reneging)** 는 지금 구조에서 안 나옵니다.
+> 나오게 하려면 재결정이 `ClearPartyQueueState(.., **true**)` 를 타야 하는데, 그 조건을
+> 새로 만드는 것이라 정원님과 정하고 싶습니다. **급하지 않습니다** — 발표 범위 밖입니다.
+
+---
+
+## 근거 — 코드 어디를 보고 판단했는지
+
+`origin/Dev`(`396319a`) 기준입니다. 제 판단이 틀렸으면 이 줄들을 반박해 주시면 됩니다.
+
+| 이슈 | 근거 (파일:줄) |
+|---|---|
+| **I-2** | `BeginArrivalSchedule` 이 3인자(`FF_CrowdSimulationSubsystem.h:629`), `BuildVisitorDistribution`(`:2204`) 이 `Build` 를 6인자로만 부름 |
+| **I-3** | Crowd 가 발행하는 델리게이트 0개. `ConfirmReservedParty` 호출부도 테스트에만 존재 |
+| **I-4** | 함수는 있는데(`FF_FFZSWorldSubsystem.h:199`) **저장소 전체 호출부 0곳** → `FF_CrowdDecisionSubsystem.cpp:395` 의 `CurrentZoneDensityRatio = 0.f` 하드코딩 |
+| **I-5** | `AFF_SpawnActor` 기본값 `UnitCount = 500` · `AgentPoolSize = 500` (`FF_SpawnActor.h:39,47`) |
+| **I-6** | `FF_CrowdSimulationSubsystem.cpp:385` 가 `Temp_LiveStageMinutes`(240) 로 체류 예산 계산. 예약 예외 없음 |
+
+**제 쪽 몫이라 요청에서 뺀 것 하나** — 개체 변주 7종 중 `WalkSpeedMultiplier`·
+`StayDurationMultiplier` 2종만 스폰 때 소비되고, 나머지 5종(인내심·혼잡내성·취향강도·
+재평가간격·여유도)은 `FFF_PartyDecisionContext` 에 안 실려서 버려집니다.
+제가 채우겠습니다. 다만 **I-4 와 같이 봐야 의미가 있습니다** — 혼잡도가 들어와도
+개인 임계(`PersonalDensityThresholdRatio`)가 1.0 고정이면 개체차 없는 일괄 회피가 됩니다.
+
+---
+
+## 1. 담당 경계
 
 ```
 김시리 (Utility AI)                     이정원 (crowdAI)
@@ -28,231 +188,108 @@
 스폰  방문객 태그 명단 ───────────────▶ 그룹·리더 지정·스폰
       DistributionBuilder::Build
 
-      개체 특성값 ───────────────────▶ 스폰 시 캐싱
+      개체 특성값 ───────────────────▶ 스폰 시 소비
       ResolveWithGroupSharing            (WalkSpeed 등)
 
 입장  시간대별 입장 비율 ─────────────▶ 실제 입장 타이밍
       DT_VisitorArrivalCurve
 
 운영  목적지 결정 ───────────────────▶ 이동·경로·도착
-      UtilityDestinationSelector         MoveCommand
-                       ◀─────────── 도착/실패
+      UtilityDestinationSelector         OnPartyNeedsDecision
+                       ◀─────────── 도착/거절/포기 (EFF_DecisionReason)
 
-      욕구·체류·퇴장 판정 ◀────────── 시설 이용 완료
-
-              ❌ 사이를 잇는 L3 층이 없음 (§5 A1)
+      욕구·체류·퇴장 판정 ◀────────── 시설 이용 완료 (OnPartyExited)
 ```
 
 **한 줄로**: 저는 **"누가 어디로 가야 하는가"를 계산**하고, 정원님은 **"실제로 그렇게 움직이게"** 합니다.
-경계에 있는 게 `FFF_MoveCommand` 하나입니다.
 
 ---
 
-## 3. 🔴 정원님이 꼭 봐야 할 코드 — 5개
+## 2. 접점 — 함수 네 개가 전부입니다
 
-경로는 전부 `Source/FestaFiesta/Public/` 기준. **위에서부터 급한 순서**입니다.
+경로는 `Source/FestaFiesta/Public/` 기준.
 
-| #     | 파일                                                 | 무엇을 하는 것                                                                     | 정원님이 할 일                                                                                                            |
-| ----- | -------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **1** | `NPC/Integration/FF_MoveCommand.h`                 | 목적지를 넘기는 **유일한 접점**. `FFF_MoveCommand`(제→정원님) / `FFF_MoveResultEvent`(정원님→제) | 이 구조체를 받아 이동시키고, 도착·실패를 이벤트로 돌려주기. **양쪽 다 아직 스텁** — 발행하는 쪽도 수신하는 쪽도 없다                                              |
-| **2** | `NPC/IndividualVariation/FF_DeterministicRandom.h` | 개체마다 다른 보행속도·인내심을 결정적으로 만든다                                                  | **스폰 시 `FFF_IndividualVariationResolver::ResolveWithGroupSharing()` 한 번 호출** 후 결과 캐싱. 안 부르면 모든 NPC가 똑같이 걷는다 (§5 A2) |
-| **3** | `NPC/Party/FF_VisitorDistributionBuilder.h`        | 방문객 N명에게 아키타입·그룹 크기·아동 슬롯 태그를 붙인 명단을 만든다                                     | `Build()` 를 불러 나온 명단으로 그룹을 묶는다. 묶는 키는 `(TargetGroupSize, TargetGroupChildCount, ArchetypeId)`                       |
-| **4** | `NPC/Integration/FF_CrowdReadModel.h`              | 5m×5m 격자 밀집도 스냅샷 구조체 (`FFF_CrowdCellSample`)                                 | 이 형태로 밀집도를 채워주면 됩니다. 셀 크기·좌표 원점은 같이 정해야 함                                                                           |
-| **5** | `NPC/Party/FF_NeedState.h`                         | 배고픔·갈증·화장실·피로·자극 5종 상태 구조체                                                   | **직접 만지지 않습니다.** NPC 하나당 이걸 어디에 보관할지만 같이 정하면 됩니다 (§5 A1)                                                            |
+**① 목적지 결정** — 정원님이 부르는 게 아니라, 제가 그쪽 델리게이트에 물려 있습니다.
 
-### 3.1 그리고 한광훈 님 플러그인에서 하나
+```cpp
+// UFF_CrowdSimulationSubsystem 가 소유. FF_CrowdDecisionSubsystem.cpp:43 에서 제가 BindUObject
+Crowd->OnPartyNeedsDecision  →  bool(const FFF_PartyDecisionContext&, FFF_PartyDecisionResult&)
+```
 
-| 파일                                                  | 함수                                                       | 정원님이 할 일                                                                    |
-| --------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `Plugins/FF_ZoneSystem/.../FF_FFZSWorldSubsystem.h` | `ReportZonePopulation(ZoneId, Population, DeltaSeconds)` | **몇 초 간격으로 호출.** 프로젝트 전체에서 호출부가 **0곳**이라 NPC가 혼잡을 피하는 행동이 아예 안 나옵니다 (§5 A3) |
+파티 스냅샷을 넘기시면 목적지를 채워 돌려드리고, **false 면 배회로 폴백**하시면 됩니다.
+구조체 둘은 `CrowdSystem/Types/FF_FestivalCrowdTypes.h` 에 있습니다.
+
+**② ~ ④ 정원님이 직접 부르는 함수**
+
+| 파일 | 함수 | 언제 |
+| --- | --- | --- |
+| `NPC/Party/FF_VisitorDistributionBuilder.h` | `Build(...)` | 유입 시작할 때. 태그 붙은 명단이 나옵니다 (상세: 부록 C) |
+| `NPC/IndividualVariation/FF_DeterministicRandom.h` | `ResolveWithGroupSharing(...)` | 스폰 시 1회 |
+| `Plugins/FF_ZoneSystem/.../FF_FFZSWorldSubsystem.h:199` | `ReportZonePopulation(...)` | 🔴 **I-4 — 아직 호출부 0곳** |
+
+**제가 채우고 정원님이 읽기만 하는 것**
+
+- `NPC/Party/FF_NeedState.h` — 욕구 5종. `FUnitData::Needs` 에 들어 있습니다
+- `NPC/Integration/FF_CrowdReadModel.h` — 밀집 스냅샷. `PublishCrowdReadModel()` 이 30스텝(1초)마다 채웁니다.
+  **셀 한 변은 2m**(`FFF_CrowdMetrics::AnalysisCellSizeUU` = 200UU), 원점은 `GridOriginUU`
+
+> ✅ **`NPC/Integration/FF_MoveCommand.h` 는 삭제했습니다**(2026-08-28). 발행부·수신부가 둘 다
+> 0곳인 죽은 타입이라 열어보면 "이게 접점인가" 하고 헷갈릴 자리였습니다. 목적지 전달은 위 ① 입니다.
 
 ---
 
-## 4. ✋ 안 봐도 되는 코드 — 이쪽은 제 안쪽입니다
+## 3. ✋ 안 봐도 되는 코드 — 이쪽은 제 안쪽입니다
 
 정원님 파트와 안 닿습니다. 궁금해서 열어보는 건 자유지만 **읽지 않아도 연동에 지장 없습니다.**
 
 | 폴더 / 파일                                 | 무엇                               | 왜 안 봐도 되나                                     |
 | --------------------------------------- | -------------------------------- | --------------------------------------------- |
-| `NPC/Destination/` 3개 파일                | Utility 식 6항 계산, 취향 벡터 합성, 계수 조회 | 제 내부 계산. 정원님은 **결과(`FFF_MoveCommand`)만** 받습니다 |
-| `NPC/Party/FF_NeedRules.*`              | 욕구가 오르고 내리는 규칙                   | 제가 굴립니다. 정원님은 "시설 이용 완료" 신호만 주시면 됩니다 (§5 A4)  |
+| `NPC/Destination/` 3개 파일                | Utility 식 6항 계산, 취향 벡터 합성, 계수 조회 | 제 내부 계산. 정원님은 **결과(`FFF_PartyDecisionResult`)만** 받습니다 |
+| `NPC/Party/FF_NeedRules.*`              | 욕구가 오르고 내리는 규칙                   | 제가 굴립니다. 완료 신호는 `OnPartyExited` 로 이미 연결돼 있습니다  |
 | `NPC/Party/FF_VisitHistory.*`           | 최근 방문 5곳 (같은 부스 재방문 페널티)         | 위와 같음. 완료 신호 하나로 욕구 해소 + 방문 기록이 같이 처리됩니다      |
-| `NPC/Party/FF_ProgramReservation*.*`    | 유료 프로그램 예약 배정                    | 배정은 제 결정적 함수가 합니다. 정원님께는 §10 D2 제약 하나만 걸립니다   |
+| `NPC/Party/FF_ProgramReservation*.*`    | 유료 프로그램 예약 배정                    | 배정은 제 결정적 함수가 합니다. 정원님께는 §7 D2 제약 하나만 걸립니다   |
 | `NPC/Integration/FF_ZoneSystemBridge.*` | ZoneSystem(한광훈) 자료형 → 제 자료형 변환   | 한광훈 님과의 경계입니다. 단위 환산(cm↔m, 초↔분)을 여기서만 합니다     |
 | `NPC/Metrics/`                          | 욕구 미해소율 집계 → UI                  | 백종태 님과의 경계입니다                                 |
 | `*Tests.cpp` 전부                         | 자동화 테스트                          | 제 쪽 회귀 방지용                                    |
 
 > **핵심**: 정원님이 실제로 코드를 부르는 지점은 **`ResolveWithGroupSharing` · `Build` ·
-> `ReportZonePopulation` 세 함수**와 **`FFF_MoveCommand` 수신** 뿐입니다. 나머지는 다 제 안쪽입니다.
+> `ReportZonePopulation` 세 함수**와 **`OnPartyNeedsDecision` 응답**뿐입니다. 나머지는 다 제 안쪽입니다.
 
 ---
 
-## 5. 🔴 지금 막혀 있는 것 4개 — 이게 안 되면 Utility AI가 아예 안 돕니다
+## 4. I-4 상세 — `ReportZonePopulation()` 이 없으면 무엇이 0이 되는가
 
-| #      | 부탁드릴 것                                                               | 안 되면 지금 무슨 일이 벌어지나                             | 어디         |
-| ------ | -------------------------------------------------------------------- | ---------------------------------------------- | ---------- |
-| **A1** | **NPC 하나당 상태를 어디에 둘지 같이 정하기** — `FUnitData` 에 넣을지 별도 배열로 둘지 (목록은 §6) | 목적지 선택이 **한 번도 실행되지 않는다.** 가장 큰 공백             | 협의         |
-| **A2** | **스폰 시 `ResolveWithGroupSharing()` 1회 호출 + 결과 캐싱**                   | **모든 NPC가 똑같은 속도로 걷고 똑같이 참는다.** 개체 변주가 코드로만 존재 | 봐야 할 코드 #2 |
-| **A3** | **`ReportZonePopulation()` 호출** (몇 초 간격, `DeltaSeconds`에 실제 보고 간격)   | **NPC가 혼잡을 피하는 행동이 안 나온다** (밀집 항이 항상 0)        | §3.1       |
-| **A4** | **"시설 이용 완료" 신호** — Queue 의 `ServiceCompleted` 를 쓸 수 있으면 가장 깔끔       | 배고픔·화장실이 **영원히 안 풀린다**                         | 협의         |
-
-> ⚠️ **A4는 "도착"이 아니라 "완료" 시점이어야 합니다.** 줄만 서고 포기한 NPC의 욕구가 풀리면
-> 대기열에서 이탈하는 게 이득이 되어버립니다.
-
-### 5.1 A2 는 이 코드 한 덩어리입니다
+호출부가 0곳이라 결정 계층이 혼잡도를 **아예 못 받습니다.** 그래서 지금 이렇게 박혀 있습니다.
 
 ```cpp
-#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
-
-// 스폰 시 1회. 매 Tick 다시 부를 필요 없습니다 — 같은 입력이면 항상 같은 값입니다
-Unit.ResolvedTraits = FFF_IndividualVariationResolver::ResolveWithGroupSharing(
-    VariationTable,          // DT_IndividualVariationKnobs 애셋
-    GlobalSimulationSeed,
-    Unit.StableAgentId,
-    Unit.GroupID,            // solo 면 INDEX_NONE → 그룹 공유 없이 개인값만
-    /*SpawnGeneration=*/0,   // 같은 ID를 재사용하지 않으면 0
-    CorrelationStrength);    // DT_UtilityCoefficients 의 correlation_strength_leisureliness (기본 0.3)
+// FF_CrowdDecisionSubsystem.cpp:395
+const float CurrentZoneDensityRatio      = 0.f;   // ← ReportZonePopulation 이 없어서
+const float PersonalDensityThresholdRatio = 1.f;  // ← 개체 변주가 안 실려와서 (제 쪽 몫)
 ```
 
-**왜 crowdAI가 부르는 게 맞는가**: 스폰 시점을 소유하는 쪽이 crowdAI이고, 결과 중
-`WalkSpeedMultiplier` 를 실제로 쓰는 쪽도 crowdAI(이동 담당)입니다.
+두 값이 상수라서 **"사람이 많아 다른 데로 간다"가 한 번도 발화하지 않습니다.**
+`Relocate` 는 나오지만 밀집 때문이 아니라 no_choice 누적 때문에만 나옵니다.
 
-**이 함수가 그룹 동행을 보장합니다.** 내부에서 두 번 계산합니다 — `StableAgentId` 시드로 개인 특성 4종,
-`GroupID` 시드로 `WalkSpeedMultiplier`/`StayDurationMultiplier` 2종. 그래서 **같은 그룹은 같은 속도로
-걷고 같은 시간 머뭅니다.** 인내심·혼잡내성 등 4종까지 공유하면 개체 변주의 목적(복제처럼 안 보이게
-하기)이 무의미해지므로 그건 개체별 독립입니다.
-
-| `FFF_ResolvedIndividualTraits` 필드                                                                                                         | 그룹 공유  | 쓰는 쪽             |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------- |
-| `WalkSpeedMultiplier`                                                                                                                     | **공유** | **crowdAI (이동)** |
-| `StayDurationMultiplier`                                                                                                                  | **공유** | Utility AI       |
-| `PatienceMultiplier` · `CrowdToleranceMultiplier` · `PreferenceStrengthMultiplier` · `ReevaluateIntervalMultiplier` · `LeisurelinessAxis` | 개체별    | Utility AI       |
-
-### 5.2 `FUnitData` 필드 — 2개는 됐고 3개 남았습니다
-
-| 필드                                          | 상태   | 용도                           |
-| ------------------------------------------- | ---- | ---------------------------- |
-| `ArchetypeID` · `StableAgentID` · `PartyID` | ✅ 있음 | —                            |
-| `CompanionSizeTag` (FName)                  | ❌    | `solo`/`pair`/`group_3_plus` |
-| `bIsDependentChildSlot` (bool)              | ❌    | 아동은 자체 목적지 계산 없이 성인에게 상속     |
-| `bIsGroupLeader` (bool 또는 `LeaderAgentId`)  | ❌    | 목적지는 리더만 계산, 나머지 상속          |
-| `FFF_ResolvedIndividualTraits` 캐싱 필드        | ❌    | A2 결과 보관                     |
+보고 주기는 몇 초여도 됩니다 — 정확도보다 **`DeltaSeconds` 에 실제 보고 간격을 넣는 것**이
+중요합니다. ZoneSystem 이 그 값으로 시간 평균을 내서(`DensityWarningHoldSeconds` 등)
+순간 스파이크로 경고가 뜨는 것을 막습니다.
 
 ---
 
-## 6. NPC 하나당 보관해야 하는 상태 (A1 상세)
+## 5. 동작 계약 — 바꾸시면 시뮬레이션 결과가 달라지는 것들
 
-목적지 선택·욕구·신규성 선호가 실제로 돌려면 NPC(또는 그룹)마다 아래를 들고 있어야 합니다.
-**이걸 어디에 둘지가 A1 이고, 지금 유일하게 막힌 지점입니다.**
+코드로는 안 보이는 전제라 적어 둡니다. **작업 요청이 아니라 "건드리실 때 알고 계셔야 하는 것"** 입니다.
 
-| 값                                         | 언제 바뀌나           | 누가 계산하나                              |
-| ----------------------------------------- | ---------------- | ------------------------------------ |
-| `FFF_NeedState` (5개 float)                | 시간 경과 + 시설 이용 완료 | `FFF_NeedRules::Advance` / `Relieve` |
-| `FFF_VisitHistory` (FName 5 + float 5)    | 시설 이용 완료         | `FFF_VisitHistory::RecordVisit`      |
-| `ConsecutiveNoChoiceCount`                | 재평가 때마다          | 선택기 결과                               |
-| `RemainingStayMinutes`                    | 시간 경과            | `FFF_NeedRules::ConsumeStay`         |
-| `LastEvaluationTime` / `ChoiceRoundIndex` | 재평가 때마다          | —                                    |
-| `FFF_ResolvedIndividualTraits`            | **스폰 시 1회 캐싱**   | `ResolveWithGroupSharing` (§5.1)     |
-
-앞 5개는 매 틱 변하고 마지막 하나는 스폰 후 불변이라, **보관 위치를 다르게 두는 게 나을 수 있습니다** —
-매 틱 도는 배열에 불변값을 섞으면 캐시가 낭비돼서요.
-
-**알아두시면 좋은 것 2개**
-
+- **그룹은 항상 통째로 움직입니다.** 통째로 입장하고 통째로 퇴장합니다. 구현 방법은 자유이고,
+  요구사항은 "쪼개지지 않는다"는 결과뿐입니다
 - **줄에서 기다리는 동안에도 욕구는 계속 쌓입니다.** 의도한 것입니다 — 줄이 길면 배고픔이 더 쌓여
-  다음 재평가에서 다른 선택이 나오는 게 자연스럽다고 봤습니다.
-  **"대기 중엔 건너뛰기" 최적화를 넣으면 동작이 바뀝니다.**
+  다음 재평가에서 다른 선택이 나옵니다. **"대기 중엔 건너뛰기" 최적화를 넣으면 동작이 바뀝니다**
 - **`RemainingStayMinutes` 는 시계가 아니라 예산입니다.** 해소 못 한 욕구가 쌓이면 시계보다 빨리
-  줄어듭니다("줄이 길어서 축제를 떠났다"를 표현). 그래서 이 값으로 "몇 분 뒤 나가겠구나"를 읽으면 틀립니다.
-
----
-
-## 7. 호출 순서 — 두 종류뿐입니다
-
-### 7.1 스폰할 때 (1회, 결과를 캐싱)
-
-```
-1. FFF_VisitorDistributionBuilder::Build(...)      → 태그 명단 + 그룹 레시피   [제 함수, 정원님이 호출]
-2. (정원님) 명단을 묶어 GroupID·리더·StableAgentId 부여
-3. ResolveWithGroupSharing(...)                    → FFF_ResolvedIndividualTraits  [캐싱] ⬅ A2
-```
-
-`Build()` 가 개체마다 `TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot` 을 미리
-채워서 돌려주므로, 정원님이 실제로 하는 건 **2번(리더 지정·ID 부여·누구와 누구를 묶을지)** 뿐입니다.
-
-> ⚠️ `CompanionSizeTag` 는 `solo`/`pair`/`group_3_plus` 3종뿐이라 3~6인이 전부 뭉칩니다.
-> **묶을 때는 정확한 인원수(1~6)를 담은 `TargetGroupSize` 를 보셔야 합니다.**
-
-### 7.2 재평가 시점마다 (제 쪽에서 돕니다)
-
-```
-4. ShouldReevaluate(...)  → false 면 끝
-5. BuildCandidates(...)   → 후보 8~12개 (ZoneSystem 스냅샷에서)
-6. Choose(...)            → FFF_DestinationDecision
-7-a. 목적지 있음 → FFF_MoveCommand 로 정원님께 전달   ⬅ 여기가 접점
-7-b. 목적지 없음 → Wander / Relocate / Leave 중 하나
-```
-
-**아동(`bIsDependentChildSlot`)과 그룹 비리더는 4~6을 건너뜁니다** — 리더의 결정을 상속합니다.
-즉 **`Choose` 는 그룹당 1회**만 돕니다.
-
----
-
-## 8. 데이터 — DataTable 5장만 보시면 됩니다
-
-**CSV 는 제 원본·재생성용입니다.** 정원님은 `Content/FestaFiesta/Data/` 의 애셋만 참조하세요.
-
-| 애셋                                | 구조체                            | 무엇                            | 언제                                       |
-| --------------------------------- | ------------------------------ | ----------------------------- | ---------------------------------------- |
-| `DT_VisitorGroupSizeDistribution` | `FFF_GroupSizeDistributionRow` | 그룹 크기 1~6 분포                  | 그룹 묶을 때 (`ScopeId="tourism_daytrip"` 행만) |
-| `DT_GroupChildComposition`        | `FFF_GroupChildCompositionRow` | 크기별 아동 수 분포                   | 같음                                       |
-| `DT_GroupCompositionRules`        | `FFF_GroupCompositionRuleRow`  | 나머지 규칙 11개 (리더 수·상속 범위·공유 특성) | 같음 — 값 전체는 **부록 B**                      |
-| `DT_VisitorArrivalCurve`          | `FFF_ArrivalCurveRow`          | 시간대별 유입 **비율(%)**, 시나리오 3종    | 입장 타이밍 정할 때                              |
-| `DT_IndividualVariationKnobs`     | `FFF_IndividualVariationRow`   | 변주 7종의 (Min, Mode, Max)       | A2 호출 인자                                 |
-
-**필드별 의미는 부록 B, 반환값 필드와 실전 의사코드는 부록 C, 유입 곡선 필드는 부록 D** 에 있습니다.
-
-### 8.0 그룹 하나 만드는 순서
-
-```text
-1. DT_VisitorGroupSizeDistribution 에서 GroupSize 를 뽑는다
-   (ScopeId="tourism_daytrip" 행만 사용 — 다른 값과 섞으면 비율 합계가 깨진다)
-2. DT_GroupChildComposition 에서 그 GroupSize 의 ChildCount 를 뽑는다
-3. ChildCount 명에게 bIsDependentChildSlot=true, 나머지는 성인
-4. 성인 중 1명을 bIsGroupLeader 로 지정 (아동은 리더 불가)
-5. 전원에게 같은 GroupID, StableAgentId 부여 (§9)
-```
-
-**1~3단계는 `FFF_VisitorDistributionBuilder::Build` 가 이미 대신 해줍니다** — 개체마다
-`TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot` 이 미리 채워져서 나옵니다.
-정원님이 실제로 하는 건 **4~5단계와 "누구를 누구와 묶을지"** 뿐입니다.
-
-### 8.1 유입 곡선에서 헷갈리기 쉬운 것 3개
-
-예시로 (총 유입 N=950, 어느 버킷이 `ArrivalSharePct=5.2`, `CumulativeSharePct=48.3`, `ProgressStart=0.4167`):
-
-1. **비율(%)이지 인원이 아닙니다** — `5.2` 는 "전체 N의 5.2%". `5.2% × 950 ≈ 49명`처럼 **정원님이 정한 N**을
-   곱해야 실제 인원이 나옵니다. N은 성능 실측으로 정원님이 정하는 값이라 제 쪽에서 알 수 없습니다.
-2. **계산은 `ProgressStart`(0~1 진행도) 기준입니다** — `MinutesStartAtDefault`(=100분) 는 Live 가 지금
-   240분이라서 그런 것뿐이고, **Live 길이가 바뀌면 틀린 값이 됩니다.**
-   실제 코드는 `현재 경과분 / live_stage_duration_minutes` 를 `ProgressStart` 와 비교해야 합니다.
-3. **버킷별 오차는 정상이고, 맞춰야 하는 건 `CumulativeSharePct`(누적)입니다** — 그룹이 1~6명 단위로
-   들어와서 버킷당 49명을 딱 맞추는 건 원리적으로 불가능합니다. 누적을 비교해 크게 어긋나면
-   다음 그룹을 더 빨리/천천히 꺼내는 식으로 보정하면 됩니다.
-
-**곡선 모양 수치는 전부 가정값**이라 특정 모양을 전제하지 않는 구현을 부탁드립니다.
-구현·테스트 중엔 `flat_v0`(균등, 가장 단순) 권장.
-
----
-
-## 9. 반드시 지켜야 할 것 2개
-
-1. **그룹은 항상 통째로 움직입니다.** 통째로 입장하고 통째로 퇴장합니다 — 일부만 먼저 들어오거나
-   그룹원이 각자 다른 행동을 하는 경우는 없습니다. 구현 방법은 자유이고, 요구사항은 "쪼개지지 않는다"는
-   결과뿐입니다.
-2. **배정·타이밍은 항상 결정적이어야 합니다.** 같은 Seed 면 항상 같은 결과 — **`FMath::Rand()` 금지.**
-   특히 `PartyID` 가 실행마다 같은 값이어야 합니다(예약 배정 순서를 정하는 값이라, 스폰 순서처럼
-   프로세스마다 달라지면 같은 Seed 인데 예약자가 바뀝니다).
+  줄어듭니다("줄이 길어서 떠났다"를 표현). 이 값으로 "몇 분 뒤 나가겠구나"를 읽으면 틀립니다
+- **`Choose` 는 그룹당 1회**입니다. 아동과 비리더는 리더의 결정을 상속합니다
+- **배정·타이밍은 결정적이어야 합니다.** 같은 Seed 면 항상 같은 결과 — **`FMath::Rand()` 금지.**
+  특히 `PartyID` 가 실행마다 같아야 합니다(예약 배정 순서를 정하는 값이라, 스폰 순서처럼
+  프로세스마다 달라지면 같은 Seed 인데 예약자가 바뀝니다)
 
 `StableAgentId` 는 이렇게 만들면 결정적입니다:
 
@@ -263,58 +300,223 @@ int32 ComputeStableAgentId(int32 GroupID, int32 OrdinalInGroup)
 }
 ```
 
-> ⚠️ `FFF_DeterministicRandom::MakeTraitSeed` 를 그대로 쓰면 안 됩니다 — 그 함수의 두 번째 인자가
-> 이미 `StableAgentId` 라서, `StableAgentId` 자체를 만드는 함수가 아닙니다.
-> 
 > ⚠️ **`GetTypeHash(FName)` 은 Seed 재료로 쓰면 안 됩니다.** FName 의 전역 표 칸 번호를 해시하는데
 > 엔진이 그 값을 "process specific unstable int" 라고 명시합니다 — 에셋 로딩 순서가 바뀌면 값이
-> 바뀝니다. 제 쪽에서 2026-08-10 에 같은 버그를 겪어서 `MakeStableNameHash`(내용 기반 FNV-1a)로
-> 고쳤습니다. `int32` 해시는 안전합니다(위 코드처럼).
+> 바뀝니다. 제 쪽에서 같은 버그를 겪어 `MakeStableNameHash`(내용 기반 FNV-1a)로 고쳤습니다.
+> `int32` 해시는 안전합니다(위 코드처럼).
+>
+> ⚠️ `FFF_DeterministicRandom::MakeTraitSeed` 를 그대로 쓰면 안 됩니다 — 그 함수의 두 번째 인자가
+> 이미 `StableAgentId` 라서, `StableAgentId` 자체를 만드는 함수가 아닙니다.
 
 ---
 
-## 10. 그 밖에 부탁드릴 것 2개
+## 6. 데이터 — DataTable 5장만 보시면 됩니다
 
-| #      | 요청                               | 왜                                                                                                                                                   |
-| ------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1** | **퇴장을 출구 이동으로 처리**               | 퇴장 판정(체류시간 소진 / 연속 no_choice)은 제 쪽입니다. 즉시 사라지면 부자연스러워서, 그룹원 전원이 출구로 이동한 뒤 소멸했으면 합니다. **출구 지점·이동·소멸 시점이 정원님 소관**이고, 제 쪽은 판정과 이동 중 재평가 잠금입니다          |
-| **D2** | **예약 그룹은 프로그램 시작 시각 전에 반드시 장내에** | 유료 프로그램을 사면 정원만큼의 그룹이 그 자리에서 확정됩니다(정원 10명 = `5+2+2+1` 처럼 크기가 섞인 조합). 유입 곡선은 비율 목표인데 이건 **하드 제약**이고, 프로그램이 여러 개면 제약도 여러 개라 곡선 누적 오차 허용 폭과 충돌할 수 있습니다 |
+**CSV 는 제 원본·재생성용입니다.** 정원님은 `Content/FestaFiesta/Data/` 의 애셋만 참조하세요.
 
-> D2 보충: 배정은 플레이어가 개별 NPC를 고르는 게 아니라 제 결정적 함수
-> (`FFF_ProgramReservationRules::Assign`)가 합니다. 배정 단위는 **그룹**이고(1인도 그룹),
-> 정확히 못 채우는 경우는 비우고 로그를 남깁니다 — **개인을 그룹에서 떼어내지 않습니다.**
-> 프로그램 중에는 그 그룹이 목적지 선택도 퇴장도 하지 않습니다(제 쪽에서 막습니다).
+| 애셋                                | 구조체                            | 무엇                            | 언제                                       |
+| --------------------------------- | ------------------------------ | ----------------------------- | ---------------------------------------- |
+| `DT_VisitorGroupSizeDistribution` | `FFF_GroupSizeDistributionRow` | 그룹 크기 1~6 분포                  | 그룹 묶을 때 (`ScopeId="tourism_daytrip"` 행만) |
+| `DT_GroupChildComposition`        | `FFF_GroupChildCompositionRow` | 크기별 아동 수 분포                   | 같음                                       |
+| `DT_GroupCompositionRules`        | `FFF_GroupCompositionRuleRow`  | 나머지 규칙 11개 (리더 수·상속 범위·공유 특성) | 같음 — 값 전체는 **부록 B**                      |
+| `DT_VisitorArrivalCurve`          | `FFF_ArrivalCurveRow`          | 시간대별 유입 **비율(%)**, 시나리오 3종    | 입장 타이밍 정할 때                              |
+| `DT_IndividualVariationKnobs`     | `FFF_IndividualVariationRow`   | 변주 7종의 (Min, Mode, Max)       | ResolveWithGroupSharing 인자                                 |
 
-**급하지 않은 것**: 셀 격자 밀도 로그(§3 #4), 판단·이동·렌더링 3층 분리 성능 실측.
+**필드별 의미는 부록 B, 반환값 필드와 실전 의사코드는 부록 C, 유입 곡선 필드는 부록 D** 에 있습니다.
+
+### 6.1 그룹 하나 만드는 순서
+
+```text
+1. DT_VisitorGroupSizeDistribution 에서 GroupSize 를 뽑는다
+   (ScopeId="tourism_daytrip" 행만 사용 — 다른 값과 섞으면 비율 합계가 깨진다)
+2. DT_GroupChildComposition 에서 그 GroupSize 의 ChildCount 를 뽑는다
+3. ChildCount 명에게 bIsDependentChildSlot=true, 나머지는 성인
+4. 성인 중 1명을 bIsGroupLeader 로 지정 (아동은 리더 불가)
+5. 전원에게 같은 GroupID, StableAgentId 부여 (§5)
+```
+
+**1~3단계는 `FFF_VisitorDistributionBuilder::Build` 가 이미 대신 해줍니다** — 개체마다
+`TargetGroupSize`/`TargetGroupChildCount`/`bIsDependentChildSlot` 이 미리 채워져서 나옵니다.
+정원님이 실제로 하는 건 **4~5단계와 "누구를 누구와 묶을지"** 뿐입니다.
+
+### 6.2 유입 곡선에서 헷갈리기 쉬운 것 3개
+
+예시로 (총 유입 N=950, 어느 버킷이 `ArrivalSharePct=5.2`, `CumulativeSharePct=48.3`, `ProgressStart=0.4167`):
+
+1. **비율(%)이지 인원이 아닙니다** — `5.2` 는 "전체 N의 5.2%". `5.2% × 950 ≈ 49명`처럼 **정원님이 정한 N**을
+   곱해야 실제 인원이 나옵니다. N은 성능 실측으로 정원님이 정하는 값이라 제 쪽에서 알 수 없습니다.
+2. **계산은 `ProgressStart`(0~1 진행도) 기준입니다** — `MinutesStartAtDefault`(=100분) 는 Day1
+   기준으로 적힌 표시용 값이고, **Day2·3 에서는 틀린 값이 됩니다**(Live 가 240초가 아니라 300초).
+   지금 코드는 `ElapsedLiveSeconds / GetLiveDurationForCurrentDay()` 로 맞게 되어 있습니다.
+   **이 열을 계산에 끌어 쓰지만 마세요.**
+3. **버킷별 오차는 정상이고, 맞춰야 하는 건 `CumulativeSharePct`(누적)입니다** — 그룹이 1~6명 단위로
+   들어와서 버킷당 49명을 딱 맞추는 건 원리적으로 불가능합니다. 누적을 비교해 크게 어긋나면
+   다음 그룹을 더 빨리/천천히 꺼내는 식으로 보정하면 됩니다.
+
+**곡선 모양 수치는 전부 가정값**이라 특정 모양을 전제하지 않는 구현을 부탁드립니다.
+구현·테스트 중엔 `flat_v0`(균등, 가장 단순) 권장.
+
+---
+
+## 7. I-6 상세 · 그 밖에 답을 기다리는 것
+
+### I-6 — 체류 예산이 아직 `240` 상수입니다
+
+유입 곡선 분모는 날짜별(`GetLiveDurationForCurrentDay()`)로 바뀌었는데,
+**체류 예산(`FF_CrowdSimulationSubsystem.cpp:385`)은 아직 `Temp_LiveStageMinutes`(240)** 를 씁니다.
+
+| Day | 실제 Live 길이 | 체류 예산 분모 |
+|---|---|---|
+| Day1 | 240초 | 240 — 일치 |
+| Day2·3 | **300초** | 240 — **20% 짧게 뽑힘** |
+
+들어오는 타이밍은 맞는데 **머무는 시간만 짧습니다.** 여기에도
+`GetLiveDurationForCurrentDay()` 를 쓰시면 닫힙니다 —
+⚠️ **단위 주의**: 그 함수는 **초**, 이 값은 축제 **분**입니다.
+
+**같은 뿌리로 예약 손님이 조기 퇴장합니다.** 체류가 짧게 뽑히면 예약자가 프로그램
+시작 전에 나가버립니다. 스폰 시점에 정해지는 값이라 **그쪽에서 예약 예외를 두는 게
+자연스러운데, 제가 판정으로 막는 쪽이 나으면 그렇게 하겠습니다.**
+
+### 그 밖에
+
+| # | 질문 |
+| --- | --- |
+| C3 | **그룹 리더 조회 경로** — 목적지는 리더만 계산하고 나머지가 상속하는데, 리더 지정은 정원님이 하십니다. 이벤트인가요 조회 API 인가요 |
+| C4 | **`bEnablePartyGrouping` 은 디버그 스위치인가요, 실제로 끄고 돌릴 수 있는 옵션인가요?** 끄면 전원 1인 그룹이 되어 정원 12 를 12 그룹으로 채우게 되는데, 그래도 되는 상황인지만 알면 됩니다 |
+| D2 | **예약 그룹은 프로그램 시작 시각 전에 반드시 장내에 있어야 합니다.** 지금은 배열 앞쪽이라 개장 직후 도착해 여유가 충분한데, **예약석이 앞쪽에 몰리면 초반 버킷이 곡선보다 커집니다** — 누적 오차를 얼마까지 허용할지 기준이 필요합니다 |
+
+**시각의 유일한 출처는 Stage 입니다.** 팀에서 *"각 시스템이 자체 시계를 들지 않고
+`UFF_FestivalStageSubsystem` 을 거친다"* 로 정했습니다(시간 담당 강민서). 남아 있는
+임시 상수는 `Temp_LiveStageMinutes`(240, 위 I-6) · `Temp_FestivalMinutesPerRealSecond`(1.0) ·
+`Temp_LeaveTimeoutSeconds`(180) · `Temp_ExitArrivalRadiusUU`(400) 입니다.
+
+**급하지 않은 것**: 셀 격자 밀도 로그, 판단·이동·렌더링 3층 분리 성능 실측,
+`CohesionRadiusMeters` 값(이동 스택 확정 후).
 방문객 300·500·700 은 감으로 잡은 체크포인트일 뿐 상한 의도가 아닙니다.
 
 ---
 
-## 11. 확인만 해주시면 되는 것 3개
+## 8. I-2 · I-3 상세 — 유료 프로그램이 방문객을 "데려옵니다"
 
-| #   | 질문                                                                                                                                                                                             |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1  | **보행 속도 `150` 이 확정값인가요?** `FUnitData::Speed = 150.f`(1.5 m/s)를 제 계수(`npc_walk_speed_mps`)에 그대로 옮겨 적었는데, `Private/CrowdSystem/` 에서 이 값을 **대입하는 코드가 0곳**이라 구조체 기본값 그대로입니다. 임시값이면 제 쪽도 같이 바꿔야 합니다 |
-| C2  | **시간 기준이 Live 경과분 맞나요?** 욕구·체류시간·재평가 주기 전부 Live 경과분입니다(실시간 초 아님)                                                                                                                               |
-| C3  | **그룹 리더 조회 경로** — 목적지는 리더만 계산하고 나머지가 상속하는데, 리더 지정은 정원님이 하십니다. 이벤트인가요 조회 API 인가요                                                                                                                |
+플레이어가 프로그램을 사면 **그 프로그램을 좋아하는 아키타입으로 정원만큼 손님이 추가로
+방문합니다.** 프로그램이 "유료 광고"가 되는 셈이고, 그래서 그 손님은 반드시 그 시설에 갑니다.
 
-**같이 정해야 하는 것**: `CohesionRadiusMeters` 값(이동 스택 확정 후) · 유입 곡선 누적 오차 허용 폭
-(돌려보고 정하는 게 맞다고 봅니다) · `TargetDestinationId` → 월드 좌표 조회를 누가 하는지(한광훈 님도 걸림).
+- **곡선 총량이 커집니다.** 오는 사람 중에서 고르는 것이 아니라 명단에 더 얹는 것이라,
+  조합을 맞춰 고르는 문제가 없습니다 — **"명단에 몇 명 더 있다"** 가 전부입니다
+- 예약 손님은 **아동 없이** 성인만, 그룹 상한 6명으로 쪼개집니다(정원 12 = 6+6, 16 = 6+6+4).
+  인원 합은 항상 정원과 같습니다
+- 프로그램이 둘이면 **손님도 둘 다 옵니다.** 같은 파티가 두 예약에 들어가는 것은 제 쪽에서 막습니다
+
+### 8.1 현재 스폰 흐름
+
+진입점이 둘입니다. **아래 부탁들의 전제가 이 그림입니다.**
+
+```
+① AFF_SpawnActor::BeginPlay()                  ← 레벨 BeginPlay, 1회
+② HandleStageChanged(→ Live)                   ← 날마다. 저장해 둔 요청값으로 재호출
+  └ BeginArrivalSchedule(TotalVisitorCount, SpawnCenter, SpawnRadiusUU)   ← 🔴 I-2 는 여기에 4번째 인자
+      ArrivalRequestedVisitorCount = TotalVisitorCount   ← 다음 날 재개가 이 값을 다시 씁니다
+      └ BuildVisitorDistribution(TotalVisitorCount)      ← 제 빌더. 순서가 고정된 배열이 나옵니다
+  (매 틱) UpdateArrivalSchedule()
+      Progress = ElapsedLiveSeconds / GetLiveDurationForCurrentDay()
+      Target   = CumulativeSharePct(Progress)/100 × Total
+      └ DrainVisitorUntil(Target)               ← 커서를 Target 까지 밉니다
+                                                   PartyID 는 여기서 발급됩니다  ← 🔴 I-3 은 여기서 통지
+```
+
+> ⚠️ **재개가 쓰는 값은 `ActualVisitorCount` 가 아니라 `ArrivalRequestedVisitorCount` 입니다.**
+> 그룹을 통째로만 만드느라 실제 인원이 요청보다 작은데, 그 작아진 값을 다시 넣으면 날마다 인원이
+> 깎입니다. 그쪽 주석(`:259`)에 이미 적혀 있고 제 쪽도 그 전제로 계산합니다 — **I-2 인자를 넣으실 때
+> 예약 인원을 이 값에 더하지 마세요.** 예약은 매일 새로 편성되는 별개 명단입니다.
+
+여기서 제게 중요한 것은 **곡선이 "언제"만 정하고 "누가"는 배열 순서가 이미 정해두었다**는 점입니다.
+그러면 "언제 도착하는가" = "배열 몇 번째인가" 라서, 프로그램 시작 시각을 인덱스로 바꿀 수 있습니다:
+
+```
+프로그램이 T분에 시작 → 그 전에 도착해야 함
+MaxIndex(T) = floor( CumulativeSharePct(T)/100 × Total ) - 그룹크기
+```
+
+**즉 예약 그룹을 배열 어디에 꽂을지는 제가 표만 보고 계산할 수 있습니다.** 런타임 협의가 필요 없습니다.
+
+### 8.2 부탁드리는 것
+
+| # | 부탁 | 왜 |
+|---|---|---|
+| **I-2** | **`BeginArrivalSchedule` 에 인자 하나만 더 받아주실 수 있나요** | 배열은 제 빌더가 만들어 드립니다. **제 쪽 코드는 이미 다 들어가 있습니다** — 인자를 그대로 `FFF_VisitorDistributionBuilder::Build` 로 넘겨주시면 끝입니다. 커서 미는 방식은 그대로입니다. 정확한 형태는 **아래 8.3 배선도** 참고 |
+| **I-3** | **스폰된 그룹의 `PartyID` 를 알려주는 창구** | 예약은 `PartyID` 로 잠금·퇴장 금지를 겁니다. 그런데 `PartyID` 는 스폰 순간에 생기니 제가 알 방법이 없습니다. 크라우드가 발행하는 델리게이트가 0개라 **새로 만들어야 하는 항목**입니다. **받는 쪽 함수는 이미 만들어 뒀습니다** |
+| **I-5** | **`AgentPoolSize` 를 올려도 될까요 — 여유가 사실상 0입니다** | `AFF_SpawnActor` 기본값이 `UnitCount = 500` · `AgentPoolSize = 500` 으로 **똑같습니다**(`FF_SpawnActor.h:39,47`). 실측도 `요청 500명 중 498명`이었고, 남는 2자리는 그룹을 통째로만 만들어 생긴 우수리라 **설계상 여유가 아닙니다.** 프로그램 하나(정원 12)만 사도 넘치고, 넘치면 **곡선 뒷부분이 잘립니다**(그 Error 로그는 `:404` 에 이미 넣어두셨더군요). 프로그램은 최대 2개라 **`AgentPoolSize` 를 530 으로** 올리면 닫힙니다. `UnitCount` 를 470 으로 줄이는 쪽도 괜찮습니다 — 어느 쪽이든 정해주시면 됩니다 |
+
+### 8.3 배선도 — 실제 함수 이름으로
+
+🔴 **표시된 두 줄만 정원님 쪽 작업입니다.** 나머지는 제 쪽에 다 들어가 있습니다.
+
+```
+[아침]  Setup · MorningCheck — 플레이어가 프로그램을 산다
+  UFF_FestivalProgressionSubsystem::TryScheduleProgram(ProgramId, FacilityInstanceId)
+    └ Gold 차감 · Staff 묶기
+    └ UFF_ProgramReservationSubsystem::RegisterProgram(...) → ReservationId
+
+[그날 유입 시작]
+  TArray<FFF_ReservedPartyRequest> Requests = Progression->GetReservedPartyRequests();
+                                                                        ← 김시리 (완료)
+  🔴 CrowdSim->BeginArrivalSchedule(UnitCount, Origin, Radius, Requests);   ← I-2
+        └ FFF_VisitorDistributionBuilder::Build(..., Requests)
+              → Visitors[] **앞쪽**에 예약 손님이 놓인다
+                각 개체가 FFF_TaggedVisitor::ReservationId 를 달고 있다
+
+[Live 중]  곡선이 커서를 민다 (지금 하시는 그대로)
+  DrainVisitorUntil(Target) → 그룹을 묶고 PartyID 를 발급
+  🔴 선두 개체의 ReservationId 가 유효하면:                                  ← I-3
+        Reservations->ConfirmReservedParty(ReservationId, PartyID, PartySize);
+        → 이 순간부터 아래 두 판정이 true 가 된다
+
+[Live 중]  이동·퇴장 결정에서
+  IsPartyLockedAt(PartyId, NowMinutes)      → true 면 목적지를 다시 고르지 않는다
+  IsPartyExitBlockedAt(PartyId, NowMinutes) → true 면 퇴장시키지 않는다
+
+[Live 중]  카드의 시작 시각(StartMinutes)이 지나면
+  UFF_ProgramEconomyBridgeSubsystem → SettleStartedPrograms(NowMinutes)
+    → 확정 인원 × 체험비를 원장에                                    ← 김시리 (완료)
+
+[Closing]  못 걷은 것이 있으면 안전망으로 걷고 Warning              ← 김시리 (완료)
+```
+
+> ⚠️ **I-3(`ConfirmReservedParty`)가 프로그램 시작 시각(`StartMinutes`)보다 먼저 와야** 그
+> 프로그램의 매출이 잡힙니다 — 체험비를 프로그램이 시작하는 순간에 걷습니다. 예약 손님이
+> 개장 직후 도착하고 프로그램은 Live 30분·90분에 시작하므로 지금 설계로는 여유가 충분합니다.
+
+**I-2 의 정확한 형태** — 기본 인자라 기존 호출부는 안 고쳐도 됩니다:
+
+```cpp
+// UFF_CrowdSimulationSubsystem
+void BeginArrivalSchedule(
+    int32 TotalVisitorCount, FVector SpawnCenter, float SpawnRadiusUU,
+    const TArray<FFF_ReservedPartyRequest>& ReservedParties = {});
+```
+
+받은 값을 `BuildVisitorDistribution` 을 거쳐 `Build` 의 마지막 인자로 넘기시면 됩니다.
+빌더 쪽은 이미 그 인자를 받고 있고, **비우면 이 인자가 생기기 전과 한 개체도 다르지 않습니다**
+(`FestaFiesta.NPC.VisitorDistribution.EmptyReservedChangesNothing` 이 그것을 고정합니다).
+
+**I-3 은 두 가지 중 편하신 쪽**:
+① 스폰 직후 `ConfirmReservedParty` 를 직접 부르신다 (위 배선도)
+② `OnPartySpawned(PartyID, LeadReservationId, MemberCount)` 같은 델리게이트만 열어주시면
+   제가 구독해서 처리하겠습니다
+
+**헤더**: `NPC/Party/FF_VisitorDistributionBuilder.h`(주문서·태그) ·
+`NPC/Party/FF_ProgramReservationSubsystem.h`(확정·판정)
+
+> ⚠️ **미결 하나.** 지금은 예약 손님이 배열 맨 앞이라 **개장 직후 도착**하고,
+> 퇴장 금지는 프로그램이 **끝날 때까지**입니다. 선셋 요가(90~120분)면 0분에 와서 120분까지
+> 못 나가서 하루의 절반을 묶여 있게 됩니다. 부스는 이용하니 매출에는 도움이 되지만
+> 자연스러운지는 돌려봐야 알 것 같습니다. **곡선 오차 허용 폭(§7 D2)이 정해지면 도착을
+> 뒤로 미뤄 좁힐 수 있습니다.** 배선을 붙이실 때 같이 보시죠.
 
 ---
 
-## 12. ⚠️ 폐기된 것 — 이미 구현하셨다면 걷어내 주세요
-
-8/4 에 드린 그룹핑 규칙 일부가 실측으로 대체됐습니다.
-
-- ~~`group_3_plus` 는 3명 70% / 4명 30%~~ → 상한 **6인**, 3명 37% / 4명 44% / 5명 9% / 6명 10%
-- ~~`pair` couple_or_friends 80% / parent_and_child 20%~~, ~~`group_3_plus` family 50% / friends 50%~~,
-  ~~아동 부착확률 0.4 · 평균 1.5~~ → **그룹 유형을 뽑는 단계 자체가 없어졌습니다.**
-  `DT_GroupChildComposition` 한 장으로 대체
-
----
-
-## 13. 더 깊이 볼 때만 — 원본 문서 지도
+## 9. 더 깊이 볼 때만 — 원본 문서 지도
 
 **평소엔 안 보셔도 됩니다.** "왜 이렇게 정했나"가 궁금할 때만 여는 곳입니다.
 경로는 `data/metadata/` 기준.
@@ -331,40 +533,6 @@ int32 ComputeStableAgentId(int32 GroupID, int32 OrdinalInGroup)
 
 **제 안쪽 설계**(`spec/utility_ai_spec.md`, `spec/utility_destination_selector_spec.md`)는
 Utility 식·계수 표라서 연동과 무관합니다.
-
----
-
-## 요약 — 메시지로 보낼 버전
-
-> **Utility AI 쪽은 함수가 다 있는데 부르는 쪽이 없어서 실제로는 아무 NPC도 이 로직을 안 쓰고 있어요.**
-> 그 층이 crowdAI 데이터와 붙어야 해서 부탁드릴 게 있습니다. 문서 하나로 정리했고, 정원님이 실제로
-> 보실 코드는 5개(§3), 부르실 함수는 3개뿐이에요.
-> 
-> **1. NPC 하나당 들고 있어야 하는 상태를 어디에 둘지 같이 정해요** (§6 표). `FUnitData` 에 넣을지
-> 별도 배열로 둘지요. 이게 정해져야 목적지 선택이 처음으로 실행됩니다 — 제일 큰 공백이에요.
-> 
-> **2. 스폰할 때 `FFF_IndividualVariationResolver::ResolveWithGroupSharing()` 을 한 번 불러서 결과를
-> 캐싱해 주세요** (§5.1 에 코드 그대로 있어요). 안 부르면 **모든 NPC가 똑같은 속도로 걷고 똑같이
-> 참습니다.** 이 함수가 "같은 그룹은 같은 속도로 걷고 같이 떠난다"까지 처리해줍니다.
-> 
-> **3. `ReportZonePopulation()` 을 불러주실 수 있을까요?** 프로젝트 전체에서 호출부가 0곳이라
-> **NPC가 혼잡을 피하는 행동이 아예 안 나옵니다.** 몇 초 간격이면 되고, `DeltaSeconds` 에 실제
-> 보고 간격을 넣어주세요.
-> 
-> **4. "시설 이용 완료" 신호가 필요해요.** 안 오면 배고픔·화장실이 영원히 안 풀립니다.
-> 도착이 아니라 **완료** 시점이에요. Queue 의 `ServiceCompleted` 를 쓸 수 있으면 제일 깔끔할 것 같아요.
-> 이 신호 하나로 욕구 해소와 방문 기록 두 가지를 처리하니 따로 주실 필요는 없습니다.
-> 
-> **5. `FUnitData` 에 필드 3개만 더 부탁드려요** — `CompanionSizeTag` / `bIsDependentChildSlot` /
-> `bIsGroupLeader`. `ArchetypeID` 와 `StableAgentID` 는 이미 들어가 있는 것 확인했습니다.
-> 
-> **6. 확인만 해주시면 되는 것 3개** (§11) — 보행 속도 150 이 확정값인지, 시간 기준이 Live 경과분인지,
-> 그룹 리더 조회 경로.
-> 
-> **7. 퇴장을 출구 이동으로, 예약 그룹은 시작 전에 반드시 장내에** (§10).
-> 
-> 그리고 **8/4 에 드린 그룹핑 규칙 일부가 실측으로 대체돼 폐기됐어요** (§12) — 이미 구현하셨다면
-> 걷어내주세요.
 
 ---
 
@@ -533,7 +701,7 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 ```
 
 큐에서 꺼내는 순서는 자유지만 **같은 Seed 에서 같은 순서가 나와야 합니다** — 배열 앞에서부터
-순서대로면 충분하고, `FMath::RandRange` 로 무작위 추출은 금지입니다 (§9).
+순서대로면 충분하고, `FMath::RandRange` 로 무작위 추출은 금지입니다 (§5).
 
 > ⚠️ `FFF_VisitorGroupPlanBucket`(그룹 버킷)과 §8 유입 곡선의 **시간 버킷**은 완전히 다른
 > 개념입니다. 시간 버킷은 "언제"를, 그룹 버킷은 "누구끼리"를 답합니다. 같은 함수에 같이
@@ -548,29 +716,21 @@ for (const FFF_VisitorGroupPlanBucket& Bucket : Dist.GroupPlan)
 | `ProgressStart` / `ProgressEnd`                 | float           | Live 진행도 [0, 1). **계산 기준**                               |
 | `ArrivalSharePct`                               | float           | 이 버킷 신규 유입 비율(%)                                         |
 | `CumulativeSharePct`                            | float           | 누적 유입 비율(%) — **실제로 맞춰야 하는 지표**                          |
-| `MinutesStartAtDefault` / `ClockStartAtDefault` | float / FString | **표시용. 계산에 쓰지 마세요** (§8.1 ②)                             |
+| `MinutesStartAtDefault` / `ClockStartAtDefault` | float / FString | **표시용. 계산에 쓰지 마세요** (§6.2 ②)                             |
 
-## 부록 E. 목적지 전달 상세 (`FF_MoveCommand.h`)
+## 부록 E. 목적지·도착에서 지켜야 하는 제약 2개
 
-| `FFF_MoveCommand` (제 → 정원님) | 뜻                                        |
-| --------------------------- | ---------------------------------------- |
-| `PartyId`                   | = `GroupID`                              |
-| `TargetDestinationId`       | FName. ZoneSystem 시설 `FGuid` 를 문자열화한 값   |
-| `TargetEntryPointId`        | 대기열 입구                                   |
-| `Intent`                    | `Visit` / `Wander` / `Exit` / `Evacuate` |
-| `CommandId`                 | 결과 이벤트와 짝을 맞추는 식별자. 같은 값 중복 요청은 거부 대상    |
+접점 자체는 §2 ① 의 `OnPartyNeedsDecision` 이고, 아래 둘은 그 위에서 계속 유효한 제약입니다.
 
-| `FFF_MoveResultEvent` (정원님 → 제) | 뜻                                                    |
-| ------------------------------- | ---------------------------------------------------- |
-| `PartyId` / `CommandId`         | 어느 명령에 대한 결과인지                                       |
-| `Result`                        | `Arrived` / `PathFailed` / `Blocked` / `Interrupted` |
-| `SimTimeMinutes`                | 현실 분 기준 시뮬레이션 시각                                     |
+- ⚠️ **대기열 입구와 퇴장 지점은 반드시 분리해야 합니다.** 겹치면 나가는 사람과 들어오는
+  사람이 서로를 막아 인위적인 데드락이 생깁니다. 시설 데이터(한광훈 님) 쪽에
+  EntryPoint / ExitPoint 가 따로 있어야 합니다
+- ⚠️ **"도착"은 "줄에 들어갔다"가 아닙니다.** 걸어가는 동안 줄이 꽉 찰 수 있어서 도착 판정과
+  가입 판정을 분리합니다. 가입 실패는 재평가 요청으로 이어집니다 —
+  `EFF_DecisionReason::JoinRejected` 로 이미 구현돼 있습니다
 
-- **폴링하지 말고 이벤트로 주세요** — 병렬화 때문입니다
-- ⚠️ **`TargetEntryPointId` 는 퇴장 지점과 반드시 분리해야 합니다.** 겹치면 나가는 사람과 들어오는 사람이 서로를 막아서 인위적인 데드락이 생깁니다. 시설 데이터(한광훈 님) 쪽에 EntryPoint / ExitPoint 가 따로 있어야 합니다
-- ⚠️ **`Arrived` 는 "입구에 도달했다"일 뿐 "줄에 들어갔다"가 아닙니다.** 걸어가는 동안 줄이 꽉 찰 수 있어서 도착 판정과 가입 판정을 분리합니다. 가입 실패는 재평가 요청으로 이어집니다
-- `AFFZSGameplayZone::GetBoundaryAreaSquareMeters()` 결과가
-  `FFFZSZoneReadModel::AreaSquareMeters` 로 노출됩니다. `FFF_CrowdReadModel::ZoneAreaSqm` 이
-  필요하면 이 값을 ZoneId 별로 복사하시면 됩니다
+`AFFZSGameplayZone::GetBoundaryAreaSquareMeters()` 결과가
+`FFFZSZoneReadModel::AreaSquareMeters` 로 노출됩니다. `FFF_CrowdReadModel::ZoneAreaSqm` 이
+필요하면 이 값을 ZoneId 별로 복사하시면 됩니다.
 
 ---

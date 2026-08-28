@@ -13,6 +13,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "NavMesh/RecastNavMesh.h"
 #include "Queue/FF_QueueCrowdLink.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "TimerManager.h"
@@ -307,6 +308,11 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("  결정 처리    : %d회, 쿨다운으로 버림 %d회 (간격 %.1fs)"),
 		CrowdSim->GetDecisionsProcessed(), CrowdSim->GetDecisionCooldownSkips(),
 		CrowdSim->DecisionCooldownSeconds);
+	Ar.Logf(TEXT("  이동 중 목적지: %d곳, 한 곳 최대 %d명  <-- 최대치가 시설 정원을 넘으면 도착 후 거절이 난다"),
+		CrowdSim->GetInTransitDestinationCount(), CrowdSim->GetMaxInTransitMemberCount());
+	Ar.Logf(TEXT("  막혀서 포기   : %d회 (임계 %d스텝 = %.1fs)  <-- 0이면 이 경로가 안 걸린다"),
+		CrowdSim->GetStuckDecisionRequests(), CrowdSim->DecisionStuckSteps,
+		CrowdSim->DecisionStuckSteps / 30.f);
 	Ar.Logf(TEXT("막힘          : %d (%.1f%%)  <-- 가려는데 못 가는 사람"),
 		Flow.Blocked, BlockedPercent);
 	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 최장 %d스텝 = %.1f초)"),
@@ -340,6 +346,66 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 			TEXT("ZoneSystem은 있는데 시설이 0개다 — 배치가 비었거나 액터를 못 찾았다"));
 	}
 
+	const int32 PathQueries = CrowdSim->GetPathQueriesIssued();
+	const int32 PathFailures = CrowdSim->GetPathQueryFailures();
+	const int32 Following = CrowdSim->GetPathFollowingCount();
+	const int32 Backlog = CrowdSim->GetPathQueryBacklog();
+
+	Ar.Logf(TEXT("--- 경로 ---"));
+	Ar.Logf(TEXT("경로추종      : %s"), CrowdSim->bEnablePathFollowing ? TEXT("켬") : TEXT("끔"));
+
+	// 시설 nav 구멍은 ZoneSystem의 FacilityNavigationObstacleBounds가 소유한다. Crowd가 확인할 수
+	// 있는 것은 그 modifier가 런타임에 반영되는 모드인지 하나뿐이고, 여기가 어긋나면 경로가 조용히
+	// 부스를 관통한다.
+	const ERuntimeGenerationType NavRuntimeMode = GetDefault<ARecastNavMesh>()->GetRuntimeGenerationMode();
+	const bool bModifiersBake = (NavRuntimeMode == ERuntimeGenerationType::DynamicModifiersOnly)
+		|| (NavRuntimeMode == ERuntimeGenerationType::Dynamic);
+
+	Ar.Logf(TEXT("시설 nav 구멍 : ZoneSystem 소유, 런타임 갱신 %s"),
+		bModifiersBake ? TEXT("켬") : TEXT("끔"));
+
+	if (!bModifiersBake)
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("RecastNavMesh가 Static이다 — 시설 nav 구멍이 구워지지 않아 경로가 부스를 관통한다. "
+			     "DefaultEngine.ini의 RuntimeGeneration=DynamicModifiersOnly를 확인할 것"));
+	}
+
+	if (CrowdSim->bEnablePathFollowing)
+	{
+		Ar.Logf(TEXT("따라가는 중   : %d명  <-- 0이면 우회가 전혀 안 걸리고 있다"), Following);
+		Ar.Logf(TEXT("쿼리 / 실패   : %d / %d건 (%.0f%%)"),
+			PathQueries, PathFailures,
+			PathQueries > 0 ? (100.f * PathFailures / PathQueries) : 0.f);
+		Ar.Logf(TEXT("부분 경로     : %d건  <-- 목적지가 NavMesh 밖. 닿는 데까지만 간다"),
+			CrowdSim->GetPartialPathCount());
+		Ar.Logf(TEXT("경로 대기     : %d명 (예산 %d건/스텝)"), Backlog, CrowdSim->PathQueriesPerStep);
+		Ar.Logf(TEXT("배치변경 폐기 : %d회  <-- 시설 설치·이동·철거 횟수와 맞아야 한다"),
+			CrowdSim->GetPathLayoutInvalidations());
+		Ar.Logf(TEXT("웨이포인트 반경: %.0fUU   재경로 허용오차 %.0fUU   최소 쿼리거리 %.0fUU"),
+			CrowdSim->WaypointAcceptanceRadiusUU, CrowdSim->RepathToleranceUU,
+			CrowdSim->MinPathQueryDistanceUU);
+
+		if (PathQueries > 0 && PathFailures * 2 > PathQueries)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("경로 쿼리 절반 이상이 실패한다 — NavMesh가 없거나 개체가 그 위에 없다. "
+				     "그 개체들은 직선으로 걸어 건물에 붙는다"));
+		}
+
+		if (Backlog > 0)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("경로 예산이 모자란다(%d명 대기) — PathQueriesPerStep을 올릴 것"), Backlog);
+		}
+	}
+	else
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("경로추종이 꺼져 있다 — 건물 반대편이 목적지면 벽에 붙어 미끄러진다. "
+			     "벽 반발은 비키게 할 뿐 돌아가게 하지 못한다"));
+	}
+
 	const FFF_CrowdHeightField& Ground = CrowdSim->GetHeightField();
 	const FFF_CrowdHeightField::FBuildStats& GroundStats = Ground.GetStats();
 
@@ -368,6 +434,19 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		{
 			Ar.Logf(TEXT("  구멍         : %d곳 — 그 위를 지나는 개체는 이웃 값으로 보간된다"),
 				GroundStats.SampleCount - GroundStats.HitCount);
+		}
+
+		if (CrowdSim->MaxWalkableHeightAboveOriginUU > 0.f)
+		{
+			Ar.Logf(TEXT("  통행 상한    : 원점+%.0fUU (절대 Z %.0f), 막아 되돌린 스텝 %d회, 구멍은 %s"),
+				CrowdSim->MaxWalkableHeightAboveOriginUU,
+				CrowdSim->SimOrigin.Z + static_cast<double>(CrowdSim->MaxWalkableHeightAboveOriginUU),
+				CrowdSim->GetHeightBlockedSteps(),
+				CrowdSim->bBlockUnknownGround ? TEXT("통행 불가") : TEXT("통행 가능"));
+		}
+		else
+		{
+			Ar.Logf(TEXT("  통행 상한    : off — 지형이 아무리 높아도 올라간다 (FF.Crowd.Tune maxwalkheight <UU>)"));
 		}
 	}
 
@@ -686,7 +765,12 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	const FKnob Knobs[] = {
 		{ TEXT("opposing"),  &Config.MaxOpposingAccelMps2,    TEXT("역방향 가속 상한 m/s^2. 음수면 끔. 막힘 방지의 핵심") },
 		{ TEXT("wallopposing"), &Config.MaxWallOpposingAccelMps2, TEXT("벽에 걸 역방향 상한 m/s^2. 음수면 면제(기본). 켜면 부스에 파고든다") },
-		{ TEXT("social"),    &Config.MaxSocialAccelMps2,      TEXT("비접촉 반발 크기 상한 m/s^2") },
+		{ TEXT("social"),    &Config.MaxSocialAccelMps2,      TEXT("비접촉 반발 크기 상한 m/s^2. 이웃 전원의 합에 걸린다") },
+		{ TEXT("repulsionb"), &Config.RepulsionB,            TEXT("대인 반발 감쇠 거리 m. 뭉침의 1순위 손잡이. 키우면 개인 공간이 넓어진다") },
+		{ TEXT("repulsiona"), &Config.RepulsionA,            TEXT("대인 반발 계수 N. 접촉 거리의 세기. 보통 social 클램프에 먹히므로 B를 먼저 볼 것") },
+		{ TEXT("anisotropy"), &Config.Anisotropy,            TEXT("0=전방향 균등, 1=전방만. 낮추면 뒤에서 밀리는 것도 피한다") },
+		{ TEXT("neighbour"), &Config.NeighbourRadiusMeters,  TEXT("이웃 탐색 반경 m. ★ cell도 같은 값 이상으로 같이 올릴 것") },
+		{ TEXT("cell"),      &Config.BroadphaseCellSizeMeters, TEXT("브로드페이즈 셀 한 변 m. neighbour 미만이면 이웃을 놓친다") },
 		{ TEXT("lanebias"),  &Config.LaneBiasGain,            TEXT("우측 통행 편향. 0이면 끔. 밀집 군중에서는 악화됨") },
 		{ TEXT("friction"),  &Config.ContactFriction,         TEXT("접촉 접선 마찰. 낮추면 겹침·막힘이 같이 늘어난다") },
 		{ TEXT("queueslot"), &CrowdSim->QueueSlotArrivalRadiusUU, TEXT("큐 슬롯 도착 반경 UU. 슬롯 간격 90보다 작아야 한다") },
@@ -694,7 +778,15 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		{ TEXT("wander"),    &CrowdSim->WanderArrivalRadiusUU,    TEXT("배회 도착 반경 UU") },
 		{ TEXT("braking"),   &CrowdSim->BrakingDistanceUU,        TEXT("감속 시작 거리 UU. 0이면 반경 연동 폴백") },
 		{ TEXT("cooldown"),  &CrowdSim->DecisionCooldownSeconds,  TEXT("도착 재결정 최소 간격 s. 0이면 끔") },
-		{ TEXT("wallcull"),  &Config.WallCullRadiusMeters,     TEXT("벽 계산 컷오프 m. 0 이하면 전수 계산(느리다)") },
+		{ TEXT("wallcull"),  &Config.WallCullRadiusMeters,     TEXT("벽 계산 컷오프 m. ★ wallrepulsionb를 올리면 같이 올릴 것") },
+		{ TEXT("wallrepulsionb"), &Config.WallRepulsionB,     TEXT("벽 반발 감쇠 거리 m. 벽에서 비켜 서는 거리. 0.25면 균형점이 벽에서 56cm") },
+		{ TEXT("wallrepulsiona"), &Config.WallRepulsionA,     TEXT("벽 반발 계수 N. 보통 B를 먼저 볼 것") },
+		{ TEXT("waypoint"),  &CrowdSim->WaypointAcceptanceRadiusUU, TEXT("웨이포인트 통과 판정 반경 UU. 작으면 맴돌고 크면 코너를 지른다") },
+		{ TEXT("repath"),    &CrowdSim->RepathToleranceUU,    TEXT("목적지가 이만큼 움직이면 경로 재계산 UU") },
+		{ TEXT("minpath"),   &CrowdSim->MinPathQueryDistanceUU, TEXT("이 거리 미만은 경로를 안 뽑는다 UU") },
+		{ TEXT("traceabove"), &CrowdSim->HeightFieldTraceAboveUU, TEXT("높이 격자 트레이스 시작 높이 UU. 지형 최고점보다 높아야 파묻히지 않는다") },
+		{ TEXT("cliffstep"), &CrowdSim->HeightFieldCliffStepUU, TEXT("이 높이 차를 넘는 격자 칸은 보간 없이 끊어 올린다 UU. 0이면 항상 보간(비스듬히 떠오름)") },
+		{ TEXT("maxwalkheight"), &CrowdSim->MaxWalkableHeightAboveOriginUU, TEXT("SimOrigin.Z 기준 통행 상한 UU. 이보다 높은 지형에는 들어가지 않는다. 0이면 끔") },
 	};
 
 	struct FSwitch
@@ -710,7 +802,23 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		{ TEXT("boundarywalls"), &CrowdSim->bAvoidanceUseBoundaryWalls,
 		  TEXT("시뮬 사각 경계 4벽") },
 		{ TEXT("clearance"), &CrowdSim->bAvoidanceFacilityWallsIncludeClearance,
-		  TEXT("시설 벽에 여유 1m 링 포함. 켜면 통로가 좁아진다") },
+		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
+		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
+		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
+		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,
+		  TEXT("지면을 못 찾은 격자점도 통행 불가로. maxwalkheight가 켜져 있을 때만 의미가 있다") },
+	};
+
+	struct FIntKnob
+	{
+		const TCHAR* Name;
+		int32* Value;
+		const TCHAR* Note;
+	};
+
+	const FIntKnob IntKnobs[] = {
+		{ TEXT("pathbudget"), &CrowdSim->PathQueriesPerStep,
+		  TEXT("스텝당 NavMesh 쿼리 상한. Stats의 '경로 대기'가 계속 0이 아니면 올린다") },
 	};
 
 	if (Args.Num() >= 2)
@@ -750,6 +858,18 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 			}
 		}
 
+		for (const FIntKnob& Knob : IntKnobs)
+		{
+			if (Name.Equals(Knob.Name, ESearchCase::IgnoreCase))
+			{
+				const int32 Old = *Knob.Value;
+				*Knob.Value = FMath::Max(FCString::Atoi(*Args[1]), 1);
+
+				Ar.Logf(TEXT("%s : %d -> %d"), Knob.Name, Old, *Knob.Value);
+				return;
+			}
+		}
+
 		Ar.Logf(ELogVerbosity::Error, TEXT("'%s'는 없는 이름이다. 인자 없이 쳐서 목록을 볼 것"), *Name);
 		return;
 	}
@@ -758,6 +878,11 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	for (const FKnob& Knob : Knobs)
 	{
 		Ar.Logf(TEXT("  %-13s %8.2f   %s"), Knob.Name, *Knob.Value, Knob.Note);
+	}
+	Ar.Logf(TEXT("--- 정수 ---"));
+	for (const FIntKnob& Knob : IntKnobs)
+	{
+		Ar.Logf(TEXT("  %-13s %8d   %s"), Knob.Name, *Knob.Value, Knob.Note);
 	}
 	Ar.Logf(TEXT("--- on/off (1 또는 0) ---"));
 	for (const FSwitch& Sw : Switches)
@@ -924,6 +1049,12 @@ static void CrowdQueueCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		Ar.Logf(ELogVerbosity::Warning,
 			TEXT("QueueCrowdLink가 월드에 없다 — 수락돼도 슬롯 좌표가 전달되지 않는다"));
 	}
+
+	Ar.Logf(TEXT("--- Need 해소 ---"));
+	Ar.Logf(TEXT("해소 적용        : %d회  <- 서비스를 마친 파티가 있는데 0이면 배선이 끊긴 것이다"),
+		CrowdSim->GetNeedReliefApplied());
+	Ar.Logf(TEXT("해소 건너뜀      : %d회  (배회 목적지 또는 Need를 풀지 않는 카테고리 — 정상)"),
+		CrowdSim->GetNeedReliefSkipped());
 }
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdQueueCommand(
@@ -986,13 +1117,27 @@ static void CrowdArrivalCommand(const TArray<FString>& Args, UWorld* World, FOut
 		return;
 	}
 
+	// 진행도는 서브시스템과 같은 함수로 구한다. 여기서 식을 복제하면 둘이 갈렸을 때
+	// 이 커맨드가 거짓말을 하게 되고, 그러면 입장 곡선 진단이 통째로 무의미해진다.
 	const int32 BucketCount = CrowdSim->GetArrivalBucketCount();
-	const float LiveMinutes = CrowdSim->GetLiveMinutes();
-	const float StageMinutes = FMath::Max(CrowdSim->Temp_LiveStageMinutes, KINDA_SMALL_NUMBER);
-	const float Progress = FMath::Clamp(LiveMinutes / StageMinutes, 0.f, 1.f);
+	const float Progress = CrowdSim->GetLiveProgress01();
 	const int32 BucketIdx = FMath::Min(FMath::FloorToInt(Progress * BucketCount), BucketCount - 1);
 
-	Ar.Logf(TEXT("Live 경과        : %.1f분 / %.1f분  (진행도 %.4f)"), LiveMinutes, StageMinutes, Progress);
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* ArrivalStage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+
+	if (ArrivalStage && ArrivalStage->GetLiveDurationForCurrentDay() > 0.f)
+	{
+		Ar.Logf(TEXT("Live 경과        : %.1f초 / %.1f초  (진행도 %.4f, Stage 시계 기준)"),
+			ArrivalStage->ElapsedLiveSeconds, ArrivalStage->GetLiveDurationForCurrentDay(), Progress);
+	}
+	else
+	{
+		Ar.Logf(TEXT("Live 경과        : %.1f분 / %.1f분  (진행도 %.4f, Stage 없음 — Crowd 자체 시계로 폴백)"),
+			CrowdSim->GetLiveMinutes(),
+			FMath::Max(CrowdSim->Temp_LiveStageMinutes, KINDA_SMALL_NUMBER), Progress);
+	}
 
 	const FName RowName(*FString::Printf(TEXT("%s_%02d"), *ScenarioId.ToString(), BucketIdx));
 	const FFF_ArrivalCurveRow* Row =

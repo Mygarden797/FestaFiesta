@@ -60,6 +60,14 @@ struct FFF_DestinationCandidate
 	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Destination")
 	float MinutesSinceLastVisit = -1.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Destination")
+	bool bFailedRecently = false;
+
+	// 지금 이곳으로 걸어오고 있는 인원. 아직 줄에도 시설에도 없어서 대기시간·혼잡도에 안 잡힌다.
+	// 줄에 들어간 파티는 여기서 빠진다 — EstimatedWaitMinutes 가 이미 세고 있다.
+	UPROPERTY(BlueprintReadWrite, Category = "Destination")
+	float InTransitMemberCount = 0.f;
 };
 
 /**
@@ -117,6 +125,12 @@ struct FFF_DestinationUtilityBreakdown
 	// -weight_revisit * 방문 잔상 * novelty_seeking_multiplier. 안 가본 곳은 0
 	UPROPERTY(BlueprintReadOnly, Category = "Debug")
 	float RevisitPenaltyTerm = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Debug")
+	float FailedDestinationPenaltyTerm = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Debug")
+	float InTransitCostTerm = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Debug")
 	float TotalUtility = 0.f;

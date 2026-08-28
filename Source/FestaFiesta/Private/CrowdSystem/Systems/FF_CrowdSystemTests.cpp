@@ -1316,6 +1316,231 @@ bool FFF_CrowdDecision_ArrivalCooldownThrottlesRechoice::RunTest(const FString& 
 	return true;
 }
 
+// 한 점으로 몰려 서로를 막으면 목적지를 포기한다 — 인기 시설 앞 병목이 스스로 풀리는 유일한 경로다.
+// 임계를 0으로 두면 예전처럼 영원히 밀어붙인다(대조군).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdDecision_StuckPartyGivesUpDestination, "FestaFiesta.Crowd.Decision.StuckPartyGivesUpDestination", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdDecision_StuckPartyGivesUpDestination::RunTest(const FString& Parameters)
+{
+	// 60명이 반경 300UU 안에서 같은 한 점을 향한다. 안쪽 고리가 그 점을 차지하면 바깥은
+	// 목적지 방향 진척이 0에 붙는다 — 부스 앞에서 실제로 일어나는 모양 그대로다.
+	const FName CrushTarget(TEXT("CrushTarget"));
+
+	// 포기한 목적지가 다음 요청에 실려 오는가. 조정자가 그것을 후보에서 뺄 수 있으려면
+	// 이 값이 반드시 채워져 있어야 한다 — 비어 있으면 같은 잼으로 되돌아간다
+	int32 MoveFailedWithPrevious = 0;
+	int32 MoveFailedWithoutPrevious = 0;
+	int32 SpawnedWithPrevious = 0;
+
+	auto RunCrush = [this, CrushTarget, &MoveFailedWithPrevious, &MoveFailedWithoutPrevious, &SpawnedWithPrevious](
+		int32 StuckStepThreshold, int32& OutStuckRequests, int32& OutMaxStuckSteps)
+	{
+		FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
+		UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
+		if (!CrowdSim)
+		{
+			AddError(TEXT("월드에서 CrowdSimulationSubsystem을 얻지 못했다"));
+			return false;
+		}
+
+		CrowdSim->bEnablePartyGrouping = false;
+		CrowdSim->bEnableQueueJoin = false;
+		CrowdSim->DecisionStuckSteps = StuckStepThreshold;
+		// 쿨다운은 켜 둔다. 잼에서 churn 이 나는지도 같이 보려면 실제 설정이어야 한다
+		CrowdSim->DecisionCooldownSeconds = 2.f;
+
+		CrowdSim->OnPartyNeedsDecision.BindLambda(
+			[CrushTarget, &MoveFailedWithPrevious, &MoveFailedWithoutPrevious, &SpawnedWithPrevious](
+				const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult)
+			{
+				if (Context.Reason == EFF_DecisionReason::MoveFailed)
+				{
+					if (Context.PreviousDestinationId == CrushTarget)
+					{
+						++MoveFailedWithPrevious;
+					}
+					else
+					{
+						++MoveFailedWithoutPrevious;
+					}
+				}
+				else if (Context.Reason == EFF_DecisionReason::Spawned
+					&& !Context.PreviousDestinationId.IsNone())
+				{
+					// 스폰 직후에는 직전 목적지가 있을 수 없다. 세어지면 상태가 새고 있는 것이다
+					++SpawnedWithPrevious;
+				}
+
+				// 매번 같은 곳을 준다 = 잼이 풀릴 다른 선택지가 없는 최악 상황.
+				// 직전 목적지 감점은 조정자 몫이라 여기서는 흉내내지 않는다
+				OutResult.DestinationId = CrushTarget;
+				OutResult.Destination = FVector::ZeroVector;
+				return true;
+			});
+
+		CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 64, AFF_BaseCrowd::StaticClass());
+		CrowdSim->SpawnAgents(60, FVector::ZeroVector, 300.f);
+
+		FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 10.f);
+
+		CrowdSim->OnPartyNeedsDecision.Unbind();
+
+		OutStuckRequests = CrowdSim->GetStuckDecisionRequests();
+		OutMaxStuckSteps = CrowdSim->GetFlowBreakdown().MaxStuckSteps;
+		return true;
+	};
+
+	// 60스텝 = 2초. 조향의 탈출 임계(40스텝)보다 크고 실전값(300)보다 짧게 잡아 테스트를 짧게 유지한다
+	int32 OnRequests = 0;
+	int32 OnMaxStuck = 0;
+	if (!RunCrush(60, OnRequests, OnMaxStuck))
+	{
+		return false;
+	}
+
+	AddInfo(FString::Printf(TEXT("[임계 60스텝] 막혀서 포기 %d회, 최장 막힘 %d스텝"), OnRequests, OnMaxStuck));
+
+	if (OnMaxStuck == 0)
+	{
+		AddError(TEXT("아무도 막히지 않았다 — 이 설정으로는 잼이 만들어지지 않아 판정이 무의미하다. "
+			"인원·반경을 다시 잡을 것"));
+		return false;
+	}
+
+	TestTrue(TEXT("막힌 파티가 목적지를 포기했다"), OnRequests > 0);
+
+	AddInfo(FString::Printf(TEXT("MoveFailed 요청 중 직전 목적지가 실려 온 것 %d건, 빈 것 %d건"),
+		MoveFailedWithPrevious, MoveFailedWithoutPrevious));
+
+	TestTrue(TEXT("포기 요청이 조정자까지 MoveFailed 사유로 도달했다"), MoveFailedWithPrevious > 0);
+	TestEqual(TEXT("MoveFailed 인데 직전 목적지가 비어 온 요청은 없다"), MoveFailedWithoutPrevious, 0);
+	TestEqual(TEXT("스폰 요청에는 직전 목적지가 없다"), SpawnedWithPrevious, 0);
+
+	int32 OffRequests = 0;
+	int32 OffMaxStuck = 0;
+	if (!RunCrush(0, OffRequests, OffMaxStuck))
+	{
+		return false;
+	}
+
+	AddInfo(FString::Printf(TEXT("[끔] 막혀서 포기 %d회, 최장 막힘 %d스텝"), OffRequests, OffMaxStuck));
+
+	TestEqual(TEXT("0으로 끄면 막혀도 포기하지 않는다"), OffRequests, 0);
+	TestTrue(TEXT("[전제] 끈 쪽도 실제로 막혀 있었다"), OffMaxStuck > 0);
+
+	return true;
+}
+
+// 같은 배치에서 결정하는 파티들이 서로의 목적지를 본다 — 시설 몰림을 막는 값의 핵심 성질이다.
+// 이 성질이 깨지면(전원이 0을 본다) 계수를 어떻게 만져도 전원이 같은 빈 시설을 고른다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdDecision_InTransitCountsAccumulateWithinBatch, "FestaFiesta.Crowd.Decision.InTransitCountsAccumulateWithinBatch", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdDecision_InTransitCountsAccumulateWithinBatch::RunTest(const FString& Parameters)
+{
+	const FName FixedDestination(TEXT("SoleFacility"));
+
+	TArray<int32> ObservedBeforeEachDecision;
+	int32 SpawnedSoloParties = 0;
+	int32 FinalCount = -1;
+	int32 FinalDestinations = -1;
+	int32 FinalMax = -1;
+
+	// ★ 월드는 한 번에 하나만 살려 둔다. 두 개를 동시에 들고 있으면 월드 서브시스템의
+	// 콘솔 명령 등록이 이름을 다투다 해제 시점에 죽는다(UFF_FinaleShowSubsystem, 이 파일 밖 문제).
+	// 그래서 결과를 지역 변수로 빼낸 뒤 월드를 놓는다.
+	{
+		FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
+		UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
+
+		if (!CrowdSim)
+		{
+			AddError(TEXT("월드에서 CrowdSimulationSubsystem을 얻지 못했다"));
+			return false;
+		}
+
+		// 파티를 묶으면 인원수가 섞여 "누적됐는가"와 "인원을 맞게 셌는가"가 한 값에 겹친다
+		CrowdSim->bEnablePartyGrouping = false;
+		// 큐에 들어가면 이 값에서 빠지는 것이 정상이라, 그 경로를 아예 닫아 누적만 본다
+		CrowdSim->bEnableQueueJoin = false;
+
+		// 전원에게 같은 목적지를 내려주는 조정자. 몰림이 발생하는 최악 상황을 그대로 만든다
+		CrowdSim->OnPartyNeedsDecision.BindLambda(
+			[&ObservedBeforeEachDecision, FixedDestination](
+				const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult)
+			{
+				ObservedBeforeEachDecision.Add(Context.InTransitMemberCounts
+					? Context.InTransitMemberCounts->FindRef(FixedDestination)
+					: -1);
+
+				OutResult.DestinationId = FixedDestination;
+				// 도착하면 재평가가 걸려 배치가 갈린다. 이 틱 안에 못 닿을 거리로 둔다
+				OutResult.Destination = FVector(100000.f, 0.f, 0.f);
+				return true;
+			});
+
+		CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 8, 16, AFF_BaseCrowd::StaticClass());
+		// ★ 실제 스폰 수는 요청 수와 다르다. 방문객 분포 빌더가 그룹을 통째로만 방출하므로
+		// 8명을 요청해도 6~8명이 나온다(로그: "요청 N명 중 M명"). 그래서 아래 검증은 요청 수가
+		// 아니라 실제로 온 결정 건수를 기준으로 한다 — 숫자를 박아두면 분포가 바뀔 때마다 깨진다.
+		SpawnedSoloParties = CrowdSim->SpawnAgents(8, FVector::ZeroVector, 100.f);
+
+		FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 0.1f);
+
+		CrowdSim->OnPartyNeedsDecision.Unbind();
+
+		FinalCount = CrowdSim->GetInTransitMemberCount(FixedDestination);
+		FinalDestinations = CrowdSim->GetInTransitDestinationCount();
+		FinalMax = CrowdSim->GetMaxInTransitMemberCount();
+	}
+
+	const int32 DecisionCount = ObservedBeforeEachDecision.Num();
+
+	AddInfo(FString::Printf(TEXT("솔로 파티 %d개 스폰, 첫 배치에서 결정 %d건"),
+		SpawnedSoloParties, DecisionCount));
+
+	if (DecisionCount < 2)
+	{
+		AddError(FString::Printf(TEXT("누적을 보려면 한 배치에 결정이 2건 이상 필요하다 (%d건)"),
+			DecisionCount));
+		return false;
+	}
+
+	// 핵심 성질: N번째로 결정하는 파티는 앞서 결정한 N-1개를 본다.
+	// 전원이 0을 보면 같은 배치의 파티들이 서로를 못 보는 것이고, 그게 몰림의 원인이다.
+	for (int32 Index = 0; Index < DecisionCount; ++Index)
+	{
+		TestEqual(
+			*FString::Printf(TEXT("%d번째 파티는 앞서 결정한 %d명을 본다"), Index + 1, Index),
+			ObservedBeforeEachDecision[Index], Index);
+	}
+
+	TestEqual(TEXT("배치가 끝나면 결정한 전원이 그 목적지로 집계된다"), FinalCount, DecisionCount);
+	TestEqual(TEXT("집계된 목적지는 그 한 곳뿐이다"), FinalDestinations, 1);
+	TestEqual(TEXT("한 곳 최대 인원이 총원과 같다"), FinalMax, DecisionCount);
+
+	// 조정자가 없으면(배회만 하면) 이 값은 비어 있어야 한다 — 배회 목적지가 섞이면 안 된다
+	int32 WanderDestinations = -1;
+	{
+		FFF_CrowdWorldTestHelpers::FScopedTestWorld WanderWorld;
+		UFF_CrowdSimulationSubsystem* Wander = WanderWorld.GetCrowdSim();
+		if (!Wander)
+		{
+			AddError(TEXT("대조군 월드를 얻지 못했다"));
+			return false;
+		}
+
+		Wander->bEnablePartyGrouping = false;
+		Wander->OnPartyNeedsDecision.Unbind();
+		Wander->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+		Wander->SpawnAgents(4, FVector::ZeroVector, 100.f);
+		FFF_CrowdWorldTestHelpers::TickFor(*Wander, 0.1f);
+
+		WanderDestinations = Wander->GetInTransitDestinationCount();
+	}
+
+	TestEqual(TEXT("배회는 목적지로 집계되지 않는다"), WanderDestinations, 0);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt, "FestaFiesta.Crowd.World.ReleaseReturnsActorAndHidesIt", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt::RunTest(const FString& Parameters)
 {
@@ -1766,9 +1991,12 @@ bool FFF_CrowdAvoidance_RepulsionIsInMetresNotUU::RunTest(const FString& Paramet
 
 	const FVector2f AtNeighbourEdge = FFF_CrowdForceSolver::ComputeAgentInteraction(
 		FVector2f(0.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters,
-		FVector2f(2.f, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
+		FVector2f(Config.NeighbourRadiusMeters, 0.f), FVector2f::ZeroVector, PersonRadiusMeters, Config);
 
-	TestTrue(TEXT("이웃 반경 끝에서는 기여가 무시할 만하다"), AtNeighbourEdge.Size() < 1.f);
+	TestTrue(
+		*FString::Printf(TEXT("이웃 반경(%.1fm) 끝에서는 기여가 무시할 만하다 (%.3fN)"),
+			Config.NeighbourRadiusMeters, AtNeighbourEdge.Size()),
+		AtNeighbourEdge.Size() < 1.f);
 
 	return true;
 }
@@ -2161,8 +2389,12 @@ bool FFF_CrowdAvoidance_LaneBiasSplitsOncomingPairs::RunTest(const FString& Para
 	TestTrue(TEXT("뒤에 있는 사람에게는 걸리지 않는다"), Behind.IsNearlyZero());
 
 	const FVector2f Far = FFF_CrowdForceSolver::ComputeLaneBias(
-		PosI, PersonRadiusMeters, FVector2f(2.f, 0.f), PersonRadiusMeters, WantsRight, WantsLeft, Config);
-	TestTrue(TEXT("이웃 반경 끝에서는 무시할 만하다"), Far.Size() < 1.f);
+		PosI, PersonRadiusMeters, FVector2f(Config.NeighbourRadiusMeters, 0.f), PersonRadiusMeters,
+		WantsRight, WantsLeft, Config);
+	TestTrue(
+		*FString::Printf(TEXT("이웃 반경(%.1fm) 끝에서는 무시할 만하다 (%.3fN)"),
+			Config.NeighbourRadiusMeters, Far.Size()),
+		Far.Size() < 1.f);
 
 	FFF_CrowdAvoidanceConfig Disabled = Config;
 	Disabled.LaneBiasGain = 0.f;

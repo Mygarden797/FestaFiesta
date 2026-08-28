@@ -40,17 +40,77 @@ FText UFF_BuildPlacementFailureFeedback::MakeFailureTitle(
 	switch (ClassifyFailure(FailureReason))
 	{
 	case EFF_BuildPlacementFailureType::InsufficientGold:
-		return LOCTEXT("InsufficientGoldTitle", "골드 부족");
+		return LOCTEXT("InsufficientGoldTitle", "골드가 부족해요");
 	case EFF_BuildPlacementFailureType::ConfigurationError:
-		return LOCTEXT("ConfigurationErrorTitle", "시설 데이터 오류");
+		return LOCTEXT("ConfigurationErrorTitle", "시설 정보를 불러오지 못했어요");
 	case EFF_BuildPlacementFailureType::WorldStateChanged:
-		return LOCTEXT("WorldStateChangedTitle", "설치 조건 변경");
+		return LOCTEXT("WorldStateChangedTitle", "주변 상태가 바뀌었어요");
 	case EFF_BuildPlacementFailureType::Unknown:
-		return LOCTEXT("UnknownFailureTitle", "설치 오류");
+		return LOCTEXT("UnknownFailureTitle", "설치를 완료하지 못했어요");
 	default:
 		return bIsMoving
-			? LOCTEXT("MoveRejectedTitle", "이동할 수 없음")
-			: LOCTEXT("InstallRejectedTitle", "설치할 수 없음");
+			? LOCTEXT("MoveRejectedTitle", "여기로 옮길 수 없어요")
+			: LOCTEXT("InstallRejectedTitle", "여기에 설치할 수 없어요");
+	}
+}
+
+FText UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
+	const EFFZSPlacementFailure FailureReason,
+	const FText& AuthoritativeDetail,
+	const bool bIsMoving)
+{
+	(void)bIsMoving;
+	switch (FailureReason)
+	{
+	case EFFZSPlacementFailure::ZoneNotFound:
+	case EFFZSPlacementFailure::OutsideZone:
+		return LOCTEXT("OutsideZoneReason", "건축 구역 밖이에요 · 경계선 안쪽으로 옮겨 주세요");
+	case EFFZSPlacementFailure::CategoryNotAllowed:
+		return LOCTEXT("CategoryNotAllowedReason", "이 시설은 이 구역에 놓을 수 없어요 · 다른 건축 구역을 선택해 주세요");
+	case EFFZSPlacementFailure::InvalidGround:
+		return LOCTEXT("InvalidGroundReason", "바닥을 찾지 못했어요 · 땅 위로 옮겨 주세요");
+	case EFFZSPlacementFailure::ExcessSlope:
+		return LOCTEXT("ExcessSlopeReason", "땅이 너무 가팔라요 · 더 평평한 곳으로 옮겨 주세요");
+	case EFFZSPlacementFailure::HeightVarianceExceeded:
+		return LOCTEXT("HeightVarianceReason", "땅이 고르지 않아요 · 더 평평한 곳으로 옮겨 주세요");
+	case EFFZSPlacementFailure::PlacementCollision:
+		return LOCTEXT("PlacementCollisionReason", "다른 시설과 겹쳐요 · 빨간 영역이 겹치지 않게 옮겨 주세요");
+	case EFFZSPlacementFailure::InsufficientClearance:
+		return LOCTEXT("InsufficientClearanceReason", "시설을 이용할 공간이 부족해요 · 주변을 조금 더 비워 주세요");
+	case EFFZSPlacementFailure::QueueFootprintBlocked:
+		return LOCTEXT("QueueBlockedReason", "대기 줄 공간이 부족해요 · 입구 앞을 비워 주세요");
+	case EFFZSPlacementFailure::ProtectedRouteBlocked:
+		return LOCTEXT("ProtectedRouteReason", "통행로를 막고 있어요 · 표시된 길 밖으로 옮겨 주세요");
+	case EFFZSPlacementFailure::AccessibilityRouteBlocked:
+		return LOCTEXT("AccessibilityRouteReason", "이동에 필요한 길을 막고 있어요 · 표시된 길 밖으로 옮겨 주세요");
+	case EFFZSPlacementFailure::RequiredRouteDisconnected:
+		return LOCTEXT("DisconnectedRouteReason", "입구까지 갈 수 없어요 · 입구가 길과 이어지게 놓아 주세요");
+	case EFFZSPlacementFailure::WrongStage:
+		return LOCTEXT("WrongStageReason", "지금은 건축할 수 없어요 · 준비 시간에 다시 시도해 주세요");
+	case EFFZSPlacementFailure::FacilityOccupied:
+	case EFFZSPlacementFailure::InvalidFacilityState:
+		return LOCTEXT("OccupiedReason", "이용 중인 시설은 바꿀 수 없어요 · 손님이 나갈 때까지 기다려 주세요");
+	case EFFZSPlacementFailure::StaleWorldRevision:
+		return LOCTEXT("StaleWorldReason", "주변 상태가 방금 바뀌었어요 · 위치를 다시 확인해 주세요");
+	case EFFZSPlacementFailure::NavigationUnavailable:
+	case EFFZSPlacementFailure::NavRebuildTimeout:
+		return LOCTEXT("NavigationReason", "길을 확인하는 중이에요 · 잠시 후 다시 시도해 주세요");
+	case EFFZSPlacementFailure::InsufficientFunds:
+		return AuthoritativeDetail.IsEmpty()
+			? LOCTEXT("InsufficientFundsReason", "설치 비용이 부족해요 · 카탈로그에서 필요한 골드를 확인해 주세요")
+			: AuthoritativeDetail;
+	case EFFZSPlacementFailure::FacilityNotFound:
+	case EFFZSPlacementFailure::DuplicateZoneId:
+	case EFFZSPlacementFailure::DuplicateFacilityId:
+	case EFFZSPlacementFailure::DuplicatePayloadMismatch:
+	case EFFZSPlacementFailure::DataInvalid:
+	case EFFZSPlacementFailure::InternalError:
+		return LOCTEXT("DataReason", "설치 정보를 불러오지 못했어요 · 다른 시설을 선택하거나 다시 시도해 주세요");
+	case EFFZSPlacementFailure::ExternalPolicyRejected:
+		return LOCTEXT("PolicyReason", "현재 조건에서는 놓을 수 없어요 · 위치를 바꾸거나 잠시 후 다시 시도해 주세요");
+	case EFFZSPlacementFailure::None:
+	default:
+		return LOCTEXT("GenericReason", "위치나 회전을 바꾼 뒤 다시 시도해 주세요");
 	}
 }
 

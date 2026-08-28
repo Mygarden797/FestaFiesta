@@ -6,6 +6,8 @@
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Time/FF_FestivalStage.h"
 #include "Finale/FF_FinaleShowTypes.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_FinaleShowSubsystem.generated.h"
 
@@ -80,8 +82,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Finale")
 	FFF_OnFinaleBurst OnBurst;
 
-	// 등급별 수치. 지정하지 않으면 코드 기본값을 쓴다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "FestaFiesta|Finale")
+	// 등급별 수치를 직접 지정한다. 보통은 비워두고 GameMode 나 Project Settings 를 쓴다.
+	//
+	// 월드 서브시스템은 에디터에 노출되지 않으므로 이 값은 코드에서만 채울 수 있다.
+	// 연출을 임시로 바꿔보고 싶을 때 쓰는 자리다.
+	UPROPERTY(BlueprintReadWrite, Category = "FestaFiesta|Finale")
 	TSoftObjectPtr<UFF_FinaleShowData> ShowData;
 
 	// 연출 시작·종료 시 카메라 블렌드 시간.
@@ -142,6 +147,12 @@ private:
 	// 이번 등급의 수치를 결정한다. 데이터 애셋이 있으면 그것을, 없으면 기본값을 쓴다.
 	FFF_FinaleGradeSpec ResolveSpec(EFF_FinaleGrade Grade) const;
 
+	// 쓸 데이터 애셋을 고른다. 직접 지정 → GameMode → Project Settings 순으로 본다.
+	//
+	// 레벨마다 연출이 다를 수 있어서 GameMode 가 전역 설정보다 우선한다.
+	// 전역 기본값을 둔 이유는 새 레벨을 만들 때마다 매번 지정하지 않아도 되게 하려는 것이다.
+	const UFF_FinaleShowData* ResolveShowData() const;
+
 	// 한 차례 발사. SimultaneousShells 만큼 동시에 터뜨린다.
 	void FireVolley();
 
@@ -154,6 +165,15 @@ private:
 	FLinearColor PickColor(int32 Index) const;
 
 	AFF_FestivalPlayerController* GetFestivalController() const;
+
+	// 게임 인스턴스 서브시스템을 꺼낸다. 월드와 인스턴스 널체크가 매번 반복돼서 묶었다.
+	template <typename SubsystemType>
+	SubsystemType* GetGameInstanceSubsystem() const
+	{
+		const UWorld* World = GetWorld();
+		UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<SubsystemType>() : nullptr;
+	}
 
 	bool bShowInProgress = false;
 	bool bTakeOverCamera = true;

@@ -23,6 +23,35 @@ namespace
 		return Category != EFFZSFacilityCategory::Info
 			&& Category != EFFZSFacilityCategory::Safety;
 	}
+
+	/**
+	 * 메인 무대인가 — 즉 `bMainStageOpen` 게이팅의 대상인가.
+	 *
+	 * Performance 소분류 4종 중 MainStage 하나만 닫는 이유는 나머지 셋이 저 시각표를 안 타서다:
+	 *   - Busking·SubStage — 상시 공연이라 닫을 근거가 없다
+	 *   - ExperienceStage — 유료 프로그램(요가·공방)이 여는 시설이다
+	 *
+	 * 컨벤션 위반이면 false 다 — 닫는 쪽으로 기울면 오타 하나가 무대를 하루 종일 후보에서
+	 * 지우는데, 여는 쪽으로 기울면 게이팅만 안 걸린다. 위반 경고는 MapToPreferenceCategory 가
+	 * 시설당 1회 이미 낸다(여기서 또 내면 같은 시설에 두 번 뜬다).
+	 */
+	bool IsMainStageFacility(EFFZSFacilityCategory Category, FName FacilityDefinitionId)
+	{
+		if (Category != EFFZSFacilityCategory::Performance)
+		{
+			return false;
+		}
+
+		FFF_FacilityNameParts Parts;
+		FString UnusedFailureReason;
+		if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			EFFZSFacilityCategory::Performance, FacilityDefinitionId, Parts, UnusedFailureReason))
+		{
+			return false;
+		}
+
+		return Parts.MinorToken == TEXT("MainStage");
+	}
 }
 
 TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
@@ -30,7 +59,8 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	FName CurrentZoneId,
 	const FVector& PartyWorldLocation,
 	int32 MaxCandidates,
-	const FFF_WalkDistanceMatrix* WalkDistances)
+	const FFF_WalkDistanceMatrix* WalkDistances,
+	bool bMainStageOpen)
 {
 	// 파티가 서 있는 존의 앵커까지 걸어 나가는 구간. 행렬이 없으면 쓰이지 않는다.
 	// 앵커를 못 찾으면(등록되지 않은 존) 0으로 두어 행렬 경유분만 남긴다 —
@@ -112,6 +142,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	int32 SkippedByZone = 0;
 	int32 SkippedByState = 0;
 	int32 SkippedByCategory = 0;
+	int32 SkippedByMainStageGate = 0;
 
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
@@ -144,6 +175,16 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		if (Facility.bNeedsRelocation)
 		{
 			++SkippedByState;
+			continue;
+		}
+
+		// 메인 공연 시각이 아니면 메인 무대를 후보에서 뺀다.
+		// bIsOpen = false 로 넣어두면 Choose 가 건너뛰기는 하지만 MaxCandidates 한 칸을 먹는다 —
+		// "닫힌 시설은 후보에 넣지 않는다"는 이 함수의 기존 정책과 같은 처리다.
+		if (!bMainStageOpen
+			&& IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId))
+		{
+			++SkippedByMainStageGate;
 			continue;
 		}
 
@@ -258,18 +299,18 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		// 후보 0개는 항상 no_choice 를 만든다. 원인이 데이터인지 필터인지 여기서 갈라준다.
 		UE_LOG(LogFestaFiestaNpc, Warning,
 			TEXT("BuildCandidates: Zone='%s' 후보가 0개다 — 이 Party 는 반드시 no_choice 가 된다. ")
-			TEXT("제외 내역: Zone밖 %d / 카테고리 %d / 상태 %d (전체 시설 %d개)"),
+			TEXT("제외 내역: Zone밖 %d / 카테고리 %d / 상태 %d / 메인공연시각아님 %d (전체 시설 %d개)"),
 			*CurrentZoneId.ToString(), SkippedByZone, SkippedByCategory, SkippedByState,
-			ReadModel.Facilities.Num());
+			SkippedByMainStageGate, ReadModel.Facilities.Num());
 	}
 	else
 	{
 		UE_LOG(LogFestaFiestaNpc, Verbose,
 			TEXT("BuildCandidates: Zone='%s'(인접 %d) → 후보 %d개%s. ")
-			TEXT("제외: Zone밖 %d / 카테고리 %d / 상태 %d"),
+			TEXT("제외: Zone밖 %d / 카테고리 %d / 상태 %d / 메인공연시각아님 %d"),
 			*CurrentZoneId.ToString(), CurrentZone->NeighborZoneIds.Num(), Candidates.Num(),
 			bNeedsTruncation ? TEXT("(상한으로 잘림)") : TEXT(""),
-			SkippedByZone, SkippedByCategory, SkippedByState);
+			SkippedByZone, SkippedByCategory, SkippedByState, SkippedByMainStageGate);
 	}
 
 	// TODO(전역 인기 상위 K): utility_ai_todo.md 2절. 현재 Zone·인접 Zone 밖의 인기 시설을 후보에

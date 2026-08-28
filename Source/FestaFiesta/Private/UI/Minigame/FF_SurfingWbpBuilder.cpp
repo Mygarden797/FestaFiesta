@@ -70,7 +70,8 @@ namespace FFSurfingWbpBuilder
 	const FString FreeRideScreenClassPath(
 		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_Surfing_FreeRide.WBP_FF_Surfing_FreeRide_C"));
 	const TCHAR* const BackdropTextureObjectPath =
-		TEXT("/Game/FestaFiesta/UI/Minigame/AAA/T_MG_Surfing_Backdrop_AAA.T_MG_Surfing_Backdrop_AAA");
+		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Backdrop_UIUX_v2."
+			 "T_MG_Surfing_Backdrop_UIUX_v2");
 	const FName SurfingId(TEXT("Surfing"));
 	const FName SurfingFacilityId(TEXT("Booth_ActivityGame_Surfing"));
 

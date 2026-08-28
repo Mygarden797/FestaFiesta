@@ -33,6 +33,7 @@ namespace FFF_EconomyDisplayTextTestHelpers
 	constexpr int64 LastEarnReason   = static_cast<int64>(EFF_EarnReason::MinigameReward);
 	constexpr int64 LastFinaleResult = static_cast<int64>(EFF_FinalePurchaseResult::InsufficientGold);
 	constexpr int64 LastFinaleGrade  = static_cast<int64>(EFF_FinaleGrade::S);
+	constexpr int64 LastProgramResult = static_cast<int64>(EFF_ProgramPurchaseResult::InsufficientGold);
 }
 
 // 모든 값에 문자열이 있고, 그 문자열이 enum 이름이 아니다.
@@ -85,7 +86,22 @@ bool FFF_EconomyDisplayText_EveryValueHasTextThatIsNotTheEnumName::RunTest(const
 		}
 	}
 
-	// 실제 문구를 하나씩 못 박아 둔다 — 종태님이 이 문자열을 그대로 화면에 쓴다.
+	// 프로그램 편성 결과 6종 — 아침 화면이 실패 이유를 그대로 쓴다.
+	{
+		const UEnum* EnumType = StaticEnum<EFF_ProgramPurchaseResult>();
+		for (int64 Value = 0; Value <= FFF_EconomyDisplayTextTestHelpers::LastProgramResult; ++Value)
+		{
+			const FString Text = UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(
+				static_cast<EFF_ProgramPurchaseResult>(Value)).ToString();
+			const FString RawName = EnumType->GetAuthoredNameStringByValue(Value);
+
+			TestFalse(FString::Printf(TEXT("편성 결과 %s 에 문자열이 있다"), *RawName), Text.IsEmpty());
+			TestNotEqual(FString::Printf(TEXT("편성 결과 %s 가 enum 이름 그대로가 아니다"), *RawName),
+				Text, RawName);
+		}
+	}
+
+	// 실제 문구를 하나씩 못 박아 둔다 — 화면이 이 문자열을 그대로 쓴다.
 	TestEqual(TEXT("Gold 부족 문구"),
 		UFF_EconomyDisplayTextLibrary::GetFinalePurchaseResultText(
 			EFF_FinalePurchaseResult::InsufficientGold).ToString(),
@@ -159,6 +175,19 @@ bool FFF_EconomyDisplayText_RuntimeTextMatchesEditorMetadata::RunTest(const FStr
 				EnumType->GetDisplayNameTextByValue(Value).ToString());
 		}
 	}
+
+	{
+		const UEnum* EnumType = StaticEnum<EFF_ProgramPurchaseResult>();
+		for (int64 Value = 0; Value <= FFF_EconomyDisplayTextTestHelpers::LastProgramResult; ++Value)
+		{
+			TestEqual(
+				FString::Printf(TEXT("편성 결과 %s 의 UMETA 와 NSLOCTEXT 가 같다"),
+					*EnumType->GetAuthoredNameStringByValue(Value)),
+				UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(
+					static_cast<EFF_ProgramPurchaseResult>(Value)).ToString(),
+				EnumType->GetDisplayNameTextByValue(Value).ToString());
+		}
+	}
 #else
 	AddInfo(TEXT("에디터가 아니라 UMETA 를 읽을 수 없다. 드리프트 검사를 건너뛴다."));
 #endif
@@ -181,6 +210,8 @@ bool FFF_EconomyDisplayText_EnumSizesMatchExpectations::RunTest(const FString& P
 		StaticEnum<EFF_FinalePurchaseResult>()->NumEnums() - 1, 6);
 	TestEqual(TEXT("피날레 등급이 5종이다"),
 		StaticEnum<EFF_FinaleGrade>()->NumEnums() - 1, 5);
+	TestEqual(TEXT("프로그램 편성 결과가 7종이다"),
+		StaticEnum<EFF_ProgramPurchaseResult>()->NumEnums() - 1, 7);
 
 	// 위 개수가 바뀌면 이 파일의 Last* 상수와 문자열 switch 도 같이 고쳐야 한다.
 	TestEqual(TEXT("지출 마지막 값이 8 이다"),

@@ -4,6 +4,7 @@
 
 #include "CommonTextBlock.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "UI/FF_UILog.h"
 
 void UFF_CommonButtonBase::SetButtonLabel(const FText& InLabel)
@@ -45,6 +46,7 @@ void UFF_CommonButtonBase::NativePreConstruct()
 	// 디자이너에서도 문구·아이콘·상태가 보이도록 미리 반영한다.
 	SetButtonLabel(ButtonLabel);
 	ApplyIconBrush();
+	ApplyButtonSizeOverride();
 	RefreshVisualState();
 }
 
@@ -56,7 +58,26 @@ void UFF_CommonButtonBase::NativeConstruct()
 	// 이벤트는 앞으로의 변화만 알려주므로, 생성 시점의 현재 상태를 여기서 한 번 반영한다.
 	SetButtonLabel(ButtonLabel);
 	ApplyIconBrush();
+	ApplyButtonSizeOverride();
 	RefreshVisualState();
+}
+
+void UFF_CommonButtonBase::ApplyButtonSizeOverride()
+{
+	if (!SizeBox_Root)
+	{
+		return;
+	}
+
+	// 0은 "해제"가 아니라 "WBP 기본값 유지"다. 기존 버튼 전체의 크기가 바뀌지 않게 한다.
+	if (ButtonSizeOverride.X > 0.f)
+	{
+		SizeBox_Root->SetWidthOverride(ButtonSizeOverride.X);
+	}
+	if (ButtonSizeOverride.Y > 0.f)
+	{
+		SizeBox_Root->SetHeightOverride(ButtonSizeOverride.Y);
+	}
 }
 
 void UFF_CommonButtonBase::NativeOnClicked()

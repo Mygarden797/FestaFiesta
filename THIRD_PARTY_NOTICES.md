@@ -35,6 +35,8 @@
 | Pretendard | 한국어·공통 UI 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 | Michroma | 영문 브랜드 워드마크 폰트 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
 | Dongle | 영문 브랜드 워드마크 비교·Unreal UI 후보 | `confirmed` | SIL OFL 1.1 | 권장, 라이선스 동봉 필요 |
+| Copernicus DEM GLO-30 | 대한민국 국가 지도 고도·산악 음영 | `confirmed` | Copernicus WorldDEM-30 User Licence | 필요 |
+| geoBoundaries KOR ADM1 | 대한민국 행정구역 경계·6권역 재구성 | `confirmed` | CC BY 4.0 | 필요 |
 
 ---
 
@@ -238,6 +240,61 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - 기본 Typeface 순서는 `Regular`, `Light`, `Bold`이며 기본값은 `Regular`
 - 최종 타이틀 워드마크 폰트 채택 여부: `to_verify`
 - 라이선스 동봉 경로: `to_verify`
+
+---
+
+## Copernicus DEM GLO-30
+
+- 상태: `confirmed` — 대한민국 국가 지도용 실제 고도·산악 음영 기준으로 사용
+- 데이터셋: `COP-DEM_GLO-30-DGED` / 제품 유형 `SAR_DGE_30_A4AD`
+- 제작·권리: © DLR e.V. 2010-2014, © Airbus Defence and Space GmbH 2014-2018; European Union 및 ESA의 COPERNICUS로 제공
+- 원본 페이지: https://documentation.dataspace.copernicus.eu/Data/Others/CCM.html
+- 라이선스: Copernicus WorldDEM-30 User Licence
+- 라이선스 원문: https://documentation.dataspace.copernicus.eu/APIs/SentinelHub/Data/DEM/resources/license/License-COPDEM-30.pdf
+- 다운로드 날짜: 2026-08-24
+- 확보 범위: 대한민국 본토·제주·울릉도·독도와 서해 도서를 포함하는 1°×1° GLO-30 DGED 타일
+- 원본 형식: WGS84/EPSG:4326, 1 arc-second, 3601×3601 Float GeoTIFF
+- 작업 원본: 사용자 로컬 `Downloads/DEM1_SAR_DGE_30_*.zip`; 필요한 라이선스 사본과 처리 스크립트는 `SourceArt/ThirdParty/CopernicusDEM/Korea/`에 보관
+- 로컬 라이선스 사본: `SourceArt/ThirdParty/CopernicusDEM/Korea/licenses/Copernicus-WorldDEM-30-eula_F.pdf` — SHA-256 `32049914C37F14E7D53B48D13D74A49E77C030236E2ACC7A0DF426F9344FEBA2`
+- 수정 내역: 타일 병합, 대한민국 ADM1 경계 마스킹, 리샘플링, 고도 색상화, hillshade 생성 및 게임 지도용 합성
+- 사용 산출물: `docs/ui/mockups/festival-atlas-adm1/terrain-reference/`의 지형 기준 이미지와
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Map/T_FF_FA_Map_KoreaNaturalADM1_2400x2160.png`,
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Overlays/T_FF_FA_Overlay_ADM1_08_Busan_Selected_2400x2160.png`
+- 배포본 라이선스 동봉 경로: `to_verify`
+
+변형·가공 데이터 권장 크레딧 문구:
+
+> produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved.
+
+책임 제한 고지:
+
+> The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30.
+
+---
+
+## geoBoundaries KOR ADM1
+
+- 상태: `confirmed` — 대한민국 17개 ADM1을 6개 큰 권역으로 재구성하는 경계 기준으로 사용
+- 제품: `geoBoundaries-KOR-ADM1`, boundary ID `KOR-ADM1-68945753`, 경계 기준 연도 2021, 빌드 2023-12-12
+- 제작·배포: geoBoundaries / William & Mary geoLab
+- 원본 페이지: https://www.geoboundaries.org
+- 학술 출처: Runfola et al. (2020), https://doi.org/10.1371/journal.pone.0231866
+- 라이선스: Creative Commons Attribution 4.0 International (`CC BY 4.0`)
+- 라이선스 원문: https://creativecommons.org/licenses/by/4.0/
+- 다운로드 날짜: 2026-08-21
+- 원본 보관 경로: `C:/Users/jt/Downloads/geoBoundaries-KOR-ADM1-all/`
+- 로컬 인용·메타데이터 사본:
+  - `SourceArt/ThirdParty/CopernicusDEM/Korea/licenses/geoBoundaries-CITATION-AND-USE.txt` — SHA-256 `F6EA7572BEA6036C4CDCACF8C0CA7BF09098D4E600D19546D7432533E9A290D5`
+  - `SourceArt/ThirdParty/CopernicusDEM/Korea/licenses/geoBoundaries-KOR-ADM1-metaData.json` — SHA-256 `0CA1426407D6ACC6B9BBC258F3DEFB65F17A37B424ABC93D629A16AF189549E4`
+- 수정 내역: 17개 ADM1 도형을 6개 선택 권역으로 통합·단순화하고, UI용 경계선·마스크로 변환. 독도는 원본 ADM1에 없어 별도 좌표 기준으로 보완
+- 사용 산출물: `docs/ui/mockups/festival-atlas-adm1/`의 지도 실루엣·권역 경계·파생 UI 목업과
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Map/T_FF_FA_Map_KoreaNaturalADM1_2400x2160.png`,
+  `SourceArt/UI/Atlas/KoreaNaturalParts_v1/Overlays/T_FF_FA_Overlay_ADM1_08_Busan_Selected_2400x2160.png`
+- 배포본 라이선스 동봉 경로: `to_verify`
+
+권장 크레딧 문구:
+
+> Administrative boundaries by geoBoundaries, licensed under CC BY 4.0. Modified for FestaFiesta.
 
 ---
 

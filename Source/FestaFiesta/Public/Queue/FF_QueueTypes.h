@@ -9,7 +9,7 @@
  * 대기열 모듈 계약 타입 모음.
  *
  * 이 헤더는 Queue 가 소유하는 타입만 담는다. Crowd(FFF_CrowdReadModel)·
- * Decision(FFF_MoveCommand) 쪽 타입은 여기에 두지 않는다.
+ * Decision(FFF_PartyDecisionContext) 쪽 타입은 여기에 두지 않는다.
  *
  * ID 는 PartyId / AgentId 모두 int32, CauseId 는 FName 이다.
  * 세 모듈이 같은 타입을 쓰므로 여기서 별도 래퍼를 정의하지 않는다.
@@ -108,6 +108,13 @@ struct FFF_QueueConfig
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	float ServiceSecondsPerMember = 20.f;
 
+	// 일행이 리더 주위로 뭉치는 반경. Crowd 의 포메이션 간격과 맞춰야 한다.
+	//
+	// 줄에서 일행이 몇 칸을 먹는지 계산하는 데 쓴다. 4인 가족이 한 줄로 서지는 않고
+	// 리더 주위에 뭉치므로, 인원수만큼 칸을 잡으면 줄이 실제보다 길어진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0"))
+	float PartyFormationSpacing = 90.f;
+
 	// 서비스 종료 후 Crowd가 데려갈 퇴장 지점. 대기열 입구와 겹치면 데드락이 생긴다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	FVector ExitLocation = FVector::ZeroVector;
@@ -165,19 +172,23 @@ struct FFF_QueueLaneGeometry
  * Queue → Crowd. Queue가 하는 일은 이 배열을 갱신하고 알리는 것뿐이다.
  * Queue는 절대 트랜스폼을 직접 건드리지 않는다 — 순간이동도 Lerp도 아니고, Crowd가 걸어서 간다.
  * 그래야 앞사람 지연이 뒷사람에게 전파되고 실제 대기시간에 반영된다.
+ *
+ * 일행당 하나씩 나온다. 멤버마다 자리를 지정하지 않는 이유는 Crowd 가 일행을 리더 기준
+ * 포메이션으로 묶어 다루기 때문이다. 멤버별로 다른 목적지를 주면 그 포메이션과 싸운다.
  */
 USTRUCT(BlueprintType)
 struct FFF_SlotAssignment
 {
 	GENERATED_BODY()
 
+	// 일행의 리더. 나머지 멤버는 Crowd 포메이션이 이 주위에 배치한다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 AgentId = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 PartyId = INDEX_NONE;
 
-	// 0 = 창구 바로 앞
+	// 0 = 창구 바로 앞. 일행 인원에 따라 다음 일행과의 간격이 벌어지므로 연속이 아닐 수 있다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 SlotIndex = INDEX_NONE;
 

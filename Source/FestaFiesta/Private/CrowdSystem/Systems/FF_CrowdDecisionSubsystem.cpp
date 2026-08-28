@@ -18,6 +18,7 @@
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Queue/FF_QueueWaitAdapter.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogCrowdDecision, Log, All);
@@ -41,6 +42,25 @@ void UFF_CrowdDecisionSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	}
 
 	Crowd->OnPartyNeedsDecision.BindUObject(this, &UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision);
+
+	// 공연 시간표 게이팅. 시각의 유일한 출처가 Stage 이므로 여기서 시계를 들지 않는다.
+	// Stage 가 없는 월드(크라우드 단독 테스트 맵)에서는 게이팅이 꺼진 채로 돌아간다 —
+	// bMainStageGatingActive 가 false 로 남아 IsMainStageOpen() 이 항상 true 다.
+	if (UGameInstance* GameInstance = InWorld.GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnStageChanged.AddDynamic(this, &UFF_CrowdDecisionSubsystem::HandleStageChanged);
+			Stage->OnMainProgramStarted.AddDynamic(this, &UFF_CrowdDecisionSubsystem::HandleMainProgramStarted);
+			Stage->OnMainProgramEnded.AddDynamic(this, &UFF_CrowdDecisionSubsystem::HandleMainProgramEnded);
+		}
+		else
+		{
+			UE_LOG(LogCrowdDecision, Warning,
+				TEXT("FestivalStageSubsystem이 없다 — 공연 시간표 게이팅이 꺼진다(메인 무대가 상시 후보). ")
+				TEXT("Live 후반 무대 쏠림(AT-016)이 재현되지 않는다"));
+		}
+	}
 
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
 	CachedCoefficientTable = Settings ? Settings->UtilityCoefficientTable.LoadSynchronous() : nullptr;
@@ -80,9 +100,81 @@ void UFF_CrowdDecisionSubsystem::Deinitialize()
 				Crowd->OnPartyNeedsDecision.Unbind();
 			}
 		}
+
+		// Stage 는 GameInstance 스코프라 이 월드보다 오래 산다 — 안 끊으면 다음 월드까지
+		// 죽은 this 가 물려 있다.
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+			{
+				Stage->OnStageChanged.RemoveAll(this);
+				Stage->OnMainProgramStarted.RemoveAll(this);
+				Stage->OnMainProgramEnded.RemoveAll(this);
+			}
+		}
 	}
 
 	Super::Deinitialize();
+}
+
+void UFF_CrowdDecisionSubsystem::HandleStageChanged(
+	EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
+{
+	if (NewStage == EFF_FestivalStage::Live)
+	{
+		// Live 진입 시점은 공연 전이므로 닫고 시작한다. 여는 것은 OnMainProgramStarted 다.
+		bMainStageGatingActive = true;
+		bMainStageOpen = false;
+		bSawMainProgramThisLive = false;
+		return;
+	}
+
+	if (PreviousStage == EFF_FestivalStage::Live)
+	{
+		if (!bSawMainProgramThisLive)
+		{
+			// 표에 bIsMainProgramLockStart 행이 없으면 IsMainProgramLocked() 이 영원히 false 라
+			// 시작 신호가 안 온다. 그 경우 무대는 Live 내내 후보에서 빠져 있었고, 조용히 두면
+			// "왜 아무도 무대에 안 갔는가"의 원인이 로그에 안 남는다.
+			UE_LOG(LogCrowdDecision, Warning,
+				TEXT("Live 동안 메인 공연 시작 신호가 한 번도 오지 않았다 — 메인 무대가 하루 종일 ")
+				TEXT("후보에서 빠져 있었다. DT_ProgramSchedule 에 bIsMainProgramLockStart 행이 있는지 확인할 것"));
+		}
+
+		bMainStageGatingActive = false;
+		bMainStageOpen = false;
+		bSawMainProgramThisLive = false;
+	}
+}
+
+void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
+{
+	bSawMainProgramThisLive = true;
+	bMainStageOpen = true;
+
+	// 무대를 여는 것만으로는 아무도 모른다. 재결정 트리거가 도착·이동실패·큐거절뿐이라
+	// (ShouldReevaluate 의 주기 재평가는 아직 호출부가 없다) 밀어 넣지 않으면 회전율만큼
+	// 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
+	const UWorld* World = GetWorld();
+	UFF_CrowdSimulationSubsystem* Crowd =
+		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
+
+	const int32 RedecidedCount = Crowd
+		? Crowd->RequestRedecisionForIdleParties(MaxPartiesRedecidedOnStageOpen)
+		: 0;
+
+	UE_LOG(LogCrowdDecision, Log,
+		TEXT("메인 공연 시작('%s') — 메인 무대를 후보로 열고 유휴 파티 %d개에 재결정을 요청했다. ")
+		TEXT("줄에 선 파티는 제외했다(대기열과 어긋난다)"), *EventLabel, RedecidedCount);
+}
+
+void UFF_CrowdDecisionSubsystem::HandleMainProgramEnded(FString EventLabel)
+{
+	bMainStageOpen = false;
+
+	UE_LOG(LogCrowdDecision, Log,
+		TEXT("메인 공연 종료('%s') — 메인 무대를 후보에서 닫는다. ")
+		TEXT("이미 줄에 선 파티는 그대로 서비스를 받는다(대기열은 이 게이트와 무관하다)"), *EventLabel);
 }
 
 void UFF_CrowdDecisionSubsystem::SetDecisionEnabled(bool bEnabled)
@@ -186,6 +278,7 @@ void UFF_CrowdDecisionSubsystem::EnsureWalkDistanceMatrix(
 			WalkDistanceUnauthoredAnchors = 0;
 			WalkDistanceProjectionFailures = 0;
 			WalkDistanceMaxProjectionDropCm = 0.f;
+			WalkDistanceNavBuildDeferrals = 0;
 		}
 		return;
 	}
@@ -212,7 +305,20 @@ void UFF_CrowdDecisionSubsystem::EnsureWalkDistanceMatrix(
 
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
 
-	const FVector ProjectionExtent(50.0, 50.0, 500.0);
+	// 시설 nav 구멍은 dynamic modifier라 리비전이 오른 **몇 프레임 뒤에** 구워진다.
+	// 여기서 기다리지 않으면 구멍이 없는 NavMesh로 거리를 재고, WalkDistanceBuiltRevision을
+	// 찍어 버리므로 다음 리비전까지 그 틀린 값이 고정된다 — 강 건너편이 가깝게 나오는 종류의
+	// 조용한 오류다. 리비전을 기록하지 않고 빠지면 다음 결정 요청에서 다시 시도한다.
+	//
+	// 그동안 후보 거리는 직전 리비전의 행렬(없으면 직선거리)로 계산된다. 한쪽은 몇 프레임 낡고
+	// 다른 한쪽은 영구히 틀리므로, 낡은 쪽을 고른다.
+	if (NavSys && NavSys->GetNumRemainingBuildTasks() > 0)
+	{
+		++WalkDistanceNavBuildDeferrals;
+		return;
+	}
+
+	const FVector ProjectionExtent = FFF_CrowdNav::GetAnchorProjectionExtentCm();
 
 	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
 	{
@@ -452,12 +558,30 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		(bEnableWalkDistances && WalkDistances.IsValid()) ? &WalkDistances : nullptr;
 
 	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
-		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull);
+		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull,
+		IsMainStageOpen());
 
 	if (Candidates.IsEmpty())
 	{
 		++Stats.NoCandidate;
 		return false;
+	}
+
+	// 실패한 사유로 온 요청만 직전 목적지를 벌한다 — Arrived(이용 완료)는 정상적인 재방문이고
+	// revisit 항이 맡는다. bFullMode 분기 밖에 두는 이유: 혼잡·대기는 모드에 따라 지우는
+	// 추정값이지만 "방금 여기 못 갔다"는 사실이다.
+	if ((Context.Reason == EFF_DecisionReason::MoveFailed
+			|| Context.Reason == EFF_DecisionReason::JoinRejected)
+		&& !Context.PreviousDestinationId.IsNone())
+	{
+		for (FFF_DestinationCandidate& Candidate : Candidates)
+		{
+			if (Candidate.DestinationId == Context.PreviousDestinationId)
+			{
+				Candidate.bFailedRecently = true;
+				++Stats.FailedDestinationPenalized;
+			}
+		}
 	}
 
 	static const TMap<FName, float> EmptyPreferenceVector;
@@ -476,6 +600,7 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		{
 			Candidate.CurrentOccupancy = 0.f;
 			Candidate.EstimatedWaitMinutes = 0.f;
+			Candidate.InTransitMemberCount = 0.f;
 		}
 	}
 	else
@@ -493,6 +618,22 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		// Queue 가 부분 가입을 허용하는 쪽으로 바뀌면 이 인자도 같이 바꿔야 한다.
 		Stats.QueueWaitApplied += FFF_QueueWaitAdapter::ApplyFromZoneBridge(
 			GetWorld(), Candidates, Context.PartySize);
+
+		// 아직 줄에 반영되지 않은 수요. 널이면 이 항은 0 으로 남는다(결선 전과 동일 동작).
+		// Crowd 가 결정 배치 안에서 누적해 주므로 같은 프레임에 결정하는 파티들이 서로를 본다.
+		if (Context.InTransitMemberCounts)
+		{
+			for (FFF_DestinationCandidate& Candidate : Candidates)
+			{
+				Candidate.InTransitMemberCount =
+					static_cast<float>(Context.InTransitMemberCounts->FindRef(Candidate.DestinationId));
+
+				if (Candidate.InTransitMemberCount > 0.f)
+				{
+					++Stats.InTransitApplied;
+				}
+			}
+		}
 	}
 	const TMap<FName, float>& PreferenceVector = bFullMode
 		? GetPreferenceVector(
@@ -557,6 +698,17 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	OutResult.Destination = Facility->ApproachWorldTransform.GetLocation();
 	OutResult.DestinationId = Decision.ChosenDestinationId;
 
+	// 고른 후보의 해소 플래그를 결과에 실어 보낸다. 여기서 GetNeedReliefFlags 를 다시 부르지 않는다 —
+	// BuildCandidates 가 이미 채운 값이고, 같은 판정을 두 번 하면 갈릴 자리가 생긴다.
+	if (const FFF_DestinationCandidate* Chosen = Candidates.FindByPredicate(
+			[&Decision](const FFF_DestinationCandidate& Candidate)
+			{
+				return Candidate.DestinationId == Decision.ChosenDestinationId;
+			}))
+	{
+		OutResult.NeedRelief = Chosen->NeedRelief;
+	}
+
 	++Stats.Chosen;
 
 	UE_LOG(LogCrowdDecision, Verbose,
@@ -612,6 +764,10 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 	Ar.Logf(TEXT("[문제] GUID 파싱 실패 : %d"), S.ParseFailed);
 	Ar.Logf(TEXT("[문제] 시설 소실      : %d"), S.FacilityMissing);
 	Ar.Logf(TEXT("[문제] 접근점 무효    : %d   (FacilityDefinition의 Entry[0] 확인)"), S.InvalidApproach);
+	Ar.Logf(TEXT("실패 목적지 감점 : %d   <- FF.Crowd.Flow의 '막혀서 포기'와 짝이 맞아야 한다"),
+		S.FailedDestinationPenalized);
+	Ar.Logf(TEXT("이동 중 인원 반영: %d   <- 0이면 Crowd 원장이 안 넘어오거나 Full 모드가 아니다"),
+		S.InTransitApplied);
 	Ar.Logf(TEXT("--- 퇴장 판정 ---"));
 	Ar.Logf(TEXT("퇴장: 체류 소진    : %d   (주 원인이어야 한다)"), Decision->GetLeaveByStayExpiredCount());
 	Ar.Logf(TEXT("퇴장: 인내 한계    : %d   (연속 no_choice %d회. 체류 소진보다 많으면 인원 보존 위험)"),
@@ -647,6 +803,9 @@ static void DecisionStatsCommand(const TArray<FString>& Args, UWorld* World, FOu
 		}
 		Ar.Logf(TEXT("  앵커 투영 낙차: 최대 %.0fcm (0이면 앵커가 이미 NavMesh 위)"),
 			Decision->GetMaxAnchorProjectionDropCm());
+
+		Ar.Logf(TEXT("  nav빌드 대기  : %d회 미룸 (배치 변경 직후 몇 번 오르는 것이 정상)"),
+			Decision->GetWalkDistanceNavBuildDeferrals());
 
 		const int32 Mismatches = Decision->GetWalkDistanceMismatchCount();
 		if (Mismatches > 0)

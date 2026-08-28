@@ -5,6 +5,13 @@
 #include "Economy/FF_EconomyLog.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_FinaleRules.h"
+#include "Economy/Rules/FF_ProgramScheduleRules.h"
+#include "Building/FF_FacilityNamingLibrary.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSWorldSubsystem.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 
@@ -34,6 +41,11 @@ namespace
 void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	// 예약 슬롯의 소유자. 같은 GameInstance 스코프라 수명이 같아서 캐시해도 된다.
+	// StartFestival 이 아래에서 ResetAll 을 부르므로 그 전에 물려야 한다.
+	SetProgramReservations(
+		Collection.InitializeDependency<UFF_ProgramReservationSubsystem>());
 
 	const UFF_FestivalSettings* Settings = UFF_FestivalSettings::Get();
 	if (Settings == nullptr || Settings->DefaultFestival.IsNull())
@@ -87,6 +99,12 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
+	ScheduledPrograms.Reset();
+	if (ProgramReservations != nullptr)
+	{
+		// 새 축제에 이전 판의 슬롯이 남지 않게 한다.
+		ProgramReservations->ResetAll();
+	}
 	
 	// 새 축제
 	LastProcessedDay = 0;
@@ -364,6 +382,310 @@ EFF_FinalePurchaseResult UFF_FestivalProgressionSubsystem::TryPurchaseFinale(EFF
 	return EFF_FinalePurchaseResult::Success;
 }
 
+TArray<FFF_ProgramCard> UFF_FestivalProgressionSubsystem::GetProgramCatalog() const
+{
+	return Definition != nullptr ? Definition->ProgramCatalog : TArray<FFF_ProgramCard>();
+}
+
+void UFF_FestivalProgressionSubsystem::SetProgramReservations(
+	UFF_ProgramReservationSubsystem* InReservations)
+{
+	ProgramReservations = InReservations;
+}
+
+TArray<FName> UFF_FestivalProgressionSubsystem::GetScheduledProgramIds() const
+{
+	TArray<FName> Ids;
+	Ids.Reserve(ScheduledPrograms.Num());
+	for (const FFF_ScheduledProgram& Scheduled : ScheduledPrograms)
+	{
+		Ids.Add(Scheduled.ProgramId);
+	}
+	return Ids;
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetStaffAssignedToPrograms() const
+{
+	if (Definition == nullptr) return 0;
+
+	return FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(
+		Definition->ProgramCatalog, GetScheduledProgramIds());
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetAvailableStaffCount() const
+{
+	// 음수로 내려가지 않게 한다. 카탈로그가 바뀌어 요구 인원이 늘어난 저장 슬롯을
+	// 불러오면 묶인 인원이 전체를 넘을 수 있다.
+	return FMath::Max(0, StaffPool.GetTotalStaffCount() - GetStaffAssignedToPrograms());
+}
+
+EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::CanScheduleProgram(
+	const FName ProgramId) const
+{
+	if (Definition == nullptr) return EFF_ProgramPurchaseResult::FestivalNotStarted;
+
+	FFF_ProgramCard Unused;
+	return FFF_ProgramScheduleRules::EvaluatePurchase(
+		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
+		Funds.GetGold(), GetAvailableStaffCount(), Unused);
+}
+
+EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
+	const FName ProgramId, const FGuid FacilityInstanceId)
+{
+	if (Definition == nullptr) return EFF_ProgramPurchaseResult::FestivalNotStarted;
+
+	FFF_ProgramCard Card;
+	const EFF_ProgramPurchaseResult Result = FFF_ProgramScheduleRules::EvaluatePurchase(
+		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
+		Funds.GetGold(), GetAvailableStaffCount(), Card);
+
+	if (Result != EFF_ProgramPurchaseResult::Success)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Log,
+			TEXT("[경제] 프로그램 편성 거부: %s (요청 %s, 잔액 %d, 남은 인원 %d)"),
+			*UEnum::GetValueAsString(Result), *ProgramId.ToString(),
+			Funds.GetGold(), GetAvailableStaffCount());
+		return Result;
+	}
+
+	if (!IsFacilityTypeAllowedForCard(Card, FacilityInstanceId))
+	{
+		UE_LOG(LogFestaFiestaEconomy, Log,
+			TEXT("[경제] 프로그램 '%s' 편성 거부: 이 시설에서는 열 수 없다."),
+			*ProgramId.ToString());
+		return EFF_ProgramPurchaseResult::FacilityTypeMismatch;
+	}
+
+	// 슬롯을 못 만들면 차감도 하지 않는다. 순서를 뒤집으면 Gold 만 빠지고
+	// 아무도 배정되지 않는 상태가 남는다.
+	if (ProgramReservations == nullptr)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 예약 서브시스템이 없어 프로그램 '%s' 을 편성할 수 없다."),
+			*ProgramId.ToString());
+		return EFF_ProgramPurchaseResult::UnknownProgram;
+	}
+
+	const FGuid ReservationId = ProgramReservations->RegisterProgram(
+		FacilityInstanceId, Card.StartMinutes, Card.EndMinutes, Card.Capacity);
+
+	if (!ReservationId.IsValid())
+	{
+		// 시설 핸들이 무효하거나 시각이 뒤집힌 경우다. 카드는 IsValid 로 걸렀으므로
+		// 남는 원인은 시설 쪽이다.
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 프로그램 '%s' 의 예약 슬롯을 만들지 못했다(시설 %s). 차감하지 않는다."),
+			*ProgramId.ToString(), *FacilityInstanceId.ToString());
+		return EFF_ProgramPurchaseResult::UnknownProgram;
+	}
+
+	const int32 PreviousGold = Funds.GetGold();
+
+	// 판정이 통과했으므로 차감이 실패할 수 없다. (이상 상황)
+	if (!ensureMsgf(TrySpend(Card.CostGold, EFF_SpendReason::ProgramPurchase),
+		TEXT("프로그램 비용 %d 차감이 판정 통과 후 실패했다. 잔액 %d"),
+		Card.CostGold, Funds.GetGold()))
+	{
+		// 슬롯을 되돌린다 — 돈을 안 받았는데 프로그램이 열려 있으면 안 된다.
+		ProgramReservations->RemoveReservation(ReservationId);
+		return EFF_ProgramPurchaseResult::InsufficientGold;
+	}
+
+	ScheduledPrograms.Add(FFF_ScheduledProgram{ ProgramId, ReservationId });
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] 프로그램 '%s' 편성. 비용 %d, 남은 Gold %d, 인원 %d명 묶임(남은 인원 %d), "
+			 "정원 %d명·체험비 %d, %.0f~%.0f분"),
+		*ProgramId.ToString(), Card.CostGold, Funds.GetGold(),
+		Card.RequiredStaff, GetAvailableStaffCount(), Card.Capacity, Card.FeePerPerson,
+		Card.StartMinutes, Card.EndMinutes);
+
+	// TrySpend 가 Gold 를 이미 쏘지만, 편성 목록·인원은 여기서만 바뀐다.
+	BroadcastGoldIfChanged(PreviousGold);
+	OnScheduledProgramsChanged.Broadcast();
+
+	return EFF_ProgramPurchaseResult::Success;
+}
+
+int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
+	FFF_ScheduledProgram& Scheduled, const bool bLateSettlement)
+{
+	if (Scheduled.bFeeSettled) return 0;
+
+	const FFF_ProgramCard* Card = FFF_ProgramScheduleRules::FindCard(
+		Definition->ProgramCatalog, Scheduled.ProgramId);
+	if (Card == nullptr) return 0;
+
+	// 예약 그룹은 스폰될 때 이미 확정돼 있기 때문에 여기서 배정하지 않는다.
+	// (`ConfirmReservedParty`). 정산에서 다시 배정하면 그 확정을 덮어쓴다.
+	FFF_ProgramReservation Reservation;
+	if (!ProgramReservations->FindReservation(Scheduled.ReservationId, Reservation))
+	{
+		return 0;
+	}
+
+	const int32 Fee = FFF_ProgramScheduleRules::CalcProgramRevenue(
+		*Card, Reservation.AssignedHeadcount);
+
+	// 여기까지 왔으면 이 카드는 오늘 처리가 끝났다. 금액이 0 이어도 다시 걷지 않는다 —
+	// 안 그러면 아무도 안 온 프로그램을 Closing 안전망이 또 집어 Warning 이 두 번 난다.
+	Scheduled.bFeeSettled = true;
+
+	if (bLateSettlement)
+	{
+		// 시작 시각 정산이 놓친 카드다. 카드 시각이 그날 Live 길이를 넘었거나 Live 를 건너뛴
+		// 경우라 저작·단계 전환 쪽 결함이다.
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 프로그램 '%s' 이 시작 시각(%.0f분)에 정산되지 않아 마감에 걷었다. "
+				 "체험비 %d — 카드 시각이 오늘 Live 길이를 넘었는지 확인해야 한다"),
+			*Scheduled.ProgramId.ToString(), Card->StartMinutes, Fee);
+	}
+
+	if (Reservation.UnfilledSeats > 0)
+	{
+		// 산 정원만큼 스폰되므로 여기 걸리면 스폰 배선이 깨진 것이다.
+		// 정상 상황이 아니라 결함이라 Warning 으로 올린다.
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 프로그램 '%s' 정원 미달: %d/%d명 (빈자리 %d). 체험비 %d — "
+				 "산 정원만큼 스폰됐어야 한다"),
+			*Scheduled.ProgramId.ToString(), Reservation.AssignedHeadcount,
+			Reservation.Capacity, Reservation.UnfilledSeats, Fee);
+	}
+
+	if (Fee > 0)
+	{
+		AddRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId);
+	}
+
+	return Fee;
+}
+
+int32 UFF_FestivalProgressionSubsystem::SettleStartedPrograms(const float NowMinutes)
+{
+	if (Definition == nullptr || ProgramReservations == nullptr) return 0;
+	if (ScheduledPrograms.Num() == 0) return 0;
+
+	const int32 PreviousGold = Funds.GetGold();
+	int32 TotalFee = 0;
+	int32 SettledCount = 0;
+
+	for (FFF_ScheduledProgram& Scheduled : ScheduledPrograms)
+	{
+		if (Scheduled.bFeeSettled) continue;
+
+		const FFF_ProgramCard* Card = FFF_ProgramScheduleRules::FindCard(
+			Definition->ProgramCatalog, Scheduled.ProgramId);
+		if (Card == nullptr || NowMinutes < Card->StartMinutes) continue;
+
+		TotalFee += SettleOneProgram(Scheduled, /*bLateSettlement=*/false);
+		++SettledCount;
+	}
+
+	if (SettledCount > 0)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Log,
+			TEXT("[경제] %.0f분에 프로그램 %d개가 열렸다. 체험비 합계 %d, 잔액 %d"),
+			NowMinutes, SettledCount, TotalFee, Funds.GetGold());
+	}
+
+	BroadcastGoldIfChanged(PreviousGold);
+	return TotalFee;
+}
+
+int32 UFF_FestivalProgressionSubsystem::SettleScheduledPrograms()
+{
+	if (Definition == nullptr || ProgramReservations == nullptr) return 0;
+	if (ScheduledPrograms.Num() == 0) return 0;
+
+	const int32 PreviousGold = Funds.GetGold();
+	int32 TotalFee = 0;
+	int32 SettledCount = 0;
+
+	for (FFF_ScheduledProgram& Scheduled : ScheduledPrograms)
+	{
+		if (Scheduled.bFeeSettled) continue;
+
+		TotalFee += SettleOneProgram(Scheduled, /*bLateSettlement=*/true);
+		++SettledCount;
+	}
+
+	if (SettledCount > 0)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Log,
+			TEXT("[경제] 마감에 프로그램 %d개를 뒤늦게 정산했다. 체험비 합계 %d, 잔액 %d"),
+			SettledCount, TotalFee, Funds.GetGold());
+	}
+
+	BroadcastGoldIfChanged(PreviousGold);
+	return TotalFee;
+}
+
+bool UFF_FestivalProgressionSubsystem::IsFacilityTypeAllowedForCard(
+	const FFF_ProgramCard& Card, const FGuid& FacilityInstanceId) const
+{
+	if (Card.AllowedFacilityTypes.Num() == 0)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 프로그램 '%s' 에 허용 시설이 저작되지 않았다. 아무 시설에서나 열린다."),
+			*Card.ProgramId.ToString());
+		return true;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
+	UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+
+	// ZoneSystem 자체가 없는 것은 시설 검증을 할 수 없는 환경이라는 뜻이다(월드 없는 테스트).
+	// 시설 핸들이 유효한데 못 찾는 것과는 다른 상황이라 구분해서 다룬다.
+	if (Zone == nullptr)
+	{
+		return true;
+	}
+
+	const AFFZSFacilityActor* Facility = Zone->FindFacility(FacilityInstanceId);
+	if (Facility == nullptr)
+	{
+		return false;
+	}
+
+	const FFFZSFacilityReadModel ReadModel = Facility->GetReadModel();
+
+	FFF_FacilityNameParts Parts;
+	FString FailureReason;
+	if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+		ReadModel.Category, ReadModel.FacilityDefinitionId, Parts, FailureReason))
+	{
+		// 이름 규칙을 어긴 시설이다. 종류를 알 수 없으므로 열어주지 않는다.
+		UE_LOG(LogFestaFiestaEconomy, Warning,
+			TEXT("[경제] 시설 '%s' 의 이름을 해석하지 못했다: %s"),
+			*ReadModel.FacilityDefinitionId.ToString(), *FailureReason);
+		return false;
+	}
+
+	return FFF_ProgramScheduleRules::IsFacilityTypeAllowed(
+		Card, Parts.MajorToken, Parts.MinorToken);
+}
+
+TArray<FFF_ReservedPartyRequest>
+UFF_FestivalProgressionSubsystem::GetReservedPartyRequests() const
+{
+	TArray<FFF_ReservedPartyRequest> Requests;
+	if (Definition == nullptr) return Requests;
+
+	for (const FFF_ScheduledProgram& Scheduled : ScheduledPrograms)
+	{
+		const FFF_ProgramCard* Card = FFF_ProgramScheduleRules::FindCard(
+			Definition->ProgramCatalog, Scheduled.ProgramId);
+		if (Card == nullptr) continue;
+
+		Requests.Append(FFF_ProgramScheduleRules::BuildReservedPartyRequests(
+			*Card, Scheduled.ReservationId));
+	}
+
+	return Requests;
+}
+
 int32 UFF_FestivalProgressionSubsystem::GetFinaleSatisfactionBonus() const
 {
 	if (Definition == nullptr) return 0;
@@ -449,6 +771,19 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.
 	StaffPool.SetTemporaryStaffCount(0);
 
+	// 프로그램 카드도 하루짜리다. 비우지 않으면 어제 편성이 오늘 인원을 계속 묶는다.
+	// 슬롯까지 같이 지운다 — 어제 예약이 남아 있으면 오늘 스폰된 파티가 어제 시각에
+	// 잠기거나 퇴장을 막힌다.
+	const bool bHadPrograms = ScheduledPrograms.Num() > 0;
+	if (ProgramReservations != nullptr)
+	{
+		for (const FFF_ScheduledProgram& Scheduled : ScheduledPrograms)
+		{
+			ProgramReservations->RemoveReservation(Scheduled.ReservationId);
+		}
+	}
+	ScheduledPrograms.Reset();
+
 	SettleVenueRent();       // 거절할 수 없다 — 못 내면 미납
 	
 	ensureMsgf(Arrears.HasNoArrears() || Funds.GetGold() == 0,
@@ -462,6 +797,11 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 		NewDay, Funds.GetGold(), Arrears.GetTotalArrears(),
 		StaffPool.GetTotalStaffCount(), StaffPool.GetBaseStaffCount(),
 		StaffPool.GetTemporaryStaffCount());
+
+	if (bHadPrograms)
+	{
+		OnScheduledProgramsChanged.Broadcast();
+	}
 
 	return true;
 }

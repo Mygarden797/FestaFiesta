@@ -27,6 +27,7 @@ public class FF_ZoneSystemTests : ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+            "NavigationSystem",
             "UnrealEd",
             "FF_ZoneSystem"
         });

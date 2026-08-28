@@ -11,6 +11,14 @@
 class UDataTable;
 class UFFZSWorldSubsystem;
 
+namespace FFF_CrowdNav
+{
+	inline FVector GetAnchorProjectionExtentCm()
+	{
+		return FVector(300.0, 300.0, 2000.0);
+	}
+}
+
 UENUM(BlueprintType)
 enum class EFF_DecisionMode : uint8
 {
@@ -88,6 +96,25 @@ struct FFF_CrowdDecisionStats
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Decision")
 	int32 QueueWaitApplied = 0;
+
+	/**
+	 * 직전 목적지를 실패 후보로 표시한 횟수.
+	 *
+	 * Crowd 의 GetStuckDecisionRequests()와 짝이 맞는지로 배선을 확인한다 — 그쪽이 늘어나는데
+	 * 이 값이 0이면 사유(MoveFailed)나 직전 목적지가 컨텍스트에 안 실려 오고 있다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 FailedDestinationPenalized = 0;
+
+	/**
+	 * 이동 중 인원이 0이 아니게 실린 후보 수(후보 단위 누적).
+	 *
+	 * QueueWaitApplied 와 같은 이유로 후보 개수로 센다 — "결정은 돌았는데 이동 중 인원은
+	 * 하나도 안 붙었다"를 이 값 0으로 구분할 수 있다. Crowd 원장이 안 넘어오거나
+	 * DecisionMode 가 Full 이 아니면 0이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Decision")
+	int32 InTransitApplied = 0;
 };
 
 /**
@@ -239,7 +266,39 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
 	float GetMaxAnchorProjectionDropCm() const { return WalkDistanceMaxProjectionDropCm; }
 
+	// NavMesh 재굽기가 안 끝나 행렬 빌드를 미룬 횟수. 배치 변경 직후 몇 번 오르는 것이 정상이고,
+	// 계속 오르기만 하면 nav 빌드가 끝나지 않는다는 뜻이다(행렬이 영구히 낡은다)
+	UFUNCTION(BlueprintPure, Category = "Decision|Distance")
+	int32 GetWalkDistanceNavBuildDeferrals() const { return WalkDistanceNavBuildDeferrals; }
+
+	// 지금 메인 무대가 후보로 열려 있는가. BuildCandidates 에 그대로 넘어가는 값이다.
+	UFUNCTION(BlueprintPure, Category = "Decision|Stage")
+	bool IsMainStageOpen() const { return !bMainStageGatingActive || bMainStageOpen; }
+
+	/**
+	 * 무대가 열리는 순간 재결정을 밀어 넣을 파티 수 상한. 0 이하면 상한 없음.
+	 *
+	 * 상한이 필요한 이유: 이 경로는 결정 쿨다운(Arrived·MoveFailed 전용)을 타지 않으므로
+	 * 전 파티에 걸면 한 프레임에 결정 큐가 통째로 부푼다. 상한에 걸려 못 받은 파티도
+	 * 다음 도착에서 자연스럽게 무대를 보게 되므로 쏠림이 사라지지는 않고 완만해질 뿐이다.
+	 *
+	 * 실측 근거 없음 — 프레임 예산을 재면 계수 CSV 로 옮긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision|Stage")
+	int32 MaxPartiesRedecidedOnStageOpen = 64;
+
 private:
+	// UFF_FestivalStageSubsystem 은 GameInstance 스코프라 포인터를 캐시하면 수명이 어긋난다
+	// 공연 시간표 게이팅 — Stage 델리게이트로 불리언만 유지한다.
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	UFUNCTION()
+	void HandleMainProgramStarted(FString EventLabel);
+
+	UFUNCTION()
+	void HandleMainProgramEnded(FString EventLabel);
+
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
 	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
 	EFF_PartyFallbackAction ResolveFallbackAction(const FFF_PartyDecisionContext& Context);
@@ -262,6 +321,16 @@ private:
 	 * 결정마다 지으면 프레임 예산이 통째로 날아간다. 끄면 행렬을 비우고 계수기도 되돌린다.
 	 */
 	void EnsureWalkDistanceMatrix(const UFFZSWorldSubsystem& ZoneSystem, const FFFZSReadModel& ReadModel);
+
+	// 게이팅이 도는 구간인가. Live 안에서만 켠다.
+	bool bMainStageGatingActive = false;
+
+	// 게이팅이 도는 동안 무대가 열려 있는가. 공연 시작~종료 사이에만 true 다.
+	bool bMainStageOpen = false;
+
+	// 이번 Live 에서 공연 시작 신호를 한 번이라도 받았는가.
+	// Live 를 빠져나갈 때까지 false 면 표에 메인 공연이 저작되지 않은 것이다 — Warning 을 낸다.
+	bool bSawMainProgramThisLive = false;
 
 	FFFZSReadModel CachedReadModel;
 
@@ -298,4 +367,7 @@ private:
 	int32 WalkDistanceUnauthoredAnchors = 0;
 	int32 WalkDistanceProjectionFailures = 0;
 	float WalkDistanceMaxProjectionDropCm = 0.f;
+
+	// nav 빌드가 안 끝나 빌드를 미룬 누적 횟수. 위 진단값과 달리 빌드마다 초기화되지 않는다
+	int32 WalkDistanceNavBuildDeferrals = 0;
 };

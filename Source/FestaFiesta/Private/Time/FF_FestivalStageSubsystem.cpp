@@ -46,6 +46,7 @@ bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 {
 	TimeScale = NewScale;
+	OnTimeScaleChange.Broadcast(TimeScale);
 }
 // 배속값을 저장하는 함수
 
@@ -155,6 +156,8 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
+	if (!bFestivalStarted) { return; }
+
 	if (CurrentStage == EFF_FestivalStage::Live)
 		// Live 단계일 때 처리
 	{
@@ -347,6 +350,24 @@ void UFF_FestivalStageSubsystem::AdvanceToNextDay()
 	RequestTransition(EFF_FestivalStage::MorningCheck);
 }
 
+void UFF_FestivalStageSubsystem::StartNewFestival()
+{
+	CurrentDay = 1;
+	CurrentStage = EFF_FestivalStage::Setup;
+	ElapsedLiveSeconds = 0.f;
+	bFestivalEndedBroadcasted = false;
+	bNightLightingActivated = false;
+	// 밤 조명 상태도 리셋 안 하면 재시작 시 낮인데 조명 켜진 채로 남을 수 있음
+
+	bFestivalStarted = true;
+	// 이 줄이 있어야 Tick()이 다시 돌기 시작함
+
+	UE_LOG(LogTemp, Log, TEXT("[Festival] 새 축제 시작! Day=1, Stage=Setup"));
+
+	OnFestivalStarted.Broadcast();
+	// 축제가 시작됐다고 UI 등 구독자들에게 알림
+}
+
 void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -444,12 +465,45 @@ void UFF_FestivalStageSubsystem::SkipCurrentStage()
 
 FText UFF_FestivalStageSubsystem::GetCurrentStageDisplayName() const
 {
-	UEnum* EnumPtr = StaticEnum<EFF_FestivalStage>();
-	if (EnumPtr)
+	//  수정 - UMETA(DisplayName) 직접 읽기는 패키징 빌드에서 값이 사라져서 하드코딩 매핑으로 교체
+	switch (CurrentStage)
 	{
-		return EnumPtr->GetDisplayNameTextByValue((int64)CurrentStage);
+	case EFF_FestivalStage::Setup:
+		return FText::FromString(TEXT("셋업"));
+		// Setup 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::PromotionPreview:
+		return FText::FromString(TEXT("홍보 프리뷰"));
+		// PromotionPreview 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::SunsetTransition:
+		return FText::FromString(TEXT("노을 전환"));
+		// SunsetTransition 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::MorningCheck:
+		return FText::FromString(TEXT("모닝체크"));
+		// MorningCheck 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Live:
+		return FText::FromString(TEXT("라이브 운영"));
+		// Live 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Closing:
+		return FText::FromString(TEXT("마감"));
+		// Closing 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Report:
+		return FText::FromString(TEXT("리포트"));
+		// Report 단계일 때 반환할 한글 이름
+
+	case EFF_FestivalStage::Finale:
+		return FText::FromString(TEXT("피날레"));
+		// Finale 단계일 때 반환할 한글 이름
+
+	default:
+		return FText::FromString(TEXT("알 수 없음"));
+		// 혹시 모를 예외 상황 (enum에 없는 값)
 	}
-	return FText::FromString(TEXT("알 수 없음"));
 }
 // enum에 붙여둔 UMETA(DisplayName)을 그대로 가져와서 반환
 
@@ -466,6 +520,25 @@ FString UFF_FestivalStageSubsystem::GetCurrentLiveClockString() const
 }
 // ElapsedLiveSeconds(경과 시간)를 그대로 "게임 속 분"으로 취급해서
 // 17:00에 더한 뒤 시:분 형식 문자열로 변환
+
+
+FString UFF_FestivalStageSubsystem::GetLiveClockStringFromMinutes(int32 LiveMinutes) const
+{
+	const int32 StartHour = 17;
+	// Live 시작 시각(오후 5시)
+
+	const int32 TotalMinutes = StartHour * 60 + LiveMinutes;
+	// 시작 시각(17:00)에 진행 시간(분)을 더함
+
+	const int32 Hour = (TotalMinutes / 60) % 24;
+	// 시 계산 (24시간 제, 24시 넘어가면 0시로 순환)
+
+	const int32 Minute = TotalMinutes % 60;
+	// 분 계산
+
+	return FString::Printf(TEXT("%02d:%02d"), Hour, Minute);
+	// "HH:MM" 형태로 반환
+}
 
 bool UFF_FestivalStageSubsystem::IsLiveStage() const
 {

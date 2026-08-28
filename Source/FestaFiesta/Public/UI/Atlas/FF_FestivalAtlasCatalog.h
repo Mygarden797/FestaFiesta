@@ -67,11 +67,26 @@ struct FESTAFIESTA_API FFF_AtlasCountryEntry
 	TSoftObjectPtr<UStaticMesh> LandmarkMesh;
 
 	/**
-	 * 2.5D 국가 지도 배경. Two Point Campus 풍 프리렌더 이미지다.
+	 * 국가 지도 배경.
+	 *
+	 * 🔴 **알파가 있는 이미지를 넣는다.** 바다까지 칠해진 불투명 합성본을 넣으면 배경 위에
+	 * 지도 사각형의 경계선이 그대로 보인다 (2026-08-27에 실제로 그랬다). 육지만 남기고
+	 * 나머지는 투명해야 화면의 바다 배경과 이어진다.
+	 *
 	 * 비어 있으면 국가 지도 화면이 네모 박스 + 팔레트 색으로 대신 그린다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map")
 	TSoftObjectPtr<UTexture2D> MapImage;
+
+	/**
+	 * 행정구역 경계선 레이어. `MapImage` 위에 같은 사각형으로 겹쳐 그린다.
+	 *
+	 * ★ **`MapImage` 와 좌표계·크기가 같은 이미지여야 한다.** 지형에 경계를 구워 넣지 않고
+	 *   나누는 이유는, 경계 두께·색을 지형을 다시 만들지 않고 바꿀 수 있어서다.
+	 *   비어 있으면 경계 없이 지형만 그린다 — 없다고 화면이 죽지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map")
+	TSoftObjectPtr<UTexture2D> MapBordersImage;
 
 	/** 고를 수 있는지. 잠긴 국가는 자물쇠 + `LockReason` 을 함께 띄우고 진입을 막는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lock")
@@ -165,6 +180,17 @@ struct FESTAFIESTA_API FFF_FestivalAtlasEntry
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	FVector2D MapPosition = FVector2D(0.5, 0.5);
+
+	/**
+	 * 이 축제를 가리킬 때 지도 위에 겹치는 선택 오버레이.
+	 *
+	 * 부산 축제라면 부산 ADM1만 들어 있는 투명 PNG를 넣는다. 영남권 전체를 공통 코드에서
+	 * 칠하지 않는다. 축제마다 데이터로 들기 때문에 다른 나라·도시가 추가되어도 화면 코드는
+	 * 같은 방식으로 해당 오버레이를 읽는다. 비어 있으면 선택 핀만 강조한다.
+	 * `MapImage`와 정확히 같은 캔버스·Crop·비율을 사용해야 한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Country Map")
+	TSoftObjectPtr<UTexture2D> SelectionOverlayImage;
 
 	// --- 카드에 표시하는 값 ---
 

@@ -87,6 +87,33 @@ public:
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
     float MaxGroundSlopeDegrees = 5.0f;
 	// 모든 지면 표본의 법선으로 허용할 최대 경사각이다. 
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Rotation Snap (Degrees)", ToolTip = "건축 모드에서 Q/E를 한 번 눌렀을 때 회전하는 각도입니다.", ClampMin = "0.01", ClampMax = "180.0", Units = "deg"))
+    float PlacementRotationSnapDegrees = 45.0f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Free Rotation Speed (Degrees/Second)", ToolTip = "건축 모드에서 Shift+Q/E를 누르고 있을 때의 자유 회전 속도입니다.", ClampMin = "1.0", ClampMax = "720.0", Units = "deg/s"))
+    float FreePlacementRotationSpeedDegreesPerSecond = 90.0f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Default Position Snap (cm)", ToolTip = "평소 배치할 때 사용하는 이해하기 쉬운 기본 간격입니다. 권위 저장 격자는 계속 1cm이며 이 값은 마우스 조작만 양자화합니다.", ClampMin = "1", ClampMax = "100", Units = "cm"))
+    int32 PlacementPositionSnapCm = 100;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Precision Position Snap (cm)", ToolTip = "Ctrl을 누른 동안 사용하는 미세 조정 간격입니다.", ClampMin = "1", ClampMax = "100", Units = "cm"))
+    int32 PrecisionPlacementPositionSnapCm = 25;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Free Position Snap (cm)", ToolTip = "Alt를 누른 동안 사용하는 자유 배치 간격입니다. 1cm는 현재 권위 좌표 계약에서 가능한 가장 자유로운 값입니다.", ClampMin = "1", ClampMax = "100", Units = "cm"))
+    int32 FreePlacementPositionSnapCm = 1;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Grid", meta = (DisplayName = "Local Grid Padding (cm)", ToolTip = "배치 대상의 footprint 바깥으로 더 보여 줄 로컬 격자 여백입니다.", ClampMin = "0.0", ClampMax = "2000.0", Units = "cm"))
+    float PlacementGridPaddingCm = 600.0f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Grid", meta = (DisplayName = "Local Grid Maximum Radius (cm)", ToolTip = "로컬 격자 여백을 제한하는 소프트 최대 반경입니다. 대형 시설의 footprint 자체는 이 값보다 커도 잘리지 않습니다.", ClampMin = "100.0", ClampMax = "5000.0", Units = "cm"))
+    float PlacementGridMaxRadiusCm = 3600.0f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Grid", meta = (DisplayName = "Major Grid Interval (cm)", ToolTip = "기본선보다 굵게 표시할 기준선 간격입니다.", ClampMin = "100", ClampMax = "2000", Units = "cm"))
+    int32 PlacementGridMajorIntervalCm = 500;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Grid", meta = (DisplayName = "Grid Surface Lift (cm)", ToolTip = "지면과 격자가 겹쳐 깜빡이는 현상을 막기 위해 선을 위로 띄우는 거리입니다.", ClampMin = "0.5", ClampMax = "20.0", Units = "cm"))
+    float PlacementGridSurfaceLiftCm = 3.0f;
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", Units = "cm"))
     float MaxGroundHeightVarianceCm = 20.0f;
