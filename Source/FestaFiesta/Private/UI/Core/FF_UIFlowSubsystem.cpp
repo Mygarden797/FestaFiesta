@@ -968,11 +968,16 @@ void UFF_UIFlowSubsystem::ApplyStageScreen(EFF_FestivalStage Stage)
 
 	if (!Mapping || Mapping->WidgetClass.IsNull())
 	{
-		// SunsetTransition(노을 전환)처럼 문서에 없는 Stage 가 여기서 드러난다.
-		// EFF_FestivalStage 는 코드에 8종인데 module-ownership.md 는 7종으로 적고 있다.
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("UFF_UIFlowSubsystem: Stage `%s` 에 배선된 화면이 없다. 화면이 바뀌지 않는다. "
-				 "Project Settings > Game > FestaFiesta UI Flow > Stage Screens 를 채운다."),
+		// 🔴 **배선이 없으면 이전 화면을 내린다.** 예전에는 그냥 return 했는데, 그러면
+		// 앞 단계의 HUD 가 그대로 남아 "노을 전환인데 준비 단계 바가 떠 있는" 화면이 된다
+		// (2026-08-27 확인). `배선 없음` 은 곧 `이 단계에는 HUD 가 없다` 로 다룬다.
+		//
+		// 노을 전환이 그 자리다 — 20초짜리 순수 연출이라 HUD 를 띄우지 않는다.
+		ClearStageHudWidget();
+
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("UFF_UIFlowSubsystem: Stage `%s` 에 배선된 화면이 없어 HUD 를 내렸다. "
+				 "의도한 것이 아니면 Project Settings > Game > FestaFiesta UI Flow > Stage Screens 를 채운다."),
 			*UEnum::GetValueAsString(Stage));
 		return;
 	}
