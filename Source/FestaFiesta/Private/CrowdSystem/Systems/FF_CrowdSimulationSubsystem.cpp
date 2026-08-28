@@ -23,6 +23,8 @@
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 
 namespace
 {
@@ -265,14 +267,14 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 }
 
 void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter,
-	float SpawnRadiusUU)
+	float SpawnRadiusUU, const TArray<FFF_ReservedPartyRequest>& ReservedParties)
 {
 	// 다음 날 재개는 이 값을 그대로 다시 넘긴다. CachedDistribution.RequestedVisitorCount 를
 	// 재사용하지 않는 것은 바로 아래에서 그 구조체를 덮기 때문이고, ActualVisitorCount 를
 	// 쓰지 않는 것은 그룹을 통째로만 만드느라 요청보다 작아서 날마다 인원이 깎이기 때문이다.
 	ArrivalRequestedVisitorCount = TotalVisitorCount;
 
-	CachedDistribution = BuildVisitorDistribution(TotalVisitorCount);
+	CachedDistribution = BuildVisitorDistribution(TotalVisitorCount, ReservedParties);
 	VisitorCursor = 0;
 	ArrivalTotalVisitorCount = CachedDistribution.ActualVisitorCount;
 	ArrivalSpawnCenter = SpawnCenter;
@@ -296,7 +298,21 @@ void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount,
 			CachedDistribution.RequestedVisitorCount, CachedDistribution.ActualVisitorCount,
 			CachedDistribution.RequestedVisitorCount - CachedDistribution.ActualVisitorCount);
 	}
-	
+
+	if (CachedDistribution.RejectedReservedCount > 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 예약 주문서 %d건이 규칙에 안 맞아 빠졌다 — 산 정원보다 손님이 적게 온다"),
+			CachedDistribution.RejectedReservedCount);
+	}
+
+	if (CachedDistribution.ReservedGroupCount > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[CrowdSimulationSubsystem] 예약 손님 %d명(%d그룹)이 명단 앞쪽에 실렸다"),
+			CachedDistribution.ReservedVisitorCount, CachedDistribution.ReservedGroupCount);
+	}
+
 }
 
 int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCount)
@@ -328,6 +344,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 
 		int32 LeaderIndex = INDEX_NONE;
 		int32 PartyID = INDEX_NONE;
+		int32 MembersSpawnedThisParty = 0;
 
 		for (int32 Slot = 0; Slot < PartySize; ++Slot)
 		{
@@ -396,13 +413,19 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
 			}
 
-			
+
 			++SpawnedCount;
+			++MembersSpawnedThisParty;
 		}
 
 		if (LeaderIndex != INDEX_NONE)
 		{
 			++PartiesFormed;
+
+			if (LeadVisitor.ReservationId.IsValid())
+			{
+				ConfirmReservedPartySpawn(LeadVisitor.ReservationId, PartyID, MembersSpawnedThisParty);
+			}
 
 			NextPartyID = PartyID + 1;
 		}
@@ -1916,7 +1939,8 @@ void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage Previous
 	else if (CurrentStage == EFF_FestivalStage::Live)
 	{
 		LiveStartSimTime = SimTimeSeconds;
-		BeginArrivalSchedule(ArrivalRequestedVisitorCount,ArrivalSpawnCenter,ArrivalSpawnRadiusUU);
+		BeginArrivalSchedule(ArrivalRequestedVisitorCount,ArrivalSpawnCenter,ArrivalSpawnRadiusUU,
+			GatherReservedPartyRequests());
 		
 	}
 	else if (PreviousStage == EFF_FestivalStage::Closing)
@@ -2251,7 +2275,8 @@ int32 UFF_CrowdSimulationSubsystem::GetLeavingPartyCount() const
 	}
 	return Count;
 }
-FFF_VisitorDistribution UFF_CrowdSimulationSubsystem::BuildVisitorDistribution(int32 RequestedCount) const
+FFF_VisitorDistribution UFF_CrowdSimulationSubsystem::BuildVisitorDistribution(int32 RequestedCount,
+	const TArray<FFF_ReservedPartyRequest>& ReservedParties) const
 {
 	return FFF_VisitorDistributionBuilder::Build(
 		CachedGroupSizeTable.Get(),
@@ -2260,7 +2285,47 @@ FFF_VisitorDistribution UFF_CrowdSimulationSubsystem::BuildVisitorDistribution(i
 		CachedGroupScopeId,
 		CachedArchetypeScenarioId,
 		RequestedCount,
-		GlobalSimulationSeed);
+		GlobalSimulationSeed,
+		ReservedParties);
+}
+
+TArray<FFF_ReservedPartyRequest> UFF_CrowdSimulationSubsystem::GatherReservedPartyRequests() const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+
+	if (const UFF_FestivalProgressionSubsystem* Progression =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr)
+	{
+		return Progression->GetReservedPartyRequests();
+	}
+
+	return TArray<FFF_ReservedPartyRequest>();
+}
+
+void UFF_CrowdSimulationSubsystem::ConfirmReservedPartySpawn(const FGuid& ReservationId, int32 PartyID,
+	int32 MemberCount)
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+
+	UFF_ProgramReservationSubsystem* Reservations =
+		GameInstance ? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+
+	if (!Reservations)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 예약 파티 %d를 스폰했지만 ProgramReservationSubsystem이 없다 — 프로그램 매출이 잡히지 않는다"),
+			PartyID);
+		return;
+	}
+
+	if (!Reservations->ConfirmReservedParty(ReservationId, PartyID, MemberCount))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 예약 %s 확정이 거절됐다 — 파티 %d(%d명). 정원 초과이거나 없는 예약이다"),
+			*ReservationId.ToString(), PartyID, MemberCount);
+	}
 }
 FFF_NeedState UFF_CrowdSimulationSubsystem::MakeInitialNeeds(int32 StableAgentId) const
 {
