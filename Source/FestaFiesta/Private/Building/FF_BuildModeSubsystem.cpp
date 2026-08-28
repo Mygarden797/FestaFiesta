@@ -12,6 +12,7 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Economy/FF_ProgramSchedulingSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
@@ -1474,6 +1475,27 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 		ShowStatus(TEXT("운영 중이거나 이용객이 남아 있는 시설은 철거할 수 없습니다."), true);
 		ShowFacilityInfoFeedback(
 			FText::FromString(TEXT("운영 중이거나 이용객이 남아 있어 철거할 수 없습니다.")), true);
+		return false;
+	}
+
+	// 오늘 프로그램의 예약은 시설 GUID를 목적지로 보유한다. 이 시설을 없애면 편성은 남고
+	// 손님이 갈 Actor만 사라지므로 Remove 권위 명령 직전에 다시 확인한다.
+	const UFF_ProgramSchedulingSubsystem* ProgramScheduling = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_ProgramSchedulingSubsystem>()
+		: nullptr;
+	if (ProgramScheduling == nullptr)
+	{
+		ShowStatus(TEXT("프로그램 편성 상태를 확인할 수 없어 시설을 철거할 수 없습니다."), true);
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("프로그램 편성 상태를 확인할 수 없어 철거할 수 없습니다.")), true);
+		return false;
+	}
+	if (!FFBuildModeModel::CanRemoveFacilityWithTodaysProgram(
+		ProgramScheduling->HasScheduledProgramForFacility(FacilityInstanceId)))
+	{
+		ShowStatus(TEXT("오늘 프로그램이 편성된 시설은 철거할 수 없습니다."), true);
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("오늘 프로그램이 편성되어 있어 철거할 수 없습니다.")), true);
 		return false;
 	}
 

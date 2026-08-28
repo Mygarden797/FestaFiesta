@@ -103,6 +103,36 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bCanRemove = false;
 
+	/** True when the inspector should expose today's paid-program state for this facility. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	bool bShowProgramSection = false;
+
+	/** At least one of today's reservations targets this installed facility. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	bool bHasScheduledProgram = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	FText ProgramStatusText;
+
+	/** Flattened one-line-per-program summary: display name, relative time, and purchase cost. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	FText ScheduledProgramSummaryText;
+
+	/** Build-context action visibility. Live keeps an existing assignment read-only. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	bool bShowProgramScheduleAction = false;
+
+	/** Opens the picker when compatible cards can be previewed; each confirm action is gated again. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	bool bCanScheduleProgram = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	FText ProgramScheduleActionText;
+
+	/** Empty while enabled; otherwise a player-facing explanation for the disabled CTA. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
+	FText ProgramScheduleDisabledReasonText;
+
 	/** True when a data-authored minigame is mapped to this installed facility type. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bHasMinigame = false;
@@ -126,6 +156,13 @@ namespace FFFacilityInfoModel
 	FESTAFIESTA_API FText FormatFootprint(const FIntPoint& SizeCentimeters);
 	FESTAFIESTA_API FText FormatDistanceMeters(int32 Centimeters);
 	FESTAFIESTA_API FText FormatGold(bool bAvailable, int32 Amount);
+	FESTAFIESTA_API FText FormatProgramTimeRange(float StartMinutes, float EndMinutes);
+	FESTAFIESTA_API FText FormatScheduledProgramSummary(
+		const FText& DisplayName,
+		float StartMinutes,
+		float EndMinutes,
+		bool bCostAvailable,
+		int32 CostGold);
 	FESTAFIESTA_API FText FormatExpectedWait(bool bAvailable, float Seconds);
 	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float PeoplePerMinute);
 	FESTAFIESTA_API FText GetOperationStateText(
