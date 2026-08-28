@@ -129,6 +129,10 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		CanRemoveInstalledFacility(EFF_BuildModeState::Moving));
 	TestFalse(TEXT("Closed에서는 시설을 철거하지 않는다"),
 		CanRemoveInstalledFacility(EFF_BuildModeState::Closed));
+	TestTrue(TEXT("오늘 편성이 없는 시설은 철거 정책을 통과한다"),
+		CanRemoveFacilityWithTodaysProgram(false));
+	TestFalse(TEXT("오늘 프로그램이 편성된 시설은 철거 정책에서 막힌다"),
+		CanRemoveFacilityWithTodaysProgram(true));
 	TestFalse(TEXT("첫 클릭은 작업 대상을 선택한다"),
 		ShouldKeepActionSelection(EFF_BuildModeState::BuildMode, false, false));
 	TestFalse(TEXT("다른 시설 클릭은 작업 대상을 교체한다"),

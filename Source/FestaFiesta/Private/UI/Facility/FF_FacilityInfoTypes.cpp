@@ -72,6 +72,37 @@ namespace FFFacilityInfoModel
 			: LOCTEXT("UnavailableCost", "가격 정보 없음");
 	}
 
+	FText FormatProgramTimeRange(const float StartMinutes, const float EndMinutes)
+	{
+		if (!FMath::IsFinite(StartMinutes) || !FMath::IsFinite(EndMinutes) ||
+			StartMinutes < 0.0f || EndMinutes <= StartMinutes)
+		{
+			return LOCTEXT("UnavailableProgramTime", "시간 정보 없음");
+		}
+
+		FNumberFormattingOptions Options;
+		Options.MinimumFractionalDigits = 0;
+		Options.MaximumFractionalDigits = 1;
+		return FText::Format(
+			LOCTEXT("ProgramTimeRangeFormat", "개장 +{0}분 ~ +{1}분"),
+			FText::AsNumber(StartMinutes, &Options),
+			FText::AsNumber(EndMinutes, &Options));
+	}
+
+	FText FormatScheduledProgramSummary(
+		const FText& DisplayName,
+		const float StartMinutes,
+		const float EndMinutes,
+		const bool bCostAvailable,
+		const int32 CostGold)
+	{
+		return FText::Format(
+			LOCTEXT("ScheduledProgramSummaryFormat", "{0} · {1} · 비용 {2}"),
+			DisplayName.IsEmpty() ? LOCTEXT("UnknownProgramName", "이름 없는 프로그램") : DisplayName,
+			FormatProgramTimeRange(StartMinutes, EndMinutes),
+			FormatGold(bCostAvailable, CostGold));
+	}
+
 	FText FormatExpectedWait(const bool bAvailable, const float Seconds)
 	{
 		if (!bAvailable || !FMath::IsFinite(Seconds) || Seconds < 0.0f || Seconds >= 86400.0f)

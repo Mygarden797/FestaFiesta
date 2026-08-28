@@ -16,6 +16,7 @@
 #include "Components/Image.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/Spacer.h"
 #include "Components/VerticalBox.h"
@@ -28,6 +29,8 @@
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Facility/FF_FacilityPaidProgramCard.h"
+#include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UObject/SavePackage.h"
 #include "WidgetBlueprint.h"
 #include "WidgetBlueprintFactory.h"
@@ -37,6 +40,10 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityInfoWbpBuilder, Log, All);
 namespace FFFacilityInfoWbpBuilder
 {
 	const FString PanelPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
+	const FString PaidProgramPickerPackage(
+		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"));
+	const FString PaidProgramCardPackage(
+		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"));
 
 	const FLinearColor ColorPanel(0.018f, 0.047f, 0.070f, 0.985f);
 	const FLinearColor ColorSection(0.027f, 0.080f, 0.102f, 0.96f);
@@ -158,6 +165,210 @@ namespace FFFacilityInfoWbpBuilder
 		StyleText(*Text, 14, FLinearColor::White, ETextJustify::Center);
 		Button->AddChild(Text);
 		return Button;
+	}
+
+	const TArray<FName>& GetProgramContractVariableNames()
+	{
+		static const TArray<FName> Names = {
+			TEXT("Panel_ProgramSection"),
+			TEXT("Text_ProgramStatus"),
+			TEXT("Text_ScheduledProgramSummary"),
+			TEXT("Text_ProgramScheduleReason"),
+			TEXT("Button_ScheduleProgram"),
+			TEXT("Text_ScheduleProgram")
+		};
+		return Names;
+	}
+
+	bool HasProgramWidgetContract(const UWidgetBlueprint& Blueprint)
+	{
+		const UWidgetTree* Tree = Blueprint.WidgetTree;
+		if (!Tree)
+		{
+			return false;
+		}
+		for (const FName Name : GetProgramContractVariableNames())
+		{
+			const UWidget* Widget = Tree->FindWidget(Name);
+			if (!Widget || !Widget->bIsVariable ||
+				!Blueprint.WidgetVariableNameToGuidMap.Contains(Name))
+			{
+				return false;
+			}
+		}
+
+		return Tree->FindWidget(TEXT("Panel_ProgramSection")) &&
+			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_ProgramStatus"))) &&
+			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_ScheduledProgramSummary"))) &&
+			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_ProgramScheduleReason"))) &&
+			Cast<UButton>(Tree->FindWidget(TEXT("Button_ScheduleProgram"))) &&
+			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_ScheduleProgram")));
+	}
+
+	void EnsureVariableContract(
+		UWidgetBlueprint& Blueprint,
+		UWidget& Widget,
+		const FName Name,
+		bool& bOutModified)
+	{
+		if (!Widget.bIsVariable)
+		{
+			Widget.bIsVariable = true;
+			bOutModified = true;
+		}
+		if (!Blueprint.WidgetVariableNameToGuidMap.Contains(Name))
+		{
+			Blueprint.OnVariableAdded(Name);
+			bOutModified = true;
+		}
+	}
+
+	/**
+	 * Idempotent, non-destructive migration for the paid-program block.
+	 *
+	 * Existing designer nodes are never rebuilt or restyled. Missing nodes are appended only when
+	 * the known `Panel_Content`/VerticalBox seam is available; an incompatible partial designer
+	 * layout fails validation instead of being overwritten.
+	 */
+	bool EnsureProgramWidgetContract(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		bool& bOutModified)
+	{
+		bOutModified = false;
+		if (HasProgramWidgetContract(Blueprint))
+		{
+			return true;
+		}
+
+		UWidget* ExistingProgramSection = Tree.FindWidget(TEXT("Panel_ProgramSection"));
+		UVerticalBox* ProgramSection = Cast<UVerticalBox>(ExistingProgramSection);
+		if (ExistingProgramSection && !ProgramSection)
+		{
+			return false;
+		}
+
+		if (!ProgramSection)
+		{
+			UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+			if (!Content)
+			{
+				return false;
+			}
+
+			ProgramSection = MakeWidget<UVerticalBox>(
+				Blueprint, Tree, TEXT("Panel_ProgramSection"), true);
+			UCommonTextBlock* ProgramTitle = MakeWidget<UCommonTextBlock>(
+				Blueprint, Tree, TEXT("Program_Title"));
+			if (!ProgramSection || !ProgramTitle)
+			{
+				return false;
+			}
+			ProgramSection->SetVisibility(ESlateVisibility::Collapsed);
+			ProgramTitle->SetText(FText::FromString(TEXT("유료 프로그램")));
+			StyleText(*ProgramTitle, 16, ColorAccent);
+			AddVertical(*ProgramSection, *ProgramTitle, FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+			AddVertical(*Content, *ProgramSection, FMargin(0.0f, 14.0f, 0.0f, 0.0f));
+			bOutModified = true;
+		}
+		else
+		{
+			EnsureVariableContract(
+				Blueprint, *ProgramSection, TEXT("Panel_ProgramSection"), bOutModified);
+		}
+
+		auto EnsureText = [&](
+			const FName Name,
+			const FText& DefaultText,
+			const int32 FontSize,
+			const FLinearColor& Color,
+			const FMargin Padding) -> UCommonTextBlock*
+		{
+			UWidget* Existing = Tree.FindWidget(Name);
+			UCommonTextBlock* Text = Cast<UCommonTextBlock>(Existing);
+			if (Existing && !Text)
+			{
+				return nullptr;
+			}
+			if (!Text)
+			{
+				Text = MakeWidget<UCommonTextBlock>(Blueprint, Tree, Name, true);
+				if (!Text)
+				{
+					return nullptr;
+				}
+				Text->SetText(DefaultText);
+				Text->SetAutoWrapText(true);
+				StyleText(*Text, FontSize, Color);
+				AddVertical(*ProgramSection, *Text, Padding);
+				bOutModified = true;
+			}
+			else
+			{
+				EnsureVariableContract(Blueprint, *Text, Name, bOutModified);
+			}
+			return Text;
+		};
+
+		if (!EnsureText(
+				TEXT("Text_ProgramStatus"),
+				FText::FromString(TEXT("오늘 편성 없음")),
+				14,
+				ColorPrimary,
+				FMargin(0.0f, 0.0f, 0.0f, 4.0f)) ||
+			!EnsureText(
+				TEXT("Text_ScheduledProgramSummary"),
+				FText::GetEmpty(),
+				13,
+				ColorPrimary,
+				FMargin(0.0f, 0.0f, 0.0f, 4.0f)) ||
+			!EnsureText(
+				TEXT("Text_ProgramScheduleReason"),
+				FText::GetEmpty(),
+				12,
+				ColorWarning,
+				FMargin(0.0f, 0.0f, 0.0f, 5.0f)))
+		{
+			return false;
+		}
+
+		UWidget* ExistingButtonWidget = Tree.FindWidget(TEXT("Button_ScheduleProgram"));
+		UButton* ScheduleButton = Cast<UButton>(ExistingButtonWidget);
+		UWidget* ExistingButtonTextWidget = Tree.FindWidget(TEXT("Text_ScheduleProgram"));
+		UCommonTextBlock* ScheduleButtonText = Cast<UCommonTextBlock>(ExistingButtonTextWidget);
+		if ((ExistingButtonWidget && !ScheduleButton) ||
+			(ExistingButtonTextWidget && !ScheduleButtonText) ||
+			(static_cast<bool>(ScheduleButton) != static_cast<bool>(ScheduleButtonText)))
+		{
+			return false;
+		}
+		if (!ScheduleButton)
+		{
+			ScheduleButton = MakeTextButton(
+				Blueprint,
+				Tree,
+				TEXT("Button_ScheduleProgram"),
+				TEXT("Text_ScheduleProgram"),
+				FText::FromString(TEXT("유료 프로그램 편성")),
+				FLinearColor(0.02f, 0.55f, 0.72f, 1.0f),
+				true,
+				true);
+			if (!ScheduleButton)
+			{
+				return false;
+			}
+			AddVertical(*ProgramSection, *ScheduleButton, FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+			bOutModified = true;
+		}
+		else
+		{
+			EnsureVariableContract(
+				Blueprint, *ScheduleButton, TEXT("Button_ScheduleProgram"), bOutModified);
+			EnsureVariableContract(
+				Blueprint, *ScheduleButtonText, TEXT("Text_ScheduleProgram"), bOutModified);
+		}
+
+		return HasProgramWidgetContract(Blueprint);
 	}
 
 	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
@@ -369,6 +580,13 @@ namespace FFFacilityInfoWbpBuilder
 		SectionBackground->AddChild(SectionSwitcher);
 		AddVertical(*Content, *SectionBackground, FMargin(0.0f, 14.0f, 0.0f, 0.0f));
 
+		bool bProgramContractAdded = false;
+		if (!EnsureProgramWidgetContract(Blueprint, Tree, bProgramContractAdded))
+		{
+			return false;
+		}
+		(void)bProgramContractAdded;
+
 		UCommonTextBlock* Feedback = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("Text_Feedback"), true);
 		if (!Feedback)
@@ -479,7 +697,7 @@ namespace FFFacilityInfoWbpBuilder
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Feedback")));
 	}
 
-	bool SaveNewBlueprint(UWidgetBlueprint& Blueprint)
+	bool SaveBlueprint(UWidgetBlueprint& Blueprint)
 	{
 		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
 		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
@@ -498,9 +716,251 @@ namespace FFFacilityInfoWbpBuilder
 		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
 	}
 
+	bool HasNamedVariable(
+		const UWidgetBlueprint& Blueprint,
+		const FName Name,
+		const UClass& ExpectedClass)
+	{
+		const UWidget* Widget = Blueprint.WidgetTree
+			? Blueprint.WidgetTree->FindWidget(Name)
+			: nullptr;
+		return Widget && Widget->IsA(&ExpectedClass) && Widget->bIsVariable &&
+			Blueprint.WidgetVariableNameToGuidMap.Contains(Name);
+	}
+
+	bool HasPaidProgramCardContract(const UWidgetBlueprint& Blueprint)
+	{
+		return HasNamedVariable(Blueprint, TEXT("Button_Select"), *UButton::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_ProgramName"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_ProgramMeta"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_ProgramAvailability"), *UCommonTextBlock::StaticClass());
+	}
+
+	bool BuildPaidProgramCardLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		UButton* Select = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Select"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, TEXT("Panel_CardContent"));
+		UCommonTextBlock* Name = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ProgramName"), true);
+		UCommonTextBlock* Meta = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ProgramMeta"), true);
+		UCommonTextBlock* Availability = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_ProgramAvailability"), true);
+		if (!Select || !Content || !Name || !Meta || !Availability)
+		{
+			return false;
+		}
+		Tree.RootWidget = Select;
+		Select->SetBackgroundColor(FLinearColor(0.055f, 0.12f, 0.15f, 1.0f));
+		Select->AddChild(Content);
+		Name->SetText(FText::FromString(TEXT("프로그램 이름")));
+		StyleText(*Name, 17, ColorPrimary);
+		Meta->SetText(FText::FromString(TEXT("개장 +0분 ~ +0분 · 0 Gold")));
+		StyleText(*Meta, 12, ColorMuted);
+		Availability->SetText(FText::FromString(TEXT("편성 가능")));
+		StyleText(*Availability, 12, ColorAccent);
+		AddVertical(*Content, *Name, FMargin(14.0f, 10.0f, 14.0f, 3.0f));
+		AddVertical(*Content, *Meta, FMargin(14.0f, 0.0f, 14.0f, 3.0f));
+		AddVertical(*Content, *Availability, FMargin(14.0f, 0.0f, 14.0f, 10.0f));
+		return HasPaidProgramCardContract(Blueprint);
+	}
+
+	bool HasPaidProgramPickerContract(const UWidgetBlueprint& Blueprint)
+	{
+		return HasNamedVariable(Blueprint, TEXT("Border_Picker"), *UBorder::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Button_Close"), *UButton::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_FacilityName"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_Empty"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("ScrollBox_Programs"), *UScrollBox::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_PreviewName"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_PreviewDescription"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_PreviewDetails"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_PreviewAvailability"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_NoRefundNotice"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_Feedback"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Button_Confirm"), *UButton::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_Confirm"), *UCommonTextBlock::StaticClass());
+	}
+
+	bool BuildPaidProgramPickerLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Root_Canvas"));
+		UBorder* PickerBorder = MakeWidget<UBorder>(
+			Blueprint, Tree, TEXT("Border_Picker"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, TEXT("Panel_PickerContent"));
+		if (!Root || !PickerBorder || !Content)
+		{
+			return false;
+		}
+		Tree.RootWidget = Root;
+		Root->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		PickerBorder->SetBrushColor(ColorPanel);
+		PickerBorder->SetPadding(FMargin(20.0f));
+		PickerBorder->AddChild(Content);
+		UCanvasPanelSlot* PickerSlot = Root->AddChildToCanvas(PickerBorder);
+		if (!PickerSlot)
+		{
+			return false;
+		}
+		PickerSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+		PickerSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		PickerSlot->SetSize(FVector2D(760.0f, 720.0f));
+
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_Header"));
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_Title"));
+		UButton* Close = MakeTextButton(
+			Blueprint, Tree, TEXT("Button_Close"), TEXT("Text_Close"),
+			FText::FromString(TEXT("닫기")), FLinearColor(0.18f, 0.24f, 0.27f, 1.0f), true);
+		if (!Header || !Title || !Close)
+		{
+			return false;
+		}
+		Title->SetText(FText::FromString(TEXT("유료 프로그램 구매·편성")));
+		StyleText(*Title, 24, ColorAccent);
+		AddHorizontal(*Header, *Title, FMargin(0.0f), ESlateSizeRule::Fill);
+		AddHorizontal(*Header, *Close);
+		AddVertical(*Content, *Header, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+
+		auto AddText = [&](const FName Name, const FText& DefaultText, const int32 Size,
+			const FLinearColor& Color, const FMargin Padding) -> UCommonTextBlock*
+		{
+			UCommonTextBlock* Text = MakeWidget<UCommonTextBlock>(Blueprint, Tree, Name, true);
+			if (Text)
+			{
+				Text->SetText(DefaultText);
+				Text->SetAutoWrapText(true);
+				StyleText(*Text, Size, Color);
+				AddVertical(*Content, *Text, Padding);
+			}
+			return Text;
+		};
+
+		if (!AddText(TEXT("Text_FacilityName"), FText::FromString(TEXT("선택 시설 전용 프로그램")),
+				16, ColorPrimary, FMargin(0.0f, 0.0f, 0.0f, 5.0f)) ||
+			!AddText(TEXT("Text_Instruction"),
+				FText::FromString(TEXT("카드를 선택해 내용을 확인한 뒤 아래 버튼으로 구매하세요.")),
+				13, ColorMuted, FMargin(0.0f, 0.0f, 0.0f, 8.0f)))
+		{
+			return false;
+		}
+
+		USizeBox* ListSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Size_ProgramList"));
+		UOverlay* ListOverlay = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_ProgramList"));
+		UScrollBox* ProgramList = MakeWidget<UScrollBox>(
+			Blueprint, Tree, TEXT("ScrollBox_Programs"), true);
+		UCommonTextBlock* Empty = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_Empty"), true);
+		if (!ListSize || !ListOverlay || !ProgramList || !Empty)
+		{
+			return false;
+		}
+		ListSize->SetHeightOverride(250.0f);
+		Empty->SetText(FText::FromString(TEXT("호환 프로그램이 없습니다.")));
+		StyleText(*Empty, 14, ColorMuted, ETextJustify::Center);
+		ListOverlay->AddChildToOverlay(ProgramList);
+		ListOverlay->AddChildToOverlay(Empty);
+		ListSize->AddChild(ListOverlay);
+		AddVertical(*Content, *ListSize, FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+
+		if (!AddText(TEXT("Text_PreviewName"), FText::FromString(TEXT("프로그램을 선택하세요")),
+				19, ColorPrimary, FMargin(0.0f, 0.0f, 0.0f, 4.0f)) ||
+			!AddText(TEXT("Text_PreviewDescription"), FText::GetEmpty(), 13, ColorMuted,
+				FMargin(0.0f, 0.0f, 0.0f, 4.0f)) ||
+			!AddText(TEXT("Text_PreviewDetails"), FText::GetEmpty(), 13, ColorPrimary,
+				FMargin(0.0f, 0.0f, 0.0f, 4.0f)) ||
+			!AddText(TEXT("Text_PreviewAvailability"), FText::GetEmpty(), 13, ColorAccent,
+				FMargin(0.0f, 0.0f, 0.0f, 8.0f)) ||
+			!AddText(TEXT("Text_NoRefundNotice"),
+				FText::FromString(TEXT("구매·편성 후 당일 취소 및 환불은 불가합니다.")),
+				12, ColorWarning, FMargin(0.0f, 0.0f, 0.0f, 5.0f)) ||
+			!AddText(TEXT("Text_Feedback"), FText::GetEmpty(), 13, ColorWarning,
+				FMargin(0.0f, 0.0f, 0.0f, 8.0f)))
+		{
+			return false;
+		}
+
+		UButton* Confirm = MakeTextButton(
+			Blueprint, Tree, TEXT("Button_Confirm"), TEXT("Text_Confirm"),
+			FText::FromString(TEXT("구매·편성")),
+			FLinearColor(0.02f, 0.55f, 0.72f, 1.0f), true, true);
+		if (!Confirm)
+		{
+			return false;
+		}
+		Confirm->SetIsEnabled(false);
+		AddVertical(*Content, *Confirm, FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+		return HasPaidProgramPickerContract(Blueprint);
+	}
+
+	void EnsurePaidProgramBlueprint(
+		const FString& PackageName,
+		UClass& ParentClass,
+		const TFunctionRef<bool(UWidgetBlueprint&, UWidgetTree&)> Build,
+		const TFunctionRef<bool(const UWidgetBlueprint&)> Validate)
+	{
+		const FString AssetName = FPackageName::GetLongPackageAssetName(PackageName);
+		if (FPackageName::DoesPackageExist(PackageName))
+		{
+			UWidgetBlueprint* Existing = LoadObject<UWidgetBlueprint>(
+				nullptr, *FString::Printf(TEXT("%s.%s"), *PackageName, *AssetName));
+			if (Existing && Existing->GeneratedClass &&
+				Existing->GeneratedClass->IsChildOf(&ParentClass) && Validate(*Existing))
+			{
+				UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+					TEXT("FF_FACILITY_PAID_PROGRAM_UMG_REUSE: %s"), *PackageName);
+			}
+			else
+			{
+				UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+					TEXT("FF_FACILITY_PAID_PROGRAM_UMG_FAIL: existing asset contract mismatch: %s"),
+					*PackageName);
+			}
+			return;
+		}
+
+		UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
+		Factory->ParentClass = &ParentClass;
+		FAssetToolsModule& AssetTools =
+			FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+		UWidgetBlueprint* Blueprint = Cast<UWidgetBlueprint>(AssetTools.Get().CreateAsset(
+			AssetName,
+			FPackageName::GetLongPackagePath(PackageName),
+			UWidgetBlueprint::StaticClass(),
+			Factory));
+		if (!Blueprint || !Blueprint->WidgetTree ||
+			!Build(*Blueprint, *Blueprint->WidgetTree) || !Validate(*Blueprint) ||
+			!SaveBlueprint(*Blueprint))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_PAID_PROGRAM_UMG_FAIL: could not create %s"), *PackageName);
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+			TEXT("FF_FACILITY_PAID_PROGRAM_UMG_CREATED: %s"), *PackageName);
+	}
+
+	void BuildPaidProgramWidgetBlueprints()
+	{
+		EnsurePaidProgramBlueprint(
+			PaidProgramCardPackage,
+			*UFF_FacilityPaidProgramCard::StaticClass(),
+			BuildPaidProgramCardLayout,
+			HasPaidProgramCardContract);
+		EnsurePaidProgramBlueprint(
+			PaidProgramPickerPackage,
+			*UFF_FacilityPaidProgramPicker::StaticClass(),
+			BuildPaidProgramPickerLayout,
+			HasPaidProgramPickerContract);
+	}
+
 	void BuildFacilityInfoUmg()
 	{
-		// Never rewrite an existing designer-owned asset. Validate its public contract instead.
+		BuildPaidProgramWidgetBlueprints();
+		// Never rebuild an existing designer-owned asset. A versioned contract migration may append
+		// missing named nodes at the known Panel_Content seam, but it leaves every existing node,
+		// style, graph, and layout property untouched.
 		if (FPackageName::DoesPackageExist(PanelPackage))
 		{
 			UWidgetBlueprint* Existing = LoadExistingBlueprint();
@@ -508,8 +968,38 @@ namespace FFFacilityInfoWbpBuilder
 				Existing->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()) &&
 				HasRequiredLayout(*Existing))
 			{
-				UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
-					TEXT("FF_FACILITY_INFO_UMG_REUSE: %s (designer changes preserved)"), *PanelPackage);
+				bool bMigratedProgramContract = false;
+				if (!EnsureProgramWidgetContract(
+						*Existing,
+						*Existing->WidgetTree,
+						bMigratedProgramContract) ||
+					!HasProgramWidgetContract(*Existing))
+				{
+					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+						TEXT("FF_FACILITY_INFO_UMG_FAIL: existing asset cannot accept the non-destructive program contract migration: %s"),
+						*PanelPackage);
+					return;
+				}
+				if (bMigratedProgramContract && !SaveBlueprint(*Existing))
+				{
+					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+						TEXT("FF_FACILITY_INFO_UMG_FAIL: could not save migrated asset: %s"),
+						*PanelPackage);
+					return;
+				}
+
+				if (bMigratedProgramContract)
+				{
+					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+						TEXT("FF_FACILITY_INFO_UMG_MIGRATED: %s (existing designer nodes preserved)"),
+						*PanelPackage);
+				}
+				else
+				{
+					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+						TEXT("FF_FACILITY_INFO_UMG_REUSE: %s (designer changes preserved)"),
+						*PanelPackage);
+				}
 			}
 			else
 			{
@@ -531,7 +1021,8 @@ namespace FFFacilityInfoWbpBuilder
 		if (!Blueprint || !Blueprint->WidgetTree ||
 			!BuildLayout(*Blueprint, *Blueprint->WidgetTree) ||
 			!HasRequiredLayout(*Blueprint) ||
-			!SaveNewBlueprint(*Blueprint))
+			!HasProgramWidgetContract(*Blueprint) ||
+			!SaveBlueprint(*Blueprint))
 		{
 			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 				TEXT("FF_FACILITY_INFO_UMG_FAIL: could not create %s"), *PanelPackage);

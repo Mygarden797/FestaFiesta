@@ -5,7 +5,9 @@
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Tickable.h"
+#include "Time/FF_FestivalStage.h"
 #include "UI/Facility/FF_FacilityInfoTypes.h"
+#include "UI/Facility/FF_FacilityPaidProgramTypes.h"
 #include "FF_FacilityInfoSubsystem.generated.h"
 
 class AFFZSFacilityActor;
@@ -13,9 +15,14 @@ class AFF_FestivalPlayerController;
 class AActor;
 class APlayerController;
 class UFF_FacilityInfoPanel;
+class UFF_FacilityPaidProgramPicker;
+class UFF_FestivalProgressionSubsystem;
+class UFF_FestivalStageSubsystem;
 struct FFFZSWorldChangeEvent;
 #if WITH_DEV_AUTOMATION_TESTS
 class FFF_FacilityInfoIndicatorLifecycleTest;
+class FFF_FacilityInfoProgramActionLifecycleTest;
+class FFF_FacilityInfoProgramReadModelTest;
 class FFF_FacilityInfoSelectionGeometryTest;
 #endif
 
@@ -90,22 +97,34 @@ public:
 	void SetFeedback(const FText& Feedback, bool bIsError);
 
 	static FSoftClassPath GetDefaultPanelClassPath();
+	static FSoftClassPath GetDefaultPaidProgramPickerClassPath();
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Facility Info")
 	FFF_OnFacilityInfoSelectionChanged OnSelectionChanged;
 
 	FFF_OnFacilityInfoActionRequested OnMoveRequested;
 	FFF_OnFacilityInfoActionRequested OnRemoveRequested;
+	FFF_OnFacilityInfoActionRequested OnProgramScheduleRequested;
 	FFF_OnFacilityInfoActionRequested OnMinigameRequested;
 	FFF_OnFacilityInfoActionRequested OnCloseRequested;
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_FacilityInfoIndicatorLifecycleTest;
+	friend class FFF_FacilityInfoProgramActionLifecycleTest;
+	friend class FFF_FacilityInfoProgramReadModelTest;
 	friend class FFF_FacilityInfoSelectionGeometryTest;
 #endif
 
 	bool EnsurePanel(APlayerController& OwningController);
+	bool EnsurePaidProgramPicker(APlayerController& OwningController);
+	bool BuildPaidProgramPickerViewData(
+		AFFZSFacilityActor& Facility,
+		FFF_FacilityPaidProgramPickerViewData& OutViewData,
+		const FText& Feedback = FText::GetEmpty(),
+		bool bIsFeedbackError = false) const;
+	void ClosePaidProgramPicker();
+	void EnsureProgramReadModelBindings();
 	bool IsContextCurrentlyAllowed(EFF_FacilityInfoContext Context) const;
 	bool BuildViewData(AFFZSFacilityActor& Facility, FFF_FacilityInfoViewData& OutViewData) const;
 	void RefreshPanel();
@@ -129,8 +148,17 @@ private:
 
 	void HandlePanelMoveRequested();
 	void HandlePanelRemoveRequested();
+	void HandlePanelProgramScheduleRequested();
+	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);
+	void HandlePaidProgramPickerCloseRequested();
 	void HandlePanelMinigameRequested();
 	void HandlePanelCloseRequested();
+
+	UFUNCTION()
+	void HandleScheduledProgramsChanged();
+
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 
 	UFUNCTION()
 	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
@@ -144,6 +172,15 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FacilityInfoPanel> Panel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FacilityPaidProgramPicker> PaidProgramPicker;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FestivalProgressionSubsystem> BoundProgression;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FestivalStageSubsystem> BoundStage;
 
 	TWeakObjectPtr<APlayerController> OwningController;
 	TWeakObjectPtr<AFF_FestivalPlayerController> BoundPickController;
@@ -160,4 +197,5 @@ private:
 	static constexpr float RefreshIntervalSeconds = 0.25f;
 	static constexpr float SelectionIndicatorRefreshIntervalSeconds = 0.05f;
 	static constexpr int32 PanelZOrder = 95;
+	static constexpr int32 PaidProgramPickerZOrder = 96;
 };

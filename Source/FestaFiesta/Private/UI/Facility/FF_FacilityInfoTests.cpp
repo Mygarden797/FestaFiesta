@@ -14,9 +14,15 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
+#include "DataTables/FF_FacilityCostRow.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
+#include "Engine/DataTable.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "FF_FFZSCollision.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
@@ -24,11 +30,15 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Misc/AutomationTest.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "UI/Facility/FF_FacilityPaidProgramCard.h"
+#include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "WidgetBlueprint.h"
 
 namespace
@@ -39,6 +49,12 @@ namespace
 	const TCHAR* FacilityInfoClassPath =
 		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
 			"WBP_FF_FacilityInfoPanel_C");
+	const TCHAR* PaidProgramPickerClassPath =
+		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
+			"WBP_FF_FacilityPaidProgramPicker_C");
+	const TCHAR* PaidProgramCardClassPath =
+		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
+			"WBP_FF_FacilityPaidProgramCard_C");
 
 	class FScopedFacilityInfoPlayerlessWidgetInitialization
 	{
@@ -158,6 +174,161 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Queue 시스템이 없는 월드는 영구 로딩 대신 사용 불가로 표시한다"),
 		FFFacilityInfoModel::GetOperationStateText(false, false, true, true).ToString(),
 		FString(TEXT("운영 정보 사용 불가")));
+	TestEqual(TEXT("프로그램 시간은 하드코딩된 절대 시각 대신 개장 상대 시간으로 표시한다"),
+		FFFacilityInfoModel::FormatProgramTimeRange(30.0f, 60.0f).ToString(),
+		FString(TEXT("개장 +30분 ~ +60분")));
+	TestEqual(TEXT("프로그램 요약은 판단에 필요한 이름·시간·비용을 함께 가진다"),
+		FFFacilityInfoModel::FormatScheduledProgramSummary(
+			FText::FromString(TEXT("바다향기 공방")), 30.0f, 60.0f, true, 200).ToString(),
+		FString(TEXT("바다향기 공방 · 개장 +30분 ~ +60분 · 비용 200 Gold")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoProgramReadModelTest,
+	"FestaFiesta.UI.FacilityInfo.ProgramReadModel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FScopedFacilitySelectionGeometrySettings SettingsGuard;
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game))
+	{
+		TestWorld.ForwardErrorMessages(this);
+		return false;
+	}
+
+	UWorld* World = TestWorld.GetTestWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFFZSWorldSubsystem* ZoneSystem = World
+		? World->GetSubsystem<UFFZSWorldSubsystem>()
+		: nullptr;
+	UFF_FacilityInfoSubsystem* Coordinator = World
+		? World->GetSubsystem<UFF_FacilityInfoSubsystem>()
+		: nullptr;
+	UFF_FestivalProgressionSubsystem* Progression = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>()
+		: nullptr;
+	UFF_ProgramReservationSubsystem* Reservations = GameInstance
+		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>()
+		: nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (!TestNotNull(TEXT("프로그램 read model Game World"), World) ||
+		!TestNotNull(TEXT("프로그램 read model GameInstance"), GameInstance) ||
+		!TestNotNull(TEXT("프로그램 read model ZoneSystem"), ZoneSystem) ||
+		!TestNotNull(TEXT("프로그램 read model FacilityInfoSubsystem"), Coordinator) ||
+		!TestNotNull(TEXT("프로그램 read model Progression"), Progression) ||
+		!TestNotNull(TEXT("프로그램 read model Reservations"), Reservations) ||
+		!TestNotNull(TEXT("프로그램 read model Stage"), Stage))
+	{
+		return false;
+	}
+
+	const FName ZoneId(TEXT("GZ_DadaPocha"));
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>(
+		AFFZSGameplayZone::StaticClass(), FTransform::Identity, SpawnParameters);
+	if (!TestNotNull(TEXT("프로그램 read model Gameplay Zone"), Zone) ||
+		!TestTrue(TEXT("프로그램 read model Zone preset"), Zone->ApplyAcceptedZonePreset(ZoneId)) ||
+		!TestTrue(TEXT("프로그램 read model Zone 등록"), ZoneSystem->RegisterZone(Zone)))
+	{
+		return false;
+	}
+
+	FFFZSFacilitySpec FacilitySpec =
+		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	FacilitySpec.FacilityDefinitionId = TEXT("Booth_CraftExperience_FacilityInfoProgramTest");
+	FacilitySpec.DisplayName = FText::FromString(TEXT("프로그램 테스트 공방"));
+	FacilitySpec.Category = EFFZSFacilityCategory::Booth;
+	FacilitySpec.InstallCostKey = NAME_None;
+	FFFZSGridPlacement Placement;
+	Placement.OriginCell = FIntPoint(1000, 1000);
+	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
+		FacilitySpec,
+		ZoneId,
+		Placement,
+		ZoneSystem->GetWorldRevision());
+	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
+	AFFZSFacilityActor* Facility = InstallResult.bSucceeded
+		? ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId)
+		: nullptr;
+	if (!TestTrue(TEXT("프로그램 호환 시설 설치"), InstallResult.bSucceeded) ||
+		!TestNotNull(TEXT("프로그램 호환 시설 조회"), Facility))
+	{
+		return false;
+	}
+
+	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
+	UDataTable* CostTable = NewObject<UDataTable>(GameInstance);
+	if (!TestNotNull(TEXT("프로그램 read model FestivalDefinition"), Definition) ||
+		!TestNotNull(TEXT("프로그램 read model CostTable"), CostTable))
+	{
+		return false;
+	}
+	CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
+	FFF_FacilityCostRow CostRow;
+	CostRow.InstallCost = 100;
+	CostTable->AddRow(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"), CostRow);
+	Definition->FestivalId = TEXT("FacilityInfoProgramReadModelFestival");
+	Definition->FacilityCostTable = CostTable;
+	Definition->DailyVenueRentGold = 0;
+	Progression->SetProgramReservations(Reservations);
+	Progression->StartFestival(Definition);
+
+	Coordinator->SelectionContext = EFF_FacilityInfoContext::Build;
+	Stage->CurrentStage = EFF_FestivalStage::Setup;
+	FFF_FacilityInfoViewData ViewData;
+	if (!TestTrue(TEXT("Setup 시설 정보를 평탄화한다"),
+		Coordinator->BuildViewData(*Facility, ViewData)))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Setup Build 시설은 프로그램 섹션을 표시한다"), ViewData.bShowProgramSection);
+	TestTrue(TEXT("Setup Build 시설은 편성 CTA를 표시한다"), ViewData.bShowProgramScheduleAction);
+	TestTrue(TEXT("호환 프로그램과 자원이 있으면 CTA가 활성화된다"), ViewData.bCanScheduleProgram);
+	TestTrue(TEXT("활성 CTA에는 실패 이유가 없다"), ViewData.ProgramScheduleDisabledReasonText.IsEmpty());
+
+	Stage->CurrentStage = EFF_FestivalStage::PromotionPreview;
+	TestTrue(TEXT("PromotionPreview 시설 정보를 평탄화한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestTrue(TEXT("PromotionPreview에서도 내역 섹션은 읽을 수 있다"), ViewData.bShowProgramSection);
+	TestTrue(TEXT("PromotionPreview CTA는 위치를 유지한다"), ViewData.bShowProgramScheduleAction);
+	TestFalse(TEXT("PromotionPreview CTA는 비활성화된다"), ViewData.bCanScheduleProgram);
+	TestTrue(TEXT("PromotionPreview 비활성 이유를 명시한다"),
+		ViewData.ProgramScheduleDisabledReasonText.ToString().Contains(TEXT("단계")));
+
+	Stage->CurrentStage = EFF_FestivalStage::Setup;
+	TestEqual(TEXT("시설 GUID와 함께 공방 프로그램을 편성한다"),
+		Progression->TryScheduleProgram(
+			TEXT("Program_SandArtWorkshop"), InstallCommand.FacilityInstanceId),
+		EFF_ProgramPurchaseResult::Success);
+	TestTrue(TEXT("편성 뒤 시설 정보를 다시 평탄화한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestTrue(TEXT("예약 핸들로 현재 시설의 편성을 찾는다"), ViewData.bHasScheduledProgram);
+	TestTrue(TEXT("편성 요약에 프로그램 이름이 있다"),
+		ViewData.ScheduledProgramSummaryText.ToString().Contains(TEXT("바다향기 공방")));
+	TestTrue(TEXT("편성 요약에 상대 시간이 있다"),
+		ViewData.ScheduledProgramSummaryText.ToString().Contains(TEXT("개장 +30분 ~ +60분")));
+	TestTrue(TEXT("편성 요약에 구매 비용이 있다"),
+		ViewData.ScheduledProgramSummaryText.ToString().Contains(TEXT("200 Gold")));
+	TestTrue(TEXT("편성 완료 카드도 상세 내역을 다시 볼 수 있도록 CTA는 열린다"),
+		ViewData.bCanScheduleProgram);
+	TestTrue(TEXT("카드별 편성 완료 사유는 Picker에서 표시하므로 패널 사유는 비운다"),
+		ViewData.ProgramScheduleDisabledReasonText.IsEmpty());
+
+	Coordinator->SelectionContext = EFF_FacilityInfoContext::Live;
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	TestTrue(TEXT("Live 시설 정보를 평탄화한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestTrue(TEXT("Live에서도 오늘 편성 요약은 읽을 수 있다"), ViewData.bShowProgramSection);
+	TestFalse(TEXT("Live에서는 편성 CTA를 숨긴다"), ViewData.bShowProgramScheduleAction);
+	TestFalse(TEXT("숨긴 Live CTA는 활성 상태를 갖지 않는다"), ViewData.bCanScheduleProgram);
 	return true;
 }
 
@@ -600,6 +771,9 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("썸네일 계약"), Cast<UImage>(Tree->FindWidget(TEXT("Image_Thumbnail"))));
 	TestNotNull(TEXT("건축 섹션 계약"), Tree->FindWidget(TEXT("Panel_BuildSection")));
 	TestNotNull(TEXT("라이브 섹션 계약"), Tree->FindWidget(TEXT("Panel_LiveSection")));
+	TestNotNull(TEXT("유료 프로그램 섹션 계약"), Tree->FindWidget(TEXT("Panel_ProgramSection")));
+	TestNotNull(TEXT("유료 프로그램 편성 버튼 계약"),
+		Cast<UButton>(Tree->FindWidget(TEXT("Button_ScheduleProgram"))));
 
 	const TArray<FName> RequiredTextNames = {
 		TEXT("Text_ThumbnailPlaceholder"), TEXT("Text_Context"), TEXT("Text_FacilityName"),
@@ -608,7 +782,9 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"), TEXT("Text_QueueCapacity"),
 		TEXT("Text_ServiceDuration"), TEXT("Text_OperationState"), TEXT("Text_WaitingParties"),
 		TEXT("Text_Occupancy"), TEXT("Text_RemainingService"), TEXT("Text_ExpectedWait"),
-		TEXT("Text_Throughput"), TEXT("Text_Feedback")
+		TEXT("Text_Throughput"), TEXT("Text_Feedback"), TEXT("Text_ProgramStatus"),
+		TEXT("Text_ScheduledProgramSummary"), TEXT("Text_ProgramScheduleReason"),
+		TEXT("Text_ScheduleProgram")
 	};
 	for (const FName Name : RequiredTextNames)
 	{
@@ -618,7 +794,8 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TArray<FName> RequiredVariableNames = {
 		TEXT("Border_Panel"), TEXT("Button_Close"), TEXT("Button_Move"),
 		TEXT("Button_Remove"), TEXT("Image_Thumbnail"), TEXT("Panel_BuildSection"),
-		TEXT("Panel_LiveSection")
+		TEXT("Panel_LiveSection"), TEXT("Panel_ProgramSection"),
+		TEXT("Button_ScheduleProgram")
 	};
 	RequiredVariableNames.Append(RequiredTextNames);
 	for (const FName Name : RequiredVariableNames)
@@ -636,7 +813,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	}
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*GeneratedClass);
 	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(EditorWorld, GeneratedClass);
-	TestNotNull(TEXT("27개 BindWidget 계약으로 WBP 인스턴스를 만들 수 있다"), Panel);
+	TestNotNull(TEXT("시설 정보 BindWidget 계약으로 WBP 인스턴스를 만들 수 있다"), Panel);
 	if (Panel)
 	{
 		FFF_FacilityInfoViewData ViewData;
@@ -645,11 +822,44 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		ViewData.DisplayName = FText::FromString(TEXT("테스트 시설"));
 		ViewData.bCanMove = true;
 		ViewData.bCanRemove = true;
+		ViewData.bShowProgramSection = true;
+		ViewData.ProgramStatusText = FText::FromString(TEXT("오늘 편성 없음"));
+		ViewData.bShowProgramScheduleAction = true;
+		ViewData.bCanScheduleProgram = true;
+		ViewData.ProgramScheduleActionText = FText::FromString(TEXT("유료 프로그램 편성"));
 		Panel->ApplyViewData(ViewData);
 		const TSharedRef<SWidget> SlateWidget = Panel->TakeWidget();
 		(void)SlateWidget;
 		TestEqual(TEXT("적용된 ViewData의 GUID가 보존된다"),
 			Panel->GetCurrentViewData().FacilityInstanceId, ViewData.FacilityInstanceId);
+		UWidget* ProgramSection = Panel->GetWidgetFromName(TEXT("Panel_ProgramSection"));
+		UButton* ScheduleProgramButton = Cast<UButton>(
+			Panel->GetWidgetFromName(TEXT("Button_ScheduleProgram")));
+		TestNotNull(TEXT("인스턴스에 designer-editable 프로그램 섹션이 바인딩된다"), ProgramSection);
+		TestNotNull(TEXT("인스턴스에 프로그램 편성 버튼이 바인딩된다"), ScheduleProgramButton);
+		if (ProgramSection)
+		{
+			TestEqual(TEXT("프로그램 섹션 visibility는 read model을 따른다"),
+				ProgramSection->GetVisibility(), ESlateVisibility::Visible);
+		}
+		if (ScheduleProgramButton)
+		{
+			TestTrue(TEXT("편성 가능 read model은 버튼을 활성화한다"),
+				ScheduleProgramButton->GetIsEnabled());
+			int32 PanelRequestCount = 0;
+			const FDelegateHandle Handle = Panel->OnProgramScheduleRequested.AddLambda(
+				[&PanelRequestCount]() { ++PanelRequestCount; });
+			ScheduleProgramButton->OnClicked.Broadcast();
+			TestEqual(TEXT("활성화된 편성 버튼은 패널 요청을 한 번 보낸다"), PanelRequestCount, 1);
+
+			ViewData.bCanScheduleProgram = false;
+			ViewData.ProgramScheduleDisabledReasonText =
+				FText::FromString(TEXT("현재 단계에서는 편성할 수 없습니다."));
+			Panel->ApplyViewData(ViewData);
+			ScheduleProgramButton->OnClicked.Broadcast();
+			TestEqual(TEXT("비활성화된 편성 버튼은 우회 방송하지 않는다"), PanelRequestCount, 1);
+			Panel->OnProgramScheduleRequested.Remove(Handle);
+		}
 		Panel->SetPanelOpen(true);
 		TestEqual(TEXT("열린 full-screen wrapper는 카드 밖 클릭을 통과시킨다"),
 			Panel->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
@@ -657,6 +867,129 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("닫힌 패널은 완전히 접힌다"),
 			Panel->GetVisibility(), ESlateVisibility::Collapsed);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityPaidProgramWbpContractTest,
+	"FestaFiesta.UI.FacilityInfo.PaidProgramWbpContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWidgetBlueprintGeneratedClass* PickerClass =
+		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, PaidProgramPickerClassPath));
+	UWidgetBlueprintGeneratedClass* CardClass =
+		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, PaidProgramCardClassPath));
+	if (!TestNotNull(TEXT("시설 유료 프로그램 Picker WBP class"), PickerClass) ||
+		!TestNotNull(TEXT("시설 유료 프로그램 Card WBP class"), CardClass))
+	{
+		return false;
+	}
+	TestTrue(TEXT("Picker는 네이티브 순수 UI 계약을 상속한다"),
+		PickerClass->IsChildOf(UFF_FacilityPaidProgramPicker::StaticClass()));
+	TestTrue(TEXT("Card는 네이티브 순수 UI 계약을 상속한다"),
+		CardClass->IsChildOf(UFF_FacilityPaidProgramCard::StaticClass()));
+
+	const UWidgetTree* PickerTree = PickerClass->GetWidgetTreeArchetype();
+	const UWidgetTree* CardTree = CardClass->GetWidgetTreeArchetype();
+	if (!TestNotNull(TEXT("Picker WidgetTree"), PickerTree) ||
+		!TestNotNull(TEXT("Card WidgetTree"), CardTree))
+	{
+		return false;
+	}
+	TestNotNull(TEXT("Picker 클릭 영역"),
+		Cast<UBorder>(PickerTree->FindWidget(TEXT("Border_Picker"))));
+	TestNotNull(TEXT("프로그램 동적 목록"),
+		Cast<UScrollBox>(PickerTree->FindWidget(TEXT("ScrollBox_Programs"))));
+	TestNotNull(TEXT("별도 구매·편성 확인 버튼"),
+		Cast<UButton>(PickerTree->FindWidget(TEXT("Button_Confirm"))));
+	TestNotNull(TEXT("당일 취소·환불 불가 문구 계약"),
+		Cast<UCommonTextBlock>(PickerTree->FindWidget(TEXT("Text_NoRefundNotice"))));
+	TestNotNull(TEXT("카드 선택 버튼"),
+		Cast<UButton>(CardTree->FindWidget(TEXT("Button_Select"))));
+	TestNull(TEXT("순수 UI Picker에는 gameplay subsystem 객체가 저작되지 않는다"),
+		PickerTree->FindWidget(TEXT("ProgramSchedulingSubsystem")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoProgramActionLifecycleTest,
+	"FestaFiesta.UI.FacilityInfo.ProgramActionLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoProgramActionLifecycleTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UWidgetBlueprintGeneratedClass* GeneratedClass =
+		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, FacilityInfoClassPath));
+	if (!TestNotNull(TEXT("편성 액션 수명주기 Editor World"), EditorWorld) ||
+		!TestNotNull(TEXT("편성 액션 수명주기 WBP class"), GeneratedClass))
+	{
+		return false;
+	}
+
+	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*GeneratedClass);
+	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(EditorWorld, GeneratedClass);
+	UFF_FacilityInfoSubsystem* Coordinator =
+		NewObject<UFF_FacilityInfoSubsystem>(EditorWorld);
+	if (!TestNotNull(TEXT("편성 액션 패널"), Panel) ||
+		!TestNotNull(TEXT("편성 액션 coordinator"), Coordinator))
+	{
+		return false;
+	}
+	const TSharedRef<SWidget> SlateWidget = Panel->TakeWidget();
+	(void)SlateWidget;
+	UButton* ScheduleProgramButton = Cast<UButton>(
+		Panel->GetWidgetFromName(TEXT("Button_ScheduleProgram")));
+	if (!TestNotNull(TEXT("편성 액션 버튼"), ScheduleProgramButton))
+	{
+		return false;
+	}
+
+	const FGuid SelectedFacilityId = FGuid::NewGuid();
+	FFF_FacilityInfoViewData ViewData;
+	ViewData.FacilityInstanceId = SelectedFacilityId;
+	ViewData.Context = EFF_FacilityInfoContext::Build;
+	ViewData.bShowProgramSection = true;
+	ViewData.bShowProgramScheduleAction = true;
+	ViewData.bCanScheduleProgram = true;
+	Panel->ApplyViewData(ViewData);
+
+	Coordinator->Panel = Panel;
+	Coordinator->SelectedFacilityId = SelectedFacilityId;
+	Coordinator->SelectionContext = EFF_FacilityInfoContext::Build;
+	Panel->OnProgramScheduleRequested.AddUObject(
+		Coordinator, &UFF_FacilityInfoSubsystem::HandlePanelProgramScheduleRequested);
+
+	int32 BroadcastCount = 0;
+	FGuid BroadcastFacilityId;
+	const FDelegateHandle BroadcastHandle = Coordinator->OnProgramScheduleRequested.AddLambda(
+		[&BroadcastCount, &BroadcastFacilityId](const FGuid FacilityInstanceId)
+		{
+			++BroadcastCount;
+			BroadcastFacilityId = FacilityInstanceId;
+		});
+	ScheduleProgramButton->OnClicked.Broadcast();
+	TestEqual(TEXT("클릭은 subsystem 액션을 한 번 방송한다"), BroadcastCount, 1);
+	TestEqual(TEXT("subsystem 액션은 현재 선택 시설 GUID를 전달한다"),
+		BroadcastFacilityId, SelectedFacilityId);
+
+	Coordinator->SelectedFacilityId = FGuid::NewGuid();
+	ScheduleProgramButton->OnClicked.Broadcast();
+	TestEqual(TEXT("stale 패널 GUID는 새 선택으로 방송되지 않는다"), BroadcastCount, 1);
+
+	ViewData.FacilityInstanceId = Coordinator->SelectedFacilityId;
+	ViewData.bCanScheduleProgram = false;
+	Panel->ApplyViewData(ViewData);
+	ScheduleProgramButton->OnClicked.Broadcast();
+	TestEqual(TEXT("비활성 read model은 subsystem 방송까지 도달하지 않는다"), BroadcastCount, 1);
+
+	Coordinator->OnProgramScheduleRequested.Remove(BroadcastHandle);
+	Panel->OnProgramScheduleRequested.RemoveAll(Coordinator);
+	Coordinator->Panel = nullptr;
 	return true;
 }
 

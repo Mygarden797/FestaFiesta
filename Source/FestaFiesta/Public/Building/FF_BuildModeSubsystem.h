@@ -69,6 +69,11 @@ namespace FFBuildModeModel
 		return State == EFF_BuildModeState::BuildMode;
 	}
 
+	inline bool CanRemoveFacilityWithTodaysProgram(const bool bHasScheduledProgram)
+	{
+		return !bHasScheduledProgram;
+	}
+
 	inline bool IsPreviewActive(const EFF_BuildModeState State)
 	{
 		return State == EFF_BuildModeState::Placing ||
