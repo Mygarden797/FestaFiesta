@@ -298,9 +298,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Panels")
 	FString PanelClassNameFormat = TEXT("WBP_FF_LivePanel{0}");
 
-	/** 아직 안 만든 탭에 띄울 패널. 비면 그 탭은 아무것도 안 뜬다. */
+	/**
+	 * 아직 안 만든 탭에 띄울 패널.
+	 *
+	 * 🔴 **기본값을 여기서 준다.** 처음에는 비워 뒀는데 그러면 아직 안 만든 탭을 눌렀을 때
+	 * `EnsurePanel` 이 `nullptr` 을 돌려주고 **아무 일도 안 일어난다** — 버튼이 고장난 것처럼
+	 * 보인다. 준비 단계 바는 같은 자리에 경로 상수를 두고 있어서 이 함정을 안 밟았다.
+	 *
+	 * `TSoftClassPtr` 이라 쿠커의 참조 그래프에도 잡힌다 (문자열 경로와 다른 점).
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Panels")
-	TSoftClassPtr<UFF_LivePlaceholderPanel> PlaceholderPanelClass;
+	TSoftClassPtr<UFF_LivePlaceholderPanel> PlaceholderPanelClass = TSoftClassPtr<UFF_LivePlaceholderPanel>(
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/LiveHUD/Panels/WBP_FF_LivePlaceholderPanel.WBP_FF_LivePlaceholderPanel_C")));
 
 private:
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;
