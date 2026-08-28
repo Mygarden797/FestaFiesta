@@ -252,6 +252,15 @@ void UFF_LiveHudScreen::ApplySelection(const FFF_LiveTabSelection& NewSelection)
 		}
 	}
 
+	// 🔴 호스트를 함께 켜고 끈다. 생성기가 `Collapsed` 로 만들어 두기 때문에 패널만
+	// `Visible` 로 바꾸면 **접힌 부모 안에 들어가 아무것도 안 보인다** (2026-08-27 실기 확인).
+	if (Panel_PanelHost)
+	{
+		Panel_PanelHost->SetVisibility(Selection.bHasSelection
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
+
 	RefreshTabs();
 	OnTabSelectionChanged.Broadcast(Selection);
 }

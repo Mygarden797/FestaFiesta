@@ -35,9 +35,27 @@ bool FFF_LiveHudRules_LiveStageOnly::RunTest(const FString& Parameters)
 			FFF_LiveHudRules::IsLiveStage(Stage));
 	}
 
-	// 🔴 노을 전환은 20초짜리 순수 연출이라 HUD 를 띄우지 않는다 (2026-08-27 결정).
-	TestFalse(TEXT("노을 전환은 라이브가 아니다"),
-		FFF_LiveHudRules::IsLiveStage(EFF_FestivalStage::SunsetTransition));
+	// 🔴 시계가 흐르는 단계와 HUD 를 띄우는 단계는 다르다 (2026-08-27 결정).
+	//    홍보 프리뷰·노을 전환은 시계가 안 흐르지만 HUD 는 그대로 떠 있어야 한다 —
+	//    셋업에서 확정한 뒤 준비 단계 바가 다시 나오면 안 된다.
+	for (const EFF_FestivalStage Stage : {
+		EFF_FestivalStage::PromotionPreview,
+		EFF_FestivalStage::SunsetTransition })
+	{
+		TestFalse(FString::Printf(TEXT("시계는 안 흐른다 (%s)"), *UEnum::GetValueAsString(Stage)),
+			FFF_LiveHudRules::IsLiveStage(Stage));
+		TestTrue(FString::Printf(TEXT("그래도 HUD 는 뜬다 (%s)"), *UEnum::GetValueAsString(Stage)),
+			FFF_LiveHudRules::IsLiveHudStage(Stage));
+	}
+
+	TestTrue(TEXT("라이브에서도 HUD 가 뜬다"),
+		FFF_LiveHudRules::IsLiveHudStage(EFF_FestivalStage::Live));
+
+	// 준비 단계 바가 맡는 두 단계에서는 라이브 HUD 가 뜨지 않는다.
+	TestFalse(TEXT("셋업에서는 라이브 HUD 가 안 뜬다"),
+		FFF_LiveHudRules::IsLiveHudStage(EFF_FestivalStage::Setup));
+	TestFalse(TEXT("개장 준비에서는 라이브 HUD 가 안 뜬다"),
+		FFF_LiveHudRules::IsLiveHudStage(EFF_FestivalStage::MorningCheck));
 
 	// 마감·결산·피날레는 풀스크린 시트다 (U7).
 	for (const EFF_FestivalStage Stage : {

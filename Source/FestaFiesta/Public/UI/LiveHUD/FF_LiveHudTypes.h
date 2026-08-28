@@ -144,20 +144,31 @@ struct FESTAFIESTA_API FFF_LiveTabSelection
 struct FESTAFIESTA_API FFF_LiveHudRules
 {
 	/**
-	 * 라이브 운영 HUD 를 띄울 단계인지.
+	 * **시계가 실제로 흐르는** 라이브 단계인지. `Live` 하나뿐이다.
 	 *
-	 * `Live` 하나뿐이다. 마감(`Closing`)과 결산(`Report`)은 풀스크린 시트라 이 HUD 가 아니고
-	 * (U7), 노을 전환(`SunsetTransition`)은 20초짜리 순수 연출이라 HUD 를 띄우지 않는다
-	 * (2026-08-27 결정 — 그 단계는 `StageScreens` 에서 아예 뺐다).
+	 * 배속 판정에 쓴다 — 시간이 안 흐르는 단계에서 배속 버튼을 띄우면 눌러도 아무 일이 없다.
 	 */
 	static bool IsLiveStage(EFF_FestivalStage Stage);
 
 	/**
+	 * 라이브 HUD 를 **화면에 띄울** 단계인지. `IsLiveStage` 보다 넓다.
+	 *
+	 * 🔴 홍보 프리뷰 · 노을 전환 · 라이브 셋이다 (2026-08-27 백종태 결정).
+	 * 셋업에서 `확정하고 Day 1 시작` 을 누른 순간부터 **축제는 이미 시작된 것**이라,
+	 * 거기서 준비 단계 바가 다시 나오면 "확정했는데 왜 또 준비 화면인가" 가 된다.
+	 * 노을 전환도 마찬가지로 라이브로 넘어가는 중이라 같은 HUD 를 유지한다.
+	 *
+	 * 마감(`Closing`)과 결산(`Report`)은 풀스크린 시트라 이 HUD 가 아니다 (U7).
+	 */
+	static bool IsLiveHudStage(EFF_FestivalStage Stage);
+
+	/**
 	 * 이 탭을 지금 보여줄지.
 	 *
-	 * 라이브 탭 7종은 **단계로 갈리지 않는다** — 라이브면 전부 보인다. 준비 단계와 다른 점이다
-	 * (그쪽은 홍보·피날레가 단계로 갈렸다). 그래도 함수를 두는 이유는, 나중에 조건이 붙을 때
-	 * 위젯이 아니라 여기가 바뀌게 하기 위해서다.
+	 * 라이브 탭 7종은 **탭끼리 갈리지 않는다** — HUD 가 뜨는 단계면 전부 보인다.
+	 * 홍보 프리뷰·노을에서도 열 수 있게 두는 이유는 전부 **읽기 전용 정보**라서다.
+	 * 미리 열어 둔다고 잘못될 것이 없고, 단계가 넘어갈 때 패널이 닫혔다 다시 열리면
+	 * 오히려 눈이 매번 다시 찾는다.
 	 */
 	static bool IsTabVisible(EFF_LiveTab Tab, EFF_FestivalStage Stage);
 

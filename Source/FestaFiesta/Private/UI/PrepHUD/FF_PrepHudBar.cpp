@@ -56,17 +56,18 @@ UFF_PrepHudBar::UFF_PrepHudBar(const FObjectInitializer& ObjectInitializer)
 	// === CTA 문구 기본값 ===
 	// `{Day}` 는 현재 일차로 치환된다. 문구에 `Day 1` 을 박으면 2·3일차에 거짓말이 된다.
 	//
-	// 🔴 `PromotionPreview` 는 이름과 달리 **Day 1 의 개장 준비**다 (2026-08-27 확인).
-	// Day 2·3 은 `MorningCheck` 가 그 자리인데 Day 1 에는 그게 없다 —
-	//   Day 1: Setup → PromotionPreview → SunsetTransition → Live
-	//   Day 2: MorningCheck          → SunsetTransition → Live
-	// 그래서 개장 CTA 가 있어야 한다. 예전에는 "시간이 지나면 자동으로 넘어간다"는 이유로
-	// 비워 뒀는데, 그러면 **점검 패널의 `개장하기` 버튼만 남아 바와 어긋난다.**
-	// 홍보비 선택은 이 단계가 아니라 셋업 탭에서 한다 (2026-08-27 백종태 결정).
+	// 🔴 `PromotionPreview` 에는 CTA 를 두지 않는다 — **이 바 자체가 거기서 안 뜬다.**
+	//
+	// 2026-08-27 에 두 번 바뀐 자리라 경위를 남긴다.
+	//   ① 처음엔 CTA 가 없었다 (시간이 지나면 자동으로 넘어간다는 이유)
+	//   ② `Day 1 의 개장 준비 자리` 로 보고 `개장하기` 를 넣었다
+	//   ③ 실기에서 보니 **셋업에서 `확정하고 Day 1 시작` 을 누른 직후 준비 단계 바가
+	//      다시 나오는 것**이 이상했다. 확정했는데 왜 또 준비 화면인가.
+	//      → 홍보 프리뷰·노을 전환을 라이브 HUD 로 넘겼다 (`StageScreens`).
+	//
+	// 그래서 준비 단계 바가 뜨는 곳은 셋업과 개장 준비 둘뿐이다.
 	CtaLabels.Add(EFF_FestivalStage::Setup,
 		LOCTEXT("PrepCta_Setup", "확정하고 Day {Day} 시작"));
-	CtaLabels.Add(EFF_FestivalStage::PromotionPreview,
-		LOCTEXT("PrepCta_PromotionPreview", "개장하기"));
 	CtaLabels.Add(EFF_FestivalStage::MorningCheck,
 		LOCTEXT("PrepCta_MorningCheck", "개장하기"));
 

@@ -45,7 +45,9 @@ bool FFF_LiveOperationsRules_GoalProgress::RunTest(const FString& Parameters)
 		const FFF_LiveGoalProgress P = FFF_LiveOperationsRules::BuildGoalProgress(320, 500);
 
 		TestEqual(TEXT("진행 중이다"), P.State, EFF_LiveGoalState::InProgress);
-		TestTrue(TEXT("비율은 0.64"), FMath::IsNearlyEqual(P.Ratio, 0.64f));
+		// 🔴 `IsNearlyEqual` 기본 허용오차는 `UE_SMALL_NUMBER`(1e-8) 라 나눗셈 결과를
+		//    소수 리터럴과 비교하기에 너무 빡빡하다. 화면이 실제로 쓰는 단위(%)로 본다.
+		TestEqual(TEXT("비율은 64%"), FMath::RoundToInt(P.Ratio * 100.f), 64);
 		TestEqual(TEXT("180명 남았다"), P.Remaining, 180);
 	}
 
@@ -54,7 +56,7 @@ bool FFF_LiveOperationsRules_GoalProgress::RunTest(const FString& Parameters)
 		const FFF_LiveGoalProgress P = FFF_LiveOperationsRules::BuildGoalProgress(500, 500);
 
 		TestEqual(TEXT("목표와 같으면 달성"), P.State, EFF_LiveGoalState::Reached);
-		TestTrue(TEXT("비율은 1"), FMath::IsNearlyEqual(P.Ratio, 1.f));
+		TestEqual(TEXT("비율은 100%"), FMath::RoundToInt(P.Ratio * 100.f), 100);
 
 		// ③ `0명 남음` 은 아직 뭔가 남은 것처럼 읽힌다. 값을 두지 않는다.
 		TestEqual(TEXT("달성하면 남은 수를 지운다"), P.Remaining, INDEX_NONE);
@@ -65,7 +67,7 @@ bool FFF_LiveOperationsRules_GoalProgress::RunTest(const FString& Parameters)
 		const FFF_LiveGoalProgress P = FFF_LiveOperationsRules::BuildGoalProgress(900, 500);
 
 		TestEqual(TEXT("넘겨도 달성"), P.State, EFF_LiveGoalState::Reached);
-		TestTrue(TEXT("비율이 1 을 넘지 않는다"), FMath::IsNearlyEqual(P.Ratio, 1.f));
+		TestEqual(TEXT("비율이 100% 를 넘지 않는다"), FMath::RoundToInt(P.Ratio * 100.f), 100);
 	}
 
 	{
