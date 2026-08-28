@@ -161,11 +161,16 @@ void UFF_FestivalAtlasCatalog::ValidateCatalog() const
 		}
 		SeenFestivalIds.Add(Entry.FestivalId);
 
-		if (Entry.Level.IsNull())
+		// 이 카탈로그의 존재 이유가 레벨 참조다. 비면 축제를 시작할 수 없다.
+		//
+		// ★ **잠긴 축제는 경고하지 않는다.** 잠금 상태에서 레벨이 없는 것은 결함이 아니라
+		//   `아직 만들지 않았다`는 정상적인 표현이다 (지도를 채우는 잠금 핀이 그렇다).
+		//   여기서 경고하면 의도한 상태가 매번 경고로 올라와, 진짜 결함인
+		//   `플레이 가능한데 레벨이 없는` 항목이 그 안에 묻힌다.
+		if (Entry.bUnlocked && Entry.Level.IsNull())
 		{
-			// 이 카탈로그의 존재 이유가 레벨 참조다. 비면 축제를 시작할 수 없다.
 			UE_LOG(LogFestaFiestaUI, Warning,
-				TEXT("%s: `%s` 에 Festival Level 이 비어 있다. 이 축제는 시작할 수 없다."),
+				TEXT("%s: `%s` 는 플레이 가능인데 Festival Level 이 비어 있다. 이 축제는 시작할 수 없다."),
 				*GetName(), *Entry.FestivalId.ToString());
 		}
 

@@ -6,8 +6,18 @@
 #include "UI/FF_CommonButtonBase.h"
 #include "FF_AtlasPinButton.generated.h"
 
+class UFF_AtlasPinButton;
 class UImage;
 class UTextBlock;
+
+/**
+ * 이 핀에 포커스가 들어왔다.
+ *
+ * ★ 호버를 따로 알리지 않는다. `UFF_CommonButtonBase::NativeOnHovered` 가 `bFocusOnHover` 로
+ *   마우스 진입을 그 자리에서 포커스로 바꾸기 때문에, 마우스와 패드가 이미 같은 경로를 탄다.
+ *   호버 델리게이트를 따로 두면 마우스일 때만 두 번 불린다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnAtlasPinFocusReceived, UFF_AtlasPinButton*, Pin);
 
 /**
  * 지구본의 **국가 핀**과 국가 지도의 **축제 핀**을 겸하는 버튼.
@@ -34,6 +44,16 @@ class FESTAFIESTA_API UFF_AtlasPinButton : public UFF_CommonButtonBase
 	GENERATED_BODY()
 
 public:
+	/**
+	 * 포커스가 이 핀으로 들어왔다고 알린다.
+	 *
+	 * 국가 지도 화면이 이걸 듣고 축제 카드를 채운다. **핀을 고르기 전에는 카드가 없다**는
+	 * 규칙(2026-08-27 결정)을 지키려면 "선택"의 출발점이 화면의 자동 선택이 아니라
+	 * 플레이어의 포커스 이동이어야 한다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Atlas|Pin")
+	FFF_OnAtlasPinFocusReceived OnPinFocusReceived;
+
 	/**
 	 * 핀 하나의 표시 내용을 한 번에 넣는다.
 	 *
@@ -70,11 +90,35 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Pin")
 	bool IsSelectedState() const { return bSelected; }
 
+	/**
+	 * 지도 좌표가 실제로 닿는 지점. 위젯 안에서의 비율이다.
+	 *
+	 * 핀 모양마다 다르다 — 아래가 뾰족한 조형물 핀은 `(0.5, 1)`(바닥 중앙)이고,
+	 * 점 마커는 점의 한가운데다. 화면이 이 값을 캔버스 슬롯 정렬에 그대로 넣는다.
+	 *
+	 * ★ 화면에 숫자를 박지 않고 핀이 들고 있는 이유는, 핀 WBP 를 바꿀 때 화면 코드를 같이
+	 *   고쳐야 하는 상태를 만들지 않기 위해서다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Pin")
+	FVector2D GetMapAnchor() const { return MapAnchor; }
+
 protected:
+	/** 위 `GetMapAnchor` 참고. 기본값은 옛 조형물 핀 기준이라 기존 WBP 가 그대로 동작한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Pin")
+	FVector2D MapAnchor = FVector2D(0.5, 1.0);
+
+	virtual void NativeOnAddedToFocusPath(const FFocusEvent& InFocusEvent) override;
+
 	// 핀 이름은 베이스의 `Text_Label`(UCommonTextBlock, 필수 바인딩)이 그린다.
 	// 여기 따로 두지 않는다 — 위젯 둘이 같은 문구를 그리면 하나만 갱신되는 사고가 난다.
 
-	/** `축제 3`·`부산` 같은 배지. 비면 숨는다. */
+	/**
+	 * 핀 아래 한 줄. 고를 수 있으면 `부산` 같은 배지, **잠겨 있으면 `준비 중`** 이다.
+	 *
+	 * 🔴 색·모양 말고 **글자로도** 잠금을 알리기 위한 자리다 (AT-011). 지도 위 마커는 작아서
+	 * 채움/테두리 차이만으로는 구분이 안 된다 — `icon-inventory.md` 가 같은 이유로 `● ◐ ○` 를 금지한다.
+	 * 그래서 잠긴 핀에서는 배지 대신 상태 문구가 나간다. 지역 이름은 카드에서 읽는다.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
 	TObjectPtr<UTextBlock> Text_PinBadge;
 
@@ -98,6 +142,10 @@ private:
 	void RefreshPinVisual();
 
 	FName PinId;
+
+	/** `SetPinData` 가 받은 배지 원문. 잠금 문구로 갈아 끼웠다가 되돌리려면 원문이 필요하다. */
+	FText BadgeText;
+
 	bool bSelectable = false;
 	bool bSelected = false;
 	FText LockReason;
