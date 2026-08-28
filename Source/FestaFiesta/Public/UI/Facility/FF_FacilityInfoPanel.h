@@ -27,6 +27,7 @@ class FESTAFIESTA_API UFF_FacilityInfoPanel : public UUserWidget
 public:
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
+	FSimpleMulticastDelegate OnProgramScheduleRequested;
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 
@@ -62,13 +63,28 @@ private:
 	UFUNCTION()
 	void HandleMinigameClicked();
 
+	UFUNCTION()
+	void HandleProgramScheduleClicked();
+
 	/** Keeps the shipped facility-info WBP compatible while designers migrate the new button. */
 	void EnsureMinigameButton();
+
+	/** Adds only the missing compact program block; authored WBP layout remains authoritative. */
+	void EnsureProgramSection();
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;
+
+	/** Designer-tunable feedback states; edit these in the panel WBP Class Defaults. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor FeedbackErrorColor = FLinearColor(1.0f, 0.32f, 0.28f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor FeedbackSuccessColor = FLinearColor(0.25f, 1.0f, 0.67f, 1.0f);
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
@@ -87,6 +103,25 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_StartMinigame;
+
+	/** Optional during the non-destructive WBP migration; the builder authors it for new assets. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_ProgramSection;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ProgramStatus;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ScheduledProgramSummary;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ProgramScheduleReason;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_ScheduleProgram;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ScheduleProgram;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;
