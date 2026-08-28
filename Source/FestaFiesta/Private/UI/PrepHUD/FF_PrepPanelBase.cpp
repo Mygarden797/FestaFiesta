@@ -84,9 +84,26 @@ FReply UFF_PrepPanelBase::NativeOnMouseButtonDown(const FGeometry& InGeometry, c
 
 	DragTracker.Press(InMouseEvent.GetScreenSpacePosition());
 
-	// 🔴 `CaptureMouse` 를 돌려주지 않으면 커서가 패널을 벗어나는 순간 이동이 멈추고
-	//    버튼을 뗀 것도 받지 못한다. 프론트엔드 입력 모드가 `NoCapture` 라 반드시 필요하다.
-	return FReply::Handled().CaptureMouse(TakeWidget());
+	// 🔴 **`CaptureMouse` 를 쓰지 않는다** (2026-08-28 실기 확인. 전에는 캡처했다).
+	//
+	// `AFF_FestivalPlayerController` 는 `SetInputMode` 를 부르지 않아 기본값
+	// `FInputModeGameOnly` 로 돈다. 그 모드는 `bHideCursorDuringCapture = true` 라
+	// **슬레이트가 마우스를 캡처하는 순간 뷰포트가 커서를 숨기고 가둔다.** 그러면 —
+	//   ① 커서가 사라지고
+	//   ② 좌표가 안 변해서 패널이 안 움직이고
+	//   ③ 뗀 이벤트가 이쪽으로 안 와서 `DragTracker` 가 눌린 채로 남는다
+	//      → 손을 뗐는데도 패널이 커서를 따라다닌다
+	//
+	// 프론트엔드(타이틀·아틀라스)는 CommonUI 가 입력 모드를 잡아 줘서 캡처가 멀쩡했다.
+	// 인게임 HUD 에는 그 전제가 없다 — 같은 코드인데 화면에 따라 다르게 동작했다.
+	//
+	// 캡처를 안 하면 커서가 패널을 벗어난 동안 이동 이벤트가 끊긴다. 대신 패널이 커서를
+	// 따라오므로 벗어나는 일이 드물고, 돌아오면 절대 좌표 차이만큼 따라붙어 이어진다.
+	// 밖에서 뗀 경우는 `NativeOnMouseMove` 가 버튼 상태를 보고 정리한다.
+	//
+	// ⚠️ 입력 모드를 여기서 바꾸지 않는다. 건축 모드·미니게임이 그 값을 저장하고 되돌리므로
+	//    UI 가 끼어들면 서로 덮어쓴다.
+	return FReply::Handled();
 }
 
 FReply UFF_PrepPanelBase::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -94,6 +111,14 @@ FReply UFF_PrepPanelBase::NativeOnMouseMove(const FGeometry& InGeometry, const F
 	if (!DragTracker.IsPressed())
 	{
 		return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+	}
+
+	// 🔴 캡처를 안 하므로 **패널 밖에서 뗀 것을 못 받는다.** 그대로 두면 눌린 상태가 남아
+	//    손을 뗀 뒤에도 패널이 커서를 따라다닌다. 커서가 돌아온 첫 이동에서 정리한다.
+	if (!InMouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+	{
+		DragTracker.Release();
+		return FReply::Handled();
 	}
 
 	// 임계를 넘기 전에는 0 이 온다. 넘는 순간 쌓인 이동을 몰아 적용하지 않아 툭 튀지 않는다.
@@ -128,7 +153,7 @@ FReply UFF_PrepPanelBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, con
 	// 그래도 상태는 반드시 비운다 — 안 그러면 다음 이동이 이전 드래그로 이어진다.
 	DragTracker.Release();
 
-	return FReply::Handled().ReleaseMouseCapture();
+	return FReply::Handled();
 }
 
 // =============================================================================
