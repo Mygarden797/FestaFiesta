@@ -37,6 +37,26 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
 
 namespace
 {
+	bool IsEditableSlateTextFocused()
+	{
+		if (!FSlateApplication::IsInitialized())
+		{
+			return false;
+		}
+
+		// UEditableTextBox focuses its inner SEditableText. Walking parents also covers
+		// multiline/search wrappers without coupling BuildMode to a particular UMG screen.
+		for (TSharedPtr<SWidget> Widget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+			Widget; Widget = Widget->GetParentWidget())
+		{
+			if (FFBuildModeModel::IsEditableSlateTextWidgetType(Widget->GetType()))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// 디자이너가 만든 기본 카탈로그 화면을 지연 참조한다. 패키지 로드 실패 시 아래 생성 함수가
 	// UFF_BuildCatalogScreen의 C++ 구현으로 폴백하므로 에셋 누락이 건축 모드 전체를 중단시키지 않는다.
 	const TSoftClassPtr<UFF_BuildCatalogScreen> BuildCatalogScreenClass(
@@ -110,7 +130,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 {
 	const bool bShouldRestoreInput = bBuildSessionActive;
 	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
-	State = EFF_BuildModeState::Closed;
+	SetState(EFF_BuildModeState::Closed);
 	bBuildSessionActive = false;
 	if (UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
 	{
@@ -197,6 +217,46 @@ TStatId UFF_BuildModeSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UFF_BuildModeSubsystem, STATGROUP_Tickables);
 }
 
+void UFF_BuildModeSubsystem::SetExternalCatalogPresentationActive(const bool bActive)
+{
+	if (bExternalCatalogPresentationActive == bActive)
+	{
+		return;
+	}
+
+	bExternalCatalogPresentationActive = bActive;
+	if (State != EFF_BuildModeState::CatalogOpen || bIsExitingBuildMode)
+	{
+		return;
+	}
+
+	if (bExternalCatalogPresentationActive)
+	{
+		// 실행 중 opt-in도 안전하게 지원한다. 레거시 위젯만 제거하고 세션·입력·프리로드는 유지한다.
+		RemoveCatalogScreen();
+		if (APlayerController* Controller = GetLocalPlayerController())
+		{
+			SetCatalogInputMode(*Controller);
+		}
+		return;
+	}
+
+	// 외부 표현이 해제될 때 CatalogOpen이면 기존 화면을 즉시 복구한다.
+	OpenCatalog();
+}
+
+void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
+{
+	if (State == NewState)
+	{
+		return;
+	}
+
+	const EFF_BuildModeState PreviousState = State;
+	State = NewState;
+	OnBuildModeStateChanged.Broadcast(PreviousState, State);
+}
+
 void UFF_BuildModeSubsystem::ToggleBuildMode()
 {
 	if (bIsExitingBuildMode)
@@ -247,7 +307,7 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
 	ResetPlacementSelection();
-	State = EFF_BuildModeState::BuildMode;
+	SetState(EFF_BuildModeState::BuildMode);
 	SetFacilityRangeVisibility(true);
 	SetBuildInputMode(*Controller);
 	// UI 버튼 콜백이 mouse-up에서 오더라도 다음 Tick까지는 같은 클릭을 월드 입력으로 사용하지 않는다.
@@ -307,17 +367,20 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	ResetMovingSelection();
 	ResetPlacementSelection();
 	RemoveCatalogScreen();
-	State = EFF_BuildModeState::CatalogOpen;
+	SetState(EFF_BuildModeState::CatalogOpen);
 	bCatalogWasApplied = false;
 	bCatalogThumbnailsApplied = false;
-	CreateCatalogScreen(*Controller);
-	if (!CatalogScreen)
+	if (!bExternalCatalogPresentationActive)
 	{
-		AbortOpen(TEXT("건축 카탈로그 화면을 열지 못했습니다."));
-		return;
+		CreateCatalogScreen(*Controller);
+		if (!CatalogScreen)
+		{
+			AbortOpen(TEXT("건축 카탈로그 화면을 열지 못했습니다."));
+			return;
+		}
+		Catalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogChanged);
+		Catalog->OnCatalogThumbnailsChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogThumbnailsChanged);
 	}
-	Catalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogChanged);
-	Catalog->OnCatalogThumbnailsChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogThumbnailsChanged);
 	SetCatalogInputMode(*Controller);
 	AcquireCatalogThumbnailSession(*Catalog);
 
@@ -328,7 +391,10 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 		// 첫 진입은 로드를 시작하고, 이전 실패 뒤 다시 연 경우에는 명시적으로 재시도한다.
 		Catalog->RefreshCatalog();
 	}
-	ApplyCatalogIfReady();
+	if (!bExternalCatalogPresentationActive)
+	{
+		ApplyCatalogIfReady();
+	}
 }
 
 bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
@@ -385,7 +451,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	bHasPlacementTarget = false;
 
 	RemoveCatalogScreen();
-	State = EFF_BuildModeState::Placing;
+	SetState(EFF_BuildModeState::Placing);
 	SetFacilityRangeVisibility(true);
 	SpawnPlacementPreview();
 	if (!PlacementPreview)
@@ -427,7 +493,7 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
 	// 어느 활성 상태에서 호출해도 같은 Closed 불변식(UI/프리뷰/선택/표적 없음)을 만든다.
 	// 아래 정리 중 썸네일 상태 방송이 동기 재진입해도 공개 전환 API는 Closed 상태와 guard를 본다.
-	State = EFF_BuildModeState::Closed;
+	SetState(EFF_BuildModeState::Closed);
 	bBuildSessionActive = false;
 	bSuppressWorldClickUntilReleased = false;
 	bSuppressPlacementConfirmUntilReleased = false;
@@ -638,7 +704,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 			return true;
 		}
 		const FString FacilityName = SelectedSpec.DisplayName.ToString();
-		State = EFF_BuildModeState::BuildMode;
+		SetState(EFF_BuildModeState::BuildMode);
 		DestroyPlacementPreview();
 		ResetPlacementSelection();
 		ResetMovingSelection();
@@ -678,7 +744,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	}
 	if (FFBuildModeModel::ShouldProcessRawBuildKey(
 		bBlockBuildToggleThisFrame,
-		Controller.WasInputKeyJustPressed(EKeys::B)))
+		Controller.WasInputKeyJustPressed(EKeys::B),
+		IsEditableSlateTextFocused()))
 	{
 		ToggleBuildMode();
 		return;
@@ -1581,12 +1648,12 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 	CurrentPlacement = SourcePlacement;
 	ClearPendingRemovalSelection();
 
-	State = EFF_BuildModeState::Moving;
+	SetState(EFF_BuildModeState::Moving);
 	SetFacilityRangeVisibility(true);
 	SpawnPlacementPreview();
 	if (!PlacementPreview)
 	{
-		State = EFF_BuildModeState::BuildMode;
+		SetState(EFF_BuildModeState::BuildMode);
 		ResetPlacementSelection();
 		ResetMovingSelection();
 		ShowStatus(TEXT("시설 이동 프리뷰를 생성하지 못했습니다."), true);
@@ -1612,7 +1679,7 @@ void UFF_BuildModeSubsystem::CancelMovingToBuildMode(
 		return;
 	}
 
-	State = FFBuildModeModel::ResolvePreviewCancelState(State);
+	SetState(FFBuildModeModel::ResolvePreviewCancelState(State));
 	DestroyPlacementPreview();
 	ResetPlacementSelection();
 	ResetMovingSelection();

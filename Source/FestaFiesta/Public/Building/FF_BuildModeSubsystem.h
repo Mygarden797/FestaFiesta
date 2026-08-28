@@ -40,6 +40,13 @@ enum class EFF_BuildModeState : uint8
 	Moving
 };
 
+// 건축 상태가 실제로 바뀐 뒤 외부 표현 계층(예: PrepHUD의 배치 패널)에 알린다.
+// PreviousState와 NewState를 함께 제공해 UI가 Tick 없이 필요한 전환만 처리할 수 있게 한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FFF_OnBuildModeStateChanged,
+	EFF_BuildModeState, PreviousState,
+	EFF_BuildModeState, NewState);
+
 // 입력과 부작용을 분리해 자동화 테스트에서도 실제 B 키 상태표를 검증할 수 있게 한다.
 namespace FFBuildModeModel
 {
@@ -119,9 +126,19 @@ namespace FFBuildModeModel
 
 	inline bool ShouldProcessRawBuildKey(
 		const bool bUiBuildKeyHandledThisFrame,
-		const bool bRawBuildKeyJustPressed)
+		const bool bRawBuildKeyJustPressed,
+		const bool bEditableTextHasFocus = false)
 	{
-		return !bUiBuildKeyHandledThisFrame && bRawBuildKeyJustPressed;
+		return !bUiBuildKeyHandledThisFrame &&
+			!bEditableTextHasFocus && bRawBuildKeyJustPressed;
+	}
+
+	inline bool IsEditableSlateTextWidgetType(const FName WidgetType)
+	{
+		return WidgetType == TEXT("SEditableText") ||
+			WidgetType == TEXT("SEditableTextBox") ||
+			WidgetType == TEXT("SMultiLineEditableText") ||
+			WidgetType == TEXT("SMultiLineEditableTextBox");
 	}
 
 	inline bool ShouldExitOnEscape(const EFF_BuildModeState State)
@@ -283,6 +300,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	EFF_BuildModeState GetBuildModeState() const { return State; }
 
+	// true이면 상태·입력·카탈로그 로드는 BuildMode가 계속 소유하되 기존 전체 화면 카탈로그는 만들지 않는다.
+	// 기본값 false는 기존 카탈로그 경로를 그대로 유지한다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Presentation")
+	void SetExternalCatalogPresentationActive(bool bActive);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Presentation")
+	bool IsExternalCatalogPresentationActive() const
+	{
+		return bExternalCatalogPresentationActive;
+	}
+
+	// 외부 UMG는 이 이벤트로 CatalogOpen/Placing/Closed 표현을 갱신하고 별도 Tick을 두지 않는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Presentation")
+	FFF_OnBuildModeStateChanged OnBuildModeStateChanged;
+
 	// B 키 상태표에 따라 Closed/CatalogOpen은 BuildMode로, BuildMode/Placing/Moving은 CatalogOpen으로 전환한다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void ToggleBuildMode();
@@ -376,8 +408,10 @@ private:
 	// ExecuteCommand가 동기 방송하는 자체 Move 이벤트를 외부 변경과 구분한다.
 	FGuid InFlightMoveCommandId;
 
-	// 공개 API와 입력 처리의 기준이 되는 건축 모드 상태기계의 현재 상태. 
+	// 공개 API와 입력 처리의 기준이 되는 건축 모드 상태기계의 현재 상태.
 	EFF_BuildModeState State = EFF_BuildModeState::Closed;
+	// 명시적 opt-in에서만 기존 전체 화면 카탈로그 생성을 생략한다. false가 레거시 호환 기본값이다.
+	bool bExternalCatalogPresentationActive = false;
 	// 매 프레임의 비싼 라인트레이스/검증을 피하기 위한 누적 시간이다. 
 	float PreviewRefreshAccumulator = 0.0f;
 	// 라인트레이스, 바닥 경사, Zone, 회전 면적 검사를 모두 통과한 커서 표적이 있는지 나타낸다. 
@@ -418,6 +452,9 @@ private:
 
 	// 커서 추적과 전체 Zone 검증의 비용을 제한하면서도 프리뷰가 충분히 부드럽게 보이는 갱신 간격.
 	static constexpr float PreviewRefreshIntervalSeconds = 0.08f;
+
+	// 모든 상태 쓰기를 한곳에서 수행하고 실제 변경일 때만 외부 표현 계층에 방송한다.
+	void SetState(EFF_BuildModeState NewState);
 
 	// B/Escape/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다.
 	void HandleInput(APlayerController& Controller, float DeltaTime);
