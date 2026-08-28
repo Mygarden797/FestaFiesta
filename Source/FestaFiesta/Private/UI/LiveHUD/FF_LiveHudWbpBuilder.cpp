@@ -14,6 +14,7 @@
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
 #include "Components/Overlay.h"
+#include "Components/ProgressBar.h"
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -24,6 +25,7 @@
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelOperations.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveHudWbpBuilder"
@@ -66,9 +68,11 @@ namespace FFLiveHudWbpBuilder
 	const FString TabButtonPackage = LiveFolder / TEXT("WBP_FF_LiveTabButton");
 	const FString ScreenPackage = LiveFolder / TEXT("WBP_FF_LiveHudScreen");
 
-	// ★ 이름이 계약이다. `UFF_LiveHudScreen::PanelClassNameFormat`(`WBP_FF_LivePanel{0}`) 이
-	//   찾는 이름과 같아야 자리표시가 아니라 실제 패널이 붙는다.
 	const FString PlaceholderPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePlaceholderPanel");
+
+	// ★ 이름이 계약이다. `UFF_LiveHudScreen::PanelClassNameFormat`(`WBP_FF_LivePanel{0}`) 의
+	//   `{0}` 에 `EFF_LiveTab` 항목 이름이 들어간다. 이 이름이 아니면 자리표시가 뜬다.
+	const FString OperationsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelOperations");
 
 	/** 메뉴 행 + 상태 행. 준비 단계 바와 같은 58 이라 두 화면이 같은 높이로 끝난다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -252,7 +256,243 @@ namespace FFLiveHudWbpBuilder
 	}
 
 	// =========================================================================
-	// 3) 라이브 HUD 루트
+	// 3) 운영 패널
+	// =========================================================================
+
+	/** 지표 한 칸. `라벨 / 큰 숫자` 세로 두 줄이다. */
+	bool AddMetricCell(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		UHorizontalBox& Row,
+		const UFF_UIPalette& Palette,
+		const FName TextName,
+		const FText& Label,
+		const FText& PreviewValue)
+	{
+		UVerticalBox* Cell = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, FName(*(TextName.ToString() + TEXT("_Cell"))));
+		UTextBlock* LabelText = MakeWidget<UTextBlock>(
+			Blueprint, Tree, FName(*(TextName.ToString() + TEXT("_Label"))));
+		UTextBlock* ValueText = MakeWidget<UTextBlock>(Blueprint, Tree, TextName, true);
+
+		if (!Cell || !LabelText || !ValueText)
+		{
+			return false;
+		}
+
+		StyleText(*LabelText, 12, Palette.InGame.InkMuted, TEXT("Medium"));
+		LabelText->SetText(Label);
+		if (UVerticalBoxSlot* Slot_Label = Cell->AddChildToVerticalBox(LabelText))
+		{
+			Slot_Label->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Label->SetHorizontalAlignment(HAlign_Left);
+		}
+
+		StyleText(*ValueText, 24, Palette.InGame.Ink, TEXT("SemiBold"));
+		ValueText->SetText(PreviewValue);
+		if (UVerticalBoxSlot* Slot_Value = Cell->AddChildToVerticalBox(ValueText))
+		{
+			Slot_Value->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Value->SetHorizontalAlignment(HAlign_Left);
+			Slot_Value->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
+		}
+
+		// 네 칸이 같은 폭을 나눠 갖는다. `Automatic` 이면 숫자 자릿수에 따라 칸이 흔들린다.
+		if (UHorizontalBoxSlot* Slot_Cell = Row.AddChildToHorizontalBox(Cell))
+		{
+			Slot_Cell->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Cell->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	bool BuildOperationsPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 운영 패널을 만들지 않았다."), LiveLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		// 지표 4종은 2×2 로 놓는다. 한 줄에 넷을 넣으면 520 폭에서 숫자가 잘린다.
+		UHorizontalBox* MetricRow1 = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_MetricRow1"));
+		UHorizontalBox* MetricRow2 = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_MetricRow2"));
+
+		UTextBlock* GoalTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_GoalTitle"));
+		UTextBlock* GoalProgress = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_GoalProgress"), true);
+		UProgressBar* GoalBar = MakeWidget<UProgressBar>(Blueprint, Tree, TEXT("Bar_GoalProgress"), true);
+		UTextBlock* GoalDetail = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_GoalDetail"), true);
+
+		UHorizontalBox* WarningBox = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Box_Warning"), true);
+		UTextBlock* WarningText = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Warning"), true);
+		UTextBlock* DummyNotice = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_DummyNotice"), true);
+
+		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
+			|| !MetricRow1 || !MetricRow2
+			|| !GoalTitle || !GoalProgress || !GoalBar || !GoalDetail
+			|| !WarningBox || !WarningText || !DummyNotice)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		// --- 헤더 ---
+		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(LOCTEXT("LiveOps_TitlePreview", "운영"));
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveOps_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 지표 4종 ---
+		// ★ 라벨은 `관객 만족도` 다. `평가 점수`(ScoreSatisfaction)를 같이 두지 않는다 —
+		//   Live 중에는 값이 같아서 다른 지표로 읽힌다.
+		const bool bMetricsOk =
+			AddMetricCell(Blueprint, Tree, *MetricRow1, *Palette,
+				TEXT("Text_Satisfaction"), LOCTEXT("LiveOps_Satisfaction", "관객 만족도"),
+				LOCTEXT("LiveOpsPreview_Satisfaction", "72"))
+			&& AddMetricCell(Blueprint, Tree, *MetricRow1, *Palette,
+				TEXT("Text_Safety"), LOCTEXT("LiveOps_Safety", "안전"),
+				LOCTEXT("LiveOpsPreview_Safety", "88"))
+			&& AddMetricCell(Blueprint, Tree, *MetricRow2, *Palette,
+				TEXT("Text_TodayRevenue"), LOCTEXT("LiveOps_Revenue", "오늘 매출"),
+				LOCTEXT("LiveOpsPreview_Revenue", "3,200"))
+			&& AddMetricCell(Blueprint, Tree, *MetricRow2, *Palette,
+				TEXT("Text_Gold"), LOCTEXT("LiveOps_Gold", "보유 금화"),
+				LOCTEXT("LiveOpsPreview_Gold", "7,600"));
+
+		if (!bMetricsOk)
+		{
+			return false;
+		}
+
+		for (UHorizontalBox* MetricRow : { MetricRow1, MetricRow2 })
+		{
+			if (UVerticalBoxSlot* Slot_Row = Content->AddChildToVerticalBox(MetricRow))
+			{
+				Slot_Row->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				Slot_Row->SetHorizontalAlignment(HAlign_Fill);
+				Slot_Row->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+			}
+		}
+
+		// --- 일일 목표 ---
+		StyleText(*GoalTitle, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		GoalTitle->SetText(LOCTEXT("LiveOps_GoalTitle", "일일 목표"));
+		if (UVerticalBoxSlot* Slot_GoalTitle = Content->AddChildToVerticalBox(GoalTitle))
+		{
+			Slot_GoalTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_GoalTitle->SetHorizontalAlignment(HAlign_Fill);
+			Slot_GoalTitle->SetPadding(FMargin(0.f, 6.f, 0.f, 4.f));
+		}
+
+		StyleText(*GoalProgress, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		GoalProgress->SetText(LOCTEXT("LiveOpsPreview_GoalProgress", "320 / 500명"));
+		if (UVerticalBoxSlot* Slot_GoalProgress = Content->AddChildToVerticalBox(GoalProgress))
+		{
+			Slot_GoalProgress->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_GoalProgress->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		GoalBar->SetPercent(0.64f);
+		GoalBar->SetFillColorAndOpacity(Palette->InGame.Teal);
+		if (UVerticalBoxSlot* Slot_GoalBar = Content->AddChildToVerticalBox(GoalBar))
+		{
+			Slot_GoalBar->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_GoalBar->SetHorizontalAlignment(HAlign_Fill);
+			Slot_GoalBar->SetPadding(FMargin(0.f, 6.f, 0.f, 4.f));
+		}
+
+		// !! 막대만으로는 얼마나 남았는지 알 수 없다 !! (AT-011)
+		StyleText(*GoalDetail, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		GoalDetail->SetText(LOCTEXT("LiveOpsPreview_GoalDetail", "180명 더 오면 +300"));
+		if (UVerticalBoxSlot* Slot_GoalDetail = Content->AddChildToVerticalBox(GoalDetail))
+		{
+			Slot_GoalDetail->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_GoalDetail->SetHorizontalAlignment(HAlign_Fill);
+			Slot_GoalDetail->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 주의 항목. 없으면 줄째 접힌다 ---
+		StyleText(*WarningText, 13, Palette->InGame.Amber, TEXT("Medium"));
+		WarningText->SetText(LOCTEXT("LiveOpsPreview_Warning",
+			"임대료 2,400 이 밀려 있습니다. 매출이 들어와도 잔액이 늘지 않습니다."));
+		WarningText->SetAutoWrapText(true);
+		if (UHorizontalBoxSlot* Slot_WarningText = WarningBox->AddChildToHorizontalBox(WarningText))
+		{
+			Slot_WarningText->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_WarningText->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_WarningBox = Content->AddChildToVerticalBox(WarningBox))
+		{
+			Slot_WarningBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_WarningBox->SetHorizontalAlignment(HAlign_Fill);
+			Slot_WarningBox->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+		}
+
+		// ★ 어떤 값이 아직 진짜가 아닌지 적는다. 안 적으면 더미 숫자를 실제로 믿게 된다.
+		StyleText(*DummyNotice, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		DummyNotice->SetText(LOCTEXT("LiveOpsPreview_DummyNotice",
+			"관객 만족도·안전은 아직 임시 값이고, 관객 수는 소유자 API 가 없어 비어 있습니다."));
+		DummyNotice->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_DummyNotice = Content->AddChildToVerticalBox(DummyNotice))
+		{
+			Slot_DummyNotice->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_DummyNotice->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
+	// 4) 라이브 HUD 루트
 	// =========================================================================
 
 	/** 상태 행의 칸 하나. 값이 없으면 `Box_*` 묶음째 접히도록 두 위젯을 함께 만든다. */
@@ -579,7 +819,7 @@ namespace FFLiveHudWbpBuilder
 	void RunLiveHudUmg()
 	{
 		UE_LOG(LogFFUIWbpBuilder, Display,
-			TEXT("%s_BEGIN: 없는 WBP 만 만든다 (탭 버튼 → 자리표시 → 라이브 HUD)."),
+			TEXT("%s_BEGIN: 없는 WBP 만 만든다 (탭 버튼 → 자리표시 → 운영 패널 → 라이브 HUD)."),
 			LiveLogPrefix);
 
 		// 순서가 고정이다. 루트가 탭 버튼의 `GeneratedClass` 를 자식으로 넣는다.
@@ -601,6 +841,16 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildPlaceholderPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			OperationsPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelOperations::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildOperationsPanel(Blueprint, Tree);
 			});
 
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
@@ -634,7 +884,7 @@ namespace FFLiveHudWbpBuilder
 
 	FAutoConsoleCommand LiveHudUmgCommand(
 		TEXT("FF.LiveHudUMG"),
-		TEXT("라이브 운영 HUD 의 WBP 3종(탭 버튼·자리표시 패널·라이브 HUD)을 만든다. "
+		TEXT("라이브 운영 HUD 의 WBP 4종(탭 버튼·자리표시 패널·운영 패널·라이브 HUD)을 만든다. "
 			 "이미 있으면 건드리지 않는다."),
 		FConsoleCommandDelegate::CreateStatic(&RunLiveHudUmg));
 }
