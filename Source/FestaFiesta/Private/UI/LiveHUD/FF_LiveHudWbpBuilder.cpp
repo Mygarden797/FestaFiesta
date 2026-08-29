@@ -26,6 +26,7 @@
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelOperations.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelFacilities.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 
@@ -75,6 +76,7 @@ namespace FFLiveHudWbpBuilder
 	//   `{0}` 에 `EFF_LiveTab` 항목 이름이 들어간다. 이 이름이 아니면 자리표시가 뜬다.
 	const FString OperationsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelOperations");
 	const FString StaffPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelStaff");
+	const FString FacilitiesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelFacilities");
 
 	/** 메뉴 행 + 상태 행. 준비 단계 바와 같은 58 이라 두 화면이 같은 높이로 끝난다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -690,6 +692,141 @@ namespace FFLiveHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 3-3) 시설 패널
+	// =========================================================================
+
+	bool BuildFacilitiesPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 시설 패널을 만들지 않았다."), LiveLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		UHorizontalBox* SummaryRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Summary"));
+		UTextBlock* Summary = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Summary"), true);
+
+		UVerticalBox* ListBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_Facilities"), true);
+		UTextBlock* Empty = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Empty"), true);
+		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
+
+		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
+			|| !SummaryRow || !Summary || !ListBox || !Empty || !MissingNote)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		// --- 헤더 ---
+		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(LOCTEXT("LiveFac_TitlePreview", "시설"));
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveFac_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 요약. 개수 한 칸 + 급한 것 몇 개인지 한 줄 ---
+		if (!AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+			TEXT("Text_FacilityCount"), LOCTEXT("LiveFac_CountLabel", "놓인 시설"),
+			LOCTEXT("LiveFacPreview_Count", "6개")))
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_SummaryRow = Content->AddChildToVerticalBox(SummaryRow))
+		{
+			Slot_SummaryRow->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_SummaryRow->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 숫자만 두면 "많은 건가" 를 사람이 판단해야 한다. 급한 것이 몇 개인지 함께 적는다.
+		StyleText(*Summary, 13, Palette->InGame.Amber, TEXT("Medium"));
+		Summary->SetText(LOCTEXT("LiveFacPreview_Summary", "막힘 1개 · 주의 2개"));
+		Summary->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Summary = Content->AddChildToVerticalBox(Summary))
+		{
+			Slot_Summary->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Summary->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Summary->SetPadding(FMargin(0.f, 4.f, 0.f, 18.f));
+		}
+
+		// --- 목록. 줄은 코드가 런타임에 채운다 ---
+		if (UVerticalBoxSlot* Slot_ListBox = Content->AddChildToVerticalBox(ListBox))
+		{
+			Slot_ListBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ListBox->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*Empty, 13, Palette->InGame.InkFaint, TEXT("Medium"));
+		Empty->SetText(LOCTEXT("LiveFacPreview_Empty", "놓인 시설이 없습니다."));
+		Empty->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Empty = Content->AddChildToVerticalBox(Empty))
+		{
+			Slot_Empty->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Empty->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Empty->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// ★ 여기서 무엇을 할 수 없는지 적는다. 목록만 두면 눌러 볼 수 있다고 오해한다.
+		StyleText(*MissingNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		MissingNote->SetText(LOCTEXT("LiveFacPreview_MissingNote",
+			"시설을 열고 닫거나 옮기는 것은 건축 화면에서 합니다. 여기서는 상태만 봅니다."));
+		MissingNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_MissingNote = Content->AddChildToVerticalBox(MissingNote))
+		{
+			Slot_MissingNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_MissingNote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
 	// 4) 라이브 HUD 루트
 	// =========================================================================
 
@@ -1063,6 +1200,16 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildStaffPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			FacilitiesPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelFacilities::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildFacilitiesPanel(Blueprint, Tree);
 			});
 
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
