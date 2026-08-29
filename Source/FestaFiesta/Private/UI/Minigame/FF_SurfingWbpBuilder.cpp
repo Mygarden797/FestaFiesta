@@ -70,8 +70,11 @@ namespace FFSurfingWbpBuilder
 	const FString FreeRideScreenClassPath(
 		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_Surfing_FreeRide.WBP_FF_Surfing_FreeRide_C"));
 	const TCHAR* const BackdropTextureObjectPath =
-		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Backdrop_UIUX_v2."
-			 "T_MG_Surfing_Backdrop_UIUX_v2");
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Backdrop_Final."
+			 "T_MG_Surfing_Backdrop_Final");
+	const TCHAR* const SurferTextureObjectPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Surfer_Final."
+			 "T_MG_Surfing_Surfer_Final");
 	const FName SurfingId(TEXT("Surfing"));
 	const FName SurfingFacilityId(TEXT("Booth_ActivityGame_Surfing"));
 
@@ -302,44 +305,19 @@ namespace FFSurfingWbpBuilder
 		return Slot;
 	}
 
-	bool AddSeaBand(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		UCanvasPanel& SurfArea,
-		const FName Name,
-		const float Top,
-		const float Bottom,
-		const FLinearColor& Color,
-		const int32 ZOrder,
-		const float Left = 0.0f,
-		const float Right = 1.0f)
-	{
-		UBorder* Band = MakeWidget<UBorder>(Blueprint, Tree, Name);
-		if (!Band)
-		{
-			return false;
-		}
-
-		Band->SetBrushColor(Color);
-		Band->SetVisibility(ESlateVisibility::HitTestInvisible);
-		return AddCanvasChild(
-			SurfArea,
-			*Band,
-			FAnchors(Left, Top, Right, Bottom),
-			FVector2D::ZeroVector,
-			FMargin(0.0f),
-			ZOrder) != nullptr;
-	}
-
 	bool BuildScreenLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		UTexture2D* BackdropTexture = LoadObject<UTexture2D>(
 			nullptr, BackdropTextureObjectPath);
-		if (!BackdropTexture)
+		UTexture2D* SurferTexture = LoadObject<UTexture2D>(
+			nullptr, SurferTextureObjectPath);
+		if (!BackdropTexture || !SurferTexture)
 		{
 			UE_LOG(LogFFUIWbpBuilder, Error,
-				TEXT("%s_FAIL: canonical AAA backdrop is missing: %s"),
-				LogPrefix, BackdropTextureObjectPath);
+				TEXT("%s_FAIL: production 2.5D artwork is missing: backdrop=%s surfer=%s"),
+				LogPrefix,
+				BackdropTexture ? TEXT("OK") : BackdropTextureObjectPath,
+				SurferTexture ? TEXT("OK") : SurferTextureObjectPath);
 			return false;
 		}
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Root"));
@@ -378,46 +356,6 @@ namespace FFSurfingWbpBuilder
 			return false;
 		}
 
-		// The cinematic plate stays legible under bright surf highlights through
-		// a navy vignette, a framed arena glass layer and restrained wake guides.
-		if (!AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_TopVignette"),
-			0.00f, 0.155f, FLinearColor(0.002f, 0.018f, 0.045f, 0.76f), 2)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_BottomVignette"),
-				0.84f, 1.00f, FLinearColor(0.002f, 0.020f, 0.050f, 0.72f), 2)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_01"),
-				0.265f, 0.269f, FLinearColor(0.72f, 0.98f, 0.96f, 0.12f), 6, 0.085f, 0.915f)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_02"),
-				0.420f, 0.424f, FLinearColor(0.72f, 0.98f, 0.96f, 0.16f), 6, 0.100f, 0.915f)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_03"),
-				0.575f, 0.579f, FLinearColor(0.72f, 0.98f, 0.96f, 0.12f), 6, 0.085f, 0.915f)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_04"),
-				0.730f, 0.734f, FLinearColor(0.72f, 0.98f, 0.96f, 0.16f), 6, 0.100f, 0.915f))
-		{
-			return false;
-		}
-
-		UBorder* ArenaShadow = MakeWidget<UBorder>(
-			Blueprint, Tree, TEXT("Border_ArenaShadow"));
-		UBorder* ArenaGlass = MakeWidget<UBorder>(
-			Blueprint, Tree, TEXT("Border_ArenaGlass"));
-		if (!ArenaShadow || !ArenaGlass)
-		{
-			return false;
-		}
-		ArenaShadow->SetBrushColor(FLinearColor(0.001f, 0.014f, 0.033f, 0.30f));
-		ArenaGlass->SetBrushColor(FLinearColor(0.006f, 0.055f, 0.105f, 0.14f));
-		ArenaShadow->SetVisibility(ESlateVisibility::HitTestInvisible);
-		ArenaGlass->SetVisibility(ESlateVisibility::HitTestInvisible);
-		if (!AddCanvasChild(*SurfArea, *ArenaShadow,
-			FAnchors(0.055f, 0.145f, 0.945f, 0.875f), FVector2D::ZeroVector,
-			FMargin(0.0f), 4)
-			|| !AddCanvasChild(*SurfArea, *ArenaGlass,
-				FAnchors(0.060f, 0.150f, 0.940f, 0.870f), FVector2D::ZeroVector,
-				FMargin(0.0f), 5))
-		{
-			return false;
-		}
-
 		UCanvasPanel* EntityLayer = MakeWidget<UCanvasPanel>(
 			Blueprint, Tree, TEXT("Canvas_EntityLayer"), true);
 		if (!EntityLayer)
@@ -452,13 +390,20 @@ namespace FFSurfingWbpBuilder
 			return false;
 		}
 
-		SurferAvatar->SetBrushColor(FLinearColor(0.002f, 0.018f, 0.036f, 0.96f));
-		SurferAvatar->SetPadding(FMargin(5.0f));
+		SurferAvatar->SetBrushColor(FLinearColor::Transparent);
+		SurferAvatar->SetPadding(FMargin(0.0f));
 		SurferAvatar->SetVisibility(ESlateVisibility::HitTestInvisible);
 		SurferAvatar->SetContent(SurferCore);
-		SurferCore->SetBrushColor(FLinearColor(1.0f, 0.67f, 0.16f, 1.0f));
-		SurferCore->SetPadding(FMargin(14.0f, 9.0f));
+		FSlateBrush SurferBrush;
+		SurferBrush.DrawAs = ESlateBrushDrawType::Image;
+		SurferBrush.SetResourceObject(SurferTexture);
+		SurferBrush.SetImageSize(FVector2D(150.0f, 225.0f));
+		SurferBrush.TintColor = FSlateColor(FLinearColor::White);
+		SurferCore->SetBrush(SurferBrush);
+		SurferCore->SetBrushColor(FLinearColor::White);
+		SurferCore->SetPadding(FMargin(75.0f, 112.5f));
 		SurferCore->SetContent(AvatarColumn);
+		AvatarColumn->SetVisibility(ESlateVisibility::Collapsed);
 		RiderMark->SetText(LOCTEXT("SurferRider", "▲"));
 		RiderMark->SetJustification(ETextJustify::Center);
 		StyleText(*RiderMark, 22, FLinearColor(0.015f, 0.06f, 0.09f, 1.0f), TEXT("Bold"));
@@ -472,7 +417,7 @@ namespace FFSurfingWbpBuilder
 			*SurferAvatar,
 			FAnchors(0.5f, 0.51f),
 			FVector2D(0.5f, 0.5f),
-			FMargin(0.0f, 0.0f, 104.0f, 104.0f),
+			FMargin(0.0f, 0.0f, 150.0f, 225.0f),
 			100))
 		{
 			return false;

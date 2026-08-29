@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Minigame/ClawMachine/FF_ClawMachineTypes.h"
 #include "Minigame/FF_MinigameTypes.h"
 #include "Minigame/Surfing/FF_SurfingTypes.h"
 #include "FF_MinigameDefinition.generated.h"
@@ -118,6 +119,33 @@ public:
 	/** Fixed Rock/Log/Buoy and pickup placement authored as FFF_SurfingCourseRow rows. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Minigame|Surfing")
 	TSoftObjectPtr<UDataTable> CourseLayoutTable;
+
+protected:
+	virtual void AppendValidationErrors(TArray<FText>& OutErrors) const override;
+};
+
+/** Three-dimensional, finite-attempt claw machine inspired by an arcade cabinet loop. */
+UCLASS(BlueprintType, meta = (DisplayName = "인형뽑기 미니게임 설정"))
+class FESTAFIESTA_API UFF_ClawMachineDefinition final : public UFF_MinigameDefinition
+{
+	GENERATED_BODY()
+
+public:
+	UFF_ClawMachineDefinition();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "인형뽑기 세부 설정",
+		meta = (ShowOnlyInnerProperties, DisplayName = "기계·점수·인형 데이터", ToolTip = "조작감, 집게 판정, 점수, 시도 횟수와 교체 가능한 인형 에셋을 한 곳에서 관리합니다."))
+	FFF_ClawMachineRules Rules;
+
+	/** Optional row-based catalog. When assigned, its rows replace Rules.PrizePool. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "인형뽑기 세부 설정",
+		meta = (DisplayName = "인형 카탈로그 데이터테이블", RowType = "/Script/FestaFiesta.FF_ClawMachinePrizeTuning", ToolTip = "기획자는 행 추가·삭제로 인형 목록과 밸런스를 관리하고, 디자이너는 같은 행의 메시·머티리얼을 교체합니다."))
+	TSoftObjectPtr<UDataTable> PrizeCatalogTable;
+
+	/** Resolves the DataTable override into a stable, row-name-sorted session catalog. */
+	bool BuildResolvedPrizePool(
+		TArray<FFF_ClawMachinePrizeTuning>& OutPrizePool,
+		FString* OutFailureReason = nullptr) const;
 
 protected:
 	virtual void AppendValidationErrors(TArray<FText>& OutErrors) const override;

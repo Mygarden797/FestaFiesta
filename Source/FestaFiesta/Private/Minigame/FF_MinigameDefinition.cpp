@@ -2,6 +2,7 @@
 
 #include "Minigame/FF_MinigameDefinition.h"
 
+#include "Minigame/FF_ClawMachineRuntime.h"
 #include "Minigame/FF_MinigameRuntime.h"
 #include "Minigame/FF_SurfingRuntime.h"
 #include "Minigame/FF_TargetShootingRuntime.h"
@@ -279,6 +280,145 @@ void UFF_SurfingDefinition::AppendValidationErrors(TArray<FText>& OutErrors) con
 		OutErrors.Add(LOCTEXT(
 			"MissingSurfingCoursePickup",
 			"Surfing CourseLayoutTable requires at least one enabled pickup."));
+	}
+}
+
+UFF_ClawMachineDefinition::UFF_ClawMachineDefinition()
+{
+	MinigameId = TEXT("ClawMachine");
+	DisplayName = LOCTEXT("ClawMachineDisplayName", "바다 친구 인형뽑기");
+	CompatibleFacilityDefinitionIds = { TEXT("Booth_ActivityGame_ClawMachine") };
+	DurationSeconds = 75.0f;
+	ScoreForMaxReward = 1500;
+	RewardGoldAtMaxScore = 150;
+	RuntimeClass = UFF_ClawMachineRuntime::StaticClass();
+	ScreenClass = TSoftClassPtr<UFF_MinigameScreenBase>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_ClawMachine.WBP_FF_ClawMachine_C")));
+	PrizeCatalogTable = TSoftObjectPtr<UDataTable>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/Minigame/Data/DT_ClawMachinePrizes.DT_ClawMachinePrizes")));
+
+	FFF_ClawMachinePrizeTuning Seal;
+	Seal.PrizeId = TEXT("SeaSeal");
+	Seal.DisplayName = LOCTEXT("ClawPrizeSeal", "하프물범 바다물개");
+	Seal.ScoreValue = 280;
+	Seal.SpawnWeight = 1.35f;
+	Seal.GripDifficulty = 0.34f;
+	Seal.CaptureRadiusNormalized = 0.115f;
+	Seal.MassKg = 0.28f;
+	Seal.SurfaceFriction = 0.68f;
+	Seal.GripCompliance = 0.78f;
+	Seal.FallbackColor = FLinearColor(0.18f, 0.78f, 0.86f, 1.0f);
+	Seal.VisualScale = FVector(1.05f, 1.28f, 0.82f);
+
+	FFF_ClawMachinePrizeTuning Octopus;
+	Octopus.PrizeId = TEXT("CoralOctopus");
+	Octopus.DisplayName = LOCTEXT("ClawPrizeOctopus", "산호빛 문어");
+	Octopus.ScoreValue = 420;
+	Octopus.SpawnWeight = 0.92f;
+	Octopus.GripDifficulty = 0.49f;
+	Octopus.CaptureRadiusNormalized = 0.100f;
+	Octopus.MassKg = 0.36f;
+	Octopus.SurfaceFriction = 0.62f;
+	Octopus.GripCompliance = 0.72f;
+	Octopus.CenterOfMassOffsetNormalized = FVector2D(0.015f, -0.01f);
+	Octopus.FallbackColor = FLinearColor(1.0f, 0.28f, 0.34f, 1.0f);
+	Octopus.VisualScale = FVector(0.95f, 0.95f, 1.08f);
+
+	FFF_ClawMachinePrizeTuning Whale;
+	Whale.PrizeId = TEXT("BlueWhale");
+	Whale.DisplayName = LOCTEXT("ClawPrizeWhale", "파도빛 고래");
+	Whale.ScoreValue = 650;
+	Whale.SpawnWeight = 0.58f;
+	Whale.GripDifficulty = 0.61f;
+	Whale.CaptureRadiusNormalized = 0.092f;
+	Whale.MassKg = 0.52f;
+	Whale.SurfaceFriction = 0.48f;
+	Whale.GripCompliance = 0.58f;
+	Whale.CenterOfMassOffsetNormalized = FVector2D(0.045f, 0.0f);
+	Whale.FallbackColor = FLinearColor(0.13f, 0.34f, 0.88f, 1.0f);
+	Whale.VisualScale = FVector(1.28f, 0.82f, 0.78f);
+
+	Rules.PrizePool = { Seal, Octopus, Whale };
+}
+
+bool UFF_ClawMachineDefinition::BuildResolvedPrizePool(
+	TArray<FFF_ClawMachinePrizeTuning>& OutPrizePool,
+	FString* OutFailureReason) const
+{
+	OutPrizePool = Rules.PrizePool;
+	if (PrizeCatalogTable.IsNull())
+	{
+		return !OutPrizePool.IsEmpty();
+	}
+
+	const UDataTable* Table = PrizeCatalogTable.LoadSynchronous();
+	if (!Table)
+	{
+		if (OutFailureReason) { *OutFailureReason = TEXT("PrizeCatalogTable could not be loaded"); }
+		return false;
+	}
+	if (Table->GetRowStruct() != FFF_ClawMachinePrizeTuning::StaticStruct())
+	{
+		if (OutFailureReason) { *OutFailureReason = TEXT("PrizeCatalogTable has the wrong row struct"); }
+		return false;
+	}
+
+	TArray<FName> RowNames = Table->GetRowNames();
+	RowNames.Sort(FNameLexicalLess());
+	OutPrizePool.Reset(RowNames.Num());
+	TSet<FName> SeenPrizeIds;
+	for (const FName RowName : RowNames)
+	{
+		const FFF_ClawMachinePrizeTuning* Source = Table->FindRow<FFF_ClawMachinePrizeTuning>(
+			RowName, TEXT("ClawMachinePrizeCatalog"), false);
+		if (!Source)
+		{
+			continue;
+		}
+		FFF_ClawMachinePrizeTuning Row = *Source;
+		if (Row.PrizeId.IsNone())
+		{
+			Row.PrizeId = RowName;
+		}
+		FString FailureReason;
+		if (!Row.IsValid(&FailureReason) || SeenPrizeIds.Contains(Row.PrizeId))
+		{
+			if (OutFailureReason)
+			{
+				*OutFailureReason = SeenPrizeIds.Contains(Row.PrizeId)
+					? FString::Printf(TEXT("duplicate PrizeId '%s'"), *Row.PrizeId.ToString())
+					: FString::Printf(TEXT("invalid row '%s': %s"), *RowName.ToString(), *FailureReason);
+			}
+			return false;
+		}
+		SeenPrizeIds.Add(Row.PrizeId);
+		OutPrizePool.Add(MoveTemp(Row));
+	}
+	if (OutPrizePool.IsEmpty())
+	{
+		if (OutFailureReason) { *OutFailureReason = TEXT("PrizeCatalogTable requires at least one row"); }
+		return false;
+	}
+	return true;
+}
+
+void UFF_ClawMachineDefinition::AppendValidationErrors(TArray<FText>& OutErrors) const
+{
+	Super::AppendValidationErrors(OutErrors);
+	FString FailureReason;
+	if (!Rules.IsValid(&FailureReason))
+	{
+		OutErrors.Add(FText::Format(
+			LOCTEXT("InvalidClawMachineRules", "인형뽑기 세부 설정이 올바르지 않습니다: {0}"),
+			FText::FromString(FailureReason)));
+	}
+	TArray<FFF_ClawMachinePrizeTuning> ResolvedPrizePool;
+	FailureReason.Reset();
+	if (!BuildResolvedPrizePool(ResolvedPrizePool, &FailureReason))
+	{
+		OutErrors.Add(FText::Format(
+			LOCTEXT("InvalidClawMachinePrizeCatalog", "인형 카탈로그가 올바르지 않습니다: {0}"),
+			FText::FromString(FailureReason)));
 	}
 }
 

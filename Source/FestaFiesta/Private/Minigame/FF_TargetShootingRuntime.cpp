@@ -151,6 +151,22 @@ EFF_TargetShootingShotResult UFF_TargetShootingRuntime::FireProjectile(
 	const FVector2D& NormalizedPoint,
 	const int32 TargetSerial)
 {
+	const FVector2D MuzzleNormalized = TargetDefinition
+		? TargetDefinition->Rules.ProjectileOriginNormalized
+		: FVector2D(0.5f, 0.68f);
+	return FireProjectileFromMuzzle(
+		SessionId,
+		MuzzleNormalized,
+		NormalizedPoint,
+		TargetSerial);
+}
+
+EFF_TargetShootingShotResult UFF_TargetShootingRuntime::FireProjectileFromMuzzle(
+	const FGuid& SessionId,
+	const FVector2D& MuzzleNormalized,
+	const FVector2D& AimPointNormalized,
+	const int32 TargetSerial)
+{
 	if (!IsPlaying())
 	{
 		return EFF_TargetShootingShotResult::RejectedNotPlaying;
@@ -161,7 +177,8 @@ EFF_TargetShootingShotResult UFF_TargetShootingRuntime::FireProjectile(
 		return EFF_TargetShootingShotResult::RejectedWrongSession;
 	}
 
-	if (!FFTargetShootingRules::IsNormalizedCoordinate(NormalizedPoint))
+	if (!FFTargetShootingRules::IsNormalizedCoordinate(MuzzleNormalized)
+		|| !FFTargetShootingRules::IsNormalizedCoordinate(AimPointNormalized))
 	{
 		return EFF_TargetShootingShotResult::RejectedInvalidCoordinate;
 	}
@@ -181,12 +198,12 @@ EFF_TargetShootingShotResult UFF_TargetShootingRuntime::FireProjectile(
 		? 1
 		: TargetSnapshot.ProjectileSerial + 1;
 	TargetSnapshot.ProjectileTargetSerial = TargetSerial;
-	TargetSnapshot.ProjectileStartNormalized = Rules.ProjectileOriginNormalized;
-	TargetSnapshot.ProjectileAimPointNormalized = NormalizedPoint;
-	TargetSnapshot.ProjectilePositionNormalized = Rules.ProjectileOriginNormalized;
+	TargetSnapshot.ProjectileStartNormalized = MuzzleNormalized;
+	TargetSnapshot.ProjectileAimPointNormalized = AimPointNormalized;
+	TargetSnapshot.ProjectilePositionNormalized = MuzzleNormalized;
 	const float ProjectileDistance = FVector2D::Distance(
-		Rules.ProjectileOriginNormalized,
-		NormalizedPoint);
+		MuzzleNormalized,
+		AimPointNormalized);
 	TargetSnapshot.ProjectileTravelSeconds = FMath::Max(
 		Rules.ProjectileMinTravelSeconds,
 		ProjectileDistance / FMath::Max(Rules.ProjectileSpeedNormalizedPerSecond, 0.1f));
