@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Minigame/Audio/FF_MinigameAudioTypes.h"
 #include "Minigame/ClawMachine/FF_ClawMachineTypes.h"
 #include "Minigame/FF_MinigameTypes.h"
 #include "Minigame/Surfing/FF_SurfingTypes.h"
@@ -56,6 +57,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "클리어 보상",
 		meta = (ClampMin = "-1", UIMin = "-1", DisplayName = "클리어 최대 획득 골드", ToolTip = "게임을 정상 완료하고 '최대 보상 달성 점수'를 채웠을 때 받는 골드입니다. 점수가 낮으면 비율에 따라 줄어듭니다. -1은 축제 공통 설정을 사용하고, 0은 골드 보상을 주지 않습니다."))
 	int32 RewardGoldAtMaxScore = -1;
+
+	/** Sound assets and playback policy live with balance data, not in screen code. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "사운드",
+		meta = (ShowOnlyInnerProperties, DisplayName = "미니게임 사운드", ToolTip = "배경 음악과 이벤트별 Sound Wave, Sound Cue, MetaSound를 한 곳에서 교체합니다."))
+	FFF_MinigameAudioProfile AudioProfile;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "기술 설정",
 		meta = (DisplayName = "런타임 클래스", ToolTip = "미니게임 규칙을 실행하는 코드 클래스입니다. 프로그래머 요청 없이 변경하지 마세요."))

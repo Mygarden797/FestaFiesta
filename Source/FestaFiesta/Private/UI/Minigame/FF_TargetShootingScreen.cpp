@@ -517,6 +517,7 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 	if (Snapshot.TargetSerial > 0 && Snapshot.TargetSerial != PresentedTargetSerial)
 	{
 		PresentedTargetSerial = Snapshot.TargetSerial;
+		PlayMinigameSound(EFF_MinigameAudioEvent::TargetSpawned);
 		TargetSpawnPulseRemainingSeconds = FMath::Max(
 			0.0f,
 			VisualStyle.TargetSpawnPulseSeconds);
@@ -525,6 +526,7 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 		&& Snapshot.ProjectileSerial != PresentedProjectileSerial)
 	{
 		PresentedProjectileSerial = Snapshot.ProjectileSerial;
+		PlayMinigameSound(EFF_MinigameAudioEvent::ShotFired);
 		ReticleShotPulseRemainingSeconds = FMath::Max(
 			0.0f,
 			VisualStyle.ReticleShotPulseSeconds);
@@ -536,6 +538,34 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 		&& Snapshot.LatestFeedbackSerial != PresentedFeedbackSerial)
 	{
 		PresentedFeedbackSerial = Snapshot.LatestFeedbackSerial;
+		EFF_MinigameAudioEvent AudioEvent = EFF_MinigameAudioEvent::TargetHit;
+		if (Snapshot.bLatestFeedbackWasBonusTarget
+			&& Snapshot.LatestFeedbackType != EFF_TargetShootingFeedbackType::Miss
+			&& Snapshot.LatestFeedbackType != EFF_TargetShootingFeedbackType::Escaped)
+		{
+			AudioEvent = EFF_MinigameAudioEvent::BonusTargetHit;
+		}
+		else
+		{
+			switch (Snapshot.LatestFeedbackType)
+			{
+			case EFF_TargetShootingFeedbackType::Precision:
+				AudioEvent = EFF_MinigameAudioEvent::TargetPrecision;
+				break;
+			case EFF_TargetShootingFeedbackType::Bullseye:
+				AudioEvent = EFF_MinigameAudioEvent::TargetBullseye;
+				break;
+			case EFF_TargetShootingFeedbackType::Miss:
+				AudioEvent = EFF_MinigameAudioEvent::TargetMissed;
+				break;
+			case EFF_TargetShootingFeedbackType::Escaped:
+				AudioEvent = EFF_MinigameAudioEvent::TargetEscaped;
+				break;
+			default:
+				break;
+			}
+		}
+		PlayMinigameSound(AudioEvent);
 		FeedbackRemainingSeconds = FMath::Max(
 			0.0f,
 			VisualStyle.FeedbackDurationSeconds);

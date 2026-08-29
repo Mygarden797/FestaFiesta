@@ -297,7 +297,27 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, VisualSizingMode),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, VisualOffsetCm),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, VisualRotation),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, AudioSettings),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, PlacementObstacleHeightCm),
+        });
+
+    TestEnglishDisplayNameAndKoreanTooltip(
+        *this,
+        FFFZSFacilityAudioSettings::StaticStruct(),
+        {
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, AmbientSound),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, Attenuation),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, bOverrideAudibleRange),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, FullVolumeRadiusCm),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, MaxAudibleDistanceCm),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, Concurrency),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, VolumeMultiplier),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, PitchMultiplier),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, LocalOffsetCm),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, FadeInDurationSeconds),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, FadeOutDurationSeconds),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, bPlayOnlyWhileActive),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityAudioSettings, bLoop),
         });
 
     TestEnglishDisplayNameAndKoreanTooltip(

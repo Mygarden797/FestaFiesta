@@ -312,6 +312,29 @@ void UFF_SurfingScreen::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 	{
 		PresentedEventSerial = Snapshot.LatestEventSerial;
 		PresentedEventType = Snapshot.LatestEventType;
+		switch (Snapshot.LatestEventType)
+		{
+		case EFF_SurfingEventType::ObstacleHit:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfObstacleHit);
+			break;
+		case EFF_SurfingEventType::ObstacleSmashed:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfObstacleSmashed);
+			break;
+		case EFF_SurfingEventType::CoinCollected:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfCoinCollected);
+			break;
+		case EFF_SurfingEventType::HeartCollected:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfHeartCollected);
+			break;
+		case EFF_SurfingEventType::BoostPickupCollected:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfBoostCollected);
+			break;
+		case EFF_SurfingEventType::BoostActivated:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfBoostActivated);
+			break;
+		default:
+			break;
+		}
 		EventPulseRemainingSeconds = FMath::Max(0.0f, VisualStyle.EventPulseSeconds);
 	}
 

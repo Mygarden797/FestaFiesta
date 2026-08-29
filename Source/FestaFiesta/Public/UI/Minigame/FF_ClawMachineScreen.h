@@ -263,6 +263,8 @@ private:
 	FVector2D AnalogMovement = FVector2D::ZeroVector;
 	FVector2D VirtualJoystickMovement = FVector2D::ZeroVector;
 	int32 PresentedFeedbackSerial = 0;
+	EFF_ClawMachinePhase PresentedPhase = EFF_ClawMachinePhase::Aiming;
+	bool bHasPresentedPhase = false;
 	float FeedbackRemainingSeconds = 0.0f;
 	FVector CurrentCameraLocation = FVector::ZeroVector;
 	FRotator CurrentCameraRotation = FRotator::ZeroRotator;

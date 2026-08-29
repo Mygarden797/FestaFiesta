@@ -15,6 +15,7 @@
 class UButton;
 class UBorder;
 class UCommonTextBlock;
+class UFF_FestivalProgressionSubsystem;
 
 /**
  * Test_Main에서 시설 자동 개장/폐쇄를 관찰하고 같은 권위 API를 수동 실행하는 개발용 패널입니다.
@@ -59,6 +60,12 @@ private:
 	void HandleNextDayClicked();
 
 	UFUNCTION()
+	void HandleRemoveGoldClicked();
+
+	UFUNCTION()
+	void HandleAddGoldClicked();
+
+	UFUNCTION()
 	void HandleOpenAllClicked();
 
 	UFUNCTION()
@@ -74,6 +81,9 @@ private:
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 
 	UFUNCTION()
+	void HandleGoldChanged(int32 NewGold);
+
+	UFUNCTION()
 	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);
 
 	UFUNCTION()
@@ -82,6 +92,9 @@ private:
 	void RequestStage(EFF_FestivalStage Stage);
 	void ApplyBatchResult(const FFF_ZoneFacilityLifecycleBatchResult& Result);
 	void SetLastResult(const FText& Text);
+	void RefreshGoldControls();
+	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
+	int32 GetGoldAdjustmentStep() const;
 
 	// Live rewind schedules one redundant empty AutomaticClose on the next Tick.
 	// Suppress only that no-op result so the rewind outcome remains visible.
@@ -110,6 +123,18 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
 		meta = (BindWidget, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> TXT_Gold;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
+		meta = (BindWidget, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> TXT_BTN_RemoveGold;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
+		meta = (BindWidget, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> TXT_BTN_AddGold;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
+		meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> TXT_LastResult;
 
 	UPROPERTY(meta = (BindWidget))
@@ -131,6 +156,12 @@ private:
 	TObjectPtr<UButton> BTN_NextDay;
 
 	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> BTN_RemoveGold;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> BTN_AddGold;
+
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> BTN_OpenAll;
 
 	UPROPERTY(meta = (BindWidget))
@@ -141,5 +172,10 @@ private:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> BTN_Refresh;
+
+	/** 한 번의 디버그 조작으로 증감할 Gold. 파생 WBP 기본값에서 조정할 수 있습니다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
+		meta = (ClampMin = "1", UIMin = "1", AllowPrivateAccess = "true"))
+	int32 GoldAdjustmentAmount = 1000;
 };
 

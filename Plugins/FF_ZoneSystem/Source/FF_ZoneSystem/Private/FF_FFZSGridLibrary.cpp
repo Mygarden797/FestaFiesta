@@ -947,6 +947,36 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
         AppendFloat(TEXT("spec.visual_rotation.yaw"), Spec.VisualRotation.Yaw);
         AppendFloat(TEXT("spec.visual_rotation.roll"), Spec.VisualRotation.Roll);
     }
+    // 기본 무음 설정은 기존 v5 영수증과 동일한 지문을 유지한다. 시설 오디오를 저작한 경우에는
+    // 표현 설정 전체를 포함해 Data Asset과 설치 명령의 정확 일치 검사가 사운드 교체도 감지한다.
+    if (Spec.AudioSettings.HasNonDefaultValues())
+    {
+        AppendString(TEXT("spec.audio.ambient_sound"),
+            Spec.AudioSettings.AmbientSound.ToSoftObjectPath().ToString());
+        AppendString(TEXT("spec.audio.attenuation"),
+            Spec.AudioSettings.Attenuation.ToSoftObjectPath().ToString());
+        AppendInt(TEXT("spec.audio.override_audible_range"),
+            Spec.AudioSettings.bOverrideAudibleRange ? 1 : 0);
+        AppendFloat(TEXT("spec.audio.full_volume_radius_cm"),
+            Spec.AudioSettings.FullVolumeRadiusCm);
+        AppendFloat(TEXT("spec.audio.max_audible_distance_cm"),
+            Spec.AudioSettings.MaxAudibleDistanceCm);
+        AppendString(TEXT("spec.audio.concurrency"),
+            Spec.AudioSettings.Concurrency.ToSoftObjectPath().ToString());
+        AppendFloat(TEXT("spec.audio.volume_multiplier"),
+            Spec.AudioSettings.VolumeMultiplier);
+        AppendFloat(TEXT("spec.audio.pitch_multiplier"),
+            Spec.AudioSettings.PitchMultiplier);
+        AppendVector(TEXT("spec.audio.local_offset_cm"),
+            Spec.AudioSettings.LocalOffsetCm);
+        AppendFloat(TEXT("spec.audio.fade_in_seconds"),
+            Spec.AudioSettings.FadeInDurationSeconds);
+        AppendFloat(TEXT("spec.audio.fade_out_seconds"),
+            Spec.AudioSettings.FadeOutDurationSeconds);
+        AppendInt(TEXT("spec.audio.play_only_while_active"),
+            Spec.AudioSettings.bPlayOnlyWhileActive ? 1 : 0);
+        AppendInt(TEXT("spec.audio.loop"), Spec.AudioSettings.bLoop ? 1 : 0);
+    }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
     // 새 필드의 기본값 0(무제한)은 기존 v5 영수증 지문과 완전히 같은 문자열을 유지한다.
     // 검증 전 음수 입력도 서로 다른 의미 Payload이므로 0이 아닐 때는 지문에 기록한다.

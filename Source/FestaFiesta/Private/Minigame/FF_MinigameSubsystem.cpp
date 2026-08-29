@@ -15,6 +15,7 @@
 #include "Minigame/FF_MinigameDefinition.h"
 #include "Minigame/FF_MinigameRuntime.h"
 #include "Minigame/FF_TargetShootingRuntime.h"
+#include "Minigame/Audio/FF_MinigameAudioSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/Minigame/FF_ClawMachineScreen.h"
@@ -30,6 +31,7 @@ void UFF_MinigameSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Collection.InitializeDependency<UFFZSWorldSubsystem>();
 	Collection.InitializeDependency<UFF_FacilityInfoSubsystem>();
+	Collection.InitializeDependency<UFF_MinigameAudioSubsystem>();
 	Super::Initialize(Collection);
 
 	UWorld* World = GetWorld();
@@ -278,6 +280,20 @@ EFF_MinigameStartResult UFF_MinigameSubsystem::StartMinigame(
 	bRewardCommitted = false;
 	bCompletionHandled = false;
 	Screen->OnCloseRequested.AddUObject(this, &ThisClass::HandleScreenCloseRequested);
+	if (UFF_MinigameAudioSubsystem* Audio =
+		World->GetSubsystem<UFF_MinigameAudioSubsystem>())
+	{
+		Audio->BeginSession(Context.SessionId, CandidateDefinition->AudioProfile);
+	}
+	// Collapse the launch panel before installing the minigame focus path. Hiding
+	// the previously focused start button can otherwise clear a focus assignment
+	// made earlier in this call on some Slate update orders.
+	if (UFF_FacilityInfoSubsystem* FacilityInfo =
+		World->GetSubsystem<UFF_FacilityInfoSubsystem>())
+	{
+		FacilityInfo->ClearSelectionIfMatches(
+			FacilityInstanceId, EFF_FacilityInfoContext::Live);
+	}
 
 	if (AFF_FestivalPlayerController* FestivalController =
 		Cast<AFF_FestivalPlayerController>(OwningController))
@@ -287,15 +303,14 @@ EFF_MinigameStartResult UFF_MinigameSubsystem::StartMinigame(
 		FestivalController->SetModalUiActive(true);
 		FestivalController->bShowMouseCursor = true;
 		FInputModeGameAndUI InputMode;
+		// SetInputMode is applied after CommonUI activation, so it must carry the
+		// focus target as part of the same transition. Otherwise Slate can leave
+		// keyboard/gamepad focus on the viewport and the screen never receives the
+		// first movement key event.
+		InputMode.SetWidgetToFocus(CandidateScreen->TakeWidget());
 		InputMode.SetHideCursorDuringCapture(false);
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		FestivalController->SetInputMode(InputMode);
-	}
-	if (UFF_FacilityInfoSubsystem* FacilityInfo =
-		World->GetSubsystem<UFF_FacilityInfoSubsystem>())
-	{
-		FacilityInfo->ClearSelectionIfMatches(
-			FacilityInstanceId, EFF_FacilityInfoContext::Live);
 	}
 
 	UE_LOG(LogFestaFiestaMinigame, Log,
@@ -412,6 +427,12 @@ void UFF_MinigameSubsystem::CompleteActiveSession()
 			: FestivalFallbackGold;
 	}
 	const FFF_MinigameResult Result = Runtime->BuildResult(RewardCap);
+	if (UFF_MinigameAudioSubsystem* Audio = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_MinigameAudioSubsystem>()
+		: nullptr)
+	{
+		Audio->FinishSession(Result.SessionId, true);
+	}
 
 	if (!bRewardCommitted)
 	{
@@ -435,6 +456,21 @@ void UFF_MinigameSubsystem::CompleteActiveSession()
 
 void UFF_MinigameSubsystem::TeardownSession()
 {
+	if (Runtime)
+	{
+		const FFF_MinigameSessionSnapshot& Snapshot = Runtime->GetSnapshot();
+		if (UFF_MinigameAudioSubsystem* Audio = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_MinigameAudioSubsystem>()
+			: nullptr)
+		{
+			if (Snapshot.State == EFF_MinigameSessionState::Cancelled)
+			{
+				Audio->FinishSession(Snapshot.Context.SessionId, false);
+			}
+			Audio->EndSession(Snapshot.Context.SessionId);
+		}
+	}
+
 	if (Screen)
 	{
 		Screen->OnCloseRequested.RemoveAll(this);

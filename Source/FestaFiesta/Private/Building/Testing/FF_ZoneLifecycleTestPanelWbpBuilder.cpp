@@ -163,10 +163,12 @@ namespace FFZoneLifecycleTestWbpBuilder
 		const FLinearColor& PressedColor,
 		const FLinearColor& DisabledColor,
 		const FLinearColor& TextColor,
-		const FLinearColor& OutlineColor)
+		const FLinearColor& OutlineColor,
+		const bool bTextVariable = false)
 	{
 		UButton* Button = MakeWidget<UButton>(Blueprint, Tree, ButtonName, true);
-		UCommonTextBlock* Text = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TextName);
+		UCommonTextBlock* Text = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TextName, bTextVariable);
 		if (!Button || !Text)
 		{
 			return nullptr;
@@ -345,6 +347,42 @@ namespace FFZoneLifecycleTestWbpBuilder
 		StatusBorder->AddChild(Status);
 		AddVertical(*Sections, *StatusBorder, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 
+		UBorder* EconomyBorder = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_EconomySection"));
+		UVerticalBox* EconomySection = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_EconomySection"));
+		UCommonTextBlock* Gold = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("TXT_Gold"), true);
+		UHorizontalBox* GoldRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Gold_Button_Row"));
+		if (!EconomyBorder || !EconomySection || !Gold || !GoldRow)
+		{
+			return false;
+		}
+		PaintBorder(*EconomyBorder, MakeSolidBrush(
+			Palette->InGame.Paper, 6.0f, Palette->InGame.Line, 1.0f));
+		EconomyBorder->SetPadding(FMargin(12.0f));
+		Gold->SetText(FText::FromString(TEXT("현재 잔액  - Gold")));
+		StyleLightText(*Gold, 15, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		if (!AddSectionHeading(
+				Blueprint, Tree, *EconomySection,
+				TEXT("TXT_EconomySectionTitle"), TEXT("TXT_EconomySectionCaption"),
+				FText::FromString(TEXT("골드 조정")),
+				FText::FromString(TEXT("실제 경제 API로 잔액을 조정하며 모든 Gold UI에 즉시 반영됩니다.")),
+				*Palette)
+			|| !AddVertical(*EconomySection, *Gold, FMargin(0.0f, 0.0f, 0.0f, 8.0f))
+			|| !AddButtonRow(*GoldRow, {
+				MakeLightButton(Blueprint, Tree, TEXT("BTN_RemoveGold"), TEXT("TXT_BTN_RemoveGold"),
+					FText::FromString(TEXT("1,000 Gold 차감")), Palette->InGame.PaperSunken,
+					Palette->InGame.Hover, Palette->InGame.TealSoft, Palette->InGame.PaperSunken,
+					Palette->InGame.TealDeep, Palette->InGame.Line, true),
+				MakeLightButton(Blueprint, Tree, TEXT("BTN_AddGold"), TEXT("TXT_BTN_AddGold"),
+					FText::FromString(TEXT("1,000 Gold 추가")), Palette->InGame.Teal,
+					Palette->InGame.TealDeep, Palette->InGame.TealDeep, Palette->InGame.LineStrong,
+					Palette->InGame.White, Palette->InGame.TealDeep, true)}))
+		{
+			return false;
+		}
+		AddVertical(*EconomySection, *GoldRow);
+		EconomyBorder->AddChild(EconomySection);
+		AddVertical(*Sections, *EconomyBorder, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+
 		UBorder* StageBorder = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_StageSection"));
 		UVerticalBox* StageSection = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_StageSection"));
 		UHorizontalBox* StageRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Stage_Button_Row"));
@@ -479,6 +517,8 @@ namespace FFZoneLifecycleTestWbpBuilder
 		for (const FName TextName : {
 			FName(TEXT("TXT_Stage")), FName(TEXT("TXT_PhaseRevision")),
 			FName(TEXT("TXT_FacilityCounts")), FName(TEXT("TXT_QueueCounts")),
+			FName(TEXT("TXT_Gold")), FName(TEXT("TXT_BTN_RemoveGold")),
+			FName(TEXT("TXT_BTN_AddGold")),
 			FName(TEXT("TXT_LastResult"))})
 		{
 			const UCommonTextBlock* Text = Cast<UCommonTextBlock>(Tree->FindWidget(TextName));
@@ -491,6 +531,7 @@ namespace FFZoneLifecycleTestWbpBuilder
 			FName(TEXT("BTN_Setup")), FName(TEXT("BTN_MorningCheck")),
 			FName(TEXT("BTN_Live")), FName(TEXT("BTN_Closing")),
 			FName(TEXT("BTN_PreviousDay")), FName(TEXT("BTN_NextDay")),
+			FName(TEXT("BTN_RemoveGold")), FName(TEXT("BTN_AddGold")),
 			FName(TEXT("BTN_OpenAll")), FName(TEXT("BTN_CloseAll")),
 			FName(TEXT("BTN_EmergencyCloseAll")), FName(TEXT("BTN_Refresh"))})
 		{
@@ -505,6 +546,7 @@ namespace FFZoneLifecycleTestWbpBuilder
 			&& Cast<UBorder>(Tree->FindWidget(TEXT("Border_Panel")))
 			&& Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Controls")))
 			&& Cast<UBorder>(Tree->FindWidget(TEXT("Border_StatusSection")))
+			&& Cast<UBorder>(Tree->FindWidget(TEXT("Border_EconomySection")))
 			&& Cast<UBorder>(Tree->FindWidget(TEXT("Border_StageSection")))
 			&& Cast<UBorder>(Tree->FindWidget(TEXT("Border_LifecycleSection")))
 			&& Cast<UBorder>(Tree->FindWidget(TEXT("Border_LastResult")));

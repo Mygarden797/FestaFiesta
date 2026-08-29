@@ -28,6 +28,55 @@ namespace
     }
 }
 
+bool FFFZSFacilityAudioSettings::IsValid(TArray<FText>& OutErrors) const
+{
+    if (!FMath::IsFinite(VolumeMultiplier) || VolumeMultiplier < 0.0f || VolumeMultiplier > 4.0f)
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidFacilityAudioVolume",
+            "Facility Audio VolumeMultiplier는 0 이상 4 이하의 유한한 값이어야 합니다."));
+    }
+    if (!FMath::IsFinite(PitchMultiplier) || PitchMultiplier < 0.125f || PitchMultiplier > 4.0f)
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidFacilityAudioPitch",
+            "Facility Audio PitchMultiplier는 0.125 이상 4 이하의 유한한 값이어야 합니다."));
+    }
+    if (LocalOffsetCm.ContainsNaN())
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidFacilityAudioOffset",
+            "Facility Audio LocalOffsetCm에는 유한한 값만 사용할 수 있습니다."));
+    }
+    if (!FMath::IsFinite(FullVolumeRadiusCm) || FullVolumeRadiusCm < 0.0f ||
+        !FMath::IsFinite(MaxAudibleDistanceCm) ||
+        MaxAudibleDistanceCm < FullVolumeRadiusCm + 1.0f)
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidFacilityAudioAudibleRange",
+            "Facility Audio 최대 가청 범위는 유한한 값이며 Full Volume Radius보다 최소 1cm 커야 합니다."));
+    }
+    if (!FMath::IsFinite(FadeInDurationSeconds) || FadeInDurationSeconds < 0.0f ||
+        !FMath::IsFinite(FadeOutDurationSeconds) || FadeOutDurationSeconds < 0.0f)
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidFacilityAudioFade",
+            "Facility Audio Fade In/Out 시간은 0 이상의 유한한 값이어야 합니다."));
+    }
+    return OutErrors.IsEmpty();
+}
+
+bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
+{
+    return !AmbientSound.IsNull() || !Attenuation.IsNull() || !Concurrency.IsNull() ||
+        !bOverrideAudibleRange || FullVolumeRadiusCm != 500.0f ||
+        MaxAudibleDistanceCm != 2000.0f ||
+        VolumeMultiplier != 1.0f || PitchMultiplier != 1.0f ||
+        LocalOffsetCm != FVector::ZeroVector ||
+        FadeInDurationSeconds != 0.25f || FadeOutDurationSeconds != 0.25f ||
+        !bPlayOnlyWhileActive || !bLoop;
+}
+
 // 검증 순서
     // 1) 식별자/Enum/크기 같은 값싼 기본 조건
     // 2) Cell 열거 예산과 Queue 수치
@@ -469,6 +518,8 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             "OffsetExactVisualBounds",
             "MatchPlacementBounds는 권위 배치 경계와 정확히 일치해야 하므로 VisualOffsetCm은 0이어야 합니다."));
     }
+
+    AudioSettings.IsValid(OutErrors);
 
     return OutErrors.IsEmpty();
 }
