@@ -26,6 +26,7 @@
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelOperations.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveHudWbpBuilder"
@@ -73,6 +74,7 @@ namespace FFLiveHudWbpBuilder
 	// ★ 이름이 계약이다. `UFF_LiveHudScreen::PanelClassNameFormat`(`WBP_FF_LivePanel{0}`) 의
 	//   `{0}` 에 `EFF_LiveTab` 항목 이름이 들어간다. 이 이름이 아니면 자리표시가 뜬다.
 	const FString OperationsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelOperations");
+	const FString StaffPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelStaff");
 
 	/** 메뉴 행 + 상태 행. 준비 단계 바와 같은 58 이라 두 화면이 같은 높이로 끝난다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -493,6 +495,201 @@ namespace FFLiveHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 3-2) 스태프 패널
+	// =========================================================================
+
+	bool BuildStaffPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 스태프 패널을 만들지 않았다."), LiveLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		// 요약은 3칸이라 한 줄에 들어간다. 운영 패널이 2×2 인 것은 넷이라서다.
+		UHorizontalBox* SummaryRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Summary"));
+		UTextBlock* Breakdown = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_StaffBreakdown"), true);
+		UTextBlock* IdleNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_IdleNote"), true);
+
+		UTextBlock* AssignTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AssignmentsTitle"));
+		UVerticalBox* AssignBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_Assignments"), true);
+		UTextBlock* AssignEmpty = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AssignmentsEmpty"), true);
+
+		UTextBlock* Wage = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_DailyWage"), true);
+		UTextBlock* HireNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_HireNote"), true);
+		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
+
+		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
+			|| !SummaryRow || !Breakdown || !IdleNote
+			|| !AssignTitle || !AssignBox || !AssignEmpty
+			|| !Wage || !HireNote || !MissingNote)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		// --- 헤더 ---
+		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(LOCTEXT("LiveStaff_TitlePreview", "스태프"));
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveStaff_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 요약 3칸 ---
+		const bool bSummaryOk =
+			AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+				TEXT("Text_TotalStaff"), LOCTEXT("LiveStaff_Total", "전체 인원"),
+				LOCTEXT("LiveStaffPreview_Total", "12명"))
+			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+				TEXT("Text_AssignedStaff"), LOCTEXT("LiveStaff_Assigned", "프로그램 배치"),
+				LOCTEXT("LiveStaffPreview_Assigned", "5명"))
+			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+				TEXT("Text_IdleStaff"), LOCTEXT("LiveStaff_Idle", "남는 인원"),
+				LOCTEXT("LiveStaffPreview_Idle", "7명"));
+
+		if (!bSummaryOk)
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_Summary = Content->AddChildToVerticalBox(SummaryRow))
+		{
+			Slot_Summary->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Summary->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Summary->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
+
+		// 전체 숫자만으로는 내일 몇 명이 남는지 알 수 없다. 알바는 하루짜리다.
+		StyleText(*Breakdown, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Breakdown->SetText(LOCTEXT("LiveStaffPreview_Breakdown", "기본 6 · 알바 6"));
+		if (UVerticalBoxSlot* Slot_Breakdown = Content->AddChildToVerticalBox(Breakdown))
+		{
+			Slot_Breakdown->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Breakdown->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// !! 숫자만 두지 않는다 !! 남는 것이 좋은 일인지 나쁜 일인지 숫자로는 알 수 없다 (AT-011).
+		StyleText(*IdleNote, 13, Palette->InGame.Amber, TEXT("Medium"));
+		IdleNote->SetText(LOCTEXT("LiveStaffPreview_IdleNote",
+			"임금은 그대로 나가는데 아무 프로그램에도 묶여 있지 않습니다."));
+		IdleNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_IdleNote = Content->AddChildToVerticalBox(IdleNote))
+		{
+			Slot_IdleNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_IdleNote->SetHorizontalAlignment(HAlign_Fill);
+			Slot_IdleNote->SetPadding(FMargin(0.f, 4.f, 0.f, 18.f));
+		}
+
+		// --- 오늘 편성 ---
+		StyleText(*AssignTitle, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		AssignTitle->SetText(LOCTEXT("LiveStaff_AssignmentsTitle", "오늘 편성"));
+		if (UVerticalBoxSlot* Slot_AssignTitle = Content->AddChildToVerticalBox(AssignTitle))
+		{
+			Slot_AssignTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_AssignTitle->SetHorizontalAlignment(HAlign_Fill);
+			Slot_AssignTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
+
+		// 줄은 코드가 런타임에 채운다. 여기서는 자리만 만든다.
+		if (UVerticalBoxSlot* Slot_AssignBox = Content->AddChildToVerticalBox(AssignBox))
+		{
+			Slot_AssignBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_AssignBox->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*AssignEmpty, 13, Palette->InGame.InkFaint, TEXT("Medium"));
+		AssignEmpty->SetText(LOCTEXT("LiveStaffPreview_AssignEmpty",
+			"오늘 편성한 유료 프로그램이 없어 인력이 묶여 있지 않습니다."));
+		AssignEmpty->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_AssignEmpty = Content->AddChildToVerticalBox(AssignEmpty))
+		{
+			Slot_AssignEmpty->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_AssignEmpty->SetHorizontalAlignment(HAlign_Fill);
+			Slot_AssignEmpty->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 비용과 안내 ---
+		StyleText(*Wage, 13, Palette->InGame.Ink, TEXT("Medium"));
+		Wage->SetText(LOCTEXT("LiveStaffPreview_Wage", "오늘 알바 임금 900 / 일"));
+		if (UVerticalBoxSlot* Slot_Wage = Content->AddChildToVerticalBox(Wage))
+		{
+			Slot_Wage->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Wage->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Wage->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		// ★ 못 하는 것은 흐려 놓지 말고 이유를 적는다 (AT-011 과 같은 이유).
+		StyleText(*HireNote, 12, Palette->InGame.InkMuted, TEXT("Medium"));
+		HireNote->SetText(LOCTEXT("LiveStaffPreview_HireNote",
+			"알바는 하루짜리라 셋업과 개장 준비에서만 뽑습니다. 라이브 중에는 늘릴 수 없습니다."));
+		HireNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_HireNote = Content->AddChildToVerticalBox(HireNote))
+		{
+			Slot_HireNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_HireNote->SetHorizontalAlignment(HAlign_Fill);
+			Slot_HireNote->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
+
+		StyleText(*MissingNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		MissingNote->SetText(LOCTEXT("LiveStaffPreview_MissingNote",
+			"시설별 배치와 스태프 개인 상태는 아직 읽을 수 없습니다."));
+		MissingNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_MissingNote = Content->AddChildToVerticalBox(MissingNote))
+		{
+			Slot_MissingNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_MissingNote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
 	// 4) 라이브 HUD 루트
 	// =========================================================================
 
@@ -856,6 +1053,16 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildOperationsPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			StaffPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelStaff::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildStaffPanel(Blueprint, Tree);
 			});
 
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
