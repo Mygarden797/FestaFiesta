@@ -55,12 +55,12 @@ namespace FFBuildModeModel
 		switch (CurrentState)
 		{
 		case EFF_BuildModeState::Closed:
-		case EFF_BuildModeState::CatalogOpen:
-			return EFF_BuildModeState::BuildMode;
 		case EFF_BuildModeState::BuildMode:
 		case EFF_BuildModeState::Placing:
 		case EFF_BuildModeState::Moving:
 			return EFF_BuildModeState::CatalogOpen;
+		case EFF_BuildModeState::CatalogOpen:
+			return EFF_BuildModeState::BuildMode;
 		default:
 			return EFF_BuildModeState::Closed;
 		}
@@ -265,7 +265,7 @@ namespace FFBuildModeModel
 // UI는 시설 정의를 선택할 뿐이며 실제 설치는 FF Zone System의 PreviewCommand와
 // ExecuteCommand 경로만 사용한다. 따라서 단계·충돌·보호 동선·정책 검증을 우회하지 않는다.
 
-// 상태 전환은 `Closed -> BuildMode <-> CatalogOpen -> Placing`과
+// 상태 전환은 `Closed -> CatalogOpen <-> BuildMode`, `CatalogOpen -> Placing`과
 // `BuildMode -> Moving -> BuildMode`를 따른다. B는 활성 프리뷰를 정리하고 카탈로그를
 // 열고 닫으며 Esc만 세션 전체를 종료한다. BuildMode에서는 설치 시설의 예약 범위를 보여 주고
 // 선택 후 액션 패널에서 이동·철거·취소를 선택한다. Placing과 Moving은 제한된 주기로 커서 위치를 다시 검증한다.
@@ -315,7 +315,8 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Presentation")
 	FFF_OnBuildModeStateChanged OnBuildModeStateChanged;
 
-	// B 키 상태표에 따라 Closed/CatalogOpen은 BuildMode로, BuildMode/Placing/Moving은 CatalogOpen으로 전환한다.
+	// 첫 B는 배치 카탈로그를 열고, 열린 카탈로그의 다음 B는 설치 시설을 다루는 BuildMode로 전환한다.
+	// Placing/Moving에서 B를 누르면 현재 프리뷰를 정리하고 카탈로그로 돌아간다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void ToggleBuildMode();
 

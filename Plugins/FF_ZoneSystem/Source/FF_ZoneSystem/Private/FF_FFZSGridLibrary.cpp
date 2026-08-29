@@ -948,6 +948,12 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
         AppendFloat(TEXT("spec.visual_rotation.roll"), Spec.VisualRotation.Roll);
     }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
+    // 새 필드의 기본값 0(무제한)은 기존 v5 영수증 지문과 완전히 같은 문자열을 유지한다.
+    // 검증 전 음수 입력도 서로 다른 의미 Payload이므로 0이 아닐 때는 지문에 기록한다.
+    if (Spec.MaxInstancesPerWorld != 0)
+    {
+        AppendInt(TEXT("spec.max_instances_per_world"), Spec.MaxInstancesPerWorld);
+    }
     return Canonical;
 }
 
@@ -988,6 +994,7 @@ FText UFFZSGridLibrary::PlacementFailureToText(const EFFZSPlacementFailure Failu
     case EFFZSPlacementFailure::DataInvalid: return LOCTEXT("DataInvalid", "Facility 또는 Zone 데이터가 잘못되었습니다");
     case EFFZSPlacementFailure::ExternalPolicyRejected: return LOCTEXT("PolicyRejected", "외부 팀 Policy가 변경을 거부했습니다");
     case EFFZSPlacementFailure::InsufficientFunds: return LOCTEXT("InsufficientFunds", "현재 잔액이 부족합니다");
+    case EFFZSPlacementFailure::BuildLimitReached: return LOCTEXT("BuildLimitReached", "이 시설은 건축 가능 수량 한도에 도달했습니다");
     default: return LOCTEXT("InternalError", "Zone/Facility 내부 오류가 발생했습니다");
     }
 }

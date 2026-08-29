@@ -884,6 +884,28 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstan
     return nullptr;
 }
 
+int32 UFFZSWorldSubsystem::CountFacilitiesByDefinitionId(
+    const FName FacilityDefinitionId) const
+{
+    if (FacilityDefinitionId.IsNone())
+    {
+        return 0;
+    }
+
+    int32 Count = 0;
+    for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+    {
+        const AFFZSFacilityActor* Facility = Pair.Value.Get();
+        if (IsValid(Facility) &&
+            Facility->GetFacilityState() != EFFZSFacilityState::Removed &&
+            Facility->GetFacilitySpec().FacilityDefinitionId == FacilityDefinitionId)
+        {
+            ++Count;
+        }
+    }
+    return Count;
+}
+
 AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacilityAtWorldPoint(
     const FVector& WorldPoint,
     const FName ZoneId) const
@@ -1001,6 +1023,26 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         return Result;
     }
 
+    bool bBuildLimitReached = false;
+    if (Command.Type == EFFZSCommandType::Install &&
+        Command.FacilitySpec.MaxInstancesPerWorld > 0)
+    {
+        const int32 InstalledCount = CountFacilitiesByDefinitionId(
+            Command.FacilitySpec.FacilityDefinitionId);
+        if (InstalledCount >= Command.FacilitySpec.MaxInstancesPerWorld)
+        {
+            bBuildLimitReached = true;
+            Result.AddFailure(
+                EFFZSPlacementFailure::BuildLimitReached,
+                FText::Format(
+                    LOCTEXT(
+                        "FacilityBuildLimitReached",
+                        "이 시설은 최대 {0}개까지 건축할 수 있으며, 현재 {1}개가 설치되어 있습니다."),
+                    FText::AsNumber(Command.FacilitySpec.MaxInstancesPerWorld),
+                    FText::AsNumber(InstalledCount)));
+        }
+    }
+
     AFFZSGameplayZone* Zone = FindZone(Command.ZoneId);
     if (!Zone)
     {
@@ -1069,6 +1111,13 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     {
         Result.AddFailure(EFFZSPlacementFailure::DataInvalid,
             LOCTEXT("EmptyCompressedPlacement", "Facility 데이터에서 유효한 압축 1cm 배치 영역을 만들 수 없습니다."));
+        return Result;
+    }
+
+    // 한도 실패도 PreviewActor가 정상 위치를 유지하도록 배치 영역과 Transform까지 산출한다.
+    // 이후 지면·충돌·내비게이션 검사는 명령 결과를 바꾸지 않으므로 권위 실행에서는 fail-fast한다.
+    if (bBuildLimitReached)
+    {
         return Result;
     }
 

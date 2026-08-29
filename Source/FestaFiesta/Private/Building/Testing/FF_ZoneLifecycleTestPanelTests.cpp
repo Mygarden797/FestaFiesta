@@ -7,12 +7,17 @@
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
 
+#include "FF_ZoneLifecycleDebugDayControl.h"
+
 #if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
 
 #include "Blueprint/WidgetTree.h"
 #include "CommonTextBlock.h"
 #include "Components/Button.h"
+#include "Components/HorizontalBox.h"
+#include "Engine/GameInstance.h"
 #include "Misc/AutomationTest.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "WidgetBlueprint.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -55,6 +60,8 @@ bool FFFZoneLifecycleTestPanelAssetContractTest::RunTest(const FString& Paramete
 		FName(TEXT("BTN_MorningCheck")),
 		FName(TEXT("BTN_Live")),
 		FName(TEXT("BTN_Closing")),
+		FName(TEXT("BTN_PreviousDay")),
+		FName(TEXT("BTN_NextDay")),
 		FName(TEXT("BTN_OpenAll")),
 		FName(TEXT("BTN_CloseAll")),
 		FName(TEXT("BTN_EmergencyCloseAll")),
@@ -63,6 +70,65 @@ bool FFFZoneLifecycleTestPanelAssetContractTest::RunTest(const FString& Paramete
 		TestTrue(*FString::Printf(TEXT("%s Button이 존재한다"), *ButtonName.ToString()),
 			Cast<UButton>(Blueprint->WidgetTree->FindWidget(ButtonName)) != nullptr);
 	}
+	const UHorizontalBox* DayRow = Cast<UHorizontalBox>(
+		Blueprint->WidgetTree->FindWidget(TEXT("Day_Button_Row")));
+	const UButton* PreviousDay = Cast<UButton>(
+		Blueprint->WidgetTree->FindWidget(TEXT("BTN_PreviousDay")));
+	const UButton* NextDay = Cast<UButton>(
+		Blueprint->WidgetTree->FindWidget(TEXT("BTN_NextDay")));
+	TestNotNull(TEXT("날짜 이동 버튼 행이 존재한다"), DayRow);
+	TestTrue(TEXT("이전 날 버튼은 날짜 이동 행에 속한다"),
+		DayRow && PreviousDay && PreviousDay->GetParent() == DayRow);
+	TestTrue(TEXT("다음 날 버튼은 날짜 이동 행에 속한다"),
+		DayRow && NextDay && NextDay->GetParent() == DayRow);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFFZoneLifecycleDayControlTest,
+	"FestaFiesta.Building.UI.ZoneLifecycleTestPanel.DayControl",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZoneLifecycleDayControlTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UGameInstance* GameInstance = NewObject<UGameInstance>(GetTransientPackage());
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? NewObject<UFF_FestivalStageSubsystem>(GameInstance)
+		: nullptr;
+	if (!TestNotNull(TEXT("Stage 테스트 인스턴스"), Stage))
+	{
+		return false;
+	}
+
+	Stage->CurrentDay = 3;
+	Stage->CurrentStage = EFF_FestivalStage::Report;
+	TestTrue(TEXT("Day3은 이전 날로 이동한다"),
+		FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(*Stage));
+	TestEqual(TEXT("Day3 -> Day2"), Stage->CurrentDay, 2);
+	TestEqual(TEXT("Day2 진입점은 MorningCheck"),
+		Stage->CurrentStage, EFF_FestivalStage::MorningCheck);
+
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	TestTrue(TEXT("Day2 Live도 이전 날로 이동한다"),
+		FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(*Stage));
+	TestEqual(TEXT("Day2 -> Day1"), Stage->CurrentDay, 1);
+	TestEqual(TEXT("Day1 진입점은 Setup"), Stage->CurrentStage, EFF_FestivalStage::Setup);
+	TestFalse(TEXT("Day1에서는 더 이전으로 이동하지 않는다"),
+		FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(*Stage));
+	TestEqual(TEXT("Day1 하한을 유지한다"), Stage->CurrentDay, 1);
+
+	TestTrue(TEXT("Day1은 다음 날로 이동한다"),
+		FFZoneLifecycleDebugDayControl::TryMoveToNextDay(*Stage));
+	TestEqual(TEXT("Day1 -> Day2"), Stage->CurrentDay, 2);
+	TestEqual(TEXT("Day2 진입점은 MorningCheck"),
+		Stage->CurrentStage, EFF_FestivalStage::MorningCheck);
+	TestTrue(TEXT("Day2도 다음 날로 이동한다"),
+		FFZoneLifecycleDebugDayControl::TryMoveToNextDay(*Stage));
+	TestEqual(TEXT("Day2 -> Day3"), Stage->CurrentDay, 3);
+	TestFalse(TEXT("Day3에서는 다음 날로 이동하지 않는다"),
+		FFZoneLifecycleDebugDayControl::TryMoveToNextDay(*Stage));
+	TestEqual(TEXT("Day3 상한을 유지한다"), Stage->CurrentDay, 3);
 	return true;
 }
 

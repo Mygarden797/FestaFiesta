@@ -523,6 +523,7 @@ bool UFF_BuildCatalogSubsystem::TryMakeEntry(
 	OutEntry.Category = Definition.Spec.Category;
 	OutEntry.MinorToken = NameParts.MinorToken;
 	OutEntry.UniqueNameToken = NameParts.UniqueToken;
+	OutEntry.MaxInstancesPerWorld = Definition.Spec.MaxInstancesPerWorld;
 	// 소프트 참조는 위젯에 원본 식별 경로를 제공하되 강한 객체 수명 소유권을 넘기지 않습니다.
 	OutEntry.Definition = TSoftObjectPtr<UFFZSFacilityDefinition>(&Definition);
 	// UI 전용 이미지도 소프트 참조 그대로 전달하여 카탈로그 구성 중 동기 로드를 강제하지 않습니다.

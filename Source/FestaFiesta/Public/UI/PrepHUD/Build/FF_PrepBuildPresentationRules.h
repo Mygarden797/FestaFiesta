@@ -31,7 +31,13 @@ struct FESTAFIESTA_API FFF_PrepBuildPresentationRules
 	/** 가격을 표시할 수 없을 때 0 Gold라고 거짓 표시하지 않습니다. */
 	static FText ResolveCostText(const FFF_BuildCatalogEntry& Entry);
 
-	/** 카드 비활성 원인을 색 외의 문구로도 전달합니다. Available이면 빈 텍스트입니다. */
+	/** 화면 투영 시점의 현재 수와 Data Asset의 정적 상한을 표시합니다. 0 상한은 제한 없음입니다. */
+	static FText ResolveBuildLimitText(const FFF_BuildCatalogEntry& Entry);
+
+	/** 고정 크기 카드에 한 줄로 표시할 짧은 상태 라벨입니다. */
+	static FText ResolveTileStateLabel(EFF_PrepBuildTileState TileState);
+
+	/** 툴팁과 패널 상태 영역에 표시할 상세 비활성 원인입니다. Available이면 빈 텍스트입니다. */
 	static FText ResolveTileStateText(EFF_PrepBuildTileState TileState);
 
 	/** 카탈로그 로드 상태와 필터 결과를 패널 최상위 상태 하나로 합칩니다. */

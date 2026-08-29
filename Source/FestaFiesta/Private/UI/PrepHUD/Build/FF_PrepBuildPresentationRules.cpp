@@ -96,6 +96,12 @@ EFF_PrepBuildTileState FFF_PrepBuildPresentationRules::ResolveTileState(
 	const int32 Gold,
 	const bool bHasAuthoritativeGold)
 {
+	// 한도 도달은 잔액을 바꿔도 해소되지 않으므로 가격 상태보다 먼저 명확한 원인으로 노출합니다.
+	if (Entry.bBuildLimitReached)
+	{
+		return EFF_PrepBuildTileState::BuildLimitReached;
+	}
+
 	// 가격과 잔액 중 어느 값을 못 읽었는지 보존해야 UI가 잘못된 해결 방법을 안내하지 않습니다.
 	if (!Entry.bHasResolvedInstallCost || Entry.InstallCost <= 0)
 	{
@@ -123,11 +129,47 @@ FText FFF_PrepBuildPresentationRules::ResolveCostText(const FFF_BuildCatalogEntr
 		FText::AsNumber(Entry.InstallCost));
 }
 
+FText FFF_PrepBuildPresentationRules::ResolveBuildLimitText(
+	const FFF_BuildCatalogEntry& Entry)
+{
+	if (Entry.MaxInstancesPerWorld <= 0)
+	{
+		return LOCTEXT("UnlimitedBuildCount", "설치 제한 없음");
+	}
+
+	return FText::Format(
+		LOCTEXT("LimitedBuildCount", "설치 {0}/{1}"),
+		FText::AsNumber(FMath::Max(0, Entry.CurrentInstanceCount)),
+		FText::AsNumber(Entry.MaxInstancesPerWorld));
+}
+
+FText FFF_PrepBuildPresentationRules::ResolveTileStateLabel(
+	const EFF_PrepBuildTileState TileState)
+{
+	switch (TileState)
+	{
+	case EFF_PrepBuildTileState::Available:
+		return LOCTEXT("AvailableLabel", "배치 가능");
+	case EFF_PrepBuildTileState::BuildLimitReached:
+		return LOCTEXT("BuildLimitReachedLabel", "한도 도달");
+	case EFF_PrepBuildTileState::InsufficientFunds:
+		return LOCTEXT("InsufficientFundsLabel", "잔액 부족");
+	case EFF_PrepBuildTileState::PriceUnavailable:
+		return LOCTEXT("PriceUnavailableLabel", "가격 미확정");
+	case EFF_PrepBuildTileState::GoldUnavailable:
+		return LOCTEXT("GoldUnavailableLabel", "잔액 확인 중");
+	default:
+		return FText::GetEmpty();
+	}
+}
+
 FText FFF_PrepBuildPresentationRules::ResolveTileStateText(
 	const EFF_PrepBuildTileState TileState)
 {
 	switch (TileState)
 	{
+	case EFF_PrepBuildTileState::BuildLimitReached:
+		return LOCTEXT("BuildLimitReached", "이 시설의 건축 한도에 도달했습니다.");
 	case EFF_PrepBuildTileState::InsufficientFunds:
 		return LOCTEXT("InsufficientFunds", "잔액이 부족합니다.");
 	case EFF_PrepBuildTileState::PriceUnavailable:

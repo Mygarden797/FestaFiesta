@@ -6,6 +6,9 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
+#include "Framework/Application/SlateApplication.h"
+#include "UI/Data/FF_UIPalette.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityPaidProgramPicker"
@@ -15,6 +18,16 @@ FSoftClassPath UFF_FacilityPaidProgramPicker::GetDefaultCardClassPath()
 	return FSoftClassPath(TEXT(
 		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
 		"WBP_FF_FacilityPaidProgramCard_C"));
+}
+
+void UFF_FacilityPaidProgramPicker::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	if (const UFF_UIPalette* Palette = UFF_UIPalette::Get())
+	{
+		FeedbackErrorColor = Palette->InGame.Danger;
+		FeedbackSuccessColor = Palette->InGame.BandGood;
+	}
 }
 
 void UFF_FacilityPaidProgramPicker::NativeOnInitialized()
@@ -83,7 +96,12 @@ void UFF_FacilityPaidProgramPicker::ApplyViewData(
 				}
 				Card->ApplyViewData(CardData);
 				Card->OnSelected.AddUObject(this, &ThisClass::HandleCardSelected);
-				ScrollBox_Programs->AddChild(Card);
+				if (UScrollBoxSlot* CardSlot = Cast<UScrollBoxSlot>(
+					ScrollBox_Programs->AddChild(Card)))
+				{
+					CardSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+					CardSlot->SetHorizontalAlignment(HAlign_Fill);
+				}
 				SpawnedCards.Add(Card);
 			}
 		}
@@ -98,7 +116,15 @@ void UFF_FacilityPaidProgramPicker::SetPickerOpen(const bool bOpen)
 
 bool UFF_FacilityPaidProgramPicker::IsPointerOverInteractivePanel() const
 {
-	return GetVisibility() != ESlateVisibility::Collapsed && Border_Picker && Border_Picker->IsHovered();
+	if (GetVisibility() == ESlateVisibility::Collapsed ||
+		GetVisibility() == ESlateVisibility::Hidden || !Border_Picker)
+	{
+		return false;
+	}
+	return Border_Picker->IsHovered() ||
+		(FSlateApplication::IsInitialized() &&
+			Border_Picker->GetCachedGeometry().IsUnderLocation(
+				FSlateApplication::Get().GetCursorPos()));
 }
 
 void UFF_FacilityPaidProgramPicker::HandleCardSelected(const FName ProgramId)
@@ -137,6 +163,8 @@ void UFF_FacilityPaidProgramPicker::HandleCardSelected(const FName ProgramId)
 	if (Text_PreviewAvailability)
 	{
 		Text_PreviewAvailability->SetText(CardData->AvailabilityText);
+		Text_PreviewAvailability->SetColorAndOpacity(FSlateColor(
+			CardData->bCanSchedule ? FeedbackSuccessColor : FeedbackErrorColor));
 	}
 	if (Text_Confirm)
 	{

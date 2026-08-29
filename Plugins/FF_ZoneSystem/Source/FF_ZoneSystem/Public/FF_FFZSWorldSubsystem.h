@@ -107,6 +107,10 @@ public:
     // 현재 유효한 등록 시설을 반환한다. 잘못된 GUID나 소멸한 액터면 nullptr. 
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    int32 CountFacilitiesByDefinitionId(FName FacilityDefinitionId) const;
+    // 현재 등록된 유효 시설 중 FacilityDefinitionId가 같은 인스턴스 수를 반환한다. None이면 0이다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacilityAtWorldPoint(
         const FVector& WorldPoint,
         FName ZoneId = NAME_None) const;

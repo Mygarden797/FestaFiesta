@@ -66,6 +66,12 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     {
         OutErrors.Add(LOCTEXT("InvalidClearance", "ClearanceCells는 음수일 수 없습니다."));
     }
+    if (MaxInstancesPerWorld < 0)
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidMaxInstancesPerWorld",
+            "MaxInstancesPerWorld는 0(무제한) 이상이어야 합니다."));
+    }
     // 양수/비음수 조건을 먼저 통과한 경우에만 예산 계산을 호출해 오류 중복과 오버플로를 피한다.
     if (FootprintSizeCells.X > 0 && FootprintSizeCells.Y > 0 && ClearanceCells >= 0 &&
         !UFFZSGridLibrary::CanEnumerateFacilityCells(*this))

@@ -50,6 +50,33 @@ namespace
 			FText::AsNumber(Occupied),
 			FText::AsNumber(Capacity));
 	}
+
+	FText FormatInstanceLimit(
+		const int32 CurrentInstances,
+		const int32 MaxInstances,
+		const bool bLimitReached)
+	{
+		if (MaxInstances <= 0)
+		{
+			return FText::Format(
+				LOCTEXT("UnlimitedInstancesFormat", "현재 {0} / 제한 없음"),
+				FText::AsNumber(CurrentInstances));
+		}
+
+		if (bLimitReached)
+		{
+			return FText::Format(
+				LOCTEXT("ReachedInstanceLimitFormat", "현재 {0} / 최대 {1} · 한도 도달"),
+				FText::AsNumber(CurrentInstances),
+				FText::AsNumber(MaxInstances));
+		}
+
+		return FText::Format(
+			LOCTEXT("AvailableInstanceLimitFormat", "현재 {0} / 최대 {1} · {2}개 남음"),
+			FText::AsNumber(CurrentInstances),
+			FText::AsNumber(MaxInstances),
+			FText::AsNumber(FMath::Max(0, MaxInstances - CurrentInstances)));
+	}
 }
 
 void UFF_FacilityInfoSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -241,10 +268,14 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
-	if (!Panel->AddToPlayerScreen(PanelZOrder))
+	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
+	// Player game layer, so its local Z-order can never rise above a newly-created PrepHUD in the
+	// Viewport layer (UE 5.7: Player=100, Viewport=200). Keep this card in the same global layer.
+	Panel->AddToViewport(PanelZOrder);
+	if (!Panel->IsInViewport())
 	{
 		UE_LOG(LogFestaFiestaFacilityInfo, Error,
-			TEXT("시설 정보 패널을 LocalPlayer 화면에 추가하지 못했습니다."));
+			TEXT("시설 정보 패널을 Viewport 화면에 추가하지 못했습니다."));
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
@@ -293,7 +324,9 @@ bool UFF_FacilityInfoSubsystem::EnsurePaidProgramPicker(APlayerController& InOwn
 		this, &ThisClass::HandlePaidProgramConfirmed);
 	PaidProgramPicker->OnCloseRequested.AddUObject(
 		this, &ThisClass::HandlePaidProgramPickerCloseRequested);
-	if (!PaidProgramPicker->AddToPlayerScreen(PaidProgramPickerZOrder))
+	// The picker replaces the card as the active surface and must share its global viewport layer.
+	PaidProgramPicker->AddToViewport(PaidProgramPickerZOrder);
+	if (!PaidProgramPicker->IsInViewport())
 	{
 		ClosePaidProgramPicker();
 		return false;
@@ -312,6 +345,26 @@ void UFF_FacilityInfoSubsystem::ClosePaidProgramPicker()
 	PaidProgramPicker->OnCloseRequested.RemoveAll(this);
 	PaidProgramPicker->RemoveFromParent();
 	PaidProgramPicker = nullptr;
+	if (Panel && HasSelection())
+	{
+		Panel->SetPanelOpen(true);
+	}
+}
+
+void UFF_FacilityInfoSubsystem::SetPaidProgramPickerOpen(const bool bOpen)
+{
+	if (!PaidProgramPicker)
+	{
+		return;
+	}
+
+	// These are two views of the same selected facility. Keeping one presentation owner visible
+	// avoids both the right-side card overlap and stale actions behind the confirmation surface.
+	PaidProgramPicker->SetPickerOpen(bOpen);
+	if (Panel)
+	{
+		Panel->SetPanelOpen(!bOpen && HasSelection());
+	}
 }
 
 bool UFF_FacilityInfoSubsystem::SelectFacility(
@@ -354,7 +407,9 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	{
 		return false;
 	}
-	Panel->SetPanelOpen(true);
+	const bool bPickerOpen = PaidProgramPicker &&
+		PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
+	Panel->SetPanelOpen(!bPickerOpen);
 	if (Context == EFF_FacilityInfoContext::Live)
 	{
 		ApplyLiveSelectionIndicatorTargets(SelectionIndicatorHoverFacility.Get(), Facility);
@@ -488,6 +543,16 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? LOCTEXT("UnknownZone", "구역 정보 없음")
 		: FText::FromName(Facility.GetZoneId());
 	OutViewData.FacilityStateText = FFFacilityInfoModel::GetFacilityStateText(ReadModel.State);
+	OutViewData.CurrentInstancesInWorld = Spec.FacilityDefinitionId.IsNone()
+		? 0
+		: FMath::Max(0, ZoneSystem->CountFacilitiesByDefinitionId(Spec.FacilityDefinitionId));
+	OutViewData.MaxInstancesPerWorld = FMath::Max(0, Spec.MaxInstancesPerWorld);
+	OutViewData.bInstanceLimitReached = OutViewData.MaxInstancesPerWorld > 0 &&
+		OutViewData.CurrentInstancesInWorld >= OutViewData.MaxInstancesPerWorld;
+	OutViewData.InstanceLimitText = FormatInstanceLimit(
+		OutViewData.CurrentInstancesInWorld,
+		OutViewData.MaxInstancesPerWorld,
+		OutViewData.bInstanceLimitReached);
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
 	OutViewData.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Spec.ClearanceCells);
 	OutViewData.QueueCapacityText = FText::Format(
@@ -1137,7 +1202,7 @@ void UFF_FacilityInfoSubsystem::HandlePanelProgramScheduleRequested()
 		return;
 	}
 	PaidProgramPicker->ApplyViewData(PickerViewData);
-	PaidProgramPicker->SetPickerOpen(true);
+	SetPaidProgramPickerOpen(true);
 }
 
 bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
@@ -1232,7 +1297,7 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 	}
 	if (Result == EFF_PaidProgramScheduleResult::Success)
 	{
-		ActivePicker->SetPickerOpen(false);
+		SetPaidProgramPickerOpen(false);
 		SetFeedback(LOCTEXT("PaidProgramScheduled", "유료 프로그램 구매·편성이 완료되었습니다."), false);
 		RefreshPanel();
 		return;
@@ -1247,7 +1312,7 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 		true))
 	{
 		ActivePicker->ApplyViewData(PickerViewData);
-		ActivePicker->SetPickerOpen(true);
+		SetPaidProgramPickerOpen(true);
 	}
 }
 
@@ -1255,7 +1320,7 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramPickerCloseRequested()
 {
 	if (PaidProgramPicker)
 	{
-		PaidProgramPicker->SetPickerOpen(false);
+		SetPaidProgramPickerOpen(false);
 	}
 }
 
@@ -1321,10 +1386,33 @@ void UFF_FacilityInfoSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& 
 				nullptr,
 				SelectionIndicatorSelectedFacility.Get());
 		}
+		if (HasSelection())
+		{
+			// Remove events no longer have an actor from which to recover the definition id.
+			// Refresh the selected card on the next tick so a shared-definition count cannot go stale.
+			RefreshAccumulatorSeconds = RefreshIntervalSeconds;
+		}
 		return;
 	}
 	if (Event.FacilityInstanceId != SelectedFacilityId)
 	{
+		if (Event.Type == EFFZSCommandType::Install && HasSelection())
+		{
+			UWorld* World = GetWorld();
+			UFFZSWorldSubsystem* ZoneSystem = World
+				? World->GetSubsystem<UFFZSWorldSubsystem>()
+				: nullptr;
+			const AFFZSFacilityActor* InstalledFacility = ZoneSystem
+				? ZoneSystem->FindFacility(Event.FacilityInstanceId)
+				: nullptr;
+			const AFFZSFacilityActor* SelectedFacility = GetSelectedFacility();
+			if (InstalledFacility && SelectedFacility &&
+				InstalledFacility->GetFacilitySpec().FacilityDefinitionId ==
+					SelectedFacility->GetFacilitySpec().FacilityDefinitionId)
+			{
+				RefreshAccumulatorSeconds = RefreshIntervalSeconds;
+			}
+		}
 		return;
 	}
 	ClosePaidProgramPicker();
