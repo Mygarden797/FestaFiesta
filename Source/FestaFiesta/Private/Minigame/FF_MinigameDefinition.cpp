@@ -15,7 +15,12 @@
 
 #define LOCTEXT_NAMESPACE "FFMinigameDefinition"
 
-UFF_MinigameDefinition::UFF_MinigameDefinition() = default;
+UFF_MinigameDefinition::UFF_MinigameDefinition()
+{
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SessionStarted);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SessionCompleted);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SessionCancelled);
+}
 
 const FPrimaryAssetType& UFF_MinigameDefinition::GetMinigameDefinitionAssetType()
 {
@@ -86,6 +91,14 @@ void UFF_MinigameDefinition::AppendValidationErrors(TArray<FText>& OutErrors) co
 		OutErrors.Add(LOCTEXT("MissingCompatibleFacilities", "At least one compatible facility is required."));
 	}
 
+	FString AudioFailureReason;
+	if (!AudioProfile.IsValid(&AudioFailureReason))
+	{
+		OutErrors.Add(FText::Format(
+			LOCTEXT("InvalidAudioProfile", "미니게임 사운드 설정이 올바르지 않습니다: {0}"),
+			FText::FromString(AudioFailureReason)));
+	}
+
 	TSet<FName> SeenFacilityIds;
 	for (const FName FacilityDefinitionId : CompatibleFacilityDefinitionIds)
 	{
@@ -140,6 +153,14 @@ UFF_TargetShootingDefinition::UFF_TargetShootingDefinition()
 	ScoreForMaxReward = 2000;
 	RewardGoldAtMaxScore = 150;
 	RuntimeClass = UFF_TargetShootingRuntime::StaticClass();
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::TargetSpawned);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ShotFired);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::TargetHit);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::TargetPrecision);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::TargetBullseye);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::TargetMissed);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::TargetEscaped);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::BonusTargetHit);
 }
 
 void UFF_TargetShootingDefinition::AppendValidationErrors(TArray<FText>& OutErrors) const
@@ -163,6 +184,12 @@ UFF_SurfingDefinition::UFF_SurfingDefinition()
 	DurationSeconds = 30.0f;
 	ScoreForMaxReward = 3500;
 	RuntimeClass = UFF_SurfingRuntime::StaticClass();
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SurfObstacleHit);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SurfObstacleSmashed);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SurfCoinCollected);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SurfHeartCollected);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SurfBoostCollected);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::SurfBoostActivated);
 	CourseLayoutTable = TSoftObjectPtr<UDataTable>(FSoftObjectPath(
 		TEXT("/Game/FestaFiesta/Minigame/Data/DT_SurfingCourse.DT_SurfingCourse")));
 }
@@ -292,6 +319,12 @@ UFF_ClawMachineDefinition::UFF_ClawMachineDefinition()
 	ScoreForMaxReward = 1500;
 	RewardGoldAtMaxScore = 150;
 	RuntimeClass = UFF_ClawMachineRuntime::StaticClass();
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ClawDropStarted);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ClawClosing);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ClawRelease);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ClawPrizeCaptured);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ClawPerfectCapture);
+	AudioProfile.EventSounds.FindOrAdd(EFF_MinigameAudioEvent::ClawPrizeMissed);
 	ScreenClass = TSoftClassPtr<UFF_MinigameScreenBase>(FSoftObjectPath(
 		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_ClawMachine.WBP_FF_ClawMachine_C")));
 	PrizeCatalogTable = TSoftObjectPtr<UDataTable>(FSoftObjectPath(

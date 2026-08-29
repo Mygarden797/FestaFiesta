@@ -14,6 +14,7 @@
 
 struct FStreamableHandle;
 class UBoxComponent;
+class UAudioComponent;
 class ULineBatchComponent;
 class USceneComponent;
 class USplineComponent;
@@ -53,6 +54,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UStaticMeshComponent> VisualMesh;
     // FacilitySpec.VisualMesh를 비동기 표시하는 비권한 표현 캐시다. 
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
+    TObjectPtr<UAudioComponent> FacilityAudioComponent;
+    // FacilitySpec.AudioSettings를 재생하는 비권한 3D 오디오 컴포넌트다.
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UBoxComponent> SelectionProxy;
@@ -233,12 +238,22 @@ private:
     bool bSetMovePendingWhenDrained = false;
     // 소프트 비주얼 메시 비동기 요청의 수명과 취소를 관리한다. 
     TSharedPtr<FStreamableHandle> VisualLoadHandle;
+    // 시설 오디오 의존성은 메시와 독립적으로 교체·취소한다.
+    TSharedPtr<FStreamableHandle> AudioLoadHandle;
+    uint32 AudioLoadGeneration = 0;
+    bool bAudioStopRequested = false;
 
     void RebuildRuntimePresentation();
     void RebuildSelectionProxy(const FVector& SelectionExtent);
     void SetNavigationObstacleEnabled(bool bEnabled);
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
+    void RequestFacilityAudio();
+    void ApplyLoadedFacilityAudio(uint32 LoadGeneration);
+    void UpdateFacilityAudioPlayback(bool bAllowFade = true);
+    void StopFacilityAudio(bool bAllowFade);
+    bool IsFacilityAudioPlaybackAllowed() const;
+    void HandleFacilityAudioFinished(UAudioComponent* FinishedComponent);
     void RebuildAnchors();
     void RebuildBuildModeRangePresentation();
     void DestroyBuildModeRangePresentation();

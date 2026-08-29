@@ -13,6 +13,9 @@
 
 class AActor;
 class AFFZSFacilityActor;
+class USoundAttenuation;
+class USoundBase;
+class USoundConcurrency;
 class UStaticMesh;
 
 // 존 허용 규칙과 UI 분류에 쓰는 시설의 기능 카테고리.
@@ -417,6 +420,58 @@ struct FF_ZONESYSTEM_API FFFZSOrientedRect
 };
 USTRUCT(BlueprintType)
 
+// 시설 한 종류의 3D 앰비언트 오디오 저작값이다. Sound Wave, Sound Cue, MetaSound Source를
+// 같은 슬롯으로 교체할 수 있으며 런타임 액터는 이 값을 비동기 로드해 AudioComponent에 적용한다.
+struct FF_ZONESYSTEM_API FFFZSFacilityAudioSettings
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Ambient Sound", ToolTip = "시설에서 재생할 3D 사운드입니다. Sound Wave, Sound Cue 또는 MetaSound Source를 지정할 수 있으며 비워 두면 이 시설은 소리를 재생하지 않습니다.", AssetBundles = "FacilityAudio"))
+    TSoftObjectPtr<USoundBase> AmbientSound;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Attenuation Settings", ToolTip = "공간화·리버브·오클루전 같은 고급 정책을 재사용할 선택적 Sound Attenuation 에셋입니다. Override Audible Range가 켜져 있으면 거리 모양과 범위는 아래 시설별 값이 우선합니다.", AssetBundles = "FacilityAudio"))
+    TSoftObjectPtr<USoundAttenuation> Attenuation;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio|Audible Range", meta = (DisplayName = "Override Audible Range", ToolTip = "켜면 시설마다 구형 3D 가청 범위를 직접 적용합니다. 최대 가청 범위 밖에서는 볼륨이 0이 되며 별도 충돌·Overlap·Tick은 사용하지 않습니다."))
+    bool bOverrideAudibleRange = true;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio|Audible Range", meta = (DisplayName = "Full Volume Radius (cm)", ToolTip = "사운드 발생 위치를 중심으로 원래 볼륨을 유지하는 반경입니다. 이 거리부터 최대 가청 범위까지 선형으로 작아집니다.", EditCondition = "bOverrideAudibleRange", EditConditionHides, ClampMin = "0.0", UIMin = "0.0", UIMax = "5000.0", Units = "cm"))
+    float FullVolumeRadiusCm = 500.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio|Audible Range", meta = (DisplayName = "Maximum Audible Distance (cm)", ToolTip = "사운드 발생 위치에서 소리가 완전히 들리지 않게 되는 최대 거리입니다. Full Volume Radius보다 최소 1cm 커야 합니다.", EditCondition = "bOverrideAudibleRange", EditConditionHides, ClampMin = "1.0", UIMin = "100.0", UIMax = "20000.0", Units = "cm"))
+    float MaxAudibleDistanceCm = 2000.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Concurrency Settings", ToolTip = "같은 시설 사운드가 동시에 재생될 수 있는 수와 우선순위를 정하는 선택적 Sound Concurrency 에셋입니다. 비워 두면 사운드 에셋 자체의 정책을 사용합니다.", AssetBundles = "FacilityAudio"))
+    TSoftObjectPtr<USoundConcurrency> Concurrency;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Volume Multiplier", ToolTip = "이 시설 인스턴스에 적용할 볼륨 배수입니다. 0이면 사운드 에셋을 유지하면서 음소거합니다.", ClampMin = "0.0", ClampMax = "4.0", UIMin = "0.0", UIMax = "2.0"))
+    float VolumeMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Pitch Multiplier", ToolTip = "이 시설 인스턴스에 적용할 재생 속도와 음높이 배수입니다.", ClampMin = "0.125", ClampMax = "4.0", UIMin = "0.5", UIMax = "2.0"))
+    float PitchMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Local Offset (cm)", ToolTip = "시설 Actor 중심에서 사운드가 발생할 로컬 위치 보정값입니다. 시설과 함께 이동·회전하며 단위는 cm입니다.", Units = "cm"))
+    FVector LocalOffsetCm = FVector::ZeroVector;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Fade In Duration", ToolTip = "시설 사운드가 시작될 때 목표 볼륨까지 증가하는 시간입니다. 0이면 즉시 재생합니다.", ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0", Units = "s"))
+    float FadeInDurationSeconds = 0.25f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Fade Out Duration", ToolTip = "시설이 폐장·철거되거나 재생 조건을 벗어날 때 볼륨이 0까지 감소하는 시간입니다. 0이면 즉시 정지합니다.", ClampMin = "0.0", UIMin = "0.0", UIMax = "5.0", Units = "s"))
+    float FadeOutDurationSeconds = 0.25f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Play Only While Active", ToolTip = "켜면 시설이 개장된 Active 상태일 때만 재생합니다. 끄면 설치된 뒤부터 철거되기 전까지 재생합니다."))
+    bool bPlayOnlyWhileActive = true;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Loop", ToolTip = "켜면 일회성 사운드도 끝난 뒤 다시 시작합니다. Sound Cue나 MetaSound 내부의 샘플 정확도 루프도 그대로 지원합니다."))
+    bool bLoop = true;
+
+    // 오류를 기존 목록 뒤에 누적한다. 기본 설정은 기존 저장과 같은 무음 상태다.
+    bool IsValid(TArray<FText>& OutErrors) const;
+    bool HasNonDefaultValues() const;
+};
+
+USTRUCT(BlueprintType)
+
  // 시설 종류 하나를 완전히 설명하는 저장 가능한 값 사양.
  // 격자 공간, queue 경로·규칙, 앵커, 존 제한, 외부 시스템 키, 소프트 비주얼을 포함하며
  // 런타임 액터에 복사되어 원본 Data Asset 로드 상태와 분리된다.
@@ -501,6 +556,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Visual", meta = (DisplayName = "Visual Rotation", ToolTip = "메시 원본의 앞 방향을 시설 로컬 +Y 손님 방향에 맞추는 회전입니다. 정확 맞춤 모드에서는 0·90·180·270도 Yaw만 허용합니다."))
     FRotator VisualRotation = FRotator::ZeroRotator;
     // 메시 원본의 전면 방향을 시설 로컬 +Y 계약에 맞추는 회전이다.
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Facility Audio", ToolTip = "이 시설에만 적용할 3D 앰비언트 사운드와 재생 정책입니다. 사운드 에셋을 교체하면 코드나 시설 Blueprint 수정 없이 새 설치와 저장 데이터에 반영됩니다."))
+    FFFZSFacilityAudioSettings AudioSettings;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "10.0", Units = "cm"))
     float PlacementObstacleHeightCm = 250.0f;

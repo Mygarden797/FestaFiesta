@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Minigame/Audio/FF_MinigameAudioTypes.h"
 #include "Minigame/FF_MinigameTypes.h"
 #include "UI/FF_ActivatableScreenBase.h"
 #include "FF_MinigameScreenBase.generated.h"
@@ -52,6 +53,10 @@ public:
 protected:
 	/** Broadcasts at most once for the configured session. */
 	void RequestClose();
+
+	/** Emits a semantic event through the world audio subsystem. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Audio")
+	bool PlayMinigameSound(EFF_MinigameAudioEvent Event);
 
 	virtual FReply NativeOnPreviewKeyDown(
 		const FGeometry& InGeometry,

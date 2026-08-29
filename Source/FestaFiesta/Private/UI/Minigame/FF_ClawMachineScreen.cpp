@@ -127,6 +127,8 @@ bool UFF_ClawMachineScreen::SetRuntime(UFF_ClawMachineRuntime* InRuntime)
 		Runtime = nullptr;
 		SetSessionId(FGuid());
 		bHasSnapshot = false;
+		PresentedFeedbackSerial = 0;
+		bHasPresentedPhase = false;
 		RefreshPresentation();
 		return false;
 	}
@@ -141,6 +143,11 @@ bool UFF_ClawMachineScreen::SetRuntime(UFF_ClawMachineRuntime* InRuntime)
 	if (!GetSessionId().IsValid())
 	{
 		SetSessionId(RuntimeSessionId);
+	}
+	if (Runtime != InRuntime)
+	{
+		PresentedFeedbackSerial = 0;
+		bHasPresentedPhase = false;
 	}
 	Runtime = InRuntime;
 	ApplySnapshot(Snapshot);
@@ -169,10 +176,44 @@ void UFF_ClawMachineScreen::ApplySnapshot(const FFF_ClawMachineSnapshot& Snapsho
 	{
 		return;
 	}
+	if (bHasPresentedPhase && Snapshot.Phase != PresentedPhase)
+	{
+		switch (Snapshot.Phase)
+		{
+		case EFF_ClawMachinePhase::Dropping:
+			PlayMinigameSound(EFF_MinigameAudioEvent::ClawDropStarted);
+			break;
+		case EFF_ClawMachinePhase::Closing:
+			PlayMinigameSound(EFF_MinigameAudioEvent::ClawClosing);
+			break;
+		case EFF_ClawMachinePhase::Releasing:
+			PlayMinigameSound(EFF_MinigameAudioEvent::ClawRelease);
+			break;
+		default:
+			break;
+		}
+	}
+	PresentedPhase = Snapshot.Phase;
+	bHasPresentedPhase = true;
 	if (Snapshot.LatestFeedbackSerial > 0
 		&& Snapshot.LatestFeedbackSerial != PresentedFeedbackSerial)
 	{
 		PresentedFeedbackSerial = Snapshot.LatestFeedbackSerial;
+		switch (Snapshot.LatestFeedbackType)
+		{
+		case EFF_ClawMachineFeedbackType::PerfectGrab:
+			PlayMinigameSound(EFF_MinigameAudioEvent::ClawPerfectCapture);
+			break;
+		case EFF_ClawMachineFeedbackType::Grabbed:
+			PlayMinigameSound(EFF_MinigameAudioEvent::ClawPrizeCaptured);
+			break;
+		case EFF_ClawMachineFeedbackType::Slipped:
+		case EFF_ClawMachineFeedbackType::EmptyDrop:
+			PlayMinigameSound(EFF_MinigameAudioEvent::ClawPrizeMissed);
+			break;
+		default:
+			break;
+		}
 		FeedbackRemainingSeconds = 1.5f;
 	}
 	DisplayedSnapshot = Snapshot;
@@ -230,6 +271,8 @@ void UFF_ClawMachineScreen::NativeDestruct()
 	bBindingsInitialized = false;
 	bHasSnapshot = false;
 	bHasResult = false;
+	PresentedFeedbackSerial = 0;
+	bHasPresentedPhase = false;
 	bMoveLeft = bMoveRight = bMoveForward = bMoveBackward = false;
 	AnalogMovement = FVector2D::ZeroVector;
 	VirtualJoystickMovement = FVector2D::ZeroVector;
