@@ -60,6 +60,12 @@ namespace FFSurfingAssetTestHelpers
 			 "WBP_FF_Surfing_FreeRide_C");
 	const TCHAR* const CourseTableObjectPath =
 		TEXT("/Game/FestaFiesta/Minigame/Data/DT_SurfingCourse.DT_SurfingCourse");
+	const TCHAR* const FinalBackdropObjectPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Backdrop_Final."
+			 "T_MG_Surfing_Backdrop_Final");
+	const TCHAR* const FinalSurferObjectPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Surfer_Final."
+			 "T_MG_Surfing_Surfer_Final");
 
 	struct FRequiredWidget
 	{
@@ -281,6 +287,8 @@ bool FFF_SurfingDefinitionAssetContractTest::RunTest(const FString& Parameters)
 		Definition->GetPrimaryAssetId().PrimaryAssetName,
 		FName(TEXT("Surfing")));
 	TestEqual(TEXT("미니게임 ID가 보존된다"), Definition->MinigameId, FName(TEXT("Surfing")));
+	TestTrue(TEXT("기본 서핑 에셋은 마지막 목숨 손실 시 즉시 종료한다"),
+		Definition->Rules.bEndRunWhenLivesDepleted);
 	TestEqual(TEXT("사용자 표시 이름이 보존된다"),
 		Definition->DisplayName.ToString(), FString(TEXT("다대포 웨이브 서핑")));
 	TestEqual(TEXT("연결 시설은 하나로 보존된다"),
@@ -299,6 +307,19 @@ bool FFF_SurfingDefinitionAssetContractTest::RunTest(const FString& Parameters)
 			ScreenClass->IsChildOf(UFF_SurfingScreen::StaticClass()));
 		TestEqual(TEXT("Definition은 새 FreeRide WBP를 가리킨다"),
 			ScreenClass->GetPathName(), FString(FreeRideScreenClassPath));
+		const UFF_SurfingScreen* ScreenDefaults =
+			Cast<UFF_SurfingScreen>(ScreenClass->GetDefaultObject());
+		if (TestNotNull(TEXT("FreeRide 화면 CDO가 로드된다"), ScreenDefaults))
+		{
+			TestFalse(TEXT("기본 플레이는 프리미티브 SceneCapture를 사용하지 않는다"),
+				ScreenDefaults->VisualStyle.bEnableSceneCapture3D);
+			TestEqual(TEXT("최종 백드롭이 기본 플레이에 연결된다"),
+				ScreenDefaults->VisualStyle.BackdropTexture.ToSoftObjectPath().ToString(),
+				FString(FinalBackdropObjectPath));
+			TestEqual(TEXT("최종 서퍼가 기본 플레이에 연결된다"),
+				ScreenDefaults->VisualStyle.SurferTexture.ToSoftObjectPath().ToString(),
+				FString(FinalSurferObjectPath));
+		}
 	}
 
 	UDataTable* CourseTable = Definition->CourseLayoutTable.LoadSynchronous();

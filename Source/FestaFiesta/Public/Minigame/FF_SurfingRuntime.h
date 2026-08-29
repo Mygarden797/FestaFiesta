@@ -43,8 +43,10 @@ class FESTAFIESTA_API UFF_SurfingRuntime final : public UFF_MinigameRuntime
 
 public:
 	/**
-	 * Queues finite axes in [-1, 1] for the next fixed tick. X steers while the
-	 * course always advances; Y trims speed without stopping it.
+	 * Publishes finite input intent in [-1, 1] immediately. The next fixed tick
+	 * consumes the latest intent, so presentation stays responsive without making
+	 * movement or collision results frame-rate dependent. X steers while the course
+	 * always advances; Y trims speed without stopping it.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Surfing")
 	EFF_SurfingSteerResult SetMovementInput(
@@ -108,8 +110,6 @@ private:
 	double SimulationAccumulatorSeconds = 0.0;
 	int32 SimulationTick = 0;
 	int32 MaxSimulationTicks = 0;
-	FVector2D PendingMovementInput = FVector2D::ZeroVector;
-	bool bHasPendingMovementInput = false;
 	bool bBoostActivationPending = false;
 	float ScoreAccumulator = 0.0f;
 };

@@ -26,6 +26,18 @@ public:
 		int32 TargetSerial);
 
 	/**
+	 * Starts a projectile from the weapon's current visual muzzle toward its captured
+	 * aim direction. This keeps asset-driven muzzle placement and authoritative
+	 * impact resolution separate without treating a pointer position as a hit.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Target Shooting")
+	EFF_TargetShootingShotResult FireProjectileFromMuzzle(
+		const FGuid& SessionId,
+		const FVector2D& MuzzleNormalized,
+		const FVector2D& AimPointNormalized,
+		int32 TargetSerial);
+
+	/**
 	 * Immediately resolves one shot for integrations that do not render projectiles.
 	 * A hit consumes that serial and immediately spawns the next target. A miss keeps
 	 * the current target in place so the player can correct their aim without a random reset.

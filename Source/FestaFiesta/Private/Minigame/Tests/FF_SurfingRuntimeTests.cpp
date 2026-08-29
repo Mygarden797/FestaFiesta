@@ -203,6 +203,32 @@ bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 		FFSurfingRules::IsValidMovementInput(
 			std::numeric_limits<float>::quiet_NaN(),
 			0.0f));
+	TestEqual(TEXT("A single positive digital key resolves positive"),
+		FFSurfingRules::ResolveDigitalAxis(false, true, -1), 1.0f);
+	TestEqual(TEXT("The latest positive key wins while both are held"),
+		FFSurfingRules::ResolveDigitalAxis(true, true, 1), 1.0f);
+	TestEqual(TEXT("The latest negative key wins while both are held"),
+		FFSurfingRules::ResolveDigitalAxis(true, true, -1), -1.0f);
+	TestEqual(TEXT("Released digital keys resolve neutral"),
+		FFSurfingRules::ResolveDigitalAxis(false, false, 1), 0.0f);
+	const float ResponseAt30Fps = FFSurfingRules::CalculateExponentialResponse(
+		8.0f, 1.0f / 30.0f);
+	const float ResponseAt120Fps = FFSurfingRules::CalculateExponentialResponse(
+		8.0f, 1.0f / 120.0f);
+	float SmoothedAt30Fps = 0.0f;
+	float SmoothedAt120Fps = 0.0f;
+	for (int32 Frame = 0; Frame < 30; ++Frame)
+	{
+		SmoothedAt30Fps = FMath::Lerp(SmoothedAt30Fps, 1.0f, ResponseAt30Fps);
+	}
+	for (int32 Frame = 0; Frame < 120; ++Frame)
+	{
+		SmoothedAt120Fps = FMath::Lerp(SmoothedAt120Fps, 1.0f, ResponseAt120Fps);
+	}
+	TestTrue(TEXT("DeltaTime smoothing reaches the same response across frame rates"),
+		FMath::IsNearlyEqual(SmoothedAt30Fps, SmoothedAt120Fps, 1.0e-5f));
+	TestEqual(TEXT("Zero DeltaTime cannot advance presentation smoothing"),
+		FFSurfingRules::CalculateExponentialResponse(8.0f, 0.0f), 0.0f);
 
 	const float HorizontalMetricScale = Rules.ArenaHorizontalMetricScale;
 	TestTrue(TEXT("Default arena metric matches the authored aspect"),
@@ -277,6 +303,13 @@ bool FFF_SurfingRulesTest::RunTest(const FString& Parameters)
 	InvalidRules.BoostSpeedMultiplier = 2.0f;
 	InvalidRules.ForwardInputSpeedInfluence = 0.5f;
 	TestFalse(TEXT("Maximum forward trim is included in bounded tick travel"),
+		InvalidRules.IsValid());
+	InvalidRules = Rules;
+	InvalidRules.InitialLives = 0;
+	TestFalse(TEXT("A run that ends on depletion cannot start with zero lives"),
+		InvalidRules.IsValid());
+	InvalidRules.bEndRunWhenLivesDepleted = false;
+	TestTrue(TEXT("Zero initial lives remain valid for authored non-ending modes"),
 		InvalidRules.IsValid());
 
 	TestTrue(TEXT("Score subtraction saturates at zero"),
@@ -536,8 +569,12 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Diagonal input is accepted"),
 		Runtime->SetMovementInput(Context.SessionId, 0.3f, 0.4f),
 		EFF_SurfingSteerResult::Applied);
-	TestTrue(TEXT("Input waits for the next fixed tick"),
-		Runtime->GetSurfingSnapshot().MovementInput.IsZero());
+	const FFF_SurfingSnapshot ImmediateDiagonal = Runtime->GetSurfingSnapshot();
+	TestTrue(TEXT("Accepted input intent is published immediately"),
+		IsNearlyEqualVector(ImmediateDiagonal.MovementInput, FVector2D(0.3, 0.4)));
+	TestTrue(TEXT("Immediate input publication does not advance simulation"),
+		ImmediateDiagonal.PlayerPositionNormalized.IsZero()
+		&& FMath::IsNearlyZero(ImmediateDiagonal.DistanceMeters));
 	Runtime->Advance(FixedStepSeconds);
 	const FFF_SurfingSnapshot AfterDiagonal = Runtime->GetSurfingSnapshot();
 	const FVector2D ExpectedDiagonal = FFSurfingRules::NormalizeHeading(
@@ -564,7 +601,17 @@ bool FFF_SurfingInputTest::RunTest(const FString& Parameters)
 			ExpectedDiagonal.Y * ExpectedTravel,
 			1.0e-5));
 
+	const FVector2D PositionBeforeReverse = AfterDiagonal.PlayerPositionNormalized;
 	Runtime->SetSteerInput(Context.SessionId, -0.5f);
+	const FFF_SurfingSnapshot ImmediateReverse = Runtime->GetSurfingSnapshot();
+	TestTrue(TEXT("Opposite steering publishes its new heading immediately"),
+		FMath::IsNearlyEqual(ImmediateReverse.MovementInput.X, -0.5, 1.0e-6)
+		&& ImmediateReverse.CurrentHeading.X < 0.0);
+	TestTrue(TEXT("Immediate steering feedback cannot move outside the fixed tick"),
+		IsNearlyEqualVector(
+			ImmediateReverse.PlayerPositionNormalized,
+			PositionBeforeReverse,
+			1.0e-6));
 	Runtime->Advance(FixedStepSeconds);
 	TestTrue(TEXT("Horizontal wrapper preserves the forward input component"),
 		FMath::IsNearlyEqual(Runtime->GetSurfingSnapshot().MovementInput.Y, 0.4, 1.0e-6));
@@ -801,6 +848,7 @@ bool FFF_SurfingCollisionPickupBoostTest::RunTest(const FString& Parameters)
 	UFF_SurfingDefinition* HeartDefinition = MakeVerticalContactDefinition(
 		EFF_SurfingObjectType::Heart,
 		0);
+	HeartDefinition->Rules.bEndRunWhenLivesDepleted = false;
 	const FFF_MinigameSessionContext HeartContext = MakeSurfingContext(5002);
 	FString HeartFailure;
 	UFF_SurfingRuntime* HeartRuntime = MakeSurfingRuntime(
@@ -880,7 +928,7 @@ bool FFF_SurfingHitInvincibilityTest::RunTest(const FString& Parameters)
 
 	UFF_SurfingDefinition* Definition = MakeVerticalContactDefinition(
 		EFF_SurfingObjectType::Rock,
-		1);
+		2);
 	Definition->Rules.HitInvincibilitySeconds = 2.0f * FixedStepSeconds;
 	const FFF_MinigameSessionContext Context = MakeSurfingContext(6001);
 	FString FailureReason;
@@ -892,24 +940,113 @@ bool FFF_SurfingHitInvincibilityTest::RunTest(const FString& Parameters)
 
 	Runtime->Advance(FixedStepSeconds);
 	const FFF_SurfingSnapshot FirstHit = Runtime->GetSurfingSnapshot();
-	TestEqual(TEXT("First unprotected obstacle costs one life"), FirstHit.Lives, 0);
+	TestEqual(TEXT("First unprotected obstacle costs one life"), FirstHit.Lives, 1);
 	TestEqual(TEXT("First collision is counted"), FirstHit.CollisionCount, 1);
 	TestTrue(TEXT("Hit starts invincibility"), FirstHit.bInvincible);
-	TestEqual(TEXT("Zero lives does not end the challenge"),
+	TestEqual(TEXT("A remaining life keeps the challenge active"),
 		FirstHit.Session.State, EFF_MinigameSessionState::Playing);
 
 	Runtime->Advance(FixedStepSeconds);
 	TestEqual(TEXT("Return crossing during invincibility cannot deal duplicate damage"),
 		Runtime->GetSurfingSnapshot().CollisionCount, 1);
 	TestEqual(TEXT("Lives never fall below zero"),
-		Runtime->GetSurfingSnapshot().Lives, 0);
+		Runtime->GetSurfingSnapshot().Lives, 1);
 
 	// Three more unit paths reach the next recycled rock after invincibility expires.
 	Runtime->Advance(3.0f * FixedStepSeconds);
+	const FFF_SurfingSnapshot Wipeout = Runtime->GetSurfingSnapshot();
 	TestEqual(TEXT("A new logical segment obstacle can damage after invincibility"),
-		Runtime->GetSurfingSnapshot().CollisionCount, 2);
-	TestTrue(TEXT("Persistent obstacle is still rendered"),
-		FindVisibleType(Runtime->GetSurfingSnapshot(), EFF_SurfingObjectType::Rock));
+		Wipeout.CollisionCount, 2);
+	TestEqual(TEXT("The final collision saturates lives at zero"), Wipeout.Lives, 0);
+	TestEqual(TEXT("Zero lives completes the challenge"),
+		Wipeout.Session.State, EFF_MinigameSessionState::Completed);
+	TestEqual(TEXT("The challenge reports an explicit depletion reason"),
+		Wipeout.Session.EndReason, EFF_MinigameEndReason::LivesDepleted);
+	TestFalse(TEXT("Finishing clears temporary invincibility"), Wipeout.bInvincible);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_SurfingFatalContactShortCircuitTest,
+	"FestaFiesta.Minigame.Surfing.FatalContactShortCircuitsTick",
+	SurfingTestFlags)
+
+bool FFF_SurfingFatalContactShortCircuitTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+
+	UFF_SurfingDefinition* Definition = MakeVerticalContactDefinition(
+		EFF_SurfingObjectType::Rock,
+		1);
+	Definition->ScoreForMaxReward = 1;
+	UDataTable* CourseTable = Definition->CourseLayoutTable.LoadSynchronous();
+	if (!TestNotNull(TEXT("Fatal-contact course table loads"), CourseTable))
+	{
+		return false;
+	}
+	AddCourseRow(
+		*CourseTable,
+		TEXT("B_AfterFatalCoin"),
+		EFF_SurfingObjectType::Coin,
+		FVector2D(0.0, 0.75),
+		0.02f);
+
+	const FFF_MinigameSessionContext Context = MakeSurfingContext(6002);
+	FString FailureReason;
+	UFF_SurfingRuntime* Runtime = MakeSurfingRuntime(Definition, Context, FailureReason);
+	if (!TestNotNull(TEXT("Fatal-contact runtime initializes"), Runtime))
+	{
+		return false;
+	}
+
+	int32 EndBroadcastCount = 0;
+	Runtime->OnEnded.AddLambda([&EndBroadcastCount](UFF_MinigameRuntime*)
+	{
+		++EndBroadcastCount;
+	});
+
+	Runtime->Advance(FixedStepSeconds);
+	const FFF_SurfingSnapshot Finished = Runtime->GetSurfingSnapshot();
+	TestEqual(TEXT("Fatal contact completes immediately"),
+		Finished.Session.State, EFF_MinigameSessionState::Completed);
+	TestEqual(TEXT("Fatal contact uses the depletion end reason"),
+		Finished.Session.EndReason, EFF_MinigameEndReason::LivesDepleted);
+	TestEqual(TEXT("Fatal contact broadcasts exactly once"), EndBroadcastCount, 1);
+	TestEqual(TEXT("A later same-tick pickup is not collected"), Finished.CoinCount, 0);
+	TestEqual(TEXT("The fatal collision is retained"), Finished.CollisionCount, 1);
+	TestTrue(TEXT("Earned score still produces a completion reward"),
+		Runtime->BuildResult(150).RewardGold > 0);
+	TestEqual(TEXT("Finished runtime rejects movement"),
+		Runtime->SetMovementInput(Context.SessionId, 1.0f, 1.0f),
+		EFF_SurfingSteerResult::RejectedNotPlaying);
+	TestEqual(TEXT("Finished runtime rejects boost"),
+		Runtime->SubmitBoost(Context.SessionId),
+		EFF_SurfingBoostResult::RejectedNotPlaying);
+
+	const int32 FinalScore = Finished.Session.Score;
+	Runtime->Advance(FixedStepSeconds);
+	TestEqual(TEXT("Repeated advance cannot broadcast a second ending"),
+		EndBroadcastCount, 1);
+	TestEqual(TEXT("Repeated advance cannot change the final score"),
+		Runtime->GetSnapshot().Score, FinalScore);
+
+	UFF_SurfingDefinition* NonEndingDefinition = MakeVerticalContactDefinition(
+		EFF_SurfingObjectType::Rock,
+		1);
+	NonEndingDefinition->Rules.bEndRunWhenLivesDepleted = false;
+	FString NonEndingFailure;
+	UFF_SurfingRuntime* NonEndingRuntime = MakeSurfingRuntime(
+		NonEndingDefinition,
+		MakeSurfingContext(6003),
+		NonEndingFailure);
+	if (!TestNotNull(TEXT("Authored non-ending runtime initializes"), NonEndingRuntime))
+	{
+		return false;
+	}
+	NonEndingRuntime->Advance(FixedStepSeconds);
+	TestEqual(TEXT("The data switch can preserve play at zero lives"),
+		NonEndingRuntime->GetSnapshot().State,
+		EFF_MinigameSessionState::Playing);
 	return true;
 }
 

@@ -19,8 +19,8 @@ class UStaticMeshComponent;
  * perspective, lighting, shadows, a layered target plate and a first-person weapon.
  * Gameplay remains normalized and authoritative in UFF_TargetShootingRuntime.
  */
-UCLASS(NotBlueprintable, Transient)
-class FESTAFIESTA_API AFF_TargetShootingArena3D final : public AActor
+UCLASS(Blueprintable, Transient, meta = (DisplayName = "FF Target Shooting 3D Arena"))
+class FESTAFIESTA_API AFF_TargetShootingArena3D : public AActor
 {
 	GENERATED_BODY()
 
@@ -30,6 +30,15 @@ public:
 	/** Maps the runtime's normalized play-area coordinate onto the target wall. */
 	static FVector NormalizedToTargetPlane(const FVector2D& NormalizedPoint, float DepthX = 440.0f);
 
+	/** Hides the native room shell while preserving target/projectile presentation. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Minigame|Target Shooting|3D")
+	void SetEnvironmentVisible(bool bVisible);
+
+	/**
+	 * Blueprint subclasses may replace the complete target presentation while the
+	 * native implementation remains a zero-asset-dependency fallback.
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "FestaFiesta|Minigame|Target Shooting|3D")
 	void SetTargetPresentation(
 		bool bVisible,
 		const FVector2D& CenterNormalized,
@@ -40,7 +49,18 @@ public:
 		const FLinearColor& PrecisionColor,
 		const FLinearColor& BullseyeColor,
 		float HighlightStrength);
+	virtual void SetTargetPresentation_Implementation(
+		bool bVisible,
+		const FVector2D& CenterNormalized,
+		const FVector2D& RadiusNormalized,
+		float PrecisionRatio,
+		float BullseyeRatio,
+		const FLinearColor& OuterColor,
+		const FLinearColor& PrecisionColor,
+		const FLinearColor& BullseyeColor,
+		float HighlightStrength);
 
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "FestaFiesta|Minigame|Target Shooting|3D")
 	void SetProjectilePresentation(
 		bool bVisible,
 		const FVector2D& PositionNormalized,
@@ -48,8 +68,20 @@ public:
 		float TravelAlpha,
 		const FLinearColor& CoreColor,
 		const FLinearColor& GlowColor);
+	virtual void SetProjectilePresentation_Implementation(
+		bool bVisible,
+		const FVector2D& PositionNormalized,
+		const FVector2D& AimNormalized,
+		float TravelAlpha,
+		const FLinearColor& CoreColor,
+		const FLinearColor& GlowColor);
 
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "FestaFiesta|Minigame|Target Shooting|3D")
 	void SetWeaponPresentation(bool bVisible, float RecoilAlpha, float MuzzleFlashAlpha);
+	virtual void SetWeaponPresentation_Implementation(
+		bool bVisible,
+		float RecoilAlpha,
+		float MuzzleFlashAlpha);
 
 private:
 	UStaticMeshComponent* CreatePrimitive(

@@ -178,6 +178,21 @@ FVector AFF_TargetShootingArena3D::NormalizedToTargetPlane(
 		190.0 + (0.5 - FMath::Clamp(NormalizedPoint.Y, 0.0, 1.0)) * ArenaPlaneHeight);
 }
 
+void AFF_TargetShootingArena3D::SetEnvironmentVisible(const bool bVisible)
+{
+	for (const TArray<TObjectPtr<UStaticMeshComponent>>* Group : {
+		&NavyEnvironment, &SteelEnvironment, &CyanLights, &AmberLights })
+	{
+		for (UStaticMeshComponent* Mesh : *Group)
+		{
+			if (Mesh)
+			{
+				Mesh->SetVisibility(bVisible, true);
+			}
+		}
+	}
+}
+
 UStaticMeshComponent* AFF_TargetShootingArena3D::CreatePrimitive(
 	const FName Name,
 	UStaticMesh* Mesh,
@@ -269,7 +284,7 @@ void AFF_TargetShootingArena3D::SetTargetPartsVisible(const bool bVisible)
 	}
 }
 
-void AFF_TargetShootingArena3D::SetTargetPresentation(
+void AFF_TargetShootingArena3D::SetTargetPresentation_Implementation(
 	const bool bVisible,
 	const FVector2D& CenterNormalized,
 	const FVector2D& RadiusNormalized,
@@ -376,7 +391,7 @@ void AFF_TargetShootingArena3D::SetTargetPresentation(
 	}
 }
 
-void AFF_TargetShootingArena3D::SetProjectilePresentation(
+void AFF_TargetShootingArena3D::SetProjectilePresentation_Implementation(
 	const bool bVisible,
 	const FVector2D& PositionNormalized,
 	const FVector2D& AimNormalized,
@@ -422,7 +437,7 @@ void AFF_TargetShootingArena3D::SetProjectilePresentation(
 	ApplyColor(ProjectileTrail, GlowColor * 1.25f);
 }
 
-void AFF_TargetShootingArena3D::SetWeaponPresentation(
+void AFF_TargetShootingArena3D::SetWeaponPresentation_Implementation(
 	const bool bVisible,
 	const float RecoilAlpha,
 	const float MuzzleFlashAlpha)

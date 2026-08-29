@@ -17,6 +17,7 @@
 #include "Minigame/FF_TargetShootingRuntime.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "UI/Minigame/FF_ClawMachineScreen.h"
 #include "UI/Minigame/FF_MinigameScreenBase.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
 #include "UI/Minigame/FF_TargetShootingScreen.h"
@@ -230,6 +231,10 @@ EFF_MinigameStartResult UFF_MinigameSubsystem::StartMinigame(
 		else if (CandidateDefinition->IsA<UFF_SurfingDefinition>())
 		{
 			ScreenClass = UFF_SurfingScreen::StaticClass();
+		}
+		else if (CandidateDefinition->IsA<UFF_ClawMachineDefinition>())
+		{
+			ScreenClass = UFF_ClawMachineScreen::StaticClass();
 		}
 
 		if (ScreenClass)
