@@ -95,6 +95,19 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog")
 	TSoftObjectPtr<UTexture2D> Thumbnail;
 
+	// Facility Definition Spec에서 투영한 월드 동시 설치 상한입니다. 0이면 제한 없음입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Limit")
+	int32 MaxInstancesPerWorld = 0;
+
+	// 이 카탈로그 스냅샷을 화면에 투영한 시점의 동일 Definition 등록 시설 수입니다.
+	// 권위 판정 원천이 아니며 화면을 다시 열거나 월드 변경을 받을 때 새로 계산합니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Limit")
+	int32 CurrentInstanceCount = 0;
+
+	// 유한 상한에 도달했는지 나타내는 표현 전용 값입니다. 최종 설치 판정은 Zone System이 다시 수행합니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Limit")
+	bool bBuildLimitReached = false;
+
 	// 현재 Festival의 FacilityCostTable에서 해석한 설치비입니다. 카탈로그 구성 시 한 번 계산해
 	// UMG/Slate 표현이 같은 가격 원천을 사용하게 하며, 실패하면 bHasResolvedInstallCost가 false입니다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")

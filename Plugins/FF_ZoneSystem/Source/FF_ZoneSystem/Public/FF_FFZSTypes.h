@@ -140,7 +140,10 @@ enum class EFFZSPlacementFailure : uint8
     InternalError,
     // 경제 정책이 현재 잔액으로 명령 비용을 지불할 수 없음을 구조적으로 나타낸다.
     // 기존 SaveGame enum ordinal을 보존하기 위해 새 값은 항상 목록 끝에 추가한다.
-    InsufficientFunds
+    InsufficientFunds,
+    // 동일 정의 시설의 월드 동시 설치 상한에 도달했다.
+    // 기존 SaveGame enum ordinal을 보존하기 위해 새 값은 항상 목록 끝에 추가한다.
+    BuildLimitReached
 };
 
 // 시설 내 이동 의미 지점. Entry는 진입, Service는 처리 위치, Exit는 최종 소유권 해제 전 도착 위치
@@ -470,6 +473,10 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Allowed Zone IDs", ToolTip = "시설을 배치할 수 있는 Zone ID 제한 목록입니다. 비어 있으면 시설 분류와 Zone 정책만 사용합니다."))
     TArray<FName> AllowedZoneIds;
     // 비어 있으면 이 정의는 Zone 카테고리 규칙에만 의존한다.
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Maximum Instances per World", ToolTip = "동일한 Facility Definition ID로 월드에 동시에 건축할 수 있는 최대 시설 수입니다. 0이면 건축 수량을 제한하지 않습니다.", ClampMin = "0"))
+    int32 MaxInstancesPerWorld = 0;
+    // 0은 무제한이다. 양수면 철거되지 않고 현재 등록된 동일 정의 시설의 동시 설치 상한이다.
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Install Cost Key", ToolTip = "외부 경제 시스템에서 설치 비용을 조회할 키입니다. None이면 프로젝트 정책에 따라 비용이 없거나 별도 기본값을 사용합니다."))
     FName InstallCostKey = NAME_None;

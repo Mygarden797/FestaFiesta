@@ -50,6 +50,14 @@ private:
 	UFUNCTION()
 	void HandleClosingClicked();
 
+	/** Debug rewind: changes only the Stage timeline; irreversible economy state is preserved. */
+	UFUNCTION()
+	void HandlePreviousDayClicked();
+
+	/** Debug fast-forward: uses the real Report -> AdvanceToNextDay authority path. */
+	UFUNCTION()
+	void HandleNextDayClicked();
+
 	UFUNCTION()
 	void HandleOpenAllClicked();
 
@@ -74,6 +82,10 @@ private:
 	void RequestStage(EFF_FestivalStage Stage);
 	void ApplyBatchResult(const FFF_ZoneFacilityLifecycleBatchResult& Result);
 	void SetLastResult(const FText& Text);
+
+	// Live rewind schedules one redundant empty AutomaticClose on the next Tick.
+	// Suppress only that no-op result so the rewind outcome remains visible.
+	bool bSuppressNextEmptyAutomaticCloseResult = false;
 
 	// 새 LightTeal WBP의 상호작용 경계. 구 에셋도 로드할 수 있도록 refresh 전에는 선택 계약이다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Testing",
@@ -111,6 +123,12 @@ private:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> BTN_Closing;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> BTN_PreviousDay;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> BTN_NextDay;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> BTN_OpenAll;

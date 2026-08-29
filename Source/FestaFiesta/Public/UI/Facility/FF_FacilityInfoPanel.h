@@ -88,6 +88,16 @@ private:
 	FLinearColor FeedbackSuccessColor =
 		FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor InstanceLimitNormalColor =
+		FLinearColor::FromSRGBColor(FColor(0x24, 0x33, 0x2E));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor InstanceLimitReachedColor =
+		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
 
@@ -176,6 +186,10 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_RecoveryCost;
+
+	/** Optional until the non-destructive WBP builder migration has added the new row. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_InstanceLimit;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_QueueCapacity;

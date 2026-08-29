@@ -8,6 +8,7 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/VerticalBox.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 
@@ -68,6 +69,14 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_Clearance, ViewData.ClearanceText);
 	SetText(Text_InstallCost, ViewData.InstallCostText);
 	SetText(Text_RecoveryCost, ViewData.RecoveryCostText);
+	SetText(Text_InstanceLimit, ViewData.InstanceLimitText);
+	if (Text_InstanceLimit)
+	{
+		Text_InstanceLimit->SetColorAndOpacity(FSlateColor(
+			ViewData.bInstanceLimitReached
+				? InstanceLimitReachedColor
+				: InstanceLimitNormalColor));
+	}
 	SetText(Text_QueueCapacity, ViewData.QueueCapacityText);
 	SetText(Text_ServiceDuration, ViewData.ServiceDurationText);
 	SetText(Text_OperationState, ViewData.OperationStateText);
@@ -208,7 +217,23 @@ void UFF_FacilityInfoPanel::SetPanelOpen(const bool bOpen)
 
 bool UFF_FacilityInfoPanel::IsPointerOverInteractivePanel() const
 {
-	return GetVisibility() != ESlateVisibility::Collapsed && Border_Panel && Border_Panel->IsHovered();
+	if (GetVisibility() == ESlateVisibility::Collapsed ||
+		GetVisibility() == ESlateVisibility::Hidden || !Border_Panel)
+	{
+		return false;
+	}
+	if (Border_Panel->IsHovered())
+	{
+		return true;
+	}
+
+	// BuildMode polls the raw mouse-down state during the world tick, while UMG buttons normally
+	// click on mouse-up. A newly replaced PrepHUD can own Slate's hover path even when this card is
+	// visibly above it, so IsHovered alone lets the same press fall through and clear the selected
+	// facility before the button callback runs. Cached geometry is independent of that hover owner.
+	return FSlateApplication::IsInitialized() &&
+		Border_Panel->GetCachedGeometry().IsUnderLocation(
+			FSlateApplication::Get().GetCursorPos());
 }
 
 void UFF_FacilityInfoPanel::HandleMoveClicked()

@@ -28,7 +28,8 @@ enum class EFF_PrepBuildTileState : uint8
 	Available			UMETA(DisplayName = "배치 가능"),
 	InsufficientFunds	UMETA(DisplayName = "잔액 부족"),
 	PriceUnavailable	UMETA(DisplayName = "가격 미확정"),
-	GoldUnavailable		UMETA(DisplayName = "잔액 미확정")
+	GoldUnavailable		UMETA(DisplayName = "잔액 미확정"),
+	BuildLimitReached	UMETA(DisplayName = "건축 한도 도달")
 };
 
 /** 카탈로그 원본을 변경하지 않고 적용하는 화면 전용 필터입니다. */

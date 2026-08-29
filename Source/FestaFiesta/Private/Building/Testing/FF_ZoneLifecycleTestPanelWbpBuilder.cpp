@@ -348,7 +348,8 @@ namespace FFZoneLifecycleTestWbpBuilder
 		UBorder* StageBorder = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_StageSection"));
 		UVerticalBox* StageSection = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_StageSection"));
 		UHorizontalBox* StageRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Stage_Button_Row"));
-		if (!StageBorder || !StageSection || !StageRow)
+		UHorizontalBox* DayRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Day_Button_Row"));
+		if (!StageBorder || !StageSection || !StageRow || !DayRow)
 		{
 			return false;
 		}
@@ -359,7 +360,7 @@ namespace FFZoneLifecycleTestWbpBuilder
 				Blueprint, Tree, *StageSection,
 				TEXT("TXT_StageSectionTitle"), TEXT("TXT_StageSectionCaption"),
 				FText::FromString(TEXT("축제 단계")),
-				FText::FromString(TEXT("실제 Festival Stage 전환 API를 호출합니다.")), *Palette)
+				FText::FromString(TEXT("실제 Stage API와 일 경계 정산 경로를 호출합니다.")), *Palette)
 			|| !AddButtonRow(*StageRow, {
 				MakeLightButton(Blueprint, Tree, TEXT("BTN_Setup"), TEXT("TXT_BTN_Setup"),
 					FText::FromString(TEXT("설치 준비")), Palette->InGame.PaperSunken,
@@ -376,11 +377,21 @@ namespace FFZoneLifecycleTestWbpBuilder
 				MakeLightButton(Blueprint, Tree, TEXT("BTN_Closing"), TEXT("TXT_BTN_Closing"),
 					FText::FromString(TEXT("마감")), Palette->InGame.PaperSunken,
 					Palette->InGame.Hover, Palette->InGame.TealSoft, Palette->InGame.PaperSunken,
-					Palette->InGame.TealDeep, Palette->InGame.Line)}))
+					Palette->InGame.TealDeep, Palette->InGame.Line)})
+			|| !AddButtonRow(*DayRow, {
+				MakeLightButton(Blueprint, Tree, TEXT("BTN_PreviousDay"), TEXT("TXT_BTN_PreviousDay"),
+					FText::FromString(TEXT("이전 날로 이동")), Palette->InGame.PaperSunken,
+					Palette->InGame.Hover, Palette->InGame.TealSoft, Palette->InGame.PaperSunken,
+					Palette->InGame.TealDeep, Palette->InGame.Line),
+				MakeLightButton(Blueprint, Tree, TEXT("BTN_NextDay"), TEXT("TXT_BTN_NextDay"),
+					FText::FromString(TEXT("다음 날로 진행")), Palette->InGame.Teal,
+					Palette->InGame.TealDeep, Palette->InGame.TealDeep, Palette->InGame.LineStrong,
+					Palette->InGame.White, Palette->InGame.TealDeep)}))
 		{
 			return false;
 		}
-		AddVertical(*StageSection, *StageRow);
+		AddVertical(*StageSection, *StageRow, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+		AddVertical(*StageSection, *DayRow);
 		StageBorder->AddChild(StageSection);
 		AddVertical(*Sections, *StageBorder, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 
@@ -479,6 +490,7 @@ namespace FFZoneLifecycleTestWbpBuilder
 		for (const FName ButtonName : {
 			FName(TEXT("BTN_Setup")), FName(TEXT("BTN_MorningCheck")),
 			FName(TEXT("BTN_Live")), FName(TEXT("BTN_Closing")),
+			FName(TEXT("BTN_PreviousDay")), FName(TEXT("BTN_NextDay")),
 			FName(TEXT("BTN_OpenAll")), FName(TEXT("BTN_CloseAll")),
 			FName(TEXT("BTN_EmergencyCloseAll")), FName(TEXT("BTN_Refresh"))})
 		{

@@ -64,6 +64,21 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText RecoveryCostText;
 
+	/** Number of committed facilities in this world that share FacilityDefinitionId. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Build Limit")
+	int32 CurrentInstancesInWorld = 0;
+
+	/** Data-authored world cap. Zero means this facility definition has no count limit. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Build Limit")
+	int32 MaxInstancesPerWorld = 0;
+
+	/** Localized current/max summary. Unlimited definitions still show the committed count. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Build Limit")
+	FText InstanceLimitText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Build Limit")
+	bool bInstanceLimitReached = false;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText QueueCapacityText;
 

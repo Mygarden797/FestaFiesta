@@ -241,6 +241,23 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 		return false;
 	}
 
+	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
+	UDataTable* CostTable = NewObject<UDataTable>(GameInstance);
+	if (!TestNotNull(TEXT("프로그램 read model FestivalDefinition"), Definition) ||
+		!TestNotNull(TEXT("프로그램 read model CostTable"), CostTable))
+	{
+		return false;
+	}
+	CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
+	FFF_FacilityCostRow CostRow;
+	CostRow.InstallCost = 100;
+	CostTable->AddRow(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"), CostRow);
+	Definition->FestivalId = TEXT("FacilityInfoProgramReadModelFestival");
+	Definition->FacilityCostTable = CostTable;
+	Definition->DailyVenueRentGold = 0;
+	Progression->SetProgramReservations(Reservations);
+	Progression->StartFestival(Definition);
+
 	FFFZSFacilitySpec FacilitySpec =
 		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	FacilitySpec.FacilityDefinitionId = TEXT("Booth_CraftExperience_FacilityInfoProgramTest");
@@ -258,28 +275,15 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	AFFZSFacilityActor* Facility = InstallResult.bSucceeded
 		? ZoneSystem->FindFacility(InstallCommand.FacilityInstanceId)
 		: nullptr;
-	if (!TestTrue(TEXT("프로그램 호환 시설 설치"), InstallResult.bSucceeded) ||
+	const FString InstallDiagnostic = FString::Printf(
+		TEXT("프로그램 호환 시설 설치 (FailureReason=%d, Message=%s)"),
+		static_cast<int32>(InstallResult.FailureReason),
+		*InstallResult.Message.ToString());
+	if (!TestTrue(*InstallDiagnostic, InstallResult.bSucceeded) ||
 		!TestNotNull(TEXT("프로그램 호환 시설 조회"), Facility))
 	{
 		return false;
 	}
-
-	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
-	UDataTable* CostTable = NewObject<UDataTable>(GameInstance);
-	if (!TestNotNull(TEXT("프로그램 read model FestivalDefinition"), Definition) ||
-		!TestNotNull(TEXT("프로그램 read model CostTable"), CostTable))
-	{
-		return false;
-	}
-	CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
-	FFF_FacilityCostRow CostRow;
-	CostRow.InstallCost = 100;
-	CostTable->AddRow(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"), CostRow);
-	Definition->FestivalId = TEXT("FacilityInfoProgramReadModelFestival");
-	Definition->FacilityCostTable = CostTable;
-	Definition->DailyVenueRentGold = 0;
-	Progression->SetProgramReservations(Reservations);
-	Progression->StartFestival(Definition);
 
 	Coordinator->SelectionContext = EFF_FacilityInfoContext::Build;
 	Stage->CurrentStage = EFF_FestivalStage::Setup;
@@ -412,15 +416,22 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 	FFFZSGridPlacement Placement;
 	Placement.OriginCell = FIntPoint(1000, 1000);
 	Placement.QuarterTurns = 1;
-	const FFFZSFacilitySpec FacilitySpec =
+	FFFZSFacilitySpec FacilitySpec =
 		FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	// Game World에서는 프로젝트 Economy 정책도 함께 동작하므로 플러그인 범용 fixture의
+	// 레거시 가격 키 대신 실제 DT_FacilityCosts에 존재하는 프로젝트 행을 사용한다.
+	FacilitySpec.InstallCostKey = TEXT("Cost.Booth.FoodStall.DadaPochaFoodTruck");
 	const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
 		FacilitySpec,
 		ZoneId,
 		Placement,
 		ZoneSystem->GetWorldRevision());
 	const FFFZSCommandResult InstallResult = ZoneSystem->ExecuteCommand(InstallCommand);
-	if (!TestTrue(TEXT("90도 회전 시설 설치"), InstallResult.bSucceeded))
+	const FString InstallDiagnostic = FString::Printf(
+		TEXT("90도 회전 시설 설치 (FailureReason=%d, Message=%s)"),
+		static_cast<int32>(InstallResult.FailureReason),
+		*InstallResult.Message.ToString());
+	if (!TestTrue(*InstallDiagnostic, InstallResult.bSucceeded))
 	{
 		return false;
 	}
@@ -867,6 +878,42 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		(void)SlateWidget;
 		TestEqual(TEXT("적용된 ViewData의 GUID가 보존된다"),
 			Panel->GetCurrentViewData().FacilityInstanceId, ViewData.FacilityInstanceId);
+		UButton* MoveButton = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_Move")));
+		UButton* RemoveButton = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_Remove")));
+		TestNotNull(TEXT("인스턴스에 이동 버튼이 바인딩된다"), MoveButton);
+		TestNotNull(TEXT("인스턴스에 철거 버튼이 바인딩된다"), RemoveButton);
+		if (MoveButton && RemoveButton)
+		{
+			TestTrue(TEXT("이동 가능 read model은 이동 버튼을 활성화한다"),
+				MoveButton->GetIsEnabled());
+			TestTrue(TEXT("철거 가능 read model은 철거 버튼을 활성화한다"),
+				RemoveButton->GetIsEnabled());
+
+			int32 MoveRequestCount = 0;
+			int32 RemoveRequestCount = 0;
+			const FDelegateHandle MoveHandle = Panel->OnMoveRequested.AddLambda(
+				[&MoveRequestCount]() { ++MoveRequestCount; });
+			const FDelegateHandle RemoveHandle = Panel->OnRemoveRequested.AddLambda(
+				[&RemoveRequestCount]() { ++RemoveRequestCount; });
+			MoveButton->OnClicked.Broadcast();
+			RemoveButton->OnClicked.Broadcast();
+			TestEqual(TEXT("활성 이동 버튼은 요청을 한 번 보낸다"), MoveRequestCount, 1);
+			TestEqual(TEXT("활성 철거 버튼은 요청을 한 번 보낸다"), RemoveRequestCount, 1);
+
+			ViewData.bCanMove = false;
+			ViewData.bCanRemove = false;
+			Panel->ApplyViewData(ViewData);
+			TestFalse(TEXT("이동 불가 read model은 이동 버튼을 비활성화한다"),
+				MoveButton->GetIsEnabled());
+			TestFalse(TEXT("철거 불가 read model은 철거 버튼을 비활성화한다"),
+				RemoveButton->GetIsEnabled());
+			MoveButton->OnClicked.Broadcast();
+			RemoveButton->OnClicked.Broadcast();
+			TestEqual(TEXT("비활성 이동 버튼은 요청을 우회 방송하지 않는다"), MoveRequestCount, 1);
+			TestEqual(TEXT("비활성 철거 버튼은 요청을 우회 방송하지 않는다"), RemoveRequestCount, 1);
+			Panel->OnMoveRequested.Remove(MoveHandle);
+			Panel->OnRemoveRequested.Remove(RemoveHandle);
+		}
 		UWidget* ProgramSection = Panel->GetWidgetFromName(TEXT("Panel_ProgramSection"));
 		UButton* ScheduleProgramButton = Cast<UButton>(
 			Panel->GetWidgetFromName(TEXT("Button_ScheduleProgram")));
@@ -934,8 +981,44 @@ bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
-	TestNotNull(TEXT("Picker 클릭 영역"),
-		Cast<UBorder>(PickerTree->FindWidget(TEXT("Border_Picker"))));
+	const UBorder* PickerBorder =
+		Cast<UBorder>(PickerTree->FindWidget(TEXT("Border_Picker")));
+	TestNotNull(TEXT("Picker 클릭 영역"), PickerBorder);
+	const UCanvasPanelSlot* PickerSlot = PickerBorder
+		? Cast<UCanvasPanelSlot>(PickerBorder->Slot)
+		: nullptr;
+	TestNotNull(TEXT("Picker는 전체 화면 Canvas에 우측 도킹된다"), PickerSlot);
+	if (PickerSlot)
+	{
+		const FAnchors Anchors = PickerSlot->GetAnchors();
+		TestTrue(TEXT("Picker anchor는 우측 세로 stretch다"),
+			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) &&
+			Anchors.Maximum.Equals(FVector2D(1.0f, 1.0f)));
+		TestTrue(TEXT("Picker alignment는 우상단이다"),
+			PickerSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)));
+
+		const FMargin Offsets = PickerSlot->GetOffsets();
+		TestTrue(TEXT("Picker offsets는 우측 24px, 상단 72px, 폭 520px, 하단 400px 여백이다"),
+			FMath::IsNearlyEqual(Offsets.Left, -24.0f) &&
+			FMath::IsNearlyEqual(Offsets.Top, 72.0f) &&
+			FMath::IsNearlyEqual(Offsets.Right, 520.0f) &&
+			FMath::IsNearlyEqual(Offsets.Bottom, 400.0f));
+
+		constexpr float ReferenceViewportHeight = 1080.0f;
+		constexpr float PrepHudBarHeight = 58.0f;
+		constexpr float PrepHudBottomMargin = 12.0f;
+		constexpr float PrepBuildHostHeight = 320.0f;
+		constexpr float PrepBuildHudTop = ReferenceViewportHeight
+			- PrepHudBarHeight - PrepHudBottomMargin - PrepBuildHostHeight;
+		const float PickerBottom = ReferenceViewportHeight - Offsets.Bottom;
+		TestTrue(TEXT("1080p에서 Picker 하단은 680px이다"),
+			FMath::IsNearlyEqual(PickerBottom, 680.0f));
+		TestTrue(*FString::Printf(
+			TEXT("1080p에서 Picker 하단 %.0fpx는 Build HUD 상단 %.0fpx보다 위다"),
+			PickerBottom,
+			PrepBuildHudTop),
+			PickerBottom < PrepBuildHudTop);
+	}
 	TestNotNull(TEXT("프로그램 동적 목록"),
 		Cast<UScrollBox>(PickerTree->FindWidget(TEXT("ScrollBox_Programs"))));
 	TestNotNull(TEXT("별도 구매·편성 확인 버튼"),

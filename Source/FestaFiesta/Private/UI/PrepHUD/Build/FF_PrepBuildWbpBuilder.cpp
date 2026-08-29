@@ -176,6 +176,7 @@ namespace FFPrepBuildWbpBuilder
 		Tree.RootWidget = Root;
 		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 6.0f));
 		Root->SetPadding(FMargin(10.0f));
+		Root->SetClipping(EWidgetClipping::ClipToBoundsAlways);
 
 		ThumbnailSize->SetHeightOverride(94.0f);
 		ThumbnailBackdrop->SetBrush(MakeSolidBrush(Palette->InGame.StatusBar, 5.0f));

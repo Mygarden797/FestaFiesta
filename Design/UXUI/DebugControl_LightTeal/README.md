@@ -23,7 +23,7 @@
 
 1. `Border_Header`: 도구명, Test_Main 문맥, `Ctrl+G` 키캡.
 2. `Border_StatusSection`: Stage, FFZS Phase/Revision, 시설·Queue 집계.
-3. `Border_StageSection`: Setup, MorningCheck, Live, Closing 단계 전환.
+3. `Border_StageSection`: Setup, MorningCheck, Live, Closing 단계 전환과 이전/다음 날 이동.
 4. `Border_LifecycleSection`: 전체 개장, 정상 폐쇄, 긴급 폐쇄, 새로고침.
 5. `Border_LastResult`: 최근 Lifecycle 실행 결과. 본문 스크롤과 무관하게 항상 고정 표시한다.
 
@@ -34,11 +34,23 @@
 아래 BindWidget 이름과 타입은 네이티브 계약이므로 변경·삭제하지 않는다.
 
 - 상태 텍스트: `TXT_Stage`, `TXT_PhaseRevision`, `TXT_FacilityCounts`, `TXT_QueueCounts`, `TXT_LastResult`
-- 단계 버튼: `BTN_Setup`, `BTN_MorningCheck`, `BTN_Live`, `BTN_Closing`
+- 단계 버튼: `BTN_Setup`, `BTN_MorningCheck`, `BTN_Live`, `BTN_Closing`, `BTN_PreviousDay`, `BTN_NextDay`
 - 운영 버튼: `BTN_OpenAll`, `BTN_CloseAll`, `BTN_EmergencyCloseAll`, `BTN_Refresh`
 - 클릭 경계: `Border_Panel`
 
 버튼 레이블, 설명, 브러시, 패딩, 타이포 위계는 Designer에서 수정할 수 있다. 표시 데이터와 버튼 동작, `Ctrl+G` 토글, 월드 클릭 관통 방지는 C++가 소유한다.
+
+`BTN_PreviousDay`와 `BTN_NextDay`는 `Day_Button_Row`에서 같은 폭으로 표시한다. Day 1에서는 이전 날,
+Day 3에서는 다음 날 버튼을 비활성화한다. 이전 날 이동은 Time 서브시스템을 확장하지 않고 디버그 패널 전용
+`FFZoneLifecycleDebugDayControl`이 공개 Stage 상태와 전환 API만 사용한다. Day 2·3은 `MorningCheck`, Day 1은
+실제 시작 단계인 `Setup`으로 진입한다. 이동 전에 Active 시설을 권위 `Close` 배치로 동기 폐쇄하며 하나라도
+실패하면 날짜를 바꾸지 않는다. 이 기능은 시설 Lifecycle QA를 위한 **Stage 시간축 이동**이므로 이미 확정된
+경제·원장·유료 프로그램 예약과 Day 3 종료 방송 상태는 되돌리지 않는다.
+
+`BTN_NextDay`는 날짜 값을 직접 수정하지 않는다. 마지막 날이 아니라면 현재 단계를 `Closing → Report`로
+전환한 뒤 `UFF_FestivalStageSubsystem::AdvanceToNextDay()`를 호출한다. 따라서 시설 폐쇄 안전망,
+`OnDayEnded`, 일일 경제·유료 프로그램 예약 초기화와 다음 날 `MorningCheck` 진입이 실제 게임과 같은 권위
+경로를 통과한다. 마지막 날에는 상태를 바꾸지 않고 결과 문구만 표시한다.
 
 ## 생성·리프레시
 

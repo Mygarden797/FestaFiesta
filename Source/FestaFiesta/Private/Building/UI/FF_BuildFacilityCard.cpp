@@ -60,12 +60,57 @@ FText UFF_BuildFacilityCard::MakeFacilityCostToolTip(
 			FText::AsNumber(CatalogEntry.RecoveryCost))
 		: UnavailableText;
 
-	return FText::Format(
+	const FText BuildLimitText = MakeFacilityBuildLimitText(CatalogEntry);
+	const FText BuildLimitReason = CatalogEntry.bBuildLimitReached
+		? LOCTEXT("FacilityBuildLimitReachedReason", "이 시설은 건축 한도에 도달해 더 배치할 수 없습니다.")
+		: FText::GetEmpty();
+
+	if (CatalogEntry.MaxInstancesPerWorld <= 0)
+	{
+		// 기존 무제한 카드는 가격 툴팁 문자열 계약을 그대로 유지하고 카드 본문에서 제한 없음을 표시합니다.
+		return FText::Format(
+			LOCTEXT(
+				"FacilityCostsFormat",
+				"건설 비용: {0}\n회수 비용: {1}"),
+			InstallCostText,
+			RecoveryCostText);
+	}
+
+	return CatalogEntry.bBuildLimitReached
+		? FText::Format(
+			LOCTEXT(
+				"FacilityCostsAndReachedLimitFormat",
+				"건설 비용: {0}\n회수 비용: {1}\n{2}\n{3}"),
+			InstallCostText,
+			RecoveryCostText,
+			BuildLimitText,
+			BuildLimitReason)
+		: FText::Format(
 		LOCTEXT(
-			"FacilityCostsFormat",
-			"건설 비용: {0}\n회수 비용: {1}"),
+			"FacilityCostsAndLimitFormat",
+			"건설 비용: {0}\n회수 비용: {1}\n{2}"),
 		InstallCostText,
-		RecoveryCostText);
+		RecoveryCostText,
+		BuildLimitText);
+}
+
+FText UFF_BuildFacilityCard::MakeFacilityBuildLimitText(
+	const FFF_BuildCatalogEntry& CatalogEntry)
+{
+	if (CatalogEntry.MaxInstancesPerWorld <= 0)
+	{
+		return LOCTEXT("FacilityBuildLimitUnlimited", "설치 제한 없음");
+	}
+
+	const FText CountText = FText::Format(
+		LOCTEXT("FacilityBuildLimitCount", "설치 {0}/{1}"),
+		FText::AsNumber(FMath::Max(0, CatalogEntry.CurrentInstanceCount)),
+		FText::AsNumber(CatalogEntry.MaxInstancesPerWorld));
+	return CatalogEntry.bBuildLimitReached
+		? FText::Format(
+			LOCTEXT("FacilityBuildLimitCountReached", "{0} · 한도 도달"),
+			CountText)
+		: CountText;
 }
 
 void UFF_BuildFacilityCard::RefreshThumbnail()
@@ -123,7 +168,10 @@ void UFF_BuildFacilityCard::ApplyEntryToWidgets()
 	}
 	if (Text_DefinitionId)
 	{
-		Text_DefinitionId->SetText(FText::FromName(Entry.FacilityDefinitionId));
+		Text_DefinitionId->SetText(FText::Format(
+			LOCTEXT("DefinitionAndBuildLimit", "{0}\n{1}"),
+			FText::FromName(Entry.FacilityDefinitionId),
+			MakeFacilityBuildLimitText(Entry)));
 	}
 	ApplyThumbnailToWidget();
 }
@@ -148,6 +196,14 @@ void UFF_BuildFacilityCard::ApplyThumbnailToWidget()
 
 void UFF_BuildFacilityCard::RefreshFacilityCostTooltip()
 {
+	// 한도 도달 카드는 클릭을 유지해 사유를 안내하므로, 기존 WBP가 한도 행을 갖지 않아도
+	// 반드시 전체 사유가 보이는 지역화 텍스트 툴팁으로 표시합니다.
+	if (Entry.bBuildLimitReached)
+	{
+		ApplyFacilityCostTextFallback();
+		return;
+	}
+
 	// Native NewObject 기반 단위 테스트에는 WidgetTree가 없습니다. CreateWidget(UWidget owner)는
 	// 유효한 부모 UserWidgetTree를 요구하므로 이 경로에서는 의도적으로 텍스트 폴백을 사용합니다.
 	if (IsDesignTime() || !WidgetTree)

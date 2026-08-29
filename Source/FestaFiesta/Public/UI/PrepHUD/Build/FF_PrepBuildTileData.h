@@ -53,6 +53,12 @@ public:
 	FText GetCostText() const { return CostText; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FText GetBuildLimitText() const { return BuildLimitText; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FText GetStateLabelText() const { return StateLabelText; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	FText GetStateText() const { return StateText; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
@@ -76,6 +82,13 @@ private:
 
 	UPROPERTY(Transient)
 	FText CostText;
+
+	UPROPERTY(Transient)
+	FText BuildLimitText;
+
+	/** 타일 안에는 짧은 라벨만 표시하고, 전체 사유는 StateText로 안내합니다. */
+	UPROPERTY(Transient)
+	FText StateLabelText;
 
 	UPROPERTY(Transient)
 	FText StateText;

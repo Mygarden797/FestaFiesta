@@ -28,8 +28,10 @@ void UFF_PrepBuildTileData::RefreshDerivedValues()
 {
 	DisplayName = FFF_PrepBuildPresentationRules::ResolveDisplayName(Entry);
 	CostText = FFF_PrepBuildPresentationRules::ResolveCostText(Entry);
+	BuildLimitText = FFF_PrepBuildPresentationRules::ResolveBuildLimitText(Entry);
 	TileState = FFF_PrepBuildPresentationRules::ResolveTileState(
 		Entry, Gold, bHasAuthoritativeGold);
+	StateLabelText = FFF_PrepBuildPresentationRules::ResolveTileStateLabel(TileState);
 	StateText = FFF_PrepBuildPresentationRules::ResolveTileStateText(TileState);
 }
 

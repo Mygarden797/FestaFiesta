@@ -123,6 +123,8 @@ private:
 		FFF_FacilityPaidProgramPickerViewData& OutViewData,
 		const FText& Feedback = FText::GetEmpty(),
 		bool bIsFeedbackError = false) const;
+	/** Makes the picker and facility card mutually exclusive so two panels never stack. */
+	void SetPaidProgramPickerOpen(bool bOpen);
 	void ClosePaidProgramPicker();
 	void EnsureProgramReadModelBindings();
 	bool IsContextCurrentlyAllowed(EFF_FacilityInfoContext Context) const;
@@ -196,6 +198,7 @@ private:
 
 	static constexpr float RefreshIntervalSeconds = 0.25f;
 	static constexpr float SelectionIndicatorRefreshIntervalSeconds = 0.05f;
+	/** Global viewport Z-orders; stage HUDs live in the same viewport layer at RootLayout Z=0. */
 	static constexpr int32 PanelZOrder = 95;
 	static constexpr int32 PaidProgramPickerZOrder = 96;
 };

@@ -4,8 +4,21 @@
 
 #include "CommonTextBlock.h"
 #include "Components/Button.h"
+#include "UI/Data/FF_UIPalette.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityPaidProgramCard"
+
+void UFF_FacilityPaidProgramCard::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	if (const UFF_UIPalette* Palette = UFF_UIPalette::Get())
+	{
+		SelectedColor = Palette->InGame.TealSoft;
+		UnselectedColor = Palette->InGame.White;
+		AvailableColor = Palette->InGame.TealDeep;
+		UnavailableColor = Palette->InGame.Danger;
+	}
+}
 
 void UFF_FacilityPaidProgramCard::NativeOnInitialized()
 {

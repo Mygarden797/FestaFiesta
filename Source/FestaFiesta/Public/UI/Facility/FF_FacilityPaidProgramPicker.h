@@ -45,6 +45,7 @@ public:
 	static FSoftClassPath GetDefaultCardClassPath();
 
 protected:
+	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
 
 private:
@@ -74,11 +75,13 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
-	FLinearColor FeedbackErrorColor = FLinearColor(1.0f, 0.32f, 0.28f, 1.0f);
+	FLinearColor FeedbackErrorColor =
+		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
-	FLinearColor FeedbackSuccessColor = FLinearColor(0.25f, 1.0f, 0.67f, 1.0f);
+	FLinearColor FeedbackSuccessColor =
+		FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Picker;

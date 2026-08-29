@@ -16,6 +16,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "FF_FFZSWorldSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
@@ -216,7 +217,7 @@ void UFF_PrepPanelBuild::NativeOnPanelClosed()
 
 void UFF_PrepPanelBuild::EndPanelSession()
 {
-	if (!bPanelOpen && !CatalogSubsystem && !EconomyReadModel && !BuildModeSubsystem)
+	if (!bPanelOpen && !CatalogSubsystem && !EconomyReadModel && !BuildModeSubsystem && !ZoneSystem)
 	{
 		return;
 	}
@@ -254,6 +255,9 @@ void UFF_PrepPanelBuild::BindExternalSources()
 	BuildModeSubsystem = GetWorld()
 		? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>()
 		: nullptr;
+	ZoneSystem = GetWorld()
+		? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>()
+		: nullptr;
 
 	if (CatalogSubsystem)
 	{
@@ -269,6 +273,12 @@ void UFF_PrepPanelBuild::BindExternalSources()
 	{
 		BuildModeSubsystem->OnBuildModeStateChanged.AddUniqueDynamic(
 			this, &ThisClass::HandleBuildModeStateChanged);
+	}
+	if (ZoneSystem)
+	{
+		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleZoneWorldChanged);
+		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(
+			this, &ThisClass::HandleZoneWorldSnapshotRestored);
 	}
 }
 
@@ -289,10 +299,17 @@ void UFF_PrepPanelBuild::UnbindExternalSources()
 		BuildModeSubsystem->OnBuildModeStateChanged.RemoveDynamic(
 			this, &ThisClass::HandleBuildModeStateChanged);
 	}
+	if (ZoneSystem)
+	{
+		ZoneSystem->OnWorldChanged.RemoveDynamic(this, &ThisClass::HandleZoneWorldChanged);
+		ZoneSystem->OnWorldSnapshotRestored.RemoveDynamic(
+			this, &ThisClass::HandleZoneWorldSnapshotRestored);
+	}
 
 	CatalogSubsystem = nullptr;
 	EconomyReadModel = nullptr;
 	BuildModeSubsystem = nullptr;
+	ZoneSystem = nullptr;
 }
 
 void UFF_PrepPanelBuild::HandleCatalogChanged()
@@ -340,12 +357,44 @@ void UFF_PrepPanelBuild::HandleBuildModeStateChanged(
 		return;
 	}
 
+	if (NewState == EFF_BuildModeState::CatalogOpen)
+	{
+		// 설치·철거 뒤 목록으로 돌아올 때 현재 등록 수를 새 스냅샷으로 투영합니다.
+		RefreshPricedEntries();
+		ReconcilePresentation();
+	}
 	ApplyBuildModeState(NewState);
 	if (NewState == EFF_BuildModeState::Closed)
 	{
 		// Escape and stage-policy exits originate in BuildMode; the bar still owns actual panel visibility.
 		RequestClose();
 	}
+}
+
+void UFF_PrepPanelBuild::HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event)
+{
+	if ((Event.Type != EFFZSCommandType::Install && Event.Type != EFFZSCommandType::Remove) ||
+		!bPanelOpen || bClosingPanel || !BuildModeSubsystem ||
+		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen)
+	{
+		return;
+	}
+
+	// 카탈로그가 보이는 동안 수량이 바뀌는 설치·철거만 즉시 다시 투영한다.
+	RefreshPricedEntries();
+	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::HandleZoneWorldSnapshotRestored()
+{
+	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem ||
+		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen)
+	{
+		return;
+	}
+
+	RefreshPricedEntries();
+	ReconcilePresentation();
 }
 
 void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
@@ -375,10 +424,19 @@ void UFF_PrepPanelBuild::HandleTileClicked(UObject* ItemObject)
 
 	if (!BuildModeSubsystem->StartPlacement(Tile->GetFacilityDefinitionId()))
 	{
+		// 클릭 직전 다른 설치가 상한을 채운 경우 새 권위 수량을 다시 투영해 일반 오류 대신 정확한 원인을 남깁니다.
+		RefreshPricedEntries();
+		ReconcilePresentation();
 		if (Text_Status)
 		{
-			Text_Status->SetText(LOCTEXT(
-				"PlacementStartFailed", "배치를 시작하지 못했습니다. 현재 단계와 건축 가능 구역을 확인하세요."));
+			const UFF_PrepBuildTileData* RefreshedTile = PresentationModel
+				? PresentationModel->FindTile(Tile->GetFacilityDefinitionId())
+				: nullptr;
+			const FText Reason = RefreshedTile ? RefreshedTile->GetStateText() : FText::GetEmpty();
+			Text_Status->SetText(Reason.IsEmpty()
+				? LOCTEXT(
+					"PlacementStartFailed", "배치를 시작하지 못했습니다. 현재 단계와 건축 가능 구역을 확인하세요.")
+				: Reason);
 		}
 		if (TileView_Facilities)
 		{
@@ -709,8 +767,19 @@ TArray<FFF_BuildCatalogEntry> UFF_PrepPanelBuild::MakePricedEntries() const
 	}
 
 	Result = CatalogSubsystem->GetEntriesView();
+	const UFFZSWorldSubsystem* CurrentZoneSystem = ZoneSystem.Get();
+	if (!CurrentZoneSystem && GetWorld())
+	{
+		CurrentZoneSystem = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>();
+	}
 	for (FFF_BuildCatalogEntry& Entry : Result)
 	{
+		Entry.CurrentInstanceCount = CurrentZoneSystem
+			? CurrentZoneSystem->CountFacilitiesByDefinitionId(Entry.FacilityDefinitionId)
+			: 0;
+		Entry.bBuildLimitReached = Entry.MaxInstancesPerWorld > 0 &&
+			Entry.CurrentInstanceCount >= Entry.MaxInstancesPerWorld;
+
 		if (!EconomyReadModel)
 		{
 			continue;
@@ -817,7 +886,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		switch (State)
 		{
 		case EFF_BuildModeState::Placing: 
-			Guide = LOCTEXT("PlacingGuide", " [좌클릭] 설치/ 철거/이동 대상 선택 \n [Q/E] 90도 회전 \n [Shift+Q/E] 정밀 회전 \n [우클릭] 목록 복귀");
+			Guide = LOCTEXT("PlacingGuide", " [좌클릭] 설치/ 철거/이동 대상 선택 \n [Q/E] 45도 회전 \n [Shift+Q/E] 정밀 회전 \n [우클릭] 목록 복귀");
 			break;
 		case EFF_BuildModeState::Moving:
 			Guide = LOCTEXT("MovingGuide", "이동 중 · 좌클릭 확정 · 우클릭 취소");

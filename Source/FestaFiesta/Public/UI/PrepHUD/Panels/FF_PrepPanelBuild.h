@@ -21,6 +21,7 @@ class UFF_BuildModeSubsystem;
 class UFF_PrepChoiceButton;
 class UFF_PrepBuildPresentationModel;
 class UFF_PrepBuildTileView;
+class UFFZSWorldSubsystem;
 
 /**
  * PrepHUD's production build panel.
@@ -54,6 +55,12 @@ protected:
 
 	UFUNCTION()
 	void HandleBuildModeStateChanged(EFF_BuildModeState PreviousState, EFF_BuildModeState NewState);
+
+	UFUNCTION()
+	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);
+
+	UFUNCTION()
+	void HandleZoneWorldSnapshotRestored();
 
 	UFUNCTION()
 	void HandleReturnToCatalogClicked();
@@ -149,6 +156,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildModeSubsystem> BuildModeSubsystem;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_PrepBuildPresentationModel> PresentationModel;

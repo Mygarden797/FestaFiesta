@@ -7,6 +7,8 @@
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
 
+#include "FF_ZoneLifecycleDebugDayControl.h"
+
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -41,6 +43,67 @@ namespace
 	}
 }
 
+bool FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(
+	UFF_FestivalStageSubsystem& Stage)
+{
+#if UE_BUILD_SHIPPING
+	(void)Stage;
+	return false;
+#else
+	if (Stage.CurrentDay <= 1 || Stage.CurrentDay > 3)
+	{
+		return false;
+	}
+
+	const int32 SourceDay = Stage.CurrentDay;
+	--Stage.CurrentDay;
+	const EFF_FestivalStage EntryStage = Stage.CurrentDay == 1
+		? EFF_FestivalStage::Setup
+		: EFF_FestivalStage::MorningCheck;
+	Stage.RequestTransition(EntryStage);
+
+	// RequestTransition resets the night flag, but non-Live transitions do not emit
+	// an environment edge. Re-apply the selected weather through the public API.
+	Stage.SetSelectedWeather(Stage.GetSelectedWeather());
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[ZoneLifecycleDebug] Day %d -> Day %d (%s). External state was not rolled back."),
+		SourceDay,
+		Stage.CurrentDay,
+		*UEnum::GetValueAsString(EntryStage));
+	return true;
+#endif
+}
+
+bool FFZoneLifecycleDebugDayControl::TryMoveToNextDay(
+	UFF_FestivalStageSubsystem& Stage)
+{
+#if UE_BUILD_SHIPPING
+	(void)Stage;
+	return false;
+#else
+	if (Stage.CurrentDay < 1 || Stage.CurrentDay >= 3)
+	{
+		return false;
+	}
+
+	const int32 SourceDay = Stage.CurrentDay;
+	// AdvanceToNextDay is the production day-boundary authority and accepts Report only.
+	if (!Stage.IsReportStage())
+	{
+		if (Stage.CurrentStage != EFF_FestivalStage::Closing)
+		{
+			Stage.RequestTransition(EFF_FestivalStage::Closing);
+		}
+		Stage.RequestTransition(EFF_FestivalStage::Report);
+	}
+	Stage.AdvanceToNextDay();
+
+	return Stage.CurrentDay == SourceDay + 1
+		&& Stage.CurrentStage == EFF_FestivalStage::MorningCheck;
+#endif
+}
+
 void UFF_ZoneLifecycleTestPanel::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -49,6 +112,8 @@ void UFF_ZoneLifecycleTestPanel::NativeConstruct()
 	BTN_MorningCheck->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMorningCheckClicked);
 	BTN_Live->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLiveClicked);
 	BTN_Closing->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClosingClicked);
+	BTN_PreviousDay->OnClicked.AddUniqueDynamic(this, &ThisClass::HandlePreviousDayClicked);
+	BTN_NextDay->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleNextDayClicked);
 	BTN_OpenAll->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOpenAllClicked);
 	BTN_CloseAll->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseAllClicked);
 	BTN_EmergencyCloseAll->OnClicked.AddUniqueDynamic(
@@ -120,6 +185,9 @@ void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 	UFFZSWorldSubsystem* ZoneSystem = World
 		? World->GetSubsystem<UFFZSWorldSubsystem>()
 		: nullptr;
+	BTN_PreviousDay->SetIsEnabled(
+		Stage && Stage->CurrentDay > 1 && Stage->CurrentDay <= 3);
+	BTN_NextDay->SetIsEnabled(Stage && Stage->CurrentDay >= 1 && Stage->CurrentDay < 3);
 	if (!Stage || !ZoneSystem)
 	{
 		TXT_Stage->SetText(LOCTEXT("MissingSubsystems", "Stage/Zone Subsystem 없음"));
@@ -127,7 +195,8 @@ void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 	}
 
 	TXT_Stage->SetText(FText::Format(
-		LOCTEXT("StageFormat", "Festival Stage: {0}"),
+		LOCTEXT("StageFormat", "Day {0}  |  Festival Stage: {1}"),
+		FText::AsNumber(Stage->CurrentDay),
 		UEnum::GetDisplayValueAsText(Stage->CurrentStage)));
 	TXT_PhaseRevision->SetText(FText::Format(
 		LOCTEXT("PhaseRevisionFormat", "FFZS Phase: {0}  |  Revision: {1}"),
@@ -239,6 +308,96 @@ void UFF_ZoneLifecycleTestPanel::HandleClosingClicked()
 	RequestStage(EFF_FestivalStage::Closing);
 }
 
+void UFF_ZoneLifecycleTestPanel::HandlePreviousDayClicked()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (!Stage)
+	{
+		SetLastResult(LOCTEXT("PreviousDayMissingStage", "이전 날 실패: Stage Subsystem 없음"));
+		return;
+	}
+	if (Stage->CurrentDay <= 1)
+	{
+		SetLastResult(LOCTEXT("PreviousDayFirstDay", "이전 날 없음: 현재가 첫날입니다."));
+		RefreshStatus();
+		return;
+	}
+
+	const int32 SourceDay = Stage->CurrentDay;
+	const bool bWasLiveStage = Stage->IsLiveStage();
+	UFF_ZoneSystemStageBridgeSubsystem* StageBridge = World
+		? World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>()
+		: nullptr;
+	if (!StageBridge)
+	{
+		SetLastResult(LOCTEXT(
+			"PreviousDayMissingBridge",
+			"이전 날 실패: 시설 Stage Bridge 없음"));
+		return;
+	}
+	const FFF_ZoneFacilityLifecycleBatchResult CloseResult =
+		StageBridge->CloseActiveFacilities(false);
+	if (CloseResult.FailedCount > 0)
+	{
+		SetLastResult(FText::Format(
+			LOCTEXT("PreviousDayCloseFailed", "이전 날 중단: 시설 폐쇄 실패 · {0}"),
+			CloseResult.Summary));
+		RefreshStatus();
+		return;
+	}
+
+	if (!FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(*Stage))
+	{
+		SetLastResult(LOCTEXT("PreviousDayFailed", "이전 날 전환을 완료하지 못했습니다."));
+		RefreshStatus();
+		return;
+	}
+	bSuppressNextEmptyAutomaticCloseResult = bWasLiveStage;
+
+	SetLastResult(FText::Format(
+		LOCTEXT(
+			"PreviousDaySucceeded",
+			"운영 시간축 Day {0} -> Day {1} {2} (경제·예약은 롤백하지 않음)"),
+		FText::AsNumber(SourceDay),
+		FText::AsNumber(Stage->CurrentDay),
+		Stage->GetCurrentStageDisplayName()));
+	RefreshStatus();
+}
+
+void UFF_ZoneLifecycleTestPanel::HandleNextDayClicked()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (!Stage)
+	{
+		SetLastResult(LOCTEXT("NextDayMissingStage", "다음 날 실패: Stage Subsystem 없음"));
+		return;
+	}
+	if (Stage->CurrentDay >= 3)
+	{
+		SetLastResult(LOCTEXT("NextDayFinalDay", "다음 날 없음: 현재가 마지막 날입니다."));
+		RefreshStatus();
+		return;
+	}
+
+	const int32 EndedDay = Stage->CurrentDay;
+	const bool bAdvanced = FFZoneLifecycleDebugDayControl::TryMoveToNextDay(*Stage);
+	SetLastResult(bAdvanced
+		? FText::Format(
+			LOCTEXT("NextDaySucceeded", "Day {0} 종료 -> Day {1} 개장 점검"),
+			FText::AsNumber(EndedDay),
+			FText::AsNumber(Stage->CurrentDay))
+		: LOCTEXT("NextDayFailed", "다음 날 전환을 완료하지 못했습니다."));
+	RefreshStatus();
+}
+
 void UFF_ZoneLifecycleTestPanel::HandleOpenAllClicked()
 {
 	if (UWorld* World = GetWorld())
@@ -300,6 +459,17 @@ void UFF_ZoneLifecycleTestPanel::HandleZoneWorldChanged(const FFFZSWorldChangeEv
 void UFF_ZoneLifecycleTestPanel::HandleLifecycleBatchCompleted(
 	const FFF_ZoneFacilityLifecycleBatchResult& Result)
 {
+	if (bSuppressNextEmptyAutomaticCloseResult)
+	{
+		bSuppressNextEmptyAutomaticCloseResult = false;
+		if (Result.Action == EFF_ZoneFacilityLifecycleAction::AutomaticClose
+			&& Result.AttemptedCount == 0
+			&& Result.FailedCount == 0)
+		{
+			RefreshStatus();
+			return;
+		}
+	}
 	ApplyBatchResult(Result);
 }
 

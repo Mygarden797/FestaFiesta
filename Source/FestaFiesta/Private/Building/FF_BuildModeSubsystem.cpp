@@ -335,7 +335,7 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
 	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 
-	// Closed에서 직접 호출한 Blueprint 경로도 첫 B와 같은 BuildMode 세션을 먼저 만든다.
+	// Closed에서 카탈로그를 곧바로 열어도 입력 복구값과 세션 수명은 BuildMode 진입 경로에서 한 번 초기화한다.
 	if (State == EFF_BuildModeState::Closed)
 	{
 		EnterBuildMode();
@@ -441,6 +441,29 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 			CatalogScreen->SetStatusText(FText::FromString(Reason), true);
 		}
 		return false;
+	}
+
+	// 카탈로그 스냅샷이 열린 뒤 다른 설치가 상한을 채울 수 있으므로 프리뷰 생성 직전에 현재 수를 다시 읽습니다.
+	// 이 차단은 UX용이며 최종 권위 판정은 ExecuteCommand의 공통 ValidatePlacement가 다시 수행합니다.
+	if (Definition->Spec.MaxInstancesPerWorld > 0)
+	{
+		const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+		const int32 CurrentCount = ZoneSystem
+			? ZoneSystem->CountFacilitiesByDefinitionId(FacilityDefinitionId)
+			: 0;
+		if (CurrentCount >= Definition->Spec.MaxInstancesPerWorld)
+		{
+			const FText LimitMessage = FText::Format(
+				NSLOCTEXT("FFBuildMode", "StartPlacementBuildLimitReached", "이 시설의 건축 한도에 도달했습니다. (설치 {0}/{1})"),
+				FText::AsNumber(CurrentCount),
+				FText::AsNumber(Definition->Spec.MaxInstancesPerWorld));
+			if (CatalogScreen)
+			{
+				CatalogScreen->SetStatusText(LimitMessage, true);
+			}
+			ShowStatus(LimitMessage.ToString(), true);
+			return false;
+		}
 	}
 
 	// 새 선택은 이전 Zone/원점/검증 결과와 독립적이어야 한다. 선택 스펙만 복사하고 배치 표적은 초기화한다.
@@ -1051,9 +1074,16 @@ void UFF_BuildModeSubsystem::ApplyCatalogIfReady()
 		const UFF_BuildCatalogEconomyReadModel* EconomyReadModel = GameInstance
 			? GameInstance->GetSubsystem<UFF_BuildCatalogEconomyReadModel>()
 			: nullptr;
+		const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 
 		for (FFF_BuildCatalogEntry& Entry : PricedEntries)
 		{
+			Entry.CurrentInstanceCount = ZoneSystem
+				? ZoneSystem->CountFacilitiesByDefinitionId(Entry.FacilityDefinitionId)
+				: 0;
+			Entry.bBuildLimitReached = Entry.MaxInstancesPerWorld > 0 &&
+				Entry.CurrentInstanceCount >= Entry.MaxInstancesPerWorld;
+
 			const UFFZSFacilityDefinition* Definition = Entry.Definition.Get();
 			FString FailureReason = TEXT("Build catalog economy read model is unavailable.");
 			if (EconomyReadModel && EconomyReadModel->TryProjectFacilityCosts(
@@ -1191,7 +1221,10 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 		return;
 	}
 
-	BuildModeGuideWidget->SetVisibility(State == EFF_BuildModeState::CatalogOpen
+	// PrepHUD 배치 패널은 같은 조작 안내를 자체 표시한다. 외부 표현이 활성인 동안 레거시
+	// 좌하단 가이드를 함께 띄우면 하단 도킹 패널 뒤에 겹치므로 한 표현 소유자만 남긴다.
+	BuildModeGuideWidget->SetVisibility(
+		(State == EFF_BuildModeState::CatalogOpen || bExternalCatalogPresentationActive)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible);
 	BuildModeGuideWidget->SetPlacementGuideState(
@@ -2071,6 +2104,13 @@ void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Eve
 		// 콜백 안에서 정책 검증에 재진입하지 않고 다음 제한 주기에서 최신 revision으로 다시 만든다.
 		bPreviewWorldDirty = true;
 	}
+	else if (State == EFF_BuildModeState::CatalogOpen && CatalogScreen &&
+		(Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Remove))
+	{
+		// 수량이 변하는 설치·철거에만 열린 목록을 다시 투영한다. 이동·운영 상태 변경은 건축 한도와 무관하다.
+		bCatalogWasApplied = false;
+		ApplyCatalogIfReady();
+	}
 
 	const bool bTargetsMovingFacility = State == EFF_BuildModeState::Moving &&
 		MovingFacilityInstanceId.IsValid() &&
@@ -2120,6 +2160,12 @@ void UFF_BuildModeSubsystem::HandleWorldSnapshotRestored()
 		return;
 	}
 	SetFacilityRangeVisibility(true);
+	if (State == EFF_BuildModeState::CatalogOpen && CatalogScreen)
+	{
+		bCatalogWasApplied = false;
+		ApplyCatalogIfReady();
+		return;
+	}
 	if (State == EFF_BuildModeState::Placing)
 	{
 		bPreviewWorldDirty = true;

@@ -48,6 +48,9 @@ public:
 	// UMG와 Slate 폴백이 공유하는 지역화된 hover 가격 문구입니다.
 	static FText MakeFacilityCostToolTip(const FFF_BuildCatalogEntry& CatalogEntry);
 
+	// Data Asset 상한과 화면 투영 시점의 현재 설치 수를 카드·Slate 폴백에서 같은 형식으로 표시합니다.
+	static FText MakeFacilityBuildLimitText(const FFF_BuildCatalogEntry& CatalogEntry);
+
 	const FFF_BuildCatalogEntry& GetCatalogEntry() const { return Entry; }
 
 protected:

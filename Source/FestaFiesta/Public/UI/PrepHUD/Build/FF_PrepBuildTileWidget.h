@@ -39,6 +39,7 @@ class FESTAFIESTA_API UFF_PrepBuildTileWidget
 	GENERATED_BODY()
 
 protected:
+	virtual void NativePreConstruct() override;
 	virtual void NativeOnListItemObjectSet(UObject* ListItemObject) override;
 	virtual void NativeOnItemSelectionChanged(bool bIsSelected) override;
 	virtual void NativeOnEntryReleased() override;

@@ -30,6 +30,7 @@ public:
 	FName GetProgramId() const { return CurrentViewData.ProgramId; }
 
 protected:
+	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
 
 private:
@@ -39,22 +40,25 @@ private:
 	UPROPERTY(Transient)
 	FFF_FacilityPaidProgramCardViewData CurrentViewData;
 
-	/** Designer-tunable runtime states; edit these in the card WBP Class Defaults. */
+	/** Runtime state tints are synchronized from the shared in-game LightTeal palette. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
-	FLinearColor SelectedColor = FLinearColor(0.02f, 0.62f, 0.72f, 1.0f);
+	FLinearColor SelectedColor =
+		FLinearColor::FromSRGBColor(FColor(0xB4, 0xC8, 0xBB));
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
-	FLinearColor UnselectedColor = FLinearColor(0.055f, 0.12f, 0.15f, 1.0f);
+	FLinearColor UnselectedColor = FLinearColor::White;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
-	FLinearColor AvailableColor = FLinearColor(0.25f, 1.0f, 0.67f, 1.0f);
+	FLinearColor AvailableColor =
+		FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
-	FLinearColor UnavailableColor = FLinearColor(1.0f, 0.58f, 0.32f, 1.0f);
+	FLinearColor UnavailableColor =
+		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_Select;
