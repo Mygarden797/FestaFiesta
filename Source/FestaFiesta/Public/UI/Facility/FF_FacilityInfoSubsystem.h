@@ -21,6 +21,7 @@ class UFF_FestivalStageSubsystem;
 struct FFFZSWorldChangeEvent;
 #if WITH_DEV_AUTOMATION_TESTS
 class FFF_FacilityInfoIndicatorLifecycleTest;
+class FFF_FacilityInfoPausePresentationLifecycleTest;
 class FFF_FacilityInfoProgramActionLifecycleTest;
 class FFF_FacilityInfoProgramReadModelTest;
 class FFF_FacilityInfoSelectionGeometryTest;
@@ -93,6 +94,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverPanel() const;
 
+	/**
+	 * Pause Hub가 동일 Viewport 상위 Z-order의 시설 UI를 완전히 숨기고 입력도 차단한다.
+	 * 선택과 picker 의미 상태는 유지하므로 해제 시 사용자가 보던 표면만 복원된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Pause")
+	void SetPauseMenuPresentationSuppressed(bool bSuppressed);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info|Pause")
+	bool IsPauseMenuPresentationSuppressed() const
+	{
+		return bPauseMenuPresentationSuppressed;
+	}
+
 	/** Keeps authoritative command failure details visible until selection changes. */
 	void SetFeedback(const FText& Feedback, bool bIsError);
 
@@ -111,6 +125,7 @@ public:
 private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_FacilityInfoIndicatorLifecycleTest;
+	friend class FFF_FacilityInfoPausePresentationLifecycleTest;
 	friend class FFF_FacilityInfoProgramActionLifecycleTest;
 	friend class FFF_FacilityInfoProgramReadModelTest;
 	friend class FFF_FacilityInfoSelectionGeometryTest;
@@ -193,6 +208,14 @@ private:
 	FText FeedbackText;
 	bool bFeedbackIsError = false;
 	bool bThumbnailSessionAcquired = false;
+	// RootLayout보다 높은 전역 Z-order 시설 UI가 Pause Hub 위에서 클릭되지 않도록 하는 presentation lease.
+	bool bPauseMenuPresentationSuppressed = false;
+	// suppress 중 Collapsed 상태를 새 기준으로 덮지 않고 원래 활성 표면 하나만 복원한다.
+	bool bPanelWasVisibleBeforePause = false;
+	bool bPaidProgramPickerWasVisibleBeforePause = false;
+	// Pause 중 월드 복원/삭제로 선택 세대가 바뀌면 오래된 UI를 되살리지 않기 위한 identity snapshot.
+	FGuid PauseMenuSuppressedFacilityId;
+	EFF_FacilityInfoContext PauseMenuSuppressedContext = EFF_FacilityInfoContext::None;
 	float RefreshAccumulatorSeconds = 0.0f;
 	float SelectionIndicatorRefreshAccumulatorSeconds = 0.0f;
 

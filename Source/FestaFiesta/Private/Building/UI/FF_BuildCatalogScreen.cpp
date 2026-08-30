@@ -29,11 +29,13 @@
 #include "Styling/CoreStyle.h"
 #include "UI/FF_CommonButtonBase.h"
 #include "UI/FF_UILog.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -635,9 +637,13 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 		OnBuildModeKeyRequested.Broadcast();
 		return FReply::Handled();
 	}
-	if (InKeyEvent.GetKey() == EKeys::Escape && !InKeyEvent.IsRepeat())
+	const UFF_FestivalSettingsDeveloperSettings* Settings =
+		UFF_FestivalSettingsDeveloperSettings::Get();
+	if (Settings && Settings->OpenCloseKeys.Contains(InKeyEvent.GetKey()) &&
+		!InKeyEvent.IsRepeat())
 	{
-		OnExitBuildModeKeyRequested.Broadcast();
+		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 ESC/F5가 게임 입력으로 유실되지 않게 전달한다.
+		OnPauseMenuKeyRequested.Broadcast();
 		return FReply::Handled();
 	}
 

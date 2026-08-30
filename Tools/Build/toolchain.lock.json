@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "unrealEngine": {
+    "association": "5.7",
+    "version": "5.7.4",
+    "changelist": 51494982,
+    "compatibleChangelist": 47537391,
+    "branch": "++UE5+Release-5.7"
+  },
+  "windows": {
+    "targetPlatform": "Win64",
+    "sdk": "10.0.22621.0",
+    "msvcToolchain": "14.44.35225",
+    "msvcInstall": "14.44.35207"
+  },
+  "sourceControl": {
+    "gitLfs": "3.5.1"
+  }
+}

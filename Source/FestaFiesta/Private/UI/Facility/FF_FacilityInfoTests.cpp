@@ -1033,6 +1033,112 @@ bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoPausePresentationLifecycleTest,
+	"FestaFiesta.UI.FacilityInfo.PausePresentationLifecycle",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoPausePresentationLifecycleTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!TestNotNull(TEXT("Pause presentation Editor World"), EditorWorld))
+	{
+		return false;
+	}
+
+	UFF_FacilityInfoPanel* Panel = NewObject<UFF_FacilityInfoPanel>(EditorWorld);
+	UFF_FacilityPaidProgramPicker* Picker =
+		NewObject<UFF_FacilityPaidProgramPicker>(EditorWorld);
+	UFF_FacilityInfoSubsystem* Coordinator =
+		NewObject<UFF_FacilityInfoSubsystem>(EditorWorld);
+	if (!TestNotNull(TEXT("Pause presentation panel"), Panel) ||
+		!TestNotNull(TEXT("Pause presentation picker"), Picker) ||
+		!TestNotNull(TEXT("Pause presentation coordinator"), Coordinator))
+	{
+		return false;
+	}
+
+	const FGuid SelectedFacilityId = FGuid::NewGuid();
+	Coordinator->Panel = Panel;
+	Coordinator->PaidProgramPicker = Picker;
+	Coordinator->SelectedFacilityId = SelectedFacilityId;
+	Coordinator->SelectionContext = EFF_FacilityInfoContext::Build;
+
+	Panel->SetPanelOpen(true);
+	Picker->SetPickerOpen(false);
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	TestEqual(TEXT("Pause 중 panel은 높은 viewport layer에서 숨는다"),
+		Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Pause 중 picker도 높은 viewport layer에서 숨는다"),
+		Picker->GetVisibility(), ESlateVisibility::Collapsed);
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+	TestEqual(TEXT("중복 suppress도 최초 panel 표면을 한 번에 복원한다"),
+		Panel->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+	TestEqual(TEXT("panel 복원 때 picker는 겹쳐 열리지 않는다"),
+		Picker->GetVisibility(), ESlateVisibility::Collapsed);
+
+	Panel->SetPanelOpen(false);
+	Picker->SetPickerOpen(true);
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+	TestEqual(TEXT("picker가 활성 표면이면 panel은 닫힌 채 유지된다"),
+		Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("picker 활성 표면만 복원된다"),
+		Picker->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+
+	Panel->SetPanelOpen(true);
+	Picker->SetPickerOpen(false);
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->SelectedFacilityId = FGuid::NewGuid();
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+	TestEqual(TEXT("Pause 중 선택 identity가 바뀌면 stale panel을 복원하지 않는다"),
+		Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Pause 중 선택 identity가 바뀌면 stale picker도 복원하지 않는다"),
+		Picker->GetVisibility(), ESlateVisibility::Collapsed);
+
+	Coordinator->SelectedFacilityId = SelectedFacilityId;
+	Coordinator->SelectionContext = EFF_FacilityInfoContext::Build;
+	FFF_FacilityInfoViewData ViewData;
+	ViewData.FacilityInstanceId = SelectedFacilityId;
+	ViewData.Context = EFF_FacilityInfoContext::Build;
+	ViewData.bShowProgramSection = true;
+	ViewData.bShowProgramScheduleAction = true;
+	ViewData.bCanScheduleProgram = true;
+	Panel->ApplyViewData(ViewData);
+	Panel->SetPanelOpen(true);
+
+	int32 MoveRequestCount = 0;
+	int32 RemoveRequestCount = 0;
+	int32 ProgramRequestCount = 0;
+	const FDelegateHandle MoveHandle = Coordinator->OnMoveRequested.AddLambda(
+		[&MoveRequestCount](const FGuid) { ++MoveRequestCount; });
+	const FDelegateHandle RemoveHandle = Coordinator->OnRemoveRequested.AddLambda(
+		[&RemoveRequestCount](const FGuid) { ++RemoveRequestCount; });
+	const FDelegateHandle ProgramHandle = Coordinator->OnProgramScheduleRequested.AddLambda(
+		[&ProgramRequestCount](const FGuid) { ++ProgramRequestCount; });
+
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->HandlePanelMoveRequested();
+	Coordinator->HandlePanelRemoveRequested();
+	Coordinator->HandlePanelProgramScheduleRequested();
+	Coordinator->HandlePanelCloseRequested();
+	TestEqual(TEXT("Pause 중 이동 요청은 gameplay로 전달되지 않는다"), MoveRequestCount, 0);
+	TestEqual(TEXT("Pause 중 철거 요청은 gameplay로 전달되지 않는다"), RemoveRequestCount, 0);
+	TestEqual(TEXT("Pause 중 유료 프로그램 요청은 gameplay로 전달되지 않는다"), ProgramRequestCount, 0);
+	TestEqual(TEXT("Pause 중 닫기 입력도 건축 선택을 지우지 않는다"),
+		Coordinator->SelectedFacilityId, SelectedFacilityId);
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+
+	Coordinator->OnMoveRequested.Remove(MoveHandle);
+	Coordinator->OnRemoveRequested.Remove(RemoveHandle);
+	Coordinator->OnProgramScheduleRequested.Remove(ProgramHandle);
+	Coordinator->Panel = nullptr;
+	Coordinator->PaidProgramPicker = nullptr;
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityInfoProgramActionLifecycleTest,
 	"FestaFiesta.UI.FacilityInfo.ProgramActionLifecycle",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)

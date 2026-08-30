@@ -24,6 +24,7 @@
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 #include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepBuild"
 
@@ -273,6 +274,8 @@ void UFF_PrepPanelBuild::BindExternalSources()
 	{
 		BuildModeSubsystem->OnBuildModeStateChanged.AddUniqueDynamic(
 			this, &ThisClass::HandleBuildModeStateChanged);
+		BuildModeSubsystem->OnBuildCatalogFocusRestoreRequested.AddUniqueDynamic(
+			this, &ThisClass::HandleBuildCatalogFocusRestoreRequested);
 	}
 	if (ZoneSystem)
 	{
@@ -298,6 +301,8 @@ void UFF_PrepPanelBuild::UnbindExternalSources()
 	{
 		BuildModeSubsystem->OnBuildModeStateChanged.RemoveDynamic(
 			this, &ThisClass::HandleBuildModeStateChanged);
+		BuildModeSubsystem->OnBuildCatalogFocusRestoreRequested.RemoveDynamic(
+			this, &ThisClass::HandleBuildCatalogFocusRestoreRequested);
 	}
 	if (ZoneSystem)
 	{
@@ -366,9 +371,53 @@ void UFF_PrepPanelBuild::HandleBuildModeStateChanged(
 	ApplyBuildModeState(NewState);
 	if (NewState == EFF_BuildModeState::Closed)
 	{
-		// Escape and stage-policy exits originate in BuildMode; the bar still owns actual panel visibility.
+		// 명시적 배치 종료와 stage-policy 종료는 BuildMode에서 오며, ESC/F5 Pause는 이 panel 상태를 보존한다.
 		RequestClose();
 	}
+}
+
+FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
+	const FGeometry& InGeometry,
+	const FKeyEvent& InKeyEvent)
+{
+	const UFF_FestivalSettingsDeveloperSettings* Settings =
+		UFF_FestivalSettingsDeveloperSettings::Get();
+	const EFF_BuildModeState CurrentState = BuildModeSubsystem
+		? BuildModeSubsystem->GetBuildModeState()
+		: EFF_BuildModeState::Closed;
+	if (Settings && FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
+		InKeyEvent.GetKey(),
+		InKeyEvent.IsRepeat(),
+		bPanelOpen,
+		bClosingPanel,
+		CurrentState,
+		Settings->OpenCloseKeys))
+	{
+		// Preview 단계에서 child 검색창보다 먼저 받아 ESC/F5가 텍스트 편집 동작으로 소실되지 않게 한다.
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UFF_FestivalSettingsSubsystem* SettingsSubsystem =
+				GameInstance->GetSubsystem<UFF_FestivalSettingsSubsystem>())
+			{
+				SettingsSubsystem->OpenPauseMenu(GetOwningPlayer());
+			}
+		}
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+void UFF_PrepPanelBuild::HandleBuildCatalogFocusRestoreRequested()
+{
+	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem ||
+		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen)
+	{
+		return;
+	}
+
+	// TileView 재생성으로 exact Slate entry가 사라진 경우에도 키보드 탐색의 안정된 시작점을 제공한다.
+	FocusSelectedCategoryChoice();
 }
 
 void UFF_PrepPanelBuild::HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event)

@@ -18,10 +18,13 @@
 #include "Components/ProgressBar.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Components/Viewport.h"
 #include "HAL/IConsoleManager.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Minigame/FF_ClawMachineJoystickWidget.h"
+#include "UI/Minigame/FF_MinigameUIStyle.h"
 #include "UI/Minigame/FF_ClawMachineScreen.h"
 #include "WidgetBlueprint.h"
 
@@ -51,13 +54,13 @@ namespace FFClawMachineWbpBuilder
 		return Brush;
 	}
 
-	FButtonStyle MakeJoystickDropStyle()
+	FButtonStyle MakeJoystickDropStyle(const FFMinigameUIStyle::FTheme& Theme)
 	{
 		FButtonStyle Style;
-		Style.Normal = MakeJoystickBrush(FLinearColor(0.96f, 0.15f, 0.12f, 1.0f), 35.0f);
-		Style.Hovered = MakeJoystickBrush(FLinearColor(1.0f, 0.28f, 0.18f, 1.0f), 35.0f);
-		Style.Pressed = MakeJoystickBrush(FLinearColor(0.72f, 0.055f, 0.045f, 1.0f), 35.0f);
-		Style.Disabled = MakeJoystickBrush(FLinearColor(0.28f, 0.18f, 0.15f, 0.72f), 35.0f);
+		Style.Normal = MakeJoystickBrush(Theme.Header, 35.0f, Theme.HeaderStrong, 2.0f);
+		Style.Hovered = MakeJoystickBrush(Theme.HeaderStrong, 35.0f, Theme.White, 2.0f);
+		Style.Pressed = MakeJoystickBrush(Theme.LineStrong, 35.0f, Theme.HeaderStrong, 2.0f);
+		Style.Disabled = MakeJoystickBrush(Theme.StatusSurface, 35.0f, Theme.Line, 1.0f);
 		Style.NormalPadding = FMargin(2.0f);
 		Style.PressedPadding = FMargin(2.0f, 5.0f, 2.0f, 0.0f);
 		return Style;
@@ -87,6 +90,8 @@ namespace FFClawMachineWbpBuilder
 		const UProgressBar* Phase = Cast<UProgressBar>(Tree->FindWidget(TEXT("Progress_Phase")));
 		const UButton* Drop = Cast<UButton>(Tree->FindWidget(TEXT("Button_Drop")));
 		const UButton* Close = Cast<UButton>(Tree->FindWidget(TEXT("Button_Close")));
+		const UButton* ResultClose = Cast<UButton>(
+			Tree->FindWidget(TEXT("Button_ResultClose")));
 		const UBorder* Result = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_Result")));
 		const UTextBlock* ResultText = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_Result")));
 
@@ -99,6 +104,7 @@ namespace FFClawMachineWbpBuilder
 			&& IsVariableWidget(Blueprint, Phase)
 			&& IsVariableWidget(Blueprint, Drop)
 			&& IsVariableWidget(Blueprint, Close)
+			&& IsVariableWidget(Blueprint, ResultClose)
 			&& IsVariableWidget(Blueprint, Result)
 			&& IsVariableWidget(Blueprint, ResultText);
 	}
@@ -120,8 +126,7 @@ namespace FFClawMachineWbpBuilder
 
 	bool BuildJoystickLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
-		const FFF_ClawMachineVisualStyle& Style =
-			GetDefault<UFF_ClawMachineScreen>()->VisualStyle;
+		const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 		USizeBox* Root = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Size_JoystickRoot"));
 		UBorder* Plate = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Panel_JoystickPlate"), true);
 		UCanvasPanel* Canvas = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Canvas_Joystick"), true);
@@ -141,31 +146,31 @@ namespace FFClawMachineWbpBuilder
 		Root->SetWidthOverride(260.0f);
 		Root->SetHeightOverride(136.0f);
 		Plate->SetBrush(MakeJoystickBrush(
-			FLinearColor(0.92f, 0.56f, 0.10f, 0.98f),
+			Theme.Surface,
 			12.0f,
-			FLinearColor(1.0f, 0.78f, 0.24f, 0.92f),
+			Theme.LineStrong,
 			2.0f));
 		Plate->SetBrushColor(FLinearColor::White);
 		Plate->SetPadding(FMargin(4.0f));
 		Track->SetBrush(MakeJoystickBrush(
-			FLinearColor(0.012f, 0.035f, 0.045f, 1.0f),
+			Theme.StatusSurface,
 			40.0f,
-			FLinearColor(0.03f, 0.18f, 0.20f, 1.0f),
+			Theme.LineStrong,
 			3.0f));
 		Track->SetBrushColor(FLinearColor::White);
 		Knob->SetBrush(MakeJoystickBrush(
-			Style.CoralColor,
+			Theme.Header,
 			19.0f,
-			FLinearColor(1.0f, 0.42f, 0.28f, 1.0f),
+			Theme.HeaderStrong,
 			2.0f));
 		Knob->SetBrushColor(FLinearColor::White);
-		DropButton->SetStyle(MakeJoystickDropStyle());
+		DropButton->SetStyle(MakeJoystickDropStyle(Theme));
 		MoveLabel->SetText(LOCTEXT("JoystickMove", "MOVE"));
 		DropLabel->SetText(LOCTEXT("JoystickDrop", "DROP"));
 		KeyLabel->SetText(LOCTEXT("JoystickKeys", "SPACE / A"));
-		StyleHudText(*MoveLabel, 13, FLinearColor(0.02f, 0.08f, 0.09f, 1.0f), TEXT("Bold"));
+		StyleHudText(*MoveLabel, 13, Theme.Text, TEXT("Bold"));
 		StyleHudText(*DropLabel, 14, FLinearColor::White, TEXT("Bold"));
-		StyleHudText(*KeyLabel, 10, FLinearColor(0.02f, 0.08f, 0.09f, 1.0f), TEXT("SemiBold"));
+		StyleHudText(*KeyLabel, 10, Theme.TextMuted, TEXT("SemiBold"));
 		MoveLabel->SetJustification(ETextJustify::Center);
 		DropLabel->SetJustification(ETextJustify::Center);
 		KeyLabel->SetJustification(ETextJustify::Center);
@@ -217,13 +222,12 @@ namespace FFClawMachineWbpBuilder
 
 	bool BuildScreenLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
-		const FFF_ClawMachineVisualStyle& Style =
-			GetDefault<UFF_ClawMachineScreen>()->VisualStyle;
-		const FLinearColor BackgroundColor(0.003f, 0.012f, 0.020f, 1.0f);
-		const FLinearColor FrameColor(0.055f, 0.58f, 0.57f, 1.0f);
-		const FLinearColor DeckColor(0.009f, 0.035f, 0.055f, 0.985f);
-		const FLinearColor CardColor(0.020f, 0.090f, 0.112f, 0.98f);
-		const FLinearColor CardMutedColor(0.014f, 0.052f, 0.072f, 0.98f);
+		const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
+		const FLinearColor BackgroundColor = Theme.HeaderStrong;
+		const FLinearColor FrameColor = Theme.LineStrong;
+		const FLinearColor DeckColor = FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.985f);
+		const FLinearColor CardColor = FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.98f);
+		const FLinearColor CardMutedColor = FFMinigameUIStyle::WithOpacity(Theme.StatusSurface, 0.98f);
 
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_ClawMachineRoot"));
 		UBorder* Background = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Background"), true);
@@ -294,7 +298,7 @@ namespace FFClawMachineWbpBuilder
 		{
 			return false;
 		}
-		HeaderLine->SetBrushColor(Style.CoralColor);
+		HeaderLine->SetBrushColor(Theme.Warning);
 		HeaderLine->SetVisibility(ESlateVisibility::HitTestInvisible);
 		if (!PlaceAnchored(*HeaderLine, FAnchors(0.035f, 0.091f, 0.185f, 0.097f), 18))
 		{
@@ -313,11 +317,11 @@ namespace FFClawMachineWbpBuilder
 		Eyebrow->SetText(LOCTEXT("GameEyebrow", "SEA FRIENDS ARCADE  /  CLAW 01"));
 		Eyebrow->SetJustification(ETextJustify::Left);
 		Eyebrow->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*Eyebrow, 11, Style.AccentColor, TEXT("SemiBold"));
+		StyleHudText(*Eyebrow, 11, Theme.AccentSoft, TEXT("SemiBold"));
 		GameTitle->SetText(LOCTEXT("GameTitle", "바다 친구 인형뽑기"));
 		GameTitle->SetJustification(ETextJustify::Left);
 		GameTitle->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*GameTitle, 27, Style.PrimaryTextColor);
+		StyleHudText(*GameTitle, 27, Theme.White);
 		if (!PlaceAnchored(*Eyebrow, FAnchors(0.038f, 0.018f, 0.340f, 0.044f), 20)
 			|| !PlaceAnchored(*GameTitle, FAnchors(0.038f, 0.046f, 0.370f, 0.090f), 20))
 		{
@@ -349,19 +353,19 @@ namespace FFClawMachineWbpBuilder
 		RailTitle->SetText(LOCTEXT("RailTitle", "MACHINE STATUS"));
 		RailTitle->SetJustification(ETextJustify::Left);
 		RailTitle->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*RailTitle, 15, Style.GoldColor);
+		StyleHudText(*RailTitle, 15, Theme.HeaderStrong);
 		RailSubtitle->SetText(LOCTEXT("RailSubtitle", "집게 위치와 남은 기회를 확인하세요"));
 		RailSubtitle->SetJustification(ETextJustify::Left);
 		RailSubtitle->SetAutoWrapText(true);
 		RailSubtitle->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*RailSubtitle, 11, Style.SecondaryTextColor, TEXT("Regular"));
+		StyleHudText(*RailSubtitle, 11, Theme.TextMuted, TEXT("Regular"));
 		if (!PlaceAnchored(*RailTitle, FAnchors(0.775f, 0.140f, 0.945f, 0.177f), 20)
 			|| !PlaceAnchored(*RailSubtitle, FAnchors(0.775f, 0.180f, 0.945f, 0.225f), 20))
 		{
 			return false;
 		}
 
-		auto MakeStatCard = [&Blueprint, &Tree, &PlaceAnchored, &Style, CardColor](
+		auto MakeStatCard = [&Blueprint, &Tree, &PlaceAnchored, &Theme, CardColor](
 			const FName CardName,
 			const FName TextName,
 			const FAnchors& Anchors) -> UTextBlock*
@@ -378,7 +382,7 @@ namespace FFClawMachineWbpBuilder
 			Card->SetVerticalAlignment(VAlign_Center);
 			Text->SetJustification(ETextJustify::Center);
 			Text->SetVisibility(ESlateVisibility::HitTestInvisible);
-			StyleHudText(*Text, 17, Style.PrimaryTextColor, TEXT("SemiBold"));
+			StyleHudText(*Text, 17, Theme.Text, TEXT("SemiBold"));
 			Card->SetContent(Text);
 			if (!PlaceAnchored(*Card, Anchors, 25))
 			{
@@ -408,8 +412,8 @@ namespace FFClawMachineWbpBuilder
 		}
 		CloseLabel->SetText(LOCTEXT("Close", "나가기  [ESC]"));
 		CloseLabel->SetJustification(ETextJustify::Center);
-		StyleHudText(*CloseLabel, 12, Style.SecondaryTextColor, TEXT("SemiBold"));
-		CloseButton->SetBackgroundColor(CardMutedColor);
+		StyleHudText(*CloseLabel, 12, Theme.Text, TEXT("SemiBold"));
+		FFMinigameUIStyle::ApplyButton(*CloseButton, Theme, false);
 		CloseButton->SetContent(CloseLabel);
 		if (!PlaceAnchored(*CloseButton, FAnchors(0.855f, 0.035f, 0.965f, 0.085f), 40))
 		{
@@ -425,7 +429,7 @@ namespace FFClawMachineWbpBuilder
 		}
 		Feedback->SetJustification(ETextJustify::Center);
 		Feedback->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*Feedback, 30, Style.GoldColor);
+		StyleHudText(*Feedback, 30, Theme.Warning);
 		if (!PlaceAnchored(*Feedback, FAnchors(0.175f, 0.150f, 0.595f, 0.230f), 50))
 		{
 			return false;
@@ -446,13 +450,13 @@ namespace FFClawMachineWbpBuilder
 		}
 		Status->SetJustification(ETextJustify::Center);
 		Status->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*Status, 17, Style.AccentColor, TEXT("SemiBold"));
-		Phase->SetFillColorAndOpacity(Style.GoldColor);
+		StyleHudText(*Status, 17, Theme.HeaderStrong, TEXT("SemiBold"));
+		Phase->SetFillColorAndOpacity(Theme.Warning);
 		Phase->SetVisibility(ESlateVisibility::HitTestInvisible);
 		DropLabel->SetText(LOCTEXT("Drop", "집게 내리기\nSPACE / A"));
 		DropLabel->SetJustification(ETextJustify::Center);
-		StyleHudText(*DropLabel, 18, BackgroundColor);
-		DropButton->SetBackgroundColor(Style.GoldColor);
+		StyleHudText(*DropLabel, 18, Theme.White);
+		FFMinigameUIStyle::ApplyButton(*DropButton, Theme, true);
 		DropButton->SetContent(DropLabel);
 		if (!PlaceAnchored(*Status, FAnchors(0.775f, 0.535f, 0.945f, 0.590f), 20)
 			|| !PlaceAnchored(*Phase, FAnchors(0.790f, 0.605f, 0.930f, 0.619f), 20)
@@ -472,7 +476,7 @@ namespace FFClawMachineWbpBuilder
 			"WASD / 방향키 / 왼쪽 스틱  집게 이동     ·     SPACE / A  집게 내리기"));
 		Hint->SetJustification(ETextJustify::Left);
 		Hint->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleHudText(*Hint, 12, Style.SecondaryTextColor, TEXT("Regular"));
+		StyleHudText(*Hint, 12, Theme.AccentSoft, TEXT("Regular"));
 		if (!PlaceAnchored(*Hint, FAnchors(0.040f, 0.947f, 0.730f, 0.982f), 20))
 		{
 			return false;
@@ -483,24 +487,67 @@ namespace FFClawMachineWbpBuilder
 			Blueprint, Tree, TEXT("Panel_Result"), true);
 		USizeBox* ResultSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Size_Result"));
 		UBorder* ResultCard = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Card_Result"), true);
+		UVerticalBox* ResultColumn = MakeWidget<UVerticalBox>(
+			Blueprint, Tree, TEXT("Column_Result"));
+		UTextBlock* ResultHeading = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_ResultHeading"));
 		UTextBlock* ResultText = MakeWidget<UTextBlock>(
 			Blueprint, Tree, TEXT("Text_Result"), true);
-		if (!ResultPanel || !ResultSize || !ResultCard || !ResultText)
+		USizeBox* ResultCtaSize = MakeWidget<USizeBox>(
+			Blueprint, Tree, TEXT("Size_ResultCta"));
+		UButton* ResultCloseButton = MakeWidget<UButton>(
+			Blueprint, Tree, TEXT("Button_ResultClose"), true);
+		UTextBlock* ResultCloseLabel = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_ResultCloseLabel"));
+		if (!ResultPanel || !ResultSize || !ResultCard || !ResultColumn
+			|| !ResultHeading || !ResultText || !ResultCtaSize
+			|| !ResultCloseButton || !ResultCloseLabel)
 		{
 			return false;
 		}
-		ResultPanel->SetBrushColor(FLinearColor(0.0f, 0.006f, 0.012f, 0.92f));
+		ResultPanel->SetBrushColor(Theme.Scrim);
 		ResultPanel->SetHorizontalAlignment(HAlign_Center);
 		ResultPanel->SetVerticalAlignment(VAlign_Center);
 		ResultPanel->SetVisibility(ESlateVisibility::Collapsed);
 		ResultSize->SetWidthOverride(650.0f);
-		ResultSize->SetHeightOverride(390.0f);
-		ResultCard->SetBrushColor(CardColor);
-		ResultCard->SetPadding(FMargin(48.0f));
+		ResultSize->SetHeightOverride(440.0f);
+		FFMinigameUIStyle::ApplyCard(
+			*ResultCard, Theme.Surface, FMargin(48.0f, 40.0f), Theme.LineStrong, 10.0f, 2.0f);
+		ResultCard->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		ResultHeading->SetText(LOCTEXT("ResultHeading", "SEA FRIENDS ARCADE  //  플레이 결과"));
+		ResultHeading->SetJustification(ETextJustify::Center);
+		StyleHudText(*ResultHeading, 13, Theme.HeaderStrong, TEXT("SemiBold"));
 		ResultText->SetJustification(ETextJustify::Center);
 		ResultText->SetAutoWrapText(true);
-		StyleHudText(*ResultText, 26, Style.PrimaryTextColor);
-		ResultCard->SetContent(ResultText);
+		StyleHudText(*ResultText, 26, Theme.Text);
+		ResultCtaSize->SetWidthOverride(240.0f);
+		ResultCtaSize->SetHeightOverride(54.0f);
+		ResultCloseLabel->SetText(LOCTEXT("ResultClose", "확인  [ESC]"));
+		ResultCloseLabel->SetJustification(ETextJustify::Center);
+		StyleHudText(*ResultCloseLabel, 15, Theme.White, TEXT("SemiBold"));
+		FFMinigameUIStyle::ApplyButton(*ResultCloseButton, Theme, true);
+		ResultCloseButton->SetContent(ResultCloseLabel);
+		ResultCtaSize->SetContent(ResultCloseButton);
+		if (UVerticalBoxSlot* HeadingSlot = ResultColumn->AddChildToVerticalBox(ResultHeading))
+		{
+			HeadingSlot->SetHorizontalAlignment(HAlign_Center);
+			HeadingSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 22.0f));
+		}
+		if (UVerticalBoxSlot* TextSlot = ResultColumn->AddChildToVerticalBox(ResultText))
+		{
+			TextSlot->SetHorizontalAlignment(HAlign_Center);
+			TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		if (UVerticalBoxSlot* CtaSlot = ResultColumn->AddChildToVerticalBox(ResultCtaSize))
+		{
+			CtaSlot->SetHorizontalAlignment(HAlign_Center);
+			CtaSlot->SetPadding(FMargin(0.0f, 22.0f, 0.0f, 0.0f));
+		}
+		else
+		{
+			return false;
+		}
+		ResultCard->SetContent(ResultColumn);
 		ResultSize->SetContent(ResultCard);
 		ResultPanel->SetContent(ResultSize);
 		if (!PlaceAnchored(*ResultPanel, FAnchors(0.0f, 0.0f, 1.0f, 1.0f), 100))

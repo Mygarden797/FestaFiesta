@@ -60,6 +60,7 @@ void UFF_BuildModeGuide::ApplyGuideText()
 			TextBlock->SetText(Text);
 		}
 	};
+	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("PauseOptions", "[ESC/F5]  일시정지 · 옵션"));
 
 	if (!bPlacementPreviewActive)
 	{

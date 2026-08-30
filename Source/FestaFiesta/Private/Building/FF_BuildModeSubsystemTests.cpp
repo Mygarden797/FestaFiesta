@@ -1,6 +1,6 @@
 // FF_BuildModeSubsystemTests.cpp
 
-// B/Escape 상태 전이와 Q/E 스냅·자유 회전 입력, 임의 yaw 중심 보정의 순수 정책을 검증한다.
+// B 상태 전이, Pause 복귀 입력 소유권과 Q/E 스냅·자유 회전 입력, 임의 yaw 중심 보정을 검증한다.
 // 흐름: 상태별 입력 정책 비교 -> 회전 edge/hold 배타성 -> 스냅 각도와 footprint 중심 계산 비교.
 // 불변식: 런타임과 같은 FFBuildModeModel 함수를 호출하며 임의 월드 상태를 만들지 않는다.
 // 실패/성능: 순수 규칙만 검사해 상태 머신 회귀를 빠르게 찾고 실패 assertion을 입력별로 분리한다.
@@ -97,17 +97,23 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 			FGuid::NewGuid(),
 			MoveFacilityId,
 			MoveTransactionId));
-	// Escape와 단계 정책은 활성 세션만 닫고 이미 Closed인 상태에는 부작용을 만들지 않는다.
-	TestFalse(TEXT("Closed의 Esc는 건축 종료를 중복 실행하지 않는다"),
-		ShouldExitOnEscape(EFF_BuildModeState::Closed));
-	TestTrue(TEXT("BuildMode의 Esc는 전체 건축 모드를 종료한다"),
-		ShouldExitOnEscape(EFF_BuildModeState::BuildMode));
-	TestTrue(TEXT("CatalogOpen의 Esc는 전체 건축 모드를 종료한다"),
-		ShouldExitOnEscape(EFF_BuildModeState::CatalogOpen));
-	TestTrue(TEXT("Placing의 Esc는 전체 건축 모드를 종료한다"),
-		ShouldExitOnEscape(EFF_BuildModeState::Placing));
-	TestTrue(TEXT("Moving의 Esc는 전체 건축 모드를 종료한다"),
-		ShouldExitOnEscape(EFF_BuildModeState::Moving));
+	// Pause Hub 복귀는 상태를 바꾸지 않고 현재 상태가 소유하던 입력 표면만 정확히 되찾는다.
+	TestEqual(TEXT("Closed에는 복원할 건축 입력 소유권이 없다"),
+		ResolvePauseResumeInputMode(EFF_BuildModeState::Closed), EPauseResumeInputMode::None);
+	TestEqual(TEXT("CatalogOpen은 카탈로그 GameAndUI 포커스를 복원한다"),
+		ResolvePauseResumeInputMode(EFF_BuildModeState::CatalogOpen), EPauseResumeInputMode::Catalog);
+	TestEqual(TEXT("BuildMode은 월드 건축 입력을 복원한다"),
+		ResolvePauseResumeInputMode(EFF_BuildModeState::BuildMode), EPauseResumeInputMode::World);
+	TestEqual(TEXT("Placing은 프리뷰를 유지한 월드 건축 입력을 복원한다"),
+		ResolvePauseResumeInputMode(EFF_BuildModeState::Placing), EPauseResumeInputMode::World);
+	TestEqual(TEXT("Moving은 이동 세션을 유지한 월드 건축 입력을 복원한다"),
+		ResolvePauseResumeInputMode(EFF_BuildModeState::Moving), EPauseResumeInputMode::World);
+	TestFalse(TEXT("일반 Closed 상태는 건축 Pause lease를 만들지 않는다"),
+		CanSuspendInputForPauseMenu(EFF_BuildModeState::Closed, false, false));
+	TestTrue(TEXT("Pause 중 단계 전환으로 Closed가 되어도 재오픈은 pending resume를 취소한다"),
+		CanSuspendInputForPauseMenu(EFF_BuildModeState::Closed, true, false));
+	TestFalse(TEXT("건축 종료 정리 중에는 새 Pause lease를 만들지 않는다"),
+		CanSuspendInputForPauseMenu(EFF_BuildModeState::BuildMode, false, true));
 	TestTrue(TEXT("라이브 전환으로 재배치가 닫히면 활성 건축 세션을 자동 종료한다"),
 		ShouldExitWhenReconfigureCloses(EFF_BuildModeState::BuildMode, false));
 	TestFalse(TEXT("아침 점검처럼 재배치 가능 단계에서는 건축 세션을 유지한다"),

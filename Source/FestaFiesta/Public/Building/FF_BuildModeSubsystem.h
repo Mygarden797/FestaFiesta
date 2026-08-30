@@ -47,6 +47,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	EFF_BuildModeState, PreviousState,
 	EFF_BuildModeState, NewState);
 
+// 외부 PrepHUD 카탈로그의 exact Slate focus가 사라졌을 때 안정적인 카테고리 버튼으로 복구하도록 요청한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildCatalogFocusRestoreRequested);
+
 // 입력과 부작용을 분리해 자동화 테스트에서도 실제 B 키 상태표를 검증할 수 있게 한다.
 namespace FFBuildModeModel
 {
@@ -141,9 +144,32 @@ namespace FFBuildModeModel
 			WidgetType == TEXT("SMultiLineEditableTextBox");
 	}
 
-	inline bool ShouldExitOnEscape(const EFF_BuildModeState State)
+	enum class EPauseResumeInputMode : uint8
 	{
-		return IsBuildSessionActive(State);
+		None,
+		Catalog,
+		World
+	};
+
+	// Pause Hub가 제거된 다음 CommonUI가 입력 모드를 복원한 뒤, 건축 상태별 소유권을 다시 적용한다.
+	inline EPauseResumeInputMode ResolvePauseResumeInputMode(const EFF_BuildModeState State)
+	{
+		if (State == EFF_BuildModeState::CatalogOpen)
+		{
+			return EPauseResumeInputMode::Catalog;
+		}
+		return IsBuildSessionActive(State)
+			? EPauseResumeInputMode::World
+			: EPauseResumeInputMode::None;
+	}
+
+	// Pause 중 stage-policy로 Closed가 된 세션도 새 Hub가 열리면 pending resume를 다시 취소할 수 있어야 한다.
+	inline bool CanSuspendInputForPauseMenu(
+		const EFF_BuildModeState State,
+		const bool bAlreadySuspended,
+		const bool bIsExiting)
+	{
+		return !bIsExiting && (bAlreadySuspended || IsBuildSessionActive(State));
 	}
 
 	inline bool ShouldExitWhenReconfigureCloses(
@@ -267,7 +293,7 @@ namespace FFBuildModeModel
 
 // 상태 전환은 `Closed -> CatalogOpen <-> BuildMode`, `CatalogOpen -> Placing`과
 // `BuildMode -> Moving -> BuildMode`를 따른다. B는 활성 프리뷰를 정리하고 카탈로그를
-// 열고 닫으며 Esc만 세션 전체를 종료한다. BuildMode에서는 설치 시설의 예약 범위를 보여 주고
+// 열고 닫으며 ESC/F5는 상태를 보존한 채 공용 Pause Hub를 연다. BuildMode에서는 설치 시설의 예약 범위를 보여 주고
 // 선택 후 액션 패널에서 이동·철거·취소를 선택한다. Placing과 Moving은 제한된 주기로 커서 위치를 다시 검증한다.
  
 UCLASS()
@@ -300,6 +326,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	EFF_BuildModeState GetBuildModeState() const { return State; }
 
+	/** Pause Hub가 건축 상태를 파괴하지 않고 입력 소유권만 임시로 넘긴다. 활성 세션에서만 true. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Pause")
+	bool SuspendInputForPauseMenu();
+
+	/** Pause Hub가 닫힌 다음 틱에 Catalog/World 상태에 맞는 입력 모드와 포커스를 되찾는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Pause")
+	void ResumeInputAfterPauseMenu();
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Pause")
+	bool IsInputSuspendedForPauseMenu() const { return bInputSuspendedForPauseMenu; }
+
 	// true이면 상태·입력·카탈로그 로드는 BuildMode가 계속 소유하되 기존 전체 화면 카탈로그는 만들지 않는다.
 	// 기본값 false는 기존 카탈로그 경로를 그대로 유지한다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Presentation")
@@ -314,6 +351,9 @@ public:
 	// 외부 UMG는 이 이벤트로 CatalogOpen/Placing/Closed 표현을 갱신하고 별도 Tick을 두지 않는다.
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Presentation")
 	FFF_OnBuildModeStateChanged OnBuildModeStateChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Presentation")
+	FFF_OnBuildCatalogFocusRestoreRequested OnBuildCatalogFocusRestoreRequested;
 
 	// 첫 B는 배치 카탈로그를 열고, 열린 카탈로그의 다음 B는 설치 시설을 다루는 BuildMode로 전환한다.
 	// Placing/Moving에서 B를 누르면 현재 프리뷰를 정리하고 카탈로그로 돌아간다.
@@ -427,6 +467,11 @@ private:
 	bool bThumbnailPreloadAcquired = false;
 	// 입력 모드 복구에 필요한 원래 값을 한 번만 캡처했는지 나타낸다. 
 	bool bBuildSessionActive = false;
+	// Pause Hub가 열린 동안 상태·프리뷰는 유지하되 모든 raw 건축 입력과 프리뷰 갱신을 멈춘다.
+	bool bInputSuspendedForPauseMenu = false;
+	// CommonUI ScreenStack 제거와 같은 프레임에 입력 모드를 덮지 않도록 실제 복원은 다음 틱에 수행한다.
+	bool bPauseMenuResumePending = false;
+	FTimerHandle PauseMenuResumeTimerHandle;
 	// 카탈로그 카드/닫기 버튼을 누른 좌클릭이 같은 프레임에 설치나 철거로 전달되지 않게 한다.
 	bool bSuppressWorldClickUntilReleased = false;
 	// Enter/Space로 카탈로그 카드를 연 키가 같은 프레임의 설치 확정으로 전달되지 않게 한다.
@@ -448,6 +493,8 @@ private:
 	bool bPreviousShowMouseCursor = false;
 	// 건축 진입 전에 포커스된 UI가 남아 있으면 종료 시 GameAndUI 포커스를 복원한다.
 	TWeakPtr<SWidget> PreviousFocusedWidget;
+	// Pause 진입 직전 카탈로그의 실제 버튼/타일 포커스. 외부 PrepHUD 카탈로그도 같은 지점으로 복원한다.
+	TWeakPtr<SWidget> PauseMenuFocusedWidget;
 	// 같은 프리뷰 상태가 짧은 주기로 반복될 때 로그가 폭증하지 않도록 마지막 문구를 기억한다. 
 	mutable FString LastLoggedStatusMessage;
 
@@ -457,8 +504,12 @@ private:
 	// 모든 상태 쓰기를 한곳에서 수행하고 실제 변경일 때만 외부 표현 계층에 방송한다.
 	void SetState(EFF_BuildModeState NewState);
 
-	// B/Escape/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다.
+	// B/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다. ESC/F5는 공용 Pause Hub가 소유한다.
 	void HandleInput(APlayerController& Controller, float DeltaTime);
+	// 예약된 다음 틱에 현재 상태별 입력 모드와 포커스를 다시 적용하고 클릭 관통을 한 프레임 차단한다.
+	void RestoreInputAfterPauseMenu();
+	// 종료/월드 해제에서 예약 타이머와 suspend 플래그를 함께 정리한다.
+	void ClearPauseMenuInputSuspension();
 	// Q/E 스냅과 Shift+Q/E 자유 회전 gesture를 처리한다. 회전은 dirty 표시만 하고 검증은 Tick 주기를 따른다.
 	void HandlePlacementRotationInput(APlayerController& Controller, float DeltaTime);
 	void TogglePlacementGrid();
@@ -481,9 +532,13 @@ private:
 	// 조작 안내 패널을 뷰포트에서 제거한다. 여러 번 호출해도 안전하다.
 	void RemoveBuildModeGuide();
 	// 카탈로그가 키보드/마우스 입력을 받도록 GameAndUI 모드와 포커스를 설정한다. 
-	void SetCatalogInputMode(APlayerController& Controller) const;
+	void SetCatalogInputMode(
+		APlayerController& Controller,
+		TSharedPtr<SWidget> PreferredFocus = nullptr) const;
 	// 카탈로그 없는 BuildMode/Placing/Moving에서 커서 기반 월드 입력을 받도록 GameAndUI 모드를 설정한다.
-	void SetBuildInputMode(APlayerController& Controller) const;
+	void SetBuildInputMode(
+		APlayerController& Controller,
+		TSharedPtr<SWidget> PreferredFocus = nullptr) const;
 	// 세션 시작 전에 저장한 커서 표시 상태를 복원하고 GameOnly 입력으로 돌아간다. 
 	void RestoreInputMode(APlayerController& Controller);
 
@@ -542,8 +597,8 @@ private:
 	void HandleCatalogCloseRequested();
 	// 포커스된 카탈로그의 B 요청을 BuildMode 복귀로 변환하고 raw B 폴링을 키 해제까지 차단한다.
 	void HandleCatalogBuildModeKeyRequested();
-	// CommonUI가 먼저 받은 Esc 요청을 건축 세션 전체 종료로 변환한다.
-	void HandleCatalogExitKeyRequested();
+	// 포커스된 카탈로그의 ESC 요청을 상태 파괴 없이 공용 Pause Hub 진입으로 변환한다.
+	void HandleCatalogPauseMenuKeyRequested();
 	UFUNCTION()
 	void HandleCatalogChanged();
 	UFUNCTION()
