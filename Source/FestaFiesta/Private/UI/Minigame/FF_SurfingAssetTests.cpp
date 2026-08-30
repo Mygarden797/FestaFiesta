@@ -86,6 +86,7 @@ namespace FFSurfingAssetTestHelpers
 			{ TEXT("Text_Controls"), UTextBlock::StaticClass() },
 			{ TEXT("Panel_Result"), UBorder::StaticClass() },
 			{ TEXT("Text_Result"), UTextBlock::StaticClass() },
+			{ TEXT("Button_ResultClose"), UButton::StaticClass() },
 			{ TEXT("Button_Close"), UButton::StaticClass() },
 		};
 		return Widgets;
@@ -195,9 +196,11 @@ namespace FFSurfingAssetTestHelpers
 			Tree.FindWidget(TEXT("Text_Controls")));
 		const UButton* CloseButton = Cast<UButton>(Tree.FindWidget(TEXT("Button_Close")));
 		const UBorder* ResultPanel = Cast<UBorder>(Tree.FindWidget(TEXT("Panel_Result")));
+		const UButton* ResultCloseButton = Cast<UButton>(
+			Tree.FindWidget(TEXT("Button_ResultClose")));
 		const UOverlay* Root = Cast<UOverlay>(Tree.RootWidget);
 		if (!SurfArea || !EntityLayer || !PillHud || !ControlsHint || !ControlsText
-			|| !CloseButton || !ResultPanel || !Root)
+			|| !CloseButton || !ResultPanel || !ResultCloseButton || !Root)
 		{
 			Test.AddError(TEXT("디자이너 편집용 FreeRide named hierarchy가 완전하지 않다."));
 			return false;
@@ -238,6 +241,13 @@ namespace FFSurfingAssetTestHelpers
 		Test.TestTrue(TEXT("결과 모달은 arena 다음에 그려지는 최상위 overlay 자식이다"),
 			ResultPanel->GetParent() == Root
 			&& Root->GetChildIndex(ResultPanel) > Root->GetChildIndex(SurfArea));
+		const UWidget* ResultAncestor = ResultCloseButton;
+		while (ResultAncestor && ResultAncestor != ResultPanel)
+		{
+			ResultAncestor = ResultAncestor->GetParent();
+		}
+		Test.TestTrue(TEXT("결과 닫기 버튼은 결과 모달 안에 있어 스크림 뒤로 가려지지 않는다"),
+			ResultAncestor == ResultPanel);
 		return !Test.HasAnyErrors();
 	}
 

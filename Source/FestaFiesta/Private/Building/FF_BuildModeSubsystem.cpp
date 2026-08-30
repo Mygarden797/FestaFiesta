@@ -27,12 +27,16 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "InputCoreTypes.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Layout/WidgetPath.h"
 #include "Widgets/SViewport.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "Building/UI/FF_BuildCatalogScreen.h"
+#include "TimerManager.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
 
@@ -56,6 +60,19 @@ namespace
 			}
 		}
 		return false;
+	}
+
+	bool IsSlateWidgetOnVisiblePath(const TSharedPtr<SWidget>& Widget)
+	{
+		if (!Widget.IsValid() || !FSlateApplication::IsInitialized())
+		{
+			return false;
+		}
+
+		// 위젯 풀에 살아 있어도 현재 창의 visible path에서 빠진 Slate 객체는 포커스 대상으로 쓰지 않는다.
+		FWidgetPath VisiblePath;
+		return FSlateApplication::Get().GeneratePathToWidgetUnchecked(
+			Widget.ToSharedRef(), VisiblePath, EVisibility::Visible);
 	}
 
 	// 디자이너가 만든 기본 카탈로그 화면을 지연 참조한다. 패키지 로드 실패 시 아래 생성 함수가
@@ -130,6 +147,7 @@ void UFF_BuildModeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UFF_BuildModeSubsystem::Deinitialize()
 {
 	const bool bShouldRestoreInput = bBuildSessionActive;
+	ClearPauseMenuInputSuspension();
 	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
 	SetState(EFF_BuildModeState::Closed);
 	bBuildSessionActive = false;
@@ -186,6 +204,12 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	{
 		return;
 	}
+	if (bInputSuspendedForPauseMenu)
+	{
+		// Pause 중에는 상태·선택·프리뷰 액터를 그대로 보존하고 입력 및 비싼 커서 재검증만 멈춘다.
+		ResetPlacementRotationInput();
+		return;
+	}
 	if (FFBuildModeModel::IsBuildSessionActive(State) && !IsBuildEntryAllowed())
 	{
 		// Stage/Zone 이벤트 순서와 관계없이 Live에서 건축 입력이 남지 않게 한다.
@@ -216,6 +240,118 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 TStatId UFF_BuildModeSubsystem::GetStatId() const
 {
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UFF_BuildModeSubsystem, STATGROUP_Tickables);
+}
+
+bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
+{
+	if (!FFBuildModeModel::CanSuspendInputForPauseMenu(
+		State, bInputSuspendedForPauseMenu, bIsExitingBuildMode))
+	{
+		return false;
+	}
+
+	const bool bWasAlreadySuspended = bInputSuspendedForPauseMenu;
+	// 닫았다가 같은 프레임에 다시 연 경우 이전 resume 예약이 최신 Pause 세션을 깨우지 않게 무효화한다.
+	if (UWorld* World = GetWorld(); World && PauseMenuResumeTimerHandle.IsValid())
+	{
+		World->GetTimerManager().ClearTimer(PauseMenuResumeTimerHandle);
+	}
+	PauseMenuResumeTimerHandle.Invalidate();
+	bPauseMenuResumePending = false;
+	bInputSuspendedForPauseMenu = true;
+	if (!bWasAlreadySuspended && FSlateApplication::IsInitialized())
+	{
+		// Pause 화면이 focus를 가져가기 전에 실제 카탈로그 버튼/타일을 저장한다.
+		PauseMenuFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+	}
+	ResetPlacementRotationInput();
+	return true;
+}
+
+void UFF_BuildModeSubsystem::ResumeInputAfterPauseMenu()
+{
+	if (!bInputSuspendedForPauseMenu || bPauseMenuResumePending)
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		bPauseMenuResumePending = true;
+		PauseMenuResumeTimerHandle = World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(this, &ThisClass::RestoreInputAfterPauseMenu));
+		return;
+	}
+
+	// 월드가 이미 해제된 경로에는 복원할 Controller도 없다.
+	bInputSuspendedForPauseMenu = false;
+	PauseMenuFocusedWidget.Reset();
+}
+
+void UFF_BuildModeSubsystem::RestoreInputAfterPauseMenu()
+{
+	bPauseMenuResumePending = false;
+	PauseMenuResumeTimerHandle.Invalidate();
+	if (!bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
+
+	TSharedPtr<SWidget> FocusToRestore = PauseMenuFocusedWidget.Pin();
+	PauseMenuFocusedWidget.Reset();
+	if (!IsSlateWidgetOnVisiblePath(FocusToRestore))
+	{
+		FocusToRestore.Reset();
+	}
+	bInputSuspendedForPauseMenu = false;
+	if (bIsExitingBuildMode)
+	{
+		return;
+	}
+
+	APlayerController* Controller = GetLocalPlayerController();
+	if (!Controller)
+	{
+		return;
+	}
+
+	switch (FFBuildModeModel::ResolvePauseResumeInputMode(State))
+	{
+	case FFBuildModeModel::EPauseResumeInputMode::Catalog:
+		SetCatalogInputMode(*Controller, FocusToRestore);
+		if (!FocusToRestore.IsValid() && bExternalCatalogPresentationActive)
+		{
+			OnBuildCatalogFocusRestoreRequested.Broadcast();
+		}
+		break;
+	case FFBuildModeModel::EPauseResumeInputMode::World:
+		SetBuildInputMode(*Controller, FocusToRestore);
+		break;
+	case FFBuildModeModel::EPauseResumeInputMode::None:
+	default:
+		// Pause 중 stage-policy로 건축이 종료됐으면 Hub가 닫힌 지금 세션 이전 입력으로 돌아간다.
+		RestoreInputMode(*Controller);
+		return;
+	}
+
+	// Resume 버튼의 mouse-up이나 Enter/Space가 곧바로 시설 선택·설치·B 토글로 관통하지 않게 한다.
+	bSuppressWorldClickUntilReleased = true;
+	bSuppressPlacementConfirmUntilReleased = true;
+	bSuppressBuildToggleUntilReleased = true;
+	ResetPlacementRotationInput();
+	RefreshBuildModeGuide();
+}
+
+void UFF_BuildModeSubsystem::ClearPauseMenuInputSuspension()
+{
+	if (UWorld* World = GetWorld(); World && PauseMenuResumeTimerHandle.IsValid())
+	{
+		World->GetTimerManager().ClearTimer(PauseMenuResumeTimerHandle);
+	}
+	PauseMenuResumeTimerHandle.Invalidate();
+	bPauseMenuResumePending = false;
+	bInputSuspendedForPauseMenu = false;
+	PauseMenuFocusedWidget.Reset();
 }
 
 void UFF_BuildModeSubsystem::SetExternalCatalogPresentationActive(const bool bActive)
@@ -260,6 +396,10 @@ void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
 
 void UFF_BuildModeSubsystem::ToggleBuildMode()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	if (bIsExitingBuildMode)
 	{
 		return;
@@ -279,6 +419,10 @@ void UFF_BuildModeSubsystem::ToggleBuildMode()
 
 void UFF_BuildModeSubsystem::EnterBuildMode()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	if (bIsExitingBuildMode)
 	{
 		return;
@@ -313,11 +457,15 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	SetBuildInputMode(*Controller);
 	// UI 버튼 콜백이 mouse-up에서 오더라도 다음 Tick까지는 같은 클릭을 월드 입력으로 사용하지 않는다.
 	bSuppressWorldClickUntilReleased = true;
-	ShowStatus(TEXT("건축 모드 · 좌클릭 시설 선택 · B 카탈로그 · Esc 종료"), false, 2.5f);
+	ShowStatus(TEXT("건축 모드 · 좌클릭 시설 선택 · B 카탈로그 · ESC/F5 일시정지"), false, 2.5f);
 }
 
 void UFF_BuildModeSubsystem::OpenCatalog()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	if (bIsExitingBuildMode)
 	{
 		return;
@@ -400,6 +548,10 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 
 bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return false;
+	}
 	// NAME_None은 UI에서 아직 항목을 선택하지 않은 상태이므로 오류 UI 없이 단순 실패로 처리한다.
 	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
 	if (bIsExitingBuildMode || State != EFF_BuildModeState::CatalogOpen ||
@@ -493,12 +645,16 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	}
 	// 첫 프레임부터 현재 커서 위치와 회전을 명령에 반영하기 위해 위치 변화 여부와 무관하게 강제 갱신한다.
 	UpdatePlacementFromCursor(true);
-	ShowStatus(TEXT("좌클릭 설치 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 목록 · Esc 종료"));
+	ShowStatus(TEXT("좌클릭 설치 · Q/E 회전 · Ctrl 정밀 · Alt 자유 · G 격자 · 우클릭 목록 · ESC/F5 일시정지"));
 	return PlacementPreview != nullptr;
 }
 
 void UFF_BuildModeSubsystem::ReturnToCatalog()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	// Closed에서 호출된 늦은 UI 이벤트는 이미 끝난 세션을 다시 열지 않도록 무시한다.
 	if (bIsExitingBuildMode || State == EFF_BuildModeState::Closed)
 	{
@@ -514,7 +670,12 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 		return;
 	}
 
+	const bool bDeferInputRestoreUntilPauseCloses = bInputSuspendedForPauseMenu;
 	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
+	if (!bDeferInputRestoreUntilPauseCloses)
+	{
+		ClearPauseMenuInputSuspension();
+	}
 	// 어느 활성 상태에서 호출해도 같은 Closed 불변식(UI/프리뷰/선택/표적 없음)을 만든다.
 	// 아래 정리 중 썸네일 상태 방송이 동기 재진입해도 공개 전환 API는 Closed 상태와 guard를 본다.
 	SetState(EFF_BuildModeState::Closed);
@@ -534,9 +695,12 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 	ResetPlacementSelection();
 
 	// 컨트롤러가 월드 종료 등으로 사라졌다면 복구할 대상도 없으므로 정리만 완료한다.
-	if (APlayerController* Controller = GetLocalPlayerController())
+	if (!bDeferInputRestoreUntilPauseCloses)
 	{
-		RestoreInputMode(*Controller);
+		if (APlayerController* Controller = GetLocalPlayerController())
+		{
+			RestoreInputMode(*Controller);
+		}
 	}
 	ShowStatus(TEXT("건축 모드를 종료했습니다."), false, 1.2f);
 }
@@ -548,6 +712,10 @@ void UFF_BuildModeSubsystem::RotatePlacement(const int32 QuarterTurnDelta)
 
 void UFF_BuildModeSubsystem::RotatePlacementDegrees(const float DeltaDegrees)
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	if (!FFBuildModeModel::IsPreviewActive(State))
 	{
 		return;
@@ -562,6 +730,10 @@ void UFF_BuildModeSubsystem::RotatePlacementDegrees(const float DeltaDegrees)
 
 void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	if (!FFBuildModeModel::IsPreviewActive(State) || !FMath::IsFinite(YawDegrees))
 	{
 		return;
@@ -593,6 +765,10 @@ float UFF_BuildModeSubsystem::GetPlacementYawDegrees() const
 
 bool UFF_BuildModeSubsystem::CommitPlacement()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return false;
+	}
 	// 프리뷰가 없는 Placing/Moving은 불완전한 상태이므로 권위 명령을 만들지 않는다.
 	if (!FFBuildModeModel::IsPreviewActive(State) || !PlacementPreview)
 	{
@@ -753,14 +929,6 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 
 void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const float DeltaTime)
 {
-	// Esc는 어느 활성 하위 상태에서도 세션 전체를 닫으며 같은 프레임의 다른 입력을 실행하지 않는다.
-	if (FFBuildModeModel::ShouldExitOnEscape(State) &&
-		Controller.WasInputKeyJustPressed(EKeys::Escape))
-	{
-		ExitBuildMode();
-		return;
-	}
-
 	const bool bBlockBuildToggleThisFrame = bSuppressBuildToggleUntilReleased;
 	if (bSuppressBuildToggleUntilReleased)
 	{
@@ -1002,8 +1170,8 @@ void UFF_BuildModeSubsystem::CreateCatalogScreen(APlayerController& Controller)
 	CatalogScreen->OnCloseRequested.AddUObject(this, &UFF_BuildModeSubsystem::HandleCatalogCloseRequested);
 	CatalogScreen->OnBuildModeKeyRequested.AddUObject(
 		this, &UFF_BuildModeSubsystem::HandleCatalogBuildModeKeyRequested);
-	CatalogScreen->OnExitBuildModeKeyRequested.AddUObject(
-		this, &UFF_BuildModeSubsystem::HandleCatalogExitKeyRequested);
+	CatalogScreen->OnPauseMenuKeyRequested.AddUObject(
+		this, &UFF_BuildModeSubsystem::HandleCatalogPauseMenuKeyRequested);
 	CatalogScreen->AddToPlayerScreen(80);
 	CatalogScreen->ActivateWidget();
 }
@@ -1024,7 +1192,7 @@ void UFF_BuildModeSubsystem::RemoveCatalogScreen()
 	CatalogScreen->OnFacilitySelected.RemoveAll(this);
 	CatalogScreen->OnCloseRequested.RemoveAll(this);
 	CatalogScreen->OnBuildModeKeyRequested.RemoveAll(this);
-	CatalogScreen->OnExitBuildModeKeyRequested.RemoveAll(this);
+	CatalogScreen->OnPauseMenuKeyRequested.RemoveAll(this);
 	CatalogScreen->DeactivateWidget();
 	CatalogScreen->RemoveFromParent();
 	CatalogScreen = nullptr;
@@ -1246,12 +1414,23 @@ void UFF_BuildModeSubsystem::RemoveBuildModeGuide()
 	BuildModeGuideWidget = nullptr;
 }
 
-void UFF_BuildModeSubsystem::SetCatalogInputMode(APlayerController& Controller) const
+void UFF_BuildModeSubsystem::SetCatalogInputMode(
+	APlayerController& Controller,
+	TSharedPtr<SWidget> PreferredFocus) const
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
 	// GameAndUI를 사용해 B 키 폴링은 유지하면서 위젯의 마우스/키보드 탐색도 가능하게 한다.
 	Controller.bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
-	if (CatalogScreen)
+	if (PreferredFocus.IsValid())
+	{
+		// PrepHUD 외부 카탈로그와 레거시 카탈로그 모두 Pause 진입 직전의 정확한 항목으로 돌아간다.
+		InputMode.SetWidgetToFocus(PreferredFocus);
+	}
+	else if (CatalogScreen)
 	{
 		// TakeWidget으로 얻은 Slate 위젯을 포커스 대상으로 지정해 첫 키보드 입력이 게임에만 빠지지 않게 한다.
 		InputMode.SetWidgetToFocus(CatalogScreen->TakeWidget());
@@ -1261,13 +1440,24 @@ void UFF_BuildModeSubsystem::SetCatalogInputMode(APlayerController& Controller) 
 	Controller.SetInputMode(InputMode);
 }
 
-void UFF_BuildModeSubsystem::SetBuildInputMode(APlayerController& Controller) const
+void UFF_BuildModeSubsystem::SetBuildInputMode(
+	APlayerController& Controller,
+	TSharedPtr<SWidget> PreferredFocus) const
 {
-	// 카탈로그 없는 건축 상태에서는 커서를 표시하고 게임 입력도 함께 받는다. 특정 위젯에 포커스를
-	// 고정하지 않아 PlayerController가 B/Escape/클릭을 계속 감지할 수 있다.
+	if (bInputSuspendedForPauseMenu)
+	{
+		return;
+	}
+	// 카탈로그 없는 건축 상태에서도 커서와 게임 입력을 함께 유지한다. 일반 전환은 viewport를,
+	// Pause 복귀는 사용자가 보던 시설 액션을 우선해 키보드와 마우스 흐름을 모두 보존한다.
 	Controller.bShowMouseCursor = true;
 	FInputModeGameAndUI InputMode;
-	if (const UWorld* World = GetWorld())
+	if (PreferredFocus.IsValid())
+	{
+		// 시설 이동/철거 패널에서 Pause를 열었다면 같은 액션 버튼으로 키보드 포커스를 돌려준다.
+		InputMode.SetWidgetToFocus(PreferredFocus);
+	}
+	else if (const UWorld* World = GetWorld())
 	{
 		if (const UGameViewportClient* ViewportClient = World->GetGameViewport())
 		{
@@ -1294,7 +1484,7 @@ void UFF_BuildModeSubsystem::RestoreInputMode(APlayerController& Controller)
 			GameViewportWidget = ViewportClient->GetGameViewportWidget();
 		}
 	}
-	if (PreviousFocus.IsValid() && PreviousFocus != GameViewportWidget)
+	if (PreviousFocus != GameViewportWidget && IsSlateWidgetOnVisiblePath(PreviousFocus))
 	{
 		FInputModeGameAndUI InputMode;
 		InputMode.SetWidgetToFocus(PreviousFocus);
@@ -1551,6 +1741,10 @@ bool UFF_BuildModeSubsystem::HandleRemovalClickUnderCursor(APlayerController& Co
 
 bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return false;
+	}
 	if (!FFBuildModeModel::CanRemoveInstalledFacility(State))
 	{
 		return false;
@@ -1631,6 +1825,10 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 
 bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 {
+	if (bInputSuspendedForPauseMenu)
+	{
+		return false;
+	}
 	if (bIsExitingBuildMode || State != EFF_BuildModeState::BuildMode)
 	{
 		return false;
@@ -1739,7 +1937,7 @@ void UFF_BuildModeSubsystem::CancelMovingToBuildMode(
 
 void UFF_BuildModeSubsystem::HandleMoveRequested(const FGuid FacilityInstanceId)
 {
-	if (!PendingRemovalFacility.IsValid() ||
+	if (bInputSuspendedForPauseMenu || !PendingRemovalFacility.IsValid() ||
 		PendingRemovalFacility->GetFacilityInstanceId() != FacilityInstanceId)
 	{
 		return;
@@ -1751,7 +1949,7 @@ void UFF_BuildModeSubsystem::HandleMoveRequested(const FGuid FacilityInstanceId)
 
 void UFF_BuildModeSubsystem::HandleRemoveRequested(const FGuid FacilityInstanceId)
 {
-	if (!PendingRemovalFacility.IsValid() ||
+	if (bInputSuspendedForPauseMenu || !PendingRemovalFacility.IsValid() ||
 		PendingRemovalFacility->GetFacilityInstanceId() != FacilityInstanceId)
 	{
 		return;
@@ -1763,7 +1961,7 @@ void UFF_BuildModeSubsystem::HandleRemoveRequested(const FGuid FacilityInstanceI
 
 void UFF_BuildModeSubsystem::HandleRemovalCancelRequested(const FGuid FacilityInstanceId)
 {
-	if (!PendingRemovalFacility.IsValid() ||
+	if (bInputSuspendedForPauseMenu || !PendingRemovalFacility.IsValid() ||
 		PendingRemovalFacility->GetFacilityInstanceId() != FacilityInstanceId)
 	{
 		return;
@@ -2052,7 +2250,7 @@ void UFF_BuildModeSubsystem::HandleFacilitySelected(const FName FacilityDefiniti
 
 void UFF_BuildModeSubsystem::HandleCatalogCloseRequested()
 {
-	// 닫기 버튼은 카탈로그만 접고 범위 확인/철거가 가능한 건축 상태를 유지한다. 전체 종료는 Esc 전용이다.
+	// 닫기 버튼은 카탈로그만 접고 범위 확인/철거가 가능한 건축 상태를 유지한다.
 	EnterBuildMode();
 }
 
@@ -2063,9 +2261,12 @@ void UFF_BuildModeSubsystem::HandleCatalogBuildModeKeyRequested()
 	EnterBuildMode();
 }
 
-void UFF_BuildModeSubsystem::HandleCatalogExitKeyRequested()
+void UFF_BuildModeSubsystem::HandleCatalogPauseMenuKeyRequested()
 {
-	ExitBuildMode();
+	if (UFF_FestivalSettingsSubsystem* Settings = UFF_FestivalSettingsSubsystem::Get(this))
+	{
+		Settings->OpenPauseMenu(GetLocalPlayerController());
+	}
 }
 
 void UFF_BuildModeSubsystem::HandleCatalogChanged()

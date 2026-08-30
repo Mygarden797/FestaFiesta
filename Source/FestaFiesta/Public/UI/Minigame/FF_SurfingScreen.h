@@ -397,6 +397,10 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UButton> Button_Close;
 
+	/** Result-only primary CTA, parented by Panel_Result so it can never render behind it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UButton> Button_ResultClose;
+
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<UBorder>> EntityWidgetsById;
 
@@ -405,4 +409,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> CloseLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ResultCloseLabel;
 };

@@ -21,6 +21,7 @@
 #include "UI/FF_UILog.h"
 #include "UI/Minigame/FF_ClawMachineArena3D.h"
 #include "UI/Minigame/FF_ClawMachineJoystickWidget.h"
+#include "UI/Minigame/FF_MinigameUIStyle.h"
 
 #define LOCTEXT_NAMESPACE "FFClawMachineScreen"
 
@@ -254,6 +255,7 @@ void UFF_ClawMachineScreen::NativeDestruct()
 {
 	if (Button_Drop) { Button_Drop->OnClicked.RemoveAll(this); }
 	if (Button_Close) { Button_Close->OnClicked.RemoveAll(this); }
+	if (Button_ResultClose) { Button_ResultClose->OnClicked.RemoveAll(this); }
 	if (JoystickWidget)
 	{
 		JoystickWidget->OnInputAxisChanged.RemoveAll(this);
@@ -357,8 +359,8 @@ FReply UFF_ClawMachineScreen::NativeOnAnalogValueChanged(
 
 UWidget* UFF_ClawMachineScreen::NativeGetDesiredFocusTarget() const
 {
-	return (bHasResult && Button_Close)
-		? static_cast<UWidget*>(Button_Close.Get())
+	return (bHasResult && (Button_ResultClose || Button_Close))
+		? static_cast<UWidget*>(Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get())
 		: const_cast<UFF_ClawMachineScreen*>(this);
 }
 
@@ -369,6 +371,7 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 		return false;
 	}
 	bBuiltNativeWidgetTree = true;
+	const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 
 	UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass(), TEXT("Root_ClawMachineNative"));
 	UBorder* Background = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Border_Background"));
@@ -378,7 +381,7 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 		return false;
 	}
 	WidgetTree->RootWidget = Root;
-	Background->SetBrushColor(VisualStyle.ViewportBackgroundColor);
+	Background->SetBrushColor(Theme.HeaderStrong);
 	if (UOverlaySlot* BackgroundSlot = Root->AddChildToOverlay(Background))
 	{
 		BackgroundSlot->SetHorizontalAlignment(HAlign_Fill);
@@ -405,10 +408,14 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 	{
 		UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), BorderName);
 		OutText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
-		Card->SetBrushColor(VisualStyle.PanelColor);
-		Card->SetPadding(FMargin(16.0f, 8.0f));
+		const FFMinigameUIStyle::FTheme CardTheme = FFMinigameUIStyle::GetTheme();
+		FFMinigameUIStyle::ApplyCard(
+			*Card,
+			FFMinigameUIStyle::WithOpacity(CardTheme.Surface, 0.96f),
+			FMargin(16.0f, 8.0f),
+			CardTheme.Line);
 		OutText->SetJustification(ETextJustify::Center);
-		StyleText(OutText, 20.0f, VisualStyle.PrimaryTextColor);
+		StyleText(OutText, 20.0f, CardTheme.Text);
 		Card->SetContent(OutText);
 		PlaceOnCanvas(Canvas, Card, Anchors, 20);
 	};
@@ -420,11 +427,14 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 	UVerticalBox* StatusColumn = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Column_Status"));
 	Text_Status = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Status"));
 	Progress_Phase = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("Progress_Phase"));
-	StatusCard->SetBrushColor(VisualStyle.PanelMutedColor);
-	StatusCard->SetPadding(FMargin(18.0f, 8.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*StatusCard,
+		FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f),
+		FMargin(18.0f, 8.0f),
+		Theme.Line);
 	Text_Status->SetJustification(ETextJustify::Center);
-	StyleText(Text_Status, 17.0f, VisualStyle.AccentColor);
-	Progress_Phase->SetFillColorAndOpacity(VisualStyle.GoldColor);
+	StyleText(Text_Status, 17.0f, Theme.HeaderStrong);
+	Progress_Phase->SetFillColorAndOpacity(Theme.Warning);
 	StatusColumn->AddChildToVerticalBox(Text_Status);
 	if (UVerticalBoxSlot* PhaseSlot = StatusColumn->AddChildToVerticalBox(Progress_Phase))
 	{
@@ -435,16 +445,19 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 
 	Text_Feedback = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Feedback"));
 	Text_Feedback->SetJustification(ETextJustify::Center);
-	StyleText(Text_Feedback, 28.0f, VisualStyle.GoldColor);
+	StyleText(Text_Feedback, 28.0f, Theme.Warning);
 	PlaceOnCanvas(Canvas, Text_Feedback, FAnchors(0.28f, 0.14f, 0.72f, 0.22f), 30);
 
 	UBorder* HintCard = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Card_Hint"));
 	UTextBlock* Hint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Hint"));
-	HintCard->SetBrushColor(VisualStyle.PanelMutedColor);
-	HintCard->SetPadding(FMargin(14.0f, 7.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*HintCard,
+		FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f),
+		FMargin(14.0f, 7.0f),
+		Theme.Line);
 	Hint->SetText(LOCTEXT("ClawHint", "WASD / 방향키 / 스틱: 집게 이동   ·   SPACE / A: 집게 내리기   ·   ESC: 나가기"));
 	Hint->SetJustification(ETextJustify::Center);
-	StyleText(Hint, 14.0f, VisualStyle.SecondaryTextColor);
+	StyleText(Hint, 14.0f, Theme.TextMuted);
 	HintCard->SetContent(Hint);
 	PlaceOnCanvas(Canvas, HintCard, FAnchors(0.18f, 0.94f, 0.82f, 0.985f), 25);
 
@@ -452,8 +465,8 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 	Text_DropLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_DropLabel"));
 	Text_DropLabel->SetText(LOCTEXT("DropButton", "집게 내리기  [SPACE]"));
 	Text_DropLabel->SetJustification(ETextJustify::Center);
-	StyleText(Text_DropLabel, 18.0f, FLinearColor(0.02f, 0.10f, 0.11f, 1.0f));
-	Button_Drop->SetBackgroundColor(VisualStyle.GoldColor);
+	StyleText(Text_DropLabel, 18.0f, Theme.White);
+	FFMinigameUIStyle::ApplyButton(*Button_Drop, Theme, true);
 	Button_Drop->SetContent(Text_DropLabel);
 	PlaceOnCanvas(Canvas, Button_Drop, FAnchors(0.39f, 0.84f, 0.61f, 0.925f), 30);
 
@@ -461,24 +474,70 @@ bool UFF_ClawMachineScreen::BuildNativeWidgetTree()
 	Text_CloseLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_CloseLabel"));
 	Text_CloseLabel->SetText(LOCTEXT("CloseButton", "나가기  [ESC]"));
 	Text_CloseLabel->SetJustification(ETextJustify::Center);
-	StyleText(Text_CloseLabel, 13.0f, VisualStyle.PrimaryTextColor);
-	Button_Close->SetBackgroundColor(VisualStyle.PanelMutedColor);
+	StyleText(Text_CloseLabel, 13.0f, Theme.Text);
+	FFMinigameUIStyle::ApplyButton(*Button_Close, Theme, false);
 	Button_Close->SetContent(Text_CloseLabel);
 	PlaceOnCanvas(Canvas, Button_Close, FAnchors(0.915f, 0.018f, 0.985f, 0.075f), 120);
 
 	Panel_Result = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel_Result"));
 	USizeBox* ResultSize = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("Size_Result"));
 	UBorder* ResultCard = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Card_Result"));
+	UVerticalBox* ResultColumn = WidgetTree->ConstructWidget<UVerticalBox>(
+		UVerticalBox::StaticClass(), TEXT("Column_Result"));
+	UTextBlock* ResultHeading = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("Text_ResultHeading"));
 	Text_Result = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Text_Result"));
-	Panel_Result->SetBrushColor(FLinearColor(0.005f, 0.04f, 0.05f, 0.88f));
+	USizeBox* ResultCtaSize = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(), TEXT("Size_ResultCta"));
+	Button_ResultClose = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("Button_ResultClose"));
+	Text_ResultCloseLabel = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("Text_ResultCloseLabel"));
+	if (!Panel_Result || !ResultSize || !ResultCard || !ResultColumn || !ResultHeading
+		|| !Text_Result || !ResultCtaSize || !Button_ResultClose || !Text_ResultCloseLabel)
+	{
+		return false;
+	}
+	Panel_Result->SetBrushColor(Theme.Scrim);
 	ResultSize->SetWidthOverride(680.0f);
-	ResultSize->SetHeightOverride(390.0f);
-	ResultCard->SetBrushColor(VisualStyle.PanelColor);
-	ResultCard->SetPadding(FMargin(48.0f));
+	ResultSize->SetHeightOverride(440.0f);
+	FFMinigameUIStyle::ApplyCard(
+		*ResultCard, Theme.Surface, FMargin(48.0f, 40.0f), Theme.LineStrong, 10.0f, 2.0f);
+	ResultCard->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	ResultHeading->SetText(LOCTEXT("ResultHeading", "SEA FRIENDS ARCADE  //  플레이 결과"));
+	ResultHeading->SetJustification(ETextJustify::Center);
+	StyleText(ResultHeading, 13.0f, Theme.HeaderStrong);
 	Text_Result->SetJustification(ETextJustify::Center);
 	Text_Result->SetAutoWrapText(true);
-	StyleText(Text_Result, 27.0f, VisualStyle.PrimaryTextColor);
-	ResultCard->SetContent(Text_Result);
+	StyleText(Text_Result, 27.0f, Theme.Text);
+	ResultCtaSize->SetWidthOverride(240.0f);
+	ResultCtaSize->SetHeightOverride(54.0f);
+	Text_ResultCloseLabel->SetText(LOCTEXT("ResultClose", "확인  [ESC]"));
+	Text_ResultCloseLabel->SetJustification(ETextJustify::Center);
+	StyleText(Text_ResultCloseLabel, 15.0f, Theme.White);
+	FFMinigameUIStyle::ApplyButton(*Button_ResultClose, Theme, true);
+	Button_ResultClose->SetContent(Text_ResultCloseLabel);
+	ResultCtaSize->SetContent(Button_ResultClose);
+	if (UVerticalBoxSlot* HeadingSlot = ResultColumn->AddChildToVerticalBox(ResultHeading))
+	{
+		HeadingSlot->SetHorizontalAlignment(HAlign_Center);
+		HeadingSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 22.0f));
+	}
+	if (UVerticalBoxSlot* TextSlot = ResultColumn->AddChildToVerticalBox(Text_Result))
+	{
+		TextSlot->SetHorizontalAlignment(HAlign_Center);
+		TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	if (UVerticalBoxSlot* CtaSlot = ResultColumn->AddChildToVerticalBox(ResultCtaSize))
+	{
+		CtaSlot->SetHorizontalAlignment(HAlign_Center);
+		CtaSlot->SetPadding(FMargin(0.0f, 22.0f, 0.0f, 0.0f));
+	}
+	else
+	{
+		return false;
+	}
+	ResultCard->SetContent(ResultColumn);
 	ResultSize->SetContent(ResultCard);
 	Panel_Result->SetContent(ResultSize);
 	Panel_Result->SetHorizontalAlignment(HAlign_Center);
@@ -503,10 +562,12 @@ void UFF_ClawMachineScreen::ResolveBindings()
 	Progress_Phase = Cast<UProgressBar>(WidgetTree->FindWidget(TEXT("Progress_Phase")));
 	Button_Drop = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_Drop")));
 	Button_Close = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_Close")));
+	Button_ResultClose = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_ResultClose")));
 	Panel_Result = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Panel_Result")));
 	Text_Result = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_Result")));
 	if (!Text_DropLabel) { Text_DropLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_DropLabel"))); }
 	if (!Text_CloseLabel) { Text_CloseLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_CloseLabel"))); }
+	if (!Text_ResultCloseLabel) { Text_ResultCloseLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_ResultCloseLabel"))); }
 }
 
 bool UFF_ClawMachineScreen::EnsureJoystickWidget()
@@ -570,6 +631,10 @@ void UFF_ClawMachineScreen::InitializeBindings()
 	}
 	Button_Drop->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDropClicked);
 	Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	if (Button_ResultClose)
+	{
+		Button_ResultClose->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	}
 	InitialFocusTarget = this;
 	bBindingsInitialized = true;
 }
@@ -701,7 +766,24 @@ void UFF_ClawMachineScreen::RefreshPresentation()
 			? LOCTEXT("DropReady", "집게 내리기  [SPACE]")
 			: LOCTEXT("DropBusy", "기계 작동 중..."));
 	}
-	Panel_Result->SetVisibility(bShowResult ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	UButton* ResultActionButton = Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get();
+	Panel_Result->SetVisibility(
+		bShowResult ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	Button_Close->SetVisibility(
+		bShowResult && Button_ResultClose
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::Visible);
+	if (UCanvasPanelSlot* CloseSlot = Cast<UCanvasPanelSlot>(Button_Close->Slot))
+	{
+		CloseSlot->SetAnchors(bShowResult && !Button_ResultClose
+			? FAnchors(0.42f, 0.68f, 0.58f, 0.735f)
+			: FAnchors(0.855f, 0.035f, 0.965f, 0.085f));
+		CloseSlot->SetOffsets(FMargin(0.0f));
+		CloseSlot->SetZOrder(bShowResult && !Button_ResultClose ? 110 : 40);
+	}
+	InitialFocusTarget = bShowResult && ResultActionButton
+		? static_cast<UWidget*>(ResultActionButton)
+		: static_cast<UWidget*>(this);
 	if (bHasResult)
 	{
 		FFormatNamedArguments Arguments;
@@ -713,13 +795,17 @@ void UFF_ClawMachineScreen::RefreshPresentation()
 		Arguments.Add(TEXT("Captured"), DisplayedSnapshot.CapturedCount);
 		Arguments.Add(TEXT("Attempts"), DisplayedSnapshot.MaxAttempts);
 		Text_Result->SetText(FText::Format(
-			LOCTEXT("ResultFormat", "{Grade} 등급\n\n인형 {Captured}개 획득 / {Attempts}회\n최종 점수  {Score}\n축제 골드  +{Reward}\n\nESC 또는 나가기 버튼으로 돌아갑니다"),
+			LOCTEXT("ResultFormat", "{Grade} 등급\n\n인형 {Captured}개 획득 / {Attempts}회\n최종 점수  {Score}\n축제 골드  +{Reward}"),
 			Arguments));
 	}
-	if (bShowResult && !bResultFocusApplied && GetOwningLocalPlayer())
+	if (bShowResult && !bResultFocusApplied && GetOwningLocalPlayer() && ResultActionButton)
 	{
-		Button_Close->SetFocus();
+		ResultActionButton->SetFocus();
 		bResultFocusApplied = true;
+	}
+	else if (!bShowResult)
+	{
+		bResultFocusApplied = false;
 	}
 	if (bArenaReady && ArenaActor && bHasSnapshot)
 	{

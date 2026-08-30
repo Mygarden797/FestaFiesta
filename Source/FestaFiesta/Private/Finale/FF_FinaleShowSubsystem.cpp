@@ -5,7 +5,9 @@
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Engine/GameInstance.h"
+#if !UE_BUILD_SHIPPING
 #include "HAL/IConsoleManager.h"
+#endif
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -17,6 +19,8 @@
 #include "NiagaraComponent.h"
 #include "NiagaraParameterStore.h"
 #include "NiagaraSystem.h"
+
+#if !UE_BUILD_SHIPPING
 
 namespace
 {
@@ -57,6 +61,8 @@ namespace
 	}
 }
 
+#endif // !UE_BUILD_SHIPPING
+
 bool UFF_FinaleShowSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
@@ -70,7 +76,9 @@ void UFF_FinaleShowSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	// 재현이 필요해지면 여기에 시드를 주입하는 경로를 열면 된다.
 	ShowRandom.GenerateNewSeed();
 
+#if !UE_BUILD_SHIPPING
 	RegisterDebugConsoleCommands();
+#endif
 	BindFestivalStage();
 }
 
@@ -141,7 +149,9 @@ void UFF_FinaleShowSubsystem::HandleFestivalStageChanged(
 void UFF_FinaleShowSubsystem::Deinitialize()
 {
 	UnbindFestivalStage();
+#if !UE_BUILD_SHIPPING
 	UnregisterDebugConsoleCommands();
+#endif
 
 	if (bShowInProgress)
 	{
@@ -149,6 +159,8 @@ void UFF_FinaleShowSubsystem::Deinitialize()
 	}
 	Super::Deinitialize();
 }
+
+#if !UE_BUILD_SHIPPING
 
 bool UFF_FinaleShowSubsystem::TryParseGrade(const FString& Token, EFF_FinaleGrade& OutGrade)
 {
@@ -259,6 +271,8 @@ void UFF_FinaleShowSubsystem::UnregisterDebugConsoleCommands()
 	UnregisterOwnedConsoleCommand(StopConsoleCommand, FinaleStopCommandName);
 	UnregisterOwnedConsoleCommand(StatConsoleCommand, FinaleStatCommandName);
 }
+
+#endif // !UE_BUILD_SHIPPING
 
 AFF_FestivalPlayerController* UFF_FinaleShowSubsystem::GetFestivalController() const
 {

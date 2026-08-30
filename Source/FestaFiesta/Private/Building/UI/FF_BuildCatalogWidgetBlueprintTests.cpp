@@ -459,16 +459,23 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			TestTrue(TEXT("Focused catalog requests BuildMode on B"), bBuildModeKeyRequested);
 			Screen->OnBuildModeKeyRequested.Remove(BuildModeKeyHandle);
 
-			bool bExitBuildModeKeyRequested = false;
-			const FDelegateHandle ExitBuildModeKeyHandle = Screen->OnExitBuildModeKeyRequested.AddLambda(
-				[&bExitBuildModeKeyRequested]() { bExitBuildModeKeyRequested = true; });
-			const FKeyEvent ExitBuildModeKeyEvent(
+			bool bPauseMenuKeyRequested = false;
+			const FDelegateHandle PauseMenuKeyHandle = Screen->OnPauseMenuKeyRequested.AddLambda(
+				[&bPauseMenuKeyRequested]() { bPauseMenuKeyRequested = true; });
+			const FKeyEvent PauseMenuKeyEvent(
 				EKeys::Escape, FModifierKeysState(), 0, false, 0, 0);
-			const FReply ExitBuildModeKeyReply = Screen->NativeOnPreviewKeyDown(
-				FGeometry(), ExitBuildModeKeyEvent);
-			TestTrue(TEXT("Focused catalog handles Escape"), ExitBuildModeKeyReply.IsEventHandled());
-			TestTrue(TEXT("Focused catalog requests session exit on Escape"), bExitBuildModeKeyRequested);
-			Screen->OnExitBuildModeKeyRequested.Remove(ExitBuildModeKeyHandle);
+			const FReply PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
+				FGeometry(), PauseMenuKeyEvent);
+			TestTrue(TEXT("Focused catalog handles Escape"), PauseMenuKeyReply.IsEventHandled());
+			TestTrue(TEXT("Focused catalog requests Pause Hub without exiting build"), bPauseMenuKeyRequested);
+			bPauseMenuKeyRequested = false;
+			const FKeyEvent F5PauseMenuKeyEvent(
+				EKeys::F5, FModifierKeysState(), 0, false, 0, 0);
+			const FReply F5PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
+				FGeometry(), F5PauseMenuKeyEvent);
+			TestTrue(TEXT("Focused catalog handles F5"), F5PauseMenuKeyReply.IsEventHandled());
+			TestTrue(TEXT("Focused catalog routes F5 to the same Pause Hub"), bPauseMenuKeyRequested);
+			Screen->OnPauseMenuKeyRequested.Remove(PauseMenuKeyHandle);
 
 			const TCHAR* TopButtonNames[] = {
 				TEXT("BTN_BuildTab"),

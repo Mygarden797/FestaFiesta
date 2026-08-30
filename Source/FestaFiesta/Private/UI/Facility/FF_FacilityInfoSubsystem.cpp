@@ -17,6 +17,8 @@
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "Layout/Margin.h"
 #include "InputCoreTypes.h"
 #include "Minigame/FF_MinigameCatalogSubsystem.h"
 #include "Minigame/FF_MinigameDefinition.h"
@@ -119,6 +121,11 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 
 	ReleaseThumbnailSession();
 	ClosePaidProgramPicker();
+	bPauseMenuPresentationSuppressed = false;
+	bPanelWasVisibleBeforePause = false;
+	bPaidProgramPickerWasVisibleBeforePause = false;
+	PauseMenuSuppressedFacilityId.Invalidate();
+	PauseMenuSuppressedContext = EFF_FacilityInfoContext::None;
 	SelectedFacilityId.Invalidate();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	if (Panel)
@@ -144,6 +151,12 @@ bool UFF_FacilityInfoSubsystem::DoesSupportWorldType(const EWorldType::Type Worl
 
 void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		// Pause 중에는 높은 Viewport layer 표면과 hover/selection 갱신을 모두 멈춘다.
+		return;
+	}
+
 	// The camera controller already owns click timing and input gating. Bind to its public pick
 	// signal here so Camera source files stay untouched and controller replacement is tolerated.
 	EnsurePickControllerBinding();
@@ -347,7 +360,17 @@ void UFF_FacilityInfoSubsystem::ClosePaidProgramPicker()
 	PaidProgramPicker = nullptr;
 	if (Panel && HasSelection())
 	{
-		Panel->SetPanelOpen(true);
+		// Picker의 의미 상태가 닫혀도 Pause Hub 뒤의 높은 Z-order 카드가 다시 나타나면 안 된다.
+		if (bPauseMenuPresentationSuppressed)
+		{
+			bPaidProgramPickerWasVisibleBeforePause = false;
+			bPanelWasVisibleBeforePause = true;
+			Panel->SetPanelOpen(false);
+		}
+		else
+		{
+			Panel->SetPanelOpen(true);
+		}
 	}
 }
 
@@ -360,6 +383,19 @@ void UFF_FacilityInfoSubsystem::SetPaidProgramPickerOpen(const bool bOpen)
 
 	// These are two views of the same selected facility. Keeping one presentation owner visible
 	// avoids both the right-side card overlap and stale actions behind the confirmation surface.
+	if (bPauseMenuPresentationSuppressed)
+	{
+		// suppressed 동안 발생한 권위 수명주기 변경은 복원 대상에 반영하되 실제 표면은 계속 숨긴다.
+		bPaidProgramPickerWasVisibleBeforePause = bOpen;
+		bPanelWasVisibleBeforePause = !bOpen && HasSelection();
+		PaidProgramPicker->SetPickerOpen(false);
+		if (Panel)
+		{
+			Panel->SetPanelOpen(false);
+		}
+		return;
+	}
+
 	PaidProgramPicker->SetPickerOpen(bOpen);
 	if (Panel)
 	{
@@ -372,6 +408,11 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	AFFZSFacilityActor* Facility,
 	const EFF_FacilityInfoContext Context)
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return false;
+	}
+
 	UWorld* World = GetWorld();
 	UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 	if (!IsValid(InOwningController) || !InOwningController->GetLocalPlayer() ||
@@ -445,6 +486,11 @@ void UFF_FacilityInfoSubsystem::ClearSelection()
 	ClosePaidProgramPicker();
 	SelectedFacilityId.Invalidate();
 	SelectionContext = EFF_FacilityInfoContext::None;
+	if (bPauseMenuPresentationSuppressed)
+	{
+		bPanelWasVisibleBeforePause = false;
+		bPaidProgramPickerWasVisibleBeforePause = false;
+	}
 	FeedbackText = FText::GetEmpty();
 	bFeedbackIsError = false;
 	RefreshAccumulatorSeconds = 0.0f;
@@ -486,8 +532,67 @@ AFFZSFacilityActor* UFF_FacilityInfoSubsystem::GetSelectedFacility() const
 
 bool UFF_FacilityInfoSubsystem::IsPointerOverPanel() const
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return false;
+	}
 	return (Panel && Panel->IsPointerOverInteractivePanel()) ||
 		(PaidProgramPicker && PaidProgramPicker->IsPointerOverInteractivePanel());
+}
+
+void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bSuppressed)
+{
+	if (bPauseMenuPresentationSuppressed == bSuppressed)
+	{
+		return;
+	}
+
+	if (bSuppressed)
+	{
+		const auto IsPresented = [](const ESlateVisibility Visibility)
+		{
+			return Visibility != ESlateVisibility::Collapsed &&
+				Visibility != ESlateVisibility::Hidden;
+		};
+		bPanelWasVisibleBeforePause = Panel && IsPresented(Panel->GetVisibility());
+		bPaidProgramPickerWasVisibleBeforePause =
+			PaidProgramPicker && IsPresented(PaidProgramPicker->GetVisibility());
+		PauseMenuSuppressedFacilityId = SelectedFacilityId;
+		PauseMenuSuppressedContext = SelectionContext;
+		bPauseMenuPresentationSuppressed = true;
+		if (Panel)
+		{
+			Panel->SetPanelOpen(false);
+		}
+		if (PaidProgramPicker)
+		{
+			PaidProgramPicker->SetPickerOpen(false);
+		}
+		return;
+	}
+
+	const bool bSelectionUnchanged = PauseMenuSuppressedFacilityId.IsValid() &&
+		SelectedFacilityId == PauseMenuSuppressedFacilityId &&
+		SelectionContext == PauseMenuSuppressedContext;
+	const bool bRestorePicker = bSelectionUnchanged &&
+		bPaidProgramPickerWasVisibleBeforePause && PaidProgramPicker;
+	const bool bRestorePanel = bSelectionUnchanged && !bRestorePicker &&
+		(bPanelWasVisibleBeforePause ||
+			(bPaidProgramPickerWasVisibleBeforePause && !PaidProgramPicker));
+
+	bPauseMenuPresentationSuppressed = false;
+	if (PaidProgramPicker)
+	{
+		PaidProgramPicker->SetPickerOpen(bRestorePicker);
+	}
+	if (Panel)
+	{
+		Panel->SetPanelOpen(bRestorePanel);
+	}
+	bPanelWasVisibleBeforePause = false;
+	bPaidProgramPickerWasVisibleBeforePause = false;
+	PauseMenuSuppressedFacilityId.Invalidate();
+	PauseMenuSuppressedContext = EFF_FacilityInfoContext::None;
 }
 
 void UFF_FacilityInfoSubsystem::SetFeedback(const FText& Feedback, const bool bIsError)
@@ -1146,6 +1251,10 @@ void UFF_FacilityInfoSubsystem::ClearLiveSelectionIndicators()
 
 void UFF_FacilityInfoSubsystem::HandlePanelMoveRequested()
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return;
+	}
 	if (SelectionContext == EFF_FacilityInfoContext::Build && SelectedFacilityId.IsValid())
 	{
 		OnMoveRequested.Broadcast(SelectedFacilityId);
@@ -1154,6 +1263,10 @@ void UFF_FacilityInfoSubsystem::HandlePanelMoveRequested()
 
 void UFF_FacilityInfoSubsystem::HandlePanelRemoveRequested()
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return;
+	}
 	if (SelectionContext == EFF_FacilityInfoContext::Build && SelectedFacilityId.IsValid())
 	{
 		OnRemoveRequested.Broadcast(SelectedFacilityId);
@@ -1169,7 +1282,8 @@ FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
 
 void UFF_FacilityInfoSubsystem::HandlePanelProgramScheduleRequested()
 {
-	if (!Panel || SelectionContext != EFF_FacilityInfoContext::Build ||
+	if (bPauseMenuPresentationSuppressed || !Panel ||
+		SelectionContext != EFF_FacilityInfoContext::Build ||
 		!SelectedFacilityId.IsValid())
 	{
 		return;
@@ -1273,7 +1387,7 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 	const FName ProgramId,
 	const FGuid FacilityInstanceId)
 {
-	if (!PaidProgramPicker || ProgramId.IsNone() ||
+	if (bPauseMenuPresentationSuppressed || !PaidProgramPicker || ProgramId.IsNone() ||
 		FacilityInstanceId != SelectedFacilityId ||
 		PaidProgramPicker->GetFacilityInstanceId() != FacilityInstanceId)
 	{
@@ -1318,6 +1432,10 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 
 void UFF_FacilityInfoSubsystem::HandlePaidProgramPickerCloseRequested()
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return;
+	}
 	if (PaidProgramPicker)
 	{
 		SetPaidProgramPickerOpen(false);
@@ -1326,6 +1444,10 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramPickerCloseRequested()
 
 void UFF_FacilityInfoSubsystem::HandlePanelMinigameRequested()
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return;
+	}
 	if (SelectionContext == EFF_FacilityInfoContext::Live && SelectedFacilityId.IsValid())
 	{
 		OnMinigameRequested.Broadcast(SelectedFacilityId);
@@ -1334,6 +1456,10 @@ void UFF_FacilityInfoSubsystem::HandlePanelMinigameRequested()
 
 void UFF_FacilityInfoSubsystem::HandlePanelCloseRequested()
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return;
+	}
 	const FGuid ClosingFacilityId = SelectedFacilityId;
 	const EFF_FacilityInfoContext ClosingContext = SelectionContext;
 	if (ClosingContext == EFF_FacilityInfoContext::Build && ClosingFacilityId.IsValid())
@@ -1430,6 +1556,10 @@ void UFF_FacilityInfoSubsystem::HandleWorldSnapshotRestored()
 
 void UFF_FacilityInfoSubsystem::HandleActorPicked(AActor* PickedActor)
 {
+	if (bPauseMenuPresentationSuppressed)
+	{
+		return;
+	}
 	// The camera delegate is only the already-gated click signal. Facility identity comes from
 	// the dedicated selection trace below, so a null or unrelated camera hit is still meaningful.
 	(void)PickedActor;

@@ -517,7 +517,14 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UButton> Button_Close;
 
+	/** Dedicated result CTA. Keeping it inside the modal prevents z-order and aspect-ratio overlap. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UButton> Button_ResultClose;
+
 	/** Optional close-button label shared by the generated WBP and native fallback. */
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> NativeCloseLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> NativeResultCloseLabel;
 };
