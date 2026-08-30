@@ -4,7 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameplayEffect.h"
+#include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 #include "UFF_GE_TriggerCooldown.generated.h"
+
 
 // 상호작용 완료 후 부여하는 쿨다운 효과 (재상호작용 방지용)
 UCLASS()

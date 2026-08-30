@@ -30,6 +30,9 @@ class UFFZSWorldSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPrepTabSelectionChanged, FFF_PrepTabSelection, Selection);
 
+// 개장 판정이 바뀌었다. 점검 패널의 `개장하기` 가 이걸 받아 자기 버튼을 켜고 끈다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnPrepCtaStateChanged);
+
 /**
  * 준비 단계(셋업 · 홍보 · 개장 준비)의 하단 HUD.
  *
@@ -137,6 +140,23 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
 	void RequestStageAdvance();
+
+	/**
+	 * 지금 개장할 수 있는지. **판정은 바가 소유한다** — 시설 수와 단계 표를 아는 것이 바뿐이다.
+	 *
+	 * 🔴 바에는 이제 CTA 버튼이 없다 (2026-08-27). 화면에 버튼이 둘이라 하나로 줄였고,
+	 * 남은 하나는 점검 패널의 `개장하기` 다. 그쪽이 이 값으로 자기 버튼을 켜고 끈다.
+	 * 막힌 이유 문구는 탭을 열지 않아도 보여야 해서 바에 그대로 남아 있다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
+	EFF_PrepCtaState GetCtaState() const { return LastCtaState; }
+
+	/** 단계에 맞는 진행 버튼 문구. 셋업은 `확정하고 Day 1 시작`, 개장 준비는 `개장하기`. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
+	FText GetCtaLabelText() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Prep")
+	FFF_OnPrepCtaStateChanged OnCtaStateChanged;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
 	FFF_PrepTabSelection GetSelection() const { return Selection; }
@@ -518,6 +538,9 @@ private:
 	 */
 	void RefreshDayStageText(EFF_FestivalStage Stage, int32 Day);
 	void RefreshCta();
+
+	/** 상태를 넣고 **바뀌었을 때만** 알린다. 매 갱신마다 쏘면 패널이 헛돈다. */
+	void SetCtaState(EFF_PrepCtaState NewState);
 
 	/**
 	 * 이 탭의 레이아웃. 표를 먼저 보고 없으면 `DefaultPanelLayout` 을 쓴다.

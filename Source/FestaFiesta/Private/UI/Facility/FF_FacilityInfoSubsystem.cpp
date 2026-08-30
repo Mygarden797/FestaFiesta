@@ -7,6 +7,7 @@
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
+#include "Economy/FF_ProgramSchedulingSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
@@ -19,9 +20,11 @@
 #include "InputCoreTypes.h"
 #include "Minigame/FF_MinigameCatalogSubsystem.h"
 #include "Minigame/FF_MinigameDefinition.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
@@ -47,6 +50,33 @@ namespace
 			FText::AsNumber(Occupied),
 			FText::AsNumber(Capacity));
 	}
+
+	FText FormatInstanceLimit(
+		const int32 CurrentInstances,
+		const int32 MaxInstances,
+		const bool bLimitReached)
+	{
+		if (MaxInstances <= 0)
+		{
+			return FText::Format(
+				LOCTEXT("UnlimitedInstancesFormat", "현재 {0} / 제한 없음"),
+				FText::AsNumber(CurrentInstances));
+		}
+
+		if (bLimitReached)
+		{
+			return FText::Format(
+				LOCTEXT("ReachedInstanceLimitFormat", "현재 {0} / 최대 {1} · 한도 도달"),
+				FText::AsNumber(CurrentInstances),
+				FText::AsNumber(MaxInstances));
+		}
+
+		return FText::Format(
+			LOCTEXT("AvailableInstanceLimitFormat", "현재 {0} / 최대 {1} · {2}개 남음"),
+			FText::AsNumber(CurrentInstances),
+			FText::AsNumber(MaxInstances),
+			FText::AsNumber(FMath::Max(0, MaxInstances - CurrentInstances)));
+	}
 }
 
 void UFF_FacilityInfoSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -60,12 +90,24 @@ void UFF_FacilityInfoSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(
 			this, &ThisClass::HandleWorldSnapshotRestored);
 	}
+	EnsureProgramReadModelBindings();
 }
 
 void UFF_FacilityInfoSubsystem::Deinitialize()
 {
 	ClearLiveSelectionIndicators();
 	ReleasePickControllerBinding();
+	if (BoundProgression)
+	{
+		BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
+			this, &ThisClass::HandleScheduledProgramsChanged);
+		BoundProgression = nullptr;
+	}
+	if (BoundStage)
+	{
+		BoundStage->OnStageChanged.RemoveDynamic(this, &ThisClass::HandleStageChanged);
+		BoundStage = nullptr;
+	}
 	if (UWorld* World = GetWorld())
 	{
 		if (UFFZSWorldSubsystem* ZoneSystem = World->GetSubsystem<UFFZSWorldSubsystem>())
@@ -76,12 +118,14 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	}
 
 	ReleaseThumbnailSession();
+	ClosePaidProgramPicker();
 	SelectedFacilityId.Invalidate();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	if (Panel)
 	{
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
+		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -103,6 +147,7 @@ void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 	// The camera controller already owns click timing and input gating. Bind to its public pick
 	// signal here so Camera source files stay untouched and controller replacement is tolerated.
 	EnsurePickControllerBinding();
+	EnsureProgramReadModelBindings();
 	UpdateLiveSelectionIndicators(DeltaTime);
 	if (!HasSelection())
 	{
@@ -117,6 +162,44 @@ void UFF_FacilityInfoSubsystem::Tick(const float DeltaTime)
 	}
 	RefreshAccumulatorSeconds = FMath::Fmod(RefreshAccumulatorSeconds, RefreshIntervalSeconds);
 	RefreshPanel();
+}
+
+void UFF_FacilityInfoSubsystem::EnsureProgramReadModelBindings()
+{
+	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UFF_FestivalProgressionSubsystem* Progression = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>()
+		: nullptr;
+	if (BoundProgression != Progression)
+	{
+		if (BoundProgression)
+		{
+			BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
+				this, &ThisClass::HandleScheduledProgramsChanged);
+		}
+		BoundProgression = Progression;
+		if (BoundProgression)
+		{
+			BoundProgression->OnScheduledProgramsChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleScheduledProgramsChanged);
+		}
+	}
+
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (BoundStage != Stage)
+	{
+		if (BoundStage)
+		{
+			BoundStage->OnStageChanged.RemoveDynamic(this, &ThisClass::HandleStageChanged);
+		}
+		BoundStage = Stage;
+		if (BoundStage)
+		{
+			BoundStage->OnStageChanged.AddUniqueDynamic(this, &ThisClass::HandleStageChanged);
+		}
+	}
 }
 
 TStatId UFF_FacilityInfoSubsystem::GetStatId() const
@@ -150,10 +233,12 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		// the panel bound to a stale LocalPlayer would route input and viewport ownership incorrectly.
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
+		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
+		ClosePaidProgramPicker();
 		OwningController.Reset();
 	}
 	if (!InOwningController.GetLocalPlayer())
@@ -179,14 +264,21 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 
 	Panel->OnMoveRequested.AddUObject(this, &ThisClass::HandlePanelMoveRequested);
 	Panel->OnRemoveRequested.AddUObject(this, &ThisClass::HandlePanelRemoveRequested);
+	Panel->OnProgramScheduleRequested.AddUObject(
+		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
-	if (!Panel->AddToPlayerScreen(PanelZOrder))
+	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
+	// Player game layer, so its local Z-order can never rise above a newly-created PrepHUD in the
+	// Viewport layer (UE 5.7: Player=100, Viewport=200). Keep this card in the same global layer.
+	Panel->AddToViewport(PanelZOrder);
+	if (!Panel->IsInViewport())
 	{
 		UE_LOG(LogFestaFiestaFacilityInfo, Error,
-			TEXT("시설 정보 패널을 LocalPlayer 화면에 추가하지 못했습니다."));
+			TEXT("시설 정보 패널을 Viewport 화면에 추가하지 못했습니다."));
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
+		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel = nullptr;
@@ -195,6 +287,84 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->SetPanelOpen(false);
 	OwningController = &InOwningController;
 	return true;
+}
+
+bool UFF_FacilityInfoSubsystem::EnsurePaidProgramPicker(APlayerController& InOwningController)
+{
+	if (PaidProgramPicker)
+	{
+		if (PaidProgramPicker->GetOwningPlayer() == &InOwningController &&
+			PaidProgramPicker->IsInViewport())
+		{
+			return true;
+		}
+		ClosePaidProgramPicker();
+	}
+	if (!InOwningController.GetLocalPlayer())
+	{
+		return false;
+	}
+
+	UClass* PickerClass =
+		GetDefaultPaidProgramPickerClassPath().TryLoadClass<UFF_FacilityPaidProgramPicker>();
+	if (!PickerClass || !PickerClass->IsChildOf(UFF_FacilityPaidProgramPicker::StaticClass()))
+	{
+		UE_LOG(LogFestaFiestaFacilityInfo, Error,
+			TEXT("유료 프로그램 Picker WBP를 불러오지 못했습니다: %s. FF.BuildFacilityInfoUMG를 실행하세요."),
+			*GetDefaultPaidProgramPickerClassPath().ToString());
+		return false;
+	}
+
+	PaidProgramPicker = CreateWidget<UFF_FacilityPaidProgramPicker>(&InOwningController, PickerClass);
+	if (!PaidProgramPicker)
+	{
+		return false;
+	}
+	PaidProgramPicker->OnConfirmed.AddUObject(
+		this, &ThisClass::HandlePaidProgramConfirmed);
+	PaidProgramPicker->OnCloseRequested.AddUObject(
+		this, &ThisClass::HandlePaidProgramPickerCloseRequested);
+	// The picker replaces the card as the active surface and must share its global viewport layer.
+	PaidProgramPicker->AddToViewport(PaidProgramPickerZOrder);
+	if (!PaidProgramPicker->IsInViewport())
+	{
+		ClosePaidProgramPicker();
+		return false;
+	}
+	PaidProgramPicker->SetPickerOpen(false);
+	return true;
+}
+
+void UFF_FacilityInfoSubsystem::ClosePaidProgramPicker()
+{
+	if (!PaidProgramPicker)
+	{
+		return;
+	}
+	PaidProgramPicker->OnConfirmed.RemoveAll(this);
+	PaidProgramPicker->OnCloseRequested.RemoveAll(this);
+	PaidProgramPicker->RemoveFromParent();
+	PaidProgramPicker = nullptr;
+	if (Panel && HasSelection())
+	{
+		Panel->SetPanelOpen(true);
+	}
+}
+
+void UFF_FacilityInfoSubsystem::SetPaidProgramPickerOpen(const bool bOpen)
+{
+	if (!PaidProgramPicker)
+	{
+		return;
+	}
+
+	// These are two views of the same selected facility. Keeping one presentation owner visible
+	// avoids both the right-side card overlap and stale actions behind the confirmation surface.
+	PaidProgramPicker->SetPickerOpen(bOpen);
+	if (Panel)
+	{
+		Panel->SetPanelOpen(!bOpen && HasSelection());
+	}
 }
 
 bool UFF_FacilityInfoSubsystem::SelectFacility(
@@ -218,6 +388,10 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	}
 
 	const bool bSelectionChanged = SelectedFacilityId != FacilityId || SelectionContext != Context;
+	if (bSelectionChanged)
+	{
+		ClosePaidProgramPicker();
+	}
 	SelectedFacilityId = FacilityId;
 	SelectionContext = Context;
 	OwningController = InOwningController;
@@ -233,7 +407,9 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	{
 		return false;
 	}
-	Panel->SetPanelOpen(true);
+	const bool bPickerOpen = PaidProgramPicker &&
+		PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
+	Panel->SetPanelOpen(!bPickerOpen);
 	if (Context == EFF_FacilityInfoContext::Live)
 	{
 		ApplyLiveSelectionIndicatorTargets(SelectionIndicatorHoverFacility.Get(), Facility);
@@ -266,6 +442,7 @@ bool UFF_FacilityInfoSubsystem::SelectFacilityAtWorldPoint(
 void UFF_FacilityInfoSubsystem::ClearSelection()
 {
 	const bool bHadSelection = HasSelection();
+	ClosePaidProgramPicker();
 	SelectedFacilityId.Invalidate();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	FeedbackText = FText::GetEmpty();
@@ -309,7 +486,8 @@ AFFZSFacilityActor* UFF_FacilityInfoSubsystem::GetSelectedFacility() const
 
 bool UFF_FacilityInfoSubsystem::IsPointerOverPanel() const
 {
-	return Panel && Panel->IsPointerOverInteractivePanel();
+	return (Panel && Panel->IsPointerOverInteractivePanel()) ||
+		(PaidProgramPicker && PaidProgramPicker->IsPointerOverInteractivePanel());
 }
 
 void UFF_FacilityInfoSubsystem::SetFeedback(const FText& Feedback, const bool bIsError)
@@ -355,8 +533,8 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.FacilityInstanceId = Facility.GetFacilityInstanceId();
 	OutViewData.Context = SelectionContext;
 	OutViewData.ContextTitle = SelectionContext == EFF_FacilityInfoContext::Build
-		? LOCTEXT("BuildContextTitle", "건축 시설 정보")
-		: LOCTEXT("LiveContextTitle", "라이브 시설 정보");
+		? LOCTEXT("BuildContextTitle", "배치 시설")
+		: LOCTEXT("LiveContextTitle", "운영 시설");
 	OutViewData.DisplayName = Spec.DisplayName.IsEmpty()
 		? LOCTEXT("UnknownFacility", "이름 없는 시설")
 		: Spec.DisplayName;
@@ -365,6 +543,16 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? LOCTEXT("UnknownZone", "구역 정보 없음")
 		: FText::FromName(Facility.GetZoneId());
 	OutViewData.FacilityStateText = FFFacilityInfoModel::GetFacilityStateText(ReadModel.State);
+	OutViewData.CurrentInstancesInWorld = Spec.FacilityDefinitionId.IsNone()
+		? 0
+		: FMath::Max(0, ZoneSystem->CountFacilitiesByDefinitionId(Spec.FacilityDefinitionId));
+	OutViewData.MaxInstancesPerWorld = FMath::Max(0, Spec.MaxInstancesPerWorld);
+	OutViewData.bInstanceLimitReached = OutViewData.MaxInstancesPerWorld > 0 &&
+		OutViewData.CurrentInstancesInWorld >= OutViewData.MaxInstancesPerWorld;
+	OutViewData.InstanceLimitText = FormatInstanceLimit(
+		OutViewData.CurrentInstancesInWorld,
+		OutViewData.MaxInstancesPerWorld,
+		OutViewData.bInstanceLimitReached);
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
 	OutViewData.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Spec.ClearanceCells);
 	OutViewData.QueueCapacityText = FText::Format(
@@ -489,6 +677,124 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		bReconfigurePhase && bQueueEmpty && Facility.CanMoveOrRemove();
 	OutViewData.bCanMove = bCanModify;
 	OutViewData.bCanRemove = bCanModify;
+
+	// Paid-program state is flattened here so WBP bindings never have to join progression cards,
+	// reservation handles, facility identity, and stage policy on their own.
+	const UFF_ProgramReservationSubsystem* ProgramReservations = GameInstance
+		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>()
+		: nullptr;
+	const UFF_ProgramSchedulingSubsystem* ProgramScheduling = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_ProgramSchedulingSubsystem>()
+		: nullptr;
+	const TArray<FFF_ProgramCard> ProgramCatalog = Progression
+		? Progression->GetProgramCatalog()
+		: TArray<FFF_ProgramCard>();
+	TArray<FString> ScheduledProgramSummaries;
+	if (ProgramScheduling && ProgramReservations)
+	{
+		for (const FFF_ScheduledProgram& Scheduled :
+			ProgramScheduling->GetScheduledProgramsForFacility(OutViewData.FacilityInstanceId))
+		{
+			FFF_ProgramReservation Reservation;
+			if (!ProgramReservations->FindReservation(Scheduled.ReservationId, Reservation))
+			{
+				continue;
+			}
+
+			const FFF_ProgramCard* Card = ProgramCatalog.FindByPredicate(
+				[ProgramId = Scheduled.ProgramId](const FFF_ProgramCard& Candidate)
+				{
+					return Candidate.ProgramId == ProgramId;
+				});
+			const FText ProgramName = Card && !Card->DisplayName.IsEmpty()
+				? Card->DisplayName
+				: FText::FromName(Scheduled.ProgramId);
+			ScheduledProgramSummaries.Add(
+				FFFacilityInfoModel::FormatScheduledProgramSummary(
+					ProgramName,
+					Reservation.StartMinutes,
+					Reservation.EndMinutes,
+					Card != nullptr,
+					Card ? Card->CostGold : 0).ToString());
+		}
+	}
+
+	OutViewData.bHasScheduledProgram = ScheduledProgramSummaries.Num() > 0;
+	OutViewData.ScheduledProgramSummaryText = OutViewData.bHasScheduledProgram
+		? FText::FromString(FString::Join(ScheduledProgramSummaries, TEXT("\n")))
+		: FText::GetEmpty();
+	OutViewData.ProgramStatusText = OutViewData.bHasScheduledProgram
+		? (ScheduledProgramSummaries.Num() == 1
+			? LOCTEXT("OneProgramScheduled", "오늘 편성됨")
+			: FText::Format(
+				LOCTEXT("ManyProgramsScheduled", "오늘 {0}개 편성됨"),
+				FText::AsNumber(ScheduledProgramSummaries.Num())))
+		: LOCTEXT("NoProgramScheduled", "오늘 편성 없음");
+	OutViewData.bShowProgramSection =
+		SelectionContext == EFF_FacilityInfoContext::Build || OutViewData.bHasScheduledProgram;
+	OutViewData.bShowProgramScheduleAction = SelectionContext == EFF_FacilityInfoContext::Build;
+	OutViewData.ProgramScheduleActionText = OutViewData.bHasScheduledProgram
+		? LOCTEXT("AddPaidProgram", "유료 프로그램 추가 편성")
+		: LOCTEXT("SchedulePaidProgram", "유료 프로그램 편성");
+
+	if (OutViewData.bShowProgramScheduleAction)
+	{
+		if (!ProgramScheduling || !Progression)
+		{
+			OutViewData.ProgramScheduleDisabledReasonText =
+				LOCTEXT("ProgramSchedulingUnavailable", "프로그램 편성 정보를 준비 중입니다.");
+		}
+		else
+		{
+			bool bHasCompatibleCard = false;
+			EFF_PaidProgramScheduleResult FirstBlockedResult =
+				EFF_PaidProgramScheduleResult::UnknownProgram;
+
+			for (const FFF_ProgramCard& Card : ProgramCatalog)
+			{
+				const EFF_PaidProgramScheduleResult Result =
+					ProgramScheduling->CanScheduleProgramAtFacility(
+						Card.ProgramId, OutViewData.FacilityInstanceId);
+				if (Result == EFF_PaidProgramScheduleResult::FacilityTypeMismatch ||
+					Result == EFF_PaidProgramScheduleResult::UnknownProgram)
+				{
+					continue;
+				}
+
+				bHasCompatibleCard = true;
+				if (Result == EFF_PaidProgramScheduleResult::Success ||
+					Result == EFF_PaidProgramScheduleResult::NotEnoughStaff ||
+					Result == EFF_PaidProgramScheduleResult::InsufficientGold ||
+					Result == EFF_PaidProgramScheduleResult::AlreadyScheduled ||
+					Result == EFF_PaidProgramScheduleResult::FacilityTimeConflict)
+				{
+					// The CTA opens a read-only preview even when this particular card cannot be
+					// purchased now. Only the picker's separate confirmation button is gated by Success.
+					OutViewData.bCanScheduleProgram = true;
+					if (Result == EFF_PaidProgramScheduleResult::Success)
+					{
+						break;
+					}
+				}
+				FirstBlockedResult = Result;
+			}
+
+			if (!OutViewData.bCanScheduleProgram)
+			{
+				if (!bHasCompatibleCard)
+				{
+					OutViewData.ProgramScheduleDisabledReasonText = LOCTEXT(
+						"NoCompatiblePaidProgram",
+						"이 시설에서 열 수 있는 유료 프로그램이 없습니다.");
+				}
+				else
+				{
+					OutViewData.ProgramScheduleDisabledReasonText =
+						UFF_ProgramSchedulingSubsystem::GetResultText(FirstBlockedResult);
+				}
+			}
+		}
+	}
 
 	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
 		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
@@ -854,6 +1160,170 @@ void UFF_FacilityInfoSubsystem::HandlePanelRemoveRequested()
 	}
 }
 
+FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
+{
+	return FSoftClassPath(TEXT(
+		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
+		"WBP_FF_FacilityPaidProgramPicker_C"));
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelProgramScheduleRequested()
+{
+	if (!Panel || SelectionContext != EFF_FacilityInfoContext::Build ||
+		!SelectedFacilityId.IsValid())
+	{
+		return;
+	}
+
+	// Stage/program changes and facility removal refresh or clear this immutable snapshot on the
+	// game thread. Matching it again prevents a stale button from routing a previous facility ID.
+	const FFF_FacilityInfoViewData& ViewData = Panel->GetCurrentViewData();
+	if (ViewData.FacilityInstanceId != SelectedFacilityId ||
+		!ViewData.bShowProgramScheduleAction || !ViewData.bCanScheduleProgram)
+	{
+		return;
+	}
+	// Public observation seam remains available for analytics/tests; this subsystem still owns the
+	// actual picker and authoritative command, so listeners cannot bypass the second confirmation.
+	OnProgramScheduleRequested.Broadcast(SelectedFacilityId);
+
+	AFFZSFacilityActor* Facility = GetSelectedFacility();
+	APlayerController* Controller = OwningController.Get();
+	if (!Facility || !Controller || !EnsurePaidProgramPicker(*Controller))
+	{
+		SetFeedback(LOCTEXT("PaidProgramPickerOpenFailed", "프로그램 선택 화면을 열 수 없습니다."), true);
+		return;
+	}
+
+	FFF_FacilityPaidProgramPickerViewData PickerViewData;
+	if (!BuildPaidProgramPickerViewData(*Facility, PickerViewData))
+	{
+		SetFeedback(LOCTEXT("PaidProgramPickerDataFailed", "프로그램 정보를 불러올 수 없습니다."), true);
+		return;
+	}
+	PaidProgramPicker->ApplyViewData(PickerViewData);
+	SetPaidProgramPickerOpen(true);
+}
+
+bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
+	AFFZSFacilityActor& Facility,
+	FFF_FacilityPaidProgramPickerViewData& OutViewData,
+	const FText& Feedback,
+	const bool bIsFeedbackError) const
+{
+	OutViewData = FFF_FacilityPaidProgramPickerViewData();
+	const FGuid FacilityId = Facility.GetFacilityInstanceId();
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalProgressionSubsystem* Progression = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>()
+		: nullptr;
+	const UFF_ProgramSchedulingSubsystem* Scheduling = World
+		? World->GetSubsystem<UFF_ProgramSchedulingSubsystem>()
+		: nullptr;
+	if (!FacilityId.IsValid() || !Progression || !Scheduling)
+	{
+		return false;
+	}
+
+	OutViewData.FacilityInstanceId = FacilityId;
+	OutViewData.FacilityName = Facility.GetFacilitySpec().DisplayName.IsEmpty()
+		? FText::FromName(Facility.GetFacilitySpec().FacilityDefinitionId)
+		: Facility.GetFacilitySpec().DisplayName;
+	OutViewData.FeedbackText = Feedback;
+	OutViewData.bFeedbackIsError = bIsFeedbackError;
+	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalog())
+	{
+		const EFF_PaidProgramScheduleResult Result =
+			Scheduling->CanScheduleProgramAtFacility(Card.ProgramId, FacilityId);
+		if (Result == EFF_PaidProgramScheduleResult::FacilityTypeMismatch ||
+			Result == EFF_PaidProgramScheduleResult::UnknownProgram)
+		{
+			continue;
+		}
+
+		FFF_FacilityPaidProgramCardViewData& CardViewData = OutViewData.Cards.AddDefaulted_GetRef();
+		CardViewData.ProgramId = Card.ProgramId;
+		CardViewData.DisplayName = Card.DisplayName.IsEmpty()
+			? FText::FromName(Card.ProgramId)
+			: Card.DisplayName;
+		CardViewData.Description = FText::Format(
+			LOCTEXT("ProgramCardDescription", "당일 한정 프로그램 · 최대 매출 {0} Gold"),
+			FText::AsNumber(Card.CalcMaxRevenue()));
+		CardViewData.TimeText =
+			FFFacilityInfoModel::FormatProgramTimeRange(Card.StartMinutes, Card.EndMinutes);
+		CardViewData.CostGold = Card.CostGold;
+		CardViewData.CostText = FFFacilityInfoModel::FormatGold(true, Card.CostGold);
+		CardViewData.StaffText = FText::Format(
+			LOCTEXT("ProgramRequiredStaff", "필요 인원 {0}명"),
+			FText::AsNumber(Card.RequiredStaff));
+		CardViewData.CapacityText = FText::Format(
+			LOCTEXT("ProgramCapacity", "정원 {0}명"), FText::AsNumber(Card.Capacity));
+		CardViewData.TicketFeeText = FText::Format(
+			LOCTEXT("ProgramTicketFee", "참가비 {0} Gold/인"),
+			FText::AsNumber(Card.FeePerPerson));
+		CardViewData.AvailabilityText =
+			UFF_ProgramSchedulingSubsystem::GetResultText(Result);
+		CardViewData.bCanSchedule = Result == EFF_PaidProgramScheduleResult::Success;
+	}
+	return true;
+}
+
+void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
+	const FName ProgramId,
+	const FGuid FacilityInstanceId)
+{
+	if (!PaidProgramPicker || ProgramId.IsNone() ||
+		FacilityInstanceId != SelectedFacilityId ||
+		PaidProgramPicker->GetFacilityInstanceId() != FacilityInstanceId)
+	{
+		return;
+	}
+	// 아래 권위 명령은 경제/예약 델리게이트를 동기 방송할 수 있다. 수신자가 선택을
+	// 닫으면 Picker가 제거되므로, 호출 전 약한 참조를 잡고 반환 뒤 다시 검증한다.
+	TWeakObjectPtr<UFF_FacilityPaidProgramPicker> RequestedPicker = PaidProgramPicker;
+	UFF_ProgramSchedulingSubsystem* Scheduling = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_ProgramSchedulingSubsystem>()
+		: nullptr;
+	const EFF_PaidProgramScheduleResult Result = Scheduling
+		? Scheduling->TryScheduleProgramAtFacility(ProgramId, FacilityInstanceId)
+		: EFF_PaidProgramScheduleResult::CommitFailed;
+	UFF_FacilityPaidProgramPicker* ActivePicker = RequestedPicker.Get();
+	if (!ActivePicker || PaidProgramPicker != ActivePicker ||
+		SelectedFacilityId != FacilityInstanceId ||
+		ActivePicker->GetFacilityInstanceId() != FacilityInstanceId)
+	{
+		return;
+	}
+	if (Result == EFF_PaidProgramScheduleResult::Success)
+	{
+		SetPaidProgramPickerOpen(false);
+		SetFeedback(LOCTEXT("PaidProgramScheduled", "유료 프로그램 구매·편성이 완료되었습니다."), false);
+		RefreshPanel();
+		return;
+	}
+
+	AFFZSFacilityActor* Facility = GetSelectedFacility();
+	FFF_FacilityPaidProgramPickerViewData PickerViewData;
+	if (Facility && BuildPaidProgramPickerViewData(
+		*Facility,
+		PickerViewData,
+		UFF_ProgramSchedulingSubsystem::GetResultText(Result),
+		true))
+	{
+		ActivePicker->ApplyViewData(PickerViewData);
+		SetPaidProgramPickerOpen(true);
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePaidProgramPickerCloseRequested()
+{
+	if (PaidProgramPicker)
+	{
+		SetPaidProgramPickerOpen(false);
+	}
+}
+
 void UFF_FacilityInfoSubsystem::HandlePanelMinigameRequested()
 {
 	if (SelectionContext == EFF_FacilityInfoContext::Live && SelectedFacilityId.IsValid())
@@ -876,6 +1346,28 @@ void UFF_FacilityInfoSubsystem::HandlePanelCloseRequested()
 	}
 }
 
+void UFF_FacilityInfoSubsystem::HandleScheduledProgramsChanged()
+{
+	if (HasSelection())
+	{
+		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandleStageChanged(
+	const EFF_FestivalStage PreviousStage,
+	const EFF_FestivalStage NewStage)
+{
+	(void)PreviousStage;
+	(void)NewStage;
+	ClosePaidProgramPicker();
+	if (HasSelection())
+	{
+		// RefreshPanel also closes a Live selection immediately when the stage leaves Live.
+		RefreshPanel();
+	}
+}
+
 void UFF_FacilityInfoSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	if (Event.Type == EFFZSCommandType::Remove)
@@ -894,12 +1386,36 @@ void UFF_FacilityInfoSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& 
 				nullptr,
 				SelectionIndicatorSelectedFacility.Get());
 		}
+		if (HasSelection())
+		{
+			// Remove events no longer have an actor from which to recover the definition id.
+			// Refresh the selected card on the next tick so a shared-definition count cannot go stale.
+			RefreshAccumulatorSeconds = RefreshIntervalSeconds;
+		}
 		return;
 	}
 	if (Event.FacilityInstanceId != SelectedFacilityId)
 	{
+		if (Event.Type == EFFZSCommandType::Install && HasSelection())
+		{
+			UWorld* World = GetWorld();
+			UFFZSWorldSubsystem* ZoneSystem = World
+				? World->GetSubsystem<UFFZSWorldSubsystem>()
+				: nullptr;
+			const AFFZSFacilityActor* InstalledFacility = ZoneSystem
+				? ZoneSystem->FindFacility(Event.FacilityInstanceId)
+				: nullptr;
+			const AFFZSFacilityActor* SelectedFacility = GetSelectedFacility();
+			if (InstalledFacility && SelectedFacility &&
+				InstalledFacility->GetFacilitySpec().FacilityDefinitionId ==
+					SelectedFacility->GetFacilitySpec().FacilityDefinitionId)
+			{
+				RefreshAccumulatorSeconds = RefreshIntervalSeconds;
+			}
+		}
 		return;
 	}
+	ClosePaidProgramPicker();
 	// QueueBridge consumes the same world event. Refresh on the next subsystem tick so all
 	// authority adapters have committed their matching read models before the card samples them.
 	RefreshAccumulatorSeconds = RefreshIntervalSeconds;

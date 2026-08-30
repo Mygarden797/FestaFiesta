@@ -20,6 +20,7 @@
 #include "Engine/World.h"
 #include "InputCoreTypes.h"
 #include "Minigame/FF_SurfingRuntime.h"
+#include "Minigame/Surfing/FF_SurfingRules.h"
 #include "UI/FF_UILog.h"
 #include "UI/Minigame/FF_SurfingCharacterActor.h"
 #include "UI/Minigame/FF_SurfingSceneActor.h"
@@ -29,8 +30,11 @@
 namespace
 {
 	constexpr TCHAR SurfingBackdropPath[] =
-		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Backdrop_UIUX_v2."
-			 "T_MG_Surfing_Backdrop_UIUX_v2");
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Backdrop_Final."
+			 "T_MG_Surfing_Backdrop_Final");
+	constexpr TCHAR SurfingSurferPath[] =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Surfer_Final."
+			 "T_MG_Surfing_Surfer_Final");
 	constexpr TCHAR SurfingRockPath[] =
 		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Rock_UIUX_v2."
 			 "T_MG_Surfing_Rock_UIUX_v2");
@@ -197,6 +201,8 @@ UFF_SurfingScreen::UFF_SurfingScreen(const FObjectInitializer& ObjectInitializer
 {
 	VisualStyle.BackdropTexture = TSoftObjectPtr<UTexture2D>(
 		FSoftObjectPath(SurfingBackdropPath));
+	VisualStyle.SurferTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(SurfingSurferPath));
 	VisualStyle.RockTexture = TSoftObjectPtr<UTexture2D>(
 		FSoftObjectPath(SurfingRockPath));
 	VisualStyle.LogTexture = TSoftObjectPtr<UTexture2D>(
@@ -306,11 +312,37 @@ void UFF_SurfingScreen::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 	{
 		PresentedEventSerial = Snapshot.LatestEventSerial;
 		PresentedEventType = Snapshot.LatestEventType;
+		switch (Snapshot.LatestEventType)
+		{
+		case EFF_SurfingEventType::ObstacleHit:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfObstacleHit);
+			break;
+		case EFF_SurfingEventType::ObstacleSmashed:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfObstacleSmashed);
+			break;
+		case EFF_SurfingEventType::CoinCollected:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfCoinCollected);
+			break;
+		case EFF_SurfingEventType::HeartCollected:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfHeartCollected);
+			break;
+		case EFF_SurfingEventType::BoostPickupCollected:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfBoostCollected);
+			break;
+		case EFF_SurfingEventType::BoostActivated:
+			PlayMinigameSound(EFF_MinigameAudioEvent::SurfBoostActivated);
+			break;
+		default:
+			break;
+		}
 		EventPulseRemainingSeconds = FMath::Max(0.0f, VisualStyle.EventPulseSeconds);
 	}
 
 	DisplayedSnapshot = Snapshot;
 	bHasSnapshot = true;
+	// The first accepted snapshot must establish a valid pose immediately. Later
+	// snapshots are interpolated from NativeTick without delaying gameplay state.
+	Advance2DPresentation(0.0f);
 	RefreshPresentation();
 }
 
@@ -446,6 +478,11 @@ void UFF_SurfingScreen::NativeTick(
 		RefreshArenaLayout();
 		RefreshEntityWidgets();
 	}
+	Advance2DPresentation(InDeltaTime);
+	if (!bUsing3DScene)
+	{
+		RefreshArenaLayout();
+	}
 
 	EventPulseRemainingSeconds = FMath::Max(
 		0.0f,
@@ -471,23 +508,7 @@ FReply UFF_SurfingScreen::NativeOnPreviewKeyDown(
 	{
 		if (!InKeyEvent.IsRepeat())
 		{
-			if (IsLeftMovementKey(Key))
-			{
-				bLeftKeyHeld = true;
-			}
-			if (IsRightMovementKey(Key))
-			{
-				bRightKeyHeld = true;
-			}
-			if (IsUpMovementKey(Key))
-			{
-				bUpKeyHeld = true;
-			}
-			if (IsDownMovementKey(Key))
-			{
-				bDownKeyHeld = true;
-			}
-			UpdateHeldMovementInput();
+			SetMovementKeyHeld(Key, true);
 		}
 		return FReply::Handled();
 	}
@@ -511,23 +532,7 @@ FReply UFF_SurfingScreen::NativeOnKeyUp(
 	const FKey Key = InKeyEvent.GetKey();
 	if (IsMovementKey(Key))
 	{
-		if (IsLeftMovementKey(Key))
-		{
-			bLeftKeyHeld = false;
-		}
-		if (IsRightMovementKey(Key))
-		{
-			bRightKeyHeld = false;
-		}
-		if (IsUpMovementKey(Key))
-		{
-			bUpKeyHeld = false;
-		}
-		if (IsDownMovementKey(Key))
-		{
-			bDownKeyHeld = false;
-		}
-		UpdateHeldMovementInput();
+		SetMovementKeyHeld(Key, false);
 		return FReply::Handled();
 	}
 
@@ -708,56 +713,6 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	AddStretchedToCanvas(
 		*Canvas_SurfArea, *Backdrop, FAnchors(0.0f, 0.0f, 1.0f, 1.0f), 0);
 
-	UBorder* TopVignette = WidgetTree->ConstructWidget<UBorder>(
-		UBorder::StaticClass(), TEXT("Border_TopVignette"));
-	UBorder* BottomVignette = WidgetTree->ConstructWidget<UBorder>(
-		UBorder::StaticClass(), TEXT("Border_BottomVignette"));
-	UBorder* ArenaShadow = WidgetTree->ConstructWidget<UBorder>(
-		UBorder::StaticClass(), TEXT("Border_ArenaShadow"));
-	UBorder* ArenaGlass = WidgetTree->ConstructWidget<UBorder>(
-		UBorder::StaticClass(), TEXT("Border_ArenaGlass"));
-	if (!TopVignette || !BottomVignette || !ArenaShadow || !ArenaGlass)
-	{
-		return false;
-	}
-	TopVignette->SetBrushColor(FLinearColor(0.002f, 0.018f, 0.045f, 0.76f));
-	BottomVignette->SetBrushColor(FLinearColor(0.002f, 0.020f, 0.050f, 0.72f));
-	ArenaShadow->SetBrushColor(FLinearColor(0.001f, 0.014f, 0.033f, 0.30f));
-	ArenaGlass->SetBrushColor(VisualStyle.ArenaScrimColor);
-	for (UBorder* Decorative : { TopVignette, BottomVignette, ArenaShadow, ArenaGlass })
-	{
-		Decorative->SetVisibility(ESlateVisibility::HitTestInvisible);
-	}
-	AddStretchedToCanvas(
-		*Canvas_SurfArea, *TopVignette, FAnchors(0.0f, 0.0f, 1.0f, 0.155f), 2);
-	AddStretchedToCanvas(
-		*Canvas_SurfArea, *BottomVignette, FAnchors(0.0f, 0.84f, 1.0f, 1.0f), 2);
-	AddStretchedToCanvas(
-		*Canvas_SurfArea, *ArenaShadow, FAnchors(0.055f, 0.145f, 0.945f, 0.875f), 4);
-	AddStretchedToCanvas(
-		*Canvas_SurfArea, *ArenaGlass, FAnchors(0.060f, 0.150f, 0.940f, 0.870f), 5);
-
-	for (int32 Index = 0; Index < 4; ++Index)
-	{
-		UBorder* WakeLine = WidgetTree->ConstructWidget<UBorder>(
-			UBorder::StaticClass(),
-			*FString::Printf(TEXT("Border_WakeGuide_%02d"), Index + 1));
-		if (!WakeLine)
-		{
-			return false;
-		}
-		FLinearColor WakeColor = VisualStyle.FoamColor;
-		WakeColor.A = 0.10f + static_cast<float>(Index % 2) * 0.06f;
-		WakeLine->SetBrushColor(WakeColor);
-		WakeLine->SetVisibility(ESlateVisibility::HitTestInvisible);
-		const float Top = 0.265f + static_cast<float>(Index) * 0.155f;
-		AddStretchedToCanvas(
-			*Canvas_SurfArea,
-			*WakeLine,
-			FAnchors(0.085f + 0.015f * (Index % 2), Top, 0.915f, Top + 0.004f),
-			6);
-	}
-
 	Canvas_EntityLayer = WidgetTree->ConstructWidget<UCanvasPanel>(
 		UCanvasPanel::StaticClass(), TEXT("Canvas_EntityLayer"));
 	if (!Canvas_EntityLayer)
@@ -795,12 +750,31 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	{
 		return false;
 	}
-	Border_SurferAvatar->SetBrushColor(VisualStyle.EntityHaloColor);
-	Border_SurferAvatar->SetPadding(FMargin(5.0f));
+	Border_SurferAvatar->SetBrushColor(FLinearColor::Transparent);
+	Border_SurferAvatar->SetPadding(FMargin(0.0f));
 	Border_SurferAvatar->SetContent(Border_SurferCore);
 	Border_SurferAvatar->SetVisibility(ESlateVisibility::HitTestInvisible);
-	Border_SurferCore->SetBrushColor(VisualStyle.SurferColor);
-	Border_SurferCore->SetPadding(FMargin(14.0f, 9.0f));
+	if (UTexture2D* SurferTexture = VisualStyle.SurferTexture.IsNull()
+		? nullptr
+		: VisualStyle.SurferTexture.LoadSynchronous())
+	{
+		FSlateBrush SurferBrush;
+		SurferBrush.DrawAs = ESlateBrushDrawType::Image;
+		SurferBrush.SetResourceObject(SurferTexture);
+		SurferBrush.SetImageSize(VisualStyle.SurferTextureSize);
+		SurferBrush.TintColor = FSlateColor(FLinearColor::White);
+		Border_SurferCore->SetBrush(SurferBrush);
+		Border_SurferCore->SetBrushColor(FLinearColor::White);
+		Border_SurferCore->SetPadding(FMargin(
+			VisualStyle.SurferTextureSize.X * 0.5f,
+			VisualStyle.SurferTextureSize.Y * 0.5f));
+		SurferColumn->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	else
+	{
+		Border_SurferCore->SetBrushColor(VisualStyle.SurferColor);
+		Border_SurferCore->SetPadding(FMargin(14.0f, 9.0f));
+	}
 	Border_SurferCore->SetContent(SurferColumn);
 	SurferColumn->AddChildToVerticalBox(RiderMark);
 	SurferColumn->AddChildToVerticalBox(SurferLabel);
@@ -1156,6 +1130,12 @@ void UFF_SurfingScreen::InitializeBindings()
 
 bool UFF_SurfingScreen::Initialize3DScene()
 {
+	if (!VisualStyle.bEnableSceneCapture3D)
+	{
+		Release3DScene();
+		return false;
+	}
+
 	if (bUsing3DScene && IsValid(SurfingSceneActor)
 		&& SurfingSceneActor->IsSceneReady())
 	{
@@ -1286,6 +1266,8 @@ void UFF_SurfingScreen::RefreshBackdropBrush()
 
 	if (bUsing3DScene && SurfingRenderTarget)
 	{
+		Border_SurfBackdrop->SetRenderScale(FVector2D(1.0f, 1.0f));
+		Border_SurfBackdrop->SetRenderTranslation(FVector2D::ZeroVector);
 		FSlateBrush CaptureBrush;
 		CaptureBrush.DrawAs = ESlateBrushDrawType::Image;
 		CaptureBrush.SetResourceObject(SurfingRenderTarget);
@@ -1327,6 +1309,73 @@ void UFF_SurfingScreen::ResetTransientPresentationState()
 	EventPulseRemainingSeconds = 0.0f;
 	PresentedEntityHash = 0;
 	bHasPresentedEntityHash = false;
+	bHasSmoothedPlayerPose = false;
+	SmoothedPlayerPositionNormalized = FVector2D::ZeroVector;
+	SmoothedPlayerHeadingDegrees = 0.0f;
+	LastPresentedLateralDirection = 0.0f;
+	bHasPresentedLateralDirection = false;
+	PresentationTimeSeconds = 0.0f;
+}
+
+void UFF_SurfingScreen::Advance2DPresentation(const float DeltaSeconds)
+{
+	if (bUsing3DScene)
+	{
+		return;
+	}
+
+	const float SafeDeltaSeconds = FMath::Clamp(DeltaSeconds, 0.0f, 0.1f);
+	PresentationTimeSeconds += SafeDeltaSeconds;
+	const FVector2D TargetPosition = bHasSnapshot
+		? FVector2D(
+			FMath::Clamp(DisplayedSnapshot.PlayerPositionNormalized.X, -1.0f, 1.0f),
+			FMath::Clamp(DisplayedSnapshot.PlayerPositionNormalized.Y, -1.0f, 1.0f))
+		: FVector2D::ZeroVector;
+
+	const FVector2D Heading = bHasSnapshot
+		? DisplayedSnapshot.CurrentHeading.GetSafeNormal()
+		: FVector2D(0.0f, 1.0f);
+	const float TargetHeadingDegrees = Heading.IsNearlyZero()
+		? 0.0f
+		: FMath::RadiansToDegrees(FMath::Atan2(Heading.X, Heading.Y));
+	const float LateralDirection = bHasSnapshot
+		? FMath::Clamp(DisplayedSnapshot.MovementInput.X, -1.0f, 1.0f)
+		: 0.0f;
+	const bool bDirectionChanged = FMath::Abs(LateralDirection) > UE_KINDA_SMALL_NUMBER
+		&& bHasPresentedLateralDirection
+		&& LateralDirection * LastPresentedLateralDirection < 0.0f;
+	if (FMath::Abs(LateralDirection) > UE_KINDA_SMALL_NUMBER)
+	{
+		LastPresentedLateralDirection = LateralDirection;
+		bHasPresentedLateralDirection = true;
+	}
+
+	if (!bHasSmoothedPlayerPose)
+	{
+		SmoothedPlayerPositionNormalized = TargetPosition;
+		SmoothedPlayerHeadingDegrees = TargetHeadingDegrees;
+		bHasSmoothedPlayerPose = true;
+		return;
+	}
+	if (bDirectionChanged && VisualStyle.bResetPresentationLagOnDirectionChange)
+	{
+		SmoothedPlayerPositionNormalized.X = TargetPosition.X;
+		SmoothedPlayerHeadingDegrees = TargetHeadingDegrees;
+	}
+
+	const float PositionResponse = FFSurfingRules::CalculateExponentialResponse(
+		FMath::Max(0.01f, VisualStyle.PlayerPositionSmoothingSpeed),
+		SafeDeltaSeconds);
+	SmoothedPlayerPositionNormalized = FMath::Lerp(
+		SmoothedPlayerPositionNormalized,
+		TargetPosition,
+		PositionResponse);
+	const float HeadingResponse = FFSurfingRules::CalculateExponentialResponse(
+		FMath::Max(0.01f, VisualStyle.PlayerRotationSmoothingSpeed),
+		SafeDeltaSeconds);
+	SmoothedPlayerHeadingDegrees += FMath::FindDeltaAngleDegrees(
+		SmoothedPlayerHeadingDegrees,
+		TargetHeadingDegrees) * HeadingResponse;
 }
 
 void UFF_SurfingScreen::RefreshPresentation()
@@ -1450,7 +1499,11 @@ void UFF_SurfingScreen::RefreshPresentation()
 
 	if (bHasResult)
 	{
-		const FText Grade = DisplayedResult.GradeText.IsEmpty()
+		const bool bWipeout =
+			DisplayedResult.EndReason == EFF_MinigameEndReason::LivesDepleted;
+		const FText Grade = bWipeout
+			? LOCTEXT("SurfWipeout", "WIPEOUT")
+			: DisplayedResult.GradeText.IsEmpty()
 			? LOCTEXT("SurfComplete", "RIDE COMPLETE")
 			: DisplayedResult.GradeText;
 		Text_Result->SetText(FText::Format(
@@ -1466,6 +1519,9 @@ void UFF_SurfingScreen::RefreshPresentation()
 	else if (bSessionFinished)
 	{
 		const FText ResultTitle =
+			DisplayedSnapshot.Session.EndReason == EFF_MinigameEndReason::LivesDepleted
+			? LOCTEXT("SnapshotWipeout", "WIPEOUT")
+			:
 			DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Completed
 			? LOCTEXT("TimeExpired", "RIDE COMPLETE")
 			: LOCTEXT("SessionCancelled", "RIDE ENDED");
@@ -1525,10 +1581,8 @@ void UFF_SurfingScreen::RefreshArenaLayout()
 		return;
 	}
 
-	const FVector2D Position = bHasSnapshot
-		? FVector2D(
-			FMath::Clamp(DisplayedSnapshot.PlayerPositionNormalized.X, -1.0f, 1.0f),
-			FMath::Clamp(DisplayedSnapshot.PlayerPositionNormalized.Y, -1.0f, 1.0f))
+	const FVector2D Position = bHasSmoothedPlayerPose
+		? SmoothedPlayerPositionNormalized
 		: FVector2D::ZeroVector;
 	const FVector2D LocalSize = GetCachedGeometry().GetLocalSize();
 	const FVector2D ArenaHalfExtents = GetProjectedArenaHalfExtents(LocalSize);
@@ -1539,39 +1593,80 @@ void UFF_SurfingScreen::RefreshArenaLayout()
 			VisualStyle.ArenaCenter.Y - Position.Y * ArenaHalfExtents.Y);
 		SurferSlot->SetAnchors(FAnchors(Anchor.X, Anchor.Y));
 		SurferSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-		SurferSlot->SetPosition(FVector2D::ZeroVector);
-		SurferSlot->SetAutoSize(true);
+		const float BobPixels = FMath::Sin(PresentationTimeSeconds * 5.4f) * 3.5f;
+		SurferSlot->SetPosition(FVector2D(0.0f, BobPixels));
+		SurferSlot->SetAutoSize(false);
+		SurferSlot->SetSize(VisualStyle.SurferTextureSize);
 	}
 
-	const FVector2D Heading = bHasSnapshot
-		? DisplayedSnapshot.CurrentHeading.GetSafeNormal()
-		: FVector2D(0.0f, 1.0f);
-	const FVector2D ProjectedHeading(
-		Heading.X * ArenaHalfExtents.X
-			* FMath::Max(static_cast<float>(LocalSize.X), 1.0f),
-		Heading.Y * ArenaHalfExtents.Y
-			* FMath::Max(static_cast<float>(LocalSize.Y), 1.0f));
-	const float HeadingAngle = ProjectedHeading.IsNearlyZero()
-		? 0.0f
-		: FMath::RadiansToDegrees(FMath::Atan2(ProjectedHeading.X, ProjectedHeading.Y));
+	const float SteerAxis = bHasSnapshot
+		? FMath::Clamp(DisplayedSnapshot.MovementInput.X, -1.0f, 1.0f)
+		: 0.0f;
+	const float BankDegrees = SteerAxis
+		* FMath::Clamp(VisualStyle.TurnBankScale, 0.0f, 1.0f)
+		* FMath::Max(0.0f, VisualStyle.MaximumBankDegrees);
+	const float HeadingAngle = SmoothedPlayerHeadingDegrees + BankDegrees;
 	Border_SurferAvatar->SetRenderTransformAngle(HeadingAngle);
 
-	FLinearColor SurferColor =
-		bHasSnapshot && DisplayedSnapshot.bBoosting
-		? VisualStyle.BoostingSurferColor
-		: VisualStyle.SurferColor;
-	if (bHasSnapshot && DisplayedSnapshot.bInvincible)
-	{
-		SurferColor = SurferColor * 0.62f + FLinearColor::White * 0.38f;
-		SurferColor.A = 1.0f;
-	}
 	UBorder* SurferVisual = Border_SurferCore
 		? Border_SurferCore.Get()
 		: Border_SurferAvatar.Get();
-	SurferVisual->SetBrushColor(SurferColor);
-	if (Border_SurferCore)
+	UTexture2D* SurferTexture = VisualStyle.SurferTexture.IsNull()
+		? nullptr
+		: VisualStyle.SurferTexture.LoadSynchronous();
+	if (SurferTexture)
 	{
-		Border_SurferAvatar->SetBrushColor(VisualStyle.EntityHaloColor);
+		FSlateBrush SurferBrush;
+		SurferBrush.DrawAs = ESlateBrushDrawType::Image;
+		SurferBrush.SetResourceObject(SurferTexture);
+		SurferBrush.SetImageSize(VisualStyle.SurferTextureSize);
+		SurferBrush.TintColor = FSlateColor(FLinearColor::White);
+		SurferVisual->SetBrush(SurferBrush);
+		SurferVisual->SetPadding(FMargin(
+			VisualStyle.SurferTextureSize.X * 0.5f,
+			VisualStyle.SurferTextureSize.Y * 0.5f));
+		SurferVisual->SetBrushColor(
+			bHasSnapshot && DisplayedSnapshot.bBoosting
+			? FLinearColor(1.0f, 0.96f, 0.78f, 1.0f)
+			: FLinearColor::White);
+		if (UWidget* PlaceholderContent = SurferVisual->GetContent())
+		{
+			PlaceholderContent->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		if (Border_SurferCore)
+		{
+			Border_SurferAvatar->SetBrushColor(FLinearColor::Transparent);
+			Border_SurferAvatar->SetPadding(FMargin(0.0f));
+		}
+	}
+	else
+	{
+		SurferVisual->SetPadding(FMargin(14.0f, 9.0f));
+		SurferVisual->SetBrushColor(
+			bHasSnapshot && DisplayedSnapshot.bBoosting
+			? VisualStyle.BoostingSurferColor
+			: VisualStyle.SurferColor);
+		if (UWidget* PlaceholderContent = SurferVisual->GetContent())
+		{
+			PlaceholderContent->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+		if (Border_SurferCore)
+		{
+			Border_SurferAvatar->SetBrushColor(VisualStyle.EntityHaloColor);
+		}
+	}
+	const bool bInvinciblePulse = bHasSnapshot
+		&& DisplayedSnapshot.bInvincible
+		&& FMath::Sin(PresentationTimeSeconds * 18.0f) < -0.2f;
+	Border_SurferAvatar->SetRenderOpacity(bInvinciblePulse ? 0.62f : 1.0f);
+
+	if (Border_SurfBackdrop)
+	{
+		Border_SurfBackdrop->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Border_SurfBackdrop->SetRenderScale(FVector2D(1.035f, 1.035f));
+		Border_SurfBackdrop->SetRenderTranslation(FVector2D(
+			-Position.X * 12.0f + FMath::Sin(PresentationTimeSeconds * 0.73f) * 3.0f,
+			FMath::Sin(PresentationTimeSeconds * 0.91f) * 2.5f));
 	}
 
 	float Scale = bHasSnapshot && DisplayedSnapshot.bBoosting ? 1.12f : 1.0f;
@@ -1652,19 +1747,29 @@ void UFF_SurfingScreen::RefreshEntityWidgets()
 				EntitySlot->SetAnchors(FAnchors(Anchor.X, Anchor.Y));
 				EntitySlot->SetAlignment(FVector2D(0.5f, 0.5f));
 				EntitySlot->SetPosition(FVector2D::ZeroVector);
-				EntitySlot->SetAutoSize(true);
+				EntitySlot->SetAutoSize(false);
+				EntitySlot->SetSize(VisualStyle.EntityTextureSize);
 				const bool bPickup =
 					ObjectSnapshot.Type == EFF_SurfingObjectType::Coin
 					|| ObjectSnapshot.Type == EFF_SurfingObjectType::Heart
 					|| ObjectSnapshot.Type == EFF_SurfingObjectType::BoostPickup;
-				EntitySlot->SetZOrder(bPickup ? 60 : 45);
+				const int32 DepthOrder = FMath::RoundToInt(
+					(1.0f - Position.Y) * 10.0f);
+				EntitySlot->SetZOrder((bPickup ? 55 : 40) + DepthOrder);
 			}
 
 			const float RadiusScale = FMath::Clamp(
 				ObjectSnapshot.CollisionRadiusNormalized / 0.075f,
 				0.65f,
 				1.45f);
-			const float Scale = FMath::Max(0.1f, VisualStyle.EntityScale) * RadiusScale;
+			const float DepthAlpha = FMath::Clamp(
+				(Position.Y + 1.0f) * 0.5f,
+				0.0f,
+				1.0f);
+			const float PerspectiveScale = FMath::Lerp(1.24f, 0.68f, DepthAlpha);
+			const float Scale = FMath::Max(0.1f, VisualStyle.EntityScale)
+				* RadiusScale
+				* PerspectiveScale;
 			EntityWidget->SetRenderScale(FVector2D(Scale, Scale));
 			EntityWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
@@ -1812,7 +1917,14 @@ void UFF_SurfingScreen::ConfigureEntityWidget(
 		TextureBrush.SetImageSize(VisualStyle.EntityTextureSize);
 		TextureBrush.TintColor = FSlateColor(FLinearColor::White);
 		VisualBorder.SetBrush(TextureBrush);
-		VisualBorder.SetPadding(FMargin(0.0f));
+		VisualBorder.SetPadding(FMargin(
+			VisualStyle.EntityTextureSize.X * 0.5f,
+			VisualStyle.EntityTextureSize.Y * 0.5f));
+		if (ArtBorder)
+		{
+			EntityWidget.SetBrushColor(FLinearColor::Transparent);
+			EntityWidget.SetPadding(FMargin(0.0f));
+		}
 		if (LabelWidget)
 		{
 			LabelWidget->SetVisibility(ESlateVisibility::Collapsed);
@@ -1951,11 +2063,50 @@ bool UFF_SurfingScreen::TryBoost()
 	return Result == EFF_SurfingBoostResult::Activated;
 }
 
+void UFF_SurfingScreen::SetMovementKeyHeld(const FKey& Key, const bool bHeld)
+{
+	if (IsLeftMovementKey(Key))
+	{
+		bLeftKeyHeld = bHeld;
+		if (bHeld)
+		{
+			MostRecentHorizontalDirection = -1;
+		}
+	}
+	if (IsRightMovementKey(Key))
+	{
+		bRightKeyHeld = bHeld;
+		if (bHeld)
+		{
+			MostRecentHorizontalDirection = 1;
+		}
+	}
+	if (IsUpMovementKey(Key))
+	{
+		bUpKeyHeld = bHeld;
+		if (bHeld)
+		{
+			MostRecentVerticalDirection = 1;
+		}
+	}
+	if (IsDownMovementKey(Key))
+	{
+		bDownKeyHeld = bHeld;
+		if (bHeld)
+		{
+			MostRecentVerticalDirection = -1;
+		}
+	}
+	UpdateHeldMovementInput();
+}
+
 void UFF_SurfingScreen::UpdateHeldMovementInput()
 {
 	FVector2D DigitalInput(
-		(bRightKeyHeld ? 1.0f : 0.0f) - (bLeftKeyHeld ? 1.0f : 0.0f),
-		(bUpKeyHeld ? 1.0f : 0.0f) - (bDownKeyHeld ? 1.0f : 0.0f));
+		FFSurfingRules::ResolveDigitalAxis(
+			bLeftKeyHeld, bRightKeyHeld, MostRecentHorizontalDirection),
+		FFSurfingRules::ResolveDigitalAxis(
+			bDownKeyHeld, bUpKeyHeld, MostRecentVerticalDirection));
 	if (!DigitalInput.IsNearlyZero())
 	{
 		DigitalInput.Normalize();
@@ -1978,6 +2129,8 @@ void UFF_SurfingScreen::ReleaseAllMovementInput()
 	bRightKeyHeld = false;
 	bUpKeyHeld = false;
 	bDownKeyHeld = false;
+	MostRecentHorizontalDirection = 0;
+	MostRecentVerticalDirection = 0;
 	AnalogMovementInput = FVector2D::ZeroVector;
 
 	if (IsValid(Runtime)

@@ -394,6 +394,7 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 - 원본 Data Asset이 언로드되어도 설치된 시설과 Snapshot은 동작한다.
 - 원본 Data Asset을 수정해도 이미 설치된 시설에 자동 반영되지 않는다.
 - Visual Mesh는 Soft Reference라 논리 설치와 로드를 분리한다.
+- Facility Audio도 Soft Reference라 시설별 사운드와 오디오 정책을 Data Asset에서 교체할 수 있다.
 - Host 프로젝트가 Asset Manager Scan/Cook 규칙을 별도로 설정해야 할 수 있다.
 
 ### 7.2 FacilitySpec 주요 필드
@@ -413,6 +414,7 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 | Visual | `VisualMesh` | 비동기 로드 Soft Mesh |
 | Visual | `VisualSizingMode` | Production Definition은 `MatchPlacementBounds`; Footprint/ObstacleHeight가 표시 크기의 권위 |
 | Visual | `VisualOffsetCm / VisualRotation` | 표시 전용 로컬 보정. Match 모드는 Offset 0, 정확한 90도 회전만 허용 |
+| Audio | `AudioSettings` | 시설별 3D 사운드, 감쇠·동시재생 정책, 볼륨·피치·위치·페이드·반복 설정 |
 | Collision | `PlacementObstacleHeightCm` | 월드 충돌과 보호영역 박스 높이 |
 
 `QueueReservedCells`는 작은 구 데이터 호환용 Deprecated 필드다. 새 데이터는
@@ -437,9 +439,28 @@ Threshold를 둔 대칭형 Hysteresis는 아니다. 이 수치는 게임 Prototy
 - Service Anchor가 `0..ServiceCapacity-1`을 연속 제공하는가
 - Anchor `Type + Index` 조합이 고유하고 Local Scale이 1인가
 - `AllowedZoneIds`에 `NAME_None`이나 중복이 없는가
+- Facility Audio의 볼륨·피치·위치·페이드 값이 유한하고 허용 범위 안인가
 - `PlacementObstacleHeightCm`이 유한하고 10 cm 이상인가
 
-### 7.4 FacilityDefinition Data Asset 단일 원천
+### 7.4 시설별 사운드 저작
+
+시설 Definition Data Asset의 `Spec > Facility Audio`에서 설정한다.
+
+- `Ambient Sound`: Sound Wave, Sound Cue, MetaSound Source 중 하나를 지정한다. 비우면 무음이다.
+- `Override Audible Range`: 켜면 시설마다 구형 가청 범위를 직접 사용하며 최대 거리 밖의 볼륨은 0이다.
+- `Full Volume Radius`: 원래 볼륨을 유지하는 반경이다. 기본값 500cm다.
+- `Maximum Audible Distance`: 완전히 들리지 않게 되는 거리다. 기본값 2,000cm다.
+- `Attenuation Settings`: 공간화·리버브·오클루전 정책을 재사용한다. 범위 Override가 켜져 있으면 거리 값은 시설 설정이 우선한다.
+- `Concurrency Settings`: 같은 종류의 시설이 많을 때 최대 동시 재생 수와 우선순위를 제한한다.
+- `Play Only While Active`: 기본값은 켜짐이며 Open 때 페이드 인, Close·Remove 때 페이드 아웃한다.
+- `Loop`: 일회성 음원도 끝나면 다시 재생한다. 이음매가 중요한 루프는 Sound Cue/MetaSound 내부에서 만든다.
+
+런타임은 사운드·감쇠·동시재생 에셋을 한 번에 비동기 로드하며 Actor Tick을 사용하지 않는다. 시설별
+코드를 추가하거나 Blueprint 파생 클래스를 만들지 말고 같은 Data Asset 필드만 교체한다. 이미 설치되어
+Snapshot에 들어간 시설은 설치 시점의 Spec을 유지하므로 저작 변경 확인 시에는 새로 설치하거나 저장을
+다시 생성한다.
+
+### 7.5 FacilityDefinition Data Asset 단일 원천
 
 프로덕션 시설의 ID, 크기, 여유 영역, Queue 영역·Spline·규칙, Anchor, 외부 Key와 Visual Mesh는
 `UFFZSFacilityDefinition::Spec`에서만 저작한다. `UFFZSGridLibrary`에는 시설별 값이나 기본 시설 생성
@@ -475,7 +496,7 @@ Shipping API나 Asset Manager Scan 대상이 아니며 프로덕션 시설 정�
 enum pin과 함수 시그니처가 달라 Core Redirect만으로 안전하게 자동 변환할 수 없으므로, 이 변경은
 외부 API 관점에서 명시적 마이그레이션이 필요한 breaking change다.
 
-### 7.5 FacilityActor
+### 7.6 FacilityActor
 
 `AFFZSFacilityActor`는 다음 Component를 가진다.
 
@@ -1417,7 +1438,8 @@ UI 입력
 - Definition·배치 에디터 픽스처: `/Game/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`
 - Lifecycle QA 코드: `Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanel*`
 
-Lifecycle 패널은 비 Shipping의 `Test_Main` Game·PIE 월드에서만 생성되며 Festival 단계 변경과
+Lifecycle 패널은 비 Shipping의 `Test_Main` Game·PIE 월드에서만 숨김 상태로 생성되며, 게임
+뷰포트에 포커스를 둔 뒤 `Ctrl+G`로 표시·숨김을 전환한다. Festival 단계 변경과
 Open·Close·Emergency 권위 API를 관찰·수동 실행한다. Install·Move·Remove는 같은 맵의 프로덕션
 건축 모드 경로로 확인하고, Definition과 배치 픽스처는 Editor 검증에 사용한다. 이 QA Slice는
 Queue 또는 실제 NPC 이동 하네스가 아니므로 해당 통합 검증은 별도로 수행한다.

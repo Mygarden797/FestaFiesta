@@ -348,6 +348,7 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 	const int32 PathQueries = CrowdSim->GetPathQueriesIssued();
 	const int32 PathFailures = CrowdSim->GetPathQueryFailures();
+	const int32 PartialPaths = CrowdSim->GetPartialPathCount();
 	const int32 Following = CrowdSim->GetPathFollowingCount();
 	const int32 Backlog = CrowdSim->GetPathQueryBacklog();
 
@@ -377,8 +378,9 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		Ar.Logf(TEXT("쿼리 / 실패   : %d / %d건 (%.0f%%)"),
 			PathQueries, PathFailures,
 			PathQueries > 0 ? (100.f * PathFailures / PathQueries) : 0.f);
-		Ar.Logf(TEXT("부분 경로     : %d건  <-- 목적지가 NavMesh 밖. 닿는 데까지만 간다"),
-			CrowdSim->GetPartialPathCount());
+		Ar.Logf(TEXT("부분 경로     : %d건 (%.1f%%)  <-- 목적지가 NavMesh 밖. 닿는 데까지만 간다"),
+			PartialPaths,
+			PathQueries > 0 ? (100.f * PartialPaths / PathQueries) : 0.f);
 		Ar.Logf(TEXT("경로 대기     : %d명 (예산 %d건/스텝)"), Backlog, CrowdSim->PathQueriesPerStep);
 		Ar.Logf(TEXT("배치변경 폐기 : %d회  <-- 시설 설치·이동·철거 횟수와 맞아야 한다"),
 			CrowdSim->GetPathLayoutInvalidations());
@@ -391,6 +393,13 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 			Ar.Logf(ELogVerbosity::Warning,
 				TEXT("경로 쿼리 절반 이상이 실패한다 — NavMesh가 없거나 개체가 그 위에 없다. "
 				     "그 개체들은 직선으로 걸어 건물에 붙는다"));
+		}
+
+		if (PathQueries > 0 && PartialPaths * 10 > PathQueries)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("경로 10건 중 1건 이상이 부분 경로다 — 목적지가 NavMesh 위에 있는지 확인할 것. "
+				     "그 개체는 닿는 데까지 간 뒤 남은 거리를 직선으로 밀어 건물에 붙어 미끄러진다"));
 		}
 
 		if (Backlog > 0)

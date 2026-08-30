@@ -7,6 +7,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "UI/FF_UILog.h"
+#include "UI/FF_UIDisplayTextLibrary.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
@@ -165,7 +166,8 @@ void UFF_LiveHudMenuBar::CollectTabs()
 		// 라벨과 아이콘은 코드가 채운다. WBP에 문구를 박으면 enum과 화면이 갈라진다.
 		Binding.Value->Configure(
 			Binding.Key,
-			TabEnum->GetDisplayNameTextByIndex(EnumIndex),
+			// 🔴 `GetDisplayNameTextByIndex` 는 패키징 빌드에서 영문을 돌려준다 (2026-08-28).
+			UFF_UIDisplayTextLibrary::GetLiveHudTabText(Binding.Key),
 			ResolveTabIcon(Binding.Key, EnumName));
 
 		Binding.Value->OnTabButtonClicked.BindUObject(this, &UFF_LiveHudMenuBar::HandleTabButtonClicked);

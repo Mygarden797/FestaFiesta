@@ -127,6 +127,7 @@ namespace FFTargetShootingWbpBuilder
 		const UBorder* PlayArea = Cast<UBorder>(Tree->FindWidget(TEXT("Border_PlayArea")));
 		const UCanvasPanel* PlayCanvas = Cast<UCanvasPanel>(Tree->FindWidget(TEXT("Canvas_PlayArea")));
 		const UBorder* Target = Cast<UBorder>(Tree->FindWidget(TEXT("Border_Target")));
+		const UImage* TargetImage = Cast<UImage>(Tree->FindWidget(TEXT("Image_Target")));
 		const UImage* WaterBlaster = Cast<UImage>(Tree->FindWidget(TEXT("Image_WaterBlaster")));
 		const UTextBlock* MuzzleFlash = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_MuzzleFlash")));
 		const UTextBlock* WeaponStatus = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_WeaponStatus")));
@@ -143,6 +144,7 @@ namespace FFTargetShootingWbpBuilder
 		if (!IsVariableWidget(Blueprint, PlayArea)
 			|| !IsVariableWidget(Blueprint, PlayCanvas)
 			|| !IsVariableWidget(Blueprint, Target)
+			|| !IsVariableWidget(Blueprint, TargetImage)
 			|| !IsVariableWidget(Blueprint, WaterBlaster)
 			|| !IsVariableWidget(Blueprint, MuzzleFlash)
 			|| !IsVariableWidget(Blueprint, WeaponStatus)
@@ -162,6 +164,7 @@ namespace FFTargetShootingWbpBuilder
 		// Runtime pointer normalization assumes this exact ownership boundary.
 		return PlayArea->GetContent() == PlayCanvas
 			&& Target->GetParent() == PlayCanvas
+			&& TargetImage->GetParent() == Target->GetContent()
 			&& WaterBlaster->GetParent() == PlayCanvas
 			&& MuzzleFlash->GetParent() == PlayCanvas
 			&& WeaponStatus->GetParent() == PlayCanvas
@@ -188,6 +191,7 @@ namespace FFTargetShootingWbpBuilder
 			GetDefault<UFF_TargetShootingScreen>()->VisualStyle;
 		UTexture2D* BackdropTexture = Style.BackdropTexture.LoadSynchronous();
 		UTexture2D* WaterBlasterTexture = Style.WaterBlasterTexture.LoadSynchronous();
+		UTexture2D* TargetTexture = Style.TargetTexture.LoadSynchronous();
 		if (!BackdropTexture)
 		{
 			UE_LOG(LogFFUIWbpBuilder, Error,
@@ -204,6 +208,14 @@ namespace FFTargetShootingWbpBuilder
 				*Style.WaterBlasterTexture.ToSoftObjectPath().ToString());
 			return false;
 		}
+		if (!TargetTexture)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: target image is missing: %s"),
+				LogPrefix,
+				*Style.TargetTexture.ToSoftObjectPath().ToString());
+			return false;
+		}
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Root"));
 		UImage* Backdrop = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_Backdrop"), true);
 		UBorder* ScreenWash = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ScreenWash"));
@@ -214,8 +226,12 @@ namespace FFTargetShootingWbpBuilder
 		UBorder* PlayArea = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PlayArea"), true);
 		UCanvasPanel* PlayCanvas = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Canvas_PlayArea"), true);
 		UBorder* Target = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Target"), true);
+		UOverlay* TargetOverlay = MakeWidget<UOverlay>(
+			Blueprint, Tree, TEXT("Overlay_TargetVisual"));
+		UImage* TargetImage = MakeWidget<UImage>(
+			Blueprint, Tree, TEXT("Image_Target"), true);
 		if (!Root || !Backdrop || !ScreenWash || !LayoutCanvas || !ArenaFrame
-			|| !PlayArea || !PlayCanvas || !Target)
+			|| !PlayArea || !PlayCanvas || !Target || !TargetOverlay || !TargetImage)
 		{
 			return false;
 		}
@@ -267,10 +283,16 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 
-		ArenaFrame->SetBrushColor(Style.ArenaFrameColor);
-		ArenaFrame->SetPadding(FMargin(2.0f));
+		ArenaFrame->SetBrushColor(Style.bUseSingleBackdrop
+			? FLinearColor::Transparent
+			: Style.ArenaFrameColor);
+		ArenaFrame->SetPadding(Style.bUseSingleBackdrop
+			? FMargin(0.0f)
+			: FMargin(2.0f));
 		ArenaFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-		PlayArea->SetBrushColor(Style.ArenaSurfaceColor);
+		PlayArea->SetBrushColor(Style.bUseSingleBackdrop
+			? FLinearColor::Transparent
+			: Style.ArenaSurfaceColor);
 		PlayArea->SetPadding(FMargin(0.0f));
 		PlayArea->SetContent(PlayCanvas);
 		ArenaFrame->SetContent(PlayArea);
@@ -279,18 +301,24 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 
-		Target->SetBrushColor(Style.NormalTargetColor);
 		Target->SetPadding(FMargin(0.0f));
 		Target->SetVisibility(ESlateVisibility::HitTestInvisible);
-		UTextBlock* TargetMark = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_TargetMark"));
-		if (!TargetMark)
+		FSlateBrush NoTargetBackground;
+		NoTargetBackground.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Target->SetBrush(NoTargetBackground);
+		TargetImage->SetBrushFromTexture(TargetTexture, true);
+		TargetImage->SetColorAndOpacity(Style.TargetImageTint);
+		TargetImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UOverlaySlot* ImageSlot = TargetOverlay->AddChildToOverlay(TargetImage))
+		{
+			ImageSlot->SetHorizontalAlignment(HAlign_Fill);
+			ImageSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		else
 		{
 			return false;
 		}
-		TargetMark->SetText(LOCTEXT("TargetMark", "+"));
-		TargetMark->SetJustification(ETextJustify::Center);
-		StyleAaaText(*TargetMark, 36, Style.PrimaryTextColor);
-		Target->SetContent(TargetMark);
+		Target->SetContent(TargetOverlay);
 		if (UCanvasPanelSlot* TargetSlot = PlayCanvas->AddChildToCanvas(Target))
 		{
 			TargetSlot->SetAnchors(FAnchors(0.5f, 0.5f));
@@ -378,7 +406,7 @@ namespace FFTargetShootingWbpBuilder
 		}
 
 		WeaponStatus->SetText(LOCTEXT(
-			"WeaponStatusPlaceholder", "과녁을 조준하고 클릭하여 발사!"));
+			"WeaponStatusPlaceholder", "총기를 회전해 과녁을 조준하고 발사!"));
 		WeaponStatus->SetJustification(ETextJustify::Center);
 		WeaponStatus->SetVisibility(ESlateVisibility::HitTestInvisible);
 		StyleAaaText(*WeaponStatus, 16, Style.HudAmberColor, TEXT("SemiBold"));
@@ -558,7 +586,7 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 		ConfigureCard(HintCard, Style.HudPanelMutedColor, FMargin(16.0f, 8.0f));
-		HintText->SetText(LOCTEXT("InputHint", "마우스로 조준  ·  클릭하여 발사  ·  ESC 나가기"));
+		HintText->SetText(LOCTEXT("InputHint", "마우스로 총기 회전  ·  좌클릭 발사  ·  ESC 나가기"));
 		HintText->SetJustification(ETextJustify::Center);
 		StyleAaaText(*HintText, 13, Style.SecondaryTextColor, TEXT("SemiBold"));
 		HintCard->SetContent(HintText);

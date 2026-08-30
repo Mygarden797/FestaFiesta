@@ -20,9 +20,12 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 {
 	using namespace FFBuildModeModel;
 
-	// B 키는 Closed에서 세션을 열고 활성 세션에서는 프리뷰를 정리한 뒤 카탈로그를 토글한다.
-	TestEqual(TEXT("첫 B는 카탈로그 없는 건축 모드로 진입한다"),
+	// 첫 B는 배치 UI를 즉시 열고, 두 번째 B는 설치 시설을 다루는 건축 모드로 전환한다.
+	TestEqual(TEXT("첫 B는 배치 카탈로그를 즉시 연다"),
 		ResolveBuildKeyState(EFF_BuildModeState::Closed),
+		EFF_BuildModeState::CatalogOpen);
+	TestEqual(TEXT("두 번째 B는 카탈로그에서 건축 모드로 진입한다"),
+		ResolveBuildKeyState(ResolveBuildKeyState(EFF_BuildModeState::Closed)),
 		EFF_BuildModeState::BuildMode);
 	TestEqual(TEXT("건축 모드의 B는 카탈로그를 연다"),
 		ResolveBuildKeyState(EFF_BuildModeState::BuildMode),
@@ -129,6 +132,10 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		CanRemoveInstalledFacility(EFF_BuildModeState::Moving));
 	TestFalse(TEXT("Closed에서는 시설을 철거하지 않는다"),
 		CanRemoveInstalledFacility(EFF_BuildModeState::Closed));
+	TestTrue(TEXT("오늘 편성이 없는 시설은 철거 정책을 통과한다"),
+		CanRemoveFacilityWithTodaysProgram(false));
+	TestFalse(TEXT("오늘 프로그램이 편성된 시설은 철거 정책에서 막힌다"),
+		CanRemoveFacilityWithTodaysProgram(true));
 	TestFalse(TEXT("첫 클릭은 작업 대상을 선택한다"),
 		ShouldKeepActionSelection(EFF_BuildModeState::BuildMode, false, false));
 	TestFalse(TEXT("다른 시설 클릭은 작업 대상을 교체한다"),

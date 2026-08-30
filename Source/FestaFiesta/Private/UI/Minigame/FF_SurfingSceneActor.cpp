@@ -13,6 +13,7 @@
 #include "Engine/Scene.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "Minigame/Surfing/FF_SurfingRules.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -27,6 +28,7 @@ namespace
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
 	constexpr TCHAR SurfingSceneProjectSeaMaterialPath[] =
 		TEXT("/Game/Level/Demo_Matereal/Sea_Material/Mi_Sea_Inst.Mi_Sea_Inst");
+	constexpr float CharacterCaptureRefreshIntervalSeconds = 0.5f;
 
 	int32 ObjectTypeIndex(const EFF_SurfingObjectType Type)
 	{
@@ -158,6 +160,19 @@ void AFF_SurfingSceneActor::InitializeScene(
 	CameraLookAtOffset = VisualStyle.Camera3DLookAt;
 	CameraLateralFollowRatio = FMath::Clamp(
 		VisualStyle.CameraLateralFollowRatio, 0.0f, 0.9f);
+	PlayerPositionSmoothingSpeed = FMath::Max(0.01f, VisualStyle.PlayerPositionSmoothingSpeed);
+	PlayerRotationSmoothingSpeed = FMath::Max(0.01f, VisualStyle.PlayerRotationSmoothingSpeed);
+	bResetPresentationLagOnDirectionChange =
+		VisualStyle.bResetPresentationLagOnDirectionChange;
+	LastPresentedLateralDirection = 0.0f;
+	bHasPresentedLateralDirection = false;
+	CameraPositionSmoothingSpeed = FMath::Max(0.01f, VisualStyle.CameraPositionSmoothingSpeed);
+	CameraRotationSmoothingSpeed = FMath::Max(0.01f, VisualStyle.CameraRotationSmoothingSpeed);
+	CourseObjectSmoothingSpeed = FMath::Max(0.01f, VisualStyle.CourseObjectSmoothingSpeed);
+	SurferBobAmplitudeCm = FMath::Max(0.0f, VisualStyle.SurferBobAmplitudeCm);
+	TurnBankScale = FMath::Max(0.0f, VisualStyle.TurnBankScale);
+	MaximumBankDegrees = FMath::Clamp(VisualStyle.MaximumBankDegrees, 0.0f, 45.0f);
+	CharacterCaptureRefreshRemainingSeconds = CharacterCaptureRefreshIntervalSeconds;
 	SceneCapture->bCaptureEveryFrame = true;
 	SceneCapture->ShowOnlyActors.Reset();
 	SceneCapture->ShowOnlyActors.Add(this);
@@ -351,6 +366,16 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 	PlayerTargetYaw = FMath::RadiansToDegrees(FMath::Atan2(
 		Heading.X * ArenaHorizontalMetricScale,
 		Heading.Y));
+	const float LateralDirection = FMath::Clamp(
+		static_cast<float>(Snapshot.MovementInput.X), -1.0f, 1.0f);
+	const bool bDirectionChanged = FMath::Abs(LateralDirection) > UE_KINDA_SMALL_NUMBER
+		&& bHasPresentedLateralDirection
+		&& LateralDirection * LastPresentedLateralDirection < 0.0f;
+	if (FMath::Abs(LateralDirection) > UE_KINDA_SMALL_NUMBER)
+	{
+		LastPresentedLateralDirection = LateralDirection;
+		bHasPresentedLateralDirection = true;
+	}
 	if (!bHasPlayerTransform)
 	{
 		SurferRoot->SetRelativeLocation(PlayerTargetLocation);
@@ -363,6 +388,11 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 			- SceneCapture->GetRelativeLocation()).Rotation());
 		bHasPlayerTransform = true;
 	}
+	else if (bDirectionChanged && bResetPresentationLagOnDirectionChange)
+	{
+		SurferRoot->SetRelativeLocation(PlayerTargetLocation);
+		SurferRoot->SetRelativeRotation(FRotator(0.0f, PlayerTargetYaw, 0.0f));
+	}
 
 	bBoosting = Snapshot.bBoosting;
 	bInvincible = Snapshot.bInvincible;
@@ -373,7 +403,6 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 		PresentedEventSerial = Snapshot.LatestEventSerial;
 	}
 	ApplyCharacterPresentationState(0.0f);
-	RefreshCharacterCaptureActors();
 
 	TSet<int32> VisibleIds;
 	CourseObjectTargetLocations.Reset();
@@ -436,19 +465,6 @@ void AFF_SurfingSceneActor::ApplySnapshot(const FFF_SurfingSnapshot& Snapshot)
 		}
 	}
 	VisibleCourseObjectIdsLastFrame = VisibleIds;
-	TArray<UStaticMeshComponent*> CaptureMeshes;
-	GetComponents<UStaticMeshComponent>(CaptureMeshes);
-	for (UStaticMeshComponent* MeshComponent : CaptureMeshes)
-	{
-		if (MeshComponent)
-		{
-			MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			MeshComponent->SetCanEverAffectNavigation(false);
-			MeshComponent->SetVisibleInSceneCaptureOnly(true);
-			MeshComponent->SetLightingChannels(false, true, false);
-		}
-	}
-	SceneCapture->CaptureSceneDeferred();
 }
 
 void AFF_SurfingSceneActor::Tick(const float DeltaSeconds)
@@ -460,48 +476,63 @@ void AFF_SurfingSceneActor::Tick(const float DeltaSeconds)
 	}
 
 	SceneSeconds += DeltaSeconds;
+	CharacterCaptureRefreshRemainingSeconds -= DeltaSeconds;
+	if (CharacterCaptureRefreshRemainingSeconds <= 0.0f)
+	{
+		RefreshCharacterCaptureActors();
+		CharacterCaptureRefreshRemainingSeconds = CharacterCaptureRefreshIntervalSeconds;
+	}
 
 	UpdateWaterPresentation(SceneSeconds);
 
 	const FVector BobbedPlayerTarget = PlayerTargetLocation + FVector(
 		0.0,
 		0.0,
-		FMath::Sin(SceneSeconds * 3.4f) * 7.0f);
-	SurferRoot->SetRelativeLocation(FMath::VInterpTo(
-		SurferRoot->GetRelativeLocation(), BobbedPlayerTarget, DeltaSeconds, 10.0f));
+		FMath::Sin(SceneSeconds * 3.4f) * SurferBobAmplitudeCm);
+	const float PlayerPositionResponse = FFSurfingRules::CalculateExponentialResponse(
+		PlayerPositionSmoothingSpeed, DeltaSeconds);
+	SurferRoot->SetRelativeLocation(FMath::Lerp(
+		SurferRoot->GetRelativeLocation(), BobbedPlayerTarget, PlayerPositionResponse));
 
 	const FRotator CurrentRotation = SurferRoot->GetRelativeRotation();
 	const float YawDelta = FMath::FindDeltaAngleDegrees(CurrentRotation.Yaw, PlayerTargetYaw);
-	const float TargetBank = FMath::Clamp(-YawDelta * 0.32f, -18.0f, 18.0f);
+	const float TargetBank = FMath::Clamp(
+		-YawDelta * TurnBankScale, -MaximumBankDegrees, MaximumBankDegrees);
 	const FRotator DesiredRotation(
 		FMath::Sin(SceneSeconds * 2.1f) * 1.8f,
 		PlayerTargetYaw,
 		TargetBank);
-	SurferRoot->SetRelativeRotation(FMath::RInterpTo(
-		CurrentRotation, DesiredRotation, DeltaSeconds, 8.0f));
+	const float PlayerRotationResponse = FFSurfingRules::CalculateExponentialResponse(
+		PlayerRotationSmoothingSpeed, DeltaSeconds);
+	SurferRoot->SetRelativeRotation(FQuat::Slerp(
+		CurrentRotation.Quaternion(),
+		DesiredRotation.Quaternion(),
+		PlayerRotationResponse).GetNormalized());
 	FVector CameraAnchor = PlayerTargetLocation;
 	CameraAnchor.Y *= CameraLateralFollowRatio;
 	const FVector DesiredCameraLocation = CameraAnchor + CameraFollowOffset;
-	SceneCapture->SetRelativeLocation(FMath::VInterpTo(
+	const float CameraPositionResponse = FFSurfingRules::CalculateExponentialResponse(
+		CameraPositionSmoothingSpeed, DeltaSeconds);
+	SceneCapture->SetRelativeLocation(FMath::Lerp(
 		SceneCapture->GetRelativeLocation(),
 		DesiredCameraLocation,
-		DeltaSeconds,
-		4.5f));
+		CameraPositionResponse));
 	const FRotator DesiredCameraRotation = (
 		CameraAnchor + CameraLookAtOffset
 		- SceneCapture->GetRelativeLocation()).Rotation();
-	SceneCapture->SetRelativeRotation(FMath::RInterpTo(
-		SceneCapture->GetRelativeRotation(),
-		DesiredCameraRotation,
-		DeltaSeconds,
-		5.5f));
+	const float CameraRotationResponse = FFSurfingRules::CalculateExponentialResponse(
+		CameraRotationSmoothingSpeed, DeltaSeconds);
+	SceneCapture->SetRelativeRotation(FQuat::Slerp(
+		SceneCapture->GetRelativeRotation().Quaternion(),
+		DesiredCameraRotation.Quaternion(),
+		CameraRotationResponse).GetNormalized());
 	ApplyCharacterPresentationState(TargetBank);
 	if (AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor())
 	{
 		Character->AdvancePresentation(DeltaSeconds);
 	}
-	RefreshCharacterCaptureActors();
-
+	const float CourseObjectResponse = FFSurfingRules::CalculateExponentialResponse(
+		CourseObjectSmoothingSpeed, DeltaSeconds);
 	for (const TPair<int32, FVector>& Pair : CourseObjectTargetLocations)
 	{
 		USceneComponent* ObjectRoot = CourseObjectRoots.FindRef(Pair.Key);
@@ -517,8 +548,8 @@ void AFF_SurfingSceneActor::Tick(const float DeltaSeconds)
 			0.0,
 			0.0,
 			FMath::Sin(SceneSeconds * 2.4f + Phase) * BobAmount);
-		ObjectRoot->SetRelativeLocation(FMath::VInterpTo(
-			ObjectRoot->GetRelativeLocation(), BobbedTarget, DeltaSeconds, 12.0f));
+		ObjectRoot->SetRelativeLocation(FMath::Lerp(
+			ObjectRoot->GetRelativeLocation(), BobbedTarget, CourseObjectResponse));
 
 		FRotator Rotation = ObjectRoot->GetRelativeRotation();
 		if (IsPickupType(*Type))
@@ -596,22 +627,52 @@ void AFF_SurfingSceneActor::ClearCharacterCaptureActors()
 
 void AFF_SurfingSceneActor::RefreshCharacterCaptureActors()
 {
-	ClearCharacterCaptureActors();
 	AFF_SurfingCharacterActor* Character = GetSurfingCharacterActor();
 	if (!SceneCapture || !IsValid(Character))
+	{
+		ClearCharacterCaptureActors();
+		return;
+	}
+
+	TArray<AActor*> ReportedActors;
+	Character->GetPresentationActors(ReportedActors);
+	TArray<AActor*> PresentationActors;
+	PresentationActors.Reserve(ReportedActors.Num());
+	for (AActor* ReportedActor : ReportedActors)
+	{
+		if (IsValid(ReportedActor))
+		{
+			PresentationActors.AddUnique(ReportedActor);
+		}
+	}
+
+	bool bCaptureSetChanged = PresentationActors.Num() != CharacterCaptureActors.Num();
+	if (!bCaptureSetChanged)
+	{
+		for (AActor* PresentationActor : PresentationActors)
+		{
+			const bool bAlreadyCaptured = CharacterCaptureActors.ContainsByPredicate(
+				[PresentationActor](const TWeakObjectPtr<AActor>& CapturedActor)
+				{
+					return CapturedActor.Get() == PresentationActor;
+				});
+			if (!bAlreadyCaptured)
+			{
+				bCaptureSetChanged = true;
+				break;
+			}
+		}
+	}
+	if (!bCaptureSetChanged)
 	{
 		return;
 	}
 
-	TArray<AActor*> PresentationActors;
-	Character->GetPresentationActors(PresentationActors);
+	ClearCharacterCaptureActors();
 	for (AActor* PresentationActor : PresentationActors)
 	{
-		if (IsValid(PresentationActor))
-		{
-			SceneCapture->ShowOnlyActors.AddUnique(PresentationActor);
-			CharacterCaptureActors.Add(PresentationActor);
-		}
+		SceneCapture->ShowOnlyActors.AddUnique(PresentationActor);
+		CharacterCaptureActors.Add(PresentationActor);
 	}
 }
 

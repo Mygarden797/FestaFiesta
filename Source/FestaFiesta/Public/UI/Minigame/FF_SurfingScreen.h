@@ -24,6 +24,14 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
 {
 	GENERATED_BODY()
 
+	/**
+	 * Enables the isolated real-time 3D capture path. Keep this disabled until a
+	 * production character, obstacle meshes and ocean material have been assigned.
+	 * The shipped default is the generated-art 2.5D presentation.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
+	bool bEnableSceneCapture3D = false;
+
 	/** Forward half-length of the isolated capture arena in centimetres. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "500.0"))
 	float ArenaWorldHalfForward = 1450.0f;
@@ -59,6 +67,35 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene", meta = (ClampMin = "0.0"))
 	float SceneFillLightIntensity = 12000.0f;
 
+	/** Exponential response rates used only by the presentation layer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.01", ClampMax = "60.0"))
+	float PlayerPositionSmoothingSpeed = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.01", ClampMax = "60.0"))
+	float PlayerRotationSmoothingSpeed = 8.0f;
+
+	/** Clears stale visual lag when steering changes directly to the opposite side. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion")
+	bool bResetPresentationLagOnDirectionChange = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.01", ClampMax = "60.0"))
+	float CameraPositionSmoothingSpeed = 4.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.01", ClampMax = "60.0"))
+	float CameraRotationSmoothingSpeed = 5.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.01", ClampMax = "60.0"))
+	float CourseObjectSmoothingSpeed = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.0", ClampMax = "40.0"))
+	float SurferBobAmplitudeCm = 7.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TurnBankScale = 0.32f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Scene|Motion", meta = (ClampMin = "0.0", ClampMax = "45.0"))
+	float MaximumBankDegrees = 18.0f;
+
 	/** Blueprint/native visual actor used for the surfer; null uses the native fallback. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Character", meta = (AllowAbstract = "false"))
 	TSubclassOf<AFF_SurfingCharacterActor> SurfingCharacterClass;
@@ -88,13 +125,20 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
 	float EventPulseScale = 1.12f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Artwork", meta = (ClampMin = "8.0"))
-	FVector2D EntityTextureSize = FVector2D(52.0f, 52.0f);
+	FVector2D EntityTextureSize = FVector2D(96.0f, 96.0f);
 
-	/** Bright cinematic arena plate. The HUD and entity halos are authored for this image. */
+	/** Generated player cutout, including board and a compact water wake. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Artwork")
+	TSoftObjectPtr<UTexture2D> SurferTexture;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Artwork", meta = (ClampMin = "16.0"))
+	FVector2D SurferTextureSize = FVector2D(150.0f, 225.0f);
+
+	/** Bright cinematic arena plate used by the production 2.5D presentation. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Artwork")
 	TSoftObjectPtr<UTexture2D> BackdropTexture;
 
-	/** Empty texture slots use the readable colour-card fallback. */
+	/** Empty texture slots use the readable colour-card emergency fallback. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Artwork")
 	TSoftObjectPtr<UTexture2D> RockTexture;
 
@@ -179,9 +223,9 @@ struct FESTAFIESTA_API FFF_SurfingVisualStyle
  *
  * The runtime owns continuous movement, DataTable object placement, collision
  * and score. This screen only forwards direction/boost intent and projects the
- * immutable surface snapshot into an isolated SceneCapture-driven 3D arena.
- * The AAA HUD hierarchy stays editable in WBP_FF_Surfing_FreeRide; the legacy
- * Canvas projection remains available only as a fail-safe when 3D cannot start.
+ * immutable surface snapshot into the generated-art 2.5D arena. The AAA HUD
+ * hierarchy stays editable in WBP_FF_Surfing_FreeRide. An isolated SceneCapture
+ * path remains opt-in for teams that later provide a complete production 3D set.
  */
 UCLASS(BlueprintType, meta = (DisplayName = "FF Surfing Screen"))
 class FESTAFIESTA_API UFF_SurfingScreen : public UFF_MinigameScreenBase
@@ -249,6 +293,7 @@ private:
 	void Set3DPresentationActive(bool bActive);
 	void RefreshBackdropBrush();
 	void ResetTransientPresentationState();
+	void Advance2DPresentation(float DeltaSeconds);
 	void RefreshPresentation();
 	void RefreshFocusPresentation();
 	void RefreshArenaLayout();
@@ -262,6 +307,7 @@ private:
 	FVector2D ConvertDisplayDirectionToArenaInput(const FVector2D& DisplayDirection) const;
 	bool TrySetMovementInput(const FVector2D& InputAxis);
 	bool TryBoost();
+	void SetMovementKeyHeld(const FKey& Key, bool bHeld);
 	void UpdateHeldMovementInput();
 	void ReleaseAllMovementInput();
 
@@ -286,6 +332,8 @@ private:
 	bool bRightKeyHeld = false;
 	bool bUpKeyHeld = false;
 	bool bDownKeyHeld = false;
+	int32 MostRecentHorizontalDirection = 0;
+	int32 MostRecentVerticalDirection = 0;
 	FVector2D AnalogMovementInput = FVector2D::ZeroVector;
 	int32 PresentedEventSerial = 0;
 	EFF_SurfingEventType PresentedEventType = EFF_SurfingEventType::None;
@@ -293,6 +341,12 @@ private:
 	uint32 PresentedEntityHash = 0;
 	bool bHasPresentedEntityHash = false;
 	bool bUsing3DScene = false;
+	bool bHasSmoothedPlayerPose = false;
+	FVector2D SmoothedPlayerPositionNormalized = FVector2D::ZeroVector;
+	float SmoothedPlayerHeadingDegrees = 0.0f;
+	float LastPresentedLateralDirection = 0.0f;
+	bool bHasPresentedLateralDirection = false;
+	float PresentationTimeSeconds = 0.0f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AFF_SurfingSceneActor> SurfingSceneActor;

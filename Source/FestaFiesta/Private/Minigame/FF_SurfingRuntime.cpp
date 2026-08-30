@@ -104,8 +104,6 @@ bool UFF_SurfingRuntime::OnInitialize(FString& OutFailureReason)
 		FMath::RoundToInt(
 			static_cast<double>(SurfingDefinition->DurationSeconds)
 			/ FFSurfingRules::FixedSimulationStepSeconds));
-	PendingMovementInput = FVector2D::ZeroVector;
-	bHasPendingMovementInput = false;
 	bBoostActivationPending = false;
 	ScoreAccumulator = 0.0f;
 
@@ -155,7 +153,6 @@ void UFF_SurfingRuntime::OnFinished(
 {
 	(void)FinalState;
 	(void)EndReason;
-	bHasPendingMovementInput = false;
 	bBoostActivationPending = false;
 	SurfingSnapshot.MovementInput = FVector2D::ZeroVector;
 	SurfingSnapshot.CurrentSpeed = 0.0f;
@@ -185,17 +182,22 @@ EFF_SurfingSteerResult UFF_SurfingRuntime::SetMovementInput(
 	}
 
 	const FVector2D NewInput(LateralAxis, ForwardAxis);
-	const FVector2D EffectiveInput = bHasPendingMovementInput
-		? PendingMovementInput
-		: SurfingSnapshot.MovementInput;
-	if (IsNearlySameInput(EffectiveInput, NewInput))
+	if (IsNearlySameInput(SurfingSnapshot.MovementInput, NewInput))
 	{
 		return EFF_SurfingSteerResult::Applied;
 	}
 
 	IncrementSaturated(SurfingSnapshot.SteerCount);
-	PendingMovementInput = NewInput;
-	bHasPendingMovementInput = true;
+	SurfingSnapshot.MovementInput = NewInput;
+	const FVector2D NewHeading = FFSurfingRules::NormalizeHeading(
+		LateralAxis * SurfingDefinition->Rules.SteeringStrength,
+		1.0f,
+		SurfingDefinition->Rules.ArenaHorizontalMetricScale);
+	if (!NewHeading.IsZero())
+	{
+		SurfingSnapshot.CurrentHeading = NewHeading;
+	}
+	SynchronizeDerivedAndLegacyState();
 	return EFF_SurfingSteerResult::Applied;
 }
 
@@ -203,9 +205,7 @@ EFF_SurfingSteerResult UFF_SurfingRuntime::SetSteerInput(
 	const FGuid& SessionId,
 	const float Axis)
 {
-	const float ForwardAxis = bHasPendingMovementInput
-		? static_cast<float>(PendingMovementInput.Y)
-		: static_cast<float>(SurfingSnapshot.MovementInput.Y);
+	const float ForwardAxis = static_cast<float>(SurfingSnapshot.MovementInput.Y);
 	return SetMovementInput(SessionId, Axis, ForwardAxis);
 }
 
@@ -414,6 +414,10 @@ void UFF_SurfingRuntime::SimulateFixedTick()
 		ScoreAccumulator,
 		static_cast<float>(TravelDistance) * Rules.DistanceScorePerMeter);
 	MovePlayerAndProcessCollisions(TravelDistance);
+	if (!IsPlaying())
+	{
+		return;
+	}
 
 	SurfingSnapshot.BoostRemainingSeconds = FMath::Max(
 		0.0f,
@@ -430,21 +434,6 @@ void UFF_SurfingRuntime::SimulateFixedTick()
 
 void UFF_SurfingRuntime::ApplyPendingCommands()
 {
-	if (bHasPendingMovementInput)
-	{
-		SurfingSnapshot.MovementInput = PendingMovementInput;
-		bHasPendingMovementInput = false;
-		const FVector2D NewHeading = FFSurfingRules::NormalizeHeading(
-			static_cast<float>(PendingMovementInput.X)
-				* SurfingDefinition->Rules.SteeringStrength,
-			1.0f,
-			SurfingDefinition->Rules.ArenaHorizontalMetricScale);
-		if (!NewHeading.IsZero())
-		{
-			SurfingSnapshot.CurrentHeading = NewHeading;
-		}
-	}
-
 	if (bBoostActivationPending)
 	{
 		bBoostActivationPending = false;
@@ -476,6 +465,10 @@ void UFF_SurfingRuntime::MovePlayerAndProcessCollisions(const double TravelDista
 	{
 		const FVector2D SegmentEnd = Position + Heading * SegmentDistance;
 		ProcessMovementSegment(Position, SegmentEnd);
+		if (!IsPlaying())
+		{
+			return;
+		}
 		Position = SegmentEnd;
 		RemainingDistance = FMath::Max(0.0, RemainingDistance - SegmentDistance);
 	}
@@ -489,6 +482,10 @@ void UFF_SurfingRuntime::MovePlayerAndProcessCollisions(const double TravelDista
 			Position.X,
 			Position.Y + ForwardDirection * RemainingDistance);
 		ProcessMovementSegment(Position, SlideEnd);
+		if (!IsPlaying())
+		{
+			return;
+		}
 		Position = SlideEnd;
 	}
 
@@ -555,6 +552,10 @@ void UFF_SurfingRuntime::ProcessMovementSegment(
 			Object.LastContactSimulationTick = SimulationTick;
 		}
 		ProcessObjectContact(Object);
+		if (!IsPlaying())
+		{
+			return;
+		}
 	}
 
 	for (FFF_SurfingCourseObject& Object : CourseObjects)
@@ -596,6 +597,12 @@ void UFF_SurfingRuntime::ProcessObjectContact(FFF_SurfingCourseObject& Object)
 				: Rules.CollisionPenalty;
 			ScoreAccumulator = FFSurfingRules::AddScoreSaturated(ScoreAccumulator, -Penalty);
 			RecordEvent(EFF_SurfingEventType::ObstacleHit);
+			if (Rules.bEndRunWhenLivesDepleted && SurfingSnapshot.Lives <= 0)
+			{
+				Finish(
+					EFF_MinigameSessionState::Completed,
+					EFF_MinigameEndReason::LivesDepleted);
+			}
 		}
 		return;
 	}

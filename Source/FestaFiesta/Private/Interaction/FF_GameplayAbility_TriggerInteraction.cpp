@@ -3,7 +3,7 @@
 #include "Interaction/FF_GameplayAbility_TriggerInteraction.h"
 #include "Interaction/UFF_GE_TriggerCooldown.h"
 #include "AbilitySystemComponent.h"
-
+#include "GameplayTagContainer.h"
 
 UFF_GameplayAbility_TriggerInteraction::UFF_GameplayAbility_TriggerInteraction()
 {
@@ -17,6 +17,19 @@ void UFF_GameplayAbility_TriggerInteraction::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
+	{
+		FGameplayTag CooldownTag = FGameplayTag::RequestGameplayTag(FName("Trigger.State.Cooldown"));
+		if (ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(CooldownTag))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 쿨다운 중이라 상호작용 거부됨"));
+			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+			// bWasCancelled=true로 종료 -> 쿨다운 재적용 안 되게 함
+			return;
+		}
+	}
+	// 쿨다운 중이면 아예 시작하지 않음
+
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	// 부모 클래스의 기본 처리를 먼저 실행
 

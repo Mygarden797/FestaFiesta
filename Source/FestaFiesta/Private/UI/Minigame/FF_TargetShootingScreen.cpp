@@ -18,7 +18,9 @@
 #include "Components/Viewport.h"
 #include "Engine/Font.h"
 #include "Engine/Texture2D.h"
+#include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
+#include "Math/RotationMatrix.h"
 #include "Minigame/FF_TargetShootingRuntime.h"
 #include "Minigame/TargetShooting/FF_TargetShootingRules.h"
 #include "Rendering/DrawElementTypes.h"
@@ -30,11 +32,42 @@
 namespace
 {
 	const TCHAR* const TargetShootingBackdropPath =
-		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_TargetShooting_Backdrop_UIUX_v2."
-			 "T_MG_TargetShooting_Backdrop_UIUX_v2");
+		TEXT("/Game/FestaFiesta/UI/Minigame/TargetShooting/T_MG_TargetShooting_Backdrop_Single_ImageGen_v4."
+			 "T_MG_TargetShooting_Backdrop_Single_ImageGen_v4");
 	const TCHAR* const TargetShootingWaterBlasterPath =
 		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_TargetShooting_WaterBlaster_UIUX_v2."
 			 "T_MG_TargetShooting_WaterBlaster_UIUX_v2");
+	const TCHAR* const TargetShootingTargetPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/TargetShooting/T_MG_TargetShooting_Target_Simple_ImageGen_v1."
+			 "T_MG_TargetShooting_Target_Simple_ImageGen_v1");
+	constexpr float ArenaProjectileOriginDepthX = -810.0f;
+	constexpr float ArenaProjectileImpactDepthX = 420.0f;
+
+	FVector2D RotateScreenVector(const FVector2D& Vector, const float AngleDegrees)
+	{
+		const float AngleRadians = FMath::DegreesToRadians(AngleDegrees);
+		const float CosAngle = FMath::Cos(AngleRadians);
+		const float SinAngle = FMath::Sin(AngleRadians);
+		return FVector2D(
+			Vector.X * CosAngle - Vector.Y * SinAngle,
+			Vector.X * SinAngle + Vector.Y * CosAngle);
+	}
+
+	UTexture2D* LoadPreferredTexture(
+		const TSoftObjectPtr<UTexture2D>& PreferredTexture,
+		const TCHAR* FallbackObjectPath)
+	{
+		// Designer-authored Class Defaults are authoritative. The native path is only
+		// a resilient fallback for a blank or stale soft reference.
+		if (!PreferredTexture.IsNull())
+		{
+			if (UTexture2D* Texture = PreferredTexture.LoadSynchronous())
+			{
+				return Texture;
+			}
+		}
+		return LoadObject<UTexture2D>(nullptr, FallbackObjectPath);
+	}
 
 	void StyleNativeText(
 		UTextBlock* TextBlock,
@@ -406,6 +439,9 @@ UFF_TargetShootingScreen::UFF_TargetShootingScreen(const FObjectInitializer& Obj
 		FSoftObjectPath(TargetShootingBackdropPath));
 	VisualStyle.WaterBlasterTexture = TSoftObjectPtr<UTexture2D>(
 		FSoftObjectPath(TargetShootingWaterBlasterPath));
+	VisualStyle.TargetTexture = TSoftObjectPtr<UTexture2D>(
+		FSoftObjectPath(TargetShootingTargetPath));
+	VisualStyle.Arena3DActorClass = AFF_TargetShootingArena3D::StaticClass();
 }
 
 bool UFF_TargetShootingScreen::SetRuntime(UFF_TargetShootingRuntime* InRuntime)
@@ -481,6 +517,7 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 	if (Snapshot.TargetSerial > 0 && Snapshot.TargetSerial != PresentedTargetSerial)
 	{
 		PresentedTargetSerial = Snapshot.TargetSerial;
+		PlayMinigameSound(EFF_MinigameAudioEvent::TargetSpawned);
 		TargetSpawnPulseRemainingSeconds = FMath::Max(
 			0.0f,
 			VisualStyle.TargetSpawnPulseSeconds);
@@ -489,6 +526,7 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 		&& Snapshot.ProjectileSerial != PresentedProjectileSerial)
 	{
 		PresentedProjectileSerial = Snapshot.ProjectileSerial;
+		PlayMinigameSound(EFF_MinigameAudioEvent::ShotFired);
 		ReticleShotPulseRemainingSeconds = FMath::Max(
 			0.0f,
 			VisualStyle.ReticleShotPulseSeconds);
@@ -500,6 +538,34 @@ void UFF_TargetShootingScreen::ApplySnapshot(const FFF_TargetShootingSnapshot& S
 		&& Snapshot.LatestFeedbackSerial != PresentedFeedbackSerial)
 	{
 		PresentedFeedbackSerial = Snapshot.LatestFeedbackSerial;
+		EFF_MinigameAudioEvent AudioEvent = EFF_MinigameAudioEvent::TargetHit;
+		if (Snapshot.bLatestFeedbackWasBonusTarget
+			&& Snapshot.LatestFeedbackType != EFF_TargetShootingFeedbackType::Miss
+			&& Snapshot.LatestFeedbackType != EFF_TargetShootingFeedbackType::Escaped)
+		{
+			AudioEvent = EFF_MinigameAudioEvent::BonusTargetHit;
+		}
+		else
+		{
+			switch (Snapshot.LatestFeedbackType)
+			{
+			case EFF_TargetShootingFeedbackType::Precision:
+				AudioEvent = EFF_MinigameAudioEvent::TargetPrecision;
+				break;
+			case EFF_TargetShootingFeedbackType::Bullseye:
+				AudioEvent = EFF_MinigameAudioEvent::TargetBullseye;
+				break;
+			case EFF_TargetShootingFeedbackType::Miss:
+				AudioEvent = EFF_MinigameAudioEvent::TargetMissed;
+				break;
+			case EFF_TargetShootingFeedbackType::Escaped:
+				AudioEvent = EFF_MinigameAudioEvent::TargetEscaped;
+				break;
+			default:
+				break;
+			}
+		}
+		PlayMinigameSound(AudioEvent);
 		FeedbackRemainingSeconds = FMath::Max(
 			0.0f,
 			VisualStyle.FeedbackDurationSeconds);
@@ -562,6 +628,10 @@ void UFF_TargetShootingScreen::NativeDestruct()
 	Runtime = nullptr;
 	Arena3DActor = nullptr;
 	bThreeDimensionalArenaReady = false;
+	if (HasMouseCapture() && FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().ReleaseAllPointerCapture();
+	}
 	SetSessionId(FGuid());
 	ResetTransientPresentationState();
 	if (Border_PlayArea)
@@ -581,7 +651,16 @@ void UFF_TargetShootingScreen::NativeDestruct()
 void UFF_TargetShootingScreen::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
-	if (!bThreeDimensionalArenaReady)
+	const bool bPointerAimActive = bHasSnapshot
+		&& !bHasResult
+		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing;
+	if (bPointerAimActive && FSlateApplication::IsInitialized())
+	{
+		// Polling closes the initial-frame and layout-change gaps where no move event
+		// is emitted even though the absolute pointer and canvas relationship changed.
+		UpdateAimFromScreenPosition(FSlateApplication::Get().GetCursorPos());
+	}
+	if (!VisualStyle.bUseSingleBackdrop && !bThreeDimensionalArenaReady)
 	{
 		TryInitializeThreeDimensionalArena();
 	}
@@ -634,22 +713,18 @@ FReply UFF_TargetShootingScreen::NativeOnMouseButtonDown(
 	{
 		return FReply::Handled();
 	}
+	UpdateAimFromScreenPosition(InMouseEvent.GetScreenSpacePosition());
 
-	FVector2D NormalizedPoint = FVector2D::ZeroVector;
-	if (!TryMakeNormalizedPoint(InMouseEvent.GetScreenSpacePosition(), NormalizedPoint))
-	{
-		return FReply::Handled();
-	}
-	ReticlePointNormalized = NormalizedPoint;
-	bReticleInsidePlayArea = true;
-
-	// The runtime validates this fire request, advances the projectile and owns the
-	// impact-time hit test. UI never predicts Hit/Miss or mutates score.
-	Runtime->FireProjectile(
+	// The button is only a trigger and the target widget is never click-tested. The
+	// absolute pointer coordinate is converted to the shared reticle aim, then the
+	// projectile follows the rotated weapon ray toward that same coordinate.
+	Runtime->FireProjectileFromMuzzle(
 		GetSessionId(),
-		NormalizedPoint,
+		CalculateWeaponMuzzlePointNormalized(),
+		CameraAimPointNormalized,
 		DisplayedSnapshot.TargetSerial);
 	ApplySnapshot(Runtime->GetTargetSnapshot());
+
 	return FReply::Handled();
 }
 
@@ -657,22 +732,28 @@ FReply UFF_TargetShootingScreen::NativeOnMouseMove(
 	const FGeometry& InGeometry,
 	const FPointerEvent& InMouseEvent)
 {
-	FVector2D NormalizedPoint = FVector2D::ZeroVector;
-	bReticleInsidePlayArea = TryMakeNormalizedPoint(
-		InMouseEvent.GetScreenSpacePosition(),
-		NormalizedPoint);
-	if (bReticleInsidePlayArea)
+	const bool bPlaying = bHasSnapshot
+		&& !bHasResult
+		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing;
+	if (!bPlaying || !Canvas_PlayArea)
 	{
-		ReticlePointNormalized = NormalizedPoint;
+		return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
 	}
-	RefreshReticlePresentation();
-	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+
+	if (UpdateAimFromScreenPosition(InMouseEvent.GetScreenSpacePosition()))
+	{
+		RefreshCameraAimPresentation();
+		RefreshTargetLayout();
+		RefreshWeaponPresentation();
+		RefreshReticlePresentation();
+	}
+	return FReply::Handled();
 }
 
 void UFF_TargetShootingScreen::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
-	bReticleInsidePlayArea = false;
-	RefreshReticlePresentation();
+	// Absolute pointer aiming intentionally stops at the play-area boundary. The
+	// reticle keeps the last valid clamped coordinate until the pointer returns.
 	Super::NativeOnMouseLeave(InMouseEvent);
 }
 
@@ -718,9 +799,14 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		UCanvasPanel::StaticClass(), TEXT("Canvas_PlayArea"));
 	Border_Target = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("Border_Target"));
+	UOverlay* TargetOverlay = WidgetTree->ConstructWidget<UOverlay>(
+		UOverlay::StaticClass(), TEXT("Overlay_TargetVisual"));
+	Image_Target = WidgetTree->ConstructWidget<UImage>(
+		UImage::StaticClass(), TEXT("Image_Target"));
 
 	if (!Root || !Image_Backdrop || !ScreenWash || !LayoutCanvas || !ArenaFrame
-		|| !Border_PlayArea || !Canvas_PlayArea || !Border_Target)
+		|| !Border_PlayArea || !Canvas_PlayArea || !Border_Target
+		|| !TargetOverlay || !Image_Target)
 	{
 		return false;
 	}
@@ -771,10 +857,16 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 
-	ArenaFrame->SetBrushColor(VisualStyle.ArenaFrameColor);
-	ArenaFrame->SetPadding(FMargin(2.0f));
+	ArenaFrame->SetBrushColor(VisualStyle.bUseSingleBackdrop
+		? FLinearColor::Transparent
+		: VisualStyle.ArenaFrameColor);
+	ArenaFrame->SetPadding(VisualStyle.bUseSingleBackdrop
+		? FMargin(0.0f)
+		: FMargin(2.0f));
 	ArenaFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	Border_PlayArea->SetBrushColor(VisualStyle.ArenaSurfaceColor);
+	Border_PlayArea->SetBrushColor(VisualStyle.bUseSingleBackdrop
+		? FLinearColor::Transparent
+		: VisualStyle.ArenaSurfaceColor);
 	Border_PlayArea->SetPadding(FMargin(0.0f));
 	Border_PlayArea->SetContent(Canvas_PlayArea);
 	ArenaFrame->SetContent(Border_PlayArea);
@@ -783,19 +875,20 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 
-	Border_Target->SetBrushColor(VisualStyle.NormalTargetColor);
 	Border_Target->SetPadding(FMargin(0.0f));
 	Border_Target->SetVisibility(ESlateVisibility::HitTestInvisible);
-	UTextBlock* TargetMark = WidgetTree->ConstructWidget<UTextBlock>(
-		UTextBlock::StaticClass(), TEXT("Text_TargetMark"));
-	if (!TargetMark)
+	Image_Target->SetColorAndOpacity(VisualStyle.TargetImageTint);
+	Image_Target->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (UOverlaySlot* ImageSlot = TargetOverlay->AddChildToOverlay(Image_Target))
+	{
+		ImageSlot->SetHorizontalAlignment(HAlign_Fill);
+		ImageSlot->SetVerticalAlignment(VAlign_Fill);
+	}
+	else
 	{
 		return false;
 	}
-	TargetMark->SetText(LOCTEXT("NativeTargetMark", "+"));
-	TargetMark->SetJustification(ETextJustify::Center);
-	StyleNativeText(TargetMark, 36.0f, VisualStyle.PrimaryTextColor);
-	Border_Target->SetContent(TargetMark);
+	Border_Target->SetContent(TargetOverlay);
 
 	UCanvasPanelSlot* TargetSlot = Canvas_PlayArea->AddChildToCanvas(Border_Target);
 	if (!TargetSlot)
@@ -1010,7 +1103,7 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 	ConfigureCard(HintCard, VisualStyle.HudPanelMutedColor, FMargin(16.0f, 8.0f));
-	HintText->SetText(LOCTEXT("InputHint", "마우스로 조준  ·  클릭하여 발사  ·  ESC 나가기"));
+	HintText->SetText(LOCTEXT("InputHint", "마우스로 총기 회전  ·  좌클릭 발사  ·  ESC 나가기"));
 	HintText->SetJustification(ETextJustify::Center);
 	StyleNativeText(HintText, 13.0f, VisualStyle.SecondaryTextColor, TEXT("SemiBold"));
 	HintCard->SetContent(HintText);
@@ -1133,6 +1226,7 @@ void UFF_TargetShootingScreen::ResolveBindingsFromWidgetTree()
 	Canvas_PlayArea = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("Canvas_PlayArea")));
 	Viewport_Arena3D = Cast<UViewport>(WidgetTree->FindWidget(TEXT("Viewport_Arena3D")));
 	Border_Target = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Border_Target")));
+	Image_Target = Cast<UImage>(WidgetTree->FindWidget(TEXT("Image_Target")));
 	TargetVisual = Cast<UFF_TargetShootingTargetVisual>(
 		WidgetTree->FindWidget(TEXT("TargetVisual_AuthoritativeRings")));
 	ProjectileVisual = Cast<UFF_TargetShootingProjectileVisual>(
@@ -1195,32 +1289,36 @@ void UFF_TargetShootingScreen::InitializeBindings()
 	Border_Target->SetVisibility(ESlateVisibility::HitTestInvisible);
 	if (Image_Backdrop)
 	{
-		Image_Backdrop->SetColorAndOpacity(VisualStyle.BackdropTint);
 		Image_Backdrop->SetVisibility(ESlateVisibility::HitTestInvisible);
-		UTexture2D* BackdropTexture = LoadObject<UTexture2D>(nullptr, TargetShootingBackdropPath);
-		if (!BackdropTexture)
+		if (!bUsingDesignerWidgetTree)
 		{
-			BackdropTexture = VisualStyle.BackdropTexture.LoadSynchronous();
-		}
-		if (BackdropTexture)
-		{
-			Image_Backdrop->SetBrushFromTexture(BackdropTexture, true);
+			Image_Backdrop->SetColorAndOpacity(VisualStyle.BackdropTint);
+			if (UTexture2D* BackdropTexture = LoadPreferredTexture(
+				VisualStyle.BackdropTexture,
+				TargetShootingBackdropPath))
+			{
+				Image_Backdrop->SetBrushFromTexture(BackdropTexture, true);
+			}
 		}
 	}
 	if (Image_WaterBlaster)
 	{
-		Image_WaterBlaster->SetColorAndOpacity(VisualStyle.WaterBlasterTint);
 		Image_WaterBlaster->SetVisibility(ESlateVisibility::HitTestInvisible);
-		UTexture2D* WaterBlasterTexture = LoadObject<UTexture2D>(
-			nullptr, TargetShootingWaterBlasterPath);
-		if (!WaterBlasterTexture)
+		if (!bUsingDesignerWidgetTree)
 		{
-			WaterBlasterTexture = VisualStyle.WaterBlasterTexture.LoadSynchronous();
+			Image_WaterBlaster->SetColorAndOpacity(VisualStyle.WaterBlasterTint);
+			if (UTexture2D* WaterBlasterTexture = LoadPreferredTexture(
+				VisualStyle.WaterBlasterTexture,
+				TargetShootingWaterBlasterPath))
+			{
+				Image_WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
+			}
 		}
-		if (WaterBlasterTexture)
-		{
-			Image_WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
-		}
+	}
+	if (!Image_Target)
+	{
+		Image_Target = WidgetTree->ConstructWidget<UImage>(
+			UImage::StaticClass(), TEXT("Image_Target"));
 	}
 	if (!TargetVisual)
 	{
@@ -1228,24 +1326,84 @@ void UFF_TargetShootingScreen::InitializeBindings()
 			UFF_TargetShootingTargetVisual::StaticClass(),
 			TEXT("TargetVisual_AuthoritativeRings"));
 	}
-	if (TargetVisual)
+	if (Image_Target && TargetVisual)
 	{
-		TargetVisual->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Border_Target->SetPadding(FMargin(0.0f));
-		Border_Target->SetContent(TargetVisual);
-		FSlateBrush NoBackground;
-		NoBackground.DrawAs = ESlateBrushDrawType::NoDrawType;
-		Border_Target->SetBrush(NoBackground);
+		UOverlay* TargetOverlay = Cast<UOverlay>(Border_Target->GetContent());
+		if (!TargetOverlay)
+		{
+			TargetOverlay = WidgetTree->ConstructWidget<UOverlay>(
+				UOverlay::StaticClass(), TEXT("Overlay_TargetVisual"));
+			Border_Target->SetContent(TargetOverlay);
+		}
+		if (Image_Target->GetParent() != TargetOverlay)
+		{
+			Image_Target->RemoveFromParent();
+			if (UOverlaySlot* ImageSlot = TargetOverlay->AddChildToOverlay(Image_Target))
+			{
+				ImageSlot->SetHorizontalAlignment(HAlign_Fill);
+				ImageSlot->SetVerticalAlignment(VAlign_Fill);
+			}
+		}
+		if (TargetVisual->GetParent() != TargetOverlay)
+		{
+			TargetVisual->RemoveFromParent();
+			if (UOverlaySlot* RingSlot = TargetOverlay->AddChildToOverlay(TargetVisual))
+			{
+				RingSlot->SetHorizontalAlignment(HAlign_Fill);
+				RingSlot->SetVerticalAlignment(VAlign_Fill);
+			}
+		}
+		Image_Target->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (!bUsingDesignerWidgetTree)
+		{
+			Image_Target->SetColorAndOpacity(VisualStyle.TargetImageTint);
+			if (UTexture2D* TargetTexture = LoadPreferredTexture(
+				VisualStyle.TargetTexture,
+				TargetShootingTargetPath))
+			{
+				Image_Target->SetBrushFromTexture(TargetTexture, true);
+			}
+		}
+		// A production WBP owns the complete target appearance through Image_Target.
+		// The paint-only rings remain available only for the asset-free native fallback.
+		TargetVisual->SetVisibility(bUsingDesignerWidgetTree
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::HitTestInvisible);
+		if (!bUsingDesignerWidgetTree)
+		{
+			Border_Target->SetPadding(FMargin(0.0f));
+			FSlateBrush NoBackground;
+			NoBackground.DrawAs = ESlateBrushDrawType::NoDrawType;
+			Border_Target->SetBrush(NoBackground);
+		}
 	}
 	EnsureTransientPresentationWidgets();
 	if (UWidget* ArenaFrame = WidgetTree->FindWidget(TEXT("Border_ArenaFrame")))
 	{
+		if (!bUsingDesignerWidgetTree)
+		{
+			if (UBorder* ArenaFrameBorder = Cast<UBorder>(ArenaFrame))
+			{
+				ArenaFrameBorder->SetBrushColor(VisualStyle.bUseSingleBackdrop
+					? FLinearColor::Transparent
+					: VisualStyle.ArenaFrameColor);
+				ArenaFrameBorder->SetPadding(VisualStyle.bUseSingleBackdrop
+					? FMargin(0.0f)
+					: FMargin(2.0f));
+			}
+		}
 		if (UCanvasPanelSlot* ArenaFrameSlot = Cast<UCanvasPanelSlot>(ArenaFrame->Slot))
 		{
 			// UViewport renders a separate scene family. Keeping its containing frame
 			// far below every HUD card prevents a late viewport draw from covering UI.
 			ArenaFrameSlot->SetZOrder(-100);
 		}
+	}
+	if (!bUsingDesignerWidgetTree)
+	{
+		Border_PlayArea->SetBrushColor(VisualStyle.bUseSingleBackdrop
+			? FLinearColor::Transparent
+			: VisualStyle.ArenaSurfaceColor);
 	}
 	TryInitializeThreeDimensionalArena();
 	if (!bHasBasePlayAreaBrushColor)
@@ -1319,7 +1477,9 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	}
 	if (Viewport_Arena3D)
 	{
-		Viewport_Arena3D->SetBackgroundColor(VisualStyle.Arena3DBackgroundColor);
+		Viewport_Arena3D->SetBackgroundColor(VisualStyle.bUseSingleBackdrop
+			? FLinearColor::Transparent
+			: VisualStyle.Arena3DBackgroundColor);
 		Viewport_Arena3D->SetVisibility(ESlateVisibility::Collapsed);
 		Viewport_Arena3D->SetIsEnabled(true);
 	}
@@ -1334,13 +1494,16 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	if (Text_TargetCue)
 	{
 		Text_TargetCue->SetText(LOCTEXT("TargetCue", "여기를 쏘세요"));
-		Text_TargetCue->SetJustification(ETextJustify::Center);
-		Text_TargetCue->SetShadowOffset(FVector2D(2.0f, 2.0f));
-		Text_TargetCue->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.92f));
-		StyleNativeText(
-			Text_TargetCue,
-			FMath::Clamp(VisualStyle.TargetCueFontSize, 10.0f, 32.0f),
-			VisualStyle.TargetCueColor);
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_TargetCue->SetJustification(ETextJustify::Center);
+			Text_TargetCue->SetShadowOffset(FVector2D(2.0f, 2.0f));
+			Text_TargetCue->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.92f));
+			StyleNativeText(
+				Text_TargetCue,
+				FMath::Clamp(VisualStyle.TargetCueFontSize, 10.0f, 32.0f),
+				VisualStyle.TargetCueColor);
+		}
 		Text_TargetCue->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
@@ -1353,10 +1516,13 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	EnsureDirectCanvasChild(Text_ShotFeedback, FVector2D(320.0f, 90.0f), 10, false);
 	if (Text_ShotFeedback)
 	{
-		Text_ShotFeedback->SetJustification(ETextJustify::Center);
-		Text_ShotFeedback->SetShadowOffset(FVector2D(2.0f, 2.0f));
-		Text_ShotFeedback->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.72f));
-		StyleNativeText(Text_ShotFeedback, FMath::Max(8.0f, VisualStyle.FeedbackFontSize));
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_ShotFeedback->SetJustification(ETextJustify::Center);
+			Text_ShotFeedback->SetShadowOffset(FVector2D(2.0f, 2.0f));
+			Text_ShotFeedback->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.72f));
+			StyleNativeText(Text_ShotFeedback, FMath::Max(8.0f, VisualStyle.FeedbackFontSize));
+		}
 		Text_ShotFeedback->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
@@ -1411,17 +1577,16 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	}
 	if (Image_WaterBlaster)
 	{
-		Image_WaterBlaster->SetColorAndOpacity(VisualStyle.WaterBlasterTint);
 		Image_WaterBlaster->SetVisibility(ESlateVisibility::Collapsed);
-		UTexture2D* WaterBlasterTexture = LoadObject<UTexture2D>(
-			nullptr, TargetShootingWaterBlasterPath);
-		if (!WaterBlasterTexture)
+		if (!bUsingDesignerWidgetTree)
 		{
-			WaterBlasterTexture = VisualStyle.WaterBlasterTexture.LoadSynchronous();
-		}
-		if (WaterBlasterTexture)
-		{
-			Image_WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
+			Image_WaterBlaster->SetColorAndOpacity(VisualStyle.WaterBlasterTint);
+			if (UTexture2D* WaterBlasterTexture = LoadPreferredTexture(
+				VisualStyle.WaterBlasterTexture,
+				TargetShootingWaterBlasterPath))
+			{
+				Image_WaterBlaster->SetBrushFromTexture(WaterBlasterTexture, true);
+			}
 		}
 	}
 
@@ -1435,11 +1600,14 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	if (Text_MuzzleFlash)
 	{
 		Text_MuzzleFlash->SetText(FText::FromString(TEXT("+")));
-		Text_MuzzleFlash->SetJustification(ETextJustify::Center);
-		Text_MuzzleFlash->SetColorAndOpacity(FSlateColor(VisualStyle.MuzzleFlashColor));
-		Text_MuzzleFlash->SetShadowOffset(FVector2D(0.0f, 0.0f));
-		Text_MuzzleFlash->SetShadowColorAndOpacity(FLinearColor::Transparent);
-		StyleNativeText(Text_MuzzleFlash, 54.0f, VisualStyle.MuzzleFlashColor);
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_MuzzleFlash->SetJustification(ETextJustify::Center);
+			Text_MuzzleFlash->SetColorAndOpacity(FSlateColor(VisualStyle.MuzzleFlashColor));
+			Text_MuzzleFlash->SetShadowOffset(FVector2D(0.0f, 0.0f));
+			Text_MuzzleFlash->SetShadowColorAndOpacity(FLinearColor::Transparent);
+			StyleNativeText(Text_MuzzleFlash, 54.0f, VisualStyle.MuzzleFlashColor);
+		}
 		Text_MuzzleFlash->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
@@ -1462,8 +1630,11 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	}
 	if (Text_WeaponStatus)
 	{
-		Text_WeaponStatus->SetJustification(ETextJustify::Center);
-		StyleNativeText(Text_WeaponStatus, 16.0f, VisualStyle.HudAmberColor, TEXT("SemiBold"));
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_WeaponStatus->SetJustification(ETextJustify::Center);
+			StyleNativeText(Text_WeaponStatus, 16.0f, VisualStyle.HudAmberColor, TEXT("SemiBold"));
+		}
 		Text_WeaponStatus->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
@@ -1477,17 +1648,29 @@ void UFF_TargetShootingScreen::EnsureTransientPresentationWidgets()
 	if (Text_Reticle)
 	{
 		Text_Reticle->SetText(FText::FromString(VisualStyle.ReticleGlyph));
-		Text_Reticle->SetJustification(ETextJustify::Center);
-		Text_Reticle->SetColorAndOpacity(FSlateColor(VisualStyle.ReticleColor));
-		Text_Reticle->SetShadowOffset(FVector2D(1.0f, 1.0f));
-		Text_Reticle->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.70f));
-		StyleNativeText(Text_Reticle, FMath::Max(8.0f, VisualStyle.ReticleFontSize));
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_Reticle->SetJustification(ETextJustify::Center);
+			Text_Reticle->SetColorAndOpacity(FSlateColor(VisualStyle.ReticleColor));
+			Text_Reticle->SetShadowOffset(FVector2D(1.0f, 1.0f));
+			Text_Reticle->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.70f));
+			StyleNativeText(Text_Reticle, FMath::Max(8.0f, VisualStyle.ReticleFontSize));
+		}
 		Text_Reticle->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
 bool UFF_TargetShootingScreen::TryInitializeThreeDimensionalArena()
 {
+	if (VisualStyle.bUseSingleBackdrop)
+	{
+		if (Viewport_Arena3D)
+		{
+			Viewport_Arena3D->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		bThreeDimensionalArenaReady = false;
+		return false;
+	}
 	if (bThreeDimensionalArenaReady && IsValid(Arena3DActor))
 	{
 		return true;
@@ -1497,21 +1680,29 @@ bool UFF_TargetShootingScreen::TryInitializeThreeDimensionalArena()
 		return false;
 	}
 
-	Viewport_Arena3D->SetBackgroundColor(VisualStyle.Arena3DBackgroundColor);
+	Viewport_Arena3D->SetBackgroundColor(VisualStyle.bUseSingleBackdrop
+		? FLinearColor::Transparent
+		: VisualStyle.Arena3DBackgroundColor);
 	Viewport_Arena3D->SetEnableAdvancedFeatures(true);
 	Viewport_Arena3D->SetLightIntensity(FMath::Max(0.1f, VisualStyle.Arena3DKeyLightIntensity));
 	Viewport_Arena3D->SetSkyIntensity(FMath::Max(0.0f, VisualStyle.Arena3DSkyIntensity));
 	Viewport_Arena3D->SetViewLocation(VisualStyle.Arena3DCameraLocation);
-	Viewport_Arena3D->SetViewRotation(VisualStyle.Arena3DCameraRotation);
 	Viewport_Arena3D->SetShowFlag(TEXT("Grid"), false);
 	Viewport_Arena3D->SetShowFlag(TEXT("SelectionOutline"), false);
 	Viewport_Arena3D->SetShowFlag(TEXT("MotionBlur"), false);
 	Viewport_Arena3D->SetShowFlag(TEXT("OnScreenDebug"), false);
 
-	Arena3DActor = Cast<AFF_TargetShootingArena3D>(
-		Viewport_Arena3D->Spawn(AFF_TargetShootingArena3D::StaticClass()));
+	UClass* ArenaClass = VisualStyle.Arena3DActorClass
+		? VisualStyle.Arena3DActorClass.Get()
+		: AFF_TargetShootingArena3D::StaticClass();
+	Arena3DActor = Cast<AFF_TargetShootingArena3D>(Viewport_Arena3D->Spawn(ArenaClass));
 	bThreeDimensionalArenaReady = IsValid(Arena3DActor);
-	if (!bThreeDimensionalArenaReady)
+	if (bThreeDimensionalArenaReady)
+	{
+		Arena3DActor->SetEnvironmentVisible(!VisualStyle.bUseSingleBackdrop);
+	}
+	RefreshCameraAimPresentation();
+	if (!VisualStyle.bUseSingleBackdrop && !bThreeDimensionalArenaReady)
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("[%s] 3D 사격장 생성에 실패해 2D 과녁 폴백을 사용한다."),
@@ -1534,8 +1725,7 @@ void UFF_TargetShootingScreen::ResetTransientPresentationState()
 	FeedbackRemainingSeconds = 0.0f;
 	ReticleShotPulseRemainingSeconds = 0.0f;
 	MuzzleFlashRemainingSeconds = 0.0f;
-	ReticlePointNormalized = FVector2D(0.5f, 0.5f);
-	bReticleInsidePlayArea = false;
+	CameraAimPointNormalized = FVector2D(0.5f, 0.5f);
 }
 
 void UFF_TargetShootingScreen::RefreshPresentation()
@@ -1544,7 +1734,7 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 	{
 		return;
 	}
-	if (!bThreeDimensionalArenaReady)
+	if (!VisualStyle.bUseSingleBackdrop && !bThreeDimensionalArenaReady)
 	{
 		TryInitializeThreeDimensionalArena();
 	}
@@ -1580,10 +1770,13 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 		LOCTEXT("RemainingTimeFormat", "{0}:{1}"),
 		FText::AsNumber(RemainingMinutes, &TwoDigits),
 		FText::AsNumber(RemainingSecondPart, &TwoDigits)));
-	Text_RemainingTime->SetColorAndOpacity(FSlateColor(
-		bHasSnapshot && RemainingSeconds <= 5.0f
-			? VisualStyle.HudAmberColor
-			: VisualStyle.PrimaryTextColor));
+	if (!bUsingDesignerWidgetTree)
+	{
+		Text_RemainingTime->SetColorAndOpacity(FSlateColor(
+			bHasSnapshot && RemainingSeconds <= 5.0f
+				? VisualStyle.HudAmberColor
+				: VisualStyle.PrimaryTextColor));
+	}
 	if (Progress_Time)
 	{
 		const float TotalSessionSeconds = bHasSnapshot
@@ -1592,10 +1785,13 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 		Progress_Time->SetPercent(TotalSessionSeconds > UE_SMALL_NUMBER
 			? FMath::Clamp(RemainingSeconds / TotalSessionSeconds, 0.0f, 1.0f)
 			: 0.0f);
-		Progress_Time->SetFillColorAndOpacity(
-			bHasSnapshot && RemainingSeconds <= 5.0f
-				? VisualStyle.HudAmberColor
-				: VisualStyle.HudAccentColor);
+		if (!bUsingDesignerWidgetTree)
+		{
+			Progress_Time->SetFillColorAndOpacity(
+				bHasSnapshot && RemainingSeconds <= 5.0f
+					? VisualStyle.HudAmberColor
+					: VisualStyle.HudAccentColor);
+		}
 	}
 	Text_Score->SetText(FText::Format(
 		LOCTEXT("ScoreFormat", "점수  {0}"),
@@ -1619,8 +1815,11 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 			LOCTEXT("StreakFormat", "연속 x{0}     최고 {1}"),
 			FText::AsNumber(CurrentCombo),
 			FText::AsNumber(BestCombo)));
-	Text_Streak->SetColorAndOpacity(FSlateColor(
-		CurrentCombo >= 5 ? VisualStyle.HudAmberColor : VisualStyle.HudAccentColor));
+	if (!bUsingDesignerWidgetTree)
+	{
+		Text_Streak->SetColorAndOpacity(FSlateColor(
+			CurrentCombo >= 5 ? VisualStyle.HudAmberColor : VisualStyle.HudAccentColor));
+	}
 
 	const bool bSessionFinished = bHasSnapshot
 		&& (DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Completed
@@ -1699,19 +1898,25 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 		NativeCloseLabel->SetText(bShowResult
 			? LOCTEXT("NativeResultClose", "확인  [ESC]")
 			: LOCTEXT("NativePlayingClose", "나가기  [ESC]"));
-		NativeCloseLabel->SetColorAndOpacity(FSlateColor(bShowResult
-			? FLinearColor(0.008f, 0.028f, 0.045f, 1.0f)
-			: VisualStyle.PrimaryTextColor));
+		if (!bUsingDesignerWidgetTree)
+		{
+			NativeCloseLabel->SetColorAndOpacity(FSlateColor(bShowResult
+				? FLinearColor(0.008f, 0.028f, 0.045f, 1.0f)
+				: VisualStyle.PrimaryTextColor));
+		}
 	}
 	if (Button_Close)
 	{
-		Button_Close->SetBackgroundColor(bShowResult
-			? VisualStyle.HudAmberColor
-			: FLinearColor(
-				VisualStyle.HudPanelMutedColor.R,
-				VisualStyle.HudPanelMutedColor.G,
-				VisualStyle.HudPanelMutedColor.B,
-				1.0f));
+		if (!bUsingDesignerWidgetTree)
+		{
+			Button_Close->SetBackgroundColor(bShowResult
+				? VisualStyle.HudAmberColor
+				: FLinearColor(
+					VisualStyle.HudPanelMutedColor.R,
+					VisualStyle.HudPanelMutedColor.G,
+					VisualStyle.HudPanelMutedColor.B,
+					1.0f));
+		}
 		if (UCanvasPanelSlot* CloseSlot = Cast<UCanvasPanelSlot>(Button_Close->Slot))
 		{
 			// One contracted button serves both states: top-right abort while playing,
@@ -1728,9 +1933,18 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 	const bool bPlaying = bHasSnapshot
 		&& !bHasResult
 		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing;
+	if (!bPlaying && HasMouseCapture() && FSlateApplication::IsInitialized())
+	{
+		// Result buttons must immediately regain ordinary pointer input when the
+		// FPS session ends; waiting for widget destruction would trap the cursor.
+		FSlateApplication::Get().ReleaseAllPointerCapture();
+	}
+	RefreshCameraAimPresentation();
 	if (Viewport_Arena3D)
 	{
-		Viewport_Arena3D->SetVisibility(bPlaying && bThreeDimensionalArenaReady
+		Viewport_Arena3D->SetVisibility(bPlaying
+			&& !VisualStyle.bUseSingleBackdrop
+			&& bThreeDimensionalArenaReady
 			? ESlateVisibility::HitTestInvisible
 			: ESlateVisibility::Collapsed);
 	}
@@ -1764,21 +1978,26 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 		&& !bHasResult
 		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing
 		&& DisplayedSnapshot.bTargetVisible;
-	// The 3D viewport is atmospheric only. Keeping every interactive element on
-	// Canvas_PlayArea makes the visible target exactly match pointer normalization
-	// and the runtime's authoritative hit ellipse at every resolution.
+	const bool bShowTargetIn3D = bShowTarget
+		&& bThreeDimensionalArenaReady
+		&& !VisualStyle.bUseSingleBackdrop
+		&& VisualStyle.bRenderTargetIn3D;
+	// The exact 2D ring stays on Canvas_PlayArea for pixel-perfect hit readability,
+	// while the target plate itself now participates in the perspective 3D scene.
 	if (IsValid(Arena3DActor))
 	{
 		Arena3DActor->SetTargetPresentation(
-			false,
-			FVector2D(0.5f, 0.5f),
-			FVector2D(0.05f, 0.09f),
-			0.58f,
-			0.26f,
-			VisualStyle.NormalTargetColor,
+			bShowTargetIn3D,
+			DisplayedSnapshot.TargetCenterNormalized,
+			DisplayedSnapshot.TargetRadiusNormalized,
+			DisplayedSnapshot.PrecisionRadiusRatio,
+			DisplayedSnapshot.BullseyeRadiusRatio,
+			DisplayedSnapshot.bBonusTarget
+				? VisualStyle.BonusTargetColor
+				: VisualStyle.NormalTargetColor,
 			VisualStyle.PrecisionColor,
 			VisualStyle.BullseyeColor,
-			0.0f);
+			TargetSpawnPulseRemainingSeconds > 0.0f ? 0.75f : 0.0f);
 	}
 	Border_Target->SetVisibility(bShowTarget
 		? ESlateVisibility::HitTestInvisible
@@ -1806,7 +2025,7 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 		return;
 	}
 
-	const FVector2D Center(
+	const FVector2D WorldCenter(
 		FMath::Clamp(DisplayedSnapshot.TargetCenterNormalized.X, 0.0, 1.0),
 		FMath::Clamp(DisplayedSnapshot.TargetCenterNormalized.Y, 0.0, 1.0));
 	const FVector2D Radius(
@@ -1825,6 +2044,8 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 			? VisualStyle.HudAmberColor
 			: VisualStyle.TargetCueColor);
 
+	FVector2D Center = WorldCenter;
+	ProjectArenaPointToCanvas(WorldCenter, Center);
 	TargetSlot->SetAnchors(FAnchors(Center.X, Center.Y));
 	TargetSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	TargetSlot->SetPosition(FVector2D::ZeroVector);
@@ -1832,9 +2053,24 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 	const FVector2D PlayAreaSize = Canvas_PlayArea->GetCachedGeometry().GetLocalSize();
 	if (PlayAreaSize.X > UE_SMALL_NUMBER && PlayAreaSize.Y > UE_SMALL_NUMBER)
 	{
+		FVector2D Left = Center;
+		FVector2D Right = Center;
+		FVector2D Top = Center;
+		FVector2D Bottom = Center;
+		ProjectArenaPointToCanvas(
+			FVector2D(WorldCenter.X - Radius.X, WorldCenter.Y), Left);
+		ProjectArenaPointToCanvas(
+			FVector2D(WorldCenter.X + Radius.X, WorldCenter.Y), Right);
+		ProjectArenaPointToCanvas(
+			FVector2D(WorldCenter.X, WorldCenter.Y - Radius.Y), Top);
+		ProjectArenaPointToCanvas(
+			FVector2D(WorldCenter.X, WorldCenter.Y + Radius.Y), Bottom);
+		const FVector2D ProjectedRadius(
+			FMath::Max(FMath::Abs(Center.X - Left.X), FMath::Abs(Right.X - Center.X)),
+			FMath::Max(FMath::Abs(Center.Y - Top.Y), FMath::Abs(Bottom.Y - Center.Y)));
 		TargetSlot->SetSize(FVector2D(
-			Radius.X * 2.0 * PlayAreaSize.X,
-			Radius.Y * 2.0 * PlayAreaSize.Y));
+			ProjectedRadius.X * 2.0f * PlayAreaSize.X,
+			ProjectedRadius.Y * 2.0f * PlayAreaSize.Y));
 		if (UCanvasPanelSlot* CueSlot = Text_TargetCue
 			? Cast<UCanvasPanelSlot>(Text_TargetCue->Slot)
 			: nullptr)
@@ -1843,16 +2079,19 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 			CueSlot->SetAlignment(FVector2D(0.5f, 1.0f));
 			CueSlot->SetPosition(FVector2D(
 				0.0f,
-				-Radius.Y * PlayAreaSize.Y - 10.0f));
+				-ProjectedRadius.Y * PlayAreaSize.Y - 10.0f));
 			CueSlot->SetSize(FVector2D(240.0f, 38.0f));
 			CueSlot->SetZOrder(7);
 		}
 		LastPlayAreaSize = PlayAreaSize;
 	}
 
-	Border_Target->SetBrushColor(DisplayedSnapshot.bBonusTarget
-		? VisualStyle.BonusTargetColor
-		: VisualStyle.NormalTargetColor);
+	if (!bUsingDesignerWidgetTree)
+	{
+		Border_Target->SetBrushColor(DisplayedSnapshot.bBonusTarget
+			? VisualStyle.BonusTargetColor
+			: VisualStyle.NormalTargetColor);
+	}
 	if (TargetVisual)
 	{
 		TargetVisual->Configure(
@@ -1876,9 +2115,12 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 			: (RemainingLifeRatio <= 0.35f
 				? LOCTEXT("UrgentTargetCue", "서둘러!")
 				: LOCTEXT("NormalTargetCue", "여기를 쏘세요")));
-		Text_TargetCue->SetColorAndOpacity(FSlateColor(DisplayedSnapshot.bBonusTarget
-			? VisualStyle.BonusTargetColor
-			: CountdownColor));
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_TargetCue->SetColorAndOpacity(FSlateColor(DisplayedSnapshot.bBonusTarget
+				? VisualStyle.BonusTargetColor
+				: CountdownColor));
+		}
 		Text_TargetCue->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 		Text_TargetCue->SetRenderScale(FVector2D(1.0f, 1.0f));
 	}
@@ -1914,11 +2156,22 @@ void UFF_TargetShootingScreen::RefreshTargetLayout()
 			FMath::Clamp(VisualStyle.TargetUrgencyPulseMinOpacity, 0.0f, 1.0f),
 			UrgencyAlpha * PulseWave);
 	}
-	Border_Target->SetRenderOpacity(FMath::Clamp(TargetOpacity, 0.0f, 1.0f));
+	const float ClampedTargetOpacity = FMath::Clamp(TargetOpacity, 0.0f, 1.0f);
+	Border_Target->SetRenderOpacity(1.0f);
+	if (Image_Target)
+	{
+		Image_Target->SetRenderOpacity(ClampedTargetOpacity);
+	}
+	if (TargetVisual)
+	{
+		TargetVisual->SetRenderOpacity(ClampedTargetOpacity * (bShowTargetIn3D
+			? FMath::Clamp(VisualStyle.AuthoritativeRingOpacityIn3D, 0.0f, 1.0f)
+			: 1.0f));
+	}
 	if (Text_TargetCue)
 	{
 		Text_TargetCue->SetRenderOpacity(FMath::Clamp(
-			TargetOpacity * CueOpacity,
+			ClampedTargetOpacity * CueOpacity,
 			0.0f,
 			1.0f));
 	}
@@ -1939,13 +2192,13 @@ void UFF_TargetShootingScreen::RefreshProjectilePresentation()
 		: 1.0f;
 	if (IsValid(Arena3DActor))
 	{
-		// Perspective projection is intentionally decorative; the projectile uses
-		// the same 2D coordinate space as target, reticle and hit feedback.
 		Arena3DActor->SetProjectilePresentation(
-			false,
-			FVector2D(0.5f, 0.5f),
-			FVector2D(0.5f, 0.5f),
-			0.0f,
+			bShowProjectile
+				&& bThreeDimensionalArenaReady
+				&& VisualStyle.bRenderProjectileIn3D,
+			DisplayedSnapshot.ProjectilePositionNormalized,
+			DisplayedSnapshot.ProjectileAimPointNormalized,
+			TravelAlpha,
 			VisualStyle.ProjectileCoreColor,
 			VisualStyle.ProjectileGlowColor);
 	}
@@ -1976,7 +2229,17 @@ void UFF_TargetShootingScreen::RefreshProjectilePresentation()
 	const FVector2D ProjectilePoint(
 		FMath::Clamp(DisplayedSnapshot.ProjectilePositionNormalized.X, 0.0, 1.0),
 		FMath::Clamp(DisplayedSnapshot.ProjectilePositionNormalized.Y, 0.0, 1.0));
-	ProjectileSlot->SetAnchors(FAnchors(ProjectilePoint.X, ProjectilePoint.Y));
+	FVector2D ProjectedProjectilePoint = ProjectilePoint;
+	ProjectArenaPointToCanvas(
+		ProjectilePoint,
+		ProjectedProjectilePoint,
+		FMath::Lerp(
+			ArenaProjectileOriginDepthX,
+			ArenaProjectileImpactDepthX,
+			TravelAlpha));
+	ProjectileSlot->SetAnchors(FAnchors(
+		ProjectedProjectilePoint.X,
+		ProjectedProjectilePoint.Y));
 	ProjectileSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	ProjectileSlot->SetPosition(FVector2D::ZeroVector);
 	const float ProjectileSize = FMath::Clamp(
@@ -2023,7 +2286,9 @@ void UFF_TargetShootingScreen::RefreshWeaponPresentation()
 	if (IsValid(Arena3DActor))
 	{
 		Arena3DActor->SetWeaponPresentation(
-			false,
+			bPlaying
+				&& bThreeDimensionalArenaReady
+				&& VisualStyle.bRenderWeaponIn3D,
 			RecoilAlpha,
 			FlashAlpha);
 	}
@@ -2050,14 +2315,20 @@ void UFF_TargetShootingScreen::RefreshWeaponPresentation()
 				0.0f,
 				FMath::Clamp(VisualStyle.WaterBlasterBottomOffsetPixels, 0.0f, 80.0f)));
 			WaterBlasterSlot->SetSize(FVector2D(BlasterSize, BlasterSize));
-			Image_WaterBlaster->SetRenderTranslation(FVector2D(
+			const FVector2D ViewFollowOffset = CalculateWeaponViewOffsetPixels();
+			Image_WaterBlaster->SetRenderTransformPivot(FVector2D(
+				FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.X, 0.0f, 1.0f),
+				FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.Y, 0.0f, 1.0f)));
+			Image_WaterBlaster->SetRenderTranslation(ViewFollowOffset + FVector2D(
 				0.0f,
 				FMath::Max(0.0f, VisualStyle.WeaponRecoilPixels) * RecoilAlpha));
+			Image_WaterBlaster->SetRenderTransformAngle(CalculateWeaponAimAngleDegrees());
 			Image_WaterBlaster->SetRenderOpacity(FMath::Lerp(1.0f, 0.90f, RecoilAlpha));
 		}
 		else
 		{
 			Image_WaterBlaster->SetRenderTranslation(FVector2D::ZeroVector);
+			Image_WaterBlaster->SetRenderTransformAngle(0.0f);
 			Image_WaterBlaster->SetRenderOpacity(1.0f);
 		}
 	}
@@ -2103,10 +2374,13 @@ void UFF_TargetShootingScreen::RefreshWeaponPresentation()
 			const bool bProjectileInFlight = DisplayedSnapshot.bProjectileInFlight;
 			Text_WeaponStatus->SetText(bProjectileInFlight
 				? LOCTEXT("ProjectileInFlightStatus", "과녁 판정 예약  ·  물 탄환 비행 중")
-				: LOCTEXT("WeaponReadyStatus", "과녁을 조준하고 클릭하여 발사!"));
-			Text_WeaponStatus->SetColorAndOpacity(FSlateColor(bProjectileInFlight
-				? VisualStyle.HudAccentColor
-				: VisualStyle.HudAmberColor));
+				: LOCTEXT("WeaponReadyStatus", "총기를 회전해 과녁을 조준하고 발사!"));
+			if (!bUsingDesignerWidgetTree)
+			{
+				Text_WeaponStatus->SetColorAndOpacity(FSlateColor(bProjectileInFlight
+					? VisualStyle.HudAccentColor
+					: VisualStyle.HudAmberColor));
+			}
 		}
 	}
 }
@@ -2131,7 +2405,7 @@ void UFF_TargetShootingScreen::RefreshFeedbackPresentation()
 	{
 		Text_ShotFeedback->SetRenderOpacity(0.0f);
 		Text_ShotFeedback->SetRenderScale(FVector2D(1.0f, 1.0f));
-		if (Border_PlayArea && bHasBasePlayAreaBrushColor)
+		if (!bUsingDesignerWidgetTree && Border_PlayArea && bHasBasePlayAreaBrushColor)
 		{
 			Border_PlayArea->SetBrushColor(BasePlayAreaBrushColor);
 		}
@@ -2147,7 +2421,10 @@ void UFF_TargetShootingScreen::RefreshFeedbackPresentation()
 		1.0f);
 	const FLinearColor FeedbackColor = GetFeedbackColor(DisplayedSnapshot.LatestFeedbackType);
 	Text_ShotFeedback->SetText(MakeFeedbackText());
-	Text_ShotFeedback->SetColorAndOpacity(FSlateColor(FeedbackColor));
+	if (!bUsingDesignerWidgetTree)
+	{
+		Text_ShotFeedback->SetColorAndOpacity(FSlateColor(FeedbackColor));
+	}
 	Text_ShotFeedback->SetRenderOpacity(FMath::Clamp(FeedbackAlpha * 1.55f, 0.0f, 1.0f));
 	Text_ShotFeedback->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 	const float FeedbackScale = FMath::Lerp(0.92f, 1.22f, FeedbackAlpha);
@@ -2155,9 +2432,12 @@ void UFF_TargetShootingScreen::RefreshFeedbackPresentation()
 
 	if (UCanvasPanelSlot* FeedbackSlot = Cast<UCanvasPanelSlot>(Text_ShotFeedback->Slot))
 	{
-		const FVector2D FeedbackPoint(
+		FVector2D FeedbackPoint(
 			FMath::Clamp(DisplayedSnapshot.LatestFeedbackPointNormalized.X, 0.0, 1.0),
 			FMath::Clamp(DisplayedSnapshot.LatestFeedbackPointNormalized.Y, 0.0, 1.0));
+		ProjectArenaPointToCanvas(
+			DisplayedSnapshot.LatestFeedbackPointNormalized,
+			FeedbackPoint);
 		// Keep the score callout clear of the authoritative target/reticle. Near the
 		// top edge it travels downward; everywhere else it rises above the hit.
 		const float FeedbackDirection = FeedbackPoint.Y < 0.24f ? 1.0f : -1.0f;
@@ -2168,7 +2448,7 @@ void UFF_TargetShootingScreen::RefreshFeedbackPresentation()
 		FeedbackSlot->SetPosition(FVector2D(0.0f, FeedbackDirection * FeedbackOffset));
 	}
 
-	if (Border_PlayArea && bHasBasePlayAreaBrushColor)
+	if (!bUsingDesignerWidgetTree && Border_PlayArea && bHasBasePlayAreaBrushColor)
 	{
 		const float FlashAlpha = FMath::Clamp(
 			VisualStyle.PlayAreaFlashStrength * FeedbackAlpha,
@@ -2200,9 +2480,7 @@ void UFF_TargetShootingScreen::RefreshReticlePresentation()
 	const bool bPlaying = bHasSnapshot
 		&& !bHasResult
 		&& DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Playing;
-	const bool bShowReticle = bPlaying
-		&& bReticleInsidePlayArea
-		&& !VisualStyle.ReticleGlyph.IsEmpty();
+	const bool bShowReticle = bPlaying && !VisualStyle.ReticleGlyph.IsEmpty();
 	Text_Reticle->SetVisibility(bShowReticle
 		? ESlateVisibility::HitTestInvisible
 		: ESlateVisibility::Collapsed);
@@ -2219,24 +2497,31 @@ void UFF_TargetShootingScreen::RefreshReticlePresentation()
 	// a hit outside the ellipse that will be evaluated at projectile impact.
 	const bool bReticleOnTarget = DisplayedSnapshot.bTargetVisible
 		&& FFTargetShootingRules::IsInsideTarget(
-			ReticlePointNormalized,
+			CameraAimPointNormalized,
 			DisplayedSnapshot.TargetCenterNormalized,
 			DisplayedSnapshot.TargetRadiusNormalized);
 	const bool bAimReady = bReticleOnTarget && !DisplayedSnapshot.bProjectileInFlight;
-	Text_Reticle->SetColorAndOpacity(FSlateColor(
-		bMissFlash
-			? VisualStyle.MissColor
-			: (bAimReady ? VisualStyle.BullseyeColor : VisualStyle.ReticleColor)));
+	if (!bUsingDesignerWidgetTree)
+	{
+		Text_Reticle->SetColorAndOpacity(FSlateColor(
+			bMissFlash
+				? VisualStyle.MissColor
+				: (bAimReady ? VisualStyle.BullseyeColor : VisualStyle.ReticleColor)));
+	}
 	if (bAimReady && Text_TargetCue)
 	{
 		Text_TargetCue->SetText(LOCTEXT("AimReadyTargetCue", "발사!"));
-		Text_TargetCue->SetColorAndOpacity(FSlateColor(VisualStyle.BullseyeColor));
+		if (!bUsingDesignerWidgetTree)
+		{
+			Text_TargetCue->SetColorAndOpacity(FSlateColor(VisualStyle.BullseyeColor));
+		}
 		Text_TargetCue->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 		Text_TargetCue->SetRenderScale(FVector2D(1.12f, 1.12f));
 	}
-	ReticleSlot->SetAnchors(FAnchors(
-		FMath::Clamp(ReticlePointNormalized.X, 0.0, 1.0),
-		FMath::Clamp(ReticlePointNormalized.Y, 0.0, 1.0)));
+	const FVector2D ReticleAnchor = VisualStyle.bUseSingleBackdrop
+		? CameraAimPointNormalized
+		: FVector2D(0.5f, 0.5f);
+	ReticleSlot->SetAnchors(FAnchors(ReticleAnchor.X, ReticleAnchor.Y));
 	ReticleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 	ReticleSlot->SetPosition(FVector2D::ZeroVector);
 
@@ -2255,6 +2540,238 @@ void UFF_TargetShootingScreen::RefreshReticlePresentation()
 	}
 	Text_Reticle->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 	Text_Reticle->SetRenderScale(FVector2D(ReticleScale, ReticleScale));
+}
+
+bool UFF_TargetShootingScreen::UpdateAimFromScreenPosition(
+	const FVector2D& ScreenSpacePosition)
+{
+	if (!Canvas_PlayArea
+		|| !FMath::IsFinite(ScreenSpacePosition.X)
+		|| !FMath::IsFinite(ScreenSpacePosition.Y))
+	{
+		return false;
+	}
+	const FGeometry& PlayAreaGeometry = Canvas_PlayArea->GetCachedGeometry();
+	const FVector2D PlayAreaSize = PlayAreaGeometry.GetLocalSize();
+	if (PlayAreaSize.X <= UE_SMALL_NUMBER || PlayAreaSize.Y <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+	const FVector2D LocalPointer = PlayAreaGeometry.AbsoluteToLocal(ScreenSpacePosition);
+	if (!FMath::IsFinite(LocalPointer.X) || !FMath::IsFinite(LocalPointer.Y))
+	{
+		return false;
+	}
+	CameraAimPointNormalized = FVector2D(
+		FMath::Clamp(LocalPointer.X / PlayAreaSize.X, 0.0f, 1.0f),
+		FMath::Clamp(LocalPointer.Y / PlayAreaSize.Y, 0.0f, 1.0f));
+	return true;
+}
+
+FVector2D UFF_TargetShootingScreen::ResolveWeaponPlayAreaSize() const
+{
+	FVector2D PlayAreaSize = Canvas_PlayArea
+		? Canvas_PlayArea->GetCachedGeometry().GetLocalSize()
+		: FVector2D::ZeroVector;
+	if (PlayAreaSize.X <= UE_SMALL_NUMBER || PlayAreaSize.Y <= UE_SMALL_NUMBER)
+	{
+		PlayAreaSize = LastPlayAreaSize;
+	}
+	return PlayAreaSize;
+}
+
+FVector2D UFF_TargetShootingScreen::CalculateWeaponViewOffsetPixels() const
+{
+	const FVector2D PlayAreaSize = ResolveWeaponPlayAreaSize();
+	const float FollowStrength = FMath::Clamp(
+		VisualStyle.WeaponViewFollowStrength,
+		0.0f,
+		0.15f);
+	return FVector2D(
+		(CameraAimPointNormalized.X - 0.5f) * PlayAreaSize.X * FollowStrength,
+		(CameraAimPointNormalized.Y - 0.5f) * PlayAreaSize.Y * FollowStrength);
+}
+
+FVector2D UFF_TargetShootingScreen::CalculateWeaponPivotPointPixels() const
+{
+	const FVector2D PlayAreaSize = ResolveWeaponPlayAreaSize();
+	if (PlayAreaSize.X <= UE_SMALL_NUMBER || PlayAreaSize.Y <= UE_SMALL_NUMBER)
+	{
+		return FVector2D::ZeroVector;
+	}
+	const float BlasterSize = FMath::Clamp(
+		VisualStyle.WaterBlasterVisualSize,
+		180.0f,
+		520.0f);
+	const FVector2D PivotNormalized(
+		FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.X, 0.0f, 1.0f),
+		FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.Y, 0.0f, 1.0f));
+	const FVector2D ImageTopLeft(
+		PlayAreaSize.X * 0.5f - BlasterSize * 0.5f,
+		PlayAreaSize.Y
+			+ FMath::Clamp(VisualStyle.WaterBlasterBottomOffsetPixels, 0.0f, 80.0f)
+			- BlasterSize);
+	return ImageTopLeft
+		+ PivotNormalized * BlasterSize
+		+ CalculateWeaponViewOffsetPixels();
+}
+
+FVector2D UFF_TargetShootingScreen::CalculateWeaponBaseForwardDirection() const
+{
+	const FVector2D PivotNormalized(
+		FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.X, 0.0f, 1.0f),
+		FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.Y, 0.0f, 1.0f));
+	const FVector2D MuzzleNormalized(
+		FMath::Clamp(VisualStyle.WaterBlasterMuzzleNormalized.X, 0.0f, 1.0f),
+		FMath::Clamp(VisualStyle.WaterBlasterMuzzleNormalized.Y, 0.0f, 1.0f));
+	const FVector2D Forward = MuzzleNormalized - PivotNormalized;
+	const float ForwardLength = Forward.Size();
+	return ForwardLength > UE_SMALL_NUMBER
+		? Forward / ForwardLength
+		: FVector2D(0.0f, -1.0f);
+}
+
+float UFF_TargetShootingScreen::CalculateWeaponAimAngleDegrees() const
+{
+	const FVector2D PlayAreaSize = ResolveWeaponPlayAreaSize();
+	if (PlayAreaSize.X <= UE_SMALL_NUMBER || PlayAreaSize.Y <= UE_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+	const FVector2D DesiredDirection = CameraAimPointNormalized * PlayAreaSize
+		- CalculateWeaponPivotPointPixels();
+	if (DesiredDirection.SizeSquared() <= UE_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+	const FVector2D BaseForward = CalculateWeaponBaseForwardDirection();
+	const float BaseAngleDegrees = FMath::RadiansToDegrees(
+		FMath::Atan2(BaseForward.Y, BaseForward.X));
+	const float DesiredAngleDegrees = FMath::RadiansToDegrees(
+		FMath::Atan2(DesiredDirection.Y, DesiredDirection.X));
+	const float RequiredAngleDegrees = FMath::FindDeltaAngleDegrees(
+		BaseAngleDegrees,
+		DesiredAngleDegrees);
+	return RequiredAngleDegrees;
+}
+
+FVector2D UFF_TargetShootingScreen::CalculateWeaponMuzzlePointNormalized() const
+{
+	const FVector2D PlayAreaSize = ResolveWeaponPlayAreaSize();
+	if (PlayAreaSize.X <= UE_SMALL_NUMBER || PlayAreaSize.Y <= UE_SMALL_NUMBER)
+	{
+		return FVector2D(0.5f, 0.68f);
+	}
+	const float BlasterSize = FMath::Clamp(
+		VisualStyle.WaterBlasterVisualSize,
+		180.0f,
+		520.0f);
+	const FVector2D PivotNormalized(
+		FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.X, 0.0f, 1.0f),
+		FMath::Clamp(VisualStyle.WaterBlasterAimPivotNormalized.Y, 0.0f, 1.0f));
+	const FVector2D MuzzleNormalized(
+		FMath::Clamp(VisualStyle.WaterBlasterMuzzleNormalized.X, 0.0f, 1.0f),
+		FMath::Clamp(VisualStyle.WaterBlasterMuzzleNormalized.Y, 0.0f, 1.0f));
+	const FVector2D MuzzleFromPivot = (MuzzleNormalized - PivotNormalized) * BlasterSize;
+	const FVector2D MuzzlePoint = CalculateWeaponPivotPointPixels()
+		+ RotateScreenVector(MuzzleFromPivot, CalculateWeaponAimAngleDegrees());
+	return FVector2D(
+		FMath::Clamp(MuzzlePoint.X / PlayAreaSize.X, 0.0f, 1.0f),
+		FMath::Clamp(MuzzlePoint.Y / PlayAreaSize.Y, 0.0f, 1.0f));
+}
+
+void UFF_TargetShootingScreen::RefreshCameraAimPresentation()
+{
+	CameraAimPointNormalized.X = FMath::Clamp(
+		CameraAimPointNormalized.X,
+		0.0f,
+		1.0f);
+	CameraAimPointNormalized.Y = FMath::Clamp(
+		CameraAimPointNormalized.Y,
+		0.0f,
+		1.0f);
+
+	const FVector AimWorld = AFF_TargetShootingArena3D::NormalizedToTargetPlane(
+		CameraAimPointNormalized);
+	const FVector AimDirection = AimWorld - VisualStyle.Arena3DCameraLocation;
+	if (!VisualStyle.bUseSingleBackdrop
+		&& !AimDirection.IsNearlyZero()
+		&& Viewport_Arena3D)
+	{
+		const FRotator ViewRotation = AimDirection.Rotation()
+			+ VisualStyle.Arena3DCameraRotation;
+		Viewport_Arena3D->SetViewLocation(VisualStyle.Arena3DCameraLocation);
+		Viewport_Arena3D->SetViewRotation(ViewRotation);
+	}
+
+	// The authored single backdrop is presentation-only and never follows aim.
+	if (Image_Backdrop)
+	{
+		Image_Backdrop->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
+		Image_Backdrop->SetRenderScale(FVector2D(1.0f));
+		Image_Backdrop->SetRenderTranslation(FVector2D::ZeroVector);
+	}
+}
+
+bool UFF_TargetShootingScreen::ProjectArenaPointToCanvas(
+	const FVector2D& ArenaPointNormalized,
+	FVector2D& OutCanvasPointNormalized,
+	const float DepthX) const
+{
+	if (!Canvas_PlayArea)
+	{
+		return false;
+	}
+	if (VisualStyle.bUseSingleBackdrop)
+	{
+		OutCanvasPointNormalized = FVector2D(
+			FMath::Clamp(ArenaPointNormalized.X, 0.0, 1.0),
+			FMath::Clamp(ArenaPointNormalized.Y, 0.0, 1.0));
+		return true;
+	}
+	const FVector2D CanvasSize = Canvas_PlayArea->GetCachedGeometry().GetLocalSize();
+	if (CanvasSize.X <= UE_SMALL_NUMBER || CanvasSize.Y <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const FVector AimWorld = AFF_TargetShootingArena3D::NormalizedToTargetPlane(
+		CameraAimPointNormalized);
+	const FVector AimDirection = AimWorld - VisualStyle.Arena3DCameraLocation;
+	if (AimDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const FRotator ViewRotation = AimDirection.Rotation()
+		+ VisualStyle.Arena3DCameraRotation;
+	const FRotationMatrix ViewAxes(ViewRotation);
+	const FVector Delta = AFF_TargetShootingArena3D::NormalizedToTargetPlane(
+		ArenaPointNormalized,
+		DepthX) - VisualStyle.Arena3DCameraLocation;
+	const float ForwardDepth = FVector::DotProduct(
+		Delta,
+		ViewAxes.GetUnitAxis(EAxis::X));
+	if (!FMath::IsFinite(ForwardDepth) || ForwardDepth <= UE_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	// UViewport's preview client uses a 90-degree horizontal field of view. Project
+	// the target plane with the same camera basis so the exact 2D hit ring follows
+	// the 3D target when the player looks around.
+	const float HorizontalTangent = FVector::DotProduct(
+		Delta,
+		ViewAxes.GetUnitAxis(EAxis::Y)) / ForwardDepth;
+	const float VerticalTangent = FVector::DotProduct(
+		Delta,
+		ViewAxes.GetUnitAxis(EAxis::Z)) / ForwardDepth;
+	const float AspectRatio = CanvasSize.X / CanvasSize.Y;
+	OutCanvasPointNormalized = FVector2D(
+		0.5f + HorizontalTangent * 0.5f,
+		0.5f - VerticalTangent * AspectRatio * 0.5f);
+	return FMath::IsFinite(OutCanvasPointNormalized.X)
+		&& FMath::IsFinite(OutCanvasPointNormalized.Y);
 }
 
 FLinearColor UFF_TargetShootingScreen::GetFeedbackColor(
@@ -2329,39 +2846,6 @@ FText UFF_TargetShootingScreen::MakeFeedbackText() const
 			LOCTEXT("ScoredFeedback", "{0}  +{1}"),
 			QualityText,
 			FText::AsNumber(FMath::Max(0, DisplayedSnapshot.LatestScoreDelta)));
-}
-
-bool UFF_TargetShootingScreen::TryMakeNormalizedPoint(
-	const FVector2D& ScreenSpacePoint,
-	FVector2D& OutNormalizedPoint) const
-{
-	if (!Canvas_PlayArea)
-	{
-		return false;
-	}
-
-	// Target, reticle and feedback all anchor to this canvas. Using its geometry
-	// keeps pointer normalization exact even when a designer changes border padding.
-	const FGeometry& PlayGeometry = Canvas_PlayArea->GetCachedGeometry();
-	const FVector2D LocalSize = PlayGeometry.GetLocalSize();
-	if (LocalSize.X <= UE_SMALL_NUMBER || LocalSize.Y <= UE_SMALL_NUMBER)
-	{
-		return false;
-	}
-
-	const FVector2D LocalPoint = PlayGeometry.AbsoluteToLocal(ScreenSpacePoint);
-	if (!FMath::IsFinite(LocalPoint.X) || !FMath::IsFinite(LocalPoint.Y)
-		|| LocalPoint.X < 0.0 || LocalPoint.Y < 0.0
-		|| LocalPoint.X > LocalSize.X || LocalPoint.Y > LocalSize.Y)
-	{
-		return false;
-	}
-
-	OutNormalizedPoint = FVector2D(
-		LocalPoint.X / LocalSize.X,
-		LocalPoint.Y / LocalSize.Y);
-	return FMath::IsFinite(OutNormalizedPoint.X)
-		&& FMath::IsFinite(OutNormalizedPoint.Y);
 }
 
 void UFF_TargetShootingScreen::HandleCloseClicked()

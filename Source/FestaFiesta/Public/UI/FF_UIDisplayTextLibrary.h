@@ -1,0 +1,53 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
+#include "Time/FF_FestivalStage.h"
+#include "UI/LiveHUD/FF_LiveHudMenuBar.h"
+#include "UI/LiveHUD/FF_LiveHudTypes.h"
+#include "UI/PrepHUD/FF_PrepHudTypes.h"
+#include "FF_UIDisplayTextLibrary.generated.h"
+
+/**
+ * UI enum 의 한글 표시 문구를 한 곳에서 낸다.
+ *
+ * === 🔴 왜 `UMETA(DisplayName)` 을 런타임에 읽으면 안 되나 ===
+ * `UEnum::GetDisplayNameText*()` 는 **에디터 메타데이터**를 읽는다. 그 메타데이터는
+ * 패키징 빌드에서 떨어져 나가고, 그러면 함수가 조용히 **enum 항목 이름(영문)** 을 돌려준다.
+ * 에디터에서는 `점검`·`셋업` 으로 잘 보이다가 패키징하면 `Check`·`Setup` 이 뜬다.
+ *
+ * 2026-08-28 시연용 패키징에서 실제로 발생했다 — 하단 탭이 전부 영문이었고
+ * 일차 표시가 `1일차 · Setup` 이 되었다. 2026-08-19 에 김시리가 같은 함정을 짚었는데
+ * 그때 고친 것은 경제 enum 뿐이라 UI enum 세 개가 남아 있었다.
+ *
+ * === 규칙 ===
+ * `UMETA(DisplayName)` 은 **에디터 표시용으로만** 둔다. 화면에 나가는 문구는 전부 여기서 낸다.
+ * enum 에 항목을 더하면 여기 `switch` 도 채운다 — 안 채우면 자동 테스트
+ * (`FestaFiesta.UI.DisplayText.*`) 가 영문 항목 이름이 새어 나온 것을 잡는다.
+ *
+ * 같은 성격의 경제 enum 은 `UFF_EconomyDisplayTextLibrary` 가 맡는다.
+ */
+UCLASS()
+class FESTAFIESTA_API UFF_UIDisplayTextLibrary : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
+
+public:
+	/** 축제 단계. 하단 바의 `N일차 · <단계>` 에 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetFestivalStageText(EFF_FestivalStage Stage);
+
+	/** 준비 단계 하단 바의 탭. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetPrepTabText(EFF_PrepHudTab Tab);
+
+	/** 라이브 하단 바의 탭. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetLiveTabText(EFF_LiveTab Tab);
+
+	/** 구 라이브 메뉴 바의 탭. 새 라이브 HUD 로 완전히 옮기면 이 함수와 enum 을 함께 지운다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetLiveHudTabText(EFF_LiveHudTab Tab);
+};

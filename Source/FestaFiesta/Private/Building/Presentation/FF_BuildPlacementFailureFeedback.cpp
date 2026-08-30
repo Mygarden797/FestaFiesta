@@ -37,6 +37,11 @@ FText UFF_BuildPlacementFailureFeedback::MakeFailureTitle(
 	const EFFZSPlacementFailure FailureReason,
 	const bool bIsMoving)
 {
+	if (FailureReason == EFFZSPlacementFailure::BuildLimitReached)
+	{
+		return LOCTEXT("BuildLimitReachedTitle", "건축 한도에 도달했어요");
+	}
+
 	switch (ClassifyFailure(FailureReason))
 	{
 	case EFF_BuildPlacementFailureType::InsufficientGold:
@@ -98,6 +103,10 @@ FText UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
 	case EFFZSPlacementFailure::InsufficientFunds:
 		return AuthoritativeDetail.IsEmpty()
 			? LOCTEXT("InsufficientFundsReason", "설치 비용이 부족해요 · 카탈로그에서 필요한 골드를 확인해 주세요")
+			: AuthoritativeDetail;
+	case EFFZSPlacementFailure::BuildLimitReached:
+		return AuthoritativeDetail.IsEmpty()
+			? LOCTEXT("BuildLimitReachedReason", "이 시설은 더 설치할 수 없어요 · 기존 시설을 철거한 뒤 다시 시도해 주세요")
 			: AuthoritativeDetail;
 	case EFFZSPlacementFailure::FacilityNotFound:
 	case EFFZSPlacementFailure::DuplicateZoneId:

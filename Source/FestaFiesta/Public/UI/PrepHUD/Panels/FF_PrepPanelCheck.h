@@ -179,6 +179,10 @@ protected:
 	UFUNCTION()
 	void HandlePurchasedFinaleGradeChanged(EFF_FinaleGrade NewGrade);
 
+	/** 시설을 놓거나 철거하면 개장 판정이 바뀐다. 바가 알려 준다. */
+	UFUNCTION()
+	void HandleCtaStateChanged();
+
 protected:
 	// --- 카드 4장 ---
 
@@ -264,6 +268,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
 	TObjectPtr<UButton> Button_OpenGate;
 
+	/**
+	 * 개장 버튼 문구. **단계마다 다르다** — 셋업은 `확정하고 Day 1 시작`, 개장 준비는 `개장하기`.
+	 * 바가 단계별 문구를 소유하므로 여기서 박지 않고 받아 온다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Check")
+	TObjectPtr<UTextBlock> Text_OpenGateLabel;
+
 	// --- 설정 ---
 
 	/**
@@ -308,6 +319,14 @@ private:
 	void RefreshCapacity();
 	void RefreshSummary();
 	void RefreshEstimate();
+
+	/**
+	 * 개장 버튼의 문구와 활성 상태를 바의 판정으로 맞춘다.
+	 *
+	 * !! 여기서 다시 판정하지 않는다 !! 시설 수와 단계 표를 아는 것은 바뿐이라,
+	 * 패널이 따로 세면 두 곳의 규칙이 갈라진다 (UI 규칙 2).
+	 */
+	void RefreshOpenGate();
 
 	/** 설치된 Zone 의 정원 합. 못 읽으면 `INDEX_NONE`. */
 	int32 GetTotalSoftCapacity() const;

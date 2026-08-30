@@ -27,6 +27,7 @@ class FESTAFIESTA_API UFF_FacilityInfoPanel : public UUserWidget
 public:
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
+	FSimpleMulticastDelegate OnProgramScheduleRequested;
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 
@@ -62,13 +63,40 @@ private:
 	UFUNCTION()
 	void HandleMinigameClicked();
 
+	UFUNCTION()
+	void HandleProgramScheduleClicked();
+
 	/** Keeps the shipped facility-info WBP compatible while designers migrate the new button. */
 	void EnsureMinigameButton();
+
+	/** Adds only the missing compact program block; authored WBP layout remains authoritative. */
+	void EnsureProgramSection();
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;
+
+	/** Designer-tunable feedback states; edit these in the panel WBP Class Defaults. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor FeedbackErrorColor =
+		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor FeedbackSuccessColor =
+		FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor InstanceLimitNormalColor =
+		FLinearColor::FromSRGBColor(FColor(0x24, 0x33, 0x2E));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
+		meta = (AllowPrivateAccess = "true"))
+	FLinearColor InstanceLimitReachedColor =
+		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
@@ -87,6 +115,35 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_StartMinigame;
+
+	/** Optional during the non-destructive WBP migration; the builder authors it for new assets. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_ProgramSection;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ProgramStatus;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ScheduledProgramSummary;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ProgramScheduleReason;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_ScheduleProgram;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ScheduleProgram;
+
+	/** Fixed footer surfaces in the LightTeal WBP; optional for legacy designer assets. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_Actions;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_BuildActions;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_LiveActions;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;
@@ -129,6 +186,10 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_RecoveryCost;
+
+	/** Optional until the non-destructive WBP builder migration has added the new row. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_InstanceLimit;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_QueueCapacity;

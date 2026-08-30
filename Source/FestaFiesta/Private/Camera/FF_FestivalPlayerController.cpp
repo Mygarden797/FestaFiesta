@@ -3,6 +3,7 @@
 #include "Camera/FF_FestivalPlayerController.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Camera/FF_OverviewCameraPawn.h"
 #include "Camera/FF_OverviewCameraRig.h"
@@ -575,6 +576,17 @@ void AFF_FestivalPlayerController::ProcessPickRequest()
 		return;
 	}
 	bPickRequestHandledThisTick = true;
+
+	// Debug WBP 버튼은 Slate 입력과 별개인 raw 좌클릭 폴백까지 막아야 한다.
+	// 패널이 숨겨졌거나 포인터가 카드 밖이면 서브시스템 조회는 즉시 false다.
+	const UWorld* World = GetWorld();
+	const UFF_ZoneLifecycleTestPanelSubsystem* DebugPanel = World
+		? World->GetSubsystem<UFF_ZoneLifecycleTestPanelSubsystem>()
+		: nullptr;
+	if (DebugPanel && DebugPanel->IsPointerOverPanel())
+	{
+		return;
+	}
 
 	if (!IsPickingAllowed())
 	{

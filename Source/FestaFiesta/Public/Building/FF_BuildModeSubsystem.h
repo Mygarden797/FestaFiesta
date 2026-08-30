@@ -40,6 +40,13 @@ enum class EFF_BuildModeState : uint8
 	Moving
 };
 
+// 건축 상태가 실제로 바뀐 뒤 외부 표현 계층(예: PrepHUD의 배치 패널)에 알린다.
+// PreviousState와 NewState를 함께 제공해 UI가 Tick 없이 필요한 전환만 처리할 수 있게 한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FFF_OnBuildModeStateChanged,
+	EFF_BuildModeState, PreviousState,
+	EFF_BuildModeState, NewState);
+
 // 입력과 부작용을 분리해 자동화 테스트에서도 실제 B 키 상태표를 검증할 수 있게 한다.
 namespace FFBuildModeModel
 {
@@ -48,12 +55,12 @@ namespace FFBuildModeModel
 		switch (CurrentState)
 		{
 		case EFF_BuildModeState::Closed:
-		case EFF_BuildModeState::CatalogOpen:
-			return EFF_BuildModeState::BuildMode;
 		case EFF_BuildModeState::BuildMode:
 		case EFF_BuildModeState::Placing:
 		case EFF_BuildModeState::Moving:
 			return EFF_BuildModeState::CatalogOpen;
+		case EFF_BuildModeState::CatalogOpen:
+			return EFF_BuildModeState::BuildMode;
 		default:
 			return EFF_BuildModeState::Closed;
 		}
@@ -67,6 +74,11 @@ namespace FFBuildModeModel
 	inline bool CanRemoveInstalledFacility(const EFF_BuildModeState State)
 	{
 		return State == EFF_BuildModeState::BuildMode;
+	}
+
+	inline bool CanRemoveFacilityWithTodaysProgram(const bool bHasScheduledProgram)
+	{
+		return !bHasScheduledProgram;
 	}
 
 	inline bool IsPreviewActive(const EFF_BuildModeState State)
@@ -114,9 +126,19 @@ namespace FFBuildModeModel
 
 	inline bool ShouldProcessRawBuildKey(
 		const bool bUiBuildKeyHandledThisFrame,
-		const bool bRawBuildKeyJustPressed)
+		const bool bRawBuildKeyJustPressed,
+		const bool bEditableTextHasFocus = false)
 	{
-		return !bUiBuildKeyHandledThisFrame && bRawBuildKeyJustPressed;
+		return !bUiBuildKeyHandledThisFrame &&
+			!bEditableTextHasFocus && bRawBuildKeyJustPressed;
+	}
+
+	inline bool IsEditableSlateTextWidgetType(const FName WidgetType)
+	{
+		return WidgetType == TEXT("SEditableText") ||
+			WidgetType == TEXT("SEditableTextBox") ||
+			WidgetType == TEXT("SMultiLineEditableText") ||
+			WidgetType == TEXT("SMultiLineEditableTextBox");
 	}
 
 	inline bool ShouldExitOnEscape(const EFF_BuildModeState State)
@@ -243,7 +265,7 @@ namespace FFBuildModeModel
 // UI는 시설 정의를 선택할 뿐이며 실제 설치는 FF Zone System의 PreviewCommand와
 // ExecuteCommand 경로만 사용한다. 따라서 단계·충돌·보호 동선·정책 검증을 우회하지 않는다.
 
-// 상태 전환은 `Closed -> BuildMode <-> CatalogOpen -> Placing`과
+// 상태 전환은 `Closed -> CatalogOpen <-> BuildMode`, `CatalogOpen -> Placing`과
 // `BuildMode -> Moving -> BuildMode`를 따른다. B는 활성 프리뷰를 정리하고 카탈로그를
 // 열고 닫으며 Esc만 세션 전체를 종료한다. BuildMode에서는 설치 시설의 예약 범위를 보여 주고
 // 선택 후 액션 패널에서 이동·철거·취소를 선택한다. Placing과 Moving은 제한된 주기로 커서 위치를 다시 검증한다.
@@ -278,7 +300,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	EFF_BuildModeState GetBuildModeState() const { return State; }
 
-	// B 키 상태표에 따라 Closed/CatalogOpen은 BuildMode로, BuildMode/Placing/Moving은 CatalogOpen으로 전환한다.
+	// true이면 상태·입력·카탈로그 로드는 BuildMode가 계속 소유하되 기존 전체 화면 카탈로그는 만들지 않는다.
+	// 기본값 false는 기존 카탈로그 경로를 그대로 유지한다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Presentation")
+	void SetExternalCatalogPresentationActive(bool bActive);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Presentation")
+	bool IsExternalCatalogPresentationActive() const
+	{
+		return bExternalCatalogPresentationActive;
+	}
+
+	// 외부 UMG는 이 이벤트로 CatalogOpen/Placing/Closed 표현을 갱신하고 별도 Tick을 두지 않는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Presentation")
+	FFF_OnBuildModeStateChanged OnBuildModeStateChanged;
+
+	// 첫 B는 배치 카탈로그를 열고, 열린 카탈로그의 다음 B는 설치 시설을 다루는 BuildMode로 전환한다.
+	// Placing/Moving에서 B를 누르면 현재 프리뷰를 정리하고 카탈로그로 돌아간다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void ToggleBuildMode();
 
@@ -371,8 +409,10 @@ private:
 	// ExecuteCommand가 동기 방송하는 자체 Move 이벤트를 외부 변경과 구분한다.
 	FGuid InFlightMoveCommandId;
 
-	// 공개 API와 입력 처리의 기준이 되는 건축 모드 상태기계의 현재 상태. 
+	// 공개 API와 입력 처리의 기준이 되는 건축 모드 상태기계의 현재 상태.
 	EFF_BuildModeState State = EFF_BuildModeState::Closed;
+	// 명시적 opt-in에서만 기존 전체 화면 카탈로그 생성을 생략한다. false가 레거시 호환 기본값이다.
+	bool bExternalCatalogPresentationActive = false;
 	// 매 프레임의 비싼 라인트레이스/검증을 피하기 위한 누적 시간이다. 
 	float PreviewRefreshAccumulator = 0.0f;
 	// 라인트레이스, 바닥 경사, Zone, 회전 면적 검사를 모두 통과한 커서 표적이 있는지 나타낸다. 
@@ -413,6 +453,9 @@ private:
 
 	// 커서 추적과 전체 Zone 검증의 비용을 제한하면서도 프리뷰가 충분히 부드럽게 보이는 갱신 간격.
 	static constexpr float PreviewRefreshIntervalSeconds = 0.08f;
+
+	// 모든 상태 쓰기를 한곳에서 수행하고 실제 변경일 때만 외부 표현 계층에 방송한다.
+	void SetState(EFF_BuildModeState NewState);
 
 	// B/Escape/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다.
 	void HandleInput(APlayerController& Controller, float DeltaTime);

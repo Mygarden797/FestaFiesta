@@ -12,6 +12,8 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
+#include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
+#include "Economy/FF_ProgramSchedulingSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
@@ -36,6 +38,26 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
 
 namespace
 {
+	bool IsEditableSlateTextFocused()
+	{
+		if (!FSlateApplication::IsInitialized())
+		{
+			return false;
+		}
+
+		// UEditableTextBox focuses its inner SEditableText. Walking parents also covers
+		// multiline/search wrappers without coupling BuildMode to a particular UMG screen.
+		for (TSharedPtr<SWidget> Widget = FSlateApplication::Get().GetKeyboardFocusedWidget();
+			Widget; Widget = Widget->GetParentWidget())
+		{
+			if (FFBuildModeModel::IsEditableSlateTextWidgetType(Widget->GetType()))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// 디자이너가 만든 기본 카탈로그 화면을 지연 참조한다. 패키지 로드 실패 시 아래 생성 함수가
 	// UFF_BuildCatalogScreen의 C++ 구현으로 폴백하므로 에셋 누락이 건축 모드 전체를 중단시키지 않는다.
 	const TSoftClassPtr<UFF_BuildCatalogScreen> BuildCatalogScreenClass(
@@ -109,7 +131,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 {
 	const bool bShouldRestoreInput = bBuildSessionActive;
 	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
-	State = EFF_BuildModeState::Closed;
+	SetState(EFF_BuildModeState::Closed);
 	bBuildSessionActive = false;
 	if (UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
 	{
@@ -196,6 +218,46 @@ TStatId UFF_BuildModeSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UFF_BuildModeSubsystem, STATGROUP_Tickables);
 }
 
+void UFF_BuildModeSubsystem::SetExternalCatalogPresentationActive(const bool bActive)
+{
+	if (bExternalCatalogPresentationActive == bActive)
+	{
+		return;
+	}
+
+	bExternalCatalogPresentationActive = bActive;
+	if (State != EFF_BuildModeState::CatalogOpen || bIsExitingBuildMode)
+	{
+		return;
+	}
+
+	if (bExternalCatalogPresentationActive)
+	{
+		// 실행 중 opt-in도 안전하게 지원한다. 레거시 위젯만 제거하고 세션·입력·프리로드는 유지한다.
+		RemoveCatalogScreen();
+		if (APlayerController* Controller = GetLocalPlayerController())
+		{
+			SetCatalogInputMode(*Controller);
+		}
+		return;
+	}
+
+	// 외부 표현이 해제될 때 CatalogOpen이면 기존 화면을 즉시 복구한다.
+	OpenCatalog();
+}
+
+void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
+{
+	if (State == NewState)
+	{
+		return;
+	}
+
+	const EFF_BuildModeState PreviousState = State;
+	State = NewState;
+	OnBuildModeStateChanged.Broadcast(PreviousState, State);
+}
+
 void UFF_BuildModeSubsystem::ToggleBuildMode()
 {
 	if (bIsExitingBuildMode)
@@ -246,7 +308,7 @@ void UFF_BuildModeSubsystem::EnterBuildMode()
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
 	ResetPlacementSelection();
-	State = EFF_BuildModeState::BuildMode;
+	SetState(EFF_BuildModeState::BuildMode);
 	SetFacilityRangeVisibility(true);
 	SetBuildInputMode(*Controller);
 	// UI 버튼 콜백이 mouse-up에서 오더라도 다음 Tick까지는 같은 클릭을 월드 입력으로 사용하지 않는다.
@@ -273,7 +335,7 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
 	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 
-	// Closed에서 직접 호출한 Blueprint 경로도 첫 B와 같은 BuildMode 세션을 먼저 만든다.
+	// Closed에서 카탈로그를 곧바로 열어도 입력 복구값과 세션 수명은 BuildMode 진입 경로에서 한 번 초기화한다.
 	if (State == EFF_BuildModeState::Closed)
 	{
 		EnterBuildMode();
@@ -306,17 +368,20 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	ResetMovingSelection();
 	ResetPlacementSelection();
 	RemoveCatalogScreen();
-	State = EFF_BuildModeState::CatalogOpen;
+	SetState(EFF_BuildModeState::CatalogOpen);
 	bCatalogWasApplied = false;
 	bCatalogThumbnailsApplied = false;
-	CreateCatalogScreen(*Controller);
-	if (!CatalogScreen)
+	if (!bExternalCatalogPresentationActive)
 	{
-		AbortOpen(TEXT("건축 카탈로그 화면을 열지 못했습니다."));
-		return;
+		CreateCatalogScreen(*Controller);
+		if (!CatalogScreen)
+		{
+			AbortOpen(TEXT("건축 카탈로그 화면을 열지 못했습니다."));
+			return;
+		}
+		Catalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogChanged);
+		Catalog->OnCatalogThumbnailsChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogThumbnailsChanged);
 	}
-	Catalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogChanged);
-	Catalog->OnCatalogThumbnailsChanged.AddUniqueDynamic(this, &ThisClass::HandleCatalogThumbnailsChanged);
 	SetCatalogInputMode(*Controller);
 	AcquireCatalogThumbnailSession(*Catalog);
 
@@ -327,7 +392,10 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 		// 첫 진입은 로드를 시작하고, 이전 실패 뒤 다시 연 경우에는 명시적으로 재시도한다.
 		Catalog->RefreshCatalog();
 	}
-	ApplyCatalogIfReady();
+	if (!bExternalCatalogPresentationActive)
+	{
+		ApplyCatalogIfReady();
+	}
 }
 
 bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
@@ -375,6 +443,29 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 		return false;
 	}
 
+	// 카탈로그 스냅샷이 열린 뒤 다른 설치가 상한을 채울 수 있으므로 프리뷰 생성 직전에 현재 수를 다시 읽습니다.
+	// 이 차단은 UX용이며 최종 권위 판정은 ExecuteCommand의 공통 ValidatePlacement가 다시 수행합니다.
+	if (Definition->Spec.MaxInstancesPerWorld > 0)
+	{
+		const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+		const int32 CurrentCount = ZoneSystem
+			? ZoneSystem->CountFacilitiesByDefinitionId(FacilityDefinitionId)
+			: 0;
+		if (CurrentCount >= Definition->Spec.MaxInstancesPerWorld)
+		{
+			const FText LimitMessage = FText::Format(
+				NSLOCTEXT("FFBuildMode", "StartPlacementBuildLimitReached", "이 시설의 건축 한도에 도달했습니다. (설치 {0}/{1})"),
+				FText::AsNumber(CurrentCount),
+				FText::AsNumber(Definition->Spec.MaxInstancesPerWorld));
+			if (CatalogScreen)
+			{
+				CatalogScreen->SetStatusText(LimitMessage, true);
+			}
+			ShowStatus(LimitMessage.ToString(), true);
+			return false;
+		}
+	}
+
 	// 새 선택은 이전 Zone/원점/검증 결과와 독립적이어야 한다. 선택 스펙만 복사하고 배치 표적은 초기화한다.
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
 	DismissPlacementFailureFeedback();
@@ -384,7 +475,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	bHasPlacementTarget = false;
 
 	RemoveCatalogScreen();
-	State = EFF_BuildModeState::Placing;
+	SetState(EFF_BuildModeState::Placing);
 	SetFacilityRangeVisibility(true);
 	SpawnPlacementPreview();
 	if (!PlacementPreview)
@@ -426,7 +517,7 @@ void UFF_BuildModeSubsystem::ExitBuildMode()
 	TGuardValue<bool> ExitGuard(bIsExitingBuildMode, true);
 	// 어느 활성 상태에서 호출해도 같은 Closed 불변식(UI/프리뷰/선택/표적 없음)을 만든다.
 	// 아래 정리 중 썸네일 상태 방송이 동기 재진입해도 공개 전환 API는 Closed 상태와 guard를 본다.
-	State = EFF_BuildModeState::Closed;
+	SetState(EFF_BuildModeState::Closed);
 	bBuildSessionActive = false;
 	bSuppressWorldClickUntilReleased = false;
 	bSuppressPlacementConfirmUntilReleased = false;
@@ -637,7 +728,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 			return true;
 		}
 		const FString FacilityName = SelectedSpec.DisplayName.ToString();
-		State = EFF_BuildModeState::BuildMode;
+		SetState(EFF_BuildModeState::BuildMode);
 		DestroyPlacementPreview();
 		ResetPlacementSelection();
 		ResetMovingSelection();
@@ -677,7 +768,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	}
 	if (FFBuildModeModel::ShouldProcessRawBuildKey(
 		bBlockBuildToggleThisFrame,
-		Controller.WasInputKeyJustPressed(EKeys::B)))
+		Controller.WasInputKeyJustPressed(EKeys::B),
+		IsEditableSlateTextFocused()))
 	{
 		ToggleBuildMode();
 		return;
@@ -694,6 +786,10 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 			Controller.IsInputKeyDown(EKeys::Enter) ||
 			Controller.IsInputKeyDown(EKeys::SpaceBar);
 	}
+	const UFF_ZoneLifecycleTestPanelSubsystem* DebugPanel = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_ZoneLifecycleTestPanelSubsystem>()
+		: nullptr;
+	const bool bPointerOverDebugPanel = DebugPanel && DebugPanel->IsPointerOverPanel();
 
 	if (FFBuildModeModel::CanRemoveInstalledFacility(State))
 	{
@@ -721,7 +817,8 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		}
 		const UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem();
 		const bool bPointerOverFacilityPanel = FacilityInfo && FacilityInfo->IsPointerOverPanel();
-		if (!bBlockWorldClickThisFrame && !bPointerOverFacilityPanel &&
+		if (!bBlockWorldClickThisFrame && !bPointerOverFacilityPanel
+			&& !bPointerOverDebugPanel &&
 			Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
 		{
 			HandleRemovalClickUnderCursor(Controller);
@@ -734,7 +831,10 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		ResetPlacementRotationInput();
 		return;
 	}
-	if (Controller.WasInputKeyJustPressed(EKeys::G))
+	const bool bControlDown =
+		Controller.IsInputKeyDown(EKeys::LeftControl)
+		|| Controller.IsInputKeyDown(EKeys::RightControl);
+	if (!bControlDown && Controller.WasInputKeyJustPressed(EKeys::G))
 	{
 		TogglePlacementGrid();
 		return;
@@ -755,7 +855,7 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	}
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
 	HandlePlacementRotationInput(Controller, DeltaTime);
-	if ((!bBlockWorldClickThisFrame &&
+	if ((!bBlockWorldClickThisFrame && !bPointerOverDebugPanel &&
 		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton)) ||
 		(!bBlockPlacementConfirmThisFrame &&
 			Controller.WasInputKeyJustPressed(EKeys::Enter)))
@@ -974,9 +1074,16 @@ void UFF_BuildModeSubsystem::ApplyCatalogIfReady()
 		const UFF_BuildCatalogEconomyReadModel* EconomyReadModel = GameInstance
 			? GameInstance->GetSubsystem<UFF_BuildCatalogEconomyReadModel>()
 			: nullptr;
+		const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
 
 		for (FFF_BuildCatalogEntry& Entry : PricedEntries)
 		{
+			Entry.CurrentInstanceCount = ZoneSystem
+				? ZoneSystem->CountFacilitiesByDefinitionId(Entry.FacilityDefinitionId)
+				: 0;
+			Entry.bBuildLimitReached = Entry.MaxInstancesPerWorld > 0 &&
+				Entry.CurrentInstanceCount >= Entry.MaxInstancesPerWorld;
+
 			const UFFZSFacilityDefinition* Definition = Entry.Definition.Get();
 			FString FailureReason = TEXT("Build catalog economy read model is unavailable.");
 			if (EconomyReadModel && EconomyReadModel->TryProjectFacilityCosts(
@@ -1114,7 +1221,10 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 		return;
 	}
 
-	BuildModeGuideWidget->SetVisibility(State == EFF_BuildModeState::CatalogOpen
+	// PrepHUD 배치 패널은 같은 조작 안내를 자체 표시한다. 외부 표현이 활성인 동안 레거시
+	// 좌하단 가이드를 함께 띄우면 하단 도킹 패널 뒤에 겹치므로 한 표현 소유자만 남긴다.
+	BuildModeGuideWidget->SetVisibility(
+		(State == EFF_BuildModeState::CatalogOpen || bExternalCatalogPresentationActive)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible);
 	BuildModeGuideWidget->SetPlacementGuideState(
@@ -1477,6 +1587,27 @@ bool UFF_BuildModeSubsystem::ConfirmPendingRemoval()
 		return false;
 	}
 
+	// 오늘 프로그램의 예약은 시설 GUID를 목적지로 보유한다. 이 시설을 없애면 편성은 남고
+	// 손님이 갈 Actor만 사라지므로 Remove 권위 명령 직전에 다시 확인한다.
+	const UFF_ProgramSchedulingSubsystem* ProgramScheduling = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_ProgramSchedulingSubsystem>()
+		: nullptr;
+	if (ProgramScheduling == nullptr)
+	{
+		ShowStatus(TEXT("프로그램 편성 상태를 확인할 수 없어 시설을 철거할 수 없습니다."), true);
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("프로그램 편성 상태를 확인할 수 없어 철거할 수 없습니다.")), true);
+		return false;
+	}
+	if (!FFBuildModeModel::CanRemoveFacilityWithTodaysProgram(
+		ProgramScheduling->HasScheduledProgramForFacility(FacilityInstanceId)))
+	{
+		ShowStatus(TEXT("오늘 프로그램이 편성된 시설은 철거할 수 없습니다."), true);
+		ShowFacilityInfoFeedback(
+			FText::FromString(TEXT("오늘 프로그램이 편성되어 있어 철거할 수 없습니다.")), true);
+		return false;
+	}
+
 	const FString FacilityName = Facility->GetFacilitySpec().DisplayName.ToString();
 	FFFZSCommand RemoveCommand;
 	RemoveCommand.CommandId = FGuid::NewGuid();
@@ -1559,12 +1690,12 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 	CurrentPlacement = SourcePlacement;
 	ClearPendingRemovalSelection();
 
-	State = EFF_BuildModeState::Moving;
+	SetState(EFF_BuildModeState::Moving);
 	SetFacilityRangeVisibility(true);
 	SpawnPlacementPreview();
 	if (!PlacementPreview)
 	{
-		State = EFF_BuildModeState::BuildMode;
+		SetState(EFF_BuildModeState::BuildMode);
 		ResetPlacementSelection();
 		ResetMovingSelection();
 		ShowStatus(TEXT("시설 이동 프리뷰를 생성하지 못했습니다."), true);
@@ -1590,7 +1721,7 @@ void UFF_BuildModeSubsystem::CancelMovingToBuildMode(
 		return;
 	}
 
-	State = FFBuildModeModel::ResolvePreviewCancelState(State);
+	SetState(FFBuildModeModel::ResolvePreviewCancelState(State));
 	DestroyPlacementPreview();
 	ResetPlacementSelection();
 	ResetMovingSelection();
@@ -1973,6 +2104,13 @@ void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Eve
 		// 콜백 안에서 정책 검증에 재진입하지 않고 다음 제한 주기에서 최신 revision으로 다시 만든다.
 		bPreviewWorldDirty = true;
 	}
+	else if (State == EFF_BuildModeState::CatalogOpen && CatalogScreen &&
+		(Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Remove))
+	{
+		// 수량이 변하는 설치·철거에만 열린 목록을 다시 투영한다. 이동·운영 상태 변경은 건축 한도와 무관하다.
+		bCatalogWasApplied = false;
+		ApplyCatalogIfReady();
+	}
 
 	const bool bTargetsMovingFacility = State == EFF_BuildModeState::Moving &&
 		MovingFacilityInstanceId.IsValid() &&
@@ -2022,6 +2160,12 @@ void UFF_BuildModeSubsystem::HandleWorldSnapshotRestored()
 		return;
 	}
 	SetFacilityRangeVisibility(true);
+	if (State == EFF_BuildModeState::CatalogOpen && CatalogScreen)
+	{
+		bCatalogWasApplied = false;
+		ApplyCatalogIfReady();
+		return;
+	}
 	if (State == EFF_BuildModeState::Placing)
 	{
 		bPreviewWorldDirty = true;

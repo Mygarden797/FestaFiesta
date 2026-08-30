@@ -79,6 +79,7 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `GetCurrentLiveClockString()`          | `FString`           | 지금 시각을 "17:30" 형식으로 반환 |
 | `GetCurrentStageDisplayName()`         | `FText`             | 현재 Stage의 한글 표시 이름 (⚠️ 패키징 빌드 안전성 재검토 필요 — 아래 참고) |
 | `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨) |
+| `OnFestivalStarted`                    | (인자 없음)          | 축제가 새로 시작됐음을 알리는 신호 (StartNewFestival() 호출 시 발동|
 
 **`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
 
@@ -409,7 +410,7 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
 `대분류 > 소분류 > 고유이름` 읽기 모델을 만든다. 위젯은 에셋 레지스트리를 직접 조회하거나 ID를 직접
 파싱하지 않고 `GetEntries()`/`GetCategoryGroups()`와 `OnCatalogChanged`를 사용한다.
 
-`UFF_BuildModeSubsystem`은 `Closed → BuildMode ↔ CatalogOpen → Placing`과
+`UFF_BuildModeSubsystem`은 `Closed → CatalogOpen ↔ BuildMode`, `CatalogOpen → Placing`과
 `BuildMode → Moving → BuildMode` 상태를 소유한다. 건축 세션은
 `UFF_FestivalStageSubsystem::IsReconfigureAllowed()`와 FFZS `ChangePhase`
 (`InitialSetup`/`MorningCheck`)가 모두 허용할 때만 진입할 수 있다. 활성 세션 중 어느 한 정책이
@@ -443,7 +444,7 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 
 | 입력 | 동작 |
 | --- | --- |
-| `B` | 재배치 허용 단계에서 첫 입력은 `BuildMode` 진입, 이후 카탈로그 열기/닫기. 불허 단계에서는 진입하지 않음 |
+| `B` | 재배치 허용 단계에서 첫 입력은 배치 카탈로그를 즉시 열고, 다음 입력은 `BuildMode`로 전환. 이후 두 상태를 오가며 불허 단계에서는 진입하지 않음 |
 | `M` 또는 `이동` 버튼 | 선택 시설의 이동 프리뷰 시작 |
 | `Q`, `E` 탭 | 설치/이동 프리뷰를 설정된 스냅 간격만큼 진행 방향의 다음 각도로 회전. 기본 45도 |
 | `Shift` + `Q`, `E` 홀드 | 설치/이동 프리뷰를 설정 속도로 연속 자유 회전. 첫 edge의 스냅 회전과 중복 실행하지 않음 |
@@ -467,12 +468,16 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 - 상단 UI는 `건축`/`스킨` 2탭이지만, 현재 `스킨` 탭은 데이터 모델이 없어 준비중 상태다.
 - 현재 등록된 실제 시설 정의가 1개뿐이므로, 나머지 카드는 규칙에 맞는 Data Asset을 추가할 때 자동 생성된다.
 
-### 설치 시설 공용 정보 패널 (2026-08-18 추가)
+### 설치 시설 공용 정보 패널 (2026-08-29 갱신)
 
 - **헤더**: `Public/UI/Facility/FF_FacilityInfoTypes.h`, `FF_FacilityInfoSubsystem.h`,
-  `FF_FacilityInfoPanel.h`
+  `FF_FacilityInfoPanel.h`, `FF_FacilityPaidProgramTypes.h`,
+  `FF_FacilityPaidProgramPicker.h`, `FF_FacilityPaidProgramCard.h`
 - **접근**: `UFF_FacilityInfoSubsystem` (`TickableWorldSubsystem`)
 - **기본 WBP**: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C`
+- **유료 프로그램 WBP**:
+  `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C`,
+  `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C`
 - **갱신 주기**: 선택 즉시, 선택 시설의 non-Remove World Change 다음 Tick, 선택 중 0.25초 간격.
   Remove·World Snapshot 복원은 즉시 선택 해제
 - **상태**: `구현완료`
@@ -480,6 +485,12 @@ Queue 예약·보호구역·지면·내비게이션·운영 단계 검증을 우
 건축 모드와 Live가 같은 비모달 우측 패널을 사용한다. 서브시스템이 Zone·Queue·Economy·Stage·Catalog를
 읽어 불변 표시 스냅샷 `FFF_FacilityInfoViewData`로 평탄화하며, WBP는 게임플레이 서브시스템을 직접
 조회하거나 값을 다시 계산하지 않는다. 0.25초 샘플링은 이 coordinator 내부에만 한정되며 위젯은 폴링하지 않는다.
+
+유료 프로그램 Picker도 같은 선택 시설을 보여 주는 **두 번째 우측 표현**이다. `유료 프로그램 편성`을 누르면
+시설 정보 패널을 먼저 접고 Picker 하나만 표시하며, Picker를 닫거나 편성에 성공하면 선택이 유효한 경우 시설
+정보 패널로 돌아온다. 두 WBP를 동시에 보이게 하지 않는 상호 배타 규칙은
+`UFF_FacilityInfoSubsystem::SetPaidProgramPickerOpen()`이 소유한다. Blueprint에서 별도 visibility를 덧씌워
+두 창을 함께 띄우지 않는다.
 
 **`EFF_FacilityInfoContext`**
 
@@ -539,8 +550,10 @@ FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계�
 | 식별·Context | `FacilityInstanceId`, `Context`, `ContextTitle` |
 | 시설 표시 | `DisplayName`, `CategoryText`, `ZoneText`, `FacilityStateText`, `FootprintText`, `ClearanceText` |
 | 가격·정적 사양 | `InstallCostText`, `RecoveryCostText`, `QueueCapacityText`, `ServiceDurationText`, `Thumbnail`, `ThumbnailPlaceholderText` |
+| 건축 한도 | `CurrentInstancesInWorld`, `MaxInstancesPerWorld`, `InstanceLimitText`, `bInstanceLimitReached` |
 | 운영·Queue | `OperationStateText`, `WaitingPartiesText`, `OccupancyText`, `RemainingServiceText`, `ExpectedWaitText`, `ThroughputText` |
-| 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `FeedbackText`, `bFeedbackIsError` |
+| 유료 프로그램 | `bShowProgramSection`, `bHasScheduledProgram`, `ProgramStatusText`, `ScheduledProgramSummaryText`, `bShowProgramScheduleAction`, `bCanScheduleProgram`, `ProgramScheduleActionText`, `ProgramScheduleDisabledReasonText` |
+| 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `bHasMinigame`, `bCanStartMinigame`, `MinigameActionText`, `FeedbackText`, `bFeedbackIsError` |
 
 문자열 필드는 모두 표시용 `FText`다. 포맷터가 만든 수치에는 단위와 지역화된 숫자 포맷이 적용되지만,
 `ZoneText`·`DisplayName`·`FeedbackText`의 현지화 여부는 원본 데이터에 따른다. 예상 대기는 1인 진입
@@ -556,9 +569,10 @@ Actor의 `CanMoveOrRemove()`가 참이어야 한다. 버튼 상태는 안내용�
 
 - Blueprint 함수는 `ApplyViewData(const FFF_FacilityInfoViewData&)`, `SetPanelOpen(bool)`,
   `IsPointerOverInteractivePanel()` 3종이다. 일반 호출자는 패널을 직접 만들지 않고 서브시스템을 사용한다.
-- 루트는 `CanvasPanel` + `SelfHitTestInvisible`, 실제 카드는 우측 중앙 + AutoSize다. 카드 밖 클릭은 월드로
-  통과하고 카드 좌클릭과 버튼 입력은 소비한다. 우클릭은 건축 선택 취소로 전달될 수 있다.
-- 다음 27개 `BindWidget` 이름을 유지한다.
+- 루트는 `CanvasPanel` + `SelfHitTestInvisible`, 실제 카드는 우측 상단 `(-24, 72)`에 고정된
+  `388 × 500`이다. 카드 밖 클릭은 월드로 통과하고 카드 좌클릭과 버튼 입력은 소비한다. 우클릭은 건축
+  선택 취소로 전달될 수 있다.
+- 다음 핵심 27개 `BindWidget` 이름과, 아래 가산 계약 이름을 유지한다.
 
 ```text
 Border_Panel, Button_Close, Button_Move, Button_Remove, Image_Thumbnail,
@@ -569,16 +583,43 @@ Text_ServiceDuration, Text_OperationState, Text_WaitingParties, Text_Occupancy,
 Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
 ```
 
-에디터 명령 `FF.BuildFacilityInfoUMG`는 에셋이 없을 때만 기본 WBP를 생성한다. 기존 디자이너 에셋은
-덮어쓰지 않고 위 상속·배치·BindWidget 계약만 검증한다.
+```text
+Text_InstanceLimit, Button_StartMinigame, Text_StartMinigame,
+Panel_ProgramSection, Text_ProgramStatus, Text_ScheduledProgramSummary,
+Text_ProgramScheduleReason, Button_ScheduleProgram, Text_ScheduleProgram,
+Panel_Actions, Panel_BuildActions, Panel_LiveActions
+```
+
+**유료 프로그램 Picker·Card WBP 계약**
+
+- Picker는 종태님 UI와 같은 `LightTeal` 팔레트와
+  `/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard`를 사용한다. 루트는 `SelfHitTestInvisible`, 실제 Picker는
+  우측 상단 기준 너비 `520`, 우측 여백 `24`, 상단 여백 `72`로 도킹한다.
+- Picker의 하단은 Build UI를 위해 **400px를 예약**한다. 이 값은 Build Host `320px` + 상태 바·여백
+  `70px` + 안전 간격 `10px`의 합이며, 세로 stretch를 사용해 해상도가 달라도 하단 Build 패널 위에서
+  끝나게 한다.
+- Picker named widget은 `Border_Picker`, `Button_Close`, `Text_FacilityName`, `Text_Empty`,
+  `ScrollBox_Programs`, `Text_PreviewName`, `Text_PreviewDescription`, `Text_PreviewDetails`,
+  `Text_PreviewAvailability`, `Text_NoRefundNotice`, `Text_Feedback`, `Button_Confirm`, `Text_Confirm`이다.
+- 카드 named widget은 `Button_Select`, `Text_ProgramName`, `Text_ProgramMeta`,
+  `Text_ProgramAvailability`이다. 카드 선택은 미리보기만 바꾸고, 명시적 확인 뒤에만
+  `UFF_FacilityInfoSubsystem`이 시설 GUID와 편성 가능 여부를 다시 검증해 권위 명령을 실행한다.
+
+에디터 명령 `FF.BuildFacilityInfoUMG`는 시설 정보·유료 Picker·유료 Card WBP가 없을 때 만든다. 기존 시설
+정보 패널에는 지원되는 가산 계약만 비파괴 마이그레이션하고, 기존 Picker/Card는 계약을 검증해 재사용한다.
+불일치한 기존 Picker/Card는 덮어쓰지 않고 오류로 보고한다. 승인된 스타일을 다시 적용할 때만
+유료 WBP만 갱신할 때는 `FF.RefreshFacilityPaidProgramUMG`를 사용한다. 시설 정보 패널까지 함께 갱신할 때는
+`FF.RefreshFacilityInfoUMG`를 사용한다. 이 명령은 **시설 정보 패널뿐 아니라 유료 Picker와 유료 Card까지
+세 WidgetTree를 모두 LightTeal/Pretendard 템플릿으로 재생성하고 Compile/Save**한다. 실행 전 변경분을
+커밋하거나 백업한다.
 
 **C++ 전용 어댑터 계약**
 
 - `UFF_FacilityInfoPanel`의 `FSimpleMulticastDelegate OnMoveRequested`·`OnRemoveRequested`·
-  `OnCloseRequested`는 인자가 없다. 이동·철거는 현재 ViewData가 `Build`이고 해당 `bCan*`가 참일 때만,
-  닫기는 항상 방송한다.
-- `UFF_FacilityInfoSubsystem`의 `FFF_OnFacilityInfoActionRequested(FGuid)` 3종은 패널 이벤트를 선택 GUID로
-  변환한다. 이동·철거·닫기 모두 `Build` 선택에서만 외부로 방송하며, 닫기는 방송 후 같은 선택을 해제한다.
+  `OnProgramScheduleRequested`·`OnMinigameRequested`·`OnCloseRequested`는 인자가 없다. 이동·철거·편성은
+  현재 ViewData의 Context와 각 `bCan*`를 통과할 때만 요청하며, 닫기는 항상 방송한다.
+- `UFF_FacilityInfoSubsystem`의 `FFF_OnFacilityInfoActionRequested(FGuid)` 5종은 패널 이벤트를 현재 선택
+  GUID로 변환한다. 유료 프로그램의 실제 Picker 생성·확인·권위 편성은 서브시스템 내부에서 계속 소유한다.
 - `SetFeedback(const FText&, bool)`은 선택이 없으면 no-op이고, `ClearSelectionIfMatches(FGuid, Context)`는
   호출자 소유 선택만 닫는다. `static FSoftClassPath GetDefaultPanelClassPath()`,
   `const FFF_FacilityInfoViewData& GetCurrentViewData() const`, `FFFacilityInfoModel` 포맷 함수도 C++ 전용이다.
@@ -747,14 +788,18 @@ FFF_CrowdCellSample {
 - 🔴 **`UnfilledSeats` 는 화면에 붙이지 말아 주세요.** 정원은 보장되므로 배선이 끝나면 항상 0 입니다.
   필드는 남겨 두지만 **0 이 아닌 값이 보이면 제 쪽 버그**입니다.
 
-### 🔴 프로그램 편성 화면이 필요합니다 (담당 백종태)
+### 시설 기반 유료 프로그램 편성 UI (2026-08-29 구현완료)
 
-Setup·MorningCheck 에서 **그날 열 프로그램을 고르는 화면**입니다. 경제 쪽은 다 됐습니다.
+Setup·MorningCheck 에서 설치 시설을 선택하고 **그 시설에서 그날 열 프로그램을 고르는 화면**이다.
+경제·예약의 원본 상태는 기존 시스템이 소유하고, 시설 정보 coordinator가 화면용 스냅샷과 권위 명령 경계를
+연결한다.
 
-> **2026-08-27 — 자리는 이미 잡혀 있습니다.** `EFF_PrepHudTab::Program`("프로그램") 탭이
-> `FF_PrepHudTypes.h` 에 있고 `Center` 도킹 대상입니다. 지금 `Panels/` 에 있는 패널은
-> `FF_PrepPanelCheck` · `FF_PrepPanelStaff` 둘뿐이라 **이 탭을 누르면 열리는 것이 없습니다.**
-> `FF_PrepPanelStaff` 와 같은 모양(`UFF_PrepPanelBase` 상속)으로 하나 더 만드시면 됩니다.
+실제 진입은 `BuildMode`에서 시설 선택 → 우측 시설 정보 → `유료 프로그램 편성`이다. Picker는
+`UFF_FacilityInfoSubsystem`이 `FFF_FacilityPaidProgramPickerViewData`와
+`FFF_FacilityPaidProgramCardViewData`로 평탄화한 값만 렌더링한다. 프로그램 카드는
+`CanScheduleProgramAtFacility()` 결과로 시설 호환성과 편성 가능 여부를 함께 표시하고, 확인 시
+`TryScheduleProgramAtFacility()`로 다시 검증한다. PrepHUD의 전역 `Program` 탭과는 별도인 시설 단위
+흐름이다.
 
 **한 줄 요약** — 아침에 Gold 와 인원을 걸면 **그 프로그램을 좋아하는 손님이 정원만큼 축제에 옵니다.**
 프로그램은 "유료 광고"에 가깝습니다 — 체험비도 벌지만, 데려온 손님이 부스에서도 쓰기 때문입니다.
@@ -1468,6 +1513,45 @@ U5 홍보 패널을 만들면서, 없는 API 를 UI 쪽 더미로 임시로 메�
 `예상 방문객 (범위)` 요청(위 표)과 짝입니다 — 그게 오면 `안 함 대비 +N명` 을 숫자로 그릴 수 있습니다.
 지금은 `×1.08` 배수만 보여줍니다.
 
+### 🔴 홍보 — 웹 프로토타입과 코드가 다릅니다 (2026-08-27, 백종태) · **기획 결정 필요**
+
+예전에 웹으로 만든 `홍보 프리뷰` 프로토타입이 지금 코드와 **정면으로 다릅니다.**
+어느 쪽이 맞는지 정해 주셔야 UI 를 그쪽에 맞춥니다. UI 가 밸런스 값을 지어낼 수는 없습니다.
+
+| 항목 | 웹 프로토타입 | 지금 코드 |
+| --- | --- | --- |
+| 등급 수 | **4개** | 3개 (`안 함` 포함) |
+| 등급·비용·배율 | 홍보 없음 `0` **×0.78** · 지역 SNS `600` ×1.00 · 전국 홍보 `1,400` ×1.22 · 인플루언서 `2,600` ×1.46 | 안 함 `0` ×1.00 · 기본 `500` ×1.08 · 집중 `1,200` ×1.18 |
+| 시작 버즈 | 등급마다 `+0 / +6 / +14 / +26` | ❌ Buzz 개념 자체가 없음 (9월 투입 예정) |
+| 입장료 | **플레이어가 슬라이더로 정한다** | `AdmissionFeeGold = 5` **고정값**. setter 없음 |
+| 예상 총 방문객 (3일 합계) | 표시함 | ❌ 없음 |
+| 예상 입장료 수입 | 표시함 | ❌ 없음 |
+| 예상 최대 동시 인원 + 혼잡 위험 | 표시함 (`334`, `혼잡 위험 높음`) | ❌ 없음 |
+
+**특히 갈리는 것 두 가지입니다.**
+
+1. 🔴 **`홍보 없음` 이 ×0.78 입니다.** 프로토타입에서는 홍보를 **안 하면 손해**고 지역 SNS 가
+   기준선(×1.00)입니다. 지금 코드는 안 함이 ×1.00 기준이고 홍보가 보너스입니다.
+   같은 화면이라도 플레이어가 받는 인상이 완전히 다릅니다 — "안 사면 손해" vs "사면 이득".
+2. 🔴 **입장료를 플레이어가 정하는가.** 지금 헤더 주석에 `고정값이라 화면에 슬라이더를
+   두지 않는다` 고 박혀 있습니다. 플레이어가 정하는 것으로 가면
+   **`SetAdmissionFee(int32)` Command + 변경 델리게이트**가 필요하고,
+   프로토타입 문구대로 `입장료가 높으면 수익은 오르지만 방문객이 줄어듭니다` 라는
+   **수요 곡선**도 누군가 소유해야 합니다.
+
+**결정이 프로토타입 쪽이면 필요한 것** (위 `UI 가 더미로 채운 부분` 표에 더해서):
+
+| 필요한 것 | 비고 |
+| --- | --- |
+| `FFF_PromotionTier` 에 등급 4종 + `StartingBuzz` | 배율도 프로토타입 값으로 |
+| `SetAdmissionFee(int32)` + `OnAdmissionFeeChanged` | 범위(min·max)도 함께 주세요 |
+| 예상 방문객 — **입장료와 홍보 등급을 넣으면 나오는 함수** | 위 `예상 방문객 (범위)` 요청과 같은 것. 다만 **현재값이 아니라 가정값으로 물을 수 있어야** 합니다 — 슬라이더를 움직이는 동안 미리보기를 그려야 하므로 |
+| 예상 최대 동시 인원 + 혼잡 위험 구간 | 판정 기준을 함께 주세요. Zone `SoftCapacity` 대비인지 Fruin LOS 인지 |
+
+**UI 쪽 준비 상태** — 홍보 패널은 이미 있고 등급 카드·견적·확인창까지 동작합니다.
+위 값들이 오면 `UFF_FestivalViewModelSubsystem` 안쪽과 카드 필드만 늘리면 됩니다.
+슬라이더와 예상치 3칸은 자리를 비워 두겠습니다.
+
 **소유자분들께** — 만드실 때 아래 두 가지만 지켜 주시면 UI가 바로 붙습니다.
 
 1. 현재값 Getter + 변경 델리게이트를 **쌍으로** 제공
@@ -1524,3 +1608,4 @@ U5 홍보 패널을 만들면서, 없는 API 를 UI 쪽 더미로 임시로 메�
 | 2026-08-28 | 김시리 | 🔴 **2회차 축제를 시작하면 경제가 리셋되지 않습니다.** 경제의 `StartFestival(Definition)` 이 **`Initialize()` 에서 한 번만** 불려서, GameInstance 가 살아 있는 한 다시 안 돕니다 — Gold·원장·미납·인원·예약이 1회차 마지막 값으로 남습니다. **제 쪽에서 닫겠습니다**(리셋 함수는 이미 완성돼 있고 부를 자리만 없었습니다). ❓ **여쭙고 싶은 것**: `UFF_UIFlowSubsystem` 에서 **프론트엔드 복귀 후 축제를 다시 시작하는 흐름이 지금 실제로 도는지**입니다. 도는 상태면 발표 전에, 아니면 발표 뒤에 닫겠습니다 |
 | 2026-08-28 | 김시리 | ✅ **메인 무대가 공연 시간에만 후보로 열립니다.** Live 전반에는 `Performance_MainStage_*` 가 NPC 목적지 후보에서 빠져 있다가 공연 시작 시각에 열리고, 그 순간 유휴 파티가 무대로 몰립니다. **버스킹·체험 무대는 상시 열려 있습니다.** 화면 쪽 작업은 없습니다 — 다만 "무대에 아무도 없다"가 버그가 아니라 의도라는 점만 알아 두시면 됩니다 |
 | 2026-08-27 | 김시리 | **코드 전수 대조 + 문서 정리.** 안 맞는 것을 문서 끝 `아직 안 맞는 것` 표 하나로 모으고, 이미 닫힌 항목의 경위 서술을 걷어냈습니다. 실제로 바뀐 사실 4개: ① **표시 문자열은 5개 파일에 남아 있습니다**(지목했던 2곳은 줄 번호가 낡았고, 그중 4건은 Stage enum 이 아니라 탭·옵션 enum 이라 강민서 님 수정과 무관합니다) ② **`FFF_CrowdReadModel` 은 스텁이 아니라 실값이고 셀이 2m 입니다**(5m 가정이면 Heat Map 색이 틀립니다) ③ 인원 칸에 **가용이 아니라 보유**가 붙어 있습니다 ④ 프로그램·피날레는 `EFF_PrepHudTab` 에 탭 자리가 이미 있고 패널 본체만 없습니다. **경제 쪽 추가 작업은 0건이고, 제 숙제는 `AddSample` 호출부입니다** |
+| 2026-08-28 | 강민서 | ✅ **김시리님 질문 관련 — `OnFestivalStarted` 델리게이트로 대신 구독하시는 걸 제안합니다.** `StartNewFestival()` 호출 시 Day/Stage/시계 초기화 후 마지막에 `OnFestivalStarted.Broadcast()`가 발동하도록 만들어 뒀습니다. 경제 쪽 리셋 함수를 `UFF_UIFlowSubsystem`이 직접 호출하는 방식 대신, 여기 구독해서 자체 리셋을 걸어두시면 "부를 자리가 없다"는 문제가 UI Flow 흐름 여부와 무관하게 해결될 것 같습니다. 구독 방법: `GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()->OnFestivalStarted.AddDynamic(this, &YourClass::YourResetHandler);` 이 방식이 맞을지 확인 부탁드립니다. |
