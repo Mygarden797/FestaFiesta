@@ -42,6 +42,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void StartFestival(const UFF_FestivalDefinition* InDefinition);
 
+	// GameInstance 는 `OpenLevel` 을 넘어 살아남으므로 `Initialize()` 는 게임을 켤 때 한 번만
+	// 브리지가 `OnFestivalStarted` 를 받아 이 함수를 부른다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void RestartFestival();
+
 	// 축제 시작됐는지
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	bool IsFestivalStarted() const { return Definition != nullptr; }
@@ -295,6 +300,10 @@ public:
 	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
+	// Project Settings 의 DefaultFestival 을 읽어 축제를 시작한다.
+	// 저작이 비어 있으면 Warning 만 남기고 시작하지 않는다.
+	void StartConfiguredFestival();
+
 	// 이 시설에서 이 프로그램을 열 수 있는가.
 	// 시설 종류를 ZoneSystem 에서 읽어 카드의 허용 목록과 대조한다.
 	bool IsFacilityTypeAllowedForCard(const FFF_ProgramCard& Card, const FGuid& FacilityInstanceId) const;

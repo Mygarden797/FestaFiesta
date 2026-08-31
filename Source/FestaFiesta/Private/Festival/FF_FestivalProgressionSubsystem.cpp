@@ -47,6 +47,11 @@ void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Coll
 	SetProgramReservations(
 		Collection.InitializeDependency<UFF_ProgramReservationSubsystem>());
 
+	StartConfiguredFestival();
+}
+
+void UFF_FestivalProgressionSubsystem::StartConfiguredFestival()
+{
 	const UFF_FestivalSettings* Settings = UFF_FestivalSettings::Get();
 	if (Settings == nullptr || Settings->DefaultFestival.IsNull())
 	{
@@ -60,6 +65,19 @@ void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Coll
 
 	// 작은 DataAsset 하나라 동기 로드로 충분하다. GameInstance 초기화 시점이라 프레임 예산과 무관하다.
 	StartFestival(Settings->DefaultFestival.LoadSynchronous());
+}
+
+void UFF_FestivalProgressionSubsystem::RestartFestival()
+{
+	if (Definition != nullptr)
+	{
+		StartFestival(Definition);
+		return;
+	}
+
+	// 여기 오는 것은 `Initialize` 가 설정 누락으로 그냥 돌아갔던 경우다. 그 사이에 저작이
+	// 채워졌을 수 있으니 한 번 더 본다. 여전히 비어 있으면 저쪽이 Warning 을 남긴다.
+	StartConfiguredFestival();
 }
 
 void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinition* InDefinition)
