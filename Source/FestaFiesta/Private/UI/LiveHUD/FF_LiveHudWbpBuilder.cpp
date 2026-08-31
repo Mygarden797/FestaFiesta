@@ -27,6 +27,7 @@
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelOperations.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelFacilities.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelQueues.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 
@@ -77,6 +78,7 @@ namespace FFLiveHudWbpBuilder
 	const FString OperationsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelOperations");
 	const FString StaffPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelStaff");
 	const FString FacilitiesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelFacilities");
+	const FString QueuesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelQueues");
 
 	/** 메뉴 행 + 상태 행. 준비 단계 바와 같은 58 이라 두 화면이 같은 높이로 끝난다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -827,6 +829,183 @@ namespace FFLiveHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 3-4) 대기열 패널
+	// =========================================================================
+
+	bool BuildQueuesPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 대기열 패널을 만들지 않았다."), LiveLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		UHorizontalBox* SummaryRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Summary"));
+		UTextBlock* AverageNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AverageNote"), true);
+		UTextBlock* Longest = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Longest"), true);
+		UTextBlock* StateCounts = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_StateCounts"), true);
+
+		UTextBlock* ListTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ListTitle"));
+		UVerticalBox* ListBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_Queues"), true);
+		UTextBlock* Empty = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Empty"), true);
+		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
+
+		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
+			|| !SummaryRow || !AverageNote || !Longest || !StateCounts
+			|| !ListTitle || !ListBox || !Empty || !MissingNote)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		// --- 헤더 ---
+		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(LOCTEXT("LiveQueue_TitlePreview", "대기열"));
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveQueue_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 요약 3칸 ---
+		const bool bSummaryOk =
+			AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+				TEXT("Text_TotalWaiting"), LOCTEXT("LiveQueue_TotalLabel", "총 대기"),
+				LOCTEXT("LiveQueuePreview_Total", "26명"))
+			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+				TEXT("Text_InService"), LOCTEXT("LiveQueue_ServiceLabel", "이용 중"),
+				LOCTEXT("LiveQueuePreview_Service", "7명"))
+			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+				TEXT("Text_AverageWait"), LOCTEXT("LiveQueue_AvgLabel", "평균 대기"),
+				LOCTEXT("LiveQueuePreview_Avg", "62초"));
+
+		if (!bSummaryOk)
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_SummaryRow = Content->AddChildToVerticalBox(SummaryRow))
+		{
+			Slot_SummaryRow->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_SummaryRow->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 한 곳만 센 평균과 여섯 곳을 센 평균은 뜻이 다르다. 몇 곳을 셌는지 적는다.
+		StyleText(*AverageNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		AverageNote->SetText(LOCTEXT("LiveQueuePreview_AvgNote", "줄을 끝낸 손님이 있는 4곳 기준"));
+		AverageNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_AverageNote = Content->AddChildToVerticalBox(AverageNote))
+		{
+			Slot_AverageNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_AverageNote->SetHorizontalAlignment(HAlign_Fill);
+			Slot_AverageNote->SetPadding(FMargin(0.f, 4.f, 0.f, 12.f));
+		}
+
+		StyleText(*Longest, 14, Palette->InGame.Ink, TEXT("SemiBold"));
+		Longest->SetText(LOCTEXT("LiveQueuePreview_Longest", "가장 긴 줄 · 화장실A 14명"));
+		Longest->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Longest = Content->AddChildToVerticalBox(Longest))
+		{
+			Slot_Longest->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Longest->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*StateCounts, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		StateCounts->SetText(LOCTEXT("LiveQueuePreview_StateCounts",
+			"받는 중 4 · 정원 참 1 · 안 받음 1 · 막힘 0"));
+		StateCounts->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_StateCounts = Content->AddChildToVerticalBox(StateCounts))
+		{
+			Slot_StateCounts->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_StateCounts->SetHorizontalAlignment(HAlign_Fill);
+			Slot_StateCounts->SetPadding(FMargin(0.f, 4.f, 0.f, 18.f));
+		}
+
+		// --- 줄별 목록. 줄은 코드가 런타임에 채운다 ---
+		StyleText(*ListTitle, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		ListTitle->SetText(LOCTEXT("LiveQueue_ListTitle", "줄이 긴 순"));
+		if (UVerticalBoxSlot* Slot_ListTitle = Content->AddChildToVerticalBox(ListTitle))
+		{
+			Slot_ListTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ListTitle->SetHorizontalAlignment(HAlign_Fill);
+			Slot_ListTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
+
+		if (UVerticalBoxSlot* Slot_ListBox = Content->AddChildToVerticalBox(ListBox))
+		{
+			Slot_ListBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ListBox->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*Empty, 13, Palette->InGame.InkFaint, TEXT("Medium"));
+		Empty->SetText(LOCTEXT("LiveQueuePreview_Empty", "줄을 세울 시설이 없습니다."));
+		Empty->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Empty = Content->AddChildToVerticalBox(Empty))
+		{
+			Slot_Empty->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Empty->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Empty->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// ★ 아직 못 보여주는 것을 적는다. 안 적으면 빠진 줄 모른다.
+		StyleText(*MissingNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		MissingNote->SetText(LOCTEXT("LiveQueuePreview_MissingNote",
+			"예상 대기 시간과 줄을 포기한 손님 수는 아직 읽을 수 없습니다."));
+		MissingNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_MissingNote = Content->AddChildToVerticalBox(MissingNote))
+		{
+			Slot_MissingNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_MissingNote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
 	// 4) 라이브 HUD 루트
 	// =========================================================================
 
@@ -1210,6 +1389,16 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildFacilitiesPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			QueuesPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelQueues::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildQueuesPanel(Blueprint, Tree);
 			});
 
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
