@@ -42,6 +42,7 @@
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "UI/Minigame/FF_MinigameUIStyle.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
 #include "UObject/SavePackage.h"
 #include "UObject/UObjectGlobals.h"
@@ -70,8 +71,11 @@ namespace FFSurfingWbpBuilder
 	const FString FreeRideScreenClassPath(
 		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_Surfing_FreeRide.WBP_FF_Surfing_FreeRide_C"));
 	const TCHAR* const BackdropTextureObjectPath =
-		TEXT("/Game/FestaFiesta/UI/Minigame/UIUX_v2/T_MG_Surfing_Backdrop_UIUX_v2."
-			 "T_MG_Surfing_Backdrop_UIUX_v2");
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Backdrop_Final."
+			 "T_MG_Surfing_Backdrop_Final");
+	const TCHAR* const SurferTextureObjectPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Surfer_Final."
+			 "T_MG_Surfing_Surfer_Final");
 	const FName SurfingId(TEXT("Surfing"));
 	const FName SurfingFacilityId(TEXT("Booth_ActivityGame_Surfing"));
 
@@ -148,7 +152,11 @@ namespace FFSurfingWbpBuilder
 		const UBorder* ResultPanel = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_Result")));
 		const UTextBlock* ResultText = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_Result")));
 		const UButton* CloseButton = Cast<UButton>(Tree->FindWidget(TEXT("Button_Close")));
+		const UButton* ResultCloseButton = Cast<UButton>(
+			Tree->FindWidget(TEXT("Button_ResultClose")));
 		const UTextBlock* CloseLabel = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_CloseLabel")));
+		const UTextBlock* ResultCloseLabel = Cast<UTextBlock>(
+			Tree->FindWidget(TEXT("Text_ResultCloseLabel")));
 		const UBorder* PillHud = Cast<UBorder>(Tree->FindWidget(TEXT("Border_PillHud")));
 		const UBorder* ControlsHint = Cast<UBorder>(Tree->FindWidget(TEXT("Border_ControlsHint")));
 		const UBorder* Backdrop = Cast<UBorder>(Tree->FindWidget(TEXT("Border_SurfBackdrop")));
@@ -174,6 +182,7 @@ namespace FFSurfingWbpBuilder
 			ResultPanel,
 			ResultText,
 			CloseButton,
+			ResultCloseButton,
 		};
 		for (const UWidget* Widget : RequiredVariables)
 		{
@@ -227,13 +236,15 @@ namespace FFSurfingWbpBuilder
 			|| ResultDimmer->GetParent() != SurfArea
 			|| ResultDimmer->GetVisibility() != ESlateVisibility::Collapsed
 			|| !ResultCard
-			|| ResultCard->GetVisibility() != ESlateVisibility::HitTestInvisible
+			|| ResultCard->GetVisibility() != ESlateVisibility::SelfHitTestInvisible
 			|| !ResultStage
-			|| ResultStage->GetVisibility() != ESlateVisibility::HitTestInvisible
+			|| ResultStage->GetVisibility() != ESlateVisibility::SelfHitTestInvisible
 			|| !Root
 			|| ResultPanel->GetParent() != Root
 			|| !CloseLabel
-			|| CloseLabel->GetParent() != CloseButton)
+			|| CloseLabel->GetParent() != CloseButton
+			|| !ResultCloseLabel
+			|| ResultCloseLabel->GetParent() != ResultCloseButton)
 		{
 			return false;
 		}
@@ -302,44 +313,20 @@ namespace FFSurfingWbpBuilder
 		return Slot;
 	}
 
-	bool AddSeaBand(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		UCanvasPanel& SurfArea,
-		const FName Name,
-		const float Top,
-		const float Bottom,
-		const FLinearColor& Color,
-		const int32 ZOrder,
-		const float Left = 0.0f,
-		const float Right = 1.0f)
-	{
-		UBorder* Band = MakeWidget<UBorder>(Blueprint, Tree, Name);
-		if (!Band)
-		{
-			return false;
-		}
-
-		Band->SetBrushColor(Color);
-		Band->SetVisibility(ESlateVisibility::HitTestInvisible);
-		return AddCanvasChild(
-			SurfArea,
-			*Band,
-			FAnchors(Left, Top, Right, Bottom),
-			FVector2D::ZeroVector,
-			FMargin(0.0f),
-			ZOrder) != nullptr;
-	}
-
 	bool BuildScreenLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
+		const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 		UTexture2D* BackdropTexture = LoadObject<UTexture2D>(
 			nullptr, BackdropTextureObjectPath);
-		if (!BackdropTexture)
+		UTexture2D* SurferTexture = LoadObject<UTexture2D>(
+			nullptr, SurferTextureObjectPath);
+		if (!BackdropTexture || !SurferTexture)
 		{
 			UE_LOG(LogFFUIWbpBuilder, Error,
-				TEXT("%s_FAIL: canonical AAA backdrop is missing: %s"),
-				LogPrefix, BackdropTextureObjectPath);
+				TEXT("%s_FAIL: production 2.5D artwork is missing: backdrop=%s surfer=%s"),
+				LogPrefix,
+				BackdropTexture ? TEXT("OK") : BackdropTextureObjectPath,
+				SurferTexture ? TEXT("OK") : SurferTextureObjectPath);
 			return false;
 		}
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Root"));
@@ -378,46 +365,6 @@ namespace FFSurfingWbpBuilder
 			return false;
 		}
 
-		// The cinematic plate stays legible under bright surf highlights through
-		// a navy vignette, a framed arena glass layer and restrained wake guides.
-		if (!AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_TopVignette"),
-			0.00f, 0.155f, FLinearColor(0.002f, 0.018f, 0.045f, 0.76f), 2)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_BottomVignette"),
-				0.84f, 1.00f, FLinearColor(0.002f, 0.020f, 0.050f, 0.72f), 2)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_01"),
-				0.265f, 0.269f, FLinearColor(0.72f, 0.98f, 0.96f, 0.12f), 6, 0.085f, 0.915f)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_02"),
-				0.420f, 0.424f, FLinearColor(0.72f, 0.98f, 0.96f, 0.16f), 6, 0.100f, 0.915f)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_03"),
-				0.575f, 0.579f, FLinearColor(0.72f, 0.98f, 0.96f, 0.12f), 6, 0.085f, 0.915f)
-			|| !AddSeaBand(Blueprint, Tree, *SurfArea, TEXT("Border_WakeGuide_04"),
-				0.730f, 0.734f, FLinearColor(0.72f, 0.98f, 0.96f, 0.16f), 6, 0.100f, 0.915f))
-		{
-			return false;
-		}
-
-		UBorder* ArenaShadow = MakeWidget<UBorder>(
-			Blueprint, Tree, TEXT("Border_ArenaShadow"));
-		UBorder* ArenaGlass = MakeWidget<UBorder>(
-			Blueprint, Tree, TEXT("Border_ArenaGlass"));
-		if (!ArenaShadow || !ArenaGlass)
-		{
-			return false;
-		}
-		ArenaShadow->SetBrushColor(FLinearColor(0.001f, 0.014f, 0.033f, 0.30f));
-		ArenaGlass->SetBrushColor(FLinearColor(0.006f, 0.055f, 0.105f, 0.14f));
-		ArenaShadow->SetVisibility(ESlateVisibility::HitTestInvisible);
-		ArenaGlass->SetVisibility(ESlateVisibility::HitTestInvisible);
-		if (!AddCanvasChild(*SurfArea, *ArenaShadow,
-			FAnchors(0.055f, 0.145f, 0.945f, 0.875f), FVector2D::ZeroVector,
-			FMargin(0.0f), 4)
-			|| !AddCanvasChild(*SurfArea, *ArenaGlass,
-				FAnchors(0.060f, 0.150f, 0.940f, 0.870f), FVector2D::ZeroVector,
-				FMargin(0.0f), 5))
-		{
-			return false;
-		}
-
 		UCanvasPanel* EntityLayer = MakeWidget<UCanvasPanel>(
 			Blueprint, Tree, TEXT("Canvas_EntityLayer"), true);
 		if (!EntityLayer)
@@ -452,13 +399,20 @@ namespace FFSurfingWbpBuilder
 			return false;
 		}
 
-		SurferAvatar->SetBrushColor(FLinearColor(0.002f, 0.018f, 0.036f, 0.96f));
-		SurferAvatar->SetPadding(FMargin(5.0f));
+		SurferAvatar->SetBrushColor(FLinearColor::Transparent);
+		SurferAvatar->SetPadding(FMargin(0.0f));
 		SurferAvatar->SetVisibility(ESlateVisibility::HitTestInvisible);
 		SurferAvatar->SetContent(SurferCore);
-		SurferCore->SetBrushColor(FLinearColor(1.0f, 0.67f, 0.16f, 1.0f));
-		SurferCore->SetPadding(FMargin(14.0f, 9.0f));
+		FSlateBrush SurferBrush;
+		SurferBrush.DrawAs = ESlateBrushDrawType::Image;
+		SurferBrush.SetResourceObject(SurferTexture);
+		SurferBrush.SetImageSize(FVector2D(150.0f, 225.0f));
+		SurferBrush.TintColor = FSlateColor(FLinearColor::White);
+		SurferCore->SetBrush(SurferBrush);
+		SurferCore->SetBrushColor(FLinearColor::White);
+		SurferCore->SetPadding(FMargin(75.0f, 112.5f));
 		SurferCore->SetContent(AvatarColumn);
+		AvatarColumn->SetVisibility(ESlateVisibility::Collapsed);
 		RiderMark->SetText(LOCTEXT("SurferRider", "▲"));
 		RiderMark->SetJustification(ETextJustify::Center);
 		StyleText(*RiderMark, 22, FLinearColor(0.015f, 0.06f, 0.09f, 1.0f), TEXT("Bold"));
@@ -472,15 +426,15 @@ namespace FFSurfingWbpBuilder
 			*SurferAvatar,
 			FAnchors(0.5f, 0.51f),
 			FVector2D(0.5f, 0.5f),
-			FMargin(0.0f, 0.0f, 104.0f, 104.0f),
+			FMargin(0.0f, 0.0f, 150.0f, 225.0f),
 			100))
 		{
 			return false;
 		}
 
-		const FLinearColor HudPanel(0.008f, 0.045f, 0.090f, 0.93f);
-		const FLinearColor Mint(0.38f, 0.98f, 0.86f, 1.0f);
-		const FLinearColor Amber(1.0f, 0.67f, 0.16f, 1.0f);
+		const FLinearColor HudPanel = FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f);
+		const FLinearColor Mint = Theme.HeaderStrong;
+		const FLinearColor Amber = Theme.Warning;
 		auto StyleAaaText = [](UTextBlock& Text, const int32 Size,
 			const FLinearColor& Color, const FName Typeface)
 		{
@@ -504,16 +458,16 @@ namespace FFSurfingWbpBuilder
 		{
 			return false;
 		}
-		IdentityCard->SetBrushColor(HudPanel);
-		IdentityCard->SetPadding(FMargin(18.0f, 10.0f));
+		FFMinigameUIStyle::ApplyCard(
+			*IdentityCard, Theme.Header, FMargin(18.0f, 10.0f), Theme.HeaderStrong);
 		IdentityCard->SetVisibility(ESlateVisibility::HitTestInvisible);
 		IdentityCard->SetContent(IdentityColumn);
 		IdentityEyebrow->SetText(LOCTEXT("IdentityEyebrow", "FESTA SPORTS  //  LIVE"));
 		IdentityTitle->SetText(LOCTEXT("IdentityTitle", "TIDAL RUN"));
 		IdentitySubtitle->SetText(LOCTEXT("IdentitySubtitle", "DADAEPO  /  FREE RIDE"));
-		StyleAaaText(*IdentityEyebrow, 11, Amber, TEXT("SemiBold"));
+		StyleAaaText(*IdentityEyebrow, 11, Theme.AccentSoft, TEXT("SemiBold"));
 		StyleAaaText(*IdentityTitle, 23, FLinearColor::White, TEXT("Bold"));
-		StyleAaaText(*IdentitySubtitle, 10, Mint, TEXT("SemiBold"));
+		StyleAaaText(*IdentitySubtitle, 10, Theme.AccentSoft, TEXT("SemiBold"));
 		IdentityColumn->AddChildToVerticalBox(IdentityEyebrow);
 		IdentityColumn->AddChildToVerticalBox(IdentityTitle);
 		IdentityColumn->AddChildToVerticalBox(IdentitySubtitle);
@@ -535,8 +489,8 @@ namespace FFSurfingWbpBuilder
 		{
 			return false;
 		}
-		PillHud->SetBrushColor(HudPanel);
-		PillHud->SetPadding(FMargin(28.0f, 7.0f));
+		FFMinigameUIStyle::ApplyCard(
+			*PillHud, HudPanel, FMargin(28.0f, 7.0f), Theme.Line);
 		PillHud->SetVisibility(ESlateVisibility::HitTestInvisible);
 		PillHud->SetContent(TimerColumn);
 		TimerCaption->SetText(LOCTEXT("TimeCaption", "ROUND TIMER"));
@@ -545,7 +499,7 @@ namespace FFSurfingWbpBuilder
 		TimerColumn->AddChildToVerticalBox(TimerCaption);
 		RemainingTime->SetText(LOCTEXT("TimePlaceholder", "30"));
 		RemainingTime->SetJustification(ETextJustify::Center);
-		StyleAaaText(*RemainingTime, 48, FLinearColor::White, TEXT("Bold"));
+		StyleAaaText(*RemainingTime, 48, Theme.Text, TEXT("Bold"));
 		TimerColumn->AddChildToVerticalBox(RemainingTime);
 		if (!AddCanvasChild(
 			*SurfArea,
@@ -572,8 +526,8 @@ namespace FFSurfingWbpBuilder
 			{
 				return nullptr;
 			}
-			Card->SetBrushColor(HudPanel);
-			Card->SetPadding(FMargin(18.0f, 9.0f));
+			FFMinigameUIStyle::ApplyCard(
+				*Card, HudPanel, FMargin(18.0f, 9.0f), Theme.Line);
 			Card->SetVisibility(ESlateVisibility::HitTestInvisible);
 			Card->SetContent(Column);
 			CaptionText->SetText(Caption);
@@ -621,15 +575,18 @@ namespace FFSurfingWbpBuilder
 		{
 			return false;
 		}
-		ControlsHint->SetBrushColor(FLinearColor(0.006f, 0.035f, 0.072f, 0.91f));
-		ControlsHint->SetPadding(FMargin(22.0f, 10.0f));
+		FFMinigameUIStyle::ApplyCard(
+			*ControlsHint,
+			FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f),
+			FMargin(22.0f, 10.0f),
+			Theme.Line);
 		ControlsHint->SetVisibility(ESlateVisibility::HitTestInvisible);
 		ControlsText->SetText(LOCTEXT(
 			"ControlsHint",
 			"[ WASD / STICK ]  MOVE     [ MOUSE ]  TURN     [ SPACE / A ]  BOOST"));
 		ControlsText->SetJustification(ETextJustify::Center);
 		ControlsText->SetVisibility(ESlateVisibility::HitTestInvisible);
-		StyleAaaText(*ControlsText, 13, FLinearColor(0.90f, 1.0f, 0.98f, 0.96f), TEXT("SemiBold"));
+		StyleAaaText(*ControlsText, 13, Theme.Text, TEXT("SemiBold"));
 		ControlsHint->SetContent(ControlsText);
 		if (!AddCanvasChild(
 			*SurfArea,
@@ -650,17 +607,17 @@ namespace FFSurfingWbpBuilder
 		{
 			return false;
 		}
-		CloseButton->SetBackgroundColor(FLinearColor(0.006f, 0.035f, 0.072f, 0.96f));
-		CloseLabel->SetText(LOCTEXT("Close", "ESC"));
+		CloseLabel->SetText(LOCTEXT("Close", "나가기  [ESC]"));
 		CloseLabel->SetJustification(ETextJustify::Center);
-		StyleAaaText(*CloseLabel, 12, FLinearColor::White, TEXT("SemiBold"));
+		StyleAaaText(*CloseLabel, 12, Theme.Text, TEXT("SemiBold"));
+		FFMinigameUIStyle::ApplyButton(*CloseButton, Theme, false);
 		CloseButton->SetContent(CloseLabel);
 		if (!AddCanvasChild(
 			*SurfArea,
 			*CloseButton,
 			FAnchors(0.982f, 0.028f),
 			FVector2D(1.0f, 0.0f),
-			FMargin(0.0f, 0.0f, 54.0f, 46.0f),
+			FMargin(0.0f, 0.0f, 136.0f, 48.0f),
 			400))
 		{
 			return false;
@@ -672,7 +629,7 @@ namespace FFSurfingWbpBuilder
 		{
 			return false;
 		}
-		ResultDimmer->SetBrushColor(FLinearColor(0.001f, 0.010f, 0.026f, 0.78f));
+		ResultDimmer->SetBrushColor(FLinearColor::Transparent);
 		ResultDimmer->SetVisibility(ESlateVisibility::Collapsed);
 		if (!AddCanvasChild(
 			*SurfArea, *ResultDimmer,
@@ -698,23 +655,30 @@ namespace FFSurfingWbpBuilder
 			Blueprint, Tree, TEXT("Text_Result"), true);
 		UTextBlock* ResultExitHint = MakeWidget<UTextBlock>(
 			Blueprint, Tree, TEXT("Text_ResultExitHint"));
+		USizeBox* ResultCtaSize = MakeWidget<USizeBox>(
+			Blueprint, Tree, TEXT("Size_ResultCta"));
+		UButton* ResultCloseButton = MakeWidget<UButton>(
+			Blueprint, Tree, TEXT("Button_ResultClose"), true);
+		UTextBlock* ResultCloseLabel = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_ResultCloseLabel"));
 		if (!ResultPanel || !ResultStage || !ResultCardSize || !ResultCard
-			|| !ResultColumn || !ResultHeading || !ResultText || !ResultExitHint)
+			|| !ResultColumn || !ResultHeading || !ResultText || !ResultExitHint
+			|| !ResultCtaSize || !ResultCloseButton || !ResultCloseLabel)
 		{
 			return false;
 		}
-		ResultPanel->SetBrushColor(FLinearColor::Transparent);
+		ResultPanel->SetBrushColor(Theme.Scrim);
 		ResultPanel->SetPadding(FMargin(0.0f));
 		ResultPanel->SetVisibility(ESlateVisibility::Collapsed);
 		ResultPanel->SetContent(ResultStage);
-		ResultStage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ResultStage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		ResultCardSize->SetWidthOverride(660.0f);
-		ResultCardSize->SetHeightOverride(380.0f);
+		ResultCardSize->SetHeightOverride(500.0f);
 		ResultCardSize->SetContent(ResultCard);
-		ResultCard->SetBrushColor(HudPanel);
-		ResultCard->SetPadding(FMargin(56.0f, 44.0f));
+		FFMinigameUIStyle::ApplyCard(
+			*ResultCard, Theme.Surface, FMargin(56.0f, 40.0f), Theme.LineStrong, 10.0f, 2.0f);
 		ResultCard->SetContent(ResultColumn);
-		ResultCard->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ResultCard->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 		if (UOverlaySlot* CardSlot = ResultStage->AddChildToOverlay(ResultCardSize))
 		{
 			CardSlot->SetHorizontalAlignment(HAlign_Center);
@@ -722,7 +686,7 @@ namespace FFSurfingWbpBuilder
 		}
 		ResultHeading->SetText(LOCTEXT("ResultHeading", "TIDAL RUN  //  FINAL TELEMETRY"));
 		ResultHeading->SetJustification(ETextJustify::Center);
-		StyleAaaText(*ResultHeading, 12, Mint, TEXT("SemiBold"));
+		StyleAaaText(*ResultHeading, 12, Theme.HeaderStrong, TEXT("SemiBold"));
 		if (UVerticalBoxSlot* HeadingSlot = ResultColumn->AddChildToVerticalBox(ResultHeading))
 		{
 			HeadingSlot->SetHorizontalAlignment(HAlign_Center);
@@ -732,20 +696,36 @@ namespace FFSurfingWbpBuilder
 		ResultText->SetJustification(ETextJustify::Center);
 		ResultText->SetAutoWrapText(true);
 		ResultText->SetMinDesiredWidth(540.0f);
-		StyleAaaText(*ResultText, 30, Amber, TEXT("Bold"));
+		StyleAaaText(*ResultText, 30, Theme.Text, TEXT("Bold"));
 		if (UVerticalBoxSlot* ResultTextSlot = ResultColumn->AddChildToVerticalBox(ResultText))
 		{
 			ResultTextSlot->SetHorizontalAlignment(HAlign_Center);
 			ResultTextSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 28.0f));
 		}
 		ResultExitHint->SetText(LOCTEXT(
-			"ResultExitHint", "아래 CONTINUE 버튼으로 라이드 종료"));
+			"ResultExitHint", "아래 확인 버튼으로 라이드 종료"));
 		ResultExitHint->SetJustification(ETextJustify::Center);
-		StyleAaaText(*ResultExitHint, 12,
-			FLinearColor(0.74f, 0.88f, 0.91f, 0.90f), TEXT("SemiBold"));
+		StyleAaaText(*ResultExitHint, 12, Theme.TextMuted, TEXT("SemiBold"));
 		if (UVerticalBoxSlot* ExitHintSlot = ResultColumn->AddChildToVerticalBox(ResultExitHint))
 		{
 			ExitHintSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+		ResultCtaSize->SetWidthOverride(240.0f);
+		ResultCtaSize->SetHeightOverride(54.0f);
+		ResultCloseLabel->SetText(LOCTEXT("ResultClose", "확인  [ESC]"));
+		ResultCloseLabel->SetJustification(ETextJustify::Center);
+		StyleAaaText(*ResultCloseLabel, 15, Theme.White, TEXT("SemiBold"));
+		FFMinigameUIStyle::ApplyButton(*ResultCloseButton, Theme, true);
+		ResultCloseButton->SetContent(ResultCloseLabel);
+		ResultCtaSize->SetContent(ResultCloseButton);
+		if (UVerticalBoxSlot* ResultCtaSlot = ResultColumn->AddChildToVerticalBox(ResultCtaSize))
+		{
+			ResultCtaSlot->SetHorizontalAlignment(HAlign_Center);
+			ResultCtaSlot->SetPadding(FMargin(0.0f, 22.0f, 0.0f, 0.0f));
+		}
+		else
+		{
+			return false;
 		}
 		if (UOverlaySlot* ResultSlot = Root->AddChildToOverlay(ResultPanel))
 		{

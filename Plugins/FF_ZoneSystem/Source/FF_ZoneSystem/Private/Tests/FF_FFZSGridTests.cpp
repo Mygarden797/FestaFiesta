@@ -15,6 +15,7 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSOrientedGeometry.h"
+#include "Sound/SoundBase.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 
 namespace
@@ -632,6 +633,16 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
     ExpectMutationDetected(TEXT("매우 작은 비영 시각 회전도 지문에 반영된다"),
         [](FFFZSCommand& C) {
             C.FacilitySpec.VisualRotation.Yaw = UE_KINDA_SMALL_NUMBER * 0.5f;
+        });
+    ExpectMutationDetected(TEXT("시설 사운드 변경이 지문에 반영된다"),
+        [](FFFZSCommand& C) {
+            C.FacilitySpec.AudioSettings.AmbientSound =
+                TSoftObjectPtr<USoundBase>(FSoftObjectPath(
+                    TEXT("/Game/Audio/Facility/Ambient_Test.Ambient_Test")));
+        });
+    ExpectMutationDetected(TEXT("시설 최대 가청 범위 변경이 지문에 반영된다"),
+        [](FFFZSCommand& C) {
+            C.FacilitySpec.AudioSettings.MaxAudibleDistanceCm += 100.0f;
         });
     ExpectMutationDetected(TEXT("장애물 높이 변경이 지문에 반영된다"),
         [](FFFZSCommand& C) {

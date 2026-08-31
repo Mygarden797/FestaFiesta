@@ -720,6 +720,8 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	return true;
 }
 
+#if !UE_BUILD_SHIPPING
+
 namespace FFDecisionConsole
 {
 	UFF_CrowdDecisionSubsystem* GetDecision(UWorld* World, FOutputDevice& Ar)
@@ -1002,3 +1004,5 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GOpenAllFacilitiesCommand
 	TEXT("FF.Decision.OpenFacilities"),
 	TEXT("Validated 상태 시설을 전부 Active로 개장한다(빌드 모드가 Open을 발행하지 않으므로 필요한 임시 도구)"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&OpenAllFacilities));
+
+#endif // !UE_BUILD_SHIPPING

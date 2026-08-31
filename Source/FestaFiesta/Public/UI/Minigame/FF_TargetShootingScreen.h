@@ -104,9 +104,19 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop")
 	TSoftObjectPtr<UTexture2D> BackdropTexture;
 
+	/** Prefer one unobstructed image instead of the native 3D environment box. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop",
+		meta = (DisplayName = "단일 배경 모드", ToolTip = "켜면 배경 이미지만 사용하고 검은 뷰포트와 전경 기둥·벽·바닥이 있는 3D 환경 박스를 생성하지 않습니다. 과녁, 탄환과 물총 UMG 연출은 그대로 유지됩니다."))
+	bool bUseSingleBackdrop = true;
+
 	/** First-person water blaster rendered at the bottom of the shooting canvas. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TSoftObjectPtr<UTexture2D> WaterBlasterTexture;
+
+	/** Minimal circular target plate shown by the WBP Image_Target layer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target",
+		meta = (DisplayName = "과녁 이미지", ToolTip = "WBP의 Image_Target에 표시할 원형 과녁 텍스처입니다. 이 값만 교체하면 판정과 게임 로직을 건드리지 않고 과녁 디자인을 바꿀 수 있습니다."))
+	TSoftObjectPtr<UTexture2D> TargetTexture;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Backdrop")
 	FLinearColor BackdropTint = FLinearColor(0.92f, 0.98f, 1.0f, 1.0f);
@@ -117,6 +127,28 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 	/** Clear colour behind the real-time 3D gallery viewport. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena")
 	FLinearColor Arena3DBackgroundColor = FLinearColor(0.001f, 0.004f, 0.010f, 1.0f);
+
+	/** Replace this class with a Blueprint child to swap the entire 3D art kit. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena",
+		meta = (DisplayName = "3D 사격장 클래스", ToolTip = "전체 3D 배경·과녁·탄환·물총 에셋을 교체하려면 FF Target Shooting 3D Arena의 Blueprint 자식 클래스를 지정합니다."))
+	TSubclassOf<AFF_TargetShootingArena3D> Arena3DActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena",
+		meta = (DisplayName = "3D 과녁 사용", ToolTip = "켜면 권위 판정 좌표와 같은 정규화 좌표에 실제 3D 과녁을 표시합니다."))
+	bool bRenderTargetIn3D = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena",
+		meta = (DisplayName = "3D 물 탄환 사용", ToolTip = "켜면 발사 궤적과 함께 원근감이 있는 3D 물 탄환을 표시합니다."))
+	bool bRenderProjectileIn3D = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena",
+		meta = (DisplayName = "3D 물총 사용", ToolTip = "켜면 2D 전경 물총과 별도로 3D 사격장 물총 모델을 표시합니다. 완전 3D 아트 구성이 준비된 경우 사용합니다."))
+	bool bRenderWeaponIn3D = false;
+
+	/** A faint exact 2D ring preserves pixel-perfect hit readability over the 3D plate. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena",
+		meta = (ClampMin = "0.0", ClampMax = "1.0", DisplayName = "3D 과녁 판정 링 투명도", ToolTip = "3D 과녁 위에 겹치는 정확한 판정 타원 링의 투명도입니다. 0이면 3D 과녁만 보이고 1이면 판정 링이 완전히 보입니다."))
+	float AuthoritativeRingOpacityIn3D = 0.34f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "3D Arena", meta = (ClampMin = "0.1", ClampMax = "10.0"))
 	float Arena3DKeyLightIntensity = 0.78f;
@@ -159,6 +191,10 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target")
 	FLinearColor BonusTargetColor = FLinearColor(1.0f, 0.72f, 0.04f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target",
+		meta = (DisplayName = "과녁 이미지 색상", ToolTip = "Image_Target 텍스처에 곱하는 색입니다. 원본 색을 그대로 사용하려면 흰색을 유지합니다."))
+	FLinearColor TargetImageTint = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target", meta = (ClampMin = "1.0", ClampMax = "12.0"))
 	float TargetRingThickness = 7.0f;
@@ -204,8 +240,22 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.0", ClampMax = "80.0"))
 	float WaterBlasterBottomOffsetPixels = 30.0f;
 
+	/** Rotation origin inside Image_WaterBlaster, normalized from its top-left corner. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon",
+		meta = (DisplayName = "총기 회전축", ToolTip = "교체한 Image_WaterBlaster 에셋 내부에서 총기가 회전할 기준점입니다. (0,0)은 좌상단, (1,1)은 우하단입니다."))
+	FVector2D WaterBlasterAimPivotNormalized = FVector2D(0.5f, 0.85f);
+
+	/** Projectile origin inside Image_WaterBlaster, normalized from its top-left corner. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon",
+		meta = (DisplayName = "총구 위치", ToolTip = "교체한 Image_WaterBlaster 에셋 내부의 총구 위치입니다. 발사 섬광과 물 탄환이 이 지점에서 시작합니다."))
+	FVector2D WaterBlasterMuzzleNormalized = FVector2D(0.5f, 0.14f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.0", ClampMax = "60.0"))
 	float WeaponRecoilPixels = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon",
+		meta = (ClampMin = "0.0", ClampMax = "0.15", DisplayName = "총기 조준 이동 보정", ToolTip = "총기 회전과 함께 적용할 1인칭 조준 이동 보정량입니다."))
+	float WeaponViewFollowStrength = 0.07f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon", meta = (ClampMin = "0.05", ClampMax = "0.5", Units = "s"))
 	float MuzzleFlashSeconds = 0.18f;
@@ -259,8 +309,9 @@ struct FESTAFIESTA_API FFF_TargetShootingVisualStyle
 /**
  * DPI-independent target-shooting presentation.
  *
- * The screen converts a pointer position to play-area normalized coordinates and
- * fires a projectile toward that point together with the displayed TargetSerial.
+ * The custom reticle is an exact visual replacement for the pointer: absolute
+ * screen-space mouse coordinates are transformed into the play canvas on move and
+ * resampled on trigger. The projectile then starts at the authored weapon muzzle.
  * Projectile travel, impact-time hit testing, scoring, target movement and time
  * expiration all remain authoritative in the runtime strategy.
  *
@@ -301,6 +352,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Target Shooting")
 	bool IsThreeDimensionalArenaReady() const { return bThreeDimensionalArenaReady; }
 
+	/** Normalized screen coordinate currently shared by the custom reticle and shot destination. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Minigame|Target Shooting")
+	FVector2D GetCameraAimPointNormalized() const { return CameraAimPointNormalized; }
+
 	/** WBP Class Defaults expose these tokens without changing runtime/scoring code. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Minigame|Target Shooting|Visual Style")
 	FFF_TargetShootingVisualStyle VisualStyle;
@@ -334,11 +389,20 @@ private:
 	void RefreshWeaponPresentation();
 	void RefreshFeedbackPresentation();
 	void RefreshReticlePresentation();
+	void RefreshCameraAimPresentation();
+	bool UpdateAimFromScreenPosition(const FVector2D& ScreenSpacePosition);
+	FVector2D ResolveWeaponPlayAreaSize() const;
+	FVector2D CalculateWeaponPivotPointPixels() const;
+	FVector2D CalculateWeaponBaseForwardDirection() const;
+	float CalculateWeaponAimAngleDegrees() const;
+	FVector2D CalculateWeaponViewOffsetPixels() const;
+	FVector2D CalculateWeaponMuzzlePointNormalized() const;
+	bool ProjectArenaPointToCanvas(
+		const FVector2D& ArenaPointNormalized,
+		FVector2D& OutCanvasPointNormalized,
+		float DepthX = 440.0f) const;
 	FLinearColor GetFeedbackColor(EFF_TargetShootingFeedbackType FeedbackType) const;
 	FText MakeFeedbackText() const;
-	bool TryMakeNormalizedPoint(
-		const FVector2D& ScreenSpacePoint,
-		FVector2D& OutNormalizedPoint) const;
 
 	UFUNCTION()
 	void HandleCloseClicked();
@@ -392,8 +456,8 @@ private:
 	float FeedbackRemainingSeconds = 0.0f;
 	float ReticleShotPulseRemainingSeconds = 0.0f;
 	float MuzzleFlashRemainingSeconds = 0.0f;
-	FVector2D ReticlePointNormalized = FVector2D(0.5f, 0.5f);
-	bool bReticleInsidePlayArea = false;
+	/** Hidden-mouse aim coordinate shared by the custom reticle, weapon and shot destination. */
+	FVector2D CameraAimPointNormalized = FVector2D(0.5f, 0.5f);
 	FLinearColor BasePlayAreaBrushColor = FLinearColor::White;
 	bool bHasBasePlayAreaBrushColor = false;
 
@@ -412,6 +476,10 @@ private:
 	/** Authoritative 2D target visual; must remain HitTestInvisible so the play area receives clicks. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UBorder> Border_Target;
+
+	/** Designer-swappable target art. Runtime keeps the exact hit/countdown rings above it. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UImage> Image_Target;
 
 	/** Optional in designer WBP; created on the play canvas when absent. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
@@ -449,7 +517,14 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UButton> Button_Close;
 
+	/** Dedicated result CTA. Keeping it inside the modal prevents z-order and aspect-ratio overlap. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UButton> Button_ResultClose;
+
 	/** Optional close-button label shared by the generated WBP and native fallback. */
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> NativeCloseLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> NativeResultCloseLabel;
 };

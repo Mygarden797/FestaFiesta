@@ -12,12 +12,16 @@
 #include "Engine/StreamableManager.h"
 #include "Engine/StaticMesh.h"
 
+#include "Components/AudioComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "NavAreas/NavArea_Null.h"
+#include "Sound/SoundAttenuation.h"
+#include "Sound/SoundBase.h"
+#include "Sound/SoundConcurrency.h"
 #include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityAnchorComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -67,6 +71,13 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     VisualMesh->SetupAttachment(SceneRoot);
     VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     VisualMesh->SetCanEverAffectNavigation(false);
+
+    FacilityAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("FacilityAudio"));
+    FacilityAudioComponent->SetupAttachment(SceneRoot);
+    FacilityAudioComponent->SetAutoActivate(false);
+    FacilityAudioComponent->bAutoDestroy = false;
+    FacilityAudioComponent->bStopWhenOwnerDestroyed = true;
+    FacilityAudioComponent->bAllowSpatialization = true;
 
     SelectionProxy = CreateDefaultSubobject<UBoxComponent>(TEXT("SelectionProxy"));
     SelectionProxy->SetupAttachment(SceneRoot);
@@ -135,6 +146,7 @@ AFFZSFacilityActor::AFFZSFacilityActor()
 void AFFZSFacilityActor::BeginPlay()
 {
     Super::BeginPlay();
+    RequestFacilityAudio();
     if (FacilityInstanceId.IsValid())
     {
         if (UFFZSWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>())
@@ -150,6 +162,17 @@ void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
     SetNavigationObstacleEnabled(false);
     DestroyBuildModeRangePresentation();
+    ++AudioLoadGeneration;
+    if (AudioLoadHandle.IsValid())
+    {
+        AudioLoadHandle->CancelHandle();
+        AudioLoadHandle.Reset();
+    }
+    if (FacilityAudioComponent)
+    {
+        FacilityAudioComponent->OnAudioFinishedNative.RemoveAll(this);
+    }
+    StopFacilityAudio(false);
     if (VisualLoadHandle.IsValid())
     {
         VisualLoadHandle->CancelHandle();
@@ -224,6 +247,7 @@ bool AFFZSFacilityActor::OpenFacility()
     bSetMovePendingWhenDrained = false;
     FacilityState = EFFZSFacilityState::Active;
     QueueComponent->OpenQueue();
+    UpdateFacilityAudioPlayback();
     return true;
 }
 
@@ -251,6 +275,7 @@ void AFFZSFacilityActor::CloseFacility(const bool bEmergency)
             FacilityState = EFFZSFacilityState::MovePending;
         }
     }
+    UpdateFacilityAudioPlayback();
 }
 
 void AFFZSFacilityActor::MarkRemoved()
@@ -262,6 +287,7 @@ void AFFZSFacilityActor::MarkRemoved()
     QueueComponent->EmergencyCancel();
     SetNavigationObstacleEnabled(false);
     FacilityState = EFFZSFacilityState::Removed;
+    UpdateFacilityAudioPlayback();
     SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
     SetBuildModeActionSelected(false);
     SetBuildModeRangeVisible(false);
@@ -458,6 +484,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     RebuildSelectionProxy(SelectionExtent);
 
     RequestVisualMesh();
+    RequestFacilityAudio();
 
     QueueSpline->ClearSplinePoints(false);
     for (int32 Index = 0; Index < FacilitySpec.QueueSplinePointsCm.Num(); ++Index)
@@ -703,6 +730,184 @@ void AFFZSFacilityActor::ApplyLoadedVisualMesh()
         VisualMesh->SetRelativeTransform(
             FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
     }
+}
+
+// 오디오 표현은 권위 배치·큐와 독립적이다. 현재 Spec의 soft path만 묶어 비동기 로드하고,
+// 세대 번호로 취소 직전 요청의 늦은 콜백이 새 요청 상태를 덮어쓰지 못하게 한다.
+void AFFZSFacilityActor::RequestFacilityAudio()
+{
+    const uint32 LoadGeneration = ++AudioLoadGeneration;
+    if (AudioLoadHandle.IsValid())
+    {
+        AudioLoadHandle->CancelHandle();
+        AudioLoadHandle.Reset();
+    }
+
+    StopFacilityAudio(false);
+    if (!FacilityAudioComponent)
+    {
+        return;
+    }
+
+    FacilityAudioComponent->SetSound(nullptr);
+    FacilityAudioComponent->SetAttenuationSettings(nullptr);
+    FacilityAudioComponent->SetOverrideAttenuation(false);
+    FacilityAudioComponent->ConcurrencySet.Reset();
+    FacilityAudioComponent->SetRelativeLocation(FacilitySpec.AudioSettings.LocalOffsetCm);
+    FacilityAudioComponent->SetVolumeMultiplier(FacilitySpec.AudioSettings.VolumeMultiplier);
+    FacilityAudioComponent->SetPitchMultiplier(FacilitySpec.AudioSettings.PitchMultiplier);
+
+    if (FacilitySpec.AudioSettings.AmbientSound.IsNull())
+    {
+        return;
+    }
+
+    TArray<FSoftObjectPath> AudioPaths;
+    AudioPaths.Reserve(3);
+    AudioPaths.Add(FacilitySpec.AudioSettings.AmbientSound.ToSoftObjectPath());
+    if (!FacilitySpec.AudioSettings.Attenuation.IsNull())
+    {
+        AudioPaths.Add(FacilitySpec.AudioSettings.Attenuation.ToSoftObjectPath());
+    }
+    if (!FacilitySpec.AudioSettings.Concurrency.IsNull())
+    {
+        AudioPaths.Add(FacilitySpec.AudioSettings.Concurrency.ToSoftObjectPath());
+    }
+
+    AudioLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+        AudioPaths,
+        FStreamableDelegate::CreateUObject(
+            this,
+            &AFFZSFacilityActor::ApplyLoadedFacilityAudio,
+            LoadGeneration));
+}
+
+void AFFZSFacilityActor::ApplyLoadedFacilityAudio(const uint32 LoadGeneration)
+{
+    if (LoadGeneration != AudioLoadGeneration || !FacilityAudioComponent)
+    {
+        return;
+    }
+    AudioLoadHandle.Reset();
+
+    USoundBase* Sound = FacilitySpec.AudioSettings.AmbientSound.Get();
+    if (!Sound)
+    {
+        FacilityAudioComponent->SetSound(nullptr);
+        return;
+    }
+
+    USoundAttenuation* LoadedAttenuation =
+        FacilitySpec.AudioSettings.Attenuation.Get();
+    FacilityAudioComponent->SetAttenuationSettings(LoadedAttenuation);
+    if (FacilitySpec.AudioSettings.bOverrideAudibleRange)
+    {
+        // Attenuation 에셋의 공간화·리버브·오클루전 정책은 보존하되 시설별 가청 거리 계약이
+        // 항상 우선하도록 구형 선형 거리 설정만 교체한다. Max 밖에서는 Linear 결과가 0이다.
+        FSoundAttenuationSettings RangeSettings = LoadedAttenuation
+            ? LoadedAttenuation->Attenuation
+            : FSoundAttenuationSettings{};
+        RangeSettings.bAttenuate = true;
+        RangeSettings.bSpatialize = true;
+        RangeSettings.DistanceAlgorithm = EAttenuationDistanceModel::Linear;
+        RangeSettings.AttenuationShape = EAttenuationShape::Sphere;
+        RangeSettings.AttenuationShapeExtents = FVector(
+            FacilitySpec.AudioSettings.FullVolumeRadiusCm,
+            0.0f,
+            0.0f);
+        RangeSettings.FalloffDistance =
+            FacilitySpec.AudioSettings.MaxAudibleDistanceCm -
+            FacilitySpec.AudioSettings.FullVolumeRadiusCm;
+        FacilityAudioComponent->AdjustAttenuation(RangeSettings);
+    }
+    else
+    {
+        FacilityAudioComponent->SetOverrideAttenuation(false);
+    }
+    FacilityAudioComponent->ConcurrencySet.Reset();
+    if (USoundConcurrency* Concurrency = FacilitySpec.AudioSettings.Concurrency.Get())
+    {
+        FacilityAudioComponent->ConcurrencySet.Add(Concurrency);
+    }
+    FacilityAudioComponent->SetSound(Sound);
+    FacilityAudioComponent->OnAudioFinishedNative.RemoveAll(this);
+    FacilityAudioComponent->OnAudioFinishedNative.AddUObject(
+        this,
+        &AFFZSFacilityActor::HandleFacilityAudioFinished);
+    UpdateFacilityAudioPlayback(true);
+}
+
+bool AFFZSFacilityActor::IsFacilityAudioPlaybackAllowed() const
+{
+    return FacilityState != EFFZSFacilityState::Removed &&
+        (!FacilitySpec.AudioSettings.bPlayOnlyWhileActive ||
+            FacilityState == EFFZSFacilityState::Active);
+}
+
+void AFFZSFacilityActor::UpdateFacilityAudioPlayback(const bool bAllowFade)
+{
+    if (!FacilityAudioComponent || !FacilityAudioComponent->GetSound() ||
+        FacilitySpec.AudioSettings.VolumeMultiplier <= 0.0f ||
+        !IsFacilityAudioPlaybackAllowed())
+    {
+        StopFacilityAudio(bAllowFade);
+        return;
+    }
+
+    if (bAudioStopRequested)
+    {
+        FacilityAudioComponent->Stop();
+    }
+    if (!FacilityAudioComponent->IsPlaying() || bAudioStopRequested)
+    {
+        bAudioStopRequested = false;
+        if (bAllowFade && FacilitySpec.AudioSettings.FadeInDurationSeconds > 0.0f)
+        {
+            FacilityAudioComponent->FadeIn(
+                FacilitySpec.AudioSettings.FadeInDurationSeconds,
+                1.0f);
+        }
+        else
+        {
+            FacilityAudioComponent->Play();
+        }
+    }
+}
+
+void AFFZSFacilityActor::StopFacilityAudio(const bool bAllowFade)
+{
+    if (!FacilityAudioComponent)
+    {
+        return;
+    }
+
+    bAudioStopRequested = true;
+    if (!FacilityAudioComponent->IsPlaying())
+    {
+        return;
+    }
+    if (bAllowFade && FacilitySpec.AudioSettings.FadeOutDurationSeconds > 0.0f)
+    {
+        FacilityAudioComponent->FadeOut(
+            FacilitySpec.AudioSettings.FadeOutDurationSeconds,
+            0.0f);
+    }
+    else
+    {
+        FacilityAudioComponent->Stop();
+    }
+}
+
+void AFFZSFacilityActor::HandleFacilityAudioFinished(UAudioComponent* FinishedComponent)
+{
+    if (FinishedComponent != FacilityAudioComponent || bAudioStopRequested ||
+        !FacilitySpec.AudioSettings.bLoop || !IsFacilityAudioPlaybackAllowed() ||
+        FacilitySpec.AudioSettings.VolumeMultiplier <= 0.0f)
+    {
+        return;
+    }
+
+    FacilityAudioComponent->Play();
 }
 
 // 앵커 정의가 바뀌었을 때 이름/인덱스가 남지 않도록 기존 파생 컴포넌트를 모두 폐기한 뒤 재구성한다.

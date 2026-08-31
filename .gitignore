@@ -4,6 +4,7 @@
 
 # Jetbrain Rider
 .idea/
+*.sln.DotSettings.user
 
 # Compiled Object files
 *.slo
@@ -84,6 +85,10 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# Local validation, staging, and release outputs
+/Artifacts/
+/Temp/
 
 # Prerequisites
 *.d

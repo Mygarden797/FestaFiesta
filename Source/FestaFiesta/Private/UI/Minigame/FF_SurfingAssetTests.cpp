@@ -60,6 +60,12 @@ namespace FFSurfingAssetTestHelpers
 			 "WBP_FF_Surfing_FreeRide_C");
 	const TCHAR* const CourseTableObjectPath =
 		TEXT("/Game/FestaFiesta/Minigame/Data/DT_SurfingCourse.DT_SurfingCourse");
+	const TCHAR* const FinalBackdropObjectPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Backdrop_Final."
+			 "T_MG_Surfing_Backdrop_Final");
+	const TCHAR* const FinalSurferObjectPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/Final/T_MG_Surfing_Surfer_Final."
+			 "T_MG_Surfing_Surfer_Final");
 
 	struct FRequiredWidget
 	{
@@ -80,6 +86,7 @@ namespace FFSurfingAssetTestHelpers
 			{ TEXT("Text_Controls"), UTextBlock::StaticClass() },
 			{ TEXT("Panel_Result"), UBorder::StaticClass() },
 			{ TEXT("Text_Result"), UTextBlock::StaticClass() },
+			{ TEXT("Button_ResultClose"), UButton::StaticClass() },
 			{ TEXT("Button_Close"), UButton::StaticClass() },
 		};
 		return Widgets;
@@ -189,9 +196,11 @@ namespace FFSurfingAssetTestHelpers
 			Tree.FindWidget(TEXT("Text_Controls")));
 		const UButton* CloseButton = Cast<UButton>(Tree.FindWidget(TEXT("Button_Close")));
 		const UBorder* ResultPanel = Cast<UBorder>(Tree.FindWidget(TEXT("Panel_Result")));
+		const UButton* ResultCloseButton = Cast<UButton>(
+			Tree.FindWidget(TEXT("Button_ResultClose")));
 		const UOverlay* Root = Cast<UOverlay>(Tree.RootWidget);
 		if (!SurfArea || !EntityLayer || !PillHud || !ControlsHint || !ControlsText
-			|| !CloseButton || !ResultPanel || !Root)
+			|| !CloseButton || !ResultPanel || !ResultCloseButton || !Root)
 		{
 			Test.AddError(TEXT("디자이너 편집용 FreeRide named hierarchy가 완전하지 않다."));
 			return false;
@@ -232,6 +241,13 @@ namespace FFSurfingAssetTestHelpers
 		Test.TestTrue(TEXT("결과 모달은 arena 다음에 그려지는 최상위 overlay 자식이다"),
 			ResultPanel->GetParent() == Root
 			&& Root->GetChildIndex(ResultPanel) > Root->GetChildIndex(SurfArea));
+		const UWidget* ResultAncestor = ResultCloseButton;
+		while (ResultAncestor && ResultAncestor != ResultPanel)
+		{
+			ResultAncestor = ResultAncestor->GetParent();
+		}
+		Test.TestTrue(TEXT("결과 닫기 버튼은 결과 모달 안에 있어 스크림 뒤로 가려지지 않는다"),
+			ResultAncestor == ResultPanel);
 		return !Test.HasAnyErrors();
 	}
 
@@ -281,6 +297,8 @@ bool FFF_SurfingDefinitionAssetContractTest::RunTest(const FString& Parameters)
 		Definition->GetPrimaryAssetId().PrimaryAssetName,
 		FName(TEXT("Surfing")));
 	TestEqual(TEXT("미니게임 ID가 보존된다"), Definition->MinigameId, FName(TEXT("Surfing")));
+	TestTrue(TEXT("기본 서핑 에셋은 마지막 목숨 손실 시 즉시 종료한다"),
+		Definition->Rules.bEndRunWhenLivesDepleted);
 	TestEqual(TEXT("사용자 표시 이름이 보존된다"),
 		Definition->DisplayName.ToString(), FString(TEXT("다대포 웨이브 서핑")));
 	TestEqual(TEXT("연결 시설은 하나로 보존된다"),
@@ -299,6 +317,19 @@ bool FFF_SurfingDefinitionAssetContractTest::RunTest(const FString& Parameters)
 			ScreenClass->IsChildOf(UFF_SurfingScreen::StaticClass()));
 		TestEqual(TEXT("Definition은 새 FreeRide WBP를 가리킨다"),
 			ScreenClass->GetPathName(), FString(FreeRideScreenClassPath));
+		const UFF_SurfingScreen* ScreenDefaults =
+			Cast<UFF_SurfingScreen>(ScreenClass->GetDefaultObject());
+		if (TestNotNull(TEXT("FreeRide 화면 CDO가 로드된다"), ScreenDefaults))
+		{
+			TestFalse(TEXT("기본 플레이는 프리미티브 SceneCapture를 사용하지 않는다"),
+				ScreenDefaults->VisualStyle.bEnableSceneCapture3D);
+			TestEqual(TEXT("최종 백드롭이 기본 플레이에 연결된다"),
+				ScreenDefaults->VisualStyle.BackdropTexture.ToSoftObjectPath().ToString(),
+				FString(FinalBackdropObjectPath));
+			TestEqual(TEXT("최종 서퍼가 기본 플레이에 연결된다"),
+				ScreenDefaults->VisualStyle.SurferTexture.ToSoftObjectPath().ToString(),
+				FString(FinalSurferObjectPath));
+		}
 	}
 
 	UDataTable* CourseTable = Definition->CourseLayoutTable.LoadSynchronous();

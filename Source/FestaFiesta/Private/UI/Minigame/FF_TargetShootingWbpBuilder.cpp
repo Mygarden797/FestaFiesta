@@ -38,6 +38,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "UI/Minigame/FF_MinigameUIStyle.h"
 #include "UI/Minigame/FF_TargetShootingScreen.h"
 #include "UObject/SavePackage.h"
 #include "UObject/UObjectGlobals.h"
@@ -127,6 +128,7 @@ namespace FFTargetShootingWbpBuilder
 		const UBorder* PlayArea = Cast<UBorder>(Tree->FindWidget(TEXT("Border_PlayArea")));
 		const UCanvasPanel* PlayCanvas = Cast<UCanvasPanel>(Tree->FindWidget(TEXT("Canvas_PlayArea")));
 		const UBorder* Target = Cast<UBorder>(Tree->FindWidget(TEXT("Border_Target")));
+		const UImage* TargetImage = Cast<UImage>(Tree->FindWidget(TEXT("Image_Target")));
 		const UImage* WaterBlaster = Cast<UImage>(Tree->FindWidget(TEXT("Image_WaterBlaster")));
 		const UTextBlock* MuzzleFlash = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_MuzzleFlash")));
 		const UTextBlock* WeaponStatus = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_WeaponStatus")));
@@ -139,10 +141,13 @@ namespace FFTargetShootingWbpBuilder
 		const UBorder* ResultPanel = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_Result")));
 		const UTextBlock* ResultText = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_Result")));
 		const UButton* CloseButton = Cast<UButton>(Tree->FindWidget(TEXT("Button_Close")));
+		const UButton* ResultCloseButton = Cast<UButton>(
+			Tree->FindWidget(TEXT("Button_ResultClose")));
 
 		if (!IsVariableWidget(Blueprint, PlayArea)
 			|| !IsVariableWidget(Blueprint, PlayCanvas)
 			|| !IsVariableWidget(Blueprint, Target)
+			|| !IsVariableWidget(Blueprint, TargetImage)
 			|| !IsVariableWidget(Blueprint, WaterBlaster)
 			|| !IsVariableWidget(Blueprint, MuzzleFlash)
 			|| !IsVariableWidget(Blueprint, WeaponStatus)
@@ -154,7 +159,8 @@ namespace FFTargetShootingWbpBuilder
 			|| !IsVariableWidget(Blueprint, Streak)
 			|| !IsVariableWidget(Blueprint, ResultPanel)
 			|| !IsVariableWidget(Blueprint, ResultText)
-			|| !IsVariableWidget(Blueprint, CloseButton))
+			|| !IsVariableWidget(Blueprint, CloseButton)
+			|| !IsVariableWidget(Blueprint, ResultCloseButton))
 		{
 			return false;
 		}
@@ -162,6 +168,7 @@ namespace FFTargetShootingWbpBuilder
 		// Runtime pointer normalization assumes this exact ownership boundary.
 		return PlayArea->GetContent() == PlayCanvas
 			&& Target->GetParent() == PlayCanvas
+			&& TargetImage->GetParent() == Target->GetContent()
 			&& WaterBlaster->GetParent() == PlayCanvas
 			&& MuzzleFlash->GetParent() == PlayCanvas
 			&& WeaponStatus->GetParent() == PlayCanvas
@@ -184,10 +191,12 @@ namespace FFTargetShootingWbpBuilder
 
 	bool BuildScreenLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
+		const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 		const FFF_TargetShootingVisualStyle& Style =
 			GetDefault<UFF_TargetShootingScreen>()->VisualStyle;
 		UTexture2D* BackdropTexture = Style.BackdropTexture.LoadSynchronous();
 		UTexture2D* WaterBlasterTexture = Style.WaterBlasterTexture.LoadSynchronous();
+		UTexture2D* TargetTexture = Style.TargetTexture.LoadSynchronous();
 		if (!BackdropTexture)
 		{
 			UE_LOG(LogFFUIWbpBuilder, Error,
@@ -204,6 +213,14 @@ namespace FFTargetShootingWbpBuilder
 				*Style.WaterBlasterTexture.ToSoftObjectPath().ToString());
 			return false;
 		}
+		if (!TargetTexture)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: target image is missing: %s"),
+				LogPrefix,
+				*Style.TargetTexture.ToSoftObjectPath().ToString());
+			return false;
+		}
 		UOverlay* Root = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Root"));
 		UImage* Backdrop = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_Backdrop"), true);
 		UBorder* ScreenWash = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_ScreenWash"));
@@ -214,8 +231,12 @@ namespace FFTargetShootingWbpBuilder
 		UBorder* PlayArea = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PlayArea"), true);
 		UCanvasPanel* PlayCanvas = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Canvas_PlayArea"), true);
 		UBorder* Target = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Target"), true);
+		UOverlay* TargetOverlay = MakeWidget<UOverlay>(
+			Blueprint, Tree, TEXT("Overlay_TargetVisual"));
+		UImage* TargetImage = MakeWidget<UImage>(
+			Blueprint, Tree, TEXT("Image_Target"), true);
 		if (!Root || !Backdrop || !ScreenWash || !LayoutCanvas || !ArenaFrame
-			|| !PlayArea || !PlayCanvas || !Target)
+			|| !PlayArea || !PlayCanvas || !Target || !TargetOverlay || !TargetImage)
 		{
 			return false;
 		}
@@ -246,10 +267,12 @@ namespace FFTargetShootingWbpBuilder
 			}
 			return false;
 		};
-		auto ConfigureCard = [](UBorder* Card, const FLinearColor& Color, const FMargin& InPadding)
+		auto ConfigureCard = [&Theme](
+			UBorder* Card,
+			const FLinearColor& Color,
+			const FMargin& InPadding)
 		{
-			Card->SetBrushColor(Color);
-			Card->SetPadding(InPadding);
+			FFMinigameUIStyle::ApplyCard(*Card, Color, InPadding, Theme.Line);
 			Card->SetHorizontalAlignment(HAlign_Fill);
 			Card->SetVerticalAlignment(VAlign_Center);
 			Card->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -267,10 +290,16 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 
-		ArenaFrame->SetBrushColor(Style.ArenaFrameColor);
-		ArenaFrame->SetPadding(FMargin(2.0f));
+		ArenaFrame->SetBrushColor(Style.bUseSingleBackdrop
+			? FLinearColor::Transparent
+			: Style.ArenaFrameColor);
+		ArenaFrame->SetPadding(Style.bUseSingleBackdrop
+			? FMargin(0.0f)
+			: FMargin(2.0f));
 		ArenaFrame->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-		PlayArea->SetBrushColor(Style.ArenaSurfaceColor);
+		PlayArea->SetBrushColor(Style.bUseSingleBackdrop
+			? FLinearColor::Transparent
+			: Style.ArenaSurfaceColor);
 		PlayArea->SetPadding(FMargin(0.0f));
 		PlayArea->SetContent(PlayCanvas);
 		ArenaFrame->SetContent(PlayArea);
@@ -279,18 +308,24 @@ namespace FFTargetShootingWbpBuilder
 			return false;
 		}
 
-		Target->SetBrushColor(Style.NormalTargetColor);
 		Target->SetPadding(FMargin(0.0f));
 		Target->SetVisibility(ESlateVisibility::HitTestInvisible);
-		UTextBlock* TargetMark = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_TargetMark"));
-		if (!TargetMark)
+		FSlateBrush NoTargetBackground;
+		NoTargetBackground.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Target->SetBrush(NoTargetBackground);
+		TargetImage->SetBrushFromTexture(TargetTexture, true);
+		TargetImage->SetColorAndOpacity(Style.TargetImageTint);
+		TargetImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UOverlaySlot* ImageSlot = TargetOverlay->AddChildToOverlay(TargetImage))
+		{
+			ImageSlot->SetHorizontalAlignment(HAlign_Fill);
+			ImageSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		else
 		{
 			return false;
 		}
-		TargetMark->SetText(LOCTEXT("TargetMark", "+"));
-		TargetMark->SetJustification(ETextJustify::Center);
-		StyleAaaText(*TargetMark, 36, Style.PrimaryTextColor);
-		Target->SetContent(TargetMark);
+		Target->SetContent(TargetOverlay);
 		if (UCanvasPanelSlot* TargetSlot = PlayCanvas->AddChildToCanvas(Target))
 		{
 			TargetSlot->SetAnchors(FAnchors(0.5f, 0.5f));
@@ -378,7 +413,7 @@ namespace FFTargetShootingWbpBuilder
 		}
 
 		WeaponStatus->SetText(LOCTEXT(
-			"WeaponStatusPlaceholder", "과녁을 조준하고 클릭하여 발사!"));
+			"WeaponStatusPlaceholder", "총기를 회전해 과녁을 조준하고 발사!"));
 		WeaponStatus->SetJustification(ETextJustify::Center);
 		WeaponStatus->SetVisibility(ESlateVisibility::HitTestInvisible);
 		StyleAaaText(*WeaponStatus, 16, Style.HudAmberColor, TEXT("SemiBold"));
@@ -467,11 +502,11 @@ namespace FFTargetShootingWbpBuilder
 		{
 			return false;
 		}
-		ConfigureCard(TitleCard, Style.HudPanelColor, FMargin(20.0f, 12.0f));
+		ConfigureCard(TitleCard, Theme.Header, FMargin(20.0f, 12.0f));
 		TitleEyebrow->SetText(LOCTEXT("TitleEyebrow", "BUSAN WATERFRONT FESTIVAL"));
-		StyleAaaText(*TitleEyebrow, 10, Style.HudAccentColor, TEXT("SemiBold"));
+		StyleAaaText(*TitleEyebrow, 10, Theme.AccentSoft, TEXT("SemiBold"));
 		TitleText->SetText(LOCTEXT("Title", "WATER BLAST"));
-		StyleAaaText(*TitleText, 27, Style.PrimaryTextColor);
+		StyleAaaText(*TitleText, 27, Theme.White);
 		TitleColumn->AddChildToVerticalBox(TitleEyebrow);
 		TitleColumn->AddChildToVerticalBox(TitleText);
 		TitleCard->SetContent(TitleColumn);
@@ -502,16 +537,16 @@ namespace FFTargetShootingWbpBuilder
 		{
 			return false;
 		}
-		ConfigureCard(TimerCard, Style.HudPanelColor, FMargin(18.0f, 6.0f));
-		ConfigureCard(ScoreCard, Style.HudPanelColor, FMargin(18.0f, 10.0f));
-		ConfigureCard(HitCard, Style.HudPanelMutedColor, FMargin(16.0f, 12.0f));
-		ConfigureCard(PerformanceCard, Style.HudPanelMutedColor, FMargin(16.0f, 12.0f));
-		ConfigureCard(StreakCard, Style.HudPanelColor, FMargin(18.0f, 8.0f));
+		ConfigureCard(TimerCard, FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f), FMargin(18.0f, 6.0f));
+		ConfigureCard(ScoreCard, FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f), FMargin(18.0f, 10.0f));
+		ConfigureCard(HitCard, FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f), FMargin(16.0f, 12.0f));
+		ConfigureCard(PerformanceCard, FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f), FMargin(16.0f, 12.0f));
+		ConfigureCard(StreakCard, FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f), FMargin(18.0f, 8.0f));
 		RemainingTime->SetText(LOCTEXT("Time", "00:30"));
 		RemainingTime->SetJustification(ETextJustify::Center);
-		StyleAaaText(*RemainingTime, 48, Style.PrimaryTextColor);
+		StyleAaaText(*RemainingTime, 48, Theme.Text);
 		TimeGauge->SetPercent(1.0f);
-		TimeGauge->SetFillColorAndOpacity(Style.HudAccentColor);
+		TimeGauge->SetFillColorAndOpacity(Theme.Header);
 		TimeGauge->SetVisibility(ESlateVisibility::HitTestInvisible);
 		TimerGaugeSize->SetHeightOverride(5.0f);
 		TimerGaugeSize->SetContent(TimeGauge);
@@ -528,16 +563,16 @@ namespace FFTargetShootingWbpBuilder
 		TimerCard->SetContent(TimerColumn);
 		Score->SetText(LOCTEXT("Score", "점수  000000"));
 		Score->SetJustification(ETextJustify::Right);
-		StyleAaaText(*Score, 27, Style.HudAmberColor);
+		StyleAaaText(*Score, 27, Theme.Warning);
 		HitCount->SetText(LOCTEXT("Hits", "명중  0\n정확도  0%"));
 		HitCount->SetAutoWrapText(true);
-		StyleAaaText(*HitCount, 16, Style.PrimaryTextColor, TEXT("SemiBold"));
+		StyleAaaText(*HitCount, 16, Theme.Text, TEXT("SemiBold"));
 		MissCount->SetText(LOCTEXT("Performance", "초당  0.0발\n반응  0ms\n빗나감  0"));
 		MissCount->SetAutoWrapText(true);
-		StyleAaaText(*MissCount, 15, Style.SecondaryTextColor, TEXT("SemiBold"));
+		StyleAaaText(*MissCount, 15, Theme.TextMuted, TEXT("SemiBold"));
 		Streak->SetText(LOCTEXT("Streak", "연속 x0     최고 0"));
 		Streak->SetJustification(ETextJustify::Center);
-		StyleAaaText(*Streak, 22, Style.HudAccentColor);
+		StyleAaaText(*Streak, 22, Theme.HeaderStrong);
 		ScoreCard->SetContent(Score);
 		HitCard->SetContent(HitCount);
 		PerformanceCard->SetContent(MissCount);
@@ -557,10 +592,10 @@ namespace FFTargetShootingWbpBuilder
 		{
 			return false;
 		}
-		ConfigureCard(HintCard, Style.HudPanelMutedColor, FMargin(16.0f, 8.0f));
-		HintText->SetText(LOCTEXT("InputHint", "마우스로 조준  ·  클릭하여 발사  ·  ESC 나가기"));
+		ConfigureCard(HintCard, FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f), FMargin(16.0f, 8.0f));
+		HintText->SetText(LOCTEXT("InputHint", "마우스로 총기 회전  ·  좌클릭 발사  ·  ESC 나가기"));
 		HintText->SetJustification(ETextJustify::Center);
-		StyleAaaText(*HintText, 13, Style.SecondaryTextColor, TEXT("SemiBold"));
+		StyleAaaText(*HintText, 13, Theme.TextMuted, TEXT("SemiBold"));
 		HintCard->SetContent(HintText);
 		if (!PlaceAnchored(HintCard, FAnchors(0.350f, 0.940f, 0.650f, 0.985f), 30))
 		{
@@ -577,33 +612,38 @@ namespace FFTargetShootingWbpBuilder
 		UTextBlock* ResultEyebrow = MakeWidget<UTextBlock>(
 			Blueprint, Tree, TEXT("Text_ResultEyebrow"));
 		UTextBlock* ResultText = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Result"), true);
-		USizeBox* ResultCtaReserve = MakeWidget<USizeBox>(
-			Blueprint, Tree, TEXT("Size_ResultCtaReserve"));
+		USizeBox* ResultCtaSize = MakeWidget<USizeBox>(
+			Blueprint, Tree, TEXT("Size_ResultCta"));
+		UButton* ResultCloseButton = MakeWidget<UButton>(
+			Blueprint, Tree, TEXT("Button_ResultClose"), true);
+		UTextBlock* ResultCloseLabel = MakeWidget<UTextBlock>(
+			Blueprint, Tree, TEXT("Text_ResultCloseLabel"));
 		if (!ResultPanel || !ResultStage || !ResultSize || !ResultFrame || !ResultSurface
-			|| !ResultColumn || !ResultEyebrow || !ResultText || !ResultCtaReserve)
+			|| !ResultColumn || !ResultEyebrow || !ResultText || !ResultCtaSize
+			|| !ResultCloseButton || !ResultCloseLabel)
 		{
 			return false;
 		}
-		ResultPanel->SetBrushColor(FLinearColor(0.002f, 0.010f, 0.024f, 0.88f));
+		ResultPanel->SetBrushColor(Theme.Scrim);
 		ResultPanel->SetPadding(FMargin(0.0f));
 		ResultPanel->SetVisibility(ESlateVisibility::Collapsed);
 		ResultPanel->SetContent(ResultStage);
-		ResultSize->SetWidthOverride(720.0f);
+		ResultSize->SetWidthOverride(820.0f);
 		ResultSize->SetHeightOverride(500.0f);
 		ResultSize->SetContent(ResultFrame);
-		ResultFrame->SetBrushColor(Style.HudAmberColor);
+		ResultFrame->SetBrushColor(Theme.LineStrong);
 		ResultFrame->SetPadding(FMargin(2.0f));
 		ResultFrame->SetContent(ResultSurface);
-		ResultSurface->SetBrushColor(Style.HudPanelColor);
-		ResultSurface->SetPadding(FMargin(48.0f, 40.0f));
+		FFMinigameUIStyle::ApplyCard(
+			*ResultSurface, Theme.Surface, FMargin(48.0f, 40.0f), Theme.LineStrong, 10.0f);
 		ResultSurface->SetContent(ResultColumn);
 		ResultEyebrow->SetText(LOCTEXT("ResultEyebrow", "WATER BLAST  //  플레이 결과"));
 		ResultEyebrow->SetJustification(ETextJustify::Center);
-		StyleAaaText(*ResultEyebrow, 13, Style.HudAccentColor, TEXT("SemiBold"));
+		StyleAaaText(*ResultEyebrow, 13, Theme.HeaderStrong, TEXT("SemiBold"));
 		ResultText->SetText(LOCTEXT("ResultPlaceholder", "결과를 계산 중입니다"));
 		ResultText->SetJustification(ETextJustify::Center);
 		ResultText->SetAutoWrapText(true);
-		StyleAaaText(*ResultText, 26, Style.PrimaryTextColor);
+		StyleAaaText(*ResultText, 26, Theme.Text);
 		if (UVerticalBoxSlot* EyebrowSlot = ResultColumn->AddChildToVerticalBox(ResultEyebrow))
 		{
 			EyebrowSlot->SetHorizontalAlignment(HAlign_Center);
@@ -611,12 +651,24 @@ namespace FFTargetShootingWbpBuilder
 		}
 		if (UVerticalBoxSlot* ResultTextSlot = ResultColumn->AddChildToVerticalBox(ResultText))
 		{
-			ResultTextSlot->SetHorizontalAlignment(HAlign_Center);
+			ResultTextSlot->SetHorizontalAlignment(HAlign_Fill);
 			ResultTextSlot->SetVerticalAlignment(VAlign_Center);
 			ResultTextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		}
-		ResultCtaReserve->SetHeightOverride(62.0f);
-		if (!ResultColumn->AddChildToVerticalBox(ResultCtaReserve))
+		ResultCtaSize->SetWidthOverride(260.0f);
+		ResultCtaSize->SetHeightOverride(54.0f);
+		ResultCloseLabel->SetText(LOCTEXT("ResultClose", "확인  [ESC]"));
+		ResultCloseLabel->SetJustification(ETextJustify::Center);
+		StyleAaaText(*ResultCloseLabel, 15, Theme.White, TEXT("SemiBold"));
+		FFMinigameUIStyle::ApplyButton(*ResultCloseButton, Theme, true);
+		ResultCloseButton->SetContent(ResultCloseLabel);
+		ResultCtaSize->SetContent(ResultCloseButton);
+		if (UVerticalBoxSlot* ResultCtaSlot = ResultColumn->AddChildToVerticalBox(ResultCtaSize))
+		{
+			ResultCtaSlot->SetHorizontalAlignment(HAlign_Center);
+			ResultCtaSlot->SetPadding(FMargin(0.0f, 24.0f, 0.0f, 0.0f));
+		}
+		else
 		{
 			return false;
 		}
@@ -642,13 +694,9 @@ namespace FFTargetShootingWbpBuilder
 		}
 		CloseLabel->SetText(LOCTEXT("Close", "나가기  [ESC]"));
 		CloseLabel->SetJustification(ETextJustify::Center);
-		StyleAaaText(*CloseLabel, 13, Style.PrimaryTextColor, TEXT("SemiBold"));
+		StyleAaaText(*CloseLabel, 13, Theme.Text, TEXT("SemiBold"));
 		CloseButton->SetContent(CloseLabel);
-		CloseButton->SetBackgroundColor(FLinearColor(
-			Style.HudPanelMutedColor.R,
-			Style.HudPanelMutedColor.G,
-			Style.HudPanelMutedColor.B,
-			1.0f));
+		FFMinigameUIStyle::ApplyButton(*CloseButton, Theme, false);
 		if (!PlaceAnchored(CloseButton, FAnchors(0.925f, 0.050f, 0.982f, 0.110f), 110))
 		{
 			return false;

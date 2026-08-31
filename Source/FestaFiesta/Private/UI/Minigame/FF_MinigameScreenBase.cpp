@@ -2,7 +2,9 @@
 
 #include "UI/Minigame/FF_MinigameScreenBase.h"
 
+#include "Engine/World.h"
 #include "InputCoreTypes.h"
+#include "Minigame/Audio/FF_MinigameAudioSubsystem.h"
 
 UFF_MinigameScreenBase::UFF_MinigameScreenBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -41,6 +43,14 @@ void UFF_MinigameScreenBase::RequestClose()
 
 	bCloseRequested = true;
 	OnCloseRequested.Broadcast(this, SessionId);
+}
+
+bool UFF_MinigameScreenBase::PlayMinigameSound(const EFF_MinigameAudioEvent Event)
+{
+	UFF_MinigameAudioSubsystem* Audio = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_MinigameAudioSubsystem>()
+		: nullptr;
+	return Audio && Audio->PlayEvent(SessionId, Event);
 }
 
 FReply UFF_MinigameScreenBase::NativeOnPreviewKeyDown(

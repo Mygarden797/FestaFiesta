@@ -16,6 +16,8 @@
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformMisc.h"
 #include "Minigame/FF_MinigameSubsystem.h"
+#include "Minigame/FF_ClawMachineRuntime.h"
+#include "Minigame/FF_MinigameDefinition.h"
 #include "Misc/Paths.h"
 #include "ShaderCompiler.h"
 #if WITH_EDITOR
@@ -23,6 +25,7 @@
 #endif
 #include "UnrealClient.h"
 #include "UI/Minigame/FF_MinigameScreenBase.h"
+#include "UI/Minigame/FF_ClawMachineScreen.h"
 #include "UI/Minigame/FF_SurfingScreen.h"
 #include "UI/Minigame/FF_TargetShootingScreen.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -45,6 +48,9 @@ namespace FFMinigameUIPreview
 	const TCHAR* const SurfScreenClassPath =
 		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_Surfing_FreeRide."
 			 "WBP_FF_Surfing_FreeRide_C");
+	const TCHAR* const ClawScreenClassPath =
+		TEXT("/Game/FestaFiesta/UI/Minigame/WBP_FF_ClawMachine."
+			 "WBP_FF_ClawMachine_C");
 
 	enum class EPreviewMode : uint8
 	{
@@ -52,6 +58,8 @@ namespace FFMinigameUIPreview
 		TargetResult,
 		Surf,
 		SurfResult,
+		Claw,
+		ClawResult,
 		Close,
 		Invalid
 	};
@@ -79,6 +87,14 @@ namespace FFMinigameUIPreview
 		if (Value.Equals(TEXT("SurfResult"), ESearchCase::IgnoreCase))
 		{
 			return EPreviewMode::SurfResult;
+		}
+		if (Value.Equals(TEXT("Claw"), ESearchCase::IgnoreCase))
+		{
+			return EPreviewMode::Claw;
+		}
+		if (Value.Equals(TEXT("ClawResult"), ESearchCase::IgnoreCase))
+		{
+			return EPreviewMode::ClawResult;
 		}
 		if (Value.Equals(TEXT("Close"), ESearchCase::IgnoreCase))
 		{
@@ -387,6 +403,62 @@ namespace FFMinigameUIPreview
 		return true;
 	}
 
+	bool ShowClawPreview(APlayerController& Controller, const bool bShowResult)
+	{
+		UFF_ClawMachineScreen* Screen =
+			CreateDesignerScreen<UFF_ClawMachineScreen>(Controller, ClawScreenClassPath);
+		if (!Screen)
+		{
+			return false;
+		}
+
+		// Use the real deterministic runtime so this preview exercises the same
+		// late-binding/configuration path as UFF_MinigameSubsystem and renders the
+		// authored prize pool rather than a hand-built UI-only snapshot.
+		UFF_ClawMachineDefinition* Definition =
+			NewObject<UFF_ClawMachineDefinition>(Screen);
+		UFF_ClawMachineRuntime* Runtime = NewObject<UFF_ClawMachineRuntime>(Screen);
+		FFF_MinigameSessionContext Context;
+		Context.SessionId = FGuid(
+			0xA11CE003, 0xC1A44A10, 0xB0315A17, 0xF17A0003);
+		Context.FacilityInstanceId = FGuid(
+			0xB007A003, 0x5A004D22, 0x9001C0DE, 0x00000003);
+		Context.FacilityDefinitionId = TEXT("Booth_ActivityGame_ClawMachine");
+		Context.MinigameId = TEXT("ClawMachine");
+		Context.RandomSeed = 130043;
+
+		FString FailureReason;
+		if (!Runtime->Initialize(Definition, Context, &FailureReason))
+		{
+			Screen->DeactivateWidget();
+			Screen->RemoveFromParent();
+			UE_LOG(LogFestaFiestaMinigameUIPreview, Error,
+				TEXT("FF.PreviewMinigameUI: claw runtime initialization failed: %s"),
+				*FailureReason);
+			return false;
+		}
+
+		Runtime->SetMovementInput(Context.SessionId, FVector2D(0.70f, 0.70f));
+		Runtime->Advance(1.0f);
+		Runtime->SetMovementInput(Context.SessionId, FVector2D::ZeroVector);
+		Runtime->Advance(bShowResult ? 80.0f : 7.0f);
+		if (!Screen->SetRuntime(Runtime))
+		{
+			Screen->DeactivateWidget();
+			Screen->RemoveFromParent();
+			UE_LOG(LogFestaFiestaMinigameUIPreview, Error,
+				TEXT("FF.PreviewMinigameUI: claw WBP rejected its preview runtime."));
+			return false;
+		}
+
+		if (bShowResult)
+		{
+			Screen->ShowResult(Runtime->BuildResult(Definition->RewardGoldAtMaxScore));
+		}
+		AdoptPreviewScreen(*Screen);
+		return true;
+	}
+
 	FString ResolveScreenshotPath(const FString& RequestedPath)
 	{
 		FString ResolvedPath = RequestedPath;
@@ -593,7 +665,7 @@ namespace FFMinigameUIPreview
 		{
 			UE_LOG(LogFestaFiestaMinigameUIPreview, Error,
 				TEXT("Usage: FF.PreviewMinigameUI "
-					 "<Target|TargetResult|Surf|SurfResult|Close> "
+						 "<Target|TargetResult|Surf|SurfResult|Claw|ClawResult|Close> "
 					 "[ScreenshotPath] [AutoExit]"));
 			return;
 		}
@@ -608,7 +680,7 @@ namespace FFMinigameUIPreview
 		{
 			UE_LOG(LogFestaFiestaMinigameUIPreview, Error,
 				TEXT("Usage: FF.PreviewMinigameUI "
-					 "<Target|TargetResult|Surf|SurfResult|Close> "
+						 "<Target|TargetResult|Surf|SurfResult|Claw|ClawResult|Close> "
 					 "[ScreenshotPath] [AutoExit]"));
 			return;
 		}
@@ -675,6 +747,12 @@ namespace FFMinigameUIPreview
 		case EPreviewMode::SurfResult:
 			bShown = ShowSurfPreview(*Controller, true);
 			break;
+		case EPreviewMode::Claw:
+			bShown = ShowClawPreview(*Controller, false);
+			break;
+		case EPreviewMode::ClawResult:
+			bShown = ShowClawPreview(*Controller, true);
+			break;
 		default:
 			break;
 		}
@@ -696,7 +774,7 @@ namespace FFMinigameUIPreview
 	FAutoConsoleCommandWithWorldAndArgs PreviewCommand(
 		TEXT("FF.PreviewMinigameUI"),
 		TEXT("Shows a deterministic designer-WBP minigame preview. "
-			 "FF.PreviewMinigameUI <Target|TargetResult|Surf|SurfResult|Close> "
+			 "FF.PreviewMinigameUI <Target|TargetResult|Surf|SurfResult|Claw|ClawResult|Close> "
 			 "[ScreenshotPath] [AutoExit]"),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&RunPreviewCommand));
 }

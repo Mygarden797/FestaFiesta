@@ -133,6 +133,10 @@ struct FESTAFIESTA_API FFF_SurfingRules
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player", meta = (ClampMin = "0"))
 	int32 InitialLives = 3;
 
+	/** Ends the run immediately when an unprotected obstacle reduces Lives to zero. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Player")
+	bool bEndRunWhenLivesDepleted = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boost", meta = (ClampMin = "1"))
 	int32 MaxBoostCharges = 3;
 
