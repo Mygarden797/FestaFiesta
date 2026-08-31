@@ -646,9 +646,19 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 			FText::AsNumber(TotalStaff), FText::AsNumber(AvailableStaff))
 		: FText::GetEmpty());
 
-	// 소유자 API 가 없는 칸. **못 읽었으면 숨긴다** — 0 을 띄우면 "관객이 없다"는 틀린 사실이 된다.
+	// 🔴 이 값은 **동시 인원**이다 (지금 축제장 안에 있는 사람 수).
+	// 일일 목표(오늘 누적 500명)의 분자로 쓰지 않는다 — 운영 패널의 목표 진행이 여전히
+	// `모름` 인 것은 그래서다. 누적 방문객 API 를 `UI_API.md` 에 요청해 뒀다.
+	//
+	// **못 읽었으면 숨긴다** — 0 을 띄우면 "관객이 없다"는 틀린 사실이 된다.
+	const int32 LiveVisitorCount = ViewModel->GetConcurrentVisitorCount();
+
+	// 디버그로 넣은 값이 있으면 그것을 우선한다. 실값만 쓰게 되면 이 분기와
+	// `Debug_SetPlaceholders` 를 함께 지운다.
+	const int32 ShownVisitorCount = (VisitorCount >= 0) ? VisitorCount : LiveVisitorCount;
+
 	SetGroupTextOrHide(Box_VisitorCount, Text_VisitorCount,
-		(VisitorCount >= 0) ? FText::AsNumber(VisitorCount) : FText::GetEmpty());
+		(ShownVisitorCount >= 0) ? FText::AsNumber(ShownVisitorCount) : FText::GetEmpty());
 
 	// --- 가운데: `1일차 · 라이브` ---
 	//

@@ -10,6 +10,7 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 
@@ -550,6 +551,19 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 	}
 
 	return Options;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetConcurrentVisitorCount() const
+{
+	// 군중은 월드 서브시스템이라 GameInstance 에서 바로 못 꺼낸다.
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	const UFF_CrowdSimulationSubsystem* Crowd =
+		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
+
+	// 🔴 없으면 0 이 아니라 `모름` 이다. 0 을 돌려주면 화면이 `관객 0명` 이라는
+	// **확정 사실**을 말하는데, 실제로는 시뮬레이션이 아직 없는 것뿐이다.
+	return Crowd ? Crowd->GetActiveAgentCount() : INDEX_NONE;
 }
 
 namespace FFViewModelFacilityLocal

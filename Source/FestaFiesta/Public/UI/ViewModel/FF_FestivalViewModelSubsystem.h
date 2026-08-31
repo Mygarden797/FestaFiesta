@@ -508,6 +508,24 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
 	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
 
+	// --- 관객 수 (2026-08-29 추가) ---
+
+	/**
+	 * 지금 축제장 안에 있는 관객 수. 못 읽으면 `INDEX_NONE`.
+	 *
+	 * === 🔴 이것은 **동시 인원**이지 누적 방문객이 아니다 ===
+	 * 원본은 `UFF_CrowdSimulationSubsystem::GetActiveAgentCount()` 로, 스폰될 때 늘고
+	 * 사라질 때 주는 값이다. **`DailyVisitorGoal`(오늘 500명) 의 분자로 쓰면 안 된다** —
+	 * 그 목표는 하루 동안 들어온 총 인원이라, 동시 80명을 넣으면 진행률이 16% 에서
+	 * 영원히 안 올라간다. 그럴듯해 보여서 눈으로는 안 걸린다.
+	 *
+	 * 누적 방문객 API 는 아직 없다 (`UI_API.md` 요청 목록). 그래서 일일 목표 진행은
+	 * 여전히 `모름` 이고, 이 값은 **상태 바의 `관객` 칸에만** 쓴다 — 지금 얼마나 붐비는지는
+	 * 그 자체로 볼 값이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	int32 GetConcurrentVisitorCount() const;
+
 	// --- 시설 현황 (2026-08-29 추가 — U6 라이브 시설 패널) ---
 	//
 	// 원본은 ZoneSystem 의 `FFFZSFacilityReadModel` 이다. 그 타입을 UI 헤더로 끌고 오지 않고
