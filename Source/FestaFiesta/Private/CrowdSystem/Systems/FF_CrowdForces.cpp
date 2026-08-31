@@ -41,7 +41,8 @@ FVector2f FFF_CrowdForceSolver::ComputeDrivingForce(const FVector2f& DesiredVel,
 FFF_CrowdForceTerms FFF_CrowdForceSolver::ComputeAgentInteractionTerms(
 	const FVector2f& PosI, const FVector2f& VelI, float RadiusI,
 	const FVector2f& PosJ, const FVector2f& VelJ, float RadiusJ,
-	const FFF_CrowdAvoidanceConfig& Config)
+	const FFF_CrowdAvoidanceConfig& Config,
+	float MassKg, float FixedDtSeconds)
 {
 	float Dist = 0.f;
 	const FVector2f N = SafeNormalize(PosI - PosJ, Dist);
@@ -72,7 +73,12 @@ FFF_CrowdForceTerms FFF_CrowdForceSolver::ComputeAgentInteractionTerms(
 
 		const FVector2f T(-N.Y, N.X);
 		const float RelTangential = FVector2f::DotProduct(VelJ - VelI, T);
-		Terms.Contact += T * (Config.ContactFriction * Overlap * RelTangential);
+
+		const float Friction = Config.ContactFriction * Overlap * RelTangential;
+		const float MaxFriction = 0.5f * FMath::Max(MassKg, KINDA_SMALL_NUMBER)
+			* FMath::Abs(RelTangential) / FMath::Max(FixedDtSeconds, KINDA_SMALL_NUMBER);
+
+		Terms.Contact += T * FMath::Clamp(Friction, -MaxFriction, MaxFriction);
 	}
 
 	return Terms;
@@ -81,7 +87,8 @@ FFF_CrowdForceTerms FFF_CrowdForceSolver::ComputeAgentInteractionTerms(
 FFF_CrowdForceTerms FFF_CrowdForceSolver::ComputeWallForceTerms(
 	const FVector2f& Pos, const FVector2f& Vel, float Radius,
 	const FVector2f& SegA, const FVector2f& SegB,
-	const FFF_CrowdAvoidanceConfig& Config)
+	const FFF_CrowdAvoidanceConfig& Config,
+	float MassKg, float FixedDtSeconds)
 {
 	const FVector2f AB = SegB - SegA;
 	const float LenSq = AB.SizeSquared();
@@ -110,7 +117,12 @@ FFF_CrowdForceTerms FFF_CrowdForceSolver::ComputeWallForceTerms(
 
 		const FVector2f T(-N.Y, N.X);
 		const float RelTangential = -FVector2f::DotProduct(Vel, T);
-		Terms.Contact += T * (Config.ContactFriction * Overlap * RelTangential);
+
+		const float Friction = Config.ContactFriction * Overlap * RelTangential;
+		const float MaxFriction = FMath::Max(MassKg, KINDA_SMALL_NUMBER)
+			* FMath::Abs(RelTangential) / FMath::Max(FixedDtSeconds, KINDA_SMALL_NUMBER);
+
+		Terms.Contact += T * FMath::Clamp(Friction, -MaxFriction, MaxFriction);
 	}
 
 	return Terms;
@@ -349,6 +361,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 	NeighbourScratch.SetNum(NumChunks);
 
 	const float SearchRadius = Config.NeighbourRadiusMeters;
+	const float FixedDt = In.FixedDtSeconds;
 	const bool bUnstuckEnabled = (Config.StuckDetectSteps > 0) && (Config.UnstuckAccelMps2 > 0.f);
 
 	ParallelFor(NumChunks, [&](int32 ChunkIdx)
@@ -368,6 +381,8 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 
 			const FUnitData& U = Units[i];
 
+			const float MassKg = FMath::Max(U.MassKg, KINDA_SMALL_NUMBER);
+
 			FFF_CrowdForceTerms Terms;
 
 			Grid.GatherNearest(Pos, Pos[i], SearchRadius, Config.MaxNeighbours + 1, Neighbours);
@@ -382,7 +397,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 				Terms += ComputeAgentInteractionTerms(
 					Pos[i], Vel[i], Radius[i],
 					Pos[j], Vel[j], Radius[j],
-					Config);
+					Config, MassKg, FixedDt);
 
 				if (bUseLaneBias)
 				{
@@ -413,25 +428,34 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 						}
 					}
 
-					WallTerms += ComputeWallForceTerms(Pos[i], Vel[i], Radius[i], Wall.A, Wall.B, Config);
+					WallTerms += ComputeWallForceTerms(Pos[i], Vel[i], Radius[i], Wall.A, Wall.B,
+						Config, MassKg, FixedDt);
 				}
 			}
 
-			const float MassKg = FMath::Max(U.MassKg, KINDA_SMALL_NUMBER);
 			const FVector2f Desired = bHasDesired ? (*DesiredVel)[i] : FVector2f::ZeroVector;
 
 			FVector2f Accel = ComposeAcceleration(Terms, WallTerms, Vel[i], Desired,
 				bHasDesired, bUseDrivingForce, MassKg, Config);
 
-			if (bUnstuckEnabled && U.StuckSteps >= Config.StuckDetectSteps)
+			if (bUnstuckEnabled)
 			{
-				FVector2f Suggested = FVector2f::ZeroVector;
-				FVector2f CellCenter;
-				if (Grid.FindLeastCrowdedNeighbourCell(Pos[i], CellCenter))
+				const int32 HoldMax = FMath::Max(1, Config.UnstuckHoldSteps);
+				const float HoldScale = (U.StuckSteps >= Config.StuckDetectSteps)
+					? 1.f
+					: static_cast<float>(FMath::Min(U.UnstuckHoldSteps, HoldMax)) / static_cast<float>(HoldMax);
+
+				if (HoldScale > 0.f)
 				{
-					Suggested = CellCenter - Pos[i];
+					FVector2f Suggested = FVector2f::ZeroVector;
+					FVector2f CellCenter;
+					if (Grid.FindLeastCrowdedNeighbourCell(Pos[i], CellCenter))
+					{
+						Suggested = CellCenter - Pos[i];
+					}
+					Accel += ComputeUnstuckImpulse(U.StableAgentID, Suggested)
+						* (Config.UnstuckAccelMps2 * HoldScale);
 				}
-				Accel += ComputeUnstuckImpulse(U.StableAgentID, Suggested) * Config.UnstuckAccelMps2;
 			}
 
 			OutAccelMps2[i] = ClampAcceleration(Accel, Config.MaxAccelerationMps2);
