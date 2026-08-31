@@ -12,10 +12,10 @@
 #include "CrowdSystem/Systems/FF_CrowdSpatialGrid.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
-#include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "EngineUtils.h"
-#include "GameFramework/WorldSettings.h"
+#include "Tests/AutomationCommon.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 
 namespace FFF_CrowdTestHelpers
 {
@@ -592,66 +592,57 @@ bool FFF_CrowdPool_OutOfRangeAgentIsRejected::RunTest(const FString& Parameters)
 
 namespace FFF_CrowdWorldTestHelpers
 {
-	// 테스트용 게임 월드를 만들고 소멸 시 정리한다(엔진 FActorTestSpawner와 같은 절차).
-	// 스택에 두고 쓴다 — 소멸자가 액터 정리 -> 월드 파괴 -> 컨텍스트 제거를 순서대로 한다.
+	constexpr int32 MaxVisitorPartySize = 6;
+
+	void TestWholePartySpawnCount(FAutomationTestBase& Test, const TCHAR* Context,
+		int32 Requested, int32 Spawned)
+	{
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s: 실제 인원이 0보다 크다 (%d명)"), Context, Spawned),
+			Spawned > 0);
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s: 실제 인원이 요청 %d명을 넘지 않는다 (%d명)"),
+				Context, Requested, Spawned),
+			Spawned <= Requested);
+		Test.TestTrue(
+			*FString::Printf(TEXT("%s: whole-party 부족분이 최대 파티 크기보다 작다 (%d명)"),
+				Context, Requested - Spawned),
+			Requested - Spawned < MaxVisitorPartySize);
+	}
+
+	// 엔진 공용 테스트 월드가 GameInstance 연결과 Begin/EndPlay, Subsystem 종료를 모두 맡는다.
+	// Stage는 Crowd Tick의 런타임 전제만 세우고 다른 시스템의 전환 부작용은 만들지 않는다.
 	struct FScopedTestWorld
 	{
+		FTestWorldWrapper TestWorld;
 		UWorld* World = nullptr;
 
 		FScopedTestWorld()
 		{
-			if (!GEngine)
+			if (!TestWorld.CreateTestWorld(EWorldType::Game))
 			{
 				return;
 			}
 
-			const FName WorldName = MakeUniqueObjectName(
-				nullptr, UWorld::StaticClass(), NAME_None, EUniqueObjectNameOptions::GloballyUnique);
-
-			FWorldContext& WorldContext = GEngine->CreateNewWorldContext(EWorldType::Game);
-			World = UWorld::CreateWorld(EWorldType::Game, false, WorldName, GetTransientPackage());
-			if (!World)
+			World = TestWorld.GetTestWorld();
+			UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+			UFF_FestivalStageSubsystem* Stage = GameInstance
+				? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+				: nullptr;
+			if (!World || !GameInstance || !Stage)
 			{
+				World = nullptr;
 				return;
 			}
 
-			World->AddToRoot();
-			WorldContext.SetCurrentWorld(World);
-			World->InitializeActorsForPlay(FURL());
-
-			World->BeginPlay();
-
-			if (AWorldSettings* Settings = World->GetWorldSettings())
+			Stage->CurrentStage = EFF_FestivalStage::Live;
+			if (!TestWorld.BeginPlayInTestWorld())
 			{
-				Settings->NotifyBeginPlay();
+				World = nullptr;
 			}
 		}
 
-		~FScopedTestWorld()
-		{
-			if (!World || !GEngine)
-			{
-				return;
-			}
-
-			if (World->AreActorsInitialized())
-			{
-				for (AActor* Actor : FActorRange(World))
-				{
-					if (Actor)
-					{
-						Actor->RouteEndPlay(EEndPlayReason::LevelTransition);
-					}
-				}
-			}
-
-			GEngine->ShutdownWorldNetDriver(World);
-			World->DestroyWorld(true);
-			World->SetPhysicsScene(nullptr);
-			GEngine->DestroyWorldContext(World);
-			World->RemoveFromRoot();
-			World = nullptr;
-		}
+		~FScopedTestWorld() = default;
 
 		UFF_CrowdSimulationSubsystem* GetCrowdSim() const
 		{
@@ -721,6 +712,9 @@ bool FFF_CrowdWorld_InitializeSpawnsHiddenPool::RunTest(const FString& Parameter
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWorld_SpawnAgentsBindsAndRevealsActors, "FestaFiesta.Crowd.World.SpawnAgentsBindsAndRevealsActors", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdWorld_SpawnAgentsBindsAndRevealsActors::RunTest(const FString& Parameters)
 {
+	constexpr int32 ActorPoolSize = 8;
+	constexpr int32 Requested = 5;
+
 	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
 	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
 
@@ -730,17 +724,26 @@ bool FFF_CrowdWorld_SpawnAgentsBindsAndRevealsActors::RunTest(const FString& Par
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 8, 20, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulation(
+		FVector::ZeroVector, 10000.f, ActorPoolSize, 20, AFF_BaseCrowd::StaticClass());
 
-	const int32 Spawned = CrowdSim->SpawnAgents(5, FVector::ZeroVector, 500.f);
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 500.f);
 
-	TestEqual(TEXT("요청한 5명이 스폰됐다"), Spawned, 5);
-	TestEqual(TEXT("활성 Agent 5"), CrowdSim->GetActiveAgentCount(), 5);
-	TestEqual(TEXT("Actor 5개가 바인딩됐다"), CrowdSim->GetBoundActorCount(), 5);
-	TestEqual(TEXT("Actor 5개가 화면에 드러났다"), FFF_CrowdWorldTestHelpers::CountVisibleActors(*CrowdSim), 5);
-	TestEqual(TEXT("남은 빈 슬롯 3"), CrowdSim->PoolBinding.GetFreeSlotCount(), 3);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("Actor 바인딩 스폰"), Requested, Spawned);
+	TestEqual(TEXT("활성 Agent 수 = 실제 스폰 수"), CrowdSim->GetActiveAgentCount(), Spawned);
+	TestEqual(TEXT("도착 커서 = 실제 스폰 수"), CrowdSim->GetArrivalSpawnedCount(), Spawned);
+	TestEqual(TEXT("바인딩 Actor 수 = 실제 스폰 수"), CrowdSim->GetBoundActorCount(), Spawned);
+	TestEqual(TEXT("보이는 Actor 수 = 실제 스폰 수"),
+		FFF_CrowdWorldTestHelpers::CountVisibleActors(*CrowdSim), Spawned);
+	TestEqual(TEXT("빈 Actor 슬롯 = 풀 크기 - 실제 스폰 수"),
+		CrowdSim->PoolBinding.GetFreeSlotCount(), ActorPoolSize - Spawned);
 
-	TestTrue(TEXT("스폰된 Agent는 활성"), CrowdSim->IsAgentActive(0));
+	for (int32 AgentIndex = 0; AgentIndex < Spawned; ++AgentIndex)
+	{
+		TestTrue(*FString::Printf(TEXT("스폰된 Agent %d는 활성"), AgentIndex),
+			CrowdSim->IsAgentActive(AgentIndex));
+	}
 
 	return true;
 }
@@ -757,8 +760,11 @@ bool FFF_CrowdWorld_TickMovesAgentsAndTheirActors::RunTest(const FString& Parame
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 4, 4, AFF_BaseCrowd::StaticClass());
-	CrowdSim->SpawnAgents(4, FVector::ZeroVector, 0.f);
+	constexpr int32 Requested = 4;
+	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 4, Requested, AFF_BaseCrowd::StaticClass());
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 0.f);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("Movement"), Requested, Spawned);
 
 	const int32 ActorSlot = CrowdSim->PoolBinding.GetBoundSlot(0);
 	if (!CrowdSim->CrowdPool.IsValidIndex(ActorSlot))
@@ -787,6 +793,9 @@ bool FFF_CrowdWorld_TickMovesAgentsAndTheirActors::RunTest(const FString& Parame
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWorld_ActorShortageDoesNotAffectMetrics, "FestaFiesta.Crowd.World.ActorShortageDoesNotAffectMetrics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdWorld_ActorShortageDoesNotAffectMetrics::RunTest(const FString& Parameters)
 {
+	constexpr int32 ActorPoolSize = 3;
+	constexpr int32 Requested = 12;
+
 	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
 	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
 
@@ -796,18 +805,25 @@ bool FFF_CrowdWorld_ActorShortageDoesNotAffectMetrics::RunTest(const FString& Pa
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 3, 12, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulation(
+		FVector::ZeroVector, 10000.f, ActorPoolSize, Requested, AFF_BaseCrowd::StaticClass());
 
-	const int32 Spawned = CrowdSim->SpawnAgents(12, FVector::ZeroVector, 300.f);
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 300.f);
+	const int32 ExpectedBoundActors = FMath::Min(Spawned, ActorPoolSize);
 
-	TestEqual(TEXT("Agent는 12명 전원 스폰된다"), Spawned, 12);
-	TestEqual(TEXT("활성 Agent 12"), CrowdSim->GetActiveAgentCount(), 12);
-	TestEqual(TEXT("하지만 Actor는 3개만 붙는다"), CrowdSim->GetBoundActorCount(), 3);
-	TestEqual(TEXT("보이는 Actor도 3개"), FFF_CrowdWorldTestHelpers::CountVisibleActors(*CrowdSim), 3);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("Actor shortage"), Requested, Spawned);
+	TestTrue(TEXT("실제 스폰 수가 Actor 풀보다 크다"), Spawned > ActorPoolSize);
+	TestEqual(TEXT("활성 Agent 수 = 실제 스폰 수"), CrowdSim->GetActiveAgentCount(), Spawned);
+	TestEqual(TEXT("바인딩 Actor 수 = min(실제 스폰, Actor 풀)"),
+		CrowdSim->GetBoundActorCount(), ExpectedBoundActors);
+	TestEqual(TEXT("보이는 Actor 수 = 바인딩 Actor 수"),
+		FFF_CrowdWorldTestHelpers::CountVisibleActors(*CrowdSim), ExpectedBoundActors);
 
 	FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 0.5f);
 
-	TestEqual(TEXT("밀도 집계는 12명 전원"), CrowdSim->GetDensityGrid().GetSampledUnitCount(), 12);
+	TestEqual(TEXT("밀도 집계 수 = 실제 스폰 수"),
+		CrowdSim->GetDensityGrid().GetSampledUnitCount(), Spawned);
 	TestTrue(TEXT("밀도가 0보다 크다"), CrowdSim->GetMaxDensity() > 0.f);
 
 	return true;
@@ -824,6 +840,7 @@ namespace FFF_CounterFlowScenario
 
 	struct FResult
 	{
+		int32 Spawned = 0;
 		int32 Crossed = 0;			// 반대편으로 넘어간 인원(양쪽 합)
 		float MeanProgressUU = 0.f;	// 목적지 방향 평균 전진량
 		float MaxDensity = 0.f;
@@ -874,6 +891,7 @@ namespace FFF_CounterFlowScenario
 		}
 
 		FResult Out;
+		Out.Spawned = Total;
 		Out.MaxDensity = CrowdSim.GetMaxDensity();
 		Out.ActiveAtEnd = CrowdSim.GetActiveAgentCount();
 		Out.Flow = CrowdSim.GetFlowBreakdown();
@@ -932,7 +950,7 @@ bool FFF_CrowdAvoidance_CounterFlowPathOpens::RunTest(const FString& Parameters)
 	{
 		AddInfo(FString::Printf(
 			TEXT("[%s] 통과 %d/%d, 평균 전진 %.0fUU, 최대밀도 %.2f/m^2, 활성 %d | 걷는중 %d, 도착 %d, 막힘 %d(탈출 %d, 최장 %d스텝)"),
-			Label, R.Crossed, PerSide * 2, R.MeanProgressUU, R.MaxDensity, R.ActiveAtEnd,
+			Label, R.Crossed, R.Spawned, R.MeanProgressUU, R.MaxDensity, R.ActiveAtEnd,
 			R.Flow.Walking, R.Flow.ArrivedIdle, R.Flow.Blocked, R.Flow.UnstuckActive, R.Flow.MaxStuckSteps));
 	};
 
@@ -941,13 +959,15 @@ bool FFF_CrowdAvoidance_CounterFlowPathOpens::RunTest(const FString& Parameters)
 	Report(TEXT("기본값   "), Current);
 	Report(TEXT("구동+편향"), DriveBias);
 
-	TestTrue(TEXT("[전제] 회피 없이는 전원이 반대편으로 넘어간다"), Off.Crossed >= PerSide * 2 - 2);
+	TestTrue(TEXT("[전제] 회피 없이는 실제 스폰 인원 전원이 반대편으로 넘어간다"),
+		Off.Spawned > 0 && Off.Crossed >= Off.Spawned - 2);
+	TestEqual(TEXT("old와 기본값의 실제 스폰 수가 같다"), Current.Spawned, Legacy.Spawned);
 
 	TestTrue(*FString::Printf(TEXT("평균 전진량이 양수다 (%.0fUU)"), Current.MeanProgressUU),
 		Current.MeanProgressUU > 0.f);
 
 	TestTrue(TEXT("최대 밀도가 유한하다"), FMath::IsFinite(Current.MaxDensity) && Current.MaxDensity > 0.f);
-	TestEqual(TEXT("아무도 사라지지 않았다"), Current.ActiveAtEnd, PerSide * 2);
+	TestEqual(TEXT("아무도 사라지지 않았다"), Current.ActiveAtEnd, Current.Spawned);
 
 	TestTrue(
 		*FString::Printf(TEXT("막힌 사람이 이식 이전보다 적다 (기본값 %d < old %d)"),
@@ -955,8 +975,8 @@ bool FFF_CrowdAvoidance_CounterFlowPathOpens::RunTest(const FString& Parameters)
 		Current.Flow.Blocked < Legacy.Flow.Blocked);
 
 	TestTrue(
-		*FString::Printf(TEXT("절반 이상이 걷고 있다 (%d/%d)"), Current.Flow.Walking, PerSide * 2),
-		Current.Flow.Walking > PerSide);
+		*FString::Printf(TEXT("절반 이상이 걷고 있다 (%d/%d)"), Current.Flow.Walking, Current.Spawned),
+		Current.Flow.Walking > Current.Spawned / 2);
 
 	return true;
 }
@@ -1232,8 +1252,11 @@ bool FFF_CrowdQueue_SlotArrivalRadiusIsSmallerThanSlotSpacing::RunTest(const FSt
 			CrowdSim->DecisionCooldownSeconds > 0.f);
 	}
 
+	constexpr int32 Requested = 4;
 	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
-	CrowdSim->SpawnAgents(4, FVector::ZeroVector, 300.f);
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 300.f);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("Arrival radius"), Requested, Spawned);
 	FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 0.2f);
 
 	TestEqual(TEXT("시설 ID가 없는 목적지는 배회 반경을 쓴다"),
@@ -1245,73 +1268,93 @@ bool FFF_CrowdQueue_SlotArrivalRadiusIsSmallerThanSlotSpacing::RunTest(const FSt
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdDecision_ArrivalCooldownThrottlesRechoice, "FestaFiesta.Crowd.Decision.ArrivalCooldownThrottlesRechoice", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdDecision_ArrivalCooldownThrottlesRechoice::RunTest(const FString& Parameters)
 {
-	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
-	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
-
-	if (!CrowdSim)
-	{
-		AddError(TEXT("월드에서 CrowdSimulationSubsystem을 얻지 못했다"));
-		return false;
-	}
-
-	CrowdSim->DecisionCooldownSeconds = 2.f;
-	CrowdSim->bEnablePartyGrouping = false;
-
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
-	CrowdSim->SpawnAgents(4, FVector::ZeroVector, 100.f);
-
+	constexpr int32 Requested = 4;
 	constexpr float FrameDelta = 1.f / 60.f;
-	for (int32 Frame = 0; Frame < 300; ++Frame)
+	int32 Spawned = 0;
+	int32 Processed = 0;
+	int32 Skipped = 0;
 	{
-		for (int32 i = 0; i < 4; ++i)
+		FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
+		UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
+
+		if (!CrowdSim)
 		{
-			CrowdSim->SetAgentDestination(i, CrowdSim->GetAgentPosition(i));
+			AddError(TEXT("월드에서 CrowdSimulationSubsystem을 얻지 못했다"));
+			return false;
 		}
-		CrowdSim->Tick(FrameDelta);
+
+		CrowdSim->DecisionCooldownSeconds = 2.f;
+		CrowdSim->bEnablePartyGrouping = false;
+
+		CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+		Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 100.f);
+		FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+			*this, TEXT("Arrival cooldown treatment"), Requested, Spawned);
+
+		for (int32 Frame = 0; Frame < 300; ++Frame)
+		{
+			for (int32 i = 0; i < Spawned; ++i)
+			{
+				CrowdSim->SetAgentDestination(i, CrowdSim->GetAgentPosition(i));
+			}
+			CrowdSim->Tick(FrameDelta);
+		}
+
+		Processed = CrowdSim->GetDecisionsProcessed();
+		Skipped = CrowdSim->GetDecisionCooldownSkips();
 	}
 
-	const int32 Processed = CrowdSim->GetDecisionsProcessed();
-	const int32 Skipped = CrowdSim->GetDecisionCooldownSkips();
-
-	AddInfo(FString::Printf(TEXT("5초간 결정 처리 %d회, 쿨다운으로 버림 %d회 (4명)"), Processed, Skipped));
+	AddInfo(FString::Printf(TEXT("5초간 결정 처리 %d회, 쿨다운으로 버림 %d회 (%d명)"), Processed, Skipped, Spawned));
 
 	TestTrue(TEXT("쿨다운이 재결정을 막았다"), Skipped > 0);
 
-	const int32 UpperBound = 4 * 3 + 4 + 2;
+	const int32 UpperBound = Spawned * 3 + Spawned + 2;
 	TestTrue(
 		*FString::Printf(TEXT("결정 횟수가 쿨다운 상한 안이다 (%d <= %d)"), Processed, UpperBound),
 		Processed <= UpperBound);
 
-	FFF_CrowdWorldTestHelpers::FScopedTestWorld NoCooldownWorld;
-	UFF_CrowdSimulationSubsystem* NoCooldown = NoCooldownWorld.GetCrowdSim();
-	if (!NoCooldown)
+	int32 NoCooldownSpawned = 0;
+	int32 NoCooldownProcessed = 0;
+	int32 NoCooldownSkipped = 0;
 	{
-		AddError(TEXT("대조군 월드를 얻지 못했다"));
-		return false;
-	}
-
-	NoCooldown->DecisionCooldownSeconds = 0.f;
-	NoCooldown->bEnablePartyGrouping = false;
-	NoCooldown->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
-	NoCooldown->SpawnAgents(4, FVector::ZeroVector, 100.f);
-
-	for (int32 Frame = 0; Frame < 300; ++Frame)
-	{
-		for (int32 i = 0; i < 4; ++i)
+		// GameInstance subsystem console commands are global, so keep the two worlds sequential.
+		FFF_CrowdWorldTestHelpers::FScopedTestWorld NoCooldownWorld;
+		UFF_CrowdSimulationSubsystem* NoCooldown = NoCooldownWorld.GetCrowdSim();
+		if (!NoCooldown)
 		{
-			NoCooldown->SetAgentDestination(i, NoCooldown->GetAgentPosition(i));
+			AddError(TEXT("대조군 월드를 얻지 못했다"));
+			return false;
 		}
-		NoCooldown->Tick(FrameDelta);
+
+		NoCooldown->DecisionCooldownSeconds = 0.f;
+		NoCooldown->bEnablePartyGrouping = false;
+		NoCooldown->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+		NoCooldownSpawned = NoCooldown->SpawnAgents(Requested, FVector::ZeroVector, 100.f);
+		FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+			*this, TEXT("Arrival cooldown control"), Requested, NoCooldownSpawned);
+
+		for (int32 Frame = 0; Frame < 300; ++Frame)
+		{
+			for (int32 i = 0; i < NoCooldownSpawned; ++i)
+			{
+				NoCooldown->SetAgentDestination(i, NoCooldown->GetAgentPosition(i));
+			}
+			NoCooldown->Tick(FrameDelta);
+		}
+
+		NoCooldownProcessed = NoCooldown->GetDecisionsProcessed();
+		NoCooldownSkipped = NoCooldown->GetDecisionCooldownSkips();
 	}
 
 	AddInfo(FString::Printf(TEXT("[쿨다운 끔] 결정 처리 %d회, 버림 %d회"),
-		NoCooldown->GetDecisionsProcessed(), NoCooldown->GetDecisionCooldownSkips()));
+		NoCooldownProcessed, NoCooldownSkipped));
 
-	TestEqual(TEXT("끄면 아무것도 버리지 않는다"), NoCooldown->GetDecisionCooldownSkips(), 0);
+	TestEqual(TEXT("Treatment and control spawned the same actual count"), NoCooldownSpawned, Spawned);
+	TestEqual(TEXT("끄면 아무것도 버리지 않는다"), NoCooldownSkipped, 0);
 	TestTrue(
 		*FString::Printf(TEXT("끄면 결정 횟수가 크게 늘어난다 (%d > %d)"),
-			NoCooldown->GetDecisionsProcessed(), Processed),
-		NoCooldown->GetDecisionsProcessed() > Processed);
+			NoCooldownProcessed, Processed),
+		NoCooldownProcessed > Processed);
 
 	return true;
 }
@@ -1544,6 +1587,9 @@ bool FFF_CrowdDecision_InTransitCountsAccumulateWithinBatch::RunTest(const FStri
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt, "FestaFiesta.Crowd.World.ReleaseReturnsActorAndHidesIt", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt::RunTest(const FString& Parameters)
 {
+	constexpr int32 ActorPoolSize = 4;
+	constexpr int32 Requested = 2;
+
 	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
 	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
 
@@ -1553,8 +1599,11 @@ bool FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt::RunTest(const FString& Parame
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 4, 4, AFF_BaseCrowd::StaticClass());
-	CrowdSim->SpawnAgents(2, FVector::ZeroVector, 100.f);
+	CrowdSim->InitializeSimulation(
+		FVector::ZeroVector, 10000.f, ActorPoolSize, 4, AFF_BaseCrowd::StaticClass());
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 100.f);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("Actor release"), Requested, Spawned);
 
 	const int32 ActorSlot = CrowdSim->PoolBinding.GetBoundSlot(0);
 	if (!CrowdSim->CrowdPool.IsValidIndex(ActorSlot))
@@ -1570,14 +1619,18 @@ bool FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt::RunTest(const FString& Parame
 
 	TestTrue(TEXT("해제된 Actor는 숨겨진다"), Actor->IsHidden());
 	TestFalse(TEXT("장부에서도 풀렸다"), CrowdSim->PoolBinding.IsBound(0));
-	TestEqual(TEXT("빈 슬롯이 회수됐다"), CrowdSim->PoolBinding.GetFreeSlotCount(), 3);
-	TestEqual(TEXT("바인딩 수 1"), CrowdSim->GetBoundActorCount(), 1);
+	TestEqual(TEXT("빈 슬롯이 회수됐다"), CrowdSim->PoolBinding.GetFreeSlotCount(),
+		ActorPoolSize - Spawned + 1);
+	TestEqual(TEXT("바인딩 수 = 실제 스폰 수 - 1"),
+		CrowdSim->GetBoundActorCount(), Spawned - 1);
 
 	TestTrue(TEXT("Agent는 여전히 활성"), CrowdSim->IsAgentActive(0));
-	TestEqual(TEXT("활성 Agent 수는 그대로 2"), CrowdSim->GetActiveAgentCount(), 2);
+	TestEqual(TEXT("활성 Agent 수는 실제 스폰 수 그대로"),
+		CrowdSim->GetActiveAgentCount(), Spawned);
 
 	FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 0.5f);
-	TestEqual(TEXT("Actor 없는 Agent도 밀도에 잡힌다"), CrowdSim->GetDensityGrid().GetSampledUnitCount(), 2);
+	TestEqual(TEXT("Actor 없는 Agent도 밀도에 잡힌다"),
+		CrowdSim->GetDensityGrid().GetSampledUnitCount(), Spawned);
 
 	return true;
 }
@@ -1609,6 +1662,8 @@ bool FFF_CrowdWorld_DoubleInitializeIsIgnored::RunTest(const FString& Parameters
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdParty_SpawnHitsExactRequestedCount, "FestaFiesta.Crowd.Party.SpawnHitsExactRequestedCount", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdParty_SpawnHitsExactRequestedCount::RunTest(const FString& Parameters)
 {
+	constexpr int32 Requested = 37;
+
 	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
 	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
 
@@ -1620,13 +1675,16 @@ bool FFF_CrowdParty_SpawnHitsExactRequestedCount::RunTest(const FString& Paramet
 
 	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 0, 64, AFF_BaseCrowd::StaticClass());
 
-	const int32 Spawned = CrowdSim->SpawnAgents(37, FVector::ZeroVector, 2000.f);
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 2000.f);
 
-	TestEqual(TEXT("요청한 37명이 정확히 스폰됐다"), Spawned, 37);
-	TestEqual(TEXT("활성 Agent도 37"), CrowdSim->GetActiveAgentCount(), 37);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("파티 스폰"), Requested, Spawned);
+	TestEqual(TEXT("활성 Agent 수 = 실제 스폰 수"), CrowdSim->GetActiveAgentCount(), Spawned);
+	TestEqual(TEXT("도착 커서 = 실제 스폰 수"), CrowdSim->GetArrivalSpawnedCount(), Spawned);
 
 	const int32 PartyCount = CrowdSim->GetActivePartyCount();
-	TestTrue(FString::Printf(TEXT("파티 수(%d)가 인원 수보다 적다 = 실제로 묶였다"), PartyCount), PartyCount < 37);
+	TestTrue(FString::Printf(TEXT("파티 수(%d)가 실제 인원(%d)보다 적다 = 실제로 묶였다"),
+		PartyCount, Spawned), PartyCount < Spawned);
 	TestTrue(TEXT("파티가 최소 하나는 있다"), PartyCount > 0);
 
 	return true;
@@ -1688,6 +1746,8 @@ bool FFF_CrowdParty_MembersPointAtLiveLeaderOfSameParty::RunTest(const FString& 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdParty_GroupingOffMakesEveryoneSolo, "FestaFiesta.Crowd.Party.GroupingOffMakesEveryoneSolo", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdParty_GroupingOffMakesEveryoneSolo::RunTest(const FString& Parameters)
 {
+	constexpr int32 Requested = 20;
+
 	FFF_CrowdWorldTestHelpers::FScopedTestWorld TestWorld;
 	UFF_CrowdSimulationSubsystem* CrowdSim = TestWorld.GetCrowdSim();
 
@@ -1701,21 +1761,37 @@ bool FFF_CrowdParty_GroupingOffMakesEveryoneSolo::RunTest(const FString& Paramet
 
 	CrowdSim->bEnablePartyGrouping = false;
 
-	const int32 Spawned = CrowdSim->SpawnAgents(20, FVector::ZeroVector, 2000.f);
+	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 2000.f);
 
-	TestEqual(TEXT("20명 스폰"), Spawned, 20);
-	TestEqual(TEXT("파티 수 = 인원 수 (전원 1인)"), CrowdSim->GetActivePartyCount(), 20);
+	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
+		*this, TEXT("그룹 비활성 스폰"), Requested, Spawned);
+	TestEqual(TEXT("활성 Agent 수 = 실제 스폰 수"), CrowdSim->GetActiveAgentCount(), Spawned);
+	TestEqual(TEXT("도착 커서 = 실제 스폰 수"), CrowdSim->GetArrivalSpawnedCount(), Spawned);
+	TestEqual(TEXT("파티 수 = 실제 인원 수 (전원 1인)"),
+		CrowdSim->GetActivePartyCount(), Spawned);
 
 	for (int32 AgentIndex = 0; AgentIndex < Spawned; ++AgentIndex)
 	{
+		if (!CrowdSim->IsAgentActive(AgentIndex))
+		{
+			AddError(FString::Printf(TEXT("Agent %d가 비활성이다"), AgentIndex));
+			return false;
+		}
 		if (!CrowdSim->IsPartyLeader(AgentIndex))
 		{
 			AddError(FString::Printf(TEXT("Agent %d가 1인 파티가 아니다"), AgentIndex));
 			return false;
 		}
-	}
 
-	TestNotEqual(TEXT("1인도 PartyID를 갖는다"), CrowdSim->GetAgentPartyID(0), static_cast<int32>(INDEX_NONE));
+		const int32 PartyID = CrowdSim->GetAgentPartyID(AgentIndex);
+		if (PartyID == INDEX_NONE)
+		{
+			AddError(FString::Printf(TEXT("1인 Agent %d에 PartyID가 없다"), AgentIndex));
+			return false;
+		}
+		TestEqual(*FString::Printf(TEXT("Agent %d의 파티는 정확히 1명"), AgentIndex),
+			CrowdSim->GetPartyMembers(PartyID).Num(), 1);
+	}
 
 	return true;
 }

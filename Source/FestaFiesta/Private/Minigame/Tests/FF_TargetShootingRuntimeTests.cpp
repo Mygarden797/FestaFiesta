@@ -322,14 +322,18 @@ bool FFF_TargetShootingProjectileFlightTest::RunTest(const FString& Parameters)
 	}
 
 	const FFF_TargetShootingSnapshot Original = Runtime->GetTargetSnapshot();
+	const FVector2D AuthoredMuzzle(0.44f, 0.76f);
 	TestEqual(TEXT("Fire request starts a projectile"),
-		Runtime->FireProjectile(
+		Runtime->FireProjectileFromMuzzle(
 			Context.SessionId,
+			AuthoredMuzzle,
 			Original.TargetCenterNormalized,
 			Original.TargetSerial),
 		EFF_TargetShootingShotResult::ProjectileFired);
 	FFF_TargetShootingSnapshot Projectile = Runtime->GetTargetSnapshot();
 	TestTrue(TEXT("Accepted projectile is in flight"), Projectile.bProjectileInFlight);
+	TestEqual(TEXT("Projectile starts at the weapon-authored muzzle"),
+		Projectile.ProjectileStartNormalized, AuthoredMuzzle);
 	TestEqual(TEXT("Projectile captures the target serial"),
 		Projectile.ProjectileTargetSerial, Original.TargetSerial);
 	TestEqual(TEXT("Score is deferred until impact"), Projectile.Session.Score, 0);

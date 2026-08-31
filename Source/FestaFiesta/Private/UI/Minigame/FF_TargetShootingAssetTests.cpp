@@ -11,6 +11,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/Overlay.h"
 #include "Components/TextBlock.h"
 #include "Components/Viewport.h"
 #include "Editor.h"
@@ -63,6 +64,7 @@ namespace FFTargetShootingAssetTestHelpers
 			{ TEXT("Border_PlayArea"), UBorder::StaticClass() },
 			{ TEXT("Canvas_PlayArea"), UCanvasPanel::StaticClass() },
 			{ TEXT("Border_Target"), UBorder::StaticClass() },
+			{ TEXT("Image_Target"), UImage::StaticClass() },
 			{ TEXT("Image_WaterBlaster"), UImage::StaticClass() },
 			{ TEXT("Text_MuzzleFlash"), UTextBlock::StaticClass() },
 			{ TEXT("Text_WeaponStatus"), UTextBlock::StaticClass() },
@@ -74,6 +76,7 @@ namespace FFTargetShootingAssetTestHelpers
 			{ TEXT("Text_Streak"), UTextBlock::StaticClass() },
 			{ TEXT("Panel_Result"), UBorder::StaticClass() },
 			{ TEXT("Text_Result"), UTextBlock::StaticClass() },
+			{ TEXT("Button_ResultClose"), UButton::StaticClass() },
 			{ TEXT("Button_Close"), UButton::StaticClass() },
 		};
 		return Widgets;
@@ -237,9 +240,24 @@ bool FFF_TargetShootingWidgetAssetContractTest::RunTest(const FString& Parameter
 		GeneratedClass->GetDefaultObject());
 	if (TestNotNull(TEXT("WBP 기본값을 로드한다"), ScreenDefaults))
 	{
+		TestTrue(TEXT("전경 구조물이 없는 단일 ImageGen v4 배경을 사용한다"),
+			ScreenDefaults->VisualStyle.BackdropTexture.ToSoftObjectPath().ToString()
+				.Contains(TEXT("T_MG_TargetShooting_Backdrop_Single_ImageGen_v4")));
+		TestTrue(TEXT("기본 화면은 3D 환경 박스 없이 단일 배경 모드를 사용한다"),
+			ScreenDefaults->VisualStyle.bUseSingleBackdrop);
 		TestTrue(TEXT("새 물총 전경 자산을 사용한다"),
 			ScreenDefaults->VisualStyle.WaterBlasterTexture.ToSoftObjectPath().ToString()
 				.Contains(TEXT("T_MG_TargetShooting_WaterBlaster_UIUX_v2")));
+		TestTrue(TEXT("미니멀 원형 ImageGen 과녁을 사용한다"),
+			ScreenDefaults->VisualStyle.TargetTexture.ToSoftObjectPath().ToString()
+				.Contains(TEXT("T_MG_TargetShooting_Target_Simple_ImageGen_v1")));
+		TestTrue(TEXT("3D 사격장 클래스는 디자이너가 교체할 수 있다"),
+			ScreenDefaults->VisualStyle.Arena3DActorClass
+			&& ScreenDefaults->VisualStyle.Arena3DActorClass->IsChildOf(
+				AFF_TargetShootingArena3D::StaticClass()));
+		TestTrue(TEXT("단일 배경을 꺼도 3D 과녁과 탄환 연출을 사용할 수 있다"),
+			ScreenDefaults->VisualStyle.bRenderTargetIn3D
+			&& ScreenDefaults->VisualStyle.bRenderProjectileIn3D);
 		TestTrue(TEXT("물 탄환은 명확하게 보이는 크기를 사용한다"),
 			ScreenDefaults->VisualStyle.ProjectileVisualSize >= 120.0f);
 		TestTrue(TEXT("과녁 외곽선은 배경에서 분리되는 굵기를 사용한다"),
@@ -278,6 +296,10 @@ bool FFF_TargetShootingWidgetAssetContractTest::RunTest(const FString& Parameter
 	const UBorder* PlayArea = Cast<UBorder>(Tree->FindWidget(TEXT("Border_PlayArea")));
 	const UCanvasPanel* PlayCanvas = Cast<UCanvasPanel>(Tree->FindWidget(TEXT("Canvas_PlayArea")));
 	const UBorder* Target = Cast<UBorder>(Tree->FindWidget(TEXT("Border_Target")));
+	const UImage* TargetImage = Cast<UImage>(Tree->FindWidget(TEXT("Image_Target")));
+	const UBorder* ResultPanel = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_Result")));
+	const UButton* ResultCloseButton = Cast<UButton>(
+		Tree->FindWidget(TEXT("Button_ResultClose")));
 	if (PlayArea && PlayCanvas && Target)
 	{
 		TestTrue(TEXT("Canvas_PlayArea는 Border_PlayArea의 직접 콘텐츠다"),
@@ -286,6 +308,20 @@ bool FFF_TargetShootingWidgetAssetContractTest::RunTest(const FString& Parameter
 		TestNotNull(TEXT("표적은 CanvasPanelSlot을 사용한다"), Cast<UCanvasPanelSlot>(Target->Slot));
 		TestEqual(TEXT("표적은 클릭을 가로채지 않는다"),
 			Target->GetVisibility(), ESlateVisibility::HitTestInvisible);
+		TestTrue(TEXT("교체 가능한 과녁 이미지는 Border_Target 내부 Overlay에 있다"),
+			TargetImage
+			&& TargetImage->GetParent() == Target->GetContent()
+			&& Target->GetContent()->IsA(UOverlay::StaticClass()));
+	}
+	if (ResultPanel && ResultCloseButton)
+	{
+		const UWidget* ResultAncestor = ResultCloseButton;
+		while (ResultAncestor && ResultAncestor != ResultPanel)
+		{
+			ResultAncestor = ResultAncestor->GetParent();
+		}
+		TestTrue(TEXT("결과 닫기 버튼은 결과 모달 안에 있어 스크림 뒤로 가려지지 않는다"),
+			ResultAncestor == ResultPanel);
 	}
 	for (const FName PresentationWidgetName : {
 		FName(TEXT("Image_WaterBlaster")),
@@ -342,6 +378,8 @@ bool FFF_TargetShootingNativeFallbackContractTest::RunTest(const FString& Parame
 		Screen->GetWidgetFromName(TEXT("Viewport_Arena3D")));
 	TestNotNull(TEXT("네이티브 폴백에 표적이 있다"),
 		Screen->GetWidgetFromName(TEXT("Border_Target")));
+	TestNotNull(TEXT("네이티브 폴백에 교체 가능한 과녁 이미지가 있다"),
+		Screen->GetWidgetFromName(TEXT("Image_Target")));
 	TestNotNull(TEXT("네이티브 폴백에 점수 팝업 레이어가 있다"),
 		Screen->GetWidgetFromName(TEXT("Text_ShotFeedback")));
 	TestNotNull(TEXT("네이티브 폴백에 커스텀 조준선이 있다"),
@@ -431,6 +469,18 @@ bool FFF_TargetShootingNativeFallbackContractTest::RunTest(const FString& Parame
 	TestTrue(TEXT("3D 좌표 변환은 화면 중앙을 사격장 중앙에 배치한다"),
 		AFF_TargetShootingArena3D::NormalizedToTargetPlane(FVector2D(0.5f, 0.5f))
 			.Equals(FVector(440.0f, 0.0f, 190.0f)));
+	TestEqual(TEXT("FPS 카메라 조준은 세션 시작 시 과녁 평면 중앙이다"),
+		Screen->GetCameraAimPointNormalized(), FVector2D(0.5f, 0.5f));
+	const UTextBlock* FixedReticle = Cast<UTextBlock>(
+		Screen->GetWidgetFromName(TEXT("Text_Reticle")));
+	TestNotNull(TEXT("커스텀 조준점이 있다"), FixedReticle);
+	if (const UCanvasPanelSlot* ReticleSlot = FixedReticle
+		? Cast<UCanvasPanelSlot>(FixedReticle->Slot)
+		: nullptr)
+	{
+		TestEqual(TEXT("조준점 앵커는 세션 시작 시 화면 중앙에서 시작한다"),
+			ReticleSlot->GetAnchors().Minimum, FVector2D(0.5f, 0.5f));
+	}
 
 	const FFF_TargetShootingSnapshot& Displayed = Screen->GetDisplayedSnapshot();
 	TestEqual(TEXT("네이티브 폴백이 표적 serial을 표시 상태에 보존한다"),

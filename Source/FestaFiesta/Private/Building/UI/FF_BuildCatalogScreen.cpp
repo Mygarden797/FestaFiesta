@@ -29,11 +29,13 @@
 #include "Styling/CoreStyle.h"
 #include "UI/FF_CommonButtonBase.h"
 #include "UI/FF_UILog.h"
+#include "UI/Settings/FF_FestivalSettingsSubsystem.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -635,9 +637,13 @@ FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
 		OnBuildModeKeyRequested.Broadcast();
 		return FReply::Handled();
 	}
-	if (InKeyEvent.GetKey() == EKeys::Escape && !InKeyEvent.IsRepeat())
+	const UFF_FestivalSettingsDeveloperSettings* Settings =
+		UFF_FestivalSettingsDeveloperSettings::Get();
+	if (Settings && Settings->OpenCloseKeys.Contains(InKeyEvent.GetKey()) &&
+		!InKeyEvent.IsRepeat())
 	{
-		OnExitBuildModeKeyRequested.Broadcast();
+		// 카탈로그/검색창이 GameAndUI 포커스를 소유해도 ESC/F5가 게임 입력으로 유실되지 않게 전달한다.
+		OnPauseMenuKeyRequested.Broadcast();
 		return FReply::Handled();
 	}
 
@@ -987,6 +993,17 @@ void UFF_BuildCatalogScreen::RefreshContent()
 							.ColorAndOpacity(NativeIdleColor)
 							.AutoWrapText(true)
 						]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock)
+							.Text(UFF_BuildFacilityCard::MakeFacilityBuildLimitText(*Entry))
+							.ColorAndOpacity(Entry->bBuildLimitReached
+								? FLinearColor(0.85f, 0.20f, 0.16f, 1.0f)
+								: NativeIdleColor)
+							.AutoWrapText(true)
+						]
 					]
 				]
 			];
@@ -1146,6 +1163,13 @@ void UFF_BuildCatalogScreen::HandleFacilityCardPressed(UFF_CommonButtonBase* But
 	// 캐스팅 실패 시 잘못 연결된 템플릿으로 간주하고 선택 이벤트를 발생시키지 않는다.
 	if (const UFF_BuildFacilityCard* Card = Cast<UFF_BuildFacilityCard>(Button))
 	{
+		if (Card->GetCatalogEntry().bBuildLimitReached)
+		{
+			SetStatusText(
+				LOCTEXT("BuildLimitReachedStatus", "이 시설의 건축 한도에 도달했습니다. 기존 시설을 철거한 뒤 다시 시도하세요."),
+				true);
+			return;
+		}
 		OnFacilitySelected.Broadcast(Card->GetFacilityDefinitionId());
 	}
 }
@@ -1186,6 +1210,17 @@ FReply UFF_BuildCatalogScreen::HandleCategoryClicked(const EFFZSFacilityCategory
 FReply UFF_BuildCatalogScreen::HandleFacilityClicked(const FName FacilityDefinitionId)
 {
 	// 시설 ID도 버튼 구성 시 값으로 바인딩되므로 카탈로그 배열이 나중에 교체되어도 클릭 처리 중 포인터가 남지 않는다.
+	if (const FFF_BuildCatalogEntry* Entry = CatalogEntries.FindByPredicate(
+		[FacilityDefinitionId](const FFF_BuildCatalogEntry& Candidate)
+		{
+			return Candidate.FacilityDefinitionId == FacilityDefinitionId;
+		}); Entry && Entry->bBuildLimitReached)
+	{
+		SetStatusText(
+			LOCTEXT("BuildLimitReachedStatus", "이 시설의 건축 한도에 도달했습니다. 기존 시설을 철거한 뒤 다시 시도하세요."),
+			true);
+		return FReply::Handled();
+	}
 	OnFacilitySelected.Broadcast(FacilityDefinitionId);
 	return FReply::Handled();
 }

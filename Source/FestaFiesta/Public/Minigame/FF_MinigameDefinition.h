@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Minigame/Audio/FF_MinigameAudioTypes.h"
+#include "Minigame/ClawMachine/FF_ClawMachineTypes.h"
 #include "Minigame/FF_MinigameTypes.h"
 #include "Minigame/Surfing/FF_SurfingTypes.h"
 #include "FF_MinigameDefinition.generated.h"
@@ -55,6 +57,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "클리어 보상",
 		meta = (ClampMin = "-1", UIMin = "-1", DisplayName = "클리어 최대 획득 골드", ToolTip = "게임을 정상 완료하고 '최대 보상 달성 점수'를 채웠을 때 받는 골드입니다. 점수가 낮으면 비율에 따라 줄어듭니다. -1은 축제 공통 설정을 사용하고, 0은 골드 보상을 주지 않습니다."))
 	int32 RewardGoldAtMaxScore = -1;
+
+	/** Sound assets and playback policy live with balance data, not in screen code. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "사운드",
+		meta = (ShowOnlyInnerProperties, DisplayName = "미니게임 사운드", ToolTip = "배경 음악과 이벤트별 Sound Wave, Sound Cue, MetaSound를 한 곳에서 교체합니다."))
+	FFF_MinigameAudioProfile AudioProfile;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category = "기술 설정",
 		meta = (DisplayName = "런타임 클래스", ToolTip = "미니게임 규칙을 실행하는 코드 클래스입니다. 프로그래머 요청 없이 변경하지 마세요."))
@@ -118,6 +125,33 @@ public:
 	/** Fixed Rock/Log/Buoy and pickup placement authored as FFF_SurfingCourseRow rows. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Minigame|Surfing")
 	TSoftObjectPtr<UDataTable> CourseLayoutTable;
+
+protected:
+	virtual void AppendValidationErrors(TArray<FText>& OutErrors) const override;
+};
+
+/** Three-dimensional, finite-attempt claw machine inspired by an arcade cabinet loop. */
+UCLASS(BlueprintType, meta = (DisplayName = "인형뽑기 미니게임 설정"))
+class FESTAFIESTA_API UFF_ClawMachineDefinition final : public UFF_MinigameDefinition
+{
+	GENERATED_BODY()
+
+public:
+	UFF_ClawMachineDefinition();
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "인형뽑기 세부 설정",
+		meta = (ShowOnlyInnerProperties, DisplayName = "기계·점수·인형 데이터", ToolTip = "조작감, 집게 판정, 점수, 시도 횟수와 교체 가능한 인형 에셋을 한 곳에서 관리합니다."))
+	FFF_ClawMachineRules Rules;
+
+	/** Optional row-based catalog. When assigned, its rows replace Rules.PrizePool. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "인형뽑기 세부 설정",
+		meta = (DisplayName = "인형 카탈로그 데이터테이블", RowType = "/Script/FestaFiesta.FF_ClawMachinePrizeTuning", ToolTip = "기획자는 행 추가·삭제로 인형 목록과 밸런스를 관리하고, 디자이너는 같은 행의 메시·머티리얼을 교체합니다."))
+	TSoftObjectPtr<UDataTable> PrizeCatalogTable;
+
+	/** Resolves the DataTable override into a stable, row-name-sorted session catalog. */
+	bool BuildResolvedPrizePool(
+		TArray<FFF_ClawMachinePrizeTuning>& OutPrizePool,
+		FString* OutFailureReason = nullptr) const;
 
 protected:
 	virtual void AppendValidationErrors(TArray<FText>& OutErrors) const override;

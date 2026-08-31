@@ -41,7 +41,11 @@ enum class EFF_MinigameEndReason : uint8
 	StageChanged,
 	FacilityRemoved,
 	WorldRestored,
-	WorldShutdown
+	WorldShutdown,
+	/** A finite-attempt game completed normally before its safety timer expired. */
+	AttemptsExhausted,
+	/** The player exhausted every life in a life-limited minigame. */
+	LivesDepleted
 };
 
 UENUM(BlueprintType)

@@ -81,9 +81,12 @@ bool FFF_SurfingRules::IsValid(FString* OutFailureReason) const
 		return Fail(TEXT("boosted character travel must not exceed 64 normalized arena units per fixed tick"));
 	}
 
-	if (MaxLives <= 0 || InitialLives < 0 || InitialLives > MaxLives)
+	if (MaxLives <= 0
+		|| InitialLives < 0
+		|| InitialLives > MaxLives
+		|| (bEndRunWhenLivesDepleted && InitialLives == 0))
 	{
-		return Fail(TEXT("initial lives must be inside [0, MaxLives] and MaxLives must be positive"));
+		return Fail(TEXT("initial lives must be inside [0, MaxLives], positive when depletion ends the run, and MaxLives must be positive"));
 	}
 
 	if (MaxBoostCharges <= 0
@@ -124,6 +127,41 @@ namespace FFSurfingRules
 	bool IsValidSteerDirection(const int32 Direction)
 	{
 		return Direction == -1 || Direction == 1;
+	}
+
+	float ResolveDigitalAxis(
+		const bool bNegativeHeld,
+		const bool bPositiveHeld,
+		const int32 MostRecentDirection)
+	{
+		if (bNegativeHeld != bPositiveHeld)
+		{
+			return bPositiveHeld ? 1.0f : -1.0f;
+		}
+		if (bNegativeHeld && bPositiveHeld && IsValidSteerDirection(MostRecentDirection))
+		{
+			return static_cast<float>(MostRecentDirection);
+		}
+		return 0.0f;
+	}
+
+	float CalculateExponentialResponse(
+		const float ResponsePerSecond,
+		const float DeltaSeconds)
+	{
+		if (!FMath::IsFinite(ResponsePerSecond)
+			|| !FMath::IsFinite(DeltaSeconds)
+			|| ResponsePerSecond <= 0.0f
+			|| DeltaSeconds <= 0.0f)
+		{
+			return 0.0f;
+		}
+
+		const double Exponent = FMath::Min(
+			static_cast<double>(ResponsePerSecond)
+				* static_cast<double>(DeltaSeconds),
+			80.0);
+		return static_cast<float>(1.0 - FMath::Exp(-Exponent));
 	}
 
 	bool IsObstacleType(const EFF_SurfingObjectType Type)

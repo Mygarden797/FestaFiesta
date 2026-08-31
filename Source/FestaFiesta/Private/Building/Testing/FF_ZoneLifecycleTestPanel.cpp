@@ -7,10 +7,14 @@
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
 
+#include "FF_ZoneLifecycleDebugDayControl.h"
+
 #include "CommonTextBlock.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -40,6 +44,67 @@ namespace
 	}
 }
 
+bool FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(
+	UFF_FestivalStageSubsystem& Stage)
+{
+#if UE_BUILD_SHIPPING
+	(void)Stage;
+	return false;
+#else
+	if (Stage.CurrentDay <= 1 || Stage.CurrentDay > 3)
+	{
+		return false;
+	}
+
+	const int32 SourceDay = Stage.CurrentDay;
+	--Stage.CurrentDay;
+	const EFF_FestivalStage EntryStage = Stage.CurrentDay == 1
+		? EFF_FestivalStage::Setup
+		: EFF_FestivalStage::MorningCheck;
+	Stage.RequestTransition(EntryStage);
+
+	// RequestTransition resets the night flag, but non-Live transitions do not emit
+	// an environment edge. Re-apply the selected weather through the public API.
+	Stage.SetSelectedWeather(Stage.GetSelectedWeather());
+
+	UE_LOG(LogTemp, Log,
+		TEXT("[ZoneLifecycleDebug] Day %d -> Day %d (%s). External state was not rolled back."),
+		SourceDay,
+		Stage.CurrentDay,
+		*UEnum::GetValueAsString(EntryStage));
+	return true;
+#endif
+}
+
+bool FFZoneLifecycleDebugDayControl::TryMoveToNextDay(
+	UFF_FestivalStageSubsystem& Stage)
+{
+#if UE_BUILD_SHIPPING
+	(void)Stage;
+	return false;
+#else
+	if (Stage.CurrentDay < 1 || Stage.CurrentDay >= 3)
+	{
+		return false;
+	}
+
+	const int32 SourceDay = Stage.CurrentDay;
+	// AdvanceToNextDay is the production day-boundary authority and accepts Report only.
+	if (!Stage.IsReportStage())
+	{
+		if (Stage.CurrentStage != EFF_FestivalStage::Closing)
+		{
+			Stage.RequestTransition(EFF_FestivalStage::Closing);
+		}
+		Stage.RequestTransition(EFF_FestivalStage::Report);
+	}
+	Stage.AdvanceToNextDay();
+
+	return Stage.CurrentDay == SourceDay + 1
+		&& Stage.CurrentStage == EFF_FestivalStage::MorningCheck;
+#endif
+}
+
 void UFF_ZoneLifecycleTestPanel::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -48,6 +113,10 @@ void UFF_ZoneLifecycleTestPanel::NativeConstruct()
 	BTN_MorningCheck->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMorningCheckClicked);
 	BTN_Live->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLiveClicked);
 	BTN_Closing->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClosingClicked);
+	BTN_PreviousDay->OnClicked.AddUniqueDynamic(this, &ThisClass::HandlePreviousDayClicked);
+	BTN_NextDay->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleNextDayClicked);
+	BTN_RemoveGold->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveGoldClicked);
+	BTN_AddGold->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAddGoldClicked);
 	BTN_OpenAll->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOpenAllClicked);
 	BTN_CloseAll->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseAllClicked);
 	BTN_EmergencyCloseAll->OnClicked.AddUniqueDynamic(
@@ -61,6 +130,10 @@ void UFF_ZoneLifecycleTestPanel::NativeConstruct()
 		: nullptr)
 	{
 		Stage->OnStageChanged.AddUniqueDynamic(this, &ThisClass::HandleStageChanged);
+	}
+	if (UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem())
+	{
+		Progression->OnGoldChanged.AddUniqueDynamic(this, &ThisClass::HandleGoldChanged);
 	}
 	if (UFFZSWorldSubsystem* ZoneSystem = World
 		? World->GetSubsystem<UFFZSWorldSubsystem>()
@@ -92,6 +165,10 @@ void UFF_ZoneLifecycleTestPanel::NativeDestruct()
 	{
 		Stage->OnStageChanged.RemoveDynamic(this, &ThisClass::HandleStageChanged);
 	}
+	if (UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem())
+	{
+		Progression->OnGoldChanged.RemoveDynamic(this, &ThisClass::HandleGoldChanged);
+	}
 	if (UFFZSWorldSubsystem* ZoneSystem = World
 		? World->GetSubsystem<UFFZSWorldSubsystem>()
 		: nullptr)
@@ -111,6 +188,8 @@ void UFF_ZoneLifecycleTestPanel::NativeDestruct()
 
 void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 {
+	RefreshGoldControls();
+
 	UWorld* World = GetWorld();
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	UFF_FestivalStageSubsystem* Stage = GameInstance
@@ -119,6 +198,9 @@ void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 	UFFZSWorldSubsystem* ZoneSystem = World
 		? World->GetSubsystem<UFFZSWorldSubsystem>()
 		: nullptr;
+	BTN_PreviousDay->SetIsEnabled(
+		Stage && Stage->CurrentDay > 1 && Stage->CurrentDay <= 3);
+	BTN_NextDay->SetIsEnabled(Stage && Stage->CurrentDay >= 1 && Stage->CurrentDay < 3);
 	if (!Stage || !ZoneSystem)
 	{
 		TXT_Stage->SetText(LOCTEXT("MissingSubsystems", "Stage/Zone Subsystem 없음"));
@@ -126,7 +208,8 @@ void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 	}
 
 	TXT_Stage->SetText(FText::Format(
-		LOCTEXT("StageFormat", "Festival Stage: {0}"),
+		LOCTEXT("StageFormat", "Day {0}  |  Festival Stage: {1}"),
+		FText::AsNumber(Stage->CurrentDay),
 		UEnum::GetDisplayValueAsText(Stage->CurrentStage)));
 	TXT_PhaseRevision->SetText(FText::Format(
 		LOCTEXT("PhaseRevisionFormat", "FFZS Phase: {0}  |  Revision: {1}"),
@@ -213,6 +296,33 @@ void UFF_ZoneLifecycleTestPanel::RefreshStatus()
 		FText::AsNumber(ProjectOpen)));
 }
 
+void UFF_ZoneLifecycleTestPanel::RefreshGoldControls()
+{
+	const int32 AdjustmentAmount = GetGoldAdjustmentStep();
+	TXT_BTN_RemoveGold->SetText(FText::Format(
+		LOCTEXT("RemoveGoldButtonFormat", "{0} Gold 차감"),
+		FText::AsNumber(AdjustmentAmount)));
+	TXT_BTN_AddGold->SetText(FText::Format(
+		LOCTEXT("AddGoldButtonFormat", "{0} Gold 추가"),
+		FText::AsNumber(AdjustmentAmount)));
+
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	const bool bEconomyAvailable = Progression && Progression->IsFestivalStarted();
+	const int32 CurrentGold = bEconomyAvailable ? Progression->GetGold() : 0;
+	TXT_Gold->SetText(bEconomyAvailable
+		? FText::Format(
+			LOCTEXT("CurrentGoldFormat", "현재 잔액  {0} Gold"),
+			FText::AsNumber(CurrentGold))
+		: LOCTEXT("EconomyUnavailable", "현재 잔액  경제 시스템 준비 안 됨"));
+	BTN_RemoveGold->SetIsEnabled(bEconomyAvailable && CurrentGold > 0);
+	BTN_AddGold->SetIsEnabled(bEconomyAvailable && CurrentGold < MAX_int32);
+}
+
+bool UFF_ZoneLifecycleTestPanel::IsPointerOverInteractivePanel() const
+{
+	return IsVisible() && Border_Panel && Border_Panel->IsHovered();
+}
+
 void UFF_ZoneLifecycleTestPanel::HandleSetupClicked()
 {
 	RequestStage(EFF_FestivalStage::Setup);
@@ -231,6 +341,145 @@ void UFF_ZoneLifecycleTestPanel::HandleLiveClicked()
 void UFF_ZoneLifecycleTestPanel::HandleClosingClicked()
 {
 	RequestStage(EFF_FestivalStage::Closing);
+}
+
+void UFF_ZoneLifecycleTestPanel::HandlePreviousDayClicked()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (!Stage)
+	{
+		SetLastResult(LOCTEXT("PreviousDayMissingStage", "이전 날 실패: Stage Subsystem 없음"));
+		return;
+	}
+	if (Stage->CurrentDay <= 1)
+	{
+		SetLastResult(LOCTEXT("PreviousDayFirstDay", "이전 날 없음: 현재가 첫날입니다."));
+		RefreshStatus();
+		return;
+	}
+
+	const int32 SourceDay = Stage->CurrentDay;
+	const bool bWasLiveStage = Stage->IsLiveStage();
+	UFF_ZoneSystemStageBridgeSubsystem* StageBridge = World
+		? World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>()
+		: nullptr;
+	if (!StageBridge)
+	{
+		SetLastResult(LOCTEXT(
+			"PreviousDayMissingBridge",
+			"이전 날 실패: 시설 Stage Bridge 없음"));
+		return;
+	}
+	const FFF_ZoneFacilityLifecycleBatchResult CloseResult =
+		StageBridge->CloseActiveFacilities(false);
+	if (CloseResult.FailedCount > 0)
+	{
+		SetLastResult(FText::Format(
+			LOCTEXT("PreviousDayCloseFailed", "이전 날 중단: 시설 폐쇄 실패 · {0}"),
+			CloseResult.Summary));
+		RefreshStatus();
+		return;
+	}
+
+	if (!FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(*Stage))
+	{
+		SetLastResult(LOCTEXT("PreviousDayFailed", "이전 날 전환을 완료하지 못했습니다."));
+		RefreshStatus();
+		return;
+	}
+	bSuppressNextEmptyAutomaticCloseResult = bWasLiveStage;
+
+	SetLastResult(FText::Format(
+		LOCTEXT(
+			"PreviousDaySucceeded",
+			"운영 시간축 Day {0} -> Day {1} {2} (경제·예약은 롤백하지 않음)"),
+		FText::AsNumber(SourceDay),
+		FText::AsNumber(Stage->CurrentDay),
+		Stage->GetCurrentStageDisplayName()));
+	RefreshStatus();
+}
+
+void UFF_ZoneLifecycleTestPanel::HandleNextDayClicked()
+{
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>()
+		: nullptr;
+	if (!Stage)
+	{
+		SetLastResult(LOCTEXT("NextDayMissingStage", "다음 날 실패: Stage Subsystem 없음"));
+		return;
+	}
+	if (Stage->CurrentDay >= 3)
+	{
+		SetLastResult(LOCTEXT("NextDayFinalDay", "다음 날 없음: 현재가 마지막 날입니다."));
+		RefreshStatus();
+		return;
+	}
+
+	const int32 EndedDay = Stage->CurrentDay;
+	const bool bAdvanced = FFZoneLifecycleDebugDayControl::TryMoveToNextDay(*Stage);
+	SetLastResult(bAdvanced
+		? FText::Format(
+			LOCTEXT("NextDaySucceeded", "Day {0} 종료 -> Day {1} 개장 점검"),
+			FText::AsNumber(EndedDay),
+			FText::AsNumber(Stage->CurrentDay))
+		: LOCTEXT("NextDayFailed", "다음 날 전환을 완료하지 못했습니다."));
+	RefreshStatus();
+}
+
+void UFF_ZoneLifecycleTestPanel::HandleRemoveGoldClicked()
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		SetLastResult(LOCTEXT("RemoveGoldMissingEconomy", "Gold 차감 실패: 경제 시스템 준비 안 됨"));
+		RefreshGoldControls();
+		return;
+	}
+
+	const int32 PreviousGold = Progression->GetGold();
+	const int32 AmountToRemove = FMath::Min(GetGoldAdjustmentStep(), PreviousGold);
+	if (AmountToRemove <= 0
+		|| !Progression->TrySpend(AmountToRemove, EFF_SpendReason::EventSupplies))
+	{
+		SetLastResult(LOCTEXT("RemoveGoldFailed", "Gold 차감 실패: 차감 가능한 잔액 없음"));
+		RefreshGoldControls();
+		return;
+	}
+
+	SetLastResult(FText::Format(
+		LOCTEXT("RemoveGoldSucceeded", "Gold 차감: {0} -> {1} (-{2})"),
+		FText::AsNumber(PreviousGold),
+		FText::AsNumber(Progression->GetGold()),
+		FText::AsNumber(AmountToRemove)));
+	RefreshGoldControls();
+}
+
+void UFF_ZoneLifecycleTestPanel::HandleAddGoldClicked()
+{
+	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		SetLastResult(LOCTEXT("AddGoldMissingEconomy", "Gold 추가 실패: 경제 시스템 준비 안 됨"));
+		RefreshGoldControls();
+		return;
+	}
+
+	const int32 PreviousGold = Progression->GetGold();
+	Progression->Refund(GetGoldAdjustmentStep());
+	const int32 CurrentGold = Progression->GetGold();
+	SetLastResult(FText::Format(
+		LOCTEXT("AddGoldSucceeded", "Gold 추가 요청: {0} -> {1} (+{2})"),
+		FText::AsNumber(PreviousGold),
+		FText::AsNumber(CurrentGold),
+		FText::AsNumber(CurrentGold - PreviousGold)));
+	RefreshGoldControls();
 }
 
 void UFF_ZoneLifecycleTestPanel::HandleOpenAllClicked()
@@ -285,6 +534,12 @@ void UFF_ZoneLifecycleTestPanel::HandleStageChanged(
 	RefreshStatus();
 }
 
+void UFF_ZoneLifecycleTestPanel::HandleGoldChanged(const int32 NewGold)
+{
+	(void)NewGold;
+	RefreshGoldControls();
+}
+
 void UFF_ZoneLifecycleTestPanel::HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	(void)Event;
@@ -294,6 +549,17 @@ void UFF_ZoneLifecycleTestPanel::HandleZoneWorldChanged(const FFFZSWorldChangeEv
 void UFF_ZoneLifecycleTestPanel::HandleLifecycleBatchCompleted(
 	const FFF_ZoneFacilityLifecycleBatchResult& Result)
 {
+	if (bSuppressNextEmptyAutomaticCloseResult)
+	{
+		bSuppressNextEmptyAutomaticCloseResult = false;
+		if (Result.Action == EFF_ZoneFacilityLifecycleAction::AutomaticClose
+			&& Result.AttemptedCount == 0
+			&& Result.FailedCount == 0)
+		{
+			RefreshStatus();
+			return;
+		}
+	}
 	ApplyBatchResult(Result);
 }
 
@@ -325,6 +591,18 @@ void UFF_ZoneLifecycleTestPanel::SetLastResult(const FText& Text)
 	{
 		TXT_LastResult->SetText(Text);
 	}
+}
+
+UFF_FestivalProgressionSubsystem* UFF_ZoneLifecycleTestPanel::GetProgressionSubsystem() const
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	return GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+}
+
+int32 UFF_ZoneLifecycleTestPanel::GetGoldAdjustmentStep() const
+{
+	return FMath::Max(1, GoldAdjustmentAmount);
 }
 
 #undef LOCTEXT_NAMESPACE

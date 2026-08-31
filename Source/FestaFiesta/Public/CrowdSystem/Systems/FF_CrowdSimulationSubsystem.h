@@ -646,7 +646,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
 	int32 GetArrivalBucketCount() const { return CachedBucketCount;}
 	
-	void BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter, float SpawnRadiusUU);
+	void BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter, float SpawnRadiusUU,
+		const TArray<FFF_ReservedPartyRequest>& ReservedParties = TArray<FFF_ReservedPartyRequest>());
 	
 	int32 DrainVisitorUntil(int32 TargetCumulativeCount);
 	
@@ -700,7 +701,13 @@ private:
 
 	FVector PickWanderDestination(int32 LeaderAgentIndex) const;
 
-	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount) const;
+	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount,
+		const TArray<FFF_ReservedPartyRequest>& ReservedParties) const;
+
+	TArray<FFF_ReservedPartyRequest> GatherReservedPartyRequests() const;
+
+	void ConfirmReservedPartySpawn(const FGuid& ReservationId, int32 PartyID, int32 MemberCount);
+
 	FFF_NeedState MakeInitialNeeds(int32 StableAgentId) const;
 	/**
 	 * Need 를 시간만큼 올리고 파티별 체류 예산을 깎는다.
