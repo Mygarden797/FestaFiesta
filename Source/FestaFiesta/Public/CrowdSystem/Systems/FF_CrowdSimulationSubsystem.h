@@ -318,7 +318,7 @@ public:
 	 * 근거 없는 초기값이다. FF.Crowd.Stats 의 막힘 비율과 아래 계수기를 같이 보고 잡을 것.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Decision", meta = (ClampMin = "0"))
-	int32 DecisionStuckSteps = 300;
+	int32 DecisionStuckSteps = 50;
 
 	// 막힘 때문에 목적지를 다시 고른 횟수. 0이면 이 경로가 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
@@ -365,11 +365,11 @@ public:
 
 	// SimOrigin 기준 반경. 밀도 그리드는 이 반경을 감싸는 정사각형으로 만들어진다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float SimRadiusUU = 10000.f;
+	float SimRadiusUU = 100000.f;
 
 	// 목적지에 이만큼 가까워지면 도착으로 본다(접근점·배회 목적지 기준), UU.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float ArrivalRadiusUU = 150.f;
+	float ArrivalRadiusUU = 1000.f;
 
 	// 대기열 슬롯·서비스 지점의 도착 판정 반경, UU. **슬롯 간격보다 작아야 한다.**
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
@@ -522,7 +522,19 @@ public:
 
 	// 초당 회전 한계, 도. 이게 없으면 밀렸을 때 제자리에서 홱 돈다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float MaxTurnRateDegrees = 360.f;
+	float MaxTurnRateDegrees = 180.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingSmoothTime = 0.35f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingEnterSpeedUU = 40.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingExitSpeedUU = 15.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingDeadzoneDegrees = 4.f;
 
 	// 밀도 그리드 셀 한 변, UU. 200UU(2m) = 4㎡를 평균 창으로 쓴다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Metrics")

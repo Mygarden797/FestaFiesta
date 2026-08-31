@@ -81,6 +81,82 @@ struct FESTAFIESTA_API FFF_PromotionOptionView
  * `FFF_ProgramScheduleRules::IsFacilityTypeAllowed` 가 소유한다. UI 가 같은 비교를 다시 쓰면
  * 규칙이 두 곳에 생긴다 — ViewModel 은 그 함수를 **불러서** 목록만 만든다 (UI 규칙 2).
  */
+/**
+ * 시설의 설치 진행 상태. ZoneSystem 의 `EFFZSFacilityState` 를 UI 쪽으로 옮긴 것이다.
+ *
+ * === 🔴 왜 그대로 안 쓰고 옮기나 ===
+ * 플러그인 enum 을 화면 코드가 직접 쓰면, 저쪽에서 항목을 더하거나 이름을 바꿀 때마다
+ * UI 가 같이 깨진다. 여기서 한 번 옮겨 두면 고칠 자리가 이 파일 하나다.
+ *
+ * `Unknown` 이 있는 것도 그래서다 — 모르는 값이 오면 `준비 중` 으로 **지어내지 않는다.**
+ */
+UENUM(BlueprintType)
+enum class EFF_LiveFacilityState : uint8
+{
+	Unknown		UMETA(DisplayName = "모름"),
+	Planned		UMETA(DisplayName = "계획"),
+	Validated	UMETA(DisplayName = "검증됨"),
+	Active		UMETA(DisplayName = "운영 중"),
+	Closed		UMETA(DisplayName = "폐쇄"),
+	MovePending	UMETA(DisplayName = "이동 대기"),
+	Removed		UMETA(DisplayName = "철거됨")
+};
+
+/** 시설 대기열의 상태. ZoneSystem 의 `EFFZSQueueState` 를 UI 쪽으로 옮긴 것이다. */
+UENUM(BlueprintType)
+enum class EFF_LiveFacilityQueueState : uint8
+{
+	Unknown		UMETA(DisplayName = "모름"),
+	Open		UMETA(DisplayName = "받는 중"),
+	Full		UMETA(DisplayName = "정원 참"),
+	Draining	UMETA(DisplayName = "비우는 중"),
+	Closed		UMETA(DisplayName = "닫힘"),
+	Blocked		UMETA(DisplayName = "막힘")
+};
+
+/**
+ * 라이브 화면이 보는 시설 하나. **화면은 이 값을 그대로 그리고 계산을 하지 않는다.**
+ *
+ * ⚠️ 시설에 사람이 읽을 이름(`FText`)을 가진 필드가 아직 없다. `DisplayName` 은
+ * 정의 id 의 고유 토큰에서 만든 임시 값이다 — `FFF_PrepFacilityOption` 과 같은 사정이다.
+ */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_LiveFacilityView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	FGuid FacilityInstanceId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	FText DisplayName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	FName ZoneId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	EFF_LiveFacilityState State = EFF_LiveFacilityState::Unknown;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	EFF_LiveFacilityQueueState QueueState = EFF_LiveFacilityQueueState::Unknown;
+
+	/** 줄 서 있는 인원. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	int32 WaitingCount = 0;
+
+	/** 지금 이용 중인 인원. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	int32 ActiveServiceCount = 0;
+
+	/** 완료된 손님의 평균 대기 시간(초). 아직 아무도 못 끝냈으면 `INDEX_NONE`. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	int32 AverageWaitSeconds = INDEX_NONE;
+
+	/** 자리가 겹치거나 존을 벗어나 다시 놓아야 한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	bool bNeedsRelocation = false;
+};
+
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_PrepFacilityOption
 {
@@ -431,6 +507,20 @@ public:
 	/** 오늘 편성이 바뀔 때. 가용 인원도 같이 바뀌므로 두 표시를 함께 갱신한다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
 	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
+
+	// --- 시설 현황 (2026-08-29 추가 — U6 라이브 시설 패널) ---
+	//
+	// 원본은 ZoneSystem 의 `FFFZSFacilityReadModel` 이다. 그 타입을 UI 헤더로 끌고 오지 않고
+	// 여기서 UI 용 값으로 옮긴다 — 플러그인 enum 이 바뀌어도 화면 코드는 안 건드리게 한다.
+
+	/**
+	 * 지금 놓여 있는 시설 전부. **철거된 것은 빠진다.**
+	 *
+	 * 🔴 빈 배열은 `시설이 없다` 와 `아직 못 읽었다` 를 구분하지 못한다. 화면은 단계로
+	 * 판단한다 — 축제가 시작된 뒤에도 비어 있으면 정말로 없는 것이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Facility")
+	TArray<FFF_LiveFacilityView> GetLiveFacilities() const;
 
 	// --- 홍보 (2026-08-27 추가 — U5 홍보 패널) ---
 	//

@@ -552,6 +552,96 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 	return Options;
 }
 
+namespace FFViewModelFacilityLocal
+{
+	/** ZoneSystem 의 설치 상태를 UI 값으로 옮긴다. 모르는 값은 지어내지 않고 `Unknown` 이다. */
+	EFF_LiveFacilityState ToUIState(EFFZSFacilityState State)
+	{
+		switch (State)
+		{
+		case EFFZSFacilityState::Planned:		return EFF_LiveFacilityState::Planned;
+		case EFFZSFacilityState::Validated:		return EFF_LiveFacilityState::Validated;
+		case EFFZSFacilityState::Active:		return EFF_LiveFacilityState::Active;
+		case EFFZSFacilityState::Closed:		return EFF_LiveFacilityState::Closed;
+		case EFFZSFacilityState::MovePending:	return EFF_LiveFacilityState::MovePending;
+		case EFFZSFacilityState::Removed:		return EFF_LiveFacilityState::Removed;
+		default:								return EFF_LiveFacilityState::Unknown;
+		}
+	}
+
+	EFF_LiveFacilityQueueState ToUIQueueState(EFFZSQueueState State)
+	{
+		switch (State)
+		{
+		case EFFZSQueueState::Open:		return EFF_LiveFacilityQueueState::Open;
+		case EFFZSQueueState::Full:		return EFF_LiveFacilityQueueState::Full;
+		case EFFZSQueueState::Draining:	return EFF_LiveFacilityQueueState::Draining;
+		case EFFZSQueueState::Closed:	return EFF_LiveFacilityQueueState::Closed;
+		case EFFZSQueueState::Blocked:	return EFF_LiveFacilityQueueState::Blocked;
+		default:						return EFF_LiveFacilityQueueState::Unknown;
+		}
+	}
+}
+
+TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities() const
+{
+	TArray<FFF_LiveFacilityView> Views;
+
+	// Zone 은 월드 서브시스템이라 GameInstance 에서 바로 못 꺼낸다.
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (!Zone)
+	{
+		// 빈 목록은 "시설이 없다" 가 아니라 "못 읽었다" 이므로 화면이 그 둘을 구분할 수 있게
+		// 로그를 남긴다. 월드가 없는 상황(테스트 등)에서 정상적으로 지나간다.
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] Zone 월드 서브시스템이 없어 시설 현황을 만들 수 없다."));
+		return Views;
+	}
+
+	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
+	Views.Reserve(ReadModel.Facilities.Num());
+
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		// 🔴 철거된 시설은 뺀다. 목록에 남기면 "폐쇄" 와 구분이 안 되어
+		//    고칠 수 있는 것과 이미 없는 것이 섞인다.
+		if (Facility.State == EFFZSFacilityState::Removed)
+		{
+			continue;
+		}
+
+		FFF_LiveFacilityView& View = Views.AddDefaulted_GetRef();
+		View.FacilityInstanceId = Facility.FacilityInstanceId;
+		View.ZoneId = Facility.ZoneId;
+		View.State = FFViewModelFacilityLocal::ToUIState(Facility.State);
+		View.QueueState = FFViewModelFacilityLocal::ToUIQueueState(Facility.QueueState);
+		View.WaitingCount = FMath::Max(0, Facility.WaitingCount);
+		View.ActiveServiceCount = FMath::Max(0, Facility.ActiveServiceCount);
+		View.bNeedsRelocation = Facility.bNeedsRelocation;
+
+		// 🔴 아무도 아직 못 끝냈으면 평균이 `0.0` 으로 온다. 그것을 `0초 대기` 로 그리면
+		//    "기다림이 없다" 는 틀린 사실이 된다 — 실제로는 **아직 모르는 것**이다.
+		View.AverageWaitSeconds = (Facility.AverageCompletedWaitSeconds > 0.f)
+			? FMath::RoundToInt(Facility.AverageCompletedWaitSeconds)
+			: INDEX_NONE;
+
+		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다 —
+		// `GetEligibleFacilitiesForProgram` 과 같은 사정이고 같은 방식으로 만든다.
+		FFF_FacilityNameParts Parts;
+		FString FailureReason;
+		const bool bParsed = UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			Facility.Category, Facility.FacilityDefinitionId, Parts, FailureReason);
+
+		View.DisplayName = (bParsed && !Parts.UniqueToken.IsEmpty())
+			? FText::FromString(Parts.UniqueToken)
+			: FText::FromName(Facility.FacilityDefinitionId);
+	}
+
+	return Views;
+}
+
 EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::RequestScheduleProgram(
 	FName ProgramId, FGuid FacilityInstanceId)
 {
