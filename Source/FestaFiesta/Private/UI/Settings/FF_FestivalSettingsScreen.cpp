@@ -8,6 +8,8 @@
 #include "Components/ButtonSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/ScaleBox.h"
+#include "Components/ScaleBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -1772,6 +1774,40 @@ void UFF_FestivalSettingsScreen::SetButtonLabel(
 	if (Text)
 	{
 		Text->SetText(Label);
+		Text->SetAutoWrapText(false);
+		Text->SetJustification(ETextJustify::Center);
+		Text->SetToolTipText(Label);
+
+		// 해상도 미리보기 직후에는 뷰포트 크기와 DPI가 동시에 바뀐다. 이때 고정 폭인
+		// 하단 버튼에 긴 확인 문구가 직접 들어가면 일부 글자가 잘릴 수 있으므로, 문구를
+		// 버튼의 실제 가용 영역 안에서만 축소하는 ScaleBox로 감싼다. 짧은 기본 문구는
+		// DownOnly 정책으로 원래 크기를 그대로 유지한다.
+		UScaleBox* LabelScale = Cast<UScaleBox>(Text->GetParent());
+		if (!LabelScale && Text->GetParent() == Button && WidgetTree)
+		{
+			Button->RemoveChild(Text);
+			LabelScale = WidgetTree->ConstructWidget<UScaleBox>();
+			if (LabelScale)
+			{
+				LabelScale->AddChild(Text);
+				if (UScaleBoxSlot* LabelSlot = Cast<UScaleBoxSlot>(Text->Slot))
+				{
+					LabelSlot->SetHorizontalAlignment(HAlign_Center);
+					LabelSlot->SetVerticalAlignment(VAlign_Center);
+				}
+				if (UButtonSlot* ButtonSlot = Cast<UButtonSlot>(Button->AddChild(LabelScale)))
+				{
+					ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
+					ButtonSlot->SetVerticalAlignment(VAlign_Fill);
+				}
+			}
+		}
+		if (LabelScale)
+		{
+			LabelScale->SetStretch(EStretch::ScaleToFit);
+			LabelScale->SetStretchDirection(EStretchDirection::DownOnly);
+			LabelScale->SetClipping(EWidgetClipping::ClipToBounds);
+		}
 	}
 }
 
