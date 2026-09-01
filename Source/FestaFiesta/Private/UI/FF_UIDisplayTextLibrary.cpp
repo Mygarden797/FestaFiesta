@@ -73,4 +73,35 @@ FText UFF_UIDisplayTextLibrary::GetLiveHudTabText(EFF_LiveHudTab Tab)
 	return FText::GetEmpty();
 }
 
+FText UFF_UIDisplayTextLibrary::GetFacilityStateText(EFF_LiveFacilityState State)
+{
+	switch (State)
+	{
+	case EFF_LiveFacilityState::Planned:		return LOCTEXT("FacState_Planned", "계획");
+	case EFF_LiveFacilityState::Validated:		return LOCTEXT("FacState_Validated", "검증됨");
+	case EFF_LiveFacilityState::Active:			return LOCTEXT("FacState_Active", "운영 중");
+	case EFF_LiveFacilityState::Closed:			return LOCTEXT("FacState_Closed", "폐쇄");
+	case EFF_LiveFacilityState::MovePending:	return LOCTEXT("FacState_MovePending", "이동 대기");
+	case EFF_LiveFacilityState::Removed:		return LOCTEXT("FacState_Removed", "철거됨");
+	case EFF_LiveFacilityState::Unknown:		return LOCTEXT("FacState_Unknown", "모름");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetFacilityQueueStateText(EFF_LiveFacilityQueueState State)
+{
+	switch (State)
+	{
+	case EFF_LiveFacilityQueueState::Open:		return LOCTEXT("FacQueue_Open", "받는 중");
+	case EFF_LiveFacilityQueueState::Full:		return LOCTEXT("FacQueue_Full", "정원 참");
+	case EFF_LiveFacilityQueueState::Draining:	return LOCTEXT("FacQueue_Draining", "비우는 중");
+	case EFF_LiveFacilityQueueState::Closed:	return LOCTEXT("FacQueue_Closed", "닫힘");
+	case EFF_LiveFacilityQueueState::Blocked:	return LOCTEXT("FacQueue_Blocked", "막힘");
+	case EFF_LiveFacilityQueueState::Unknown:	return LOCTEXT("FacQueue_Unknown", "모름");
+	}
+
+	return FText::GetEmpty();
+}
+
 #undef LOCTEXT_NAMESPACE

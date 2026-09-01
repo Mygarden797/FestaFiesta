@@ -2828,6 +2828,156 @@ bool FFF_CrowdSteering_StuckCounterMeasuresProgressNotDisplacement::RunTest(cons
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_ContactFrictionCannotReverseTangentialMotion, "FestaFiesta.Crowd.Avoidance.ContactFrictionCannotReverseTangentialMotion", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_ContactFrictionCannotReverseTangentialMotion::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	const FFF_CrowdAvoidanceConfig Config = MakeConfig();
+
+	constexpr float OverlapMeters = 0.06f;
+	constexpr float TangentialSpeedMps = 0.4f;
+
+	const FVector2f PosI(0.f, 0.f);
+	const FVector2f PosJ(PersonRadiusMeters * 2.f - OverlapMeters, 0.f);
+	const FVector2f VelJ(0.f, TangentialSpeedMps);
+
+	const FVector2f Tangent(0.f, -1.f);
+
+	const float UnclampedDeltaV = Config.ContactFriction * OverlapMeters * TangentialSpeedMps
+		/ PersonMassKg * FixedStep;
+
+	TestTrue(
+		*FString::Printf(TEXT("클램프가 없다면 한 스텝 접선 속도 변화가 상대 속도를 넘긴다 (%.2f > %.2f m/s)"),
+			UnclampedDeltaV, TangentialSpeedMps),
+		UnclampedDeltaV > TangentialSpeedMps);
+
+	const FFF_CrowdForceTerms Terms = FFF_CrowdForceSolver::ComputeAgentInteractionTerms(
+		PosI, FVector2f::ZeroVector, PersonRadiusMeters,
+		PosJ, VelJ, PersonRadiusMeters, Config, PersonMassKg, FixedStep);
+
+	const float TangentialAccel = FMath::Abs(
+		FVector2f::DotProduct(Terms.Contact / PersonMassKg, Tangent));
+	const float DeltaV = TangentialAccel * FixedStep;
+
+	TestTrue(
+		*FString::Printf(TEXT("마찰 임펄스가 상대 접선 속도의 절반을 넘지 않는다 (%.3f <= %.3f m/s)"),
+			DeltaV, TangentialSpeedMps * 0.5f),
+		DeltaV <= TangentialSpeedMps * 0.5f + KINDA_SMALL_NUMBER);
+
+	const FFF_CrowdForceTerms NoSlide = FFF_CrowdForceSolver::ComputeAgentInteractionTerms(
+		PosI, FVector2f::ZeroVector, PersonRadiusMeters,
+		PosJ, FVector2f::ZeroVector, PersonRadiusMeters, Config, PersonMassKg, FixedStep);
+
+	TestEqual(TEXT("접선 상대 속도가 없으면 마찰도 없다"),
+		FVector2f::DotProduct(NoSlide.Contact, Tangent), 0.f, KINDA_SMALL_NUMBER);
+
+	constexpr float ShallowOverlapMeters = 0.003f;
+
+	const FFF_CrowdForceTerms Shallow = FFF_CrowdForceSolver::ComputeAgentInteractionTerms(
+		PosI, FVector2f::ZeroVector, PersonRadiusMeters,
+		FVector2f(PersonRadiusMeters * 2.f - ShallowOverlapMeters, 0.f), VelJ, PersonRadiusMeters,
+		Config, PersonMassKg, FixedStep);
+
+	const float ShallowFriction = FMath::Abs(FVector2f::DotProduct(Shallow.Contact, Tangent));
+	const float ShallowUnclamped = Config.ContactFriction * ShallowOverlapMeters * TangentialSpeedMps;
+
+	TestEqual(TEXT("안정 영역의 얕은 겹침은 클램프가 손대지 않는다"),
+		ShallowFriction, ShallowUnclamped, ShallowUnclamped * 0.01f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_FacingIgnoresJamJitter, "FestaFiesta.Crowd.Steering.FacingIgnoresJamJitter", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdSteering_FacingIgnoresJamJitter::RunTest(const FString& Parameters)
+{
+	constexpr float FixedStep = 1.f / 30.f;
+	const float Alpha = CrowdSteering::ComputeVelocityAlpha(0.35f, FixedStep);
+	CrowdSteering::FStepParams Params;
+
+	FUnitData Jammed = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Jammed.TargetLocation = FVector(5000.f, 0.f, 0.f);
+	Jammed.Speed = 0.f;
+
+	float TotalYawSwing = 0.f;
+	float MaxLateralSpeed = 0.f;
+
+	for (int32 i = 0; i < 120; ++i)
+	{
+		Jammed.Force = FVector(0.f, (i % 2 == 0) ? 3000.f : -3000.f, 0.f);
+
+		const float BeforeYaw = Jammed.Rotation.Yaw;
+		CrowdSteering::StepAgent(Jammed, Params, Alpha, FixedStep);
+
+		TotalYawSwing += FMath::Abs(FMath::FindDeltaAngleDegrees(BeforeYaw, Jammed.Rotation.Yaw));
+		MaxLateralSpeed = FMath::Max(MaxLateralSpeed, FMath::Abs(static_cast<float>(Jammed.Velocity.Y)));
+	}
+
+	TestTrue(
+		*FString::Printf(TEXT("순간 속도는 실제로 좌우로 흔들렸다 (%.1f UU/s)"), MaxLateralSpeed),
+		MaxLateralSpeed > 50.f);
+
+	TestTrue(
+		*FString::Printf(TEXT("그래도 도리도리하지 않는다 (총 회전 %.1f도)"), TotalYawSwing),
+		TotalYawSwing < 10.f);
+
+	TestEqual(TEXT("막힌 사람은 목적지 쪽을 계속 바라본다"),
+		static_cast<float>(Jammed.Rotation.Yaw), 0.f, Params.FacingDeadzoneDegrees);
+
+	FUnitData Walking = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Walking.TargetLocation = FVector(0.f, 5000.f, 0.f);
+
+	for (int32 i = 0; i < 120; ++i)
+	{
+		CrowdSteering::StepAgent(Walking, Params, Alpha, FixedStep);
+	}
+
+	TestTrue(TEXT("걷는 사람은 여전히 진행 방향을 향한다"), Walking.bFacingFollowsVelocity);
+	TestEqual(TEXT("+Y로 걸으면 +Y를 바라본다"),
+		static_cast<float>(Walking.Rotation.Yaw), 90.f, 1.f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_UnstuckHoldSurvivesCounterReset, "FestaFiesta.Crowd.Steering.UnstuckHoldSurvivesCounterReset", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdSteering_UnstuckHoldSurvivesCounterReset::RunTest(const FString& Parameters)
+{
+	constexpr float FixedStep = 1.f / 30.f;
+	const float Alpha = CrowdSteering::ComputeVelocityAlpha(0.35f, FixedStep);
+
+	CrowdSteering::FStepParams Params;
+
+	FUnitData Unit = FFF_CrowdTestHelpers::MakeUnitAt(FVector::ZeroVector);
+	Unit.TargetLocation = FVector(5000.f, 0.f, 0.f);
+	Unit.Speed = 0.f;
+
+	for (int32 i = 0; i < Params.StuckDetectSteps - 1; ++i)
+	{
+		CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("임계 직전에는 유지 카운터가 아직 0이다"), Unit.UnstuckHoldSteps, 0);
+
+	CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	TestEqual(TEXT("임계에 닿으면 유지 카운터가 채워진다"),
+		Unit.UnstuckHoldSteps, Params.UnstuckHoldSteps);
+
+	Unit.Speed = 150.f;
+	Unit.Velocity = FVector(150.f, 0.f, 0.f);
+	CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+
+	TestEqual(TEXT("다시 움직이면 막힘 카운터는 초기화된다"), Unit.StuckSteps, 0);
+	TestEqual(TEXT("그래도 탈출 가속은 한 스텝에 사라지지 않는다"),
+		Unit.UnstuckHoldSteps, Params.UnstuckHoldSteps - 1);
+
+	for (int32 i = 0; i < Params.UnstuckHoldSteps; ++i)
+	{
+		CrowdSteering::StepAgent(Unit, Params, Alpha, FixedStep);
+	}
+	TestEqual(TEXT("유지 구간이 끝나면 0으로 내려간다"), Unit.UnstuckHoldSteps, 0);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdMetrics_CellSizeHasSingleSource, "FestaFiesta.Crowd.Metrics.CellSizeHasSingleSource", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdMetrics_CellSizeHasSingleSource::RunTest(const FString& Parameters)
 {

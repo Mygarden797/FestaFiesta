@@ -111,6 +111,12 @@ struct FUnitData
 	 */
 	int32 StuckSteps = 0;
 
+	int32 UnstuckHoldSteps = 0;
+
+	FVector FacingVelocity = FVector::ZeroVector;
+
+	bool bFacingFollowsVelocity = false;
+
 	float MaxSpeed = 150.f;
 
 	float Radius = 34.f;

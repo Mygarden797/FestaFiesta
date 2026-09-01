@@ -63,6 +63,8 @@ struct FFF_CrowdForceInput
 	// 구동력을 합에 넣는다. StepAgent의 Lerp와 배타적이다.
 	bool bApplyDrivingForce = false;
 
+	float FixedDtSeconds = 1.f / 30.f;
+
 	// 활성 개체의 조밀 인덱스 배열. 오름차순이어야 결정성이 유지된다.
 	const TArray<int32>* ActiveIds = nullptr;
 
@@ -121,12 +123,14 @@ struct FESTAFIESTA_API FFF_CrowdForceSolver
 	static FFF_CrowdForceTerms ComputeAgentInteractionTerms(
 		const FVector2f& PosI, const FVector2f& VelI, float RadiusI,
 		const FVector2f& PosJ, const FVector2f& VelJ, float RadiusJ,
-		const FFF_CrowdAvoidanceConfig& Config);
+		const FFF_CrowdAvoidanceConfig& Config,
+		float MassKg = 70.f, float FixedDtSeconds = 1.f / 30.f);
 
 	static FFF_CrowdForceTerms ComputeWallForceTerms(
 		const FVector2f& Pos, const FVector2f& Vel, float Radius,
 		const FVector2f& SegA, const FVector2f& SegB,
-		const FFF_CrowdAvoidanceConfig& Config);
+		const FFF_CrowdAvoidanceConfig& Config,
+		float MassKg = 70.f, float FixedDtSeconds = 1.f / 30.f);
 
 	static FVector2f ComputeLaneBias(const FVector2f& PosI, float RadiusI,
 	                                 const FVector2f& PosJ, float RadiusJ,
@@ -135,16 +139,19 @@ struct FESTAFIESTA_API FFF_CrowdForceSolver
 
 	static FVector2f ComputeAgentInteraction(const FVector2f& PosI, const FVector2f& VelI, float RadiusI,
 	                                         const FVector2f& PosJ, const FVector2f& VelJ, float RadiusJ,
-	                                         const FFF_CrowdAvoidanceConfig& Config)
+	                                         const FFF_CrowdAvoidanceConfig& Config,
+	                                         float MassKg = 70.f, float FixedDtSeconds = 1.f / 30.f)
 	{
-		return ComputeAgentInteractionTerms(PosI, VelI, RadiusI, PosJ, VelJ, RadiusJ, Config).Total();
+		return ComputeAgentInteractionTerms(PosI, VelI, RadiusI, PosJ, VelJ, RadiusJ,
+			Config, MassKg, FixedDtSeconds).Total();
 	}
 
 	static FVector2f ComputeWallForce(const FVector2f& Pos, const FVector2f& Vel, float Radius,
 	                                  const FVector2f& SegA, const FVector2f& SegB,
-	                                  const FFF_CrowdAvoidanceConfig& Config)
+	                                  const FFF_CrowdAvoidanceConfig& Config,
+	                                  float MassKg = 70.f, float FixedDtSeconds = 1.f / 30.f)
 	{
-		return ComputeWallForceTerms(Pos, Vel, Radius, SegA, SegB, Config).Total();
+		return ComputeWallForceTerms(Pos, Vel, Radius, SegA, SegB, Config, MassKg, FixedDtSeconds).Total();
 	}
 
 	static FVector2f ComputeGroupForce(const FVector2f& Pos, const FVector2f& Vel,

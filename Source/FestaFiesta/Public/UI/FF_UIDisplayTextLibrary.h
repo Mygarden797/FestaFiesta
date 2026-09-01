@@ -8,6 +8,7 @@
 #include "UI/LiveHUD/FF_LiveHudMenuBar.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 #include "FF_UIDisplayTextLibrary.generated.h"
 
 /**
@@ -50,4 +51,12 @@ public:
 	/** 구 라이브 메뉴 바의 탭. 새 라이브 HUD 로 완전히 옮기면 이 함수와 enum 을 함께 지운다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	static FText GetLiveHudTabText(EFF_LiveHudTab Tab);
+
+	/** 시설의 설치 진행 상태. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetFacilityStateText(EFF_LiveFacilityState State);
+
+	/** 시설 대기열의 상태. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetFacilityQueueStateText(EFF_LiveFacilityQueueState State);
 };

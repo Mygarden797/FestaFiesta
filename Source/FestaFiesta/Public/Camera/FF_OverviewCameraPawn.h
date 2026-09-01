@@ -103,6 +103,9 @@ protected:
 private:
 	void ApplyRigToComponents();
 
+	// 한 지점의 지면 높이를 잰다. 못 찾으면 false.
+	bool TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const;
+
 	// 초점 아래 지면을 찾아 리그에 알린다. 리그는 월드를 모르므로 트레이스는 여기서 한다.
 	void UpdateGroundHeight(float DeltaSeconds);
 

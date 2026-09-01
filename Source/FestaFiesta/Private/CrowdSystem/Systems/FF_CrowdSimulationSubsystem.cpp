@@ -692,14 +692,15 @@ FFF_CrowdFlowBreakdown UFF_CrowdSimulationSubsystem::GetFlowBreakdown() const
 			continue;
 		}
 
+		if (bUnstuckEnabled
+			&& (Unit.StuckSteps >= AvoidanceConfig.StuckDetectSteps || Unit.UnstuckHoldSteps > 0))
+		{
+			++Out.UnstuckActive;
+		}
+
 		if (Unit.StuckSteps > 0)
 		{
 			++Out.Blocked;
-
-			if (bUnstuckEnabled && Unit.StuckSteps >= AvoidanceConfig.StuckDetectSteps)
-			{
-				++Out.UnstuckActive;
-			}
 		}
 		else
 		{
@@ -759,6 +760,12 @@ CrowdSteering::FStepParams UFF_CrowdSimulationSubsystem::MakeStepParams() const
 		? BrakingDistanceUU
 		: FMath::Max(ArrivalRadiusUU * 3.f, 1.f);
 	Params.StuckSpeedThresholdUU = AvoidanceConfig.StuckSpeedThresholdUU;
+	Params.StuckDetectSteps = AvoidanceConfig.StuckDetectSteps;
+	Params.UnstuckHoldSteps = AvoidanceConfig.UnstuckHoldSteps;
+	Params.FacingSmoothSeconds = FacingSmoothTime;
+	Params.FacingEnterSpeedUU = FacingEnterSpeedUU;
+	Params.FacingExitSpeedUU = FacingExitSpeedUU;
+	Params.FacingDeadzoneDegrees = FacingDeadzoneDegrees;
 
 	return Params;
 }
@@ -832,6 +839,7 @@ void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces(const CrowdSteering::F
 	Input.DesiredVelMeters = &ScratchDesiredVel2DMeters;
 
 	Input.bApplyDrivingForce = Params.bDrivingForceInForce;
+	Input.FixedDtSeconds = FixedStepSeconds;
 
 	EnsureFacilityWalls();
 
@@ -858,6 +866,7 @@ void UFF_CrowdSimulationSubsystem::ClearAvoidanceForces()
 	{
 		Unit.Force = FVector::ZeroVector;
 		Unit.StuckSteps = 0;
+		Unit.UnstuckHoldSteps = 0;
 	}
 	AvoidanceNeighbourCounts.Reset();
 
