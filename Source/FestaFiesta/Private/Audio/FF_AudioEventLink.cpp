@@ -4,8 +4,10 @@
 
 #include "Audio/FF_AudioSubsystem.h"
 #include "Engine/World.h"
+#include "Building/FF_BuildModeSubsystem.h"
 #include "Finale/FF_FinaleShowSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 
 bool UFF_AudioEventLink::DoesSupportWorldType(const EWorldType::Type WorldType) const
 {
@@ -51,6 +53,32 @@ void UFF_AudioEventLink::BindAll()
 		}
 	}
 
+	if (!bBoundStage)
+	{
+		// 단계는 게임 인스턴스가 소유한다. 월드가 바뀌어도 축제는 이어지기 때문이다.
+		const UGameInstance* GameInstance = World->GetGameInstance();
+		if (UFF_FestivalStageSubsystem* Stage =
+			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+		{
+			Stage->OnStageChanged.AddDynamic(this, &UFF_AudioEventLink::HandleStageChanged);
+			Stage->OnEnvironmentStateChanged.AddDynamic(this, &UFF_AudioEventLink::HandleEnvironmentChanged);
+			bBoundStage = true;
+
+			// 신호는 바뀔 때만 온다. 지금 상태를 한 번 읽어서 배경음을 맞춘다.
+			LastStage = Stage->CurrentStage;
+			RefreshAmbience();
+		}
+	}
+
+	if (!bBoundBuild)
+	{
+		if (UFF_BuildModeSubsystem* Build = World->GetSubsystem<UFF_BuildModeSubsystem>())
+		{
+			Build->OnBuildModeStateChanged.AddDynamic(this, &UFF_AudioEventLink::HandleBuildModeStateChanged);
+			bBoundBuild = true;
+		}
+	}
+
 	if (!bBoundQueue)
 	{
 		if (UFF_QueueSubsystem* Queue = World->GetSubsystem<UFF_QueueSubsystem>())
@@ -71,6 +99,8 @@ void UFF_AudioEventLink::UnbindAll()
 	{
 		bBoundFinale = false;
 		bBoundQueue = false;
+		bBoundStage = false;
+		bBoundBuild = false;
 		return;
 	}
 
@@ -82,6 +112,27 @@ void UFF_AudioEventLink::UnbindAll()
 			Finale->OnShowStateChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleFinaleShowStateChanged);
 		}
 		bBoundFinale = false;
+	}
+
+	if (bBoundStage)
+	{
+		const UGameInstance* GameInstance = World->GetGameInstance();
+		if (UFF_FestivalStageSubsystem* Stage =
+			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+		{
+			Stage->OnStageChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleStageChanged);
+			Stage->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleEnvironmentChanged);
+		}
+		bBoundStage = false;
+	}
+
+	if (bBoundBuild)
+	{
+		if (UFF_BuildModeSubsystem* Build = World->GetSubsystem<UFF_BuildModeSubsystem>())
+		{
+			Build->OnBuildModeStateChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleBuildModeStateChanged);
+		}
+		bBoundBuild = false;
 	}
 
 	if (bBoundQueue)
@@ -222,5 +273,134 @@ void UFF_AudioEventLink::HandleQueuePartyExited(
 	default:
 		// 폐쇄로 인한 취소는 플레이어 잘못이 아니므로 별도 소리를 내지 않는다.
 		break;
+	}
+}
+
+void UFF_AudioEventLink::HandleStageChanged(
+	const EFF_FestivalStage PreviousStage, const EFF_FestivalStage NewStage)
+{
+	(void)PreviousStage;
+
+	LastStage = NewStage;
+
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	if (UFF_AudioSubsystem* Audio = GetAudio())
+	{
+		Audio->PlayEvent2D(EFF_AudioEvent::StageChanged);
+	}
+
+	RefreshAmbience();
+}
+
+void UFF_AudioEventLink::HandleEnvironmentChanged(const EFF_WeatherType Weather, const bool bIsNight)
+{
+	(void)Weather;
+
+	// 같은 값이 다시 오면 넘긴다. 날씨만 바뀌었는데 배경음을 다시 걸 이유가 없다.
+	if (bLastIsNight == bIsNight)
+	{
+		return;
+	}
+	bLastIsNight = bIsNight;
+
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	if (UFF_AudioSubsystem* Audio = GetAudio())
+	{
+		Audio->PlayEvent2D(bIsNight ? EFF_AudioEvent::NightStarted : EFF_AudioEvent::DayStarted);
+	}
+
+	RefreshAmbience();
+}
+
+void UFF_AudioEventLink::RefreshAmbience()
+{
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	UFF_AudioSubsystem* Audio = GetAudio();
+	if (!Audio)
+	{
+		return;
+	}
+
+	// 연출 중에는 건드리지 않는다. 피날레 곡이 걸려 있는데 단계 신호가 오면
+	// 그 위에 덮어써서 연출이 끊긴다.
+	if (Audio->GetCurrentAmbience() == EFF_AudioAmbience::Finale)
+	{
+		return;
+	}
+
+	EFF_AudioAmbience Next = EFF_AudioAmbience::None;
+
+	switch (LastStage)
+	{
+	case EFF_FestivalStage::Setup:
+	case EFF_FestivalStage::MorningCheck:
+	case EFF_FestivalStage::PromotionPreview:
+		Next = EFF_AudioAmbience::Setup;
+		break;
+
+	case EFF_FestivalStage::Live:
+	case EFF_FestivalStage::SunsetTransition:
+		// 운영 중에는 밤낮으로 갈린다. 같은 곡이면 시간이 흐르는 느낌이 안 난다.
+		Next = bLastIsNight ? EFF_AudioAmbience::NightLive : EFF_AudioAmbience::DayLive;
+		break;
+
+	case EFF_FestivalStage::Finale:
+		Next = EFF_AudioAmbience::Finale;
+		break;
+
+	case EFF_FestivalStage::Closing:
+	case EFF_FestivalStage::Report:
+		Next = EFF_AudioAmbience::Closing;
+		break;
+
+	default:
+		break;
+	}
+
+	Audio->SetAmbience(Next);
+}
+
+void UFF_AudioEventLink::HandleBuildModeStateChanged(
+	const EFF_BuildModeState PreviousState, const EFF_BuildModeState NewState)
+{
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	UFF_AudioSubsystem* Audio = GetAudio();
+	if (!Audio)
+	{
+		return;
+	}
+
+	// 지금은 시설이 실제로 설치·철거됐다는 신호가 없다. 건축 모드 상태 변화만 온다.
+	// 그래서 카탈로그를 열고 닫는 소리까지가 한계다.
+	//
+	// 설치음은 CommitPlacement 성공 시점에 신호가 있어야 붙일 수 있다.
+	const bool bWasClosed = PreviousState == EFF_BuildModeState::Closed;
+	const bool bIsClosed = NewState == EFF_BuildModeState::Closed;
+
+	if (bWasClosed && !bIsClosed)
+	{
+		Audio->PlayEvent2D(EFF_AudioEvent::UiConfirm);
+		return;
+	}
+
+	if (!bWasClosed && bIsClosed)
+	{
+		Audio->PlayEvent2D(EFF_AudioEvent::UiCancel);
 	}
 }

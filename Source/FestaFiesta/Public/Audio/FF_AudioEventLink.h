@@ -4,7 +4,9 @@
 
 #include "Audio/FF_AudioTypes.h"
 #include "CoreMinimal.h"
+#include "Building/FF_BuildModeSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
+#include "Time/FF_FestivalStageSubsystem.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_AudioEventLink.generated.h"
 
@@ -59,6 +61,21 @@ private:
 	UFUNCTION()
 	void HandleQueuePartyExited(int32 FacilityId, int32 PartyId, EFF_QueueExit ExitType, float WaitedSeconds);
 
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	UFUNCTION()
+	void HandleEnvironmentChanged(EFF_WeatherType Weather, bool bIsNight);
+
+	UFUNCTION()
+	void HandleBuildModeStateChanged(EFF_BuildModeState PreviousState, EFF_BuildModeState NewState);
+
+	// 지금 단계와 밤낮으로 배경음을 정한다.
+	//
+	// 단계만 보면 낮과 밤이 같은 곡이 되고, 밤낮만 보면 준비 단계와 운영이 구분되지 않는다.
+	// 두 신호가 따로 오므로 어느 쪽이 바뀌든 여기서 다시 계산한다.
+	void RefreshAmbience();
+
 	void BindAll();
 	void UnbindAll();
 
@@ -67,4 +84,10 @@ private:
 	bool bLinkEnabled = true;
 	bool bBoundFinale = false;
 	bool bBoundQueue = false;
+	bool bBoundStage = false;
+	bool bBoundBuild = false;
+
+	// 마지막으로 받은 상태. 두 신호를 합쳐서 배경음을 정하려면 둘 다 들고 있어야 한다.
+	EFF_FestivalStage LastStage = EFF_FestivalStage::Setup;
+	bool bLastIsNight = false;
 };
