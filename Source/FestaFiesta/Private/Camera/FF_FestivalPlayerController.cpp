@@ -202,8 +202,12 @@ bool AFF_FestivalPlayerController::IsCameraRotationAllowed() const
 
 bool AFF_FestivalPlayerController::IsPickingAllowed() const
 {
-	// 건축 중 클릭은 배치 입력이지 선택 입력이 아니다.
-	return GetInputBlockReason() == EFF_CameraInputBlock::None;
+	// 캐릭터 조종은 관찰 카메라 이동만 막는다. 좌클릭 시설 선택까지 막으면
+	// 그라운드 모드에서 시설 정보와 미니게임 진입 경로를 사용할 수 없다.
+	// 건축 세션은 CharacterControl보다 뒤에서 판정되므로 별도 인자로 반드시 보존한다.
+	return FFCameraInputModel::IsPickingAllowed(
+		GetInputBlockReason(),
+		IsBuildSessionActive());
 }
 
 bool AFF_FestivalPlayerController::EnterScriptedView(AFF_FinaleViewpoint* Viewpoint, float BlendTime)

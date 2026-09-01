@@ -67,6 +67,18 @@ namespace FFCameraInputModel
 		return IsMovementAllowed(Reason) && !bBuildPreviewActive;
 	}
 
+	// 캐릭터를 직접 조종하는 동안에도 월드 시설 선택은 살아 있어야 한다.
+	// WASD/시점 조작과 좌클릭 피킹은 서로 다른 입력이므로 CharacterControl을
+	// 카메라 이동 차단과 시설 선택 차단에 똑같이 적용하지 않는다.
+	inline bool IsPickingAllowed(
+		const EFF_CameraInputBlock Reason,
+		const bool bBuildSessionActive)
+	{
+		return !bBuildSessionActive &&
+			(Reason == EFF_CameraInputBlock::None ||
+			 Reason == EFF_CameraInputBlock::CharacterControl);
+	}
+
 	// CommonUI나 런타임 Mapping Context가 Enhanced Input action을 소비하더라도 기본 좌클릭은
 	// 선택 신호를 잃지 않아야 한다. Action이 이미 처리된 프레임에는 중복 방송하지 않는다.
 	inline bool ShouldUsePrimaryPointerPickFallback(

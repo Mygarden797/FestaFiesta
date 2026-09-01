@@ -534,9 +534,11 @@ fallback 없이 거부한다. 빈 곳을 클릭하면 기존 Live 선택을 닫�
 Live에서는 같은 resolver를 0.05초 간격으로 재사용해 커서 아래 실제 클릭 Box를 Hover 표시한다. 클릭 순간에는
 현재 Hovered Proxy가 새 ray와 실제로 교차하고 등록·채널·가림 검증을 통과하는지 동기 재확인해 그 시설을
 우선 선택한다. stale Hover가 ray를 벗어났으면 실제 교차 후보로 즉시 표시와 결과를 바꾼다. 별도 Actor Tick이나
-시설 전체 순회는 없으며, 커서가 패널 위에 있거나 건축·모달·ActorView·CharacterView에서 피킹이 막히면
+시설 전체 순회는 없으며, 커서가 패널 위에 있거나 건축·모달·ActorView에서 피킹이 막히면
 Hover를 즉시 정리한다. 패널이 열린 시설은 `Selected` 표시가 우선하며, Live 이탈·시설 제거·World Snapshot
 복원·Subsystem 종료 때 Hover와 Selected 표시를 모두 해제한다.
+캐릭터 그라운드 모드(`CharacterControl`)에서는 관찰 카메라 이동만 막고 시설 피킹은 유지하므로,
+같은 좌클릭 경로로 시설 정보 패널과 미니게임 진입 동작을 사용할 수 있다.
 
 제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
 FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
