@@ -11,6 +11,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 
@@ -551,6 +552,42 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 	}
 
 	return Options;
+}
+
+TArray<FFF_LiveNeedView> UFF_FestivalViewModelSubsystem::GetNeedMetrics() const
+{
+	TArray<FFF_LiveNeedView> Views;
+
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_NpcNeedMetricsSubsystem* Needs =
+		GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr;
+	if (!Needs)
+	{
+		return Views;
+	}
+
+	// 순서를 enum 과 같게 유지한다 — 화면이 매번 같은 자리에 같은 욕구를 그려야
+	// 눈이 값의 변화를 따라갈 수 있다.
+	for (uint8 Index = 0; Index < static_cast<uint8>(EFF_NeedType::Count); ++Index)
+	{
+		const EFF_NeedType NeedType = static_cast<EFF_NeedType>(Index);
+
+		FFF_LiveNeedView& View = Views.AddDefaulted_GetRef();
+		View.NeedType = NeedType;
+		View.UnmetRatioPercent = Needs->GetNeedUnmetRatio(NeedType);
+	}
+
+	return Views;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetNeedSampleCount() const
+{
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_NpcNeedMetricsSubsystem* Needs =
+		GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr;
+
+	// 🔴 서브시스템이 없으면 `0` 이다 — 표본 없음과 같은 뜻이라 화면이 같게 다룬다.
+	return Needs ? Needs->GetSampleCount() : 0;
 }
 
 int32 UFF_FestivalViewModelSubsystem::GetConcurrentVisitorCount() const

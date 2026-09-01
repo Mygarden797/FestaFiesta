@@ -27,7 +27,9 @@
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelOperations.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelFacilities.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelGuests.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelQueues.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 
@@ -79,6 +81,8 @@ namespace FFLiveHudWbpBuilder
 	const FString StaffPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelStaff");
 	const FString FacilitiesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelFacilities");
 	const FString QueuesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelQueues");
+	const FString GuestsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelGuests");
+	const FString SNSPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelSNS");
 
 	/** 메뉴 행 + 상태 행. 준비 단계 바와 같은 58 이라 두 화면이 같은 높이로 끝난다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -1006,6 +1010,276 @@ namespace FFLiveHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 3-5) 관객 패널
+	// =========================================================================
+
+	bool BuildGuestsPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 관객 패널을 만들지 않았다."), LiveLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		UHorizontalBox* SummaryRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Summary"));
+		UTextBlock* VisitorNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_VisitorNote"), true);
+		UTextBlock* Summary = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Summary"), true);
+
+		UTextBlock* ListTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_NeedsTitle"));
+		UVerticalBox* NeedsBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_Needs"), true);
+		UTextBlock* Empty = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Empty"), true);
+		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
+
+		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
+			|| !SummaryRow || !VisitorNote || !Summary
+			|| !ListTitle || !NeedsBox || !Empty || !MissingNote)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		// --- 헤더 ---
+		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(LOCTEXT("LiveGuests_TitlePreview", "관객"));
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveGuests_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// --- 인원 ---
+		if (!AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
+			TEXT("Text_VisitorCount"), LOCTEXT("LiveGuests_VisitorLabel", "지금 관객"),
+			LOCTEXT("LiveGuestsPv_Visitor", "84명")))
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_SummaryRow = Content->AddChildToVerticalBox(SummaryRow))
+		{
+			Slot_SummaryRow->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_SummaryRow->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// ★ 동시 인원임을 밝힌다. 일일 목표(누적)와 다른 값이라 그냥 두면 오해한다.
+		StyleText(*VisitorNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		VisitorNote->SetText(LOCTEXT("LiveGuestsPv_VisitorNote",
+			"지금 축제장 안에 있는 인원입니다. 오늘 누적 방문객과는 다릅니다."));
+		VisitorNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_VisitorNote = Content->AddChildToVerticalBox(VisitorNote))
+		{
+			Slot_VisitorNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_VisitorNote->SetHorizontalAlignment(HAlign_Fill);
+			Slot_VisitorNote->SetPadding(FMargin(0.f, 4.f, 0.f, 18.f));
+		}
+
+		// --- 욕구 ---
+		StyleText(*ListTitle, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		ListTitle->SetText(LOCTEXT("LiveGuests_NeedsTitle", "관객이 못 하고 있는 것"));
+		if (UVerticalBoxSlot* Slot_ListTitle = Content->AddChildToVerticalBox(ListTitle))
+		{
+			Slot_ListTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_ListTitle->SetHorizontalAlignment(HAlign_Fill);
+			Slot_ListTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+		}
+
+		// 🔴 표본이 없으면 여기에 그 사실이 크게 뜬다. 숫자만 두면 전부 `0%` 로 보이고
+		//    그것은 "아무도 불편하지 않다" 로 읽힌다.
+		StyleText(*Summary, 13, Palette->InGame.Amber, TEXT("Medium"));
+		Summary->SetText(LOCTEXT("LiveGuestsPv_Summary", "관객 84명 기준 · 나쁨 1 · 주의 1"));
+		Summary->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Summary = Content->AddChildToVerticalBox(Summary))
+		{
+			Slot_Summary->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Summary->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Summary->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
+		}
+
+		// 줄은 코드가 런타임에 채운다.
+		if (UVerticalBoxSlot* Slot_NeedsBox = Content->AddChildToVerticalBox(NeedsBox))
+		{
+			Slot_NeedsBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_NeedsBox->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*Empty, 13, Palette->InGame.InkFaint, TEXT("Medium"));
+		Empty->SetText(LOCTEXT("LiveGuestsPv_Empty", "욕구 집계를 읽을 수 없습니다."));
+		Empty->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Empty = Content->AddChildToVerticalBox(Empty))
+		{
+			Slot_Empty->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Empty->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Empty->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		StyleText(*MissingNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		MissingNote->SetText(LOCTEXT("LiveGuestsPv_MissingNote",
+			"관객 그룹 구성과 오늘 누적 방문객 수는 아직 읽을 수 없습니다."));
+		MissingNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_MissingNote = Content->AddChildToVerticalBox(MissingNote))
+		{
+			Slot_MissingNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_MissingNote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
+	// 3-6) SNS 패널 — 지금은 빈 화면이고 그것이 의도다
+	// =========================================================================
+
+	bool BuildSNSPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_FAIL: UI 팔레트를 읽을 수 없어 SNS 패널을 만들지 않았다."), LiveLogPrefix);
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		UVerticalBox* PostsBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_Posts"), true);
+		UTextBlock* Empty = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Empty"), true);
+		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
+
+		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
+			|| !PostsBox || !Empty || !MissingNote)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		// --- 헤더 ---
+		StyleText(*Title, 18, Palette->InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(LOCTEXT("LiveSNS_TitlePreview", "SNS"));
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette->InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveSNS_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_Header = Content->AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// 🔴 **가짜 반응을 미리보기로도 넣지 않는다.** 디자이너에서 그럴듯한 글이 보이면
+		//    팀이 "SNS 는 됐다" 고 생각해서 진짜 API 가 안 만들어진다.
+		if (UVerticalBoxSlot* Slot_PostsBox = Content->AddChildToVerticalBox(PostsBox))
+		{
+			Slot_PostsBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_PostsBox->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		StyleText(*Empty, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Empty->SetText(LOCTEXT("LiveSNSPv_Empty", "아직 올라온 반응이 없습니다."));
+		Empty->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Empty = Content->AddChildToVerticalBox(Empty))
+		{
+			Slot_Empty->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Empty->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Empty->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		// ★ 이 패널의 본론이다.
+		StyleText(*MissingNote, 12, Palette->InGame.InkFaint, TEXT("Medium"));
+		MissingNote->SetText(LOCTEXT("LiveSNSPv_MissingNote",
+			"관객 반응을 만드는 시스템이 아직 없습니다. 화면 자리만 잡아 둔 상태이고, "
+			"반응 데이터가 생기면 여기에 그대로 들어갑니다."));
+		MissingNote->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_MissingNote = Content->AddChildToVerticalBox(MissingNote))
+		{
+			Slot_MissingNote->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_MissingNote->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
 	// 4) 라이브 HUD 루트
 	// =========================================================================
 
@@ -1399,6 +1673,26 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildQueuesPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			GuestsPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelGuests::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildGuestsPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			SNSPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelSNS::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildSNSPanel(Blueprint, Tree);
 			});
 
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);

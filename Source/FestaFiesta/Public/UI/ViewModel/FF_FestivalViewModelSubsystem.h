@@ -13,6 +13,10 @@
 // 꺼내 옮기지 않는다 (AGENTS.md 규칙 3).
 #include "Time/FF_FestivalStageSubsystem.h"
 
+// 같은 이유로 `EFF_NeedType` 도 전방 선언으로는 안 된다 — `FFF_LiveNeedView` 의
+// `UPROPERTY` 라 UHT 가 전체 정의를 요구한다.
+#include "NPC/Party/FF_NeedState.h"
+
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
@@ -155,6 +159,24 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	/** 자리가 겹치거나 존을 벗어나 다시 놓아야 한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	bool bNeedsRelocation = false;
+};
+
+/**
+ * 관객 욕구 한 종류의 현재 상태.
+ *
+ * 원본은 `UFF_NpcNeedMetricsSubsystem` 이다. 그 타입을 UI 헤더로 끌고 오지 않고 옮긴다.
+ */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_LiveNeedView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Crowd")
+	EFF_NeedType NeedType = EFF_NeedType::Hunger;
+
+	/** 이 욕구가 미해소인 관객 비율. 0~100. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Crowd")
+	float UnmetRatioPercent = 0.f;
 };
 
 USTRUCT(BlueprintType)
@@ -525,6 +547,20 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
 	int32 GetConcurrentVisitorCount() const;
+
+	/**
+	 * 관객 욕구 5종의 미해소율. 순서는 `EFF_NeedType` 과 같다.
+	 *
+	 * 🔴 **`GetNeedSampleCount()` 를 함께 봐야 한다.** 표본이 없으면 이 함수는 전부 `0` 을
+	 * 돌려주는데, 그것은 `아무도 불편하지 않다` 가 아니라 **아직 못 읽었다** 는 뜻이다.
+	 * 0% 로 그리면 화면이 틀린 사실을 말한다 (2026-08-28 김시리 주의).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	TArray<FFF_LiveNeedView> GetNeedMetrics() const;
+
+	/** 직전 집계에 들어간 관객 수. **`0` 이면 데이터 없음**이고 `0%` 와 다르다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	int32 GetNeedSampleCount() const;
 
 	// --- 시설 현황 (2026-08-29 추가 — U6 라이브 시설 패널) ---
 	//
