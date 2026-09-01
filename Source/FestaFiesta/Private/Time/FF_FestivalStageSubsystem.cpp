@@ -210,7 +210,7 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		bWasMainProgramLocked = bIsLockedNow;
 		// 다음 프레임 비교용으로 저장
 
-		const float EffectiveScale = bIsLockedNow ? 1.f : TimeScale;
+		const float EffectiveScale = (bIsLockedNow || bMinigameInProgress) ? 1.f : TimeScale;
 		// 메인 공연 구간이면 배속을 1배속으로 고정
 
 		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
@@ -366,6 +366,12 @@ void UFF_FestivalStageSubsystem::StartNewFestival()
 
 	OnFestivalStarted.Broadcast();
 	// 축제가 시작됐다고 UI 등 구독자들에게 알림
+}
+
+void UFF_FestivalStageSubsystem::SetMinigameInProgress(bool bInProgress)
+{
+	bMinigameInProgress = bInProgress;
+	UE_LOG(LogTemp, Log, TEXT("[Festival] 미니게임 상태 변경: %s"), bInProgress ? TEXT("시작(1배속 고정)") : TEXT("종료(배속 해제)"));
 }
 
 void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)

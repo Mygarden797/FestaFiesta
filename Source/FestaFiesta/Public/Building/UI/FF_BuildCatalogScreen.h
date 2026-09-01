@@ -55,13 +55,13 @@ public:
 	DECLARE_MULTICAST_DELEGATE(FOnCloseRequested);
 	// 포커스된 카탈로그가 B 키를 먼저 받은 경우 건축 모드 복귀 의도를 별도로 전달한다.
 	DECLARE_MULTICAST_DELEGATE(FOnBuildModeKeyRequested);
-	// 포커스된 카탈로그가 Esc를 먼저 받은 경우 건축 세션 전체 종료 의도를 전달한다.
-	DECLARE_MULTICAST_DELEGATE(FOnExitBuildModeKeyRequested);
+	// 포커스된 카탈로그가 ESC를 먼저 받은 경우 상태를 보존하는 Pause Hub 진입 의도를 전달한다.
+	DECLARE_MULTICAST_DELEGATE(FOnPauseMenuKeyRequested);
 
 	FOnFacilitySelected OnFacilitySelected;
 	FOnCloseRequested OnCloseRequested;
 	FOnBuildModeKeyRequested OnBuildModeKeyRequested;
-	FOnExitBuildModeKeyRequested OnExitBuildModeKeyRequested;
+	FOnPauseMenuKeyRequested OnPauseMenuKeyRequested;
 
 	// 화면에 표시할 스냅샷을 교체하고, 최초로 항목이 존재하는 대분류를 선택한 뒤 UI를 재구성한다.
 	// 호출 시점이 NativeConstruct보다 빠른 경우도 허용하므로 사용 가능한 BindWidget이 있으면 먼저 초기화한다.

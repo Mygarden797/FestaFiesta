@@ -54,6 +54,14 @@
 			]
 		},
 		{
+			"Name": "NNEDenoiser",
+			"Enabled": false
+		},
+		{
+			"Name": "NNERuntimeORT",
+			"Enabled": false
+		},
+		{
 			"Name": "Water",
 			"Enabled": true
 		}

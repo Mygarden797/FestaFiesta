@@ -234,6 +234,10 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UButton> Button_Close;
 
+	/** Result-only primary CTA, kept inside the result card for deterministic layering. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
+	TObjectPtr<UButton> Button_ResultClose;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"), Category = "FestaFiesta|Minigame|UI")
 	TObjectPtr<UBorder> Panel_Result;
 
@@ -245,6 +249,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> Text_CloseLabel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> Text_ResultCloseLabel;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_ClawMachineJoystickWidget> JoystickWidget;

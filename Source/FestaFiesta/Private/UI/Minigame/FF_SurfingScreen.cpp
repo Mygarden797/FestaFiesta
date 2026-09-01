@@ -22,6 +22,7 @@
 #include "Minigame/FF_SurfingRuntime.h"
 #include "Minigame/Surfing/FF_SurfingRules.h"
 #include "UI/FF_UILog.h"
+#include "UI/Minigame/FF_MinigameUIStyle.h"
 #include "UI/Minigame/FF_SurfingCharacterActor.h"
 #include "UI/Minigame/FF_SurfingSceneActor.h"
 
@@ -291,10 +292,11 @@ void UFF_SurfingScreen::ShowResult(const FFF_MinigameResult& Result)
 	bHasResult = true;
 	RefreshPresentation();
 
-	if (Button_Close && GetOwningLocalPlayer())
+	UButton* ResultActionButton = Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get();
+	if (ResultActionButton && GetOwningLocalPlayer())
 	{
-		InitialFocusTarget = Button_Close;
-		Button_Close->SetFocus();
+		InitialFocusTarget = ResultActionButton;
+		ResultActionButton->SetFocus();
 	}
 }
 
@@ -413,6 +415,10 @@ void UFF_SurfingScreen::NativeDestruct()
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.RemoveAll(this);
+	}
+	if (Button_ResultClose)
+	{
+		Button_ResultClose->OnClicked.RemoveAll(this);
 	}
 
 	TSet<UBorder*> DynamicEntityWidgets;
@@ -657,9 +663,9 @@ UWidget* UFF_SurfingScreen::NativeGetDesiredFocusTarget() const
 	if ((bHasResult
 		|| (bHasSnapshot
 			&& DisplayedSnapshot.Session.State != EFF_MinigameSessionState::Playing))
-		&& Button_Close)
+		&& (Button_ResultClose || Button_Close))
 	{
-		return Button_Close;
+		return Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get();
 	}
 
 	return const_cast<UFF_SurfingScreen*>(this);
@@ -674,6 +680,7 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 
 	bBuiltNativeWidgetTree = true;
 	bUsingDesignerWidgetTree = false;
+	const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 
 	UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(
 		UOverlay::StaticClass(), TEXT("Overlay_Root"));
@@ -792,21 +799,21 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	UTextBlock* IdentityEyebrow = MakeNativeText(
 		*WidgetTree, TEXT("Text_IdentityEyebrow"),
 		LOCTEXT("IdentityEyebrow", "FESTA SPORTS  //  LIVE"), 11.0f,
-		VisualStyle.AmberAccentColor);
+		Theme.AccentSoft);
 	UTextBlock* IdentityTitle = MakeNativeText(
 		*WidgetTree, TEXT("Text_IdentityTitle"),
 		LOCTEXT("IdentityTitle", "TIDAL RUN"), 23.0f, FLinearColor::White);
 	UTextBlock* IdentitySubtitle = MakeNativeText(
 		*WidgetTree, TEXT("Text_IdentitySubtitle"),
 		LOCTEXT("IdentitySubtitle", "DADAEPO  /  FREE RIDE"), 10.0f,
-		VisualStyle.MintAccentColor);
+		Theme.AccentSoft);
 	if (!IdentityCard || !IdentityColumn || !IdentityEyebrow
 		|| !IdentityTitle || !IdentitySubtitle)
 	{
 		return false;
 	}
-	IdentityCard->SetBrushColor(VisualStyle.HudPanelColor);
-	IdentityCard->SetPadding(FMargin(18.0f, 10.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*IdentityCard, Theme.Header, FMargin(18.0f, 10.0f), Theme.HeaderStrong);
 	IdentityCard->SetContent(IdentityColumn);
 	IdentityCard->SetVisibility(ESlateVisibility::HitTestInvisible);
 	for (UTextBlock* IdentityText : { IdentityEyebrow, IdentityTitle, IdentitySubtitle })
@@ -824,15 +831,19 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 		UVerticalBox::StaticClass(), TEXT("VerticalBox_TimerCard"));
 	UTextBlock* TimerCaption = MakeNativeText(
 		*WidgetTree, TEXT("Text_TimerCaption"),
-		LOCTEXT("TimerCaption", "ROUND TIMER"), 11.0f, VisualStyle.MintAccentColor);
+		LOCTEXT("TimerCaption", "ROUND TIMER"), 11.0f, Theme.HeaderStrong);
 	Text_RemainingTime = MakeNativeText(
-		*WidgetTree, TEXT("Text_RemainingTime"), LOCTEXT("TimePlaceholder", "30"), 48.0f);
+		*WidgetTree, TEXT("Text_RemainingTime"), LOCTEXT("TimePlaceholder", "30"), 48.0f,
+		Theme.Text);
 	if (!HudBorder || !TimerColumn || !TimerCaption || !Text_RemainingTime)
 	{
 		return false;
 	}
-	HudBorder->SetBrushColor(VisualStyle.HudPanelColor);
-	HudBorder->SetPadding(FMargin(28.0f, 9.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*HudBorder,
+		FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f),
+		FMargin(28.0f, 9.0f),
+		Theme.Line);
 	HudBorder->SetContent(TimerColumn);
 	HudBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 	TimerColumn->AddChildToVerticalBox(TimerCaption);
@@ -847,16 +858,19 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 		UVerticalBox::StaticClass(), TEXT("VerticalBox_ScoreCard"));
 	UTextBlock* ScoreCaption = MakeNativeText(
 		*WidgetTree, TEXT("Text_ScoreCaption"), LOCTEXT("ScoreCaption", "RUN SCORE"),
-		11.0f, VisualStyle.MintAccentColor);
+		11.0f, Theme.HeaderStrong);
 	Text_Score = MakeNativeText(
 		*WidgetTree, TEXT("Text_Score"), LOCTEXT("ScorePlaceholder", "0"), 34.0f,
-		VisualStyle.AmberAccentColor);
+		Theme.Warning);
 	if (!ScoreCard || !ScoreColumn || !ScoreCaption || !Text_Score)
 	{
 		return false;
 	}
-	ScoreCard->SetBrushColor(VisualStyle.HudPanelColor);
-	ScoreCard->SetPadding(FMargin(18.0f, 9.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*ScoreCard,
+		FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f),
+		FMargin(18.0f, 9.0f),
+		Theme.Line);
 	ScoreCard->SetContent(ScoreColumn);
 	ScoreCard->SetVisibility(ESlateVisibility::HitTestInvisible);
 	ScoreColumn->AddChildToVerticalBox(ScoreCaption);
@@ -871,33 +885,39 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 		UVerticalBox::StaticClass(), TEXT("VerticalBox_LivesCombatCard"));
 	UTextBlock* LivesCaption = MakeNativeText(
 		*WidgetTree, TEXT("Text_LivesCaption"), LOCTEXT("LivesCaption", "HULL INTEGRITY"),
-		11.0f, VisualStyle.MintAccentColor);
+		11.0f, Theme.HeaderStrong);
 	Text_Lives = MakeNativeText(
 		*WidgetTree, TEXT("Text_Lives"), LOCTEXT("LivesPlaceholder", "3 / 3   ■■■"), 25.0f,
-		FLinearColor(1.0f, 0.58f, 0.52f, 1.0f));
+		Theme.Danger);
 	UBorder* BoostCard = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("Border_BoostCombatCard"));
 	UVerticalBox* BoostColumn = WidgetTree->ConstructWidget<UVerticalBox>(
 		UVerticalBox::StaticClass(), TEXT("VerticalBox_BoostCombatCard"));
 	UTextBlock* BoostCaption = MakeNativeText(
 		*WidgetTree, TEXT("Text_BoostCaption"), LOCTEXT("BoostCaption", "TURBO CHARGE"),
-		11.0f, VisualStyle.MintAccentColor);
+		11.0f, Theme.HeaderStrong);
 	Text_Boost = MakeNativeText(
 		*WidgetTree, TEXT("Text_Boost"), LOCTEXT("BoostPlaceholder", "■■■   READY"), 20.0f,
-		VisualStyle.MintAccentColor);
+		Theme.HeaderStrong);
 	if (!LivesCard || !LivesColumn || !LivesCaption || !Text_Lives
 		|| !BoostCard || !BoostColumn || !BoostCaption || !Text_Boost)
 	{
 		return false;
 	}
-	LivesCard->SetBrushColor(VisualStyle.HudPanelColor);
-	LivesCard->SetPadding(FMargin(18.0f, 10.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*LivesCard,
+		FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f),
+		FMargin(18.0f, 10.0f),
+		Theme.Line);
 	LivesCard->SetContent(LivesColumn);
 	LivesCard->SetVisibility(ESlateVisibility::HitTestInvisible);
 	LivesColumn->AddChildToVerticalBox(LivesCaption);
 	LivesColumn->AddChildToVerticalBox(Text_Lives);
-	BoostCard->SetBrushColor(VisualStyle.HudPanelColor);
-	BoostCard->SetPadding(FMargin(18.0f, 10.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*BoostCard,
+		FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f),
+		FMargin(18.0f, 10.0f),
+		Theme.Line);
 	BoostCard->SetContent(BoostColumn);
 	BoostCard->SetVisibility(ESlateVisibility::HitTestInvisible);
 	BoostColumn->AddChildToVerticalBox(BoostCaption);
@@ -918,13 +938,16 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 			"ControlsHint",
 			"[ WASD / STICK ]  MOVE     [ MOUSE ]  TURN     [ SPACE / A ]  BOOST"),
 		13.0f,
-		FLinearColor(0.90f, 1.0f, 0.98f, 0.96f));
+		Theme.Text);
 	if (!ControlsBorder || !Text_Controls)
 	{
 		return false;
 	}
-	ControlsBorder->SetBrushColor(FLinearColor(0.006f, 0.035f, 0.072f, 0.91f));
-	ControlsBorder->SetPadding(FMargin(22.0f, 10.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*ControlsBorder,
+		FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f),
+		FMargin(22.0f, 10.0f),
+		Theme.Line);
 	ControlsBorder->SetContent(Text_Controls);
 	ControlsBorder->SetVisibility(ESlateVisibility::HitTestInvisible);
 	AddSizedToCanvas(
@@ -936,18 +959,18 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	CloseLabel = MakeNativeText(
 		*WidgetTree,
 		TEXT("Text_CloseLabel"),
-		LOCTEXT("NativeClose", "ESC"),
+		LOCTEXT("NativeClose", "나가기  [ESC]"),
 		12.0f,
-		FLinearColor::White);
+		Theme.Text);
 	if (!Button_Close || !CloseLabel)
 	{
 		return false;
 	}
-	Button_Close->SetBackgroundColor(FLinearColor(0.006f, 0.035f, 0.072f, 0.96f));
+	FFMinigameUIStyle::ApplyButton(*Button_Close, Theme, false);
 	Button_Close->SetContent(CloseLabel);
 	AddSizedToCanvas(
 		*Canvas_SurfArea, *Button_Close, FVector2D(0.982f, 0.028f),
-		FVector2D(1.0f, 0.0f), FVector2D(54.0f, 46.0f), 400);
+		FVector2D(1.0f, 0.0f), FVector2D(136.0f, 48.0f), 400);
 
 	Border_ResultDimmer = WidgetTree->ConstructWidget<UBorder>(
 		UBorder::StaticClass(), TEXT("Border_ResultDimmer"));
@@ -955,7 +978,7 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	{
 		return false;
 	}
-	Border_ResultDimmer->SetBrushColor(FLinearColor(0.001f, 0.010f, 0.026f, 0.78f));
+	Border_ResultDimmer->SetBrushColor(FLinearColor::Transparent);
 	Border_ResultDimmer->SetVisibility(ESlateVisibility::Collapsed);
 	AddStretchedToCanvas(
 		*Canvas_SurfArea, *Border_ResultDimmer,
@@ -974,34 +997,45 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	UTextBlock* ResultEyebrow = MakeNativeText(
 		*WidgetTree, TEXT("Text_ResultHeading"),
 		LOCTEXT("ResultEyebrow", "TIDAL RUN  //  FINAL TELEMETRY"), 12.0f,
-		VisualStyle.MintAccentColor);
+		Theme.HeaderStrong);
 	Text_Result = MakeNativeText(
 		*WidgetTree,
 		TEXT("Text_Result"),
 		LOCTEXT("ResultPlaceholder", "RIDE COMPLETE"),
 		30.0f,
-		VisualStyle.AmberAccentColor);
+		Theme.Text);
 	UTextBlock* ResultExitHint = MakeNativeText(
 		*WidgetTree, TEXT("Text_ResultExitHint"),
-		LOCTEXT("ResultExitHint", "아래 CONTINUE 버튼으로 라이드 종료"), 12.0f,
-		FLinearColor(0.74f, 0.88f, 0.91f, 0.90f));
+		LOCTEXT("ResultExitHint", "아래 확인 버튼으로 라이드 종료"), 12.0f,
+		Theme.TextMuted);
+	USizeBox* ResultCtaSize = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(), TEXT("Size_ResultCta"));
+	Button_ResultClose = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("Button_ResultClose"));
+	ResultCloseLabel = MakeNativeText(
+		*WidgetTree,
+		TEXT("Text_ResultCloseLabel"),
+		LOCTEXT("NativeResultClose", "확인  [ESC]"),
+		15.0f,
+		Theme.White);
 	if (!Panel_Result || !ResultStage || !ResultCardSize || !ResultCard
-		|| !ResultColumn || !ResultEyebrow || !Text_Result || !ResultExitHint)
+		|| !ResultColumn || !ResultEyebrow || !Text_Result || !ResultExitHint
+		|| !ResultCtaSize || !Button_ResultClose || !ResultCloseLabel)
 	{
 		return false;
 	}
-	Panel_Result->SetBrushColor(FLinearColor::Transparent);
+	Panel_Result->SetBrushColor(Theme.Scrim);
 	Panel_Result->SetPadding(FMargin(0.0f));
 	Panel_Result->SetContent(ResultStage);
 	Panel_Result->SetVisibility(ESlateVisibility::Collapsed);
-	ResultStage->SetVisibility(ESlateVisibility::HitTestInvisible);
+	ResultStage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	ResultCardSize->SetWidthOverride(660.0f);
-	ResultCardSize->SetHeightOverride(380.0f);
+	ResultCardSize->SetHeightOverride(500.0f);
 	ResultCardSize->SetContent(ResultCard);
-	ResultCard->SetBrushColor(VisualStyle.HudPanelColor);
-	ResultCard->SetPadding(FMargin(56.0f, 44.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*ResultCard, Theme.Surface, FMargin(56.0f, 40.0f), Theme.LineStrong, 10.0f, 2.0f);
 	ResultCard->SetContent(ResultColumn);
-	ResultCard->SetVisibility(ESlateVisibility::HitTestInvisible);
+	ResultCard->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	if (UOverlaySlot* CardSlot = ResultStage->AddChildToOverlay(ResultCardSize))
 	{
 		CardSlot->SetHorizontalAlignment(HAlign_Center);
@@ -1022,6 +1056,20 @@ bool UFF_SurfingScreen::BuildNativeWidgetTree()
 	if (UVerticalBoxSlot* ExitHintSlot = ResultColumn->AddChildToVerticalBox(ResultExitHint))
 	{
 		ExitHintSlot->SetHorizontalAlignment(HAlign_Center);
+	}
+	ResultCtaSize->SetWidthOverride(240.0f);
+	ResultCtaSize->SetHeightOverride(54.0f);
+	FFMinigameUIStyle::ApplyButton(*Button_ResultClose, Theme, true);
+	Button_ResultClose->SetContent(ResultCloseLabel);
+	ResultCtaSize->SetContent(Button_ResultClose);
+	if (UVerticalBoxSlot* ResultCtaSlot = ResultColumn->AddChildToVerticalBox(ResultCtaSize))
+	{
+		ResultCtaSlot->SetHorizontalAlignment(HAlign_Center);
+		ResultCtaSlot->SetPadding(FMargin(0.0f, 22.0f, 0.0f, 0.0f));
+	}
+	else
+	{
+		return false;
 	}
 	if (UOverlaySlot* ResultOverlaySlot = Root->AddChildToOverlay(Panel_Result))
 	{
@@ -1067,8 +1115,12 @@ void UFF_SurfingScreen::ResolveBindingsFromWidgetTree()
 		WidgetTree->FindWidget(TEXT("Text_Result")));
 	Button_Close = Cast<UButton>(
 		WidgetTree->FindWidget(TEXT("Button_Close")));
+	Button_ResultClose = Cast<UButton>(
+		WidgetTree->FindWidget(TEXT("Button_ResultClose")));
 	CloseLabel = Cast<UTextBlock>(
 		WidgetTree->FindWidget(TEXT("Text_CloseLabel")));
+	ResultCloseLabel = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("Text_ResultCloseLabel")));
 
 	RefreshBackdropBrush();
 }
@@ -1124,6 +1176,11 @@ void UFF_SurfingScreen::InitializeBindings()
 
 	Button_Close->OnClicked.RemoveAll(this);
 	Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	if (Button_ResultClose)
+	{
+		Button_ResultClose->OnClicked.RemoveAll(this);
+		Button_ResultClose->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	}
 	InitialFocusTarget = NativeGetDesiredFocusTarget();
 	bBindingsInitialized = true;
 }
@@ -1385,6 +1442,7 @@ void UFF_SurfingScreen::RefreshPresentation()
 		return;
 	}
 
+	const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 	const float RemainingSeconds = bHasSnapshot
 		? FMath::Max(0.0f, DisplayedSnapshot.Session.RemainingSeconds)
 		: 0.0f;
@@ -1412,10 +1470,10 @@ void UFF_SurfingScreen::RefreshPresentation()
 	Text_RemainingTime->SetText(FText::AsNumber(FMath::CeilToInt(RemainingSeconds)));
 	Text_RemainingTime->SetColorAndOpacity(FSlateColor(
 		RemainingSeconds <= 10.0f
-		? VisualStyle.AmberAccentColor
-		: FLinearColor::White));
+		? Theme.Warning
+		: Theme.Text));
 	Text_Score->SetText(FText::AsNumber(Score));
-	Text_Score->SetColorAndOpacity(FSlateColor(VisualStyle.AmberAccentColor));
+	Text_Score->SetColorAndOpacity(FSlateColor(Theme.Warning));
 	Text_Lives->SetText(FText::Format(
 		LOCTEXT("LivesFormat", "{0} / {1}   {2}"),
 		FText::AsNumber(Lives),
@@ -1423,8 +1481,8 @@ void UFF_SurfingScreen::RefreshPresentation()
 		MakeSegments(Lives, MaxLives)));
 	Text_Lives->SetColorAndOpacity(FSlateColor(
 		Lives <= 1
-		? VisualStyle.AmberAccentColor
-		: FLinearColor(1.0f, 0.58f, 0.52f, 1.0f)));
+		? Theme.Danger
+		: Theme.Success));
 	if (bHasSnapshot && DisplayedSnapshot.bBoosting)
 	{
 		Text_Boost->SetText(FText::Format(
@@ -1434,7 +1492,7 @@ void UFF_SurfingScreen::RefreshPresentation()
 			FText::AsNumber(
 				FMath::Max(0.0f, DisplayedSnapshot.BoostRemainingSeconds),
 				&OneDecimal)));
-		Text_Boost->SetColorAndOpacity(FSlateColor(VisualStyle.AmberAccentColor));
+		Text_Boost->SetColorAndOpacity(FSlateColor(Theme.Warning));
 	}
 	else
 	{
@@ -1444,8 +1502,8 @@ void UFF_SurfingScreen::RefreshPresentation()
 			MakeSegments(BoostCharges, MaxBoostCharges)));
 		Text_Boost->SetColorAndOpacity(FSlateColor(
 			BoostCharges > 0
-			? VisualStyle.MintAccentColor
-			: FLinearColor(0.48f, 0.60f, 0.63f, 1.0f)));
+			? Theme.HeaderStrong
+			: Theme.TextFaint));
 	}
 
 	const bool bPlaying = bHasSnapshot
@@ -1468,12 +1526,17 @@ void UFF_SurfingScreen::RefreshPresentation()
 		bShowResult ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (Border_ResultDimmer)
 	{
-		Border_ResultDimmer->SetVisibility(
-			bShowResult ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		// Panel_Result owns the single modal scrim. Keeping this legacy layer collapsed
+		// avoids double-darkening and prevents it from obscuring the result CTA.
+		Border_ResultDimmer->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	Button_Close->SetVisibility(
+		bShowResult && Button_ResultClose
+			? ESlateVisibility::Collapsed
+			: ESlateVisibility::Visible);
 	if (UCanvasPanelSlot* CloseSlot = Cast<UCanvasPanelSlot>(Button_Close->Slot))
 	{
-		if (bShowResult)
+		if (bShowResult && !Button_ResultClose)
 		{
 			CloseSlot->SetAnchors(FAnchors(0.5f, 0.72f));
 			CloseSlot->SetAlignment(FVector2D(0.5f, 0.5f));
@@ -1487,16 +1550,11 @@ void UFF_SurfingScreen::RefreshPresentation()
 			CloseSlot->SetAnchors(FAnchors(0.982f, 0.028f));
 			CloseSlot->SetAlignment(FVector2D(1.0f, 0.0f));
 			CloseSlot->SetPosition(FVector2D::ZeroVector);
-			CloseSlot->SetSize(FVector2D(54.0f, 46.0f));
+			CloseSlot->SetSize(FVector2D(136.0f, 48.0f));
 			CloseSlot->SetAutoSize(false);
 			CloseSlot->SetZOrder(400);
 		}
 	}
-	Button_Close->SetBackgroundColor(
-		bShowResult
-		? VisualStyle.AmberAccentColor
-		: FLinearColor(0.006f, 0.035f, 0.072f, 0.96f));
-
 	if (bHasResult)
 	{
 		const bool bWipeout =
@@ -1534,17 +1592,13 @@ void UFF_SurfingScreen::RefreshPresentation()
 
 	if (CloseLabel)
 	{
-		CloseLabel->SetText(bShowResult
-			? LOCTEXT("NativeResultCloseLabel", "CONTINUE")
-			: LOCTEXT("NativePlayingCloseLabel", "ESC"));
-		CloseLabel->SetColorAndOpacity(FSlateColor(
-			bShowResult
-			? FLinearColor(0.015f, 0.045f, 0.070f, 1.0f)
-			: FLinearColor::White));
+		CloseLabel->SetText(LOCTEXT("NativePlayingCloseLabel", "나가기  [ESC]"));
+		CloseLabel->SetColorAndOpacity(FSlateColor(Theme.Text));
 	}
 
-	InitialFocusTarget = bShowResult && Button_Close
-		? static_cast<UWidget*>(Button_Close.Get())
+	UButton* ResultActionButton = Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get();
+	InitialFocusTarget = bShowResult && ResultActionButton
+		? static_cast<UWidget*>(ResultActionButton)
 		: static_cast<UWidget*>(this);
 	if (bUsing3DScene && IsValid(SurfingSceneActor))
 	{
@@ -1563,15 +1617,17 @@ void UFF_SurfingScreen::RefreshPresentation()
 
 void UFF_SurfingScreen::RefreshFocusPresentation()
 {
-	if (!Button_Close)
+	for (UButton* ActionButton : { Button_Close.Get(), Button_ResultClose.Get() })
 	{
-		return;
+		if (!ActionButton)
+		{
+			continue;
+		}
+		const float Scale = ActionButton->HasKeyboardFocus()
+			? FMath::Max(1.0f, VisualStyle.FocusedControlScale)
+			: 1.0f;
+		ActionButton->SetRenderScale(FVector2D(Scale, Scale));
 	}
-
-	const float Scale = Button_Close->HasKeyboardFocus()
-		? FMath::Max(1.0f, VisualStyle.FocusedControlScale)
-		: 1.0f;
-	Button_Close->SetRenderScale(FVector2D(Scale, Scale));
 }
 
 void UFF_SurfingScreen::RefreshArenaLayout()

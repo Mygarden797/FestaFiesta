@@ -23,6 +23,21 @@ class UFF_PrepBuildPresentationModel;
 class UFF_PrepBuildTileView;
 class UFFZSWorldSubsystem;
 
+namespace FFPrepBuildPauseModel
+{
+	inline bool ShouldHandlePauseMenuKey(
+		const FKey& Key,
+		const bool bIsRepeat,
+		const bool bPanelOpen,
+		const bool bPanelClosing,
+		const EFF_BuildModeState State,
+		const TArray<FKey>& OpenCloseKeys)
+	{
+		return !bIsRepeat && bPanelOpen && !bPanelClosing &&
+			State == EFF_BuildModeState::CatalogOpen && OpenCloseKeys.Contains(Key);
+	}
+}
+
 /**
  * PrepHUD's production build panel.
  *
@@ -41,6 +56,9 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual FReply NativeOnPreviewKeyDown(
+		const FGeometry& InGeometry,
+		const FKeyEvent& InKeyEvent) override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 
@@ -55,6 +73,9 @@ protected:
 
 	UFUNCTION()
 	void HandleBuildModeStateChanged(EFF_BuildModeState PreviousState, EFF_BuildModeState NewState);
+
+	UFUNCTION()
+	void HandleBuildCatalogFocusRestoreRequested();
 
 	UFUNCTION()
 	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);

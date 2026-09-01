@@ -25,6 +25,7 @@
 #include "Minigame/TargetShooting/FF_TargetShootingRules.h"
 #include "Rendering/DrawElementTypes.h"
 #include "UI/FF_UILog.h"
+#include "UI/Minigame/FF_MinigameUIStyle.h"
 #include "UI/Minigame/FF_TargetShootingArena3D.h"
 
 #define LOCTEXT_NAMESPACE "FFTargetShootingScreen"
@@ -623,6 +624,10 @@ void UFF_TargetShootingScreen::NativeDestruct()
 	{
 		Button_Close->OnClicked.RemoveAll(this);
 	}
+	if (Button_ResultClose)
+	{
+		Button_ResultClose->OnClicked.RemoveAll(this);
+	}
 
 	InitialFocusTarget = nullptr;
 	Runtime = nullptr;
@@ -762,9 +767,9 @@ UWidget* UFF_TargetShootingScreen::NativeGetDesiredFocusTarget() const
 	const bool bSessionFinished = bHasSnapshot
 		&& (DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Completed
 			|| DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Cancelled);
-	if (Button_Close && (bHasResult || bSessionFinished))
+	if (bHasResult || bSessionFinished)
 	{
-		return Button_Close;
+		return Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get();
 	}
 
 	// The screen itself is focusable (configured by UFF_MinigameScreenBase) and has
@@ -782,6 +787,7 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 
 	bBuiltNativeWidgetTree = true;
 	bUsingDesignerWidgetTree = false;
+	const FFMinigameUIStyle::FTheme Theme = FFMinigameUIStyle::GetTheme();
 
 	UOverlay* Root = WidgetTree->ConstructWidget<UOverlay>(
 		UOverlay::StaticClass(), TEXT("Root_NativeTargetShooting"));
@@ -837,10 +843,9 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		}
 		return false;
 	};
-	auto ConfigureCard = [](UBorder* Card, const FLinearColor& Color, const FMargin& InPadding)
+	auto ConfigureCard = [&Theme](UBorder* Card, const FLinearColor& Color, const FMargin& InPadding)
 	{
-		Card->SetBrushColor(Color);
-		Card->SetPadding(InPadding);
+		FFMinigameUIStyle::ApplyCard(*Card, Color, InPadding, Theme.Line);
 		Card->SetHorizontalAlignment(HAlign_Fill);
 		Card->SetVerticalAlignment(VAlign_Center);
 		Card->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -997,11 +1002,11 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	{
 		return false;
 	}
-	ConfigureCard(TitleCard, VisualStyle.HudPanelColor, FMargin(20.0f, 12.0f));
+	ConfigureCard(TitleCard, Theme.Header, FMargin(20.0f, 12.0f));
 	TitleEyebrow->SetText(LOCTEXT("TitleEyebrow", "BUSAN WATERFRONT FESTIVAL"));
-	StyleNativeText(TitleEyebrow, 10.0f, VisualStyle.HudAccentColor, TEXT("SemiBold"));
+	StyleNativeText(TitleEyebrow, 10.0f, Theme.AccentSoft, TEXT("SemiBold"));
 	TitleText->SetText(LOCTEXT("Title", "WATER BLAST"));
-	StyleNativeText(TitleText, 27.0f, VisualStyle.PrimaryTextColor);
+	StyleNativeText(TitleText, 27.0f, Theme.White);
 	TitleColumn->AddChildToVerticalBox(TitleEyebrow);
 	TitleColumn->AddChildToVerticalBox(TitleText);
 	TitleCard->SetContent(TitleColumn);
@@ -1045,31 +1050,31 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		return false;
 	}
 
-	ConfigureCard(TimerCard, VisualStyle.HudPanelColor, FMargin(18.0f, 6.0f));
-	ConfigureCard(ScoreCard, VisualStyle.HudPanelColor, FMargin(18.0f, 10.0f));
-	ConfigureCard(HitCard, VisualStyle.HudPanelMutedColor, FMargin(16.0f, 12.0f));
-	ConfigureCard(PerformanceCard, VisualStyle.HudPanelMutedColor, FMargin(16.0f, 12.0f));
-	ConfigureCard(StreakCard, VisualStyle.HudPanelColor, FMargin(18.0f, 8.0f));
+	ConfigureCard(TimerCard, FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f), FMargin(18.0f, 6.0f));
+	ConfigureCard(ScoreCard, FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f), FMargin(18.0f, 10.0f));
+	ConfigureCard(HitCard, FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f), FMargin(16.0f, 12.0f));
+	ConfigureCard(PerformanceCard, FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f), FMargin(16.0f, 12.0f));
+	ConfigureCard(StreakCard, FFMinigameUIStyle::WithOpacity(Theme.Surface, 0.96f), FMargin(18.0f, 8.0f));
 	Text_RemainingTime->SetText(LOCTEXT("NativeTimePlaceholder", "00:30"));
 	Text_RemainingTime->SetJustification(ETextJustify::Center);
-	StyleNativeText(Text_RemainingTime, 48.0f, VisualStyle.PrimaryTextColor);
+	StyleNativeText(Text_RemainingTime, 48.0f, Theme.Text);
 	Progress_Time->SetPercent(1.0f);
-	Progress_Time->SetFillColorAndOpacity(VisualStyle.HudAccentColor);
+	Progress_Time->SetFillColorAndOpacity(Theme.Header);
 	Progress_Time->SetVisibility(ESlateVisibility::HitTestInvisible);
 	TimerGaugeSize->SetHeightOverride(5.0f);
 	TimerGaugeSize->SetContent(Progress_Time);
 	Text_Score->SetText(LOCTEXT("NativeScorePlaceholder", "점수  000000"));
 	Text_Score->SetJustification(ETextJustify::Right);
-	StyleNativeText(Text_Score, 27.0f, VisualStyle.HudAmberColor);
+	StyleNativeText(Text_Score, 27.0f, Theme.Warning);
 	Text_HitCount->SetText(LOCTEXT("NativeHitsPlaceholder", "명중  0\n정확도  0%"));
 	Text_HitCount->SetAutoWrapText(true);
-	StyleNativeText(Text_HitCount, 16.0f, VisualStyle.PrimaryTextColor, TEXT("SemiBold"));
+	StyleNativeText(Text_HitCount, 16.0f, Theme.Text, TEXT("SemiBold"));
 	Text_MissCount->SetText(LOCTEXT("NativePerformancePlaceholder", "초당  0.0발\n반응  0ms\n빗나감  0"));
 	Text_MissCount->SetAutoWrapText(true);
-	StyleNativeText(Text_MissCount, 15.0f, VisualStyle.SecondaryTextColor, TEXT("SemiBold"));
+	StyleNativeText(Text_MissCount, 15.0f, Theme.TextMuted, TEXT("SemiBold"));
 	Text_Streak->SetText(LOCTEXT("NativeStreakPlaceholder", "연속 x0     최고 0"));
 	Text_Streak->SetJustification(ETextJustify::Center);
-	StyleNativeText(Text_Streak, 22.0f, VisualStyle.HudAccentColor);
+	StyleNativeText(Text_Streak, 22.0f, Theme.HeaderStrong);
 	if (UVerticalBoxSlot* TimerTextSlot = TimerColumn->AddChildToVerticalBox(Text_RemainingTime))
 	{
 		TimerTextSlot->SetHorizontalAlignment(HAlign_Fill);
@@ -1102,10 +1107,10 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	{
 		return false;
 	}
-	ConfigureCard(HintCard, VisualStyle.HudPanelMutedColor, FMargin(16.0f, 8.0f));
+	ConfigureCard(HintCard, FFMinigameUIStyle::WithOpacity(Theme.SurfaceSunken, 0.96f), FMargin(16.0f, 8.0f));
 	HintText->SetText(LOCTEXT("InputHint", "마우스로 총기 회전  ·  좌클릭 발사  ·  ESC 나가기"));
 	HintText->SetJustification(ETextJustify::Center);
-	StyleNativeText(HintText, 13.0f, VisualStyle.SecondaryTextColor, TEXT("SemiBold"));
+	StyleNativeText(HintText, 13.0f, Theme.TextMuted, TEXT("SemiBold"));
 	HintCard->SetContent(HintText);
 	if (!PlaceAnchored(HintCard, FAnchors(0.350f, 0.940f, 0.650f, 0.985f), 30))
 	{
@@ -1129,32 +1134,37 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 		UTextBlock::StaticClass(), TEXT("Text_ResultEyebrow"));
 	Text_Result = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(), TEXT("Text_Result"));
-	USizeBox* ResultCtaReserve = WidgetTree->ConstructWidget<USizeBox>(
-		USizeBox::StaticClass(), TEXT("Size_ResultCtaReserve"));
+	USizeBox* ResultCtaSize = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(), TEXT("Size_ResultCta"));
+	Button_ResultClose = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("Button_ResultClose"));
+	NativeResultCloseLabel = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("Text_ResultCloseLabel"));
 	if (!Panel_Result || !ResultStage || !ResultSize || !ResultFrame || !ResultSurface
-		|| !ResultColumn || !ResultEyebrow || !Text_Result || !ResultCtaReserve)
+		|| !ResultColumn || !ResultEyebrow || !Text_Result || !ResultCtaSize
+		|| !Button_ResultClose || !NativeResultCloseLabel)
 	{
 		return false;
 	}
 
-	Panel_Result->SetBrushColor(FLinearColor(0.002f, 0.010f, 0.024f, 0.88f));
+	Panel_Result->SetBrushColor(Theme.Scrim);
 	Panel_Result->SetPadding(FMargin(0.0f));
 	Panel_Result->SetContent(ResultStage);
-	ResultSize->SetWidthOverride(720.0f);
+	ResultSize->SetWidthOverride(820.0f);
 	ResultSize->SetHeightOverride(500.0f);
 	ResultSize->SetContent(ResultFrame);
-	ResultFrame->SetBrushColor(VisualStyle.HudAmberColor);
+	ResultFrame->SetBrushColor(Theme.LineStrong);
 	ResultFrame->SetPadding(FMargin(2.0f));
 	ResultFrame->SetContent(ResultSurface);
-	ResultSurface->SetBrushColor(VisualStyle.HudPanelColor);
-	ResultSurface->SetPadding(FMargin(48.0f, 40.0f));
+	FFMinigameUIStyle::ApplyCard(
+		*ResultSurface, Theme.Surface, FMargin(48.0f, 40.0f), Theme.LineStrong, 10.0f);
 	ResultSurface->SetContent(ResultColumn);
 	ResultEyebrow->SetText(LOCTEXT("ResultEyebrow", "WATER BLAST  //  플레이 결과"));
 	ResultEyebrow->SetJustification(ETextJustify::Center);
-	StyleNativeText(ResultEyebrow, 13.0f, VisualStyle.HudAccentColor, TEXT("SemiBold"));
+	StyleNativeText(ResultEyebrow, 13.0f, Theme.HeaderStrong, TEXT("SemiBold"));
 	Text_Result->SetJustification(ETextJustify::Center);
 	Text_Result->SetAutoWrapText(true);
-	StyleNativeText(Text_Result, 26.0f, VisualStyle.PrimaryTextColor);
+	StyleNativeText(Text_Result, 26.0f, Theme.Text);
 	if (UVerticalBoxSlot* EyebrowSlot = ResultColumn->AddChildToVerticalBox(ResultEyebrow))
 	{
 		EyebrowSlot->SetHorizontalAlignment(HAlign_Center);
@@ -1162,12 +1172,24 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 	}
 	if (UVerticalBoxSlot* ResultTextSlot = ResultColumn->AddChildToVerticalBox(Text_Result))
 	{
-		ResultTextSlot->SetHorizontalAlignment(HAlign_Center);
+		ResultTextSlot->SetHorizontalAlignment(HAlign_Fill);
 		ResultTextSlot->SetVerticalAlignment(VAlign_Center);
 		ResultTextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
-	ResultCtaReserve->SetHeightOverride(62.0f);
-	if (!ResultColumn->AddChildToVerticalBox(ResultCtaReserve))
+	ResultCtaSize->SetWidthOverride(260.0f);
+	ResultCtaSize->SetHeightOverride(54.0f);
+	NativeResultCloseLabel->SetText(LOCTEXT("NativeResultCloseButton", "확인  [ESC]"));
+	NativeResultCloseLabel->SetJustification(ETextJustify::Center);
+	StyleNativeText(NativeResultCloseLabel, 15.0f, Theme.White, TEXT("SemiBold"));
+	FFMinigameUIStyle::ApplyButton(*Button_ResultClose, Theme, true);
+	Button_ResultClose->SetContent(NativeResultCloseLabel);
+	ResultCtaSize->SetContent(Button_ResultClose);
+	if (UVerticalBoxSlot* ResultCtaSlot = ResultColumn->AddChildToVerticalBox(ResultCtaSize))
+	{
+		ResultCtaSlot->SetHorizontalAlignment(HAlign_Center);
+		ResultCtaSlot->SetPadding(FMargin(0.0f, 24.0f, 0.0f, 0.0f));
+	}
+	else
 	{
 		return false;
 	}
@@ -1197,13 +1219,9 @@ bool UFF_TargetShootingScreen::BuildNativeWidgetTree()
 
 	NativeCloseLabel->SetText(LOCTEXT("NativeClose", "나가기  [ESC]"));
 	NativeCloseLabel->SetJustification(ETextJustify::Center);
-	StyleNativeText(NativeCloseLabel, 13.0f, VisualStyle.PrimaryTextColor, TEXT("SemiBold"));
+	StyleNativeText(NativeCloseLabel, 13.0f, Theme.Text, TEXT("SemiBold"));
 	Button_Close->SetContent(NativeCloseLabel);
-	Button_Close->SetBackgroundColor(FLinearColor(
-		VisualStyle.HudPanelMutedColor.R,
-		VisualStyle.HudPanelMutedColor.G,
-		VisualStyle.HudPanelMutedColor.B,
-		1.0f));
+	FFMinigameUIStyle::ApplyButton(*Button_Close, Theme, false);
 	// UButton is focusable by default; keeping that default gives keyboard and
 	// gamepad users a deterministic close target without version-specific setters.
 	if (!PlaceAnchored(Button_Close, FAnchors(0.925f, 0.050f, 0.982f, 0.110f), 110))
@@ -1250,7 +1268,10 @@ void UFF_TargetShootingScreen::ResolveBindingsFromWidgetTree()
 	Panel_Result = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Panel_Result")));
 	Text_Result = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_Result")));
 	Button_Close = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_Close")));
+	Button_ResultClose = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_ResultClose")));
 	NativeCloseLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_CloseLabel")));
+	NativeResultCloseLabel = Cast<UTextBlock>(
+		WidgetTree->FindWidget(TEXT("Text_ResultCloseLabel")));
 }
 
 bool UFF_TargetShootingScreen::HasUsableDesignerBindings() const
@@ -1412,6 +1433,10 @@ void UFF_TargetShootingScreen::InitializeBindings()
 		bHasBasePlayAreaBrushColor = true;
 	}
 	Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	if (Button_ResultClose)
+	{
+		Button_ResultClose->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+	}
 	InitialFocusTarget = this;
 	bBindingsInitialized = true;
 }
@@ -1825,15 +1850,16 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 		&& (DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Completed
 			|| DisplayedSnapshot.Session.State == EFF_MinigameSessionState::Cancelled);
 	const bool bShowResult = bHasResult || bSessionFinished;
+	UButton* ResultActionButton = Button_ResultClose ? Button_ResultClose.Get() : Button_Close.Get();
 	Panel_Result->SetVisibility(bShowResult
 		? ESlateVisibility::SelfHitTestInvisible
 		: ESlateVisibility::Collapsed);
 	InitialFocusTarget = bShowResult
-		? static_cast<UWidget*>(Button_Close.Get())
+		? static_cast<UWidget*>(ResultActionButton)
 		: static_cast<UWidget*>(this);
-	if (bShowResult && !bResultFocusApplied && GetOwningLocalPlayer())
+	if (bShowResult && !bResultFocusApplied && GetOwningLocalPlayer() && ResultActionButton)
 	{
-		Button_Close->SetFocus();
+		ResultActionButton->SetFocus();
 		bResultFocusApplied = true;
 	}
 	else if (!bShowResult && bResultFocusApplied)
@@ -1864,9 +1890,10 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 		Text_Result->SetText(FText::Format(
 			LOCTEXT(
 				"ResultWithRewardFormat",
-				"{Grade}\n\n최종 점수  {Score}\n축제 골드  +{Reward}\n\n"
-				"정확도  {Accuracy}%     초당  {Tps}발     놓침  {Escaped}\n"
-				"평균 반응  {Reaction}ms     최고 연속  {Combo}"),
+				"{Grade}\n"
+				"최종 점수  {Score}  ·  축제 골드  +{Reward}\n"
+				"정확도  {Accuracy}%  ·  초당  {Tps}발  ·  놓침  {Escaped}\n"
+				"평균 반응  {Reaction}ms  ·  최고 연속  {Combo}"),
 			ResultArguments));
 	}
 	else if (bSessionFinished)
@@ -1887,41 +1914,28 @@ void UFF_TargetShootingScreen::RefreshPresentation()
 		Text_Result->SetText(FText::Format(
 			LOCTEXT(
 				"SnapshotResultFormat",
-				"{Title}\n\n최종 점수  {Score}\n\n"
-				"정확도  {Accuracy}%     초당  {Tps}발     놓침  {Escaped}\n"
-				"평균 반응  {Reaction}ms     최고 연속  {Combo}"),
+				"{Title}\n"
+				"최종 점수  {Score}\n"
+				"정확도  {Accuracy}%  ·  초당  {Tps}발  ·  놓침  {Escaped}\n"
+				"평균 반응  {Reaction}ms  ·  최고 연속  {Combo}"),
 			SnapshotArguments));
 	}
 
 	if (NativeCloseLabel)
 	{
-		NativeCloseLabel->SetText(bShowResult
-			? LOCTEXT("NativeResultClose", "확인  [ESC]")
-			: LOCTEXT("NativePlayingClose", "나가기  [ESC]"));
-		if (!bUsingDesignerWidgetTree)
-		{
-			NativeCloseLabel->SetColorAndOpacity(FSlateColor(bShowResult
-				? FLinearColor(0.008f, 0.028f, 0.045f, 1.0f)
-				: VisualStyle.PrimaryTextColor));
-		}
+		NativeCloseLabel->SetText(LOCTEXT("NativePlayingClose", "나가기  [ESC]"));
 	}
 	if (Button_Close)
 	{
-		if (!bUsingDesignerWidgetTree)
-		{
-			Button_Close->SetBackgroundColor(bShowResult
-				? VisualStyle.HudAmberColor
-				: FLinearColor(
-					VisualStyle.HudPanelMutedColor.R,
-					VisualStyle.HudPanelMutedColor.G,
-					VisualStyle.HudPanelMutedColor.B,
-					1.0f));
-		}
+		Button_Close->SetVisibility(
+			bShowResult && Button_ResultClose
+				? ESlateVisibility::Collapsed
+				: ESlateVisibility::Visible);
 		if (UCanvasPanelSlot* CloseSlot = Cast<UCanvasPanelSlot>(Button_Close->Slot))
 		{
-			// One contracted button serves both states: top-right abort while playing,
-			// then a prominent CTA visually inside the AAR card after completion.
-			CloseSlot->SetAnchors(bShowResult
+			// Legacy designer WBPs without the dedicated result button keep a safe
+			// fallback CTA. Current assets parent Button_ResultClose inside the card.
+			CloseSlot->SetAnchors(bShowResult && !Button_ResultClose
 				? FAnchors(0.435f, 0.665f, 0.565f, 0.720f)
 				: FAnchors(0.925f, 0.050f, 0.982f, 0.110f));
 			CloseSlot->SetOffsets(FMargin(0.0f));

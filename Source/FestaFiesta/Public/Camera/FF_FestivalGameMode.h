@@ -44,6 +44,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Finale")
 	TSoftObjectPtr<class UFF_FinaleShowData> FinaleShowDataOverride;
 
+	// 이 레벨에서 쓸 사운드 표.
+	//
+	// 비워두면 Project Settings 의 기본값을 쓴다. 분위기가 다른 레벨에서만 지정하면 된다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Audio")
+	TSoftObjectPtr<class UFF_AudioBankData> AudioBankOverride;
+
 	// 플레이어가 직접 조종할 방문객 캐릭터. 보통 BP_FestivalCharacter 를 넣는다.
 	//
 	// 레벨에 이미 배치돼 있으면 그것을 쓰고, 없으면 PlayerStart 에 스폰한다.

@@ -116,6 +116,28 @@ void UFF_RuntimeSettingsSubsystem::SetEdgeScrollEnabled(bool bEnabled)
 	NotifyChanged();
 }
 
+void UFF_RuntimeSettingsSubsystem::CommitSettings(
+	float NewMasterVolume,
+	bool bNewZoomToCursor,
+	bool bNewEdgeScrollEnabled)
+{
+	NewMasterVolume = FMath::Clamp(NewMasterVolume, 0.f, 1.f);
+	const bool bChanged =
+		!FMath::IsNearlyEqual(MasterVolume, NewMasterVolume) ||
+		bZoomToCursor != bNewZoomToCursor ||
+		bEdgeScrollEnabled != bNewEdgeScrollEnabled;
+	if (!bChanged)
+	{
+		return;
+	}
+
+	MasterVolume = NewMasterVolume;
+	bZoomToCursor = bNewZoomToCursor;
+	bEdgeScrollEnabled = bNewEdgeScrollEnabled;
+	ApplyAudioSettings();
+	NotifyChanged();
+}
+
 void UFF_RuntimeSettingsSubsystem::ResetToProjectDefaults()
 {
 	const UFF_RuntimeSettingsDefaults* Defaults = UFF_RuntimeSettingsDefaults::Get();

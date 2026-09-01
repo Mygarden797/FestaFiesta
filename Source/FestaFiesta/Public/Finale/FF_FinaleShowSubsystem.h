@@ -11,7 +11,9 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_FinaleShowSubsystem.generated.h"
 
+#if !UE_BUILD_SHIPPING
 struct IConsoleCommand;
+#endif
 
 class AFF_FinaleViewpoint;
 class AFF_FinaleLaunchSite;
@@ -108,6 +110,14 @@ public:
 	}
 
 private:
+	// 축제 단계 신호를 구독한다. 단계는 축제 진행 쪽이 소유하고 여기서는 읽기만 한다.
+	void BindFestivalStage();
+	void UnbindFestivalStage();
+
+	UFUNCTION()
+	void HandleFestivalStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+#if !UE_BUILD_SHIPPING
 	// ── 디버그 콘솔 ──────────────────────────────────────────────────────────
 	//
 	// 이펙트를 만들려면 계속 터뜨려 봐야 하는데, 그때마다 축제를 끝까지 진행할 수는 없다.
@@ -117,18 +127,16 @@ private:
 	// 해제를 반드시 하는 이유는 PIE 가 한 에디터 세션에서 여러 번 돌기 때문이다.
 	// 남겨두면 두 번째 PIE 에서 같은 이름 등록이 실패하고, 파괴된 this 를 가리키는
 	// 델리게이트가 콘솔에 남는다.
-	// 축제 단계 신호를 구독한다. 단계는 축제 진행 쪽이 소유하고 여기서는 읽기만 한다.
-	void BindFestivalStage();
-	void UnbindFestivalStage();
-
-	UFUNCTION()
-	void HandleFestivalStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
-
 	void RegisterDebugConsoleCommands();
 	void UnregisterDebugConsoleCommands();
 
 	// 문자열을 등급으로 바꾼다. "S" "a" "none" 전부 받는다.
 	static bool TryParseGrade(const FString& Token, EFF_FinaleGrade& OutGrade);
+
+	IConsoleCommand* PlayConsoleCommand = nullptr;
+	IConsoleCommand* StopConsoleCommand = nullptr;
+	IConsoleCommand* StatConsoleCommand = nullptr;
+#endif
 
 	// 이펙트에 우리가 넣으려는 User 파라미터가 실제로 있는지 확인하고, 없으면 알린다.
 	//
@@ -139,10 +147,6 @@ private:
 
 	// 이번 연출에서 이미 검사한 이펙트. 같은 것을 반복해서 검사하지 않는다.
 	mutable TWeakObjectPtr<const UNiagaraSystem> VerifiedEffect;
-
-	IConsoleCommand* PlayConsoleCommand = nullptr;
-	IConsoleCommand* StopConsoleCommand = nullptr;
-	IConsoleCommand* StatConsoleCommand = nullptr;
 
 	// 이번 등급의 수치를 결정한다. 데이터 애셋이 있으면 그것을, 없으면 기본값을 쓴다.
 	FFF_FinaleGradeSpec ResolveSpec(EFF_FinaleGrade Grade) const;

@@ -71,6 +71,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void SetEdgeScrollEnabled(bool bEnabled);
 
+	/**
+	 * 옵션 화면의 임시 값을 한 번에 확정한다.
+	 *
+	 * 행마다 setter를 호출하면 슬라이더를 움직이는 동안 ini를 계속 쓰게 된다. 명시적 저장 UX는
+	 * 이 함수로 세 값을 모아 적용하고, 실제 변경이 있을 때만 한 번 저장·방송한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
+	void CommitSettings(float NewMasterVolume, bool bNewZoomToCursor, bool bNewEdgeScrollEnabled);
+
 	/** 프로젝트 기본값으로 돌아가고 한 번만 저장·방송한다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Settings")
 	void ResetToProjectDefaults();

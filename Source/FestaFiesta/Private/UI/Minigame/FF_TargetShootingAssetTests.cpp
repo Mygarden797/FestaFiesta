@@ -76,6 +76,7 @@ namespace FFTargetShootingAssetTestHelpers
 			{ TEXT("Text_Streak"), UTextBlock::StaticClass() },
 			{ TEXT("Panel_Result"), UBorder::StaticClass() },
 			{ TEXT("Text_Result"), UTextBlock::StaticClass() },
+			{ TEXT("Button_ResultClose"), UButton::StaticClass() },
 			{ TEXT("Button_Close"), UButton::StaticClass() },
 		};
 		return Widgets;
@@ -296,6 +297,9 @@ bool FFF_TargetShootingWidgetAssetContractTest::RunTest(const FString& Parameter
 	const UCanvasPanel* PlayCanvas = Cast<UCanvasPanel>(Tree->FindWidget(TEXT("Canvas_PlayArea")));
 	const UBorder* Target = Cast<UBorder>(Tree->FindWidget(TEXT("Border_Target")));
 	const UImage* TargetImage = Cast<UImage>(Tree->FindWidget(TEXT("Image_Target")));
+	const UBorder* ResultPanel = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_Result")));
+	const UButton* ResultCloseButton = Cast<UButton>(
+		Tree->FindWidget(TEXT("Button_ResultClose")));
 	if (PlayArea && PlayCanvas && Target)
 	{
 		TestTrue(TEXT("Canvas_PlayArea는 Border_PlayArea의 직접 콘텐츠다"),
@@ -308,6 +312,16 @@ bool FFF_TargetShootingWidgetAssetContractTest::RunTest(const FString& Parameter
 			TargetImage
 			&& TargetImage->GetParent() == Target->GetContent()
 			&& Target->GetContent()->IsA(UOverlay::StaticClass()));
+	}
+	if (ResultPanel && ResultCloseButton)
+	{
+		const UWidget* ResultAncestor = ResultCloseButton;
+		while (ResultAncestor && ResultAncestor != ResultPanel)
+		{
+			ResultAncestor = ResultAncestor->GetParent();
+		}
+		TestTrue(TEXT("결과 닫기 버튼은 결과 모달 안에 있어 스크림 뒤로 가려지지 않는다"),
+			ResultAncestor == ResultPanel);
 	}
 	for (const FName PresentationWidgetName : {
 		FName(TEXT("Image_WaterBlaster")),

@@ -18,8 +18,6 @@ struct FUnitData;
  */
 namespace CrowdSteering
 {
-	inline constexpr float FacingSpeedThresholdUU = 5.f;
-
 	/** 한 스텝 이동에 필요한 설정값. Agent마다 달라지지 않는 값들만 모았다. */
 	struct FStepParams
 	{
@@ -29,7 +27,19 @@ namespace CrowdSteering
 
 		float BrakingDistanceUU = 450.f;
 
-		float MaxTurnRateDegrees = 360.f;
+		float MaxTurnRateDegrees = 180.f;
+
+		float FacingSmoothSeconds = 0.35f;
+
+		float FacingEnterSpeedUU = 40.f;
+
+		float FacingExitSpeedUU = 15.f;
+
+		float FacingDeadzoneDegrees = 4.f;
+
+		int32 StuckDetectSteps = 40;
+
+		int32 UnstuckHoldSteps = 30;
 
 		/**
 		 * 목적지 방향 진척이 이 속도(UU/s) 미만이면 막힌 것으로 보고 Unit.StuckSteps를 올린다.
