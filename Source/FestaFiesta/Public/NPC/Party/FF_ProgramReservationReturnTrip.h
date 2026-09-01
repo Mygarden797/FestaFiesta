@@ -7,18 +7,18 @@
 #include "FF_ProgramReservationReturnTrip.generated.h"
 
 /**
- * 예약 귀환 안전장치 1차 — v0 범위 밖. (지금 아무도 부르지 않는다.)
+ * 예약 귀환 안전장치. 아직 호출부가 0곳이다.
  *
- * ### 왜 별 파일로 빼놨나 (2026-08-11)
- * 규칙은 확정이고 계산도 테스트로 고정됐지만 **켤 수가 없다.** 
- * `CandidateWaitMinutes` 가 아직 0이라(Queue 어댑터 결선 전) 판정이 "줄이 없다"로 낙관적으로 기운다.
+ * 예약 손님을 억지로 끌고 가지 않는다. "시작까지 못 돌아올 후보를 뺀다" 가 전부이고,
+ * 시간이 흐를수록 갈 곳이 줄어 예약 시설로 저절로 수렴한다.
  *
  * ### 켤 때 할 일
- * 1. `EstimatedWaitMinutes` 가 실제 값이 되었는지 확인한다(그게 유일한 선행 조건이다)
- * 2. `BuildCandidates` 에서 예약 있는 Party 의 후보에 이 판정을 걸고
- *    `bCanReturnInTime == false` 인 후보를 제외한다
- * 3. 🔴 같은 커밋에 "통과 후보 0개 → 잠금" 분기를 넣는다. 안 넣으면 시작 직전에 후보가
- *    말라 `no_choice` 2회 → `Leave` 로 예약자가 퇴장하고 정원이 빈다 —
+ * 1. `CandidateWaitMinutes` 는 `FFF_QueueWaitAdapter::ApplyFromZoneBridge` 가 채운다
+ * 2. 예약 있는 Party 의 후보에 이 판정을 걸고 `bCanReturnInTime == false` 인 후보를 제외한다.
+ *    자리는 "어댑터 뒤 · `Choose()` 앞"이다. `BuildCandidates` 에서 걸면 대기시간이
+ *    아직 0 이라 판정이 "줄이 없다" 로 낙관적으로 기운다
+ * 3. "통과 후보 0개 → 예약 복귀 상태로 전환" 분기를 넣는다. 안 넣으면 시작 직전에 후보가
+ *    말라 `no_choice` 2회 → `Leave` 로 예약자가 퇴장하고 정원이 빈다
  *    (`reservation_program_spec.md` §3.5)
  */
 USTRUCT(BlueprintType)
@@ -38,7 +38,7 @@ struct FFF_ReturnTripInput
 	UPROPERTY(BlueprintReadWrite, Category = "Reservation")
 	float DistanceToCandidateMeters = 0.f;
 
-	// 후보 시설의 예상 대기시간(분). ⚠️ 어댑터 결선 전에는 항상 0 이다
+	// 후보 시설의 예상 대기시간(분). `Candidate.EstimatedWaitMinutes` 를 그대로 넣는다
 	UPROPERTY(BlueprintReadWrite, Category = "Reservation")
 	float CandidateWaitMinutes = 0.f;
 
@@ -64,7 +64,7 @@ struct FFF_ReturnTripInput
 	float ReturnBufferMinutes = 0.f;
 };
 
-/** 귀환 판정 결과. 통과·탈락하는 주어는 NPC 가 아니라 **후보 시설**이다. */
+// 귀환 판정 결과. 통과·탈락하는 주어는 NPC 가 아니라 후보 시설이다.
 USTRUCT(BlueprintType)
 struct FFF_ReturnTripVerdict
 {
@@ -95,7 +95,7 @@ struct FFF_ReturnTripVerdict
 	float AvailableMinutes = 0.f;
 };
 
-/** 귀환 판정 순수 함수. 파일 상단 주석 참조 — v0 에서는 호출하지 않는다. */
+// 귀환 판정 순수 함수. 켜는 순서는 파일 상단 주석 참조.
 class FFF_ProgramReservationReturnTrip
 {
 public:
@@ -103,9 +103,6 @@ public:
 	 *     필요 분 = (현재 → 후보 이동) + 대기 + 이용 + (후보 → 예약 시설 이동)
 	 *     가용 분 = (시작 시각 - 현재) - 귀환 여유
 	 *     남긴다  = 필요 분 <= 가용 분
-	 *
-	 * 강제 순간이동을 쓰지 않는 이유: 관찰 게임에서 NPC 가 사라졌다 나타나는 것은 눈에 보이는
-	 * 사고다. 늦으면 늦게 참여한다 — 프로그램에서 빼거나 정원을 다시 채우지 않는다.
 	 */
 	static FFF_ReturnTripVerdict Evaluate(
 		const FFF_ProgramReservation& Reservation,

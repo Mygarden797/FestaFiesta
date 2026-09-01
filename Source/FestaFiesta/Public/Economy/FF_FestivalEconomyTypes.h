@@ -186,6 +186,27 @@ enum class EFF_ProgramPurchaseResult : uint8
 	FacilityTypeMismatch UMETA(DisplayName = "이 시설에서는 열 수 없다")
 };
 
+// 홍보 등급. 1회 선택하고 3일 전체에 적용된다.
+// UI 쪽 `EFF_PromotionChoice` 와 값이 1:1 이다.
+UENUM(BlueprintType)
+enum class EFF_PromotionGrade : uint8
+{
+	None    = 0	UMETA(DisplayName = "안 함"),
+	Basic   = 1	UMETA(DisplayName = "기본"),
+	Focused = 2	UMETA(DisplayName = "집중")
+};
+
+// 홍보 구매 결과. 화면이 실패 사유를 그대로 쓴다.
+UENUM(BlueprintType)
+enum class EFF_PromotionPurchaseResult : uint8
+{
+	Success             UMETA(DisplayName = "구매 완료"),
+	FestivalNotStarted  UMETA(DisplayName = "축제가 시작되지 않았다"),
+	AlreadyPurchased    UMETA(DisplayName = "이미 구매했다"),
+	InvalidGrade        UMETA(DisplayName = "없는 등급이다"),
+	InsufficientGold    UMETA(DisplayName = "Gold 부족")
+};
+
 // 홍보 등급 1종의 비용과 효과. Promotion Stage 에서 한 번 선택하고 3일 전체에 적용된다.
 USTRUCT(BlueprintType)
 struct FFF_PromotionTier

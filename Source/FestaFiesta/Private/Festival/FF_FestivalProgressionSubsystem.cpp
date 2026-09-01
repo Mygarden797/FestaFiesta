@@ -6,6 +6,7 @@
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_FinaleRules.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
+#include "Economy/Rules/FF_PromotionRules.h"
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -117,6 +118,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
+	PurchasedPromotionGrade = EFF_PromotionGrade::None;
 	ScheduledPrograms.Reset();
 	if (ProgramReservations != nullptr)
 	{
@@ -398,6 +400,71 @@ EFF_FinalePurchaseResult UFF_FestivalProgressionSubsystem::TryPurchaseFinale(EFF
 
 	OnFinaleGradeChanged.Broadcast(PurchasedFinaleGrade);
 	return EFF_FinalePurchaseResult::Success;
+}
+
+EFF_PromotionPurchaseResult UFF_FestivalProgressionSubsystem::TryPurchasePromotion(
+	const EFF_PromotionGrade Grade)
+{
+	if (Definition == nullptr) return EFF_PromotionPurchaseResult::FestivalNotStarted;
+
+	FFF_PromotionTier Tier;
+	const EFF_PromotionPurchaseResult Result = FFF_PromotionRules::EvaluatePurchase(
+		Grade, PurchasedPromotionGrade, Funds.GetGold(),
+		Definition->PromotionBasic, Definition->PromotionFocused, Tier);
+
+	if (Result != EFF_PromotionPurchaseResult::Success)
+	{
+		UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 홍보 구매 거부: %s (요청 등급 %s, 잔액 %d)"),
+			*UEnum::GetValueAsString(Result), *UEnum::GetValueAsString(Grade), Funds.GetGold());
+		return Result;
+	}
+
+	const int32 PreviousExpectedVisitors = GetExpectedVisitors();
+
+	// 판정이 통과했으므로 차감이 실패할 수 없다. (이상 상황)
+	if (!ensureMsgf(TrySpend(Tier.CostGold, EFF_SpendReason::Promotion),
+		TEXT("홍보 비용 %d 차감이 판정 통과 후 실패했다. 잔액 %d"), Tier.CostGold, Funds.GetGold()))
+	{
+		return EFF_PromotionPurchaseResult::InsufficientGold;
+	}
+
+	PurchasedPromotionGrade = Grade;
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] 홍보 %s 구매. 비용 %d, 남은 Gold %d, 예상 방문객 %d -> %d"),
+		*UEnum::GetValueAsString(Grade), Tier.CostGold, Funds.GetGold(),
+		PreviousExpectedVisitors, GetExpectedVisitors());
+
+	OnPromotionGradeChanged.Broadcast(PurchasedPromotionGrade);
+	BroadcastExpectedVisitorsIfChanged(PreviousExpectedVisitors);
+	return EFF_PromotionPurchaseResult::Success;
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetExpectedVisitors() const
+{
+	// 축제 전에는 0 이 아니라 "모름"이다. 0 을 돌려주면 아무도 안 온다.
+	if (Definition == nullptr)
+	{
+		return INDEX_NONE;
+	}
+
+	const FFF_PromotionTier* Tier = FFF_PromotionRules::FindTier(
+		PurchasedPromotionGrade, Definition->PromotionBasic, Definition->PromotionFocused);
+
+	// 미구매면 배수 1.0 이다 — 티어가 없는 것이 곧 "홍보 안 함"이다.
+	const float Multiplier = Tier != nullptr ? Tier->VisitorMultiplier : 1.f;
+
+	return FFF_PromotionRules::CalcExpectedVisitors(Definition->BaseDailyVisitors, Multiplier);
+}
+
+void UFF_FestivalProgressionSubsystem::BroadcastExpectedVisitorsIfChanged(
+	const int32 PreviousExpectedVisitors)
+{
+	const int32 Current = GetExpectedVisitors();
+	if (Current != PreviousExpectedVisitors)
+	{
+		OnExpectedVisitorsChanged.Broadcast(Current);
+	}
 }
 
 TArray<FFF_ProgramCard> UFF_FestivalProgressionSubsystem::GetProgramCatalog() const

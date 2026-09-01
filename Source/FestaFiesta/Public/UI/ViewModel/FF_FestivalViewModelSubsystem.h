@@ -34,8 +34,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
  * 홍보 등급.
  *
  * 🔴 **이것은 임시 UI 쪽 enum 이다.** 경제 시스템에는 홍보 등급을 가리키는 타입이 없다 —
- * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이고
- * 구매 함수도 없다 (2026-08-27 확인, `EFF_SpendReason::Promotion` 호출부 0곳).
+ * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이다.
+ * 차감은 `RequestPurchasePromotion` 이 `TrySpend(.., Promotion)` 으로 하고 있다.
+ *
+ * 🔴 **다만 `VisitorMultiplier`(1.08·1.18) 를 소비하는 곳이 아직 0곳이다** — 사면 돈만 나가고
+ * 방문객은 안 늘어난다. 곱할 대상인 "오늘 예상 방문객"이 경제에 없기 때문이다.
  *
  * 김시리님이 `EFF_PromotionGrade` 와 구매 API 를 만들면 **이 enum 을 지우고 그것으로 바꾼다.**
  * 그때 고칠 곳은 이 파일과 홍보 패널뿐이다 — 위젯 트리는 그대로다.
@@ -909,11 +912,18 @@ private:
 	/**
 	 * 구매한 홍보 등급. **더미다** — 경제 시스템에 이 상태를 보관할 자리가 아직 없다.
 	 *
-	 * ⚠️ 저장에 안 들어가고 축제를 다시 시작해도 안 지워진다. 소유자 API 가 오면 이 필드를
-	 * 지우고 그쪽 값을 읽는다.
+	 * 소유자(`UFF_FestivalProgressionSubsystem::GetPurchasedPromotionGrade`)의 값을 미러링한다.
+	 * 축제 재시작도 그쪽이 지우고 `OnPromotionGradeChanged` 로 알려 온다.
 	 */
 	UPROPERTY()
 	EFF_PromotionChoice PurchasedPromotion = EFF_PromotionChoice::None;
+
+	// 소유자 enum ↔ 화면 enum. 값이 1:1 이라 표가 아니라 switch 로 둔다.
+	static EFF_PromotionGrade ToPromotionGrade(EFF_PromotionChoice Choice);
+	static EFF_PromotionChoice ToPromotionChoice(EFF_PromotionGrade Grade);
+
+	UFUNCTION()
+	void HandleOwnerPromotionGradeChanged(EFF_PromotionGrade NewGrade);
 
 	/** 중복 방송 차단용. Bind + Sync 와 실제 구매 방송이 같은 등급을 두 번 쏘지 않게 한다. */
 	UPROPERTY()
