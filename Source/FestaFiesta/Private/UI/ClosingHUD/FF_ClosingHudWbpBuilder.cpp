@@ -15,6 +15,7 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
+#include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -439,12 +440,17 @@ namespace FFClosingHudBuilder
 
 		UTextBlock* DayStage = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_DayStage"), true);
 		UTextBlock* Gold = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Gold"), true);
+		UTextBlock* Remaining = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Remaining"), true);
+
+		// 🔴 CTA 를 오른쪽에 **고정**하는 칸. 사유 문구가 접혀도 버튼이 왼쪽으로 딸려
+		//    오지 않게 한다 — 리포트 단계에서는 사유가 비어서 실제로 그랬다 (2026-09-02).
+		USpacer* Spacer = MakeWidget<USpacer>(Blueprint, Tree, TEXT("Spacer_CtaPush"));
 		UTextBlock* CtaReason = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CtaReason"), true);
 		UButton* Cta = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Cta"), true);
 		UTextBlock* CtaLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CtaLabel"), true);
 
 		if (!Root || !PanelHost || !BarBox || !BarRows || !MenuRow || !TabRow || !StatusRow
-			|| !StatusBox || !DayStage || !Gold || !CtaReason || !Cta || !CtaLabel)
+			|| !StatusBox || !DayStage || !Gold || !Remaining || !Spacer || !CtaReason || !Cta || !CtaLabel)
 		{
 			return false;
 		}
@@ -534,16 +540,32 @@ namespace FFClosingHudBuilder
 			Slot_Gold->SetVerticalAlignment(VAlign_Center);
 		}
 
+		// 남은 시간. 마감·리포트도 시간이 흘러 자동으로 넘어간다.
+		StyleText(*Remaining, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Remaining->SetText(LOCTEXT("ClosingPv_Remaining", "남은 42초"));
+		if (UHorizontalBoxSlot* Slot_Remaining = StatusBox->AddChildToHorizontalBox(Remaining))
+		{
+			Slot_Remaining->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Remaining->SetVerticalAlignment(VAlign_Center);
+			Slot_Remaining->SetPadding(FMargin(16.f, 0.f, 0.f, 0.f));
+		}
+
+		// 🔴 **빈 칸이 남는 공간을 먹는다.** 이 자리를 사유 문구가 맡으면, 사유가 없는
+		//    리포트 단계에서 문구가 접히면서 CTA 가 왼쪽으로 딸려 온다.
+		if (UHorizontalBoxSlot* Slot_Spacer = StatusBox->AddChildToHorizontalBox(Spacer))
+		{
+			Slot_Spacer->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+
 		// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011) 사유를 CTA 왼쪽에 둔다.
 		StyleText(*CtaReason, 12, Palette->InGame.InkMuted, TEXT("Medium"));
 		CtaReason->SetText(LOCTEXT("ClosingPv_CtaReason",
 			"결과를 먼저 확인하세요. 남은 마감 시간이 지나면 리포트로 넘어갑니다."));
 		if (UHorizontalBoxSlot* Slot_CtaReason = StatusBox->AddChildToHorizontalBox(CtaReason))
 		{
-			Slot_CtaReason->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_CtaReason->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			Slot_CtaReason->SetVerticalAlignment(VAlign_Center);
-			Slot_CtaReason->SetHorizontalAlignment(HAlign_Right);
-			Slot_CtaReason->SetPadding(FMargin(16.f, 0.f, 12.f, 0.f));
+			Slot_CtaReason->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
 		}
 
 		FButtonStyle CtaStyle = Cta->GetStyle();

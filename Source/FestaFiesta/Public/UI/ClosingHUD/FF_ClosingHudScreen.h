@@ -49,6 +49,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Closing")
 	EFF_ClosingCtaState GetCtaState() const { return CtaState; }
 
+	/**
+	 * 열려 있는 패널을 슬레이트 단위만큼 옮긴다. 패널이 자기 빈 곳을 끌 때 부른다.
+	 *
+	 * 🔴 **자리는 화면이 소유한다.** 패널이 자기 슬롯을 직접 만지면 탭을 닫았다 열 때
+	 * `ApplyPanelLayout` 이 덮어써서 옮긴 자리가 사라진다 (준비 단계와 같은 판단).
+	 */
+	void NudgePanelPosition(FVector2D SlateDelta);
+
+	bool IsPanelDragAllowed() const;
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeOnInitialized() override;
@@ -60,6 +70,9 @@ protected:
 
 	UFUNCTION()
 	void HandleGoldChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleRemainingSecondsChanged(int32 NewValue);
 
 	UFUNCTION()
 	void HandleFinaleGradeChanged(EFF_FinaleGrade NewGrade);
@@ -90,6 +103,16 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Status")
 	TObjectPtr<UTextBlock> Text_Gold;
+
+	/**
+	 * 이 단계가 끝나기까지 남은 시간.
+	 *
+	 * 🔴 마감·리포트도 **시간이 흐르고 자동으로 넘어간다.** 남은 시간을 안 보여 주면
+	 * `남은 마감 시간이 지나면 리포트로 넘어갑니다` 라는 안내가 언제까지인지 알 수 없는
+	 * 빈말이 된다 (2026-09-02).
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Status")
+	TObjectPtr<UTextBlock> Text_Remaining;
 
 	// === CTA ===
 
@@ -139,6 +162,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Closing|Layout")
 	float StatusRowHeight = 29.f;
 
+	/** 패널의 빈 곳을 끌어 자리를 옮길 수 있게 할지. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Closing|Layout")
+	bool bAllowPanelDrag = true;
+
 private:
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;
 
@@ -174,4 +201,7 @@ private:
 	FFF_ClosingTabSelection Selection;
 
 	EFF_ClosingCtaState CtaState = EFF_ClosingCtaState::Hidden;
+
+	/** 끌어서 옮긴 양. 탭을 닫았다 열어도 유지된다. */
+	FVector2D PanelOffset = FVector2D::ZeroVector;
 };

@@ -5,6 +5,8 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "UI/ClosingHUD/FF_ClosingHudScreen.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Framework/Application/SlateApplication.h"
 #include "UI/FF_UILog.h"
 
 // =============================================================================
@@ -74,6 +76,84 @@ void UFF_ClosingPanelBase::SetTextOrHide(UTextBlock* TextBlock, const FText& Val
 	TextBlock->SetVisibility(Value.IsEmpty()
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::SelfHitTestInvisible);
+}
+
+// =============================================================================
+// 끌어 옮기기 — 준비·라이브와 같은 구현이다
+// =============================================================================
+
+FReply UFF_ClosingPanelBase::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	const UFF_ClosingHudScreen* Screen = OwningScreen.Get();
+	if (!bAllowDragToMove || !Screen || !Screen->IsPanelDragAllowed()
+		|| InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
+	DragTracker.Press(InMouseEvent.GetScreenSpacePosition());
+
+	// 🔴 `CaptureMouse` 를 쓰지 않는다. 이 게임은 입력 모드가 `FInputModeGameOnly` 라
+	// 캡처하는 순간 뷰포트가 커서를 숨기고 가둔다 (`prep-hud-reference.md` 3절).
+	return FReply::Handled();
+}
+
+FReply UFF_ClosingPanelBase::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!DragTracker.IsPressed())
+	{
+		return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+	}
+
+	// 이동 자체는 `NativeTick` 이 처리한다 — 이벤트가 안 오는 구간이 있어서다.
+	return FReply::Handled();
+}
+
+FReply UFF_ClosingPanelBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (!DragTracker.IsPressed())
+	{
+		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+	}
+
+	DragTracker.Release();
+	return FReply::Handled();
+}
+
+void UFF_ClosingPanelBase::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	if (!DragTracker.IsPressed() || !FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	const FSlateApplication& Slate = FSlateApplication::Get();
+
+	// 🔴 캡처를 안 쓰므로 패널 밖에서 뗀 것을 못 받는다. 여기서 정리하지 않으면
+	// 손을 뗀 뒤에도 패널이 커서를 따라다닌다.
+	if (!Slate.GetPressedMouseButtons().Contains(EKeys::LeftMouseButton))
+	{
+		DragTracker.Release();
+		return;
+	}
+
+	const FVector2D PixelDelta = DragTracker.AddMove(Slate.GetCursorPos());
+	if (PixelDelta.IsNearlyZero())
+	{
+		return;
+	}
+
+	UFF_ClosingHudScreen* Screen = OwningScreen.Get();
+	if (!Screen)
+	{
+		return;
+	}
+
+	// 🔴 픽셀 → 슬레이트 단위. 이 나눗셈을 빼면 다른 해상도에서 어긋난다.
+	const float ViewportScale = UWidgetLayoutLibrary::GetViewportScale(this);
+	Screen->NudgePanelPosition(ViewportScale > 0.f ? PixelDelta / ViewportScale : PixelDelta);
 }
 
 // =============================================================================

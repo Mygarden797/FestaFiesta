@@ -280,6 +280,10 @@ void UFF_PrepHudBar::BindSources()
 		CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
 
+		// 🔴 초마다 온다 (`ApplyIntMetric` 이 값이 바뀔 때만 쏜다). CTA 사유에 적은
+		// 남은 시간이 실제로 줄어들려면 이 구독이 필요하다.
+		CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
+
 		// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이것까지 받아야 상태 행이 따라간다.
 		CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
@@ -317,6 +321,7 @@ void UFF_PrepHudBar::UnbindSources()
 		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
+		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
 		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
@@ -1011,8 +1016,23 @@ void UFF_PrepHudBar::RefreshCta()
 		break;
 
 	case EFF_PrepCtaState::BlockedStageLocked:
-		Reason = LOCTEXT("PrepCta_StageLocked", "아직 넘길 수 없는 단계입니다. 남은 준비 시간이 지나면 자동으로 진행됩니다.");
+	{
+		// 🔴 **남은 시간을 숫자로 적는다.** `남은 준비 시간이 지나면` 만 두면 언제까지인지
+		// 알 수 없어서 멈춘 것처럼 보인다 (2026-09-02 백종태 지적). 준비 단계도 시계가
+		// 흐르고 시간이 다 되면 자동으로 넘어간다.
+		const int32 RemainingSeconds = ViewModel
+			? FMath::CeilToInt(ViewModel->GetRemainingSeconds())
+			: 0;
+
+		Reason = (RemainingSeconds > 0)
+			? FText::Format(
+				LOCTEXT("PrepCta_StageLockedWithTime",
+					"아직 넘길 수 없는 단계입니다. {0}초 뒤 자동으로 진행됩니다."),
+				FText::AsNumber(RemainingSeconds))
+			: LOCTEXT("PrepCta_StageLocked",
+				"아직 넘길 수 없는 단계입니다. 남은 준비 시간이 지나면 자동으로 진행됩니다.");
 		break;
+	}
 
 	default:
 		break;
@@ -1157,6 +1177,12 @@ void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
 	}
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff, StaffText);
+}
+
+void UFF_PrepHudBar::HandleRemainingSecondsChanged(int32 NewValue)
+{
+	// CTA 사유에만 쓰인다. 다른 값은 각자 델리게이트로 갱신된다.
+	RefreshCta();
 }
 
 void UFF_PrepHudBar::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)

@@ -125,6 +125,7 @@ void UFF_ClosingHudScreen::BindViewModel()
 
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_ClosingHudScreen::HandleStageViewChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_ClosingHudScreen::HandleGoldChanged);
+	CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_ClosingHudScreen::HandleRemainingSecondsChanged);
 
 	// 피날레 등급이 바뀌면 **탭이 생기거나 사라진다.** 값만 바뀌는 것이 아니다.
 	CachedViewModel->OnPurchasedFinaleGradeChanged.AddUniqueDynamic(this, &UFF_ClosingHudScreen::HandleFinaleGradeChanged);
@@ -137,6 +138,7 @@ void UFF_ClosingHudScreen::UnbindViewModel()
 	{
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_ClosingHudScreen::HandleStageViewChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_ClosingHudScreen::HandleGoldChanged);
+		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_ClosingHudScreen::HandleRemainingSecondsChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_ClosingHudScreen::HandleFinaleGradeChanged);
 	}
 	CachedViewModel = nullptr;
@@ -153,6 +155,12 @@ void UFF_ClosingHudScreen::HandleStageViewChanged(EFF_FestivalStage NewStage, in
 
 void UFF_ClosingHudScreen::HandleGoldChanged(int32 NewValue)
 {
+	RefreshStatusRow();
+}
+
+void UFF_ClosingHudScreen::HandleRemainingSecondsChanged(int32 NewValue)
+{
+	// 초 단위로만 온다 (`ApplyIntMetric` 이 바뀔 때만 쏜다). 매 프레임이 아니다.
 	RefreshStatusRow();
 }
 
@@ -416,13 +424,31 @@ void UFF_ClosingHudScreen::ApplyPanelLayout()
 	CanvasSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
 	CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
 	CanvasSlot->SetOffsets(FMargin(
-		0.f, -StatusRowHeight,
+		static_cast<float>(PanelOffset.X),
+		-StatusRowHeight + static_cast<float>(PanelOffset.Y),
 		static_cast<float>(PanelSize.X), static_cast<float>(PanelSize.Y)));
 }
 
 // =============================================================================
 // 갱신
 // =============================================================================
+
+bool UFF_ClosingHudScreen::IsPanelDragAllowed() const
+{
+	return bAllowPanelDrag && Panel_PanelHost && Selection.bHasSelection;
+}
+
+void UFF_ClosingHudScreen::NudgePanelPosition(FVector2D SlateDelta)
+{
+	if (!IsPanelDragAllowed() || SlateDelta.IsNearlyZero())
+	{
+		return;
+	}
+
+	// 두 축 다 점 앵커라 `Offset` 의 X·Y 가 그대로 화면 이동량이 된다. 버릴 성분이 없다.
+	PanelOffset += SlateDelta;
+	ApplyPanelLayout();
+}
 
 void UFF_ClosingHudScreen::RefreshAll()
 {
@@ -468,6 +494,13 @@ void UFF_ClosingHudScreen::RefreshStatusRow()
 		FText::AsNumber(Day)));
 
 	SetTextOrHide(Text_Gold, FText::AsNumber(ViewModel->GetGold()));
+
+	// 🔴 마감·리포트도 시간이 흘러 자동으로 넘어간다. 남은 시간을 보여 주지 않으면
+	// CTA 사유의 `남은 마감 시간이 지나면` 이 언제까지인지 알 수 없는 빈말이 된다.
+	const int32 RemainingSeconds = FMath::CeilToInt(ViewModel->GetRemainingSeconds());
+	SetTextOrHide(Text_Remaining, (RemainingSeconds > 0)
+		? FText::Format(LOCTEXT("ClosingStatus_Remaining", "남은 {0}초"), FText::AsNumber(RemainingSeconds))
+		: FText::GetEmpty());
 }
 
 void UFF_ClosingHudScreen::RefreshCta()

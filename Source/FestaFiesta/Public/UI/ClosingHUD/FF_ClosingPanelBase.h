@@ -4,6 +4,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
+#include "UI/Atlas/FF_AtlasScreenGeo.h"
 #include "UI/ClosingHUD/FF_ClosingHudTypes.h"
 #include "FF_ClosingPanelBase.generated.h"
 
@@ -12,11 +13,15 @@ class UFF_ClosingHudScreen;
 class UTextBlock;
 
 /**
- * 결산 패널의 공통 껍데기. 제목·닫기·수명만 맡는다.
+ * 결산 패널의 공통 껍데기. 제목·닫기·수명·끌어 옮기기를 맡는다.
  *
- * === 준비·라이브 패널과 다른 점 ===
- * **끌어 옮기기가 없다.** 결산은 화면을 덮고 읽는 시간이고 그 뒤에 월드가 없다 —
- * 옮길 이유가 없으면 조작을 만들지 않는다.
+ * === 끌어 옮기기 (2026-09-02 추가) ===
+ * 처음에는 "결산은 읽기만 하니 옮길 이유가 없다" 고 뺐는데, 실기에서 **패널이 뒤의
+ * 결과 화면을 가려서** 옮기고 싶어졌다. 준비·라이브와 같은 구현이다.
+ *
+ * 🔴 함정은 `docs/memory/prep-hud-reference.md` 3절에 있다 — **캡처하지 않고**,
+ * 이동은 `NativeTick` 에서 커서를 직접 읽는다. 이 게임의 입력 모드에서는 마우스 이동
+ * 이벤트가 위젯까지 안 오는 구간이 있다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Closing Panel Base"))
 class FESTAFIESTA_API UFF_ClosingPanelBase : public UUserWidget
@@ -53,6 +58,17 @@ protected:
 	/** 값이 비면 칸째 접는다. 빈 줄을 남기면 고장난 것으로 보인다. */
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 
+	// --- 끌어 옮기기. 자세한 경위는 `prep-hud-reference.md` 3절 ---
+
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	/** 끌어 옮기기를 이 패널에서 허용할지. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Closing")
+	bool bAllowDragToMove = true;
+
 protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing")
 	TObjectPtr<UTextBlock> Text_PanelTitle;
@@ -65,6 +81,9 @@ protected:
 	TWeakObjectPtr<UFF_ClosingHudScreen> OwningScreen;
 
 	EFF_ClosingTab Tab = EFF_ClosingTab::Report;
+
+	/** 임계 판정과 이동량 누적. 준비·라이브와 같은 것을 쓴다. */
+	FFF_AtlasDragTracker DragTracker;
 };
 
 /**

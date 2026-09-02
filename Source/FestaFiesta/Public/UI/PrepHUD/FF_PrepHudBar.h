@@ -199,6 +199,10 @@ protected:
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
+	/** CTA 사유의 남은 시간을 초마다 갱신한다. */
+	UFUNCTION()
+	void HandleRemainingSecondsChanged(int32 NewValue);
+
 	UFUNCTION()
 	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
 
