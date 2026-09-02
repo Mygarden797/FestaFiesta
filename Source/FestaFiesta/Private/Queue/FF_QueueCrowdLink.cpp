@@ -105,6 +105,9 @@ void UFF_QueueCrowdLink::HandleSlotTargetsUpdated(int32 FacilityId, const TArray
 	{
 		return;
 	}
+	
+	TMap<int32, TArray<FVector>> ColumnsByParty;
+	TMap<int32, float> LaneYawByParty;
 
 	// 배정은 일행당 하나다. 멤버 배치는 Crowd 의 포메이션이 맡는다.
 	//
@@ -114,21 +117,27 @@ void UFF_QueueCrowdLink::HandleSlotTargetsUpdated(int32 FacilityId, const TArray
 	// 뒤처진 멤버가 일행에서 떨어져 나갔다.
 	for (const FFF_SlotAssignment& Assignment : Assignments)
 	{
-		// 인덱스는 캐시하지 않고 매번 새로 받는다. 슬롯이 재사용되므로 저장하면
-		// 시간이 지난 뒤 다른 사람을 가리킨다.
-		const TArray<int32> Members = Crowd->GetPartyMembers(Assignment.PartyId);
-		if (Members.Num() == 0)
+		TArray<FVector>& Column = ColumnsByParty.FindOrAdd(Assignment.PartyId);
+		if (Column.Num() <= Assignment.PartyMemberIndex)
 		{
-			// 가입한 일행이 통째로 사라졌다. 줄에는 아직 남아 있다는 뜻이라 관측해둔다.
-			++MemberCountMismatches;
-			continue;
+			Column.SetNum(Assignment.PartyMemberIndex + 1);
 		}
-
-		// 리더에게만 준다. Crowd 가 멤버 목적지를 어차피 리더로 돌리므로
-		// 여러 번 부르면 마지막 값만 남고 앞의 것은 버려진다.
-		Crowd->SetAgentDestination(Members[0], Assignment.TargetLocation);
-		++AppliedSlotTargets;
+		
+		Column[Assignment.PartyMemberIndex] = Assignment.TargetLocation;
+		if (Assignment.PartyMemberIndex == 0)
+		{
+			LaneYawByParty.Add(Assignment.PartyId, Assignment.TargetYaw);
+		}
+	}	
+		
+	for (const TPair<int32, TArray<FVector>>& It : ColumnsByParty)
+	{
+		if (!Crowd->SetPartyQueueColumn(It.Key, It.Value,LaneYawByParty.FindRef(It.Key)))
+		{
+			++MemberCountMismatches;
+		}
 	}
+	
 }
 
 void UFF_QueueCrowdLink::HandlePartyRejected(int32 FacilityId, int32 PartyId, EFF_QueueJoinResult Reason)
@@ -150,6 +159,8 @@ void UFF_QueueCrowdLink::HandlePartyRejected(int32 FacilityId, int32 PartyId, EF
 	{
 		return;
 	}
+	
+	Crowd->ClearPartyQueueColumn(PartyId);
 
 	Crowd->RequestDecision(Crowd->GetPartyLeader(Members[0]), EFF_DecisionReason::JoinRejected);
 	++DecisionRequests;
@@ -174,6 +185,7 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 		return;
 	}
 
+	Crowd->ClearPartyQueueColumn(PartyId);
 	// 서비스를 마쳤으면 퇴장 지점으로 보낸다. 퇴장 경로는 대기열 입구와 분리돼 있어서
 	// 나가는 사람과 들어오는 사람이 서로를 막지 않는다.
 	//

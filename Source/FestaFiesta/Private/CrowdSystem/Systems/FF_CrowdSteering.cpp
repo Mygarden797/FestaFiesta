@@ -123,13 +123,50 @@ namespace CrowdSteering
 			Unit.StuckSteps = 0;
 		}
 
-		if (Unit.Velocity.SizeSquared() > FMath::Square(FacingSpeedThresholdUU))
+		if (Params.StuckDetectSteps > 0 && Unit.StuckSteps >= Params.StuckDetectSteps)
 		{
-			const float TargetYaw = Unit.Velocity.Rotation().Yaw;
+			Unit.UnstuckHoldSteps = FMath::Max(0, Params.UnstuckHoldSteps);
+		}
+		else if (Unit.UnstuckHoldSteps > 0)
+		{
+			--Unit.UnstuckHoldSteps;
+		}
+
+		const float FacingAlpha = ComputeVelocityAlpha(Params.FacingSmoothSeconds, FixedDt);
+		Unit.FacingVelocity = FMath::Lerp(Unit.FacingVelocity, Unit.Velocity, FacingAlpha);
+		Unit.FacingVelocity.Z = 0.f;
+
+		const float FacingThresholdUU = Unit.bFacingFollowsVelocity
+			? Params.FacingExitSpeedUU
+			: Params.FacingEnterSpeedUU;
+
+		Unit.bFacingFollowsVelocity =
+			Unit.FacingVelocity.SizeSquared() > FMath::Square(FacingThresholdUU);
+
+		FVector FacingDirection = FVector::ZeroVector;
+		if (Unit.bFacingFollowsVelocity)
+		{
+			FacingDirection = Unit.FacingVelocity.GetSafeNormal2D();
+		}
+		else if (bWantsToMove)
+		{
+			FacingDirection = ToSteer.GetSafeNormal2D();
+		}
+		else if (Unit.bHasQueueSlot)
+		{
+			FacingDirection = FRotator(0.f, Unit.LaneYaw,0.f).Vector();
+		}
+
+		if (!FacingDirection.IsNearlyZero())
+		{
+			const float TargetYaw = FacingDirection.Rotation().Yaw;
 			const float DeltaYaw = FMath::FindDeltaAngleDegrees(Unit.Rotation.Yaw, TargetYaw);
 
-			const float MaxTurnThisStep = Params.MaxTurnRateDegrees * FixedDt;
-			Unit.Rotation.Yaw += FMath::Clamp(DeltaYaw, -MaxTurnThisStep, MaxTurnThisStep);
+			if (FMath::Abs(DeltaYaw) > Params.FacingDeadzoneDegrees)
+			{
+				const float MaxTurnThisStep = Params.MaxTurnRateDegrees * FixedDt;
+				Unit.Rotation.Yaw += FMath::Clamp(DeltaYaw, -MaxTurnThisStep, MaxTurnThisStep);
+			}
 		}
 	}
 

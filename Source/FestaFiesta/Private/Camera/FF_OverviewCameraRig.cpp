@@ -313,8 +313,18 @@ void FFF_OverviewCameraRig::ApplyGroundHeight(const float GroundZ, const float D
 	}
 	else
 	{
-		Target.FocusLocation.Z = FMath::FInterpTo(
-			Target.FocusLocation.Z, DesiredZ, DeltaSeconds, Settings.GroundFollowSpeed);
+		const double PreviousZ = Target.FocusLocation.Z;
+		double NextZ = FMath::FInterpTo(PreviousZ, DesiredZ, DeltaSeconds, Settings.GroundFollowSpeed);
+
+		// 보간만 쓰면 단차가 클수록 첫 프레임에 크게 튄다. 그게 방지턱처럼 느껴진다.
+		// 초당 이동량에 상한을 두면 단차 크기와 무관하게 일정한 속도로 올라간다.
+		if (Settings.GroundMaxClimbSpeed > 0.f)
+		{
+			const double MaxStep = Settings.GroundMaxClimbSpeed * DeltaSeconds;
+			NextZ = FMath::Clamp(NextZ, PreviousZ - MaxStep, PreviousZ + MaxStep);
+		}
+
+		Target.FocusLocation.Z = NextZ;
 	}
 
 	// 경계가 Z 를 제한하고 있으면 그쪽이 이긴다. 지형을 따라가더라도
