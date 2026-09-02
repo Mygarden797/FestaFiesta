@@ -532,6 +532,7 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 	StepParams.bDrivingForceInForce = bDriveByForce;
 
 	SampleQueueLiveness();
+	UpdateProgramReservationStates();
 
 	UpdatePathFollowing();
 
@@ -563,7 +564,8 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			{
 				Unit.ArrivalRadiusUU = Temp_ExitArrivalRadiusUU;
 			}
-			else if (RadiusState.QueuePhase != EFF_PartyQueuePhase::None)
+			else if (RadiusState.QueuePhase != EFF_PartyQueuePhase::None
+				|| RadiusState.ProgramPhase != EFF_PartyProgramPhase::None)
 			{
 				Unit.ArrivalRadiusUU = QueueSlotArrivalRadiusUU;
 			}
@@ -597,14 +599,16 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			}
 			else if (CrowdSteering::HasArrived(Unit, Unit.ArrivalRadiusUU))
 			{
-				if (!AdvancePartyQueueOnArrival(AgentIndex))
+				if (!HandleProgramArrival(AgentIndex)
+					&& !AdvancePartyQueueOnArrival(AgentIndex))
 				{
 					RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 				}
 			}
 			else if (DecisionStuckSteps > 0
 				&& Unit.StuckSteps >= DecisionStuckSteps
-				&& State.QueuePhase == EFF_PartyQueuePhase::None)
+				&& State.QueuePhase == EFF_PartyQueuePhase::None
+				&& State.ProgramPhase == EFF_PartyProgramPhase::None)
 			{
 				// ★ 큐 구간을 반드시 뺀다. 줄에 서 있으면 진척이 0인 것이 정상이고, 도착 반경도
 				// 슬롯 기준(작다)이라 슬롯에 닿기 전까지 조향이 계속 막힘으로 센다. 이 조건이
@@ -1485,6 +1489,31 @@ void UFF_CrowdSimulationSubsystem::RequestDecision(int32 LeaderAgentIndex, EFF_D
 		ClearPartyQueueState(LeaderAgentIndex, true);
 		return;
 	}
+	if (State.ProgramPhase == EFF_PartyProgramPhase::Waiting
+		|| State.ProgramPhase == EFF_PartyProgramPhase::Participating)
+	{
+		return;
+	}
+	if (State.ProgramPhase == EFF_PartyProgramPhase::Returning)
+	{
+		// 복귀 중 막힘·도착은 예약 상태 머신이 처리한다. Utility 재결정으로 새지 않는다.
+		if (UnitDatas.IsValidIndex(LeaderAgentIndex))
+		{
+			UnitDatas[LeaderAgentIndex].TargetLocation = State.ProgramWaitingLocation;
+		}
+		return;
+	}
+	float ProgramNow = 0.f;
+	if (TryGetProgramLiveMinutes(ProgramNow) && UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		const UGameInstance* GameInstance = GetWorld()->GetGameInstance();
+		const UFF_ProgramReservationSubsystem* Reservations = GameInstance
+			? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+		if (Reservations && Reservations->IsPartyLockedAt(UnitDatas[LeaderAgentIndex].PartyID, ProgramNow))
+		{
+			return; // 다음 예약 갱신이 복귀를 시작한다. 일반 Queue 상태를 먼저 지우지 않는다.
+		}
+	}
 
 	// MoveFailed 도 쿨다운을 탄다. 잼 안에서는 여러 파티가 동시에 임계를 채우므로, 안 걸면
 	// 막힌 무리 전체가 같은 초에 목적지를 갈아치우며 결정 큐를 채운다(churn).
@@ -1677,6 +1706,231 @@ void UFF_CrowdSimulationSubsystem::ClearPartyQueueState(int32 LeaderAgentIndex, 
 
 	State.QueuePhase = EFF_PartyQueuePhase::None;
 	State.QueuedFacilityId.Invalidate();
+}
+
+bool UFF_CrowdSimulationSubsystem::BeginProgramReturn(
+	const int32 LeaderAgentIndex,
+	const FFF_ProgramReservation& Reservation,
+	const FVector& FallbackLocation)
+{
+	if (!Reservation.IsValid()
+		|| !PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
+		|| !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+	FUnitData& Leader = UnitDatas[LeaderAgentIndex];
+	ClearPartyQueueState(LeaderAgentIndex, true);
+
+	int32 WaitingIndex = Reservation.AssignedGroupIds.IndexOfByKey(Leader.PartyID);
+	WaitingIndex = FMath::Max(WaitingIndex, 0);
+	FTransform WaitingTransform;
+	const UWorld* World = GetWorld();
+	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge =
+		World ? World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>() : nullptr;
+	const bool bHasWaitingSlot = Bridge && Bridge->TryGetProgramWaitingTransform(
+		Reservation.FacilityInstanceId, WaitingIndex, WaitingTransform);
+
+	State.ProgramPhase = EFF_PartyProgramPhase::Returning;
+	State.ProgramFacilityId = Reservation.FacilityInstanceId;
+	State.ProgramStartMinutes = Reservation.StartMinutes;
+	State.ProgramEndMinutes = Reservation.EndMinutes;
+	State.ProgramWaitingLocation = bHasWaitingSlot
+		? WaitingTransform.GetLocation()
+		: FallbackLocation;
+	State.CurrentDestinationId = FFF_ZoneSystemBridge::FacilityInstanceIdToDestinationId(
+		Reservation.FacilityInstanceId);
+	State.CurrentNeedRelief = FFF_NeedReliefFlags();
+	State.ConsecutiveNoChoiceCount = 0;
+	State.bNeedsDecision = false;
+	Leader.TargetLocation = State.ProgramWaitingLocation;
+	return true;
+}
+
+bool UFF_CrowdSimulationSubsystem::HandleProgramArrival(const int32 LeaderAgentIndex)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
+		|| !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+	if (State.ProgramPhase == EFF_PartyProgramPhase::None)
+	{
+		return false;
+	}
+	if (State.ProgramPhase == EFF_PartyProgramPhase::Returning)
+	{
+		float NowMinutes = 0.f;
+		if (!TryGetProgramLiveMinutes(NowMinutes))
+		{
+			return true;
+		}
+		State.ProgramPhase = NowMinutes >= State.ProgramStartMinutes
+			? EFF_PartyProgramPhase::Participating
+			: EFF_PartyProgramPhase::Waiting;
+		State.CurrentDestinationId = NAME_None;
+		State.CurrentNeedRelief = FFF_NeedReliefFlags();
+		UnitDatas[LeaderAgentIndex].TargetLocation = State.ProgramWaitingLocation;
+	}
+	return true;
+}
+
+void UFF_CrowdSimulationSubsystem::ReleaseProgramParty(const int32 LeaderAgentIndex)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
+		|| !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return;
+	}
+
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+	FUnitData& Leader = UnitDatas[LeaderAgentIndex];
+	if (State.ProgramPhase == EFF_PartyProgramPhase::None)
+	{
+		return;
+	}
+	if (PartyRemainingStayMinutes.IsValidIndex(LeaderAgentIndex))
+	{
+		PartyRemainingStayMinutes[LeaderAgentIndex] = FFF_ProgramReservationRules::ApplyExitGrace(
+			PartyRemainingStayMinutes[LeaderAgentIndex], ProgramExitGraceMinutes);
+	}
+
+	FVector ExitLocation = State.ProgramWaitingLocation;
+	if (UWorld* World = GetWorld())
+	{
+		if (const UFF_ZoneSystemQueueBridgeSubsystem* Bridge =
+			World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>())
+		{
+			if (const UFF_QueueSubsystem* Queue = World->GetSubsystem<UFF_QueueSubsystem>())
+			{
+				const int32 QueueFacilityId = Bridge->FindQueueFacilityId(State.ProgramFacilityId);
+				const FVector QueueExit = Queue->GetFacilityExitLocation(QueueFacilityId);
+				if (!QueueExit.IsNearlyZero())
+				{
+					ExitLocation = QueueExit;
+				}
+			}
+		}
+	}
+
+	State.ProgramPhase = EFF_PartyProgramPhase::None;
+	State.ProgramFacilityId.Invalidate();
+	State.ProgramStartMinutes = 0.f;
+	State.ProgramEndMinutes = 0.f;
+	State.ProgramWaitingLocation = FVector::ZeroVector;
+	State.CurrentDestinationId = NAME_None;
+	State.CurrentNeedRelief = FFF_NeedReliefFlags();
+	State.ConsecutiveNoChoiceCount = 0;
+	Leader.TargetLocation = ExitLocation;
+}
+
+bool UFF_CrowdSimulationSubsystem::TryGetProgramLiveMinutes(float& OutMinutes) const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	return Stage && Stage->TryGetLiveElapsedMinutes(OutMinutes);
+}
+
+bool UFF_CrowdSimulationSubsystem::TryBeginProgramReturnIfDue(
+	int32 LeaderIndex, const FFF_ProgramReservation& Reservation, const FVector& Approach, float NowMinutes)
+{
+	const FUnitData& Leader = UnitDatas[LeaderIndex];
+	const float TravelMinutes = Leader.Speed > KINDA_SMALL_NUMBER
+		? UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes(
+			FVector::Dist2D(Leader.Position, Approach) / Leader.Speed)
+		: 0.f;
+	return NowMinutes + TravelMinutes >= Reservation.StartMinutes - FMath::Max(ProgramReturnBufferMinutes, 0.f)
+		&& BeginProgramReturn(LeaderIndex, Reservation, Approach);
+}
+
+void UFF_CrowdSimulationSubsystem::UpdateProgramReservationStates()
+{
+	float NowMinutes = 0.f;
+	if (!TryGetProgramLiveMinutes(NowMinutes))
+	{
+		return; // 행사 종료의 전역 퇴장 경로는 예약이 가로막지 않는다.
+	}
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_ProgramReservationSubsystem* Reservations = GameInstance
+		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+	if (!Reservations)
+	{
+		return;
+	}
+
+	const UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	TOptional<FFFZSReadModel> ProgramReadModel;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex)
+			|| !UnitDatas[LeaderIndex].bIsActive
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex)
+		{
+			continue;
+		}
+
+		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		if (State.bIsLeaving)
+		{
+			continue;
+		}
+		if (State.ProgramPhase != EFF_PartyProgramPhase::None
+			&& NowMinutes >= State.ProgramEndMinutes)
+		{
+			ReleaseProgramParty(LeaderIndex);
+			continue;
+		}
+		if (State.ProgramPhase == EFF_PartyProgramPhase::Waiting
+			&& NowMinutes >= State.ProgramStartMinutes)
+		{
+			State.ProgramPhase = EFF_PartyProgramPhase::Participating;
+			continue;
+		}
+		if (State.ProgramPhase != EFF_PartyProgramPhase::None)
+		{
+			continue;
+		}
+
+		FFF_ProgramReservation Reservation;
+		if (!Reservations->FindActiveReservationForParty(
+			UnitDatas[LeaderIndex].PartyID, NowMinutes, Reservation))
+		{
+			continue;
+		}
+
+		FVector Approach = FVector::ZeroVector;
+		bool bHasApproach = false;
+		if (ZoneSystem)
+		{
+			if (!ProgramReadModel.IsSet())
+			{
+				ProgramReadModel = ZoneSystem->BuildReadModel();
+			}
+			if (const FFFZSFacilityReadModel* Facility = ProgramReadModel->Facilities.FindByPredicate(
+				[&Reservation](const FFFZSFacilityReadModel& Candidate)
+				{
+					return Candidate.FacilityInstanceId == Reservation.FacilityInstanceId;
+				}))
+			{
+				if (Facility->bHasApproachWorldTransform)
+				{
+					Approach = Facility->ApproachWorldTransform.GetLocation();
+					bHasApproach = true;
+				}
+			}
+		}
+		if (bHasApproach)
+		{
+			TryBeginProgramReturnIfDue(LeaderIndex, Reservation, Approach, NowMinutes);
+		}
+	}
 }
 
 bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentIndex)
@@ -2003,7 +2257,8 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 
 		State.bQueued = false;
 
-		if (!Unit.bIsActive || Unit.LeaderAgentIndex != LeaderIndex || !State.bNeedsDecision)
+		if (!Unit.bIsActive || Unit.LeaderAgentIndex != LeaderIndex || !State.bNeedsDecision
+			|| State.bIsLeaving || State.ProgramPhase != EFF_PartyProgramPhase::None)
 		{
 			continue;
 		}
@@ -2018,6 +2273,9 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 		Context.ArchetypeId = Unit.ArchetypeID;
 		Context.ConsecutiveNoChoiceCount = State.ConsecutiveNoChoiceCount;
 		Context.NowLiveMinutes = GetLiveMinutes();
+		const bool bHasProgramClock = TryGetProgramLiveMinutes(Context.NowLiveMinutes);
+		Context.WalkSpeedMetersPerSecond = Unit.Speed / 100.f;
+		Context.ProgramReturnBufferMinutes = FMath::Max(ProgramReturnBufferMinutes, 0.f);
 		Context.Needs = PartyAggregatedNeeds.IsValidIndex(LeaderIndex)
 			? PartyAggregatedNeeds[LeaderIndex]
 			: Unit.Needs;
@@ -2029,6 +2287,18 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 			Context.VisitHistory = PartyVisitHistories[LeaderIndex];
 		}
 		Context.RemainingStayMinutes = GetPartyRemainingStayMinutes(LeaderIndex);
+		if (UWorld* World = GetWorld())
+		{
+			if (UGameInstance* GameInstance = World->GetGameInstance())
+			{
+				if (const UFF_ProgramReservationSubsystem* Reservations =
+					GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>())
+				{
+					Context.bHasActiveReservation = bHasProgramClock && Reservations->FindActiveReservationForParty(
+						Context.PartyId, Context.NowLiveMinutes, Context.ActiveReservation);
+				}
+			}
+		}
 
 		// 이 배치 동안만 유효한 스냅샷을 빌려준다. 조정자가 보관하면 안 된다
 		Context.InTransitMemberCounts = &InTransitMemberCounts;
@@ -2043,6 +2313,23 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 		}
 		else if (Result.FallbackAction == EFF_PartyFallbackAction::Leave)
 		{
+			const UWorld* World = GetWorld();
+			const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+			const UFF_ProgramReservationSubsystem* Reservations = GameInstance
+				? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+			if (bHasProgramClock && Reservations && Reservations->IsPartyExitBlockedAt(
+				Context.PartyId, Context.NowLiveMinutes))
+			{
+				Unit.TargetLocation = PickWanderDestination(LeaderIndex);
+				State.CurrentDestinationId = NAME_None;
+				State.CurrentNeedRelief = FFF_NeedReliefFlags();
+				State.ConsecutiveNoChoiceCount = 0;
+				State.bNeedsDecision = false;
+				State.LastDecisionSimTime = SimTimeSeconds;
+				++Processed;
+				++DecisionsProcessed;
+				continue;
+			}
 			State.bIsLeaving = true;
 			State.LeaveStartedSimTime = SimTimeSeconds;
 			Unit.TargetLocation = Temp_ExitWorldLocation;
@@ -2070,7 +2357,7 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 		// CurrentDestinationId 와 항상 같이 세운다 — 갈리면 다른 시설의 Need 가 풀린다.
 		State.CurrentNeedRelief = bDecided ? Result.NeedRelief : FFF_NeedReliefFlags();
 
-		State.ConsecutiveNoChoiceCount = bDecided
+		State.ConsecutiveNoChoiceCount = (bDecided || Context.bHasActiveReservation)
 			? 0
 			: (Result.bCountAsNoChoice ? State.ConsecutiveNoChoiceCount + 1 : State.ConsecutiveNoChoiceCount);
 
@@ -2513,6 +2800,12 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			{
 				continue;
 			}
+			if (PartyDecisionStates.IsValidIndex(LeaderIndex)
+				&& PartyDecisionStates[LeaderIndex].ProgramPhase == EFF_PartyProgramPhase::Participating)
+			{
+				// 프로그램 중에도 Need는 위에서 계속 증가하지만 체류 예산만 멈춘다.
+				continue;
+			}
 			const FFF_StayConsumption Consumption = FFF_NeedRules::ConsumeStay(
 				PartyAggregatedNeeds[LeaderIndex], ElapsedMinutes, StayDrainMultiplierAtMaxNeed);
 			PartyRemainingStayMinutes[LeaderIndex] = FMath::Max(
@@ -2800,6 +3093,8 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		State.bIsLeaving = true;
 		State.LeaveStartedSimTime = SimTimeSeconds;
 		Unit.TargetLocation = Temp_ExitWorldLocation;
+		State.ProgramPhase = EFF_PartyProgramPhase::None;
+		State.ProgramFacilityId.Invalidate();
 		State.CurrentDestinationId = NAME_None;
 		State.bNeedsDecision = false;
 		State.LastDecisionSimTime = SimTimeSeconds;

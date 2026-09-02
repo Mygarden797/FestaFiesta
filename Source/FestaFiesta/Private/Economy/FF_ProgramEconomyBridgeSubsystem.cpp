@@ -3,7 +3,6 @@
 #include "Economy/FF_ProgramEconomyBridgeSubsystem.h"
 
 #include "Economy/FF_EconomyLog.h"
-#include "Economy/FF_FestivalClock.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -72,7 +71,7 @@ void UFF_ProgramEconomyBridgeSubsystem::HandleRemainingSecondsChanged(const int3
 	// 이 신호는 모든 단계에서 온다. 시각을 읽는 것은 창구 하나뿐이고, 그 창구가 Live 가
 	// 아닌 단계를 걸러 준다 — ElapsedLiveSeconds 는 Setup·Closing 에서도 누적되기 때문이다.
 	float NowMinutes = 0.f;
-	if (!FFF_FestivalClock::TryGetLiveElapsedMinutes(Stage, NowMinutes))
+	if (!Stage || !Stage->TryGetLiveElapsedMinutes(NowMinutes))
 	{
 		return;
 	}

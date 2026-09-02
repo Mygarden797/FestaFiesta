@@ -560,3 +560,18 @@ bool UFF_FestivalStageSubsystem::IsFinalDay() const
 {
 	return CurrentDay == 3;
 }
+
+bool UFF_FestivalStageSubsystem::TryGetLiveElapsedMinutes(float& OutMinutes) const
+{
+	if (!IsLiveStage()) return false;
+	OutMinutes = StageSecondsToFestivalMinutes(ElapsedLiveSeconds);
+	return true;
+}
+
+bool UFF_FestivalStageSubsystem::TryGetLiveDurationMinutes(float& OutMinutes)
+{
+	const float DurationSeconds = GetLiveDurationForCurrentDay();
+	if (DurationSeconds <= 0.f) return false;
+	OutMinutes = StageSecondsToFestivalMinutes(DurationSeconds);
+	return true;
+}

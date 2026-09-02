@@ -16,6 +16,9 @@
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
+#include "NPC/Party/FF_ProgramReservationReturnTrip.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -484,6 +487,11 @@ const TMap<FName, float>& UFF_CrowdDecisionSubsystem::GetPreferenceVector(FName 
 }
 EFF_PartyFallbackAction UFF_CrowdDecisionSubsystem::ResolveFallbackAction(const FFF_PartyDecisionContext& Context)
 {
+	// 예약 중 후보 부족·체류 예산 소진은 퇴장 사유가 아니다. 복귀 마감은 Simulation이 감시한다.
+	if (Context.bHasActiveReservation)
+	{
+		return EFF_PartyFallbackAction::Wander;
+	}
 	const float CurrentZoneDensityRatio = 0.f;
 	const float PersonalDensityThresholdRatio = 1.f;
 	const EFF_NoChoiceAction Action = FFF_UtilityDestinationSelector::ResolveNoChoiceAction(
@@ -560,8 +568,20 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
 		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull,
 		IsMainStageOpen());
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
+		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+	if (Reservations)
+	{
+		Candidates.RemoveAll([Reservations](const FFF_DestinationCandidate& Candidate)
+		{
+			FGuid FacilityId;
+			return FFF_ZoneSystemBridge::TryParseDestinationId(Candidate.DestinationId, FacilityId)
+				&& Reservations->IsProgramFacility(FacilityId); // 당일 프로그램이 편성된 시설이면 일반 목적지 후보에서 제거합니다.
+		});
+	}
 
-	if (Candidates.IsEmpty())
+	if (Candidates.IsEmpty() && !Context.bHasActiveReservation)
 	{
 		++Stats.NoCandidate;
 		return false;
@@ -635,6 +655,65 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 			}
 		}
 	}
+
+	// 예약 파티는 지금 들른 시설을 이용한 뒤에도 시작 전에 돌아올 수 있어야 한다.
+	// 일반 Queue의 실제 대기시간이 반영된 뒤 판정한다. 전부 탈락해도 마감 전에는 배회한다.
+	// 복귀 전환은 후보 유무와 무관하게 Simulation의 고정 스텝이 처리한다.
+	/*
+	 * [주의]
+	 * CandidateUseMinutes는 아직 채우지 않아 이용시간을 0으로 계산합니다.
+	 * 예약 시설까지의 복귀 거리는 직선거리입니다.
+	 */
+	if (Context.bHasActiveReservation)
+	{
+		const FFFZSFacilityReadModel* ProgramFacility = ReadModel.Facilities.FindByPredicate(
+			[&Context](const FFFZSFacilityReadModel& Facility)
+			{
+				return Facility.FacilityInstanceId == Context.ActiveReservation.FacilityInstanceId;
+			});
+
+		if (ProgramFacility && ProgramFacility->bHasApproachWorldTransform)
+		{
+			const FVector ProgramLocation = ProgramFacility->ApproachWorldTransform.GetLocation();
+			Candidates.RemoveAll([&](const FFF_DestinationCandidate& Candidate)
+			{
+				if (!Candidate.bIsOpen)
+				{
+					return true;
+				}
+				FGuid CandidateFacilityId;
+				if (!FFF_ZoneSystemBridge::TryParseDestinationId(
+					Candidate.DestinationId, CandidateFacilityId))
+				{
+					return false;
+				}
+				const FFFZSFacilityReadModel* CandidateFacility = ReadModel.Facilities.FindByPredicate(
+					[&CandidateFacilityId](const FFFZSFacilityReadModel& Facility)
+					{
+						return Facility.FacilityInstanceId == CandidateFacilityId;
+					});
+				if (!CandidateFacility || !CandidateFacility->bHasApproachWorldTransform)
+				{
+					return false;
+				}
+
+				FFF_ReturnTripInput Input;
+				Input.WalkSpeedMetersPerSecond = Context.WalkSpeedMetersPerSecond;
+				Input.ReturnBufferMinutes = Context.ProgramReturnBufferMinutes;
+				Input.MinutesPerTravelSecond = UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes(1.f);
+				Input.DistanceToCandidateMeters = Candidate.DistanceMeters;
+				// Queue 어댑터의 실제 분을 프로그램의 축제 분으로 환산한다.
+				Input.CandidateWaitMinutes = FFF_QueueWaitAdapter::ToQueueSeconds(Candidate.EstimatedWaitMinutes)
+					* UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes(1.f);
+				Input.CandidateToProgramMeters = FVector::Dist2D(
+					CandidateFacility->ApproachWorldTransform.GetLocation(), ProgramLocation) / 100.f;
+				const FFF_ReturnTripVerdict Verdict = FFF_ProgramReservationReturnTrip::Evaluate(
+					Context.ActiveReservation, Context.NowLiveMinutes, Input);
+				return Verdict.bWasEvaluated && !Verdict.bCanReturnInTime;
+			});
+
+		}
+	}
 	const TMap<FName, float>& PreferenceVector = bFullMode
 		? GetPreferenceVector(
 			Context.ArchetypeId,
@@ -657,7 +736,7 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	if (Decision.bIsNoChoice || Decision.ChosenDestinationId.IsNone())
 	{
 		++Stats.NoChoice;
-		OutResult.bCountAsNoChoice = true;
+		OutResult.bCountAsNoChoice = !Context.bHasActiveReservation;
 		FFF_PartyDecisionContext Bumped = Context;
 		Bumped.ConsecutiveNoChoiceCount = Context.ConsecutiveNoChoiceCount + 1;
 		OutResult.FallbackAction = ResolveFallbackAction(Bumped);
