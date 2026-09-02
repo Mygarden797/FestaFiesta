@@ -9,11 +9,13 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
+#include "UI/Data/FF_UIPalette.h"
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
@@ -968,6 +970,28 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 	if (Border_DayStage)
 	{
 		Border_DayStage->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	// --- 칩 앞의 점: 라이브에서만 불이 들어온다 ---
+	//
+	// 카메라 녹화등과 같은 뜻이다. 전에는 **항상 빨간색**이었는데, 그러면 마감에도 리포트에도
+	// 계속 켜져 있어서 아무 뜻도 없는 장식이 된다 (2026-09-03 백종태 요청).
+	//
+	// !! 이 점만으로 상태를 말하지 않는다 !! 바로 옆 글자가 이미 `1일차 · 마감` 이라고
+	// 적혀 있고, 점은 그 글자를 거드는 장식이다 (AT-011). 색을 못 봐도 잃는 정보가 없다.
+	//
+	// `IsLiveStage()` 를 그대로 쓴다 — 배속이 걸리는 단계와 같은 뜻이라 판정을 두 벌 두지 않는다.
+	if (Image_LiveDot)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (Palette)
+		{
+			const bool bOnAir = FFF_LiveHudRules::IsLiveStage(ViewModel->GetCurrentStage());
+
+			// 꺼진 등은 칩 바탕(`TealDeep`)보다 어두워야 눌린 것처럼 보인다.
+			Image_LiveDot->SetBrushTintColor(FSlateColor(
+				bOnAir ? Palette->InGame.Danger : Palette->InGame.Ink));
+		}
 	}
 
 	// --- 오른쪽: 시계. 배속 버튼 왼쪽에 온다 ---
