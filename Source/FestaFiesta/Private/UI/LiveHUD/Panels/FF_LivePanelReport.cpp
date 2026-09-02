@@ -27,7 +27,6 @@ void UFF_LivePanelReport::NativeOnPanelOpened()
 
 	// 🔴 열 때마다 0 으로 되돌린다. 닫았다 다시 열면 **다시 읽는 시간**이다 —
 	// 한 번 열어 두고 닫아 둔 것을 "읽었다" 로 치면 대기의 뜻이 사라진다.
-	TimeSinceOpened = 0.f;
 
 	BindViewModel();
 	RefreshAll();
@@ -71,6 +70,7 @@ void UFF_LivePanelReport::BindViewModel()
 	CachedViewModel->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnScoreSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnSafetyChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
+	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleStageViewChanged);
 }
 
 void UFF_LivePanelReport::UnbindViewModel()
@@ -85,28 +85,9 @@ void UFF_LivePanelReport::UnbindViewModel()
 		CachedViewModel->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnScoreSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnSafetyChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
+		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleStageViewChanged);
 	}
 	CachedViewModel = nullptr;
-}
-
-void UFF_LivePanelReport::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
-{
-	Super::NativeTick(MyGeometry, InDeltaTime);
-
-	// 접혀 있으면 세지 않는다. 패널은 캐시되어 살아 있다.
-	if (GetVisibility() == ESlateVisibility::Collapsed)
-	{
-		return;
-	}
-
-	// 이미 다 셌으면 매 틱 다시 그리지 않는다.
-	if (TimeSinceOpened >= ReadDelaySeconds)
-	{
-		return;
-	}
-
-	TimeSinceOpened += InDeltaTime;
-	RefreshAdvance();
 }
 
 void UFF_LivePanelReport::HandleAdvanceClicked()
@@ -130,11 +111,10 @@ void UFF_LivePanelReport::RefreshAdvance()
 	}
 
 	const EFF_LiveCtaState State = Screen->GetCtaState();
-	const float Remaining = FMath::Max(0.f, ReadDelaySeconds - TimeSinceOpened);
-	const bool bStillReading = Remaining > 0.f;
 
-	// 단계가 아직 아니거나 마지막 날이면 대기와 무관하게 못 누른다.
-	const bool bCanAdvance = (State != EFF_LiveCtaState::Hidden && State != EFF_LiveCtaState::BlockedNotReport) && !bStillReading;
+	// 넘길 수 있는 상태인지만 본다. 기다리게 하지 않는다.
+	const bool bCanAdvance =
+		(State != EFF_LiveCtaState::Hidden && State != EFF_LiveCtaState::BlockedNotReport);
 
 	SetTextOrHide(Text_AdvanceLabel, Screen->GetCtaLabelText());
 
@@ -142,7 +122,7 @@ void UFF_LivePanelReport::RefreshAdvance()
 	{
 		Button_Advance->SetIsEnabled(bCanAdvance);
 
-		// ★ 흐렸다가 또렷해진다. 못 누르는 상태가 **눈에 보여야** 기다리는 중인 줄 안다.
+		// ★ 못 누르는 상태가 **눈에 보여야** 한다. 흐려짐 + 아래 이유 문구 둘 다 쓴다.
 		Button_Advance->SetRenderOpacity(bCanAdvance ? 1.f : DimmedOpacity);
 
 		Button_Advance->SetVisibility(State == EFF_LiveCtaState::Hidden
@@ -151,16 +131,13 @@ void UFF_LivePanelReport::RefreshAdvance()
 	}
 
 	// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
-	//
-	// 대기 중에는 **남은 초를 센다.** `5 · 4 · 3 …` 이 줄어드는 것이 보여야
-	// 고장이 아니라 기다리는 중이라는 것을 안다.
-	const FText Reason = bStillReading
-		? FText::Format(
-			LOCTEXT("LiveReport_ReadDelay", "{0}초 뒤에 넘어갈 수 있습니다"),
-			FText::AsNumber(FMath::CeilToInt(Remaining)))
-		: Screen->GetCtaReasonText();
+	SetTextOrHide(Text_AdvanceReason, Screen->GetCtaReasonText());
+}
 
-	SetTextOrHide(Text_AdvanceReason, Reason);
+void UFF_LivePanelReport::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)
+{
+	// 값도 함께 바뀐다 (마감 정산이 들어온다). 전부 다시 읽는다.
+	RefreshAll();
 }
 
 void UFF_LivePanelReport::HandleIntMetricChanged(int32 NewValue)

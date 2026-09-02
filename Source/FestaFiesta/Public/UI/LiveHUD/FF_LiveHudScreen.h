@@ -89,6 +89,13 @@ protected:
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
+	/**
+	 * 메인 공연 잠금이 걸리거나 풀렸다. **단계 안에서** 바뀌므로 따로 받아야 한다.
+	 * 이걸 안 받으면 라이브 도중 시간만 1배속이 되고 버튼은 4배속이 눌린 채로 남는다.
+	 */
+	UFUNCTION()
+	void HandleTimeScaleLockChanged(bool bNewLocked);
+
 	UFUNCTION()
 	void HandleRemainingSecondsChanged(int32 NewValue);
 
@@ -390,8 +397,16 @@ public:
 	// `다음 날로` 가 둘이 된다 — 준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제다.
 	// 다만 피날레는 패널이 없는 단계라 그때만 바에 띄운다.
 
+	/**
+	 * 지금 넘길 수 있는 상태인지. **부를 때마다 다시 판정한다.**
+	 *
+	 * 🔴 캐시해 두면 안 된다. 리포트 패널이 이 값을 읽어 버튼을 그리는데, 단계가 바뀔 때
+	 * 화면과 패널 중 **누가 먼저 신호를 받는지 정해져 있지 않다.** 패널이 먼저 깨어나면
+	 * 한 단계 전의 값을 읽어 `다음 날로` 를 눌렀는데 아무 일도 안 일어나게 된다.
+	 * 판정 자체는 bool 세 개짜리 순수 함수라 매번 불러도 싸다.
+	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
-	EFF_LiveCtaState GetCtaState() const { return CtaState; }
+	EFF_LiveCtaState GetCtaState() const;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
 	FText GetCtaLabelText() const;
@@ -459,7 +474,7 @@ private:
 
 	FFF_LiveTabSelection Selection;
 
-	EFF_LiveCtaState CtaState = EFF_LiveCtaState::Hidden;
+	// 캐시하지 않는다 — `GetCtaState()` 주석 참고.
 
 	/** 소유자 API 가 없는 값. `Debug_SetPlaceholders` 로만 들어온다. */
 	int32 VisitorCount = INDEX_NONE;

@@ -145,6 +145,7 @@ void UFF_LiveHudScreen::BindViewModel()
 	}
 
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+	CachedViewModel->OnTimeScaleLockChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTimeScaleLockChanged);
 
 	// 피날레 등급이 바뀌면 **탭이 생기거나 사라진다.** 값만 바뀌는 것이 아니다.
 	CachedViewModel->OnPurchasedFinaleGradeChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleFinaleGradeChanged);
@@ -165,6 +166,7 @@ void UFF_LiveHudScreen::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+		CachedViewModel->OnTimeScaleLockChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTimeScaleLockChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleFinaleGradeChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
@@ -948,13 +950,19 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 	SetGroupTextOrHide(Box_VisitorCount, Text_VisitorCount,
 		(ShownVisitorCount >= 0) ? FText::AsNumber(ShownVisitorCount) : FText::GetEmpty());
 
-	// --- 가운데: `1일차 · 라이브` ---
+	// --- 가운데: `1일차 · 마감` ---
 	//
-	// 🔴 단계 이름을 `GetCurrentStageDisplayText()` 로 읽지 않는다. 그쪽은 `UMETA(DisplayName)`
-	// 을 런타임에 조회해서 패키징 빌드에 영문이 뜬다. 이 HUD 는 라이브에서만 뜨므로 박아도 된다.
+	// 🔴 단계 이름을 **박아 두면 안 된다.** 이 바가 라이브 전용이던 시절에는 `라이브` 를
+	// 박아 뒀는데, 2026-09-02 에 마감·리포트·피날레까지 이 바 하나로 합치면서 마감 화면에도
+	// `1일차 · 라이브` 가 그대로 떴다. 칩이 단계를 알려 주는 유일한 표시인데 그게 틀렸으니
+	// **화면이 거짓말을 한 셈이다** (2026-09-03 백종태 발견).
+	//
+	// `GetCurrentStageDisplayText()` 도 쓰지 않는다 — 그쪽은 `UMETA(DisplayName)` 을 런타임에
+	// 읽어서 패키징 빌드에 영문이 뜬다. UI 가 소유하는 표를 거친다.
 	SetTextOrHide(Text_DayStage, FText::Format(
-		LOCTEXT("LiveStatus_DayStage", "{0}일차 · 라이브"),
-		FText::AsNumber(ViewModel->GetCurrentDay())));
+		LOCTEXT("LiveStatus_DayStage", "{0}일차 · {1}"),
+		FText::AsNumber(ViewModel->GetCurrentDay()),
+		UFF_UIDisplayTextLibrary::GetFestivalStageText(ViewModel->GetCurrentStage())));
 
 	if (Border_DayStage)
 	{
@@ -1020,6 +1028,13 @@ void UFF_LiveHudScreen::RefreshSpeed()
 // 결과 이벤트
 // =============================================================================
 
+void UFF_LiveHudScreen::HandleTimeScaleLockChanged(bool bNewLocked)
+{
+	// 인자를 쓰지 않는다. 잠금 상태는 `IsTimeScaleLocked()` 를 다시 읽는 쪽이 정확하다 —
+	// 이 신호는 "지금 다시 읽어라" 는 뜻이다.
+	RefreshSpeed();
+}
+
 void UFF_LiveHudScreen::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)
 {
 	// 단계가 바뀌면 탭 가시성·배속 잠금이 함께 바뀐다. 전체를 다시 그린다.
@@ -1053,9 +1068,20 @@ void UFF_LiveHudScreen::HandleFinaleGradeChanged(EFF_FinaleGrade NewGrade)
 	RefreshTabs();
 }
 
+EFF_LiveCtaState UFF_LiveHudScreen::GetCtaState() const
+{
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
+
+	return FFF_LiveHudRules::ResolveCtaState(
+		Stage,
+		ViewModel && ViewModel->IsFinalDay(),
+		ViewModel && ViewModel->CanSkipCurrentStage());
+}
+
 FText UFF_LiveHudScreen::GetCtaLabelText() const
 {
-	switch (CtaState)
+	switch (GetCtaState())
 	{
 	// 피날레는 날짜를 넘기는 것이 아니라 연출을 건너뛰는 것이다.
 	case EFF_LiveCtaState::ReadyFinaleSkip:
@@ -1073,7 +1099,7 @@ FText UFF_LiveHudScreen::GetCtaLabelText() const
 FText UFF_LiveHudScreen::GetCtaReasonText() const
 {
 	// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
-	switch (CtaState)
+	switch (GetCtaState())
 	{
 	case EFF_LiveCtaState::BlockedNotReport:
 		return LOCTEXT("LiveCta_NotReport",
@@ -1101,12 +1127,39 @@ void UFF_LiveHudScreen::HandleCtaClicked()
 		return;
 	}
 
+	const EFF_LiveCtaState State = GetCtaState();
+
 	// 🔴 셋이 **서로 다른 함수**다. 하나로 묶으면 조용히 안 먹는다 —
 	// `AdvanceToNextDay()` 는 리포트 단계 밖에서, 그리고 마지막 날에 거절된다.
-	switch (CtaState)
+	switch (State)
 	{
 	case EFF_LiveCtaState::ReadyFinaleSkip:
 		ViewModel->RequestSkipCurrentStage();
+		return;
+
+	// 🔴 마감에서 눌렀으면 **두 걸음**이다. `AdvanceToNextDay()` 는 리포트 단계 밖에서
+	//    거절되므로, 마감을 먼저 건너뛰어 리포트로 보낸 다음 날짜를 넘긴다.
+	//    `RequestTransition` 이 동기라서 한 번의 클릭으로 둘 다 끝난다.
+	//
+	//    합쳐서 한 번에 부르지 않는 이유: 둘은 **서로 다른 요청**이고 앞의 것이 거절되면
+	//    (마감이 `bSkippable` 이 아니면) 뒤의 것도 조용히 무시되어야 한다. 그래서
+	//    성공을 가정하지 않고 단계를 다시 읽어 확인한다.
+	case EFF_LiveCtaState::ReadyNextDay:
+		if (ViewModel->GetCurrentStage() != EFF_FestivalStage::Report)
+		{
+			ViewModel->RequestSkipCurrentStage();
+
+			if (ViewModel->GetCurrentStage() != EFF_FestivalStage::Report)
+			{
+				// 저쪽이 거절했다. 조용히 넘어가지 않고 남긴다 — 눌러도 안 되는 버튼의 원인이다.
+				UE_LOG(LogFestaFiestaUI, Warning,
+					TEXT("[%s] 마감 건너뛰기가 거절됐다. DaySequence 의 마감 행 `bSkippable` 을 확인한다."),
+					*GetName());
+				return;
+			}
+		}
+
+		ViewModel->RequestAdvanceToNextDay();
 		return;
 
 	case EFF_LiveCtaState::ReadyFinishFestival:
@@ -1122,21 +1175,18 @@ void UFF_LiveHudScreen::HandleCtaClicked()
 		}
 		return;
 
+	// `Hidden`·`BlockedNotReport` 는 버튼이 없거나 꺼져 있는 상태다. 여기까지 왔다면
+	// 화면 상태와 버튼이 어긋난 것이므로 넘기지 않고 남긴다.
 	default:
-		ViewModel->RequestAdvanceToNextDay();
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 넘길 수 없는 상태(%d)에서 버튼이 눌렸다."), *GetName(), static_cast<int32>(State));
 		return;
 	}
 }
 
 void UFF_LiveHudScreen::RefreshCta()
 {
-	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
-
-	CtaState = FFF_LiveHudRules::ResolveCtaState(
-		Stage,
-		ViewModel && ViewModel->IsFinalDay(),
-		ViewModel && ViewModel->CanSkipCurrentStage());
+	const EFF_LiveCtaState CtaState = GetCtaState();
 
 	// 🔴 바의 버튼은 **피날레에서만** 띄운다. 마감·리포트에서는 리포트 패널 안에 같은
 	// 버튼이 있어서, 바에도 두면 화면에 `다음 날로` 가 둘이 된다.

@@ -153,12 +153,22 @@ EFF_LiveCtaState FFF_LiveHudRules::ResolveCtaState(
 		return EFF_LiveCtaState::ReadyFinishFestival;
 	}
 
-	// ④ 그 외에는 리포트 단계에서만 넘긴다. `AdvanceToNextDay()` 가 리포트 밖에서
-	//    무시되기 때문이다 — UI 가 판정을 다시 쓰는 것이 아니라 소유자 조건을 비춘다.
-	if (Stage != EFF_FestivalStage::Report)
+	// ④ 리포트 단계면 바로 넘긴다.
+	if (Stage == EFF_FestivalStage::Report)
 	{
-		return EFF_LiveCtaState::BlockedNotReport;
+		return EFF_LiveCtaState::ReadyNextDay;
 	}
 
-	return EFF_LiveCtaState::ReadyNextDay;
+	// ⑤ 🔴 마감에서도 **기다리게 하지 않는다** (2026-09-03 백종태 결정).
+	//
+	//    전에는 마감이면 무조건 `BlockedNotReport` 로 막고 `남은 마감 시간이 지나면
+	//    리포트로 넘어갑니다` 를 띄웠다. 그런데 마감에서 할 일은 결산을 읽는 것뿐이고,
+	//    다 읽었는지는 플레이어가 안다. 남은 시간을 세는 것은 기다림일 뿐이다.
+	//
+	//    `AdvanceToNextDay()` 가 리포트 밖에서 거절되는 것은 그대로다 — 그래서 화면이
+	//    마감을 먼저 건너뛴 뒤 넘긴다 (`UFF_LiveHudScreen::HandleCtaClicked`).
+	//    건너뛸 수 없는 마감이면 그 두 걸음의 **첫 걸음부터** 막히므로 버튼을 열지 않는다.
+	return bCanSkipStage
+		? EFF_LiveCtaState::ReadyNextDay
+		: EFF_LiveCtaState::BlockedNotReport;
 }

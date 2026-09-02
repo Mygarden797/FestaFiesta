@@ -180,4 +180,65 @@ bool FFF_LiveHudRules_SpeedLock::RunTest(const FString& Parameters)
 	return true;
 }
 
+// =============================================================================
+// 넘기는 버튼 — 단계·날짜·건너뛰기 가능 여부가 셋 다 걸린다
+// =============================================================================
+//
+// 🔴 손으로 밟기 가장 비싼 자리다. 3일차 마감을 보려면 **축제를 끝까지 세 번 플레이**해야
+// 하고, 거기서 틀리면 `게임이 안 끝난다` 는 형태로 터진다. 못으로 박는다.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_LiveHudRules_Cta, "FestaFiesta.UI.LiveHud.Cta", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_LiveHudRules_Cta::RunTest(const FString& Parameters)
+{
+	// --- 라이브 중에는 버튼이 없다. 시간이 알아서 흐른다 ---
+	TestEqual(TEXT("라이브에는 버튼이 없다"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Live, false, true),
+		EFF_LiveCtaState::Hidden);
+
+	// --- 마감에서도 바로 넘긴다 (2026-09-03) ---
+	//
+	// 전에는 무조건 `BlockedNotReport` 로 막고 남은 마감 시간을 기다리게 했다.
+	// 그 5초·수십 초 동안 플레이어가 할 수 있는 것이 아무것도 없었다.
+	TestEqual(TEXT("마감에서 바로 넘긴다"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Closing, false, /*Skippable*/ true),
+		EFF_LiveCtaState::ReadyNextDay);
+
+	// ★ 다만 **건너뛸 수 없는 마감**이면 열지 않는다. 화면은 마감을 먼저 건너뛴 뒤
+	//   날짜를 넘기므로, 첫 걸음이 막히면 버튼이 눌러도 안 되는 버튼이 된다.
+	TestEqual(TEXT("건너뛸 수 없는 마감이면 막는다"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Closing, false, /*Skippable*/ false),
+		EFF_LiveCtaState::BlockedNotReport);
+
+	TestEqual(TEXT("리포트는 건너뛰기와 무관하게 넘긴다"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Report, false, /*Skippable*/ false),
+		EFF_LiveCtaState::ReadyNextDay);
+
+	// --- 마지막 날은 `축제 마치기` 다 ---
+	//
+	// 🔴 이 판정이 건너뛰기 검사보다 **먼저** 와야 한다. 3일차에는 리포트 단계를 두지
+	// 않으므로, 순서가 뒤바뀌면 3일차 마감에서 버튼이 막히고 **게임이 안 끝난다.**
+	TestEqual(TEXT("마지막 날 마감은 축제 마치기"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Closing, /*FinalDay*/ true, /*Skippable*/ false),
+		EFF_LiveCtaState::ReadyFinishFestival);
+
+	// --- 피날레 연출은 **다른 행동**이다 ---
+	TestEqual(TEXT("피날레는 건너뛰기"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Finale, true, /*Skippable*/ true),
+		EFF_LiveCtaState::ReadyFinaleSkip);
+
+	// 못 넘기면 버튼째 숨긴다. `bSkippable` 이 꺼져 있으면 Stage 시스템이 무시하고
+	// 경고만 남기므로, 버튼을 두면 눌러도 안 되는 버튼이 된다.
+	TestEqual(TEXT("건너뛸 수 없는 피날레는 숨긴다"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Finale, true, /*Skippable*/ false),
+		EFF_LiveCtaState::Hidden);
+
+	// ★ 피날레는 마지막 날에만 나오지만, `bIsFinalDay` 로 축제 종료가 되면 안 된다 —
+	//   불꽃을 보다가 나라 지도로 튕긴다.
+	TestEqual(TEXT("피날레가 축제 종료로 새지 않는다"),
+		FFF_LiveHudRules::ResolveCtaState(EFF_FestivalStage::Finale, /*FinalDay*/ true, true),
+		EFF_LiveCtaState::ReadyFinaleSkip);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

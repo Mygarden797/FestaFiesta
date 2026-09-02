@@ -37,6 +37,8 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedStageSubsystem->OnStageChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 		CachedStageSubsystem->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 		CachedStageSubsystem->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+		CachedStageSubsystem->OnMainProgramStarted.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
+		CachedStageSubsystem->OnMainProgramEnded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramEnded);
 	}
 	CachedStageSubsystem = nullptr;
 
@@ -189,6 +191,10 @@ void UFF_FestivalViewModelSubsystem::TryBindStageSubsystem()
 	CachedStageSubsystem->OnStageChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 	CachedStageSubsystem->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 	CachedStageSubsystem->OnEnvironmentStateChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+
+	// 🔴 둘 다 받는다. 시작만 받으면 공연이 끝나도 화면은 계속 `잠김` 으로 남는다.
+	CachedStageSubsystem->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
+	CachedStageSubsystem->OnMainProgramEnded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramEnded);
 
 	OnStageViewChanged.Broadcast(GetCurrentStage(), GetCurrentDay());
 	BroadcastRemainingSecondsIfChanged(FMath::CeilToInt(GetRemainingSeconds()));
@@ -1020,6 +1026,17 @@ FText UFF_FestivalViewModelSubsystem::GetLiveClockTextAtMinutes(int32 LiveMinute
 
 	// 시각 표기는 숫자 서식이라 현지화 대상이 아니다. `GetLiveClockText()` 와 같은 이유로 감싼다.
 	return FText::FromString(StageSubsystem->GetLiveClockStringFromMinutes(LiveMinutes));
+}
+
+void UFF_FestivalViewModelSubsystem::HandleMainProgramStarted(FString EventLabel)
+{
+	// 라벨은 쓰지 않는다. 화면이 알아야 하는 것은 `지금 잠겼는가` 하나다.
+	OnTimeScaleLockChanged.Broadcast(true);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleMainProgramEnded(FString EventLabel)
+{
+	OnTimeScaleLockChanged.Broadcast(false);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)

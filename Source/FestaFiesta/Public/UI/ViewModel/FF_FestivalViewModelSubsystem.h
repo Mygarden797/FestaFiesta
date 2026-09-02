@@ -29,6 +29,7 @@ struct IConsoleCommand;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
@@ -810,6 +811,18 @@ public:
 	bool IsTimeScaleLocked() const;
 
 	/**
+	 * 배속 잠금이 걸리거나 풀렸다.
+	 *
+	 * === 🔴 이게 없으면 화면이 조용히 거짓말을 한다 ===
+	 * 잠금은 **단계 안에서** 바뀐다 — 라이브 도중 메인 공연이 시작되면 걸리고 끝나면 풀린다.
+	 * 그런데 화면은 단계가 바뀔 때만 다시 그렸다. 그래서 4배속을 눌러 둔 채 공연 구간에
+	 * 들어가면 시간만 1배속으로 느려지고 **버튼은 4배속이 눌린 채 이유도 안 뜬다.**
+	 * 2026-09-03 백종태가 실기에서 "왜 혼자 느려지지" 로 발견했다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Stage")
+	FFF_OnBoolViewChanged OnTimeScaleLockChanged;
+
+	/**
 	 * Live 중 게임 속 시각 문구 (예: `19:42`).
 	 *
 	 * Stage 시스템이 `FString`으로 주는 것을 `FText`로 감싸 돌려준다.
@@ -856,6 +869,13 @@ public:
 protected:
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	/** 소유자의 메인 공연 시작·종료를 잠금 변화 하나로 합쳐 중계한다. */
+	UFUNCTION()
+	void HandleMainProgramStarted(FString EventLabel);
+
+	UFUNCTION()
+	void HandleMainProgramEnded(FString EventLabel);
 
 	/**
 	 * Stage 시스템이 초 단위로 쏘는 값을 받아 위젯에 중계한다.

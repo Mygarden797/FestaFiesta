@@ -1463,7 +1463,7 @@ namespace FFLiveHudWbpBuilder
 		// --- 다음 날로. 결과를 읽는 자리 **바로 아래**에 둔다 ---
 		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_AdvanceReason"),
 			Palette->InGame.InkMuted, 12,
-			LOCTEXT("LiveReportPv_AdvanceReason", "5초 뒤에 넘어갈 수 있습니다"), 6.f);
+			LOCTEXT("LiveReportPv_AdvanceReason", "누르면 다음 날로 넘어갑니다"), 6.f);
 
 		UButton* Advance = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Advance"), true);
 		UTextBlock* AdvanceLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AdvanceLabel"), true);
@@ -1476,7 +1476,10 @@ namespace FFLiveHudWbpBuilder
 		AdvanceStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
 		AdvanceStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
 		AdvanceStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
-		AdvanceStyle.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		// 🔴 밝은 판을 쓰면 안 된다. 라벨이 흰 글씨라 꺼진 순간 **흰 바탕에 흰 글씨**가 되어
+		//    버튼이 통째로 사라진 것처럼 보였다 (2026-09-03 백종태 발견 — `다음 날로` 가
+		//    없다고 한 것이 사실은 안 보인 것이었다). 회색 판이면 흰 글씨가 읽힌다.
+		AdvanceStyle.Disabled = MakeSolidBrush(Palette->InGame.InkFaint, 4.f);
 		AdvanceStyle.NormalPadding = FMargin(18.f, 6.f);
 		AdvanceStyle.PressedPadding = FMargin(18.f, 6.f);
 		Advance->SetStyle(AdvanceStyle);

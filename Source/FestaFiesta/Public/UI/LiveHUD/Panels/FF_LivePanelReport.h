@@ -37,14 +37,18 @@ protected:
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
 
-	/** 읽는 시간을 세는 데 쓴다. 끌어 옮기기는 부모가 같은 곳에서 처리한다. */
-	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
-
 	UFUNCTION()
 	void HandleAdvanceClicked();
 
 	UFUNCTION()
 	void HandleIntMetricChanged(int32 NewValue);
+
+	/**
+	 * 단계가 바뀌면 버튼의 뜻이 바뀐다 — 마감에서 리포트로, 3일차면 `축제 마치기` 로.
+	 * 이걸 안 받으면 패널을 열어 둔 채 단계가 넘어갔을 때 **한 단계 전의 버튼**이 남는다.
+	 */
+	UFUNCTION()
+	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
 protected:
 	// --- 돈 ---
@@ -105,17 +109,12 @@ protected:
 	TObjectPtr<UTextBlock> Text_AdvanceReason;
 
 	/**
-	 * 패널을 연 뒤 이만큼 지나야 버튼이 열린다(초).
+	 * 못 누르는 상태일 때의 버튼 투명도.
 	 *
-	 * === 왜 기다리게 하나 ===
-	 * 결과를 안 읽고 바로 넘기는 것을 막는다. **다만 못 누르게만 하면 고장으로 보이므로**
-	 * 남은 초를 세어 보여 주고 버튼도 흐리게 두었다가 또렷해진다 — 기다리는 중이라는 것이
-	 * 눈에 보여야 한다.
+	 * 🔴 2026-09-03 에 **5초 대기를 걷어냈다.** 결과를 다 읽었는지는 플레이어가 안다 —
+	 * 억지로 세어 봐야 그 5초 동안 아무것도 안 하고 버튼만 보게 된다 (백종태 결정).
+	 * 이제 흐려지는 경우는 마감을 건너뛸 수 없을 때뿐이고, 그때는 이유가 함께 뜬다.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report", meta = (ClampMin = "0.0"))
-	float ReadDelaySeconds = 5.f;
-
-	/** 기다리는 동안의 버튼 투명도. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DimmedOpacity = 0.35f;
 
@@ -126,9 +125,6 @@ private:
 	void UnbindViewModel();
 	void RefreshAll();
 	void RefreshAdvance();
-
-	/** 패널을 연 뒤 흐른 시간. 열 때마다 0 으로 돌아간다. */
-	float TimeSinceOpened = 0.f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
