@@ -46,8 +46,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Closing")
 	FFF_ClosingTabSelection GetSelection() const { return Selection; }
 
+	/**
+	 * CTA 판정. **버튼은 리포트 패널이 그린다** (2026-09-02 백종태 결정).
+	 *
+	 * 하단 바에도 버튼을 두면 화면에 `다음 날로` 가 둘이 된다 — 준비 단계에서 `개장하기` 가
+	 * 둘이었던 것과 같은 문제다. 판정은 단계·마지막 날을 아는 화면이 소유하고,
+	 * 패널은 그 결과를 읽어 그린다.
+	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Closing")
 	EFF_ClosingCtaState GetCtaState() const { return CtaState; }
+
+	/** CTA 문구. 마지막 날에는 `축제 마치기` 다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Closing")
+	FText GetCtaLabelText() const;
+
+	/** 막힌 이유. 누를 수 있으면 비어 있다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Closing")
+	FText GetCtaReasonText() const;
+
+	/** 패널의 버튼이 눌렸을 때. 판정은 소유자가 한다 — 여기서 미리 막지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Closing")
+	void RequestAdvance();
 
 	/**
 	 * 열려 있는 패널을 슬레이트 단위만큼 옮긴다. 패널이 자기 빈 곳을 끌 때 부른다.

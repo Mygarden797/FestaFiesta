@@ -15,7 +15,6 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
-#include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -354,7 +353,42 @@ namespace FFClosingHudBuilder
 		AddNote(Blueprint, Tree, *Content, *Palette, TEXT("Text_MissingNote"),
 			Palette->InGame.InkFaint, 12,
 			LOCTEXT("ClosingReportPv_Missing",
-				"어느 시설이 만족도를 깎았는지는 아직 볼 수 없습니다. 원인 집계가 붙으면 여기에 들어갑니다."), 0.f);
+				"어느 시설이 만족도를 깎았는지는 아직 볼 수 없습니다. 원인 집계가 붙으면 여기에 들어갑니다."), 18.f);
+
+		// --- 다음 날로. 결과를 읽는 자리 **바로 아래**에 둔다 ---
+		AddNote(Blueprint, Tree, *Content, *Palette, TEXT("Text_AdvanceReason"),
+			Palette->InGame.InkMuted, 12,
+			LOCTEXT("ClosingReportPv_AdvanceReason", "5초 뒤에 넘어갈 수 있습니다"), 6.f);
+
+		UButton* Advance = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Advance"), true);
+		UTextBlock* AdvanceLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AdvanceLabel"), true);
+		if (!Advance || !AdvanceLabel)
+		{
+			return false;
+		}
+
+		FButtonStyle AdvanceStyle = Advance->GetStyle();
+		AdvanceStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
+		AdvanceStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		AdvanceStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		AdvanceStyle.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		AdvanceStyle.NormalPadding = FMargin(18.f, 6.f);
+		AdvanceStyle.PressedPadding = FMargin(18.f, 6.f);
+		Advance->SetStyle(AdvanceStyle);
+
+		StyleText(*AdvanceLabel, 14, Palette->InGame.Paper, TEXT("SemiBold"));
+		AdvanceLabel->SetText(LOCTEXT("ClosingReportPv_Advance", "다음 날로"));
+		if (UButtonSlot* Slot_AdvanceLabel = Cast<UButtonSlot>(Advance->AddChild(AdvanceLabel)))
+		{
+			Slot_AdvanceLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_AdvanceLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_AdvanceLabel->SetPadding(FMargin(0.f));
+		}
+		if (UVerticalBoxSlot* Slot_Advance = Content->AddChildToVerticalBox(Advance))
+		{
+			Slot_Advance->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Advance->SetHorizontalAlignment(HAlign_Left);
+		}
 
 		EndPanel(*Root, *Content);
 		return true;
@@ -436,21 +470,24 @@ namespace FFClosingHudBuilder
 		UBorder* MenuRow = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_MenuRow"), true);
 		UHorizontalBox* TabRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Tabs"));
 		UBorder* StatusRow = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_StatusRow"), true);
-		UHorizontalBox* StatusBox = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Status"));
+		// === 상태 행은 Overlay 다 ===
+		// `HorizontalBox` 에 나열하면 값이 없어 접히는 칸 때문에 가운데 칩이 좌우로 흔들리고,
+		// 오른쪽 것도 자리가 바뀐다. 라이브 바에서 같은 문제를 겪어 처음부터 겹쳐 둔다.
+		UOverlay* StatusOverlay = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Status"));
+		UHorizontalBox* StatusLeft = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_StatusLeft"));
+		UHorizontalBox* StatusRight = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_StatusRight"));
+		UBorder* DayStageChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_DayStage"), true);
 
 		UTextBlock* DayStage = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_DayStage"), true);
 		UTextBlock* Gold = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Gold"), true);
 		UTextBlock* Remaining = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Remaining"), true);
-
-		// 🔴 CTA 를 오른쪽에 **고정**하는 칸. 사유 문구가 접혀도 버튼이 왼쪽으로 딸려
-		//    오지 않게 한다 — 리포트 단계에서는 사유가 비어서 실제로 그랬다 (2026-09-02).
-		USpacer* Spacer = MakeWidget<USpacer>(Blueprint, Tree, TEXT("Spacer_CtaPush"));
 		UTextBlock* CtaReason = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CtaReason"), true);
 		UButton* Cta = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Cta"), true);
 		UTextBlock* CtaLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CtaLabel"), true);
 
 		if (!Root || !PanelHost || !BarBox || !BarRows || !MenuRow || !TabRow || !StatusRow
-			|| !StatusBox || !DayStage || !Gold || !Remaining || !Spacer || !CtaReason || !Cta || !CtaLabel)
+			|| !StatusOverlay || !StatusLeft || !StatusRight || !DayStageChip
+			|| !DayStage || !Gold || !Remaining || !CtaReason || !Cta || !CtaLabel)
 		{
 			return false;
 		}
@@ -517,57 +554,65 @@ namespace FFClosingHudBuilder
 			Slot_StatusRow->SetHorizontalAlignment(HAlign_Fill);
 			Slot_StatusRow->SetVerticalAlignment(VAlign_Fill);
 		}
-		if (UBorderSlot* Slot_StatusBox = Cast<UBorderSlot>(StatusRow->AddChild(StatusBox)))
+		if (UBorderSlot* Slot_StatusOverlay = Cast<UBorderSlot>(StatusRow->AddChild(StatusOverlay)))
 		{
-			Slot_StatusBox->SetHorizontalAlignment(HAlign_Fill);
-			Slot_StatusBox->SetVerticalAlignment(VAlign_Fill);
+			Slot_StatusOverlay->SetHorizontalAlignment(HAlign_Fill);
+			Slot_StatusOverlay->SetVerticalAlignment(VAlign_Fill);
 		}
 
-		StyleText(*DayStage, 13, Palette->InGame.Ink, TEXT("SemiBold"));
-		DayStage->SetText(LOCTEXT("ClosingPv_DayStage", "1일차 · 마감"));
-		if (UHorizontalBoxSlot* Slot_DayStage = StatusBox->AddChildToHorizontalBox(DayStage))
-		{
-			Slot_DayStage->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_DayStage->SetVerticalAlignment(VAlign_Center);
-			Slot_DayStage->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
-		}
-
+		// --- 왼쪽: 금화 ---
 		StyleText(*Gold, 13, Palette->InGame.Ink, TEXT("Medium"));
 		Gold->SetText(LOCTEXT("ClosingPv_Gold", "7,100"));
-		if (UHorizontalBoxSlot* Slot_Gold = StatusBox->AddChildToHorizontalBox(Gold))
+		StatusLeft->AddChildToHorizontalBox(Gold);
+		if (UOverlaySlot* Slot_Left = StatusOverlay->AddChildToOverlay(StatusLeft))
 		{
-			Slot_Gold->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Gold->SetVerticalAlignment(VAlign_Center);
+			Slot_Left->SetHorizontalAlignment(HAlign_Left);
+			Slot_Left->SetVerticalAlignment(VAlign_Center);
 		}
 
-		// 남은 시간. 마감·리포트도 시간이 흘러 자동으로 넘어간다.
-		StyleText(*Remaining, 13, Palette->InGame.InkMuted, TEXT("Medium"));
-		Remaining->SetText(LOCTEXT("ClosingPv_Remaining", "남은 42초"));
-		if (UHorizontalBoxSlot* Slot_Remaining = StatusBox->AddChildToHorizontalBox(Remaining))
+		// --- 가운데: `1일차 · 마감` 칩 ---
+		// 🔴 화면 정중앙에 **고정**한다. 왼쪽 줄에 끼워 두면 금화 자릿수가 바뀔 때마다
+		//    라벨이 좌우로 흔들리고, 실제로 왼쪽 끝에 붙어 보였다 (2026-09-02).
+		DayStageChip->SetBrush(MakeSolidBrush(Palette->InGame.Teal, 4.f));
+		DayStageChip->SetPadding(FMargin(10.f, 2.f));
+		StyleText(*DayStage, 13, Palette->InGame.Paper, TEXT("SemiBold"));
+		DayStage->SetText(LOCTEXT("ClosingPv_DayStage", "1일차 · 마감"));
+		DayStageChip->AddChild(DayStage);
+		if (UOverlaySlot* Slot_Chip = StatusOverlay->AddChildToOverlay(DayStageChip))
 		{
-			Slot_Remaining->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Remaining->SetVerticalAlignment(VAlign_Center);
-			Slot_Remaining->SetPadding(FMargin(16.f, 0.f, 0.f, 0.f));
+			Slot_Chip->SetHorizontalAlignment(HAlign_Center);
+			Slot_Chip->SetVerticalAlignment(VAlign_Center);
 		}
 
-		// 🔴 **빈 칸이 남는 공간을 먹는다.** 이 자리를 사유 문구가 맡으면, 사유가 없는
-		//    리포트 단계에서 문구가 접히면서 CTA 가 왼쪽으로 딸려 온다.
-		if (UHorizontalBoxSlot* Slot_Spacer = StatusBox->AddChildToHorizontalBox(Spacer))
-		{
-			Slot_Spacer->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		}
-
-		// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011) 사유를 CTA 왼쪽에 둔다.
+		// --- 오른쪽: 사유 + 남은 시간 ---
+		// 사유가 접혀도 남은 시간은 **오른쪽 끝에 그대로 있다** — 겹쳐 두었기 때문이다.
 		StyleText(*CtaReason, 12, Palette->InGame.InkMuted, TEXT("Medium"));
 		CtaReason->SetText(LOCTEXT("ClosingPv_CtaReason",
 			"결과를 먼저 확인하세요. 남은 마감 시간이 지나면 리포트로 넘어갑니다."));
-		if (UHorizontalBoxSlot* Slot_CtaReason = StatusBox->AddChildToHorizontalBox(CtaReason))
+		if (UHorizontalBoxSlot* Slot_CtaReason = StatusRight->AddChildToHorizontalBox(CtaReason))
 		{
 			Slot_CtaReason->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			Slot_CtaReason->SetVerticalAlignment(VAlign_Center);
-			Slot_CtaReason->SetPadding(FMargin(0.f, 0.f, 12.f, 0.f));
+			Slot_CtaReason->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
 		}
 
+		StyleText(*Remaining, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Remaining->SetText(LOCTEXT("ClosingPv_Remaining", "남은 42초"));
+		if (UHorizontalBoxSlot* Slot_Remaining = StatusRight->AddChildToHorizontalBox(Remaining))
+		{
+			Slot_Remaining->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Remaining->SetVerticalAlignment(VAlign_Center);
+		}
+
+		if (UOverlaySlot* Slot_Right = StatusOverlay->AddChildToOverlay(StatusRight))
+		{
+			Slot_Right->SetHorizontalAlignment(HAlign_Right);
+			Slot_Right->SetVerticalAlignment(VAlign_Center);
+		}
+
+		// 🔴 바의 CTA 버튼은 만들되 **상태 행에 붙이지 않는다.** 실제 버튼은 리포트 패널
+		//    안에 있다 (2026-09-02). `BindWidget` 대상이라 위젯 자체는 남겨 둔다 —
+		//    지우면 화면 클래스의 선택적 바인딩이 조용히 비어 디자이너에서 못 찾는다.
 		FButtonStyle CtaStyle = Cta->GetStyle();
 		CtaStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
 		CtaStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
@@ -585,11 +630,9 @@ namespace FFClosingHudBuilder
 			Slot_CtaLabel->SetVerticalAlignment(VAlign_Center);
 			Slot_CtaLabel->SetPadding(FMargin(0.f));
 		}
-		if (UHorizontalBoxSlot* Slot_Cta = StatusBox->AddChildToHorizontalBox(Cta))
-		{
-			Slot_Cta->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Cta->SetVerticalAlignment(VAlign_Center);
-		}
+		// 상태 행에 넣지 않는다. 위 주석 참고.
+		Cta->SetVisibility(ESlateVisibility::Collapsed);
+		StatusRight->AddChildToHorizontalBox(Cta);
 
 		return true;
 	}

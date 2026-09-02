@@ -512,19 +512,17 @@ void UFF_ClosingHudScreen::RefreshCta()
 
 	CtaState = FFF_ClosingHudRules::ResolveCtaState(Stage, bIsReport, bIsFinalDay);
 
+	// 🔴 **바의 CTA 버튼은 띄우지 않는다** (2026-09-02 백종태 결정).
+	// 리포트 패널 안에 같은 버튼이 있어서 화면에 `다음 날로` 가 둘이 된다 —
+	// 준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제다.
+	//
+	// 판정은 여기서 그대로 한다. 단계와 마지막 날 여부를 아는 것이 화면뿐이라
+	// 패널은 `GetCtaState()`·`GetCtaLabelText()` 로 이 결과를 읽어 간다.
 	if (Button_Cta)
 	{
-		Button_Cta->SetVisibility(CtaState == EFF_ClosingCtaState::Hidden
-			? ESlateVisibility::Collapsed
-			: ESlateVisibility::Visible);
-		Button_Cta->SetIsEnabled(CtaState == EFF_ClosingCtaState::Ready);
+		Button_Cta->SetVisibility(ESlateVisibility::Collapsed);
 	}
-
-	// 마지막 날에는 넘길 날이 없다. 문구도 달라야 한다 — `다음 날로` 를 띄워 놓고
-	// 못 누르게 하면 무엇이 잘못됐는지 알 수 없다.
-	SetTextOrHide(Text_CtaLabel, bIsFinalDay
-		? LOCTEXT("ClosingCta_Finish", "축제 마치기")
-		: LOCTEXT("ClosingCta_NextDay", "다음 날로"));
+	SetTextOrHide(Text_CtaLabel, FText::GetEmpty());
 
 	// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
 	FText Reason;
@@ -543,6 +541,38 @@ void UFF_ClosingHudScreen::RefreshCta()
 		break;
 	}
 	SetTextOrHide(Text_CtaReason, Reason);
+}
+
+FText UFF_ClosingHudScreen::GetCtaLabelText() const
+{
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+
+	// 마지막 날에는 넘길 날이 없다. `다음 날로` 를 띄워 놓고 못 누르게 하면
+	// 무엇이 잘못됐는지 알 수 없다.
+	return (ViewModel && ViewModel->IsFinalDay())
+		? LOCTEXT("ClosingCta_Finish", "축제 마치기")
+		: LOCTEXT("ClosingCta_NextDay", "다음 날로");
+}
+
+FText UFF_ClosingHudScreen::GetCtaReasonText() const
+{
+	switch (CtaState)
+	{
+	case EFF_ClosingCtaState::BlockedNotReport:
+		return LOCTEXT("ClosingCta_NotReport",
+			"결과를 먼저 확인하세요. 남은 마감 시간이 지나면 리포트로 넘어갑니다.");
+
+	case EFF_ClosingCtaState::BlockedFinalDay:
+		return LOCTEXT("ClosingCta_FinalDay", "마지막 날입니다. 넘어갈 다음 날이 없습니다.");
+
+	default:
+		return FText::GetEmpty();
+	}
+}
+
+void UFF_ClosingHudScreen::RequestAdvance()
+{
+	HandleCtaClicked();
 }
 
 void UFF_ClosingHudScreen::HandleCtaClicked()
