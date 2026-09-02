@@ -111,6 +111,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
 	void SetAgentDestination(int32 AgentIndex, FVector Destination);
+	
+	//시설 큐에 설정한다.
+	bool SetPartyQueueColumn(int32 PartyID, const TArray<FVector>& Locations, float InLaneYaw);
+	
+	//시설 큐에서 제거한다.
+	bool ClearPartyQueueColumn(int32 PartyID);
 
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	int32 GetActiveAgentCount() const { return ActiveAgentCount; }

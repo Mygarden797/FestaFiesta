@@ -80,6 +80,12 @@ public:
 	const FFF_OverviewCameraState& GetTargetState() const { return Target; }
 	const FFF_OverviewCameraSettings& GetSettings() const { return Settings; }
 
+	// 설정을 갈아끼운다. 초점과 줌 상태는 그대로 두고 규칙만 바꾼다.
+	//
+	// Zone 경계처럼 레벨이 뜬 뒤에야 알 수 있는 값을 넣을 때 쓴다.
+	// Initialize 를 다시 부르면 구도가 초기화되어 화면이 튄다.
+	void UpdateSettings(const FFF_OverviewCameraSettings& InSettings);
+
 	// ArmLength 를 0(가장 가까움)~1(가장 멂) 로 정규화한 값.
 	float GetNormalizedZoom() const;
 

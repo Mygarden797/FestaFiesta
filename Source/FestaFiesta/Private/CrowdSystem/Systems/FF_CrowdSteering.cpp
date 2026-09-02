@@ -152,6 +152,10 @@ namespace CrowdSteering
 		{
 			FacingDirection = ToSteer.GetSafeNormal2D();
 		}
+		else if (Unit.bHasQueueSlot)
+		{
+			FacingDirection = FRotator(0.f, Unit.LaneYaw,0.f).Vector();
+		}
 
 		if (!FacingDirection.IsNearlyZero())
 		{

@@ -32,6 +32,15 @@ namespace
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
+
+	// 멤버 추격을 푸는 거리 = PartyCohesionRadiusUU * 이 값. 켜는 임계보다 작아야 히스테리시스다.
+	constexpr float PartyCatchUpReleaseRatio = 0.6f;
+
+	// 대형 안에 있는 멤버가 리더 속도 대비 낼 수 있는 최대 배율. 1.0이면 자리를 영영 못 메운다.
+	constexpr float PartyFormationSpeedHeadroom = 1.25f;
+
+	// 이 속도 이하의 리더는 서 있는 것으로 본다, UU/s. 잼에서의 미세 진동을 걷는 것으로 세지 않는다.
+	constexpr float PartyLeaderStoppedSpeedUU = 5.f;
 }
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -404,6 +413,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			const float MemberBoost2 = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedMultiplier,1.f);
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
 			Unit.MaxSpeed = Unit.Speed * MemberBoost2;
+			Unit.CruiseSpeed = Unit.Speed;
 
 			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
 			{
@@ -1678,8 +1688,10 @@ void UFF_CrowdSimulationSubsystem::ClearPartyQueueState(int32 LeaderAgentIndex, 
 	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
 	if (State.QueuePhase == EFF_PartyQueuePhase::None)
 	{
+		ClearPartyQueueColumn(GetAgentPartyID(LeaderAgentIndex));
 		return;
 	}
+	
 
 	if (bLeaveQueue && State.QueuedFacilityId.IsValid())
 	{
@@ -2386,19 +2398,50 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		DespawnParty(Unit.PartyID);
 		return false;
 	}
+	
+	if (Unit.bHasQueueSlot)
+	{
+		Unit.TargetLocation = Unit.QueueSlotLocation;
+		const double DistSq = FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation);
+		Unit.Speed = (DistSq <= FMath::Square(QueueSlotArrivalRadiusUU)) ? 0.f : Unit.CruiseSpeed;
+		
+		return true;
+	}
+	
 
+	// 리더가 서면 멤버도 서야 추월-복귀 왕복이 끊긴다. 속도를 리더 실측 속도에 묶는 이유다
 	const FUnitData& Leader = UnitDatas[LeaderIndex];
 	const FVector Offset = GetPartyFormationOffset(Unit.PartySlotIndex);
 
-	if (FVector::DistSquared2D(Unit.Position, Leader.Position) > FMath::Square(PartyCohesionRadiusUU))
+	const float LeaderSpeedUU = static_cast<float>(Leader.Velocity.Size2D());
+	const bool bLeaderStopped = LeaderSpeedUU <= PartyLeaderStoppedSpeedUU;
+
+	Unit.TargetLocation = Leader.GetSteerTarget() + Offset;
+
+	const float CatchUpRadius = FMath::Max(PartyCohesionRadiusUU, 1.f);
+	const float ReleaseRadius = CatchUpRadius * PartyCatchUpReleaseRatio;
+
+	const double DistToSlotSq = FVector::DistSquared2D(Unit.Position, Leader.Position + Offset);
+
+	Unit.bCatchingUpToLeader = Unit.bCatchingUpToLeader
+		? (DistToSlotSq > FMath::Square(ReleaseRadius))
+		: (DistToSlotSq > FMath::Square(CatchUpRadius));
+
+	if (Unit.bCatchingUpToLeader)
 	{
-		Unit.TargetLocation = Leader.Position + Offset;
-		Unit.Speed = Unit.MaxSpeed; 
+		Unit.Speed = Unit.MaxSpeed;
+
+		if (bLeaderStopped)
+		{
+			Unit.TargetLocation = Leader.Position + Offset;
+		}
+
+		return true;
 	}
-	else
-	{
-		Unit.TargetLocation = Leader.GetSteerTarget() + Offset;
-	}
+
+	Unit.Speed = bLeaderStopped
+		? 0.f
+		: FMath::Min(Unit.CruiseSpeed, LeaderSpeedUU * PartyFormationSpeedHeadroom);
 
 	return true;
 }
@@ -2493,8 +2536,59 @@ void UFF_CrowdSimulationSubsystem::SetAgentDestination(int32 AgentIndex, FVector
 				AgentIndex, LeaderIndex);
 		}
 	}
+	
+	if (UnitDatas[TargetAgent].bHasQueueSlot)
+	{
+		ClearPartyQueueColumn(UnitDatas[TargetAgent].PartyID);
+	}
 
 	UnitDatas[TargetAgent].TargetLocation = Destination;
+}
+
+bool UFF_CrowdSimulationSubsystem::SetPartyQueueColumn(int32 PartyID, const TArray<FVector>& Locations, float InLaneYaw)
+{
+	const int32* LeaderPtr = PartyLeaderByID.Find(PartyID);
+	
+	if (!LeaderPtr || Locations.Num() ==0 )
+	{
+		return false;
+	}
+	
+	for ( const int32 AgentIndex : GetPartyMembers(PartyID))
+	{
+		FUnitData& Unit = UnitDatas[AgentIndex];
+		
+		const int32 Idx = FMath::Clamp(Unit.PartySlotIndex, 0, Locations.Num() - 1);
+		Unit.QueueSlotLocation = Locations[Idx];
+		Unit.LaneYaw = InLaneYaw;
+		Unit.bHasQueueSlot = true;
+	}
+	
+	UnitDatas[*LeaderPtr].TargetLocation = Locations[0];
+	
+	return true;
+}
+
+bool UFF_CrowdSimulationSubsystem::ClearPartyQueueColumn(int32 PartyID)
+{
+	const int32* LeaderPtr = PartyLeaderByID.Find(PartyID);
+	
+	if (!LeaderPtr)
+	{
+		return false;
+	}
+	
+	for ( const int32 AgentIndex : GetPartyMembers(PartyID))
+	{
+		FUnitData& Unit = UnitDatas[AgentIndex];
+		
+		Unit.QueueSlotLocation = FVector::ZeroVector;
+		Unit.LaneYaw = 0.f;
+		Unit.bHasQueueSlot = false;
+	}
+	
+	return true;
+	
 }
 
 void UFF_CrowdSimulationSubsystem::BindAgentToPool(int32 AgentIndex)
