@@ -51,6 +51,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
 	UFF_LiveHudScreen* GetOwningScreen() const { return OwningScreen.Get(); }
 
+protected:
+	/** 값이 비면 칸째 접는다. 빈 줄을 남기면 고장난 것으로 보인다. */
+	static void SetTextOrHide(class UTextBlock* TextBlock, const FText& Value);
+
+public:
+
 	/** 고정된 패널은 현재 위치를 유지하며 빈 영역을 끌어도 움직이지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
 	bool IsPinned() const { return bIsPinned; }

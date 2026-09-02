@@ -145,6 +145,9 @@ void UFF_LiveHudScreen::BindViewModel()
 	}
 
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+
+	// 피날레 등급이 바뀌면 **탭이 생기거나 사라진다.** 값만 바뀌는 것이 아니다.
+	CachedViewModel->OnPurchasedFinaleGradeChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleFinaleGradeChanged);
 	CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
@@ -162,6 +165,7 @@ void UFF_LiveHudScreen::UnbindViewModel()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStageViewChanged);
+		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleFinaleGradeChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
@@ -185,8 +189,9 @@ void UFF_LiveHudScreen::ForEachTabButton(TFunctionRef<void(EFF_LiveTab, UFF_Live
 		{ EFF_LiveTab::Guests,		Tab_Guests },
 		{ EFF_LiveTab::Queues,		Tab_Queues },
 		{ EFF_LiveTab::SNS,			Tab_SNS },
+		{ EFF_LiveTab::Staff,		Tab_Staff },
 		{ EFF_LiveTab::Report,		Tab_Report },
-		{ EFF_LiveTab::Staff,		Tab_Staff }
+		{ EFF_LiveTab::Finale,		Tab_Finale }
 	};
 
 	for (const TPair<EFF_LiveTab, UFF_LiveTabButton*>& Binding : Bindings)
@@ -208,7 +213,7 @@ void UFF_LiveHudScreen::ToggleTab(EFF_LiveTab Tab)
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
 
-	if (!FFF_LiveHudRules::IsTabVisible(Tab, Stage))
+	if (!FFF_LiveHudRules::IsTabVisible(Tab, Stage, HasPurchasedFinale()))
 	{
 		FString EnumName;
 		FText DisplayName;
@@ -512,7 +517,7 @@ void UFF_LiveHudScreen::RestoreFloatingPanelState()
 		{
 			break;
 		}
-		if (FFF_LiveHudRules::IsTabVisible(Tab, Stage))
+		if (FFF_LiveHudRules::IsTabVisible(Tab, Stage, HasPurchasedFinale()))
 		{
 			OpenPanel(Tab);
 		}
@@ -845,17 +850,19 @@ void UFF_LiveHudScreen::RefreshAll()
 	RefreshTabs();
 	RefreshStatusRow();
 	RefreshSpeed();
+	RefreshCta();
 }
 
 void UFF_LiveHudScreen::RefreshTabs()
 {
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
+	const bool bPurchasedFinale = HasPurchasedFinale();
 
 	int32 VisibleTabCount = 0;
-	ForEachTabButton([this, Stage, &VisibleTabCount](EFF_LiveTab Tab, UFF_LiveTabButton& Button)
+	ForEachTabButton([this, Stage, bPurchasedFinale, &VisibleTabCount](EFF_LiveTab Tab, UFF_LiveTabButton& Button)
 	{
-		const bool bVisible = FFF_LiveHudRules::IsTabVisible(Tab, Stage);
+		const bool bVisible = FFF_LiveHudRules::IsTabVisible(Tab, Stage, bPurchasedFinale);
 		Button.SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		Button.SetSelected(bVisible && IsPanelOpen(Tab));
 		VisibleTabCount += bVisible ? 1 : 0;
@@ -884,7 +891,7 @@ void UFF_LiveHudScreen::RefreshTabs()
 	const TArray<EFF_LiveTab> OpenTabsCopy = OpenTabs;
 	for (const EFF_LiveTab OpenTab : OpenTabsCopy)
 	{
-		if (!FFF_LiveHudRules::IsTabVisible(OpenTab, Stage))
+		if (!FFF_LiveHudRules::IsTabVisible(OpenTab, Stage, HasPurchasedFinale()))
 		{
 			ClosePanel(OpenTab);
 		}
@@ -1033,6 +1040,116 @@ void UFF_LiveHudScreen::HandleGoldChanged(int32 NewValue)
 void UFF_LiveHudScreen::HandleTodayRevenueChanged(int32 NewValue)
 {
 	RefreshStatusRow();
+}
+
+bool UFF_LiveHudScreen::HasPurchasedFinale() const
+{
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	return ViewModel && ViewModel->GetPurchasedFinaleGrade() != EFF_FinaleGrade::None;
+}
+
+void UFF_LiveHudScreen::HandleFinaleGradeChanged(EFF_FinaleGrade NewGrade)
+{
+	RefreshTabs();
+}
+
+FText UFF_LiveHudScreen::GetCtaLabelText() const
+{
+	switch (CtaState)
+	{
+	// 피날레는 날짜를 넘기는 것이 아니라 연출을 건너뛰는 것이다.
+	case EFF_LiveCtaState::ReadyFinaleSkip:
+		return LOCTEXT("LiveCta_FinaleSkip", "다음으로");
+
+	// 마지막 날에는 넘어갈 다음 날이 아니라 **축제가 끝난다.**
+	case EFF_LiveCtaState::ReadyFinishFestival:
+		return LOCTEXT("LiveCta_Finish", "축제 마치기");
+
+	default:
+		return LOCTEXT("LiveCta_NextDay", "다음 날로");
+	}
+}
+
+FText UFF_LiveHudScreen::GetCtaReasonText() const
+{
+	// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
+	switch (CtaState)
+	{
+	case EFF_LiveCtaState::BlockedNotReport:
+		return LOCTEXT("LiveCta_NotReport",
+			"결과를 먼저 확인하세요. 남은 마감 시간이 지나면 리포트로 넘어갑니다.");
+
+	case EFF_LiveCtaState::ReadyFinishFestival:
+		// 되돌릴 수 없는 마지막 버튼이라 무엇이 일어나는지 미리 적는다.
+		return LOCTEXT("LiveCta_FinishNote", "누르면 축제가 끝나고 나라 지도로 돌아갑니다.");
+
+	default:
+		return FText::GetEmpty();
+	}
+}
+
+void UFF_LiveHudScreen::RequestAdvance()
+{
+	HandleCtaClicked();
+}
+
+void UFF_LiveHudScreen::HandleCtaClicked()
+{
+	UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	if (!ViewModel)
+	{
+		return;
+	}
+
+	// 🔴 셋이 **서로 다른 함수**다. 하나로 묶으면 조용히 안 먹는다 —
+	// `AdvanceToNextDay()` 는 리포트 단계 밖에서, 그리고 마지막 날에 거절된다.
+	switch (CtaState)
+	{
+	case EFF_LiveCtaState::ReadyFinaleSkip:
+		ViewModel->RequestSkipCurrentStage();
+		return;
+
+	case EFF_LiveCtaState::ReadyFinishFestival:
+		// 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — UI 가 레벨을 직접 열지 않는다.
+		if (UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this))
+		{
+			Flow->ReturnToAtlas();
+		}
+		else
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[%s] UI 흐름 시스템이 없어 나라 지도로 돌아갈 수 없다."), *GetName());
+		}
+		return;
+
+	default:
+		ViewModel->RequestAdvanceToNextDay();
+		return;
+	}
+}
+
+void UFF_LiveHudScreen::RefreshCta()
+{
+	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	const EFF_FestivalStage Stage = ViewModel ? ViewModel->GetCurrentStage() : EFF_FestivalStage::Live;
+
+	CtaState = FFF_LiveHudRules::ResolveCtaState(
+		Stage,
+		ViewModel && ViewModel->IsFinalDay(),
+		ViewModel && ViewModel->CanSkipCurrentStage());
+
+	// 🔴 바의 버튼은 **피날레에서만** 띄운다. 마감·리포트에서는 리포트 패널 안에 같은
+	// 버튼이 있어서, 바에도 두면 화면에 `다음 날로` 가 둘이 된다.
+	const bool bShowBarCta = (CtaState == EFF_LiveCtaState::ReadyFinaleSkip);
+
+	if (Button_Cta)
+	{
+		Button_Cta->SetVisibility(bShowBarCta
+			? ESlateVisibility::Visible
+			: ESlateVisibility::Collapsed);
+		Button_Cta->SetIsEnabled(bShowBarCta);
+	}
+	SetTextOrHide(Text_CtaLabel, bShowBarCta ? GetCtaLabelText() : FText::GetEmpty());
 }
 
 void UFF_LiveHudScreen::HandleArrearsChanged(int32 NewValue)

@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
-#include "UI/ClosingHUD/FF_ClosingPanelBase.h"
-#include "FF_ClosingPanelFinale.generated.h"
+#include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "FF_LivePanelFinale.generated.h"
 
 class UFF_FestivalViewModelSubsystem;
 class UTextBlock;
@@ -16,7 +16,7 @@ class UTextBlock;
  * !! 색으로만 구분하지 않는다 !! (AT-011) 단계마다 문구가 함께 붙는다.
  */
 UENUM(BlueprintType)
-enum class EFF_ClosingFinalePhase : uint8
+enum class EFF_LiveFinalePhase : uint8
 {
 	/** 사지 않았다. 이 패널은 아예 안 뜬다 (탭이 숨는다). */
 	NotPurchased	UMETA(DisplayName = "미구매"),
@@ -40,14 +40,14 @@ enum class EFF_ClosingFinalePhase : uint8
  *   예정  등급 · 예정 보너스 · "3일차 라이브가 끝나면 실행됩니다"
  *   완료  등급 · 실제 보너스 · 평가 점수에 들어갔다는 사실
  */
-UCLASS(Abstract, meta = (DisplayName = "FF Closing Panel - Finale"))
-class FESTAFIESTA_API UFF_ClosingPanelFinale : public UFF_ClosingPanelBase
+UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Finale"))
+class FESTAFIESTA_API UFF_LivePanelFinale : public UFF_LivePanelBase
 {
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Closing|Finale")
-	EFF_ClosingFinalePhase GetPhase() const { return Phase; }
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Finale")
+	EFF_LiveFinalePhase GetPhase() const { return Phase; }
 
 protected:
 	virtual void NativeOnPanelOpened() override;
@@ -60,17 +60,17 @@ protected:
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
 protected:
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Finale")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Finale")
 	TObjectPtr<UTextBlock> Text_Grade;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Finale")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Finale")
 	TObjectPtr<UTextBlock> Text_Bonus;
 
 	/** 지금 어느 시점인지. 숫자만 두면 이미 터진 것인지 알 수 없다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Finale")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Finale")
 	TObjectPtr<UTextBlock> Text_PhaseNote;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Finale")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Finale")
 	TObjectPtr<UTextBlock> Text_MissingNote;
 
 private:
@@ -83,5 +83,5 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
 
-	EFF_ClosingFinalePhase Phase = EFF_ClosingFinalePhase::NotPurchased;
+	EFF_LiveFinalePhase Phase = EFF_LiveFinalePhase::NotPurchased;
 };

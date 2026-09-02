@@ -52,30 +52,59 @@ bool FFF_LiveHudRules_LiveStageOnly::RunTest(const FString& Parameters)
 		FFF_LiveHudRules::IsLiveHudStage(EFF_FestivalStage::Live));
 
 	// 준비 단계 바가 맡는 두 단계에서는 라이브 HUD 가 뜨지 않는다.
-	TestFalse(TEXT("셋업에서는 라이브 HUD 가 안 뜬다"),
+	// 바는 셋업용과 이것 둘뿐이다.
+	TestFalse(TEXT("셋업에서는 이 바가 안 뜬다"),
 		FFF_LiveHudRules::IsLiveHudStage(EFF_FestivalStage::Setup));
 	TestFalse(TEXT("개장 준비에서는 라이브 HUD 가 안 뜬다"),
 		FFF_LiveHudRules::IsLiveHudStage(EFF_FestivalStage::MorningCheck));
 
-	// 마감·결산·피날레는 풀스크린 시트다 (U7).
+	// 🔴 마감·리포트·피날레도 **같은 바**를 쓴다 (2026-09-02 통합). 다만 시계가 흐르는
+	//    `IsLiveStage` 는 아니다 — 배속이 걸리는 곳은 라이브뿐이다.
 	for (const EFF_FestivalStage Stage : {
 		EFF_FestivalStage::Closing,
 		EFF_FestivalStage::Report,
 		EFF_FestivalStage::Finale })
 	{
-		TestFalse(FString::Printf(TEXT("시트 단계는 라이브가 아니다 (%s)"), *UEnum::GetValueAsString(Stage)),
+		TestFalse(FString::Printf(TEXT("결산 단계는 라이브가 아니다 (%s)"), *UEnum::GetValueAsString(Stage)),
 			FFF_LiveHudRules::IsLiveStage(Stage));
+		TestTrue(FString::Printf(TEXT("그래도 같은 바를 쓴다 (%s)"), *UEnum::GetValueAsString(Stage)),
+			FFF_LiveHudRules::IsLiveHudStage(Stage));
 	}
 
-	// 탭 7종은 라이브면 전부 보이고, 아니면 전부 안 보인다.
+	// === 운영 탭과 결산 탭은 서로 배타다 (2026-09-02 통합) ===
+	//
+	// 🔴 라이브 중에 `리포트` 를 열면 하루가 안 끝나 빈 표만 보이고, 마감에 `대기열` 을
+	// 남겨 두면 이미 끝난 줄을 보게 된다. 볼 수 있는 시점에만 띄운다.
 	for (const EFF_LiveTab Tab : {
 		EFF_LiveTab::Operations, EFF_LiveTab::Facilities, EFF_LiveTab::Guests,
-		EFF_LiveTab::Queues, EFF_LiveTab::SNS, EFF_LiveTab::Report, EFF_LiveTab::Staff })
+		EFF_LiveTab::Queues, EFF_LiveTab::SNS, EFF_LiveTab::Staff })
 	{
-		TestTrue(TEXT("라이브에서는 탭이 보인다"),
-			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Live));
-		TestFalse(TEXT("라이브가 아니면 탭이 안 보인다"),
-			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Closing));
+		TestTrue(TEXT("라이브에서는 운영 탭이 보인다"),
+			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Live, true));
+		TestFalse(TEXT("마감에서는 운영 탭이 안 보인다"),
+			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Closing, true));
+	}
+
+	TestFalse(TEXT("라이브에서는 리포트 탭이 안 보인다"),
+		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Report, EFF_FestivalStage::Live, true));
+	TestTrue(TEXT("마감에서는 리포트 탭이 보인다"),
+		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Report, EFF_FestivalStage::Closing, true));
+	TestTrue(TEXT("리포트 단계에서도 보인다"),
+		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Report, EFF_FestivalStage::Report, true));
+
+	// 🔴 피날레를 안 샀으면 그 탭은 숨긴다. 빈 패널은 "고장났나" 로 읽히고,
+	//    살 수 있는 곳(셋업)은 이미 지나간 뒤다.
+	TestFalse(TEXT("안 샀으면 피날레 탭이 숨는다"),
+		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Finale, EFF_FestivalStage::Closing, /*Purchased*/ false));
+	TestTrue(TEXT("샀으면 보인다"),
+		FFF_LiveHudRules::IsTabVisible(EFF_LiveTab::Finale, EFF_FestivalStage::Closing, /*Purchased*/ true));
+
+	// ★ 피날레 **연출 구간**에는 탭을 하나도 안 띄운다. 불꽃을 보는 시간이다.
+	for (const EFF_LiveTab Tab : {
+		EFF_LiveTab::Operations, EFF_LiveTab::Report, EFF_LiveTab::Finale })
+	{
+		TestFalse(TEXT("피날레 연출 구간에는 탭이 없다"),
+			FFF_LiveHudRules::IsTabVisible(Tab, EFF_FestivalStage::Finale, true));
 	}
 	return true;
 }
@@ -102,10 +131,10 @@ bool FFF_LiveHudRules_TabExclusivity::RunTest(const FString& Parameters)
 
 	// ② 라이브가 끝나면 선택이 풀려야 한다. 안 그러면 탭은 사라졌는데 패널만 남는다.
 	TestFalse(TEXT("마감으로 넘어가면 선택이 풀린다"),
-		FFF_LiveHudRules::ClampSelectionToVisible(Switched, EFF_FestivalStage::Closing).bHasSelection);
+		FFF_LiveHudRules::ClampSelectionToVisible(Switched, EFF_FestivalStage::Closing, true).bHasSelection);
 
 	TestTrue(TEXT("라이브 안에서는 선택이 유지된다"),
-		FFF_LiveHudRules::ClampSelectionToVisible(Switched, EFF_FestivalStage::Live)
+		FFF_LiveHudRules::ClampSelectionToVisible(Switched, EFF_FestivalStage::Live, true)
 			.IsSelected(EFF_LiveTab::SNS));
 
 	return true;

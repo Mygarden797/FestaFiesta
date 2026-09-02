@@ -3,8 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "UI/ClosingHUD/FF_ClosingPanelBase.h"
-#include "FF_ClosingPanelReport.generated.h"
+#include "UI/LiveHUD/FF_LivePanelBase.h"
+#include "FF_LivePanelReport.generated.h"
 
 class UButton;
 class UFF_FestivalViewModelSubsystem;
@@ -28,8 +28,8 @@ class UTextBlock;
  * **다른 지표**다. 라이브 중에는 값이 같아서 라이브 HUD 에서는 하나만 띄웠지만,
  * 결산에서는 보너스가 붙어 갈라지므로 둘 다 보여야 차이가 보인다.
  */
-UCLASS(Abstract, meta = (DisplayName = "FF Closing Panel - Report"))
-class FESTAFIESTA_API UFF_ClosingPanelReport : public UFF_ClosingPanelBase
+UCLASS(Abstract, meta = (DisplayName = "FF Live Panel - Report"))
+class FESTAFIESTA_API UFF_LivePanelReport : public UFF_LivePanelBase
 {
 	GENERATED_BODY()
 
@@ -49,44 +49,44 @@ protected:
 protected:
 	// --- 돈 ---
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_TodayRevenue;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_TotalRevenue;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_Gold;
 
 	/** 미납은 0 이면 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_Arrears;
 
 	// --- 평가 ---
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_SimSatisfaction;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_ScoreSatisfaction;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_Safety;
 
 	/** 두 만족도가 왜 다른지. 값이 같으면 숨긴다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_SatisfactionNote;
 
 	// --- 운영 ---
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_Staff;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_Programs;
 
 	/** 아직 못 보여주는 것. 안 적으면 빠진 줄 모른다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_MissingNote;
 
 	// === 다음 날로 (2026-09-02 이동) ===
@@ -94,14 +94,14 @@ protected:
 	// 🔴 하단 바가 아니라 **패널 안**에 둔다. 결과를 읽는 자리와 넘기는 자리를 붙여야
 	// "읽고 나서 넘긴다" 는 순서가 손에 잡힌다. 바에도 두면 버튼이 둘이 된다.
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UButton> Button_Advance;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_AdvanceLabel;
 
 	/** 막힌 이유 또는 남은 대기 초. 버튼만 흐려 두면 왜 못 누르는지 알 수 없다 (AT-011). */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Closing|Report")
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_AdvanceReason;
 
 	/**
@@ -112,11 +112,11 @@ protected:
 	 * 남은 초를 세어 보여 주고 버튼도 흐리게 두었다가 또렷해진다 — 기다리는 중이라는 것이
 	 * 눈에 보여야 한다.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Closing|Report", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report", meta = (ClampMin = "0.0"))
 	float ReadDelaySeconds = 5.f;
 
 	/** 기다리는 동안의 버튼 투명도. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Closing|Report", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Report", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DimmedOpacity = 0.35f;
 
 private:

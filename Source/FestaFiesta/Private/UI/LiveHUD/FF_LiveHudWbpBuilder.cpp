@@ -29,6 +29,8 @@
 #include "UI/LiveHUD/Panels/FF_LivePanelFacilities.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelGuests.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelQueues.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelFinale.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelReport.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
@@ -83,6 +85,8 @@ namespace FFLiveHudWbpBuilder
 	const FString QueuesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelQueues");
 	const FString GuestsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelGuests");
 	const FString SNSPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelSNS");
+	const FString ReportPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelReport");
+	const FString FinalePanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelFinale");
 
 	/** 메뉴 행 + 상태 행. 준비 단계 바와 같은 58 이라 두 화면이 같은 높이로 끝난다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -1280,10 +1284,323 @@ namespace FFLiveHudWbpBuilder
 	}
 
 	// =========================================================================
+	// 3-7) 결산 패널 둘 — 마감·리포트에서만 열린다
+	// =========================================================================
+
+	/** 패널 공통 머리(제목 + 닫기). 결산 패널 둘이 같은 모양이어야 한다. */
+	bool AddResultPanelHeader(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, UVerticalBox& Content,
+		const UFF_UIPalette& Palette, const FText& TitlePreview)
+	{
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
+		UButton* Close = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Close"), true);
+		UTextBlock* CloseGlyph = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CloseGlyph"));
+
+		if (!Header || !Title || !Close || !CloseGlyph)
+		{
+			return false;
+		}
+
+		StyleText(*Title, 18, Palette.InGame.Ink, TEXT("SemiBold"));
+		Title->SetText(TitlePreview);
+		if (UHorizontalBoxSlot* Slot_Title = Header->AddChildToHorizontalBox(Title))
+		{
+			Slot_Title->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			Slot_Title->SetVerticalAlignment(VAlign_Center);
+		}
+
+		FButtonStyle CloseStyle = Close->GetStyle();
+		CloseStyle.Normal = MakeSolidBrush(Palette.InGame.PaperSunken, 4.f);
+		CloseStyle.Hovered = MakeSolidBrush(Palette.InGame.Hover, 4.f);
+		CloseStyle.Pressed = MakeSolidBrush(Palette.InGame.Line, 4.f);
+		CloseStyle.NormalPadding = FMargin(8.f, 2.f);
+		CloseStyle.PressedPadding = FMargin(8.f, 2.f);
+		Close->SetStyle(CloseStyle);
+
+		StyleText(*CloseGlyph, 14, Palette.InGame.InkMuted, TEXT("Medium"));
+		CloseGlyph->SetText(LOCTEXT("LiveResult_Close", "×"));
+		if (UButtonSlot* Slot_CloseGlyph = Cast<UButtonSlot>(Close->AddChild(CloseGlyph)))
+		{
+			Slot_CloseGlyph->SetHorizontalAlignment(HAlign_Center);
+			Slot_CloseGlyph->SetVerticalAlignment(VAlign_Center);
+			Slot_CloseGlyph->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Close = Header->AddChildToHorizontalBox(Close))
+		{
+			Slot_Close->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Close->SetVerticalAlignment(VAlign_Center);
+		}
+		if (UVerticalBoxSlot* Slot_Header = Content.AddChildToVerticalBox(Header))
+		{
+			Slot_Header->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Header->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Header->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+		return true;
+	}
+
+	/** 설명 한 줄. 값이 없으면 런타임에 접힌다. */
+	UTextBlock* AddResultNote(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, UVerticalBox& Content,
+		const FName Name, const FLinearColor& Color, const int32 FontSize,
+		const FText& Preview, const float BottomPadding)
+	{
+		UTextBlock* Note = MakeWidget<UTextBlock>(Blueprint, Tree, Name, true);
+		if (!Note)
+		{
+			return nullptr;
+		}
+
+		StyleText(*Note, FontSize, Color, TEXT("Medium"));
+		Note->SetText(Preview);
+		Note->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_Note = Content.AddChildToVerticalBox(Note))
+		{
+			Slot_Note->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Note->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Note->SetPadding(FMargin(0.f, 0.f, 0.f, BottomPadding));
+		}
+		return Note;
+	}
+
+	bool BuildReportPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* MoneyRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Money"));
+		UHorizontalBox* ScoreRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Score"));
+		UHorizontalBox* OpsRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Ops"));
+		if (!Root || !Content || !MoneyRow || !ScoreRow || !OpsRow)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		if (!AddResultPanelHeader(Blueprint, Tree, *Content, *Palette,
+			LOCTEXT("LiveReport_Title", "리포트")))
+		{
+			return false;
+		}
+
+		// --- 돈 ---
+		const bool bMoneyOk =
+			AddMetricCell(Blueprint, Tree, *MoneyRow, *Palette, TEXT("Text_TodayRevenue"),
+				LOCTEXT("LiveReport_TodayRevenue", "오늘 매출"), LOCTEXT("LiveReportPv_Today", "3,200"))
+			&& AddMetricCell(Blueprint, Tree, *MoneyRow, *Palette, TEXT("Text_TotalRevenue"),
+				LOCTEXT("LiveReport_TotalRevenue", "전체 매출"), LOCTEXT("LiveReportPv_Total", "9,800"))
+			&& AddMetricCell(Blueprint, Tree, *MoneyRow, *Palette, TEXT("Text_Gold"),
+				LOCTEXT("LiveReport_Gold", "보유 금화"), LOCTEXT("LiveReportPv_Gold", "7,100"));
+		if (!bMoneyOk)
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_Money = Content->AddChildToVerticalBox(MoneyRow))
+		{
+			Slot_Money->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Money->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 미납은 0 이면 런타임에 접힌다.
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_Arrears"),
+			Palette->InGame.Danger, 13, LOCTEXT("LiveReportPv_Arrears", "미납 2,400"), 18.f);
+
+		// --- 평가 ---
+		const bool bScoreOk =
+			AddMetricCell(Blueprint, Tree, *ScoreRow, *Palette, TEXT("Text_SimSatisfaction"),
+				LOCTEXT("LiveReport_Sim", "관객 만족도"), LOCTEXT("LiveReportPv_Sim", "72"))
+			&& AddMetricCell(Blueprint, Tree, *ScoreRow, *Palette, TEXT("Text_ScoreSatisfaction"),
+				LOCTEXT("LiveReport_Score", "평가 점수"), LOCTEXT("LiveReportPv_Score", "80"))
+			&& AddMetricCell(Blueprint, Tree, *ScoreRow, *Palette, TEXT("Text_Safety"),
+				LOCTEXT("LiveReport_Safety", "안전"), LOCTEXT("LiveReportPv_Safety", "88"));
+		if (!bScoreOk)
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_Score = Content->AddChildToVerticalBox(ScoreRow))
+		{
+			Slot_Score->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Score->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 두 만족도가 같으면 런타임에 접힌다.
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_SatisfactionNote"),
+			Palette->InGame.InkMuted, 12,
+			LOCTEXT("LiveReportPv_SatNote",
+				"평가 점수는 관객 만족도에 피날레·연출 보정을 더한 값입니다 (8 차이)."), 18.f);
+
+		// --- 운영 ---
+		const bool bOpsOk =
+			AddMetricCell(Blueprint, Tree, *OpsRow, *Palette, TEXT("Text_Staff"),
+				LOCTEXT("LiveReport_Staff", "인력"), LOCTEXT("LiveReportPv_Staff", "12명 (알바 6)"))
+			&& AddMetricCell(Blueprint, Tree, *OpsRow, *Palette, TEXT("Text_Programs"),
+				LOCTEXT("LiveReport_Programs", "편성한 프로그램"), LOCTEXT("LiveReportPv_Programs", "2개"));
+		if (!bOpsOk)
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_Ops = Content->AddChildToVerticalBox(OpsRow))
+		{
+			Slot_Ops->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Ops->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Ops->SetPadding(FMargin(0.f, 0.f, 0.f, 18.f));
+		}
+
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
+			Palette->InGame.InkFaint, 12,
+			LOCTEXT("LiveReportPv_Missing",
+				"어느 시설이 만족도를 깎았는지는 아직 볼 수 없습니다. 원인 집계가 붙으면 여기에 들어갑니다."), 18.f);
+
+		// --- 다음 날로. 결과를 읽는 자리 **바로 아래**에 둔다 ---
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_AdvanceReason"),
+			Palette->InGame.InkMuted, 12,
+			LOCTEXT("LiveReportPv_AdvanceReason", "5초 뒤에 넘어갈 수 있습니다"), 6.f);
+
+		UButton* Advance = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Advance"), true);
+		UTextBlock* AdvanceLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AdvanceLabel"), true);
+		if (!Advance || !AdvanceLabel)
+		{
+			return false;
+		}
+
+		FButtonStyle AdvanceStyle = Advance->GetStyle();
+		AdvanceStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
+		AdvanceStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
+		AdvanceStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		AdvanceStyle.Disabled = MakeSolidBrush(Palette->InGame.PaperSunken, 4.f);
+		AdvanceStyle.NormalPadding = FMargin(18.f, 6.f);
+		AdvanceStyle.PressedPadding = FMargin(18.f, 6.f);
+		Advance->SetStyle(AdvanceStyle);
+
+		StyleText(*AdvanceLabel, 14, Palette->InGame.Paper, TEXT("SemiBold"));
+		AdvanceLabel->SetText(LOCTEXT("LiveReportPv_Advance", "다음 날로"));
+		if (UButtonSlot* Slot_AdvanceLabel = Cast<UButtonSlot>(Advance->AddChild(AdvanceLabel)))
+		{
+			Slot_AdvanceLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_AdvanceLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_AdvanceLabel->SetPadding(FMargin(0.f));
+		}
+		if (UVerticalBoxSlot* Slot_Advance = Content->AddChildToVerticalBox(Advance))
+		{
+			Slot_Advance->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Advance->SetHorizontalAlignment(HAlign_Left);
+		}
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	bool BuildFinalePanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UHorizontalBox* Row = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Finale"));
+		if (!Root || !Content || !Row)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		if (!AddResultPanelHeader(Blueprint, Tree, *Content, *Palette,
+			LOCTEXT("LiveFinale_Title", "피날레")))
+		{
+			return false;
+		}
+
+		const bool bRowOk =
+			AddMetricCell(Blueprint, Tree, *Row, *Palette, TEXT("Text_Grade"),
+				LOCTEXT("LiveFinale_Grade", "등급"), LOCTEXT("LiveFinalePv_Grade", "대형"))
+			&& AddMetricCell(Blueprint, Tree, *Row, *Palette, TEXT("Text_Bonus"),
+				LOCTEXT("LiveFinale_Bonus", "보너스"), LOCTEXT("LiveFinalePv_Bonus", "만족도 +8"));
+		if (!bRowOk)
+		{
+			return false;
+		}
+		if (UVerticalBoxSlot* Slot_Row = Content->AddChildToVerticalBox(Row))
+		{
+			Slot_Row->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Row->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Row->SetPadding(FMargin(0.f, 0.f, 0.f, 12.f));
+		}
+
+		// !! 숫자만 두지 않는다 !! 이미 터졌는지 앞으로 터질지는 숫자로 알 수 없다 (AT-011).
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_PhaseNote"),
+			Palette->InGame.Ink, 13,
+			LOCTEXT("LiveFinalePv_Phase",
+				"3일차 라이브가 끝나면 실행됩니다. 보너스는 그때 평가 점수에 들어갑니다."), 12.f);
+
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
+			Palette->InGame.InkFaint, 12,
+			LOCTEXT("LiveFinalePv_Missing",
+				"피날레는 셋업에서만 고를 수 있고 축제당 한 번입니다. 여기서는 결과만 봅니다."), 0.f);
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
+	// =========================================================================
 	// 4) 라이브 HUD 루트
 	// =========================================================================
 
 	/** 상태 행의 칸 하나. 값이 없으면 `Box_*` 묶음째 접히도록 두 위젯을 함께 만든다. */
+	/** 상태 행 아이콘 폴더. 이름 규칙으로 찾으므로 표를 따로 두지 않는다. */
+	const FString MetricIconFolder =
+		TEXT("/Game/FestaFiesta/UI/LiveHUD/Themes/LightTeal/Icons/Metrics");
+
+	/**
+	 * 🔴 숫자만 두면 무엇인지 모른다 (2026-09-02 백종태 지적).
+	 *
+	 * 실기 화면이 `다대포 바다축제 6,785 35 7명 중 7명 사용 가능 0` 이었는데
+	 * `35`(오늘 매출)와 `0`(관객)이 무엇인지 알 방법이 없었다. 라벨을 붙이면 바가
+	 * 길어지므로 아이콘을 앞에 둔다.
+	 *
+	 * ⚠️ 아이콘은 **보조**다. 아이콘만으로 뜻을 전하지 않는다 — 숫자에 단위(`명`)가
+	 * 붙어 있고, 못 읽은 칸은 아예 접힌다 (AT-011 과 같은 이유).
+	 */
+	UTexture2D* LoadMetricIcon(const TCHAR* IconName)
+	{
+		const FString Path = FString::Printf(
+			TEXT("%s/T_FF_LH_Icon_%s_White_256.T_FF_LH_Icon_%s_White_256"),
+			*MetricIconFolder, IconName, IconName);
+
+		UTexture2D* Icon = LoadObject<UTexture2D>(nullptr, *Path);
+		if (!Icon)
+		{
+			// 아이콘이 없어도 화면은 뜬다. 조용히 넘기지 않는 이유는 이름 규칙을
+			// 어긴 파일을 여기서만 잡을 수 있어서다.
+			UE_LOG(LogFFUIWbpBuilder, Warning,
+				TEXT("%s_WARN: 상태 행 아이콘을 못 찾았다 (%s). 그 칸은 숫자만 뜬다."),
+				LiveLogPrefix, *Path);
+		}
+		return Icon;
+	}
+
 	bool AddStatusCell(
 		UWidgetBlueprint& Blueprint,
 		UWidgetTree& Tree,
@@ -1291,7 +1608,8 @@ namespace FFLiveHudWbpBuilder
 		const FName BoxName,
 		const FName TextName,
 		const FText& PreviewText,
-		const FLinearColor& TextColor)
+		const FLinearColor& TextColor,
+		const TCHAR* IconName = nullptr)
 	{
 		UHorizontalBox* Box = MakeWidget<UHorizontalBox>(Blueprint, Tree, BoxName, true);
 		UTextBlock* Text = MakeWidget<UTextBlock>(Blueprint, Tree, TextName, true);
@@ -1301,6 +1619,34 @@ namespace FFLiveHudWbpBuilder
 		}
 
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+
+		// 아이콘을 **텍스트 앞**에 둔다. 칸이 접힐 때 아이콘도 같이 접혀야 하므로
+		// 같은 `Box_*` 안에 넣는다 — 밖에 두면 값이 없는 칸의 아이콘만 남는다.
+		if (IconName)
+		{
+			if (UTexture2D* IconTexture = LoadMetricIcon(IconName))
+			{
+				UImage* Icon = MakeWidget<UImage>(
+					Blueprint, Tree, FName(*(BoxName.ToString() + TEXT("_Icon"))));
+				if (Icon)
+				{
+					FSlateBrush IconBrush;
+					IconBrush.SetResourceObject(IconTexture);
+					IconBrush.ImageSize = FVector2D(14.f, 14.f);
+					IconBrush.TintColor = FSlateColor(Palette
+						? Palette->InGame.InkMuted : FLinearColor::White);
+					Icon->SetBrush(IconBrush);
+
+					if (UHorizontalBoxSlot* Slot_Icon = Box->AddChildToHorizontalBox(Icon))
+					{
+						Slot_Icon->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+						Slot_Icon->SetVerticalAlignment(VAlign_Center);
+						Slot_Icon->SetPadding(FMargin(0.f, 0.f, 5.f, 0.f));
+					}
+				}
+			}
+		}
+
 		StyleText(*Text, 12, TextColor, TEXT("Medium"));
 		Text->SetText(PreviewText);
 		if (UHorizontalBoxSlot* Slot_Text = Box->AddChildToHorizontalBox(Text))
@@ -1437,7 +1783,9 @@ namespace FFLiveHudWbpBuilder
 		// ★ 이름이 계약이다. `UFF_LiveHudScreen` 의 `BindWidgetOptional` 과 같아야 붙는다.
 		const TCHAR* TabWidgetNames[] = {
 			TEXT("Tab_Operations"), TEXT("Tab_Facilities"), TEXT("Tab_Guests"),
-			TEXT("Tab_Queues"), TEXT("Tab_SNS"), TEXT("Tab_Report"), TEXT("Tab_Staff") };
+			TEXT("Tab_Queues"), TEXT("Tab_SNS"), TEXT("Tab_Staff"),
+			// 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합).
+			TEXT("Tab_Report"), TEXT("Tab_Finale") };
 
 		for (const TCHAR* TabWidgetName : TabWidgetNames)
 		{
@@ -1479,26 +1827,29 @@ namespace FFLiveHudWbpBuilder
 				LOCTEXT("LiveStatusPreview_Festival", "다대포 바다축제"), Palette->InGame.Ink)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Gold"), TEXT("Text_Gold"),
-				LOCTEXT("LiveStatusPreview_Gold", "7,600"), Palette->InGame.Ink)
+				LOCTEXT("LiveStatusPreview_Gold", "7,600"), Palette->InGame.Ink, TEXT("Gold"))
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Arrears"), TEXT("Text_Arrears"),
 				LOCTEXT("LiveStatusPreview_Arrears", "미납 2,400"), Palette->InGame.Danger)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_TodayRevenue"), TEXT("Text_TodayRevenue"),
-				LOCTEXT("LiveStatusPreview_Revenue", "3,200"), Palette->InGame.Ink)
+				LOCTEXT("LiveStatusPreview_Revenue", "3,200"), Palette->InGame.Ink, TEXT("Revenue"))
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Staff"), TEXT("Text_Staff"),
-				LOCTEXT("LiveStatusPreview_Staff", "6명 중 4명 사용 가능"), Palette->InGame.Ink)
+				LOCTEXT("LiveStatusPreview_Staff", "6명 중 4명 사용 가능"), Palette->InGame.Ink,
+				TEXT("StaffCount"))
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_VisitorCount"), TEXT("Text_VisitorCount"),
-				LOCTEXT("LiveStatusPreview_Visitors", "1,240"), Palette->InGame.Ink);
+				LOCTEXT("LiveStatusPreview_Visitors", "1,240"), Palette->InGame.Ink,
+				TEXT("Visitors"));
 
 		// --- 오른쪽 묶음. 시계 → 배속 ---
 		// ★ 시계를 배속 **왼쪽**에 둔다 (2026-08-27 요청). 관객 만족도·안전은 운영 패널로 갔다.
 		const bool bRightCellsOk =
 			AddStatusCell(Blueprint, Tree, *StatusRight,
 				TEXT("Box_Clock"), TEXT("Text_Clock"),
-				LOCTEXT("LiveStatusPreview_Clock", "19:42 · 남은 128초"), Palette->InGame.InkMuted);
+				LOCTEXT("LiveStatusPreview_Clock", "19:42 · 남은 128초"), Palette->InGame.InkMuted,
+				TEXT("Clock"));
 
 		if (!bLeftCellsOk || !bRightCellsOk)
 		{
@@ -1693,6 +2044,26 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildSNSPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			ReportPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelReport::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildReportPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			FinalePanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelFinale::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildFinalePanel(Blueprint, Tree);
 			});
 
 		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);

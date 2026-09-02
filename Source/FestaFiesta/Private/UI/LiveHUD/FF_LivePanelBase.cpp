@@ -187,6 +187,19 @@ void UFF_LivePanelBase::RequestClose()
 		TEXT("[%s] 소유 화면이 없어 닫아 달라고 요청할 수 없다."), *GetName());
 }
 
+void UFF_LivePanelBase::SetTextOrHide(UTextBlock* TextBlock, const FText& Value)
+{
+	if (!TextBlock)
+	{
+		return;
+	}
+
+	TextBlock->SetText(Value);
+	TextBlock->SetVisibility(Value.IsEmpty()
+		? ESlateVisibility::Collapsed
+		: ESlateVisibility::SelfHitTestInvisible);
+}
+
 // =============================================================================
 // 끌어 옮기기 — 준비 단계와 같은 구현이다
 // =============================================================================

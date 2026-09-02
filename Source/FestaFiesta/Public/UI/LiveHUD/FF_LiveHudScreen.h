@@ -101,6 +101,13 @@ protected:
 	UFUNCTION()
 	void HandleArrearsChanged(int32 NewValue);
 
+	/** 피날레 등급이 바뀌면 탭이 생기거나 사라진다. 값만 바뀌는 것이 아니다. */
+	UFUNCTION()
+	void HandleFinaleGradeChanged(EFF_FinaleGrade NewGrade);
+
+	UFUNCTION()
+	void HandleCtaClicked();
+
 	/** 전체 인원과 가용 인원 **양쪽**이 이 핸들러를 부른다. 인자를 믿지 않는다. */
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
@@ -147,6 +154,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Staff;
+
+	/** 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
+	TObjectPtr<UFF_LiveTabButton> Tab_Finale;
 
 	// --- 배경 (팔레트 색을 입힐 자리) ---
 
@@ -275,6 +286,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Speed")
 	TObjectPtr<UWidget> Box_Speed;
 
+	// === CTA — 피날레 연출 구간에서만 띄운다 ===
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Cta")
+	TObjectPtr<UButton> Button_Cta;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Cta")
+	TObjectPtr<UTextBlock> Text_CtaLabel;
+
 	// --- 설정 ---
 
 	/** 탭 하나 = 한 줄. 없는 탭은 `DefaultPanelLayout` 으로 연다. */
@@ -365,6 +384,29 @@ public:
 	 */
 	void NudgePanelPosition(EFF_LiveTab Tab, FVector2D SlateDelta);
 
+	// === 하단 바 CTA (2026-09-02 통합) ===
+	//
+	// 판정은 화면이 소유하고 **버튼은 리포트 패널이 그린다.** 바에도 두면 화면에
+	// `다음 날로` 가 둘이 된다 — 준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제다.
+	// 다만 피날레는 패널이 없는 단계라 그때만 바에 띄운다.
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	EFF_LiveCtaState GetCtaState() const { return CtaState; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	FText GetCtaLabelText() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	FText GetCtaReasonText() const;
+
+	/** 패널의 버튼이 눌렸을 때. 판정은 소유자가 한다 — 여기서 미리 막지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live|Cta")
+	void RequestAdvance();
+
+	/** 피날레를 샀는가. 결산 탭을 숨길지 정한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	bool HasPurchasedFinale() const;
+
 	/** 지금 끌어 옮길 수 있는 상태인지. `Designer` 도킹이면 코드가 자리를 안 잡으므로 막는다. */
 	bool IsPanelDragAllowed(EFF_LiveTab Tab) const;
 
@@ -392,6 +434,7 @@ private:
 	void RefreshTabs();
 	void RefreshStatusRow();
 	void RefreshSpeed();
+	void RefreshCta();
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 	static void SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBlock, const FText& Value);
@@ -415,6 +458,8 @@ private:
 	TSet<EFF_LiveTab> PinnedTabs;
 
 	FFF_LiveTabSelection Selection;
+
+	EFF_LiveCtaState CtaState = EFF_LiveCtaState::Hidden;
 
 	/** 소유자 API 가 없는 값. `Debug_SetPlaceholders` 로만 들어온다. */
 	int32 VisitorCount = INDEX_NONE;
