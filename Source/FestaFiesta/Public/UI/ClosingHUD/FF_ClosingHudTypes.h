@@ -79,7 +79,15 @@ enum class EFF_ClosingCtaState : uint8
 	BlockedNotReport	UMETA(DisplayName = "리포트 단계 아님"),
 
 	/** 마지막 날이라 넘길 날이 없다. */
-	BlockedFinalDay		UMETA(DisplayName = "마지막 날")
+	BlockedFinalDay		UMETA(DisplayName = "마지막 날"),
+
+	/**
+	 * 피날레 연출 구간이라 `다음으로` 다.
+	 *
+	 * 리포트의 `다음 날로` 와 **다른 행동**이다 — 여기서는 단계를 건너뛰는 것이고
+	 * (`SkipCurrentStage`), 리포트는 날짜를 넘기는 것이다 (`AdvanceToNextDay`).
+	 */
+	ReadyFinaleSkip		UMETA(DisplayName = "피날레 넘기기")
 };
 
 /**
@@ -89,6 +97,9 @@ struct FESTAFIESTA_API FFF_ClosingHudRules
 {
 	/** 이 단계에서 결산 HUD 를 띄우는가. */
 	static bool IsClosingHudStage(EFF_FestivalStage Stage);
+
+	/** 피날레 연출 구간인가. 탭을 숨기고 CTA 만 띄운다. */
+	static bool IsFinaleShowStage(EFF_FestivalStage Stage) { return Stage == EFF_FestivalStage::Finale; }
 
 	/**
 	 * 이 탭을 지금 볼 수 있는가.
@@ -112,5 +123,6 @@ struct FESTAFIESTA_API FFF_ClosingHudRules
 	 * ③ 을 앞에 두면 마감 단계에서 `마지막 날이라 넘길 수 없습니다` 가 떠서, 리포트로
 	 * 넘어가면 끝낼 수 있다는 사실을 못 알린다.
 	 */
-	static EFF_ClosingCtaState ResolveCtaState(EFF_FestivalStage Stage, bool bIsReportStage, bool bIsFinalDay);
+	static EFF_ClosingCtaState ResolveCtaState(
+		EFF_FestivalStage Stage, bool bIsReportStage, bool bIsFinalDay, bool bCanSkipStage);
 };

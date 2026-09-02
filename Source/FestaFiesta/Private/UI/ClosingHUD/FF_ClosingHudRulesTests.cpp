@@ -26,9 +26,16 @@ bool FFF_ClosingHudRules_Stage::RunTest(const FString& Parameters)
 	TestTrue(TEXT("리포트에서도 뜬다"),
 		FFF_ClosingHudRules::IsClosingHudStage(EFF_FestivalStage::Report));
 
-	// ★ 피날레는 불꽃이 터지는 연출 구간이다. 결산 표로 덮으면 연출을 가린다.
-	TestFalse(TEXT("피날레 연출 구간에서는 안 뜬다"),
+	// ★ 피날레도 이 바를 쓴다 (2026-09-02 변경). 다만 **탭은 하나도 안 띄운다** —
+	//   불꽃이 터지는 연출 구간이라 결산 표로 덮으면 연출을 가린다.
+	TestTrue(TEXT("피날레에서도 바는 뜬다"),
 		FFF_ClosingHudRules::IsClosingHudStage(EFF_FestivalStage::Finale));
+
+	for (const EFF_ClosingTab Tab : { EFF_ClosingTab::Report, EFF_ClosingTab::Finale })
+	{
+		TestFalse(TEXT("피날레 연출 구간에는 탭이 하나도 없다"),
+			FFF_ClosingHudRules::IsTabVisible(Tab, EFF_FestivalStage::Finale, /*Purchased*/ true));
+	}
 
 	for (const EFF_FestivalStage Stage : {
 		EFF_FestivalStage::Setup,
@@ -96,25 +103,49 @@ bool FFF_ClosingHudRules_Cta::RunTest(const FString& Parameters)
 	using EState = EFF_ClosingCtaState;
 
 	TestEqual(TEXT("HUD 단계가 아니면 숨긴다"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Live, false, false), EState::Hidden);
+		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Live, false, false, false), EState::Hidden);
 
 	TestEqual(TEXT("마감에서는 아직 못 넘긴다"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Closing, /*Report*/ false, false),
+		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Closing, /*Report*/ false, false, false),
 		EState::BlockedNotReport);
 
 	TestEqual(TEXT("리포트에서는 넘길 수 있다"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Report, /*Report*/ true, false),
+		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Report, /*Report*/ true, false, false),
 		EState::Ready);
 
 	TestEqual(TEXT("마지막 날이면 넘길 날이 없다"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Report, true, /*FinalDay*/ true),
+		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Report, true, /*FinalDay*/ true, false),
 		EState::BlockedFinalDay);
 
 	// ③ ★ 순서. `마지막 날` 을 앞에 두면 **마감 단계에서** `마지막 날이라 넘길 수 없습니다`
 	//   가 떠서, 리포트로 넘어가면 축제를 끝낼 수 있다는 사실을 못 알린다.
 	TestEqual(TEXT("마감 + 마지막 날이면 `리포트 단계 아님` 이 먼저"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Closing, /*Report*/ false, /*FinalDay*/ true),
+		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Closing, /*Report*/ false, /*FinalDay*/ true, false),
 		EState::BlockedNotReport);
+
+	// --- 피날레 (2026-09-02) ---
+	//
+	// ★ 리포트의 `다음 날로` 와 **다른 행동**이다. 피날레는 연출 단계를 건너뛰고
+	//   (`SkipCurrentStage`), 리포트는 날짜를 넘긴다 (`AdvanceToNextDay`).
+	//   하나로 묶으면 `AdvanceToNextDay` 가 리포트 밖에서 무시되어 조용히 안 먹는다.
+	TestEqual(TEXT("피날레에서 넘길 수 있으면 넘기기 상태"),
+		FFF_ClosingHudRules::ResolveCtaState(
+			EFF_FestivalStage::Finale, false, /*FinalDay*/ true, /*CanSkip*/ true),
+		EState::ReadyFinaleSkip);
+
+	// 🔴 `bSkippable` 이 꺼져 있으면 버튼째 숨긴다. 눌러도 안 되는 버튼을 두지 않는다 —
+	//    Stage 시스템이 무시하고 경고만 남기므로 화면에서는 고장으로 보인다.
+	TestEqual(TEXT("못 넘기면 버튼을 숨긴다"),
+		FFF_ClosingHudRules::ResolveCtaState(
+			EFF_FestivalStage::Finale, false, true, /*CanSkip*/ false),
+		EState::Hidden);
+
+	// ★ 마지막 날 판정이 피날레를 가리면 안 된다. 피날레는 3일차에만 오므로
+	//   `bIsFinalDay` 가 항상 참인데, 그것으로 막으면 영영 못 넘긴다.
+	TestEqual(TEXT("마지막 날이어도 피날레는 넘길 수 있다"),
+		FFF_ClosingHudRules::ResolveCtaState(
+			EFF_FestivalStage::Finale, /*Report*/ false, /*FinalDay*/ true, /*CanSkip*/ true),
+		EState::ReadyFinaleSkip);
 
 	return true;
 }

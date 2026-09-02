@@ -13,8 +13,12 @@ bool FFF_ClosingHudRules::IsClosingHudStage(EFF_FestivalStage Stage)
 	case EFF_FestivalStage::Report:
 		return true;
 
-	// 🔴 `Finale` 단계는 **불꽃이 터지는 연출 구간**이다 (3일차 라이브 직후).
-	//    거기서 결산 표를 덮으면 연출을 가린다 — 결과는 그 뒤 마감에서 본다.
+	// 🔴 피날레도 이 바를 쓴다 (2026-09-02 변경). 다만 **탭은 전부 숨기고 CTA 만** 띄운다 —
+	//    불꽃이 터지는 연출 구간이라 결산 표로 덮으면 연출을 가린다. 화면 아래에 얇은 바만
+	//    남겨 두고, 다 봤으면 오른쪽 버튼으로 넘긴다.
+	case EFF_FestivalStage::Finale:
+		return true;
+
 	default:
 		return false;
 	}
@@ -24,6 +28,12 @@ bool FFF_ClosingHudRules::IsTabVisible(
 	EFF_ClosingTab Tab, EFF_FestivalStage Stage, bool bHasPurchasedFinale)
 {
 	if (!IsClosingHudStage(Stage))
+	{
+		return false;
+	}
+
+	// 🔴 연출 구간에는 **탭을 하나도 안 띄운다.** 결과는 그 뒤 마감에서 본다.
+	if (IsFinaleShowStage(Stage))
 	{
 		return false;
 	}
@@ -60,12 +70,24 @@ FFF_ClosingTabSelection FFF_ClosingHudRules::ToggleTab(
 }
 
 EFF_ClosingCtaState FFF_ClosingHudRules::ResolveCtaState(
-	EFF_FestivalStage Stage, bool bIsReportStage, bool bIsFinalDay)
+	EFF_FestivalStage Stage, bool bIsReportStage, bool bIsFinalDay, bool bCanSkipStage)
 {
 	// ① HUD 가 안 뜨는 단계면 CTA 도 없다.
 	if (!IsClosingHudStage(Stage))
 	{
 		return EFF_ClosingCtaState::Hidden;
+	}
+
+	// ★ 피날레는 **다른 행동**이다. 날짜를 넘기는 것이 아니라 연출 단계를 건너뛴다.
+	//   기다리게 하지 않는다 — 불꽃을 다 봤는지는 플레이어가 정한다 (2026-09-02).
+	//
+	//   못 넘기는 것은 `DT_DaySequence` 의 `bSkippable` 이 꺼져 있을 때뿐이고,
+	//   그 판정은 Stage 시스템이 소유한다. UI 는 그대로 비춘다.
+	if (IsFinaleShowStage(Stage))
+	{
+		return bCanSkipStage
+			? EFF_ClosingCtaState::ReadyFinaleSkip
+			: EFF_ClosingCtaState::Hidden;
 	}
 
 	// ② 마감에서는 아직 못 넘긴다. `AdvanceToNextDay()` 가 리포트 단계 밖에서는 무시된다 —

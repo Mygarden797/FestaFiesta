@@ -487,11 +487,17 @@ void UFF_ClosingHudScreen::RefreshStatusRow()
 	const bool bIsReport = ViewModel->GetCurrentStage() == EFF_FestivalStage::Report;
 
 	// 🔴 단계 이름을 리플렉션으로 읽지 않는다. 이 바는 두 단계에서만 뜨므로 박아도 된다.
-	SetTextOrHide(Text_DayStage, FText::Format(
-		bIsReport
-			? LOCTEXT("ClosingStatus_Report", "{0}일차 · 리포트")
-			: LOCTEXT("ClosingStatus_Closing", "{0}일차 · 마감"),
-		FText::AsNumber(Day)));
+	const EFF_FestivalStage Stage = ViewModel->GetCurrentStage();
+	FText StageFormat = LOCTEXT("ClosingStatus_Closing", "{0}일차 · 마감");
+	if (bIsReport)
+	{
+		StageFormat = LOCTEXT("ClosingStatus_Report", "{0}일차 · 리포트");
+	}
+	else if (FFF_ClosingHudRules::IsFinaleShowStage(Stage))
+	{
+		StageFormat = LOCTEXT("ClosingStatus_Finale", "{0}일차 · 피날레");
+	}
+	SetTextOrHide(Text_DayStage, FText::Format(StageFormat, FText::AsNumber(Day)));
 
 	SetTextOrHide(Text_Gold, FText::AsNumber(ViewModel->GetGold()));
 
@@ -510,19 +516,25 @@ void UFF_ClosingHudScreen::RefreshCta()
 	const bool bIsReport = (Stage == EFF_FestivalStage::Report);
 	const bool bIsFinalDay = ViewModel && ViewModel->IsFinalDay();
 
-	CtaState = FFF_ClosingHudRules::ResolveCtaState(Stage, bIsReport, bIsFinalDay);
+	CtaState = FFF_ClosingHudRules::ResolveCtaState(
+		Stage, bIsReport, bIsFinalDay,
+		ViewModel ? ViewModel->CanSkipCurrentStage() : false);
 
-	// 🔴 **바의 CTA 버튼은 띄우지 않는다** (2026-09-02 백종태 결정).
-	// 리포트 패널 안에 같은 버튼이 있어서 화면에 `다음 날로` 가 둘이 된다 —
-	// 준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제다.
+	// 🔴 바의 CTA 버튼은 **피날레에서만** 띄운다 (2026-09-02).
 	//
-	// 판정은 여기서 그대로 한다. 단계와 마지막 날 여부를 아는 것이 화면뿐이라
-	// 패널은 `GetCtaState()`·`GetCtaLabelText()` 로 이 결과를 읽어 간다.
+	// 마감·리포트에서는 리포트 패널 안에 같은 버튼이 있어서, 바에도 두면 화면에
+	// `다음 날로` 가 둘이 된다 (준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제).
+	// 피날레는 **패널이 없는 단계**라 버튼을 놓을 곳이 바뿐이다.
+	const bool bShowBarCta = (CtaState == EFF_ClosingCtaState::ReadyFinaleSkip);
+
 	if (Button_Cta)
 	{
-		Button_Cta->SetVisibility(ESlateVisibility::Collapsed);
+		Button_Cta->SetVisibility(bShowBarCta
+			? ESlateVisibility::Visible
+			: ESlateVisibility::Collapsed);
+		Button_Cta->SetIsEnabled(bShowBarCta);
 	}
-	SetTextOrHide(Text_CtaLabel, FText::GetEmpty());
+	SetTextOrHide(Text_CtaLabel, bShowBarCta ? GetCtaLabelText() : FText::GetEmpty());
 
 	// !! 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
 	FText Reason;
@@ -545,6 +557,12 @@ void UFF_ClosingHudScreen::RefreshCta()
 
 FText UFF_ClosingHudScreen::GetCtaLabelText() const
 {
+	// 피날레는 날짜를 넘기는 것이 아니라 연출을 건너뛰는 것이다. 문구가 달라야 한다.
+	if (CtaState == EFF_ClosingCtaState::ReadyFinaleSkip)
+	{
+		return LOCTEXT("ClosingCta_FinaleSkip", "다음으로");
+	}
+
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 
 	// 마지막 날에는 넘길 날이 없다. `다음 날로` 를 띄워 놓고 못 누르게 하면
@@ -585,6 +603,15 @@ void UFF_ClosingHudScreen::HandleCtaClicked()
 
 	// 여기서 미리 막지 않는다. 판정의 소유자는 Stage 시스템이고, 불가능하면 저쪽이
 	// 무시하고 경고를 남긴다 (UI 규칙 2).
+	//
+	// 🔴 피날레와 리포트는 **다른 함수**다. 피날레는 단계를 건너뛰고, 리포트는 날짜를
+	// 넘긴다. 하나로 묶으면 `AdvanceToNextDay` 가 리포트 밖에서 무시되어 조용히 안 먹는다.
+	if (CtaState == EFF_ClosingCtaState::ReadyFinaleSkip)
+	{
+		ViewModel->RequestSkipCurrentStage();
+		return;
+	}
+
 	ViewModel->RequestAdvanceToNextDay();
 }
 
