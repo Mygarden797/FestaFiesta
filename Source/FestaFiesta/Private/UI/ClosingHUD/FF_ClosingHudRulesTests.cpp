@@ -113,15 +113,24 @@ bool FFF_ClosingHudRules_Cta::RunTest(const FString& Parameters)
 		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Report, /*Report*/ true, false, false),
 		EState::Ready);
 
-	TestEqual(TEXT("마지막 날이면 넘길 날이 없다"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Report, true, /*FinalDay*/ true, false),
-		EState::BlockedFinalDay);
+	// ③ 🔴 **마지막 날은 마감이 마지막 화면이다** (2026-09-02 결정).
+	//
+	// 3일차에는 리포트 단계를 두지 않는다 — 피날레를 이미 봤고 마감에서 최종 결산을
+	// 확인하면 끝이다. 예전에는 여기서 `막힘` 을 돌려줬는데, 그러면 3일차에
+	// `아직 넘길 수 없는 단계입니다` 만 뜨고 **게임이 안 끝난다.**
+	//
+	// ★ 그래서 `마지막 날` 판정이 `리포트 단계 아님` 보다 **먼저**여야 한다.
+	//   순서가 뒤집히면 마감에서 다시 막힌다.
+	TestEqual(TEXT("마지막 날 마감에서 축제를 끝낼 수 있다"),
+		FFF_ClosingHudRules::ResolveCtaState(
+			EFF_FestivalStage::Closing, /*Report*/ false, /*FinalDay*/ true, false),
+		EState::ReadyFinishFestival);
 
-	// ③ ★ 순서. `마지막 날` 을 앞에 두면 **마감 단계에서** `마지막 날이라 넘길 수 없습니다`
-	//   가 떠서, 리포트로 넘어가면 축제를 끝낼 수 있다는 사실을 못 알린다.
-	TestEqual(TEXT("마감 + 마지막 날이면 `리포트 단계 아님` 이 먼저"),
-		FFF_ClosingHudRules::ResolveCtaState(EFF_FestivalStage::Closing, /*Report*/ false, /*FinalDay*/ true, false),
-		EState::BlockedNotReport);
+	// 리포트 단계가 남아 있는 경우에도 마지막 날이면 끝내기다.
+	TestEqual(TEXT("마지막 날 리포트에서도 끝내기"),
+		FFF_ClosingHudRules::ResolveCtaState(
+			EFF_FestivalStage::Report, /*Report*/ true, /*FinalDay*/ true, false),
+		EState::ReadyFinishFestival);
 
 	// --- 피날레 (2026-09-02) ---
 	//

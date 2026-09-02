@@ -90,18 +90,21 @@ EFF_ClosingCtaState FFF_ClosingHudRules::ResolveCtaState(
 			: EFF_ClosingCtaState::Hidden;
 	}
 
-	// ② 마감에서는 아직 못 넘긴다. `AdvanceToNextDay()` 가 리포트 단계 밖에서는 무시된다 —
-	//    UI 가 여기서 판정을 다시 쓰는 것이 아니라 **소유자의 조건을 그대로 비춘다.**
+	// ② 🔴 **마지막 날은 마감이 마지막 화면이다** (2026-09-02 결정).
+	//
+	// 3일차에는 리포트 단계를 두지 않는다 — 피날레를 이미 봤고 마감에서 최종 결산을
+	// 확인하면 끝이다. 그래서 리포트 단계를 기다리지 않고 여기서 끝낼 수 있어야 한다.
+	// 이 분기가 없으면 3일차에 `아직 넘길 수 없는 단계입니다` 만 뜨고 **게임이 안 끝난다.**
+	if (bIsFinalDay)
+	{
+		return EFF_ClosingCtaState::ReadyFinishFestival;
+	}
+
+	// ③ 그 외에는 리포트 단계에서만 넘긴다. `AdvanceToNextDay()` 가 리포트 밖에서
+	//    무시되기 때문이다 — UI 가 판정을 다시 쓰는 것이 아니라 소유자 조건을 비춘다.
 	if (!bIsReportStage)
 	{
 		return EFF_ClosingCtaState::BlockedNotReport;
-	}
-
-	// ★ ③ 을 ② 앞에 두면 마감 단계에서 `마지막 날이라 넘길 수 없습니다` 가 떠서,
-	//   리포트로 넘어가면 축제를 끝낼 수 있다는 사실을 못 알린다.
-	if (bIsFinalDay)
-	{
-		return EFF_ClosingCtaState::BlockedFinalDay;
 	}
 
 	return EFF_ClosingCtaState::Ready;

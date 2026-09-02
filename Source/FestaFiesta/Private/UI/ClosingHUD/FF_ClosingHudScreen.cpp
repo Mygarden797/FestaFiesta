@@ -10,6 +10,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "UI/ClosingHUD/FF_ClosingPanelBase.h"
+#include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
@@ -525,6 +526,8 @@ void UFF_ClosingHudScreen::RefreshCta()
 	// 마감·리포트에서는 리포트 패널 안에 같은 버튼이 있어서, 바에도 두면 화면에
 	// `다음 날로` 가 둘이 된다 (준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제).
 	// 피날레는 **패널이 없는 단계**라 버튼을 놓을 곳이 바뿐이다.
+	// 피날레만 바에 버튼을 둔다. `축제 마치기` 는 리포트 패널 안이다 —
+	// 최종 결산을 보고 나서 누르는 버튼이라 결과 옆에 있어야 한다.
 	const bool bShowBarCta = (CtaState == EFF_ClosingCtaState::ReadyFinaleSkip);
 
 	if (Button_Cta)
@@ -545,10 +548,6 @@ void UFF_ClosingHudScreen::RefreshCta()
 			"결과를 먼저 확인하세요. 남은 마감 시간이 지나면 리포트로 넘어갑니다.");
 		break;
 
-	case EFF_ClosingCtaState::BlockedFinalDay:
-		Reason = LOCTEXT("ClosingCta_FinalDay", "마지막 날입니다. 넘어갈 다음 날이 없습니다.");
-		break;
-
 	default:
 		break;
 	}
@@ -563,13 +562,13 @@ FText UFF_ClosingHudScreen::GetCtaLabelText() const
 		return LOCTEXT("ClosingCta_FinaleSkip", "다음으로");
 	}
 
-	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
+	// 마지막 날에는 넘어갈 다음 날이 아니라 **축제가 끝난다.**
+	if (CtaState == EFF_ClosingCtaState::ReadyFinishFestival)
+	{
+		return LOCTEXT("ClosingCta_Finish", "축제 마치기");
+	}
 
-	// 마지막 날에는 넘길 날이 없다. `다음 날로` 를 띄워 놓고 못 누르게 하면
-	// 무엇이 잘못됐는지 알 수 없다.
-	return (ViewModel && ViewModel->IsFinalDay())
-		? LOCTEXT("ClosingCta_Finish", "축제 마치기")
-		: LOCTEXT("ClosingCta_NextDay", "다음 날로");
+	return LOCTEXT("ClosingCta_NextDay", "다음 날로");
 }
 
 FText UFF_ClosingHudScreen::GetCtaReasonText() const
@@ -580,8 +579,9 @@ FText UFF_ClosingHudScreen::GetCtaReasonText() const
 		return LOCTEXT("ClosingCta_NotReport",
 			"결과를 먼저 확인하세요. 남은 마감 시간이 지나면 리포트로 넘어갑니다.");
 
-	case EFF_ClosingCtaState::BlockedFinalDay:
-		return LOCTEXT("ClosingCta_FinalDay", "마지막 날입니다. 넘어갈 다음 날이 없습니다.");
+	case EFF_ClosingCtaState::ReadyFinishFestival:
+		// 누를 수 있지만 **되돌릴 수 없는 마지막 버튼**이라 무엇이 일어나는지 미리 적는다.
+		return LOCTEXT("ClosingCta_FinishNote", "누르면 축제가 끝나고 나라 지도로 돌아갑니다.");
 
 	default:
 		return FText::GetEmpty();
@@ -609,6 +609,23 @@ void UFF_ClosingHudScreen::HandleCtaClicked()
 	if (CtaState == EFF_ClosingCtaState::ReadyFinaleSkip)
 	{
 		ViewModel->RequestSkipCurrentStage();
+		return;
+	}
+
+	// 🔴 마지막 날은 **날짜를 넘기는 것이 아니라 축제를 끝낸다.**
+	// `AdvanceToNextDay()` 는 3일차에서 거절되므로 여기로 보내면 아무 일도 안 일어난다.
+	// 나라 지도 복귀는 `UFF_UIFlowSubsystem` 이 소유한다 — 레벨을 UI 가 직접 열지 않는다.
+	if (CtaState == EFF_ClosingCtaState::ReadyFinishFestival)
+	{
+		if (UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this))
+		{
+			Flow->ReturnToAtlas();
+		}
+		else
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[%s] UI 흐름 시스템이 없어 나라 지도로 돌아갈 수 없다."), *GetName());
+		}
 		return;
 	}
 

@@ -78,8 +78,13 @@ enum class EFF_ClosingCtaState : uint8
 	 */
 	BlockedNotReport	UMETA(DisplayName = "리포트 단계 아님"),
 
-	/** 마지막 날이라 넘길 날이 없다. */
-	BlockedFinalDay		UMETA(DisplayName = "마지막 날"),
+	/**
+	 * 마지막 날이라 **축제를 끝낸다.** 넘어갈 다음 날이 아니라 나라 지도로 돌아간다.
+	 *
+	 * 🔴 예전에는 `막힘` 이었다. 3일차에 리포트 단계를 두지 않기로 하면서
+	 * **마감이 마지막 화면**이 되었고, 여기서 못 끝내면 게임이 안 끝난다 (2026-09-02).
+	 */
+	ReadyFinishFestival	UMETA(DisplayName = "축제 마치기"),
 
 	/**
 	 * 피날레 연출 구간이라 `다음으로` 다.
