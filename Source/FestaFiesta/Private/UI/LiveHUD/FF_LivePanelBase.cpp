@@ -2,10 +2,7 @@
 
 #include "UI/LiveHUD/FF_LivePanelBase.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
-#include "Components/ButtonSlot.h"
-#include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "UI/FF_UILog.h"
 #include "UI/LiveHUD/FF_LiveHudScreen.h"
@@ -19,7 +16,6 @@
 void UFF_LivePanelBase::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	EnsurePinButton();
 
 	// 내부 버튼이라 인스턴스 수명과 같다. 외부 시스템 구독만 패널을 열 때 붙인다.
 	if (Button_Close)
@@ -31,124 +27,11 @@ void UFF_LivePanelBase::NativeOnInitialized()
 		// 다시 만드는 것보다 이쪽이 싸고, 디자이너가 실수로 다시 넣어도 같이 막힌다.
 		Button_Close->SetToolTipText(FText::GetEmpty());
 	}
-
-	if (Button_Pin)
-	{
-		Button_Pin->OnClicked.AddUniqueDynamic(this, &UFF_LivePanelBase::HandlePinClicked);
-		RefreshPinButtonPresentation();
-	}
 }
 
 void UFF_LivePanelBase::HandleCloseClicked()
 {
 	RequestClose();
-}
-
-void UFF_LivePanelBase::HandlePinClicked()
-{
-	bIsPinned = !bIsPinned;
-
-	// 누르고 있던 빈 영역 위로 고정 버튼이 들어오는 경우까지 포함해 즉시 이동을 끊는다.
-	DragTracker.Reset();
-	RefreshPinButtonPresentation();
-
-	if (UFF_LiveHudScreen* Screen = OwningScreen.Get())
-	{
-		Screen->SetPanelPinned(Tab, bIsPinned);
-	}
-}
-
-void UFF_LivePanelBase::ApplyPinnedState(bool bPinned)
-{
-	bIsPinned = bPinned;
-	if (bIsPinned)
-	{
-		DragTracker.Reset();
-	}
-	RefreshPinButtonPresentation();
-}
-
-void UFF_LivePanelBase::EnsurePinButton()
-{
-	if (Button_Pin)
-	{
-		Text_PinLabel = Cast<UTextBlock>(Button_Pin->GetContent());
-		if (!Text_PinLabel && WidgetTree)
-		{
-			Text_PinLabel = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_PinLabel")));
-		}
-		return;
-	}
-
-	if (!WidgetTree || !Button_Close)
-	{
-		return;
-	}
-
-	UPanelWidget* CloseParent = Button_Close->GetParent();
-	const int32 CloseIndex = CloseParent ? CloseParent->GetChildIndex(Button_Close) : INDEX_NONE;
-	if (!CloseParent || CloseIndex == INDEX_NONE)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Button_Close 의 부모를 찾지 못해 고정 버튼을 만들 수 없다."), *GetName());
-		return;
-	}
-
-	UButton* RuntimePinButton = WidgetTree->ConstructWidget<UButton>(
-		UButton::StaticClass(), TEXT("Button_Pin"));
-	UTextBlock* RuntimePinLabel = WidgetTree->ConstructWidget<UTextBlock>(
-		UTextBlock::StaticClass(), TEXT("Text_PinLabel"));
-	if (!RuntimePinButton || !RuntimePinLabel)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 런타임 고정 버튼 위젯 생성에 실패했다."), *GetName());
-		return;
-	}
-
-	// 기존 WBP 의 시각 언어를 그대로 잇는다. 새 스타일을 박으면 패널별 닫기 버튼과 어긋난다.
-	RuntimePinButton->SetStyle(Button_Close->GetStyle());
-	if (const UTextBlock* CloseLabel = Cast<UTextBlock>(Button_Close->GetContent()))
-	{
-		RuntimePinLabel->SetFont(CloseLabel->GetFont());
-		RuntimePinLabel->SetColorAndOpacity(CloseLabel->GetColorAndOpacity());
-	}
-	RuntimePinLabel->SetJustification(ETextJustify::Center);
-
-	if (UButtonSlot* LabelSlot = Cast<UButtonSlot>(RuntimePinButton->AddChild(RuntimePinLabel)))
-	{
-		LabelSlot->SetHorizontalAlignment(HAlign_Center);
-		LabelSlot->SetVerticalAlignment(VAlign_Center);
-	}
-
-	// 닫기와 같은 부모에, 닫기 바로 앞 순서로 넣어 익숙한 우측 상단 조작 묶음을 유지한다.
-	if (!CloseParent->InsertChildAt(CloseIndex, RuntimePinButton))
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] Button_Close 앞에 고정 버튼을 삽입하지 못했다."), *GetName());
-		return;
-	}
-
-	Button_Pin = RuntimePinButton;
-	Text_PinLabel = RuntimePinLabel;
-}
-
-void UFF_LivePanelBase::RefreshPinButtonPresentation()
-{
-	if (Text_PinLabel)
-	{
-		Text_PinLabel->SetText(bIsPinned
-			? NSLOCTEXT("FestaFiestaLivePanel", "PinnedLabel", "고정됨")
-			: NSLOCTEXT("FestaFiestaLivePanel", "PinLabel", "고정"));
-	}
-
-	if (Button_Pin)
-	{
-		Button_Pin->SetToolTipText(bIsPinned
-			? NSLOCTEXT("FestaFiestaLivePanel", "UnpinTooltip",
-				"패널 고정을 해제합니다. 해제하면 빈 영역을 끌어 다시 이동할 수 있습니다.")
-			: NSLOCTEXT("FestaFiestaLivePanel", "PinTooltip",
-				"패널을 현재 위치에 고정합니다. 고정된 동안에는 끌어 이동할 수 없습니다."));
-	}
 }
 
 void UFF_LivePanelBase::InitializePanel(UFF_LiveHudScreen* InOwningScreen, EFF_LiveTab InTab, const FText& InTitle)
@@ -178,7 +61,7 @@ void UFF_LivePanelBase::RequestClose()
 {
 	if (UFF_LiveHudScreen* Screen = OwningScreen.Get())
 	{
-		Screen->ClosePanel(Tab);
+		Screen->CloseCurrentPanel();
 		return;
 	}
 
@@ -206,15 +89,9 @@ void UFF_LivePanelBase::SetTextOrHide(UTextBlock* TextBlock, const FText& Value)
 
 FReply UFF_LivePanelBase::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
-	UFF_LiveHudScreen* Screen = OwningScreen.Get();
-	const bool bIsLeftButton = InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
-	if (Screen && bIsLeftButton)
-	{
-		// 자식 버튼이 아닌 패널 빈 영역을 누른 경우다. 겹친 패널 중 이 패널을 맨 앞으로 올린다.
-		Screen->BringPanelToFront(Tab);
-	}
-
-	if (bIsPinned || !Screen || !Screen->IsPanelDragAllowed(Tab) || !bIsLeftButton)
+	const UFF_LiveHudScreen* Screen = OwningScreen.Get();
+	if (!bAllowDragToMove || !Screen || !Screen->IsPanelDragAllowed()
+		|| InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 	{
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
@@ -257,19 +134,7 @@ void UFF_LivePanelBase::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	if (!DragTracker.IsPressed())
-	{
-		return;
-	}
-
-	UFF_LiveHudScreen* Screen = OwningScreen.Get();
-	if (bIsPinned || !Screen || !Screen->IsPanelDragAllowed(Tab))
-	{
-		DragTracker.Reset();
-		return;
-	}
-
-	if (!FSlateApplication::IsInitialized())
+	if (!DragTracker.IsPressed() || !FSlateApplication::IsInitialized())
 	{
 		return;
 	}
@@ -291,11 +156,17 @@ void UFF_LivePanelBase::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 		return;
 	}
 
+	UFF_LiveHudScreen* Screen = OwningScreen.Get();
+	if (!Screen)
+	{
+		return;
+	}
+
 	// 🔴 픽셀 → 슬레이트 단위. 캔버스 슬롯은 슬레이트 단위를 쓴다.
 	//    이 나눗셈을 빼면 UI 배율이 1 인 환경에서만 맞고 다른 해상도에서 어긋난다.
 	//    배율이 0 이하로 올 일은 없지만, 0 으로 나누면 좌표가 NaN 이 되어 패널이 사라진다.
 	const float ViewportScale = UWidgetLayoutLibrary::GetViewportScale(this);
-	Screen->NudgePanelPosition(Tab, ViewportScale > 0.f ? PixelDelta / ViewportScale : PixelDelta);
+	Screen->NudgePanelPosition(ViewportScale > 0.f ? PixelDelta / ViewportScale : PixelDelta);
 }
 
 FReply UFF_LivePanelBase::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

@@ -17,7 +17,6 @@
 
 class UBorder;
 class UButton;
-class UCanvasPanel;
 class UPanelWidget;
 class UTextBlock;
 class UWidget;
@@ -84,14 +83,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
 	void CloseCurrentPanel();
 
-	/** 지정한 탭의 패널만 닫는다. 다중 패널의 닫기 버튼이 이 경로를 사용한다. */
-	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
-	void ClosePanel(EFF_PrepHudTab Tab);
-
-	/** 해당 탭 패널이 현재 열려 있는지. 포커스와 열린 상태를 혼동하지 않는다. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
-	bool IsPanelOpen(EFF_PrepHudTab Tab) const;
-
 	/**
 	 * 열린 패널을 화면에서 끌어 옮긴다. 패널 베이스의 드래그가 이걸 부른다.
 	 *
@@ -103,7 +94,7 @@ public:
 	 * 늘어난 축의 이동은 버린다 — 그 방향은 화면이 정하므로 값이 커지면 반대로 밀린다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
-	void NudgePanelPosition(EFF_PrepHudTab Tab, FVector2D SlateDelta);
+	void NudgePanelPosition(FVector2D SlateDelta);
 
 	/** 옮긴 것을 되돌린다. 그 탭의 `Offset` 을 0 으로 만든다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
@@ -138,13 +129,7 @@ public:
 
 	/** 지금 패널을 끌어 옮길 수 있는지. `디자이너 지정` 도킹에서는 코드가 자리를 안 만지므로 false. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep")
-	bool IsPanelDragAllowed(EFF_PrepHudTab Tab) const;
-
-	/** 패널을 앞으로 가져오고 포커스한다. 이미 열린 패널의 탭을 다시 눌러도 닫지 않는다. */
-	void BringPanelToFront(EFF_PrepHudTab Tab);
-
-	/** 고정된 패널은 움직이지 않고 일반 패널보다 위에 유지된다. */
-	void SetPanelPinned(EFF_PrepHudTab Tab, bool bPinned);
+	bool IsPanelDragAllowed() const;
 
 	/**
 	 * 다음 단계로 보내 달라고 요청한다. **CTA 버튼과 같은 경로다.**
@@ -571,7 +556,7 @@ private:
 	 * 패널 자리를 이 방향으로 맞춘다. **패널을 열 때마다 부른다** — 탭마다 방향이 다르다.
 	 * 호스트가 `CanvasPanel` 자식이 아니면 아무것도 하지 않는다 (위치를 디자이너가 소유한다).
 	 */
-	void ApplyPanelLayout(EFF_PrepHudTab Tab, const FFF_PrepPanelLayout& Layout);
+	void ApplyPanelLayout(const FFF_PrepPanelLayout& Layout);
 
 	/**
 	 * 행 배경을 칠한다. **`SetBrushColor` 만으로는 안 된다** — `UBorder` 의 기본 브러시가
@@ -579,19 +564,8 @@ private:
 	 */
 	void PaintRowBackground(UBorder* Border, const FLinearColor& Color, float CornerRadius) const;
 
-	/** 기존 WBP의 단일 Overlay 안에 패널별 슬롯을 갖는 전체 화면 Canvas를 런타임으로 만든다. */
-	void EnsurePanelWorkspace();
-
-	/** 닫힌 탭을 연다. 이미 열렸으면 앞으로만 가져오며, 5개면 상태를 바꾸지 않는다. */
-	bool OpenPanel(EFF_PrepHudTab Tab);
-
-	void RefreshPanelSelectionVisuals();
-	void RefreshPanelZOrder();
-	void RefreshPanelHostVisibility();
-	void ShowPanelLimitNotice();
-	void HidePanelLimitNotice();
-	void RestoreFloatingPanelState();
-	void SaveFloatingPanelState() const;
+	/** 선택을 실제 화면에 반영한다. 값이 바뀌지 않았으면 아무것도 하지 않는다. */
+	void ApplySelection(const FFF_PrepTabSelection& NewSelection);
 
 	/** 없으면 만들어 호스트에 넣는다. 만들 수 없으면 nullptr 과 이유 로그. */
 	UFF_PrepPanelBase* EnsurePanel(EFF_PrepHudTab Tab);
@@ -629,20 +603,6 @@ private:
 	/** 한 번 만든 패널은 재사용한다. 단계가 끝나 위젯이 내려가면 함께 사라진다. */
 	UPROPERTY()
 	TMap<EFF_PrepHudTab, TObjectPtr<UFF_PrepPanelBase>> PanelWidgets;
-
-	/** 기존 패널 호스트 안에 런타임으로 넣는 전체 화면 작업공간. 패널마다 Canvas 슬롯을 갖는다. */
-	UPROPERTY(Transient)
-	TObjectPtr<UCanvasPanel> PanelWorkspace;
-
-	/** 여섯 번째 패널을 열려고 했을 때 표시하는 비모달 안내. */
-	UPROPERTY(Transient)
-	TObjectPtr<UBorder> PanelLimitNotice;
-
-	/** 뒤에서 앞으로의 열린 순서. Selection은 이 중 포커스된 하나만 나타내는 호환 상태다. */
-	TArray<EFF_PrepHudTab> OpenTabs;
-
-	/** 닫아도 같은 HUD 세션에서 고정 상태가 유지되며, 단계 전환은 상태 서브시스템이 이어 준다. */
-	TSet<EFF_PrepHudTab> PinnedTabs;
 
 	FFF_PrepTabSelection Selection;
 
