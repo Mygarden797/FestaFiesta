@@ -2,7 +2,7 @@
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
-#include "Components/CanvasPanel.h"
+#include "Components/PanelWidget.h"
 #include "Editor.h"
 #include "Misc/AutomationTest.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildInputBridgeSubsystem.h"
@@ -162,13 +162,16 @@ bool FFF_PrepBuildInputBridgeWorkspaceHitTestContractTest::RunTest(const FString
 		return false;
 	}
 
-	const UCanvasPanel* Workspace = Cast<UCanvasPanel>(
-		HudBar->GetWidgetFromName(TEXT("Canvas_FloatingPanelWorkspace")));
-	TestNotNull(TEXT("전체 화면 플로팅 패널 작업공간이 런타임에 생성된다"), Workspace);
-	if (Workspace)
+	TestEqual(TEXT("PrepHUD 루트의 빈 영역은 시설/지면 월드 클릭을 통과시킨다"),
+		HudBar->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+
+	const UPanelWidget* PanelHost = Cast<UPanelWidget>(
+		HudBar->GetWidgetFromName(TEXT("Panel_PanelHost")));
+	TestNotNull(TEXT("단일 패널 호스트가 존재한다"), PanelHost);
+	if (PanelHost)
 	{
-		TestEqual(TEXT("작업공간의 빈 영역은 시설/지면 월드 클릭을 통과시킨다"),
-			Workspace->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+		TestEqual(TEXT("열린 패널이 없을 때 단일 패널 호스트는 입력을 가로채지 않는다"),
+			PanelHost->GetVisibility(), ESlateVisibility::Collapsed);
 	}
 
 	return true;
