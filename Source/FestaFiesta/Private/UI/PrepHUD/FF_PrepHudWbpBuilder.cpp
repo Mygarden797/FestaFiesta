@@ -1874,7 +1874,7 @@ namespace FFPrepHudWbpBuilder
 		// ★ 아직 안 먹는다는 안내는 `Amber` 다. 흘려보내면 안 되는 사실이라 본문보다 눈에 띄어야 한다.
 		StyleText(*NotApplied, 13, Palette->InGame.Amber, TEXT("Medium"));
 		NotApplied->SetText(LOCTEXT("PrepPromotion_NotAppliedPreview",
-			"홍보 효과는 아직 방문객 수에 반영되지 않습니다. 배수만 표시합니다."));
+			"예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다."));
 		NotApplied->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_NotApplied = Content->AddChildToVerticalBox(NotApplied))
 		{

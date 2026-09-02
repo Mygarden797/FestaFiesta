@@ -552,6 +552,22 @@ public:
 	int32 GetConcurrentVisitorCount() const;
 
 	/**
+	 * 오늘 예상 방문객. 못 읽었으면 `INDEX_NONE`.
+	 *
+	 * 경제가 `floor(기본 방문객 × 홍보 배수)` 로 계산한다. 홍보를 사면 이 값이 오른다.
+	 *
+	 * 🔴 **하루 단일 예상치다.** 3일 합계도, 범위도, 최대 동시 인원도 아니다.
+	 * 그리고 **실제 입장 인원과 다르다** — 스폰은 아직 `AFF_SpawnActor::UnitCount` 를
+	 * 쓰기 때문에 홍보 배수가 안 걸린다 (2026-09-02 김시리 확인).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	int32 GetExpectedVisitors() const { return ExpectedVisitors; }
+
+	/** 예상 방문객이 바뀔 때. 홍보를 사면 온다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Crowd")
+	FFF_OnIntMetricChanged OnExpectedVisitorsChanged;
+
+	/**
 	 * 관객 욕구 5종의 미해소율. 순서는 `EFF_NeedType` 과 같다.
 	 *
 	 * 🔴 **`GetNeedSampleCount()` 를 함께 봐야 한다.** 표본이 없으면 이 함수는 전부 `0` 을
@@ -855,6 +871,15 @@ protected:
 	UFUNCTION()
 	void HandleOwnerGoldChanged(int32 NewValue);
 
+	UFUNCTION()
+	void HandleOwnerTotalRevenueChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerTodayRevenueChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerExpectedVisitorsChanged(int32 NewValue);
+
 	/** 미납 총액을 받아 중계한다. */
 	UFUNCTION()
 	void HandleOwnerArrearsChanged(int32 NewValue);
@@ -962,6 +987,10 @@ private:
 
 	UPROPERTY()
 	int32 AvailableStaffCount = INDEX_NONE;
+
+	/** 오늘 예상 방문객. 소유자 값이 오기 전에는 `모름` 이다. */
+	UPROPERTY(Transient)
+	int32 ExpectedVisitors = INDEX_NONE;
 
 	/**
 	 * 구매한 홍보 등급. **더미다** — 경제 시스템에 이 상태를 보관할 자리가 아직 없다.
