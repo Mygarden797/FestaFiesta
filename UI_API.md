@@ -80,7 +80,8 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `GetCurrentStageDisplayName()`         | `FText`             | 현재 Stage의 한글 표시 이름 (⚠️ 패키징 빌드 안전성 재검토 필요 — 아래 참고) |
 | `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨) |
 | `OnFestivalStarted`                    | (인자 없음)          | 축제가 새로 시작됐음을 알리는 신호 (StartNewFestival() 호출 시 발동|
-
+| `SetMinigameInProgress(bool)`          |                      | 미니게임 시작/종료 시 호출. true면 배속을 무조건 1배속으로 고정 
+| `IsMinigameInProgress()`               | `bool`               | 지금 미니게임 진행 중인지 즉시 조회 (2026-08-28 추가)
 **`OnMainProgramStarted` 사용 시 주의 3건 (백종태 확인, 2026-08-12)** — 토스트 알림 만들 때 다시 읽습니다.
 
 1. **이 이벤트는 공연 "시작"이 아니라 "배속 잠금 시작" 시점입니다.**
@@ -533,9 +534,11 @@ fallback 없이 거부한다. 빈 곳을 클릭하면 기존 Live 선택을 닫�
 Live에서는 같은 resolver를 0.05초 간격으로 재사용해 커서 아래 실제 클릭 Box를 Hover 표시한다. 클릭 순간에는
 현재 Hovered Proxy가 새 ray와 실제로 교차하고 등록·채널·가림 검증을 통과하는지 동기 재확인해 그 시설을
 우선 선택한다. stale Hover가 ray를 벗어났으면 실제 교차 후보로 즉시 표시와 결과를 바꾼다. 별도 Actor Tick이나
-시설 전체 순회는 없으며, 커서가 패널 위에 있거나 건축·모달·ActorView·CharacterView에서 피킹이 막히면
+시설 전체 순회는 없으며, 커서가 패널 위에 있거나 건축·모달·ActorView에서 피킹이 막히면
 Hover를 즉시 정리한다. 패널이 열린 시설은 `Selected` 표시가 우선하며, Live 이탈·시설 제거·World Snapshot
 복원·Subsystem 종료 때 Hover와 Selected 표시를 모두 해제한다.
+캐릭터 그라운드 모드(`CharacterControl`)에서는 관찰 카메라 이동만 막고 시설 피킹은 유지하므로,
+같은 좌클릭 경로로 시설 정보 패널과 미니게임 진입 동작을 사용할 수 있다.
 
 제품 건축 경로의 `Build` 선택은 `UFF_BuildModeSubsystem`이 소유한다. 활성 건축 세션은 Festival Stage와
 FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계에서는 시설 GUID·권위 레지스트리·FFZS Phase·
@@ -1609,3 +1612,4 @@ U5 홍보 패널을 만들면서, 없는 API 를 UI 쪽 더미로 임시로 메�
 | 2026-08-28 | 김시리 | ✅ **메인 무대가 공연 시간에만 후보로 열립니다.** Live 전반에는 `Performance_MainStage_*` 가 NPC 목적지 후보에서 빠져 있다가 공연 시작 시각에 열리고, 그 순간 유휴 파티가 무대로 몰립니다. **버스킹·체험 무대는 상시 열려 있습니다.** 화면 쪽 작업은 없습니다 — 다만 "무대에 아무도 없다"가 버그가 아니라 의도라는 점만 알아 두시면 됩니다 |
 | 2026-08-27 | 김시리 | **코드 전수 대조 + 문서 정리.** 안 맞는 것을 문서 끝 `아직 안 맞는 것` 표 하나로 모으고, 이미 닫힌 항목의 경위 서술을 걷어냈습니다. 실제로 바뀐 사실 4개: ① **표시 문자열은 5개 파일에 남아 있습니다**(지목했던 2곳은 줄 번호가 낡았고, 그중 4건은 Stage enum 이 아니라 탭·옵션 enum 이라 강민서 님 수정과 무관합니다) ② **`FFF_CrowdReadModel` 은 스텁이 아니라 실값이고 셀이 2m 입니다**(5m 가정이면 Heat Map 색이 틀립니다) ③ 인원 칸에 **가용이 아니라 보유**가 붙어 있습니다 ④ 프로그램·피날레는 `EFF_PrepHudTab` 에 탭 자리가 이미 있고 패널 본체만 없습니다. **경제 쪽 추가 작업은 0건이고, 제 숙제는 `AddSample` 호출부입니다** |
 | 2026-08-28 | 강민서 | ✅ **김시리님 질문 관련 — `OnFestivalStarted` 델리게이트로 대신 구독하시는 걸 제안합니다.** `StartNewFestival()` 호출 시 Day/Stage/시계 초기화 후 마지막에 `OnFestivalStarted.Broadcast()`가 발동하도록 만들어 뒀습니다. 경제 쪽 리셋 함수를 `UFF_UIFlowSubsystem`이 직접 호출하는 방식 대신, 여기 구독해서 자체 리셋을 걸어두시면 "부를 자리가 없다"는 문제가 UI Flow 흐름 여부와 무관하게 해결될 것 같습니다. 구독 방법: `GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()->OnFestivalStarted.AddDynamic(this, &YourClass::YourResetHandler);` 이 방식이 맞을지 확인 부탁드립니다. |
+| 2026-08-28 | 강민서 | 🆕 **미니게임 진행 중 1배속 고정 API 추가 — `SetMinigameInProgress(bool)` / `IsMinigameInProgress()`.** 팀 결정대로 미니게임 플레이 중에는 배속 버튼을 눌러도 무조건 1배속으로 고정되도록 `Tick()`의 배속 계산에 반영했습니다. 미니게임 시작 시점에 `true`, 종료 시점에 `false`로 호출해주시면 됩니다. 다만 **이 함수를 실제로 호출하는 연결부는 아직 없습니다** — 원재/광훈 쪽 미니게임(사격 게임 등) 시작/종료 지점에 이 호출을 걸어주시는 작업이 필요합니다. |

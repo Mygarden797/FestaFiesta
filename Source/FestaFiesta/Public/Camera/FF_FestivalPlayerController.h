@@ -61,7 +61,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	bool IsCameraMovementAllowed() const;
 
-	// 클릭으로 대상을 고를 수 있는 상태인가. 건축 중에는 false 다.
+	// 클릭으로 대상을 고를 수 있는 상태인가. 관찰·캐릭터 시점에서는 true,
+	// 건축·모달·액터 관람·연출 중에는 false 다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Camera")
 	bool IsPickingAllowed() const;
 
