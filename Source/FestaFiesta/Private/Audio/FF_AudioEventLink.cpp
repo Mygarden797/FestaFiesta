@@ -5,6 +5,7 @@
 #include "Audio/FF_AudioSubsystem.h"
 #include "Engine/World.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "FF_FFZSWorldSubsystem.h"
 #include "Finale/FF_FinaleShowSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -79,6 +80,18 @@ void UFF_AudioEventLink::BindAll()
 		}
 	}
 
+	if (!bBoundZoneWorld)
+	{
+		// 시설 설치·철거는 Zone 이 확정한 뒤에만 방송된다.
+		// 건축 모드 상태만 보면 카탈로그를 열고 닫은 것까지 설치로 잡힌다.
+		if (UFFZSWorldSubsystem* ZoneWorld = World->GetSubsystem<UFFZSWorldSubsystem>())
+		{
+			ZoneWorld->OnWorldChanged.AddDynamic(this, &UFF_AudioEventLink::HandleWorldChanged);
+			ZoneWorld->OnPlacementRejected.AddDynamic(this, &UFF_AudioEventLink::HandlePlacementRejected);
+			bBoundZoneWorld = true;
+		}
+	}
+
 	if (!bBoundQueue)
 	{
 		if (UFF_QueueSubsystem* Queue = World->GetSubsystem<UFF_QueueSubsystem>())
@@ -101,6 +114,7 @@ void UFF_AudioEventLink::UnbindAll()
 		bBoundQueue = false;
 		bBoundStage = false;
 		bBoundBuild = false;
+		bBoundZoneWorld = false;
 		return;
 	}
 
@@ -133,6 +147,16 @@ void UFF_AudioEventLink::UnbindAll()
 			Build->OnBuildModeStateChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleBuildModeStateChanged);
 		}
 		bBoundBuild = false;
+	}
+
+	if (bBoundZoneWorld)
+	{
+		if (UFFZSWorldSubsystem* ZoneWorld = World->GetSubsystem<UFFZSWorldSubsystem>())
+		{
+			ZoneWorld->OnWorldChanged.RemoveDynamic(this, &UFF_AudioEventLink::HandleWorldChanged);
+			ZoneWorld->OnPlacementRejected.RemoveDynamic(this, &UFF_AudioEventLink::HandlePlacementRejected);
+		}
+		bBoundZoneWorld = false;
 	}
 
 	if (bBoundQueue)
@@ -386,10 +410,8 @@ void UFF_AudioEventLink::HandleBuildModeStateChanged(
 		return;
 	}
 
-	// 지금은 시설이 실제로 설치·철거됐다는 신호가 없다. 건축 모드 상태 변화만 온다.
-	// 그래서 카탈로그를 열고 닫는 소리까지가 한계다.
-	//
-	// 설치음은 CommitPlacement 성공 시점에 신호가 있어야 붙일 수 있다.
+	// 카탈로그를 열고 닫는 소리다. 실제 설치·철거음은 Zone 이 확정한 뒤
+	// HandleWorldChanged 에서 낸다.
 	const bool bWasClosed = PreviousState == EFF_BuildModeState::Closed;
 	const bool bIsClosed = NewState == EFF_BuildModeState::Closed;
 
@@ -402,5 +424,53 @@ void UFF_AudioEventLink::HandleBuildModeStateChanged(
 	if (!bWasClosed && bIsClosed)
 	{
 		Audio->PlayEvent2D(EFF_AudioEvent::UiCancel);
+	}
+}
+
+void UFF_AudioEventLink::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
+{
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	UFF_AudioSubsystem* Audio = GetAudio();
+	if (!Audio)
+	{
+		return;
+	}
+
+	// 종류마다 다른 소리를 낸다. 설치와 철거가 같은 소리면 뭘 했는지 귀로 구분이 안 된다.
+	EFF_AudioEvent Sound = EFF_AudioEvent::None;
+
+	switch (Event.Type)
+	{
+	case EFFZSCommandType::Install:        Sound = EFF_AudioEvent::BuildPlaced;         break;
+	case EFFZSCommandType::Move:           Sound = EFF_AudioEvent::BuildMoved;          break;
+	case EFFZSCommandType::Remove:         Sound = EFF_AudioEvent::BuildRemoved;        break;
+	case EFFZSCommandType::Open:           Sound = EFF_AudioEvent::BuildFacilityOpened; break;
+	case EFFZSCommandType::Close:
+	case EFFZSCommandType::EmergencyClose: Sound = EFF_AudioEvent::BuildFacilityClosed; break;
+	default: return;
+	}
+
+	// 위치를 모르므로 2D 로 낸다. 시설 좌표를 얻으려면 Zone 에 다시 물어야 하는데,
+	// 소리 하나 때문에 그 조회를 매번 하는 건 과하다.
+	Audio->PlayEvent2D(Sound);
+}
+
+void UFF_AudioEventLink::HandlePlacementRejected(
+	const FFFZSCommand& Command, const FFFZSCommandResult& Result)
+{
+	(void)Command; (void)Result;
+
+	if (!bLinkEnabled)
+	{
+		return;
+	}
+
+	if (UFF_AudioSubsystem* Audio = GetAudio())
+	{
+		Audio->PlayEvent2D(EFF_AudioEvent::BuildRejected);
 	}
 }

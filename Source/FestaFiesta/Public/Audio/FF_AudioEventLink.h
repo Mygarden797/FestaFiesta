@@ -5,6 +5,7 @@
 #include "Audio/FF_AudioTypes.h"
 #include "CoreMinimal.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "FF_FFZSTypes.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -12,19 +13,17 @@
 
 class UFF_AudioSubsystem;
 
-/**
- * 우리 파트에서 나오는 신호를 사운드로 잇는다.
- *
- * ─── 왜 별도인가 ────────────────────────────────────────────────────────────
- * 오디오 서브시스템은 "무슨 소리를 어떻게 낼지"만 안다. 어떤 순간에 소리가 나야 하는지는
- * 각 파트가 알고 있고, 그 둘을 잇는 코드는 어딘가에 있어야 한다. 그 자리를 여기로 둔다.
- *
- * 이렇게 나눠두면 소리를 붙이려고 Queue 나 Finale 코드를 고칠 일이 없다.
- * 새 소리가 필요해지면 여기에 구독 한 줄만 늘리면 된다.
- *
- * ─── 무엇이 없어도 돌아간다 ─────────────────────────────────────────────────
- * 구독 대상이 없으면 그냥 안 붙는다. 사운드 뱅크가 비어 있어도 조용히 넘어간다.
- */
+// 우리 파트에서 나오는 신호를 사운드로 잇는다.
+//
+// ─── 왜 별도인가 ────────────────────────────────────────────────────────────
+// 오디오 서브시스템은 "무슨 소리를 어떻게 낼지"만 안다. 어떤 순간에 소리가 나야 하는지는
+// 각 파트가 알고 있고, 그 둘을 잇는 코드는 어딘가에 있어야 한다. 그 자리를 여기로 둔다.
+//
+// 이렇게 나눠두면 소리를 붙이려고 Queue 나 Finale 코드를 고칠 일이 없다.
+// 새 소리가 필요해지면 여기에 구독 한 줄만 늘리면 된다.
+//
+// ─── 무엇이 없어도 돌아간다 ─────────────────────────────────────────────────
+// 구독 대상이 없으면 그냥 안 붙는다. 사운드 뱅크가 비어 있어도 조용히 넘어간다.
 UCLASS()
 class FESTAFIESTA_API UFF_AudioEventLink : public UWorldSubsystem
 {
@@ -35,7 +34,7 @@ public:
 	virtual void Deinitialize() override;
 	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
 
-	/** 결선을 끊는다. 소리 때문에 다른 확인이 방해될 때 쓴다. */
+	// 결선을 끊는다. 소리 때문에 다른 확인이 방해될 때 쓴다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Audio")
 	void SetLinkEnabled(bool bEnabled) { bLinkEnabled = bEnabled; }
 
@@ -70,6 +69,14 @@ private:
 	UFUNCTION()
 	void HandleBuildModeStateChanged(EFF_BuildModeState PreviousState, EFF_BuildModeState NewState);
 
+	// 시설이 실제로 설치·이동·철거·개폐될 때. Zone 이 확정한 뒤에만 방송한다.
+	UFUNCTION()
+	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
+
+	// 배치가 거절됐을 때. 설치음과 다른 소리를 내야 실패한 걸 안다.
+	UFUNCTION()
+	void HandlePlacementRejected(const FFFZSCommand& Command, const FFFZSCommandResult& Result);
+
 	// 지금 단계와 밤낮으로 배경음을 정한다.
 	//
 	// 단계만 보면 낮과 밤이 같은 곡이 되고, 밤낮만 보면 준비 단계와 운영이 구분되지 않는다.
@@ -86,6 +93,7 @@ private:
 	bool bBoundQueue = false;
 	bool bBoundStage = false;
 	bool bBoundBuild = false;
+	bool bBoundZoneWorld = false;
 
 	// 마지막으로 받은 상태. 두 신호를 합쳐서 배경음을 정하려면 둘 다 들고 있어야 한다.
 	EFF_FestivalStage LastStage = EFF_FestivalStage::Setup;
