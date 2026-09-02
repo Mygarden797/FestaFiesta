@@ -455,15 +455,17 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 	const FVector InsideRayOrigin = MakeVerticalRayOrigin(ProxyExtent.X - 1.0f);
 	const FVector OutsideRayOrigin = MakeVerticalRayOrigin(ProxyExtent.X + 1.0f);
 
-	TestEqual(TEXT("회전된 표시 proxy 안쪽 1cm는 같은 시설로 판정한다"),
-		Coordinator->ResolveLiveFacilityAlongRay(
+	TestNull(TEXT("선택 여백은 권위 footprint 바깥이라 구형 지면 좌표 조회로는 시설을 놓친다"),
+		ZoneSystem->FindFacilityAtWorldPoint(InsideRayOrigin, ZoneId));
+	TestEqual(TEXT("Build/Live 공용 resolver는 회전된 padded proxy 안쪽 1cm를 같은 시설로 판정한다"),
+		Coordinator->ResolveFacilityAlongRay(
 			InsideRayOrigin, RayDirection, nullptr),
 		Facility);
 	TestNull(TEXT("회전된 표시 proxy 바깥쪽 1cm는 선택하지 않는다"),
-		Coordinator->ResolveLiveFacilityAlongRay(
+		Coordinator->ResolveFacilityAlongRay(
 			OutsideRayOrigin, RayDirection, nullptr));
 	TestEqual(TEXT("현재 Hover 표시 대상은 현재 ray와 교차하면 클릭 대상으로 유지한다"),
-		Coordinator->ResolveLiveFacilityAlongRay(
+		Coordinator->ResolveFacilityAlongRay(
 			InsideRayOrigin, RayDirection, Facility),
 		Facility);
 
@@ -514,7 +516,7 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 				PreferredOverlapFacility->GetSelectionIndicatorState(),
 				EFFZSFacilitySelectionIndicatorState::Hovered);
 			TestEqual(TEXT("겹친 proxy에서도 화면에 Hover된 시설을 클릭한다"),
-				Coordinator->ResolveLiveFacilityAlongRay(
+				Coordinator->ResolveFacilityAlongRay(
 					InsideRayOrigin,
 					RayDirection,
 					Coordinator->SelectionIndicatorHoverFacility.Get()),
@@ -526,7 +528,7 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 				nullptr,
 				ETeleportType::TeleportPhysics);
 			AFFZSFacilityActor* ResolvedAfterHoverMoved =
-				Coordinator->ResolveLiveFacilityAlongRay(
+				Coordinator->ResolveFacilityAlongRay(
 					InsideRayOrigin,
 					RayDirection,
 					Coordinator->SelectionIndicatorHoverFacility.Get());
@@ -577,7 +579,7 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 			bInvalidFirstHit && InvalidFirstHit.GetActor() == InvalidFrontActor))
 		{
 			TestEqual(TEXT("앞쪽 비등록 proxy를 건너뛰고 뒤의 등록 시설을 선택한다"),
-				Coordinator->ResolveLiveFacilityAlongRay(
+				Coordinator->ResolveFacilityAlongRay(
 					InsideRayOrigin, RayDirection, nullptr),
 				Facility);
 		}
@@ -607,13 +609,13 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 				FVector(10.0f, 10.0f, 0.25f),
 				ECC_Visibility);
 			TestEqual(TEXT("proxy 표면 2cm 이내 접촉 오차는 클릭을 막지 않는다"),
-				Coordinator->ResolveLiveFacilityAlongRay(
+				Coordinator->ResolveFacilityAlongRay(
 					InsideRayOrigin, RayDirection, Facility),
 				Facility);
 			ContactBox->SetWorldLocation(
 				InsideRayOrigin + RayDirection * (ProxyHitDistance - 4.0f));
 			TestNull(TEXT("proxy 표면보다 2cm 이상 앞선 실제 blocker는 클릭을 막는다"),
-				Coordinator->ResolveLiveFacilityAlongRay(
+				Coordinator->ResolveFacilityAlongRay(
 					InsideRayOrigin, RayDirection, Facility));
 			ContactActor->Destroy();
 		}
@@ -630,14 +632,14 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 			FVector(50.0f),
 			ECC_Visibility);
 		TestNull(TEXT("실제 외부 장애물 뒤 시설은 표시 proxy가 있어도 선택하지 않는다"),
-			Coordinator->ResolveLiveFacilityAlongRay(
+			Coordinator->ResolveFacilityAlongRay(
 				InsideRayOrigin, RayDirection, Facility));
 		VisibilityBlocker->Destroy();
 	}
 
 	Proxy->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	TestNull(TEXT("collision이 꺼진 stale Hover geometry는 직접 선택하지 않는다"),
-		Coordinator->ResolveLiveFacilityAlongRay(
+		Coordinator->ResolveFacilityAlongRay(
 			InsideRayOrigin, RayDirection, Facility));
 	Proxy->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 

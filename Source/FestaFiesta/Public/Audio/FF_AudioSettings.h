@@ -8,13 +8,11 @@
 
 class UFF_AudioBankData;
 
-/**
- * 축제 사운드의 프로젝트 기본값.
- * Project Settings > Game > FestaFiesta Audio 에서 지정한다.
- *
- * 레벨마다 분위기가 다를 수 있어 GameMode 쪽 지정이 우선한다. 여기 값은 그게 비어 있을 때
- * 쓰는 기본값이다.
- */
+// 축제 사운드의 프로젝트 기본값.
+// Project Settings > Game > FestaFiesta Audio 에서 지정한다.
+//
+// 레벨마다 분위기가 다를 수 있어 GameMode 쪽 지정이 우선한다. 여기 값은 그게 비어 있을 때
+// 쓰는 기본값이다.
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "FestaFiesta Audio"))
 class FESTAFIESTA_API UFF_AudioSettings : public UDeveloperSettings
 {

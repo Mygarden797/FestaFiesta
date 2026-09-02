@@ -16,12 +16,14 @@
 #include "Engine/World.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Misc/AutomationTest.h"
 #include "Queue/FF_QueueSubsystem.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -416,6 +418,24 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 	FFF_JoinRequest JoinRequest;
 	JoinRequest.PartyId = 7001;
 	JoinRequest.MemberCount = 1;
+	// 예약 프로그램은 같은 줄 좌표를 읽지만 일반 서비스 Queue에는 들어가지 않는다.
+	UFF_ProgramReservationSubsystem* Reservations = World->GetGameInstance()->GetSubsystem<UFF_ProgramReservationSubsystem>();
+	const FGuid ProgramId = Reservations->RegisterProgram(FacilityId, 30.f, 60.f, 1);
+	FTransform WaitingTransform;
+	TestTrue(TEXT("Reservation reads authored waiting slot"),
+		QueueBridge->TryGetProgramWaitingTransform(FacilityId, 0, WaitingTransform));
+	TestTrue(TEXT("Reservation slot matches Zone geometry"), WaitingTransform.GetLocation().Equals(
+		Facility->GetQueueComponent()->GetQueueSlotWorldLocation(0), 0.1));
+	TestFalse(TEXT("Missing slot is not extended outside authored geometry"),
+		QueueBridge->TryGetProgramWaitingTransform(FacilityId, MAX_int32, WaitingTransform));
+	TestFalse(TEXT("Scheduled facility rejects ordinary Queue joining"),
+		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest).bAccepted);
+	Reservations->ConfirmReservedParty(ProgramId, JoinRequest.PartyId, 1);
+	TestFalse(TEXT("Reserved party also bypasses ordinary Queue service"),
+		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest).bAccepted);
+	TestEqual(TEXT("Reading reservation slots never occupies ordinary Queue"),
+		QueueBridge->GetZoneFacilityQueueState(FacilityId).OccupiedMemberCount, 0);
+	Reservations->RemoveReservation(ProgramId);
 	const FFF_QueueJoinResponse FirstJoin =
 		QueueBridge->TryJoinZoneFacility(FacilityId, JoinRequest);
 	if (!TestTrue(TEXT("The Queue façade accepts a Party for an active Zone Facility"),
@@ -626,6 +646,29 @@ bool FFFZoneSystemQueueShortGeometryFailsClosedTest::RunTest(const FString& Para
 			Spec, FTransform::Identity, Lane));
 	TestTrue(TEXT("Failed projection leaves no partial explicit geometry"),
 		Lane.ExplicitSlotTransforms.IsEmpty());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFProgramFacilityWaitingAssetsTest,
+	"FestaFiesta.ZoneIntegration.Queue.ProgramFacilityWaitingAssets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFProgramFacilityWaitingAssetsTest::RunTest(const FString& Parameters)
+{
+	const TCHAR* Paths[] = {
+		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"),
+		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_DanceBattle.PDA_FFZS_Performance_ExperienceStage_DanceBattle")
+	};
+	for (const TCHAR* Path : Paths)
+	{
+		const UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, Path);
+		if (!TestNotNull(Path, Definition)) { continue; }
+		FFF_QueueLaneGeometry Lane;
+		TestTrue(TEXT("Program facility has usable authored Queue geometry"),
+			UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(Definition->Spec, FTransform::Identity, Lane));
+		TestTrue(TEXT("Default programs need at most three group waiting slots"), Lane.ExplicitSlotTransforms.Num() >= 3);
+		AddInfo(FString::Printf(TEXT("%s: %d waiting slots, spacing %.0fcm"),
+			*Definition->GetName(), Lane.ExplicitSlotTransforms.Num(), Lane.SlotSpacingCm));
+	}
 	return true;
 }
 

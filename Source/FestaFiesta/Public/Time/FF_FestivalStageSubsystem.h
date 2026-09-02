@@ -161,6 +161,9 @@ public:
 	bool bNightLightingActivated = false;
 	// 오늘 이미 밤 조명을 켰는지 여부 
 
+	bool bMinigameInProgress = false;
+	// 미니게임 진행 중이면 true. true면 배속을 무조건 1배속으로 고정
+
 	bool bFestivalStarted = true;
 	//이 값이 false면 Tick()에서 시간 진행을 아예 멈춤
 
@@ -241,6 +244,14 @@ public:
 	// 축제를 처음부터 다시 시작할 때 호출
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
+	void SetMinigameInProgress(bool bInProgress);
+	// 미니게임 시작할 때 true로, 끝날 때 false로 불러주는 함수
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	bool IsMinigameInProgress() const { return bMinigameInProgress; }
+	// 지금 미니게임 중인지 바로 확인하는 함수
+
+	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void AdvanceToNextDay();
 	//report에서 다음날로 누르면 호출
 
@@ -276,6 +287,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsCurrentStageSkippable();
 	// 지금 이 단계가 스킵 가능한지 확인하는 함수 (private에서 public으로 이동)
+
+	// Stage x1 초를 축제분으로 환산한다. 이미 배속 반영된 경과 시간에 배속을 다시 곱하지 않는다.
+	static constexpr float StageSecondsToFestivalMinutes(float Seconds) { return Seconds; }
+
+	// Live 단계의 경과 축제분. Live가 아니면 false이며 OutMinutes는 유지한다.
+	bool TryGetLiveElapsedMinutes(float& OutMinutes) const;
+
+	// 현재 일차의 Live 총 축제분. 단계와 무관하며 길이가 없으면 false, 출력 유지.
+	bool TryGetLiveDurationMinutes(float& OutMinutes);
 
 	float GetLiveDurationForCurrentDay() ;
 	//그날 Live 총 길이(마지막 이벤트 시각, x1 기준 초)를 알려주는 함수

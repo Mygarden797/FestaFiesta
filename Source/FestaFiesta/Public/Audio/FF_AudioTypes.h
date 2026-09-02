@@ -40,6 +40,9 @@ enum class EFF_AudioEvent : uint8
 	BuildPlaced = 50        UMETA(DisplayName = "건축 - 시설 설치"),
 	BuildRemoved = 51       UMETA(DisplayName = "건축 - 시설 철거"),
 	BuildRejected = 52      UMETA(DisplayName = "건축 - 배치 불가"),
+	BuildMoved = 53         UMETA(DisplayName = "건축 - 시설 이동"),
+	BuildFacilityOpened = 54 UMETA(DisplayName = "건축 - 시설 개장"),
+	BuildFacilityClosed = 55 UMETA(DisplayName = "건축 - 시설 폐장"),
 
 	// ── UI ──────────────────────────────────────────────────────────────────
 	UiClick = 70            UMETA(DisplayName = "UI - 클릭"),

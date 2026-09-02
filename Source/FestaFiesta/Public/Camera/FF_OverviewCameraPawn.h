@@ -103,6 +103,14 @@ protected:
 private:
 	void ApplyRigToComponents();
 
+	// 레벨의 Zone 을 모두 감싸는 범위를 구해 경계로 삼는다.
+	//
+	// 한 번만 계산한다. Zone 은 설치·철거로 늘고 줄지만 축제장 자체가 넓어지지는 않는다.
+	void ApplyZoneBoundsIfNeeded();
+
+	// 한 지점의 지면 높이를 잰다. 못 찾으면 false.
+	bool TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const;
+
 	// 초점 아래 지면을 찾아 리그에 알린다. 리그는 월드를 모르므로 트레이스는 여기서 한다.
 	void UpdateGroundHeight(float DeltaSeconds);
 
@@ -117,4 +125,7 @@ private:
 	TWeakObjectPtr<AActor> FollowTarget;
 
 	bool bInitialized = false;
+
+	// Zone 경계를 이미 잡았는지. 매 틱 액터를 순회하지 않기 위해서다.
+	bool bZoneBoundsApplied = false;
 };

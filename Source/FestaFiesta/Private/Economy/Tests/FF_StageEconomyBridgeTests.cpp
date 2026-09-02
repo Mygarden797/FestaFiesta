@@ -10,6 +10,7 @@
 #include "Engine/GameInstance.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 
 /**
  * 하루 경계의 **트리거**를 검증한다 (S6 스텝 5). [참고] economy_spec.md §5.1 S6
@@ -45,11 +46,16 @@ namespace FFF_StageEconomyBridgeTestHelpers
 			Bridge = NewObject<UFF_StageEconomyBridgeSubsystem>(GameInstance);
 			Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
 			CostTable = NewObject<UDataTable>(GameInstance);
+			Reservations = NewObject<UFF_ProgramReservationSubsystem>(GameInstance);
 			if (Progression == nullptr || Bridge == nullptr
-				|| Definition == nullptr || CostTable == nullptr)
+				|| Definition == nullptr || CostTable == nullptr
+				|| Reservations == nullptr)
 			{
 				return false;
 			}
+
+			// 프로덕션은 Initialize 가 물린다. 재시작이 예약 슬롯까지 비우는지 보려면 필요하다.
+			Progression->SetProgramReservations(Reservations);
 
 			// 시설을 짓지 않아도 표가 필요하다. 비어 있으면 IsDefinitionValid 가 Error 를 찍고
 			// UE 자동화 프레임워크는 Error 로그 자체를 테스트 실패로 취급한다.
@@ -76,6 +82,7 @@ namespace FFF_StageEconomyBridgeTestHelpers
 		UFF_StageEconomyBridgeSubsystem* Bridge = nullptr;
 		UFF_FestivalDefinition* Definition = nullptr;
 		UDataTable* CostTable = nullptr;
+		UFF_ProgramReservationSubsystem* Reservations = nullptr;
 	};
 }
 
@@ -276,6 +283,111 @@ bool FFF_StageEconomyBridge_OtherStagesDoNotSettle::RunTest(const FString& Param
 		Harness.Progression->GetTodayRevenue(), TodayRevenueBefore);
 	TestEqual(TEXT("마지막 정산일이 Day1 에 머문다"),
 		Harness.Progression->GetLastProcessedDay(), 1);
+
+	return true;
+}
+
+// 🔴 2회차 축제가 1회차 값을 물려받지 않는다 (§B0).
+//
+// GameInstance 는 OpenLevel 을 넘어 살아남아서 경제의 Initialize 는 게임을 켤 때 한 번만
+// 돈다. 이 신호가 없으면 프론트엔드를 다녀온 뒤 Gold·원장·미납·인원·예약이 1회차 마지막
+// 값으로 남는다 — 크래시도 로그도 없이 두 번째 판이 처음부터 망가진 채로 시작한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_FestivalStartedResetsEconomy, "FestaFiesta.Economy.StageEconomyBridge.FestivalStartedResetsEconomy", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageEconomyBridge_FestivalStartedResetsEconomy::RunTest(const FString& Parameters)
+{
+	FFF_StageEconomyBridgeTestHelpers::FStageBridgeHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	const int32 GoldAfterFirstDay = Harness.Progression->GetGold();
+
+	// 1회차를 끝까지 굴린다 — 사흘치 임대료, 매출, 알바, 예약 슬롯까지 상태를 더럽힌다.
+	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 2);
+	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 3);
+	Harness.Progression->AddRevenue(1500, EFF_EarnReason::AdmissionFee);
+	Harness.Reservations->RegisterProgram(FGuid::NewGuid(), 60.f, 90.f, 12);
+
+	TestNotEqual(TEXT("1회차가 실제로 진행됐다"),
+		Harness.Progression->GetGold(), GoldAfterFirstDay);
+	TestEqual(TEXT("1회차에 예약 슬롯이 남아 있다"),
+		Harness.Reservations->GetReservationIds().Num(), 1);
+	TestTrue(TEXT("1회차 매출이 쌓여 있다"), Harness.Progression->GetTotalRevenue() > 0);
+
+	// 프론트엔드 복귀 후 2회차 시작. Stage 는 StartNewFestival 이 되돌리고,
+	// 경제는 그 신호를 받는 이 창구가 되돌린다.
+	Harness.Bridge->ProcessFestivalStarted();
+
+	TestEqual(TEXT("잔액이 2회차 Day1 값으로 돌아온다"),
+		Harness.Progression->GetGold(), GoldAfterFirstDay);
+	TestEqual(TEXT("정산일이 Day1 로 돌아온다"),
+		Harness.Progression->GetLastProcessedDay(), 1);
+	TestEqual(TEXT("누적 매출이 비워진다"), Harness.Progression->GetTotalRevenue(), 0);
+	TestEqual(TEXT("미납이 비워진다"), Harness.Progression->GetTotalArrears(), 0);
+	TestEqual(TEXT("인원이 기본값으로 돌아온다"),
+		Harness.Progression->GetTotalStaffCount(),
+		FFF_StageEconomyBridgeTestHelpers::BaseStaff);
+	TestEqual(TEXT("예약 슬롯이 지워진다"),
+		Harness.Reservations->GetReservationIds().Num(), 0);
+
+	return true;
+}
+
+// 🔴 신호가 두 번 와도 상태가 같다.
+//
+// 1회차에는 Initialize 의 StartFestival 과 이 신호가 겹친다. StartFestival 이 완전한
+// 리셋 함수라 겹쳐도 되는 것이 이 배선의 전제이므로, 그 전제를 고정해 둔다 —
+// 만약 부분 리셋으로 바뀌면 Day1 임대료가 두 번 빠지고 여기서 먼저 깨진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_FestivalStartedIsIdempotent, "FestaFiesta.Economy.StageEconomyBridge.FestivalStartedIsIdempotent", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageEconomyBridge_FestivalStartedIsIdempotent::RunTest(const FString& Parameters)
+{
+	FFF_StageEconomyBridgeTestHelpers::FStageBridgeHarness Harness;
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize()))
+	{
+		return false;
+	}
+
+	// Initialize 가 이미 Day1 을 열어 둔 상태다. 여기서 신호가 오는 것이 1회차 상황이다.
+	const int32 GoldAfterInitialize = Harness.Progression->GetGold();
+
+	Harness.Bridge->ProcessFestivalStarted();
+	const int32 GoldAfterFirstSignal = Harness.Progression->GetGold();
+
+	TestEqual(TEXT("첫 신호가 Day1 임대료를 두 번 걷지 않는다"),
+		GoldAfterFirstSignal, GoldAfterInitialize);
+
+	Harness.Bridge->ProcessFestivalStarted();
+	Harness.Bridge->ProcessFestivalStarted();
+
+	TestEqual(TEXT("몇 번을 받아도 같은 상태다"),
+		Harness.Progression->GetGold(), GoldAfterInitialize);
+	TestEqual(TEXT("정산일도 Day1 에 머문다"),
+		Harness.Progression->GetLastProcessedDay(), 1);
+
+	return true;
+}
+
+// Progression 이 없으면 조용히 아무 일도 하지 않는다.
+// 신호는 Stage 가 쏘므로 경제가 안 붙은 구성에서도 이 경로가 지나간다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_FestivalStartedWithoutProgressionIsSafe, "FestaFiesta.Economy.StageEconomyBridge.FestivalStartedWithoutProgressionIsSafe", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageEconomyBridge_FestivalStartedWithoutProgressionIsSafe::RunTest(const FString& Parameters)
+{
+	UGameInstance* GameInstance = NewObject<UGameInstance>(GetTransientPackage());
+	if (!TestNotNull(TEXT("GameInstance 가 만들어진다"), GameInstance))
+	{
+		return false;
+	}
+
+	UFF_StageEconomyBridgeSubsystem* Bridge =
+		NewObject<UFF_StageEconomyBridgeSubsystem>(GameInstance);
+	if (!TestNotNull(TEXT("브리지가 만들어진다"), Bridge))
+	{
+		return false;
+	}
+
+	// Progression 을 물리지 않았다. 크래시하지 않는 것이 확인 내용이다.
+	Bridge->ProcessFestivalStarted();
 
 	return true;
 }

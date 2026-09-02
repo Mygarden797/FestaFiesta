@@ -47,6 +47,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 		CachedProgressionSubsystem->OnFinaleGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
+		CachedProgressionSubsystem->OnPromotionGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
 	}
 	CachedProgressionSubsystem = nullptr;
 
@@ -253,6 +254,10 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 	CachedProgressionSubsystem->OnFinaleGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
+	CachedProgressionSubsystem->OnPromotionGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
+
+	// 구독 전에 이미 샀을 수 있다. 현재값을 한 번 맞춘다.
+	PurchasedPromotion = ToPromotionChoice(CachedProgressionSubsystem->GetPurchasedPromotionGrade());
 
 	// !! 축제가 시작되기 전에는 소유자 값을 쓰지 않는다 !!
 	// StartFestival 전 Funds는 0이다. 그 0을 화면에 띄우면 "잔액이 없다"는 틀린 사실이 되고,
@@ -782,45 +787,45 @@ bool UFF_FestivalViewModelSubsystem::RequestPurchasePromotion(EFF_PromotionChoic
 		return false;
 	}
 
-	if (PurchasedPromotion != EFF_PromotionChoice::None)
+	// 판정·차감·등급 보관을 전부 소유자가 한다. 여기는 enum 을 옮겨 담을 뿐이다.
+	const EFF_PromotionPurchaseResult Result =
+		Progression->TryPurchasePromotion(ToPromotionGrade(Choice));
+
+	if (Result != EFF_PromotionPurchaseResult::Success)
 	{
 		UE_LOG(LogFestaFiestaUI, Log,
-			TEXT("[ViewModel] 홍보는 이미 구매했다. 축제당 1회다."));
+			TEXT("[ViewModel] 홍보 구매 거부: %s"), *UEnum::GetValueAsString(Result));
 		return false;
 	}
 
-	int32 CostGold = 0;
-	for (const FFF_PromotionOptionView& Option : GetPromotionOptions())
-	{
-		if (Option.Choice == Choice)
-		{
-			CostGold = Option.CostGold;
-			break;
-		}
-	}
-
-	if (CostGold <= 0)
-	{
-		// 등급을 못 찾았거나 데이터가 0원이다. 공짜로 통과시키지 않는다.
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[ViewModel] 홍보 등급 %s 의 비용을 읽지 못했다."), *UEnum::GetValueAsString(Choice));
-		return false;
-	}
-
-	// 🔴 차감은 소유자가 한다. 실패하면 아무것도 바뀌지 않는다 — 잔액 판정을 UI 가 하지 않는다.
-	// 원장에도 `홍보비` 로 남는다.
-	if (!Progression->TrySpend(CostGold, EFF_SpendReason::Promotion))
-	{
-		UE_LOG(LogFestaFiestaUI, Log,
-			TEXT("[ViewModel] 홍보 %d Gold 차감이 거부됐다. 잔액은 경제 로그를 본다."), CostGold);
-		return false;
-	}
-
-	// ⚠️ 여기부터가 더미다. 소유자에게 이 상태를 보관할 자리가 없어 ViewModel 이 들고 있다.
-	// **배수는 아직 아무도 소비하지 않는다** — 화면이 그 사실을 적어야 한다.
-	PurchasedPromotion = Choice;
-	OnPurchasedPromotionChanged.Broadcast(PurchasedPromotion);
+	// 방송은 소유자의 OnPromotionGradeChanged 를 받아서 한다 — 여기서 또 쏘면 두 번 온다.
 	return true;
+}
+
+EFF_PromotionGrade UFF_FestivalViewModelSubsystem::ToPromotionGrade(EFF_PromotionChoice Choice)
+{
+	switch (Choice)
+	{
+	case EFF_PromotionChoice::Basic:   return EFF_PromotionGrade::Basic;
+	case EFF_PromotionChoice::Focused: return EFF_PromotionGrade::Focused;
+	default:                           return EFF_PromotionGrade::None;
+	}
+}
+
+EFF_PromotionChoice UFF_FestivalViewModelSubsystem::ToPromotionChoice(EFF_PromotionGrade Grade)
+{
+	switch (Grade)
+	{
+	case EFF_PromotionGrade::Basic:   return EFF_PromotionChoice::Basic;
+	case EFF_PromotionGrade::Focused: return EFF_PromotionChoice::Focused;
+	default:                          return EFF_PromotionChoice::None;
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged(EFF_PromotionGrade NewGrade)
+{
+	PurchasedPromotion = ToPromotionChoice(NewGrade);
+	OnPurchasedPromotionChanged.Broadcast(PurchasedPromotion);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged(EFF_FinaleGrade NewGrade)

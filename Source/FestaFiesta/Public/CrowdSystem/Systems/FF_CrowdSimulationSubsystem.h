@@ -111,6 +111,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
 	void SetAgentDestination(int32 AgentIndex, FVector Destination);
+	
+	//시설 큐에 설정한다.
+	bool SetPartyQueueColumn(int32 PartyID, const TArray<FVector>& Locations, float InLaneYaw);
+	
+	//시설 큐에서 제거한다.
+	bool ClearPartyQueueColumn(int32 PartyID);
 
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	int32 GetActiveAgentCount() const { return ActiveAgentCount; }
@@ -263,6 +269,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue", meta = (ClampMin = "0.0"))
 	float QueueHoldTimeoutSeconds = 1200.f;
 
+	// 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
+	float ProgramExitGraceMinutes = 10.f;
+
+	// 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
+	float ProgramReturnBufferMinutes = 10.f;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueHoldTimeoutCount() const { return QueueHoldTimeouts; }
 
@@ -318,7 +332,7 @@ public:
 	 * 근거 없는 초기값이다. FF.Crowd.Stats 의 막힘 비율과 아래 계수기를 같이 보고 잡을 것.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Decision", meta = (ClampMin = "0"))
-	int32 DecisionStuckSteps = 300;
+	int32 DecisionStuckSteps = 50;
 
 	// 막힘 때문에 목적지를 다시 고른 횟수. 0이면 이 경로가 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
@@ -365,11 +379,11 @@ public:
 
 	// SimOrigin 기준 반경. 밀도 그리드는 이 반경을 감싸는 정사각형으로 만들어진다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float SimRadiusUU = 10000.f;
+	float SimRadiusUU = 100000.f;
 
 	// 목적지에 이만큼 가까워지면 도착으로 본다(접근점·배회 목적지 기준), UU.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float ArrivalRadiusUU = 150.f;
+	float ArrivalRadiusUU = 1000.f;
 
 	// 대기열 슬롯·서비스 지점의 도착 판정 반경, UU. **슬롯 간격보다 작아야 한다.**
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "10.0"))
@@ -522,7 +536,19 @@ public:
 
 	// 초당 회전 한계, 도. 이게 없으면 밀렸을 때 제자리에서 홱 돈다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float MaxTurnRateDegrees = 360.f;
+	float MaxTurnRateDegrees = 180.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingSmoothTime = 0.35f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingEnterSpeedUU = 40.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingExitSpeedUU = 15.f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
+	float FacingDeadzoneDegrees = 4.f;
 
 	// 밀도 그리드 셀 한 변, UU. 200UU(2m) = 4㎡를 평균 창으로 쓴다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Metrics")
@@ -723,6 +749,30 @@ private:
 	bool UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
 
 	bool AdvancePartyQueueOnArrival(int32 LeaderAgentIndex);
+
+	// 매 고정 스텝에서 예약 파티의 복귀 마감·참여 시작·종료를 검사하고 상태를 전환한다.
+	void UpdateProgramReservationStates();
+	
+	// 현재 축제분 + 직접 이동 예상분이 시작 시각에 도달하면 복귀를 시작하고 true를 반환한다.
+	bool TryBeginProgramReturnIfDue(int32 LeaderIndex, const FFF_ProgramReservation& Reservation,
+		const FVector& Approach, float NowMinutes);
+	
+	// Stage에서 Live 경과 축제분을 읽는다. 조회할 수 없으면 false를 반환하고 출력값은 유지한다.
+	bool TryGetProgramLiveMinutes(float& OutMinutes) const;
+	
+	// 예약 복귀 도착을 처리해 시작 전이면 대기, 시작 이후면 참여로 전환하고 일반 도착 처리를 막는다.
+	bool HandleProgramArrival(int32 LeaderAgentIndex);
+	
+	// 일반 Queue에서 이탈한 뒤 예약자 대기 슬롯을 목표로 복귀한다. 슬롯이 없으면 FallbackLocation을 사용한다.
+	bool BeginProgramReturn(
+		int32 LeaderAgentIndex,
+		const FFF_ProgramReservation& Reservation,
+		const FVector& FallbackLocation);
+	
+	// 예약 행동 상태를 해제하고 시설 이탈 목표와 최소 잔여 체류시간을 설정해 자유활동을 재개한다.
+	void ReleaseProgramParty(int32 LeaderAgentIndex);
+	
+	friend struct FFF_CrowdProgramTestAccess;
 
 	void ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue);
 

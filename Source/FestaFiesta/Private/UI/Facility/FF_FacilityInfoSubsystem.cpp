@@ -1010,7 +1010,7 @@ void UFF_FacilityInfoSubsystem::ReleasePickControllerBinding()
 	ApplyLiveSelectionIndicatorTargets(nullptr, nullptr);
 }
 
-AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveLiveFacilityUnderCursor(
+AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveFacilityUnderCursor(
 	APlayerController& Controller,
 	AFFZSFacilityActor* PreferredHoveredFacility) const
 {
@@ -1020,14 +1020,14 @@ AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveLiveFacilityUnderCursor(
 	{
 		return nullptr;
 	}
-	return ResolveLiveFacilityAlongRay(
+	return ResolveFacilityAlongRay(
 		RayOrigin,
 		RayDirection,
 		PreferredHoveredFacility,
 		Controller.GetPawn());
 }
 
-AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveLiveFacilityAlongRay(
+AFFZSFacilityActor* UFF_FacilityInfoSubsystem::ResolveFacilityAlongRay(
 	const FVector& RayOrigin,
 	const FVector& RayDirection,
 	AFFZSFacilityActor* PreferredHoveredFacility,
@@ -1207,7 +1207,7 @@ void UFF_FacilityInfoSubsystem::UpdateLiveSelectionIndicators(const float DeltaT
 		SelectionIndicatorRefreshAccumulatorSeconds,
 		SelectionIndicatorRefreshIntervalSeconds);
 	ApplyLiveSelectionIndicatorTargets(
-		ResolveLiveFacilityUnderCursor(*Controller),
+		ResolveFacilityUnderCursor(*Controller),
 		SelectedFacility);
 }
 
@@ -1577,7 +1577,7 @@ void UFF_FacilityInfoSubsystem::HandleActorPicked(AActor* PickedActor)
 		return;
 	}
 
-	AFFZSFacilityActor* Facility = ResolveLiveFacilityUnderCursor(
+	AFFZSFacilityActor* Facility = ResolveFacilityUnderCursor(
 		*Controller,
 		SelectionIndicatorHoverFacility.Get());
 	ApplyLiveSelectionIndicatorTargets(

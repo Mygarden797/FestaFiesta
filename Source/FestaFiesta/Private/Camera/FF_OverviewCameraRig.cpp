@@ -295,6 +295,20 @@ void FFF_OverviewCameraRig::SnapRotate(int32 Direction)
 	Target.Yaw = NormalizeYaw(Next * Step);
 }
 
+void FFF_OverviewCameraRig::UpdateSettings(const FFF_OverviewCameraSettings& InSettings)
+{
+	Settings = InSettings;
+
+	// 새 경계가 지금 위치를 벗어나 있으면 즉시 끌어들인다.
+	// 다음 팬 입력까지 기다리면 그 동안 밖에 나가 있는 셈이 된다.
+	ClampFocusToBounds(Target.FocusLocation);
+	ClampFocusToBounds(Display.FocusLocation);
+
+	// 줌 범위가 바뀌었을 수 있다.
+	Target.ArmLength = FMath::Clamp(Target.ArmLength, Settings.MinArmLength, Settings.MaxArmLength);
+	Target.Pitch = ResolvePitchForArmLength(Target.ArmLength);
+}
+
 void FFF_OverviewCameraRig::ApplyGroundHeight(const float GroundZ, const float DeltaSeconds)
 {
 	if (!Settings.bFollowGroundHeight)
@@ -313,8 +327,18 @@ void FFF_OverviewCameraRig::ApplyGroundHeight(const float GroundZ, const float D
 	}
 	else
 	{
-		Target.FocusLocation.Z = FMath::FInterpTo(
-			Target.FocusLocation.Z, DesiredZ, DeltaSeconds, Settings.GroundFollowSpeed);
+		const double PreviousZ = Target.FocusLocation.Z;
+		double NextZ = FMath::FInterpTo(PreviousZ, DesiredZ, DeltaSeconds, Settings.GroundFollowSpeed);
+
+		// 보간만 쓰면 단차가 클수록 첫 프레임에 크게 튄다. 그게 방지턱처럼 느껴진다.
+		// 초당 이동량에 상한을 두면 단차 크기와 무관하게 일정한 속도로 올라간다.
+		if (Settings.GroundMaxClimbSpeed > 0.f)
+		{
+			const double MaxStep = Settings.GroundMaxClimbSpeed * DeltaSeconds;
+			NextZ = FMath::Clamp(NextZ, PreviousZ - MaxStep, PreviousZ + MaxStep);
+		}
+
+		Target.FocusLocation.Z = NextZ;
 	}
 
 	// 경계가 Z 를 제한하고 있으면 그쪽이 이긴다. 지형을 따라가더라도

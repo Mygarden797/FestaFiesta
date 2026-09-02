@@ -4,7 +4,7 @@
 
 - 런타임 WBP: `/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel`
 - 네이티브 클래스: `UFF_ZoneLifecycleTestPanel`
-- 표시 범위: 비 Shipping `Test_Main` Game/PIE
+- 표시 범위: Editor·Shipping 패키지의 `Test_Main` Game/PIE
 - 표시 토글: 게임 뷰포트 포커스 상태에서 `Ctrl+G`
 
 ## 배치 계약

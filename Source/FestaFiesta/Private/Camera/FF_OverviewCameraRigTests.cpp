@@ -648,4 +648,148 @@ bool FFF_OverviewCameraRig_PanDoesNotFightGround::RunTest(const FString& Paramet
 	return true;
 }
 
+// 20. 지면이 급변해도 초점이 일정 속도 이상으로 튀지 않아야 한다.
+//
+//     보간만 쓰면 단차가 클수록 첫 프레임에 크게 움직인다. 화면에서는 방지턱을
+//     넘는 것처럼 출렁여 보인다. 상한을 두면 단차 크기와 무관하게 속도가 일정하다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_GroundClimbIsRateLimited, "FestaFiesta.Camera.Rig.GroundClimbIsRateLimited", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_GroundClimbIsRateLimited::RunTest(const FString& Parameters)
+{
+	constexpr float MaxClimb = 700.f;
+	constexpr float Step = 1.f / 60.f;
+
+	FFF_OverviewCameraSettings Settings = MakeSettings();
+	Settings.bFollowGroundHeight = true;
+	Settings.GroundFocusOffset = 0.f;
+	Settings.GroundFollowSpeed = 6.f;
+	Settings.GroundMaxClimbSpeed = MaxClimb;
+
+	FFF_OverviewCameraRig Rig;
+	Rig.Initialize(Settings, FVector::ZeroVector, 8000.f);
+
+	// 첫 지면은 즉시 반영된다. 여기는 제한 대상이 아니다.
+	Rig.ApplyGroundHeight(0.f, Step);
+	TestEqual(TEXT("첫 지면은 즉시 붙는다"), Rig.GetTargetState().FocusLocation.Z, 0.0, 0.01);
+
+	// 400 만큼 갑자기 솟은 지형을 만난 경우.
+	double Previous = Rig.GetTargetState().FocusLocation.Z;
+	double PeakSpeed = 0.0;
+	for (int32 Frame = 0; Frame < 120; ++Frame)
+	{
+		Rig.ApplyGroundHeight(400.f, Step);
+		const double Current = Rig.GetTargetState().FocusLocation.Z;
+		PeakSpeed = FMath::Max(PeakSpeed, FMath::Abs(Current - Previous) / Step);
+		Previous = Current;
+	}
+
+	// 여유를 조금 둔다. 부동소수 누적으로 상한을 아주 살짝 넘길 수 있다.
+	TestTrue(TEXT("순간 속도가 상한을 넘지 않는다"), PeakSpeed <= MaxClimb * 1.05);
+	TestEqual(TEXT("충분한 시간이 지나면 도달한다"), Rig.GetTargetState().FocusLocation.Z, 400.0, 5.0);
+
+	// 상한을 끄면 첫 프레임에 훨씬 빠르게 움직인다. 그 차이가 이 설정의 존재 이유다.
+	FFF_OverviewCameraSettings NoLimit = Settings;
+	NoLimit.GroundMaxClimbSpeed = 0.f;
+
+	FFF_OverviewCameraRig Unlimited;
+	Unlimited.Initialize(NoLimit, FVector::ZeroVector, 8000.f);
+	Unlimited.ApplyGroundHeight(0.f, Step);
+
+	const double Before = Unlimited.GetTargetState().FocusLocation.Z;
+	Unlimited.ApplyGroundHeight(400.f, Step);
+	const double UnlimitedSpeed =
+		FMath::Abs(Unlimited.GetTargetState().FocusLocation.Z - Before) / Step;
+
+	TestTrue(TEXT("상한을 끄면 첫 프레임이 더 빠르다"), UnlimitedSpeed > MaxClimb);
+	return true;
+}
+
+// 21. 내려갈 때도 같은 상한이 걸려야 한다.
+//     올라갈 때만 막으면 절벽에서 카메라가 뚝 떨어진다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_GroundDescentIsRateLimited, "FestaFiesta.Camera.Rig.GroundDescentIsRateLimited", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_GroundDescentIsRateLimited::RunTest(const FString& Parameters)
+{
+	constexpr float MaxClimb = 700.f;
+	constexpr float Step = 1.f / 60.f;
+
+	FFF_OverviewCameraSettings Settings = MakeSettings();
+	Settings.bFollowGroundHeight = true;
+	Settings.GroundFocusOffset = 0.f;
+	Settings.GroundFollowSpeed = 6.f;
+	Settings.GroundMaxClimbSpeed = MaxClimb;
+
+	FFF_OverviewCameraRig Rig;
+	Rig.Initialize(Settings, FVector::ZeroVector, 8000.f);
+	Rig.ApplyGroundHeight(1000.f, Step);
+
+	double Previous = Rig.GetTargetState().FocusLocation.Z;
+	double PeakSpeed = 0.0;
+	for (int32 Frame = 0; Frame < 180; ++Frame)
+	{
+		Rig.ApplyGroundHeight(0.f, Step);
+		const double Current = Rig.GetTargetState().FocusLocation.Z;
+		PeakSpeed = FMath::Max(PeakSpeed, FMath::Abs(Current - Previous) / Step);
+		Previous = Current;
+	}
+
+	TestTrue(TEXT("내려갈 때도 상한이 걸린다"), PeakSpeed <= MaxClimb * 1.05);
+	TestEqual(TEXT("결국 바닥에 도달한다"), Rig.GetTargetState().FocusLocation.Z, 0.0, 5.0);
+	return true;
+}
+
+// 22. 설정을 갈아끼워도 구도가 초기화되지 않아야 한다.
+//     Zone 경계는 레벨이 뜬 뒤에야 알 수 있어 도중에 들어온다.
+//     그때 Initialize 를 다시 부르면 화면이 튄다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_UpdateSettingsKeepsFraming, "FestaFiesta.Camera.Rig.UpdateSettingsKeepsFraming", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_UpdateSettingsKeepsFraming::RunTest(const FString& Parameters)
+{
+	FFF_OverviewCameraRig Rig = MakeRig(8000.f);
+
+	// 구도를 한번 흐트러뜨린다.
+	Rig.Pan(FVector2D(1.f, 0.f), 1.f);
+	Rig.Zoom(2.f);
+	Rig.SnapRotate(1);
+
+	const FVector FocusBefore = Rig.GetTargetState().FocusLocation;
+	const float ArmBefore = Rig.GetTargetState().ArmLength;
+	const float YawBefore = Rig.GetTargetState().Yaw;
+
+	// 경계만 바꾼 설정을 넣는다. 지금 위치를 감싸는 넉넉한 범위라 잘릴 일이 없다.
+	FFF_OverviewCameraSettings WithBounds = Rig.GetSettings();
+	WithBounds.FocusBounds = FBox(
+		FVector(-100000.f, -100000.f, -100000.f),
+		FVector(100000.f, 100000.f, 100000.f));
+	Rig.UpdateSettings(WithBounds);
+
+	TestTrue(TEXT("초점이 유지된다"), Rig.GetTargetState().FocusLocation.Equals(FocusBefore, 0.01));
+	TestEqual(TEXT("줌이 유지된다"), Rig.GetTargetState().ArmLength, ArmBefore, 0.01f);
+	TestEqual(TEXT("회전이 유지된다"), Rig.GetTargetState().Yaw, YawBefore, 0.01f);
+	return true;
+}
+
+// 23. 새 경계가 지금 위치를 벗어나 있으면 즉시 끌어들여야 한다.
+//     다음 팬 입력까지 기다리면 그동안 밖에 나가 있는 셈이 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_UpdateSettingsClampsImmediately, "FestaFiesta.Camera.Rig.UpdateSettingsClampsImmediately", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_UpdateSettingsClampsImmediately::RunTest(const FString& Parameters)
+{
+	FFF_OverviewCameraRig Rig = MakeRig(8000.f);
+
+	// 경계 없이 멀리 보낸다.
+	Rig.FocusOn(FVector(50000.f, 50000.f, 0.f));
+	TestTrue(TEXT("경계가 없으면 그대로 간다"),
+		Rig.GetTargetState().FocusLocation.X > 40000.0);
+
+	// 좁은 경계를 나중에 넣는다.
+	FFF_OverviewCameraSettings Narrow = Rig.GetSettings();
+	Narrow.FocusBounds = FBox(FVector(-5000.f, -5000.f, -5000.f), FVector(5000.f, 5000.f, 5000.f));
+	Rig.UpdateSettings(Narrow);
+
+	TestEqual(TEXT("X 가 즉시 경계로 당겨진다"), Rig.GetTargetState().FocusLocation.X, 5000.0, 0.01);
+	TestEqual(TEXT("Y 도 마찬가지"), Rig.GetTargetState().FocusLocation.Y, 5000.0, 0.01);
+
+	// 표시 위치도 같이 당겨야 한다. 목표만 당기면 화면이 천천히 돌아오는 동안 밖을 비춘다.
+	TestTrue(TEXT("표시 위치도 경계 안이다"),
+		Rig.GetDisplayState().FocusLocation.X <= 5000.0 + 0.01);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

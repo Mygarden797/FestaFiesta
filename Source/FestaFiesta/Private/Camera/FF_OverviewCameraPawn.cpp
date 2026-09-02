@@ -6,6 +6,9 @@
 #include "Components/SceneComponent.h"
 #include "CollisionQueryParams.h"
 #include "Engine/World.h"
+#include "Components/SplineComponent.h"
+#include "EngineUtils.h"
+#include "FF_FFZSZoneActor.h"
 #include "GameFramework/SpringArmComponent.h"
 
 AFF_OverviewCameraPawn::AFF_OverviewCameraPawn()
@@ -165,6 +168,10 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 		Rig.FocusOn(Target->GetActorLocation());
 	}
 
+	// Zone 은 레벨이 다 뜬 뒤에야 잡힌다. BeginPlay 시점엔 아직 없을 수 있어
+	// 처음 성공할 때까지 매 틱 시도한다.
+	ApplyZoneBoundsIfNeeded();
+
 	// 팬과 추적이 초점을 옮긴 뒤에 지면을 잡는다. 순서를 바꾸면 한 프레임 늦은 위치의
 	// 지면을 따라가서 경사에서 카메라가 뒤처진다.
 	UpdateGroundHeight(DeltaSeconds);
@@ -173,9 +180,9 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 	ApplyRigToComponents();
 }
 
-void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
+void AFF_OverviewCameraPawn::ApplyZoneBoundsIfNeeded()
 {
-	if (!CameraSettings.bFollowGroundHeight)
+	if (bZoneBoundsApplied || !CameraSettings.bUseZoneBounds)
 	{
 		return;
 	}
@@ -186,26 +193,137 @@ void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
 		return;
 	}
 
-	// 초점의 수평 위치를 기준으로 위아래를 훑는다. 목표 위치를 쓰는 이유는
-	// 표시 위치를 쓰면 보간 중인 값을 따라가면서 서로를 쫓는 진동이 생기기 때문이다.
-	const FVector Focus = Rig.GetTargetState().FocusLocation;
+	FBox Combined(ForceInit);
+	int32 ZoneCount = 0;
+
+	for (TActorIterator<AFFZSGameplayZone> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		const AFFZSGameplayZone* Zone = *It;
+		if (!IsValid(Zone) || !Zone->BoundarySpline)
+		{
+			continue;
+		}
+
+		// 스플라인 점을 하나씩 넣어 감싸는 상자를 만든다.
+		// 액터 바운드를 쓰면 스플라인이 실제로 그리는 모양보다 커지거나 작아진다.
+		const int32 PointCount = Zone->BoundarySpline->GetNumberOfSplinePoints();
+		for (int32 Index = 0; Index < PointCount; ++Index)
+		{
+			Combined += Zone->BoundarySpline->GetLocationAtSplinePoint(
+				Index, ESplineCoordinateSpace::World);
+		}
+		++ZoneCount;
+	}
+
+	if (ZoneCount == 0 || !Combined.IsValid)
+	{
+		// 아직 Zone 이 안 떴거나 레벨에 없다. 다음 틱에 다시 본다.
+		return;
+	}
+
+	// 가장자리 시설이 화면 끝에 걸리지 않게 여유를 준다.
+	const float Padding = FMath::Max(0.f, CameraSettings.ZoneBoundsPadding);
+	Combined = Combined.ExpandBy(FVector(Padding, Padding, 0.f));
+
+	// 높이는 제한하지 않는다. 지형 추종이 초점 Z 를 정하는데 여기서 또 막으면 서로 싸운다.
+	Combined.Min.Z = -HALF_WORLD_MAX;
+	Combined.Max.Z = HALF_WORLD_MAX;
+
+	CameraSettings.FocusBounds = Combined;
+	Rig.UpdateSettings(CameraSettings);
+	bZoneBoundsApplied = true;
+
+	UE_LOG(LogFestaFiestaCamera, Log,
+		TEXT("[카메라] Zone %d개 기준으로 이동 범위를 잡았다. X %.0f~%.0f / Y %.0f~%.0f"),
+		ZoneCount, Combined.Min.X, Combined.Max.X, Combined.Min.Y, Combined.Max.Y);
+}
+
+bool AFF_OverviewCameraPawn::TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
 	const float HalfHeight = FMath::Max(100.f, CameraSettings.GroundTraceHalfHeight);
 
-	const FVector TraceStart(Focus.X, Focus.Y, Focus.Z + HalfHeight);
-	const FVector TraceEnd(Focus.X, Focus.Y, Focus.Z - HalfHeight);
+	const FVector Start(Where.X, Where.Y, AroundZ + HalfHeight);
+	const FVector End(Where.X, Where.Y, AroundZ - HalfHeight);
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(FF_CameraGround), false);
 	QueryParams.AddIgnoredActor(this);
 
 	FHitResult Hit;
-	if (World->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, CameraSettings.GroundTraceChannel, QueryParams))
 	{
-		Rig.ApplyGroundHeight(Hit.ImpactPoint.Z, DeltaSeconds);
+		return false;
+	}
+
+	OutGroundZ = static_cast<float>(Hit.ImpactPoint.Z);
+	return true;
+}
+
+void AFF_OverviewCameraPawn::UpdateGroundHeight(const float DeltaSeconds)
+{
+	if (!CameraSettings.bFollowGroundHeight)
+	{
 		return;
 	}
 
-	// 절벽, 물 위, 콜리전이 없는 구역. 마지막 높이를 유지한다.
-	Rig.OnGroundHeightUnavailable();
+	// 초점의 수평 위치를 기준으로 위아래를 훑는다. 목표 위치를 쓰는 이유는
+	// 표시 위치를 쓰면 보간 중인 값을 따라가면서 서로를 쫓는 진동이 생기기 때문이다.
+	const FVector Focus = Rig.GetTargetState().FocusLocation;
+	const FVector2D Center(Focus.X, Focus.Y);
+
+	// 중심은 반드시 있어야 한다. 여기서 못 찾으면 주변을 재봐야 기준이 없다.
+	float CenterZ = 0.f;
+	if (!TraceGroundAt(Center, static_cast<float>(Focus.Z), CenterZ))
+	{
+		// 절벽, 물 위, 콜리전이 없는 구역. 마지막 높이를 유지한다.
+		Rig.OnGroundHeightUnavailable();
+		return;
+	}
+
+	double Sum = CenterZ;
+	int32 Count = 1;
+
+	// 주변을 같이 재서 평균을 낸다.
+	//
+	// 한 점만 보면 벽 끝이나 물가를 지날 때 높이가 한 프레임에 뚝 끊긴다.
+	// 그 순간 카메라가 방지턱을 넘는 것처럼 출렁인다.
+	// 주변을 섞으면 경계를 지나는 동안 값이 서서히 이어진다.
+	const int32 SampleCount = FMath::Clamp(CameraSettings.GroundSampleCount, 0, 8);
+	if (SampleCount > 0)
+	{
+		const float Radius = FMath::Max(10.f, CameraSettings.GroundSampleRadius);
+		const float MaxDeviation = CameraSettings.GroundSampleMaxDeviation;
+
+		for (int32 Index = 0; Index < SampleCount; ++Index)
+		{
+			const float Angle = 2.f * PI * static_cast<float>(Index) / static_cast<float>(SampleCount);
+			const FVector2D Offset(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius);
+
+			float SampleZ = 0.f;
+			if (!TraceGroundAt(Center + Offset, static_cast<float>(Focus.Z), SampleZ))
+			{
+				// 이 방향은 허공이다. 평균에서 빼면 나머지가 그대로 반영된다.
+				continue;
+			}
+
+			// 구멍이나 절벽 아래를 찍은 표본이 섞이면 평균이 끌려 내려간다.
+			// 중심에서 너무 먼 값은 지형이 아니라 다른 층으로 본다.
+			if (MaxDeviation > 0.f && FMath::Abs(SampleZ - CenterZ) > MaxDeviation)
+			{
+				continue;
+			}
+
+			Sum += SampleZ;
+			++Count;
+		}
+	}
+
+	Rig.ApplyGroundHeight(static_cast<float>(Sum / Count), DeltaSeconds);
 }
 
 void AFF_OverviewCameraPawn::ApplyRigToComponents()
