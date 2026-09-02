@@ -15,7 +15,7 @@ FText UFF_UIDisplayTextLibrary::GetFestivalStageText(EFF_FestivalStage Stage)
 	case EFF_FestivalStage::PromotionPreview:	return LOCTEXT("Stage_PromotionPreview", "홍보 프리뷰");
 	case EFF_FestivalStage::SunsetTransition:	return LOCTEXT("Stage_SunsetTransition", "노을 전환");
 	case EFF_FestivalStage::MorningCheck:		return LOCTEXT("Stage_MorningCheck", "모닝체크");
-	case EFF_FestivalStage::Live:				return LOCTEXT("Stage_Live", "라이브 운영");
+	case EFF_FestivalStage::Live:				return LOCTEXT("Stage_Live", "라이브");
 	case EFF_FestivalStage::Closing:			return LOCTEXT("Stage_Closing", "마감");
 	case EFF_FestivalStage::Report:				return LOCTEXT("Stage_Report", "리포트");
 	case EFF_FestivalStage::Finale:				return LOCTEXT("Stage_Finale", "피날레");

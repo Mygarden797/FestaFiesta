@@ -957,8 +957,9 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 	// `1일차 · 라이브` 가 그대로 떴다. 칩이 단계를 알려 주는 유일한 표시인데 그게 틀렸으니
 	// **화면이 거짓말을 한 셈이다** (2026-09-03 백종태 발견).
 	//
-	// `GetCurrentStageDisplayText()` 도 쓰지 않는다 — 그쪽은 `UMETA(DisplayName)` 을 런타임에
-	// 읽어서 패키징 빌드에 영문이 뜬다. UI 가 소유하는 표를 거친다.
+	// 문구는 `UFF_UIDisplayTextLibrary` 하나가 소유한다. ViewModel 의
+	// `GetCurrentStageDisplayText()` 도 지금은 같은 표를 거치지만, 거기에는 표에 없는 값을
+	// 위한 대체 경로가 붙어 있다. 칩은 표에 있는 값만 쓰므로 표를 직접 읽는다.
 	SetTextOrHide(Text_DayStage, FText::Format(
 		LOCTEXT("LiveStatus_DayStage", "{0}일차 · {1}"),
 		FText::AsNumber(ViewModel->GetCurrentDay()),

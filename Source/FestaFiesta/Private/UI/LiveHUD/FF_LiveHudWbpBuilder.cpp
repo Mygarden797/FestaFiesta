@@ -1473,9 +1473,16 @@ namespace FFLiveHudWbpBuilder
 		}
 
 		FButtonStyle AdvanceStyle = Advance->GetStyle();
+		// 🔴 이 버튼만 **라벨이 흰 글씨**다 (아래 `StyleText` 참고). 그래서 네 상태가 전부
+		//    어두워야 한다. 원래는 닫기 버튼 묶음을 그대로 베껴 왔는데 그쪽은 라벨이
+		//    `Ink`(어두움)라 밝은 판이 맞았다 — 여기서는 정반대가 된다.
+		//
+		//    `Hover`(거의 흰색)와 `Line`(밝은 회색)을 쓰던 탓에 **마우스를 올리거나 누르는
+		//    순간 글씨가 사라졌다** (2026-09-03 백종태 발견). 꺼짐 상태도 같은 이유로
+		//    한 번 고쳤는데, 그때 나머지 둘을 같이 안 본 것이 이 버그다.
 		AdvanceStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
-		AdvanceStyle.Hovered = MakeSolidBrush(Palette->InGame.Hover, 4.f);
-		AdvanceStyle.Pressed = MakeSolidBrush(Palette->InGame.Line, 4.f);
+		AdvanceStyle.Hovered = MakeSolidBrush(Palette->InGame.TealDeep, 4.f);
+		AdvanceStyle.Pressed = MakeSolidBrush(Palette->InGame.Ink, 4.f);
 		// 🔴 밝은 판을 쓰면 안 된다. 라벨이 흰 글씨라 꺼진 순간 **흰 바탕에 흰 글씨**가 되어
 		//    버튼이 통째로 사라진 것처럼 보였다 (2026-09-03 백종태 발견 — `다음 날로` 가
 		//    없다고 한 것이 사실은 안 보인 것이었다). 회색 판이면 흰 글씨가 읽힌다.
