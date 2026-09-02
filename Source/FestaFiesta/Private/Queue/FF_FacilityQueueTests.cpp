@@ -274,26 +274,22 @@ bool FFF_FacilityQueue_SlotTargetsAreContiguous::RunTest(const FString& Paramete
 	TArray<FFF_SlotAssignment> Assignments;
 	Queue.BuildSlotAssignments(Assignments);
 
-	// 일행당 하나씩 나온다. 인원수만큼이 아니다.
-	// 4인 가족이 한 줄로 늘어서지 않으므로 자리 하나를 주고 멤버 배치는 포메이션이 맡는다.
-	TestEqual(TEXT("일행 수만큼 배정이 나온다"), Assignments.Num(), 2);
-	if (Assignments.Num() == 2)
+	TestEqual(TEXT("인원 수만큼 배정이 나온다"), Assignments.Num(), 5);
+	if (Assignments.Num() == 5)
 	{
-		TestEqual(TEXT("첫 일행이 슬롯 0을 잡는다"), Assignments[0].SlotIndex, 0);
-		TestEqual(TEXT("배정에 리더 AgentId가 실린다"), Assignments[0].AgentId, 1000);
-		TestEqual(TEXT("두 번째 일행의 PartyId"), Assignments[1].PartyId, 20);
-
-		// 2인은 나란히 서므로 한 칸이면 충분하다. 그래서 다음 일행이 슬롯 1에 온다.
-		TestEqual(TEXT("2인 일행 뒤는 한 칸만 띄운다"), Assignments[1].SlotIndex, 1);
+		TestEqual(TEXT("첫 사람이 슬롯 0을 잡는다"), Assignments[0].SlotIndex, 0);
+		TestEqual(TEXT("배정에 본인 AgentId가 실린다"), Assignments[0].AgentId, 1000);
+		TestEqual(TEXT("같은 일행의 둘째 멤버가 뒤에 선다"), Assignments[1].AgentId, 1001);
+		TestEqual(TEXT("2인 일행 다음이 두 번째 일행이다"), Assignments[2].PartyId, 20);
+		TestEqual(TEXT("두 번째 일행은 슬롯 2부터 선다"), Assignments[2].SlotIndex, 2);
 		TestEqual(TEXT("슬롯 간격이 115cm다"),
 			Assignments[1].TargetLocation.X - Assignments[0].TargetLocation.X, 115, 0.01);
 	}
 
-	// 앞 일행이 빠지면 뒷사람이 앞으로 당겨진다.
 	Queue.LeaveQueue(10, SimTime);
 	Queue.BuildSlotAssignments(Assignments);
-	TestEqual(TEXT("한 일행이 빠지면 하나 줄어든다"), Assignments.Num(), 1);
-	if (Assignments.Num() == 1)
+	TestEqual(TEXT("2인 일행이 빠지면 배정이 둘 줄어든다"), Assignments.Num(), 3);
+	if (Assignments.Num() == 3)
 	{
 		TestEqual(TEXT("뒷 일행이 슬롯 0으로 당겨진다"), Assignments[0].SlotIndex, 0);
 	}
@@ -321,15 +317,13 @@ bool FFF_FacilityQueue_ExplicitSlotTargetsOverrideLegacyLane::RunTest(const FStr
 	FFF_FacilityQueue Queue;
 	Queue.Configure(1, MakeConfig(3, 300.f), Lane);
 
-	// 슬롯 기하를 보는 테스트다. 1인 일행 셋을 세워 슬롯 0·1·2 를 그대로 얻는다.
-	// 한 일행에 3명을 넣으면 배정이 하나만 나와 슬롯 1·2 를 확인할 수 없다.
 	Join(Queue, MakeRequest(10, 1), 0.f);
 	Join(Queue, MakeRequest(20, 1), 0.f);
 	Join(Queue, MakeRequest(30, 1), 0.f);
 
 	TArray<FFF_SlotAssignment> Assignments;
 	Queue.BuildSlotAssignments(Assignments);
-	TestEqual(TEXT("Explicit slots produce one target per party"), Assignments.Num(), 3);
+	TestEqual(TEXT("Explicit slots produce one target per member"), Assignments.Num(), 3);
 	if (Assignments.Num() == 3)
 	{
 		TestEqual(TEXT("Explicit slot keeps its authored corner location"), Assignments[2].TargetLocation, FVector(110.f, 120.f, 0.f));
@@ -357,14 +351,13 @@ bool FFF_FacilityQueue_PolylineTargetsFollowEverySegment::RunTest(const FString&
 	FFF_FacilityQueue Queue;
 	Queue.Configure(1, MakeConfig(3, 300.f), Lane);
 
-	// 폴리라인 구간별 좌표를 보는 테스트다. 1인 일행 셋으로 슬롯 0·1·2 를 확보한다.
 	Join(Queue, MakeRequest(10, 1), 0.f);
 	Join(Queue, MakeRequest(20, 1), 0.f);
 	Join(Queue, MakeRequest(30, 1), 0.f);
 
 	TArray<FFF_SlotAssignment> Assignments;
 	Queue.BuildSlotAssignments(Assignments);
-	TestEqual(TEXT("Polyline produces one target per party"), Assignments.Num(), 3);
+	TestEqual(TEXT("Polyline produces one target per member"), Assignments.Num(), 3);
 	if (Assignments.Num() == 3)
 	{
 		TestEqual(TEXT("Slot zero begins at the polyline head"), Assignments[0].TargetLocation, FVector::ZeroVector);
@@ -639,8 +632,7 @@ bool FFF_FacilityQueue_SlotAssignmentsAreConsumableByCrowd::RunTest(const FStrin
 	TArray<FFF_SlotAssignment> Assignments;
 	Queue.BuildSlotAssignments(Assignments);
 
-	// 일행당 하나. Crowd 는 리더에게만 목적지를 주고 멤버는 포메이션으로 따라붙는다.
-	TestEqual(TEXT("일행 수만큼 배정이 나온다"), Assignments.Num(), 3);
+	TestEqual(TEXT("인원 수만큼 배정이 나온다"), Assignments.Num(), 6);
 
 	bool bAllHaveAgent = true;
 	bool bAllFinite = true;
@@ -654,22 +646,25 @@ bool FFF_FacilityQueue_SlotAssignmentsAreConsumableByCrowd::RunTest(const FStrin
 		bSlotsAscend &= (Assignment.SlotIndex > PreviousSlot);
 		PreviousSlot = Assignment.SlotIndex;
 	}
-	TestTrue(TEXT("모든 배정에 리더 AgentId 가 있다"), bAllHaveAgent);
+	TestTrue(TEXT("모든 배정에 AgentId 가 있다"), bAllHaveAgent);
 	TestTrue(TEXT("모든 좌표가 유한하다"), bAllFinite);
 	TestTrue(TEXT("슬롯 인덱스가 뒤로 갈수록 커진다"), bSlotsAscend);
 
-	// 같은 일행이 두 번 나오면 리더 목적지가 덮어써진다.
-	TSet<int32> SeenParties;
+	TMap<int32, int32> CountByParty;
 	for (const FFF_SlotAssignment& Assignment : Assignments)
 	{
-		SeenParties.Add(Assignment.PartyId);
+		CountByParty.FindOrAdd(Assignment.PartyId)++;
 	}
-	TestEqual(TEXT("일행이 중복되지 않는다"), SeenParties.Num(), Assignments.Num());
+	TestEqual(TEXT("2인 일행은 배정 둘"), CountByParty.FindRef(10), 2);
+	TestEqual(TEXT("3인 일행은 배정 셋"), CountByParty.FindRef(20), 3);
+	TestEqual(TEXT("1인 일행은 배정 하나"), CountByParty.FindRef(30), 1);
 
-	// 앞 일행이 차지한 만큼 뒤 일행이 물러난다. 2인은 나란히 서므로 한 칸이면 된다.
-	TestEqual(TEXT("첫 일행은 슬롯 0"), Assignments[0].SlotIndex, 0);
-	TestEqual(TEXT("2인 일행 뒤는 한 칸 뒤"), Assignments[1].SlotIndex, 1);
-	TestEqual(TEXT("3인 일행 뒤는 두 칸 뒤"), Assignments[2].SlotIndex, 3);
+	if (Assignments.Num() == 6)
+	{
+		TestEqual(TEXT("첫 일행은 슬롯 0 부터"), Assignments[0].SlotIndex, 0);
+		TestEqual(TEXT("2인 일행 뒤는 슬롯 2 부터"), Assignments[2].SlotIndex, 2);
+		TestEqual(TEXT("3인 일행 뒤는 슬롯 5"), Assignments[5].SlotIndex, 5);
+	}
 	return true;
 }
 
@@ -757,11 +752,9 @@ bool FFF_FacilityQueue_RejectionLeavesNoResidue::RunTest(const FString& Paramete
 	return true;
 }
 
-// 21. Crowd 결선의 전제 — 슬롯 배정이 Party 별로 연속이어야 한다.
-//
-//     결선 글루는 배정 배열을 Party 경계로 잘라서 GetPartyMembers 와 짝지운다.
-//     Party 멤버가 배열 안에서 흩어져 있으면 그 방식이 통째로 깨진다.
-//     Queue 쪽 구현이 바뀌어도 이 성질만은 유지돼야 한다.
+// 21. Crowd 결선의 전제 — 한 일행의 배정이 배열 안에서 붙어 있고,
+//     PartyMemberIndex 가 일행마다 0부터 다시 세어야 한다.
+//     결선 글루는 이 둘로 일행별 열(column)을 조립한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityQueue_AssignmentsAreGroupedByParty, "FestaFiesta.Queue.FacilityQueue.AssignmentsAreGroupedByParty", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_FacilityQueue_AssignmentsAreGroupedByParty::RunTest(const FString& Parameters)
 {
@@ -776,36 +769,53 @@ bool FFF_FacilityQueue_AssignmentsAreGroupedByParty::RunTest(const FString& Para
 
 	TArray<FFF_SlotAssignment> Assignments;
 	Queue.BuildSlotAssignments(Assignments);
-	// 일행 넷이므로 배정도 넷이다.
-	TestEqual(TEXT("일행 수만큼 배정된다"), Assignments.Num(), 4);
+	TestEqual(TEXT("인원 수만큼 배정된다"), Assignments.Num(), 10);
 
-	// 일행마다 정확히 하나씩. 예전에는 인원수만큼 나와서 Crowd 가 멤버 목적지를
-	// 리더로 되돌리는 구조와 충돌했고, 그 결과 리더가 줄 맨 뒤에 혼자 섰다.
 	TMap<int32, int32> CountByParty;
 	for (const FFF_SlotAssignment& Assignment : Assignments)
 	{
 		CountByParty.FindOrAdd(Assignment.PartyId)++;
 	}
-	TestEqual(TEXT("Party 10 은 하나"), CountByParty.FindRef(10), 1);
+	TestEqual(TEXT("Party 10 은 셋"), CountByParty.FindRef(10), 3);
 	TestEqual(TEXT("Party 20 은 하나"), CountByParty.FindRef(20), 1);
-	TestEqual(TEXT("Party 30 은 하나"), CountByParty.FindRef(30), 1);
-	TestEqual(TEXT("Party 40 은 하나"), CountByParty.FindRef(40), 1);
+	TestEqual(TEXT("Party 30 은 넷"), CountByParty.FindRef(30), 4);
+	TestEqual(TEXT("Party 40 은 둘"), CountByParty.FindRef(40), 2);
 
-	// 인원이 많은 일행일수록 뒤를 더 밀어낸다.
-	// 3인(2칸) → 1인(1칸) → 4인(2칸) 순이므로 슬롯은 0, 2, 3, 5 가 된다.
-	TestEqual(TEXT("3인 일행은 슬롯 0"), Assignments[0].SlotIndex, 0);
-	TestEqual(TEXT("1인 일행은 두 칸 뒤"), Assignments[1].SlotIndex, 2);
-	TestEqual(TEXT("4인 일행은 한 칸 뒤"), Assignments[2].SlotIndex, 3);
-	TestEqual(TEXT("2인 일행은 두 칸 뒤"), Assignments[3].SlotIndex, 5);
+	bool bPartiesAreContiguous = true;
+	bool bMemberIndexRestarts = true;
+	TSet<int32> ClosedParties;
+	int32 CurrentParty = INDEX_NONE;
+	int32 ExpectedMemberIndex = 0;
+	for (const FFF_SlotAssignment& Assignment : Assignments)
+	{
+		if (Assignment.PartyId != CurrentParty)
+		{
+			bPartiesAreContiguous &= !ClosedParties.Contains(Assignment.PartyId);
+			ClosedParties.Add(CurrentParty);
+			CurrentParty = Assignment.PartyId;
+			ExpectedMemberIndex = 0;
+		}
+		bMemberIndexRestarts &= (Assignment.PartyMemberIndex == ExpectedMemberIndex);
+		++ExpectedMemberIndex;
+	}
+	TestTrue(TEXT("한 일행의 배정이 배열 안에서 붙어 있다"), bPartiesAreContiguous);
+	TestTrue(TEXT("PartyMemberIndex 가 일행마다 0부터 다시 센다"), bMemberIndexRestarts);
 
-	// 앞 일행이 빠지면 나머지가 당겨진다.
+	if (Assignments.Num() == 10)
+	{
+		TestEqual(TEXT("3인 일행은 슬롯 0 부터"), Assignments[0].SlotIndex, 0);
+		TestEqual(TEXT("1인 일행은 슬롯 3"), Assignments[3].SlotIndex, 3);
+		TestEqual(TEXT("4인 일행은 슬롯 4 부터"), Assignments[4].SlotIndex, 4);
+		TestEqual(TEXT("2인 일행은 슬롯 8 부터"), Assignments[8].SlotIndex, 8);
+	}
+
 	Queue.LeaveQueue(20, SimTime);
 	Queue.BuildSlotAssignments(Assignments);
-	TestEqual(TEXT("한 일행이 빠지면 하나 줄어든다"), Assignments.Num(), 3);
-	if (Assignments.Num() == 3)
+	TestEqual(TEXT("1인 일행이 빠지면 배정이 하나 줄어든다"), Assignments.Num(), 9);
+	if (Assignments.Num() == 9)
 	{
 		TestEqual(TEXT("맨 앞은 그대로 슬롯 0"), Assignments[0].SlotIndex, 0);
-		TestEqual(TEXT("빈 칸만큼 당겨진다"), Assignments[1].SlotIndex, 2);
+		TestEqual(TEXT("빈 칸만큼 당겨진다"), Assignments[3].SlotIndex, 3);
 	}
 	return true;
 }

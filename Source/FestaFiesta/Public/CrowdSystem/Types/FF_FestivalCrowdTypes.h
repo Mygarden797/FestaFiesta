@@ -71,6 +71,10 @@ struct FUnitData
 
 	// 파티 내 자리 번호. 0이 리더. 대형(formation) 오프셋을 이 번호로 계산한다
 	int32 PartySlotIndex = 0;
+	
+	FVector QueueSlotLocation = FVector::ZeroVector;
+	bool bHasQueueSlot = false;
+	float LaneYaw = 0.f;
 
 	// 재현성을 위한 고정 ID. 슬롯 인덱스는 재사용되므로 그것과 별개로 둔다
 	int32 StableAgentID = INDEX_NONE;
@@ -141,8 +145,18 @@ struct FUnitData
 	 * 큐 단계를 아는 것은 그쪽뿐이다. 여기 값을 직접 쓰지 말 것.
 	 */
 	float ArrivalRadiusUU = 150.f;
-	
+
+	// 추격 중이 아닐 때 내는 속도, UU/s. Speed가 MaxSpeed로 덮이므로 역산할 수 없다
+	float CruiseSpeed = 150.f;
+
+	// 멤버가 리더를 따라붙는 중인가. 켜는 임계와 푸는 임계가 다르다(히스테리시스)
+	bool bCatchingUpToLeader = false;
+
 	//Animation
+	
+
+	
+	
 	
 	
 };

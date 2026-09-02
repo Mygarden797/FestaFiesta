@@ -197,6 +197,9 @@ struct FFF_SlotAssignment
 
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	float TargetYaw = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Queue")
+	int32 PartyMemberIndex = 0;
 };
 
 /**
