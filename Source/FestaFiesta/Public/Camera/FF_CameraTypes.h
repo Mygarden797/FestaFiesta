@@ -67,6 +67,18 @@ namespace FFCameraInputModel
 		return IsMovementAllowed(Reason) && !bBuildPreviewActive;
 	}
 
+	// 캐릭터를 직접 조종하는 동안에도 월드 시설 선택은 살아 있어야 한다.
+	// WASD/시점 조작과 좌클릭 피킹은 서로 다른 입력이므로 CharacterControl을
+	// 카메라 이동 차단과 시설 선택 차단에 똑같이 적용하지 않는다.
+	inline bool IsPickingAllowed(
+		const EFF_CameraInputBlock Reason,
+		const bool bBuildSessionActive)
+	{
+		return !bBuildSessionActive &&
+			(Reason == EFF_CameraInputBlock::None ||
+			 Reason == EFF_CameraInputBlock::CharacterControl);
+	}
+
 	// CommonUI나 런타임 Mapping Context가 Enhanced Input action을 소비하더라도 기본 좌클릭은
 	// 선택 신호를 잃지 않아야 한다. Action이 이미 처리된 프레임에는 중복 방송하지 않는다.
 	inline bool ShouldUsePrimaryPointerPickFallback(
@@ -212,6 +224,42 @@ struct FFF_OverviewCameraSettings
 	// 너무 좁으면 절벽에서 지면을 놓치고, 너무 넓으면 아래층 바닥을 잡는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "100.0"))
 	float GroundTraceHalfHeight = 20000.f;
+
+	// 지면을 찾을 때 쓸 충돌 채널.
+	//
+	// 기본 Visibility 는 물 표면이나 얇은 소품에도 맞는다. 그런 걸 지면으로 잡으면
+	// 카메라가 그 위로 올라탔다 내려온다. 지형만 잡고 싶으면 WorldStatic 이나
+	// 전용 채널로 바꾼다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground")
+	TEnumAsByte<ECollisionChannel> GroundTraceChannel = ECC_Visibility;
+
+	// 초점 주변을 몇 군데 더 찍을지. 0 이면 중심 한 점만 본다.
+	//
+	// 한 점만 보면 벽 끝이나 물가를 지날 때 높이가 뚝 끊긴다. 그 순간 카메라가
+	// 방지턱을 넘는 것처럼 출렁인다. 주변을 같이 재서 평균을 내면 경계를 지나는 동안
+	// 값이 부드럽게 이어진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "0", ClampMax = "8"))
+	int32 GroundSampleCount = 4;
+
+	// 주변 표본을 얼마나 떨어뜨려 찍을지.
+	// 좁으면 경계를 못 걸러내고, 넓으면 멀리 있는 지형까지 끌어와 초점이 붕 뜬다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "10.0"))
+	float GroundSampleRadius = 250.f;
+
+	// 중심에서 이만큼 넘게 차이 나는 표본은 버린다.
+	//
+	// 구멍이나 절벽 아래를 찍은 표본이 평균을 끌어내리면 카메라가 갑자기 가라앉는다.
+	// 0 이하면 버리지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "0.0"))
+	float GroundSampleMaxDeviation = 800.f;
+
+	// 초점 높이가 초당 이 이상으로는 변하지 않는다.
+	//
+	// 보간만으로는 큰 단차에서 처음에 확 움직였다가 서서히 멎는다. 그게 방지턱처럼 느껴진다.
+	// 상한을 두면 단차가 크든 작든 일정한 속도로 올라가서 예측 가능해진다.
+	// 0 이하면 제한하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "0.0"))
+	float GroundMaxClimbSpeed = 700.f;
 
 	// 카메라 초점이 벗어나지 못하는 영역. 유효하지 않으면 클램프하지 않는다.
 	// 축제장 밖으로 나가면 빈 지형만 보여서 길을 잃는다.

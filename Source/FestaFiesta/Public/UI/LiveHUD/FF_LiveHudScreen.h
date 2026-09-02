@@ -11,6 +11,7 @@
 class UBorder;
 class UImage;
 class UButton;
+class UCanvasPanel;
 class UFF_FestivalViewModelSubsystem;
 class UFF_LivePanelBase;
 class UFF_LivePlaceholderPanel;
@@ -59,6 +60,13 @@ public:
 	/** 열려 있는 패널을 닫는다. **패널이 스스로 닫지 않는다** — 여기가 유일한 경로다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
 	void CloseCurrentPanel();
+
+	/** 지정한 패널만 닫는다. 각 패널의 닫기 버튼이 자기 탭을 넘긴다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
+	void ClosePanel(EFF_LiveTab Tab);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
+	bool IsPanelOpen(EFF_LiveTab Tab) const;
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
 	FFF_LiveTabSelection GetSelection() const { return Selection; }
@@ -338,7 +346,15 @@ private:
 	/** 탭 버튼을 모아 한 번에 돈다. 매번 7개를 손으로 나열하지 않기 위해서다. */
 	void ForEachTabButton(TFunctionRef<void(EFF_LiveTab, UFF_LiveTabButton&)> Visitor) const;
 
-	void ApplySelection(const FFF_LiveTabSelection& NewSelection);
+	void EnsurePanelWorkspace();
+	bool OpenPanel(EFF_LiveTab Tab);
+	void RefreshPanelSelectionVisuals();
+	void RefreshPanelZOrder();
+	void RefreshPanelHostVisibility();
+	void ShowPanelLimitNotice();
+	void HidePanelLimitNotice();
+	void RestoreFloatingPanelState();
+	void SaveFloatingPanelState() const;
 
 public:
 	/**
@@ -347,10 +363,13 @@ public:
 	 * 준비 단계와 같다 — 자리는 **화면이 소유**하고 패널은 요청만 한다. 패널이 자기 슬롯을
 	 * 직접 만지면 탭을 닫았다 열 때 값이 되돌아가서 옮긴 자리가 사라진다.
 	 */
-	void NudgePanelPosition(FVector2D SlateDelta);
+	void NudgePanelPosition(EFF_LiveTab Tab, FVector2D SlateDelta);
 
 	/** 지금 끌어 옮길 수 있는 상태인지. `Designer` 도킹이면 코드가 자리를 안 잡으므로 막는다. */
-	bool IsPanelDragAllowed() const;
+	bool IsPanelDragAllowed(EFF_LiveTab Tab) const;
+
+	void BringPanelToFront(EFF_LiveTab Tab);
+	void SetPanelPinned(EFF_LiveTab Tab, bool bPinned);
 
 private:
 
@@ -360,7 +379,7 @@ private:
 	UClass* ResolvePanelClass(EFF_LiveTab Tab, const FString& EnumName, bool& bOutIsPlaceholder) const;
 
 	FFF_LivePanelLayout ResolveLayout(EFF_LiveTab Tab) const;
-	void ApplyPanelLayout(const FFF_LivePanelLayout& Layout);
+	void ApplyPanelLayout(EFF_LiveTab Tab, const FFF_LivePanelLayout& Layout);
 
 	/**
 	 * 다음 틱에 패널·호스트의 **실제 크기**를 로그로 찍는다.
@@ -382,6 +401,18 @@ private:
 
 	UPROPERTY()
 	TMap<EFF_LiveTab, TObjectPtr<UFF_LivePanelBase>> PanelWidgets;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCanvasPanel> PanelWorkspace;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> PanelLimitNotice;
+
+	/** 뒤에서 앞으로의 열린 순서. 최대 다섯 개다. */
+	TArray<EFF_LiveTab> OpenTabs;
+
+	/** 고정 패널은 이동하지 않고 일반 패널보다 위에 그려진다. */
+	TSet<EFF_LiveTab> PinnedTabs;
 
 	FFF_LiveTabSelection Selection;
 

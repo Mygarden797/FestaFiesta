@@ -59,6 +59,41 @@ bool FFF_FestivalCameraRotationBuildStatePolicyTest::RunTest(const FString& Para
 		TEXT("캐릭터 조종 중에는 회전을 막는다"),
 		FFCameraInputModel::IsRotationAllowed(EFF_CameraInputBlock::CharacterControl, false));
 	TestTrue(
+		TEXT("캐릭터 조종 중에도 시설 피킹은 허용한다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::CharacterControl,
+			/*bBuildSessionActive=*/false));
+	TestTrue(
+		TEXT("평상시 관찰 시점에서도 시설 피킹을 유지한다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::None,
+			/*bBuildSessionActive=*/false));
+	TestFalse(
+		TEXT("캐릭터 조종 중인 건축 세션에서는 피킹을 막는다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::CharacterControl,
+			/*bBuildSessionActive=*/true));
+	TestFalse(
+		TEXT("관찰 시점의 건축 입력도 시설 피킹으로 전달하지 않는다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::BuildSession,
+			/*bBuildSessionActive=*/true));
+	TestFalse(
+		TEXT("모달 UI에서는 시설 피킹을 막는다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::ModalUi,
+			/*bBuildSessionActive=*/false));
+	TestFalse(
+		TEXT("액터 관람 중에는 시설 피킹을 막는다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::ActorView,
+			/*bBuildSessionActive=*/false));
+	TestFalse(
+		TEXT("연출 중에는 시설 피킹을 막는다"),
+		FFCameraInputModel::IsPickingAllowed(
+			EFF_CameraInputBlock::Scripted,
+			/*bBuildSessionActive=*/false));
+	TestTrue(
 		TEXT("IA_Pick이 유실된 프레임의 좌클릭은 native fallback으로 복구한다"),
 		FFCameraInputModel::ShouldUsePrimaryPointerPickFallback(false, true));
 	TestFalse(
