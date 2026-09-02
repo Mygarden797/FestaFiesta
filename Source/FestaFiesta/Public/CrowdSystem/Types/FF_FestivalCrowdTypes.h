@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "NPC/Party/FF_NeedState.h"
+#include "NPC/Party/FF_ProgramReservation.h"
 #include "NPC/Party/FF_VisitHistory.h"
 #include "FF_FestivalCrowdTypes.generated.h"
 
@@ -261,7 +262,13 @@ struct FFF_PartyDecisionContext
 	FFF_VisitHistory VisitHistory;
 	int32 ConsecutiveNoChoiceCount = 0;
 	float NowLiveMinutes = 0.f;
+
+	float WalkSpeedMetersPerSecond = 1.5f;
+	// Simulation의 복귀 여유(축제분). 후보 방문 후 귀환 가능 판정에 전달한다.
+	float ProgramReturnBufferMinutes = 0.f;
 	float RemainingStayMinutes = 0.f;
+	bool bHasActiveReservation = false;
+	FFF_ProgramReservation ActiveReservation;
 
 	/**
 	 * 목적지별 "지금 그곳으로 걸어가고 있는 인원". 널일 수 있다 — 조정자는 널이면 이 항을 끈다.
@@ -316,6 +323,16 @@ enum class EFF_PartyQueuePhase : uint8
 	AtSlot,
 };
 
+// 일반 시설 Queue와 독립적인 예약 프로그램 이동 상태.
+UENUM()
+enum class EFF_PartyProgramPhase : uint8
+{
+	None,
+	Returning,		// 복귀 중
+	Waiting,		// 대기 중 
+	Participating   // 참여 중
+};
+
 USTRUCT()
 struct FPartyDecisionState
 {
@@ -358,5 +375,12 @@ struct FPartyDecisionState
 	// 완료·폐쇄 취소)인데, 그 이벤트가 하나라도 유실되면 파티가 영원히 재평가되지 않는다.
 	// 그러면 화면에는 "이유 없이 굳은 NPC 무리"로만 보이고 로그에는 아무것도 안 남는다.
 	float QueueEnteredSimTime = 0.f;
+
+	// --- 예약 프로그램 -----------------------------------------------------------------
+	EFF_PartyProgramPhase ProgramPhase = EFF_PartyProgramPhase::None;
+	FGuid ProgramFacilityId;
+	float ProgramStartMinutes = 0.f;
+	float ProgramEndMinutes = 0.f;
+	FVector ProgramWaitingLocation = FVector::ZeroVector;
 };
 

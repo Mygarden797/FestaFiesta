@@ -283,7 +283,7 @@ public:
 	 *
 	 * 한 번 걷은 프로그램은 다시 걷지 않는다. Live 동안 매 초 불려도 안전하다.
 	 *
-	 * @param NowMinutes Live 경과 시각(분). `FFF_FestivalClock::TryGetLiveElapsedMinutes` 로 얻는다
+	 * @param NowMinutes Live 경과 시각(축제분). `UFF_FestivalStageSubsystem::TryGetLiveElapsedMinutes` 로 얻는다
 	 * @return 이번 호출에서 원장에 들어간 체험비 총액
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")

@@ -17,6 +17,7 @@
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
+#include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 
@@ -679,6 +680,14 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 	}
 
 	AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(ZoneFacilityId);
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
+		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+	if (Reservations && Reservations->IsProgramFacility(ZoneFacilityId))
+	{
+		Response.Result = EFF_QueueJoinResult::RejectedClosed;
+		return Response; // 예약자는 슬롯 좌표만 사용하고 일반 서비스 Queue에는 가입하지 않는다.
+	}
 	if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::Active)
 	{
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
@@ -749,6 +758,31 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::LeaveZoneFacilityQueue(
 		&& QueueSystem->LeaveQueue(QueueFacilityId, PartyId);
 	bQueueEventsNeedFlush |= bLeft;
 	return bLeft;
+}
+
+bool UFF_ZoneSystemQueueBridgeSubsystem::TryGetProgramWaitingTransform(
+	const FGuid ZoneFacilityId,
+	const int32 WaitingIndex,
+	FTransform& OutTransform) const
+{
+	OutTransform = FTransform::Identity;
+	const int32 QueueFacilityId = FindQueueFacilityId(ZoneFacilityId);
+	const FFF_FacilityQueue* Queue = QueueSystem && QueueFacilityId != INDEX_NONE
+		? QueueSystem->FindQueue(QueueFacilityId)
+		: nullptr;
+	if (!Queue || WaitingIndex < 0)
+	{
+		return false;
+	}
+
+	const FFF_QueueLaneGeometry& Lane = Queue->GetLaneGeometry();
+	if (Lane.ExplicitSlotTransforms.IsValidIndex(WaitingIndex))
+	{
+		OutTransform = Lane.ExplicitSlotTransforms[WaitingIndex];
+		return !OutTransform.ContainsNaN();
+	}
+	// 저작 범위 밖으로 줄을 늘리면 장애물이나 다른 시설에 들어갈 수 있다.
+	return false;
 }
 
 void UFF_ZoneSystemQueueBridgeSubsystem::NotifyZoneFacilityPartyArrived(

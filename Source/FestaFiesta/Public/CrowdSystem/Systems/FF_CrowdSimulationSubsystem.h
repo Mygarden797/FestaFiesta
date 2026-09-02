@@ -263,6 +263,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue", meta = (ClampMin = "0.0"))
 	float QueueHoldTimeoutSeconds = 1200.f;
 
+	// 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
+	float ProgramExitGraceMinutes = 10.f;
+
+	// 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
+	float ProgramReturnBufferMinutes = 10.f;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
 	int32 GetQueueHoldTimeoutCount() const { return QueueHoldTimeouts; }
 
@@ -735,6 +743,30 @@ private:
 	bool UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
 
 	bool AdvancePartyQueueOnArrival(int32 LeaderAgentIndex);
+
+	// 매 고정 스텝에서 예약 파티의 복귀 마감·참여 시작·종료를 검사하고 상태를 전환한다.
+	void UpdateProgramReservationStates();
+	
+	// 현재 축제분 + 직접 이동 예상분이 시작 시각에 도달하면 복귀를 시작하고 true를 반환한다.
+	bool TryBeginProgramReturnIfDue(int32 LeaderIndex, const FFF_ProgramReservation& Reservation,
+		const FVector& Approach, float NowMinutes);
+	
+	// Stage에서 Live 경과 축제분을 읽는다. 조회할 수 없으면 false를 반환하고 출력값은 유지한다.
+	bool TryGetProgramLiveMinutes(float& OutMinutes) const;
+	
+	// 예약 복귀 도착을 처리해 시작 전이면 대기, 시작 이후면 참여로 전환하고 일반 도착 처리를 막는다.
+	bool HandleProgramArrival(int32 LeaderAgentIndex);
+	
+	// 일반 Queue에서 이탈한 뒤 예약자 대기 슬롯을 목표로 복귀한다. 슬롯이 없으면 FallbackLocation을 사용한다.
+	bool BeginProgramReturn(
+		int32 LeaderAgentIndex,
+		const FFF_ProgramReservation& Reservation,
+		const FVector& FallbackLocation);
+	
+	// 예약 행동 상태를 해제하고 시설 이탈 목표와 최소 잔여 체류시간을 설정해 자유활동을 재개한다.
+	void ReleaseProgramParty(int32 LeaderAgentIndex);
+	
+	friend struct FFF_CrowdProgramTestAccess;
 
 	void ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue);
 
