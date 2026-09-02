@@ -617,6 +617,10 @@ void UFF_PrepHudBar::EnsurePanelWorkspace()
 	{
 		return;
 	}
+	// 이 Canvas는 패널마다 독립 슬롯을 주기 위해 화면 전체를 채운다. 기본 Visible로 두면
+	// 빈 영역도 Slate hit-test 대상이 되어 GameAndUI 모드의 시설/지면 클릭이 월드까지 가지 않는다.
+	// Workspace 자신만 통과시키고 실제 패널 자식은 계속 입력을 받게 한다.
+	PanelWorkspace->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 
 	UPanelSlot* WorkspaceSlot = Panel_PanelHost->AddChild(PanelWorkspace);
 	if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(WorkspaceSlot))

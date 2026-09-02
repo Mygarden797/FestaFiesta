@@ -1696,26 +1696,15 @@ bool UFF_BuildModeSubsystem::HandleRemovalClickUnderCursor(APlayerController& Co
 		return false;
 	}
 
-	FHitResult GroundHit;
-	if (!TraceGroundUnderCursor(Controller, GroundHit))
+	UFF_FacilityInfoSubsystem* FacilityInfo = GetFacilityInfoSubsystem();
+	if (!FacilityInfo)
 	{
-		if (PendingRemovalFacility.IsValid())
-		{
-			ClearPendingRemovalSelection();
-			ShowStatus(TEXT("시설 선택을 해제했습니다."), false, 1.5f);
-		}
+		ShowStatus(TEXT("시설 선택 시스템을 찾을 수 없습니다."), true);
 		return false;
 	}
-
-	UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
-	if (!ZoneSystem)
-	{
-		ShowStatus(TEXT("시설 철거 시스템을 찾을 수 없습니다."), true);
-		return false;
-	}
-	const FName TargetZoneId = ZoneSystem->ResolveZoneAtWorldLocation(GroundHit.ImpactPoint);
-	AFFZSFacilityActor* Facility = ZoneSystem->FindFacilityAtWorldPoint(
-		GroundHit.ImpactPoint, TargetZoneId);
+	// Live 선택과 같은 padded proxy/가림/등록 검증을 사용한다. 지면 Visibility hit를 정확한
+	// footprint에 다시 대입하면 메시가 지면 trace를 막거나 여백을 눌렀을 때 시설을 놓친다.
+	AFFZSFacilityActor* Facility = FacilityInfo->ResolveFacilityUnderCursor(Controller);
 	if (!Facility)
 	{
 		if (PendingRemovalFacility.IsValid())
