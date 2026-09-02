@@ -6,6 +6,9 @@
 #include "Components/SceneComponent.h"
 #include "CollisionQueryParams.h"
 #include "Engine/World.h"
+#include "Components/SplineComponent.h"
+#include "EngineUtils.h"
+#include "FF_FFZSZoneActor.h"
 #include "GameFramework/SpringArmComponent.h"
 
 AFF_OverviewCameraPawn::AFF_OverviewCameraPawn()
@@ -165,12 +168,74 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 		Rig.FocusOn(Target->GetActorLocation());
 	}
 
+	// Zone 은 레벨이 다 뜬 뒤에야 잡힌다. BeginPlay 시점엔 아직 없을 수 있어
+	// 처음 성공할 때까지 매 틱 시도한다.
+	ApplyZoneBoundsIfNeeded();
+
 	// 팬과 추적이 초점을 옮긴 뒤에 지면을 잡는다. 순서를 바꾸면 한 프레임 늦은 위치의
 	// 지면을 따라가서 경사에서 카메라가 뒤처진다.
 	UpdateGroundHeight(DeltaSeconds);
 
 	Rig.AdvanceInterpolation(DeltaSeconds);
 	ApplyRigToComponents();
+}
+
+void AFF_OverviewCameraPawn::ApplyZoneBoundsIfNeeded()
+{
+	if (bZoneBoundsApplied || !CameraSettings.bUseZoneBounds)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FBox Combined(ForceInit);
+	int32 ZoneCount = 0;
+
+	for (TActorIterator<AFFZSGameplayZone> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		const AFFZSGameplayZone* Zone = *It;
+		if (!IsValid(Zone) || !Zone->BoundarySpline)
+		{
+			continue;
+		}
+
+		// 스플라인 점을 하나씩 넣어 감싸는 상자를 만든다.
+		// 액터 바운드를 쓰면 스플라인이 실제로 그리는 모양보다 커지거나 작아진다.
+		const int32 PointCount = Zone->BoundarySpline->GetNumberOfSplinePoints();
+		for (int32 Index = 0; Index < PointCount; ++Index)
+		{
+			Combined += Zone->BoundarySpline->GetLocationAtSplinePoint(
+				Index, ESplineCoordinateSpace::World);
+		}
+		++ZoneCount;
+	}
+
+	if (ZoneCount == 0 || !Combined.IsValid)
+	{
+		// 아직 Zone 이 안 떴거나 레벨에 없다. 다음 틱에 다시 본다.
+		return;
+	}
+
+	// 가장자리 시설이 화면 끝에 걸리지 않게 여유를 준다.
+	const float Padding = FMath::Max(0.f, CameraSettings.ZoneBoundsPadding);
+	Combined = Combined.ExpandBy(FVector(Padding, Padding, 0.f));
+
+	// 높이는 제한하지 않는다. 지형 추종이 초점 Z 를 정하는데 여기서 또 막으면 서로 싸운다.
+	Combined.Min.Z = -HALF_WORLD_MAX;
+	Combined.Max.Z = HALF_WORLD_MAX;
+
+	CameraSettings.FocusBounds = Combined;
+	Rig.UpdateSettings(CameraSettings);
+	bZoneBoundsApplied = true;
+
+	UE_LOG(LogFestaFiestaCamera, Log,
+		TEXT("[카메라] Zone %d개 기준으로 이동 범위를 잡았다. X %.0f~%.0f / Y %.0f~%.0f"),
+		ZoneCount, Combined.Min.X, Combined.Max.X, Combined.Min.Y, Combined.Max.Y);
 }
 
 bool AFF_OverviewCameraPawn::TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const
