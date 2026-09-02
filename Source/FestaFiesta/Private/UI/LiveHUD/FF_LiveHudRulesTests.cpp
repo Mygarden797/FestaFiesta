@@ -116,31 +116,36 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_LiveHudRules_SpeedLock, "FestaFiesta.UI.Liv
 bool FFF_LiveHudRules_SpeedLock::RunTest(const FString& Parameters)
 {
 	TestEqual(TEXT("평소에는 바꿀 수 있다"),
-		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, false, false),
+		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, false),
 		EFF_LiveSpeedState::Ready);
 
 	TestEqual(TEXT("메인 공연 중에는 잠긴다"),
-		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, /*MainProgram*/ true, false),
+		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, /*MainProgram*/ true),
 		EFF_LiveSpeedState::LockedMainProgram);
 
-	TestEqual(TEXT("마지막 날에도 잠긴다"),
-		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, false, /*FinalDay*/ true),
-		EFF_LiveSpeedState::LockedFinalDay);
+	// ★ **마지막 날에도 바꿀 수 있다** (2026-09-02 백종태 결정).
+	//
+	// 웹 프로토타입에 `마지막 날은 배속을 쓸 수 없습니다` 가 있어서 그대로 옮겼었는데,
+	// 소유자 코드에는 그런 잠금이 없다 — `Tick` 의 Live 분기는 공연 잠금만 본다.
+	// UI 혼자 막고 있었다. 3일차는 가장 긴 날이라 오히려 배속이 필요하다.
+	//
+	// 이 줄이 없으면 프로토타입을 다시 보고 잠금을 되살릴 수 있다.
+	TestEqual(TEXT("마지막 날에도 바꿀 수 있다"),
+		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, /*MainProgram*/ false),
+		EFF_LiveSpeedState::Ready);
 
-	// ★ 순서가 뒤집히면 3일차 공연 중에 `마지막 날이라 못 바꿉니다` 가 떠서,
-	//   공연이 끝나면 풀린다는 사실을 못 알리게 된다.
-	TestEqual(TEXT("둘 다 걸리면 공연 잠금을 먼저 알린다"),
-		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Live, /*MainProgram*/ true, /*FinalDay*/ true),
-		EFF_LiveSpeedState::LockedMainProgram);
-
-	// 라이브가 아니면 배속 줄째 숨긴다 — 준비 단계에는 배속이 없다.
-	TestEqual(TEXT("라이브가 아니면 숨긴다"),
-		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::MorningCheck, false, false),
+	// 라이브가 아니면 배속 줄째 숨긴다.
+	//
+	// ⚠️ 마감·준비 단계도 시계는 흐르지만 **배속이 안 먹는다** — `Tick` 의 비-Live 분기가
+	// `TimeScale` 을 안 쓰고 항상 1배속으로 더한다. 눌러도 안 되는 버튼을 만들지 않으려고
+	// 줄째 숨긴다. 소유자가 그 분기에도 배속을 적용하면 그때 연다 (`UI_API.md` 요청).
+	TestEqual(TEXT("개장 준비에서는 숨긴다"),
+		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::MorningCheck, false),
 		EFF_LiveSpeedState::Hidden);
 
 	// 잠금 인자가 켜져 있어도 단계가 아니면 숨김이 먼저다.
 	TestEqual(TEXT("라이브가 아니면 잠금보다 숨김이 먼저"),
-		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Closing, true, true),
+		FFF_LiveHudRules::ResolveSpeedState(EFF_FestivalStage::Closing, true),
 		EFF_LiveSpeedState::Hidden);
 
 	return true;

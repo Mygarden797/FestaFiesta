@@ -135,10 +135,15 @@ enum class EFF_LiveSpeedState : uint8
 	 * 메인 공연 구간이라 1배속으로 잠겼다.
 	 * 판정은 `UFF_FestivalStageSubsystem::IsMainProgramLocked()` 가 소유한다 — UI 가 세지 않는다.
 	 */
-	LockedMainProgram	UMETA(DisplayName = "메인 공연 잠금"),
+	LockedMainProgram	UMETA(DisplayName = "메인 공연 잠금")
 
-	/** 마지막 날은 배속을 막는다. 결말을 빨리 감기로 넘기지 않게 한다. */
-	LockedFinalDay		UMETA(DisplayName = "마지막 날 잠금")
+	// 🔴 `마지막 날 잠금` 을 뺐다 (2026-09-02 백종태 결정).
+	//
+	// 웹 프로토타입에 `마지막 날은 배속을 쓸 수 없습니다` 라는 규칙이 있어서 그대로
+	// 옮겼는데, **소유자 코드에는 그런 잠금이 없다.** `SetTimeScale()` 은 값을 저장하고
+	// `Tick` 의 Live 분기는 메인 공연 잠금만 본다 — 즉 UI 혼자 막고 있었다.
+	//
+	// 3일차는 가장 긴 날이라 오히려 배속이 필요하다는 판단이다.
 };
 
 /**
@@ -243,15 +248,10 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	/**
 	 * 배속 버튼 상태.
 	 *
-	 * ★ **메인 공연 잠금을 마지막 날보다 먼저 본다.** 둘 다 걸린 3일차 공연 중에
-	 *   `마지막 날이라 못 바꿉니다` 라고 하면, 공연이 끝나면 풀린다는 사실을 못 알린다.
-	 *   더 빨리 풀리는 이유를 먼저 알려 준다.
+	 * 잠기는 곳은 **메인 공연 구간 하나뿐**이다. 마지막 날 잠금은 2026-09-02 에 뺐다 —
+	 * 소유자 코드에 그런 잠금이 없어서 UI 혼자 막고 있었다 (`EFF_LiveSpeedState` 주석).
 	 *
 	 * @param bIsMainProgramLocked `UFF_FestivalStageSubsystem::IsMainProgramLocked()`
-	 * @param bIsFinalDay          `IsFinalDay()`. UI 가 총 일수를 알지 못하게 중계값을 받는다
 	 */
-	static EFF_LiveSpeedState ResolveSpeedState(
-		EFF_FestivalStage Stage,
-		bool bIsMainProgramLocked,
-		bool bIsFinalDay);
+	static EFF_LiveSpeedState ResolveSpeedState(EFF_FestivalStage Stage, bool bIsMainProgramLocked);
 };

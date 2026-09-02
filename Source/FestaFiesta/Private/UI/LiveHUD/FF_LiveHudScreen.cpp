@@ -691,8 +691,7 @@ void UFF_LiveHudScreen::RefreshSpeed()
 
 	const EFF_LiveSpeedState State = FFF_LiveHudRules::ResolveSpeedState(
 		Stage,
-		ViewModel ? ViewModel->IsTimeScaleLocked() : false,
-		ViewModel ? ViewModel->IsFinalDay() : false);
+		ViewModel ? ViewModel->IsTimeScaleLocked() : false);
 
 	if (Box_Speed)
 	{
@@ -721,10 +720,6 @@ void UFF_LiveHudScreen::RefreshSpeed()
 	{
 	case EFF_LiveSpeedState::LockedMainProgram:
 		Reason = LOCTEXT("LiveSpeed_MainProgram", "메인 공연 중에는 1배속으로 고정됩니다. 공연이 끝나면 풀립니다.");
-		break;
-
-	case EFF_LiveSpeedState::LockedFinalDay:
-		Reason = LOCTEXT("LiveSpeed_FinalDay", "마지막 날에는 배속을 바꿀 수 없습니다.");
 		break;
 
 	default:

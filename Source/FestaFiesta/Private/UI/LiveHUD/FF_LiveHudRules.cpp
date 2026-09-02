@@ -57,24 +57,21 @@ FFF_LiveTabSelection FFF_LiveHudRules::ToggleTab(const FFF_LiveTabSelection& Cur
 
 EFF_LiveSpeedState FFF_LiveHudRules::ResolveSpeedState(
 	EFF_FestivalStage Stage,
-	bool bIsMainProgramLocked,
-	bool bIsFinalDay)
+	bool bIsMainProgramLocked)
 {
 	if (!IsLiveStage(Stage))
 	{
 		return EFF_LiveSpeedState::Hidden;
 	}
 
-	// ★ 공연 잠금을 먼저 본다. 3일차 공연 중에 `마지막 날이라 못 바꿉니다` 라고 하면
-	//   공연이 끝나면 풀린다는 사실을 못 알린다 — 더 빨리 풀리는 이유를 먼저 말한다.
+	// 🔴 잠기는 곳은 **메인 공연 구간 하나뿐**이다.
+	//
+	// 웹 프로토타입에 `마지막 날은 배속을 쓸 수 없습니다` 가 있어서 옮겼었는데,
+	// 소유자 코드에는 그런 잠금이 없다 — `Tick` 의 Live 분기는 공연 잠금만 본다.
+	// UI 혼자 막고 있던 셈이라 뺐다 (2026-09-02 백종태 결정).
 	if (bIsMainProgramLocked)
 	{
 		return EFF_LiveSpeedState::LockedMainProgram;
-	}
-
-	if (bIsFinalDay)
-	{
-		return EFF_LiveSpeedState::LockedFinalDay;
 	}
 
 	return EFF_LiveSpeedState::Ready;
