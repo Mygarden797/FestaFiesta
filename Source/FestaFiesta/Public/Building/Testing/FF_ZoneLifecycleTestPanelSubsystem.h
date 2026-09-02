@@ -2,7 +2,7 @@
 
 // Test_Main 월드에서 시설 Lifecycle 개발 패널의 생성·Ctrl+G 표시 토글을 소유한다.
 // 흐름: 대상 월드 확인 -> WBP를 숨김 상태로 부착 -> Ctrl+G raw chord 감지 -> 표시·상태 갱신.
-// 불변식: 일반 맵과 Shipping에서는 생성하지 않고 입력 모드·마우스 커서 상태도 변경하지 않는다.
+// 불변식: 일반 맵에서는 생성하지 않으며 패키징에서도 입력 모드·마우스 커서 상태를 변경하지 않는다.
 // 실패/수명: 플레이어 준비 전만 생성을 재시도하고 해제 시 위젯과 토글 상태를 함께 정리한다.
 
 #pragma once
@@ -13,7 +13,7 @@
 
 class UFF_ZoneLifecycleTestPanel;
 
-/** Test_Main에서만 개발용 시설 Lifecycle WBP를 만들고 Ctrl+G로 표시합니다. */
+/** Editor와 패키징의 Test_Main에서 개발용 시설 Lifecycle WBP를 만들고 Ctrl+G로 표시합니다. */
 UCLASS()
 class FESTAFIESTA_API UFF_ZoneLifecycleTestPanelSubsystem final : public UTickableWorldSubsystem
 {

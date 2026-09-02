@@ -393,8 +393,9 @@ Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설
 
 현재 수동 통합 QA는 `Content/FestaFiesta/Maps/Test_Main`에서 프로덕션
 `UFF_BuildModeSubsystem`과 개발용 `UFF_ZoneLifecycleTestPanelSubsystem`을 함께 사용합니다.
-비 Shipping의 `Test_Main`에서는 `WBP_FF_ZoneLifecycleTestPanel`이 자동으로 표시되어 Festival 단계와
-시설 Open·Close·Emergency 권위 API를 관찰·실행하고, 설치·이동·철거는 실제 건축 모드 경로로 확인합니다.
+Editor와 Shipping 패키지의 `Test_Main`에서는 `WBP_FF_ZoneLifecycleTestPanel`이 숨김 상태로 생성되고
+`Ctrl+G`로 표시됩니다. Festival 단계와 시설 Open·Close·Emergency 권위 API를 관찰·실행하고,
+설치·이동·철거는 실제 건축 모드 경로로 확인합니다.
 
 시설 Definition과 배치용 에디터 픽스처는
 `Content/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`입니다. 이 맵은 패키징 대상이 아닙니다.
