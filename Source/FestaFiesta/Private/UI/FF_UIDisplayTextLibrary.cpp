@@ -50,6 +50,7 @@ FText UFF_UIDisplayTextLibrary::GetLiveTabText(EFF_LiveTab Tab)
 	case EFF_LiveTab::SNS:			return LOCTEXT("LiveTab_SNS", "SNS");
 	case EFF_LiveTab::Report:		return LOCTEXT("LiveTab_Report", "리포트");
 	case EFF_LiveTab::Staff:		return LOCTEXT("LiveTab_Staff", "스태프");
+	case EFF_LiveTab::Density:		return LOCTEXT("LiveTab_Density", "밀집");
 	case EFF_LiveTab::Finale:		return LOCTEXT("LiveTab_Finale", "피날레");
 	}
 

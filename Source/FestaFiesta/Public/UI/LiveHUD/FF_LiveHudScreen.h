@@ -154,6 +154,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Staff;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
+	TObjectPtr<UFF_LiveTabButton> Tab_Density;
+
 	/** 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합). */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Finale;
