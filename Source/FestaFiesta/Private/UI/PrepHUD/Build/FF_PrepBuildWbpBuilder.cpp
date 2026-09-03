@@ -388,6 +388,12 @@ namespace FFPrepBuildWbpBuilder
 		{
 			Slot->SetHorizontalAlignment(HAlign_Fill);
 			Slot->SetVerticalAlignment(VAlign_Center);
+
+			// 🔴 **아래 여백 22 는 실기에서 맞춘 값이다** (2026-09-03 백종태).
+			//   에디터 디자이너에서는 아래가 붕 떠 보이지만, 런타임에는 이 띠가 36px 로
+			//   줄고 바 위에 얹히므로 이 여백이 있어야 글자가 탭 줄과 같은 높이에 온다.
+			//   **에디터에서 예뻐 보이게 고치면 실기가 어긋난다.**
+			Slot->SetPadding(FMargin(12.0f, 8.0f, 12.0f, 22.0f));
 		}
 		if (UVerticalBoxSlot* Slot = Content->AddChildToVerticalBox(Compact))
 		{
