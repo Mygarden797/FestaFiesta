@@ -6,6 +6,7 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Overlay.h"
+#include "Components/SizeBox.h"
 #include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/Image.h"
@@ -82,6 +83,14 @@ void UFF_LiveHudScreen::NativeOnInitialized()
 	if (Button_Speed4)
 	{
 		Button_Speed4->OnClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleSpeed4Clicked);
+	}
+
+	// 🔴 **이 배선을 빠뜨렸었다.** 버튼은 보이고 눌리는데 아무 일도 안 났다 —
+	//    가시성과 활성만 맞춰 두고 `OnClicked` 를 안 붙였다 (2026-09-03 백종태 실기 확인).
+	//    피날레는 이 버튼이 넘어갈 **유일한** 수단이라 게임이 거기서 멈췄다.
+	if (Button_Cta)
+	{
+		Button_Cta->OnClicked.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleCtaClicked);
 	}
 }
 
@@ -407,6 +416,38 @@ UFF_LivePanelBase* UFF_LiveHudScreen::EnsurePanel(EFF_LiveTab Tab)
 	return Panel;
 }
 
+void UFF_LiveHudScreen::LogBarGeometryNextTick(EFF_FestivalStage Stage)
+{
+	// 방금 바뀐 가시성이 반영되려면 한 프레임 지나야 한다 (`LogPanelGeometryNextTick` 과 같은 이유).
+	TWeakObjectPtr<UFF_LiveHudScreen> WeakThis(this);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateLambda([WeakThis, Stage]()
+		{
+			const UFF_LiveHudScreen* Screen = WeakThis.Get();
+			if (!Screen)
+			{
+				return;
+			}
+
+			const FVector2D MenuSize = Screen->Border_MenuRow
+				? Screen->Border_MenuRow->GetCachedGeometry().GetLocalSize()
+				: FVector2D::ZeroVector;
+			const FVector2D StatusSize = Screen->Border_StatusRow
+				? Screen->Border_StatusRow->GetCachedGeometry().GetLocalSize()
+				: FVector2D::ZeroVector;
+			const FVector2D ScreenSize = Screen->GetCachedGeometry().GetLocalSize();
+
+			UE_LOG(LogFestaFiestaUI, Warning,
+				TEXT("[%s] 바 실측 — 단계=%s · 메뉴행 %.0fx%.0f · 상태행 %.0fx%.0f · 루트 %.0fx%.0f"),
+				*Screen->GetName(),
+				*UFF_UIDisplayTextLibrary::GetFestivalStageText(Stage).ToString(),
+				MenuSize.X, MenuSize.Y, StatusSize.X, StatusSize.Y, ScreenSize.X, ScreenSize.Y);
+		}));
+	}
+}
+
 void UFF_LiveHudScreen::LogPanelGeometryNextTick(UFF_LivePanelBase& Panel)
 {
 	// === 왜 다음 틱인가 ===
@@ -611,11 +652,42 @@ void UFF_LiveHudScreen::RefreshTabs()
 
 	// 🔴 탭이 하나도 없으면 메뉴 행째 접는다. 라이브가 아닌 Stage 에 이 화면이 배선돼 있으면
 	// **빈 띠**만 남아 고장난 화면처럼 보인다. 상태 행은 그대로 둔다.
+	const bool bHasTabs = (VisibleTabCount > 0);
+
 	if (Border_MenuRow)
 	{
-		Border_MenuRow->SetVisibility(VisibleTabCount > 0
+		Border_MenuRow->SetVisibility(bHasTabs
 			? ESlateVisibility::SelfHitTestInvisible
 			: ESlateVisibility::Collapsed);
+	}
+
+	// 🔴 **바 높이도 같이 줄인다.** 접기만 하면 두 행이 모두 `Fill` 이라 상태 행이 남은
+	//    58 을 전부 가져가서, 배경만 두 배가 되고 안의 글자는 `VAlign_Center` 라 그대로다 —
+	//    위아래로 빈 흰 띠가 생긴다. 실측으로 갈랐다 (2026-09-03):
+	//      마감   메뉴행 75x29 · 상태행 2020x29
+	//      피날레 메뉴행  0x0  · 상태행 2020x58   ← 이것
+	if (SizeBox_Bar)
+	{
+		const float TargetHeight = bHasTabs
+			? MenuRowHeight + StatusRowHeight
+			: StatusRowHeight;
+
+		SizeBox_Bar->SetHeightOverride(TargetHeight);
+
+		// 🔴 **`SetHeightOverride` 만으로는 안 된다** (2026-09-03 실기에서 확인).
+		//
+		//   `HeightOverride` 는 *희망* 크기를 바꿀 뿐이고, 실제 크기는 부모가 준다.
+		//   이 바는 캔버스에 **Y 점 앵커 + 명시 크기**로 놓여 있어 (`Offsets.Bottom` = 높이)
+		//   캔버스가 준 58 이 그대로 이긴다. 슬롯을 같이 고쳐야 실제로 줄어든다.
+		//
+		//   ★ 점 앵커라서 `Offsets.Bottom` 이 여백이 아니라 **크기**다. 늘어난 축이었으면
+		//     뜻이 정반대가 된다 (`docs/memory/prep-hud-reference.md` 2절).
+		if (UCanvasPanelSlot* BarSlot = Cast<UCanvasPanelSlot>(SizeBox_Bar->Slot))
+		{
+			FMargin Offsets = BarSlot->GetOffsets();
+			Offsets.Bottom = TargetHeight;
+			BarSlot->SetOffsets(Offsets);
+		}
 	}
 
 	// 사라진 탭의 패널이 남아 있으면 닫을 수단이 화면에서 없어진다.
@@ -786,6 +858,8 @@ void UFF_LiveHudScreen::HandleStageViewChanged(EFF_FestivalStage NewStage, int32
 {
 	// 단계가 바뀌면 탭 가시성·배속 잠금이 함께 바뀐다. 전체를 다시 그린다.
 	RefreshAll();
+
+	LogBarGeometryNextTick(NewStage);
 }
 
 void UFF_LiveHudScreen::HandleRemainingSecondsChanged(int32 NewValue)

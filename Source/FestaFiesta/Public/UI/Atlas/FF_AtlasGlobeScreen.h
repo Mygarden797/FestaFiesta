@@ -79,6 +79,15 @@ protected:
 
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual FReply NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+
+	/**
+	 * 커서를 직접 읽어 지구를 돌린다. **이동을 마우스 이벤트로 처리하지 않는 이유**는
+	 * `NativeOnMouseButtonDown` 주석에 있다 — 캡처를 못 쓰는 상황이 있어서다.
+	 */
+	void TickDrag();
+
+	/** 드래그를 끝내고 가까운 핀으로 재스냅한다. 위젯 안/밖 어디서 떼든 여기로 모인다. */
+	void EndDrag();
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 

@@ -163,6 +163,17 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
 	TObjectPtr<UBorder> Border_MenuRow;
 
+	/**
+	 * 바 전체 높이를 쥔 상자.
+	 *
+	 * 🔴 **런타임에 높이를 바꿔야 한다.** 탭이 하나도 없는 단계(피날레 연출)에서는
+	 * `Border_MenuRow` 를 접는데, 두 행이 모두 `Fill` 이라 남은 58 을 **상태 행이 전부
+	 * 가져간다.** 그러면 배경만 두 배로 커지고 안의 글자는 `VAlign_Center` 라 그대로여서
+	 * 위아래로 빈 띠가 생긴다 (2026-09-03 실측: 마감 `상태행 2020x29` → 피날레 `2020x58`).
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<class USizeBox> SizeBox_Bar;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
 	TObjectPtr<UBorder> Border_StatusRow;
 
@@ -426,6 +437,23 @@ private:
 	 * 원인을 잡고 나면 지운다 (2026-08-28 임시).
 	 */
 	void LogPanelGeometryNextTick(UFF_LivePanelBase& Panel);
+
+	/**
+	 * 단계가 바뀔 때 바의 실측 높이를 남긴다.
+	 *
+	 * 🔴 "피날레에서 바가 두꺼워진다" 는 보고(2026-09-03)를 코드만 읽어서는 못 갈랐다.
+	 * 바는 `SizeBox` 로 58 고정이고 두 행 모두 `Fill` 이라 이론상 안 변한다. 그러면
+	 * ① 실제로는 안 변하는데 탭 줄이 사라져 그렇게 보이거나 ② 어딘가 내가 못 본 경로가
+	 * 늘리고 있는 것인데, **둘의 대처가 완전히 다르다.** 추측으로 고치면 헛짚는다.
+	 */
+	void LogBarGeometryNextTick(EFF_FestivalStage Stage);
+
+	/**
+	 * 탭 버튼 줄의 높이(px). 생성기의 `MenuRowHeight` 와 같아야 한다.
+	 * 상태 행 높이는 위의 `StatusRowHeight` 를 그대로 쓴다 — 값을 두 벌 두지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|Layout", meta = (ClampMin = "0.0"))
+	float MenuRowHeight = 29.f;
 
 	void RefreshTabs();
 	void RefreshStatusRow();

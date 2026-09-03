@@ -1722,7 +1722,9 @@ namespace FFLiveHudWbpBuilder
 
 		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("Canvas_Root"));
 		UOverlay* PanelHost = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Panel_PanelHost"), true);
-		USizeBox* BarBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Bar"));
+		// ★ 변수로 노출한다. 탭이 없는 단계에서 화면이 높이를 줄여야 한다
+		//   (`UFF_LiveHudScreen::RefreshTabs`).
+		USizeBox* BarBox = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("SizeBox_Bar"), true);
 		UVerticalBox* BarRows = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Bar"));
 		UBorder* MenuRow = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_MenuRow"), true);
 		UHorizontalBox* TabRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Tabs"));
@@ -1902,6 +1904,50 @@ namespace FFLiveHudWbpBuilder
 		{
 			Slot_SpeedBox->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			Slot_SpeedBox->SetVerticalAlignment(VAlign_Center);
+		}
+
+		// --- 넘기는 버튼. **피날레 연출 구간에서만** 뜬다 ---
+		//
+		// 🔴 2026-09-03 에 되살렸다. 마감 HUD 를 라이브 HUD 로 합칠 때 이 버튼을 옮기는 것을
+		//    빠뜨려서, 피날레에 **넘어갈 수단이 화면에서 사라졌다.** `RefreshCta()` 는 계속
+		//    돌고 있었지만 위젯이 없어 아무 일도 안 했다 (`BindWidgetOptional` 이라 조용히).
+		//
+		//    마감·리포트에서는 리포트 패널 안에 같은 버튼이 있으므로 여기는 접힌다 —
+		//    바에도 두면 화면에 `다음 날로` 가 둘이 된다.
+		UButton* Cta = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Cta"), true);
+		UTextBlock* CtaLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CtaLabel"), true);
+		if (!Cta || !CtaLabel)
+		{
+			return false;
+		}
+
+		// 라벨이 흰 글씨라 네 상태가 전부 어두워야 한다 — 리포트 패널의 `Button_Advance` 와
+		// 같은 이유다. 밝은 판을 쓰면 마우스를 올리는 순간 글씨가 사라진다.
+		FButtonStyle CtaStyle = Cta->GetStyle();
+		CtaStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
+		CtaStyle.Hovered = MakeSolidBrush(Palette->InGame.TealDeep, 4.f);
+		CtaStyle.Pressed = MakeSolidBrush(Palette->InGame.Ink, 4.f);
+		CtaStyle.Disabled = MakeSolidBrush(Palette->InGame.InkFaint, 4.f);
+		CtaStyle.NormalPadding = FMargin(14.f, 3.f);
+		CtaStyle.PressedPadding = FMargin(14.f, 3.f);
+		Cta->SetStyle(CtaStyle);
+
+		StyleText(*CtaLabel, 12, Palette->InGame.Paper, TEXT("SemiBold"));
+		CtaLabel->SetText(LOCTEXT("LiveStatusPreview_Cta", "다음으로"));
+		if (UButtonSlot* Slot_CtaLabel = Cast<UButtonSlot>(Cta->AddChild(CtaLabel)))
+		{
+			Slot_CtaLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_CtaLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_CtaLabel->SetPadding(FMargin(0.f));
+		}
+		if (UHorizontalBoxSlot* Slot_Cta = StatusRight->AddChildToHorizontalBox(Cta))
+		{
+			Slot_Cta->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+
+			// ★ `VAlign_Center` 다. `Fill` 로 두면 버튼이 29px 행을 세로로 꽉 채우려 하고,
+			//   패딩까지 더해져 **행이 밀려 바가 두꺼워진다.**
+			Slot_Cta->SetVerticalAlignment(VAlign_Center);
+			Slot_Cta->SetPadding(FMargin(10.f, 0.f, 0.f, 0.f));
 		}
 
 		// --- 중앙 칩 `● 1일차 · 라이브`. 어두운 판 + 흰 글씨라 이 한 줄만 도드라진다 ---
