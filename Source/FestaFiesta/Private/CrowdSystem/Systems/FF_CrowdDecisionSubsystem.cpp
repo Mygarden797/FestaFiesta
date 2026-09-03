@@ -162,13 +162,17 @@ void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
 	UFF_CrowdSimulationSubsystem* Crowd =
 		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
 
-	const int32 RedecidedCount = Crowd
+	const int32 PendingBefore = Crowd ? Crowd->GetPendingDecisionCount() : 0;
+	const int32 AttemptedCount = Crowd
 		? Crowd->RequestRedecisionForIdleParties(MaxPartiesRedecidedOnStageOpen)
 		: 0;
+	const int32 NewlyQueuedCount = Crowd ? Crowd->GetPendingDecisionCount() - PendingBefore : 0;
 
 	UE_LOG(LogCrowdDecision, Log,
-		TEXT("메인 공연 시작('%s') — 메인 무대를 후보로 열고 유휴 파티 %d개에 재결정을 요청했다. ")
-		TEXT("줄에 선 파티는 제외했다(대기열과 어긋난다)"), *EventLabel, RedecidedCount);
+		TEXT("메인 공연 시작('%s') — 전역 메인 무대 후보를 열고 재결정 %d개 시도, %d개 새로 대기. ")
+		TEXT("요청 상한 %d(0=전체), 프레임당 처리 %d. 대기열·예약·퇴장 보호는 유지한다"),
+		*EventLabel, AttemptedCount, NewlyQueuedCount, MaxPartiesRedecidedOnStageOpen,
+		Crowd ? Crowd->MaxDecisionsPerFrame : 0);
 }
 
 void UFF_CrowdDecisionSubsystem::HandleMainProgramEnded(FString EventLabel)
@@ -567,7 +571,7 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 
 	TArray<FFF_DestinationCandidate> Candidates = FFF_ZoneSystemBridge::BuildCandidates(
 		ReadModel, CurrentZoneId, Context.PartyWorldLocation, MaxCandidates, WalkDistancesOrNull,
-		IsMainStageOpen());
+		IsMainStageOpen(), IsGlobalMainStageDiscoveryActive());
 	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
 	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
 		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
