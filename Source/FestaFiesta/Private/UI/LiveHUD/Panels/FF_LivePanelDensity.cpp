@@ -8,23 +8,36 @@
 #include "Components/VerticalBoxSlot.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Engine/World.h"
-#include "HAL/IConsoleManager.h"
 #include "UI/FF_UILog.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaLiveDensity"
 
 namespace FFDensityLocal
 {
-	/** 히트맵을 켜는 콘솔 변수. 제품용 API 가 오면 이 이름을 지운다 (`UI_API.md` 11번). */
-	const TCHAR* const DebugCVarName = TEXT("FF.Crowd.Debug");
+	/**
+	 * 범례 글자 크기. 런타임에 만드는 `UTextBlock` 은 **꾸미지 않으면 기본 폰트**라
+	 * 패널 안에서 혼자 크게 나온다 (2026-09-03 실기에서 확인).
+	 */
+	constexpr int32 LegendFontSize = 13;
 
-	/** `FF.Crowd.Debug` 의 값. 1 이면 밀도 그리드, 2 면 Agent 까지. */
-	constexpr int32 DebugGridOnly = 1;
-	constexpr int32 DebugOff = 0;
-
-	IConsoleVariable* FindDebugCVar()
+	/**
+	 * 히트맵 상태를 쥔 곳.
+	 *
+	 * 🔴 처음엔 `FF.Crowd.Debug` 콘솔 **변수**를 찾으려 했는데 그건 변수가 아니라
+	 *    **명령**(`FAutoConsoleCommandWithWorldArgsAndOutputDevice`)이라
+	 *    `FindConsoleVariable()` 이 항상 null 을 돌려줬다. 그래서 버튼이 꺼진 채로 떴다.
+	 *
+	 *    실제 상태는 서브시스템의 `bDrawDebugDensity` 이고 `BlueprintReadWrite` 라 공개돼
+	 *    있다. 콘솔을 흉내 내지 말고 그 값을 직접 읽고 쓴다.
+	 *
+	 * ⚠️ 이것은 월드·경제 상태가 아니라 **디버그 표시 플래그**다. UI 가 상태를 직접
+	 *    바꾸지 않는다는 규칙(AGENTS.md 2)에 걸리지 않는다. 제품용 토글 API 가 오면
+	 *    그쪽으로 옮긴다 (`UI_API.md` 11번).
+	 */
+	UFF_CrowdSimulationSubsystem* FindCrowd(const UObject* WorldContext)
 	{
-		return IConsoleManager::Get().FindConsoleVariable(DebugCVarName);
+		const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+		return World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
 	}
 }
 
@@ -130,8 +143,9 @@ void UFF_LivePanelDensity::NativeOnPanelOpened()
 	}
 
 	// ★ 못 하는 것을 화면에 적는다. 안 적으면 패키징에서 안 켜지는 이유를 아무도 모른다.
+	// ★ 별표를 쓰지 않는다. UMG 는 마크다운을 모르므로 `**` 가 글자로 그대로 나온다.
 	SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_MissingNote",
-		"히트맵은 지금 디버그 표시라 **에디터에서만** 보입니다. 제품 빌드용 표시를 요청해 뒀습니다."));
+		"히트맵은 지금 디버그 표시라 에디터에서만 보입니다. 제품 빌드용 표시를 요청해 뒀습니다."));
 
 	RebuildLegend();
 	RefreshToggleLabel();
@@ -177,31 +191,24 @@ void UFF_LivePanelDensity::NativeTick(const FGeometry& MyGeometry, float InDelta
 
 void UFF_LivePanelDensity::HandleToggleClicked()
 {
-	IConsoleVariable* CVar = FFDensityLocal::FindDebugCVar();
-	if (!CVar)
+	UFF_CrowdSimulationSubsystem* Crowd = FFDensityLocal::FindCrowd(this);
+	if (!Crowd)
 	{
-		// 셰이핑 빌드에서는 이 변수가 없을 수 있다. 조용히 넘기지 않는다 —
-		// 버튼이 눌리는데 아무 일도 안 나는 것이 제일 헷갈린다.
+		// 조용히 넘기지 않는다 — 버튼이 눌리는데 아무 일도 안 나는 것이 제일 헷갈린다.
 		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] `%s` 콘솔 변수를 찾지 못해 히트맵을 켤 수 없다. "
-				 "제품용 토글 API 가 필요하다 (UI_API.md 11번)."),
-			*GetName(), FFDensityLocal::DebugCVarName);
-
-		SetTextOrHide(Text_MissingNote, LOCTEXT("LiveDensity_NoCVar",
-			"이 빌드에서는 히트맵을 켤 수 없습니다. 제품 빌드용 표시가 아직 없습니다."));
+			TEXT("[%s] Crowd 서브시스템이 없어 히트맵을 켤 수 없다."), *GetName());
 		return;
 	}
 
-	const bool bWasOn = CVar->GetInt() > FFDensityLocal::DebugOff;
-	CVar->Set(bWasOn ? FFDensityLocal::DebugOff : FFDensityLocal::DebugGridOnly);
+	Crowd->bDrawDebugDensity = !Crowd->bDrawDebugDensity;
 
 	RefreshToggleLabel();
 }
 
 void UFF_LivePanelDensity::RefreshToggleLabel()
 {
-	const IConsoleVariable* CVar = FFDensityLocal::FindDebugCVar();
-	const bool bOn = CVar && CVar->GetInt() > FFDensityLocal::DebugOff;
+	const UFF_CrowdSimulationSubsystem* Crowd = FFDensityLocal::FindCrowd(this);
+	const bool bOn = Crowd && Crowd->bDrawDebugDensity;
 
 	// !! 상태를 색으로만 말하지 않는다 !! 라벨이 지금 상태를 글자로 적는다 (AT-011).
 	SetTextOrHide(Text_ToggleLabel, bOn
@@ -210,7 +217,7 @@ void UFF_LivePanelDensity::RefreshToggleLabel()
 
 	if (Button_Toggle)
 	{
-		Button_Toggle->SetIsEnabled(CVar != nullptr);
+		Button_Toggle->SetIsEnabled(Crowd != nullptr);
 	}
 }
 
@@ -253,6 +260,11 @@ void UFF_LivePanelDensity::RebuildLegend()
 		Line->SetText(FText::Format(
 			LOCTEXT("LiveDensity_LegendRow", "{0} · {1} · {2}"),
 			Row.GradeLetter, Range, Row.GradeName));
+
+		// 🔴 **꾸미지 않으면 기본 폰트**라 패널 안에서 혼자 크게 나온다.
+		FSlateFontInfo Font = Line->GetFont();
+		Font.Size = FFDensityLocal::LegendFontSize;
+		Line->SetFont(Font);
 
 		Line->SetAutoWrapText(true);
 
