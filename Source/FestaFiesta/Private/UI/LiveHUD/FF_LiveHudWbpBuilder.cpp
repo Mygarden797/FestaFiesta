@@ -860,6 +860,7 @@ namespace FFLiveHudWbpBuilder
 		UHorizontalBox* SummaryRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Summary"));
 		UTextBlock* AverageNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_AverageNote"), true);
 		UTextBlock* Longest = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Longest"), true);
+		UTextBlock* WorstWait = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_WorstWait"), true);
 		UTextBlock* StateCounts = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_StateCounts"), true);
 
 		UTextBlock* ListTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ListTitle"));
@@ -868,7 +869,7 @@ namespace FFLiveHudWbpBuilder
 		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
 
 		if (!Root || !Content || !Header || !Title || !Close || !CloseGlyph
-			|| !SummaryRow || !AverageNote || !Longest || !StateCounts
+			|| !SummaryRow || !AverageNote || !Longest || !WorstWait || !StateCounts
 			|| !ListTitle || !ListBox || !Empty || !MissingNote)
 		{
 			return false;
@@ -955,6 +956,19 @@ namespace FFLiveHudWbpBuilder
 		{
 			Slot_Longest->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			Slot_Longest->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		// 🔴 `가장 긴 줄` 바로 아래에 둔다. 둘은 **다른 시설을 가리킬 수 있고**, 나란히
+		//    있어야 "사람은 저기가 많은데 오래 걸리는 건 여기" 가 눈에 붙는다.
+		//    값이 없으면 런타임에 접힌다 — `0초` 로 적으면 "어디든 바로" 가 된다.
+		StyleText(*WorstWait, 13, Palette->InGame.Amber, TEXT("Medium"));
+		WorstWait->SetText(LOCTEXT("LiveQueuePreview_WorstWait", "지금 서면 가장 오래 · 푸드트럭B 180초"));
+		WorstWait->SetAutoWrapText(true);
+		if (UVerticalBoxSlot* Slot_WorstWait = Content->AddChildToVerticalBox(WorstWait))
+		{
+			Slot_WorstWait->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_WorstWait->SetHorizontalAlignment(HAlign_Fill);
+			Slot_WorstWait->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
 		}
 
 		StyleText(*StateCounts, 13, Palette->InGame.InkMuted, TEXT("Medium"));

@@ -177,4 +177,78 @@ bool FFF_LiveQueueRules_Sort::RunTest(const FString& Parameters)
 	return true;
 }
 
+// =============================================================================
+// 지금 서면 가장 오래 걸리는 곳
+// =============================================================================
+//
+// 🔴 `가장 긴 줄` 과 다른 값이다. 사람이 많아도 처리가 빠르면 금방 빠지고, 줄이 짧아도
+// 처리가 느리면 오래 걸린다. 둘이 같은 시설을 가리킬 것이라고 가정하면 안 된다.
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_LiveQueueRules_WorstExpectedWait, "FestaFiesta.UI.LiveQueue.WorstExpectedWait", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_LiveQueueRules_WorstExpectedWait::RunTest(const FString& Parameters)
+{
+	auto Make = [](const TCHAR* Name, int32 Waiting, int32 ExpectedWait)
+	{
+		FFF_LiveFacilityView View;
+		View.DisplayName = FText::FromString(Name);
+		View.WaitingCount = Waiting;
+		View.ExpectedWaitSeconds = ExpectedWait;
+		return View;
+	};
+
+	{
+		// 줄은 짧은데 느린 곳이 가장 오래 걸린다 — `가장 긴 줄` 과 갈린다.
+		const TArray<FFF_LiveFacilityView> Facilities = {
+			Make(TEXT("붐비는 곳"), /*Waiting=*/20, /*ExpectedWait=*/30),
+			Make(TEXT("느린 곳"),   /*Waiting=*/3,  /*ExpectedWait=*/300),
+		};
+
+		const FFF_LiveQueueSummary Summary = FFF_LiveQueueRules::BuildSummary(Facilities);
+
+		TestEqual(TEXT("가장 긴 줄은 인원이 많은 곳"),
+			Summary.LongestQueueName.ToString(), FString(TEXT("붐비는 곳")));
+
+		TestEqual(TEXT("가장 오래 걸리는 곳은 느린 곳"),
+			Summary.WorstExpectedWaitName.ToString(), FString(TEXT("느린 곳")));
+
+		TestEqual(TEXT("그 대기 시간"), Summary.WorstExpectedWaitSeconds, 300);
+		TestEqual(TEXT("둘 다 읽었다"), Summary.ExpectedWaitSampleCount, 2);
+	}
+
+	{
+		// 🔴 **못 읽은 시설을 0 으로 세지 않는다.** 0 으로 세면 그 곳이 `가장 빠른 곳` 이
+		//    되어 실제로 붐비는 곳을 가린다 — 평균에서 뺀 것과 같은 이유다.
+		//
+		//    `INDEX_NONE` 은 큐에 등록되지 않았거나 다리를 못 건넌 것이고,
+		//    Queue 쪽 `UnreachableWaitSeconds`(86400) 도 ViewModel 이 여기로 바꿔 준다.
+		const TArray<FFF_LiveFacilityView> Facilities = {
+			Make(TEXT("모르는 곳"), /*Waiting=*/50, /*ExpectedWait=*/INDEX_NONE),
+			Make(TEXT("아는 곳"),   /*Waiting=*/1,  /*ExpectedWait=*/45),
+		};
+
+		const FFF_LiveQueueSummary Summary = FFF_LiveQueueRules::BuildSummary(Facilities);
+
+		TestEqual(TEXT("모르는 곳은 안 센다"), Summary.ExpectedWaitSampleCount, 1);
+		TestEqual(TEXT("아는 곳이 최악으로 남는다"),
+			Summary.WorstExpectedWaitName.ToString(), FString(TEXT("아는 곳")));
+		TestEqual(TEXT("그 값"), Summary.WorstExpectedWaitSeconds, 45);
+	}
+
+	{
+		// 하나도 못 읽으면 `모름` 이다. 0 이 아니다 — 0 은 `어디든 바로 이용 가능` 이라는 뜻이 된다.
+		const TArray<FFF_LiveFacilityView> Facilities = {
+			Make(TEXT("가"), 10, INDEX_NONE),
+			Make(TEXT("나"), 20, INDEX_NONE),
+		};
+
+		const FFF_LiveQueueSummary Summary = FFF_LiveQueueRules::BuildSummary(Facilities);
+
+		TestEqual(TEXT("표본 0"), Summary.ExpectedWaitSampleCount, 0);
+		TestEqual(TEXT("값은 모름"), Summary.WorstExpectedWaitSeconds, INDEX_NONE);
+		TestTrue(TEXT("이름도 비어 있다"), Summary.WorstExpectedWaitName.IsEmpty());
+	}
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
