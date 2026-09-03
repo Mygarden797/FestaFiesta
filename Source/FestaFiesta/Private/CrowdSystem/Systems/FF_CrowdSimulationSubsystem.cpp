@@ -22,6 +22,7 @@
 #include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
+#include "DataTables/FF_CrowdAppearenceRow.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
@@ -89,6 +90,15 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	CachedArrivalScenarioId = Settings->ArrivalScenarioId;
 	CachedBucketCount = 0;
 	
+	CachedAppearenceTable = Settings->CrowdAppearanceTable.LoadSynchronous();
+
+	if (!CachedAppearenceTable)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] CrowdAppearanceTable 미설정 — 전원 프록시 원기둥으로 표시된다. ")
+			TEXT("Project Settings에 지정했는지, 지정한 DataTable 애셋이 이동·삭제되지 않았는지 확인할 것"));
+	}
+
 	if (CachedCoefficientTable)
 	{
 		NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
@@ -374,6 +384,9 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			FUnitData& Unit = UnitDatas[AgentIndex];
 			Unit.ArchetypeID = Visitor.ArchetypeId;
 			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
+			
+			ApplyAgentAppearance(AgentIndex);
+			
 			if (Unit.bIsDependentChild)
 			{
 				++ChildrenSpawned;
@@ -423,7 +436,8 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
 			}
 
-
+			ApplyAgentAppearance(AgentIndex);
+			
 			++SpawnedCount;
 			++MembersSpawnedThisParty;
 		}
@@ -2207,7 +2221,7 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
-	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
+	if (CurrentStage == EFF_FestivalStage::Closing)
 	{
 		AllAgentLeavingTrigger();
 	}
@@ -2218,7 +2232,7 @@ void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage Previous
 			GatherReservedPartyRequests());
 		
 	}
-	else if (PreviousStage == EFF_FestivalStage::Closing)
+	else if (CurrentStage == EFF_FestivalStage::Report)
 	{
 		DespawnAllAgent();
 	}
@@ -3105,5 +3119,48 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		
 		
 	}
+	
+}
+
+void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
+{
+	
+	if (!UnitDatas.IsValidIndex(AgentIndex))
+	{
+		return;
+	}
+	
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot)) {return;}
+	
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	if (!IsValid(Actor)) { return; }
+	
+	FUnitData& Unit = UnitDatas[AgentIndex];
+	
+	const FName RowKey = Unit.bIsDependentChild ? FName(TEXT("child")) : (Unit.ArchetypeID.IsNone() ? FName(TEXT("default")) : Unit.ArchetypeID);
+	
+	
+
+	const UDataTable* AppearenceTable = CachedAppearenceTable.Get();
+	if (AppearenceTable == nullptr)
+	{
+		Actor->ApplyAppearance(nullptr,nullptr ,0.f, 1.f);
+		return;
+	}
+
+	const FFF_CrowdAppearenceRow* Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(RowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+
+	if (Row == nullptr)
+	{
+		Actor->ApplyAppearance(nullptr, nullptr,0.f,1.f);
+		return;
+	}
+	
+	Actor->ApplyAppearance(Row->Mesh.LoadSynchronous(), Row->AnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
+	
+	
+	
+	
 	
 }
