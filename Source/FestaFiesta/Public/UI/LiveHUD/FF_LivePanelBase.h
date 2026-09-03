@@ -51,13 +51,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
 	UFF_LiveHudScreen* GetOwningScreen() const { return OwningScreen.Get(); }
 
-	/** 고정된 패널은 현재 위치를 유지하며 빈 영역을 끌어도 움직이지 않는다. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
-	bool IsPinned() const { return bIsPinned; }
-
-	/** 단계 전환 뒤 저장된 고정 상태를 화면에 되살린다. 소유 화면에는 다시 알리지 않는다. */
-	void ApplyPinnedState(bool bPinned);
-
+protected:
+	/** 값이 비면 칸째 접는다. 빈 줄을 남기면 고장난 것으로 보인다. */
+	static void SetTextOrHide(class UTextBlock* TextBlock, const FText& Value);
 	/** 이 패널을 닫아 달라고 **바에 요청한다.** 직접 숨기지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
 	void RequestClose();
@@ -68,10 +64,6 @@ protected:
 	/** 오른쪽 위 닫기 버튼. 없으면 하단 바의 탭을 다시 눌러 닫는다. */
 	UFUNCTION()
 	void HandleCloseClicked();
-
-	/** 현재 위치 고정/해제를 전환하고 화면의 패널 상태와 맞춘다. */
-	UFUNCTION()
-	void HandlePinClicked();
 
 	// =========================================================================
 	// 끌어 옮기기 — 준비 단계(`UFF_PrepPanelBase`)와 같은 조작이다
@@ -124,29 +116,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
 	TObjectPtr<UButton> Button_Close;
 
-	/**
-	 * 닫기 옆의 고정 버튼. 최신 WBP 는 직접 둘 수 있고, 기존 WBP 에 없으면 런타임에
-	 * `Button_Close` 바로 앞에 같은 버튼 스타일로 만들어 넣는다.
-	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
-	TObjectPtr<UButton> Button_Pin;
-
 private:
-	void EnsurePinButton();
-	void RefreshPinButtonPresentation();
-
 	UPROPERTY()
 	TWeakObjectPtr<UFF_LiveHudScreen> OwningScreen;
-
-	/** 런타임 폴백 버튼의 라벨. WBP 버튼이면 그 버튼의 텍스트 자식을 가리킨다. */
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> Text_PinLabel;
 
 	/** 임계 판정과 이동량 누적. 아틀라스 지구본과 같은 것을 쓴다. */
 	FFF_AtlasDragTracker DragTracker;
 
 	EFF_LiveTab Tab = EFF_LiveTab::Operations;
-	bool bIsPinned = false;
 };
 
 /**

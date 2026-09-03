@@ -19,6 +19,7 @@ class UFF_FestivalDefinition;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPromotionGradeChanged, EFF_PromotionGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleChanged);
 
 /**
@@ -41,6 +42,11 @@ public:
 	// 축제를 시작하고 자금을 초기 자금으로 맞춘다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void StartFestival(const UFF_FestivalDefinition* InDefinition);
+
+	// GameInstance 는 `OpenLevel` 을 넘어 살아남으므로 `Initialize()` 는 게임을 켤 때 한 번만
+	// 브리지가 `OnFestivalStarted` 를 받아 이 함수를 부른다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void RestartFestival();
 
 	// 축제 시작됐는지
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
@@ -210,6 +216,32 @@ public:
 	int32 GetFinaleSatisfactionBonus() const;
 
 
+	// --- 홍보 -------------------------------------------------------------
+
+	// 홍보를 구매한다. 축제당 1회이고 변경·취소가 없다(피날레와 같은 규칙).
+	// 단계 판정은 여기서 하지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	EFF_PromotionPurchaseResult TryPurchasePromotion(EFF_PromotionGrade Grade);
+
+	// 구매한 홍보 등급. 안 샀으면 None.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	EFF_PromotionGrade GetPurchasedPromotionGrade() const { return PurchasedPromotionGrade; }
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnPromotionGradeChanged OnPromotionGradeChanged;
+
+	/**
+	 * 홍보를 반영한 하루 예상 방문객. 축제가 시작되지 않았으면 `INDEX_NONE`("모름").
+	 * [주의] 0 과 `INDEX_NONE` 은 다르다. 0 은 "아무도 안 온다", `INDEX_NONE` 은 "알 수 없다" 다.
+	 * 🔴 crowd 가 `AFF_SpawnActor::UnitCount` 를 쓰므로, 그쪽이 이 창구를 읽기 전까지 홍보를 사도 손님은 안 늘어난다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetExpectedVisitors() const;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnExpectedVisitorsChanged;
+
+
 	// --- 유료 프로그램 -----------------------------------------------------
 
 	// 편성할 수 있는 카드 전체. 축제가 시작되지 않았으면 빈 배열.
@@ -251,7 +283,7 @@ public:
 	 *
 	 * 한 번 걷은 프로그램은 다시 걷지 않는다. Live 동안 매 초 불려도 안전하다.
 	 *
-	 * @param NowMinutes Live 경과 시각(분). `FFF_FestivalClock::TryGetLiveElapsedMinutes` 로 얻는다
+	 * @param NowMinutes Live 경과 시각(축제분). `UFF_FestivalStageSubsystem::TryGetLiveElapsedMinutes` 로 얻는다
 	 * @return 이번 호출에서 원장에 들어간 체험비 총액
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
@@ -295,6 +327,10 @@ public:
 	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
+	// Project Settings 의 DefaultFestival 을 읽어 축제를 시작한다.
+	// 저작이 비어 있으면 Warning 만 남기고 시작하지 않는다.
+	void StartConfiguredFestival();
+
 	// 이 시설에서 이 프로그램을 열 수 있는가.
 	// 시설 종류를 ZoneSystem 에서 읽어 카드의 허용 목록과 대조한다.
 	bool IsFacilityTypeAllowedForCard(const FFF_ProgramCard& Card, const FGuid& FacilityInstanceId) const;
@@ -309,6 +345,7 @@ private:
 	int32 SettleOneProgram(FFF_ScheduledProgram& Scheduled, bool bLateSettlement);
 
 	// 값이 실제로 바뀔 때만 통지한다.
+	void BroadcastExpectedVisitorsIfChanged(int32 PreviousExpectedVisitors);
 	void BroadcastGoldIfChanged(int32 PreviousGold);
 	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
 	void BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue);
@@ -354,6 +391,9 @@ private:
 	
 	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.
 	EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
+
+	// 구매한 홍보 등급. 피날레와 같은 규칙이다.
+	EFF_PromotionGrade PurchasedPromotionGrade = EFF_PromotionGrade::None;
 
 	// 오늘 편성한 프로그램. 카드가 하루짜리라 하루 경계에서 비운다.
 	TArray<FFF_ScheduledProgram> ScheduledPrograms;

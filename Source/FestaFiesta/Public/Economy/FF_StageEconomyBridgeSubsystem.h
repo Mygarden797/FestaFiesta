@@ -36,6 +36,10 @@ public:
 	// Stage 진입을 경제 시스템의 하루 경계 정산으로 전달한다.
 	void ProcessStageEntry(EFF_FestivalStage NewStage, int32 Day);
 
+	// 축제가 새로 시작됐다는 신호 - 경제 리셋
+	// 테스트 seam 이라 public 이다.
+	void ProcessFestivalStarted();
+
 	// 하루 경계 정산을 수행할 Progression 서브시스템을 지정한다.
 	void SetProgression(UFF_FestivalProgressionSubsystem* InProgression);
 
@@ -63,6 +67,10 @@ private:
 	void HandleStageChanged(
 		EFF_FestivalStage PreviousStage,
 		EFF_FestivalStage NewStage);
+
+	// 축제 시작 신호를 받아 경제를 처음 상태로 되돌린다.
+	UFUNCTION()
+	void HandleFestivalStarted();
 	
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalStageSubsystem> Stage;

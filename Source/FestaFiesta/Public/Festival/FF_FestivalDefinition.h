@@ -40,6 +40,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
 	int32 DailyVisitorGoal = 500;
 
+	/**
+	 * 홍보 전 하루 방문객. 여기에 홍보 배수를 곱한 값이 `GetExpectedVisitors()` 다.
+	 *
+	 * 🔴 지금은 `AFF_SpawnActor::UnitCount` 와 같은 값을 저작해야 한다.
+	 * crowd 가 `GetExpectedVisitors()` 를 읽게 되면 이 값이 출처가 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
+	int32 BaseDailyVisitors = 500;
+
 	// --- 초기 자원 --------------------------------------------------------
 
 	// 시작 Gold. [기획서] §8.2.

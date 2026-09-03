@@ -6,6 +6,11 @@
 #include "Components/SceneComponent.h"
 #include "CollisionQueryParams.h"
 #include "Engine/World.h"
+#include "Components/SplineComponent.h"
+#include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
+#include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSZoneActor.h"
 #include "GameFramework/SpringArmComponent.h"
 
 AFF_OverviewCameraPawn::AFF_OverviewCameraPawn()
@@ -42,6 +47,8 @@ AFF_OverviewCameraPawn::AFF_OverviewCameraPawn()
 void AFF_OverviewCameraPawn::BeginPlay()
 {
 	Super::BeginPlay();
+
+	RegisterDebugConsoleCommands();
 
 	// 레벨 크기를 아는 쪽이 InitializeOverview 를 불러주는 게 정상 경로다.
 	// 안 불러도 현재 위치 기준으로 동작은 하게 둔다.
@@ -165,12 +172,168 @@ void AFF_OverviewCameraPawn::Tick(float DeltaSeconds)
 		Rig.FocusOn(Target->GetActorLocation());
 	}
 
+	// Zone 은 레벨이 다 뜬 뒤에야 잡힌다. BeginPlay 시점엔 아직 없을 수 있어
+	// 처음 성공할 때까지 매 틱 시도한다.
+	ApplyZoneBoundsIfNeeded(DeltaSeconds);
+
+	// 사각형 경계를 통과했어도 Zone 사이 빈 공간에 있을 수 있다. 실제 모양으로 한 번 더 막는다.
+	ConstrainFocusToZones();
+
 	// 팬과 추적이 초점을 옮긴 뒤에 지면을 잡는다. 순서를 바꾸면 한 프레임 늦은 위치의
 	// 지면을 따라가서 경사에서 카메라가 뒤처진다.
 	UpdateGroundHeight(DeltaSeconds);
 
 	Rig.AdvanceInterpolation(DeltaSeconds);
 	ApplyRigToComponents();
+}
+
+void AFF_OverviewCameraPawn::LogBoundsState() const
+{
+	const FBox& Bounds = CameraSettings.FocusBounds;
+
+	UE_LOG(LogFestaFiestaCamera, Display,
+		TEXT("[카메라] Zone 경계 사용=%s / 적용됨=%s / 범위 유효=%s"),
+		CameraSettings.bUseZoneBounds ? TEXT("예") : TEXT("아니오"),
+		bZoneBoundsApplied ? TEXT("예") : TEXT("아니오"),
+		Bounds.IsValid ? TEXT("예") : TEXT("아니오"));
+
+	if (Bounds.IsValid)
+	{
+		UE_LOG(LogFestaFiestaCamera, Display,
+			TEXT("  X %.0f ~ %.0f / Y %.0f ~ %.0f"),
+			Bounds.Min.X, Bounds.Max.X, Bounds.Min.Y, Bounds.Max.Y);
+	}
+
+	// Zone 이 몇 개고 각각 무엇을 들고 있는지 본다.
+	// 0 개면 레벨 문제고, 있는데 점이 0 개면 스플라인 문제다.
+	int32 ZoneCount = 0;
+	int32 PolygonTotal = 0;
+	int32 SplineTotal = 0;
+
+	if (const UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AFFZSGameplayZone> It(const_cast<UWorld*>(World)); It; ++It)
+		{
+			if (!IsValid(*It))
+			{
+				continue;
+			}
+			++ZoneCount;
+			PolygonTotal += It->GetBoundaryPolygonLocalCm().Num();
+			if (It->BoundarySpline)
+			{
+				SplineTotal += It->BoundarySpline->GetNumberOfSplinePoints();
+			}
+		}
+	}
+
+	UE_LOG(LogFestaFiestaCamera, Display,
+		TEXT("  Zone %d개 / 폴리곤 점 %d개 / 스플라인 점 %d개"),
+		ZoneCount, PolygonTotal, SplineTotal);
+
+	const FVector Focus = Rig.GetTargetState().FocusLocation;
+	UE_LOG(LogFestaFiestaCamera, Display,
+		TEXT("  현재 초점 X %.0f / Y %.0f / 소속 Zone %s"),
+		Focus.X, Focus.Y,
+		LastZoneId.IsNone() ? TEXT("없음(Zone 밖)") : *LastZoneId.ToString());
+
+	UE_LOG(LogFestaFiestaCamera, Display,
+		TEXT("  Zone 안쪽 제한=%s / 차단 %d회 / 미끄러짐 %d회 / 기준점 있음=%s"),
+		CameraSettings.bConstrainFocusToZones ? TEXT("켜짐") : TEXT("꺼짐"),
+		ConstrainBlockCount, ConstrainSlideCount,
+		bHasValidFocus ? TEXT("예") : TEXT("아니오"));
+
+	if (bHasValidFocus)
+	{
+		UE_LOG(LogFestaFiestaCamera, Display,
+			TEXT("  마지막 유효 초점 X %.0f / Y %.0f"), LastValidFocus.X, LastValidFocus.Y);
+	}
+}
+
+void AFF_OverviewCameraPawn::ApplyZoneBoundsIfNeeded(const float DeltaSeconds)
+{
+	if (bZoneBoundsApplied || !CameraSettings.bUseZoneBounds)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FBox Combined(ForceInit);
+	int32 ZoneCount = 0;
+	int32 FromPolygon = 0;
+	int32 FromBounds = 0;
+
+	for (TActorIterator<AFFZSGameplayZone> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		const AFFZSGameplayZone* Zone = *It;
+		if (!IsValid(Zone))
+		{
+			continue;
+		}
+		++ZoneCount;
+
+		// 경계 폴리곤이 정답이다. Zone 이 배치 검증에 쓰는 것과 같은 값이라
+		// 카메라 범위와 실제 축제장이 어긋나지 않는다.
+		const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();
+		if (Polygon.Num() > 0)
+		{
+			const FTransform& ZoneTransform = Zone->GetActorTransform();
+			for (const FVector2D& LocalPoint : Polygon)
+			{
+				Combined += ZoneTransform.TransformPosition(FVector(LocalPoint.X, LocalPoint.Y, 0.f));
+			}
+			++FromPolygon;
+			continue;
+		}
+
+		// 스플라인이 비어 있는 Zone 도 있다. 그때는 액터가 차지하는 범위로 대신한다.
+		// 정확하지는 않지만 아예 경계가 없는 것보다는 낫다.
+		const FBox ActorBox = Zone->GetComponentsBoundingBox(/*bNonColliding=*/true);
+		if (ActorBox.IsValid)
+		{
+			Combined += ActorBox;
+			++FromBounds;
+		}
+	}
+
+	if (!Combined.IsValid)
+	{
+		// 아직 Zone 이 안 떴거나 레벨에 없다. 다음 틱에 다시 본다.
+		//
+		// 계속 못 잡으면 조용히 실패한 채로 카메라가 축제장 밖으로 나간다.
+		// 한 번만 경고해서 원인을 찾을 수 있게 한다.
+		ZoneBoundsWaitSeconds += DeltaSeconds;
+		if (!bZoneBoundsWarned && ZoneBoundsWaitSeconds > 5.f)
+		{
+			bZoneBoundsWarned = true;
+			UE_LOG(LogFestaFiestaCamera, Warning,
+				TEXT("[카메라] Zone 경계를 5초 동안 잡지 못했다. 이동 범위 제한이 걸리지 않는다."));
+			LogBoundsState();
+		}
+		return;
+	}
+
+	// 가장자리 시설이 화면 끝에 걸리지 않게 여유를 준다.
+	const float Padding = FMath::Max(0.f, CameraSettings.ZoneBoundsPadding);
+	Combined = Combined.ExpandBy(FVector(Padding, Padding, 0.f));
+
+	// 높이는 제한하지 않는다. 지형 추종이 초점 Z 를 정하는데 여기서 또 막으면 서로 싸운다.
+	Combined.Min.Z = -HALF_WORLD_MAX;
+	Combined.Max.Z = HALF_WORLD_MAX;
+
+	CameraSettings.FocusBounds = Combined;
+	Rig.UpdateSettings(CameraSettings);
+	bZoneBoundsApplied = true;
+
+	UE_LOG(LogFestaFiestaCamera, Log,
+		TEXT("[카메라] Zone %d개(폴리곤 %d, 바운드 %d)로 이동 범위를 잡았다. X %.0f~%.0f / Y %.0f~%.0f"),
+		ZoneCount, FromPolygon, FromBounds,
+		Combined.Min.X, Combined.Max.X, Combined.Min.Y, Combined.Max.Y);
 }
 
 bool AFF_OverviewCameraPawn::TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const
@@ -274,4 +437,180 @@ void AFF_OverviewCameraPawn::ApplyRigToComponents()
 		// Pitch 가 음수면 카메라가 위에서 아래를 내려다본다.
 		CameraBoom->SetRelativeRotation(FRotator(State.Pitch, State.Yaw, 0.f));
 	}
+}
+
+void AFF_OverviewCameraPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnregisterDebugConsoleCommands();
+	Super::EndPlay(EndPlayReason);
+}
+
+void AFF_OverviewCameraPawn::RegisterDebugConsoleCommands()
+{
+	IConsoleManager& ConsoleManager = IConsoleManager::Get();
+	UnregisterDebugConsoleCommands();
+
+	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Camera.Bounds")))
+	{
+		BoundsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+			TEXT("FF.Camera.Bounds"),
+			TEXT("카메라 이동 범위 상태를 출력한다."),
+			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+			{
+				LogBoundsState();
+			}));
+	}
+
+	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Camera.RefreshBounds")))
+	{
+		BoundsRefreshCommand = ConsoleManager.RegisterConsoleCommand(
+			TEXT("FF.Camera.RefreshBounds"),
+			TEXT("Zone 을 다시 훑어 카메라 이동 범위를 재계산한다."),
+			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+			{
+				// Zone 이 나중에 추가됐거나 처음에 못 잡은 경우를 위해 다시 시도한다.
+				bZoneBoundsApplied = false;
+				bZoneBoundsWarned = false;
+				ZoneBoundsWaitSeconds = 0.f;
+				ApplyZoneBoundsIfNeeded(0.f);
+				LogBoundsState();
+			}));
+	}
+}
+
+void AFF_OverviewCameraPawn::UnregisterDebugConsoleCommands()
+{
+	IConsoleManager& ConsoleManager = IConsoleManager::Get();
+
+	if (BoundsConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(BoundsConsoleCommand);
+	}
+	BoundsConsoleCommand = nullptr;
+
+	if (BoundsRefreshCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(BoundsRefreshCommand);
+	}
+	BoundsRefreshCommand = nullptr;
+}
+
+namespace
+{
+	// Zone 의 수평 범위 안인지만 본다.
+	//
+	// ContainsWorldPoint 는 높이도 같이 본다. Zone 원점에서 VerticalExtentCm 의 절반
+	// (기본 10m) 넘게 벗어나면 수평으로는 안에 있어도 밖으로 판정한다.
+	//
+	// 카메라 초점 Z 는 지형을 따라다니므로 언덕이나 높이가 다른 구역에서 그 범위를
+	// 쉽게 넘는다. 그러면 판정이 통째로 실패해서 이동 제한이 걸리지 않는다.
+	// 그래서 Zone 자신의 높이로 물어본다.
+	bool IsInsideZoneIgnoringHeight(const AFFZSGameplayZone& Zone, const FVector& WorldLocation)
+	{
+		const FVector TestPoint(WorldLocation.X, WorldLocation.Y, Zone.GetActorLocation().Z);
+		return Zone.ContainsWorldPoint(TestPoint);
+	}
+}
+
+FName AFF_OverviewCameraPawn::ResolveZoneAt(const FVector& WorldLocation) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return NAME_None;
+	}
+
+	// 직전 Zone 을 먼저 본다. 대개 그 안에 그대로 있으므로 검사 한 번으로 끝난다.
+	if (const UFFZSWorldSubsystem* ZoneSystem = World->GetSubsystem<UFFZSWorldSubsystem>())
+	{
+		if (const AFFZSGameplayZone* Cached = ZoneSystem->FindZone(LastZoneId))
+		{
+			if (IsInsideZoneIgnoringHeight(*Cached, WorldLocation))
+			{
+				return LastZoneId;
+			}
+		}
+	}
+
+	// Zone 을 옮겼거나 처음이다. 전체를 훑는다.
+	for (TActorIterator<AFFZSGameplayZone> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		const AFFZSGameplayZone* Zone = *It;
+		if (!IsValid(Zone) || !IsInsideZoneIgnoringHeight(*Zone, WorldLocation))
+		{
+			continue;
+		}
+
+		// ZoneId 가 비어 있으면 캐시가 무의미해지므로 이름으로 대신한다.
+		const FName ZoneId = Zone->ZoneId.IsNone() ? FName(*Zone->GetName()) : Zone->ZoneId;
+		return ZoneId;
+	}
+
+	return NAME_None;
+}
+
+void AFF_OverviewCameraPawn::ConstrainFocusToZones()
+{
+	if (!CameraSettings.bConstrainFocusToZones)
+	{
+		return;
+	}
+
+	// 액터를 따라가는 중이면 건드리지 않는다. 그 대상이 어디 있든 보여주는 게 맞고,
+	// 여기서 끌어당기면 추적과 매 프레임 싸운다.
+	if (FollowTarget.IsValid())
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World || !World->GetSubsystem<UFFZSWorldSubsystem>())
+	{
+		// Zone 시스템이 없는 테스트 맵이다. 사각형 경계만으로 돈다.
+		return;
+	}
+
+	const FVector Desired = Rig.GetTargetState().FocusLocation;
+
+	if (const FName ZoneId = ResolveZoneAt(Desired); ZoneId != NAME_None)
+	{
+		LastZoneId = ZoneId;
+		LastValidFocus = Desired;
+		bHasValidFocus = true;
+		return;
+	}
+
+	// 아직 한 번도 Zone 안에 있어본 적이 없다. 되돌릴 곳이 없으므로 그대로 둔다.
+	// 시작 위치가 Zone 밖인 레벨에서 카메라가 얼어붙는 걸 막는다.
+	if (!bHasValidFocus)
+	{
+		return;
+	}
+
+	// 축을 나눠 시도한다. 벽에 비스듬히 밀 때 완전히 멈추는 대신 벽을 따라 미끄러진다.
+	// 한 축만 막힌 경우가 대부분이라 이것만으로 조작감이 크게 달라진다.
+	const FVector SlideX(Desired.X, LastValidFocus.Y, Desired.Z);
+	if (const FName ZoneId = ResolveZoneAt(SlideX); ZoneId != NAME_None)
+	{
+		LastZoneId = ZoneId;
+		LastValidFocus = SlideX;
+		Rig.FocusOn(SlideX);
+		++ConstrainSlideCount;
+		return;
+	}
+
+	const FVector SlideY(LastValidFocus.X, Desired.Y, Desired.Z);
+	if (const FName ZoneId = ResolveZoneAt(SlideY); ZoneId != NAME_None)
+	{
+		LastZoneId = ZoneId;
+		LastValidFocus = SlideY;
+		Rig.FocusOn(SlideY);
+		++ConstrainSlideCount;
+		return;
+	}
+
+	// 양쪽 다 막혔다. 마지막으로 안에 있던 자리로 되돌린다.
+	// 높이는 지형 추종이 정하므로 그대로 둔다.
+	Rig.FocusOn(FVector(LastValidFocus.X, LastValidFocus.Y, Desired.Z));
+	++ConstrainBlockCount;
 }

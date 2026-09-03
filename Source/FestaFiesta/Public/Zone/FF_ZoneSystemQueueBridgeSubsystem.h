@@ -82,6 +82,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FF Zone System|Integration|Queue")
 	bool LeaveZoneFacilityQueue(FGuid ZoneFacilityId, int32 PartyId);
 
+	/**
+	 * 시설에 저작된 Queue 슬롯을 예약 프로그램의 대기 위치로 읽는다.
+	 * Queue 가입은 하지 않으며, 저작된 슬롯이 부족하면 false를 반환한다.
+	 */
+	bool TryGetProgramWaitingTransform(
+		FGuid ZoneFacilityId,
+		int32 WaitingIndex,
+		FTransform& OutTransform) const;
+
 	UFUNCTION(BlueprintCallable, Category = "FF Zone System|Integration|Queue")
 	void NotifyZoneFacilityPartyArrived(FGuid ZoneFacilityId, int32 PartyId);
 

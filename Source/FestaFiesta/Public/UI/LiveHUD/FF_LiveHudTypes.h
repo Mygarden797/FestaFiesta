@@ -27,8 +27,15 @@ enum class EFF_LiveTab : uint8
 	Guests		UMETA(DisplayName = "관객"),
 	Queues		UMETA(DisplayName = "대기열"),
 	SNS			UMETA(DisplayName = "SNS"),
+	Staff		UMETA(DisplayName = "스태프"),
+
+	// === 아래 둘은 **마감·리포트에서만** 보인다 (2026-09-02 통합) ===
+	//
+	// 🔴 라이브 중에는 숨긴다. 하루가 끝나야 나오는 결과라 라이브에 두면 빈 표만 보이고,
+	// 실제로 볼 곳(마감)이 따로 있는데 탭이 둘이 되면 어디서 보는 것인지 헷갈린다.
+
 	Report		UMETA(DisplayName = "리포트"),
-	Staff		UMETA(DisplayName = "스태프")
+	Finale		UMETA(DisplayName = "피날레")
 };
 
 /**
@@ -117,6 +124,34 @@ struct FESTAFIESTA_API FFF_LivePanelLayout
 };
 
 /**
+ * 하단 바 오른쪽 CTA 의 상태.
+ *
+ * === 2026-09-02 통합 ===
+ * 마감 HUD 를 없애고 이 바 하나로 합치면서 결산 쪽 CTA 판정을 여기로 옮겼다.
+ * 화면이 단계마다 갈리면 같은 정보를 두 벌 그리게 된다.
+ *
+ * !! 비활성만 하지 않는다 !! (AT-011) 막힌 이유를 문구로 함께 띄운다.
+ */
+UENUM(BlueprintType)
+enum class EFF_LiveCtaState : uint8
+{
+	/** CTA 를 아예 안 띄운다. 라이브 중에는 넘기는 버튼이 없다. */
+	Hidden				UMETA(DisplayName = "숨김"),
+
+	/** 다음 날로. 리포트 단계에서만. */
+	ReadyNextDay		UMETA(DisplayName = "다음 날로"),
+
+	/** 축제 마치기 → 나라 지도. 마지막 날은 마감이 마지막 화면이다. */
+	ReadyFinishFestival	UMETA(DisplayName = "축제 마치기"),
+
+	/** 피날레 연출을 건너뛴다. 날짜를 넘기는 것이 아니라 단계를 건너뛴다. */
+	ReadyFinaleSkip		UMETA(DisplayName = "다음으로"),
+
+	/** 마감이라 아직 못 넘긴다. 리포트 단계로 가야 한다. */
+	BlockedNotReport	UMETA(DisplayName = "리포트 단계 아님")
+};
+
+/**
  * 배속 버튼의 상태.
  *
  * !! 비활성만 하지 않는다 !! (AT-011) 흐려짐만으로는 왜 못 누르는지 알 수 없으므로
@@ -135,10 +170,15 @@ enum class EFF_LiveSpeedState : uint8
 	 * 메인 공연 구간이라 1배속으로 잠겼다.
 	 * 판정은 `UFF_FestivalStageSubsystem::IsMainProgramLocked()` 가 소유한다 — UI 가 세지 않는다.
 	 */
-	LockedMainProgram	UMETA(DisplayName = "메인 공연 잠금"),
+	LockedMainProgram	UMETA(DisplayName = "메인 공연 잠금")
 
-	/** 마지막 날은 배속을 막는다. 결말을 빨리 감기로 넘기지 않게 한다. */
-	LockedFinalDay		UMETA(DisplayName = "마지막 날 잠금")
+	// 🔴 `마지막 날 잠금` 을 뺐다 (2026-09-02 백종태 결정).
+	//
+	// 웹 프로토타입에 `마지막 날은 배속을 쓸 수 없습니다` 라는 규칙이 있어서 그대로
+	// 옮겼는데, **소유자 코드에는 그런 잠금이 없다.** `SetTimeScale()` 은 값을 저장하고
+	// `Tick` 의 Live 분기는 메인 공연 잠금만 본다 — 즉 UI 혼자 막고 있었다.
+	//
+	// 3일차는 가장 긴 날이라 오히려 배속이 필요하다는 판단이다.
 };
 
 /**
@@ -212,6 +252,12 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	 */
 	static bool IsLiveHudStage(EFF_FestivalStage Stage);
 
+	/** 결과를 읽는 단계인가 — 마감·리포트. `리포트`·`피날레` 탭이 여기서만 열린다. */
+	static bool IsResultStage(EFF_FestivalStage Stage);
+
+	/** 피날레 연출 구간인가. 탭을 전부 숨기고 CTA 만 띄운다. */
+	static bool IsFinaleShowStage(EFF_FestivalStage Stage) { return Stage == EFF_FestivalStage::Finale; }
+
 	/**
 	 * 이 탭을 지금 보여줄지.
 	 *
@@ -220,7 +266,7 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	 * 미리 열어 둔다고 잘못될 것이 없고, 단계가 넘어갈 때 패널이 닫혔다 다시 열리면
 	 * 오히려 눈이 매번 다시 찾는다.
 	 */
-	static bool IsTabVisible(EFF_LiveTab Tab, EFF_FestivalStage Stage);
+	static bool IsTabVisible(EFF_LiveTab Tab, EFF_FestivalStage Stage, bool bHasPurchasedFinale);
 
 	/**
 	 * 라이브가 끝나 탭이 사라졌으면 선택을 푼다.
@@ -230,7 +276,8 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	 */
 	static FFF_LiveTabSelection ClampSelectionToVisible(
 		const FFF_LiveTabSelection& Current,
-		EFF_FestivalStage Stage);
+		EFF_FestivalStage Stage,
+		bool bHasPurchasedFinale);
 
 	/**
 	 * 탭을 눌렀을 때의 다음 선택. **패널 배타 규칙의 본체다.**
@@ -243,15 +290,24 @@ struct FESTAFIESTA_API FFF_LiveHudRules
 	/**
 	 * 배속 버튼 상태.
 	 *
-	 * ★ **메인 공연 잠금을 마지막 날보다 먼저 본다.** 둘 다 걸린 3일차 공연 중에
-	 *   `마지막 날이라 못 바꿉니다` 라고 하면, 공연이 끝나면 풀린다는 사실을 못 알린다.
-	 *   더 빨리 풀리는 이유를 먼저 알려 준다.
+	 * 잠기는 곳은 **메인 공연 구간 하나뿐**이다. 마지막 날 잠금은 2026-09-02 에 뺐다 —
+	 * 소유자 코드에 그런 잠금이 없어서 UI 혼자 막고 있었다 (`EFF_LiveSpeedState` 주석).
 	 *
 	 * @param bIsMainProgramLocked `UFF_FestivalStageSubsystem::IsMainProgramLocked()`
-	 * @param bIsFinalDay          `IsFinalDay()`. UI 가 총 일수를 알지 못하게 중계값을 받는다
 	 */
-	static EFF_LiveSpeedState ResolveSpeedState(
-		EFF_FestivalStage Stage,
-		bool bIsMainProgramLocked,
-		bool bIsFinalDay);
+	static EFF_LiveSpeedState ResolveSpeedState(EFF_FestivalStage Stage, bool bIsMainProgramLocked);
+
+	/**
+	 * 하단 바 CTA 상태.
+	 *
+	 * 🔴 **순서가 뜻을 만든다** —
+	 *   ① 결산·피날레 단계가 아니면 숨김 (라이브 중에는 넘기는 버튼이 없다)
+	 *   ② 피날레 연출 → `다음으로` (건너뛸 수 있을 때만. 아니면 숨김)
+	 *   ③ 마지막 날 → `축제 마치기`. **리포트 단계를 기다리지 않는다** —
+	 *      3일차에는 리포트 단계가 없어서, 기다리게 하면 게임이 안 끝난다
+	 *   ④ 리포트 단계가 아니면 막힘
+	 *   ⑤ `다음 날로`
+	 */
+	static EFF_LiveCtaState ResolveCtaState(
+		EFF_FestivalStage Stage, bool bIsFinalDay, bool bCanSkipStage);
 };

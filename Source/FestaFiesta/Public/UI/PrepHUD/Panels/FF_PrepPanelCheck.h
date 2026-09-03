@@ -350,6 +350,11 @@ private:
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> WeatherChoices;
 
 	// 소유자 API 가 없는 값. `INDEX_NONE` 이면 관련 칸이 전부 `모름` 이 된다.
+	/**
+	 * 🔴 경제는 **하루 단일 예상치**를 준다 (`GetExpectedVisitors()`). 범위 API 는 아직 없다.
+	 * 그래서 지금은 Min·Max 에 같은 값이 들어가고 화면도 `500명` 하나로 뜬다.
+	 * 범위가 오면 여기만 갈라 넣으면 되고 표시 코드는 그대로다 (2026-09-02).
+	 */
 	int32 ExpectedVisitorsMin = INDEX_NONE;
 	int32 ExpectedVisitorsMax = INDEX_NONE;
 };

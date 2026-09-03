@@ -26,6 +26,7 @@
 #include "FF_FFZSFacilityAnchorComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSNavArea_QueueLane.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSVisualGeometry.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -44,6 +45,50 @@ namespace
             Spec.FootprintSizeCells.X * CellSizeCm * 0.5f,
             Spec.FootprintSizeCells.Y * CellSizeCm * 0.5f,
             Spec.PlacementObstacleHeightCm * 0.5f);
+    }
+
+    // 예약된 Queue 사각형 전체를 감싸는 외접 박스를 로컬 cm 공간의 (중심, 반치수)로 돌려준다.
+    // 예약 사각형이 하나도 없으면 false다.
+    //
+    // 셀 좌표는 footprint 좌하단을 원점으로 세지만 Actor 원점은 footprint 중심이다. 그래서
+    // 셀->로컬 변환에서 footprint 반치수를 빼야 두 좌표계가 맞는다 — 이 뺄셈이 빠지면 레인이
+    // 시설 크기의 절반만큼 어긋난 자리에 생긴다.
+    //
+    // 두 곳에서 부른다: 표현 재구축(RebuildRuntimePresentation)과 등록 시점 기하 복구
+    // (SetNavigationObstacleEnabled). 레벨에 미리 배치된 시설은 후자만 거치므로 한쪽만
+    // 계산하면 그 시설의 레인 비용이 영원히 켜지지 않는다.
+    bool TryMakeQueueLaneLocalBox(const FFFZSFacilitySpec& Spec, FVector& OutCenterCm, FVector& OutExtentCm)
+    {
+        const TArray<FFFZSCellRect> QueueRects = UFFZSGridLibrary::GetQueueRects(Spec, FFFZSGridPlacement{});
+        if (QueueRects.IsEmpty())
+        {
+            return false;
+        }
+
+        FIntPoint Min = QueueRects[0].Min;
+        FIntPoint Max = QueueRects[0].Max;
+        for (const FFFZSCellRect& Rect : QueueRects)
+        {
+            Min.X = FMath::Min(Min.X, Rect.Min.X);
+            Min.Y = FMath::Min(Min.Y, Rect.Min.Y);
+            Max.X = FMath::Max(Max.X, Rect.Max.X);
+            Max.Y = FMath::Max(Max.Y, Rect.Max.Y);
+        }
+
+        const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
+        const FVector FootprintExtent = MakeFacilityFootprintExtent(Spec);
+        const FVector LowerLeftCm(
+            Min.X * CellSizeCm - FootprintExtent.X,
+            Min.Y * CellSizeCm - FootprintExtent.Y,
+            0.0f);
+        const FVector UpperRightCm(
+            Max.X * CellSizeCm - FootprintExtent.X,
+            Max.Y * CellSizeCm - FootprintExtent.Y,
+            Spec.PlacementObstacleHeightCm);
+
+        OutCenterCm = (LowerLeftCm + UpperRightCm) * 0.5f;
+        OutExtentCm = (UpperRightCm - LowerLeftCm) * 0.5f;
+        return true;
     }
 }
 
@@ -115,6 +160,21 @@ AFFZSFacilityActor::AFFZSFacilityActor()
     NavigationObstacleBounds->SetCanEverAffectNavigation(false);
     NavigationObstacleBounds->SetVisibility(false, true);
     NavigationObstacleBounds->SetHiddenInGame(true);
+
+    // 통행 NPC가 대기열을 관통하지 않게 레인을 '비싼 길'로 표시하는 Nav 전용 Box다.
+    // NavigationObstacleBounds와 같은 이유로 표현용 QueueAreaBounds와 분리한다 — 하나로 겸하면
+    // 디버그 표시를 끄는 순간 통행 제어까지 같이 꺼진다.
+    QueueLaneNavCostBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("FacilityQueueLaneNavCostBounds"));
+    QueueLaneNavCostBounds->SetupAttachment(SceneRoot);
+    QueueLaneNavCostBounds->SetBoxExtent(FVector::ZeroVector);
+    QueueLaneNavCostBounds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    QueueLaneNavCostBounds->SetCollisionResponseToAllChannels(ECR_Ignore);
+    QueueLaneNavCostBounds->SetGenerateOverlapEvents(false);
+    QueueLaneNavCostBounds->bDynamicObstacle = true;
+    QueueLaneNavCostBounds->SetAreaClassOverride(UFFZSNavArea_QueueLane::StaticClass());
+    QueueLaneNavCostBounds->SetCanEverAffectNavigation(false);
+    QueueLaneNavCostBounds->SetVisibility(false, true);
+    QueueLaneNavCostBounds->SetHiddenInGame(true);
 
     QueueAreaBounds = CreateDefaultSubobject<UBoxComponent>(TEXT("QueueAreaBounds"));
     QueueAreaBounds->SetupAttachment(SceneRoot);
@@ -457,7 +517,6 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
 // 충돌 이벤트가 아니라 Subsystem의 그리드, 보호 구역, 월드 충돌 검사를 사용.
 void AFFZSFacilityActor::RebuildRuntimePresentation()
 {
-    const float CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FVector FootprintExtent = MakeFacilityFootprintExtent(FacilitySpec);
     FootprintBounds->SetBoxExtent(FootprintExtent);
     FootprintBounds->SetRelativeLocation(FVector(0.0f, 0.0f, FootprintExtent.Z));
@@ -494,29 +553,12 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
     }
     QueueSpline->UpdateSpline();
 
-    const TArray<FFFZSCellRect> QueueRects = UFFZSGridLibrary::GetQueueRects(
-        FacilitySpec, FFFZSGridPlacement{});
-    if (!QueueRects.IsEmpty())
+    FVector QueueLaneCenterCm = FVector::ZeroVector;
+    FVector QueueLaneExtentCm = FVector::ZeroVector;
+    if (TryMakeQueueLaneLocalBox(FacilitySpec, QueueLaneCenterCm, QueueLaneExtentCm))
     {
-        FIntPoint Min = QueueRects[0].Min;
-        FIntPoint Max = QueueRects[0].Max;
-        for (const FFFZSCellRect& Rect : QueueRects)
-        {
-            Min.X = FMath::Min(Min.X, Rect.Min.X);
-            Min.Y = FMath::Min(Min.Y, Rect.Min.Y);
-            Max.X = FMath::Max(Max.X, Rect.Max.X);
-            Max.Y = FMath::Max(Max.Y, Rect.Max.Y);
-        }
-        const FVector LowerLeftCm(
-            Min.X * CellSizeCm - FootprintExtent.X,
-            Min.Y * CellSizeCm - FootprintExtent.Y,
-            0.0f);
-        const FVector UpperRightCm(
-            Max.X * CellSizeCm - FootprintExtent.X,
-            Max.Y * CellSizeCm - FootprintExtent.Y,
-            FacilitySpec.PlacementObstacleHeightCm);
-        QueueAreaBounds->SetRelativeLocation((LowerLeftCm + UpperRightCm) * 0.5f);
-        QueueAreaBounds->SetBoxExtent((UpperRightCm - LowerLeftCm) * 0.5f);
+        QueueAreaBounds->SetRelativeLocation(QueueLaneCenterCm);
+        QueueAreaBounds->SetBoxExtent(QueueLaneExtentCm);
     }
     else
     {
@@ -524,6 +566,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
         QueueAreaBounds->SetRelativeLocation(FVector::ZeroVector);
         QueueAreaBounds->SetBoxExtent(FVector::ZeroVector);
     }
+    ApplyQueueLaneNavCostGeometry();
 
     RebuildAnchors();
 
@@ -588,6 +631,59 @@ void AFFZSFacilityActor::SetNavigationObstacleEnabled(const bool bEnabled)
     {
         NavigationObstacleBounds->SetCanEverAffectNavigation(bShouldEnable);
     }
+
+    // Queue 레인 비용 Box도 같은 게이트에 묶는다. 함수를 나누지 않는 이유는 두 Box가 갈리면
+    // "시설은 사라졌는데 레인만 비싼 채로 남는" 상태가 생기고, 그건 호출부가 아니라 여기서만
+    // 막을 수 있기 때문이다. 호출 지점은 이미 시설 수명주기 전체를 덮고 있다.
+    if (!QueueLaneNavCostBounds)
+    {
+        return;
+    }
+
+    // footprint와 같은 이유로 기하를 먼저 복구한다. 레벨에 미리 배치된 시설은
+    // RebuildRuntimePresentation을 거치지 않고 등록될 수 있다.
+    if (bEnabled)
+    {
+        ApplyQueueLaneNavCostGeometry();
+    }
+
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const FVector QueueExtent = QueueLaneNavCostBounds->GetUnscaledBoxExtent();
+    // Queue 레인이 없는 시설(예약 사각형 0개)은 Extent가 0이라 여기서 자연히 걸러진다.
+    const bool bHasQueueLane = QueueExtent.X > UE_KINDA_SMALL_NUMBER &&
+        QueueExtent.Y > UE_KINDA_SMALL_NUMBER && QueueExtent.Z > UE_KINDA_SMALL_NUMBER;
+    const bool bShouldEnableQueueLane = bShouldEnable && bHasQueueLane &&
+        (!Settings || Settings->bEnableQueueLaneNavCost);
+    if (QueueLaneNavCostBounds->CanEverAffectNavigation() != bShouldEnableQueueLane)
+    {
+        QueueLaneNavCostBounds->SetCanEverAffectNavigation(bShouldEnableQueueLane);
+    }
+}
+
+// 비용 Box는 예약 레인과 같은 외접 박스를 쓰되 XY로만 여유를 준다. 경로추종은 웨이포인트를
+// 일정 반경 앞에서 넘기며 모서리를 자르므로, 레인에 딱 맞추면 그 컷이 레인 안으로 들어온다.
+// Z는 넓히지 않는다 — 위아래로 키우면 다른 층의 NavMesh까지 비싸진다.
+void AFFZSFacilityActor::ApplyQueueLaneNavCostGeometry()
+{
+    if (!QueueLaneNavCostBounds)
+    {
+        return;
+    }
+
+    FVector CenterCm = FVector::ZeroVector;
+    FVector ExtentCm = FVector::ZeroVector;
+    if (!TryMakeQueueLaneLocalBox(FacilitySpec, CenterCm, ExtentCm))
+    {
+        QueueLaneNavCostBounds->SetRelativeLocation(FVector::ZeroVector);
+        QueueLaneNavCostBounds->SetBoxExtent(FVector::ZeroVector);
+        return;
+    }
+
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const float PaddingCm = Settings ? FMath::Max(0.0f, Settings->QueueLaneNavCostPaddingCm) : 0.0f;
+
+    QueueLaneNavCostBounds->SetRelativeLocation(CenterCm);
+    QueueLaneNavCostBounds->SetBoxExtent(ExtentCm + FVector(PaddingCm, PaddingCm, 0.0f));
 }
 
 void AFFZSFacilityActor::RebuildBuildModeRangePresentation()

@@ -8,6 +8,8 @@
 #include "Camera/FF_OverviewCameraRig.h"
 #include "FF_OverviewCameraPawn.generated.h"
 
+struct IConsoleCommand;
+
 class UCameraComponent;
 class USceneComponent;
 class USpringArmComponent;
@@ -30,6 +32,7 @@ public:
 	AFF_OverviewCameraPawn();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	// 축제장 중심과 전체가 들어오는 거리를 받아 첫 구도를 잡는다.
@@ -103,6 +106,28 @@ protected:
 private:
 	void ApplyRigToComponents();
 
+	// 초점이 Zone 밖으로 나갔으면 되돌린다.
+	//
+	// 사각형 경계는 거친 1차 방어고, 이게 실제 모양을 지킨다.
+	// 벽에 비스듬히 밀면 축을 나눠 시도해서 벽을 따라 미끄러지게 한다.
+	void ConstrainFocusToZones();
+
+	// 이 지점이 어느 Zone 안인지 본다. 밖이면 NAME_None.
+	FName ResolveZoneAt(const FVector& WorldLocation) const;
+
+	// 지금 경계가 어떤 상태인지 로그로 남긴다. 콘솔에서 부른다.
+	void LogBoundsState() const;
+
+	// 콘솔 이름은 프로세스 전역인데 Pawn 은 레벨마다 새로 생긴다.
+	// 이미 있는 이름이면 손대지 않고, 해제할 때도 내가 등록한 것만 지운다.
+	void RegisterDebugConsoleCommands();
+	void UnregisterDebugConsoleCommands();
+
+	// 레벨의 Zone 을 모두 감싸는 범위를 구해 경계로 삼는다.
+	//
+	// 한 번만 계산한다. Zone 은 설치·철거로 늘고 줄지만 축제장 자체가 넓어지지는 않는다.
+	void ApplyZoneBoundsIfNeeded(float DeltaSeconds);
+
 	// 한 지점의 지면 높이를 잰다. 못 찾으면 false.
 	bool TraceGroundAt(const FVector2D& Where, float AroundZ, float& OutGroundZ) const;
 
@@ -120,4 +145,25 @@ private:
 	TWeakObjectPtr<AActor> FollowTarget;
 
 	bool bInitialized = false;
+
+	// Zone 경계를 이미 잡았는지. 매 틱 액터를 순회하지 않기 위해서다.
+	bool bZoneBoundsApplied = false;
+
+	// 경계를 못 잡은 채 흐른 시간. 일정 시간이 지나면 한 번만 경고한다.
+	float ZoneBoundsWaitSeconds = 0.f;
+	bool bZoneBoundsWarned = false;
+
+	// 마지막으로 Zone 안이었던 초점. 밖으로 나가면 여기로 되돌린다.
+	FVector LastValidFocus = FVector::ZeroVector;
+	bool bHasValidFocus = false;
+
+	// 직전에 있던 Zone. 히스테리시스에 넘겨서 매번 전체를 훑지 않게 한다.
+	FName LastZoneId = NAME_None;
+
+	// 제한에 걸린 횟수. 0 에서 안 올라가면 제한이 동작하지 않는 것이다.
+	int32 ConstrainBlockCount = 0;
+	int32 ConstrainSlideCount = 0;
+
+	IConsoleCommand* BoundsConsoleCommand = nullptr;
+	IConsoleCommand* BoundsRefreshCommand = nullptr;
 };

@@ -261,6 +261,27 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ground", meta = (ClampMin = "0.0"))
 	float GroundMaxClimbSpeed = 700.f;
 
+	// 레벨의 Zone 을 모두 감싸는 범위를 경계로 삼는다.
+	//
+	// 좌표를 손으로 넣으면 맵이 바뀔 때마다 다시 재야 한다. Zone 이 이미 축제장 범위를
+	// 알고 있으므로 거기서 가져오는 편이 어긋나지 않는다.
+	// 끄면 아래 FocusBounds 를 직접 쓴다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")
+	bool bUseZoneBounds = true;
+
+	// 초점이 Zone 안에 있도록 매 프레임 확인할지.
+	//
+	// 사각형 경계만으로는 부족하다. Zone 이 여러 개면 그것들을 감싸는 상자에는
+	// Zone 사이 빈 공간과 바깥 모서리가 전부 들어간다. 그래서 벽 너머로 갈 수 있다.
+	// 실제 Zone 안쪽인지 확인하면 그 구멍이 막힌다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")
+	bool bConstrainFocusToZones = true;
+
+	// Zone 범위 바깥으로 이만큼은 더 나갈 수 있다.
+	// 0 이면 경계에 딱 붙어서 가장자리 시설이 화면 끝에 걸린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds", meta = (ClampMin = "0.0"))
+	float ZoneBoundsPadding = 3000.f;
+
 	// 카메라 초점이 벗어나지 못하는 영역. 유효하지 않으면 클램프하지 않는다.
 	// 축제장 밖으로 나가면 빈 지형만 보여서 길을 잃는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")

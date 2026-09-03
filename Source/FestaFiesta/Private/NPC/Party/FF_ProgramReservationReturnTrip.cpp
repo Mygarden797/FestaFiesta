@@ -15,8 +15,7 @@ FFF_ReturnTripVerdict FFF_ProgramReservationReturnTrip::Evaluate(
 		return Verdict;
 	}
 
-	// 속도가 0 이하면 이동시간을 계산할 수 없다. 후보를 남기는 이유는 헤더 주석 참조 —
-	// 후보를 전부 닫으면 no_choice → Leave 로 이어져 정원이 비고 매출이 비결정적이 된다.
+	// 속도가 0 이하면 평가하지 않는다. 예약자의 퇴장 차단은 Crowd가 별도로 보장한다.
 	if (Input.WalkSpeedMetersPerSecond <= 0.f)
 	{
 		return Verdict;
@@ -25,10 +24,10 @@ FFF_ReturnTripVerdict FFF_ProgramReservationReturnTrip::Evaluate(
 	Verdict.bWasEvaluated = true;
 
 	// 거리는 m, 속도는 m/s, 결과는 분. 음수 거리는 데이터 오류이므로 0 으로 본다.
-	const float SecondsPerMinute = 60.f;
-	const auto ToMinutes = [&Input, SecondsPerMinute](float Meters)
+	const auto ToMinutes = [&Input](float Meters)
 	{
-		return FMath::Max(Meters, 0.f) / Input.WalkSpeedMetersPerSecond / SecondsPerMinute;
+		return FMath::Max(Meters, 0.f) / Input.WalkSpeedMetersPerSecond
+			* FMath::Max(Input.MinutesPerTravelSecond, 0.f);
 	};
 
 	Verdict.RequiredMinutes =

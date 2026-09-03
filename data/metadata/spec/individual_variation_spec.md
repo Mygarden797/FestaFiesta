@@ -1,18 +1,13 @@
 # 고정 Seed 기반 개체 변주 명세 (v0)
 
-- 작성일: 2026-08-04 (**구현 현황 갱신 2026-08-27**)
-- 상태: 7종 변주 범위는 `draft_assumption`, 구조(해시·분포·상관 방식)는 확정
+- 작성일: 2026-08-04 (**구현 현황 갱신 2026-09-03**)
+- 상태: multiplier 7종 + 공유 성격축 1종(총 8행)의 범위는 `draft_assumption`, 구조(해시·분포·상관 방식)는 확정
 
-> ⚠️ **7종을 다 뽑고 있지만 지금 실제로 쓰이는 것은 2종입니다** (2026-08-27 코드 확인).
-> `ResolveWithGroupSharing` 은 스폰 시 정상 호출되고 있고, 그 결과 중
-> **`WalkSpeedMultiplier`(보행속도) · `StayDurationMultiplier`(체류시간)** 만 그 자리에서 소비됩니다.
-> 나머지 5종(인내심·혼잡내성·선호강도·재평가주기·여유도)은 `FFF_PartyDecisionContext` 에
-> 실려 오지 않아 **결정 계층이 못 씁니다.** 그래서 지금은 개체마다 다르게 걷고 다르게 머물지만
-> **판단은 전원이 똑같이** 합니다.
->
-> 남은 작업은 컨텍스트에 필드를 얹거나 결정 시점에 다시 Resolve 하는 것이고 **제(김시리) 몫**입니다.
-> `density` 항과 같이 봐야 의미가 있습니다 — 혼잡도가 들어와도 개인 임계가 1.0 고정이면
-> 개체차 없는 일괄 회피가 됩니다.
+> **8개 knob를 읽어 multiplier 7종과 LeisurelinessAxis를 계산한다. 현재 Crowd는 속도·체류 배수 2종을 직접 소비한다.**
+> 나머지 multiplier 5종(인내심·혼잡내성·선호강도·재평가주기·신규성)은 결정 컨텍스트에 전달되지 않는다. 취향 강도와 신규성 배수는 Decision에서 1.0을 쓴다. `ResolvePersonalThresholds`와 `ShouldReevaluate`는 프로덕션 C++ 호출이 없다.
+> （LeisurelinessAxis는 Resolver 안에서 상관에 쓰이므로 “미사용 5종”에 넣지 않는다. 판단도 전원이 같지는 않다: 아키타입·일행 크기·Need·위치·방문 이력·결정 시드가 다르다.）
+> （Zone density 비용은 인구 보고 미연결, `Relocate`는 현재 밀도 0/개인 임계 1 고정이라는 별도 한계가 있다. 개인 임계 전달만으로 Zone 보고가 채워지지는 않는다.）
+
 - 목적: 아키타입(`FFF_ArchetypeRow`)·동반유형(`FFF_CompanionModifierRow`)은 집단 평균이다. 같은 Row를 쓰는 NPC들이 복제처럼 보이지 않도록 개체별로 조금씩 다른 행동양식(보행속도·인내심·혼잡내성·선호강도·체류시간·재평가주기·신규성선호)을 주면서도, 같은 Seed·같은 Agent ID에는 항상 같은 값이 나오게 해서 디버깅과 실험 재현이 가능하게 한다.
 
 ## 1. 최종 개체값 구성
@@ -40,7 +35,7 @@ TraitSeed = HashCombine(
 >
 > 실제로 이 문서가 아래 "금지 입력"에 *Actor 스폰 순서*를 적어놓고 정작 이름 등록 순서에 의존하고 있었다. 증상은 `VisitorDistribution.Deterministic` 테스트가 **같은 바이너리에서 실행마다 다른 결과**를 낸 것이었다.
 >
-> `MakeStableNameHash`는 FName의 **문자열 내용**을 FNV-1a로 해시한다 — 힙 할당 없고, 엔진 버전·플랫폼·실행 순서와 무관하다. FName 비교가 대소문자를 무시하므로 소문자화 후 해시한다(안 하면 FName으로는 같은 두 이름이 다른 NPC를 만든다). **TraitKey는 ASCII snake_case로만 쓴다.**
+> `MakeStableNameHash`는 FName의 **문자열 내용**을 FNV-1a로 해시한다 — 힙 할당 없고, 동일 구현에서는 이름 등록 순서와 무관하다（다른 엔진 버전·플랫폼까지 동일하다는 검증 범위는 별도다）. FName 비교가 대소문자를 무시하므로 소문자화 후 해시한다(안 하면 FName으로는 같은 두 이름이 다른 NPC를 만든다). **TraitKey는 ASCII snake_case로만 쓴다.**
 >
 > 회귀 방지: `DeterministicRandom.NameHashIsContentBased` / `SeedsAreStableAcrossProcesses`가 **골든 값 상수**로 고정한다. 그 테스트가 깨지면 상수를 맞추기 전에 "모든 NPC의 특성값이 바뀐다"는 영향을 먼저 확인할 것.
 
@@ -64,7 +59,7 @@ TraitSeed = HashCombine(
 | Purpose | 용도 | v0 사용 범위 |
 |---|---|---|
 | `Generation` | NPC 생성 시 한 번 정해지고 유지되는 성격·신체 특성 | 이 문서의 7종 multiplier + `leisureliness_axis` 전부 |
-| `Decision` | softmax 목적지 선택 샘플링. 선택 회차 인덱스를 `SpawnGeneration` 또는 별도 인자로 Seed에 포함해 재현 | 목표 4(목적지 선택기 v0)에서 사용 — 이 문서에서는 훅만 마련 |
+| `Decision` | softmax 목적지 선택 샘플링. 선택 회차 인덱스를 `SpawnGeneration` 또는 별도 인자로 Seed에 포함해 재현 | `Choose`의 `MakeDecisionSeed`에서 사용 |
 | `RuntimeNoise` | 애니메이션·시각적 흔들림 등 의사결정에 영향 없는 표현용 난수 | 아직 사용처 없음 |
 
 ## 4. 분포 함수 — 삼각분포로 통일
@@ -88,7 +83,7 @@ U ≥ C 이면:  X = Max - sqrt((1 - U) * (Max - Min) * (Max - Mode))
 
 | TraitKey | 곱해지는 대상 | Min | Mode | Max | 상태 |
 |---|---|---|---|---|---|
-| `walk_speed_multiplier` | NPC 기본 이동속도 (Character MovementComponent 상수) | 0.85 | 1.00 | 1.15 | draft_assumption |
+| `walk_speed_multiplier` | Crowd `FUnitData`의 기본 속도 150cm/s（Character MovementComponent 경로가 아님） | 0.85 | 1.00 | 1.15 | draft_assumption |
 | `patience_multiplier` | `wait_threshold_minutes` (재평가 트리거, 기본 15분) | 0.70 | 1.00 | 1.30 | draft_assumption |
 | `crowd_tolerance_multiplier` | `density_threshold_ratio` (재평가 트리거, 기본 0.85) | 0.70 | 1.00 | 1.30 | draft_assumption |
 | `preference_strength_multiplier` | `preference_vector` (아키타입+동반유형 delta 합산값 — `lambda_affinity` 자체는 건드리지 않음) | 0.60 | 1.00 | 1.40 | draft_assumption |
@@ -109,6 +104,8 @@ CSV 원본: `data/derived/individual_variation_knobs_v0.csv` (8행). Unreal Data
 
 ## 6. 체류시간 앵커 — "Live 단계 길이의 몇 %"
 
+（2026-09-03 코드 대조: 아래 240분은 초기 설계 앵커다. 실제 유입 진행도는 Stage의 날짜별 Live 길이를 읽지만 체류 초기 예산은 Crowd 임시 240을 사용한다. 예약은 Stage Live 축제분을 읽고, Need·방문 이력은 Crowd GetLiveMinutes를 사용한다. 배속 수신은 연결됐으나 모든 시간 경로가 하나로 통합된 것은 아니다.）
+
 체류시간 분포는 공공데이터로 확보할 수 없는 값이라 기획 판단이 필요하다(`utility_ai_spec.md` 8절 "체류시간 분포 — 노브"). 다만 절대 분(分) 숫자를 감으로 정하면 축제 운영시간이 바뀔 때마다 재조정해야 하므로, 게임 안의 다른 구조적 단위에 앵커를 건다.
 
 ```text
@@ -116,13 +113,15 @@ BaseStayDurationMinutes = live_stage_duration_minutes * stay_duration_share_of_l
 FinalStayDurationMinutes(NPC) = BaseStayDurationMinutes * stay_duration_multiplier(NPC)
 ```
 
-- `live_stage_duration_minutes`: `EFF_FestivalStage::Live` 단계의 실제 길이. **단위는 게임(시뮬레이션) 시간 분이다 — 배속(x1/x2/x4)이나 플레이어 실제 체감 시간과 무관하다.** 값의 출처는 실제 축제의 실제 운영시간(현실 시간)을 그대로 게임 시계에 옮긴 것이다(2026-08-05, 강민서 작업 중인 실제 프로그램 시간표 기준: 17:00~21:00, 4시간 = 240분). 4시간(240분)이라는 숫자 자체는 바뀌지 않았다 — 처음엔 근거 없는 임시값이었는데 실제 시간표와 우연히 일치했다. **다만 강민서 님의 배속·Tick 구현이 아직 진행 중이라 다른 클래스의 시간 단위(초/분, 배율)는 아직 서로 안 맞을 수 있다 — 그쪽 작업이 끝나면 전체 재점검 필요.** `status: confirmed`(실제 운영시간 기준값 확정) — 코드상 실제 값 반영은 `FF_FestivalStageSubsystem` 담당(강민서) 완료 후.
+- `live_stage_duration_minutes`: `EFF_FestivalStage::Live` 단계의 실제 길이. **단위는 게임(시뮬레이션) 시간 분이다 — 배속(x1/x2/x4)이나 플레이어 실제 체감 시간과 무관하다.** 값의 출처는 실제 축제의 실제 운영시간(현실 시간)을 그대로 게임 시계에 옮긴 것이다(2026-08-05, 강민서 작업 중인 실제 프로그램 시간표 기준: 17:00~21:00, 4시간 = 240분). 4시간(240분)이라는 숫자 자체는 바뀌지 않았다 — 처음엔 근거 없는 임시값이었는데 실제 시간표와 우연히 일치했다. **배속 수신과 Stage 시간 API는 구현됐다. 다만 Crowd 초기 체류 예산은 임시 240분 기준이므로 날짜별 통합 점검은 남아 있다.** `status: confirmed`(실제 운영시간 기준값 확정) — （실행 시 Stage 길이와 Crowd 예산 필드를 각각 확인해야 함.）
 - `stay_duration_share_of_live_stage_mean`: 평균 NPC가 `Live` 단계 길이 중 머무는 비율의 기준값(초기값 0.5). `status: assumption`.
 - 두 값 모두 `data/derived/utility_coefficients_v0.csv`에 `individual_variation_anchor` term으로 추가했다 (전역 스칼라 노브라 기존 Utility 계수 표와 같은 자리에 둔다 — `total_visitor_count` 등 Utility 식의 항이 아닌 전역 노브도 이미 이 표에 있는 선례를 따른다).
 
-`remaining_stay` 필드 자체를 채우는 NPC 런타임 로직은 아직 없다(목표 4 목적지 선택기 구현 시 필요). 이 문서는 값을 만드는 공식만 확정한다.
+`remaining_stay`는 Crowd의 `PartyRemainingStayMinutes`에 저장되고 결정 컨텍스트로 전달된다. 현재 초기 예산은 `Temp_LiveStageMinutes(240) × stay_duration_share_of_live_stage_mean(0.5) × Traits.StayDurationMultiplier`이다（CSV의 `live_stage_duration_minutes`를 직접 소비하지 않음. 날짜별 Stage Live 길이에 맞춘 예산 통합은 미완료）.
 
 ## 7. 특성 간 상관관계 — 공유 성격축 1개
+
+（2026-09-03 코드 대조: 현재 Crowd는 CSV `correlation_strength_leisureliness` 대신 SimulationSettings.VariationCorrelationStrength(기본 0.3)를 Resolver에 전달한다. 그룹은 개인별 Patience를 유지한 채 StayDuration만 GroupId 기반 결과로 덮으므로 개인 Patience와 공유 StayDuration의 상관은 아래 solo 식과 동일하다고 단정할 수 없다.）
 
 전체 상관행렬은 v0 범위를 넘는다. 대신 `patience_multiplier`와 `stay_duration_multiplier`(실제로 상관될 법한 두 특성 — 여유 있는 사람이 대기도 잘 참고 오래 머문다)에만, 공유 값 하나(`leisureliness_axis`)를 통해 가벼운 상관을 준다.
 
@@ -163,14 +162,22 @@ u_blended  = Lerp(u_own, u_leisure, correlation_strength)
 > `Unit.Speed = BaseSpeed × Traits.WalkSpeedMultiplier × MemberBoost` 로 보행 속도가 개체마다 다르고,
 > `ArchetypeID`도 개체군 분포로 배정된다(표가 없을 때만 폴백 + Error 로그).
 
-나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 그룹이어도 계속 개체별 독립 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
+나머지 5개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`, `novelty_seeking_multiplier`)는 그룹이어도 계속 개체별 독립 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
 
 ## 9. 남은 의존성
 
-1. ~~`live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체~~ → **2026-08-05 확정.** 실제 축제 프로그램 시간표(17:00~21:00) 기준 240분 그대로 유지. 강민서 님 `FF_FestivalStageSubsystem` 배속 구현이 끝나면 다른 시간 단위 필드들과 함께 최종 재점검.
+1. ~~`live_stage_duration_minutes`(240분, 임시값) — `Live` 단계 실제 길이 확정 후 교체~~ → **2026-08-05 확정.** 실제 축제 프로그램 시간표(17:00~21:00) 기준 240분 그대로 유지. Stage 배속 수신은 연결됐으나 다른 시간 단위·초기 체류 예산과 최종 재점검이 필요하다.
 2. 7종 변주 범위(5절)는 실측이 아니라 초안이다. 실제 시뮬레이션을 돌려본 뒤 편차가 너무 크거나 작으면 DataTable 값만 조정한다(코드 수정 불필요).
 3. `correlation_strength_leisureliness`(0.3, 초안) — 두 특성이 부자연스럽게 조합되는지 플레이테스트로 확인 후 조정.
 4. ~~`remaining_stay`를 실제로 채우는 NPC 런타임 로직~~ → **2026-08-19 결선.** crowdAI가
    `FFF_NeedRules::ConsumeStay`를 돌리고 `RemainingStayMinutes`를 결정 컨텍스트로 넘긴다.
-5. ~~`Decision` purpose는 훅만 마련했고 실제 사용처가 없다~~ → **2026-08-06 연결 완료.** `FFF_UtilityDestinationSelector::Choose`가 softmax 샘플링 시드에 `RandomPurpose = Decision`을 쓴다. 회차 인덱스는 `SpawnGeneration`이 아니라 `TraitKey` 문자열(`destination_choice_round_%d`)에 접어넣었다 — `SpawnGeneration`의 원래 의미(같은 ID 재사용 세대)를 건드리지 않기 위해서다.
+5. ~~`Decision` purpose는 훅만 마련했고 실제 사용처가 없다~~ → **2026-08-06 연결 완료.** `FFF_UtilityDestinationSelector::Choose`가 softmax 샘플링 시드에 `RandomPurpose = Decision`을 쓴다. 현재는 `MakeDecisionSeed(GlobalSimulationSeed, StableAgentId, ChoiceRoundIndex)`에 회차를 정수로 넣는다（문자열 `destination_choice_round_%d` 방식은 2026-08-10 제거된 과거 구현）.
 6. `RuntimeNoise` purpose는 여전히 사용처가 없다 — 애니메이션·시각적 흔들림 담당이 정해지면 연결한다. 훅만 있어도 나중에 붙을 때 기존 특성값이 안 바뀌므로 급하지 않다(2절 `TraitKey`별 독립 스트림).
+
+## 코드 대조 근거 (2026-09-03)
+
+- [FF_DeterministicRandom.cpp](../../../Source/FestaFiesta/Private/NPC/IndividualVariation/FF_DeterministicRandom.cpp)
+- [FF_SimulationSettings.h](../../../Source/FestaFiesta/Public/CrowdSystem/Types/FF_SimulationSettings.h)
+- [FF_CrowdSimulationSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdSimulationSubsystem.cpp)
+
+（현재 작업 트리 기준. 데이터/계수 수는 저장소 CSV, 설정은 C++ 기본값과 Config를 구분해 기술했다. 설계 제안·과거 실측은 코드만으로 재검증할 수 없어 해당 설명을 보존했다.）
