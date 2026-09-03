@@ -288,6 +288,7 @@ public:
 	int32 MaxPartiesRedecidedOnStageOpen = 64;
 
 private:
+	friend struct FFF_CrowdProgramDecisionTestAccess;
 	// UFF_FestivalStageSubsystem 은 GameInstance 스코프라 포인터를 캐시하면 수명이 어긋난다
 	// 공연 시간표 게이팅 — Stage 델리게이트로 불리언만 유지한다.
 	UFUNCTION()

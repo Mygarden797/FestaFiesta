@@ -6,7 +6,6 @@
 
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "DataTables/FF_ArchetypeRow.h"
-#include "Economy/FF_FestivalClock.h"
 #include "Engine/DataTable.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -94,8 +93,8 @@ bool FFF_ProgramCardContract_CardTimesFitInsideShortestDay::RunTest(const FStrin
 		return false;
 	}
 
-	// 1 Stage초 = 1 경제분 (FFF_FestivalClock). 이 환산이 바뀌면 여기도 같이 바뀐다.
-	const float ShortestLiveMinutes = ShortestLiveSeconds * FFF_FestivalClock::MinutesPerStageSecond;
+	// 1 Stage초 = 1 축제분 (Stage 시간 API). 이 환산이 바뀌면 여기도 같이 바뀐다.
+	const float ShortestLiveMinutes = ShortestLiveSeconds * UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes(1.f);
 
 	const TArray<FFF_ProgramCard> Catalog = LoadCatalog();
 	if (!TestTrue(TEXT("카탈로그가 비어 있지 않다"), Catalog.Num() > 0)) return false;

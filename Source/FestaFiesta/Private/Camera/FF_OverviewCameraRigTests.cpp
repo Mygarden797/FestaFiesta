@@ -736,4 +736,60 @@ bool FFF_OverviewCameraRig_GroundDescentIsRateLimited::RunTest(const FString& Pa
 	return true;
 }
 
+// 22. 설정을 갈아끼워도 구도가 초기화되지 않아야 한다.
+//     Zone 경계는 레벨이 뜬 뒤에야 알 수 있어 도중에 들어온다.
+//     그때 Initialize 를 다시 부르면 화면이 튄다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_UpdateSettingsKeepsFraming, "FestaFiesta.Camera.Rig.UpdateSettingsKeepsFraming", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_UpdateSettingsKeepsFraming::RunTest(const FString& Parameters)
+{
+	FFF_OverviewCameraRig Rig = MakeRig(8000.f);
+
+	// 구도를 한번 흐트러뜨린다.
+	Rig.Pan(FVector2D(1.f, 0.f), 1.f);
+	Rig.Zoom(2.f);
+	Rig.SnapRotate(1);
+
+	const FVector FocusBefore = Rig.GetTargetState().FocusLocation;
+	const float ArmBefore = Rig.GetTargetState().ArmLength;
+	const float YawBefore = Rig.GetTargetState().Yaw;
+
+	// 경계만 바꾼 설정을 넣는다. 지금 위치를 감싸는 넉넉한 범위라 잘릴 일이 없다.
+	FFF_OverviewCameraSettings WithBounds = Rig.GetSettings();
+	WithBounds.FocusBounds = FBox(
+		FVector(-100000.f, -100000.f, -100000.f),
+		FVector(100000.f, 100000.f, 100000.f));
+	Rig.UpdateSettings(WithBounds);
+
+	TestTrue(TEXT("초점이 유지된다"), Rig.GetTargetState().FocusLocation.Equals(FocusBefore, 0.01));
+	TestEqual(TEXT("줌이 유지된다"), Rig.GetTargetState().ArmLength, ArmBefore, 0.01f);
+	TestEqual(TEXT("회전이 유지된다"), Rig.GetTargetState().Yaw, YawBefore, 0.01f);
+	return true;
+}
+
+// 23. 새 경계가 지금 위치를 벗어나 있으면 즉시 끌어들여야 한다.
+//     다음 팬 입력까지 기다리면 그동안 밖에 나가 있는 셈이 된다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_OverviewCameraRig_UpdateSettingsClampsImmediately, "FestaFiesta.Camera.Rig.UpdateSettingsClampsImmediately", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_OverviewCameraRig_UpdateSettingsClampsImmediately::RunTest(const FString& Parameters)
+{
+	FFF_OverviewCameraRig Rig = MakeRig(8000.f);
+
+	// 경계 없이 멀리 보낸다.
+	Rig.FocusOn(FVector(50000.f, 50000.f, 0.f));
+	TestTrue(TEXT("경계가 없으면 그대로 간다"),
+		Rig.GetTargetState().FocusLocation.X > 40000.0);
+
+	// 좁은 경계를 나중에 넣는다.
+	FFF_OverviewCameraSettings Narrow = Rig.GetSettings();
+	Narrow.FocusBounds = FBox(FVector(-5000.f, -5000.f, -5000.f), FVector(5000.f, 5000.f, 5000.f));
+	Rig.UpdateSettings(Narrow);
+
+	TestEqual(TEXT("X 가 즉시 경계로 당겨진다"), Rig.GetTargetState().FocusLocation.X, 5000.0, 0.01);
+	TestEqual(TEXT("Y 도 마찬가지"), Rig.GetTargetState().FocusLocation.Y, 5000.0, 0.01);
+
+	// 표시 위치도 같이 당겨야 한다. 목표만 당기면 화면이 천천히 돌아오는 동안 밖을 비춘다.
+	TestTrue(TEXT("표시 위치도 경계 안이다"),
+		Rig.GetDisplayState().FocusLocation.X <= 5000.0 + 0.01);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

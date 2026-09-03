@@ -4,18 +4,17 @@
 
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
-#include "Blueprint/WidgetTree.h"
 #include "Engine/GameInstance.h"
 #include "HAL/IConsoleManager.h"
 #include "Engine/Texture2D.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/FF_UILog.h"
@@ -23,7 +22,6 @@
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
-#include "UI/Workspace/FF_FloatingPanelStateSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepHud"
 
@@ -197,7 +195,6 @@ void UFF_PrepHudBar::NativeOnInitialized()
 	}
 
 	CollectTabs();
-	EnsurePanelWorkspace();
 
 	if (Button_Cta)
 	{
@@ -234,7 +231,6 @@ void UFF_PrepHudBar::NativeConstruct()
 	// 구독은 여기다. `NativeOnInitialized`(인스턴스당 1회)에 두면 위젯이 재사용될 때
 	// 두 번째 진입부터 아무 값도 안 들어온다 (2026-08-24에 화면 5종에서 실제로 발생).
 	BindSources();
-	RestoreFloatingPanelState();
 	RefreshAll();
 }
 
@@ -248,19 +244,6 @@ void UFF_PrepHudBar::NativeDestruct()
 	}
 #endif
 
-	// 화면 인스턴스는 단계마다 다시 만들어진다. 열린 상태는 저장하되, 이전 패널의
-	// 외부 구독은 여기서 정확히 한 번 정리한다.
-	for (const EFF_PrepHudTab Tab : OpenTabs)
-	{
-		if (TObjectPtr<UFF_PrepPanelBase>* Panel = PanelWidgets.Find(Tab))
-		{
-			if (*Panel)
-			{
-				(*Panel)->HandlePanelClosed();
-			}
-		}
-	}
-	SaveFloatingPanelState();
 	UnbindSources();
 	Super::NativeDestruct();
 }
@@ -450,343 +433,87 @@ void UFF_PrepHudBar::SelectTab(EFF_PrepHudTab Tab)
 		return;
 	}
 
-	// 열린 탭을 다시 눌러도 닫지 않는다. 닫기는 각 패널의 닫기 버튼으로만 한다.
-	if (IsPanelOpen(Tab))
-	{
-		BringPanelToFront(Tab);
-		return;
-	}
-
-	OpenPanel(Tab);
+	ApplySelection(FFF_PrepHudRules::ToggleTab(Selection, Tab));
 }
 
 void UFF_PrepHudBar::CloseCurrentPanel()
 {
-	if (Selection.bHasSelection)
-	{
-		ClosePanel(Selection.Tab);
-	}
-}
-
-void UFF_PrepHudBar::ClosePanel(EFF_PrepHudTab Tab)
-{
-	if (!OpenTabs.RemoveSingle(Tab))
-	{
-		return;
-	}
-
-	if (TObjectPtr<UFF_PrepPanelBase>* Panel = PanelWidgets.Find(Tab))
-	{
-		if (*Panel)
-		{
-			(*Panel)->SetVisibility(ESlateVisibility::Collapsed);
-			(*Panel)->HandlePanelClosed();
-		}
-	}
-
-	if (Selection.IsSelected(Tab))
-	{
-		Selection = OpenTabs.IsEmpty()
-			? FFF_PrepTabSelection::None()
-			: FFF_PrepTabSelection::Of(OpenTabs.Last());
-	}
-
-	HidePanelLimitNotice();
-	RefreshPanelZOrder();
-	RefreshPanelHostVisibility();
-	RefreshPanelSelectionVisuals();
-	OnTabSelectionChanged.Broadcast(Selection);
-	SaveFloatingPanelState();
-}
-
-bool UFF_PrepHudBar::IsPanelOpen(EFF_PrepHudTab Tab) const
-
-{
-	return OpenTabs.Contains(Tab);
-}
-
-bool UFF_PrepHudBar::OpenPanel(EFF_PrepHudTab Tab)
-
-{
-	if (IsPanelOpen(Tab))
-	{
-		BringPanelToFront(Tab);
-		return true;
-	}
-
-	// 상한 검사 뒤에는 어떤 선택·가시성·Z-order도 바꾸지 않는다.
-	if (OpenTabs.Num() >= UFF_FloatingPanelStateSubsystem::MaxOpenPanelCount)
-	{
-		ShowPanelLimitNotice();
-		return false;
-	}
-
-	UFF_PrepPanelBase* Panel = EnsurePanel(Tab);
-	if (!Panel)
-	{
-		return false;
-	}
-
-	OpenTabs.Add(Tab);
-	Selection = FFF_PrepTabSelection::Of(Tab);
-	ApplyPanelLayout(Tab, ResolveLayout(Tab));
-	Panel->ApplyPinnedState(PinnedTabs.Contains(Tab));
-	Panel->SetVisibility(ESlateVisibility::Visible);
-	Panel->HandlePanelOpened();
-
-	HidePanelLimitNotice();
-	RefreshPanelZOrder();
-	RefreshPanelHostVisibility();
-	RefreshPanelSelectionVisuals();
-	OnTabSelectionChanged.Broadcast(Selection);
-	SaveFloatingPanelState();
-	return true;
-}
-
-void UFF_PrepHudBar::BringPanelToFront(EFF_PrepHudTab Tab)
-
-{
-	if (!OpenTabs.RemoveSingle(Tab))
-	{
-		return;
-	}
-
-	OpenTabs.Add(Tab);
-	const FFF_PrepTabSelection Previous = Selection;
-	Selection = FFF_PrepTabSelection::Of(Tab);
-	RefreshPanelZOrder();
-	RefreshPanelSelectionVisuals();
-	if (Selection != Previous)
-	{
-		OnTabSelectionChanged.Broadcast(Selection);
-	}
-	SaveFloatingPanelState();
-}
-
-void UFF_PrepHudBar::SetPanelPinned(EFF_PrepHudTab Tab, bool bPinned)
-
-{
-	if (bPinned)
-	{
-		PinnedTabs.Add(Tab);
-	}
-	else
-	{
-		PinnedTabs.Remove(Tab);
-	}
-
-	RefreshPanelZOrder();
-	SaveFloatingPanelState();
-}
-
-void UFF_PrepHudBar::RefreshPanelSelectionVisuals()
-
-{
-	for (UFF_PrepHudTabButton* TabButton : TabButtons)
-	{
-		if (TabButton)
-		{
-			TabButton->SetSelected(IsPanelOpen(TabButton->GetTab()));
-		}
-	}
+	ApplySelection(FFF_PrepTabSelection::None());
 }
 
 // =============================================================================
 // 패널
 // =============================================================================
 
-void UFF_PrepHudBar::EnsurePanelWorkspace()
+void UFF_PrepHudBar::ApplySelection(const FFF_PrepTabSelection& NewSelection)
 {
-	if (PanelWorkspace || !Panel_PanelHost || !WidgetTree)
+	if (NewSelection == Selection)
 	{
 		return;
 	}
 
-	// 기존 WBP는 단일 패널 크기의 Overlay를 움직이도록 만들어졌다. 에셋을 덮어쓰지 않고
-	// 호스트만 전체 화면으로 넓힌 뒤, 안쪽 Canvas의 자식마다 독립 슬롯을 준다.
-	if (UCanvasPanelSlot* HostCanvasSlot = Cast<UCanvasPanelSlot>(Panel_PanelHost->Slot))
+	// 1) 열려 있던 것을 닫는다. **패널이 스스로 닫지 않는다** — 여기가 유일한 경로다.
+	if (Selection.bHasSelection)
 	{
-		HostCanvasSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-		HostCanvasSlot->SetAlignment(FVector2D::ZeroVector);
-		HostCanvasSlot->SetOffsets(FMargin(0.f));
-	}
-
-	PanelWorkspace = WidgetTree->ConstructWidget<UCanvasPanel>(
-		UCanvasPanel::StaticClass(), TEXT("Canvas_FloatingPanelWorkspace"));
-	if (!PanelWorkspace)
-	{
-		return;
-	}
-
-	UPanelSlot* WorkspaceSlot = Panel_PanelHost->AddChild(PanelWorkspace);
-	if (UOverlaySlot* OverlaySlot = Cast<UOverlaySlot>(WorkspaceSlot))
-	{
-		OverlaySlot->SetHorizontalAlignment(HAlign_Fill);
-		OverlaySlot->SetVerticalAlignment(VAlign_Fill);
-	}
-	else if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(WorkspaceSlot))
-	{
-		CanvasSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-		CanvasSlot->SetOffsets(FMargin(0.f));
-	}
-
-	PanelLimitNotice = WidgetTree->ConstructWidget<UBorder>(
-		UBorder::StaticClass(), TEXT("Border_PanelLimitNotice"));
-	UTextBlock* NoticeText = WidgetTree->ConstructWidget<UTextBlock>(
-		UTextBlock::StaticClass(), TEXT("Text_PanelLimitNotice"));
-	if (PanelLimitNotice && NoticeText)
-	{
-		NoticeText->SetText(LOCTEXT(
-			"PrepPanelLimitNotice",
-			"패널은 최대 5개까지 열 수 있습니다. 하나를 닫고 다시 시도하세요."));
-		NoticeText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
-		NoticeText->SetJustification(ETextJustify::Center);
-		NoticeText->SetShadowOffset(FVector2D(1.f, 1.f));
-		NoticeText->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.8f));
-		FSlateFontInfo Font = NoticeText->GetFont();
-		Font.Size = 14;
-		NoticeText->SetFont(Font);
-
-		FSlateBrush NoticeBrush;
-		NoticeBrush.DrawAs = ESlateBrushDrawType::RoundedBox;
-		NoticeBrush.TintColor = FSlateColor(FLinearColor(0.06f, 0.12f, 0.14f, 0.96f));
-		NoticeBrush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-		NoticeBrush.OutlineSettings.CornerRadii = FVector4(6.f, 6.f, 6.f, 6.f);
-		PanelLimitNotice->SetBrush(NoticeBrush);
-		PanelLimitNotice->SetPadding(FMargin(16.f, 9.f));
-		PanelLimitNotice->SetContent(NoticeText);
-		PanelLimitNotice->SetVisibility(ESlateVisibility::Collapsed);
-
-		if (UCanvasPanelSlot* NoticeSlot = PanelWorkspace->AddChildToCanvas(PanelLimitNotice))
+		if (TObjectPtr<UFF_PrepPanelBase>* Previous = PanelWidgets.Find(Selection.Tab))
 		{
-			NoticeSlot->SetAnchors(FAnchors(0.5f, 0.f));
-			NoticeSlot->SetAlignment(FVector2D(0.5f, 0.f));
-			NoticeSlot->SetPosition(FVector2D(0.f, 24.f));
-			NoticeSlot->SetAutoSize(true);
-			NoticeSlot->SetZOrder(10000);
+			if (*Previous)
+			{
+				(*Previous)->SetVisibility(ESlateVisibility::Collapsed);
+				(*Previous)->HandlePanelClosed();
+			}
 		}
 	}
-}
 
-void UFF_PrepHudBar::ShowPanelLimitNotice()
-{
-	EnsurePanelWorkspace();
-	if (PanelLimitNotice)
+	Selection = NewSelection;
+
+	// 2) 새 패널을 연다. 만들지 못하면 닫힌 상태로 되돌린다 — 탭만 눌린 채로 두지 않는다.
+	if (Selection.bHasSelection)
 	{
-		PanelLimitNotice->SetVisibility(ESlateVisibility::HitTestInvisible);
-	}
-	RefreshPanelHostVisibility();
-}
+		// 자리를 먼저 맞춘 뒤 패널을 넣는다. 순서가 반대면 이전 탭의 자리로 한 프레임 그려진다.
+		ApplyPanelLayout(ResolveLayout(Selection.Tab));
 
-void UFF_PrepHudBar::HidePanelLimitNotice()
-{
-	if (PanelLimitNotice)
-	{
-		PanelLimitNotice->SetVisibility(ESlateVisibility::Collapsed);
-	}
-}
-
-void UFF_PrepHudBar::RefreshPanelHostVisibility()
-{
-	if (!Panel_PanelHost)
-	{
-		return;
-	}
-
-	const bool bShowNotice = PanelLimitNotice
-		&& PanelLimitNotice->GetVisibility() != ESlateVisibility::Collapsed;
-	Panel_PanelHost->SetVisibility(!OpenTabs.IsEmpty() || bShowNotice
-		? ESlateVisibility::SelfHitTestInvisible
-		: ESlateVisibility::Collapsed);
-}
-
-void UFF_PrepHudBar::RefreshPanelZOrder()
-{
-	int32 NormalZ = 1;
-	int32 PinnedZ = 100;
-	for (const EFF_PrepHudTab Tab : OpenTabs)
-	{
-		const TObjectPtr<UFF_PrepPanelBase>* Found = PanelWidgets.Find(Tab);
-		UCanvasPanelSlot* PanelCanvasSlot = Found && *Found
-			? Cast<UCanvasPanelSlot>((*Found)->Slot)
-			: nullptr;
-		if (!PanelCanvasSlot)
+		if (UFF_PrepPanelBase* Panel = EnsurePanel(Selection.Tab))
 		{
-			continue;
+			Panel->SetVisibility(ESlateVisibility::Visible);
+			Panel->HandlePanelOpened();
+
+			// 움직임 감소가 켜져 있으면 재생하지 않는다. 판정은 접근성 서브시스템이 소유한다.
+			const UFF_UIAccessibilitySubsystem* Accessibility = UFF_UIAccessibilitySubsystem::Get(this);
+			const float MotionDuration = Accessibility
+				? Accessibility->GetMotionDuration(EFF_UIMotionSpeed::Base)
+				: 0.f;
+
+			if (Anim_PanelOpen && MotionDuration > 0.f)
+			{
+				PlayAnimation(Anim_PanelOpen);
+			}
 		}
-
-		PanelCanvasSlot->SetZOrder(PinnedTabs.Contains(Tab) ? PinnedZ++ : NormalZ++);
-	}
-
-	// 안내 문구는 고정 패널보다도 위에 있어야 가려지지 않는다.
-	if (PanelLimitNotice)
-	{
-		if (UCanvasPanelSlot* NoticeSlot = Cast<UCanvasPanelSlot>(PanelLimitNotice->Slot))
+		else
 		{
-			NoticeSlot->SetZOrder(10000);
+			Selection = FFF_PrepTabSelection::None();
 		}
 	}
-}
 
-void UFF_PrepHudBar::RestoreFloatingPanelState()
-{
-	UFF_FloatingPanelStateSubsystem* State = UFF_FloatingPanelStateSubsystem::Get(this);
-	if (!State)
+	// 3) 호스트는 `SelfHitTestInvisible` 로 띄운다. `Visible` 이면 패널 바깥의 빈 영역까지
+	//    월드 클릭을 먹는다. 자식(패널)은 그대로 클릭을 받는다.
+	if (Panel_PanelHost)
 	{
-		return;
+		Panel_PanelHost->SetVisibility(Selection.bHasSelection
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
 	}
 
-	const FFF_PrepFloatingPanelSnapshot Snapshot = State->GetPrepSnapshot();
-	for (const TPair<EFF_PrepHudTab, FFF_PrepPanelLayout>& Pair : Snapshot.RuntimeLayouts)
+	// 4) 탭 선택 표시. 색만 바꾸지 않고 배경 브러시가 함께 바뀐다 (AT-011).
+	for (UFF_PrepHudTabButton* TabButton : TabButtons)
 	{
-		PanelLayouts.Add(Pair.Key, Pair.Value);
-	}
-
-	PinnedTabs = Snapshot.PinnedTabs;
-	OpenTabs.Reset();
-	Selection = FFF_PrepTabSelection::None();
-
-	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
-	const EFF_FestivalStage Stage = ViewModel
-		? ViewModel->GetCurrentStage()
-		: EFF_FestivalStage::Setup;
-	const bool bIsFinalDay = ViewModel ? ViewModel->IsFinalDay() : false;
-
-	for (const EFF_PrepHudTab Tab : Snapshot.OpenTabs)
-	{
-		if (OpenTabs.Num() >= UFF_FloatingPanelStateSubsystem::MaxOpenPanelCount)
+		if (TabButton)
 		{
-			break;
+			TabButton->SetSelected(Selection.IsSelected(TabButton->GetTab()));
 		}
-		if (!FFF_PrepHudRules::IsTabVisible(Tab, Stage, bIsFinalDay))
-		{
-			continue;
-		}
-
-		OpenPanel(Tab);
 	}
 
-	if (Snapshot.FocusedSelection.bHasSelection
-		&& IsPanelOpen(Snapshot.FocusedSelection.Tab))
-	{
-		BringPanelToFront(Snapshot.FocusedSelection.Tab);
-	}
-
-	RefreshPanelHostVisibility();
-	SaveFloatingPanelState();
-}
-
-void UFF_PrepHudBar::SaveFloatingPanelState() const
-{
-	if (UFF_FloatingPanelStateSubsystem* State = UFF_FloatingPanelStateSubsystem::Get(this))
-	{
-		FFF_PrepFloatingPanelSnapshot Snapshot;
-		Snapshot.OpenTabs = OpenTabs;
-		Snapshot.PinnedTabs = PinnedTabs;
-		Snapshot.RuntimeLayouts = PanelLayouts;
-		Snapshot.FocusedSelection = Selection;
-		State->SavePrep(Snapshot);
-	}
+	OnTabSelectionChanged.Broadcast(Selection);
 }
 
 UClass* UFF_PrepHudBar::ResolvePanelClass(EFF_PrepHudTab Tab, const FString& EnumName, bool& bOutIsPlaceholder) const
@@ -845,11 +572,10 @@ UFF_PrepPanelBase* UFF_PrepHudBar::EnsurePanel(EFF_PrepHudTab Tab)
 		}
 	}
 
-	EnsurePanelWorkspace();
-	if (!PanelWorkspace)
+	if (!Panel_PanelHost)
 	{
 		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] 플로팅 패널 작업공간을 만들지 못했다. WBP의 Panel_PanelHost를 확인한다."),
+			TEXT("[%s] Panel_PanelHost 가 없어 패널을 띄울 자리가 없다. WBP 에 컨테이너를 넣는다."),
 			*GetName());
 		return nullptr;
 	}
@@ -897,30 +623,48 @@ UFF_PrepPanelBase* UFF_PrepHudBar::EnsurePanel(EFF_PrepHudTab Tab)
 
 	Panel->SetVisibility(ESlateVisibility::Collapsed);
 
-	if (UCanvasPanelSlot* PanelSlot = PanelWorkspace->AddChildToCanvas(Panel))
+	// 🔴 `UOverlaySlot` 기본값은 `HAlign_Left` + `VAlign_Top` 이다.
+	//    그대로 두면 패널이 호스트를 채우지 않고 **내용 크기로 줄어들어**
+	//    레이아웃 표의 `Size` 를 아무리 키워도 화면이 안 커진다 (2026-08-26 실제 발생).
+	//    호스트가 다른 컨테이너면 그쪽 슬롯 타입에 맞춰 디자이너가 맞춘다.
+	if (UOverlaySlot* HostSlot = Cast<UOverlaySlot>(Panel_PanelHost->AddChild(Panel)))
 	{
-		PanelSlot->SetAutoSize(false);
-		PanelSlot->SetZOrder(1);
+		HostSlot->SetHorizontalAlignment(HAlign_Fill);
+		HostSlot->SetVerticalAlignment(VAlign_Fill);
 	}
 	PanelWidgets.Add(Tab, Panel);
 	return Panel;
 }
 
-void UFF_PrepHudBar::NudgePanelPosition(EFF_PrepHudTab Tab, FVector2D SlateDelta)
+void UFF_PrepHudBar::NudgePanelPosition(FVector2D SlateDelta)
 {
-	if (!IsPanelDragAllowed(Tab) || SlateDelta.IsNearlyZero() || !IsPanelOpen(Tab))
+	if (!IsPanelDragAllowed() || SlateDelta.IsNearlyZero() || !Selection.bHasSelection)
 	{
 		return;
 	}
 
-	FFF_PrepPanelLayout Layout = ResolveLayout(Tab);
-	// 다중 작업공간에서는 모든 도킹이 독립적인 점 앵커를 사용하므로 두 축을 그대로 옮긴다.
-	Layout.Offset += SlateDelta;
+	// 늘어난 축은 화면이 정하므로 그 방향의 이동은 버린다. 안 버리면 여백 값이 커져
+	// 패널이 반대쪽으로 밀린다.
+	FFF_PrepPanelLayout Layout = ResolveLayout(Selection.Tab);
+	switch (Layout.Dock)
+	{
+	case EFF_PrepPanelDock::Bottom:
+		Layout.Offset.Y += SlateDelta.Y;
+		break;
+
+	case EFF_PrepPanelDock::Left:
+	case EFF_PrepPanelDock::Right:
+		Layout.Offset.X += SlateDelta.X;
+		break;
+
+	default:
+		Layout.Offset += SlateDelta;
+		break;
+	}
 
 	// 인스턴스의 표를 고친다. 에셋 기본값은 그대로다 — 확정은 WBP 에 적어서 한다.
-	PanelLayouts.Add(Tab, Layout);
-	ApplyPanelLayout(Tab, Layout);
-	SaveFloatingPanelState();
+	PanelLayouts.Add(Selection.Tab, Layout);
+	ApplyPanelLayout(Layout);
 }
 
 void UFF_PrepHudBar::ResetPanelPosition()
@@ -938,20 +682,19 @@ void UFF_PrepHudBar::ResetPanelPosition()
 
 	Layout.Offset = FVector2D::ZeroVector;
 	PanelLayouts.Add(Selection.Tab, Layout);
-	ApplyPanelLayout(Selection.Tab, Layout);
-	SaveFloatingPanelState();
+	ApplyPanelLayout(Layout);
 }
 
-bool UFF_PrepHudBar::IsPanelDragAllowed(EFF_PrepHudTab Tab) const
+bool UFF_PrepHudBar::IsPanelDragAllowed() const
 {
-	if (!bAllowPanelDrag || !PanelWorkspace || !IsPanelOpen(Tab) || PinnedTabs.Contains(Tab))
+	if (!bAllowPanelDrag || !Panel_PanelHost || !Selection.bHasSelection)
 	{
 		return false;
 	}
 
 	// `디자이너 지정` 은 코드가 슬롯을 아예 만지지 않는 모드다. 거기서 드래그를 허용하면
 	// 값만 쌓이고 화면은 안 움직여 "끌리지 않는다"로 보인다.
-	return ResolveLayout(Tab).Dock != EFF_PrepPanelDock::Designer;
+	return ResolveLayout(Selection.Tab).Dock != EFF_PrepPanelDock::Designer;
 }
 
 FFF_PrepPanelLayout UFF_PrepHudBar::GetOpenPanelLayout() const
@@ -969,8 +712,7 @@ void UFF_PrepHudBar::SetOpenPanelLayout(const FFF_PrepPanelLayout& NewLayout)
 	}
 
 	PanelLayouts.Add(Selection.Tab, NewLayout);
-	ApplyPanelLayout(Selection.Tab, ResolveLayout(Selection.Tab));
-	SaveFloatingPanelState();
+	ApplyPanelLayout(ResolveLayout(Selection.Tab));
 }
 
 FString UFF_PrepHudBar::DescribeOpenPanelLayout() const
@@ -1004,29 +746,27 @@ FFF_PrepPanelLayout UFF_PrepHudBar::ResolveLayout(EFF_PrepHudTab Tab) const
 		Layout = *Found;
 	}
 
-	// 예전 단일 호스트에서는 Bottom의 폭과 Left/Right의 높이를 부모가 정했다. 패널별 Canvas
-	// 슬롯에서는 두 축 모두 명시해야 하므로 0인 성분만 기본 크기로 보충한다.
-	if (Layout.Size.X <= 0.0)
+	// 방향에 따라 실제로 쓰이는 성분만 검사한다. 하단 도킹의 `Size.X` 처럼 안 쓰는 값이
+	// 0 인 것은 정상이라, 그것까지 막으면 기본값으로 되돌아가 버린다.
+	const bool bNeedsWidth = Layout.Dock == EFF_PrepPanelDock::Center
+		|| Layout.Dock == EFF_PrepPanelDock::Left
+		|| Layout.Dock == EFF_PrepPanelDock::Right;
+	const bool bNeedsHeight = Layout.Dock == EFF_PrepPanelDock::Center
+		|| Layout.Dock == EFF_PrepPanelDock::Bottom;
+
+	if ((bNeedsWidth && Layout.Size.X <= 0.0) || (bNeedsHeight && Layout.Size.Y <= 0.0))
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 패널 폭이 0 이하다 (%s). 기본 폭을 쓴다."),
+			TEXT("[%s] 패널 크기가 0 이하다 (%s). 패널이 사라지므로 기본 레이아웃 크기를 쓴다."),
 			*GetName(), *Layout.Size.ToString());
-		Layout.Size.X = DefaultPanelLayout.Size.X > 0.0 ? DefaultPanelLayout.Size.X : 1160.0;
-	}
-	if (Layout.Size.Y <= 0.0)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 패널 높이가 0 이하다 (%s). 기본 높이를 쓴다."),
-			*GetName(), *Layout.Size.ToString());
-		Layout.Size.Y = DefaultPanelLayout.Size.Y > 0.0 ? DefaultPanelLayout.Size.Y : 640.0;
+		Layout.Size = DefaultPanelLayout.Size;
 	}
 	return Layout;
 }
 
-void UFF_PrepHudBar::ApplyPanelLayout(EFF_PrepHudTab Tab, const FFF_PrepPanelLayout& Layout)
+void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 {
-	const TObjectPtr<UFF_PrepPanelBase>* FoundPanel = PanelWidgets.Find(Tab);
-	if (!FoundPanel || !*FoundPanel)
+	if (!Panel_PanelHost)
 	{
 		return;
 	}
@@ -1038,12 +778,13 @@ void UFF_PrepHudBar::ApplyPanelLayout(EFF_PrepHudTab Tab, const FFF_PrepPanelLay
 		return;
 	}
 
-	UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>((*FoundPanel)->Slot);
+	UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Panel_PanelHost->Slot);
 	if (!CanvasSlot)
 	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("[%s] 패널별 Canvas 슬롯이 없어 `%d` 패널 위치를 적용하지 못했다."),
-			*GetName(), static_cast<int32>(Tab));
+		// 캔버스가 아니면 위치는 디자이너가 소유한다. 코드가 짐작해서 옮기지 않는다.
+		UE_LOG(LogFestaFiestaUI, Verbose,
+			TEXT("[%s] Panel_PanelHost 가 CanvasPanel 자식이 아니라 도킹을 코드가 정하지 않는다."),
+			*GetName());
 		return;
 	}
 
@@ -1055,14 +796,15 @@ void UFF_PrepHudBar::ApplyPanelLayout(EFF_PrepHudTab Tab, const FFF_PrepPanelLay
 	switch (Dock)
 	{
 	case EFF_PrepPanelDock::Bottom:
-		// 초기 위치만 하단이다. 점 앵커라 이후에는 X/Y 어느 쪽으로든 자유롭게 옮길 수 있다.
-		CanvasSlot->SetAnchors(FAnchors(0.5f, 1.f));
-		CanvasSlot->SetAlignment(FVector2D(0.5f, 1.f));
+		// 가로로 꽉 채우고, 아래쪽 점 앵커에서 바 높이만큼 띄운다.
+		CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 1.f, 1.f));
+		CanvasSlot->SetAlignment(FVector2D(0.f, 1.f));
+		// 가로로 늘어난 축이라 X 는 여백이다 — `Size.X` 와 `Offset.X` 는 쓰이지 않는다.
 		CanvasSlot->SetOffsets(FMargin(
-			static_cast<float>(Layout.Offset.X),
-			-(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y),
-			static_cast<float>(Layout.Size.X),
-			static_cast<float>(Layout.Size.Y)));
+			PanelMargin,														// 왼쪽 여백
+			-(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y),	// 바 위로 띄운다
+			PanelMargin,														// 오른쪽 여백
+			static_cast<float>(Layout.Size.Y)));								// 높이
 		break;
 
 	case EFF_PrepPanelDock::Center:
@@ -1078,24 +820,26 @@ void UFF_PrepHudBar::ApplyPanelLayout(EFF_PrepHudTab Tab, const FFF_PrepPanelLay
 		break;
 
 	case EFF_PrepPanelDock::Right:
-		CanvasSlot->SetAnchors(FAnchors(1.f, 0.5f));
-		CanvasSlot->SetAlignment(FVector2D(1.f, 0.5f));
+		// 세로로 꽉 채우고 오른쪽에 붙인다. 아래는 바 높이만큼 비운다.
+		CanvasSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 1.f));
+		CanvasSlot->SetAlignment(FVector2D(1.f, 0.f));
+		// 세로로 늘어난 축이라 Y 는 여백이다 — `Size.Y` 와 `Offset.Y` 는 쓰이지 않는다.
 		CanvasSlot->SetOffsets(FMargin(
-			-PanelMargin + static_cast<float>(Layout.Offset.X),
-			-BarHeight * 0.5f + static_cast<float>(Layout.Offset.Y),
-			static_cast<float>(Layout.Size.X),
-			static_cast<float>(Layout.Size.Y)));
+			-PanelMargin + static_cast<float>(Layout.Offset.X),	// X 위치 (오른쪽 정렬이라 음수)
+			PanelMargin,										// 위쪽 여백
+			static_cast<float>(Layout.Size.X),					// 폭
+			BarHeight + PanelMargin));							// 아래쪽 여백
 		break;
 
 	case EFF_PrepPanelDock::Left:
 	default:
-		CanvasSlot->SetAnchors(FAnchors(0.f, 0.5f));
-		CanvasSlot->SetAlignment(FVector2D(0.f, 0.5f));
+		CanvasSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 1.f));
+		CanvasSlot->SetAlignment(FVector2D(0.f, 0.f));
 		CanvasSlot->SetOffsets(FMargin(
 			PanelMargin + static_cast<float>(Layout.Offset.X),
-			-BarHeight * 0.5f + static_cast<float>(Layout.Offset.Y),
+			PanelMargin,
 			static_cast<float>(Layout.Size.X),
-			static_cast<float>(Layout.Size.Y)));
+			BarHeight + PanelMargin));
 		break;
 	}
 }
@@ -1167,7 +911,6 @@ void UFF_PrepHudBar::RefreshTabVisibility()
 
 		const bool bVisible = FFF_PrepHudRules::IsTabVisible(TabButton->GetTab(), Stage, bIsFinalDay);
 		TabButton->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		TabButton->SetSelected(bVisible && IsPanelOpen(TabButton->GetTab()));
 		VisibleTabCount += bVisible ? 1 : 0;
 	}
 
@@ -1181,29 +924,8 @@ void UFF_PrepHudBar::RefreshTabVisibility()
 			: ESlateVisibility::Collapsed);
 	}
 
-	// 다른 Stage로 넘어갈 때 UIFlow가 이 HUD를 곧 제거한다. 이때 닫힌 것으로 처리하면
-	// 사용자가 닫지 않은 패널이 다음 Setup/MorningCheck에서 사라지므로 상태는 보존하고
-	// 이전 화면의 호스트만 즉시 숨긴다.
-	if (!FFF_PrepHudRules::IsPrepStage(Stage))
-	{
-		if (Panel_PanelHost)
-		{
-			Panel_PanelHost->SetVisibility(ESlateVisibility::Collapsed);
-		}
-		return;
-	}
-
-	// 같은 준비 화면 안에서 실제로 사라진 탭만 닫는다. 복사본을 순회해 ClosePanel이
-	// 실제 배열을 바꿔도 안전하게 처리한다.
-	const TArray<EFF_PrepHudTab> OpenTabsCopy = OpenTabs;
-	for (const EFF_PrepHudTab OpenTab : OpenTabsCopy)
-	{
-		if (!FFF_PrepHudRules::IsTabVisible(OpenTab, Stage, bIsFinalDay))
-		{
-			ClosePanel(OpenTab);
-		}
-	}
-	RefreshPanelSelectionVisuals();
+	// 사라진 탭의 패널이 남아 있으면 닫을 수단이 화면에서 없어진다.
+	ApplySelection(FFF_PrepHudRules::ClampSelectionToVisible(Selection, Stage, bIsFinalDay));
 }
 
 void UFF_PrepHudBar::RefreshStatusRow()

@@ -22,6 +22,7 @@ void UFF_StageEconomyBridgeSubsystem::Initialize(FSubsystemCollectionBase& Colle
 	}
 	
 	Stage->OnStageChanged.AddDynamic(this, &UFF_StageEconomyBridgeSubsystem::HandleStageChanged);
+	Stage->OnFestivalStarted.AddDynamic(this, &UFF_StageEconomyBridgeSubsystem::HandleFestivalStarted);
 }
 
 void UFF_StageEconomyBridgeSubsystem::Deinitialize()
@@ -29,6 +30,7 @@ void UFF_StageEconomyBridgeSubsystem::Deinitialize()
 	if (Stage != nullptr)
 	{
 		Stage->OnStageChanged.RemoveDynamic(this, &UFF_StageEconomyBridgeSubsystem::HandleStageChanged);
+		Stage->OnFestivalStarted.RemoveDynamic(this, &UFF_StageEconomyBridgeSubsystem::HandleFestivalStarted);
 		Stage = nullptr;
 	}
 	
@@ -45,6 +47,15 @@ void UFF_StageEconomyBridgeSubsystem::ProcessStageEntry(EFF_FestivalStage NewSta
 	
 	// 중복 정산은 Progression의 LastProcessedDay에서 단일하게 방어
 	Progression->BeginNewDay(Day);
+}
+
+void UFF_StageEconomyBridgeSubsystem::ProcessFestivalStarted()
+{
+	if (Progression == nullptr) return;
+
+	// `StartFestival` 은 완전한 리셋 함수라 두 번 돌아도 같은 상태로 끝나므로 
+	// `Initialize` 호출과 겹치는 것을 따로 막지 않는다.
+	Progression->RestartFestival();
 }
 
 void UFF_StageEconomyBridgeSubsystem::SetProgression(UFF_FestivalProgressionSubsystem* InProgression)
@@ -79,4 +90,9 @@ bool UFF_StageEconomyBridgeSubsystem::CanScheduleProgramNow() const
 void UFF_StageEconomyBridgeSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)
 {
 	ProcessStageEntry(NewStage, Stage != nullptr ? Stage->CurrentDay : 0);
+}
+
+void UFF_StageEconomyBridgeSubsystem::HandleFestivalStarted()
+{
+	ProcessFestivalStarted();
 }

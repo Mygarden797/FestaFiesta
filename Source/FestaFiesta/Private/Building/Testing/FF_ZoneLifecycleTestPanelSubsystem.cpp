@@ -2,7 +2,7 @@
 
 // Test_Main에서 Lifecycle 개발 패널을 숨김 상태로 부착하고 Ctrl+G 표시 토글을 처리한다.
 // 흐름: 월드 유형/맵 확인 -> 생성 재시도 -> Collapsed 부착 -> raw chord 감지 -> Visible/Collapsed.
-// 불변식: 일반 콘텐츠·Shipping에는 만들지 않고 기존 게임 입력 모드와 커서 소유권을 건드리지 않는다.
+// 불변식: Editor·패키징 모두 Test_Main에서만 만들고 기존 게임 입력 모드와 커서 소유권을 건드리지 않는다.
 // 실패/성능: 생성 전만 로드를 재시도하고 생성 뒤 Tick은 저비용 key edge 검사만 수행한다.
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
@@ -26,9 +26,7 @@ namespace
 void UFF_ZoneLifecycleTestPanelSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-#if !UE_BUILD_SHIPPING
 	bPanelCreationPending = true;
-#endif
 }
 
 void UFF_ZoneLifecycleTestPanelSubsystem::Deinitialize()
@@ -46,12 +44,7 @@ void UFF_ZoneLifecycleTestPanelSubsystem::Deinitialize()
 bool UFF_ZoneLifecycleTestPanelSubsystem::DoesSupportWorldType(
 	const EWorldType::Type WorldType) const
 {
-#if UE_BUILD_SHIPPING
-	(void)WorldType;
-	return false;
-#else
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
-#endif
 }
 
 void UFF_ZoneLifecycleTestPanelSubsystem::Tick(const float DeltaTime)

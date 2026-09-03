@@ -95,6 +95,15 @@ public:
 	bool IsPointerOverPanel() const;
 
 	/**
+	 * Resolves a currently registered installed facility from its dedicated padded selection proxy.
+	 * Build and Live input share this path so selection is independent of visual-mesh collision and
+	 * the exact authority footprint. A real Visibility blocker in front of the proxy still wins.
+	 */
+	AFFZSFacilityActor* ResolveFacilityUnderCursor(
+		APlayerController& Controller,
+		AFFZSFacilityActor* PreferredHoveredFacility = nullptr) const;
+
+	/**
 	 * Pause Hub가 동일 Viewport 상위 Z-order의 시설 UI를 완전히 숨기고 입력도 차단한다.
 	 * 선택과 picker 의미 상태는 유지하므로 해제 시 사용자가 보던 표면만 복원된다.
 	 */
@@ -149,10 +158,7 @@ private:
 	void ReleaseThumbnailSession();
 	void EnsurePickControllerBinding();
 	void ReleasePickControllerBinding();
-	AFFZSFacilityActor* ResolveLiveFacilityUnderCursor(
-		APlayerController& Controller,
-		AFFZSFacilityActor* PreferredHoveredFacility = nullptr) const;
-	AFFZSFacilityActor* ResolveLiveFacilityAlongRay(
+	AFFZSFacilityActor* ResolveFacilityAlongRay(
 		const FVector& RayOrigin,
 		const FVector& RayDirection,
 		AFFZSFacilityActor* PreferredHoveredFacility,
