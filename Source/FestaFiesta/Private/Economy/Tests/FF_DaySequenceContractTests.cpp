@@ -269,6 +269,9 @@ bool FFF_DaySequence_EveryDayChainReachesLiveAndTerminates::RunTest(const FStrin
 // (FF_FestivalStageSubsystem.cpp 의 `if (Range.MaxSeconds <= 0.f) return;`).
 // 크래시도 로그도 없이 시간만 안 흐르므로, 표에 행을 빼먹었을 때 이 테스트가 잡는다.
 //
+// ★ 2026-09-03 에 전제를 넓혔다. 보는 것은 `재생 가능한 길이`가 아니라 **나갈 수단**이다 —
+//   수동 버튼(`bSkippable`)이 있으면 시간 제한이 없어도 멈추지 않는다. 자세한 것은 아래.
+//
 // ⚠️ 이 테스트는 혼자서는 아무것도 보증하지 못한다 — 체인이 비면 순회할 것이 없어
 // 공허하게 통과한다(변이 검사로 확인했다). 체인이 실제로 걸리는지는
 // EveryDayChainReachesLiveAndTerminates 가 본다. 그쪽이 빨간불이면 이 테스트의
@@ -307,10 +310,31 @@ bool FFF_DaySequence_ReachableStagesHavePlayableDuration::RunTest(const FString&
 				continue;
 			}
 
+			// 🔴 **전제를 넓혔다 (2026-09-03 백종태).** 원래는 `MaxSeconds > 0` 만 봤다.
+			//
+			// 이 테스트가 지키려는 것은 `MaxSeconds` 자체가 아니라 **단계에서 나갈 수 있는가**
+			// 다. `MaxSeconds <= 0` 이면 `Tick` 이 곧바로 return 해서 시간이 안 흐르고
+			// 자동 전환도 안 되므로, 나갈 다른 수단이 없으면 게임이 조용히 멈춘다.
+			//
+			// 그런데 마감에 **수동 버튼**이 생기면서 (리포트 패널의 `다음 날로`) 시간 제한이
+			// 필요 없어졌다 — 결산을 다 읽었는지는 플레이어가 안다. 그래서 마감은
+			// `MaxSeconds = 0` + `bSkippable` 조합이 정상이 됐다.
+			//
+			// 나갈 수단은 셋이다 —
+			//   ① MaxSeconds > 0   시간이 지나면 자동으로
+			//   ② bSkippable       `SkipCurrentStage()` 로 수동으로
+			//   ③ Report 단계      `AdvanceToNextDay()` 가 여기서만 통한다 (bSkippable 무관)
+			const bool bCanLeaveByTime = Row->MaxSeconds > 0.f;
+			const bool bCanLeaveByHand =
+				Row->bSkippable || Stage == EFF_FestivalStage::Report;
+
 			TestTrue(
-				*FString::Printf(TEXT("Day%d %s 의 MaxSeconds 가 0 보다 크다"),
-					Day, *FFF_DaySequenceContractHelpers::StageName(Stage)),
-				Row->MaxSeconds > 0.f);
+				*FString::Printf(
+					TEXT("Day%d %s 에서 나갈 수단이 있다 (MaxSeconds>0 이거나 bSkippable) "
+						 "— 현재 MaxSeconds=%.1f · bSkippable=%s"),
+					Day, *FFF_DaySequenceContractHelpers::StageName(Stage),
+					Row->MaxSeconds, Row->bSkippable ? TEXT("켜짐") : TEXT("꺼짐")),
+				bCanLeaveByTime || bCanLeaveByHand);
 		}
 	}
 

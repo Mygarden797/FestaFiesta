@@ -11,6 +11,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/Texture2D.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/Atlas/FF_AtlasCameraRig.h"
@@ -146,6 +147,15 @@ void UFF_AtlasGlobeScreen::NativeOnActivated()
 	RebuildPinButtons();
 	RefreshCountryPanel();
 
+	// 🔴 "지구 누름" 로그가 아예 안 뜬다는 보고(2026-09-03)를 가르는 두 번째 축이다.
+	//    이 줄이 뜨는데 누름이 안 오면 **위젯은 살아 있는데 입력만 안 오는 것**이고,
+	//    이 줄조차 없으면 **화면이 아예 안 올라온 것**이다. 대처가 완전히 다르다.
+	UE_LOG(LogFestaFiestaUI, Warning,
+		TEXT("[%s] 지구본 화면 활성화 — 드래그면=%s · 가시성=%d"),
+		*GetName(),
+		Border_DragSurface ? TEXT("있음") : TEXT("**없음**"),
+		Border_DragSurface ? static_cast<int32>(Border_DragSurface->GetVisibility()) : -1);
+
 	Super::NativeOnActivated();
 }
 
@@ -155,6 +165,8 @@ void UFF_AtlasGlobeScreen::NativeTick(const FGeometry& MyGeometry, float InDelta
 
 	// 지구가 상시 자전하므로 핀 좌표가 매 프레임 바뀐다. 이벤트로 알릴 수 있는 변화가 아니다.
 	UpdatePinPositions();
+
+	TickDrag();
 }
 
 UWidget* UFF_AtlasGlobeScreen::NativeGetDesiredFocusTarget() const
@@ -197,22 +209,62 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry
 	// 연출 중에 손을 대면 즉시 끝낸다. 반복 플레이에서 매번 다 보게 하지 않는다.
 	SkipPresentation();
 
+	// 🔴 **이 줄이 로그에 안 뜨면 원인이 다른 곳이다.**
+	//
+	// "축제를 한 번 하고 오면 지구가 안 돌아간다"(2026-09-03)의 원인을 코드만 읽어서는
+	// 못 갈랐다. 두 가지가 가능한데 대처가 완전히 다르다 —
+	//   ① 누름 이벤트가 **위젯까지 온다** → 캡처·이동 라우팅 문제 (`TickDrag` 이 고친다)
+	//   ② 누름 이벤트가 **아예 안 온다** → CommonUI 입력 설정 문제 (여기서는 못 고친다)
+	// 앞서 ① 이라고 단정했는데, 프론트엔드는 `FUIInputConfig(Menu, NoCapture)` 를 쓰므로
+	// 캡처가 멀쩡해야 맞다. 즉 ② 일 수 있다. 숫자로 가른다.
+	if (const APlayerController* PC = GetOwningPlayer())
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("[%s] 지구 누름 — 커서표시=%d · 입력이 위젯까지 왔다."),
+			*GetName(), PC->bShowMouseCursor ? 1 : 0);
+	}
+
 	DragTracker.Press(InMouseEvent.GetScreenSpacePosition());
 
-	// 🔴 **마우스를 캡처한다.** 프론트엔드는 `NoCapture` 라 캡처하지 않으면 커서가 위젯 밖으로
-	//    나가는 순간 이동 이벤트가 끊기고 지구가 그 자리에 멈춘다.
-	return FReply::Handled().CaptureMouse(TakeWidget());
+	// 🔴 **캡처하지 않는다** (2026-09-03 정정).
+	//
+	// 예전에는 캡처했다 — 프론트엔드가 `NoCapture` 라 캡처 없이는 커서가 위젯 밖으로 나가면
+	// 이동 이벤트가 끊긴다는 이유였다. 그 전제가 **축제를 한 번 하고 오면 깨진다.**
+	// 건축 모드를 끌 때 `SetInputMode(FInputModeGameOnly())` 를 부르고
+	// (`FF_BuildModeSubsystem.cpp`), `ReturnToAtlas()` 는 입력 모드를 되돌리지 않는다.
+	// `FInputModeGameOnly` 는 `bHideCursorDuringCapture = true` 라 캡처하는 순간 커서가
+	// 잠기고 좌표가 안 변해 **지구가 안 돌아간다.**
+	//
+	// 셋업·라이브 패널에서 같은 함정을 이미 겪었다 (`docs/memory/prep-hud-reference.md` 3절).
+	// 거기서 쓴 해법을 그대로 쓴다 — 캡처 없이 `NativeTick` 에서 커서를 직접 읽는다.
+	// 입력 모드가 무엇이든 동작하고, 커서가 위젯 밖으로 나가도 안 끊긴다.
+	return FReply::Handled();
 }
 
-FReply UFF_AtlasGlobeScreen::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+void UFF_AtlasGlobeScreen::TickDrag()
 {
 	if (!DragTracker.IsPressed())
 	{
-		return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+		return;
+	}
+
+	if (!FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+
+	FSlateApplication& Slate = FSlateApplication::Get();
+
+	// ★ 뗀 것도 여기서 본다. 캡처가 없으면 위젯 밖에서 뗀 이벤트가 안 오고,
+	//   그러면 눌린 상태가 남아 **손을 뗀 뒤에도 지구가 커서를 따라다닌다.**
+	if (!Slate.GetPressedMouseButtons().Contains(EKeys::LeftMouseButton))
+	{
+		EndDrag();
+		return;
 	}
 
 	// 임계 안이면 0 이 돌아온다 (데드존). 넘은 뒤에는 이동량이 그대로 온다.
-	const FVector2D Delta = DragTracker.AddMove(InMouseEvent.GetScreenSpacePosition());
+	const FVector2D Delta = DragTracker.AddMove(Slate.GetCursorPos());
 
 	if (!Delta.IsNearlyZero())
 	{
@@ -222,21 +274,11 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseMove(const FGeometry& InGeometry, cons
 			Globe->AddDragInput(Delta);
 		}
 	}
-
-	return FReply::Handled();
 }
 
-FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+void UFF_AtlasGlobeScreen::EndDrag()
 {
-	if (InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
-	{
-		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
-	}
-
 	const bool bWasDragging = DragTracker.IsDragging();
-
-	// 클릭이었으면(임계를 안 넘었으면) 지구 빈 곳을 눌렀다는 뜻이다. 선택을 바꾸지 않는다 —
-	// 국가 선택은 핀 버튼만 한다.
 	DragTracker.Release();
 
 	if (bWasDragging)
@@ -248,8 +290,32 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonUp(const FGeometry& InGeometry, 
 			Globe->ReSnapToNearestCountry();
 		}
 	}
+}
 
-	return FReply::Handled().ReleaseMouseCapture();
+FReply UFF_AtlasGlobeScreen::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// 이동은 `TickDrag()` 이 처리한다. 여기서는 눌린 동안 이벤트만 먹어
+	// 아래 위젯으로 새지 않게 한다 — 이동을 여기서도 하면 한 프레임에 두 번 돈다.
+	return DragTracker.IsPressed()
+		? FReply::Handled()
+		: Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+}
+
+FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+	}
+
+	// 클릭이었으면(임계를 안 넘었으면) 지구 빈 곳을 눌렀다는 뜻이다. 선택을 바꾸지 않는다 —
+	// 국가 선택은 핀 버튼만 한다.
+	//
+	// 위젯 안에서 뗐으면 여기가 먼저 오고, 밖에서 뗐으면 `TickDrag()` 이 잡는다.
+	// 둘 중 어느 쪽이 와도 `DragTracker.Release()` 뒤에는 눌림이 풀려 두 번 돌지 않는다.
+	EndDrag();
+
+	return FReply::Handled();
 }
 
 void UFF_AtlasGlobeScreen::NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
