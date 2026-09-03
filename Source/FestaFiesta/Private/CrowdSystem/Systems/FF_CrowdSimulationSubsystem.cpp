@@ -1953,7 +1953,7 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
-	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
+	if (CurrentStage == EFF_FestivalStage::Closing)
 	{
 		AllAgentLeavingTrigger();
 	}
@@ -1964,7 +1964,7 @@ void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage Previous
 			GatherReservedPartyRequests());
 		
 	}
-	else if (PreviousStage == EFF_FestivalStage::Closing)
+	else if (CurrentStage == EFF_FestivalStage::Report)
 	{
 		DespawnAllAgent();
 	}
