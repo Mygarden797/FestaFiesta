@@ -64,7 +64,7 @@ public:
 	 *
 	 * **그래서 생기는 한계**: 상한에 걸려 잘릴 때 "멀지만 내 취향에 딱 맞는 부스"가 후보에 아예
 	 * 들어오지 못한다. 2단계에서 취향을 봐도 이미 늦다. 이걸 메우는 것이 아직 미구현인
-	 * "전역 인기 상위 K"(utility_ai_todo.md 2절)이고, 지금은 인접 Zone 밖이 절대 후보가 못 된다.
+	 * "전역 인기 상위 K"(utility_ai_todo.md 2절)이다. 현재 전역 예외는 공연 중 메인 무대뿐이다.
 	 *
 	 * ### 좁히는 방법
 	 *
@@ -94,7 +94,7 @@ public:
 	 * @param ReadModel              ZoneSystem 스냅샷
 	 * @param CurrentZoneId          이 Party가 지금 있는 Zone. ReadModel에 없으면 빈 배열 + Warning
 	 * @param PartyWorldLocation 거리 계산 기준이 되는 Party 월드 위치(cm)
-	 * @param MaxCandidates      후보 상한. 0 이하면 상한 없음
+	 * @param MaxCandidates      지역 후보 상한. 0 이하면 상한 없음. 전역 메인 무대는 별도로 추가.
 	 */
 	/**
 	 * @param WalkDistances 존 앵커 보행거리 행렬. nullptr이면 직선거리를 쓴다(기존 거동).
@@ -102,7 +102,7 @@ public:
 	 *                      행렬을 지으려면 존 액터의 월드 트랜스폼과 NavigationSystem이 필요하고,
 	 *                      이 클래스는 월드를 모르는 순수 변환기로 남겨야 테스트가 싸다.
 	 *
-	 * @param bMainStageOpen 지금이 메인 공연 시간인가. false면 `Performance_MainStage_*` 시설을
+	 * @param bMainStageOpen 지금이 메인 공연 시간인가. false면 `Performance_MainStage_SunsetMainStage` 시설을
 	 *                       후보에서 뺀다.
 	 *
 	 *                       "공연 시간에 무대로 몰린다"(AT-016)는 셋이 같이 만든다:
@@ -123,9 +123,12 @@ public:
 	 *
 	 *                       기본값 true = 게이팅 없음(기존 거동). 안 넘기면 기존 결과와 완전히 같다.
 	 *
-	 *                       ⛔ MainStage 소분류만 닫는다. Busking 은 상시 공연이고
-	 *                       ExperienceStage 는 유료 프로그램 시설이라(FF_FestivalDefinition의
-	 *                       AllowedFacilityTypes) 같이 닫으면 예약 참가자가 자기 시설에 못 간다.
+	 *                       Performance_MainStage_SunsetMainStage만 닫는다. StreetStage,
+	 *                       DanceBattle, LocalArtist 등 다른 공연 시설은 일반 지역 후보로 유지한다.
+	 *                       별도로 편성된 프로그램의 예약 전용 필터는 Decision 계층에서 적용한다.
+	 * @param bIncludeGlobalMainStages 실제 메인 공연 중일 때만 true. 열린 SunsetMainStage를 구역/지역 상한과
+	 *                                무관하게 한 번씩 추가한다. 거리·밀집 비용과 이후 예약 필터는 유지한다.
+	 *                                기본 false라 Stage 없는 월드/기존 호출자의 지역 탐색은 유지된다.
 	 */
 	static TArray<FFF_DestinationCandidate> BuildCandidates(
 		const FFFZSReadModel& ReadModel,
@@ -133,7 +136,11 @@ public:
 		const FVector& PartyWorldLocation,
 		int32 MaxCandidates = DefaultMaxCandidates,
 		const FFF_WalkDistanceMatrix* WalkDistances = nullptr,
-		bool bMainStageOpen = true);
+		bool bMainStageOpen = true,
+		bool bIncludeGlobalMainStages = false);
+
+	// 시간 게이트와 전역 후보·진단이 동일한 SunsetMainStage 시설 ID 판정을 사용한다.
+	static bool IsMainStageFacility(EFFZSFacilityCategory Category, FName FacilityDefinitionId);
 
 	/**
 	 * 시설 카테고리 → preference_vector 키.
