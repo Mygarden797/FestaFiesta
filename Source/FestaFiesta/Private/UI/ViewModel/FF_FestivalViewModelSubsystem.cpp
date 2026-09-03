@@ -12,6 +12,9 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "Queue/FF_QueueSubsystem.h"
+#include "Queue/FF_QueueTypes.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 
@@ -691,6 +694,22 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		return Views;
 	}
 
+	// 🔴 **예상 대기 시간은 다리를 건너야 온다.**
+	//   Queue 는 `int32 FacilityId`, Zone 은 `FGuid` 라 서로 못 알아본다.
+	//   그 사이를 이어 주는 `FindQueueFacilityId()` 가 2026-09-03 에 확인됐다
+	//   (`UI_API.md` 요청 4번 — 장원재·한광훈 님 공급). 둘 중 하나만 없어도
+	//   예상 대기는 `모름` 이고, 나머지 값은 그대로 보여 준다.
+	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge =
+		World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+	const UFF_QueueSubsystem* Queue = World->GetSubsystem<UFF_QueueSubsystem>();
+
+	if (!QueueBridge || !Queue)
+	{
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] 대기열 다리(%s)나 Queue(%s)가 없어 예상 대기를 못 붙인다."),
+			QueueBridge ? TEXT("있음") : TEXT("없음"), Queue ? TEXT("있음") : TEXT("없음"));
+	}
+
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 	Views.Reserve(ReadModel.Facilities.Num());
 
@@ -717,6 +736,28 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		View.AverageWaitSeconds = (Facility.AverageCompletedWaitSeconds > 0.f)
 			? FMath::RoundToInt(Facility.AverageCompletedWaitSeconds)
 			: INDEX_NONE;
+
+		// --- 예상 대기: 지금 한 명이 서면 얼마나 기다리나 ---
+		if (QueueBridge && Queue)
+		{
+			const int32 QueueFacilityId = QueueBridge->FindQueueFacilityId(Facility.FacilityInstanceId);
+			if (QueueFacilityId != INDEX_NONE)
+			{
+				const float WaitSeconds = Queue->GetExpectedWaitSeconds(QueueFacilityId, /*IncomingMemberCount=*/1);
+
+				// 🔴 `UnreachableWaitSeconds` 는 **시간이 아니라 표식**이다. Queue 쪽 주석에
+				//    "미등록 시설에 0을 돌려주면 대기 없는 최고의 후보로 보인다" 고 적혀 있듯,
+				//    저쪽은 안전한 쪽으로 넘어지려고 큰 값을 쓴다. 그것을 그대로 그리면
+				//    화면에 `1440분` 이 뜬다. 여기서 `모름` 으로 바꾼다.
+				const bool bReachable = WaitSeconds < FFF_QueueTimings::UnreachableWaitSeconds;
+
+				View.ExpectedWaitSeconds = bReachable
+					? FMath::Max(0, FMath::RoundToInt(WaitSeconds))
+					: INDEX_NONE;
+
+				View.ServiceRatePerMinute = Queue->GetFacilityServiceRatePerMinute(QueueFacilityId);
+			}
+		}
 
 		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다 —
 		// `GetEligibleFacilitiesForProgram` 과 같은 사정이고 같은 방식으로 만든다.

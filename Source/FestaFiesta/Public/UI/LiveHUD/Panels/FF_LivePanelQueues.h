@@ -48,6 +48,24 @@ struct FESTAFIESTA_API FFF_LiveQueueSummary
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 LongestQueueWaiting = INDEX_NONE;
 
+	// --- 지금 서면 가장 오래 기다리는 곳 ---
+	//
+	// 🔴 **`가장 긴 줄` 과 다른 값이다.** 사람이 많아도 처리가 빠르면 금방 빠지고,
+	// 줄이 짧아도 처리가 느리면 오래 걸린다. 고칠 곳을 고르는 근거는 이쪽이다.
+	// (`UI_API.md` 요청 4번 — 큐↔시설 다리가 2026-09-03 에 확인돼 붙였다)
+
+	/** 예상 대기가 가장 긴 시설 이름. 읽은 곳이 하나도 없으면 비어 있다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	FText WorstExpectedWaitName;
+
+	/** 그 시설의 예상 대기(초). 아무 곳도 못 읽었으면 `INDEX_NONE`. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	int32 WorstExpectedWaitSeconds = INDEX_NONE;
+
+	/** 예상 대기를 실제로 읽은 시설 수. `0` 이면 다리가 없거나 큐에 등록된 시설이 없다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
+	int32 ExpectedWaitSampleCount = 0;
+
 	// --- 큐 상태별 개수 ---
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
@@ -133,6 +151,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Queues")
 	TObjectPtr<UTextBlock> Text_Longest;
+
+	/** 지금 서면 가장 오래 걸리는 곳. 못 읽었으면 접힌다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Queues")
+	TObjectPtr<UTextBlock> Text_WorstWait;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Queues")
 	TObjectPtr<UTextBlock> Text_StateCounts;

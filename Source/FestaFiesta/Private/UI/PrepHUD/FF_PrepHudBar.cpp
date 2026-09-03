@@ -801,15 +801,21 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 	switch (Dock)
 	{
 	case EFF_PrepPanelDock::Bottom:
-		// 가로로 꽉 채우고, 아래쪽 점 앵커에서 바 높이만큼 띄운다.
+		// 가로로 꽉 채우고, 아래 끝을 **탭 줄 밑으로** 밀어 넣는다.
 		CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 1.f, 1.f));
 		CanvasSlot->SetAlignment(FVector2D(0.f, 1.f));
 		// 가로로 늘어난 축이라 X 는 여백이다 — `Size.X` 와 `Offset.X` 는 쓰이지 않는다.
 		CanvasSlot->SetOffsets(FMargin(
-			PanelMargin,														// 왼쪽 여백
-			-(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y),	// 바 위로 띄운다
-			PanelMargin,														// 오른쪽 여백
-			static_cast<float>(Layout.Size.Y)));								// 높이
+			PanelMargin,													// 왼쪽 여백
+
+			// 🔴 예전에는 `-(BarHeight + PanelMargin)` = 70px 를 띄웠다. 그래서 배치 패널만
+			//    바 위에 **동동 떠 있었고**, 가운데 패널들(`CenterNudge` = -29)과 아래 끝이
+			//    어긋났다 (2026-09-03 백종태 지적). 상태 행 높이만 띄워 다른 패널과 맞춘다 —
+			//    패널 아래 끝이 탭 줄 밑으로 들어가서 버튼이 패널에 얹힌 것처럼 보인다.
+			-StatusRowHeight + static_cast<float>(Layout.Offset.Y),
+
+			PanelMargin,													// 오른쪽 여백
+			static_cast<float>(Layout.Size.Y)));							// 높이
 		break;
 
 	case EFF_PrepPanelDock::Center:

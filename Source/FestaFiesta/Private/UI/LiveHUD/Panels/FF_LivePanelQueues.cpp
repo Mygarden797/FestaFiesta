@@ -60,6 +60,25 @@ FFF_LiveQueueSummary FFF_LiveQueueRules::BuildSummary(const TArray<FFF_LiveFacil
 			Result.LongestQueueWaiting = Facility.WaitingCount;
 			Result.LongestQueueName = Facility.DisplayName;
 		}
+
+		// --- 지금 서면 가장 오래 걸리는 곳 ---
+		// 못 읽은 시설(`INDEX_NONE`)은 세지 않는다. 0 으로 세면 "대기 없는 최고의 시설" 로
+		// 보여서 실제로 붐비는 곳이 가려진다 — 평균에서 뺀 것과 같은 이유다.
+		if (Facility.ExpectedWaitSeconds != INDEX_NONE)
+		{
+			++Result.ExpectedWaitSampleCount;
+
+			const bool bWorse = Facility.ExpectedWaitSeconds > Result.WorstExpectedWaitSeconds;
+			const bool bTieButEarlier =
+				Facility.ExpectedWaitSeconds == Result.WorstExpectedWaitSeconds
+				&& Facility.DisplayName.CompareTo(Result.WorstExpectedWaitName) < 0;
+
+			if (bWorse || bTieButEarlier)
+			{
+				Result.WorstExpectedWaitSeconds = Facility.ExpectedWaitSeconds;
+				Result.WorstExpectedWaitName = Facility.DisplayName;
+			}
+		}
 	}
 
 	if (Result.AverageSampleCount > 0)
@@ -179,6 +198,15 @@ void UFF_LivePanelQueues::RefreshAll()
 			LOCTEXT("LiveQueue_Longest", "가장 긴 줄 · {0} {1}명"),
 			Summary.LongestQueueName, FText::AsNumber(Summary.LongestQueueWaiting))
 		: LOCTEXT("LiveQueue_NoQueue", "줄 서 있는 손님이 없습니다."));
+
+	// 지금 서면 가장 오래 걸리는 곳. **못 읽었으면 칸째 접는다** — `0초` 로 적으면
+	// "어디든 바로 이용 가능" 이라는 틀린 사실이 된다.
+	SetTextOrHide(Text_WorstWait, (Summary.WorstExpectedWaitSeconds != INDEX_NONE)
+		? FText::Format(
+			LOCTEXT("LiveQueue_WorstWait", "지금 서면 가장 오래 · {0} {1}초"),
+			Summary.WorstExpectedWaitName,
+			FText::AsNumber(Summary.WorstExpectedWaitSeconds))
+		: FText::GetEmpty());
 
 	// 모름은 따로 적는다. 닫힘에 섞으면 못 읽은 것이 정상적으로 닫힌 것처럼 보인다.
 	const FText UnknownSuffix = (Summary.UnknownCount > 0)

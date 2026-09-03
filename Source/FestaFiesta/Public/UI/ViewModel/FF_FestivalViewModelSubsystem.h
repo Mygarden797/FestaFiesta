@@ -160,6 +160,24 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 AverageWaitSeconds = INDEX_NONE;
 
+	/**
+	 * **지금 줄을 서면** 얼마나 기다리는가(초). 모르면 `INDEX_NONE`.
+	 *
+	 * 위의 `AverageWaitSeconds` 와 다른 값이다 —
+	 *   평균 대기   **이미 끝낸 사람**이 실제로 기다린 시간 (과거)
+	 *   예상 대기   지금 서면 얼마나 (미래)
+	 * 둘을 한 칸에 섞으면 "줄이 짧아졌는데 숫자가 안 준다" 가 된다.
+	 *
+	 * 🔴 `UnreachableWaitSeconds`(86400) 는 **대기 시간이 아니라 `닿을 수 없음` 표식**이다.
+	 *    그대로 그리면 `1440분` 이 뜬다. 여기서 걸러 `INDEX_NONE` 으로 바꾼다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	int32 ExpectedWaitSeconds = INDEX_NONE;
+
+	/** 분당 처리 인원. 모르면 음수. 대기가 긴 이유가 `느림` 인지 `사람이 많음` 인지 가른다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	float ServiceRatePerMinute = -1.f;
+
 	/** 자리가 겹치거나 존을 벗어나 다시 놓아야 한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	bool bNeedsRelocation = false;
