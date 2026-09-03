@@ -1609,6 +1609,61 @@ ElapsedLiveSeconds += DeltaTime;   // ← 항상 1배속. 주석에도 그렇게
 확인 부탁드립니다.** 멈추는 것이 맞다면 배속도 필요 없고, 지금 화면에 띄우는
 `{N}초 뒤 자동으로 진행됩니다` 도 지워야 합니다.
 
+#### 9. 🔴 **입장료가 한 번도 걷히지 않습니다** (2026-09-03) · **김시리님께**
+
+실기에서 "사람은 261명인데 오늘 매출이 24" 로 발견했습니다. 코드를 훑어보니 —
+
+```
+EFF_EarnReason::AdmissionFee 를 쓰는 곳
+  FF_EconomyDisplayTextLibrary.cpp : 1   ← 문구만
+  Economy/Tests/*.cpp              : 30  ← 테스트만
+  프로덕션 호출부                    : 0
+```
+
+실제로 매출이 들어오는 경로는 **시설 수수료**(`FF_QueueEconomyBridgeSubsystem.cpp` 한 곳)와
+미니게임 보상·프로그램비·일일 목표 보너스뿐입니다. 입장료는 표(`AdmissionFeeGold = 5`)에만
+있고 아무 데서도 `AddRevenue(..., EFF_EarnReason::AdmissionFee)` 를 부르지 않습니다.
+
+⚠️ **UI 는 이미 그 돈을 약속하고 있습니다.** 점검 패널이 `예상 입장료 수입` 을
+`예상 방문객 × 입장료` 로 계산해 보여 주는데 (`FF_PrepPanelCheck.cpp:74`), 실제로는 안
+들어옵니다. 플레이어 입장에서는 **화면이 거짓말을 하는 셈**입니다.
+
+필요한 것: 라이브 중 관객이 입장할 때 그 이유로 매출을 올리는 호출부.
+누가 입장을 판정하는지(Crowd? Queue? Zone?) 몰라서 UI 쪽에서 채울 수 없습니다.
+
+> UI 는 이 값을 새로 읽을 필요가 없습니다. 지금도 `OnTodayRevenueChanged` 를 구독하고
+> 있어서, 매출이 실제로 오르면 화면은 그대로 따라갑니다.
+
+---
+
+#### 10. 단계에 시간 제한이 있는지 읽을 표면 (2026-09-03) · **강민서님께**
+
+마감을 무제한(`MaxSeconds = 0`)으로 바꾸면서 생긴 것입니다.
+
+`Tick` 은 `MaxSeconds <= 0` 이면 곧바로 return 하므로 **`RemainingTime` 이 갱신되지 않고
+이전 단계 값이 그대로 남습니다.** 라이브가 0 으로 끝나니 마감 내내 하단 바에 —
+
+```
+17:00 · 남은 0초
+```
+
+제한이 없는데 `남은 0초` 는 **시간이 다 된 것처럼** 읽힙니다.
+
+`남은 N초` 부분만 접으면 되는데, 지금은 UI 가 "이 단계에 제한이 있나" 를 알 방법이
+없습니다. `GetPhaseTimeRange()` 가 `const` 가 아니라 ViewModel 의 const 경로에서 못 씁니다.
+
+원하는 것 (둘 중 아무거나):
+```cpp
+UFUNCTION(BlueprintPure) bool CurrentStageHasTimeLimit() const;
+// 또는
+FFF_PhaseTimeRange GetPhaseTimeRange(EFF_FestivalStage Stage) const;   // const 추가
+```
+
+임시로는 UI 가 `GetRemainingSeconds() <= 0 && 라이브가 아님` 으로 짐작할 수 있지만,
+**진짜로 0초 남은 순간과 구분이 안 되므로** 하지 않았습니다.
+
+---
+
 #### ✅ 되돌린 것 — 마지막 날 배속 잠금 (2026-09-02)
 
 UI 가 3일차에 배속을 막고 있었는데, **소유자 코드에는 그런 잠금이 없었습니다.**
