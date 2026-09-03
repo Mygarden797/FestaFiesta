@@ -251,6 +251,11 @@ public:
 	bool IsMinigameInProgress() const { return bMinigameInProgress; }
 	// 지금 미니게임 중인지 바로 확인하는 함수
 
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	float GetEffectiveTimeScale() const;
+	// 실제로 적용되는 배속. Crowd 등 다른 시스템은 TimeScale 대신 이 함수를 써야 함
+	// (공연 잠금·미니게임·마감 등 모든 상황이 반영된 "진짜" 배속)
+
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void AdvanceToNextDay();
 	//report에서 다음날로 누르면 호출
