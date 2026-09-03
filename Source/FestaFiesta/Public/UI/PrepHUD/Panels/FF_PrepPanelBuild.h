@@ -197,11 +197,22 @@ private:
 	 * 아래로 빈 흰 판이 남으면 그만큼 화면을 가린다 (2026-09-03 백종태 지적).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
-	// 🔴 **탭 줄과 같은 높이**로 둔다 (`FF_PrepHudBar::MenuRowHeight`).
-	//   패널 아래 끝이 탭 줄 밑에 맞춰져 있으므로, 높이가 같으면 흰 띠와 탭 줄이 정확히
-	//   겹쳐서 초록 칩이 흰 배경의 **한가운데**에 온다. 더 크게 잡으면 위로만 튀어나와
-	//   칩이 아래쪽에 붙어 보인다 — 아래는 상태 행이라 늘릴 수 없기 때문이다.
-	float CompactHeight = 29.f;
+	// 🔴 탭 줄과 **겹치지 않게** 그 위에 올린다 (`CompactOffsetY` 참고).
+	//   겹치면 흰 띠 안에 초록 칩이 들어가고, 띠를 키울수록 칩이 아래로 밀린다 —
+	//   아래는 상태 행이라 늘릴 수 없어서 가운데로 맞출 방법이 없다 (2026-09-03).
+	//   겹치지 않게 두면 그 문제 자체가 사라지고 높이를 자유롭게 잡을 수 있다.
+	float CompactHeight = 32.f;
+
+	/**
+	 * 배치 중 띠를 위로 더 올리는 양(px). 기본값은 탭 줄 높이만큼이라 **바 바로 위**에 붙는다.
+	 *
+	 * 패널은 원래 아래 끝을 탭 줄 밑(`StatusRowHeight`)에 맞춘다. 여기에 이 값이 더해진다 —
+	 * `-29`(탭 줄 높이)를 주면 바 전체를 피해 그 위에 얹힌다.
+	 *
+	 * 0 으로 두면 예전처럼 탭 줄과 겹친다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build")
+	float CompactOffsetY = -29.f;
 	void SetCategoryFilter(bool bEnabled, EFFZSFacilityCategory Category);
 	TArray<FFF_BuildCatalogEntry> MakePricedEntries() const;
 

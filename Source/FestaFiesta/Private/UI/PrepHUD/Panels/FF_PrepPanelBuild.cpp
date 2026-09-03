@@ -981,8 +981,12 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	{
 		FFF_PrepPanelLayout Layout = Bar->GetOpenPanelLayout();
 
-		// 안내 네 줄 + 버튼 한 줄이 들어가는 높이. 카탈로그일 때는 원래 높이로 돌린다.
+		// 배치 중에는 얇은 띠로, 카탈로그일 때는 원래 크기로.
 		Layout.Size.Y = bShowCompact ? CompactHeight : CatalogHeight;
+
+		// ★ 자리도 같이 옮긴다. 배치 중에는 바 **위**에 얹어 탭 줄과 겹치지 않게 한다 —
+		//   겹치면 흰 띠 안에 초록 칩이 들어가고, 띠를 키울수록 칩이 아래로 밀린다.
+		Layout.Offset.Y = bShowCompact ? CompactOffsetY : 0.0;
 
 		Bar->SetOpenPanelLayout(Layout);
 	}
