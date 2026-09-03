@@ -6,6 +6,7 @@
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
@@ -13,6 +14,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -929,13 +931,31 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		Panel_PlacementCompact->SetVisibility(
 			bShowCompact ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
+
+	// 제목·보유 금화는 배치 중에 볼 일이 없다 — 목록에서 이미 보고 들어왔다.
+	if (Box_Header)
+	{
+		Box_Header->SetVisibility(
+			bShowCompact ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	// 상하 여백을 0 으로. 남겨 두면 흰 판이 탭 줄 위로 튀어나와 초록 칩이 아래에 붙어 보인다.
+	if (Border_PanelRoot)
+	{
+		Border_PanelRoot->SetPadding(bShowCompact
+			? FMargin(18.f, 0.f)
+			: FMargin(18.f, 14.f));
+	}
 	if (Text_PlacementGuide)
 	{
 		FText Guide;
 		switch (State)
 		{
 		case EFF_BuildModeState::Placing: 
-			Guide = LOCTEXT("PlacingGuide", " [좌클릭] 설치/ 철거/이동 대상 선택 \n [Q/E] 45도 회전 \n [Shift+Q/E] 정밀 회전 \n [우클릭] 목록 복귀");
+			// 🔴 **한 줄로 쓴다.** 네 줄로 쌓으면 그만큼 지면을 가리는데, 배치 중에는
+			//   지면이 보여야 시설을 놓을 수 있다 (2026-09-03 백종태 요청).
+			Guide = LOCTEXT("PlacingGuide",
+				"[좌클릭] 설치·철거·이동 · [Q/E] 45° 회전 · [Shift+Q/E] 정밀 회전 · [우클릭] 목록");
 			break;
 		case EFF_BuildModeState::Moving:
 			Guide = LOCTEXT("MovingGuide", "이동 중 · 좌클릭 확정 · 우클릭 취소");
@@ -949,6 +969,28 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		}
 		Text_PlacementGuide->SetText(Guide);
 	}
+	// 🔴 **패널 높이도 같이 줄인다.**
+	//
+	// 목록을 접고 안내 네 줄만 남겨도 호스트 슬롯은 카탈로그 높이(320)를 그대로 쥐고 있어서,
+	// 글자 몇 줄 아래로 **빈 흰 판이 크게 남았다** (2026-09-03 백종태 지적).
+	// 배치 중에는 지면이 보여야 하는데 그 빈 판이 화면을 가린다.
+	//
+	// 크기는 바가 소유하므로 여기서 슬롯을 직접 만지지 않고 요청한다 — 직접 만지면
+	// 탭을 닫았다 열 때 `ApplyPanelLayout` 이 표 값으로 덮어써서 되돌아간다.
+	if (UFF_PrepHudBar* Bar = GetOwningBar())
+	{
+		FFF_PrepPanelLayout Layout = Bar->GetOpenPanelLayout();
+
+		// 배치 중에는 얇은 띠로, 카탈로그일 때는 원래 크기로.
+		Layout.Size.Y = bShowCompact ? CompactHeight : CatalogHeight;
+
+		// ★ 자리도 같이 옮긴다. 배치 중에는 바 **위**에 얹어 탭 줄과 겹치지 않게 한다 —
+		//   겹치면 흰 띠 안에 초록 칩이 들어가고, 띠를 키울수록 칩이 아래로 밀린다.
+		Layout.Offset.Y = bShowCompact ? CompactOffsetY : 0.0;
+
+		Bar->SetOpenPanelLayout(Layout);
+	}
+
 	if (bShowCatalog)
 	{
 		FocusSelectedCategoryChoice();

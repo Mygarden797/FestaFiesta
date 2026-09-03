@@ -14,15 +14,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnProgramReservationChanged, FGu
  * [참고] `data/metadata/spec/reservation_program_spec.md`.
  *
  * ### 계층
- * 이 서브시스템은 **보관·수명주기·조회**만 한다. 잠금·퇴장 판정은
- * `FFF_ProgramReservationRules` 의 순수 함수가 갖는다.
+ * 이 서브시스템은 보관·수명주기·조회만 한다. 
+ * 잠금·퇴장 판정은 `FFF_ProgramReservationRules` 의 순수 함수가 갖는다.
  *
  * 프로그램은 Setup·MorningCheck 에서 사고 그날치로 편성된다 - GameInstance 스코프다.
  * 그룹 확정(`ConfirmReservedParty`)은 매일 새로 한다 — 예약 손님이 날마다 새로 스폰된다.
  *
- * ⚠️ **"날마다 새로 스폰된다"는 아직 확인된 사실이 아니다.** 크라우드는 레벨 BeginPlay 에
- * 한 번만 유입을 시작하고 하루 경계를 구독하지 않는다.
- * `crowdai_integration_guide.md` §13.3 E1 로 물어둔 상태다.
+ * Crowd가 Live 진입마다 유입을 재개하고 스폰 직후 ConfirmReservedParty로 확정한다.
  */
 UCLASS()
 class FESTAFIESTA_API UFF_ProgramReservationSubsystem : public UGameInstanceSubsystem
@@ -68,7 +66,7 @@ public:
 
 	// --- 조회 -------------------------------------------------------------
 
-	// 예약 핸들 목록. **시작 시각 오름차순으로 정렬해서 돌려준다.
+	// 예약 핸들 목록. 시작 시각 오름차순으로 정렬해서 돌려준다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Reservation")
 	TArray<FGuid> GetReservationIds() const;
 
@@ -82,6 +80,9 @@ public:
 	// 이 파티가 배정된, 아직 끝나지 않은 예약을 찾는다. 결정 계층이 쓰는 창구다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Reservation")
 	bool FindActiveReservationForParty(int32 PartyId, float NowMinutes, FFF_ProgramReservation& OutReservation) const;
+
+	// 그날 프로그램이 편성된 시설은 종료 후에도 일반 시설 Queue로 개방하지 않는다.
+	bool IsProgramFacility(FGuid FacilityInstanceId) const;
 
 	// 이 파티가 지금 잠금 상태인가 = 목적지 재평가를 건너뛰어야 하는가.
 	// 진행 중(시작~종료)에만 true 다. 시작 전 자유 행동 구간은 false 다.

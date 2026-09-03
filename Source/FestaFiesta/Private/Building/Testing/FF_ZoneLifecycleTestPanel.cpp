@@ -47,10 +47,6 @@ namespace
 bool FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(
 	UFF_FestivalStageSubsystem& Stage)
 {
-#if UE_BUILD_SHIPPING
-	(void)Stage;
-	return false;
-#else
 	if (Stage.CurrentDay <= 1 || Stage.CurrentDay > 3)
 	{
 		return false;
@@ -73,16 +69,11 @@ bool FFZoneLifecycleDebugDayControl::TryMoveToPreviousDay(
 		Stage.CurrentDay,
 		*UEnum::GetValueAsString(EntryStage));
 	return true;
-#endif
 }
 
 bool FFZoneLifecycleDebugDayControl::TryMoveToNextDay(
 	UFF_FestivalStageSubsystem& Stage)
 {
-#if UE_BUILD_SHIPPING
-	(void)Stage;
-	return false;
-#else
 	if (Stage.CurrentDay < 1 || Stage.CurrentDay >= 3)
 	{
 		return false;
@@ -102,7 +93,6 @@ bool FFZoneLifecycleDebugDayControl::TryMoveToNextDay(
 
 	return Stage.CurrentDay == SourceDay + 1
 		&& Stage.CurrentStage == EFF_FestivalStage::MorningCheck;
-#endif
 }
 
 void UFF_ZoneLifecycleTestPanel::NativeConstruct()

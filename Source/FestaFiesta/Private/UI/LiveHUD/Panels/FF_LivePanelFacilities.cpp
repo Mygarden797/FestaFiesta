@@ -249,17 +249,29 @@ void UFF_LivePanelFacilities::RefreshAll()
 				FText::AsNumber(Row.View.AverageWaitSeconds))
 			: FText::GetEmpty();
 
+		// 🔴 평균과 **다른 값**이다 (2026-09-03 추가) —
+		//   평균   이미 끝낸 사람이 실제로 기다린 시간 (과거)
+		//   예상   지금 서면 얼마나 (미래)
+		// 지금 고칠지 말지는 예상 쪽으로 정한다. 못 읽었으면 아예 안 적는다 —
+		// `0초` 로 적으면 "바로 이용 가능" 이라는 틀린 사실이 된다.
+		const FText Expected = (Row.View.ExpectedWaitSeconds != INDEX_NONE)
+			? FText::Format(
+				LOCTEXT("LiveFac_ExpectedWait", " · 지금 서면 {0}초"),
+				FText::AsNumber(Row.View.ExpectedWaitSeconds))
+			: FText::GetEmpty();
+
 		const FText Reason = FFF_LiveFacilityRules::DescribeAlert(Row);
 		const FText ReasonSuffix = Reason.IsEmpty()
 			? FText::GetEmpty()
 			: FText::Format(LOCTEXT("LiveFac_ReasonSuffix", "  —  {0}"), Reason);
 
 		Line->SetText(FText::Format(
-			LOCTEXT("LiveFac_Row", "{0}  대기 {1} · 이용 {2}{3}{4}"),
+			LOCTEXT("LiveFac_Row", "{0}  대기 {1} · 이용 {2}{3}{4}{5}"),
 			Row.View.DisplayName,
 			FText::AsNumber(Row.View.WaitingCount),
 			FText::AsNumber(Row.View.ActiveServiceCount),
 			Wait,
+			Expected,
 			ReasonSuffix));
 		Line->SetAutoWrapText(true);
 

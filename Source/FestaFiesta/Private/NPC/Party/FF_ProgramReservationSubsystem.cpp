@@ -201,6 +201,16 @@ bool UFF_ProgramReservationSubsystem::FindActiveReservationForParty(
 	return true;
 }
 
+bool UFF_ProgramReservationSubsystem::IsProgramFacility(const FGuid FacilityInstanceId) const
+{
+	if (!FacilityInstanceId.IsValid()) return false;
+	for (const auto& Pair : Reservations)
+	{
+		if (Pair.Value.FacilityInstanceId == FacilityInstanceId) return true;
+	}
+	return false;
+}
+
 bool UFF_ProgramReservationSubsystem::IsPartyLockedAt(int32 PartyId, float NowMinutes) const
 {
 	FFF_ProgramReservation Reservation;

@@ -195,6 +195,9 @@ void UFF_PrepPanelCheck::BindViewModel()
 
 	CachedViewModel->OnWeatherChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleWeatherChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
+
+	// 홍보를 사면 예상 방문객이 오른다. 그 값이 수입·목표 보너스·혼잡 판정까지 바꾼다.
+	CachedViewModel->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 
@@ -212,6 +215,7 @@ void UFF_PrepPanelCheck::UnbindViewModel()
 	{
 		CachedViewModel->OnWeatherChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleWeatherChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
+		CachedViewModel->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
@@ -336,6 +340,21 @@ void UFF_PrepPanelCheck::RefreshWeather()
 
 void UFF_PrepPanelCheck::RefreshAll()
 {
+	// 🔴 소유자 값을 **먼저** 읽는다. 아래 갱신들이 전부 이 값을 본다 (수입·보너스·혼잡).
+	//
+	// 경제는 하루 단일 예상치만 준다. 범위 API 가 없어 Min·Max 에 같은 값을 넣고,
+	// 표시 쪽이 둘이 같으면 `500명` 으로 그린다. 못 읽으면 디버그로 넣어 둔 값을 남긴다 —
+	// 손으로 확인하던 화면이 갑자기 비지 않게 한다.
+	if (const UFF_FestivalViewModelSubsystem* SourceViewModel = GetViewModel())
+	{
+		const int32 Expected = SourceViewModel->GetExpectedVisitors();
+		if (Expected != INDEX_NONE)
+		{
+			ExpectedVisitorsMin = Expected;
+			ExpectedVisitorsMax = Expected;
+		}
+	}
+
 	RefreshWeather();
 	RefreshCapacity();
 	RefreshSummary();
@@ -356,10 +375,15 @@ void UFF_PrepPanelCheck::RefreshAll()
 
 	const bool bHasRange = ExpectedVisitorsMin != INDEX_NONE
 		&& ExpectedVisitorsMax >= ExpectedVisitorsMin;
+
+	// ★ 둘이 같으면 `500~500명` 이 아니라 `500명` 이다. 지금 경제가 단일값만 주므로
+	//   보통 이쪽으로 온다 — 범위처럼 써 두면 없는 정밀도를 있는 것처럼 보이게 한다.
 	SetTextOrHide(Text_ExpectedVisitors, bHasRange
-		? FText::Format(
-			LOCTEXT("PrepCheck_Expected", "{0}~{1}명"),
-			FText::AsNumber(ExpectedVisitorsMin), FText::AsNumber(ExpectedVisitorsMax))
+		? ((ExpectedVisitorsMin == ExpectedVisitorsMax)
+			? FText::Format(LOCTEXT("PrepCheck_ExpectedSingle", "{0}명"),
+				FText::AsNumber(ExpectedVisitorsMin))
+			: FText::Format(LOCTEXT("PrepCheck_Expected", "{0}~{1}명"),
+				FText::AsNumber(ExpectedVisitorsMin), FText::AsNumber(ExpectedVisitorsMax)))
 		: LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"));
 }
 

@@ -1,6 +1,6 @@
 # 시간대별 목표 유입 곡선 명세 (v0)
 
-- 작성일: 2026-08-06
+- 작성일: 2026-08-06 / 코드 대조: 2026-09-03
 - 상태: **인터페이스(무엇을·어떤 단위로·어떤 도메인에서 넘기는가)는 확정. 곡선 모양 수치는 전부 `draft_assumption`.**
 - 대상: crowdAI(이정원) — 그룹 입장 타이밍을 정하는 쪽
 - 산출물: `data/derived/visitor_arrival_curve_v0.csv`(+`.json`), `data/unreal/visitor_arrival_curve_v0.csv`
@@ -41,7 +41,7 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 
 ### 2.3 도메인은 Live 단계의 정규화 진행도 [0,1) — 절대 시각이 아니다
 
-`live_stage_duration_minutes`는 현재 240분(`confirmed`)이지만 범위가 120~480으로 열려 있고, 강민서 님의 배속·Tick 구현이 끝나면 시간 단위 전체 재점검이 예정돼 있다(`individual_variation_spec.md` 6절). 절대 분(分)으로 버킷을 박으면 Live 길이가 바뀔 때 뒤쪽 버킷이 창 밖으로 나가 곡선이 깨진다.
+`live_stage_duration_minutes`는 현재 240분(`confirmed`)이지만 범위가 120~480으로 열려 있고, 배속 수신은 구현됐지만 Crowd 체류 예산과 Stage 날짜별 시간의 통합 점검이 남아 있다(`individual_variation_spec.md` 6절). 절대 분(分)으로 버킷을 박으면 Live 길이가 바뀔 때 뒤쪽 버킷이 창 밖으로 나가 곡선이 깨진다.
 
 정규화 진행도로 두면 Live 길이가 바뀌어도 곡선을 다시 만들 필요가 없다 — 소비자가 진행도를 자기 시계에 곱하면 된다. 버킷 24개이므로 기본 240분에서 버킷 하나 = 10분이다. 사람이 확인하기 쉽게 기본값(240분·17:00 시작) 기준 절대 분·시각 열을 함께 넣었지만, **계산에 쓰는 것은 `progress_start`/`progress_end`이고 시각 열은 표시용**이다.
 
@@ -59,6 +59,8 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 
 ## 3. 소비 방법
 
+（2026-09-03 코드 대조: UpdateArrivalSchedule가 Stage.ElapsedLiveSeconds / GetLiveDurationForCurrentDay()를 읽고 버킷 안의 LocalT로 누적 비율을 선형 보간한 뒤 floor(누적 비율 × ArrivalTotalVisitorCount)까지 DrainVisitorUntil을 호출한다. Stage 시계가 없으면 Crowd 임시 시계로 폴백한다. 아래 버킷 단계식은 개념 설명이며 실제 입장이 버킷 끝에 한꺼번에 발생한다는 뜻은 아니다.）
+
 ```text
 1. scenario_id 하나를 고른다 (기본 제안: single_peak_v0)
 2. 그 시나리오의 24개 행을 bucket_index 순으로 읽는다
@@ -72,7 +74,7 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 
 ## 4. 그룹 통째 입장과 버킷 오차 — 허용 규칙
 
-`request/crowdai_integration_guide.md` §8의 제약: **그룹은 항상 통째로 같이 들어온다.** 그룹 크기가 1~4명으로 덩어리져 있으므로 버킷 목표를 인원 단위로 정확히 맞추는 것은 원리적으로 불가능하다(목표 37명인 버킷을 3·4명 그룹으로 채우면 딱 37이 안 된다).
+`request/crowdai_integration_guide.md` §8의 제약: **그룹은 항상 통째로 같이 들어온다.** 그룹 크기가 1~6명으로 덩어리져 있으므로 버킷 목표를 인원 단위로 정확히 맞추는 것은 원리적으로 불가능하다(목표 37명인 버킷을 3·4명 그룹으로 채우면 딱 37이 안 된다).
 
 **버킷별 오차는 정상이며 맞추려고 애쓸 필요가 없다.** 관리해야 할 것은 하나뿐이다:
 
@@ -105,6 +107,8 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 
 ## 6. 파생 지표 — 가정 하나를 없애고, 구조적 문제 하나를 드러냄
 
+（2026-09-03 코드 대조: 아래 수치는 당시 오프라인 가정 계산이며 현재 실행을 측정한 결과가 아니다. 실제 Crowd 초기 체류 예산은 Temp_LiveStageMinutes=240, 유입 진행도는 날짜별 Stage 길이를 사용한다. no_choice 퇴장·예약 추가 스폰·용량 제한도 있으므로 표의 피크 비율을 런타임 보장값으로 쓰지 않는다.）
+
 ### 6.1 `peak_to_mean_arrival_ratio` — 기존 가정값 1.4를 대체한다
 
 `public_data_decision_log.md`(2026-08-05)에 "피크·평균 비율 = 1.4(draft_assumption — 유입 곡선이 평평하면 1.0, 공연 시간대로 뾰족하면 2.0에 가까워진다)"가 미해결로 남아 있었다. 이제 이 값은 **곡선에서 계산되는 파생값**이며 따로 가정할 노브가 아니다.
@@ -127,7 +131,7 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 | `single_peak_v0` | 0.8439 | 19:35 | 16,878명 |
 | `sunset_peak_v0` | 0.9019 | 20:05 | 18,038명 |
 
-**여기서 드러난 문제**: 유입 창(240분)이 평균 체류(약 128분 = 240×0.5×1.0667)의 **1.9배밖에 안 된다.** 그래서 유입을 조금만 모아도 하루 방문객의 대부분이 동시에 축제장에 있게 된다 — 곡선을 어떻게 그려도 동시 체류가 N의 **55% 아래로 내려가지 않는다**(완전 균등에서도 0.554).
+**여기서 드러난 문제**: 유입 창(240분)이 평균 체류(약 128분 = 240×0.5×1.0667)의 **1.9배밖에 안 된다.** 그래서 유입을 조금만 모아도 하루 방문객의 대부분이 동시에 축제장에 있게 된다 — **이 세 시나리오의 오프라인 계산에서는** 동시 체류가 N의 55% 이상이었다(완전 균등에서 0.554).（모든 가능한 유입 곡선의 수학적 하한을 증명한 것은 아니다.）
 
 즉 `total_visitor_count`(20,000/일)와 Crowd 성능 체크포인트(300~700 동시)의 간극은 곡선 모양으로 메울 수 있는 종류가 아니다 — **16~26배**이고, 유입을 아무리 평평하게 펴도 최소 11,000명이다. 이건 곡선을 뾰족하게 했느냐의 문제가 아니라 "하루 방문객 전체가 4시간 창 안에 들어온다"는 구조 자체의 결과다.
 
@@ -135,10 +139,24 @@ N이 `total_visitor_count`(20,000)든 성능 실측으로 정한 런타임 값�
 
 **금지**: 이 비율로 `total_visitor_count`를 역산해 낮추지 말 것. 2026-08-05에 같은 방식(700 → 950 역산)을 시도했다가 **근거 없는 숫자에서 또 역산하면 거짓 정밀도만 남는다**는 이유로 되돌린 전례가 있다. 이 값은 "수요가 스폰 상한을 넘을 때 흡수 정책(통계 처리·대기·배경 크라우드 대체)이 감당해야 할 규모"를 가늠하는 **진단용**이다.
 
+### 현재 수요 연결의 한계
+
+`AFF_SpawnActor::BeginPlay`는 `UnitCount`를 `BeginArrivalSchedule`에 전달한다. `total_visitor_count` CSV나 경제 `GetExpectedVisitors()`를 자동으로 읽어 넣지 않는다（홍보 배수는 경제의 예상 방문객 계산에는 연결됐지만 Crowd 총 입장 수에는 미연결）.
+
+예약 전용 그룹은 일반 방문객 명단과 별도로 생성·배정하고 시작 전 강제 스폰 경로를 탄다. 따라서 예약을 포함한 전체 스폰·명단 크기와 `AgentPoolSize`를 비교해야 한다（C++ 기본 500. 530으로 고정하면 항상 충분하다는 뜻은 아님）. 풀 초과분의 통계 대체·대기 정책은 미구현이며 오류 로그로 진단한다. 실제 맵 인스턴스 값은 저장된 에셋/실행 상태를 확인해야 한다.
+
 ## 7. 아직 안 정한 것
 
-1. **어느 시나리오를 기본값으로 쓸지** — 팀 결정 필요. 제안: crowdAI 구현·디버깅 중에는 `flat_v0`(가장 단순), 실제 시뮬레이션 기본값은 `single_peak_v0`.
+1. **현재 설정값** — `UFF_SimulationSettings` C++ 기본은 `flat_v0`, 저장소 `Config/DefaultGame.ini`는 `sunset_peak_v0`다（에디터/사용자 설정이 이를 덮어쓸 수 있음. `single_peak_v0`는 초기 제안으로 보존）.
 2. **누적 오차 허용 폭**(§4) — crowdAI가 실측 후 정하는 게 맞다.
 3. **다봉 곡선 필요 여부** — 실제 공연 시간표(무대별 시작 시각)가 확정되면 그 시각 앞에 봉우리가 여러 개 생기는 게 맞을 수 있다. 지금은 단봉만 제공한다. 강민서 님 프로그램 시간표 작업이 끝나면 재검토.
-4. **퇴장 곡선** — 이 문서는 유입만 다룬다. 퇴장은 체류시간 분포에서 나오지만, 축제 종료 시각에 남은 인원이 어떻게 빠지는지(일괄 퇴장? 점진적?)는 안 정했다. `TargetEntryPointId`와 퇴장 지점을 반드시 분리해야 한다는 제약(`request/crowdai_integration_guide.md` 부록 E)만 있는 상태.
-5. **곡선의 정의 구간이 Live 단계뿐인 것** — 실제로는 개장 전(`MorningCheck`)부터 사람이 오거나 Live 종료 후에도 남아 있을 수 있다. v0는 Live 안에서만 유입이 일어난다고 본다.
+4. **퇴장 곡선** — 이 문서는 유입만 다룬다. 현재 일반 퇴장은 예산 소진/no_choice 인내 판정 후 출구 이동이고 Live를 벗어나면 `AllAgentLeavingTrigger`로 전원 퇴장을 요청한다（동시 이동 요청이며 즉시 전원 삭제가 아님. 퇴장 타임아웃 강제 해제 경로가 있고 Closing을 벗어나면 `DespawnAllAgent`로 남은 활성 개체를 정리함）. `AFF_SpawnActor`는 시뮬레이션 중심+`Temp_ExitOffsetFromOrigin`으로 출구를 정하고 `SpawnAchor`는 입장 중심만 바꾼다（여러 입구/출구 정책은 별도 설계）.
+5. **곡선의 정의 구간이 Live 단계뿐인 것** — 실제로는 개장 전(`MorningCheck`)부터 사람이 오거나 Live 종료 후에도 남아 있을 수 있다. 설계는 Live 안에서만 유입이다（현재 `IsFestivalLive()`가 Closing도 허용하고 같은 틱에서 `UpdateArrivalSchedule`를 호출한다. Live 종료 시 미입장 잔량이 있다면 Closing 스폰 여부를 실제로 확인해야 함）.
+
+## 코드 대조 근거 (2026-09-03)
+
+- [FF_SpawnActor.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/FF_SpawnActor.cpp)
+- [FF_CrowdSimulationSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdSimulationSubsystem.cpp)
+- [FF_FestivalProgressionSubsystem.cpp](../../../Source/FestaFiesta/Private/Festival/FF_FestivalProgressionSubsystem.cpp)
+
+（현재 작업 트리 기준. 데이터/계수 수는 저장소 CSV, 설정은 C++ 기본값과 Config를 구분해 기술했다. 설계 제안·과거 실측은 코드만으로 재검증할 수 없어 해당 설명을 보존했다.）

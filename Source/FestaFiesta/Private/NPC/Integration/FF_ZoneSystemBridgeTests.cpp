@@ -656,9 +656,7 @@ bool FFF_ZoneSystemBridge_UnitConversions::RunTest(const FString& Parameters)
 
 // 공연 시간이 아니면 메인 무대만 후보에서 빠진다.
 //
-// Busking·ExperienceStage 가 같이 빠지면 안 되는 이유가 서로 다르다:
-// Busking 은 상시 공연이고, ExperienceStage 는 유료 프로그램이 여는 시설이라
-// (FFF_ProgramCard::AllowedFacilityTypes) 닫으면 예약 참가자가 자기 시설에 못 간다.
+// 소규모 공연 세 종류는 일반 지역 시설이다. 메인 공연 시간 게이트로 닫지 않는다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_ProgramScheduleHidesOnlyMainStage, "FestaFiesta.NPC.ZoneSystemBridge.ProgramScheduleHidesOnlyMainStage", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ZoneSystemBridge_ProgramScheduleHidesOnlyMainStage::RunTest(const FString& Parameters)
 {
@@ -666,13 +664,13 @@ bool FFF_ZoneSystemBridge_ProgramScheduleHidesOnlyMainStage::RunTest(const FStri
 	ReadModel.Zones.Add(MakeBridgeTestZone(TEXT("ZoneA"), {}));
 
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA"),
-		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_Sunset")));
+		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_SunsetMainStage")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(2, TEXT("ZoneA"),
-		EFFZSFacilityCategory::Performance, TEXT("Performance_Busking_Street")));
+		EFFZSFacilityCategory::Performance, TEXT("Performance_Busking_StreetStage")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(3, TEXT("ZoneA"),
-		EFFZSFacilityCategory::Performance, TEXT("Performance_ExperienceStage_Yoga")));
+		EFFZSFacilityCategory::Performance, TEXT("Performance_ExperienceStage_DanceBattle")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(4, TEXT("ZoneA"),
-		EFFZSFacilityCategory::Performance, TEXT("Performance_SubStage_Local")));
+		EFFZSFacilityCategory::Performance, TEXT("Performance_SubStage_LocalArtist")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(5, TEXT("ZoneA")));
 
 	const TArray<FFF_DestinationCandidate> Closed = FFF_ZoneSystemBridge::BuildCandidates(
@@ -681,7 +679,7 @@ bool FFF_ZoneSystemBridge_ProgramScheduleHidesOnlyMainStage::RunTest(const FStri
 
 	TestFalse(TEXT("공연 시간이 아니면 메인 무대가 빠진다"), ContainsFacility(Closed, 1));
 	TestTrue(TEXT("버스킹은 상시라 남는다"), ContainsFacility(Closed, 2));
-	TestTrue(TEXT("체험 무대는 예약 시설이라 남는다"), ContainsFacility(Closed, 3));
+	TestTrue(TEXT("DanceBattle은 메인 공연 시간과 무관하게 남는다"), ContainsFacility(Closed, 3));
 	TestTrue(TEXT("서브 무대는 게이팅 대상이 아니다"), ContainsFacility(Closed, 4));
 	TestTrue(TEXT("무관한 카테고리는 영향 없다"), ContainsFacility(Closed, 5));
 
@@ -704,12 +702,116 @@ bool FFF_ZoneSystemBridge_MainStageGatingDefaultsToOpen::RunTest(const FString& 
 	FFFZSReadModel ReadModel;
 	ReadModel.Zones.Add(MakeBridgeTestZone(TEXT("ZoneA"), {}));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(1, TEXT("ZoneA"),
-		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_Sunset")));
+		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_SunsetMainStage")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
 		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestTrue(TEXT("기본값은 게이팅 없음이다"), ContainsFacility(Candidates, 1));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_GlobalMainStageCandidates,
+	"FestaFiesta.NPC.ZoneSystemBridge.GlobalMainStagesSurviveLocalCap",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_GlobalMainStageCandidates::RunTest(const FString& Parameters)
+{
+	FFFZSReadModel Model;
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("A"), {TEXT("B")}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("B"), {TEXT("A"), TEXT("C")}));
+	Model.Zones.Add(MakeBridgeTestZone(TEXT("C"), {TEXT("B")}, 80, 100));
+	for (int32 I = 1; I <= 14; ++I)
+	{
+		Model.Facilities.Add(MakeBridgeTestFacility(I, TEXT("A")));
+	}
+	Model.Facilities.Add(MakeBridgeTestFacility(20, TEXT("C"), EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_SunsetMainStage")));
+	Model.Facilities.Last().WorldLocation = FVector(50000, 0, 0);
+	Model.Facilities.Add(MakeBridgeTestFacility(21, TEXT("A"), EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_SunsetMainStage")));
+	Model.Facilities.Add(MakeBridgeTestFacility(22, TEXT("C"), EFFZSFacilityCategory::Performance, TEXT("Performance_Busking_Far")));
+	Model.Facilities.Add(MakeBridgeTestFacility(23, TEXT("C")));
+	const auto Candidates = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("A"), FVector::ZeroVector, 12, nullptr, true, true);
+	TestEqual(TEXT("Twelve local choices plus both main stages"), Candidates.Num(), 14);
+	TestTrue(TEXT("Distant main stage survives cap"), ContainsFacility(Candidates, 20));
+	TestTrue(TEXT("Local main stage gets one protected entry"), ContainsFacility(Candidates, 21));
+	TestFalse(TEXT("Distant busking stays local"), ContainsFacility(Candidates, 22));
+	TestFalse(TEXT("Distant ordinary booth stays local"), ContainsFacility(Candidates, 23));
+	TSet<FName> Seen;
+	for (const auto& Candidate : Candidates)
+	{
+		TestFalse(TEXT("No duplicate destination"), Seen.Contains(Candidate.DestinationId));
+		Seen.Add(Candidate.DestinationId);
+		if (Candidate.DestinationId == FFF_ZoneSystemBridge::FacilityInstanceIdToDestinationId(MakeBridgeTestFacilityId(20)))
+		{
+			TestEqual(TEXT("Global stage retains real distance cost input"), Candidate.DistanceMeters, 500.f);
+			TestEqual(TEXT("Global stage retains destination zone density"), Candidate.CurrentOccupancy, 80.f);
+			TestEqual(TEXT("Global stage retains destination zone capacity"), Candidate.Capacity, 100.f);
+		}
+	}
+	const auto Unlimited = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("A"), FVector::ZeroVector, 0, nullptr, true, true);
+	TestEqual(TEXT("Unlimited locals also contain each stage once"), Unlimited.Num(), 16);
+	const auto Ended = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("A"), FVector::ZeroVector, 12, nullptr, false, true);
+	TestEqual(TEXT("After event only local ordinary candidates remain"), Ended.Num(), 12);
+	TestFalse(TEXT("Ended global stage removed"), ContainsFacility(Ended, 20));
+	TestFalse(TEXT("Ended local main stage removed"), ContainsFacility(Ended, 21));
+	const auto NoBroadcast = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("A"), FVector::ZeroVector, 0, nullptr, true, false);
+	TestFalse(TEXT("Open gate alone does not broadcast"), ContainsFacility(NoBroadcast, 20));
+	Model.Facilities[14].State = EFFZSFacilityState::Closed;
+	Model.Facilities[15].bNeedsRelocation = true;
+	const auto Closed = FFF_ZoneSystemBridge::BuildCandidates(Model, TEXT("A"), FVector::ZeroVector, 12, nullptr, true, true);
+	TestFalse(TEXT("Global discovery respects closed facility"), ContainsFacility(Closed, 20));
+	TestFalse(TEXT("Global discovery respects relocation"), ContainsFacility(Closed, 21));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SunsetOnlyDiscovery,
+	"FestaFiesta.NPC.ZoneSystemBridge.OnlySunsetHasTimeGateAndGlobalDiscovery",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SunsetOnlyDiscovery::RunTest(const FString& Parameters)
+{
+	FFFZSReadModel Model;
+	const FName ZoneIds[] = {TEXT("Here"), TEXT("Neighbor"), TEXT("Far")};
+	Model.Zones.Add(MakeBridgeTestZone(ZoneIds[0], {ZoneIds[1]}));
+	Model.Zones.Add(MakeBridgeTestZone(ZoneIds[1], {ZoneIds[0], ZoneIds[2]}));
+	Model.Zones.Add(MakeBridgeTestZone(ZoneIds[2], {ZoneIds[1]}));
+	const FName Definitions[] = {
+		TEXT("Performance_MainStage_SunsetMainStage"),
+		TEXT("Performance_Busking_StreetStage"),
+		TEXT("Performance_ExperienceStage_DanceBattle"),
+		TEXT("Performance_SubStage_LocalArtist"),
+		TEXT("Performance_MainStage_OtherStage")
+	};
+	for (int32 ZoneIndex = 0; ZoneIndex < 3; ++ZoneIndex)
+	{
+		for (int32 TypeIndex = 0; TypeIndex < 5; ++TypeIndex)
+		{
+			Model.Facilities.Add(MakeBridgeTestFacility(100 + ZoneIndex * 10 + TypeIndex,
+				ZoneIds[ZoneIndex], EFFZSFacilityCategory::Performance, Definitions[TypeIndex]));
+		}
+	}
+	// Closed covers both pre-show and post-show. Open with/without global covers show vs standalone world.
+	for (bool bOpen : {false, true})
+	{
+		for (bool bGlobal : {false, true})
+		{
+			const auto Candidates = FFF_ZoneSystemBridge::BuildCandidates(Model, ZoneIds[0],
+				FVector::ZeroVector, 0, nullptr, bOpen, bGlobal);
+			for (int32 ZoneIndex = 0; ZoneIndex < 3; ++ZoneIndex)
+			{
+				for (int32 TypeIndex = 0; TypeIndex < 5; ++TypeIndex)
+				{
+					const bool bExpected = TypeIndex == 0
+						? bOpen && (ZoneIndex < 2 || bGlobal) : ZoneIndex < 2;
+					TestEqual(*FString::Printf(TEXT("%s zone=%s open=%d global=%d"),
+						*Definitions[TypeIndex].ToString(), *ZoneIds[ZoneIndex].ToString(), bOpen, bGlobal),
+						ContainsFacility(Candidates, 100 + ZoneIndex * 10 + TypeIndex), bExpected);
+				}
+			}
+		}
+	}
+	TestFalse(TEXT("Category alone never marks a main stage"),
+		FFF_ZoneSystemBridge::IsMainStageFacility(EFFZSFacilityCategory::Performance, NAME_None));
+	TestFalse(TEXT("Other category cannot opt in with Sunset's ID"),
+		FFF_ZoneSystemBridge::IsMainStageFacility(EFFZSFacilityCategory::Booth, Definitions[0]));
 	return true;
 }
 

@@ -288,6 +288,15 @@ public:
 	bool IsCurrentStageSkippable();
 	// 지금 이 단계가 스킵 가능한지 확인하는 함수 (private에서 public으로 이동)
 
+	// Stage x1 초를 축제분으로 환산한다. 이미 배속 반영된 경과 시간에 배속을 다시 곱하지 않는다.
+	static constexpr float StageSecondsToFestivalMinutes(float Seconds) { return Seconds; }
+
+	// Live 단계의 경과 축제분. Live가 아니면 false이며 OutMinutes는 유지한다.
+	bool TryGetLiveElapsedMinutes(float& OutMinutes) const;
+
+	// 현재 일차의 Live 총 축제분. 단계와 무관하며 길이가 없으면 false, 출력 유지.
+	bool TryGetLiveDurationMinutes(float& OutMinutes);
+
 	float GetLiveDurationForCurrentDay() ;
 	//그날 Live 총 길이(마지막 이벤트 시각, x1 기준 초)를 알려주는 함수
 	// Crowd의 입장 곡선이 진행도 분모로 읽는다 (private에서 public으로 이동)

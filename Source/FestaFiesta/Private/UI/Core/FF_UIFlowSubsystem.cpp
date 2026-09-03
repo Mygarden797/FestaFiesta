@@ -286,21 +286,24 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 		{
 			bPendingFestivalStart = false;
 
-			// 🔴 여기가 아직 막혀 있는 곳이다.
-			// Stage 서브시스템에 **축제를 처음부터 시작하는 API 가 없다.** CurrentDay 는
-			// BlueprintReadOnly 이고 리셋 함수가 없어, 프론트엔드에 오래 머물러 시계가
-			// 흘러 버렸으면 Day 2·3 에서 축제가 시작된다.
-			// UI 가 남의 상태를 직접 쓰지 않으므로 여기서는 알리기만 한다.
-			// 강민서님께 StartNewFestival() 요청 — UI_API.md 참고.
-			if (Stage->CurrentDay != 1)
-			{
-				UE_LOG(LogFestaFiestaUI, Warning,
-					TEXT("UFF_UIFlowSubsystem: 축제를 시작하는데 CurrentDay=%d 다. "
-						 "Stage 시계가 프론트엔드에서 이미 흘렀다. Day 1 부터 시작하는 API 가 필요하다."),
-					Stage->CurrentDay);
-			}
+			// 🔴 **여기서 축제를 처음부터 되돌린다.**
+			//
+			// Stage 서브시스템은 `UGameInstanceSubsystem` 이라 레벨을 다시 열어도 살아남는다.
+			// 그래서 3일차를 끝내고 나라 지도로 나갔다가 같은 축제를 다시 고르면
+			// **3일차 셋업부터 시작했다** (2026-09-03 백종태 실기 확인).
+			//
+			// 초기화는 **들어오는 쪽**이 한다. 나가는 쪽(`ReturnToAtlas`)에 두면 게임을 끄거나
+			// 다른 경로로 나갔을 때 빠지고, 다음 축제가 이전 상태를 물려받는다.
+			//
+			// ★ 이건 남의 모듈을 고치는 것이 아니라 **공개 API 를 쓰는 것**이다.
+			//   `StartNewFestival()` 은 강민서 님이 이미 만들어 두셨다 (예전 주석은 "없다"고
+			//   되어 있었는데 그 사이에 생겼다). 경제도 이 신호를 구독해
+			//   `RestartFestival()` 로 함께 되돌아간다.
+			Stage->StartNewFestival();
 
 			// RequestTransition 이 OnStageChanged 를 울리고, 그 핸들러가 화면을 올린다.
+			// `StartNewFestival()` 은 `OnFestivalStarted` 만 쏘고 단계 전환은 알리지 않으므로
+			// 이 줄이 없으면 상태만 1일차가 되고 **화면이 안 뜬다.**
 			// 여기서 직접 ApplyStageScreen 을 부르지 않는다 — 경로가 둘이 되면
 			// 어느 쪽이 화면을 올렸는지 알 수 없다 (안티패턴 10).
 			Stage->RequestTransition(EFF_FestivalStage::Setup);
@@ -321,6 +324,27 @@ void UFF_UIFlowSubsystem::HandlePostLogin(AGameModeBase* GameMode, APlayerContro
 		if (!EnsureRootLayout(NewPlayer))
 		{
 			return;
+		}
+
+		// 🔴 **국가 지도는 혼자 서지 못한다.** 뒤로 가기가 CommonUI 스택을 쓰는데
+		//    (`HandleFrontendBackRequested` → `GoBack()`), 국가 지도만 올려 두면 스택에
+		//    그것 하나뿐이라 **뒤로 누르는 순간 스택이 비고 화면이 통째로 사라진다.**
+		//
+		//    실기에서는 "축제를 끝내고 나온 뒤 지구본을 눌렀더니 지구는 보이는데 힌트도
+		//    핀도 없고 드래그도 안 된다" 로 나타났다 (2026-09-03). 그때 보이던 지구는
+		//    **월드의 지구 액터**였고 그 위에 위젯이 하나도 없었다 — 그래서 입력도
+		//    아무 데도 안 갔다.
+		//
+		//    평소 경로(지구본 → 나라 클릭 → 국가 지도)와 같은 스택을 만들어 준다.
+		if (PendingFrontendScreen == EFF_UIFlowScreen::AtlasCountry)
+		{
+			GoToScreen(EFF_UIFlowScreen::AtlasGlobe);
+
+			// ★ 지구본은 **스택 바닥을 만들기 위해서만** 올린다. 보여 주려는 것이 아니다.
+			//   이 줄이 없으면 카메라가 지구본 → 국가로 **블렌드**해서, 축제를 끝내고
+			//   나올 때마다 지구가 잠깐 돌아가는 모습이 스쳤다 (2026-09-03 백종태 지적).
+			//   레벨에 막 들어온 참이라 블렌드할 `이전 모습`도 없다 — 바로 국가로 간다.
+			bInstantCameraForNextScreen = true;
 		}
 
 		GoToScreen(PendingFrontendScreen);
@@ -539,7 +563,14 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 	// 섞을 이전 구도가 없는데 블렌드를 걸면 엉뚱한 곳에서 날아온다.
 	if (AFF_AtlasCameraRig* CameraRig = AFF_AtlasCameraRig::Find(this, /*bLogIfMissing=*/false))
 	{
-		CameraRig->ViewForScreen(Screen, /*bInstant=*/PreviousScreen == EFF_UIFlowScreen::None);
+		// 🔴 레벨에 막 들어온 첫 화면은 블렌드할 `이전 모습`이 없으므로 즉시 맞춘다.
+		//    `bInstantCameraForNextScreen` 은 그 예외를 **한 번 더** 쓰는 자리다 —
+		//    아래 `아틀라스 스택 복원` 주석 참고.
+		const bool bInstant =
+			(PreviousScreen == EFF_UIFlowScreen::None) || bInstantCameraForNextScreen;
+		bInstantCameraForNextScreen = false;
+
+		CameraRig->ViewForScreen(Screen, bInstant);
 	}
 
 	if (IsVerbose())

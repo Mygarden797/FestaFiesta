@@ -1,7 +1,9 @@
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/PanelWidget.h"
+#include "Editor.h"
 #include "Misc/AutomationTest.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildInputBridgeSubsystem.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
@@ -17,6 +19,27 @@ namespace FFPrepBuildInputBridgeTest
 			Cast<UWidgetBlueprintGeneratedClass>(WidgetClass);
 		return GeneratedClass ? GeneratedClass->GetWidgetTreeArchetype() : nullptr;
 	}
+
+	class FScopedPrepBuildHudPlayerlessWidgetInitialization
+	{
+	public:
+		explicit FScopedPrepBuildHudPlayerlessWidgetInitialization(
+			UWidgetBlueprintGeneratedClass& InClass)
+			: WidgetClass(InClass)
+			, bPreviousValue(InClass.bCanCallInitializedWithoutPlayerContext)
+		{
+			WidgetClass.bCanCallInitializedWithoutPlayerContext = true;
+		}
+
+		~FScopedPrepBuildHudPlayerlessWidgetInitialization()
+		{
+			WidgetClass.bCanCallInitializedWithoutPlayerContext = bPreviousValue;
+		}
+
+	private:
+		UWidgetBlueprintGeneratedClass& WidgetClass;
+		bool bPreviousValue;
+	};
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -111,4 +134,47 @@ bool FFF_PrepBuildInputBridgeWidgetContractTest::RunTest(const FString& Paramete
 	return true;
 }
 
-#endif // WITH_DEV_AUTOMATION_TESTS
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildInputBridgeWorkspaceHitTestContractTest,
+	"FestaFiesta.UI.PrepHUD.Build.InputBridge.WorkspaceHitTestContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildInputBridgeWorkspaceHitTestContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFPrepBuildInputBridgeTest;
+
+	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UWidgetBlueprintGeneratedClass* HudBarClass =
+		Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepHudBar>(nullptr, HudBarClassPath));
+	TestNotNull(TEXT("PrepHUD 런타임 위젯 검증용 Editor World가 존재한다"), EditorWorld);
+	TestNotNull(TEXT("PrepHUD Bar GeneratedClass를 로드한다"), HudBarClass);
+	if (!EditorWorld || !HudBarClass)
+	{
+		return false;
+	}
+
+	FScopedPrepBuildHudPlayerlessWidgetInitialization InitializationGuard(*HudBarClass);
+	UFF_PrepHudBar* HudBar = CreateWidget<UFF_PrepHudBar>(EditorWorld, HudBarClass);
+	TestNotNull(TEXT("PrepHUD Bar 인스턴스를 만들 수 있다"), HudBar);
+	if (!HudBar)
+	{
+		return false;
+	}
+
+	TestEqual(TEXT("PrepHUD 루트의 빈 영역은 시설/지면 월드 클릭을 통과시킨다"),
+		HudBar->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+
+	const UPanelWidget* PanelHost = Cast<UPanelWidget>(
+		HudBar->GetWidgetFromName(TEXT("Panel_PanelHost")));
+	TestNotNull(TEXT("단일 패널 호스트가 존재한다"), PanelHost);
+	if (PanelHost)
+	{
+		TestEqual(TEXT("열린 패널이 없을 때 단일 패널 호스트는 입력을 가로채지 않는다"),
+			PanelHost->GetVisibility(), ESlateVisibility::Collapsed);
+	}
+
+	return true;
+}
+
+#endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

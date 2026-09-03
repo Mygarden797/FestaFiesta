@@ -13,6 +13,10 @@
 // 꺼내 옮기지 않는다 (AGENTS.md 규칙 3).
 #include "Time/FF_FestivalStageSubsystem.h"
 
+// 같은 이유로 `EFF_NeedType` 도 전방 선언으로는 안 된다 — `FFF_LiveNeedView` 의
+// `UPROPERTY` 라 UHT 가 전체 정의를 요구한다.
+#include "NPC/Party/FF_NeedState.h"
+
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
@@ -25,6 +29,7 @@ struct IConsoleCommand;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
@@ -34,8 +39,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
  * 홍보 등급.
  *
  * 🔴 **이것은 임시 UI 쪽 enum 이다.** 경제 시스템에는 홍보 등급을 가리키는 타입이 없다 —
- * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이고
- * 구매 함수도 없다 (2026-08-27 확인, `EFF_SpendReason::Promotion` 호출부 0곳).
+ * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이다.
+ * 차감은 `RequestPurchasePromotion` 이 `TrySpend(.., Promotion)` 으로 하고 있다.
+ *
+ * 🔴 **다만 `VisitorMultiplier`(1.08·1.18) 를 소비하는 곳이 아직 0곳이다** — 사면 돈만 나가고
+ * 방문객은 안 늘어난다. 곱할 대상인 "오늘 예상 방문객"이 경제에 없기 때문이다.
  *
  * 김시리님이 `EFF_PromotionGrade` 와 구매 API 를 만들면 **이 enum 을 지우고 그것으로 바꾼다.**
  * 그때 고칠 곳은 이 파일과 홍보 패널뿐이다 — 위젯 트리는 그대로다.
@@ -152,9 +160,45 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 AverageWaitSeconds = INDEX_NONE;
 
+	/**
+	 * **지금 줄을 서면** 얼마나 기다리는가(초). 모르면 `INDEX_NONE`.
+	 *
+	 * 위의 `AverageWaitSeconds` 와 다른 값이다 —
+	 *   평균 대기   **이미 끝낸 사람**이 실제로 기다린 시간 (과거)
+	 *   예상 대기   지금 서면 얼마나 (미래)
+	 * 둘을 한 칸에 섞으면 "줄이 짧아졌는데 숫자가 안 준다" 가 된다.
+	 *
+	 * 🔴 `UnreachableWaitSeconds`(86400) 는 **대기 시간이 아니라 `닿을 수 없음` 표식**이다.
+	 *    그대로 그리면 `1440분` 이 뜬다. 여기서 걸러 `INDEX_NONE` 으로 바꾼다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	int32 ExpectedWaitSeconds = INDEX_NONE;
+
+	/** 분당 처리 인원. 모르면 음수. 대기가 긴 이유가 `느림` 인지 `사람이 많음` 인지 가른다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
+	float ServiceRatePerMinute = -1.f;
+
 	/** 자리가 겹치거나 존을 벗어나 다시 놓아야 한다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	bool bNeedsRelocation = false;
+};
+
+/**
+ * 관객 욕구 한 종류의 현재 상태.
+ *
+ * 원본은 `UFF_NpcNeedMetricsSubsystem` 이다. 그 타입을 UI 헤더로 끌고 오지 않고 옮긴다.
+ */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_LiveNeedView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Crowd")
+	EFF_NeedType NeedType = EFF_NeedType::Hunger;
+
+	/** 이 욕구가 미해소인 관객 비율. 0~100. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Crowd")
+	float UnmetRatioPercent = 0.f;
 };
 
 USTRUCT(BlueprintType)
@@ -508,6 +552,54 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
 	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
 
+	// --- 관객 수 (2026-08-29 추가) ---
+
+	/**
+	 * 지금 축제장 안에 있는 관객 수. 못 읽으면 `INDEX_NONE`.
+	 *
+	 * === 🔴 이것은 **동시 인원**이지 누적 방문객이 아니다 ===
+	 * 원본은 `UFF_CrowdSimulationSubsystem::GetActiveAgentCount()` 로, 스폰될 때 늘고
+	 * 사라질 때 주는 값이다. **`DailyVisitorGoal`(오늘 500명) 의 분자로 쓰면 안 된다** —
+	 * 그 목표는 하루 동안 들어온 총 인원이라, 동시 80명을 넣으면 진행률이 16% 에서
+	 * 영원히 안 올라간다. 그럴듯해 보여서 눈으로는 안 걸린다.
+	 *
+	 * 누적 방문객 API 는 아직 없다 (`UI_API.md` 요청 목록). 그래서 일일 목표 진행은
+	 * 여전히 `모름` 이고, 이 값은 **상태 바의 `관객` 칸에만** 쓴다 — 지금 얼마나 붐비는지는
+	 * 그 자체로 볼 값이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	int32 GetConcurrentVisitorCount() const;
+
+	/**
+	 * 오늘 예상 방문객. 못 읽었으면 `INDEX_NONE`.
+	 *
+	 * 경제가 `floor(기본 방문객 × 홍보 배수)` 로 계산한다. 홍보를 사면 이 값이 오른다.
+	 *
+	 * 🔴 **하루 단일 예상치다.** 3일 합계도, 범위도, 최대 동시 인원도 아니다.
+	 * 그리고 **실제 입장 인원과 다르다** — 스폰은 아직 `AFF_SpawnActor::UnitCount` 를
+	 * 쓰기 때문에 홍보 배수가 안 걸린다 (2026-09-02 김시리 확인).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	int32 GetExpectedVisitors() const { return ExpectedVisitors; }
+
+	/** 예상 방문객이 바뀔 때. 홍보를 사면 온다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Crowd")
+	FFF_OnIntMetricChanged OnExpectedVisitorsChanged;
+
+	/**
+	 * 관객 욕구 5종의 미해소율. 순서는 `EFF_NeedType` 과 같다.
+	 *
+	 * 🔴 **`GetNeedSampleCount()` 를 함께 봐야 한다.** 표본이 없으면 이 함수는 전부 `0` 을
+	 * 돌려주는데, 그것은 `아무도 불편하지 않다` 가 아니라 **아직 못 읽었다** 는 뜻이다.
+	 * 0% 로 그리면 화면이 틀린 사실을 말한다 (2026-08-28 김시리 주의).
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	TArray<FFF_LiveNeedView> GetNeedMetrics() const;
+
+	/** 직전 집계에 들어간 관객 수. **`0` 이면 데이터 없음**이고 `0%` 와 다르다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Crowd")
+	int32 GetNeedSampleCount() const;
+
 	// --- 시설 현황 (2026-08-29 추가 — U6 라이브 시설 패널) ---
 	//
 	// 원본은 ZoneSystem 의 `FFFZSFacilityReadModel` 이다. 그 타입을 UI 헤더로 끌고 오지 않고
@@ -737,6 +829,18 @@ public:
 	bool IsTimeScaleLocked() const;
 
 	/**
+	 * 배속 잠금이 걸리거나 풀렸다.
+	 *
+	 * === 🔴 이게 없으면 화면이 조용히 거짓말을 한다 ===
+	 * 잠금은 **단계 안에서** 바뀐다 — 라이브 도중 메인 공연이 시작되면 걸리고 끝나면 풀린다.
+	 * 그런데 화면은 단계가 바뀔 때만 다시 그렸다. 그래서 4배속을 눌러 둔 채 공연 구간에
+	 * 들어가면 시간만 1배속으로 느려지고 **버튼은 4배속이 눌린 채 이유도 안 뜬다.**
+	 * 2026-09-03 백종태가 실기에서 "왜 혼자 느려지지" 로 발견했다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Stage")
+	FFF_OnBoolViewChanged OnTimeScaleLockChanged;
+
+	/**
 	 * Live 중 게임 속 시각 문구 (예: `19:42`).
 	 *
 	 * Stage 시스템이 `FString`으로 주는 것을 `FText`로 감싸 돌려준다.
@@ -784,6 +888,13 @@ protected:
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 
+	/** 소유자의 메인 공연 시작·종료를 잠금 변화 하나로 합쳐 중계한다. */
+	UFUNCTION()
+	void HandleMainProgramStarted(FString EventLabel);
+
+	UFUNCTION()
+	void HandleMainProgramEnded(FString EventLabel);
+
 	/**
 	 * Stage 시스템이 초 단위로 쏘는 값을 받아 위젯에 중계한다.
 	 *
@@ -797,6 +908,15 @@ protected:
 	/** 경제 시스템이 쏘는 Gold를 받아 위젯에 중계한다. */
 	UFUNCTION()
 	void HandleOwnerGoldChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerTotalRevenueChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerTodayRevenueChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerExpectedVisitorsChanged(int32 NewValue);
 
 	/** 미납 총액을 받아 중계한다. */
 	UFUNCTION()
@@ -906,14 +1026,25 @@ private:
 	UPROPERTY()
 	int32 AvailableStaffCount = INDEX_NONE;
 
+	/** 오늘 예상 방문객. 소유자 값이 오기 전에는 `모름` 이다. */
+	UPROPERTY(Transient)
+	int32 ExpectedVisitors = INDEX_NONE;
+
 	/**
 	 * 구매한 홍보 등급. **더미다** — 경제 시스템에 이 상태를 보관할 자리가 아직 없다.
 	 *
-	 * ⚠️ 저장에 안 들어가고 축제를 다시 시작해도 안 지워진다. 소유자 API 가 오면 이 필드를
-	 * 지우고 그쪽 값을 읽는다.
+	 * 소유자(`UFF_FestivalProgressionSubsystem::GetPurchasedPromotionGrade`)의 값을 미러링한다.
+	 * 축제 재시작도 그쪽이 지우고 `OnPromotionGradeChanged` 로 알려 온다.
 	 */
 	UPROPERTY()
 	EFF_PromotionChoice PurchasedPromotion = EFF_PromotionChoice::None;
+
+	// 소유자 enum ↔ 화면 enum. 값이 1:1 이라 표가 아니라 switch 로 둔다.
+	static EFF_PromotionGrade ToPromotionGrade(EFF_PromotionChoice Choice);
+	static EFF_PromotionChoice ToPromotionChoice(EFF_PromotionGrade Grade);
+
+	UFUNCTION()
+	void HandleOwnerPromotionGradeChanged(EFF_PromotionGrade NewGrade);
 
 	/** 중복 방송 차단용. Bind + Sync 와 실제 구매 방송이 같은 등급을 두 번 쏘지 않게 한다. */
 	UPROPERTY()
