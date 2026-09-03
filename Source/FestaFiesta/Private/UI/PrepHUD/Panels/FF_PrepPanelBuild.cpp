@@ -13,6 +13,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -949,6 +950,24 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		}
 		Text_PlacementGuide->SetText(Guide);
 	}
+	// 🔴 **패널 높이도 같이 줄인다.**
+	//
+	// 목록을 접고 안내 네 줄만 남겨도 호스트 슬롯은 카탈로그 높이(320)를 그대로 쥐고 있어서,
+	// 글자 몇 줄 아래로 **빈 흰 판이 크게 남았다** (2026-09-03 백종태 지적).
+	// 배치 중에는 지면이 보여야 하는데 그 빈 판이 화면을 가린다.
+	//
+	// 크기는 바가 소유하므로 여기서 슬롯을 직접 만지지 않고 요청한다 — 직접 만지면
+	// 탭을 닫았다 열 때 `ApplyPanelLayout` 이 표 값으로 덮어써서 되돌아간다.
+	if (UFF_PrepHudBar* Bar = GetOwningBar())
+	{
+		FFF_PrepPanelLayout Layout = Bar->GetOpenPanelLayout();
+
+		// 안내 네 줄 + 버튼 한 줄이 들어가는 높이. 카탈로그일 때는 원래 높이로 돌린다.
+		Layout.Size.Y = bShowCompact ? CompactHeight : CatalogHeight;
+
+		Bar->SetOpenPanelLayout(Layout);
+	}
+
 	if (bShowCatalog)
 	{
 		FocusSelectedCategoryChoice();

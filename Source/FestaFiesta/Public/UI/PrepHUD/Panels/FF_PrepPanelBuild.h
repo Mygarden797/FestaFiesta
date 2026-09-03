@@ -166,6 +166,19 @@ private:
 	void ReconcilePresentation();
 	void ApplyPresentation(bool bReplaceListItems = true);
 	void ApplyBuildModeState(EFF_BuildModeState State);
+
+	/** 카탈로그를 펼쳤을 때의 패널 높이(px). `FF_PrepHudBar` 의 `PanelLayouts` 표와 같아야 한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
+	float CatalogHeight = 320.f;
+
+	/**
+	 * 배치 중(목록을 접었을 때)의 패널 높이(px).
+	 *
+	 * 🔴 **작게 유지한다.** 배치 중에는 지면이 보여야 시설을 놓을 수 있는데, 안내 네 줄
+	 * 아래로 빈 흰 판이 남으면 그만큼 화면을 가린다 (2026-09-03 백종태 지적).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
+	float CompactHeight = 120.f;
 	void SetCategoryFilter(bool bEnabled, EFFZSFacilityCategory Category);
 	TArray<FFF_BuildCatalogEntry> MakePricedEntries() const;
 
