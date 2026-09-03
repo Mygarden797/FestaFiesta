@@ -269,6 +269,14 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")
 	bool bUseZoneBounds = true;
 
+	// 초점이 Zone 안에 있도록 매 프레임 확인할지.
+	//
+	// 사각형 경계만으로는 부족하다. Zone 이 여러 개면 그것들을 감싸는 상자에는
+	// Zone 사이 빈 공간과 바깥 모서리가 전부 들어간다. 그래서 벽 너머로 갈 수 있다.
+	// 실제 Zone 안쪽인지 확인하면 그 구멍이 막힌다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds")
+	bool bConstrainFocusToZones = true;
+
 	// Zone 범위 바깥으로 이만큼은 더 나갈 수 있다.
 	// 0 이면 경계에 딱 붙어서 가장자리 시설이 화면 끝에 걸린다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Bounds", meta = (ClampMin = "0.0"))
