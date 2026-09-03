@@ -59,6 +59,13 @@ void AFF_BaseCrowd::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 메시 유무를 따지기 전에 받아 둬야 한다. 메시가 없으면 아래에서 곧바로 return 하는데,
+	// 외형은 런타임에 DataTable로 들어오므로 BP에 기본 메시가 없는 구성도 정상이다.
+	if (IsValid(SkeletalMeshComponent))
+	{
+		DefaultAnimClass = SkeletalMeshComponent->GetAnimClass();
+	}
+
 	const bool bHasSkeletalMesh = IsValid(SkeletalMeshComponent) && SkeletalMeshComponent->GetSkeletalMeshAsset() != nullptr;
 
 	// 메시가 없으면 원기둥으로 대신 보여 준다. 있으면 원기둥은 계속 꺼진 채로 둔다.
@@ -123,6 +130,48 @@ void AFF_BaseCrowd::PushPresentation(FVector NewPosition, FRotator NewRotator, f
 	{
 		CrowdAnimInstance->SetSpeed(NewSpeed);
 	}
+}
+
+// AnimClass는 '클래스'를 받는다. 
+void AFF_BaseCrowd::ApplyAppearance(USkeletalMesh* Mesh, UClass* AnimClass, float YawOffset, float UniformScale)
+{
+	if (!IsValid(SkeletalMeshComponent))
+	{
+		return;
+	}
+
+	MeshYawOffset = YawOffset;
+	SkeletalMeshComponent->SetSkeletalMeshAsset(Mesh);
+	SkeletalMeshComponent->SetRelativeScale3D(FVector(UniformScale));
+
+	UClass* const DesiredAnimClass = AnimClass ? AnimClass : DefaultAnimClass.Get();
+	if (DesiredAnimClass != nullptr)
+	{
+		SkeletalMeshComponent->SetAnimInstanceClass(DesiredAnimClass);
+	}
+
+	CrowdAnimInstance = Cast<UFF_CrowdAnimInstance>(SkeletalMeshComponent->GetAnimInstance());
+
+	// 메시가 있는데 인스턴스가 없다면 AnimClass의 대상 Skeleton과 메시의 Skeleton이 다른 것이다.
+	// InitAnim은 이 경우 조용히 아무것도 만들지 않으므로 여기서 짚어 주지 않으면 원인을 찾을 수 없다.
+	if (Mesh != nullptr && !IsValid(CrowdAnimInstance))
+	{
+		static bool bLoggedAppearanceAnimFailure = false;
+		if (!bLoggedAppearanceAnimFailure)
+		{
+			bLoggedAppearanceAnimFailure = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[AFF_BaseCrowd] ApplyAppearance: AnimInstance를 얻지 못했다 — AnimClass(%s)의 대상 Skeleton과 ")
+				TEXT("Mesh(%s)의 Skeleton이 다른지 확인할 것 (이하 동일 경고 생략)"),
+				*GetNameSafe(DesiredAnimClass), *GetNameSafe(Mesh));
+		}
+	}
+
+	if (IsValid(ProxyMeshComponent))
+	{
+		ProxyMeshComponent->SetVisibility(Mesh == nullptr);
+	}
+
 }
 
 
