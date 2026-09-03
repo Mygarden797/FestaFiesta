@@ -150,8 +150,19 @@ public:
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
     float NavigationProjectionExtentCm = 30.0f;
-	// 배치 지점을 NavMesh에 투영할 때 사용하는 수평·수직 검색 범위다. 
-	
+	// 배치 지점을 NavMesh에 투영할 때 사용하는 수평·수직 검색 범위다.
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Navigation")
+    bool bEnableQueueLaneNavCost = true;
+	// 켜면 예약된 Queue 레인을 고비용 NavArea로 표시해, 지나가는 NPC가 줄을 관통하지 않고
+	// 우회하도록 만든다. 통행 불가가 아니라 비용이므로 배치 검증(투영·경로 연결성)에는 영향이 없다.
+	// 끄면 레인이 일반 보행로로 돌아간다 — 효과를 A/B로 비교할 때 이 스위치만 내리면 된다.
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Navigation", meta = (ClampMin = "0.0", Units = "cm"))
+    float QueueLaneNavCostPaddingCm = 100.0f;
+	// 고비용 영역을 예약 레인보다 이만큼 넓게 잡는다. 경로추종은 웨이포인트를 일정 반경 앞에서
+	// 넘기며 모서리를 자르므로, 레인에 딱 맞추면 그 컷이 레인 안으로 들어온다. 0이면 딱 맞춘다.
+
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Zone Authoring")
     bool bRestrictZoneIdsToProjectPresets = true;
 	// 켜면 ZoneId를 아래 프로젝트 목록에 한정합니다. 이식 프로젝트에서는 목록을 교체하거나 끌 수 있습니다. 
