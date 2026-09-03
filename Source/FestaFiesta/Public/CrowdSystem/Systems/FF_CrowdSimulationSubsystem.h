@@ -379,7 +379,7 @@ public:
 
 	// SimOrigin 기준 반경. 밀도 그리드는 이 반경을 감싸는 정사각형으로 만들어진다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float SimRadiusUU = 100000.f;
+	float SimRadiusUU = 1000000.f;
 
 	// 목적지에 이만큼 가까워지면 도착으로 본다(접근점·배회 목적지 기준), UU.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
@@ -786,6 +786,9 @@ private:
 	
 	void AllAgentLeavingTrigger();
 	
+	//AgentMesh 적용
+	void ApplyAgentAppearance(int32 AgentIndex);
+	
 public:
 private:
 	
@@ -807,6 +810,12 @@ private:
 	float ArrivalSpawnRadiusUU = 100.f;
 	
 	bool bArrivalPoolExhaustedLogged = false;
+	
+	
+	//Actor Mesh 관련 변수들 추가
+	TSoftObjectPtr<UDataTable> CachedAppearenceTable;
+	
+	
 	
 	
 	// 다음에 발급할 파티 ID. 슬롯 인덱스와 달리 재사용하지 않아 로그를 되짚을 수 있다
