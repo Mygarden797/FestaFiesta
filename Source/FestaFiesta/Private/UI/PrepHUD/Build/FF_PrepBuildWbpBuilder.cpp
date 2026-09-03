@@ -251,7 +251,8 @@ namespace FFPrepBuildWbpBuilder
 			return false;
 		}
 
-		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"));
+		// ★ 변수로 노출한다. 배치 중에는 상하 여백(14)을 0 으로 줄여야 탭 줄 높이에 맞는다.
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
 		UHorizontalBox* Header = MakePanelHeader(Blueprint, Tree, *Palette);
 		UVerticalBox* CatalogPanel = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_Catalog"), true);

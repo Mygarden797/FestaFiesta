@@ -122,6 +122,16 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UWidget> Box_Header;
 
+	/**
+	 * 패널 바깥 테두리.
+	 *
+	 * 🔴 배치 중에는 **상하 여백을 0 으로** 만든다. 여백 14 를 남겨 두면 흰 판이
+	 * 탭 줄보다 위아래로 튀어나와, 초록 칩이 흰 배경의 아래쪽에 붙은 것처럼 보인다
+	 * (2026-09-03 백종태 지적).
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<class UBorder> Border_PanelRoot;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_Status;
 
@@ -187,7 +197,11 @@ private:
 	 * 아래로 빈 흰 판이 남으면 그만큼 화면을 가린다 (2026-09-03 백종태 지적).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
-	float CompactHeight = 64.f;
+	// 🔴 **탭 줄과 같은 높이**로 둔다 (`FF_PrepHudBar::MenuRowHeight`).
+	//   패널 아래 끝이 탭 줄 밑에 맞춰져 있으므로, 높이가 같으면 흰 띠와 탭 줄이 정확히
+	//   겹쳐서 초록 칩이 흰 배경의 **한가운데**에 온다. 더 크게 잡으면 위로만 튀어나와
+	//   칩이 아래쪽에 붙어 보인다 — 아래는 상태 행이라 늘릴 수 없기 때문이다.
+	float CompactHeight = 29.f;
 	void SetCategoryFilter(bool bEnabled, EFFZSFacilityCategory Category);
 	TArray<FFF_BuildCatalogEntry> MakePricedEntries() const;
 

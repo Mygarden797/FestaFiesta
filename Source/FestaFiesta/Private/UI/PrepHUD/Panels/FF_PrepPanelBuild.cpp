@@ -6,6 +6,7 @@
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
@@ -936,6 +937,14 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	{
 		Box_Header->SetVisibility(
 			bShowCompact ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	// 상하 여백을 0 으로. 남겨 두면 흰 판이 탭 줄 위로 튀어나와 초록 칩이 아래에 붙어 보인다.
+	if (Border_PanelRoot)
+	{
+		Border_PanelRoot->SetPadding(bShowCompact
+			? FMargin(18.f, 0.f)
+			: FMargin(18.f, 14.f));
 	}
 	if (Text_PlacementGuide)
 	{
