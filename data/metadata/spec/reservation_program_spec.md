@@ -1,10 +1,12 @@
 # 유료 프로그램 예약 시스템
 
-- 갱신: 2026-09-02 — 예약 이동·대기·참여 흐름 연결
-- 관련: `facility_naming_convention.md` 5.4, `utility_ai_spec.md` §2·§9, `economy_spec.md`
+- 갱신: 2026-09-03 — 현재 구매·배정·Crowd 실행 경로 대조
+- 관련: `../request/facility_naming_convention.md` 5.4, `utility_ai_spec.md` §2·§9, `../SiriKim_Docs/economy_spec.md`
 - 배경: 시설 태그에 `예약 필요`가 있는데 Utility AI 가 이 태그를 모르고 NPC 가 그냥 들어간다
 
 ## 1. 확정된 규칙
+
+（2026-09-03 코드 대조: 표의 “사면 즉시 찬다/반드시 시작 전 입장”은 기획 의도다. 코드는 구매 때 슬롯 등록·차감, 예약 명단 생성·그룹 스폰 시 배정 확정으로 나뉜다. 풀 부족·경로 실패가 있을 수 있어 구매 성공만으로 물리적 정시 도착을 보장하지 않는다.）
 
 | #   | 규칙                                             | 왜                                                |
 | --- | ---------------------------------------------- | ------------------------------------------------ |
@@ -32,7 +34,7 @@
 ## 2. 자료구조와 순수 함수 (구현 완료)
 
 `FF_ProgramReservation.h` — 상태를 갖지 않고, 같은 입력이면 항상 같은 결과다.
-예약 목록을 들고 구매 흐름을 태우는 것은 `UFF_FestivalProgressionSubsystem` 이다(§5).
+예약 목록·파티 역색인은 `UFF_ProgramReservationSubsystem`이 보관하고 구매·편성·경제 처리는 `UFF_FestivalProgressionSubsystem`이 담당한다(§5).
 
 ```text
 FFF_ProgramReservation          시설·시작·종료·정원 + 배정 결과(AssignedGroupIds·인원·빈자리)
@@ -105,7 +107,7 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 `자유활동 → 복귀 → 대기 → 참여 → 자유활동`을 Crowd의 파티별 상태로 관리한다.
 
 - 자유활동: 시작 전 귀환 가능한 일반 시설을 선택한다. 프로그램 종료 전 개인 퇴장은 금지한다.
-- 자유활동: 이동·Queue 대기·이용 후 돌아올 시간이 부족한 후보를 제외한다. 통과 후보가 없어도 복귀 마감 전에는 배회 후 재탐색한다. 예약 중에는 `no_choice` 횟수를 누적하지 않고 개인 퇴장도 막는다.
+- 자유활동: 이동·Queue 대기 후 돌아올 시간이 부족한 후보를 제외한다（판정 함수는 이용시간도 받지만 현재 `CandidateUseMinutes` 입력은 생략돼 0이다）. 통과 후보가 없어도 복귀 마감 전에는 배회 후 재탐색한다. 예약 중에는 `no_choice` 횟수를 누적하지 않고 개인 퇴장도 막는다.
 - 복귀: Simulation의 고정 스텝에서 `현재 축제분 + 직접 이동 예상분 >= 시작 축제분 - ProgramReturnBufferMinutes`를 검사한다. 여유 기본값은 10축제분이며 음수는 0으로 보정한다. 일반 시설 후보의 귀환 가능 판정에도 같은 값을 적용한다. 마감 도달 시 후보 유무·배회·일반 시설 방문 여부와 무관하게 복귀하며, 일반 Queue에서는 탈퇴한다. Decision의 별도 복귀 의도는 사용하지 않는다.
 - 대기: 시설의 저작된 Queue 슬롯을 위치로만 사용한다. 일반 Queue 가입·서비스·포기 타이머는 사용하지 않는다. 대기 중 일반 목적지 재선택은 없다.
 - 참여: 도착했고 시작 시각이 지났으면 참여한다. Need는 계속 증가하고 체류 예산 소모만 멈춘다. 늦게 도착하면 늦게 참여한다.
@@ -116,9 +118,9 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 이동시간에는 리더의 실제 속도를 쓰고 Queue의 실제 대기분도 축제분으로 변환한다.
 귀환 거리는 직선거리 근사이므로 장애물·혼잡에 의한 지각까지 보장하지는 않는다. 순간이동은 하지 않는다.
 
-프로그램이 편성된 시설은 그날 예약자 전용이며, 프로그램이 끝나도 일반 후보나 일반 Queue에 개방하지 않는다.
+프로그램이 편성된 시설은 그날 예약자 전용이며, 프로그램이 끝나도 일반 후보나 일반 Queue에 개방하지 않는다. 이 판정은 `IsProgramFacility`의 편성 기록이며 시설 카테고리 전체를 막는 게이트가 아니다（DanceBattle 등도 미편성 시 일반 지역 후보. 메인 시간·전역 안내는 SunsetMainStage ID에만 적용）.
 대기 슬롯은 예약 파티 ID 순서로 리더에 배정하고 일행은 기존 대형을 유지한다.
-슬롯 부족 시 시설 접근점으로 대체한다. 현재 SandArt·ExperienceStage(DanceBattle) 에셋은 각각 12슬롯이다.
+슬롯 부족 시 시설 접근점으로 대체한다. 2026-09-02 에셋 확인 기록에서 SandArt·ExperienceStage(DanceBattle)는 각각 12슬롯이었다（이번 갱신은 C++ 기준이며 에셋 인스턴스 값은 재덤프하지 않음）.
 슬롯 간격은 각각 90cm·115cm이며, 실제 그룹 대형 간 간격은 플레이 화면에서 확인해야 한다.
 
 참여 중 시설 메쉬 내부로 이동할지, 입구에서 숨길지는 미정이다.
@@ -150,19 +152,22 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 ### 5.1 배선 — `UFF_FestivalProgressionSubsystem` (경제 S8)
 
 구매가 Gold 차감이고 기획서 §7 이 경제·진행을 한 소유자로 두므로,
-**차감과 배정이 한 트랜잭션**이어야 한다. 배정·등록은 이제 §5.0 을 부르면 된다.
+**슬롯 등록과 비용 차감은 함께 성공해야 한다.** 실제 `TryScheduleProgram`은 슬롯 등록 뒤 차감하고 차감 실패 시 슬롯을 되돌린다（그룹 배정·스폰은 이후 단계이며 구매와 같은 트랜잭션이 아님）.
 
 | 만들 API                                                              | 쓰는 쪽                   |
 | ------------------------------------------------------------------- | ---------------------- |
-| `TryPurchaseProgram(Program, CostGold, Candidates, OutReservation)` | 타임테이블 UI               |
+| `TryScheduleProgram(ProgramId, FacilityInstanceId)` | 시설 편성 UI에서 호출（초안 `TryPurchaseProgram`을 대체） |
 | ~~`GetReservations()` + `OnReservationsChanged`~~ ✅ §5.0 이 제공        | 타임테이블 UI               |
 | ~~`IsGroupLockedAt` / `IsGroupExitBlockedAt` / `ClearReservations`~~ ✅ §5.0 이 제공 | L3 · 새 날 |
 | `GetLockedFacilityForGroup(GroupId, Now)`                           | L3 — 잠금 중 목적지 고정 (`FindActiveReservationForParty` 로 대체 가능) |
 
-**차감 순서**(기획서 §6.1): 검증 → 잔액 확인 → 배정 → 성공 시 1회 차감 → 등록.
-배정이 0명이면 Gold 를 건드리지 않는다(AT-003·AT-004).
-구매 실패는 이유를 구분해야 한다(정원 무효 / 잔액 부족 / 슬롯 중복 / 배정 가능 그룹 없음) —
-UI 가 "왜 못 샀는지"를 표시해야 해서 bool 하나로는 못 한다.
+**실제 구매 순서**: 카탈로그·중복·잔액·스태프 검증 → 시설 타입 적합성 → `RegisterProgram` → `TrySpend` → 편성 목록 추가·통지. 차감 실패는 예약 슬롯을 제거한다.
+
+（초안의 “배정 0명이면 차감 안 함”은 현재 구매 계약과 다르다. 구매 시 그룹 후보를 받지 않고, 이후 예약 전용 명단 생성·스폰 배정으로 정원을 채운다. 풀 부족·배정 실패 처리와 환불 보장은 별도 미완료 사항이다.）
+
+`EFF_ProgramPurchaseResult`는 잔액·스태프·중복·시설 타입 등 실패 사유를 구분한다. UI가 허용 단계를 관리하는 경로와 순수 규칙의 책임을 구분한다.
+
+（예약 귀환·종료 유예의 Crowd 기본은 `ProgramReturnBufferMinutes=10`, `ProgramExitGraceMinutes=10`이다. CSV의 `reservation_return_buffer_minutes=0`·`reservation_exit_buffer_minutes=0`·`npc_walk_speed_mps=1.5`를 이 런타임 경로가 직접 읽지는 않는다. 이동 예상은 리더 실제 속도를 전달한다.）
 
 ### 5.2 Crowd 연결
 
@@ -176,9 +181,18 @@ UI 가 "왜 못 샀는지"를 표시해야 해서 bool 하나로는 못 한다.
 
 | 상대  | 항목                                                                                                      |
 | --- | ------------------------------------------------------------------------------------------------------- |
-| 이정원 | **유입 곡선에 하드 제약** — "시작 전까지 이 그룹들은 반드시 입장"이 비율 목표 위에 얹힌다. 프로그램이 여러 개면 제약도 여러 개고, 곡선 누적 오차 허용 폭과 충돌할 수 있다 |
-| 이정원 | `GroupId`(`PartyID`)가 실행마다 같은 값인가 — §2.1                                                                |
-| 한광훈 | `예약 필요` 태그를 어디서 읽는가 — `UFFZSFacilityDefinition` 필드인가 별도 DataTable 인가                                    |
-| 한광훈 | **정원의 의미** — 시설 `Capacity`(동시 수용)와 프로그램 정원이 같은 값인가                                                      |
+| 이정원 | **유입 곡선에 하드 제약（구현됨: 예약 명단 별도 생성·시작 전 강제 스폰. 용량 부족·도착 시간 보장은 남음）** — "시작 전까지 이 그룹들은 반드시 입장"이 비율 목표 위에 얹힌다. 프로그램이 여러 개면 제약도 여러 개고, 곡선 누적 오차 허용 폭과 충돌할 수 있다 |
+| 이정원 | `PartyID`는 예약 배정과 Crowd가 공유한다（같은 시드·명단·생성 순서가 전제이며 실행 전체 결정성 실측은 별도） — §2.1                                                                |
+| 한광훈 | `IsProgramFacility`가 편성 기록으로 당일 전용 여부를 판정한다（추상적인 예약 필요 태그의 별도 필드는 사용하지 않음）                                    |
+| 한광훈 | **정원의 의미** — 프로그램은 `FFF_ProgramCard::Capacity`, Queue는 대기·서비스 정원, Utility 후보는 Zone SoftCapacity다（세 값을 동일시하지 않음）                                                      |
 | 장원재 | 예약자는 일반 Queue 서비스에 가입하지 않는다. 저작된 줄 좌표를 예약 대기로 재사용하며, 시설별 슬롯 수·대형 간격은 확인이 필요하다 |
 | 백종태 | 타임테이블 UI — 예약 현황·정원·시간 표시                                                                               |
+
+## 코드 대조 근거 (2026-09-03)
+
+- [FF_FestivalProgressionSubsystem.cpp](../../../Source/FestaFiesta/Private/Festival/FF_FestivalProgressionSubsystem.cpp)
+- [FF_ProgramReservationSubsystem.cpp](../../../Source/FestaFiesta/Private/NPC/Party/FF_ProgramReservationSubsystem.cpp)
+- [FF_CrowdSimulationSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdSimulationSubsystem.cpp)
+- [FF_CrowdDecisionSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdDecisionSubsystem.cpp)
+
+（현재 작업 트리 기준. 데이터/계수 수는 저장소 CSV, 설정은 C++ 기본값과 Config를 구분해 기술했다. 설계 제안·과거 실측은 코드만으로 재검증할 수 없어 해당 설명을 보존했다.）

@@ -24,34 +24,14 @@ namespace
 			&& Category != EFFZSFacilityCategory::Safety;
 	}
 
-	/**
-	 * 메인 무대인가 — 즉 `bMainStageOpen` 게이팅의 대상인가.
-	 *
-	 * Performance 소분류 4종 중 MainStage 하나만 닫는 이유는 나머지 셋이 저 시각표를 안 타서다:
-	 *   - Busking·SubStage — 상시 공연이라 닫을 근거가 없다
-	 *   - ExperienceStage — 유료 프로그램(요가·공방)이 여는 시설이다
-	 *
-	 * 컨벤션 위반이면 false 다 — 닫는 쪽으로 기울면 오타 하나가 무대를 하루 종일 후보에서
-	 * 지우는데, 여는 쪽으로 기울면 게이팅만 안 걸린다. 위반 경고는 MapToPreferenceCategory 가
-	 * 시설당 1회 이미 낸다(여기서 또 내면 같은 시설에 두 번 뜬다).
-	 */
-	bool IsMainStageFacility(EFFZSFacilityCategory Category, FName FacilityDefinitionId)
-	{
-		if (Category != EFFZSFacilityCategory::Performance)
-		{
-			return false;
-		}
+}
 
-		FFF_FacilityNameParts Parts;
-		FString UnusedFailureReason;
-		if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
-			EFFZSFacilityCategory::Performance, FacilityDefinitionId, Parts, UnusedFailureReason))
-		{
-			return false;
-		}
-
-		return Parts.MinorToken == TEXT("MainStage");
-	}
+// 메인 공연 시간표와 전역 안내는 SunsetMainStage에만 적용한다.
+// 다른 공연 시설은 일반 지역 후보이며, 편성된 프로그램의 예약 정책은 Decision 계층에서 유지한다.
+bool FFF_ZoneSystemBridge::IsMainStageFacility(EFFZSFacilityCategory Category, FName FacilityDefinitionId)
+{
+	static const FName SunsetMainStageId(TEXT("Performance_MainStage_SunsetMainStage"));
+	return Category == EFFZSFacilityCategory::Performance && FacilityDefinitionId == SunsetMainStageId;
 }
 
 TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
@@ -60,7 +40,8 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	const FVector& PartyWorldLocation,
 	int32 MaxCandidates,
 	const FFF_WalkDistanceMatrix* WalkDistances,
-	bool bMainStageOpen)
+	bool bMainStageOpen,
+	bool bIncludeGlobalMainStages)
 {
 	// 파티가 서 있는 존의 앵커까지 걸어 나가는 구간. 행렬이 없으면 쓰이지 않는다.
 	// 앵커를 못 찾으면(등록되지 않은 존) 0으로 두어 행렬 경유분만 남긴다 —
@@ -119,13 +100,10 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		float Capacity = 1.f;
 	};
 	TMap<FName, FZoneDensity> DensityByZoneId;
-	DensityByZoneId.Reserve(ZoneRankById.Num());
+	DensityByZoneId.Reserve(ReadModel.Zones.Num());
 	for (const FFFZSZoneReadModel& Zone : ReadModel.Zones)
 	{
-		if (!ZoneRankById.Contains(Zone.ZoneId))
-		{
-			continue;
-		}
+		// 전역 무대도 도착 구역의 혼잡을 비용으로 지불한다.
 		FZoneDensity Density;
 		Density.Occupancy = static_cast<float>(Zone.ReportedPopulation);
 		// SoftCapacity 0 은 "아직 설정 안 됨"이다. 선택기가 Capacity 로 나누므로 최소 1 을 보장한다.
@@ -136,6 +114,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	// ── 3. 시설 순회 ─────────────────────────────────────────────────────────
 	TArray<FRankedCandidate> Ranked;
 	Ranked.Reserve(FMath::Min(ReadModel.Facilities.Num(), 64));
+	TArray<FFF_DestinationCandidate> GlobalMainStages;
 
 	// 왜 세는가: 후보가 0개로 나왔을 때 "시설이 없다"와 "전부 닫혀 있다"와 "카테고리가 다 제외됐다"를
 	// 로그만 보고 구분할 수 있어야 한다.
@@ -146,8 +125,10 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
+		const bool bGlobalMainStage = bIncludeGlobalMainStages && bMainStageOpen
+			&& IsMainStageFacility(Facility.Category, Facility.FacilityDefinitionId);
 		const int32* ZoneRank = ZoneRankById.Find(Facility.ZoneId);
-		if (!ZoneRank)
+		if (!ZoneRank && !(bGlobalMainStage && DensityByZoneId.Contains(Facility.ZoneId)))
 		{
 			++SkippedByZone;
 			continue;
@@ -178,7 +159,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 			continue;
 		}
 
-		// 메인 공연 시각이 아니면 메인 무대를 후보에서 뺀다.
+		// 메인 공연 시각이 아니면 SunsetMainStage만 후보에서 뺀다.
 		// bIsOpen = false 로 넣어두면 Choose 가 건너뛰기는 하지만 MaxCandidates 한 칸을 먹는다 —
 		// "닫힌 시설은 후보에 넣지 않는다"는 이 함수의 기존 정책과 같은 처리다.
 		if (!bMainStageOpen
@@ -189,7 +170,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 		}
 
 		FRankedCandidate Entry;
-		Entry.ZoneRank = *ZoneRank;
+		Entry.ZoneRank = ZoneRank ? *ZoneRank : 2;
 
 		FFF_DestinationCandidate& Candidate = Entry.Candidate;
 		Candidate.DestinationId = FacilityInstanceIdToDestinationId(Facility.FacilityInstanceId);
@@ -248,7 +229,15 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 			Candidate.Capacity = Density->Capacity;
 		}
 
-		Ranked.Add(MoveTemp(Entry));
+		// 지역 후보 상한과 별도다. 같은 구역의 메인 무대도 이쪽에만 넣어 중복과 상한 소모를 막는다.
+		if (bGlobalMainStage)
+		{
+			GlobalMainStages.Add(MoveTemp(Candidate));
+		}
+		else
+		{
+			Ranked.Add(MoveTemp(Entry));
+		}
 	}
 
 	// ── 4. 상한 적용 ─────────────────────────────────────────────────────────
@@ -275,11 +264,16 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 	}
 
 	TArray<FFF_DestinationCandidate> Candidates;
-	Candidates.Reserve(Ranked.Num());
+	Candidates.Reserve(Ranked.Num() + GlobalMainStages.Num());
 	for (FRankedCandidate& Entry : Ranked)
 	{
 		Candidates.Add(MoveTemp(Entry.Candidate));
 	}
+	GlobalMainStages.Sort([](const FFF_DestinationCandidate& A, const FFF_DestinationCandidate& B)
+	{
+		return A.DestinationId.Compare(B.DestinationId) < 0;
+	});
+	Candidates.Append(GlobalMainStages);
 
 	// ── 5. 진단 ──────────────────────────────────────────────────────────────
 
@@ -313,9 +307,7 @@ TArray<FFF_DestinationCandidate> FFF_ZoneSystemBridge::BuildCandidates(
 			SkippedByZone, SkippedByCategory, SkippedByState, SkippedByMainStageGate);
 	}
 
-	// TODO(전역 인기 상위 K): utility_ai_todo.md 2절. 현재 Zone·인접 Zone 밖의 인기 시설을 후보에
-	// 섞어야 "멀지만 유명한 곳"으로 가는 행동이 나온다. 지금은 인접 Zone 밖이 절대 후보가 안 된다.
-	// 계수화가 선행 조건이다 — 안 하면 병목이 취향 때문인지 후보 필터 때문인지 구분할 수 없다.
+	// 전역 예외는 공연 중 메인 무대뿐이다. 일반 인기 시설의 전역 상위 K 정책은 아직 없다.
 
 	// TODO(예약 필터): reservation_program_spec.md §4.1. `예약 필요` 시설은 그 Party 가 예약을
 	// 갖고 있지 않으면 제외해야 한다. 태그 출처(한광훈)가 정해지면 위 필터 옆에 붙인다.
