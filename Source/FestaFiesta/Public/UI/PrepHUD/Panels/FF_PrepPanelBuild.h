@@ -113,6 +113,15 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_Gold;
 
+	/**
+	 * 제목·보유 금화 줄.
+	 *
+	 * 🔴 배치 중에는 **접는다.** 시설을 놓는 동안 화면을 가리면 안 되고, 그때 제목과
+	 * 금화는 볼 일이 없다 — 목록에서 이미 보고 들어왔다 (2026-09-03 백종태 요청).
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UWidget> Box_Header;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_Status;
 
@@ -178,7 +187,7 @@ private:
 	 * 아래로 빈 흰 판이 남으면 그만큼 화면을 가린다 (2026-09-03 백종태 지적).
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
-	float CompactHeight = 120.f;
+	float CompactHeight = 64.f;
 	void SetCategoryFilter(bool bEnabled, EFFZSFacilityCategory Category);
 	TArray<FFF_BuildCatalogEntry> MakePricedEntries() const;
 

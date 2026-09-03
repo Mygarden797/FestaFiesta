@@ -112,7 +112,9 @@ namespace FFPrepBuildWbpBuilder
 		UWidgetTree& Tree,
 		const UFF_UIPalette& Palette)
 	{
-		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Header"));
+		// ★ `Box_Header` 로 노출한다. 배치 중에 패널이 이 줄을 접는다
+		//   (`UFF_PrepPanelBuild::ApplyBuildModeState`).
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Box_Header"), true);
 		UTextBlock* Title = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_PanelTitle"), true);
 		UTextBlock* Gold = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Gold"), true);
 		UButton* Close = MakeTextButton(

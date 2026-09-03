@@ -930,13 +930,23 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		Panel_PlacementCompact->SetVisibility(
 			bShowCompact ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
+
+	// 제목·보유 금화는 배치 중에 볼 일이 없다 — 목록에서 이미 보고 들어왔다.
+	if (Box_Header)
+	{
+		Box_Header->SetVisibility(
+			bShowCompact ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	}
 	if (Text_PlacementGuide)
 	{
 		FText Guide;
 		switch (State)
 		{
 		case EFF_BuildModeState::Placing: 
-			Guide = LOCTEXT("PlacingGuide", " [좌클릭] 설치/ 철거/이동 대상 선택 \n [Q/E] 45도 회전 \n [Shift+Q/E] 정밀 회전 \n [우클릭] 목록 복귀");
+			// 🔴 **한 줄로 쓴다.** 네 줄로 쌓으면 그만큼 지면을 가리는데, 배치 중에는
+			//   지면이 보여야 시설을 놓을 수 있다 (2026-09-03 백종태 요청).
+			Guide = LOCTEXT("PlacingGuide",
+				"[좌클릭] 설치·철거·이동 · [Q/E] 45° 회전 · [Shift+Q/E] 정밀 회전 · [우클릭] 목록");
 			break;
 		case EFF_BuildModeState::Moving:
 			Guide = LOCTEXT("MovingGuide", "이동 중 · 좌클릭 확정 · 우클릭 취소");
