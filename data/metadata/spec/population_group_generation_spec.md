@@ -1,7 +1,7 @@
 # NPC 인구·그룹 생성 명세 (v0)
 
 - 작성일: 2026-08-04
-- 상태: 초안 — 생성 순서와 독립가정은 확정, 정확한 계수(그룹 크기 분포·그룹 내 연령 구성 규칙)는 draft_assumption
+- 상태: 생성·Crowd 그룹 연결 구현됨（2026-09-03 코드 대조）. 그룹 크기·아동 수는 여행 조사 기반 분포이고, 연령 독립·비리더 성인 same_as_leader는 가정이다（축제 현장 실측은 아님）.
 - 배경: 사용자 피드백으로 두 가지 구조적 문제를 발견함 — ① 동반유형(companion_type)은 NPC 개인 속성이 아니라 그룹 생성 규칙이다 ② 종속 아동 생성이 일반 인구 샘플링과 이중으로 겹칠 위험이 있다. 이 문서가 둘 다 해결한다.
 - **역할 이전(8/6)**: 이 문서의 규칙(비율·연령 구성·아동 배치 대상)은 그대로 유효하지만, 이 규칙을 적용해서 실제로 그룹을 만들어내는 코드는 Utility AI(김시리)가 아니라 crowdAI(이정원)가 짠다. Utility AI는 개별 방문객 태그(아키타입·동반유형 크기·아동 슬롯 여부) 분포만 만들어 넘긴다. 자세한 역할 분담은 `crowdai_integration_guide.md` 참고.
 
@@ -18,6 +18,8 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 ```
 
 ### 1.2 생성 순서 (5단계)
+
+（2026-09-03 코드 대조: 아래는 개념 순서다. 실제 FFF_VisitorDistributionBuilder는 TaggedVisitors와 GroupPlan을 만들고 Crowd의 BeginArrivalSchedule/DrainVisitorUntil이 연속 슬롯을 파티로 스폰하며 PartyID·LeaderAgentIndex·StableAgentID를 부여한다. 그룹화 비활성 설정·표 누락·풀 부족 경로는 별도 폴백이며 기본 분포 규칙이 모든 디버그 스폰에 강제되지는 않는다.）
 
 > **2026-08-06 해결 — 그룹 크기·아동 구성이 실측값으로 대체됐다.** 원래 1단계가 참조하던 "`companion_type_modifier_v0.csv`의 비율"은 **그 파일에 없었고**(카테고리별 응답률만 있었다), 그 CSV의 출처인 Tour_Stat 2018 표의 가로분석변수는 **`가구원수`**(여행 동반 인원이 아니다)였다. 2025 국민여행조사 원자료에서 실제 일행 규모(문항 A6)와 일행 내 만 15세 미만 인원(A6A)을 가중 집계해 대체했다 — 공표표 검증 통과. 아래 1·4단계가 그 실측표를 쓰도록 갱신됐고, 1.3·1.4절의 가정들은 폐기됐다(1.3절 참조).
 
@@ -91,7 +93,7 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
    자체 Utility 계산을 하지 않는다
 ```
 
-이건 `dependent_child_npc_spec.md`의 "아동은 자체 Utility 계산 없이 부모 목적지 상속"을 **그룹 전체로 일반화**한 것이다 — 아동은 그 일반 규칙의 특수 케이스(추가로 이동속도·주의집중 노브가 낮게 붙는 케이스)일 뿐이다.
+이건 `dependent_child_npc_spec.md`의 "아동은 자체 Utility 계산 없이 부모 목적지 상속"을 **그룹 전체로 일반화**한 것이다 — 아동은 그 일반 규칙의 특수 케이스(이동속도·주의집중 노브를 낮추자는 설계는 있으나 현재 미구현)일 뿐이다.
 
 **v0에서 하지 않는 것 (v1 이후 후보로 명시적으로 남김)**: 그룹원 각자 독립적으로 후보를 평가하다가 잠시 흩어져서 다른 목적지에 갔다가, 그룹 재합류를 우선순위로 다시 모이는 동작. 사용자가 이상적으로는 원하는 방향이라고 밝혔으나, 지금은 "편한 구현"을 우선해 리더 상속 모델로 시작하고, 나중에 이 문서를 갱신해 확장한다.
 
@@ -101,7 +103,7 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 
 - **스폰**: 그룹원 전원을 한 번에 일괄 스폰한다(따로따로 시차를 두고 생성하지 않음).
 - **도착 시각**: `arrival_time`은 그룹 전체가 공유하는 하나의 값이다(개인별 필드가 아니라 그룹 필드).
-- **체류시간**: `stay_duration_multiplier`(개체 변주, `individual_variation_spec.md` 5절)는 그룹원마다 독립적으로 뽑지 않는다. **그룹 리더의 `StableAgentId` 대신 `GroupId`를 시드 재료로 써서** `FFF_DeterministicRandom::MakeTraitSeed`를 호출하면, 그룹 전체가 동일한 체류시간을 공유하면서도 결정성은 그대로 유지된다. `crowdai_integration_guide.md`에서 이미 제안한 "그룹 이동속도(`walk_speed_multiplier`)를 GroupId로 시드해서 공유"와 정확히 같은 방식이다 — 이 두 특성(`walk_speed_multiplier`, `stay_duration_multiplier`)만 GroupId 기반으로 바꾸고, 나머지 4개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`)는 계속 개체별 독립을 유지한다 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
+- **체류시간**: `stay_duration_multiplier`(개체 변주, `individual_variation_spec.md` 5절)는 그룹원마다 독립적으로 뽑지 않는다. **그룹 리더의 `StableAgentId` 대신 `GroupId`를 시드 재료로 써서** `FFF_DeterministicRandom::MakeTraitSeed`를 호출하면, 그룹 전체가 동일한 체류시간을 공유하면서도 결정성은 그대로 유지된다. `crowdai_integration_guide.md`에서 이미 제안한 "그룹 이동속도(`walk_speed_multiplier`)를 GroupId로 시드해서 공유"와 정확히 같은 방식이다 — 이 두 특성(`walk_speed_multiplier`, `stay_duration_multiplier`)만 GroupId 기반으로 바꾸고, 나머지 5개(`patience_multiplier`, `crowd_tolerance_multiplier`, `preference_strength_multiplier`, `reevaluate_interval_multiplier`, `novelty_seeking_multiplier`)는 계속 개체별 독립을 유지한다 — 취향·인내심까지 그룹으로 묶으면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이 무의미해진다.
 
 **2026-08-06 구현 완료** — `FFF_IndividualVariationResolver::ResolveWithGroupSharing`. 자세한 내용은 3절 항목 7.
 
@@ -114,6 +116,8 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 다행히 원본 인구 데이터(`data/cleaned/population/saha_population_age_sex_2026_07.csv`)는 **단일세 해상도**(0세, 1세, … 100세 이상)를 그대로 갖고 있다 — `age_10_or_under`는 Tour_Stat 행동자료 해상도에 맞추기 위해 나중에 만든 집계일 뿐, 0~14세와 15~19세를 원본에서 분리할 수 있다.
 
 ### 2.2 해결 — 방식 A (사람 수를 먼저 맞춘다)
+
+（2026-09-03 코드 대조: 이 절은 기각된 초기안으로 보존한다. 실제 구현은 §2.4의 그룹 크기→아동 수 분포 방식이며 목표 아동 수 보정이나 group_3_plus 전용 부착을 하지 않는다. 0.4·1.5 노브도 현재 입력이 아니다.）
 
 ```text
 1. 원본 단일세 인구에서 0~14세 합계를 계산 → 목표 아동 수
@@ -159,7 +163,7 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 ## 3. 아직 안 된 것
 
 1. ~~위 2.3절 스크립트 수정~~ → **완료(2026-08-04)**.
-2. 그룹을 실제로 **묶는** 코드 — 8/6 역할 재조정으로 **crowdAI(이정원) 담당**이다. Utility AI 쪽 몫인 개체 태그 분포 생성(`FFF_VisitorDistributionBuilder`)은 **2026-08-06 구현 완료**(`Source/FestaFiesta/Public+Private/NPC/Party/FF_VisitorDistributionBuilder.*`, 자동화 테스트 8개). 입력 데이터 3종(`visitor_group_size_distribution_v0` / `group_child_composition_v0` / `group_composition_rules_v0`)도 준비됐다.
+2. 그룹을 실제로 **묶는** 코드 — **Crowd의 DrainVisitorUntil에 구현됐다**（PartyID·리더 인덱스·안정 ID 배정. 풀 용량과 예약 추가 인원은 별도 검증 필요）. 8/6 역할 재조정으로 **crowdAI(이정원) 담당**이다. Utility AI 쪽 몫인 개체 태그 분포 생성(`FFF_VisitorDistributionBuilder`)은 **2026-08-06 구현 완료**(`Source/FestaFiesta/Public+Private/NPC/Party/FF_VisitorDistributionBuilder.*`, 자동화 테스트 8개). 입력 데이터 3종(`visitor_group_size_distribution_v0` / `group_child_composition_v0` / `group_composition_rules_v0`)도 준비됐다.
 3. ~~1.3절 유형별 비율(80/20, 50/50)과 1.4절 그룹 크기 비율(70/30)~~ → **2026-08-06 실측으로 교체 완료.** 남은 가정은 `non_leader_adult_archetype_rule`(리더가 아닌 성인의 아키타입) 하나뿐이다.
 4. ~~아동 비율을 무엇이 결정할지~~ → **2026-08-06 결정 완료**: 그룹 구성이 결정한다(2.4절).
 5. ~~`GroupId`를 실제 NPC 런타임 필드로 어떻게 들고 다닐지~~ — **2026-08-19 확인: 결선됐다.**
@@ -174,4 +178,11 @@ P(대표 방문객의 연령, 그룹 크기) ≈ P(대표 방문객의 연령) �
 
    **이 규칙이 지키는 것**: 아동만 장내에 남는 상태가 원리적으로 발생하지 않는다. 1.5절 리더 상속 모델을 목적지 없는 결과까지 확장한 것이고, `spawn_group_together = true`(그룹 통째로 입장)와 대칭이다 — **통째로 들어오고 통째로 나간다.**
 
-   **인원 보존 계산 시 주의**: 퇴장 단위가 개인이 아니라 그룹이다. 리더 1명의 판정으로 최대 6명이 한 번에 빠지므로, 이탈률을 개인 단위로 세면 실제 감소 인원과 어긋난다.
+   **인원 보존 계산 시 주의**: 퇴장 단위가 개인이 아니라 그룹이다. 리더 1명의 판정으로 최대 6명이 한 번에 빠지므로, 파티 퇴장 건수와 실제 퇴장 인원 합계를 구분해야 한다（개인 단위 지표에는 그 파티의 전체 인원수를 더함）.
+
+## 코드 대조 근거 (2026-09-03)
+
+- [FF_VisitorDistributionBuilder.cpp](../../../Source/FestaFiesta/Private/NPC/Party/FF_VisitorDistributionBuilder.cpp)
+- [FF_CrowdSimulationSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdSimulationSubsystem.cpp)
+
+（현재 작업 트리 기준. 데이터/계수 수는 저장소 CSV, 설정은 C++ 기본값과 Config를 구분해 기술했다. 설계 제안·과거 실측은 코드만으로 재검증할 수 없어 해당 설명을 보존했다.）
