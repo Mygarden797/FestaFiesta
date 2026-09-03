@@ -15,7 +15,7 @@ FText UFF_UIDisplayTextLibrary::GetFestivalStageText(EFF_FestivalStage Stage)
 	case EFF_FestivalStage::PromotionPreview:	return LOCTEXT("Stage_PromotionPreview", "홍보 프리뷰");
 	case EFF_FestivalStage::SunsetTransition:	return LOCTEXT("Stage_SunsetTransition", "노을 전환");
 	case EFF_FestivalStage::MorningCheck:		return LOCTEXT("Stage_MorningCheck", "모닝체크");
-	case EFF_FestivalStage::Live:				return LOCTEXT("Stage_Live", "라이브 운영");
+	case EFF_FestivalStage::Live:				return LOCTEXT("Stage_Live", "라이브");
 	case EFF_FestivalStage::Closing:			return LOCTEXT("Stage_Closing", "마감");
 	case EFF_FestivalStage::Report:				return LOCTEXT("Stage_Report", "리포트");
 	case EFF_FestivalStage::Finale:				return LOCTEXT("Stage_Finale", "피날레");
@@ -50,6 +50,7 @@ FText UFF_UIDisplayTextLibrary::GetLiveTabText(EFF_LiveTab Tab)
 	case EFF_LiveTab::SNS:			return LOCTEXT("LiveTab_SNS", "SNS");
 	case EFF_LiveTab::Report:		return LOCTEXT("LiveTab_Report", "리포트");
 	case EFF_LiveTab::Staff:		return LOCTEXT("LiveTab_Staff", "스태프");
+	case EFF_LiveTab::Finale:		return LOCTEXT("LiveTab_Finale", "피날레");
 	}
 
 	return FText::GetEmpty();
@@ -102,6 +103,34 @@ FText UFF_UIDisplayTextLibrary::GetFacilityQueueStateText(EFF_LiveFacilityQueueS
 	}
 
 	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetNeedTypeText(EFF_NeedType NeedType)
+{
+	switch (NeedType)
+	{
+	case EFF_NeedType::Hunger:		return LOCTEXT("Need_Hunger", "배고픔");
+	case EFF_NeedType::Thirst:		return LOCTEXT("Need_Thirst", "갈증");
+	case EFF_NeedType::Restroom:	return LOCTEXT("Need_Restroom", "화장실");
+	case EFF_NeedType::Fatigue:		return LOCTEXT("Need_Fatigue", "피로");
+	case EFF_NeedType::Stimulation:	return LOCTEXT("Need_Stimulation", "즐길거리");
+	default:						return FText::GetEmpty();
+	}
+}
+
+FText UFF_UIDisplayTextLibrary::GetNeedRemedyText(EFF_NeedType NeedType)
+{
+	// ★ 시설 종류 이름을 그대로 쓰지 않고 **할 일**로 적는다.
+	//   `푸드 부스` 보다 `먹을 곳을 늘리세요` 가 무엇을 해야 하는지에 가깝다.
+	switch (NeedType)
+	{
+	case EFF_NeedType::Hunger:		return LOCTEXT("NeedFix_Hunger", "먹을 곳을 늘리세요");
+	case EFF_NeedType::Thirst:		return LOCTEXT("NeedFix_Thirst", "마실 곳을 늘리세요");
+	case EFF_NeedType::Restroom:	return LOCTEXT("NeedFix_Restroom", "화장실을 늘리세요");
+	case EFF_NeedType::Fatigue:		return LOCTEXT("NeedFix_Fatigue", "쉴 곳을 늘리세요");
+	case EFF_NeedType::Stimulation:	return LOCTEXT("NeedFix_Stimulation", "볼거리를 늘리세요");
+	default:						return FText::GetEmpty();
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

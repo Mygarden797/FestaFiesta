@@ -32,6 +32,8 @@ struct FFF_CrowdProgramTestAccess
 	static void Needs(UFF_CrowdSimulationSubsystem& C)
 	{ C.SimTimeSeconds += 1.f; C.AdvanceNeeds(false); }
 	static void LeaveAll(UFF_CrowdSimulationSubsystem& C) { C.AllAgentLeavingTrigger(); }
+	static void Process(UFF_CrowdSimulationSubsystem& C) { C.ProcessDecisions(); }
+	static void ClearSpawnRequests(UFF_CrowdSimulationSubsystem& C) { C.DecisionQueue.Reset(); }
 	static void RegisterLeader(UFF_CrowdSimulationSubsystem& C, int32 I)
 	{ C.PartyLeaderByID.Add(C.UnitDatas[I].PartyID, I); }
 	static bool Deadline(UFF_CrowdSimulationSubsystem& C, int32 I, const FFF_ProgramReservation& R, float Now)
@@ -40,6 +42,9 @@ struct FFF_CrowdProgramTestAccess
 
 struct FFF_CrowdProgramDecisionTestAccess
 {
+	static void EnterLive(UFF_CrowdDecisionSubsystem& D) { D.HandleStageChanged(EFF_FestivalStage::Setup, EFF_FestivalStage::Live); }
+	static void StartMain(UFF_CrowdDecisionSubsystem& D) { D.HandleMainProgramStarted(TEXT("Test main stage")); }
+	static void EndMain(UFF_CrowdDecisionSubsystem& D) { D.HandleMainProgramEnded(TEXT("Test main stage")); }
 	static void SetReadModel(UFF_CrowdDecisionSubsystem& D, const FFFZSReadModel& Model)
 	{ D.CachedReadModel = Model; D.CachedReadModelFrame = GFrameCounter; }
 	static bool Decide(UFF_CrowdDecisionSubsystem& D, const FFF_PartyDecisionContext& C, FFF_PartyDecisionResult& R)
@@ -226,6 +231,114 @@ bool FFF_CrowdProgramNoCandidates::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Ordinary party still leaves on expired stay"), Access::Fallback(*Decision, Context), EFF_PartyFallbackAction::Leave);
 	Context.RemainingStayMinutes = 100.f;
 	TestEqual(TEXT("Ordinary party still leaves on no_choice patience"), Access::Fallback(*Decision, Context), EFF_PartyFallbackAction::Leave);
+
+	// 실제 Decision 연결도 전역 후보를 전달하며, 그 뒤의 예약 전용 필터가 유지되는지 확인한다.
+	Reservations->ResetAll();
+	Context.RemainingStayMinutes = 100.f;
+	Context.ConsecutiveNoChoiceCount = 0;
+	Context.Needs.Stimulation = 1.f;
+	FFFZSZoneReadModel RemoteZone;
+	RemoteZone.ZoneId = TEXT("RemoteStageZone");
+	Model.Zones.Add(RemoteZone);
+	Model.Facilities[0].ZoneId = RemoteZone.ZoneId;
+	Model.Facilities[0].Category = EFFZSFacilityCategory::Performance;
+	Model.Facilities[0].FacilityDefinitionId = TEXT("Performance_MainStage_SunsetMainStage");
+	Model.Facilities[0].WorldLocation = Context.PartyWorldLocation;
+	Access::EnterLive(*Decision);
+	Access::StartMain(*Decision);
+	Decision->ResetStats();
+	int32 ChosenCount = 0;
+	for (int32 Round = 0; Round < 16; ++Round)
+	{
+		Context.ChoiceRoundIndex = Round;
+		Access::SetReadModel(*Decision, Model);
+		FFF_PartyDecisionResult Result;
+		if (Access::Decide(*Decision, Context, Result))
+		{
+			++ChosenCount;
+			TestEqual(TEXT("Actual selector can choose distant main stage"), Result.Destination,
+				Model.Facilities[0].ApproachWorldTransform.GetLocation());
+		}
+	}
+	TestEqual(TEXT("Global candidates reach production selector"), Decision->GetStats().NoCandidate, 0);
+	TestTrue(TEXT("Main stage selected in deterministic sample"), ChosenCount > 0);
+	Reservations->RegisterProgram(Model.Facilities[0].FacilityInstanceId, 30.f, 60.f, 1);
+	Access::SetReadModel(*Decision, Model);
+	FFF_PartyDecisionResult ReservedResult;
+	TestFalse(TEXT("Global discovery cannot bypass reservation-only filter"), Access::Decide(*Decision, Context, ReservedResult));
+	TestEqual(TEXT("Reserved global stage removed before scoring"), Decision->GetStats().NoCandidate, 1);
+	Access::EndMain(*Decision);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_MainStageBroadcast,
+	"FestaFiesta.Crowd.Reservation.MainStageBroadcastReachesBeyond64",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game)) { Fixture.ForwardErrorMessages(this); return false; }
+	UWorld* World = Fixture.GetTestWorld();
+	auto* Stage = World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>();
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	Stage->ElapsedLiveSeconds = 30.f;
+	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
+	auto* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	auto* Decision = World->GetSubsystem<UFF_CrowdDecisionSubsystem>();
+	Crowd->InitializeSimulation(FVector::ZeroVector, 10000.f, 1, 78, AFF_BaseCrowd::StaticClass());
+	using Access = FFF_CrowdProgramTestAccess;
+	using Decisions = FFF_CrowdProgramDecisionTestAccess;
+	TArray<int32> Agents;
+	for (int32 I = 0; I < 78; ++I)
+	{
+		const int32 Agent = Crowd->SpawnAgent(*World, FVector::ZeroVector, FRotator::ZeroRotator);
+		if (!TestTrue(TEXT("Agent allocated"), Agent != INDEX_NONE)) return false;
+		Agents.Add(Agent);
+		Access::Unit(*Crowd, Agent).LeaderAgentIndex = Agent;
+		Access::Unit(*Crowd, Agent).PartyID = I;
+		Access::State(*Crowd, Agent) = FPartyDecisionState();
+		Access::State(*Crowd, Agent).CurrentDestinationId = TEXT("ExistingDestination");
+		Access::RegisterLeader(*Crowd, Agent);
+	}
+	Access::ClearSpawnRequests(*Crowd);
+	Access::State(*Crowd, Agents[0]).QueuePhase = EFF_PartyQueuePhase::AtSlot;
+	Access::State(*Crowd, Agents[1]).bIsLeaving = true;
+	Access::State(*Crowd, Agents[2]).ProgramPhase = EFF_PartyProgramPhase::Returning;
+	Access::State(*Crowd, Agents[3]).ProgramPhase = EFF_PartyProgramPhase::Waiting;
+	Access::State(*Crowd, Agents[4]).ProgramPhase = EFF_PartyProgramPhase::Participating;
+	Access::Unit(*Crowd, Agents[5]).bIsActive = false;
+	Access::Unit(*Crowd, Agents[6]).LeaderAgentIndex = Agents[8];
+	auto* Reservations = World->GetGameInstance()->GetSubsystem<UFF_ProgramReservationSubsystem>();
+	const FGuid ProgramId = Reservations->RegisterProgram(FGuid::NewGuid(), 10.f, 60.f, 1);
+	Reservations->ConfirmReservedParty(ProgramId, 7, 1);
+	int32 Calls = 0;
+	Crowd->OnPartyNeedsDecision.BindLambda([&Calls](const FFF_PartyDecisionContext&, FFF_PartyDecisionResult& Result)
+	{
+		++Calls;
+		Result.Destination = FVector(1000, 0, 0);
+		Result.DestinationId = TEXT("ChosenByTestSelector");
+		return true;
+	});
+	TestFalse(TEXT("Standalone open gate is not global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
+	Decisions::EnterLive(*Decision);
+	TestFalse(TEXT("Before main event global discovery is off"), Decision->IsGlobalMainStageDiscoveryActive());
+	Decisions::StartMain(*Decision);
+	TestTrue(TEXT("Main event enables global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
+	TestEqual(TEXT("All seventy eligible parties notified, including beyond old cap"), Crowd->GetPendingDecisionCount(), 70);
+	for (int32 I = 0; I < 8; ++I)
+	{
+		TestFalse(TEXT("Protected party/member is not queued"), Access::State(*Crowd, Agents[I]).bNeedsDecision);
+		TestEqual(TEXT("Protected destination is preserved"), Access::State(*Crowd, Agents[I]).CurrentDestinationId, FName(TEXT("ExistingDestination")));
+	}
+	TestEqual(TEXT("Existing queue membership is preserved"), Access::State(*Crowd, Agents[0]).QueuePhase, EFF_PartyQueuePhase::AtSlot);
+	Access::Process(*Crowd);
+	TestEqual(TEXT("Only frame budget is processed"), Calls, 64);
+	TestEqual(TEXT("Remaining parties are retained for next frame"), Crowd->GetPendingDecisionCount(), 6);
+	Access::Process(*Crowd);
+	TestEqual(TEXT("All eligible parties eventually evaluated"), Calls, 70);
+	TestEqual(TEXT("Broadcast drained"), Crowd->GetPendingDecisionCount(), 0);
+	Decisions::EndMain(*Decision);
+	TestFalse(TEXT("Main end removes global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
+	Crowd->OnPartyNeedsDecision.Unbind();
 	return true;
 }
 #endif

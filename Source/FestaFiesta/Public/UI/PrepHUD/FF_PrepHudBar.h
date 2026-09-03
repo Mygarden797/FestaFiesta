@@ -199,6 +199,10 @@ protected:
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
+	/** CTA 사유의 남은 시간을 초마다 갱신한다. */
+	UFUNCTION()
+	void HandleRemainingSecondsChanged(int32 NewValue);
+
 	UFUNCTION()
 	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
 
@@ -365,11 +369,21 @@ protected:
 	FFF_PrepPanelLayout DefaultPanelLayout;
 
 	/**
-	 * 하단 바 높이(px). 패널이 바를 덮지 않게 이만큼 띄운다.
-	 * **바의 실제 높이와 같게 유지한다** — 디자이너에서 바를 키우면 이 값도 같이 키운다.
+	 * 하단 바 높이(px). **바의 실제 높이와 같게 유지한다.**
+	 * 디자이너에서 바를 키우면 이 값도 같이 키운다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
 	float BarHeight = 58.f;
+
+	/**
+	 * 상태 행 높이(px). **패널 아래 끝을 여기까지만 올린다.**
+	 *
+	 * 바 전체(58)만큼 띄우면 패널이 바 위에 동동 뜨고, 가운데 패널들과 아래 끝이 어긋난다.
+	 * 탭 줄 밑으로 들어가야 "이 버튼이 이 패널을 연다" 가 눈에 붙는다
+	 * (`docs/memory/prep-hud-reference.md` 2절).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))
+	float StatusRowHeight = 29.f;
 
 	/** 패널과 화면 가장자리 사이 여백(px). 늘어나는 축에만 쓰인다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Layout", meta = (ClampMin = "0.0"))

@@ -229,6 +229,11 @@ private:
     TObjectPtr<UBoxComponent> NavigationObstacleBounds;
     // 등록된 시설의 고형 footprint만 NavArea_Null로 반영하는 Nav 전용 Box다.
 
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Navigation", meta = (AllowPrivateAccess = "true"))
+    TObjectPtr<UBoxComponent> QueueLaneNavCostBounds;
+    // 예약된 Queue 레인을 고비용 NavArea로 반영하는 Nav 전용 Box다. footprint와 달리 통행을
+    // 막지 않고 비용만 올린다 — 막으면 대기열 슬롯이 NavMesh 밖으로 나가 배치 검증이 깨진다.
+
     bool bBuildModeRangeVisible = false;
     bool bBuildModeActionSelected = false;
     EFFZSFacilitySelectionIndicatorState SelectionIndicatorState =
@@ -246,6 +251,7 @@ private:
     void RebuildRuntimePresentation();
     void RebuildSelectionProxy(const FVector& SelectionExtent);
     void SetNavigationObstacleEnabled(bool bEnabled);
+    void ApplyQueueLaneNavCostGeometry();
     void RequestVisualMesh();
     void ApplyLoadedVisualMesh();
     void RequestFacilityAudio();

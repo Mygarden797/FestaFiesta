@@ -81,6 +81,13 @@ protected:
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
 
+	/**
+	 * 메인 공연 잠금이 걸리거나 풀렸다. **단계 안에서** 바뀌므로 따로 받아야 한다.
+	 * 이걸 안 받으면 라이브 도중 시간만 1배속이 되고 버튼은 4배속이 눌린 채로 남는다.
+	 */
+	UFUNCTION()
+	void HandleTimeScaleLockChanged(bool bNewLocked);
+
 	UFUNCTION()
 	void HandleRemainingSecondsChanged(int32 NewValue);
 
@@ -92,6 +99,13 @@ protected:
 
 	UFUNCTION()
 	void HandleArrearsChanged(int32 NewValue);
+
+	/** 피날레 등급이 바뀌면 탭이 생기거나 사라진다. 값만 바뀌는 것이 아니다. */
+	UFUNCTION()
+	void HandleFinaleGradeChanged(EFF_FinaleGrade NewGrade);
+
+	UFUNCTION()
+	void HandleCtaClicked();
 
 	/** 전체 인원과 가용 인원 **양쪽**이 이 핸들러를 부른다. 인자를 믿지 않는다. */
 	UFUNCTION()
@@ -140,10 +154,25 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
 	TObjectPtr<UFF_LiveTabButton> Tab_Staff;
 
+	/** 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합). */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Tabs")
+	TObjectPtr<UFF_LiveTabButton> Tab_Finale;
+
 	// --- 배경 (팔레트 색을 입힐 자리) ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
 	TObjectPtr<UBorder> Border_MenuRow;
+
+	/**
+	 * 바 전체 높이를 쥔 상자.
+	 *
+	 * 🔴 **런타임에 높이를 바꿔야 한다.** 탭이 하나도 없는 단계(피날레 연출)에서는
+	 * `Border_MenuRow` 를 접는데, 두 행이 모두 `Fill` 이라 남은 58 을 **상태 행이 전부
+	 * 가져간다.** 그러면 배경만 두 배로 커지고 안의 글자는 `VAlign_Center` 라 그대로여서
+	 * 위아래로 빈 띠가 생긴다 (2026-09-03 실측: 마감 `상태행 2020x29` → 피날레 `2020x58`).
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
+	TObjectPtr<class USizeBox> SizeBox_Bar;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live")
 	TObjectPtr<UBorder> Border_StatusRow;
@@ -267,6 +296,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Speed")
 	TObjectPtr<UWidget> Box_Speed;
 
+	// === CTA — 피날레 연출 구간에서만 띄운다 ===
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Cta")
+	TObjectPtr<UButton> Button_Cta;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Cta")
+	TObjectPtr<UTextBlock> Text_CtaLabel;
+
 	// --- 설정 ---
 
 	/** 탭 하나 = 한 줄. 없는 탭은 `DefaultPanelLayout` 으로 연다. */
@@ -349,6 +386,37 @@ public:
 	 */
 	void NudgePanelPosition(FVector2D SlateDelta);
 
+	// === 하단 바 CTA (2026-09-02 통합) ===
+	//
+	// 판정은 화면이 소유하고 **버튼은 리포트 패널이 그린다.** 바에도 두면 화면에
+	// `다음 날로` 가 둘이 된다 — 준비 단계에서 `개장하기` 가 둘이었던 것과 같은 문제다.
+	// 다만 피날레는 패널이 없는 단계라 그때만 바에 띄운다.
+
+	/**
+	 * 지금 넘길 수 있는 상태인지. **부를 때마다 다시 판정한다.**
+	 *
+	 * 🔴 캐시해 두면 안 된다. 리포트 패널이 이 값을 읽어 버튼을 그리는데, 단계가 바뀔 때
+	 * 화면과 패널 중 **누가 먼저 신호를 받는지 정해져 있지 않다.** 패널이 먼저 깨어나면
+	 * 한 단계 전의 값을 읽어 `다음 날로` 를 눌렀는데 아무 일도 안 일어나게 된다.
+	 * 판정 자체는 bool 세 개짜리 순수 함수라 매번 불러도 싸다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	EFF_LiveCtaState GetCtaState() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	FText GetCtaLabelText() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	FText GetCtaReasonText() const;
+
+	/** 패널의 버튼이 눌렸을 때. 판정은 소유자가 한다 — 여기서 미리 막지 않는다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live|Cta")
+	void RequestAdvance();
+
+	/** 피날레를 샀는가. 결산 탭을 숨길지 정한다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live|Cta")
+	bool HasPurchasedFinale() const;
+
 	/** 지금 끌어 옮길 수 있는 상태인지. `Designer` 도킹이면 코드가 자리를 안 잡으므로 막는다. */
 	bool IsPanelDragAllowed() const;
 
@@ -370,9 +438,27 @@ private:
 	 */
 	void LogPanelGeometryNextTick(UFF_LivePanelBase& Panel);
 
+	/**
+	 * 단계가 바뀔 때 바의 실측 높이를 남긴다.
+	 *
+	 * 🔴 "피날레에서 바가 두꺼워진다" 는 보고(2026-09-03)를 코드만 읽어서는 못 갈랐다.
+	 * 바는 `SizeBox` 로 58 고정이고 두 행 모두 `Fill` 이라 이론상 안 변한다. 그러면
+	 * ① 실제로는 안 변하는데 탭 줄이 사라져 그렇게 보이거나 ② 어딘가 내가 못 본 경로가
+	 * 늘리고 있는 것인데, **둘의 대처가 완전히 다르다.** 추측으로 고치면 헛짚는다.
+	 */
+	void LogBarGeometryNextTick(EFF_FestivalStage Stage);
+
+	/**
+	 * 탭 버튼 줄의 높이(px). 생성기의 `MenuRowHeight` 와 같아야 한다.
+	 * 상태 행 높이는 위의 `StatusRowHeight` 를 그대로 쓴다 — 값을 두 벌 두지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Live|Layout", meta = (ClampMin = "0.0"))
+	float MenuRowHeight = 29.f;
+
 	void RefreshTabs();
 	void RefreshStatusRow();
 	void RefreshSpeed();
+	void RefreshCta();
 
 	static void SetTextOrHide(UTextBlock* TextBlock, const FText& Value);
 	static void SetGroupTextOrHide(UWidget* Group, UTextBlock* TextBlock, const FText& Value);
@@ -384,6 +470,8 @@ private:
 	TMap<EFF_LiveTab, TObjectPtr<UFF_LivePanelBase>> PanelWidgets;
 
 	FFF_LiveTabSelection Selection;
+
+	// 캐시하지 않는다 — `GetCtaState()` 주석 참고.
 
 	/** 소유자 API 가 없는 값. `Debug_SetPlaceholders` 로만 들어온다. */
 	int32 VisitorCount = INDEX_NONE;

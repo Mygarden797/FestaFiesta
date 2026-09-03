@@ -59,4 +59,17 @@ public:
 	/** 시설 대기열의 상태. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	static FText GetFacilityQueueStateText(EFF_LiveFacilityQueueState State);
+
+	/** 관객 욕구 종류. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetNeedTypeText(EFF_NeedType NeedType);
+
+	/**
+	 * 그 욕구가 미해소일 때 **무엇을 하면 되는지.**
+	 *
+	 * 숫자만 두면 `배고픔 62%` 를 보고도 할 일을 모른다. 욕구 이름과 대처를 함께 두는
+	 * 것이 이 화면의 값어치다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetNeedRemedyText(EFF_NeedType NeedType);
 };

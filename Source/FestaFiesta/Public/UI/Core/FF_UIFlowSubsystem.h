@@ -275,6 +275,15 @@ private:
 	/** 프론트엔드 레벨이 열린 뒤 띄울 화면. 첫 진입은 타이틀, `로비로` 는 국가 지도다. */
 	EFF_UIFlowScreen PendingFrontendScreen = EFF_UIFlowScreen::Title;
 
+	/**
+	 * 다음 `GoToScreen` 한 번만 카메라를 블렌드 없이 맞춘다.
+	 *
+	 * 축제를 끝내고 나올 때 지구본을 스택 바닥으로 깔고 그 위에 국가 지도를 올리는데,
+	 * 그대로 두면 카메라가 지구본 → 국가로 블렌드해서 **지구가 잠깐 스친다.**
+	 * 쓰고 나면 스스로 꺼진다 — 다음 전환까지 남으면 엉뚱한 화면이 끊겨 보인다.
+	 */
+	bool bInstantCameraForNextScreen = false;
+
 	FName ActiveFestivalId;
 
 	/**

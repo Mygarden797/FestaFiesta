@@ -51,6 +51,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Live")
 	UFF_LiveHudScreen* GetOwningScreen() const { return OwningScreen.Get(); }
 
+protected:
+	/** 값이 비면 칸째 접는다. 빈 줄을 남기면 고장난 것으로 보인다. */
+	static void SetTextOrHide(class UTextBlock* TextBlock, const FText& Value);
 	/** 이 패널을 닫아 달라고 **바에 요청한다.** 직접 숨기지 않는다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Live")
 	void RequestClose();

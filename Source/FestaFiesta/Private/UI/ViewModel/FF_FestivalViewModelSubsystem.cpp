@@ -10,6 +10,11 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "Queue/FF_QueueSubsystem.h"
+#include "Queue/FF_QueueTypes.h"
+#include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/FF_UIDisplayTextLibrary.h"
 
@@ -35,12 +40,17 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedStageSubsystem->OnStageChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleStageChanged);
 		CachedStageSubsystem->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 		CachedStageSubsystem->OnEnvironmentStateChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
+		CachedStageSubsystem->OnMainProgramStarted.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
+		CachedStageSubsystem->OnMainProgramEnded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramEnded);
 	}
 	CachedStageSubsystem = nullptr;
 
 	if (CachedProgressionSubsystem)
 	{
 		CachedProgressionSubsystem->OnGoldChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+		CachedProgressionSubsystem->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
+		CachedProgressionSubsystem->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
+		CachedProgressionSubsystem->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
 		CachedProgressionSubsystem->OnTotalArrearsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
 		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
@@ -185,6 +195,10 @@ void UFF_FestivalViewModelSubsystem::TryBindStageSubsystem()
 	CachedStageSubsystem->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleRemainingSecondsChanged);
 	CachedStageSubsystem->OnEnvironmentStateChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged);
 
+	// 🔴 둘 다 받는다. 시작만 받으면 공연이 끝나도 화면은 계속 `잠김` 으로 남는다.
+	CachedStageSubsystem->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramStarted);
+	CachedStageSubsystem->OnMainProgramEnded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleMainProgramEnded);
+
 	OnStageViewChanged.Broadcast(GetCurrentStage(), GetCurrentDay());
 	BroadcastRemainingSecondsIfChanged(FMath::CeilToInt(GetRemainingSeconds()));
 
@@ -248,6 +262,12 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 
 	// Bind + Sync. StartFestival이 이미 지나갔다면 방송을 놓쳤으므로 현재값을 직접 읽는다.
 	CachedProgressionSubsystem->OnGoldChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged);
+
+	// 🔴 매출 둘은 2026-09-02 까지 **구독이 없어서 화면이 영원히 `0`** 이었다.
+	// 소유자에는 값도 델리게이트도 처음부터 있었는데 ViewModel 이 안 받고 있었다.
+	CachedProgressionSubsystem->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
+	CachedProgressionSubsystem->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
+	CachedProgressionSubsystem->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
 	CachedProgressionSubsystem->OnTotalArrearsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
 	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
@@ -263,6 +283,9 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	if (CachedProgressionSubsystem->IsFestivalStarted())
 	{
 		HandleOwnerGoldChanged(CachedProgressionSubsystem->GetGold());
+		HandleOwnerTotalRevenueChanged(CachedProgressionSubsystem->GetTotalRevenue());
+		HandleOwnerTodayRevenueChanged(CachedProgressionSubsystem->GetTodayRevenue());
+		HandleOwnerExpectedVisitorsChanged(CachedProgressionSubsystem->GetExpectedVisitors());
 		HandleOwnerArrearsChanged(CachedProgressionSubsystem->GetTotalArrears());
 		HandleOwnerStaffCountChanged(CachedProgressionSubsystem->GetTotalStaffCount());
 
@@ -281,6 +304,23 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged(int32 NewValue)
 {
 	// 소유자 값이 들어오는 순간부터 더미는 의미가 없다. 변화 감지는 ApplyIntMetric이 한다.
 	ApplyIntMetric(Gold, NewValue, OnGoldChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged(int32 NewValue)
+{
+	ApplyIntMetric(TotalRevenue, NewValue, OnTotalRevenueChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged(int32 NewValue)
+{
+	ApplyIntMetric(TodayRevenue, NewValue, OnTodayRevenueChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged(int32 NewValue)
+{
+	// 🔴 소유자는 정의가 없을 때 `INDEX_NONE` 을 준다. 그대로 넘긴다 —
+	// 0 으로 바꾸면 `아무도 안 온다` 는 확정 사실이 된다.
+	ApplyIntMetric(ExpectedVisitors, NewValue, OnExpectedVisitorsChanged);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged(int32 NewValue)
@@ -557,6 +597,55 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 	return Options;
 }
 
+TArray<FFF_LiveNeedView> UFF_FestivalViewModelSubsystem::GetNeedMetrics() const
+{
+	TArray<FFF_LiveNeedView> Views;
+
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_NpcNeedMetricsSubsystem* Needs =
+		GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr;
+	if (!Needs)
+	{
+		return Views;
+	}
+
+	// 순서를 enum 과 같게 유지한다 — 화면이 매번 같은 자리에 같은 욕구를 그려야
+	// 눈이 값의 변화를 따라갈 수 있다.
+	for (uint8 Index = 0; Index < static_cast<uint8>(EFF_NeedType::Count); ++Index)
+	{
+		const EFF_NeedType NeedType = static_cast<EFF_NeedType>(Index);
+
+		FFF_LiveNeedView& View = Views.AddDefaulted_GetRef();
+		View.NeedType = NeedType;
+		View.UnmetRatioPercent = Needs->GetNeedUnmetRatio(NeedType);
+	}
+
+	return Views;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetNeedSampleCount() const
+{
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_NpcNeedMetricsSubsystem* Needs =
+		GI ? GI->GetSubsystem<UFF_NpcNeedMetricsSubsystem>() : nullptr;
+
+	// 🔴 서브시스템이 없으면 `0` 이다 — 표본 없음과 같은 뜻이라 화면이 같게 다룬다.
+	return Needs ? Needs->GetSampleCount() : 0;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetConcurrentVisitorCount() const
+{
+	// 군중은 월드 서브시스템이라 GameInstance 에서 바로 못 꺼낸다.
+	const UGameInstance* GI = GetGameInstance();
+	const UWorld* World = GI ? GI->GetWorld() : nullptr;
+	const UFF_CrowdSimulationSubsystem* Crowd =
+		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
+
+	// 🔴 없으면 0 이 아니라 `모름` 이다. 0 을 돌려주면 화면이 `관객 0명` 이라는
+	// **확정 사실**을 말하는데, 실제로는 시뮬레이션이 아직 없는 것뿐이다.
+	return Crowd ? Crowd->GetActiveAgentCount() : INDEX_NONE;
+}
+
 namespace FFViewModelFacilityLocal
 {
 	/** ZoneSystem 의 설치 상태를 UI 값으로 옮긴다. 모르는 값은 지어내지 않고 `Unknown` 이다. */
@@ -605,6 +694,22 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		return Views;
 	}
 
+	// 🔴 **예상 대기 시간은 다리를 건너야 온다.**
+	//   Queue 는 `int32 FacilityId`, Zone 은 `FGuid` 라 서로 못 알아본다.
+	//   그 사이를 이어 주는 `FindQueueFacilityId()` 가 2026-09-03 에 확인됐다
+	//   (`UI_API.md` 요청 4번 — 장원재·한광훈 님 공급). 둘 중 하나만 없어도
+	//   예상 대기는 `모름` 이고, 나머지 값은 그대로 보여 준다.
+	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge =
+		World->GetSubsystem<UFF_ZoneSystemQueueBridgeSubsystem>();
+	const UFF_QueueSubsystem* Queue = World->GetSubsystem<UFF_QueueSubsystem>();
+
+	if (!QueueBridge || !Queue)
+	{
+		UE_LOG(LogFestaFiestaUI, Log,
+			TEXT("[ViewModel] 대기열 다리(%s)나 Queue(%s)가 없어 예상 대기를 못 붙인다."),
+			QueueBridge ? TEXT("있음") : TEXT("없음"), Queue ? TEXT("있음") : TEXT("없음"));
+	}
+
 	const FFFZSReadModel ReadModel = Zone->BuildReadModel();
 	Views.Reserve(ReadModel.Facilities.Num());
 
@@ -631,6 +736,28 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 		View.AverageWaitSeconds = (Facility.AverageCompletedWaitSeconds > 0.f)
 			? FMath::RoundToInt(Facility.AverageCompletedWaitSeconds)
 			: INDEX_NONE;
+
+		// --- 예상 대기: 지금 한 명이 서면 얼마나 기다리나 ---
+		if (QueueBridge && Queue)
+		{
+			const int32 QueueFacilityId = QueueBridge->FindQueueFacilityId(Facility.FacilityInstanceId);
+			if (QueueFacilityId != INDEX_NONE)
+			{
+				const float WaitSeconds = Queue->GetExpectedWaitSeconds(QueueFacilityId, /*IncomingMemberCount=*/1);
+
+				// 🔴 `UnreachableWaitSeconds` 는 **시간이 아니라 표식**이다. Queue 쪽 주석에
+				//    "미등록 시설에 0을 돌려주면 대기 없는 최고의 후보로 보인다" 고 적혀 있듯,
+				//    저쪽은 안전한 쪽으로 넘어지려고 큰 값을 쓴다. 그것을 그대로 그리면
+				//    화면에 `1440분` 이 뜬다. 여기서 `모름` 으로 바꾼다.
+				const bool bReachable = WaitSeconds < FFF_QueueTimings::UnreachableWaitSeconds;
+
+				View.ExpectedWaitSeconds = bReachable
+					? FMath::Max(0, FMath::RoundToInt(WaitSeconds))
+					: INDEX_NONE;
+
+				View.ServiceRatePerMinute = Queue->GetFacilityServiceRatePerMinute(QueueFacilityId);
+			}
+		}
 
 		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다 —
 		// `GetEligibleFacilitiesForProgram` 과 같은 사정이고 같은 방식으로 만든다.
@@ -940,6 +1067,17 @@ FText UFF_FestivalViewModelSubsystem::GetLiveClockTextAtMinutes(int32 LiveMinute
 
 	// 시각 표기는 숫자 서식이라 현지화 대상이 아니다. `GetLiveClockText()` 와 같은 이유로 감싼다.
 	return FText::FromString(StageSubsystem->GetLiveClockStringFromMinutes(LiveMinutes));
+}
+
+void UFF_FestivalViewModelSubsystem::HandleMainProgramStarted(FString EventLabel)
+{
+	// 라벨은 쓰지 않는다. 화면이 알아야 하는 것은 `지금 잠겼는가` 하나다.
+	OnTimeScaleLockChanged.Broadcast(true);
+}
+
+void UFF_FestivalViewModelSubsystem::HandleMainProgramEnded(FString EventLabel)
+{
+	OnTimeScaleLockChanged.Broadcast(false);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage)

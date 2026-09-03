@@ -280,6 +280,10 @@ void UFF_PrepHudBar::BindSources()
 		CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
 
+		// 🔴 초마다 온다 (`ApplyIntMetric` 이 값이 바뀔 때만 쏜다). CTA 사유에 적은
+		// 남은 시간이 실제로 줄어들려면 이 구독이 필요하다.
+		CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
+
 		// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이것까지 받아야 상태 행이 따라간다.
 		CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
@@ -317,6 +321,7 @@ void UFF_PrepHudBar::UnbindSources()
 		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
+		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
 		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
@@ -796,15 +801,21 @@ void UFF_PrepHudBar::ApplyPanelLayout(const FFF_PrepPanelLayout& Layout)
 	switch (Dock)
 	{
 	case EFF_PrepPanelDock::Bottom:
-		// 가로로 꽉 채우고, 아래쪽 점 앵커에서 바 높이만큼 띄운다.
+		// 가로로 꽉 채우고, 아래 끝을 **탭 줄 밑으로** 밀어 넣는다.
 		CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 1.f, 1.f));
 		CanvasSlot->SetAlignment(FVector2D(0.f, 1.f));
 		// 가로로 늘어난 축이라 X 는 여백이다 — `Size.X` 와 `Offset.X` 는 쓰이지 않는다.
 		CanvasSlot->SetOffsets(FMargin(
-			PanelMargin,														// 왼쪽 여백
-			-(BarHeight + PanelMargin) + static_cast<float>(Layout.Offset.Y),	// 바 위로 띄운다
-			PanelMargin,														// 오른쪽 여백
-			static_cast<float>(Layout.Size.Y)));								// 높이
+			PanelMargin,													// 왼쪽 여백
+
+			// 🔴 예전에는 `-(BarHeight + PanelMargin)` = 70px 를 띄웠다. 그래서 배치 패널만
+			//    바 위에 **동동 떠 있었고**, 가운데 패널들(`CenterNudge` = -29)과 아래 끝이
+			//    어긋났다 (2026-09-03 백종태 지적). 상태 행 높이만 띄워 다른 패널과 맞춘다 —
+			//    패널 아래 끝이 탭 줄 밑으로 들어가서 버튼이 패널에 얹힌 것처럼 보인다.
+			-StatusRowHeight + static_cast<float>(Layout.Offset.Y),
+
+			PanelMargin,													// 오른쪽 여백
+			static_cast<float>(Layout.Size.Y)));							// 높이
 		break;
 
 	case EFF_PrepPanelDock::Center:
@@ -1011,8 +1022,23 @@ void UFF_PrepHudBar::RefreshCta()
 		break;
 
 	case EFF_PrepCtaState::BlockedStageLocked:
-		Reason = LOCTEXT("PrepCta_StageLocked", "아직 넘길 수 없는 단계입니다. 남은 준비 시간이 지나면 자동으로 진행됩니다.");
+	{
+		// 🔴 **남은 시간을 숫자로 적는다.** `남은 준비 시간이 지나면` 만 두면 언제까지인지
+		// 알 수 없어서 멈춘 것처럼 보인다 (2026-09-02 백종태 지적). 준비 단계도 시계가
+		// 흐르고 시간이 다 되면 자동으로 넘어간다.
+		const int32 RemainingSeconds = ViewModel
+			? FMath::CeilToInt(ViewModel->GetRemainingSeconds())
+			: 0;
+
+		Reason = (RemainingSeconds > 0)
+			? FText::Format(
+				LOCTEXT("PrepCta_StageLockedWithTime",
+					"아직 넘길 수 없는 단계입니다. {0}초 뒤 자동으로 진행됩니다."),
+				FText::AsNumber(RemainingSeconds))
+			: LOCTEXT("PrepCta_StageLocked",
+				"아직 넘길 수 없는 단계입니다. 남은 준비 시간이 지나면 자동으로 진행됩니다.");
 		break;
+	}
 
 	default:
 		break;
@@ -1157,6 +1183,12 @@ void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
 	}
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff, StaffText);
+}
+
+void UFF_PrepHudBar::HandleRemainingSecondsChanged(int32 NewValue)
+{
+	// CTA 사유에만 쓰인다. 다른 값은 각자 델리게이트로 갱신된다.
+	RefreshCta();
 }
 
 void UFF_PrepHudBar::HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay)

@@ -94,10 +94,14 @@ void UFF_PrepPanelPromotion::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
-	// ★ 배수가 아직 안 먹는다는 사실은 반드시 화면에 있어야 한다. 안 적으면 플레이어가
-	//   돈만 내고 아무 일도 안 일어나는 것을 버그로 본다.
+	// ★ 어디까지 먹고 어디부터 안 먹는지 정확히 적는다.
+	//
+	// 🔴 2026-09-02 정정 — 예전 문구는 `아직 방문객 수에 반영되지 않습니다` 였는데
+	// 그 사이 경제가 붙어서 **절반만 맞는 말**이 됐다. 예상 방문객
+	// (`GetExpectedVisitors()`) 에는 배수가 들어간다. 안 들어가는 것은 실제 스폰이다
+	// (`AFF_SpawnActor::UnitCount` 를 쓴다). 김시리님 권장 문구를 그대로 쓴다.
 	SetTextOrHide(Text_NotAppliedNotice, LOCTEXT("PrepPromotion_NotApplied",
-		"홍보 효과는 아직 방문객 수에 반영되지 않습니다. 배수만 표시합니다."));
+		"예상 방문객에는 반영되며, 실제 입장 인원 연동은 준비 중입니다."));
 
 	// `Text_OnceNotice` 는 여기서 안 채운다 — 사유 문구와 같은 말을 할 때가 있어
 	// `RefreshAll` 이 상태를 보고 켜고 끈다.
@@ -467,7 +471,7 @@ bool UFF_PrepPanelPromotion::OpenConfirmDialog()
 			GetChoiceLabel(Quote.Choice)),
 		LOCTEXT("PrepPromotion_ConfirmBody",
 			"홍보는 축제당 한 번뿐이고 되돌릴 수 없습니다. 3일 전체에 적용됩니다.\n"
-			"지금은 효과가 방문객 수에 아직 반영되지 않습니다."),
+			"예상 방문객에는 반영되고, 실제 입장 인원 연동은 준비 중입니다."),
 		Rows,
 		LOCTEXT("PrepPromotion_ConfirmOk", "구매하기"));
 

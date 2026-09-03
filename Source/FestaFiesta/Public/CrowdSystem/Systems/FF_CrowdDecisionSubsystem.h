@@ -224,8 +224,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Decision|Debug")
 	int32 Debug_OpenAllValidatedFacilities(int32& OutFailedCount);
 
+#if !UE_BUILD_SHIPPING
+	// Read-only candidate/nav/queue snapshot. Does not request a decision or open facilities.
+	void DebugDumpStageFlow(int32 LeaderAgentIndex, FOutputDevice& Ar) const;
+#endif
+
 	/**
-	 * 후보 생성 상한. 파티 하나당 이 개수만큼 점수를 계산한다.
+	 * 지역 후보 생성 상한. 공연 중 전역 메인 무대 후보는 이 상한과 별도로 더한다.
 	 *
 	 * 프레임 예산이 여기 걸려 있다 — (프레임당 결정 수 × 이 값)이 실제 계산량이다.
 	 * 0 이하면 상한 없음이므로 시설이 늘어날수록 결정 비용이 선형으로 증가한다.
@@ -275,17 +280,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Decision|Stage")
 	bool IsMainStageOpen() const { return !bMainStageGatingActive || bMainStageOpen; }
 
+	// Stage 없는 월드의 상시 개방과 실제 메인 공연 중 전역 안내를 구분한다.
+	bool IsGlobalMainStageDiscoveryActive() const { return bMainStageGatingActive && bMainStageOpen; }
+
 	/**
 	 * 무대가 열리는 순간 재결정을 밀어 넣을 파티 수 상한. 0 이하면 상한 없음.
 	 *
-	 * 상한이 필요한 이유: 이 경로는 결정 쿨다운(Arrived·MoveFailed 전용)을 타지 않으므로
-	 * 전 파티에 걸면 한 프레임에 결정 큐가 통째로 부푼다. 상한에 걸려 못 받은 파티도
-	 * 다음 도착에서 자연스럽게 무대를 보게 되므로 쏠림이 사라지지는 않고 완만해질 뿐이다.
-	 *
-	 * 실측 근거 없음 — 프레임 예산을 재면 계수 CSV 로 옮긴다.
+	 * 기본 0: 전체 적격 파티에 알린다. 실제 결정은 Crowd.MaxDecisionsPerFrame 예산으로 나눈다.
+	 * 양수는 디버깅용 제한이며 나머지 파티를 후속 배치로 요청하지 않는다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Decision|Stage")
-	int32 MaxPartiesRedecidedOnStageOpen = 64;
+	int32 MaxPartiesRedecidedOnStageOpen = 0;
 
 private:
 	friend struct FFF_CrowdProgramDecisionTestAccess;
