@@ -1664,6 +1664,82 @@ FFF_PhaseTimeRange GetPhaseTimeRange(EFF_FestivalStage Stage) const;   // const 
 
 ---
 
+#### 11. Heat Map — 제품용 렌더링과 등급 경계값 (2026-09-03) · **이정원님께**
+
+밀집 탭(토글 + 범례 + 요약)을 만들려고 코드를 읽다가 정리한 것입니다.
+**결론부터: 밀도 원본은 이미 충분합니다.** 막히는 것은 두 가지뿐입니다.
+
+##### 이미 있어서 그대로 쓸 것 (감사합니다)
+
+```cpp
+UFF_CrowdSimulationSubsystem::GetMaxDensity()            // 가장 붐비는 셀 (명/㎡)
+UFF_CrowdSimulationSubsystem::GetCongestedCellCount()    // 혼잡 셀 수
+UFF_CrowdSimulationSubsystem::GetLOSAtLocation(FVector)
+FCrowdDensityGrid::DensityToLOS(float)                   // static, 공개
+ECrowdLOS                                                // A~F, 공개 헤더
+```
+
+`FFF_CrowdReadModel` 의 `Occupancy`·`Throughput`·`DensityPerSqm` 도 확인했습니다.
+**UI 는 밀도를 다시 계산하지 않습니다** — 위 값을 그대로 표시합니다 (C-009 규칙).
+
+##### 🔴 (1) LOS 경계 6개를 헤더로 올려 주세요
+
+```cpp
+// 지금: FF_CrowdDensityGrid.cpp 9행, 익명 네임스페이스라 UI 가 못 읽습니다
+namespace CrowdDensity
+{
+    static constexpr float LOS_A_Max = 0.31f;
+    ...
+}
+```
+
+**범례에 수치를 적어야 합니다.** AT-011 상 색만으로 상태를 구분할 수 없어서
+`초록 = 한산` 이 아니라 `A · 0.31 미만 · 한산` 으로 써야 합니다.
+
+UI 가 `0.31` 을 코드에 베껴 두면 그쪽이 값을 바꿨을 때 **범례만 조용히 틀려집니다.**
+헤더로 올려 주시면(또는 `GetLOSRange(ECrowdLOS)` 같은 함수로) 그럴 일이 없습니다.
+
+> ⚠️ 이것 때문에 **C-029 는 사실상 정리됐습니다.** UI 문서의 3구간(`<2 / 2~4 / >=4`)은
+> Fruin 기준으로 **2.17 이 이미 최악(F)** 이라 `빨강 4 이상` 에 도달조차 못 합니다.
+> 구현하신 6등급을 제품 기준으로 삼고 UI 문서를 맞추겠습니다. 이견 있으면 알려 주세요.
+
+##### 🔴 (2) 제품용 렌더링과 토글
+
+지금 화면에 보이는 히트맵은 `FF.Crowd.Debug 1` → `FCrowdDensityGrid::DrawDebug()` →
+`DrawDebugSolidBox` 입니다. **`DrawDebug*` 는 셰이핑 빌드에서 컴파일 아웃되므로
+패키징에는 안 나옵니다.**
+
+필요한 것:
+- 제품 빌드에서도 그려지는 밀도 표시 (데칼·머티리얼·인스턴스 메시 등 — 방식은 그쪽 판단)
+- UI 가 부를 토글 — 콘솔 변수 말고 함수 하나면 됩니다
+
+```cpp
+UFUNCTION(BlueprintCallable) void SetDensityOverlayVisible(bool bVisible);
+UFUNCTION(BlueprintPure)     bool IsDensityOverlayVisible() const;
+```
+
+##### 그때까지 UI 가 할 일
+
+**밀집 탭을 `에디터 전용` 전제로 먼저 만들어 두겠습니다.** 토글이 `FF.Crowd.Debug` 를
+호출하고, 위 API 가 생기면 **그 한 줄만 갈아끼웁니다.** 범례·요약은 그대로 씁니다.
+
+패널에 담을 것 —
+
+| 구역 | 내용 |
+| --- | --- |
+| 토글 | `히트맵 보기` 켜기/끄기 |
+| 범례 | A~F · 색 + **명/㎡ 수치** + 기호 (색 단독 금지) |
+| 요약 | `가장 붐비는 곳 N.N명/㎡ (등급 D)` · `혼잡 셀 N개` |
+| 못 읽을 때 | `밀도를 아직 읽지 못했습니다` — **0 으로 쓰지 않습니다** |
+
+##### 확인 부탁
+
+등급 이름을 `A 한산 / B 여유 / C 보통 / D 붐빔 / E 혼잡 / F 위험` 으로 붙일 생각인데,
+Fruin 원문은 보행로 흐름 기준이라 축제장 표현으로 맞는지 봐 주세요.
+아니면 문자(A~F)와 수치만 쓰고 이름은 빼겠습니다.
+
+---
+
 #### ✅ 되돌린 것 — 마지막 날 배속 잠금 (2026-09-02)
 
 UI 가 3일차에 배속을 막고 있었는데, **소유자 코드에는 그런 잠금이 없었습니다.**
