@@ -21,6 +21,24 @@ namespace FFDensityLocal
 	constexpr int32 LegendFontSize = 13;
 
 	/**
+	 * 범례 수치 자릿수.
+	 *
+	 * 🔴 경계는 `DensityToLOS()` 를 훑어서 찾으므로 **한 스텝 지나서 잡힌다** —
+	 *    간격이 0.001 이면 `0.31` 이 아니라 `0.311` 이 나온다. 값 자체는 맞지만
+	 *    화면에 `0.311명/㎡` 로 찍히면 지저분하고, 원래 기준값이 뭔지도 흐려진다.
+	 *
+	 *    간격을 더 줄이는 대신 **표시만 반올림한다.** 경계를 역산하는 방식은 그대로 두고
+	 *    보기만 다듬는 쪽이 안전하다 — 소유자가 `0.315` 같은 값을 쓰더라도 그대로 보인다.
+	 */
+	FNumberFormattingOptions MakeDensityFormat()
+	{
+		FNumberFormattingOptions Options;
+		Options.MinimumFractionalDigits = 0;
+		Options.MaximumFractionalDigits = 2;
+		return Options;
+	}
+
+	/**
 	 * 히트맵 상태를 쥔 곳.
 	 *
 	 * 🔴 처음엔 `FF.Crowd.Debug` 콘솔 **변수**를 찾으려 했는데 그건 변수가 아니라
@@ -248,14 +266,16 @@ void UFF_LivePanelDensity::RebuildLegend()
 
 		// 🔴 **넷을 같이 적는다** — 문자·이름·수치·(색은 히트맵 쪽). 색을 못 봐도
 		//    `D · 0.72~1.08명/㎡ · 혼잡` 을 읽으면 무엇인지 안다 (AT-011).
+		const FNumberFormattingOptions Format = FFDensityLocal::MakeDensityFormat();
+
 		const FText Range = Row.HasUpperBound()
 			? FText::Format(
 				LOCTEXT("LiveDensity_Range", "{0}~{1}명/㎡"),
-				FText::AsNumber(Row.MinDensity),
-				FText::AsNumber(Row.MaxDensity))
+				FText::AsNumber(Row.MinDensity, &Format),
+				FText::AsNumber(Row.MaxDensity, &Format))
 			: FText::Format(
 				LOCTEXT("LiveDensity_RangeTop", "{0}명/㎡ 이상"),
-				FText::AsNumber(Row.MinDensity));
+				FText::AsNumber(Row.MinDensity, &Format));
 
 		Line->SetText(FText::Format(
 			LOCTEXT("LiveDensity_LegendRow", "{0} · {1} · {2}"),
@@ -292,9 +312,11 @@ void UFF_LivePanelDensity::RefreshSummary()
 	const float MaxDensity = Crowd->GetMaxDensity();
 	const ECrowdLOS PeakGrade = FCrowdDensityGrid::DensityToLOS(MaxDensity);
 
+	const FNumberFormattingOptions Format = FFDensityLocal::MakeDensityFormat();
+
 	SetTextOrHide(Text_Peak, FText::Format(
 		LOCTEXT("LiveDensity_Peak", "가장 붐비는 곳 {0}명/㎡ · {1} ({2})"),
-		FText::AsNumber(MaxDensity),
+		FText::AsNumber(MaxDensity, &Format),
 		FFF_DensityRules::GetGradeLetter(PeakGrade),
 		FFF_DensityRules::GetGradeName(PeakGrade)));
 
