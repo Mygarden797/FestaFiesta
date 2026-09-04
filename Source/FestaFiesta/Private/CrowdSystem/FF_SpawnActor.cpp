@@ -38,7 +38,15 @@ void AFF_SpawnActor::BeginPlay()
 
 	// 파티 설정은 SpawnAgents보다 먼저 넘겨야 한다. 파티 구성은 스폰 시점에 확정되기 때문이다.
 	CrowdSim->bEnablePartyGrouping = bEnablePartyGrouping;
-	CrowdSim->SetTemp_ExitWorldLocation(Origin + Temp_ExitOffsetFromOrigin);
+	if (IsValid(DespawnAchor))
+	{
+		CrowdSim->SetTemp_ExitWorldLocation(DespawnAchor->GetActorLocation());	
+	}
+	else
+	{
+		CrowdSim->SetTemp_ExitWorldLocation(Origin + Temp_ExitOffsetFromOrigin);
+	}
+	
 
 	if (IsValid(SpawnAchor))
 	{

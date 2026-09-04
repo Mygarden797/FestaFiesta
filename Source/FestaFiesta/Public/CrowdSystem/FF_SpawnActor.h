@@ -53,7 +53,7 @@ protected:
 	// 시뮬레이션/밀도 그리드가 덮는 반경, UU. 목적지도 이 안에서 뽑힌다.
 	// 스폰 반경보다 넉넉해야 한다 — 좁으면 목적지가 몰려 인위적인 혼잡이 생긴다
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
-	float SimRadiusUU = 10000.f;
+	float SimRadiusUU = 100000.f;
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Temp")
 	FVector Temp_ExitOffsetFromOrigin = FVector(-4000.f, 0.f, 0.f);
@@ -71,4 +71,7 @@ protected:
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	TObjectPtr<AActor> SpawnAchor;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
+	TObjectPtr<AActor> DespawnAchor;
 };
