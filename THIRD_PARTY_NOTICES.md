@@ -90,6 +90,26 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - 상태: 파생 3종은 `수정 완료`. 노멀·스페큘러는 `원본 그대로`.
 - 게임 내 표기는 **필수**다 (옵션의 `크레딧` 분류). U3-c에서 채운다.
 
+### Citrus Pop v2 지구 파생 세트 (2026-09-05 추가)
+
+- 보관 경로: `SourceArt/UI/Title/CasualReliefParts_v2/`
+- 원본: 위 Solar System Scope Earth Day Map 2K와 Earth Normal Map 2K, CC BY 4.0.
+- 사용자 첨부 지리 기준 지도는 로컬 Earth Day Map 2K와 RGB 픽셀 값이 동일함을 확인했다.
+- 수정: 원본 좌표를 유지한 바다·육지·설빙 분류, Citrus Pop 재채색, 원본 노멀 기울기 기반 캐주얼 높이·DirectX 노멀·Height/Land/Roughness/AO 패킹 생성.
+- 생성형 색감 초안은 참고 기록으로만 보관하며 최종 픽셀 생성의 입력으로 사용하지 않는다.
+- 게임 내 표기: 아래 수정된 행성 텍스처용 한국어·영어 크레딧을 동일하게 사용한다.
+
+### Casual Relief 타이틀 지구 파생 세트 (2026-09-04 추가)
+
+- 보관 경로: `SourceArt/UI/Title/CasualReliefParts_v1/Earth/`
+- 지형 가이드 원본: `SourceArt/ThirdParty/SolarSystemScope/PlanetTextures/Earth/2k_earth_normal_map.tif`
+- 수정 내용: 원본 노멀의 기울기 크기를 산악 위치 가이드로 변환하고, 캐주얼한 육지 단차·높이·DirectX 노멀·러프니스·AO 마스크를 새로 생성함
+- `T_FF_Earth_CasualRelief_Albedo_2048x1024.png`: 기존 FestaFiesta CasualBright 대륙 윤곽과 색 구획을 유지하고 미세 표면 변화를 재제작한 Base Color
+- `T_FF_Earth_CasualRelief_Height16_2048x1024.png`: 해안 단차와 산악 가이드로 생성한 16비트 높이 파생물
+- `T_FF_Earth_CasualRelief_Normal_DX_2048x1024.png`: 위 높이에서 다시 계산한 Unreal용 DirectX 노멀 파생물
+- `T_FF_Earth_CasualRelief_Masks_2048x1024.png`: Height/Land/Roughness/AO를 패킹한 파생물
+- 상태: `수정 완료`. 게임 내 표기는 아래의 “Modified for FestaFiesta” 문구를 사용한다.
+
 ### 지켜야 할 조건
 
 - 적절한 출처를 표시한다.

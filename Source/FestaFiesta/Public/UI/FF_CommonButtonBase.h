@@ -63,6 +63,38 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI")
 	void ApplyIconBrush();
 
+#if WITH_EDITOR
+	/**
+	 * **WBP 생성기 전용.** 컴파일된 CDO의 기본값을 한 번에 박는다. 런타임에서 부르지 않는다.
+	 *
+	 * 아래 값들은 전부 `EditDefaultsOnly` 라 에디터의 Class Defaults 에서 손으로 바꿀 수 있다.
+	 * 생성기가 이 함수를 쓰는 이유는 **테마마다 값이 다르기 때문**이다 —
+	 * Glass Orbit 은 밝은 글자, Clean Casual 은 짙은 초록 글자다. 기본값 하나로는 둘 다 맞출 수 없다.
+	 *
+	 * `protected` 멤버를 밖에서 못 만지므로 클래스 안에 둔다. 생성기가 리플렉션으로
+	 * 프로퍼티 이름을 찾아 쓰면 이름을 바꾸는 순간 조용히 깨진다.
+	 */
+	void ApplyGeneratedButtonDefaults(
+		TSubclassOf<UCommonButtonStyle> InStyle,
+		const FLinearColor& InNormalContentColor,
+		const FLinearColor& InHighlightedContentColor,
+		const FLinearColor& InDisabledContentColor,
+		bool bInTintLabel,
+		bool bInFocusOnHover,
+		bool bInShowChevronOnlyWhenHighlighted);
+
+	/**
+	 * **WBP 생성기 전용.** 화면 안에 놓인 버튼 **인스턴스**의 문구·아이콘·크기를 넣는다.
+	 *
+	 * 세 값 모두 `EditAnywhere` 라 에디터 Details 의 `FestaFiesta > UI` 에서 그대로 바꿀 수 있다.
+	 * 자식 WBP 내부(`Image_Icon` 등)는 부모 화면에서 편집할 수 없어서 이 경로가 필요하다.
+	 */
+	void ApplyGeneratedButtonContent(
+		const FText& InLabel,
+		const FSlateBrush& InIconBrush,
+		const FVector2D& InButtonSizeOverride);
+#endif // WITH_EDITOR
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeConstruct() override;
@@ -120,6 +152,21 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UImage> Image_FocusRing;
+
+	/**
+	 * 버튼 **표면 전체**를 덮는 포커스 이미지. `Image_FocusRing`과 같은 조건으로 켜고 끈다.
+	 *
+	 * === 왜 링과 따로 두는가 ===
+	 * CBS_ 스타일의 `NormalHovered`를 밝은 표면으로 바꾸면 **마우스에서만** 표면이 바뀐다.
+	 * 게임패드 포커스는 CommonButton의 Hovered 상태가 아니라서 표면이 그대로다.
+	 * 목업(캐주얼 타이틀)처럼 "포커스된 버튼은 표면 전체가 연녹색"이 되려면
+	 * 마우스·패드 양쪽에서 같은 그림이 나와야 하므로, 스타일이 아니라 위젯으로 그린다.
+	 *
+	 * 없는 버튼 WBP가 정상이다 — Glass Orbit 계열은 링만 쓴다.
+	 * WBP에서는 `Overlay_Root`의 **첫 자식**으로 두어 내용 뒤에 깔리게 한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
+	TObjectPtr<UImage> Image_FocusSurface;
 
 	/**
 	 * 버튼 WBP의 바깥 크기 상자. 부모 화면에서 자식 WBP 내부를 직접 편집할 수 없으므로
