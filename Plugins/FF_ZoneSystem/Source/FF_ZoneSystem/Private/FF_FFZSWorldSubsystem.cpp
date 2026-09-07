@@ -2341,16 +2341,38 @@ FName UFFZSWorldSubsystem::ResolveZoneAtWorldLocation(const FVector& WorldLocati
     return NAME_None;
 }
 
-void UFFZSWorldSubsystem::ReportZonePopulation(const FName ZoneId, const int32 Population, const float DeltaSeconds)
+// 등록 순서와 무관하게 소비 측이 항상 같은 순서를 보도록 BuildReadModel·ResolveZoneAtWorldLocation과
+// 같은 사전순으로 맞춘다. 소멸한 Actor의 키는 내보내지 않는다.
+TArray<FName> UFFZSWorldSubsystem::GetRegisteredZoneIds() const
+{
+    TArray<FName> ZoneIds;
+    ZoneIds.Reserve(ZonesById.Num());
+    for (const TPair<FName, TWeakObjectPtr<AFFZSGameplayZone>>& Pair : ZonesById)
+    {
+        if (Pair.Value.IsValid())
+        {
+            ZoneIds.Add(Pair.Key);
+        }
+    }
+    ZoneIds.Sort(FNameLexicalLess());
+    return ZoneIds;
+}
+
+// 반환값은 "이 표본이 밀도 상태에 반영됐는가"다. 호출자는 false일 때 DeltaSeconds를 이월해야 한다 —
+// UpdatePopulationSample이 유지 시간을 누적으로 판정하므로, 흘려보낸 구간만큼 승격이 늦어진다.
+bool UFFZSWorldSubsystem::ReportZonePopulation(const FName ZoneId, const int32 Population, const float DeltaSeconds)
 {
     if (IsAuthorityMutationBlocked())
     {
-        return;
+        return false;
     }
-    if (AFFZSGameplayZone* Zone = FindZone(ZoneId))
+    AFFZSGameplayZone* Zone = FindZone(ZoneId);
+    if (!Zone)
     {
-        Zone->UpdatePopulationSample(Population, DeltaSeconds);
+        return false;
     }
+    Zone->UpdatePopulationSample(Population, DeltaSeconds);
+    return true;
 }
 
 FFFZSReadModel UFFZSWorldSubsystem::BuildReadModel() const
