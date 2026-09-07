@@ -103,6 +103,11 @@ public:
     // 전체 시설 읽기 모델을 만들지 않고 유효한 등록 Zone이 하나라도 있는지 확인한다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    TArray<FName> GetRegisteredZoneIds() const;
+    // 유효한 등록 존 ID를 ZoneId 사전순으로 반환한다. BuildReadModel과 같은 정렬이다.
+    // 존 전체를 주기적으로 순회해야 하는 호출자(예: 인구 보고)가 시설 요약까지 만드는 비용을 피하는 경로다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacility(FGuid FacilityInstanceId) const;
     // 현재 유효한 등록 시설을 반환한다. 잘못된 GUID나 소멸한 액터면 nullptr. 
 
@@ -200,8 +205,11 @@ public:
     // 아니면 ZoneId 사전순으로 정확한 경계를 검사하며 어느 존에도 없으면 NAME_None이다.
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Zone")
-    void ReportZonePopulation(FName ZoneId, int32 Population, float DeltaSeconds);
-    // 외부 시뮬레이션의 인구 표본을 존에 전달한다. 음수 값은 존에서 0으로 보정하고 무효 ID는 무시.
+    bool ReportZonePopulation(FName ZoneId, int32 Population, float DeltaSeconds);
+    // 외부 시뮬레이션의 인구 표본을 존에 전달한다. 음수 값은 존에서 0으로 보정한다.
+    // 표본이 실제로 반영됐을 때만 true다. 권한 변경이 차단 중이거나 무효 ID면 false이며 이때 상태는 바뀌지 않는다.
+    // 밀도 단계 승격은 DeltaSeconds 누적으로 판정하므로, false를 받은 호출자는 그 경과 시간을
+    // 다음 보고로 이월해야 Warning·Critical 유지 시간이 실제보다 길게 걸리지 않는다.
     
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Read Model")
     FFFZSReadModel BuildReadModel() const;
