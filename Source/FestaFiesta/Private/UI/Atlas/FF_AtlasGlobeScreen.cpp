@@ -169,6 +169,14 @@ void UFF_AtlasGlobeScreen::NativeTick(const FGeometry& MyGeometry, float InDelta
 	TickDrag();
 }
 
+void UFF_AtlasGlobeScreen::NativeOnDeactivated()
+{
+	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get()) { Globe->SetSelectedCountry(NAME_None); }
+	PanelCountryId = NAME_None;
+	DragTracker.Reset();
+	Super::NativeOnDeactivated();
+}
+
 UWidget* UFF_AtlasGlobeScreen::NativeGetDesiredFocusTarget() const
 {
 	if (!PanelCountryId.IsNone())
@@ -192,6 +200,11 @@ UWidget* UFF_AtlasGlobeScreen::NativeGetDesiredFocusTarget() const
 
 bool UFF_AtlasGlobeScreen::NativeOnHandleBackAction()
 {
+	if (!PanelCountryId.IsNone())
+	{
+		HandleClosePanelClicked(nullptr);
+		return true;
+	}
 	// 기본 CommonUI Deactivate만 쓰면 UIFlowSubsystem의 현재 화면·히스토리가 어긋난다.
 	OnBackRequested.Broadcast();
 	return true;
@@ -268,6 +281,10 @@ void UFF_AtlasGlobeScreen::TickDrag()
 
 	if (!Delta.IsNearlyZero())
 	{
+		if (!PanelCountryId.IsNone())
+		{
+			HandleClosePanelClicked(nullptr);
+		}
 		if (AFF_AtlasGlobeActor* Globe = GetGlobe())
 		{
 			// 픽셀 → 회전은 순수 함수가 한다 (`FFF_AtlasGeo::ApplyDrag`). 여기서 각도를 만들지 않는다.
@@ -681,14 +698,11 @@ void UFF_AtlasGlobeScreen::HandlePinClicked(UFF_CommonButtonBase* Button)
 	// 그래야 왜 못 고르는지 왼쪽 패널에서 읽을 수 있다.
 	Globe->FocusOnCountry(Pin->GetPinId());
 
-	if (Pin->IsSelectable())
-	{
-		Globe->SetSelectedCountry(Pin->GetPinId());
-	}
-	else
+	// 선택은「살펴보기」다. 잠금 국가는 동일하게 연출하되 지도 진입은 별도로 차단한다.
+	Globe->SetSelectedCountry(Pin->GetPinId());
+	if (!Pin->IsSelectable())
 	{
 		// 이전의 열린 국가가 계속 선택 조명으로 남지 않게 한다. 잠금은 패널의 아이콘·사유로 알린다.
-		Globe->SetSelectedCountry(NAME_None);
 		UE_LOG(LogFestaFiestaUI, Log,
 			TEXT("UFF_AtlasGlobeScreen: 잠긴 국가 `%s` 를 눌렀다 — %s"),
 			*Pin->GetPinId().ToString(),
@@ -711,6 +725,9 @@ void UFF_AtlasGlobeScreen::HandleSelectCountryClicked(UFF_CommonButtonBase* Butt
 		return;
 	}
 
+	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
+	const FFF_AtlasCountryEntry* Country = Catalog ? Catalog->FindCountry(PanelCountryId) : nullptr;
+	if (!Country || !Country->bUnlocked) { return; }
 	OnBrowseFestivalsRequested.Broadcast(PanelCountryId);
 }
 
@@ -737,6 +754,10 @@ void UFF_AtlasGlobeScreen::HandleCountryFocused(FName CountryId)
 	if (!PanelCountryId.IsNone() && !CountryId.IsNone())
 	{
 		PanelCountryId = CountryId;
+		if (AFF_AtlasGlobeActor* Globe = GetGlobe())
+		{
+			Globe->SetSelectedCountry(CountryId);
+		}
 		RefreshCountryPanel();
 	}
 }

@@ -78,6 +78,11 @@ struct FESTAFIESTA_API FFF_AtlasPinInstance
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> Landmark;
 
+	float BaseLandmarkScale = 1.f;
+	float BaseLandmarkHeight = 0.f;
+	float LandmarkSurfaceOffset = 0.f;
+	float LandmarkHeading = 0.f;
+
 	/** 선택됐을 때만 켜지는 조명. 크기 변화만으로 선택을 알리지 않기 위한 두 번째 신호다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UPointLightComponent> Light;
@@ -223,6 +228,8 @@ public:
 	/** 카탈로그를 다시 읽어 핀·조형물을 새로 만든다. 회전과 선택은 유지한다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
 	void RebuildPins();
+
+	float GetGlobeRadius() const { return GlobeRadius; }
 
 	// --- 조회 ---
 

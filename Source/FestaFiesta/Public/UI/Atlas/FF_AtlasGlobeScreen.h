@@ -71,6 +71,7 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeOnActivated() override;
+	virtual void NativeOnDeactivated() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 	virtual bool NativeOnHandleBackAction() override;

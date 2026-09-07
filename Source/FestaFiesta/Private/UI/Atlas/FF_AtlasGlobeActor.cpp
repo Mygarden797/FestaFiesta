@@ -14,6 +14,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UI/Atlas/FF_AtlasSettings.h"
+#include "UI/Atlas/FF_AtlasCameraRig.h"
 #include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/Core/FF_UIFlowSettings.h"
@@ -261,7 +262,7 @@ void AFF_AtlasGlobeActor::Tick(float DeltaSeconds)
 		const bool bWaitingForResume =
 			bHasReceivedInput && (SecondsSinceInput < Settings.AutoSpinResumeDelaySeconds);
 
-		if (IsAutoSpinAllowed() && !bWaitingForResume)
+		if (IsAutoSpinAllowed() && SelectedCountryId.IsNone() && !bWaitingForResume)
 		{
 			// 🔴 부호가 음수인 것이 **실제 지구 자전 방향**이다.
 			// 지구는 동쪽으로 돌고, 우리 규약에서 동쪽은 화면 오른쪽이므로 지표가 화면
@@ -288,6 +289,7 @@ void AFF_AtlasGlobeActor::Tick(float DeltaSeconds)
 
 void AFF_AtlasGlobeActor::AddDragInput(const FVector2D& DragPixels)
 {
+	SetSelectedCountry(NAME_None);
 	const UFF_AtlasSettings& Settings = GetAtlasSettings();
 
 	// 손으로 돌리는 중에 연출이 겹치면 지구가 두 방향으로 끌린다. 진행 중인 회전은 버린다.
@@ -423,6 +425,14 @@ void AFF_AtlasGlobeActor::SetSelectedCountry(FName CountryId)
 	}
 
 	SelectedCountryId = CountryId;
+	if (CountryId.IsNone())
+	{
+		MarkInputReceived();
+	}
+	if (AFF_AtlasCameraRig* Rig = AFF_AtlasCameraRig::Find(this, false))
+	{
+		Rig->SetCountryInspection(!CountryId.IsNone());
+	}
 	ApplySelectionVisuals();
 	OnSelectedCountryChanged.Broadcast(SelectedCountryId);
 }
@@ -749,7 +759,18 @@ void AFF_AtlasGlobeActor::RebuildPins()
 
 		if (LandmarkMesh)
 		{
-			const float LandmarkScale = ComputeUniformScaleForHeight(*LandmarkMesh, LandmarkHeight);
+			const float TargetHeight = Country.LandmarkHeightOverride > 0.f ? Country.LandmarkHeightOverride : LandmarkHeight;
+			float LandmarkScale = ComputeUniformScaleForHeight(*LandmarkMesh, TargetHeight);
+			const FVector MeshSize = LandmarkMesh->GetBounds().BoxExtent * 2.0;
+			const double Width = FMath::Max(MeshSize.X, MeshSize.Y);
+			if (Country.LandmarkMaxWidth > 0.f && Width > UE_SMALL_NUMBER)
+			{
+				LandmarkScale = FMath::Min(LandmarkScale, static_cast<float>(Country.LandmarkMaxWidth / Width));
+			}
+			Pin.BaseLandmarkScale = LandmarkScale;
+			Pin.BaseLandmarkHeight = static_cast<float>(MeshSize.Z) * LandmarkScale;
+			Pin.LandmarkSurfaceOffset = FMath::Max(0.f, Country.LandmarkSurfaceOffset);
+			Pin.LandmarkHeading = Country.LandmarkHeading;
 
 			// 메시 원점이 가운데인 프리미티브를 그대로 붙이면 절반이 지표에 묻힌다.
 			// 바운드로 들어 올려 밑면이 표면에 닿게 한다.
@@ -761,7 +782,8 @@ void AFF_AtlasGlobeActor::RebuildPins()
 			Pin.Landmark->AttachToComponent(Pin.Anchor, FAttachmentTransformRules::KeepRelativeTransform);
 			Pin.Landmark->SetStaticMesh(LandmarkMesh);
 			Pin.Landmark->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Pin.Landmark->SetRelativeLocation(FVector(0.0, 0.0, LiftLocal * LandmarkScale));
+			Pin.Landmark->SetRelativeLocation(FVector(0.0, 0.0, LiftLocal * LandmarkScale + Pin.LandmarkSurfaceOffset));
+			Pin.Landmark->SetRelativeRotation(FRotator(0.f, Pin.LandmarkHeading, 0.f));
 			Pin.Landmark->SetRelativeScale3D(FVector(LandmarkScale));
 
 			// 선택 표시용 조명. 기본은 꺼져 있다.
@@ -813,8 +835,7 @@ void AFF_AtlasGlobeActor::ReconcileStateWithPins()
 	if (!SelectedCountryId.IsNone() && FindPinIndex(SelectedCountryId) == INDEX_NONE)
 	{
 		// 구독자에게 선택이 사라졌음을 알려야 한다. 조용히 지우면 화면이 stale 상태를 못 안다.
-		SelectedCountryId = NAME_None;
-		OnSelectedCountryChanged.Broadcast(SelectedCountryId);
+		SetSelectedCountry(NAME_None);
 	}
 }
 
@@ -923,15 +944,26 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 {
 	const float PinMinDot = ComputePinVisibleMinDot();
 	const float SelectedScale = GetAtlasSettings().SelectedLandmarkScale;
-	const float LandmarkMinDot = ComputeLandmarkVisibleMinDot();
-	const float SelectedLandmarkMinDot = ComputeLandmarkVisibleMinDot(SelectedScale);
+	FVector ViewerLocation;
+	const bool bHasViewer = GetViewerLocation(ViewerLocation);
+	const FVector ViewDirection = bHasViewer ? (ViewerLocation - GetActorLocation()).GetSafeNormal() : GetActorForwardVector();
+	const bool bReduceMotion = Accessibility.IsValid() && Accessibility->IsReduceMotionEnabled();
 
 	for (const FFF_AtlasPinInstance& Pin : Pins)
 	{
 		const bool bSelected = (Pin.CountryId == SelectedCountryId);
+		const FVector SurfaceDirection = Pin.Anchor
+			? (Pin.Anchor->GetComponentLocation() - GetActorLocation()).GetSafeNormal() : ViewDirection;
+		const float Facing = FMath::Clamp(static_cast<float>(FVector::DotProduct(SurfaceDirection, ViewDirection)), 0.f, 1.f);
+		// 원근 지평선을 기준으로 보간해 카메라가 가까워져도 가장자리에서 충분히 작아진다.
+		const float T = FMath::Clamp((Facing - PinMinDot) / FMath::Max(1.f - PinMinDot, 0.01f), 0.f, 1.f);
+		const float EdgeScale = bReduceMotion ? 1.f : FMath::Lerp(FMath::Clamp(GetAtlasSettings().LandmarkEdgeScale, 0.3f, 1.f), 1.f, T * T * (3.f - 2.f * T));
+		const float VisualScale = EdgeScale * (bSelected ? SelectedScale : 1.f);
+		const float EffectiveHeight = Pin.LandmarkSurfaceOffset + Pin.BaseLandmarkHeight * VisualScale;
+		const float LandmarkMinDot = ComputeLandmarkVisibleMinDot(EffectiveHeight / FMath::Max(LandmarkHeight, 1.f));
 		const bool bLandmarkVisible =
 			FFF_AtlasGeo::IsPinFacingFront(
-				Pin.Location, Orientation, bSelected ? SelectedLandmarkMinDot : LandmarkMinDot);
+				Pin.Location, Orientation, LandmarkMinDot);
 		const bool bSurfaceVisible =
 			FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, PinMinDot);
 
@@ -940,11 +972,22 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 			// 앵커를 숨기면 자식(조형물·조명)까지 함께 숨는다.
 			Pin.Anchor->SetVisibility(bLandmarkVisible, /*bPropagateToChildren=*/true);
 		}
+		if (Pin.Landmark && Pin.Landmark->GetStaticMesh())
+		{
+			const FAtlasLandmarkFit Fit = ComputeLandmarkFit(*Pin.Landmark->GetStaticMesh(), Pin.BaseLandmarkHeight, VisualScale);
+			Pin.Landmark->SetRelativeScale3D(FVector(Fit.Scale));
+			Pin.Landmark->SetRelativeLocation(FVector(0, 0, Pin.LandmarkSurfaceOffset + Fit.LiftZ));
+		}
 
 		// 조형물은 높이만큼 일찍 보여도 되지만 조명은 지표 기준을 넘기 전까지 켜지 않는다.
 		// CastShadows=false인 빛이 뒤편에서 지구를 관통하는 것을 막는다.
 		if (Pin.Light)
 		{
+			// 작은 국가 모델도 원래 큰 원뿔과 같은 광량을 받으면 흰색으로 포화된다.
+			const float SizeRatio = Pin.BaseLandmarkHeight / FMath::Max(LandmarkHeight, 1.f);
+			Pin.Light->SetIntensity(SelectionLightIntensity * FMath::Square(SizeRatio) * GetAtlasSettings().LandmarkSelectionLightScale);
+			Pin.Light->SetRelativeLocation(FVector(0, 0, EffectiveHeight));
+			Pin.Light->SetAttenuationRadius(FMath::Max(EffectiveHeight * 4.f, 1.f));
 			Pin.Light->SetVisibility(bSurfaceVisible && bSelected);
 		}
 	}
@@ -952,26 +995,7 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 
 void AFF_AtlasGlobeActor::ApplySelectionVisuals()
 {
-	const float SelectedScale = GetAtlasSettings().SelectedLandmarkScale;
-
-	for (const FFF_AtlasPinInstance& Pin : Pins)
-	{
-		if (!Pin.Landmark || !Pin.Landmark->GetStaticMesh())
-		{
-			continue;
-		}
-
-		const bool bSelected = (Pin.CountryId == SelectedCountryId);
-		const FAtlasLandmarkFit Fit = ComputeLandmarkFit(
-			*Pin.Landmark->GetStaticMesh(), LandmarkHeight, bSelected ? SelectedScale : 1.f);
-
-		// ★ 크기만으로 선택을 알리지 않는다 (AT-011). 조명이 함께 켜지고, 화면 왼쪽 패널의
-		//   국가 이름도 바뀐다 — 그쪽은 U3-b 가 한다.
-		// 위치를 **함께** 갱신한다 — 스케일만 키우면 커진 만큼 지표에 파묻힌다.
-		Pin.Landmark->SetRelativeScale3D(FVector(Fit.Scale));
-		Pin.Landmark->SetRelativeLocation(FVector(0.0, 0.0, Fit.LiftZ));
-	}
-
+	// 회전과 선택이 같은 크기·밑면 보정 경로를 사용한다.
 	UpdatePinPresentation();
 }
 
