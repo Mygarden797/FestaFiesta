@@ -100,6 +100,13 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
 	FText UpgradeEffectText;
 
+	/** Parallel, labelled current/quoted values for the game panel; never parsed from display text. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeCurrentText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeNextText;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
 	FText UpgradeSizeEffectText;
 

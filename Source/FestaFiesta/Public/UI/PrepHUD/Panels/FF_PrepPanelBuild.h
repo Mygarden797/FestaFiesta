@@ -12,6 +12,7 @@
 class UButton;
 class UEditableTextBox;
 class UHorizontalBox;
+class UVerticalBox;
 class UScrollBox;
 class UTextBlock;
 class UWidget;
@@ -90,6 +91,9 @@ protected:
 	void HandleExitBuildModeClicked();
 
 	UFUNCTION()
+	void HandleInspectFacilitiesClicked();
+
+	UFUNCTION()
 	void HandleFilterAllClicked();
 
 	UFUNCTION()
@@ -148,6 +152,9 @@ protected:
 	TObjectPtr<UButton> Button_ExitBuildMode;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UButton> Button_InspectFacilities;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UButton> Button_FilterAll;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
@@ -159,6 +166,13 @@ protected:
 	/** 기존 WBP를 수정하지 않고 전체 카테고리 스크롤 행을 삽입하는 런타임 호스트입니다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UHorizontalBox> HorizontalBox_Tools;
+
+	/** Designer-owned second level; populated from the selected major category's catalog data. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UHorizontalBox> HorizontalBox_Subcategories;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_CategoryBreadcrumb;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UEditableTextBox> Search_Facilities;
@@ -174,6 +188,8 @@ protected:
 private:
 	void HandleTileClicked(UObject* ItemObject);
 	void HandleCategoryChoiceClicked(int32 ChoiceId);
+	void HandleMinorChoiceClicked(int32 ChoiceId);
+	void RefreshMinorCategorySurface();
 	void BindExternalSources();
 	void UnbindExternalSources();
 	void EndPanelSession();
@@ -183,6 +199,7 @@ private:
 	void FocusSelectedCategoryChoice();
 	void RefreshPricedEntries();
 	void ReconcilePresentation();
+	void RefreshVisibleTiles();
 	void ApplyPresentation(bool bReplaceListItems = true);
 	void ApplyBuildModeState(EFF_BuildModeState State);
 
@@ -238,10 +255,15 @@ private:
 	TObjectPtr<UScrollBox> RuntimeCategoryScroll;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UHorizontalBox> RuntimeCategoryBox;
+	TObjectPtr<UVerticalBox> RuntimeCategoryBox;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> CategoryChoices;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_PrepChoiceButton>> MinorChoices;
+
+	TArray<FName> MinorTokens;
 
 	FFF_PrepBuildFilter Filter;
 	FButtonStyle LegacySelectedCategoryStyle;

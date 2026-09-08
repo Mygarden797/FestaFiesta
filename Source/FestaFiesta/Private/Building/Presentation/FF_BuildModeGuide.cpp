@@ -11,6 +11,33 @@
 
 #define LOCTEXT_NAMESPACE "FFBuildModeGuide"
 
+FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
+{
+	return LOCTEXT("BuildOverviewHelp",
+		"격자는 주변의 빈 건축 공간을 보여 줍니다.\n"
+		"구역 밖, 다른 시설이 쓰는 공간, 보호된 길에는 격자가 나타나지 않습니다.\n"
+		"먼 곳은 커서나 카메라를 옮겨 확인하세요.\n"
+		"[G] 격자 표시/숨기기 · [WASD] 카메라 이동 · [Q/E] 카메라 회전\n"
+		"설치된 시설을 선택해 이동하거나 철거할 수 있습니다.");
+}
+
+FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving)
+{
+	const FText ConfirmText = bInMoving
+		? LOCTEXT("MovingHelpAction", "[좌클릭/Enter] 이동 확정 · [우클릭] 이동 취소")
+		: LOCTEXT("PlacingHelpAction", "[좌클릭/Enter] 설치 · 설치 후 같은 시설을 계속 배치 · [우클릭] 목록");
+	return FText::Format(
+		LOCTEXT("PlacementHelp",
+			"격자는 주변의 빈 건축 공간입니다. 막힌 곳과 이 시설을 허용하지 않는 구역에는 표시하지 않습니다.\n"
+			"시설 전체가 들어가는지 초록(배치 가능)·빨강(배치 불가) 표시로 확인하세요.\n"
+			"[G] 격자 표시/숨기기 · 먼 곳은 커서를 옮겨 확인\n"
+			"[Q/E] 일정 각도로 회전 · [Shift+Q/E] 누르는 동안 부드럽게 회전\n"
+			"[Ctrl] 누르는 동안 정밀 위치 맞춤 · [Alt] 누르는 동안 자유 배치\n"
+			"{0}\n"
+			"공간 외에 설치 비용·건축 한도도 충족해야 합니다."),
+		ConfirmText);
+}
+
 void UFF_BuildModeGuide::SetPlacementGuideState(
 	const bool bInPlacementPreviewActive,
 	const bool bInMoving,
@@ -60,13 +87,18 @@ void UFF_BuildModeGuide::ApplyGuideText()
 			TextBlock->SetText(Text);
 		}
 	};
-	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("PauseOptions", "[ESC/F5]  일시정지 · 옵션"));
+	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("CameraAndPause", "[WASD] 카메라 이동 · [ESC/F5] 일시정지"));
+	SetNamedText(TEXT("TXT_GuideRow_1"), bPlacementGridVisible
+		? (bPlacementPreviewActive
+			? LOCTEXT("PlacementGridLegend", "격자: 빈 건축 공간 · 초록: 배치 가능 · 빨강: 배치 불가")
+			: LOCTEXT("BuildGridLegend", "격자: 주변의 빈 건축 공간 · 막힌 곳은 표시하지 않아요"))
+		: LOCTEXT("HiddenGridLegend", "격자를 숨겼어요 · [G] 다시 표시"));
 
 	if (!bPlacementPreviewActive)
 	{
 		SetNamedText(TEXT("TXT_GuideRow_2"), LOCTEXT("CameraRotate", "[Q] [E]  카메라 회전"));
 		SetNamedText(TEXT("TXT_GuideRow_3"), LOCTEXT("SelectFacility", "[좌클릭]  철거/이동 대상 선택"));
-		SetNamedText(TEXT("TXT_GuideRow_4"), LOCTEXT("CancelSelection", "[우클릭]  선택 취소"));
+		SetNamedText(TEXT("TXT_GuideRow_4"), LOCTEXT("OverviewGridAndCancel", "[G] 격자 표시/숨기기 · [우클릭] 선택 취소"));
 		return;
 	}
 
@@ -79,7 +111,7 @@ void UFF_BuildModeGuide::ApplyGuideText()
 	SetNamedText(
 		TEXT("TXT_GuideRow_2"),
 		FText::Format(
-			LOCTEXT("Rotation", "[Q/E]  {0}° 회전 · [Shift] 부드럽게 · 현재 {1}°"),
+			LOCTEXT("RotationWithModifier", "[Q/E] {0}° 회전 · [Shift+Q/E] 부드럽게 · 현재 {1}°"),
 			SnapText,
 			YawText));
 	SetNamedText(
@@ -94,7 +126,7 @@ void UFF_BuildModeGuide::ApplyGuideText()
 		TEXT("TXT_GuideRow_4"),
 		bMoving
 			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter]  이동 · [우클릭]  이동 취소")
-			: LOCTEXT("InstallOrCatalog", "[좌클릭/Enter]  설치 · [우클릭]  목록으로"));
+			: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 연속 설치 · [우클릭] 목록으로"));
 }
 
 #undef LOCTEXT_NAMESPACE

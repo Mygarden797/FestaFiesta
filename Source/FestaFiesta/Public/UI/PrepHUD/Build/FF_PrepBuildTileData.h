@@ -38,6 +38,12 @@ public:
 	FText GetDisplayName() const { return DisplayName; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FText GetCategoryPathText() const { return CategoryPathText; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FString GetUniqueNameToken() const { return Entry.UniqueNameToken; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	int32 GetInstallCost() const { return Entry.InstallCost; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
@@ -79,6 +85,9 @@ private:
 
 	UPROPERTY(Transient)
 	FText DisplayName;
+
+	UPROPERTY(Transient)
+	FText CategoryPathText;
 
 	UPROPERTY(Transient)
 	FText CostText;

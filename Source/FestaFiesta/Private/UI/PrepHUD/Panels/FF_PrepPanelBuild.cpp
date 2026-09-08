@@ -14,6 +14,8 @@
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -89,6 +91,10 @@ void UFF_PrepPanelBuild::NativeConstruct()
 		Button_ExitBuildMode->OnClicked.AddUniqueDynamic(
 			this, &ThisClass::HandleExitBuildModeClicked);
 	}
+	if (Button_InspectFacilities)
+	{
+		Button_InspectFacilities->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleInspectFacilitiesClicked);
+	}
 	if (Button_FilterAll)
 	{
 		Button_FilterAll->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFilterAllClicked);
@@ -116,6 +122,7 @@ void UFF_PrepPanelBuild::NativeConstruct()
 		}
 	}
 	RefreshCategoryChoiceSelection();
+	RefreshMinorCategorySurface();
 }
 
 void UFF_PrepPanelBuild::NativeDestruct()
@@ -136,6 +143,10 @@ void UFF_PrepPanelBuild::NativeDestruct()
 	{
 		Button_ExitBuildMode->OnClicked.RemoveDynamic(
 			this, &ThisClass::HandleExitBuildModeClicked);
+	}
+	if (Button_InspectFacilities)
+	{
+		Button_InspectFacilities->OnClicked.RemoveDynamic(this, &ThisClass::HandleInspectFacilitiesClicked);
 	}
 	if (Button_FilterAll)
 	{
@@ -163,6 +174,13 @@ void UFF_PrepPanelBuild::NativeDestruct()
 		}
 	}
 
+	for (UFF_PrepChoiceButton* Choice : MinorChoices)
+	{
+		if (Choice)
+		{
+			Choice->OnHudTabButtonClicked.Unbind();
+		}
+	}
 	Super::NativeDestruct();
 }
 
@@ -327,11 +345,9 @@ void UFF_PrepPanelBuild::HandleCatalogChanged()
 
 void UFF_PrepPanelBuild::HandleCatalogThumbnailsChanged()
 {
-	// Item identity is unchanged; recycle only the visible entry widgets so scroll position is preserved.
-	if (TileView_Facilities)
-	{
-		TileView_Facilities->RegenerateAllEntries();
-	}
+	// Rebind the displayed rows in place. Destroying pooled rows during scrolling briefly
+	// exposes empty entries and needlessly recomputes their desired size.
+	RefreshVisibleTiles();
 	ApplyPresentation(false);
 }
 
@@ -344,10 +360,7 @@ void UFF_PrepPanelBuild::HandleGoldChanged(const int32 NewGold)
 
 	const bool bHasGold = EconomyReadModel && EconomyReadModel->HasAuthoritativeGold();
 	PresentationModel->RefreshGold(NewGold, bHasGold);
-	if (TileView_Facilities)
-	{
-		TileView_Facilities->RegenerateAllEntries();
-	}
+	RefreshVisibleTiles();
 	ApplyPresentation(false);
 }
 
@@ -530,6 +543,10 @@ void UFF_PrepPanelBuild::HandleFilterPerformanceClicked()
 void UFF_PrepPanelBuild::HandleSearchTextChanged(const FText& NewText)
 {
 	Filter.SearchText = NewText.ToString();
+	if (TileView_Facilities)
+	{
+		TileView_Facilities->ScrollToTop();
+	}
 	ReconcilePresentation();
 }
 
@@ -561,8 +578,114 @@ void UFF_PrepPanelBuild::SetCategoryFilter(
 {
 	Filter.bFilterByCategory = bEnabled;
 	Filter.Category = Category;
+	Filter.MinorToken = NAME_None;
 	RefreshCategoryChoiceSelection();
+	RefreshMinorCategorySurface();
+	if (TileView_Facilities)
+	{
+		TileView_Facilities->ScrollToTop();
+	}
 	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::HandleInspectFacilitiesClicked()
+{
+	if (BuildModeSubsystem && BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
+	{
+		BuildModeSubsystem->NotifyBuildToolsInteraction();
+		BuildModeSubsystem->EnterBuildMode();
+	}
+}
+
+void UFF_PrepPanelBuild::HandleMinorChoiceClicked(const int32 ChoiceId)
+{
+	if (!MinorTokens.IsValidIndex(ChoiceId))
+	{
+		return;
+	}
+	Filter.MinorToken = MinorTokens[ChoiceId];
+	for (UFF_PrepChoiceButton* Choice : MinorChoices)
+	{
+		if (Choice)
+		{
+			Choice->SetSelected(Choice->GetChoiceId() == ChoiceId);
+		}
+	}
+	if (TileView_Facilities)
+	{
+		TileView_Facilities->ScrollToTop();
+	}
+	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
+{
+	if (!HorizontalBox_Subcategories)
+	{
+		return;
+	}
+	UClass* ChoiceClass = ResolveWidgetClass(CategoryChoiceClass, CategoryChoiceFallbackPath);
+	if (!ChoiceClass || !ChoiceClass->IsChildOf(UFF_PrepChoiceButton::StaticClass()))
+	{
+		return;
+	}
+
+	TArray<FName> AvailableTokens;
+	for (const FFF_BuildCatalogEntry& Entry : PricedEntries)
+	{
+		if ((!Filter.bFilterByCategory || Entry.Category == Filter.Category) &&
+			!Entry.MinorToken.IsNone())
+		{
+			AvailableTokens.AddUnique(Entry.MinorToken);
+		}
+	}
+	AvailableTokens.Sort([](const FName A, const FName B)
+	{
+		return FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(A).ToString() <
+			FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(B).ToString();
+	});
+	AvailableTokens.Insert(NAME_None, 0);
+	if (!AvailableTokens.Contains(Filter.MinorToken))
+	{
+		Filter.MinorToken = NAME_None;
+	}
+
+	// Catalog changes are infrequent. Rebuild chips only when their keys change; gold and
+	// thumbnail notifications keep the list's pooled entries and current scroll position.
+	if (AvailableTokens != MinorTokens || MinorChoices.IsEmpty())
+	{
+		for (UFF_PrepChoiceButton* Choice : MinorChoices)
+		{
+			if (Choice) { Choice->OnHudTabButtonClicked.Unbind(); }
+		}
+		HorizontalBox_Subcategories->ClearChildren();
+		MinorChoices.Reset();
+		MinorTokens = MoveTemp(AvailableTokens);
+		for (int32 Index = 0; Index < MinorTokens.Num(); ++Index)
+		{
+			UFF_PrepChoiceButton* Choice = CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
+			if (!Choice) { continue; }
+			Choice->ConfigureChoice(Index, Index == 0
+				? LOCTEXT("AllMinorCategories", "전체 종류")
+				: FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(MinorTokens[Index]));
+			if (UHorizontalBoxSlot* ChoiceSlot = HorizontalBox_Subcategories->AddChildToHorizontalBox(Choice))
+			{
+				ChoiceSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				ChoiceSlot->SetVerticalAlignment(VAlign_Center);
+				ChoiceSlot->SetPadding(FMargin(0, 0, 6, 0));
+			}
+			MinorChoices.Add(Choice);
+		}
+	}
+	for (UFF_PrepChoiceButton* Choice : MinorChoices)
+	{
+		if (Choice)
+		{
+			Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleMinorChoiceClicked);
+			Choice->SetSelected(MinorTokens.IsValidIndex(Choice->GetChoiceId()) &&
+				MinorTokens[Choice->GetChoiceId()] == Filter.MinorToken);
+		}
+	}
 }
 
 void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
@@ -594,8 +717,8 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 
 	RuntimeCategoryScroll = WidgetTree->ConstructWidget<UScrollBox>(
 		UScrollBox::StaticClass(), TEXT("ScrollBox_CategoryFilters_Runtime"));
-	RuntimeCategoryBox = WidgetTree->ConstructWidget<UHorizontalBox>(
-		UHorizontalBox::StaticClass(), TEXT("HorizontalBox_CategoryFilters_Runtime"));
+	RuntimeCategoryBox = WidgetTree->ConstructWidget<UVerticalBox>(
+		UVerticalBox::StaticClass(), TEXT("VerticalBox_CategoryFilters_Runtime"));
 	if (!RuntimeCategoryScroll || !RuntimeCategoryBox)
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
@@ -603,9 +726,9 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 		return;
 	}
 
-	RuntimeCategoryScroll->SetOrientation(Orient_Horizontal);
+	RuntimeCategoryScroll->SetOrientation(Orient_Vertical);
 	RuntimeCategoryScroll->SetScrollBarVisibility(ESlateVisibility::Collapsed);
-	RuntimeCategoryScroll->SetConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible);
+	RuntimeCategoryScroll->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
 	RuntimeCategoryScroll->SetAnimateWheelScrolling(true);
 	RuntimeCategoryScroll->SetWheelScrollMultiplier(1.0f);
 	RuntimeCategoryScroll->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::AnimatedScroll);
@@ -621,8 +744,8 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 		RuntimeCategoryBox = nullptr;
 		return;
 	}
-	CategoryBoxSlot->SetHorizontalAlignment(HAlign_Left);
-	CategoryBoxSlot->SetVerticalAlignment(VAlign_Center);
+	CategoryBoxSlot->SetHorizontalAlignment(HAlign_Fill);
+	CategoryBoxSlot->SetVerticalAlignment(VAlign_Top);
 
 	UHorizontalBoxSlot* ScrollSlot = Cast<UHorizontalBoxSlot>(
 		HorizontalBox_Tools->InsertChildAt(0, RuntimeCategoryScroll));
@@ -636,8 +759,8 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 		return;
 	}
 	ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-	ScrollSlot->SetVerticalAlignment(VAlign_Center);
-	ScrollSlot->SetPadding(FMargin(0.0f, 0.0f, 10.0f, 0.0f));
+	ScrollSlot->SetVerticalAlignment(VAlign_Fill);
+	ScrollSlot->SetPadding(FMargin(0.0f));
 	if (Search_Facilities)
 	{
 		Search_Facilities->SetMinDesiredWidth(180.0f);
@@ -658,7 +781,7 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 			return false;
 		}
 
-		UHorizontalBoxSlot* ChoiceSlot = RuntimeCategoryBox->AddChildToHorizontalBox(Choice);
+		UVerticalBoxSlot* ChoiceSlot = RuntimeCategoryBox->AddChildToVerticalBox(Choice);
 		if (!ChoiceSlot)
 		{
 			return false;
@@ -668,8 +791,8 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 		Choice->OnHudTabButtonClicked.BindUObject(
 			this, &ThisClass::HandleCategoryChoiceClicked);
 		ChoiceSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-		ChoiceSlot->SetVerticalAlignment(VAlign_Center);
-		ChoiceSlot->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 0.0f));
+		ChoiceSlot->SetHorizontalAlignment(HAlign_Fill);
+		ChoiceSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 2.0f));
 		CategoryChoices.Add(Choice);
 		return true;
 	};
@@ -807,6 +930,7 @@ void UFF_PrepPanelBuild::FocusSelectedCategoryChoice()
 void UFF_PrepPanelBuild::RefreshPricedEntries()
 {
 	PricedEntries = MakePricedEntries();
+	RefreshMinorCategorySurface();
 }
 
 TArray<FFF_BuildCatalogEntry> UFF_PrepPanelBuild::MakePricedEntries() const
@@ -868,6 +992,20 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 	ApplyPresentation(true);
 }
 
+void UFF_PrepPanelBuild::RefreshVisibleTiles()
+{
+	if (TileView_Facilities)
+	{
+		for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
+		{
+			if (UFF_PrepBuildTileWidget* Tile = Cast<UFF_PrepBuildTileWidget>(Entry))
+			{
+				Tile->RefreshItemPresentation();
+			}
+		}
+	}
+}
+
 void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 {
 	if (!PresentationModel)
@@ -876,11 +1014,34 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	}
 
 	const FFF_PrepBuildPresentationSnapshot Snapshot = PresentationModel->GetSnapshot();
+	if (Text_CategoryBreadcrumb)
+	{
+		const FText Major = Filter.bFilterByCategory
+			? FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(Filter.Category)
+			: LOCTEXT("AllFacilities", "전체 시설");
+		Text_CategoryBreadcrumb->SetText(Filter.MinorToken.IsNone() ? Major : FText::Format(
+			LOCTEXT("CategoryBreadcrumb", "{0}  /  {1}"), Major,
+			FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(Filter.MinorToken)));
+	}
+	if (Text_PanelTitle)
+	{
+		Text_PanelTitle->SetText(LOCTEXT("BuildStudioTitle", "축제 만들기"));
+	}
 	if (TileView_Facilities)
 	{
 		if (bReplaceListItems)
 		{
 			TileView_Facilities->SetListItems(PresentationModel->GetListItems());
+			if (PresentationModel->GetListItems().IsEmpty())
+			{
+				// A collapsed list cannot run its next Slate generation pass. Release rows
+				// only at this final empty-result boundary, before hiding the list.
+				TileView_Facilities->RegenerateAllEntries();
+			}
+			else
+			{
+				RefreshVisibleTiles();
+			}
 		}
 		TileView_Facilities->SetVisibility(
 			Snapshot.bCanInteract ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -910,7 +1071,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("CatalogReady", "[B]키를 누르면 건축 모드로 전환됩니다 ");
+				: LOCTEXT("CatalogReady", "카드 선택: 배치 시작  ·  휠: 목록 탐색  ·  B: 배치 시설 확인");
 		}
 		Text_Status->SetText(Status);
 	}
@@ -944,7 +1105,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 	{
 		Border_PanelRoot->SetPadding(bShowCompact
 			? FMargin(18.f, 0.f)
-			: FMargin(18.f, 14.f));
+			: FMargin(18.f, 10.f));
 	}
 	if (Text_PlacementGuide)
 	{

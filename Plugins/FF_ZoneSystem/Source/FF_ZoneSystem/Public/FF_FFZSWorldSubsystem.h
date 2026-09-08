@@ -16,6 +16,7 @@ class AActor;
 class AFFZSFacilityActor;
 class AFFZSGameplayZone;
 class AFFZSProtectedArea;
+struct FFFZSBuildableGridMask;
 
 // 시설 한 개의 ZoneId와 서로 겹치지 않는 회전 예약 사각형을 묶은 권위 점유 레코드.
 // GUID별 한 레코드이므로 메모리는 물리 셀 수가 아니라 시설 수와 사각형 수에 비례.
@@ -139,6 +140,18 @@ public:
     // @note 결과는 호출 시점 스냅샷이므로 ExecuteCommand가 최신 상태에서 다시 검증한.
 
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
+
+    // Read-only, bounded spatial overview using the same zone ownership, reservations and
+    // protected areas as placement. An empty definition selects overview mode. Physical
+    // obstacles are conservatively masked from one broad-phase query; no per-cell policies,
+    // navigation or ground traces. A visible cell is free land, not a full facility approval.
+    bool BuildPlacementGridMask(
+        const FFFZSCommand& Command,
+        const FVector2D& MinLocalCm,
+        const FVector2D& MaxLocalCm,
+        int32 GridStepCm,
+        double GroundWorldZ,
+        FFFZSBuildableGridMask& OutMask) const;
 
     // Candidate geometry only; never calls external policies, so purchase previews cannot recurse.
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Upgrade")

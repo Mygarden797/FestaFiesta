@@ -16,6 +16,7 @@
 #include "Components/LineBatchComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSBuildableGridComponent.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
@@ -31,117 +32,6 @@
 
 // 따라서 화면이 초록색이어도 커밋 성공을 보장하지 않는다. Preview 뒤에 월드 Revision, 점유, 정책이
 // 바뀔 수 있으며 ExpectedWorldRevision은 이 오래된 화면을 커밋하는 경쟁을 명시적으로 거부하기 위한 값이다.
-
-namespace
-{
-    constexpr double GridGeometryToleranceCm = 0.01;
-    constexpr int32 GridFadeSegmentCount = 4;
-    constexpr int32 MaximumGridLinesPerAxis = 512;
-
-    double Cross2D(const FVector2D& A, const FVector2D& B)
-    {
-        return A.X * B.Y - A.Y * B.X;
-    }
-
-    bool IsPointOnSegment2D(
-        const FVector2D& Point,
-        const FVector2D& A,
-        const FVector2D& B)
-    {
-        const FVector2D Segment = B - A;
-        const double LengthSquared = Segment.SizeSquared();
-        if (LengthSquared <= UE_SMALL_NUMBER)
-        {
-            return FVector2D::Distance(Point, A) <= GridGeometryToleranceCm;
-        }
-        const double T = FMath::Clamp(
-            FVector2D::DotProduct(Point - A, Segment) / LengthSquared,
-            0.0,
-            1.0);
-        return FVector2D::Distance(Point, A + Segment * T) <= GridGeometryToleranceCm;
-    }
-
-    bool IsPointInsidePolygonInclusive(
-        const FVector2D& Point,
-        const TArray<FVector2D>& Polygon)
-    {
-        if (Polygon.Num() < 3)
-        {
-            return false;
-        }
-
-        bool bInside = false;
-        for (int32 I = 0, J = Polygon.Num() - 1; I < Polygon.Num(); J = I++)
-        {
-            const FVector2D& A = Polygon[J];
-            const FVector2D& B = Polygon[I];
-            if (IsPointOnSegment2D(Point, A, B))
-            {
-                return true;
-            }
-            const bool bCrosses = ((B.Y > Point.Y) != (A.Y > Point.Y)) &&
-                (Point.X < (A.X - B.X) * (Point.Y - B.Y) /
-                    ((A.Y - B.Y) + UE_SMALL_NUMBER) + B.X);
-            if (bCrosses)
-            {
-                bInside = !bInside;
-            }
-        }
-        return bInside;
-    }
-
-    template <typename AllocatorType>
-    void AddSegmentPolygonIntersections(
-        const FVector2D& Start,
-        const FVector2D& End,
-        const TArray<FVector2D>& Polygon,
-        TArray<double, AllocatorType>& OutParameters)
-    {
-        const FVector2D Direction = End - Start;
-        const double DirectionLengthSquared = Direction.SizeSquared();
-        if (DirectionLengthSquared <= UE_SMALL_NUMBER)
-        {
-            return;
-        }
-
-        for (int32 Index = 0; Index < Polygon.Num(); ++Index)
-        {
-            const FVector2D& EdgeStart = Polygon[Index];
-            const FVector2D& EdgeEnd = Polygon[(Index + 1) % Polygon.Num()];
-            const FVector2D EdgeDirection = EdgeEnd - EdgeStart;
-            const FVector2D StartToEdge = EdgeStart - Start;
-            const double Denominator = Cross2D(Direction, EdgeDirection);
-            if (FMath::Abs(Denominator) > GridGeometryToleranceCm)
-            {
-                const double T = Cross2D(StartToEdge, EdgeDirection) / Denominator;
-                const double U = Cross2D(StartToEdge, Direction) / Denominator;
-                if (T >= -GridGeometryToleranceCm && T <= 1.0 + GridGeometryToleranceCm &&
-                    U >= -GridGeometryToleranceCm && U <= 1.0 + GridGeometryToleranceCm)
-                {
-                    OutParameters.Add(FMath::Clamp(T, 0.0, 1.0));
-                }
-                continue;
-            }
-
-            // 격자선과 경계선이 같은 직선 위에 놓인 경우 두 경계 끝점을 모두 분할점으로 넣는다.
-            if (FMath::Abs(Cross2D(StartToEdge, Direction)) <= GridGeometryToleranceCm)
-            {
-                const double T0 = FVector2D::DotProduct(EdgeStart - Start, Direction) /
-                    DirectionLengthSquared;
-                const double T1 = FVector2D::DotProduct(EdgeEnd - Start, Direction) /
-                    DirectionLengthSquared;
-                if (T0 >= -GridGeometryToleranceCm && T0 <= 1.0 + GridGeometryToleranceCm)
-                {
-                    OutParameters.Add(FMath::Clamp(T0, 0.0, 1.0));
-                }
-                if (T1 >= -GridGeometryToleranceCm && T1 <= 1.0 + GridGeometryToleranceCm)
-                {
-                    OutParameters.Add(FMath::Clamp(T1, 0.0, 1.0));
-                }
-            }
-        }
-    }
-}
 
 AFFZSPlacementPreviewActor::AFFZSPlacementPreviewActor()
 {
@@ -166,7 +56,7 @@ AFFZSPlacementPreviewActor::AFFZSPlacementPreviewActor()
     RangeLines->SetCanEverAffectNavigation(false);
     RangeLines->PrimaryComponentTick.bCanEverTick = false;
 
-    PlacementGridLines = CreateDefaultSubobject<ULineBatchComponent>(TEXT("PlacementGridLines"));
+    PlacementGridLines = CreateDefaultSubobject<UFFZSBuildableGridComponent>(TEXT("PlacementGridLines"));
     PlacementGridLines->SetupAttachment(SceneRoot);
     PlacementGridLines->SetAbsolute(true, true, true);
     PlacementGridLines->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -261,6 +151,17 @@ void AFFZSPlacementPreviewActor::SetPlacementGridSurface(
     }
     PlacementGridSurfacePointWorld = WorldPoint;
     PlacementGridSurfaceNormalWorld = SafeNormal;
+}
+
+bool AFFZSPlacementPreviewActor::GetPlacementGridSurface(FVector& OutWorldPoint, FVector& OutWorldNormal) const
+{
+    if (!bHasPlacementGridSurface)
+    {
+        return false;
+    }
+    OutWorldPoint = PlacementGridSurfacePointWorld;
+    OutWorldNormal = PlacementGridSurfaceNormalWorld;
+    return true;
 }
 
 // 권위 변경의 유일한 진입점이다. ExecuteCommand가 Game Thread, Phase, 중복 CommandId, Revision,
@@ -431,264 +332,38 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
     DrawGroup(LastValidation.QueueOrientedRects, FColor::Yellow);
 }
 
-// 사용자에게 필요한 순간에만 보이는 비권위 로컬 격자다. Zone 폴리곤을 한 번 읽어 각 선분을
-// 정확히 잘라 내고, 모든 선을 한 DrawLines 호출로 제출한다. 따라서 셀별 Actor/Component가 없고
-// 오목한 Zone 경계 밖이나 화면 전체를 덮는 반투명 판도 만들지 않는다.
+// The same available-land renderer powers placement and the pre-selection overview.
 void AFFZSPlacementPreviewActor::RefreshPlacementGridPresentation()
 {
-    if (!PlacementGridLines)
+    UFFZSBuildableGridComponent* Grid = Cast<UFFZSBuildableGridComponent>(PlacementGridLines);
+    if (!Grid)
     {
         return;
     }
-
-    PlacementGridLines->Flush();
-    PlacementGridLines->SetHiddenInGame(!bDrawPlacementGrid);
-    if (!bDrawPlacementGrid)
-    {
-        return;
-    }
-
-    const UFFZSWorldSubsystem* Subsystem =
-        GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+    UFFZSWorldSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     const AFFZSGameplayZone* Zone = Subsystem ? Subsystem->FindZone(PreviewCommand.ZoneId) : nullptr;
-    if (!Zone || PreviewCommand.FacilitySpec.FootprintSizeCells.X <= 0 ||
-        PreviewCommand.FacilitySpec.FootprintSizeCells.Y <= 0)
+    const FIntPoint Size = PreviewCommand.FacilitySpec.FootprintSizeCells;
+    if (!bDrawPlacementGrid || !Zone || Size.X <= 0 || Size.Y <= 0)
     {
-        PlacementGridLines->SetHiddenInGame(true);
+        Grid->HideGrid();
         return;
     }
-
-    const TArray<FVector2D> BoundaryPolygon = Zone->GetBoundaryPolygonLocalCm();
-    if (BoundaryPolygon.Num() < 3)
-    {
-        PlacementGridLines->SetHiddenInGame(true);
-        return;
-    }
-
-    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
-    const int32 GridStepCm = FFZSPlacementGridModel::SanitizeGridStepCm(PlacementGridStepCm);
-    const float PaddingCm = Settings ? Settings->PlacementGridPaddingCm : 600.0f;
-    const float MaximumRadiusCm = Settings ? Settings->PlacementGridMaxRadiusCm : 3600.0f;
-    const float SurfaceLiftCm = Settings && FMath::IsFinite(Settings->PlacementGridSurfaceLiftCm)
-        ? FMath::Clamp(Settings->PlacementGridSurfaceLiftCm, 0.5f, 20.0f)
-        : 3.0f;
-    const int32 RequestedMajorIntervalCm = Settings
-        ? Settings->PlacementGridMajorIntervalCm
-        : 500;
-    const int32 MajorIntervalCm = FMath::Max(
-        GridStepCm,
-        FMath::RoundToInt(static_cast<double>(RequestedMajorIntervalCm) / GridStepCm) * GridStepCm);
-
-    const float YawDegrees = UFFZSGridLibrary::YawCentidegreesToDegrees(
+    const float Yaw = UFFZSGridLibrary::YawCentidegreesToDegrees(
         UFFZSGridLibrary::GetEffectiveYawCentidegrees(PreviewCommand.Placement));
-    const FVector2D CenterFromFirstCell(
-        (static_cast<double>(PreviewCommand.FacilitySpec.FootprintSizeCells.X) - 1.0) * 0.5,
-        (static_cast<double>(PreviewCommand.FacilitySpec.FootprintSizeCells.Y) - 1.0) * 0.5);
-    const FVector2D FootprintCenterCell = FVector2D(0.5, 0.5) +
-        CenterFromFirstCell.GetRotated(YawDegrees);
-    const FVector2D GridCenterLocalCm(
-        PreviewCommand.Placement.OriginCell.X + FootprintCenterCell.X,
-        PreviewCommand.Placement.OriginCell.Y + FootprintCenterCell.Y);
-
-    const double YawRadians = FMath::DegreesToRadians(static_cast<double>(YawDegrees));
-    const double AbsCos = FMath::Abs(FMath::Cos(YawRadians));
-    const double AbsSin = FMath::Abs(FMath::Sin(YawRadians));
-    const int32 RotatedFootprintWidthCm = FMath::CeilToInt(
-        AbsCos * PreviewCommand.FacilitySpec.FootprintSizeCells.X +
-        AbsSin * PreviewCommand.FacilitySpec.FootprintSizeCells.Y);
-    const int32 RotatedFootprintDepthCm = FMath::CeilToInt(
-        AbsSin * PreviewCommand.FacilitySpec.FootprintSizeCells.X +
-        AbsCos * PreviewCommand.FacilitySpec.FootprintSizeCells.Y);
-    const float HalfExtentX = FFZSPlacementGridModel::ResolveGridHalfExtentCm(
-        RotatedFootprintWidthCm, PaddingCm, MaximumRadiusCm, GridStepCm);
-    const float HalfExtentY = FFZSPlacementGridModel::ResolveGridHalfExtentCm(
-        RotatedFootprintDepthCm, PaddingCm, MaximumRadiusCm, GridStepCm);
-
-    const double MinX = FFZSPlacementGridModel::AlignDownToGrid(
-        GridCenterLocalCm.X - HalfExtentX, GridStepCm);
-    const double MaxX = FFZSPlacementGridModel::AlignUpToGrid(
-        GridCenterLocalCm.X + HalfExtentX, GridStepCm);
-    const double MinY = FFZSPlacementGridModel::AlignDownToGrid(
-        GridCenterLocalCm.Y - HalfExtentY, GridStepCm);
-    const double MaxY = FFZSPlacementGridModel::AlignUpToGrid(
-        GridCenterLocalCm.Y + HalfExtentY, GridStepCm);
-    const int32 XLineCount = FMath::Clamp(
-        FMath::RoundToInt((MaxX - MinX) / GridStepCm) + 1,
-        0,
-        MaximumGridLinesPerAxis);
-    const int32 YLineCount = FMath::Clamp(
-        FMath::RoundToInt((MaxY - MinY) / GridStepCm) + 1,
-        0,
-        MaximumGridLinesPerAxis);
-
-    const FTransform ZoneTransform = Zone->GetActorTransform();
-    const FVector PreviewLocalLocation = ZoneTransform.InverseTransformPosition(
-        LastValidation.PlacementTransform.GetLocation());
-    const double FallbackLocalZ = FMath::IsFinite(PreviewLocalLocation.Z) &&
-        FMath::Abs(PreviewLocalLocation.Z) <= Zone->VerticalExtentCm * 0.5
-        ? PreviewLocalLocation.Z
-        : 0.0;
-    const FVector SurfacePointLocal = ZoneTransform.InverseTransformPosition(
-        PlacementGridSurfacePointWorld);
-    const FVector SurfaceNormalLocal = ZoneTransform.InverseTransformVectorNoScale(
-        PlacementGridSurfaceNormalWorld).GetSafeNormal();
-    const bool bUseSurfacePlane = bHasPlacementGridSurface &&
-        !SurfacePointLocal.ContainsNaN() && !SurfaceNormalLocal.ContainsNaN() &&
-        FMath::Abs(SurfaceNormalLocal.Z) >= 0.25;
-    const FVector SurfaceLiftDirectionWorld = bUseSurfacePlane
-        ? PlacementGridSurfaceNormalWorld.GetSafeNormal()
-        : ZoneTransform.GetUnitAxis(EAxis::Z);
-    const double MaximumSurfaceLocalZ = FMath::Max(
-        100.0,
-        static_cast<double>(Zone->VerticalExtentCm) * 0.5);
-    const auto MakeWorldGridPoint = [
-        &ZoneTransform,
-        &SurfacePointLocal,
-        &SurfaceNormalLocal,
-        &SurfaceLiftDirectionWorld,
-        bUseSurfacePlane,
-        FallbackLocalZ,
-        MaximumSurfaceLocalZ,
-        SurfaceLiftCm](const FVector2D& LocalPoint)
-    {
-        double LocalZ = FallbackLocalZ;
-        if (bUseSurfacePlane)
-        {
-            LocalZ = SurfacePointLocal.Z -
-                (SurfaceNormalLocal.X * (LocalPoint.X - SurfacePointLocal.X) +
-                    SurfaceNormalLocal.Y * (LocalPoint.Y - SurfacePointLocal.Y)) /
-                    SurfaceNormalLocal.Z;
-            LocalZ = FMath::Clamp(LocalZ, -MaximumSurfaceLocalZ, MaximumSurfaceLocalZ);
-        }
-        return ZoneTransform.TransformPosition(FVector(LocalPoint.X, LocalPoint.Y, LocalZ)) +
-            SurfaceLiftDirectionWorld * SurfaceLiftCm;
-    };
-
-    TArray<FBatchedLine> BatchedLines;
-    BatchedLines.Reserve((XLineCount + YLineCount) * GridFadeSegmentCount * 2);
-    const auto AppendStyledLine = [
-        &BatchedLines,
-        &MakeWorldGridPoint](
-        const FVector2D& LocalStart,
-        const FVector2D& LocalEnd,
-        const float Opacity,
-        const bool bMajor)
-    {
-        if (Opacity <= UE_KINDA_SMALL_NUMBER || LocalStart.Equals(LocalEnd, 0.01))
-        {
-            return;
-        }
-        const FVector WorldStart = MakeWorldGridPoint(LocalStart);
-        const FVector WorldEnd = MakeWorldGridPoint(LocalEnd);
-        const float InnerThickness = bMajor ? 2.0f : 1.15f;
-        const float ShadowThickness = InnerThickness + 2.25f;
-        BatchedLines.Emplace(
-            WorldStart,
-            WorldEnd,
-            FLinearColor(0.005f, 0.02f, 0.025f, 0.72f * Opacity),
-            0.0f,
-            ShadowThickness,
-            SDPG_World);
-        BatchedLines.Emplace(
-            WorldStart,
-            WorldEnd,
-            FLinearColor(0.18f, 1.0f, 0.80f, (bMajor ? 0.72f : 0.46f) * Opacity),
-            0.0f,
-            InnerThickness,
-            SDPG_World);
-    };
-
-    const auto AppendClippedGridLine = [
-        &BoundaryPolygon,
-        &AppendStyledLine,
-        &GridCenterLocalCm,
-        HalfExtentX,
-        HalfExtentY](
-        const FVector2D& SegmentStart,
-        const FVector2D& SegmentEnd,
-        const bool bMajor)
-    {
-        TArray<double, TInlineAllocator<32>> Parameters;
-        Parameters.Add(0.0);
-        Parameters.Add(1.0);
-        AddSegmentPolygonIntersections(
-            SegmentStart, SegmentEnd, BoundaryPolygon, Parameters);
-        Parameters.Sort();
-
-        TArray<double, TInlineAllocator<32>> UniqueParameters;
-        UniqueParameters.Reserve(Parameters.Num());
-        for (const double Parameter : Parameters)
-        {
-            if (UniqueParameters.IsEmpty() ||
-                !FMath::IsNearlyEqual(UniqueParameters.Last(), Parameter, 0.00001))
-            {
-                UniqueParameters.Add(Parameter);
-            }
-        }
-
-        const FVector2D Direction = SegmentEnd - SegmentStart;
-        for (int32 Index = 0; Index + 1 < UniqueParameters.Num(); ++Index)
-        {
-            const double T0 = UniqueParameters[Index];
-            const double T1 = UniqueParameters[Index + 1];
-            if (T1 - T0 <= 0.00001)
-            {
-                continue;
-            }
-            const double MidpointT = (T0 + T1) * 0.5;
-            if (!IsPointInsidePolygonInclusive(
-                SegmentStart + Direction * MidpointT,
-                BoundaryPolygon))
-            {
-                continue;
-            }
-
-            // 폴리곤 교차 계산은 전체 격자선당 한 번만 한다. 그 뒤 화면 페이드를 위한 네 구간과
-            // 안쪽 구간의 겹치는 부분만 잘라, 25cm 모드에서도 edge 순회를 반복하지 않는다.
-            for (int32 FadeIndex = 0; FadeIndex < GridFadeSegmentCount; ++FadeIndex)
-            {
-                const double FadeT0 = static_cast<double>(FadeIndex) / GridFadeSegmentCount;
-                const double FadeT1 = static_cast<double>(FadeIndex + 1) / GridFadeSegmentCount;
-                const double ClippedT0 = FMath::Max(T0, FadeT0);
-                const double ClippedT1 = FMath::Min(T1, FadeT1);
-                if (ClippedT1 - ClippedT0 <= 0.00001)
-                {
-                    continue;
-                }
-                const FVector2D LocalStart = SegmentStart + Direction * ClippedT0;
-                const FVector2D LocalEnd = SegmentStart + Direction * ClippedT1;
-                const FVector2D LocalMidpoint = (LocalStart + LocalEnd) * 0.5;
-                const float Opacity = FFZSPlacementGridModel::ResolveEdgeOpacity(
-                    LocalMidpoint.X, GridCenterLocalCm.X, HalfExtentX) *
-                    FFZSPlacementGridModel::ResolveEdgeOpacity(
-                        LocalMidpoint.Y, GridCenterLocalCm.Y, HalfExtentY);
-                AppendStyledLine(LocalStart, LocalEnd, Opacity, bMajor);
-            }
-        }
-    };
-
-    for (int32 LineIndex = 0; LineIndex < XLineCount; ++LineIndex)
-    {
-        const double X = MinX + LineIndex * GridStepCm;
-        const bool bMajor = FFZSPlacementGridModel::IsMajorGridCoordinate(
-            X, MajorIntervalCm);
-        AppendClippedGridLine(FVector2D(X, MinY), FVector2D(X, MaxY), bMajor);
-    }
-    for (int32 LineIndex = 0; LineIndex < YLineCount; ++LineIndex)
-    {
-        const double Y = MinY + LineIndex * GridStepCm;
-        const bool bMajor = FFZSPlacementGridModel::IsMajorGridCoordinate(
-            Y, MajorIntervalCm);
-        AppendClippedGridLine(FVector2D(MinX, Y), FVector2D(MaxX, Y), bMajor);
-    }
-
-    if (!BatchedLines.IsEmpty())
-    {
-        PlacementGridLines->SetHiddenInGame(false);
-        PlacementGridLines->DrawLines(BatchedLines);
-    }
-    else
-    {
-        PlacementGridLines->SetHiddenInGame(true);
-    }
+    const FVector2D Center = FVector2D(PreviewCommand.Placement.OriginCell) + FVector2D(0.5, 0.5) +
+        FVector2D((Size.X - 1.0) * 0.5, (Size.Y - 1.0) * 0.5).GetRotated(Yaw);
+    const double Radians = FMath::DegreesToRadians(static_cast<double>(Yaw));
+    const double AbsCos = FMath::Abs(FMath::Cos(Radians));
+    const double AbsSin = FMath::Abs(FMath::Sin(Radians));
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const FVector2D HalfExtent(
+        FFZSPlacementGridModel::ResolveGridHalfExtentCm(
+            FMath::CeilToInt(AbsCos * Size.X + AbsSin * Size.Y), Settings->PlacementGridPaddingCm,
+            Settings->PlacementGridMaxRadiusCm, PlacementGridStepCm),
+        FFZSPlacementGridModel::ResolveGridHalfExtentCm(
+            FMath::CeilToInt(AbsSin * Size.X + AbsCos * Size.Y), Settings->PlacementGridPaddingCm,
+            Settings->PlacementGridMaxRadiusCm, PlacementGridStepCm));
+    Grid->RefreshGrid(*Subsystem, PreviewCommand, Center, HalfExtent, PlacementGridStepCm,
+        bHasPlacementGridSurface ? PlacementGridSurfacePointWorld : LastValidation.PlacementTransform.GetLocation(),
+        bHasPlacementGridSurface ? PlacementGridSurfaceNormalWorld : FVector::UpVector);
 }
