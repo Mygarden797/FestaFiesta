@@ -167,7 +167,9 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 
 `EFF_ProgramPurchaseResult`는 잔액·스태프·중복·시설 타입 등 실패 사유를 구분한다. UI가 허용 단계를 관리하는 경로와 순수 규칙의 책임을 구분한다.
 
-（예약 귀환·종료 유예의 Crowd 기본은 `ProgramReturnBufferMinutes=10`, `ProgramExitGraceMinutes=10`이다. CSV의 `reservation_return_buffer_minutes=0`·`reservation_exit_buffer_minutes=0`·`npc_walk_speed_mps=1.5`를 이 런타임 경로가 직접 읽지는 않는다. 이동 예상은 리더 실제 속도를 전달한다.）
+（2026-09-08부터 예약 귀환·종료 유예는 **CSV가 출처다.** `reservation_return_buffer_minutes`·`reservation_exit_buffer_minutes`(둘 다 10축제분)를 `OnWorldBeginPlay`에서 읽어 `ProgramReturnBufferMinutes`·`ProgramExitGraceMinutes`를 덮는다. 그 전에는 코드 기본값 10만 살아 있고 CSV 행은 0으로 방치돼 아무도 읽지 않았다 — 결선하면서 CSV 값을 10으로 맞춰 동작이 바뀌지 않게 했다. UPROPERTY로 편집한 값은 해당 행이 없을 때만 남는다.
+
+`npc_walk_speed_mps=1.5`는 여전히 이 경로가 읽지 않는다 — 이동 예상은 리더의 실제 속도를 전달한다.）
 
 ### 5.2 Crowd 연결
 

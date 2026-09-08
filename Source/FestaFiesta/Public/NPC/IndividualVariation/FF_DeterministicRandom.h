@@ -7,160 +7,134 @@
 
 class UDataTable;
 
-/**
- * 고정 Seed 기반 개체 변주 — 순수 해시·분포 수학. DataTable 의존성 없음.
- * 설계는 data/metadata/spec/individual_variation_spec.md 참조.
- *
- * 같은 (GlobalSimulationSeed, StableAgentId, TraitKey, SpawnGeneration, RandomPurpose) 조합은
- * 항상 같은 값을 낸다. 금지 입력: 현재 시각, 포인터 주소, Actor 스폰 순서, 프레임 번호.
+// 고정 Seed 기반 개체 변주 — 순수 해시·분포 수학. DataTable 의존성 없음.
+// 같은 (GlobalSimulationSeed, StableAgentId, TraitKey, SpawnGeneration, RandomPurpose) 조합은 항상 같은 값을 낸다.
+
+/*
+ * - GlobalSimulationSeed: 시뮬레이션 전체의 기준 시드
+ * - StableAgentId: 에이전트의 고정 식별자
+ * - TraitKey: 계산할 특성의 이름
+ * - SpawnGeneration: 같은 ID가 재사용될 때 생성 세대를 구분하는 값
+ * - RandomPurpose: 외형 생성, 의사결정 등 난수의 사용 목적
  */
+
 class FFF_DeterministicRandom
 {
 public:
-	/**
-	 * FName 을 **문자열 내용**으로 해시한다. 프로세스 간 안정성의 핵심이다.
-	 *
-	 * ### 왜 GetTypeHash(FName) 을 쓰면 안 되는가 (2026-08-10 버그 수정)
-	 *
-	 * 엔진의 `GetTypeHash(FName)` 은 `FName::GetComparisonIndex()` 를 해시하고, 그 인덱스는
-	 * `NameTypes.h` 주석에 **"process specific unstable int"** 로 명시돼 있다 — 전역 이름 테이블에
-	 * 등록된 **순서**에 따라 값이 달라진다. 에셋 로딩 순서가 조금 달라지거나, 프로젝트에 새 이름이
-	 * 하나 추가되기만 해도 기존 NPC 전원의 시드가 바뀐다.
-	 *
-	 * 실제로 그래서 `VisitorDistribution.Deterministic` 테스트가 **같은 바이너리에서 실행마다 다른
-	 * 결과**를 냈다. 이 문서(individual_variation_spec.md 2절)가 "금지 입력: Actor 스폰 순서"라고
-	 * 적어놓고 정작 이름 등록 순서에 의존하고 있었던 것이다.
-	 *
-	 * ### 내용 기반 해시 — FNV-1a
-	 *
-	 * 엔진 버전·플랫폼·실행 순서와 무관하게 같은 문자열이면 같은 값이 나온다. 힙 할당도 없다.
-	 * **FName 비교가 대소문자를 무시하므로 소문자화해서 해시한다** — 안 하면 FName 으로는 같다고
-	 * 취급되는 두 이름이 서로 다른 시드를 낸다.
-	 *
-	 * TraitKey 는 ASCII snake_case 로만 쓴다(비ASCII 문자의 대소문자 변환까지 보장하지 않는다).
-	 */
+	// FName의 문자열 내용 자체를 FNV-1a 방식으로 해시하여 uint32 값으로 바꾼다.
+	// FName의 내부 인덱스는 실행 환경이나 이름 등록 순서에 따라 달라질 수 있으므로
+	// TraitKey 는 ASCII snake_case 으로 작성한다.
 	static uint32 MakeStableNameHash(FName Name);
 
-	// TraitKey마다 독립된 난수 스트림을 만든다 — 하나의 스트림을 순서대로 소비하지 않으므로
-	// 나중에 특성을 추가해도 기존 특성값이 바뀌지 않는다.
+	// 다섯 가지 식별값을 섞어 특정 에이전트의 특정 특성 전용 시드를 만든다.
 	//
-	// FName 두 개(TraitKey/RandomPurpose)는 MakeStableNameHash 로 내용 해시한다 — 위 주석 참조.
+	// 도메인을 모르는 순수 함수다. 개체 변주 밖에서도 재사용하며, 2026-09-08 기준 실사용
+	// RandomPurpose 는 4종이다 — Generation(변주·방문객 분포) / Decision(목적지·배회) /
+	// NeedInitial(초기 Need) / Gate(입장 게이트, 이정원 분할 스폰).
+	// 새 purpose 를 쓰면 individual_variation_spec.md 4절에 적을 것. 안 적으면 어떤 난수가
+	// 어디서 갈라지는지 추적할 방법이 없다.
 	static uint32 MakeTraitSeed(int32 GlobalSimulationSeed, int32 StableAgentId, FName TraitKey, int32 SpawnGeneration, FName RandomPurpose);
 
-	/**
-	 * 목적지 선택(softmax 샘플링)용 시드. 회차 인덱스를 **정수로** 접는다.
-	 *
-	 * MakeTraitSeed 와 따로 두는 이유: 예전에는 회차를 TraitKey 문자열에 접어넣었다
-	 * (`FName(*FString::Printf(TEXT("destination_choice_round_%d"), Round))`). 그러면
-	 * **매 목적지 선택마다** FString 할당과 전역 이름 테이블 조회가 발생한다 — 정수 하나를
-	 * 시드에 넣으려고 8만 명 × 회차 수만큼 문자열을 만드는 셈이다. FName 은 해제되지도 않는다.
-	 *
-	 * RandomPurpose 는 `Decision` 으로 고정이고, TraitKey 는 회차와 무관한 상수다.
-	 */
+	// 에이전트의 목적지 선택(softmax 샘플링)에 사용할 결정론적 시드를 만든다.
 	static uint32 MakeDecisionSeed(int32 GlobalSimulationSeed, int32 StableAgentId, int32 ChoiceRoundIndex);
 
 	// TraitSeed 하나로 [0,1) 균등난수 하나를 결정적으로 뽑는다.
 	static float MakeUniformFraction(uint32 TraitSeed);
 
-	// 균등난수 하나를 삼각분포(Min, Mode, Max)의 값으로 바꾼다 (역누적분포함수).
+	// 균등난수 하나를 삼각분포(Min, Mode, Max)의 값으로 바꾼다.
+	// 역누적분포함수를 사용하므로 결과는 Min과 Max 사이에 위치하며, Mode에 가까운 값이 상대적으로 자주 나온다.
 	static float SampleTriangularFromFraction(float Min, float Mode, float Max, float UniformFraction01);
 };
 
-/**
- * FFF_IndividualVariationResolver 가 만들어내는, 개체 하나에 대해 확정된 변주값 묶음.
- * 전부 곱셈용 multiplier이며 기본값 1.0(=변주 없음)에서 벗어난 정도가 개체차다.
- * (leisureliness_axis 만 예외 — 직접 곱하지 않는 공유 성격축)
- */
+// FFF_IndividualVariationResolver 가 만들어내는, 개체 하나에 대해 확정된 변주값 묶음.
+// 전부 곱셈용 multiplier이며 기본값 1.0(=변주 없음)에서 벗어난 정도가 개체차다.
+
 USTRUCT(BlueprintType)
 struct FFF_ResolvedIndividualTraits
 {
 	GENERATED_BODY()
 
+	// NPC의 이동속도
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float WalkSpeedMultiplier = 1.f;
 
+	// 대기열에서 얼마나 오래 참을지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float PatienceMultiplier = 1.f;
 
+	// 혼잡한 장소를 얼마나 견디는지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float CrowdToleranceMultiplier = 1.f;
 
+	// NPC 아키타입의 장소 취향이 얼마나 강하게 적용될지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float PreferenceStrengthMultiplier = 1.f;
 
+	// 축제에 얼마나 오래 머무를지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float StayDurationMultiplier = 1.f;
 
+	// 목적지를 얼마나 자주 다시 판단할지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float ReevaluateIntervalMultiplier = 1.f;
 
-	/**
-	 * 새로운 곳을 얼마나 좋아하는가. Utility 식의 revisit_penalty 항에 곱한다(2026-08-10 추가).
-	 *
-	 * 1.0 보다 크면 이미 가본 곳을 더 피하고, 작으면 익숙한 곳을 다시 가는 데 거리낌이 없다.
-	 * 0 이면 방문 이력을 아예 신경 쓰지 않는다.
-	 *
-	 * 다른 multiplier 와 달리 **페널티에 곱한다** — 값이 커질수록 그 후보의 효용이 내려간다.
-	 */
+	// 새로운 곳을 얼마나 좋아하는가.
+	// 이미 방문했던 장소를 또 방문하는 것에 대한 페널티
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float NoveltySeekingMultiplier = 1.f;
 
+	// NPC가 얼마나 느긋한지 - 직접 소비하지 않음
+	// PatienceMultiplier, StayDurationMultiplier 계산 과정에 이미 반영됨
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float LeisurelinessAxis = 0.5f;
 };
 
-/**
- * FFF_UtilityDestinationSelector::ShouldReevaluate가 받는 "이 개인의" 재평가 임계값.
- * 전역 계수(wait_threshold_minutes 등)에 개체 변주 multiplier를 곱해서 만든다.
- */
+// NPC마다 목적지를 다시 판단하는 기준을 저장
 USTRUCT(BlueprintType)
 struct FFF_PersonalReevaluationThresholds
 {
 	GENERATED_BODY()
 
+	// 현재 목적지의 예상 대기시간이 얼마나 길어지면 다시 판단할지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float WaitThresholdMinutes = 15.f;
 
+	// 목적지가 얼마나 붐비면 다시 판단할지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float DensityThresholdRatio = 0.85f;
 
+	// 특별한 문제가 없어도 몇 초마다 목적지를 다시 검토할지
 	UPROPERTY(BlueprintReadOnly, Category = "IndividualVariation")
 	float ReevaluateIntervalSeconds = 120.f;
 };
 
-/**
- * data/unreal/individual_variation_knobs_v0.csv 로 임포트한 FFF_IndividualVariationRow
- * DataTable을 읽어 NPC 한 명의 확정된 개체 변주값을 만든다.
- *
- * patience_multiplier·stay_duration_multiplier는 leisureliness_axis와 CorrelationStrength
- * 비율로 균등난수 단계에서 블렌딩한다 (individual_variation_spec.md 7절). 나머지는 완전 독립.
- */
+// CSV에서 가져온 특성 범위를 읽고, NPC별로 확정된 개체 특성을 계산한다.
+// 특성 이름                  Min   Mode  Max
+// walk_speed_multiplier     0.8   1.0   1.2
+
+// NPC의 결정론적 난수를 이용해 이 범위 안에서 실제 값을 뽑는다.
+// NPC 42
+// walk_speed_multiplier     = 1.08
 class FFF_IndividualVariationResolver
 {
 public:
+	
+	// 한 개의 ID를 기준으로 개체 특성 전체를 계산하는 기본 함수
 	static FFF_ResolvedIndividualTraits Resolve(
 		const UDataTable* VariationTable,
 		int32 GlobalSimulationSeed,
 		int32 StableAgentId,
 		int32 SpawnGeneration,
 		float CorrelationStrength);
-
-	/**
-	 * 그룹 멤버용 개체 변주. **NPC를 스폰할 때 이 함수를 부르고 결과를 캐싱하면 된다** —
-	 * 개체 변주는 자동으로 걸리지 않는다. `StableAgentId`가 만들어져도 누군가 Resolve를
-	 * 호출하지 않으면 아무 변주도 적용되지 않는다 (data/metadata/request/crowdai_integration_guide.md §5).
+	
+	/*
+	 * Resolve()에 동행 그룹 정책을 추가한 함수
 	 *
-	 * Resolve()를 두 번 부른다:
-	 *   - `StableAgentId` 시드 → 개인 특성 4종 + LeisurelinessAxis
-	 *   - `GroupId` 시드       → WalkSpeedMultiplier / StayDurationMultiplier 만 가져다 덮음
-	 *
-	 * 그래서 같은 그룹은 같은 속도로 걷고 같은 시간 머문다(동행이 유지된다). 인내심·혼잡내성·
-	 * 취향강도·재평가주기까지 공유하면 개체 변주의 원래 목적(복제처럼 안 보이게 하기)이
-	 * 무의미해지므로 그 4종은 계속 개체별 독립이다 (individual_variation_spec.md 8-A절).
-	 *
-	 * Resolve()의 시그니처를 안 바꾸고 wrapper로 둔 이유: 그룹 공유는 호출부의 정책이고,
-	 * Resolve() 자체는 "이 시드로 이 값"이라는 순수 대응 관계만 알아야 한다.
-	 *
+	 * <내부 처리>
+	 * 1. StableAgentId로 Resolve() → 개인별 특성 전체 계산
+	 * 2. GroupId로 Resolve() → 그룹 공통 특성 전체 계산
+	 * 3. 그룹 결과 중 아래 두 개만 개인 결과에 덮어쓰기 → WalkSpeedMultiplier, StayDurationMultiplier
+	 * 
 	 * @param GroupId 그룹 식별자. `INDEX_NONE`이면 solo로 취급해 Resolve() 한 번과 완전히 같은 결과를 낸다.
 	 */
 	static FFF_ResolvedIndividualTraits ResolveWithGroupSharing(
@@ -171,11 +145,7 @@ public:
 		int32 SpawnGeneration,
 		float CorrelationStrength);
 
-	/**
-	 * Resolve()가 만든 개체 변주값을 전역 재평가 계수(UtilityCoefficientTable의
-	 * wait_threshold_minutes/density_threshold_ratio/reevaluate_interval_seconds)에
-	 * 곱해서 "이 개인의" 임계값을 만든다. individual_variation_spec.md 5절 매핑 그대로.
-	 */
+	// 앞에서 계산한 NPC 특성을 실제 재평가 기준으로 변환
 	static FFF_PersonalReevaluationThresholds ResolvePersonalThresholds(
 		const FFF_ResolvedIndividualTraits& Traits,
 		const UDataTable* UtilityCoefficientTable);

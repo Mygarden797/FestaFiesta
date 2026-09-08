@@ -4,6 +4,7 @@
 
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
+#include "FF_FFZSFacilityDefinition.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -13,6 +14,11 @@
 
 UFF_FestivalDefinition::UFF_FestivalDefinition()
 {
+	FFF_RequiredFacility MainStage;
+	MainStage.FacilityDefinition = TSoftObjectPtr<UFFZSFacilityDefinition>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
+	RequiredSetupFacilities.Add(MainStage);
+
 	// 등급이 올라갈수록 비용과 보너스가 함께 커진다.
 	FinaleTiers = {
 		{ EFF_FinaleGrade::C, 2000,  5 },
@@ -74,6 +80,26 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 {
 	const int32 ErrorCountBefore = OutErrors.Num();
+
+	TSet<FName> RequiredIds;
+	for (const FFF_RequiredFacility& Requirement : RequiredSetupFacilities)
+	{
+		const UFFZSFacilityDefinition* Facility = Requirement.FacilityDefinition.LoadSynchronous();
+		if (!Facility || Facility->Spec.FacilityDefinitionId.IsNone() || Requirement.MinimumCount < 1)
+		{
+			OutErrors.Add(LOCTEXT("InvalidRequiredFacility", "필수 설치 시설의 정의와 최소 개수(1 이상)를 확인하세요."));
+			continue;
+		}
+		if (RequiredIds.Contains(Facility->Spec.FacilityDefinitionId))
+		{
+			OutErrors.Add(LOCTEXT("DuplicateRequiredFacility", "필수 설치 시설 종류가 중복되었습니다. 한 행의 최소 개수로 설정하세요."));
+		}
+		RequiredIds.Add(Facility->Spec.FacilityDefinitionId);
+		if (Facility->Spec.MaxInstancesPerWorld > 0 && Requirement.MinimumCount > Facility->Spec.MaxInstancesPerWorld)
+		{
+			OutErrors.Add(LOCTEXT("RequiredFacilityExceedsLimit", "필수 설치 개수가 시설의 월드 설치 상한을 초과합니다."));
+		}
+	}
 
 	// --- 식별 ---
 	if (FestivalId.IsNone())

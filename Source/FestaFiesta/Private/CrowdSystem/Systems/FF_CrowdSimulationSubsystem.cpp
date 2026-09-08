@@ -9,6 +9,7 @@
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
@@ -122,6 +123,16 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 			FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
 		FFF_NeedRules::LoadInitialNeedFractions(
 			CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+
+		// 기존 멤버 값을 기본값으로 넘긴다: 행이 없거나 테이블이 없으면 저작값이 살아남고,
+		// 행이 있으면 CSV 가 이긴다. UPROPERTY 로 편집한 값도 여기서 덮이므로 그 의미를
+		// 헤더 주석에 적어 두었다.
+		ProgramReturnBufferMinutes = FFF_UtilityCoefficientHelpers::GetCoefficient(
+			CachedCoefficientTable.Get(), TEXT("reservation_return_buffer_minutes"),
+			ProgramReturnBufferMinutes);
+		ProgramExitGraceMinutes = FFF_UtilityCoefficientHelpers::GetCoefficient(
+			CachedCoefficientTable.Get(), TEXT("reservation_exit_buffer_minutes"),
+			ProgramExitGraceMinutes);
 	}
 	else
 	{
@@ -720,6 +731,17 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					Unit.PartyID,
 					0,
 					CachedCorrelationStrength);
+
+			// 값을 보관한다. 안 하면 아래에서 속도·체류시간에 녹아든 2종만 남고 나머지가 버려져,
+			// 변주를 8종 뽑아 놓고 화면에는 걷는 속도 차이만 나오는 상태가 된다.
+			if (AgentTraits.IsValidIndex(AgentIndex) && AgentPersonalThresholds.IsValidIndex(AgentIndex))
+			{
+				AgentTraits[AgentIndex] = Traits;
+				AgentPersonalThresholds[AgentIndex] =
+					FFF_IndividualVariationResolver::ResolvePersonalThresholds(
+						Traits, CachedCoefficientTable.Get());
+			}
+
 			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
 			const float MemberBoost2 = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedMultiplier,1.f);
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
@@ -940,6 +962,50 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 					Unit.PartyID, DecisionStuckSteps);
 
 				RequestDecision(AgentIndex, EFF_DecisionReason::MoveFailed);
+			}
+			else if (bEnablePeriodicReevaluation
+				&& State.QueuePhase == EFF_PartyQueuePhase::None
+				&& State.ProgramPhase == EFF_PartyProgramPhase::None
+				&& !State.bNeedsDecision
+				&& AgentPersonalThresholds.IsValidIndex(AgentIndex))
+			{
+				// 개인 주기 재평가. reevaluate_interval_multiplier 의 결선 지점이다.
+				//
+				// ★ 큐·프로그램 구간을 뺀다. 줄에 선 파티를 주기로 끌어내면 인내심과 무관하게
+				//   전원이 같은 주기로 이탈하고, patience_multiplier 를 개인별로 뽑은 의미가
+				//   사라진다 — 줄에서의 이탈은 AdvancePartyQueueOnArrival 이 판정한다.
+				//
+				// ★ bNeedsDecision 을 확인한다. 이미 결정 대기 줄에 들어간 파티에 또 걸면
+				//   프레임 예산에 밀린 파티가 매 스텝 요청을 반복해 DecisionQueue 가 넘친다.
+				//
+				// ★ LastDecisionSimTime 을 기준으로 잰다. 목적지를 고른 시점이 재평가 주기의
+				//   시작이라, 결정이 늦게 처리된 파티는 그만큼 다음 재평가도 늦어진다.
+				//   0(아직 한 번도 결정 안 됨)이면 Spawned 요청이 처리되기 전이므로 건너뛴다.
+				const float SecondsSinceLastDecision = (State.LastDecisionSimTime > 0.f)
+					? FMath::Max(SimTimeSeconds - State.LastDecisionSimTime, 0.f)
+					: 0.f;
+
+				// 대기·밀집 항은 끈다 — 각각 큐 이탈과 조정자의 Relocate 경로가 맡는다.
+				const bool bReevaluate = (State.LastDecisionSimTime > 0.f)
+					&& FFF_UtilityDestinationSelector::ShouldReevaluate(
+						/*CurrentWaitMinutes=*/0.f, /*PersonalWaitThresholdMinutes=*/TNumericLimits<float>::Max(),
+						/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
+						SecondsSinceLastDecision,
+						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds,
+						/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
+
+				if (bReevaluate)
+				{
+					// 계수기만으로는 "주기가 짧아서 자주 걸리는가"와 "주기가 안 차는가"를 못 가른다.
+					// 개인 주기를 같이 찍어 두면 0회일 때 원인이 바로 보인다.
+					UE_LOG(LogFestaFiestaNpc, Verbose,
+						TEXT("[주기 재평가] 파티 %d가 %.1f초 만에 다시 고른다 (개인 주기 %.1f초)"),
+						UnitDatas[AgentIndex].PartyID, SecondsSinceLastDecision,
+						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds);
+
+					++ReevaluateRequests;
+					RequestDecision(AgentIndex, EFF_DecisionReason::Reevaluated);
+				}
 			}
 		}
 		else
@@ -2298,6 +2364,66 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		return false;
 	}
 
+	// 인내심 한계 이탈(reneging). patience_multiplier 의 결선 지점이다.
+	//
+	// ★ 판정은 AtSlot 에서만 한다. Joined(배정 슬롯으로 걸어가는 중)에 이탈시키면 걸어가다
+	//   포기하는 것이 되고, 그 구간에서 진척이 없는 경우는 MoveFailed 가 이미 맡고 있다.
+	//
+	// ★ 기준점은 QueueEnteredSimTime = **줄에 가입한 시각**이라, 슬롯까지 걸어간 시간이
+	//   대기 시간에 포함된다. 슬롯 도착 시각을 따로 들지 않은 것은 의도다 — 손님 입장에서
+	//   "이 시설에 매인 시간"은 가입 시점부터이고, 필드를 하나 더 늘릴 값어치가 없다.
+	//   순수 슬롯 대기만 재야 할 이유가 생기면 그때 타임스탬프를 추가할 것.
+	//
+	// ★ ClearPartyQueueState 를 bLeaveQueue=true 로 먼저 부른다. 이 순서가 중요하다 —
+	//   RequestDecision 이 내부에서 부르는 것은 bLeaveQueue=false 라 큐에 통지하지 않고,
+	//   그러면 Queue 는 이 파티를 계속 들고 있어 자리가 영영 안 비운다(헤더 주석의 그 문제).
+	//   먼저 지우고 나면 QueuePhase 가 None 이라 RequestDecision 쪽 호출은 무해해진다.
+	//
+	// ★ 재결정을 여기서 직접 걸고 true 를 돌려준다. false 를 돌려주면 호출부가 Arrived 로
+	//   요청하는데, 그 사유는 조정자가 직전 목적지를 감점하지 않아 같은 줄에 다시 선다.
+	//   Arrived 는 쿨다운도 타므로 이탈 직후 요청이 조용히 버려질 수 있다.
+	if (bEnableQueuePatienceAbandon
+		&& State.QueuePhase == EFF_PartyQueuePhase::AtSlot
+		&& AgentPersonalThresholds.IsValidIndex(LeaderAgentIndex))
+	{
+		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime, 0.f)
+			* Temp_FestivalMinutesPerRealSecond;
+
+		// 대기 항만 켜서 부른다. 밀집은 조정자의 Relocate 경로가 이미 판정하고 있고,
+		// 개장·라이브 변화는 DestinationOpened 가 밖에서 밀어 넣는다 — 여기서 또 보면
+		// 같은 사건에 두 경로가 반응한다.
+		//
+		// ★ 끄는 항은 조건이 **성립할 수 없는 값**을 넣는다. 부등호 방향을 확인할 것 —
+		//   밀집은 `>` 라 (0, 1) 로 꺼지지만, 주기는 `>=` 라 (0, 0) 을 넣으면 0 >= 0 이
+		//   참이 되어 매번 발화한다. 2026-09-08 실측에서 실제로 그 버그가 났고, 인내심과
+		//   무관하게 슬롯 도착 즉시 전원이 이탈했다(`0.1분 기다리다 떠난다`).
+		//   주기를 끌 때는 Max 를 넣어야 한다.
+		const bool bAbandon = FFF_UtilityDestinationSelector::ShouldReevaluate(
+			WaitedMinutes, AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes,
+			/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
+			/*SecondsSinceLastEvaluation=*/0.f,
+			/*PersonalReevaluateIntervalSeconds=*/TNumericLimits<float>::Max(),
+			/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
+
+		if (bAbandon)
+		{
+			// LogFestaFiestaNpc 에 붙인다 — 개체 변주 진단은 `Log LogFestaFiestaNpc Verbose` 하나로
+			// 다 켜져야 한다. LogTemp 에 두면 [개체]·항별 덤프를 켜도 이 줄만 빠져서,
+			// 계수기는 31회인데 로그는 0줄인 상태가 된다(2026-09-08 실측에서 실제로 겪었다).
+			UE_LOG(LogFestaFiestaNpc, Verbose,
+				TEXT("[줄 이탈] 파티 %d가 %.1f분 기다리다 떠난다 (개인 한계 %.1f분)"),
+				Leader.PartyID, WaitedMinutes,
+				AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes);
+
+			++QueuePatienceAbandons;
+
+			// 큐에 먼저 통지하고(위 주석) 그 다음 재결정을 건다. 이 순서를 바꾸면 안 된다.
+			ClearPartyQueueState(LeaderAgentIndex, true);
+			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::QueuePatienceExpired);
+			return true;
+		}
+	}
+
 	switch (State.QueuePhase)
 	{
 	case EFF_PartyQueuePhase::None:
@@ -2402,6 +2528,7 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 	QueueArrivalNotifies = 0;
 	QueueHoldTimeouts = 0;
 	QueueStalledSkips = 0;
+	QueuePatienceAbandons = 0;
 }
 
 // 조정자가 목적지를 못 정했을 때의 국소 배회. **살아 있는 유일한 랜덤 목적지 생성기다.**
@@ -2599,6 +2726,20 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 			Context.VisitHistory = PartyVisitHistories[LeaderIndex];
 		}
 		Context.RemainingStayMinutes = GetPartyRemainingStayMinutes(LeaderIndex);
+
+		// 리더의 개체 변주를 실어 보낸다. 파티 단위 결정이므로 리더 값만 넘어간다 —
+		// 멤버 값을 섞으면 "누구 취향으로 고른 목적지인가"가 불명확해지고, 리더 상속 모델
+		// (FFF_Party 주석)에서 결정을 내리는 것은 리더 한 명이다.
+		if (AgentTraits.IsValidIndex(LeaderIndex))
+		{
+			Context.NoveltySeekingMultiplier = AgentTraits[LeaderIndex].NoveltySeekingMultiplier;
+			Context.PreferenceStrengthMultiplier = AgentTraits[LeaderIndex].PreferenceStrengthMultiplier;
+		}
+		if (AgentPersonalThresholds.IsValidIndex(LeaderIndex))
+		{
+			Context.PersonalDensityThresholdRatio =
+				AgentPersonalThresholds[LeaderIndex].DensityThresholdRatio;
+		}
 		if (UWorld* World = GetWorld())
 		{
 			if (UGameInstance* GameInstance = World->GetGameInstance())
@@ -3265,6 +3406,12 @@ void UFF_CrowdSimulationSubsystem::InitializeCrowdAgentPool(UWorld& InWorld, FVe
 	PartyMemberCounts.SetNumZeroed(UnitDatas.Num());
 	PartyRemainingStayMinutes.Reset();
 	PartyRemainingStayMinutes.SetNumZeroed(UnitDatas.Num());
+	// SetNumZeroed 를 쓰지 않는다 — 두 구조체의 기본값은 0 이 아니라 "변주 없음"(1.0)이고,
+	// 0 으로 채우면 Resolve 가 아직 안 걸린 슬롯이 "속도 0배·임계 0"으로 동작한다.
+	AgentTraits.Reset();
+	AgentTraits.SetNum(UnitDatas.Num());
+	AgentPersonalThresholds.Reset();
+	AgentPersonalThresholds.SetNum(UnitDatas.Num());
 	PathFollowers.Reset();
 	PathFollowers.SetNum(UnitDatas.Num());
 	PathQueryCursor = 0;
@@ -3397,14 +3544,30 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		int PartyIndex = Party.Key;
 		int LeaderIndex = Party.Value;
 		
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !PartyDecisionStates.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+
 		FUnitData& Unit = UnitDatas[LeaderIndex];
 		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
-		
+
 		if (State.bIsLeaving) continue;
-		
+
+		// 게이트가 없거나 EntryGateIndex 가 안 잡힌 개체는 기존 단일 출구로 보낸다.
+		//
+		// ★ 임시 크래시 가드 추가
+		//	 EntryGateIndex 기본값이 INDEX_NONE 이고 대입 지점이
+		//   SpawnAgents 하나뿐이라, 콘솔 FF.Crowd.Spawn 이나 테스트의 직접 스폰으로 만든
+		//   개체는 -1 로 남는다. 그대로 ValidGates[-1] 을 읽어 Crowd.Reservation.Lifecycle 이
+		//   죽고 자동화 런 전체가 중단됐다.
+		const FVector ExitLocation = ValidGates.IsValidIndex(Unit.EntryGateIndex)
+			? ValidGates[Unit.EntryGateIndex].GateLocation
+			: Temp_ExitWorldLocation;
+
 		State.bIsLeaving = true;
 		State.LeaveStartedSimTime = SimTimeSeconds;
-		Unit.TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
+		Unit.TargetLocation = ExitLocation;
 		State.ProgramPhase = EFF_PartyProgramPhase::None;
 		State.ProgramFacilityId.Invalidate();
 		State.CurrentDestinationId = NAME_None;
@@ -3412,7 +3575,6 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		State.LastDecisionSimTime = SimTimeSeconds;
 		State.CurrentNeedRelief = FFF_NeedReliefFlags();
 		ClearPartyQueueState(LeaderIndex, true);
-		UnitDatas[LeaderIndex].TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
 		
 		
 		
