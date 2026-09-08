@@ -13,6 +13,8 @@ struct FESTAFIESTA_API FFF_PrepBuildPresentationRules
 
 	/** 카테고리 칩에 사용하는 짧은 현지화 표기입니다. */
 	static FText ResolveCategoryDisplayName(EFFZSFacilityCategory Category);
+	static FText ResolveMinorDisplayName(FName MinorToken);
+	static FText ResolveCategoryPathText(EFFZSFacilityCategory Category, FName MinorToken);
 
 	/** 유효 ID, 대분류, 소분류, 검색어를 모두 만족하는지 판정합니다. */
 	static bool IsEntryVisible(

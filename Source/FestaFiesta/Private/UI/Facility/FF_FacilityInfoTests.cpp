@@ -21,6 +21,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
@@ -43,6 +44,9 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
+#include "TextureCompiler.h"
+#include "RHITypes.h"
+#include "UI/Data/FF_UIPalette.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
@@ -53,6 +57,28 @@
 
 namespace
 {
+	UTextureRenderTarget2D* DrawCaptureWidget(
+		FWidgetRenderer& Renderer, const TSharedRef<SWidget>& Widget, const FVector2D Size)
+	{
+		// An explicit sRGB target performs the one display conversion. Renderer must
+		// disable shader gamma; its convenience DrawWidget would choose a linear target.
+		UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true);
+		if (Target) Renderer.DrawWidget(Target, Widget, Size, 0.0f, false);
+		return Target;
+	}
+
+	UTexture2D* LoadCaptureFoodTruckTexture(FAutomationTestBase& Test)
+	{
+		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
+		if (!Test.TestNotNull(TEXT("실제 카탈로그 푸드트럭 썸네일"), Texture)) return nullptr;
+		TArray<UTexture*> Textures = {Texture};
+		FTextureCompilingManager::Get().FinishCompilation(Textures);
+		Texture->SetForceMipLevelsToBeResident(30.0f);
+		Texture->WaitForStreaming();
+		return Texture;
+	}
+
 	const TCHAR* FacilityInfoObjectPath =
 		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
 			"WBP_FF_FacilityInfoPanel");
@@ -231,6 +257,11 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("구매 검증에 사용할 확인 당시 레벨을 보관한다"), ViewData.CurrentUpgradeLevel, 1);
 	TestTrue(TEXT("효과는 전후 값을 화살표로 비교한다"),
 		ViewData.UpgradeEffectText.ToString().Contains(TEXT("4.0초 → 3.2초")));
+	TestTrue(TEXT("현재와 다음 비교 카드가 같은 견적의 서로 다른 값을 표시한다"),
+		ViewData.UpgradeCurrentText.ToString().Contains(TEXT("10 Gold")) &&
+		ViewData.UpgradeCurrentText.ToString().Contains(TEXT("4 × 4 m")) &&
+		ViewData.UpgradeNextText.ToString().Contains(TEXT("16 Gold")) &&
+		ViewData.UpgradeNextText.ToString().Contains(TEXT("6 × 6 m")));
 	TestTrue(TEXT("강화로 달라지는 시설 크기를 구매 전에 표시한다"),
 		ViewData.UpgradeSizeEffectText.ToString().Contains(TEXT("4 × 4 m → 6 × 6 m")));
 	TestTrue(TEXT("비용과 구매 후 잔액을 함께 표시한다"),
@@ -260,6 +291,8 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
 	TestFalse(TEXT("운영 중에는 구매 동작을 숨긴다"), ViewData.bShowUpgradeAction);
 	TestFalse(TEXT("운영 중에는 다음 단계 구매 상세를 숨긴다"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("운영 전환 시 이전 비교 카드도 지운다"),
+		ViewData.UpgradeCurrentText.IsEmpty() && ViewData.UpgradeNextText.IsEmpty());
 	TestTrue(TEXT("운영 중에도 레벨이 보인다"), !ViewData.FacilityLevelText.IsEmpty());
 	TestTrue(TEXT("운영 상태로 전환하면 이전 실패 사유를 지운다"), ViewData.UpgradeDisabledReasonText.IsEmpty());
 
@@ -293,6 +326,9 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("다음 수익 감소액과 감소율은 부호가 한 번만 표시된다"),
 		ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("-3 Gold (-60%)")) &&
 		!ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("+-")));
+	TestTrue(TEXT("비교 카드도 수익 감소와 더 느린 시간을 실제 값으로 표시한다"),
+		ViewData.UpgradeNextText.ToString().Contains(TEXT("2 Gold")) &&
+		ViewData.UpgradeNextText.ToString().Contains(TEXT("8.0초")));
 	Preview.CurrentLevel = Preview.MaxLevel;
 	Preview.TargetLevel = Preview.MaxLevel;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
@@ -302,6 +338,8 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	FFFacilityInfoModel::ApplyUpgradePreview(nullptr, ViewData);
 	TestFalse(TEXT("정보를 잃으면 이전 구매 가능 상태를 유지하지 않는다"), ViewData.bCanUpgrade);
 	TestTrue(TEXT("정보를 잃으면 이전 견적을 지운다"), ViewData.UpgradeCostText.IsEmpty());
+	TestTrue(TEXT("정보를 잃으면 이전 전후 수치를 지운다"),
+		ViewData.UpgradeCurrentText.IsEmpty() && ViewData.UpgradeNextText.IsEmpty());
 	Preview.bHasLevels = false;
 	Preview.CurrentRevenuePerUseGold = 10;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
@@ -901,13 +939,13 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		? Cast<UCanvasPanelSlot>(PanelSize->Slot)
 		: nullptr;
 	TestNotNull(TEXT("카드는 전체 화면 Canvas의 직접 자식이다"), PanelSlot);
-	constexpr float ExpectedPanelWidth = 388.0f;
+	constexpr float ExpectedPanelWidth = 376.0f;
 	constexpr float ExpectedPanelHeight = 500.0f;
-	constexpr float ExpectedPanelRightInset = -24.0f;
-	constexpr float ExpectedPanelTop = 72.0f;
+	constexpr float ExpectedPanelRightInset = -18.0f;
+	constexpr float ExpectedPanelTop = 18.0f;
 	if (PanelSize)
 	{
-		TestTrue(TEXT("카드 WidthOverride는 388px이다"),
+		TestTrue(TEXT("카드 WidthOverride는 376px이다"),
 			FMath::IsNearlyEqual(PanelSize->GetWidthOverride(), ExpectedPanelWidth));
 		TestTrue(TEXT("카드 HeightOverride는 500px이다"),
 			FMath::IsNearlyEqual(PanelSize->GetHeightOverride(), ExpectedPanelHeight));
@@ -921,11 +959,11 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("카드 alignment는 우상단이다"),
 			PanelSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)));
 		const FVector2D PanelPosition = PanelSlot->GetPosition();
-		TestTrue(TEXT("카드 위치는 우측 -24px, 상단 72px이다"),
+		TestTrue(TEXT("카드 위치는 우측 -18px, 상단 18px이다"),
 			PanelPosition.Equals(FVector2D(ExpectedPanelRightInset, ExpectedPanelTop)));
 		TestFalse(TEXT("카드 Canvas 슬롯은 AutoSize를 사용하지 않는다"), PanelSlot->GetAutoSize());
 		const FVector2D PanelSlotSize = PanelSlot->GetSize();
-		TestTrue(TEXT("카드 Canvas 슬롯은 388x500 고정 크기다"),
+		TestTrue(TEXT("카드 Canvas 슬롯은 376x500 고정 크기다"),
 			PanelSlotSize.Equals(FVector2D(ExpectedPanelWidth, ExpectedPanelHeight)));
 
 		constexpr float ReferenceViewportHeight = 1080.0f;
@@ -934,9 +972,10 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		constexpr float PrepBuildHostHeight = 320.0f;
 		constexpr float PrepBuildHudTop = ReferenceViewportHeight
 			- PrepHudBarHeight - PrepHudBottomMargin - PrepBuildHostHeight;
-		static_assert(ExpectedPanelTop + ExpectedPanelHeight == 572.0f);
+		static_assert(ExpectedPanelTop + ExpectedPanelHeight == 518.0f);
 		static_assert(PrepBuildHudTop == 690.0f);
 		const float PanelBottom = PanelPosition.Y + PanelSlotSize.Y;
+		TestTrue(TEXT("720p에서도 카드 하단은 하단 도구 모음 시작 528px보다 위다"), PanelBottom < 528.0f);
 		TestTrue(*FString::Printf(
 			TEXT("1080p에서 시설 카드 하단 %.0fpx는 Build HUD 상단 %.0fpx보다 위다"),
 			PanelBottom,
@@ -951,6 +990,16 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("상세 정보는 내부 ScrollBox를 사용한다"),
 		Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Details"))));
 	TestNotNull(TEXT("썸네일 계약"), Cast<UImage>(Tree->FindWidget(TEXT("Image_Thumbnail"))));
+	const USizeBox* ThumbnailSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Thumbnail_Size")));
+	TestTrue(TEXT("확대된 썸네일은 120x112px 공간을 가진다"), ThumbnailSize &&
+		FMath::IsNearlyEqual(ThumbnailSize->GetWidthOverride(), 120.0f) &&
+		FMath::IsNearlyEqual(ThumbnailSize->GetHeightOverride(), 112.0f));
+	TestNotNull(TEXT("현재/강화 후 비교 카드 계약"), Tree->FindWidget(TEXT("Panel_UpgradeComparison")));
+	for (const FName Name : {FName(TEXT("Text_UpgradeCurrent")), FName(TEXT("Text_UpgradeNext")),
+		FName(TEXT("Text_Footprint_Card")), FName(TEXT("Text_InstallCost_Card")), FName(TEXT("Text_Occupancy_Card"))})
+	{
+		TestNotNull(*FString::Printf(TEXT("게임형 정보 카드 %s"), *Name.ToString()), Tree->FindWidget(Name));
+	}
 	TestNotNull(TEXT("건축 섹션 계약"), Tree->FindWidget(TEXT("Panel_BuildSection")));
 	TestNotNull(TEXT("라이브 섹션 계약"), Tree->FindWidget(TEXT("Panel_LiveSection")));
 	TestNotNull(TEXT("고정 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_Actions")));
@@ -1192,6 +1241,8 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 	ViewData.Context = EFF_FacilityInfoContext::Build;
 	ViewData.ContextTitle = FText::FromString(TEXT("배치 시설"));
 	ViewData.DisplayName = FText::FromString(TEXT("해변 간식 부스"));
+	ViewData.Thumbnail = LoadCaptureFoodTruckTexture(*this);
+	if (!ViewData.Thumbnail) return false;
 	ViewData.CategoryText = FText::FromString(TEXT("음식 부스"));
 	ViewData.ZoneText = FText::FromString(TEXT("중앙 구역"));
 	ViewData.FacilityStateText = FText::FromString(TEXT("운영 준비 완료"));
@@ -1229,16 +1280,19 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 	{
 		return false;
 	}
-	constexpr int32 CaptureWidth = 388;
+	constexpr int32 CaptureWidth = 376;
 	constexpr int32 CaptureHeight = 500;
 	// Render the real card subtree at its shipped size, independent of the editor viewport.
-	FWidgetRenderer Renderer(true, true);
-	UTextureRenderTarget2D* RenderTarget = Renderer.DrawWidget(
-		Card->TakeWidget(), FVector2D(CaptureWidth, CaptureHeight));
+	FWidgetRenderer Renderer(false, true);
+	FReadSurfaceDataFlags ReadFlags;
+	// The sRGB target already contains display-encoded color.
+	ReadFlags.SetLinearToGamma(false);
+	UTextureRenderTarget2D* RenderTarget = DrawCaptureWidget(
+		Renderer, Card->TakeWidget(), FVector2D(CaptureWidth, CaptureHeight));
 	TArray<FColor> Pixels;
 	FTextureRenderTargetResource* Resource = RenderTarget ? RenderTarget->GameThread_GetRenderTargetResource() : nullptr;
 	if (!TestTrue(TEXT("실제 RHI에서 시설 카드 픽셀을 읽는다"),
-		Resource && Resource->ReadPixels(Pixels) && Pixels.Num() == CaptureWidth * CaptureHeight))
+		Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == CaptureWidth * CaptureHeight))
 	{
 		return false;
 	}
@@ -1283,11 +1337,11 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
 	Panel->ApplyViewData(ViewData);
 	Panel->ForceLayoutPrepass();
-	RenderTarget = Renderer.DrawWidget(Card->TakeWidget(), FVector2D(CaptureWidth, CaptureHeight));
+	RenderTarget = DrawCaptureWidget(Renderer, Card->TakeWidget(), FVector2D(CaptureWidth, CaptureHeight));
 	Resource = RenderTarget ? RenderTarget->GameThread_GetRenderTargetResource() : nullptr;
 	Pixels.Reset();
 	const bool bFlexiblePixels = TestTrue(TEXT("무료·감소·축소 견적도 실제 카드에서 렌더된다"),
-		Resource && Resource->ReadPixels(Pixels) && Pixels.Num() == CaptureWidth * CaptureHeight);
+		Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == CaptureWidth * CaptureHeight);
 	bool bFlexibleSaved = false;
 	if (bFlexiblePixels)
 	{
@@ -1309,6 +1363,118 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 	}
 	Panel->ReleaseSlateResources(true);
 	return bSaved && bFlexibleSaved;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoGamePanelVisualPreviewTest,
+	"FestaFiesta.UI.FacilityInfo.GamePanelVisualPreview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
+	{
+		AddInfo(TEXT("SKIPPED: game panel screenshots require -RenderOffscreen with a real RHI."));
+		return true;
+	}
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UWidgetBlueprintGeneratedClass* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(
+		LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
+	if (!TestNotNull(TEXT("게임 패널 시각 검증 월드"), World) ||
+		!TestNotNull(TEXT("실제 게임 패널 WBP"), PanelClass)) return false;
+	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*PanelClass);
+	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(World, PanelClass);
+	if (!TestNotNull(TEXT("시설 게임 패널 인스턴스"), Panel)) return false;
+	FFF_FacilityInfoViewData Data;
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Data.Context = EFF_FacilityInfoContext::Build;
+	Data.ContextTitle = FText::FromString(TEXT("배치 시설"));
+	Data.DisplayName = FText::FromString(TEXT("다다포차 푸드트럭"));
+	Data.Thumbnail = LoadCaptureFoodTruckTexture(*this);
+	if (!Data.Thumbnail) return false;
+	Data.CategoryText = FText::FromString(TEXT("부스 › 음식 판매"));
+	Data.ZoneText = FText::FromString(TEXT("해변 구역"));
+	Data.FacilityStateText = FText::FromString(TEXT("운영 준비 완료"));
+	Data.ThumbnailPlaceholderText = FText::FromString(TEXT("시설 이미지 준비 중"));
+	Data.FacilityRevenueText = FText::FromString(TEXT("1인 예상 수익  15 Gold"));
+	Data.FootprintText = FText::FromString(TEXT("4 × 4 m"));
+	Data.ClearanceText = FText::FromString(TEXT("1 m"));
+	Data.InstallCostText = FText::FromString(TEXT("120 Gold"));
+	Data.RecoveryCostText = FText::FromString(TEXT("60 Gold"));
+	Data.InstanceLimitText = FText::FromString(TEXT("2 / 8개"));
+	Data.QueueCapacityText = FText::FromString(TEXT("8명"));
+	Data.ServiceDurationText = FText::FromString(TEXT("4초"));
+	Data.bCanMove = true;
+	Data.bCanRemove = true;
+	Panel->ApplyViewData(Data);
+	Panel->SetPanelOpen(true);
+	// The renderer's virtual window is temporary. Retain SObjectWidget until after
+	// geometry inspection so its destructor cannot release the child Slate resources.
+	const TSharedRef<SWidget> PanelSlate = Panel->TakeWidget();
+	FWidgetRenderer Renderer(false, true);
+	FReadSurfaceDataFlags ReadFlags;
+	ReadFlags.SetLinearToGamma(false);
+	constexpr int32 Width = 1280;
+	constexpr int32 Height = 720;
+	const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"));
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	auto Capture = [&](const TCHAR* Filename)
+	{
+		Panel->ForceLayoutPrepass();
+		UTextureRenderTarget2D* Target = DrawCaptureWidget(Renderer, PanelSlate, FVector2D(Width, Height));
+		FTextureRenderTargetResource* Resource = Target ? Target->GameThread_GetRenderTargetResource() : nullptr;
+		TArray<FColor> Pixels;
+		if (!TestTrue(TEXT("720p 실제 WBP 렌더"), Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == Width * Height)) return false;
+		// Solid header chrome above the context label, outside the rounded corners.
+		const FColor HeaderPixel = Pixels[23 * Width + (Width - 18 - 376 + 20)];
+		const FColor ExpectedHeader = UFF_UIPalette::Get()->InGame.TealDeep.ToFColor(true);
+		TestTrue(TEXT("캡처 헤더 색은 실제 팔레트 sRGB와 일치한다"),
+			FMath::Abs(int32(HeaderPixel.R) - ExpectedHeader.R) <= 3 &&
+			FMath::Abs(int32(HeaderPixel.G) - ExpectedHeader.G) <= 3 &&
+			FMath::Abs(int32(HeaderPixel.B) - ExpectedHeader.B) <= 3);
+		AddInfo(FString::Printf(TEXT("Header RGB actual=%s, expected=%s"), *HeaderPixel.ToString(), *ExpectedHeader.ToString()));
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(Width, Height, Pixels, Png);
+		const FString Path = FPaths::Combine(Directory, Filename);
+		AddInfo(FString::Printf(TEXT("Game panel screenshot: %s"), *FPaths::ConvertRelativePathToFull(Path)));
+		return TestTrue(TEXT("720p 게임 패널 PNG 저장"), FFileHelper::SaveArrayToFile(Png, *Path));
+	};
+	bool bSaved = Capture(TEXT("FacilityGamePanelBuild720.png"));
+	UWidget* Footer = Panel->GetWidgetFromName(TEXT("Panel_Actions"));
+	UScrollBox* Scroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Details")));
+	if (TestNotNull(TEXT("고정 행동 영역"), Footer) && TestNotNull(TEXT("상세 스크롤"), Scroll))
+	{
+		const FGeometry& Geometry = Footer->GetPaintSpaceGeometry();
+		const double FooterTop = Geometry.LocalToAbsolute(FVector2D::ZeroVector).Y;
+		const double FooterBottom = Geometry.LocalToAbsolute(Geometry.GetLocalSize()).Y;
+		TestTrue(TEXT("720p 고정 행동 영역은 도구 모음 위에 온전히 보인다"),
+			Geometry.GetLocalSize().Y > 24.0 && FooterTop >= 18.0 && FooterBottom <= 518.5);
+		AddInfo(FString::Printf(TEXT("Footer Y=%.1f..%.1f, height=%.1f, tools begin=528"),
+			FooterTop, FooterBottom, Geometry.GetLocalSize().Y));
+		Scroll->SetScrollOffset(180.0f);
+		bSaved &= Capture(TEXT("FacilityGamePanelBuildDetails720.png"));
+		TestTrue(TEXT("상세 스크롤은 고정 조작 버튼을 움직이지 않는다"),
+			FMath::IsNearlyEqual(Footer->GetPaintSpaceGeometry().LocalToAbsolute(FVector2D::ZeroVector).Y, FooterTop, 0.5));
+	}
+	Data.Context = EFF_FacilityInfoContext::Live;
+	Data.ContextTitle = FText::FromString(TEXT("운영 시설"));
+	Data.FacilityStateText = FText::FromString(TEXT("운영 중"));
+	Data.OperationStateText = FText::FromString(TEXT("손님을 맞이하고 있어요"));
+	Data.WaitingPartiesText = FText::FromString(TEXT("3 / 1팀"));
+	Data.OccupancyText = FText::FromString(TEXT("4 / 8명"));
+	Data.RemainingServiceText = FText::FromString(TEXT("4명"));
+	Data.ExpectedWaitText = FText::FromString(TEXT("12초"));
+	Data.ThroughputText = FText::FromString(TEXT("분당 15명"));
+	Data.bHasMinigame = true;
+	Data.bCanStartMinigame = true;
+	Panel->ApplyViewData(Data);
+	bSaved &= Capture(TEXT("FacilityGamePanelLive720.png"));
+	TestTrue(TEXT("컨텍스트 변경 시 새 정보의 처음으로 이동한다"), Scroll && Scroll->GetScrollOffset() < 1.0f);
+	UButton* Minigame = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_StartMinigame")));
+	TestTrue(TEXT("게임형 운영 화면에서도 미니게임 실행을 유지한다"), Minigame && Minigame->GetIsEnabled());
+	Panel->ReleaseSlateResources(true);
+	return bSaved;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

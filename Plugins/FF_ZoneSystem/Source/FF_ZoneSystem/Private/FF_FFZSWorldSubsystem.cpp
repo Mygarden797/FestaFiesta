@@ -2,10 +2,14 @@
 
 #include "CollisionQueryParams.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "NavigationSystem.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Templates/UnrealTemplate.h"
 #include "UObject/StrongObjectPtr.h"
 #include "NavigationPath.h"
@@ -14,6 +18,7 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSExternalPolicy.h"
 #include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSBuildableGrid.h"
 #include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSQueueAgent.h"
@@ -947,6 +952,269 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacilityAtWorldPoint(
         }
     }
     return BestMatch;
+}
+
+bool UFFZSWorldSubsystem::BuildPlacementGridMask(
+    const FFFZSCommand& Command,
+    const FVector2D& MinLocalCm,
+    const FVector2D& MaxLocalCm,
+    const int32 GridStepCm,
+    const double GroundWorldZ,
+    FFFZSBuildableGridMask& OutMask) const
+{
+    OutMask.Reset();
+    if (!IsInGameThread() || !FMath::IsFinite(GroundWorldZ))
+    {
+        return false;
+    }
+    const AFFZSGameplayZone* Zone = FindZone(Command.ZoneId);
+    if (!Zone)
+    {
+        return false;
+    }
+    TArray<FText> Errors;
+    if (!Zone->ValidateZoneData(Errors) ||
+        !OutMask.Initialize(MinLocalCm, MaxLocalCm, GridStepCm))
+    {
+        return false;
+    }
+
+    const AFFZSFacilityActor* Moving = Command.Type == EFFZSCommandType::Move
+        ? FindFacility(Command.FacilityInstanceId) : nullptr;
+    const FFFZSFacilitySpec& Spec = Moving ? Moving->GetFacilitySpec() : Command.FacilitySpec;
+    const bool bHasSelection = !Spec.FacilityDefinitionId.IsNone();
+    if (!bHasSelection && !Zone->bAllowAllFacilityCategories && Zone->AllowedFacilityCategories.IsEmpty())
+    {
+        return true;
+    }
+    if (bHasSelection && (!UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Spec) ||
+        !Spec.IsValid(Errors) || !Zone->IsCategoryAllowed(Spec.Category) ||
+        (!Spec.AllowedZoneIds.IsEmpty() && !Spec.AllowedZoneIds.Contains(Command.ZoneId))))
+    {
+        return true; // Well-formed empty mask for a selection disallowed in this zone.
+    }
+
+    // Reuse the authority's concave-polygon/exactly-one-zone test. Preparation happens once,
+    // not once per cell, and never materializes the world's physical 1 cm occupancy lattice.
+    const FZoneCellOwnershipCache Ownership(ZonesById, *Zone);
+    const FTransform ZoneTransform = Zone->GetActorTransform();
+    const double Step = OutMask.GetStepCm();
+    const FVector2D MaskMin = OutMask.GetMinLocalCm();
+    const FVector2D MaskMax = MaskMin + FVector2D(OutMask.GetNumX(), OutMask.GetNumY()) * Step;
+    FFFZSOrientedRect ViewRect;
+    ViewRect.CenterCell = (MaskMin + MaskMax) * 0.5;
+    ViewRect.HalfExtentCells = (MaskMax - MaskMin) * 0.5;
+    TArray<const FFFZSOrientedRect*> OccupiedRegions;
+    for (const TPair<FGuid, FFFZSFacilityRegionOccupancy>& Pair : OccupiedFacilityRegions)
+    {
+        if (Pair.Value.ZoneId != Command.ZoneId ||
+            (Moving && Pair.Key == Moving->GetFacilityInstanceId()))
+        {
+            continue;
+        }
+        for (const FFFZSOrientedRect& Region : Pair.Value.Regions)
+        {
+            if (FFZSOrientedGeometry::IntersectsPositiveArea(ViewRect, Region))
+            {
+                OccupiedRegions.Add(&Region);
+            }
+        }
+    }
+
+    TArray<const AFFZSProtectedArea*> RelevantAreas;
+    for (const TWeakObjectPtr<AFFZSProtectedArea>& WeakArea : ProtectedAreas)
+    {
+        const AFFZSProtectedArea* Area = WeakArea.Get();
+        if (!Area)
+        {
+            continue;
+        }
+        // Validate even another zone's malformed protection, matching ValidateProtectedAreas.
+        if (!Area->ValidateProtectedAreaData(Errors) ||
+            (!Area->LinkedZoneId.IsNone() && !FindZone(Area->LinkedZoneId)))
+        {
+            return true;
+        }
+        if (Area->LinkedZoneId.IsNone() || Area->LinkedZoneId == Command.ZoneId)
+        {
+            RelevantAreas.Add(Area);
+        }
+    }
+
+    const double HeightCm = bHasSelection ? Spec.PlacementObstacleHeightCm : 250.0;
+    const double ProtectedHalfHeight = HeightCm * 0.5;
+    const double CollisionHalfHeight = FMath::Max(5.0, HeightCm * 0.5 - 2.0);
+    const double CollisionCenterZ = GroundWorldZ + CollisionHalfHeight + 3.0;
+    const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const bool bDeferToSurface = Settings->bEnableGroundChecks;
+    OutMask.ObstacleHeightCm = HeightCm;
+    TBitArray<> WorldBlockedCells(false, OutMask.GetCellCount());
+    const auto RasterizeWorldBounds = [&](const FBox& Bounds,
+        const UPrimitiveComponent* Component, const int32 InstanceIndex = INDEX_NONE)
+    {
+        if (!Bounds.IsValid || Bounds.Min.ContainsNaN() || Bounds.Max.ContainsNaN())
+        {
+            return false;
+        }
+        if (!bDeferToSurface &&
+            (Bounds.Max.Z <= GroundWorldZ + 3.0 || Bounds.Min.Z > CollisionCenterZ + CollisionHalfHeight))
+        {
+            return true;
+        }
+        FBox2D LocalBounds(EForceInit::ForceInit);
+        for (int32 Corner = 0; Corner < 4; ++Corner)
+        {
+            const FVector Local = ZoneTransform.InverseTransformPosition(FVector(
+                (Corner & 1) ? Bounds.Max.X : Bounds.Min.X,
+                (Corner & 2) ? Bounds.Max.Y : Bounds.Min.Y, GroundWorldZ));
+            LocalBounds += FVector2D(Local.X, Local.Y);
+        }
+        const int32 FirstX = static_cast<int32>(FMath::Clamp(
+            FMath::FloorToDouble((LocalBounds.Min.X - MaskMin.X) / Step), 0.0, static_cast<double>(OutMask.GetNumX())));
+        const int32 FirstY = static_cast<int32>(FMath::Clamp(
+            FMath::FloorToDouble((LocalBounds.Min.Y - MaskMin.Y) / Step), 0.0, static_cast<double>(OutMask.GetNumY())));
+        const int32 LastX = static_cast<int32>(FMath::Clamp(
+            FMath::CeilToDouble((LocalBounds.Max.X - MaskMin.X) / Step), 0.0, static_cast<double>(OutMask.GetNumX())));
+        const int32 LastY = static_cast<int32>(FMath::Clamp(
+            FMath::CeilToDouble((LocalBounds.Max.Y - MaskMin.Y) / Step), 0.0, static_cast<double>(OutMask.GetNumY())));
+        if (bDeferToSurface)
+        {
+            FFFZSBuildGridObstacle& Obstacle = OutMask.DeferredWorldObstacles.AddDefaulted_GetRef();
+            Obstacle.WorldBounds = Bounds;
+            Obstacle.FirstCell = FIntPoint(FirstX, FirstY);
+            Obstacle.EndCell = FIntPoint(LastX, LastY);
+            Obstacle.Component = const_cast<UPrimitiveComponent*>(Component);
+            Obstacle.InstanceIndex = InstanceIndex;
+            return true;
+        }
+        for (int32 Y = FirstY; Y < LastY; ++Y)
+        {
+            WorldBlockedCells.SetRange(Y * OutMask.GetNumX() + FirstX, LastX - FirstX, true);
+        }
+        return true;
+    };
+    if (Settings->bEnableWorldCollisionChecks && GetWorld())
+    {
+        FCollisionQueryParams Params(SCENE_QUERY_STAT(FFZoneSystemBuildGrid), false);
+        Params.AddIgnoredActor(Zone);
+        if (Moving)
+        {
+            Params.AddIgnoredActor(Moving);
+        }
+        FVector QueryCenter = ZoneTransform.TransformPosition(FVector(ViewRect.CenterCell, 0.0));
+        const double QueryMinZ = bDeferToSurface ? ZoneTransform.GetLocation().Z -
+            FMath::Max(1.0, static_cast<double>(Settings->GroundTraceBelowCm)) : GroundWorldZ + 3.0;
+        const double QueryMaxZ = bDeferToSurface ? ZoneTransform.GetLocation().Z +
+            FMath::Max(1.0, static_cast<double>(Settings->GroundTraceAboveCm)) + HeightCm :
+            CollisionCenterZ + CollisionHalfHeight;
+        QueryCenter.Z = (QueryMinZ + QueryMaxZ) * 0.5;
+        TArray<FOverlapResult> Overlaps;
+        GetWorld()->OverlapMultiByChannel(Overlaps, QueryCenter, ZoneTransform.GetRotation(),
+            ECC_Visibility, FCollisionShape::MakeBox(FVector(
+                ViewRect.HalfExtentCells, (QueryMaxZ - QueryMinZ) * 0.5)), Params);
+        TSet<const UPrimitiveComponent*> SeenComponents;
+        for (const FOverlapResult& Overlap : Overlaps)
+        {
+            const AActor* Actor = Overlap.GetActor();
+            const UPrimitiveComponent* Component = Overlap.GetComponent();
+            if (!Actor || !Component || Actor->IsA<AFFZSGameplayZone>() ||
+                Actor->IsA<AFFZSProtectedArea>() || Actor->IsA<AFFZSFacilityActor>() ||
+                Component->IsA<ULandscapeHeightfieldCollisionComponent>() ||
+                Component->GetCollisionResponseToChannel(ECC_Visibility) == ECR_Ignore ||
+                SeenComponents.Contains(Component))
+            {
+                continue;
+            }
+            SeenComponents.Add(Component);
+            // A foliage/ISM component can span an entire map. Use only nearby instances,
+            // otherwise one tree would incorrectly turn the whole component's bounds dark.
+            if (const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Component))
+            {
+                const UStaticMesh* Mesh = Instances->GetStaticMesh();
+                if (!Mesh)
+                {
+                    continue;
+                }
+                const FBox QueryLocalBounds(
+                    FVector(MaskMin, 0.0), FVector(MaskMax, CollisionHalfHeight * 2.0));
+                FBox QueryWorldBounds = QueryLocalBounds.TransformBy(ZoneTransform);
+                QueryWorldBounds.Min.Z = QueryMinZ;
+                QueryWorldBounds.Max.Z = QueryMaxZ;
+                for (const int32 InstanceIndex : Instances->GetInstancesOverlappingBox(QueryWorldBounds, true))
+                {
+                    FTransform InstanceTransform;
+                    if (!Instances->GetInstanceTransform(InstanceIndex, InstanceTransform, true))
+                    {
+                        continue;
+                    }
+                    FBox InstanceBounds = Mesh->GetBoundingBox().TransformBy(InstanceTransform);
+                    if (const UBodySetup* Body = Mesh->GetBodySetup())
+                    {
+                        const FBox CollisionBounds = Body->AggGeom.CalcAABB(InstanceTransform);
+                        if (CollisionBounds.IsValid)
+                        {
+                            InstanceBounds += CollisionBounds;
+                        }
+                    }
+                    if (!RasterizeWorldBounds(InstanceBounds, Component, InstanceIndex))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else if (!RasterizeWorldBounds(Component->Bounds.GetBox(), Component))
+            {
+                return true;
+            }
+        }
+    }
+
+    FFFZSOrientedRect CellRect;
+    CellRect.HalfExtentCells = FVector2D(Step * 0.5);
+    const FVector ProtectedHalfExtent(Step * 0.5, Step * 0.5, ProtectedHalfHeight);
+    for (int32 Y = 0; Y < OutMask.GetNumY(); ++Y)
+    {
+        for (int32 X = 0; X < OutMask.GetNumX(); ++X)
+        {
+            CellRect.CenterCell = MaskMin + FVector2D(X + 0.5, Y + 0.5) * Step;
+            if (WorldBlockedCells[Y * OutMask.GetNumX() + X] || !IsOrientedRectOwnedByExactlyOneZone(
+                Ownership, CellRect, UFFZSDeveloperSettings::DefaultPlacementCellSizeCm))
+            {
+                continue;
+            }
+            bool bBlocked = false;
+            for (const FFFZSOrientedRect* Occupied : OccupiedRegions)
+            {
+                if (FFZSOrientedGeometry::IntersectsPositiveArea(CellRect, *Occupied))
+                {
+                    bBlocked = true;
+                    break;
+                }
+            }
+            if (bBlocked)
+            {
+                continue;
+            }
+            FVector WorldCenter = ZoneTransform.TransformPosition(FVector(CellRect.CenterCell, 0.0));
+            // Authority checks protection on the zone plane before its ground-height pass.
+            // A camera ray landing on a roof must not reveal protected ground below it.
+            WorldCenter.Z += ProtectedHalfHeight;
+            for (const AFFZSProtectedArea* Area : RelevantAreas)
+            {
+                if (Area->IntersectsWorldOrientedBox(WorldCenter, ProtectedHalfExtent, ZoneTransform.GetRotation()))
+                {
+                    bBlocked = true;
+                    break;
+                }
+            }
+            if (bBlocked)
+            {
+                continue;
+            }
+            OutMask.SetBuildable(X, Y, !bBlocked);
+        }
+    }
+    return true;
 }
 
 // Move는 등록된 Spec으로 검증하며, 이 단계에서는 권위 상태를 변경하지 않는다.

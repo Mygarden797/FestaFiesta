@@ -8,6 +8,7 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/InputSettings.h"
@@ -65,12 +66,27 @@ FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
 
 void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewData)
 {
+	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
+		CurrentViewData.Context != ViewData.Context;
 	CurrentViewData = ViewData;
+	if (bSelectionChanged && WidgetTree)
+	{
+		if (UScrollBox* Details = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("ScrollBox_Details"))))
+		{
+			Details->ScrollToStart();
+		}
+	}
 
 	SetText(Text_Context, ViewData.ContextTitle);
 	SetText(Text_FacilityName, ViewData.DisplayName);
+	if (Text_FacilityName)
+	{
+		Text_FacilityName->SetToolTipText(ViewData.DisplayName);
+	}
 	SetText(Text_Category, ViewData.CategoryText);
 	SetText(Text_Zone, ViewData.ZoneText);
+	if (Text_Category) Text_Category->SetToolTipText(ViewData.CategoryText);
+	if (Text_Zone) Text_Zone->SetToolTipText(ViewData.ZoneText);
 	SetText(Text_FacilityState, ViewData.FacilityStateText);
 	SetText(Text_FacilityRevenue, ViewData.FacilityRevenueText);
 	if (Text_FacilityRevenue)
@@ -116,6 +132,18 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_UpgradeEffect, ViewData.UpgradeSizeEffectText.IsEmpty()
 		? Effects : FText::Format(LOCTEXT("UpgradeEffectsWithSize", "{0}\n{1}"),
 			Effects, ViewData.UpgradeSizeEffectText));
+	SetText(Text_UpgradeCurrent, ViewData.UpgradeCurrentText);
+	SetText(Text_UpgradeNext, ViewData.UpgradeNextText);
+	const bool bHasComparison = Panel_UpgradeComparison && Text_UpgradeCurrent && Text_UpgradeNext &&
+		!ViewData.UpgradeCurrentText.IsEmpty() && !ViewData.UpgradeNextText.IsEmpty();
+	if (Panel_UpgradeComparison)
+	{
+		Panel_UpgradeComparison->SetVisibility(bHasComparison && bBuildContext && ViewData.bShowUpgradeDetails
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		// Keep authored multipliers, signed changes and footprint details available without
+		// making the first screen taller. Legacy WBP assets continue to show the full text.
+		Panel_UpgradeComparison->SetToolTipText(Text_UpgradeEffect ? Text_UpgradeEffect->GetText() : Effects);
+	}
 	SetText(Text_UpgradeCost, ViewData.UpgradeCostText);
 	SetText(Text_UpgradeReason, ViewData.UpgradeDisabledReasonText);
 	SetText(Text_Upgrade, ViewData.UpgradeActionText);
@@ -129,6 +157,7 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		if (Detail)
 		{
 			Detail->SetVisibility(bBuildContext && ViewData.bShowUpgradeDetails
+				&& (Detail != Text_UpgradeEffect.Get() || !bHasComparison)
 				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		}
 	}

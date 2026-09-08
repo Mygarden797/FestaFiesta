@@ -34,6 +34,8 @@ namespace FFFacilityInfoModel
 			Preview->bSupported && Preview->bHasUpgradeQuote && Preview->TargetLevel > Preview->CurrentLevel;
 		ViewData.bCanUpgrade = ViewData.bShowUpgradeDetails && Preview->bCanUpgrade;
 		ViewData.UpgradeEffectText = FText::GetEmpty();
+		ViewData.UpgradeCurrentText = FText::GetEmpty();
+		ViewData.UpgradeNextText = FText::GetEmpty();
 		ViewData.UpgradeSizeEffectText = FText::GetEmpty();
 		ViewData.UpgradeRevenueEffectText = FText::GetEmpty();
 		ViewData.UpgradeCostText = FText::GetEmpty();
@@ -56,6 +58,19 @@ namespace FFFacilityInfoModel
 		FNumberFormattingOptions SecondsOptions = Options;
 		SecondsOptions.MaximumFractionalDigits = FMath::Min(
 			Preview->CurrentServiceDurationSeconds, Preview->NextServiceDurationSeconds) < .1f ? 3 : 1;
+		auto FormatComparison = [&](const bool bNext)
+		{
+			const FText Revenue = Preview->bRevenueAvailable
+				? FormatGold(true, bNext ? Preview->NextRevenuePerUseGold : Preview->CurrentRevenuePerUseGold)
+				: LOCTEXT("ComparisonRevenueUnavailable", "정보 없음");
+			return FText::Format(LOCTEXT("UpgradeComparisonValues", "1인 수익  {0}\n1인 시간  {1}초\n분당  {2}명\n크기  {3}"),
+				Revenue,
+				FText::AsNumber(bNext ? Preview->NextServiceDurationSeconds : Preview->CurrentServiceDurationSeconds, &SecondsOptions),
+				FText::AsNumber(bNext ? Preview->NextThroughputPerMinute : Preview->CurrentThroughputPerMinute, &Options),
+				FormatFootprint(bNext ? Preview->NextFootprintCentimeters : Preview->CurrentFootprintCentimeters));
+		};
+		ViewData.UpgradeCurrentText = FormatComparison(false);
+		ViewData.UpgradeNextText = FormatComparison(true);
 		ViewData.UpgradeEffectText = FText::Format(
 			LOCTEXT("UpgradeEffectsCompact", "시간 {0}초 → {1}초 · 분당 {2}명 → {3}명"),
 			FText::AsNumber(Preview->CurrentServiceDurationSeconds, &SecondsOptions),

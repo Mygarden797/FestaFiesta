@@ -44,6 +44,53 @@ FText FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(
 	}
 }
 
+FText FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(const FName MinorToken)
+{
+	static const TMap<FName, FText> Labels = {
+		{ TEXT("FoodStall"), LOCTEXT("MinorFoodStall", "먹거리·음료") },
+		{ TEXT("MarketGoods"), LOCTEXT("MinorMarketGoods", "상품 판매") },
+		{ TEXT("CraftExperience"), LOCTEXT("MinorCraftExperience", "공예·제작 체험") },
+		{ TEXT("ActivityGame"), LOCTEXT("MinorActivityGame", "게임·활동 체험") },
+		{ TEXT("Nightlife"), LOCTEXT("MinorNightlife", "야간·주점") },
+		{ TEXT("Standard"), LOCTEXT("MinorStandard", "일반") },
+		{ TEXT("Accessible"), LOCTEXT("MinorAccessible", "장애인 화장실") },
+		{ TEXT("Family"), LOCTEXT("MinorFamily", "가족") },
+		{ TEXT("Temporary"), LOCTEXT("MinorTemporary", "임시") },
+		{ TEXT("GeneralInfo"), LOCTEXT("MinorGeneralInfo", "종합 안내") },
+		{ TEXT("Ticketing"), LOCTEXT("MinorTicketing", "티켓") },
+		{ TEXT("LostFound"), LOCTEXT("MinorLostFound", "분실물") },
+		{ TEXT("Translation"), LOCTEXT("MinorTranslation", "통역") },
+		{ TEXT("Seating"), LOCTEXT("MinorSeating", "좌석") },
+		{ TEXT("Shade"), LOCTEXT("MinorShade", "그늘") },
+		{ TEXT("Picnic"), LOCTEXT("MinorPicnic", "피크닉") },
+		{ TEXT("Cooling"), LOCTEXT("MinorCooling", "무더위 쉼터") },
+		{ TEXT("MainStage"), LOCTEXT("MinorMainStage", "메인 무대") },
+		{ TEXT("SubStage"), LOCTEXT("MinorSubStage", "보조 무대") },
+		{ TEXT("Busking"), LOCTEXT("MinorBusking", "버스킹") },
+		{ TEXT("ExperienceStage"), LOCTEXT("MinorExperienceStage", "참여형 무대") },
+		{ TEXT("FirstAid"), LOCTEXT("MinorFirstAid", "응급 처치") },
+		{ TEXT("Security"), LOCTEXT("MinorSecurity", "보안") },
+		{ TEXT("FireSafety"), LOCTEXT("MinorFireSafety", "소방") },
+		{ TEXT("Evacuation"), LOCTEXT("MinorEvacuation", "대피") },
+		{ TEXT("Landmark"), LOCTEXT("MinorLandmark", "랜드마크") },
+		{ TEXT("Theme"), LOCTEXT("MinorTheme", "테마") },
+		{ TEXT("Scenic"), LOCTEXT("MinorScenic", "경관") },
+		{ TEXT("Interactive"), LOCTEXT("MinorInteractive", "상호작용") }
+	};
+	if (const FText* Label = Labels.Find(MinorToken))
+	{
+		return *Label;
+	}
+	return MinorToken.IsNone() ? LOCTEXT("MinorUnspecified", "미분류") : FText::FromName(MinorToken);
+}
+
+FText FFF_PrepBuildPresentationRules::ResolveCategoryPathText(
+	const EFFZSFacilityCategory Category, const FName MinorToken)
+{
+	return FText::Format(LOCTEXT("CategoryPath", "{0} > {1}"),
+		ResolveCategoryDisplayName(Category), ResolveMinorDisplayName(MinorToken));
+}
+
 bool FFF_PrepBuildPresentationRules::IsEntryVisible(
 	const FFF_BuildCatalogEntry& Entry,
 	const FFF_PrepBuildFilter& Filter)
@@ -71,6 +118,8 @@ bool FFF_PrepBuildPresentationRules::IsEntryVisible(
 	}
 
 	return Entry.DisplayName.ToString().Contains(Search, ESearchCase::IgnoreCase)
+		|| ResolveCategoryDisplayName(Entry.Category).ToString().Contains(Search, ESearchCase::IgnoreCase)
+		|| ResolveMinorDisplayName(Entry.MinorToken).ToString().Contains(Search, ESearchCase::IgnoreCase)
 		|| Entry.UniqueNameToken.Contains(Search, ESearchCase::IgnoreCase)
 		|| Entry.FacilityDefinitionId.ToString().Contains(Search, ESearchCase::IgnoreCase)
 		|| Entry.MinorToken.ToString().Contains(Search, ESearchCase::IgnoreCase);

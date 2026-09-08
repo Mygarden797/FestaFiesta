@@ -10,97 +10,13 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "FF_FFZSTypes.h"
+#include "FF_FFZSPlacementGridModel.h"
 #include "FF_FFZSPlacementPreviewActor.generated.h"
 
 struct FStreamableHandle;
 class USceneComponent;
 class UStaticMeshComponent;
 class ULineBatchComponent;
-
-// 권위 1cm 저장 격자와 별개인 사용자용 로컬 격자의 순수 계산 규칙이다.
-// Actor/World 없이 자동화 테스트할 수 있어 음수 좌표, 잘못된 설정과 대형 footprint 회귀를 막는다.
-namespace FFZSPlacementGridModel
-{
-    constexpr int32 DefaultVisualGridStepCm = 100;
-    constexpr int32 MinimumVisualGridStepCm = 25;
-    constexpr int32 MaximumVisualGridStepCm = 1000;
-
-    inline int32 SanitizeGridStepCm(const int32 StepCm)
-    {
-        return StepCm >= MinimumVisualGridStepCm && StepCm <= MaximumVisualGridStepCm
-            ? StepCm
-            : DefaultVisualGridStepCm;
-    }
-
-    inline double AlignDownToGrid(const double CoordinateCm, const int32 StepCm)
-    {
-        const int32 SafeStepCm = SanitizeGridStepCm(StepCm);
-        return FMath::FloorToDouble(CoordinateCm / SafeStepCm) * SafeStepCm;
-    }
-
-    inline double AlignUpToGrid(const double CoordinateCm, const int32 StepCm)
-    {
-        const int32 SafeStepCm = SanitizeGridStepCm(StepCm);
-        return FMath::CeilToDouble(CoordinateCm / SafeStepCm) * SafeStepCm;
-    }
-
-    inline float ResolveGridHalfExtentCm(
-        const int32 FootprintAxisCm,
-        const float PaddingCm,
-        const float MaximumRadiusCm,
-        const int32 StepCm)
-    {
-        const int32 SafeStepCm = SanitizeGridStepCm(StepCm);
-        const float SafePaddingCm = FMath::IsFinite(PaddingCm) ? FMath::Max(0.0f, PaddingCm) : 600.0f;
-        const float SafeMaximumRadiusCm = FMath::IsFinite(MaximumRadiusCm) && MaximumRadiusCm >= SafeStepCm
-            ? MaximumRadiusCm
-            : 3600.0f;
-        const float FootprintHalfExtentCm = FMath::Max(0, FootprintAxisCm) * 0.5f;
-        const float MinimumHalfExtentCm = FMath::Max(
-            FootprintHalfExtentCm,
-            SafeStepCm * 2.0f);
-        const float DesiredHalfExtentCm = FMath::Max(
-            FootprintHalfExtentCm + SafePaddingCm,
-            MinimumHalfExtentCm);
-        // 반경 제한은 주변 여백을 줄이는 소프트 제한이다. 대형 시설 자체를 잘라 내면 가장
-        // 정렬이 어려운 외곽을 볼 수 없으므로 footprint 반경만큼은 항상 보장한다.
-        return FMath::Max(MinimumHalfExtentCm, FMath::Min(DesiredHalfExtentCm, SafeMaximumRadiusCm));
-    }
-
-    inline bool IsMajorGridCoordinate(
-        const double CoordinateCm,
-        const int32 MajorIntervalCm)
-    {
-        if (MajorIntervalCm <= 0 || !FMath::IsFinite(CoordinateCm))
-        {
-            return false;
-        }
-        const double Remainder = FMath::Abs(FMath::Fmod(CoordinateCm, MajorIntervalCm));
-        return Remainder <= 0.01 || FMath::Abs(Remainder - MajorIntervalCm) <= 0.01;
-    }
-
-    inline float ResolveEdgeOpacity(
-        const double CoordinateCm,
-        const double CenterCm,
-        const double HalfExtentCm)
-    {
-        if (!FMath::IsFinite(CoordinateCm) || !FMath::IsFinite(CenterCm) ||
-            !FMath::IsFinite(HalfExtentCm) || HalfExtentCm <= UE_SMALL_NUMBER)
-        {
-            return 0.25f;
-        }
-        const double NormalizedDistance = FMath::Clamp(
-            FMath::Abs(CoordinateCm - CenterCm) / HalfExtentCm,
-            0.0,
-            1.0);
-        if (NormalizedDistance <= 0.65)
-        {
-            return 1.0f;
-        }
-        const float FadeAlpha = static_cast<float>((NormalizedDistance - 0.65) / 0.35);
-        return FMath::Lerp(1.0f, 0.25f, FadeAlpha);
-    }
-}
 
 // UI와 독립적인 비권한 배치 고스트.
 // UI가 입력과 수명주기를 소유하고 이 액터는 검증 결과·비주얼·디버그 표시만 보관.
@@ -149,7 +65,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview|Grid")
     bool bDrawPlacementGrid = false;
-    // BuildModeSubsystem의 배치·이동 상태와 G 토글이 제어하는 로컬 격자 표시 여부다.
+    // 독립적으로 사용하는 프리뷰의 로컬 격자다. 건축 모드는 전체 격자를 사용하므로 이 값은 끈다.
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Preview|Grid",
         meta = (ClampMin = "25", ClampMax = "1000", Units = "cm"))
@@ -172,6 +88,10 @@ public:
     // 커서가 가리킨 실제 지면의 점과 법선을 격자 표현에만 제공한다. 저장 좌표와 시설 Transform은
     // 기존 Zone 1cm 계약을 유지하고, 선만 완만한 지면 평면을 따라가도록 한다.
     void SetPlacementGridSurface(const FVector& WorldPoint, const FVector& WorldNormal);
+
+    // Share the current traced floor with the session grid if its camera ray misses.
+    // The caller must also check that the preview still has a current placement target.
+    bool GetPlacementGridSurface(FVector& OutWorldPoint, FVector& OutWorldNormal) const;
     
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Preview")

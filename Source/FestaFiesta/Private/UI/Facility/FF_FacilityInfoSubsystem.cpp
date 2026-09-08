@@ -6,6 +6,7 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 #include "Building/FF_FacilityUpgradeTypes.h"
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
@@ -30,6 +31,7 @@
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityInfoSubsystem"
@@ -649,7 +651,12 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.DisplayName = Spec.DisplayName.IsEmpty()
 		? LOCTEXT("UnknownFacility", "이름 없는 시설")
 		: Spec.DisplayName;
-	OutViewData.CategoryText = FFFacilityInfoModel::GetCategoryText(Spec.Category);
+	FFF_FacilityNameParts NameParts;
+	FString NamingFailure;
+	UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+		Spec.Category, Spec.FacilityDefinitionId, NameParts, NamingFailure);
+	OutViewData.CategoryText = FFF_PrepBuildPresentationRules::ResolveCategoryPathText(
+		Spec.Category, NameParts.MinorToken);
 	OutViewData.ZoneText = Facility.GetZoneId().IsNone()
 		? LOCTEXT("UnknownZone", "구역 정보 없음")
 		: FText::FromName(Facility.GetZoneId());
