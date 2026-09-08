@@ -183,6 +183,62 @@
 
 시설이 늘면 목적지가 분산되어 한 곳당 이동 중 인원이 줄고, 그러면 `in_transit` 정규화가 포화되지 않습니다. 계수를 올려 감점을 약화시키는 것은 증상을 가리는 쪽이었고, 실제로는 배치가 원인이었습니다. **두 계수 모두 기본값(400 / 12)으로 커밋합니다.**
 
+## 🔴 분할 스폰/디스폰 병합 후 확인 3건 (2026-09-08, `4b06a3a` 기준)
+
+게이트 기능을 병합한 뒤 코드를 읽고 테스트를 돌린 결과입니다.
+
+### 1. 테스트 스위트가 크래시합니다 — 가장 급합니다
+
+`FestaFiesta.Crowd.Reservation.Lifecycle` 이 `AllAgentLeavingTrigger()` 에서 배열 범위 초과로 죽고, **그 시점에 자동화 런 전체가 중단됩니다.** 뒤 테스트들이 아예 실행되지 않아 회귀 판정을 할 수 없습니다.
+
+```
+Assertion failed: (Index >= 0) & (Index < ArrayNum)
+UnrealEditor-FestaFiesta.dll!UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
+```
+
+원인은 이 두 줄입니다(`FF_CrowdSimulationSubsystem.cpp:3554`, `:3562`):
+
+```cpp
+Unit.TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
+```
+
+`FUnitData::EntryGateIndex` 의 기본값이 `INDEX_NONE`(-1)이고, **`SpawnAgents` 를 거치지 않은 개체는 그 값이 그대로 남습니다**(`:695` 가 유일한 대입 지점입니다). 콘솔 `FF.Crowd.Spawn`, 테스트의 직접 스폰이 그 경로입니다. `ValidGates` 가 빈 경우도 같습니다.
+
+`EnsureFallbackGate()` 로 스폰 게이트를 항상 보장해 두신 설계는 잘 동작합니다 — `PickSpawnGate` 는 안전합니다. **누락된 것은 퇴장 쪽 한 곳뿐**입니다.
+
+**제가 크래시 가드만 넣어 두었습니다**(별도 커밋). `ValidGates.IsValidIndex()` 로 감싸고 아니면 기존 `Temp_ExitWorldLocation` 으로 폴백합니다. 범위만 막았고 게이트 정책은 건드리지 않았습니다 — "들어온 문으로 나간다"를 모든 스폰 경로에 적용할지는 아래 2번에서 정해 주세요. 같은 참조에 두 번 대입하던 줄도 함께 정리했습니다.
+
+가드를 넣으면 런이 끝까지 돌아 **547/597** 이 나옵니다.
+
+### 1-B. `Crowd.Avoidance.CounterFlowPathOpens` 도 실패합니다
+
+```
+Expected '막힌 사람이 이식 이전보다 적다 (기본값 0 < old 0)' to be true.
+```
+
+두 값이 모두 0 이라 `0 < 0` 이 거짓이 되는 축퇴 단정입니다. **막힌 사람이 아예 없어서** 실패하는 것이라, 게이트로 스폰이 여러 문에 흩어지면서 역류 시나리오가 성립하지 않게 된 것으로 보입니다.
+
+제 크래시 가드를 뺀 상태로 이 필터만 따로 돌려도 같이 실패하므로(15 통과 / 1 실패) **제 변경과 무관합니다.** 테스트가 잡으려던 현상 자체가 사라진 것인지, 스폰 위치를 옛 방식으로 고정해야 하는 테스트인지 봐 주세요.
+
+### 2. 퇴장 경로가 두 개로 갈려 있습니다
+
+| 경로 | 목적지 | 도착 판정 |
+|---|---|---|
+| 일괄 퇴장 (`AllAgentLeavingTrigger`) | `ValidGates[EntryGateIndex].GateLocation` | — |
+| 개별 퇴장 (`ProcessDecisions` 의 Leave) | `Temp_ExitWorldLocation` (`:2788`) | `Temp_ExitArrivalRadiusUU` (`:921`) |
+
+`bAllowExit` 는 현재 **게이트 검증에만** 쓰이고 개별 퇴장 판정에는 반영되지 않습니다. 즉 "들어온 문으로 나간다"가 일괄 퇴장에만 적용되고, 체류 소진·연속 no_choice 로 개별 퇴장하는 파티는 여전히 단일 출구로 갑니다.
+
+의도한 단계적 이행인지, 개별 퇴장도 게이트로 옮길 계획인지 알려 주시면 저희 쪽 퇴장 지표(`퇴장: 체류 소진` / `인내 한계`)를 어느 기준으로 읽을지 정하겠습니다.
+
+### 3. 결정론 API 재사용 — 확인만 부탁드립니다
+
+`PickSpawnGate` 가 `FFF_DeterministicRandom::MakeTraitSeed` 를 `RandomPurpose = Gate`, `TraitKey = entry_gate_choice` 로 쓰고 계십니다. **의도한 사용법이 맞습니다** — 그 함수는 도메인을 모르는 순수 함수로 만들어 두었습니다.
+
+`individual_variation_spec.md` 4절의 purpose 목록에 `Gate` 를 추가했습니다. 앞으로 새 purpose 를 쓰시면 그 줄에 같이 적어 주세요 — 안 적으면 어떤 난수가 어디서 갈라지는지 추적할 방법이 없습니다.
+
+한 가지만 주의: `ArrivalGeneration` 을 `SpawnGeneration` 자리에 넣으셨는데, 그 값이 날마다 증가하면 **같은 방문객 순번이 날마다 다른 게이트로 들어옵니다.** 의도라면 문제없고, "같은 손님은 늘 같은 문"이 목표라면 고정값이어야 합니다.
+
 ## 정원님 확인·협의 요청 — 이번 작업에서 미변경
 
 > **2026-09-08 전수 재검토했습니다.** 정원님 코드를 먼저 읽지 않고 적어 둔 요청이 섞여 있었습니다. 결과: **I-6 은 제 몫이었고**(필요한 API 가 이미 제공되고 있었습니다), **C3·C4 의 절반은 이미 되어 있었고**(콘솔 명령 존재), I-9 는 요청이 아니라 공유 사항이었습니다. Q1 은 선언 위치를 하나 빠뜨렸습니다.
@@ -197,7 +253,7 @@
 | I-6 · 체류 예산 | ✅ **정원님 몫이 아니었습니다 — 제 몫으로 가져갑니다**(2026-09-08 재확인). `GetLiveDurationForCurrentDay()` 가 이미 있고 입장 곡선 진행도는 그 값을 씁니다(`FF_CrowdSimulationSubsystem.cpp:533`). 남은 것은 **체류 예산 계산 한 줄**(`:458`)이 아직 `Temp_LiveStageMinutes=240` 고정을 쓰는 것뿐이고, 필요한 API 는 이미 제공되고 있으니 제가 고치면 됩니다. 요청 드릴 것이 없습니다. |
 | I-9 · 일반 Queue 재결정 | 🟡 **요청이 아니라 공유 사항으로 낮춥니다**(2026-09-08 재확인). `ClearPartyQueueState(.., false)` 로컬 전용 경로는 2곳(`:1609`, `:2195`)에 그대로 있지만, 지금 있는 호출부는 전부 안전합니다 — `RequestRedecisionForIdleParties` 는 줄에 선 파티를 제외하고, 예약 복귀와 인내심 이탈은 `bLeaveQueue=true` 를 먼저 부릅니다. 함정은 헤더 주석에 이미 적혀 있습니다. **지금 고칠 것은 없고, 줄에 선 파티에 `RequestDecision` 을 직접 거는 새 호출부를 만들 때만 주의하시면 됩니다.** |
 | I-1 · 격자 원점 | 관련 테스트는 통과합니다. Heat Map 문서의 주의 문구를 해제하기 전에 원점 계산 수정 여부만 확인 부탁드립니다. |
-| I-7 · 이동 계약 | 코드에서 읽은 값을 먼저 적습니다(2026-09-08) — 비리더 속도 배수는 `PartyMemberSpeedBoost=1.15` · `PartyMemberSpeedMultiplier=1.3` 두 개이고, 출구 반경은 `Temp_ExitArrivalRadiusUU=400`, 배회 좌표는 `HeightField.IsWalkable` 로 통행 가능 칸만 고릅니다. **확인 부탁드릴 것은 "이 값들이 의도한 것인가" 하나입니다** — 특히 배수가 두 개로 나뉘어 곱해지는 구조가 대형 유지 목적인지, 아니면 한쪽이 잔재인지 궁금합니다. |
+| I-7 · 이동 계약 | 코드에서 읽은 값을 먼저 적습니다(2026-09-08) — 비리더 속도 배수는 `PartyMemberSpeedBoost=1.15` · `PartyMemberSpeedMultiplier=1.3` 두 개이고, 배회 좌표는 `HeightField.IsWalkable` 로 통행 가능 칸만 고릅니다. **확인 부탁드릴 것은 "배수가 두 개로 나뉘어 곱해지는 구조가 대형 유지 목적인지, 한쪽이 잔재인지" 하나입니다.** 출구 반경은 게이트 도입으로 `Temp_ExitArrivalRadiusUU=400` 과 게이트별 `GateRadiusUU=400` 두 기준이 공존합니다 — 위 「분할 스폰/디스폰」 2번에서 함께 다룹니다. |
 | C3·C4 · 그룹 | ✅ **`bEnablePartyGrouping` 은 이미 끌 수 있습니다**(2026-09-08 확인). `FF.Crowd.Party [0\|1]` 콘솔 명령이 있고, 그 명령 자체가 "이미 스폰된 N명은 그대로다. 다음 `FF.Crowd.Spawn` 부터 적용된다"까지 알려 줍니다. 즉 **런타임 토글은 되지만 재스폰이 필요**합니다 — 그 제약이 문제인지만 봐 주세요. 리더 조회 경로 확인은 그대로 남습니다. |
 | D2 · 유입 곡선 | 예약자를 앞쪽에 배치할 때 허용할 초반 누적 유입 오차 기준이 필요합니다. |
 

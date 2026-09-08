@@ -27,6 +27,12 @@ public:
 	static uint32 MakeStableNameHash(FName Name);
 
 	// 다섯 가지 식별값을 섞어 특정 에이전트의 특정 특성 전용 시드를 만든다.
+	//
+	// 도메인을 모르는 순수 함수다. 개체 변주 밖에서도 재사용하며, 2026-09-08 기준 실사용
+	// RandomPurpose 는 4종이다 — Generation(변주·방문객 분포) / Decision(목적지·배회) /
+	// NeedInitial(초기 Need) / Gate(입장 게이트, 이정원 분할 스폰).
+	// 새 purpose 를 쓰면 individual_variation_spec.md 4절에 적을 것. 안 적으면 어떤 난수가
+	// 어디서 갈라지는지 추적할 방법이 없다.
 	static uint32 MakeTraitSeed(int32 GlobalSimulationSeed, int32 StableAgentId, FName TraitKey, int32 SpawnGeneration, FName RandomPurpose);
 
 	// 에이전트의 목적지 선택(softmax 샘플링)에 사용할 결정론적 시드를 만든다.
