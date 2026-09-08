@@ -819,4 +819,68 @@ bool FFF_UtilityDestinationSelector_InTransitPenaltyIsMonotonicAndClamped::RunTe
 	return true;
 }
 
+/**
+ * preference_strength_multiplier 는 **정규화 클램프 전에** 벡터에 곱해야 한다.
+ *
+ * 이 테스트가 지키는 것은 계산 결과가 아니라 **결선 위치**다. Choose 는 취향 성분을
+ * `Clamp(값 / preference_vector_scale_ref, -1, 1)` 로 정규화하므로, 배수를 클램프 뒤에
+ * 곱하면(= Choose 안에서 PreferenceTerm 에 곱하는 구현) 포화 구간에서 배수가 먹지 않는다.
+ * 그러면 취향이 강한 개체일수록 오히려 개체차가 사라지는, 의도와 정반대의 결과가 된다.
+ *
+ * 그래서 UFF_CrowdDecisionSubsystem::GetScaledPreferenceVector 가 벡터 자체를 스케일한다.
+ * 이 테스트는 그 선택이 관측 가능한 차이를 만든다는 것을 고정한다 — 누군가 "간단하니까"
+ * 배수를 Choose 인자로 옮기면 아래 마지막 단정이 깨진다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_PreferenceStrengthScalesBeforeClamp, "FestaFiesta.NPC.UtilityDestinationSelector.PreferenceStrengthScalesBeforeClamp", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_PreferenceStrengthScalesBeforeClamp::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// 두 후보의 차이를 카테고리(=취향)에만 둔다. 나머지 항은 전부 같다.
+	TArray<FFF_DestinationCandidate> Candidates = {
+		MakeCandidate(TEXT("Liked"), TEXT("food_stall"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+		MakeCandidate(TEXT("Neutral"), TEXT("rest_area"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+	};
+
+	auto PreferenceTermFor = [&Candidates, Table](float RawDelta, float StrengthMultiplier)
+	{
+		// 조정자와 같은 방식 — 벡터에 미리 곱한다.
+		const TMap<FName, float> Scaled = { { TEXT("food_stall"), RawDelta * StrengthMultiplier } };
+		const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+			Candidates, Scaled, Table, 1, 1, 0);
+
+		for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+		{
+			if (B.DestinationId == TEXT("Liked"))
+			{
+				return B.PreferenceTerm;
+			}
+		}
+		return 0.f;
+	};
+
+	// 포화 전(raw 5 / scale_ref 17 = 0.29)에서는 배수가 그대로 반영된다.
+	const float Weak = PreferenceTermFor(5.f, 0.6f);
+	const float Average = PreferenceTermFor(5.f, 1.0f);
+	const float Strong = PreferenceTermFor(5.f, 1.4f);
+
+	TestTrue(TEXT("배수가 크면 취향 항이 커진다"), Strong > Average && Average > Weak);
+	TestTrue(TEXT("배수 0.6 은 평균의 0.6 배다"), FMath::IsNearlyEqual(Weak, Average * 0.6f, 0.001f));
+
+	// 포화 구간: raw 20 은 이미 scale_ref(17)를 넘어 클램프에 걸린다.
+	// 클램프 뒤에 곱하는 구현이면 아래 두 값이 같아진다 — 그게 이 테스트가 잡으려는 회귀다.
+	const float SaturatedStrong = PreferenceTermFor(20.f, 1.4f);
+	const float SaturatedWeak = PreferenceTermFor(20.f, 0.6f);
+
+	// 20 × 1.4 = 28 → 28/17 = 1.65 → 클램프 1.0 → 항 = lambda_affinity
+	TestEqual(TEXT("배수가 큰 쪽은 클램프 상한(lambda_affinity)에 머문다"),
+		SaturatedStrong, 0.6f, 0.001f);
+
+	// 20 × 0.6 = 12 → 12/17 = 0.71 → 클램프에 안 걸린다
+	TestTrue(TEXT("포화된 취향도 배수가 낮으면 클램프에서 풀려 내려간다"),
+		SaturatedWeak < SaturatedStrong - 0.1f);
+
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS
