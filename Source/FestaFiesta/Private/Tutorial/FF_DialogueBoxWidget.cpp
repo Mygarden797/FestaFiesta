@@ -1,0 +1,206 @@
+// Copyright Epic Games, Inc. All Rights Reserved.
+
+#include "Tutorial/FF_DialogueBoxWidget.h"
+
+#include "Components/Button.h"
+#include "Components/PanelWidget.h"
+#include "Components/TextBlock.h"
+#include "Tutorial/FF_TutorialSubsystem.h"
+
+void UFF_DialogueBoxWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (AdvanceButton)
+	{
+		AdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
+	UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	if (!Tutorial)
+	{
+		// 튜토리얼 시스템이 없는 화면에서도 이 위젯을 쓸 수 있게 조용히 넘긴다.
+		return;
+	}
+
+	Tutorial->OnLineChanged.AddDynamic(this, &UFF_DialogueBoxWidget::HandleLineChanged);
+	Tutorial->OnDialogueActiveChanged.AddDynamic(this, &UFF_DialogueBoxWidget::HandleDialogueActiveChanged);
+	bBound = true;
+
+	// 이미 진행 중인 대사가 있으면 지금 상태를 반영한다.
+	// 위젯이 대사보다 늦게 만들어지는 경우가 있어서, 그때 첫 줄이 조용히 빠진다.
+	if (Tutorial->IsDialogueActive())
+	{
+		HandleDialogueActiveChanged(true);
+		HandleLineChanged(Tutorial->GetCurrentLine());
+	}
+	else
+	{
+		HandleDialogueActiveChanged(false);
+	}
+}
+
+void UFF_DialogueBoxWidget::NativeDestruct()
+{
+	if (bBound)
+	{
+		if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+		{
+			Tutorial->OnLineChanged.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleLineChanged);
+			Tutorial->OnDialogueActiveChanged.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleDialogueActiveChanged);
+		}
+		bBound = false;
+	}
+
+	if (AdvanceButton)
+	{
+		AdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
+	ClearChoices();
+	Super::NativeDestruct();
+}
+
+void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
+{
+	if (SpeakerText)
+	{
+		SpeakerText->SetText(Line.Speaker);
+
+		// 화자가 없으면 이름칸을 숨긴다. 내레이션이나 독백일 때 빈 칸이 남으면 어색하다.
+		SpeakerText->SetVisibility(
+			Line.Speaker.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	}
+
+	if (BodyText)
+	{
+		BodyText->SetText(Line.Text);
+	}
+
+	RebuildChoices(Line);
+
+	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
+	const bool bCanAdvance =
+		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
+	SetAdvanceEnabled(bCanAdvance);
+
+	BP_OnLineChanged(Line);
+}
+
+void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
+{
+	SetVisibility(bActive ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+
+	if (!bActive)
+	{
+		ClearChoices();
+	}
+
+	BP_OnDialogueActiveChanged(bActive);
+}
+
+void UFF_DialogueBoxWidget::HandleAdvanceClicked()
+{
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		// 넘길 수 있는지는 서브시스템이 판단한다. 여기서 또 검사하면 규칙이 두 곳에 생긴다.
+		Tutorial->Advance();
+	}
+}
+
+void UFF_DialogueBoxWidget::HandleChoiceSelected(const int32 ChoiceIndex)
+{
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->SelectChoice(ChoiceIndex);
+	}
+}
+
+void UFF_DialogueBoxWidget::RebuildChoices(const FFF_DialogueLine& Line)
+{
+	ClearChoices();
+
+	if (Line.Kind != EFF_DialogueLineKind::Choice || !ChoiceContainer || !ChoiceButtonClass)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Line.Choices.Num(); ++Index)
+	{
+		UFF_DialogueChoiceButton* Button =
+			CreateWidget<UFF_DialogueChoiceButton>(this, ChoiceButtonClass);
+		if (!Button)
+		{
+			continue;
+		}
+
+		Button->Setup(this, Index, Line.Choices[Index].Text);
+		ChoiceContainer->AddChild(Button);
+		ChoiceButtons.Add(Button);
+	}
+}
+
+void UFF_DialogueBoxWidget::ClearChoices()
+{
+	for (UFF_DialogueChoiceButton* Button : ChoiceButtons)
+	{
+		if (Button)
+		{
+			Button->RemoveFromParent();
+		}
+	}
+	ChoiceButtons.Reset();
+
+	if (ChoiceContainer)
+	{
+		ChoiceContainer->ClearChildren();
+	}
+}
+
+void UFF_DialogueBoxWidget::SetAdvanceEnabled(const bool bEnabled)
+{
+	if (!AdvanceButton)
+	{
+		return;
+	}
+
+	AdvanceButton->SetIsEnabled(bEnabled);
+
+	// 클릭 영역이 선택지를 덮고 있으면 선택지를 못 누른다.
+	// 비활성만으로는 히트 판정이 남는 경우가 있어 아예 숨긴다.
+	AdvanceButton->SetVisibility(
+		bEnabled ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+// ── 선택지 버튼 ─────────────────────────────────────────────────────────────
+
+void UFF_DialogueChoiceButton::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (ChoiceButton)
+	{
+		ChoiceButton->OnClicked.AddDynamic(this, &UFF_DialogueChoiceButton::HandleClicked);
+	}
+}
+
+void UFF_DialogueChoiceButton::Setup(
+	UFF_DialogueBoxWidget* InOwner, const int32 InChoiceIndex, const FText& InText)
+{
+	Owner = InOwner;
+	ChoiceIndex = InChoiceIndex;
+
+	if (ChoiceText)
+	{
+		ChoiceText->SetText(InText);
+	}
+	BP_OnChoiceTextSet(InText);
+}
+
+void UFF_DialogueChoiceButton::HandleClicked()
+{
+	if (UFF_DialogueBoxWidget* OwnerBox = Owner.Get())
+	{
+		OwnerBox->HandleChoiceSelected(ChoiceIndex);
+	}
+}
