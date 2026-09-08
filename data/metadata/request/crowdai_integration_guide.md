@@ -52,7 +52,7 @@
 | `stay_duration` | `PartyRemainingStayMinutes` | 기존 |
 | `patience` | 줄 이탈 임계 (`AdvancePartyQueueOnArrival`) | **신규** |
 | `reevaluate_interval` | 주기 재평가 (`StepSimulation` 리더 분기) | **신규** |
-| `crowd_tolerance` | Relocate 임계 (`ResolveFallbackAction`) | **신규 — 단 Q5 대기, 아래 참조** |
+| `crowd_tolerance` | Relocate 임계 (`ResolveFallbackAction`) | **신규 — 배선 완료, 단 구역 정원 산정 대기(아래 참조)** |
 | `novelty_seeking` | revisit 페널티 (`Choose`) | **신규** |
 | `preference_strength` | 취향 벡터 (`GetScaledPreferenceVector`) | **신규** |
 | `leisureliness_axis` | 직접 소비처 없음 | 설계상 정상. `patience`·`stay_duration`이 균등난수 단계에서 공유하는 축이라 그 두 값에 이미 반영돼 있습니다(knobs CSV의 `affects_field = none`) |
@@ -62,6 +62,10 @@
 ### Crowd 쪽에 새로 생긴 행동 두 가지
 
 **줄 이탈(reneging).** `AtSlot` 상태에서 개인 인내심 한계를 넘기면 줄을 떠나고 목적지를 다시 고릅니다. 기준점은 `QueueEnteredSimTime`(줄 가입 시각)이라 슬롯까지 걸어간 시간이 포함됩니다. 임계는 `wait_threshold_minutes` 15 × `patience_multiplier` 0.7~1.3이고, 현재 `Temp_FestivalMinutesPerRealSecond = 1.0`이라 실제로는 **10.5~19.5초**에 발화합니다.
+
+> 🔴 **2026-09-08 버그 수정 — 그 전 이탈 수치는 전부 무효입니다.** 판정에 쓰는 `ShouldReevaluate` 는 네 조건의 OR 인데 주기 항만 `>=` 비교입니다. 대기 항만 켜려고 주기에 `(경과 0, 임계 0)` 을 넣었더니 `0 >= 0` 이 참이 되어 **인내심과 무관하게 슬롯 도착 즉시 전원이 이탈**했습니다(`0.1분 기다리다 떠난다`). 임계를 `Max` 로 바꿔 고쳤고 회귀 테스트를 넣었습니다.
+>
+> 계수기와 on/off 스위치는 정상으로 보였습니다 — **값을 찍는 로그를 붙인 뒤에야 드러났습니다.** 이 기능을 검증하실 때는 건수가 아니라 `[줄 이탈]` 로그의 `개인 한계` 와 실제 대기시간을 대조해 주세요.
 
 > ⚠️ 이탈은 `ClearPartyQueueState(.., bLeaveQueue=true)`를 **먼저** 호출해 Queue에 실제 탈퇴를 알린 뒤 재결정을 겁니다. 순서를 바꾸면 안 됩니다 — `RequestDecision`이 내부에서 부르는 것은 `bLeaveQueue=false`라 로컬 상태만 지우고, Queue는 그 파티를 계속 들고 있어 자리가 영영 비지 않습니다(I-9와 같은 문제).
 
@@ -82,18 +86,43 @@
 
 ### 검증
 
-- 전체 회귀: FestaFiesta **514/559**, FF_ZoneSystem 48/48 통과.
-- 실패 5건 중 3건(`AllDefinitionsAreProjectable`, `InTransitCountsAccumulateWithinBatch`, `Probe.NavMeshBakeStatus`)은 이 작업 전 HEAD에서도 실패하던 에셋·NavMesh 환경 문제입니다. 나머지 2건은 같은 워킹트리에 있던 필수시설 게이트 작업 쪽이며 이 변경과 무관합니다.
-- 취향강도 결선 위치를 고정하는 테스트 1개를 추가했습니다(`PreferenceStrengthScalesBeforeClamp`).
-- 인게임 확인은 아직입니다.
+- 전체 회귀: FestaFiesta **547/597**, FF_ZoneSystem 48/48 통과. 실패 3건(`AllDefinitionsAreProjectable`, `InTransitCountsAccumulateWithinBatch`, `Probe.NavMeshBakeStatus`)은 HEAD 기준선과 동일한 에셋·NavMesh 환경 문제입니다.
+- 취향강도 결선 위치를 고정하는 테스트(`PreferenceStrengthScalesBeforeClamp`)와 `ShouldReevaluate` 부등호 회귀 테스트 4건을 추가했습니다.
 
-### crowd_tolerance는 배선만 됐고 아직 발화하지 않습니다
+**인게임 확인 상태 (2026-09-08)**
 
-`ResolveFallbackAction`이 이제 하드코딩 0 대신 `FFFZSZoneReadModel::DensityRatio`를 읽고 개인 임계와 비교합니다. 그런데 **`DensityRatio`는 항상 0입니다** — `UFFZSWorldSubsystem::ReportZonePopulation`을 부르는 곳이 프로젝트 전체에 없어서(`DensityRatio = ReportedPopulation / SoftCapacity`) 분자가 채워지지 않습니다.
+| 특성 | 상태 |
+|---|---|
+| `preference_strength` | ✅ 확정. 같은 아키타입·동반유형·시설에서 개체별 `Preference` 가 배수 비율만큼 정확히 갈립니다(0.951/1.128 → -0.054/-0.064, 비율 1.185 vs 기대 1.186) |
+| `walk_speed` · `stay_duration` | ✅ 기존부터 동작 |
+| `patience` | ⚠️ 버그 수정 후 **재측정 필요**. 아래 🔴 주의 참조 |
+| `novelty_seeking` | 🟡 경로 확인. 서비스 완료가 살아나 `Revisit` 항이 0 이 아닌 값을 내기 시작했습니다(표본 4건) |
+| `reevaluate_interval` | 🟡 미측정. 도착·막힘 재결정이 잦아 96~144초가 쌓이지 않습니다. `reevaluate_interval_seconds` 를 30(CSV 하한)으로 내려 확인 예정 |
+| `crowd_tolerance` | ⚠️ 배선 완료, 구역 정원 산정 대기 (아래 절) |
 
-즉 Q6의 "파티별 보관·컨텍스트 전달" 요청은 해결됐고, 남은 것은 **Q5(존 인구 보고 주기)** 하나입니다. 그것이 붙는 순간 별도 작업 없이 동작합니다.
+변주 3종 분포는 979 표본에서 CSV 정의 범위와 일치합니다 — 취향강도 0.641~1.354(정의 0.6~1.4), 신규성 0.471~1.542(0.4~1.6), 밀집임계 0.612~1.085(0.595~1.105).
 
-덧붙여 `EFF_PartyFallbackAction::Relocate`는 Simulation에 전용 분기가 없어 현재 배회와 동일하게 처리됩니다. 인접 Zone 이동을 실제로 구현할지는 Q5 연결 후 `GetRelocateRequestedCount()` 수치를 보고 정하는 것이 좋겠습니다.
+### crowd_tolerance는 배선을 마쳤지만 아직 발화하지 않습니다 (2026-09-08 갱신)
+
+`ResolveFallbackAction`이 하드코딩 0 대신 `FFFZSZoneReadModel::DensityRatio`를 읽고 개인 임계와 비교합니다. Q6의 "파티별 보관·컨텍스트 전달" 요청은 이것으로 해결됐습니다.
+
+**Q5(존 인구 보고)도 광훈님의 구역 인원 집계 브리지로 연결됐습니다.** 이제 값이 실제로 들어옵니다. 그런데 여전히 발화하지 않고, **이유가 바뀌었습니다.**
+
+| | 값 |
+|---|---|
+| 구역 크기 100m×100m, 1인당 4㎡ → 정원 | 2,500명 |
+| 전체 방문객 | 500명 |
+| 구역당 평균 인원 | 약 17명 |
+| **실측 혼잡도** | **약 0.007** |
+| 개인 밀집 임계 (`density_threshold_ratio 0.85 × crowd_tolerance 0.7~1.3`) | **0.595 ~ 1.105** |
+
+두 자리 수 차이로 임계를 못 넘습니다. `Choose`의 `Density` 항도 같은 입력을 쓰므로 `Density=-0.000` 수준입니다.
+
+이건 코드 문제가 아닙니다 — "30만㎡ 부지에 500명은 실제로 안 붐빈다"가 올바른 계산입니다. `Collaboration/FestaFiesta_ZoneCongestion_Team_Handoff.md` 3절의 A/B/C 결정(구역 정원을 실제 보행 면적 기준으로 재산정 등)이 나와야 살아납니다.
+
+**어느 안으로 가도 저희 쪽 코드 수정은 없습니다.** 다만 C안(정원을 임의로 50 등으로 지정)은 `density_threshold_ratio 0.85`가 "정원 대비 비율"로 정의된 값이라 그 계수까지 근거를 잃게 됩니다. A안(실제 보행 광장 면적만 정원에 반영)을 지지합니다.
+
+덧붙여 `EFF_PartyFallbackAction::Relocate`는 Simulation에 전용 분기가 없어 현재 배회와 동일하게 처리됩니다. 인접 Zone 이동을 실제로 구현할지는 위 결정 후 `GetRelocateRequestedCount()` 수치를 보고 정하는 것이 좋겠습니다.
 
 ## 인게임 측정 결과 — 원인은 시설 밀도였습니다 (2026-09-08)
 
@@ -116,28 +145,33 @@
 
 `attraction_norm` 이 붙으면 이 제약이 완화됩니다. 그때까지는 **시설 간 간격을 400m 이내로** 유지해 주세요.
 
-### 정원님 확인 부탁드리는 것 3건
+### 정원님 확인 부탁드리는 것 2건
 
-배치를 고쳐 배회 문제는 풀렸지만, 아래 3건은 그와 별개로 남아 있습니다.
+배치를 고쳐 배회 문제는 풀렸고, 아래 1번은 그 사이에 해결됐습니다.
 
-### 1. 대기열 서비스가 완료되지 않습니다 — 가장 급합니다
+### 1. ✅ 대기열 서비스 완료 — 해결됐습니다 (2026-09-08 재측정)
 
-```
-가입 시도        : 8
-  수락           : 8
-슬롯 목표 적용   : 0   <- 수락은 됐는데 이게 0이면 슬롯이 이동으로 안 넘어간다
-해소 적용        : 0회 <- 서비스를 마친 파티가 있는데 0이면 배선이 끊긴 것이다
-```
+이 자리에 "슬롯 좌표가 Crowd 로 넘어오지 않고 서비스 완료가 한 번도 없다"고 적어 두었던 항목입니다. **`DirtySlotFacilities` 추가 이후 재측정하니 둘 다 살아났습니다.**
 
-가입은 수락되는데 **슬롯 좌표가 Crowd 로 넘어오지 않고, 서비스 완료도 한 번도 없습니다.** 위 두 줄은 `FF.Crowd.Queue` 덤프 자신이 출력하는 진단 문구입니다.
+| | 이전 | 재측정 |
+|---|---|---|
+| 등록 시설 | 4 | 5 |
+| 가입 시도 | 8 | 61 |
+| 수락 | 8 | 31 |
+| **슬롯 목표 적용** | **0** | **7** |
+| **해소 적용** | **0회** | **6회** |
 
-⚠️ 이것 때문에 저희 쪽 신규 기능인 **인내심 이탈(reneging) 수치를 밸런스 근거로 쓸 수 없습니다.** 줄이 정상적으로 길어서 떠난 것이 아니라 서비스가 끝나지 않아 떠난 것일 수 있습니다. 이 배선이 먼저 살아나야 대기시간 임계(15축제분)가 적절한지 판단할 수 있습니다.
+서비스가 완료되기 시작하면서 방문 이력도 쌓입니다 — `Revisit` 항이 0 이 아닌 값을 내기 시작했고(`-0.128` 등), 이로써 `novelty_seeking` 개체 변주도 경로가 뚫렸습니다.
 
-### 2. Q5 — 존 인구 보고가 여전히 미연결입니다
+⚠️ **다만 아직 밸런스 근거로는 쓰지 마세요.** 재측정에서 `수락 31 / 거절 30`, 즉 가입 시도의 절반이 만석으로 거절됩니다. 시설 처리량 대비 인원이 많은 상태이고, 여기에 시설 레벨업(처리량 변동)까지 새로 들어와 변수가 하나 늘었습니다. **측정할 때 시설 레벨을 함께 기록해 주세요** — 레벨이 섞이면 전후 비교가 성립하지 않습니다.
 
-`UFFZSWorldSubsystem::ReportZonePopulation` 을 부르는 곳이 프로젝트 전체에 없어서 `FFFZSZoneReadModel::DensityRatio` 가 항상 0입니다(`DensityRatio = ReportedPopulation / SoftCapacity`).
+### 2. ✅ Q5 — 존 인구 보고는 연결됐습니다 (광훈님 브리지)
 
-결과로 `Relocate 요청` 이 계속 0이고, `crowd_tolerance_multiplier` 는 배선을 마쳤는데도 발화하지 못합니다. **호출 주기만 정해 주시면 저희 쪽 추가 작업 없이 동작합니다.**
+`UFF_ZonePopulationBridgeSubsystem`이 1초마다 보고하므로 `DensityRatio`에 값이 들어옵니다. **저희 쪽 결선도 끝났으니 이 항목은 닫힙니다.**
+
+다만 실측 혼잡도가 약 0.007로 개인 임계(0.595~1.105)에 한참 못 미쳐 아직 행동으로는 안 나타납니다. 원인과 선택지는 위 「crowd_tolerance」 절과 광훈님 인수인계 문서 3절에 있습니다.
+
+정원님께 남은 것은 **집계 주기(현재 1초)가 적절한지 확정**하는 것뿐입니다(광훈님 문서 5절 요청).
 
 ### 3. NavMesh 가 구워져 있지 않습니다
 
@@ -154,8 +188,8 @@
 | 항목 | 요청 |
 |---|---|
 | Q1 / I-5 · 풀 크기 | 일반 방문객 500명 + 예약 최대 28명에 맞춰 `AgentPoolSize`를 530으로 조정해도 될까요? 배치 액터의 저장값도 확인이 필요합니다. |
-| Q5 / I-4 · 존 인구 | `ReportZonePopulation(ZoneId, Population, DeltaSeconds)`를 어느 주기에 호출할지 협의 부탁드립니다. 실제 보고 간격을 전달해야 합니다. |
-| Q6 · 개체별 혼잡 내성 | **보관·전달은 완료했습니다**(2026-09-08). `AgentPersonalThresholds`에 보관하고 `FFF_PartyDecisionContext::PersonalDensityThresholdRatio`로 전달합니다. 남은 것은 Q5뿐입니다 — `ReportZonePopulation` 호출부가 없어 `DensityRatio`가 0이라 아직 발화하지 않습니다. |
+| Q5 / I-4 · 존 인구 | ✅ **닫힘**(2026-09-08). 광훈님 `UFF_ZonePopulationBridgeSubsystem`이 1초마다 보고합니다. 정원님께 남은 것은 그 주기가 적절한지 확정하는 것뿐입니다. |
+| Q6 · 개체별 혼잡 내성 | ✅ **닫힘**(2026-09-08). `AgentPersonalThresholds`에 보관하고 `FFF_PartyDecisionContext::PersonalDensityThresholdRatio`로 전달합니다. 값도 실제로 들어옵니다. 행동으로 안 나타나는 것은 구역 정원(2,500) 대비 인원(17)이 너무 적어서이며, 코드가 아니라 정원 산정 방식의 문제입니다 — 광훈님 문서 3절. |
 | I-6 · 체류 예산 | `Temp_LiveStageMinutes=240`을 날짜별 Live 길이로 바꾸는 작업이 필요합니다. Day2·3은 300초입니다. 예약 조기 퇴장은 별도 가드로 차단했습니다. |
 | I-9 · 일반 Queue 재결정 | Queue 소유 중 재결정 시 실제 탈퇴 없이 로컬 상태만 지우는 경로를 확인 부탁드립니다. 예약 복귀와 **인내심 이탈**(2026-09-08 추가)에서는 실제 탈퇴를 먼저 호출합니다. `RequestDecision` 자체의 경로는 그대로 두었으므로 이 항목은 계속 열려 있습니다 — 줄에 선 파티에 `RequestDecision`을 직접 거는 새 호출부가 생기면 같은 함정을 다시 밟습니다. |
 | I-1 · 격자 원점 | 관련 테스트는 통과합니다. Heat Map 문서의 주의 문구를 해제하기 전에 원점 계산 수정 여부만 확인 부탁드립니다. |
