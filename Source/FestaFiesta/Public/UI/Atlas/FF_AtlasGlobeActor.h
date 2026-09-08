@@ -243,6 +243,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas")
 	FName GetFocusedCountryId() const { return FocusedCountryId; }
 
+	/** 렌더링된 프랍의 로컬 경계와 광선을 검사한다. 바다 뒤쪽 프랍은 제외한다. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
+	FName PickLandmark(const FVector& RayOrigin, const FVector& RayDirection) const;
+
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
+	void SetHoveredCountry(FName CountryId);
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas")
 	FName GetSelectedCountryId() const { return SelectedCountryId; }
 
@@ -335,6 +342,10 @@ protected:
 	/** 지구 표면 머티리얼. **여기에 임포트한 텍스처를 붙인다.** 비우면 기본 머티리얼이다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Assets")
 	TObjectPtr<UMaterialInterface> GlobeMaterial;
+
+	/** 독립 육지 윗면/해안 메시. 반지름 5000uu 기준, 최대 16개. 비우면 기존 구체 방식이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Assets")
+	TArray<TObjectPtr<UStaticMesh>> LandLayerMeshes;
 
 	/** 구름 머티리얼. 반투명이어야 한다. 비우면 구름 구체를 아예 숨긴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Atlas|Assets")
@@ -476,6 +487,10 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "FestaFiesta|Atlas")
 	TObjectPtr<USceneComponent> GlobeRoot;
 
+	/** 생성자에서 만든 고정 육지 슬롯. 회전·숨김을 지구 액터와 공유한다. */
+	UPROPERTY(VisibleAnywhere, Category = "FestaFiesta|Atlas")
+	TArray<TObjectPtr<UStaticMeshComponent>> LandLayerComponents;
+
 	UPROPERTY(VisibleAnywhere, Category = "FestaFiesta|Atlas")
 	TObjectPtr<UStaticMeshComponent> GlobeMesh;
 
@@ -497,6 +512,7 @@ private:
 	FFF_AtlasGlobeOrientation Orientation;
 
 	FName FocusedCountryId;
+	FName HoveredCountryId;
 	FName SelectedCountryId;
 
 	// --- 전환 ---

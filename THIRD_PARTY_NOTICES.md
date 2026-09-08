@@ -350,3 +350,35 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - [ ] OFL·CC 등 필요한 라이선스 원문을 배포본에 포함
 - [ ] 옵션의 `크레딧 > 외부 에셋` 화면과 이 문서의 문구 일치 확인
 - [ ] 한국어·영어 크레딧 모두 링크 또는 QR/URL 접근 가능 여부 확인
+
+### Casual Clay 원본 지리 고정 지구 (2026-09-07)
+
+- 원본: 위 Solar System Scope Earth Day Map / Normal Map 2K, CC BY 4.0.
+- 수정: 원본 색상 분류 마스크를 유지한 캐주얼 재채색, 노멀 기울기의 산지 가이드화, 육지 단차·Height·Normal·Roughness·AO 생성. 4K는 2K 샘플 보존 확대본.
+- 소스: SourceArt/UI/Title/CasualClay_Albedo_v1/GeographyLocked/
+- 임포트: /Game/FestaFiesta/UI/Atlas/Earth/CasualClay_v1/
+- 크레딧: 행성 텍스처: Solar System Scope(INOVE), CC BY 4.0. FestaFiesta용으로 수정됨.
+
+### 동아시아 디오라마 시험 지형 — NOAA ETOPO1 (2026-09-07)
+
+- 상태: `confirmed` — 고도 데이터 출처·공개 사용 조건 확인. 아래 전 세계판이 같은 출처를 이어받는다.
+- 제작자: NOAA National Geophysical Data Center. ETOPO1 Ice Surface, WGS84, 평균 해수면 기준 미터.
+- 원본: https://www.ncei.noaa.gov/products/etopo-global-relief-model
+- 데이터: https://data.pmel.noaa.gov/socat/erddap/griddap/etopo360.html
+- 사용 조건: 공개 도메인 NOAA 데이터. https://www.ngdc.noaa.gov/mgg/global/dem_faq.html ; ERDDAP 메타데이터는 무료 사용·재배포를 허용하며 정확도 보증은 하지 않는다.
+- 다운로드: `altitude[(-10):10:(65)][(55):10:(155)]` CSV, 원본 1분격자에서 10분 간격 추출.
+- 보관: SourceArt/ThirdParty/NOAA/ETOPO1/east_asia_10arcmin.csv
+- SHA256: 50582fc0c5db907772329cd151c366db17a21f4e5125c1d39ea779c26a99f08d
+- 수정: 원본 daymap과 같은 위경도에 재표본화, 약한 평활화, 고도 과장·캐주얼 재채색·독립 해안 옆면 제작. 2K 해안 마스크와 색상은 위 Solar System Scope CC BY 4.0 파생 자료다.
+- Unreal 경로: 없음 — 시험 에셋은 전 세계판으로 대체되어 리포에서 제거했다. 원본 CSV는 SourceArt에만 남는다.
+- 크레딧: 지형 높이: NOAA NGDC ETOPO1 (Amante & Eakins, 2009). 지도·색상 기준: Solar System Scope(INOVE), CC BY 4.0. FestaFiesta용으로 수정됨.
+
+### 전 세계 디오라마 확장 (2026-09-08)
+
+- 위 ETOPO1과 Solar System Scope와 같은 출처·사용 조건. 전 세계 CSV를 추가 취득했다.
+- 쿼리: `altitude[(-90):10:(90)][(0):10:(360)]`, 1분 원본에서 10분 간격 추출.
+- 소스: `SourceArt/ThirdParty/NOAA/ETOPO1/global_10arcmin.csv` (79,075,524 bytes).
+- SHA256: 334023611dfed93efb3ce3f15f706460086ad75b93dc30d3ebd494eca27d86a5.
+- 수정: 높이 평활화, 극점 통합, 원본 해안 경계 완화·베벨 생성, 밝은 캐주얼 팔레트. 8개 경도 구간으로 나누어 제작.
+- Unreal: `/Game/FestaFiesta/UI/Atlas/Earth/DioramaWorld_v1/`.
+- 원본 위치·고도 기준은 지리 데이터이며 AI 시안은 스타일 참고에만 사용.

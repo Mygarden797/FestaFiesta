@@ -20,6 +20,7 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "CommonTextBlock.h"
+#include "CommonButtonBase.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -29,6 +30,9 @@
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
+#include "Components/ScrollBox.h"
+#include "Styling/SlateTypes.h"
+#include "UObject/UnrealType.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -423,6 +427,101 @@ namespace
 		TEXT("Atlas WBP 3종(AtlasPin / AtlasGlobe / AtlasCountry)을 만든다. "
 			 "이미 있는 에셋은 건드리지 않는다. 먼저 FF.FrontendUMG 가 필요하다."),
 		FConsoleCommandDelegate::CreateStatic(&RunAtlasUmg));
+
+	/** 기존 국가 지도와 공용 핀은 보존하고 지구 화면만 목록 방식으로 이관한다. */
+	void ApplyCountryNavigation()
+	{
+		UWidgetBlueprint* BP = LoadExistingBlueprint(GlobePackage);
+		if (!BP || !BP->WidgetTree || BP->WidgetTree->FindWidget(TEXT("ScrollBox_Countries"))) { return; }
+		const FString RowPackage = AtlasFolder / TEXT("WBP_FF_AtlasCountryRow");
+		EnsureWidgetBlueprint(AtlasLogPrefix, RowPackage, AtlasFolder, *UFF_AtlasPinButton::StaticClass(),
+			[](UWidgetBlueprint& BP, UWidgetTree& Tree)
+			{
+				if (!BuildAtlasPin(BP, Tree)) { return false; }
+				Cast<USizeBox>(Tree.RootWidget)->SetHeightOverride(50.f);
+				auto* Background = Cast<UBorder>(Tree.FindWidget(TEXT("Border_Background")));
+				FSlateBrush Surface;
+				Surface.DrawAs = ESlateBrushDrawType::RoundedBox;
+				Surface.OutlineSettings.CornerRadii = FVector4(12,12,12,12);
+				Surface.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+				Background->SetBrush(Surface);
+				Background->SetBrushColor(FLinearColor(.82f,.93f,.81f,1.f));
+				Background->SetPadding(FMargin(16,6));
+				auto* Label = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_Label")));
+				StyleText(*Label, 22, FLinearColor(.025f,.12f,.08f,1.f), TEXT("Bold"));
+				auto* Badge = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_PinBadge")));
+				StyleText(*Badge, 15, FLinearColor(.12f,.24f,.18f,1.f), TEXT("Regular"));
+				Badge->SetText(FText::GetEmpty());
+				// 준비 중 문구가 잠금을 명시하므로 무늬 없는 사각 아이콘은 제거한다.
+				auto* Lock = Cast<UImage>(Tree.FindWidget(TEXT("Image_PinLock")));
+				Lock->SetDesiredSizeOverride(FVector2D::ZeroVector);
+				Lock->SetRenderOpacity(0.f);
+				Cast<UHorizontalBoxSlot>(Lock->Slot)->SetPadding(FMargin(0));
+				auto* Ring = Cast<UImage>(Tree.FindWidget(TEXT("Image_FocusRing")));
+				Surface.TintColor = FSlateColor(FLinearColor::Transparent);
+				Surface.OutlineSettings.Color = FSlateColor(FLinearColor(.15f,.45f,.22f,1.f));
+				Surface.OutlineSettings.Width = 2.f;
+				Ring->SetBrush(Surface);
+				Ring->SetColorAndOpacity(FLinearColor::White);
+				return true;
+			});
+		UClass* RowClass = LoadGeneratedClass(RowPackage);
+		if (!BP || !BP->WidgetTree || !RowClass) { return; }
+		if (auto* Defaults = Cast<UFF_AtlasPinButton>(RowClass->GetDefaultObject()))
+		{
+			Defaults->ApplyGeneratedButtonDefaults(LoadClass<UCommonButtonStyle>(nullptr,TEXT("/Game/FestaFiesta/UI/Styles/CBS_FF_AtlasTransparent.CBS_FF_AtlasTransparent_C")), FLinearColor(.025f,.12f,.08f,1),
+				FLinearColor(.025f,.12f,.08f,1), FLinearColor(.25f,.35f,.28f,1), true, false, false);
+			SaveAssetPackage(AtlasLogPrefix,*Defaults);
+		}
+		UWidgetTree& Tree = *BP->WidgetTree;
+		auto* Root = Cast<UCanvasPanel>(Tree.RootWidget);
+		auto* Panel = Cast<UBorder>(Tree.FindWidget(TEXT("Border_Panel")));
+		if (!Root || !Panel || Tree.FindWidget(TEXT("ScrollBox_Countries"))) { return; }
+		const FLinearColor Ink(.025f,.12f,.08f,1.f);
+		auto* Heading = MakeWidget<UTextBlock>(*BP, Tree, TEXT("Text_CountryHeading"));
+		StyleText(*Heading, 32, Ink, TEXT("Bold"));
+		Heading->SetText(LOCTEXT("AtlasCountriesHeading", "어느 나라로 떠날까요?"));
+		PlaceOnCanvas(*Root, *Heading, 60, 55, 440, 50);
+		auto* List = MakeWidget<UScrollBox>(*BP, Tree, TEXT("ScrollBox_Countries"), true);
+		List->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
+		List->SetClipping(EWidgetClipping::ClipToBounds);
+		auto* ListSlot = Root->AddChildToCanvas(List);
+		ListSlot->SetAnchors(FAnchors(0,.14f,0,.48f));
+		ListSlot->SetOffsets(FMargin(60,0,420,0));
+		ListSlot->SetZOrder(5);
+		auto* Details = MakeWidget<UScrollBox>(*BP, Tree, TEXT("ScrollBox_CountryDetails"), true);
+		Details->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
+		Details->SetClipping(EWidgetClipping::ClipToBounds);
+		Panel->RemoveFromParent();
+		Details->AddChild(Panel);
+		auto* DetailsSlot = Root->AddChildToCanvas(Details);
+		DetailsSlot->SetAnchors(FAnchors(0,.51f,0,.90f));
+		DetailsSlot->SetOffsets(FMargin(60,0,420,0));
+		DetailsSlot->SetZOrder(5);
+		Details->SetVisibility(ESlateVisibility::Collapsed);
+		Panel->SetBrushColor(FLinearColor(.96f,.96f,.89f,.96f));
+		Panel->SetPadding(FMargin(18,14));
+		for (const TCHAR* Name : {TEXT("Text_CountryName"),TEXT("Text_Description"),TEXT("Text_FestivalCount"),TEXT("Text_LockReason")})
+		{
+			if (auto* Text = Cast<UTextBlock>(Tree.FindWidget(Name))) { StyleText(*Text, FCString::Strcmp(Name,TEXT("Text_CountryName"))==0 ? 26 : 17, Ink,TEXT("Regular")); }
+		}
+		// 기존 바인딩 이름은 유지하고 밝은 목록 버튼을 상세 액션에도 사용한다.
+		for (const TCHAR* Name : {TEXT("Button_SelectCountry"),TEXT("Button_ClosePanel")})
+		{
+			if (UWidget* Old = Tree.FindWidget(Name)) { Tree.RemoveWidget(Old); BP->OnVariableRemoved(Name); Old->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors); }
+			auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("VerticalBox_Panel")));
+			if (Column) { auto* Button = MakeWidgetOfClass(*BP,Tree,Name,RowClass); Column->AddChildToVerticalBox(Button)->SetPadding(FMargin(0,4)); }
+		}
+		if (auto* Hints = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_ControlHints")))) { StyleText(*Hints,16,Ink,TEXT("Regular")); }
+		if (!SaveNewBlueprint(AtlasLogPrefix,*BP)) { return; }
+		FClassProperty* Property = FindFProperty<FClassProperty>(BP->GeneratedClass,TEXT("PinButtonClass"));
+		if (Property) { Property->SetObjectPropertyValue_InContainer(BP->GeneratedClass->GetDefaultObject(),RowClass); }
+		SaveAssetPackage(AtlasLogPrefix,*BP);
+	}
+
+	FAutoConsoleCommand CountryNavigationCommand(TEXT("FF.ApplyAtlasCountryNavigation"),
+		TEXT("지구 화면에 국가 목록과 상세 스크롤을 한 번 추가한다."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyCountryNavigation));
 }
 
 #undef LOCTEXT_NAMESPACE

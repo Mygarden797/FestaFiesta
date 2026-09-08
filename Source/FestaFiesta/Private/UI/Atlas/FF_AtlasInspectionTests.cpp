@@ -46,6 +46,17 @@ bool FFF_AtlasInspectionLifecycle::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("국가 대표 조형물이 실제 컴포넌트로 생성된다"), FirstLandmark))
 	{
 		const float FrontScale = FirstLandmark->GetRelativeScale3D().X;
+		const FVector Center = FirstLandmark->Bounds.Origin;
+		const FVector Outward = (Center - Globe->GetActorLocation()).GetSafeNormal();
+		TestEqual(TEXT("정면 프랍 광선 선택"), Globe->PickLandmark(Center + Outward * 20000, -Outward), Country);
+		TestTrue(TEXT("바다 뒤 프랍은 선택되지 않는다"), Globe->PickLandmark(Center - Outward * 20000, Outward) != Country);
+		Globe->SetHoveredCountry(Country);
+		TestTrue(TEXT("호버 프랍 확대"), FirstLandmark->GetRelativeScale3D().X > FrontScale);
+		Globe->SetHoveredCountry(NAME_None);
+		TestTrue(TEXT("호버 해제 크기 복원"), FMath::IsNearlyEqual(FirstLandmark->GetRelativeScale3D().X,FrontScale));
+		Globe->SetGlobeActive(false);
+		TestTrue(TEXT("숨긴 지구는 선택 불가"), Globe->PickLandmark(Center + Outward * 20000, -Outward).IsNone());
+		Globe->SetGlobeActive(true);
 		FFF_AtlasGlobeOrientation Edge = Globe->GetOrientation();
 		Edge.Spin += 90.f;
 		Globe->SetOrientation(Edge);

@@ -97,6 +97,19 @@ AFF_AtlasGlobeActor::AFF_AtlasGlobeActor()
 	GlobeMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GlobeMesh->SetCastShadow(false);
 
+	// 고정 서브오브젝트이므로 에디터 구성 스크립트가 실행되어도 컴포넌트가 누적되지 않는다.
+	for (int32 Index = 0; Index < 16; ++Index)
+	{
+		const FName LayerName(*FString::Printf(TEXT("LandLayer%02d"), Index));
+		UStaticMeshComponent* Layer = CreateDefaultSubobject<UStaticMeshComponent>(LayerName);
+		Layer->SetupAttachment(GlobeRoot);
+		Layer->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Layer->SetCanEverAffectNavigation(false);
+		Layer->SetMobility(EComponentMobility::Movable);
+		Layer->BoundsScale = 1.15f;
+		LandLayerComponents.Add(Layer);
+	}
+
 	CloudMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("CloudMesh"));
 	CloudMesh->SetupAttachment(GlobeRoot);
 	CloudMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -626,6 +639,15 @@ const UFF_FestivalAtlasCatalog* AFF_AtlasGlobeActor::ResolveCatalog() const
 
 void AFF_AtlasGlobeActor::ApplyGlobeVisuals()
 {
+	for (int32 Index = 0; Index < LandLayerComponents.Num(); ++Index)
+	{
+		UStaticMeshComponent* Layer = LandLayerComponents[Index];
+		if (Layer)
+		{
+			Layer->SetStaticMesh(LandLayerMeshes.IsValidIndex(Index) ? LandLayerMeshes[Index].Get() : nullptr);
+			Layer->SetRelativeScale3D(FVector(GlobeRadius / 5000.f));
+		}
+	}
 	if (!GlobeMesh || !CloudMesh)
 	{
 		return;
@@ -958,7 +980,7 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 		// 원근 지평선을 기준으로 보간해 카메라가 가까워져도 가장자리에서 충분히 작아진다.
 		const float T = FMath::Clamp((Facing - PinMinDot) / FMath::Max(1.f - PinMinDot, 0.01f), 0.f, 1.f);
 		const float EdgeScale = bReduceMotion ? 1.f : FMath::Lerp(FMath::Clamp(GetAtlasSettings().LandmarkEdgeScale, 0.3f, 1.f), 1.f, T * T * (3.f - 2.f * T));
-		const float VisualScale = EdgeScale * (bSelected ? SelectedScale : 1.f);
+		const float VisualScale = EdgeScale * ((bSelected || Pin.CountryId == HoveredCountryId) ? SelectedScale : 1.f);
 		const float EffectiveHeight = Pin.LandmarkSurfaceOffset + Pin.BaseLandmarkHeight * VisualScale;
 		const float LandmarkMinDot = ComputeLandmarkVisibleMinDot(EffectiveHeight / FMath::Max(LandmarkHeight, 1.f));
 		const bool bLandmarkVisible =
@@ -997,6 +1019,45 @@ void AFF_AtlasGlobeActor::ApplySelectionVisuals()
 {
 	// 회전과 선택이 같은 크기·밑면 보정 경로를 사용한다.
 	UpdatePinPresentation();
+}
+
+void AFF_AtlasGlobeActor::SetHoveredCountry(FName CountryId)
+{
+	if (HoveredCountryId == CountryId) { return; }
+	HoveredCountryId = CountryId;
+	UpdatePinPresentation();
+}
+
+FName AFF_AtlasGlobeActor::PickLandmark(const FVector& RayOrigin, const FVector& RayDirection) const
+{
+	if (IsHidden() || RayDirection.IsNearlyZero()) { return NAME_None; }
+	const FVector Direction = RayDirection.GetSafeNormal();
+	const FVector ToCenter = GetActorLocation() - RayOrigin;
+	const double Radius = GlobeRadius * GetActorScale3D().GetAbsMax();
+	const double Along = FVector::DotProduct(ToCenter, Direction);
+	const double Discriminant = Radius * Radius - (ToCenter.SizeSquared() - Along * Along);
+	double Nearest = 1000000.0;
+	if (Discriminant >= 0.0 && Along > 0.0)
+	{
+		Nearest = FMath::Max(0.0, Along - FMath::Sqrt(Discriminant));
+	}
+	FName Result;
+	for (const FFF_AtlasPinInstance& Pin : Pins)
+	{
+		if (!Pin.Landmark || !Pin.Landmark->IsVisible() || !Pin.Landmark->GetStaticMesh()) { continue; }
+		const FTransform Transform = Pin.Landmark->GetComponentTransform();
+		const FVector Start = Transform.InverseTransformPosition(RayOrigin);
+		const FVector End = Transform.InverseTransformPosition(RayOrigin + Direction * 1000000.0);
+		FVector HitLocation, HitNormal;
+		float HitTime = 0.f;
+		if (FMath::LineExtentBoxIntersection(Pin.Landmark->GetStaticMesh()->GetBoundingBox(),
+			Start, End, FVector::ZeroVector, HitLocation, HitNormal, HitTime))
+		{
+			const double Distance = FVector::Distance(RayOrigin, Transform.TransformPosition(HitLocation));
+			if (Distance < Nearest) { Nearest = Distance; Result = Pin.CountryId; }
+		}
+	}
+	return Result;
 }
 
 float AFF_AtlasGlobeActor::GetEffectiveTransitionSeconds() const
