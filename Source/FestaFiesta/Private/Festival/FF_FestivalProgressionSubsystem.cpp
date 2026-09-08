@@ -312,8 +312,7 @@ TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetSpendRowsForDay(int32
 	}
 
 	const UEnum* ReasonEnum = StaticEnum<EFF_SpendReason>();
-
-	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FinaleFireworks); ++Value)
+	
 	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FacilityUpgrade); ++Value)
 	{
 		const int32 Amount = Ledger->GetSpendByReason(static_cast<EFF_SpendReason>(Value));
