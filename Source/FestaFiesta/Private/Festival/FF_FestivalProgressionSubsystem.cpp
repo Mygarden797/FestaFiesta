@@ -145,6 +145,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
+	OnFestivalDefinitionChanged.Broadcast();
 }
 
 bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Reason)

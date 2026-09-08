@@ -632,4 +632,8 @@ private:
 
 	/** Zone 월드 구독 해제용. 월드가 바뀌면 이전 것은 이미 죽어 있다. */
 	TWeakObjectPtr<UFFZSWorldSubsystem> BoundZoneWorldSubsystem;
+
+	UFUNCTION()
+	void HandleRequiredFacilitiesChanged();
+	TWeakObjectPtr<class UFF_RequiredFacilitiesSubsystem> BoundRequiredFacilities;
 };

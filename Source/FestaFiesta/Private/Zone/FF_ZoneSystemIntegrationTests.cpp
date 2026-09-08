@@ -27,6 +27,8 @@
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 
 namespace
 {
@@ -397,6 +399,27 @@ bool FFFZoneSystemQueueFacadeLifecycleE2ETest::RunTest(const FString& Parameters
 			StageBridge->OpenEligibleFacilities(false).SucceededCount, 1))
 	{
 		return false;
+	}
+
+	// 이 테스트의 주제는 Zone↔Queue 브리지 수명주기이고 축제 필수 시설 정책이 아니다.
+	// 그런데 Progression 이 Initialize 에서 DefaultFestival 을 자동 로드하므로 어느 World 든
+	// Definition 이 존재하고, 그 기본 Definition 이 SunsetMainStage 를 요구한다. 여기서
+	// 설치하는 것은 FoodTruck 하나뿐이라 Live 전환이 게이트에 막힌다.
+	//
+	// 그래서 요구사항이 빈 Definition 으로 갈아 끼운다 — 공유 에셋을 직접 고치면 다른
+	// 테스트로 새므로 DuplicateObject 로 사본을 만든다(FF_RequiredFacilitiesTests 와 같은 패턴).
+	// 무대를 여기서 같이 설치하는 방법도 있지만, 그러면 이 테스트가 무대 에셋과
+	// MaxInstancesPerWorld 정책 변경에까지 묶인다.
+	if (UFF_FestivalProgressionSubsystem* Progression =
+			World->GetGameInstance()->GetSubsystem<UFF_FestivalProgressionSubsystem>())
+	{
+		if (const UFF_FestivalDefinition* Current = Progression->GetDefinition())
+		{
+			UFF_FestivalDefinition* NoRequirements =
+				DuplicateObject<UFF_FestivalDefinition>(Current, World->GetGameInstance());
+			NoRequirements->RequiredSetupFacilities.Reset();
+			Progression->StartFestival(NoRequirements);
+		}
 	}
 
 	FestivalStage->RequestTransition(EFF_FestivalStage::Live);
