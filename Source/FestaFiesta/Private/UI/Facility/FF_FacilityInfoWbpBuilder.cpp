@@ -35,6 +35,7 @@
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UObject/SavePackage.h"
@@ -467,6 +468,153 @@ namespace FFFacilityInfoWbpBuilder
 		}
 
 		return HasProgramWidgetContract(Blueprint);
+	}
+
+	const TArray<FName>& GetUpgradeContractVariableNames()
+	{
+		static const TArray<FName> Names = {
+			TEXT("Panel_UpgradeSection"), TEXT("Text_FacilityLevel"),
+			TEXT("Text_UpgradeEffect"), TEXT("Text_UpgradeCost"), TEXT("Text_UpgradeReason"),
+			TEXT("Button_Upgrade"), TEXT("Text_Upgrade"), TEXT("Text_FacilityRevenue")
+		};
+		return Names;
+	}
+
+	bool HasUpgradeWidgetContract(const UWidgetBlueprint& Blueprint)
+	{
+		const UWidgetTree* Tree = Blueprint.WidgetTree;
+		if (!Tree)
+		{
+			return false;
+		}
+		for (const FName Name : GetUpgradeContractVariableNames())
+		{
+			const UWidget* Widget = Tree->FindWidget(Name);
+			const UClass* ExpectedClass = Name == TEXT("Panel_UpgradeSection")
+				? UVerticalBox::StaticClass()
+				: (Name == TEXT("Button_Upgrade") ? UButton::StaticClass() : UCommonTextBlock::StaticClass());
+			if (!Widget || !Widget->IsA(ExpectedClass) || !Widget->bIsVariable ||
+				!Blueprint.WidgetVariableNameToGuidMap.Contains(Name))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Preserve authored nodes/styles; add missing controls and correct only the upgrade section order. */
+	bool EnsureUpgradeWidgetContract(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		bOutModified = false;
+		if (HasUpgradeWidgetContract(Blueprint))
+		{
+			return FFFacilityInfoUpgradeLayout::PlaceAfterSummary(
+				Tree, *Tree.FindWidget(TEXT("Panel_UpgradeSection")), bOutModified);
+		}
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Content || !Palette)
+		{
+			return false;
+		}
+		// Validate partial designer assets before adding anything to them.
+		for (const FName Name : GetUpgradeContractVariableNames())
+		{
+			const UWidget* Existing = Tree.FindWidget(Name);
+			const UClass* ExpectedClass = Name == TEXT("Panel_UpgradeSection")
+				? UVerticalBox::StaticClass()
+				: (Name == TEXT("Button_Upgrade") ? UButton::StaticClass() : UCommonTextBlock::StaticClass());
+			if (Existing && !Existing->IsA(ExpectedClass))
+			{
+				return false;
+			}
+		}
+		const UButton* ExistingButton = Cast<UButton>(Tree.FindWidget(TEXT("Button_Upgrade")));
+		UVerticalBox* SummaryMeta = FFFacilityInfoUpgradeLayout::FindRevenueParent(Tree);
+		if (!Tree.FindWidget(TEXT("Text_FacilityRevenue")))
+		{
+			if (!SummaryMeta)
+			{
+				return false;
+			}
+			UCommonTextBlock* Revenue = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_FacilityRevenue"), true);
+			Revenue->SetAutoWrapText(true);
+			StyleLightText(*Revenue, 11, Palette->InGame.Ink, TEXT("Medium"));
+			AddVertical(*SummaryMeta, *Revenue, FMargin(0.f, 4.f, 0.f, 0.f));
+			if (UWidget* State = FFFacilityInfoUpgradeLayout::FindContentChild(Tree.FindWidget(TEXT("Text_FacilityState")), *SummaryMeta))
+			{
+				SummaryMeta->ShiftChild(SummaryMeta->GetChildIndex(State) + 1, Revenue);
+			}
+			bOutModified = true;
+		}
+		const UWidget* ExistingButtonText = Tree.FindWidget(TEXT("Text_Upgrade"));
+		if ((!ExistingButton && ExistingButtonText) ||
+			(ExistingButton && !ExistingButtonText && ExistingButton->GetContent()))
+		{
+			return false;
+		}
+		UVerticalBox* Section = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_UpgradeSection")));
+		if (!Section)
+		{
+			Section = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_UpgradeSection"), true);
+			AddVertical(*Content, *Section, FMargin(2.0f, 8.0f, 2.0f, 10.0f));
+			bOutModified = true;
+		}
+		for (const FName Name : {FName(TEXT("Text_FacilityLevel")), FName(TEXT("Text_UpgradeEffect")),
+			FName(TEXT("Text_UpgradeCost")), FName(TEXT("Text_UpgradeReason"))})
+		{
+			UCommonTextBlock* Text = Cast<UCommonTextBlock>(Tree.FindWidget(Name));
+			if (!Text)
+			{
+				Text = MakeWidget<UCommonTextBlock>(Blueprint, Tree, Name, true);
+				Text->SetAutoWrapText(true);
+				const bool bTitle = Name == TEXT("Text_FacilityLevel");
+				const bool bReason = Name == TEXT("Text_UpgradeReason");
+				Text->SetText(bTitle ? FText::FromString(TEXT("시설 강화 · Lv.1")) : FText::GetEmpty());
+				StyleLightText(*Text, bTitle ? 14 : 12,
+					bTitle ? Palette->InGame.TealDeep : (bReason ? Palette->InGame.Amber : Palette->InGame.Ink),
+					bTitle ? FName(TEXT("SemiBold")) : FName(TEXT("Medium")));
+				AddVertical(*Section, *Text, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+				bOutModified = true;
+			}
+		}
+		UButton* Button = Cast<UButton>(Tree.FindWidget(TEXT("Button_Upgrade")));
+		UCommonTextBlock* ButtonText = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_Upgrade")));
+		if (!Button)
+		{
+			if (ButtonText)
+			{
+				return false;
+			}
+			Button = MakeLightTextButton(Blueprint, Tree, TEXT("Button_Upgrade"), TEXT("Text_Upgrade"),
+				FText::FromString(TEXT("시설 강화")), Palette->InGame.Teal, Palette->InGame.TealDeep,
+				Palette->InGame.TealDeep, Palette->InGame.LineStrong, Palette->InGame.White, true, true);
+			Button->SetIsEnabled(false);
+			AddVertical(*Section, *Button);
+			bOutModified = true;
+		}
+		else if (!ButtonText)
+		{
+			if (Button->GetContent())
+			{
+				return false;
+			}
+			ButtonText = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_Upgrade"), true);
+			ButtonText->SetText(FText::FromString(TEXT("시설 강화")));
+			StyleLightText(*ButtonText, 13, Palette->InGame.White, TEXT("SemiBold"), ETextJustify::Center);
+			Button->AddChild(ButtonText);
+			bOutModified = true;
+		}
+		for (const FName Name : GetUpgradeContractVariableNames())
+		{
+			if (UWidget* Widget = Tree.FindWidget(Name))
+			{
+				EnsureVariableContract(Blueprint, *Widget, Name, bOutModified);
+			}
+		}
+		return HasUpgradeWidgetContract(Blueprint) &&
+			FFFacilityInfoUpgradeLayout::PlaceAfterSummary(Tree, *Section, bOutModified);
 	}
 
 	bool HasInstanceLimitWidgetContract(const UWidgetBlueprint& Blueprint)
@@ -1215,7 +1363,8 @@ namespace FFFacilityInfoWbpBuilder
 		}
 
 		Tree.RootWidget = Root;
-		return true;
+		bool bUpgradeContractAdded = false;
+		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded);
 	}
 
 	UWidgetBlueprint* LoadExistingBlueprint()
@@ -1794,8 +1943,8 @@ namespace FFFacilityInfoWbpBuilder
 	{
 		BuildPaidProgramWidgetBlueprints();
 		// Never rebuild an existing designer-owned asset. A versioned contract migration may append
-		// missing named nodes at the known Panel_Content seam, but it leaves every existing node,
-		// style, graph, and layout property untouched.
+		// missing named nodes at the known Panel_Content seam and normalize the upgrade block order.
+		// Existing designer nodes, their style/graph data, and their own slot properties stay intact.
 		if (FPackageName::DoesPackageExist(PanelPackage))
 		{
 			UWidgetBlueprint* Existing = LoadExistingBlueprint();
@@ -1805,6 +1954,7 @@ namespace FFFacilityInfoWbpBuilder
 			{
 				bool bMigratedProgramContract = false;
 				bool bMigratedInstanceLimitContract = false;
+				bool bMigratedUpgradeContract = false;
 				if (!EnsureProgramWidgetContract(
 						*Existing,
 						*Existing->WidgetTree,
@@ -1814,14 +1964,16 @@ namespace FFFacilityInfoWbpBuilder
 						*Existing,
 						*Existing->WidgetTree,
 						bMigratedInstanceLimitContract) ||
-					!HasInstanceLimitWidgetContract(*Existing))
+					!HasInstanceLimitWidgetContract(*Existing) ||
+					!EnsureUpgradeWidgetContract(*Existing, *Existing->WidgetTree, bMigratedUpgradeContract) ||
+					!HasUpgradeWidgetContract(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 						TEXT("FF_FACILITY_INFO_UMG_FAIL: existing asset cannot accept a non-destructive widget contract migration: %s"),
 						*PanelPackage);
 					return;
 				}
-				if ((bMigratedProgramContract || bMigratedInstanceLimitContract) &&
+				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract) &&
 					!SaveBlueprint(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -1830,7 +1982,7 @@ namespace FFFacilityInfoWbpBuilder
 					return;
 				}
 
-				if (bMigratedProgramContract || bMigratedInstanceLimitContract)
+				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract)
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
 						TEXT("FF_FACILITY_INFO_UMG_MIGRATED: %s (existing designer nodes preserved)"),
@@ -1865,6 +2017,7 @@ namespace FFFacilityInfoWbpBuilder
 			!HasRequiredLayout(*Blueprint) ||
 			!HasProgramWidgetContract(*Blueprint) ||
 			!HasInstanceLimitWidgetContract(*Blueprint) ||
+			!HasUpgradeWidgetContract(*Blueprint) ||
 			!SaveBlueprint(*Blueprint))
 		{
 			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -1941,6 +2094,7 @@ namespace FFFacilityInfoWbpBuilder
 			!HasRequiredLayout(Blueprint) ||
 			!HasProgramWidgetContract(Blueprint) ||
 			!HasInstanceLimitWidgetContract(Blueprint) ||
+			!HasUpgradeWidgetContract(Blueprint) ||
 			!SaveBlueprint(Blueprint))
 		{
 			Rollback();

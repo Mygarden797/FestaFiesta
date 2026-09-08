@@ -6,6 +6,7 @@
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
+#include "Building/FF_FacilityUpgradeTypes.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/BoxComponent.h"
@@ -20,6 +21,7 @@
 #include "Engine/Blueprint.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -29,14 +31,22 @@
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "HAL/FileManager.h"
+#include "ImageUtils.h"
 #include "Misc/AutomationTest.h"
+#include "Misc/CommandLine.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Slate/WidgetRenderer.h"
+#include "TextureResource.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "WidgetBlueprint.h"
@@ -181,6 +191,134 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 		FFFacilityInfoModel::FormatScheduledProgramSummary(
 			FText::FromString(TEXT("바다향기 공방")), 30.0f, 60.0f, true, 200).ToString(),
 		FString(TEXT("바다향기 공방 · 개장 +30분 ~ +60분 · 비용 200 Gold")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoUpgradeReadModelTest,
+	"FestaFiesta.UI.FacilityInfo.UpgradeReadModel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFF_FacilityInfoViewData ViewData;
+	ViewData.Context = EFF_FacilityInfoContext::Build;
+	FFF_FacilityUpgradePreview Preview;
+	Preview.CurrentLevel = 1;
+	Preview.TargetLevel = 2;
+	Preview.MaxLevel = 3;
+	Preview.bHasUpgradeQuote = true;
+	Preview.bSupported = true;
+	Preview.bHasLevels = true;
+	Preview.bCanUpgrade = true;
+	Preview.CostGold = 120;
+	Preview.GoldAfterUpgrade = 880;
+	Preview.CurrentServiceDurationSeconds = 4.0f;
+	Preview.NextServiceDurationSeconds = 3.2f;
+	Preview.CurrentThroughputPerMinute = 15.0f;
+	Preview.NextThroughputPerMinute = 18.75f;
+	Preview.CurrentFootprintCentimeters = FIntPoint(400, 400);
+	Preview.NextFootprintCentimeters = FIntPoint(600, 600);
+	Preview.bRevenueAvailable = true;
+	Preview.BaseRevenuePerUseGold = 10;
+	Preview.CurrentRevenuePerUseGold = 10;
+	Preview.NextRevenuePerUseGold = 16;
+	Preview.NextRevenueMultiplier = 1.5f;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("준비 중 유효한 견적은 상세 정보와 구매 버튼을 활성화한다"),
+		ViewData.bShowUpgradeAction && ViewData.bShowUpgradeDetails && ViewData.bCanUpgrade);
+	TestEqual(TEXT("구매 검증에 사용할 확인 당시 레벨을 보관한다"), ViewData.CurrentUpgradeLevel, 1);
+	TestTrue(TEXT("효과는 전후 값을 화살표로 비교한다"),
+		ViewData.UpgradeEffectText.ToString().Contains(TEXT("4.0초 → 3.2초")));
+	TestTrue(TEXT("강화로 달라지는 시설 크기를 구매 전에 표시한다"),
+		ViewData.UpgradeSizeEffectText.ToString().Contains(TEXT("4 × 4 m → 6 × 6 m")));
+	TestTrue(TEXT("비용과 구매 후 잔액을 함께 표시한다"),
+		ViewData.UpgradeCostText.ToString().Contains(TEXT("120 Gold")) &&
+		ViewData.UpgradeCostText.ToString().Contains(TEXT("880 Gold")));
+	TestTrue(TEXT("현재 수익과 기본 대비 증가액을 표시한다"),
+		ViewData.FacilityRevenueText.ToString().Contains(TEXT("10 Gold")) &&
+		ViewData.FacilityRevenueText.ToString().Contains(TEXT("기본 대비 0 Gold")));
+	TestTrue(TEXT("수익 증가율은 반올림된 표시 금액에 일치한다"),
+		ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("10 → 16 Gold")) &&
+		ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("+6 Gold (+60%)")) &&
+		ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("×1.5")));
+
+	Preview.bCanUpgrade = false;
+	Preview.GoldAfterUpgrade = -40;
+	Preview.FailureReason = FText::FromString(TEXT("골드가 부족합니다."));
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestFalse(TEXT("실패 견적은 구매를 막는다"), ViewData.bCanUpgrade);
+	TestTrue(TEXT("골드가 부족해도 효과와 가격은 비교할 수 있다"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("부족한 골드는 가상의 구매 후 잔액 대신 부족액으로 표시한다"),
+		ViewData.UpgradeCostText.ToString().Contains(TEXT("부족한 금액  40 Gold")) &&
+		!ViewData.UpgradeCostText.ToString().Contains(TEXT("구매 후 잔액")));
+	TestEqual(TEXT("권한 계층의 실패 사유를 표시한다"),
+		ViewData.UpgradeDisabledReasonText.ToString(), Preview.FailureReason.ToString());
+
+	ViewData.Context = EFF_FacilityInfoContext::Live;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestFalse(TEXT("운영 중에는 구매 동작을 숨긴다"), ViewData.bShowUpgradeAction);
+	TestFalse(TEXT("운영 중에는 다음 단계 구매 상세를 숨긴다"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("운영 중에도 레벨이 보인다"), !ViewData.FacilityLevelText.IsEmpty());
+	TestTrue(TEXT("운영 상태로 전환하면 이전 실패 사유를 지운다"), ViewData.UpgradeDisabledReasonText.IsEmpty());
+
+	ViewData.Context = EFF_FacilityInfoContext::Build;
+	Preview.CostGold = 0;
+	Preview.bHasUpgradeQuote = false;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestFalse(TEXT("가격 조회가 실패하면 0 Gold 구매 견적을 표시하지 않는다"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("가격 조회 실패 시 이전 견적을 지운다"), ViewData.UpgradeCostText.IsEmpty());
+	Preview.bHasUpgradeQuote = true;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("정상 무료 견적은 0 Gold여도 상세를 표시한다"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("무료 구매 버튼을 명시한다"), ViewData.UpgradeActionText.ToString().Contains(TEXT("무료")));
+	Preview.CostGold = 120;
+	Preview.NextServiceDurationSeconds = Preview.CurrentServiceDurationSeconds;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("속도가 같아도 수익이 늘면 다음 강화 견적을 표시한다"), ViewData.bShowUpgradeDetails);
+	Preview.NextRevenueMultiplier = Preview.CurrentRevenueMultiplier;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("외형만 바뀌거나 효과가 같은 단계도 견적을 표시한다"), ViewData.bShowUpgradeDetails);
+	Preview.CurrentRevenuePerUseGold = 5;
+	Preview.NextRevenuePerUseGold = 2;
+	Preview.NextRevenueMultiplier = .2f;
+	Preview.NextServiceDurationSeconds = 8.f;
+	Preview.TargetLevel = 15;
+	Preview.MaxLevel = 100;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("수익 감소와 느려짐, 레벨 건너뛰기도 견적을 표시한다"), ViewData.bShowUpgradeDetails);
+	TestTrue(TEXT("기본보다 줄어든 현재 수익은 음수 차액으로 표시한다"),
+		ViewData.FacilityRevenueText.ToString().Contains(TEXT("기본 대비 -5 Gold")));
+	TestTrue(TEXT("다음 수익 감소액과 감소율은 부호가 한 번만 표시된다"),
+		ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("-3 Gold (-60%)")) &&
+		!ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("+-")));
+	Preview.CurrentLevel = Preview.MaxLevel;
+	Preview.TargetLevel = Preview.MaxLevel;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestFalse(TEXT("최대 레벨에서 가상의 다음 단계 가격을 보여주지 않는다"), ViewData.bShowUpgradeDetails);
+	TestEqual(TEXT("최대 레벨 버튼은 이유를 명시한다"),
+		ViewData.UpgradeActionText.ToString(), FString(TEXT("최대 레벨")));
+	FFFacilityInfoModel::ApplyUpgradePreview(nullptr, ViewData);
+	TestFalse(TEXT("정보를 잃으면 이전 구매 가능 상태를 유지하지 않는다"), ViewData.bCanUpgrade);
+	TestTrue(TEXT("정보를 잃으면 이전 견적을 지운다"), ViewData.UpgradeCostText.IsEmpty());
+	Preview.bHasLevels = false;
+	Preview.CurrentRevenuePerUseGold = 10;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestFalse(TEXT("레벨 없는 시설은 강화 섹션을 표시하지 않는다"), ViewData.bHasFacilityLevels);
+	TestTrue(TEXT("레벨 없는 시설은 Lv.1 같은 가상의 등급도 표시하지 않는다"), ViewData.FacilityLevelText.IsEmpty());
+	TestFalse(TEXT("레벨 없는 시설은 구매 동작도 제공하지 않는다"), ViewData.bShowUpgradeAction);
+	TestTrue(TEXT("레벨 없는 시설에도 현재 수익을 표시한다"), ViewData.FacilityRevenueText.ToString().Contains(TEXT("10 Gold")));
+	Preview.CurrentLevel = 1;
+	Preview.TargetLevel = 2;
+	Preview.bHasLevels = true;
+	Preview.NextRevenueMultiplier = 1.5f;
+	Preview.BaseRevenuePerUseGold = 0;
+	Preview.CurrentRevenuePerUseGold = 0;
+	Preview.NextRevenuePerUseGold = 0;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestTrue(TEXT("무료 시설은 현재 수익 0을 표시한다"), ViewData.FacilityRevenueText.ToString().Contains(TEXT("0 Gold")));
+	TestFalse(TEXT("현재 수익 0일 때 증가율을 나눗셈으로 만들지 않는다"), ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("%")));
 	return true;
 }
 
@@ -821,6 +959,30 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("유료 프로그램 섹션 계약"), Tree->FindWidget(TEXT("Panel_ProgramSection")));
 	TestNotNull(TEXT("유료 프로그램 편성 버튼 계약"),
 		Cast<UButton>(Tree->FindWidget(TEXT("Button_ScheduleProgram"))));
+	TestNotNull(TEXT("시설 강화 버튼 계약"), Cast<UButton>(Tree->FindWidget(TEXT("Button_Upgrade"))));
+	const UWidget* UpgradeSection = Tree->FindWidget(TEXT("Panel_UpgradeSection"));
+	bool bUpgradeInsideScroll = false;
+	for (const UWidget* Ancestor = UpgradeSection; Ancestor; Ancestor = Ancestor->GetParent())
+	{
+		bUpgradeInsideScroll |= Ancestor == Tree->FindWidget(TEXT("ScrollBox_Details"));
+	}
+	TestTrue(TEXT("강화 컨트롤은 카드 외부와 겹치지 않고 기존 스크롤 안에 있다"), bUpgradeInsideScroll);
+	UVerticalBox* DetailContent = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content")));
+	if (TestNotNull(TEXT("시설 상세 스크롤 콘텐츠"), DetailContent) && UpgradeSection)
+	{
+		const UWidget* Summary = FFFacilityInfoUpgradeLayout::FindContentChild(
+			Tree->FindWidget(TEXT("Summary_Card")), *DetailContent);
+		const int32 UpgradeIndex = DetailContent->GetChildIndex(UpgradeSection);
+		TestTrue(TEXT("강화 영역은 실제 WBP 요약 바로 다음에 위치한다"),
+			Summary && UpgradeIndex == DetailContent->GetChildIndex(Summary) + 1);
+		for (const FName Name : {FName(TEXT("Panel_BuildSection")), FName(TEXT("Panel_LiveSection")),
+			FName(TEXT("Panel_ProgramSection"))})
+		{
+			UWidget* OtherSection = FFFacilityInfoUpgradeLayout::FindContentChild(Tree->FindWidget(Name), *DetailContent);
+			TestTrue(*FString::Printf(TEXT("강화는 %s보다 먼저 표시한다"), *Name.ToString()),
+				OtherSection && UpgradeIndex < DetailContent->GetChildIndex(OtherSection));
+		}
+	}
 
 	const TArray<FName> RequiredTextNames = {
 		TEXT("Text_ThumbnailPlaceholder"), TEXT("Text_Context"), TEXT("Text_FacilityName"),
@@ -831,7 +993,9 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("Text_Occupancy"), TEXT("Text_RemainingService"), TEXT("Text_ExpectedWait"),
 		TEXT("Text_Throughput"), TEXT("Text_Feedback"), TEXT("Text_ProgramStatus"),
 		TEXT("Text_ScheduledProgramSummary"), TEXT("Text_ProgramScheduleReason"),
-		TEXT("Text_ScheduleProgram"), TEXT("Text_StartMinigame")
+		TEXT("Text_ScheduleProgram"), TEXT("Text_StartMinigame"), TEXT("Text_FacilityLevel"),
+		TEXT("Text_UpgradeEffect"), TEXT("Text_UpgradeCost"), TEXT("Text_UpgradeReason"), TEXT("Text_Upgrade"),
+		TEXT("Text_FacilityRevenue")
 	};
 	for (const FName Name : RequiredTextNames)
 	{
@@ -843,7 +1007,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("Button_Remove"), TEXT("Button_StartMinigame"), TEXT("Image_Thumbnail"),
 		TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Panel_ProgramSection"),
 		TEXT("Panel_Actions"), TEXT("Panel_BuildActions"), TEXT("Panel_LiveActions"),
-		TEXT("Button_ScheduleProgram")
+		TEXT("Button_ScheduleProgram"), TEXT("Panel_UpgradeSection"), TEXT("Button_Upgrade")
 	};
 	RequiredVariableNames.Append(RequiredTextNames);
 	for (const FName Name : RequiredVariableNames)
@@ -875,6 +1039,11 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		ViewData.bShowProgramScheduleAction = true;
 		ViewData.bCanScheduleProgram = true;
 		ViewData.ProgramScheduleActionText = FText::FromString(TEXT("유료 프로그램 편성"));
+		ViewData.bShowUpgradeAction = true;
+		ViewData.bHasFacilityLevels = true;
+		ViewData.bShowUpgradeDetails = true;
+		ViewData.bCanUpgrade = true;
+		ViewData.FacilityLevelText = FText::FromString(TEXT("시설 강화 · Lv.1"));
 		Panel->ApplyViewData(ViewData);
 		const TSharedRef<SWidget> SlateWidget = Panel->TakeWidget();
 		(void)SlateWidget;
@@ -944,6 +1113,43 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 			TestEqual(TEXT("비활성화된 편성 버튼은 우회 방송하지 않는다"), PanelRequestCount, 1);
 			Panel->OnProgramScheduleRequested.Remove(Handle);
 		}
+		UButton* UpgradeButton = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_Upgrade")));
+		TestNotNull(TEXT("인스턴스에 시설 강화 버튼이 바인딩된다"), UpgradeButton);
+		if (UpgradeButton)
+		{
+			TestTrue(TEXT("확인 가능한 강화 견적은 구매 버튼을 활성화한다"), UpgradeButton->GetIsEnabled());
+			int32 UpgradeRequestCount = 0;
+			const FDelegateHandle UpgradeHandle = Panel->OnUpgradeRequested.AddLambda(
+				[&UpgradeRequestCount]() { ++UpgradeRequestCount; });
+			UpgradeButton->OnClicked.Broadcast();
+			TestEqual(TEXT("가격과 효과를 확인한 구매 클릭을 한 번 전달한다"), UpgradeRequestCount, 1);
+			// A synchronous command can immediately display Lv.2 -> Lv.3 before a double-click ends.
+			ViewData.CurrentUpgradeLevel = 2;
+			Panel->ApplyViewData(ViewData);
+			UpgradeButton->OnClicked.Broadcast();
+			TestEqual(TEXT("더블클릭이 새로 표시된 다음 단계까지 구매하지 않는다"), UpgradeRequestCount, 1);
+			ViewData.bCanUpgrade = false;
+			ViewData.UpgradeDisabledReasonText = FText::FromString(TEXT("골드가 부족합니다."));
+			Panel->ApplyViewData(ViewData);
+			TestFalse(TEXT("구매 거절 견적은 버튼을 비활성화한다"), UpgradeButton->GetIsEnabled());
+			UpgradeButton->OnClicked.Broadcast();
+			TestEqual(TEXT("비활성 구매 버튼은 이벤트 우회도 거절한다"), UpgradeRequestCount, 1);
+			ViewData.Context = EFF_FacilityInfoContext::Live;
+			ViewData.bCanUpgrade = true;
+			Panel->ApplyViewData(ViewData);
+			TestEqual(TEXT("운영 중 구매 버튼은 숨긴다"), UpgradeButton->GetVisibility(), ESlateVisibility::Collapsed);
+			TestEqual(TEXT("운영 중에도 현재 레벨을 유지한다"),
+				Panel->GetWidgetFromName(TEXT("Panel_UpgradeSection"))->GetVisibility(), ESlateVisibility::Visible);
+			UpgradeButton->OnClicked.Broadcast();
+			TestEqual(TEXT("운영 중에는 구매 이벤트를 전달하지 않는다"), UpgradeRequestCount, 1);
+			Panel->OnUpgradeRequested.Remove(UpgradeHandle);
+			ViewData.bHasFacilityLevels = false;
+			Panel->ApplyViewData(ViewData);
+			TestEqual(TEXT("레벨 없는 시설의 강화 영역 전체를 숨긴다"),
+				Panel->GetWidgetFromName(TEXT("Panel_UpgradeSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+			TestEqual(TEXT("레벨 없는 시설에도 수익 항목을 유지한다"),
+				Panel->GetWidgetFromName(TEXT("Text_FacilityRevenue"))->GetVisibility(), ESlateVisibility::HitTestInvisible);
+		}
 		Panel->SetPanelOpen(true);
 		TestEqual(TEXT("열린 full-screen wrapper는 카드 밖 클릭을 통과시킨다"),
 			Panel->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
@@ -952,6 +1158,157 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 			Panel->GetVisibility(), ESlateVisibility::Collapsed);
 	}
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoUpgradeVisualPreviewTest,
+	"FestaFiesta.UI.FacilityInfo.UpgradeVisualPreview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
+	{
+		AddInfo(TEXT("SKIPPED: 시설 강화 PNG 검증에는 실제 RHI가 필요합니다. -NullRHI 대신 -RenderOffscreen으로 실행하세요."));
+		return true;
+	}
+	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UWidgetBlueprintGeneratedClass* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(
+		LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
+	if (!TestNotNull(TEXT("렌더 검증용 에디터 월드"), EditorWorld) ||
+		!TestNotNull(TEXT("렌더 검증은 실제 시설 WBP를 사용한다"), PanelClass))
+	{
+		return false;
+	}
+	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*PanelClass);
+	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(EditorWorld, PanelClass);
+	if (!TestNotNull(TEXT("실제 시설 패널 인스턴스"), Panel))
+	{
+		return false;
+	}
+	FFF_FacilityInfoViewData ViewData;
+	ViewData.FacilityInstanceId = FGuid::NewGuid();
+	ViewData.Context = EFF_FacilityInfoContext::Build;
+	ViewData.ContextTitle = FText::FromString(TEXT("배치 시설"));
+	ViewData.DisplayName = FText::FromString(TEXT("해변 간식 부스"));
+	ViewData.CategoryText = FText::FromString(TEXT("음식 부스"));
+	ViewData.ZoneText = FText::FromString(TEXT("중앙 구역"));
+	ViewData.FacilityStateText = FText::FromString(TEXT("운영 준비 완료"));
+	ViewData.ThumbnailPlaceholderText = FText::FromString(TEXT("음식 부스"));
+	ViewData.bCanMove = true;
+	ViewData.bCanRemove = true;
+	ViewData.FootprintText = FText::FromString(TEXT("4 × 4 m"));
+	ViewData.ServiceDurationText = FText::FromString(TEXT("4초"));
+	FFF_FacilityUpgradePreview Preview;
+	Preview.CurrentLevel = 1;
+	Preview.TargetLevel = 2;
+	Preview.MaxLevel = 3;
+	Preview.CostGold = 120;
+	Preview.bHasUpgradeQuote = true;
+	Preview.GoldAfterUpgrade = 880;
+	Preview.CurrentServiceDurationSeconds = 4.0f;
+	Preview.NextServiceDurationSeconds = 3.2f;
+	Preview.CurrentThroughputPerMinute = 15.0f;
+	Preview.NextThroughputPerMinute = 18.75f;
+	Preview.bSupported = true;
+	Preview.CurrentFootprintCentimeters = FIntPoint(400, 400);
+	Preview.bRevenueAvailable = true;
+	Preview.BaseRevenuePerUseGold = 10;
+	Preview.CurrentRevenuePerUseGold = 10;
+	Preview.NextRevenuePerUseGold = 15;
+	Preview.NextRevenueMultiplier = 1.5f;
+	Preview.NextFootprintCentimeters = FIntPoint(600, 600);
+	Preview.bHasLevels = true;
+	Preview.bCanUpgrade = true;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	Panel->ApplyViewData(ViewData);
+	Panel->SetPanelOpen(true);
+	UBorder* Card = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_Panel")));
+	if (!TestNotNull(TEXT("실제 WBP 카드 표면"), Card))
+	{
+		return false;
+	}
+	constexpr int32 CaptureWidth = 388;
+	constexpr int32 CaptureHeight = 500;
+	// Render the real card subtree at its shipped size, independent of the editor viewport.
+	FWidgetRenderer Renderer(true, true);
+	UTextureRenderTarget2D* RenderTarget = Renderer.DrawWidget(
+		Card->TakeWidget(), FVector2D(CaptureWidth, CaptureHeight));
+	TArray<FColor> Pixels;
+	FTextureRenderTargetResource* Resource = RenderTarget ? RenderTarget->GameThread_GetRenderTargetResource() : nullptr;
+	if (!TestTrue(TEXT("실제 RHI에서 시설 카드 픽셀을 읽는다"),
+		Resource && Resource->ReadPixels(Pixels) && Pixels.Num() == CaptureWidth * CaptureHeight))
+	{
+		return false;
+	}
+	const UWidget* UpgradeButton = Panel->GetWidgetFromName(TEXT("Button_Upgrade"));
+	const UWidget* DetailScroll = Panel->GetWidgetFromName(TEXT("ScrollBox_Details"));
+	if (TestNotNull(TEXT("강화 버튼 렌더 검증 대상"), UpgradeButton) &&
+		TestNotNull(TEXT("스크롤 렌더 검증 대상"), DetailScroll))
+	{
+		const FGeometry& ButtonGeometry = UpgradeButton->GetCachedGeometry();
+		const FGeometry& ScrollGeometry = DetailScroll->GetCachedGeometry();
+		const FVector2D ButtonTop = ButtonGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ButtonBottom = ButtonGeometry.LocalToAbsolute(ButtonGeometry.GetLocalSize());
+		const FVector2D ScrollTop = ScrollGeometry.LocalToAbsolute(FVector2D::ZeroVector);
+		const FVector2D ScrollBottom = ScrollGeometry.LocalToAbsolute(ScrollGeometry.GetLocalSize());
+		TestTrue(TEXT("첫 화면에서 강화 버튼의 전체 높이가 스크롤 안에 보여 footer에 가려지지 않는다"),
+			ButtonGeometry.GetLocalSize().Y >= 24.0f && ButtonTop.Y >= ScrollTop.Y - 1.0 &&
+			ButtonBottom.Y <= ScrollBottom.Y + 1.0);
+		AddInfo(FString::Printf(TEXT("Upgrade button Y=%.1f..%.1f, scroll Y=%.1f..%.1f"),
+			ButtonTop.Y, ButtonBottom.Y, ScrollTop.Y, ScrollBottom.Y));
+	}
+	TArray64<uint8> PngData;
+	FImageUtils::PNGCompressImageArray(CaptureWidth, CaptureHeight, Pixels, PngData);
+	const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"));
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	const FString Path = FPaths::Combine(Directory, TEXT("FacilityUpgradePreview.png"));
+	const bool bSaved = TestTrue(TEXT("시설 강화 화면 PNG 저장"), FFileHelper::SaveArrayToFile(PngData, *Path));
+	AddInfo(FString::Printf(TEXT("시설 강화 시각 검증: %s"), *FPaths::ConvertRelativePathToFull(Path)));
+
+	// Designer-authored tradeoffs and free, sparse levels must survive the real WBP binding/layout path.
+	Preview.CurrentLevel = 5;
+	Preview.TargetLevel = 20;
+	Preview.MaxLevel = 20;
+	Preview.CostGold = 0;
+	Preview.GoldAfterUpgrade = 0;
+	Preview.CurrentRevenueMultiplier = 1.5f;
+	Preview.CurrentRevenuePerUseGold = 15;
+	Preview.NextRevenueMultiplier = 1.f;
+	Preview.NextRevenuePerUseGold = 10;
+	Preview.NextServiceDurationSeconds = 8.f;
+	Preview.NextThroughputPerMinute = 7.5f;
+	Preview.NextFootprintCentimeters = FIntPoint(300, 300);
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	Panel->ApplyViewData(ViewData);
+	Panel->ForceLayoutPrepass();
+	RenderTarget = Renderer.DrawWidget(Card->TakeWidget(), FVector2D(CaptureWidth, CaptureHeight));
+	Resource = RenderTarget ? RenderTarget->GameThread_GetRenderTargetResource() : nullptr;
+	Pixels.Reset();
+	const bool bFlexiblePixels = TestTrue(TEXT("무료·감소·축소 견적도 실제 카드에서 렌더된다"),
+		Resource && Resource->ReadPixels(Pixels) && Pixels.Num() == CaptureWidth * CaptureHeight);
+	bool bFlexibleSaved = false;
+	if (bFlexiblePixels)
+	{
+		PngData.Reset();
+		FImageUtils::PNGCompressImageArray(CaptureWidth, CaptureHeight, Pixels, PngData);
+		const FString FlexiblePath = FPaths::Combine(Directory, TEXT("FacilityFlexibleUpgradePreview.png"));
+		bFlexibleSaved = TestTrue(TEXT("자유 설정 강화 화면 PNG 저장"), FFileHelper::SaveArrayToFile(PngData, *FlexiblePath));
+		const UButton* FreeButton = Cast<UButton>(UpgradeButton);
+		TestTrue(TEXT("0 Gold에서도 무료 강화 버튼은 실제 WBP에서 활성화된다"), FreeButton && FreeButton->GetIsEnabled());
+		if (FreeButton && DetailScroll)
+		{
+			const FGeometry& ButtonGeometry = FreeButton->GetCachedGeometry();
+			const FGeometry& ScrollGeometry = DetailScroll->GetCachedGeometry();
+			TestTrue(TEXT("무료·감소 견적의 버튼 전체도 첫 화면에 보인다"),
+				ButtonGeometry.GetLocalSize().Y >= 24.f &&
+				ButtonGeometry.LocalToAbsolute(FVector2D::ZeroVector).Y >= ScrollGeometry.LocalToAbsolute(FVector2D::ZeroVector).Y - 1. &&
+				ButtonGeometry.LocalToAbsolute(ButtonGeometry.GetLocalSize()).Y <= ScrollGeometry.LocalToAbsolute(ScrollGeometry.GetLocalSize()).Y + 1.);
+		}
+	}
+	Panel->ReleaseSlateResources(true);
+	return bSaved && bFlexibleSaved;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

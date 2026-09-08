@@ -7,6 +7,7 @@
 #include "FF_FacilityInfoTypes.generated.h"
 
 class UTexture2D;
+struct FFF_FacilityUpgradePreview;
 
 /** The gameplay context that opened the shared facility inspector. */
 UENUM(BlueprintType)
@@ -49,6 +50,10 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText FacilityStateText;
 
+	/** Current one-person settlement estimate, visible even when the facility has no levels. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText FacilityRevenueText;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText OperationStateText;
 
@@ -84,6 +89,44 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ServiceDurationText;
+
+	/** The level the player reviewed; the purchase command rejects a stale level. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	int32 CurrentUpgradeLevel = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText FacilityLevelText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeEffectText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeSizeEffectText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeRevenueEffectText;
+
+	/** Facilities without authored levels have neither a level label nor an upgrade section. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bHasFacilityLevels = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeCostText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeActionText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeDisabledReasonText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bShowUpgradeDetails = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bShowUpgradeAction = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bCanUpgrade = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText WaitingPartiesText;
@@ -166,6 +209,9 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 /** Pure formatting policy shared by runtime presentation and automation tests. */
 namespace FFFacilityInfoModel
 {
+	/** Replaces all upgrade fields, including when the next snapshot is unavailable or read-only. */
+	FESTAFIESTA_API void ApplyUpgradePreview(
+		const FFF_FacilityUpgradePreview* Preview, FFF_FacilityInfoViewData& ViewData);
 	FESTAFIESTA_API FText GetCategoryText(EFFZSFacilityCategory Category);
 	FESTAFIESTA_API FText GetFacilityStateText(EFFZSFacilityState State);
 	FESTAFIESTA_API FText FormatFootprint(const FIntPoint& SizeCentimeters);

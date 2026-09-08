@@ -139,6 +139,10 @@ public:
     // @note 결과는 호출 시점 스냅샷이므로 ExecuteCommand가 최신 상태에서 다시 검증한.
 
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
+
+    // Candidate geometry only; never calls external policies, so purchase previews cannot recurse.
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Upgrade")
+    FFFZSPlacementValidation ValidateUpgradePlacement(FGuid FacilityInstanceId, float SizeMultiplier) const;
      // Install·Move·Remove·Open·Close·EmergencyClose의 유일한 공개 변경 경로.
      // CommandId 지문 멱등성, ExpectedWorldRevision, 단계, 로컬 검증, 정책 트랜잭션을 적용한다.
      //실패하면 권한 상태를 확정하지 않고 FFFZSCommandResult로 이유를 반환한다.
@@ -217,10 +221,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    //Schema 5의 1 cm 위치·0.01도 자유 Yaw 계약, 운영 단계·리비전·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    // Schema 7의 시설별 강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
-    // Schema 5를 검증하고, 알려진 Schema 3/4는 안전 검사 후 메모리상 Schema 5로 변환한 뒤 시설과 운영 상태를 교체한다.
+    // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨과 배수를 보존하며 7로 이관한 뒤 원자적으로 교체한다.
     // 제작 존·보호 영역·등록 정책은 유지하며 게임 스레드 밖이나 명령·정책 콜백 중에는 실패한다.
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Save")
     bool RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors);
@@ -305,6 +309,7 @@ private:
     FFFZSCommandResult ExecuteInstall(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     FFFZSCommandResult ExecuteMove(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     FFFZSCommandResult ExecuteRemove(const FFFZSCommand& Command);
+    FFFZSCommandResult ExecuteUpgrade(const FFFZSCommand& Command);
     FFFZSCommandResult ExecuteLifecycleCommand(const FFFZSCommand& Command);
     FFFZSCommandResult MakeFailure(EFFZSPlacementFailure Failure, const FText& Message) const;
     FFFZSCommandResult FinalizeSuccess(const FFFZSCommand& Command, AFFZSFacilityActor* Facility, FName PreviousZoneId);

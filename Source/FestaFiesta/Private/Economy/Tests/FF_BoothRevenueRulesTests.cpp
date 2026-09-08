@@ -6,6 +6,7 @@
 
 #include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "Festival/FF_FestivalDefinition.h"
+#include <limits>
 
 /**
  * 부스 이용 1회의 매출·수수료 판정을 검증한다 (S10). [참고] economy_spec.md §2.4 · §2.5
@@ -205,6 +206,45 @@ bool FFF_BoothRevenue_DefinitionDefaultsMatchSpec::RunTest(const FString& Parame
 	// 수수료율도 같은 표에서 온다 (§1.1 3번).
 	TestEqual(TEXT("수수료율 12%"), Definition->BoothCommissionRate, CommissionRate);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BoothRevenue_UpgradeUsesFinalRounding, "FestaFiesta.Economy.BoothRevenue.UpgradeUsesFinalRounding", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_BoothRevenue_UpgradeUsesFinalRounding::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("1.5x multiplies the unrounded party commission"),
+		FFF_BoothRevenueRules::ResolveCommission(20, 4, 0.12f, 1.5f), 14);
+	TestEqual(TEXT("2.25x is absolute to base revenue"),
+		FFF_BoothRevenueRules::ResolveCommission(20, 4, 0.12f, 2.25f), 22);
+	TestEqual(TEXT("An exact 50 percent increase applies before rounding"),
+		FFF_BoothRevenueRules::ResolveCommission(20, 1, 0.5f, 1.5f), 15);
+	TestEqual(TEXT("A free facility stays free at any upgrade level"),
+		FFF_BoothRevenueRules::ResolveCommission(0, 4, 0.12f, 2.25f), 0);
+	TestEqual(TEXT("An authored revenue reduction applies without a design minimum"),
+		FFF_BoothRevenueRules::ResolveCommission(20, 1, .5f, .5f), 5);
+	TestEqual(TEXT("An authored zero multiplier intentionally earns nothing"),
+		FFF_BoothRevenueRules::ResolveCommission(20, 1, .5f, 0.f), 0);
+	TestEqual(TEXT("Large finite multipliers have no design maximum"),
+		FFF_BoothRevenueRules::ResolveCommission(20, 1, .5f, 1000.f), 10000);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BoothRevenue_UpgradeRejectsNonFiniteAndSaturates, "FestaFiesta.Economy.BoothRevenue.UpgradeRejectsNonFiniteAndSaturates", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_BoothRevenue_UpgradeRejectsNonFiniteAndSaturates::RunTest(const FString& Parameters)
+{
+	const float NaN = std::numeric_limits<float>::quiet_NaN();
+	const float Infinity = std::numeric_limits<float>::infinity();
+	for (const float Invalid : { NaN, Infinity, -Infinity, -1.f })
+	{
+		TestEqual(TEXT("Invalid upgrade revenue produces no payout"),
+			FFF_BoothRevenueRules::ResolveCommission(20, 4, 0.12f, Invalid), 0);
+		TestEqual(TEXT("Invalid commission rate produces no payout"),
+			FFF_BoothRevenueRules::ResolveCommission(20, 4, Invalid, 1.5f), 0);
+	}
+	TestEqual(TEXT("Large finite amounts saturate instead of overflowing"),
+		FFF_BoothRevenueRules::ResolveCommission(MAX_int32, MAX_int32, 1.f, 100.f), MAX_int32);
+	TestEqual(TEXT("A valid amount at the integer limit remains payable"),
+		FFF_BoothRevenueRules::ResolveCommission(MAX_int32, 1, 1.f, 1.f), MAX_int32);
 	return true;
 }
 

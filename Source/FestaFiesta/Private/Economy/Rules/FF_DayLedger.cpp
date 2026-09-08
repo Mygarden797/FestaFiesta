@@ -3,7 +3,7 @@
 namespace 
 {
 	// 컴파일 타임 상수 - 배열 크기 확정
-	constexpr int32 SpendReasonCount = static_cast<int32>(EFF_SpendReason::FinaleFireworks) + 1;
+	constexpr int32 SpendReasonCount = static_cast<int32>(EFF_SpendReason::FacilityUpgrade) + 1;
 	constexpr int32 EarnReasonCount = static_cast<int32>(EFF_EarnReason::MinigameReward) + 1;
 }
 

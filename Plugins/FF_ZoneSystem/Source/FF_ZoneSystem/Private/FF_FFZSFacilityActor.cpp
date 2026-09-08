@@ -206,6 +206,11 @@ AFFZSFacilityActor::AFFZSFacilityActor()
 void AFFZSFacilityActor::BeginPlay()
 {
     Super::BeginPlay();
+    if (BaseFacilitySpec.FacilityDefinitionId.IsNone() && !FacilitySpec.FacilityDefinitionId.IsNone())
+    {
+        // 이전에 레벨에 배치·저장된 Actor는 원본을 기존 FacilitySpec에만 가지고 있다.
+        BaseFacilitySpec = FacilitySpec;
+    }
     RequestFacilityAudio();
     if (FacilityInstanceId.IsValid())
     {
@@ -233,6 +238,7 @@ void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
         FacilityAudioComponent->OnAudioFinishedNative.RemoveAll(this);
     }
     StopFacilityAudio(false);
+    ++VisualLoadGeneration;
     if (VisualLoadHandle.IsValid())
     {
         VisualLoadHandle->CancelHandle();
@@ -250,17 +256,30 @@ void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 // 실패 가능한 데이터 검사를 어떤 멤버도 바꾸기 전에 끝낸다. 성공 뒤의 설정은 새로 생성되거나
 // 스냅샷 복원용으로 스테이징된 Actor를 완성하는 단계이며, 월드 레지스트리 등록은 별도 단계다.
-bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFFZSFacilitySpec& NewSpec, const FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform, const EFFZSFacilityState InitialState)
+bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFFZSFacilitySpec& NewSpec, const FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform, const EFFZSFacilityState InitialState, const int32 InitialUpgradeLevel, const float InitialServiceDurationMultiplier, const float InitialSizeMultiplier, const float InitialRevenueMultiplier)
 {
     TArray<FText> Errors;
-    if (!NewInstanceId.IsValid() || NewZoneId.IsNone() || !NewSpec.IsValid(Errors))
+    if (!NewInstanceId.IsValid() || NewZoneId.IsNone() || !NewSpec.IsValid(Errors) ||
+        !IsValidUpgradeState(InitialUpgradeLevel, InitialServiceDurationMultiplier, InitialSizeMultiplier, InitialRevenueMultiplier))
+    {
+        return false;
+    }
+
+    FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+        NewSpec, InitialUpgradeLevel, InitialSizeMultiplier);
+    if (!EffectiveSpec.IsValid(Errors))
     {
         return false;
     }
 
     SetNavigationObstacleEnabled(false);
     FacilityInstanceId = NewInstanceId;
-    FacilitySpec = NewSpec;
+    BaseFacilitySpec = NewSpec;
+    FacilitySpec = MoveTemp(EffectiveSpec);
+    UpgradeLevel = InitialUpgradeLevel;
+    UpgradeServiceDurationMultiplier = InitialServiceDurationMultiplier;
+    UpgradeSizeMultiplier = InitialSizeMultiplier;
+    UpgradeRevenueMultiplier = InitialRevenueMultiplier;
     ZoneId = NewZoneId;
     // [하드코딩 제거] 회전 정규화 식을 이 파일에 다시 적지 않고 격자 계약을 소유한 라이브러리를 쓴다.
     // 같은 식이 여러 곳에 복사돼 있으면 정규화 규칙이 바뀔 때 일부만 갱신될 수 있다.
@@ -271,8 +290,73 @@ bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFF
     SetActorTransform(WorldTransform);
     SetActorScale3D(FVector::OneVector);
     RebuildRuntimePresentation();
-    QueueComponent->Configure(FacilitySpec.QueueRules);
+    QueueComponent->Configure(GetEffectiveQueueRules());
     return true;
+}
+
+const FFFZSFacilitySpec& AFFZSFacilityActor::GetBaseFacilitySpec() const
+{
+    // 읽기만 하는 에디터·등록 경로에서도 예전 배치 Actor를 지원한다.
+    return BaseFacilitySpec.FacilityDefinitionId.IsNone() ? FacilitySpec : BaseFacilitySpec;
+}
+
+bool AFFZSFacilityActor::IsValidUpgradeState(const int32 Level, const float ServiceDurationMultiplier, const float SizeMultiplier, const float RevenueMultiplier)
+{
+    return Level >= 1 && FMath::IsFinite(ServiceDurationMultiplier) &&
+        ServiceDurationMultiplier > 0.0f && FMath::IsFinite(SizeMultiplier) &&
+        SizeMultiplier > 0.0f && FMath::IsFinite(RevenueMultiplier) && RevenueMultiplier >= 0.0f &&
+        (Level > 1 || (ServiceDurationMultiplier == 1.0f && SizeMultiplier == 1.0f && RevenueMultiplier == 1.0f));
+}
+
+bool AFFZSFacilityActor::ApplyUpgradeState(const int32 NewLevel, const float NewServiceDurationMultiplier, const float NewSizeMultiplier, const float NewRevenueMultiplier)
+{
+    if (!IsValidUpgradeState(NewLevel, NewServiceDurationMultiplier, NewSizeMultiplier, NewRevenueMultiplier)
+        || !QueueComponent || QueueComponent->IsOccupied()
+        || (FacilityState != EFFZSFacilityState::Validated && FacilityState != EFFZSFacilityState::Closed
+            && FacilityState != EFFZSFacilityState::MovePending))
+    {
+        return false;
+    }
+    FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+        GetBaseFacilitySpec(), NewLevel, NewSizeMultiplier);
+    TArray<FText> Errors;
+    if (!EffectiveSpec.IsValid(Errors))
+    {
+        return false;
+    }
+
+    const bool bNavigationWasEnabled = NavigationObstacleBounds && NavigationObstacleBounds->CanEverAffectNavigation();
+    SetNavigationObstacleEnabled(false);
+    if (BaseFacilitySpec.FacilityDefinitionId.IsNone())
+    {
+        BaseFacilitySpec = FacilitySpec;
+    }
+    UpgradeLevel = NewLevel;
+    UpgradeServiceDurationMultiplier = NewServiceDurationMultiplier;
+    UpgradeSizeMultiplier = NewSizeMultiplier;
+    UpgradeRevenueMultiplier = NewRevenueMultiplier;
+    FacilitySpec = MoveTemp(EffectiveSpec);
+    SetActorScale3D(FVector::OneVector);
+    RebuildRuntimePresentation();
+    QueueComponent->Configure(GetEffectiveQueueRules());
+    SetNavigationObstacleEnabled(bNavigationWasEnabled);
+    return true;
+}
+
+FFFZSQueueRules AFFZSFacilityActor::BuildEffectiveQueueRules(
+    const FFFZSQueueRules& BaseRules, const float ServiceDurationMultiplier)
+{
+    FFFZSQueueRules Result = BaseRules;
+    // 배율에는 게임 규칙상 상한을 두지 않는다. 곱셈은 double로 계산하고 최종 float 시간만 포화한다.
+    // 하한은 QueueComponent::Configure의 실행 정밀도와 동일하게 유지한다.
+    const double Duration = static_cast<double>(BaseRules.ServiceDurationSeconds) * ServiceDurationMultiplier;
+    Result.ServiceDurationSeconds = static_cast<float>(FMath::Clamp(Duration, 0.01, static_cast<double>(MAX_flt)));
+    return Result;
+}
+
+FFFZSQueueRules AFFZSFacilityActor::GetEffectiveQueueRules() const
+{
+    return BuildEffectiveQueueRules(FacilitySpec.QueueRules, UpgradeServiceDurationMultiplier);
 }
 
 // 이 함수만 호출하면 Subsystem의 OccupiedFacilityRegions는 갱신되지 않는다. 정상 흐름에서는 ExecuteMove가
@@ -482,7 +566,11 @@ FFFZSFacilityInstanceSnapshot AFFZSFacilityActor::CaptureInstanceSnapshot() cons
 {
     FFFZSFacilityInstanceSnapshot Snapshot;
     Snapshot.FacilityInstanceId = FacilityInstanceId;
-    Snapshot.FacilitySpec = FacilitySpec;
+    Snapshot.FacilitySpec = GetBaseFacilitySpec();
+    Snapshot.UpgradeLevel = UpgradeLevel;
+    Snapshot.UpgradeServiceDurationMultiplier = UpgradeServiceDurationMultiplier;
+    Snapshot.UpgradeSizeMultiplier = UpgradeSizeMultiplier;
+    Snapshot.UpgradeRevenueMultiplier = UpgradeRevenueMultiplier;
     Snapshot.ZoneId = ZoneId;
     Snapshot.Placement = GridPlacement;
     Snapshot.State = FacilityState;
@@ -497,6 +585,12 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
     FFFZSFacilityReadModel Result;
     Result.FacilityInstanceId = FacilityInstanceId;
     Result.FacilityDefinitionId = FacilitySpec.FacilityDefinitionId;
+    Result.UpgradeLevel = UpgradeLevel;
+    Result.UpgradeServiceDurationMultiplier = UpgradeServiceDurationMultiplier;
+    Result.UpgradeSizeMultiplier = UpgradeSizeMultiplier;
+    Result.UpgradeRevenueMultiplier = UpgradeRevenueMultiplier;
+    Result.bUsesFacilityLevels = HasFacilityLevels();
+    Result.EffectiveQueueRules = GetEffectiveQueueRules();
     Result.ZoneId = ZoneId;
     Result.WorldLocation = GetActorLocation();
     Result.bHasApproachWorldTransform = GetAnchorWorldTransform(
@@ -789,43 +883,95 @@ void AFFZSFacilityActor::DestroyBuildModeRangePresentation()
 // SoftObjectPtr을 다시 읽는다. 따라서 오래된 요청이 완료되어도 오래된 메시를 직접 설치하지 않는다.
 void AFFZSFacilityActor::RequestVisualMesh()
 {
+    const uint32 LoadGeneration = ++VisualLoadGeneration;
     if (VisualLoadHandle.IsValid())
     {
         VisualLoadHandle->CancelHandle();
         VisualLoadHandle.Reset();
     }
 
-    VisualMesh->SetStaticMesh(nullptr);
-    VisualMesh->SetRelativeTransform(
-        FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, nullptr));
-    if (FacilitySpec.VisualMesh.IsNull())
+    if (!VisualMesh)
     {
-        return;
-    }
-    if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
-    {
-        VisualMesh->SetStaticMesh(LoadedMesh);
-        VisualMesh->SetRelativeTransform(
-            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
         return;
     }
 
-    VisualLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-        FacilitySpec.VisualMesh.ToSoftObjectPath(),
-        FStreamableDelegate::CreateUObject(this, &AFFZSFacilityActor::ApplyLoadedVisualMesh));
+    // 새 메시를 읽는 동안 현재 표현을 유지하되 크기는 새 권위 기하에 즉시 맞춘다.
+    // 해당 단계의 빈 메시 선택은 BuildEffectiveSpec이 이미 Lv.1 메시로 결정했다.
+    ApplyVisualMesh(VisualMesh->GetStaticMesh());
+    RequestVisualMeshAsset(FacilitySpec.VisualMesh.ToSoftObjectPath(), LoadGeneration, true);
 }
 
-// 현재 FacilitySpec이 가리키는 메시만 적용한다. CreateUObject 델리게이트와 EndPlay의 취소가
-// Actor 수명 종료 후 접근을 막고, 이전 요청의 로드 결과를 그대로 사용하는 코드는 두지 않는다.
-void AFFZSFacilityActor::ApplyLoadedVisualMesh()
+void AFFZSFacilityActor::RequestVisualMeshAsset(const FSoftObjectPath& AssetPath, const uint32 LoadGeneration, const bool bAllowBaseFallback)
 {
-    VisualLoadHandle.Reset();
-    if (UStaticMesh* LoadedMesh = FacilitySpec.VisualMesh.Get())
+    if (LoadGeneration != VisualLoadGeneration || !VisualMesh || IsActorBeingDestroyed()
+        || FacilityState == EFFZSFacilityState::Removed)
     {
-        VisualMesh->SetStaticMesh(LoadedMesh);
-        VisualMesh->SetRelativeTransform(
-            FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, LoadedMesh));
+        return;
     }
+    if (AssetPath.IsNull())
+    {
+        ApplyVisualMesh(nullptr);
+        return;
+    }
+    if (UStaticMesh* LoadedMesh = Cast<UStaticMesh>(AssetPath.ResolveObject()))
+    {
+        ApplyVisualMesh(LoadedMesh);
+        return;
+    }
+    VisualLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+        AssetPath,
+        FStreamableDelegate::CreateUObject(this, &AFFZSFacilityActor::ApplyLoadedVisualMesh,
+            LoadGeneration, AssetPath, bAllowBaseFallback));
+    if (!VisualLoadHandle.IsValid())
+    {
+        ApplyLoadedVisualMesh(LoadGeneration, AssetPath, bAllowBaseFallback);
+    }
+}
+
+// 취소 직전에 예약된 이전 콜백도 세대 번호가 다르면 새 handle이나 표현을 만질 수 없다.
+void AFFZSFacilityActor::ApplyLoadedVisualMesh(const uint32 LoadGeneration, FSoftObjectPath AssetPath, const bool bAllowBaseFallback)
+{
+    if (LoadGeneration != VisualLoadGeneration || !VisualMesh || IsActorBeingDestroyed()
+        || FacilityState == EFFZSFacilityState::Removed)
+    {
+        return;
+    }
+    UStaticMesh* LoadedMesh = Cast<UStaticMesh>(AssetPath.ResolveObject());
+    VisualLoadHandle.Reset();
+    if (LoadedMesh)
+    {
+        ApplyVisualMesh(LoadedMesh);
+        return;
+    }
+    const FSoftObjectPath BasePath = GetBaseFacilitySpec().VisualMesh.ToSoftObjectPath();
+    if (bAllowBaseFallback && AssetPath != BasePath)
+    {
+        // 레벨 메시가 없거나 실패하면 바로 원본 메시를 사용한다. 이전 단계는 탐색하지 않는다.
+        RequestVisualMeshAsset(BasePath, LoadGeneration, false);
+        return;
+    }
+    ApplyVisualMesh(nullptr);
+}
+
+void AFFZSFacilityActor::ApplyVisualMesh(UStaticMesh* Mesh)
+{
+    if (!VisualMesh)
+    {
+        return;
+    }
+    if (VisualMesh->GetStaticMesh() != Mesh)
+    {
+        // 다른 단계에서 남은 override가 새 메시 고유 재질을 덮어쓰지 않게 한다.
+        VisualMesh->EmptyOverrideMaterials();
+        VisualMesh->SetStaticMesh(Mesh);
+    }
+    FTransform VisualTransform = FFZSVisualGeometry::ResolveVisualMeshTransform(FacilitySpec, Mesh);
+    if (FacilitySpec.VisualSizingMode == EFFZSVisualSizingMode::SourceMeshSize)
+    {
+        // 맞춤 모드는 확장된 footprint에서 이미 크기를 계산한다. 원본 크기 모드만 한 번 곱한다.
+        VisualTransform.SetScale3D(VisualTransform.GetScale3D() * UpgradeSizeMultiplier);
+    }
+    VisualMesh->SetRelativeTransform(VisualTransform);
 }
 
 // 오디오 표현은 권위 배치·큐와 독립적이다. 현재 Spec의 soft path만 묶어 비동기 로드하고,

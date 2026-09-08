@@ -52,7 +52,8 @@ namespace
 
     bool IsWorldChangeCommand(const EFFZSCommandType Type)
     {
-        return Type == EFFZSCommandType::Install || Type == EFFZSCommandType::Move || Type == EFFZSCommandType::Remove;
+        return Type == EFFZSCommandType::Install || Type == EFFZSCommandType::Move ||
+            Type == EFFZSCommandType::Remove || Type == EFFZSCommandType::Upgrade;
     }
 
     bool IsKnownChangePhase(const EFFZSChangePhase Phase)
@@ -351,7 +352,9 @@ namespace
 
     constexpr int32 LegacySnapshotSchemaVersion = 3;
     constexpr int32 CardinalSnapshotSchemaVersion = 4;
-    constexpr int32 CurrentSnapshotSchemaVersion = 5;
+    constexpr int32 FreeYawSnapshotSchemaVersion = 5;
+    constexpr int32 InstanceUpgradeSnapshotSchemaVersion = 6;
+    constexpr int32 CurrentSnapshotSchemaVersion = 7;
     constexpr int64 LegacyMeterCellScale = 100;
 
     // 구 Cell 좌표를 100배 할 때 오버플로를 fail-closed로 처리한다.
@@ -989,6 +992,36 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
         }
     }
     return Result;
+}
+
+FFFZSPlacementValidation UFFZSWorldSubsystem::ValidateUpgradePlacement(
+    const FGuid FacilityInstanceId, const float SizeMultiplier) const
+{
+    const AFFZSFacilityActor* Facility = FindFacility(FacilityInstanceId);
+    if (!Facility)
+    {
+        FFFZSPlacementValidation Result;
+        Result.AddFailure(EFFZSPlacementFailure::FacilityNotFound,
+            LOCTEXT("UpgradePlacementMissing", "강화할 시설의 현재 배치를 확인할 수 없습니다."));
+        return Result;
+    }
+    const FFFZSFacilityUpgradeTier* NextTier = FFZSFacilityUpgradeRules::FindNextTier(
+        Facility->GetBaseFacilitySpec().UpgradeTiers, Facility->GetUpgradeLevel());
+    if (!NextTier)
+    {
+        FFFZSPlacementValidation Result;
+        Result.AddFailure(EFFZSPlacementFailure::DataInvalid,
+            LOCTEXT("UpgradePlacementNoNextLevel", "현재 레벨보다 큰 강화 단계가 설정되어 있지 않습니다."));
+        return Result;
+    }
+    FFFZSCommand Candidate;
+    Candidate.Type = EFFZSCommandType::Move;
+    Candidate.FacilityInstanceId = FacilityInstanceId;
+    Candidate.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+        Facility->GetBaseFacilitySpec(), NextTier->TargetLevel, SizeMultiplier);
+    Candidate.ZoneId = Facility->GetZoneId();
+    Candidate.Placement = Facility->GetGridPlacement();
+    return ValidatePlacementLocal(Candidate, Facility);
 }
 
 FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility) const
@@ -1769,7 +1802,7 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     }
     else if (IsWorldChangeCommand(Command.Type) && !IsWorldChangePhase(CurrentPhase))
     {
-        Result = MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongCommandPhase", "Install, Move 및 Remove는 InitialSetup 또는 MorningCheck Phase에서만 허용됩니다."));
+        Result = MakeFailure(EFFZSPlacementFailure::WrongStage, LOCTEXT("WrongCommandPhase", "Install, Move, Remove 및 Upgrade는 InitialSetup 또는 MorningCheck Phase에서만 허용됩니다."));
     }
     else if (Command.Type == EFFZSCommandType::Install || Command.Type == EFFZSCommandType::Move)
     {
@@ -1781,6 +1814,10 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     else if (Command.Type == EFFZSCommandType::Remove)
     {
         Result = ExecuteRemove(Command);
+    }
+    else if (Command.Type == EFFZSCommandType::Upgrade)
+    {
+        Result = ExecuteUpgrade(Command);
     }
     else
     {
@@ -1942,6 +1979,100 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteRemove(const FFFZSCommand& Comman
     FFFZSCommandResult Result = FinalizeSuccess(Command, nullptr, PreviousZoneId);
     Facility->Destroy();
     return Result;
+}
+
+FFFZSCommandResult UFFZSWorldSubsystem::ExecuteUpgrade(const FFFZSCommand& Command)
+{
+    AFFZSFacilityActor* Facility = FindFacility(Command.FacilityInstanceId);
+    if (!Facility)
+    {
+        return MakeFailure(EFFZSPlacementFailure::FacilityNotFound,
+            LOCTEXT("UpgradeNotFound", "강화할 시설을 찾을 수 없습니다."));
+    }
+
+    const UFFZSFacilityQueueComponent* Queue = Facility->GetQueueComponent();
+    if (Queue && Queue->IsOccupied())
+    {
+        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied,
+            LOCTEXT("UpgradeOccupied", "대기·이용·퇴장 중인 손님이 모두 나간 후 강화할 수 있습니다."));
+    }
+    const EFFZSFacilityState State = Facility->GetFacilityState();
+    if (!Queue || Queue->GetQueueState() != EFFZSQueueState::Closed ||
+        Facility->NeedsRelocation() ||
+        (State != EFFZSFacilityState::Validated && State != EFFZSFacilityState::Closed &&
+         State != EFFZSFacilityState::MovePending))
+    {
+        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState,
+            LOCTEXT("UpgradeState", "정상 배치된 시설을 닫은 후 강화할 수 있습니다."));
+    }
+    if (!AFFZSFacilityActor::IsValidUpgradeState(Command.TargetUpgradeLevel, Command.UpgradeServiceDurationMultiplier,
+            Command.UpgradeSizeMultiplier, Command.UpgradeRevenueMultiplier))
+    {
+        return MakeFailure(EFFZSPlacementFailure::DataInvalid,
+            LOCTEXT("UpgradePayload", "강화 단계와 배수가 유효하지 않습니다. 시간·크기는 양수, 수익은 0 이상인 유한한 값이어야 합니다."));
+    }
+
+    const FFFZSFacilitySpec& Spec = Facility->GetBaseFacilitySpec();
+    const FFFZSFacilityUpgradeTier* AuthoredTier = FFZSFacilityUpgradeRules::FindNextTier(
+        Spec.UpgradeTiers, Facility->GetUpgradeLevel());
+    if (!Spec.bUsesFacilityLevels || !AuthoredTier ||
+        Command.TargetUpgradeLevel != AuthoredTier->TargetLevel ||
+        Command.UpgradeServiceDurationMultiplier != AuthoredTier->ServiceDurationMultiplier ||
+        Command.UpgradeSizeMultiplier != AuthoredTier->SizeMultiplier ||
+        Command.UpgradeRevenueMultiplier != AuthoredTier->RevenueMultiplier)
+    {
+        return MakeFailure(EFFZSPlacementFailure::DataInvalid,
+            LOCTEXT("UpgradeNotAuthored", "이 시설 정의에 설정된 다음 강화 단계만 구매할 수 있습니다."));
+    }
+
+    const FFFZSPlacementValidation Validation = ValidateUpgradePlacement(
+        Command.FacilityInstanceId, Command.UpgradeSizeMultiplier);
+    if (!Validation.bIsValid)
+    {
+        return MakeFailure(Validation.Reasons.IsEmpty() ? EFFZSPlacementFailure::DataInvalid
+            : Validation.Reasons[0], Validation.Summary);
+    }
+
+    // Policies receive authoritative identity/spec/location instead of caller supplied copies.
+    // Project policies validate the configured tier, price and additional queue ownership.
+    FFFZSPolicyContext Context;
+    Context.Command = Command;
+    Context.Command.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+        Spec, Command.TargetUpgradeLevel, Command.UpgradeSizeMultiplier);
+    Context.Command.ZoneId = Facility->GetZoneId();
+    Context.Command.Placement = Facility->GetGridPlacement();
+    Context.FacilityActor = Facility;
+    Context.CurrentWorldRevision = WorldRevision;
+    Context.Validation = Validation;
+    FFFZSPolicyDecision Decision;
+    if (!RunPolicyPreValidation(Context, Decision))
+    {
+        return MakeFailure(Decision.FailureReason == EFFZSPlacementFailure::None
+            ? EFFZSPlacementFailure::ExternalPolicyRejected : Decision.FailureReason, Decision.Message);
+    }
+    TArray<TWeakObjectPtr<UObject>> AppliedPolicies;
+    if (!ApplyTentativePolicies(Context, AppliedPolicies, Decision))
+    {
+        return MakeFailure(Decision.FailureReason == EFFZSPlacementFailure::None
+            ? EFFZSPlacementFailure::ExternalPolicyRejected : Decision.FailureReason, Decision.Message);
+    }
+
+    // Actor applies a completely validated candidate; if it cannot apply, all tentative
+    // economy/queue changes are rolled back while the old occupancy still remains published.
+    if (!Facility->ApplyUpgradeState(Command.TargetUpgradeLevel,
+        Command.UpgradeServiceDurationMultiplier, Command.UpgradeSizeMultiplier, Command.UpgradeRevenueMultiplier))
+    {
+        RollbackPolicies(Context, AppliedPolicies);
+        return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState,
+            LOCTEXT("UpgradeApplyFailed", "시설 강화 적용에 실패하여 결제와 대기열을 되돌렸습니다."));
+    }
+    Facility->SetActorTransform(Validation.PlacementTransform);
+    FFFZSFacilityRegionOccupancy NewOccupancy;
+    NewOccupancy.ZoneId = Facility->GetZoneId();
+    NewOccupancy.Regions = Validation.ReservedOrientedRects;
+    OccupiedFacilityRegions.Add(Facility->GetFacilityInstanceId(), MoveTemp(NewOccupancy));
+    CommitPolicies(Context, AppliedPolicies);
+    return FinalizeSuccess(Command, Facility, Facility->GetZoneId());
 }
 
 FFFZSCommandResult UFFZSWorldSubsystem::ExecuteLifecycleCommand(const FFFZSCommand& Command)
@@ -2453,8 +2584,8 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     if (Snapshot.SchemaVersion != CurrentSnapshotSchemaVersion)
     {
         OutErrors.Add(Snapshot.SchemaVersion == 2
-            ? LOCTEXT("SnapshotSchemaV2", "Zone/Facility 스냅샷 SchemaVersion 2에는 저장된 CurrentPhase가 없어 안전하게 복원할 수 없습니다. SchemaVersion 5에서 사용하기 전에 오프라인 마이그레이션하십시오.")
-            : LOCTEXT("SnapshotSchema", "지원하지 않는 Zone/Facility 스냅샷 SchemaVersion입니다. 이 Runtime은 SchemaVersion 3/4를 명시적으로 5로 변환한 뒤 검증합니다."));
+            ? LOCTEXT("SnapshotSchemaV2", "Zone/Facility 스냅샷 SchemaVersion 2에는 저장된 CurrentPhase가 없어 안전하게 복원할 수 없습니다. SchemaVersion 7에서 사용하기 전에 오프라인 마이그레이션하십시오.")
+            : LOCTEXT("SnapshotSchema", "지원하지 않는 Zone/Facility 스냅샷 SchemaVersion입니다. 이 Runtime은 SchemaVersion 3/4/5/6을 명시적으로 7로 변환한 뒤 검증합니다."));
         return false;
     }
     if (Snapshot.WorldRevision < 0 || Snapshot.WorldRevision == MAX_int64)
@@ -2488,6 +2619,19 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
             continue;
         }
         FacilityIds.Add(Saved.FacilityInstanceId);
+        if (!AFFZSFacilityActor::IsValidUpgradeState(Saved.UpgradeLevel, Saved.UpgradeServiceDurationMultiplier,
+            Saved.UpgradeSizeMultiplier, Saved.UpgradeRevenueMultiplier))
+        {
+            OutErrors.Add(LOCTEXT("SnapshotUpgrade", "스냅샷의 시설 강화 단계 또는 배수가 유효하지 않습니다."));
+            continue;
+        }
+        const FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+            Saved.FacilitySpec, Saved.UpgradeLevel, Saved.UpgradeSizeMultiplier);
+        if (!EffectiveSpec.IsValid(SpecErrors))
+        {
+            OutErrors.Append(SpecErrors);
+            continue;
+        }
         if (!StaticEnum<EFFZSFacilityState>()->IsValidEnumValue(static_cast<int64>(Saved.State)) ||
             Saved.State == EFFZSFacilityState::Removed)
         {
@@ -2497,7 +2641,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 UFFZSGridLibrary::NormalizeYawCentidegrees(Saved.Placement.YawCentidegrees) ||
             Saved.Placement.QuarterTurns != 0)
         {
-            OutErrors.Add(LOCTEXT("SnapshotPlacementRotation", "Schema 5 스냅샷 배치의 Yaw는 0..359.99도로 정규화되고 Legacy QuarterTurns는 0이어야 합니다."));
+            OutErrors.Add(LOCTEXT("SnapshotPlacementRotation", "Schema 7 스냅샷 배치의 Yaw는 0..359.99도로 정규화되고 Legacy QuarterTurns는 0이어야 합니다."));
         }
 
         const AFFZSGameplayZone* Zone = FindZone(Saved.ZoneId);
@@ -2523,7 +2667,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         }
         else
         {
-            const FTransform Expected = BuildPlacementTransform(*Zone, Saved.FacilitySpec, Saved.Placement);
+            const FTransform Expected = BuildPlacementTransform(*Zone, EffectiveSpec, Saved.Placement);
             const FVector SavedLocation = Saved.WorldTransform.GetLocation();
             const FVector ExpectedLocation = Expected.GetLocation();
             const double HorizontalErrorCm = FVector2D::Distance(
@@ -2540,7 +2684,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         TArray<FFFZSOrientedRect> QueueRects;
         TArray<FFFZSOrientedRect> ReservedRects;
         UFFZSGridLibrary::BuildPlacementOrientedRegions(
-            Saved.FacilitySpec, Saved.Placement,
+            EffectiveSpec, Saved.Placement,
             FootprintRects, ClearanceRects, QueueRects, ReservedRects);
         if (ReservedRects.IsEmpty())
         {
@@ -2593,7 +2737,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         FFFZSPlacementValidation ProtectedValidation;
         ProtectedValidation.ReservedOrientedRects = ReservedRects;
         ProtectedValidation.PlacementTransform = Saved.WorldTransform;
-        ValidateProtectedAreas(Saved.ZoneId, *Zone, Saved.FacilitySpec, ProtectedValidation);
+        ValidateProtectedAreas(Saved.ZoneId, *Zone, EffectiveSpec, ProtectedValidation);
         if (!ProtectedValidation.Reasons.IsEmpty())
         {
             OutErrors.Add(ProtectedValidation.Summary.IsEmpty()
@@ -2607,7 +2751,8 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         {
             QueueValidator.Reset(NewObject<UFFZSFacilityQueueComponent>());
         }
-        QueueValidator->Configure(Saved.FacilitySpec.QueueRules);
+        QueueValidator->Configure(AFFZSFacilityActor::BuildEffectiveQueueRules(
+            EffectiveSpec.QueueRules, Saved.UpgradeServiceDurationMultiplier));
         TArray<FText> QueueErrors;
         if (!QueueValidator->RestoreSnapshot(Saved.Queue, QueueErrors))
         {
@@ -2724,6 +2869,37 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
         EffectiveSnapshot = &MigratedSnapshot;
     }
 
+    if (Snapshot.SchemaVersion == LegacySnapshotSchemaVersion ||
+        Snapshot.SchemaVersion == CardinalSnapshotSchemaVersion ||
+        Snapshot.SchemaVersion == FreeYawSnapshotSchemaVersion ||
+        Snapshot.SchemaVersion == InstanceUpgradeSnapshotSchemaVersion)
+    {
+        if (EffectiveSnapshot == &Snapshot)
+        {
+            MigratedSnapshot = Snapshot;
+        }
+        MigratedSnapshot.SchemaVersion = CurrentSnapshotSchemaVersion;
+        for (FFFZSFacilityInstanceSnapshot& Saved : MigratedSnapshot.Facilities)
+        {
+            Saved.UpgradeSizeMultiplier = 1.0f;
+            Saved.UpgradeRevenueMultiplier = 1.0f;
+            Saved.FacilitySpec.bUsesFacilityLevels = false;
+            Saved.FacilitySpec.UpgradeTiers.Reset();
+            if (Snapshot.SchemaVersion < InstanceUpgradeSnapshotSchemaVersion)
+            {
+                Saved.UpgradeLevel = 1;
+                Saved.UpgradeServiceDurationMultiplier = 1.0f;
+            }
+            // Schema 6 already charged for this instance's upgrade. Preserve its paid effect
+            // and level visibility even though that old save has no authored tier array.
+            if (Saved.UpgradeLevel > 1)
+            {
+                Saved.FacilitySpec.bUsesFacilityLevels = true;
+            }
+        }
+        EffectiveSnapshot = &MigratedSnapshot;
+    }
+
     if (!ValidateSnapshotBeforeRestore(*EffectiveSnapshot, OutErrors))
     {
         return false;
@@ -2796,7 +2972,11 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
                 Saved.ZoneId,
                 Saved.Placement,
                 Transform,
-                Saved.State))
+                Saved.State,
+                Saved.UpgradeLevel,
+                Saved.UpgradeServiceDurationMultiplier,
+                Saved.UpgradeSizeMultiplier,
+                Saved.UpgradeRevenueMultiplier))
         {
             OutErrors.Add(LOCTEXT("RestoreInitialize", "스냅샷 복원 중 준비된 Facility 초기화에 실패했습니다."));
             DestroyStagedFacilities();
@@ -2830,7 +3010,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         TArray<FFFZSOrientedRect> StagedQueue;
         TArray<FFFZSOrientedRect> StagedRects;
         UFFZSGridLibrary::BuildPlacementOrientedRegions(
-            Saved.FacilitySpec, Saved.Placement,
+            Facility->GetFacilitySpec(), Saved.Placement,
             StagedFootprint, StagedClearance, StagedQueue, StagedRects);
         for (const TPair<FGuid, FFFZSFacilityRegionOccupancy>& Existing : StagedOccupiedFacilityRegions)
         {
