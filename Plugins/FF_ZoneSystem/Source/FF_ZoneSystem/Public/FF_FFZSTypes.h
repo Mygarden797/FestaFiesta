@@ -106,7 +106,9 @@ enum class EFFZSCommandType : uint8
     Remove,
     Open,
     Close,
-    EmergencyClose
+    EmergencyClose,
+    // Append only: existing command ordinals are persisted in command receipts.
+    Upgrade
 };
 
 // 검증·명령·정책의 안정 실패 코드.
@@ -471,6 +473,39 @@ struct FF_ZONESYSTEM_API FFFZSFacilityAudioSettings
 };
 
 USTRUCT(BlueprintType)
+// 한 시설 정의의 강화 한 단계. 비용과 시간 배수는 설치 당시의 원본 값을 기준으로 한다.
+struct FF_ZONESYSTEM_API FFFZSFacilityUpgradeTier
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Target Level", ToolTip = "구매 후 도달할 레벨입니다. 1보다 큰 고유 번호를 사용합니다. 배열 순서나 중간 번호가 비어 있어도 현재보다 큰 가장 가까운 레벨로 강화합니다."))
+    int32 TargetLevel = 2;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Cost Multiplier", ToolTip = "원본 설치비에 곱하는 강화 비용 배수입니다. 0이면 무료이며, 0 이상의 유한한 값을 사용합니다. 예: 설치비 400, 배수 0.3이면 120 Gold."))
+    float CostMultiplier = 0.3f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Service Duration Multiplier", ToolTip = "Lv.1 서비스 시간에 곱하는 절대 배수입니다. 0보다 큰 유한한 값을 사용합니다. 이전 단계보다 증가·감소하거나 같아도 됩니다."))
+    float ServiceDurationMultiplier = 0.8f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Revenue Multiplier", ToolTip = "Lv.1 시설 수익에 곱하는 절대 배수입니다. 0 이상의 유한한 값을 사용합니다. 1.5이면 기본 수익의 150%이며 0이면 수익이 없습니다. 이전 단계와 크기를 비교하지 않습니다."))
+    float RevenueMultiplier = 1.5f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Size Multiplier", ToolTip = "Lv.1 실제 건물 크기에 곱하는 절대 배수입니다. 0보다 큰 유한한 값으로 확대하거나 축소합니다. 바닥·높이·로컬 동선이 함께 변하며 실제 배치 공간과 계산 가능 범위는 검사합니다. 사람 간격과 수용 인원은 유지합니다."))
+    float SizeMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Level Visual Mesh", ToolTip = "이 단계에서 표시할 선택적 메시입니다. 비워 두면 이전 단계가 아닌 Lv.1의 Visual Mesh를 사용합니다. 메시 교체만으로 배치 크기는 바뀌지 않으며 실제 크기는 Size Multiplier로 조정합니다.", AssetBundles = "FacilityVisual"))
+    TSoftObjectPtr<UStaticMesh> VisualMesh;
+};
+
+namespace FFZSFacilityUpgradeRules
+{
+    FF_ZONESYSTEM_API bool ValidateTiers(const TArray<FFFZSFacilityUpgradeTier>& Tiers, FText& OutError);
+    FF_ZONESYSTEM_API const FFFZSFacilityUpgradeTier* FindTier(const TArray<FFFZSFacilityUpgradeTier>& Tiers, int32 TargetLevel);
+    FF_ZONESYSTEM_API const FFFZSFacilityUpgradeTier* FindNextTier(const TArray<FFFZSFacilityUpgradeTier>& Tiers, int32 CurrentLevel);
+    FF_ZONESYSTEM_API int32 GetMaxLevel(const TArray<FFFZSFacilityUpgradeTier>& Tiers);
+}
+
+USTRUCT(BlueprintType)
 
  // 시설 종류 하나를 완전히 설명하는 저장 가능한 값 사양.
  // 격자 공간, queue 경로·규칙, 앵커, 존 제한, 외부 시스템 키, 소프트 비주얼을 포함하며
@@ -522,6 +557,12 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
     FFFZSQueueRules QueueRules;
 
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Use Facility Levels", ToolTip = "켜면 시설에 레벨을 표시하고 아래 강화 단계를 사용합니다. 단계가 없으면 최대 Lv.1입니다. 끄면 저장된 단계 설정은 보존하지만 레벨 표시와 강화를 사용하지 않습니다."))
+    bool bUsesFacilityLevels = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Upgrade Tiers", ToolTip = "이 시설만의 비용·성능·외형을 Lv.2부터 순서대로 작성합니다. 빈 배열은 구매 가능한 강화가 없다는 뜻입니다.", EditCondition = "bUsesFacilityLevels", AssetBundles = "FacilityVisual", TitleProperty = "TargetLevel"))
+    TArray<FFFZSFacilityUpgradeTier> UpgradeTiers;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Anchors", meta = (DisplayName = "Entry / Service / Exit Anchors", ToolTip = "건물 중심 기준 시설 로컬 cm 좌표의 이동 지점 목록입니다. Queue 가입 전 접근점 Entry[0], 퇴장점 Exit[0], Service[0..ServiceCapacity-1]가 필요하며 서로 다른 Anchor와 Queue 슬롯의 XY 중심이 겹치면 안 됩니다."))
     TArray<FFFZSAnchorDefinition> Anchors;
     
@@ -566,6 +607,13 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     bool IsValid(TArray<FText>& OutErrors) const;
     // 사양을 변경하지 않고 ID·크기·예산·큐·앵커·수치의 모든 오류를 누적한다. 오류가 없을 때 true다.
 };
+
+namespace FFZSFacilityUpgradeRules
+{
+    // Returns an independently owned candidate; invalid scaling produces a spec rejected by IsValid.
+    // Duration stays at the base value: the actor applies its saved paid duration exactly once.
+    FF_ZONESYSTEM_API FFFZSFacilitySpec BuildEffectiveSpec(const FFFZSFacilitySpec& BaseSpec, int32 Level, float SizeMultiplier);
+}
 
 USTRUCT(BlueprintType)
  // 배치 읽기 검증 결과와 계산 산출물.
@@ -673,6 +721,20 @@ struct FF_ZONESYSTEM_API FFFZSCommand
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command")
     FFFZSGridPlacement Placement;
+
+    // Upgrade payload: absolute values relative to the original installation spec.
+    // Other command types ignore these fields and keep their existing fingerprint.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Upgrade")
+    int32 TargetUpgradeLevel = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Upgrade")
+    float UpgradeServiceDurationMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Upgrade")
+    float UpgradeSizeMultiplier = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Command|Upgrade")
+    float UpgradeRevenueMultiplier = 1.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -811,6 +873,18 @@ struct FF_ZONESYSTEM_API FFFZSFacilityInstanceSnapshot
     FFFZSFacilitySpec FacilitySpec;
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    int32 UpgradeLevel = 1;
+
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    float UpgradeServiceDurationMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    float UpgradeSizeMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    float UpgradeRevenueMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     FName ZoneId = NAME_None;
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
@@ -864,7 +938,7 @@ struct FF_ZONESYSTEM_API FFFZSCommandReceiptSnapshot
 
 USTRUCT(BlueprintType)
 
- // FF_ZoneSystem이 소유하는 월드 저장 경계, 현재 스키마는 5다.
+ // FF_ZoneSystem이 소유하는 월드 저장 경계, 현재 스키마는 7이다.
  // WorldRevision·CurrentPhase·시설/큐·완료 영수증만 포함하며 제작 존, 보호 영역, 정책 제공자, 외부 시스템 상태는 제외한다.
 
 struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
@@ -872,8 +946,8 @@ struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
     GENERATED_BODY()
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
-    int32 SchemaVersion = 5;
-    // 현재 지원 저장 스키마. RestoreWorldSnapshot은 Schema 3/4를 Schema 5 자유 Yaw 계약으로 변환한다.
+    int32 SchemaVersion = 7;
+    // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨·효과를 보존하며 레벨 사용 여부를 이관한다.
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     int64 WorldRevision = 0;
@@ -900,6 +974,24 @@ struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     FName FacilityDefinitionId = NAME_None;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    int32 UpgradeLevel = 1;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    float UpgradeServiceDurationMultiplier = 1.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    float UpgradeSizeMultiplier = 1.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    float UpgradeRevenueMultiplier = 1.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    bool bUsesFacilityLevels = false;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    FFFZSQueueRules EffectiveQueueRules;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     FName ZoneId = NAME_None;

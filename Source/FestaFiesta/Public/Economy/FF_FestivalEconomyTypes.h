@@ -223,6 +223,7 @@ struct FFF_PromotionTier
 };
 
 // 지출 원인
+
 // [주의] 저장 슬롯에 들어갈 값이다 — 새 원인은 뒤에만 추가한다.
 UENUM(BlueprintType)
 enum class EFF_SpendReason : uint8
@@ -235,7 +236,8 @@ enum class EFF_SpendReason : uint8
 	StaffHire       = 5		UMETA(DisplayName = "추가 고용"),
 	EventSupplies   = 6		UMETA(DisplayName = "Event 소모품"),
 	Cleanup         = 7		UMETA(DisplayName = "뒷정리"),
-	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽")
+	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽"),
+	FacilityUpgrade = 9		UMETA(DisplayName = "시설 강화비")
 };
 
 // 매출 원인

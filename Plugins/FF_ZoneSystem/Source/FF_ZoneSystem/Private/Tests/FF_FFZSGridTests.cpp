@@ -10,13 +10,17 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Engine/StaticMesh.h"
 #include "Internationalization/Culture.h"
 #include "Internationalization/Internationalization.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSOrientedGeometry.h"
 #include "Sound/SoundBase.h"
 #include "Tests/FF_FFZSTestFixtures.h"
+
+#include <limits>
 
 namespace
 {
@@ -671,6 +675,218 @@ bool FFFZSCompressedRegionCommandHashTest::RunTest(const FString& Parameters)
         }
     }
     FInternationalization::Get().SetCurrentCulture(OriginalCulture);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSAuthoredUpgradeSpecTest,
+    "FF_ZoneSystem.Unit.Upgrade.AuthoredSpecGeometryAndFingerprint",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSAuthoredUpgradeSpecTest::RunTest(const FString& Parameters)
+{
+    FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Base.VisualMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Test/SM_Level1.SM_Level1")));
+    const FFFZSFacilitySpec Legacy = Base;
+    FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(Base, TEXT("GZ_DadaPocha"), FFFZSGridPlacement(), -1);
+    const FString LegacyFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    TestFalse(TEXT("Default specs do not add an upgrade fingerprint block"), LegacyFingerprint.Contains(TEXT("spec.uses_facility_levels")));
+    Command.FacilitySpec.bUsesFacilityLevels = true;
+    TestNotEqual(TEXT("Level-one-only is distinct from no levels"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Command), LegacyFingerprint);
+
+    Base.bUsesFacilityLevels = true;
+    FFFZSFacilityUpgradeTier Level2;
+    Level2.SizeMultiplier = 2.0f;
+    Level2.VisualMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Test/SM_Level2.SM_Level2")));
+    FFFZSFacilityUpgradeTier Level3;
+    Level3.TargetLevel = 3;
+    Level3.CostMultiplier = 0.7f;
+    Level3.ServiceDurationMultiplier = 0.6f;
+    Level3.SizeMultiplier = 2.5f;
+    Base.UpgradeTiers = { Level2, Level3 };
+    FText Error;
+    TestTrue(TEXT("Independent authored tiers validate"), FFZSFacilityUpgradeRules::ValidateTiers(Base.UpgradeTiers, Error));
+    TestTrue(TEXT("Lookup finds exact authored level"), FFZSFacilityUpgradeRules::FindTier(Base.UpgradeTiers, 3) == &Base.UpgradeTiers[1]);
+    TestNull(TEXT("Unknown level has no tier"), FFZSFacilityUpgradeRules::FindTier(Base.UpgradeTiers, 4));
+    TArray<FText> Errors;
+    TestTrue(TEXT("Authored spec is valid"), Base.IsValid(Errors));
+    UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
+    Definition->Spec = Base;
+    TestTrue(TEXT("Definition validates every authored physical level"), Definition->IsDefinitionValid(Errors));
+    Errors = { FText::FromString(TEXT("Existing caller error")) };
+    TestTrue(TEXT("Definition validity is independent of prior caller errors"), Definition->IsDefinitionValid(Errors));
+    TestEqual(TEXT("Definition preserves prior caller errors"), Errors.Num(), 1);
+    {
+        TGuardValue<int32> BudgetGuard(GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility, 1'000'000);
+        TestTrue(TEXT("Original geometry remains within its budget"), Definition->Spec.IsValid(Errors));
+        TestFalse(TEXT("Definition authoring catches an oversized derived building"), Definition->IsDefinitionValid(Errors));
+        TestTrue(TEXT("Derived definition errors identify the authored level"), !Errors.IsEmpty() && Errors[0].ToString().StartsWith(TEXT("Lv.2:")));
+    }
+    const FFFZSFacilitySpec Identity = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Legacy, 1, 1.0f);
+    TestTrue(TEXT("Identity scale keeps all legacy values exactly"),
+        FFFZSFacilitySpec::StaticStruct()->CompareScriptStruct(&Legacy, &Identity, 0));
+    const FFFZSFacilitySpec DecimalGrowth = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 2, 1.15f);
+    TestTrue(TEXT("Decimal growth keeps a touching queue outside the building"), DecimalGrowth.IsValid(Errors));
+    TestEqual(TEXT("Decimal float noise does not steal a row at the shared edge"),
+        DecimalGrowth.QueueReservedRects[0].Min.Y, DecimalGrowth.FootprintSizeCells.Y);
+    TestEqual(TEXT("Positive float noise does not add a footprint cell"),
+        FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 2, 1.1f).FootprintSizeCells, FIntPoint(660, 330));
+
+    FFFZSFacilitySpec OddBase = Base;
+    OddBase.FootprintSizeCells = FIntPoint(601, 301);
+    for (FFFZSCellRect& Rect : OddBase.QueueReservedRects)
+    {
+        ++Rect.Min.Y;
+        ++Rect.Max.Y;
+    }
+    // Preserve the original route's placement in its reservation after changing the centre.
+    const FVector OddOriginOffset(-0.5, 0.5, 0.0);
+    for (FVector& Point : OddBase.QueueSplinePointsCm)
+    {
+        Point += OddOriginOffset;
+    }
+    for (FFFZSAnchorDefinition& Anchor : OddBase.Anchors)
+    {
+        Anchor.LocalTransform.AddToTranslation(OddOriginOffset);
+    }
+    OddBase.QueueReservedRects.Add(FFFZSCellRect(FIntPoint(601, 0), FIntPoint(701, 301)));
+    TestTrue(TEXT("Odd-size fixture is valid before upgrading"), OddBase.IsValid(Errors));
+    const FFFZSFacilitySpec OddGrowth = FFZSFacilityUpgradeRules::BuildEffectiveSpec(OddBase, 2, 1.15f);
+    TestTrue(TEXT("Odd-size growth keeps both touching external sides valid"), OddGrowth.IsValid(Errors));
+    TestEqual(TEXT("Genuinely fractional footprint dimensions still round up"), OddGrowth.FootprintSizeCells, FIntPoint(692, 347));
+    TestEqual(TEXT("Top reservation shares the rounded footprint edge"), OddGrowth.QueueReservedRects[0].Min.Y, 347);
+    TestEqual(TEXT("Right reservation shares the rounded footprint edge"), OddGrowth.QueueReservedRects.Last().Min.X, 692);
+    FFFZSFacilitySpec InvalidOverlap = Base;
+    --InvalidOverlap.QueueReservedRects[0].Min.Y;
+    TestFalse(TEXT("Actual authored overlap is still rejected after scaling"),
+        FFZSFacilityUpgradeRules::BuildEffectiveSpec(InvalidOverlap, 2, 1.15f).IsValid(Errors));
+    const FFFZSFacilitySpec Grown = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 2, 2.0f);
+    TestTrue(TEXT("Expanded authored geometry validates"), Grown.IsValid(Errors));
+    TestEqual(TEXT("Actual footprint doubles"), Grown.FootprintSizeCells, FIntPoint(1200, 600));
+    TestEqual(TEXT("Actual obstacle height doubles"), Grown.PlacementObstacleHeightCm, Base.PlacementObstacleHeightCm * 2.0f);
+    TestEqual(TEXT("Clearance preserves human safety distance"), Grown.ClearanceCells, Base.ClearanceCells);
+    TestEqual(TEXT("Queue slot spacing stays unchanged"), Grown.QueueRules.SlotSpacingCm, Base.QueueRules.SlotSpacingCm);
+    TestEqual(TEXT("Queue capacity stays unchanged"), Grown.QueueRules.MaxWaitingAgents, Base.QueueRules.MaxWaitingAgents);
+    TestEqual(TEXT("Original service duration is not compounded in effective spec"), Grown.QueueRules.ServiceDurationSeconds, Base.QueueRules.ServiceDurationSeconds);
+    TestTrue(TEXT("Queue path scales with the actual building"), Grown.QueueSplinePointsCm[0].Equals(Base.QueueSplinePointsCm[0] * 2.0));
+    TestTrue(TEXT("Service anchors scale with the actual building"),
+        Grown.Anchors[1].LocalTransform.GetTranslation().Equals(Base.Anchors[1].LocalTransform.GetTranslation() * 2.0));
+    TestEqual(TEXT("An authored level visual is selected"), Grown.VisualMesh.ToSoftObjectPath(), Level2.VisualMesh.ToSoftObjectPath());
+    const FFFZSFacilitySpec Third = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 3, 2.5f);
+    TestEqual(TEXT("Missing level visual always returns to Lv1 instead of inheriting Lv2"), Third.VisualMesh.ToSoftObjectPath(), Base.VisualMesh.ToSoftObjectPath());
+    TestEqual(TEXT("Absolute size does not compound from Lv2"), Third.FootprintSizeCells, FIntPoint(1500, 750));
+
+    FFFZSFacilitySpec Disabled = Base;
+    Disabled.bUsesFacilityLevels = false;
+    TestTrue(TEXT("Disabled levels retain valid authored tier data"), Disabled.IsValid(Errors));
+    TestEqual(TEXT("Disabled tier visual falls back to base"),
+        FFZSFacilityUpgradeRules::BuildEffectiveSpec(Disabled, 2, 1.f).VisualMesh.ToSoftObjectPath(), Base.VisualMesh.ToSoftObjectPath());
+    FFFZSFacilitySpec Invalid = Base;
+    Invalid.UpgradeTiers[1].ServiceDurationMultiplier = 0.9f;
+    TestTrue(TEXT("Spec allows a later tier with slower service"), Invalid.IsValid(Errors));
+    Invalid = Base;
+    Invalid.UpgradeTiers[0].SizeMultiplier = 4.1f;
+    TestTrue(TEXT("Tier authoring has no arbitrary physical scale cap"), Invalid.IsValid(Errors));
+    Invalid = Base;
+    Invalid.UpgradeTiers[1].SizeMultiplier = 1.5f;
+    TestTrue(TEXT("Later levels may shrink the building"), Invalid.IsValid(Errors));
+    FFFZSFacilitySpec RevenueOnly = Base;
+    RevenueOnly.UpgradeTiers[0].ServiceDurationMultiplier = 1.0f;
+    RevenueOnly.UpgradeTiers[1].ServiceDurationMultiplier = 1.0f;
+    RevenueOnly.UpgradeTiers[1].RevenueMultiplier = 2.0f;
+    TestTrue(TEXT("Increasing revenue alone is a valid upgrade"), RevenueOnly.IsValid(Errors));
+    RevenueOnly.UpgradeTiers[1].RevenueMultiplier = 1.5f;
+    TestTrue(TEXT("Unchanged duration and revenue can represent an authored upgrade"), RevenueOnly.IsValid(Errors));
+    RevenueOnly.UpgradeTiers[1].RevenueMultiplier = 1.25f;
+    TestTrue(TEXT("Later levels may reduce revenue"), RevenueOnly.IsValid(Errors));
+    RevenueOnly.UpgradeTiers[1].RevenueMultiplier = 100.1f;
+    TestTrue(TEXT("Revenue multiplier has no arbitrary upper cap"), RevenueOnly.IsValid(Errors));
+    FFFZSFacilitySpec Flexible = Base;
+    Flexible.UpgradeTiers.Reset();
+    for (int32 Index = 25; Index >= 1; --Index)
+    {
+        FFFZSFacilityUpgradeTier Tier;
+        Tier.TargetLevel = Index * 10;
+        Tier.CostMultiplier = Index == 1 ? 0.f : 100.f;
+        Tier.ServiceDurationMultiplier = Index % 2 ? 3.f : 0.001f;
+        Tier.RevenueMultiplier = Index % 2 ? 0.f : 1000.f;
+        Tier.SizeMultiplier = Index % 2 ? 0.5f : 5.f;
+        Flexible.UpgradeTiers.Add(Tier);
+    }
+    FFFZSFacilityUpgradeTier Last;
+    Last.TargetLevel = MAX_int32;
+    Flexible.UpgradeTiers.Add(Last);
+    TestTrue(TEXT("Unsorted sparse tiers beyond ten have no artificial caps"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    TestTrue(TEXT("Fingerprint preflight accepts more than nine tiers"), UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Flexible));
+    TestEqual(TEXT("Maximum level is independent of array ordering"), FFZSFacilityUpgradeRules::GetMaxLevel(Flexible.UpgradeTiers), MAX_int32);
+    const FFFZSFacilityUpgradeTier* Next = FFZSFacilityUpgradeRules::FindNextTier(Flexible.UpgradeTiers, 1);
+    TestTrue(TEXT("Next level is the smallest larger authored number"), Next && Next->TargetLevel == 10);
+    Next = FFZSFacilityUpgradeRules::FindNextTier(Flexible.UpgradeTiers, 10);
+    TestTrue(TEXT("A missing level number is skipped"), Next && Next->TargetLevel == 20);
+    TestNull(TEXT("Highest representable level does not overflow next-level lookup"), FFZSFacilityUpgradeRules::FindNextTier(Flexible.UpgradeTiers, MAX_int32));
+    TestTrue(TEXT("Exact lookup finds high levels in an unordered array"), FFZSFacilityUpgradeRules::FindTier(Flexible.UpgradeTiers, 250) == &Flexible.UpgradeTiers[0]);
+    Flexible.UpgradeTiers.Last().TargetLevel = 250;
+    TestFalse(TEXT("Duplicate authored levels are rejected"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    TestTrue(TEXT("Duplicate error names the invalid field"), Error.ToString().Contains(TEXT("Target Level")));
+    Flexible.UpgradeTiers.Last().TargetLevel = MAX_int32;
+    Flexible.UpgradeTiers[0].CostMultiplier = -1.f;
+    TestFalse(TEXT("Negative cost remains invalid"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    TestTrue(TEXT("Cost error names the invalid field"), Error.ToString().Contains(TEXT("Cost Multiplier")));
+    Flexible.UpgradeTiers[0].CostMultiplier = 0.f;
+    Flexible.UpgradeTiers[0].ServiceDurationMultiplier = 0.f;
+    TestFalse(TEXT("Zero duration remains invalid"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    TestTrue(TEXT("Duration error names the invalid field"), Error.ToString().Contains(TEXT("Service Duration Multiplier")));
+    Flexible.UpgradeTiers[0].ServiceDurationMultiplier = 1.f;
+    Flexible.UpgradeTiers[0].RevenueMultiplier = -1.f;
+    TestFalse(TEXT("Negative revenue remains invalid"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    TestTrue(TEXT("Revenue error names the invalid field"), Error.ToString().Contains(TEXT("Revenue Multiplier")));
+    Flexible.UpgradeTiers[0].RevenueMultiplier = 0.f;
+    Flexible.UpgradeTiers[0].SizeMultiplier = std::numeric_limits<float>::infinity();
+    TestFalse(TEXT("Nonfinite physical size remains invalid"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    TestTrue(TEXT("Size error names the invalid field"), Error.ToString().Contains(TEXT("Size Multiplier")));
+    Flexible.UpgradeTiers[0].SizeMultiplier = 0.f;
+    TestFalse(TEXT("Zero physical size remains invalid"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+    Flexible.UpgradeTiers[0].SizeMultiplier = 1.f;
+    Flexible.UpgradeTiers[0].TargetLevel = 1;
+    TestFalse(TEXT("The base level cannot also be an upgrade tier"), FFZSFacilityUpgradeRules::ValidateTiers(Flexible.UpgradeTiers, Error));
+
+    Command.FacilitySpec = Base;
+    const FString Fingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    const auto CheckMutation = [this, &Command, &Fingerprint](const TCHAR* Label, TFunctionRef<void(FFFZSFacilitySpec&)> Mutate)
+    {
+        FFFZSCommand Changed = Command;
+        Mutate(Changed.FacilitySpec);
+        TestNotEqual(Label, UFFZSGridLibrary::BuildCommandFingerprint(Changed), Fingerprint);
+    };
+    CheckMutation(TEXT("Use-levels flag participates in receipts"), [](FFFZSFacilitySpec& S) { S.bUsesFacilityLevels = false; });
+    CheckMutation(TEXT("Authored level participates in receipts"), [](FFFZSFacilitySpec& S) { ++S.UpgradeTiers[0].TargetLevel; });
+    CheckMutation(TEXT("Authored price participates in receipts"), [](FFFZSFacilitySpec& S) { S.UpgradeTiers[0].CostMultiplier = 0.4f; });
+    CheckMutation(TEXT("Authored duration participates in receipts"), [](FFFZSFacilitySpec& S) { S.UpgradeTiers[0].ServiceDurationMultiplier = 0.75f; });
+    CheckMutation(TEXT("Authored size participates in receipts"), [](FFFZSFacilitySpec& S) { S.UpgradeTiers[0].SizeMultiplier = 1.5f; });
+    CheckMutation(TEXT("Authored revenue participates in receipts"), [](FFFZSFacilitySpec& S) { S.UpgradeTiers[0].RevenueMultiplier = 2.0f; });
+    CheckMutation(TEXT("Authored mesh participates in receipts"), [](FFFZSFacilitySpec& S) { S.UpgradeTiers[0].VisualMesh.Reset(); });
+    FFFZSCommand Upgrade;
+    Upgrade.Type = EFFZSCommandType::Upgrade;
+    const FString OldUpgradeFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Upgrade);
+    TestFalse(TEXT("Default size preserves old upgrade receipts"), OldUpgradeFingerprint.Contains(TEXT("upgrade.size_multiplier")));
+    TestFalse(TEXT("Default revenue preserves old upgrade receipts"), OldUpgradeFingerprint.Contains(TEXT("upgrade.revenue_multiplier")));
+    Upgrade.UpgradeRevenueMultiplier = 1.5f;
+    TestNotEqual(TEXT("Changed revenue invalidates duplicate command payload"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Upgrade), OldUpgradeFingerprint);
+    Upgrade.UpgradeRevenueMultiplier = 1.0f;
+    Upgrade.UpgradeSizeMultiplier = 1.5f;
+    TestNotEqual(TEXT("Changed physical size invalidates duplicate command payload"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Upgrade), OldUpgradeFingerprint);
+
+    FFFZSFacilitySpec LegacyCells = MakeSmallRegionSpec();
+    LegacyCells.QueueReservedCells = { FIntPoint(-2, 0), FIntPoint(-1, 0) };
+    const FFFZSFacilitySpec ScaledCells = FFZSFacilityUpgradeRules::BuildEffectiveSpec(LegacyCells, 2, 1.5f);
+    TestTrue(TEXT("Legacy queue cells convert to exact compressed regions"), ScaledCells.QueueReservedCells.IsEmpty());
+    TestTrue(TEXT("Scaled negative queue boundaries round outwards"),
+        UFFZSGridLibrary::IsCellInRects(FIntPoint(-3, 0), ScaledCells.QueueReservedRects));
+    LegacyCells.FootprintSizeCells.X = MAX_int32;
+    const FFFZSFacilitySpec Overflow = FFZSFacilityUpgradeRules::BuildEffectiveSpec(LegacyCells, 2, 4.f);
+    TestEqual(TEXT("Unsafe scaling fails closed instead of overflowing"), Overflow.FootprintSizeCells, FIntPoint::ZeroValue);
     return true;
 }
 

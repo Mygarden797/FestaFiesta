@@ -21,6 +21,7 @@ private:
     FReply ResizeQueueTailToCapacity();
     FReply SetCapacityFromQueueLength();
     FReply FitVisualToFootprint();
+    FReply PreviewFacilityLevels();
 
     bool HasAnyEditableDefinition() const;
     bool CanSetFootprintFromLoadedVisualMesh() const;

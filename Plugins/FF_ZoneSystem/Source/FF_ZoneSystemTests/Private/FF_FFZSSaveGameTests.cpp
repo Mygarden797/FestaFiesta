@@ -37,12 +37,31 @@ namespace
             FVector(1234.5, -678.25, 91.75),
             FVector(1.25, 0.75, 1.5));
         Facility.bNeedsRelocation = true;
+        Facility.UpgradeLevel = 42;
+        Facility.UpgradeServiceDurationMultiplier = 3.0f;
+        Facility.UpgradeSizeMultiplier = 5.0f;
+        Facility.UpgradeRevenueMultiplier = 1000.0f;
 
         FFFZSFacilitySpec& Spec = Facility.FacilitySpec;
         Spec.SchemaVersion = 7;
         Spec.FacilityDefinitionId = TEXT("Facility.SaveGameProbe");
         Spec.DisplayName = FText::FromString(TEXT("SaveGame Probe Facility"));
         Spec.Category = EFFZSFacilityCategory::Safety;
+        Spec.bUsesFacilityLevels = true;
+        FFFZSFacilityUpgradeTier FirstTier;
+        FirstTier.TargetLevel = 42;
+        FirstTier.CostMultiplier = 50.f;
+        FirstTier.ServiceDurationMultiplier = 3.f;
+        FirstTier.SizeMultiplier = 5.f;
+        FirstTier.RevenueMultiplier = 1000.f;
+        FirstTier.VisualMesh = TSoftObjectPtr<UStaticMesh>(FSoftObjectPath(TEXT("/Game/Test/SM_Upgrade2.SM_Upgrade2")));
+        FFFZSFacilityUpgradeTier SecondTier;
+        SecondTier.TargetLevel = 20;
+        SecondTier.CostMultiplier = 0.f;
+        SecondTier.ServiceDurationMultiplier = 0.001f;
+        SecondTier.SizeMultiplier = 0.5f;
+        SecondTier.RevenueMultiplier = 0.f;
+        Spec.UpgradeTiers = { FirstTier, SecondTier };
         Spec.FootprintSizeCells = FIntPoint(6, 3);
         Spec.ClearanceCells = 2;
         // 직렬화 sentinel은 Runtime 유효성용이 아니므로 압축 Rect와 구 소형 Cell 필드를 모두 다른 값으로 채운다.
@@ -331,6 +350,14 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
             0));
     TestTrue(TEXT("시설 ID가 보존된다"),
         LoadedFacility.FacilityInstanceId == SourceFacility.FacilityInstanceId);
+    TestEqual(TEXT("시설 강화 단계가 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedFacility.UpgradeLevel, SourceFacility.UpgradeLevel);
+    TestEqual(TEXT("시설 강화 배수가 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedFacility.UpgradeServiceDurationMultiplier, SourceFacility.UpgradeServiceDurationMultiplier);
+    TestEqual(TEXT("시설 강화 크기가 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedFacility.UpgradeSizeMultiplier, SourceFacility.UpgradeSizeMultiplier);
+    TestEqual(TEXT("시설 강화 수익 배수가 실제 SaveGame 바이트 왕복에서 보존된다"),
+        LoadedFacility.UpgradeRevenueMultiplier, SourceFacility.UpgradeRevenueMultiplier);
     TestTrue(TEXT("격자 배치가 보존된다"), LoadedFacility.Placement == SourceFacility.Placement);
     TestEqual(TEXT("시설 상태가 보존된다"), LoadedFacility.State, SourceFacility.State);
     TestTrue(TEXT("시설 트랜스폼이 보존된다"),
@@ -341,6 +368,17 @@ bool FFFZSSaveGameByteRoundTripTest::RunTest(const FString& Parameters)
     const FFFZSFacilitySpec& SourceSpec = SourceFacility.FacilitySpec;
     const FFFZSFacilitySpec& LoadedSpec = LoadedFacility.FacilitySpec;
     TestEqual(TEXT("시설 명세 스키마가 보존된다"), LoadedSpec.SchemaVersion, SourceSpec.SchemaVersion);
+    TestEqual(TEXT("레벨 사용 여부가 보존된다"), LoadedSpec.bUsesFacilityLevels, SourceSpec.bUsesFacilityLevels);
+    TestEqual(TEXT("시설별 강화 단계 개수가 보존된다"), LoadedSpec.UpgradeTiers.Num(), 2);
+    if (LoadedSpec.UpgradeTiers.Num() == 2)
+    {
+        for (int32 Index = 0; Index < 2; ++Index)
+        {
+            TestTrue(TEXT("각 단계의 비용·시간·크기·선택적 메시가 보존된다"),
+                FFFZSFacilityUpgradeTier::StaticStruct()->CompareScriptStruct(
+                    &LoadedSpec.UpgradeTiers[Index], &SourceSpec.UpgradeTiers[Index], 0));
+        }
+    }
     TestEqual(TEXT("시설 정의 ID가 보존된다"),
         LoadedSpec.FacilityDefinitionId, SourceSpec.FacilityDefinitionId);
     TestEqual(TEXT("시설 표시 이름이 보존된다"),
