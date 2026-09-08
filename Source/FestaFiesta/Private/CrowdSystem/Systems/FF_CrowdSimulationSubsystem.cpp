@@ -3544,14 +3544,30 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		int PartyIndex = Party.Key;
 		int LeaderIndex = Party.Value;
 		
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !PartyDecisionStates.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+
 		FUnitData& Unit = UnitDatas[LeaderIndex];
 		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
-		
+
 		if (State.bIsLeaving) continue;
-		
+
+		// 게이트가 없거나 EntryGateIndex 가 안 잡힌 개체는 기존 단일 출구로 보낸다.
+		//
+		// ★ 임시 크래시 가드 추가
+		//	 EntryGateIndex 기본값이 INDEX_NONE 이고 대입 지점이
+		//   SpawnAgents 하나뿐이라, 콘솔 FF.Crowd.Spawn 이나 테스트의 직접 스폰으로 만든
+		//   개체는 -1 로 남는다. 그대로 ValidGates[-1] 을 읽어 Crowd.Reservation.Lifecycle 이
+		//   죽고 자동화 런 전체가 중단됐다.
+		const FVector ExitLocation = ValidGates.IsValidIndex(Unit.EntryGateIndex)
+			? ValidGates[Unit.EntryGateIndex].GateLocation
+			: Temp_ExitWorldLocation;
+
 		State.bIsLeaving = true;
 		State.LeaveStartedSimTime = SimTimeSeconds;
-		Unit.TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
+		Unit.TargetLocation = ExitLocation;
 		State.ProgramPhase = EFF_PartyProgramPhase::None;
 		State.ProgramFacilityId.Invalidate();
 		State.CurrentDestinationId = NAME_None;
@@ -3559,7 +3575,6 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		State.LastDecisionSimTime = SimTimeSeconds;
 		State.CurrentNeedRelief = FFF_NeedReliefFlags();
 		ClearPartyQueueState(LeaderIndex, true);
-		UnitDatas[LeaderIndex].TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
 		
 		
 		
