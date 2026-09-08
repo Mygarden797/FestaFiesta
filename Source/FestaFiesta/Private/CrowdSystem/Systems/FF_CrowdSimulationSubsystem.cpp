@@ -43,6 +43,21 @@ namespace
 
 	// 이 속도 이하의 리더는 서 있는 것으로 본다, UU/s. 잼에서의 미세 진동을 걷는 것으로 세지 않는다.
 	constexpr float PartyLeaderStoppedSpeedUU = 5.f;
+
+	// 게이트 투영 익스텐트. 공용 앵커용(300, 300, 2000)은 수평이 넓어 벽 안의 문이 옆 통로에 붙어 통과한다.
+	const FVector GateProbeExtentCm(50.0, 50.0, 250.0);
+
+	// 투영 낙차가 이보다 크면 공중이나 지형 아래에 놓인 것이다. 통과시키되 경고한다.
+	constexpr double GateProjectionDropWarnCm = 150.0;
+
+	// 게이트 원판 둘레를 몇 방향 찍어볼지. 중심만 보면 벽에 걸친 문을 못 잡는다.
+	constexpr int32 GateRimSampleCount = 8;
+
+	// 가중치 총합이 이보다 작으면 정규화가 폭발한다.
+	constexpr float MinGateWeightSum = KINDA_SMALL_NUMBER;
+
+	// 폴백 게이트 ID. 지표에서 "오늘은 폴백으로 돌았다"가 바로 보인다.
+	const FName FallbackGateId(TEXT("gate_fallback"));
 }
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -296,6 +311,280 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	}
 }
 
+bool UFF_CrowdSimulationSubsystem::ValidateGate(const FFF_CrowdGate& InGate, int32 AuthoredIndex,
+	FFF_CrowdGate& OutGate)
+{
+	// 싼 검사부터 돌린다. NavMesh 쿼리까지 가기 전에 걸러낼 수 있는 것을 먼저 본다.
+	// 투영 실패와 도달 불가는 제외, 낙차와 둘레 결손은 통과시키고 경고만 남긴다.
+	OutGate = InGate;
+
+	if (OutGate.GateId.IsNone())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 %d 제외 — GateId가 비었다. 지표 집계 키가 없으면 ")
+			TEXT("게이트별 유입/유출을 셀 수 없다"), AuthoredIndex);
+		return false;
+	}
+
+	if (!OutGate.bAllowSpawn && !OutGate.bAllowExit)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 입장도 퇴장도 허용하지 않는다"),
+			*OutGate.GateId.ToString());
+		return false;
+	}
+
+	if (OutGate.GateRadiusUU <= 0.f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — GateRadiusUU가 %.1f다"),
+			*OutGate.GateId.ToString(), OutGate.GateRadiusUU);
+		return false;
+	}
+
+	if (OutGate.bAllowSpawn && OutGate.GateWeight <= 0.f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 입장 게이트인데 GateWeight가 %.3f다"),
+			*OutGate.GateId.ToString(), OutGate.GateWeight);
+		return false;
+	}
+
+	if (IsValid(OutGate.GateAnchor))
+	{
+		OutGate.GateLocation = OutGate.GateAnchor->GetActorLocation();
+	}
+
+	const double DistFromOriginSq = FVector::DistSquared2D(OutGate.GateLocation, SimOrigin);
+	if (DistFromOriginSq > static_cast<double>(SimRadiusUU) * SimRadiusUU)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 시뮬 영역(반경 %.0f) 밖이다. 중심에서 %.0f"),
+			*OutGate.GateId.ToString(), SimRadiusUU, FMath::Sqrt(DistFromOriginSq));
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
+
+	// 검증 안 함과 검증 실패는 다르다. Dynamic 생성이면 BeginPlay 시점에 NavMesh가 아직 없다.
+	if (!NavData)
+	{
+		++UnverifiedGateCount;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' NavMesh 검증 생략 — NavigationData가 없다. ")
+			TEXT("NavMesh 생성이 Dynamic이면 BeginPlay 시점에 아직 안 올라와 있다"),
+			*OutGate.GateId.ToString());
+		return true;
+	}
+
+	FNavLocation Projected;
+	if (!NavSys->ProjectPointToNavigation(OutGate.GateLocation, Projected, GateProbeExtentCm))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — NavMesh 투영 실패. 좌표 %s"),
+			*OutGate.GateId.ToString(), *OutGate.GateLocation.ToCompactString());
+		return false;
+	}
+
+	const double DropCm = FMath::Abs(OutGate.GateLocation.Z - Projected.Location.Z);
+	if (DropCm > GateProjectionDropWarnCm)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 투영 낙차 %.0fcm — 공중이나 지형 아래에 놓였는지 확인할 것"),
+			*OutGate.GateId.ToString(), DropCm);
+	}
+
+	OutGate.GateLocation = Projected.Location;
+
+	// 원판 검사. 스폰은 중심이 아니라 원판에 흩어지고 멤버는 거기서 대형만큼 더 나간다.
+	if (OutGate.bAllowSpawn)
+	{
+		// 그룹 크기 상한. 대형 반경은 PartySpacingUU * sqrt(SlotIndex)이므로 마지막 슬롯이 가장 멀다.
+		constexpr int32 MaxExpectedPartySize = 6;
+		const double RimRadius = OutGate.GateRadiusUU
+			+ GetPartyFormationOffset(MaxExpectedPartySize - 1).Size2D();
+
+		int32 RimFailures = 0;
+		for (int32 Sample = 0; Sample < GateRimSampleCount; ++Sample)
+		{
+			const double Angle = 2.0 * PI * Sample / GateRimSampleCount;
+			const FVector RimPoint = OutGate.GateLocation
+				+ FVector(RimRadius * FMath::Cos(Angle), RimRadius * FMath::Sin(Angle), 0.0);
+
+			FNavLocation RimProjected;
+			if (!NavSys->ProjectPointToNavigation(RimPoint, RimProjected, GateProbeExtentCm))
+			{
+				++RimFailures;
+			}
+		}
+
+		if (RimFailures > 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 둘레 %d/%d 방향이 NavMesh 밖이다 — ")
+				TEXT("이 문은 반쪽만 쓸 수 있다. 대형이 삐져나가면 파티 크기 상한을 검토할 것"),
+				*OutGate.GateId.ToString(), RimFailures, GateRimSampleCount);
+		}
+	}
+
+	// 도달성. 강 건너·펜스 밖에도 NavMesh는 깔려 있어 투영만으로는 끊긴 섬을 못 거른다.
+	// 부분 경로를 금지해야 "강가까지는 간다"가 성공 처리되지 않는다.
+	// 끝점에 NavMesh를 요구하지 않는 것은 SimOrigin이 지면에서 떠 있으면 전 게이트가 탈락해서다.
+	FPathFindingQuery Query(nullptr, *NavData, OutGate.GateLocation, SimOrigin);
+	Query.SetAllowPartialPaths(false);
+	Query.SetRequireNavigableEndLocation(false);
+
+	const FPathFindingResult Result = NavSys->FindPathSync(Query);
+	if (!Result.IsSuccessful() || !Result.Path.IsValid())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 시뮬 중심까지 경로가 없다. ")
+			TEXT("NavMesh 위이지만 축제장과 끊긴 섬이다"),
+			*OutGate.GateId.ToString());
+		return false;
+	}
+
+	return true;
+}
+
+void UFF_CrowdSimulationSubsystem::RebuildSpawnGateCdf()
+{
+	SpawnGateIndices.Reset();
+	SpawnGateCdf.Reset();
+
+	float RunningSum = 0.f;
+	for (int32 GateIndex = 0; GateIndex < ValidGates.Num(); ++GateIndex)
+	{
+		const FFF_CrowdGate& Gate = ValidGates[GateIndex];
+		if (!Gate.bAllowSpawn)
+		{
+			continue;
+		}
+
+		RunningSum += Gate.GateWeight;
+		SpawnGateIndices.Add(GateIndex);
+		SpawnGateCdf.Add(RunningSum);
+	}
+
+	if (SpawnGateCdf.Num() == 0 || RunningSum <= MinGateWeightSum)
+	{
+		if (SpawnGateCdf.Num() > 0)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[CrowdSimulationSubsystem] 입장 게이트 %d개의 가중치 총합이 %.6f다 — 정규화할 수 없다. 폴백으로 돌린다"),
+				SpawnGateCdf.Num(), RunningSum);
+		}
+		SpawnGateIndices.Reset();
+		SpawnGateCdf.Reset();
+		return;
+	}
+
+	// 마지막 원소로 정규화한다. 뽑을 때 나눗셈이 없다.
+	for (float& Cumulative : SpawnGateCdf)
+	{
+		Cumulative /= RunningSum;
+	}
+	SpawnGateCdf.Last() = 1.f;
+}
+
+void UFF_CrowdSimulationSubsystem::EnsureFallbackGate()
+{
+	if (SpawnGateIndices.Num() > 0)
+	{
+		bUsingFallbackGate = false;
+		return;
+	}
+
+	// 좌표만 갱신한다. 날마다 새로 붙이면 배열이 자라고 남아 있는 게이트 인덱스가 딴 문을 가리킨다.
+	int32 FallbackIndex = ValidGates.IndexOfByPredicate(
+		[](const FFF_CrowdGate& Gate) { return Gate.GateId == FallbackGateId; });
+
+	if (FallbackIndex == INDEX_NONE)
+	{
+		// 퇴장 전용 게이트가 살아 있을 수 있으므로 배열을 비우지 않고 뒤에 붙인다.
+		FFF_CrowdGate Fallback;
+		Fallback.GateId = FallbackGateId;
+		Fallback.bAllowSpawn = true;
+		Fallback.bAllowExit = true;
+		FallbackIndex = ValidGates.Add(Fallback);
+	}
+
+	FFF_CrowdGate& Fallback = ValidGates[FallbackIndex];
+	Fallback.GateLocation = ArrivalSpawnCenter;
+	Fallback.GateRadiusUU = FMath::Max(ArrivalSpawnRadiusUU, 1.f);
+	Fallback.GateWeight = 1.f;
+
+	RebuildSpawnGateCdf();
+	bUsingFallbackGate = true;
+}
+
+int32 UFF_CrowdSimulationSubsystem::PickSpawnGate(int32 InVisitorCursor) const
+{
+	static const FName EntryGateTraitKey(TEXT("entry_gate_choice"));
+	static const FName EntryGatePurpose(TEXT("Gate"));
+	
+	const uint32 Seed = FFF_DeterministicRandom::MakeTraitSeed(GlobalSimulationSeed,InVisitorCursor,EntryGateTraitKey,ArrivalGeneration,EntryGatePurpose);
+	const float Fraction = FFF_DeterministicRandom::MakeUniformFraction(Seed);
+	
+	const int32 Slot = Algo::UpperBound(SpawnGateCdf,Fraction);
+	return SpawnGateIndices[FMath::Min(Slot, SpawnGateIndices.Num()-1)];
+	
+}
+
+
+
+void UFF_CrowdSimulationSubsystem::GatherCrowdGates(const TArray<FFF_CrowdGate>& InGates)
+{
+	ValidGates.Reset();
+	RejectedGateCount = 0;
+	UnverifiedGateCount = 0;
+
+	TSet<FName> SeenGateIds;
+	SeenGateIds.Reserve(InGates.Num());
+
+	for (int32 AuthoredIndex = 0; AuthoredIndex < InGates.Num(); ++AuthoredIndex)
+	{
+		const FFF_CrowdGate& Authored = InGates[AuthoredIndex];
+
+		if (!Authored.GateId.IsNone() && SeenGateIds.Contains(Authored.GateId))
+		{
+			++RejectedGateCount;
+			UE_LOG(LogTemp, Error,
+				TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — GateId가 중복이다. 두 문의 지표가 ")
+				TEXT("합쳐지면 한쪽이 죽어도 안 보인다"),
+				*Authored.GateId.ToString());
+			continue;
+		}
+
+		FFF_CrowdGate Validated;
+		if (!ValidateGate(Authored, AuthoredIndex, Validated))
+		{
+			++RejectedGateCount;
+			continue;
+		}
+
+		SeenGateIds.Add(Validated.GateId);
+		ValidGates.Add(Validated);
+	}
+
+	RebuildSpawnGateCdf();
+	bGatesGathered = true;
+
+	// 폴백 합성은 BeginArrivalSchedule 이 한다. ArrivalSpawnCenter 가 아직 안 채워져 있다.
+	UE_LOG(LogTemp, Log,
+		TEXT("[CrowdSimulationSubsystem] 게이트 등록: 저작 %d개 → 유효 %d개(입장 %d개), 제외 %d개, 미검증 %d개"),
+		InGates.Num(), ValidGates.Num(), SpawnGateIndices.Num(), RejectedGateCount, UnverifiedGateCount);
+
+	if (SpawnGateIndices.Num() == 0 && InGates.Num() > 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 쓸 수 있는 입장 게이트가 하나도 없다 — 단일 앵커 폴백으로 돈다. ")
+			TEXT("위의 제외 사유를 확인할 것"));
+	}
+}
+
 void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter,
 	float SpawnRadiusUU, const TArray<FFF_ReservedPartyRequest>& ReservedParties)
 {
@@ -303,13 +592,17 @@ void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount,
 	// 재사용하지 않는 것은 바로 아래에서 그 구조체를 덮기 때문이고, ActualVisitorCount 를
 	// 쓰지 않는 것은 그룹을 통째로만 만드느라 요청보다 작아서 날마다 인원이 깎이기 때문이다.
 	ArrivalRequestedVisitorCount = TotalVisitorCount;
+	++ArrivalGeneration;
 
 	CachedDistribution = BuildVisitorDistribution(TotalVisitorCount, ReservedParties);
 	VisitorCursor = 0;
 	ArrivalTotalVisitorCount = CachedDistribution.ActualVisitorCount;
+	// 게이트를 쓰더라도 이 두 값은 남긴다. 폴백 게이트의 원본이다.
 	ArrivalSpawnCenter = SpawnCenter;
 	ArrivalSpawnRadiusUU = SpawnRadiusUU;
 	bArrivalPoolExhaustedLogged = false;
+
+	EnsureFallbackGate();
 	
 	
 	if (CachedDistribution.Visitors.Num() == 0)
@@ -366,9 +659,13 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 		checkf(!LeadVisitor.bIsDependentChildSlot || !bEnablePartyGrouping,
 			TEXT("SpawnAgents: 그룹 선두가 아동 슬롯이다 — 빌더가 성인을 먼저 배출한다는 전제가 깨졌다. ")
 			TEXT("아동이 리더가 되면 목적지를 상속할 대상이 없다"));
+		
+		const int32 GateIndex = PickSpawnGate(VisitorCursor);
+		const FFF_CrowdGate& Gate = ValidGates[GateIndex];
+		
 		const float Angle = Rng.FRandRange(0.f, 2.f * PI);
-		const float Radius = ArrivalSpawnRadiusUU * FMath::Sqrt(Rng.FRand());
-		const FVector Anchor = ArrivalSpawnCenter + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+		const float Radius = Gate.GateRadiusUU * FMath::Sqrt(Rng.FRand());
+		const FVector Anchor = Gate.GateLocation + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 
 		const FRotator PartyRotation(0.f, Rng.FRandRange(0.f, 360.f), 0.f);
 
@@ -395,6 +692,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			FUnitData& Unit = UnitDatas[AgentIndex];
 			Unit.ArchetypeID = Visitor.ArchetypeId;
 			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
+			Unit.EntryGateIndex = GateIndex;
 			
 			ApplyAgentAppearance(AgentIndex);
 			
@@ -3253,7 +3551,7 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		
 		State.bIsLeaving = true;
 		State.LeaveStartedSimTime = SimTimeSeconds;
-		Unit.TargetLocation = Temp_ExitWorldLocation;
+		Unit.TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
 		State.ProgramPhase = EFF_PartyProgramPhase::None;
 		State.ProgramFacilityId.Invalidate();
 		State.CurrentDestinationId = NAME_None;
@@ -3261,7 +3559,7 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		State.LastDecisionSimTime = SimTimeSeconds;
 		State.CurrentNeedRelief = FFF_NeedReliefFlags();
 		ClearPartyQueueState(LeaderIndex, true);
-		UnitDatas[LeaderIndex].TargetLocation = Temp_ExitWorldLocation;
+		UnitDatas[LeaderIndex].TargetLocation = ValidGates[Unit.EntryGateIndex].GateLocation;
 		
 		
 		

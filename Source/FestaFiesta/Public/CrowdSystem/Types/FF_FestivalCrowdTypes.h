@@ -157,7 +157,8 @@ struct FUnitData
 	
 
 	
-	
+	//이 개체가 들어온 게이트. ValidGates 인덱스이다.
+	int32 EntryGateIndex = INDEX_NONE;
 	
 	
 };
@@ -418,5 +419,40 @@ struct FPartyDecisionState
 	float ProgramStartMinutes = 0.f;
 	float ProgramEndMinutes = 0.f;
 	FVector ProgramWaitingLocation = FVector::ZeroVector;
+};
+
+// 입장, 퇴장 게이트 하나. 저작 데이터만 담고, 배열 순서가 곧 게이트 인덱스라 저작 순서가 결정성의 계약이다.
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_CrowdGate
+{
+	GENERATED_BODY()
+
+	// 게이트 별 집계 정산 용도 ID. 인덱스로 대신하면 게이트를 하나 지울 때 과거 지표가 전부 밀린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	FName GateId;
+
+	// 레벨에 놓은 앵커. 없을 경우 GateLocation을 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	TObjectPtr<AActor> GateAnchor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	FVector GateLocation = FVector::ZeroVector;
+
+	// 문의 크기. 스폰 산개 반경이자 퇴장 판정 반경이며, 여유를 얹으면 문 앞 병목이 지표에서 지워진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate", meta = (ClampMin = "0.0"))
+	float GateRadiusUU = 400.f;
+
+	// Spawn과 Exit를 허용하는지의 여부이다. 양방향이 기본이고 전용 게이트가 예외다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	bool bAllowSpawn = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	bool bAllowExit = true;
+
+	// 각 Gate의 Spawn 비율을 정산하기 위해 사용하는 장치. 0 이하면 검증에서 제외된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate", meta = (ClampMin = "0.0"))
+	float GateWeight = 1.f;
+	
+
 };
 
