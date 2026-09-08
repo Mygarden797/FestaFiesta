@@ -33,6 +33,9 @@ void AFF_SpawnActor::BeginPlay()
 	 FVector Origin = GetActorLocation();
 	CrowdSim->InitializeSimulation(Origin, SimRadiusUU, ActorPoolSize, AgentPoolSize, CrowdActorClass);
 
+	// 세션 내내 고정이라 BeginArrivalSchedule 이 게이트를 인자로 받을 필요가 없다.
+	CrowdSim->GatherCrowdGates(CrowdGates);
+
 	CrowdSim->bDrawDebugAgents = bDrawDebugAgents;
 	CrowdSim->bDrawDebugDensity = bDrawDebugDensity;
 
