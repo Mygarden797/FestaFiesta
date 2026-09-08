@@ -862,6 +862,21 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     AppendInt(TEXT("placement.origin_y"), Command.Placement.OriginCell.Y);
     AppendInt(TEXT("placement.yaw_centidegrees"), GetEffectiveYawCentidegrees(Command.Placement));
 
+    // Preserve every existing command's v5 receipt byte for byte across the save migration.
+    if (Command.Type == EFFZSCommandType::Upgrade)
+    {
+        AppendInt(TEXT("upgrade.target_level"), Command.TargetUpgradeLevel);
+        AppendFloat(TEXT("upgrade.service_duration_multiplier"), Command.UpgradeServiceDurationMultiplier);
+        if (Command.UpgradeSizeMultiplier != 1.0f)
+        {
+            AppendFloat(TEXT("upgrade.size_multiplier"), Command.UpgradeSizeMultiplier);
+        }
+        if (Command.UpgradeRevenueMultiplier != 1.0f)
+        {
+            AppendFloat(TEXT("upgrade.revenue_multiplier"), Command.UpgradeRevenueMultiplier);
+        }
+    }
+
     const FFFZSFacilitySpec& Spec = Command.FacilitySpec;
     AppendInt(TEXT("spec.schema_version"), Spec.SchemaVersion);
     AppendString(TEXT("spec.definition_id"), Spec.FacilityDefinitionId.ToString());
@@ -983,6 +998,26 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     if (Spec.MaxInstancesPerWorld != 0)
     {
         AppendInt(TEXT("spec.max_instances_per_world"), Spec.MaxInstancesPerWorld);
+    }
+    // Default false + empty is the old spec; preserve existing install receipt bytes exactly.
+    if (Spec.bUsesFacilityLevels || !Spec.UpgradeTiers.IsEmpty())
+    {
+        AppendInt(TEXT("spec.uses_facility_levels"), Spec.bUsesFacilityLevels ? 1 : 0);
+        AppendInt(TEXT("spec.upgrade_tiers.count"), Spec.UpgradeTiers.Num());
+        for (int32 Index = 0; Index < Spec.UpgradeTiers.Num(); ++Index)
+        {
+            const FFFZSFacilityUpgradeTier& Tier = Spec.UpgradeTiers[Index];
+            const FString Prefix = FString::Printf(TEXT("spec.upgrade_tiers[%d]"), Index);
+            AppendInt(*(Prefix + TEXT(".target_level")), Tier.TargetLevel);
+            AppendFloat(*(Prefix + TEXT(".cost_multiplier")), Tier.CostMultiplier);
+            AppendFloat(*(Prefix + TEXT(".service_duration_multiplier")), Tier.ServiceDurationMultiplier);
+            AppendFloat(*(Prefix + TEXT(".size_multiplier")), Tier.SizeMultiplier);
+            if (Tier.RevenueMultiplier != 1.0f)
+            {
+                AppendFloat(*(Prefix + TEXT(".revenue_multiplier")), Tier.RevenueMultiplier);
+            }
+            AppendString(*(Prefix + TEXT(".visual_mesh")), Tier.VisualMesh.ToSoftObjectPath().ToString());
+        }
     }
     return Canonical;
 }

@@ -7,6 +7,7 @@
 #include "Types/FF_FestivalCrowdTypes.h"
 #include "FF_BaseCrowd.generated.h"
 
+class UAnimInstance;
 class UFF_CrowdAnimInstance;
 class UFF_CrowdMovementComponent;
 class UFF_CrowdVisualComponent;
@@ -34,8 +35,9 @@ public:
 	virtual void ReleaseFromAgent();
 	// --- 후 보정이 끝난 이동 값을 그대로 적용하기 위한 함수 ---/
 	virtual void PushPresentation(FVector NewPosition, FRotator NewRotator, float NewSpeed);
-
-
+	// --- 알맞는 외형을 선택하기 위한 장치 --- /
+	virtual void ApplyAppearance(USkeletalMesh* Mesh,UClass* AnimClass, float YawOffset, float UniformScale);
+	
 	virtual FVector GetVelocity() const override { return CachedVelocity; }
 	
 protected:
@@ -63,6 +65,12 @@ public:
 	float MeshYawOffset = 0.f;
 
 private:
+	// BP(BP_Crowd)의 SkeletalMeshComponent에 지정된 AnimClass. BeginPlay에서 한 번 받아 둔다.
+	// 아키타입 행이 AnimClass를 비워 뒀을 때 되돌릴 자리가 있어야 한다 —
+	// 없으면 풀 슬롯을 물려받는 순간 이전 아키타입의 ABP가 그대로 남는다.
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> DefaultAnimClass;
+
 	int32 AgentIndex = INDEX_NONE;
 
 	// GetVelocity()가 돌려줄 값. PushPresentation에서 갱신한다

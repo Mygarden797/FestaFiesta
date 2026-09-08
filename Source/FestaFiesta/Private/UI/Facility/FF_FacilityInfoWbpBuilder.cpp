@@ -20,6 +20,7 @@
 #include "Components/OverlaySlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
+#include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
 #include "Components/SizeBoxSlot.h"
 #include "Components/Spacer.h"
@@ -35,6 +36,7 @@
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UObject/SavePackage.h"
@@ -58,10 +60,10 @@ namespace FFFacilityInfoWbpBuilder
 	const FLinearColor ColorAccent(0.08f, 0.95f, 0.88f, 1.0f);
 	const FLinearColor ColorWarning(1.0f, 0.73f, 0.23f, 1.0f);
 
-	constexpr float PanelWidth = 388.0f;
+	constexpr float PanelWidth = 376.0f;
 	constexpr float PanelHeight = 500.0f;
-	constexpr float PanelRightMargin = 24.0f;
-	constexpr float PanelTopMargin = 72.0f;
+	constexpr float PanelRightMargin = 18.0f;
+	constexpr float PanelTopMargin = 18.0f;
 	// PrepHUD Build host(320), 하단 바/여백(70), 안전 간격(10)을 예약한다.
 	// Picker는 세로 stretch라 1080p뿐 아니라 더 작은 뷰포트에서도 하단 패널과 겹치지 않는다.
 	constexpr float PaidProgramPickerWidth = 520.0f;
@@ -469,6 +471,153 @@ namespace FFFacilityInfoWbpBuilder
 		return HasProgramWidgetContract(Blueprint);
 	}
 
+	const TArray<FName>& GetUpgradeContractVariableNames()
+	{
+		static const TArray<FName> Names = {
+			TEXT("Panel_UpgradeSection"), TEXT("Text_FacilityLevel"),
+			TEXT("Text_UpgradeEffect"), TEXT("Text_UpgradeCost"), TEXT("Text_UpgradeReason"),
+			TEXT("Button_Upgrade"), TEXT("Text_Upgrade"), TEXT("Text_FacilityRevenue")
+		};
+		return Names;
+	}
+
+	bool HasUpgradeWidgetContract(const UWidgetBlueprint& Blueprint)
+	{
+		const UWidgetTree* Tree = Blueprint.WidgetTree;
+		if (!Tree)
+		{
+			return false;
+		}
+		for (const FName Name : GetUpgradeContractVariableNames())
+		{
+			const UWidget* Widget = Tree->FindWidget(Name);
+			const UClass* ExpectedClass = Name == TEXT("Panel_UpgradeSection")
+				? UVerticalBox::StaticClass()
+				: (Name == TEXT("Button_Upgrade") ? UButton::StaticClass() : UCommonTextBlock::StaticClass());
+			if (!Widget || !Widget->IsA(ExpectedClass) || !Widget->bIsVariable ||
+				!Blueprint.WidgetVariableNameToGuidMap.Contains(Name))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Preserve authored nodes/styles; add missing controls and correct only the upgrade section order. */
+	bool EnsureUpgradeWidgetContract(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		bOutModified = false;
+		if (HasUpgradeWidgetContract(Blueprint))
+		{
+			return FFFacilityInfoUpgradeLayout::PlaceAfterSummary(
+				Tree, *Tree.FindWidget(TEXT("Panel_UpgradeSection")), bOutModified);
+		}
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Content || !Palette)
+		{
+			return false;
+		}
+		// Validate partial designer assets before adding anything to them.
+		for (const FName Name : GetUpgradeContractVariableNames())
+		{
+			const UWidget* Existing = Tree.FindWidget(Name);
+			const UClass* ExpectedClass = Name == TEXT("Panel_UpgradeSection")
+				? UVerticalBox::StaticClass()
+				: (Name == TEXT("Button_Upgrade") ? UButton::StaticClass() : UCommonTextBlock::StaticClass());
+			if (Existing && !Existing->IsA(ExpectedClass))
+			{
+				return false;
+			}
+		}
+		const UButton* ExistingButton = Cast<UButton>(Tree.FindWidget(TEXT("Button_Upgrade")));
+		UVerticalBox* SummaryMeta = FFFacilityInfoUpgradeLayout::FindRevenueParent(Tree);
+		if (!Tree.FindWidget(TEXT("Text_FacilityRevenue")))
+		{
+			if (!SummaryMeta)
+			{
+				return false;
+			}
+			UCommonTextBlock* Revenue = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_FacilityRevenue"), true);
+			Revenue->SetAutoWrapText(true);
+			StyleLightText(*Revenue, 11, Palette->InGame.Ink, TEXT("Medium"));
+			AddVertical(*SummaryMeta, *Revenue, FMargin(0.f, 4.f, 0.f, 0.f));
+			if (UWidget* State = FFFacilityInfoUpgradeLayout::FindContentChild(Tree.FindWidget(TEXT("Text_FacilityState")), *SummaryMeta))
+			{
+				SummaryMeta->ShiftChild(SummaryMeta->GetChildIndex(State) + 1, Revenue);
+			}
+			bOutModified = true;
+		}
+		const UWidget* ExistingButtonText = Tree.FindWidget(TEXT("Text_Upgrade"));
+		if ((!ExistingButton && ExistingButtonText) ||
+			(ExistingButton && !ExistingButtonText && ExistingButton->GetContent()))
+		{
+			return false;
+		}
+		UVerticalBox* Section = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_UpgradeSection")));
+		if (!Section)
+		{
+			Section = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_UpgradeSection"), true);
+			AddVertical(*Content, *Section, FMargin(2.0f, 8.0f, 2.0f, 10.0f));
+			bOutModified = true;
+		}
+		for (const FName Name : {FName(TEXT("Text_FacilityLevel")), FName(TEXT("Text_UpgradeEffect")),
+			FName(TEXT("Text_UpgradeCost")), FName(TEXT("Text_UpgradeReason"))})
+		{
+			UCommonTextBlock* Text = Cast<UCommonTextBlock>(Tree.FindWidget(Name));
+			if (!Text)
+			{
+				Text = MakeWidget<UCommonTextBlock>(Blueprint, Tree, Name, true);
+				Text->SetAutoWrapText(true);
+				const bool bTitle = Name == TEXT("Text_FacilityLevel");
+				const bool bReason = Name == TEXT("Text_UpgradeReason");
+				Text->SetText(bTitle ? FText::FromString(TEXT("시설 강화 · Lv.1")) : FText::GetEmpty());
+				StyleLightText(*Text, bTitle ? 14 : 12,
+					bTitle ? Palette->InGame.TealDeep : (bReason ? Palette->InGame.Amber : Palette->InGame.Ink),
+					bTitle ? FName(TEXT("SemiBold")) : FName(TEXT("Medium")));
+				AddVertical(*Section, *Text, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+				bOutModified = true;
+			}
+		}
+		UButton* Button = Cast<UButton>(Tree.FindWidget(TEXT("Button_Upgrade")));
+		UCommonTextBlock* ButtonText = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_Upgrade")));
+		if (!Button)
+		{
+			if (ButtonText)
+			{
+				return false;
+			}
+			Button = MakeLightTextButton(Blueprint, Tree, TEXT("Button_Upgrade"), TEXT("Text_Upgrade"),
+				FText::FromString(TEXT("시설 강화")), Palette->InGame.Teal, Palette->InGame.TealDeep,
+				Palette->InGame.TealDeep, Palette->InGame.LineStrong, Palette->InGame.White, true, true);
+			Button->SetIsEnabled(false);
+			AddVertical(*Section, *Button);
+			bOutModified = true;
+		}
+		else if (!ButtonText)
+		{
+			if (Button->GetContent())
+			{
+				return false;
+			}
+			ButtonText = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_Upgrade"), true);
+			ButtonText->SetText(FText::FromString(TEXT("시설 강화")));
+			StyleLightText(*ButtonText, 13, Palette->InGame.White, TEXT("SemiBold"), ETextJustify::Center);
+			Button->AddChild(ButtonText);
+			bOutModified = true;
+		}
+		for (const FName Name : GetUpgradeContractVariableNames())
+		{
+			if (UWidget* Widget = Tree.FindWidget(Name))
+			{
+				EnsureVariableContract(Blueprint, *Widget, Name, bOutModified);
+			}
+		}
+		return HasUpgradeWidgetContract(Blueprint) &&
+			FFFacilityInfoUpgradeLayout::PlaceAfterSummary(Tree, *Section, bOutModified);
+	}
+
 	bool HasInstanceLimitWidgetContract(const UWidgetBlueprint& Blueprint)
 	{
 		const UWidgetTree* Tree = Blueprint.WidgetTree;
@@ -801,16 +950,17 @@ namespace FFFacilityInfoWbpBuilder
 			return nullptr;
 		}
 
-		HeaderSize->SetHeightOverride(68.0f);
+		HeaderSize->SetHeightOverride(60.0f);
 		PaintBorder(*HeaderSurface, MakeSolidBrush(Palette.InGame.TealDeep, 7.0f));
 		HeaderSurface->SetPadding(FMargin(16.0f, 10.0f, 10.0f, 10.0f));
 		FLinearColor ContextColor = Palette.InGame.White;
 		ContextColor.A = 0.78f;
 		Context->SetText(FText::FromString(TEXT("배치 시설")));
-		StyleLightText(*Context, 11, ContextColor, TEXT("Medium"));
+		StyleLightText(*Context, 10, ContextColor, TEXT("Medium"));
 		FacilityName->SetText(FText::FromString(TEXT("시설을 선택하세요")));
 		FacilityName->SetAutoWrapText(false);
-		StyleLightText(*FacilityName, 20, Palette.InGame.White, TEXT("SemiBold"));
+		FacilityName->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
+		StyleLightText(*FacilityName, 19, Palette.InGame.White, TEXT("SemiBold"));
 		AddVertical(*Identity, *Context, FMargin(0.0f, 0.0f, 0.0f, 1.0f));
 		AddVertical(*Identity, *FacilityName);
 		AddHorizontal(*HeaderRow, *Identity, FMargin(0.0f), ESlateSizeRule::Fill);
@@ -836,6 +986,7 @@ namespace FFFacilityInfoWbpBuilder
 		UOverlay* ThumbnailOverlay = MakeWidget<UOverlay>(
 			Blueprint, Tree, TEXT("Thumbnail_Overlay"));
 		UImage* Thumbnail = MakeWidget<UImage>(Blueprint, Tree, TEXT("Image_Thumbnail"), true);
+		UScaleBox* ThumbnailFit = MakeWidget<UScaleBox>(Blueprint, Tree, TEXT("Thumbnail_Fit"));
 		UCommonTextBlock* ThumbnailPlaceholder = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("Text_ThumbnailPlaceholder"), true);
 		UVerticalBox* Meta = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Summary_Meta"));
@@ -849,25 +1000,30 @@ namespace FFFacilityInfoWbpBuilder
 		UBorder* StateChip = MakeWidget<UBorder>(Blueprint, Tree, TEXT("State_Chip"));
 		UCommonTextBlock* FacilityState = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("Text_FacilityState"), true);
+		UCommonTextBlock* Revenue = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_FacilityRevenue"), true);
 		if (!Card || !Row || !ThumbnailSize || !ThumbnailBackground || !ThumbnailOverlay ||
-			!Thumbnail || !ThumbnailPlaceholder || !Meta || !MetaRow || !CategoryChip ||
-			!Category || !ZoneChip || !Zone || !StateChip || !FacilityState)
+			!Thumbnail || !ThumbnailFit || !ThumbnailPlaceholder || !Meta || !MetaRow || !CategoryChip ||
+			!Category || !ZoneChip || !Zone || !StateChip || !FacilityState || !Revenue)
 		{
 			return nullptr;
 		}
 
 		PaintBorder(*Card, MakeSolidBrush(
-			Palette.InGame.PaperSunken, 6.0f, Palette.InGame.Line, 1.0f));
+			Palette.InGame.Paper, 10.0f, Palette.InGame.Line, 1.0f));
 		Card->SetPadding(FMargin(10.0f));
-		ThumbnailSize->SetWidthOverride(104.0f);
-		ThumbnailSize->SetHeightOverride(86.0f);
-		PaintBorder(*ThumbnailBackground, MakeSolidBrush(Palette.InGame.StatusBar, 5.0f));
+		ThumbnailSize->SetWidthOverride(120.0f);
+		ThumbnailSize->SetHeightOverride(112.0f);
+		PaintBorder(*ThumbnailBackground, MakeSolidBrush(Palette.InGame.TealSoft, 8.0f));
+		ThumbnailBackground->SetPadding(FMargin(7.0f));
 		ThumbnailPlaceholder->SetText(FText::FromString(TEXT("시설 이미지 준비 중")));
 		ThumbnailPlaceholder->SetAutoWrapText(true);
 		StyleLightText(
 			*ThumbnailPlaceholder, 11, Palette.InGame.InkMuted, TEXT("Medium"),
 			ETextJustify::Center);
-		if (UOverlaySlot* Slot = ThumbnailOverlay->AddChildToOverlay(Thumbnail))
+		ThumbnailFit->SetStretch(EStretch::ScaleToFit);
+		ThumbnailFit->AddChild(Thumbnail);
+		if (UOverlaySlot* Slot = ThumbnailOverlay->AddChildToOverlay(ThumbnailFit))
 		{
 			Slot->SetHorizontalAlignment(HAlign_Fill);
 			Slot->SetVerticalAlignment(VAlign_Fill);
@@ -882,30 +1038,148 @@ namespace FFFacilityInfoWbpBuilder
 		AddHorizontal(*Row, *ThumbnailSize, FMargin(0.0f, 0.0f, 10.0f, 0.0f));
 
 		PaintBorder(*CategoryChip, MakeSolidBrush(Palette.InGame.TealSoft, 4.0f));
-		CategoryChip->SetPadding(FMargin(8.0f, 3.0f));
+		CategoryChip->SetPadding(FMargin(7.0f, 3.0f));
 		Category->SetText(FText::FromString(TEXT("부스")));
+		Category->SetAutoWrapText(true);
 		StyleLightText(*Category, 11, Palette.InGame.TealDeep, TEXT("SemiBold"));
 		CategoryChip->AddChild(Category);
-		PaintBorder(*ZoneChip, MakeSolidBrush(
-			Palette.InGame.Paper, 4.0f, Palette.InGame.Line, 1.0f));
-		ZoneChip->SetPadding(FMargin(8.0f, 3.0f));
+		PaintBorder(*ZoneChip, MakeSolidBrush(FLinearColor::Transparent, 0.0f));
+		ZoneChip->SetPadding(FMargin(1.0f, 2.0f));
 		Zone->SetText(FText::FromString(TEXT("구역 정보")));
+		Zone->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
 		StyleLightText(*Zone, 11, Palette.InGame.InkMuted, TEXT("Medium"));
 		ZoneChip->AddChild(Zone);
-		AddHorizontal(*MetaRow, *CategoryChip, FMargin(0.0f, 0.0f, 5.0f, 0.0f));
-		AddHorizontal(*MetaRow, *ZoneChip);
-		AddVertical(*Meta, *MetaRow, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		AddHorizontal(*MetaRow, *CategoryChip, FMargin(0.0f), ESlateSizeRule::Fill);
+		AddVertical(*Meta, *MetaRow, FMargin(0.0f, 0.0f, 0.0f, 2.0f));
+		AddVertical(*Meta, *ZoneChip, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
 
 		PaintBorder(*StateChip, MakeSolidBrush(
 			Palette.InGame.Paper, 5.0f, Palette.InGame.LineStrong, 1.0f));
-		StateChip->SetPadding(FMargin(9.0f, 6.0f));
+		StateChip->SetPadding(FMargin(7.0f, 4.0f));
 		FacilityState->SetText(FText::FromString(TEXT("배치 완료")));
-		StyleLightText(*FacilityState, 12, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		StyleLightText(*FacilityState, 11, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		FacilityState->SetAutoWrapText(true);
 		StateChip->AddChild(FacilityState);
-		AddVertical(*Meta, *StateChip);
+		AddVertical(*Meta, *StateChip, FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		StyleLightText(*Revenue, 10, Palette.InGame.InkMuted, TEXT("Medium"));
+		Revenue->SetAutoWrapText(true);
+		AddVertical(*Meta, *Revenue);
 		AddHorizontal(*Row, *Meta, FMargin(0.0f), ESlateSizeRule::Fill);
 		Card->AddChild(Row);
 		return Card;
+	}
+
+	UBorder* BuildStatCard(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, const UFF_UIPalette& Palette,
+		const FName ValueName, const TCHAR* LabelText)
+	{
+		const FString Prefix = ValueName.ToString();
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, FName(*(Prefix + TEXT("_Card"))));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, FName(*(Prefix + TEXT("_Content"))));
+		UCommonTextBlock* Label = MakeWidget<UCommonTextBlock>(Blueprint, Tree, FName(*(Prefix + TEXT("_Label"))));
+		UCommonTextBlock* Value = MakeWidget<UCommonTextBlock>(Blueprint, Tree, ValueName, true);
+		if (!Card || !Content || !Label || !Value)
+		{
+			return nullptr;
+		}
+		PaintBorder(*Card, MakeSolidBrush(Palette.InGame.PaperSunken, 7.0f));
+		Card->SetPadding(FMargin(10.0f, 8.0f));
+		Label->SetText(FText::FromString(LabelText));
+		StyleLightText(*Label, 10, Palette.InGame.InkMuted, TEXT("Medium"));
+		Value->SetText(FText::FromString(TEXT("—")));
+		Value->SetAutoWrapText(true);
+		StyleLightText(*Value, 15, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		AddVertical(*Content, *Label, FMargin(0.0f, 0.0f, 0.0f, 3.0f));
+		AddVertical(*Content, *Value);
+		Card->AddChild(Content);
+		return Card;
+	}
+
+	bool AddStatPair(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, UVerticalBox& Parent,
+		const UFF_UIPalette& Palette, const FName LeftName, const TCHAR* LeftLabel,
+		const FName RightName = NAME_None, const TCHAR* RightLabel = nullptr)
+	{
+		UHorizontalBox* Row = MakeWidget<UHorizontalBox>(Blueprint, Tree,
+			FName(*(LeftName.ToString() + TEXT("_StatRow"))));
+		UBorder* Left = BuildStatCard(Blueprint, Tree, Palette, LeftName, LeftLabel);
+		if (!Row || !Left)
+		{
+			return false;
+		}
+		UHorizontalBoxSlot* LeftSlot = AddHorizontal(*Row, *Left,
+			FMargin(0.0f, 0.0f, RightLabel ? 3.0f : 0.0f, 0.0f), ESlateSizeRule::Fill);
+		if (LeftSlot) LeftSlot->SetVerticalAlignment(VAlign_Fill);
+		if (RightLabel)
+		{
+			UBorder* Right = BuildStatCard(Blueprint, Tree, Palette, RightName, RightLabel);
+			if (!Right) return false;
+			UHorizontalBoxSlot* RightSlot = AddHorizontal(*Row, *Right,
+				FMargin(3.0f, 0.0f, 0.0f, 0.0f), ESlateSizeRule::Fill);
+			if (RightSlot) RightSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+		AddVertical(Parent, *Row, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+		return true;
+	}
+
+	UVerticalBox* BuildUpgradeSection(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, const UFF_UIPalette& Palette)
+	{
+		UVerticalBox* Section = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_UpgradeSection"), true);
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Upgrade_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Upgrade_Content"));
+		UCommonTextBlock* Level = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_FacilityLevel"), true);
+		UHorizontalBox* Comparison = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_UpgradeComparison"), true);
+		UCommonTextBlock* Effects = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_UpgradeEffect"), true);
+		UCommonTextBlock* Cost = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_UpgradeCost"), true);
+		UCommonTextBlock* Reason = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_UpgradeReason"), true);
+		UButton* Upgrade = MakeLightTextButton(Blueprint, Tree, TEXT("Button_Upgrade"), TEXT("Text_Upgrade"),
+			FText::FromString(TEXT("시설 강화")), Palette.InGame.TealDeep, Palette.InGame.Teal,
+			Palette.InGame.TealDeep, Palette.InGame.LineStrong, Palette.InGame.White, true, true);
+		if (!Section || !Card || !Content || !Level || !Comparison || !Effects || !Cost || !Reason || !Upgrade)
+		{
+			return nullptr;
+		}
+		PaintBorder(*Card, MakeSolidBrush(Palette.InGame.Paper, 9.0f, Palette.InGame.Amber, 1.0f));
+		Card->SetPadding(FMargin(10.0f, 8.0f));
+		StyleLightText(*Level, 12, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		Level->SetText(FText::FromString(TEXT("시설 강화 · Lv.1")));
+		AddVertical(*Content, *Level, FMargin(0.0f, 0.0f, 0.0f, 6.0f));
+		for (const bool bNext : {false, true})
+		{
+			UBorder* Surface = MakeWidget<UBorder>(Blueprint, Tree, bNext ? TEXT("Upgrade_NextCard") : TEXT("Upgrade_CurrentCard"));
+			UVerticalBox* Column = MakeWidget<UVerticalBox>(Blueprint, Tree, bNext ? TEXT("Upgrade_NextColumn") : TEXT("Upgrade_CurrentColumn"));
+			UCommonTextBlock* Caption = MakeWidget<UCommonTextBlock>(Blueprint, Tree,
+				bNext ? TEXT("Upgrade_NextCaption") : TEXT("Upgrade_CurrentCaption"));
+			UCommonTextBlock* Values = MakeWidget<UCommonTextBlock>(Blueprint, Tree,
+				bNext ? TEXT("Text_UpgradeNext") : TEXT("Text_UpgradeCurrent"), true);
+			if (!Surface || !Column || !Caption || !Values) return nullptr;
+			PaintBorder(*Surface, MakeSolidBrush(bNext ? Palette.InGame.TealSoft : Palette.InGame.PaperSunken, 6.0f));
+			Surface->SetPadding(FMargin(8.0f, 5.0f));
+			Caption->SetText(FText::FromString(bNext ? TEXT("→ 강화 후") : TEXT("현재")));
+			StyleLightText(*Caption, 10, Palette.InGame.InkMuted, TEXT("SemiBold"));
+			Values->SetAutoWrapText(true);
+			StyleLightText(*Values, 11, Palette.InGame.TealDeep, TEXT("Medium"));
+			AddVertical(*Column, *Caption, FMargin(0.0f, 0.0f, 0.0f, 2.0f));
+			AddVertical(*Column, *Values);
+			Surface->AddChild(Column);
+			UHorizontalBoxSlot* Slot = AddHorizontal(*Comparison, *Surface,
+				bNext ? FMargin(3.0f, 0.0f, 0.0f, 0.0f) : FMargin(0.0f, 0.0f, 3.0f, 0.0f), ESlateSizeRule::Fill);
+			if (Slot) Slot->SetVerticalAlignment(VAlign_Fill);
+		}
+		AddVertical(*Content, *Comparison, FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+		for (UCommonTextBlock* Text : {Effects, Cost, Reason})
+		{
+			Text->SetAutoWrapText(true);
+			StyleLightText(*Text, 10, Text == Reason ? Palette.InGame.Danger : Palette.InGame.InkMuted, TEXT("Medium"));
+			Text->SetVisibility(ESlateVisibility::Collapsed);
+			AddVertical(*Content, *Text, FMargin(0.0f, 0.0f, 0.0f, 5.0f));
+		}
+		AddVertical(*Content, *Upgrade);
+		Card->AddChild(Content);
+		AddVertical(*Section, *Card);
+		Section->SetVisibility(ESlateVisibility::Collapsed);
+		return Section;
 	}
 
 	UBorder* BuildInformationSection(
@@ -936,11 +1210,6 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			UCommonTextBlock* OperationState = MakeWidget<UCommonTextBlock>(
 				Blueprint, Tree, TEXT("Text_OperationState"), true);
-			UCommonTextBlock* WaitingParties = nullptr;
-			UCommonTextBlock* Occupancy = nullptr;
-			UCommonTextBlock* RemainingService = nullptr;
-			UCommonTextBlock* ExpectedWait = nullptr;
-			UCommonTextBlock* Throughput = nullptr;
 			if (!OperationState)
 			{
 				return nullptr;
@@ -948,16 +1217,11 @@ namespace FFFacilityInfoWbpBuilder
 			OperationState->SetText(FText::GetEmpty());
 			StyleLightText(*OperationState, 13, Palette.InGame.TealDeep, TEXT("SemiBold"));
 			AddVertical(*SectionContent, *OperationState, FMargin(2.0f, 0.0f, 0.0f, 7.0f));
-			if (!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("WaitingParties_Row"),
-					FText::FromString(TEXT("대기/처리 중 일행")), TEXT("Text_WaitingParties"), WaitingParties) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Occupancy_Row"),
-					FText::FromString(TEXT("점유 인원")), TEXT("Text_Occupancy"), Occupancy) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("RemainingService_Row"),
-					FText::FromString(TEXT("남은 서비스 인원")), TEXT("Text_RemainingService"), RemainingService) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("ExpectedWait_Row"),
-					FText::FromString(TEXT("1인 기준 예상 대기")), TEXT("Text_ExpectedWait"), ExpectedWait) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Throughput_Row"),
-					FText::FromString(TEXT("처리 속도")), TEXT("Text_Throughput"), Throughput))
+			if (!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
+				TEXT("Text_WaitingParties"), TEXT("대기 / 처리 중 일행"), TEXT("Text_Occupancy"), TEXT("이용 중 인원")) ||
+				!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
+				TEXT("Text_RemainingService"), TEXT("남은 서비스 인원"), TEXT("Text_ExpectedWait"), TEXT("1인 예상 대기")) ||
+				!AddStatPair(Blueprint, Tree, *SectionContent, Palette, TEXT("Text_Throughput"), TEXT("처리 속도")))
 			{
 				return nullptr;
 			}
@@ -965,27 +1229,13 @@ namespace FFFacilityInfoWbpBuilder
 		}
 		else
 		{
-			UCommonTextBlock* Footprint = nullptr;
-			UCommonTextBlock* Clearance = nullptr;
-			UCommonTextBlock* InstallCost = nullptr;
-			UCommonTextBlock* RecoveryCost = nullptr;
-			UCommonTextBlock* InstanceLimit = nullptr;
-			UCommonTextBlock* QueueCapacity = nullptr;
-			UCommonTextBlock* ServiceDuration = nullptr;
-			if (!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Footprint_Row"),
-					FText::FromString(TEXT("시설 크기")), TEXT("Text_Footprint"), Footprint) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("Clearance_Row"),
-					FText::FromString(TEXT("안전 여유")), TEXT("Text_Clearance"), Clearance) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("InstallCost_Row"),
-					FText::FromString(TEXT("설치 비용")), TEXT("Text_InstallCost"), InstallCost) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("RecoveryCost_Row"),
-					FText::FromString(TEXT("철거 회수액")), TEXT("Text_RecoveryCost"), RecoveryCost) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("InstanceLimit_Row"),
-					FText::FromString(TEXT("건축 한도")), TEXT("Text_InstanceLimit"), InstanceLimit) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("QueueCapacity_Row"),
-					FText::FromString(TEXT("이용 규모")), TEXT("Text_QueueCapacity"), QueueCapacity) ||
-				!AddInfoRow(Blueprint, Tree, *SectionContent, Palette, TEXT("ServiceDuration_Row"),
-					FText::FromString(TEXT("서비스 시간")), TEXT("Text_ServiceDuration"), ServiceDuration))
+			if (!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
+				TEXT("Text_Footprint"), TEXT("시설 크기"), TEXT("Text_Clearance"), TEXT("안전 여유")) ||
+				!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
+				TEXT("Text_InstallCost"), TEXT("설치 비용"), TEXT("Text_RecoveryCost"), TEXT("철거 회수액")) ||
+				!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
+				TEXT("Text_QueueCapacity"), TEXT("이용 규모"), TEXT("Text_ServiceDuration"), TEXT("서비스 시간")) ||
+				!AddStatPair(Blueprint, Tree, *SectionContent, Palette, TEXT("Text_InstanceLimit"), TEXT("건축 한도")))
 			{
 				return nullptr;
 			}
@@ -1057,21 +1307,16 @@ namespace FFFacilityInfoWbpBuilder
 			Blueprint, Tree, TEXT("Panel_BuildActions"), true);
 		UVerticalBox* LiveActions = MakeWidget<UVerticalBox>(
 			Blueprint, Tree, TEXT("Panel_LiveActions"), true);
-		FLinearColor DangerHover = Palette.InGame.Danger * 0.82f;
-		DangerHover.A = Palette.InGame.Danger.A;
-		FLinearColor DangerPressed = Palette.InGame.Danger * 0.72f;
-		DangerPressed.A = Palette.InGame.Danger.A;
 		UButton* Move = MakeLightTextButton(
 			Blueprint, Tree, TEXT("Button_Move"), TEXT("Move_Label"),
 			FText::FromString(TEXT("이동  M")),
-			Palette.InGame.PaperSunken, Palette.InGame.Hover, Palette.InGame.TealSoft,
-			Palette.InGame.PaperSunken, Palette.InGame.TealDeep, true, false,
-			Palette.InGame.Line);
+			Palette.InGame.TealDeep, Palette.InGame.Teal, Palette.InGame.TealDeep,
+			Palette.InGame.LineStrong, Palette.InGame.White, true);
 		UButton* Remove = MakeLightTextButton(
 			Blueprint, Tree, TEXT("Button_Remove"), TEXT("Remove_Label"),
 			FText::FromString(TEXT("철거  Enter")),
-			Palette.InGame.Danger, DangerHover, DangerPressed, Palette.InGame.LineStrong,
-			Palette.InGame.White, true);
+			Palette.InGame.Paper, Palette.InGame.PaperSunken, Palette.InGame.PaperSunken,
+			Palette.InGame.LineStrong, Palette.InGame.Danger, true, false, Palette.InGame.Line);
 		UButton* StartMinigame = MakeLightTextButton(
 			Blueprint, Tree, TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
 			FText::FromString(TEXT("게임 시작")),
@@ -1083,7 +1328,7 @@ namespace FFFacilityInfoWbpBuilder
 			return nullptr;
 		}
 
-		PaintBorder(*Actions, MakeSolidBrush(Palette.InGame.StatusBar, 0.0f));
+		PaintBorder(*Actions, MakeSolidBrush(Palette.InGame.PaperSunken, 0.0f));
 		Actions->SetPadding(FMargin(12.0f, 9.0f));
 		AddHorizontal(*BuildActions, *Move, FMargin(0.0f, 0.0f, 5.0f, 0.0f), ESlateSizeRule::Fill);
 		AddHorizontal(*BuildActions, *Remove, FMargin(5.0f, 0.0f, 0.0f, 0.0f), ESlateSizeRule::Fill);
@@ -1123,6 +1368,7 @@ namespace FFFacilityInfoWbpBuilder
 			Blueprint, Tree, TEXT("ScrollBox_Details"));
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_Content"));
 		UBorder* Summary = BuildIdentitySummary(Blueprint, Tree, *Palette);
+		UVerticalBox* UpgradeSection = BuildUpgradeSection(Blueprint, Tree, *Palette);
 		UCommonTextBlock* RelocationWarning = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("Text_RelocationWarning"), true);
 		UBorder* BuildSection = BuildInformationSection(Blueprint, Tree, *Palette, false);
@@ -1132,7 +1378,7 @@ namespace FFFacilityInfoWbpBuilder
 			Blueprint, Tree, TEXT("Text_Feedback"), true);
 		UBorder* Actions = BuildActionRail(Blueprint, Tree, *Palette);
 		if (!Root || !ShadowSize || !Shadow || !PanelSize || !Panel || !Shell || !Header ||
-			!Body || !DetailsScroll || !Content || !Summary || !RelocationWarning ||
+			!Body || !DetailsScroll || !Content || !Summary || !UpgradeSection || !RelocationWarning ||
 			!BuildSection || !LiveSection || !ProgramSection || !Feedback || !Actions)
 		{
 			return false;
@@ -1152,7 +1398,7 @@ namespace FFFacilityInfoWbpBuilder
 		Panel->SetClipping(EWidgetClipping::ClipToBoundsAlways);
 
 		PaintBorder(*Body, MakeSolidBrush(Palette->InGame.Paper, 0.0f));
-		Body->SetPadding(FMargin(12.0f, 12.0f, 12.0f, 8.0f));
+		Body->SetPadding(FMargin(10.0f, 8.0f, 10.0f, 6.0f));
 		DetailsScroll->SetAnimateWheelScrolling(true);
 		if (UScrollBoxSlot* Slot = Cast<UScrollBoxSlot>(DetailsScroll->AddChild(Content)))
 		{
@@ -1165,7 +1411,8 @@ namespace FFFacilityInfoWbpBuilder
 		}
 		Body->AddChild(DetailsScroll);
 
-		AddVertical(*Content, *Summary, FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		AddVertical(*Content, *Summary, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		AddVertical(*Content, *UpgradeSection, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 		RelocationWarning->SetText(FText::FromString(TEXT("! 재배치가 필요합니다.")));
 		RelocationWarning->SetAutoWrapText(true);
 		RelocationWarning->SetVisibility(ESlateVisibility::Collapsed);
@@ -1182,7 +1429,7 @@ namespace FFFacilityInfoWbpBuilder
 		AddVertical(*Content, *Feedback, FMargin(2.0f, 0.0f, 2.0f, 2.0f));
 
 		AddVertical(*Shell, *Header);
-		AddVertical(*Shell, *Body, FMargin(0.0f), ESlateSizeRule::Fill);
+		AddVertical(*Shell, *Body, FMargin(0.0f), ESlateSizeRule::Fill, VAlign_Fill);
 		AddVertical(*Shell, *Actions);
 		Panel->AddChild(Shell);
 		PanelSize->AddChild(Panel);
@@ -1215,7 +1462,8 @@ namespace FFFacilityInfoWbpBuilder
 		}
 
 		Tree.RootWidget = Root;
-		return true;
+		bool bUpgradeContractAdded = false;
+		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded);
 	}
 
 	UWidgetBlueprint* LoadExistingBlueprint()
@@ -1260,6 +1508,7 @@ namespace FFFacilityInfoWbpBuilder
 			TEXT("Image_Thumbnail"), TEXT("Text_ThumbnailPlaceholder"),
 			TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Text_Context"),
 			TEXT("Panel_Actions"), TEXT("Panel_BuildActions"), TEXT("Panel_LiveActions"),
+			TEXT("Panel_UpgradeComparison"), TEXT("Text_UpgradeCurrent"), TEXT("Text_UpgradeNext"),
 			TEXT("Text_FacilityName"), TEXT("Text_Category"), TEXT("Text_Zone"),
 			TEXT("Text_FacilityState"), TEXT("Text_RelocationWarning"), TEXT("Text_Footprint"),
 			TEXT("Text_Clearance"), TEXT("Text_InstallCost"), TEXT("Text_RecoveryCost"),
@@ -1794,8 +2043,8 @@ namespace FFFacilityInfoWbpBuilder
 	{
 		BuildPaidProgramWidgetBlueprints();
 		// Never rebuild an existing designer-owned asset. A versioned contract migration may append
-		// missing named nodes at the known Panel_Content seam, but it leaves every existing node,
-		// style, graph, and layout property untouched.
+		// missing named nodes at the known Panel_Content seam and normalize the upgrade block order.
+		// Existing designer nodes, their style/graph data, and their own slot properties stay intact.
 		if (FPackageName::DoesPackageExist(PanelPackage))
 		{
 			UWidgetBlueprint* Existing = LoadExistingBlueprint();
@@ -1805,6 +2054,7 @@ namespace FFFacilityInfoWbpBuilder
 			{
 				bool bMigratedProgramContract = false;
 				bool bMigratedInstanceLimitContract = false;
+				bool bMigratedUpgradeContract = false;
 				if (!EnsureProgramWidgetContract(
 						*Existing,
 						*Existing->WidgetTree,
@@ -1814,14 +2064,16 @@ namespace FFFacilityInfoWbpBuilder
 						*Existing,
 						*Existing->WidgetTree,
 						bMigratedInstanceLimitContract) ||
-					!HasInstanceLimitWidgetContract(*Existing))
+					!HasInstanceLimitWidgetContract(*Existing) ||
+					!EnsureUpgradeWidgetContract(*Existing, *Existing->WidgetTree, bMigratedUpgradeContract) ||
+					!HasUpgradeWidgetContract(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 						TEXT("FF_FACILITY_INFO_UMG_FAIL: existing asset cannot accept a non-destructive widget contract migration: %s"),
 						*PanelPackage);
 					return;
 				}
-				if ((bMigratedProgramContract || bMigratedInstanceLimitContract) &&
+				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract) &&
 					!SaveBlueprint(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -1830,7 +2082,7 @@ namespace FFFacilityInfoWbpBuilder
 					return;
 				}
 
-				if (bMigratedProgramContract || bMigratedInstanceLimitContract)
+				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract)
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
 						TEXT("FF_FACILITY_INFO_UMG_MIGRATED: %s (existing designer nodes preserved)"),
@@ -1865,6 +2117,7 @@ namespace FFFacilityInfoWbpBuilder
 			!HasRequiredLayout(*Blueprint) ||
 			!HasProgramWidgetContract(*Blueprint) ||
 			!HasInstanceLimitWidgetContract(*Blueprint) ||
+			!HasUpgradeWidgetContract(*Blueprint) ||
 			!SaveBlueprint(*Blueprint))
 		{
 			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -1941,6 +2194,7 @@ namespace FFFacilityInfoWbpBuilder
 			!HasRequiredLayout(Blueprint) ||
 			!HasProgramWidgetContract(Blueprint) ||
 			!HasInstanceLimitWidgetContract(Blueprint) ||
+			!HasUpgradeWidgetContract(Blueprint) ||
 			!SaveBlueprint(Blueprint))
 		{
 			Rollback();
@@ -1986,6 +2240,28 @@ namespace FFFacilityInfoWbpBuilder
 			TEXT("FF_FACILITY_INFO_UMG_REFRESHED: LightTeal designer layout saved: %s"),
 			*PanelPackage);
 	}
+
+	void RefreshFacilityInfoGameUmg()
+	{
+		// Explicitly replaces only this panel. The existing create command continues to
+		// preserve designer assets, and paid-program layouts are outside this refresh.
+		UWidgetBlueprint* Existing = LoadExistingBlueprint();
+		if (!Existing || !Existing->GeneratedClass ||
+			!Existing->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()) ||
+			!RefreshFacilityInfoWidgetTree(*Existing))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_INFO_GAME_UMG_FAIL: panel-only refresh failed: %s"), *PanelPackage);
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+			TEXT("FF_FACILITY_INFO_GAME_UMG_REFRESHED: %s"), *PanelPackage);
+	}
+
+	FAutoConsoleCommand RefreshFacilityInfoGameUmgCommand(
+		TEXT("FF.RefreshFacilityInfoGameUMG"),
+		TEXT("Explicitly rebuilds only the facility information panel using the editable festival-game template."),
+		FConsoleCommandDelegate::CreateStatic(&RefreshFacilityInfoGameUmg));
 
 	FAutoConsoleCommand BuildFacilityInfoUmgCommand(
 		TEXT("FF.BuildFacilityInfoUMG"),

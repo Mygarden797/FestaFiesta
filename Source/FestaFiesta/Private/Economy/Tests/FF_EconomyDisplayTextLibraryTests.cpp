@@ -29,7 +29,7 @@
 namespace FFF_EconomyDisplayTextTestHelpers
 {
 	// enum 마지막 값. 새 값을 뒤에 추가하면 여기도 같이 늘려야 한다.
-	constexpr int64 LastSpendReason  = static_cast<int64>(EFF_SpendReason::FinaleFireworks);
+	constexpr int64 LastSpendReason  = static_cast<int64>(EFF_SpendReason::FacilityUpgrade);
 	constexpr int64 LastEarnReason   = static_cast<int64>(EFF_EarnReason::MinigameReward);
 	constexpr int64 LastFinaleResult = static_cast<int64>(EFF_FinalePurchaseResult::InsufficientGold);
 	constexpr int64 LastFinaleGrade  = static_cast<int64>(EFF_FinaleGrade::S);
@@ -41,7 +41,7 @@ namespace FFF_EconomyDisplayTextTestHelpers
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_EconomyDisplayText_EveryValueHasTextThatIsNotTheEnumName, "FestaFiesta.Economy.DisplayText.EveryValueHasTextThatIsNotTheEnumName", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_EconomyDisplayText_EveryValueHasTextThatIsNotTheEnumName::RunTest(const FString& Parameters)
 {
-	// 지출 9종
+	// 시설 강화비를 포함한 모든 지출 사유
 	{
 		const UEnum* EnumType = StaticEnum<EFF_SpendReason>();
 		for (int64 Value = 0; Value <= FFF_EconomyDisplayTextTestHelpers::LastSpendReason; ++Value)
@@ -202,8 +202,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_EconomyDisplayText_EnumSizesMatchExpectatio
 bool FFF_EconomyDisplayText_EnumSizesMatchExpectations::RunTest(const FString& Parameters)
 {
 	// UEnum 은 _MAX 를 한 칸 더 갖는다. 저작된 값 개수는 NumEnums() - 1 이다.
-	TestEqual(TEXT("지출 원인이 9종이다"),
-		StaticEnum<EFF_SpendReason>()->NumEnums() - 1, 9);
+	TestEqual(TEXT("지출 원인이 10종이다"),
+		StaticEnum<EFF_SpendReason>()->NumEnums() - 1, 10);
 	TestEqual(TEXT("매출 원인이 5종이다"),
 		StaticEnum<EFF_EarnReason>()->NumEnums() - 1, 5);
 	TestEqual(TEXT("피날레 구매 결과가 6종이다"),
@@ -214,8 +214,8 @@ bool FFF_EconomyDisplayText_EnumSizesMatchExpectations::RunTest(const FString& P
 		StaticEnum<EFF_ProgramPurchaseResult>()->NumEnums() - 1, 7);
 
 	// 위 개수가 바뀌면 이 파일의 Last* 상수와 문자열 switch 도 같이 고쳐야 한다.
-	TestEqual(TEXT("지출 마지막 값이 8 이다"),
-		FFF_EconomyDisplayTextTestHelpers::LastSpendReason, static_cast<int64>(8));
+	TestEqual(TEXT("지출 마지막 값이 9 이다"),
+		FFF_EconomyDisplayTextTestHelpers::LastSpendReason, static_cast<int64>(9));
 	TestEqual(TEXT("매출 마지막 값이 4 이다"),
 		FFF_EconomyDisplayTextTestHelpers::LastEarnReason, static_cast<int64>(4));
 

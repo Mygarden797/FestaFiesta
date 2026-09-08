@@ -33,12 +33,23 @@ void AFF_SpawnActor::BeginPlay()
 	 FVector Origin = GetActorLocation();
 	CrowdSim->InitializeSimulation(Origin, SimRadiusUU, ActorPoolSize, AgentPoolSize, CrowdActorClass);
 
+	// 세션 내내 고정이라 BeginArrivalSchedule 이 게이트를 인자로 받을 필요가 없다.
+	CrowdSim->GatherCrowdGates(CrowdGates);
+
 	CrowdSim->bDrawDebugAgents = bDrawDebugAgents;
 	CrowdSim->bDrawDebugDensity = bDrawDebugDensity;
 
 	// 파티 설정은 SpawnAgents보다 먼저 넘겨야 한다. 파티 구성은 스폰 시점에 확정되기 때문이다.
 	CrowdSim->bEnablePartyGrouping = bEnablePartyGrouping;
-	CrowdSim->SetTemp_ExitWorldLocation(Origin + Temp_ExitOffsetFromOrigin);
+	if (IsValid(DespawnAchor))
+	{
+		CrowdSim->SetTemp_ExitWorldLocation(DespawnAchor->GetActorLocation());	
+	}
+	else
+	{
+		CrowdSim->SetTemp_ExitWorldLocation(Origin + Temp_ExitOffsetFromOrigin);
+	}
+	
 
 	if (IsValid(SpawnAchor))
 	{

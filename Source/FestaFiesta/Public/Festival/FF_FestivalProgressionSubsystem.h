@@ -129,7 +129,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_LedgerRow> GetEarnRowsForDay(int32 Day) const;
 
-	// 지출 9종을 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
+	// 지출 사유를 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
 	// [주의] 장소 임대료는 하루치(2,400)를 넘을 수 있다 — 어제 못 낸 몫을 오늘 갚으면 합산된다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_LedgerRow> GetSpendRowsForDay(int32 Day) const;
@@ -327,6 +327,17 @@ public:
 	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
+	friend class UFF_FacilityUpgradeSubsystem;
+	// Synchronous facility purchase: reserve without events, record on commit, publish only after all systems commit.
+	bool ReserveFacilityUpgradeSpend(FGuid CommandId, int32 Amount);
+	void CommitFacilityUpgradeSpend(FGuid CommandId);
+	void RollbackFacilityUpgradeSpend(FGuid CommandId);
+	void PublishFacilityUpgradeSpend(FGuid CommandId);
+	FGuid PendingFacilityUpgradeCommand;
+	int32 PendingFacilityUpgradeCost = 0;
+	int32 GoldBeforeFacilityUpgrade = 0;
+	bool bFacilityUpgradeSpendCommitted = false;
+
 	// Project Settings 의 DefaultFestival 을 읽어 축제를 시작한다.
 	// 저작이 비어 있으면 Warning 만 남기고 시작하지 않는다.
 	void StartConfiguredFestival();

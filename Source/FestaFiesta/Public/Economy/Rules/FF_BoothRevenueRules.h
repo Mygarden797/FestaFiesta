@@ -10,6 +10,6 @@ struct FESTAFIESTA_API FFF_BoothRevenueRules
 	static int32 FindRevenuePerUse(const TMap<FName, int32>& RevenueTable, FName MinorToken);
 
 	// 파티 하나가 부스를 한 번 이용했을 때 플레이어에게 들어오는 수수료(Gold).
-	// 인원을 곱한 뒤 한 번만 반올림한다 — 아래 주석 참고.
-	static int32 ResolveCommission(int32 RevenuePerUse, int32 MemberCount, float CommissionRate);
+	// 인원·수수료율·시설 수익 배율까지 곱한 뒤 한 번만 반올림한다. int32 상한은 포화한다.
+	static int32 ResolveCommission(int32 RevenuePerUse, int32 MemberCount, float CommissionRate, float RevenueMultiplier = 1.0f);
 };

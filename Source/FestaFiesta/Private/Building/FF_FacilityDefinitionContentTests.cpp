@@ -284,6 +284,43 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
             *FString::Printf(TEXT("Party Queue 슬롯 수가 MaxWaitingAgents와 같다: %s"), *AssetId.ToString()),
             Lane.ExplicitSlotTransforms.Num(),
             Definition->Spec.QueueRules.MaxWaitingAgents);
+
+        // Check authored upgrade geometry against the project's real Crowd radius as well.
+        if (Definition->Spec.bUsesFacilityLevels)
+        {
+            for (const FFFZSFacilityUpgradeTier& Tier : Definition->Spec.UpgradeTiers)
+            {
+                const FString Label = FString::Printf(TEXT("%s Lv.%d"), *AssetId.ToString(), Tier.TargetLevel);
+                const FFFZSFacilitySpec Upgraded = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+                    Definition->Spec, Tier.TargetLevel, Tier.SizeMultiplier);
+                FFF_QueueLaneGeometry UpgradedLane;
+                TestTrue(*FString::Printf(TEXT("Upgraded Party Queue is projectable: %s"), *Label),
+                    UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
+                        Upgraded, FTransform::Identity, UpgradedLane));
+                for (const FTransform& Slot : UpgradedLane.ExplicitSlotTransforms)
+                {
+                    TestTrue(*FString::Printf(TEXT("Upgraded waiting body stays reserved: %s"), *Label),
+                        IsLocalDiscInsideQueueReservation(Slot.GetLocation(), FUnitData().Radius, Upgraded));
+                }
+                for (const FFFZSAnchorDefinition& Anchor : Upgraded.Anchors)
+                {
+                    if (Anchor.Type == EFFZSAnchorType::Entry && Anchor.Index == 0)
+                    {
+                        TestTrue(*FString::Printf(TEXT("Upgraded entry body stays reserved: %s"), *Label),
+                            IsLocalDiscInsideQueueReservation(
+                                Anchor.LocalTransform.GetLocation(), FUnitData().Radius, Upgraded));
+                    }
+                }
+                UStaticMesh* LevelMesh = Upgraded.VisualMesh.LoadSynchronous();
+                if (TestNotNull(*FString::Printf(TEXT("Authored or base level mesh loads: %s"), *Label), LevelMesh))
+                {
+                    const FTransform LevelTransform = FFZSVisualGeometry::ResolveVisualMeshTransform(Upgraded, LevelMesh);
+                    TestTrue(*FString::Printf(TEXT("Upgraded visual fits its actual building bounds: %s"), *Label),
+                        IsWithinAuthoritativeBounds(FFZSVisualGeometry::TransformBounds(
+                            LevelMesh->GetBoundingBox(), LevelTransform), Upgraded));
+                }
+            }
+        }
     }
 
     return true;

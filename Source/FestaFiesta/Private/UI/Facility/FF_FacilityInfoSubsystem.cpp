@@ -4,6 +4,9 @@
 
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
+#include "Building/FF_FacilityUpgradeSubsystem.h"
+#include "Building/FF_FacilityUpgradeTypes.h"
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
@@ -28,6 +31,7 @@
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityInfoSubsystem"
@@ -133,6 +137,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
+		Panel->OnUpgradeRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -247,6 +252,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
+		Panel->OnUpgradeRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -279,6 +285,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnRemoveRequested.AddUObject(this, &ThisClass::HandlePanelRemoveRequested);
 	Panel->OnProgramScheduleRequested.AddUObject(
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
+	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
@@ -292,6 +299,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
+		Panel->OnUpgradeRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel = nullptr;
@@ -643,7 +651,12 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.DisplayName = Spec.DisplayName.IsEmpty()
 		? LOCTEXT("UnknownFacility", "이름 없는 시설")
 		: Spec.DisplayName;
-	OutViewData.CategoryText = FFFacilityInfoModel::GetCategoryText(Spec.Category);
+	FFF_FacilityNameParts NameParts;
+	FString NamingFailure;
+	UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+		Spec.Category, Spec.FacilityDefinitionId, NameParts, NamingFailure);
+	OutViewData.CategoryText = FFF_PrepBuildPresentationRules::ResolveCategoryPathText(
+		Spec.Category, NameParts.MinorToken);
 	OutViewData.ZoneText = Facility.GetZoneId().IsNone()
 		? LOCTEXT("UnknownZone", "구역 정보 없음")
 		: FText::FromName(Facility.GetZoneId());
@@ -667,6 +680,18 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.ServiceDurationText = FText::Format(
 		LOCTEXT("ServiceDurationFormat", "{0}초"),
 		FText::AsNumber(Spec.QueueRules.ServiceDurationSeconds));
+	const UFF_FacilityUpgradeSubsystem* Upgrades = World
+		? World->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
+	FFF_FacilityUpgradePreview UpgradePreview;
+	const bool bHasUpgradePreview = Upgrades &&
+		Upgrades->GetUpgradePreview(OutViewData.FacilityInstanceId, UpgradePreview);
+	FFFacilityInfoModel::ApplyUpgradePreview(bHasUpgradePreview ? &UpgradePreview : nullptr, OutViewData);
+	if (bHasUpgradePreview && UpgradePreview.CurrentServiceDurationSeconds > 0.0f)
+	{
+		OutViewData.ServiceDurationText = FText::Format(
+			LOCTEXT("ServiceDurationFormat", "{0}초"),
+			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
+	}
 	OutViewData.bNeedsRelocation = ReadModel.bNeedsRelocation;
 	OutViewData.FeedbackText = FeedbackText;
 	OutViewData.bFeedbackIsError = bFeedbackIsError;
@@ -1271,6 +1296,41 @@ void UFF_FacilityInfoSubsystem::HandlePanelRemoveRequested()
 	{
 		OnRemoveRequested.Broadcast(SelectedFacilityId);
 	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelUpgradeRequested()
+{
+	if (bPauseMenuPresentationSuppressed || !Panel ||
+		Panel->GetVisibility() == ESlateVisibility::Collapsed ||
+		SelectionContext != EFF_FacilityInfoContext::Build || !SelectedFacilityId.IsValid())
+	{
+		return;
+	}
+	const FFF_FacilityInfoViewData& ViewData = Panel->GetCurrentViewData();
+	if (ViewData.FacilityInstanceId != SelectedFacilityId || !ViewData.bShowUpgradeDetails ||
+		!ViewData.bShowUpgradeAction || !ViewData.bCanUpgrade)
+	{
+		return;
+	}
+
+	// Copy the reviewed identity/level before the command emits world events and refreshes the UI.
+	const FGuid RequestedFacilityId = SelectedFacilityId;
+	const int32 ExpectedLevel = ViewData.CurrentUpgradeLevel;
+	UFF_FacilityUpgradeSubsystem* Upgrades = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
+	FText FailureReason;
+	const bool bSucceeded = Upgrades &&
+		Upgrades->TryUpgradeFacility(RequestedFacilityId, ExpectedLevel, FailureReason);
+	if (SelectedFacilityId != RequestedFacilityId)
+	{
+		return;
+	}
+	SetFeedback(bSucceeded
+		? FText::Format(LOCTEXT("UpgradeSucceeded", "Lv.{0} 강화 완료! 손님을 더 빠르게 응대합니다."),
+			FText::AsNumber(ExpectedLevel + 1))
+		: (FailureReason.IsEmpty()
+			? LOCTEXT("UpgradeFailed", "강화할 수 없습니다. 시설 상태를 다시 확인해 주세요.")
+			: FailureReason), !bSucceeded);
 }
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()

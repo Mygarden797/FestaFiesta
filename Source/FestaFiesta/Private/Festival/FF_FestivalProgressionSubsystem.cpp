@@ -83,6 +83,11 @@ void UFF_FestivalProgressionSubsystem::RestartFestival()
 
 void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinition* InDefinition)
 {
+	// A policy callback cannot restart the economy in the middle of an atomic facility purchase.
+	if (PendingFacilityUpgradeCommand.IsValid())
+	{
+		return;
+	}
 	if (InDefinition == nullptr)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Error,
@@ -158,8 +163,76 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Re
 	return true;
 }
 
+bool UFF_FestivalProgressionSubsystem::ReserveFacilityUpgradeSpend(const FGuid CommandId, const int32 Amount)
+{
+	if (!IsInGameThread() || !IsFestivalStarted() || !CommandId.IsValid()
+		|| PendingFacilityUpgradeCommand.IsValid() || Amount < 0
+		|| DayLedger.GetSpendByReason(EFF_SpendReason::FacilityUpgrade) > MAX_int32 - Amount)
+	{
+		return false;
+	}
+	const int32 PreviousGold = Funds.GetGold();
+	if (!Funds.TrySpend(Amount))
+	{
+		return false;
+	}
+	PendingFacilityUpgradeCommand = CommandId;
+	PendingFacilityUpgradeCost = Amount;
+	GoldBeforeFacilityUpgrade = PreviousGold;
+	bFacilityUpgradeSpendCommitted = false;
+	return true;
+}
+
+void UFF_FestivalProgressionSubsystem::CommitFacilityUpgradeSpend(const FGuid CommandId)
+{
+	if (!ensure(PendingFacilityUpgradeCommand == CommandId) || bFacilityUpgradeSpendCommitted)
+	{
+		return;
+	}
+	// Free authored tiers still reserve a command, but do not create a fictitious expense.
+	if (PendingFacilityUpgradeCost > 0)
+	{
+		DayLedger.RecordSpend(EFF_SpendReason::FacilityUpgrade, PendingFacilityUpgradeCost);
+	}
+	bFacilityUpgradeSpendCommitted = true;
+}
+
+void UFF_FestivalProgressionSubsystem::RollbackFacilityUpgradeSpend(const FGuid CommandId)
+{
+	if (PendingFacilityUpgradeCommand != CommandId || bFacilityUpgradeSpendCommitted)
+	{
+		return;
+	}
+	// Release a reservation, not a player refund: do not alter refund/revenue ledgers or broadcast.
+	Funds.Refund(PendingFacilityUpgradeCost);
+	PendingFacilityUpgradeCommand.Invalidate();
+	PendingFacilityUpgradeCost = 0;
+	GoldBeforeFacilityUpgrade = 0;
+}
+
+void UFF_FestivalProgressionSubsystem::PublishFacilityUpgradeSpend(const FGuid CommandId)
+{
+	if (PendingFacilityUpgradeCommand != CommandId || !bFacilityUpgradeSpendCommitted)
+	{
+		return;
+	}
+	const int32 PreviousGold = GoldBeforeFacilityUpgrade;
+	PendingFacilityUpgradeCommand.Invalidate();
+	PendingFacilityUpgradeCost = 0;
+	GoldBeforeFacilityUpgrade = 0;
+	bFacilityUpgradeSpendCommitted = false;
+	BroadcastGoldIfChanged(PreviousGold);
+}
+
 void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
 {
+	if (Amount > 0)
+	{
+		// 잔액과 누적 매출 중 먼저 상한에 닿는 값에 맞춰 동일한 수용액을 원장에도 기록한다.
+		const int32 Capacity = MAX_int32 - FMath::Max3(Funds.GetGold(), Funds.GetTotalRevenue(), Funds.GetTodayRevenue());
+		Amount = FMath::Min(Amount, Capacity);
+		if (Amount == 0) return;
+	}
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
@@ -239,8 +312,8 @@ TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetSpendRowsForDay(int32
 	}
 
 	const UEnum* ReasonEnum = StaticEnum<EFF_SpendReason>();
-
-	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FinaleFireworks); ++Value)
+	
+	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FacilityUpgrade); ++Value)
 	{
 		const int32 Amount = Ledger->GetSpendByReason(static_cast<EFF_SpendReason>(Value));
 		if (Amount == 0)
