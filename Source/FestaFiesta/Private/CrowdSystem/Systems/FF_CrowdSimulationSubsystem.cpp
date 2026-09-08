@@ -2094,10 +2094,17 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		// 대기 항만 켜서 부른다. 밀집은 조정자의 Relocate 경로가 이미 판정하고 있고,
 		// 개장·라이브 변화는 DestinationOpened 가 밖에서 밀어 넣는다 — 여기서 또 보면
 		// 같은 사건에 두 경로가 반응한다.
+		//
+		// ★ 끄는 항은 조건이 **성립할 수 없는 값**을 넣는다. 부등호 방향을 확인할 것 —
+		//   밀집은 `>` 라 (0, 1) 로 꺼지지만, 주기는 `>=` 라 (0, 0) 을 넣으면 0 >= 0 이
+		//   참이 되어 매번 발화한다. 2026-09-08 실측에서 실제로 그 버그가 났고, 인내심과
+		//   무관하게 슬롯 도착 즉시 전원이 이탈했다(`0.1분 기다리다 떠난다`).
+		//   주기를 끌 때는 Max 를 넣어야 한다.
 		const bool bAbandon = FFF_UtilityDestinationSelector::ShouldReevaluate(
 			WaitedMinutes, AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes,
 			/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
-			/*SecondsSinceLastEvaluation=*/0.f, /*PersonalReevaluateIntervalSeconds=*/0.f,
+			/*SecondsSinceLastEvaluation=*/0.f,
+			/*PersonalReevaluateIntervalSeconds=*/TNumericLimits<float>::Max(),
 			/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
 
 		if (bAbandon)

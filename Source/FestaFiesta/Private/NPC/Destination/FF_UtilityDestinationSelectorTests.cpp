@@ -280,6 +280,33 @@ bool FFF_UtilityDestinationSelector_ShouldReevaluateTriggers::RunTest(const FStr
 		FFF_UtilityDestinationSelector::ShouldReevaluate(5.f, 15.f, 0.5f, 0.85f, 10.f, 120.f, true, false));
 	TestTrue(TEXT("라이브 이벤트 상태가 바뀌면 재평가한다"),
 		FFF_UtilityDestinationSelector::ShouldReevaluate(5.f, 15.f, 0.5f, 0.85f, 10.f, 120.f, false, true));
+
+	// --- 항 하나만 켜서 부르는 호출부를 위한 계약 (2026-09-08) ---
+	//
+	// 줄 이탈 판정은 대기 항만 켜고 나머지를 끈 채로 이 함수를 부른다. 그런데 주기 항이
+	// `>=` 라 (경과 0, 임계 0) 을 "끔"으로 넣으면 0 >= 0 이 참이 되어 매번 발화했다.
+	// 계수기는 정상으로 보이고 스위치도 동작해서, 개인 한계보다 짧은 대기에도 이탈한
+	// 로그를 인게임에서 보고서야 드러났다. 그 회귀를 여기서 잡는다.
+	TestTrue(TEXT("주기 항에 (0, 0) 을 넣으면 발화한다 — 0 으로 끄려는 시도를 막는다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/5.f, /*WaitThreshold=*/15.f, /*Density=*/0.f, /*DensityThreshold=*/1.f,
+			/*SinceLast=*/0.f, /*Interval=*/0.f, false, false));
+
+	// 끄는 올바른 방법: 임계에 Max 를 넣는다.
+	TestFalse(TEXT("주기 항은 임계 Max 로 꺼야 한다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/5.f, /*WaitThreshold=*/15.f, /*Density=*/0.f, /*DensityThreshold=*/1.f,
+			/*SinceLast=*/0.f, /*Interval=*/TNumericLimits<float>::Max(), false, false));
+
+	// 그 상태에서 대기 항만 정상 동작해야 한다 — 줄 이탈 판정이 기대하는 형태.
+	TestFalse(TEXT("대기가 개인 한계 미만이면 이탈하지 않는다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/12.5f, /*WaitThreshold=*/15.4f, 0.f, 1.f,
+			0.f, TNumericLimits<float>::Max(), false, false));
+	TestTrue(TEXT("대기가 개인 한계를 넘으면 이탈한다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/16.0f, /*WaitThreshold=*/15.4f, 0.f, 1.f,
+			0.f, TNumericLimits<float>::Max(), false, false));
 	return true;
 }
 
