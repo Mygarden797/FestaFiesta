@@ -15,10 +15,12 @@
 
 class AFFZSFacilityActor;
 class AFFZSPlacementPreviewActor;
+class AFFZSBuildableGridActor;
 class APlayerController;
 class UFF_BuildCatalogScreen;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeGuide;
+class UFF_BuildToolsWidget;
 class UFF_BuildPlacementFailureFeedback;
 class UFF_FacilityInfoSubsystem;
 class UFFZSWorldSubsystem;
@@ -30,7 +32,7 @@ enum class EFF_BuildModeState : uint8
 {
 	// 건축 UI와 배치 프리뷰가 모두 없고, 플레이어 입력 모드가 원래 상태로 복원된 상태. 
 	Closed,
-	// 카탈로그 없이 설치된 시설의 범위를 확인하고 시설을 제거할 수 있는 기본 건축 상태.
+	// 카탈로그 없이 설치된 시설의 범위·정보를 확인하고 시설을 관리하는 기본 건축 상태.
 	BuildMode,
 	// 시설 목록 UI가 열려 있으며 선택 이벤트를 기다리는 상태. 
 	CatalogOpen,
@@ -49,10 +51,22 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 
 // 외부 PrepHUD 카탈로그의 exact Slate focus가 사라졌을 때 안정적인 카테고리 버튼으로 복구하도록 요청한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildCatalogFocusRestoreRequested);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildToolsChanged);
 
 // 입력과 부작용을 분리해 자동화 테스트에서도 실제 B 키 상태표를 검증할 수 있게 한다.
 namespace FFBuildModeModel
 {
+	inline bool CanAcceptWorldBuildAction(const bool bInputSuppressed,
+		const bool bEditableTextFocused, const bool bPointerOverTools)
+	{
+		return !bInputSuppressed && !bEditableTextFocused && !bPointerOverTools;
+	}
+
+	inline bool ShouldFreezePlacementTarget(const bool bPointerOverTools, const bool bEditingAngle)
+	{
+		return bPointerOverTools || bEditingAngle;
+	}
+
 	inline EFF_BuildModeState ResolveBuildKeyState(const EFF_BuildModeState CurrentState)
 	{
 		switch (CurrentState)
@@ -79,6 +93,17 @@ namespace FFBuildModeModel
 		return State == EFF_BuildModeState::BuildMode;
 	}
 
+	inline bool CanInspectInstalledFacility(const EFF_BuildModeState State)
+	{
+		return State == EFF_BuildModeState::BuildMode || State == EFF_BuildModeState::CatalogOpen;
+	}
+
+	inline bool CanInspectFromWorldPointer(const EFF_BuildModeState State,
+		const bool bInputSuppressed, const bool bPointerTargetsWorld)
+	{
+		return CanInspectInstalledFacility(State) && !bInputSuppressed && bPointerTargetsWorld;
+	}
+
 	inline bool CanRemoveFacilityWithTodaysProgram(const bool bHasScheduledProgram)
 	{
 		return !bHasScheduledProgram;
@@ -90,10 +115,10 @@ namespace FFBuildModeModel
 			State == EFF_BuildModeState::Moving;
 	}
 
-	// 사용자용 격자는 시설을 실제로 놓거나 옮기는 순간에만 보여 일반 플레이와 메뉴 탐색을 가리지 않는다.
+	// 시설 선택 전에도 주변의 사용 가능한 땅을 살펴볼 수 있다. 일반 플레이에서는 숨긴다.
 	inline bool ShouldShowPlacementGrid(const EFF_BuildModeState State)
 	{
-		return IsPreviewActive(State);
+		return IsBuildSessionActive(State);
 	}
 
 	inline EFF_BuildModeState ResolvePreviewCancelState(const EFF_BuildModeState State)
@@ -301,6 +326,11 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 {
 	GENERATED_BODY()
 
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_BuildFacilityInspectionTest;
+	friend class FFF_BuildGridOverviewTest;
+#endif
+
 public:
 	// DeveloperSettings가 없거나 런타임 config가 범위를 벗어났을 때 사용하는 조작 안전값.
 	static constexpr float DefaultPlacementRotationSnapDegrees = 45.0f;
@@ -325,6 +355,11 @@ public:
 	// 현재 상태를 반환한다. 이 값으로 카탈로그/배치/종료 UI를 구분할 수 있다. 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	EFF_BuildModeState GetBuildModeState() const { return State; }
+
+	/** Inspect a registered placed facility. Browsing the catalog first returns to the world;
+	 * this action opens the existing information panel and never installs, moves or removes. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
+	bool InspectFacility(AFFZSFacilityActor* Facility);
 
 	/** Pause Hub가 건축 상태를 파괴하지 않고 입력 소유권만 임시로 넘긴다. 활성 세션에서만 true. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Pause")
@@ -403,6 +438,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	float GetPlacementYawDegrees() const;
 
+	// Presentation commands share the same state/validation path as keyboard placement.
+	UPROPERTY(BlueprintAssignable, Category = "Building|Tools")
+	FFF_OnBuildToolsChanged OnBuildToolsChanged;
+
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsPlacementGridVisible() const { return bPlacementGridVisible; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetPlacementGridVisible(bool bVisible);
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetPreferredPositionSnapCm(int32 SnapCm);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	int32 GetPreferredPositionSnapCm() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	int32 GetActivePositionSnapCm() const { return GetPlacementPositionSnapCm(); }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void NudgePlacement(FIntPoint Direction);
+	void NotifyBuildToolsInteraction();
+	bool HasPlacementTarget() const { return bHasPlacementTarget; }
+	bool IsCurrentPlacementValid() const { return bHasPlacementTarget && LastValidation.bIsValid; }
+	FText GetPlacementStatusText() const;
+
 	// 최신 커서·revision·대상 등록을 재검증한 뒤 PreviewCommand를 Install 또는 Move로 확정한다.
 	// 명령 성공 시만 true. 설치는 연속 배치를 유지하고, 이동은 BuildMode로 복귀하며 실패 시 프리뷰를 유지한다.
 	 
@@ -417,6 +473,16 @@ private:
 	// Install/Move 전 검증과 시각화를 담당하는 일회성 액터. Placing/Moving 동안만 존재한다.
 	UPROPERTY(Transient)
 	TObjectPtr<AFFZSPlacementPreviewActor> PlacementPreview;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AFFZSBuildableGridActor> BuildGridOverview;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildToolsWidget> BuildToolsWidget;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
+	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
 
 	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;
@@ -455,6 +521,7 @@ private:
 	bool bExternalCatalogPresentationActive = false;
 	// 매 프레임의 비싼 라인트레이스/검증을 피하기 위한 누적 시간이다. 
 	float PreviewRefreshAccumulator = 0.0f;
+	double LastPreviewValidationTimeSeconds = -1.0;
 	// 라인트레이스, 바닥 경사, Zone, 회전 면적 검사를 모두 통과한 커서 표적이 있는지 나타낸다. 
 	bool bHasPlacementTarget = false;
 	// 외부 월드 변경 뒤 커서가 멈춰 있어도 다음 주기에 revision과 범위 색을 다시 검증하게 한다.
@@ -485,6 +552,7 @@ private:
 	bool bPlacementGridVisible = true;
 	// Ctrl/Alt 전환도 커서 위치가 같을 때 프리뷰와 격자를 다시 그리도록 마지막 간격을 기억한다.
 	int32 CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
+	int32 PreferredPositionSnapCm = 0;
 	// 썸네일 해제 방송 중 공개 전환 API가 재진입해 Closed 불변식을 깨뜨리지 않게 한다.
 	bool bIsExitingBuildMode = false;
 	// 현재 CommitPreview의 Move 이벤트가 돌아오는 동안만 true다.
@@ -513,6 +581,8 @@ private:
 	// Q/E 스냅과 Shift+Q/E 자유 회전 gesture를 처리한다. 회전은 dirty 표시만 하고 검증은 Tick 주기를 따른다.
 	void HandlePlacementRotationInput(APlayerController& Controller, float DeltaTime);
 	void TogglePlacementGrid();
+	void RefreshBuildGridOverview();
+	void DestroyBuildGridOverview();
 	void ResetPlacementRotationInput();
 	void SnapPlacementRotation(int32 Direction);
 	// 디자이너 위젯을 생성하고 델리게이트를 연결한다. 바인딩이 깨졌으면 C++ 안전 UI로 폴백한다. 
@@ -527,6 +597,8 @@ private:
 	void BeginBuildSession(APlayerController& Controller);
 	// 건축 세션 시작 시 좌하단 조작 안내 패널을 만들어 붙인다. 이미 있으면 아무 일도 하지 않는다.
 	void CreateBuildModeGuide(APlayerController& Controller);
+	void CreateBuildTools(APlayerController& Controller);
+	void RemoveBuildTools();
 	// 저장된 WBP의 named text가 존재할 때만 현재 상태·각도·설정값을 안전하게 반영한다.
 	void RefreshBuildModeGuide();
 	// 조작 안내 패널을 뷰포트에서 제거한다. 여러 번 호출해도 안전하다.
@@ -555,13 +627,11 @@ private:
 	// 충돌 없는 시설 표현과 무관하게 커서 아래 실제 지면을 찾는다.
 	bool TraceGroundUnderCursor(APlayerController& Controller, FHitResult& OutGroundHit) const;
 	// BuildMode에서 커서 아래 시설을 작업 패널 대상으로 선택한다. 같은 시설 재클릭은 no-op이다.
-	bool HandleRemovalClickUnderCursor(APlayerController& Controller);
+	bool HandleFacilityInspectionClick(APlayerController& Controller);
 	// 현재 작업 대상을 범위로 강조하고, 이전 대상이 있으면 강조를 해제한다.
-	void SelectFacilityForRemoval(AFFZSFacilityActor& Facility);
 	// 선택 강조와 약한 참조를 함께 정리한다. 카탈로그/종료/스냅샷 복원에서도 호출한다.
 	void ClearPendingRemovalSelection();
 	// 공용 우측 시설 정보 WBP를 건축 컨텍스트로 열거나 닫는다.
-	void ShowRemovalConfirmation(const FText& FacilityName);
 	void RemoveRemovalConfirmation(FGuid FacilityInstanceId);
 	void ShowFacilityInfoFeedback(const FText& Feedback, bool bIsError) const;
 	// 선택 대상을 최신 단계·레지스트리·점유 상태로 재검증한 뒤 권위 Remove 명령을 실행한다.
@@ -579,6 +649,7 @@ private:
 	// 프리뷰 명령과 LastValidation을 실제로 갱신했으면 true.
 	 
 	bool UpdatePlacementFromCursor(bool bForceCommandRebuild = false);
+	void RefreshCurrentPlacementValidation();
 	// 선택 Spec, GUID, Zone, 배치, 최신 revision으로 Install/Move PreviewCommand를 교체한다.
 	void RebuildPreviewCommand();
 	// FFZS DeveloperSettings의 배치 조작값을 검증해 반환한다. 잘못된 config는 공개 fallback을 사용한다.

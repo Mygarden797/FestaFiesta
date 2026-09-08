@@ -116,7 +116,7 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 	
 	// [6] 수수료 → 원장.
 	const int32 Commission = FFF_BoothRevenueRules::ResolveCommission(
-		RevenuePerUse, MemberCount, Definition->BoothCommissionRate);
+		RevenuePerUse, MemberCount, Definition->BoothCommissionRate, Facility->GetUpgradeRevenueMultiplier());
 	if (Commission <= 0) return;
 
 	Progression->AddRevenue(Commission, EFF_EarnReason::FacilityCommission, Spec.FacilityDefinitionId);

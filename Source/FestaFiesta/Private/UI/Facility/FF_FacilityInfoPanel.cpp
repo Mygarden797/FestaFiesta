@@ -1,14 +1,18 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 
 #include "CommonTextBlock.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GameFramework/InputSettings.h"
+#include "HAL/PlatformTime.h"
 #include "Input/Reply.h"
 #include "InputCoreTypes.h"
 
@@ -19,6 +23,7 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	Super::NativeOnInitialized();
 	EnsureMinigameButton();
 	EnsureProgramSection();
+	EnsureUpgradeSection();
 
 	if (Button_Move)
 	{
@@ -41,6 +46,10 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 		Button_ScheduleProgram->OnClicked.AddUniqueDynamic(
 			this, &ThisClass::HandleProgramScheduleClicked);
 	}
+	if (Button_Upgrade)
+	{
+		Button_Upgrade->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUpgradeClicked);
+	}
 }
 
 FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
@@ -57,13 +66,34 @@ FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
 
 void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewData)
 {
+	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
+		CurrentViewData.Context != ViewData.Context;
 	CurrentViewData = ViewData;
+	if (bSelectionChanged && WidgetTree)
+	{
+		if (UScrollBox* Details = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("ScrollBox_Details"))))
+		{
+			Details->ScrollToStart();
+		}
+	}
 
 	SetText(Text_Context, ViewData.ContextTitle);
 	SetText(Text_FacilityName, ViewData.DisplayName);
+	if (Text_FacilityName)
+	{
+		Text_FacilityName->SetToolTipText(ViewData.DisplayName);
+	}
 	SetText(Text_Category, ViewData.CategoryText);
 	SetText(Text_Zone, ViewData.ZoneText);
+	if (Text_Category) Text_Category->SetToolTipText(ViewData.CategoryText);
+	if (Text_Zone) Text_Zone->SetToolTipText(ViewData.ZoneText);
 	SetText(Text_FacilityState, ViewData.FacilityStateText);
+	SetText(Text_FacilityRevenue, ViewData.FacilityRevenueText);
+	if (Text_FacilityRevenue)
+	{
+		Text_FacilityRevenue->SetVisibility(ViewData.FacilityInstanceId.IsValid()
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 	SetText(Text_RelocationWarning, LOCTEXT("NeedsRelocation", "! 재배치가 필요합니다."));
 	SetText(Text_Footprint, ViewData.FootprintText);
 	SetText(Text_Clearance, ViewData.ClearanceText);
@@ -92,6 +122,57 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	SetText(Text_ThumbnailPlaceholder, ViewData.ThumbnailPlaceholderText);
 
 	const bool bBuildContext = ViewData.Context == EFF_FacilityInfoContext::Build;
+	SetText(Text_FacilityLevel, ViewData.FacilityLevelText);
+	FText Effects = ViewData.UpgradeEffectText;
+	if (!ViewData.UpgradeRevenueEffectText.IsEmpty())
+	{
+		Effects = FText::Format(LOCTEXT("UpgradeEffectsWithRevenue", "{0}\n{1}"),
+			ViewData.UpgradeRevenueEffectText, Effects);
+	}
+	SetText(Text_UpgradeEffect, ViewData.UpgradeSizeEffectText.IsEmpty()
+		? Effects : FText::Format(LOCTEXT("UpgradeEffectsWithSize", "{0}\n{1}"),
+			Effects, ViewData.UpgradeSizeEffectText));
+	SetText(Text_UpgradeCurrent, ViewData.UpgradeCurrentText);
+	SetText(Text_UpgradeNext, ViewData.UpgradeNextText);
+	const bool bHasComparison = Panel_UpgradeComparison && Text_UpgradeCurrent && Text_UpgradeNext &&
+		!ViewData.UpgradeCurrentText.IsEmpty() && !ViewData.UpgradeNextText.IsEmpty();
+	if (Panel_UpgradeComparison)
+	{
+		Panel_UpgradeComparison->SetVisibility(bHasComparison && bBuildContext && ViewData.bShowUpgradeDetails
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		// Keep authored multipliers, signed changes and footprint details available without
+		// making the first screen taller. Legacy WBP assets continue to show the full text.
+		Panel_UpgradeComparison->SetToolTipText(Text_UpgradeEffect ? Text_UpgradeEffect->GetText() : Effects);
+	}
+	SetText(Text_UpgradeCost, ViewData.UpgradeCostText);
+	SetText(Text_UpgradeReason, ViewData.UpgradeDisabledReasonText);
+	SetText(Text_Upgrade, ViewData.UpgradeActionText);
+	if (Panel_UpgradeSection)
+	{
+		Panel_UpgradeSection->SetVisibility(ViewData.bHasFacilityLevels && ViewData.FacilityInstanceId.IsValid()
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	for (UCommonTextBlock* Detail : {Text_UpgradeEffect.Get(), Text_UpgradeCost.Get()})
+	{
+		if (Detail)
+		{
+			Detail->SetVisibility(bBuildContext && ViewData.bShowUpgradeDetails
+				&& (Detail != Text_UpgradeEffect.Get() || !bHasComparison)
+				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		}
+	}
+	if (Text_UpgradeReason)
+	{
+		Text_UpgradeReason->SetVisibility(bBuildContext && ViewData.bShowUpgradeAction &&
+			!ViewData.UpgradeDisabledReasonText.IsEmpty()
+				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (Button_Upgrade)
+	{
+		Button_Upgrade->SetVisibility(bBuildContext && ViewData.bShowUpgradeAction
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_Upgrade->SetIsEnabled(bBuildContext && ViewData.bShowUpgradeAction && ViewData.bCanUpgrade);
+	}
 	if (Panel_BuildSection)
 	{
 		Panel_BuildSection->SetVisibility(bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -274,6 +355,108 @@ void UFF_FacilityInfoPanel::HandleProgramScheduleClicked()
 		CurrentViewData.bCanScheduleProgram)
 	{
 		OnProgramScheduleRequested.Broadcast();
+	}
+}
+
+void UFF_FacilityInfoPanel::HandleUpgradeClicked()
+{
+	if (CurrentViewData.Context == EFF_FacilityInfoContext::Build &&
+		CurrentViewData.bHasFacilityLevels && CurrentViewData.FacilityInstanceId.IsValid() &&
+		CurrentViewData.bShowUpgradeDetails && CurrentViewData.bShowUpgradeAction &&
+		CurrentViewData.bCanUpgrade)
+	{
+		const double Now = FPlatformTime::Seconds();
+		const double DoubleClickSeconds = FMath::Max(0.25f, GetDefault<UInputSettings>()->DoubleClickTime);
+		if (LastUpgradeClickSeconds >= 0.0 && Now - LastUpgradeClickSeconds <= DoubleClickSeconds)
+		{
+			return;
+		}
+		LastUpgradeClickSeconds = Now;
+		// The coordinator reads the displayed level, then the command validates it again.
+		OnUpgradeRequested.Broadcast();
+	}
+}
+
+void UFF_FacilityInfoPanel::EnsureUpgradeSection()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+	if (!Text_FacilityRevenue)
+	{
+		if (UVerticalBox* Meta = FFFacilityInfoUpgradeLayout::FindRevenueParent(*WidgetTree))
+		{
+			Text_FacilityRevenue = WidgetTree->ConstructWidget<UCommonTextBlock>(
+				UCommonTextBlock::StaticClass(), TEXT("Text_FacilityRevenue"));
+			Text_FacilityRevenue->SetAutoWrapText(true);
+			if (Text_FacilityState)
+			{
+				FSlateFontInfo Font = Text_FacilityState->GetFont();
+				Font.Size = 11;
+				Text_FacilityRevenue->SetFont(Font);
+				Text_FacilityRevenue->SetColorAndOpacity(Text_FacilityState->GetColorAndOpacity());
+			}
+			Meta->AddChildToVerticalBox(Text_FacilityRevenue);
+			if (UWidget* State = FFFacilityInfoUpgradeLayout::FindContentChild(Text_FacilityState, *Meta))
+			{
+				Meta->ShiftChild(Meta->GetChildIndex(State) + 1, Text_FacilityRevenue);
+			}
+		}
+	}
+	UVerticalBox* Section = Cast<UVerticalBox>(Panel_UpgradeSection);
+	if (!Section)
+	{
+		UVerticalBox* Content = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Panel_Content")));
+		if (Panel_UpgradeSection || !Content)
+		{
+			return;
+		}
+		Section = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(), TEXT("Panel_UpgradeSection"));
+		Panel_UpgradeSection = Section;
+		Content->AddChildToVerticalBox(Section);
+	}
+	bool bOrderChanged = false;
+	FFFacilityInfoUpgradeLayout::PlaceAfterSummary(*WidgetTree, *Section, bOrderChanged);
+	auto EnsureText = [this, Section](TObjectPtr<UCommonTextBlock>& Target, const FName Name)
+	{
+		if (!Target)
+		{
+			Target = WidgetTree->ConstructWidget<UCommonTextBlock>(UCommonTextBlock::StaticClass(), Name);
+			Target->SetAutoWrapText(true);
+			if (Text_ServiceDuration)
+			{
+				Target->SetFont(Text_ServiceDuration->GetFont());
+				Target->SetColorAndOpacity(Text_ServiceDuration->GetColorAndOpacity());
+			}
+			Section->AddChildToVerticalBox(Target);
+		}
+	};
+	EnsureText(Text_FacilityLevel, TEXT("Text_FacilityLevel"));
+	EnsureText(Text_UpgradeEffect, TEXT("Text_UpgradeEffect"));
+	EnsureText(Text_UpgradeCost, TEXT("Text_UpgradeCost"));
+	EnsureText(Text_UpgradeReason, TEXT("Text_UpgradeReason"));
+	if (!Button_Upgrade)
+	{
+		Button_Upgrade = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Upgrade"));
+		if (Button_ScheduleProgram)
+		{
+			Button_Upgrade->SetStyle(Button_ScheduleProgram->GetStyle());
+		}
+		Section->AddChildToVerticalBox(Button_Upgrade);
+	}
+	if (!Text_Upgrade && !Button_Upgrade->GetContent())
+	{
+		Text_Upgrade = WidgetTree->ConstructWidget<UCommonTextBlock>(
+			UCommonTextBlock::StaticClass(), TEXT("Text_Upgrade"));
+		if (Text_ScheduleProgram)
+		{
+			Text_Upgrade->SetFont(Text_ScheduleProgram->GetFont());
+			Text_Upgrade->SetColorAndOpacity(Text_ScheduleProgram->GetColorAndOpacity());
+		}
+		Text_Upgrade->SetJustification(ETextJustify::Center);
+		Button_Upgrade->SetContent(Text_Upgrade);
 	}
 }
 

@@ -6,6 +6,7 @@
 
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 
 namespace FFF_PrepBuildPresentationTestHelpers
 {
@@ -133,6 +134,16 @@ bool FFF_PrepBuildPresentation_FilterTest::RunTest(const FString& Parameters)
 	Filter.SearchText = TEXT("화장실");
 	TestFalse(TEXT("검색어가 어느 표시 필드에도 없으면 제외한다"),
 		FFF_PrepBuildPresentationRules::IsEntryVisible(FoodTruck, Filter));
+	Filter.SearchText = TEXT("먹거리");
+	TestTrue(TEXT("화면에 보이는 한글 소분류로 검색한다"),
+		FFF_PrepBuildPresentationRules::IsEntryVisible(FoodTruck, Filter));
+	Filter.SearchText = TEXT("부스");
+	TestTrue(TEXT("화면에 보이는 한글 대분류로 검색한다"),
+		FFF_PrepBuildPresentationRules::IsEntryVisible(FoodTruck, Filter));
+	Filter.SearchText.Reset();
+	Filter.MinorToken = TEXT("MarketGoods");
+	TestFalse(TEXT("같은 대분류여도 다른 소분류는 제외한다"),
+		FFF_PrepBuildPresentationRules::IsEntryVisible(FoodTruck, Filter));
 
 	FFF_BuildCatalogEntry InvalidEntry = FoodTruck;
 	InvalidEntry.FacilityDefinitionId = NAME_None;
@@ -236,6 +247,10 @@ bool FFF_PrepBuildPresentation_TileDataTest::RunTest(const FString& Parameters)
 		Tile->GetFacilityDefinitionId(), FName(TEXT("Booth_FoodStall_FoodTruck")));
 	TestTrue(TEXT("표시명은 원본 배열 수명과 분리된 복사본이다"),
 		Tile->GetDisplayName().EqualTo(FText::FromString(TEXT("푸드 트럭"))));
+	TestTrue(TEXT("카드는 대분류와 소분류 경로를 이름과 분리해 보존한다"),
+		Tile->GetCategoryPathText().EqualTo(FText::FromString(TEXT("부스 > 먹거리·음료"))));
+	TestEqual(TEXT("고유 이름 토큰은 전체 툴팁에 사용할 수 있다"),
+		Tile->GetUniqueNameToken(), FString(TEXT("Booth_FoodStall_FoodTruck")));
 	TestTrue(TEXT("가격이 해결됐고 잔액이 충분하면 구매 가능하다"), Tile->IsAffordable());
 	TestTrue(TEXT("가격 해결 여부를 별도로 노출한다"), Tile->HasResolvedCost());
 
@@ -295,6 +310,83 @@ bool FFF_PrepBuildPresentation_ModelReuseTest::RunTest(const FString& Parameters
 	Model->RefreshGold(100, true);
 	TestEqual(TEXT("모델 잔액 경량 갱신이 풀의 항목까지 전달된다"),
 		OriginalFoodTruck->GetTileState(), EFF_PrepBuildTileState::InsufficientFunds);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_TaxonomyTest,
+	"FestaFiesta.UI.PrepBuild.TaxonomyLabelsAndNameFallback",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_TaxonomyTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const FName KnownMinorTokens[] = {
+		TEXT("FoodStall"), TEXT("MarketGoods"), TEXT("CraftExperience"), TEXT("ActivityGame"), TEXT("Nightlife"),
+		TEXT("Standard"), TEXT("Accessible"), TEXT("Family"), TEXT("Temporary"),
+		TEXT("GeneralInfo"), TEXT("Ticketing"), TEXT("LostFound"), TEXT("Translation"),
+		TEXT("Seating"), TEXT("Shade"), TEXT("Picnic"), TEXT("Cooling"),
+		TEXT("MainStage"), TEXT("SubStage"), TEXT("Busking"), TEXT("ExperienceStage"),
+		TEXT("FirstAid"), TEXT("Security"), TEXT("FireSafety"), TEXT("Evacuation"),
+		TEXT("Landmark"), TEXT("Theme"), TEXT("Scenic"), TEXT("Interactive")
+	};
+	for (const FName Token : KnownMinorTokens)
+	{
+		const FString Label = FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(Token).ToString();
+		TestTrue(*FString::Printf(TEXT("%s 소분류는 읽을 수 있는 번역이 있다"), *Token.ToString()),
+			!Label.IsEmpty() && Label != Token.ToString());
+	}
+	TestTrue(TEXT("새 소분류는 빈 라벨 대신 원래 토큰을 보존한다"),
+		FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(TEXT("FutureMinor"))
+			.EqualTo(FText::FromString(TEXT("FutureMinor"))));
+	TestTrue(TEXT("소분류가 없는 데이터는 미분류로 안내한다"),
+		FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(NAME_None)
+			.EqualTo(FText::FromString(TEXT("미분류"))));
+
+	FFF_BuildCatalogEntry Entry;
+	Entry.FacilityDefinitionId = TEXT("Booth_FoodStall_UniqueTruck");
+	Entry.UniqueNameToken = TEXT("UniqueTruck");
+	Entry.DisplayName = FText::FromString(TEXT("이름이 긴 우리 동네 푸드 트럭"));
+	TestEqual(TEXT("표시 이름이 있으면 고유 토큰을 중복해서 붙이지 않는다"),
+		FFF_PrepBuildPresentationRules::ResolveDisplayName(Entry), Entry.DisplayName);
+	Entry.DisplayName = FText::FromString(TEXT("   "));
+	TestTrue(TEXT("표시 이름이 비어 있으면 고유 이름으로 대체한다"),
+		FFF_PrepBuildPresentationRules::ResolveDisplayName(Entry)
+			.EqualTo(FText::FromString(TEXT("UniqueTruck"))));
+	Entry.UniqueNameToken.Reset();
+	TestTrue(TEXT("고유 이름도 없으면 유효한 배치 ID로 구분한다"),
+		FFF_PrepBuildPresentationRules::ResolveDisplayName(Entry)
+			.EqualTo(FText::FromName(Entry.FacilityDefinitionId)));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_ThumbnailLayoutTest,
+	"FestaFiesta.UI.PrepBuild.ThumbnailAspectFitsFixedFrame",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_ThumbnailLayoutTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const FIntPoint Sizes[] = {
+		FIntPoint(32, 32), FIntPoint(4096, 4096), FIntPoint(1024, 256), FIntPoint(256, 2048)
+	};
+	for (const FIntPoint Size : Sizes)
+	{
+		const FVector2D Fit = FFPrepBuildTileLayout::FitThumbnailSize(Size.X, Size.Y);
+		TestTrue(TEXT("해상도와 무관하게 썸네일이 150x70 프레임을 넘지 않는다"),
+			Fit.X > 0.0 && Fit.X <= FFPrepBuildTileLayout::ThumbnailWidth
+			&& Fit.Y > 0.0 && Fit.Y <= FFPrepBuildTileLayout::ThumbnailHeight);
+		TestTrue(TEXT("원본 이미지의 가로세로 비율을 유지한다"),
+			FMath::IsNearlyEqual(Fit.X / Fit.Y, static_cast<double>(Size.X) / Size.Y));
+		TestTrue(TEXT("프레임 안에서 적어도 한 축은 가득 채운다"),
+			FMath::IsNearlyEqual(Fit.X, static_cast<double>(FFPrepBuildTileLayout::ThumbnailWidth))
+			|| FMath::IsNearlyEqual(Fit.Y, static_cast<double>(FFPrepBuildTileLayout::ThumbnailHeight)));
+	}
+	TestEqual(TEXT("작거나 큰 정사각 이미지의 표시 크기는 같다"),
+		FFPrepBuildTileLayout::FitThumbnailSize(32, 32), FFPrepBuildTileLayout::FitThumbnailSize(4096, 4096));
+	TestEqual(TEXT("이미지 미로딩 상태도 프레임 크기가 유효하다"),
+		FFPrepBuildTileLayout::FitThumbnailSize(0, 0), FVector2D(150.0, 70.0));
 	return true;
 }
 

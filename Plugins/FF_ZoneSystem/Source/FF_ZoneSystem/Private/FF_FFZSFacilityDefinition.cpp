@@ -15,11 +15,45 @@
 #include "Misc/DataValidation.h"
 #endif
 
-// 단일 검증 진실원인 FFFZSFacilitySpec::IsValid에 위임한다.
-// 호출자가 이미 모은 오류를 보존하는 Spec 계약을 그대로 따른다.
+// 원본과 활성화된 각 단계의 실제 배치를 같은 Spec 검증으로 확인한다.
+// 잘못된 원본 배열은 먼저 거절해 불필요한 파생 사양 계산을 피한다.
 bool UFFZSFacilityDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 {
-    return Spec.IsValid(OutErrors);
+    const int32 ErrorCountBefore = OutErrors.Num();
+    TArray<FText> BaseErrors;
+    if (!Spec.IsValid(BaseErrors))
+    {
+        OutErrors.Append(BaseErrors);
+        return false;
+    }
+    if (Spec.bUsesFacilityLevels)
+    {
+        // Tier structure was validated once above. Do not copy and revalidate the whole
+        // authoring array for every geometry candidate as the number of tiers grows.
+        FFFZSFacilitySpec GeometryBase = Spec;
+        GeometryBase.UpgradeTiers.Reset();
+        GeometryBase.bUsesFacilityLevels = false;
+        for (const FFFZSFacilityUpgradeTier& Tier : Spec.UpgradeTiers)
+        {
+            FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+                GeometryBase, Tier.TargetLevel, Tier.SizeMultiplier);
+            if (!Tier.VisualMesh.IsNull())
+            {
+                EffectiveSpec.VisualMesh = Tier.VisualMesh;
+            }
+            TArray<FText> TierErrors;
+            if (!EffectiveSpec.IsValid(TierErrors))
+            {
+                for (const FText& Error : TierErrors)
+                {
+                    OutErrors.Add(FText::Format(
+                        NSLOCTEXT("FFZSFacilityDefinition", "InvalidLevelGeometry", "Lv.{0}: {1}"),
+                        FText::AsNumber(Tier.TargetLevel), Error));
+                }
+            }
+        }
+    }
+    return OutErrors.Num() == ErrorCountBefore;
 }
 
 // 유효한 안정 DefinitionId가 있으면 프로젝트 전체에서 같은 Primary Asset Type을 사용한다.

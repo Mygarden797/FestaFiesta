@@ -11,6 +11,7 @@
 
 #include "CoreMinimal.h"
 #include "FF_FFZSExternalPolicy.h"
+#include "Queue/FF_FacilityQueue.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_ZoneSystemQueueBridgeSubsystem.generated.h"
@@ -111,7 +112,7 @@ public:
 	/** Party 개인 제한과 Zone 시설 제한 중 더 이른 양수 포기 시간을 선택한다. */
 	static float ToProjectMaxWaitSeconds(float RequestedSeconds, float ZoneAbandonSeconds);
 
-	// IFFZSExternalPolicy: Move/Remove 전에 프로젝트 Party Queue 점유도 함께 검사한다.
+	// IFFZSExternalPolicy: Move/Remove/Upgrade 전에 두 Queue의 점유를 함께 검사한다.
 	virtual FName GetFFZoneSystemPolicyName_Implementation() const override;
 	virtual EFFZSPolicyDomain GetFFZoneSystemPolicyDomain_Implementation() const override;
 	virtual FFFZSPolicyDecision PreValidateFFZoneSystemChange_Implementation(
@@ -122,6 +123,15 @@ public:
 	virtual void RollbackFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context) override;
 
 private:
+	// 비어 있는 큐의 설정 변경도 취소될 수 있으므로 지연 이벤트까지 포함해 원본을 보관한다.
+	struct FPendingUpgradeQueue
+	{
+		int32 QueueFacilityId = INDEX_NONE;
+		FFF_FacilityQueue PreviousQueue;
+		bool bWasSlotDirty = false;
+	};
+	TMap<FGuid, FPendingUpgradeQueue> PendingUpgradeQueues;
+
 	UFUNCTION()
 	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);
 

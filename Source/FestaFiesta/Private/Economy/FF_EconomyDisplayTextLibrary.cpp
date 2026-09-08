@@ -21,6 +21,7 @@ FText UFF_EconomyDisplayTextLibrary::GetSpendReasonText(EFF_SpendReason Reason)
 	case EFF_SpendReason::EventSupplies:   return LOCTEXT("Spend_EventSupplies",   "Event 소모품");
 	case EFF_SpendReason::Cleanup:         return LOCTEXT("Spend_Cleanup",         "뒷정리");
 	case EFF_SpendReason::FinaleFireworks: return LOCTEXT("Spend_FinaleFireworks", "피날레 폭죽");
+	case EFF_SpendReason::FacilityUpgrade: return LOCTEXT("Spend_FacilityUpgrade", "시설 강화비");
 	}
 
 	return FText::GetEmpty();

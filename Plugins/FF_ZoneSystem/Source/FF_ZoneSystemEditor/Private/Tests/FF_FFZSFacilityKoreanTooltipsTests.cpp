@@ -274,6 +274,16 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
 {
     using namespace FFZSFacilityKoreanTooltipsTestsPrivate;
 
+    TestEnglishDisplayNameAndKoreanTooltip(*this, FFFZSFacilityUpgradeTier::StaticStruct(),
+        {
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityUpgradeTier, TargetLevel),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityUpgradeTier, CostMultiplier),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityUpgradeTier, ServiceDurationMultiplier),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityUpgradeTier, RevenueMultiplier),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityUpgradeTier, SizeMultiplier),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilityUpgradeTier, VisualMesh),
+        });
+
     TestEnglishDisplayNameAndKoreanTooltip(
         *this,
         FFFZSFacilitySpec::StaticStruct(),
@@ -288,6 +298,8 @@ bool FFFZSFacilityKoreanTooltipsTest::RunTest(const FString& Parameters)
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedCells),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueSplinePointsCm),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueRules),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bUsesFacilityLevels),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, UpgradeTiers),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Anchors),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, AllowedZoneIds),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, InstallCostKey),

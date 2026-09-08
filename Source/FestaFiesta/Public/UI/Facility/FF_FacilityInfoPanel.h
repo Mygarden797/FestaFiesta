@@ -28,6 +28,7 @@ public:
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
+	FSimpleMulticastDelegate OnUpgradeRequested;
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 
@@ -66,6 +67,12 @@ private:
 	UFUNCTION()
 	void HandleProgramScheduleClicked();
 
+	UFUNCTION()
+	void HandleUpgradeClicked();
+
+	/** Appends only missing upgrade controls inside the existing detail scroll content. */
+	void EnsureUpgradeSection();
+
 	/** Keeps the shipped facility-info WBP compatible while designers migrate the new button. */
 	void EnsureMinigameButton();
 
@@ -76,6 +83,9 @@ private:
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;
+
+	/** A double-click must not also purchase the newly displayed next level. */
+	double LastUpgradeClickSeconds = -1.0;
 
 	/** Designer-tunable feedback states; edit these in the panel WBP Class Defaults. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
@@ -134,6 +144,40 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_ScheduleProgram;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_UpgradeSection;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityLevel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeEffect;
+
+	/** Optional so existing designer panels keep the complete legacy effect text. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_UpgradeComparison;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeCurrent;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeNext;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeCost;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeReason;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Upgrade;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_Upgrade;
 
 	/** Fixed footer surfaces in the LightTeal WBP; optional for legacy designer assets. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))

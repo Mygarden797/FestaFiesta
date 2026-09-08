@@ -172,6 +172,7 @@ private:
 	void HandlePanelMoveRequested();
 	void HandlePanelRemoveRequested();
 	void HandlePanelProgramScheduleRequested();
+	void HandlePanelUpgradeRequested();
 	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);
 	void HandlePaidProgramPickerCloseRequested();
 	void HandlePanelMinigameRequested();

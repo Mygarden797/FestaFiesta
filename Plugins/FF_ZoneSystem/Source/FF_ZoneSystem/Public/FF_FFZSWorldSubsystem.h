@@ -16,6 +16,7 @@ class AActor;
 class AFFZSFacilityActor;
 class AFFZSGameplayZone;
 class AFFZSProtectedArea;
+struct FFFZSBuildableGridMask;
 
 // 시설 한 개의 ZoneId와 서로 겹치지 않는 회전 예약 사각형을 묶은 권위 점유 레코드.
 // GUID별 한 레코드이므로 메모리는 물리 셀 수가 아니라 시설 수와 사각형 수에 비례.
@@ -103,6 +104,11 @@ public:
     // 전체 시설 읽기 모델을 만들지 않고 유효한 등록 Zone이 하나라도 있는지 확인한다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    TArray<FName> GetRegisteredZoneIds() const;
+    // 유효한 등록 존 ID를 ZoneId 사전순으로 반환한다. BuildReadModel과 같은 정렬이다.
+    // 존 전체를 주기적으로 순회해야 하는 호출자(예: 인구 보고)가 시설 요약까지 만드는 비용을 피하는 경로다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacility(FGuid FacilityInstanceId) const;
     // 현재 유효한 등록 시설을 반환한다. 잘못된 GUID나 소멸한 액터면 nullptr. 
 
@@ -134,6 +140,22 @@ public:
     // @note 결과는 호출 시점 스냅샷이므로 ExecuteCommand가 최신 상태에서 다시 검증한.
 
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
+
+    // Read-only, bounded spatial overview using the same zone ownership, reservations and
+    // protected areas as placement. An empty definition selects overview mode. Physical
+    // obstacles are conservatively masked from one broad-phase query; no per-cell policies,
+    // navigation or ground traces. A visible cell is free land, not a full facility approval.
+    bool BuildPlacementGridMask(
+        const FFFZSCommand& Command,
+        const FVector2D& MinLocalCm,
+        const FVector2D& MaxLocalCm,
+        int32 GridStepCm,
+        double GroundWorldZ,
+        FFFZSBuildableGridMask& OutMask) const;
+
+    // Candidate geometry only; never calls external policies, so purchase previews cannot recurse.
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Upgrade")
+    FFFZSPlacementValidation ValidateUpgradePlacement(FGuid FacilityInstanceId, float SizeMultiplier) const;
      // Install·Move·Remove·Open·Close·EmergencyClose의 유일한 공개 변경 경로.
      // CommandId 지문 멱등성, ExpectedWorldRevision, 단계, 로컬 검증, 정책 트랜잭션을 적용한다.
      //실패하면 권한 상태를 확정하지 않고 FFFZSCommandResult로 이유를 반환한다.
@@ -200,8 +222,11 @@ public:
     // 아니면 ZoneId 사전순으로 정확한 경계를 검사하며 어느 존에도 없으면 NAME_None이다.
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Zone")
-    void ReportZonePopulation(FName ZoneId, int32 Population, float DeltaSeconds);
-    // 외부 시뮬레이션의 인구 표본을 존에 전달한다. 음수 값은 존에서 0으로 보정하고 무효 ID는 무시.
+    bool ReportZonePopulation(FName ZoneId, int32 Population, float DeltaSeconds);
+    // 외부 시뮬레이션의 인구 표본을 존에 전달한다. 음수 값은 존에서 0으로 보정한다.
+    // 표본이 실제로 반영됐을 때만 true다. 권한 변경이 차단 중이거나 무효 ID면 false이며 이때 상태는 바뀌지 않는다.
+    // 밀도 단계 승격은 DeltaSeconds 누적으로 판정하므로, false를 받은 호출자는 그 경과 시간을
+    // 다음 보고로 이월해야 Warning·Critical 유지 시간이 실제보다 길게 걸리지 않는다.
     
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Read Model")
     FFFZSReadModel BuildReadModel() const;
@@ -209,10 +234,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    //Schema 5의 1 cm 위치·0.01도 자유 Yaw 계약, 운영 단계·리비전·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    // Schema 7의 시설별 강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
-    // Schema 5를 검증하고, 알려진 Schema 3/4는 안전 검사 후 메모리상 Schema 5로 변환한 뒤 시설과 운영 상태를 교체한다.
+    // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨과 배수를 보존하며 7로 이관한 뒤 원자적으로 교체한다.
     // 제작 존·보호 영역·등록 정책은 유지하며 게임 스레드 밖이나 명령·정책 콜백 중에는 실패한다.
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Save")
     bool RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors);
@@ -297,6 +322,7 @@ private:
     FFFZSCommandResult ExecuteInstall(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     FFFZSCommandResult ExecuteMove(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     FFFZSCommandResult ExecuteRemove(const FFFZSCommand& Command);
+    FFFZSCommandResult ExecuteUpgrade(const FFFZSCommand& Command);
     FFFZSCommandResult ExecuteLifecycleCommand(const FFFZSCommand& Command);
     FFFZSCommandResult MakeFailure(EFFZSPlacementFailure Failure, const FText& Message) const;
     FFFZSCommandResult FinalizeSuccess(const FFFZSCommand& Command, AFFZSFacilityActor* Facility, FName PreviousZoneId);

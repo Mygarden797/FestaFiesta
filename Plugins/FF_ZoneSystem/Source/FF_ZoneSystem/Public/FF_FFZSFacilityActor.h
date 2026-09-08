@@ -25,6 +25,7 @@ class UFFZSWorldSubsystem;
 #if WITH_DEV_AUTOMATION_TESTS
 class FFFZSWorldCommandLifecycleSnapshotTest;
 class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
+class FFFZSFacilityLevelPresentationTest;
 #endif
 
 UENUM(BlueprintType)
@@ -99,7 +100,33 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility")
     const FFFZSFacilitySpec& GetFacilitySpec() const { return FacilitySpec; }
-    // 설치 때 복사한 사양을 반환한다. 원본 Data Asset의 이후 변경은 이 인스턴스에 자동 반영되지 않는다. 
+    // 현재 단계의 크기·외형이 적용된 사양이다. QueueRules의 처리 시간은 기준값이며 GetEffectiveQueueRules로 읽는다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility")
+    const FFFZSFacilitySpec& GetBaseFacilitySpec() const;
+    // 설치 시 복사한 원본 사양. 이후 강화·이동·저장 복원에서 배율을 이 원본에 한 번만 적용한다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
+    bool HasFacilityLevels() const { return GetBaseFacilitySpec().bUsesFacilityLevels; }
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
+    int32 GetUpgradeLevel() const { return UpgradeLevel; }
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
+    float GetUpgradeServiceDurationMultiplier() const { return UpgradeServiceDurationMultiplier; }
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
+    float GetUpgradeSizeMultiplier() const { return UpgradeSizeMultiplier; }
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
+    float GetUpgradeRevenueMultiplier() const { return UpgradeRevenueMultiplier; }
+
+    // Derived value only: shared definition data and the captured base spec stay immutable.
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
+    FFFZSQueueRules GetEffectiveQueueRules() const;
+
+    static bool IsValidUpgradeState(int32 Level, float ServiceDurationMultiplier, float SizeMultiplier = 1.0f, float RevenueMultiplier = 1.0f);
+    static FFFZSQueueRules BuildEffectiveQueueRules(const FFFZSQueueRules& BaseRules, float ServiceDurationMultiplier);
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility")
     EFFZSFacilityState GetFacilityState() const { return FacilityState; }
@@ -167,13 +194,17 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
     friend class FFFZSWorldCommandLifecycleSnapshotTest;
     friend class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
+    friend class FFFZSFacilityLevelPresentationTest;
 #endif
 
     // 권한 수명주기 변경은 의도적으로 월드 서브시스템에만 공개한다.
     // 점유 맵·명령 영수증·외부 정책과 액터 상태가 함께 바뀌어야 하기 때문이다.
     
-    bool InitializeFacility(FGuid NewInstanceId, const FFFZSFacilitySpec& NewSpec, FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform, EFFZSFacilityState InitialState = EFFZSFacilityState::Validated);
+    bool InitializeFacility(FGuid NewInstanceId, const FFFZSFacilitySpec& NewSpec, FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform, EFFZSFacilityState InitialState = EFFZSFacilityState::Validated, int32 InitialUpgradeLevel = 1, float InitialServiceDurationMultiplier = 1.0f, float InitialSizeMultiplier = 1.0f, float InitialRevenueMultiplier = 1.0f);
     // 검증된 ID·사양·배치를 복사하고 표현·앵커·큐 규칙을 재구성한다. 입력이 무효면 상태를 바꾸지 않고 false다. 
+
+    // 월드가 새 점유 영역을 검증한 뒤 호출한다. 모든 실패 검사를 변경 전에 완료한다.
+    bool ApplyUpgradeState(int32 NewLevel, float NewServiceDurationMultiplier, float NewSizeMultiplier, float NewRevenueMultiplier = 1.0f);
     
     bool ApplyPlacement(FName NewZoneId, FFFZSGridPlacement NewPlacement, const FTransform& WorldTransform);
     // 비점유 이동 가능 상태에서 존·격자·Transform을 교체하고 Validated로 전환한다. 
@@ -198,8 +229,24 @@ private:
     // 레지스트리·명령·저장에서 사용하는 권한 인스턴스 ID다. 
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
+    FFFZSFacilitySpec BaseFacilitySpec;
+    // 설치 시점에 값 복사된 원본 사양이며 저장 스냅샷의 FacilitySpec도 이 값이다.
+
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     FFFZSFacilitySpec FacilitySpec;
-    // 설치 시점에 값 복사된 권한 사양이다. 
+    // BaseFacilitySpec과 현재 단계에서 파생한 크기·외형 캐시다. 기존 배치 Actor의 원본 호환 필드이기도 하다.
+
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
+    int32 UpgradeLevel = 1;
+
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
+    float UpgradeServiceDurationMultiplier = 1.0f;
+
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
+    float UpgradeSizeMultiplier = 1.0f;
+
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
+    float UpgradeRevenueMultiplier = 1.0f;
 
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     FName ZoneId = NAME_None;
@@ -243,6 +290,7 @@ private:
     bool bSetMovePendingWhenDrained = false;
     // 소프트 비주얼 메시 비동기 요청의 수명과 취소를 관리한다. 
     TSharedPtr<FStreamableHandle> VisualLoadHandle;
+    uint32 VisualLoadGeneration = 0;
     // 시설 오디오 의존성은 메시와 독립적으로 교체·취소한다.
     TSharedPtr<FStreamableHandle> AudioLoadHandle;
     uint32 AudioLoadGeneration = 0;
@@ -253,7 +301,9 @@ private:
     void SetNavigationObstacleEnabled(bool bEnabled);
     void ApplyQueueLaneNavCostGeometry();
     void RequestVisualMesh();
-    void ApplyLoadedVisualMesh();
+    void RequestVisualMeshAsset(const FSoftObjectPath& AssetPath, uint32 LoadGeneration, bool bAllowBaseFallback);
+    void ApplyLoadedVisualMesh(uint32 LoadGeneration, FSoftObjectPath AssetPath, bool bAllowBaseFallback);
+    void ApplyVisualMesh(UStaticMesh* Mesh);
     void RequestFacilityAudio();
     void ApplyLoadedFacilityAudio(uint32 LoadGeneration);
     void UpdateFacilityAudioPlayback(bool bAllowFade = true);
