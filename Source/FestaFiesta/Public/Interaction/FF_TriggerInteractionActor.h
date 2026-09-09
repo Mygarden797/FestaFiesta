@@ -51,6 +51,14 @@ public:
 	bool bPlayerInRange = false;
 	// 지금 플레이어가 범위 안에 있는지 여부
 
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Trigger")
+	void ShowInteractionPrompt();
+	virtual void ShowInteractionPrompt_Implementation();
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Trigger")
+	void HideInteractionPrompt();
+	virtual void HideInteractionPrompt_Implementation();
+
 	UFUNCTION()
 	void OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 	// 플레이어가 감지 범위 안으로 들어왔을 때 실행되는 이벤트
