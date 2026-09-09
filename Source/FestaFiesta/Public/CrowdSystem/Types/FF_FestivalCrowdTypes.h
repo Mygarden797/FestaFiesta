@@ -198,7 +198,17 @@ enum class EFF_DecisionReason : uint8
 	 * 이 사유가 없으면 무대가 열려도 아무도 통지받지 못해, 각자 하던 일을 끝낼 때까지
 	 * 회전율만큼 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
 	 */
-	DestinationOpened
+	DestinationOpened,
+
+	// 개인 재평가 주기(reevaluate_interval_seconds × reevaluate_interval_multiplier)가 찼다.
+	// 도착 전에 발화하는 두 번째 사유다. MoveFailed 와 달리 실패가 아니다.
+	// 그래서 직전 목적지를 감점하지 않는다.
+	Reevaluated,
+
+	// 줄에서 개인 인내심 한계(wait_threshold_minutes × patience_multiplier)를 넘겨 이탈했다.
+	// 직전 목적지를 감점해야 하는 사유다.
+	// Warning을 남기는 QueueHoldTimeoutSeconds 강제 해제와 달리, 정상 행동이다.
+	QueuePatienceExpired
 };
 
 UENUM()
@@ -253,6 +263,18 @@ struct FFF_PartyDecisionContext
 
 	// 리더의 현재 월드 위치, cm. Zone 판정과 후보 거리 계산의 기준점이다
 	FVector PartyWorldLocation = FVector::ZeroVector;
+
+	/**
+	 * 리더의 개체 변주 중 결정에 쓰이는 값들. Crowd 가 스폰 때 확정해 둔 것을 실어 보낸다
+	 * (FFF_IndividualVariationResolver::ResolveWithGroupSharing).
+	 * 기본값은 전부 "변주 없음"이라, 안 채워 보내면 예전과 동일하게 동작한다.
+	 */
+	float NoveltySeekingMultiplier = 1.f;
+	float PreferenceStrengthMultiplier = 1.f;
+
+	// density_threshold_ratio 에 이미 crowd_tolerance_multiplier 가 곱해진 값이다.
+	// 조정자는 이것을 그대로 임계로 쓴다 — 다시 곱하면 변주가 두 번 걸린다.
+	float PersonalDensityThresholdRatio = 1.f;
 
 	// 왜 결정이 필요해졌는지
 	EFF_DecisionReason Reason = EFF_DecisionReason::Spawned;
