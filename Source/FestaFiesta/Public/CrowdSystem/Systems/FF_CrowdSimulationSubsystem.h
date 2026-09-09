@@ -232,6 +232,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	int32 GetSnapshotCount() const { return SnapshotCount; }
 
+	// 스텝 상한에 걸려 버려진 시뮬 시간의 총합, 초
+	float GetDroppedSimSeconds() const { return DroppedSimSeconds; }
+
+	// 위가 발생한 프레임 수
+	int32 GetDroppedStepFrames() const { return DroppedStepFrames; }
+
+	// 시뮬 시간 / 실시간. 1.0 미만이면 시뮬이 실시간을 따라가지 못하고 있다
+	float GetSimTimeFidelity() const
+	{
+		const float Elapsed = SimTimeSeconds + DroppedSimSeconds;
+		return (Elapsed > KINDA_SMALL_NUMBER) ? (SimTimeSeconds / Elapsed) : 1.f;
+	}
+
 	// 스냅샷 발행 주기, 고정 스텝 단위. 30 = 1초(30Hz).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 SnapshotIntervalSteps = 30;
@@ -885,6 +898,13 @@ private:
 
 	// 아직 소비하지 못한 프레임 시간, 초
 	float SimAccumulator = 0.f;
+
+	// 스텝 상한(MaxStepsPerFrame)에 걸려 버려진 시뮬 시간의 총합, 초. 프레임률과 무관하게
+	// 이 값이 늘어나면 축제 시간이 실시간보다 느리게 흐른 것이다 — 인원수 한계 판정에 쓴다.
+	float DroppedSimSeconds = 0.f;
+
+	// 위가 발생한 프레임 수
+	int32 DroppedStepFrames = 0;
 
 	// 시뮬레이션 누적 시간, 초
 	float SimTimeSeconds = 0.f;

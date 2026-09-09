@@ -170,8 +170,14 @@ namespace CrowdSteering
 		}
 	}
 
-	int32 ConsumeFixedSteps(float& Accumulator, float DeltaTime, float FixedStepSeconds, int32 MaxStepsPerFrame)
+	int32 ConsumeFixedSteps(float& Accumulator, float DeltaTime, float FixedStepSeconds, int32 MaxStepsPerFrame,
+		float* OutDiscardedSeconds)
 	{
+		if (OutDiscardedSeconds)
+		{
+			*OutDiscardedSeconds = 0.f;
+		}
+
 		if (FixedStepSeconds <= KINDA_SMALL_NUMBER || MaxStepsPerFrame <= 0)
 		{
 			return 0;
@@ -188,6 +194,10 @@ namespace CrowdSteering
 
 		if (Steps >= MaxStepsPerFrame && Accumulator >= FixedStepSeconds)
 		{
+			if (OutDiscardedSeconds)
+			{
+				*OutDiscardedSeconds = Accumulator;
+			}
 			Accumulator = 0.f;
 		}
 

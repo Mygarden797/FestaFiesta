@@ -192,7 +192,12 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdClassCommand(
 
 namespace FFCrowdConsole
 {
-	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU, float SimRadiusUU)
+	// AgentPool / ActorPool 은 0이면 Count 로 채운다(기존 동작). 둘을 다르게 주면
+	// Agent 만 늘리고 화면 Actor 수는 묶어둘 수 있어서 시뮬 비용과 표현 비용을 나눠 잴 수 있다.
+	// 풀 크기는 최초 1회만 정해지므로, 계단식 인원 스윕을 한 PIE 세션에서 돌리려면
+	// 첫 호출에서 목표 최대 인원만큼 풀을 잡아둬야 한다.
+	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU, float SimRadiusUU,
+		int32 AgentPoolSize = 0, int32 ActorPoolSize = 0)
 	{
 		UFF_CrowdSimulationSubsystem* CrowdSim = GetCrowdSim(World, Ar);
 		if (!CrowdSim)
@@ -206,10 +211,24 @@ namespace FFCrowdConsole
 		{
 			const TSubclassOf<AFF_BaseCrowd> CrowdClass = ResolvePendingCrowdClass();
 
-			CrowdSim->InitializeSimulation(Origin, SimRadiusUU, Count, Count, CrowdClass);
+			const int32 ResolvedAgentPool = FMath::Max(AgentPoolSize > 0 ? AgentPoolSize : Count, Count);
+			const int32 ResolvedActorPool = FMath::Max(ActorPoolSize > 0 ? ActorPoolSize : ResolvedAgentPool, 1);
+
+			CrowdSim->InitializeSimulation(Origin, SimRadiusUU, ResolvedActorPool, ResolvedAgentPool, CrowdClass);
+
+			Ar.Logf(TEXT("풀 — Agent %d, Actor %d%s"),
+				ResolvedAgentPool, ResolvedActorPool,
+				(ResolvedActorPool < ResolvedAgentPool)
+					? TEXT("  <-- Actor가 모자라 일부는 표시되지 않는다(시뮬 비용만 재는 모드)")
+					: TEXT(""));
 
 			Ar.Logf(TEXT("표시 클래스: %s"),
 				CrowdClass ? *CrowdClass->GetName() : TEXT("AFF_BaseCrowd (대체 원기둥) - FF.Crowd.Class로 BP 지정 가능"));
+		}
+		else if (AgentPoolSize > 0 || ActorPoolSize > 0)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("풀 크기 인자는 무시된다 — 이미 초기화가 끝났다. 풀은 최초 스폰 때만 정해진다"));
 		}
 
 		const int32 Spawned = CrowdSim->SpawnAgents(Count, Origin, SpawnRadiusUU);
@@ -227,8 +246,10 @@ static void CrowdSpawnCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	const int32 Count = FFCrowdConsole::ParseIntArg(Args, 0, 500);
 	const float SpawnRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 1, 3000.f);
 	const float SimRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 2, 10000.f);
+	const int32 AgentPoolSize = FFCrowdConsole::ParseIntArg(Args, 3, 0);
+	const int32 ActorPoolSize = FFCrowdConsole::ParseIntArg(Args, 4, 0);
 
-	if (FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, SimRadiusUU))
+	if (FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, SimRadiusUU, AgentPoolSize, ActorPoolSize))
 	{
 		Ar.Logf(TEXT("FF.Crowd.Debug 1 로 밀도 그리드를, 2로 Agent까지 표시합니다"));
 		Ar.Logf(TEXT("메시가 붙은 BP로 보려면 스폰 전에 FF.Crowd.Class <BP경로>"));
@@ -237,7 +258,8 @@ static void CrowdSpawnCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpawnCommand(
 	TEXT("FF.Crowd.Spawn"),
-	TEXT("군중을 스폰한다. FF.Crowd.Spawn [인원=500] [스폰반경UU=3000] [시뮬반경UU=10000]"),
+	TEXT("군중을 스폰한다. FF.Crowd.Spawn [인원=500] [스폰반경UU=3000] [시뮬반경UU=10000] [Agent풀=인원] [Actor풀=Agent풀]  "
+	     "풀은 최초 1회만 정해진다 — 계단식 스윕은 첫 호출에서 목표 최대 인원으로 풀을 잡을 것"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdSpawnCommand));
 
 static void CrowdDebugCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
@@ -284,6 +306,18 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 	Ar.Logf(TEXT("--- Crowd ---"));
 	Ar.Logf(TEXT("활성 Agent    : %d"), ActiveAgents);
+
+	const float Fidelity = CrowdSim->GetSimTimeFidelity();
+	Ar.Logf(TEXT("시뮬 충실도   : %.1f%% (버린 시간 %.2fs, %d프레임)"),
+		Fidelity * 100.f, CrowdSim->GetDroppedSimSeconds(), CrowdSim->GetDroppedStepFrames());
+
+	if (Fidelity < 0.99f)
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("시뮬이 실시간을 놓치고 있다 — 프레임률이 멀쩡해도 축제 시간이 느리게 흐른다. "
+			     "인원을 줄이거나 부하 항목을 끄고 다시 잴 것 (CsvProfile start/stop, FFCrowd 카테고리)"));
+	}
+
 	Ar.Logf(TEXT("파티          : %d개 (평균 %.2f명, 그룹핑 %s)"),
 		PartyCount, AveragePartySize, CrowdSim->bEnablePartyGrouping ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("화면 표시 Actor: %d"), CrowdSim->GetBoundActorCount());

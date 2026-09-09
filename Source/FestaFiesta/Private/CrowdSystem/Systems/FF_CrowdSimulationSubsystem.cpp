@@ -26,6 +26,13 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+// 인원수별 프레임 부하를 재기 위한 프레임 단위 카운터.
+// `CsvProfile start` / `CsvProfile stop` 로 뜬 CSV에 FrameTime·GameThreadTime과 같은 행에 실린다.
+// N을 손으로 기록할 필요가 없어지고, StepsThisFrame 이 MaxStepsPerFrame(3)에 붙는 지점이
+// 곧 시뮬이 실시간을 놓치기 시작하는 한계선이다.
+CSV_DEFINE_CATEGORY(FFCrowd, true);
 
 namespace
 {
@@ -250,8 +257,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	const float Time = DeltaTime * SimulationTimeScale;
 
+	float DiscardedSimSeconds = 0.f;
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
-		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame);
+		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame, &DiscardedSimSeconds);
+
+	if (DiscardedSimSeconds > 0.f)
+	{
+		DroppedSimSeconds += DiscardedSimSeconds;
+		++DroppedStepFrames;
+	}
 
 	for (int32 Step = 0; Step < StepsThisFrame; ++Step)
 	{
@@ -298,6 +312,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		DrawDebugAgents();
 	}
+
+	CSV_CUSTOM_STAT(FFCrowd, ActiveAgents, ActiveAgentCount, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, BoundActors, PoolBinding.GetBoundCount(), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, StepsThisFrame, StepsThisFrame, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, DiscardedSimMs, DiscardedSimSeconds * 1000.f, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, DroppedSimSeconds, DroppedSimSeconds, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, MaxDensity, DensityGrid.GetMaxDensity(), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, PathQueryBacklog, PathQueryBacklog, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, PendingDecisions, DecisionQueue.Num(), ECsvCustomStatOp::Set);
 }
 
 bool UFF_CrowdSimulationSubsystem::ValidateGate(const FFF_CrowdGate& InGate, int32 AuthoredIndex,

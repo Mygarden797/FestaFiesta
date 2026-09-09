@@ -86,5 +86,9 @@ namespace CrowdSteering
 	//Agent의 스탭을 진행시킨다.
 	FESTAFIESTA_API void StepAgent(FUnitData& Unit, const FStepParams& Params, float VelocityAlpha, float FixedDt);
 
-	FESTAFIESTA_API int32 ConsumeFixedSteps(float& Accumulator, float DeltaTime, float FixedStepSeconds, int32 MaxStepsPerFrame);
+	// OutDiscardedSeconds 는 스텝 상한에 걸려 버려진 시뮬 시간이다. 이 값이 0보다 크면
+	// 시뮬레이션이 실시간보다 뒤처진 것이고, 그만큼의 축제 시간이 통째로 사라진다.
+	// 프레임률은 멀쩡한데 이 값이 쌓이는 구간이 인원수 한계선이다.
+	FESTAFIESTA_API int32 ConsumeFixedSteps(float& Accumulator, float DeltaTime, float FixedStepSeconds, int32 MaxStepsPerFrame,
+		float* OutDiscardedSeconds = nullptr);
 }
