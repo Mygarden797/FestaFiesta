@@ -170,6 +170,7 @@ private:
 	void ClearLiveSelectionIndicators();
 
 	void HandlePanelMoveRequested();
+	void HandlePanelFavoriteRequested();
 	void HandlePanelRemoveRequested();
 	void HandlePanelProgramScheduleRequested();
 	void HandlePanelUpgradeRequested();

@@ -53,6 +53,13 @@ struct FESTAFIESTA_API FFF_PrepBuildFilter
 	/** 표시명·정의 ID·소분류 토큰을 대소문자 구분 없이 검색합니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
 	FString SearchText;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	bool bFavoritesOnly = false;
+
+	/** Snapshot of personal preferences. Filtering never changes the authoritative catalog. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|UI|Prep|Build")
+	TSet<FName> FavoriteIds;
 };
 
 /** 패널이 한 번에 적용할 목록/빈 상태 스냅샷입니다. */

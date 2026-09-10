@@ -122,6 +122,7 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilityInstanceId));
     ContextHash = HashCombine(ContextHash, GetTypeHash(static_cast<uint8>(Command.Type)));
     ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilitySpec.PlacementObstacleHeightCm));
+    ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilitySpec.bAllowFacilityPlacementOnTop));
     ContextHash = HashCombine(ContextHash, GetTypeHash(MajorInterval));
     ContextHash = HashCombine(ContextHash, GetTypeHash(Lift));
     for (const FName AllowedZone : Command.FacilitySpec.AllowedZoneIds)

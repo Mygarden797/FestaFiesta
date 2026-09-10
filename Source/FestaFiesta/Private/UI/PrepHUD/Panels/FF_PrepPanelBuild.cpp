@@ -5,6 +5,8 @@
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
+#include "Building/Presentation/FF_BuildCategoryIcons.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -49,6 +51,11 @@ void UFF_PrepPanelBuild::NativeOnInitialized()
 	Super::NativeOnInitialized();
 
 	PresentationModel = NewObject<UFF_PrepBuildPresentationModel>(this);
+	if (Button_FavoritesOnly)
+	{
+		FavoritesFilterStyle = Button_FavoritesOnly->GetStyle();
+		bHasFavoritesFilterStyle = true;
+	}
 	if (!HorizontalBox_Tools && WidgetTree)
 	{
 		// 최초 생성 WBP는 이 host가 designer variable이 아니었다. 팀 에셋을 다시 저장하지 않고
@@ -68,9 +75,17 @@ void UFF_PrepPanelBuild::NativeOnInitialized()
 void UFF_PrepPanelBuild::NativeConstruct()
 {
 	Super::NativeConstruct();
+	LastResponsiveListWidth = -1.0f;
+	LastResponsiveColumnCount = 0;
+	if (Button_PreviousPage) Button_PreviousPage->OnClicked.AddUniqueDynamic(this, &ThisClass::PreviousCatalogPage);
+	if (Button_NextPage) Button_NextPage->OnClicked.AddUniqueDynamic(this, &ThisClass::NextCatalogPage);
 
 	if (TileView_Facilities)
 	{
+		// UListView applies scrollbar visibility to its live Slate widget, not a saved
+		// property. NativeConstruct runs after Slate creation, including viewport reattach.
+		TileView_Facilities->SetScrollbarVisibility(bUsePagination
+			? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 		// NativeConstruct can run again on the same panel instance after a viewport reattach.
 		TileView_Facilities->OnItemClicked().RemoveAll(this);
 		TileView_Facilities->OnItemClicked().AddUObject(this, &ThisClass::HandleTileClicked);
@@ -113,6 +128,8 @@ void UFF_PrepPanelBuild::NativeConstruct()
 		Search_Facilities->OnTextChanged.AddUniqueDynamic(
 			this, &ThisClass::HandleSearchTextChanged);
 	}
+	if (Button_FavoritesOnly) { Button_FavoritesOnly->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoritesOnlyClicked); }
+	if (Button_ResetFilters) { Button_ResetFilters->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleResetFiltersClicked); }
 	for (UFF_PrepChoiceButton* Choice : CategoryChoices)
 	{
 		if (Choice)
@@ -127,6 +144,10 @@ void UFF_PrepPanelBuild::NativeConstruct()
 
 void UFF_PrepPanelBuild::NativeDestruct()
 {
+	if (Button_PreviousPage) Button_PreviousPage->OnClicked.RemoveDynamic(this, &ThisClass::PreviousCatalogPage);
+	if (Button_NextPage) Button_NextPage->OnClicked.RemoveDynamic(this, &ThisClass::NextCatalogPage);
+	if (Button_FavoritesOnly) { Button_FavoritesOnly->OnClicked.RemoveDynamic(this, &ThisClass::HandleFavoritesOnlyClicked); }
+	if (Button_ResetFilters) { Button_ResetFilters->OnClicked.RemoveDynamic(this, &ThisClass::HandleResetFiltersClicked); }
 	// World teardown can bypass the bar's normal close callback. Keep opt-in and delegates balanced.
 	EndPanelSession();
 
@@ -184,6 +205,77 @@ void UFF_PrepPanelBuild::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UFF_PrepPanelBuild::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	if (!bUsePagination || !TileView_Facilities || !TileView_Facilities->IsVisible()) return;
+	const float Width = TileView_Facilities->GetCachedGeometry().GetLocalSize().X;
+	const int32 Columns = FMath::Max(1, CardsPerPage);
+	if (!FMath::IsFinite(Width) || Width <= 0.0f ||
+		(FMath::IsNearlyEqual(Width, LastResponsiveListWidth, 0.5f) && Columns == LastResponsiveColumnCount)) return;
+	LastResponsiveListWidth = Width;
+	LastResponsiveColumnCount = Columns;
+	// UTileView adds entry padding to SetEntryWidth. Reserve the full authored spacing
+	// and two Slate units of rounding tolerance so the last card never wraps to row two.
+	const float EntryWidth = FMath::Max(1.0f,
+		(Width - 2.0f) / Columns - TileView_Facilities->GetHorizontalEntrySpacing());
+	TileView_Facilities->SetEntryWidth(EntryWidth);
+}
+
+int32 UFF_PrepPanelBuild::GetCatalogPageCount() const
+{
+	const int32 Count = PresentationModel ? PresentationModel->GetVisibleTiles().Num() : 0;
+	if (Count == 0) return 0;
+	return bUsePagination ? FMath::DivideAndRoundUp(Count, FMath::Max(1, CardsPerPage)) : 1;
+}
+
+int32 UFF_PrepPanelBuild::GetCatalogPageIndex() const
+{
+	return FMath::Clamp(CatalogPageIndex, 0, FMath::Max(0, GetCatalogPageCount() - 1));
+}
+
+TArray<UObject*> UFF_PrepPanelBuild::GetCatalogPageItems() const
+{
+	TArray<UObject*> PageItems;
+	if (!PresentationModel) return PageItems;
+	const TArray<TObjectPtr<UFF_PrepBuildTileData>>& FilteredItems = PresentationModel->GetVisibleTiles();
+	const int32 Start = bUsePagination ? GetCatalogPageIndex() * FMath::Max(1, CardsPerPage) : 0;
+	const int32 Count = bUsePagination
+		? FMath::Min(FMath::Max(1, CardsPerPage), FilteredItems.Num() - Start) : FilteredItems.Num();
+	PageItems.Reserve(Count);
+	for (int32 Index = Start; Index < Start + Count; ++Index) PageItems.Add(FilteredItems[Index]);
+	return PageItems;
+}
+
+bool UFF_PrepPanelBuild::CanGoToPreviousPage() const
+{
+	return bUsePagination && GetCatalogPageCount() > 0 && GetCatalogPageIndex() > 0;
+}
+
+bool UFF_PrepPanelBuild::CanGoToNextPage() const
+{
+	return bUsePagination && GetCatalogPageIndex() + 1 < GetCatalogPageCount();
+}
+
+void UFF_PrepPanelBuild::SetCatalogPage(const int32 PageIndex)
+{
+	const int32 NewPage = FMath::Clamp(PageIndex, 0, FMath::Max(0, GetCatalogPageCount() - 1));
+	if (CatalogPageIndex == NewPage) return;
+	CatalogPageIndex = NewPage;
+	ApplyPresentation(true);
+	if (TileView_Facilities) TileView_Facilities->ScrollToTop();
+}
+
+void UFF_PrepPanelBuild::NextCatalogPage()
+{
+	if (CanGoToNextPage()) SetCatalogPage(GetCatalogPageIndex() + 1);
+}
+
+void UFF_PrepPanelBuild::PreviousCatalogPage()
+{
+	if (CanGoToPreviousPage()) SetCatalogPage(GetCatalogPageIndex() - 1);
+}
+
 void UFF_PrepPanelBuild::NativeOnPanelOpened()
 {
 	Super::NativeOnPanelOpened();
@@ -196,6 +288,7 @@ void UFF_PrepPanelBuild::NativeOnPanelOpened()
 	bPanelOpen = true;
 	bClosingPanel = false;
 	Filter = FFF_PrepBuildFilter();
+	CatalogPageIndex = 0;
 	RefreshCategoryChoiceSelection();
 	if (Search_Facilities)
 	{
@@ -279,6 +372,13 @@ void UFF_PrepPanelBuild::BindExternalSources()
 	ZoneSystem = GetWorld()
 		? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>()
 		: nullptr;
+	FavoritesSubsystem = GameInstance ? GameInstance->GetSubsystem<UFF_BuildFavoritesSubsystem>() : nullptr;
+	if (FavoritesSubsystem)
+	{
+		FavoritesSubsystem->OnFavoritesChanged.RemoveAll(this);
+		FavoritesSubsystem->OnFavoritesChanged.AddUObject(this, &ThisClass::HandleFavoritesChanged);
+		Filter.FavoriteIds = FavoritesSubsystem->GetFavoriteIds();
+	}
 
 	if (CatalogSubsystem)
 	{
@@ -307,6 +407,8 @@ void UFF_PrepPanelBuild::BindExternalSources()
 
 void UFF_PrepPanelBuild::UnbindExternalSources()
 {
+	if (FavoritesSubsystem) { FavoritesSubsystem->OnFavoritesChanged.RemoveAll(this); }
+	FavoritesSubsystem = nullptr;
 	if (CatalogSubsystem)
 	{
 		CatalogSubsystem->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleCatalogChanged);
@@ -542,11 +644,41 @@ void UFF_PrepPanelBuild::HandleFilterPerformanceClicked()
 
 void UFF_PrepPanelBuild::HandleSearchTextChanged(const FText& NewText)
 {
+	if (Filter.SearchText != NewText.ToString()) CatalogPageIndex = 0;
 	Filter.SearchText = NewText.ToString();
 	if (TileView_Facilities)
 	{
 		TileView_Facilities->ScrollToTop();
 	}
+	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::HandleFavoritesChanged()
+{
+	Filter.FavoriteIds = FavoritesSubsystem ? FavoritesSubsystem->GetFavoriteIds() : TSet<FName>();
+	ReconcilePresentation();
+	// Removing a focused favorite can release that virtualized entry. Keep keyboard navigation in the panel.
+	if (Filter.bFavoritesOnly && Button_FavoritesOnly) { Button_FavoritesOnly->SetFocus(); }
+}
+
+void UFF_PrepPanelBuild::HandleFavoritesOnlyClicked()
+{
+	Filter.bFavoritesOnly = !Filter.bFavoritesOnly;
+	CatalogPageIndex = 0;
+	if (TileView_Facilities) { TileView_Facilities->ScrollToTop(); }
+	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::HandleResetFiltersClicked()
+{
+	CatalogPageIndex = 0;
+	Filter.bFilterByCategory = false;
+	Filter.MinorToken = NAME_None;
+	Filter.SearchText.Reset();
+	if (Filter.FavoriteIds.IsEmpty()) { Filter.bFavoritesOnly = false; }
+	if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
+	RefreshCategoryChoiceSelection();
+	RefreshMinorCategorySurface();
 	ReconcilePresentation();
 }
 
@@ -576,9 +708,12 @@ void UFF_PrepPanelBuild::SetCategoryFilter(
 	const bool bEnabled,
 	const EFFZSFacilityCategory Category)
 {
+	if (Filter.bFilterByCategory != bEnabled || (bEnabled && Filter.Category != Category) || !Filter.MinorToken.IsNone())
+		CatalogPageIndex = 0;
 	Filter.bFilterByCategory = bEnabled;
 	Filter.Category = Category;
 	Filter.MinorToken = NAME_None;
+	if (ScrollBox_Subcategories) ScrollBox_Subcategories->ScrollToStart();
 	RefreshCategoryChoiceSelection();
 	RefreshMinorCategorySurface();
 	if (TileView_Facilities)
@@ -603,12 +738,16 @@ void UFF_PrepPanelBuild::HandleMinorChoiceClicked(const int32 ChoiceId)
 	{
 		return;
 	}
+	if (Filter.MinorToken != MinorTokens[ChoiceId]) CatalogPageIndex = 0;
 	Filter.MinorToken = MinorTokens[ChoiceId];
 	for (UFF_PrepChoiceButton* Choice : MinorChoices)
 	{
 		if (Choice)
 		{
-			Choice->SetSelected(Choice->GetChoiceId() == ChoiceId);
+			const bool bSelected = Choice->GetChoiceId() == ChoiceId;
+			Choice->SetSelected(bSelected);
+			if (bSelected && ScrollBox_Subcategories)
+				ScrollBox_Subcategories->ScrollWidgetIntoView(Choice, false, EDescendantScrollDestination::IntoView, 4.0f);
 		}
 	}
 	if (TileView_Facilities)
@@ -633,7 +772,7 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 	TArray<FName> AvailableTokens;
 	for (const FFF_BuildCatalogEntry& Entry : PricedEntries)
 	{
-		if ((!Filter.bFilterByCategory || Entry.Category == Filter.Category) &&
+		if (Filter.bFilterByCategory && Entry.Category == Filter.Category &&
 			!Entry.MinorToken.IsNone())
 		{
 			AvailableTokens.AddUnique(Entry.MinorToken);
@@ -648,12 +787,14 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 	if (!AvailableTokens.Contains(Filter.MinorToken))
 	{
 		Filter.MinorToken = NAME_None;
+		CatalogPageIndex = 0;
 	}
 
 	// Catalog changes are infrequent. Rebuild chips only when their keys change; gold and
 	// thumbnail notifications keep the list's pooled entries and current scroll position.
 	if (AvailableTokens != MinorTokens || MinorChoices.IsEmpty())
 	{
+		if (ScrollBox_Subcategories) ScrollBox_Subcategories->ScrollToStart();
 		for (UFF_PrepChoiceButton* Choice : MinorChoices)
 		{
 			if (Choice) { Choice->OnHudTabButtonClicked.Unbind(); }
@@ -666,7 +807,7 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 			UFF_PrepChoiceButton* Choice = CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
 			if (!Choice) { continue; }
 			Choice->ConfigureChoice(Index, Index == 0
-				? LOCTEXT("AllMinorCategories", "전체 종류")
+				? (Filter.bFilterByCategory ? LOCTEXT("AllMinorCategories", "전체 종류") : LOCTEXT("AllFacilities", "전체 시설"))
 				: FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(MinorTokens[Index]));
 			if (UHorizontalBoxSlot* ChoiceSlot = HorizontalBox_Subcategories->AddChildToHorizontalBox(Choice))
 			{
@@ -682,6 +823,9 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 		if (Choice)
 		{
 			Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleMinorChoiceClicked);
+			if (Choice->GetChoiceId() == 0)
+				Choice->ConfigureChoice(0, Filter.bFilterByCategory
+					? LOCTEXT("AllMinorCategories", "전체 종류") : LOCTEXT("AllFacilities", "전체 시설"));
 			Choice->SetSelected(MinorTokens.IsValidIndex(Choice->GetChoiceId()) &&
 				MinorTokens[Choice->GetChoiceId()] == Filter.MinorToken);
 		}
@@ -692,6 +836,32 @@ void UFF_PrepPanelBuild::BuildCategoryFilterSurface()
 {
 	const int32 ExpectedChoiceCount =
 		1 + FFF_PrepBuildPresentationRules::GetCategoryOrder().Num();
+	if (HorizontalBox_Categories)
+	{
+		if (CategoryChoices.Num() == ExpectedChoiceCount) { return; }
+		UClass* ChoiceClass = ResolveWidgetClass(CategoryChoiceClass, CategoryChoiceFallbackPath);
+		if (!ChoiceClass || !ChoiceClass->IsChildOf(UFF_PrepChoiceButton::StaticClass())) { return; }
+		const auto AddAuthoredChoice = [this, ChoiceClass](int32 Id, FText Label)
+		{
+			auto* Choice = CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
+			if (!Choice) { return; }
+			const bool bAll = Id == FFPrepBuildPanel::AllCategoryChoiceId;
+			Choice->ConfigureTab(Id, Label, FFBuildCategoryIcons::Resolve(bAll,
+				bAll ? EFFZSFacilityCategory::Booth : static_cast<EFFZSFacilityCategory>(Id)));
+			Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCategoryChoiceClicked);
+			auto* Slot = HorizontalBox_Categories->AddChildToHorizontalBox(Choice);
+			Slot->SetPadding(CategoryItemPadding);
+			Slot->SetVerticalAlignment(VAlign_Center);
+			CategoryChoices.Add(Choice);
+		};
+		AddAuthoredChoice(FFPrepBuildPanel::AllCategoryChoiceId, LOCTEXT("FilterAll", "전체"));
+		for (const auto Category : FFF_PrepBuildPresentationRules::GetCategoryOrder())
+		{
+			AddAuthoredChoice(static_cast<int32>(Category), FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(Category));
+		}
+		RefreshCategoryChoiceSelection();
+		return;
+	}
 	if (RuntimeCategoryScroll && RuntimeCategoryBox &&
 		CategoryChoices.Num() == ExpectedChoiceCount)
 	{
@@ -1014,6 +1184,14 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	}
 
 	const FFF_PrepBuildPresentationSnapshot Snapshot = PresentationModel->GetSnapshot();
+	const int32 ClampedPageIndex = GetCatalogPageIndex();
+	const bool bPageClamped = ClampedPageIndex != CatalogPageIndex;
+	CatalogPageIndex = ClampedPageIndex;
+	if (Button_PreviousPage) Button_PreviousPage->SetIsEnabled(Snapshot.bCanInteract && CanGoToPreviousPage());
+	if (Button_NextPage) Button_NextPage->SetIsEnabled(Snapshot.bCanInteract && CanGoToNextPage());
+	if (Text_PageIndex) Text_PageIndex->SetText(FText::Format(LOCTEXT("CatalogPage", "{0} / {1}"),
+		FText::AsNumber(GetCatalogPageCount() == 0 ? 0 : CatalogPageIndex + 1),
+		FText::AsNumber(GetCatalogPageCount())));
 	if (Text_CategoryBreadcrumb)
 	{
 		const FText Major = Filter.bFilterByCategory
@@ -1025,14 +1203,56 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	}
 	if (Text_PanelTitle)
 	{
-		Text_PanelTitle->SetText(LOCTEXT("BuildStudioTitle", "축제 만들기"));
+		Text_PanelTitle->SetText(LOCTEXT("ApprovedBuildTitle", "시설 배치"));
+	}
+	if (Text_FavoritesOnly)
+	{
+		Text_FavoritesOnly->SetText(Text_FavoriteCount
+			? (Filter.bFavoritesOnly ? LOCTEXT("FavoritesOnlyOn", "★ 즐겨찾기만") : LOCTEXT("FavoritesOnlyOff", "☆ 즐겨찾기만"))
+			: FText::Format(Filter.bFavoritesOnly ? LOCTEXT("FavoritesOn", "★ 즐겨찾기만 · {0}") : LOCTEXT("FavoritesOff", "☆ 즐겨찾기만 · {0}"),
+				FText::AsNumber(Filter.FavoriteIds.Num())));
+	}
+	if (Text_FavoriteCount) Text_FavoriteCount->SetText(FText::AsNumber(Filter.FavoriteIds.Num()));
+	if (Panel_Empty) Panel_Empty->SetVisibility(Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty
+		? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty)
+	{
+		const bool bNoFavorites = Filter.bFavoritesOnly && Filter.FavoriteIds.IsEmpty();
+		if (Text_EmptyTitle) Text_EmptyTitle->SetText(bNoFavorites
+			? LOCTEXT("NoFavoritesTitle", "즐겨찾기한 시설이 없어요")
+			: (Filter.bFavoritesOnly ? LOCTEXT("NoMatchingFavoritesTitle", "조건에 맞는 즐겨찾기가 없어요")
+				: LOCTEXT("NoMatchingFacilitiesTitle", "조건에 맞는 시설이 없어요")));
+		if (Text_EmptyHint) Text_EmptyHint->SetText(bNoFavorites
+			? LOCTEXT("NoFavoritesHint", "자주 쓰는 시설의 ☆을 눌러 모아보세요.")
+			: LOCTEXT("NoMatchingFacilitiesHint", "분류나 검색어를 바꾸어 보세요."));
+	}
+	if (Button_FavoritesOnly && bHasFavoritesFilterStyle)
+	{
+		FButtonStyle Style = FavoritesFilterStyle;
+		if (Filter.bFavoritesOnly)
+		{
+			Style.Normal = Style.Pressed;
+			Style.Hovered = Style.Pressed;
+		}
+		Button_FavoritesOnly->SetStyle(Style);
+	}
+	if (Button_ResetFilters)
+	{
+		Button_ResetFilters->SetVisibility(Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (UTextBlock* Label = Cast<UTextBlock>(Button_ResetFilters->GetContent()))
+		{
+			Label->SetText(Filter.bFavoritesOnly && Filter.FavoriteIds.IsEmpty()
+				? LOCTEXT("ShowAllFacilities", "전체 시설 보기") : LOCTEXT("ClearCategorySearch", "분류·검색 초기화"));
+		}
 	}
 	if (TileView_Facilities)
 	{
-		if (bReplaceListItems)
+		if (bReplaceListItems || bPageClamped)
 		{
-			TileView_Facilities->SetListItems(PresentationModel->GetListItems());
-			if (PresentationModel->GetListItems().IsEmpty())
+			const TArray<UObject*> PageItems = GetCatalogPageItems();
+			TileView_Facilities->SetListItems(PageItems);
+			if (PageItems.IsEmpty())
 			{
 				// A collapsed list cannot run its next Slate generation pass. Release rows
 				// only at this final empty-result boundary, before hiding the list.
@@ -1045,14 +1265,14 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 		}
 		TileView_Facilities->SetVisibility(
 			Snapshot.bCanInteract ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		if (bPageClamped) TileView_Facilities->ScrollToTop();
 	}
 
 	if (Text_ItemCount)
 	{
 		Text_ItemCount->SetText(FText::Format(
-			LOCTEXT("ItemCount", "시설 {0} / {1}"),
-			FText::AsNumber(Snapshot.VisibleItemCount),
-			FText::AsNumber(Snapshot.TotalItemCount)));
+			Filter.bFavoritesOnly ? LOCTEXT("FavoriteItemCount", "즐겨찾기 {0}종") : LOCTEXT("ItemCount", "시설 {0}종"),
+			FText::AsNumber(Snapshot.VisibleItemCount)));
 	}
 	if (Text_Gold)
 	{
@@ -1063,6 +1283,14 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 	if (Text_Status)
 	{
 		FText Status = Snapshot.StatusText;
+		if (Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty && Filter.bFavoritesOnly)
+		{
+			Status = Filter.FavoriteIds.IsEmpty()
+				? LOCTEXT("NoFavorites", "즐겨찾기한 시설이 없어요. 시설 카드의 ☆을 눌러 모아보세요.")
+				: LOCTEXT("NoMatchingFavorites", "조건에 맞는 즐겨찾기가 없어요. 분류나 검색어를 바꾸어 보세요.");
+		}
+		if (Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty && Panel_Empty)
+			Status = LOCTEXT("EmptyCatalogFooter", "☆ 즐겨찾기  ·  B 시설 확인");
 		if (Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Ready)
 		{
 			const EFF_BuildCatalogThumbnailLoadState ThumbnailState = CatalogSubsystem
@@ -1071,7 +1299,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("CatalogReady", "카드 선택: 배치 시작  ·  휠: 목록 탐색  ·  B: 배치 시설 확인");
+				: LOCTEXT("ApprovedCatalogReady", "카드 선택 → 배치 시작  ·  ☆ 즐겨찾기  ·  B 시설 확인");
 		}
 		Text_Status->SetText(Status);
 	}
@@ -1080,8 +1308,8 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 {
 	const bool bShowCatalog = State == EFF_BuildModeState::CatalogOpen;
-	const bool bShowCompact = State == EFF_BuildModeState::BuildMode ||
-		State == EFF_BuildModeState::Placing || State == EFF_BuildModeState::Moving;
+	const bool bShowCompact = State == EFF_BuildModeState::BuildMode;
+	const bool bShowSeparateTools = State == EFF_BuildModeState::Placing || State == EFF_BuildModeState::Moving;
 
 	if (Panel_Catalog)
 	{
@@ -1093,19 +1321,18 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 			bShowCompact ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
-	// 제목·보유 금화는 배치 중에 볼 일이 없다 — 목록에서 이미 보고 들어왔다.
+	// Catalog header and the separate placement-tools WBP are mutually exclusive.
 	if (Box_Header)
 	{
 		Box_Header->SetVisibility(
-			bShowCompact ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+			bShowCatalog ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	}
 
-	// 상하 여백을 0 으로. 남겨 두면 흰 판이 탭 줄 위로 튀어나와 초록 칩이 아래에 붙어 보인다.
+	// The WBP owns padding; C++ changes only which surface is visible.
 	if (Border_PanelRoot)
 	{
-		Border_PanelRoot->SetPadding(bShowCompact
-			? FMargin(18.f, 0.f)
-			: FMargin(18.f, 10.f));
+		// Placement tools have their own WBP and viewport host. Do not leave an empty catalog rectangle behind.
+		Border_PanelRoot->SetVisibility(bShowSeparateTools ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	}
 	if (Text_PlacementGuide)
 	{
@@ -1143,11 +1370,11 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		FFF_PrepPanelLayout Layout = Bar->GetOpenPanelLayout();
 
 		// 배치 중에는 얇은 띠로, 카탈로그일 때는 원래 크기로.
-		Layout.Size.Y = bShowCompact ? CompactHeight : CatalogHeight;
+		Layout.Size.Y = bShowCatalog ? CatalogHeight : CompactHeight;
 
 		// ★ 자리도 같이 옮긴다. 배치 중에는 바 **위**에 얹어 탭 줄과 겹치지 않게 한다 —
 		//   겹치면 흰 띠 안에 초록 칩이 들어가고, 띠를 키울수록 칩이 아래로 밀린다.
-		Layout.Offset.Y = bShowCompact ? CompactOffsetY : 0.0;
+		Layout.Offset.Y = bShowCatalog ? CatalogOffsetY : CompactOffsetY;
 
 		Bar->SetOpenPanelLayout(Layout);
 	}

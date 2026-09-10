@@ -247,6 +247,15 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 		ExitBuildMode();
 		return;
 	}
+	if (FFBuildModeModel::IsPreviewActive(State))
+	{
+		const int32 PresentedSnapCm = GetPlacementPositionSnapCm();
+		if (LastPresentedPositionSnapCm != PresentedSnapCm)
+		{
+			LastPresentedPositionSnapCm = PresentedSnapCm;
+			OnBuildToolsChanged.Broadcast();
+		}
+	}
 
 	// 입력 처리에서 상태가 바뀔 수 있으므로 처리 직후의 State를 기준으로 아래 작업을 선택한다.
 	HandleInput(*Controller, DeltaTime);

@@ -24,6 +24,7 @@
 
 class AFF_BaseCrowd;
 class UDataTable;
+class UFFZSWorldSubsystem;
 
 // 개체 하나가 레인의 어디를 어디까지 타고 있는가. 디버그 표시와 콘솔 전용이다.
 //
@@ -883,6 +884,9 @@ public:
 
 private:
 	void SnapUnitToGround(FUnitData& Unit) const;
+	void EnsureRoadSupportCache() const;
+	UFUNCTION()
+	void HandleRoadSupportSnapshotRestored();
 
 	void RebuildHeightField();
 	void RebuildAvoidanceWalls();
@@ -1124,6 +1128,19 @@ private:
 	// --- 지형 ------------------------------------------------------------------------------
 
 	FFF_CrowdHeightField HeightField;
+
+	// Roads overlay the coarse terrain height without rebuilding its physics samples.
+	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.
+	struct FRoadSupportSurface
+	{
+		FTransform Transform;
+		FVector2D HalfExtentCm = FVector2D::ZeroVector;
+		double TopZ = 0.0;
+	};
+	mutable TArray<FRoadSupportSurface> RoadSupportSurfaces;
+	mutable TMap<FIntPoint, TArray<int32>> RoadSupportBuckets;
+	mutable TWeakObjectPtr<UFFZSWorldSubsystem> RoadSupportSystem;
+	mutable int64 RoadSupportRevision = -1;
 
 	// 직전 스텝에 회피가 실제로 적용됐는지. 껐을 때 낡은 Force를 한 번만 지우기 위한 것이다
 	bool bAvoidanceAppliedLastStep = false;

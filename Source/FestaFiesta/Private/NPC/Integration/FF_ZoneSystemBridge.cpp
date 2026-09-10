@@ -21,7 +21,9 @@ namespace
 	bool IsSelectableCategory(EFFZSFacilityCategory Category)
 	{
 		return Category != EFFZSFacilityCategory::Info
-			&& Category != EFFZSFacilityCategory::Safety;
+			&& Category != EFFZSFacilityCategory::Safety
+			&& Category != EFFZSFacilityCategory::Lighting
+			&& Category != EFFZSFacilityCategory::Road;
 	}
 
 }
@@ -432,8 +434,10 @@ FName FFF_ZoneSystemBridge::MapToPreferenceCategory(
 	case EFFZSFacilityCategory::Toilet:
 	case EFFZSFacilityCategory::Info:
 	case EFFZSFacilityCategory::Safety:
+	case EFFZSFacilityCategory::Lighting:
+	case EFFZSFacilityCategory::Road:
 	default:
-		// Toilet 은 Need로만 해소(GetNeedReliefFlags), Info·Safety 는 목적지 후보 자체가 아니다.
+		// Toilet 은 Need로만 해소(GetNeedReliefFlags), Info·Safety·Lighting 은 목적지 후보 자체가 아니다.
 		// NAME_None 이면 FFF_UtilityDestinationSelector 가 preference 항을 0으로 계산한다 —
 		// 크래시 없이 "취향 없음"으로 동작한다.
 		return NAME_None;
@@ -478,7 +482,7 @@ FFF_NeedReliefFlags FFF_ZoneSystemBridge::GetNeedReliefFlags(
 		break;
 	}
 	default:
-		// Info·Safety 는 FF_NeedState.h 설계상 아예 Need 대상이 아니다.
+		// Info·Safety·Lighting 은 서비스나 Need 해소 대상이 아니다.
 		break;
 	}
 

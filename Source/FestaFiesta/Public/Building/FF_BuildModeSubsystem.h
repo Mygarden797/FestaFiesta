@@ -443,6 +443,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	float GetPlacementYawDegrees() const;
 
+	// Read-only presentation values share the same selected definition and input settings.
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FName GetSelectedFacilityDefinitionId() const { return SelectedSpec.FacilityDefinitionId; }
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FText GetSelectedFacilityDisplayName() const { return SelectedSpec.DisplayName; }
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	float GetPlacementRotationSnapDegrees() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
+
 	// Presentation commands share the same state/validation path as keyboard placement.
 	UPROPERTY(BlueprintAssignable, Category = "Building|Tools")
 	FFF_OnBuildToolsChanged OnBuildToolsChanged;
@@ -526,6 +536,9 @@ private:
 	bool bExternalCatalogPresentationActive = false;
 	// 매 프레임의 비싼 라인트레이스/검증을 피하기 위한 누적 시간이다. 
 	float PreviewRefreshAccumulator = 0.0f;
+	// Presentation-only cache: a short Ctrl/Alt press must update the toolbar even while
+	// its hover guard intentionally postpones expensive placement revalidation.
+	int32 LastPresentedPositionSnapCm = 0;
 	double LastPreviewValidationTimeSeconds = -1.0;
 	// 라인트레이스, 바닥 경사, Zone, 회전 면적 검사를 모두 통과한 커서 표적이 있는지 나타낸다. 
 	bool bHasPlacementTarget = false;
@@ -658,8 +671,6 @@ private:
 	// 선택 Spec, GUID, Zone, 배치, 최신 revision으로 Install/Move PreviewCommand를 교체한다.
 	void RebuildPreviewCommand();
 	// FFZS DeveloperSettings의 배치 조작값을 검증해 반환한다. 잘못된 config는 공개 fallback을 사용한다.
-	float GetPlacementRotationSnapDegrees() const;
-	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
 	int32 GetPlacementPositionSnapCm() const;
 	int32 GetPlacementVisualGridStepCm(int32 ActivePositionSnapCm) const;
 	// Zone System의 현재 단계가 시설 변경을 허용하는 InitialSetup/MorningCheck인지 확인한다. 

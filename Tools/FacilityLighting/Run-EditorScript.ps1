@@ -13,7 +13,7 @@ $log = Join-Path $qaRoot ($Label + '.log')
 $argsForEditor = @(
     ('"' + (Join-Path $projectRoot 'FestaFiesta.uproject') + '"'), '/Engine/Maps/Entry',
     ('-ExecutePythonScript="' + $scriptPath + '"'),
-    '-DisablePlugins=RiderLink', '-unattended', '-nosplash', '-nosound', '-NoSourceControl',
+    '-DisablePlugins=RiderLink', '-unattended', '-nosplash', '-nosound', '-NoSourceControl', '-RenderOffscreen',
     '-ddc=InstalledNoZenLocalFallback', '-noxgeshadercompile',
     ('-ShaderWorkingDir="' + (Join-Path $qaRoot '_shaderwork') + '"'),
     ('-abslog="' + $log + '"')
