@@ -24,6 +24,11 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	EnsureMinigameButton();
 	EnsureProgramSection();
 	EnsureUpgradeSection();
+	if (Widget_LightingControls)
+	{
+		Widget_LightingControls->OnLightingRequested.AddUObject(this, &ThisClass::HandleLightingRequested);
+		Widget_LightingControls->OnLightingResetRequested.AddUObject(this, &ThisClass::HandleLightingResetRequested);
+	}
 
 	if (Button_Move)
 	{
@@ -69,6 +74,7 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
 		CurrentViewData.Context != ViewData.Context;
 	CurrentViewData = ViewData;
+	if (Widget_LightingControls) Widget_LightingControls->ApplyViewData(ViewData);
 	if (bSelectionChanged && WidgetTree)
 	{
 		if (UScrollBox* Details = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("ScrollBox_Details"))))
@@ -576,6 +582,18 @@ void UFF_FacilityInfoPanel::SetText(UCommonTextBlock* Target, const FText& Text)
 	{
 		Target->SetText(Text);
 	}
+}
+
+void UFF_FacilityInfoPanel::HandleLightingRequested(const FGuid FacilityId, const FFFZSFacilityLightingState& State)
+{
+	if (CurrentViewData.bCanEditLighting && CurrentViewData.FacilityInstanceId == FacilityId)
+		OnLightingRequested.Broadcast(FacilityId, State);
+}
+
+void UFF_FacilityInfoPanel::HandleLightingResetRequested(const FGuid FacilityId)
+{
+	if (CurrentViewData.bCanEditLighting && CurrentViewData.FacilityInstanceId == FacilityId)
+		OnLightingResetRequested.Broadcast(FacilityId);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -7,6 +7,7 @@
 #include "Components/CapsuleComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "FF_FFZSCollision.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -18,6 +19,8 @@ AFF_FestivalCharacter::AFF_FestivalCharacter()
 	PrimaryActorTick.bCanEverTick = false;
 
 	GetCapsuleComponent()->InitCapsuleSize(34.f, 88.f);
+	// Pawn ObjectType은 유지해 지면·기존 월드 충돌을 보존하고 시설 전용 채널만 선택 참여한다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(FFZSCollision::FacilityPlayerObjectChannel, ECR_Block);
 
 	// 반지름 34cm 는 Crowd 에이전트와 같은 값이다. 연동 가이드가 NPC 두 명의 비겹침
 	// 중심거리를 68cm 로 잡고 시설 간격을 그 기준으로 보정했으므로, 플레이어만 다른 몸집이면
@@ -56,6 +59,8 @@ AFF_FestivalCharacter::AFF_FestivalCharacter()
 void AFF_FestivalCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	// 기존 캐릭터 Blueprint에 저장된 응답이 새 채널을 Ignore로 덮어써도 플레이 시 복구한다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(FFZSCollision::FacilityPlayerObjectChannel, ECR_Block);
 	ApplyMovementSpeed();
 }
 

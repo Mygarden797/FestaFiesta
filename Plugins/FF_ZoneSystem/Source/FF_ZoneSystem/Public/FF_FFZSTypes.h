@@ -13,6 +13,7 @@
 
 class AActor;
 class AFFZSFacilityActor;
+class AFFZSFacilityLightingRig;
 class USoundAttenuation;
 class USoundBase;
 class USoundConcurrency;
@@ -472,6 +473,51 @@ struct FF_ZONESYSTEM_API FFFZSFacilityAudioSettings
     bool HasNonDefaultValues() const;
 };
 
+// 설치된 시설 한 개의 조명 값. PDA 원본과 분리하여 저장한다.
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSFacilityLightingState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Lighting Enabled"))
+    bool bEnabled = true;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (ClampMin = "0.0", ClampMax = "5.0", UIMin = "0.0", UIMax = "5.0", ToolTip = "Blueprint에서 정한 각 조명의 원래 밝기에 곱합니다. 1은 100%, 0은 소등입니다."))
+    float BrightnessMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (ToolTip = "끄면 Blueprint에서 정한 각 조명의 고유 색을 유지합니다."))
+    bool bOverrideColor = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (EditCondition = "bOverrideColor", HideAlphaChannel))
+    FLinearColor Color = FLinearColor::White;
+
+    bool IsValid() const;
+};
+
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSFacilityLightingSettings
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (AssetBundles = "FacilityLighting", ToolTip = "FFZSFacilityLightingRig를 부모로 만든 조명 전용 Blueprint를 지정합니다. 비워 두면 조명을 생성하지 않습니다."))
+    TSoftClassPtr<AFFZSFacilityLightingRig> LightingRigClass;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Lighting Enabled", ToolTip = "새 시설을 설치하는 즉시 점등합니다. 개장 상태와 무관합니다."))
+    bool bEnabled = true;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (ClampMin = "0.0", ClampMax = "5.0", UIMin = "0.0", UIMax = "5.0", ToolTip = "전체 기본 밝기입니다. 각 조명의 Blueprint 밝기 × 이 배수를 적용합니다."))
+    float BrightnessMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting")
+    bool bOverrideColor = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (EditCondition = "bOverrideColor", HideAlphaChannel))
+    FLinearColor Color = FLinearColor::White;
+
+    FFFZSFacilityLightingState GetDefaultState() const;
+    bool HasNonDefaultValues() const;
+};
+
 USTRUCT(BlueprintType)
 // 한 시설 정의의 강화 한 단계. 비용과 시간 배수는 설치 당시의 원본 값을 기준으로 한다.
 struct FF_ZONESYSTEM_API FFFZSFacilityUpgradeTier
@@ -600,6 +646,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Facility Audio", ToolTip = "이 시설에만 적용할 3D 앰비언트 사운드와 재생 정책입니다. 사운드 에셋을 교체하면 코드나 시설 Blueprint 수정 없이 새 설치와 저장 데이터에 반영됩니다."))
     FFFZSFacilityAudioSettings AudioSettings;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Facility Lighting", ToolTip = "메시와 함께 설치되는 조명 Blueprint 및 기본 점등·밝기·색상입니다. Blueprint 좌표는 원본 메시의 로컬 좌표와 같아야 합니다."))
+    FFFZSFacilityLightingSettings LightingSettings;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "10.0", Units = "cm"))
     float PlacementObstacleHeightCm = 250.0f;
@@ -871,6 +920,13 @@ struct FF_ZONESYSTEM_API FFFZSFacilityInstanceSnapshot
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     FFFZSFacilitySpec FacilitySpec;
+
+    // 이전 저장에 필드가 없으면 false이므로 설치 당시 PDA 기본값을 적용한다.
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    bool bHasLightingOverride = false;
+
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    FFFZSFacilityLightingState LightingState;
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     int32 UpgradeLevel = 1;

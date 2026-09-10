@@ -168,6 +168,16 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bCanRemove = false;
 
+	/** Lighting is independently editable in Build and Live for facilities with an authored rig. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Lighting")
+	bool bHasLightingRig = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Lighting")
+	bool bCanEditLighting = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Lighting")
+	FFFZSFacilityLightingState LightingState;
+
 	/** True when the inspector should expose today's paid-program state for this facility. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
 	bool bShowProgramSection = false;

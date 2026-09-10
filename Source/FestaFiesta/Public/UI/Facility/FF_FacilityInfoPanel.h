@@ -5,6 +5,7 @@
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
 #include "UI/Facility/FF_FacilityInfoTypes.h"
+#include "UI/Facility/FF_FacilityLightingControls.h"
 #include "FF_FacilityInfoPanel.generated.h"
 
 class UBorder;
@@ -31,6 +32,8 @@ public:
 	FSimpleMulticastDelegate OnUpgradeRequested;
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
+	FFF_OnFacilityLightingRequested OnLightingRequested;
+	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
 	void ApplyViewData(const FFF_FacilityInfoViewData& ViewData);
@@ -80,6 +83,12 @@ private:
 	void EnsureProgramSection();
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
+	void HandleLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
+	void HandleLightingResetRequested(FGuid FacilityId);
+
+	/** Authored child WBP, migrated by FF.BuildFacilityInfoUMG without replacing designer layout. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UFF_FacilityLightingControls> Widget_LightingControls;
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;

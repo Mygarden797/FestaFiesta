@@ -676,7 +676,7 @@ bool UFFZSWorldSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType)
 // 게임 스레드 밖이거나 Snapshot 복원, 외부 Policy 콜백, Command 실행 중이면 권위 변경을 막는다.
 bool UFFZSWorldSubsystem::IsAuthorityMutationBlocked() const
 {
-    return !IsInGameThread() || bIsRestoringSnapshot || bIsInvokingExternalPolicy || InFlightCommandId.IsValid();
+    return !IsInGameThread() || bIsRestoringSnapshot || bIsInvokingExternalPolicy || bIsBroadcastingLightingChange || InFlightCommandId.IsValid();
 }
 
 bool UFFZSWorldSubsystem::SetChangePhase(const EFFZSChangePhase NewPhase)
@@ -759,6 +759,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
         if (Existing->Get() == Facility)
         {
             Facility->SetNavigationObstacleEnabled(true);
+            Facility->SetPlayerCollisionEnabled(true);
             return true;
         }
     }
@@ -796,6 +797,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
         }
     }
     Facility->SetNavigationObstacleEnabled(true);
+    Facility->SetPlayerCollisionEnabled(true);
     return true;
 }
 
@@ -811,6 +813,7 @@ void UFFZSWorldSubsystem::UnregisterFacility(AFFZSFacilityActor* Facility)
         return;
     }
     Facility->SetNavigationObstacleEnabled(false);
+    Facility->SetPlayerCollisionEnabled(false);
     ReleaseFacilityRegions(*Facility);
     FacilitiesById.Remove(FacilityId);
     if (UFFZSFacilityQueueComponent* Queue = Facility->GetMutableQueueComponent())
@@ -2551,6 +2554,51 @@ bool UFFZSWorldSubsystem::UnregisterExternalPolicy(UObject* PolicyProvider)
     return ExternalPolicies.Remove(PolicyProvider) > 0;
 }
 
+bool UFFZSWorldSubsystem::SetFacilityLighting(const FGuid FacilityInstanceId, const FFFZSFacilityLightingState& Settings, FText& OutFailureReason)
+{
+    OutFailureReason = FText::GetEmpty();
+    if (IsAuthorityMutationBlocked())
+    {
+        OutFailureReason = LOCTEXT("LightingMutationBusy", "시설 변경을 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+        return false;
+    }
+    AFFZSFacilityActor* Facility = FindFacility(FacilityInstanceId);
+    if (!IsValid(Facility) || Facility->IsActorBeingDestroyed() || Facility->GetFacilityState() == EFFZSFacilityState::Removed || !Facility->HasLightingRig())
+    {
+        OutFailureReason = LOCTEXT("LightingFacilityMissing", "조명을 설정할 수 있는 설치된 시설이 없습니다.");
+        return false;
+    }
+    if (!Settings.IsValid())
+    {
+        OutFailureReason = LOCTEXT("LightingStateInvalid", "조명 밝기는 0~500%, 색상은 0~1 범위여야 합니다.");
+        return false;
+    }
+    Facility->ApplyFacilityLightingOverride(Settings, true);
+    TGuardValue<bool> NotificationGuard(bIsBroadcastingLightingChange, true);
+    OnFacilityLightingChanged.Broadcast(FacilityInstanceId);
+    return true;
+}
+
+bool UFFZSWorldSubsystem::ResetFacilityLighting(const FGuid FacilityInstanceId, FText& OutFailureReason)
+{
+    OutFailureReason = FText::GetEmpty();
+    if (IsAuthorityMutationBlocked())
+    {
+        OutFailureReason = LOCTEXT("LightingMutationBusy", "시설 변경을 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+        return false;
+    }
+    AFFZSFacilityActor* Facility = FindFacility(FacilityInstanceId);
+    if (!IsValid(Facility) || Facility->IsActorBeingDestroyed() || Facility->GetFacilityState() == EFFZSFacilityState::Removed || !Facility->HasLightingRig())
+    {
+        OutFailureReason = LOCTEXT("LightingFacilityMissing", "조명을 설정할 수 있는 설치된 시설이 없습니다.");
+        return false;
+    }
+    Facility->ApplyFacilityLightingOverride(Facility->GetBaseFacilitySpec().LightingSettings.GetDefaultState(), false);
+    TGuardValue<bool> NotificationGuard(bIsBroadcastingLightingChange, true);
+    OnFacilityLightingChanged.Broadcast(FacilityInstanceId);
+    return true;
+}
+
 bool UFFZSWorldSubsystem::SetFacilityQueueBlocked(const FGuid FacilityInstanceId, const bool bBlocked)
 {
     if (IsAuthorityMutationBlocked())
@@ -2881,6 +2929,10 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
     for (const FFFZSFacilityInstanceSnapshot& Saved : Snapshot.Facilities)
     {
         TArray<FText> SpecErrors;
+        if (Saved.bHasLightingOverride && !Saved.LightingState.IsValid())
+        {
+            OutErrors.Add(LOCTEXT("SnapshotLightingStateInvalid", "스냅샷 시설 조명의 밝기 또는 색상이 유효하지 않습니다."));
+        }
         if (!Saved.FacilityInstanceId.IsValid() || FacilityIds.Contains(Saved.FacilityInstanceId) || !Saved.FacilitySpec.IsValid(SpecErrors))
         {
             OutErrors.Add(LOCTEXT("SnapshotFacility", "스냅샷에 잘못되었거나 중복된 Facility가 있습니다."));
@@ -3251,6 +3303,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             return false;
         }
         Facility->SetNeedsRelocation(Saved.bNeedsRelocation);
+        Facility->ApplyFacilityLightingOverride(Saved.LightingState, Saved.bHasLightingOverride);
 
         UFFZSFacilityQueueComponent* Queue = Facility->GetMutableQueueComponent();
         TArray<FText> QueueErrors;
@@ -3340,6 +3393,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
                 Queue->OnAgentReleased.RemoveDynamic(this, &UFFZSWorldSubsystem::HandleAgentReleased);
             }
             Facility->SetNavigationObstacleEnabled(false);
+            Facility->SetPlayerCollisionEnabled(false);
             Facility->SetActorEnableCollision(false);
             Facility->SetActorHiddenInGame(true);
         }
@@ -3364,6 +3418,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             Facility->SetActorHiddenInGame(false);
             Facility->SetActorEnableCollision(true);
             Facility->SetNavigationObstacleEnabled(true);
+            Facility->SetPlayerCollisionEnabled(true);
         }
     }
     for (const TWeakObjectPtr<AFFZSFacilityActor>& WeakFacility : ExistingFacilities)

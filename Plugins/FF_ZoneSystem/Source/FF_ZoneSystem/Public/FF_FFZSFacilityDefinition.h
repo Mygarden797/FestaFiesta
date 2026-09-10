@@ -26,7 +26,7 @@ public:
     /** AssetManager, catalog, validators, and adapters share this one type token. */
     static const FPrimaryAssetType& GetFacilityDefinitionAssetType();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System", meta = (DisplayName = "Facility Specification", ToolTip = "이 시설의 ID·건물 크기·대기열·앵커·시각 메시를 정의하는 프로덕션 단일 원천입니다. 설치 시 이 값을 검증한 복사본이 월드 인스턴스와 저장 데이터에 들어갑니다.", AssetBundles = "FacilityVisual"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System", meta = (DisplayName = "Facility Specification", ToolTip = "이 시설의 ID·건물 크기·대기열·앵커·시각 메시를 정의하는 프로덕션 단일 원천입니다. 설치 시 이 값을 검증한 복사본이 월드 인스턴스와 저장 데이터에 들어갑니다.", AssetBundles = "FacilityVisual,FacilityLighting"))
     FFFZSFacilitySpec Spec;
     // ID·크기·대기열·앵커·외부 키·소프트 메시를 포함하는 설치 시점 복사 원본.
 
