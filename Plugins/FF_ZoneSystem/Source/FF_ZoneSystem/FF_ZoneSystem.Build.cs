@@ -35,6 +35,6 @@ public class FF_ZoneSystem : ModuleRules
             "NavigationSystem"
         });
         // Terrain collisions are sampled as ground, never rasterized as giant obstacle bounds.
-        PrivateDependencyModuleNames.Add("Landscape");
+        PrivateDependencyModuleNames.AddRange(new string[] { "Landscape", "GeometryCore", "GeometryAlgorithms" });
     }
 }

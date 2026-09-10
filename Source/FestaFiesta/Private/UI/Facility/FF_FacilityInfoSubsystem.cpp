@@ -95,6 +95,7 @@ void UFF_FacilityInfoSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleWorldChanged);
 		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(
 			this, &ThisClass::HandleWorldSnapshotRestored);
+		ZoneSystem->OnFacilityLightingChanged.AddUniqueDynamic(this, &ThisClass::HandleFacilityLightingChanged);
 	}
 	EnsureProgramReadModelBindings();
 }
@@ -120,6 +121,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		{
 			ZoneSystem->OnWorldChanged.RemoveAll(this);
 			ZoneSystem->OnWorldSnapshotRestored.RemoveAll(this);
+			ZoneSystem->OnFacilityLightingChanged.RemoveAll(this);
 		}
 	}
 
@@ -138,6 +140,8 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
+		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -253,6 +257,8 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
+		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -286,6 +292,8 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnProgramScheduleRequested.AddUObject(
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
+	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
+	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
@@ -300,6 +308,8 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
+		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel = nullptr;
@@ -693,6 +703,10 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
 	}
 	OutViewData.bNeedsRelocation = ReadModel.bNeedsRelocation;
+	OutViewData.bHasLightingRig = Facility.HasLightingRig();
+	OutViewData.bCanEditLighting = OutViewData.bHasLightingRig &&
+		IsContextCurrentlyAllowed(SelectionContext) && !bPauseMenuPresentationSuppressed;
+	OutViewData.LightingState = Facility.GetLightingState();
 	OutViewData.FeedbackText = FeedbackText;
 	OutViewData.bFeedbackIsError = bFeedbackIsError;
 
@@ -1331,6 +1345,52 @@ void UFF_FacilityInfoSubsystem::HandlePanelUpgradeRequested()
 		: (FailureReason.IsEmpty()
 			? LOCTEXT("UpgradeFailed", "강화할 수 없습니다. 시설 상태를 다시 확인해 주세요.")
 			: FailureReason), !bSucceeded);
+}
+
+void UFF_FacilityInfoSubsystem::HandleFacilityLightingChanged(const FGuid FacilityInstanceId)
+{
+	if (FacilityInstanceId == SelectedFacilityId) RefreshPanel();
+}
+
+bool UFF_FacilityInfoSubsystem::CanEditSelectedLighting(const FGuid FacilityId) const
+{
+	if (bPauseMenuPresentationSuppressed || !Panel ||
+		Panel->GetVisibility() == ESlateVisibility::Collapsed || !FacilityId.IsValid() ||
+		SelectedFacilityId != FacilityId || !IsContextCurrentlyAllowed(SelectionContext)) return false;
+	const FFF_FacilityInfoViewData& ViewData = Panel->GetCurrentViewData();
+	const AFFZSFacilityActor* Facility = GetSelectedFacility();
+	return ViewData.FacilityInstanceId == FacilityId && ViewData.bCanEditLighting &&
+		Facility && Facility->HasLightingRig();
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelLightingRequested(
+	const FGuid FacilityId, const FFFZSFacilityLightingState& State)
+{
+	if (!CanEditSelectedLighting(FacilityId)) return;
+	UFFZSWorldSubsystem* ZoneSystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	FText Failure;
+	const bool bSucceeded = ZoneSystem && ZoneSystem->SetFacilityLighting(FacilityId, State, Failure);
+	if (SelectedFacilityId != FacilityId) return;
+	// World events may refresh synchronously. Always reread after a failed command as well.
+	if (!bSucceeded) SetFeedback(Failure.IsEmpty()
+		? LOCTEXT("LightingFailed", "조명을 바꿀 수 없습니다. 시설 상태를 확인해 주세요.") : Failure, true);
+	else
+	{
+		FeedbackText = FText::GetEmpty();
+		bFeedbackIsError = false;
+		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelLightingResetRequested(const FGuid FacilityId)
+{
+	if (!CanEditSelectedLighting(FacilityId)) return;
+	UFFZSWorldSubsystem* ZoneSystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	FText Failure;
+	const bool bSucceeded = ZoneSystem && ZoneSystem->ResetFacilityLighting(FacilityId, Failure);
+	if (SelectedFacilityId != FacilityId) return;
+	SetFeedback(bSucceeded ? LOCTEXT("LightingReset", "시설의 기본 조명 설정으로 되돌렸습니다.")
+		: (Failure.IsEmpty() ? LOCTEXT("LightingResetFailed", "기본 조명을 복원할 수 없습니다.") : Failure), !bSucceeded);
 }
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()

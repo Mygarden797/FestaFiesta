@@ -143,17 +143,18 @@ struct FFF_CrowdDecisionStats
  * Crowd: 그 좌표로 이동
  * ```
  *
- * ### 아직 없는 것
- * - 취향(preference): `FUnitData::ArchetypeID`가 NAME_None이라 빈 벡터를 넘긴다
- * - Need: 실시간초 → 축제분 압축비가 정해지지 않아 연결하지 않았다
- * - 방문 이력(revisit), Queue 대기시간: 미연결
+ * ### 개체 변주는 Crowd 가 실어 보낸다
+ * 취향강도·신규성선호·개인 밀집임계는 이 조정자가 계산하지 않는다. Crowd 가 스폰 때
+ * `ResolveWithGroupSharing` 으로 확정해 `FFF_PartyDecisionContext` 에 담아 넘긴다.
  *
- * 그래서 현재 Choose의 6항 중 attraction·distance·density 셋만 동작한다.
- * 시설로 수렴하는 동선은 나오지만 "누가 어디에 끌리는가"의 개인차는 아직 없다.
+ * 취향강도만 예외적으로 이 클래스에서 곱한다(`GetScaledPreferenceVector`). 
+ * 정규화 클램프 전에 벡터에 걸어야 하는 값이라 Choose 인자로 넘길 수 없기 때문이다.
  *
- * ### 대기열·서비스·퇴장은 이 단계에 없다
- * `ApproachWorldTransform`은 대기열 가입 **전** 접근점이다. 도착 후 Join·Slot 추종·
- * Service·Exit는 다음 단계이며, 그때 도착 통지 채널(Crowd → 조정자)이 추가된다.
+ * ### 대기열·서비스·퇴장
+ * `ApproachWorldTransform`은 대기열 가입 전 접근점이다. 가입 후의 Slot 추종·Service·
+ * Exit 는 Crowd 와 Queue 브리지가 맡고, 이 조정자는 관여하지 않는다.
+ * 줄에서의 이탈(reneging)도 Crowd 쪽 판정이며, 그 결과가
+ * `EFF_DecisionReason::QueuePatienceExpired` 요청으로 여기 되돌아온다.
  */
 UCLASS()
 class FESTAFIESTA_API UFF_CrowdDecisionSubsystem : public UWorldSubsystem
@@ -308,7 +309,23 @@ private:
 	// Crowd의 OnPartyNeedsDecision에 물리는 함수. false면 Crowd가 배회로 폴백한다
 	bool HandlePartyNeedsDecision(const FFF_PartyDecisionContext& Context, FFF_PartyDecisionResult& OutResult);
 	EFF_PartyFallbackAction ResolveFallbackAction(const FFF_PartyDecisionContext& Context);
+	// (아키타입, 동반유형) 조합의 개체 변주가 안 걸린 기준 취향 벡터. 조합 수가 유한해서 캐시된다
 	const TMap<FName, float>& GetPreferenceVector(FName ArchetypeId, FName CompanionType);
+
+	/**
+	 * 기준 취향 벡터에 이 개체의 preference_strength_multiplier 를 곱한 것.
+	 *
+	 * 곱셈을 Choose 안에서 하지 않고 벡터에 미리 거는 이유: Choose 는 성분을
+	 * `Clamp(값 / preference_vector_scale_ref, -1, 1)` 로 정규화한다. 클램프가 걸린 뒤에
+	 * 곱하면 포화된 성분에서 배수가 먹지 않아, 취향이 강한 개체일수록 오히려 변주가
+	 * 사라진다. 클램프 전에 곱해야 "취향이 강하다"가 정규화 한계까지 반영된다.
+	 *
+	 * 배수가 1 에 가까우면 캐시된 기준 벡터를 그대로 돌려준다 — 복사를 아끼려는 것이다.
+	 * 그 외에는 ScaledPreferenceVector 에 채워 돌려주므로, 반환된 참조는 다음 호출까지만
+	 * 유효하다. 결정 하나를 처리하는 동안만 쓰고 보관하지 말 것.
+	 */
+	const TMap<FName, float>& GetScaledPreferenceVector(
+		FName ArchetypeId, FName CompanionType, float PreferenceStrengthMultiplier);
 
 	/**
 	 * 이번 프레임의 ZoneSystem 스냅샷. 프레임당 한 번만 만든다.
@@ -356,6 +373,14 @@ private:
 	UPROPERTY()
 	TObjectPtr<UDataTable> CachedCompanionModifierTable;
 	TMap<FName, TMap<FName, float>> PreferenceVectorCache;
+
+	/**
+	 * GetScaledPreferenceVector 의 작업 버퍼. 개체별 배수는 연속값이라 캐시할 수 없어서
+	 * 결정마다 다시 채우는데, 멤버로 두면 Reset 이 용량을 유지하므로 초반 이후 재할당이 없다.
+	 * 카테고리 수만큼(10개 남짓)의 작은 맵이다.
+	 */
+	TMap<FName, float> ScaledPreferenceVector;
+
 	int32 NoChoiceLeavePatienceRounds = 5;
 	int32 LeaveByStayExpiredCount = 0;
 	int32 LeaveByNoChoicePatienceCount = 0;

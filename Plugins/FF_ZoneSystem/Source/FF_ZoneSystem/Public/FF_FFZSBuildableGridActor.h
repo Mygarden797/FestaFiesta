@@ -21,6 +21,12 @@ public:
     void HideGrid();
 
 private:
+    // A build area owns one visible grid; gameplay regions only provide local coordinates.
+    UPROPERTY(Transient)
+    TObjectPtr<UFFZSBuildableGridComponent> UnifiedGrid;
+
+    FName UnifiedCoordinateZoneId = NAME_None;
+
     UPROPERTY(Transient)
     TMap<FName, TObjectPtr<UFFZSBuildableGridComponent>> ZoneGrids;
 };

@@ -15,6 +15,8 @@
 class AActor;
 class AFFZSFacilityActor;
 class AFFZSGameplayZone;
+class AFFZSBuildArea;
+class FFFZSSpatialHash2D;
 class AFFZSProtectedArea;
 struct FFFZSBuildableGridMask;
 
@@ -25,12 +27,16 @@ struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
     TArray<FFFZSOrientedRect> Regions;
+    // Derived broad/narrow-phase data; saved placements and NPC region IDs stay unchanged.
+    TArray<FFFZSOrientedRect> WorldRegions;
+    FBox2D WorldBounds = FBox2D(ForceInit);
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
 // 성공한 권한 명령이 확정되고 WorldRevision이 증가한 뒤 방송하는 불변 이벤트.
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFFZSWorldSnapshotRestoredSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSFacilityLightingChangedSignature, FGuid, FacilityInstanceId);
 // 원자적 스냅샷 복원이 끝나 시설 Actor 레지스트리가 한 번에 교체됐음을 알리는 수명주기 이벤트.
 
 
@@ -48,6 +54,18 @@ class FF_ZONESYSTEM_API UFFZSWorldSubsystem : public UWorldSubsystem
     GENERATED_BODY()
 
 public:
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RegisterBuildArea(AFFZSBuildArea* BuildArea);
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool UnregisterBuildArea(AFFZSBuildArea* BuildArea);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Construction")
+    AFFZSBuildArea* FindBuildArea() const;
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RefreshBuildArea();
+
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     // InitialPhase 설정을 읽고 이미 월드에 존재하는 존·보호 영역·유효 시설을 등록한다. 월드당 한 번 호출.
     
@@ -63,6 +81,9 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
     FFFZSWorldSnapshotRestoredSignature OnWorldSnapshotRestored;
+
+    UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
+    FFFZSFacilityLightingChangedSignature OnFacilityLightingChanged;
     // 명령 이벤트로 표현할 수 없는 전체 시설 레지스트리 복원이 끝난 뒤 한 번 방송한다.
     
     UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
@@ -181,6 +202,13 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
     bool SetFacilityQueueBlocked(FGuid FacilityInstanceId, bool bBlocked);
+
+    // 설치된 한 시설의 조명만 변경한다. PDA 기본값과 다른 시설은 수정하지 않는다.
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Lighting")
+    bool SetFacilityLighting(FGuid FacilityInstanceId, const FFFZSFacilityLightingState& Settings, FText& OutFailureReason);
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Lighting")
+    bool ResetFacilityLighting(FGuid FacilityInstanceId, FText& OutFailureReason);
     // Navigation·Safety 어댑터가 활성 시설 접근 차단을 설정하는 권한 진입점. 성공 시 큐의 실제 Blocked 여부가 요청과 일치.
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
@@ -252,6 +280,18 @@ public:
 
 private:
     TMap<FName, TWeakObjectPtr<AFFZSGameplayZone>> ZonesById;
+    TWeakObjectPtr<AFFZSBuildArea> UnifiedBuildArea;
+    TSharedPtr<FFFZSSpatialHash2D> FacilitySpatialIndex;
+    TSharedPtr<FFFZSSpatialHash2D> RegionSpatialIndex;
+    TArray<FName> SpatialRegionIds;
+
+    void RebuildBuildArea();
+    void CacheFacilityOccupancy(FGuid FacilityId, FFFZSFacilityRegionOccupancy&& Occupancy);
+    void RebuildFacilitySpatialIndex();
+    void RebuildRegionSpatialIndex();
+    TArray<FFFZSOrientedRect> ToWorldRegions(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions) const;
+    bool IsOccupancyRelevant(FName ZoneId, const FFFZSFacilityRegionOccupancy& Occupancy) const;
+    void QueryFacilityCandidates(const TArray<FFFZSOrientedRect>& WorldRegions, TArray<FGuid>& Candidates) const;
     // 안정 ZoneId → 제작 존 약한 참조의 권한 레지스트리다.
     
     TMap<FGuid, TWeakObjectPtr<AFFZSFacilityActor>> FacilitiesById;
@@ -276,6 +316,7 @@ private:
     // 저장할 성공 결과가 참조하는 시설 GUID 집합으로 제거 뒤 UObject 포인터 재연결 판단에 쓴다.
     
     int64 WorldRevision = 0;
+    bool bIsBroadcastingLightingChange = false;
     // 성공한 권한 명령 확정 횟수. 실패·미리보기·단계 변경은 증가시키지 않는다.
 
     EFFZSChangePhase CurrentPhase = EFFZSChangePhase::InitialSetup;

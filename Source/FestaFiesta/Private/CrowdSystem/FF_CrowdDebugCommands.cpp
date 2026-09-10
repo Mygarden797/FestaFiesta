@@ -313,6 +313,9 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("  막혀서 포기   : %d회 (임계 %d스텝 = %.1fs)  <-- 0이면 이 경로가 안 걸린다"),
 		CrowdSim->GetStuckDecisionRequests(), CrowdSim->DecisionStuckSteps,
 		CrowdSim->DecisionStuckSteps / 30.f);
+	Ar.Logf(TEXT("  주기 재평가   : %d회 (%s)  <-- 켰는데 0이면 개인 주기가 안 차고 있다"),
+		CrowdSim->GetReevaluateRequests(),
+		CrowdSim->bEnablePeriodicReevaluation ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("막힘          : %d (%.1f%%)  <-- 가려는데 못 가는 사람"),
 		Flow.Blocked, BlockedPercent);
 	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 최장 %d스텝 = %.1f초)"),
@@ -596,6 +599,48 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdPartyCommand(
 	TEXT("FF.Crowd.Party"),
 	TEXT("파티 그룹핑을 켜고 끈다(스폰 전에 설정). FF.Crowd.Party [0|1=1]"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdPartyCommand));
+
+// 개체 변주가 만드는 두 행동을 런타임에 끄고 켠다. **재스폰이 필요 없다** —
+// 두 판정 모두 매 스텝 플래그를 다시 보므로, 같은 세션에서 전/후를 대조할 수 있다.
+// (특성값 자체는 스폰 때 확정되므로 여기서 끈다고 값이 사라지지는 않는다)
+static void CrowdVariationCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	if (Args.Num() > 0)
+	{
+		CrowdSim->bEnableQueuePatienceAbandon = (FFCrowdConsole::ParseIntArg(Args, 0, 1) != 0);
+	}
+	if (Args.Num() > 1)
+	{
+		CrowdSim->bEnablePeriodicReevaluation = (FFCrowdConsole::ParseIntArg(Args, 1, 1) != 0);
+	}
+
+	Ar.Logf(TEXT("--- 개체 변주 행동 ---"));
+	Ar.Logf(TEXT("인내심 이탈   : %s   %d회   (wait_threshold_minutes x patience_multiplier)"),
+		CrowdSim->bEnableQueuePatienceAbandon ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetQueuePatienceAbandons());
+	Ar.Logf(TEXT("주기 재평가   : %s   %d회   (reevaluate_interval_seconds x reevaluate_interval_multiplier)"),
+		CrowdSim->bEnablePeriodicReevaluation ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetReevaluateRequests());
+	Ar.Logf(TEXT("끄면 두 값은 그 자리에 멈춘다(0으로 돌아가지 않는다). 리셋은 FF.Crowd.Queue 쪽 통계 초기화를 쓴다"));
+
+	if (!CrowdSim->IsQueueAdvancing())
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("★ 큐가 진행 중이 아니다 — 인내심 이탈은 큐 진행 판정 뒤에 있어서 절대 발화하지 않는다. ")
+			TEXT("FF.Crowd.GoLive 로 Live 로 올리고 FF.Crowd.Queue 를 볼 것"));
+	}
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdVariationCommand(
+	TEXT("FF.Crowd.Variation"),
+	TEXT("개체 변주 행동(인내심 이탈·주기 재평가)을 켜고 끈다. FF.Crowd.Variation [인내심 0|1] [주기 0|1] (인자 없으면 현재 상태)"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdVariationCommand));
 
 static void CrowdDemoCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
 {
@@ -974,6 +1019,9 @@ static void CrowdQueueCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("시설 미해결      : %d   (GUID 파싱 실패 + 큐 미등록 시설. 배회는 여기 안 들어온다)"), Unresolved);
 	Ar.Logf(TEXT("슬롯 도착 통지   : %d"), CrowdSim->GetQueueArrivalNotifyCount());
 	Ar.Logf(TEXT("지금 줄에 선 파티: %d"), CrowdSim->GetQueuedPartyCount());
+	Ar.Logf(TEXT("인내심 이탈      : %d   (%s) <- 정상 행동이다. 아래 '강제 해제'와 다른 것이니 구분할 것"),
+		CrowdSim->GetQueuePatienceAbandons(),
+		CrowdSim->bEnableQueuePatienceAbandon ? TEXT("켬") : TEXT("끔"));
 
 	if (!CrowdSim->IsQueueAdvancing())
 	{

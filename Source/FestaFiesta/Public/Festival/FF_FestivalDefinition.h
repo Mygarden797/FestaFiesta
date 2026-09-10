@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "FF_FestivalDefinition.generated.h"
 
 class UDataTable;
@@ -48,6 +49,10 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival", meta = (ClampMin = "0"))
 	int32 BaseDailyVisitors = 500;
+
+	// Setup 완료 및 운영 진입에 필요한 시설. 기본은 SunsetMainStage 1개. 빈 목록이면 조건 없음.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Setup", meta = (TitleProperty = "FacilityDefinition"))
+	TArray<FFF_RequiredFacility> RequiredSetupFacilities;
 
 	// --- 초기 자원 --------------------------------------------------------
 

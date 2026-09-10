@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "GameFramework/Actor.h"
 #include "Templates/SubclassOf.h"
 #include "FF_SpawnActor.generated.h"
@@ -71,7 +72,11 @@ protected:
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	TObjectPtr<AActor> SpawnAchor;
-	
+
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	TObjectPtr<AActor> DespawnAchor;
+
+	// 입장·퇴장 게이트. 비워두면 단일 앵커로 돌고, 순서가 인덱스라 중간에 끼우지 말고 뒤에 추가한다.
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Gate")
+	TArray<FFF_CrowdGate> CrowdGates;
 };

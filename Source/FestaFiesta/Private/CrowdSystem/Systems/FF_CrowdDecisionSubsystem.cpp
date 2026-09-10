@@ -155,9 +155,12 @@ void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
 	bSawMainProgramThisLive = true;
 	bMainStageOpen = true;
 
-	// 무대를 여는 것만으로는 아무도 모른다. 재결정 트리거가 도착·이동실패·큐거절뿐이라
-	// (ShouldReevaluate 의 주기 재평가는 아직 호출부가 없다) 밀어 넣지 않으면 회전율만큼
-	// 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
+	// 무대를 여는 것만으로는 아무도 모른다. 밀어 넣지 않으면 회전율만큼 서서히 차기만 하고
+	// "공연 시간에 몰린다"가 안 나온다.
+	//
+	// 개인 주기 재평가(EFF_DecisionReason::Reevaluated)가 붙은 뒤에도 이 밀어넣기는 필요하다 —
+	// 그쪽 주기는 reevaluate_interval_seconds(기본 120초) 단위라, 무대가 열린 순간에 맞춰
+	// 반응하지 않는다. 개장은 시각이 정해진 사건이므로 그 시각에 알려야 한다.
 	const UWorld* World = GetWorld();
 	UFF_CrowdSimulationSubsystem* Crowd =
 		World ? World->GetSubsystem<UFF_CrowdSimulationSubsystem>() : nullptr;
@@ -482,12 +485,37 @@ const TMap<FName, float>& UFF_CrowdDecisionSubsystem::GetPreferenceVector(FName 
 	{
 		return *Cached;
 	}
+	// 배수는 1 로 굳혀 둔다 — 개체 변주는 GetScaledPreferenceVector 가 얹는다.
+	// 여기에 개체 배수를 넣으면 캐시 키가 개체 수만큼 늘어난다.
 	return PreferenceVectorCache.Add(CacheKey, FFF_PreferenceVectorBuilder::Build(
 		ArchetypeId,
 		CompanionType,
 		1.f,
 		CachedArchetypeTable.Get(),
 		CachedCompanionModifierTable.Get()));
+}
+
+const TMap<FName, float>& UFF_CrowdDecisionSubsystem::GetScaledPreferenceVector(
+	FName ArchetypeId, FName CompanionType, float PreferenceStrengthMultiplier)
+{
+	const TMap<FName, float>& BaseVector = GetPreferenceVector(ArchetypeId, CompanionType);
+
+	// 음수 배수는 "싫어하는 것을 좋아한다"가 되어 의도와 반대다. 호출부 버그로 보고 0 으로 막는다
+	// (FFF_UtilityDestinationSelector 의 novelty 배수와 같은 방침).
+	const float SafeMultiplier = FMath::Max(PreferenceStrengthMultiplier, 0.f);
+
+	if (FMath::IsNearlyEqual(SafeMultiplier, 1.f))
+	{
+		return BaseVector;
+	}
+
+	ScaledPreferenceVector.Reset();
+	ScaledPreferenceVector.Reserve(BaseVector.Num());
+	for (const TPair<FName, float>& Entry : BaseVector)
+	{
+		ScaledPreferenceVector.Add(Entry.Key, Entry.Value * SafeMultiplier);
+	}
+	return ScaledPreferenceVector;
 }
 EFF_PartyFallbackAction UFF_CrowdDecisionSubsystem::ResolveFallbackAction(const FFF_PartyDecisionContext& Context)
 {
@@ -496,14 +524,35 @@ EFF_PartyFallbackAction UFF_CrowdDecisionSubsystem::ResolveFallbackAction(const 
 	{
 		return EFF_PartyFallbackAction::Wander;
 	}
-	const float CurrentZoneDensityRatio = 0.f;
-	const float PersonalDensityThresholdRatio = 1.f;
+	// 지금 서 있는 Zone 의 밀집도. Relocate 판정의 유일한 입력이라 이 값이 0 이면
+	// no_choice 는 영원히 Wander 로만 떨어지고 crowd_tolerance_multiplier 도 쓰이지 않는다.
+	//
+	// ReadModel 은 프레임 단위로 캐시되므로(GetReadModelForThisFrame) 결정 하나마다
+	// ZoneSystem 을 새로 긁지 않는다. Zone 을 못 찾으면 0 — 축제장 밖이라는 뜻이고,
+	// 그 경우 밀집을 근거로 파티를 옮길 수 없다.
+	float CurrentZoneDensityRatio = 0.f;
+	if (const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem())
+	{
+		const FName CurrentZoneId = ZoneSystem->ResolveZoneAtWorldLocation(Context.PartyWorldLocation);
+		if (!CurrentZoneId.IsNone())
+		{
+			const FFFZSReadModel& ReadModel = GetReadModelForThisFrame();
+			if (const FFFZSZoneReadModel* CurrentZone = ReadModel.Zones.FindByPredicate(
+				[CurrentZoneId](const FFFZSZoneReadModel& Zone) { return Zone.ZoneId == CurrentZoneId; }))
+			{
+				CurrentZoneDensityRatio = CurrentZone->DensityRatio;
+			}
+		}
+	}
+
+	// Crowd 가 스폰 때 density_threshold_ratio × crowd_tolerance_multiplier 를 곱해 둔 값이다.
+	// 여기서 다시 곱하지 않는다 — 변주가 두 번 걸린다.
 	const EFF_NoChoiceAction Action = FFF_UtilityDestinationSelector::ResolveNoChoiceAction(
 		Context.RemainingStayMinutes,
 		Context.ConsecutiveNoChoiceCount,
 		NoChoiceLeavePatienceRounds,
 		CurrentZoneDensityRatio,
-		PersonalDensityThresholdRatio);
+		Context.PersonalDensityThresholdRatio);
 	switch (Action)
 	{
 	case EFF_NoChoiceAction::Leave:
@@ -594,8 +643,15 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	// 실패한 사유로 온 요청만 직전 목적지를 벌한다 — Arrived(이용 완료)는 정상적인 재방문이고
 	// revisit 항이 맡는다. bFullMode 분기 밖에 두는 이유: 혼잡·대기는 모드에 따라 지우는
 	// 추정값이지만 "방금 여기 못 갔다"는 사실이다.
+	//
+	// QueuePatienceExpired 가 여기 있는 이유: 인내심이 짧은 개체는 줄을 떠난 직후 다시 고르는데,
+	// 그 시설의 대기시간 추정은 방금 떠난 그 줄 그대로다. 감점하지 않으면 같은 줄에 들어가
+	// 또 나오는 왕복이 인내심이 짧을수록 심해진다 — 변주를 넣은 결과가 버그처럼 보이게 된다.
+	// Reevaluated 는 넣지 않는다. 그쪽은 실패가 아니라 "다시 보자"이고, 감점하면 재평가할수록
+	// 원래 가려던 곳이 싫어져 주기가 짧은 개체가 목적지를 계속 갈아치운다.
 	if ((Context.Reason == EFF_DecisionReason::MoveFailed
-			|| Context.Reason == EFF_DecisionReason::JoinRejected)
+			|| Context.Reason == EFF_DecisionReason::JoinRejected
+			|| Context.Reason == EFF_DecisionReason::QueuePatienceExpired)
 		&& !Context.PreviousDestinationId.IsNone())
 	{
 		for (FFF_DestinationCandidate& Candidate : Candidates)
@@ -719,13 +775,26 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		}
 	}
 	const TMap<FName, float>& PreferenceVector = bFullMode
-		? GetPreferenceVector(
+		? GetScaledPreferenceVector(
 			Context.ArchetypeId,
-			FFF_VisitorDistributionBuilder::CompanionSizeTagForGroupSize(Context.PartySize))
+			FFF_VisitorDistributionBuilder::CompanionSizeTagForGroupSize(Context.PartySize),
+			Context.PreferenceStrengthMultiplier)
 		: EmptyPreferenceVector;
 
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
 	const int32 GlobalSeed = Settings ? Settings->GlobalSimulationSeed : 0;
+
+	// Choose 의 항별 덤프 바로 앞에 개체 정체성을 찍는다. 같은 카테고리의 Preference 값이
+	// 개체마다 다를 때 그것이 아키타입 차이인지 취향강도 변주인지 이 줄 없이는 못 가른다.
+	//
+	// Choose 에 아키타입을 넘겨 그쪽에서 찍지 않는 이유: 선택기는 "이 벡터로 이 점수"라는
+	// 순수 대응만 알아야 하고, 로그 한 줄 때문에 순수 함수 시그니처를 넓히지 않는다.
+	UE_LOG(LogFestaFiestaNpc, Verbose,
+		TEXT("[개체] Agent=%d 파티=%d(%d명) 아키타입=%s 취향강도=%.3f 신규성=%.3f 밀집임계=%.3f"),
+		Context.StableAgentId, Context.PartyId, Context.PartySize,
+		Context.ArchetypeId.IsNone() ? TEXT("(없음/아동)") : *Context.ArchetypeId.ToString(),
+		Context.PreferenceStrengthMultiplier, Context.NoveltySeekingMultiplier,
+		Context.PersonalDensityThresholdRatio);
 
 	const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
 		Candidates,
@@ -735,7 +804,10 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		Context.StableAgentId,
 		Context.ChoiceRoundIndex,
 		bFullMode ? Context.Needs : FFF_NeedState(),
-		bFullMode ? Context.ConsecutiveNoChoiceCount : 0);
+		bFullMode ? Context.ConsecutiveNoChoiceCount : 0,
+		// Random 모드에서는 1(변주 없음)로 둔다 — 그 모드는 취향·혼잡 추정을 전부 지우고
+		// 비교 기준선을 만드는 용도이므로, 개체차가 섞이면 기준선이 아니게 된다.
+		bFullMode ? Context.NoveltySeekingMultiplier : 1.f);
 
 	if (Decision.bIsNoChoice || Decision.ChosenDestinationId.IsNone())
 	{

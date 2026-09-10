@@ -79,6 +79,8 @@ void AFF_TriggerInteractionActor::OnRangeBeginOverlap(UPrimitiveComponent* Overl
 		// 플레이어 진입 상태로 전환
 
 		UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 플레이어가 범위에 들어옴"));
+		ShowInteractionPrompt();
+		// 블루프린트에 구현된 UI 표시 실행
 	}
 }
 
@@ -91,5 +93,17 @@ void AFF_TriggerInteractionActor::OnRangeEndOverlap(UPrimitiveComponent* Overlap
 		// 플레이어 이탈 상태로 전환
 
 		UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 플레이어가 범위에서 나감"));
+		HideInteractionPrompt();
+		// 블루프린트에 구현된 UI 숨김 실행
 	}
+}
+
+void AFF_TriggerInteractionActor::ShowInteractionPrompt_Implementation()
+{
+	// 블루프린트에서 오버라이드하지 않을 때 실행될 기본 C++ 동작 (비워두어도 됨)
+}
+
+void AFF_TriggerInteractionActor::HideInteractionPrompt_Implementation()
+{
+	// 기본 C++ 동작 (비워두어도 됨)
 }

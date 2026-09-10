@@ -137,9 +137,6 @@ private:
 	UPROPERTY()
 	TObjectPtr<UMaterialInterface> BasicShapeMaterial;
 
-	UPROPERTY()
-	TObjectPtr<UMaterialInterface> ProjectSeaMaterial;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> OceanMaterial;
 

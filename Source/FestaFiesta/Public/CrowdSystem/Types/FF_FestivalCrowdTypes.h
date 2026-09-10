@@ -157,7 +157,8 @@ struct FUnitData
 	
 
 	
-	
+	//이 개체가 들어온 게이트. ValidGates 인덱스이다.
+	int32 EntryGateIndex = INDEX_NONE;
 	
 	
 };
@@ -197,7 +198,17 @@ enum class EFF_DecisionReason : uint8
 	 * 이 사유가 없으면 무대가 열려도 아무도 통지받지 못해, 각자 하던 일을 끝낼 때까지
 	 * 회전율만큼 서서히 차기만 하고 "공연 시간에 몰린다"가 안 나온다.
 	 */
-	DestinationOpened
+	DestinationOpened,
+
+	// 개인 재평가 주기(reevaluate_interval_seconds × reevaluate_interval_multiplier)가 찼다.
+	// 도착 전에 발화하는 두 번째 사유다. MoveFailed 와 달리 실패가 아니다.
+	// 그래서 직전 목적지를 감점하지 않는다.
+	Reevaluated,
+
+	// 줄에서 개인 인내심 한계(wait_threshold_minutes × patience_multiplier)를 넘겨 이탈했다.
+	// 직전 목적지를 감점해야 하는 사유다.
+	// Warning을 남기는 QueueHoldTimeoutSeconds 강제 해제와 달리, 정상 행동이다.
+	QueuePatienceExpired
 };
 
 UENUM()
@@ -252,6 +263,18 @@ struct FFF_PartyDecisionContext
 
 	// 리더의 현재 월드 위치, cm. Zone 판정과 후보 거리 계산의 기준점이다
 	FVector PartyWorldLocation = FVector::ZeroVector;
+
+	/**
+	 * 리더의 개체 변주 중 결정에 쓰이는 값들. Crowd 가 스폰 때 확정해 둔 것을 실어 보낸다
+	 * (FFF_IndividualVariationResolver::ResolveWithGroupSharing).
+	 * 기본값은 전부 "변주 없음"이라, 안 채워 보내면 예전과 동일하게 동작한다.
+	 */
+	float NoveltySeekingMultiplier = 1.f;
+	float PreferenceStrengthMultiplier = 1.f;
+
+	// density_threshold_ratio 에 이미 crowd_tolerance_multiplier 가 곱해진 값이다.
+	// 조정자는 이것을 그대로 임계로 쓴다 — 다시 곱하면 변주가 두 번 걸린다.
+	float PersonalDensityThresholdRatio = 1.f;
 
 	// 왜 결정이 필요해졌는지
 	EFF_DecisionReason Reason = EFF_DecisionReason::Spawned;
@@ -396,5 +419,40 @@ struct FPartyDecisionState
 	float ProgramStartMinutes = 0.f;
 	float ProgramEndMinutes = 0.f;
 	FVector ProgramWaitingLocation = FVector::ZeroVector;
+};
+
+// 입장, 퇴장 게이트 하나. 저작 데이터만 담고, 배열 순서가 곧 게이트 인덱스라 저작 순서가 결정성의 계약이다.
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_CrowdGate
+{
+	GENERATED_BODY()
+
+	// 게이트 별 집계 정산 용도 ID. 인덱스로 대신하면 게이트를 하나 지울 때 과거 지표가 전부 밀린다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	FName GateId;
+
+	// 레벨에 놓은 앵커. 없을 경우 GateLocation을 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	TObjectPtr<AActor> GateAnchor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	FVector GateLocation = FVector::ZeroVector;
+
+	// 문의 크기. 스폰 산개 반경이자 퇴장 판정 반경이며, 여유를 얹으면 문 앞 병목이 지표에서 지워진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate", meta = (ClampMin = "0.0"))
+	float GateRadiusUU = 400.f;
+
+	// Spawn과 Exit를 허용하는지의 여부이다. 양방향이 기본이고 전용 게이트가 예외다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	bool bAllowSpawn = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate")
+	bool bAllowExit = true;
+
+	// 각 Gate의 Spawn 비율을 정산하기 위해 사용하는 장치. 0 이하면 검증에서 제외된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Gate", meta = (ClampMin = "0.0"))
+	float GateWeight = 1.f;
+	
+
 };
 

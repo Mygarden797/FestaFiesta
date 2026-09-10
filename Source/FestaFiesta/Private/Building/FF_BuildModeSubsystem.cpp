@@ -42,6 +42,24 @@
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildMode, Log, All);
 
+FFFZSGridPlacement FFBuildModeModel::ResolveWorldSnappedPlacement(
+	const FVector& CursorWorld, const float WorldYawDegrees, const FTransform& RegionTransform,
+	const FIntPoint& FootprintSizeCells, const int32 PositionSnapCm)
+{
+	const double Snap = FMath::Max(1, PositionSnapCm);
+	const FVector SnappedWorld(FMath::GridSnap(CursorWorld.X, Snap),
+		FMath::GridSnap(CursorWorld.Y, Snap), CursorWorld.Z);
+	const FVector LocalCenter = RegionTransform.InverseTransformPosition(SnappedWorld);
+	FFFZSGridPlacement Placement;
+	Placement.YawCentidegrees = UFFZSGridLibrary::DegreesToYawCentidegrees(
+		WorldYawDegrees - RegionTransform.Rotator().Yaw);
+	const FVector2D Offset = ResolveRotatedFootprintCenterOffset(FootprintSizeCells,
+		UFFZSGridLibrary::YawCentidegreesToDegrees(Placement.YawCentidegrees));
+	Placement.OriginCell = FIntPoint(FMath::RoundToInt(LocalCenter.X - Offset.X),
+		FMath::RoundToInt(LocalCenter.Y - Offset.Y));
+	return Placement;
+}
+
 namespace
 {
 	bool IsPointerOverWorldViewport()
@@ -767,8 +785,12 @@ void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 		return;
 	}
 
+	const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	const AFFZSGameplayZone* Region = ZoneSystem && ZoneSystem->FindBuildArea()
+		? ZoneSystem->FindZone(CurrentZoneId) : nullptr;
+	const float LocalYawDegrees = YawDegrees - (Region ? Region->GetActorRotation().Yaw : 0.0f);
 	const int32 NewYawCentidegrees = UFFZSGridLibrary::NormalizeYawCentidegrees(
-		UFFZSGridLibrary::DegreesToYawCentidegrees(YawDegrees));
+		UFFZSGridLibrary::DegreesToYawCentidegrees(LocalYawDegrees));
 	if (CurrentPlacement.YawCentidegrees == NewYawCentidegrees &&
 		CurrentPlacement.QuarterTurns == 0)
 	{
@@ -781,7 +803,8 @@ void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 		(BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsEditingAngle()))
 	{
 		const FVector2D OldOffset = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
-			SelectedSpec.FootprintSizeCells, GetPlacementYawDegrees());
+			SelectedSpec.FootprintSizeCells, UFFZSGridLibrary::YawCentidegreesToDegrees(
+				UFFZSGridLibrary::GetEffectiveYawCentidegrees(CurrentPlacement)));
 		const FVector2D NewOffset = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
 			SelectedSpec.FootprintSizeCells, UFFZSGridLibrary::YawCentidegreesToDegrees(NewYawCentidegrees));
 		const FVector2D Origin = FVector2D(CurrentPlacement.OriginCell) + OldOffset - NewOffset;
@@ -802,8 +825,12 @@ void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 
 float UFF_BuildModeSubsystem::GetPlacementYawDegrees() const
 {
-	return UFFZSGridLibrary::YawCentidegreesToDegrees(
+	const float LocalYaw = UFFZSGridLibrary::YawCentidegreesToDegrees(
 		UFFZSGridLibrary::GetEffectiveYawCentidegrees(CurrentPlacement));
+	const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystem();
+	const AFFZSGameplayZone* Region = ZoneSystem && ZoneSystem->FindBuildArea()
+		? ZoneSystem->FindZone(CurrentZoneId) : nullptr;
+	return FRotator::ClampAxis(LocalYaw + (Region ? Region->GetActorRotation().Yaw : 0.0f));
 }
 
 bool UFF_BuildModeSubsystem::CommitPlacement()
@@ -2286,13 +2313,26 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		return false;
 	}
 
+	const bool bUnifiedBuilding = ZoneSystem->FindBuildArea() != nullptr;
+	const float ManipulationYawDegrees = GetPlacementYawDegrees();
+	const int32 PositionSnapCm = GetPlacementPositionSnapCm();
+	const FVector RegionProbe = bUnifiedBuilding
+		? FVector(FMath::GridSnap(GroundHit.ImpactPoint.X, static_cast<double>(PositionSnapCm)),
+			FMath::GridSnap(GroundHit.ImpactPoint.Y, static_cast<double>(PositionSnapCm)), GroundHit.ImpactPoint.Z)
+		: GroundHit.ImpactPoint;
 	// 경계에서 Zone이 매 프레임 흔들리지 않도록 현재 Zone을 힌트로 넘긴 뒤, 실제 등록된 Zone인지 다시 확인한다.
-	const FName NewZoneId = ZoneSystem->ResolveZoneAtWorldLocation(GroundHit.ImpactPoint, CurrentZoneId);
+	const FName NewZoneId = ZoneSystem->ResolveZoneAtWorldLocation(RegionProbe, CurrentZoneId);
 	AFFZSGameplayZone* Zone = ZoneSystem->FindZone(NewZoneId);
 	if (!Zone)
 	{
 		// 유효 Zone을 잃었음을 명시해 다음 유효 위치가 같은 원점이어도 bChanged가 true가 되게 한다.
 		bHasPlacementTarget = false;
+		if (bUnifiedBuilding)
+		{
+			// With no coordinate region, retain the user's world angle until re-entering land.
+			CurrentPlacement.YawCentidegrees = UFFZSGridLibrary::DegreesToYawCentidegrees(ManipulationYawDegrees);
+			CurrentPlacement.QuarterTurns = 0;
+		}
 		CurrentZoneId = NAME_None;
 		PlacementPreview->SetActorHiddenInGame(true);
 		OnBuildToolsChanged.Broadcast();
@@ -2306,7 +2346,6 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 
 	// Zone 권위 격자는 1cm 정수 좌표를 유지하고, 커서 조작만 DeveloperSettings의 간격으로 양자화한다.
 	FIntPoint TargetCell = Zone->WorldToGridCell1Cm(GroundHit.ImpactPoint);
-	const int32 PositionSnapCm = GetPlacementPositionSnapCm();
 	const bool bSnapModeChanged = PositionSnapCm != CurrentPositionSnapCm;
 	CurrentPositionSnapCm = PositionSnapCm;
 	PlacementPreview->bDrawPlacementGrid = false;
@@ -2326,15 +2365,21 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 	// 회전한다. QuarterTurns용 외접 Rect 중심을 사용하면 45도에서 커서와 시설 중심이 어긋난다.
 	const FVector2D CenterOffset = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
 		SelectedSpec.FootprintSizeCells,
-		GetPlacementYawDegrees());
-	const FIntPoint NewOrigin(
+		UFFZSGridLibrary::YawCentidegreesToDegrees(UFFZSGridLibrary::GetEffectiveYawCentidegrees(CurrentPlacement)));
+	FFFZSGridPlacement NewPlacement = CurrentPlacement;
+	NewPlacement.OriginCell = FIntPoint(
 		FMath::RoundToInt(static_cast<double>(TargetCell.X) - CenterOffset.X),
 		FMath::RoundToInt(static_cast<double>(TargetCell.Y) - CenterOffset.Y));
+	if (bUnifiedBuilding)
+	{
+		NewPlacement = FFBuildModeModel::ResolveWorldSnappedPlacement(GroundHit.ImpactPoint,
+			ManipulationYawDegrees, Zone->GetActorTransform(), SelectedSpec.FootprintSizeCells, PositionSnapCm);
+	}
 
 	// 표적이 한 번 끊겼다가 같은 좌표로 돌아온 경우도 다시 표시/검증해야 하므로 이전 bHasPlacementTarget을 비교한다.
-	const bool bChanged = NewOrigin != CurrentPlacement.OriginCell ||
+	const bool bChanged = !(NewPlacement == CurrentPlacement) ||
 		NewZoneId != CurrentZoneId || !bHasPlacementTarget || bSnapModeChanged;
-	CurrentPlacement.OriginCell = NewOrigin;
+	CurrentPlacement = NewPlacement;
 	CurrentZoneId = NewZoneId;
 	bHasPlacementTarget = true;
 	PlacementPreview->SetActorHiddenInGame(false);

@@ -526,9 +526,13 @@ bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters
         return false;
     }
 
-    TestEqual(TEXT("비주얼 메시에는 충돌이 없다"),
+    TestEqual(TEXT("메시가 없는 시설에는 플레이어 충돌이 없다"),
         HigherFacility->VisualMesh->GetCollisionEnabled(),
         ECollisionEnabled::NoCollision);
+    TestEqual(TEXT("비주얼 메시의 충돌 ObjectType은 플레이어 전용 시설 채널이다"),
+        HigherFacility->VisualMesh->GetCollisionObjectType(), FFZSCollision::FacilityPlayerObjectChannel);
+    TestEqual(TEXT("비주얼 메시가 시설 선택 Trace를 가로채지 않는다"),
+        HigherFacility->VisualMesh->GetCollisionResponseToChannel(FFZSCollision::FacilitySelectionTraceChannel), ECR_Ignore);
     TestFalse(TEXT("비주얼 메시가 Navigation에 영향을 주지 않는다"),
         HigherFacility->VisualMesh->CanEverAffectNavigation());
     TestEqual(TEXT("선택 Proxy는 QueryOnly다"),

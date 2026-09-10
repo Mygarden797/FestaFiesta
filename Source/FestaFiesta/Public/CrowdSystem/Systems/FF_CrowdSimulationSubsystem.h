@@ -13,6 +13,7 @@
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -102,6 +103,31 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
 	void ConfigureSimArea(FVector NewOrigin, float NewRadiusUU);
+
+	// 게이트를 등록한다. InitializeSimulation 직후 1회만 부르며, 재검증하면 인덱스가 밀려 소속이 바뀐다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Gate")
+	void GatherCrowdGates(const TArray<FFF_CrowdGate>& InGates);
+
+	// 검증을 통과한 게이트. 저작 배열이 아니라 이쪽이 런타임의 진실이다.
+	const TArray<FFF_CrowdGate>& GetValidGates() const { return ValidGates; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetValidGateCount() const { return ValidGates.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetSpawnGateCount() const { return SpawnGateIndices.Num(); }
+
+	// 검증에서 제외된 게이트 수. 0 이 아니면 로그를 확인해야 한다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetRejectedGateCount() const { return RejectedGateCount; }
+
+	// NavMesh 가 아직 없어 검증을 건너뛴 게이트 수. "검증 통과"와 "검증 안 함"은 다르다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetUnverifiedGateCount() const { return UnverifiedGateCount; }
+
+	// 저작 게이트가 하나도 유효하지 않아 폴백 게이트로 돌고 있는가.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	bool IsUsingFallbackGate() const { return bUsingFallbackGate; }
 
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	bool IsSimulationInitialized() const { return bSimulationInitialized; }
@@ -269,11 +295,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue", meta = (ClampMin = "0.0"))
 	float QueueHoldTimeoutSeconds = 1200.f;
 
-	// 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	/**
+	 * 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	 *
+	 * ★ UtilityCoefficientTable 의 `reservation_exit_buffer_minutes` 행이 OnWorldBeginPlay 에서
+	 *   이 값을 덮는다. 여기서 편집한 값은 그 행이 **없을 때만** 남는다 — 튜닝은 CSV 에서 할 것.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
 	float ProgramExitGraceMinutes = 10.f;
 
-	// 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	/**
+	 * 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	 *
+	 * ★ `reservation_return_buffer_minutes` 행이 OnWorldBeginPlay 에서 이 값을 덮는다
+	 *   (위 ProgramExitGraceMinutes 와 같은 규칙).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
 	float ProgramReturnBufferMinutes = 10.f;
 
@@ -408,6 +444,23 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Flow")
 	int32 GetDecisionsProcessed() const { return DecisionsProcessed; }
+
+	// 개인 주기가 차서 걷던 중 재평가한 횟수(reevaluate_interval_multiplier 결선 지점).
+	// 끄려면 bEnablePeriodicReevaluation 을 false 로 둔다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Flow")
+	int32 GetReevaluateRequests() const { return ReevaluateRequests; }
+
+	// 인내심 한계로 줄에서 이탈한 파티 수(patience_multiplier 결선 지점).
+	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
+	int32 GetQueuePatienceAbandons() const { return QueuePatienceAbandons; }
+
+	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
+	bool bEnablePeriodicReevaluation = true;
+
+	// 줄에서 개인 인내심 한계를 넘기면 이탈한다(reneging).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue")
+	bool bEnableQueuePatienceAbandon = true;
 
 	// 목적지 앞에서 감속을 시작하는 거리, UU. 0이면 ArrivalRadiusUU * 3으로 폴백한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
@@ -681,9 +734,21 @@ public:
 
 private:
 
+	// 게이트 하나를 검증하고, 통과하면 OutGate 의 GateLocation 을 NavMesh 투영 좌표로 덮는다.
+	bool ValidateGate(const FFF_CrowdGate& InGate, int32 AuthoredIndex, FFF_CrowdGate& OutGate);
+
+	// bAllowSpawn 게이트만으로 CDF 를 다시 만든다. 가중치만 바뀌면 검증 없이 이것만 부르면 된다.
+	void RebuildSpawnGateCdf();
+
+	// 입장 게이트가 없을 때 단일 앵커로 폴백을 합성한다. 게이트로 만들어야 뽑는 쪽에 분기가 안 생긴다.
+	void EnsureFallbackGate();
 	
+	// 파티 하나가 들어올 게이트를 고른다. 반환값은 ValidGates 인덱스이며 항상 유효해야 한다.
+	int32 PickSpawnGate(int32 InVisitorCursor) const;
+	
+
 	bool IsFestivalLive();
-	
+
 	void StepSimulation(float FixedDt);
 
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
@@ -788,8 +853,7 @@ private:
 	
 	//AgentMesh 적용
 	void ApplyAgentAppearance(int32 AgentIndex);
-	
-public:
+
 private:
 	
 	//스케줄 관련 변수
@@ -810,8 +874,28 @@ private:
 	float ArrivalSpawnRadiusUU = 100.f;
 	
 	bool bArrivalPoolExhaustedLogged = false;
-	
-	
+
+
+	//게이트 관련 변수
+	// GateLocation 은 NavMesh 투영 좌표로 덮여 있다. 저작 좌표를 그대로 쓰면 지면에서 뜬 곳에 사람이 나온다.
+	TArray<FFF_CrowdGate> ValidGates;
+
+	TArray<int32> SpawnGateIndices;
+
+	// SpawnGateIndices 와 같은 길이. 마지막 원소로 정규화돼 있어 뽑을 때 나눗셈이 없다.
+	TArray<float> SpawnGateCdf;
+
+	bool bGatesGathered = false;
+
+	bool bUsingFallbackGate = false;
+
+	int32 RejectedGateCount = 0;
+
+	int32 UnverifiedGateCount = 0;
+
+	//Live 재진입 시에 상승시켜서, 매일 같은 배분이 나오지 못하도록 하는 장치이다.
+	int32 ArrivalGeneration = 0;
+
 	//Actor Mesh 관련 변수들 추가
 	TSoftObjectPtr<UDataTable> CachedAppearenceTable;
 	
@@ -943,6 +1027,18 @@ private:
 	TArray<FFF_NeedState> PartyAggregatedNeeds;
 	TArray<int32> PartyMemberCounts;
 	TArray<float> PartyRemainingStayMinutes;
+
+	/**
+	 * 개체별로 확정된 변주값. AgentIndex 로 인덱싱한다. (StableAgentID 가 아니다)
+	 * 스폰 시 한 번 Resolve 해서 여기 넣는다. 리더가 아닌 멤버 자리도 채운다.
+	 */
+	TArray<FFF_ResolvedIndividualTraits> AgentTraits;
+
+	/**
+	 * AgentTraits 에 전역 재평가 계수를 곱해 둔 개인 임계값. 인덱싱 규칙은 AgentTraits 와 같다.
+	 * 계수는 런타임에 안 바뀌므로 스폰 때 한 번 곱한 값을 들고 있는다.
+	 */
+	TArray<FFF_PersonalReevaluationThresholds> AgentPersonalThresholds;
 	UPROPERTY()
 	TObjectPtr<UDataTable> CachedCoefficientTable;
 	float StayDrainMultiplierAtMaxNeed = 1.f;
@@ -973,6 +1069,14 @@ private:
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
 
+	// 개인 주기가 차서 걷던 중 재평가한 횟수. DecisionsProcessed 와 같이 봐야 한다 —
+	// 이 값이 처리량의 대부분을 차지하면 reevaluate_interval_seconds 가 너무 짧다
+	int32 ReevaluateRequests = 0;
+
+	// 인내심 한계로 줄에서 이탈한 파티 수(reneging). QueueJoinAccepted 대비 비율로 읽는다.
+	// QueueHoldTimeouts 와 구분할 것 — 그쪽은 큐 이벤트 유실 신호고 이쪽은 정상 행동이다
+	int32 QueuePatienceAbandons = 0;
+
 	// 통행 상한에 막혀 되돌린 스텝 수. 이 값이 계속 오르는데 StuckDecisionRequests가 안 오르면
 	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다
 	int32 HeightBlockedSteps = 0;
@@ -997,6 +1101,9 @@ private:
 	
 	TMap<FName, int32> InTransitMemberCounts;
 	
+	
+	
+
 	void RebuildInTransitMemberCounts();
 
 	// 상대 통행 상한 손잡이를 높이 격자가 쓰는 절대 Z(cm)로 환산해 밀어넣는다.
