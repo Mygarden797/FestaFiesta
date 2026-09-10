@@ -18,6 +18,16 @@ enum class EFF_FacilityInfoContext : uint8
 	Live UMETA(DisplayName = "Live Operation")
 };
 
+/** Local inspector navigation; changing pages never issues a gameplay command. */
+UENUM(BlueprintType)
+enum class EFF_FacilityInfoPage : uint8
+{
+	Overview,
+	Operation,
+	Upgrade,
+	RemoveConfirmation
+};
+
 /**
  * Immutable UI snapshot for one installed facility.
  *
@@ -31,6 +41,12 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FGuid FacilityInstanceId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
+	FName FacilityDefinitionId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
+	bool bIsFavorite = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	EFF_FacilityInfoContext Context = EFF_FacilityInfoContext::None;

@@ -4,20 +4,33 @@
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
 #include "Building/FF_BuildCatalogModel.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildCatalogEconomyReadModel.h"
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/HorizontalBox.h"
 #include "Components/Image.h"
+#include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/DataTable.h"
+#include "Engine/AssetManager.h"
+#include "Engine/GameInstance.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "Festival/FF_FestivalDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "Input/HittestGrid.h"
+#include "Layout/WidgetPath.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
@@ -30,10 +43,15 @@
 #include "Types/PaintArgs.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
+#include "UI/PrepHUD/Panels/FF_PrepChoiceButton.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
 #include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SDPIScaler.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/SVirtualWindow.h"
 
@@ -44,6 +62,8 @@ namespace FFPrepBuildVirtualizedSlateTest
         TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
     constexpr const TCHAR* TilePath =
         TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
+    constexpr const TCHAR* HudPath =
+        TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C");
 
     class FPlayerlessInitialization
     {
@@ -72,7 +92,14 @@ namespace FFPrepBuildVirtualizedSlateTest
     class FCatalogFixture
     {
     public:
-        bool Initialize(FAutomationTestBase& Test, const FVector2D InViewportSize, const float PanelHeight)
+        ~FCatalogFixture()
+        {
+#if !UE_BUILD_SHIPPING
+            if (Hud && UFF_PrepHudBar::ActiveBar.Get() == Hud.Get()) { UFF_PrepHudBar::ActiveBar = PreviousActiveBar; }
+#endif
+        }
+
+        bool Initialize(FAutomationTestBase& Test, const FVector2D InViewportSize, const bool bUseGameplayHud = false)
         {
             ViewportSize = InViewportSize;
             UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
@@ -86,6 +113,10 @@ namespace FFPrepBuildVirtualizedSlateTest
             {
                 return false;
             }
+            const FFloatProperty* HeightProperty = FindFProperty<FFloatProperty>(PanelClass, TEXT("CatalogHeight"));
+            if (!Test.TestNotNull(TEXT("Catalog height remains editable in WBP Class Defaults"), HeightProperty)) { return false; }
+            const float PanelHeight = HeightProperty->GetPropertyValue_InContainer(PanelClass->GetDefaultObject());
+            if (!Test.TestTrue(TEXT("Authored catalog height fits the fixture viewport"), PanelHeight > 0 && PanelHeight < ViewportSize.Y)) { return false; }
             FPlayerlessInitialization PanelInitialization(*PanelClass);
             TileInitialization = MakeUnique<FPlayerlessInitialization>(*TileClass);
             Panel.Reset(CreateWidget<UFF_PrepPanelBuild>(World, PanelClass));
@@ -100,7 +131,15 @@ namespace FFPrepBuildVirtualizedSlateTest
             SetVisibility(TEXT("Panel_PlacementCompact"), ESlateVisibility::Collapsed);
             SetVisibility(TEXT("Box_Header"), ESlateVisibility::SelfHitTestInvisible);
             SetText(TEXT("Text_Gold"), TEXT("보유 7,500 Gold"));
-            SetText(TEXT("Text_Status"), TEXT("시설을 선택해 배치하세요"));
+            // The playerless world has no catalog subsystem. Keep the saved WBP's current
+            // ready-state hint instead of its missing-session error or an old fixture string.
+            const UWidgetTree* AuthoredTree = PanelClass->GetWidgetTreeArchetype();
+            const UTextBlock* AuthoredStatus = AuthoredTree
+                ? Cast<UTextBlock>(AuthoredTree->FindWidget(TEXT("Text_Status"))) : nullptr;
+            if (UTextBlock* Status = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Status"))); Status && AuthoredStatus)
+            {
+                Status->SetText(AuthoredStatus->GetText());
+            }
             SetText(TEXT("Text_ItemCount"), TEXT("시설 144 / 144"));
             List = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
             if (!Test.TestNotNull(TEXT("Actual virtualized catalog list"), List) ||
@@ -153,43 +192,148 @@ namespace FFPrepBuildVirtualizedSlateTest
                 ListItems.Add(Item);
             }
             List->SetListItems(ListItems);
+            List->SetIsEnabled(true);
             Window = SNew(SVirtualWindow).Size(ViewportSize);
             Window->SetContent(SNew(SOverlay)
                 + SOverlay::Slot().VAlign(VAlign_Bottom)
                 [ SNew(SBox).HeightOverride(PanelHeight)[PanelSlate] ]);
+            return !bUseGameplayHud || AttachGameplayHud(Test, World);
+        }
+
+        bool AttachGameplayHud(FAutomationTestBase& Test, UWorld* World)
+        {
+            auto* HudClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepHudBar>(nullptr, HudPath));
+            if (!Test.TestNotNull(TEXT("The teammate HUD uses its actual saved WBP"), HudClass)) { return false; }
+            FPlayerlessInitialization HudInitialization(*HudClass);
+            Hud.Reset(CreateWidget<UFF_PrepHudBar>(World, HudClass));
+            if (!Test.TestNotNull(TEXT("Playerless teammate HUD instance"), Hud.Get())) { return false; }
+#if !UE_BUILD_SHIPPING
+            PreviousActiveBar = UFF_PrepHudBar::ActiveBar;
+#endif
+            const TSharedRef<SWidget> HudSlate = Hud->TakeWidget();
+            auto* Host = Cast<UPanelWidget>(Hud->GetWidgetFromName(TEXT("Panel_PanelHost")));
+            const auto* PanelsProperty = FindFProperty<FMapProperty>(HudClass, TEXT("PanelWidgets"));
+            const auto* HeightProperty = FindFProperty<FFloatProperty>(Panel->GetClass(), TEXT("CatalogHeight"));
+            const auto* OffsetProperty = FindFProperty<FFloatProperty>(Panel->GetClass(), TEXT("CatalogOffsetY"));
+            if (!Test.TestNotNull(TEXT("Actual teammate panel host"), Host) ||
+                !Test.TestNotNull(TEXT("Actual HUD cached panels"), PanelsProperty) ||
+                !Test.TestNotNull(TEXT("Authored catalog height"), HeightProperty) ||
+                !Test.TestNotNull(TEXT("Authored catalog offset above the teammate tabs"), OffsetProperty)) { return false; }
+            // Use the real public tab selection without starting a world build session.
+            // A detached placeholder absorbs only the panel-open callback, then the real
+            // build WBP replaces it in the same transient cache and authored HUD host.
+            UClass* PlaceholderClass = LoadClass<UFF_PrepPanelBase>(nullptr,
+                TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPlaceholderPanel.WBP_FF_PrepPlaceholderPanel_C"));
+            if (!Test.TestNotNull(TEXT("Isolated panel-open placeholder class"), PlaceholderClass)) { return false; }
+            auto* Placeholder = CreateWidget<UFF_PrepPanelBase>(World, PlaceholderClass);
+            if (!Test.TestNotNull(TEXT("Isolated panel-open placeholder"), Placeholder)) { return false; }
+            auto& CachedPanels = *PanelsProperty->ContainerPtrToValuePtr<TMap<EFF_PrepHudTab, TObjectPtr<UFF_PrepPanelBase>>>(Hud.Get());
+            CachedPanels.Add(EFF_PrepHudTab::Build, Placeholder);
+            Hud->SelectTab(EFF_PrepHudTab::Build);
+            Test.TestTrue(TEXT("Actual teammate Build selection opens the catalog host"), Hud->GetSelection().IsSelected(EFF_PrepHudTab::Build));
+            CachedPanels.Add(EFF_PrepHudTab::Build, Panel.Get());
+            Panel->InitializePanel(Hud.Get(), EFF_PrepHudTab::Build, FText::FromString(TEXT("배치")));
+            auto* HostSlot = Cast<UOverlaySlot>(Host->AddChild(Panel.Get()));
+            if (!Test.TestNotNull(TEXT("Production HUD overlay slot"), HostSlot)) { return false; }
+            HostSlot->SetHorizontalAlignment(HAlign_Fill);
+            HostSlot->SetVerticalAlignment(VAlign_Fill);
+            Host->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+            FFF_PrepPanelLayout Layout = Hud->GetOpenPanelLayout();
+            Test.TestTrue(TEXT("The real Build tab remains bottom docked"), Layout.Dock == EFF_PrepPanelDock::Bottom);
+            Layout.Size.Y = HeightProperty->GetPropertyValue_InContainer(Panel.Get());
+            Layout.Offset.Y = OffsetProperty->GetPropertyValue_InContainer(Panel.Get());
+            Hud->SetOpenPanelLayout(Layout);
+            DpiScale = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(
+                FIntPoint(FMath::RoundToInt(ViewportSize.X), FMath::RoundToInt(ViewportSize.Y)));
+            Window->SetContent(SNew(SDPIScaler).DPIScale(DpiScale)[HudSlate]);
+            Test.TestTrue(TEXT("Fixture cannot access player preferences or a festival save"),
+                Panel->GetGameInstance() == nullptr && Hud->GetGameInstance() == nullptr);
+            Test.AddInfo(FString::Printf(TEXT("Gameplay HUD fixture: %.0fx%.0f, project DPI %.4f, logical viewport %.1fx%.1f, catalog %.0f high / offset %.0f"),
+                ViewportSize.X, ViewportSize.Y, DpiScale, ViewportSize.X / DpiScale, ViewportSize.Y / DpiScale, Layout.Size.Y, Layout.Offset.Y));
+            return true;
+        }
+
+        bool CheckFavoriteInputIsolation(FAutomationTestBase& Test)
+        {
+            // No GameInstance means the production star handler cannot read or save personal preferences.
+            if (!Test.TestTrue(TEXT("Pointer fixture is isolated from the user's GameInstance/preferences"),
+                Panel->GetGameInstance() == nullptr)) { return false; }
+            UButton* Favorite = nullptr;
+            const FSlateRect ListRect = List->GetCachedGeometry().GetLayoutBoundingRect();
+            for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
+            {
+                auto* Candidate = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Favorite")));
+                if (!Candidate) { continue; }
+                const FSlateRect Rect = Candidate->GetCachedGeometry().GetLayoutBoundingRect();
+                if (Rect.Top >= ListRect.Top && Rect.Bottom <= ListRect.Bottom && Rect.GetSize().X > 10)
+                {
+                    Favorite = Candidate;
+                    break;
+                }
+            }
+            if (!Test.TestNotNull(TEXT("A visible production card has its independent favorite button"), Favorite)) { return false; }
+            const FGeometry& Geometry = Favorite->GetCachedGeometry();
+            const FVector2D Point = Geometry.LocalToAbsolute(Geometry.GetLocalSize() * 0.5);
+            TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
+            FWidgetPath Path(MakeArrayView(Bubble));
+            if (!Test.TestTrue(TEXT("The actual painted star is hit-testable"),
+                Path.IsValid() && Path.ContainsWidget(Favorite->GetCachedWidget().Get()))) { return false; }
+            Test.TestTrue(TEXT("The star retains its native action binding"), Favorite->OnClicked.IsBound());
+            int32 PlacementActivations = 0;
+            const FDelegateHandle ClickHandle = List->OnItemClicked().AddLambda(
+                [&PlacementActivations](UObject*) { ++PlacementActivations; });
+            FSlateApplication& App = FSlateApplication::Get();
+            const TSharedPtr<SWidget> PreviousFocus = App.GetUserFocusedWidget(0);
+            const TSet<FKey> Pressed = { EKeys::LeftMouseButton };
+            const TSet<FKey> Released;
+            const FPointerEvent Down(0, Point, Point, Pressed, EKeys::LeftMouseButton, 0.0f, FModifierKeysState());
+            const FPointerEvent Up(0, Point, Point, Released, EKeys::LeftMouseButton, 0.0f, FModifierKeysState());
+            Test.TestTrue(TEXT("Star consumes pointer-down before its TileView row"), App.RoutePointerDownEvent(Path, Down).IsEventHandled());
+            Test.TestTrue(TEXT("The actual star entered its pressed state"), Favorite->IsPressed());
+            Test.TestTrue(TEXT("Star consumes pointer-up before its TileView row"), App.RoutePointerUpEvent(Path, Up).IsEventHandled());
+            Test.TestFalse(TEXT("The star releases its pressed state"), Favorite->IsPressed());
+            List->OnItemClicked().Remove(ClickHandle);
+            if (PreviousFocus) { App.SetUserFocus(0, PreviousFocus, EFocusCause::SetDirectly); }
+            Test.TestEqual(TEXT("A full favorite click emits no facility placement activation"), PlacementActivations, 0);
             return true;
         }
 
         bool UseSourceCatalogEntries(FAutomationTestBase& Test)
         {
-            // The final visual preview uses real source definitions, names, thumbnails and
-            // prices. Mixed-resolution diagnostic textures belong only to the scroll test.
-            const TCHAR* DefinitionNames[] = {
-                TEXT("Booth_FoodStall_DadaPochaFoodTruck"), TEXT("Booth_CraftExperience_SandArt"),
-                TEXT("Booth_MarketGoods_FestivalGoods"), TEXT("Booth_Nightlife_EDMBar"),
-                TEXT("Performance_MainStage_SunsetMainStage"), TEXT("Performance_SubStage_LocalArtist"),
-                TEXT("Performance_ExperienceStage_DanceBattle"), TEXT("Performance_Busking_StreetStage"),
-                TEXT("Info_GeneralInfo_MainInformation"), TEXT("Rest_Seating_MainRestArea"),
-                TEXT("Safety_FirstAid_MedicalTent"), TEXT("PhotoSpot_Landmark_SunsetLandmark"),
-                TEXT("Toilet_Standard_MainRestroom"), TEXT("Toilet_Accessible_WestGate")
-            };
-            UDataTable* Costs = LoadObject<UDataTable>(nullptr,
-                TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilityCosts.DT_FacilityCosts"));
+            // Discover the same complete Primary Asset set as the production catalog.
+            // A curated list injected directly into TileView previously left PricedEntries
+            // empty, so the screenshot never created the overflowing real subcategory row.
+            TArray<FPrimaryAssetId> AssetIds;
+            UAssetManager& Assets = UAssetManager::Get();
+            Assets.GetPrimaryAssetIdList(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), AssetIds);
+            AssetIds.Sort([](const FPrimaryAssetId& A, const FPrimaryAssetId& B) { return A.ToString() < B.ToString(); });
+            const UFF_FestivalDefinition* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
+                TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
+            if (!Test.TestNotNull(TEXT("Production festival definition owns the catalog costs"), Festival)) { return false; }
+            const UDataTable* Costs = Festival->FacilityCostTable.Get();
             if (!Test.TestNotNull(TEXT("Production facility price table"), Costs)) { return false; }
-            TArray<UObject*> Items;
             TArray<UTexture*> SourceTextures;
-            for (const TCHAR* DefinitionName : DefinitionNames)
+            TSet<FName> DefinitionIds;
+            TSet<EFFZSFacilityCategory> Categories;
+            SourceEntries.Reset();
+            for (const FPrimaryAssetId& AssetId : AssetIds)
             {
-                TArray<FString> Tokens;
-                FString(DefinitionName).ParseIntoArray(Tokens, TEXT("_"));
-                const FString Path = FString::Printf(
-                    TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/%s/PDA_FFZS_%s.PDA_FFZS_%s"),
-                    *Tokens[0], DefinitionName, DefinitionName);
-                UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, *Path);
-                if (!Test.TestNotNull(*FString::Printf(TEXT("Source facility %s"), DefinitionName), Definition)) { return false; }
+                auto* Definition = Cast<UFFZSFacilityDefinition>(Assets.GetPrimaryAssetPath(AssetId).TryLoad());
+                if (!Test.TestNotNull(*FString::Printf(TEXT("Registered source facility %s"), *AssetId.ToString()), Definition)) { return false; }
+                if (!Definition->bShowInBuildCatalog) { continue; }
+                const FString DefinitionName = Definition->Spec.FacilityDefinitionId.ToString();
+                TArray<FText> DefinitionErrors;
+                FFF_FacilityNameParts Parts;
+                FString ParseFailure;
+                if (!Test.TestTrue(*FString::Printf(TEXT("Active source definition is valid: %s"), *DefinitionName),
+                    Definition->IsDefinitionValid(DefinitionErrors) && UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+                        Definition->Spec.Category, Definition->Spec.FacilityDefinitionId, Parts, ParseFailure))) { return false; }
+                if (!Test.TestFalse(TEXT("Active source IDs are unique"), DefinitionIds.Contains(Definition->Spec.FacilityDefinitionId))) { return false; }
+                DefinitionIds.Add(Definition->Spec.FacilityDefinitionId);
+                Categories.Add(Definition->Spec.Category);
                 Definitions.Emplace(Definition);
                 UTexture2D* Texture = Definition->CatalogThumbnail.LoadSynchronous();
-                if (!Test.TestNotNull(*FString::Printf(TEXT("Real facility thumbnail %s"), DefinitionName), Texture)) { return false; }
+                if (!Test.TestNotNull(*FString::Printf(TEXT("Real facility thumbnail %s"), *DefinitionName), Texture)) { return false; }
                 Textures.Emplace(Texture);
                 SourceTextures.Add(Texture);
                 FFF_BuildCatalogEntry Entry;
@@ -197,18 +341,54 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Entry.FacilityDefinitionId = Definition->Spec.FacilityDefinitionId;
                 Entry.DisplayName = Definition->Spec.DisplayName;
                 Entry.Category = Definition->Spec.Category;
-                Entry.MinorToken = FName(*Tokens[1]);
+                Entry.MinorToken = Parts.MinorToken;
+                Entry.UniqueNameToken = Parts.UniqueToken;
                 Entry.Definition = Definition;
                 Entry.Thumbnail = Texture;
                 Entry.MaxInstancesPerWorld = Definition->Spec.MaxInstancesPerWorld;
                 FString CostFailure;
-                FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, Costs, 0.5f, CostFailure);
-                UFF_PrepBuildTileData* Item = NewObject<UFF_PrepBuildTileData>(Panel.Get());
-                Item->Initialize(Entry, 7500);
-                Items.Add(Item);
+                if (!Test.TestTrue(*FString::Printf(TEXT("Source facility price resolves: %s"), *DefinitionName),
+                    FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, Costs,
+                        Festival->FacilityDemolitionRefundRate, CostFailure)))
+                {
+                    Test.AddError(FString::Printf(TEXT("%s: %s"), *DefinitionName, *CostFailure));
+                    return false;
+                }
+                SourceEntries.Add(MoveTemp(Entry));
             }
-            List->SetListItems(Items);
-            SetText(TEXT("Text_ItemCount"), TEXT("시설 14 / 14"));
+            if (!Test.TestTrue(TEXT("Full fixture covers all 45 existing active facilities, including future additions"), SourceEntries.Num() >= 45) ||
+                !Test.TestEqual(TEXT("Full source fixture contains every production major category"), Categories.Num(), 9)) { return false; }
+            FFBuildCatalogModel::SortEntries(SourceEntries);
+            DetachedGame.Reset(NewObject<UGameInstance>());
+            Catalog.Reset(NewObject<UFF_BuildCatalogSubsystem>(DetachedGame.Get()));
+            Economy.Reset(NewObject<UFF_BuildCatalogEconomyReadModel>(DetachedGame.Get()));
+            // None of these detached subsystems is initialized or registered with a world.
+            // Their read snapshots exercise actual filtering without touching game saves.
+            const auto* EntriesProperty = FindFProperty<FArrayProperty>(Catalog->GetClass(), TEXT("Entries"));
+            const auto* StateProperty = FindFProperty<FEnumProperty>(Catalog->GetClass(), TEXT("LoadState"));
+            const auto* PricedProperty = FindFProperty<FArrayProperty>(Panel->GetClass(), TEXT("PricedEntries"));
+            auto* CatalogProperty = FindFProperty<FObjectPropertyBase>(Panel->GetClass(), TEXT("CatalogSubsystem"));
+            auto* EconomyProperty = FindFProperty<FObjectPropertyBase>(Panel->GetClass(), TEXT("EconomyReadModel"));
+            UFunction* GoldHandler = Economy->FindFunction(TEXT("HandleProgressionGoldChanged"));
+            if (!Test.TestNotNull(TEXT("Reflected catalog snapshot"), EntriesProperty) ||
+                !Test.TestNotNull(TEXT("Reflected catalog ready state"), StateProperty) ||
+                !Test.TestNotNull(TEXT("Panel's real priced source entries"), PricedProperty) ||
+                !Test.TestNotNull(TEXT("Panel catalog input"), CatalogProperty) ||
+                !Test.TestNotNull(TEXT("Panel economy input"), EconomyProperty) ||
+                !Test.TestNotNull(TEXT("Detached economy snapshot event"), GoldHandler)) { return false; }
+            *EntriesProperty->ContainerPtrToValuePtr<TArray<FFF_BuildCatalogEntry>>(Catalog.Get()) = SourceEntries;
+            StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                StateProperty->ContainerPtrToValuePtr<void>(Catalog.Get()), static_cast<uint64>(EFF_BuildCatalogLoadState::Ready));
+            *PricedProperty->ContainerPtrToValuePtr<TArray<FFF_BuildCatalogEntry>>(Panel.Get()) = SourceEntries;
+            CatalogProperty->SetObjectPropertyValue_InContainer(Panel.Get(), Catalog.Get());
+            EconomyProperty->SetObjectPropertyValue_InContainer(Panel.Get(), Economy.Get());
+            struct { int32 NewGold = 7500; } GoldParameters;
+            Economy->ProcessEvent(GoldHandler, &GoldParameters);
+            UFunction* AllHandler = Panel->FindFunction(TEXT("HandleFilterAllClicked"));
+            if (!Test.TestNotNull(TEXT("Production category filter event"), AllHandler)) { return false; }
+            Panel->ProcessEvent(AllHandler, nullptr);
+            Test.AddInfo(FString::Printf(TEXT("Complete source catalog: %d active facilities across %d categories; actual Busan installation prices; transient 7500 Gold"),
+                SourceEntries.Num(), Categories.Num()));
             // LoadSynchronous resolves the UObject before editor texture compilation and
             // streaming finish. Wait for the selected source thumbnails before GPU capture.
             FTextureCompilingManager::Get().FinishCompilation(SourceTextures);
@@ -236,6 +416,195 @@ namespace FFPrepBuildVirtualizedSlateTest
                     FPlatformTime::Seconds() + (++FrameNumber * Delta), Delta);
                 Window->Paint(Args, Geometry, Geometry.GetLayoutBoundingRect(), Elements, 0, FWidgetStyle(), true);
             }
+        }
+
+        bool CheckFilterLayout(FAutomationTestBase& Test, const FString& State)
+        {
+            auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
+            auto* Label = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_FavoritesOnly")));
+            auto* Minors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
+            auto* Majors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
+            if (!Test.TestNotNull(TEXT("Independent favorite filter"), Favorites) ||
+                !Test.TestNotNull(TEXT("Favorite filter readable label"), Label) ||
+                !Test.TestNotNull(TEXT("Real generated subcategory row"), Minors) ||
+                !Test.TestNotNull(TEXT("Real generated category row"), Majors)) { return false; }
+            const FSlateRect FavoriteRect = Favorites->GetCachedGeometry().GetLayoutBoundingRect();
+            const FSlateRect LabelRect = Label->GetCachedGeometry().GetLayoutBoundingRect();
+            Test.TestTrue(*FString::Printf(TEXT("%s: favorites has a visible independent hit area inside the viewport"), *State),
+                Favorites->IsVisible() && Favorites->GetIsEnabled() && FavoriteRect.GetSize().X >= 100.0 * DpiScale &&
+                FavoriteRect.GetSize().Y >= 20.0 * DpiScale && FavoriteRect.Left >= 0 && FavoriteRect.Right <= ViewportSize.X &&
+                FavoriteRect.Top >= 0 && FavoriteRect.Bottom <= ViewportSize.Y);
+            Test.TestTrue(*FString::Printf(TEXT("%s: the complete favorite label fits its button"), *State),
+                LabelRect.Left >= FavoriteRect.Left - 1 && LabelRect.Right <= FavoriteRect.Right + 1 &&
+                LabelRect.Top >= FavoriteRect.Top - 1 && LabelRect.Bottom <= FavoriteRect.Bottom + 1);
+            for (UHorizontalBox* Choices : { Majors, Minors })
+            {
+                for (UWidget* Choice : Choices->GetAllChildren())
+                {
+                    const FSlateRect Rect = Choice->GetCachedGeometry().GetLayoutBoundingRect();
+                    const bool bOverlap = Rect.Left < FavoriteRect.Right - 1 && Rect.Right > FavoriteRect.Left + 1 &&
+                        Rect.Top < FavoriteRect.Bottom - 1 && Rect.Bottom > FavoriteRect.Top + 1;
+                    Test.TestFalse(*FString::Printf(TEXT("%s: %s never overlaps the favorite filter"), *State, *Choice->GetName()), bOverlap);
+                }
+            }
+            // Geometry alone misses widgets that paint or hit-test above the button. Probe
+            // its left, middle and right through the actual clipped Slate hit-test grid.
+            for (const double Fraction : { 0.15, 0.5, 0.85 })
+            {
+                const FVector2D Point(FMath::Lerp(FavoriteRect.Left, FavoriteRect.Right, Fraction),
+                    (FavoriteRect.Top + FavoriteRect.Bottom) * 0.5);
+                TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
+                FWidgetPath Path(MakeArrayView(Bubble));
+                Test.TestTrue(*FString::Printf(TEXT("%s: favorite filter remains clickable at %.0f percent of its width"), *State, Fraction * 100),
+                    Path.IsValid() && Path.ContainsWidget(Favorites->GetCachedWidget().Get()));
+            }
+            if (Hud)
+            {
+                const UWidget* Host = Hud->GetWidgetFromName(TEXT("Panel_PanelHost"));
+                const auto* CanvasSlot = Host ? Cast<UCanvasPanelSlot>(Host->Slot) : nullptr;
+                if (!Test.TestNotNull(TEXT("Teammate HUD retains its canvas host contract"), CanvasSlot)) { return false; }
+                const FSlateRect HostRect = Host->GetCachedGeometry().GetLayoutBoundingRect();
+                const FMargin Offsets = CanvasSlot->GetOffsets();
+                Test.TestTrue(*FString::Printf(TEXT("%s: project DPI scales the real HUD catalog width, height and bottom offset"), *State),
+                    FMath::IsNearlyEqual(HostRect.Left, static_cast<float>(Offsets.Left * DpiScale), 1.5f) &&
+                    FMath::IsNearlyEqual(HostRect.Right, static_cast<float>(ViewportSize.X - Offsets.Right * DpiScale), 1.5f) &&
+                    FMath::IsNearlyEqual(HostRect.Bottom, static_cast<float>(ViewportSize.Y + Offsets.Top * DpiScale), 1.5f) &&
+                    FMath::IsNearlyEqual(HostRect.GetSize().Y, Offsets.Bottom * DpiScale, 1.5f));
+                int32 VisibleTabs = 0;
+                for (const TCHAR* TabName : { TEXT("Tab_Build"), TEXT("Tab_Program"), TEXT("Tab_Staff"),
+                    TEXT("Tab_Promotion"), TEXT("Tab_Finale"), TEXT("Tab_Check") })
+                {
+                    const UWidget* Tab = Hud->GetWidgetFromName(TabName);
+                    if (!Test.TestNotNull(TEXT("Teammate tab is preserved in the real WBP"), Tab)) { return false; }
+                    if (!Tab->IsVisible()) { continue; }
+                    ++VisibleTabs;
+                    const FSlateRect TabRect = Tab->GetCachedGeometry().GetLayoutBoundingRect();
+                    Test.TestTrue(*FString::Printf(TEXT("%s: catalog stays above teammate %s"), *State, TabName),
+                        TabRect.GetSize().Y > 1 && HostRect.Bottom <= TabRect.Top + 1.5);
+                }
+                Test.TestTrue(TEXT("The integrated fixture actually paints the teammate navigation"), VisibleTabs >= 4);
+            }
+            return true;
+        }
+
+        bool CheckSixCardPage(FAutomationTestBase& Test, const FString& State)
+        {
+            const TArray<UObject*> Items = Panel->GetCatalogPageItems();
+            Test.TestEqual(*FString::Printf(TEXT("%s: TileView contains the public current page only"), *State), List->GetListItems().Num(), Items.Num());
+            Test.TestTrue(*FString::Printf(TEXT("%s: page contains at most six facilities"), *State), Items.Num() > 0 && Items.Num() <= 6);
+            const FSlateRect ListRect = List->GetCachedGeometry().GetLayoutBoundingRect();
+            TArray<FSlateRect> Rects;
+            for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
+            {
+                if (const UWidget* Card = Row->GetWidgetFromName(TEXT("Border_Card")))
+                {
+                    const FSlateRect Rect = Card->GetCachedGeometry().GetLayoutBoundingRect();
+                    if (Rect.GetSize().X <= 1 || Rect.GetSize().Y <= 1) { continue; }
+                    Rects.Add(Rect);
+                    Test.TestTrue(*FString::Printf(TEXT("%s: every page card fits completely inside the list"), *State),
+                        Rect.Left >= ListRect.Left - 1.5 && Rect.Right <= ListRect.Right + 1.5 &&
+                        Rect.Top >= ListRect.Top - 1.5 && Rect.Bottom <= ListRect.Bottom + 1.5);
+                }
+            }
+            Test.TestEqual(*FString::Printf(TEXT("%s: every page item is painted"), *State), Rects.Num(), Items.Num());
+            Rects.Sort([](const FSlateRect& A, const FSlateRect& B) { return A.Left < B.Left; });
+            if (Rects.Num() == 6)
+            {
+                Test.TestTrue(*FString::Printf(TEXT("%s: the six responsive cards occupy the available catalog width"), *State),
+                    Rects.Last().Right - Rects[0].Left >= ListRect.GetSize().X * 0.94);
+            }
+            for (int32 Index = 1; Index < Rects.Num(); ++Index)
+            {
+                Test.TestTrue(*FString::Printf(TEXT("%s: six cards form one evenly sized nonoverlapping row"), *State),
+                    Rects[Index - 1].Right <= Rects[Index].Left + 1.5 &&
+                    FMath::IsNearlyEqual(Rects[0].Top, Rects[Index].Top, 1.5f) &&
+                    FMath::IsNearlyEqual(Rects[0].GetSize().X, Rects[Index].GetSize().X, 1.5f));
+            }
+            return true;
+        }
+
+        bool CheckAllCategoriesAndFirstAid(FAutomationTestBase& Test, const bool bCapture)
+        {
+            auto* Majors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
+            auto* Minors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
+            if (!Test.TestNotNull(TEXT("Full real category list"), Majors) ||
+                !Test.TestNotNull(TEXT("Full real minor choices"), Minors)) { return false; }
+            Test.TestEqual(TEXT("All and all nine categories are present"), Majors->GetChildrenCount(), 10);
+            Test.TestEqual(TEXT("All facilities does not create a cross-category strip of every minor token"), Minors->GetChildrenCount(), 1);
+            CheckFilterLayout(Test, TEXT("All facilities"));
+            CheckSixCardPage(Test, TEXT("All facilities / page 1"));
+            Test.TestEqual(TEXT("Full source catalog exposes every six-item page"), Panel->GetCatalogPageCount(), FMath::DivideAndRoundUp(SourceEntries.Num(), 6));
+            if (bCapture) { Capture(Test, TEXT("AllCategories")); }
+            TSet<FName> PagedIds;
+            for (int32 Page = 0; Page < Panel->GetCatalogPageCount(); ++Page)
+            {
+                Panel->SetCatalogPage(Page);
+                Paint();
+                CheckSixCardPage(Test, FString::Printf(TEXT("All facilities / page %d"), Page + 1));
+                CheckFilterLayout(Test, FString::Printf(TEXT("All facilities / page %d"), Page + 1));
+                for (UObject* Object : Panel->GetCatalogPageItems())
+                {
+                    const auto* Item = Cast<UFF_PrepBuildTileData>(Object);
+                    if (!Test.TestNotNull(TEXT("A page item is a real facility"), Item)) { return false; }
+                    Test.TestFalse(TEXT("Facility IDs are never duplicated across catalog pages"), PagedIds.Contains(Item->GetFacilityDefinitionId()));
+                    PagedIds.Add(Item->GetFacilityDefinitionId());
+                }
+            }
+            Test.TestEqual(TEXT("Page navigation reaches the complete source catalog"), PagedIds.Num(), SourceEntries.Num());
+            for (int32 Index = 1; Index < Majors->GetChildrenCount(); ++Index)
+            {
+                auto* Choice = Cast<UFF_PrepChoiceButton>(Majors->GetChildAt(Index));
+                if (!Test.TestNotNull(TEXT("Real category action"), Choice)) { return false; }
+                Choice->OnHudTabButtonClicked.ExecuteIfBound(Choice->GetChoiceId());
+                Paint();
+                const auto Category = static_cast<EFFZSFacilityCategory>(Choice->GetChoiceId());
+                TSet<FName> ExpectedMinors;
+                for (const auto& Entry : SourceEntries) { if (Entry.Category == Category) { ExpectedMinors.Add(Entry.MinorToken); } }
+                Test.TestEqual(TEXT("Selecting a category resets to its first page"), Panel->GetCatalogPageIndex(), 0);
+                Test.TestEqual(TEXT("Every real subcategory of the selected category is present"), Minors->GetChildrenCount(), ExpectedMinors.Num() + 1);
+                CheckFilterLayout(Test, FString::Printf(TEXT("Major category %d"), Choice->GetChoiceId()));
+            }
+            UFF_PrepChoiceButton* Safety = nullptr;
+            for (UWidget* Child : Majors->GetAllChildren())
+            {
+                auto* Choice = Cast<UFF_PrepChoiceButton>(Child);
+                if (Choice && Choice->GetChoiceId() == static_cast<int32>(EFFZSFacilityCategory::Safety)) { Safety = Choice; }
+            }
+            if (!Test.TestNotNull(TEXT("Safety category exists in the complete source fixture"), Safety)) { return false; }
+            Safety->OnHudTabButtonClicked.ExecuteIfBound(Safety->GetChoiceId());
+            Paint();
+            UFF_PrepChoiceButton* FirstAid = nullptr;
+            const FString FirstAidLabel = FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(TEXT("FirstAid")).ToString();
+            for (UWidget* Child : Minors->GetAllChildren())
+            {
+                auto* Choice = Cast<UFF_PrepChoiceButton>(Child);
+                const auto* Label = Choice ? Cast<UTextBlock>(Choice->GetWidgetFromName(TEXT("Text_Label"))) : nullptr;
+                if (Label && Label->GetText().ToString() == FirstAidLabel) { FirstAid = Choice; }
+            }
+            if (!Test.TestNotNull(TEXT("The real First Aid subcategory is selectable"), FirstAid)) { return false; }
+            FirstAid->OnHudTabButtonClicked.ExecuteIfBound(FirstAid->GetChoiceId());
+            Paint();
+            CheckFilterLayout(Test, TEXT("Safety / First Aid selected"));
+            CheckSixCardPage(Test, TEXT("Safety / First Aid selected"));
+            for (UObject* Object : Panel->GetCatalogPageItems())
+            {
+                const auto* Item = Cast<UFF_PrepBuildTileData>(Object);
+                Test.TestTrue(TEXT("First Aid action actually filters the real catalog"), Item &&
+                    Item->GetEntry().Category == EFFZSFacilityCategory::Safety && Item->GetEntry().MinorToken == TEXT("FirstAid"));
+            }
+            if (bCapture) { Capture(Test, TEXT("FirstAid")); }
+            auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
+            if (!Test.TestTrue(TEXT("Favorite-only action is bound"), Favorites && Favorites->OnClicked.IsBound())) { return false; }
+            // The filter changes only this panel. No favorites storage subsystem is attached.
+            Favorites->OnClicked.Broadcast();
+            Paint();
+            CheckFilterLayout(Test, TEXT("First Aid / favorites only / no saved favorites"));
+            Test.TestEqual(TEXT("Empty favorites has no hidden stale page items"), Panel->GetCatalogPageItems().Num(), 0);
+            Favorites->OnClicked.Broadcast();
+            Paint();
+            CheckFilterLayout(Test, TEXT("First Aid / favorite filter restored"));
+            CheckSixCardPage(Test, TEXT("First Aid / favorite filter restored"));
+            return true;
         }
 
         void CheckRows(FAutomationTestBase& Test, FMeasurements& Measurements, const FString& Step,
@@ -280,10 +649,12 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Thumbnail->GetVisibility() != ESlateVisibility::Hidden && Thumbnail->GetColorAndOpacity().A > 0.0f);
                 const UTexture2D* Texture = Item->GetThumbnail().Get();
                 const FVector2D ImageDesiredSize = Thumbnail->GetDesiredSize();
+                const double AuthoredThumbnailHeight = ThumbnailFrame->IsHeightOverride()
+                    ? ThumbnailFrame->GetHeightOverride() : List->GetEntryHeight();
                 Test.TestTrue(*FString::Printf(TEXT("%s: even clipped rows keep the current image's aspect and bounded desired size"), *Label),
                     Texture && ImageDesiredSize.X > 0.0 && ImageDesiredSize.Y > 0.0 &&
-                    ImageDesiredSize.X <= FFPrepBuildTileLayout::ThumbnailWidth + 1.0 &&
-                    ImageDesiredSize.Y <= FFPrepBuildTileLayout::ThumbnailHeight + 1.0 &&
+                    ImageDesiredSize.X <= List->GetEntryWidth() + 1.0 &&
+                    ImageDesiredSize.Y <= AuthoredThumbnailHeight + 1.0 &&
                     FMath::IsNearlyEqual(ImageDesiredSize.X / ImageDesiredSize.Y,
                         static_cast<double>(Texture->GetSizeX()) / Texture->GetSizeY(), 0.01));
 
@@ -309,13 +680,17 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Measurements.CardSize = CardSize;
                     Measurements.ThumbnailSize = ThumbnailSize;
                 }
-                Test.TestTrue(*FString::Printf(TEXT("%s: card has the fixed production dimensions"), *Label),
-                    CardSize.Equals(FVector2D(FFPrepBuildTileLayout::CardWidth, FFPrepBuildTileLayout::CardHeight), 1.0));
+                const auto* CardFrame = Cast<USizeBox>(Row->GetWidgetFromName(TEXT("SizeBox_Card")));
+                Test.TestTrue(*FString::Printf(TEXT("%s: card respects its authored height and allocated column width"), *Label),
+                    CardFrame && CardSize.X > 0.0 && CardSize.X <= List->GetEntryWidth() + 1.0 &&
+                    (!CardFrame->IsWidthOverride() || FMath::IsNearlyEqual(CardSize.X, static_cast<double>(CardFrame->GetWidthOverride()), 1.0)) &&
+                    (!CardFrame->IsHeightOverride() || FMath::IsNearlyEqual(CardSize.Y, static_cast<double>(CardFrame->GetHeightOverride()), 1.0)));
                 Test.TestTrue(*FString::Printf(TEXT("%s: card dimensions survive reuse"), *Label),
                     CardSize.Equals(Measurements.CardSize, 1.0));
                 Test.TestTrue(*FString::Printf(TEXT("%s: thumbnail frame survives mixed native resolutions"), *Label),
-                    ThumbnailSize.Equals(Measurements.ThumbnailSize, 1.0) && ThumbnailSize.Equals(FVector2D(
-                        FFPrepBuildTileLayout::ThumbnailWidth, FFPrepBuildTileLayout::ThumbnailHeight), 1.0));
+                    ThumbnailSize.Equals(Measurements.ThumbnailSize, 1.0) &&
+                    (!ThumbnailFrame->IsWidthOverride() || FMath::IsNearlyEqual(ThumbnailSize.X, static_cast<double>(ThumbnailFrame->GetWidthOverride()), 1.0)) &&
+                    (!ThumbnailFrame->IsHeightOverride() || FMath::IsNearlyEqual(ThumbnailSize.Y, static_cast<double>(ThumbnailFrame->GetHeightOverride()), 1.0)));
                 const FSlateRect ImageRect = Thumbnail->GetCachedGeometry().GetLayoutBoundingRect();
                 const FSlateRect FrameRect = ThumbnailFrame->GetCachedGeometry().GetLayoutBoundingRect();
                 const double ImageWidth = ImageRect.Right - ImageRect.Left;
@@ -329,7 +704,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                         static_cast<double>(Texture->GetSizeX()) / Texture->GetSizeY(), 0.01));
                 const FSlateRect NameRect = Name->GetCachedGeometry().GetLayoutBoundingRect();
                 Test.TestTrue(*FString::Printf(TEXT("%s: name keeps visible space inside its card"), *Label),
-                    NameRect.Right > NameRect.Left && NameRect.Bottom - NameRect.Top >= 12.0 &&
+                    NameRect.Right > NameRect.Left && NameRect.Bottom - NameRect.Top >= Name->GetFont().Size * DpiScale * 0.7 &&
                     NameRect.Top >= CardRect.Top - 1.0 && NameRect.Bottom <= CardRect.Bottom + 1.0);
             }
             Test.TestTrue(*FString::Printf(TEXT("%s: at least one card is inside the visible list"), *Step), VisibleCount > 0);
@@ -366,13 +741,13 @@ namespace FFPrepBuildVirtualizedSlateTest
                 VisiblePixels += Pixel.A > 0 && (Pixel.R > 25 || Pixel.G > 25 || Pixel.B > 25) ? 1 : 0;
             }
             Test.TestTrue(TEXT("Catalog image contains visible cards and labels"), VisiblePixels > Width * 100);
-            if (const UWidget* GoldBacking = Panel->GetWidgetFromName(TEXT("Border_Gold")))
+            if (const auto* Mark = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Block_BuildMark00"))))
             {
-                const FSlateRect GoldRect = GoldBacking->GetCachedGeometry().GetLayoutBoundingRect();
-                const int32 SampleX = FMath::Clamp(FMath::RoundToInt((GoldRect.Left + GoldRect.Right) * 0.5f), 0, Width - 1);
-                const int32 SampleY = FMath::Clamp(FMath::RoundToInt(GoldRect.Top + 2.0f), 0, Height - 1);
+                const FSlateRect MarkRect = Mark->GetCachedGeometry().GetLayoutBoundingRect();
+                const int32 SampleX = FMath::Clamp(FMath::RoundToInt((MarkRect.Left + MarkRect.Right) * 0.5f), 0, Width - 1);
+                const int32 SampleY = FMath::Clamp(FMath::RoundToInt((MarkRect.Top + MarkRect.Bottom) * 0.5f), 0, Height - 1);
                 const FColor Actual = Pixels[SampleY * Width + SampleX];
-                const FColor Expected = UFF_UIPalette::Get()->InGame.TealDeep.ToFColor(true);
+                const FColor Expected = (Mark->Background.TintColor.GetSpecifiedColor() * Mark->GetBrushColor()).ToFColor(true);
                 Test.TestTrue(TEXT("PNG preserves the production teal without a second gamma conversion"),
                     FMath::Abs(static_cast<int32>(Actual.R) - Expected.R) <= 3 &&
                     FMath::Abs(static_cast<int32>(Actual.G) - Expected.G) <= 3 &&
@@ -390,6 +765,9 @@ namespace FFPrepBuildVirtualizedSlateTest
             return bSaved;
         }
 
+        void ShowFirstPage() { Panel->SetCatalogPage(0); }
+        void ShowLastPage() { Panel->SetCatalogPage(Panel->GetCatalogPageCount() - 1); }
+
         UFF_PrepBuildTileView* List = nullptr;
 
     private:
@@ -403,21 +781,38 @@ namespace FFPrepBuildVirtualizedSlateTest
         }
         TUniquePtr<FPlayerlessInitialization> TileInitialization;
         TStrongObjectPtr<UFF_PrepPanelBuild> Panel;
+        TStrongObjectPtr<UFF_PrepHudBar> Hud;
+        TStrongObjectPtr<UGameInstance> DetachedGame;
+        TStrongObjectPtr<UFF_BuildCatalogSubsystem> Catalog;
+        TStrongObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
+        TArray<FFF_BuildCatalogEntry> SourceEntries;
+#if !UE_BUILD_SHIPPING
+        TWeakObjectPtr<UFF_PrepHudBar> PreviousActiveBar;
+#endif
         TArray<TStrongObjectPtr<UTexture2D>> Textures;
         TArray<TStrongObjectPtr<UFFZSFacilityDefinition>> Definitions;
         FHittestGrid HitGrid;
         TSharedPtr<SVirtualWindow> Window;
         FVector2D ViewportSize = FVector2D::ZeroVector;
+        float DpiScale = 1.0f;
         int32 FrameNumber = 0;
     };
 
     bool RunCatalogFixture(FAutomationTestBase& Test, const bool bCapture)
     {
         if (!Test.TestTrue(TEXT("Slate application is initialized"), FSlateApplication::IsInitialized())) { return false; }
-        for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
+        TArray<FIntPoint> Resolutions = { FIntPoint(1280, 720), FIntPoint(1920, 1080) };
+        if (bCapture)
+        {
+            Resolutions.Add(FIntPoint(1742, 738));
+            // The isolated HUD intentionally has no gameplay ViewModel. Its expected
+            // diagnostic is not a rendering failure; real catalog/economy snapshots follow.
+            Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, Resolutions.Num());
+        }
+        for (const FIntPoint Resolution : Resolutions)
         {
             FCatalogFixture Fixture;
-            if (!Fixture.Initialize(Test, FVector2D(Resolution.X, Resolution.Y), FMath::Min(320.0f, Resolution.Y * 0.4f))) { return false; }
+            if (!Fixture.Initialize(Test, FVector2D(Resolution.X, Resolution.Y), bCapture)) { return false; }
             FMeasurements Measurements;
             if (bCapture)
             {
@@ -425,19 +820,21 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Fixture.Paint();
                 Fixture.CheckRows(Test, Measurements, TEXT("Source catalog top"), true);
                 Fixture.Capture(Test, TEXT("Top"));
-                Fixture.List->ScrollToBottom();
+                Fixture.ShowLastPage();
                 Fixture.Paint();
                 Fixture.CheckRows(Test, Measurements, TEXT("Source catalog bottom"), true);
                 Fixture.Capture(Test, TEXT("Bottom"));
-                Fixture.List->ScrollToTop();
+                Fixture.ShowFirstPage();
                 Fixture.Paint();
                 Fixture.CheckRows(Test, Measurements, TEXT("Source catalog returned"), true);
                 Fixture.Capture(Test, TEXT("Returned"));
+                if (!Fixture.CheckAllCategoriesAndFirstAid(Test, true)) { return false; }
                 Fixture.List->ClearListItems();
                 continue;
             }
             Fixture.Paint();
             Fixture.CheckRows(Test, Measurements, TEXT("Initial top"), true);
+            if (!Fixture.CheckFavoriteInputIsolation(Test)) { return false; }
             for (int32 Round = 0; Round < 3; ++Round)
             {
                 for (const float Offset : { 24.0f, 72.0f, 112.0f })
@@ -476,6 +873,30 @@ namespace FFPrepBuildVirtualizedSlateTest
         }
         return true;
     }
+
+    bool RunFullCatalogLayoutFixture(FAutomationTestBase& Test)
+    {
+        if (!Test.TestTrue(TEXT("Slate application is initialized"), FSlateApplication::IsInitialized())) { return false; }
+        Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 3);
+        for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080), FIntPoint(1742, 738) })
+        {
+            FCatalogFixture Fixture;
+            if (!Fixture.Initialize(Test, FVector2D(Resolution.X, Resolution.Y), true) ||
+                !Fixture.UseSourceCatalogEntries(Test)) { return false; }
+            Fixture.Paint();
+            if (!Fixture.CheckAllCategoriesAndFirstAid(Test, false)) { return false; }
+        }
+        return true;
+    }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepBuildFullCatalogHudLayoutTest,
+    "FestaFiesta.UI.PrepBuild.FullCatalogHudLayout",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildFullCatalogHudLayoutTest::RunTest(const FString& Parameters)
+{
+    return FFPrepBuildVirtualizedSlateTest::RunFullCatalogLayoutFixture(*this);
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepBuildVirtualizedScrollLifecycleTest,

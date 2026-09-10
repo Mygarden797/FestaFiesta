@@ -47,6 +47,19 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramCardViewData
 	int32 CostGold = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
+	int32 RequiredStaff = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
+	int32 CapacityPeople = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
+	int32 TicketFeeGold = 0;
+
+	/** Capacity multiplied by ticket fee, not guaranteed revenue or net profit. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
+	int32 MaxRevenueGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	bool bCanSchedule = false;
 };
 
@@ -61,6 +74,12 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramPickerViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	FText FacilityName;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
+	int32 AvailableGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
+	int32 AvailableStaff = 0;
 
 	/** Only facility-compatible cards are projected into this array. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")

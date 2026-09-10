@@ -116,6 +116,11 @@ bool FFF_PrepBuildPresentationRules::IsEntryVisible(
 		return false;
 	}
 
+	if (Filter.bFavoritesOnly && !Filter.FavoriteIds.Contains(Entry.FacilityDefinitionId))
+	{
+		return false;
+	}
+
 	if (!Filter.MinorToken.IsNone() && Entry.MinorToken != Filter.MinorToken)
 	{
 		return false;

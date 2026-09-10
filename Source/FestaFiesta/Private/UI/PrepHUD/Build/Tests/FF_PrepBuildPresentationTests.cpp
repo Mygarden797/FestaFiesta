@@ -210,6 +210,64 @@ bool FFF_PrepBuildPresentation_FilterTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_FavoritesFilterTest,
+	"FestaFiesta.UI.PrepBuild.FavoritesFilterComposition",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_FavoritesFilterTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+	const TArray<FFF_BuildCatalogEntry> Entries = {
+		MakeEntry(TEXT("Booth_CraftExperience_SandArt"), TEXT("바다향기 공방"),
+			EFFZSFacilityCategory::Booth, TEXT("CraftExperience"), 300),
+		MakeEntry(TEXT("Booth_FoodStall_Burger"), TEXT("해변 버거"),
+			EFFZSFacilityCategory::Booth, TEXT("FoodStall"), 300),
+		MakeEntry(TEXT("Toilet_Standard_Default"), TEXT("일반 화장실"),
+			EFFZSFacilityCategory::Toilet, TEXT("Standard"), 300)
+	};
+	UFF_PrepBuildPresentationModel* Model = NewObject<UFF_PrepBuildPresentationModel>();
+	FFF_PrepBuildFilter Filter;
+	const auto Reconcile = [&]()
+	{
+		Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 1000, true, FText::GetEmpty());
+	};
+	Filter.FavoriteIds = { Entries[0].FacilityDefinitionId, Entries[2].FacilityDefinitionId, FName(TEXT("Retired_Facility")) };
+	Reconcile();
+	TestEqual(TEXT("Saving favorites alone does not hide the rest of the catalog"), Model->GetVisibleTiles().Num(), 3);
+	UFF_PrepBuildTileData* OriginalSand = Model->FindTile(Entries[0].FacilityDefinitionId);
+	Filter.bFavoritesOnly = true;
+	Reconcile();
+	TestEqual(TEXT("Favorites-only ignores stale IDs and retains the two existing favorites"), Model->GetVisibleTiles().Num(), 2);
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Booth;
+	Filter.MinorToken = TEXT("CraftExperience");
+	Filter.SearchText = TEXT(" 바다향기 ");
+	Reconcile();
+	TestEqual(TEXT("Favorite, major category, minor category and search compose with AND"), Model->GetVisibleTiles().Num(), 1);
+	TestTrue(TEXT("Filtering reuses the existing tile object"), Model->FindTile(Entries[0].FacilityDefinitionId) == OriginalSand);
+	Filter.SearchText = TEXT("버거");
+	Reconcile();
+	TestEqual(TEXT("Search cannot reintroduce a nonfavorite facility"), Model->GetVisibleTiles().Num(), 0);
+	Filter.SearchText = TEXT("바다향기");
+	Filter.FavoriteIds.Remove(Entries[0].FacilityDefinitionId);
+	Reconcile();
+	TestEqual(TEXT("Unstarring the final matching facility leaves an empty list"), Model->GetVisibleTiles().Num(), 0);
+	TestTrue(TEXT("Unstarring preserves favorites-only and the user's other filters"),
+		Filter.bFavoritesOnly && Filter.bFilterByCategory && Filter.MinorToken == TEXT("CraftExperience") && Filter.SearchText == TEXT("바다향기"));
+	Filter.FavoriteIds.Reset();
+	Filter.bFilterByCategory = false;
+	Filter.MinorToken = NAME_None;
+	Filter.SearchText.Reset();
+	Reconcile();
+	TestEqual(TEXT("An empty favorites collection produces an empty list"), Model->GetVisibleTiles().Num(), 0);
+	Filter.bFavoritesOnly = false;
+	Reconcile();
+	TestEqual(TEXT("Turning off favorites-only restores the complete catalog"), Model->GetVisibleTiles().Num(), 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_PrepBuildPresentation_TileStateTest,
 	"FestaFiesta.UI.PrepBuild.TileStates",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

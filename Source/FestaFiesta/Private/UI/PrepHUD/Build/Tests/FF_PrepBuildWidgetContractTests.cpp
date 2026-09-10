@@ -86,7 +86,10 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Image_Thumbnail")),
 			FName(TEXT("Text_Name")),
 			FName(TEXT("Text_Cost")),
-			FName(TEXT("Text_State")) })
+			FName(TEXT("Text_State")),
+			FName(TEXT("Button_Favorite")),
+			FName(TEXT("Text_Favorite")),
+			FName(TEXT("SizeBox_Card")) })
 		{
 			TestNotNull(
 				*FString::Printf(TEXT("타일 계약 위젯이 존재한다: %s"), *RequiredName.ToString()),
@@ -109,6 +112,9 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Panel_Catalog")),
 			FName(TEXT("Panel_PlacementCompact")),
 			FName(TEXT("HorizontalBox_Tools")),
+			FName(TEXT("HorizontalBox_Categories")),
+			FName(TEXT("Button_FavoritesOnly")),
+			FName(TEXT("Text_FavoritesOnly")),
 			FName(TEXT("TileView_Facilities")),
 			FName(TEXT("Search_Facilities")),
 			FName(TEXT("Text_Gold")),
