@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/PrepHUD/FF_PrepHudBar.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -268,6 +269,11 @@ UFF_UIFlowSubsystem* UFF_PrepHudBar::GetFlow() const
 	return UFF_UIFlowSubsystem::Get(this);
 }
 
+void UFF_PrepHudBar::HandleRequiredFacilitiesChanged()
+{
+	RefreshCta();
+}
+
 void UFF_PrepHudBar::BindSources()
 {
 	UGameInstance* GI = GetGameInstance();
@@ -297,6 +303,11 @@ void UFF_PrepHudBar::BindSources()
 	// 시설 수는 Zone 이 소유한다. 시설을 놓거나 철거하면 CTA 가 즉시 따라가야 한다.
 	if (UWorld* World = GetWorld())
 	{
+		if (auto* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>())
+		{
+			Required->OnRequiredFacilitiesChanged.AddUniqueDynamic(this, &ThisClass::HandleRequiredFacilitiesChanged);
+			BoundRequiredFacilities = Required;
+		}
 		if (UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
 		{
 			Zone->OnWorldChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleWorldChanged);
@@ -314,6 +325,11 @@ void UFF_PrepHudBar::BindSources()
 
 void UFF_PrepHudBar::UnbindSources()
 {
+	if (auto* Required = BoundRequiredFacilities.Get())
+	{
+		Required->OnRequiredFacilitiesChanged.RemoveDynamic(this, &ThisClass::HandleRequiredFacilitiesChanged);
+	}
+	BoundRequiredFacilities.Reset();
 	// 해제는 조건부, 정리(`nullptr` 대입)는 무조건. 조기 return 으로 빠져나가지 않는다.
 	if (CachedViewModel)
 	{
@@ -1042,6 +1058,15 @@ void UFF_PrepHudBar::RefreshCta()
 
 	default:
 		break;
+	}
+	// 시간 경과로 해결되지 않는 설치 조건은 카운트다운 안내보다 우선한다.
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (auto* StageSystem = GI->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			const FText RequiredReason = StageSystem->GetStageAdvanceBlockingReason();
+			if (!RequiredReason.IsEmpty()) { Reason = RequiredReason; }
+		}
 	}
 	SetGroupTextOrHide(nullptr, Text_CtaReason, Reason);
 

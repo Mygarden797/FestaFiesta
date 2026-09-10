@@ -13,6 +13,7 @@
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -307,11 +308,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue", meta = (ClampMin = "0.0"))
 	float QueueHoldTimeoutSeconds = 1200.f;
 
-	// 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	/**
+	 * 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	 *
+	 * ★ UtilityCoefficientTable 의 `reservation_exit_buffer_minutes` 행이 OnWorldBeginPlay 에서
+	 *   이 값을 덮는다. 여기서 편집한 값은 그 행이 **없을 때만** 남는다 — 튜닝은 CSV 에서 할 것.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
 	float ProgramExitGraceMinutes = 10.f;
 
-	// 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	/**
+	 * 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	 *
+	 * ★ `reservation_return_buffer_minutes` 행이 OnWorldBeginPlay 에서 이 값을 덮는다
+	 *   (위 ProgramExitGraceMinutes 와 같은 규칙).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
 	float ProgramReturnBufferMinutes = 10.f;
 
@@ -446,6 +457,23 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Flow")
 	int32 GetDecisionsProcessed() const { return DecisionsProcessed; }
+
+	// 개인 주기가 차서 걷던 중 재평가한 횟수(reevaluate_interval_multiplier 결선 지점).
+	// 끄려면 bEnablePeriodicReevaluation 을 false 로 둔다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Flow")
+	int32 GetReevaluateRequests() const { return ReevaluateRequests; }
+
+	// 인내심 한계로 줄에서 이탈한 파티 수(patience_multiplier 결선 지점).
+	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
+	int32 GetQueuePatienceAbandons() const { return QueuePatienceAbandons; }
+
+	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
+	bool bEnablePeriodicReevaluation = true;
+
+	// 줄에서 개인 인내심 한계를 넘기면 이탈한다(reneging).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue")
+	bool bEnableQueuePatienceAbandon = true;
 
 	// 목적지 앞에서 감속을 시작하는 거리, UU. 0이면 ArrivalRadiusUU * 3으로 폴백한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
@@ -1019,6 +1047,18 @@ private:
 	TArray<FFF_NeedState> PartyAggregatedNeeds;
 	TArray<int32> PartyMemberCounts;
 	TArray<float> PartyRemainingStayMinutes;
+
+	/**
+	 * 개체별로 확정된 변주값. AgentIndex 로 인덱싱한다. (StableAgentID 가 아니다)
+	 * 스폰 시 한 번 Resolve 해서 여기 넣는다. 리더가 아닌 멤버 자리도 채운다.
+	 */
+	TArray<FFF_ResolvedIndividualTraits> AgentTraits;
+
+	/**
+	 * AgentTraits 에 전역 재평가 계수를 곱해 둔 개인 임계값. 인덱싱 규칙은 AgentTraits 와 같다.
+	 * 계수는 런타임에 안 바뀌므로 스폰 때 한 번 곱한 값을 들고 있는다.
+	 */
+	TArray<FFF_PersonalReevaluationThresholds> AgentPersonalThresholds;
 	UPROPERTY()
 	TObjectPtr<UDataTable> CachedCoefficientTable;
 	float StayDrainMultiplierAtMaxNeed = 1.f;
@@ -1048,6 +1088,14 @@ private:
 	// 막힘으로 목적지를 포기한 횟수. 위 둘과 같이 봐야 한다 — 이 값만 크면 잼이 안 풀리는 것이고,
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
+
+	// 개인 주기가 차서 걷던 중 재평가한 횟수. DecisionsProcessed 와 같이 봐야 한다 —
+	// 이 값이 처리량의 대부분을 차지하면 reevaluate_interval_seconds 가 너무 짧다
+	int32 ReevaluateRequests = 0;
+
+	// 인내심 한계로 줄에서 이탈한 파티 수(reneging). QueueJoinAccepted 대비 비율로 읽는다.
+	// QueueHoldTimeouts 와 구분할 것 — 그쪽은 큐 이벤트 유실 신호고 이쪽은 정상 행동이다
+	int32 QueuePatienceAbandons = 0;
 
 	// 통행 상한에 막혀 되돌린 스텝 수. 이 값이 계속 오르는데 StuckDecisionRequests가 안 오르면
 	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다

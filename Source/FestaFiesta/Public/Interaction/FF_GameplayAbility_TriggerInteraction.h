@@ -22,6 +22,10 @@ public:
 	TSubclassOf<class UFF_GE_TriggerCooldown> CooldownEffectClass;
 	// 상호작용 끝나고 나타나는 쿨다운 효과
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Trigger")
+	float PhotoFocusDelaySeconds = 1.0f;
+	// 카메라 프레임 뜬 뒤 실제 촬영까지 기다리는 시간 (초)
+
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -40,4 +44,18 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Trigger")
 	void PlayPhotoCaptureEffect();
 	// 화면 플래시 연출
+
+private:
+
+	void HandlePhotoFocusComplete();
+	// 타이머가 끝났을 때 실제 촬영을 실행하는 함수
+
+	FTimerHandle PhotoFocusTimerHandle;
+	// 초점 대기시간을 재는 타이머
+
+	FGameplayAbilitySpecHandle CachedHandle;
+	const FGameplayAbilityActorInfo* CachedActorInfo = nullptr;
+	FGameplayAbilityActivationInfo CachedActivationInfo;
+	// 타이머 콜백에서 EndAbility를 호출하기 위해 값들을 잠깐 저장해두는 변수들
+
 };

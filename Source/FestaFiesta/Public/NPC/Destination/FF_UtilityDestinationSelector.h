@@ -219,6 +219,20 @@ public:
 	 * PersonalWaitThresholdMinutes/PersonalDensityThresholdRatio/PersonalReevaluateIntervalSeconds는
 	 * 이미 FFF_IndividualVariationResolver의 개체 변주가 적용된 값을 호출부가 넘긴다 — 이 함수는
 	 * 개체 변주를 다시 계산하지 않는다.
+	 *
+	 * ### ⚠️ 항 하나만 켜서 부를 때 — 0 을 넣어 끄지 말 것
+	 *
+	 * 네 조건의 OR 이고 **부등호 방향이 항마다 다르다.**
+	 *   대기  `CurrentWaitMinutes >  PersonalWaitThresholdMinutes`
+	 *   밀집  `CurrentDensityRatio >  PersonalDensityThresholdRatio`
+	 *   주기  `SecondsSinceLastEvaluation >= PersonalReevaluateIntervalSeconds`   ← **>= 다**
+	 *
+	 * 그래서 주기 항에 (0, 0) 을 넣으면 `0 >= 0` 이 참이 되어 **항상 발화한다.** 끄려면
+	 * 임계에 `TNumericLimits<float>::Max()` 를 넣어야 한다. 대기·밀집은 `>` 라 (0, 양수) 로 꺼진다.
+	 *
+	 * 2026-09-08 에 줄 이탈 판정이 이 함정을 밟아, 인내심과 무관하게 슬롯 도착 즉시 전원이
+	 * 이탈했다. 계수기는 올라가고 스위치도 동작해서 배선이 맞는 것처럼 보였다 —
+	 * 개인 한계보다 짧은 대기에도 이탈한 로그를 보고서야 드러났다.
 	 */
 	static bool ShouldReevaluate(
 		float CurrentWaitMinutes, float PersonalWaitThresholdMinutes,

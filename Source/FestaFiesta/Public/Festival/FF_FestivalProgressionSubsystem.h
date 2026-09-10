@@ -21,6 +21,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, Ne
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPromotionGradeChanged, EFF_PromotionGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFestivalDefinitionChanged);
 
 /**
  * 잔액 규칙은 FFF_FestivalFunds(순수 구조체)가 갖고, 여기는 "상태 보관과 통지"만 한다.
@@ -55,6 +56,10 @@ public:
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	const UFF_FestivalDefinition* GetDefinition() const { return Definition; }
+
+	// StartFestival 완료 후 발행. 같은 자금으로 다른 축제를 시작해도 UI 조건을 갱신한다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Festival")
+	FFF_OnFestivalDefinitionChanged OnFestivalDefinitionChanged;
 
 	// --- Gold ------------------------------------------------------------
 

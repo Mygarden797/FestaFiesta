@@ -77,7 +77,9 @@ UI는 7개 서브시스템 거의 전부에서 데이터를 읽는다. 각 모�
 | `GetLiveClockStringFromMinutes(int32)` | `FString`           | 임의의 LiveMinutes를 "17:30" 형식 문자열로 변환 (2026-08-26 추가) |
 | `GetCurrentLiveClockString()`          | `FString`           | 지금 시각을 "17:30" 형식으로 반환 |
 | `GetCurrentStageDisplayName()`         | `FText`             | 현재 Stage의 한글 표시 이름. switch 기반으로 패키징 메타데이터에 의존하지 않음 |
-| `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨) |
+| `IsCurrentStageSkippable()`            | `bool`              | 지금 단계가 스킵 가능한지 (2026-08-13 public 전환됨). **⚠️ 2026-09-08 판정이 하나 늘었습니다 — 이 절 말미 「필수 설치 시설 게이트로 계약이 바뀐 것 2건」 참조** |
+| `CanTransitionTo(NewStage, OutBlockingReason)` | `bool`     | 필수 설치 시설 조건으로 전환이 허용되는지 + 막힌 사유 문구 (2026-09-08 추가, 김시리) |
+| `GetStageAdvanceBlockingReason()`      | `FText`             | 현재 단계의 **다음** 단계가 막혔을 때의 안내 문구. 막히지 않았으면 빈 `FText` (2026-09-08 추가, 김시리) |
 | `OnFestivalStarted`                    | (인자 없음)          | 축제가 새로 시작됐음을 알리는 신호 (StartNewFestival() 호출 시 발동|
 | `SetMinigameInProgress(bool)`          |                      | 미니게임 시작/종료 시 호출. true면 배속을 무조건 1배속으로 고정 
 | `IsMinigameInProgress()`               | `bool`               | 지금 미니게임 진행 중인지 즉시 조회 (2026-08-28 추가)
@@ -293,8 +295,42 @@ GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()
 
 **시각 연출 참고 (민서 자체 구현, UI 무관)**: `BP_WeatherManager`가 이 델리게이트를 구독해 Fog Density·VolumetricCloud·`NS_Rain` 파티클·빗소리 사운드를 날씨별로 조절함. 다른 시스템이 참고할 필요는 없음
 
+### ⚠️ 필수 설치 시설 게이트로 계약이 바뀐 것 2건 (2026-09-08, 김시리)
 
+`UFF_FestivalStageSubsystem` 은 강민서 님 소유인데 필수 설치 시설 판정을 얹었습니다. **UI 코드를 수정하지 않아도 표시가 달라지는 변경 2건**만 여기 적습니다.
 
+**1. `IsCurrentStageSkippable()` 이 필수 시설 조건도 봅니다.**
+
+```
+전: return Range.bSkippable;
+후: return Range.bSkippable && CanTransitionTo(Range.NextStage, Reason);
+```
+
+`ViewModel::CanSkipCurrentStage()` 가 이 값을 그대로 중계하므로(아래 「Command」 절 계약), **메인 무대가 없으면 스킵 버튼이 비활성됩니다.**
+
+**2. `RemainingTime == 0` 이 오래 지속될 수 있습니다.**
+
+값의 범위는 그대로입니다(예전에도 0 으로 클램프). 달라진 것은 **0 에서 머무는 시간**입니다 — 조건을 못 채우면 시간이 만료된 채 그 단계에 머무릅니다. `0` 을 "전환 임박"으로 가정하고 연출을 트리거하거나 `OnRemainingSecondsChanged(0)` 을 단계 종료 신호로 쓰고 있으면 확인이 필요합니다. `GetStageAdvanceBlockingReason()` 이 비어 있지 않은 동안이 "대기 중"입니다.
+
+> 막힌 사유는 **Setup HUD 의 CTA 버튼 왼쪽에 이미 표시됩니다**(종태님이 만들어 두신 `Text_CtaReason` 자리). 자세한 내용과 백로그 3건은 「Utility AI · 경제 · 진행 — 김시리」 절의 `UFF_RequiredFacilitiesSubsystem` 아래에 있습니다.
+>
+> **강민서 님께**: `IsCurrentStageSkippable()` 의 의미가 넓어졌습니다. `RequestTransition` 은 게이트에 막힐 때 **사유가 바뀔 때만 한 번** 로그를 남깁니다 — 자동 시간 만료로도 매 Tick 불리는 함수라 매번 남기면 초당 수십 줄이 되고, 반대로 완전히 조용하면 "왜 안 넘어가는가"의 단서가 사라져 그 중간을 택했습니다.
+
+#### `GetStageAdvanceBlockingReason()`
+
+- **헤더**: `Public/Time/FF_FestivalStageSubsystem.h`
+- **접근**: `GameInstanceSubsystem` · `BlueprintPure`
+- **시그니처**: `FText GetStageAdvanceBlockingReason()`
+- **갱신 주기**: 요청 시
+- **상태**: `구현완료`
+- **비고**: 막히지 않았으면 **빈 `FText`** 입니다 — `IsEmpty()` 로 판정하세요. 필수 시설이 여러 종류면 사유가 `\n` 으로 이어진 **여러 줄**이 옵니다. 문구 예: `메인 무대: 1개 추가 설치가 필요합니다. (설치 0/1)`
+
+#### `CanTransitionTo(NewStage, OutBlockingReason)`
+
+- **접근**: `BlueprintPure`
+- **시그니처**: `bool CanTransitionTo(EFF_FestivalStage NewStage, FText& OutBlockingReason) const`
+- **상태**: `구현완료`
+- **비고**: 특정 단계로의 전환 가능 여부. 단계 표의 `bSkippable` 과는 별개 판정입니다.
 
 ## Zone · 시설 — 한광훈
 
@@ -712,6 +748,69 @@ FFF_CrowdCellSample {
 ---
 
 ## Utility AI · 경제 · 진행 — 김시리
+
+### `UFF_RequiredFacilitiesSubsystem` — Setup 필수 설치 시설 (2026-09-08 추가)
+
+- **헤더**: `Public/Festival/FF_RequiredFacilitiesSubsystem.h`
+- **접근**: `WorldSubsystem`
+- **갱신 주기**: 이벤트 (시설 설치·철거 / 축제 정의 교체)
+- **상태**: `구현완료`
+
+| 멤버 | 형 | 설명 |
+|---|---|---|
+| `GetRequiredFacilitiesStatus()` | `FFF_RequiredFacilitiesStatus` | 전체 요구사항 + `bCanProceed` + `BlockingReason` |
+| `HasMissingRequiredFacilitiesInCategory(Category)` | `bool` | 카테고리 탭에 느낌표를 붙일지 |
+| `TryGetRequiredFacilityRow(FacilityDefinitionId, OutRow)` | `bool` | 카탈로그 **카드 1장**용 조회 |
+| `OnRequiredFacilitiesChanged` | (인자 없음) | 시설 설치·철거·축제 정의 교체 시 |
+
+`FFF_RequiredFacilityRow` 한 행 — `FacilityDefinitionId` · `DisplayName` · `Category` · `MinimumCount` · `InstalledCount` · `MissingCount` · `bDefinitionValid` · `Guidance`.
+
+> **`bDefinitionValid == false` 면 `Category` 도 믿지 마세요.** 저작 오류가 있는 행이라 카테고리가 미확정입니다 — 그 행으로 느낌표를 붙이면 엉뚱한 탭이 빨개집니다. 그 경우 `Guidance` 에 저작 오류 안내가 들어옵니다.
+
+> `Guidance` · `BlockingReason` 은 `FF_RequiredFacilitiesSubsystem.cpp` 의 `LOCTEXT` 입니다. **UI 에서 같은 문장을 다시 만들지 마세요** — 요구사항이 바뀔 때 두 곳이 갈립니다. 문구 수정이 필요하면 말씀 주세요.
+
+#### 종태님께 — 노출은 이미 되고 있습니다. 먼저 확인만 부탁드립니다
+
+**"막힌 이유를 플레이어가 모른다"는 문제는 이미 해결돼 있습니다.** 종태님이 `FF_PrepHudWbpBuilder.cpp` 에 만들어 두신 `Text_CtaReason` 자리에 제가 값만 흘려 넣었습니다.
+
+```cpp
+// !! 비활성 흐려짐만으로는 왜 못 누르는지 알 수 없다 !! (AT-011)
+// 이유 문구 자리를 버튼 왼쪽에 반드시 둔다. 값이 없으면 코드가 접는다.
+```
+
+`Box_Cta` 안에서 **CTA 버튼 바로 왼쪽**이라 버튼을 보면 사유가 같이 보입니다. AT-011 대비를 미리 해두신 덕에 추가 작업이 필요 없었습니다.
+
+| 위치 | 내용 |
+|---|---|
+| CTA 사유 줄 | 막힌 사유를 넣습니다. **카운트다운 안내보다 우선** — 시간이 지나도 해결되지 않는 조건이라서 |
+| 조건 변화 구독 | `OnRequiredFacilitiesChanged` 를 구독해 시설을 놓거나 철거하면 즉시 `RefreshCta()` 가 돕니다 |
+
+**부탁드리는 것은 하나입니다** — PIE 에서 무대를 안 지은 채로 그 줄이 실제로 보이는지 확인해 주세요. 보이면 이 기능의 필수 작업은 끝입니다.
+
+#### 백로그 3건 — 급하지 않습니다
+
+아래는 "이유를 알린다"가 아니라 **"어디서 지어야 하는지 더 빨리 찾게 한다"** 입니다. 사유 문구가 이미 동작하므로 없어도 기능은 성립합니다. 여유 있을 때 판단해 주세요.
+
+| 우선 | 항목 | 성격 | 호출 |
+|---|---|---|---|
+| 중 | 건축 카탈로그 카테고리 탭 느낌표 | 탐색 단축. 사유 문구는 "메인 무대 1개 필요"라고만 하고 **어느 탭인지는 말하지 않습니다** | `HasMissingRequiredFacilitiesInCategory(Category)` |
+| 중 | `00:00` 멈춤 상태 표시 | 오해 방지. 타이머가 0 에 멈춰 있으면 플레이어는 게임이 멈춘 줄 압니다. `GetStageAdvanceBlockingReason()` 이 비어 있지 않은 동안이 "대기 중"입니다 | Stage 절 계약 변경 2번 |
+| 하 | 시설 카드 「필수」 뱃지 + `설치 0/1` | 탐색 단축. `Guidance` 는 그대로 써도 되는 완성 문구입니다 | `TryGetRequiredFacilityRow(Id, Out)` |
+
+#### 제가 어디까지 손댔는지
+
+`FF_PrepHudBar.cpp/h` 를 수정했습니다. 기준은 이렇게 잡았습니다.
+
+- **했음** — 이미 있는 위젯에 값 흘리기, 델리게이트 구독
+- **안 했음** — 새 시각 요소 추가, 레이아웃·표현 결정
+
+위 백로그 3건이 후자에 해당해서 남겼습니다. 이 선이 불편하시면 조정하겠습니다.
+
+### `UFF_FestivalProgressionSubsystem::OnFestivalDefinitionChanged` (2026-09-08 추가)
+
+- **접근**: `BlueprintAssignable`, 인자 없음
+- **상태**: `구현완료`
+- **비고**: `StartFestival` 완료 후 발행합니다. **같은 자금으로 다른 축제를 시작해도** 요구사항이 바뀌므로, 금액 델리게이트만 구독하고 있으면 조건 표시가 갱신되지 않습니다.
 
 ### `UFF_NpcNeedMetricsSubsystem` — Need 집계
 
@@ -1891,4 +1990,5 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 2026-08-28 | 강민서 | ✅ **김시리님 질문 관련 — `OnFestivalStarted` 델리게이트로 대신 구독하시는 걸 제안합니다.** `StartNewFestival()` 호출 시 Day/Stage/시계 초기화 후 마지막에 `OnFestivalStarted.Broadcast()`가 발동하도록 만들어 뒀습니다. 경제 쪽 리셋 함수를 `UFF_UIFlowSubsystem`이 직접 호출하는 방식 대신, 여기 구독해서 자체 리셋을 걸어두시면 "부를 자리가 없다"는 문제가 UI Flow 흐름 여부와 무관하게 해결될 것 같습니다. 구독 방법: `GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>()->OnFestivalStarted.AddDynamic(this, &YourClass::YourResetHandler);` 이 방식이 맞을지 확인 부탁드립니다. |
 | 2026-08-28 | 강민서 | 🆕 **미니게임 진행 중 1배속 고정 API 추가 — `SetMinigameInProgress(bool)` / `IsMinigameInProgress()`.** 팀 결정대로 미니게임 플레이 중에는 배속 버튼을 눌러도 무조건 1배속으로 고정되도록 `Tick()`의 배속 계산에 반영했습니다. 미니게임 시작 시점에 `true`, 종료 시점에 `false`로 호출해주시면 됩니다. 다만 **이 함수를 실제로 호출하는 연결부는 아직 없습니다** — 원재/광훈 쪽 미니게임(사격 게임 등) 시작/종료 지점에 이 호출을 걸어주시는 작업이 필요합니다. |
 | 2026-08-29 | 백종태 | 🆕 **라이브 HUD 요청 7건.** 문서 끝 `라이브 HUD 를 만들며 나온 요청 7건` 절에 적었습니다 — 누적 방문객(이정원)·시설 표시 이름(한광훈)·`CompletedCount`(한광훈)·큐 id 다리(장원재)·줄 포기 손님(장원재)·시설별 스태프 배치(김시리)·입력 모드 정책(카메라). ⚠️ **동시 관객 수는 요청 대상이 아닙니다** — `GetActiveAgentCount()` 가 이미 있어서 상태 바에 붙였고, 누적 방문객과는 **다른 값**입니다 (동시 인원을 일일 목표 분자로 쓰면 진행률이 안 올라갑니다) |
-| 2026-09-02 | 백종태 | 🆕 **요청 8번 추가 — 마감·준비 단계 배속(강민서).** `TimeScale` 이 `Tick` 의 Live 분기에서만 쓰여서, 마감·리포트·셋업·개장 준비에는 **배속 버튼을 못 답니다**(눌러도 안 되는 버튼이 됩니다). 비-Live 분기에도 적용해 주시면 UI 는 버튼만 열면 됩니다. ❓ **개장 준비는 기획상 시간이 멈추는 단계인데 코드는 흐릅니다** — 어느 쪽이 맞는지 확인 부탁드립니다. ✅ 그리고 **마지막 날 배속 잠금은 UI 쪽 착오였습니다** — 웹 프로토타입 규칙을 옮긴 것이고 소유자 코드에는 없어서 지웠습니다 |
+| 2026-09-02 | 백종태 | 🆕 **요청 8번 추가 — 마감·준비 단계 배속(강민서).**
+| 2026-09-08 | 김시리 | ⚠️ **필수 설치 시설 게이트 — 계약 변경 2건.** `IsCurrentStageSkippable()` 이 필수 시설 조건도 보게 되어 **무대가 없으면 스킵 버튼이 비활성됩니다**(`CanSkipCurrentStage` 가 그대로 중계). **`RemainingTime == 0` 이 오래 지속되는 상태가 생겼습니다**(값 범위는 그대로, 0 에서 머무는 시간이 길어진 것). 신규 API: `CanTransitionTo` · `GetStageAdvanceBlockingReason`(Stage 절) / `UFF_RequiredFacilitiesSubsystem` · `OnFestivalDefinitionChanged`(김시리 절). 막힌 사유는 종태님이 만들어 두신 `Text_CtaReason`(CTA 버튼 왼쪽, AT-011 대비) 자리에 값을 흘려 넣어 **이미 표시됩니다** — 부탁드리는 것은 PIE 확인 하나입니다. 탐색을 더 빠르게 하는 백로그 3건(카탈로그 느낌표·`00:00` 상태 표시·카드 진행도)은 급하지 않으며 김시리 절에 정리했습니다. Stage 서브시스템은 강민서 님 소유이므로 함께 확인 부탁드립니다 `TimeScale` 이 `Tick` 의 Live 분기에서만 쓰여서, 마감·리포트·셋업·개장 준비에는 **배속 버튼을 못 답니다**(눌러도 안 되는 버튼이 됩니다). 비-Live 분기에도 적용해 주시면 UI 는 버튼만 열면 됩니다. ❓ **개장 준비는 기획상 시간이 멈추는 단계인데 코드는 흐릅니다** — 어느 쪽이 맞는지 확인 부탁드립니다. ✅ 그리고 **마지막 날 배속 잠금은 UI 쪽 착오였습니다** — 웹 프로토타입 규칙을 옮긴 것이고 소유자 코드에는 없어서 지웠습니다 |

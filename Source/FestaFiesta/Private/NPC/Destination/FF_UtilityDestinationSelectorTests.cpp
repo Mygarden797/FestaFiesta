@@ -280,6 +280,33 @@ bool FFF_UtilityDestinationSelector_ShouldReevaluateTriggers::RunTest(const FStr
 		FFF_UtilityDestinationSelector::ShouldReevaluate(5.f, 15.f, 0.5f, 0.85f, 10.f, 120.f, true, false));
 	TestTrue(TEXT("라이브 이벤트 상태가 바뀌면 재평가한다"),
 		FFF_UtilityDestinationSelector::ShouldReevaluate(5.f, 15.f, 0.5f, 0.85f, 10.f, 120.f, false, true));
+
+	// --- 항 하나만 켜서 부르는 호출부를 위한 계약 (2026-09-08) ---
+	//
+	// 줄 이탈 판정은 대기 항만 켜고 나머지를 끈 채로 이 함수를 부른다. 그런데 주기 항이
+	// `>=` 라 (경과 0, 임계 0) 을 "끔"으로 넣으면 0 >= 0 이 참이 되어 매번 발화했다.
+	// 계수기는 정상으로 보이고 스위치도 동작해서, 개인 한계보다 짧은 대기에도 이탈한
+	// 로그를 인게임에서 보고서야 드러났다. 그 회귀를 여기서 잡는다.
+	TestTrue(TEXT("주기 항에 (0, 0) 을 넣으면 발화한다 — 0 으로 끄려는 시도를 막는다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/5.f, /*WaitThreshold=*/15.f, /*Density=*/0.f, /*DensityThreshold=*/1.f,
+			/*SinceLast=*/0.f, /*Interval=*/0.f, false, false));
+
+	// 끄는 올바른 방법: 임계에 Max 를 넣는다.
+	TestFalse(TEXT("주기 항은 임계 Max 로 꺼야 한다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/5.f, /*WaitThreshold=*/15.f, /*Density=*/0.f, /*DensityThreshold=*/1.f,
+			/*SinceLast=*/0.f, /*Interval=*/TNumericLimits<float>::Max(), false, false));
+
+	// 그 상태에서 대기 항만 정상 동작해야 한다 — 줄 이탈 판정이 기대하는 형태.
+	TestFalse(TEXT("대기가 개인 한계 미만이면 이탈하지 않는다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/12.5f, /*WaitThreshold=*/15.4f, 0.f, 1.f,
+			0.f, TNumericLimits<float>::Max(), false, false));
+	TestTrue(TEXT("대기가 개인 한계를 넘으면 이탈한다"),
+		FFF_UtilityDestinationSelector::ShouldReevaluate(
+			/*Wait=*/16.0f, /*WaitThreshold=*/15.4f, 0.f, 1.f,
+			0.f, TNumericLimits<float>::Max(), false, false));
 	return true;
 }
 
@@ -815,6 +842,70 @@ bool FFF_UtilityDestinationSelector_InTransitPenaltyIsMonotonicAndClamped::RunTe
 	TestTrue(TEXT("인원이 늘면 감점이 커진다"), Half < None && AtRef < Half);
 	TestEqual(TEXT("기준 인원을 넘어도 감점은 -weight_in_transit 에서 멈춘다"),
 		Over, -TestWeightInTransit, 0.001f);
+
+	return true;
+}
+
+/**
+ * preference_strength_multiplier 는 **정규화 클램프 전에** 벡터에 곱해야 한다.
+ *
+ * 이 테스트가 지키는 것은 계산 결과가 아니라 **결선 위치**다. Choose 는 취향 성분을
+ * `Clamp(값 / preference_vector_scale_ref, -1, 1)` 로 정규화하므로, 배수를 클램프 뒤에
+ * 곱하면(= Choose 안에서 PreferenceTerm 에 곱하는 구현) 포화 구간에서 배수가 먹지 않는다.
+ * 그러면 취향이 강한 개체일수록 오히려 개체차가 사라지는, 의도와 정반대의 결과가 된다.
+ *
+ * 그래서 UFF_CrowdDecisionSubsystem::GetScaledPreferenceVector 가 벡터 자체를 스케일한다.
+ * 이 테스트는 그 선택이 관측 가능한 차이를 만든다는 것을 고정한다 — 누군가 "간단하니까"
+ * 배수를 Choose 인자로 옮기면 아래 마지막 단정이 깨진다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_UtilityDestinationSelector_PreferenceStrengthScalesBeforeClamp, "FestaFiesta.NPC.UtilityDestinationSelector.PreferenceStrengthScalesBeforeClamp", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_UtilityDestinationSelector_PreferenceStrengthScalesBeforeClamp::RunTest(const FString& Parameters)
+{
+	UDataTable* Table = MakeTestCoefficientTable();
+
+	// 두 후보의 차이를 카테고리(=취향)에만 둔다. 나머지 항은 전부 같다.
+	TArray<FFF_DestinationCandidate> Candidates = {
+		MakeCandidate(TEXT("Liked"), TEXT("food_stall"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+		MakeCandidate(TEXT("Neutral"), TEXT("rest_area"), 0.5f, 100.f, 5.f, 10.f, 100.f),
+	};
+
+	auto PreferenceTermFor = [&Candidates, Table](float RawDelta, float StrengthMultiplier)
+	{
+		// 조정자와 같은 방식 — 벡터에 미리 곱한다.
+		const TMap<FName, float> Scaled = { { TEXT("food_stall"), RawDelta * StrengthMultiplier } };
+		const FFF_DestinationDecision Decision = FFF_UtilityDestinationSelector::Choose(
+			Candidates, Scaled, Table, 1, 1, 0);
+
+		for (const FFF_DestinationUtilityBreakdown& B : Decision.AllCandidateScores)
+		{
+			if (B.DestinationId == TEXT("Liked"))
+			{
+				return B.PreferenceTerm;
+			}
+		}
+		return 0.f;
+	};
+
+	// 포화 전(raw 5 / scale_ref 17 = 0.29)에서는 배수가 그대로 반영된다.
+	const float Weak = PreferenceTermFor(5.f, 0.6f);
+	const float Average = PreferenceTermFor(5.f, 1.0f);
+	const float Strong = PreferenceTermFor(5.f, 1.4f);
+
+	TestTrue(TEXT("배수가 크면 취향 항이 커진다"), Strong > Average && Average > Weak);
+	TestTrue(TEXT("배수 0.6 은 평균의 0.6 배다"), FMath::IsNearlyEqual(Weak, Average * 0.6f, 0.001f));
+
+	// 포화 구간: raw 20 은 이미 scale_ref(17)를 넘어 클램프에 걸린다.
+	// 클램프 뒤에 곱하는 구현이면 아래 두 값이 같아진다 — 그게 이 테스트가 잡으려는 회귀다.
+	const float SaturatedStrong = PreferenceTermFor(20.f, 1.4f);
+	const float SaturatedWeak = PreferenceTermFor(20.f, 0.6f);
+
+	// 20 × 1.4 = 28 → 28/17 = 1.65 → 클램프 1.0 → 항 = lambda_affinity
+	TestEqual(TEXT("배수가 큰 쪽은 클램프 상한(lambda_affinity)에 머문다"),
+		SaturatedStrong, 0.6f, 0.001f);
+
+	// 20 × 0.6 = 12 → 12/17 = 0.71 → 클램프에 안 걸린다
+	TestTrue(TEXT("포화된 취향도 배수가 낮으면 클램프에서 풀려 내려간다"),
+		SaturatedWeak < SaturatedStrong - 0.1f);
 
 	return true;
 }

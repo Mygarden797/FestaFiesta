@@ -43,7 +43,8 @@ TraitSeed = HashCombine(
 
 - `GlobalSimulationSeed` (int32): 시뮬레이션 실험 전체 Seed. 같은 시나리오 재현에 사용.
 - `StableAgentId` (int32): 실행 순서·메모리 주소가 아니라 저장·복원 가능한 NPC 고유 ID.
-- `RandomPurpose` (FName): `Generation` / `Decision` / `RuntimeNoise` 중 하나 (3절).
+- `RandomPurpose` (FName): 난수 목적. **2026-09-08 실사용 4종** — `Generation`(개체 변주·방문객 분포) / `Decision`(목적지 softmax·배회 좌표) / `NeedInitial`(초기 Need 분포) / `Gate`(입장 게이트 선택, `entry_gate_choice`, 이정원 분할 스폰). `RuntimeNoise`는 3절에 이름만 있고 아직 사용처가 없다.
+  - 이 목록은 **닫힌 열거가 아니다.** `MakeTraitSeed`는 도메인을 모르는 순수 함수라 누구든 새 purpose를 넣어 재사용할 수 있고, 실제로 `Gate`가 그렇게 추가됐다. 새 purpose를 쓰면 이 줄에 적을 것 — 안 적으면 "어떤 난수가 어디서 갈라지는지"를 추적할 방법이 없다.
 - `TraitKey` (FName): `walk_speed_multiplier` 등 특성별 고정 문자열.
 - `SpawnGeneration` (int32): 같은 ID를 재사용할 때만 쓰는 세대 번호. 필요 없으면 0.
 - 금지 입력: 현재 시각, 포인터 주소, Actor 스폰 순서, 프레임 번호 — 실행마다 달라질 수 있는 값은 절대 넣지 않는다.
