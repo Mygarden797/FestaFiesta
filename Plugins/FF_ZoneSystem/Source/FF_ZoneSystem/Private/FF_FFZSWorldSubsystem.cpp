@@ -1952,6 +1952,12 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
 }
 void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const
 {
+    if (Spec.Category == EFFZSFacilityCategory::Lighting)
+    {
+        // 조명에는 고객 Entry/Service/Queue 목적지가 없다. 본체 충돌과 보호 동선은
+        // 다른 배치 검증 단계에서 검사하고, 존재하지 않는 서비스 경로만 생략한다.
+        return;
+    }
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
     UWorld* World = GetWorld();
     if (!Settings->bEnableNavigationProjectionChecks || !World)
@@ -3357,6 +3363,12 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 bStateCompatible = Saved.Queue.State == EFFZSQueueState::Closed;
                 break;
             case EFFZSFacilityState::Active:
+                if (EffectiveSpec.Category == EFFZSFacilityCategory::Lighting)
+                {
+                    bStateCompatible = Saved.Queue.State == EFFZSQueueState::Closed &&
+                        Saved.Queue.Entries.IsEmpty();
+                    break;
+                }
                 bStateCompatible = !Saved.Queue.bDrainRequested &&
                     (Saved.Queue.State == EFFZSQueueState::Open ||
                      Saved.Queue.State == EFFZSQueueState::Full ||

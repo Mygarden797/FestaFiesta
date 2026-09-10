@@ -54,6 +54,7 @@ namespace
 		EFFZSFacilityCategory::Performance,
 		EFFZSFacilityCategory::Safety,
 		EFFZSFacilityCategory::PhotoSpot,
+		EFFZSFacilityCategory::Lighting,
 	};
 
 	// 아래 색상은 WBP가 없을 때 만들어지는 Slate 폴백 전용이다. 디자이너 경로의 색은 UPROPERTY를 따른다.
@@ -750,6 +751,15 @@ void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 			// 선택 가능 CommonButton으로 구성하고, 자동 선택 이벤트는 발생시키지 않은 채 현재 상태만 투영한다.
 			Button->SetButtonLabel(GetCategoryDisplayName(Category));
 			ApplyButtonIconBrush(Button, MakeAtlasIconBrush(GetCategoryAtlasIndex(Category)));
+			if (Category == EFFZSFacilityCategory::Lighting)
+			{
+				// The existing ten-cell atlas has no lighting glyph. Keep the readable label
+				// and its layout instead of displaying the template's empty white image.
+				if (UImage* Icon = Cast<UImage>(Button->GetWidgetFromName(TEXT("Image_Icon"))))
+				{
+					Icon->SetVisibility(ESlateVisibility::Hidden);
+				}
+			}
 			MakeButtonSurfaceTransparent(Button, TEXT("Surface"));
 			Button->SetIsSelectable(true);
 			Button->SetIsSelected(SelectedCategory == Category, false);
@@ -1253,6 +1263,7 @@ FText UFF_BuildCatalogScreen::GetCategoryDisplayName(const EFFZSFacilityCategory
 	case EFFZSFacilityCategory::Performance: return LOCTEXT("CategoryPerformance", "공연");
 	case EFFZSFacilityCategory::Safety: return LOCTEXT("CategorySafety", "안전");
 	case EFFZSFacilityCategory::PhotoSpot: return LOCTEXT("CategoryPhotoSpot", "포토스팟");
+	case EFFZSFacilityCategory::Lighting: return LOCTEXT("CategoryLighting", "조명");
 	default: return LOCTEXT("CategoryUnknown", "기타");
 	}
 }

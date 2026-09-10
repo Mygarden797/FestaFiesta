@@ -12,6 +12,12 @@
 #include "FF_FFZSLightingTestRig.h"
 #include "FF_FFZSSaveGameTestObject.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionLinearInterpolate.h"
+#include "Materials/MaterialExpressionMultiply.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include <limits>
 
@@ -38,6 +44,7 @@ bool FFFZSFacilityLightingLifecycleTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Configured child rig is created"), Rig)) return false;
     TestTrue(TEXT("Lighting child attaches to mesh"), Actor->FacilityLightingComponent->GetAttachParent() == Actor->VisualMesh);
     TestEqual(TEXT("Install automatically uses PDA brightness"), Rig->TestLight->Intensity, 1500.f);
+    TestTrue(TEXT("Install preserves authored lamp temperature"), Rig->TestLight->bUseTemperature);
     const FLinearColor AuthoredColor = Rig->TestLight->GetLightColor();
     TestTrue(TEXT("Light follows original mesh-space position and rotation"), Rig->TestLight->GetComponentLocation().Equals(
         Actor->VisualMesh->GetComponentTransform().TransformPosition(FVector(17, -31, 93)), 0.01));
@@ -50,9 +57,12 @@ bool FFFZSFacilityLightingLifecycleTest::RunTest(const FString& Parameters)
     Actor->ApplyFacilityLightingOverride(State, true);
     TestEqual(TEXT("Repeated multiplier never compounds"), Rig->TestLight->Intensity, 2000.f);
     TestTrue(TEXT("Linear color survives light FColor encoding"), Rig->TestLight->GetLightColor().Equals(State.Color, 0.01f));
+    TestFalse(TEXT("Custom color is not tinted by authored temperature"), Rig->TestLight->bUseTemperature);
     State.bOverrideColor = false;
     Actor->ApplyFacilityLightingOverride(State, true);
     TestTrue(TEXT("Authored per-light color returns"), Rig->TestLight->GetLightColor().Equals(AuthoredColor, 0.01f));
+    TestTrue(TEXT("Original color restores authored temperature mode"), Rig->TestLight->bUseTemperature);
+    TestEqual(TEXT("Authored warm temperature remains unchanged"), Rig->TestLight->Temperature, 2700.0f);
 
     Actor->SetActorHiddenInGame(true);
     TestEqual(TEXT("Hidden restore staging has no illumination"), Rig->TestLight->Intensity, 0.f);
@@ -123,6 +133,111 @@ bool FFFZSFacilityLightingValidationTest::RunTest(const FString& Parameters)
     TestNotEqual(TEXT("Rig reference participates in canonical command identity"), RigFingerprint, DefaultFingerprint);
     Command.FacilitySpec.LightingSettings.BrightnessMultiplier = 2.f;
     TestNotEqual(TEXT("PDA brightness participates in command identity"), UFFZSGridLibrary::BuildCommandFingerprint(Command), RigFingerprint);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSFacilityLightingEmissiveTest,
+    "FF_ZoneSystem.Lighting.EmissiveIsolationAndMaterialReplacement",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityLightingEmissiveTest::RunTest(const FString& Parameters)
+{
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Cube"), Cube)) return false;
+    UMaterial* Source = NewObject<UMaterial>();
+    UMaterialExpressionScalarParameter* BrightnessExpression = nullptr;
+    UMaterialExpressionScalarParameter* OverrideExpression = nullptr;
+    for (const FName Name : { FName(TEXT("FF_LightingBrightness")), FName(TEXT("FF_LightingUseColorOverride")) })
+    {
+        UMaterialExpressionScalarParameter* Scalar = NewObject<UMaterialExpressionScalarParameter>(Source);
+        Scalar->ParameterName = Name;
+        Scalar->DefaultValue = Name == TEXT("FF_LightingBrightness") ? 1.0f : 0.0f;
+        Source->GetExpressionCollection().AddExpression(Scalar);
+        if (Name == TEXT("FF_LightingBrightness")) BrightnessExpression = Scalar;
+        else OverrideExpression = Scalar;
+    }
+    UMaterialExpressionVectorParameter* Color = NewObject<UMaterialExpressionVectorParameter>(Source);
+    Color->ParameterName = TEXT("FF_LightingColor");
+    Color->DefaultValue = FLinearColor::White;
+    Source->GetExpressionCollection().AddExpression(Color);
+    UMaterialExpressionLinearInterpolate* Tint = NewObject<UMaterialExpressionLinearInterpolate>(Source);
+    Tint->ConstA = 1.0f;
+    Tint->B.Connect(0, Color);
+    Tint->Alpha.Connect(0, OverrideExpression);
+    Source->GetExpressionCollection().AddExpression(Tint);
+    UMaterialExpressionMultiply* Emission = NewObject<UMaterialExpressionMultiply>(Source);
+    Emission->A.Connect(0, Tint);
+    Emission->B.Connect(0, BrightnessExpression);
+    Source->GetExpressionCollection().AddExpression(Emission);
+    Source->GetEditorOnlyData()->EmissiveColor.Connect(0, Emission);
+    Source->UpdateCachedExpressionData();
+
+    AFFZSLightingTestRig* RigA = World->SpawnActor<AFFZSLightingTestRig>();
+    AFFZSLightingTestRig* RigB = World->SpawnActor<AFFZSLightingTestRig>();
+    if (!TestNotNull(TEXT("First rig"), RigA) || !TestNotNull(TEXT("Second rig"), RigB)) return false;
+    UStaticMeshComponent* MeshA = NewObject<UStaticMeshComponent>(RigA);
+    UStaticMeshComponent* MeshB = NewObject<UStaticMeshComponent>(RigB);
+    MeshA->SetStaticMesh(Cube);
+    MeshB->SetStaticMesh(Cube);
+    MeshA->SetMaterial(0, Source);
+    MeshB->SetMaterial(0, Source);
+
+    auto ReadScalar = [](const UMaterialInterface* Material, const FName Name)
+    {
+        float Value = -1.0f;
+        if (Material) Material->GetScalarParameterValue(FMaterialParameterInfo(Name), Value);
+        return Value;
+    };
+    FFFZSFacilityLightingState State;
+    State.BrightnessMultiplier = 2.5f;
+    State.bOverrideColor = true;
+    State.Color = FLinearColor(0.2f, 0.5f, 0.8f);
+    RigA->ApplyLightingState(State, true, MeshA);
+    UMaterialInstanceDynamic* MaterialA = Cast<UMaterialInstanceDynamic>(MeshA->GetMaterial(0));
+    if (!TestNotNull(TEXT("Opt-in material gets an instance"), MaterialA)) return false;
+    TestEqual(TEXT("Emissive uses selected brightness"), ReadScalar(MaterialA, TEXT("FF_LightingBrightness")), 2.5f);
+    TestEqual(TEXT("Override tint enabled"), ReadScalar(MaterialA, TEXT("FF_LightingUseColorOverride")), 1.0f);
+    FLinearColor AppliedColor;
+    TestTrue(TEXT("Color parameter exists"), MaterialA->GetVectorParameterValue(
+        FMaterialParameterInfo(TEXT("FF_LightingColor")), AppliedColor));
+    TestTrue(TEXT("Emissive tint matches real light color"), AppliedColor.Equals(State.Color));
+    RigA->ApplyLightingState(State, true, MeshA);
+    TestTrue(TEXT("Repeated edits reuse material instance"), MeshA->GetMaterial(0) == MaterialA);
+    TestEqual(TEXT("Repeated brightness does not compound"), ReadScalar(MaterialA, TEXT("FF_LightingBrightness")), 2.5f);
+    TestEqual(TEXT("Source asset keeps authored appearance"), ReadScalar(Source, TEXT("FF_LightingBrightness")), 1.0f);
+    TestTrue(TEXT("Other facility still references original"), MeshB->GetMaterial(0) == Source);
+
+    State.bEnabled = false;
+    RigA->ApplyLightingState(State, true, MeshA);
+    TestEqual(TEXT("Off extinguishes bulb material too"), ReadScalar(MaterialA, TEXT("FF_LightingBrightness")), 0.0f);
+    State.bEnabled = true;
+    RigA->ApplyLightingState(State, false, MeshA);
+    TestEqual(TEXT("Hidden staging suppresses emissive"), ReadScalar(MaterialA, TEXT("FF_LightingBrightness")), 0.0f);
+    State = FFFZSFacilityLightingState();
+    RigA->ApplyLightingState(State, true, MeshA);
+    TestEqual(TEXT("Reset restores authored brightness"), ReadScalar(MaterialA, TEXT("FF_LightingBrightness")), 1.0f);
+    TestEqual(TEXT("Reset restores original colors"), ReadScalar(MaterialA, TEXT("FF_LightingUseColorOverride")), 0.0f);
+
+    // A shared external dynamic material must also be isolated and retain a valid non-MID parent.
+    MeshB->SetMaterial(0, MaterialA);
+    State.BrightnessMultiplier = 4.0f;
+    RigB->ApplyLightingState(State, true, MeshB);
+    UMaterialInstanceDynamic* MaterialB = Cast<UMaterialInstanceDynamic>(MeshB->GetMaterial(0));
+    if (!TestNotNull(TEXT("Shared MID is copied"), MaterialB)) return false;
+    TestTrue(TEXT("Facilities own distinct dynamic instances"), MaterialB != MaterialA);
+    TestTrue(TEXT("Copied MID has original renderable parent"), MaterialB->Parent == Source);
+    TestEqual(TEXT("Editing copied MID leaves first fixture unchanged"), ReadScalar(MaterialA, TEXT("FF_LightingBrightness")), 1.0f);
+
+    MeshB->SetMaterial(0, Source);
+    RigB->ApplyLightingState(State, true, MeshB);
+    TestEqual(TEXT("Replaced mesh material receives current state"), ReadScalar(MeshB->GetMaterial(0), TEXT("FF_LightingBrightness")), 4.0f);
+    UMaterialInterface* Uncontrolled = Cube->GetMaterial(0);
+    MeshB->SetMaterial(0, Uncontrolled);
+    RigB->ApplyLightingState(State, true, MeshB);
+    TestTrue(TEXT("Ordinary materials remain untouched"), MeshB->GetMaterial(0) == Uncontrolled);
+    RigA->Destroy();
+    RigB->Destroy();
     return true;
 }
 

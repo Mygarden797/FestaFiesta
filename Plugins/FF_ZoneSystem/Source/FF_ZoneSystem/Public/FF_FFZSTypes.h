@@ -22,6 +22,7 @@ class UStaticMesh;
 
 // 존 허용 규칙과 UI 분류에 쓰는 시설의 기능 카테고리.
 // 새 값 추가 시 저장 호환성, FacilityDefinition Data Asset, 정책 어댑터, UI 표시를 함께 갱신.
+// 기존 저장 카테고리 ordinal을 유지하도록 새 값은 마지막에만 추가한다.
 UENUM(BlueprintType)
 enum class EFFZSFacilityCategory : uint8
 {
@@ -31,7 +32,8 @@ enum class EFFZSFacilityCategory : uint8
     Rest UMETA(DisplayName = "Rest", ToolTip = "좌석·쉼터 등 휴식 시설입니다."),
     Performance UMETA(DisplayName = "Performance", ToolTip = "무대와 공연 운영 시설입니다."),
     Safety UMETA(DisplayName = "Safety", ToolTip = "의무실·안전 지원 시설입니다."),
-    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다.")
+    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다."),
+    Lighting UMETA(DisplayName = "Lighting", ToolTip = "설치 후 점등·밝기·색상을 조절하는 조명 시설입니다.")
 };
 
 //권한 시설 수명주기.

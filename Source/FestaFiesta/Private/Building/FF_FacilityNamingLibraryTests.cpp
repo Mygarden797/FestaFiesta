@@ -12,18 +12,18 @@
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 
-// 네이밍 규칙 표가 현재 지원하는 일곱 대분류와 대표 소분류를 모두 노출하는지 검증한다.
+// 네이밍 규칙 표가 현재 지원하는 여덟 대분류와 대표 소분류를 모두 노출하는지 검증한다.
 // 이 테스트가 깨지면 enum 추가/변경과 규칙 표 갱신이 어긋났거나, 기존 데이터 에셋의 공개 토큰이
 // 의도치 않게 바뀌었다는 뜻이다. ProductFilter로 등록해 개발 자동화 실행에서 회귀를 빠르게 찾는다.
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityNamingLibrary_CategoryTables,
-	"FestaFiesta.Building.FacilityNaming.CategoryTablesExposeSevenMajors",
+	"FestaFiesta.Building.FacilityNaming.CategoryTablesExposeEightMajors",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FFF_FacilityNamingLibrary_CategoryTables::RunTest(const FString& Parameters)
 {
-	// 대분류 토큰은 데이터 에셋 ID의 첫 부분이므로 일곱 카테고리 전체를 정확한 영문 표기로 고정한다.
+	// 대분류 토큰은 데이터 에셋 ID의 첫 부분이므로 여덟 카테고리 전체를 정확한 영문 표기로 고정한다.
 	TestEqual(TEXT("Booth 대분류"),
 		UFF_FacilityNamingLibrary::GetMajorToken(EFFZSFacilityCategory::Booth), FName(TEXT("Booth")));
 	TestEqual(TEXT("Toilet 대분류"),
@@ -38,6 +38,10 @@ bool FFF_FacilityNamingLibrary_CategoryTables::RunTest(const FString& Parameters
 		UFF_FacilityNamingLibrary::GetMajorToken(EFFZSFacilityCategory::Safety), FName(TEXT("Safety")));
 	TestEqual(TEXT("PhotoSpot 대분류"),
 		UFF_FacilityNamingLibrary::GetMajorToken(EFFZSFacilityCategory::PhotoSpot), FName(TEXT("PhotoSpot")));
+	TestEqual(TEXT("Lighting 대분류"),
+		UFF_FacilityNamingLibrary::GetMajorToken(EFFZSFacilityCategory::Lighting), FName(TEXT("Lighting")));
+	TestEqual(TEXT("Lighting 카테고리는 기존 저장값 뒤에 추가된다"),
+		static_cast<uint8>(EFFZSFacilityCategory::Lighting), static_cast<uint8>(7));
 
 	// Booth는 소비자 취향 매핑에 직접 사용되는 대표 카테고리다. 개수와 양 끝의 대표 토큰을 함께 검사해
 	// 목록이 통째로 비거나 일부 항목이 우연히 누락되는 회귀를 포착한다.
@@ -46,6 +50,12 @@ bool FFF_FacilityNamingLibrary_CategoryTables::RunTest(const FString& Parameters
 	TestEqual(TEXT("Booth 소분류 수"), BoothMinors.Num(), 5);
 	TestTrue(TEXT("Booth FoodStall 소분류"), BoothMinors.Contains(TEXT("FoodStall")));
 	TestTrue(TEXT("Booth Nightlife 소분류"), BoothMinors.Contains(TEXT("Nightlife")));
+	const TArray<FName> LightingMinors =
+		UFF_FacilityNamingLibrary::GetKnownMinorTokens(EFFZSFacilityCategory::Lighting);
+	TestEqual(TEXT("Lighting 소분류 수"), LightingMinors.Num(), 3);
+	TestTrue(TEXT("Lighting 장식 조명 소분류"), LightingMinors.Contains(TEXT("Decorative")));
+	TestTrue(TEXT("Lighting 펜던트 조명 소분류"), LightingMinors.Contains(TEXT("Pendant")));
+	TestTrue(TEXT("Lighting 가로등 소분류"), LightingMinors.Contains(TEXT("Streetlamp")));
 	return true;
 }
 

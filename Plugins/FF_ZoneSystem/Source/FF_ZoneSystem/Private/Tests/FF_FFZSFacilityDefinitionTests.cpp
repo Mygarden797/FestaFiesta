@@ -68,6 +68,42 @@ namespace
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSPassiveLightingDefinitionTest,
+    "FF_ZoneSystem.Unit.Definitions.PassiveLightingHasNoServiceGeometry",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPassiveLightingDefinitionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Info);
+    Spec.Category = EFFZSFacilityCategory::Lighting;
+    Spec.FacilityDefinitionId = TEXT("Lighting_Streetlamp_FestivalStreetlamp");
+    Spec.QueueRules.MaxWaitingAgents = 0;
+    Spec.QueueRules.ServiceCapacity = 0;
+    Spec.QueueReservedRects.Reset();
+    Spec.QueueReservedCells.Reset();
+    Spec.QueueSplinePointsCm.Reset();
+    Spec.Anchors.Reset();
+    TArray<FText> Errors;
+    TestTrue(TEXT("조명은 방문객 대기열과 서비스 앵커 없이 유효하다"), Spec.IsValid(Errors));
+
+    FFFZSFacilitySpec Invalid = Spec;
+    Invalid.QueueRules.ServiceCapacity = 1;
+    TestFalse(TEXT("조명에는 서비스 정원을 만들 수 없다"), Invalid.IsValid(Errors));
+    TestTrue(TEXT("조명 전용 오류를 안내한다"), ContainsErrorText(Errors, TEXT("조명 시설은")));
+    Invalid = Spec;
+    Invalid.Anchors.AddDefaulted();
+    TestFalse(TEXT("조명에 고객 이동 앵커를 붙일 수 없다"), Invalid.IsValid(Errors));
+    Invalid = Spec;
+    Invalid.QueueReservedRects.Emplace(FIntPoint(1000, 0), FIntPoint(1100, 100));
+    TestFalse(TEXT("조명에 고객 대기 공간을 예약할 수 없다"), Invalid.IsValid(Errors));
+    Invalid = Spec;
+    Invalid.Category = EFFZSFacilityCategory::Info;
+    TestFalse(TEXT("서비스 시설에는 기존 대기열·앵커 계약이 유지된다"), Invalid.IsValid(Errors));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FFFZSOneCentimeterTestFacilityDefinitionsTest,
     "FF_ZoneSystem.Unit.Definitions.OneCentimeterTestFacilityFixtures",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

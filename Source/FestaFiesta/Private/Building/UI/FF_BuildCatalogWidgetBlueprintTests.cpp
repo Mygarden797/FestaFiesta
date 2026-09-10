@@ -584,8 +584,8 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			Screen->SetCatalogEntries({ Entry });
 
 			// 진단 카운터는 실제 성공적으로 생성된 위젯만 세므로 템플릿 로드나 CreateWidget 실패도 감지한다.
-			TestEqual(TEXT("Designer screen creates seven major-category buttons"),
-				Screen->GetDisplayedCategoryCount(), 7);
+			TestEqual(TEXT("Designer screen creates eight major-category buttons"),
+				Screen->GetDisplayedCategoryCount(), 8);
 			TestEqual(TEXT("Designer screen creates one facility card from one entry"),
 				Screen->GetDisplayedFacilityCardCount(), 1);
 
@@ -595,8 +595,8 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			TestNotNull(TEXT("Designer screen exposes the category-button row"), CategoryButtons);
 			if (CategoryButtons)
 			{
-				TestEqual(TEXT("Category row contains seven button widgets"),
-					CategoryButtons->GetChildrenCount(), 7);
+				TestEqual(TEXT("Category row contains eight button widgets"),
+					CategoryButtons->GetChildrenCount(), 8);
 				for (int32 Index = 0; Index < CategoryButtons->GetChildrenCount(); ++Index)
 				{
 					UFF_CommonButtonBase* CategoryButton =
@@ -631,7 +631,12 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 						FString::Printf(TEXT("Category child %d binds Image_Icon"), Index),
 						CategoryIcon);
 					// 앞선 텍스처 로드가 성공했을 때만 리소스 동일성을 비교해 하나의 누락이 연쇄 nullptr 실패를 만들지 않게 한다.
-					if (CategoryIcon && IconAtlas)
+					if (CategoryIcon && Index == 7)
+					{
+						TestEqual(TEXT("Lighting category hides the missing legacy atlas glyph"),
+							CategoryIcon->GetVisibility(), ESlateVisibility::Hidden);
+					}
+					else if (CategoryIcon && IconAtlas)
 					{
 						TestEqual(
 							FString::Printf(TEXT("Category child %d loads the icon atlas"), Index),

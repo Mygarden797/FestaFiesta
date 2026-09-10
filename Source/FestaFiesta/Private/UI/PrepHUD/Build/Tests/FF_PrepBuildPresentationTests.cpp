@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
@@ -47,16 +48,17 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 		EFFZSFacilityCategory::Rest,
 		EFFZSFacilityCategory::Performance,
 		EFFZSFacilityCategory::Safety,
-		EFFZSFacilityCategory::PhotoSpot
+		EFFZSFacilityCategory::PhotoSpot,
+		EFFZSFacilityCategory::Lighting
 	};
 	const TCHAR* ExpectedLabels[] = {
 		TEXT("부스"), TEXT("화장실"), TEXT("안내"), TEXT("휴게"),
-		TEXT("공연"), TEXT("안전"), TEXT("포토스팟")
+		TEXT("공연"), TEXT("안전"), TEXT("포토스팟"), TEXT("조명")
 	};
 
 	const TConstArrayView<EFFZSFacilityCategory> Categories =
 		FFF_PrepBuildPresentationRules::GetCategoryOrder();
-	TestEqual(TEXT("시설 대분류 칩은 일곱 종류다"), Categories.Num(), 7);
+	TestEqual(TEXT("시설 대분류 칩은 조명을 포함한 여덟 종류다"), Categories.Num(), 8);
 
 	TArray<FFF_BuildCatalogEntry> Entries;
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(ExpectedCategories); ++Index)
@@ -83,7 +85,7 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 	{
 		VisibleCount += FFF_PrepBuildPresentationRules::IsEntryVisible(Entry, Filter) ? 1 : 0;
 	}
-	TestEqual(TEXT("전체 칩은 일곱 카테고리를 모두 통과시킨다"), VisibleCount, 7);
+	TestEqual(TEXT("전체 칩은 여덟 카테고리를 모두 통과시킨다"), VisibleCount, 8);
 
 	Filter.bFilterByCategory = true;
 	for (const EFFZSFacilityCategory Category : Categories)
@@ -98,6 +100,59 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 			*FString::Printf(TEXT("%s 칩은 자기 시설만 남긴다"),
 				*UEnum::GetValueAsString(Category)),
 			VisibleCount, 1);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_LightingCatalogTest,
+	"FestaFiesta.UI.PrepBuild.LightingCatalogAndSearch",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_LightingCatalogTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+	const TCHAR* LightingIds[] = {
+		TEXT("Lighting_Decorative_CurtainArch"), TEXT("Lighting_Decorative_Festoon"),
+		TEXT("Lighting_Decorative_GoldenTree"), TEXT("Lighting_Pendant_RattanPendant"),
+		TEXT("Lighting_Decorative_StarTree"), TEXT("Lighting_Streetlamp_FestivalStreetlamp")
+	};
+	TArray<FFF_BuildCatalogEntry> Entries;
+	for (const TCHAR* Id : LightingIds)
+	{
+		FFF_FacilityNameParts Parts;
+		FString Failure;
+		if (!TestTrue(*FString::Printf(TEXT("조명 정의 ID %s가 카탈로그 규칙을 통과한다"), Id),
+			UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+				EFFZSFacilityCategory::Lighting, FName(Id), Parts, Failure)))
+		{
+			continue;
+		}
+		Entries.Add(MakeEntry(Id, *Parts.UniqueToken, EFFZSFacilityCategory::Lighting,
+			*Parts.MinorToken.ToString(), 100));
+	}
+	Entries.Add(MakeEntry(TEXT("Booth_FoodStall_Test"), TEXT("먹거리 부스"),
+		EFFZSFacilityCategory::Booth, TEXT("FoodStall"), 100));
+	UFF_PrepBuildPresentationModel* Model = NewObject<UFF_PrepBuildPresentationModel>();
+	FFF_PrepBuildFilter Filter;
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Lighting;
+	Filter.SearchText = TEXT("조명");
+	Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 1000, true, FText::GetEmpty());
+	TestEqual(TEXT("조명 분류와 한글 검색에서 여섯 종류를 모두 표시한다"), Model->GetVisibleTiles().Num(), 6);
+	for (const UFF_PrepBuildTileData* Tile : Model->GetVisibleTiles())
+	{
+		TestTrue(TEXT("조명 카드는 설치 명령용 정의 ID를 보존한다"), !Tile->GetFacilityDefinitionId().IsNone());
+		TestTrue(TEXT("잔액이 충분한 조명 카드는 배치 가능하다"), Tile->IsAffordable());
+	}
+	Filter.MinorToken = TEXT("Streetlamp");
+	Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 1000, true, FText::GetEmpty());
+	TestEqual(TEXT("가로등 소분류는 FestivalStreetlamp 한 종류만 표시한다"), Model->GetVisibleTiles().Num(), 1);
+	if (Model->GetVisibleTiles().Num() == 1)
+	{
+		TestEqual(TEXT("가로등 카드는 올바른 시설을 배치한다"),
+			Model->GetVisibleTiles()[0]->GetFacilityDefinitionId(), FName(LightingIds[5]));
 	}
 	return true;
 }
@@ -328,7 +383,8 @@ bool FFF_PrepBuildPresentation_TaxonomyTest::RunTest(const FString& Parameters)
 		TEXT("Seating"), TEXT("Shade"), TEXT("Picnic"), TEXT("Cooling"),
 		TEXT("MainStage"), TEXT("SubStage"), TEXT("Busking"), TEXT("ExperienceStage"),
 		TEXT("FirstAid"), TEXT("Security"), TEXT("FireSafety"), TEXT("Evacuation"),
-		TEXT("Landmark"), TEXT("Theme"), TEXT("Scenic"), TEXT("Interactive")
+		TEXT("Landmark"), TEXT("Theme"), TEXT("Scenic"), TEXT("Interactive"),
+		TEXT("Decorative"), TEXT("Pendant"), TEXT("Streetlamp")
 	};
 	for (const FName Token : KnownMinorTokens)
 	{

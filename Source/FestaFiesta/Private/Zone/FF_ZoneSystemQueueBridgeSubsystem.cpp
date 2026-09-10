@@ -388,7 +388,8 @@ float UFF_ZoneSystemQueueBridgeSubsystem::ToProjectMaxWaitSeconds(
 
 bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacilityActor& Facility)
 {
-	if (!QueueSystem)
+	// 조명은 Party 서비스 시설이 아니므로 Queue ID나 이동 슬롯을 만들지 않는다.
+	if (!QueueSystem || Facility.GetFacilitySpec().Category == EFFZSFacilityCategory::Lighting)
 	{
 		return false;
 	}
@@ -580,7 +581,8 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 	case EFFZSCommandType::Move:
 		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
 		{
-			if (!RegisterOrRefreshFacility(*Facility))
+			if (Facility->GetFacilitySpec().Category != EFFZSFacilityCategory::Lighting &&
+				!RegisterOrRefreshFacility(*Facility))
 			{
 				// Move는 Zone 권위 배치가 커밋된 뒤 이 이벤트를 방송한다. 새 Queue geometry를 만들지
 				// 못한 경우 이전 위치의 Queue를 남기면 다음 Open에서 잘못된 동선을 재활성화할 수 있다.
@@ -694,7 +696,8 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response; // 예약자는 슬롯 좌표만 사용하고 일반 서비스 Queue에는 가입하지 않는다.
 	}
-	if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::Active)
+	if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::Active ||
+		Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Lighting)
 	{
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response;

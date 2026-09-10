@@ -63,7 +63,7 @@ void UFF_FacilityLightingControls::ApplyViewData(const FFF_FacilityInfoViewData&
 	}
 	if (Text_LightingColorStatus) Text_LightingColorStatus->SetText(ViewData.LightingState.bOverrideColor
 		? LOCTEXT("ColorOverride", "선택한 색을 모든 조명에 적용 중")
-		: LOCTEXT("OriginalColors", "Blueprint의 개별 조명 색상 사용 중"));
+		: LOCTEXT("OriginalColors", "원래 조명 색상 사용 중"));
 }
 
 bool UFF_FacilityLightingControls::CanSendCommand() const

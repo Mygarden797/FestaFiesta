@@ -8,7 +8,7 @@
 /** 에디터나 위젯 없이 자동화 테스트할 수 있는 배치 패널 표현 규칙입니다. */
 struct FESTAFIESTA_API FFF_PrepBuildPresentationRules
 {
-	/** ZoneSystem이 지원하는 일곱 대분류를 카탈로그와 같은 결정적 순서로 제공합니다. */
+	/** 조명을 포함한 대분류를 카탈로그와 같은 결정적 순서로 제공합니다. */
 	static TConstArrayView<EFFZSFacilityCategory> GetCategoryOrder();
 
 	/** 카테고리 칩에 사용하는 짧은 현지화 표기입니다. */

@@ -1392,7 +1392,7 @@ namespace FFFacilityInfoWbpBuilder
 			!BrightnessValue || !Slider || !Colors || !ColorStatus || !ColorInput || !Reset) return false;
 		PaintBorder(*Card, MakeSolidBrush(P.Paper, 8.0f, P.Line, 1.0f));
 		Card->SetPadding(FMargin(10.0f, 8.0f));
-		Title->SetText(FText::FromString(TEXT("무대 조명")));
+		Title->SetText(FText::FromString(TEXT("조명 설정")));
 		StyleLightText(*Title, 14, P.TealDeep, TEXT("SemiBold"));
 		AddHorizontal(*Header, *Title, FMargin(0), ESlateSizeRule::Fill);
 		AddHorizontal(*Header, *Toggle);
@@ -1458,6 +1458,17 @@ namespace FFFacilityInfoWbpBuilder
 			if (Existing && Existing->GeneratedClass && Existing->GeneratedClass->IsChildOf(UFF_FacilityLightingControls::StaticClass()) &&
 				HasLightingControlsContract(*Existing))
 			{
+				// Generalize the original stage-only caption while retaining any designer custom title.
+				if (UCommonTextBlock* Title = Cast<UCommonTextBlock>(Existing->WidgetTree->FindWidget(TEXT("Text_LightingTitle"))))
+				{
+					if (Title->GetText().ToString() == TEXT("무대 조명"))
+					{
+						Existing->Modify();
+						Title->Modify();
+						Title->SetText(FText::FromString(TEXT("조명 설정")));
+						if (!SaveBlueprint(*Existing)) return nullptr;
+					}
+				}
 				UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_LIGHTING_UMG_REUSE: %s (designer changes preserved)"), *LightingPackage);
 				return Existing;
 			}

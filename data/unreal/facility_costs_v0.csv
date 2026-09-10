@@ -12,6 +12,12 @@ Cost.Info.GeneralInfo.General,300
 Cost.Info.LostFound.Lost,300
 Cost.Info.Ticketing.Ticket,200
 Cost.Info.Translation.Translation,500
+Cost.Lighting.Decorative.CurtainArch,100
+Cost.Lighting.Decorative.Festoon,50
+Cost.Lighting.Decorative.GoldenTree,100
+Cost.Lighting.Pendant.RattanPendant,50
+Cost.Lighting.Decorative.StarTree,50
+Cost.Lighting.Streetlamp.FestivalStreetlamp,50
 Cost.Performance.Busking.Busking,1000
 Cost.Performance.ExperienceStage.Experience,800
 Cost.Performance.MainStage.SunsetMainStage,2000

@@ -1056,7 +1056,7 @@ void AFFZSFacilityActor::UpdateFacilityLighting()
     {
         const bool bShow = !IsHidden() && FacilityState != EFFZSFacilityState::Removed && !IsActorBeingDestroyed();
         Rig->SetActorHiddenInGame(!bShow);
-        Rig->ApplyLightingState(GetLightingState(), bShow && VisualMesh && VisualMesh->GetStaticMesh());
+        Rig->ApplyLightingState(GetLightingState(), bShow && VisualMesh && VisualMesh->GetStaticMesh(), VisualMesh);
     }
 }
 
