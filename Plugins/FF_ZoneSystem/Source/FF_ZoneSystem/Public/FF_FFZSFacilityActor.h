@@ -213,6 +213,7 @@ private:
     friend class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
     friend class FFFZSFacilityLevelPresentationTest;
     friend class FFFZSFacilityLightingLifecycleTest;
+    friend class FFFZSAudienceWorldTest;
 #endif
 
     // 권한 수명주기 변경은 의도적으로 월드 서브시스템에만 공개한다.

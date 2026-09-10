@@ -35,6 +35,9 @@ public:
     // Cheap cardinality preflight used before validation, fingerprinting, or geometry work.
     static bool HasSafeFacilitySpecCardinality(const FFFZSFacilitySpec& Spec);
 
+    // Converts centre-local audience bounds to footprint-corner cm coordinates, rounded outward.
+    static bool TryGetAudienceReservedRect(const FFFZSFacilitySpec& Spec, FFFZSCellRect& OutRect);
+
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Validation")
     static int32 GetMaxEnumeratedCellsPerFacility();
 	// Project Settings 값을 하드 상한 10,000,000에 제한한 실제 열거 예산을 반환.

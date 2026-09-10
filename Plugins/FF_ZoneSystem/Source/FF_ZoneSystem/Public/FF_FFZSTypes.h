@@ -9,6 +9,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/SoftObjectPtr.h"
+#include "FF_FFZSAudienceLayout.h"
 #include "FF_FFZSTypes.generated.h"
 
 class AActor;
@@ -602,6 +603,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
     FFFZSQueueRules QueueRules;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audience", meta = (DisplayName = "Audience Layout", ToolTip = "공연 관람 공간·자리 간격·입퇴장·관람 방향입니다. 켜면 일반 Queue와 별개로 관람 공간을 확보합니다. NPC 행동과 시간표는 외부 담당자가 연결합니다."))
+    FFFZSAudienceLayout Audience;
 
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Use Facility Levels", ToolTip = "켜면 시설에 레벨을 표시하고 아래 강화 단계를 사용합니다. 단계가 없으면 최대 Lv.1입니다. 끄면 저장된 단계 설정은 보존하지만 레벨 표시와 강화를 사용하지 않습니다."))
     bool bUsesFacilityLevels = false;

@@ -209,6 +209,7 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
     Result.PlacementObstacleHeightCm *= SizeMultiplier;
     Result.VisualOffsetCm *= SizeMultiplier;
     Result.AudioSettings.LocalOffsetCm *= SizeMultiplier;
+    Result.Audience.ApplySizeMultiplier(SizeMultiplier);
     for (FVector& Point : Result.QueueSplinePointsCm)
     {
         Point *= SizeMultiplier;
@@ -304,6 +305,7 @@ bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
+    Audience.IsValid(OutErrors);
     FText UpgradeError;
     // Disabled levels keep authored data, so malformed tiers still fail validation before re-enabling.
     if (!FFZSFacilityUpgradeRules::ValidateTiers(UpgradeTiers, UpgradeError))
@@ -349,7 +351,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         OutErrors.Add(FText::Format(
             LOCTEXT(
                 "FacilityCellEnumerationLimit",
-                "Footprint, 여유 공간 및 Queue 예약 영역은 최대 {0}개의 1cm Cell만 표현할 수 있습니다."),
+                "시설 본체·여유 공간·일반 Queue는 공통 면적 한도 {0}cm² 안에 있어야 합니다. 관람 영역은 Audience Area Limit이 0이면 공통 한도에 합산하고, 양수면 설정한 m² 한도를 따릅니다. 관람 인원을 늘리려면 해당 시설의 Audience Area Limit을 먼저 확인하세요."),
             FText::AsNumber(UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())));
     }
 
@@ -487,6 +489,20 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         LocalQueueRects.Emplace(Cell, FIntPoint(Cell.X + 1, Cell.Y + 1));
     }
     LocalQueueRects = UFFZSGridLibrary::CanonicalizeCellRects(LocalQueueRects);
+
+    if (Audience.bEnabled)
+    {
+        FFFZSCellRect AudienceRect;
+        if (UFFZSGridLibrary::TryGetAudienceReservedRect(*this, AudienceRect))
+        {
+            const FFFZSCellRect Body(FIntPoint::ZeroValue, FootprintSizeCells);
+            if (AudienceRect.Intersects(Body)
+                || UFFZSGridLibrary::DoCellRectSetsOverlap({ AudienceRect }, LocalQueueRects))
+            {
+                OutErrors.Add(LOCTEXT("AudienceOverlap", "Audience: 관람 예약 영역은 건물 바닥이나 일반 Queue 예약 영역과 겹칠 수 없습니다. 첫 자리 위치를 옮기세요."));
+            }
+        }
+    }
 
     const TArray<FFFZSCellRect> LocalFootprintRects = {
         FFFZSCellRect(FIntPoint::ZeroValue, FootprintSizeCells)
