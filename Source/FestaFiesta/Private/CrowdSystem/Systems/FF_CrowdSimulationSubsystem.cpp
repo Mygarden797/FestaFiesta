@@ -4,8 +4,10 @@
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
+#include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
@@ -70,9 +72,8 @@ namespace
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
-	
-	
 
+	RefreshLanesFromWorld();
 }
 
 void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
@@ -1641,6 +1642,18 @@ void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 		return;
 	}
 
+	const int32 Dropped = DropAllPaths();
+	++PathLayoutInvalidations;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
+		Revision, Dropped, PathQueriesPerStep);
+}
+
+// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
+// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다.
+int32 UFF_CrowdSimulationSubsystem::DropAllPaths()
+{
 	int32 Dropped = 0;
 	for (FFF_CrowdPathFollower& Follower : PathFollowers)
 	{
@@ -1651,14 +1664,133 @@ void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 		}
 	}
 
-	// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
-	// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다
+	for (int32& LaneIndex : AgentLaneIndices)
+	{
+		LaneIndex = INDEX_NONE;
+	}
+
 	PathQueryCursor = 0;
-	++PathLayoutInvalidations;
+	return Dropped;
+}
+
+// 저작 액터에서 폴리라인을 다시 굽는다.
+//
+// AFF_CrowdLane은 아무 곳에도 자기를 등록하지 않으므로 BeginPlay 순서에 기대지 않고
+// TActorIterator로 직접 훑는다. 빈도가 낮은 연산이고(맵 로드 / 레인 변경 시 1회)
+// 스플라인을 매 경로 쿼리에서 들여다보는 것을 이걸로 막는다.
+//
+// 레벨에 레인이 하나도 없으면 Lanes가 비고, TryBuildPath가 항상 실패해 NavMesh로만
+// 돈다 — 레인을 도입하기 전과 동작이 같다.
+int32 UFF_CrowdSimulationSubsystem::RefreshLanesFromWorld()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return 0;
+	}
+
+	TArray<FFF_CrowdSplineLane> Collected;
+	int32 SkippedCount = 0;
+
+	for (TActorIterator<AFF_CrowdLane> It(World); It; ++It)
+	{
+		const AFF_CrowdLane* LaneActor = *It;
+		if (!IsValid(LaneActor))
+		{
+			continue;
+		}
+
+		TArray<FVector> PointsCm;
+		LaneActor->BuildPolylineCm(PointsCm);
+
+		if (PointsCm.Num() < 2)
+		{
+			++SkippedCount;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[CrowdSimulationSubsystem] 레인 %s: 점이 %d개라 건너뛴다 (스플라인 점 2개 이상 필요)"),
+				*LaneActor->GetActorNameOrLabel(), PointsCm.Num());
+			continue;
+		}
+
+		FFF_CrowdSplineLane Lane;
+		Lane.Points = MoveTemp(PointsCm);
+		Lane.HalfWidthCm = LaneActor->LaneHalfWidthCm;
+		Lane.bOneWay = LaneActor->bOneWay;
+		Lane.RebuildDerived();
+
+		if (!Lane.IsUsable())
+		{
+			++SkippedCount;
+			continue;
+		}
+
+		Collected.Add(MoveTemp(Lane));
+	}
+
+	const int32 LaneNum = Collected.Num();
+	SetLanes(MoveTemp(Collected));
 
 	UE_LOG(LogTemp, Log,
-		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
-		Revision, Dropped, PathQueriesPerStep);
+		TEXT("[CrowdSimulationSubsystem] 레인 %d개 베이크 (건너뜀 %d개), 경로추종 %s, 레인경로 %s"),
+		LaneNum, SkippedCount,
+		bEnablePathFollowing ? TEXT("on") : TEXT("off"),
+		bEnableLanePathing ? TEXT("on") : TEXT("off"));
+
+	return LaneNum;
+}
+
+void UFF_CrowdSimulationSubsystem::SetLanes(TArray<FFF_CrowdSplineLane> NewLanes)
+{
+	Lanes = MoveTemp(NewLanes);
+
+	// 낡은 경로는 이전 레인 배치로 뽑힌 것이다. 목적지가 그대로여서 UpdatePathFollowing의
+	// Reset 조건에 걸리지 않으므로 여기서 버려야 한다 — 배치 변경 무효화와 같은 이유다
+	DropAllPaths();
+}
+
+// 레인 경로의 Points[0]은 언제나 TryBuildPath가 낸 진입점이다 — 중간 정점은
+// 1cm 병합을 거쳐 그 뒤에 붙으므로 첫 원소가 밀려나지 않는다.
+bool UFF_CrowdSimulationSubsystem::GetLaneFollowInfo(int32 AgentIndex,
+	FFF_CrowdLaneFollowInfo& OutInfo) const
+{
+	OutInfo = FFF_CrowdLaneFollowInfo();
+
+	if (!UnitDatas.IsValidIndex(AgentIndex) || !PathFollowers.IsValidIndex(AgentIndex))
+	{
+		return false;
+	}
+
+	const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+	if (!Follower.bHasPath || Follower.Points.IsEmpty())
+	{
+		return false;
+	}
+
+	OutInfo.bHasPath = true;
+	OutInfo.LaneIndex = AgentLaneIndices.IsValidIndex(AgentIndex)
+		? AgentLaneIndices[AgentIndex]
+		: INDEX_NONE;
+	OutInfo.EntryPointCm = Follower.Points[0];
+	OutInfo.DistanceToEntryCm = static_cast<float>(
+		FVector::Dist2D(UnitDatas[AgentIndex].Position, Follower.Points[0]));
+	OutInfo.bApproachingEntry = (Follower.NextIndex == 0);
+	OutInfo.ConsumedCount = Follower.NextIndex;
+	OutInfo.TotalCount = Follower.Points.Num();
+
+	return true;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetUsableLaneCount() const
+{
+	int32 Count = 0;
+	for (const FFF_CrowdSplineLane& Lane : Lanes)
+	{
+		if (Lane.IsUsable())
+		{
+			++Count;
+		}
+	}
+	return Count;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetPathFollowingCount() const
@@ -1689,6 +1821,11 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 	if (PathFollowers.Num() != PoolSize)
 	{
 		PathFollowers.SetNum(PoolSize);
+	}
+
+	if (AgentLaneIndices.Num() != PoolSize)
+	{
+		AgentLaneIndices.Init(INDEX_NONE, PoolSize);
 	}
 
 	InvalidatePathsOnLayoutChange();
@@ -1778,6 +1915,56 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 	PathQueryBacklog = Backlog;
 }
 
+// 저작된 레인으로 경로를 낸다. 실패하면 호출부가 NavMesh로 떨어진다.
+//
+// TryBuildPath가 내는 점 목록은 [진입점, 중간 정점들, 이탈점, 목적지] 순서이고
+// 시작점을 포함하지 않는다 — FFF_CrowdPathFollower::Points의 규약과 그대로 맞는다.
+// 마지막 원소가 목적지 자체이므로 NavMesh 완전 경로와 도착 판정이 같다.
+//
+// 레인은 NavMesh와 달리 진입점까지의 직선을 검사하지 않는다. 그 구간의 건물 우회는
+// 사회력의 벽 반발이 맡고, 진입 반경(LaneEntrySnapRadiusCm)이 그 직선의 길이 상한이다.
+bool UFF_CrowdSimulationSubsystem::TryBuildLanePathForAgent(int32 AgentIndex)
+{
+	if (!bEnableLanePathing || Lanes.IsEmpty())
+	{
+		return false;
+	}
+
+	const FUnitData& Unit = UnitDatas[AgentIndex];
+	FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+
+	CrowdSplinePath::FQueryParams Params;
+	Params.EntrySnapRadiusCm = LaneEntrySnapRadiusCm;
+	Params.ExitSnapRadiusCm = LaneExitSnapRadiusCm;
+	Params.MaxDetourRatio = LaneMaxDetourRatio;
+
+	TArray<FVector> LanePoints;
+	int32 LaneIndex = INDEX_NONE;
+
+	if (!CrowdSplinePath::TryBuildPath(Lanes, Unit.Position, Unit.TargetLocation,
+		Params, LanePoints, LaneIndex))
+	{
+		++NavFallbackCount;
+		return false;
+	}
+
+	if (LanePoints.Num() < 1)
+	{
+		++NavFallbackCount;
+		return false;
+	}
+
+	Follower.Points = MoveTemp(LanePoints);
+	Follower.NextIndex = 0;
+	Follower.bHasPath = true;
+	Follower.bQueryFailed = false;
+
+	AgentLaneIndices[AgentIndex] = LaneIndex;
+	++LanePathCount;
+
+	return true;
+}
+
 bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 {
 	if (!UnitDatas.IsValidIndex(AgentIndex) || !PathFollowers.IsValidIndex(AgentIndex))
@@ -1790,6 +1977,18 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 
 	Follower.PlannedForTarget = Unit.TargetLocation;
 	++PathQueriesIssued;
+
+	if (AgentLaneIndices.Num() != UnitDatas.Num())
+	{
+		AgentLaneIndices.Init(INDEX_NONE, UnitDatas.Num());
+	}
+	AgentLaneIndices[AgentIndex] = INDEX_NONE;
+
+	// 레인이 먼저다. 실패는 정상 경로이며 그대로 NavMesh로 내려간다
+	if (TryBuildLanePathForAgent(AgentIndex))
+	{
+		return true;
+	}
 
 	UWorld* World = GetWorld();
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
@@ -3484,14 +3683,41 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 				const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
 				constexpr float PathDrawZ = 10.f;
 
+				// 경로를 낸 쪽을 색으로 가른다. 레인과 NavMesh가 같은 색이면 "레인이 먹었는지"를
+				// 그림만 보고 판정할 수 없다
+				const int32 LaneIndex = AgentLaneIndices.IsValidIndex(AgentIndex)
+					? AgentLaneIndices[AgentIndex]
+					: INDEX_NONE;
+				const bool bOnLane = (LaneIndex != INDEX_NONE);
+
+				const FColor PathColor = bOnLane ? FColor(0, 255, 255) : FColor(120, 200, 255);
+
 				FVector Previous = Unit.Position;
 				for (int32 PointIndex = Follower.NextIndex; PointIndex < Follower.Points.Num(); ++PointIndex)
 				{
 					const FVector Point = Follower.Points[PointIndex] + FVector(0, 0, PathDrawZ);
 					DrawDebugLine(World, Previous + FVector(0, 0, PathDrawZ), Point,
-						FColor(120, 200, 255), false, -1.f, 0, 2.f);
+						PathColor, false, -1.f, 0, 2.f);
 					DrawDebugPoint(World, Point, 8.f, FColor(255, 255, 120), false, -1.f, 0);
 					Previous = Follower.Points[PointIndex];
+				}
+
+				// 진입점 = 레인에 올라타는 자리. 아직 소비하지 않았으면 개체에서 그 자리까지가
+				// 레인 밖 직선 구간이므로 굵게 따로 긋는다
+				if (bOnLane)
+				{
+					const FVector Entry = Follower.Points[0];
+
+					DrawDebugLine(World, Entry, Entry + FVector(0, 0, 250.f),
+						FColor(255, 0, 255), false, -1.f, 0, 3.f);
+					DrawDebugSphere(World, Entry + FVector(0, 0, PathDrawZ), 35.f, 8,
+						FColor(255, 0, 255), false, -1.f, 0, 2.f);
+
+					if (Follower.NextIndex == 0)
+					{
+						DrawDebugLine(World, Unit.Position + FVector(0, 0, PathDrawZ),
+							Entry + FVector(0, 0, PathDrawZ), FColor(255, 0, 255), false, -1.f, 0, 4.f);
+					}
 				}
 			}
 		}

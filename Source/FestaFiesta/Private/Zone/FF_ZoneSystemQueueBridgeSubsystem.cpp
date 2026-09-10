@@ -11,8 +11,11 @@
 #include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Misc/ScopeExit.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -540,7 +543,36 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RestoreZoneWorldSnapshotAndSynchronize(
 		}
 	}
 
-	if (!ZoneSystem || !ZoneSystem->RestoreWorldSnapshot(Snapshot, OutErrors))
+	if (!ZoneSystem)
+	{
+		return false;
+	}
+
+	// 저장된 배치는 저장 시점에 이미 배치 검증을 통과했으므로 복원은 권위 상태를 신뢰한다.
+	// 이 가드가 없으면 Crowd 레인이 구운 GeneralRoute 보호 구역 때문에 레인 도입 이전 세이브가
+	// 복원에 실패한다. 게다가 ProtectedArea 등록은 BeginPlay라 복원 시점에 등록이 끝났는지가
+	// 보장되지 않아(비었으면 fail-open) 결과가 액터 순서에 따라 갈린다 — 여기서 결정적으로 만든다.
+	TArray<AFFZSProtectedArea*> SuspendedProtectedAreas;
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AFFZSProtectedArea> It(World); It; ++It)
+		{
+			if (ZoneSystem->UnregisterProtectedArea(*It))
+			{
+				SuspendedProtectedAreas.Add(*It);
+			}
+		}
+	}
+
+	ON_SCOPE_EXIT
+	{
+		for (AFFZSProtectedArea* Area : SuspendedProtectedAreas)
+		{
+			ZoneSystem->RegisterProtectedArea(Area);
+		}
+	};
+
+	if (!ZoneSystem->RestoreWorldSnapshot(Snapshot, OutErrors))
 	{
 		return false;
 	}
