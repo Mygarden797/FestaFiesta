@@ -37,6 +37,10 @@ class FESTAFIESTA_API UFF_AtlasGlobeScreen : public UFF_ActivatableScreenBase
 public:
 	UFF_AtlasGlobeScreen(const FObjectInitializer& ObjectInitializer);
 
+	/** 나라 목록·상세 카드용 국기. UI 전용 참조라 지구 액터의 데이터와 분리한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Atlas|Appearance")
+	TMap<FName, TObjectPtr<UTexture2D>> CountryFlagTextures;
+
 	/** 목록과 프랍이 공유하는 국가 살펴보기. 잠긴 나라도 회전하되 지도 진입은 막는다. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
 	void InspectCountry(FName CountryId);
@@ -218,7 +222,7 @@ private:
 
 	/** 패널에서 정보 행으로만 쓰는 축제 핀 위젯. 입력은 받지 않는다. */
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UFF_AtlasPinButton>> FestivalRows;
+
 
 	/**
 	 * 지구 액터. 월드와 함께 죽으므로 약참조로 든다.

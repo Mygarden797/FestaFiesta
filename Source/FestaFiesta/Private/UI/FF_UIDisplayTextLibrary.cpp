@@ -75,6 +75,21 @@ FText UFF_UIDisplayTextLibrary::GetLiveHudTabText(EFF_LiveHudTab Tab)
 	return FText::GetEmpty();
 }
 
+FText UFF_UIDisplayTextLibrary::GetOptionCategoryText(EFF_OptionCategory Category)
+{
+	switch (Category)
+	{
+	case EFF_OptionCategory::Language:		return LOCTEXT("OptionCategory_Language", "언어");
+	case EFF_OptionCategory::Accessibility:	return LOCTEXT("OptionCategory_Accessibility", "접근성");
+	case EFF_OptionCategory::Sound:			return LOCTEXT("OptionCategory_Sound", "사운드");
+	case EFF_OptionCategory::Graphics:		return LOCTEXT("OptionCategory_Graphics", "그래픽");
+	case EFF_OptionCategory::Controls:		return LOCTEXT("OptionCategory_Controls", "조작");
+	case EFF_OptionCategory::Credits:		return LOCTEXT("OptionCategory_Credits", "크레딧");
+	}
+
+	return FText::GetEmpty();
+}
+
 FText UFF_UIDisplayTextLibrary::GetFacilityStateText(EFF_LiveFacilityState State)
 {
 	switch (State)

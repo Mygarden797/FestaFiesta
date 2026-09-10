@@ -96,11 +96,6 @@ void UFF_AtlasGlobeScreen::NativeConstruct()
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("UFF_AtlasGlobeScreen: Border_Panel 바인딩이 없어 국가 패널을 열고 닫을 수 없다."));
 	}
-	if (!VerticalBox_FestivalList)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("UFF_AtlasGlobeScreen: VerticalBox_FestivalList 바인딩이 없어 축제 목록을 표시할 수 없다."));
-	}
 
 	DragTracker.DragThresholdPixels = DragThresholdPixels;
 	DragTracker.Reset();
@@ -459,6 +454,14 @@ void UFF_AtlasGlobeScreen::RebuildPinButtons()
 		}
 
 		Pin->SetPinData(State.CountryId, Title, Badge, State.bSelectable, LockReason);
+        if(UImage* Flag=Cast<UImage>(Pin->GetWidgetFromName(TEXT("Image_CountryFlag"))))
+        {
+            const auto* Texture=CountryFlagTextures.Find(State.CountryId);
+            Flag->SetBrushFromTexture(Texture?Texture->Get():nullptr);
+            Flag->SetVisibility(Texture && *Texture?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
+        }
+        Pin->SetIsSelectable(true);Pin->SetIsToggleable(true);
+
 		Pin->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_AtlasGlobeScreen::HandlePinClicked);
 
 		Pin->OnPinFocusReceived.AddUniqueDynamic(this, &UFF_AtlasGlobeScreen::HandleListFocused);
@@ -477,12 +480,19 @@ void UFF_AtlasGlobeScreen::UpdatePinPositions()
 	// 위치는 ScrollBox가 담당한다. 선택 표시는 준비 중 국가에도 동일하게 적용한다.
 	for (const auto& Pair : PinButtons)
 	{
-		if (Pair.Value) { Pair.Value->SetRenderScale(Pair.Key == PanelCountryId ? FVector2D(1.02, 1.02) : FVector2D(1, 1)); }
+		if (Pair.Value) { Pair.Value->SetIsSelected(Pair.Key == PanelCountryId, false); }
 	}
 }
 
 void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 {
+    if(UImage* Flag=Cast<UImage>(GetWidgetFromName(TEXT("Image_CountryFlag"))))
+    {
+        const auto* Texture=CountryFlagTextures.Find(PanelCountryId);
+        Flag->SetBrushFromTexture(Texture?Texture->Get():nullptr);
+        Flag->SetVisibility(Texture && *Texture?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
+    }
+
 	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
 	ClearFestivalRows();
 
@@ -521,53 +531,15 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 				? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
-	// 축제 개수와 목록. 대표 축제 한 줄은 목록과 중복이라 구버전 WBP에서도 숨긴다.
+	// 🔴 **축제 목록을 여기서 보여주지 않는다** (2026-09-11 결정).
+	// 어떤 축제가 있는지는 **국가 지도**에서 본다 — 같은 정보를 두 곳에 두면 지도로 갈 이유가 없고,
+	// 왼쪽 패널은 나라 목록이 길게 보이는 것이 값어치다. 개수만 상태로 남긴다.
 	int32 FestivalCount = 0;
 	if (bHasCountry && Catalog)
 	{
 		TArray<const FFF_FestivalAtlasEntry*> Festivals;
 		Catalog->GetFestivalsInCountry(PanelCountryId, Festivals);
 		FestivalCount = Festivals.Num();
-
-		if (VerticalBox_FestivalList && PinButtonClass)
-		{
-			for (const FFF_FestivalAtlasEntry* Festival : Festivals)
-			{
-				if (!Festival)
-				{
-					continue;
-				}
-
-				UFF_AtlasPinButton* Row = CreateWidget<UFF_AtlasPinButton>(this, PinButtonClass);
-				if (!Row)
-				{
-					UE_LOG(LogFestaFiestaUI, Error,
-						TEXT("UFF_AtlasGlobeScreen: 축제 목록 행 생성 실패 (%s)."), *PinButtonClass->GetName());
-					continue;
-				}
-
-				Row->SetPinData(
-					Festival->FestivalId,
-					Festival->FestivalName,
-					Festival->RegionName,
-					Festival->bUnlocked,
-					Festival->LockReason);
-
-				// 이 목록은 국가 진입 전에 내용을 훑는 정보 행이다. 클릭·포커스 가능한 죽은 버튼으로 두지 않는다.
-				Row->SetVisibility(ESlateVisibility::HitTestInvisible);
-				if (UVerticalBoxSlot* RowSlot = VerticalBox_FestivalList->AddChildToVerticalBox(Row))
-				{
-					RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
-				}
-				FestivalRows.Add(Row);
-			}
-		}
-	}
-
-	if (VerticalBox_FestivalList)
-	{
-		VerticalBox_FestivalList->SetVisibility(
-			FestivalRows.Num() > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 
 	if (Text_FestivalCount)
@@ -577,12 +549,6 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 		// 값이 없으면 칸을 숨긴다. `0` 을 띄우지 않는다.
 		Text_FestivalCount->SetVisibility(
 			FestivalCount > 0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	}
-
-	if (Text_RepresentativeFestival)
-	{
-		Text_RepresentativeFestival->SetText(FText::GetEmpty());
-		Text_RepresentativeFestival->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (Image_Preview)
@@ -626,19 +592,12 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 
 void UFF_AtlasGlobeScreen::ClearFestivalRows()
 {
-	for (UFF_AtlasPinButton* Row : FestivalRows)
-	{
-		if (Row)
-		{
-			Row->RemoveFromParent();
-		}
-	}
-	FestivalRows.Reset();
-
-	// 축제 행 전용 컨테이너라 미추적 잔여 행까지 안전하게 제거할 수 있다.
+	// 축제 목록을 만들지 않게 된 뒤로도(2026-09-11) 이 함수는 남겨 둔다 —
+	// 구버전 WBP 가 남긴 행을 지우는 경로이고, 호출부 세 곳의 정리 순서를 그대로 유지한다.
 	if (VerticalBox_FestivalList)
 	{
 		VerticalBox_FestivalList->ClearChildren();
+		VerticalBox_FestivalList->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 

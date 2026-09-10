@@ -31,6 +31,7 @@
 #include "Components/OverlaySlot.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Styling/SlateTypes.h"
 #include "UObject/UnrealType.h"
 #include "Components/TextBlock.h"
@@ -40,7 +41,9 @@
 #include "UI/Atlas/FF_AtlasGlobeScreen.h"
 #include "UI/Atlas/FF_AtlasPinButton.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "UI/FF_CommonButtonBase.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/Frontend/FF_FrontendCasualBuilder.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaUI"
 
@@ -54,6 +57,11 @@ namespace
 	const FString PinPackage = TEXT("/Game/FestaFiesta/UI/Atlas/WBP_FF_AtlasPin");
 	const FString GlobePackage = TEXT("/Game/FestaFiesta/UI/Atlas/WBP_FF_AtlasGlobe");
 	const FString CountryPackage = TEXT("/Game/FestaFiesta/UI/Atlas/WBP_FF_AtlasCountry");
+
+	// 프론트엔드 셋업 스타일 버튼. `FF.ApplyFrontendSetupStyle` 이 소유한다 — 여기서는 읽기만 한다.
+	const FString FrontendButtonPackage = TEXT("/Game/FestaFiesta/UI/Frontend/WBP_FF_FrontendButton");
+	const FString FrontendPrimaryButtonPackage =
+		TEXT("/Game/FestaFiesta/UI/Frontend/WBP_FF_FrontendPrimaryButton");
 
 	// 1920x1080 기준 대략값. 왼쪽 1/3 이 패널, 오른쪽은 비운다.
 	constexpr float PanelX = 120.f;
@@ -428,100 +436,165 @@ namespace
 			 "이미 있는 에셋은 건드리지 않는다. 먼저 FF.FrontendUMG 가 필요하다."),
 		FConsoleCommandDelegate::CreateStatic(&RunAtlasUmg));
 
-	/** 기존 국가 지도와 공용 핀은 보존하고 지구 화면만 목록 방식으로 이관한다. */
-	void ApplyCountryNavigation()
+	/**
+	 * 아트 없이 Slate 가 칠하는 라운드 면.
+	 *
+	 * 9-slice 패널 아트를 쓰지 않는 이유는 가장자리에 투명 여백이 있어 면이 안쪽으로 물러나기
+	 * 때문이다 (`docs/ui/title-options-wiring.md` 6절). 왼쪽 패널은 밝은 지구 위에 얹히므로
+	 * **불투명**해야 글자가 읽힌다.
+	 */
+	FSlateBrush MakeSetupPanelBrush(
+		const FLinearColor& Fill, const FLinearColor& Outline, const float Radius)
 	{
-		UWidgetBlueprint* BP = LoadExistingBlueprint(GlobePackage);
-		if (!BP || !BP->WidgetTree || BP->WidgetTree->FindWidget(TEXT("ScrollBox_Countries"))) { return; }
-		const FString RowPackage = AtlasFolder / TEXT("WBP_FF_AtlasCountryRow");
-		EnsureWidgetBlueprint(AtlasLogPrefix, RowPackage, AtlasFolder, *UFF_AtlasPinButton::StaticClass(),
-			[](UWidgetBlueprint& BP, UWidgetTree& Tree)
-			{
-				if (!BuildAtlasPin(BP, Tree)) { return false; }
-				Cast<USizeBox>(Tree.RootWidget)->SetHeightOverride(50.f);
-				auto* Background = Cast<UBorder>(Tree.FindWidget(TEXT("Border_Background")));
-				FSlateBrush Surface;
-				Surface.DrawAs = ESlateBrushDrawType::RoundedBox;
-				Surface.OutlineSettings.CornerRadii = FVector4(12,12,12,12);
-				Surface.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
-				Background->SetBrush(Surface);
-				Background->SetBrushColor(FLinearColor(.82f,.93f,.81f,1.f));
-				Background->SetPadding(FMargin(16,6));
-				auto* Label = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_Label")));
-				StyleText(*Label, 22, FLinearColor(.025f,.12f,.08f,1.f), TEXT("Bold"));
-				auto* Badge = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_PinBadge")));
-				StyleText(*Badge, 15, FLinearColor(.12f,.24f,.18f,1.f), TEXT("Regular"));
-				Badge->SetText(FText::GetEmpty());
-				// 준비 중 문구가 잠금을 명시하므로 무늬 없는 사각 아이콘은 제거한다.
-				auto* Lock = Cast<UImage>(Tree.FindWidget(TEXT("Image_PinLock")));
-				Lock->SetDesiredSizeOverride(FVector2D::ZeroVector);
-				Lock->SetRenderOpacity(0.f);
-				Cast<UHorizontalBoxSlot>(Lock->Slot)->SetPadding(FMargin(0));
-				auto* Ring = Cast<UImage>(Tree.FindWidget(TEXT("Image_FocusRing")));
-				Surface.TintColor = FSlateColor(FLinearColor::Transparent);
-				Surface.OutlineSettings.Color = FSlateColor(FLinearColor(.15f,.45f,.22f,1.f));
-				Surface.OutlineSettings.Width = 2.f;
-				Ring->SetBrush(Surface);
-				Ring->SetColorAndOpacity(FLinearColor::White);
-				return true;
-			});
-		UClass* RowClass = LoadGeneratedClass(RowPackage);
-		if (!BP || !BP->WidgetTree || !RowClass) { return; }
-		if (auto* Defaults = Cast<UFF_AtlasPinButton>(RowClass->GetDefaultObject()))
-		{
-			Defaults->ApplyGeneratedButtonDefaults(LoadClass<UCommonButtonStyle>(nullptr,TEXT("/Game/FestaFiesta/UI/Styles/CBS_FF_AtlasTransparent.CBS_FF_AtlasTransparent_C")), FLinearColor(.025f,.12f,.08f,1),
-				FLinearColor(.025f,.12f,.08f,1), FLinearColor(.25f,.35f,.28f,1), true, false, false);
-			SaveAssetPackage(AtlasLogPrefix,*Defaults);
-		}
-		UWidgetTree& Tree = *BP->WidgetTree;
-		auto* Root = Cast<UCanvasPanel>(Tree.RootWidget);
-		auto* Panel = Cast<UBorder>(Tree.FindWidget(TEXT("Border_Panel")));
-		if (!Root || !Panel || Tree.FindWidget(TEXT("ScrollBox_Countries"))) { return; }
-		const FLinearColor Ink(.025f,.12f,.08f,1.f);
-		auto* Heading = MakeWidget<UTextBlock>(*BP, Tree, TEXT("Text_CountryHeading"));
-		StyleText(*Heading, 32, Ink, TEXT("Bold"));
-		Heading->SetText(LOCTEXT("AtlasCountriesHeading", "어느 나라로 떠날까요?"));
-		PlaceOnCanvas(*Root, *Heading, 60, 55, 440, 50);
-		auto* List = MakeWidget<UScrollBox>(*BP, Tree, TEXT("ScrollBox_Countries"), true);
-		List->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
-		List->SetClipping(EWidgetClipping::ClipToBounds);
-		auto* ListSlot = Root->AddChildToCanvas(List);
-		ListSlot->SetAnchors(FAnchors(0,.14f,0,.48f));
-		ListSlot->SetOffsets(FMargin(60,0,420,0));
-		ListSlot->SetZOrder(5);
-		auto* Details = MakeWidget<UScrollBox>(*BP, Tree, TEXT("ScrollBox_CountryDetails"), true);
-		Details->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
-		Details->SetClipping(EWidgetClipping::ClipToBounds);
-		Panel->RemoveFromParent();
-		Details->AddChild(Panel);
-		auto* DetailsSlot = Root->AddChildToCanvas(Details);
-		DetailsSlot->SetAnchors(FAnchors(0,.51f,0,.90f));
-		DetailsSlot->SetOffsets(FMargin(60,0,420,0));
-		DetailsSlot->SetZOrder(5);
-		Details->SetVisibility(ESlateVisibility::Collapsed);
-		Panel->SetBrushColor(FLinearColor(.96f,.96f,.89f,.96f));
-		Panel->SetPadding(FMargin(18,14));
-		for (const TCHAR* Name : {TEXT("Text_CountryName"),TEXT("Text_Description"),TEXT("Text_FestivalCount"),TEXT("Text_LockReason")})
-		{
-			if (auto* Text = Cast<UTextBlock>(Tree.FindWidget(Name))) { StyleText(*Text, FCString::Strcmp(Name,TEXT("Text_CountryName"))==0 ? 26 : 17, Ink,TEXT("Regular")); }
-		}
-		// 기존 바인딩 이름은 유지하고 밝은 목록 버튼을 상세 액션에도 사용한다.
-		for (const TCHAR* Name : {TEXT("Button_SelectCountry"),TEXT("Button_ClosePanel")})
-		{
-			if (UWidget* Old = Tree.FindWidget(Name)) { Tree.RemoveWidget(Old); BP->OnVariableRemoved(Name); Old->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors); }
-			auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("VerticalBox_Panel")));
-			if (Column) { auto* Button = MakeWidgetOfClass(*BP,Tree,Name,RowClass); Column->AddChildToVerticalBox(Button)->SetPadding(FMargin(0,4)); }
-		}
-		if (auto* Hints = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_ControlHints")))) { StyleText(*Hints,16,Ink,TEXT("Regular")); }
-		if (!SaveNewBlueprint(AtlasLogPrefix,*BP)) { return; }
-		FClassProperty* Property = FindFProperty<FClassProperty>(BP->GeneratedClass,TEXT("PinButtonClass"));
-		if (Property) { Property->SetObjectPropertyValue_InContainer(BP->GeneratedClass->GetDefaultObject(),RowClass); }
-		SaveAssetPackage(AtlasLogPrefix,*BP);
+		FSlateBrush Brush;
+		Brush.DrawAs = ESlateBrushDrawType::RoundedBox;
+		Brush.TintColor = FSlateColor(Fill);
+		Brush.OutlineSettings.RoundingType = ESlateBrushRoundingType::FixedRadius;
+		Brush.OutlineSettings.CornerRadii = FVector4(Radius, Radius, Radius, Radius);
+		Brush.OutlineSettings.Color = FSlateColor(Outline);
+		Brush.OutlineSettings.Width = 1.f;
+		return Brush;
 	}
 
-	FAutoConsoleCommand CountryNavigationCommand(TEXT("FF.ApplyAtlasCountryNavigation"),
-		TEXT("지구 화면에 국가 목록과 상세 스크롤을 한 번 추가한다."),
-		FConsoleCommandDelegate::CreateStatic(&ApplyCountryNavigation));
+	// =========================================================================
+	// WBP_FF_AtlasGlobe — 캐주얼 스타일 왼쪽 패널 하나 (2026-09-11 개편)
+	// =========================================================================
+	//
+	// CanvasPanel_Root
+	// ├ Border_DragSurface                    ← 첫 자식. 빈 곳을 끌어 지구를 돌린다
+	// ├ CanvasPanel_Pins                      ← 화면 전체. 프랍 위 핀
+	// └ Border_LeftPanel (세로로 길게)
+	//   └ VerticalBox_LeftColumn
+	//     ├ Text_CountryHeading
+	//     ├ 구분선
+	//     ├ ScrollBox_Countries (Fill)        ← **나라 목록이 화면 높이를 다 쓴다**
+	//     ├ ScrollBox_CountryDetails (Auto)
+	//     │   └ Border_Panel → VerticalBox_Panel
+	//     │       ├ Text_CountryName
+	//     │       ├ Text_FestivalCount        ← 상태 한 줄 (`축제 5개`)
+	//     │       ├ Image_LockedIcon + Text_LockReason
+	//     │       ├ Button_SelectCountry      `축제 지도 보기` (주 동작)
+	//     │       └ Button_ClosePanel         `닫기`
+	//     └ Text_ControlHints
+	//
+	// 🔴 **축제 종류 목록을 두지 않는다** (사용자 결정 2026-09-11). 어떤 축제가 있는지는
+	// 국가 지도에서 본다. 같은 정보를 두 곳에 두면 지도로 갈 이유가 없고, 왼쪽 패널은
+	// 나라 목록이 길게 보이는 것이 값어치다. `Image_Preview`·`Text_Description` 도 만들지 않는다 —
+	// 화면 코드는 두 바인딩이 없어도 동작한다 (`BindWidgetOptional`).
+	bool BuildCasualCountryRow(UWidgetBlueprint& Blueprint,UWidgetTree& Tree)
+    {
+        FFFrontendCasual::FBuilder B{Blueprint,Tree};
+        auto* Root=B.Make<USizeBox>(TEXT("SizeBox_Root"),true);Root->SetHeightOverride(54);Tree.RootWidget=Root;
+        auto* Overlay=B.Make<UOverlay>(TEXT("Overlay_Root"));Root->AddChild(Overlay);
+        auto* Ring=B.Make<UImage>(TEXT("Image_FocusRing"),true);Ring->SetBrush(FFFrontendCasual::Rounded(FLinearColor::Transparent,B.T.Teal,16,3));Ring->SetVisibility(ESlateVisibility::Hidden);
+        auto* RS=Overlay->AddChildToOverlay(Ring);RS->SetHorizontalAlignment(HAlign_Fill);RS->SetVerticalAlignment(VAlign_Fill);
+        auto* Row=B.Make<UHorizontalBox>(TEXT("HorizontalBox_Content"));auto* OS=Overlay->AddChildToOverlay(Row);OS->SetHorizontalAlignment(HAlign_Fill);OS->SetVerticalAlignment(VAlign_Center);OS->SetPadding(FMargin(18,0));
+        auto* Flag=B.Icon(TEXT("Image_CountryFlag"),TEXT("Flag_KR"),40,true);B.H(Row,B.Sized(TEXT("SizeBox_Flag"),Flag,42,30),18);
+        auto* Label=B.Make<UCommonTextBlock>(TEXT("Text_Label"),true);
+        Label->SetStyle(LoadClass<UCommonTextStyle>(nullptr,TEXT("/Game/FestaFiesta/UI/Styles/CTS_FF_FrontendInk.CTS_FF_FrontendInk_C")));
+        Label->SetText(LOCTEXT("CountryRowPlaceholder","대한민국"));B.H(Row,Label,12,true);
+        B.H(Row,B.Sized(TEXT("SizeBox_Status"),B.Text(TEXT("Text_PinBadge"),LOCTEXT("CountryStatusPlaceholder","준비 중"),16,true,true),104,0),14);
+        auto* Arrow=B.Icon(TEXT("Image_Chevron"),TEXT("Chevron"),16,true);Arrow->SetColorAndOpacity(B.T.Ink);B.H(Row,Arrow);
+        return true;
+    }
+
+    bool BuildAtlasGlobeSetupLayout(UWidgetBlueprint& Blueprint,UWidgetTree& Tree,
+        UClass* RowClass,UClass* NavButtonClass,UClass* PrimaryButtonClass)
+    {
+        if(!RowClass || !NavButtonClass || !PrimaryButtonClass)return false;
+        FFFrontendCasual::FBuilder B{Blueprint,Tree};auto* Root=B.Make<UCanvasPanel>(TEXT("CanvasPanel_Root"));Tree.RootWidget=Root;
+        auto* Drag=B.Make<UBorder>(TEXT("Border_DragSurface"),true);Drag->SetBrushColor(FLinearColor::Transparent);
+        StretchOnCanvas(*Root,*Drag);auto* Pins=B.Make<UCanvasPanel>(TEXT("CanvasPanel_Pins"),true);Pins->SetVisibility(ESlateVisibility::SelfHitTestInvisible);StretchOnCanvas(*Root,*Pins);
+        auto* Column=B.Make<UVerticalBox>(TEXT("VerticalBox_LeftColumn"));B.SidePanel(Root,Column,620,56);
+        B.Heading(Column,LOCTEXT("AtlasCountriesHeading","어느 나라로 떠날까요?"),LOCTEXT("AtlasCountriesSubheading","축제를 열고 싶은 나라를 선택하세요!"),29);
+        auto* Countries=B.Make<UScrollBox>(TEXT("ScrollBox_Countries"),true);Countries->SetConsumeMouseWheel(EConsumeMouseWheel::Always);Countries->SetClipping(EWidgetClipping::ClipToBounds);
+        B.V(Column,Countries,16,true);
+        auto* Details=B.Make<UScrollBox>(TEXT("ScrollBox_CountryDetails"),true);Details->SetVisibility(ESlateVisibility::Collapsed);Details->SetClipping(EWidgetClipping::ClipToBounds);B.V(Column,Details,14);
+        auto* Content=B.Make<UVerticalBox>(TEXT("VerticalBox_Panel"));auto* Panel=B.Panel(TEXT("Border_Panel"),Content,18,22,false,true);Details->AddChild(Panel);
+        auto* Info=B.Make<UHorizontalBox>(TEXT("HorizontalBox_CountryInfo"));
+        auto* Flag=B.Icon(TEXT("Image_CountryFlag"),TEXT("Flag_KR"),72,true);B.H(Info,B.Sized(TEXT("SizeBox_CountryFlag"),Flag,98,66),20);
+        auto* Text=B.Make<UVerticalBox>(TEXT("VerticalBox_CountryInfo"));
+        B.V(Text,B.Text(TEXT("Text_CountryName"),LOCTEXT("AtlasCountryPlaceholder","대한민국"),26,false,true),6);
+        B.V(Text,B.Text(TEXT("Text_FestivalCount"),FText::GetEmpty(),17,true,true));B.H(Info,Text,0,true);B.V(Content,Info,14);
+        auto* Lock=B.Make<UHorizontalBox>(TEXT("HorizontalBox_Lock"));
+        auto* LockIcon=B.Icon(TEXT("Image_LockedIcon"),TEXT("Lock"),20,true);LockIcon->SetColorAndOpacity(B.T.InkMuted);B.H(Lock,LockIcon,10);
+        B.H(Lock,B.Text(TEXT("Text_LockReason"),FText::GetEmpty(),16,true,true),0,true);B.V(Content,Lock,8);
+        B.V(Content,B.Button(TEXT("Button_SelectCountry"),PrimaryButtonClass,LOCTEXT("AtlasGlobeSelectCountry","축제 지도 보기"),518,56,TEXT("Map")),8);
+        B.V(Content,B.Button(TEXT("Button_ClosePanel"),NavButtonClass,LOCTEXT("AtlasGlobeClosePanel","닫기"),518,50,TEXT("Folder")));
+        B.V(Column,B.Text(TEXT("Text_ControlHints"),LOCTEXT("AtlasGlobeHintPlaceholder","드래그: 회전   국가 목록 / 조형물: 살펴보기\nEsc: 뒤로"),14,true,true));
+        return true;
+    }
+
+	/**
+	 * 🔴 **파괴적이다.** `WBP_FF_AtlasGlobe` 의 위젯 트리를 통째로 교체한다.
+	 * 손으로 마감한 뒤에는 다시 실행하지 않는다. 나라 행(`WBP_FF_AtlasCountryRow`)과
+	 * 국가 지도 화면은 건드리지 않는다.
+	 */
+	void ApplyAtlasGlobeSetupStyle()
+	{
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_BEGIN: 지구 화면을 캐주얼 스타일 왼쪽 패널로 다시 만든다."), AtlasLogPrefix);
+
+		UClass* NavButtonClass = LoadGeneratedClass(FrontendButtonPackage);
+		UClass* PrimaryButtonClass = LoadGeneratedClass(FrontendPrimaryButtonPackage);
+		if (!NavButtonClass || !PrimaryButtonClass)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_ABORT: 프론트엔드 버튼 WBP 가 없다. 먼저 `FF.ApplyFrontendSetupStyle` 을 실행한다."),
+				AtlasLogPrefix);
+			return;
+		}
+
+		const FString RowPackage=AtlasFolder/TEXT("WBP_FF_AtlasCountryRow");
+        auto* RowBP=ReplaceWidgetBlueprint(AtlasLogPrefix,RowPackage,AtlasFolder,*UFF_AtlasPinButton::StaticClass(),
+            [](UWidgetBlueprint& BP,UWidgetTree& Tree){return BuildCasualCountryRow(BP,Tree);});
+        if(!RowBP || !RowBP->GeneratedClass)return;
+        auto* RowDefaults=RowBP->GeneratedClass->GetDefaultObject<UFF_AtlasPinButton>();
+        RowBP->Modify();RowDefaults->Modify();
+        const auto Ink=FFFrontendCasual::Get().Ink;
+        RowDefaults->ApplyGeneratedButtonDefaults(LoadClass<UCommonButtonStyle>(nullptr,
+            TEXT("/Game/FestaFiesta/UI/Styles/CBS_FF_FrontendNav.CBS_FF_FrontendNav_C")),Ink,Ink,Ink,false,false,false);
+        RowDefaults->SetIsSelectable(true);RowDefaults->SetIsToggleable(true);SaveAssetPackage(AtlasLogPrefix,*RowBP);
+        UClass* RowClass=RowBP->GeneratedClass;
+
+		UWidgetBlueprint* Globe = ReplaceWidgetBlueprint(
+			AtlasLogPrefix, GlobePackage, AtlasFolder,
+			*UFF_AtlasGlobeScreen::StaticClass(),
+			[RowClass, NavButtonClass, PrimaryButtonClass](UWidgetBlueprint& BP, UWidgetTree& Tree)
+			{
+				return BuildAtlasGlobeSetupLayout(BP, Tree, RowClass, NavButtonClass, PrimaryButtonClass);
+			});
+
+		if (!Globe || !Globe->GeneratedClass)
+		{
+			return;
+		}
+
+		// UI 국기는 CDO가 강하게 참조해서 쿠킹에도 포함한다.
+        auto* Defaults=Globe->GeneratedClass->GetDefaultObject<UFF_AtlasGlobeScreen>();
+        Defaults->Modify();
+        for(const TCHAR* Code : {TEXT("KR"),TEXT("BR"),TEXT("DE"),TEXT("JP"),TEXT("US"),TEXT("ES"),TEXT("TH"),TEXT("AU")})
+            Defaults->CountryFlagTextures.Add(FName(Code),LoadObject<UTexture2D>(nullptr,*MakeObjectPath(FFFrontendCasual::ArtPackage(FString(TEXT("Flag_"))+Code))));
+        // PinButtonClass는 나라 목록에만 쓰고 지구 액터는 변경하지 않는다.
+		if (FClassProperty* Property =
+			FindFProperty<FClassProperty>(Globe->GeneratedClass, TEXT("PinButtonClass")))
+		{
+			Property->SetObjectPropertyValue_InContainer(
+				Globe->GeneratedClass->GetDefaultObject(), RowClass);
+			SaveAssetPackage(AtlasLogPrefix, *Globe);
+		}
+
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_DONE: 지구 화면 적용 완료. 나라 목록은 세로로 길고 축제 종류 목록은 없다."),
+			AtlasLogPrefix);
+	}
+
+	FAutoConsoleCommand ApplyAtlasGlobeSetupStyleCommand(
+		TEXT("FF.ApplyAtlasGlobeSetupStyle"),
+		TEXT("Rebuilds WBP_FF_AtlasGlobe as a Clean Casual left panel (country list + "
+			 "status + map/close actions). DESTRUCTIVE: the existing layout is replaced."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyAtlasGlobeSetupStyle));
+
 }
 
 #undef LOCTEXT_NAMESPACE
