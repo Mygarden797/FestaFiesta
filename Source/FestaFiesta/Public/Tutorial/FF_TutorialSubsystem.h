@@ -4,10 +4,16 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "Tickable.h"
+#include "FF_FFZSTypes.h"
+#include "Time/FF_FestivalStage.h"
 #include "Tutorial/FF_TutorialTypes.h"
 #include "FF_TutorialSubsystem.generated.h"
 
+class AFF_OverviewCameraPawn;
+class UDataTable;
 class UFF_DialogueScriptData;
+class UUserWidget;
 class UWidget;
 struct IConsoleCommand;
 
@@ -32,7 +38,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnHighlightAnchorChanged, FName,
 //
 // 강조할 위젯도 이름으로만 다룬다. 실제 위젯은 밖에서 등록해준다.
 UCLASS()
-class FESTAFIESTA_API UFF_TutorialSubsystem : public UWorldSubsystem
+class FESTAFIESTA_API UFF_TutorialSubsystem : public UTickableWorldSubsystem
 {
 	GENERATED_BODY()
 
@@ -40,6 +46,11 @@ public:
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	virtual void Deinitialize() override;
 	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
+	virtual void Tick(float DeltaTime) override;
+	virtual TStatId GetStatId() const override
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(UFF_TutorialSubsystem, STATGROUP_Tickables);
+	}
 
 	static UFF_TutorialSubsystem* Get(const UObject* WorldContextObject);
 
@@ -47,6 +58,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
 	bool PlayScript(UFF_DialogueScriptData* Script);
+
+	// CSV 로 만든 표를 재생한다. 행 순서대로 흐르고 행 이름이 분기 목적지가 된다.
+	//
+	// 데이터 애셋과 표를 둘 다 받는 이유는, 짧은 대사는 애셋이 편하고
+	// 긴 대사는 표가 편해서다. 재생 뒤로는 둘이 같은 길을 탄다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	bool PlayTable(UDataTable* Table);
 
 	// 다음 줄로. 대사창에서 클릭했을 때 부른다.
 	//
@@ -119,6 +137,47 @@ public:
 	FFF_OnHighlightAnchorChanged OnHighlightAnchorChanged;
 
 private:
+	// 시설이 설치·철거되면 온다. Zone 이 확정한 뒤에만 방송되므로 실제 성공만 잡힌다.
+	UFUNCTION()
+	void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
+
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	void BindGameSignals();
+	void UnbindGameSignals();
+
+	// 줄 배열로 재생을 시작한다. 애셋과 표가 여기로 모인다.
+	bool StartLines(const TArray<FFF_DialogueLine>& Lines, FName ScriptId);
+
+	// 라벨로 줄을 찾는다. 행 이름이 곧 라벨이다.
+	int32 FindLineIndexByLabel(FName Label) const;
+
+	// 지금 줄 다음에 갈 자리. NextLabel 이 있으면 그리로, 없으면 바로 다음 줄로.
+	int32 ResolveNextLineIndex() const;
+
+	// 레벨이 뜨면 설정에 지정된 대사를 시작한다. 지정이 없으면 아무것도 하지 않는다.
+	void TryAutoStart();
+
+	// 카메라 조작을 감시한다.
+	//
+	// 카메라 쪽에서 알려주게 하면 카메라가 튜토리얼을 알아야 한다.
+	// 여기서 상태를 읽는 편이 의존이 한쪽으로만 흐른다.
+	void TickCameraWatch();
+
+	// 감시 기준점을 지금 위치로 다시 잡는다. 조작 대기 줄에 들어갈 때 부른다.
+	void ResetCameraBaseline();
+
+	AFF_OverviewCameraPawn* FindOverviewPawn() const;
+
+	// 설정에 지정된 위젯을 화면에 띄운다. 이미 있으면 아무것도 하지 않는다.
+	//
+	// 대사만 자동으로 시작되고 위젯은 직접 띄워야 하면, 레벨마다 그 코드를 넣어야 한다.
+	// 튜토리얼을 켜고 끄는 게 설정 한 곳에서 끝나야 실수가 없다.
+	void EnsureWidgets();
+
+	void RemoveWidgets();
+
 	// 인덱스로 이동하고 신호를 보낸다. 범위를 벗어나면 스크립트를 끝낸다.
 	void GoToLine(int32 LineIndex);
 
@@ -133,8 +192,18 @@ private:
 	void RegisterDebugConsoleCommands();
 	void UnregisterDebugConsoleCommands();
 
+	// 재생 중인 줄. 애셋에서 왔든 표에서 왔든 여기로 모인다.
+	//
+	// 애셋을 직접 들고 다니지 않는 이유는, 표로 재생할 때 들 것이 없어서다.
+	// 줄만 복사해두면 출처와 무관하게 같은 코드로 굴릴 수 있다.
+	TArray<FFF_DialogueLine> ActiveLines;
+
+	// 이어질 씬. 표에는 없으므로 애셋으로 재생할 때만 채워진다.
 	UPROPERTY(Transient)
-	TObjectPtr<UFF_DialogueScriptData> ActiveScript;
+	TObjectPtr<UFF_DialogueScriptData> PendingNextScript;
+
+	// 지금 재생 중인 것의 이름. 로그에만 쓴다.
+	FName ActiveScriptId;
 
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bDialogueActive = false;
@@ -143,6 +212,24 @@ private:
 
 	// 이름 → 위젯. 화면이 사라지면 자동으로 비도록 약참조로 든다.
 	TMap<FName, TWeakObjectPtr<UWidget>> AnchorWidgets;
+
+	// 자동 시작까지 남은 시간. 음수면 이미 처리했다.
+	float AutoStartCountdown = -1.f;
+
+	// 조작 대기 줄에 들어간 시점의 카메라 상태.
+	// 여기서 얼마나 벗어났는지로 조작 여부를 판단한다.
+	FVector CameraBaselineFocus = FVector::ZeroVector;
+	float CameraBaselineArmLength = 0.f;
+	bool bCameraBaselineValid = false;
+
+	bool bBoundZoneWorld = false;
+	bool bBoundStage = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> DialogueBoxWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> OverlayWidget;
 
 	IConsoleCommand* SkipConsoleCommand = nullptr;
 	IConsoleCommand* StatConsoleCommand = nullptr;

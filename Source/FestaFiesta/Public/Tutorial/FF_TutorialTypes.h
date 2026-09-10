@@ -88,6 +88,13 @@ struct FFF_DialogueLine
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
 	FName Label;
 
+	// 이 줄이 끝나면 갈 곳. 비어 있으면 바로 다음 줄로 간다.
+	//
+	// 분기가 합쳐지는 자리를 지정하는 데 쓴다. 선택지로 갈라진 뒤 그냥 두면
+	// 반대편 분기까지 이어서 재생된다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	FName NextLabel;
+
 	// 화자. 비어 있으면 내레이션이나 독백으로 본다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
 	FText Speaker;
