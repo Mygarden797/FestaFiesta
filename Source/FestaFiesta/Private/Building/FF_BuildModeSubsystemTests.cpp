@@ -8,6 +8,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "Misc/AutomationTest.h"
 
@@ -356,6 +357,47 @@ bool FFF_BuildModeToolsInputIsolationTest::RunTest(const FString& Parameters)
 		ShouldProcessRawBuildKey(false, true, false));
 	TestFalse(TEXT("편집을 끝냈어도 새 B 누름이 없으면 전환하지 않는다"),
 		ShouldProcessRawBuildKey(false, false, false));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildUnifiedWorldManipulationTest,
+	"FestaFiesta.Building.BuildMode.UnifiedWorldManipulation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildUnifiedWorldManipulationTest::RunTest(const FString& Parameters)
+{
+	const FIntPoint Size(601, 401);
+	const float WorldYaw = 37.25f;
+	for (const FVector Cursor : { FVector(1049.0, 246.0, 0.0), FVector(-1049.0, -246.0, 0.0) })
+	{
+		FVector ReferenceCenter = FVector::ZeroVector;
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			// Deliberately do not align region origins to the player's 100 cm snap interval.
+			const FTransform Region(FRotator(0.0, Index * 90.0, 0.0), FVector(Index * 1037.0, Index * -1063.0, 0.0));
+			const FFFZSGridPlacement Placement = FFBuildModeModel::ResolveWorldSnappedPlacement(
+				Cursor, WorldYaw, Region, Size, 100);
+			const float LocalYaw = UFFZSGridLibrary::YawCentidegreesToDegrees(Placement.YawCentidegrees);
+			const FVector2D LocalCenter = FVector2D(Placement.OriginCell) +
+				FFBuildModeModel::ResolveRotatedFootprintCenterOffset(Size, LocalYaw);
+			const FVector WorldCenter = Region.TransformPosition(FVector(LocalCenter, 0.0));
+			const FVector SnappedCursor(FMath::GridSnap(Cursor.X, 100.0), FMath::GridSnap(Cursor.Y, 100.0), 0.0);
+			TestTrue(TEXT("The center follows world snapping within the 1 cm storage precision"),
+				FVector::Dist2D(WorldCenter, SnappedCursor) <= 0.71);
+			TestTrue(TEXT("Region rotation does not change the user's world angle"),
+				FMath::Abs(FMath::FindDeltaAngleDegrees(LocalYaw + Region.Rotator().Yaw, WorldYaw)) < 0.01);
+			TestEqual(TEXT("Unified commands use canonical free rotation"), Placement.QuarterTurns, 0);
+			if (Index == 0)
+			{
+				ReferenceCenter = WorldCenter;
+			}
+			else
+			{
+				TestTrue(TEXT("Changing the coordinate region does not move the preview"),
+					WorldCenter.Equals(ReferenceCenter, 0.01));
+			}
+		}
+	}
 	return true;
 }
 

@@ -309,6 +309,11 @@ namespace FFBuildModeModel
 			(static_cast<double>(FootprintSizeCells.Y) - 1.0) * 0.5);
 		return FVector2D(0.5, 0.5) + CenterFromFirstCell.GetRotated(YawDegrees);
 	}
+
+	// Unified building uses a world-aligned manipulation grid while preserving region-local saves.
+	FESTAFIESTA_API FFFZSGridPlacement ResolveWorldSnappedPlacement(
+		const FVector& CursorWorld, float WorldYawDegrees, const FTransform& RegionTransform,
+		const FIntPoint& FootprintSizeCells, int32 PositionSnapCm);
 }
 
 // B 키, 카탈로그, 시설 배치/제거를 연결하는 플레이어용 월드 서브시스템.
@@ -430,11 +435,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void RotatePlacementDegrees(float DeltaDegrees);
 
-	// 현재 배치 yaw를 도 단위 절대값으로 설정한다. 비유한 값과 비활성 프리뷰에서는 no-op이다.
+	// 현재 배치 yaw를 도 단위 절대값으로 설정한다. 통합 건설 모드에서는 월드 각도이며 저장 명령은 지역 로컬 각도를 유지한다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void SetPlacementYawDegrees(float YawDegrees);
 
-	// 현재 배치 yaw를 정규화된 도 단위로 반환한다. 레거시 QuarterTurns도 읽기 시 승격한다.
+	// 현재 조작 yaw를 반환한다(통합 모드: 월드, 기존 모드: 지역 로컬). 레거시 QuarterTurns도 읽기 시 승격한다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	float GetPlacementYawDegrees() const;
 
