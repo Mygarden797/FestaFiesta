@@ -702,7 +702,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			LOCTEXT("ServiceDurationFormat", "{0}초"),
 			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
 	}
-	if (Spec.Category == EFFZSFacilityCategory::Lighting)
+	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.Category == EFFZSFacilityCategory::Road)
 	{
 		OutViewData.QueueCapacityText = LOCTEXT("LightingNoQueue", "대기열 없음");
 		OutViewData.ServiceDurationText = LOCTEXT("LightingNoService", "이용 서비스 없음");
@@ -818,10 +818,14 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.ThroughputText = bQueueAvailable
 		? FFFacilityInfoModel::FormatThroughput(true, QueueState.GetServiceRatePerMinute())
 		: MissingQueueMetric;
-	if (Spec.Category == EFFZSFacilityCategory::Lighting)
+	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.Category == EFFZSFacilityCategory::Road)
 	{
-		OutViewData.OperationStateText = Facility.GetLightingState().bEnabled
-			? LOCTEXT("LightingOn", "조명 켜짐") : LOCTEXT("LightingOff", "조명 꺼짐");
+		OutViewData.OperationStateText = Spec.Category == EFFZSFacilityCategory::Road
+			? (Spec.bAllowFacilityPlacementOnTop
+				? LOCTEXT("RoadSurface", "통행 · 시설 설치 가능")
+				: LOCTEXT("RoadSurfaceWithoutFacilities", "통행 전용 · 시설 설치 불가"))
+			: (Facility.GetLightingState().bEnabled
+				? LOCTEXT("LightingOn", "조명 켜짐") : LOCTEXT("LightingOff", "조명 꺼짐"));
 		const FText NotApplicable = LOCTEXT("LightingMetricNotApplicable", "해당 없음");
 		OutViewData.WaitingPartiesText = NotApplicable;
 		OutViewData.OccupancyText = NotApplicable;

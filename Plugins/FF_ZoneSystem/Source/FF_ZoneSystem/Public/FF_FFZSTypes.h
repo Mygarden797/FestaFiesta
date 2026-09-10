@@ -33,7 +33,8 @@ enum class EFFZSFacilityCategory : uint8
     Performance UMETA(DisplayName = "Performance", ToolTip = "무대와 공연 운영 시설입니다."),
     Safety UMETA(DisplayName = "Safety", ToolTip = "의무실·안전 지원 시설입니다."),
     PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다."),
-    Lighting UMETA(DisplayName = "Lighting", ToolTip = "설치 후 점등·밝기·색상을 조절하는 조명 시설입니다.")
+    Lighting UMETA(DisplayName = "Lighting", ToolTip = "설치 후 점등·밝기·색상을 조절하는 조명 시설입니다."),
+    Road UMETA(DisplayName = "Road", ToolTip = "시설과 대기열을 위에 설치할 수 있는 바닥 길입니다. 다른 길과는 겹칠 수 없습니다.")
 };
 
 //권한 시설 수명주기.
@@ -656,8 +657,11 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Facility Lighting", ToolTip = "메시와 함께 설치되는 조명 Blueprint 및 기본 점등·밝기·색상입니다. Blueprint 좌표는 원본 메시의 로컬 좌표와 같아야 합니다."))
     FFFZSFacilityLightingSettings LightingSettings;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "10.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. 길은 최소 1cm, 그 외 시설은 최소 10cm입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "1.0", Units = "cm"))
     float PlacementObstacleHeightCm = 250.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "길 위 시설 설치 허용", ToolTip = "켜면 이 길 위에 시설, 여유 공간, 대기열을 배치할 수 있습니다. 끄면 길 전체가 시설 배치를 막습니다.", EditCondition = "Category == EFFZSFacilityCategory::Road", EditConditionHides))
+    bool bAllowFacilityPlacementOnTop = true;
     
     bool IsValid(TArray<FText>& OutErrors) const;
     // 사양을 변경하지 않고 ID·크기·예산·큐·앵커·수치의 모든 오류를 누적한다. 오류가 없을 때 true다.

@@ -49,16 +49,17 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 		EFFZSFacilityCategory::Performance,
 		EFFZSFacilityCategory::Safety,
 		EFFZSFacilityCategory::PhotoSpot,
-		EFFZSFacilityCategory::Lighting
+		EFFZSFacilityCategory::Lighting,
+		EFFZSFacilityCategory::Road
 	};
 	const TCHAR* ExpectedLabels[] = {
 		TEXT("부스"), TEXT("화장실"), TEXT("안내"), TEXT("휴게"),
-		TEXT("공연"), TEXT("안전"), TEXT("포토스팟"), TEXT("조명")
+		TEXT("공연"), TEXT("안전"), TEXT("포토스팟"), TEXT("조명"), TEXT("길")
 	};
 
 	const TConstArrayView<EFFZSFacilityCategory> Categories =
 		FFF_PrepBuildPresentationRules::GetCategoryOrder();
-	TestEqual(TEXT("시설 대분류 칩은 조명을 포함한 여덟 종류다"), Categories.Num(), 8);
+	TestEqual(TEXT("시설 대분류 칩은 길을 포함한 아홉 종류다"), Categories.Num(), 9);
 
 	TArray<FFF_BuildCatalogEntry> Entries;
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(ExpectedCategories); ++Index)
@@ -85,7 +86,7 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 	{
 		VisibleCount += FFF_PrepBuildPresentationRules::IsEntryVisible(Entry, Filter) ? 1 : 0;
 	}
-	TestEqual(TEXT("전체 칩은 여덟 카테고리를 모두 통과시킨다"), VisibleCount, 8);
+	TestEqual(TEXT("전체 칩은 아홉 카테고리를 모두 통과시킨다"), VisibleCount, 9);
 
 	Filter.bFilterByCategory = true;
 	for (const EFFZSFacilityCategory Category : Categories)

@@ -1069,6 +1069,10 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
         AppendFloat(TEXT("spec.lighting.color.a"), Spec.LightingSettings.Color.A);
     }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
+    if (Spec.Category == EFFZSFacilityCategory::Road)
+    {
+        AppendInt(TEXT("spec.allow_facility_placement_on_top"), Spec.bAllowFacilityPlacementOnTop ? 1 : 0);
+    }
     // 새 필드의 기본값 0(무제한)은 기존 v5 영수증 지문과 완전히 같은 문자열을 유지한다.
     // 검증 전 음수 입력도 서로 다른 의미 Payload이므로 0이 아닐 때는 지문에 기록한다.
     if (Spec.MaxInstancesPerWorld != 0)

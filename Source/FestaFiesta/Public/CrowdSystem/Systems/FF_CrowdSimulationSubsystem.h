@@ -23,6 +23,7 @@
 
 class AFF_BaseCrowd;
 class UDataTable;
+class UFFZSWorldSubsystem;
 
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
 	const FFF_PartyDecisionContext& , FFF_PartyDecisionResult& );
@@ -780,6 +781,9 @@ public:
 
 private:
 	void SnapUnitToGround(FUnitData& Unit) const;
+	void EnsureRoadSupportCache() const;
+	UFUNCTION()
+	void HandleRoadSupportSnapshotRestored();
 
 	void RebuildHeightField();
 	void RebuildAvoidanceWalls();
@@ -1003,6 +1007,19 @@ private:
 	// --- 지형 ------------------------------------------------------------------------------
 
 	FFF_CrowdHeightField HeightField;
+
+	// Roads overlay the coarse terrain height without rebuilding its physics samples.
+	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.
+	struct FRoadSupportSurface
+	{
+		FTransform Transform;
+		FVector2D HalfExtentCm = FVector2D::ZeroVector;
+		double TopZ = 0.0;
+	};
+	mutable TArray<FRoadSupportSurface> RoadSupportSurfaces;
+	mutable TMap<FIntPoint, TArray<int32>> RoadSupportBuckets;
+	mutable TWeakObjectPtr<UFFZSWorldSubsystem> RoadSupportSystem;
+	mutable int64 RoadSupportRevision = -1;
 
 	// 직전 스텝에 회피가 실제로 적용됐는지. 껐을 때 낡은 Force를 한 번만 지우기 위한 것이다
 	bool bAvoidanceAppliedLastStep = false;

@@ -809,7 +809,9 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
         Facility->GetFacilitySpec(), Facility->GetGridPlacement(),
         IgnoredFootprint, IgnoredClearance, IgnoredQueue, ReservedRects);
     if (ReservedRects.IsEmpty() ||
-        AreRegionsOccupiedByOther(Facility->GetZoneId(), ReservedRects, FacilityId))
+        AreRegionsOccupiedByOther(Facility->GetZoneId(), ReservedRects, FacilityId,
+            Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Road,
+            Facility->GetFacilitySpec().bAllowFacilityPlacementOnTop))
     {
         UE_LOG(LogFFZoneSystem, Error, TEXT("Facility %s 등록 실패: Zone %s의 압축 영역이 잘못되었거나 다른 영역과 겹칩니다"),
             *FacilityId.ToString(), *Facility->GetZoneId().ToString());
@@ -819,6 +821,8 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
     FacilitiesById.Add(FacilityId, Facility);
     FFFZSFacilityRegionOccupancy Occupancy;
     Occupancy.ZoneId = Facility->GetZoneId();
+    Occupancy.bIsRoad = Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Road;
+    Occupancy.bAllowsFacilitiesOnTop = Facility->GetFacilitySpec().bAllowFacilityPlacementOnTop;
     // 등록 검증에서 계산한 예약 영역을 재사용한다.
     Occupancy.Regions = MoveTemp(ReservedRects);
     CacheFacilityOccupancy(FacilityId, MoveTemp(Occupancy));
@@ -1191,6 +1195,7 @@ bool UFFZSWorldSubsystem::BuildPlacementGridMask(
         ? FindFacility(Command.FacilityInstanceId) : nullptr;
     const FFFZSFacilitySpec& Spec = Moving ? Moving->GetFacilitySpec() : Command.FacilitySpec;
     const bool bHasSelection = !Spec.FacilityDefinitionId.IsNone();
+    OutMask.bIncludeRoadSupport = Spec.Category != EFFZSFacilityCategory::Road;
     if (!bHasSelection && !Zone->bAllowAllFacilityCategories && Zone->AllowedFacilityCategories.IsEmpty())
     {
         return true;
@@ -1217,6 +1222,7 @@ bool UFFZSWorldSubsystem::BuildPlacementGridMask(
     ViewRect.CenterCell = (MaskMin + MaskMax) * 0.5;
     ViewRect.HalfExtentCells = (MaskMax - MaskMin) * 0.5;
     TArray<const FFFZSOrientedRect*> OccupiedRegions;
+    TArray<FFFZSOrientedRect> ExistingStructureFootprints;
     const FFFZSOrientedRect WorldViewRect = TransformRegion(ViewRect, ZoneTransform);
     TArray<FGuid> Candidates;
     QueryFacilityCandidates({WorldViewRect}, Candidates);
@@ -1228,6 +1234,18 @@ bool UFFZSWorldSubsystem::BuildPlacementGridMask(
         {
             continue;
         }
+        if (Spec.Category == EFFZSFacilityCategory::Road && Spec.bAllowFacilityPlacementOnTop && !Occupancy->bIsRoad)
+        {
+            if (const AFFZSFacilityActor* Existing = FindFacility(Id))
+            {
+                TArray<FFFZSOrientedRect> Footprint, Clearance, Queue, Reserved;
+                UFFZSGridLibrary::BuildPlacementOrientedRegions(Existing->GetFacilitySpec(), Existing->GetGridPlacement(),
+                    Footprint, Clearance, Queue, Reserved);
+                ExistingStructureFootprints.Append(ToWorldRegions(Existing->GetZoneId(), Footprint));
+            }
+            continue;
+        }
+        if (!Occupancy->BlocksLayer(Spec.Category == EFFZSFacilityCategory::Road, Spec.bAllowFacilityPlacementOnTop)) continue;
         for (const FFFZSOrientedRect& Region : Occupancy->WorldRegions)
         {
             if (FFZSOrientedGeometry::IntersectsPositiveArea(WorldViewRect, Region))
@@ -1235,6 +1253,11 @@ bool UFFZSWorldSubsystem::BuildPlacementGridMask(
                 OccupiedRegions.Add(&Region);
             }
         }
+    }
+
+    for (const FFFZSOrientedRect& Footprint : ExistingStructureFootprints)
+    {
+        OccupiedRegions.Add(&Footprint);
     }
 
     TArray<const AFFZSProtectedArea*> RelevantAreas;
@@ -1457,6 +1480,11 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
                 EFFZSPlacementFailure::FacilityOccupied,
                 LOCTEXT("MovePreviewOccupied", "Facility를 이동하기 전에 닫고 Queue를 비우십시오."));
         }
+        else if (DoesRoadSupportFacility(*Existing))
+        {
+            Result.AddFailure(EFFZSPlacementFailure::FacilityOccupied,
+                LOCTEXT("RoadMoveSupportsFacility", "길 위의 시설을 먼저 옮긴 후 길을 이동할 수 있습니다."));
+        }
         else if (!Existing->CanMoveOrRemove())
         {
             Result.AddFailure(
@@ -1512,7 +1540,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidateUpgradePlacement(
     return ValidatePlacementLocal(Candidate, Facility);
 }
 
-FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility) const
+FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility, const bool bRevalidateExisting) const
 {
     TRACE_CPUPROFILER_EVENT_SCOPE(FFZS_ValidatePlacement);
     FFFZSPlacementValidation Result;
@@ -1669,6 +1697,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     bool bFootprintOccupied = false;
     bool bClearanceOccupied = false;
     bool bQueueOccupied = false;
+    bool bRoadDisallowsFacilities = false;
     const TArray<FFFZSOrientedRect> WorldReserved = ToWorldRegions(Command.ZoneId, Result.ReservedOrientedRects);
     const TArray<FFFZSOrientedRect> WorldFootprint = ToWorldRegions(Command.ZoneId, Result.FootprintOrientedRects);
     const TArray<FFFZSOrientedRect> WorldClearance = ToWorldRegions(Command.ZoneId, Result.ClearanceOrientedRects);
@@ -1682,6 +1711,30 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         {
             continue;
         }
+        if (Command.FacilitySpec.Category == EFFZSFacilityCategory::Road &&
+            Command.FacilitySpec.bAllowFacilityPlacementOnTop && !Occupancy->bIsRoad)
+        {
+            if (bRevalidateExisting) continue;
+            // Paving may extend through queues, but adding it underneath an existing building
+            // would bury that building's fixed foundation. Place the road before the building.
+            if (const AFFZSFacilityActor* Existing = FindFacility(Id))
+            {
+                TArray<FFFZSOrientedRect> ExistingFootprint, ExistingClearance, ExistingQueue, ExistingReserved;
+                UFFZSGridLibrary::BuildPlacementOrientedRegions(Existing->GetFacilitySpec(), Existing->GetGridPlacement(),
+                    ExistingFootprint, ExistingClearance, ExistingQueue, ExistingReserved);
+                bFootprintOccupied |= UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldFootprint,
+                    ToWorldRegions(Existing->GetZoneId(), ExistingFootprint));
+            }
+            continue;
+        }
+        if (!Occupancy->BlocksLayer(Command.FacilitySpec.Category == EFFZSFacilityCategory::Road,
+            Command.FacilitySpec.bAllowFacilityPlacementOnTop))
+        {
+            continue;
+        }
+        bRoadDisallowsFacilities |= Occupancy->bIsRoad && !Occupancy->bAllowsFacilitiesOnTop &&
+            Command.FacilitySpec.Category != EFFZSFacilityCategory::Road &&
+            UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldReserved, Occupancy->WorldRegions);
         if (!bFootprintOccupied)
         {
             bFootprintOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
@@ -1706,7 +1759,11 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     if (bFootprintOccupied)
     {
         Result.AddFailure(EFFZSPlacementFailure::PlacementCollision,
-            LOCTEXT("FootprintOccupied", "Facility Footprint가 다른 Facility 예약 영역과 겹칩니다."));
+            Command.FacilitySpec.Category == EFFZSFacilityCategory::Road
+                ? LOCTEXT("RoadFootprintOccupied", "이미 설치된 길이나 시설 본체 아래에 길을 설치할 수 없습니다. 시설을 옮긴 뒤 길을 먼저 설치하세요.")
+                : bRoadDisallowsFacilities
+                    ? LOCTEXT("RoadDisallowsFacilities", "이 길은 데이터 에셋의 '길 위 시설 설치 허용'이 꺼져 있어 시설을 설치할 수 없습니다.")
+                    : LOCTEXT("FootprintOccupied", "Facility Footprint가 다른 Facility 예약 영역과 겹칩니다."));
     }
     if (bClearanceOccupied)
     {
@@ -1720,6 +1777,25 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     }
     ValidateProtectedAreas(Command.ZoneId, *Zone, Command.FacilitySpec, Result);
     ValidateGround(*Zone, Command.FacilitySpec, IgnoreFacility, Result);
+    if (Command.FacilitySpec.Category != EFFZSFacilityCategory::Road)
+    {
+        // Ground can contain both uncovered soil and paving, and visual meshes load asynchronously.
+        // Use the registered road surface as a minimum base height so a facility never sinks into
+        // a tile because traces averaged mixed heights or its presentation has not loaded yet.
+        FVector Location = Result.PlacementTransform.GetLocation();
+        for (const FGuid Id : Candidates)
+        {
+            const FFFZSFacilityRegionOccupancy* Occupancy = OccupiedFacilityRegions.Find(Id);
+            const AFFZSFacilityActor* Road = FindFacility(Id);
+            if (Occupancy && Occupancy->bIsRoad && Road && IsOccupancyRelevant(Command.ZoneId, *Occupancy) &&
+                UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldFootprint, Occupancy->WorldRegions))
+            {
+                Location.Z = FMath::Max(Location.Z, Road->GetActorLocation().Z +
+                    Road->GetFacilitySpec().PlacementObstacleHeightCm);
+            }
+        }
+        Result.PlacementTransform.SetLocation(Location);
+    }
     ValidateWorldCollision(*Zone, Command.FacilitySpec, IgnoreFacility, Result);
     ValidateNavigation(Command.FacilitySpec, Result);
 
@@ -1759,6 +1835,19 @@ void UFFZSWorldSubsystem::ValidateGround(
 
     FCollisionQueryParams Params(SCENE_QUERY_STAT(FFZoneSystemGround), false);
     Params.AddIgnoredActor(&Zone);
+    if (Spec.Category == EFFZSFacilityCategory::Road)
+    {
+        // Repositioning a road, or laying a neighbor at a shared edge, samples the underlying
+        // terrain rather than the existing paving. Same-layer occupancy still rejects stacking.
+        for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+        {
+            if (const AFFZSFacilityActor* Facility = Pair.Value.Get(); Facility &&
+                Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Road)
+            {
+                Params.AddIgnoredActor(Facility);
+            }
+        }
+    }
     if (IgnoreFacility)
     {
         Params.AddIgnoredActor(IgnoreFacility);
@@ -1952,7 +2041,7 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
 }
 void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const
 {
-    if (Spec.Category == EFFZSFacilityCategory::Lighting)
+    if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.Category == EFFZSFacilityCategory::Road)
     {
         // 조명에는 고객 Entry/Service/Queue 목적지가 없다. 본체 충돌과 보호 동선은
         // 다른 배치 검증 단계에서 검사하고, 존재하지 않는 서비스 경로만 생략한다.
@@ -2445,6 +2534,8 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
     // 검증된 예약 영역을 재사용해 Move 이후 기하 계산을 반복하지 않는다.
     FFFZSFacilityRegionOccupancy NewOccupancy;
     NewOccupancy.ZoneId = Facility->GetZoneId();
+    NewOccupancy.bIsRoad = Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Road;
+    NewOccupancy.bAllowsFacilitiesOnTop = Facility->GetFacilitySpec().bAllowFacilityPlacementOnTop;
     NewOccupancy.Regions = Validation.ReservedOrientedRects;
     CacheFacilityOccupancy(Facility->GetFacilityInstanceId(), MoveTemp(NewOccupancy));
     CommitPolicies(Context, AppliedPolicies);
@@ -2457,6 +2548,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteRemove(const FFFZSCommand& Comman
     if (!Facility)
     {
         return MakeFailure(EFFZSPlacementFailure::FacilityNotFound, LOCTEXT("RemoveNotFound", "제거할 Facility를 찾을 수 없습니다."));
+    }
+    if (DoesRoadSupportFacility(*Facility))
+    {
+        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied,
+            LOCTEXT("RoadRemoveSupportsFacility", "길 위의 시설을 먼저 옮긴 후 길을 철거할 수 있습니다."));
     }
     if (Facility->GetQueueComponent()->IsOccupied())
     {
@@ -2523,6 +2619,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteUpgrade(const FFFZSCommand& Comma
     }
 
     const FFFZSFacilitySpec& Spec = Facility->GetBaseFacilitySpec();
+    if (DoesRoadSupportFacility(*Facility))
+    {
+        return MakeFailure(EFFZSPlacementFailure::FacilityOccupied,
+            LOCTEXT("RoadUpgradeSupportsFacility", "길 위의 시설을 먼저 옮긴 후 길의 크기를 변경할 수 있습니다."));
+    }
     const FFFZSFacilityUpgradeTier* AuthoredTier = FFZSFacilityUpgradeRules::FindNextTier(
         Spec.UpgradeTiers, Facility->GetUpgradeLevel());
     if (!Spec.bUsesFacilityLevels || !AuthoredTier ||
@@ -2579,6 +2680,8 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteUpgrade(const FFFZSCommand& Comma
     Facility->SetActorTransform(Validation.PlacementTransform);
     FFFZSFacilityRegionOccupancy NewOccupancy;
     NewOccupancy.ZoneId = Facility->GetZoneId();
+    NewOccupancy.bIsRoad = Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Road;
+    NewOccupancy.bAllowsFacilitiesOnTop = Facility->GetFacilitySpec().bAllowFacilityPlacementOnTop;
     NewOccupancy.Regions = Validation.ReservedOrientedRects;
     CacheFacilityOccupancy(Facility->GetFacilityInstanceId(), MoveTemp(NewOccupancy));
     CommitPolicies(Context, AppliedPolicies);
@@ -3281,6 +3384,8 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         bool bOverlapsFacility = false;
         FFFZSFacilityRegionOccupancy Record;
         Record.ZoneId = Saved.ZoneId;
+        Record.bIsRoad = EffectiveSpec.Category == EFFZSFacilityCategory::Road;
+        Record.bAllowsFacilitiesOnTop = EffectiveSpec.bAllowFacilityPlacementOnTop;
         Record.Regions = ReservedRects;
         Record.WorldRegions = ToWorldRegions(Saved.ZoneId, ReservedRects);
         Record.WorldBounds = GetRegionBounds(Record.WorldRegions);
@@ -3289,7 +3394,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
         for (const FGuid Id : Candidates)
         {
             const FFFZSFacilityRegionOccupancy& Existing = ValidatedOccupancy.FindChecked(Id);
-            if (IsOccupancyRelevant(Saved.ZoneId, Existing) &&
+            if (Existing.BlocksLayer(Record.bIsRoad, Record.bAllowsFacilitiesOnTop) && IsOccupancyRelevant(Saved.ZoneId, Existing) &&
                 UFFZSGridLibrary::DoOrientedRectSetsOverlap(Record.WorldRegions, Existing.WorldRegions))
             {
                 bOverlapsFacility = true;
@@ -3363,7 +3468,7 @@ bool UFFZSWorldSubsystem::ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot
                 bStateCompatible = Saved.Queue.State == EFFZSQueueState::Closed;
                 break;
             case EFFZSFacilityState::Active:
-                if (EffectiveSpec.Category == EFFZSFacilityCategory::Lighting)
+                if (EffectiveSpec.Category == EFFZSFacilityCategory::Lighting || EffectiveSpec.Category == EFFZSFacilityCategory::Road)
                 {
                     bStateCompatible = Saved.Queue.State == EFFZSQueueState::Closed &&
                         Saved.Queue.Entries.IsEmpty();
@@ -3612,6 +3717,8 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
             StagedFootprint, StagedClearance, StagedQueue, StagedRects);
         FFFZSFacilityRegionOccupancy StagedOccupancy;
         StagedOccupancy.ZoneId = Saved.ZoneId;
+        StagedOccupancy.bIsRoad = Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Road;
+        StagedOccupancy.bAllowsFacilitiesOnTop = Facility->GetFacilitySpec().bAllowFacilityPlacementOnTop;
         StagedOccupancy.Regions = StagedRects;
         StagedOccupancy.WorldRegions = ToWorldRegions(Saved.ZoneId, StagedRects);
         StagedOccupancy.WorldBounds = GetRegionBounds(StagedOccupancy.WorldRegions);
@@ -3620,7 +3727,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
         for (const FGuid Id : Candidates)
         {
             const FFFZSFacilityRegionOccupancy& Existing = StagedOccupiedFacilityRegions.FindChecked(Id);
-            if (IsOccupancyRelevant(Saved.ZoneId, Existing) &&
+            if (Existing.BlocksLayer(StagedOccupancy.bIsRoad, StagedOccupancy.bAllowsFacilitiesOnTop) && IsOccupancyRelevant(Saved.ZoneId, Existing) &&
                 UFFZSGridLibrary::DoOrientedRectSetsOverlap(StagedOccupancy.WorldRegions, Existing.WorldRegions))
             {
                 OutErrors.Add(LOCTEXT(
@@ -3814,7 +3921,7 @@ int32 UFFZSWorldSubsystem::RevalidateFacilitiesInZone(const FName ZoneId)
         Command.FacilitySpec = Facility->GetFacilitySpec();
         Command.ZoneId = ZoneId;
         Command.Placement = Facility->GetGridPlacement();
-        const bool bValid = ValidatePlacementLocal(Command, Facility).bIsValid;
+        const bool bValid = ValidatePlacementLocal(Command, Facility, true).bIsValid;
         if (bValid)
         {
             Facility->Tags.Remove(NeedsRelocationTag);
@@ -3834,6 +3941,8 @@ void UFFZSWorldSubsystem::OccupyFacilityRegions(const AFFZSFacilityActor& Facili
 {
     FFFZSFacilityRegionOccupancy Record;
     Record.ZoneId = Facility.GetZoneId();
+    Record.bIsRoad = Facility.GetFacilitySpec().Category == EFFZSFacilityCategory::Road;
+    Record.bAllowsFacilitiesOnTop = Facility.GetFacilitySpec().bAllowFacilityPlacementOnTop;
     TArray<FFFZSOrientedRect> IgnoredFootprint;
     TArray<FFFZSOrientedRect> IgnoredClearance;
     TArray<FFFZSOrientedRect> IgnoredQueue;
@@ -3852,10 +3961,33 @@ void UFFZSWorldSubsystem::ReleaseFacilityRegions(const AFFZSFacilityActor& Facil
     }
 }
 
+bool UFFZSWorldSubsystem::DoesRoadSupportFacility(const AFFZSFacilityActor& Road) const
+{
+    if (Road.GetFacilitySpec().Category != EFFZSFacilityCategory::Road) return false;
+    const FFFZSFacilityRegionOccupancy* RoadOccupancy = OccupiedFacilityRegions.Find(Road.GetFacilityInstanceId());
+    if (!RoadOccupancy) return false;
+    TArray<FGuid> Candidates;
+    QueryFacilityCandidates(RoadOccupancy->WorldRegions, Candidates);
+    for (const FGuid Id : Candidates)
+    {
+        const AFFZSFacilityActor* Facility = FindFacility(Id);
+        const FFFZSFacilityRegionOccupancy* Occupancy = OccupiedFacilityRegions.Find(Id);
+        if (!Facility || !Occupancy || Occupancy->bIsRoad || !IsOccupancyRelevant(Road.GetZoneId(), *Occupancy)) continue;
+        TArray<FFFZSOrientedRect> Footprint, Clearance, Queue, Reserved;
+        UFFZSGridLibrary::BuildPlacementOrientedRegions(Facility->GetFacilitySpec(), Facility->GetGridPlacement(),
+            Footprint, Clearance, Queue, Reserved);
+        if (UFFZSGridLibrary::DoOrientedRectSetsOverlap(RoadOccupancy->WorldRegions,
+            ToWorldRegions(Facility->GetZoneId(), Footprint))) return true;
+    }
+    return false;
+}
+
 bool UFFZSWorldSubsystem::AreRegionsOccupiedByOther(
     const FName ZoneId,
     const TArray<FFFZSOrientedRect>& Regions,
-    const FGuid IgnoreFacilityId) const
+    const FGuid IgnoreFacilityId,
+    const bool bIsRoad,
+    const bool bAllowsFacilitiesOnTop) const
 {
     const TArray<FFFZSOrientedRect> WorldRegions = ToWorldRegions(ZoneId, Regions);
     if (WorldRegions.IsEmpty())
@@ -3867,7 +3999,8 @@ bool UFFZSWorldSubsystem::AreRegionsOccupiedByOther(
     for (const FGuid Id : Candidates)
     {
         const FFFZSFacilityRegionOccupancy* Occupancy = OccupiedFacilityRegions.Find(Id);
-        if (Id == IgnoreFacilityId || !Occupancy || !IsOccupancyRelevant(ZoneId, *Occupancy))
+        if (Id == IgnoreFacilityId || !Occupancy || !IsOccupancyRelevant(ZoneId, *Occupancy) ||
+            !Occupancy->BlocksLayer(bIsRoad, bAllowsFacilitiesOnTop))
         {
             continue;
         }

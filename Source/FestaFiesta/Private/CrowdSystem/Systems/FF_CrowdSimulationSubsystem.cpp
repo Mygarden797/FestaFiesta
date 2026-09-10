@@ -31,6 +31,7 @@
 namespace
 {
 	constexpr int32 NoSpawnGeneration = 0;
+	constexpr double RoadSupportBucketSizeCm = 400.0;
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
@@ -1313,6 +1314,7 @@ void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
 void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 {
 	HeightField.Reset();
+	RoadSupportRevision = -1;
 
 	if (!bEnableHeightField)
 	{
@@ -1458,7 +1460,91 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
 {
-	return HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	bool bHasGround = HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	if (!bEnableHeightField || WorldLocation.ContainsNaN()) return bHasGround;
+	EnsureRoadSupportCache();
+	const FIntPoint Bucket(FMath::FloorToInt(WorldLocation.X / RoadSupportBucketSizeCm),
+		FMath::FloorToInt(WorldLocation.Y / RoadSupportBucketSizeCm));
+	if (const TArray<int32>* Surfaces = RoadSupportBuckets.Find(Bucket))
+	{
+		for (const int32 Index : *Surfaces)
+		{
+			const FRoadSupportSurface& Surface = RoadSupportSurfaces[Index];
+			const FVector Local = Surface.Transform.InverseTransformPosition(WorldLocation);
+			if (FMath::Abs(Local.X) <= Surface.HalfExtentCm.X + UE_KINDA_SMALL_NUMBER &&
+				FMath::Abs(Local.Y) <= Surface.HalfExtentCm.Y + UE_KINDA_SMALL_NUMBER)
+			{
+				OutZ = bHasGround ? FMath::Max(OutZ, Surface.TopZ) : Surface.TopZ;
+				bHasGround = true;
+			}
+		}
+	}
+	return bHasGround;
+}
+
+void UFF_CrowdSimulationSubsystem::EnsureRoadSupportCache() const
+{
+	UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* System = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const int64 Revision = System ? System->GetWorldRevision() : -1;
+	if (RoadSupportSystem.Get() == System && RoadSupportRevision == Revision) return;
+	if (RoadSupportSystem.Get() != System)
+	{
+		UFF_CrowdSimulationSubsystem* MutableThis = const_cast<UFF_CrowdSimulationSubsystem*>(this);
+		if (UFFZSWorldSubsystem* Previous = RoadSupportSystem.Get())
+		{
+			Previous->OnWorldSnapshotRestored.RemoveDynamic(MutableThis,
+				&UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored);
+		}
+		if (System)
+		{
+			System->OnWorldSnapshotRestored.AddUniqueDynamic(MutableThis,
+				&UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored);
+		}
+	}
+	RoadSupportSystem = System;
+	RoadSupportRevision = Revision;
+	RoadSupportSurfaces.Reset();
+	RoadSupportBuckets.Reset();
+	if (!System) return;
+	const FFFZSReadModel ReadModel = System->BuildReadModel();
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.Category != EFFZSFacilityCategory::Road) continue;
+		const AFFZSFacilityActor* Actor = System->FindFacility(Facility.FacilityInstanceId);
+		if (!IsValid(Actor)) continue;
+		const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
+		FRoadSupportSurface Surface;
+		Surface.Transform = Actor->GetActorTransform();
+		Surface.HalfExtentCm = FVector2D(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y) * 0.5;
+		Surface.TopZ = Actor->GetActorLocation().Z + Spec.PlacementObstacleHeightCm;
+		FBox2D Bounds(ForceInit);
+		for (const double XSign : {-1.0, 1.0})
+		{
+			for (const double YSign : {-1.0, 1.0})
+			{
+				const FVector Corner = Surface.Transform.TransformPosition(FVector(
+					Surface.HalfExtentCm.X * XSign, Surface.HalfExtentCm.Y * YSign, 0.0));
+				Bounds += FVector2D(Corner.X, Corner.Y);
+			}
+		}
+		const int32 Index = RoadSupportSurfaces.Add(Surface);
+		const FIntPoint Min(FMath::FloorToInt(Bounds.Min.X / RoadSupportBucketSizeCm),
+			FMath::FloorToInt(Bounds.Min.Y / RoadSupportBucketSizeCm));
+		const FIntPoint Max(FMath::FloorToInt(Bounds.Max.X / RoadSupportBucketSizeCm),
+			FMath::FloorToInt(Bounds.Max.Y / RoadSupportBucketSizeCm));
+		for (int32 Y = Min.Y; Y <= Max.Y; ++Y)
+		{
+			for (int32 X = Min.X; X <= Max.X; ++X) RoadSupportBuckets.FindOrAdd(FIntPoint(X, Y)).Add(Index);
+		}
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored()
+{
+	// Restore may reuse the same serialized revision with a different set of actors.
+	RoadSupportRevision = -1;
+	FacilityWallsRevision = -1;
 }
 
 void UFF_CrowdSimulationSubsystem::SnapUnitToGround(FUnitData& Unit) const
@@ -1502,6 +1588,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		}
 
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
+		if (Spec.Category == EFFZSFacilityCategory::Road) continue;
 
 		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
 		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;

@@ -189,6 +189,8 @@ bool FFF_ZoneSystemBridge_ExcludesInfoAndSafety::RunTest(const FString& Paramete
 		EFFZSFacilityCategory::Toilet, TEXT("Toilet_Standard_Test")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(4, TEXT("ZoneA"),
 		EFFZSFacilityCategory::Lighting, TEXT("Lighting_Streetlamp_FestivalStreetlamp")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(5, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Road, TEXT("Road_Surface_Sand")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
 		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
@@ -196,6 +198,7 @@ bool FFF_ZoneSystemBridge_ExcludesInfoAndSafety::RunTest(const FString& Paramete
 	TestEqual(TEXT("Toilet 만 후보로 남는다"), Candidates.Num(), 1);
 	TestTrue(TEXT("Toilet 은 후보다 — Need 로만 해소되지만 목적지는 될 수 있다"), ContainsFacility(Candidates, 3));
 	TestFalse(TEXT("조명은 방문객 서비스 목적지가 아니다"), ContainsFacility(Candidates, 4));
+	TestFalse(TEXT("길은 방문객 서비스 목적지가 아니다"), ContainsFacility(Candidates, 5));
 	if (Candidates.Num() == 1)
 	{
 		TestTrue(TEXT("Toilet 후보는 Restroom 을 해소한다"), Candidates[0].NeedRelief.bRelievesRestroom);

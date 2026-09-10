@@ -130,6 +130,8 @@ namespace FFFacilityInfoModel
 			return LOCTEXT("CategoryPhotoSpot", "포토 스팟");
 		case EFFZSFacilityCategory::Lighting:
 			return LOCTEXT("CategoryLighting", "조명");
+		case EFFZSFacilityCategory::Road:
+			return LOCTEXT("CategoryRoad", "길");
 		default:
 			return LOCTEXT("CategoryUnknown", "기타 시설");
 		}

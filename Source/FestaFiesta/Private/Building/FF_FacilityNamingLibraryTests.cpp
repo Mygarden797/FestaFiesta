@@ -18,7 +18,7 @@
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityNamingLibrary_CategoryTables,
-	"FestaFiesta.Building.FacilityNaming.CategoryTablesExposeEightMajors",
+	"FestaFiesta.Building.FacilityNaming.CategoryTablesExposeNineMajors",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 
 bool FFF_FacilityNamingLibrary_CategoryTables::RunTest(const FString& Parameters)
@@ -42,6 +42,12 @@ bool FFF_FacilityNamingLibrary_CategoryTables::RunTest(const FString& Parameters
 		UFF_FacilityNamingLibrary::GetMajorToken(EFFZSFacilityCategory::Lighting), FName(TEXT("Lighting")));
 	TestEqual(TEXT("Lighting 카테고리는 기존 저장값 뒤에 추가된다"),
 		static_cast<uint8>(EFFZSFacilityCategory::Lighting), static_cast<uint8>(7));
+	TestEqual(TEXT("Road 대분류"),
+		UFF_FacilityNamingLibrary::GetMajorToken(EFFZSFacilityCategory::Road), FName(TEXT("Road")));
+	TestEqual(TEXT("Road 카테고리는 기존 저장값 뒤에 추가된다"),
+		static_cast<uint8>(EFFZSFacilityCategory::Road), static_cast<uint8>(8));
+	TestTrue(TEXT("Road 바닥 소분류"),
+		UFF_FacilityNamingLibrary::GetKnownMinorTokens(EFFZSFacilityCategory::Road).Contains(TEXT("Surface")));
 
 	// Booth는 소비자 취향 매핑에 직접 사용되는 대표 카테고리다. 개수와 양 끝의 대표 토큰을 함께 검사해
 	// 목록이 통째로 비거나 일부 항목이 우연히 누락되는 회귀를 포착한다.

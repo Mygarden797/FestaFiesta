@@ -22,7 +22,8 @@ namespace
 	{
 		return Category != EFFZSFacilityCategory::Info
 			&& Category != EFFZSFacilityCategory::Safety
-			&& Category != EFFZSFacilityCategory::Lighting;
+			&& Category != EFFZSFacilityCategory::Lighting
+			&& Category != EFFZSFacilityCategory::Road;
 	}
 
 }
@@ -434,6 +435,7 @@ FName FFF_ZoneSystemBridge::MapToPreferenceCategory(
 	case EFFZSFacilityCategory::Info:
 	case EFFZSFacilityCategory::Safety:
 	case EFFZSFacilityCategory::Lighting:
+	case EFFZSFacilityCategory::Road:
 	default:
 		// Toilet 은 Need로만 해소(GetNeedReliefFlags), Info·Safety·Lighting 은 목적지 후보 자체가 아니다.
 		// NAME_None 이면 FFF_UtilityDestinationSelector 가 preference 항을 0으로 계산한다 —
