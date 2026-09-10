@@ -15,6 +15,10 @@ AFFZSBuildableGridActor::AFFZSBuildableGridActor()
 
 void AFFZSBuildableGridActor::HideGrid()
 {
+    if (UnifiedGrid)
+    {
+        UnifiedGrid->HideGrid();
+    }
     for (const auto& Pair : ZoneGrids)
     {
         Pair.Value->HideGrid();
@@ -26,6 +30,45 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
     const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, const int32 GridStepCm,
     const FFFZSCommand* PlacementContext)
 {
+    const float ConfigRadius = GetDefault<UFFZSDeveloperSettings>()->PlacementGridMaxRadiusCm;
+    const double Radius = FMath::IsFinite(ConfigRadius) ? FMath::Clamp(ConfigRadius, 100.f, 5000.f) : 3600.0;
+    if (WorldSystem.FindBuildArea())
+    {
+        // Drop the legacy per-region renderers when changing an existing session to unified land.
+        for (const auto& Pair : ZoneGrids)
+        {
+            Pair.Value->DestroyComponent();
+        }
+        ZoneGrids.Reset();
+        UnifiedCoordinateZoneId = WorldSystem.ResolveZoneAtWorldLocation(SurfacePointWorld,
+            UnifiedCoordinateZoneId);
+        const AFFZSGameplayZone* Region = WorldSystem.FindZone(UnifiedCoordinateZoneId);
+        if (!Region)
+        {
+            HideGrid();
+            return;
+        }
+        if (!UnifiedGrid)
+        {
+            UnifiedGrid = NewObject<UFFZSBuildableGridComponent>(this, NAME_None, RF_Transient);
+            UnifiedGrid->SetupAttachment(GetRootComponent());
+            AddInstanceComponent(UnifiedGrid);
+            UnifiedGrid->RegisterComponent();
+        }
+        FFFZSCommand Overview = PlacementContext ? *PlacementContext : FFFZSCommand();
+        Overview.ZoneId = UnifiedCoordinateZoneId;
+        const FVector Local = Region->GetActorTransform().InverseTransformPosition(SurfacePointWorld);
+        UnifiedGrid->RefreshGrid(WorldSystem, Overview, FVector2D(Local.X, Local.Y), FVector2D(Radius),
+            GridStepCm, SurfacePointWorld, SurfaceNormalWorld, 512);
+        SetActorHiddenInGame(false);
+        return;
+    }
+    if (UnifiedGrid)
+    {
+        UnifiedGrid->DestroyComponent();
+        UnifiedGrid = nullptr;
+        UnifiedCoordinateZoneId = NAME_None;
+    }
     const TArray<FName> ZoneIds = WorldSystem.GetRegisteredZoneIds();
     for (auto It = ZoneGrids.CreateIterator(); It; ++It)
     {
@@ -35,8 +78,6 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
             It.RemoveCurrent();
         }
     }
-    const float ConfigRadius = GetDefault<UFFZSDeveloperSettings>()->PlacementGridMaxRadiusCm;
-    const double Radius = FMath::IsFinite(ConfigRadius) ? FMath::Clamp(ConfigRadius, 100.f, 5000.f) : 3600.0;
     TMap<FName, FVector2D> VisibleCenters;
     for (const FName ZoneId : ZoneIds)
     {

@@ -11,10 +11,11 @@ void FFFZSBuildableGridMask::Reset()
 }
 
 bool FFFZSBuildableGridMask::Initialize(
-    const FVector2D& MinCm, const FVector2D& MaxCm, const int32 RequestedStepCm)
+    const FVector2D& MinCm, const FVector2D& MaxCm, const int32 RequestedStepCm,
+    const FVector2D& AlignmentOriginLocalCm)
 {
     Reset();
-    if (MinCm.ContainsNaN() || MaxCm.ContainsNaN() || RequestedStepCm < 25 ||
+    if (MinCm.ContainsNaN() || MaxCm.ContainsNaN() || AlignmentOriginLocalCm.ContainsNaN() || RequestedStepCm < 25 ||
         RequestedStepCm > 1000 || MinCm.X >= MaxCm.X || MinCm.Y >= MaxCm.Y ||
         MinCm.X < MIN_int32 || MinCm.Y < MIN_int32 || MaxCm.X > MAX_int32 || MaxCm.Y > MAX_int32)
     {
@@ -22,16 +23,17 @@ bool FFFZSBuildableGridMask::Initialize(
     }
 
     StepCm = RequestedStepCm;
-    // Always align to the zone origin, including negative coordinates. Doubling preserves the
-    // requested lattice while reducing detail evenly, instead of truncating one side of the lot.
+    // Legacy callers align to their region origin. Unified land supplies the world origin in
+    // region coordinates so changing regions cannot shift the displayed manipulation grid.
+    // Doubling preserves the requested lattice while reducing detail within the same budget.
     for (int32 Attempt = 0; Attempt < 32; ++Attempt, StepCm *= 2.0)
     {
         const FVector2D AlignedMin(
-            FMath::FloorToDouble(MinCm.X / StepCm) * StepCm,
-            FMath::FloorToDouble(MinCm.Y / StepCm) * StepCm);
+            AlignmentOriginLocalCm.X + FMath::FloorToDouble((MinCm.X - AlignmentOriginLocalCm.X) / StepCm) * StepCm,
+            AlignmentOriginLocalCm.Y + FMath::FloorToDouble((MinCm.Y - AlignmentOriginLocalCm.Y) / StepCm) * StepCm);
         const FVector2D AlignedMax(
-            FMath::CeilToDouble(MaxCm.X / StepCm) * StepCm,
-            FMath::CeilToDouble(MaxCm.Y / StepCm) * StepCm);
+            AlignmentOriginLocalCm.X + FMath::CeilToDouble((MaxCm.X - AlignmentOriginLocalCm.X) / StepCm) * StepCm,
+            AlignmentOriginLocalCm.Y + FMath::CeilToDouble((MaxCm.Y - AlignmentOriginLocalCm.Y) / StepCm) * StepCm);
         const double CountX = FMath::RoundToDouble((AlignedMax.X - AlignedMin.X) / StepCm);
         const double CountY = FMath::RoundToDouble((AlignedMax.Y - AlignedMin.Y) / StepCm);
         if (CountX >= 1.0 && CountY >= 1.0 && CountX * CountY <= MaximumCellCount)

@@ -11,6 +11,8 @@
 #include "Components/BorderSlot.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
+#include "Components/EditableTextBox.h"
+#include "Components/Slider.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -48,6 +50,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityInfoWbpBuilder, Log, All);
 namespace FFFacilityInfoWbpBuilder
 {
 	const FString PanelPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
+	const FString LightingPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"));
+	bool SaveBlueprint(UWidgetBlueprint& Blueprint);
+	bool HasNamedVariable(const UWidgetBlueprint& Blueprint, FName Name, const UClass& ExpectedClass);
 	const FString PaidProgramPickerPackage(
 		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"));
 	const FString PaidProgramCardPackage(
@@ -1348,6 +1353,149 @@ namespace FFFacilityInfoWbpBuilder
 		return Actions;
 	}
 
+	bool HasLightingControlsContract(const UWidgetBlueprint& Blueprint)
+	{
+		for (const TCHAR* Name : { TEXT("Button_LightingToggle"), TEXT("Button_LightingOriginal"),
+			TEXT("Button_LightingTeal"), TEXT("Button_LightingSunset"), TEXT("Button_LightingViolet"), TEXT("Button_LightingReset") })
+		{
+			if (!HasNamedVariable(Blueprint, Name, *UButton::StaticClass())) return false;
+		}
+		for (const TCHAR* Name : { TEXT("Text_LightingToggle"), TEXT("Text_LightingBrightness"), TEXT("Text_LightingColorStatus") })
+		{
+			if (!HasNamedVariable(Blueprint, Name, *UCommonTextBlock::StaticClass())) return false;
+		}
+		return HasNamedVariable(Blueprint, TEXT("Slider_LightingBrightness"), *USlider::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Input_LightingColor"), *UEditableTextBox::StaticClass());
+	}
+
+	bool BuildLightingControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette) return false;
+		const FFF_UIPaletteInGame& P = Palette->InGame;
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Lighting_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Lighting_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Lighting_Header"));
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingTitle"));
+		UButton* Toggle = MakeLightTextButton(Blueprint, Tree, TEXT("Button_LightingToggle"), TEXT("Text_LightingToggle"),
+			FText::FromString(TEXT("켜짐 · 끄기")), P.Teal, P.TealDeep, P.TealDeep, P.LineStrong, P.White, true, true);
+		UHorizontalBox* BrightnessRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Lighting_BrightnessRow"));
+		UCommonTextBlock* BrightnessLabel = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingBrightnessLabel"));
+		UCommonTextBlock* BrightnessValue = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingBrightness"), true);
+		USlider* Slider = MakeWidget<USlider>(Blueprint, Tree, TEXT("Slider_LightingBrightness"), true);
+		UHorizontalBox* Colors = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Lighting_ColorPresets"));
+		UCommonTextBlock* ColorStatus = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingColorStatus"), true);
+		UEditableTextBox* ColorInput = MakeWidget<UEditableTextBox>(Blueprint, Tree, TEXT("Input_LightingColor"), true);
+		UButton* Reset = MakeLightTextButton(Blueprint, Tree, TEXT("Button_LightingReset"), TEXT("Text_LightingReset"),
+			FText::FromString(TEXT("기본 설정으로 되돌리기")), P.PaperSunken, P.Hover, P.TealSoft, P.Line, P.TealDeep, true);
+		if (!Card || !Content || !Header || !Title || !Toggle || !BrightnessRow || !BrightnessLabel ||
+			!BrightnessValue || !Slider || !Colors || !ColorStatus || !ColorInput || !Reset) return false;
+		PaintBorder(*Card, MakeSolidBrush(P.Paper, 8.0f, P.Line, 1.0f));
+		Card->SetPadding(FMargin(10.0f, 8.0f));
+		Title->SetText(FText::FromString(TEXT("무대 조명")));
+		StyleLightText(*Title, 14, P.TealDeep, TEXT("SemiBold"));
+		AddHorizontal(*Header, *Title, FMargin(0), ESlateSizeRule::Fill);
+		AddHorizontal(*Header, *Toggle);
+		AddVertical(*Content, *Header, FMargin(0, 0, 0, 8));
+		BrightnessLabel->SetText(FText::FromString(TEXT("전체 밝기")));
+		StyleLightText(*BrightnessLabel, 11, P.Ink, TEXT("Medium"));
+		BrightnessValue->SetText(FText::FromString(TEXT("100%")));
+		StyleLightText(*BrightnessValue, 11, P.TealDeep, TEXT("SemiBold"));
+		AddHorizontal(*BrightnessRow, *BrightnessLabel, FMargin(0), ESlateSizeRule::Fill);
+		AddHorizontal(*BrightnessRow, *BrightnessValue);
+		AddVertical(*Content, *BrightnessRow);
+		Slider->SetMinValue(0.0f);
+		Slider->SetMaxValue(5.0f);
+		Slider->SetStepSize(0.05f);
+		Slider->SetValue(1.0f);
+		Slider->SetSliderBarColor(P.TealSoft);
+		Slider->SetSliderHandleColor(P.TealDeep);
+		Slider->SetToolTipText(FText::FromString(TEXT("0~500%. 100%는 Blueprint에 설정한 밝기입니다.")));
+		AddVertical(*Content, *Slider, FMargin(0, 5, 0, 9));
+		const TCHAR* ButtonNames[] = {TEXT("Button_LightingOriginal"), TEXT("Button_LightingTeal"), TEXT("Button_LightingSunset"), TEXT("Button_LightingViolet")};
+		const TCHAR* Labels[] = {TEXT("원래 색"), TEXT("청록"), TEXT("노을"), TEXT("보라")};
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			const FName LabelName(*FString::Printf(TEXT("Text_LightingPreset%d"), Index));
+			UButton* Button = MakeLightTextButton(Blueprint, Tree, ButtonNames[Index], LabelName,
+				FText::FromString(Labels[Index]), P.PaperSunken, P.Hover, P.TealSoft, P.Line, P.TealDeep, true, false, P.Line);
+			if (!Button) return false;
+			FButtonStyle Style = Button->GetStyle();
+			Style.NormalPadding = FMargin(3.0f, 6.0f);
+			Style.PressedPadding = Style.NormalPadding;
+			Button->SetStyle(Style);
+			AddHorizontal(*Colors, *Button, FMargin(0, 0, Index < 3 ? 4.0f : 0.0f, 0), ESlateSizeRule::Fill);
+		}
+		AddVertical(*Content, *Colors, FMargin(0, 0, 0, 5));
+		ColorStatus->SetText(FText::FromString(TEXT("Blueprint의 개별 조명 색상 사용 중")));
+		ColorStatus->SetAutoWrapText(true);
+		StyleLightText(*ColorStatus, 10, P.InkMuted, TEXT("Medium"));
+		AddVertical(*Content, *ColorStatus, FMargin(0, 0, 0, 5));
+		FEditableTextBoxStyle InputStyle = ColorInput->GetWidgetStyle();
+		InputStyle.BackgroundImageNormal = MakeSolidBrush(P.PaperSunken, 4, P.Line, 1);
+		InputStyle.BackgroundImageHovered = MakeSolidBrush(P.Hover, 4, P.TealSoft, 1);
+		InputStyle.BackgroundImageFocused = MakeSolidBrush(P.Paper, 4, P.TealDeep, 1);
+		InputStyle.ForegroundColor = FSlateColor(P.Ink);
+		InputStyle.TextStyle.SetFont(BrightnessLabel->GetFont());
+		InputStyle.Padding = FMargin(8, 6);
+		ColorInput->SetWidgetStyle(InputStyle);
+		ColorInput->SetHintText(FText::FromString(TEXT("직접 입력: #56DCE7 · Enter로 적용")));
+		ColorInput->SetToolTipText(FText::FromString(TEXT("6자리 색상 코드로 원하는 색을 적용합니다. ‘원래 색’은 개별 조명의 색을 복원합니다.")));
+		ColorInput->SetClearKeyboardFocusOnCommit(true);
+		AddVertical(*Content, *ColorInput, FMargin(0, 0, 0, 7));
+		AddVertical(*Content, *Reset);
+		Card->AddChild(Content);
+		Tree.RootWidget = Card;
+		return HasLightingControlsContract(Blueprint);
+	}
+
+	UWidgetBlueprint* EnsureLightingControlsBlueprint()
+	{
+		const FString Name = FPackageName::GetLongPackageAssetName(LightingPackage);
+		if (FPackageName::DoesPackageExist(LightingPackage))
+		{
+			UWidgetBlueprint* Existing = LoadObject<UWidgetBlueprint>(nullptr, *(LightingPackage + TEXT(".") + Name));
+			if (Existing && Existing->GeneratedClass && Existing->GeneratedClass->IsChildOf(UFF_FacilityLightingControls::StaticClass()) &&
+				HasLightingControlsContract(*Existing))
+			{
+				UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_LIGHTING_UMG_REUSE: %s (designer changes preserved)"), *LightingPackage);
+				return Existing;
+			}
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_LIGHTING_UMG_FAIL: existing designer asset contract mismatch: %s"), *LightingPackage);
+			return nullptr;
+		}
+		UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
+		Factory->ParentClass = UFF_FacilityLightingControls::StaticClass();
+		FAssetToolsModule& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+		UWidgetBlueprint* Created = Cast<UWidgetBlueprint>(AssetTools.Get().CreateAsset(Name,
+			FPackageName::GetLongPackagePath(LightingPackage), UWidgetBlueprint::StaticClass(), Factory));
+		if (!Created || !Created->WidgetTree || !BuildLightingControls(*Created, *Created->WidgetTree) || !SaveBlueprint(*Created)) return nullptr;
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_LIGHTING_UMG_CREATED: %s"), *LightingPackage);
+		return Created;
+	}
+
+	bool EnsureLightingWidgetContract(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bAdded)
+	{
+		bAdded = false;
+		if (Tree.FindWidget(TEXT("Widget_LightingControls")))
+			return HasNamedVariable(Blueprint, TEXT("Widget_LightingControls"), *UFF_FacilityLightingControls::StaticClass());
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		UWidgetBlueprint* Lighting = Content ? EnsureLightingControlsBlueprint() : nullptr;
+		if (!Content || !Lighting || !Lighting->GeneratedClass) return false;
+		Blueprint.Modify();
+		Content->Modify();
+		UFF_FacilityLightingControls* Controls = Tree.ConstructWidget<UFF_FacilityLightingControls>(
+			Lighting->GeneratedClass.Get(), TEXT("Widget_LightingControls"));
+		if (!Controls) return false;
+		Controls->bIsVariable = true;
+		Blueprint.OnVariableAdded(Controls->GetFName());
+		// Append without reparenting or resetting any designer-owned child or slot.
+		if (!AddVertical(*Content, *Controls, FMargin(0, 0, 0, 8))) return false;
+		Controls->SetVisibility(ESlateVisibility::Collapsed);
+		bAdded = true;
+		return true;
+	}
+
 	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
@@ -1463,7 +1611,9 @@ namespace FFFacilityInfoWbpBuilder
 
 		Tree.RootWidget = Root;
 		bool bUpgradeContractAdded = false;
-		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded);
+		bool bLightingContractAdded = false;
+		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded) &&
+			EnsureLightingWidgetContract(Blueprint, Tree, bLightingContractAdded);
 	}
 
 	UWidgetBlueprint* LoadExistingBlueprint()
@@ -2041,6 +2191,7 @@ namespace FFFacilityInfoWbpBuilder
 
 	void BuildFacilityInfoUmg()
 	{
+		if (!EnsureLightingControlsBlueprint()) return;
 		BuildPaidProgramWidgetBlueprints();
 		// Never rebuild an existing designer-owned asset. A versioned contract migration may append
 		// missing named nodes at the known Panel_Content seam and normalize the upgrade block order.
@@ -2055,6 +2206,7 @@ namespace FFFacilityInfoWbpBuilder
 				bool bMigratedProgramContract = false;
 				bool bMigratedInstanceLimitContract = false;
 				bool bMigratedUpgradeContract = false;
+				bool bMigratedLightingContract = false;
 				if (!EnsureProgramWidgetContract(
 						*Existing,
 						*Existing->WidgetTree,
@@ -2066,14 +2218,15 @@ namespace FFFacilityInfoWbpBuilder
 						bMigratedInstanceLimitContract) ||
 					!HasInstanceLimitWidgetContract(*Existing) ||
 					!EnsureUpgradeWidgetContract(*Existing, *Existing->WidgetTree, bMigratedUpgradeContract) ||
-					!HasUpgradeWidgetContract(*Existing))
+					!HasUpgradeWidgetContract(*Existing) ||
+					!EnsureLightingWidgetContract(*Existing, *Existing->WidgetTree, bMigratedLightingContract))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 						TEXT("FF_FACILITY_INFO_UMG_FAIL: existing asset cannot accept a non-destructive widget contract migration: %s"),
 						*PanelPackage);
 					return;
 				}
-				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract) &&
+				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract || bMigratedLightingContract) &&
 					!SaveBlueprint(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -2082,7 +2235,7 @@ namespace FFFacilityInfoWbpBuilder
 					return;
 				}
 
-				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract)
+				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract || bMigratedLightingContract)
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
 						TEXT("FF_FACILITY_INFO_UMG_MIGRATED: %s (existing designer nodes preserved)"),

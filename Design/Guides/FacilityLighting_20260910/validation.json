@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-10",
+  "editor_build": "Succeeded",
+  "tests": {
+    "FF_ZoneSystem.World.FacilityLevels.GeometryVisualAndRestore": "Success",
+    "FF_ZoneSystem.Lighting.LifecycleScaleAndSave": "Success",
+    "FF_ZoneSystem.Lighting.ValidationAndCommandFingerprint": "Success",
+    "FestaFiesta.UI.FacilityInfo.LightingControls": "Success",
+    "FestaFiesta.UI.FacilityInfo.PausePresentationLifecycle": "Success",
+    "FestaFiesta.UI.FacilityInfo.AssetContract": "Success",
+    "FestaFiesta.UI.FacilityInfo.LightingVisualPreview": "Success",
+    "FF_ZoneSystem.Lighting.ProductionMainStageInstallation": "Success"
+  },
+  "distinct_tests": 8,
+  "asset_verification": {
+    "status": "PASS",
+    "lights": {
+      "DeckSpot_Spot_GEN_VARIABLE": {
+        "intensity": 6000.0,
+        "movable": true
+      },
+      "Overhead_10_Spot_GEN_VARIABLE": {
+        "intensity": 10500.0,
+        "movable": true
+      },
+      "RunwaySpot_Spot_GEN_VARIABLE": {
+        "intensity": 6000.0,
+        "movable": true
+      },
+      "RunwaySpot_Spot_001_GEN_VARIABLE": {
+        "intensity": 6000.0,
+        "movable": true
+      },
+      "DeckSpot_Spot_001_GEN_VARIABLE": {
+        "intensity": 6000.0,
+        "movable": true
+      },
+      "Overhead_02_Spot_GEN_VARIABLE": {
+        "intensity": 10500.0,
+        "movable": true
+      },
+      "Overhead_00_Spot_GEN_VARIABLE": {
+        "intensity": 10500.0,
+        "movable": true
+      },
+      "Overhead_04_Spot_GEN_VARIABLE": {
+        "intensity": 10500.0,
+        "movable": true
+      },
+      "Overhead_06_Spot_GEN_VARIABLE": {
+        "intensity": 10500.0,
+        "movable": true
+      },
+      "Overhead_08_Spot_GEN_VARIABLE": {
+        "intensity": 10500.0,
+        "movable": true
+      }
+    },
+    "editor_only_preview": true,
+    "bundle_check": "native ProductionMainStageInstallation test",
+    "wbp_rebuild_preserves_saved_assets": true,
+    "wbp_sha256": [
+      "fa1134a9a2c204265a8ec306b997e3ceacad8d89632fdb92dc2f0db471e6f94b",
+      "6f0c1105c84ea6ba69a1822c9e43a9f20def15aae82d5849adc46f6caa43bb7f"
+    ]
+  },
+  "notion_guide": "https://app.notion.com/p/3d796c43a7f78005b0aec644df576b61",
+  "limits": [
+    "Packaged executable and manual full-map playthrough not run",
+    "Runtime settings are serialized in facility snapshots; existing production disk-save UI remains unconnected"
+  ],
+  "test_environment": "GPU RHI; CEF browser GPU acceleration disabled for regression runner to avoid unrelated engine CEF offscreen assertion"
+}

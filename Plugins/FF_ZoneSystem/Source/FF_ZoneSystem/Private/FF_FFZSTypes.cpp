@@ -220,6 +220,30 @@ FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
     return Result;
 }
 
+bool FFFZSFacilityLightingState::IsValid() const
+{
+    return FMath::IsFinite(BrightnessMultiplier) && BrightnessMultiplier >= 0.0f && BrightnessMultiplier <= 5.0f
+        && FMath::IsFinite(Color.R) && FMath::IsFinite(Color.G) && FMath::IsFinite(Color.B) && FMath::IsFinite(Color.A)
+        && Color.R >= 0.0f && Color.R <= 1.0f && Color.G >= 0.0f && Color.G <= 1.0f
+        && Color.B >= 0.0f && Color.B <= 1.0f && Color.A >= 0.0f && Color.A <= 1.0f;
+}
+
+FFFZSFacilityLightingState FFFZSFacilityLightingSettings::GetDefaultState() const
+{
+    FFFZSFacilityLightingState Result;
+    Result.bEnabled = bEnabled;
+    Result.BrightnessMultiplier = BrightnessMultiplier;
+    Result.bOverrideColor = bOverrideColor;
+    Result.Color = Color;
+    return Result;
+}
+
+bool FFFZSFacilityLightingSettings::HasNonDefaultValues() const
+{
+    return !LightingRigClass.IsNull() || !bEnabled || BrightnessMultiplier != 1.0f
+        || bOverrideColor || Color != FLinearColor::White;
+}
+
 bool FFFZSFacilityAudioSettings::IsValid(TArray<FText>& OutErrors) const
 {
     if (!FMath::IsFinite(VolumeMultiplier) || VolumeMultiplier < 0.0f || VolumeMultiplier > 4.0f)
@@ -717,6 +741,10 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     }
 
     AudioSettings.IsValid(OutErrors);
+    if (!LightingSettings.GetDefaultState().IsValid())
+    {
+        OutErrors.Add(LOCTEXT("InvalidFacilityLighting", "시설 조명의 밝기 배수는 0~5, 색상 채널은 유한한 0~1이어야 합니다."));
+    }
 
     return OutErrors.IsEmpty();
 }

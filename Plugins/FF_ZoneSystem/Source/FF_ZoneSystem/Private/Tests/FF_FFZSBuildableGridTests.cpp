@@ -101,4 +101,37 @@ bool FFFZSBuildableGridBudgetTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSBuildableGridWorldAlignmentTest,
+    "FF_ZoneSystem.Unit.BuildableGrid.WorldAlignmentAcrossRegions",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSBuildableGridWorldAlignmentTest::RunTest(const FString& Parameters)
+{
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        const FTransform Region(FRotator(0.0, Index * 90.0, 0.0), FVector(1037.0, -2063.0, 0.0));
+        const FVector WorldOriginLocal = Region.InverseTransformPosition(FVector::ZeroVector);
+        const FVector2D AlignmentOrigin(WorldOriginLocal.X, WorldOriginLocal.Y);
+        for (const double Extent : { 1000.0, 500000.0 })
+        {
+            FFFZSBuildableGridMask Mask;
+            TestTrue(TEXT("World-aligned mask initializes for each cardinal coordinate region"),
+                Mask.Initialize(FVector2D(-Extent), FVector2D(Extent), 100, AlignmentOrigin));
+            TestTrue(TEXT("World alignment preserves the allocation budget"),
+                Mask.GetCellCount() > 0 && Mask.GetCellCount() <= FFFZSBuildableGridMask::MaximumCellCount);
+            for (int32 Cell = 0; Cell < 3; ++Cell)
+            {
+                const FVector2D Local = Mask.GetMinLocalCm() + FVector2D(Cell * Mask.GetStepCm());
+                const FVector World = Region.TransformPosition(FVector(Local, 0.0));
+                TestTrue(TEXT("Grid X stays on world multiples even after budget coarsening"),
+                    FMath::IsNearlyEqual(World.X, FMath::GridSnap(World.X, Mask.GetStepCm()), 0.001));
+                TestTrue(TEXT("Grid Y stays on world multiples after a region rotation"),
+                    FMath::IsNearlyEqual(World.Y, FMath::GridSnap(World.Y, Mask.GetStepCm()), 0.001));
+            }
+        }
+    }
+    return true;
+}
+
 #endif

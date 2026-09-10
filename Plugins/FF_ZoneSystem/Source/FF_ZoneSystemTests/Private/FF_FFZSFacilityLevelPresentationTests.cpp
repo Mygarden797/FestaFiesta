@@ -7,6 +7,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Materials/Material.h"
+#include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSVisualGeometry.h"
@@ -56,10 +57,19 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Facility declares level support"), Actor->HasFacilityLevels());
     TestEqual(TEXT("Level one has base revenue"), Actor->GetUpgradeRevenueMultiplier(), 1.f);
     TestTrue(TEXT("Level one displays the base mesh"), Actor->VisualMesh->GetStaticMesh() == BaseMesh);
+    TestEqual(TEXT("Initialized mesh remains nonblocking before registration"),
+        Actor->VisualMesh->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+    Actor->SetPlayerCollisionEnabled(true);
+    TestEqual(TEXT("Registration enables queries on the existing mesh"),
+        Actor->VisualMesh->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
     Actor->VisualMesh->SetMaterial(0, UMaterial::GetDefaultMaterial(MD_Surface));
     if (!TestTrue(TEXT("Level two applies"), Actor->ApplyUpgradeState(2, 0.8f, 1.5f, 1.5f))) return false;
     TestEqual(TEXT("Level two uses its authored revenue"), Actor->GetUpgradeRevenueMultiplier(), 1.5f);
     TestTrue(TEXT("Level two uses its own mesh"), Actor->VisualMesh->GetStaticMesh() == LevelMesh);
+    TestEqual(TEXT("Upgrading keeps the registered mesh collision enabled"),
+        Actor->VisualMesh->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
+    TestEqual(TEXT("The replacement mesh keeps player-only object filtering"),
+        Actor->VisualMesh->GetCollisionObjectType(), FFZSCollision::FacilityPlayerObjectChannel);
     TestEqual(TEXT("Old mesh material overrides are cleared"), Actor->VisualMesh->GetNumOverrideMaterials(), 0);
     TestTrue(TEXT("Source mesh size uses one absolute multiplier"),
         Actor->VisualMesh->GetRelativeScale3D().Equals(FVector(1.5)));
@@ -90,6 +100,8 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
     Actor->ApplyLoadedVisualMesh(Actor->VisualLoadGeneration,
         FSoftObjectPath(TEXT("/Game/Automation/MissingLevelMesh.MissingLevelMesh")), true);
     TestTrue(TEXT("Failed tier mesh falls back to level one"), Actor->VisualMesh->GetStaticMesh() == BaseMesh);
+    TestEqual(TEXT("Fallback mesh retains player collision"),
+        Actor->VisualMesh->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
     TestTrue(TEXT("The specified second-level mesh can be selected again"), Actor->ApplyUpgradeState(2, 0.8f, 1.5f, 1.5f));
     const uint32 OldRequestGeneration = Actor->VisualLoadGeneration;
     if (!TestTrue(TEXT("Level three applies"), Actor->ApplyUpgradeState(3, 0.65f, 2.f, 2.25f))) return false;
@@ -97,6 +109,8 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Level three size is absolute, not compounded"), Actor->VisualMesh->GetRelativeScale3D().Equals(FVector(2.f)));
     Actor->ApplyLoadedVisualMesh(OldRequestGeneration, FSoftObjectPath(LevelMesh), true);
     TestTrue(TEXT("A stale asynchronous callback cannot restore the previous tier mesh"), Actor->VisualMesh->GetStaticMesh() == BaseMesh);
+    TestEqual(TEXT("A stale callback preserves the current mesh collision"),
+        Actor->VisualMesh->GetCollisionEnabled(), ECollisionEnabled::QueryOnly);
     TestFalse(TEXT("Invalid size is rejected before mutation"), Actor->ApplyUpgradeState(4, 0.5f, 0.f));
     TestEqual(TEXT("Rejected mutation preserves level three"), Actor->GetUpgradeLevel(), 3);
     TestTrue(TEXT("Rejected mutation preserves the mesh"), Actor->VisualMesh->GetStaticMesh() == BaseMesh);
@@ -138,6 +152,9 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
         FGuid::NewGuid(), Base, Snapshot.ZoneId, Placement, FTransform::Identity, EFFZSFacilityState::Validated, 2, 0.8f, 1.5f, 1.5f))) return false;
     TestTrue(TEXT("A missing next-tier and base mesh can be selected"), NoBaseMesh->ApplyUpgradeState(3, 0.65f, 2.f, 2.25f));
     TestNull(TEXT("No base mesh preserves the intentional absence of a visual"), NoBaseMesh->VisualMesh->GetStaticMesh());
+    NoBaseMesh->SetPlayerCollisionEnabled(true);
+    TestEqual(TEXT("A missing mesh cannot create invisible player collision"),
+        NoBaseMesh->VisualMesh->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
 
     Base.UpgradeTiers.SetNum(1);
     Base.UpgradeTiers[0].ServiceDurationMultiplier = 1.f;

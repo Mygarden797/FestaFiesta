@@ -22,7 +22,8 @@ struct FF_ZONESYSTEM_API FFFZSBuildableGridMask
 {
     static constexpr int32 MaximumCellCount = 16384;
 
-    bool Initialize(const FVector2D& MinCm, const FVector2D& MaxCm, int32 RequestedStepCm);
+    bool Initialize(const FVector2D& MinCm, const FVector2D& MaxCm, int32 RequestedStepCm,
+        const FVector2D& AlignmentOriginLocalCm = FVector2D::ZeroVector);
     void Reset();
     bool IsBuildable(int32 X, int32 Y) const;
     void SetBuildable(int32 X, int32 Y, bool bBuildable);

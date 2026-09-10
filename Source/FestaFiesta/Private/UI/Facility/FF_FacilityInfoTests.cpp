@@ -13,6 +13,8 @@
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/EditableTextBox.h"
+#include "Components/Slider.h"
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
@@ -29,6 +31,7 @@
 #include "FF_FFZSCollision.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
@@ -1740,6 +1743,178 @@ bool FFF_FacilityInfoProgramActionLifecycleTest::RunTest(const FString& Paramete
 	Panel->OnProgramScheduleRequested.RemoveAll(Coordinator);
 	Coordinator->Panel = nullptr;
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityLightingControlsTest,
+	"FestaFiesta.UI.FacilityInfo.LightingControls",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityLightingControlsTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
+		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+	if (!TestNotNull(TEXT("Lighting WBP class"), Class) || !TestNotNull(TEXT("Editor world"), World)) return false;
+	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
+	UFF_FacilityLightingControls* Controls = CreateWidget<UFF_FacilityLightingControls>(World, Class);
+	if (!TestNotNull(TEXT("Actual lighting widget"), Controls)) return false;
+	const TSharedRef<SWidget> Slate = Controls->TakeWidget();
+	USlider* Slider = Cast<USlider>(Controls->GetWidgetFromName(TEXT("Slider_LightingBrightness")));
+	UEditableTextBox* Input = Cast<UEditableTextBox>(Controls->GetWidgetFromName(TEXT("Input_LightingColor")));
+	UButton* Toggle = Cast<UButton>(Controls->GetWidgetFromName(TEXT("Button_LightingToggle")));
+	UButton* Original = Cast<UButton>(Controls->GetWidgetFromName(TEXT("Button_LightingOriginal")));
+	UButton* Reset = Cast<UButton>(Controls->GetWidgetFromName(TEXT("Button_LightingReset")));
+	if (!TestNotNull(TEXT("Brightness slider"), Slider) || !TestNotNull(TEXT("Color input"), Input) ||
+		!TestNotNull(TEXT("Toggle"), Toggle) || !TestNotNull(TEXT("Original colors"), Original) || !TestNotNull(TEXT("Reset"), Reset)) return false;
+	FFF_FacilityInfoViewData Data;
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Data.bHasLightingRig = true;
+	Data.bCanEditLighting = true;
+	int32 Requests = 0;
+	int32 ResetRequests = 0;
+	FGuid LastId;
+	FFFZSFacilityLightingState LastState;
+	const FDelegateHandle ChangeHandle = Controls->OnLightingRequested.AddLambda(
+		[&](FGuid Id, const FFFZSFacilityLightingState& State) { ++Requests; LastId = Id; LastState = State; });
+	const FDelegateHandle ResetHandle = Controls->OnLightingResetRequested.AddLambda([&](FGuid Id) { ++ResetRequests; LastId = Id; });
+	Controls->ApplyViewData(Data);
+	Controls->ApplyViewData(Data);
+	TestEqual(TEXT("Programmatic refresh never emits command"), Requests, 0);
+	Toggle->OnClicked.Broadcast();
+	TestEqual(TEXT("Toggle sends one command"), Requests, 1);
+	TestEqual(TEXT("Toggle targets displayed identity"), LastId, Data.FacilityInstanceId);
+	TestFalse(TEXT("Toggle candidate disables authored-on state"), LastState.bEnabled);
+	Slider->OnValueChanged.Broadcast(2.5f);
+	TestEqual(TEXT("Slider multiplier remains unnormalized"), LastState.BrightnessMultiplier, 2.5f);
+	Data.LightingState = LastState;
+	Data.LightingState.bOverrideColor = true;
+	Controls->ApplyViewData(Data);
+	Original->OnClicked.Broadcast();
+	TestFalse(TEXT("Original color clears override"), LastState.bOverrideColor);
+	TestEqual(TEXT("Original color preserves brightness"), LastState.BrightnessMultiplier, 2.5f);
+	Slider->OnMouseCaptureBegin.Broadcast();
+	const int32 BeforeSelectionChange = Requests;
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Controls->ApplyViewData(Data);
+	Slider->OnValueChanged.Broadcast(3.0f);
+	TestEqual(TEXT("Old slider capture cannot edit newly selected facility"), Requests, BeforeSelectionChange);
+	Slider->OnMouseCaptureEnd.Broadcast();
+	Input->OnTextChanged.Broadcast(FText::FromString(TEXT("#56DCE7")));
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Controls->ApplyViewData(Data);
+	Input->OnTextCommitted.Broadcast(FText::FromString(TEXT("#56DCE7")), ETextCommit::OnEnter);
+	TestEqual(TEXT("Old text edit cannot edit newly selected facility"), Requests, BeforeSelectionChange);
+	Input->OnTextChanged.Broadcast(FText::FromString(TEXT("#GGFFFF")));
+	Input->OnTextCommitted.Broadcast(FText::FromString(TEXT("#GGFFFF")), ETextCommit::OnEnter);
+	TestEqual(TEXT("Malformed color never emits command"), Requests, BeforeSelectionChange);
+	Input->OnTextChanged.Broadcast(FText::FromString(TEXT("#56DCE7")));
+	Input->OnTextCommitted.Broadcast(FText::FromString(TEXT("#56DCE7")), ETextCommit::OnEnter);
+	TestEqual(TEXT("Valid color emits command"), Requests, BeforeSelectionChange + 1);
+	TestEqual(TEXT("sRGB color round trips without gamma drift"), LastState.Color.ToFColor(true), FColor(0x56, 0xDC, 0xE7));
+	Reset->OnClicked.Broadcast();
+	TestEqual(TEXT("Reset carries current identity"), LastId, Data.FacilityInstanceId);
+	TestEqual(TEXT("Reset emits one command"), ResetRequests, 1);
+	Data.bCanEditLighting = false;
+	Controls->ApplyViewData(Data);
+	const int32 BeforeReadOnly = Requests;
+	Toggle->OnClicked.Broadcast();
+	Slider->OnValueChanged.Broadcast(4.f);
+	Reset->OnClicked.Broadcast();
+	TestEqual(TEXT("Read-only view blocks write commands"), Requests, BeforeReadOnly);
+	TestEqual(TEXT("Read-only view blocks reset"), ResetRequests, 1);
+	Data.bHasLightingRig = false;
+	Controls->ApplyViewData(Data);
+	TestEqual(TEXT("Unsupported facilities hide controls"), Controls->GetVisibility(), ESlateVisibility::Collapsed);
+	Controls->OnLightingRequested.Remove(ChangeHandle);
+	Controls->OnLightingResetRequested.Remove(ResetHandle);
+	Controls->ReleaseSlateResources(true);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityLightingVisualPreviewTest,
+	"FestaFiesta.UI.FacilityInfo.LightingVisualPreview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
+{
+	if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
+	{
+		AddInfo(TEXT("SKIPPED: lighting UMG capture requires real RHI with -RenderOffscreen."));
+		return true;
+	}
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
+	if (!TestNotNull(TEXT("Panel WBP"), Class) || !TestNotNull(TEXT("World"), World)) return false;
+	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
+	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(World, Class);
+	if (!TestNotNull(TEXT("Panel"), Panel)) return false;
+	FFF_FacilityInfoViewData Data;
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Data.Context = EFF_FacilityInfoContext::Build;
+	Data.ContextTitle = FText::FromString(TEXT("배치 시설"));
+	Data.DisplayName = FText::FromString(TEXT("선셋 메인공연장"));
+	Data.CategoryText = FText::FromString(TEXT("공연 › 메인공연장"));
+	Data.ZoneText = FText::FromString(TEXT("해변 구역"));
+	Data.FacilityStateText = FText::FromString(TEXT("운영 준비 완료"));
+	Data.FootprintText = FText::FromString(TEXT("50 × 32 m"));
+	Data.ClearanceText = FText::FromString(TEXT("2 m"));
+	Data.InstallCostText = FText::FromString(TEXT("1,500 Gold"));
+	Data.RecoveryCostText = FText::FromString(TEXT("750 Gold"));
+	Data.InstanceLimitText = FText::FromString(TEXT("현재 1 / 최대 1"));
+	Data.bCanMove = true;
+	Data.bCanRemove = true;
+	Data.bHasLightingRig = true;
+	Data.bCanEditLighting = true;
+	Data.LightingState.BrightnessMultiplier = 1.5f;
+	Data.LightingState.bOverrideColor = true;
+	Data.LightingState.Color = FLinearColor::FromSRGBColor(FColor(0x56, 0xDC, 0xE7));
+	UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
+		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+	if (!TestNotNull(TEXT("Current main-stage PDA"), Definition)) return false;
+	Data.DisplayName = Definition->Spec.DisplayName;
+	Data.FootprintText = FFFacilityInfoModel::FormatFootprint(Definition->Spec.FootprintSizeCells);
+	Data.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Definition->Spec.ClearanceCells);
+	Data.Thumbnail = Definition->CatalogThumbnail.LoadSynchronous();
+	if (Data.Thumbnail)
+	{
+		TArray<UTexture*> Textures = {Data.Thumbnail};
+		FTextureCompilingManager::Get().FinishCompilation(Textures);
+		Data.Thumbnail->SetForceMipLevelsToBeResident(30.f);
+		Data.Thumbnail->WaitForStreaming();
+	}
+	Panel->ApplyViewData(Data);
+	Panel->SetPanelOpen(true);
+	UFF_FacilityLightingControls* Controls = Cast<UFF_FacilityLightingControls>(Panel->GetWidgetFromName(TEXT("Widget_LightingControls")));
+	UScrollBox* Scroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Details")));
+	if (!TestNotNull(TEXT("Serialized lighting child WBP"), Controls) || !TestNotNull(TEXT("Detail scroll"), Scroll)) return false;
+	const TSharedRef<SWidget> Slate = Panel->TakeWidget();
+	FWidgetRenderer Renderer(false, true);
+	FReadSurfaceDataFlags Flags;
+	Flags.SetLinearToGamma(false);
+	const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation"));
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	auto Capture = [&](const TSharedRef<SWidget>& Widget, const int32 Width, const int32 Height, const TCHAR* Filename)
+	{
+		Panel->ForceLayoutPrepass();
+		UTextureRenderTarget2D* Target = DrawCaptureWidget(Renderer, Widget, FVector2D(Width, Height));
+		FTextureRenderTargetResource* Resource = Target ? Target->GameThread_GetRenderTargetResource() : nullptr;
+		TArray<FColor> Pixels;
+		if (!Resource || !Resource->ReadPixels(Pixels, Flags) || Pixels.Num() != Width * Height) return false;
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(Width, Height, Pixels, Png);
+		const FString Path = FPaths::Combine(Directory, Filename);
+		AddInfo(FString::Printf(TEXT("Lighting UMG capture: %s"), *FPaths::ConvertRelativePathToFull(Path)));
+		return TestTrue(TEXT("Lighting PNG saved"), FFileHelper::SaveArrayToFile(Png, *Path));
+	};
+	bool bSaved = Capture(Slate, 1280, 720, TEXT("FacilityLightingPanelTop720.png"));
+	Scroll->ScrollWidgetIntoView(Controls, false, EDescendantScrollDestination::BottomOrRight);
+	bSaved &= Capture(Slate, 1280, 720, TEXT("FacilityLightingPanel720.png"));
+	// A dedicated card capture makes each actual UMG control easy to inspect in the guide.
+	bSaved &= Capture(Controls->TakeWidget(), 346, 300, TEXT("FacilityLightingControls.png"));
+	Panel->ReleaseSlateResources(true);
+	return bSaved;
 }
 
 #endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

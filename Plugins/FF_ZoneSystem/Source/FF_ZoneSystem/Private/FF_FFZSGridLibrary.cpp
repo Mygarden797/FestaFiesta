@@ -992,6 +992,18 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
             Spec.AudioSettings.bPlayOnlyWhileActive ? 1 : 0);
         AppendInt(TEXT("spec.audio.loop"), Spec.AudioSettings.bLoop ? 1 : 0);
     }
+    // 빈 기본 조명은 기존 저장 영수증의 지문을 보존한다.
+    if (Spec.LightingSettings.HasNonDefaultValues())
+    {
+        AppendString(TEXT("spec.lighting.rig_class"), Spec.LightingSettings.LightingRigClass.ToSoftObjectPath().ToString());
+        AppendInt(TEXT("spec.lighting.enabled"), Spec.LightingSettings.bEnabled ? 1 : 0);
+        AppendFloat(TEXT("spec.lighting.brightness"), Spec.LightingSettings.BrightnessMultiplier);
+        AppendInt(TEXT("spec.lighting.override_color"), Spec.LightingSettings.bOverrideColor ? 1 : 0);
+        AppendFloat(TEXT("spec.lighting.color.r"), Spec.LightingSettings.Color.R);
+        AppendFloat(TEXT("spec.lighting.color.g"), Spec.LightingSettings.Color.G);
+        AppendFloat(TEXT("spec.lighting.color.b"), Spec.LightingSettings.Color.B);
+        AppendFloat(TEXT("spec.lighting.color.a"), Spec.LightingSettings.Color.A);
+    }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
     // 새 필드의 기본값 0(무제한)은 기존 v5 영수증 지문과 완전히 같은 문자열을 유지한다.
     // 검증 전 음수 입력도 서로 다른 의미 Payload이므로 0이 아닐 때는 지문에 기록한다.
