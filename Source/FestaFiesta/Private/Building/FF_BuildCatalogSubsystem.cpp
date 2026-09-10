@@ -412,6 +412,13 @@ void UFF_BuildCatalogSubsystem::RebuildCatalogFromLoadedAssets()
 			continue;
 		}
 
+		// Retirement is an authoring choice, not a malformed definition. Keep the
+		// Primary Asset registered so existing instances and saved IDs still resolve.
+		if (!Definition->bShowInBuildCatalog)
+		{
+			continue;
+		}
+
 		FFF_BuildCatalogEntry Entry;
 		FString FailureReason;
 		// 원본 정의의 유효성과 이름 규칙을 모두 통과한 항목만 UI 읽기 모델로 채택합니다.

@@ -28,6 +28,10 @@
   ],
   "Plugins": [
     {
+      "Name": "GeometryProcessing",
+      "Enabled": true
+    },
+    {
       "Name": "DataValidation",
       "Enabled": true
     }

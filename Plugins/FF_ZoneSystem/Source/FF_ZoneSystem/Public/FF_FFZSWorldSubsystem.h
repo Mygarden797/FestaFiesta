@@ -15,6 +15,8 @@
 class AActor;
 class AFFZSFacilityActor;
 class AFFZSGameplayZone;
+class AFFZSBuildArea;
+class FFFZSSpatialHash2D;
 class AFFZSProtectedArea;
 struct FFFZSBuildableGridMask;
 
@@ -25,6 +27,9 @@ struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
     TArray<FFFZSOrientedRect> Regions;
+    // Derived broad/narrow-phase data; saved placements and NPC region IDs stay unchanged.
+    TArray<FFFZSOrientedRect> WorldRegions;
+    FBox2D WorldBounds = FBox2D(ForceInit);
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
@@ -49,6 +54,18 @@ class FF_ZONESYSTEM_API UFFZSWorldSubsystem : public UWorldSubsystem
     GENERATED_BODY()
 
 public:
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RegisterBuildArea(AFFZSBuildArea* BuildArea);
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool UnregisterBuildArea(AFFZSBuildArea* BuildArea);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Construction")
+    AFFZSBuildArea* FindBuildArea() const;
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RefreshBuildArea();
+
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     // InitialPhase 설정을 읽고 이미 월드에 존재하는 존·보호 영역·유효 시설을 등록한다. 월드당 한 번 호출.
     
@@ -263,6 +280,18 @@ public:
 
 private:
     TMap<FName, TWeakObjectPtr<AFFZSGameplayZone>> ZonesById;
+    TWeakObjectPtr<AFFZSBuildArea> UnifiedBuildArea;
+    TSharedPtr<FFFZSSpatialHash2D> FacilitySpatialIndex;
+    TSharedPtr<FFFZSSpatialHash2D> RegionSpatialIndex;
+    TArray<FName> SpatialRegionIds;
+
+    void RebuildBuildArea();
+    void CacheFacilityOccupancy(FGuid FacilityId, FFFZSFacilityRegionOccupancy&& Occupancy);
+    void RebuildFacilitySpatialIndex();
+    void RebuildRegionSpatialIndex();
+    TArray<FFFZSOrientedRect> ToWorldRegions(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions) const;
+    bool IsOccupancyRelevant(FName ZoneId, const FFFZSFacilityRegionOccupancy& Occupancy) const;
+    void QueryFacilityCandidates(const TArray<FFFZSOrientedRect>& WorldRegions, TArray<FGuid>& Candidates) const;
     // 안정 ZoneId → 제작 존 약한 참조의 권한 레지스트리다.
     
     TMap<FGuid, TWeakObjectPtr<AFFZSFacilityActor>> FacilitiesById;
