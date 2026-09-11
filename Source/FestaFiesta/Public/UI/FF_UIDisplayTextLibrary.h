@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Time/FF_FestivalStage.h"
+#include "UI/Frontend/FF_OptionsScreen.h"
 #include "UI/LiveHUD/FF_LiveHudMenuBar.h"
 #include "UI/LiveHUD/FF_LiveHudTypes.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
@@ -51,6 +52,10 @@ public:
 	/** 구 라이브 메뉴 바의 탭. 새 라이브 HUD 로 완전히 옮기면 이 함수와 enum 을 함께 지운다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
 	static FText GetLiveHudTabText(EFF_LiveHudTab Tab);
+
+	/** 옵션 화면의 분류 6종. 타이틀 `옵션` 의 좌측 목록과 우측 제목이 같은 문구를 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")
+	static FText GetOptionCategoryText(EFF_OptionCategory Category);
 
 	/** 시설의 설치 진행 상태. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI")

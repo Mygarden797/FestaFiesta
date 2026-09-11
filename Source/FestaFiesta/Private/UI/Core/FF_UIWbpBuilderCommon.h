@@ -110,6 +110,31 @@ namespace FFUIWbpBuilder
 	bool SaveNewBlueprint(const TCHAR* LogPrefix, UWidgetBlueprint& Blueprint);
 
 	/**
+	 * 트리를 건드리지 않고 CDO 값만 바꾼 에셋을 저장한다 (예: `CBS_` 버튼 스타일, 컴파일 뒤의 CDO 기본값).
+	 * 컴파일하지 않는다 — 구조를 바꿨다면 `SaveNewBlueprint` 를 쓴다.
+	 */
+	bool SaveAssetPackage(const TCHAR* LogPrefix, UObject& Asset);
+
+	/**
+	 * 🔴 **파괴적이다.** 기존 트리·바인딩·이름 GUID 맵을 비우고 빈 `WidgetTree` 를 새로 만든다.
+	 * 디자이너에서 손댄 배치가 전부 사라지므로 `FF.Apply...` 처럼 이름에 위험을 박은 명령에서만 부른다.
+	 */
+	bool ResetWidgetTree(const TCHAR* LogPrefix, UWidgetBlueprint& Blueprint);
+
+	/**
+	 * 🔴 **파괴적이다.** 이미 있는 WBP 의 레이아웃을 통째로 교체한다. 없으면 `EnsureWidgetBlueprint` 로 위임한다.
+	 *
+	 * 이름이 같아도 **부모 클래스가 다르면 손대지 않는다** — 우연히 이름이 겹친 사용자 에셋을 지우지 않기 위함이다.
+	 * 이벤트 그래프는 건드리지 않는다. 남은 레거시 노드는 호출부가 따로 정리한다.
+	 */
+	UWidgetBlueprint* ReplaceWidgetBlueprint(
+		const TCHAR* LogPrefix,
+		const FString& PackageName,
+		const FString& Folder,
+		UClass& ParentClass,
+		FBuildLayout&& BuildLayout);
+
+	/**
 	 * **비파괴 핵심.** 패키지가 이미 있으면 레이아웃 콜백을 **아예 실행하지 않고** 그것을 돌려준다.
 	 * 명령을 여러 번 실행해도 디자이너 수정이 보존된다. 덮어쓰는 경로를 여기 만들지 않는다.
 	 */

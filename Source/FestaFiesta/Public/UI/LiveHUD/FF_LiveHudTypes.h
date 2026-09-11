@@ -28,6 +28,7 @@ enum class EFF_LiveTab : uint8
 	Queues		UMETA(DisplayName = "대기열"),
 	SNS			UMETA(DisplayName = "SNS"),
 	Staff		UMETA(DisplayName = "스태프"),
+	Density		UMETA(DisplayName = "밀집"),
 
 	// === 아래 둘은 **마감·리포트에서만** 보인다 (2026-09-02 통합) ===
 	//

@@ -1,0 +1,50 @@
+{
+  "KR": {
+    "surface_offset": 37.59,
+    "rendered_surface_radius_estimate": 5035.5863065675985,
+    "latitude": 37.579,
+    "longitude": 126.977
+  },
+  "BR": {
+    "surface_offset": 28.86,
+    "rendered_surface_radius_estimate": 5026.8555719468095,
+    "latitude": -22.952,
+    "longitude": -43.211
+  },
+  "DE": {
+    "surface_offset": 42.25,
+    "rendered_surface_radius_estimate": 5040.247342773858,
+    "latitude": 52.516,
+    "longitude": 13.378
+  },
+  "JP": {
+    "surface_offset": 5.11,
+    "rendered_surface_radius_estimate": 5003.1133564939855,
+    "latitude": 34.296,
+    "longitude": 132.319
+  },
+  "US": {
+    "surface_offset": 27.72,
+    "rendered_surface_radius_estimate": 5025.7208350018955,
+    "latitude": 40.689,
+    "longitude": -74.045
+  },
+  "ES": {
+    "surface_offset": 14.28,
+    "rendered_surface_radius_estimate": 5012.284337413583,
+    "latitude": 41.404,
+    "longitude": 2.175
+  },
+  "TH": {
+    "surface_offset": 40.52,
+    "rendered_surface_radius_estimate": 5038.523649789952,
+    "latitude": 13.751,
+    "longitude": 100.492
+  },
+  "AU": {
+    "surface_offset": 20.96,
+    "rendered_surface_radius_estimate": 5018.96317805964,
+    "latitude": -33.857,
+    "longitude": 151.215
+  }
+}

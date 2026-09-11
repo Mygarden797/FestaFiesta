@@ -28,9 +28,11 @@ public class FestaFiesta : ModuleRules
 		// packaging remains free of UnrealEd and UMGEditor dependencies.
 		if (Target.bBuildEditor)
 		{
+			// BlueprintGraph: 생성기가 복사본에 남은 레거시 K2 노드(OpenLevel)를 찾아 지운다.
+			// UnrealEd가 public으로 끌고 오지만, 직접 include하므로 명시적으로 적는다.
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
-				"AssetTools", "UnrealEd", "UMGEditor"
+				"AssetTools", "UnrealEd", "UMGEditor", "BlueprintGraph"
 			});
 		}
 	}
