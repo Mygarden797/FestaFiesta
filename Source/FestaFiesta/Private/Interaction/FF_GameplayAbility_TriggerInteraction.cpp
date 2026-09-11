@@ -18,18 +18,7 @@ void UFF_GameplayAbility_TriggerInteraction::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	if (ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
-	{
-		FGameplayTag CooldownTag = FGameplayTag::RequestGameplayTag(FName("Trigger.State.Cooldown"));
-		if (ActorInfo->AbilitySystemComponent->HasMatchingGameplayTag(CooldownTag))
-		{
-			UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 쿨다운 중이라 상호작용 거부됨"));
-			EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-			// bWasCancelled=true로 종료 -> 쿨다운 재적용 안 되게 함
-			return;
-		}
-	}
-	// 쿨다운 중이면 아예 시작하지 않음
+
 
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 	// 부모 클래스의 기본 처리를 먼저 실행
@@ -100,21 +89,6 @@ void UFF_GameplayAbility_TriggerInteraction::EndAbility(
 	UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 상호작용 종료됨! 취소여부=%s"), bWasCancelled ? TEXT("true") : TEXT("false"));
 
 	// 취소되지 않고 정상적으로 끝났을 때만 쿨다운 적용
-	if (!bWasCancelled && CooldownEffectClass && ActorInfo && ActorInfo->AbilitySystemComponent.IsValid())
-	{
-		UAbilitySystemComponent* ASC = ActorInfo->AbilitySystemComponent.Get();
-
-		// 쿨다운 효과를 적용하기 위한 세팅 데이터 만들기
-		FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
-		FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(CooldownEffectClass, 1.f, EffectContext);
-
-		// 데이터 생성이 성공했다면 액터 본인에게 쿨다운 적용
-		if (SpecHandle.IsValid())
-		{
-			ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-			UE_LOG(LogTemp, Log, TEXT("[TriggerInteraction] 쿨다운 효과 적용 완료"));
-		}
-	}
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 	// 부모 클래스의 마무리 실행
