@@ -45,6 +45,10 @@ void UFF_GameplayAbility_TriggerInteraction::ActivateAbility(
 	{
 		if (AFF_TriggerInteractionActor* TriggerActor = Cast<AFF_TriggerInteractionActor>(ActorInfo->AvatarActor.Get()))
 		{
+
+			TriggerActor->HideInteractionPrompt();
+			// 촬영 시작하면 "M 사진 촬영" 안내는 숨김
+
 			TriggerActor->ShowCameraFrame();
 			// 카메라 프레임 UI 표시
 
@@ -71,6 +75,10 @@ void UFF_GameplayAbility_TriggerInteraction::HandlePhotoFocusComplete()
 		{
 			TriggerActor->HideCameraFrame();
 			// 카메라 프레임 UI 숨기기
+
+			TriggerActor->CaptureAndShowPhoto();
+			// 화면 캡처 + 결과 사진 UI 표시
+
 		}
 	}
 
