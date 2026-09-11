@@ -65,6 +65,11 @@ foreach ($filter in $TestFilter) {
     $reportRoot = Join-Path $filterRoot 'Report'
     $logPath = Join-Path $filterRoot 'Automation.log'
     [System.IO.Directory]::CreateDirectory($reportRoot) | Out-Null
+    $reportIndex = Join-Path $reportRoot 'index.json'
+    if (Test-Path -LiteralPath $reportIndex -PathType Leaf) {
+        # A prior successful export must not validate a failed or empty current run.
+        Remove-Item -LiteralPath $reportIndex -Force
+    }
 
     $arguments = @(
         $projectFile,
@@ -96,10 +101,24 @@ foreach ($filter in $TestFilter) {
         'Result=\{Fail\}',
         'Automation Test Failed',
         'Automation Test Queue Empty.*[1-9][0-9]* test\(s\) failed',
-        'Fatal error:'
+        'Fatal error:',
+        'LogClass: Error: .*not initialized properly'
     ) -ErrorAction SilentlyContinue)
 
-    if ($exitCode -ne 0 -or $failureLines.Count -gt 0) {
+    $reportPassed = $false
+    try {
+        $report = Get-Content -LiteralPath $reportIndex -Raw | ConvertFrom-Json
+        $completed = [int]$report.succeeded + [int]$report.succeededWithWarnings
+        $reportPassed = $completed -gt 0 -and [int]$report.failed -eq 0 -and
+            [int]$report.notRun -eq 0 -and [int]$report.inProcess -eq 0 -and
+            @($report.tests).Count -eq $completed -and
+            @($report.tests | Where-Object { $_.state -ne 'Success' }).Count -eq 0
+    }
+    catch {
+        Write-Warning "Automation did not export a valid current report: $reportIndex"
+    }
+
+    if ($exitCode -ne 0 -or $failureLines.Count -gt 0 -or -not $reportPassed) {
         $failedFilters.Add($filter)
         Write-Error "Automation test filter '$filter' failed. See: $logPath" -ErrorAction Continue
     }

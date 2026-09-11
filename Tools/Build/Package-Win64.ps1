@@ -6,11 +6,17 @@ param(
 
     [string] $BuildLabel,
 
+    [ValidateSet('Shipping', 'Development')]
+    [string] $Configuration = 'Shipping',
+
     [switch] $Incremental,
 
     [switch] $SkipTests,
 
     [switch] $SkipSmokeTest,
+
+    # Requires a GPU/driver supporting both paths; tests real RHI startup, not gameplay.
+    [switch] $GraphicsSmokeTest,
 
     [switch] $SkipZip,
 
@@ -51,9 +57,9 @@ function Resolve-PayloadRoot {
         Sort-Object { $_.FullName.Length })
     foreach ($launcher in $launchers) {
         $candidateRoot = $launcher.Directory.FullName
-        $shippingExecutable = Join-Path $candidateRoot 'FestaFiesta\Binaries\Win64\FestaFiesta-Win64-Shipping.exe'
+        $gameExecutable = Join-Path $candidateRoot "FestaFiesta\Binaries\Win64\$gameBinaryBaseName.exe"
         $pakDirectory = Join-Path $candidateRoot 'FestaFiesta\Content\Paks'
-        if ((Test-Path -LiteralPath $shippingExecutable -PathType Leaf) -and
+        if ((Test-Path -LiteralPath $gameExecutable -PathType Leaf) -and
             (Test-Path -LiteralPath $pakDirectory -PathType Container)) {
             return $candidateRoot
         }
@@ -62,6 +68,7 @@ function Resolve-PayloadRoot {
     throw "UAT completed without producing a complete FestaFiesta payload below: $ArchiveRoot"
 }
 
+$gameBinaryBaseName = Get-FFGameBinaryBaseName -Configuration $Configuration
 $projectRoot = Get-FFProjectRoot
 $projectFile = Get-FFProjectFile
 $projectDescriptor = Get-Content -LiteralPath $projectFile -Raw | ConvertFrom-Json
@@ -123,7 +130,7 @@ $projectVersion = Get-FFProjectVersion
 $timestamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
 if ([string]::IsNullOrWhiteSpace($BuildLabel)) {
     $dirtySuffix = if ($git.Dirty) { '-dirty' } else { '' }
-    $BuildLabel = "FestaFiesta-Win64-Shipping-$timestamp-$($git.Commit)$dirtySuffix"
+    $BuildLabel = "FestaFiesta-Win64-$Configuration-$timestamp-$($git.Commit)$dirtySuffix"
 }
 if ($BuildLabel -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$') {
     throw 'BuildLabel must be 1-120 characters and contain only letters, digits, dot, underscore, or hyphen.'
@@ -153,6 +160,7 @@ $currentLog = $null
 try {
     Write-Host "Release: $BuildLabel"
     Write-Host "Engine:  $resolvedEngineRoot ($engineVersion)"
+    Write-Host "Configuration: $Configuration"
     Write-Host "Output:  $releaseRoot"
     Write-Host ('Mode:    {0}' -f $(if ($Incremental) { 'incremental' } else { 'clean release' }))
 
@@ -182,7 +190,7 @@ try {
         '-unattended',
         '-WaitForUATMutex',
         '-platform=Win64',
-        '-clientconfig=Shipping',
+        "-clientconfig=$Configuration",
         '-nodebuginfo',
         '-makebinaryconfig',
         '-build',
@@ -217,6 +225,20 @@ try {
         throw "BuildCookRun failed with exit code $uatExitCode. See: $uatLog"
     }
 
+    # Installation presence is not evidence that UBT selected that toolchain.
+    # An up-to-date build may omit these lines; record unknown rather than
+    # attributing the requested version to binaries without evidence.
+    $toolchainSelections = @(Select-String -LiteralPath $uatLog -Pattern (
+        'Using Visual Studio .*?([0-9]+\.[0-9]+\.[0-9]+) toolchain.*?Windows ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) SDK'))
+    foreach ($selection in $toolchainSelections) {
+        if ($selection.Matches[0].Groups[1].Value -ne [string]$toolchainLock.windows.msvcToolchain -or
+            $selection.Matches[0].Groups[2].Value -ne [string]$toolchainLock.windows.sdk) {
+            throw "UBT selected a toolchain different from toolchain.lock.json: $($selection.Line)"
+        }
+    }
+    $selectedMsvc = if ($toolchainSelections.Count -gt 0) { $toolchainSelections[0].Matches[0].Groups[1].Value } else { $null }
+    $selectedSdk = if ($toolchainSelections.Count -gt 0) { $toolchainSelections[0].Matches[0].Groups[2].Value } else { $null }
+
     $payloadRoot = Resolve-PayloadRoot -ArchiveRoot $archiveRoot
 
     # UAT stages both redistributable architectures. A Win64 payload only needs x64.
@@ -229,8 +251,12 @@ try {
     [System.IO.Directory]::CreateDirectory($licenseRoot) | Out-Null
     Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') `
         -Destination (Join-Path $licenseRoot 'THIRD_PARTY_NOTICES.md')
-    Copy-Item -LiteralPath (Join-Path $projectRoot 'Distribution\README_KO.md') `
+    $readmeName = if ($Configuration -eq 'Development') { 'DEVELOPMENT_TEST_GUIDE_KO.md' } else { 'README_KO.md' }
+    Copy-Item -LiteralPath (Join-Path $projectRoot "Distribution\$readmeName") `
         -Destination (Join-Path $payloadRoot 'README_KO.md')
+    # UAT's standard bootstrap is the sole player-facing entry point. The engine
+    # chooses the supported default RHI; QA can still pass explicit RHI options
+    # to this same executable without distributing multiple launcher scripts.
 
     if ($hasQualityOverride) {
         $overrideNotice = @(
@@ -249,18 +275,25 @@ try {
         Copy-Item -LiteralPath $overrideNoticePath -Destination (Join-Path $payloadRoot 'QUALITY-OVERRIDE.txt')
     }
 
-    $shippingPdb = Join-Path $projectRoot 'Binaries\Win64\FestaFiesta-Win64-Shipping.pdb'
-    $shippingTarget = Join-Path $projectRoot 'Binaries\Win64\FestaFiesta-Win64-Shipping.target'
-    if (-not (Test-Path -LiteralPath $shippingPdb -PathType Leaf)) {
-        throw "Shipping symbols were not generated: $shippingPdb"
+    $gamePdb = Join-Path $projectRoot "Binaries\Win64\$gameBinaryBaseName.pdb"
+    $gameTarget = Join-Path $projectRoot "Binaries\Win64\$gameBinaryBaseName.target"
+    if (-not (Test-Path -LiteralPath $gamePdb -PathType Leaf)) {
+        throw "$Configuration symbols were not generated: $gamePdb"
     }
-    Copy-Item -LiteralPath $shippingPdb -Destination $symbolsRoot
-    if (Test-Path -LiteralPath $shippingTarget -PathType Leaf) {
-        Copy-Item -LiteralPath $shippingTarget -Destination $symbolsRoot
+    if (-not (Test-Path -LiteralPath $gameTarget -PathType Leaf)) {
+        throw "$Configuration target receipt was not generated: $gameTarget"
     }
+    $targetReceipt = Get-Content -LiteralPath $gameTarget -Raw | ConvertFrom-Json
+    if ($targetReceipt.TargetName -ne 'FestaFiesta' -or $targetReceipt.Platform -ne 'Win64' -or
+        $targetReceipt.Configuration -ne $Configuration -or
+        [System.IO.Path]::GetFileName([string]$targetReceipt.Launch) -ne "$gameBinaryBaseName.exe") {
+        throw "Target receipt does not describe the requested Win64 $Configuration executable: $gameTarget"
+    }
+    Copy-Item -LiteralPath $gamePdb -Destination $symbolsRoot
+    Copy-Item -LiteralPath $gameTarget -Destination $symbolsRoot
 
-    $shippingExecutable = Join-Path $payloadRoot 'FestaFiesta\Binaries\Win64\FestaFiesta-Win64-Shipping.exe'
-    $signature = Get-AuthenticodeSignature -LiteralPath $shippingExecutable
+    $gameExecutable = Join-Path $payloadRoot "FestaFiesta\Binaries\Win64\$gameBinaryBaseName.exe"
+    $signature = Get-AuthenticodeSignature -LiteralPath $gameExecutable
     $containerFiles = @(Get-ChildItem -LiteralPath (Join-Path $payloadRoot 'FestaFiesta\Content\Paks') -File |
         Where-Object { $_.Extension -in @('.pak', '.utoc', '.ucas') } |
         Sort-Object Name |
@@ -291,15 +324,22 @@ try {
             compatibleChangelist = [int64]$engineBuild.CompatibleChangelist
         }
         toolchain     = [ordered]@{
-            windowsSdk = [string]$toolchainLock.windows.sdk
-            msvc       = [string]$toolchainLock.windows.msvcToolchain
+            windowsSdk = $selectedSdk
+            msvc       = $selectedMsvc
+            selectionEvidence = if ($toolchainSelections.Count -gt 0) { 'Logs/BuildCookRun.log' } else { 'not-reported-by-UBT' }
+            requestedWindowsSdk = [string]$toolchainLock.windows.sdk
+            requestedMsvc = [string]$toolchainLock.windows.msvcToolchain
             gitLfs     = $gitLfsVersion
             lockSha256 = (Get-FileHash -LiteralPath $toolchainLockFile -Algorithm SHA256).Hash.ToLowerInvariant()
         }
         target        = [ordered]@{
             platform      = 'Win64'
-            configuration = 'Shipping'
+            configuration = $Configuration
+            launcher      = 'FestaFiesta.exe'
+            executable    = "FestaFiesta/Binaries/Win64/$gameBinaryBaseName.exe"
             cleanBuild    = -not [bool]$Incremental
+            graphicsPaths = @('D3D11-SM5', 'D3D12-SM6')
+            defaultRhi    = 'D3D12'
         }
         packaging     = [ordered]@{
             pak            = $true
@@ -318,6 +358,9 @@ try {
             automationTests = -not [bool]$SkipTests
             dataValidation  = $true
             smokeTest      = -not [bool]$SkipSmokeTest
+            graphicsStartupTest = [bool]$GraphicsSmokeTest
+            defaultLauncherStartupTest = [bool]$GraphicsSmokeTest
+            manualGameplayTest = 'not-recorded-by-this-script'
             qualityOverride = $hasQualityOverride
             overrideReason = if ($hasQualityOverride) { $QualityOverrideReason } else { $null }
         }
@@ -339,11 +382,15 @@ try {
 
     $verifyArguments = @{
         PackagePath    = $archiveRoot
+        Configuration  = $Configuration
         EngineRoot     = $resolvedEngineRoot
         ReportDirectory = $metadataRoot
     }
     if (-not $SkipSmokeTest) {
         $verifyArguments.SmokeTest = $true
+    }
+    if ($GraphicsSmokeTest) {
+        $verifyArguments.GraphicsSmokeTest = $true
     }
     $currentPhase = 'package-verification'
     $currentLog = 'Metadata'

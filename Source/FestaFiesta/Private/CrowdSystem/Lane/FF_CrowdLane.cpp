@@ -278,7 +278,9 @@ bool AFF_CrowdLane::ValidateLaneData(TArray<FText>& OutErrors) const
 {
 	OutErrors.Reset();
 
-	if (LaneId.IsNone())
+	// Blueprint 검증은 CDO도 검사한다. 세그먼트 접두사는 배치된 레인마다 지정하며,
+	// 템플릿에서는 생략할 수 있다. 폭과 스플라인 등 나머지 검사는 그대로 수행한다.
+	if (!IsTemplate() && LaneId.IsNone())
 	{
 		OutErrors.Add(LOCTEXT("MissingLaneId", "LaneId가 필요합니다. 세그먼트 ID의 접두사로 쓰입니다."));
 	}

@@ -107,8 +107,8 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
 			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
-				"PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck."
-				"PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck"));
+				"PDA_FFZS_Booth_FoodStall_Taco."
+				"PDA_FFZS_Booth_FoodStall_Taco"));
 	TestNotNull(TEXT("The production FoodTruck definition loads for catalog pricing"),
 		FoodTruckDefinition);
 	if (!FoodTruckDefinition)
