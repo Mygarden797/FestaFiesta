@@ -1,5 +1,15 @@
 # FF_ZoneSystem 기능 상세 가이드
 
+> **2026-09-10 통합 건설 영역 추가:** 레벨에 `AFFZSBuildArea`를 하나 배치하면 기존 지역의
+> 공유 경계를 넘는 시설 배치를 지원한다. 기존 `AFFZSGameplayZone`은 NPC·혼잡·저장용 지역으로 유지한다.
+> 아래의 “정확히 하나의 Zone 안” 규칙은 BuildArea가 없는 기존 모드에 적용된다.
+> [비전공자 작업 가이드](../../Collaboration/UnifiedConstruction_UserGuide_KO.md)에서 적용·확인·복구 순서를 확인할 수 있다.
+>
+> 통합 모드는 UE GeometryAlgorithms의 폴리곤 합집합 캐시, 시설용 20m 희소 공간 해시,
+> 지역 소속 조회용 100m 공간 해시를 사용한다. 시설의 저장 좌표와 점유는 여전히 1cm 단위다.
+> 지역 경계를 런타임에 수정한 뒤에는 `UFFZSWorldSubsystem::RefreshBuildArea()`로 캐시를 갱신한다.
+> 시설은 기존 Install/Move/Upgrade/Remove 명령으로 변경하면 점유 인덱스가 자동 갱신된다.
+
 > 대상 플러그인: `Plugins/FF_ZoneSystem`<br>
 > 플러그인 버전: `2.0.0`<br>
 > 기준 단위: `1 Unreal Unit = 1 cm`, `1 배치 Cell = 1 cm`<br>

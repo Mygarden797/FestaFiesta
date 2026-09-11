@@ -111,15 +111,18 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     }
 
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
+    const bool bUnifiedBuilding = WorldSystem.FindBuildArea() != nullptr;
     const float Lift = FMath::Clamp(Settings->PlacementGridSurfaceLiftCm, 0.5f, 20.0f);
     const int32 MajorInterval = FMath::Max(Step,
         FMath::RoundToInt(static_cast<double>(Settings->PlacementGridMajorIntervalCm) / Step) * Step);
     uint32 ContextHash = HashCombine(GetTypeHash(Command.ZoneId), GetTypeHash(Step));
+    ContextHash = HashCombine(ContextHash, GetTypeHash(bUnifiedBuilding));
     ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilitySpec.FacilityDefinitionId));
     ContextHash = HashCombine(ContextHash, GetTypeHash(static_cast<uint8>(Command.FacilitySpec.Category)));
     ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilityInstanceId));
     ContextHash = HashCombine(ContextHash, GetTypeHash(static_cast<uint8>(Command.Type)));
     ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilitySpec.PlacementObstacleHeightCm));
+    ContextHash = HashCombine(ContextHash, GetTypeHash(Command.FacilitySpec.bAllowFacilityPlacementOnTop));
     ContextHash = HashCombine(ContextHash, GetTypeHash(MajorInterval));
     ContextHash = HashCombine(ContextHash, GetTypeHash(Lift));
     for (const FName AllowedZone : Command.FacilitySpec.AllowedZoneIds)
@@ -169,11 +172,22 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     Lines.Reserve(Segments.Num() * 2);
     const FVector2D StableCenter = (Min + Max) * 0.5;
     const FVector2D StableExtent = (Max - Min) * 0.5;
+    const int32 VisibleStep = FMath::Max(1, FMath::RoundToInt(Mask.GetStepCm()));
+    const int32 VisibleMajorInterval = bUnifiedBuilding
+        ? FMath::Max(VisibleStep, FMath::RoundToInt(
+            static_cast<double>(Settings->PlacementGridMajorIntervalCm) / VisibleStep) * VisibleStep)
+        : MajorInterval;
     for (const FFFZSBuildableGridSegment& Segment : Segments)
     {
-        const bool bVertical = FMath::IsNearlyEqual(Segment.StartLocalCm.X, Segment.EndLocalCm.X);
+        // Styling shares the same world lattice as placement and mask alignment, including
+        // coordinate regions whose origins are offset or whose axes turn by 90 degrees.
+        const FVector StyleStart = bUnifiedBuilding
+            ? ZoneTransform.TransformPosition(FVector(Segment.StartLocalCm, 0.0)) : FVector(Segment.StartLocalCm, 0.0);
+        const FVector StyleEnd = bUnifiedBuilding
+            ? ZoneTransform.TransformPosition(FVector(Segment.EndLocalCm, 0.0)) : FVector(Segment.EndLocalCm, 0.0);
+        const bool bVertical = FMath::IsNearlyEqual(StyleStart.X, StyleEnd.X);
         const bool bMajor = FFZSPlacementGridModel::IsMajorGridCoordinate(
-            bVertical ? Segment.StartLocalCm.X : Segment.StartLocalCm.Y, MajorInterval);
+            bVertical ? StyleStart.X : StyleStart.Y, VisibleMajorInterval);
         // Sample every lattice endpoint to follow terrain rather than spanning hills with
         // a single chord. Merge straight runs inside each fade band before scene submission.
         const int32 SectionCount = FMath::Max(1, FMath::RoundToInt(

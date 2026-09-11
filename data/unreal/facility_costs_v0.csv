@@ -12,6 +12,12 @@ Cost.Info.GeneralInfo.General,300
 Cost.Info.LostFound.Lost,300
 Cost.Info.Ticketing.Ticket,200
 Cost.Info.Translation.Translation,500
+Cost.Lighting.Decorative.CurtainArch,100
+Cost.Lighting.Decorative.Festoon,50
+Cost.Lighting.Decorative.GoldenTree,100
+Cost.Lighting.Pendant.RattanPendant,50
+Cost.Lighting.Decorative.StarTree,50
+Cost.Lighting.Streetlamp.FestivalStreetlamp,50
 Cost.Performance.Busking.Busking,1000
 Cost.Performance.ExperienceStage.Experience,800
 Cost.Performance.MainStage.SunsetMainStage,2000
@@ -24,6 +30,12 @@ Cost.Rest.Cooling.Cooling,300
 Cost.Rest.Picnic.Picnic,300
 Cost.Rest.Seating.Seating,300
 Cost.Rest.Shade.Shade,300
+Cost.Road.Surface.Sand,10
+Cost.Road.Surface.Asphalt,10
+Cost.Road.Surface.Wood,10
+Cost.Road.Surface.Stone,10
+Cost.Road.Surface.Herringbone,10
+Cost.Road.Surface.Concrete,10
 Cost.Safety.Evacuation.Evacuation,300
 Cost.Safety.FireSafety.FireSafety,300
 Cost.Safety.FirstAid.FirstAid,300

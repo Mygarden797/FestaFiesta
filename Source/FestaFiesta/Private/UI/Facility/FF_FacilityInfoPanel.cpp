@@ -1,7 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
-#include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 
 #include "CommonTextBlock.h"
 #include "Blueprint/WidgetTree.h"
@@ -21,9 +20,19 @@
 void UFF_FacilityInfoPanel::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
-	EnsureMinigameButton();
-	EnsureProgramSection();
-	EnsureUpgradeSection();
+	// Layout is authored in WBP, including optional tabs and confirmation. Use the editor
+	// migration command for old assets; never append runtime controls over designer work.
+	if (Button_TabOverview) Button_TabOverview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOverviewClicked);
+	if (Button_TabOperation) Button_TabOperation->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOperationClicked);
+	if (Button_TabUpgrade) Button_TabUpgrade->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUpgradeTabClicked);
+	if (Button_Favorite) Button_Favorite->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoriteClicked);
+	if (Button_RemoveConfirm) Button_RemoveConfirm->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveConfirmClicked);
+	if (Button_RemoveCancel) Button_RemoveCancel->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveCancelClicked);
+	if (Widget_LightingControls)
+	{
+		Widget_LightingControls->OnLightingRequested.AddUObject(this, &ThisClass::HandleLightingRequested);
+		Widget_LightingControls->OnLightingResetRequested.AddUObject(this, &ThisClass::HandleLightingResetRequested);
+	}
 
 	if (Button_Move)
 	{
@@ -69,6 +78,8 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
 		CurrentViewData.Context != ViewData.Context;
 	CurrentViewData = ViewData;
+	if (bSelectionChanged) ActivePage = EFF_FacilityInfoPage::Overview;
+	if (Widget_LightingControls) Widget_LightingControls->ApplyViewData(ViewData);
 	if (bSelectionChanged && WidgetTree)
 	{
 		if (UScrollBox* Details = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("ScrollBox_Details"))))
@@ -287,6 +298,86 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		Text_ThumbnailPlaceholder->SetVisibility(
 			bHasThumbnail ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
+	SetText(Text_Favorite, ViewData.bIsFavorite
+		? LOCTEXT("FavoriteSaved", "★ 즐겨찾기") : LOCTEXT("FavoriteAdd", "☆ 즐겨찾기"));
+	if (Button_Favorite) Button_Favorite->SetIsEnabled(!ViewData.FacilityDefinitionId.IsNone());
+	SetText(Text_LevelSummary, ViewData.FacilityLevelText);
+	if (Text_LevelSummary) Text_LevelSummary->SetVisibility(ViewData.bHasFacilityLevels
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	SetText(Text_RemoveConfirmation, FText::Format(
+		LOCTEXT("RemoveConfirmation", "{0} 시설을 철거할까요?\n회수 금액 {1}\n강화에 사용한 비용은 환불되지 않습니다."),
+		ViewData.DisplayName, ViewData.RecoveryCostText));
+	if (Button_RemoveConfirm) Button_RemoveConfirm->SetIsEnabled(bBuildContext && ViewData.bCanRemove);
+	RefreshPageVisibility();
+	OnViewDataApplied(ViewData);
+}
+
+void UFF_FacilityInfoPanel::SetInfoPage(const EFF_FacilityInfoPage Page)
+{
+	const bool bPageChanged = ActivePage != Page;
+	ActivePage = Page;
+	RefreshPageVisibility();
+	if (bPageChanged && WidgetTree)
+		if (UScrollBox* Details = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("ScrollBox_Details"))))
+			Details->ScrollToStart();
+}
+
+void UFF_FacilityInfoPanel::RefreshPageVisibility()
+{
+	// Legacy designer panels keep their previous presentation until explicitly migrated.
+	if (!Button_TabOverview || !Button_TabOperation || !Button_TabUpgrade) return;
+	const bool bBuild = CurrentViewData.Context == EFF_FacilityInfoContext::Build;
+	if (ActivePage == EFF_FacilityInfoPage::Upgrade && (!bBuild || !CurrentViewData.bHasFacilityLevels))
+		ActivePage = EFF_FacilityInfoPage::Overview;
+	if (ActivePage == EFF_FacilityInfoPage::RemoveConfirmation && (!bBuild || !CurrentViewData.bCanRemove))
+		ActivePage = EFF_FacilityInfoPage::Overview;
+	auto Show = [](UWidget* Widget, const bool bShow)
+	{
+		if (Widget) Widget->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+	Show(Panel_BuildSection, ActivePage == EFF_FacilityInfoPage::Overview);
+	Show(Panel_LiveSection, ActivePage == EFF_FacilityInfoPage::Operation);
+	Show(Panel_UpgradeSection, ActivePage == EFF_FacilityInfoPage::Upgrade);
+	Show(Panel_ProgramSection, ActivePage == EFF_FacilityInfoPage::Overview && CurrentViewData.bShowProgramSection);
+	Show(Panel_RemoveConfirmation, ActivePage == EFF_FacilityInfoPage::RemoveConfirmation);
+	// The persistent header still identifies the facility. Give task-specific pages their
+	// full scroll area instead of repeating the overview thumbnail above every action.
+	if (WidgetTree) Show(WidgetTree->FindWidget(TEXT("Summary_Card")), ActivePage == EFF_FacilityInfoPage::Overview);
+	// Lighting remains available in the overview; its own data controls applicability.
+	if (Widget_LightingControls)
+	{
+		Widget_LightingControls->ApplyViewData(CurrentViewData);
+		if (ActivePage != EFF_FacilityInfoPage::Overview) Show(Widget_LightingControls, false);
+	}
+	Button_TabOverview->SetIsEnabled(ActivePage != EFF_FacilityInfoPage::Overview);
+	Button_TabOperation->SetIsEnabled(ActivePage != EFF_FacilityInfoPage::Operation);
+	Button_TabUpgrade->SetIsEnabled(bBuild && CurrentViewData.bHasFacilityLevels && ActivePage != EFF_FacilityInfoPage::Upgrade);
+	Show(Button_TabUpgrade, bBuild && CurrentViewData.bHasFacilityLevels);
+	Show(Panel_Actions, ActivePage != EFF_FacilityInfoPage::RemoveConfirmation &&
+		(bBuild || CurrentViewData.bHasMinigame));
+}
+
+void UFF_FacilityInfoPanel::HandleOverviewClicked() { SetInfoPage(EFF_FacilityInfoPage::Overview); }
+void UFF_FacilityInfoPanel::HandleOperationClicked() { SetInfoPage(EFF_FacilityInfoPage::Operation); }
+void UFF_FacilityInfoPanel::HandleUpgradeTabClicked() { SetInfoPage(EFF_FacilityInfoPage::Upgrade); }
+void UFF_FacilityInfoPanel::HandleFavoriteClicked()
+{
+	if (!CurrentViewData.FacilityDefinitionId.IsNone()) OnFavoriteRequested.Broadcast();
+}
+void UFF_FacilityInfoPanel::HandleRemoveCancelClicked()
+{
+	SetInfoPage(EFF_FacilityInfoPage::Overview);
+	ApplyViewData(CurrentViewData);
+}
+void UFF_FacilityInfoPanel::HandleRemoveConfirmClicked()
+{
+	if (ActivePage == EFF_FacilityInfoPage::RemoveConfirmation &&
+		CurrentViewData.Context == EFF_FacilityInfoContext::Build && CurrentViewData.bCanRemove)
+	{
+		// Leave confirmation before broadcasting so repeated clicks cannot submit twice.
+		ActivePage = EFF_FacilityInfoPage::Overview;
+		OnRemoveRequested.Broadcast();
+	}
 }
 
 void UFF_FacilityInfoPanel::SetPanelOpen(const bool bOpen)
@@ -329,7 +420,9 @@ void UFF_FacilityInfoPanel::HandleRemoveClicked()
 {
 	if (CurrentViewData.Context == EFF_FacilityInfoContext::Build && CurrentViewData.bCanRemove)
 	{
-		OnRemoveRequested.Broadcast();
+		// An old WBP without the authored confirmation is deliberately not destructive.
+		if (Panel_RemoveConfirmation && Button_RemoveConfirm)
+			SetInfoPage(EFF_FacilityInfoPage::RemoveConfirmation);
 	}
 }
 
@@ -377,205 +470,24 @@ void UFF_FacilityInfoPanel::HandleUpgradeClicked()
 	}
 }
 
-void UFF_FacilityInfoPanel::EnsureUpgradeSection()
-{
-	if (!WidgetTree)
-	{
-		return;
-	}
-	if (!Text_FacilityRevenue)
-	{
-		if (UVerticalBox* Meta = FFFacilityInfoUpgradeLayout::FindRevenueParent(*WidgetTree))
-		{
-			Text_FacilityRevenue = WidgetTree->ConstructWidget<UCommonTextBlock>(
-				UCommonTextBlock::StaticClass(), TEXT("Text_FacilityRevenue"));
-			Text_FacilityRevenue->SetAutoWrapText(true);
-			if (Text_FacilityState)
-			{
-				FSlateFontInfo Font = Text_FacilityState->GetFont();
-				Font.Size = 11;
-				Text_FacilityRevenue->SetFont(Font);
-				Text_FacilityRevenue->SetColorAndOpacity(Text_FacilityState->GetColorAndOpacity());
-			}
-			Meta->AddChildToVerticalBox(Text_FacilityRevenue);
-			if (UWidget* State = FFFacilityInfoUpgradeLayout::FindContentChild(Text_FacilityState, *Meta))
-			{
-				Meta->ShiftChild(Meta->GetChildIndex(State) + 1, Text_FacilityRevenue);
-			}
-		}
-	}
-	UVerticalBox* Section = Cast<UVerticalBox>(Panel_UpgradeSection);
-	if (!Section)
-	{
-		UVerticalBox* Content = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Panel_Content")));
-		if (Panel_UpgradeSection || !Content)
-		{
-			return;
-		}
-		Section = WidgetTree->ConstructWidget<UVerticalBox>(
-			UVerticalBox::StaticClass(), TEXT("Panel_UpgradeSection"));
-		Panel_UpgradeSection = Section;
-		Content->AddChildToVerticalBox(Section);
-	}
-	bool bOrderChanged = false;
-	FFFacilityInfoUpgradeLayout::PlaceAfterSummary(*WidgetTree, *Section, bOrderChanged);
-	auto EnsureText = [this, Section](TObjectPtr<UCommonTextBlock>& Target, const FName Name)
-	{
-		if (!Target)
-		{
-			Target = WidgetTree->ConstructWidget<UCommonTextBlock>(UCommonTextBlock::StaticClass(), Name);
-			Target->SetAutoWrapText(true);
-			if (Text_ServiceDuration)
-			{
-				Target->SetFont(Text_ServiceDuration->GetFont());
-				Target->SetColorAndOpacity(Text_ServiceDuration->GetColorAndOpacity());
-			}
-			Section->AddChildToVerticalBox(Target);
-		}
-	};
-	EnsureText(Text_FacilityLevel, TEXT("Text_FacilityLevel"));
-	EnsureText(Text_UpgradeEffect, TEXT("Text_UpgradeEffect"));
-	EnsureText(Text_UpgradeCost, TEXT("Text_UpgradeCost"));
-	EnsureText(Text_UpgradeReason, TEXT("Text_UpgradeReason"));
-	if (!Button_Upgrade)
-	{
-		Button_Upgrade = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("Button_Upgrade"));
-		if (Button_ScheduleProgram)
-		{
-			Button_Upgrade->SetStyle(Button_ScheduleProgram->GetStyle());
-		}
-		Section->AddChildToVerticalBox(Button_Upgrade);
-	}
-	if (!Text_Upgrade && !Button_Upgrade->GetContent())
-	{
-		Text_Upgrade = WidgetTree->ConstructWidget<UCommonTextBlock>(
-			UCommonTextBlock::StaticClass(), TEXT("Text_Upgrade"));
-		if (Text_ScheduleProgram)
-		{
-			Text_Upgrade->SetFont(Text_ScheduleProgram->GetFont());
-			Text_Upgrade->SetColorAndOpacity(Text_ScheduleProgram->GetColorAndOpacity());
-		}
-		Text_Upgrade->SetJustification(ETextJustify::Center);
-		Button_Upgrade->SetContent(Text_Upgrade);
-	}
-}
-
-void UFF_FacilityInfoPanel::EnsureMinigameButton()
-{
-	if (Button_StartMinigame || !WidgetTree)
-	{
-		return;
-	}
-
-	UVerticalBox* LiveSection = Cast<UVerticalBox>(Panel_LiveSection);
-	if (!LiveSection)
-	{
-		return;
-	}
-
-	Button_StartMinigame = WidgetTree->ConstructWidget<UButton>(
-		UButton::StaticClass(), TEXT("Button_StartMinigame"));
-	Text_StartMinigame = WidgetTree->ConstructWidget<UCommonTextBlock>(
-		UCommonTextBlock::StaticClass(), TEXT("Text_StartMinigame"));
-	if (!Button_StartMinigame || !Text_StartMinigame)
-	{
-		Button_StartMinigame = nullptr;
-		Text_StartMinigame = nullptr;
-		return;
-	}
-
-	Text_StartMinigame->SetText(LOCTEXT("StartMinigameFallback", "게임 시작"));
-	Text_StartMinigame->SetJustification(ETextJustify::Center);
-	Button_StartMinigame->SetContent(Text_StartMinigame);
-	LiveSection->AddChildToVerticalBox(Button_StartMinigame);
-}
-
-void UFF_FacilityInfoPanel::EnsureProgramSection()
-{
-	// This is a compatibility shim for an older designer asset. It creates only the missing
-	// program block; the WBP builder/migration owns the normal authored layout and styling.
-	UVerticalBox* ProgramSection = Cast<UVerticalBox>(Panel_ProgramSection);
-	if (!ProgramSection)
-	{
-		if (Panel_ProgramSection || !WidgetTree)
-		{
-			return;
-		}
-
-		UVerticalBox* Content = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Panel_Content")));
-		if (!Content)
-		{
-			return;
-		}
-
-		ProgramSection = WidgetTree->ConstructWidget<UVerticalBox>(
-			UVerticalBox::StaticClass(), TEXT("Panel_ProgramSection"));
-		if (!ProgramSection)
-		{
-			return;
-		}
-		Panel_ProgramSection = ProgramSection;
-		Content->AddChildToVerticalBox(ProgramSection);
-
-		UCommonTextBlock* Title = WidgetTree->ConstructWidget<UCommonTextBlock>(
-			UCommonTextBlock::StaticClass(), TEXT("Text_ProgramTitleFallback"));
-		if (Title)
-		{
-			Title->SetText(LOCTEXT("ProgramTitleFallback", "유료 프로그램"));
-			ProgramSection->AddChildToVerticalBox(Title);
-		}
-	}
-
-	auto EnsureText = [this, ProgramSection](
-		TObjectPtr<UCommonTextBlock>& Target,
-		const FName WidgetName)
-	{
-		if (Target || !WidgetTree)
-		{
-			return;
-		}
-		Target = WidgetTree->ConstructWidget<UCommonTextBlock>(
-			UCommonTextBlock::StaticClass(), WidgetName);
-		if (Target)
-		{
-			Target->SetAutoWrapText(true);
-			ProgramSection->AddChildToVerticalBox(Target);
-		}
-	};
-
-	EnsureText(Text_ProgramStatus, TEXT("Text_ProgramStatus"));
-	EnsureText(Text_ScheduledProgramSummary, TEXT("Text_ScheduledProgramSummary"));
-	EnsureText(Text_ProgramScheduleReason, TEXT("Text_ProgramScheduleReason"));
-
-	if (!Button_ScheduleProgram && WidgetTree)
-	{
-		Button_ScheduleProgram = WidgetTree->ConstructWidget<UButton>(
-			UButton::StaticClass(), TEXT("Button_ScheduleProgram"));
-		if (Button_ScheduleProgram)
-		{
-			ProgramSection->AddChildToVerticalBox(Button_ScheduleProgram);
-		}
-	}
-	if (!Text_ScheduleProgram && Button_ScheduleProgram && WidgetTree &&
-		!Button_ScheduleProgram->GetContent())
-	{
-		Text_ScheduleProgram = WidgetTree->ConstructWidget<UCommonTextBlock>(
-			UCommonTextBlock::StaticClass(), TEXT("Text_ScheduleProgram"));
-		if (Text_ScheduleProgram)
-		{
-			Text_ScheduleProgram->SetText(LOCTEXT("ScheduleProgramFallback", "유료 프로그램 편성"));
-			Text_ScheduleProgram->SetJustification(ETextJustify::Center);
-			Button_ScheduleProgram->SetContent(Text_ScheduleProgram);
-		}
-	}
-}
-
 void UFF_FacilityInfoPanel::SetText(UCommonTextBlock* Target, const FText& Text) const
 {
 	if (Target)
 	{
 		Target->SetText(Text);
 	}
+}
+
+void UFF_FacilityInfoPanel::HandleLightingRequested(const FGuid FacilityId, const FFFZSFacilityLightingState& State)
+{
+	if (CurrentViewData.bCanEditLighting && CurrentViewData.FacilityInstanceId == FacilityId)
+		OnLightingRequested.Broadcast(FacilityId, State);
+}
+
+void UFF_FacilityInfoPanel::HandleLightingResetRequested(const FGuid FacilityId)
+{
+	if (CurrentViewData.bCanEditLighting && CurrentViewData.FacilityInstanceId == FacilityId)
+		OnLightingResetRequested.Broadcast(FacilityId);
 }
 
 #undef LOCTEXT_NAMESPACE

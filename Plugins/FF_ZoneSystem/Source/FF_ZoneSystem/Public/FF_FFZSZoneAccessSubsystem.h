@@ -25,13 +25,14 @@
 // 소비 측은 이미 "앵커가 있으면 앵커, 없으면 존 중심" 규칙이라 별도 연동이 필요 없다.
 //
 // 지형을 바꾸지 않고 데이터를 바꾸는 방식이므로 NPC가 절벽을 오르거나 허공을 건너뛰지 않는다.
-// 앵커를 아무리 옮겨도 출구에 닿지 못하는 존은 경계 전체가 다른 지형 조각에 있다는 뜻이므로
-// 좌표와 함께 오류로 보고한다 — 그건 레벨에서 램프를 놓거나 존을 옮겨야 하는 자리다.
+// 제한된 표본에서 접근점을 찾지 못하면 좌표와 함께 보고한다. 이 결과만으로 존 전체가
+// 끊겼다고 단정하지 않는다. NavMesh 준비 상태·투영 범위·표본 간격과 실제 지형을 확인해야 한다.
 //
 // ─── 불변식·실패 ─────────────────────────────────────────────────────────────
 // 게임 월드(Game/PIE)에서만 생성되고 런타임 값만 바꾼다. 에디터 월드는 건드리지 않으므로
 // 레벨 에셋이 dirty해지지 않는다. 이미 저작된 앵커는 절대 덮어쓰지 않는다.
-// NavMesh나 출구를 못 찾으면 아무것도 바꾸지 않고 경고만 남긴다.
+// 게임플레이 존이 없는 Frontend 월드는 검사하지 않는다. 존이 있는 월드에서 NavMesh나
+// 출구를 못 찾으면 아무것도 바꾸지 않고 경고만 남긴다.
 //
 // 타이밍이 이 클래스의 유일한 전제다. 앵커를 쓰는 쪽(UFF_CrowdDecisionSubsystem의 보행거리
 // 행렬)은 UFFZSWorldSubsystem의 WorldRevision이 바뀔 때만 다시 만드는데, 앵커를 직접 넣는
@@ -83,7 +84,7 @@ public:
     // 게임 월드(Game/PIE)에만 만든다. 에디터 월드에서 존 속성을 바꾸면 레벨이 dirty해진다.
     virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 
-    // 존과 NavMesh가 준비된 뒤 한 번 복구하고 결과를 로그로 남긴다.
+    // 액터 BeginPlay 전에 한 번 복구한다. 구워서 저장한 NavMesh가 준비되어 있어야 한다.
     virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
     // 앵커가 비어 있고 존 중심에서 출구에 못 닿는 존의 접근점을 고쳐 넣는다.
@@ -91,13 +92,15 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Zone Access")
     int32 RepairZoneAccessPoints();
 
-    // 지금 상태에서 존별 출구 도달 가능 여부와 NavMesh 조각 수를 로그로 남긴다.
+    // 전체 존 수에 투영 실패 존도 포함해 보고한다. ffzs.ZoneAccess.Report 콘솔에서도 호출한다.
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Zone Access")
     void LogReachabilityReport() const;
 
     const TArray<FFFZSZoneAccessRepair>& GetRepairs() const { return Repairs; }
 
 private:
+    bool HasGameplayZones() const;
+
     // 퇴장 출구의 월드 좌표. AFF_SpawnActor의 위치 + Temp_ExitOffsetFromOrigin이며,
     // 게임 모듈에 의존하지 않도록 클래스 이름과 리플렉션으로 읽는다.
     bool ResolveExitLocation(FVector& OutExit) const;

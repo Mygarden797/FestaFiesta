@@ -170,9 +170,13 @@ private:
 	void ClearLiveSelectionIndicators();
 
 	void HandlePanelMoveRequested();
+	void HandlePanelFavoriteRequested();
 	void HandlePanelRemoveRequested();
 	void HandlePanelProgramScheduleRequested();
 	void HandlePanelUpgradeRequested();
+	void HandlePanelLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
+	void HandlePanelLightingResetRequested(FGuid FacilityId);
+	bool CanEditSelectedLighting(FGuid FacilityId) const;
 	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);
 	void HandlePaidProgramPickerCloseRequested();
 	void HandlePanelMinigameRequested();
@@ -189,6 +193,9 @@ private:
 
 	UFUNCTION()
 	void HandleWorldSnapshotRestored();
+
+	UFUNCTION()
+	void HandleFacilityLightingChanged(FGuid FacilityInstanceId);
 
 	/** Adapts the existing camera pick signal without changing Camera module files. */
 	UFUNCTION()

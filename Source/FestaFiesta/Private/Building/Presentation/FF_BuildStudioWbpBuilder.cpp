@@ -17,6 +17,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
+#include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -109,7 +110,16 @@ bool BuildChoice(UWidgetBlueprint& BP, UWidgetTree& Tree)
 {
 	const auto& P = UFF_UIPalette::Get()->InGame;
 	auto* B = Button(BP, Tree, TEXT("Button_Root"), TEXT("Text_Label"), LOCTEXT("Choice", "전체 시설"));
-	Tree.RootWidget = Size(BP, Tree, TEXT("Size_Choice"), *B, 0, 24);
+	UWidget* Label = B->GetContent();
+	Label->RemoveFromParent();
+	auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Choice"));
+	auto* Icon = MakeWidget<UImage>(BP, Tree, TEXT("Image_Icon"), true);
+	Icon->SetDesiredSizeOverride(FVector2D(16, 16));
+	Icon->SetVisibility(ESlateVisibility::Collapsed);
+	H(*Row, *Icon, false, FMargin(0, 0, 6, 0))->SetVerticalAlignment(VAlign_Center);
+	H(*Row, *Label)->SetVerticalAlignment(VAlign_Center);
+	B->AddChild(Row);
+	Tree.RootWidget = Size(BP, Tree, TEXT("Size_Choice"), *B, 0, 32);
 	return true;
 }
 
@@ -120,8 +130,9 @@ bool BuildTile(UWidgetBlueprint& BP, UWidgetTree& Tree)
 	Card->SetBrush(Brush(P.White, 8, P.Line));
 	Card->SetPadding(FMargin(10, 7, 10, 7));
 	Card->SetClipping(EWidgetClipping::ClipToBoundsAlways);
-	Tree.RootWidget = Size(BP, Tree, TEXT("SizeBox_Card"), *Card,
-		FFPrepBuildTileLayout::CardWidth, FFPrepBuildTileLayout::CardHeight);
+	// The page supplies six equal columns. Designer still owns the card height and
+	// can opt into a fixed width; the default expands with its TileView column.
+	Tree.RootWidget = Size(BP, Tree, TEXT("SizeBox_Card"), *Card, 0, 160);
 	auto* Content = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_Content"));
 	Card->AddChild(Content);
 	auto* Backdrop = MakeWidget<UBorder>(BP, Tree, TEXT("Border_ThumbnailBackdrop"));
@@ -134,22 +145,38 @@ bool BuildTile(UWidgetBlueprint& BP, UWidgetTree& Tree)
 	Scale->AddChild(Image);
 	auto* ThumbnailStack = MakeWidget<UOverlay>(BP, Tree, TEXT("Overlay_Thumbnail"));
 	ThumbnailStack->AddChildToOverlay(Scale)->SetHorizontalAlignment(HAlign_Center);
-	auto* Placeholder = Text(BP, Tree, TEXT("Text_ThumbnailPlaceholder"), LOCTEXT("ThumbnailLoading", "이미지 준비 중"), 10, P.InkMuted, true);
+	auto* Placeholder = Text(BP, Tree, TEXT("Text_ThumbnailPlaceholder"), LOCTEXT("ThumbnailLoading", "이미지 준비 중"), 11, P.InkMuted, true);
 	auto* PlaceholderSlot = ThumbnailStack->AddChildToOverlay(Placeholder);
 	PlaceholderSlot->SetHorizontalAlignment(HAlign_Center);
 	PlaceholderSlot->SetVerticalAlignment(VAlign_Center);
+	auto* Favorite = Button(BP, Tree, TEXT("Button_Favorite"), TEXT("Text_Favorite"), FText::FromString(TEXT("☆")));
+	auto* FavoriteText = Cast<UTextBlock>(Favorite->GetContent());
+	FavoriteText->bIsVariable = true;
+	StyleText(*FavoriteText, 20, P.InkMuted, TEXT("Medium"));
+	FButtonStyle FavoriteStyle = Favorite->GetStyle();
+	FavoriteStyle.Normal = Brush(P.White, 5, P.Line);
+	FavoriteStyle.NormalPadding = FavoriteStyle.PressedPadding = FMargin(0);
+	Favorite->SetStyle(FavoriteStyle);
+	auto* FavoriteSlot = ThumbnailStack->AddChildToOverlay(Size(BP, Tree, TEXT("Size_Favorite"), *Favorite, 30, 30));
+	FavoriteSlot->SetHorizontalAlignment(HAlign_Right);
+	FavoriteSlot->SetVerticalAlignment(VAlign_Top);
+	FavoriteSlot->SetPadding(FMargin(3));
 	Backdrop->AddChild(ThumbnailStack);
 	V(*Content, *Size(BP, Tree, TEXT("SizeBox_Thumbnail"), *Backdrop,
-		FFPrepBuildTileLayout::ThumbnailWidth, FFPrepBuildTileLayout::ThumbnailHeight));
-	V(*Content, *Text(BP, Tree, TEXT("Text_CategoryPath"), LOCTEXT("TileCategory", "부스  /  먹거리"), 10, P.InkMuted, true), false, FMargin(0, 4, 0, 0));
+		0, 86));
+	auto* CategoryPath = Text(BP, Tree, TEXT("Text_CategoryPath"), LOCTEXT("TileCategory", "부스  /  먹거리"), 11, P.InkMuted, true);
+	CategoryPath->SetVisibility(ESlateVisibility::Collapsed);
+	V(*Content, *CategoryPath);
 	auto* Name = Text(BP, Tree, TEXT("Text_Name"), LOCTEXT("TileName", "푸드트럭"), 14, P.Ink, true);
 	StyleText(*Name, 14, P.Ink, TEXT("SemiBold"));
-	V(*Content, *Name, false, FMargin(0, 1, 0, 2));
+	V(*Content, *Name, false, FMargin(3, 9, 3, 2));
 	auto* Meta = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Meta"));
 	H(*Meta, *Text(BP, Tree, TEXT("Text_Cost"), LOCTEXT("Price", "700 Gold"), 12, P.TealDeep, true), true);
-	H(*Meta, *Text(BP, Tree, TEXT("Text_State"), LOCTEXT("Available", "배치 가능"), 10, P.TealDeep, true));
-	V(*Content, *Meta);
-	V(*Content, *Text(BP, Tree, TEXT("Text_BuildLimit"), LOCTEXT("Count", "설치 0 / 10"), 10, P.InkMuted, true), false, FMargin(0, 2, 0, 0));
+	H(*Meta, *Text(BP, Tree, TEXT("Text_State"), LOCTEXT("Available", "배치 가능"), 11, P.TealDeep, true));
+	V(*Content, *Meta, false, FMargin(3, 0));
+	auto* BuildLimit = Text(BP, Tree, TEXT("Text_BuildLimit"), LOCTEXT("Count", "설치 0 / 10"), 11, P.InkMuted, true);
+	BuildLimit->SetVisibility(ESlateVisibility::Collapsed);
+	V(*Content, *BuildLimit);
 	return true;
 }
 
@@ -158,16 +185,44 @@ bool BuildPanel(UWidgetBlueprint& BP, UWidgetTree& Tree, UClass* TileClass, UWid
 	const auto& P = UFF_UIPalette::Get()->InGame;
 	auto* Root = MakeWidget<UBorder>(BP, Tree, TEXT("Border_PanelRoot"), true);
 	Root->SetBrush(Brush(P.Paper, 10, P.LineStrong));
-	Root->SetPadding(FMargin(18, 10));
-	Tree.RootWidget = Root;
-	auto* Content = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_Content"));
+	Root->SetPadding(FMargin(0));
+	Root->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+	auto* Outer = MakeWidget<UBorder>(BP, Tree, TEXT("Border_ApprovedCatalogV9"));
+	Outer->SetBrushColor(FLinearColor::Transparent);
+	Outer->SetPadding(FMargin(16, 0));
+	Outer->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	Outer->AddChild(Root);
+	Tree.RootWidget = Outer;
+	auto* Content = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_ApprovedBuildV6"));
 	Root->AddChild(Content);
-	auto* Header = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("Box_Header"), true);
-	auto* Title = Text(BP, Tree, TEXT("Text_PanelTitle"), LOCTEXT("Title", "축제 만들기"), 20, P.TealDeep, true);
-	StyleText(*Title, 20, P.TealDeep, TEXT("SemiBold"));
-	H(*Header, *Title)->SetVerticalAlignment(VAlign_Center);
-	auto* Subtitle = Text(BP, Tree, TEXT("Text_StudioHint"), LOCTEXT("StudioHint", "시설을 고르고, 나만의 공간을 꾸며 보세요"), 11, P.InkMuted);
-	H(*Header, *Subtitle, true, FMargin(14, 0, 14, 0))->SetVerticalAlignment(VAlign_Center);
+	auto* HeaderGroup = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Box_Header"), true);
+	auto* Header = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_CatalogHeader"));
+	// A simple four-block UMG mark matches the preview without a font-dependent icon.
+	auto* Mark = MakeWidget<UBorder>(BP, Tree, TEXT("Border_BuildMark"));
+	Mark->SetBrush(Brush(P.Hover, 8, P.Line));
+	Mark->SetPadding(FMargin(8));
+	auto* MarkRows = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_BuildMark"));
+	Mark->AddChild(MarkRows);
+	for (int32 RowIndex = 0; RowIndex < 2; ++RowIndex)
+	{
+		auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, FName(*FString::Printf(TEXT("Row_BuildMark%d"), RowIndex)));
+		for (int32 ColIndex = 0; ColIndex < 2; ++ColIndex)
+		{
+			auto* Block = MakeWidget<UBorder>(BP, Tree, FName(*FString::Printf(TEXT("Block_BuildMark%d%d"), RowIndex, ColIndex)));
+			Block->SetBrush(Brush(P.TealDeep, 1));
+			Block->SetPadding(FMargin(0));
+			H(*Row, *Size(BP, Tree, FName(*FString::Printf(TEXT("Size_BuildMark%d%d"), RowIndex, ColIndex)), *Block, 7, 7), false, FMargin(1));
+		}
+		V(*MarkRows, *Row);
+	}
+	H(*Header, *Mark, false, FMargin(0, 0, 11, 0))->SetVerticalAlignment(VAlign_Center);
+	auto* TitleStack = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_CatalogTitle"));
+	auto* Title = Text(BP, Tree, TEXT("Text_PanelTitle"), LOCTEXT("ApprovedTitle", "시설 배치"), 18, P.TealDeep, true);
+	StyleText(*Title, 18, P.TealDeep, TEXT("SemiBold"));
+	V(*TitleStack, *Title);
+	auto* Subtitle = Text(BP, Tree, TEXT("Text_StudioHint"), LOCTEXT("ApprovedStudioHint", "마음에 드는 시설을 골라 놓아보세요"), 11, P.InkMuted);
+	V(*TitleStack, *Subtitle, false, FMargin(0, 2, 0, 0));
+	H(*Header, *TitleStack, true, FMargin(0, 0, 14, 0))->SetVerticalAlignment(VAlign_Center);
 	auto* Search = MakeWidget<UEditableTextBox>(BP, Tree, TEXT("Search_Facilities"), true);
 	Search->SetHintText(LOCTEXT("Search", "이름 · 종류 검색"));
 	Search->SetMinDesiredWidth(180);
@@ -182,21 +237,37 @@ bool BuildPanel(UWidgetBlueprint& BP, UWidgetTree& Tree, UClass* TileClass, UWid
 	Search->SetWidgetStyle(SearchStyle);
 	H(*Header, *Search, false, FMargin(0, 0, 14, 0))->SetVerticalAlignment(VAlign_Center);
 	auto* GoldBacking = MakeWidget<UBorder>(BP, Tree, TEXT("Border_Gold"));
-	GoldBacking->SetBrush(Brush(P.TealDeep, 8));
+	GoldBacking->SetBrush(Brush(FLinearColor::Transparent, 8));
 	GoldBacking->SetPadding(FMargin(12, 6));
-	GoldBacking->AddChild(Text(BP, Tree, TEXT("Text_Gold"), LOCTEXT("Gold", "보유 4,106 Gold"), 13, P.White, true));
+	GoldBacking->AddChild(Text(BP, Tree, TEXT("Text_Gold"), LOCTEXT("Gold", "보유 7,600 Gold"), 15, P.TealDeep, true));
 	H(*Header, *GoldBacking, false, FMargin(0, 0, 8, 0))->SetVerticalAlignment(VAlign_Center);
-	H(*Header, *Button(BP, Tree, TEXT("Button_InspectFacilities"), TEXT("Text_InspectFacilities"), LOCTEXT("InspectFacilities", "시설 확인  B")), false, FMargin(0, 0, 8, 0))->SetVerticalAlignment(VAlign_Center);
+	auto* InspectButton = Button(BP, Tree, TEXT("Button_InspectFacilities"), TEXT("Text_InspectFacilities"), LOCTEXT("InspectFacilities", "시설 확인  B"));
 	H(*Header, *Button(BP, Tree, TEXT("Button_Close"), TEXT("Text_CloseLabel"), FText::FromString(TEXT("×"))))->SetVerticalAlignment(VAlign_Center);
-	V(*Content, *Header, false, FMargin(0, 0, 0, 8));
+	V(*HeaderGroup, *Size(BP, Tree, TEXT("Size_CatalogHeader"), *Header, 0, 68), false, FMargin(18, 0));
+	auto* HeaderLine = MakeWidget<UBorder>(BP, Tree, TEXT("Border_HeaderDivider"));
+	HeaderLine->SetBrush(Brush(P.Line, 0));
+	HeaderLine->SetPadding(FMargin(0));
+	V(*HeaderGroup, *Size(BP, Tree, TEXT("Size_HeaderDivider"), *HeaderLine, 0, 1));
+	V(*Content, *HeaderGroup);
 
-	auto* Catalog = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("Panel_Catalog"), true);
-	auto* Sidebar = MakeWidget<UBorder>(BP, Tree, TEXT("Border_Categories"));
-	Sidebar->SetBrush(Brush(P.StatusBar, 8));
-	Sidebar->SetPadding(FMargin(8, 4));
+	auto* CatalogShell = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Panel_Catalog"), true);
+	auto* Catalog = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_CatalogBody"));
+	auto* CategoryScroll = MakeWidget<UScrollBox>(BP, Tree, TEXT("ScrollBox_Categories"));
+	CategoryScroll->SetOrientation(Orient_Horizontal);
+	CategoryScroll->SetScrollBarVisibility(ESlateVisibility::Collapsed);
+	CategoryScroll->SetConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible);
+	CategoryScroll->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::InstantScroll);
+	CategoryScroll->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+	auto* Categories = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Categories"), true);
+	CategoryScroll->AddChild(Categories);
+	V(*Catalog, *Size(BP, Tree, TEXT("Size_CategoryRow"), *CategoryScroll, 0, 34), false, FMargin(0, 10, 0, 8));
+	auto* CategoryLine = MakeWidget<UBorder>(BP, Tree, TEXT("Border_CategoryDivider"));
+	CategoryLine->SetBrush(Brush(P.Line, 0));
+	CategoryLine->SetPadding(FMargin(0));
+	V(*Catalog, *Size(BP, Tree, TEXT("Size_CategoryDivider"), *CategoryLine, 0, 1), false, FMargin(0, 0, 0, 8));
+	// Keep legacy bindings available during migration. New layouts populate the authored category row.
 	auto* Tools = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Tools"), true);
-	Sidebar->AddChild(Tools);
-	// Stable compatibility names; the full data-driven major category list replaces these at runtime.
+	Tools->SetVisibility(ESlateVisibility::Collapsed);
 	for (auto* B : {
 		Button(BP, Tree, TEXT("Button_FilterAll"), TEXT("Text_FilterAll"), LOCTEXT("All", "전체"), true),
 		Button(BP, Tree, TEXT("Button_FilterBooth"), TEXT("Text_FilterBooth"), LOCTEXT("Booth", "부스")),
@@ -204,53 +275,101 @@ bool BuildPanel(UWidgetBlueprint& BP, UWidgetTree& Tree, UClass* TileClass, UWid
 	{
 		H(*Tools, *B);
 	}
-	H(*Catalog, *Size(BP, Tree, TEXT("Size_CategorySidebar"), *Sidebar, 128, 0), false, FMargin(0, 0, 14, 0));
+	V(*Catalog, *Tools);
 	auto* Browser = MakeWidget<UVerticalBox>(BP, Tree, TEXT("VerticalBox_Browser"));
-	H(*Catalog, *Browser, true);
+	V(*Catalog, *Browser, true);
 	auto* SubRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_SubcategoryHeader"));
-	H(*SubRow, *Text(BP, Tree, TEXT("Text_CategoryBreadcrumb"), LOCTEXT("AllFacilities", "전체 시설"), 13, P.TealDeep, true), false, FMargin(0, 0, 12, 0))->SetVerticalAlignment(VAlign_Center);
-	auto* SubScroll = MakeWidget<UScrollBox>(BP, Tree, TEXT("ScrollBox_Subcategories"));
+	auto* Breadcrumb = Text(BP, Tree, TEXT("Text_CategoryBreadcrumb"), LOCTEXT("AllFacilities", "전체 시설"), 13, P.TealDeep, true);
+	Breadcrumb->SetVisibility(ESlateVisibility::Collapsed);
+	H(*SubRow, *Breadcrumb);
+	auto* SubScroll = MakeWidget<UScrollBox>(BP, Tree, TEXT("ScrollBox_Subcategories"), true);
 	SubScroll->SetOrientation(Orient_Horizontal);
 	SubScroll->SetScrollBarVisibility(ESlateVisibility::Collapsed);
-	SubScroll->SetConsumeMouseWheel(EConsumeMouseWheel::Always);
+	SubScroll->SetConsumeMouseWheel(EConsumeMouseWheel::WhenScrollingPossible);
+	SubScroll->SetScrollWhenFocusChanges(EScrollWhenFocusChanges::InstantScroll);
+	// ScrollBox desired width must never become a minimum for the Fill slot.
+	// Clip both its viewport and content so hidden chips cannot paint or hit-test over favorites.
+	SubScroll->SetClipping(EWidgetClipping::ClipToBoundsAlways);
 	auto* Sub = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Subcategories"), true);
 	SubScroll->AddChild(Sub);
-	H(*SubRow, *SubScroll, true);
-	V(*Browser, *Size(BP, Tree, TEXT("Size_SubcategoryHeader"), *SubRow, 0, 26), false, FMargin(0, 0, 0, 6));
+	auto* SubViewport = Size(BP, Tree, TEXT("Size_SubcategoryViewport"), *SubScroll, 0, 32);
+	SubViewport->SetMinDesiredWidth(0);
+	SubViewport->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+	H(*SubRow, *SubViewport, true);
+	auto* Favorites = Button(BP, Tree, TEXT("Button_FavoritesOnly"), TEXT("Text_FavoritesOnly"), LOCTEXT("FavoritesOnly", "☆ 즐겨찾기만 · 0"));
+	auto* FavoriteLabel = Cast<UTextBlock>(Favorites->GetContent());
+	FavoriteLabel->bIsVariable = true;
+	FavoriteLabel->SetText(LOCTEXT("FavoritesLabel", "☆ 즐겨찾기만"));
+	FavoriteLabel->RemoveFromParent();
+	auto* FavoriteRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_FavoriteFilter"));
+	H(*FavoriteRow, *FavoriteLabel)->SetVerticalAlignment(VAlign_Center);
+	auto* CountBadge = MakeWidget<UBorder>(BP, Tree, TEXT("Border_FavoriteCount"));
+	CountBadge->SetBrush(Brush(P.PaperSunken, 4));
+	CountBadge->SetPadding(FMargin(5, 1));
+	CountBadge->AddChild(Text(BP, Tree, TEXT("Text_FavoriteCount"), FText::FromString(TEXT("0")), 11, P.TealDeep, true));
+	H(*FavoriteRow, *CountBadge, false, FMargin(7, 0, 0, 0))->SetVerticalAlignment(VAlign_Center);
+	Favorites->AddChild(FavoriteRow);
+	FButtonStyle FavoritesStyle = Favorites->GetStyle();
+	FavoritesStyle.Normal = Brush(P.White, 6, P.Line);
+	FavoritesStyle.Pressed = Brush(FLinearColor::FromSRGBColor(FColor(0xFA, 0xF1, 0xDC)), 6,
+		FLinearColor::FromSRGBColor(FColor(0xC7, 0xA9, 0x5B)));
+	Favorites->SetStyle(FavoritesStyle);
+	H(*SubRow, *Size(BP, Tree, TEXT("Size_FavoritesOnly"), *Favorites, 164, 32), false, FMargin(12, 0, 0, 0));
+	V(*Browser, *Size(BP, Tree, TEXT("Size_SubcategoryHeader"), *SubRow, 0, 32), false, FMargin(0, 0, 0, 8));
 	auto* Tiles = MakeWidget<UFF_PrepBuildTileView>(BP, Tree, TEXT("TileView_Facilities"), true);
 	Tiles->ConfigureEntryClass(TileClass);
-	Tiles->SetScrollbarVisibility(ESlateVisibility::Visible);
-	V(*Browser, *Tiles, true);
+	Tiles->SetEntryHeight(160);
+	Tiles->SetScrollbarVisibility(ESlateVisibility::Collapsed);
+	auto* CardsOverlay = MakeWidget<UOverlay>(BP, Tree, TEXT("Overlay_CatalogCards"));
+	auto* TilesSlot = CardsOverlay->AddChildToOverlay(Tiles);
+	TilesSlot->SetHorizontalAlignment(HAlign_Fill);
+	TilesSlot->SetVerticalAlignment(VAlign_Fill);
+	auto* Empty = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Panel_Empty"), true);
+	Empty->SetVisibility(ESlateVisibility::Collapsed);
+	auto* EmptyStar = Text(BP, Tree, TEXT("Text_EmptyStar"), FText::FromString(TEXT("☆")), 26, P.InkMuted);
+	EmptyStar->SetJustification(ETextJustify::Center);
+	V(*Empty, *EmptyStar);
+	auto* EmptyTitle = Text(BP, Tree, TEXT("Text_EmptyTitle"), LOCTEXT("EmptyTitle", "즐겨찾기한 시설이 없어요"), 14, P.TealDeep, true);
+	EmptyTitle->SetJustification(ETextJustify::Center);
+	V(*Empty, *EmptyTitle, false, FMargin(0, 6));
+	auto* EmptyHint = Text(BP, Tree, TEXT("Text_EmptyHint"), LOCTEXT("EmptyHint", "자주 쓰는 시설의 ☆을 눌러 모아보세요."), 12, P.InkMuted, true);
+	EmptyHint->SetJustification(ETextJustify::Center);
+	V(*Empty, *EmptyHint, false, FMargin(0, 0, 0, 6));
+	auto* Reset = Button(BP, Tree, TEXT("Button_ResetFilters"), TEXT("Text_ResetFilters"), LOCTEXT("ResetFilters", "전체 시설 보기"));
+	V(*Empty, *Reset)->SetHorizontalAlignment(HAlign_Center);
+	auto* EmptySlot = CardsOverlay->AddChildToOverlay(Empty);
+	EmptySlot->SetHorizontalAlignment(HAlign_Center);
+	EmptySlot->SetVerticalAlignment(VAlign_Center);
+	V(*Browser, *CardsOverlay, true);
 	auto* Footer = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_Footer"));
-	H(*Footer, *Text(BP, Tree, TEXT("Text_Status"), LOCTEXT("Hint", "카드 선택: 배치 시작  ·  휠: 목록 탐색  ·  B: 배치 시설 확인"), 10, P.InkMuted, true), true);
-	H(*Footer, *Text(BP, Tree, TEXT("Text_ItemCount"), LOCTEXT("ItemCount", "시설 14 / 14"), 10, P.InkMuted, true));
-	V(*Browser, *Footer, false, FMargin(0, 4, 0, 0));
-	V(*Content, *Catalog, true);
-	if (PreservedCompact)
+	H(*Footer, *Text(BP, Tree, TEXT("Text_Status"), LOCTEXT("ApprovedHint", "카드 선택 → 배치 시작  ·  ☆ 즐겨찾기  ·  B 시설 확인"), 11, P.InkMuted, true), true);
+	H(*Footer, *InspectButton, false, FMargin(8, 0));
+	H(*Footer, *Text(BP, Tree, TEXT("Text_ItemCount"), LOCTEXT("ItemCount", "시설 45종"), 11, P.InkMuted, true), false, FMargin(12, 0));
+	H(*Footer, *Size(BP, Tree, TEXT("Size_PreviousPage"), *Button(BP, Tree, TEXT("Button_PreviousPage"), TEXT("Text_PreviousPage"), FText::FromString(TEXT("<"))), 28, 28));
+	H(*Footer, *Text(BP, Tree, TEXT("Text_PageIndex"), FText::FromString(TEXT("1 / 8")), 12, P.TealDeep, true), false, FMargin(10, 0))->SetVerticalAlignment(VAlign_Center);
+	H(*Footer, *Size(BP, Tree, TEXT("Size_NextPage"), *Button(BP, Tree, TEXT("Button_NextPage"), TEXT("Text_NextPage"), FText::FromString(TEXT(">"))), 28, 28));
+	for (UPanelSlot* Slot : Footer->GetSlots())
 	{
-		// The existing compact placement strip and its team-tuned padding are preserved verbatim.
-		// UMG children are owned by WidgetTree, not by their visual parent. Duplicate the
-		// tree first so a copied panel cannot retain private references into the old asset tree.
-		TStrongObjectPtr<UWidgetTree> CopyTree(DuplicateObject<UWidgetTree>(
-			CastChecked<UWidgetTree>(PreservedCompact->GetOuter()), GetTransientPackage()));
-		UWidget* Compact = CopyTree->FindWidget(TEXT("Panel_PlacementCompact"));
-		if (!Compact) { return false; }
-		Compact->RemoveFromParent();
-		Compact->Rename(*Compact->GetName(), &Tree, REN_DontCreateRedirectors | REN_NonTransactional);
-		UWidgetTree::ForWidgetAndChildren(Compact, [&Tree](UWidget* Widget)
-		{
-			Widget->Rename(*Widget->GetName(), &Tree, REN_DontCreateRedirectors | REN_NonTransactional);
-		});
-		V(*Content, *Compact);
-		Tree.ForEachWidget([&BP](UWidget* W)
-		{
-			if (!BP.WidgetVariableNameToGuidMap.Contains(W->GetFName()))
-			{
-				BP.OnVariableAdded(W->GetFName());
-			}
-		});
+		CastChecked<UHorizontalBoxSlot>(Slot)->SetVerticalAlignment(VAlign_Center);
 	}
-	return PreservedCompact != nullptr;
+	V(*CatalogShell, *Catalog, true, FMargin(18, 0, 18, 10));
+	auto* FooterBacking = MakeWidget<UBorder>(BP, Tree, TEXT("Border_CatalogFooter"));
+	FooterBacking->SetBrush(Brush(P.PaperSunken, 0));
+	FooterBacking->SetPadding(FMargin(18, 6));
+	FooterBacking->AddChild(Footer);
+	V(*CatalogShell, *FooterBacking);
+	V(*Content, *CatalogShell, true);
+	auto* Compact = MakeWidget<UBorder>(BP, Tree, TEXT("Panel_PlacementCompact"), true);
+	Compact->SetBrush(Brush(P.Paper, 10, P.Line));
+	Compact->SetPadding(FMargin(12, 5));
+	Compact->SetVisibility(ESlateVisibility::Collapsed);
+	auto* CompactRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("HorizontalBox_PlacementCompact"));
+	Compact->AddChild(CompactRow);
+	H(*CompactRow, *Text(BP, Tree, TEXT("Text_PlacementGuide"), LOCTEXT("InspectGuide", "시설 확인 · 설치된 시설을 선택하세요"), 12, P.TealDeep, true), true)->SetVerticalAlignment(VAlign_Center);
+	H(*CompactRow, *Button(BP, Tree, TEXT("Button_ReturnToCatalog"), TEXT("Text_ReturnToCatalog"), LOCTEXT("CatalogButton", "시설 목록  B")), false, FMargin(8, 0));
+	H(*CompactRow, *Button(BP, Tree, TEXT("Button_ExitBuildMode"), TEXT("Text_ExitBuildMode"), LOCTEXT("ExitBuild", "건축 종료")));
+	V(*Content, *Compact);
+	return true;
 }
 
 template <typename BuildFunction>
@@ -288,6 +407,12 @@ void RefreshBuildStudio()
 		UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: required build WBPs are missing"), LogPrefix);
 		return;
 	}
+	if (Panel->WidgetTree->FindWidget(TEXT("Border_ApprovedCatalogV9")) &&
+		Tile->WidgetTree && Tile->WidgetTree->FindWidget(TEXT("Button_Favorite")))
+	{
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: approved Designer trees already exist; preserving edits"), LogPrefix);
+		return;
+	}
 	UWidget* Compact = Panel->WidgetTree->FindWidget(TEXT("Panel_PlacementCompact"));
 	if (!ReplaceVisualTree(*Choice, [Choice](UWidgetTree& Tree) { return BuildChoice(*Choice, Tree); })) { return; }
 	if (!Compact || !ReplaceVisualTree(*Tile, [Tile](UWidgetTree& Tree) { return BuildTile(*Tile, Tree); })) { return; }
@@ -297,13 +422,32 @@ void RefreshBuildStudio()
 	{
 		Property->SetObjectPropertyValue_InContainer(Panel->GeneratedClass->GetDefaultObject(), Choice->GeneratedClass);
 	}
+	for (const TPair<FName, float>& Value : {
+		TPair<FName, float>(TEXT("CatalogHeight"), 392.f),
+		TPair<FName, float>(TEXT("CatalogOffsetY"), -41.f),
+		TPair<FName, float>(TEXT("CompactHeight"), 42.f),
+		TPair<FName, float>(TEXT("CompactOffsetY"), -41.f) })
+	{
+		if (FFloatProperty* Property = FindFProperty<FFloatProperty>(Panel->GeneratedClass.Get(), Value.Key))
+		{
+			Property->SetPropertyValue_InContainer(Panel->GeneratedClass->GetDefaultObject(), Value.Value);
+		}
+	}
+	if (FIntProperty* Property = FindFProperty<FIntProperty>(Panel->GeneratedClass.Get(), TEXT("CardsPerPage")))
+	{
+		Property->SetPropertyValue_InContainer(Panel->GeneratedClass->GetDefaultObject(), 6);
+	}
+	if (FBoolProperty* Property = FindFProperty<FBoolProperty>(Panel->GeneratedClass.Get(), TEXT("bUsePagination")))
+	{
+		Property->SetPropertyValue_InContainer(Panel->GeneratedClass->GetDefaultObject(), true);
+	}
 	if (SaveNewBlueprint(LogPrefix, *Panel))
 	{
-		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_DONE: catalog, tile and category choice saved; compact strip preserved"), LogPrefix);
+		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_DONE: approved catalog, favorite tile and category choice saved; teammate HUD untouched"), LogPrefix);
 	}
 }
 FAutoConsoleCommand RefreshCommand(TEXT("FF.RefreshBuildStudioUMG"),
-	TEXT("Rebuilds only the build catalog/tile Designer surfaces; preserves the existing compact placement strip."),
+	TEXT("Migrates build catalog/tile to the approved design once. Existing approved Designer edits are preserved."),
 	FConsoleCommandDelegate::CreateStatic(&RefreshBuildStudio));
 }
 #undef LOCTEXT_NAMESPACE

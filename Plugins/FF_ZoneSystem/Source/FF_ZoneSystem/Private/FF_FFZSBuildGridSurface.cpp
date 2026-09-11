@@ -93,6 +93,7 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(MaxHeightVarianceCm));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(Settings->bEnableGroundChecks));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(Settings->bRequireEveryGroundSample));
+    SettingsHash = HashCombine(SettingsHash, GetTypeHash(InOutMask.bIncludeRoadSupport));
 
     // Ground traces start from the same transformed zone-local zero plane as ValidateGround.
     // Cursor/preview height cannot change which floor lies inside that authoritative trace band.
@@ -221,7 +222,10 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
             GroundQueryParams = FCollisionQueryParams(SCENE_QUERY_STAT(FFBuildGridSurface), false);
             for (TActorIterator<AFFZSFacilityActor> It(&World); It; ++It)
             {
-                GroundQueryParams.AddIgnoredActor(*It);
+                if (!InOutMask.bIncludeRoadSupport || It->GetFacilitySpec().Category != EFFZSFacilityCategory::Road)
+                {
+                    GroundQueryParams.AddIgnoredActor(*It);
+                }
             }
             LastIgnoreRefreshSeconds = LastUpdateSeconds;
             CachedWorldRevision = Revision;

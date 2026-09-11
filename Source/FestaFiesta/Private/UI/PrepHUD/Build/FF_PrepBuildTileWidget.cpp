@@ -3,10 +3,16 @@
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
 
 #include "Brushes/SlateRoundedBoxBrush.h"
+#include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
+#include "Building/FF_BuildModeSubsystem.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
 #include "Widgets/Layout/SBox.h"
@@ -32,15 +38,19 @@ namespace
 	};
 }
 
-FVector2D FFPrepBuildTileLayout::FitThumbnailSize(const int32 TextureWidth, const int32 TextureHeight)
+FVector2D FFPrepBuildTileLayout::FitThumbnailSize(const int32 TextureWidth, const int32 TextureHeight,
+	const FVector2D Bounds)
 {
+	const FVector2D SafeBounds(
+		FMath::IsFinite(Bounds.X) && Bounds.X > 0.0 ? Bounds.X : ThumbnailWidth,
+		FMath::IsFinite(Bounds.Y) && Bounds.Y > 0.0 ? Bounds.Y : ThumbnailHeight);
 	if (TextureWidth <= 0 || TextureHeight <= 0)
 	{
-		return FVector2D(ThumbnailWidth, ThumbnailHeight);
+		return SafeBounds;
 	}
 	const double Scale = FMath::Min(
-		static_cast<double>(ThumbnailWidth) / TextureWidth,
-		static_cast<double>(ThumbnailHeight) / TextureHeight);
+		SafeBounds.X / TextureWidth,
+		SafeBounds.Y / TextureHeight);
 	return FVector2D(TextureWidth * Scale, TextureHeight * Scale);
 }
 
@@ -71,7 +81,6 @@ TSharedRef<STableViewBase> UFF_PrepBuildTileView::RebuildListWidget()
 	// UE's saved "entry size includes spacing" option and runtime size setters use
 	// different margin conventions. Define the Slate pitch explicitly: 170px card
 	// plus 5px on either side. A partial last row keeps these same dimensions.
-	ConfigureEntryClass(EntryWidgetClass);
 	FTileViewConstructArgs Args;
 	Args.bAllowFocus = bIsFocusable;
 	Args.SelectionMode = SelectionMode;
@@ -83,8 +92,8 @@ TSharedRef<STableViewBase> UFF_PrepBuildTileView::RebuildListWidget()
 	Args.Orientation = Orientation;
 	Args.ScrollBarStyle = &ScrollBarStyle;
 	Args.ScrollbarDisabledVisibility = UWidget::ConvertSerializedVisibilityToRuntime(ScrollbarDisabledVisibility);
-	Args.EntryWidth = FFPrepBuildTileLayout::CardWidth + FFPrepBuildTileLayout::HorizontalSpacing;
-	Args.EntryHeight = FFPrepBuildTileLayout::CardHeight;
+	Args.EntryWidth = EntryWidth;
+	Args.EntryHeight = EntryHeight;
 	MyListView = MyTileView = ITypedUMGListView<UObject*>::ConstructTileView<SFFPrepBuildTileView>(this, ListItems, Args);
 	MyTileView->SetOnEntryInitialized(SListView<UObject*>::FOnEntryInitialized::CreateUObject(
 		this, &UFF_PrepBuildTileView::HandleOnEntryInitializedInternal));
@@ -93,30 +102,35 @@ TSharedRef<STableViewBase> UFF_PrepBuildTileView::RebuildListWidget()
 
 TSharedRef<SWidget> UFF_PrepBuildTileWidget::RebuildWidget()
 {
-	// Async image loading and recycled entry contents must never change the row size.
-	return SNew(SBox)
-		.WidthOverride(FFPrepBuildTileLayout::CardWidth)
-		.HeightOverride(FFPrepBuildTileLayout::CardHeight)
-		[Super::RebuildWidget()];
+	// The saved WBP SizeBox owns card dimensions. Match its size to the TileView entry size in Designer.
+	return Super::RebuildWidget();
+}
+
+void UFF_PrepBuildTileWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	// Older saved WBP assets did not mark this SizeBox as a variable. Resolve its stable
+	// Designer name without regenerating the asset or taking ownership of its layout.
+	ThumbnailFrame = Cast<USizeBox>(GetWidgetFromName(TEXT("SizeBox_Thumbnail")));
+	if (Button_Favorite)
+	{
+		Button_Favorite->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoriteClicked);
+	}
 }
 
 void UFF_PrepBuildTileWidget::NativePreConstruct()
 {
 	Super::NativePreConstruct();
-	if (Border_Card)
+	if (!bCapturedAppearance || IsDesignTime())
 	{
-		Border_Card->SetClipping(EWidgetClipping::ClipToBoundsAlways);
+		if (Border_Card) { AuthoredCardBrush = Border_Card->Background; }
+		if (Text_Cost) { AuthoredCostColor = Text_Cost->GetColorAndOpacity(); }
+		if (Text_State) { AuthoredStateColor = Text_State->GetColorAndOpacity(); }
+		if (Text_Favorite) { AuthoredFavoriteColor = Text_Favorite->GetColorAndOpacity(); }
+		bCapturedAppearance = true;
 	}
-	for (UTextBlock* Text : { Text_CategoryPath.Get(), Text_Name.Get(), Text_Cost.Get(),
-		Text_State.Get(), Text_BuildLimit.Get() })
-	{
-		if (Text)
-		{
-			Text->SetAutoWrapText(false);
-			Text->SetTextOverflowPolicy(ETextOverflowPolicy::Ellipsis);
-		}
-	}
-	RefreshItemPresentation();
+	// Preview labels, clipping and wrapping are authored in the WBP, including Designer preview.
+	if (!IsDesignTime()) { RefreshItemPresentation(); }
 }
 
 void UFF_PrepBuildTileWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
@@ -139,6 +153,7 @@ void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 	// Released entries retain their fixed layout but no previous data or selection.
 	RefreshFromItem();
 	RefreshVisualState(false);
+	RefreshFavorite();
 	IUserObjectListEntry::NativeOnEntryReleased();
 }
 
@@ -160,6 +175,43 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 {
 	RefreshFromItem();
 	RefreshVisualState(Item && IsListItemSelected());
+	RefreshFavorite();
+}
+
+void UFF_PrepBuildTileWidget::HandleFavoriteClicked()
+{
+	if (!Item) { return; }
+	if (UWorld* World = GetWorld())
+	{
+		if (auto* Mode = World->GetSubsystem<UFF_BuildModeSubsystem>()) { Mode->NotifyBuildToolsInteraction(); }
+	}
+	if (UGameInstance* Game = GetGameInstance())
+	{
+		if (auto* Favorites = Game->GetSubsystem<UFF_BuildFavoritesSubsystem>())
+		{
+			Favorites->ToggleFavorite(Item->GetFacilityDefinitionId());
+		}
+	}
+	RefreshFavorite();
+}
+
+void UFF_PrepBuildTileWidget::RefreshFavorite()
+{
+	const auto* Favorites = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UFF_BuildFavoritesSubsystem>() : nullptr;
+	const bool bFavorite = Item && Favorites && Favorites->IsFavorite(Item->GetFacilityDefinitionId());
+	if (Button_Favorite)
+	{
+		Button_Favorite->SetIsEnabled(Item != nullptr);
+		Button_Favorite->SetToolTipText(bFavorite
+			? NSLOCTEXT("FestaFiestaPrepBuild", "Unfavorite", "즐겨찾기 해제")
+			: NSLOCTEXT("FestaFiestaPrepBuild", "Favorite", "즐겨찾기 등록"));
+	}
+	if (Text_Favorite)
+	{
+		Text_Favorite->SetText(FText::FromString(bFavorite ? TEXT("★") : TEXT("☆")));
+		Text_Favorite->SetColorAndOpacity(bFavorite ? FSlateColor(FavoriteColor) : AuthoredFavoriteColor);
+	}
 }
 
 void UFF_PrepBuildTileWidget::RefreshFromItem()
@@ -211,10 +263,12 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 	if (Image_Thumbnail)
 	{
 		Image_Thumbnail->SetBrushFromTexture(LoadedThumbnail, false);
+		// Preserve each texture's aspect within the Designer's current frame. Neither
+		// async loading nor pooled-row reuse may restore the old fixed 150 x 70 bounds.
+		const FVector2D ThumbnailBounds = GetAuthoredThumbnailBounds();
 		Image_Thumbnail->SetDesiredSizeOverride(LoadedThumbnail
-			? FFPrepBuildTileLayout::FitThumbnailSize(LoadedThumbnail->GetSizeX(), LoadedThumbnail->GetSizeY())
-			: FVector2D(FFPrepBuildTileLayout::ThumbnailWidth, FFPrepBuildTileLayout::ThumbnailHeight));
-		Image_Thumbnail->SetColorAndOpacity(FLinearColor::White);
+			? FFPrepBuildTileLayout::FitThumbnailSize(LoadedThumbnail->GetSizeX(), LoadedThumbnail->GetSizeY(), ThumbnailBounds)
+			: FFPrepBuildTileLayout::FitThumbnailSize(0, 0, ThumbnailBounds));
 		Image_Thumbnail->SetVisibility(LoadedThumbnail
 			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 	}
@@ -225,41 +279,27 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 	}
 }
 
+FVector2D UFF_PrepBuildTileWidget::GetAuthoredThumbnailBounds() const
+{
+	FVector2D Bounds = ThumbnailFallbackBounds;
+	if (const USizeBox* Frame = ThumbnailFrame.Get())
+	{
+		if (Frame->IsWidthOverride()) { Bounds.X = Frame->GetWidthOverride(); }
+		if (Frame->IsHeightOverride()) { Bounds.Y = Frame->GetHeightOverride(); }
+	}
+	return Bounds;
+}
+
 void UFF_PrepBuildTileWidget::RefreshVisualState(const bool bIsSelected)
 {
-	const UFF_UIPalette* Palette = UFF_UIPalette::Get();
-	if (!Palette)
-	{
-		return;
-	}
-
-	const FFF_UIPaletteInGame& Colors = Palette->InGame;
 	const bool bAvailable = Item && Item->IsAffordable();
-	if (Border_Card)
+	if (Border_Card && bCapturedAppearance)
 	{
-		const FLinearColor Fill = bIsSelected ? Colors.TealSoft
-			: bCardHovered ? Colors.Hover : bAvailable ? Colors.Paper : Colors.PaperSunken;
-		const FLinearColor Outline = bIsSelected ? Colors.TealDeep : bCardHovered ? Colors.Amber : Colors.Line;
-		const FSlateRoundedBoxBrush Brush(Fill, 7.0f, Outline, bIsSelected || bCardHovered ? 2.0f : 1.0f);
+		FSlateBrush Brush = AuthoredCardBrush;
+		if (bIsSelected) { Brush.TintColor = SelectedTint; }
+		else if (bCardHovered) { Brush.TintColor = HoverTint; }
 		Border_Card->SetBrush(Brush);
-		Border_Card->SetBrushColor(FLinearColor::White);
 	}
-	if (Text_Name)
-	{
-		Text_Name->SetColorAndOpacity(FSlateColor(Colors.Ink));
-	}
-	for (UTextBlock* Text : { Text_CategoryPath.Get(), Text_BuildLimit.Get(), Text_ThumbnailPlaceholder.Get() })
-	{
-		if (Text)
-		{
-			Text->SetColorAndOpacity(FSlateColor(Colors.InkMuted));
-		}
-	}
-	for (UTextBlock* Text : { Text_Cost.Get(), Text_State.Get() })
-	{
-		if (Text)
-		{
-			Text->SetColorAndOpacity(FSlateColor(bAvailable ? Colors.TealDeep : Colors.Danger));
-		}
-	}
+	if (Text_Cost) { Text_Cost->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredCostColor); }
+	if (Text_State) { Text_State->SetColorAndOpacity(Item && !bAvailable ? FSlateColor(UnavailableColor) : AuthoredStateColor); }
 }

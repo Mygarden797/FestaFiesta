@@ -11,6 +11,8 @@
 #include "Components/BorderSlot.h"
 #include "Components/Button.h"
 #include "Components/ButtonSlot.h"
+#include "Components/EditableTextBox.h"
+#include "Components/Slider.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -48,6 +50,11 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityInfoWbpBuilder, Log, All);
 namespace FFFacilityInfoWbpBuilder
 {
 	const FString PanelPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
+	const FString LightingPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"));
+	bool SaveBlueprint(UWidgetBlueprint& Blueprint);
+	bool HasNamedVariable(const UWidgetBlueprint& Blueprint, FName Name, const UClass& ExpectedClass);
+	bool MigrateInspectorControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
+	bool MigratePurchaseControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	const FString PaidProgramPickerPackage(
 		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"));
 	const FString PaidProgramCardPackage(
@@ -60,16 +67,15 @@ namespace FFFacilityInfoWbpBuilder
 	const FLinearColor ColorAccent(0.08f, 0.95f, 0.88f, 1.0f);
 	const FLinearColor ColorWarning(1.0f, 0.73f, 0.23f, 1.0f);
 
-	constexpr float PanelWidth = 376.0f;
+	constexpr float PanelWidth = 405.0f;
 	constexpr float PanelHeight = 500.0f;
 	constexpr float PanelRightMargin = 18.0f;
 	constexpr float PanelTopMargin = 18.0f;
-	// PrepHUD Build host(320), 하단 바/여백(70), 안전 간격(10)을 예약한다.
-	// Picker는 세로 stretch라 1080p뿐 아니라 더 작은 뷰포트에서도 하단 패널과 겹치지 않는다.
-	constexpr float PaidProgramPickerWidth = 520.0f;
-	constexpr float PaidProgramPickerRightMargin = 24.0f;
-	constexpr float PaidProgramPickerTopMargin = 72.0f;
-	constexpr float PaidProgramPickerBottomReserve = 400.0f;
+	// Inspector and purchase are mutually exclusive. Reserve the compact build shelf and HUD.
+	constexpr float PaidProgramPickerWidth = PanelWidth;
+	constexpr float PaidProgramPickerRightMargin = PanelRightMargin;
+	constexpr float PaidProgramPickerTopMargin = PanelTopMargin;
+	constexpr float PaidProgramPickerBottomReserve = 126.0f;
 
 	FSlateBrush MakeSolidBrush(
 		const FLinearColor& Fill,
@@ -1348,6 +1354,160 @@ namespace FFFacilityInfoWbpBuilder
 		return Actions;
 	}
 
+	bool HasLightingControlsContract(const UWidgetBlueprint& Blueprint)
+	{
+		for (const TCHAR* Name : { TEXT("Button_LightingToggle"), TEXT("Button_LightingOriginal"),
+			TEXT("Button_LightingTeal"), TEXT("Button_LightingSunset"), TEXT("Button_LightingViolet"), TEXT("Button_LightingReset") })
+		{
+			if (!HasNamedVariable(Blueprint, Name, *UButton::StaticClass())) return false;
+		}
+		for (const TCHAR* Name : { TEXT("Text_LightingToggle"), TEXT("Text_LightingBrightness"), TEXT("Text_LightingColorStatus") })
+		{
+			if (!HasNamedVariable(Blueprint, Name, *UCommonTextBlock::StaticClass())) return false;
+		}
+		return HasNamedVariable(Blueprint, TEXT("Slider_LightingBrightness"), *USlider::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Input_LightingColor"), *UEditableTextBox::StaticClass());
+	}
+
+	bool BuildLightingControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette) return false;
+		const FFF_UIPaletteInGame& P = Palette->InGame;
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Lighting_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Lighting_Content"));
+		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Lighting_Header"));
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingTitle"));
+		UButton* Toggle = MakeLightTextButton(Blueprint, Tree, TEXT("Button_LightingToggle"), TEXT("Text_LightingToggle"),
+			FText::FromString(TEXT("켜짐 · 끄기")), P.Teal, P.TealDeep, P.TealDeep, P.LineStrong, P.White, true, true);
+		UHorizontalBox* BrightnessRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Lighting_BrightnessRow"));
+		UCommonTextBlock* BrightnessLabel = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingBrightnessLabel"));
+		UCommonTextBlock* BrightnessValue = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingBrightness"), true);
+		USlider* Slider = MakeWidget<USlider>(Blueprint, Tree, TEXT("Slider_LightingBrightness"), true);
+		UHorizontalBox* Colors = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Lighting_ColorPresets"));
+		UCommonTextBlock* ColorStatus = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LightingColorStatus"), true);
+		UEditableTextBox* ColorInput = MakeWidget<UEditableTextBox>(Blueprint, Tree, TEXT("Input_LightingColor"), true);
+		UButton* Reset = MakeLightTextButton(Blueprint, Tree, TEXT("Button_LightingReset"), TEXT("Text_LightingReset"),
+			FText::FromString(TEXT("기본 설정으로 되돌리기")), P.PaperSunken, P.Hover, P.TealSoft, P.Line, P.TealDeep, true);
+		if (!Card || !Content || !Header || !Title || !Toggle || !BrightnessRow || !BrightnessLabel ||
+			!BrightnessValue || !Slider || !Colors || !ColorStatus || !ColorInput || !Reset) return false;
+		PaintBorder(*Card, MakeSolidBrush(P.Paper, 8.0f, P.Line, 1.0f));
+		Card->SetPadding(FMargin(10.0f, 8.0f));
+		Title->SetText(FText::FromString(TEXT("조명 설정")));
+		StyleLightText(*Title, 14, P.TealDeep, TEXT("SemiBold"));
+		AddHorizontal(*Header, *Title, FMargin(0), ESlateSizeRule::Fill);
+		AddHorizontal(*Header, *Toggle);
+		AddVertical(*Content, *Header, FMargin(0, 0, 0, 8));
+		BrightnessLabel->SetText(FText::FromString(TEXT("전체 밝기")));
+		StyleLightText(*BrightnessLabel, 11, P.Ink, TEXT("Medium"));
+		BrightnessValue->SetText(FText::FromString(TEXT("100%")));
+		StyleLightText(*BrightnessValue, 11, P.TealDeep, TEXT("SemiBold"));
+		AddHorizontal(*BrightnessRow, *BrightnessLabel, FMargin(0), ESlateSizeRule::Fill);
+		AddHorizontal(*BrightnessRow, *BrightnessValue);
+		AddVertical(*Content, *BrightnessRow);
+		Slider->SetMinValue(0.0f);
+		Slider->SetMaxValue(5.0f);
+		Slider->SetStepSize(0.05f);
+		Slider->SetValue(1.0f);
+		Slider->SetSliderBarColor(P.TealSoft);
+		Slider->SetSliderHandleColor(P.TealDeep);
+		Slider->SetToolTipText(FText::FromString(TEXT("0~500%. 100%는 Blueprint에 설정한 밝기입니다.")));
+		AddVertical(*Content, *Slider, FMargin(0, 5, 0, 9));
+		const TCHAR* ButtonNames[] = {TEXT("Button_LightingOriginal"), TEXT("Button_LightingTeal"), TEXT("Button_LightingSunset"), TEXT("Button_LightingViolet")};
+		const TCHAR* Labels[] = {TEXT("원래 색"), TEXT("청록"), TEXT("노을"), TEXT("보라")};
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			const FName LabelName(*FString::Printf(TEXT("Text_LightingPreset%d"), Index));
+			UButton* Button = MakeLightTextButton(Blueprint, Tree, ButtonNames[Index], LabelName,
+				FText::FromString(Labels[Index]), P.PaperSunken, P.Hover, P.TealSoft, P.Line, P.TealDeep, true, false, P.Line);
+			if (!Button) return false;
+			FButtonStyle Style = Button->GetStyle();
+			Style.NormalPadding = FMargin(3.0f, 6.0f);
+			Style.PressedPadding = Style.NormalPadding;
+			Button->SetStyle(Style);
+			AddHorizontal(*Colors, *Button, FMargin(0, 0, Index < 3 ? 4.0f : 0.0f, 0), ESlateSizeRule::Fill);
+		}
+		AddVertical(*Content, *Colors, FMargin(0, 0, 0, 5));
+		ColorStatus->SetText(FText::FromString(TEXT("Blueprint의 개별 조명 색상 사용 중")));
+		ColorStatus->SetAutoWrapText(true);
+		StyleLightText(*ColorStatus, 10, P.InkMuted, TEXT("Medium"));
+		AddVertical(*Content, *ColorStatus, FMargin(0, 0, 0, 5));
+		FEditableTextBoxStyle InputStyle = ColorInput->GetWidgetStyle();
+		InputStyle.BackgroundImageNormal = MakeSolidBrush(P.PaperSunken, 4, P.Line, 1);
+		InputStyle.BackgroundImageHovered = MakeSolidBrush(P.Hover, 4, P.TealSoft, 1);
+		InputStyle.BackgroundImageFocused = MakeSolidBrush(P.Paper, 4, P.TealDeep, 1);
+		InputStyle.ForegroundColor = FSlateColor(P.Ink);
+		InputStyle.TextStyle.SetFont(BrightnessLabel->GetFont());
+		InputStyle.Padding = FMargin(8, 6);
+		ColorInput->SetWidgetStyle(InputStyle);
+		ColorInput->SetHintText(FText::FromString(TEXT("직접 입력: #56DCE7 · Enter로 적용")));
+		ColorInput->SetToolTipText(FText::FromString(TEXT("6자리 색상 코드로 원하는 색을 적용합니다. ‘원래 색’은 개별 조명의 색을 복원합니다.")));
+		ColorInput->SetClearKeyboardFocusOnCommit(true);
+		AddVertical(*Content, *ColorInput, FMargin(0, 0, 0, 7));
+		AddVertical(*Content, *Reset);
+		Card->AddChild(Content);
+		Tree.RootWidget = Card;
+		return HasLightingControlsContract(Blueprint);
+	}
+
+	UWidgetBlueprint* EnsureLightingControlsBlueprint()
+	{
+		const FString Name = FPackageName::GetLongPackageAssetName(LightingPackage);
+		if (FPackageName::DoesPackageExist(LightingPackage))
+		{
+			UWidgetBlueprint* Existing = LoadObject<UWidgetBlueprint>(nullptr, *(LightingPackage + TEXT(".") + Name));
+			if (Existing && Existing->GeneratedClass && Existing->GeneratedClass->IsChildOf(UFF_FacilityLightingControls::StaticClass()) &&
+				HasLightingControlsContract(*Existing))
+			{
+				// Generalize the original stage-only caption while retaining any designer custom title.
+				if (UCommonTextBlock* Title = Cast<UCommonTextBlock>(Existing->WidgetTree->FindWidget(TEXT("Text_LightingTitle"))))
+				{
+					if (Title->GetText().ToString() == TEXT("무대 조명"))
+					{
+						Existing->Modify();
+						Title->Modify();
+						Title->SetText(FText::FromString(TEXT("조명 설정")));
+						if (!SaveBlueprint(*Existing)) return nullptr;
+					}
+				}
+				UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_LIGHTING_UMG_REUSE: %s (designer changes preserved)"), *LightingPackage);
+				return Existing;
+			}
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_LIGHTING_UMG_FAIL: existing designer asset contract mismatch: %s"), *LightingPackage);
+			return nullptr;
+		}
+		UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
+		Factory->ParentClass = UFF_FacilityLightingControls::StaticClass();
+		FAssetToolsModule& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
+		UWidgetBlueprint* Created = Cast<UWidgetBlueprint>(AssetTools.Get().CreateAsset(Name,
+			FPackageName::GetLongPackagePath(LightingPackage), UWidgetBlueprint::StaticClass(), Factory));
+		if (!Created || !Created->WidgetTree || !BuildLightingControls(*Created, *Created->WidgetTree) || !SaveBlueprint(*Created)) return nullptr;
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_LIGHTING_UMG_CREATED: %s"), *LightingPackage);
+		return Created;
+	}
+
+	bool EnsureLightingWidgetContract(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bAdded)
+	{
+		bAdded = false;
+		if (Tree.FindWidget(TEXT("Widget_LightingControls")))
+			return HasNamedVariable(Blueprint, TEXT("Widget_LightingControls"), *UFF_FacilityLightingControls::StaticClass());
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		UWidgetBlueprint* Lighting = Content ? EnsureLightingControlsBlueprint() : nullptr;
+		if (!Content || !Lighting || !Lighting->GeneratedClass) return false;
+		Blueprint.Modify();
+		Content->Modify();
+		UFF_FacilityLightingControls* Controls = Tree.ConstructWidget<UFF_FacilityLightingControls>(
+			Lighting->GeneratedClass.Get(), TEXT("Widget_LightingControls"));
+		if (!Controls) return false;
+		Controls->bIsVariable = true;
+		Blueprint.OnVariableAdded(Controls->GetFName());
+		// Append without reparenting or resetting any designer-owned child or slot.
+		if (!AddVertical(*Content, *Controls, FMargin(0, 0, 0, 8))) return false;
+		Controls->SetVisibility(ESlateVisibility::Collapsed);
+		bAdded = true;
+		return true;
+	}
+
 	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
@@ -1463,7 +1623,10 @@ namespace FFFacilityInfoWbpBuilder
 
 		Tree.RootWidget = Root;
 		bool bUpgradeContractAdded = false;
-		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded);
+		bool bLightingContractAdded = false;
+		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded) &&
+			EnsureLightingWidgetContract(Blueprint, Tree, bLightingContractAdded) &&
+			MigrateInspectorControls(Blueprint, Tree);
 	}
 
 	UWidgetBlueprint* LoadExistingBlueprint()
@@ -1489,18 +1652,7 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			return false;
 		}
-		const FAnchors Anchors = PanelSlot->GetAnchors();
-		if (!Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) ||
-			!Anchors.Maximum.Equals(FVector2D(1.0f, 0.0f)) ||
-			!PanelSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)) ||
-			!PanelSlot->GetPosition().Equals(FVector2D(-PanelRightMargin, PanelTopMargin)) ||
-			PanelSlot->GetAutoSize() ||
-			!PanelSlot->GetSize().Equals(FVector2D(PanelWidth, PanelHeight)) ||
-			!FMath::IsNearlyEqual(PanelSize->GetWidthOverride(), PanelWidth) ||
-			!FMath::IsNearlyEqual(PanelSize->GetHeightOverride(), PanelHeight))
-		{
-			return false;
-		}
+		// Geometry belongs to the designer. Validate the binding surface, not template pixels.
 
 		const TArray<FName> RequiredVariables = {
 			TEXT("Border_Panel"), TEXT("Button_Close"), TEXT("Button_Move"),
@@ -1656,14 +1808,7 @@ namespace FFFacilityInfoWbpBuilder
 			? Cast<UCanvasPanelSlot>(Picker->Slot)
 			: nullptr;
 		const bool bSafeDockContract = Root && PickerSlot &&
-			Root->GetVisibility() == ESlateVisibility::SelfHitTestInvisible &&
-			PickerSlot->GetAnchors().Minimum.Equals(FVector2D(1.0f, 0.0f)) &&
-			PickerSlot->GetAnchors().Maximum.Equals(FVector2D(1.0f, 1.0f)) &&
-			PickerSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)) &&
-			FMath::IsNearlyEqual(PickerSlot->GetOffsets().Left, -PaidProgramPickerRightMargin) &&
-			FMath::IsNearlyEqual(PickerSlot->GetOffsets().Top, PaidProgramPickerTopMargin) &&
-			FMath::IsNearlyEqual(PickerSlot->GetOffsets().Right, PaidProgramPickerWidth) &&
-			FMath::IsNearlyEqual(PickerSlot->GetOffsets().Bottom, PaidProgramPickerBottomReserve);
+			Root->GetVisibility() == ESlateVisibility::SelfHitTestInvisible;
 		return bSafeDockContract &&
 			HasNamedVariable(Blueprint, TEXT("Border_Picker"), *UBorder::StaticClass()) &&
 			HasNamedVariable(Blueprint, TEXT("Button_Close"), *UButton::StaticClass()) &&
@@ -1861,7 +2006,7 @@ namespace FFFacilityInfoWbpBuilder
 		AddVertical(*Footer, *Confirm);
 		FooterSurface->AddChild(Footer);
 		AddVertical(*Shell, *FooterSurface);
-		return HasPaidProgramPickerContract(Blueprint);
+		return MigratePurchaseControls(Blueprint, Tree) && HasPaidProgramPickerContract(Blueprint);
 	}
 
 	void EnsurePaidProgramBlueprint(
@@ -2041,6 +2186,7 @@ namespace FFFacilityInfoWbpBuilder
 
 	void BuildFacilityInfoUmg()
 	{
+		if (!EnsureLightingControlsBlueprint()) return;
 		BuildPaidProgramWidgetBlueprints();
 		// Never rebuild an existing designer-owned asset. A versioned contract migration may append
 		// missing named nodes at the known Panel_Content seam and normalize the upgrade block order.
@@ -2055,6 +2201,7 @@ namespace FFFacilityInfoWbpBuilder
 				bool bMigratedProgramContract = false;
 				bool bMigratedInstanceLimitContract = false;
 				bool bMigratedUpgradeContract = false;
+				bool bMigratedLightingContract = false;
 				if (!EnsureProgramWidgetContract(
 						*Existing,
 						*Existing->WidgetTree,
@@ -2066,14 +2213,15 @@ namespace FFFacilityInfoWbpBuilder
 						bMigratedInstanceLimitContract) ||
 					!HasInstanceLimitWidgetContract(*Existing) ||
 					!EnsureUpgradeWidgetContract(*Existing, *Existing->WidgetTree, bMigratedUpgradeContract) ||
-					!HasUpgradeWidgetContract(*Existing))
+					!HasUpgradeWidgetContract(*Existing) ||
+					!EnsureLightingWidgetContract(*Existing, *Existing->WidgetTree, bMigratedLightingContract))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 						TEXT("FF_FACILITY_INFO_UMG_FAIL: existing asset cannot accept a non-destructive widget contract migration: %s"),
 						*PanelPackage);
 					return;
 				}
-				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract) &&
+				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract || bMigratedLightingContract) &&
 					!SaveBlueprint(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -2082,7 +2230,7 @@ namespace FFFacilityInfoWbpBuilder
 					return;
 				}
 
-				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract)
+				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract || bMigratedLightingContract)
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
 						TEXT("FF_FACILITY_INFO_UMG_MIGRATED: %s (existing designer nodes preserved)"),
@@ -2257,6 +2405,246 @@ namespace FFFacilityInfoWbpBuilder
 		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
 			TEXT("FF_FACILITY_INFO_GAME_UMG_REFRESHED: %s"), *PanelPackage);
 	}
+
+	void SetApprovedDock(UWidget& Widget, const bool bShadow = false)
+	{
+		if (USizeBox* Size = Cast<USizeBox>(&Widget))
+		{
+			Size->SetWidthOverride(PanelWidth);
+			Size->ClearHeightOverride();
+		}
+		if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Widget.Slot))
+		{
+			Slot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 1.0f));
+			Slot->SetAlignment(FVector2D(1.0f, 0.0f));
+			Slot->SetAutoSize(false);
+			Slot->SetOffsets(FMargin(-PanelRightMargin + (bShadow ? 4.0f : 0.0f),
+				PanelTopMargin + (bShadow ? 4.0f : 0.0f), PanelWidth,
+				PaidProgramPickerBottomReserve - (bShadow ? 4.0f : 0.0f)));
+		}
+	}
+
+	bool MigrateInspectorControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		// Presence is a version marker. Repeat execution never repositions or repaints authored nodes.
+		if (Tree.FindWidget(TEXT("Panel_InspectorNavigation")))
+		{
+			return HasNamedVariable(Blueprint, TEXT("Button_TabOverview"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_TabOperation"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_TabUpgrade"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_Favorite"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_RemoveConfirm"), *UButton::StaticClass());
+		}
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		UVerticalBox* Shell = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Shell")));
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		if (!Palette || !Shell || !Content) return false;
+		UCommonTextBlock* LevelSummary = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_LevelSummary"), true);
+		UVerticalBox* Identity = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Summary_Meta")));
+		if (!LevelSummary || !Identity) return false;
+		LevelSummary->SetText(FText::FromString(TEXT("시설 강화 · Lv.1")));
+		StyleLightText(*LevelSummary, 12, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		AddVertical(*Identity, *LevelSummary, FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+		UVerticalBox* Navigation = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_InspectorNavigation"));
+		UHorizontalBox* Tabs = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_InspectorTabs"));
+		UButton* Favorite = MakeLightTextButton(Blueprint, Tree,
+			TEXT("Button_Favorite"), TEXT("Text_Favorite"), FText::FromString(TEXT("☆ 즐겨찾기")),
+			Palette->InGame.Paper, Palette->InGame.TealSoft, Palette->InGame.TealSoft,
+			Palette->InGame.Line, Palette->InGame.TealDeep, true, true);
+		if (!Navigation || !Tabs || !Favorite) return false;
+		AddVertical(*Navigation, *Favorite, FMargin(10.0f, 7.0f, 10.0f, 5.0f));
+		const TCHAR* Names[] = {TEXT("Overview"), TEXT("Operation"), TEXT("Upgrade")};
+		const TCHAR* Labels[] = {TEXT("시설 정보"), TEXT("운영"), TEXT("강화")};
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			UButton* Tab = MakeLightTextButton(Blueprint, Tree,
+				FName(*FString::Printf(TEXT("Button_Tab%s"), Names[Index])),
+				FName(*FString::Printf(TEXT("Text_Tab%s"), Names[Index])), FText::FromString(Labels[Index]),
+				Palette->InGame.PaperSunken, Palette->InGame.TealSoft, Palette->InGame.TealSoft,
+				Palette->InGame.Line, Palette->InGame.TealDeep, true, false);
+			if (!Tab) return false;
+			AddHorizontal(*Tabs, *Tab, FMargin(2.0f, 0.0f), ESlateSizeRule::Fill);
+		}
+		AddVertical(*Navigation, *Tabs, FMargin(8.0f, 0.0f, 8.0f, 6.0f));
+		Shell->InsertChildAt(1, Navigation);
+
+		UVerticalBox* Confirmation = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_RemoveConfirmation"), true);
+		UCommonTextBlock* Copy = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_RemoveConfirmation"), true);
+		UButton* Confirm = MakeLightTextButton(Blueprint, Tree,
+			TEXT("Button_RemoveConfirm"), TEXT("Text_RemoveConfirm"), FText::FromString(TEXT("회수 금액을 받고 철거")),
+			Palette->InGame.Danger, Palette->InGame.Danger, Palette->InGame.Danger,
+			Palette->InGame.Danger, Palette->InGame.White, true, false);
+		UButton* Cancel = MakeLightTextButton(Blueprint, Tree,
+			TEXT("Button_RemoveCancel"), TEXT("Text_RemoveCancel"), FText::FromString(TEXT("시설 유지")),
+			Palette->InGame.Paper, Palette->InGame.TealSoft, Palette->InGame.TealSoft,
+			Palette->InGame.Line, Palette->InGame.TealDeep, true, false);
+		if (!Confirmation || !Copy || !Confirm || !Cancel) return false;
+		Copy->SetText(FText::FromString(TEXT("시설을 철거할까요?\n강화에 사용한 비용은 환불되지 않습니다.")));
+		Copy->SetAutoWrapText(true);
+		StyleLightText(*Copy, 14, Palette->InGame.Ink, TEXT("Medium"));
+		AddVertical(*Confirmation, *Copy, FMargin(6.0f, 12.0f, 6.0f, 16.0f));
+		AddVertical(*Confirmation, *Cancel, FMargin(0.0f, 0.0f, 0.0f, 7.0f));
+		AddVertical(*Confirmation, *Confirm);
+		AddVertical(*Content, *Confirmation);
+		Confirmation->SetVisibility(ESlateVisibility::Collapsed);
+		if (UWidget* PanelSize = Tree.FindWidget(TEXT("Panel_Size"))) SetApprovedDock(*PanelSize);
+		if (UWidget* Shadow = Tree.FindWidget(TEXT("Panel_ShadowSize"))) SetApprovedDock(*Shadow, true);
+		// Show only the initial overview in Designer. Runtime projects state into these same nodes.
+		for (const FName Name : {FName(TEXT("Panel_UpgradeSection")), FName(TEXT("Panel_LiveSection"))})
+			if (UWidget* Section = Tree.FindWidget(Name)) Section->SetVisibility(ESlateVisibility::Collapsed);
+		return true;
+	}
+
+	bool MigratePurchaseControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		if (Tree.FindWidget(TEXT("Panel_PurchaseComplete")))
+		{
+			return HasNamedVariable(Blueprint, TEXT("Text_PurchaseReceipt"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_ReturnToFacility"), *UButton::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_ResourcePreview"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_PreviewTime"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_RequiredStaff"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_Capacity"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_TicketFee"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_MaxRevenue"), *UCommonTextBlock::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Text_PurchaseCost"), *UCommonTextBlock::StaticClass());
+		}
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		UVerticalBox* Shell = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_PickerShell")));
+		UVerticalBox* Body = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_PickerContent")));
+		UVerticalBox* Preview = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Preview")));
+		UVerticalBox* Footer = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Footer")));
+		UBorder* BodySurface = Cast<UBorder>(Tree.FindWidget(TEXT("Border_Body")));
+		UWidget* FooterSurface = Tree.FindWidget(TEXT("Border_Footer"));
+		UBorder* ListSurface = Cast<UBorder>(Tree.FindWidget(TEXT("Border_ProgramList")));
+		if (!Palette || !Shell || !Body || !BodySurface || !FooterSurface || !ListSurface || !Preview || !Footer) return false;
+		bool bModified = false;
+		EnsureVariableContract(Blueprint, *BodySurface, TEXT("Border_Body"), bModified);
+		EnsureVariableContract(Blueprint, *FooterSurface, TEXT("Border_Footer"), bModified);
+		UCommonTextBlock* Resources = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_ResourcePreview"), true);
+		UVerticalBox* Complete = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_PurchaseComplete"), true);
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_PurchaseCompleteTitle"));
+		UCommonTextBlock* Receipt = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_PurchaseReceipt"), true);
+		UCommonTextBlock* ReceiptName = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_ReceiptProgramName"), true);
+		UCommonTextBlock* ReceiptResources = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_ReceiptResources"), true);
+		UCommonTextBlock* Time = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_PreviewTime"), true);
+		UCommonTextBlock* MaxRevenue = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_MaxRevenue"), true);
+		UCommonTextBlock* PurchaseCost = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_PurchaseCost"), true);
+		UCommonTextBlock* PurchaseLabel = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_PurchaseCostLabel"));
+		UHorizontalBox* Metrics = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_ProgramMetrics"));
+		UHorizontalBox* CostRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_PurchaseCost"));
+		UButton* Return = MakeLightTextButton(Blueprint, Tree,
+			TEXT("Button_ReturnToFacility"), TEXT("Text_ReturnToFacility"), FText::FromString(TEXT("시설 정보로 돌아가기")),
+			Palette->InGame.TealDeep, Palette->InGame.Teal, Palette->InGame.Teal,
+			Palette->InGame.TealDeep, Palette->InGame.White, true, false);
+		UScrollBox* Details = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_PurchaseDetails"));
+		USizeBox* ListSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("Size_ProgramList"));
+		if (!Resources || !Complete || !Title || !Receipt || !Return || !Details || !ListSize ||
+			!ReceiptName || !ReceiptResources || !Time || !MaxRevenue || !PurchaseCost || !PurchaseLabel || !Metrics || !CostRow) return false;
+		for (const FName Name : {FName(TEXT("Text_PreviewDetails")), FName(TEXT("Text_PreviewDescription"))})
+			if (UWidget* LegacyText = Tree.FindWidget(Name)) LegacyText->SetVisibility(ESlateVisibility::Collapsed);
+		if (UCommonTextBlock* PreviewName = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_PreviewName"))))
+			StyleLightText(*PreviewName, 21, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		Time->SetText(FText::FromString(TEXT("개장 후 운영 시간")));
+		Time->SetAutoWrapText(true);
+		StyleLightText(*Time, 13, Palette->InGame.InkMuted, TEXT("Medium"));
+		Preview->InsertChildAt(1, Time);
+		const FName ValueNames[] = {TEXT("Text_RequiredStaff"), TEXT("Text_Capacity"), TEXT("Text_TicketFee")};
+		const TCHAR* MetricLabels[] = {TEXT("필요 인력"), TEXT("참가 정원"), TEXT("1인 참가비")};
+		for (int32 Index = 0; Index < 3; ++Index)
+		{
+			UBorder* Metric = BuildStatCard(Blueprint, Tree, *Palette, ValueNames[Index], MetricLabels[Index]);
+			if (!Metric) return false;
+			AddHorizontal(*Metrics, *Metric, FMargin(Index == 0 ? 0.0f : 3.0f, 0.0f,
+				Index == 2 ? 0.0f : 3.0f, 0.0f), ESlateSizeRule::Fill);
+		}
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Preview->InsertChildAt(2, Metrics)))
+			Slot->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 10.0f));
+		MaxRevenue->SetText(FText::FromString(TEXT("최대 매출 · 정원 모두 참여 시")));
+		MaxRevenue->SetAutoWrapText(true);
+		StyleLightText(*MaxRevenue, 13, Palette->InGame.TealDeep, TEXT("Medium"));
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Preview->InsertChildAt(3, MaxRevenue)))
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 10.0f));
+		PurchaseLabel->SetText(FText::FromString(TEXT("구매 비용")));
+		StyleLightText(*PurchaseLabel, 12, Palette->InGame.InkMuted, TEXT("Medium"));
+		PurchaseCost->SetText(FText::FromString(TEXT("—")));
+		StyleLightText(*PurchaseCost, 26, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		AddHorizontal(*CostRow, *PurchaseLabel, FMargin(0.0f), ESlateSizeRule::Fill);
+		AddHorizontal(*CostRow, *PurchaseCost);
+		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Footer->InsertChildAt(0, CostRow)))
+			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		Resources->SetText(FText::FromString(TEXT("보유금 · 가용 인력")));
+		Resources->SetAutoWrapText(true);
+		StyleLightText(*Resources, 13, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		AddVertical(*Body, *Resources, FMargin(2.0f, 10.0f));
+		// The entire review scrolls at short viewports; confirmation remains in its fixed footer.
+		const int32 ListIndex = Body->GetChildIndex(ListSurface);
+		ListSurface->RemoveFromParent();
+		ListSize->SetMaxDesiredHeight(145.0f);
+		ListSize->AddChild(ListSurface);
+		Body->InsertChildAt(ListIndex, ListSize);
+		Body->RemoveFromParent();
+		Details->SetAnimateWheelScrolling(true);
+		Details->AddChild(Body);
+		BodySurface->AddChild(Details);
+		Title->SetText(FText::FromString(TEXT("구매·편성 완료")));
+		StyleLightText(*Title, 14, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		ReceiptName->SetText(FText::FromString(TEXT("프로그램명")));
+		ReceiptName->SetAutoWrapText(true);
+		StyleLightText(*ReceiptName, 24, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		ReceiptResources->SetText(FText::FromString(TEXT("남은 보유금 · 가용 인력")));
+		ReceiptResources->SetAutoWrapText(true);
+		StyleLightText(*ReceiptResources, 16, Palette->InGame.TealDeep, TEXT("SemiBold"));
+		Receipt->SetText(FText::FromString(TEXT("프로그램 구매가 완료되었습니다.")));
+		Receipt->SetAutoWrapText(true);
+		StyleLightText(*Receipt, 14, Palette->InGame.Ink, TEXT("Medium"));
+		AddVertical(*Complete, *Title, FMargin(18.0f, 24.0f, 18.0f, 8.0f));
+		AddVertical(*Complete, *ReceiptName, FMargin(18.0f, 0.0f, 18.0f, 18.0f));
+		UScrollBox* ReceiptScroll = MakeWidget<UScrollBox>(Blueprint, Tree, TEXT("ScrollBox_PurchaseReceipt"));
+		if (!ReceiptScroll) return false;
+		ReceiptScroll->AddChild(Receipt);
+		AddVertical(*Complete, *ReceiptScroll, FMargin(18.0f, 0.0f, 18.0f, 18.0f), ESlateSizeRule::Fill, VAlign_Fill);
+		AddVertical(*Complete, *ReceiptResources, FMargin(18.0f, 0.0f, 18.0f, 12.0f));
+		AddVertical(*Complete, *Return, FMargin(12.0f, 8.0f, 12.0f, 12.0f));
+		AddVertical(*Shell, *Complete, FMargin(0.0f), ESlateSizeRule::Fill, VAlign_Fill);
+		Complete->SetVisibility(ESlateVisibility::Collapsed);
+		if (UWidget* Picker = Tree.FindWidget(TEXT("Border_Picker"))) SetApprovedDock(*Picker);
+		return true;
+	}
+
+	void MigrateFacilityInspectorUmg()
+	{
+		// This is the safe approved-layout command. Legacy Refresh commands explicitly rebuild.
+		BuildFacilityInfoUmg();
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		const FString PickerName = FPackageName::GetLongPackageAssetName(PaidProgramPickerPackage);
+		UWidgetBlueprint* Picker = LoadObject<UWidgetBlueprint>(nullptr,
+			*FString::Printf(TEXT("%s.%s"), *PaidProgramPickerPackage, *PickerName));
+		bool bSuccess = true;
+		if (!Inspector || !Inspector->WidgetTree) bSuccess = false;
+		else if (!Inspector->WidgetTree->FindWidget(TEXT("Panel_InspectorNavigation")))
+			bSuccess &= MigrateInspectorControls(*Inspector, *Inspector->WidgetTree) && SaveBlueprint(*Inspector);
+		else bSuccess &= MigrateInspectorControls(*Inspector, *Inspector->WidgetTree);
+		if (!Picker || !Picker->WidgetTree) bSuccess = false;
+		else if (!Picker->WidgetTree->FindWidget(TEXT("Panel_PurchaseComplete")))
+			bSuccess &= MigratePurchaseControls(*Picker, *Picker->WidgetTree) && SaveBlueprint(*Picker);
+		else bSuccess &= MigratePurchaseControls(*Picker, *Picker->WidgetTree);
+		if (bSuccess)
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+				TEXT("FF_FACILITY_INSPECTOR_MIGRATED: editable inspector and purchase contracts ready; existing edits preserved."));
+		}
+		else
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_INSPECTOR_MIGRATION_FAIL: incompatible or partially authored contract; no destructive rebuild performed."));
+		}
+	}
+
+	FAutoConsoleCommand MigrateFacilityInspectorUmgCommand(
+		TEXT("FF.MigrateFacilityInspectorUMG"),
+		TEXT("Adds approved inspector tabs, favorites, remove confirmation and paid-program receipt once; reruns preserve designer changes."),
+		FConsoleCommandDelegate::CreateStatic(&MigrateFacilityInspectorUmg));
 
 	FAutoConsoleCommand RefreshFacilityInfoGameUmgCommand(
 		TEXT("FF.RefreshFacilityInfoGameUMG"),

@@ -10,6 +10,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/World.h"
+#include "FF_FFZSBuildArea.h"
 #include "FF_FFZSBuildableGridActor.h"
 #include "FF_FFZSBuildableGridComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
@@ -418,6 +419,96 @@ bool FFFZSBuildableGridOverviewMoveContextTest::RunTest(const FString& Parameter
     TestFalse(TEXT("Canceling movement restores the source's hidden footprint immediately"), HasOverviewLineAt(*Overview, SourcePoint));
     TestEqual(TEXT("Overview transitions leave the source actor at its committed origin"), Source->GetGridPlacement().OriginCell, SourcePlacement.OriginCell);
     TestEqual(TEXT("Overview transitions never commit the move"), System->GetWorldRevision(), Revision);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSUnifiedBuildableGridReuseTest,
+    "FF_ZoneSystem.Integration.BuildableGrid.UnifiedComponentReuse",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSUnifiedBuildableGridReuseTest::RunTest(const FString& Parameters)
+{
+    FScopedGridPresentationSettings Settings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Editor world"), World)) return false;
+    UFFZSWorldSubsystem* System = World->GetSubsystem<UFFZSWorldSubsystem>();
+    AFFZSGameplayZone* A = SpawnGridPresentationZone(*World, TEXT("UnifiedA"));
+    AFFZSGameplayZone* B = SpawnGridPresentationZone(*World, TEXT("UnifiedB"), FVector(1000.0, 0.0, 0.0));
+    if (!TestNotNull(TEXT("World subsystem"), System) || !TestNotNull(TEXT("Region A"), A) ||
+        !TestNotNull(TEXT("Region B"), B) || !TestTrue(TEXT("Region A registers"), System->RegisterZone(A)) ||
+        !TestTrue(TEXT("Region B registers"), System->RegisterZone(B))) return false;
+    AFFZSBuildableGridActor* Overview = World->SpawnActor<AFFZSBuildableGridActor>();
+    if (!TestNotNull(TEXT("Overview"), Overview)) return false;
+    Overview->UpdateGrid(*System, FVector(500.0, 500.0, 0.0), FVector::UpVector, 100);
+    AFFZSBuildArea* BuildArea = World->SpawnActor<AFFZSBuildArea>();
+    if (!TestNotNull(TEXT("Unified building area"), BuildArea) ||
+        !TestTrue(TEXT("Build area registers"), System->RegisterBuildArea(BuildArea))) return false;
+
+    Overview->UpdateGrid(*System, FVector(500.0, 500.0, 0.0), FVector::UpVector, 100);
+    TArray<UFFZSBuildableGridComponent*> Grids;
+    Overview->GetComponents(Grids);
+    if (!TestEqual(TEXT("Unified mode replaces legacy region renderers with one component"), Grids.Num(), 1)) return false;
+    UFFZSBuildableGridComponent* SharedGrid = Grids[0];
+    TestTrue(TEXT("A neighboring region remains visible in the unified mask"),
+        HasOverviewLineAt(*Overview, FVector2D(1500.0, 500.0)));
+
+    Overview->UpdateGrid(*System, FVector(1500.0, 500.0, 0.0), FVector::UpVector, 100);
+    Grids.Reset();
+    Overview->GetComponents(Grids);
+    TestEqual(TEXT("Crossing a region boundary does not allocate another renderer"), Grids.Num(), 1);
+    if (!Grids.IsEmpty()) TestTrue(TEXT("The same component survives a coordinate-region change"), Grids[0] == SharedGrid);
+    TestTrue(TEXT("Crossing a region boundary keeps the first region visible"),
+        HasOverviewLineAt(*Overview, FVector2D(500.0, 500.0)));
+
+    Overview->UpdateGrid(*System, FVector(3500.0, 500.0, 0.0), FVector::UpVector, 100);
+    TestTrue(TEXT("No coordinate region outside the original union hides the grid"), Overview->IsHidden());
+    Overview->UpdateGrid(*System, FVector(500.0, 500.0, 0.0), FVector::UpVector, 100);
+    TestFalse(TEXT("Re-entering the unified area restores the grid"), Overview->IsHidden());
+    Grids.Reset();
+    Overview->GetComponents(Grids);
+    TestEqual(TEXT("Re-entry still owns exactly one component"), Grids.Num(), 1);
+    if (!Grids.IsEmpty()) TestTrue(TEXT("Hiding does not replace the shared component"), Grids[0] == SharedGrid);
+    TestEqual(TEXT("Rendering does not merge NPC regions"), System->GetRegisteredZoneIds().Num(), 2);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSUnifiedBuildableGridMajorLinesTest,
+    "FF_ZoneSystem.Integration.BuildableGrid.UnifiedWorldMajorLines",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSUnifiedBuildableGridMajorLinesTest::RunTest(const FString& Parameters)
+{
+    FScopedGridPresentationSettings Settings;
+    TGuardValue<int32> MajorInterval(GetMutableDefault<UFFZSDeveloperSettings>()->PlacementGridMajorIntervalCm, 500);
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Editor world"), World)) return false;
+    UFFZSWorldSubsystem* System = World->GetSubsystem<UFFZSWorldSubsystem>();
+    AFFZSGameplayZone* Region = SpawnGridPresentationZone(*World, TEXT("UnifiedRotated"), FVector(1037.0, -2063.0, 0.0));
+    if (!TestNotNull(TEXT("World subsystem"), System) || !TestNotNull(TEXT("Coordinate region"), Region)) return false;
+    Region->SetActorRotation(FRotator(0.0, 90.0, 0.0));
+    if (!TestTrue(TEXT("Coordinate region registers"), System->RegisterZone(Region))) return false;
+    AFFZSBuildArea* BuildArea = World->SpawnActor<AFFZSBuildArea>();
+    AFFZSBuildableGridActor* Overview = World->SpawnActor<AFFZSBuildableGridActor>();
+    if (!TestNotNull(TEXT("Build area"), BuildArea) || !TestNotNull(TEXT("Overview"), Overview) ||
+        !TestTrue(TEXT("Build area registers"), System->RegisterBuildArea(BuildArea))) return false;
+    Overview->UpdateGrid(*System, FVector(537.0, -1563.0, 0.0), FVector::UpVector, 100);
+    TArray<UFFZSBuildableGridComponent*> Grids;
+    Overview->GetComponents(Grids);
+    int32 MajorLines = 0;
+    for (const UFFZSBuildableGridComponent* Grid : Grids)
+    {
+        for (const FBatchedLine& Line : Grid->BatchedLines)
+        {
+            // Foreground major strokes are 1.8 px; halos and exterior contours differ.
+            if (!FMath::IsNearlyEqual(Line.Thickness, 1.8f)) continue;
+            ++MajorLines;
+            const bool bWorldVertical = FMath::IsNearlyEqual(Line.Start.X, Line.End.X, 0.01);
+            const double Coordinate = bWorldVertical ? Line.Start.X : Line.Start.Y;
+            TestTrue(TEXT("Major stroke styling follows the world grid across rotated offset regions"),
+                FMath::IsNearlyEqual(Coordinate, FMath::GridSnap(Coordinate, 500.0), 0.01));
+        }
+    }
+    TestTrue(TEXT("The visible interior contains major strokes"), MajorLines > 0);
     return true;
 }
 

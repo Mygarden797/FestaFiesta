@@ -26,13 +26,17 @@ public:
     /** AssetManager, catalog, validators, and adapters share this one type token. */
     static const FPrimaryAssetType& GetFacilityDefinitionAssetType();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System", meta = (DisplayName = "Facility Specification", ToolTip = "이 시설의 ID·건물 크기·대기열·앵커·시각 메시를 정의하는 프로덕션 단일 원천입니다. 설치 시 이 값을 검증한 복사본이 월드 인스턴스와 저장 데이터에 들어갑니다.", AssetBundles = "FacilityVisual"))
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System", meta = (DisplayName = "Facility Specification", ToolTip = "이 시설의 ID·건물 크기·대기열·앵커·시각 메시를 정의하는 프로덕션 단일 원천입니다. 설치 시 이 값을 검증한 복사본이 월드 인스턴스와 저장 데이터에 들어갑니다.", AssetBundles = "FacilityVisual,FacilityLighting"))
     FFFZSFacilitySpec Spec;
     // ID·크기·대기열·앵커·외부 키·소프트 메시를 포함하는 설치 시점 복사 원본.
 
     /** 건설 카탈로그 카드에만 사용하는 선택적 이미지. 설치 사양·SaveGame 데이터에는 포함하지 않는다. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System|Presentation", meta = (DisplayName = "Catalog Thumbnail", ToolTip = "건설 카탈로그 카드에 표시할 선택적 이미지입니다. 건물 크기·대기열·배치 판정에는 영향을 주지 않습니다.", AssetBundles = "BuildCatalogUI"))
     TSoftObjectPtr<UTexture2D> CatalogThumbnail;
+
+    /** Retired definitions keep their stable ID and saved specifications, but offer no new catalog entry. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System|Presentation", meta = (DisplayName = "Show in Build Catalog", ToolTip = "끄면 신규 건설 카탈로그에서만 제외됩니다. 기존 시설 ID, 저장 사양, 에셋 참조는 유지됩니다."))
+    bool bShowInBuildCatalog = true;
 
 #if WITH_EDITORONLY_DATA
     /** Explicit write-ownership for the procedural mesh import/material tools; never affects runtime size. */

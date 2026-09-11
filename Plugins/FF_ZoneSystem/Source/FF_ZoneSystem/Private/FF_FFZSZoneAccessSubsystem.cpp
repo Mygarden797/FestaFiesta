@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/OutputDevice.h"
 #include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "UObject/UnrealType.h"
@@ -41,7 +42,7 @@ namespace FFZSZoneAccess
 
     static TAutoConsoleVariable<float> CVarWarnOffsetCm(
         TEXT("ffzs.ZoneAccess.WarnOffsetCm"), 3000.0f,
-        TEXT("접근점이 존 중심에서 이 거리보다 멀어지면 경고한다(cm). 존 대부분이 끊긴 지형이라는 신호다."),
+        TEXT("접근점이 존 중심에서 이 거리보다 멀어지면 경고한다(cm). 앵커와 NavMesh를 확인할 진단 기준이다."),
         ECVF_Default);
 
 }
@@ -63,8 +64,32 @@ void UFFZSZoneAccessSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
     Super::OnWorldBeginPlay(InWorld);
 
+    // Frontend 등 존이 없는 맵은 군중용 NavMesh와 출구가 필요하지 않다.
+    if (!HasGameplayZones())
+    {
+        return;
+    }
+
     RepairZoneAccessPoints();
     LogReachabilityReport();
+}
+
+bool UFFZSZoneAccessSubsystem::HasGameplayZones() const
+{
+    UWorld* World = GetWorld();
+    if (World == nullptr)
+    {
+        return false;
+    }
+
+    for (TActorIterator<AFFZSGameplayZone> It(World); It; ++It)
+    {
+        if (IsValid(*It))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool UFFZSZoneAccessSubsystem::ProjectToNavMesh(const FVector& Point, FVector& OutProjected) const
@@ -292,7 +317,7 @@ int32 UFFZSZoneAccessSubsystem::RepairZoneAccessPoints()
     Repairs.Reset();
 
     UWorld* World = GetWorld();
-    if (World == nullptr)
+    if (World == nullptr || !HasGameplayZones())
     {
         return 0;
     }
@@ -365,7 +390,7 @@ int32 UFFZSZoneAccessSubsystem::RepairZoneAccessPoints()
         FVector MiddleWorld;
         if (!FindReachableAccessPoint(*Zone, ExitNav, AccessWorld, MiddleWorld))
         {
-            // 경계 전체가 출구와 다른 지형 조각에 있다. 데이터로는 고칠 수 없는 자리다.
+            // 제한된 표본으로 찾지 못했다. 좁은 통로나 투영 실패도 가능하므로 전체 단절로 단정하지 않는다.
             Stranded.Add(FString::Printf(TEXT("%s(%.0f, %.0f)"),
                 *Zone->ZoneId.ToString(), Corner.X, Corner.Y));
             continue;
@@ -388,19 +413,19 @@ int32 UFFZSZoneAccessSubsystem::RepairZoneAccessPoints()
     }
 
     UE_LOG(LogFFZSZoneAccess, Log,
-        TEXT("존 %d개: 이미 도달 가능 %d, 저작된 앵커 %d, 접근점 고침 %d, 고칠 수 없음 %d (%.0fms)"),
+        TEXT("존 %d개: 이미 도달 가능 %d, 저작된 앵커 %d, 접근점 고침 %d, 표본 탐색 실패 %d (%.0fms)"),
         ZoneCount, AlreadyReachable, Authored, Repairs.Num(), Stranded.Num(),
         (FPlatformTime::Seconds() - StartSeconds) * 1000.0);
 
-    // 접근점이 존 중심에서 크게 밀린 존은 경계 대부분이 끊긴 지형이라는 뜻이다. 통행은
-    // 복구됐지만 NPC가 존 가장자리로만 모이므로 레벨에서 확인하는 편이 좋다.
+    // 중심과 멀다는 사실만으로 지형 전체를 판단하지 않는다. 가장자리로 군중이 모이는지
+    // 저작 앵커·NavMesh 투영과 함께 확인한다.
     const float WarnOffsetCm = FMath::Max(0.0f, FFZSZoneAccess::CVarWarnOffsetCm.GetValueOnGameThread());
     for (const FFFZSZoneAccessRepair& Repair : Repairs)
     {
         if (Repair.OffsetCm > WarnOffsetCm)
         {
             UE_LOG(LogFFZSZoneAccess, Warning,
-                TEXT("%s의 접근점이 존 한가운데에서 %.0fm 떨어졌다 — 존 대부분이 끊긴 지형이다. ")
+                TEXT("%s의 접근점이 존 한가운데에서 %.0fm 떨어졌다 — 앵커 위치와 NavMesh 연결을 확인할 것. ")
                 TEXT("한가운데 (%.0f, %.0f) / 접근점 (%.0f, %.0f)"),
                 *Repair.ZoneId.ToString(), Repair.OffsetCm * 0.01f,
                 Repair.CentreWorld.X, Repair.CentreWorld.Y,
@@ -410,10 +435,10 @@ int32 UFFZSZoneAccessSubsystem::RepairZoneAccessPoints()
 
     if (!Stranded.IsEmpty())
     {
-        // 경계 안에 출구와 이어진 지면이 한 점도 없는 존이다. 레벨에서 단차에 램프를 놓거나
-        // 존을 이어진 지형 위로 옮겨야 한다 — 데이터만으로는 해결되지 않는다.
+        // 격자 표본과 쿼리 예산 안에서 실패한 것이며, 연속 영역 전체의 도달 불가 증명은 아니다.
         UE_LOG(LogFFZSZoneAccess, Error,
-            TEXT("★ 존 %d개는 경계 전체가 출구와 끊긴 지형 조각에 있다 — 레벨 작업이 필요하다: %s"),
+            TEXT("★ 존 %d개의 접근점을 제한된 표본에서 찾지 못했다 — NavMesh 준비 상태, 투영 범위, ")
+            TEXT("표본 간격과 레벨 연결을 확인할 것: %s"),
             Stranded.Num(), *FString::Join(Stranded, TEXT(", ")));
     }
 
@@ -428,6 +453,28 @@ void UFFZSZoneAccessSubsystem::LogReachabilityReport() const
         return;
     }
 
+    if (!HasGameplayZones())
+    {
+        UE_LOG(LogFFZSZoneAccess, Log, TEXT("게임플레이 존이 없어 NavMesh 도달 검사를 생략한다"));
+        return;
+    }
+
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    if (NavSys == nullptr || NavSys->GetDefaultNavDataInstance(FNavigationSystem::DontCreate) == nullptr)
+    {
+        UE_LOG(LogFFZSZoneAccess, Warning, TEXT("NavMesh가 준비되지 않아 도달 리포트를 만들 수 없다"));
+        return;
+    }
+
+    // 아직 구워지는 타일을 영구적인 지형 단절로 보고하지 않는다. 이 명령은 읽기 전용이므로
+    // NavMesh 준비 후 ffzs.ZoneAccess.Report로 다시 측정해도 앵커와 보행거리 캐시는 바뀌지 않는다.
+    if (UNavigationSystemV1::IsNavigationBeingBuiltOrLocked(World))
+    {
+        UE_LOG(LogFFZSZoneAccess, Warning,
+            TEXT("NavMesh 빌드·변경 반영이 끝나지 않아 도달 판정을 보류한다 — 완료 후 ffzs.ZoneAccess.Report로 확인할 것"));
+        return;
+    }
+
     FVector ExitWorld;
     FVector ExitNav;
     if (!ResolveExitLocation(ExitWorld) || !ProjectToNavMesh(ExitWorld, ExitNav))
@@ -438,6 +485,8 @@ void UFFZSZoneAccessSubsystem::LogReachabilityReport() const
 
     TArray<FName> ZoneIds;
     TArray<FVector> Points;
+    TArray<FString> Unprojected;
+    int32 TotalZoneCount = 0;
     for (TActorIterator<AFFZSGameplayZone> It(World); It; ++It)
     {
         const AFFZSGameplayZone* Zone = *It;
@@ -445,12 +494,12 @@ void UFFZSZoneAccessSubsystem::LogReachabilityReport() const
         {
             continue;
         }
+        ++TotalZoneCount;
 
         FVector Projected;
         if (!ProjectToNavMesh(GetZoneRepresentativePoint(*Zone), Projected))
         {
-            UE_LOG(LogFFZSZoneAccess, Warning,
-                TEXT("존 %s의 대표점이 NavMesh 밖이다"), *Zone->ZoneId.ToString());
+            Unprojected.Add(Zone->ZoneId.ToString());
             continue;
         }
 
@@ -514,15 +563,34 @@ void UFFZSZoneAccessSubsystem::LogReachabilityReport() const
     UE_LOG(LogFFZSZoneAccess, Log,
         TEXT("존 대표점 %d개가 NavMesh 조각 %d개에 걸쳐 있다"), Points.Num(), Islands.Num());
 
-    if (Unreachable.IsEmpty())
+    if (Unreachable.IsEmpty() && Unprojected.IsEmpty())
     {
         UE_LOG(LogFFZSZoneAccess, Log,
-            TEXT("★ 존 %d/%d개가 출구까지 완전 경로를 가진다"), Reachable, Points.Num());
+            TEXT("★ 전체 존 %d/%d개가 출구까지 완전 경로를 가진다"), Reachable, TotalZoneCount);
     }
     else
     {
         UE_LOG(LogFFZSZoneAccess, Error,
-            TEXT("★ 존 %d/%d개만 출구에 닿는다. 남은 %d개: %s"),
-            Reachable, Points.Num(), Unreachable.Num(), *FString::Join(Unreachable, TEXT(", ")));
+            TEXT("★ 전체 존 %d/%d개가 출구에 닿는다. NavMesh 투영 성공 %d개, 경로 없음 %d개 [%s], ")
+            TEXT("대표점 투영 실패 %d개 [%s]"),
+            Reachable, TotalZoneCount, Points.Num(), Unreachable.Num(),
+            *FString::Join(Unreachable, TEXT(", ")), Unprojected.Num(),
+            *FString::Join(Unprojected, TEXT(", ")));
     }
 }
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GFFZSZoneAccessReportCommand(
+    TEXT("ffzs.ZoneAccess.Report"),
+    TEXT("전체 게임플레이 존의 출구 도달 상태를 다시 측정한다. 앵커나 레벨은 수정하지 않는다."),
+    FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateLambda(
+        [](const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+        {
+            const UFFZSZoneAccessSubsystem* Subsystem = World
+                ? World->GetSubsystem<UFFZSZoneAccessSubsystem>() : nullptr;
+            if (Subsystem == nullptr)
+            {
+                Ar.Logf(TEXT("ZoneAccess 검사는 Game/PIE 월드에서 실행할 수 있다"));
+                return;
+            }
+            Subsystem->LogReachabilityReport();
+        }));

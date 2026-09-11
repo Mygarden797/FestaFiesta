@@ -160,9 +160,9 @@ def configure_mesh(mesh, definition_record):
             )
         )
 
-    # Collision is deliberately non-authoritative: FFZS runtime visual components
-    # use NoCollision and placement consumes FacilitySpec geometry. Query imported
-    # UCX metadata for the report, but never generate a second bounds source here.
+    # Imported collision is reused for player movement; placement and NPC navigation
+    # still consume FacilitySpec geometry. Report existing UCX metadata without
+    # generating another collision body or changing the shared mesh's collision mode.
     collision_count = 0
     try:
         subsystem = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)

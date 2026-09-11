@@ -1,6 +1,7 @@
 #include "FF_FFZSFacilityLevelPreview.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "Components/LineBatchComponent.h"
 #include "EditorViewportClient.h"
 #include "Engine/StaticMesh.h"
 #include "FF_FFZSFacilityDefinition.h"
@@ -15,6 +16,7 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SWindow.h"
 #include "Widgets/Text/STextBlock.h"
+#include "UObject/UnrealType.h"
 
 #define LOCTEXT_NAMESPACE "FFZSFacilityLevelPreview"
 
@@ -35,12 +37,16 @@ namespace
             Mesh = NewObject<UStaticMeshComponent>();
             Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
             Scene->AddComponent(Mesh, FTransform::Identity);
+            AudienceLines = NewObject<ULineBatchComponent>();
+            Scene->AddComponent(AudienceLines, FTransform::Identity);
             SEditorViewport::Construct(SEditorViewport::FArguments());
             SetLevel(1);
+            FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP(this, &SFFZSFacilityLevelViewport::OnDefinitionEdited);
         }
 
         virtual ~SFFZSFacilityLevelViewport() override
         {
+            FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);
             // SEditorViewport also owns the client. Detach it before our preview scene dies.
             if (Client)
             {
@@ -54,6 +60,16 @@ namespace
         }
 
         int32 GetLevel() const { return Level; }
+        void OnDefinitionEdited(UObject* Object, FPropertyChangedEvent& Event)
+        {
+            if (Object != Definition.Get() || (Event.ChangeType & EPropertyChangeType::Interactive) != 0) return;
+            // Capacity auto-fit is registered by the module before any preview is constructed.
+            // The committed/rolled-back data is therefore available here; undo has no leaf property.
+            if (!Event.Property || Event.Property->GetOwnerStruct() == FFFZSAudienceLayout::StaticStruct()
+                || (Event.Property->GetOwnerStruct() == FFFZSFacilitySpec::StaticStruct()
+                    && Event.Property->GetFName() == GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Audience)))
+                RefreshPreview();
+        }
         const TArray<TSharedPtr<int32>>& GetLevelOptions() const { return LevelOptions; }
         TSharedPtr<int32> GetSelectedLevelOption() const
         {
@@ -79,6 +95,7 @@ namespace
 
         void SetLevel(int32 NewLevel)
         {
+            AudienceLines->Flush();
             const UFFZSFacilityDefinition* Asset = Definition.Get();
             if (!Asset)
             {
@@ -123,6 +140,7 @@ namespace
                 Transform.SetScale3D(Transform.GetScale3D() * Size);
             }
             Mesh->SetRelativeTransform(Transform);
+            DrawAudience(Effective.Audience);
             Summary = FText::Format(LOCTEXT("LevelSummary",
                 "{0} · {1} × {2} × {3} cm · {4}\n데이터 수정 후 Refresh Preview를 누르세요. 미지정 외형은 Lv.1 기본 메시를 사용합니다."),
                 Asset->Spec.bUsesFacilityLevels
@@ -131,6 +149,15 @@ namespace
                 FText::AsNumber(Effective.FootprintSizeCells.Y),
                 FText::AsNumber(Effective.PlacementObstacleHeightCm),
                 LoadedMesh ? FText::FromString(LoadedMesh->GetName()) : LOCTEXT("NoMesh", "표시할 메시 없음"));
+            if (Effective.Audience.bEnabled)
+            {
+                TArray<FText> AudienceErrors;
+                Effective.Audience.IsValid(AudienceErrors);
+                Summary = FText::Format(LOCTEXT("AudienceSummary",
+                    "{0}\n관람 정원 {1}명 · 초록: 자리/예약 경계 · 파랑: 입구 · 주황: 출구 · 흰색: 무대 방향 · 표시 최대 1024자리\n{2}"),
+                    Summary, FText::AsNumber(Effective.Audience.GetCapacity()),
+                    AudienceErrors.IsEmpty() ? LOCTEXT("AudienceGeometryOnly", "공간 배치 미리보기입니다. 실제 레벨의 NavMesh·입퇴장 경로는 별도로 검사하세요.") : AudienceErrors[0]);
+            }
             Invalidate();
         }
 
@@ -148,6 +175,33 @@ namespace
         }
 
     private:
+        void DrawAudience(const FFFZSAudienceLayout& Layout)
+        {
+            FBox2D Bounds;
+            if (!Layout.TryGetLocalBounds(Bounds)) return;
+            const double Z = Layout.FirstSlotLocalCm.Z + 8.;
+            const FVector Corners[] = { FVector(Bounds.Min.X, Bounds.Min.Y, Z),
+                FVector(Bounds.Max.X, Bounds.Min.Y, Z), FVector(Bounds.Max.X, Bounds.Max.Y, Z),
+                FVector(Bounds.Min.X, Bounds.Max.Y, Z) };
+            for (int32 I = 0; I < 4; ++I)
+                AudienceLines->DrawLine(Corners[I], Corners[(I + 1) % 4], FLinearColor::Green, SDPG_World, 4.f);
+            // Compact crosses, generated once per explicit refresh; no actors or per-seat ticks.
+            for (int32 I = 0; I < FMath::Min(Layout.GetCapacity(), 1024); ++I)
+            {
+                FVector P;
+                if (!Layout.TryGetSlotLocal(I, P)) break;
+                P.Z = Z;
+                const double R = FMath::Clamp(static_cast<double>(Layout.AgentRadiusCm), 1., 100.);
+                AudienceLines->DrawLine(P - FVector(R, 0, 0), P + FVector(R, 0, 0), FLinearColor::Green, SDPG_World, 2.f);
+                AudienceLines->DrawLine(P - FVector(0, R, 0), P + FVector(0, R, 0), FLinearColor::Green, SDPG_World, 2.f);
+            }
+            const FVector Lift(0, 0, 10);
+            AudienceLines->DrawPoint(Layout.EntryLocalCm + Lift, FLinearColor::Blue, 18.f, SDPG_World);
+            AudienceLines->DrawPoint(Layout.ExitLocalCm + Lift, FLinearColor(1.f, .3f, 0.f), 18.f, SDPG_World);
+            AudienceLines->DrawLine(FVector((Bounds.Min.X + Bounds.Max.X) * .5, Bounds.Min.Y, Z),
+                Layout.FocusLocalCm + Lift, FLinearColor::White, SDPG_World, 3.f);
+        }
+
         void RebuildLevelOptions()
         {
             LevelOptions.Reset();
@@ -184,6 +238,12 @@ namespace
                         !FMath::IsFinite(Spec.PlacementObstacleHeightCm) || Spec.PlacementObstacleHeightCm <= 0.f)
                     {
                         return;
+                    }
+                    FBox2D AudienceBounds;
+                    if (Spec.Audience.TryGetLocalBounds(AudienceBounds))
+                    {
+                        Bounds += FVector(AudienceBounds.Min, Spec.Audience.FirstSlotLocalCm.Z);
+                        Bounds += FVector(AudienceBounds.Max, Spec.Audience.FirstSlotLocalCm.Z);
                     }
                     UStaticMesh* LevelMesh = Spec.VisualMesh.LoadSynchronous();
                     if (!LevelMesh && Spec.VisualMesh != Asset->Spec.VisualMesh)
@@ -225,6 +285,7 @@ namespace
         TUniquePtr<FPreviewScene> Scene;
         TArray<TSharedPtr<int32>> LevelOptions;
         UStaticMeshComponent* Mesh = nullptr; // FPreviewScene owns the GC reference.
+        ULineBatchComponent* AudienceLines = nullptr; // Same preview-scene lifetime as Mesh.
         int32 Level = 1;
         FText Summary;
     };

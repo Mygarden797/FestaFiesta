@@ -309,6 +309,11 @@ namespace FFBuildModeModel
 			(static_cast<double>(FootprintSizeCells.Y) - 1.0) * 0.5);
 		return FVector2D(0.5, 0.5) + CenterFromFirstCell.GetRotated(YawDegrees);
 	}
+
+	// Unified building uses a world-aligned manipulation grid while preserving region-local saves.
+	FESTAFIESTA_API FFFZSGridPlacement ResolveWorldSnappedPlacement(
+		const FVector& CursorWorld, float WorldYawDegrees, const FTransform& RegionTransform,
+		const FIntPoint& FootprintSizeCells, int32 PositionSnapCm);
 }
 
 // B 키, 카탈로그, 시설 배치/제거를 연결하는 플레이어용 월드 서브시스템.
@@ -430,13 +435,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void RotatePlacementDegrees(float DeltaDegrees);
 
-	// 현재 배치 yaw를 도 단위 절대값으로 설정한다. 비유한 값과 비활성 프리뷰에서는 no-op이다.
+	// 현재 배치 yaw를 도 단위 절대값으로 설정한다. 통합 건설 모드에서는 월드 각도이며 저장 명령은 지역 로컬 각도를 유지한다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void SetPlacementYawDegrees(float YawDegrees);
 
-	// 현재 배치 yaw를 정규화된 도 단위로 반환한다. 레거시 QuarterTurns도 읽기 시 승격한다.
+	// 현재 조작 yaw를 반환한다(통합 모드: 월드, 기존 모드: 지역 로컬). 레거시 QuarterTurns도 읽기 시 승격한다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	float GetPlacementYawDegrees() const;
+
+	// Read-only presentation values share the same selected definition and input settings.
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FName GetSelectedFacilityDefinitionId() const { return SelectedSpec.FacilityDefinitionId; }
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FText GetSelectedFacilityDisplayName() const { return SelectedSpec.DisplayName; }
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	float GetPlacementRotationSnapDegrees() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
 
 	// Presentation commands share the same state/validation path as keyboard placement.
 	UPROPERTY(BlueprintAssignable, Category = "Building|Tools")
@@ -521,6 +536,9 @@ private:
 	bool bExternalCatalogPresentationActive = false;
 	// 매 프레임의 비싼 라인트레이스/검증을 피하기 위한 누적 시간이다. 
 	float PreviewRefreshAccumulator = 0.0f;
+	// Presentation-only cache: a short Ctrl/Alt press must update the toolbar even while
+	// its hover guard intentionally postpones expensive placement revalidation.
+	int32 LastPresentedPositionSnapCm = 0;
 	double LastPreviewValidationTimeSeconds = -1.0;
 	// 라인트레이스, 바닥 경사, Zone, 회전 면적 검사를 모두 통과한 커서 표적이 있는지 나타낸다. 
 	bool bHasPlacementTarget = false;
@@ -653,8 +671,6 @@ private:
 	// 선택 Spec, GUID, Zone, 배치, 최신 revision으로 Install/Move PreviewCommand를 교체한다.
 	void RebuildPreviewCommand();
 	// FFZS DeveloperSettings의 배치 조작값을 검증해 반환한다. 잘못된 config는 공개 fallback을 사용한다.
-	float GetPlacementRotationSnapDegrees() const;
-	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
 	int32 GetPlacementPositionSnapCm() const;
 	int32 GetPlacementVisualGridStepCm(int32 ActivePositionSnapCm) const;
 	// Zone System의 현재 단계가 시설 변경을 허용하는 InitialSetup/MorningCheck인지 확인한다. 

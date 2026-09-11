@@ -9,10 +9,12 @@
 
 #include "CoreMinimal.h"
 #include "UObject/SoftObjectPtr.h"
+#include "FF_FFZSAudienceLayout.h"
 #include "FF_FFZSTypes.generated.h"
 
 class AActor;
 class AFFZSFacilityActor;
+class AFFZSFacilityLightingRig;
 class USoundAttenuation;
 class USoundBase;
 class USoundConcurrency;
@@ -20,6 +22,7 @@ class UStaticMesh;
 
 // 존 허용 규칙과 UI 분류에 쓰는 시설의 기능 카테고리.
 // 새 값 추가 시 저장 호환성, FacilityDefinition Data Asset, 정책 어댑터, UI 표시를 함께 갱신.
+// 기존 저장 카테고리 ordinal을 유지하도록 새 값은 마지막에만 추가한다.
 UENUM(BlueprintType)
 enum class EFFZSFacilityCategory : uint8
 {
@@ -29,7 +32,9 @@ enum class EFFZSFacilityCategory : uint8
     Rest UMETA(DisplayName = "Rest", ToolTip = "좌석·쉼터 등 휴식 시설입니다."),
     Performance UMETA(DisplayName = "Performance", ToolTip = "무대와 공연 운영 시설입니다."),
     Safety UMETA(DisplayName = "Safety", ToolTip = "의무실·안전 지원 시설입니다."),
-    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다.")
+    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다."),
+    Lighting UMETA(DisplayName = "Lighting", ToolTip = "설치 후 점등·밝기·색상을 조절하는 조명 시설입니다."),
+    Road UMETA(DisplayName = "Road", ToolTip = "시설과 대기열을 위에 설치할 수 있는 바닥 길입니다. 다른 길과는 겹칠 수 없습니다.")
 };
 
 //권한 시설 수명주기.
@@ -472,6 +477,51 @@ struct FF_ZONESYSTEM_API FFFZSFacilityAudioSettings
     bool HasNonDefaultValues() const;
 };
 
+// 설치된 시설 한 개의 조명 값. PDA 원본과 분리하여 저장한다.
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSFacilityLightingState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Lighting Enabled"))
+    bool bEnabled = true;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (ClampMin = "0.0", ClampMax = "5.0", UIMin = "0.0", UIMax = "5.0", ToolTip = "Blueprint에서 정한 각 조명의 원래 밝기에 곱합니다. 1은 100%, 0은 소등입니다."))
+    float BrightnessMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (ToolTip = "끄면 Blueprint에서 정한 각 조명의 고유 색을 유지합니다."))
+    bool bOverrideColor = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (EditCondition = "bOverrideColor", HideAlphaChannel))
+    FLinearColor Color = FLinearColor::White;
+
+    bool IsValid() const;
+};
+
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSFacilityLightingSettings
+{
+    GENERATED_BODY()
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (AssetBundles = "FacilityLighting", ToolTip = "FFZSFacilityLightingRig를 부모로 만든 조명 전용 Blueprint를 지정합니다. 비워 두면 조명을 생성하지 않습니다."))
+    TSoftClassPtr<AFFZSFacilityLightingRig> LightingRigClass;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Lighting Enabled", ToolTip = "새 시설을 설치하는 즉시 점등합니다. 개장 상태와 무관합니다."))
+    bool bEnabled = true;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (ClampMin = "0.0", ClampMax = "5.0", UIMin = "0.0", UIMax = "5.0", ToolTip = "전체 기본 밝기입니다. 각 조명의 Blueprint 밝기 × 이 배수를 적용합니다."))
+    float BrightnessMultiplier = 1.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting")
+    bool bOverrideColor = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (EditCondition = "bOverrideColor", HideAlphaChannel))
+    FLinearColor Color = FLinearColor::White;
+
+    FFFZSFacilityLightingState GetDefaultState() const;
+    bool HasNonDefaultValues() const;
+};
+
 USTRUCT(BlueprintType)
 // 한 시설 정의의 강화 한 단계. 비용과 시간 배수는 설치 당시의 원본 값을 기준으로 한다.
 struct FF_ZONESYSTEM_API FFFZSFacilityUpgradeTier
@@ -557,6 +607,9 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Queue Rules", ToolTip = "대기 정원·슬롯 간격·동시 서비스 수·처리 시간·이탈·내비 재시도 규칙입니다."))
     FFFZSQueueRules QueueRules;
 
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audience", meta = (DisplayName = "Audience Layout", ToolTip = "공연 관람 공간·자리 간격·입퇴장·관람 방향입니다. 켜면 일반 Queue와 별개로 관람 공간을 확보합니다. NPC 행동과 시간표는 외부 담당자가 연결합니다."))
+    FFFZSAudienceLayout Audience;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Upgrade", meta = (DisplayName = "Use Facility Levels", ToolTip = "켜면 시설에 레벨을 표시하고 아래 강화 단계를 사용합니다. 단계가 없으면 최대 Lv.1입니다. 끄면 저장된 단계 설정은 보존하지만 레벨 표시와 강화를 사용하지 않습니다."))
     bool bUsesFacilityLevels = false;
 
@@ -601,8 +654,14 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Audio", meta = (DisplayName = "Facility Audio", ToolTip = "이 시설에만 적용할 3D 앰비언트 사운드와 재생 정책입니다. 사운드 에셋을 교체하면 코드나 시설 Blueprint 수정 없이 새 설치와 저장 데이터에 반영됩니다."))
     FFFZSFacilityAudioSettings AudioSettings;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "10.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Facility Lighting", ToolTip = "메시와 함께 설치되는 조명 Blueprint 및 기본 점등·밝기·색상입니다. Blueprint 좌표는 원본 메시의 로컬 좌표와 같아야 합니다."))
+    FFFZSFacilityLightingSettings LightingSettings;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. 길은 최소 1cm, 그 외 시설은 최소 10cm입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "1.0", Units = "cm"))
     float PlacementObstacleHeightCm = 250.0f;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "길 위 시설 설치 허용", ToolTip = "켜면 이 길 위에 시설, 여유 공간, 대기열을 배치할 수 있습니다. 끄면 길 전체가 시설 배치를 막습니다.", EditCondition = "Category == EFFZSFacilityCategory::Road", EditConditionHides))
+    bool bAllowFacilityPlacementOnTop = true;
     
     bool IsValid(TArray<FText>& OutErrors) const;
     // 사양을 변경하지 않고 ID·크기·예산·큐·앵커·수치의 모든 오류를 누적한다. 오류가 없을 때 true다.
@@ -871,6 +930,13 @@ struct FF_ZONESYSTEM_API FFFZSFacilityInstanceSnapshot
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     FFFZSFacilitySpec FacilitySpec;
+
+    // 이전 저장에 필드가 없으면 false이므로 설치 당시 PDA 기본값을 적용한다.
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    bool bHasLightingOverride = false;
+
+    UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
+    FFFZSFacilityLightingState LightingState;
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     int32 UpgradeLevel = 1;

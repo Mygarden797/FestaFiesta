@@ -2,6 +2,7 @@
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/HorizontalBox.h"
+#include "Components/Button.h"
 #include "Components/SizeBox.h"
 #include "Editor.h"
 #include "Misc/AutomationTest.h"
@@ -28,6 +29,8 @@ bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 	for (const FName Name : { FName(TEXT("Panel_Catalog")), FName(TEXT("Panel_PlacementCompact")),
 		FName(TEXT("TileView_Facilities")), FName(TEXT("HorizontalBox_Subcategories")),
 		FName(TEXT("Button_InspectFacilities")), FName(TEXT("Text_CategoryBreadcrumb")),
+		FName(TEXT("HorizontalBox_Categories")), FName(TEXT("Button_FavoritesOnly")),
+		FName(TEXT("Text_FavoritesOnly")),
 		FName(TEXT("Button_ReturnToCatalog")), FName(TEXT("Button_ExitBuildMode")),
 		FName(TEXT("Text_PlacementGuide")) })
 	{
@@ -47,8 +50,11 @@ bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 	}
 	const auto* MinorHost = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
 	TestTrue(TEXT("The second-level filter is populated in the real widget"), MinorHost && MinorHost->GetChildrenCount() > 0);
-	const auto* Sidebar = Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_CategorySidebar")));
-	TestTrue(TEXT("Category sidebar has stable width"), Sidebar && FMath::IsNearlyEqual(Sidebar->GetWidthOverride(), 128.0f));
+	const auto* Categories = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
+	TestTrue(TEXT("The authored horizontal row contains All and all nine facility categories"),
+		Categories && Categories->GetChildrenCount() == 10);
+	const auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
+	TestTrue(TEXT("Favorites-only has a separate bound control"), Favorites && Favorites->OnClicked.IsBound());
 	return true;
 }
 #endif

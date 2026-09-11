@@ -14,6 +14,8 @@
 
 struct FStreamableHandle;
 class UBoxComponent;
+class UChildActorComponent;
+class AFFZSFacilityLightingRig;
 class UAudioComponent;
 class ULineBatchComponent;
 class USceneComponent;
@@ -26,6 +28,7 @@ class UFFZSWorldSubsystem;
 class FFFZSWorldCommandLifecycleSnapshotTest;
 class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
 class FFFZSFacilityLevelPresentationTest;
+class FFFZSFacilityLightingLifecycleTest;
 #endif
 
 UENUM(BlueprintType)
@@ -54,11 +57,14 @@ public:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UStaticMeshComponent> VisualMesh;
-    // FacilitySpec.VisualMesh를 비동기 표시하는 비권한 표현 캐시다. 
+    // 기존 메시 콜리전으로 플레이어만 막는다. 배치 점유·NPC Nav는 FacilitySpec이 담당한다.
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UAudioComponent> FacilityAudioComponent;
     // FacilitySpec.AudioSettings를 재생하는 비권한 3D 오디오 컴포넌트다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
+    TObjectPtr<UChildActorComponent> FacilityLightingComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Facility|Components")
     TObjectPtr<UBoxComponent> SelectionProxy;
@@ -105,6 +111,17 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility")
     const FFFZSFacilitySpec& GetBaseFacilitySpec() const;
     // 설치 시 복사한 원본 사양. 이후 강화·이동·저장 복원에서 배율을 이 원본에 한 번만 적용한다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Lighting")
+    bool HasLightingRig() const { return !FacilitySpec.LightingSettings.LightingRigClass.IsNull(); }
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Lighting")
+    FFFZSFacilityLightingState GetLightingState() const;
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Lighting")
+    AFFZSFacilityLightingRig* GetLightingRig() const;
+
+    virtual void SetActorHiddenInGame(bool bNewHidden) override;
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Facility|Upgrade")
     bool HasFacilityLevels() const { return GetBaseFacilitySpec().bUsesFacilityLevels; }
@@ -195,6 +212,8 @@ private:
     friend class FFFZSWorldCommandLifecycleSnapshotTest;
     friend class FFFZSSnapshotPhaseReentrancyAndDrainIntentTest;
     friend class FFFZSFacilityLevelPresentationTest;
+    friend class FFFZSFacilityLightingLifecycleTest;
+    friend class FFFZSAudienceWorldTest;
 #endif
 
     // 권한 수명주기 변경은 의도적으로 월드 서브시스템에만 공개한다.
@@ -248,6 +267,12 @@ private:
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     float UpgradeRevenueMultiplier = 1.0f;
 
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Lighting")
+    bool bHasLightingOverride = false;
+
+    UPROPERTY(VisibleAnywhere, Category = "Facility|Lighting")
+    FFFZSFacilityLightingState LightingState;
+
     UPROPERTY(VisibleAnywhere, Category = "Facility|Runtime")
     FName ZoneId = NAME_None;
     // 현재 점유 키가 속한 존 ID다. 
@@ -291,13 +316,20 @@ private:
     // 소프트 비주얼 메시 비동기 요청의 수명과 취소를 관리한다. 
     TSharedPtr<FStreamableHandle> VisualLoadHandle;
     uint32 VisualLoadGeneration = 0;
+    // 등록된 시설에만 메시 이동 충돌을 허용한다. 숨겨진 복원 staging과 늦은 로드 완료를 구분한다.
+    bool bPlayerCollisionEnabled = false;
     // 시설 오디오 의존성은 메시와 독립적으로 교체·취소한다.
     TSharedPtr<FStreamableHandle> AudioLoadHandle;
     uint32 AudioLoadGeneration = 0;
     bool bAudioStopRequested = false;
 
+    TSharedPtr<FStreamableHandle> LightingLoadHandle;
+    uint32 LightingLoadGeneration = 0;
+
     void RebuildRuntimePresentation();
     void RebuildSelectionProxy(const FVector& SelectionExtent);
+    void SetPlayerCollisionEnabled(bool bEnabled);
+    void RefreshPlayerCollision();
     void SetNavigationObstacleEnabled(bool bEnabled);
     void ApplyQueueLaneNavCostGeometry();
     void RequestVisualMesh();
@@ -305,6 +337,11 @@ private:
     void ApplyLoadedVisualMesh(uint32 LoadGeneration, FSoftObjectPath AssetPath, bool bAllowBaseFallback);
     void ApplyVisualMesh(UStaticMesh* Mesh);
     void RequestFacilityAudio();
+    void RequestFacilityLighting();
+    void ApplyLoadedFacilityLighting(uint32 LoadGeneration);
+    void DestroyFacilityLighting();
+    void UpdateFacilityLighting();
+    void ApplyFacilityLightingOverride(const FFFZSFacilityLightingState& State, bool bHasOverride);
     void ApplyLoadedFacilityAudio(uint32 LoadGeneration);
     void UpdateFacilityAudioPlayback(bool bAllowFade = true);
     void StopFacilityAudio(bool bAllowFade);

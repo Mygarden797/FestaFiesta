@@ -14,6 +14,7 @@
 
 #include "Components/AudioComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/ChildActorComponent.h"
 #include "Components/LineBatchComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
@@ -24,6 +25,7 @@
 #include "Sound/SoundConcurrency.h"
 #include "FF_FFZSCollision.h"
 #include "FF_FFZSFacilityAnchorComponent.h"
+#include "FF_FFZSFacilityLightingRig.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSNavArea_QueueLane.h"
@@ -114,8 +116,12 @@ AFFZSFacilityActor::AFFZSFacilityActor()
 
     VisualMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("VisualMesh"));
     VisualMesh->SetupAttachment(SceneRoot);
-    VisualMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    VisualMesh->SetCanEverAffectNavigation(false);
+    RefreshPlayerCollision();
+
+    FacilityLightingComponent = CreateDefaultSubobject<UChildActorComponent>(TEXT("FacilityLighting"));
+    FacilityLightingComponent->SetupAttachment(VisualMesh);
+    FacilityLightingComponent->SetMobility(EComponentMobility::Movable);
+    FacilityLightingComponent->SetCanEverAffectNavigation(false);
 
     FacilityAudioComponent = CreateDefaultSubobject<UAudioComponent>(TEXT("FacilityAudio"));
     FacilityAudioComponent->SetupAttachment(SceneRoot);
@@ -206,12 +212,15 @@ AFFZSFacilityActor::AFFZSFacilityActor()
 void AFFZSFacilityActor::BeginPlay()
 {
     Super::BeginPlay();
+    // Blueprint에 저장된 예전 응답/물리 설정도 등록 전에 현재 정책으로 복구한다.
+    RefreshPlayerCollision();
     if (BaseFacilitySpec.FacilityDefinitionId.IsNone() && !FacilitySpec.FacilityDefinitionId.IsNone())
     {
         // 이전에 레벨에 배치·저장된 Actor는 원본을 기존 FacilitySpec에만 가지고 있다.
         BaseFacilitySpec = FacilitySpec;
     }
     RequestFacilityAudio();
+    RequestFacilityLighting();
     if (FacilityInstanceId.IsValid())
     {
         if (UFFZSWorldSubsystem* Subsystem = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>())
@@ -225,8 +234,10 @@ void AFFZSFacilityActor::BeginPlay()
 // 이어지는 등록 해제는 ID뿐 아니라 Actor 동일성도 확인하므로 교체된 Actor를 잘못 지우지 않는다.
 void AFFZSFacilityActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    SetPlayerCollisionEnabled(false);
     SetNavigationObstacleEnabled(false);
     DestroyBuildModeRangePresentation();
+    DestroyFacilityLighting();
     ++AudioLoadGeneration;
     if (AudioLoadHandle.IsValid())
     {
@@ -272,10 +283,13 @@ bool AFFZSFacilityActor::InitializeFacility(const FGuid NewInstanceId, const FFF
         return false;
     }
 
+    SetPlayerCollisionEnabled(false);
     SetNavigationObstacleEnabled(false);
     FacilityInstanceId = NewInstanceId;
     BaseFacilitySpec = NewSpec;
     FacilitySpec = MoveTemp(EffectiveSpec);
+    bHasLightingOverride = false;
+    LightingState = NewSpec.LightingSettings.GetDefaultState();
     UpgradeLevel = InitialUpgradeLevel;
     UpgradeServiceDurationMultiplier = InitialServiceDurationMultiplier;
     UpgradeSizeMultiplier = InitialSizeMultiplier;
@@ -429,8 +443,10 @@ void AFFZSFacilityActor::MarkRemoved()
         return;
     }
     QueueComponent->EmergencyCancel();
+    SetPlayerCollisionEnabled(false);
     SetNavigationObstacleEnabled(false);
     FacilityState = EFFZSFacilityState::Removed;
+    DestroyFacilityLighting();
     UpdateFacilityAudioPlayback();
     SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
     SetBuildModeActionSelected(false);
@@ -567,6 +583,8 @@ FFFZSFacilityInstanceSnapshot AFFZSFacilityActor::CaptureInstanceSnapshot() cons
     FFFZSFacilityInstanceSnapshot Snapshot;
     Snapshot.FacilityInstanceId = FacilityInstanceId;
     Snapshot.FacilitySpec = GetBaseFacilitySpec();
+    Snapshot.bHasLightingOverride = bHasLightingOverride;
+    Snapshot.LightingState = GetLightingState();
     Snapshot.UpgradeLevel = UpgradeLevel;
     Snapshot.UpgradeServiceDurationMultiplier = UpgradeServiceDurationMultiplier;
     Snapshot.UpgradeSizeMultiplier = UpgradeSizeMultiplier;
@@ -638,6 +656,7 @@ void AFFZSFacilityActor::RebuildRuntimePresentation()
 
     RequestVisualMesh();
     RequestFacilityAudio();
+    RequestFacilityLighting();
 
     QueueSpline->ClearSplinePoints(false);
     for (int32 Index = 0; Index < FacilitySpec.QueueSplinePointsCm.Num(); ++Index)
@@ -693,6 +712,41 @@ void AFFZSFacilityActor::RebuildSelectionProxy(const FVector& SelectionExtent)
     SelectionProxy->SetRelativeLocation(FVector(0.0f, 0.0f, SelectionExtent.Z));
 }
 
+void AFFZSFacilityActor::SetPlayerCollisionEnabled(const bool bEnabled)
+{
+    bPlayerCollisionEnabled = bEnabled;
+    RefreshPlayerCollision();
+}
+
+void AFFZSFacilityActor::RefreshPlayerCollision()
+{
+    if (!VisualMesh)
+    {
+        return;
+    }
+
+    // 공유 StaticMesh/BodySetup을 변경하거나 충돌 형상을 새로 만들지 않는다.
+    // CharacterMovement의 기존 capsule sweep가 에셋에 저장된 collision을 사용한다.
+    // 업데이트는 등록/메시 교체/철거 시에만 실행되며 Tick·Overlap/Hit 이벤트는 필요 없다.
+    VisualMesh->SetCanEverAffectNavigation(false);
+    VisualMesh->SetSimulatePhysics(false);
+    VisualMesh->SetEnableGravity(false);
+    VisualMesh->SetGenerateOverlapEvents(false);
+    VisualMesh->SetNotifyRigidBodyCollision(false);
+    VisualMesh->SetCollisionObjectType(FFZSCollision::FacilityPlayerObjectChannel);
+    VisualMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+    VisualMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
+    // Roads are shallow walkable support. Other facility roofs stay invisible to ground traces.
+    VisualMesh->SetCollisionResponseToChannel(ECC_Visibility,
+        FacilitySpec.Category == EFFZSFacilityCategory::Road ? ECR_Block : ECR_Ignore);
+
+    const bool bShouldEnable = bPlayerCollisionEnabled && FacilityInstanceId.IsValid()
+        && FacilityState != EFFZSFacilityState::Removed && !IsActorBeingDestroyed()
+        && VisualMesh->GetStaticMesh() != nullptr;
+    VisualMesh->SetCollisionEnabled(bShouldEnable
+        ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+}
+
 void AFFZSFacilityActor::SetNavigationObstacleEnabled(const bool bEnabled)
 {
     if (!NavigationObstacleBounds)
@@ -720,7 +774,8 @@ void AFFZSFacilityActor::SetNavigationObstacleEnabled(const bool bEnabled)
     const bool bHasValidFootprint = Extent.X > UE_KINDA_SMALL_NUMBER &&
         Extent.Y > UE_KINDA_SMALL_NUMBER && Extent.Z > UE_KINDA_SMALL_NUMBER;
     const bool bShouldEnable = bEnabled && FacilityInstanceId.IsValid() &&
-        FacilityState != EFFZSFacilityState::Removed && bHasValidFootprint;
+        FacilityState != EFFZSFacilityState::Removed && bHasValidFootprint &&
+        FacilitySpec.Category != EFFZSFacilityCategory::Road;
     if (NavigationObstacleBounds->CanEverAffectNavigation() != bShouldEnable)
     {
         NavigationObstacleBounds->SetCanEverAffectNavigation(bShouldEnable);
@@ -972,6 +1027,101 @@ void AFFZSFacilityActor::ApplyVisualMesh(UStaticMesh* Mesh)
         VisualTransform.SetScale3D(VisualTransform.GetScale3D() * UpgradeSizeMultiplier);
     }
     VisualMesh->SetRelativeTransform(VisualTransform);
+    RefreshPlayerCollision();
+    UpdateFacilityLighting();
+}
+
+FFFZSFacilityLightingState AFFZSFacilityActor::GetLightingState() const
+{
+    return bHasLightingOverride ? LightingState : GetBaseFacilitySpec().LightingSettings.GetDefaultState();
+}
+
+AFFZSFacilityLightingRig* AFFZSFacilityActor::GetLightingRig() const
+{
+    return FacilityLightingComponent ? Cast<AFFZSFacilityLightingRig>(FacilityLightingComponent->GetChildActor()) : nullptr;
+}
+
+void AFFZSFacilityActor::SetActorHiddenInGame(const bool bNewHidden)
+{
+    Super::SetActorHiddenInGame(bNewHidden);
+    UpdateFacilityLighting();
+}
+
+void AFFZSFacilityActor::ApplyFacilityLightingOverride(const FFFZSFacilityLightingState& State, const bool bHasOverride)
+{
+    bHasLightingOverride = bHasOverride;
+    LightingState = State;
+    UpdateFacilityLighting();
+}
+
+void AFFZSFacilityActor::UpdateFacilityLighting()
+{
+    if (AFFZSFacilityLightingRig* Rig = GetLightingRig())
+    {
+        const bool bShow = !IsHidden() && FacilityState != EFFZSFacilityState::Removed && !IsActorBeingDestroyed();
+        Rig->SetActorHiddenInGame(!bShow);
+        Rig->ApplyLightingState(GetLightingState(), bShow && VisualMesh && VisualMesh->GetStaticMesh(), VisualMesh);
+    }
+}
+
+void AFFZSFacilityActor::DestroyFacilityLighting()
+{
+    ++LightingLoadGeneration;
+    if (LightingLoadHandle.IsValid())
+    {
+        LightingLoadHandle->CancelHandle();
+        LightingLoadHandle.Reset();
+    }
+    if (FacilityLightingComponent)
+    {
+        FacilityLightingComponent->SetChildActorClass(nullptr);
+    }
+}
+
+void AFFZSFacilityActor::RequestFacilityLighting()
+{
+    const uint32 Generation = ++LightingLoadGeneration;
+    if (LightingLoadHandle.IsValid())
+    {
+        LightingLoadHandle->CancelHandle();
+        LightingLoadHandle.Reset();
+    }
+    if (!FacilityLightingComponent || IsActorBeingDestroyed() || FacilityState == EFFZSFacilityState::Removed) return;
+    if (!HasLightingRig())
+    {
+        FacilityLightingComponent->SetChildActorClass(nullptr);
+        return;
+    }
+    UClass* Loaded = FacilitySpec.LightingSettings.LightingRigClass.Get();
+    if (Loaded)
+    {
+        ApplyLoadedFacilityLighting(Generation);
+        return;
+    }
+    // 이전 다른 클래스의 광원이 비동기 적재 중 남지 않도록 정리한다.
+    FacilityLightingComponent->SetChildActorClass(nullptr);
+    LightingLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+        FacilitySpec.LightingSettings.LightingRigClass.ToSoftObjectPath(),
+        FStreamableDelegate::CreateUObject(this, &AFFZSFacilityActor::ApplyLoadedFacilityLighting, Generation));
+}
+
+void AFFZSFacilityActor::ApplyLoadedFacilityLighting(const uint32 LoadGeneration)
+{
+    if (LoadGeneration != LightingLoadGeneration || !FacilityLightingComponent || IsActorBeingDestroyed()
+        || FacilityState == EFFZSFacilityState::Removed) return;
+    LightingLoadHandle.Reset();
+    UClass* RigClass = FacilitySpec.LightingSettings.LightingRigClass.Get();
+    if (!RigClass || !RigClass->IsChildOf(AFFZSFacilityLightingRig::StaticClass()) || RigClass->HasAnyClassFlags(CLASS_Abstract))
+    {
+        FacilityLightingComponent->SetChildActorClass(nullptr);
+        return;
+    }
+    if (FacilityLightingComponent->GetChildActorClass() != RigClass)
+    {
+        FacilityLightingComponent->SetChildActorClass(RigClass);
+    }
+    FacilityLightingComponent->SetRelativeTransform(FTransform::Identity);
+    UpdateFacilityLighting();
 }
 
 // 오디오 표현은 권위 배치·큐와 독립적이다. 현재 Spec의 soft path만 묶어 비동기 로드하고,
