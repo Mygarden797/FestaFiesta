@@ -162,6 +162,8 @@ def create_definition(name, label, mesh, thumbnail):
         spec.set_editor_property('queue_rules', rules)
         definition.set_editor_property('spec', spec)
         definition.set_editor_property('show_in_build_catalog', True)
+        # Input policy belongs to the Definition. Reimport must retain later author choices.
+        definition.set_editor_property('enable_drag_placement', True)
     definition.set_editor_property('catalog_thumbnail', thumbnail)
     errors = definition.is_definition_valid()
     assert errors is not None and len(errors) == 0, (name, errors)

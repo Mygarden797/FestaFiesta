@@ -18,6 +18,7 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
     GENERATED_BODY()
     UPROPERTY(BlueprintReadOnly) bool bPreviewActive = false;
     UPROPERTY(BlueprintReadOnly) bool bMoving = false;
+    UPROPERTY(BlueprintReadOnly) bool bDragPlacementEnabled = false;
     UPROPERTY(BlueprintReadOnly) bool bCanConfirm = false;
     UPROPERTY(BlueprintReadOnly) bool bGridVisible = false;
     UPROPERTY(BlueprintReadOnly) int32 PreferredSnapCm = 100;

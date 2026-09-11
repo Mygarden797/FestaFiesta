@@ -300,6 +300,9 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
         DetailBuilder, TEXT("FF Zone System|Presentation"), LOCTEXT("PresentationCategory", "Presentation"),
         LOCTEXT("PresentationCategoryTip", "카탈로그처럼 게임 화면에 표시할 선택적 정보를 편집합니다."));
     FFZSFacilityDefinitionCustomizationPrivate::LocalizeCategory(
+        DetailBuilder, TEXT("FF Zone System|Placement"), LOCTEXT("PlacementCategory", "Placement"),
+        LOCTEXT("PlacementCategoryTip", "신규 시설의 건설 입력 방식을 설정합니다. 기존 인스턴스나 저장된 시설 사양은 변경하지 않습니다."));
+    FFZSFacilityDefinitionCustomizationPrivate::LocalizeCategory(
         DetailBuilder, TEXT("FF Zone System|Authoring"), LOCTEXT("AuthoringCategory", "Authoring"),
         LOCTEXT("AuthoringCategoryTip", "에디터와 절차형 아트 도구 전용 소유권 정보를 편집합니다."));
     FFZSFacilityDefinitionCustomizationPrivate::LocalizeSpecCoordinateChildren(DetailBuilder);

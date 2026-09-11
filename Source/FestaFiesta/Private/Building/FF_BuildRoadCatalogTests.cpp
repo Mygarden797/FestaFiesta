@@ -68,10 +68,21 @@ namespace FFBuildRoadCatalogTest
                 Test->TestFalse(TEXT("Road card has its own thumbnail"), Entry.Thumbnail.IsNull());
                 FFFZSFacilitySpec Spec;
                 if (!Test->TestTrue(TEXT("Selection supplies an installable spec"), Catalog->TryGetDefinitionSpec(Id, Spec))) continue;
-                Test->TestEqual(TEXT("Road footprint is four meters square"), Spec.FootprintSizeCells, FIntPoint(400, 400));
+                const UFFZSFacilityDefinition* Definition = Catalog->FindDefinition(Id);
+                if (!Test->TestNotNull(TEXT("Selection retains its authored definition"), Definition)) continue;
+                // Size and layering permission belong to the authored PDA. Catalog projection
+                // must preserve them rather than silently restore the original import defaults.
+                TArray<FText> SpecErrors;
+                Test->TestTrue(TEXT("Authored road specification remains valid"), Spec.IsValid(SpecErrors));
+                Test->TestTrue(TEXT("Road has a positive authored footprint"),
+                    Spec.FootprintSizeCells.X > 0 && Spec.FootprintSizeCells.Y > 0);
+                Test->TestEqual(TEXT("Catalog preserves the authored road dimensions"),
+                    Spec.FootprintSizeCells, Definition->Spec.FootprintSizeCells);
                 Test->TestEqual(TEXT("Roads tile without added clearance"), Spec.ClearanceCells, 0);
-                Test->TestTrue(TEXT("Authored road defaults allow facilities on top"), Spec.bAllowFacilityPlacementOnTop);
-                Test->TestEqual(TEXT("Road surface height is eight centimeters"), Spec.PlacementObstacleHeightCm, 8.0f);
+                Test->TestEqual(TEXT("Catalog preserves each road's upper-facility permission"),
+                    Spec.bAllowFacilityPlacementOnTop, Definition->Spec.bAllowFacilityPlacementOnTop);
+                Test->TestEqual(TEXT("Catalog preserves the authored road surface height"),
+                    Spec.PlacementObstacleHeightCm, Definition->Spec.PlacementObstacleHeightCm);
                 Test->TestEqual(TEXT("Road creates no visitor service"), Spec.QueueRules.ServiceCapacity, 0);
                 Test->TestEqual(TEXT("Road creates no waiting queue"), Spec.QueueRules.MaxWaitingAgents, 0);
                 Test->TestFalse(TEXT("Road mesh is linked"), Spec.VisualMesh.IsNull());
