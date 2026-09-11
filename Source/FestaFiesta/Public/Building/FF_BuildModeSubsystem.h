@@ -26,6 +26,7 @@ class UFF_FacilityInfoSubsystem;
 class UFFZSWorldSubsystem;
 class SWidget;
 struct FHitResult;
+struct FFF_BuildDragPlacementSession;
 
 UENUM(BlueprintType)
 enum class EFF_BuildModeState : uint8
@@ -99,9 +100,12 @@ namespace FFBuildModeModel
 	}
 
 	inline bool CanInspectFromWorldPointer(const EFF_BuildModeState State,
-		const bool bInputSuppressed, const bool bPointerTargetsWorld)
+		const bool bInputSuppressed, const bool bPointerTargetsWorld,
+		const bool bClosedPreparationAllowed = false)
 	{
-		return CanInspectInstalledFacility(State) && !bInputSuppressed && bPointerTargetsWorld;
+		return (CanInspectInstalledFacility(State) ||
+			(State == EFF_BuildModeState::Closed && bClosedPreparationAllowed)) &&
+			!bInputSuppressed && bPointerTargetsWorld;
 	}
 
 	inline bool CanRemoveFacilityWithTodaysProgram(const bool bHasScheduledProgram)
@@ -334,6 +338,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildFacilityInspectionTest;
 	friend class FFF_BuildGridOverviewTest;
+	friend class FFF_BuildDragPlacementTest;
 #endif
 
 public:
@@ -480,7 +485,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	bool CommitPlacement();
 
+	/** Selected Data Asset opts in to holding the left mouse button to paint facilities. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
+	bool IsDragPlacementEnabled() const;
+
 private:
+	// A stroke owns bounded path/deduplication data; installed actors remain owned by ZoneSystem.
+	TSharedPtr<FFF_BuildDragPlacementSession> DragPlacementSession;
+	void HandlePlacementPrimaryPress(bool bButtonDown);
+	void BeginDragPlacement(bool bOriginAlreadyProcessed = false);
+	void UpdateDragPlacement(const FVector& CursorWorld);
+	void ProcessDragPlacement();
+	void EndDragPlacement();
+	bool TryInstallDragCell(const FIntPoint& Cell);
+	bool ResolveDragPlacement(const FIntPoint& Cell, FName& OutZoneId, FFFZSGridPlacement& OutPlacement) const;
+	bool ResolveDragCursorCell(const FVector& CursorWorld, FIntPoint& OutCell) const;
+	void RefreshDragPlacementPreview(bool bForceRefresh);
 	// 현재 표시 중인 카탈로그 위젯. CatalogOpen 외 상태에서는 원칙적으로 null이다. 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildCatalogScreen> CatalogScreen;
@@ -646,6 +666,7 @@ private:
 	bool TraceGroundUnderCursor(APlayerController& Controller, FHitResult& OutGroundHit) const;
 	// BuildMode에서 커서 아래 시설을 작업 패널 대상으로 선택한다. 같은 시설 재클릭은 no-op이다.
 	bool HandleFacilityInspectionClick(APlayerController& Controller);
+	bool CanInspectClosedPreparation(const APlayerController& Controller) const;
 	// 현재 작업 대상을 범위로 강조하고, 이전 대상이 있으면 강조를 해제한다.
 	// 선택 강조와 약한 참조를 함께 정리한다. 카탈로그/종료/스냅샷 복원에서도 호출한다.
 	void ClearPendingRemovalSelection();

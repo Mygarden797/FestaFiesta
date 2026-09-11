@@ -32,7 +32,8 @@ public class FestaFiesta : ModuleRules
 			// UnrealEd가 public으로 끌고 오지만, 직접 include하므로 명시적으로 적는다.
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
-				"AssetTools", "UnrealEd", "UMGEditor", "BlueprintGraph"
+				// Input integration tests host a lightweight FViewport (FRenderResource).
+				"AssetTools", "UnrealEd", "UMGEditor", "BlueprintGraph", "RenderCore"
 			});
 		}
 	}

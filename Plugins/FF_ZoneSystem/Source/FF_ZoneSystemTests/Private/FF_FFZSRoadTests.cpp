@@ -311,33 +311,73 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
         FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
         if (!TestFalse(Names[Index] + TEXT(" collision fixture mesh finished compilation"), Mesh->IsCompiling())) return false;
         TestEqual(Names[Index] + TEXT(" Road category"), Definition->Spec.Category, EFFZSFacilityCategory::Road);
-        TestTrue(Names[Index] + TEXT(" enables facilities above by default"), Definition->Spec.bAllowFacilityPlacementOnTop);
+        TArray<FText> SpecErrors;
+        if (!TestTrue(Names[Index] + TEXT(" authored specification is valid"), Definition->Spec.IsValid(SpecErrors)))
+        {
+            for (const FText& Error : SpecErrors) AddError(Error.ToString());
+            return false;
+        }
         const FIntPoint Origin(1000 + Index * 800, 1000);
         const FFFZSCommand Road = InstallAt(Definition->Spec, Origin);
         if (!TestTrue(Names[Index] + TEXT(" production road installs"), System->ExecuteCommand(Road).bSucceeded)) return false;
         const AFFZSFacilityActor* Actor = System->FindFacility(Road.FacilityInstanceId);
         if (!TestNotNull(Names[Index] + TEXT(" installed actor"), Actor)) return false;
+        TestEqual(Names[Index] + TEXT(" installation preserves authored dimensions"),
+            Actor->GetFacilitySpec().FootprintSizeCells, Definition->Spec.FootprintSizeCells);
+        TestEqual(Names[Index] + TEXT(" installation preserves upper-facility permission"),
+            Actor->GetFacilitySpec().bAllowFacilityPlacementOnTop, Definition->Spec.bAllowFacilityPlacementOnTop);
         TestTrue(Names[Index] + TEXT(" imported mesh physics state is ready"), Actor->VisualMesh->IsPhysicsStateCreated());
         // UWorld's omitted DefaultQueryParam requests complex render triangles. Match the runtime
         // ground/player support query instead: the authored UCX slab bridges decorative grooves.
         const FCollisionQueryParams SupportQuery(SCENE_QUERY_STAT(FFZSRoadProductionSupport), false);
-        for (const double X : { 50.0, 200.0, 350.0 })
+        const FIntPoint Footprint = Definition->Spec.FootprintSizeCells;
+        const double ExpectedSurfaceZ = Actor->GetActorLocation().Z + Definition->Spec.PlacementObstacleHeightCm;
+        // Keep nine interior support samples when a designer changes the PDA dimensions.
+        // Fixed 50/200/350 cm samples would trace outside a smaller, correctly scaled road.
+        for (const double XFraction : { 0.125, 0.5, 0.875 })
         {
-            for (const double Y : { 50.0, 200.0, 350.0 })
+            for (const double YFraction : { 0.125, 0.5, 0.875 })
             {
+                const double X = Footprint.X * XFraction;
+                const double Y = Footprint.Y * YFraction;
+                const FVector SampleWorld = Actor->GetActorTransform().TransformPosition(
+                    FVector(X - Footprint.X * 0.5, Y - Footprint.Y * 0.5, 0.0));
                 FHitResult Hit;
-                World->LineTraceSingleByChannel(Hit, FVector(Origin.X + X, Origin.Y + Y, 100),
-                    FVector(Origin.X + X, Origin.Y + Y, -100), ECC_Visibility, SupportQuery);
-                TestTrue(FString::Printf(TEXT("%s authored collision at %.0f,%.0f supports tile: hit=%s Z=%.6f expected=%s Z=8"),
-                    *Names[Index], X, Y, *GetNameSafe(Hit.GetActor()), Hit.ImpactPoint.Z, *Actor->GetName()),
-                    Hit.GetActor() == Actor && FMath::IsNearlyEqual(Hit.ImpactPoint.Z, 8.0, 0.05));
+                World->LineTraceSingleByChannel(Hit, FVector(SampleWorld.X, SampleWorld.Y, ExpectedSurfaceZ + 100.0),
+                    FVector(SampleWorld.X, SampleWorld.Y, Actor->GetActorLocation().Z - 100.0), ECC_Visibility, SupportQuery);
+                TestTrue(FString::Printf(TEXT("%s authored collision at %.2f,%.2f supports tile: hit=%s Z=%.6f expected=%s Z=%.6f"),
+                    *Names[Index], X, Y, *GetNameSafe(Hit.GetActor()), Hit.ImpactPoint.Z, *Actor->GetName(), ExpectedSurfaceZ),
+                    Hit.GetActor() == Actor && FMath::IsNearlyEqual(Hit.ImpactPoint.Z, ExpectedSurfaceZ, 0.05));
             }
         }
-        const FFFZSPlacementValidation Facility = System->ValidatePlacement(InstallAt(
-            FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck), Origin));
-        TestTrue(Names[Index] + TEXT(" accepts a facility on its surface"), Facility.bIsValid);
-        TestTrue(Names[Index] + TEXT(" supports facility foundation at 8 cm"),
-            FMath::IsNearlyEqual(Facility.PlacementTransform.GetLocation().Z, 8.0, 0.05));
+        // A compact non-service facility fits fully on the authored tile. A fixed 6x3 m
+        // food truck would test neighboring roads and mixed terrain instead of this PDA.
+        FFFZSFacilitySpec UpperSpec;
+        UpperSpec.FacilityDefinitionId = TEXT("Lighting_RoadSupportProbe");
+        UpperSpec.DisplayName = FText::FromString(TEXT("Road support probe"));
+        UpperSpec.Category = EFFZSFacilityCategory::Lighting;
+        UpperSpec.FootprintSizeCells = FIntPoint(FMath::Max(1, Footprint.X / 2), FMath::Max(1, Footprint.Y / 2));
+        UpperSpec.ClearanceCells = 0;
+        UpperSpec.PlacementObstacleHeightCm = 100.0f;
+        UpperSpec.QueueRules.MaxWaitingAgents = 0;
+        UpperSpec.QueueRules.ServiceCapacity = 0;
+        TestTrue(Names[Index] + TEXT(" upper-facility probe is valid on bare terrain"), System->ValidatePlacement(
+            InstallAt(UpperSpec, Origin + FIntPoint(0, Footprint.Y + 100))).bIsValid);
+        const FIntPoint UpperOrigin = Origin + FIntPoint(
+            (Footprint.X - UpperSpec.FootprintSizeCells.X) / 2, (Footprint.Y - UpperSpec.FootprintSizeCells.Y) / 2);
+        const FFFZSPlacementValidation Facility = System->ValidatePlacement(InstallAt(UpperSpec, UpperOrigin));
+        TestEqual(Names[Index] + TEXT(" upper-facility acceptance follows its authored permission"),
+            Facility.bIsValid, Definition->Spec.bAllowFacilityPlacementOnTop);
+        if (Definition->Spec.bAllowFacilityPlacementOnTop)
+        {
+            TestTrue(Names[Index] + TEXT(" supports the upper foundation at its authored surface height"),
+                FMath::IsNearlyEqual(Facility.PlacementTransform.GetLocation().Z, ExpectedSurfaceZ, 0.05));
+        }
+        else
+        {
+            TestTrue(Names[Index] + TEXT(" disallowed upper placement fails because its footprint is occupied"),
+                Facility.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+        }
     }
     return true;
 }

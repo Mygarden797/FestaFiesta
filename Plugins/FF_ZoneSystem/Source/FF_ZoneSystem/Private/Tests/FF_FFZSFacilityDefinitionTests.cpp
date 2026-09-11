@@ -12,6 +12,8 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
+#include "Serialization/ObjectReader.h"
+#include "Serialization/ObjectWriter.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 
 #if WITH_EDITOR
@@ -65,6 +67,55 @@ namespace
         Spec.QueueReservedCells.Reset();
         return Spec;
     }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSDragPlacementDefinitionPolicyTest,
+    "FF_ZoneSystem.Unit.Definitions.DragPlacementPolicySerializationAndSpecIsolation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSDragPlacementDefinitionPolicyTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    TGuardValue<int32> StableRegionBudget(
+        GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility,
+        1'000'000);
+    UFFZSFacilityDefinition* Definition = NewObject<UFFZSFacilityDefinition>();
+    Definition->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Info);
+    TestFalse(TEXT("기존·신규 일반 시설은 기본적으로 클릭 설치를 유지한다"),
+        Definition->bEnableDragPlacement);
+
+    FFFZSCommand Command;
+    Command.FacilitySpec = Definition->Spec;
+    const FString BeforeFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Command);
+    const FPrimaryAssetId BeforeId = Definition->GetPrimaryAssetId();
+    Definition->bEnableDragPlacement = true;
+    TArray<FText> Errors;
+    TestTrue(TEXT("길 외의 유효한 시설도 드래그 설치를 선택할 수 있다"),
+        Definition->IsDefinitionValid(Errors));
+    Command.FacilitySpec = Definition->Spec;
+    TestEqual(TEXT("입력 정책 변경은 저장 사양·명령 멱등성에 영향을 주지 않는다"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Command), BeforeFingerprint);
+    TestEqual(TEXT("입력 정책 변경은 안정적인 시설 ID를 유지한다"),
+        Definition->GetPrimaryAssetId(), BeforeId);
+
+    // Use UObject's reflected serialization so a missing/transient UPROPERTY is caught.
+    TArray<uint8> Bytes;
+    FObjectWriter Writer(Definition, Bytes, true, true);
+    UFFZSFacilityDefinition* Restored = NewObject<UFFZSFacilityDefinition>();
+    FObjectReader Reader(Restored, Bytes, true, true);
+    TestFalse(TEXT("시설 정의 직렬화가 성공한다"), Writer.IsError() || Reader.IsError());
+    TestTrue(TEXT("드래그 설치 선택이 Data Asset 직렬화 후 유지된다"),
+        Restored->bEnableDragPlacement);
+    Command.FacilitySpec = Restored->Spec;
+    TestEqual(TEXT("직렬화된 시설 사양은 드래그 선택과 독립적으로 보존된다"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Command), BeforeFingerprint);
+
+    Restored->Spec.FootprintSizeCells.X = 0;
+    Errors.Reset();
+    TestFalse(TEXT("드래그 설치를 켜도 0 크기 바닥 영역을 허용하지 않는다"),
+        Restored->IsDefinitionValid(Errors));
+    return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(

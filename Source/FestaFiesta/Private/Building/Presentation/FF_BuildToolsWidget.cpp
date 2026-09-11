@@ -3,6 +3,7 @@
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
+#include "Building/Presentation/FF_BuildModeGuide.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
 #include "Components/EditableTextBox.h"
@@ -228,6 +229,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     const int32 ActiveSnap = System ? System->GetActivePositionSnapCm() : PreferredSnap;
     ViewData.bPreviewActive = bPreview;
     ViewData.bMoving = State == EFF_BuildModeState::Moving;
+    ViewData.bDragPlacementEnabled = System && System->IsDragPlacementEnabled();
     ViewData.bGridVisible = bGrid;
     ViewData.PreferredSnapCm = PreferredSnap;
     ViewData.ActiveSnapCm = ActiveSnap;
@@ -255,13 +257,26 @@ void UFF_BuildToolsWidget::RefreshTools()
     }
     if (Text_RotationHint)
     {
-        Text_RotationHint->SetText(FText::Format(LOCTEXT("RotationHint", "Q / E  {0}° 맞춤  ·  Shift + Q / E  누르는 동안 자유 회전"),
+        Text_RotationHint->SetText(FText::Format(ViewData.bDragPlacementEnabled
+            ? LOCTEXT("DragRotationHint", "Q / E  {0}° 맞춤 · Shift + Q / E  자유 회전 · 회전 시 드래그 종료")
+            : LOCTEXT("RotationHint", "Q / E  {0}° 맞춤  ·  Shift + Q / E  누르는 동안 자유 회전"),
             FText::AsNumber(System ? System->GetPlacementRotationSnapDegrees() : 45.0f)));
+    }
+    // The existing WBP owns this named row; no Blueprint regeneration is needed.
+    if (UTextBlock* PrecisionHint = Cast<UTextBlock>(GetWidgetFromName(TEXT("Text_PrecisionHint"))))
+    {
+        PrecisionHint->SetText(ViewData.bDragPlacementEnabled
+            ? LOCTEXT("DragPrecisionHint", "Ctrl / Alt: 첫 위치 조정 · 이후 시설 크기 간격 · 좌클릭을 놓으면 정지")
+            : LOCTEXT("PrecisionHint", "Ctrl 누르는 동안 25cm  ·  Alt 누르는 동안 1cm  ·  미세 조정 후 이 패널에서 배치를 확정하세요"));
     }
     if (Text_Mode)
     {
         Text_Mode->SetText(State == EFF_BuildModeState::Moving ? LOCTEXT("ModeMoving", "시설 이동") :
+            ViewData.bDragPlacementEnabled ? LOCTEXT("ModeDragPlacement", "시설 연속 배치") :
             bPreview ? LOCTEXT("ModePlacement", "시설 배치") : LOCTEXT("ModeOverview", "시설 확인"));
+        Text_Mode->SetToolTipText(bPreview
+            ? UFF_BuildModeGuide::MakePlacementHelpText(ViewData.bMoving, ViewData.bDragPlacementEnabled)
+            : UFF_BuildModeGuide::MakeBuildOverviewHelpText());
     }
     {
         FText Status = LOCTEXT("OverviewLegend", "시설 클릭: 정보 확인 · 격자: 빈 건축 공간");
@@ -272,7 +287,9 @@ void UFF_BuildToolsWidget::RefreshTools()
         }
         else if (bPreview && System->IsCurrentPlacementValid())
         {
-            Status = FText::Format(LOCTEXT("PlacementReady", "배치 가능 · 현재 {0}cm 맞춤"), FText::AsNumber(ActiveSnap));
+            Status = ViewData.bDragPlacementEnabled
+                ? LOCTEXT("DragPlacementReady", "배치 가능 · 좌클릭을 누른 채 드래그해 연속 설치")
+                : FText::Format(LOCTEXT("PlacementReady", "배치 가능 · 현재 {0}cm 맞춤"), FText::AsNumber(ActiveSnap));
             Color = ReadyStatusColor;
         }
         else if (bPreview)

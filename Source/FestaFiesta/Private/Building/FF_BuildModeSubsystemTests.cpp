@@ -34,6 +34,17 @@ bool FFF_BuildFacilityInspectionInputTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("Normal play and an active placement preview do not become inspection clicks"),
 			CanInspectFromWorldPointer(OtherState, false, true));
 	}
+	TestTrue(TEXT("A world click in eligible preparation can open inspection from the closed workspace"),
+		CanInspectFromWorldPointer(EFF_BuildModeState::Closed, false, true, true));
+	TestFalse(TEXT("Preparation eligibility does not permit clicking through UI"),
+		CanInspectFromWorldPointer(EFF_BuildModeState::Closed, false, false, true));
+	TestFalse(TEXT("Preparation eligibility preserves consumed-click suppression"),
+		CanInspectFromWorldPointer(EFF_BuildModeState::Closed, true, true, true));
+	for (const EFF_BuildModeState PreviewState : { EFF_BuildModeState::Placing, EFF_BuildModeState::Moving })
+	{
+		TestFalse(TEXT("Preparation inspection never takes ownership from placement or moving"),
+			CanInspectFromWorldPointer(PreviewState, false, true, true));
+	}
 	TestFalse(TEXT("Allowing catalog inspection does not grant catalog demolition permission"),
 		CanRemoveInstalledFacility(EFF_BuildModeState::CatalogOpen));
 	TestEqual(TEXT("Folding the catalog enters the existing inspection workspace"),

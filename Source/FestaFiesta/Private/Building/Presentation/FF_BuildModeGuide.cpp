@@ -21,8 +21,18 @@ FText UFF_BuildModeGuide::MakeBuildOverviewHelpText()
 		"설치된 시설을 선택해 이동하거나 철거할 수 있습니다.");
 }
 
-FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving)
+FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving, const bool bInDragPlacementEnabled)
 {
+	if (!bInMoving && bInDragPlacementEnabled)
+	{
+		return LOCTEXT("DragPlacementHelp",
+			"[좌클릭] 누른 채 바닥을 드래그하면 시설이 이어서 설치됩니다. 버튼을 놓으면 즉시 멈춥니다.\n"
+			"첫 시설의 위치와 각도를 기준으로 시설 크기만큼 간격을 맞추며, 빠르게 움직여도 중간 칸을 채웁니다.\n"
+			"[Ctrl] 정밀 맞춤 · [Alt] 자유 배치는 첫 시설의 시작 위치에 적용됩니다.\n"
+			"[Q/E] 회전 · [Shift+Q/E] 부드럽게 회전하면 드래그가 끝납니다. 다시 클릭해 시작하세요.\n"
+			"[Enter/배치 확정] 한 개 설치 · [우클릭] 목록 · [G] 격자 표시/숨기기\n"
+			"초록은 배치 가능, 빨강은 배치 불가입니다. 설치할 때마다 비용과 건축 한도를 확인합니다.");
+	}
 	const FText ConfirmText = bInMoving
 		? LOCTEXT("MovingHelpAction", "[좌클릭/Enter] 이동 확정 · [우클릭] 이동 취소")
 		: LOCTEXT("PlacingHelpAction", "[좌클릭/Enter] 설치 · 설치 후 같은 시설을 계속 배치 · [우클릭] 목록");
@@ -36,6 +46,15 @@ FText UFF_BuildModeGuide::MakePlacementHelpText(const bool bInMoving)
 			"{0}\n"
 			"공간 외에 설치 비용·건축 한도도 충족해야 합니다."),
 		ConfirmText);
+}
+
+void UFF_BuildModeGuide::SetDragPlacementEnabled(const bool bInDragPlacementEnabled)
+{
+	if (bDragPlacementEnabled != bInDragPlacementEnabled)
+	{
+		bDragPlacementEnabled = bInDragPlacementEnabled;
+		ApplyGuideText();
+	}
 }
 
 void UFF_BuildModeGuide::SetPlacementGuideState(
@@ -108,16 +127,21 @@ void UFF_BuildModeGuide::ApplyGuideText()
 	const FText SnapText = FText::AsNumber(CachedSnapDegrees, &NumberOptions);
 	const FText YawText = FText::AsNumber(CachedYawDegrees, &NumberOptions);
 	const FText PositionSnapText = FText::AsNumber(CachedPositionSnapCm, &NumberOptions);
+	const bool bDragPlacement = bDragPlacementEnabled && !bMoving;
 	SetNamedText(
 		TEXT("TXT_GuideRow_2"),
 		FText::Format(
-			LOCTEXT("RotationWithModifier", "[Q/E] {0}° 회전 · [Shift+Q/E] 부드럽게 · 현재 {1}°"),
+			bDragPlacement
+				? LOCTEXT("DragRotationWithModifier", "[Q/E] {0}° · [Shift+Q/E] 부드럽게 · 회전 시 드래그 종료")
+				: LOCTEXT("RotationWithModifier", "[Q/E] {0}° 회전 · [Shift+Q/E] 부드럽게 · 현재 {1}°"),
 			SnapText,
 			YawText));
 	SetNamedText(
 		TEXT("TXT_GuideRow_3"),
 		FText::Format(
-			LOCTEXT("PositionSnapAndGrid", "현재 {0}cm 맞춤 · [Ctrl] 정밀 · [Alt] 자유 · [G] 격자 {1}"),
+			bDragPlacement
+				? LOCTEXT("DragPositionSnap", "첫 위치 {0}cm · [Ctrl/Alt] 시작점 조정 · 이후 시설 크기 간격")
+				: LOCTEXT("PositionSnapAndGrid", "현재 {0}cm 맞춤 · [Ctrl] 정밀 · [Alt] 자유 · [G] 격자 {1}"),
 			PositionSnapText,
 			bPlacementGridVisible
 				? LOCTEXT("GridOn", "켜짐")
@@ -126,7 +150,9 @@ void UFF_BuildModeGuide::ApplyGuideText()
 		TEXT("TXT_GuideRow_4"),
 		bMoving
 			? LOCTEXT("MoveOrCancel", "[좌클릭/Enter]  이동 · [우클릭]  이동 취소")
-			: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 연속 설치 · [우클릭] 목록으로"));
+			: (bDragPlacement
+				? LOCTEXT("DragInstallOrCatalog", "[좌클릭 누른 채 이동] 연속 설치 · 놓으면 정지 · [우클릭] 목록")
+				: LOCTEXT("RepeatInstallOrCatalog", "[좌클릭/Enter] 한 개씩 설치 · [우클릭] 목록으로")));
 }
 
 #undef LOCTEXT_NAMESPACE

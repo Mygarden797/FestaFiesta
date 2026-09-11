@@ -45,6 +45,7 @@ for name, label in ROADS:
     price = costs['Cost.Road.Surface.' + name]
     assert price > 0
     rows.append(dict(name=name, definition=definition.get_path_name(), cost=price,
+                     enable_drag_placement=bool(definition.get_editor_property('enable_drag_placement')),
                      thumbnail=thumbnail.get_path_name(), **inspect_mesh(mesh, material)))
 (OUT / 'verification_report.json').write_text(json.dumps(dict(status='PASS', roads=rows, calibration=calibration), ensure_ascii=False, indent=2), encoding='utf-8')
 unreal.log('ROAD_VERIFY_PASS')
