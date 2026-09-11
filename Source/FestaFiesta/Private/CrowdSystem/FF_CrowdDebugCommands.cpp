@@ -1424,19 +1424,35 @@ static void CrowdArrivalCommand(const TArray<FString>& Args, UWorld* World, FOut
 		return;
 	}
 
-	// 설정에서 표를 독립적으로 다시 읽는다. 서브시스템의 캐시를 그대로 믿고 출력하면
-	// "설정은 됐는데 캐시가 비었다"(= 부트스트랩 실패)를 이 커맨드로 진단할 수 없다.
+	// Inspect the cache used by UpdateArrivalSchedule. Loading the configured soft
+	// reference here would revive a collected table and hide the spawning failure.
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
-	const UDataTable* Table = Settings ? Settings->ArrivalCurveTable.LoadSynchronous() : nullptr;
+	const UDataTable* Table = CrowdSim->GetLoadedArrivalCurveTable();
 	const FName ScenarioId = Settings ? Settings->ArrivalScenarioId : NAME_None;
+	const UGameInstance* DiagnosticGI = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* DiagnosticStage = DiagnosticGI
+		? DiagnosticGI->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	Ar.Logf(TEXT("[CrowdArrival] Initialized=%d Stage=%s Started=%d TimeScale=%.2f TableLoaded=%d Planned=%d Admitted=%d Active=%d Bound=%d"),
+		CrowdSim->IsSimulationInitialized(), DiagnosticStage
+			? *UEnum::GetValueAsString(DiagnosticStage->CurrentStage) : TEXT("NoStage"),
+		DiagnosticStage ? DiagnosticStage->bFestivalStarted : true,
+		DiagnosticStage ? DiagnosticStage->GetEffectiveTimeScale() : CrowdSim->SimulationTimeScale,
+		Table != nullptr, CrowdSim->GetArrivalPlannedCount(), CrowdSim->GetArrivalSpawnedCount(),
+		CrowdSim->GetActiveAgentCount(), CrowdSim->GetBoundActorCount());
 
 	Ar.Logf(TEXT("--- 입장 곡선 ---"));
-	Ar.Logf(TEXT("설정 표          : %s"), Table ? *Table->GetName() : TEXT("<미설정>"));
+	Ar.Logf(TEXT("설정 경로        : %s"), Settings ? *Settings->ArrivalCurveTable.ToString() : TEXT("<미설정>"));
+	Ar.Logf(TEXT("실행 중인 표     : %s"), Table ? *Table->GetName() : TEXT("<로드되지 않음>"));
 	Ar.Logf(TEXT("설정 ScenarioId  : %s"), *ScenarioId.ToString());
 	Ar.Logf(TEXT("곡선 활성        : %s"),
 		CrowdSim->IsArrivalCurveActive() ? TEXT("예") : TEXT("아니오 — 일괄 스폰으로 폴백했다"));
 	Ar.Logf(TEXT("캐시 버킷 수     : %d   <- 0이면 InitializeSimulation의 _00 행 조회가 실패했다"),
 		CrowdSim->GetArrivalBucketCount());
+	if (CrowdSim->IsArrivalCurveActive() && !Table)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("입장 시간표가 메모리에 없다. 입장이 중단된 상태이며 진단 명령은 표를 다시 로드하지 않는다."));
+		return;
+	}
 
 	if (!CrowdSim->IsArrivalCurveActive())
 	{

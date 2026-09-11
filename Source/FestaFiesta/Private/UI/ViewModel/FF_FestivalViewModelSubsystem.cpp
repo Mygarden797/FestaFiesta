@@ -5,6 +5,8 @@
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Economy/FF_StageEconomyBridgeSubsystem.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -26,10 +28,6 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	// 지금 없으면 Tick에서 다시 시도한다.
 	TryBindStageSubsystem();
 	TryBindProgressionSubsystem();
-
-#if !UE_BUILD_SHIPPING
-	RegisterDebugConsoleCommands();
-#endif
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -59,90 +57,77 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	}
 	CachedProgressionSubsystem = nullptr;
 
-#if !UE_BUILD_SHIPPING
-	UnregisterDebugConsoleCommands();
-#endif
-
 	Super::Deinitialize();
 }
 
 #if !UE_BUILD_SHIPPING
-void UFF_FestivalViewModelSubsystem::RegisterDebugConsoleCommands()
+namespace FFFestivalViewModelConsole
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	// 중복 등록 방어. 어떤 이유로 해제가 안 됐어도 두 번째 PIE가 조용히 망가지지 않게 한다.
-	UnregisterDebugConsoleCommands();
-
-	SetMetricsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.SetMetrics"),
-		TEXT("0~100 지표를 설정한다. 사용법: FF.SetMetrics <SimSatisfaction> <ScoreSatisfaction> <Safety>"),
-		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-		{
-			if (Args.Num() < 3)
-			{
-				UE_LOG(LogFestaFiestaUI, Warning,
-					TEXT("FF.SetMetrics <Sim> <Score> <Safety> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
-				return;
-			}
-
-			Debug_SetMetrics(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
-			Debug_DumpToLog();
-		}),
-		ECVF_Cheat);
-
-	SetEconomyConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.SetEconomy"),
-		TEXT("경제 값을 설정한다. 사용법: FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue>"),
-		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-		{
-			if (Args.Num() < 3)
-			{
-				UE_LOG(LogFestaFiestaUI, Warning,
-					TEXT("FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
-				return;
-			}
-
-			Debug_SetEconomy(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
-			Debug_DumpToLog();
-		}),
-		ECVF_Cheat);
-
-	DumpMetricsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.DumpMetrics"),
-		TEXT("현재 지표·경제·Stage 값을 로그에 찍는다."),
-		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-		{
-			Debug_DumpToLog();
-		}),
-		ECVF_Cheat);
-
-	UE_LOG(LogFestaFiestaUI, Log,
-		TEXT("[ViewModel] 디버그 콘솔 명령 등록 완료 — FF.SetMetrics / FF.SetEconomy / FF.DumpMetrics"));
+// Console names are process-wide, whereas ViewModels belong to individual game
+// instances. Register once for the module and resolve the caller's world only
+// when executing; overlapping PIE/test worlds must not replace each other's handles.
+UFF_FestivalViewModelSubsystem* ResolveViewModel(UWorld* World)
+{
+	UGameInstance* GameInstance = IsValid(World) && !World->bIsTearingDown
+		? World->GetGameInstance() : nullptr;
+	return IsValid(GameInstance) ? GameInstance->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 }
 
-void UFF_FestivalViewModelSubsystem::UnregisterDebugConsoleCommands()
+void SetMetrics(const TArray<FString>& Args, UWorld* World)
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	// 해제는 조건부, 정리(nullptr 대입)는 무조건.
-	if (SetMetricsConsoleCommand)
+	if (Args.Num() < 3)
 	{
-		ConsoleManager.UnregisterConsoleObject(SetMetricsConsoleCommand);
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("FF.SetMetrics <Sim> <Score> <Safety> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
+		return;
 	}
-	SetMetricsConsoleCommand = nullptr;
-
-	if (SetEconomyConsoleCommand)
+	if (UFF_FestivalViewModelSubsystem* ViewModel = ResolveViewModel(World))
 	{
-		ConsoleManager.UnregisterConsoleObject(SetEconomyConsoleCommand);
+		ViewModel->Debug_SetMetrics(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
+		ViewModel->Debug_DumpToLog();
 	}
-	SetEconomyConsoleCommand = nullptr;
+}
 
-	if (DumpMetricsConsoleCommand)
+void SetEconomy(const TArray<FString>& Args, UWorld* World)
+{
+	if (Args.Num() < 3)
 	{
-		ConsoleManager.UnregisterConsoleObject(DumpMetricsConsoleCommand);
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
+		return;
 	}
-	DumpMetricsConsoleCommand = nullptr;
+	if (UFF_FestivalViewModelSubsystem* ViewModel = ResolveViewModel(World))
+	{
+		ViewModel->Debug_SetEconomy(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
+		ViewModel->Debug_DumpToLog();
+	}
+}
+
+void DumpMetrics(UWorld* World)
+{
+	if (UFF_FestivalViewModelSubsystem* ViewModel = ResolveViewModel(World))
+	{
+		ViewModel->Debug_DumpToLog();
+	}
+}
+
+static FAutoConsoleCommandWithWorldAndArgs SetMetricsCommand(
+		TEXT("FF.SetMetrics"),
+		TEXT("0~100 지표를 설정한다. 사용법: FF.SetMetrics <SimSatisfaction> <ScoreSatisfaction> <Safety>"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetMetrics),
+		ECVF_Cheat);
+
+static FAutoConsoleCommandWithWorldAndArgs SetEconomyCommand(
+		TEXT("FF.SetEconomy"),
+		TEXT("경제 값을 설정한다. 사용법: FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue>"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetEconomy),
+		ECVF_Cheat);
+
+static FAutoConsoleCommandWithWorld DumpMetricsCommand(
+		TEXT("FF.DumpMetrics"),
+		TEXT("현재 지표·경제·Stage 값을 로그에 찍는다."),
+		FConsoleCommandWithWorldDelegate::CreateStatic(&DumpMetrics),
+		ECVF_Cheat);
 }
 #endif
 

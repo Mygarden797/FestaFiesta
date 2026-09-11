@@ -969,10 +969,22 @@ bool FFF_CrowdAvoidance_CounterFlowPathOpens::RunTest(const FString& Parameters)
 	TestTrue(TEXT("최대 밀도가 유한하다"), FMath::IsFinite(Current.MaxDensity) && Current.MaxDensity > 0.f);
 	TestEqual(TEXT("아무도 사라지지 않았다"), Current.ActiveAtEnd, Current.Spawned);
 
+	// Both runs can have no stalled agents by the final frame. A strict comparison
+	// of that instantaneous count would then demand an impossible negative count.
+	// Measure the scenario's actual goal: the opposing flows pass one another,
+	// make more forward progress, and do not introduce extra final-frame stalls.
+	TestTrue(TEXT("기본 회피로 실제 스폰 인원 거의 전원이 반대편을 통과한다"),
+		Current.Spawned > 0 && Current.Crossed >= Current.Spawned - 2);
+	TestTrue(TEXT("기본 회피의 통과 인원이 이전 방식보다 줄지 않는다"),
+		Current.Crossed >= Legacy.Crossed);
 	TestTrue(
-		*FString::Printf(TEXT("막힌 사람이 이식 이전보다 적다 (기본값 %d < old %d)"),
+		*FString::Printf(TEXT("기본 회피의 평균 전진량이 이전 방식보다 크다 (%.0f > %.0fUU)"),
+			Current.MeanProgressUU, Legacy.MeanProgressUU),
+		Current.MeanProgressUU > Legacy.MeanProgressUU);
+	TestTrue(
+		*FString::Printf(TEXT("마지막 프레임의 막힌 인원이 이전 방식보다 늘지 않는다 (%d <= %d)"),
 			Current.Flow.Blocked, Legacy.Flow.Blocked),
-		Current.Flow.Blocked < Legacy.Flow.Blocked);
+		Current.Flow.Blocked <= Legacy.Flow.Blocked);
 
 	TestTrue(
 		*FString::Printf(TEXT("절반 이상이 걷고 있다 (%d/%d)"), Current.Flow.Walking, Current.Spawned),

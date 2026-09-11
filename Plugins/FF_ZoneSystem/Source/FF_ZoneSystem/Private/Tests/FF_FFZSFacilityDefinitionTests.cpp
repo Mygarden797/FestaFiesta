@@ -9,6 +9,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Internationalization/Text.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
@@ -141,7 +142,15 @@ bool FFFZSPassiveLightingDefinitionTest::RunTest(const FString& Parameters)
     FFFZSFacilitySpec Invalid = Spec;
     Invalid.QueueRules.ServiceCapacity = 1;
     TestFalse(TEXT("조명에는 서비스 정원을 만들 수 없다"), Invalid.IsValid(Errors));
-    TestTrue(TEXT("조명 전용 오류를 안내한다"), ContainsErrorText(Errors, TEXT("조명 시설은")));
+    // Lighting and roads share this non-service contract. Assert its stable
+    // localization identity rather than the old lighting-only Korean wording.
+    TestTrue(TEXT("서비스 없는 시설의 전용 오류를 안내한다"), Errors.ContainsByPredicate([](const FText& Error)
+    {
+        const TOptional<FString> Namespace = FTextInspector::GetNamespace(Error);
+        const TOptional<FString> Key = FTextInspector::GetKey(Error);
+        return Namespace.IsSet() && Namespace.GetValue() == TEXT("FFZSTypes")
+            && Key.IsSet() && Key.GetValue() == TEXT("NonServiceFacilityHasServiceData");
+    }));
     Invalid = Spec;
     Invalid.Anchors.AddDefaulted();
     TestFalse(TEXT("조명에 고객 이동 앵커를 붙일 수 없다"), Invalid.IsValid(Errors));

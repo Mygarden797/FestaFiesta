@@ -17,6 +17,12 @@ PDA = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Perf
 PANEL = '/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel'
 CONTROLS = '/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls'
 RIG = STAGE + '/BP_MainStage_Grand_Lighting'
+EXPECTED_RUNTIME_LIGHTS = {
+    'Overhead_00_Spot', 'Overhead_02_Spot', 'Overhead_04_Spot',
+    'Overhead_06_Spot', 'Overhead_10_Spot',
+    'DeckSpot_Spot', 'DeckSpot_Spot_001',
+    'RunwaySpot_Spot', 'RunwaySpot_Spot_001',
+}
 
 
 def backup(package):
@@ -67,6 +73,10 @@ def main():
             if not isinstance(original, unreal.SpotLightComponent):
                 continue
             name = original.get_name().removesuffix('_GEN_VARIABLE')
+            # Artist revision 67483cfb removed this lamp from the runtime rig.
+            # Keep the original ten-light preview unchanged when recreating it.
+            if name == 'Overhead_08_Spot':
+                continue
             # SCS handles can include the same inherited/template object more than once.
             if name in copied:
                 continue
@@ -79,7 +89,7 @@ def main():
                 lamp.set_editor_property(key, original.get_editor_property(key))
             lamp.set_mobility(unreal.ComponentMobility.MOVABLE)
             copied.append(name)
-        assert len(copied) == 10, copied
+        assert set(copied) == EXPECTED_RUNTIME_LIGHTS, copied
         unreal.BlueprintEditorLibrary.compile_blueprint(bp)
         assert unreal.EditorAssetLibrary.save_loaded_asset(bp, only_if_is_dirty=False)
         report['copied_lights'] = copied
