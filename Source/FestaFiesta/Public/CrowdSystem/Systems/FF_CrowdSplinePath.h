@@ -41,6 +41,9 @@ namespace CrowdSplinePath
 	FESTAFIESTA_API bool FindClosestOnLane(const FFF_CrowdSplineLane& Lane, const FVector& QueryCm,
 	                                       FVector& OutPointCm, float& OutArcCm, float& OutDist2DCm);
 
+	// 호길이로 레인 위 한 점을 되짚는다. 닫힌 레인은 전체 길이로 감고, 열린 레인은 양 끝에서 자른다.
+	FESTAFIESTA_API bool PointAtArc(const FFF_CrowdSplineLane& Lane, float ArcCm, FVector& OutPointCm);
+
 	// 단일 레인만 쓴다. 레인 여러 개를 잇는 것은 GetNavFallbackCount가 높게 나오면 그때 얹는다.
 	FESTAFIESTA_API bool TryBuildPath(const TArray<FFF_CrowdSplineLane>& Lanes,
 	                                  const FVector& StartCm, const FVector& TargetCm,
