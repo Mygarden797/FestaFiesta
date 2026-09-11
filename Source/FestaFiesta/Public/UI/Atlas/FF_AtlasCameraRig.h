@@ -74,6 +74,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas|Camera")
 	void SkipCameraMove();
 
+	/** 국가를 살펴보는 동안 기존 지구 카메라 구도에서 조금 접근한다. */
+	void SetCountryInspection(bool bInspect);
+	virtual void Tick(float DeltaSeconds) override;
+
 	/** 지금 카메라가 두 구도 사이를 이동하는 중인가. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Camera")
 	bool IsMoving() const;
@@ -83,6 +87,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
 	 * 타이틀·플레이 허브·저장 기록·옵션에서 쓰는 구도. **멀리서 보는 지구다.**
@@ -134,4 +139,10 @@ private:
 
 	/** Skip 이 붙일 목표. */
 	TWeakObjectPtr<ACameraActor> PendingCamera;
+
+	void ResetCountryInspection();
+	TWeakObjectPtr<ACameraActor> InspectionCamera;
+	FVector InspectionBaseLocation = FVector::ZeroVector;
+	float InspectionAlpha = 0.f;
+	bool bCountryInspection = false;
 };

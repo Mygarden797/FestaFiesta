@@ -1,8 +1,9 @@
-"""Capture actual buildable fixtures, update six catalog thumbnails, and QA controls.
+"""Capture actual buildable fixtures for visual QA of their runtime controls.
 
 Launch in /Engine/Maps/Entry with a real RHI and -RenderOffscreen. The transient
-actors are never saved into a map. Only generated thumbnails, their six PDA
-references and the existing lighting-caption migration are saved.
+actors are never saved into a map. No project assets are changed. Catalog
+textures use render_catalog_thumbnails.py and import_catalog_thumbnails.py;
+these dark-background lighting previews must never overwrite the catalog.
 """
 import json
 import math
@@ -13,7 +14,7 @@ from pathlib import Path
 import unreal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from create_buildable_lights import ROOT, BASE, DEFINITIONS, FIXTURES, backup, save
+from create_buildable_lights import ROOT, BASE, FIXTURES
 
 OUT = ROOT / 'Saved/FacilityLighting_20260910/buildable_renders'
 OUT.mkdir(parents=True, exist_ok=True)
@@ -30,7 +31,7 @@ def start():
     assert world and world.get_path_name().startswith('/Engine/Maps/Entry.'), 'Run only in /Engine/Maps/Entry; no user level is modified.'
     spawned, records, phases = [], {}, []
     state = {'status': 'RUNNING', 'started': time.time(), 'phase': 0, 'frame': 0,
-             'captures': [], 'thumbnails': [], 'source_geometry_modified': False,
+             'captures': [], 'source_geometry_modified': False,
              'map_saved': False, 'visual_review': 'NOT_REVIEWED'}
 
     def spawn(cls, location, rotation=unreal.Rotator(0, 0, 0)):
@@ -42,9 +43,6 @@ def start():
     # Place authored meshes at their original scale, with the lower bounds at ground level.
     cursor, maximum_height, maximum_depth = 0.0, 0.0, 0.0
     for name, minor, display in FIXTURES:
-        definition_path = DEFINITIONS + '/PDA_FFZS_Lighting_' + minor + '_' + name
-        definition = unreal.load_asset(definition_path)
-        assert definition, definition_path
         folder = BASE + ('/Lighting/FestivalStreetlamp/Run_b31f2d864298' if name == 'FestivalStreetlamp' else '/' + name)
         mesh_path = folder + ('/SM_FestivalStreetlamp' if name == 'FestivalStreetlamp' else '/Meshes/SM_FF_' + name)
         mesh = unreal.load_asset(mesh_path)
@@ -68,10 +66,10 @@ def start():
         for preview in rig.get_components_by_class(unreal.StaticMeshComponent):
             preview.set_visibility(False)
             preview.set_editor_property('hidden_in_game', True)
-        records[name] = dict(model=model, component=component, rig=rig, definition=definition,
+        records[name] = dict(model=model, component=component, rig=rig,
                              width=width, height=height, depth=depth, center_y=center_y)
         distance = max(height * 1.72, width * 1.72, 480.0) + depth * .4
-        phases.append(dict(name='Thumbnail_' + name, fixture=name, mode='ON', resolution=[512, 512],
+        phases.append(dict(name='Preview_' + name, fixture=name, mode='ON', resolution=[512, 512],
                            camera=[distance, center_y - width * .40, height * .66],
                            target=[0, center_y, height * .48], key=1.3, fill=.7))
         cursor += width + 300.0
@@ -126,11 +124,6 @@ def start():
         pp.set_editor_property(prop, value)
     capture.set_editor_property('post_process_settings', pp)
 
-    # Reuse the versioned WBP migration; this preserves custom designer captions.
-    lighting_wbp = unreal.load_asset('/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls')
-    if lighting_wbp:
-        backup(lighting_wbp)
-    unreal.SystemLibrary.execute_console_command(world, 'FF.BuildFacilityInfoUMG')
     unreal.EditorPythonScripting.set_keep_python_script_alive(True)
     write_report(state)
 
@@ -141,8 +134,7 @@ def start():
         for actor in reversed(spawned):
             actors.destroy_actor(actor)
         state['elapsed_seconds'] = time.time() - state['started']
-        state['status'] = 'PASS' if ('error' not in state and len(state['captures']) == len(phases)
-                                   and len(state['thumbnails']) == len(FIXTURES)) else 'FAIL'
+        state['status'] = 'PASS' if ('error' not in state and len(state['captures']) == len(phases)) else 'FAIL'
         write_report(state)
         unreal.log('BUILDABLE_LIGHTING_CAPTURES_' + state['status'])
         unreal.EditorPythonScripting.set_keep_python_script_alive(False)
@@ -182,30 +174,6 @@ def start():
         capture.set_editor_property('camera_cut_this_frame', True)
         state['phase_started'] = time.time()
 
-    def save_thumbnail(name, render_target):
-        path = DEFINITIONS + '/Thumbnails/T_UI_Lighting_' + name
-        texture = unreal.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else None
-        if texture:
-            backup(texture)
-            unreal.RenderingLibrary.convert_render_target_to_texture2d_editor_only(world, render_target, texture)
-        else:
-            texture = unreal.RenderingLibrary.render_target_create_static_texture2d_editor_only(
-                render_target, path, unreal.TextureCompressionSettings.TC_EDITOR_ICON,
-                unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
-        assert texture and texture.get_path_name().split('.')[0] == path, path
-        texture.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_EDITOR_ICON)
-        texture.set_editor_property('mip_gen_settings', unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
-        texture.set_editor_property('lod_group', unreal.TextureGroup.TEXTUREGROUP_UI)
-        texture.set_editor_property('srgb', True)
-        texture.set_editor_property('never_stream', True)
-        save(texture)
-        definition = records[name]['definition']
-        backup(definition)
-        definition.set_editor_property('catalog_thumbnail', texture)
-        save(definition)
-        state['thumbnails'].append({'fixture': name, 'texture': path,
-                                    'definition': definition.get_path_name().split('.')[0]})
-
     def tick(dt):
         # Texture creation / package saving can pump Slate and re-enter this callback.
         if state.get('busy'):
@@ -234,8 +202,6 @@ def start():
                 unreal.RenderingLibrary.export_render_target(world, target, str(OUT), filename)
                 path = OUT / filename
                 assert path.is_file() and path.stat().st_size > 1000, 'Missing or empty capture: ' + str(path)
-                if phase['fixture']:
-                    save_thumbnail(phase['fixture'], target)
                 state['captures'].append({**phase, 'path': str(path), 'bytes': path.stat().st_size,
                                           'visual_review': 'NOT_REVIEWED'})
                 state['phase'] += 1

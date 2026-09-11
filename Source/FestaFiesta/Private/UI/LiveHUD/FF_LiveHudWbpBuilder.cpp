@@ -31,6 +31,7 @@
 #include "UI/LiveHUD/Panels/FF_LivePanelQueues.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelFinale.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelReport.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelDensity.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 #include "UI/LiveHUD/Panels/FF_LivePanelStaff.h"
 #include "UI/LiveHUD/FF_LiveTabButton.h"
@@ -85,6 +86,7 @@ namespace FFLiveHudWbpBuilder
 	const FString QueuesPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelQueues");
 	const FString GuestsPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelGuests");
 	const FString SNSPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelSNS");
+	const FString DensityPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelDensity");
 	const FString ReportPanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelReport");
 	const FString FinalePanelPackage = LivePanelsFolder / TEXT("WBP_FF_LivePanelFinale");
 
@@ -1378,6 +1380,107 @@ namespace FFLiveHudWbpBuilder
 		return Note;
 	}
 
+	// =========================================================================
+	// 3-6b) 밀집 패널 — 히트맵 토글 · 범례 · 지금 상태
+	// =========================================================================
+
+	bool BuildDensityPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette)
+		{
+			return false;
+		}
+
+		UBorder* Root = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_PanelRoot"), true);
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Content"));
+		UButton* Toggle = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_Toggle"), true);
+		UTextBlock* ToggleLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ToggleLabel"), true);
+		UTextBlock* Peak = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Peak"), true);
+		UTextBlock* Congested = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Congested"), true);
+		UTextBlock* LegendTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_LegendTitle"));
+		UVerticalBox* Legend = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Box_Legend"), true);
+		UTextBlock* MissingNote = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_MissingNote"), true);
+
+		if (!Root || !Content || !Toggle || !ToggleLabel || !Peak || !Congested
+			|| !LegendTitle || !Legend || !MissingNote)
+		{
+			return false;
+		}
+
+		Tree.RootWidget = Root;
+		Root->SetBrush(MakeSolidBrush(Palette->InGame.Paper, 8.f));
+		Root->SetPadding(FMargin(24.f, 20.f));
+
+		if (!AddResultPanelHeader(Blueprint, Tree, *Content, *Palette,
+			LOCTEXT("LiveDensity_Title", "밀집")))
+		{
+			return false;
+		}
+
+		// --- 토글. 라벨이 지금 상태를 글자로 말한다 (AT-011) ---
+		FButtonStyle ToggleStyle = Toggle->GetStyle();
+		ToggleStyle.Normal = MakeSolidBrush(Palette->InGame.Teal, 4.f);
+		ToggleStyle.Hovered = MakeSolidBrush(Palette->InGame.TealDeep, 4.f);
+		ToggleStyle.Pressed = MakeSolidBrush(Palette->InGame.Ink, 4.f);
+		ToggleStyle.Disabled = MakeSolidBrush(Palette->InGame.InkFaint, 4.f);
+		ToggleStyle.NormalPadding = FMargin(16.f, 5.f);
+		ToggleStyle.PressedPadding = FMargin(16.f, 5.f);
+		Toggle->SetStyle(ToggleStyle);
+
+		StyleText(*ToggleLabel, 13, Palette->InGame.Paper, TEXT("SemiBold"));
+		ToggleLabel->SetText(LOCTEXT("LiveDensityPv_Toggle", "히트맵 켜기"));
+		if (UButtonSlot* Slot_ToggleLabel = Cast<UButtonSlot>(Toggle->AddChild(ToggleLabel)))
+		{
+			Slot_ToggleLabel->SetHorizontalAlignment(HAlign_Center);
+			Slot_ToggleLabel->SetVerticalAlignment(VAlign_Center);
+			Slot_ToggleLabel->SetPadding(FMargin(0.f));
+		}
+		if (UVerticalBoxSlot* Slot_Toggle = Content->AddChildToVerticalBox(Toggle))
+		{
+			Slot_Toggle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Toggle->SetHorizontalAlignment(HAlign_Left);
+			Slot_Toggle->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+		}
+
+		// --- 지금 상태 ---
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_Peak"),
+			Palette->InGame.Ink, 15, LOCTEXT("LiveDensityPv_Peak",
+				"가장 붐비는 곳 1.4명/㎡ · E (매우 혼잡)"), 4.f);
+
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_Congested"),
+			Palette->InGame.Amber, 13, LOCTEXT("LiveDensityPv_Congested", "혼잡 구간 3칸"), 18.f);
+
+		// --- 범례 ---
+		StyleText(*LegendTitle, 12, Palette->InGame.InkMuted, TEXT("SemiBold"));
+		LegendTitle->SetText(LOCTEXT("LiveDensity_LegendTitle", "등급"));
+		if (UVerticalBoxSlot* Slot_LegendTitle = Content->AddChildToVerticalBox(LegendTitle))
+		{
+			Slot_LegendTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_LegendTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		}
+
+		// 줄은 코드가 채운다. 등급 경계를 여기 박아 두면 소유자가 값을 바꿨을 때 어긋난다.
+		if (UVerticalBoxSlot* Slot_Legend = Content->AddChildToVerticalBox(Legend))
+		{
+			Slot_Legend->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+			Slot_Legend->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Legend->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+		}
+
+		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_MissingNote"),
+			Palette->InGame.InkFaint, 12,
+			LOCTEXT("LiveDensityPv_Missing",
+				"히트맵은 지금 디버그 표시라 에디터에서만 보입니다."), 0.f);
+
+		if (UBorderSlot* Slot_Content = Cast<UBorderSlot>(Root->AddChild(Content)))
+		{
+			Slot_Content->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Content->SetVerticalAlignment(VAlign_Top);
+		}
+		return true;
+	}
+
 	bool BuildReportPanel(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
@@ -1809,7 +1912,7 @@ namespace FFLiveHudWbpBuilder
 		// ★ 이름이 계약이다. `UFF_LiveHudScreen` 의 `BindWidgetOptional` 과 같아야 붙는다.
 		const TCHAR* TabWidgetNames[] = {
 			TEXT("Tab_Operations"), TEXT("Tab_Facilities"), TEXT("Tab_Guests"),
-			TEXT("Tab_Queues"), TEXT("Tab_SNS"), TEXT("Tab_Staff"),
+			TEXT("Tab_Queues"), TEXT("Tab_SNS"), TEXT("Tab_Staff"), TEXT("Tab_Density"),
 			// 결산 탭. 마감·리포트에서만 보인다 (2026-09-02 통합).
 			TEXT("Tab_Report"), TEXT("Tab_Finale") };
 
@@ -2114,6 +2217,16 @@ namespace FFLiveHudWbpBuilder
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
 				return BuildSNSPanel(Blueprint, Tree);
+			});
+
+		EnsureWidgetBlueprint(
+			LiveLogPrefix,
+			DensityPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelDensity::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildDensityPanel(Blueprint, Tree);
 			});
 
 		EnsureWidgetBlueprint(

@@ -27,8 +27,19 @@ class UFF_FestivalViewModelSubsystem;
  *   빨강 >=4 명/㎡)인데, Crowd가 구현한 `ECrowdLOS`는 Fruin 보행로 LOS 6등급
  *   (0.31 / 0.43 / 0.72 / 1.08 / 2.17 명/㎡)이라 자릿수가 다르다. 보행로 기준으로는 2.17부터 이미 최악 등급이라
  *   "빨강 4 이상"에 도달하지 않는다. 어느 표준을 쓸지 합의 전까지 색·구간을 코드로 굳히지 않는다.
- *   또한 원본 `FFF_CrowdReadModel::DensityPerSqm`은 아직 아무도 채우지 않는다 — 실값은 Crowd 내부
- *   `FCrowdDensityGrid`에만 있고 UI가 읽을 경로가 없다. 상세는 open-conflicts.md의 C-028·C-029.
+ *   **2026-09-08 갱신** — 라이브 `밀집` 패널은 답을 기다리는 동안 Crowd의 6등급을 채택했다
+ *   (`FF_LivePanelDensity`). `UI_API` 요청 11번으로 제품 렌더링과 경계값을 이정원 님께 물어본 상태이며
+ *   아직 답이 없다. 확정되면 이 주석과 패널 범례를 함께 고친다.
+ *
+ *   ⚠ **혼잡 어휘가 세 가지로 늘었다.** ① UI 문서의 3구간(명/㎡) ② Crowd `ECrowdLOS` 6등급(명/㎡)
+ *   ③ Zone `DensityState` 4단계(Normal·Caution·Warning·Critical) — 이건 **명/㎡가 아니라 정원 비율**
+ *   (`pop ÷ cap`, 0.8부터 붐빔)이다. 서로 환산되지 않으므로 한 화면에 섞어 쓰지 않는다.
+ *
+ *   구역 인원 원본은 생겼다 — `FF_ZonePopulationBridgeSubsystem`이 1초마다 `ReportZonePopulation()`을
+ *   호출한다. 다만 현재 규모(구역 10,000㎡ · 정원 2,500명 · 전체 방문객 500명)에서는 한 구역에 전원이
+ *   몰려도 20%라 **Zone 기준으로는 늘 Normal이다.** 정원 산정 방식이 정해지기 전에는 밀집 표시가
+ *   "항상 평온"으로 보이는 것이 정상이다. 근거는 `Collaboration/FestaFiesta_ZoneCongestion_Team_Handoff.md`.
+ *   상세는 open-conflicts.md의 C-029·C-042.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Metrics HUD Widget"))
 class FESTAFIESTA_API UFF_MetricsHudWidget : public UUserWidget

@@ -1,0 +1,42 @@
+{
+  "KR": {
+    "latitude": 37.579,
+    "longitude": 126.977,
+    "surface_offset": 105.923
+  },
+  "BR": {
+    "latitude": -22.952,
+    "longitude": -43.211,
+    "surface_offset": 103.686
+  },
+  "DE": {
+    "latitude": 52.516,
+    "longitude": 13.378,
+    "surface_offset": 104.204
+  },
+  "JP": {
+    "latitude": 34.296,
+    "longitude": 132.319,
+    "surface_offset": 111.51
+  },
+  "US": {
+    "latitude": 40.689,
+    "longitude": -74.045,
+    "surface_offset": 103.339
+  },
+  "ES": {
+    "latitude": 41.404,
+    "longitude": 2.175,
+    "surface_offset": 108.19
+  },
+  "TH": {
+    "latitude": 13.751,
+    "longitude": 100.492,
+    "surface_offset": 102.0
+  },
+  "AU": {
+    "latitude": -33.857,
+    "longitude": 151.215,
+    "surface_offset": 103.722
+  }
+}

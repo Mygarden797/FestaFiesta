@@ -7,6 +7,8 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -38,7 +40,7 @@ void UFF_AtlasGlobeScreen::NativeOnInitialized()
 	// 문구는 인스턴스에 한 번만 넣으면 된다.
 	if (UFF_CommonButtonBase* SelectButton = GetSelectCountryButton())
 	{
-		SelectButton->SetButtonLabel(LOCTEXT("AtlasGlobeSelectCountry", "선택"));
+		SelectButton->SetButtonLabel(LOCTEXT("AtlasGlobeSelectCountry", "축제 지도 보기"));
 	}
 	if (UFF_CommonButtonBase* CloseButton = GetClosePanelButton())
 	{
@@ -47,7 +49,7 @@ void UFF_AtlasGlobeScreen::NativeOnInitialized()
 	if (Text_ControlHints)
 	{
 		Text_ControlHints->SetText(
-			LOCTEXT("AtlasGlobeHints", "드래그: 회전    ← →: 핀 이동    Enter: 선택    Esc: 플레이 허브"));
+			LOCTEXT("AtlasGlobeHints", "드래그: 회전    국가 목록 / 조형물: 살펴보기    Esc: 뒤로"));
 	}
 }
 
@@ -94,11 +96,6 @@ void UFF_AtlasGlobeScreen::NativeConstruct()
 		UE_LOG(LogFestaFiestaUI, Warning,
 			TEXT("UFF_AtlasGlobeScreen: Border_Panel 바인딩이 없어 국가 패널을 열고 닫을 수 없다."));
 	}
-	if (!VerticalBox_FestivalList)
-	{
-		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("UFF_AtlasGlobeScreen: VerticalBox_FestivalList 바인딩이 없어 축제 목록을 표시할 수 없다."));
-	}
 
 	DragTracker.DragThresholdPixels = DragThresholdPixels;
 	DragTracker.Reset();
@@ -128,6 +125,7 @@ void UFF_AtlasGlobeScreen::NativeDestruct()
 	// 액터는 위젯보다 오래 산다. 해제를 빼면 죽은 위젯을 역참조한다.
 	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get())
 	{
+		Globe->SetHoveredCountry(NAME_None);
 		Globe->OnCountryFocused.RemoveDynamic(this, &UFF_AtlasGlobeScreen::HandleCountryFocused);
 	}
 
@@ -163,10 +161,23 @@ void UFF_AtlasGlobeScreen::NativeTick(const FGeometry& MyGeometry, float InDelta
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	// 지구가 상시 자전하므로 핀 좌표가 매 프레임 바뀐다. 이벤트로 알릴 수 있는 변화가 아니다.
+	// 지구 자전 중에도 커서 아래 프랍이 바뀌므로 호버를 매 프레임 확인한다.
 	UpdatePinPositions();
+	if (AFF_AtlasGlobeActor* Globe = GetGlobe())
+	{
+		Globe->SetHoveredCountry(!DragTracker.IsPressed() && Border_DragSurface && Border_DragSurface->IsHovered()
+			? PickCursorLandmark() : NAME_None);
+	}
 
 	TickDrag();
+}
+
+void UFF_AtlasGlobeScreen::NativeOnDeactivated()
+{
+	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get()) { Globe->SetSelectedCountry(NAME_None); Globe->SetHoveredCountry(NAME_None); }
+	PanelCountryId = NAME_None;
+	DragTracker.Reset();
+	Super::NativeOnDeactivated();
 }
 
 UWidget* UFF_AtlasGlobeScreen::NativeGetDesiredFocusTarget() const
@@ -192,9 +203,26 @@ UWidget* UFF_AtlasGlobeScreen::NativeGetDesiredFocusTarget() const
 
 bool UFF_AtlasGlobeScreen::NativeOnHandleBackAction()
 {
+	if (!PanelCountryId.IsNone())
+	{
+		HandleClosePanelClicked(nullptr);
+		return true;
+	}
 	// 기본 CommonUI Deactivate만 쓰면 UIFlowSubsystem의 현재 화면·히스토리가 어긋난다.
 	OnBackRequested.Broadcast();
 	return true;
+}
+
+FReply UFF_AtlasGlobeScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	// CommonUI Back 데이터가 비어 있는 프로젝트 설정에서도 화면을 나갈 수 있게 한다.
+	// 공통 라우터가 먼저 처리한 키는 여기로 오지 않는다.
+	if (InKeyEvent.GetKey() == EKeys::Escape || InKeyEvent.GetKey() == EKeys::Gamepad_FaceButton_Right)
+	{
+		if (!InKeyEvent.IsRepeat()) { NativeOnHandleBackAction(); }
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 // --- 입력 ---
@@ -206,6 +234,7 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
+	if (!Border_DragSurface || !Border_DragSurface->IsHovered()) { return FReply::Unhandled(); }
 	// 연출 중에 손을 대면 즉시 끝낸다. 반복 플레이에서 매번 다 보게 하지 않는다.
 	SkipPresentation();
 
@@ -224,6 +253,7 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry
 			*GetName(), PC->bShowMouseCursor ? 1 : 0);
 	}
 
+	PressedCountryId = PickCursorLandmark();
 	DragTracker.Press(InMouseEvent.GetScreenSpacePosition());
 
 	// 🔴 **캡처하지 않는다** (2026-09-03 정정).
@@ -268,6 +298,10 @@ void UFF_AtlasGlobeScreen::TickDrag()
 
 	if (!Delta.IsNearlyZero())
 	{
+		if (!PanelCountryId.IsNone())
+		{
+			HandleClosePanelClicked(nullptr);
+		}
 		if (AFF_AtlasGlobeActor* Globe = GetGlobe())
 		{
 			// 픽셀 → 회전은 순수 함수가 한다 (`FFF_AtlasGeo::ApplyDrag`). 여기서 각도를 만들지 않는다.
@@ -278,18 +312,27 @@ void UFF_AtlasGlobeScreen::TickDrag()
 
 void UFF_AtlasGlobeScreen::EndDrag()
 {
+	if (!DragTracker.IsPressed()) { return; }
+	// 마지막 Tick 뒤에 이동/해제돼도 클릭으로 잘못 판정하지 않는다.
+	if (FSlateApplication::IsInitialized()) { DragTracker.AddMove(FSlateApplication::Get().GetCursorPos()); }
 	const bool bWasDragging = DragTracker.IsDragging();
 	DragTracker.Release();
-
-	if (bWasDragging)
+	if (!bWasDragging && !PressedCountryId.IsNone() && Border_DragSurface && Border_DragSurface->IsHovered()
+		&& PickCursorLandmark() == PressedCountryId)
 	{
-		// 손을 뗐으니 가장 가까운 핀으로 다시 붙인다. 확정 요구사항이다 —
-		// "스틱을 직접 움직이면 자유 회전, 끝나면 가까운 활성 핀으로 재스냅".
-		if (AFF_AtlasGlobeActor* Globe = GetGlobe())
-		{
-			Globe->ReSnapToNearestCountry();
-		}
+		InspectCountry(PressedCountryId);
 	}
+	// 사용자가 놓은 각도를 유지한다. 목록 클릭 시에만 국가로 회전한다.
+	PressedCountryId = NAME_None;
+}
+
+FName UFF_AtlasGlobeScreen::PickCursorLandmark() const
+{
+	APlayerController* PC = GetOwningPlayer();
+	AFF_AtlasGlobeActor* Globe = GetGlobe();
+	FVector Origin, Direction;
+	return PC && Globe && PC->DeprojectMousePositionToWorld(Origin, Direction)
+		? Globe->PickLandmark(Origin, Direction) : NAME_None;
 }
 
 FReply UFF_AtlasGlobeScreen::NativeOnMouseMove(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
@@ -308,11 +351,7 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonUp(const FGeometry& InGeometry, 
 		return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
 	}
 
-	// 클릭이었으면(임계를 안 넘었으면) 지구 빈 곳을 눌렀다는 뜻이다. 선택을 바꾸지 않는다 —
-	// 국가 선택은 핀 버튼만 한다.
-	//
-	// 위젯 안에서 뗐으면 여기가 먼저 오고, 밖에서 뗐으면 `TickDrag()` 이 잡는다.
-	// 둘 중 어느 쪽이 와도 `DragTracker.Release()` 뒤에는 눌림이 풀려 두 번 돌지 않는다.
+	// 클릭과 드래그는 EndDrag에서 한 번만 처리한다.
 	EndDrag();
 
 	return FReply::Handled();
@@ -335,10 +374,12 @@ void UFF_AtlasGlobeScreen::ClearPinButtons()
 		if (Pair.Value)
 		{
 			Pair.Value->OnFFButtonClicked.RemoveDynamic(this, &UFF_AtlasGlobeScreen::HandlePinClicked);
+			Pair.Value->OnPinFocusReceived.RemoveDynamic(this, &UFF_AtlasGlobeScreen::HandleListFocused);
 			Pair.Value->RemoveFromParent();
 		}
 	}
 	PinButtons.Reset();
+	if (ScrollBox_Countries) { ScrollBox_Countries->ClearChildren(); }
 
 	// 핀 전용 캔버스라 안전하다. 이전 버전이 추적 맵을 먼저 비워 남긴 잔여 핀까지 제거한다.
 	if (CanvasPanel_Pins)
@@ -352,10 +393,10 @@ void UFF_AtlasGlobeScreen::RebuildPinButtons()
 	// 조건 검사보다 먼저 정리한다. 클래스·액터가 잠시 없더라도 옛 핀이 화면에 남으면 안 된다.
 	ClearPinButtons();
 
-	if (!CanvasPanel_Pins)
+	if (!ScrollBox_Countries)
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
-			TEXT("UFF_AtlasGlobeScreen: CanvasPanel_Pins 바인딩이 없어 핀을 그리지 못한다."));
+			TEXT("UFF_AtlasGlobeScreen: ScrollBox_Countries 바인딩이 없어 국가 목록을 그리지 못한다."));
 		return;
 	}
 
@@ -413,76 +454,45 @@ void UFF_AtlasGlobeScreen::RebuildPinButtons()
 		}
 
 		Pin->SetPinData(State.CountryId, Title, Badge, State.bSelectable, LockReason);
+        if(UImage* Flag=Cast<UImage>(Pin->GetWidgetFromName(TEXT("Image_CountryFlag"))))
+        {
+            const auto* Texture=CountryFlagTextures.Find(State.CountryId);
+            Flag->SetBrushFromTexture(Texture?Texture->Get():nullptr);
+            Flag->SetVisibility(Texture && *Texture?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
+        }
+        Pin->SetIsSelectable(true);Pin->SetIsToggleable(true);
+
 		Pin->OnFFButtonClicked.AddUniqueDynamic(this, &UFF_AtlasGlobeScreen::HandlePinClicked);
 
-		// 캔버스에 올리고 앵커를 점으로 둔다. 좌표는 매 프레임 갱신한다.
-		if (UCanvasPanelSlot* PinSlot = CanvasPanel_Pins->AddChildToCanvas(Pin))
+		Pin->OnPinFocusReceived.AddUniqueDynamic(this, &UFF_AtlasGlobeScreen::HandleListFocused);
+		if (UScrollBoxSlot* Row = Cast<UScrollBoxSlot>(ScrollBox_Countries->AddChild(Pin)))
 		{
-			PinSlot->SetAnchors(FAnchors(0.f, 0.f));
-			// 핀의 중심이 지구 표면 지점에 오게 한다. (0,0) 이면 좌상단이 걸려 어긋난다.
-			PinSlot->SetAlignment(FVector2D(0.5, 0.5));
-			PinSlot->SetAutoSize(true);
+			Row->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+			Row->SetHorizontalAlignment(HAlign_Fill);
 		}
-
-		Pin->SetPinVisible(State.bFacingViewer);
+		Pin->SetPinVisible(true);
 		PinButtons.Add(State.CountryId, Pin);
 	}
 }
 
 void UFF_AtlasGlobeScreen::UpdatePinPositions()
 {
-	if (PinButtons.Num() == 0 || !CanvasPanel_Pins)
+	// 위치는 ScrollBox가 담당한다. 선택 표시는 준비 중 국가에도 동일하게 적용한다.
+	for (const auto& Pair : PinButtons)
 	{
-		return;
-	}
-
-	AFF_AtlasGlobeActor* Globe = GetGlobe();
-	APlayerController* Controller = UGameplayStatics::GetPlayerController(this, 0);
-	if (!Globe || !Controller)
-	{
-		return;
-	}
-
-	TArray<FFF_AtlasPinState> PinStates;
-	Globe->GetPinStates(PinStates);
-
-	for (const FFF_AtlasPinState& State : PinStates)
-	{
-		TObjectPtr<UFF_AtlasPinButton>* Found = PinButtons.Find(State.CountryId);
-		if (!Found || !*Found)
-		{
-			// 액터의 핀 집합이 바뀌었다. 다음 활성화에서 다시 만든다.
-			continue;
-		}
-
-		UFF_AtlasPinButton* Pin = *Found;
-
-		// 🔴 이 함수 하나만 쓴다. 내부에서 `ScreenToViewport` 를 거쳐 **DPI 배율을 이미 제거한**
-		//    슬레이트 좌표를 돌려주므로 캔버스 슬롯에 그대로 넣는다.
-		//    여기에 배율을 한 번 더 적용하면 두 번 나뉘어, 배율 1 인 환경에서는 티가 안 나고
-		//    창을 리사이즈할 때만 핀이 어긋난다.
-		FVector2D WidgetPosition = FVector2D::ZeroVector;
-		const bool bProjected = UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(
-			Controller, State.WorldLocation, WidgetPosition, /*bPlayerViewportRelative=*/false);
-
-		// 카메라 뒤로 넘어가면 투영이 실패한다. 그때 좌표를 쓰면 화면 반대쪽에 핀이 튄다.
-		const bool bVisible = State.bFacingViewer && bProjected;
-		Pin->SetPinVisible(bVisible);
-
-		if (!bVisible)
-		{
-			continue;
-		}
-
-		if (UCanvasPanelSlot* PinSlot = Cast<UCanvasPanelSlot>(Pin->Slot))
-		{
-			PinSlot->SetPosition(WidgetPosition);
-		}
+		if (Pair.Value) { Pair.Value->SetIsSelected(Pair.Key == PanelCountryId, false); }
 	}
 }
 
 void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 {
+    if(UImage* Flag=Cast<UImage>(GetWidgetFromName(TEXT("Image_CountryFlag"))))
+    {
+        const auto* Texture=CountryFlagTextures.Find(PanelCountryId);
+        Flag->SetBrushFromTexture(Texture?Texture->Get():nullptr);
+        Flag->SetVisibility(Texture && *Texture?ESlateVisibility::HitTestInvisible:ESlateVisibility::Collapsed);
+    }
+
 	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
 	ClearFestivalRows();
 
@@ -504,6 +514,10 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 		Border_Panel->SetVisibility(bHasCountry ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
+	if (ScrollBox_CountryDetails)
+	{
+		ScrollBox_CountryDetails->SetVisibility(bHasCountry ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 	if (Text_CountryName)
 	{
 		Text_CountryName->SetText(bHasCountry ? Country->DisplayName : FText::GetEmpty());
@@ -517,53 +531,15 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 				? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 
-	// 축제 개수와 목록. 대표 축제 한 줄은 목록과 중복이라 구버전 WBP에서도 숨긴다.
+	// 🔴 **축제 목록을 여기서 보여주지 않는다** (2026-09-11 결정).
+	// 어떤 축제가 있는지는 **국가 지도**에서 본다 — 같은 정보를 두 곳에 두면 지도로 갈 이유가 없고,
+	// 왼쪽 패널은 나라 목록이 길게 보이는 것이 값어치다. 개수만 상태로 남긴다.
 	int32 FestivalCount = 0;
 	if (bHasCountry && Catalog)
 	{
 		TArray<const FFF_FestivalAtlasEntry*> Festivals;
 		Catalog->GetFestivalsInCountry(PanelCountryId, Festivals);
 		FestivalCount = Festivals.Num();
-
-		if (VerticalBox_FestivalList && PinButtonClass)
-		{
-			for (const FFF_FestivalAtlasEntry* Festival : Festivals)
-			{
-				if (!Festival)
-				{
-					continue;
-				}
-
-				UFF_AtlasPinButton* Row = CreateWidget<UFF_AtlasPinButton>(this, PinButtonClass);
-				if (!Row)
-				{
-					UE_LOG(LogFestaFiestaUI, Error,
-						TEXT("UFF_AtlasGlobeScreen: 축제 목록 행 생성 실패 (%s)."), *PinButtonClass->GetName());
-					continue;
-				}
-
-				Row->SetPinData(
-					Festival->FestivalId,
-					Festival->FestivalName,
-					Festival->RegionName,
-					Festival->bUnlocked,
-					Festival->LockReason);
-
-				// 이 목록은 국가 진입 전에 내용을 훑는 정보 행이다. 클릭·포커스 가능한 죽은 버튼으로 두지 않는다.
-				Row->SetVisibility(ESlateVisibility::HitTestInvisible);
-				if (UVerticalBoxSlot* RowSlot = VerticalBox_FestivalList->AddChildToVerticalBox(Row))
-				{
-					RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
-				}
-				FestivalRows.Add(Row);
-			}
-		}
-	}
-
-	if (VerticalBox_FestivalList)
-	{
-		VerticalBox_FestivalList->SetVisibility(
-			FestivalRows.Num() > 0 ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 
 	if (Text_FestivalCount)
@@ -573,12 +549,6 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 		// 값이 없으면 칸을 숨긴다. `0` 을 띄우지 않는다.
 		Text_FestivalCount->SetVisibility(
 			FestivalCount > 0 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	}
-
-	if (Text_RepresentativeFestival)
-	{
-		Text_RepresentativeFestival->SetText(FText::GetEmpty());
-		Text_RepresentativeFestival->SetVisibility(ESlateVisibility::Collapsed);
 	}
 
 	if (Image_Preview)
@@ -600,7 +570,8 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 
 	if (Image_LockedIcon)
 	{
-		Image_LockedIcon->SetVisibility(bLocked ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Image_LockedIcon->SetVisibility(bLocked && Image_LockedIcon->GetBrush().GetResourceObject()
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	if (Text_LockReason)
 	{
@@ -621,19 +592,12 @@ void UFF_AtlasGlobeScreen::RefreshCountryPanel()
 
 void UFF_AtlasGlobeScreen::ClearFestivalRows()
 {
-	for (UFF_AtlasPinButton* Row : FestivalRows)
-	{
-		if (Row)
-		{
-			Row->RemoveFromParent();
-		}
-	}
-	FestivalRows.Reset();
-
-	// 축제 행 전용 컨테이너라 미추적 잔여 행까지 안전하게 제거할 수 있다.
+	// 축제 목록을 만들지 않게 된 뒤로도(2026-09-11) 이 함수는 남겨 둔다 —
+	// 구버전 WBP 가 남긴 행을 지우는 경로이고, 호출부 세 곳의 정리 순서를 그대로 유지한다.
 	if (VerticalBox_FestivalList)
 	{
 		VerticalBox_FestivalList->ClearChildren();
+		VerticalBox_FestivalList->SetVisibility(ESlateVisibility::Collapsed);
 	}
 }
 
@@ -649,55 +613,34 @@ UFF_CommonButtonBase* UFF_AtlasGlobeScreen::GetClosePanelButton() const
 
 UFF_AtlasPinButton* UFF_AtlasGlobeScreen::FindFirstVisiblePin() const
 {
-	for (const TPair<FName, TObjectPtr<UFF_AtlasPinButton>>& Pair : PinButtons)
-	{
-		if (Pair.Value && Pair.Value->GetVisibility() == ESlateVisibility::Visible)
-		{
-			return Pair.Value.Get();
-		}
-	}
-	return nullptr;
+	return ScrollBox_Countries && ScrollBox_Countries->GetChildrenCount() > 0
+		? Cast<UFF_AtlasPinButton>(ScrollBox_Countries->GetChildAt(0)) : nullptr;
 }
 
 // --- 핸들러 ---
 
 void UFF_AtlasGlobeScreen::HandlePinClicked(UFF_CommonButtonBase* Button)
 {
-	UFF_AtlasPinButton* Pin = Cast<UFF_AtlasPinButton>(Button);
-	if (!Pin)
-	{
-		return;
-	}
+	if (UFF_AtlasPinButton* Pin = Cast<UFF_AtlasPinButton>(Button)) { InspectCountry(Pin->GetPinId()); }
+}
 
-	SkipPresentation();
+void UFF_AtlasGlobeScreen::HandleListFocused(UFF_AtlasPinButton* Button)
+{
+	if (ScrollBox_Countries && Button) { ScrollBox_Countries->ScrollWidgetIntoView(Button, false); }
+}
 
+void UFF_AtlasGlobeScreen::InspectCountry(FName CountryId)
+{
+	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
+	if (!Catalog || !Catalog->FindCountry(CountryId)) { return; }
 	AFF_AtlasGlobeActor* Globe = GetGlobe();
-	if (!Globe)
-	{
-		return;
-	}
-
-	// 잠긴 국가도 **정면으로는 돌린다.** 포커스는 가고 선택만 막는 것이 확정안이다 —
-	// 그래야 왜 못 고르는지 왼쪽 패널에서 읽을 수 있다.
-	Globe->FocusOnCountry(Pin->GetPinId());
-
-	if (Pin->IsSelectable())
-	{
-		Globe->SetSelectedCountry(Pin->GetPinId());
-	}
-	else
-	{
-		// 이전의 열린 국가가 계속 선택 조명으로 남지 않게 한다. 잠금은 패널의 아이콘·사유로 알린다.
-		Globe->SetSelectedCountry(NAME_None);
-		UE_LOG(LogFestaFiestaUI, Log,
-			TEXT("UFF_AtlasGlobeScreen: 잠긴 국가 `%s` 를 눌렀다 — %s"),
-			*Pin->GetPinId().ToString(),
-			Pin->GetLockReason().IsEmpty() ? TEXT("(사유 없음)") : *Pin->GetLockReason().ToString());
-	}
-
-	// 패널은 즉시 눌린 국가를 보여준다. 회전이 끝날 때까지 기다리면 반응이 없어 보인다.
-	PanelCountryId = Pin->GetPinId();
+	if (!Globe) { return; }
+	SkipPresentation();
+	Globe->FocusOnCountry(CountryId);
+	Globe->SetSelectedCountry(CountryId);
+	PanelCountryId = CountryId;
 	RefreshCountryPanel();
+	if (ScrollBox_CountryDetails) { ScrollBox_CountryDetails->ScrollToStart(); }
 }
 
 void UFF_AtlasGlobeScreen::HandleSelectCountryClicked(UFF_CommonButtonBase* Button)
@@ -711,6 +654,9 @@ void UFF_AtlasGlobeScreen::HandleSelectCountryClicked(UFF_CommonButtonBase* Butt
 		return;
 	}
 
+	const UFF_FestivalAtlasCatalog* Catalog = GetCatalog();
+	const FFF_AtlasCountryEntry* Country = Catalog ? Catalog->FindCountry(PanelCountryId) : nullptr;
+	if (!Country || !Country->bUnlocked) { return; }
 	OnBrowseFestivalsRequested.Broadcast(PanelCountryId);
 }
 
@@ -737,6 +683,10 @@ void UFF_AtlasGlobeScreen::HandleCountryFocused(FName CountryId)
 	if (!PanelCountryId.IsNone() && !CountryId.IsNone())
 	{
 		PanelCountryId = CountryId;
+		if (AFF_AtlasGlobeActor* Globe = GetGlobe())
+		{
+			Globe->SetSelectedCountry(CountryId);
+		}
 		RefreshCountryPanel();
 	}
 }

@@ -187,6 +187,7 @@ void UFF_LiveHudScreen::ForEachTabButton(TFunctionRef<void(EFF_LiveTab, UFF_Live
 		{ EFF_LiveTab::Queues,		Tab_Queues },
 		{ EFF_LiveTab::SNS,			Tab_SNS },
 		{ EFF_LiveTab::Staff,		Tab_Staff },
+		{ EFF_LiveTab::Density,		Tab_Density },
 		{ EFF_LiveTab::Report,		Tab_Report },
 		{ EFF_LiveTab::Finale,		Tab_Finale }
 	};
