@@ -38,6 +38,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System|Presentation", meta = (DisplayName = "Show in Build Catalog", ToolTip = "끄면 신규 건설 카탈로그에서만 제외됩니다. 기존 시설 ID, 저장 사양, 에셋 참조는 유지됩니다."))
     bool bShowInBuildCatalog = true;
 
+    /** Input policy for new installs only; instance specs and saved facilities do not capture it. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FF Zone System|Placement", meta = (DisplayName = "Enable Drag Placement", ToolTip = "켜면 건설 모드에서 마우스 왼쪽 버튼을 누른 채 움직여 같은 시설을 계속 설치합니다. 간격은 회전이 적용된 건물 바닥 크기에서 자동으로 정합니다. 설치 위치·비용 검사는 시설마다 유지됩니다. 끄면 한 번 클릭할 때 한 개를 설치하며, 이미 설치한 시설과 저장 데이터에는 영향을 주지 않습니다."))
+    bool bEnableDragPlacement = false;
+
 #if WITH_EDITORONLY_DATA
     /** Explicit write-ownership for the procedural mesh import/material tools; never affects runtime size. */
     UPROPERTY(EditAnywhere, Category = "FF Zone System|Authoring", AdvancedDisplay, meta = (DisplayName = "Managed by Procedural Mesh Tools", ToolTip = "켜면 프로젝트의 절차형 FBX 임포트·재질 도구가 이 시설의 VisualMesh를 수정할 권한을 가집니다. 크기 값에는 영향을 주지 않으며 소유권 메타데이터가 일치할 때만 사용하십시오."))
