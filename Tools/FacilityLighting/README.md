@@ -26,15 +26,28 @@
 - `FF_LightingColor`: 사용자 지정 RGB
 - `FF_LightingUseColorOverride`: 원래 색상 0 / 사용자 색상 1
 
-프로젝트를 빌드한 뒤 저장된 에셋을 생성·검증하는 명령:
+프로젝트를 빌드한 뒤 기존 조명 에셋과 썸네일을 갱신·검증하는 명령
+(각 PDA의 `CatalogThumbnail`이 기존 `Thumbnails/T_UI_Lighting_*`를 참조해야 한다):
 
 ```powershell
 & Tools/FacilityLighting/Run-EditorScript.ps1 -Script Tools/FacilityLighting/create_buildable_lights.py -Label buildable_create
+& 'C:/Program Files/Blender Foundation/Blender 5.2/blender.exe' --background --factory-startup --python-exit-code 1 --python Tools/FacilityLighting/render_catalog_thumbnails.py
+& Tools/FacilityLighting/Run-EditorScript.ps1 -Script Tools/FacilityLighting/import_catalog_thumbnails.py -Label thumbnail_import -NullRHI
 & Tools/FacilityLighting/Run-EditorScript.ps1 -Script Tools/FacilityLighting/capture_buildable_lights.py -Label buildable_capture
 & Tools/FacilityLighting/Run-EditorScript.ps1 -Script Tools/FacilityLighting/verify_buildable_lights.py -Label buildable_verify
 & Tools/FacilityLighting/Run-LightingTests.ps1 -Filter 'FF_ZoneSystem.Lighting.BuildCatalogAssets+FF_ZoneSystem.Lighting.EmissiveIsolationAndMaterialReplacement+FestaFiesta.Building.Catalog.ProductionLightingAssetsAndEconomy' -Label buildable_regression
 ```
 
 생성 스크립트를 다시 실행해도 기존 PDA 설정, 리그 배치와 가격은 유지된다.
-캡처 스크립트는 실제 메시와 리그로 6개 썸네일 및 점등/소등/색상 변경 비교 이미지를 갱신한다.
+카탈로그 썸네일은 기존 시설과 같은 직교 카메라, 밝은 스튜디오 조명, 투명 배경의
+1024×1024 RGBA PNG로 생성한다. 렌더 스크립트는 로컬 제작 원본 `SourceArt`와
+`Saved/StreetlightProduction_20260909`를 읽으며 원본 모델을 저장하지 않는다.
+PNG 원본은 조명 `Thumbnails` 폴더에 함께 보관하므로 재수입에는 Blender 원본이 필요 없다.
+수입 스크립트는 기존 시설 이미지의 텍스처 설정을 복사하고 조명 텍스처 6개만 저장한다.
+검증 결과는 `Saved/FacilityLighting_20260911`에 저장한다.
+`FF_LIGHTING_VERIFY_ONLY=1` 환경 변수를 설정하고 수입 스크립트를 새 에디터 세션에서
+실행하면 저장된 크기·설정·원본 해시·시설 참조를 읽기 전용으로 검증한다.
+
+캡처 스크립트는 실제 메시와 리그의 개별 미리보기 및 점등/소등/색상 변경 비교 이미지를
+갱신한다. 이 검증용 배경 이미지는 카탈로그 텍스처를 덮어쓰지 않는다.
 결과와 변경 전 에셋 백업은 `Saved/FacilityLighting_20260910`에 저장한다.
