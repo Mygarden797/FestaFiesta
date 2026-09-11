@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CrowdSystem/Lane/FF_CrowdRoadLaneBuilder.h"
 #include "CrowdSystem/Systems/FF_CrowdActorPool.h"
 #include "CrowdSystem/Systems/FF_CrowdDensityGrid.h"
 #include "CrowdSystem/Systems/FF_CrowdForces.h"
@@ -642,7 +643,70 @@ public:
 	int32 RefreshLanesFromWorld();
 
 	// 레인 권위가 Crowd 밖으로 나가는 날의 진입점. 인게임 배치 서브시스템이 여기로 밀어 넣는다.
+	// 저작 레인 자리만 갈아 끼우며 도로에서 구운 레인은 건드리지 않는다.
 	void SetLanes(TArray<FFF_CrowdSplineLane> NewLanes);
+
+	// --- 도로 순회 --------------------------------------------------------------------------
+	//
+	// 배회 목적지가 현재 위치 중심 원판이면 순수 랜덤워크라 확산이 √n으로 느리고, 개체가
+	// 스폰 지점 주변을 벗어나지 못한다. 도로 레인 위의 먼 지점을 목적지로 주면 한 걸음이
+	// 세그먼트 길이가 되어 같은 횟수로 훨씬 멀리 퍼진다.
+	//
+	// 세그먼트 끝에 도착한 개체는 그 지점에서 다시 뽑는데, 교차로에서는 이어진 세그먼트가
+	// 모두 후보로 들어오므로 갈림길을 한 번 고른 것과 같아진다. 막다른 길에서는 왔던
+	// 방향만 남아 자연히 되돌아선다.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableRoadPatrolWander = true;
+
+	// 도로에서 레인을 구울지. 끄면 저작 레인만 남아 도로를 깔기 전과 동작이 같다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableRoadLanes = true;
+
+	// 이 안에 레인이 있는 개체만 순회로 뽑는다. LaneEntrySnapRadiusCm보다 좁게 잡는 이유는,
+	// 넓히면 도로에서 먼 개체까지 레인으로 끌려가 직선으로 걸어오기 때문이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
+	float PatrolLaneSnapRadiusCm = 800.f;
+
+	// 목적지가 현재 호 위치에서 이보다 가깝지 않은 후보만 쓴다. 세그먼트 끝에 이미 서 있는
+	// 개체가 같은 끝을 다시 목적지로 받아 제자리 재결정을 반복하는 것을 여기서 끊는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
+	float PatrolMinTravelCm = 600.f;
+
+	// 닫힌 레인에는 끝이 없으므로 전진 거리를 값으로 준다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "100.0", Units = "cm"))
+	float PatrolLoopStepCm = 4000.f;
+
+	// 순회로 목적지를 뽑은 횟수. 원판 배회와의 비율이 도로가 실제로 먹는지를 말해 준다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetPatrolWanderCount() const { return PatrolWanderCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetDiscWanderCount() const { return DiscWanderCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetRoadLaneCount() const { return RoadLanes.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetAuthoredLaneCount() const { return AuthoredLanes.Num(); }
+
+	const FFF_CrowdRoadLaneBuildStats& GetRoadLaneStats() const { return RoadLaneStats; }
+
+	// 도로 타일을 다시 읽어 순회 레인을 굽는다. 리비전이 그대로면 아무 일도 하지 않는다.
+	int32 EnsureRoadLanes();
+
+	// --- 확산 계측 --------------------------------------------------------------------------
+	//
+	// "퍼진다"를 눈으로 판정하면 안 된다. 표준편차는 무리가 얼마나 넓게 흩어졌는지를,
+	// 엔트로피는 그 넓이가 한쪽에 쏠려 있는지를 본다 — 두 개체가 축제장 양 끝에만 있어도
+	// 표준편차는 크게 나오므로 엔트로피 없이는 속는다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Spread")
+	bool GetSpreadStats(FVector& OutCentroidCm, float& OutStdDevCm,
+		float& OutNormalizedEntropy, int32& OutSampleCount, int32& OutOccupiedBuckets) const;
+
+	// 엔트로피를 셀 때 쓰는 격자 한 칸의 크기.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Spread", meta = (ClampMin = "100.0", Units = "cm"))
+	float SpreadBucketSizeCm = 5000.f;
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
 	int32 GetLaneCount() const { return Lanes.Num(); }
@@ -899,6 +963,10 @@ private:
 
 	FVector PickWanderDestination(int32 LeaderAgentIndex) const;
 
+	bool TryPickPatrolDestination(int32 LeaderAgentIndex, uint32 BaseSeed, FVector& OutDestination) const;
+
+	void RebuildCombinedLanes();
+
 	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount,
 		const TArray<FFF_ReservedPartyRequest>& ReservedParties) const;
 
@@ -1116,14 +1184,29 @@ private:
 
 	// --- 레인 상태 --------------------------------------------------------------------------
 
-	// 베이크된 레인. USplineComponent를 매 쿼리마다 들여다보지 않기 위해 폴리라인으로 들고 있다
+	// 베이크된 레인. USplineComponent를 매 쿼리마다 들여다보지 않기 위해 폴리라인으로 들고 있다.
+	// AuthoredLanes + RoadLanes를 이어 붙인 결과이며, 쿼리는 전부 이것만 본다
 	TArray<FFF_CrowdSplineLane> Lanes;
+
+	// AFF_CrowdLane 저작 액터에서 온 레인. 레벨 로드와 SetLanes로만 바뀐다
+	TArray<FFF_CrowdSplineLane> AuthoredLanes;
+
+	// 건설로 깔린 도로 타일에서 구운 레인. 배치 리비전이 바뀔 때마다 다시 굽는다
+	TArray<FFF_CrowdSplineLane> RoadLanes;
+
+	// RoadLanes를 구운 시점의 배치 리비전
+	int64 RoadLaneRevision = -1;
+
+	FFF_CrowdRoadLaneBuildStats RoadLaneStats;
 
 	// AgentIndex와 같은 인덱스. 마지막으로 쓴 레인이며 NavMesh로 떨어졌으면 INDEX_NONE이다
 	TArray<int32> AgentLaneIndices;
 
 	int32 LanePathCount = 0;
 	int32 NavFallbackCount = 0;
+
+	mutable int32 PatrolWanderCount = 0;
+	mutable int32 DiscWanderCount = 0;
 
 	// --- 지형 ------------------------------------------------------------------------------
 

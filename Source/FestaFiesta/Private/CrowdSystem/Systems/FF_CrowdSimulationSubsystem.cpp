@@ -1569,6 +1569,10 @@ void UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored()
 	// Restore may reuse the same serialized revision with a different set of actors.
 	RoadSupportRevision = -1;
 	FacilityWallsRevision = -1;
+
+	// 순회 레인도 같은 리비전을 보고 캐시를 유지하므로 같이 무효화한다. 빠뜨리면 복원된
+	// 도로와 레인이 어긋난 채 남아 개체가 없어진 길 위의 목적지를 받는다.
+	RoadLaneRevision = -1;
 }
 
 void UFF_CrowdSimulationSubsystem::SnapUnitToGround(FUnitData& Unit) const
@@ -1817,22 +1821,104 @@ int32 UFF_CrowdSimulationSubsystem::RefreshLanesFromWorld()
 	const int32 LaneNum = Collected.Num();
 	SetLanes(MoveTemp(Collected));
 
+	// 도로 레인도 같은 호출에서 다시 굽는다. 콘솔에서 refresh를 쳤는데 한쪽만 갱신되면
+	// 어느 쪽이 낡았는지 알 수 없다.
+	RoadLaneRevision = -1;
+	const int32 RoadLaneNum = EnsureRoadLanes();
+
 	UE_LOG(LogTemp, Log,
-		TEXT("[CrowdSimulationSubsystem] 레인 %d개 베이크 (건너뜀 %d개), 경로추종 %s, 레인경로 %s"),
-		LaneNum, SkippedCount,
+		TEXT("[CrowdSimulationSubsystem] 레인 %d개 베이크 (저작 %d개 + 도로 %d개, 건너뜀 %d개), "
+		     "경로추종 %s, 레인경로 %s"),
+		Lanes.Num(), LaneNum, RoadLaneNum, SkippedCount,
 		bEnablePathFollowing ? TEXT("on") : TEXT("off"),
 		bEnableLanePathing ? TEXT("on") : TEXT("off"));
 
-	return LaneNum;
+	return Lanes.Num();
 }
 
 void UFF_CrowdSimulationSubsystem::SetLanes(TArray<FFF_CrowdSplineLane> NewLanes)
 {
-	Lanes = MoveTemp(NewLanes);
+	AuthoredLanes = MoveTemp(NewLanes);
+	RebuildCombinedLanes();
+}
+
+// 저작 레인과 도로 레인을 한 배열로 잇는다. 쿼리는 Lanes만 보므로 출처가 섞여도
+// TryBuildPath는 총 거리로만 고른다 — 도로 레인에 우선권을 주지 않는 것이 의도다.
+//
+// 저작 레인을 앞에 두는 이유는 도로가 깔리고 걷혀도 저작 레인의 인덱스가 안 밀리게 하기
+// 위해서다. AgentLaneIndices와 디버그 표시가 인덱스를 그대로 쓴다.
+void UFF_CrowdSimulationSubsystem::RebuildCombinedLanes()
+{
+	Lanes.Reset(AuthoredLanes.Num() + RoadLanes.Num());
+	Lanes.Append(AuthoredLanes);
+	Lanes.Append(RoadLanes);
 
 	// 낡은 경로는 이전 레인 배치로 뽑힌 것이다. 목적지가 그대로여서 UpdatePathFollowing의
 	// Reset 조건에 걸리지 않으므로 여기서 버려야 한다 — 배치 변경 무효화와 같은 이유다
 	DropAllPaths();
+}
+
+// 도로 타일에서 순회 레인을 굽는다. 배치 리비전으로 걸러 실제 변경이 있을 때만 돈다 —
+// 매 스텝 호출되는 자리에서 불리므로 이 게이트가 없으면 그래프를 프레임마다 다시 만든다.
+int32 UFF_CrowdSimulationSubsystem::EnsureRoadLanes()
+{
+	const UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const int64 Revision = ZoneSystem ? ZoneSystem->GetWorldRevision() : -1;
+
+	if (!bEnableRoadLanes)
+	{
+		if (RoadLanes.IsEmpty())
+		{
+			return 0;
+		}
+
+		RoadLanes.Reset();
+		RoadLaneStats = FFF_CrowdRoadLaneBuildStats();
+		RoadLaneRevision = Revision;
+		RebuildCombinedLanes();
+		return 0;
+	}
+
+	if (Revision == RoadLaneRevision)
+	{
+		return RoadLanes.Num();
+	}
+
+	RoadLaneRevision = Revision;
+
+	TArray<FFF_CrowdRoadTile> Tiles;
+	if (ZoneSystem)
+	{
+		const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+		for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+		{
+			if (Facility.Category != EFFZSFacilityCategory::Road) continue;
+
+			const AFFZSFacilityActor* Actor = ZoneSystem->FindFacility(Facility.FacilityInstanceId);
+			if (!IsValid(Actor)) continue;
+
+			const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
+			FFF_CrowdRoadTile& Tile = Tiles.AddDefaulted_GetRef();
+			Tile.CenterCm = Actor->GetActorLocation();
+			Tile.HalfExtentCm = FVector2D(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y) * 0.5;
+			Tile.YawDegrees = static_cast<float>(Actor->GetActorRotation().Yaw);
+		}
+	}
+
+	FFF_CrowdRoadLaneBuildParams Params;
+	RoadLaneStats = CrowdRoadLanes::BuildLanes(Tiles, Params, RoadLanes);
+
+	if (RoadLaneStats.bTruncated)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 도로 레인이 상한 %d개를 넘어 잘렸다. 잘린 쪽 도로는 "
+			     "순회에 안 쓰인다 — 도로 타일 %d개, 교차점 %d개"),
+			Params.MaxLanes, RoadLaneStats.TileCount, RoadLaneStats.JunctionCount);
+	}
+
+	RebuildCombinedLanes();
+	return RoadLanes.Num();
 }
 
 // 레인 경로의 Points[0]은 언제나 TryBuildPath가 낸 진입점이다 — 중간 정점은
@@ -1915,6 +2001,7 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 		AgentLaneIndices.Init(INDEX_NONE, PoolSize);
 	}
 
+	EnsureRoadLanes();
 	InvalidatePathsOnLayoutChange();
 
 	for (FUnitData& Unit : UnitDatas)
@@ -2879,6 +2966,20 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 		return (Attempt == 0) ? BaseSeed : HashCombine(BaseSeed, GetTypeHash(Attempt));
 	};
 
+	// 도로 위(또는 도로 곁)의 개체는 원판 대신 레인을 따라 멀리 보낸다. 실패하면 아래 원판으로
+	// 떨어지므로 도로를 한 칸도 안 깐 맵의 동작은 그대로다.
+	if (bEnableRoadPatrolWander)
+	{
+		FVector PatrolDestination = FVector::ZeroVector;
+		if (TryPickPatrolDestination(LeaderAgentIndex, SeedAngle, PatrolDestination))
+		{
+			++PatrolWanderCount;
+			return PatrolDestination;
+		}
+	}
+
+	++DiscWanderCount;
+
 	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
 	{
 		const float Angle =
@@ -2902,6 +3003,193 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 	}
 
 	return Unit.Position;
+}
+
+// 레인 위의 먼 지점을 배회 목적지로 고른다.
+//
+// ★ 후보는 "가까운 레인 x 두 방향"이다. 열린 레인은 양 끝이, 닫힌 레인은 앞뒤로 한 걸음이
+//   후보가 된다. 교차로에 선 개체는 이어진 세그먼트가 전부 반경 안에 들어오므로 후보가
+//   여러 개가 되고, 그중 하나를 뽑는 것이 곧 갈림길 선택이다. 막다른 길에서는 되돌아가는
+//   방향만 남는다.
+//
+// ★ 끝까지 보내는 것이 핵심이다. 중간에 세워 두면 다음 추첨도 같은 세그먼트 안에서 일어나
+//   교차로에 영영 못 닿고, 확산이 다시 원판 배회 수준으로 떨어진다.
+//
+// ★ 시드는 PickWanderDestination이 쓰는 것에서 갈라 쓴다. MakeDecisionSeed의 salt 공간은
+//   라운드당 두 칸으로 이미 꽉 차 있어 새 salt를 쓰면 다음 라운드 시드와 겹친다.
+//
+// ★ 후보를 못 내거나 전부 통행 상한·비보행 지점이면 false를 돌려 원판 배회로 떨어진다.
+//   도로를 한 칸도 안 깐 맵에서는 항상 이 경로를 탄다.
+bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAgentIndex,
+	const uint32 BaseSeed, FVector& OutDestination) const
+{
+	if (Lanes.IsEmpty() || !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+
+	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
+
+	struct FPatrolCandidate
+	{
+		int32 LaneIndex = INDEX_NONE;
+		float TargetArcCm = 0.f;
+	};
+
+	TArray<FPatrolCandidate, TInlineAllocator<8>> Candidates;
+
+	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
+	{
+		const FFF_CrowdSplineLane& Lane = Lanes[LaneIndex];
+		if (!Lane.IsUsable())
+		{
+			continue;
+		}
+
+		FVector ClosestCm = FVector::ZeroVector;
+		float ArcCm = 0.f;
+		float DistCm = 0.f;
+		if (!CrowdSplinePath::FindClosestOnLane(Lane, Unit.Position, ClosestCm, ArcCm, DistCm)
+			|| DistCm > PatrolLaneSnapRadiusCm)
+		{
+			continue;
+		}
+
+		if (Lane.bClosedLoop)
+		{
+			Candidates.Add({ LaneIndex, ArcCm + PatrolLoopStepCm });
+			Candidates.Add({ LaneIndex, ArcCm - PatrolLoopStepCm });
+			continue;
+		}
+
+		const float TotalCm = Lane.TotalLengthCm();
+		if (TotalCm - ArcCm >= PatrolMinTravelCm)
+		{
+			Candidates.Add({ LaneIndex, TotalCm });
+		}
+		if (ArcCm >= PatrolMinTravelCm)
+		{
+			Candidates.Add({ LaneIndex, 0.f });
+		}
+	}
+
+	if (Candidates.IsEmpty())
+	{
+		return false;
+	}
+
+	constexpr uint32 PatrolSeedSalt = 0x9E3779B9u;
+	const uint32 PatrolSeed = HashCombine(BaseSeed, PatrolSeedSalt);
+	const int32 FirstPick = FMath::Clamp(
+		FMath::FloorToInt(FFF_DeterministicRandom::MakeUniformFraction(PatrolSeed) * Candidates.Num()),
+		0, Candidates.Num() - 1);
+
+	for (int32 Offset = 0; Offset < Candidates.Num(); ++Offset)
+	{
+		const FPatrolCandidate& Candidate = Candidates[(FirstPick + Offset) % Candidates.Num()];
+
+		FVector Destination = FVector::ZeroVector;
+		if (!CrowdSplinePath::PointAtArc(Lanes[Candidate.LaneIndex], Candidate.TargetArcCm, Destination))
+		{
+			continue;
+		}
+
+		if (FVector::Dist2D(Destination, Unit.Position) < PatrolMinTravelCm)
+		{
+			continue;
+		}
+
+		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
+		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+		{
+			continue;
+		}
+
+		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		{
+			continue;
+		}
+
+		Destination.Z = Unit.Position.Z;
+		OutDestination = Destination;
+		return true;
+	}
+
+	return false;
+}
+
+// 개체가 실제로 퍼졌는지 재는 두 값.
+//
+// 표준편차는 중심에서 얼마나 멀리 흩어졌는지만 본다. 개체가 축제장 양 끝 두 덩어리로
+// 뭉쳐 있어도 크게 나오므로 이것만 보면 속는다. 엔트로피(Pielou 균등도)는 점유한 칸들에
+// 인원이 고르게 퍼졌는지를 0..1로 내므로, 두 값을 같이 봐야 판정이 선다.
+bool UFF_CrowdSimulationSubsystem::GetSpreadStats(FVector& OutCentroidCm, float& OutStdDevCm,
+	float& OutNormalizedEntropy, int32& OutSampleCount, int32& OutOccupiedBuckets) const
+{
+	OutCentroidCm = FVector::ZeroVector;
+	OutStdDevCm = 0.f;
+	OutNormalizedEntropy = 0.f;
+	OutSampleCount = 0;
+	OutOccupiedBuckets = 0;
+
+	const float BucketSizeCm = FMath::Max(SpreadBucketSizeCm, 1.f);
+
+	double SumX = 0.0;
+	double SumY = 0.0;
+	TMap<FIntPoint, int32> Buckets;
+
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+
+		SumX += Unit.Position.X;
+		SumY += Unit.Position.Y;
+		++OutSampleCount;
+
+		const FIntPoint Key(
+			FMath::FloorToInt(Unit.Position.X / BucketSizeCm),
+			FMath::FloorToInt(Unit.Position.Y / BucketSizeCm));
+		++Buckets.FindOrAdd(Key);
+	}
+
+	if (OutSampleCount == 0)
+	{
+		return false;
+	}
+
+	OutCentroidCm = FVector(SumX / OutSampleCount, SumY / OutSampleCount, 0.0);
+
+	double SumSquaredCm = 0.0;
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+
+		SumSquaredCm += FVector::DistSquared2D(Unit.Position, OutCentroidCm);
+	}
+
+	OutStdDevCm = static_cast<float>(FMath::Sqrt(SumSquaredCm / OutSampleCount));
+	OutOccupiedBuckets = Buckets.Num();
+
+	if (Buckets.Num() <= 1)
+	{
+		return true;
+	}
+
+	double Entropy = 0.0;
+	for (const TPair<FIntPoint, int32>& Bucket : Buckets)
+	{
+		const double Probability = static_cast<double>(Bucket.Value) / OutSampleCount;
+		Entropy -= Probability * FMath::Loge(Probability);
+	}
+
+	OutNormalizedEntropy = static_cast<float>(Entropy / FMath::Loge(static_cast<double>(Buckets.Num())));
+	return true;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetMaxInTransitMemberCount() const

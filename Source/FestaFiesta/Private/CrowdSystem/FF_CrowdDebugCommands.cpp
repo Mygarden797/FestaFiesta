@@ -656,25 +656,36 @@ static void CrowdLanesCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	if (Lanes.IsEmpty())
 	{
 		Ar.Logf(ELogVerbosity::Warning,
-			TEXT("레인이 없다. 레벨에 AFF_CrowdLane을 놓고 스플라인 점을 2개 이상 준 뒤 "
+			TEXT("레인이 없다. 레벨에 AFF_CrowdLane을 놓거나 도로를 깐 뒤 "
 			     "FF.Crowd.Lanes refresh 를 실행할 것"));
 		return;
 	}
 
 	const FVector Viewer = FFCrowdConsole::GetViewerLocation(World);
+	const int32 AuthoredCount = CrowdSim->GetAuthoredLaneCount();
+	const FFF_CrowdRoadLaneBuildStats& RoadStats = CrowdSim->GetRoadLaneStats();
 
-	Ar.Logf(TEXT("레인 %d개 (시야 위치 기준 거리)"), Lanes.Num());
+	Ar.Logf(TEXT("레인 %d개 = 저작 %d + 도로 %d (시야 위치 기준 거리)"),
+		Lanes.Num(), AuthoredCount, CrowdSim->GetRoadLaneCount());
+	Ar.Logf(TEXT("  도로 그래프  : 타일 %d개, 간선 %d개, 교차·막다른 %d개, 고립 %d개, 루프 %d개%s"),
+		RoadStats.TileCount, RoadStats.EdgeCount, RoadStats.JunctionCount,
+		RoadStats.IsolatedTileCount, RoadStats.ClosedLoopCount,
+		RoadStats.bTruncated ? TEXT("  ※ 상한에 걸려 잘림") : TEXT(""));
+	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회  (순회 비율이 낮으면 도로가 동선과 멀다)"),
+		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+
 	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
 	{
 		const FFF_CrowdSplineLane& Lane = Lanes[LaneIndex];
+		const TCHAR* Source = LaneIndex < AuthoredCount ? TEXT("저작") : TEXT("도로");
 
 		FVector Closest = FVector::ZeroVector;
 		float ArcCm = 0.f;
 		float DistCm = 0.f;
 		const bool bProjected = CrowdSplinePath::FindClosestOnLane(Lane, Viewer, Closest, ArcCm, DistCm);
 
-		Ar.Logf(TEXT("  [%d] 점 %d개, 길이 %.0fcm(%.0fm), 반폭 %.0fcm, %s%s, 시야까지 %s"),
-			LaneIndex, Lane.Points.Num(),
+		Ar.Logf(TEXT("  [%d] %s 점 %d개, 길이 %.0fcm(%.0fm), 반폭 %.0fcm, %s%s, 시야까지 %s"),
+			LaneIndex, Source, Lane.Points.Num(),
 			Lane.TotalLengthCm(), Lane.TotalLengthCm() * 0.01f,
 			Lane.HalfWidthCm,
 			Lane.bOneWay ? TEXT("일방통행") : TEXT("양방향"),
@@ -713,6 +724,49 @@ static void CrowdLanesCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("레인 %d개를 %.0f초간 그렸다 (청록 선 = 개체가 따라갈 폴리라인)"),
 		Lanes.Num(), Duration);
 }
+
+// 개체가 얼마나 퍼졌는지 한 줄로 본다. 도로 순회를 켜기 전후로 같은 시각에 찍어 비교하는
+// 것이 목적이므로, 판단 근거가 되는 두 값(표준편차·균등도)을 항상 같이 낸다.
+static void CrowdSpreadCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	if (Args.Num() > 0)
+	{
+		CrowdSim->SpreadBucketSizeCm = FMath::Max(FCString::Atof(*Args[0]), 100.f);
+	}
+
+	FVector Centroid = FVector::ZeroVector;
+	float StdDevCm = 0.f;
+	float Evenness = 0.f;
+	int32 SampleCount = 0;
+	int32 OccupiedBuckets = 0;
+
+	if (!CrowdSim->GetSpreadStats(Centroid, StdDevCm, Evenness, SampleCount, OccupiedBuckets))
+	{
+		Ar.Logf(ELogVerbosity::Warning, TEXT("활성 개체가 없다 — 아직 스폰되지 않았다"));
+		return;
+	}
+
+	Ar.Logf(TEXT("개체 %d명, 격자 %.0fm"), SampleCount, CrowdSim->SpreadBucketSizeCm * 0.01f);
+	Ar.Logf(TEXT("  중심        : (%.0f, %.0f)"), Centroid.X, Centroid.Y);
+	Ar.Logf(TEXT("  표준편차    : %.0fcm (%.0fm)   ← 중심에서 얼마나 멀리 흩어졌나"),
+		StdDevCm, StdDevCm * 0.01f);
+	Ar.Logf(TEXT("  점유 칸     : %d개"), OccupiedBuckets);
+	Ar.Logf(TEXT("  균등도      : %.3f (1에 가까울수록 고르게 퍼짐)   ← 덩어리로 뭉쳤는지"),
+		Evenness);
+	Ar.Logf(TEXT("  배회 출처   : 순회 %d회 / 원판 %d회"),
+		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpreadCommand(
+	TEXT("FF.Crowd.Spread"),
+	TEXT("개체 확산을 잰다 (표준편차·균등도). [격자크기cm] 로 칸 크기를 바꾼다"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdSpreadCommand));
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdLanesCommand(
 	TEXT("FF.Crowd.Lanes"),

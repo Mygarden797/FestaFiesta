@@ -86,6 +86,46 @@ namespace CrowdSplinePath
 		return true;
 	}
 
+	bool PointAtArc(const FFF_CrowdSplineLane& Lane, const float ArcCm, FVector& OutPointCm)
+	{
+		if (Lane.Points.Num() < 2 || Lane.CumulativeDistCm.Num() != Lane.Points.Num())
+		{
+			return false;
+		}
+
+		const float TotalCm = Lane.TotalLengthCm();
+		if (TotalCm <= KINDA_SMALL_NUMBER)
+		{
+			OutPointCm = Lane.Points[0];
+			return true;
+		}
+
+		const float TargetCm = Lane.bClosedLoop
+			? FMath::Fmod(FMath::Fmod(ArcCm, TotalCm) + TotalCm, TotalCm)
+			: FMath::Clamp(ArcCm, 0.f, TotalCm);
+
+		for (int32 Index = 0; Index + 1 < Lane.Points.Num(); ++Index)
+		{
+			const float StartArcCm = Lane.CumulativeDistCm[Index];
+			const float EndArcCm = Lane.CumulativeDistCm[Index + 1];
+			if (TargetCm > EndArcCm)
+			{
+				continue;
+			}
+
+			const float SpanCm = EndArcCm - StartArcCm;
+			const float T = SpanCm > KINDA_SMALL_NUMBER
+				? FMath::Clamp((TargetCm - StartArcCm) / SpanCm, 0.f, 1.f)
+				: 0.f;
+
+			OutPointCm = FMath::Lerp(Lane.Points[Index], Lane.Points[Index + 1], T);
+			return true;
+		}
+
+		OutPointCm = Lane.Points.Last();
+		return true;
+	}
+
 	bool TryBuildPath(const TArray<FFF_CrowdSplineLane>& Lanes,
 	                  const FVector& StartCm, const FVector& TargetCm,
 	                  const FQueryParams& Params,
