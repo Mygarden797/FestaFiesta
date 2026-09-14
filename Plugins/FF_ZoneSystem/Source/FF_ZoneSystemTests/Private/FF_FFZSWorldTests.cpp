@@ -343,7 +343,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         Subsystem->ReportQueueSlotArrival(SavedAgentId, FirstFacility->GetQueueComponent()->GetQueueSlotWorldLocation(0)));
 
     const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, 7);
+    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
     TestEqual(TEXT("Snapshot이 두 Facility를 모두 캡처한다"), Snapshot.Facilities.Num(), 2);
     TestTrue(TEXT("Snapshot이 영속 Command Receipt를 보존한다"), Snapshot.CommandReceipts.Num() > 0);
     int32 StagedFacilitySpawnCount = 0;
@@ -1169,7 +1169,7 @@ bool FFFZSSchema5FreeYawSnapshotRestoreTest::RunTest(const FString& Parameters)
             FMath::DegreesToRadians(0.01));
 
     const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
-    if (!TestEqual(TEXT("자유 Yaw Capture는 schema 7을 사용한다"), Snapshot.SchemaVersion, 7) ||
+    if (!TestEqual(TEXT("자유 Yaw Capture는 현재 schema를 사용한다"), Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion) ||
         !TestEqual(TEXT("자유 Yaw Capture는 Facility 하나를 저장한다"), Snapshot.Facilities.Num(), 1))
     {
         return false;
@@ -1337,7 +1337,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot DrainingSnapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot Schema는 자유 Yaw와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, 7);
+    TestEqual(TEXT("Snapshot Schema는 자유 Yaw와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
     TestEqual(TEXT("Snapshot이 초기값이 아닌 Phase를 캡처한다"), DrainingSnapshot.CurrentPhase, EFFZSChangePhase::LiveOperation);
     TestEqual(TEXT("Snapshot이 권위 Revision을 캡처한다"), DrainingSnapshot.WorldRevision, int64(3));
     TestTrue(TEXT("Snapshot이 Normal Close의 Drain Intent를 캡처한다"),
@@ -1424,7 +1424,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         }
         const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV5Snapshot.Facilities[0];
         TestEqual(*FString::Printf(TEXT("%s: Schema 5로 다시 캡처된다"), *CaseLabel),
-            MigratedV5Snapshot.SchemaVersion, 7);
+            MigratedV5Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
         TestEqual(*FString::Printf(TEXT("%s: 정확한 centidegree Yaw로 승격된다"), *CaseLabel),
             MigratedSaved.Placement.YawCentidegrees, QuarterTurn * 9000);
         TestEqual(*FString::Printf(TEXT("%s: legacy QuarterTurns를 비운다"), *CaseLabel),
@@ -1550,7 +1550,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         }
         const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV5Snapshot.Facilities[0];
         TestEqual(*FString::Printf(TEXT("%s: Schema 5로 저장된다"), *CaseLabel),
-            MigratedV5Snapshot.SchemaVersion, 7);
+            MigratedV5Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
         TestEqual(*FString::Printf(TEXT("%s: FacilitySpec은 Schema 2를 사용한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.SchemaVersion, 2);
         TestEqual(*FString::Printf(TEXT("%s: 6m x 3m Footprint를 보존한다"), *CaseLabel),
@@ -2116,7 +2116,7 @@ bool FFFZSFacilityUpgradeTransactionTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Legacy facility is level one"), Facility->GetUpgradeLevel(), 1);
     TestEqual(TEXT("Legacy facility retains original service duration"),
         Facility->GetQueueComponent()->GetRules().ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds);
-    TestEqual(TEXT("Migrated save writes current schema"), Subsystem->CaptureWorldSnapshot().SchemaVersion, 7);
+    TestEqual(TEXT("Migrated save writes current schema"), Subsystem->CaptureWorldSnapshot().SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
     TestTrue(TEXT("Legacy install receipt remains replayable after migration"), Subsystem->ExecuteCommand(Install).bWasDuplicateReplay);
     return true;
 }

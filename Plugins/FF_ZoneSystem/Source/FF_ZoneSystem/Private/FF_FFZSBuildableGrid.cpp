@@ -8,7 +8,7 @@ void FFFZSBuildableGridMask::Reset()
     Cells.Reset();
     DeferredWorldObstacles.Reset();
     ObstacleHeightCm = 250.0;
-    bIncludeRoadSupport = true;
+    bIncludeGroundSurfaceSupport = true;
 }
 
 bool FFFZSBuildableGridMask::Initialize(

@@ -132,6 +132,8 @@ namespace FFFacilityInfoModel
 			return LOCTEXT("CategoryLighting", "조명");
 		case EFFZSFacilityCategory::Road:
 			return LOCTEXT("CategoryRoad", "길");
+		case EFFZSFacilityCategory::Tile:
+			return LOCTEXT("CategoryTile", "타일");
 		default:
 			return LOCTEXT("CategoryUnknown", "기타 시설");
 		}
