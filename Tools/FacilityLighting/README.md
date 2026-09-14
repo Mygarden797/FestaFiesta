@@ -51,3 +51,21 @@ PNG 원본은 조명 `Thumbnails` 폴더에 함께 보관하므로 재수입에�
 캡처 스크립트는 실제 메시와 리그의 개별 미리보기 및 점등/소등/색상 변경 비교 이미지를
 갱신한다. 이 검증용 배경 이미지는 카탈로그 텍스처를 덮어쓰지 않는다.
 결과와 변경 전 에셋 백업은 `Saved/FacilityLighting_20260910`에 저장한다.
+
+## 메인 무대의 원본 조명과 설치용 조명
+
+`BP_MainStage_Grand`는 원본 미리보기용 스포트라이트 10개를 유지한다.
+시설 설치에 사용하는 `BP_MainStage_Grand_Lighting`은 아티스트의
+`67483cfb` 변경(2026-09-10, 공연장 조명 변경) 이후 **9개**다.
+해당 변경에서 `Overhead_08_Spot`이 제거되었으므로 원본 개수에 맞추기 위해
+다시 추가하지 않는다. 현재 설치용 광원은 다음과 같다.
+
+- 천장 5개: `Overhead_00_Spot`, `Overhead_02_Spot`, `Overhead_04_Spot`, `Overhead_06_Spot`, `Overhead_10_Spot`
+- 데크 2개: `DeckSpot_Spot`, `DeckSpot_Spot_001`
+- 런웨이 2개: `RunwaySpot_Spot`, `RunwaySpot_Spot_001`
+
+`create_assets.py`는 기존 리그와 디자이너 배치를 보존하며, 리그가 없을 때도
+위 9개만 복사한다. `verify_assets.py`와 `ProductionMainStageInstallation`은
+개수뿐 아니라 정확한 광원 이름을 검증한다. 설치·밝기·전원·색상·저장 복원·철거
+검증도 계속 수행한다. 아티스트가 구성 자체를 바꾸면 변경 근거와 함께 세 곳의
+기대 이름을 갱신한다. 조명 설정값은 기존 리그 에셋이 기준이다.

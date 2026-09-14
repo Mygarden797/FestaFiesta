@@ -26,13 +26,13 @@ struct FFFZSBuildableGridMask;
 struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
-    // Roads reserve their own ground layer; facilities and queues reserve the layer above.
-    bool bIsRoad = false;
+    // Roads and tiles share one ground layer. Only tiles permit reservations in the layer above.
+    bool bIsGroundSurface = false;
     bool bAllowsFacilitiesOnTop = true;
 
-    bool BlocksLayer(bool bOtherIsRoad, bool bOtherAllowsFacilitiesOnTop = true) const
+    bool BlocksLayer(bool bOtherIsGroundSurface, bool bOtherAllowsFacilitiesOnTop = true) const
     {
-        return bIsRoad == bOtherIsRoad || (bIsRoad ? !bAllowsFacilitiesOnTop : !bOtherAllowsFacilitiesOnTop);
+        return bIsGroundSurface == bOtherIsGroundSurface || (bIsGroundSurface ? !bAllowsFacilitiesOnTop : !bOtherAllowsFacilitiesOnTop);
     }
     TArray<FFFZSOrientedRect> Regions;
     // Derived broad/narrow-phase data; saved placements and NPC region IDs stay unchanged.
@@ -270,7 +270,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    // Schema 7의 시설별 강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    // Schema 8의 Road/Tile 구분·강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
     // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨과 배수를 보존하며 7로 이관한 뒤 원자적으로 교체한다.
@@ -378,8 +378,8 @@ private:
 
     void OccupyFacilityRegions(const AFFZSFacilityActor& Facility);
     void ReleaseFacilityRegions(const AFFZSFacilityActor& Facility);
-    bool DoesRoadSupportFacility(const AFFZSFacilityActor& Road) const;
-    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId, bool bIsRoad, bool bAllowsFacilitiesOnTop) const;
+    bool DoesGroundSurfaceSupportFacility(const AFFZSFacilityActor& Surface) const;
+    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId, bool bIsGroundSurface, bool bAllowsFacilitiesOnTop) const;
     void RefreshWorldActors() const;
 
     bool ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors) const;

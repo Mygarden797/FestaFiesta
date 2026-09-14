@@ -103,7 +103,7 @@ namespace
 	{
 		FFFZSFacilitySpec Spec =
 			FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
-		Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.DadaPochaFoodTruck");
+		Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
 		return Spec;
 	}
 }
@@ -679,7 +679,7 @@ bool FFFProgramFacilityWaitingAssetsTest::RunTest(const FString& Parameters)
 {
 	const TCHAR* Paths[] = {
 		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_DanceBattle.PDA_FFZS_Performance_ExperienceStage_DanceBattle")
+		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience")
 	};
 	for (const TCHAR* Path : Paths)
 	{

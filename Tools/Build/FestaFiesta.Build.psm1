@@ -207,6 +207,22 @@ function Assert-FFGitLfsHealth {
     return $installedVersion
 }
 
+function Get-FFGameBinaryBaseName {
+    [CmdletBinding()]
+    param(
+        [ValidateSet('Shipping', 'Development')]
+        [string] $Configuration = 'Shipping'
+    )
+
+    # UE 5.7 TargetRules.UndecoratedConfiguration defaults to Development;
+    # UEBuildTarget.MakeBinaryFileName adds -Platform-Configuration otherwise.
+    # FestaFiesta.Target.cs uses that default for its Win64 Game target.
+    if ($Configuration -eq 'Development') {
+        return 'FestaFiesta'
+    }
+    return 'FestaFiesta-Win64-Shipping'
+}
+
 function Get-FFRelativePath {
     [CmdletBinding()]
     param(
@@ -261,6 +277,7 @@ Export-ModuleMember -Function @(
     'Get-FFGitMetadata',
     'Assert-FFAssetsMaterialized',
     'Assert-FFGitLfsHealth',
+    'Get-FFGameBinaryBaseName',
     'Get-FFRelativePath',
     'Write-FFSha256Manifest'
 )

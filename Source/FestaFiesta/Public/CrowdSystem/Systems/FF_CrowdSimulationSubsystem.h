@@ -888,6 +888,10 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
 	int32 GetArrivalBucketCount() const { return CachedBucketCount;}
+
+	// Inspect the live cache without loading an asset and accidentally hiding a lifetime failure.
+	const UDataTable* GetLoadedArrivalCurveTable() const { return CachedArrivalCurveTable.Get(); }
+	int32 GetArrivalPlannedCount() const { return ArrivalTotalVisitorCount; }
 	
 	void BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter, float SpawnRadiusUU,
 		const TArray<FFF_ReservedPartyRequest>& ReservedParties = TArray<FFF_ReservedPartyRequest>());
@@ -1031,8 +1035,10 @@ private:
 
 private:
 	
-	//스케줄 관련 변수
-	TSoftObjectPtr<UDataTable> CachedArrivalCurveTable;
+	// Settings keep a soft asset path; the running world must retain the loaded
+	// table. A soft cache lets GC stop arrivals after Setup or between days.
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> CachedArrivalCurveTable;
 	
 	FName CachedArrivalScenarioId;
 	
@@ -1071,8 +1077,9 @@ private:
 	//Live 재진입 시에 상승시켜서, 매일 같은 배분이 나오지 못하도록 하는 장치이다.
 	int32 ArrivalGeneration = 0;
 
-	//Actor Mesh 관련 변수들 추가
-	TSoftObjectPtr<UDataTable> CachedAppearenceTable;
+	// Appearance is read again for later arrivals and pooled actors after GC.
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> CachedAppearenceTable;
 	
 	
 	

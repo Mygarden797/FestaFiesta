@@ -357,7 +357,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                 SourceEntries.Add(MoveTemp(Entry));
             }
             if (!Test.TestTrue(TEXT("Full fixture covers all 45 existing active facilities, including future additions"), SourceEntries.Num() >= 45) ||
-                !Test.TestEqual(TEXT("Full source fixture contains every production major category"), Categories.Num(), 9)) { return false; }
+                !Test.TestEqual(TEXT("Full source fixture contains every production major category"), Categories.Num(), 10)) { return false; }
             FFBuildCatalogModel::SortEntries(SourceEntries);
             DetachedGame.Reset(NewObject<UGameInstance>());
             Catalog.Reset(NewObject<UFF_BuildCatalogSubsystem>(DetachedGame.Get()));
@@ -529,7 +529,7 @@ namespace FFPrepBuildVirtualizedSlateTest
             auto* Minors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
             if (!Test.TestNotNull(TEXT("Full real category list"), Majors) ||
                 !Test.TestNotNull(TEXT("Full real minor choices"), Minors)) { return false; }
-            Test.TestEqual(TEXT("All and all nine categories are present"), Majors->GetChildrenCount(), 10);
+            Test.TestEqual(TEXT("All and all ten categories are present"), Majors->GetChildrenCount(), 11);
             Test.TestEqual(TEXT("All facilities does not create a cross-category strip of every minor token"), Minors->GetChildrenCount(), 1);
             CheckFilterLayout(Test, TEXT("All facilities"));
             CheckSixCardPage(Test, TEXT("All facilities / page 1"));

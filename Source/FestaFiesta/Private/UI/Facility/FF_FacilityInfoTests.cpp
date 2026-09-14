@@ -192,6 +192,12 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("부스 분류는 제품용 한글로 표시된다"),
 		FFFacilityInfoModel::GetCategoryText(EFFZSFacilityCategory::Booth).ToString(),
 		FString(TEXT("부스")));
+	TestEqual(TEXT("Road 분류는 길로 표시된다"),
+		FFFacilityInfoModel::GetCategoryText(EFFZSFacilityCategory::Road).ToString(),
+		FString(TEXT("길")));
+	TestEqual(TEXT("Tile 분류는 길과 구분되는 타일로 표시된다"),
+		FFFacilityInfoModel::GetCategoryText(EFFZSFacilityCategory::Tile).ToString(),
+		FString(TEXT("타일")));
 	TestEqual(TEXT("운영 시설 상태는 제품용 한글로 표시된다"),
 		FFFacilityInfoModel::GetFacilityStateText(EFFZSFacilityState::Active).ToString(),
 		FString(TEXT("운영 중")));

@@ -191,6 +191,8 @@ bool FFF_ZoneSystemBridge_ExcludesInfoAndSafety::RunTest(const FString& Paramete
 		EFFZSFacilityCategory::Lighting, TEXT("Lighting_Streetlamp_FestivalStreetlamp")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(5, TEXT("ZoneA"),
 		EFFZSFacilityCategory::Road, TEXT("Road_Surface_Sand")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(6, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Tile, TEXT("Tile_Surface_Sand")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
 		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);

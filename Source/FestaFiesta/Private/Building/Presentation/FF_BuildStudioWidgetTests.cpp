@@ -51,8 +51,8 @@ bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 	const auto* MinorHost = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
 	TestTrue(TEXT("The second-level filter is populated in the real widget"), MinorHost && MinorHost->GetChildrenCount() > 0);
 	const auto* Categories = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Categories")));
-	TestTrue(TEXT("The authored horizontal row contains All and all nine facility categories"),
-		Categories && Categories->GetChildrenCount() == 10);
+	TestTrue(TEXT("The authored horizontal row contains All and all ten facility categories"),
+		Categories && Categories->GetChildrenCount() == 11);
 	const auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
 	TestTrue(TEXT("Favorites-only has a separate bound control"), Favorites && Favorites->OnClicked.IsBound());
 	return true;

@@ -26,13 +26,8 @@
 
 namespace
 {
-	// 실제 DT_FacilityCosts 의 값과 같아야 한다 — 아래 ContentContract 테스트가 표를 직접 읽는다.
-	// 2026-08-24 에 400 → 700 으로 바뀌었다(미니게임 부스 2종 추가와 같은 커밋).
-	// 표가 권위이므로 여기를 맞추고, 밸런스는 economy_spec §2.3·§2.5 에서 다시 계산했다.
-	//
-	// 🔴 아래 테스트들의 기대값을 이 상수에서 **계산해서** 쓴다. 예전에는 600·800·200 처럼
-	// 400 을 전제한 리터럴이 박혀 있어서, 표가 바뀌자 네 곳이 한꺼번에 깨졌다.
-	// 계산해서 쓰면 다음에 값이 또 바뀌어도 여기 한 줄만 고치면 된다.
+	// 격리된 설치·환급 테스트의 가격이다. 프로덕션 밸런스의 두 번째 원천으로 쓰지 않는다.
+	// 아래 ContentContract는 실제 DT 행을 읽어 비용 해석 결과와 직접 비교한다.
 	constexpr int32 FoodStallInstallCost = 700;
 
 	// 설치 → 철거 → 재설치까지 되는 잔액. 설치비가 오르면 같이 오른다.
@@ -41,7 +36,7 @@ namespace
 	const FName AutomationFoodStallCostKey(
 		TEXT("Cost.Booth.FoodStall.EconomyBridgeAutomation"));
 	const FName ProductionFoodTruckCostKey(
-		TEXT("Cost.Booth.FoodStall.DadaPochaFoodTruck"));
+		TEXT("Cost.Booth.FoodStall.Taco"));
 
 	/** Restores every mutable Zone System default changed by these integration tests. */
 	class FScopedEconomyBridgeTestSettings
@@ -305,6 +300,26 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 		}
 		if (!Definition->Spec.InstallCostKey.IsNone())
 		{
+			// 레거시 ID를 보존하는 호환 에셋도 예외 가격 키가 실제 행을 가리켜야 한다.
+			// 명시 키를 가진 정의를 검사에서 제외하면 누락된 가격이 숨어 버린다.
+			const FName ExplicitKey = Definition->Spec.InstallCostKey;
+			const FFF_FacilityCostRow* ExplicitRow = CostTable->FindRow<FFF_FacilityCostRow>(
+				ExplicitKey, CostLookupContext, false);
+			if (!TestNotNull(
+				*FString::Printf(TEXT("Explicit cost override has an exact production row: %s -> %s"),
+					*AssetId.ToString(), *ExplicitKey.ToString()), ExplicitRow))
+			{
+				continue;
+			}
+			int32 ResolvedCost = 0;
+			FName MatchedRow = NAME_None;
+			FString OverrideFailure;
+			TestTrue(*FString::Printf(TEXT("Explicit cost override resolves: %s"), *AssetId.ToString()),
+				FFF_FacilityCostResolver::FindInstallCost(
+					Definition->Spec, CostTable, ResolvedCost, MatchedRow, OverrideFailure));
+			TestEqual(TEXT("Explicit override resolves its exact row without a fallback"), MatchedRow, ExplicitKey);
+			TestEqual(TEXT("Explicit override preserves the live table price"), ResolvedCost, ExplicitRow->InstallCost);
+			TestTrue(TEXT("Production override prices are nonnegative"), ResolvedCost >= 0);
 			continue;
 		}
 
@@ -353,8 +368,8 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
 			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
-				"PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck."
-				"PDA_FFZS_Booth_FoodStall_DadaPochaFoodTruck"));
+				"PDA_FFZS_Booth_FoodStall_Taco."
+				"PDA_FFZS_Booth_FoodStall_Taco"));
 	if (!TestNotNull(TEXT("The production FoodTruck FacilityDefinition loads"),
 		FoodTruckDefinition))
 	{
@@ -380,8 +395,15 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 	}
 	TestEqual(TEXT("FoodTruck resolves to its four-part facility-specific economy row"),
 		MatchedCostRow, ProductionFoodTruckCostKey);
-	TestEqual(TEXT("The live FoodTruck installation cost is 400 Gold"),
-		InstallCost, FoodStallInstallCost);
+	const FFF_FacilityCostRow* ProductionRow = CostTable->FindRow<FFF_FacilityCostRow>(
+		ProductionFoodTruckCostKey, CostLookupContext, false);
+	if (!TestNotNull(TEXT("The canonical Taco facility has its own production cost row"), ProductionRow))
+	{
+		return false;
+	}
+	TestTrue(TEXT("The live FoodTruck installation cost is positive"), ProductionRow->InstallCost > 0);
+	TestEqual(TEXT("The resolver returns the authoritative table price without a hardcoded balance value"),
+		InstallCost, ProductionRow->InstallCost);
 	return true;
 }
 

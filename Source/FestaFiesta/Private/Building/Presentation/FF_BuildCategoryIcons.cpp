@@ -45,6 +45,9 @@ FSlateBrush FFBuildCategoryIcons::Resolve(const bool bAll, const EFFZSFacilityCa
 		case EFFZSFacilityCategory::Road:
 			IconName = TEXT("Queues");
 			break;
+		case EFFZSFacilityCategory::Tile:
+			IconName = TEXT("Facilities");
+			break;
 		default:
 			break;
 		}
