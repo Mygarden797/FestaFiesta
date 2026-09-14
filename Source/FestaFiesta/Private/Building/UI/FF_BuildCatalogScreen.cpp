@@ -56,6 +56,7 @@ namespace
 		EFFZSFacilityCategory::PhotoSpot,
 		EFFZSFacilityCategory::Lighting,
 		EFFZSFacilityCategory::Road,
+		EFFZSFacilityCategory::Tile,
 	};
 
 	// 아래 색상은 WBP가 없을 때 만들어지는 Slate 폴백 전용이다. 디자이너 경로의 색은 UPROPERTY를 따른다.
@@ -752,9 +753,10 @@ void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 			// 선택 가능 CommonButton으로 구성하고, 자동 선택 이벤트는 발생시키지 않은 채 현재 상태만 투영한다.
 			Button->SetButtonLabel(GetCategoryDisplayName(Category));
 			ApplyButtonIconBrush(Button, MakeAtlasIconBrush(GetCategoryAtlasIndex(Category)));
-			if (Category == EFFZSFacilityCategory::Lighting || Category == EFFZSFacilityCategory::Road)
+			if (Category == EFFZSFacilityCategory::Lighting || Category == EFFZSFacilityCategory::Road ||
+				Category == EFFZSFacilityCategory::Tile)
 			{
-				// The existing ten-cell atlas has no lighting or road glyph. Keep the readable label
+				// The existing ten-cell atlas has no lighting, road, or tile glyph. Keep the readable label
 				// and its layout instead of displaying the template's empty white image.
 				if (UImage* Icon = Cast<UImage>(Button->GetWidgetFromName(TEXT("Image_Icon"))))
 				{
@@ -1266,6 +1268,7 @@ FText UFF_BuildCatalogScreen::GetCategoryDisplayName(const EFFZSFacilityCategory
 	case EFFZSFacilityCategory::PhotoSpot: return LOCTEXT("CategoryPhotoSpot", "포토스팟");
 	case EFFZSFacilityCategory::Lighting: return LOCTEXT("CategoryLighting", "조명");
 	case EFFZSFacilityCategory::Road: return LOCTEXT("CategoryRoad", "길");
+	case EFFZSFacilityCategory::Tile: return LOCTEXT("CategoryTile", "타일");
 	default: return LOCTEXT("CategoryUnknown", "기타");
 	}
 }
@@ -1275,7 +1278,7 @@ FText UFF_BuildCatalogScreen::GetMinorDisplayName(const FName MinorToken)
 	// 시설 이름 파싱에서 사용하는 안정적인 토큰을 현지화 가능한 표시 텍스트로 매핑한다.
 	// 새 토큰이 NamingLibrary에 먼저 추가되더라도 원본 이름을 대체 표시해 UI가 공백이 되지 않게 한다.
 	static const TMap<FName, FText> Labels = {
-		{ TEXT("Surface"), LOCTEXT("MinorSurface", "길 바닥") },
+		{ TEXT("Surface"), LOCTEXT("MinorSurface", "바닥") },
 		{ TEXT("FoodStall"), LOCTEXT("MinorFoodStall", "먹거리·음료") },
 		{ TEXT("MarketGoods"), LOCTEXT("MinorMarketGoods", "상품 판매") },
 		{ TEXT("CraftExperience"), LOCTEXT("MinorCraftExperience", "공예·제작 체험") },

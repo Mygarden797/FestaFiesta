@@ -1069,6 +1069,8 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
         AppendFloat(TEXT("spec.lighting.color.a"), Spec.LightingSettings.Color.A);
     }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
+    // Preserve the legacy Road receipt bytes for save/replay compatibility only.
+    // This serialized flag never determines placement permission; the category does.
     if (Spec.Category == EFFZSFacilityCategory::Road)
     {
         AppendInt(TEXT("spec.allow_facility_placement_on_top"), Spec.bAllowFacilityPlacementOnTop ? 1 : 0);

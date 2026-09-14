@@ -11,9 +11,18 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdRoadSurfaceTest,
+IMPLEMENT_COMPLEX_AUTOMATION_TEST(FFF_CrowdRoadSurfaceTest,
     "FestaFiesta.Crowd.Road.SupportUpdatesAndAvoidance",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+void FFF_CrowdRoadSurfaceTest::GetTests(TArray<FString>& OutBeautifiedNames,
+    TArray<FString>& OutTestCommands) const
+{
+    OutBeautifiedNames.Add(TEXT("Road"));
+    OutTestCommands.Add(TEXT("Road"));
+    OutBeautifiedNames.Add(TEXT("Tile"));
+    OutTestCommands.Add(TEXT("Tile"));
+}
 
 bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
 {
@@ -51,9 +60,9 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Initial terrain top is zero"), Height, 0.0);
 
     FFFZSFacilitySpec Spec;
-    Spec.FacilityDefinitionId = TEXT("Road_Surface_CrowdTest");
-    Spec.DisplayName = FText::FromString(TEXT("Crowd road support test"));
-    Spec.Category = EFFZSFacilityCategory::Road;
+    Spec.FacilityDefinitionId = FName(*(Parameters + TEXT("_Surface_CrowdTest")));
+    Spec.DisplayName = FText::FromString(TEXT("Crowd ground surface support test"));
+    Spec.Category = Parameters == TEXT("Tile") ? EFFZSFacilityCategory::Tile : EFFZSFacilityCategory::Road;
     Spec.bAllowFacilityPlacementOnTop = false;
     Spec.FootprintSizeCells = FIntPoint(400, 400);
     Spec.ClearanceCells = 0;
@@ -81,7 +90,9 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(Spec, Zone->ZoneId, Placement);
     if (!ExecuteChecked(TEXT("Road installs with no loaded mesh"), Install)) return false;
     TestTrue(TEXT("Road supports NPC before visual loading"), Crowd->TryGetGroundZ(FVector(1200, 1200, 0), Height));
-    TestEqual(TEXT("NPC feet reach road top even when building on that road is disabled"), Height, 8.0);
+    TestEqual(TEXT("NPC feet reach the surface top regardless of upper-facility permission"), Height, 8.0);
+    Crowd->EnsureRoadLanes();
+    TestEqual(TEXT("Both ground categories participate in crowd lane generation"), Crowd->GetRoadLaneStats().TileCount, 1);
     Crowd->TryGetGroundZ(FVector(1410, 1200, 0), Height);
     TestEqual(TEXT("Same spatial bucket outside footprint stays terrain"), Height, 0.0);
     const FFFZSWorldSnapshot Original = System->CaptureWorldSnapshot();
@@ -139,6 +150,8 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     if (!ExecuteChecked(TEXT("Unsupported road removes"), Remove)) return false;
     Crowd->TryGetGroundZ(FVector(1200, 1200, 0), Height);
     TestEqual(TEXT("Removal immediately returns NPC height to terrain"), Height, 0.0);
+    Crowd->EnsureRoadLanes();
+    TestEqual(TEXT("Removing the surface clears its lane input"), Crowd->GetRoadLaneStats().TileCount, 0);
     return true;
 }
 

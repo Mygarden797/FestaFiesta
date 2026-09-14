@@ -305,7 +305,7 @@ bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
-    const bool bHasNoService = Category == EFFZSFacilityCategory::Lighting || Category == EFFZSFacilityCategory::Road;
+    const bool bHasNoService = Category == EFFZSFacilityCategory::Lighting || IsGroundSurface();
     Audience.IsValid(OutErrors);
     FText UpgradeError;
     // Disabled levels keep authored data, so malformed tiers still fail validation before re-enabling.
@@ -360,7 +360,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         !QueueReservedRects.IsEmpty() || !QueueReservedCells.IsEmpty() ||
         !QueueSplinePointsCm.IsEmpty() || !Anchors.IsEmpty() || Audience.bEnabled))
     {
-        OutErrors.Add(LOCTEXT("NonServiceFacilityHasServiceData", "조명과 길 시설은 대기·서비스 정원이 0이어야 하며 대기열, 서비스 Anchor, 관람 영역을 사용할 수 없습니다."));
+        OutErrors.Add(LOCTEXT("NonServiceFacilityHasServiceData", "조명, 길, 타일 시설은 대기·서비스 정원이 0이어야 하며 대기열, 서비스 Anchor, 관람 영역을 사용할 수 없습니다."));
     }
     if ((!bHasNoService && (QueueRules.MaxWaitingAgents <= 0 || QueueRules.ServiceCapacity <= 0)) ||
         !FMath::IsFinite(QueueRules.SlotSpacingCm) || QueueRules.SlotSpacingCm <= 0.0f ||
@@ -736,10 +736,10 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         }
         UniqueAllowedZones.Add(AllowedZoneId);
     }
-    const float MinimumObstacleHeightCm = Category == EFFZSFacilityCategory::Road ? 1.0f : 10.0f;
+    const float MinimumObstacleHeightCm = IsGroundSurface() ? 1.0f : 10.0f;
     if (!FMath::IsFinite(PlacementObstacleHeightCm) || PlacementObstacleHeightCm < MinimumObstacleHeightCm)
     {
-        OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm은 유한한 값이며 길은 최소 1cm, 그 외 시설은 최소 10cm여야 합니다."));
+        OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm은 유한한 값이며 길과 타일은 최소 1cm, 그 외 시설은 최소 10cm여야 합니다."));
     }
     if (!StaticEnum<EFFZSVisualSizingMode>()->IsValidEnumValue(static_cast<int64>(VisualSizingMode)))
     {

@@ -25,6 +25,7 @@ namespace
 			{ EFFZSFacilityCategory::PhotoSpot,   TEXT("PhotoSpot") },
 			{ EFFZSFacilityCategory::Lighting,    TEXT("Lighting") },
 			{ EFFZSFacilityCategory::Road,        TEXT("Road") },
+			{ EFFZSFacilityCategory::Tile,        TEXT("Tile") },
 		};
 		return Table;
 	}
@@ -45,6 +46,7 @@ namespace
 			{ EFFZSFacilityCategory::PhotoSpot,   { TEXT("Landmark"), TEXT("Theme"), TEXT("Scenic"), TEXT("Interactive") } },
 			{ EFFZSFacilityCategory::Lighting,    { TEXT("Decorative"), TEXT("Pendant"), TEXT("Streetlamp") } },
 			{ EFFZSFacilityCategory::Road,        { TEXT("Surface") } },
+			{ EFFZSFacilityCategory::Tile,        { TEXT("Surface") } },
 		};
 		return Table;
 	}

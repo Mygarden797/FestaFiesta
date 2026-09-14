@@ -191,11 +191,11 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
             }
         }
 
-        // Roads and lighting deliberately have no visitor service or queue.
+        // Roads, tiles, and lighting deliberately have no visitor service or queue.
         // Keep their placement/visual checks, and verify the absence contract
         // instead of requiring fabricated Entry anchors and queue lanes.
         const bool bHasVisitorService =
-            Definition->Spec.Category != EFFZSFacilityCategory::Road &&
+            !Definition->Spec.IsGroundSurface() &&
             Definition->Spec.Category != EFFZSFacilityCategory::Lighting;
         if (!bHasVisitorService)
         {

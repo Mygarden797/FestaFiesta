@@ -17,7 +17,8 @@ TConstArrayView<EFFZSFacilityCategory> FFF_PrepBuildPresentationRules::GetCatego
 		EFFZSFacilityCategory::Safety,
 		EFFZSFacilityCategory::PhotoSpot,
 		EFFZSFacilityCategory::Lighting,
-		EFFZSFacilityCategory::Road
+		EFFZSFacilityCategory::Road,
+		EFFZSFacilityCategory::Tile
 	};
 	return Categories;
 }
@@ -45,6 +46,8 @@ FText FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(
 		return LOCTEXT("CategoryLighting", "조명");
 	case EFFZSFacilityCategory::Road:
 		return LOCTEXT("CategoryRoad", "길");
+	case EFFZSFacilityCategory::Tile:
+		return LOCTEXT("CategoryTile", "타일");
 	default:
 		return LOCTEXT("CategoryUnknown", "기타");
 	}
@@ -53,7 +56,7 @@ FText FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(
 FText FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(const FName MinorToken)
 {
 	static const TMap<FName, FText> Labels = {
-		{ TEXT("Surface"), LOCTEXT("MinorSurface", "길 바닥") },
+		{ TEXT("Surface"), LOCTEXT("MinorSurface", "바닥") },
 		{ TEXT("FoodStall"), LOCTEXT("MinorFoodStall", "먹거리·음료") },
 		{ TEXT("MarketGoods"), LOCTEXT("MinorMarketGoods", "상품 판매") },
 		{ TEXT("CraftExperience"), LOCTEXT("MinorCraftExperience", "공예·제작 체험") },

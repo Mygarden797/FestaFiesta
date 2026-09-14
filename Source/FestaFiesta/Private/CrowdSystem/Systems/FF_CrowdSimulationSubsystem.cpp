@@ -1534,7 +1534,7 @@ void UFF_CrowdSimulationSubsystem::EnsureRoadSupportCache() const
 	const FFFZSReadModel ReadModel = System->BuildReadModel();
 	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 	{
-		if (Facility.Category != EFFZSFacilityCategory::Road) continue;
+		if (Facility.Category != EFFZSFacilityCategory::Road && Facility.Category != EFFZSFacilityCategory::Tile) continue;
 		const AFFZSFacilityActor* Actor = System->FindFacility(Facility.FacilityInstanceId);
 		if (!IsValid(Actor)) continue;
 		const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
@@ -1616,7 +1616,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		}
 
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
-		if (Spec.Category == EFFZSFacilityCategory::Road) continue;
+		if (Spec.IsGroundSurface()) continue;
 
 		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
 		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
@@ -1893,7 +1893,7 @@ int32 UFF_CrowdSimulationSubsystem::EnsureRoadLanes()
 		const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
 		for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
 		{
-			if (Facility.Category != EFFZSFacilityCategory::Road) continue;
+			if (Facility.Category != EFFZSFacilityCategory::Road && Facility.Category != EFFZSFacilityCategory::Tile) continue;
 
 			const AFFZSFacilityActor* Actor = ZoneSystem->FindFacility(Facility.FacilityInstanceId);
 			if (!IsValid(Actor)) continue;

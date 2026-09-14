@@ -1,4 +1,4 @@
-"""Render imported road surfaces and an existing facility above a tiled road.
+"""Render shared surface meshes and an existing facility above authored Tiles.
 
 Uses a transient Entry world and real GPU SceneCapture. This visual fixture is
 separate from the command/placement automation tests; it never saves a level.
@@ -13,6 +13,7 @@ import unreal
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from import_roads import ROOT, BASE, ROADS
+from split_road_tiles import tile_definition_path
 
 OUT = ROOT / 'Saved/Roads_20260910/renders'
 OUT.mkdir(parents=True, exist_ok=True)
@@ -55,8 +56,14 @@ def start():
         assert mesh, name
         model(mesh, [(index % 3 - 1) * 540, (index // 3 - .5) * 550, 0], label, gallery)
 
-    # Keep the existing facility at its authoritative size and position the floor
-    # at the road's 8 cm support plane. The tile platform expands to fit the spec.
+    # Read the buildable Tile definition, including its authored size and height.
+    tile_definition = unreal.load_asset(tile_definition_path('Stone'))
+    assert tile_definition
+    tile_spec = tile_definition.get_editor_property('spec')
+    assert tile_spec.get_editor_property('category') == unreal.FFZSFacilityCategory.TILE
+    tile_footprint = tile_spec.get_editor_property('footprint_size_cells')
+    support_height = tile_spec.get_editor_property('placement_obstacle_height_cm')
+    # Keep the existing facility at its authoritative size on the Tile support plane.
     definition = unreal.load_asset('/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream')
     assert definition
     spec = definition.get_editor_property('spec')
@@ -75,19 +82,33 @@ def start():
     cx, cy = center.x * scale.x, center.y * scale.y
     facility = model(mesh, [-cx * math.cos(angle) + cy * math.sin(angle),
                             -cx * math.sin(angle) - cy * math.cos(angle),
-                            8 - bounds.min.z * scale.z], 'ExistingIceCreamFacility_OnRoad', example)
+                            support_height - bounds.min.z * scale.z], 'ExistingIceCreamFacility_OnTile', example)
     facility.set_actor_scale3d(scale)
     facility.set_actor_rotation(unreal.Rotator(pitch=0, yaw=yaw, roll=0), False)
-    platform_x = max(2, math.ceil(footprint.x / 400.0) + 1)
-    platform_y = max(2, math.ceil(footprint.y / 400.0) + 1)
-    stone = unreal.load_asset(BASE + '/SM_Road_Stone')
+    platform_x = max(2, math.ceil(footprint.x / float(tile_footprint.x)) + 1)
+    platform_y = max(2, math.ceil(footprint.y / float(tile_footprint.y)) + 1)
+    stone = tile_spec.get_editor_property('visual_mesh')
+    assert stone
+    tile_bounds = stone.get_bounding_box()
+    tile_size = tile_bounds.max - tile_bounds.min
+    tile_center = (tile_bounds.min + tile_bounds.max) * .5
+    tile_yaw = tile_spec.get_editor_property('visual_rotation').yaw
+    tile_angle = math.radians(tile_yaw)
+    tile_swap = abs(math.sin(tile_angle)) > .5
+    tile_x, tile_y = (tile_footprint.y, tile_footprint.x) if tile_swap else (tile_footprint.x, tile_footprint.y)
+    tile_scale = unreal.Vector(tile_x / tile_size.x, tile_y / tile_size.y, support_height / tile_size.z)
+    tile_cx, tile_cy = tile_center.x * tile_scale.x, tile_center.y * tile_scale.y
     for x in range(platform_x):
         for y in range(platform_y):
-            model(stone, [(x - (platform_x - 1) * .5) * 400,
-                          (y - (platform_y - 1) * .5) * 400, 0], 'SupportRoad_%s_%s' % (x, y), example)
+            support = model(stone, [(x - (platform_x - 1) * .5) * tile_footprint.x - tile_cx * math.cos(tile_angle) + tile_cy * math.sin(tile_angle),
+                                    (y - (platform_y - 1) * .5) * tile_footprint.y - tile_cx * math.sin(tile_angle) - tile_cy * math.cos(tile_angle),
+                                    -tile_bounds.min.z * tile_scale.z], 'SupportTile_%s_%s' % (x, y), example)
+            support.set_actor_scale3d(tile_scale)
+            support.set_actor_rotation(unreal.Rotator(pitch=0, yaw=tile_yaw, roll=0), False)
     state['facility_visual_fixture'] = dict(definition=definition.get_path_name(),
-        facility_mesh=mesh.get_path_name(), support_height_cm=8,
-        footprint_cm=[footprint.x, footprint.y], road_tile_count=platform_x * platform_y)
+        tile_definition=tile_definition.get_path_name(),
+        facility_mesh=mesh.get_path_name(), support_height_cm=support_height,
+        footprint_cm=[footprint.x, footprint.y], tile_count=platform_x * platform_y)
 
     ground = model(unreal.load_asset('/Engine/BasicShapes/Cube'), [0, 0, -12], 'PreviewGround', [])
     ground.set_actor_scale3d(unreal.Vector(45, 45, .2))
@@ -119,10 +140,10 @@ def start():
                            override_vignette_intensity=True, vignette_intensity=0.0).items():
         pp.set_editor_property(key, value)
     capture.set_editor_property('post_process_settings', pp)
-    distance = max(platform_x * 400, platform_y * 400, spec.get_editor_property('placement_obstacle_height_cm')) * 1.65
+    distance = max(platform_x * tile_footprint.x, platform_y * tile_footprint.y, spec.get_editor_property('placement_obstacle_height_cm')) * 1.65
     phases = [dict(name='RoadGallery_LOD' + str(lod), mode='gallery', lod=lod,
                    camera=[-200, -1150, 2350], look_at=[0, 0, 0]) for lod in range(3)]
-    phases.append(dict(name='FacilityOnRoads', mode='example', lod=0,
+    phases.append(dict(name='FacilityOnTiles', mode='example', lod=0,
                        camera=[distance, distance * .7, distance * .72],
                        look_at=[0, 0, spec.get_editor_property('placement_obstacle_height_cm') * .3]))
     state['gallery_order'] = [label for _, label in ROADS]
