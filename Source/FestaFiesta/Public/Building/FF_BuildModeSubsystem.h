@@ -26,6 +26,7 @@ class UFF_FacilityInfoSubsystem;
 class UFFZSWorldSubsystem;
 class SWidget;
 struct FHitResult;
+struct FFF_BuildDragPlacementSession;
 
 UENUM(BlueprintType)
 enum class EFF_BuildModeState : uint8
@@ -99,9 +100,12 @@ namespace FFBuildModeModel
 	}
 
 	inline bool CanInspectFromWorldPointer(const EFF_BuildModeState State,
-		const bool bInputSuppressed, const bool bPointerTargetsWorld)
+		const bool bInputSuppressed, const bool bPointerTargetsWorld,
+		const bool bClosedPreparationAllowed = false)
 	{
-		return CanInspectInstalledFacility(State) && !bInputSuppressed && bPointerTargetsWorld;
+		return (CanInspectInstalledFacility(State) ||
+			(State == EFF_BuildModeState::Closed && bClosedPreparationAllowed)) &&
+			!bInputSuppressed && bPointerTargetsWorld;
 	}
 
 	inline bool CanRemoveFacilityWithTodaysProgram(const bool bHasScheduledProgram)
@@ -334,6 +338,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildFacilityInspectionTest;
 	friend class FFF_BuildGridOverviewTest;
+	friend class FFF_BuildDragPlacementTest;
 #endif
 
 public:
@@ -443,6 +448,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
 	float GetPlacementYawDegrees() const;
 
+	// Read-only presentation values share the same selected definition and input settings.
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FName GetSelectedFacilityDefinitionId() const { return SelectedSpec.FacilityDefinitionId; }
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FText GetSelectedFacilityDisplayName() const { return SelectedSpec.DisplayName; }
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	float GetPlacementRotationSnapDegrees() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
+
 	// Presentation commands share the same state/validation path as keyboard placement.
 	UPROPERTY(BlueprintAssignable, Category = "Building|Tools")
 	FFF_OnBuildToolsChanged OnBuildToolsChanged;
@@ -470,7 +485,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	bool CommitPlacement();
 
+	/** Selected Data Asset opts in to holding the left mouse button to paint facilities. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building")
+	bool IsDragPlacementEnabled() const;
+
 private:
+	// A stroke owns bounded path/deduplication data; installed actors remain owned by ZoneSystem.
+	TSharedPtr<FFF_BuildDragPlacementSession> DragPlacementSession;
+	void HandlePlacementPrimaryPress(bool bButtonDown);
+	void BeginDragPlacement(bool bOriginAlreadyProcessed = false);
+	void UpdateDragPlacement(const FVector& CursorWorld);
+	void ProcessDragPlacement();
+	void EndDragPlacement();
+	bool TryInstallDragCell(const FIntPoint& Cell);
+	bool ResolveDragPlacement(const FIntPoint& Cell, FName& OutZoneId, FFFZSGridPlacement& OutPlacement) const;
+	bool ResolveDragCursorCell(const FVector& CursorWorld, FIntPoint& OutCell) const;
+	void RefreshDragPlacementPreview(bool bForceRefresh);
 	// 현재 표시 중인 카탈로그 위젯. CatalogOpen 외 상태에서는 원칙적으로 null이다. 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildCatalogScreen> CatalogScreen;
@@ -526,6 +556,9 @@ private:
 	bool bExternalCatalogPresentationActive = false;
 	// 매 프레임의 비싼 라인트레이스/검증을 피하기 위한 누적 시간이다. 
 	float PreviewRefreshAccumulator = 0.0f;
+	// Presentation-only cache: a short Ctrl/Alt press must update the toolbar even while
+	// its hover guard intentionally postpones expensive placement revalidation.
+	int32 LastPresentedPositionSnapCm = 0;
 	double LastPreviewValidationTimeSeconds = -1.0;
 	// 라인트레이스, 바닥 경사, Zone, 회전 면적 검사를 모두 통과한 커서 표적이 있는지 나타낸다. 
 	bool bHasPlacementTarget = false;
@@ -633,6 +666,7 @@ private:
 	bool TraceGroundUnderCursor(APlayerController& Controller, FHitResult& OutGroundHit) const;
 	// BuildMode에서 커서 아래 시설을 작업 패널 대상으로 선택한다. 같은 시설 재클릭은 no-op이다.
 	bool HandleFacilityInspectionClick(APlayerController& Controller);
+	bool CanInspectClosedPreparation(const APlayerController& Controller) const;
 	// 현재 작업 대상을 범위로 강조하고, 이전 대상이 있으면 강조를 해제한다.
 	// 선택 강조와 약한 참조를 함께 정리한다. 카탈로그/종료/스냅샷 복원에서도 호출한다.
 	void ClearPendingRemovalSelection();
@@ -658,8 +692,6 @@ private:
 	// 선택 Spec, GUID, Zone, 배치, 최신 revision으로 Install/Move PreviewCommand를 교체한다.
 	void RebuildPreviewCommand();
 	// FFZS DeveloperSettings의 배치 조작값을 검증해 반환한다. 잘못된 config는 공개 fallback을 사용한다.
-	float GetPlacementRotationSnapDegrees() const;
-	float GetFreePlacementRotationSpeedDegreesPerSecond() const;
 	int32 GetPlacementPositionSnapCm() const;
 	int32 GetPlacementVisualGridStepCm(int32 ActivePositionSnapCm) const;
 	// Zone System의 현재 단계가 시설 변경을 허용하는 InitialSetup/MorningCheck인지 확인한다. 

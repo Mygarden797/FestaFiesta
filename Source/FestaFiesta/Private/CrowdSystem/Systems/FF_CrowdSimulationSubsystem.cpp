@@ -4,8 +4,10 @@
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
+#include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
@@ -27,10 +29,18 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+// 인원수별 프레임 부하를 재기 위한 프레임 단위 카운터.
+// `CsvProfile start` / `CsvProfile stop` 로 뜬 CSV에 FrameTime·GameThreadTime과 같은 행에 실린다.
+// N을 손으로 기록할 필요가 없어지고, StepsThisFrame 이 MaxStepsPerFrame(3)에 붙는 지점이
+// 곧 시뮬이 실시간을 놓치기 시작하는 한계선이다.
+CSV_DEFINE_CATEGORY(FFCrowd, true);
 
 namespace
 {
 	constexpr int32 NoSpawnGeneration = 0;
+	constexpr double RoadSupportBucketSizeCm = 400.0;
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
@@ -63,9 +73,8 @@ namespace
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
-	
-	
 
+	RefreshLanesFromWorld();
 }
 
 void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
@@ -261,8 +270,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	const float Time = DeltaTime * SimulationTimeScale;
 
+	float DiscardedSimSeconds = 0.f;
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
-		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame);
+		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame, &DiscardedSimSeconds);
+
+	if (DiscardedSimSeconds > 0.f)
+	{
+		DroppedSimSeconds += DiscardedSimSeconds;
+		++DroppedStepFrames;
+	}
 
 	for (int32 Step = 0; Step < StepsThisFrame; ++Step)
 	{
@@ -309,6 +325,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		DrawDebugAgents();
 	}
+
+	CSV_CUSTOM_STAT(FFCrowd, ActiveAgents, ActiveAgentCount, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, BoundActors, PoolBinding.GetBoundCount(), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, StepsThisFrame, StepsThisFrame, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, DiscardedSimMs, DiscardedSimSeconds * 1000.f, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, DroppedSimSeconds, DroppedSimSeconds, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, MaxDensity, DensityGrid.GetMaxDensity(), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, PathQueryBacklog, PathQueryBacklog, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, PendingDecisions, DecisionQueue.Num(), ECsvCustomStatOp::Set);
 }
 
 bool UFF_CrowdSimulationSubsystem::ValidateGate(const FFF_CrowdGate& InGate, int32 AuthoredIndex,
@@ -1313,6 +1338,7 @@ void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
 void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 {
 	HeightField.Reset();
+	RoadSupportRevision = -1;
 
 	if (!bEnableHeightField)
 	{
@@ -1458,7 +1484,95 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
 {
-	return HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	bool bHasGround = HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	if (!bEnableHeightField || WorldLocation.ContainsNaN()) return bHasGround;
+	EnsureRoadSupportCache();
+	const FIntPoint Bucket(FMath::FloorToInt(WorldLocation.X / RoadSupportBucketSizeCm),
+		FMath::FloorToInt(WorldLocation.Y / RoadSupportBucketSizeCm));
+	if (const TArray<int32>* Surfaces = RoadSupportBuckets.Find(Bucket))
+	{
+		for (const int32 Index : *Surfaces)
+		{
+			const FRoadSupportSurface& Surface = RoadSupportSurfaces[Index];
+			const FVector Local = Surface.Transform.InverseTransformPosition(WorldLocation);
+			if (FMath::Abs(Local.X) <= Surface.HalfExtentCm.X + UE_KINDA_SMALL_NUMBER &&
+				FMath::Abs(Local.Y) <= Surface.HalfExtentCm.Y + UE_KINDA_SMALL_NUMBER)
+			{
+				OutZ = bHasGround ? FMath::Max(OutZ, Surface.TopZ) : Surface.TopZ;
+				bHasGround = true;
+			}
+		}
+	}
+	return bHasGround;
+}
+
+void UFF_CrowdSimulationSubsystem::EnsureRoadSupportCache() const
+{
+	UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* System = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const int64 Revision = System ? System->GetWorldRevision() : -1;
+	if (RoadSupportSystem.Get() == System && RoadSupportRevision == Revision) return;
+	if (RoadSupportSystem.Get() != System)
+	{
+		UFF_CrowdSimulationSubsystem* MutableThis = const_cast<UFF_CrowdSimulationSubsystem*>(this);
+		if (UFFZSWorldSubsystem* Previous = RoadSupportSystem.Get())
+		{
+			Previous->OnWorldSnapshotRestored.RemoveDynamic(MutableThis,
+				&UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored);
+		}
+		if (System)
+		{
+			System->OnWorldSnapshotRestored.AddUniqueDynamic(MutableThis,
+				&UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored);
+		}
+	}
+	RoadSupportSystem = System;
+	RoadSupportRevision = Revision;
+	RoadSupportSurfaces.Reset();
+	RoadSupportBuckets.Reset();
+	if (!System) return;
+	const FFFZSReadModel ReadModel = System->BuildReadModel();
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.Category != EFFZSFacilityCategory::Road && Facility.Category != EFFZSFacilityCategory::Tile) continue;
+		const AFFZSFacilityActor* Actor = System->FindFacility(Facility.FacilityInstanceId);
+		if (!IsValid(Actor)) continue;
+		const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
+		FRoadSupportSurface Surface;
+		Surface.Transform = Actor->GetActorTransform();
+		Surface.HalfExtentCm = FVector2D(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y) * 0.5;
+		Surface.TopZ = Actor->GetActorLocation().Z + Spec.PlacementObstacleHeightCm;
+		FBox2D Bounds(ForceInit);
+		for (const double XSign : {-1.0, 1.0})
+		{
+			for (const double YSign : {-1.0, 1.0})
+			{
+				const FVector Corner = Surface.Transform.TransformPosition(FVector(
+					Surface.HalfExtentCm.X * XSign, Surface.HalfExtentCm.Y * YSign, 0.0));
+				Bounds += FVector2D(Corner.X, Corner.Y);
+			}
+		}
+		const int32 Index = RoadSupportSurfaces.Add(Surface);
+		const FIntPoint Min(FMath::FloorToInt(Bounds.Min.X / RoadSupportBucketSizeCm),
+			FMath::FloorToInt(Bounds.Min.Y / RoadSupportBucketSizeCm));
+		const FIntPoint Max(FMath::FloorToInt(Bounds.Max.X / RoadSupportBucketSizeCm),
+			FMath::FloorToInt(Bounds.Max.Y / RoadSupportBucketSizeCm));
+		for (int32 Y = Min.Y; Y <= Max.Y; ++Y)
+		{
+			for (int32 X = Min.X; X <= Max.X; ++X) RoadSupportBuckets.FindOrAdd(FIntPoint(X, Y)).Add(Index);
+		}
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored()
+{
+	// Restore may reuse the same serialized revision with a different set of actors.
+	RoadSupportRevision = -1;
+	FacilityWallsRevision = -1;
+
+	// 순회 레인도 같은 리비전을 보고 캐시를 유지하므로 같이 무효화한다. 빠뜨리면 복원된
+	// 도로와 레인이 어긋난 채 남아 개체가 없어진 길 위의 목적지를 받는다.
+	RoadLaneRevision = -1;
 }
 
 void UFF_CrowdSimulationSubsystem::SnapUnitToGround(FUnitData& Unit) const
@@ -1502,6 +1616,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		}
 
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
+		if (Spec.IsGroundSurface()) continue;
 
 		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
 		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
@@ -1618,6 +1733,18 @@ void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 		return;
 	}
 
+	const int32 Dropped = DropAllPaths();
+	++PathLayoutInvalidations;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
+		Revision, Dropped, PathQueriesPerStep);
+}
+
+// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
+// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다.
+int32 UFF_CrowdSimulationSubsystem::DropAllPaths()
+{
 	int32 Dropped = 0;
 	for (FFF_CrowdPathFollower& Follower : PathFollowers)
 	{
@@ -1628,14 +1755,215 @@ void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 		}
 	}
 
-	// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
-	// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다
+	for (int32& LaneIndex : AgentLaneIndices)
+	{
+		LaneIndex = INDEX_NONE;
+	}
+
 	PathQueryCursor = 0;
-	++PathLayoutInvalidations;
+	return Dropped;
+}
+
+// 저작 액터에서 폴리라인을 다시 굽는다.
+//
+// AFF_CrowdLane은 아무 곳에도 자기를 등록하지 않으므로 BeginPlay 순서에 기대지 않고
+// TActorIterator로 직접 훑는다. 빈도가 낮은 연산이고(맵 로드 / 레인 변경 시 1회)
+// 스플라인을 매 경로 쿼리에서 들여다보는 것을 이걸로 막는다.
+//
+// 레벨에 레인이 하나도 없으면 Lanes가 비고, TryBuildPath가 항상 실패해 NavMesh로만
+// 돈다 — 레인을 도입하기 전과 동작이 같다.
+int32 UFF_CrowdSimulationSubsystem::RefreshLanesFromWorld()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return 0;
+	}
+
+	TArray<FFF_CrowdSplineLane> Collected;
+	int32 SkippedCount = 0;
+
+	for (TActorIterator<AFF_CrowdLane> It(World); It; ++It)
+	{
+		const AFF_CrowdLane* LaneActor = *It;
+		if (!IsValid(LaneActor))
+		{
+			continue;
+		}
+
+		TArray<FVector> PointsCm;
+		LaneActor->BuildPolylineCm(PointsCm);
+
+		if (PointsCm.Num() < 2)
+		{
+			++SkippedCount;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[CrowdSimulationSubsystem] 레인 %s: 점이 %d개라 건너뛴다 (스플라인 점 2개 이상 필요)"),
+				*LaneActor->GetActorNameOrLabel(), PointsCm.Num());
+			continue;
+		}
+
+		FFF_CrowdSplineLane Lane;
+		Lane.Points = MoveTemp(PointsCm);
+		Lane.HalfWidthCm = LaneActor->LaneHalfWidthCm;
+		Lane.bOneWay = LaneActor->bOneWay;
+		Lane.RebuildDerived();
+
+		if (!Lane.IsUsable())
+		{
+			++SkippedCount;
+			continue;
+		}
+
+		Collected.Add(MoveTemp(Lane));
+	}
+
+	const int32 LaneNum = Collected.Num();
+	SetLanes(MoveTemp(Collected));
+
+	// 도로 레인도 같은 호출에서 다시 굽는다. 콘솔에서 refresh를 쳤는데 한쪽만 갱신되면
+	// 어느 쪽이 낡았는지 알 수 없다.
+	RoadLaneRevision = -1;
+	const int32 RoadLaneNum = EnsureRoadLanes();
 
 	UE_LOG(LogTemp, Log,
-		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
-		Revision, Dropped, PathQueriesPerStep);
+		TEXT("[CrowdSimulationSubsystem] 레인 %d개 베이크 (저작 %d개 + 도로 %d개, 건너뜀 %d개), "
+		     "경로추종 %s, 레인경로 %s"),
+		Lanes.Num(), LaneNum, RoadLaneNum, SkippedCount,
+		bEnablePathFollowing ? TEXT("on") : TEXT("off"),
+		bEnableLanePathing ? TEXT("on") : TEXT("off"));
+
+	return Lanes.Num();
+}
+
+void UFF_CrowdSimulationSubsystem::SetLanes(TArray<FFF_CrowdSplineLane> NewLanes)
+{
+	AuthoredLanes = MoveTemp(NewLanes);
+	RebuildCombinedLanes();
+}
+
+// 저작 레인과 도로 레인을 한 배열로 잇는다. 쿼리는 Lanes만 보므로 출처가 섞여도
+// TryBuildPath는 총 거리로만 고른다 — 도로 레인에 우선권을 주지 않는 것이 의도다.
+//
+// 저작 레인을 앞에 두는 이유는 도로가 깔리고 걷혀도 저작 레인의 인덱스가 안 밀리게 하기
+// 위해서다. AgentLaneIndices와 디버그 표시가 인덱스를 그대로 쓴다.
+void UFF_CrowdSimulationSubsystem::RebuildCombinedLanes()
+{
+	Lanes.Reset(AuthoredLanes.Num() + RoadLanes.Num());
+	Lanes.Append(AuthoredLanes);
+	Lanes.Append(RoadLanes);
+
+	// 낡은 경로는 이전 레인 배치로 뽑힌 것이다. 목적지가 그대로여서 UpdatePathFollowing의
+	// Reset 조건에 걸리지 않으므로 여기서 버려야 한다 — 배치 변경 무효화와 같은 이유다
+	DropAllPaths();
+}
+
+// 도로 타일에서 순회 레인을 굽는다. 배치 리비전으로 걸러 실제 변경이 있을 때만 돈다 —
+// 매 스텝 호출되는 자리에서 불리므로 이 게이트가 없으면 그래프를 프레임마다 다시 만든다.
+int32 UFF_CrowdSimulationSubsystem::EnsureRoadLanes()
+{
+	const UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const int64 Revision = ZoneSystem ? ZoneSystem->GetWorldRevision() : -1;
+
+	if (!bEnableRoadLanes)
+	{
+		if (RoadLanes.IsEmpty())
+		{
+			return 0;
+		}
+
+		RoadLanes.Reset();
+		RoadLaneStats = FFF_CrowdRoadLaneBuildStats();
+		RoadLaneRevision = Revision;
+		RebuildCombinedLanes();
+		return 0;
+	}
+
+	if (Revision == RoadLaneRevision)
+	{
+		return RoadLanes.Num();
+	}
+
+	RoadLaneRevision = Revision;
+
+	TArray<FFF_CrowdRoadTile> Tiles;
+	if (ZoneSystem)
+	{
+		const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+		for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+		{
+			if (Facility.Category != EFFZSFacilityCategory::Road && Facility.Category != EFFZSFacilityCategory::Tile) continue;
+
+			const AFFZSFacilityActor* Actor = ZoneSystem->FindFacility(Facility.FacilityInstanceId);
+			if (!IsValid(Actor)) continue;
+
+			const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
+			FFF_CrowdRoadTile& Tile = Tiles.AddDefaulted_GetRef();
+			Tile.CenterCm = Actor->GetActorLocation();
+			Tile.HalfExtentCm = FVector2D(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y) * 0.5;
+			Tile.YawDegrees = static_cast<float>(Actor->GetActorRotation().Yaw);
+		}
+	}
+
+	FFF_CrowdRoadLaneBuildParams Params;
+	RoadLaneStats = CrowdRoadLanes::BuildLanes(Tiles, Params, RoadLanes);
+
+	if (RoadLaneStats.bTruncated)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 도로 레인이 상한 %d개를 넘어 잘렸다. 잘린 쪽 도로는 "
+			     "순회에 안 쓰인다 — 도로 타일 %d개, 교차점 %d개"),
+			Params.MaxLanes, RoadLaneStats.TileCount, RoadLaneStats.JunctionCount);
+	}
+
+	RebuildCombinedLanes();
+	return RoadLanes.Num();
+}
+
+// 레인 경로의 Points[0]은 언제나 TryBuildPath가 낸 진입점이다 — 중간 정점은
+// 1cm 병합을 거쳐 그 뒤에 붙으므로 첫 원소가 밀려나지 않는다.
+bool UFF_CrowdSimulationSubsystem::GetLaneFollowInfo(int32 AgentIndex,
+	FFF_CrowdLaneFollowInfo& OutInfo) const
+{
+	OutInfo = FFF_CrowdLaneFollowInfo();
+
+	if (!UnitDatas.IsValidIndex(AgentIndex) || !PathFollowers.IsValidIndex(AgentIndex))
+	{
+		return false;
+	}
+
+	const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+	if (!Follower.bHasPath || Follower.Points.IsEmpty())
+	{
+		return false;
+	}
+
+	OutInfo.bHasPath = true;
+	OutInfo.LaneIndex = AgentLaneIndices.IsValidIndex(AgentIndex)
+		? AgentLaneIndices[AgentIndex]
+		: INDEX_NONE;
+	OutInfo.EntryPointCm = Follower.Points[0];
+	OutInfo.DistanceToEntryCm = static_cast<float>(
+		FVector::Dist2D(UnitDatas[AgentIndex].Position, Follower.Points[0]));
+	OutInfo.bApproachingEntry = (Follower.NextIndex == 0);
+	OutInfo.ConsumedCount = Follower.NextIndex;
+	OutInfo.TotalCount = Follower.Points.Num();
+
+	return true;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetUsableLaneCount() const
+{
+	int32 Count = 0;
+	for (const FFF_CrowdSplineLane& Lane : Lanes)
+	{
+		if (Lane.IsUsable())
+		{
+			++Count;
+		}
+	}
+	return Count;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetPathFollowingCount() const
@@ -1668,6 +1996,12 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 		PathFollowers.SetNum(PoolSize);
 	}
 
+	if (AgentLaneIndices.Num() != PoolSize)
+	{
+		AgentLaneIndices.Init(INDEX_NONE, PoolSize);
+	}
+
+	EnsureRoadLanes();
 	InvalidatePathsOnLayoutChange();
 
 	for (FUnitData& Unit : UnitDatas)
@@ -1755,6 +2089,56 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 	PathQueryBacklog = Backlog;
 }
 
+// 저작된 레인으로 경로를 낸다. 실패하면 호출부가 NavMesh로 떨어진다.
+//
+// TryBuildPath가 내는 점 목록은 [진입점, 중간 정점들, 이탈점, 목적지] 순서이고
+// 시작점을 포함하지 않는다 — FFF_CrowdPathFollower::Points의 규약과 그대로 맞는다.
+// 마지막 원소가 목적지 자체이므로 NavMesh 완전 경로와 도착 판정이 같다.
+//
+// 레인은 NavMesh와 달리 진입점까지의 직선을 검사하지 않는다. 그 구간의 건물 우회는
+// 사회력의 벽 반발이 맡고, 진입 반경(LaneEntrySnapRadiusCm)이 그 직선의 길이 상한이다.
+bool UFF_CrowdSimulationSubsystem::TryBuildLanePathForAgent(int32 AgentIndex)
+{
+	if (!bEnableLanePathing || Lanes.IsEmpty())
+	{
+		return false;
+	}
+
+	const FUnitData& Unit = UnitDatas[AgentIndex];
+	FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+
+	CrowdSplinePath::FQueryParams Params;
+	Params.EntrySnapRadiusCm = LaneEntrySnapRadiusCm;
+	Params.ExitSnapRadiusCm = LaneExitSnapRadiusCm;
+	Params.MaxDetourRatio = LaneMaxDetourRatio;
+
+	TArray<FVector> LanePoints;
+	int32 LaneIndex = INDEX_NONE;
+
+	if (!CrowdSplinePath::TryBuildPath(Lanes, Unit.Position, Unit.TargetLocation,
+		Params, LanePoints, LaneIndex))
+	{
+		++NavFallbackCount;
+		return false;
+	}
+
+	if (LanePoints.Num() < 1)
+	{
+		++NavFallbackCount;
+		return false;
+	}
+
+	Follower.Points = MoveTemp(LanePoints);
+	Follower.NextIndex = 0;
+	Follower.bHasPath = true;
+	Follower.bQueryFailed = false;
+
+	AgentLaneIndices[AgentIndex] = LaneIndex;
+	++LanePathCount;
+
+	return true;
+}
+
 bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 {
 	if (!UnitDatas.IsValidIndex(AgentIndex) || !PathFollowers.IsValidIndex(AgentIndex))
@@ -1767,6 +2151,18 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 
 	Follower.PlannedForTarget = Unit.TargetLocation;
 	++PathQueriesIssued;
+
+	if (AgentLaneIndices.Num() != UnitDatas.Num())
+	{
+		AgentLaneIndices.Init(INDEX_NONE, UnitDatas.Num());
+	}
+	AgentLaneIndices[AgentIndex] = INDEX_NONE;
+
+	// 레인이 먼저다. 실패는 정상 경로이며 그대로 NavMesh로 내려간다
+	if (TryBuildLanePathForAgent(AgentIndex))
+	{
+		return true;
+	}
 
 	UWorld* World = GetWorld();
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
@@ -2570,6 +2966,20 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 		return (Attempt == 0) ? BaseSeed : HashCombine(BaseSeed, GetTypeHash(Attempt));
 	};
 
+	// 도로 위(또는 도로 곁)의 개체는 원판 대신 레인을 따라 멀리 보낸다. 실패하면 아래 원판으로
+	// 떨어지므로 도로를 한 칸도 안 깐 맵의 동작은 그대로다.
+	if (bEnableRoadPatrolWander)
+	{
+		FVector PatrolDestination = FVector::ZeroVector;
+		if (TryPickPatrolDestination(LeaderAgentIndex, SeedAngle, PatrolDestination))
+		{
+			++PatrolWanderCount;
+			return PatrolDestination;
+		}
+	}
+
+	++DiscWanderCount;
+
 	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
 	{
 		const float Angle =
@@ -2593,6 +3003,193 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 	}
 
 	return Unit.Position;
+}
+
+// 레인 위의 먼 지점을 배회 목적지로 고른다.
+//
+// ★ 후보는 "가까운 레인 x 두 방향"이다. 열린 레인은 양 끝이, 닫힌 레인은 앞뒤로 한 걸음이
+//   후보가 된다. 교차로에 선 개체는 이어진 세그먼트가 전부 반경 안에 들어오므로 후보가
+//   여러 개가 되고, 그중 하나를 뽑는 것이 곧 갈림길 선택이다. 막다른 길에서는 되돌아가는
+//   방향만 남는다.
+//
+// ★ 끝까지 보내는 것이 핵심이다. 중간에 세워 두면 다음 추첨도 같은 세그먼트 안에서 일어나
+//   교차로에 영영 못 닿고, 확산이 다시 원판 배회 수준으로 떨어진다.
+//
+// ★ 시드는 PickWanderDestination이 쓰는 것에서 갈라 쓴다. MakeDecisionSeed의 salt 공간은
+//   라운드당 두 칸으로 이미 꽉 차 있어 새 salt를 쓰면 다음 라운드 시드와 겹친다.
+//
+// ★ 후보를 못 내거나 전부 통행 상한·비보행 지점이면 false를 돌려 원판 배회로 떨어진다.
+//   도로를 한 칸도 안 깐 맵에서는 항상 이 경로를 탄다.
+bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAgentIndex,
+	const uint32 BaseSeed, FVector& OutDestination) const
+{
+	if (Lanes.IsEmpty() || !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+
+	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
+
+	struct FPatrolCandidate
+	{
+		int32 LaneIndex = INDEX_NONE;
+		float TargetArcCm = 0.f;
+	};
+
+	TArray<FPatrolCandidate, TInlineAllocator<8>> Candidates;
+
+	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
+	{
+		const FFF_CrowdSplineLane& Lane = Lanes[LaneIndex];
+		if (!Lane.IsUsable())
+		{
+			continue;
+		}
+
+		FVector ClosestCm = FVector::ZeroVector;
+		float ArcCm = 0.f;
+		float DistCm = 0.f;
+		if (!CrowdSplinePath::FindClosestOnLane(Lane, Unit.Position, ClosestCm, ArcCm, DistCm)
+			|| DistCm > PatrolLaneSnapRadiusCm)
+		{
+			continue;
+		}
+
+		if (Lane.bClosedLoop)
+		{
+			Candidates.Add({ LaneIndex, ArcCm + PatrolLoopStepCm });
+			Candidates.Add({ LaneIndex, ArcCm - PatrolLoopStepCm });
+			continue;
+		}
+
+		const float TotalCm = Lane.TotalLengthCm();
+		if (TotalCm - ArcCm >= PatrolMinTravelCm)
+		{
+			Candidates.Add({ LaneIndex, TotalCm });
+		}
+		if (ArcCm >= PatrolMinTravelCm)
+		{
+			Candidates.Add({ LaneIndex, 0.f });
+		}
+	}
+
+	if (Candidates.IsEmpty())
+	{
+		return false;
+	}
+
+	constexpr uint32 PatrolSeedSalt = 0x9E3779B9u;
+	const uint32 PatrolSeed = HashCombine(BaseSeed, PatrolSeedSalt);
+	const int32 FirstPick = FMath::Clamp(
+		FMath::FloorToInt(FFF_DeterministicRandom::MakeUniformFraction(PatrolSeed) * Candidates.Num()),
+		0, Candidates.Num() - 1);
+
+	for (int32 Offset = 0; Offset < Candidates.Num(); ++Offset)
+	{
+		const FPatrolCandidate& Candidate = Candidates[(FirstPick + Offset) % Candidates.Num()];
+
+		FVector Destination = FVector::ZeroVector;
+		if (!CrowdSplinePath::PointAtArc(Lanes[Candidate.LaneIndex], Candidate.TargetArcCm, Destination))
+		{
+			continue;
+		}
+
+		if (FVector::Dist2D(Destination, Unit.Position) < PatrolMinTravelCm)
+		{
+			continue;
+		}
+
+		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
+		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+		{
+			continue;
+		}
+
+		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		{
+			continue;
+		}
+
+		Destination.Z = Unit.Position.Z;
+		OutDestination = Destination;
+		return true;
+	}
+
+	return false;
+}
+
+// 개체가 실제로 퍼졌는지 재는 두 값.
+//
+// 표준편차는 중심에서 얼마나 멀리 흩어졌는지만 본다. 개체가 축제장 양 끝 두 덩어리로
+// 뭉쳐 있어도 크게 나오므로 이것만 보면 속는다. 엔트로피(Pielou 균등도)는 점유한 칸들에
+// 인원이 고르게 퍼졌는지를 0..1로 내므로, 두 값을 같이 봐야 판정이 선다.
+bool UFF_CrowdSimulationSubsystem::GetSpreadStats(FVector& OutCentroidCm, float& OutStdDevCm,
+	float& OutNormalizedEntropy, int32& OutSampleCount, int32& OutOccupiedBuckets) const
+{
+	OutCentroidCm = FVector::ZeroVector;
+	OutStdDevCm = 0.f;
+	OutNormalizedEntropy = 0.f;
+	OutSampleCount = 0;
+	OutOccupiedBuckets = 0;
+
+	const float BucketSizeCm = FMath::Max(SpreadBucketSizeCm, 1.f);
+
+	double SumX = 0.0;
+	double SumY = 0.0;
+	TMap<FIntPoint, int32> Buckets;
+
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+
+		SumX += Unit.Position.X;
+		SumY += Unit.Position.Y;
+		++OutSampleCount;
+
+		const FIntPoint Key(
+			FMath::FloorToInt(Unit.Position.X / BucketSizeCm),
+			FMath::FloorToInt(Unit.Position.Y / BucketSizeCm));
+		++Buckets.FindOrAdd(Key);
+	}
+
+	if (OutSampleCount == 0)
+	{
+		return false;
+	}
+
+	OutCentroidCm = FVector(SumX / OutSampleCount, SumY / OutSampleCount, 0.0);
+
+	double SumSquaredCm = 0.0;
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+
+		SumSquaredCm += FVector::DistSquared2D(Unit.Position, OutCentroidCm);
+	}
+
+	OutStdDevCm = static_cast<float>(FMath::Sqrt(SumSquaredCm / OutSampleCount));
+	OutOccupiedBuckets = Buckets.Num();
+
+	if (Buckets.Num() <= 1)
+	{
+		return true;
+	}
+
+	double Entropy = 0.0;
+	for (const TPair<FIntPoint, int32>& Bucket : Buckets)
+	{
+		const double Probability = static_cast<double>(Bucket.Value) / OutSampleCount;
+		Entropy -= Probability * FMath::Loge(Probability);
+	}
+
+	OutNormalizedEntropy = static_cast<float>(Entropy / FMath::Loge(static_cast<double>(Buckets.Num())));
+	return true;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetMaxInTransitMemberCount() const
@@ -3461,14 +4058,41 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 				const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
 				constexpr float PathDrawZ = 10.f;
 
+				// 경로를 낸 쪽을 색으로 가른다. 레인과 NavMesh가 같은 색이면 "레인이 먹었는지"를
+				// 그림만 보고 판정할 수 없다
+				const int32 LaneIndex = AgentLaneIndices.IsValidIndex(AgentIndex)
+					? AgentLaneIndices[AgentIndex]
+					: INDEX_NONE;
+				const bool bOnLane = (LaneIndex != INDEX_NONE);
+
+				const FColor PathColor = bOnLane ? FColor(0, 255, 255) : FColor(120, 200, 255);
+
 				FVector Previous = Unit.Position;
 				for (int32 PointIndex = Follower.NextIndex; PointIndex < Follower.Points.Num(); ++PointIndex)
 				{
 					const FVector Point = Follower.Points[PointIndex] + FVector(0, 0, PathDrawZ);
 					DrawDebugLine(World, Previous + FVector(0, 0, PathDrawZ), Point,
-						FColor(120, 200, 255), false, -1.f, 0, 2.f);
+						PathColor, false, -1.f, 0, 2.f);
 					DrawDebugPoint(World, Point, 8.f, FColor(255, 255, 120), false, -1.f, 0);
 					Previous = Follower.Points[PointIndex];
+				}
+
+				// 진입점 = 레인에 올라타는 자리. 아직 소비하지 않았으면 개체에서 그 자리까지가
+				// 레인 밖 직선 구간이므로 굵게 따로 긋는다
+				if (bOnLane)
+				{
+					const FVector Entry = Follower.Points[0];
+
+					DrawDebugLine(World, Entry, Entry + FVector(0, 0, 250.f),
+						FColor(255, 0, 255), false, -1.f, 0, 3.f);
+					DrawDebugSphere(World, Entry + FVector(0, 0, PathDrawZ), 35.f, 8,
+						FColor(255, 0, 255), false, -1.f, 0, 2.f);
+
+					if (Follower.NextIndex == 0)
+					{
+						DrawDebugLine(World, Unit.Position + FVector(0, 0, PathDrawZ),
+							Entry + FVector(0, 0, PathDrawZ), FColor(255, 0, 255), false, -1.f, 0, 4.f);
+					}
 				}
 			}
 		}

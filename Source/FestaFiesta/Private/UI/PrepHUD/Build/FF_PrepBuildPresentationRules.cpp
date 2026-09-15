@@ -15,7 +15,10 @@ TConstArrayView<EFFZSFacilityCategory> FFF_PrepBuildPresentationRules::GetCatego
 		EFFZSFacilityCategory::Rest,
 		EFFZSFacilityCategory::Performance,
 		EFFZSFacilityCategory::Safety,
-		EFFZSFacilityCategory::PhotoSpot
+		EFFZSFacilityCategory::PhotoSpot,
+		EFFZSFacilityCategory::Lighting,
+		EFFZSFacilityCategory::Road,
+		EFFZSFacilityCategory::Tile
 	};
 	return Categories;
 }
@@ -39,6 +42,12 @@ FText FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(
 		return LOCTEXT("CategorySafety", "안전");
 	case EFFZSFacilityCategory::PhotoSpot:
 		return LOCTEXT("CategoryPhotoSpot", "포토스팟");
+	case EFFZSFacilityCategory::Lighting:
+		return LOCTEXT("CategoryLighting", "조명");
+	case EFFZSFacilityCategory::Road:
+		return LOCTEXT("CategoryRoad", "길");
+	case EFFZSFacilityCategory::Tile:
+		return LOCTEXT("CategoryTile", "타일");
 	default:
 		return LOCTEXT("CategoryUnknown", "기타");
 	}
@@ -47,6 +56,7 @@ FText FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(
 FText FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(const FName MinorToken)
 {
 	static const TMap<FName, FText> Labels = {
+		{ TEXT("Surface"), LOCTEXT("MinorSurface", "바닥") },
 		{ TEXT("FoodStall"), LOCTEXT("MinorFoodStall", "먹거리·음료") },
 		{ TEXT("MarketGoods"), LOCTEXT("MinorMarketGoods", "상품 판매") },
 		{ TEXT("CraftExperience"), LOCTEXT("MinorCraftExperience", "공예·제작 체험") },
@@ -75,7 +85,10 @@ FText FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(const FName MinorT
 		{ TEXT("Landmark"), LOCTEXT("MinorLandmark", "랜드마크") },
 		{ TEXT("Theme"), LOCTEXT("MinorTheme", "테마") },
 		{ TEXT("Scenic"), LOCTEXT("MinorScenic", "경관") },
-		{ TEXT("Interactive"), LOCTEXT("MinorInteractive", "상호작용") }
+		{ TEXT("Interactive"), LOCTEXT("MinorInteractive", "상호작용") },
+		{ TEXT("Decorative"), LOCTEXT("MinorDecorative", "장식 조명") },
+		{ TEXT("Pendant"), LOCTEXT("MinorPendant", "펜던트 조명") },
+		{ TEXT("Streetlamp"), LOCTEXT("MinorStreetlamp", "가로등") }
 	};
 	if (const FText* Label = Labels.Find(MinorToken))
 	{
@@ -102,6 +115,11 @@ bool FFF_PrepBuildPresentationRules::IsEntryVisible(
 	}
 
 	if (Filter.bFilterByCategory && Entry.Category != Filter.Category)
+	{
+		return false;
+	}
+
+	if (Filter.bFavoritesOnly && !Filter.FavoriteIds.Contains(Entry.FacilityDefinitionId))
 	{
 		return false;
 	}

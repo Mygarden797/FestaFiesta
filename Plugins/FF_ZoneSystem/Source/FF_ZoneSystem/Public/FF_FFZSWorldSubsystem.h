@@ -26,6 +26,14 @@ struct FFFZSBuildableGridMask;
 struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
+    // Roads and tiles share one ground layer. Only tiles permit reservations in the layer above.
+    bool bIsGroundSurface = false;
+    bool bAllowsFacilitiesOnTop = true;
+
+    bool BlocksLayer(bool bOtherIsGroundSurface, bool bOtherAllowsFacilitiesOnTop = true) const
+    {
+        return bIsGroundSurface == bOtherIsGroundSurface || (bIsGroundSurface ? !bAllowsFacilitiesOnTop : !bOtherAllowsFacilitiesOnTop);
+    }
     TArray<FFFZSOrientedRect> Regions;
     // Derived broad/narrow-phase data; saved placements and NPC region IDs stay unchanged.
     TArray<FFFZSOrientedRect> WorldRegions;
@@ -262,7 +270,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    // Schema 7의 시설별 강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    // Schema 8의 Road/Tile 구분·강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
     // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨과 배수를 보존하며 7로 이관한 뒤 원자적으로 교체한다.
@@ -340,7 +348,7 @@ private:
     bool IsAuthorityMutationBlocked() const;
     // 게임 스레드 밖·복원·정책 콜백·명령 실행 중이면 true인 공통 fail-closed 차단기다. 
 
-    FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility) const;
+    FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility, bool bRevalidateExisting = false) const;
     // 외부 정책 없이 플러그인 소유 데이터·기하·점유·월드 검사만 수행한다. Move는 기존 시설 점유를 IgnoreFacility로 제외한다. 
     FTransform BuildPlacementTransform(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement) const;
     void ValidateGround(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
@@ -370,7 +378,8 @@ private:
 
     void OccupyFacilityRegions(const AFFZSFacilityActor& Facility);
     void ReleaseFacilityRegions(const AFFZSFacilityActor& Facility);
-    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId) const;
+    bool DoesGroundSurfaceSupportFacility(const AFFZSFacilityActor& Surface) const;
+    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId, bool bIsGroundSurface, bool bAllowsFacilitiesOnTop) const;
     void RefreshWorldActors() const;
 
     bool ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors) const;

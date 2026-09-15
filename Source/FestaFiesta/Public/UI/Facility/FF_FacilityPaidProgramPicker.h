@@ -37,6 +37,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
 	void SetPickerOpen(bool bOpen);
 
+	/** Called only after the authoritative scheduling transaction succeeds. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
+	void ShowPurchaseComplete(FName ProgramId, int32 RemainingGold, int32 RemainingStaff);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info|Paid Program")
+	void OnViewDataApplied(const FFF_FacilityPaidProgramPickerViewData& ViewData);
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info|Paid Program")
 	bool IsPointerOverInteractivePanel() const;
 
@@ -67,6 +74,37 @@ private:
 	TArray<TObjectPtr<UFF_FacilityPaidProgramCard>> SpawnedCards;
 
 	FName SelectedProgramId = NAME_None;
+	bool bPurchaseCompleted = false;
+	bool bCommitPending = false;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Border_Body;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Border_Footer;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_PurchaseComplete;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_PurchaseReceipt;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ResourcePreview;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_PreviewTime;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_RequiredStaff;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_Capacity;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_TicketFee;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_MaxRevenue;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_PurchaseCost;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ReceiptProgramName;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_ReceiptResources;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_ReturnToFacility;
 
 	/** Optional designer override. Unset uses WBP_FF_FacilityPaidProgramCard. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Content",

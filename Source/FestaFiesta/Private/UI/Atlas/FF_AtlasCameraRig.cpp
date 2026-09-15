@@ -9,13 +9,14 @@
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "UI/Atlas/FF_AtlasSettings.h"
+#include "UI/Atlas/FF_AtlasGlobeActor.h"
 #include "UI/Core/FF_UIAccessibilitySubsystem.h"
 #include "UI/FF_UILog.h"
 
 AFF_AtlasCameraRig::AFF_AtlasCameraRig()
 {
 	// 매 프레임 할 일이 없다. 뷰타깃 보간은 엔진의 카메라 매니저가 돌린다.
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	// 연출용 액터다. 월드 클릭을 먹으면 안 된다.
 	SetActorEnableCollision(false);
@@ -72,6 +73,10 @@ void AFF_AtlasCameraRig::BeginPlay()
 
 void AFF_AtlasCameraRig::ViewForScreen(EFF_UIFlowScreen Screen, bool bInstant)
 {
+	if (Screen != EFF_UIFlowScreen::AtlasGlobe)
+	{
+		ResetCountryInspection();
+	}
 	ACameraActor* Camera = ResolveCameraForScreen(Screen);
 	if (!Camera)
 	{
@@ -95,6 +100,8 @@ void AFF_AtlasCameraRig::ViewForScreen(EFF_UIFlowScreen Screen, bool bInstant)
 
 void AFF_AtlasCameraRig::SkipCameraMove()
 {
+	InspectionAlpha = bCountryInspection ? 1.f : 0.f;
+	Tick(0.f);
 	if (!IsMoving())
 	{
 		return;
@@ -223,6 +230,56 @@ const UFF_AtlasSettings& AFF_AtlasCameraRig::GetAtlasSettings() const
 	const UFF_AtlasSettings* Settings = UFF_AtlasSettings::Get();
 	check(Settings);
 	return *Settings;
+}
+
+void AFF_AtlasCameraRig::SetCountryInspection(bool bInspect)
+{
+	if (CurrentScreen != EFF_UIFlowScreen::AtlasGlobe) { return; }
+	if (!InspectionCamera.IsValid())
+	{
+		ACameraActor* Camera = ResolveCameraForScreen(CurrentScreen);
+		if (!Camera) { return; }
+		InspectionCamera = Camera;
+		InspectionBaseLocation = Camera->GetActorLocation();
+	}
+	bCountryInspection = bInspect;
+}
+
+void AFF_AtlasCameraRig::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	ACameraActor* Camera = InspectionCamera.Get();
+	if (!Camera || CurrentScreen != EFF_UIFlowScreen::AtlasGlobe) { return; }
+	const UFF_AtlasSettings& Settings = GetAtlasSettings();
+	const UFF_UIAccessibilitySubsystem* Access = UFF_UIAccessibilitySubsystem::Get(this);
+	const bool bReduceMotion = Access && Access->IsReduceMotionEnabled();
+	const float Target = bCountryInspection ? 1.f : 0.f;
+	InspectionAlpha = bReduceMotion || Settings.CountryInspectionSeconds <= 0.f ? Target
+		: FMath::FInterpConstantTo(InspectionAlpha, Target, DeltaSeconds, 1.f / Settings.CountryInspectionSeconds);
+	if (AFF_AtlasGlobeActor* Globe = AFF_AtlasGlobeActor::Find(this))
+	{
+		const FVector Delta = Globe->GetActorLocation() - InspectionBaseLocation;
+		const double Distance = Delta.Size();
+		const double Radius = Globe->GetGlobeRadius() * Globe->GetActorScale3D().GetAbsMax();
+		const double Approach = FMath::Clamp(Distance * FMath::Clamp(Settings.CountryInspectionApproachFraction, 0.f, 0.2f), 0.0, FMath::Max(0.0, Distance - Radius * 1.35));
+		const float Eased = InspectionAlpha * InspectionAlpha * (3.f - 2.f * InspectionAlpha);
+		Camera->SetActorLocation(InspectionBaseLocation + Delta.GetSafeNormal() * Approach * Eased);
+	}
+	if (!bCountryInspection && InspectionAlpha <= 0.f) { ResetCountryInspection(); }
+}
+
+void AFF_AtlasCameraRig::ResetCountryInspection()
+{
+	if (ACameraActor* Camera = InspectionCamera.Get()) { Camera->SetActorLocation(InspectionBaseLocation); }
+	InspectionCamera.Reset();
+	InspectionAlpha = 0.f;
+	bCountryInspection = false;
+}
+
+void AFF_AtlasCameraRig::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ResetCountryInspection();
+	Super::EndPlay(EndPlayReason);
 }
 
 // =============================================================================

@@ -109,6 +109,35 @@ namespace
     }
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueuePassiveLightingTest, "FF_ZoneSystem.Unit.Queue.PassiveLightingRemainsClosed", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSQueuePassiveLightingTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    FFFZSQueueRules Rules;
+    Rules.MaxWaitingAgents = 0;
+    Rules.ServiceCapacity = 0;
+    UFFZSFacilityQueueComponent* Queue = MakeQueue(Rules);
+    TestEqual(TEXT("조명은 운영 중에도 대기열을 열지 않는다"),
+        Queue->GetQueueState(), EFFZSQueueState::Closed);
+    TestFalse(TEXT("서비스 없는 조명은 대기열 Tick을 실행하지 않는다"), Queue->IsComponentTickEnabled());
+    FGuid Ticket;
+    TestEqual(TEXT("조명에 방문객을 등록할 수 없다"),
+        FFFZSQueueTestAccess::JoinQueue(*Queue, TEXT("Agent.Lighting"), Ticket), EFFZSQueueJoinResult::NotOpen);
+    TestFalse(TEXT("거절된 참가 요청에는 Ticket이 없다"), Ticket.IsValid());
+    TestFalse(TEXT("조명은 방문객 점유를 만들지 않는다"), Queue->IsOccupied());
+
+    TArray<FText> Errors;
+    FFFZSQueueSnapshot Snapshot = Queue->CaptureSnapshot();
+    TestTrue(TEXT("빈 조명 대기열을 복원한다"),
+        FFFZSQueueTestAccess::RestoreSnapshot(*Queue, Snapshot, Errors));
+    Snapshot.State = EFFZSQueueState::Open;
+    TestFalse(TEXT("스냅샷으로 조명 대기열을 열 수 없다"),
+        FFFZSQueueTestAccess::RestoreSnapshot(*Queue, Snapshot, Errors));
+    TestEqual(TEXT("잘못된 복원 뒤에도 닫힌 상태를 보존한다"),
+        Queue->GetQueueState(), EFFZSQueueState::Closed);
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueFifoTest, "FF_ZoneSystem.Unit.Queue.FIFOArrivalAndCapacity", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFFZSQueueFifoTest::RunTest(const FString& Parameters)
 {

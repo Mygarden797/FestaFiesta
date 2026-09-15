@@ -66,6 +66,21 @@ struct FESTAFIESTA_API FFF_AtlasCountryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe")
 	TSoftObjectPtr<UStaticMesh> LandmarkMesh;
 
+	/** 국가별 조형물 높이. 0이면 지구 액터의 공통 높이를 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe", meta = (ClampMin = "0.0"))
+	float LandmarkHeightOverride = 0.f;
+
+	/** 넓은 건물이 작은 나라 전체를 덮지 않도록 폭·깊이를 함께 제한한다. 0은 제한 없음. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe", meta = (ClampMin = "0.0"))
+	float LandmarkMaxWidth = 0.f;
+
+	/** 표면 수직축을 기준으로 돌리는 방향과 지표 돌출 보정(uu). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe")
+	float LandmarkHeading = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe", meta = (ClampMin = "0.0"))
+	float LandmarkSurfaceOffset = 0.f;
+
 	/**
 	 * 국가 지도 배경.
 	 *

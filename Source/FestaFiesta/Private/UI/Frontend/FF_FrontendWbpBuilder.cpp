@@ -44,7 +44,6 @@
 #include "UI/FF_CommonButtonBase.h"
 #include "UI/Frontend/FF_ConfirmDialog.h"
 #include "UI/Frontend/FF_OptionRowToggle.h"
-#include "UI/Frontend/FF_OptionsScreen.h"
 #include "UI/Frontend/FF_PlayHubScreen.h"
 #include "UI/Frontend/FF_SaveListScreen.h"
 #include "UI/Frontend/FF_SaveSlotCard.h"
@@ -65,7 +64,6 @@ namespace FFFrontendWbpBuilder
 	const FString ConfirmDialogPackage(FrontendFolder / TEXT("WBP_FF_ConfirmDialog"));
 	const FString PlayHubPackage(FrontendFolder / TEXT("WBP_FF_PlayHub"));
 	const FString SaveListPackage(FrontendFolder / TEXT("WBP_FF_SaveList"));
-	const FString OptionsPackage(FrontendFolder / TEXT("WBP_FF_Options"));
 
 	// === 대략 크기 ===
 	// 확정 좌표는 docs/ui/glass-orbit-unreal-spec.md 5절이다. 여기 값은 그 절의 규격을 따르되
@@ -676,84 +674,6 @@ namespace FFFrontendWbpBuilder
 
 		return true;
 	}
-
-	// =========================================================================
-	// WBP_FF_Options — 좌측 분류 6개 + 우측 설정 행
-	// =========================================================================
-	bool BuildOptions(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, UClass* ButtonClass)
-	{
-		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
-		if (!Palette || !ButtonClass)
-		{
-			UE_LOG(LogFFUIWbpBuilder, Error,
-				TEXT("%s_FAIL: 팔레트 또는 버튼 클래스가 없어 WBP_FF_Options 을 만들지 않았다."), FrontendLogPrefix);
-			return false;
-		}
-
-		UCanvasPanel* Root = MakeWidget<UCanvasPanel>(Blueprint, Tree, TEXT("CanvasPanel_Root"));
-		UTextBlock* ScreenTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ScreenTitle"));
-		UVerticalBox* Categories = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Categories"));
-
-		// 분류 버튼을 **런타임에 만들지 않는다.** 컨테이너에 런타임으로 채우면 디자이너에서
-		// 하나도 보이지 않아 위치·크기를 손으로 만질 수 없다 (Live HUD 탭 9개에서 겪은 문제).
-		const TCHAR* CategoryNames[] = {
-			TEXT("Button_Language"), TEXT("Button_Accessibility"), TEXT("Button_Sound"),
-			TEXT("Button_Graphics"), TEXT("Button_Controls"), TEXT("Button_Credits")
-		};
-
-		UTextBlock* CategoryTitle = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CategoryTitle"), true);
-		UVerticalBox* Rows = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Rows"), true);
-		UTextBlock* NotImplemented = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_NotImplemented"), true);
-		UUserWidget* Back = MakeWidgetOfClass(Blueprint, Tree, TEXT("Button_Back"), ButtonClass);
-
-		if (!Root || !ScreenTitle || !Categories || !CategoryTitle || !Rows || !NotImplemented || !Back)
-		{
-			return false;
-		}
-
-		Tree.RootWidget = Root;
-
-		StyleText(*ScreenTitle, 44, Palette->Frontend.Title, TEXT("SemiBold"));
-		ScreenTitle->SetText(LOCTEXT("OptionsScreenTitle", "옵션"));
-		PlaceOnCanvas(*Root, *ScreenTitle, 152.f, 96.f, MenuColumnWidth, 80.f);
-
-		for (const TCHAR* CategoryName : CategoryNames)
-		{
-			UUserWidget* Button = MakeWidgetOfClass(Blueprint, Tree, FName(CategoryName), ButtonClass);
-			if (!Button)
-			{
-				UE_LOG(LogFFUIWbpBuilder, Error,
-					TEXT("%s_FAIL: 분류 버튼 %s 생성 실패."), FrontendLogPrefix, CategoryName);
-				return false;
-			}
-
-			if (UVerticalBoxSlot* Slot = Categories->AddChildToVerticalBox(Button))
-			{
-				Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-				Slot->SetPadding(FMargin(0.f, 0.f, 0.f, MenuButtonGap));
-			}
-		}
-
-		// 6개 x (120 + 14) = 804. Y200 에서 시작해 1004 에 끝난다. 1080 에 겨우 들어가므로
-		// 여기가 가장 먼저 조절이 필요한 곳이다.
-		PlaceOnCanvas(*Root, *Categories, 152.f, 200.f, MenuColumnWidth, 810.f);
-
-		StyleText(*CategoryTitle, 28, Palette->Frontend.Title, TEXT("SemiBold"));
-		CategoryTitle->SetText(LOCTEXT("OptionsCategoryPlaceholder", "접근성"));
-		PlaceOnCanvas(*Root, *CategoryTitle, 860.f, 200.f, 900.f, 60.f);
-
-		PlaceOnCanvas(*Root, *Rows, 860.f, 290.f, 900.f, 600.f);
-
-		// 만져도 아무 일이 없는 조작 UI 는 고장으로 보인다. 이유를 화면에 적는다.
-		StyleText(*NotImplemented, 16, Palette->Frontend.Dim, TEXT("Medium"));
-		NotImplemented->SetText(LOCTEXT("OptionsNotImplPlaceholder", "반영 사항 없음"));
-		PlaceOnCanvas(*Root, *NotImplemented, 860.f, 290.f, 900.f, 60.f);
-
-		PlaceOnCanvas(*Root, *Back, 860.f, 930.f, MenuColumnWidth, MenuButtonHeight);
-
-		return true;
-	}
-
 	void RunFrontendUmg()
 	{
 		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_BEGIN: 없는 WBP만 생성한다."), FrontendLogPrefix);
@@ -802,22 +722,17 @@ namespace FFFrontendWbpBuilder
 			[ButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{ return BuildSaveList(Blueprint, Tree, ButtonClass); });
 
-		EnsureWidgetBlueprint(
-			FrontendLogPrefix, OptionsPackage, FrontendFolder,
-			*UFF_OptionsScreen::StaticClass(),
-			[ButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
-			{ return BuildOptions(Blueprint, Tree, ButtonClass); });
-
 		UE_LOG(LogFFUIWbpBuilder, Display,
 			TEXT("%s_END: 끝났다. 에디터에서 해야 하는 것 — "
-				 "WBP_FF_SaveList 의 CardWidgetClass, WBP_FF_Options 의 ToggleRowClass, "
-				 "WBP_FF_ConfirmDialog 의 RowWidgetClass 를 지정한다."), FrontendLogPrefix);
+				 "WBP_FF_SaveList 의 CardWidgetClass 와 WBP_FF_ConfirmDialog 의 RowWidgetClass 를 지정한다. "
+				 "옵션 화면은 이 명령이 만들지 않는다 — `FF.ApplyOptionsSetupStyle` 이 단독으로 소유한다."), FrontendLogPrefix);
 	}
 
 	FAutoConsoleCommand FrontendUmgCommand(
 		TEXT("FF.FrontendUMG"),
-		TEXT("프론트엔드 WBP 7종(MenuButton / OptionRowToggle / SaveSlotCard / ConfirmDialog / "
-			 "PlayHub / SaveList / Options)을 만든다. 이미 있는 에셋은 건드리지 않는다."),
+		TEXT("프론트엔드 WBP 6종(MenuButton / OptionRowToggle / SaveSlotCard / ConfirmDialog / "
+			 "PlayHub / SaveList)을 만든다. 이미 있는 에셋은 건드리지 않는다. "
+			 "옵션 화면은 FF.ApplyOptionsSetupStyle 이 만든다."),
 		FConsoleCommandDelegate::CreateStatic(&RunFrontendUmg));
 }
 

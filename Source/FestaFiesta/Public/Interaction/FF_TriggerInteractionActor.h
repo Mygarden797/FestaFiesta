@@ -67,6 +67,10 @@ public:
 	void HideCameraFrame();
 	// 촬영 끝나면 카메라 프레임 UI를 없애는 함수
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Trigger")
+	void CaptureAndShowPhoto();
+	// 지금 화면을 캡처해서 결과 사진 UI를 띄우는 함수
+
 
 	UFUNCTION()
 	void OnRangeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);

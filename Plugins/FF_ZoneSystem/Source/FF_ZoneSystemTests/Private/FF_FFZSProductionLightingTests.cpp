@@ -78,7 +78,23 @@ bool FFFZSProductionLightingTest::RunTest(const FString& Parameters)
     AFFZSFacilityLightingRig* Rig = Facility ? Facility->GetLightingRig() : nullptr;
     if (!TestNotNull(TEXT("Production install creates lighting rig"), Rig)) return false;
     TInlineComponentArray<ULightComponent*> Lights(Rig);
-    TestEqual(TEXT("All ten real lamps exist"), Lights.Num(), 10);
+    // The artist's lighting revision 67483cfb removed Overhead_08_Spot from the
+    // dedicated runtime rig. The original preview Blueprint still has ten lamps.
+    // Check the authored identities as well as the count so another missing lamp
+    // cannot be masked by an unrelated replacement.
+    const TArray<FName> ExpectedLightNames = {
+        TEXT("Overhead_00_Spot"), TEXT("Overhead_02_Spot"), TEXT("Overhead_04_Spot"),
+        TEXT("Overhead_06_Spot"), TEXT("Overhead_10_Spot"),
+        TEXT("DeckSpot_Spot"), TEXT("DeckSpot_Spot_001"),
+        TEXT("RunwaySpot_Spot"), TEXT("RunwaySpot_Spot_001")
+    };
+    TestEqual(TEXT("All nine authored runtime lamps exist"), Lights.Num(), ExpectedLightNames.Num());
+    for (const FName ExpectedName : ExpectedLightNames)
+    {
+        TestTrue(*FString::Printf(TEXT("Authored runtime lamp exists: %s"), *ExpectedName.ToString()),
+            Lights.ContainsByPredicate([ExpectedName](const ULightComponent* Light)
+                { return Light && Light->GetFName() == ExpectedName; }));
+    }
     if (Lights.IsEmpty()) return false;
     TestTrue(TEXT("Rig uses final fitted mesh transform"), Rig->GetActorTransform().Equals(Facility->VisualMesh->GetComponentTransform(), 0.01));
     TInlineComponentArray<UStaticMeshComponent*> PreviewMeshes(Rig);

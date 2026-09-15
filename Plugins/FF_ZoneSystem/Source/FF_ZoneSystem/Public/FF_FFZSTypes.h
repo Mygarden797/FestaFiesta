@@ -22,6 +22,7 @@ class UStaticMesh;
 
 // 존 허용 규칙과 UI 분류에 쓰는 시설의 기능 카테고리.
 // 새 값 추가 시 저장 호환성, FacilityDefinition Data Asset, 정책 어댑터, UI 표시를 함께 갱신.
+// 기존 저장 카테고리 ordinal을 유지하도록 새 값은 마지막에만 추가한다.
 UENUM(BlueprintType)
 enum class EFFZSFacilityCategory : uint8
 {
@@ -31,7 +32,10 @@ enum class EFFZSFacilityCategory : uint8
     Rest UMETA(DisplayName = "Rest", ToolTip = "좌석·쉼터 등 휴식 시설입니다."),
     Performance UMETA(DisplayName = "Performance", ToolTip = "무대와 공연 운영 시설입니다."),
     Safety UMETA(DisplayName = "Safety", ToolTip = "의무실·안전 지원 시설입니다."),
-    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다.")
+    PhotoSpot UMETA(DisplayName = "Photo Spot", ToolTip = "랜드마크와 촬영 시설입니다."),
+    Lighting UMETA(DisplayName = "Lighting", ToolTip = "설치 후 점등·밝기·색상을 조절하는 조명 시설입니다."),
+    Road UMETA(DisplayName = "Road", ToolTip = "시설과 대기열을 설치할 수 없는 보행용 길입니다. 다른 길이나 타일과 겹칠 수 없습니다."),
+    Tile UMETA(DisplayName = "Tile", ToolTip = "시설과 대기열을 위에 설치할 수 있는 바닥 타일입니다. 다른 길이나 타일과 겹칠 수 없습니다.")
 };
 
 //권한 시설 수명주기.
@@ -654,8 +658,24 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Lighting", meta = (DisplayName = "Facility Lighting", ToolTip = "메시와 함께 설치되는 조명 Blueprint 및 기본 점등·밝기·색상입니다. Blueprint 좌표는 원본 메시의 로컬 좌표와 같아야 합니다."))
     FFFZSFacilityLightingSettings LightingSettings;
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "10.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Placement Obstacle Height (cm)", ToolTip = "배치 충돌·보호 영역 검사에 사용할 높이입니다. 길과 타일은 최소 1cm, 그 외 시설은 최소 10cm입니다. '배치 경계에 정확히 맞춤'에서는 표시 메시의 목표 높이로도 사용됩니다.", ClampMin = "1.0", Units = "cm"))
     float PlacementObstacleHeightCm = 250.0f;
+
+    // Deprecated: serialized legacy data and command receipts only. Category owns placement permission.
+    // Keep the property name so existing assets and saves can still deserialize it.
+    // Editor scripting needs reflected access for asset migration; keep the retired option hidden.
+    UPROPERTY(SaveGame, EditAnywhere, Category = "Legacy", meta = (EditCondition = "false", EditConditionHides))
+    bool bAllowFacilityPlacementOnTop = true;
+
+    bool IsGroundSurface() const
+    {
+        return Category == EFFZSFacilityCategory::Road || Category == EFFZSFacilityCategory::Tile;
+    }
+
+    bool AllowsFacilityPlacementOnTop() const
+    {
+        return Category == EFFZSFacilityCategory::Tile;
+    }
     
     bool IsValid(TArray<FText>& OutErrors) const;
     // 사양을 변경하지 않고 ID·크기·예산·큐·앵커·수치의 모든 오류를 누적한다. 오류가 없을 때 true다.
@@ -998,16 +1018,19 @@ struct FF_ZONESYSTEM_API FFFZSCommandReceiptSnapshot
 
 USTRUCT(BlueprintType)
 
- // FF_ZoneSystem이 소유하는 월드 저장 경계, 현재 스키마는 7이다.
+ // FF_ZoneSystem이 소유하는 월드 저장 경계, 현재 스키마는 8이다.
  // WorldRevision·CurrentPhase·시설/큐·완료 영수증만 포함하며 제작 존, 보호 영역, 정책 제공자, 외부 시스템 상태는 제외한다.
 
 struct FF_ZONESYSTEM_API FFFZSWorldSnapshot
 {
     GENERATED_BODY()
 
+    static constexpr int32 CurrentSchemaVersion = 8;
+
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
-    int32 SchemaVersion = 7;
+    int32 SchemaVersion = CurrentSchemaVersion;
     // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨·효과를 보존하며 레벨 사용 여부를 이관한다.
+    // Schema 3~7의 시설 설치 허용 Road는 Tile로 이관하며, Schema 8부터 Category만 설치 권한을 결정한다.
 
     UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Save")
     int64 WorldRevision = 0;

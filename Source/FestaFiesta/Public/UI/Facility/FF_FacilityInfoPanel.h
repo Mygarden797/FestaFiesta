@@ -32,11 +32,19 @@ public:
 	FSimpleMulticastDelegate OnUpgradeRequested;
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
+	FSimpleMulticastDelegate OnFavoriteRequested;
 	FFF_OnFacilityLightingRequested OnLightingRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
 	void ApplyViewData(const FFF_FacilityInfoViewData& ViewData);
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
+	void SetInfoPage(EFF_FacilityInfoPage Page);
+
+	/** Optional authored animation or presentation; the native class never builds a widget tree. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info")
+	void OnViewDataApplied(const FFF_FacilityInfoViewData& ViewData);
 
 	/** Opens without making the full-screen wrapper a hit target; closes by collapsing it. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
@@ -73,14 +81,35 @@ private:
 	UFUNCTION()
 	void HandleUpgradeClicked();
 
-	/** Appends only missing upgrade controls inside the existing detail scroll content. */
-	void EnsureUpgradeSection();
+	UFUNCTION() void HandleOverviewClicked();
+	UFUNCTION() void HandleOperationClicked();
+	UFUNCTION() void HandleUpgradeTabClicked();
+	UFUNCTION() void HandleFavoriteClicked();
+	UFUNCTION() void HandleRemoveConfirmClicked();
+	UFUNCTION() void HandleRemoveCancelClicked();
+	void RefreshPageVisibility();
+	EFF_FacilityInfoPage ActivePage = EFF_FacilityInfoPage::Overview;
 
-	/** Keeps the shipped facility-info WBP compatible while designers migrate the new button. */
-	void EnsureMinigameButton();
-
-	/** Adds only the missing compact program block; authored WBP layout remains authoritative. */
-	void EnsureProgramSection();
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabOverview;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabOperation;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabUpgrade;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Favorite;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_Favorite;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_LevelSummary;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_RemoveConfirmation;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_RemoveConfirmation;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_RemoveConfirm;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_RemoveCancel;
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
 	void HandleLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);

@@ -22,7 +22,7 @@ public:
 	
 	//아동인지의 여부
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")
-	bool bIsChild;	
+	bool bIsChild = false;
 	
 	//설정할 외형
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Crowd")

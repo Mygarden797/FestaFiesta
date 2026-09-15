@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Script,
-    [string]$Label = 'lighting'
+    [string]$Label = 'lighting',
+    [switch]$NullRHI
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -13,12 +14,13 @@ $log = Join-Path $qaRoot ($Label + '.log')
 $argsForEditor = @(
     ('"' + (Join-Path $projectRoot 'FestaFiesta.uproject') + '"'), '/Engine/Maps/Entry',
     ('-ExecutePythonScript="' + $scriptPath + '"'),
-    '-DisablePlugins=RiderLink', '-unattended', '-nosplash', '-nosound', '-NoSourceControl',
+    '-DisablePlugins=RiderLink', '-unattended', '-nosplash', '-nosound', '-NoSourceControl', '-RenderOffscreen',
     '-ddc=InstalledNoZenLocalFallback', '-noxgeshadercompile',
     ('-ShaderWorkingDir="' + (Join-Path $qaRoot '_shaderwork') + '"'),
     ('-abslog="' + $log + '"')
 )
-# GPU RHI is intentional: this project exercises movable spot-light components.
+# Captures need a GPU; texture-only import and readback can run without one.
+if ($NullRHI) { $argsForEditor += '-NullRHI' }
 $process = Start-Process -FilePath 'C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' -ArgumentList $argsForEditor -WindowStyle Hidden -PassThru
 Write-Output ('UNREAL_STARTED pid=' + $process.Id + ' log=' + $log)
 $process.WaitForExit()

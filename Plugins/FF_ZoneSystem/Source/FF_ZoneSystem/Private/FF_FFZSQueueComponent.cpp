@@ -36,11 +36,12 @@ UFFZSFacilityQueueComponent::UFFZSFacilityQueueComponent()
 
 void UFFZSFacilityQueueComponent::Configure(const FFFZSQueueRules& NewRules)
 {
-    // 외부 Data Asset 값은 이 경계에서 한 번 정규화. 이후 상태 전이 코드는 양수 용량과
-    // 유한한 시간/거리라는 전제를 공유하므로 각 분기에서 같은 방어 코드를 반복하지 않는다.
+    // 조명 시설의 0/0 정원은 서비스 없는 시설을 나타낸다. 서비스 시설은 기존처럼
+    // 양수 정원으로 정규화하며, 조명의 빈 대기열을 1인 서비스로 바꾸지 않는다.
     Rules = NewRules;
-    Rules.MaxWaitingAgents = FMath::Max(1, Rules.MaxWaitingAgents);
-    Rules.ServiceCapacity = FMath::Max(1, Rules.ServiceCapacity);
+    const int32 MinimumCapacity = NewRules.MaxWaitingAgents == 0 && NewRules.ServiceCapacity == 0 ? 0 : 1;
+    Rules.MaxWaitingAgents = FMath::Max(MinimumCapacity, Rules.MaxWaitingAgents);
+    Rules.ServiceCapacity = FMath::Max(MinimumCapacity, Rules.ServiceCapacity);
     Rules.SlotSpacingCm = FMath::Max(1.0f, Rules.SlotSpacingCm);
     Rules.ServiceDurationSeconds = FMath::Max(0.01f, Rules.ServiceDurationSeconds);
     Rules.SlotArrivalToleranceCm = FMath::Max(0.0f, Rules.SlotArrivalToleranceCm);
@@ -58,6 +59,12 @@ void UFFZSFacilityQueueComponent::Configure(const FFFZSQueueRules& NewRules)
 
 void UFFZSFacilityQueueComponent::OpenQueue()
 {
+    if (Rules.MaxWaitingAgents == 0 && Rules.ServiceCapacity == 0)
+    {
+        // 시설 자체의 점등/운영 상태와 무관하게 조명은 방문객 대기열을 열지 않는다.
+        SetQueueState(EFFZSQueueState::Closed);
+        return;
+    }
     bDrainRequested = false;
     BlockedElapsedSeconds = 0.0f;
     RepathAttemptCount = 0;
@@ -173,6 +180,10 @@ EFFZSQueueJoinResult UFFZSFacilityQueueComponent::JoinQueue(const FName AgentId,
     if (ContainsAgent(AgentId))
     {
         return EFFZSQueueJoinResult::DuplicateAgent;
+    }
+    if (Rules.MaxWaitingAgents == 0 && Rules.ServiceCapacity == 0)
+    {
+        return EFFZSQueueJoinResult::NotOpen;
     }
     if (Waiting.Num() + ActiveServices.Num() + Exiting.Num() >=
         UFFZSDeveloperSettings::MaxQueueRuntimeEntries)
@@ -706,6 +717,12 @@ FFFZSQueueSnapshot UFFZSFacilityQueueComponent::CaptureSnapshot() const
 bool UFFZSFacilityQueueComponent::RestoreSnapshot(const FFFZSQueueSnapshot& Snapshot, TArray<FText>& OutErrors)
 {
     OutErrors.Reset();
+    if (Rules.MaxWaitingAgents == 0 && Rules.ServiceCapacity == 0 &&
+        (Snapshot.State != EFFZSQueueState::Closed || !Snapshot.Entries.IsEmpty()))
+    {
+        OutErrors.Add(LOCTEXT("PassiveFacilityQueueSnapshot", "서비스 없는 시설은 비어 있는 Closed 대기열만 복원할 수 있습니다."));
+        return false;
+    }
     if (Snapshot.Entries.Num() > UFFZSDeveloperSettings::MaxQueueRuntimeEntries)
     {
         OutErrors.Add(LOCTEXT(

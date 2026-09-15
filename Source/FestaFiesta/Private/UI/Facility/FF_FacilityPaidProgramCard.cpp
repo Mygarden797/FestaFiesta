@@ -11,13 +11,7 @@
 void UFF_FacilityPaidProgramCard::NativePreConstruct()
 {
 	Super::NativePreConstruct();
-	if (const UFF_UIPalette* Palette = UFF_UIPalette::Get())
-	{
-		SelectedColor = Palette->InGame.TealSoft;
-		UnselectedColor = Palette->InGame.White;
-		AvailableColor = Palette->InGame.TealDeep;
-		UnavailableColor = Palette->InGame.Danger;
-	}
+	// The palette seeds Class Defaults; designer edits must survive preview and play.
 }
 
 void UFF_FacilityPaidProgramCard::NativeOnInitialized()
