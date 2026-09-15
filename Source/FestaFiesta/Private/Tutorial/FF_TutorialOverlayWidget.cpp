@@ -3,6 +3,8 @@
 #include "Tutorial/FF_TutorialOverlayWidget.h"
 
 #include "Blueprint/SlateBlueprintLibrary.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Kismet/GameplayStatics.h"
 #include "Components/Widget.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
 
@@ -144,6 +146,72 @@ bool UFF_TutorialOverlayWidget::ResolveHighlightRect(
 	return OutSize.X > 0.f && OutSize.Y > 0.f;
 }
 
+bool UFF_TutorialOverlayWidget::ResolveWorldCircle(FVector2D& OutCenter, float& OutRadius) const
+{
+	if (CurrentAnchor.IsNone())
+	{
+		return false;
+	}
+
+	const UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
+	if (!Tutorial)
+	{
+		return false;
+	}
+
+	FVector WorldLocation = FVector::ZeroVector;
+	float WorldRadius = 0.f;
+	if (!Tutorial->FindAnchorWorldPoint(CurrentAnchor, WorldLocation, WorldRadius))
+	{
+		return false;
+	}
+
+	APlayerController* Controller = GetOwningPlayer();
+	if (!Controller)
+	{
+		return false;
+	}
+
+	FVector2D ScreenCenter = FVector2D::ZeroVector;
+	if (!UGameplayStatics::ProjectWorldToScreen(Controller, WorldLocation, ScreenCenter))
+	{
+		// 화면 밖이거나 카메라 뒤다. 탑뷰라 드물지만 가장자리에서 나올 수 있다.
+		return false;
+	}
+
+	// 반경도 화면 크기로 바꾼다. 줌에 따라 원이 같이 커지고 작아져야 한다.
+	//
+	// 옆으로 한 칸 떨어진 지점을 같이 투영해서 그 거리를 쓴다.
+	// 카메라 방향을 계산하는 것보다 단순하고, 탑뷰에서는 어느 방향이든 비슷하다.
+	FVector2D ScreenEdge = FVector2D::ZeroVector;
+	const FVector EdgeWorld = WorldLocation + FVector(WorldRadius, 0.f, 0.f);
+
+	if (UGameplayStatics::ProjectWorldToScreen(Controller, EdgeWorld, ScreenEdge))
+	{
+		OutRadius = static_cast<float>(FVector2D::Distance(ScreenCenter, ScreenEdge));
+	}
+	else
+	{
+		// 가장자리를 못 구했으면 눈에 보일 만한 값으로 둔다.
+		OutRadius = 60.f;
+	}
+
+	// 투영은 픽셀 좌표를 주는데 위젯은 DPI 가 적용된 좌표를 쓴다.
+	// 이걸 안 나누면 해상도가 다를 때 원이 엉뚱한 데 그려진다.
+	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+	if (Scale > KINDA_SMALL_NUMBER)
+	{
+		ScreenCenter /= Scale;
+		OutRadius /= Scale;
+	}
+
+	OutCenter = ScreenCenter;
+
+	// 너무 작으면 안 보이고 너무 크면 화면을 덮는다.
+	OutRadius = FMath::Clamp(OutRadius, 30.f, 600.f);
+	return true;
+}
+
 void UFF_TutorialOverlayWidget::NativeTick(const FGeometry& MyGeometry, const float DeltaTime)
 {
 	Super::NativeTick(MyGeometry, DeltaTime);
@@ -154,6 +222,27 @@ void UFF_TutorialOverlayWidget::NativeTick(const FGeometry& MyGeometry, const fl
 	FVector2D TopLeft = FVector2D::ZeroVector;
 	FVector2D Size = FVector2D::ZeroVector;
 	const bool bFound = ResolveHighlightRect(TopLeft, Size);
+
+	// UI 에서 못 찾았을 때만 세계를 본다.
+	//
+	// 둘 다 그리면 화면이 어수선하고, 이름이 겹쳤다는 것도 눈치채기 어렵다.
+	FVector2D WorldCenter = FVector2D::ZeroVector;
+	float WorldRadius = 0.f;
+	const bool bFoundCircle = !bFound && ResolveWorldCircle(WorldCenter, WorldRadius);
+
+	const bool bCircleChanged =
+		bFoundCircle != bHasCachedCircle
+		|| !WorldCenter.Equals(CachedWorldCenter, 0.5f)
+		|| !FMath::IsNearlyEqual(WorldRadius, CachedWorldRadius, 0.5f);
+
+	bHasCachedCircle = bFoundCircle;
+	CachedWorldCenter = WorldCenter;
+	CachedWorldRadius = WorldRadius;
+
+	if (bCircleChanged)
+	{
+		BP_OnHighlightCircleChanged(WorldCenter, WorldRadius, bFoundCircle);
+	}
 
 	// 값이 바뀔 때만 알린다. 매 프레임 알리면 BP 쪽에서 불필요한 갱신이 돈다.
 	const bool bChanged =
@@ -184,6 +273,54 @@ int32 UFF_TutorialOverlayWidget::NativePaint(
 		Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
 	const FVector2D ScreenSize = AllottedGeometry.GetLocalSize();
+
+	// 세계 지점을 가리키는 중이다. 화면 위가 아니라 저기를 보라는 뜻이므로
+	// 사각 테두리가 아니라 원을 그린다. 모양이 달라야 무엇을 가리키는지 안다.
+	if (bHasCachedCircle)
+	{
+		if (bMaskScreenForWorldTarget)
+		{
+			DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
+				FVector2f::ZeroVector, FVector2f(ScreenSize.X, ScreenSize.Y), MaskColor);
+		}
+
+		float CircleAlpha = OutlineColor.A;
+		if (PulsePeriodSeconds > 0.f)
+		{
+			const float Phase = FMath::Fmod(PulseTime, PulsePeriodSeconds) / PulsePeriodSeconds;
+			const float Wave = 0.5f + 0.5f * FMath::Cos(Phase * 2.f * PI);
+			CircleAlpha *= FMath::Lerp(PulseMinAlpha, 1.f, Wave);
+		}
+
+		FLinearColor PulsedCircle = OutlineColor;
+		PulsedCircle.A = CircleAlpha;
+
+		// 선분으로 원을 만든다. 32 등분이면 가장자리가 각져 보이지 않는다.
+		constexpr int32 CircleSegments = 32;
+
+		TArray<FVector2f> CirclePoints;
+		CirclePoints.Reserve(CircleSegments + 1);
+
+		for (int32 Index = 0; Index <= CircleSegments; ++Index)
+		{
+			const float Angle = 2.f * PI * static_cast<float>(Index) / static_cast<float>(CircleSegments);
+			CirclePoints.Add(FVector2f(
+				static_cast<float>(CachedWorldCenter.X) + FMath::Cos(Angle) * CachedWorldRadius,
+				static_cast<float>(CachedWorldCenter.Y) + FMath::Sin(Angle) * CachedWorldRadius));
+		}
+
+		FSlateDrawElement::MakeLines(
+			OutDrawElements,
+			BaseLayer + 1,
+			AllottedGeometry.ToPaintGeometry(),
+			MoveTemp(CirclePoints),
+			ESlateDrawEffect::None,
+			PulsedCircle,
+			true,
+			OutlineThickness);
+
+		return BaseLayer + 2;
+	}
 
 	// 강조할 대상이 없으면 화면 전체를 덮는다.
 	if (!bHasCachedRect)

@@ -65,6 +65,17 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Tutorial", meta = (DisplayName = "On Highlight Rect Changed"))
 	void BP_OnHighlightRectChanged(FVector2D TopLeft, FVector2D Size, bool bHasTarget);
 
+	// 세계 지점을 가리키는 중이다. 화살표를 붙이고 싶으면 여기에 건다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Tutorial", meta = (DisplayName = "On Highlight Circle Changed"))
+	void BP_OnHighlightCircleChanged(FVector2D Center, float Radius, bool bHasTarget);
+
+	// 세계 지점을 가리킬 때 화면 전체를 덮을지.
+	//
+	// 덮으면 시선이 확실히 모이는데, 주변 상황을 못 본다.
+	// "여기 놓으세요" 는 주변을 봐야 하므로 기본은 끈다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Tutorial")
+	bool bMaskScreenForWorldTarget = false;
+
 private:
 	UFUNCTION()
 	void HandleHighlightAnchorChanged(FName AnchorId);
@@ -75,6 +86,12 @@ private:
 	// 등록된 위젯의 화면 영역을 구한다. 없으면 false.
 	bool ResolveHighlightRect(FVector2D& OutTopLeft, FVector2D& OutSize) const;
 
+	// 세계 마커를 화면 좌표로 옮긴다. 없거나 화면 밖이면 false.
+	//
+	// 탑뷰라 대상이 카메라 뒤로 가거나 가려지는 경우가 거의 없다.
+	// 자유 시점이었으면 훨씬 까다로웠을 것이다.
+	bool ResolveWorldCircle(FVector2D& OutCenter, float& OutRadius) const;
+
 	FName CurrentAnchor = NAME_None;
 
 	// 지난 프레임에 구한 영역. 매 프레임 다시 구하는 이유는 스크롤이나 창 크기 변경으로
@@ -82,6 +99,11 @@ private:
 	FVector2D CachedTopLeft = FVector2D::ZeroVector;
 	FVector2D CachedSize = FVector2D::ZeroVector;
 	bool bHasCachedRect = false;
+
+	// 세계 지점을 가리킬 때. UI 와 모양을 다르게 해서 무엇을 가리키는지 구분한다.
+	FVector2D CachedWorldCenter = FVector2D::ZeroVector;
+	float CachedWorldRadius = 0.f;
+	bool bHasCachedCircle = false;
 
 	float PulseTime = 0.f;
 	bool bBound = false;

@@ -13,6 +13,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "Engine/DataTable.h"
 #include "Tutorial/FF_DialogueRow.h"
+#include "Tutorial/FF_TutorialMarker.h"
 #include "Tutorial/FF_DialogueScriptData.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -681,6 +682,38 @@ UWidget* UFF_TutorialSubsystem::FindAnchorWidget(const FName AnchorId) const
 	return Found ? Found->Get() : nullptr;
 }
 
+bool UFF_TutorialSubsystem::FindAnchorWorldPoint(
+	const FName AnchorId, FVector& OutLocation, float& OutRadius) const
+{
+	if (AnchorId.IsNone())
+	{
+		return false;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// 마커는 몇 개 안 되므로 매번 훑어도 된다. 캐시해두면 레벨 스트리밍으로
+	// 마커가 늦게 뜰 때 영영 못 찾는다.
+	for (TActorIterator<AFF_TutorialMarker> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		const AFF_TutorialMarker* Marker = *It;
+		if (!IsValid(Marker) || Marker->ResolveAnchorId() != AnchorId)
+		{
+			continue;
+		}
+
+		OutLocation = Marker->GetActorLocation();
+		OutRadius = Marker->RadiusCm;
+		return true;
+	}
+
+	return false;
+}
+
 void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 {
 	IConsoleManager& ConsoleManager = IConsoleManager::Get();
@@ -712,7 +745,7 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 					ActiveLines.Num());
 
 				UE_LOG(LogFestaFiestaTutorial, Display,
-					TEXT("  조작 대기=%s 조건=%d 강조=%s 등록된 대상 %d개"),
+					TEXT("  조작 대기=%s 조건=%d 강조=%s 등록된 UI 대상 %d개"),
 					IsWaitingForAction() ? TEXT("예") : TEXT("아니오"),
 					static_cast<int32>(GetCurrentLine().WaitCondition),
 					CurrentAnchor.IsNone() ? TEXT("없음") : *CurrentAnchor.ToString(),
@@ -731,6 +764,22 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 					bLevelTable ? TEXT("GameMode 표")
 					: bLevelScript ? TEXT("GameMode 애셋")
 					: TEXT("Project Settings 또는 없음"));
+
+				// 레벨에 마커가 몇 개 있는지. 강조가 안 될 때 여기부터 본다.
+				int32 MarkerCount = 0;
+				if (const UWorld* MarkerWorld = GetWorld())
+				{
+					for (TActorIterator<AFF_TutorialMarker> It(const_cast<UWorld*>(MarkerWorld)); It; ++It)
+					{
+						if (IsValid(*It))
+						{
+							++MarkerCount;
+						}
+					}
+				}
+
+				UE_LOG(LogFestaFiestaTutorial, Display,
+					TEXT("  레벨의 세계 마커 %d개"), MarkerCount);
 
 				UE_LOG(LogFestaFiestaTutorial, Display,
 					TEXT("  구독: Zone=%s 단계=%s / 카메라 기준점=%s"),

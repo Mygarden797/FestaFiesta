@@ -125,6 +125,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	UWidget* FindAnchorWidget(FName AnchorId) const;
 
+	// 이 이름의 세계 지점을 찾는다. 없으면 false.
+	//
+	// UI 와 세계를 같은 이름 공간에서 다루는 이유는, 대사를 쓰는 쪽이
+	// 이게 화면 위인지 세계 안인지 신경 쓰지 않아도 되게 하려는 것이다.
+	// 찾는 순서는 UI 가 먼저다. 이름이 겹치면 관리로 막는다.
+	bool FindAnchorWorldPoint(FName AnchorId, FVector& OutLocation, float& OutRadius) const;
+
 	// ── 신호 ────────────────────────────────────────────────────────────────
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
