@@ -3891,6 +3891,42 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy);
 		}
 
+		// 큐 가입 성공률
+		// 이번 창(델타)의 수락/거절/인내이탈 비율을 대기 점수에 곱한다. 
+		// 누적 카운터의 이번 창 델타만 쓴다 — 매 창마다 스냅샷을 남겨 두고 다음 창에서 뺀다.
+		{
+			const int32 AcceptedThisWindow = QueueJoinAccepted - LastWindowQueueJoinAccepted;
+			const int32 RejectedThisWindow = QueueJoinRejected - LastWindowQueueJoinRejected;
+			const int32 AbandonedThisWindow = QueuePatienceAbandons - LastWindowQueuePatienceAbandons;
+			LastWindowQueueJoinAccepted = QueueJoinAccepted;
+			LastWindowQueueJoinRejected = QueueJoinRejected;
+			LastWindowQueuePatienceAbandons = QueuePatienceAbandons;
+
+			const int32 TotalAttemptsThisWindow = AcceptedThisWindow + RejectedThisWindow + AbandonedThisWindow;
+			if (TotalAttemptsThisWindow > 0)
+			{
+				Satisfaction->SetQueueSuccessRate(
+					static_cast<float>(AcceptedThisWindow) / TotalAttemptsThisWindow);
+			}
+		}
+
+		// Need 충족도
+		// 지금 켜져 있는 성분(Hunger·Restroom·Stimulation)만 평균한다. 
+		// Thirst·Fatigue는 Phase 게이트로 상승 계수가 0이라 넣으면 항상 100% 충족으로 왜곡된다
+		// NeedMetrics 표본이 0이면(아직 아무도 안 들어왔거나 집계가 안 돌았으면) 넣지 않는다 —
+		// "미해소 0%"가 진짜 0%인지 데이터 없음인지 구분해야 한다.
+		if (NeedMetrics && NeedMetrics->GetSampleCount() > 0)
+		{
+			static const EFF_NeedType ActiveNeedTypes[] =
+			{
+				EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
+			};
+			for (const EFF_NeedType NeedType : ActiveNeedTypes)
+			{
+				Satisfaction->AddNeedFulfillmentSample(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType));
+			}
+		}
+
 		Satisfaction->CommitAggregation(Coefficients);
 	}
 

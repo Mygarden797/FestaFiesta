@@ -297,8 +297,8 @@ public:
 	int32 GetSimSatisfaction() const { return SimSatisfaction; }
 
 	/**
-	 * SimSatisfaction 분해값 3종. 왜 지금 만족도가 그 숫자인지 보여주기 위한 것이다 —
-	 * 최종 숫자 하나만 보면 플레이어가 뭘 고쳐야 할지 모른다. 셋 다 0~100이고
+	 * SimSatisfaction 분해값 4종. 왜 지금 만족도가 그 숫자인지 보여주기 위한 것이다 —
+	 * 최종 숫자 하나만 보면 플레이어가 뭘 고쳐야 할지 모른다. 넷 다 0~100이고
 	 * SimSatisfaction과 같은 주기(1초)에 같이 갱신된다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
@@ -309,6 +309,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetSimSatisfactionPreferenceScore() const { return SimSatisfactionPreferenceScore; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionNeedFulfillmentScore() const { return SimSatisfactionNeedFulfillmentScore; }
 
 	/** 0~100. SimSatisfaction + FinaleBonus + 연출 보정. 등급 산출용 게임 점수. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
@@ -321,7 +324,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionChanged;
 
-	/** 분해값 3종의 변경 델리게이트. 셋 다 OnSimSatisfactionChanged와 같은 순간에 함께 쏜다. */
+	/** 분해값 4종의 변경 델리게이트. 넷 다 OnSimSatisfactionChanged와 같은 순간에 함께 쏜다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionWaitScoreChanged;
 
@@ -330,6 +333,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionPreferenceScoreChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionNeedFulfillmentScoreChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
@@ -1017,7 +1023,7 @@ private:
 	UPROPERTY()
 	int32 SimSatisfaction = 50;
 
-	// 분해값 3종. SimSatisfaction과 같은 순간에 같이 갱신된다(HandleOwnerSimSatisfactionChanged)
+	// 분해값 4종. SimSatisfaction과 같은 순간에 같이 갱신된다(HandleOwnerSimSatisfactionChanged)
 	UPROPERTY()
 	int32 SimSatisfactionWaitScore = 50;
 
@@ -1026,6 +1032,9 @@ private:
 
 	UPROPERTY()
 	int32 SimSatisfactionPreferenceScore = 50;
+
+	UPROPERTY()
+	int32 SimSatisfactionNeedFulfillmentScore = 50;
 
 	// --- 지표 더미값 ---
 	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.

@@ -338,14 +338,15 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged(int32 New
 {
 	ApplyIntMetric(SimSatisfaction, NewValue, OnSimSatisfactionChanged);
 
-	// 분해값 3종도 같은 확정 주기에 나온 값이라 여기서 같이 읽는다 — 소유자가 델리게이트를
-	// 따로 셋 더 쏘게 만들지 않는다. 이 핸들러가 불렸다는 것 자체가 CachedSatisfactionSubsystem이
+	// 분해값 4종도 같은 확정 주기에 나온 값이라 여기서 같이 읽는다 — 소유자가 델리게이트를
+	// 따로 넷 더 쏘게 만들지 않는다. 이 핸들러가 불렸다는 것 자체가 CachedSatisfactionSubsystem이
 	// 존재한다는 뜻이다(구독도 그 포인터로 걸었고, Bind + Sync 호출도 그 직후에만 한다).
 	if (CachedSatisfactionSubsystem)
 	{
 		ApplyIntMetric(SimSatisfactionWaitScore, CachedSatisfactionSubsystem->GetWaitScore(), OnSimSatisfactionWaitScoreChanged);
 		ApplyIntMetric(SimSatisfactionDensityScore, CachedSatisfactionSubsystem->GetDensityScore(), OnSimSatisfactionDensityScoreChanged);
 		ApplyIntMetric(SimSatisfactionPreferenceScore, CachedSatisfactionSubsystem->GetPreferenceScore(), OnSimSatisfactionPreferenceScoreChanged);
+		ApplyIntMetric(SimSatisfactionNeedFulfillmentScore, CachedSatisfactionSubsystem->GetNeedFulfillmentScore(), OnSimSatisfactionNeedFulfillmentScoreChanged);
 	}
 }
 
