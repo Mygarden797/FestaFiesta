@@ -16,6 +16,7 @@
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationReturnTrip.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Engine/GameInstance.h"
@@ -865,6 +866,29 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	}
 
 	++Stats.Chosen;
+
+	// 만족도 취향매칭 입력. no_choice(위 이른 return)나 파싱·시설 조회 실패는 확정된
+	// 목적지가 아니므로 표본에 안 들어간다 — 실제로 간 곳만 "취향에 맞았는가"를 잰다.
+	// GameInstance는 위(예약 필터 직전)에서 이미 구했다 — 여기서 다시 선언하지 않는다.
+	if (GameInstance)
+	{
+		if (UFF_SatisfactionMetricsSubsystem* Satisfaction = GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>())
+		{
+			if (const FFF_DestinationUtilityBreakdown* ChosenScore = Decision.AllCandidateScores.FindByPredicate(
+					[&Decision](const FFF_DestinationUtilityBreakdown& Score)
+					{
+						return Score.DestinationId == Decision.ChosenDestinationId;
+					}))
+			{
+				const float PreferenceRef = FFF_UtilityCoefficientHelpers::GetCoefficient(
+					CachedCoefficientTable.Get(), TEXT("satisfaction_preference_term_ref"), 0.6f);
+				const float PreferenceNorm = PreferenceRef > 0.f
+					? FMath::Clamp(ChosenScore->PreferenceTerm / PreferenceRef, -1.f, 1.f)
+					: 0.f;
+				Satisfaction->AddPreferenceSample(PreferenceNorm);
+			}
+		}
+	}
 
 	UE_LOG(LogCrowdDecision, Verbose,
 		TEXT("파티 %d (개체 %d, 회차 %d, 사유 %d) → %s, 후보 %d개"),

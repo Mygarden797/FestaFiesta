@@ -22,6 +22,7 @@
 class UFF_FestivalStageSubsystem;
 class UFF_FestivalProgressionSubsystem;
 class UFF_StageEconomyBridgeSubsystem;
+class UFF_SatisfactionMetricsSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
@@ -235,9 +236,9 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | 값                     | 실제 소유자      | 현재        |
  * |------------------------|------------------|-------------|
  * | Stage / Day            | 강민서           | **진짜 값** |
- * | 남은 시간              | 강민서           | **진짜 값** |
+ * | 남은 시간			    | 강민서           | **진짜 값** |
  * | Gold                   | 김시리           | **진짜 값** (`OnGoldChanged` 구독) |
- * | SimSatisfaction        | 김시리 · 이정원  | 더미        |
+ * | SimSatisfaction        | 김시리/이정원     | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭 3항 산출) |
  * | ScoreSatisfaction      | 김시리           | 더미        |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
  * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
@@ -295,6 +296,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetSimSatisfaction() const { return SimSatisfaction; }
 
+	/**
+	 * SimSatisfaction 분해값 3종. 왜 지금 만족도가 그 숫자인지 보여주기 위한 것이다 —
+	 * 최종 숫자 하나만 보면 플레이어가 뭘 고쳐야 할지 모른다. 셋 다 0~100이고
+	 * SimSatisfaction과 같은 주기(1초)에 같이 갱신된다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionWaitScore() const { return SimSatisfactionWaitScore; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionDensityScore() const { return SimSatisfactionDensityScore; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionPreferenceScore() const { return SimSatisfactionPreferenceScore; }
+
 	/** 0~100. SimSatisfaction + FinaleBonus + 연출 보정. 등급 산출용 게임 점수. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetScoreSatisfaction() const { return ScoreSatisfaction; }
@@ -305,6 +320,16 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionChanged;
+
+	/** 분해값 3종의 변경 델리게이트. 셋 다 OnSimSatisfactionChanged와 같은 순간에 함께 쏜다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionWaitScoreChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionDensityScoreChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionPreferenceScoreChanged;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
@@ -948,6 +973,10 @@ protected:
 	UFUNCTION()
 	void HandleOwnerFinaleGradeChanged(EFF_FinaleGrade NewGrade);
 
+	/** 만족도 시스템이 쏘는 SimSatisfaction을 받아 위젯에 중계한다. */
+	UFUNCTION()
+	void HandleOwnerSimSatisfactionChanged(int32 NewValue);
+
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
@@ -969,6 +998,9 @@ private:
 	/** 경제 시스템 구독을 시도한다. Stage와 같은 재시도 규칙을 쓴다. */
 	void TryBindProgressionSubsystem();
 
+	/** 만족도 시스템 구독을 시도한다. Stage·경제와 같은 재시도 규칙을 쓴다. */
+	void TryBindSatisfactionSubsystem();
+
 	/**
 	 * 소유자 시스템에서 지표를 읽어 온다. PollInterval마다 Tick에서 호출된다.
 	 * 지금은 소유자가 없어 아무것도 하지 않는다 — 구현이 붙으면 **여기 한 곳만** 채운다.
@@ -979,12 +1011,24 @@ private:
 	/** 값이 실제로 바뀔 때만 통지한다. 같은 값을 계속 쏘면 위젯이 헛돈다. */
 	static void ApplyIntMetric(int32& Current, int32 NewValue, FFF_OnIntMetricChanged& ChangedDelegate);
 
-	// --- 지표 더미값 ---
-	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
+	
+	// 만족도 시스템 쪽 기본값과 맞춰 기본값 50
+	// TryBindSatisfactionSubsystem이 실제 값으로 덮어쓴다
+	UPROPERTY()
+	int32 SimSatisfaction = 50;
+
+	// 분해값 3종. SimSatisfaction과 같은 순간에 같이 갱신된다(HandleOwnerSimSatisfactionChanged)
+	UPROPERTY()
+	int32 SimSatisfactionWaitScore = 50;
 
 	UPROPERTY()
-	int32 SimSatisfaction = 72;
+	int32 SimSatisfactionDensityScore = 50;
 
+	UPROPERTY()
+	int32 SimSatisfactionPreferenceScore = 50;
+
+	// --- 지표 더미값 ---
+	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
 	UPROPERTY()
 	int32 ScoreSatisfaction = 72;
 
@@ -1055,6 +1099,12 @@ private:
 
 	/** 경제 시스템을 못 찾았을 때 재시도한 횟수. */
 	int32 ProgressionBindRetryCount = 0;
+
+	UPROPERTY()
+	TObjectPtr<UFF_SatisfactionMetricsSubsystem> CachedSatisfactionSubsystem;
+
+	/** 만족도 시스템을 못 찾았을 때 재시도한 횟수. */
+	int32 SatisfactionBindRetryCount = 0;
 
 	/** 남은 시간 중복 방송 차단용. 구독 중계와 Sync가 같은 값을 두 번 쏘지 않게 한다. */
 	int32 LastBroadcastRemainingSeconds = INDEX_NONE;

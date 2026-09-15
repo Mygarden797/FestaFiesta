@@ -13,6 +13,7 @@
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
 #include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -3788,6 +3789,7 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 	// GameInstance 스코프라 캐시하지 않는다 — 이 서브시스템(World)보다 오래 산다.
 	// 집계하는 스텝에만 조회하므로 매 프레임 비용이 아니다.
 	UFF_NpcNeedMetricsSubsystem* NeedMetrics = nullptr;
+	UFF_SatisfactionMetricsSubsystem* Satisfaction = nullptr;
 	if (bAggregateMetrics)
 	{
 		if (const UWorld* World = GetWorld())
@@ -3795,6 +3797,7 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			if (UGameInstance* GameInstance = World->GetGameInstance())
 			{
 				NeedMetrics = GameInstance->GetSubsystem<UFF_NpcNeedMetricsSubsystem>();
+				Satisfaction = GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>();
 			}
 		}
 	}
@@ -3802,6 +3805,10 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 	if (NeedMetrics)
 	{
 		NeedMetrics->BeginAggregation();
+	}
+	if (Satisfaction)
+	{
+		Satisfaction->BeginAggregation();
 	}
 	for (FFF_NeedState& Aggregated : PartyAggregatedNeeds)
 	{
@@ -3840,6 +3847,51 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 	if (NeedMetrics)
 	{
 		NeedMetrics->CommitAggregation();
+	}
+
+	// 만족도의 대기·밀도 입력. 취향매칭 입력은 FF_CrowdDecisionSubsystem이 결정 확정
+	// 시점마다 이미 넣어 뒀다 — 여기서는 이번 창의 대기·밀도만 채우고 셋을 함께 확정한다.
+	if (Satisfaction)
+	{
+		const FFF_SatisfactionCoefficients Coefficients =
+			FFF_SatisfactionCoefficients::LoadFromTable(CachedCoefficientTable);
+
+		// 대기: Zone 시설 전수의 평균 완료 대기시간(초). 완료자가 없는 시설(0.0)은 뺀다 —
+		// "아직 모름"과 "대기 없음"을 섞지 않는다(ViewModel::GetLiveFacilities와 같은 판단).
+		if (const UWorld* World = GetWorld())
+		{
+			if (const UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
+			{
+				const FFFZSReadModel ReadModel = Zone->BuildReadModel();
+				for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+				{
+					if (Facility.State == EFFZSFacilityState::Removed)
+					{
+						continue;
+					}
+					if (Facility.AverageCompletedWaitSeconds > 0.f)
+					{
+						Satisfaction->AddWaitSample(Facility.AverageCompletedWaitSeconds);
+					}
+				}
+			}
+		}
+
+		// 밀도: 점유 셀마다 LOS 등급 점수를 매겨 그 셀의 인원 수로 가중한다 — "사람이 몇 명이나
+		// 어떤 등급에 서 있는가"를 반영하기 위해서다. 새 순회가 아니라 이번 스텝에 이미
+		// 갱신된 CrowdReadModel(SnapshotIntervalSteps)을 그대로 읽는다.
+		for (const FFF_CrowdCellSample& Cell : CrowdReadModel.OccupiedCells)
+		{
+			if (Cell.Occupancy <= 0)
+			{
+				continue;
+			}
+			const ECrowdLOS Grade = FCrowdDensityGrid::DensityToLOS(Cell.DensityPerSqm);
+			const float GradeScore = Coefficients.ScoreForLOSGrade(static_cast<uint8>(Grade));
+			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy);
+		}
+
+		Satisfaction->CommitAggregation(Coefficients);
 	}
 
 	if (ElapsedMinutes > 0.f)
