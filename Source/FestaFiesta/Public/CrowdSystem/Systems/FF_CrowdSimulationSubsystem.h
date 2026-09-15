@@ -283,6 +283,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 NeedMetricsIntervalSteps = 30;
 
+	// 만족도 대기 항의 큐 성공률 계산용 — 직전 확정 창에서의 누적 카운터 스냅샷.
+	// QueueJoinAccepted/QueueJoinRejected/QueuePatienceAbandons는 시뮬레이션 시작부터의
+	// 누적값이라, 이번 창만의 델타를 구하려면 지난 창의 값을 들고 있어야 한다.
+	int32 LastWindowQueueJoinAccepted = 0;
+	int32 LastWindowQueueJoinRejected = 0;
+	int32 LastWindowQueuePatienceAbandons = 0;
+
 	void DespawnParty(int32 PartyID);
 
 	// 조정자가 여기에 물어 목적지를 내려준다. 비어 있으면 Crowd가 배회로 폴백한다
