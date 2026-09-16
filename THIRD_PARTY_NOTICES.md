@@ -382,3 +382,12 @@ CC BY 4.0은 **수정 사실 표시가 의무**이므로 여기 기록한다 (U3
 - 수정: 높이 평활화, 극점 통합, 원본 해안 경계 완화·베벨 생성, 밝은 캐주얼 팔레트. 8개 경도 구간으로 나누어 제작.
 - Unreal: `/Game/FestaFiesta/UI/Atlas/Earth/DioramaWorld_v1/`.
 - 원본 위치·고도 기준은 지리 데이터이며 AI 시안은 스타일 참고에만 사용.
+
+### 밝은 지구 — BrightGlobe v1 (2026-09-16)
+
+- 위 전 세계 디오라마와 동일한 NOAA ETOPO1·Solar System Scope 입력을 재사용한다. 새 외부 텍스처나 모델은 취득하지 않았다.
+- 수정: 유럽·북아프리카 지역 시험 후 전 세계 8개 경도 구간으로 확장했다. Blender에서 육지 단차 축소, 해안 단면 완화, 원본 고도 곡선을 조정하고 Unreal 재질에 파랑·초록·모래색 팔레트와 해안 수색을 적용했다. 원본 지도·극지 분류와 위경도 배치를 유지했다.
+- 소스: `SourceArt/UI/Atlas/BrightGlobe_v1/`; 제작 스크립트: `Tools/ui/blender/bright_globe/`.
+- Unreal 에셋: `/Game/FestaFiesta/UI/Atlas/Earth/BrightGlobe_v1/`. `P05/`의 전 세계 지형·재질을 공용 Frontend에 적용했으며 지역 시험 에셋도 보존한다.
+- 지도·해안·색상 분류는 Solar System Scope CC BY 4.0 파생 자료이며, 지형 고도는 NOAA 공개 데이터다.
+- 크레딧: 지형 높이: NOAA NGDC ETOPO1 (Amante & Eakins, 2009). 지도·색상 기준: Solar System Scope(INOVE), CC BY 4.0. FestaFiesta용으로 수정됨.
