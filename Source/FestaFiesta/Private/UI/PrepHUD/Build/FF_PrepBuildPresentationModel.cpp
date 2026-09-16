@@ -33,6 +33,7 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 			Tile = NewObject<UFF_PrepBuildTileData>(this);
 		}
 		Tile->Initialize(Entry, Gold, bHasAuthoritativeGold);
+		Tile->SetSynergyHighlighted(SynergyHighlightIds.Contains(FacilityId));
 
 		// 로딩/실패 중에는 이전 프레임 목록을 눌러 배치하지 못하게 본문을 비웁니다.
 		if (LoadState == EFF_BuildCatalogLoadState::Ready
@@ -51,12 +52,30 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 		}
 	}
 
+	// Stable ordering preserves the catalog order inside each group and object identity across pages.
+	if (!SynergyHighlightIds.IsEmpty())
+	{
+		VisibleTiles.StableSort([](const UFF_PrepBuildTileData& A, const UFF_PrepBuildTileData& B)
+		{
+			return A.IsSynergyHighlighted() && !B.IsSynergyHighlighted();
+		});
+	}
+
 	Snapshot = FFF_PrepBuildPresentationRules::BuildSnapshot(
 		LoadState,
 		ActiveIds.Num(),
 		VisibleTiles.Num(),
 		FailureText);
 	OnPresentationChanged.Broadcast();
+}
+
+void UFF_PrepBuildPresentationModel::SetSynergyHighlightIds(const TArray<FName>& DefinitionIds)
+{
+	SynergyHighlightIds.Reset();
+	for (const FName Id : DefinitionIds)
+	{
+		if (!Id.IsNone()) { SynergyHighlightIds.Add(Id); }
+	}
 }
 
 void UFF_PrepBuildPresentationModel::RefreshGold(

@@ -8,6 +8,7 @@
 
 class UTexture2D;
 struct FFF_FacilityUpgradePreview;
+struct FFF_FacilitySynergyPreview;
 
 /** The gameplay context that opened the shared facility inspector. */
 UENUM(BlueprintType)
@@ -25,7 +26,25 @@ enum class EFF_FacilityInfoPage : uint8
 	Overview,
 	Operation,
 	Upgrade,
-	RemoveConfirmation
+	RemoveConfirmation,
+	/** Append only: existing WBP navigation values stay stable. */
+	Synergy
+};
+
+/** One authored combination; repeated nearby instances are summarized in this row. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_FacilityInfoSynergyEntry
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FName RuleId;
+	/** 실제 건축 카드의 식별자입니다. 표시 이름에서 추론하지 않습니다. */
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FName PartnerFacilityDefinitionId;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText TitleText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText PartnerText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText EffectText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText ConditionText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText StatusText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") bool bActive = false;
 };
 
 /**
@@ -69,6 +88,11 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	/** Current one-person settlement estimate, visible even when the facility has no levels. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText FacilityRevenueText;
+
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy")
+	FText SynergySummaryText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy")
+	TArray<FFF_FacilityInfoSynergyEntry> SynergyEntries;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText OperationStateText;
@@ -242,6 +266,10 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 /** Pure formatting policy shared by runtime presentation and automation tests. */
 namespace FFFacilityInfoModel
 {
+	/** Uses current-location preview truth, with eligibility guarding hypothetical relocation bonuses. */
+	FESTAFIESTA_API void ApplySynergyPreview(const FFF_FacilitySynergyPreview* Preview,
+		bool bSelectionEligible, float SelectedBonusPercent, const TMap<FName, FText>& FacilityNames,
+		FFF_FacilityInfoViewData& ViewData);
 	/** Replaces all upgrade fields, including when the next snapshot is unavailable or read-only. */
 	FESTAFIESTA_API void ApplyUpgradePreview(
 		const FFF_FacilityUpgradePreview* Preview, FFF_FacilityInfoViewData& ViewData);

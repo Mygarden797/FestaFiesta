@@ -80,6 +80,7 @@ void UFFZSBuildableGridComponent::HideGrid()
     if (!BatchedLines.IsEmpty())
     {
         Flush();
+        ++PresentationRevision;
     }
     SetHiddenInGame(true);
     bCacheValid = false;
@@ -136,6 +137,7 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     // moved scenery/protected areas whose edits do not issue an authority world command.
     const bool bSpatialCacheCurrent = bCacheValid && CachedContextHash == ContextHash &&
         CachedRevision == WorldSystem.GetWorldRevision() && CachedMin.Equals(Min, 0.01) &&
+        CachedRegistryRevision == WorldSystem.GetFacilityRegistryRevision() &&
         CachedMax.Equals(Max, 0.01) && CachedSurfaceNormal.Equals(Normal, 0.001) &&
         FMath::IsNearlyEqual(CachedPlaneDistance, PlaneDistance, 0.5) &&
         CachedZoneTransform.Equals(ZoneTransform) && Now - LastRefreshTimeSeconds < 0.5;
@@ -238,14 +240,27 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
         }
         AppendRun(RunStart, RunEnd, RunBand);
     }
-    Flush();
-    if (!Lines.IsEmpty())
+    bool bLinesChanged = Lines.Num() != BatchedLines.Num();
+    for (int32 Index = 0; !bLinesChanged && Index < Lines.Num(); ++Index)
     {
-        DrawLines(Lines);
+        const FBatchedLine& A = Lines[Index];
+        const FBatchedLine& B = BatchedLines[Index];
+        bLinesChanged = !A.Start.Equals(B.Start, 0.01) || !A.End.Equals(B.End, 0.01) ||
+            !A.Color.Equals(B.Color) || !FMath::IsNearlyEqual(A.Thickness, B.Thickness) ||
+            A.DepthPriority != B.DepthPriority;
     }
-    SetHiddenInGame(Lines.IsEmpty());
+    // Checks may repeat to detect external scenery changes, but an unchanged result must
+    // retain its render proxy. Publish an actual change once, without an empty Flush phase.
+    if (bLinesChanged)
+    {
+        BatchedLines = MoveTemp(Lines);
+        MarkRenderStateDirty();
+        ++PresentationRevision;
+    }
+    SetHiddenInGame(BatchedLines.IsEmpty());
     CachedContextHash = ContextHash;
     CachedRevision = WorldSystem.GetWorldRevision();
+    CachedRegistryRevision = WorldSystem.GetFacilityRegistryRevision();
     CachedMin = Min;
     CachedMax = Max;
     CachedSurfaceNormal = Normal;

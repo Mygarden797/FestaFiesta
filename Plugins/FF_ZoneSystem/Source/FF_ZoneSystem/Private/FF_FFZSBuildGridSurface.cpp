@@ -3,6 +3,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "FF_FFZSBuildableGrid.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
@@ -22,6 +24,25 @@ namespace
     double SafePositive(const double Value, const double Fallback)
     {
         return FMath::IsFinite(Value) && Value > 0.0 ? Value : Fallback;
+    }
+
+    uint32 GetSupportGeometryHash(const UPrimitiveComponent& Component, const int32 InstanceIndex)
+    {
+        FTransform Transform = Component.GetComponentTransform();
+        if (const auto* Instances = Cast<UInstancedStaticMeshComponent>(&Component);
+            Instances && InstanceIndex != INDEX_NONE)
+        {
+            if (!Instances->GetInstanceTransform(InstanceIndex, Transform, true)) { return 0; }
+        }
+        uint32 Hash = HashCombine(GetTypeHash(Transform.GetLocation()), GetTypeHash(Transform.GetRotation()));
+        Hash = HashCombine(Hash, GetTypeHash(Transform.GetScale3D()));
+        Hash = HashCombine(Hash, GetTypeHash(Component.Bounds.Origin));
+        Hash = HashCombine(Hash, GetTypeHash(Component.Bounds.BoxExtent));
+        if (const auto* Mesh = Cast<UStaticMeshComponent>(&Component))
+        {
+            Hash = HashCombine(Hash, PointerHash(Mesh->GetStaticMesh()));
+        }
+        return Hash;
     }
 
     struct FPendingSurfaceSample
@@ -160,19 +181,25 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
         }
     }
 
-    // A fixed two-second lifetime cannot cover a large 16K-cell window under a 512-trace
-    // update budget. Allow two complete passes, and renew a full pass before hard expiry.
-    // Recompute from each sample's original time so a growing window preserves valid work.
+    // These deadlines schedule background verification; they are not visibility deadlines.
+    // A slow frame or a large window must not erase already confirmed ground while the
+    // bounded trace budget catches up. Real support changes still invalidate the sample.
     const double SampleLifetimeSeconds = FFZSBuildGridSurface::CalculateSampleLifetimeSeconds(
         RequiredVertices.Num(), CachedTraceBudget);
     const double RefreshLeadSeconds = FFZSBuildGridSurface::CalculateRefreshLeadSeconds(
         RequiredVertices.Num(), CachedTraceBudget);
     for (TPair<FIntPoint, FSample>& Pair : Samples)
     {
+        FSample& Sample = Pair.Value;
+        const UPrimitiveComponent* Support = Sample.SupportComponent.Get();
+        Sample.bSupportCurrent = Sample.bHit && Support && Support->IsRegistered() &&
+            Support->IsQueryCollisionEnabled() &&
+            Support->GetCollisionResponseToChannel(ECC_Visibility) == ECR_Block &&
+            (!Support->GetOwner() || Support->GetOwner()->GetActorEnableCollision()) &&
+            GetSupportGeometryHash(*Support, Sample.SupportInstance) == Sample.SupportGeometryHash;
         if (Pair.Value.ExpiresAtSeconds > LastUpdateSeconds)
         {
-            // Increasing the budgeted lifetime may preserve a still-fresh sample, but it
-            // must never resurrect a floor whose previous hard expiration was already hit.
+            // Preserve the original sampling time when adapting the verification budget.
             Pair.Value.ExpiresAtSeconds = Pair.Value.SampledAtSeconds + SampleLifetimeSeconds +
                 ResolveSamplePhaseSeconds(Pair.Key);
         }
@@ -183,11 +210,12 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
     for (const FIntPoint& Key : RequiredVertices)
     {
         const FSample* Existing = Samples.Find(Key);
-        if (!Existing || Existing->ExpiresAtSeconds - RefreshLeadSeconds <= LastUpdateSeconds)
+        const bool bSupportChanged = Existing && Existing->bHit && !Existing->bSupportCurrent;
+        if (!Existing || bSupportChanged || Existing->ExpiresAtSeconds - RefreshLeadSeconds <= LastUpdateSeconds)
         {
             FPendingSurfaceSample& Pending = Work.AddDefaulted_GetRef();
             Pending.Key = Key;
-            Pending.bMissing = Existing == nullptr;
+            Pending.bMissing = Existing == nullptr || bSupportChanged;
             Pending.ExpiresAtSeconds = Existing ? Existing->ExpiresAtSeconds : 0.0;
             Pending.DistanceSquared = FVector2D::DistSquared(FVector2D(Key.X, Key.Y), CenterKey);
         }
@@ -248,6 +276,9 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
                 Sample.UpDot = FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), FVector::UpVector);
                 Sample.SupportComponent = Hit.GetComponent();
                 Sample.SupportInstance = Hit.Item;
+                Sample.bSupportCurrent = Sample.SupportComponent.IsValid();
+                Sample.SupportGeometryHash = Sample.bSupportCurrent
+                    ? GetSupportGeometryHash(*Sample.SupportComponent.Get(), Sample.SupportInstance) : 0;
             }
             // Vertex-specific phases spread renewal of a flat initial batch. Invalid hits
             // also renew, allowing repaired ground to become visible without cursor movement.
@@ -275,9 +306,9 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
             double MaximumHeight = -TNumericLimits<double>::Max();
             for (const FSample* Corner : Corners)
             {
-                // Even permissive whole-facility sampling must not invent missing visual
-                // corners. All four known, fresh, real hits are required to draw this cell.
-                if (!Corner || Corner->ExpiresAtSeconds <= LastUpdateSeconds || !Corner->bHit ||
+                // All four corners need confirmed, unchanged collision support. A timer
+                // expiring alone never removes a line during background verification.
+                if (!Corner || !Corner->bHit || !Corner->bSupportCurrent ||
                     Corner->UpDot + UE_SMALL_NUMBER < MinimumUpDot)
                 {
                     bValidGround = false;
@@ -349,7 +380,7 @@ FVector FFFZSBuildGridSurfaceCache::GetWorldPoint(const FVector2D& LocalCm) cons
     const auto FindGround = [this](const FIntPoint& Key) -> const FSample*
     {
         const FSample* Sample = Samples.Find(Key);
-        return Sample && Sample->bHit && Sample->ExpiresAtSeconds > LastUpdateSeconds ? Sample : nullptr;
+        return Sample && Sample->bHit && Sample->bSupportCurrent ? Sample : nullptr;
     };
     if (KeyPoint.Equals(FVector2D(Rounded.X, Rounded.Y), 0.0001))
     {
