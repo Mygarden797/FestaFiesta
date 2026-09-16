@@ -10,6 +10,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/World.h"
+#include "HAL/PlatformProcess.h"
 #include "FF_FFZSBuildArea.h"
 #include "FF_FFZSBuildableGridActor.h"
 #include "FF_FFZSBuildableGridComponent.h"
@@ -151,10 +152,19 @@ bool FFFZSBuildableGridComponentLifecycleTest::RunTest(const FString& Parameters
     const int32 OriginalLineCount = Grid->BatchedLines.Num();
     const FVector OriginalStart = Grid->BatchedLines[0].Start;
     const FVector OriginalEnd = Grid->BatchedLines[0].End;
+    const uint64 OriginalPresentationRevision = Grid->GetPresentationRevision();
     Refresh();
     TestEqual(TEXT("Repeated cached refresh does not append duplicate lines"), Grid->BatchedLines.Num(), OriginalLineCount);
     TestTrue(TEXT("Stable context keeps the same first segment"),
         Grid->BatchedLines[0].Start.Equals(OriginalStart) && Grid->BatchedLines[0].End.Equals(OriginalEnd));
+    FPlatformProcess::Sleep(0.55f);
+    Refresh();
+    TestEqual(TEXT("Background scenery checks do not republish an unchanged grid"),
+        Grid->GetPresentationRevision(), OriginalPresentationRevision);
+    Grid->InvalidateGrid();
+    Refresh();
+    TestEqual(TEXT("Even an explicit recheck retains the render proxy when its result is identical"),
+        Grid->GetPresentationRevision(), OriginalPresentationRevision);
 
     Grid->HideGrid();
     TestTrue(TEXT("Hide clears persisted lines"), Grid->BatchedLines.IsEmpty());
@@ -181,6 +191,8 @@ bool FFFZSBuildableGridComponentLifecycleTest::RunTest(const FString& Parameters
     Grid->InvalidateGrid();
     Refresh();
     TestTrue(TEXT("Invalidation removes all lines inside a newly protected region"), Grid->BatchedLines.IsEmpty());
+    TestTrue(TEXT("An actual protected-area change still publishes updated geometry"),
+        Grid->GetPresentationRevision() > OriginalPresentationRevision);
     TestTrue(TEXT("Fully excluded grid is hidden"), Grid->bHiddenInGame);
     TestEqual(TEXT("Presentation and protection registration do not commit a building"),
         System->GetWorldRevision(), RevisionBeforeProtection);

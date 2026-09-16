@@ -26,6 +26,7 @@
 #include "Components/SizeBox.h"
 #include "Components/SizeBoxSlot.h"
 #include "Components/Spacer.h"
+#include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "HAL/FileManager.h"
@@ -41,6 +42,7 @@
 #include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
+#include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
 #include "UObject/SavePackage.h"
 #include "WidgetBlueprint.h"
 #include "WidgetBlueprintFactory.h"
@@ -51,6 +53,7 @@ namespace FFFacilityInfoWbpBuilder
 {
 	const FString PanelPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
 	const FString LightingPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"));
+	const FString SynergyEntryPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"));
 	bool SaveBlueprint(UWidgetBlueprint& Blueprint);
 	bool HasNamedVariable(const UWidgetBlueprint& Blueprint, FName Name, const UClass& ExpectedClass);
 	bool MigrateInspectorControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
@@ -1508,6 +1511,173 @@ namespace FFFacilityInfoWbpBuilder
 		return true;
 	}
 
+	bool HasSynergyEntryContract(const UWidgetBlueprint& Blueprint)
+	{
+		for (const FName Name : {FName(TEXT("Text_Title")), FName(TEXT("Text_Partner")),
+			FName(TEXT("Text_Effect")), FName(TEXT("Text_Condition")), FName(TEXT("Text_Status"))})
+		{
+			if (!HasNamedVariable(Blueprint, Name, *UTextBlock::StaticClass())) return false;
+		}
+		return true;
+	}
+
+	bool EnsureSynergyPartnerLink(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bAdded)
+	{
+		bAdded = false;
+		UTextBlock* Partner = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_Partner")));
+		UWidget* Existing = Tree.FindWidget(TEXT("Button_OpenPartnerCatalog"));
+		if (!Partner || !Partner->Slot || !Partner->GetParent()) return false;
+		if (Existing)
+		{
+			UButton* Button = Cast<UButton>(Existing);
+			if (!Button || !Button->bIsVariable) return false;
+			bool bInsideButton = false;
+			for (UWidget* Ancestor = Partner->GetParent(); Ancestor; Ancestor = Ancestor->GetParent())
+			{
+				bInsideButton |= Ancestor == Button;
+				if (Ancestor->GetVisibility() == ESlateVisibility::HitTestInvisible) return false;
+			}
+			return bInsideButton;
+		}
+		UPanelWidget* Parent = Partner->GetParent();
+		const int32 Index = Parent->GetChildIndex(Partner);
+		// Do not wrap or replace an already authored button with another action.
+		if (Index == INDEX_NONE || Parent->IsA<UButton>()) return false;
+		Blueprint.Modify();
+		Tree.Modify();
+		Parent->Modify();
+		Partner->Modify();
+		Partner->Slot->Modify();
+		UButton* Button = MakeWidget<UButton>(Blueprint, Tree, TEXT("Button_OpenPartnerCatalog"), true);
+		if (!Button) return false;
+		const FFF_UIPaletteInGame& Palette = UFF_UIPalette::Get()->InGame;
+		FButtonStyle Style;
+		Style.Normal.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Style.Disabled.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Style.Hovered = MakeSolidBrush(Palette.Hover, 4.0f);
+		Style.Pressed = MakeSolidBrush(Palette.PaperSunken, 4.0f);
+		Style.NormalPadding = FMargin(0.0f);
+		Style.PressedPadding = FMargin(0.0f);
+		Button->SetStyle(Style);
+		Button->SetCursor(EMouseCursor::Hand);
+		Button->SetToolTipText(NSLOCTEXT("FFFacilitySynergy", "OpenPartnerCatalog", "건축 목록에서 이 시설 보기"));
+		// ReplaceChildAt retains the existing parent slot object, its index and every
+		// authored layout value. Only the text's direct parent becomes a zero-pad button.
+		if (!Parent->ReplaceChildAt(Index, Button)) return false;
+		Partner->Slot = nullptr;
+		UButtonSlot* TextSlot = Cast<UButtonSlot>(Button->AddChild(Partner));
+		if (!TextSlot) return false;
+		TextSlot->SetPadding(FMargin(0.0f));
+		TextSlot->SetHorizontalAlignment(HAlign_Fill);
+		TextSlot->SetVerticalAlignment(VAlign_Center);
+		// The original read-only row root blocked all child hit testing. Convert only
+		// blocking ancestors on this button's path; retain their visual/layout values.
+		for (UWidget* Ancestor = Button->GetParent(); Ancestor; Ancestor = Ancestor->GetParent())
+		{
+			if (Ancestor->GetVisibility() == ESlateVisibility::HitTestInvisible)
+			{
+				Ancestor->Modify();
+				Ancestor->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			}
+		}
+		bAdded = true;
+		return true;
+	}
+
+	bool BuildSynergyEntryLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+	{
+		const FFF_UIPaletteInGame& P = UFF_UIPalette::Get()->InGame;
+		UBorder* Spacing = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_EntrySpacing"));
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Entry"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Vertical_Entry"));
+		if (!Spacing || !Card || !Content) return false;
+		Spacing->SetBrushColor(FLinearColor::Transparent);
+		Spacing->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		Spacing->SetVisibility(ESlateVisibility::HitTestInvisible);
+		PaintBorder(*Card, MakeSolidBrush(P.PaperSunken, 6.0f, P.Line, 1.0f));
+		Card->SetPadding(FMargin(12.0f, 10.0f));
+		auto AddText = [&](const FName Name, const TCHAR* Text, int32 FontSize, const FLinearColor& Color, const FName Typeface)
+		{
+			UCommonTextBlock* Label = MakeWidget<UCommonTextBlock>(Blueprint, Tree, Name, true);
+			if (!Label) return false;
+			Label->SetText(FText::FromString(Text));
+			Label->SetAutoWrapText(true);
+			StyleLightText(*Label, FontSize, Color, Typeface);
+			AddVertical(*Content, *Label, FMargin(0, 0, 0, 5));
+			return true;
+		};
+		if (!AddText(TEXT("Text_Title"), TEXT("Burger + Seating"), 12, P.InkMuted, TEXT("Medium")) ||
+			!AddText(TEXT("Text_Partner"), TEXT("함께 놓을 시설: Seating"), 16, P.Ink, TEXT("SemiBold")) ||
+			!AddText(TEXT("Text_Effect"), TEXT("Burger 이용 수수료 +10%"), 12, P.TealDeep, TEXT("SemiBold")) ||
+			!AddText(TEXT("Text_Condition"), TEXT("시설 중심 간 수평 거리 15m 이내"), 11, P.InkMuted, TEXT("Regular")) ||
+			!AddText(TEXT("Text_Status"), TEXT("성립 · 현재 조합 보너스 적용 중"), 11, P.Ink, TEXT("Medium"))) return false;
+		Card->AddChild(Content);
+		Spacing->AddChild(Card);
+		Tree.RootWidget = Spacing;
+		bool bAddedPartnerLink = false;
+		return HasSynergyEntryContract(Blueprint) && EnsureSynergyPartnerLink(Blueprint, Tree, bAddedPartnerLink);
+	}
+
+	UWidgetBlueprint* EnsureSynergyEntryBlueprint()
+	{
+		UWidgetBlueprint* Blueprint = FFUIWbpBuilder::EnsureWidgetBlueprint(TEXT("FF_FACILITY_SYNERGY_ENTRY"),
+			SynergyEntryPackage, FPackageName::GetLongPackagePath(SynergyEntryPackage),
+			*UFF_FacilitySynergyEntryWidget::StaticClass(), BuildSynergyEntryLayout);
+		if (!Blueprint || !Blueprint->GeneratedClass ||
+			!Blueprint->GeneratedClass->IsChildOf(UFF_FacilitySynergyEntryWidget::StaticClass()) ||
+			!HasSynergyEntryContract(*Blueprint))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_SYNERGY_ENTRY_FAIL: existing or generated entry contract is invalid; no tree reset performed."));
+			return nullptr;
+		}
+		return Blueprint;
+	}
+
+	bool HasSynergyInspectorContract(const UWidgetBlueprint& Blueprint)
+	{
+		return HasNamedVariable(Blueprint, TEXT("Button_TabSynergy"), *UButton::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Panel_SynergySection"), *UVerticalBox::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("Text_SynergySummary"), *UCommonTextBlock::StaticClass()) &&
+			HasNamedVariable(Blueprint, TEXT("VerticalBox_SynergyEntries"), *UVerticalBox::StaticClass());
+	}
+
+	bool EnsureSynergyInspectorContract(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bAdded)
+	{
+		bAdded = false;
+		if (HasSynergyInspectorContract(Blueprint)) return true;
+		// Refuse incompatible/partial designer edits before touching any existing nodes.
+		for (const FName Name : {FName(TEXT("Button_TabSynergy")), FName(TEXT("Text_TabSynergy")),
+			FName(TEXT("Panel_SynergySection")), FName(TEXT("Text_SynergySummary")), FName(TEXT("VerticalBox_SynergyEntries"))})
+			if (Tree.FindWidget(Name)) return false;
+		UHorizontalBox* Tabs = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Panel_InspectorTabs")));
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		UWidget* Overview = Tree.FindWidget(TEXT("Button_TabOverview"));
+		if (!Tabs || !Content || !Overview || Overview->GetParent() != Tabs ||
+			!Cast<UScrollBox>(Content->GetParent())) return false;
+		const FFF_UIPaletteInGame& P = UFF_UIPalette::Get()->InGame;
+		Blueprint.Modify();
+		Tabs->Modify();
+		Content->Modify();
+		UButton* Tab = MakeLightTextButton(Blueprint, Tree, TEXT("Button_TabSynergy"), TEXT("Text_TabSynergy"),
+			FText::FromString(TEXT("조합")), P.PaperSunken, P.TealSoft, P.TealSoft, P.Line, P.TealDeep, true, false);
+		UVerticalBox* Section = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_SynergySection"), true);
+		UCommonTextBlock* Summary = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Text_SynergySummary"), true);
+		UVerticalBox* Entries = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_SynergyEntries"), true);
+		if (!Tab || !Section || !Summary || !Entries) return false;
+		// ShiftChild preserves all preexisting tab objects and their slot/style properties.
+		AddHorizontal(*Tabs, *Tab, FMargin(2.0f, 0.0f), ESlateSizeRule::Fill);
+		Tabs->ShiftChild(Tabs->GetChildIndex(Overview) + 1, Tab);
+		Summary->SetText(FText::FromString(TEXT("시설의 조합 상태와 추가 수익을 확인할 수 있습니다.")));
+		Summary->SetAutoWrapText(true);
+		StyleLightText(*Summary, 12, P.InkMuted, TEXT("Regular"));
+		AddVertical(*Section, *Summary, FMargin(2, 2, 2, 10), ESlateSizeRule::Automatic, VAlign_Top);
+		AddVertical(*Section, *Entries);
+		AddVertical(*Content, *Section, FMargin(0, 0, 0, 8), ESlateSizeRule::Automatic, VAlign_Top);
+		Section->SetVisibility(ESlateVisibility::Collapsed);
+		bAdded = true;
+		return HasSynergyInspectorContract(Blueprint);
+	}
+
 	bool BuildLayout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 	{
 		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
@@ -1624,9 +1794,11 @@ namespace FFFacilityInfoWbpBuilder
 		Tree.RootWidget = Root;
 		bool bUpgradeContractAdded = false;
 		bool bLightingContractAdded = false;
+		bool bSynergyContractAdded = false;
 		return EnsureUpgradeWidgetContract(Blueprint, Tree, bUpgradeContractAdded) &&
 			EnsureLightingWidgetContract(Blueprint, Tree, bLightingContractAdded) &&
-			MigrateInspectorControls(Blueprint, Tree);
+			MigrateInspectorControls(Blueprint, Tree) && EnsureSynergyEntryBlueprint() &&
+			EnsureSynergyInspectorContract(Blueprint, Tree, bSynergyContractAdded);
 	}
 
 	UWidgetBlueprint* LoadExistingBlueprint()
@@ -2640,6 +2812,57 @@ namespace FFFacilityInfoWbpBuilder
 				TEXT("FF_FACILITY_INSPECTOR_MIGRATION_FAIL: incompatible or partially authored contract; no destructive rebuild performed."));
 		}
 	}
+
+	void MigrateFacilitySynergyTab()
+	{
+		if (!EnsureSynergyEntryBlueprint()) return;
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		if (!Inspector || !Inspector->WidgetTree || !Inspector->GeneratedClass ||
+			!Inspector->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_SYNERGY_TAB_FAIL: installed-facility inspector is missing or has a different native parent."));
+			return;
+		}
+		bool bAdded = false;
+		if (!EnsureSynergyInspectorContract(*Inspector, *Inspector->WidgetTree, bAdded) ||
+			(bAdded && !SaveBlueprint(*Inspector)))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_SYNERGY_TAB_FAIL: incompatible inspector seam or save failure; no tree reset performed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+			TEXT("FF_FACILITY_SYNERGY_TAB_%s: %s; existing Designer widgets, slots and events preserved."),
+			bAdded ? TEXT("ADDED") : TEXT("REUSE"), *PanelPackage);
+	}
+
+	FAutoConsoleCommand MigrateFacilitySynergyTabCommand(
+		TEXT("FF.MigrateFacilitySynergyTab"),
+		TEXT("Adds the editable synergy tab immediately after facility info and creates its row WBP; reruns preserve Designer edits."),
+		FConsoleCommandDelegate::CreateStatic(&MigrateFacilitySynergyTab));
+
+	void MigrateFacilitySynergyPartnerLink()
+	{
+		UWidgetBlueprint* Entry = FFUIWbpBuilder::LoadExistingBlueprint(SynergyEntryPackage);
+		if (!Entry || !Entry->WidgetTree || !Entry->ParentClass ||
+			!Entry->ParentClass->IsChildOf(UFF_FacilitySynergyEntryWidget::StaticClass()) || !HasSynergyEntryContract(*Entry))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_SYNERGY_LINK_FAIL: existing row contract is missing/incompatible; asset preserved."));
+			return;
+		}
+		bool bAdded = false;
+		if (!EnsureSynergyPartnerLink(*Entry, *Entry->WidgetTree, bAdded) || (bAdded && !SaveBlueprint(*Entry)))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_SYNERGY_LINK_FAIL: partner link or ancestor input contract incompatible; no tree reset performed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_SYNERGY_LINK_%s: %s; text styling and original parent slot retained."),
+			bAdded ? TEXT("ADDED") : TEXT("REUSE"), *SynergyEntryPackage);
+	}
+
+	FAutoConsoleCommand MigrateFacilitySynergyPartnerLinkCommand(
+		TEXT("FF.MigrateFacilitySynergyPartnerLink"),
+		TEXT("Makes the synergy partner name open its build card; retains text/style/slot and never resaves on repeat."),
+		FConsoleCommandDelegate::CreateStatic(&MigrateFacilitySynergyPartnerLink));
 
 	FAutoConsoleCommand MigrateFacilityInspectorUmgCommand(
 		TEXT("FF.MigrateFacilityInspectorUMG"),

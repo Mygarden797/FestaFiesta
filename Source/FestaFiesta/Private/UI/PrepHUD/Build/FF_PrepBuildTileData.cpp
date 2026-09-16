@@ -32,7 +32,12 @@ void UFF_PrepBuildTileData::RefreshDerivedValues()
 	BuildLimitText = FFF_PrepBuildPresentationRules::ResolveBuildLimitText(Entry);
 	TileState = FFF_PrepBuildPresentationRules::ResolveTileState(
 		Entry, Gold, bHasAuthoritativeGold);
-	StateLabelText = FFF_PrepBuildPresentationRules::ResolveTileStateLabel(TileState);
+	// Limited facilities always show installation progress in the card's existing status slot.
+	// Availability still controls interaction/color and remains explained in the tooltip.
+	StateLabelText = Entry.MaxInstancesPerWorld > 0
+		? FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "InstalledCountLabel", "{0}/{1}"),
+			FText::AsNumber(FMath::Max(0, Entry.CurrentInstanceCount)), FText::AsNumber(Entry.MaxInstancesPerWorld))
+		: FFF_PrepBuildPresentationRules::ResolveTileStateLabel(TileState);
 	StateText = FFF_PrepBuildPresentationRules::ResolveTileStateText(TileState);
 }
 

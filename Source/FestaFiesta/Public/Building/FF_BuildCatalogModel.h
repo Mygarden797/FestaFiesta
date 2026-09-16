@@ -10,11 +10,38 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Economy/FF_FacilityCostResolver.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 
 class UDataTable;
 
 namespace FFBuildCatalogModel
 {
+	// 이미 조회한 권위 상태를 O(시설 수 + 필수 행 수)로 투영합니다. 설치 개수나 충족 판정을
+	// 다시 계산하지 않으며, 축제 변경으로 목록에서 빠진 시설의 이전 표시는 초기화합니다.
+	inline void ApplyRequiredFacilities(
+		TArray<FFF_BuildCatalogEntry>& Entries,
+		const FFF_RequiredFacilitiesStatus& Status)
+	{
+		TMap<FName, const FFF_RequiredFacilityRow*> RowsById;
+		RowsById.Reserve(Status.Facilities.Num());
+		for (const FFF_RequiredFacilityRow& Row : Status.Facilities)
+		{
+			if (Row.FacilityDefinitionId.IsNone()) { continue; }
+			const FFF_RequiredFacilityRow*& Selected = RowsById.FindOrAdd(Row.FacilityDefinitionId);
+			// 중복 설정 때문에 생긴 무효 행이 정상 행의 설치 개수/충족 표시를 덮지 않습니다.
+			if (!Selected || (!Selected->bDefinitionValid && Row.bDefinitionValid)) { Selected = &Row; }
+		}
+		for (FFF_BuildCatalogEntry& Entry : Entries)
+		{
+			const FFF_RequiredFacilityRow* const* Found = RowsById.Find(Entry.FacilityDefinitionId);
+			const FFF_RequiredFacilityRow* Row = Found ? *Found : nullptr;
+			Entry.bRequiredForSetup = Row != nullptr;
+			Entry.bRequiredSetupSatisfied = Row && Row->bDefinitionValid && Row->MissingCount == 0;
+			Entry.RequiredInstalledCount = Row ? Row->InstalledCount : 0;
+			Entry.RequiredMinimumCount = Row ? Row->MinimumCount : 0;
+		}
+	}
+
 	// 현재 Festival 비용표를 화면용 카탈로그 스냅샷에 투영합니다. 원본 GI 카탈로그 캐시는
 	// 변경하지 않으므로 Festival 교체 뒤 화면을 다시 열면 항상 최신 설치비와 회수비를 사용합니다.
 	inline bool ApplyFacilityCosts(

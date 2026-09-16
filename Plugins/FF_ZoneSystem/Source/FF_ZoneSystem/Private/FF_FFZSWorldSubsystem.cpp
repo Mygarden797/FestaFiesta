@@ -851,6 +851,7 @@ bool UFFZSWorldSubsystem::RegisterFacility(AFFZSFacilityActor* Facility)
     }
 
     FacilitiesById.Add(FacilityId, Facility);
+    ++FacilityRegistryRevision;
     FFFZSFacilityRegionOccupancy Occupancy;
     Occupancy.ZoneId = Facility->GetZoneId();
     Occupancy.bIsGroundSurface = Facility->GetFacilitySpec().IsGroundSurface();
@@ -889,6 +890,7 @@ void UFFZSWorldSubsystem::UnregisterFacility(AFFZSFacilityActor* Facility)
     Facility->SetPlayerCollisionEnabled(false);
     ReleaseFacilityRegions(*Facility);
     FacilitiesById.Remove(FacilityId);
+    ++FacilityRegistryRevision;
     if (UFFZSFacilityQueueComponent* Queue = Facility->GetMutableQueueComponent())
     {
         Queue->OnAgentReleased.RemoveDynamic(this, &UFFZSWorldSubsystem::HandleAgentReleased);
@@ -3832,6 +3834,7 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshotUnchecked(const FFFZSWorldSnapshot
     }
 
     FacilitiesById = MoveTemp(StagedFacilitiesById);
+    ++FacilityRegistryRevision;
     OccupiedFacilityRegions = MoveTemp(StagedOccupiedFacilityRegions);
     FacilitySpatialIndex = MakeShared<FFFZSSpatialHash2D>(MoveTemp(StagedSpatialIndex));
     AgentQueueOwnership = MoveTemp(StagedAgentQueueOwnership);
@@ -3949,6 +3952,7 @@ int32 UFFZSWorldSubsystem::RevalidateFacilitiesInZone(const FName ZoneId)
         return 0;
     }
     int32 InvalidCount = 0;
+    bool bEligibilityChanged = false;
     static const FName NeedsRelocationTag(TEXT("ZF.NeedsRelocation"));
     for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
     {
@@ -3964,6 +3968,7 @@ int32 UFFZSWorldSubsystem::RevalidateFacilitiesInZone(const FName ZoneId)
         Command.ZoneId = ZoneId;
         Command.Placement = Facility->GetGridPlacement();
         const bool bValid = ValidatePlacementLocal(Command, Facility, true).bIsValid;
+        bEligibilityChanged |= Facility->NeedsRelocation() != !bValid;
         if (bValid)
         {
             Facility->Tags.Remove(NeedsRelocationTag);
@@ -3976,6 +3981,7 @@ int32 UFFZSWorldSubsystem::RevalidateFacilitiesInZone(const FName ZoneId)
             ++InvalidCount;
         }
     }
+    if (bEligibilityChanged) ++FacilityRegistryRevision;
     return InvalidCount;
 }
 

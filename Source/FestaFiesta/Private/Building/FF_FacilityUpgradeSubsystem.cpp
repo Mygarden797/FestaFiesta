@@ -1,5 +1,6 @@
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 
 #include "Economy/FF_FacilityCostResolver.h"
 #include "Economy/FF_ProgramSchedulingSubsystem.h"
@@ -101,6 +102,8 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	OutPreview.NextThroughputPerMinute = OutPreview.CurrentThroughputPerMinute;
 	OutPreview.CurrentRevenueMultiplier = Facility->GetUpgradeRevenueMultiplier();
 	OutPreview.NextRevenueMultiplier = OutPreview.CurrentRevenueMultiplier;
+	const UFF_FacilitySynergySubsystem* Synergies = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
+	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(FacilityInstanceId) : 1.f;
 	const UFF_FestivalProgressionSubsystem* Progression = ResolveProgression();
 	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
 	int32 RevenuePerUse = 0;
@@ -117,7 +120,7 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 			OutPreview.BaseRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
 				RevenuePerUse, 1, Definition->BoothCommissionRate, 1.f);
 			OutPreview.CurrentRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-				RevenuePerUse, 1, Definition->BoothCommissionRate, OutPreview.CurrentRevenueMultiplier);
+				RevenuePerUse, 1, Definition->BoothCommissionRate, OutPreview.CurrentRevenueMultiplier * SynergyMultiplier);
 			OutPreview.NextRevenuePerUseGold = OutPreview.CurrentRevenuePerUseGold;
 		}
 	}
@@ -151,10 +154,21 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	}
 	OutPreview.TargetLevel = Tier->TargetLevel;
 	const bool bChangesSize = Tier->SizeMultiplier != Facility->GetUpgradeSizeMultiplier();
+	FFFZSPlacementValidation UpgradePlacement;
+	float NextSynergyMultiplier = SynergyMultiplier;
 	if (bChangesSize)
 	{
 		OutPreview.NextFootprintCentimeters = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
 			BaseSpec, OutPreview.TargetLevel, Tier->SizeMultiplier).FootprintSizeCells;
+		// Growing a corner-anchored footprint moves its centre. Resolve the authoritative
+		// candidate once, before a disabled-but-visible quote can return on stage/funds checks.
+		// The same validation is reused below; revenue-only upgrades perform no spatial query.
+		UpgradePlacement = ZoneSystem->ValidateUpgradePlacement(FacilityInstanceId, Tier->SizeMultiplier);
+		if (Synergies && !UpgradePlacement.FootprintOrientedRects.IsEmpty())
+		{
+			NextSynergyMultiplier = Synergies->GetRevenueMultiplierAt(
+				FacilityInstanceId, UpgradePlacement.PlacementTransform.GetLocation());
+		}
 	}
 	const FFFZSQueueRules NextRules = AFFZSFacilityActor::BuildEffectiveQueueRules(
 		BaseSpec.QueueRules, Tier->ServiceDurationMultiplier);
@@ -164,7 +178,7 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	if (OutPreview.bRevenueAvailable)
 	{
 		OutPreview.NextRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-			RevenuePerUse, 1, Definition->BoothCommissionRate, Tier->RevenueMultiplier);
+			RevenuePerUse, 1, Definition->BoothCommissionRate, Tier->RevenueMultiplier * NextSynergyMultiplier);
 	}
 	int32 InstallCost = 0;
 	FName CostRow;
@@ -221,16 +235,11 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	{
 		return Unavailable(LOCTEXT("InsufficientGold", "강화에 필요한 Gold가 부족합니다."));
 	}
-	// The selected-card refresh skips spatial queries when only performance or visuals change.
-	// The actual Zone command still validates placement for every purchase before committing.
-	if (bChangesSize)
+	// Reuse quote geometry; the actual Zone command validates again before committing.
+	if (bChangesSize && !UpgradePlacement.bIsValid)
 	{
-		const FFFZSPlacementValidation Placement = ZoneSystem->ValidateUpgradePlacement(FacilityInstanceId, Tier->SizeMultiplier);
-		if (!Placement.bIsValid)
-		{
-			return Unavailable(Placement.Summary.IsEmpty()
-				? LOCTEXT("NoUpgradeSpace", "강화 후 시설을 배치할 공간이 부족합니다.") : Placement.Summary);
-		}
+		return Unavailable(UpgradePlacement.Summary.IsEmpty()
+			? LOCTEXT("NoUpgradeSpace", "강화 후 시설을 배치할 공간이 부족합니다.") : UpgradePlacement.Summary);
 	}
 	OutPreview.bCanUpgrade = true;
 	return true;

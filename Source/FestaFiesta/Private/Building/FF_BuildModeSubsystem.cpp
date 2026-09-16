@@ -13,6 +13,8 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildSynergyWidget.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
@@ -228,6 +230,7 @@ void UFF_BuildModeSubsystem::Deinitialize()
 	DismissPlacementFailureFeedback(true);
 	RemoveBuildModeGuide();
 	DestroyPlacementPreview();
+	ClearBuildSynergyPreview(true);
 	ClearPendingRemovalSelection();
 	ResetMovingSelection();
 	SetFacilityRangeVisibility(false);
@@ -255,6 +258,7 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	if (!Controller)
 	{
 		EndDragPlacement();
+		ClearBuildSynergyPreview();
 		return;
 	}
 	if (bInputSuspendedForPauseMenu)
@@ -300,6 +304,8 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 			bPreviewWorldDirty = false;
 			if (DragPlacementSession) { RefreshDragPlacementPreview(bForceRefresh); }
 			else { UpdatePlacementFromCursor(bForceRefresh); }
+			// Also handles an invalid cursor target and rule reloads while the pointer is stationary.
+			RefreshBuildSynergyPreview();
 		}
 		// Keep the surrounding land visible while placing/moving, including when the
 		// cursor is over tools or outside the lot. One renderer owns all grid lines.
@@ -330,6 +336,7 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 	PauseMenuResumeTimerHandle.Invalidate();
 	bPauseMenuResumePending = false;
 	bInputSuspendedForPauseMenu = true;
+	ClearBuildSynergyPreview();
 	if (!bWasAlreadySuspended && FSlateApplication::IsInitialized())
 	{
 		// Pause 화면이 focus를 가져가기 전에 실제 카탈로그 버튼/타일을 저장한다.
@@ -463,8 +470,14 @@ void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
 
 	const EFF_BuildModeState PreviousState = State;
 	State = NewState;
+	if (State != EFF_BuildModeState::CatalogOpen) { PendingCatalogFacilityId = NAME_None; }
+	if (!FFBuildModeModel::IsPreviewActive(State))
+	{
+		ClearBuildSynergyPreview(State == EFF_BuildModeState::Closed);
+	}
 	if (State == EFF_BuildModeState::Closed)
 	{
+		ClearSynergyCatalogContext();
 		DestroyBuildGridOverview();
 	}
 	else
@@ -593,7 +606,8 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 
 	SetFacilityRangeVisibility(true);
 	DestroyPlacementPreview();
-	ClearPendingRemovalSelection();
+	// Closing the inspector to browse its combo partners must retain their source context.
+	ClearPendingRemovalSelection(true);
 	ResetMovingSelection();
 	ResetPlacementSelection();
 	RemoveCatalogScreen();
@@ -625,6 +639,31 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	{
 		ApplyCatalogIfReady();
 	}
+}
+
+bool UFF_BuildModeSubsystem::OpenCatalogForFacility(const FName FacilityDefinitionId)
+{
+	if (FacilityDefinitionId.IsNone() || bInputSuspendedForPauseMenu || bIsExitingBuildMode) { return false; }
+	UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem();
+	if (!Catalog) { return false; }
+	FFF_BuildCatalogEntry Entry;
+	if (Catalog->IsCatalogReady() && !Catalog->FindEntry(FacilityDefinitionId, Entry))
+	{
+		ShowStatus(TEXT("이 시설은 현재 건축 목록에서 사용할 수 없습니다."), true);
+		return false;
+	}
+	// Complete normal input/HUD routing first; a newly created Prep panel then receives the request too.
+	OpenCatalog();
+	if (State != EFF_BuildModeState::CatalogOpen) { return false; }
+	PendingCatalogFacilityId = FacilityDefinitionId;
+	OnBuildCatalogFacilityFocusRequested.Broadcast(FacilityDefinitionId);
+	if (!bExternalCatalogPresentationActive) { ApplyCatalogIfReady(); }
+	return true;
+}
+
+void UFF_BuildModeSubsystem::AcknowledgeCatalogFacilityFocus(const FName FacilityDefinitionId)
+{
+	if (PendingCatalogFacilityId == FacilityDefinitionId) { PendingCatalogFacilityId = NAME_None; }
 }
 
 bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
@@ -1476,6 +1515,11 @@ void UFF_BuildModeSubsystem::CreateCatalogScreen(APlayerController& Controller)
 
 	// AddUObject는 UObject 수명과 연결되지만, 화면을 다시 열 때 중복 구독하지 않도록 제거 함수에서도 명시 해제한다.
 	CatalogScreen->OnFacilitySelected.AddUObject(this, &UFF_BuildModeSubsystem::HandleFacilitySelected);
+	if (LastCatalogCategory.IsSet())
+	{
+		CatalogScreen->RestoreSelectedCategory(LastCatalogCategory.GetValue());
+	}
+	CatalogScreen->SetSynergyContext(SynergyCatalogFacilityIds, SynergyCatalogSourceName, true);
 	CatalogScreen->OnCloseRequested.AddUObject(this, &UFF_BuildModeSubsystem::HandleCatalogCloseRequested);
 	CatalogScreen->OnBuildModeKeyRequested.AddUObject(
 		this, &UFF_BuildModeSubsystem::HandleCatalogBuildModeKeyRequested);
@@ -1497,6 +1541,7 @@ void UFF_BuildModeSubsystem::RemoveCatalogScreen()
 	{
 		return;
 	}
+	LastCatalogCategory = CatalogScreen->GetSelectedCategory();
 	// 위젯 제거 과정에서 뒤늦은 선택/닫기 이벤트가 상태를 다시 바꾸지 않도록 델리게이트를 먼저 끊는다.
 	CatalogScreen->OnFacilitySelected.RemoveAll(this);
 	CatalogScreen->OnCloseRequested.RemoveAll(this);
@@ -1581,6 +1626,17 @@ void UFF_BuildModeSubsystem::ApplyCatalogIfReady()
 		bCatalogThumbnailsApplied = Entries.IsEmpty() ||
 			ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Ready ||
 			ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Failed;
+	}
+	if (!PendingCatalogFacilityId.IsNone())
+	{
+		const FName Target = PendingCatalogFacilityId;
+		const bool bFound = CatalogScreen->FocusFacility(Target);
+		AcknowledgeCatalogFacilityFocus(Target);
+		if (!bFound)
+		{
+			CatalogScreen->SetStatusText(FText::FromString(TEXT("이 시설은 현재 건축 목록에서 사용할 수 없습니다.")), true);
+			return;
+		}
 	}
 	if (Entries.IsEmpty())
 	{
@@ -1696,6 +1752,78 @@ void UFF_BuildModeSubsystem::RemoveBuildTools()
 	{
 		BuildToolsWidget->RemoveFromParent();
 		BuildToolsWidget = nullptr;
+	}
+}
+
+void UFF_BuildModeSubsystem::RefreshBuildSynergyPreview()
+{
+	if (bInputSuspendedForPauseMenu || !FFBuildModeModel::IsPreviewActive(State) ||
+		!bHasPlacementTarget || !LastValidation.bIsValid || !IsValid(PlacementPreview))
+	{
+		ClearBuildSynergyPreview();
+		return;
+	}
+	UWorld* World = GetWorld();
+	UFF_FacilitySynergySubsystem* Synergy = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
+	APlayerController* Controller = GetLocalPlayerController();
+	if (!Synergy || !Controller) { ClearBuildSynergyPreview(); return; }
+	const FVector Location = LastValidation.PlacementTransform.GetLocation();
+	const FName DefinitionId = SelectedSpec.FacilityDefinitionId;
+	const FGuid MovingId = State == EFF_BuildModeState::Moving ? MovingFacilityInstanceId : FGuid();
+	const uint64 Revision = Synergy->GetRevision();
+	const UFF_BuildCatalogSubsystem* Catalog = World->GetGameInstance()
+		? World->GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	const uint64 CatalogRevision = Catalog ? Catalog->GetCatalogRevision() : 0;
+	if (bHasSynergyPreviewKey && SynergyPreviewDefinitionId == DefinitionId &&
+		SynergyPreviewMovingId == MovingId && SynergyPreviewRevision == Revision &&
+		SynergyPreviewCatalogRevision == CatalogRevision &&
+		SynergyPreviewLocation.Equals(Location, 0.01))
+	{
+		return;
+	}
+	FFF_FacilitySynergyPreview Preview;
+	Synergy->BuildPlacementPreview(DefinitionId, Location, MovingId, Preview);
+	bHasSynergyPreviewKey = true;
+	SynergyPreviewDefinitionId = DefinitionId;
+	SynergyPreviewMovingId = MovingId;
+	SynergyPreviewLocation = Location;
+	SynergyPreviewRevision = Revision;
+	SynergyPreviewCatalogRevision = CatalogRevision;
+	if (!Preview.bRulesAvailable || Preview.Entries.IsEmpty())
+	{
+		if (BuildSynergyWidget) { BuildSynergyWidget->ClearPreview(); }
+		return;
+	}
+	if (!BuildSynergyWidget)
+	{
+		UClass* WidgetClass = BuildSynergyWidgetClass.LoadSynchronous();
+		if (!WidgetClass || !WidgetClass->IsChildOf(UFF_BuildSynergyWidget::StaticClass()))
+		{
+			UE_LOG(LogFFBuildMode, Warning,
+				TEXT("시설 조합 WBP를 찾을 수 없어 기본 안내를 사용합니다: %s"),
+				*BuildSynergyWidgetClass.ToSoftObjectPath().ToString());
+			WidgetClass = UFF_BuildSynergyWidget::StaticClass();
+		}
+		BuildSynergyWidget = CreateWidget<UFF_BuildSynergyWidget>(Controller, WidgetClass);
+		if (!BuildSynergyWidget || !BuildSynergyWidget->AddToPlayerScreen(94))
+		{
+			BuildSynergyWidget = nullptr;
+			bHasSynergyPreviewKey = false;
+			return;
+		}
+	}
+	BuildSynergyWidget->PresentPreview(Preview, Location);
+}
+
+void UFF_BuildModeSubsystem::ClearBuildSynergyPreview(const bool bRemoveFromParent)
+{
+	bHasSynergyPreviewKey = false;
+	if (!BuildSynergyWidget) { return; }
+	BuildSynergyWidget->ClearPreview();
+	if (bRemoveFromParent)
+	{
+		BuildSynergyWidget->RemoveFromParent();
+		BuildSynergyWidget = nullptr;
 	}
 }
 
@@ -1872,6 +2000,7 @@ void UFF_BuildModeSubsystem::SpawnPlacementPreview()
 
 void UFF_BuildModeSubsystem::DestroyPlacementPreview()
 {
+	ClearBuildSynergyPreview();
 	// TObjectPtr가 non-null이어도 PendingKill일 수 있으므로 IsValid일 때만 Destroy를 호출한다.
 	if (IsValid(PlacementPreview))
 	{
@@ -2006,15 +2135,52 @@ bool UFF_BuildModeSubsystem::InspectFacility(AFFZSFacilityActor* Facility)
 	Facility->SetBuildModeActionSelected(true);
 	const FText DisplayName = Facility->GetFacilitySpec().DisplayName;
 	const FString FacilityName = DisplayName.IsEmpty()
-		? Facility->GetFacilitySpec().FacilityDefinitionId.ToString() : DisplayName.ToString();
+		? NSLOCTEXT("FFBuildMode", "UnnamedInspectedFacility", "이름이 설정되지 않은 시설").ToString() : DisplayName.ToString();
 	ShowStatus(FString::Printf(
-		TEXT("%s · 시설 정보 확인 중 · 다른 시설 클릭: 정보 변경 · 우클릭: 닫기"),
+		TEXT("%s · 시설 정보 확인 중 · B 조합 시설 보기 · 다른 시설 클릭: 정보 변경 · 우클릭: 닫기"),
 		*FacilityName), false, 5.0f);
+	SetSynergyCatalogContext(*Facility);
 	return true;
 }
 
-void UFF_BuildModeSubsystem::ClearPendingRemovalSelection()
+void UFF_BuildModeSubsystem::SetSynergyCatalogContext(const AFFZSFacilityActor& Facility)
 {
+	const UFF_FacilitySynergySubsystem* Synergy = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
+	const FFFZSFacilitySpec& Spec = Facility.GetFacilitySpec();
+	const TArray<FName> RelatedIds = Synergy
+		? Synergy->GetRelatedFacilityDefinitionIds(Spec.FacilityDefinitionId) : TArray<FName>();
+	FText SourceName = Spec.DisplayName;
+	if (SourceName.IsEmptyOrWhitespace())
+	{
+		if (const UFF_BuildCatalogSubsystem* Catalog = GetCatalogSubsystem())
+			SourceName = Catalog->ResolveFacilityDisplayName(Spec.FacilityDefinitionId);
+		if (SourceName.IsEmptyOrWhitespace())
+			SourceName = NSLOCTEXT("FFBuildMode", "UnnamedSynergySource", "이름이 설정되지 않은 시설");
+	}
+	const FGuid SourceId = Facility.GetFacilityInstanceId();
+	if (SynergyCatalogSourceId == SourceId && SynergyCatalogFacilityIds == RelatedIds &&
+		SynergyCatalogSourceName.EqualTo(SourceName)) return;
+	SynergyCatalogSourceId = SourceId;
+	SynergyCatalogFacilityIds = RelatedIds;
+	SynergyCatalogSourceName = SourceName;
+	if (CatalogScreen) CatalogScreen->SetSynergyContext(RelatedIds, SourceName);
+	OnSynergyCatalogContextChanged.Broadcast();
+}
+
+void UFF_BuildModeSubsystem::ClearSynergyCatalogContext()
+{
+	if (!SynergyCatalogSourceId.IsValid() && SynergyCatalogFacilityIds.IsEmpty()) return;
+	SynergyCatalogSourceId.Invalidate();
+	SynergyCatalogFacilityIds.Reset();
+	SynergyCatalogSourceName = FText::GetEmpty();
+	if (CatalogScreen) CatalogScreen->SetSynergyContext(SynergyCatalogFacilityIds, SynergyCatalogSourceName);
+	OnSynergyCatalogContextChanged.Broadcast();
+}
+
+void UFF_BuildModeSubsystem::ClearPendingRemovalSelection(const bool bPreserveSynergyContext)
+{
+	if (!bPreserveSynergyContext) ClearSynergyCatalogContext();
 	AFFZSFacilityActor* ClearingFacility = PendingRemovalFacility.Get();
 	FGuid ClearingFacilityId;
 	if (ClearingFacility)
@@ -2491,6 +2657,7 @@ void UFF_BuildModeSubsystem::RefreshCurrentPlacementValidation()
 	RebuildPreviewCommand();
 	LastValidation = PlacementPreview->RefreshPreview();
 	LastPreviewValidationTimeSeconds = FPlatformTime::Seconds();
+	RefreshBuildSynergyPreview();
 	const bool bIsMoving = State == EFF_BuildModeState::Moving;
 	const EFFZSPlacementFailure PrimaryFailure = LastValidation.Reasons.IsEmpty()
 		? EFFZSPlacementFailure::None
@@ -2699,6 +2866,10 @@ void UFF_BuildModeSubsystem::HandleCatalogThumbnailsChanged()
 
 void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
+	if (Event.Type == EFFZSCommandType::Remove && Event.FacilityInstanceId == SynergyCatalogSourceId)
+	{
+		ClearSynergyCatalogContext();
+	}
 	if (!FFBuildModeModel::IsBuildSessionActive(State))
 	{
 		return;
@@ -2752,6 +2923,7 @@ void UFF_BuildModeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Eve
 
 void UFF_BuildModeSubsystem::HandleWorldSnapshotRestored()
 {
+	ClearSynergyCatalogContext();
 	EndDragPlacement();
 	if (!FFBuildModeModel::IsBuildSessionActive(State))
 	{

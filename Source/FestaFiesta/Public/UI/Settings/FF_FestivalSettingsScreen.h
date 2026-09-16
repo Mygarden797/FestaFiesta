@@ -271,6 +271,7 @@ private:
 	FSettingsDraft Draft;
 	FSettingsDraft Saved;
 	EFF_FestivalSettingsCategory SelectedCategory = EFF_FestivalSettingsCategory::Basic;
+	bool bHasSelectedCategory = false;
 	FTSTicker::FDelegateHandle VideoModeTickerHandle;
 	FDelegateHandle KeyBindingDraftChangedHandle;
 	EWindowMode::Type PreviewRollbackWindowMode = EWindowMode::WindowedFullscreen;

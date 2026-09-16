@@ -326,7 +326,7 @@ void UFF_FestivalSettingsScreen::NativeOnActivated()
 {
 	bIsTearingDown = false;
 	CaptureDraft();
-	SelectCategory(DefaultCategory);
+	SelectCategory(bHasSelectedCategory ? SelectedCategory : DefaultCategory);
 	Super::NativeOnActivated();
 }
 
@@ -454,14 +454,16 @@ bool UFF_FestivalSettingsScreen::RequestNavigateBack()
 
 void UFF_FestivalSettingsScreen::ShowCategory(const EFF_FestivalSettingsCategory Category)
 {
-	DefaultCategory = Category;
-	if (IsConstructed())
+	if (!IsConstructed())
 	{
-		SelectCategory(Category);
-		if (UButton* CategoryButton = GetCategoryButton(Category))
-		{
-			CategoryButton->SetFocus();
-		}
+		SelectedCategory = Category;
+		bHasSelectedCategory = true;
+		return;
+	}
+	SelectCategory(Category);
+	if (UButton* CategoryButton = GetCategoryButton(Category))
+	{
+		CategoryButton->SetFocus();
 	}
 }
 
@@ -532,6 +534,7 @@ void UFF_FestivalSettingsScreen::SelectCategory(const EFF_FestivalSettingsCatego
 		bExitConfirmationArmed = false;
 	}
 	SelectedCategory = Category;
+	bHasSelectedCategory = true;
 	if (Text_Intro)
 	{
 		Text_Intro->SetText(Category == EFF_FestivalSettingsCategory::Keyboard
