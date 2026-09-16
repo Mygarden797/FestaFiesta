@@ -89,7 +89,13 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 
 void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
 {
-	SetVisibility(bActive ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	// 루트는 스스로 클릭을 먹지 않는다. 자식만 받게 한다.
+	//
+	// Visible 로 두면 위젯 영역 전체가 히트 판정을 가져간다. 이 위젯은 화면 전체에
+	// 붙어 있어서, 그러면 AdvanceButton 을 숨겨도 아래 UI 가 전부 막힌다.
+	SetVisibility(bActive
+		? ESlateVisibility::SelfHitTestInvisible
+		: ESlateVisibility::Collapsed);
 
 	if (!bActive)
 	{

@@ -125,6 +125,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	UWidget* FindAnchorWidget(FName AnchorId) const;
 
+	// 화면에 떠 있는 준비 화면 탭 버튼을 찾아 등록한다.
+	//
+	// 각 위젯 BP 에서 일일이 등록하게 하면 UI 쪽 파일을 고쳐야 하고,
+	// BP 는 바이너리라 같은 파일을 두 사람이 만지면 병합이 안 된다.
+	//
+	// 이름으로 찾지 않고 클래스로 찾아 공개 API 에 물어보는 이유는,
+	// 위젯 이름이 바뀌어도 조용히 깨지지 않게 하려는 것이다.
+	// 클래스나 열거형이 바뀌면 그때는 컴파일이 멈춘다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	int32 ScanPrepHudAnchors();
+
 	// 이 이름의 세계 지점을 찾는다. 없으면 false.
 	//
 	// UI 와 세계를 같은 이름 공간에서 다루는 이유는, 대사를 쓰는 쪽이
@@ -240,4 +251,5 @@ private:
 
 	IConsoleCommand* SkipConsoleCommand = nullptr;
 	IConsoleCommand* StatConsoleCommand = nullptr;
+	IConsoleCommand* HighlightConsoleCommand = nullptr;
 };

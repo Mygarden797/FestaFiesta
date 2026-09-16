@@ -13,7 +13,10 @@
 #include "GameFramework/GameModeBase.h"
 #include "Engine/DataTable.h"
 #include "Tutorial/FF_DialogueRow.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "UI/PrepHUD/FF_PrepHudTabButton.h"
+#include "UI/PrepHUD/FF_PrepHudTypes.h"
 #include "Tutorial/FF_DialogueScriptData.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -651,6 +654,42 @@ void UFF_TutorialSubsystem::ApplyHighlight(const FName AnchorId)
 		return;
 	}
 
+	// 화면이 닫히면 위젯이 사라진다. 약참조라 크래시는 안 나지만 등록은 남아 있어서
+	// 다시 훑지 않게 된다. 가리킬 대상을 바꾸는 이 시점에 치운다.
+	if (!AnchorId.IsNone())
+	{
+		if (const TWeakObjectPtr<UWidget>* Found = AnchorWidgets.Find(AnchorId))
+		{
+			if (!Found->IsValid())
+			{
+				AnchorWidgets.Remove(AnchorId);
+			}
+		}
+
+		// 아직 등록되지 않았으면 지금 훑는다.
+		//
+		// 매 프레임 훑으면 낭비고, 시작할 때 한 번만 하면 화면이 나중에 뜰 때 놓친다.
+		// 필요해진 순간에만 찾으면 둘 다 피한다.
+		if (!AnchorWidgets.Contains(AnchorId))
+		{
+			ScanPrepHudAnchors();
+		}
+
+		// 훑고도 없고 레벨 마커에도 없으면 대사에 적은 이름이 틀린 것이다.
+		// 조용히 넘어가면 강조가 왜 안 뜨는지 알 수가 없다.
+		if (!AnchorWidgets.Contains(AnchorId))
+		{
+			FVector Unused = FVector::ZeroVector;
+			float UnusedRadius = 0.f;
+			if (!FindAnchorWorldPoint(AnchorId, Unused, UnusedRadius))
+			{
+				UE_LOG(LogFestaFiestaTutorial, Warning,
+					TEXT("[튜토리얼] 강조 대상 '%s' 를 UI 에서도 레벨에서도 찾지 못했다."),
+					*AnchorId.ToString());
+			}
+		}
+	}
+
 	CurrentAnchor = AnchorId;
 	OnHighlightAnchorChanged.Broadcast(AnchorId);
 }
@@ -661,6 +700,8 @@ void UFF_TutorialSubsystem::RegisterAnchor(const FName AnchorId, UWidget* Widget
 	{
 		return;
 	}
+	// 같은 이름이 이미 있으면 덮는다. 화면이 다시 뜨면 위젯이 새로 만들어지므로
+	// 옛 참조를 그대로 두면 사라진 위젯을 가리킨다.
 	AnchorWidgets.Add(AnchorId, Widget);
 
 	// 지금 가리키려던 대상이 방금 들어왔으면 다시 알린다.
@@ -678,8 +719,63 @@ void UFF_TutorialSubsystem::UnregisterAnchor(const FName AnchorId)
 
 UWidget* UFF_TutorialSubsystem::FindAnchorWidget(const FName AnchorId) const
 {
+	// 조회는 읽기만 한다. 죽은 참조 정리는 ApplyHighlight 에서 한다.
+	//
+	// 조회 함수가 상태를 바꾸면 어디서 무엇이 지워지는지 추적하기 어렵다.
 	const TWeakObjectPtr<UWidget>* Found = AnchorWidgets.Find(AnchorId);
 	return Found ? Found->Get() : nullptr;
+}
+
+namespace
+{
+	// 탭 종류를 대사에서 쓸 이름으로. 열거형 이름을 그대로 따서 오타가 끼지 않게 한다.
+	FName MakePrepTabAnchorId(const EFF_PrepHudTab Tab)
+	{
+		const UEnum* EnumClass = StaticEnum<EFF_PrepHudTab>();
+		if (!EnumClass)
+		{
+			return NAME_None;
+		}
+
+		// "EFF_PrepHudTab::Build" 가 아니라 "Build" 만 쓴다.
+		const FString Short = EnumClass->GetNameStringByValue(static_cast<int64>(Tab));
+		return Short.IsEmpty() ? NAME_None : FName(*FString::Printf(TEXT("PrepTab_%s"), *Short));
+	}
+}
+
+int32 UFF_TutorialSubsystem::ScanPrepHudAnchors()
+{
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
+		this, FoundWidgets, UFF_PrepHudTabButton::StaticClass(), false);
+
+	int32 Registered = 0;
+
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		UFF_PrepHudTabButton* TabButton = Cast<UFF_PrepHudTabButton>(Widget);
+		if (!TabButton)
+		{
+			continue;
+		}
+
+		const FName AnchorId = MakePrepTabAnchorId(TabButton->GetTab());
+		if (AnchorId.IsNone())
+		{
+			continue;
+		}
+
+		RegisterAnchor(AnchorId, TabButton);
+		++Registered;
+	}
+
+	if (Registered > 0)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 준비 화면 탭 %d개를 강조 대상으로 등록했다."), Registered);
+	}
+
+	return Registered;
 }
 
 bool UFF_TutorialSubsystem::FindAnchorWorldPoint(
@@ -727,6 +823,33 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
 			{
 				StopScript();
+			}));
+	}
+
+	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.Highlight")))
+	{
+		HighlightConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+			TEXT("FF.Tutorial.Highlight"),
+			TEXT("강조를 직접 켜본다. 사용법: FF.Tutorial.Highlight PrepTab_Build (인자 없으면 해제)"),
+			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
+			{
+				// 대사 흐름과 상관없이 강조만 확인할 수 있어야 한다.
+				// 대사를 끝까지 넘겨가며 확인하면 한 번 보는 데 시간이 오래 걸린다.
+				const FName AnchorId = Args.Num() > 0 ? FName(*Args[0]) : NAME_None;
+				ApplyHighlight(AnchorId);
+
+				// 로그 인자 안에서 함수를 부르면 형식 문자열 검사에 걸린다.
+				// 값을 먼저 구해두고 넘긴다.
+				FVector MarkerLocation = FVector::ZeroVector;
+				float MarkerRadius = 0.f;
+				const bool bHasMarker = FindAnchorWorldPoint(AnchorId, MarkerLocation, MarkerRadius);
+				const bool bHasWidget = FindAnchorWidget(AnchorId) != nullptr;
+
+				UE_LOG(LogFestaFiestaTutorial, Display,
+					TEXT("[튜토리얼] 강조 = %s / UI 등록 %s / 레벨 마커 %s"),
+					AnchorId.IsNone() ? TEXT("해제") : *AnchorId.ToString(),
+					bHasWidget ? TEXT("있음") : TEXT("없음"),
+					bHasMarker ? TEXT("있음") : TEXT("없음"));
 			}));
 	}
 
@@ -781,6 +904,21 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 				UE_LOG(LogFestaFiestaTutorial, Display,
 					TEXT("  레벨의 세계 마커 %d개"), MarkerCount);
 
+				// 어떤 이름이 등록됐는지 본다. 대사에 적은 이름과 다르면 강조가 안 된다.
+				if (AnchorWidgets.Num() > 0)
+				{
+					TArray<FString> Names;
+					Names.Reserve(AnchorWidgets.Num());
+					for (const TPair<FName, TWeakObjectPtr<UWidget>>& Pair : AnchorWidgets)
+					{
+						Names.Add(FString::Printf(TEXT("%s%s"),
+							*Pair.Key.ToString(),
+							Pair.Value.IsValid() ? TEXT("") : TEXT("(죽음)")));
+					}
+					UE_LOG(LogFestaFiestaTutorial, Display,
+						TEXT("  등록된 이름: %s"), *FString::Join(Names, TEXT(", ")));
+				}
+
 				UE_LOG(LogFestaFiestaTutorial, Display,
 					TEXT("  구독: Zone=%s 단계=%s / 카메라 기준점=%s"),
 					bBoundZoneWorld ? TEXT("예") : TEXT("아니오"),
@@ -805,4 +943,10 @@ void UFF_TutorialSubsystem::UnregisterDebugConsoleCommands()
 		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
 	}
 	StatConsoleCommand = nullptr;
+
+	if (HighlightConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(HighlightConsoleCommand);
+	}
+	HighlightConsoleCommand = nullptr;
 }

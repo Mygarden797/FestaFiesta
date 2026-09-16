@@ -322,12 +322,13 @@ int32 UFF_TutorialOverlayWidget::NativePaint(
 		return BaseLayer + 2;
 	}
 
-	// 강조할 대상이 없으면 화면 전체를 덮는다.
+	// 가리킬 것이 없으면 아무것도 그리지 않는다.
+	//
+	// 덮개는 강조할 대상을 돋보이게 하려는 것이다. 대상이 없는데 화면만 어두우면
+	// 대사를 읽는 내내 시야만 가린다. 대사 86줄 중 강조가 붙은 줄은 셋뿐이다.
 	if (!bHasCachedRect)
 	{
-		DrawMaskRect(OutDrawElements, BaseLayer, AllottedGeometry,
-			FVector2f::ZeroVector, FVector2f(ScreenSize.X, ScreenSize.Y), MaskColor);
-		return BaseLayer + 1;
+		return BaseLayer;
 	}
 
 	// 구멍 주변을 네 장으로 감싼다.
