@@ -1,4 +1,4 @@
-#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
+﻿#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationEditorCommon.h"
@@ -52,9 +52,8 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     Terrain->SetActorLocation(FVector(5000, 5000, -10));
 
     UFF_CrowdSimulationSubsystem* Crowd = NewObject<UFF_CrowdSimulationSubsystem>(World);
-    Crowd->bHeightFieldFitToNavBounds = false;
     Crowd->HeightFieldSpacingUU = 500.0f;
-    Crowd->ConfigureSimArea(FVector(2500, 2500, 0), 2000.0f);
+    Crowd->ConfigureSimAreaWithBounds(FVector(2500, 2500, 0), FBox::BuildAABB(FVector(2500, 2500, 0), FVector(2000.0, 2000.0, 2000.0)));
     double Height = -1.0;
     TestTrue(TEXT("Terrain height exists before roads"), Crowd->TryGetGroundZ(FVector(1200, 1200, 0), Height));
     TestEqual(TEXT("Initial terrain top is zero"), Height, 0.0);
@@ -126,7 +125,7 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Snapshot event refreshes support at the same revision"), Height, 8.0);
     Crowd->TryGetGroundZ(MovedCenter, Height);
     TestEqual(TEXT("Restored road removes previous support location"), Height, 0.0);
-    Crowd->ConfigureSimArea(FVector(2500, 2500, 0), 2000.0f);
+    Crowd->ConfigureSimAreaWithBounds(FVector(2500, 2500, 0), FBox::BuildAABB(FVector(2500, 2500, 0), FVector(2000.0, 2000.0, 2000.0)));
     TestEqual(TEXT("Road creates no crowd avoidance wall"), Crowd->GetFacilityWallCount(), 0);
 
     FFFZSFacilitySpec Lighting = Spec;
@@ -137,7 +136,7 @@ bool FFF_CrowdRoadSurfaceTest::RunTest(const FString& Parameters)
     Placement.OriginCell = FIntPoint(3000, 3000);
     if (!ExecuteChecked(TEXT("Ordinary solid facility installs"),
         UFFZSGridLibrary::MakeInstallCommand(Lighting, Zone->ZoneId, Placement))) return false;
-    Crowd->ConfigureSimArea(FVector(2500, 2500, 0), 2000.0f);
+    Crowd->ConfigureSimAreaWithBounds(FVector(2500, 2500, 0), FBox::BuildAABB(FVector(2500, 2500, 0), FVector(2000.0, 2000.0, 2000.0)));
     TestEqual(TEXT("Other facility avoidance wall remains"), Crowd->GetFacilityWallCount(), 1);
     Crowd->TryGetGroundZ(FVector(3200, 3200, 0), Height);
     TestEqual(TEXT("Other facility roofs do not support NPC height"), Height, 0.0);

@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -67,7 +67,7 @@ bool FFF_CrowdProgramLifecycle::RunTest(const FString& Parameters)
 	Stage->CurrentStage = EFF_FestivalStage::Live;
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
-	Crowd->InitializeSimulation(FVector::ZeroVector, 10000.f, 1, 4, AFF_BaseCrowd::StaticClass());
+	Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 1, 4, AFF_BaseCrowd::StaticClass());
 	const int32 Leader = Crowd->SpawnAgent(*World, FVector::ZeroVector, FRotator::ZeroRotator);
 	if (!TestTrue(TEXT("Leader spawned"), Leader != INDEX_NONE)) { return false; }
 	using Access = FFF_CrowdProgramTestAccess;
@@ -287,7 +287,7 @@ bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	auto* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
 	auto* Decision = World->GetSubsystem<UFF_CrowdDecisionSubsystem>();
-	Crowd->InitializeSimulation(FVector::ZeroVector, 10000.f, 1, 78, AFF_BaseCrowd::StaticClass());
+	Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 1, 78, AFF_BaseCrowd::StaticClass());
 	using Access = FFF_CrowdProgramTestAccess;
 	using Decisions = FFF_CrowdProgramDecisionTestAccess;
 	TArray<int32> Agents;
@@ -345,7 +345,7 @@ bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 배회 봉쇄. 원판을 Zone보다 크게, SimRadius는 느슨하게 둬서 Zone 검사만 일하도록 만들어 놓고 본다
+// 배회 봉쇄. 원판을 Zone보다 크게 둬서 Zone 검사만 일하도록 만들어 놓고 본다
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWanderZoneConfinement,
 	"FestaFiesta.Crowd.Wander.ZoneConfinement", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
@@ -386,7 +386,7 @@ bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
 	Crowd->bEnablePartyGrouping = false;
 	Crowd->MaxWalkableHeightAboveOriginUU = 0.f;
 	Crowd->OnPartyNeedsDecision.Unbind();
-	Crowd->InitializeSimulation(ZoneCenter, 100000.f, 2, 4, AFF_BaseCrowd::StaticClass());
+	Crowd->InitializeSimulationWithBounds(ZoneCenter, FBox::BuildAABB(ZoneCenter, FVector(100000.f, 100000.f, 100000.f)), 2, 4, AFF_BaseCrowd::StaticClass());
 
 	// 원판이 Zone을 넘도록 키운다. 작으면 후보가 전부 안쪽에 떨어져 봉쇄가 없어도 통과한다
 	Crowd->WanderRadiusUU = MaxRadiusCm * 3.f;

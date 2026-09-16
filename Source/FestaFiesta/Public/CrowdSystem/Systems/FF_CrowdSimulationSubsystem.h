@@ -126,11 +126,22 @@ public:
 	void InitializeCrowdAgentPool(UWorld& InWorld, FVector AgentPoolLocation);
 
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
-	void InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
+	void InitializeSimulation(FVector NewOrigin,
 		int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass);
 
+	// 분석 격자 범위를 NavMesh 경계에서 뽑는다. 시뮬레이션 반경 개념은 없다
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
-	void ConfigureSimArea(FVector NewOrigin, float NewRadiusUU);
+	void ConfigureSimArea(FVector NewOrigin);
+
+	// NavMesh가 없는 맵·테스트에서 격자 범위를 직접 지정한다. 넘긴 상자는 이후 재구축에서도 유지된다.
+	void ConfigureSimAreaWithBounds(FVector NewOrigin, const FBox& AreaBoundsCm);
+
+	// 위 둘을 묶은 편의 함수. NavMesh를 깔 수 없는 테스트 월드에서 쓴다
+	void InitializeSimulationWithBounds(FVector NewOrigin, const FBox& AreaBoundsCm,
+		int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass);
+
+	// 분석 격자(밀도·높이)가 덮는 범위, cm. 유효하지 않으면 격자가 서지 않았다는 뜻이다.
+	const FBox& GetSimAreaBounds() const { return SimAreaBoundsCm; }
 
 	// 게이트를 등록한다. InitializeSimulation 직후 1회만 부르며, 재검증하면 인덱스가 밀려 소속이 바뀐다.
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Gate")
@@ -457,13 +468,9 @@ public:
 	// Agent <-> Actor 슬롯 바인딩 장부. 실제 Actor 조작은 이 클래스가 하고, 장부만 여기 위임한다
 	FCrowdActorPoolBinding PoolBinding;
 
-	// 시뮬레이션/밀도 그리드가 덮는 영역의 중심, 월드 좌표
+	// 축제장 기준점, 월드 좌표. 통행 상한 Z와 임시 퇴장 지점의 기준면이다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
 	FVector SimOrigin = FVector::ZeroVector;
-
-	// SimOrigin 기준 반경. 밀도 그리드는 이 반경을 감싸는 정사각형으로 만들어진다
-	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float SimRadiusUU = 1000000.f;
 
 	// 목적지에 이만큼 가까워지면 도착으로 본다(접근점·배회 목적지 기준), UU.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
@@ -522,10 +529,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	FFF_CrowdAvoidanceConfig AvoidanceConfig;
 
-	// 시뮬 사각 경계(SimOrigin ± SimRadiusUU) 4벽을 벽 반발의 대상으로 넣는다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bAvoidanceUseBoundaryWalls = true;
-
 	// 시설(부스·무대·화장실 등) footprint를 벽 반발의 대상으로 넣는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceUseFacilityWalls = true;
@@ -546,11 +549,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldSpacingUU = 500.f;
 
-	// 격자를 NavMesh 경계에 맞춘다. 끄면 SimRadius 밖이 가장자리 높이로 클램프된다
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
-	bool bHeightFieldFitToNavBounds = true;
-
-	// 격자 반경(UU). 0이면 SimRadiusUU. bHeightFieldFitToNavBounds가 이긴다
+	// 높이 격자만 따로 좁힐 때 쓰는 반폭(UU). 0이면 분석 격자 범위(NavMesh 경계)를 그대로 쓴다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldRadiusUU = 0.f;
 
@@ -684,7 +683,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "100.0", Units = "cm"))
 	float PatrolLoopStepCm = 4000.f;
 
-	// 배회·순회 목적지를 Zone 안으로 제한한다. 끄면 봉쇄가 SimRadiusUU(기본 1km) 하나만 남는다
+	// 배회·순회 목적지를 Zone 안으로 제한한다. 끄면 봉쇄가 NavMesh 통행성 하나만 남는다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
 	bool bConfineWanderToZones = true;
 
@@ -983,6 +982,12 @@ private:
 	UFUNCTION()
 	void HandleRoadSupportSnapshotRestored();
 
+	// 분석 격자 범위를 NavMesh 경계에서 뽑는다. 직접 지정된 범위가 있으면 그것이 이긴다
+	bool ResolveSimAreaBounds(FBox& OutBoundsCm) const;
+
+	void ApplySimArea(FVector NewOrigin, const FBox& AreaBoundsCm);
+
+	void RebuildDensityGrid();
 	void RebuildHeightField();
 	void RebuildAvoidanceWalls();
 
@@ -1152,6 +1157,12 @@ private:
 	// 혼잡도 계측용 밀도 그리드
 	FCrowdDensityGrid DensityGrid;
 
+	// 분석 격자가 덮는 범위(cm). NavMesh 경계에서 뽑거나 ConfigureSimAreaWithBounds로 직접 받는다
+	FBox SimAreaBoundsCm = FBox(ForceInit);
+
+	// 직접 받은 범위인가. true면 NavMesh 경계로 덮어쓰지 않는다
+	bool bSimAreaBoundsOverridden = false;
+
 	// 결정·UI가 읽는 사본. 발행 주기 사이에는 값이 그대로 남아 있다
 	FFF_CrowdReadModel CrowdReadModel;
 
@@ -1187,7 +1198,7 @@ private:
 	// 이웃 버퍼를 청크별로 들고 있으므로 스텝 간 재사용을 위해 멤버로 둔다
 	FFF_CrowdForceSolver ForceSolver;
 
-	// 경계 4벽(m). ConfigureSimArea에서 갱신된다
+	// 벽 반발 대상 선분(m). 시설 footprint만 들어간다 — 시뮬 경계 벽은 존재하지 않는다
 	TArray<FFF_CrowdWallSegment> AvoidanceWalls;
 
 	// AvoidanceWalls를 마지막으로 지은 시점의 ZoneSystem WorldRevision.
@@ -1200,7 +1211,6 @@ private:
 	bool bFacilityWallsSawZoneSystem = true;
 
 	// 마지막 재구축이 어떤 손잡이 값으로 지어졌는지.
-	bool bBuiltWithBoundaryWalls = false;
 	bool bBuiltWithFacilityWalls = false;
 	bool bBuiltWithClearance = false;
 

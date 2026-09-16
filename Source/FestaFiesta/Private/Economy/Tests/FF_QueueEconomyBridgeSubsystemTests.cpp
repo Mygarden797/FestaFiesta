@@ -214,8 +214,7 @@ namespace FFF_QueueEconomyBridgeTestHelpers
 		{
 			// 수수료 검증에는 실제 Agent/Party 데이터만 필요하다. 렌더 Actor 풀은 비워
 			// 관계없는 군중 메시·애니메이션 로드를 피하고 Agent 생성·파티 인원 조회는 유지한다.
-			CrowdSim->InitializeSimulation(
-				FVector::ZeroVector, 10000.f, 0, SpawnedAgentCount + 4, AFF_BaseCrowd::StaticClass());
+			CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 0, SpawnedAgentCount + 4, AFF_BaseCrowd::StaticClass());
 			CrowdSim->SpawnAgents(SpawnedAgentCount, FVector::ZeroVector, 500.f);
 
 			PartyId = CrowdSim->GetAgentPartyID(0);

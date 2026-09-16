@@ -78,7 +78,7 @@ void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 	RefreshLanesFromWorld();
 }
 
-void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
+void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin,
 	int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass)
 {
 	if (bSimulationInitialized)
@@ -191,7 +191,7 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	AgentPoolSize = FMath::Max(NewAgentPoolSize, 0);
 	CrowdActorClass = InCrowdActorClass;
 
-	ConfigureSimArea(NewOrigin, NewRadiusUU);
+	ConfigureSimArea(NewOrigin);
 
 	InitializeCrowdActorPool(*World, NewOrigin);
 	InitializeCrowdAgentPool(*World, NewOrigin);
@@ -215,14 +215,60 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	}
 }
 
-void UFF_CrowdSimulationSubsystem::ConfigureSimArea(FVector NewOrigin, float NewRadiusUU)
+// 격자 범위의 우선순위는 직접 지정 > NavMesh 경계다. 통행 가능 영역이 곧 관측 대상이다
+bool UFF_CrowdSimulationSubsystem::ResolveSimAreaBounds(FBox& OutBoundsCm) const
+{
+	if (bSimAreaBoundsOverridden && SimAreaBoundsCm.IsValid)
+	{
+		OutBoundsCm = SimAreaBoundsCm;
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
+	const FBox NavBounds = NavData ? NavData->GetBounds() : FBox(ForceInit);
+
+	if (!NavBounds.IsValid || NavBounds.GetSize().GetMax() <= 0.0)
+	{
+		OutBoundsCm = FBox(ForceInit);
+		return false;
+	}
+
+	OutBoundsCm = NavBounds;
+	return true;
+}
+
+void UFF_CrowdSimulationSubsystem::ConfigureSimArea(FVector NewOrigin)
+{
+	bSimAreaBoundsOverridden = false;
+
+	FBox Resolved(ForceInit);
+	ResolveSimAreaBounds(Resolved);
+
+	ApplySimArea(NewOrigin, Resolved);
+}
+
+void UFF_CrowdSimulationSubsystem::InitializeSimulationWithBounds(FVector NewOrigin, const FBox& AreaBoundsCm,
+	int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass)
+{
+	InitializeSimulation(NewOrigin, NewActorPoolSize, NewAgentPoolSize, InCrowdActorClass);
+	ConfigureSimAreaWithBounds(NewOrigin, AreaBoundsCm);
+}
+
+void UFF_CrowdSimulationSubsystem::ConfigureSimAreaWithBounds(FVector NewOrigin, const FBox& AreaBoundsCm)
+{
+	bSimAreaBoundsOverridden = AreaBoundsCm.IsValid != 0;
+
+	ApplySimArea(NewOrigin, AreaBoundsCm);
+}
+
+void UFF_CrowdSimulationSubsystem::ApplySimArea(FVector NewOrigin, const FBox& AreaBoundsCm)
 {
 	SimOrigin = NewOrigin;
-	SimRadiusUU = FMath::Max(NewRadiusUU, 100.f);
+	SimAreaBoundsCm = AreaBoundsCm;
 
-	const FVector GridOrigin = SimOrigin - FVector(SimRadiusUU, SimRadiusUU, 0.f);
-	const FVector2D GridSize(SimRadiusUU * 2.f, SimRadiusUU * 2.f);
-	DensityGrid.Build(GridOrigin, GridSize, DensityCellSizeUU);
+	RebuildDensityGrid();
 
 	RebuildAvoidanceWalls();
 	UE_LOG(LogTemp, Warning,
@@ -231,10 +277,34 @@ void UFF_CrowdSimulationSubsystem::ConfigureSimArea(FVector NewOrigin, float New
 
 	RebuildHeightField();
 
+	// 퇴장 지점을 안 받았으면 범위의 -X 가장자리 안쪽에 둔다
 	if (!bTemp_ExitLocationSet)
 	{
-		Temp_ExitWorldLocation = SimOrigin + FVector(-SimRadiusUU * 0.8f, 0.f, 0.f);
+		Temp_ExitWorldLocation = SimAreaBoundsCm.IsValid
+			? FVector(
+				FMath::Lerp(SimAreaBoundsCm.Min.X, SimOrigin.X, 0.2),
+				SimOrigin.Y,
+				SimOrigin.Z)
+			: SimOrigin;
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::RebuildDensityGrid()
+{
+	if (!SimAreaBoundsCm.IsValid)
+	{
+		DensityGrid = FCrowdDensityGrid();
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Crowd] 밀도 격자를 세우지 못했다 — NavMesh 경계가 없다. "
+				 "NavMesh를 깔거나 ConfigureSimAreaWithBounds로 범위를 지정할 것"));
+		return;
+	}
+
+	const FVector GridOrigin(SimAreaBoundsCm.Min.X, SimAreaBoundsCm.Min.Y, SimOrigin.Z);
+	const FVector BoundsSize = SimAreaBoundsCm.GetSize();
+
+	DensityGrid.Build(GridOrigin, FVector2D(BoundsSize.X, BoundsSize.Y), DensityCellSizeUU);
 }
 
 TStatId UFF_CrowdSimulationSubsystem::GetStatId() const
@@ -379,15 +449,6 @@ bool UFF_CrowdSimulationSubsystem::ValidateGate(const FFF_CrowdGate& InGate, int
 	if (IsValid(OutGate.GateAnchor))
 	{
 		OutGate.GateLocation = OutGate.GateAnchor->GetActorLocation();
-	}
-
-	const double DistFromOriginSq = FVector::DistSquared2D(OutGate.GateLocation, SimOrigin);
-	if (DistFromOriginSq > static_cast<double>(SimRadiusUU) * SimRadiusUU)
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 시뮬 영역(반경 %.0f) 밖이다. 중심에서 %.0f"),
-			*OutGate.GateId.ToString(), SimRadiusUU, FMath::Sqrt(DistFromOriginSq));
-		return false;
 	}
 
 	UWorld* World = GetWorld();
@@ -1295,29 +1356,8 @@ void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
 {
 	AvoidanceWalls.Reset();
 
-	if (bAvoidanceUseBoundaryWalls)
-	{
-		const float CX = static_cast<float>(SimOrigin.X) * FFF_CrowdUnits::MetersPerUU;
-		const float CY = static_cast<float>(SimOrigin.Y) * FFF_CrowdUnits::MetersPerUU;
-		const float H = SimRadiusUU * FFF_CrowdUnits::MetersPerUU;
-
-		const FVector2f Corners[4] = {
-			FVector2f(CX - H, CY - H), FVector2f(CX + H, CY - H),
-			FVector2f(CX + H, CY + H), FVector2f(CX - H, CY + H)
-		};
-
-		for (int32 i = 0; i < 4; ++i)
-		{
-			FFF_CrowdWallSegment Wall;
-			Wall.A = Corners[i];
-			Wall.B = Corners[(i + 1) % 4];
-			AvoidanceWalls.Add(Wall);
-		}
-	}
-
 	FacilityWallCount = AppendFacilityWalls();
 
-	bBuiltWithBoundaryWalls = bAvoidanceUseBoundaryWalls;
 	bBuiltWithFacilityWalls = bAvoidanceUseFacilityWalls;
 	bBuiltWithClearance = bAvoidanceFacilityWallsIncludeClearance;
 }
@@ -1352,6 +1392,14 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		return;
 	}
 
+	// 높이 격자는 분석 격자와 같은 범위를 덮는다
+	if (!SimAreaBoundsCm.IsValid)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("높이 격자: 덮을 범위가 없다(NavMesh 경계 미확보) — 개체 Z는 스폰 값 그대로 유지된다"));
+		return;
+	}
+
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(CrowdHeightField), false);
 
 	int32 IgnoredFacilities = 0;
@@ -1376,27 +1424,14 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		}
 	}
 
-	FVector2D CenterCm(SimOrigin.X, SimOrigin.Y);
-	double HalfSizeCm = (HeightFieldRadiusUU > 0.f)
-		? static_cast<double>(HeightFieldRadiusUU)
-		: static_cast<double>(SimRadiusUU);
-	double TopZ = SimOrigin.Z;
-	bool bFittedToNav = false;
-
-	if (bHeightFieldFitToNavBounds)
+	FVector2D CenterCm(SimAreaBoundsCm.GetCenter().X, SimAreaBoundsCm.GetCenter().Y);
+	double HalfSizeCm = FMath::Max(SimAreaBoundsCm.GetSize().X, SimAreaBoundsCm.GetSize().Y) * 0.5;
+	if (HeightFieldRadiusUU > 0.f)
 	{
-		const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
-		const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
-		const FBox NavBounds = NavData ? NavData->GetBounds() : FBox(ForceInit);
-
-		if (NavBounds.IsValid)
-		{
-			CenterCm = FVector2D(NavBounds.GetCenter().X, NavBounds.GetCenter().Y);
-			HalfSizeCm = FMath::Max(NavBounds.GetSize().X, NavBounds.GetSize().Y) * 0.5;
-			TopZ = FMath::Max(TopZ, NavBounds.Max.Z);
-			bFittedToNav = true;
-		}
+		HalfSizeCm = FMath::Min(HalfSizeCm, static_cast<double>(HeightFieldRadiusUU));
 	}
+
+	const double TopZ = FMath::Max(SimOrigin.Z, SimAreaBoundsCm.Max.Z);
 
 	constexpr double TraceBelowCm = 50000.0;
 
@@ -1453,9 +1488,9 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 		IgnoredFacilities);
 
 	UE_LOG(LogTemp, Log,
-		TEXT("높이 격자: 중심 (%.0f, %.0f) 반경 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),
+		TEXT("높이 격자: 중심 (%.0f, %.0f) 반폭 %.0f (%s), 간격 %.0f, 트레이스 시작 Z=%.0f"),
 		CenterCm.X, CenterCm.Y, HalfSizeCm,
-		bFittedToNav ? TEXT("NavMesh 경계에 맞춤") : TEXT("SimRadius"),
+		bSimAreaBoundsOverridden ? TEXT("지정 범위") : TEXT("NavMesh 경계"),
 		SpacingCm, StartZ);
 
 	if (MaxWalkableHeightAboveOriginUU > 0.f)
@@ -1655,7 +1690,6 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 void UFF_CrowdSimulationSubsystem::EnsureFacilityWalls()
 {
 	const bool bKnobsChanged =
-		(bBuiltWithBoundaryWalls != bAvoidanceUseBoundaryWalls) ||
 		(bBuiltWithFacilityWalls != bAvoidanceUseFacilityWalls) ||
 		(bBuiltWithClearance != bAvoidanceFacilityWallsIncludeClearance);
 
@@ -2980,13 +3014,13 @@ FVector UFF_CrowdSimulationSubsystem::MakeContainmentDestination(const FVector& 
 //   공유 스트림에서 뽑으면 뽑는 순서가 곧 결과가 되고, 위치가 갈리면 다음 재평가의 거리가 갈려
 //   결정 자체가 갈린다(FF_WalkDistanceMatrix.h가 경고하는 그 문제다).
 //
-// ★ 예전에 PickRandomDestination()이 따로 있었다. 공유 Rng에서 뽑고 범위가 SimRadiusUU 전체라
+// ★ 예전에 PickRandomDestination()이 따로 있었다. 공유 Rng에서 뽑고 범위가 시뮬 반경 전체라
 //   개체를 축제장 밖으로 보내면서 결정론까지 깨는 함수였고, 호출부가 없어 삭제했다.
 //   배회 범위를 넓히고 싶으면 그것을 되살리지 말고 WanderRadiusUU를 올릴 것 —
 //   그래야 결정론이 유지된다.
 //
-// ★ 실제 울타리는 IsInsideFestivalBounds다. SimRadiusUU 클램프는 밀도 그리드 범위(기본 1km)라
-//   울타리가 못 되고, 원판은 Unit.Position 중심이라 반복하면 그 상한까지 순수 확산이 된다.
+// ★ 유일한 수평 울타리는 IsInsideFestivalBounds(Zone)다. IsWalkable은 통행 상한 Z만 보며 격자 밖은
+//   통과시키므로 울타리가 아니다. Zone이 하나도 없는 맵에는 수평 봉쇄가 없다.
 //
 // ★ 통행 상한에 걸리는 좌표는 여기서 걸러 낸다. 안 걸러도 이동 쪽이 막아 주지만, 갈 수 없는
 //   곳을 목표로 잡은 파티는 경계에 붙어 서서 StuckSteps를 채우고 MoveFailed로 다시 여기
@@ -3053,13 +3087,6 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 			FFF_DeterministicRandom::MakeUniformFraction(DeriveAttemptSeed(SeedRadius, Attempt)));
 
 		FVector Destination = Unit.Position + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
-
-		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
-		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
-		{
-			Destination = SimOrigin + FromOrigin.GetSafeNormal() * SimRadiusUU;
-			Destination.Z = Unit.Position.Z;
-		}
 
 		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
 		{
@@ -3183,12 +3210,6 @@ bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAg
 		}
 
 		if (FVector::Dist2D(Destination, Unit.Position) < PatrolMinTravelCm)
-		{
-			continue;
-		}
-
-		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
-		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
 		{
 			continue;
 		}
