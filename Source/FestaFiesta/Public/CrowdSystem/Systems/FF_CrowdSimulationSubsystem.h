@@ -673,7 +673,7 @@ public:
 	// 이 안에 레인이 있는 개체만 순회로 뽑는다. LaneEntrySnapRadiusCm보다 좁게 잡는 이유는,
 	// 넓히면 도로에서 먼 개체까지 레인으로 끌려가 직선으로 걸어오기 때문이다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
-	float PatrolLaneSnapRadiusCm = 800.f;
+	float PatrolLaneSnapRadiusCm = 1000.f;
 
 	// 목적지가 현재 호 위치에서 이보다 가깝지 않은 후보만 쓴다. 세그먼트 끝에 이미 서 있는
 	// 개체가 같은 끝을 다시 목적지로 받아 제자리 재결정을 반복하는 것을 여기서 끊는다.
@@ -687,6 +687,14 @@ public:
 	// 배회·순회 목적지를 Zone 안으로 제한한다. 끄면 봉쇄가 SimRadiusUU(기본 1km) 하나만 남는다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
 	bool bConfineWanderToZones = true;
+
+	// 원판 배회. 끄면 레인 순회만 남고, 레인에서 먼 개체는 목적지를 못 받아 제자리에 선다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableDiscWander = false;
+
+	// 배회 목적지를 못 내 제자리를 돌려준 횟수. 원판을 끄기 전후로 이 값을 비교할 것
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetWanderStalls() const { return WanderStalls; }
 
 	// Zone 밖이라 기각한 배회·순회 후보 수. 0이면 봉쇄가 한 번도 안 걸린 것이다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
@@ -1239,6 +1247,7 @@ private:
 	mutable int32 DiscWanderCount = 0;
 	mutable int32 WanderZoneRejects = 0;
 	mutable int32 WanderContainmentNudges = 0;
+	mutable int32 WanderStalls = 0;
 
 	// "이 월드에 Zone 이 있는가"만 WorldRevision 을 키로 캐시한다. 등록 목록 조회가 TArray를 할당해서다
 	mutable TWeakObjectPtr<UFFZSWorldSubsystem> WanderBoundsSystem;

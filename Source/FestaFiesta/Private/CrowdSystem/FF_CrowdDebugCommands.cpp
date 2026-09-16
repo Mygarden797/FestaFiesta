@@ -671,11 +671,14 @@ static void CrowdLanesCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		RoadStats.TileCount, RoadStats.EdgeCount, RoadStats.JunctionCount,
 		RoadStats.IsolatedTileCount, RoadStats.ClosedLoopCount,
 		RoadStats.bTruncated ? TEXT("  ※ 상한에 걸려 잘림") : TEXT(""));
-	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회  (순회 비율이 낮으면 도로가 동선과 멀다)"),
-		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회(%s)  (순회 비율이 낮으면 도로가 동선과 멀다)"),
+		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount(),
+		CrowdSim->bEnableDiscWander ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("  Zone 봉쇄    : %s   기각 %d회 / 복귀 %d회  (기각이 0이면 봉쇄가 한 번도 안 걸렸다)"),
 		CrowdSim->bConfineWanderToZones ? TEXT("켬") : TEXT("끔"),
 		CrowdSim->GetWanderZoneRejects(), CrowdSim->GetWanderContainmentNudges());
+	Ar.Logf(TEXT("  목적지 없음  : %d회  ← 배회가 제자리를 돌려준 횟수. 원판을 끄면 여기가 오른다"),
+		CrowdSim->GetWanderStalls());
 
 	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
 	{
@@ -767,6 +770,7 @@ static void CrowdSpreadCommand(const TArray<FString>& Args, UWorld* World, FOutp
 	Ar.Logf(TEXT("  Zone 봉쇄   : %s   기각 %d회 / 복귀 %d회"),
 		CrowdSim->bConfineWanderToZones ? TEXT("켬") : TEXT("끔"),
 		CrowdSim->GetWanderZoneRejects(), CrowdSim->GetWanderContainmentNudges());
+	Ar.Logf(TEXT("  목적지 없음 : %d회"), CrowdSim->GetWanderStalls());
 }
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpreadCommand(
@@ -1166,6 +1170,10 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		  TEXT("지면을 못 찾은 격자점도 통행 불가로. maxwalkheight가 켜져 있을 때만 의미가 있다") },
 		{ TEXT("confinezones"), &CrowdSim->bConfineWanderToZones,
 		  TEXT("배회·순회 목적지를 Zone 안으로 제한. 끄면 봉쇄가 SimRadius(기본 1km) 하나만 남는다") },
+		{ TEXT("discwander"), &CrowdSim->bEnableDiscWander,
+		  TEXT("원판 배회. 끄면 레인 순회만 남는다 — 레인에서 먼 개체는 제자리에 서므로 stall을 같이 볼 것") },
+		{ TEXT("patrolwander"), &CrowdSim->bEnableRoadPatrolWander,
+		  TEXT("레인 순회 배회. discwander와 함께 끄면 배회가 전멸한다") },
 	};
 
 	struct FIntKnob

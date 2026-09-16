@@ -3029,6 +3029,20 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 		}
 	}
 
+	// 원판을 끄면 레인이 유일한 배회 수단이 된다. 레인에서 PatrolLaneSnapRadiusCm 밖에 선
+	// 개체는 목적지를 못 받으므로, 끄기 전에 WanderStalls가 얼마나 오르는지 볼 것
+	if (!bEnableDiscWander)
+	{
+		if (!IsInsideFestivalBounds(Unit.Position))
+		{
+			++WanderContainmentNudges;
+			return MakeContainmentDestination(Unit.Position);
+		}
+
+		++WanderStalls;
+		return Unit.Position;
+	}
+
 	++DiscWanderCount;
 
 	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
@@ -3068,6 +3082,7 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 		return MakeContainmentDestination(Unit.Position);
 	}
 
+	++WanderStalls;
 	return Unit.Position;
 }
 
@@ -3115,16 +3130,23 @@ bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAg
 		FVector ClosestCm = FVector::ZeroVector;
 		float ArcCm = 0.f;
 		float DistCm = 0.f;
+		// 반폭을 더해서 잰다. FindClosestOnLane은 중심선까지의 거리라, 안 더하면 넓은 도로 위에
+		// 서 있는 개체가 "도로 밖"으로 판정된다
 		if (!CrowdSplinePath::FindClosestOnLane(Lane, Unit.Position, ClosestCm, ArcCm, DistCm)
-			|| DistCm > PatrolLaneSnapRadiusCm)
+			|| DistCm > PatrolLaneSnapRadiusCm + Lane.HalfWidthCm)
 		{
 			continue;
 		}
 
+		// 일방통행 레인은 역방향 후보를 안 낸다. 내면 경로 쪽(TryBuildPath)이 그 방향을 거부해
+		// NavMesh로 떨어지고, 결국 레인을 벗어나 직선으로 가로지른다
 		if (Lane.bClosedLoop)
 		{
 			Candidates.Add({ LaneIndex, ArcCm + PatrolLoopStepCm });
-			Candidates.Add({ LaneIndex, ArcCm - PatrolLoopStepCm });
+			if (!Lane.bOneWay)
+			{
+				Candidates.Add({ LaneIndex, ArcCm - PatrolLoopStepCm });
+			}
 			continue;
 		}
 
@@ -3133,7 +3155,7 @@ bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAg
 		{
 			Candidates.Add({ LaneIndex, TotalCm });
 		}
-		if (ArcCm >= PatrolMinTravelCm)
+		if (!Lane.bOneWay && ArcCm >= PatrolMinTravelCm)
 		{
 			Candidates.Add({ LaneIndex, 0.f });
 		}

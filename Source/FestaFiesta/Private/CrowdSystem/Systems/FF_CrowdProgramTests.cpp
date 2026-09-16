@@ -391,6 +391,11 @@ bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
 	// 원판이 Zone을 넘도록 키운다. 작으면 후보가 전부 안쪽에 떨어져 봉쇄가 없어도 통과한다
 	Crowd->WanderRadiusUU = MaxRadiusCm * 3.f;
 
+	// 두 경로를 프로젝트 기본값에 맡기지 않고 여기서 못 박는다. 이 블록은 원판 봉쇄를 보는
+	// 것이라, 기본값이 바뀌면 조용히 다른 경로를 재게 된다
+	Crowd->bEnableDiscWander = true;
+	Crowd->bEnableRoadPatrolWander = false;
+
 	const int32 Leader = Crowd->SpawnAgent(*World, ZoneCenter, FRotator::ZeroRotator);
 	if (!TestTrue(TEXT("Leader spawned"), Leader != INDEX_NONE)) { return false; }
 
@@ -425,6 +430,23 @@ bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
 	TestTrue(TEXT("밖에 있던 개체는 축제장 쪽으로 당겨진다"),
 		FVector::Dist2D(Recovered, ZoneCenter) < FVector::Dist2D(Outside, ZoneCenter));
 	TestTrue(TEXT("복귀 계수기가 올랐다"), Crowd->GetWanderContainmentNudges() > 0);
+
+	// 원판을 끄면 레인이 없는 이 월드에서는 목적지가 안 나온다. 그래도 밖에 선 개체의 복귀만은
+	// 살아 있어야 한다 — 그게 죽으면 나간 개체를 되돌릴 수단이 하나도 안 남는다
+	Crowd->bEnableDiscWander = false;
+	const int32 DiscBefore = Crowd->GetDiscWanderCount();
+	const int32 StallsBefore = Crowd->GetWanderStalls();
+
+	Access::Unit(*Crowd, Leader).Position = ZoneCenter;
+	const FVector Stalled = Access::Wander(*Crowd, Leader);
+	TestTrue(TEXT("원판을 끄면 안쪽 개체는 제자리를 받는다"), Stalled.Equals(ZoneCenter, 1.f));
+	TestEqual(TEXT("원판을 끄면 원판 계수기가 안 오른다"), Crowd->GetDiscWanderCount(), DiscBefore);
+	TestEqual(TEXT("제자리는 stall로 집계된다"), Crowd->GetWanderStalls(), StallsBefore + 1);
+
+	Access::Unit(*Crowd, Leader).Position = Outside;
+	const FVector StillRecovers = Access::Wander(*Crowd, Leader);
+	TestTrue(TEXT("원판을 꺼도 밖에 선 개체는 되돌아온다"),
+		FVector::Dist2D(StillRecovers, ZoneCenter) < FVector::Dist2D(Outside, ZoneCenter));
 
 	return true;
 }
