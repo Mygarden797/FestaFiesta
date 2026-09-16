@@ -120,7 +120,8 @@ def read_finished_csv(path):
     if not path.exists():
         return None
     raw = path.read_text(encoding='utf-8-sig')
-    if '[HasHeaderRowAtEnd]' not in raw or '[EndTimestamp]' not in raw:
+    # 실제 5.7 CSV 메타데이터는 [endtimestamp]처럼 소문자 키를 저장한다.
+    if '[hasheaderrowatend]' not in raw.lower() or '[endtimestamp]' not in raw.lower():
         return None
     rows = list(csv.reader(io.StringIO(raw)))
     headers = [(i, row) for i, row in enumerate(rows) if row and row[0] == 'EVENTS']
