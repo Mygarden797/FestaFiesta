@@ -2,7 +2,7 @@
 
 상태: `confirmed` 2026-09-16 Blender 5.2.1 LTS → UE 5.7.4.
 v002의 밝고 부드러운 육지색·해안 형태를 P05 전 세계에 확장했다. 24 OBJ·Blender 저장, 실제 형상 검증, 표시용 16메시 UE 시험 임포트까지 완료했다.
-공용 Frontend 연결·기존 8개국 프랍 높이·외곽 패널 숨김을 저장했고, 별도 프로세스 PIE API/버튼 델리게이트 14개를 통과했다. 물리 입력·실제 UI 외형·성능 검증은 남아 있다.
+공용 Frontend 연결·기존 8개국 프랍 높이·외곽 패널 숨김을 저장했다. P10 밝기·햇살 개선과 P11 작은 화면 레이아웃 수정 후 실제 UI 포함 4개 화면비를 직접 확인했고, 별도 프로세스 PIE API/버튼 델리게이트 14개를 다시 통과했다. 물리 입력·목표 해상도 성능·패키징 검증은 남아 있다.
 사용자 외형 판단과 재개 체크리스트는 로컬 `docs/ui/title-bright-globe-plan.md`를 따른다.
 
 ## 산출물
@@ -100,7 +100,7 @@ UE 5.7의 `MaterialEditingLibrary.set_material_instance_vector_parameter_value`�
 
 - Unreal에서 `/Game/FestaFiesta/Maps/Frontend`를 열고 실행한다. 별도 시험이 필요하면 `L_BrightGlobe_World`를 사용한다.
 - 두께/산: `/Game/FestaFiesta/UI/Atlas/Earth/BrightGlobe_v1/P05/MPC_BrightGlobe_Controls`의 `LandThickness=40`, `MountainHeight=650`. 높이를 크게 바꾸면 기본값 기준으로 맞춘 프랍 바닥도 다시 확인한다.
-- 육지/해안색: 같은 `P05/`의 `MI_BrightGlobe_Land`, `MI_BrightGlobe_Coast`. 배경: 상위 `BrightGlobe_v1/MI_BrightGlobe_Backdrop`, `BackgroundBrightness=4.5`.
+- 현재 P10 색/배경 조절은 아래 햇살 마감 절을 따른다. 이전 P05 육지/해안색과 상위 `MI_BrightGlobe_Backdrop`(밝기 4.5)는 복원용으로 보존했다.
 - 기존 `Frontend.umap`, `DA_FestivalAtlas.uasset`, `WBP_TitleMain_MyCasual.uasset`만 변경했다. 두 외곽 Border만 Collapsed로 하고 다른 위젯·카메라·카탈로그 필드를 보존했다. 프랍 위경도는 유지했으며 8개국 표면 오프셋은 `p05_prop_offsets.json`에서 대조한다.
 - 실제 백업: `Saved/BrightGlobeBefore/P06-20260916-183442-520428/Content/`. 복원은 에디터를 닫고 현재 파일에 후속 변경이 없는지 확인한 뒤 해당 파일만 원래 상대 경로에 복사한다. `p06_frontend_integration.json`에 원본/최종 해시가 있다. 전체 reset/clean을 복원 수단으로 쓰지 않는다.
 - `p08_original_hash_audit.json`: 기준 98개 중 95개 동일, 위 3개만 의도한 변경. 옛 `original_hash_check.json`의 98개 동일 결과는 통합 이전 기록이다.
@@ -109,7 +109,7 @@ UE 5.7의 `MaterialEditingLibrary.set_material_instance_vector_parameter_value`�
 ## 현재 한계
 
 - 형상 검사에는 전체 극지·이음선이 포함되지만, 모든 방향의 GPU 외형·물리 입력을 통한 국가 선택·조형물 바닥의 근접 외형은 별도 검증이 필요하다. PIE API 국가 선택/화면 이동은 위 14개 검사에서 통과했다.
-- Frontend 저장 연결과 패널 숨김은 완료했다. 다음은 실제 UI 가독성·화면비·물리 입력과 성능 A/B 확인이다. 프레임 측정 스크립트/CSV는 준비 중이며 통과 수치를 아직 기록하지 않는다. 패키징·콘솔 실기는 미완료다.
+- Frontend 저장 연결과 패널 숨김, P11 실제 타이틀 UI 가독성·4개 화면비 검토는 완료했다. P09는 실제 PIE 559×190에서 구형/신형 GPU 중앙값 4.84575→5.63930ms(+16.376%)를 측정했다. 이는 P10 이전 재질의 소형 뷰포트 비교이며 목표 해상도/현재 P10 성능 보장이 아니다. 물리 입력·패키징·콘솔 실기는 미완료다.
 - 원값 0/1/2 마스크를 그대로 밉 생성하면 반올림으로 블록이 생기므로 원본 샘플을 정규화한 뒤 평균한다. P03 수색은 지역 제한, P05 수색은 전 세계 범위다.
 - 색상은 옛 `T_Diorama_Color`가 아니라 `T_FF_Earth_CasualClay_Aligned_2048x1024.png`를 참조한다. 새 AI 지도를 그리거나 UV를 이동하지 않았다.
 
@@ -118,3 +118,36 @@ UE 5.7의 `MaterialEditingLibrary.set_material_instance_vector_parameter_value`�
 - NOAA ETOPO1 및 Solar System Scope 파생 자료: `THIRD_PARTY_NOTICES.md` 참조.
 - 참고한 외부 스킬: RobLe3/cc-blender-skill, v1.3.0, commit `11016c9`의 blender-modeling / blender-uv-texturing / blender-export.
 - 스킬의 일반 축·UV 예제보다 이 프로젝트의 실제 왕복 검증과 위 계약을 우선했다.
+
+## P10 맑은 파랑·햇살 마감 (2026-09-16)
+
+- 사용자 밝기 피드백을 반영해 신규 `P10/` 재질과 `L_BrightGlobe_SunnyStudy`를 만들고 실제 Frontend에 연결했다. P05 메시/원본 슬롯·지도·Blender 파일·MPC 높이·카메라·WBP·국가 카탈로그는 유지했다. 육지는 Frontend 컴포넌트의 재질 override로 연결한다.
+- `P10/MI_BrightGlobe_SunnyWater`: `OceanColor=(.003,.155,.90)`, `ShallowColor=(.025,.64,.90)`, `OceanRoughness=.34`, `OceanSpecular=.28`, `CoastWidthTexels=2.6`. 기존 지리 UV와 원본 얼음 범위 유지.
+- `P10/MI_BrightGlobe_SunnyLand`·`MI_BrightGlobe_SunnyCoast`: 초원/숲/모래/눈과 해안 색. 부모는 기존 P05 재질이므로 높이 조절 계약도 같다.
+- `P10/MI_BrightGlobe_SunnyBackdrop`: `Sky`, `Cream`, `Brightness=4.2`, `GradientStart=.22`, `GradientEnd=.66`. `SunGlow=.60`, `SunRadius=.30`, `RayStrength=.07`, `SunPosition=(.94,-.055,0)`으로 오른쪽 위 햇살을 조절한다. 화면 가로세로 비율을 반영한 재질 효과이며 물리적인 태양 위치는 아니다.
+- 조명은 Frontend의 `DirectionalLight=4.0`, `FF_Clay_FillLight=.48`, `FF_Clay_SkyFill=.14`. 고정 노출은 유지하고 Bloom .22, AO .30, Vignette 0으로 조정했다. 배경 그라데이션으로 SkyLight를 재캡처하지 않는다.
+- `PostProcessQuality@1`은 엔진 설정상 `r.LensFlareQuality=0`이다. 품질 설정을 강제로 바꾸지 않으며 햇살은 배경 재질로 표시한다. 고품질에서 사용하는 기본 LensFlareIntensity는 .025, Threshold 4다. 강한 렌즈 고스트를 추가한 작업은 아니다.
+- 제작 순서: `prepare_sunny_title.py` → `tune_sunny_title.py` → `capture_scene.py`의 `sunny_review/02_sunny_title_final.png` 시각 확인 → `apply_sunny_frontend.py` → `verify_sunny_frontend.py`. 준비 스크립트는 기존 준비 기록/에셋을 덮어쓰지 않는다.
+- P10 직전 백업은 `p10_prepare.json`의 `backup_directory`를 따른다. 원래 Frontend만 되돌리면 이전 재질과 조명이 복구된다. 후속 수정 여부/해시를 확인하고 에디터를 종료한 뒤 복원한다. 새 재질을 일괄 삭제할 필요는 없다.
+- 적용/검증 증거는 `p10_frontend_apply.json`, `p10_frontend_verify.json` 및 각 `.process.json`을 함께 확인한다. `sunny_review/` 캡처는 UI를 제외한 실제 UE 장면이다.
+
+## P11 실제 타이틀 UI·화면비 마감 (2026-09-16)
+
+- P10 장면 캡처에는 UI가 없었다. `capture_title_ui.py`는 실제 Frontend PIE의 로고·워드마크·플레이/옵션/종료 버튼을 함께 캡처하고 표시 상태·라벨 색·geometry 가용 여부를 보고서에 기록한다. 이번 비표시 창에서는 geometry가 0이어서 **경계·겹침은 PNG를 직접 확인**했다. 보고서의 `contained=false`를 잘림 판정으로 해석하지 않는다.
+- 4:3에서 확인한 로고·지구 겹침은 `fit_title_layout.py`로 수정했다. 타이틀의 기존 Canvas를 `SafeZone > ScaleBox(ScaleToFit, DownOnly) > SizeBox(1920×1080) > 기존 Canvas`로 감싸고 왼쪽·세로 중앙에 정렬한다. 기존 위젯·버튼 속성과 이벤트 배선, 타이틀 외곽 패널의 Collapsed 상태는 보존한다. 넓은 화면에 맞춰 메뉴를 무한히 확대하지 않는다.
+- 적용은 `p11_title_layout.json` status `passed`, `p11_title_layout_apply.process.json` exit 0 / Python 오류 0이다. `/Game/FestaFiesta/UI/Title/GlassOrbit/WBP_TitleMain_MyCasual` 하나만 저장했고 다른 6,869패키지가 변하지 않았음을 확인했다. 기존 Frontend·국가 카탈로그·P10 재질·Blender 파일은 이번 레이아웃 수정 대상이 아니다.
+- WBP 원본과 SHA256은 `p11_title_layout.json`의 `backup_file`·`title_sha256_before`에 기록한다. 이번 백업은 `Saved/BrightGlobeBefore/P11-20260916-233549-784880/Content/FestaFiesta/UI/Title/GlassOrbit/WBP_TitleMain_MyCasual.uasset`이다. 완료 후 다시 실행하면 완료 보고서와 실제 구조·해시를 비교하고 저장 없이 반환한다. 미완료 보고서나 후속 수정을 발견하면 자동으로 덮어쓰지 않는다.
+- **최종 네 화면 직접 검토 완료:** `Saved/BrightGlobe/title_ui_v005_final/report.json` status `captured`, 실제 viewport 960×540·960×720·1600×900·1680×720가 모두 요청과 일치했다. `visual_review.json` status `visually_reviewed`에 로고/버튼 가독성, UI 문구 잘림 없음·메뉴끼리 겹침 없음·검은 기둥 여백 없음의 이미지 판정을 기록했다. 4:3에서는 지구 일부가 불투명 버튼 뒤로 보이지만 로고 글자와 버튼 문구가 가려지거나 잘리지 않는다. 햇살 수치는 유지했다.
+- `p11_title_ui_v005_final.process.json` exit 0 / Python 오류 0, 92.5초, PIE 종료·에셋 무변경이다. 실제 UI 렌더로 저장된 ScaleBox/SizeBox 구조를 별도 프로세스에서 확인했다. 적용 당시 보고서의 `separate_process_verified=false`와 캡처 원본의 `visual_review_complete=false`는 자동으로 갱신하지 않으며, **후속 `visual_review.json`이 시각 검토 결과**다. PNG 크기는 창 장식을 포함한 966×578·966×758·1606×938·1686×758이고 viewport와 구분한다.
+- 레이아웃 저장 후 `p11_frontend_verify.json`은 기존 화면 이동·국가 잠금·회전/숨김 API 등 14개 `passed`, 19.985초, 에셋 무변경·PIE 종료다. `p11_frontend_verify.process.json` exit 0 / Python 오류 0. 물리 마우스/키보드/게임패드 입력·성능·패키징 검사로 확대 해석하지 않는다.
+
+### UI 포함 캡처와 해상도 확인
+
+1. GUI 에디터를 닫고 `Saved/BrightGlobe/title_ui_request.json`에 고유 `output` 이름과 선택적인 `cases` 목록을 지정한다. 같은 결과 이미지를 덮지 않는다. 실행 전 PIE 창 설정도 백업한다. 창 위치 설정은 에디터 종료 때 자동 저장될 수 있다.
+2. `run_editor.ps1 -Script Tools/ui/blender/bright_globe/capture_title_ui.py -Label <고유 이름>`으로 실행한다. 각 화면에서 로딩과 렌더링을 기다리고 `Shot SHOWUI`로 실제 UI를 포함해 캡처한다. 카메라/지구 방향은 화면 사이에 고정해 비교한다.
+3. `report.json`의 `requested`, `viewport`, `viewport_matches_requested`와 PNG `png_size`를 대조한다. **SHOWUI PNG에는 Slate 제목바가 포함될 수 있으므로 PNG 크기를 게임 뷰포트 크기로 쓰지 않는다.** 실제 뷰포트 기준은 `PlayerController.get_viewport_size()`다.
+4. 네 이미지 직접 검토, PIE 종료, 에셋 해시 보존, 별도 `.process.json`의 exit 0 / Python 오류 0을 확인한다. `captured`는 캡처 종료 상태이며 자동으로 외형 검토 통과를 뜻하지 않는다.
+
+`RenderOffscreen`의 `FNullApplication`은 `r.SetRes` 값을 가상 작업영역 크기로 사용한다. 이전 PIE 창 크기가 남으면 다음 큰 창이 그 크기에 제한되어 실행 인자와 실제 뷰포트가 달라질 수 있다. 현재 캡처 스크립트는 매 PIE 생성 전에 `r.SetRes 4096x2160w`를 실행하고 다음 단계까지 2초 기다린 뒤 창을 만든다. 창 생성 크기의 −2/−12 보정은 이 환경의 실측값이며, 결과 보고서의 viewport 일치 여부로 다시 검증한다. 일반 사용자 창에 적용하는 게임 해상도 설정이 아니다.
+
+v001은 WidgetTree 대체 탐색 실패, v002/v003/v004는 UI가 있어도 목표 해상도가 다른 진단 결과다. 최종 검토나 성능 근거로 인용하지 않는다. 원본을 찾지 못할 때 임의 WidgetTree를 선택하지 않고 런타임 타이틀 인스턴스의 Outer로 유일성을 확인한다.
