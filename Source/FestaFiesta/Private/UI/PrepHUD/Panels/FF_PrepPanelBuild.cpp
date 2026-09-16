@@ -291,7 +291,11 @@ void UFF_PrepPanelBuild::NativeOnPanelOpened()
 
 	bPanelOpen = true;
 	bClosingPanel = false;
-	Filter = FFF_PrepBuildFilter();
+	// The HUD reuses this panel: retain the last major/minor category on reopen.
+	// Search and favorites remain scoped to each browsing session.
+	Filter.SearchText.Reset();
+	Filter.bFavoritesOnly = false;
+	Filter.FavoriteIds.Reset();
 	CatalogPageIndex = 0;
 	RefreshCategoryChoiceSelection();
 	if (Search_Facilities)
@@ -901,7 +905,10 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 			FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(B).ToString();
 	});
 	AvailableTokens.Insert(NAME_None, 0);
-	if (!AvailableTokens.Contains(Filter.MinorToken))
+	// A reconstructed or loading panel has no snapshot yet; it cannot invalidate
+	// the remembered subcategory until the catalog has finished loading.
+	if (CatalogSubsystem && CatalogSubsystem->GetLoadState() == EFF_BuildCatalogLoadState::Ready &&
+		!AvailableTokens.Contains(Filter.MinorToken))
 	{
 		Filter.MinorToken = NAME_None;
 		CatalogPageIndex = 0;

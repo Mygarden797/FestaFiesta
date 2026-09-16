@@ -270,9 +270,9 @@ void UFF_OptionsScreen::NativeOnActivated()
 	// 저장값을 먼저 읽는다. 행이 그 값을 초기값으로 쓴다.
 	CaptureDraft();
 
-	// 열 때마다 기본 분류로 돌아간다. 이전 선택을 기억하면 "왜 여기가 열렸지" 가 된다.
+	// 풀에서 다시 열린 화면은 마지막 분류를 복원하고, 최초 진입만 기본 분류를 쓴다.
 	bSavedNotice = false;
-	SelectCategory(DefaultCategory);
+	SelectCategory(bHasSelectedCategory ? SelectedCategory : DefaultCategory);
 
 	// 포커스는 베이스가 NativeGetDesiredFocusTarget 으로 잡는다.
 	// 그 함수가 SelectedCategory 를 보므로 반드시 SelectCategory 뒤에 Super 를 부른다.
@@ -343,6 +343,7 @@ FReply UFF_OptionsScreen::NativeOnKeyDown(const FGeometry& InGeometry, const FKe
 void UFF_OptionsScreen::SelectCategory(EFF_OptionCategory Category)
 {
 	SelectedCategory = Category;
+	bHasSelectedCategory = true;
 
 	// 부분 갱신을 하지 않는다. 여섯 개의 선택 상태를 매번 전체로 다시 선언한다.
 	for (const EFF_OptionCategory Each : AllOptionCategories)

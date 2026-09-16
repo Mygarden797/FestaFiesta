@@ -528,6 +528,8 @@ private:
 	// 현재 표시 중인 카탈로그 위젯. CatalogOpen 외 상태에서는 원칙적으로 null이다. 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildCatalogScreen> CatalogScreen;
+	// 위젯이 제거되어도 같은 월드에서 마지막으로 본 분류는 유지한다.
+	TOptional<EFFZSFacilityCategory> LastCatalogCategory;
 
 	// Install/Move 전 검증과 시각화를 담당하는 일회성 액터. Placing/Moving 동안만 존재한다.
 	UPROPERTY(Transient)

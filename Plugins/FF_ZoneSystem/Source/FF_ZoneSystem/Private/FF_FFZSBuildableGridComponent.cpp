@@ -212,8 +212,8 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
             Lines.Emplace(A - HaloOffset, B - HaloOffset, FLinearColor(0.005f, 0.02f, 0.025f, 0.68f * Opacity),
                 0.0f, Thickness + 2.0f, SDPG_World);
             Lines.Emplace(A, B,
-                Segment.bBoundary ? FLinearColor(0.5f, 1.0f, 0.86f, 0.95f * Opacity) :
-                    FLinearColor(0.18f, 0.88f, 0.72f, (bMajor ? 0.7f : 0.42f) * Opacity),
+                Segment.bBoundary ? FLinearColor(1.0f, 1.0f, 1.0f, 0.95f * Opacity) :
+                    FLinearColor(1.0f, 1.0f, 1.0f, (bMajor ? 0.7f : 0.42f) * Opacity),
                 0.0f, Thickness, SDPG_World);
         };
         for (int32 Index = 0; Index < SectionCount; ++Index)

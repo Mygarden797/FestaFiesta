@@ -201,6 +201,19 @@ void UFF_BuildCatalogScreen::SetCatalogEntries(const TArray<FFF_BuildCatalogEntr
 	RefreshContent();
 }
 
+TOptional<EFFZSFacilityCategory> UFF_BuildCatalogScreen::GetSelectedCategory() const
+{
+	return bHasInitializedCategory ? TOptional<EFFZSFacilityCategory>(SelectedCategory) : TOptional<EFFZSFacilityCategory>();
+}
+
+void UFF_BuildCatalogScreen::RestoreSelectedCategory(const EFFZSFacilityCategory Category)
+{
+	SelectedCategory = Category;
+	bHasInitializedCategory = true;
+	RefreshCategoryButtons();
+	RefreshContent();
+}
+
 bool UFF_BuildCatalogScreen::FocusFacility(const FName FacilityDefinitionId)
 {
 	const FFF_BuildCatalogEntry* Entry = FacilityDefinitionId.IsNone() ? nullptr :
@@ -1372,6 +1385,7 @@ void UFF_BuildCatalogScreen::HandleCategoryPressed(UFF_CommonButtonBase* Button)
 	if (const EFFZSFacilityCategory* Category = CategoryByButton.Find(Button))
 	{
 		SelectedCategory = *Category;
+		bHasInitializedCategory = true;
 		RefreshCategoryButtons();
 		RefreshContent();
 	}
@@ -1422,6 +1436,7 @@ FReply UFF_BuildCatalogScreen::HandleCategoryClicked(const EFFZSFacilityCategory
 {
 	// 분류 값은 Slate 델리게이트에 값으로 바인딩되어 별도 버튼-분류 맵 없이 직접 상태를 갱신한다.
 	SelectedCategory = Category;
+	bHasInitializedCategory = true;
 	RefreshCategoryButtons();
 	RefreshContent();
 	return FReply::Handled();

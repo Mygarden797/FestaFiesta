@@ -1515,6 +1515,10 @@ void UFF_BuildModeSubsystem::CreateCatalogScreen(APlayerController& Controller)
 
 	// AddUObject는 UObject 수명과 연결되지만, 화면을 다시 열 때 중복 구독하지 않도록 제거 함수에서도 명시 해제한다.
 	CatalogScreen->OnFacilitySelected.AddUObject(this, &UFF_BuildModeSubsystem::HandleFacilitySelected);
+	if (LastCatalogCategory.IsSet())
+	{
+		CatalogScreen->RestoreSelectedCategory(LastCatalogCategory.GetValue());
+	}
 	CatalogScreen->SetSynergyContext(SynergyCatalogFacilityIds, SynergyCatalogSourceName, true);
 	CatalogScreen->OnCloseRequested.AddUObject(this, &UFF_BuildModeSubsystem::HandleCatalogCloseRequested);
 	CatalogScreen->OnBuildModeKeyRequested.AddUObject(
@@ -1537,6 +1541,7 @@ void UFF_BuildModeSubsystem::RemoveCatalogScreen()
 	{
 		return;
 	}
+	LastCatalogCategory = CatalogScreen->GetSelectedCategory();
 	// 위젯 제거 과정에서 뒤늦은 선택/닫기 이벤트가 상태를 다시 바꾸지 않도록 델리게이트를 먼저 끊는다.
 	CatalogScreen->OnFacilitySelected.RemoveAll(this);
 	CatalogScreen->OnCloseRequested.RemoveAll(this);

@@ -66,10 +66,14 @@ public:
 	FOnBuildModeKeyRequested OnBuildModeKeyRequested;
 	FOnPauseMenuKeyRequested OnPauseMenuKeyRequested;
 
-	// 화면에 표시할 스냅샷을 교체하고, 최초로 항목이 존재하는 대분류를 선택한 뒤 UI를 재구성한다.
+	// 화면에 표시할 스냅샷을 교체하고, 선택 이력이 없을 때만 첫 항목 보유 대분류를 선택한다.
 	// 호출 시점이 NativeConstruct보다 빠른 경우도 허용하므로 사용 가능한 BindWidget이 있으면 먼저 초기화한다.
 	 
 	void SetCatalogEntries(const TArray<FFF_BuildCatalogEntry>& InEntries);
+
+	/** 화면 재생성 전후에 선택 이력을 전달한다. 첫 데이터 로드 전 기본값은 저장하지 않는다. */
+	TOptional<EFFZSFacilityCategory> GetSelectedCategory() const;
+	void RestoreSelectedCategory(EFFZSFacilityCategory Category);
 
 	/** Reveal an existing facility once without selecting it for placement. False means the catalog has no matching entry. */
 	bool FocusFacility(FName FacilityDefinitionId);

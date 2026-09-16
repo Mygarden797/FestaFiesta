@@ -503,11 +503,14 @@ void UFF_FestivalSettingsSubsystem::ReleasePauseSession()
 }
 
 bool UFF_FestivalSettingsSubsystem::OpenSettingsLayer(
-	const EFF_FestivalSettingsCategory Category)
+	const TOptional<EFF_FestivalSettingsCategory> Category)
 {
 	if (UFF_FestivalSettingsScreen* Existing = ActiveScreen.Get())
 	{
-		Existing->ShowCategory(Category);
+		if (Category.IsSet())
+		{
+			Existing->ShowCategory(Category.GetValue());
+		}
 		return true;
 	}
 	if (!ActiveHub.IsValid() || bTransitionInProgress)
@@ -537,7 +540,10 @@ bool UFF_FestivalSettingsSubsystem::OpenSettingsLayer(
 	ActiveScreen = Screen;
 	Screen->OnCloseRequested.AddUniqueDynamic(
 		this, &UFF_FestivalSettingsSubsystem::HandleCloseRequested);
-	Screen->ShowCategory(Category);
+	if (Category.IsSet())
+	{
+		Screen->ShowCategory(Category.GetValue());
+	}
 	LastStateTransitionFrame = GFrameCounter;
 	UE_LOG(LogFestaFiestaUI, Log,
 		TEXT("UFF_FestivalSettingsSubsystem: 일시정지 허브 위에 상세 설정을 열었다."));
@@ -680,7 +686,7 @@ void UFF_FestivalSettingsSubsystem::HandlePauseHubAction(const EFF_PauseHubActio
 	switch (Action)
 	{
 	case EFF_PauseHubAction::SystemSettings:
-		OpenSettingsLayer(EFF_FestivalSettingsCategory::Basic);
+		OpenSettingsLayer();
 		break;
 	case EFF_PauseHubAction::KeyboardGuide:
 		OpenSettingsLayer(EFF_FestivalSettingsCategory::Keyboard);
