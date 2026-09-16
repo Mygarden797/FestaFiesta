@@ -1,76 +1,79 @@
-# 길 시설 6종
+# Road 길 6종과 Tile 바닥 6종
 
-참고 이미지 `C:\Users\kpo91\OneDrive\Desktop\Build\Road.png`에서 제작한
-모래길, 아스팔트길, 나무 데크길, 석재 타일길, 헤링본 벽돌길, 콘크리트길이다.
-최초 제작한 메시 타일은 400 × 400 × 8 cm이며 원점은 바닥 중심, 진행 방향은 +X다.
-설치 간격에는 메시 원본 크기 대신 각 시설 PDA에 현재 저장된 바닥 크기를 사용한다.
+모래·아스팔트·목재·돌·헤링본·콘크리트 표면을 두 카테고리로 제공한다.
+**Road(길)는 시설 설치를 막고, Tile(타일)는 위에 시설을 설치할 수 있다.**
+둘 다 NPC가 통행할 수 있는 바닥이며 서비스 목적지나 대기열을 만들지 않는다.
+상부 배치 정책은 카테고리로 결정한다. 이전 `길 위 시설 설치 허용` 값은 저장 호환용으로만 남고 배치 판정에는 사용하지 않는다.
 
-## 언리얼 에셋
+| 구분 | Road | Tile |
+| --- | --- | --- |
+| 카탈로그 | 길 → 바닥 | 타일 → 바닥 |
+| 시설 ID | `Road_Surface_<종류>` | `Tile_Surface_<종류>` |
+| PDA 폴더 | `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road` | `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile` |
+| PDA 이름 | `PDA_FFZS_Road_Surface_<종류>` | `PDA_FFZS_Tile_Surface_<종류>` |
+| 기본 비용 키 | `Cost.Road.Surface.<종류>` | `Cost.Tile.Surface.<종류>` |
+| 다른 시설과 겹침 | 본체·여유 공간·대기열 모두 차단 | 상부 시설의 배치 허용 |
 
-- 메시: `/Game/Asset/FacilitiesAsset_HKH/Roads/SM_Road_<종류>`
-- 공유 재질: `/Game/Asset/FacilitiesAsset_HKH/Roads/Materials/M_Road_Palette`
-- 시설 정의: `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_<종류>`
-- 카테고리: `길` → `길 바닥`
-- 설치비: 기존 `DT_FacilityCosts`의 `Cost.Road.Surface.<종류>` 행. 최초 추가 시 각 100 Gold.
+메시는 `/Game/Asset/FacilitiesAsset_HKH/Roads/SM_Road_<종류>`, 재질은 같은 폴더의
+`Materials/M_Road_Palette`를 공유한다. Tile은 Road의 메시와 썸네일을 재사용한다.
+원본 메시 규격은 400 × 400 × 8 cm, 원점은 바닥 중심, 진행 방향은 +X다.
+실제 설치 크기·높이·드래그 간격은 **각 PDA에 현재 저장된 값**을 사용한다.
 
-각 길 PDA의 `Spec > Placement > 길 위 시설 설치 허용`을 켜면
-그 길 위에 시설을 배치할 수 있고, 끄면 통행용 바닥으로만 사용한다.
-최초 임포트 기본값은 켜짐이며, 이후 작성한 각 PDA 값이 우선한다. 이 값은 설치 시 인스턴스 사양으로
-복사되므로 PDA 편집은 이후 설치에 반영되며, 이미 설치한 길과 저장 데이터는
-각자의 설정을 유지한다. 이동은 해당 인스턴스의 설정으로 다시 검증된다.
+## 기존 에셋 분리
 
-길끼리는 같은 자리에 겹칠 수 없고, 일반 시설끼리의 배치 제한은 유지된다.
-길은 방문객 서비스 목적지나 대기열을 만들지 않으며 레벨 강화는 사용하지 않는다.
-
-## 드래그로 연속 설치
-
-시설 PDA를 열고 최상위 `Placement > Enable Drag Placement`를 켜면
-왼쪽 마우스 버튼을 누른 채 이동하여 같은 시설을 계속 설치할 수 있다.
-이 설정은 `Facility Specification` 안이 아니라 PDA의 입력 방식 설정이다.
-새 일반 시설의 기본값은 꺼짐이며, 길 외 시설도 필요에 따라 켤 수 있다.
-설치 간격은 회전된 건물 바닥 크기로 자동 계산하므로 별도 간격 입력은 없다.
-예를 들어 바닥 크기 400 × 400 cm는 4m 간격을 사용한다. 실제 작성된 바닥 크기는
-길마다 다를 수 있으며 기존 크기·상부 배치 허용 값은 보존한다. 시설별 배치·충돌·비용 검사는 유지된다.
-
-기존 여섯 길에 처음 적용하려면 C++ 빌드 후 아래 명령을 순서대로 실행한다.
-스크립트는 임시 에디터 프로세스에서 실행되므로 작업 중인 에디터는 먼저 종료한다.
+C++의 Tile 카테고리를 먼저 빌드하고 작업 중인 에디터를 종료한 뒤 실행한다.
+이미 제작한 메시를 다시 임포트할 필요 없이 다음 명령으로 분리와 저장 검증을 할 수 있다.
 
 ```powershell
-& Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/enable_drag_placement.py -Label road_drag_enable -SuccessPattern ROAD_DRAG_MIGRATION_PASS
-& Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/verify_drag_placement.py -Label road_drag_verify -SuccessPattern ROAD_DRAG_VERIFY_PASS
+& Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/split_road_tiles.py -Label road_tile_split -SuccessPattern ROAD_TILE_SPLIT_PASS
+& Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/verify_road_tiles.py -Label road_tile_verify -SuccessPattern ROAD_TILE_VERIFY_PASS
 ```
 
-적용 스크립트는 여섯 PDA만 확인하고, 저장 전에 기존 패키지를 백업한다.
-저장 실패 시 백업을 복원한다. 최초 적용 기록을 남겨 재실행 시 제작자가
-나중에 끈 설정까지 다시 켜지 않으며, 메시·비용 표·시설 사양은 수정하지 않는다.
-새로 임포트하는 길은 처음부터 켜지고, 기존 길을 다시 임포트할 때는 작성된 값을 유지한다.
+분리는 여섯 Road의 기존 경로·ID·크기·높이·메시·드래그 설정을 보존하고 이전 상부 허용 플래그만 끈다.
+Tile이 없으면 Road PDA 전체를 복제하고 ID·카테고리·표시 이름·설치 비용 키를 Tile 값으로 바꾼다.
+Tile의 최초 가격 행은 원본 Road가 현재 참조하는 가격 행 전체를 복제하므로 제작자가 조정한 가격을 따른다.
+기존 Tile PDA와 가격 행은 재실행해도 덮어쓰지 않는다. 판매 반환 금액도 기존 경제 시스템의 설치 비용 기준을 따른다.
+모든 대상과 가격 키를 먼저 확인하고, 13개 패키지 저장을 복구 가능한 트랜잭션으로 보호한다.
+저장 실패 시 기존 패키지를 복원하며 오류가 발생한 임시 에디터는 저장 없이 종료해야 한다.
 
-`verify_drag_placement.py`는 새 에디터에서 여섯 값이 모두 켜져 저장되었는지,
-시설 사양 전체가 적용 전과 같은지 확인하는 최초 납품 검증이다. 현재 바닥 크기,
-상부 배치 허용, 여유 공간, 사양 전체도 검증 보고서에 기록한다. 나중에 일부 길을
-의도적으로 끄거나 사양을 바꾸면 에디터 데이터 검증과 실제 조작으로 새 설정을 확인한다.
-`verify_roads.py`는 최초 제작 시 고정 사양을 검사하므로 편집 후 범용 검사로 사용하지 않는다. 적용·검증 보고서는
-`Saved/Roads_20260910/drag_placement_*.json`에 기록된다.
+새 에디터 검증은 12개 PDA의 전체 Spec, 드래그 설정, 카탈로그 표시, 썸네일과 전체 비용 표를
+마이그레이션 직후 보고서와 비교한다. 제작자가 이후 수정한 내용을 검증하려면 분리를 다시 실행해
+현재 값을 기록한 뒤 검증한다. 이미 분리한 상태의 재실행은 패키지를 저장하지 않는다.
+보고서는 `Saved/Roads_20260910/road_tile_split_*.json`에 기록된다.
 
-## 재현 및 확인
+이 에셋 분리 스크립트는 저장 게임 파일을 직접 수정하지 않는다. 런타임의 버전별 저장 복원은
+스키마 7 이하에서 상부 설치를 허용하던 Road를 Tile로 변환해 기존 상부 시설 배치를 유지한다.
+상부 설치를 막던 이전 Road는 Road로 남는다. 스키마 8부터 Road는 상부 설치를 항상 차단한다.
 
-먼저 C++에서 Road 카테고리와 배치 설정을 컴파일한다. Blender 제작 스크립트는
-`build_roads.py`이며 원본과 FBX/텍스처/렌더는 `SourceArt/Roads_20260910`에 있다.
-이미 생성된 원본 경로에는 자동으로 다시 쓰지 않는다.
+## 배치와 드래그
+
+Road/Tile끼리는 겹칠 수 없고, 이미 설치된 일반 시설 아래에 바닥을 새로 끼워 넣을 수 없다.
+Tile을 먼저 설치한 뒤 시설을 올린다. 상부 시설을 지지하는 Tile은 해당 시설을 먼저 옮겨야
+이동·철거·크기 변경할 수 있다. 시설끼리의 충돌과 건설 구역 제한은 계속 적용한다.
+NPC는 두 바닥의 실제 영역과 높이를 반영하며 바닥 자체를 회피 벽으로 취급하지 않는다.
+
+PDA 최상위 `Placement > Enable Drag Placement`를 켜면 마우스 왼쪽 버튼을 누른 채
+같은 시설을 연속 설치할 수 있다. 새 Road는 기본적으로 켜지고 새 Tile은 원본 Road 설정을 복사한다.
+재임포트·분리 시 제작자가 편집한 설정을 유지한다. 직사각형 크기와 회전에 따른 설치 간격을 사용하며
+각 지점마다 기존 배치·충돌·비용 검사를 적용한다. 상세 조작은 `DRAG_PLACEMENT_GUIDE_KO.md`에 있다.
+
+`enable_drag_placement.py`와 `verify_drag_placement.py`는 과거 여섯 Road의 드래그 기능을
+최초 납품할 때 사용한 별도 마이그레이션이다. Road/Tile 분리 후에는 위의 새 검증을 사용한다.
+분리 과정에서 Road Spec의 호환 플래그를 바꾸므로 분리 전 드래그 보고서와 전체 Spec 해시는 달라질 수 있다.
+
+## 원본 임포트와 회귀 검사
+
+Blender 제작 스크립트는 `build_roads.py`, 원본과 FBX/텍스처/렌더는 `SourceArt/Roads_20260910`에 있다.
+이미 생성된 원본 경로는 자동으로 다시 쓰지 않는다. 최신 임포터는 Road를 시설 설치 불가로 만들고
+Tile 분리를 함께 실행하므로 최초 임포트에서도 두 카테고리를 모두 생성한다.
 
 ```powershell
 & Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/import_roads.py -Label road_import
 & Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/verify_roads.py -Label road_verify
-& Tools/RoadFacilities/Run-RoadEditor.ps1 -Script Tools/RoadFacilities/capture_roads.py -Label road_capture -SuccessPattern ROAD_CAPTURE_PASS
 & Tools/RoadFacilities/Run-RoadTests.ps1
 ```
 
-임포트는 명시 LOD 3개, UV0/UV1, UCX 충돌 1개, 공유 재질을 연결한다.
-4개 보정 메시로 1m=100cm와 +X/+Z 방향 및 FBX의 Y축 변환을 확인한다.
-신규 길 패키지와 비용 표는 복원 가능한 저장 트랜잭션으로 기록하며 기존 비용 행은 보존한다.
-재실행 시 기존 PDA의 수치와 상부 배치 설정은 보존한다.
-
-보고서와 GPU 렌더는 `Saved/Roads_20260910`에 저장된다. 캡처 스크립트는
-Entry 임시 월드에서 6종과 LOD 비교, 석재 타일 위의 기존 아이스크림 시설을 렌더한다.
-해당 시설 이미지는 시각 확인용 배치이며 실제 설치/이동/중첩 허용은 Road 자동화 테스트가 검증한다.
-프로덕션 레벨을 수정하거나 저장하지 않는다.
+메시 검증은 명시 LOD 3개, UV0/UV1, UCX 충돌 1개, 공유 재질과 4개 축/단위 보정 메시를 확인한다.
+카탈로그·배치·저장 복원·경제·NPC 관련 회귀는 Unreal 자동화 테스트로 확인한다.
+`capture_roads.py`는 공유 표면 메시와 Tile 위 시설의 외형을 확인하는 렌더 도구다.
+렌더는 실제 설치 허용 여부를 증명하지 않는다. 실행하지 않은 검사 결과는 성공으로 기록하지 않는다.

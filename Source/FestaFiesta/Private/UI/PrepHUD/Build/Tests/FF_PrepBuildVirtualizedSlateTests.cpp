@@ -12,6 +12,7 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/OverlaySlot.h"
@@ -26,6 +27,7 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
@@ -42,6 +44,7 @@
 #include "TextureResource.h"
 #include "Types/PaintArgs.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"
@@ -253,7 +256,7 @@ namespace FFPrepBuildVirtualizedSlateTest
             return true;
         }
 
-        bool CheckFavoriteInputIsolation(FAutomationTestBase& Test)
+        bool CheckFavoriteInputIsolation(FAutomationTestBase& Test, const FName FacilityId = NAME_None)
         {
             // No GameInstance means the production star handler cannot read or save personal preferences.
             if (!Test.TestTrue(TEXT("Pointer fixture is isolated from the user's GameInstance/preferences"),
@@ -262,6 +265,8 @@ namespace FFPrepBuildVirtualizedSlateTest
             const FSlateRect ListRect = List->GetCachedGeometry().GetLayoutBoundingRect();
             for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
             {
+                const auto* Item = Cast<UFF_PrepBuildTileData>(List->GetListObjectFromEntry(*Row));
+                if (!FacilityId.IsNone() && (!Item || Item->GetFacilityDefinitionId() != FacilityId)) { continue; }
                 auto* Candidate = Cast<UButton>(Row->GetWidgetFromName(TEXT("Button_Favorite")));
                 if (!Candidate) { continue; }
                 const FSlateRect Rect = Candidate->GetCachedGeometry().GetLayoutBoundingRect();
@@ -357,7 +362,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                 SourceEntries.Add(MoveTemp(Entry));
             }
             if (!Test.TestTrue(TEXT("Full fixture covers all 45 existing active facilities, including future additions"), SourceEntries.Num() >= 45) ||
-                !Test.TestEqual(TEXT("Full source fixture contains every production major category"), Categories.Num(), 9)) { return false; }
+                !Test.TestEqual(TEXT("Full source fixture contains every production major category"), Categories.Num(), 10)) { return false; }
             FFBuildCatalogModel::SortEntries(SourceEntries);
             DetachedGame.Reset(NewObject<UGameInstance>());
             Catalog.Reset(NewObject<UFF_BuildCatalogSubsystem>(DetachedGame.Get()));
@@ -398,6 +403,259 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Texture->WaitForStreaming();
             }
             return true;
+        }
+
+        bool CheckFacilityNavigation(FAutomationTestBase& Test)
+        {
+            const FName PartnerId(TEXT("Rest_Seating_Seating"));
+            auto* Search = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Search_Facilities")));
+            auto* Favorites = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_FavoritesOnly")));
+            const auto* StateProperty = FindFProperty<FEnumProperty>(Catalog->GetClass(), TEXT("LoadState"));
+            const auto* PageSize = FindFProperty<FIntProperty>(Panel->GetClass(), TEXT("CardsPerPage"));
+            UFunction* AllHandler = Panel->FindFunction(TEXT("HandleFilterAllClicked"));
+            UFunction* PerformanceHandler = Panel->FindFunction(TEXT("HandleFilterPerformanceClicked"));
+            UFunction* ModeHandler = Panel->FindFunction(TEXT("HandleBuildModeStateChanged"));
+            if (!Test.TestNotNull(TEXT("Actual catalog search"), Search) ||
+                !Test.TestNotNull(TEXT("Actual favorites filter"), Favorites) ||
+                !Test.TestNotNull(TEXT("Catalog loading state"), StateProperty) ||
+                !Test.TestNotNull(TEXT("Designer page capacity"), PageSize) ||
+                !Test.TestNotNull(TEXT("All category action"), AllHandler) ||
+                !Test.TestNotNull(TEXT("Performance category action"), PerformanceHandler) ||
+                !Test.TestNotNull(TEXT("Build mode event"), ModeHandler)) { return false; }
+            Search->SetText(FText::FromString(TEXT("NoSuchFacility")));
+            Favorites->OnClicked.Broadcast();
+            StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                StateProperty->ContainerPtrToValuePtr<void>(Catalog.Get()), static_cast<uint64>(EFF_BuildCatalogLoadState::Loading));
+            Panel->RequestFacilityFocus(PartnerId);
+            Test.TestTrue(TEXT("A jump during loading does not expose stale cards"), Panel->GetCatalogPageItems().IsEmpty());
+            struct { EFF_BuildModeState Previous = EFF_BuildModeState::CatalogOpen; EFF_BuildModeState Next = EFF_BuildModeState::BuildMode; } ModeParameters;
+            Panel->ProcessEvent(ModeHandler, &ModeParameters);
+            StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                StateProperty->ContainerPtrToValuePtr<void>(Catalog.Get()), static_cast<uint64>(EFF_BuildCatalogLoadState::Ready));
+            Panel->ProcessEvent(AllHandler, nullptr);
+            Test.TestTrue(TEXT("Leaving the catalog cancels a pending jump; late readiness keeps the old search"),
+                Panel->GetCatalogPageItems().IsEmpty() && !Search->GetText().IsEmpty());
+            StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                StateProperty->ContainerPtrToValuePtr<void>(Catalog.Get()), static_cast<uint64>(EFF_BuildCatalogLoadState::Loading));
+            Panel->RequestFacilityFocus(PartnerId);
+            StateProperty->GetUnderlyingProperty()->SetIntPropertyValue(
+                StateProperty->ContainerPtrToValuePtr<void>(Catalog.Get()), static_cast<uint64>(EFF_BuildCatalogLoadState::Ready));
+            // Reconcile after readiness must honor the retained request, not the old filters.
+            Panel->ProcessEvent(AllHandler, nullptr);
+            auto* Target = Cast<UFF_PrepBuildTileData>(List->GetSelectedItem());
+            if (!Test.TestTrue(TEXT("Deferred navigation clears search/favorites and selects the actual Seating card"),
+                Target && Target->GetFacilityDefinitionId() == PartnerId &&
+                Panel->GetCatalogPageItems().Contains(Target) && Search->GetText().IsEmpty())) { return false; }
+            Panel->ProcessEvent(PerformanceHandler, nullptr);
+            const TArray<UObject*> ManualItems = Panel->GetCatalogPageItems();
+            Test.TestTrue(TEXT("Later player category choice is not forced back to the consumed jump"),
+                !ManualItems.IsEmpty() && !ManualItems.Contains(Target));
+
+            const int32 OriginalPageSize = PageSize->GetPropertyValue_InContainer(Panel.Get());
+            PageSize->SetPropertyValue_InContainer(Panel.Get(), 1);
+            Panel->RequestFacilityFocus(TEXT("Booth_FoodStall_Taco"));
+            auto* LaterTile = Cast<UFF_PrepBuildTileData>(List->GetSelectedItem());
+            Test.TestTrue(TEXT("A target beyond page one is visible and selected on its own page"),
+                Panel->GetCatalogPageIndex() > 0 && LaterTile &&
+                LaterTile->GetFacilityDefinitionId() == FName(TEXT("Booth_FoodStall_Taco")) &&
+                Panel->GetCatalogPageItems().Contains(LaterTile));
+            PageSize->SetPropertyValue_InContainer(Panel.Get(), OriginalPageSize);
+            Panel->RequestFacilityFocus(PartnerId);
+            Paint();
+            Test.TestEqual(TEXT("Returning to a different partner restores the appropriate page"), Panel->GetCatalogPageIndex(), 0);
+            bool bFoundRow = false;
+            for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
+            {
+                const auto* Item = Cast<UFF_PrepBuildTileData>(List->GetListObjectFromEntry(*Row));
+                bFoundRow |= Item && Item->GetFacilityDefinitionId() == PartnerId;
+            }
+            Test.TestTrue(TEXT("Target card is actually generated by the saved WBP"), bFoundRow);
+            return CheckFavoriteInputIsolation(Test, PartnerId);
+        }
+
+        bool UseSynergyCatalogPreview(FAutomationTestBase& Test)
+        {
+            const FName PartnerId(TEXT("Rest_Seating_Seating"));
+            const FFF_BuildCatalogEntry* Source = SourceEntries.FindByPredicate([](const FFF_BuildCatalogEntry& Entry)
+            {
+                return Entry.FacilityDefinitionId == FName(TEXT("Booth_FoodStall_Burger"));
+            });
+            const auto* ModelProperty = FindFProperty<FObjectPropertyBase>(Panel->GetClass(), TEXT("PresentationModel"));
+            auto* Model = ModelProperty ? Cast<UFF_PrepBuildPresentationModel>(
+                ModelProperty->GetObjectPropertyValue_InContainer(Panel.Get())) : nullptr;
+            if (!Test.TestNotNull(TEXT("Actual Burger catalog entry supplies the selected facility name"), Source) ||
+                !Test.TestNotNull(TEXT("Actual panel presentation model"), Model)) { return false; }
+            Model->SetSynergyHighlightIds({ PartnerId });
+            Model->Reconcile(EFF_BuildCatalogLoadState::Ready, SourceEntries,
+                FFF_PrepBuildFilter(), 7500, true, FText::GetEmpty());
+            const TArray<UObject*> PageItems = Panel->GetCatalogPageItems();
+            const auto* FirstItem = PageItems.IsEmpty() ? nullptr : Cast<UFF_PrepBuildTileData>(PageItems[0]);
+            if (!Test.TestTrue(TEXT("The actual Seating partner sorts to the first six-card page"),
+                FirstItem && FirstItem->GetFacilityDefinitionId() == PartnerId && FirstItem->IsSynergyHighlighted() &&
+                PageItems.Num() == 6)) { return false; }
+            // The detached fixture has no world selection subsystem; feed its real pooled
+            // model page directly while retaining the saved WBP, prices and thumbnails.
+            List->SetListItems(PageItems);
+            List->ScrollToTop();
+            List->RegenerateAllEntries();
+            auto* Status = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Status")));
+            if (!Test.TestNotNull(TEXT("The actual status widget explains the selected facility's recommendation"), Status)) { return false; }
+            Status->SetText(FText::Format(FText::FromString(TEXT("{0} 조합 1/1종 강조 · 배치 시 거리 조건 확인")), Source->DisplayName));
+            return true;
+        }
+
+        bool CheckSynergyCatalogPreview(FAutomationTestBase& Test)
+        {
+            UFF_PrepBuildTileWidget* RecommendedRow = nullptr;
+            for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
+            {
+                const auto* Item = Cast<UFF_PrepBuildTileData>(List->GetListObjectFromEntry(*Row));
+                if (Item && Item->GetFacilityDefinitionId() == FName(TEXT("Rest_Seating_Seating")))
+                {
+                    RecommendedRow = Cast<UFF_PrepBuildTileWidget>(Row);
+                    break;
+                }
+            }
+            if (!Test.TestNotNull(TEXT("The recommended Seating card is actually rendered"), RecommendedRow)) { return false; }
+            auto* Highlight = Cast<UBorder>(RecommendedRow->GetWidgetFromName(TEXT("Border_SynergyHighlight")));
+            auto* Badge = Cast<UTextBlock>(RecommendedRow->GetWidgetFromName(TEXT("Text_SynergyBadge")));
+            auto* Card = Cast<UBorder>(RecommendedRow->GetWidgetFromName(TEXT("Border_Card")));
+            auto* Favorite = Cast<UButton>(RecommendedRow->GetWidgetFromName(TEXT("Button_Favorite")));
+            if (!Test.TestNotNull(TEXT("Saved WBP recommendation outline"), Highlight) ||
+                !Test.TestNotNull(TEXT("Saved WBP recommendation badge"), Badge) ||
+                !Test.TestNotNull(TEXT("Recommended card frame"), Card) ||
+                !Test.TestNotNull(TEXT("Recommended card retains its favorite button"), Favorite)) { return false; }
+            Test.TestTrue(TEXT("Recommended data reaches the actual pooled widget"), RecommendedRow->IsSynergyHighlighted());
+            Test.TestTrue(TEXT("Recommendation outline and readable badge are visible without intercepting input"),
+                Highlight->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+                Badge->GetVisibility() == ESlateVisibility::HitTestInvisible && !Badge->GetText().IsEmpty());
+            const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
+            for (const UWidget* Decoration : { static_cast<UWidget*>(Highlight), static_cast<UWidget*>(Badge) })
+            {
+                const FSlateRect Rect = Decoration->GetCachedGeometry().GetLayoutBoundingRect();
+                Test.TestTrue(TEXT("Recommendation outline and badge fit within the actual card at 1280x720"),
+                    Rect.GetSize().X > 1.0f && Rect.GetSize().Y > 1.0f &&
+                    Rect.Left >= CardRect.Left - 1.5f && Rect.Right <= CardRect.Right + 1.5f &&
+                    Rect.Top >= CardRect.Top - 1.5f && Rect.Bottom <= CardRect.Bottom + 1.5f);
+            }
+            const FGeometry& FavoriteGeometry = Favorite->GetCachedGeometry();
+            const FVector2D Point = FavoriteGeometry.LocalToAbsolute(FavoriteGeometry.GetLocalSize() * 0.5);
+            TArray<FWidgetAndPointer> Bubble = HitGrid.GetBubblePath(Point, 0.0f, false);
+            FWidgetPath Path(MakeArrayView(Bubble));
+            return Test.TestTrue(TEXT("Recommendation decorations preserve favorite hit-testing on the highlighted card"),
+                Path.IsValid() && Path.ContainsWidget(Favorite->GetCachedWidget().Get()));
+        }
+
+        bool UseRequiredCatalogPreview(FAutomationTestBase& Test, const bool bInstalled)
+        {
+            const auto* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
+                TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
+            if (!Test.TestNotNull(TEXT("Required preview uses the actual festival definition"), Festival)) { return false; }
+            FFFZSReadModel WorldSnapshot;
+            const FFF_RequiredFacilitiesStatus Before = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Festival, WorldSnapshot);
+            const FFF_RequiredFacilityRow* Requirement = Before.Facilities.FindByPredicate([](const FFF_RequiredFacilityRow& Row)
+            {
+                return Row.bDefinitionValid && Row.Category == EFFZSFacilityCategory::Performance;
+            });
+            if (!Test.TestNotNull(TEXT("The actual festival authors a required performance facility"), Requirement)) { return false; }
+            RequiredPreviewFacilityId = Requirement->FacilityDefinitionId;
+            FFF_BuildCatalogEntry* Source = SourceEntries.FindByPredicate([this](const FFF_BuildCatalogEntry& Entry)
+            {
+                return Entry.FacilityDefinitionId == RequiredPreviewFacilityId;
+            });
+            if (!Test.TestTrue(TEXT("The festival requirement resolves to the actual one-per-world SunsetMainStage"),
+                Source && Source->UniqueNameToken == TEXT("SunsetMainStage") &&
+                Source->MaxInstancesPerWorld == 1 && Requirement->MinimumCount == 1)) { return false; }
+            if (bInstalled)
+            {
+                // Only the world read snapshot is synthetic. No actor, asset or save is changed.
+                FFFZSFacilityReadModel& Installed = WorldSnapshot.Facilities.AddDefaulted_GetRef();
+                Installed.FacilityDefinitionId = RequiredPreviewFacilityId;
+                Installed.Category = EFFZSFacilityCategory::Performance;
+                Installed.State = EFFZSFacilityState::Validated;
+            }
+            const FFF_RequiredFacilitiesStatus Status = bInstalled
+                ? UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Festival, WorldSnapshot) : Before;
+            FFBuildCatalogModel::ApplyRequiredFacilities(SourceEntries, Status);
+            Source->CurrentInstanceCount = WorldSnapshot.Facilities.Num();
+            Source->bBuildLimitReached = Source->CurrentInstanceCount >= Source->MaxInstancesPerWorld;
+
+            UFunction* PerformanceHandler = Panel->FindFunction(TEXT("HandleFilterPerformanceClicked"));
+            const auto* ModelProperty = FindFProperty<FObjectPropertyBase>(Panel->GetClass(), TEXT("PresentationModel"));
+            auto* Model = ModelProperty ? Cast<UFF_PrepBuildPresentationModel>(
+                ModelProperty->GetObjectPropertyValue_InContainer(Panel.Get())) : nullptr;
+            if (!Test.TestNotNull(TEXT("Production performance category action"), PerformanceHandler) ||
+                !Test.TestNotNull(TEXT("Actual panel presentation model"), Model)) { return false; }
+            Panel->ProcessEvent(PerformanceHandler, nullptr);
+            FFF_PrepBuildFilter Filter;
+            Filter.bFilterByCategory = true;
+            Filter.Category = EFFZSFacilityCategory::Performance;
+            // The playerless panel has no required-facilities subsystem. Supply the same
+            // authoritative projection directly to its real model after normal filtering.
+            Model->Reconcile(EFF_BuildCatalogLoadState::Ready, SourceEntries, Filter, 7500, true, FText::GetEmpty());
+            UFF_PrepBuildTileData* Tile = Model->FindTile(RequiredPreviewFacilityId);
+            if (!Test.TestNotNull(TEXT("Required facility remains in the production tile pool"), Tile)) { return false; }
+            if (RequiredPreviewTile.IsValid())
+            {
+                Test.TestTrue(TEXT("Installation updates the same pooled tile object"), RequiredPreviewTile.Get() == Tile);
+            }
+            RequiredPreviewTile = Tile;
+            Test.TestTrue(TEXT("Required status uses the authoritative before/after result"),
+                Tile->IsRequiredFacility() && Tile->IsRequiredFacilitySatisfied() == bInstalled &&
+                Tile->GetRequiredFacilityCurrentCount() == (bInstalled ? 1 : 0));
+            List->SetListItems(Panel->GetCatalogPageItems());
+            List->ScrollToTop();
+            List->RegenerateAllEntries();
+            return true;
+        }
+
+        bool CheckRequiredCatalogPreview(FAutomationTestBase& Test, const bool bInstalled)
+        {
+            UFF_PrepBuildTileWidget* RequiredRow = nullptr;
+            for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
+            {
+                const auto* Item = Cast<UFF_PrepBuildTileData>(List->GetListObjectFromEntry(*Row));
+                if (Item && Item->GetFacilityDefinitionId() == RequiredPreviewFacilityId)
+                {
+                    RequiredRow = Cast<UFF_PrepBuildTileWidget>(Row);
+                    break;
+                }
+            }
+            if (!Test.TestNotNull(TEXT("The actual required main stage card is painted"), RequiredRow)) { return false; }
+            auto* State = Cast<UTextBlock>(RequiredRow->GetWidgetFromName(TEXT("Text_State")));
+            auto* Card = Cast<UBorder>(RequiredRow->GetWidgetFromName(TEXT("Border_Card")));
+            if (!Test.TestNotNull(TEXT("The existing status slot shows installation count"), State) ||
+                !Test.TestNotNull(TEXT("Required facility card frame"), Card)) { return false; }
+            Test.TestEqual(TEXT("The actual saved status slot changes from 0/1 to 1/1"),
+                State->GetText().ToString(), FString(bInstalled ? TEXT("1/1") : TEXT("0/1")));
+            Test.TestTrue(TEXT("The real row receives required/satisfied state"),
+                RequiredRow->IsRequiredFacility() && RequiredRow->IsRequiredFacilitySatisfied() == bInstalled);
+            const FSlateRect CardRect = Card->GetCachedGeometry().GetLayoutBoundingRect();
+            for (const bool bSatisfiedDecoration : { false, true })
+            {
+                auto* Border = Cast<UBorder>(RequiredRow->GetWidgetFromName(bSatisfiedDecoration
+                    ? TEXT("Border_RequiredSatisfied") : TEXT("Border_RequiredMissing")));
+                auto* Badge = Cast<UTextBlock>(RequiredRow->GetWidgetFromName(bSatisfiedDecoration
+                    ? TEXT("Text_RequiredSatisfied") : TEXT("Text_RequiredMissing")));
+                if (!Test.TestNotNull(TEXT("Required status border is authored in the saved WBP"), Border) ||
+                    !Test.TestNotNull(TEXT("Required status label is authored in the saved WBP"), Badge)) { return false; }
+                const bool bActive = bSatisfiedDecoration == bInstalled;
+                const ESlateVisibility Expected = bActive ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+                Test.TestTrue(TEXT("Only the matching required badge is visible and neither badge blocks input"),
+                    Border->GetVisibility() == Expected && Badge->GetVisibility() == Expected);
+                if (!bActive) { continue; }
+                Test.TestEqual(TEXT("Required badge retains the authored readable label"), Badge->GetText().ToString(),
+                    FString(bInstalled ? TEXT("필수 충족") : TEXT("필수 설치")));
+                for (const UWidget* Decoration : { static_cast<UWidget*>(Border), static_cast<UWidget*>(Badge) })
+                {
+                    const FSlateRect Rect = Decoration->GetCachedGeometry().GetLayoutBoundingRect();
+                    Test.TestTrue(TEXT("Required badge fits inside the actual card at 1280x720"),
+                        Rect.GetSize().X > 1.0f && Rect.GetSize().Y > 1.0f &&
+                        Rect.Left >= CardRect.Left - 1.5f && Rect.Right <= CardRect.Right + 1.5f &&
+                        Rect.Top >= CardRect.Top - 1.5f && Rect.Bottom <= CardRect.Bottom + 1.5f);
+                }
+            }
+            return CheckFavoriteInputIsolation(Test, RequiredPreviewFacilityId);
         }
 
         void Paint()
@@ -529,7 +787,7 @@ namespace FFPrepBuildVirtualizedSlateTest
             auto* Minors = Cast<UHorizontalBox>(Panel->GetWidgetFromName(TEXT("HorizontalBox_Subcategories")));
             if (!Test.TestNotNull(TEXT("Full real category list"), Majors) ||
                 !Test.TestNotNull(TEXT("Full real minor choices"), Minors)) { return false; }
-            Test.TestEqual(TEXT("All and all nine categories are present"), Majors->GetChildrenCount(), 10);
+            Test.TestEqual(TEXT("All and all ten categories are present"), Majors->GetChildrenCount(), 11);
             Test.TestEqual(TEXT("All facilities does not create a cross-category strip of every minor token"), Minors->GetChildrenCount(), 1);
             CheckFilterLayout(Test, TEXT("All facilities"));
             CheckSixCardPage(Test, TEXT("All facilities / page 1"));
@@ -786,6 +1044,8 @@ namespace FFPrepBuildVirtualizedSlateTest
         TStrongObjectPtr<UFF_BuildCatalogSubsystem> Catalog;
         TStrongObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
         TArray<FFF_BuildCatalogEntry> SourceEntries;
+        FName RequiredPreviewFacilityId = NAME_None;
+        TWeakObjectPtr<UFF_PrepBuildTileData> RequiredPreviewTile;
 #if !UE_BUILD_SHIPPING
         TWeakObjectPtr<UFF_PrepHudBar> PreviousActiveBar;
 #endif
@@ -874,6 +1134,51 @@ namespace FFPrepBuildVirtualizedSlateTest
         return true;
     }
 
+    bool RunSynergyCatalogFixture(FAutomationTestBase& Test)
+    {
+        if (!Test.TestTrue(TEXT("Slate application is initialized"), FSlateApplication::IsInitialized())) { return false; }
+        Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 1);
+        FCatalogFixture Fixture;
+        if (!Fixture.Initialize(Test, FVector2D(1280, 720), true) ||
+            !Fixture.UseSourceCatalogEntries(Test) || !Fixture.UseSynergyCatalogPreview(Test)) { return false; }
+        Fixture.Paint();
+        FMeasurements Measurements;
+        Fixture.CheckRows(Test, Measurements, TEXT("Source catalog synergy recommendation"), true);
+        if (!Fixture.CheckSixCardPage(Test, TEXT("Source catalog synergy recommendation")) ||
+            !Fixture.CheckSynergyCatalogPreview(Test) || !Fixture.CheckFavoriteInputIsolation(Test)) { return false; }
+        const bool bCaptured = Fixture.Capture(Test, TEXT("Synergy"));
+        Fixture.List->ClearListItems();
+        return bCaptured;
+    }
+
+    bool RunFacilityNavigationFixture(FAutomationTestBase& Test)
+    {
+        Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 1);
+        FCatalogFixture Fixture;
+        if (!Fixture.Initialize(Test, FVector2D(1280, 720), true) ||
+            !Fixture.UseSourceCatalogEntries(Test) || !Fixture.CheckFacilityNavigation(Test)) { return false; }
+        return Fixture.Capture(Test, TEXT("PartnerNavigation"));
+    }
+
+    bool RunRequiredCatalogFixture(FAutomationTestBase& Test)
+    {
+        if (!Test.TestTrue(TEXT("Slate application is initialized"), FSlateApplication::IsInitialized())) { return false; }
+        Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 1);
+        FCatalogFixture Fixture;
+        if (!Fixture.Initialize(Test, FVector2D(1280, 720), true) || !Fixture.UseSourceCatalogEntries(Test)) { return false; }
+        FMeasurements Measurements;
+        for (const bool bInstalled : { false, true })
+        {
+            if (!Fixture.UseRequiredCatalogPreview(Test, bInstalled)) { return false; }
+            Fixture.Paint();
+            Fixture.CheckRows(Test, Measurements, bInstalled ? TEXT("Required stage installed") : TEXT("Required stage missing"), true);
+            if (!Fixture.CheckRequiredCatalogPreview(Test, bInstalled) ||
+                !Fixture.Capture(Test, bInstalled ? TEXT("RequiredSatisfied") : TEXT("RequiredMissing"))) { return false; }
+        }
+        Fixture.List->ClearListItems();
+        return true;
+    }
+
     bool RunFullCatalogLayoutFixture(FAutomationTestBase& Test)
     {
         if (!Test.TestTrue(TEXT("Slate application is initialized"), FSlateApplication::IsInitialized())) { return false; }
@@ -918,6 +1223,18 @@ bool FFF_PrepBuildCatalogRenderedPreviewTest::RunTest(const FString& Parameters)
     {
         AddInfo(TEXT("SKIPPED: PNG capture requires a real RHI; use -RenderOffscreen. VirtualizedScrollLifecycle runs with NullRHI."));
         return true;
+    }
+    if (FParse::Param(FCommandLine::Get(), TEXT("FFSynergyNavigationPreview")))
+    {
+        return FFPrepBuildVirtualizedSlateTest::RunFacilityNavigationFixture(*this);
+    }
+    if (FParse::Param(FCommandLine::Get(), TEXT("FFSynergyCatalogPreview")))
+    {
+        return FFPrepBuildVirtualizedSlateTest::RunSynergyCatalogFixture(*this);
+    }
+    if (FParse::Param(FCommandLine::Get(), TEXT("FFRequiredCatalogPreview")))
+    {
+        return FFPrepBuildVirtualizedSlateTest::RunRequiredCatalogFixture(*this);
     }
     return FFPrepBuildVirtualizedSlateTest::RunCatalogFixture(*this, true);
 }

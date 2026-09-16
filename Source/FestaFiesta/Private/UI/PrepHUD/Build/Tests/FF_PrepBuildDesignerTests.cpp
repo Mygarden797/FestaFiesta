@@ -37,12 +37,26 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	auto* Cost = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_Cost")));
 	auto* ThumbnailFrame = Cast<USizeBox>(Tile->GetWidgetFromName(TEXT("SizeBox_Thumbnail")));
 	auto* Thumbnail = Cast<UImage>(Tile->GetWidgetFromName(TEXT("Image_Thumbnail")));
+	auto* SynergyHighlight = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_SynergyHighlight")));
+	auto* SynergyBadge = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_SynergyBadge")));
+	auto* RequiredMissing = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_RequiredMissing")));
+	auto* RequiredSatisfied = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_RequiredSatisfied")));
+	auto* RequiredMissingText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_RequiredMissing")));
+	auto* RequiredSatisfiedText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_RequiredSatisfied")));
+	auto* StateLabel = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_State")));
 	const FObjectPropertyBase* ItemProperty = FindFProperty<FObjectPropertyBase>(Class, TEXT("Item"));
 	if (!TestNotNull(TEXT("Designer card SizeBox"), Size) || !TestNotNull(TEXT("Designer card border"), Card) ||
 		!TestNotNull(TEXT("Designer name"), Name) || !TestNotNull(TEXT("Designer cost"), Cost) ||
 		!TestNotNull(TEXT("Transient view-model slot"), ItemProperty) ||
 		!TestNotNull(TEXT("Designer thumbnail frame"), ThumbnailFrame) ||
-		!TestNotNull(TEXT("Designer thumbnail image"), Thumbnail)) { return false; }
+		!TestNotNull(TEXT("Designer thumbnail image"), Thumbnail) ||
+		!TestNotNull(TEXT("Designer synergy outline"), SynergyHighlight) ||
+		!TestNotNull(TEXT("Designer synergy badge"), SynergyBadge) ||
+		!TestNotNull(TEXT("Designer required missing badge"), RequiredMissing) ||
+		!TestNotNull(TEXT("Designer required satisfied badge"), RequiredSatisfied) ||
+		!TestNotNull(TEXT("Designer required missing text"), RequiredMissingText) ||
+		!TestNotNull(TEXT("Designer required satisfied text"), RequiredSatisfiedText) ||
+		!TestNotNull(TEXT("Designer installation state label"), StateLabel)) { return false; }
 	// These are instance-only edits made before PreConstruct captures the authored appearance.
 	Size->SetWidthOverride(196.f);
 	Size->SetHeightOverride(188.f);
@@ -54,6 +68,23 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Name->SetFont(Font);
 	const FSlateColor AuthoredCost(FLinearColor(0.18f, 0.12f, 0.62f, 1.f));
 	Cost->SetColorAndOpacity(AuthoredCost);
+	FSlateBrush AuthoredHighlight = SynergyHighlight->Background;
+	AuthoredHighlight.OutlineSettings.Color = FSlateColor(FLinearColor(0.6f, 0.1f, 0.4f, 1.0f));
+	AuthoredHighlight.OutlineSettings.Width = 3.0f;
+	SynergyHighlight->SetBrush(AuthoredHighlight);
+	const FText AuthoredBadge = FText::FromString(TEXT("함께 놓을 시설"));
+	SynergyBadge->SetText(AuthoredBadge);
+	FSlateFontInfo BadgeFont = SynergyBadge->GetFont();
+	BadgeFont.Size = 14;
+	SynergyBadge->SetFont(BadgeFont);
+	FSlateBrush AuthoredRequiredBrush = RequiredMissing->Background;
+	AuthoredRequiredBrush.TintColor = FSlateColor(FLinearColor(0.4f, 0.1f, 0.5f, 1.0f));
+	RequiredMissing->SetBrush(AuthoredRequiredBrush);
+	const FText AuthoredRequiredLabel = FText::FromString(TEXT("필수 배치"));
+	RequiredMissingText->SetText(AuthoredRequiredLabel);
+	FSlateFontInfo RequiredFont = RequiredMissingText->GetFont();
+	RequiredFont.Size = 13;
+	RequiredMissingText->SetFont(RequiredFont);
 	ThumbnailFrame->SetWidthOverride(176.f);
 	ThumbnailFrame->SetHeightOverride(88.f);
 	TStrongObjectPtr<UTexture2D> WideTexture(UTexture2D::CreateTransient(400, 200));
@@ -101,6 +132,86 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Data->RefreshGold(1000, true);
 	Tile->RefreshItemPresentation();
 	TestTrue(TEXT("Returning to available restores the Designer color"), Cost->GetColorAndOpacity() == AuthoredCost);
+	// Recommendation is independent of selection/affordability and must never restyle the card.
+	Data->SetSynergyHighlighted(true);
+	Tile->RefreshItemPresentation();
+	Slate->SlatePrepass(1.0f);
+	TestTrue(TEXT("Visible entry reads the recommendation from its current model"), Tile->IsSynergyHighlighted());
+	TestTrue(TEXT("Synergy accent cannot intercept the tile or favorite button"),
+		SynergyHighlight->GetVisibility() == ESlateVisibility::HitTestInvisible);
+	TestTrue(TEXT("Showing synergy preserves authored outline style"),
+		SynergyHighlight->Background.OutlineSettings == AuthoredHighlight.OutlineSettings);
+	TestEqual(TEXT("Showing synergy preserves authored badge wording"), SynergyBadge->GetText().ToString(), AuthoredBadge.ToString());
+	TestEqual(TEXT("Showing synergy preserves authored badge typography"), SynergyBadge->GetFont().Size, BadgeFont.Size);
+	TestTrue(TEXT("Independent synergy layer preserves the original card brush and dimensions"),
+		Card->Background.TintColor == AuthoredBrush.TintColor && Slate->GetDesiredSize().Equals(FVector2D(196, 188), 0.5));
+	Data->RefreshGold(0, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Related but unaffordable item retains its relation without becoming available"),
+		Tile->IsSynergyHighlighted() && !Data->IsAffordable() && Cost->GetColorAndOpacity() != AuthoredCost);
+	Data->SetSynergyHighlighted(false);
+	Tile->RefreshItemPresentation();
+	TestFalse(TEXT("Clearing recommendation clears the displayed state"), Tile->IsSynergyHighlighted());
+	TestTrue(TEXT("Cleared badge and outline both collapse"),
+		SynergyHighlight->GetVisibility() == ESlateVisibility::Collapsed && SynergyBadge->GetVisibility() == ESlateVisibility::Collapsed);
+	Data->SetSynergyHighlighted(true);
+	Tile->RefreshItemPresentation();
+	// Required progress is independent from combo recommendations. Both states can
+	// coexist while the model's 0/1 -> 1/1 progress still reaches the original label.
+	Entry.bRequiredForSetup = true;
+	Entry.bRequiredSetupSatisfied = false;
+	Entry.RequiredInstalledCount = 0;
+	Entry.RequiredMinimumCount = 1;
+	Entry.MaxInstancesPerWorld = 1;
+	Entry.CurrentInstanceCount = 0;
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Missing requirement coexists with the combination highlight"),
+		Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() &&
+		RequiredMissing->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+		RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Limited facility displays empty installation progress in the original state slot"),
+		StateLabel->GetText().ToString(), FString(TEXT("0/1")));
+	TestTrue(TEXT("Missing requirement preserves Designer brush, font and caption"),
+		RequiredMissing->Background.TintColor == AuthoredRequiredBrush.TintColor &&
+		RequiredMissingText->GetFont().Size == RequiredFont.Size && RequiredMissingText->GetText().EqualTo(AuthoredRequiredLabel));
+	TestTrue(TEXT("Requirement minimum is available alongside the original price tooltip"),
+		Tile->GetToolTipText().ToString().Contains(TEXT("필요 최소 1개")) &&
+		Tile->GetToolTipText().ToString().Contains(Data->GetCostText().ToString()));
+	Entry.bRequiredSetupSatisfied = true;
+	Entry.RequiredInstalledCount = 1;
+	Entry.CurrentInstanceCount = 1;
+	Entry.bBuildLimitReached = true;
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Installing required facility swaps badges while preserving combination recommendation"),
+		Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() &&
+		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
+		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible);
+	TestEqual(TEXT("Completed installation retains its real 1/1 progress instead of availability wording"),
+		StateLabel->GetText().ToString(), FString(TEXT("1/1")));
+	Entry.RequiredMinimumCount = 0;
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Invalid minimum remains visibly required and never reports completion"),
+		Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
+		Tile->GetToolTipText().ToString().Contains(TEXT("설정 확인 필요")));
+	Entry.RequiredMinimumCount = 1;
+	Entry.bRequiredForSetup = false;
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Removing requirement clears both badge surfaces on a reused row"),
+		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
+		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
+	Entry.bRequiredForSetup = true;
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	IUserListEntry::ReleaseEntry(*Tile.Get());
+	TestFalse(TEXT("Virtualized row release clears the previous facility recommendation"), Tile->IsSynergyHighlighted());
+	TestTrue(TEXT("Released row contains no stale recommendation badge"), SynergyHighlight->GetVisibility() == ESlateVisibility::Collapsed);
+	TestTrue(TEXT("Released row contains no stale required status"),
+		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
+		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
 	return true;
 }
 

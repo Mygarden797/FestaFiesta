@@ -47,6 +47,16 @@ namespace
         return Spec;
     }
 
+    FFFZSFacilitySpec MakeTileSpec(UStaticMesh* Mesh = nullptr)
+    {
+        FFFZSFacilitySpec Spec = MakeRoadSpec(Mesh);
+        Spec.FacilityDefinitionId = TEXT("Tile_Surface_Test");
+        Spec.Category = EFFZSFacilityCategory::Tile;
+        // A stale legacy flag must not override the Tile category.
+        Spec.bAllowFacilityPlacementOnTop = false;
+        return Spec;
+    }
+
     FFFZSCommand InstallAt(const FFFZSFacilitySpec& Spec, const FIntPoint Origin)
     {
         FFFZSGridPlacement Placement;
@@ -102,17 +112,41 @@ bool FFFZSRoadSpecTest::RunTest(const FString& Parameters)
 {
     TestEqual(TEXT("Existing Lighting ordinal stays serialized as 7"), static_cast<uint8>(EFFZSFacilityCategory::Lighting), uint8(7));
     TestEqual(TEXT("Road is appended after existing categories"), static_cast<uint8>(EFFZSFacilityCategory::Road), uint8(8));
+    TestEqual(TEXT("Tile is appended without changing existing categories"), static_cast<uint8>(EFFZSFacilityCategory::Tile), uint8(9));
     TArray<FText> Errors;
-    FFFZSFacilitySpec Road = MakeRoadSpec();
-    TestTrue(TEXT("An 8 cm road needs no queue or service anchors"), Road.IsValid(Errors));
-    Road.QueueRules.ServiceCapacity = 1;
-    TestFalse(TEXT("Road service data fails authoring validation"), Road.IsValid(Errors));
-    Road = MakeRoadSpec();
-    Road.PlacementObstacleHeightCm = 0.0f;
-    TestFalse(TEXT("A zero-thickness road is invalid"), Road.IsValid(Errors));
+    for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
+    {
+        FFFZSFacilitySpec Surface = MakeRoadSpec();
+        Surface.Category = Category;
+        TestTrue(TEXT("Both categories are ground surfaces"), Surface.IsGroundSurface());
+        for (const bool bLegacyAllowsPlacement : { false, true })
+        {
+            Surface.bAllowFacilityPlacementOnTop = bLegacyAllowsPlacement;
+            TestEqual(TEXT("Only Tile permits facilities regardless of the legacy flag"),
+                Surface.AllowsFacilityPlacementOnTop(), Category == EFFZSFacilityCategory::Tile);
+        }
+        TestTrue(TEXT("An 8 cm ground surface needs no queue or service anchors"), Surface.IsValid(Errors));
+        Surface.QueueRules.ServiceCapacity = 1;
+        TestFalse(TEXT("Ground surface service data fails authoring validation"), Surface.IsValid(Errors));
+        Surface.QueueRules.ServiceCapacity = 0;
+        Surface.PlacementObstacleHeightCm = 0.0f;
+        TestFalse(TEXT("A zero-thickness ground surface is invalid"), Surface.IsValid(Errors));
+    }
     FFFZSFacilitySpec Facility = FFZSTest::MakeValidFacilitySpec();
+    TestFalse(TEXT("An ordinary facility is not a ground surface"), Facility.IsGroundSurface());
+    TestFalse(TEXT("An ordinary facility does not support another facility"), Facility.AllowsFacilityPlacementOnTop());
     Facility.PlacementObstacleHeightCm = 8.0f;
     TestFalse(TEXT("Other facilities retain their 10 cm minimum"), Facility.IsValid(Errors));
+    FFFZSCommand RoadReceipt = InstallAt(MakeRoadSpec(), FIntPoint::ZeroValue);
+    const FString LegacyRoadFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(RoadReceipt);
+    RoadReceipt.FacilitySpec.bAllowFacilityPlacementOnTop = false;
+    TestNotEqual(TEXT("Road keeps its legacy receipt payload for saved command replay"),
+        UFFZSGridLibrary::BuildCommandFingerprint(RoadReceipt), LegacyRoadFingerprint);
+    FFFZSCommand TileReceipt = InstallAt(MakeTileSpec(), FIntPoint::ZeroValue);
+    const FString TileFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(TileReceipt);
+    TileReceipt.FacilitySpec.bAllowFacilityPlacementOnTop = true;
+    TestEqual(TEXT("New Tile command semantics ignore the legacy permission flag"),
+        UFFZSGridLibrary::BuildCommandFingerprint(TileReceipt), TileFingerprint);
     return true;
 }
 
@@ -124,25 +158,31 @@ bool FFFZSRoadLayerLifecycleTest::RunTest(const FString& Parameters)
     FScopedRoadSettings Settings;
     UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
     UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
-    if (!TestNotNull(TEXT("Road test world registers"), System)) return false;
-    const FFFZSFacilitySpec RoadSpec = MakeRoadSpec();
-    const FFFZSCommand Road = InstallAt(RoadSpec, FIntPoint(1000, 1000));
-    if (!TestTrue(TEXT("First road installs"), System->ExecuteCommand(Road).bSucceeded)) return false;
-    TestFalse(TEXT("A second road cannot stack on the first"), System->ValidatePlacement(
+    if (!TestNotNull(TEXT("Tile test world registers"), System)) return false;
+    const FFFZSFacilitySpec TileSpec = MakeTileSpec();
+    const FFFZSCommand Tile = InstallAt(TileSpec, FIntPoint(1000, 1000));
+    if (!TestTrue(TEXT("First tile installs"), System->ExecuteCommand(Tile).bSucceeded)) return false;
+    TestFalse(TEXT("A second tile cannot stack on the first"), System->ValidatePlacement(
+        InstallAt(TileSpec, FIntPoint(1000, 1000))).bIsValid);
+    TestTrue(TEXT("Tiles may meet at a shared edge"), System->ExecuteCommand(
+        InstallAt(TileSpec, FIntPoint(1400, 1000))).bSucceeded);
+    TestTrue(TEXT("A tile can occupy the future queue and clearance area"), System->ExecuteCommand(
+        InstallAt(TileSpec, FIntPoint(1000, 1500))).bSucceeded);
+    FFFZSFacilitySpec RoadSpec = MakeRoadSpec();
+    RoadSpec.bAllowFacilityPlacementOnTop = true;
+    const FFFZSCommand Road = InstallAt(RoadSpec, FIntPoint(6000, 1000));
+    TestTrue(TEXT("Road installs with a contradictory legacy permission flag"), System->ExecuteCommand(Road).bSucceeded);
+    TestFalse(TEXT("Road cannot overlap Tile"), System->ValidatePlacement(
         InstallAt(RoadSpec, FIntPoint(1000, 1000))).bIsValid);
-    TestTrue(TEXT("Roads may meet at a shared edge"), System->ExecuteCommand(
-        InstallAt(RoadSpec, FIntPoint(1400, 1000))).bSucceeded);
-    TestTrue(TEXT("A road can occupy the future queue and clearance area"), System->ExecuteCommand(
-        InstallAt(RoadSpec, FIntPoint(1000, 1500))).bSucceeded);
-    FFFZSFacilitySpec BlockingRoadSpec = RoadSpec;
-    BlockingRoadSpec.bAllowFacilityPlacementOnTop = false;
-    const FFFZSCommand BlockingRoad = InstallAt(BlockingRoadSpec, FIntPoint(6000, 1000));
-    TestTrue(TEXT("A road may disable facilities through its saved spec"), System->ExecuteCommand(BlockingRoad).bSucceeded);
+    TestFalse(TEXT("Tile cannot overlap Road"), System->ValidatePlacement(
+        InstallAt(TileSpec, FIntPoint(6000, 1000))).bIsValid);
+    TestFalse(TEXT("Road cannot overlap another Road"), System->ValidatePlacement(
+        InstallAt(RoadSpec, FIntPoint(6000, 1000))).bIsValid);
     const FFFZSCommand BlockedFacility = InstallAt(FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck), FIntPoint(6000, 1000));
-    TestFalse(TEXT("Disabled road rejects facility placement"), System->ValidatePlacement(BlockedFacility).bIsValid);
+    TestFalse(TEXT("Road rejects facility placement even with legacy permission enabled"), System->ValidatePlacement(BlockedFacility).bIsValid);
     FFFZSBuildableGridMask DisabledMask;
     System->BuildPlacementGridMask(BlockedFacility, FVector2D(6000, 1000), FVector2D(6400, 1400), 100, 0.0, DisabledMask);
-    TestEqual(TEXT("Disabled road is blocked in facility grid preview"), DisabledMask.GetBuildableCellCount(), 0);
+    TestEqual(TEXT("Road is blocked in the facility grid preview"), DisabledMask.GetBuildableCellCount(), 0);
 
     FFFZSFacilitySpec FacilitySpec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     FacilitySpec.bUsesFacilityLevels = true;
@@ -150,83 +190,252 @@ bool FFFZSRoadLayerLifecycleTest::RunTest(const FString& Parameters)
     Tier.SizeMultiplier = 1.1f;
     FacilitySpec.UpgradeTiers.Add(Tier);
     const FFFZSCommand Facility = InstallAt(FacilitySpec, FIntPoint(1000, 1000));
-    if (!TestTrue(TEXT("Facility footprint, clearance and queue may overlap roads"),
+    if (!TestTrue(TEXT("Facility footprint, clearance and queue may overlap tiles"),
         System->ExecuteCommand(Facility).bSucceeded)) return false;
-    TestEqual(TEXT("Foundation reaches road height before any visual mesh loads"),
+    TestEqual(TEXT("Foundation reaches tile height before any visual mesh loads"),
         System->FindFacility(Facility.FacilityInstanceId)->GetActorLocation().Z, 8.0);
-    TestFalse(TEXT("Facilities still block facilities on the same road"), System->ValidatePlacement(
+    TestFalse(TEXT("Facilities still block facilities on the same tile"), System->ValidatePlacement(
         InstallAt(FacilitySpec, FIntPoint(1000, 1000))).bIsValid);
     TestTrue(TEXT("Size upgrade validation ignores paving reservations"),
         System->ValidateUpgradePlacement(Facility.FacilityInstanceId, 1.1f).bIsValid);
-    TestFalse(TEXT("Road move cannot strand an installed facility"), System->ExecuteCommand(
-        MoveTo(Road.FacilityInstanceId, FIntPoint(2000, 1000))).bSucceeded);
-    FFFZSCommand RemoveRoad = MoveTo(Road.FacilityInstanceId, FIntPoint(1000, 1000));
-    RemoveRoad.Type = EFFZSCommandType::Remove;
-    TestFalse(TEXT("Road removal cannot strand an installed facility"), System->ExecuteCommand(RemoveRoad).bSucceeded);
-    TestTrue(TEXT("Road may be added beneath only the existing queue"), System->ExecuteCommand(
-        InstallAt(RoadSpec, FIntPoint(1500, 1500))).bSucceeded);
+    TestFalse(TEXT("Tile move cannot strand an installed facility"), System->ExecuteCommand(
+        MoveTo(Tile.FacilityInstanceId, FIntPoint(2000, 1000))).bSucceeded);
+    FFFZSCommand RemoveTile = MoveTo(Tile.FacilityInstanceId, FIntPoint(1000, 1000));
+    RemoveTile.Type = EFFZSCommandType::Remove;
+    TestFalse(TEXT("Tile removal cannot strand an installed facility"), System->ExecuteCommand(RemoveTile).bSucceeded);
+    TestFalse(TEXT("Road cannot be inserted under an existing queue"), System->ValidatePlacement(
+        InstallAt(RoadSpec, FIntPoint(1500, 1500))).bIsValid);
+    TestTrue(TEXT("Tile may be added beneath only the existing queue"), System->ExecuteCommand(
+        InstallAt(TileSpec, FIntPoint(1500, 1500))).bSucceeded);
 
     FFFZSBuildableGridMask Mask;
-    System->BuildPlacementGridMask(InstallAt(RoadSpec, FIntPoint(1000, 1000)),
+    System->BuildPlacementGridMask(InstallAt(TileSpec, FIntPoint(1000, 1000)),
         FVector2D(1000.0), FVector2D(1400.0), 100, 0.0, Mask);
-    TestEqual(TEXT("Road preview masks existing roads"), Mask.GetBuildableCellCount(), 0);
+    TestEqual(TEXT("Tile preview masks existing tiles"), Mask.GetBuildableCellCount(), 0);
     FFFZSCommand Moving = MoveTo(Facility.FacilityInstanceId, FIntPoint(1000, 1000));
     System->BuildPlacementGridMask(Moving, FVector2D(1000.0), FVector2D(1400.0), 100, 0.0, Mask);
-    TestEqual(TEXT("Moving facility preview releases itself and retains road buildability"), Mask.GetBuildableCellCount(), 16);
+    TestEqual(TEXT("Moving facility preview releases itself and retains tile buildability"), Mask.GetBuildableCellCount(), 16);
 
-    FFFZSCommand OpenRoad = MoveTo(Road.FacilityInstanceId, FIntPoint(1000, 1000));
-    OpenRoad.Type = EFFZSCommandType::Open;
-    TestTrue(TEXT("Road participates in the active festival lifecycle"), System->ExecuteCommand(OpenRoad).bSucceeded);
+    FFFZSCommand OpenTile = MoveTo(Tile.FacilityInstanceId, FIntPoint(1000, 1000));
+    OpenTile.Type = EFFZSCommandType::Open;
+    TestTrue(TEXT("Tile participates in the active festival lifecycle"), System->ExecuteCommand(OpenTile).bSucceeded);
     UFFZSSaveGameTestObject* Save = NewObject<UFFZSSaveGameTestObject>();
     Save->Snapshot = System->CaptureWorldSnapshot();
     FFFZSWorldSnapshot InvalidLayeredSnapshot = Save->Snapshot;
     for (FFFZSFacilityInstanceSnapshot& Saved : InvalidLayeredSnapshot.Facilities)
     {
-        if (Saved.FacilityInstanceId == Road.FacilityInstanceId) Saved.FacilitySpec.bAllowFacilityPlacementOnTop = false;
+        if (Saved.FacilityInstanceId == Tile.FacilityInstanceId) Saved.FacilitySpec.Category = EFFZSFacilityCategory::Road;
     }
     TArray<FText> InvalidErrors;
-    TestFalse(TEXT("Restore rejects a disallowed road underneath a saved facility"),
+    TestFalse(TEXT("Restore rejects a Road underneath a saved facility"),
         System->RestoreWorldSnapshot(InvalidLayeredSnapshot, InvalidErrors));
     TArray<uint8> Bytes;
     if (!TestTrue(TEXT("Layered world serializes"), UGameplayStatics::SaveGameToMemory(Save, Bytes))) return false;
     UFFZSSaveGameTestObject* Loaded = Cast<UFFZSSaveGameTestObject>(UGameplayStatics::LoadGameFromMemory(Bytes));
     if (!TestNotNull(TEXT("Saved world deserializes"), Loaded)) return false;
     TArray<FText> Errors;
-    if (!TestTrue(TEXT("Overlapping road/facility world restores atomically"), System->RestoreWorldSnapshot(Loaded->Snapshot, Errors)))
+    if (!TestTrue(TEXT("Overlapping tile/facility world restores atomically"), System->RestoreWorldSnapshot(Loaded->Snapshot, Errors)))
     {
         for (const FText& Error : Errors) AddError(Error.ToString());
         return false;
     }
     TestEqual(TEXT("Saved foundation elevation survives restore"),
         System->FindFacility(Facility.FacilityInstanceId)->GetActorLocation().Z, 8.0);
-    TestEqual(TEXT("Active road with an empty closed queue survives restore"),
-        System->FindFacility(Road.FacilityInstanceId)->GetFacilityState(), EFFZSFacilityState::Active);
-    TestFalse(TEXT("Road placement permission survives serialization and restore"),
-        System->FindFacility(BlockingRoad.FacilityInstanceId)->GetFacilitySpec().bAllowFacilityPlacementOnTop);
+    TestEqual(TEXT("Active tile with an empty closed queue survives restore"),
+        System->FindFacility(Tile.FacilityInstanceId)->GetFacilityState(), EFFZSFacilityState::Active);
+    TestTrue(TEXT("Legacy Road receipt data survives serialization and restore"),
+        System->FindFacility(Road.FacilityInstanceId)->GetFacilitySpec().bAllowFacilityPlacementOnTop);
+    TestFalse(TEXT("Contradictory legacy Tile flag survives serialization and restore"),
+        System->FindFacility(Tile.FacilityInstanceId)->GetFacilitySpec().bAllowFacilityPlacementOnTop);
+    TestTrue(TEXT("Restored Tile permission derives from category"),
+        System->FindFacility(Tile.FacilityInstanceId)->GetFacilitySpec().AllowsFacilityPlacementOnTop());
+    TestFalse(TEXT("Restored Road still blocks upper facilities"), System->ValidatePlacement(BlockedFacility).bIsValid);
+    TestTrue(TEXT("Road install receipt survives restore"), System->ExecuteCommand(Road).bWasDuplicateReplay);
+    TestTrue(TEXT("Tile install receipt survives restore"), System->ExecuteCommand(Tile).bWasDuplicateReplay);
     TestEqual(TEXT("Revalidation preserves a valid layered world"), System->RevalidateFacilitiesInZone(TEXT("GZ_DadaPocha")), 0);
-    FFFZSCommand CloseRoad = MoveTo(Road.FacilityInstanceId, FIntPoint(1000, 1000));
-    CloseRoad.Type = EFFZSCommandType::Close;
-    TestTrue(TEXT("Restored road closes"), System->ExecuteCommand(CloseRoad).bSucceeded);
-    TestTrue(TEXT("Facility moves off the road"), System->ExecuteCommand(
+    FFFZSCommand CloseTile = MoveTo(Tile.FacilityInstanceId, FIntPoint(1000, 1000));
+    CloseTile.Type = EFFZSCommandType::Close;
+    TestTrue(TEXT("Restored tile closes"), System->ExecuteCommand(CloseTile).bSucceeded);
+    TestTrue(TEXT("Facility moves off the tile"), System->ExecuteCommand(
         MoveTo(Facility.FacilityInstanceId, FIntPoint(4000, 4000))).bSucceeded);
-    TestEqual(TEXT("Moving onto bare ground removes road height"),
+    TestEqual(TEXT("Moving onto bare ground removes tile height"),
         System->FindFacility(Facility.FacilityInstanceId)->GetActorLocation().Z, 0.0);
+    TestFalse(TEXT("Tile cannot be inserted beneath an existing structure on bare ground"), System->ValidatePlacement(
+        InstallAt(TileSpec, FIntPoint(4100, 4000))).bIsValid);
     TestFalse(TEXT("Road cannot be inserted beneath an existing structure on bare ground"), System->ValidatePlacement(
         InstallAt(RoadSpec, FIntPoint(4100, 4000))).bIsValid);
-    TestTrue(TEXT("Facility can move back onto the road"), System->ExecuteCommand(Moving).bSucceeded);
-    TestEqual(TEXT("Moving back restores road height"),
+    TestTrue(TEXT("Facility can move back onto the tile"), System->ExecuteCommand(Moving).bSucceeded);
+    TestEqual(TEXT("Moving back restores tile height"),
         System->FindFacility(Facility.FacilityInstanceId)->GetActorLocation().Z, 8.0);
-    TestTrue(TEXT("Facility moves clear before altering its road support"), System->ExecuteCommand(
+    TestTrue(TEXT("Facility moves clear before altering its tile support"), System->ExecuteCommand(
         MoveTo(Facility.FacilityInstanceId, FIntPoint(4000, 4000))).bSucceeded);
-    TestTrue(TEXT("Road can move once the supported facility is relocated"), System->ExecuteCommand(
-        MoveTo(Road.FacilityInstanceId, FIntPoint(2000, 1000))).bSucceeded);
-    TestFalse(TEXT("Moved road retains ground-layer occupancy"), System->ValidatePlacement(
-        InstallAt(RoadSpec, FIntPoint(2000, 1000))).bIsValid);
+    TestTrue(TEXT("Tile can move once the supported facility is relocated"), System->ExecuteCommand(
+        MoveTo(Tile.FacilityInstanceId, FIntPoint(2000, 1000))).bSucceeded);
+    TestFalse(TEXT("Moved tile retains ground-layer occupancy"), System->ValidatePlacement(
+        InstallAt(TileSpec, FIntPoint(2000, 1000))).bIsValid);
     TestTrue(TEXT("Upper-layer facility retains its own occupancy after relocation"), System->ValidatePlacement(
         InstallAt(FacilitySpec, FIntPoint(4000, 4000))).Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+    TestFalse(TEXT("Facility movement onto Road remains prohibited"), System->ExecuteCommand(
+        MoveTo(Facility.FacilityInstanceId, FIntPoint(6000, 1000))).bSucceeded);
+    TestTrue(TEXT("Unoccupied Road can move"), System->ExecuteCommand(
+        MoveTo(Road.FacilityInstanceId, FIntPoint(6000, 2500))).bSucceeded);
+    TestFalse(TEXT("Moved Road retains its blocking category"), System->ValidatePlacement(
+        InstallAt(FacilitySpec, FIntPoint(6000, 2500))).bIsValid);
+    FFFZSCommand RemoveRoad = MoveTo(Road.FacilityInstanceId, FIntPoint(6000, 2500));
+    RemoveRoad.Type = EFFZSCommandType::Remove;
+    TestTrue(TEXT("Unoccupied Road can be removed"), System->ExecuteCommand(RemoveRoad).bSucceeded);
+    TestTrue(TEXT("Road removal releases the ground layer"), System->ValidatePlacement(
+        InstallAt(TileSpec, FIntPoint(6000, 2500))).bIsValid);
+    RemoveTile.CommandId = FGuid::NewGuid();
+    RemoveTile.TransactionId = FGuid::NewGuid();
+    TestTrue(TEXT("Tile can be removed once its supported facility has moved"), System->ExecuteCommand(RemoveTile).bSucceeded);
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSLegacyRoadMigrationTest, "FF_ZoneSystem.Road.LegacyRoadSnapshotMigration",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSLegacyRoadMigrationTest::RunTest(const FString& Parameters)
+{
+    FScopedRoadSettings Settings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    if (!TestNotNull(TEXT("Migration world"), System)) return false;
+    FFFZSFacilitySpec BuiltInSpec = MakeTileSpec();
+    BuiltInSpec.FacilityDefinitionId = TEXT("Tile_Surface_Sand");
+    BuiltInSpec.FootprintSizeCells = FIntPoint(440, 360);
+    BuiltInSpec.PlacementObstacleHeightCm = 12.0f;
+    BuiltInSpec.InstallCostKey = TEXT("Cost.Road.Surface.Sand");
+    BuiltInSpec.RevenueRuleKey = TEXT("Saved.Custom.Revenue");
+    BuiltInSpec.bUsesFacilityLevels = true;
+    FFFZSFacilityUpgradeTier Tier;
+    Tier.TargetLevel = 2;
+    Tier.SizeMultiplier = 1.25f;
+    Tier.ServiceDurationMultiplier = 0.8f;
+    Tier.RevenueMultiplier = 1.3f;
+    BuiltInSpec.UpgradeTiers.Add(Tier);
+    const FFFZSCommand BuiltIn = InstallAt(BuiltInSpec, FIntPoint(1000, 1000));
+    if (!TestTrue(TEXT("Built-in paving fixture installs"), System->ExecuteCommand(BuiltIn).bSucceeded)) return false;
+    FFFZSCommand Upgrade = MoveTo(BuiltIn.FacilityInstanceId, FIntPoint(1000, 1000));
+    Upgrade.Type = EFFZSCommandType::Upgrade;
+    Upgrade.TargetUpgradeLevel = Tier.TargetLevel;
+    Upgrade.UpgradeSizeMultiplier = Tier.SizeMultiplier;
+    Upgrade.UpgradeServiceDurationMultiplier = Tier.ServiceDurationMultiplier;
+    Upgrade.UpgradeRevenueMultiplier = Tier.RevenueMultiplier;
+    if (!TestTrue(TEXT("Paving fixture receives its paid upgrade"), System->ExecuteCommand(Upgrade).bSucceeded)) return false;
+
+    FFFZSFacilitySpec UpperSpec = MakeRoadSpec();
+    UpperSpec.FacilityDefinitionId = TEXT("Lighting_MigrationProbe");
+    UpperSpec.Category = EFFZSFacilityCategory::Lighting;
+    UpperSpec.FootprintSizeCells = FIntPoint(200, 200);
+    UpperSpec.PlacementObstacleHeightCm = 100.0f;
+    const FFFZSCommand Upper = InstallAt(UpperSpec, FIntPoint(1100, 1100));
+    if (!TestTrue(TEXT("Facility installs on the saved paving"), System->ExecuteCommand(Upper).bSucceeded)) return false;
+
+    FFFZSFacilitySpec CustomSpec = MakeTileSpec();
+    CustomSpec.FacilityDefinitionId = TEXT("Custom_Paving_KeepIdentity");
+    const FFFZSCommand Custom = InstallAt(CustomSpec, FIntPoint(3000, 1000));
+    if (!TestTrue(TEXT("Custom paving fixture installs"), System->ExecuteCommand(Custom).bSucceeded)) return false;
+    FFFZSFacilitySpec BlockingSpec = MakeRoadSpec();
+    BlockingSpec.bAllowFacilityPlacementOnTop = false;
+    const FFFZSCommand BlockingRoad = InstallAt(BlockingSpec, FIntPoint(6000, 1000));
+    if (!TestTrue(TEXT("Nonpermissive legacy road fixture installs"), System->ExecuteCommand(BlockingRoad).bSucceeded)) return false;
+
+    FFFZSWorldSnapshot Legacy = System->CaptureWorldSnapshot();
+    const FFFZSFacilityInstanceSnapshot* OriginalBuiltIn = Legacy.Facilities.FindByPredicate(
+        [&](const FFFZSFacilityInstanceSnapshot& Saved) { return Saved.FacilityInstanceId == BuiltIn.FacilityInstanceId; });
+    if (!TestNotNull(TEXT("Saved upgraded paving"), OriginalBuiltIn)) return false;
+    const FFFZSFacilityInstanceSnapshot ExpectedBuiltIn = *OriginalBuiltIn;
+    const FFFZSFacilityInstanceSnapshot* OriginalUpper = Legacy.Facilities.FindByPredicate(
+        [&](const FFFZSFacilityInstanceSnapshot& Saved) { return Saved.FacilityInstanceId == Upper.FacilityInstanceId; });
+    if (!TestNotNull(TEXT("Saved facility on upgraded paving"), OriginalUpper)) return false;
+    const FTransform ExpectedUpperTransform = OriginalUpper->WorldTransform;
+    FFFZSCommand LegacyInstall = BuiltIn;
+    LegacyInstall.FacilitySpec.Category = EFFZSFacilityCategory::Road;
+    LegacyInstall.FacilitySpec.FacilityDefinitionId = TEXT("Road_Surface_Sand");
+    LegacyInstall.FacilitySpec.bAllowFacilityPlacementOnTop = true;
+    Legacy.SchemaVersion = 7;
+    for (FFFZSFacilityInstanceSnapshot& Saved : Legacy.Facilities)
+    {
+        if (Saved.FacilityInstanceId == BuiltIn.FacilityInstanceId || Saved.FacilityInstanceId == Custom.FacilityInstanceId)
+        {
+            Saved.FacilitySpec.Category = EFFZSFacilityCategory::Road;
+            Saved.FacilitySpec.bAllowFacilityPlacementOnTop = true;
+            if (Saved.FacilityInstanceId == BuiltIn.FacilityInstanceId)
+            {
+                Saved.FacilitySpec.FacilityDefinitionId = TEXT("Road_Surface_Sand");
+            }
+        }
+    }
+    const FString HistoricalFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(LegacyInstall);
+    for (FFFZSCommandReceiptSnapshot& Receipt : Legacy.CommandReceipts)
+    {
+        if (Receipt.CommandId == BuiltIn.CommandId) Receipt.PayloadFingerprint = HistoricalFingerprint;
+    }
+
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Schema 7 Road with a facility above migrates atomically"), System->RestoreWorldSnapshot(Legacy, Errors)))
+    {
+        for (const FText& Error : Errors) AddError(Error.ToString());
+        return false;
+    }
+    const AFFZSFacilityActor* MigratedBuiltIn = System->FindFacility(BuiltIn.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Migrated built-in actor"), MigratedBuiltIn)) return false;
+    const FFFZSFacilityInstanceSnapshot Migrated = MigratedBuiltIn->CaptureInstanceSnapshot();
+    TestEqual(TEXT("Permissive Road becomes Tile"), Migrated.FacilitySpec.Category, EFFZSFacilityCategory::Tile);
+    TestEqual(TEXT("Known built-in ID resolves to the matching Tile definition"),
+        Migrated.FacilitySpec.FacilityDefinitionId, FName(TEXT("Tile_Surface_Sand")));
+    TestEqual(TEXT("Custom definition identity remains intact"),
+        System->FindFacility(Custom.FacilityInstanceId)->GetFacilitySpec().FacilityDefinitionId, CustomSpec.FacilityDefinitionId);
+    TestEqual(TEXT("Custom permissive Road also becomes Tile"),
+        System->FindFacility(Custom.FacilityInstanceId)->GetFacilitySpec().Category, EFFZSFacilityCategory::Tile);
+    TestEqual(TEXT("False-flag Road stays Road"),
+        System->FindFacility(BlockingRoad.FacilityInstanceId)->GetFacilitySpec().Category, EFFZSFacilityCategory::Road);
+    TestFalse(TEXT("Legacy nonpermissive Road still rejects facilities"), System->ValidatePlacement(
+        InstallAt(UpperSpec, FIntPoint(6100, 1100))).bIsValid);
+    TestEqual(TEXT("Authored base footprint survives migration"), Migrated.FacilitySpec.FootprintSizeCells, BuiltInSpec.FootprintSizeCells);
+    TestEqual(TEXT("Authored slab height survives migration"), Migrated.FacilitySpec.PlacementObstacleHeightCm, BuiltInSpec.PlacementObstacleHeightCm);
+    TestEqual(TEXT("Economy cost key survives migration"), Migrated.FacilitySpec.InstallCostKey, BuiltInSpec.InstallCostKey);
+    TestEqual(TEXT("Economy revenue key survives migration"), Migrated.FacilitySpec.RevenueRuleKey, BuiltInSpec.RevenueRuleKey);
+    TestEqual(TEXT("Paid upgrade level survives migration"), Migrated.UpgradeLevel, ExpectedBuiltIn.UpgradeLevel);
+    TestEqual(TEXT("Paid size effect survives migration"), Migrated.UpgradeSizeMultiplier, ExpectedBuiltIn.UpgradeSizeMultiplier);
+    TestEqual(TEXT("Paid duration effect survives migration"), Migrated.UpgradeServiceDurationMultiplier, ExpectedBuiltIn.UpgradeServiceDurationMultiplier);
+    TestEqual(TEXT("Paid revenue effect survives migration"), Migrated.UpgradeRevenueMultiplier, ExpectedBuiltIn.UpgradeRevenueMultiplier);
+    TestEqual(TEXT("Authored tiers survive schema 7 migration"), Migrated.FacilitySpec.UpgradeTiers.Num(), BuiltInSpec.UpgradeTiers.Num());
+    TestTrue(TEXT("Existing upgraded transform survives migration"), Migrated.WorldTransform.Equals(ExpectedBuiltIn.WorldTransform));
+    const AFFZSFacilityActor* MigratedUpper = System->FindFacility(Upper.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Migrated facility on paving"), MigratedUpper)) return false;
+    TestTrue(TEXT("Facility preserves its complete saved transform on upgraded paving"),
+        MigratedUpper->GetActorTransform().Equals(ExpectedUpperTransform));
+    TestTrue(TEXT("Historical Road install command replays after identity migration"), System->ExecuteCommand(LegacyInstall).bWasDuplicateReplay);
+
+    UFFZSSaveGameTestObject* Save = NewObject<UFFZSSaveGameTestObject>();
+    Save->Snapshot = System->CaptureWorldSnapshot();
+    TestEqual(TEXT("Migrated save writes schema 8"), Save->Snapshot.SchemaVersion, 8);
+    const FFFZSCommandReceiptSnapshot* SavedReceipt = Save->Snapshot.CommandReceipts.FindByPredicate(
+        [&](const FFFZSCommandReceiptSnapshot& Receipt) { return Receipt.CommandId == BuiltIn.CommandId; });
+    if (!TestNotNull(TEXT("Historical receipt still exists"), SavedReceipt)) return false;
+    TestEqual(TEXT("Historical receipt bytes remain unchanged"), SavedReceipt->PayloadFingerprint, HistoricalFingerprint);
+    TArray<uint8> Bytes;
+    if (!TestTrue(TEXT("Migrated save serializes"), UGameplayStatics::SaveGameToMemory(Save, Bytes))) return false;
+    UFFZSSaveGameTestObject* Loaded = Cast<UFFZSSaveGameTestObject>(UGameplayStatics::LoadGameFromMemory(Bytes));
+    if (!TestNotNull(TEXT("Migrated save deserializes"), Loaded)) return false;
+    TestTrue(TEXT("Schema 8 migrated world restores without reinterpreting categories"), System->RestoreWorldSnapshot(Loaded->Snapshot, Errors));
+    TestTrue(TEXT("Historical receipt replays after schema 8 save roundtrip"), System->ExecuteCommand(LegacyInstall).bWasDuplicateReplay);
+    FFFZSWorldSnapshot InvalidCurrent = Loaded->Snapshot;
+    for (FFFZSFacilityInstanceSnapshot& Saved : InvalidCurrent.Facilities)
+    {
+        if (Saved.FacilityInstanceId == BuiltIn.FacilityInstanceId)
+        {
+            Saved.FacilitySpec.Category = EFFZSFacilityCategory::Road;
+            Saved.FacilitySpec.bAllowFacilityPlacementOnTop = true;
+        }
+    }
+    TestFalse(TEXT("Schema 8 Road overlap rejects even if its legacy flag is true"), System->RestoreWorldSnapshot(InvalidCurrent, Errors));
+    TestEqual(TEXT("Failed schema 8 restore preserves the previous Tile world"),
+        System->FindFacility(BuiltIn.FacilityInstanceId)->GetFacilitySpec().Category, EFFZSFacilityCategory::Tile);
+    return true;
+}
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRoadPhysicalSurfaceTest, "FF_ZoneSystem.Road.PhysicalSurfaceGridAndObstacles",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -234,55 +443,74 @@ bool FFFZSRoadPhysicalSurfaceTest::RunTest(const FString& Parameters)
 {
     FScopedRoadSettings Settings;
     Settings.Settings->bEnableGroundChecks = true;
-    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
-    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
     UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
-    if (!TestNotNull(TEXT("Road world"), System) || !TestNotNull(TEXT("Collision mesh"), Cube)) return false;
-    if (!TestNotNull(TEXT("Physical terrain"), SpawnRoadTestBox(*World,
-        FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;
-    const FFFZSCommand Road = InstallAt(MakeRoadSpec(Cube), FIntPoint(1000, 1000));
-    if (!TestTrue(TEXT("Physical road installs"), System->ExecuteCommand(Road).bSucceeded)) return false;
-    AFFZSFacilityActor* RoadActor = System->FindFacility(Road.FacilityInstanceId);
-    TestEqual(TEXT("Road participates in support traces"),
-        RoadActor->VisualMesh->GetCollisionResponseToChannel(ECC_Visibility), ECR_Block);
-    TestEqual(TEXT("Road remains walkable by the player capsule"),
-        RoadActor->VisualMesh->GetCollisionResponseToChannel(ECC_Pawn), ECR_Block);
-    TArray<UBoxComponent*> Boxes;
-    RoadActor->GetComponents(Boxes);
-    for (const UBoxComponent* Box : Boxes)
+    if (!TestNotNull(TEXT("Collision mesh"), Cube)) return false;
+    TArray<UStaticMesh*> MeshesToFinish{Cube};
+    FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
+    for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
     {
-        TestFalse(TEXT("Paving creates no navigation hole or costly queue lane"), Box->CanEverAffectNavigation());
+        const bool bIsTile = Category == EFFZSFacilityCategory::Tile;
+        const FString Label = bIsTile ? TEXT("Tile: ") : TEXT("Road: ");
+        UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+        UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+        if (!TestNotNull(Label + TEXT("world"), System)) return false;
+        if (!TestNotNull(Label + TEXT("physical terrain"), SpawnRoadTestBox(*World,
+            FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;
+        const FFFZSCommand Surface = InstallAt(bIsTile ? MakeTileSpec(Cube) : MakeRoadSpec(Cube), FIntPoint(1000, 1000));
+        if (!TestTrue(Label + TEXT("physical surface installs"), System->ExecuteCommand(Surface).bSucceeded)) return false;
+        AFFZSFacilityActor* SurfaceActor = System->FindFacility(Surface.FacilityInstanceId);
+        TestEqual(Label + TEXT("participates in support traces"),
+            SurfaceActor->VisualMesh->GetCollisionResponseToChannel(ECC_Visibility), ECR_Block);
+        TestEqual(Label + TEXT("remains walkable by the player capsule"),
+            SurfaceActor->VisualMesh->GetCollisionResponseToChannel(ECC_Pawn), ECR_Block);
+        TArray<UBoxComponent*> Boxes;
+        SurfaceActor->GetComponents(Boxes);
+        for (const UBoxComponent* Box : Boxes)
+        {
+            TestFalse(Label + TEXT("creates no navigation hole or costly queue lane"), Box->CanEverAffectNavigation());
+        }
+        FHitResult Hit;
+        TestTrue(Label + TEXT("ground ray hits the surface"), World->LineTraceSingleByChannel(Hit,
+            FVector(1200, 1200, 100), FVector(1200, 1200, -100), ECC_Visibility));
+        TestTrue(Label + TEXT("collision top is 8 cm"), FMath::IsNearlyEqual(Hit.ImpactPoint.Z, 8.0, 0.01));
+        const FFFZSPlacementValidation SurfaceMove = System->ValidatePlacement(
+            MoveTo(Surface.FacilityInstanceId, FIntPoint(1000, 1000)));
+        TestTrue(Label + TEXT("can be validated at its own footprint"), SurfaceMove.bIsValid);
+        TestTrue(Label + TEXT("movement traces underlying ground without accumulated elevation"),
+            FMath::IsNearlyZero(SurfaceMove.PlacementTransform.GetLocation().Z, 0.01));
+
+        const FFFZSCommand Facility = InstallAt(FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck), FIntPoint(1000, 1000));
+        FFFZSBuildableGridMask Mask;
+        System->BuildPlacementGridMask(Facility, FVector2D(1100.0), FVector2D(1300.0), 100, 0.0, Mask);
+        FFFZSBuildGridSurfaceCache GridSurface;
+        GridSurface.Update(*World, FTransform::Identity, 0.0, Mask, 512);
+        TestEqual(Label + TEXT("facility preview follows category permission"), Mask.GetBuildableCellCount(), bIsTile ? 4 : 0);
+        if (bIsTile)
+        {
+            TestTrue(Label + TEXT("grid follows the support surface"),
+                FMath::IsNearlyEqual(GridSurface.GetWorldPoint(FVector2D(1200.0)).Z, 8.0, 0.01));
+        }
+
+        AActor* Obstacle = SpawnRoadTestBox(*World, FVector(1100, 1100, 60), FVector(30, 30, 60));
+        if (!TestNotNull(Label + TEXT("scenery obstacle on paving"), Obstacle)) return false;
+        TestFalse(Label + TEXT("does not bypass scenery obstruction validation"), System->ValidatePlacement(Facility).bIsValid);
+        Obstacle->Destroy();
+        const FFFZSPlacementValidation Validation = System->ValidatePlacement(Facility);
+        TestEqual(Label + TEXT("only Tile supports installation on mixed paving and terrain"), Validation.bIsValid, bIsTile);
+        if (bIsTile)
+        {
+            TestTrue(Label + TEXT("mixed ground samples never sink the foundation below paving"),
+                FMath::IsNearlyEqual(Validation.PlacementTransform.GetLocation().Z, 8.0, 0.01));
+        }
+        else
+        {
+            TestTrue(Label + TEXT("blocked placement identifies occupied ground"),
+                Validation.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+        }
     }
-    FHitResult Hit;
-    TestTrue(TEXT("Ground ray hits the road surface"), World->LineTraceSingleByChannel(Hit,
-        FVector(1200, 1200, 100), FVector(1200, 1200, -100), ECC_Visibility));
-    TestTrue(TEXT("Road collision top is 8 cm"), FMath::IsNearlyEqual(Hit.ImpactPoint.Z, 8.0, 0.01));
-    const FFFZSPlacementValidation RoadMove = System->ValidatePlacement(MoveTo(Road.FacilityInstanceId, FIntPoint(1000, 1000)));
-    TestTrue(TEXT("Road can be validated at its own footprint"), RoadMove.bIsValid);
-    TestTrue(TEXT("Road movement traces underlying ground, avoiding accumulated elevation"),
-        FMath::IsNearlyZero(RoadMove.PlacementTransform.GetLocation().Z, 0.01));
-
-    const FFFZSCommand Facility = InstallAt(FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck), FIntPoint(1000, 1000));
-    FFFZSBuildableGridMask Mask;
-    System->BuildPlacementGridMask(Facility, FVector2D(1100.0), FVector2D(1300.0), 100, 0.0, Mask);
-    FFFZSBuildGridSurfaceCache Surface;
-    Surface.Update(*World, FTransform::Identity, 0.0, Mask, 512);
-    TestEqual(TEXT("Road cells stay buildable for a facility"), Mask.GetBuildableCellCount(), 4);
-    TestTrue(TEXT("Grid follows the road support surface"),
-        FMath::IsNearlyEqual(Surface.GetWorldPoint(FVector2D(1200.0)).Z, 8.0, 0.01));
-
-    AActor* Obstacle = SpawnRoadTestBox(*World, FVector(1100, 1100, 60), FVector(30, 30, 60));
-    if (!TestNotNull(TEXT("Scenery obstacle on paving"), Obstacle)) return false;
-    TestFalse(TEXT("Road does not bypass scenery obstruction validation"), System->ValidatePlacement(Facility).bIsValid);
-    Obstacle->Destroy();
-    const FFFZSPlacementValidation Validation = System->ValidatePlacement(Facility);
-    TestTrue(TEXT("Facility is valid on mixed paving and bare ground"), Validation.bIsValid);
-    TestTrue(TEXT("Mixed ground samples never sink the foundation below paving"),
-        FMath::IsNearlyEqual(Validation.PlacementTransform.GetLocation().Z, 8.0, 0.01));
     return true;
 }
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRoadProductionCollisionTest, "FF_ZoneSystem.Road.ProductionSixMeshes",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRoadProductionCollisionTest, "FF_ZoneSystem.Road.ProductionRoadAndTileMeshes",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
@@ -295,88 +523,92 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Physical terrain"), SpawnRoadTestBox(*World,
         FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;
     const TArray<FString> Names = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Wood"), TEXT("Stone"), TEXT("Herringbone"), TEXT("Concrete") };
-    for (int32 Index = 0; Index < Names.Num(); ++Index)
+    for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
     {
-        const FString Path = TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_") + Names[Index];
-        UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, *Path);
-        if (!TestNotNull(Names[Index] + TEXT(" production definition"), Definition)) return false;
-        UStaticMesh* Mesh = Definition->Spec.VisualMesh.LoadSynchronous();
-        if (!TestNotNull(Names[Index] + TEXT(" imported mesh"), Mesh)) return false;
-        AddInfo(FString::Printf(TEXT("%s static mesh compilation pending before collision fixture: %s"),
-            *Names[Index], Mesh->IsCompiling() ? TEXT("true") : TEXT("false")));
-        // Loading a cold editor UObject does not finish its async mesh compilation. UE deliberately
-        // skips UStaticMeshComponent physics creation while IsCompiling(), so wait on this asset's
-        // actual readiness before testing its imported collision (never on a fixed time delay).
-        TArray<UStaticMesh*> MeshesToFinish{Mesh};
-        FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
-        if (!TestFalse(Names[Index] + TEXT(" collision fixture mesh finished compilation"), Mesh->IsCompiling())) return false;
-        TestEqual(Names[Index] + TEXT(" Road category"), Definition->Spec.Category, EFFZSFacilityCategory::Road);
-        TArray<FText> SpecErrors;
-        if (!TestTrue(Names[Index] + TEXT(" authored specification is valid"), Definition->Spec.IsValid(SpecErrors)))
+        const FString SurfaceType = Category == EFFZSFacilityCategory::Tile ? TEXT("Tile") : TEXT("Road");
+        for (int32 Index = 0; Index < Names.Num(); ++Index)
         {
-            for (const FText& Error : SpecErrors) AddError(Error.ToString());
-            return false;
-        }
-        const FIntPoint Origin(1000 + Index * 800, 1000);
-        const FFFZSCommand Road = InstallAt(Definition->Spec, Origin);
-        if (!TestTrue(Names[Index] + TEXT(" production road installs"), System->ExecuteCommand(Road).bSucceeded)) return false;
-        const AFFZSFacilityActor* Actor = System->FindFacility(Road.FacilityInstanceId);
-        if (!TestNotNull(Names[Index] + TEXT(" installed actor"), Actor)) return false;
-        TestEqual(Names[Index] + TEXT(" installation preserves authored dimensions"),
-            Actor->GetFacilitySpec().FootprintSizeCells, Definition->Spec.FootprintSizeCells);
-        TestEqual(Names[Index] + TEXT(" installation preserves upper-facility permission"),
-            Actor->GetFacilitySpec().bAllowFacilityPlacementOnTop, Definition->Spec.bAllowFacilityPlacementOnTop);
-        TestTrue(Names[Index] + TEXT(" imported mesh physics state is ready"), Actor->VisualMesh->IsPhysicsStateCreated());
-        // UWorld's omitted DefaultQueryParam requests complex render triangles. Match the runtime
-        // ground/player support query instead: the authored UCX slab bridges decorative grooves.
-        const FCollisionQueryParams SupportQuery(SCENE_QUERY_STAT(FFZSRoadProductionSupport), false);
-        const FIntPoint Footprint = Definition->Spec.FootprintSizeCells;
-        const double ExpectedSurfaceZ = Actor->GetActorLocation().Z + Definition->Spec.PlacementObstacleHeightCm;
-        // Keep nine interior support samples when a designer changes the PDA dimensions.
-        // Fixed 50/200/350 cm samples would trace outside a smaller, correctly scaled road.
-        for (const double XFraction : { 0.125, 0.5, 0.875 })
-        {
-            for (const double YFraction : { 0.125, 0.5, 0.875 })
+            const FString Path = TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/") + SurfaceType + TEXT("/PDA_FFZS_") + SurfaceType + TEXT("_Surface_") + Names[Index];
+            UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, *Path);
+            if (!TestNotNull(Names[Index] + TEXT(" production definition"), Definition)) return false;
+            UStaticMesh* Mesh = Definition->Spec.VisualMesh.LoadSynchronous();
+            if (!TestNotNull(Names[Index] + TEXT(" imported mesh"), Mesh)) return false;
+            AddInfo(FString::Printf(TEXT("%s static mesh compilation pending before collision fixture: %s"),
+                *Names[Index], Mesh->IsCompiling() ? TEXT("true") : TEXT("false")));
+            // Loading a cold editor UObject does not finish its async mesh compilation. UE deliberately
+            // skips UStaticMeshComponent physics creation while IsCompiling(), so wait on this asset's
+            // actual readiness before testing its imported collision (never on a fixed time delay).
+            TArray<UStaticMesh*> MeshesToFinish{Mesh};
+            FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
+            if (!TestFalse(Names[Index] + TEXT(" collision fixture mesh finished compilation"), Mesh->IsCompiling())) return false;
+            TestEqual(Names[Index] + TEXT(" category: ") + SurfaceType, Definition->Spec.Category, Category);
+            TArray<FText> SpecErrors;
+            if (!TestTrue(Names[Index] + TEXT(" authored specification is valid"), Definition->Spec.IsValid(SpecErrors)))
             {
-                const double X = Footprint.X * XFraction;
-                const double Y = Footprint.Y * YFraction;
-                const FVector SampleWorld = Actor->GetActorTransform().TransformPosition(
-                    FVector(X - Footprint.X * 0.5, Y - Footprint.Y * 0.5, 0.0));
-                FHitResult Hit;
-                World->LineTraceSingleByChannel(Hit, FVector(SampleWorld.X, SampleWorld.Y, ExpectedSurfaceZ + 100.0),
-                    FVector(SampleWorld.X, SampleWorld.Y, Actor->GetActorLocation().Z - 100.0), ECC_Visibility, SupportQuery);
-                TestTrue(FString::Printf(TEXT("%s authored collision at %.2f,%.2f supports tile: hit=%s Z=%.6f expected=%s Z=%.6f"),
-                    *Names[Index], X, Y, *GetNameSafe(Hit.GetActor()), Hit.ImpactPoint.Z, *Actor->GetName(), ExpectedSurfaceZ),
-                    Hit.GetActor() == Actor && FMath::IsNearlyEqual(Hit.ImpactPoint.Z, ExpectedSurfaceZ, 0.05));
+                for (const FText& Error : SpecErrors) AddError(Error.ToString());
+                return false;
             }
-        }
-        // A compact non-service facility fits fully on the authored tile. A fixed 6x3 m
-        // food truck would test neighboring roads and mixed terrain instead of this PDA.
-        FFFZSFacilitySpec UpperSpec;
-        UpperSpec.FacilityDefinitionId = TEXT("Lighting_RoadSupportProbe");
-        UpperSpec.DisplayName = FText::FromString(TEXT("Road support probe"));
-        UpperSpec.Category = EFFZSFacilityCategory::Lighting;
-        UpperSpec.FootprintSizeCells = FIntPoint(FMath::Max(1, Footprint.X / 2), FMath::Max(1, Footprint.Y / 2));
-        UpperSpec.ClearanceCells = 0;
-        UpperSpec.PlacementObstacleHeightCm = 100.0f;
-        UpperSpec.QueueRules.MaxWaitingAgents = 0;
-        UpperSpec.QueueRules.ServiceCapacity = 0;
-        TestTrue(Names[Index] + TEXT(" upper-facility probe is valid on bare terrain"), System->ValidatePlacement(
-            InstallAt(UpperSpec, Origin + FIntPoint(0, Footprint.Y + 100))).bIsValid);
-        const FIntPoint UpperOrigin = Origin + FIntPoint(
-            (Footprint.X - UpperSpec.FootprintSizeCells.X) / 2, (Footprint.Y - UpperSpec.FootprintSizeCells.Y) / 2);
-        const FFFZSPlacementValidation Facility = System->ValidatePlacement(InstallAt(UpperSpec, UpperOrigin));
-        TestEqual(Names[Index] + TEXT(" upper-facility acceptance follows its authored permission"),
-            Facility.bIsValid, Definition->Spec.bAllowFacilityPlacementOnTop);
-        if (Definition->Spec.bAllowFacilityPlacementOnTop)
-        {
-            TestTrue(Names[Index] + TEXT(" supports the upper foundation at its authored surface height"),
-                FMath::IsNearlyEqual(Facility.PlacementTransform.GetLocation().Z, ExpectedSurfaceZ, 0.05));
-        }
-        else
-        {
-            TestTrue(Names[Index] + TEXT(" disallowed upper placement fails because its footprint is occupied"),
-                Facility.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+            const FIntPoint Origin(1000 + Index * 800, Category == EFFZSFacilityCategory::Tile ? 3000 : 1000);
+            const FFFZSCommand Surface = InstallAt(Definition->Spec, Origin);
+            if (!TestTrue(Names[Index] + TEXT(" production ground surface installs"), System->ExecuteCommand(Surface).bSucceeded)) return false;
+            const AFFZSFacilityActor* Actor = System->FindFacility(Surface.FacilityInstanceId);
+            if (!TestNotNull(Names[Index] + TEXT(" installed actor"), Actor)) return false;
+            TestEqual(Names[Index] + TEXT(" installation preserves authored dimensions"),
+                Actor->GetFacilitySpec().FootprintSizeCells, Definition->Spec.FootprintSizeCells);
+            TestEqual(Names[Index] + TEXT(" installation preserves upper-facility permission"),
+                Actor->GetFacilitySpec().AllowsFacilityPlacementOnTop(), Category == EFFZSFacilityCategory::Tile);
+            TestTrue(Names[Index] + TEXT(" imported mesh physics state is ready"), Actor->VisualMesh->IsPhysicsStateCreated());
+            // UWorld's omitted DefaultQueryParam requests complex render triangles. Match the runtime
+            // ground/player support query instead: the authored UCX slab bridges decorative grooves.
+            const FCollisionQueryParams SupportQuery(SCENE_QUERY_STAT(FFZSRoadProductionSupport), false);
+            const FIntPoint Footprint = Definition->Spec.FootprintSizeCells;
+            const double ExpectedSurfaceZ = Actor->GetActorLocation().Z + Definition->Spec.PlacementObstacleHeightCm;
+            // Keep nine interior support samples when a designer changes the PDA dimensions.
+            // Fixed 50/200/350 cm samples would trace outside a smaller, correctly scaled road.
+            for (const double XFraction : { 0.125, 0.5, 0.875 })
+            {
+                for (const double YFraction : { 0.125, 0.5, 0.875 })
+                {
+                    const double X = Footprint.X * XFraction;
+                    const double Y = Footprint.Y * YFraction;
+                    const FVector SampleWorld = Actor->GetActorTransform().TransformPosition(
+                        FVector(X - Footprint.X * 0.5, Y - Footprint.Y * 0.5, 0.0));
+                    FHitResult Hit;
+                    World->LineTraceSingleByChannel(Hit, FVector(SampleWorld.X, SampleWorld.Y, ExpectedSurfaceZ + 100.0),
+                        FVector(SampleWorld.X, SampleWorld.Y, Actor->GetActorLocation().Z - 100.0), ECC_Visibility, SupportQuery);
+                    TestTrue(FString::Printf(TEXT("%s authored collision at %.2f,%.2f supports tile: hit=%s Z=%.6f expected=%s Z=%.6f"),
+                        *Names[Index], X, Y, *GetNameSafe(Hit.GetActor()), Hit.ImpactPoint.Z, *Actor->GetName(), ExpectedSurfaceZ),
+                        Hit.GetActor() == Actor && FMath::IsNearlyEqual(Hit.ImpactPoint.Z, ExpectedSurfaceZ, 0.05));
+                }
+            }
+            // A compact non-service facility fits fully on the authored tile. A fixed 6x3 m
+            // food truck would test neighboring roads and mixed terrain instead of this PDA.
+            FFFZSFacilitySpec UpperSpec;
+            UpperSpec.FacilityDefinitionId = TEXT("Lighting_GroundSurfaceSupportProbe");
+            UpperSpec.DisplayName = FText::FromString(TEXT("Ground surface support probe"));
+            UpperSpec.Category = EFFZSFacilityCategory::Lighting;
+            UpperSpec.FootprintSizeCells = FIntPoint(FMath::Max(1, Footprint.X / 2), FMath::Max(1, Footprint.Y / 2));
+            UpperSpec.ClearanceCells = 0;
+            UpperSpec.PlacementObstacleHeightCm = 100.0f;
+            UpperSpec.QueueRules.MaxWaitingAgents = 0;
+            UpperSpec.QueueRules.ServiceCapacity = 0;
+            TestTrue(Names[Index] + TEXT(" upper-facility probe is valid on bare terrain"), System->ValidatePlacement(
+                InstallAt(UpperSpec, Origin + FIntPoint(0, Footprint.Y + 100))).bIsValid);
+            const FIntPoint UpperOrigin = Origin + FIntPoint(
+                (Footprint.X - UpperSpec.FootprintSizeCells.X) / 2, (Footprint.Y - UpperSpec.FootprintSizeCells.Y) / 2);
+            const FFFZSPlacementValidation Facility = System->ValidatePlacement(InstallAt(UpperSpec, UpperOrigin));
+            TestEqual(Names[Index] + TEXT(" upper-facility acceptance follows its category"),
+                Facility.bIsValid, Category == EFFZSFacilityCategory::Tile);
+            if (Category == EFFZSFacilityCategory::Tile)
+            {
+                TestTrue(Names[Index] + TEXT(" supports the upper foundation at its authored surface height"),
+                    FMath::IsNearlyEqual(Facility.PlacementTransform.GetLocation().Z, ExpectedSurfaceZ, 0.05));
+            }
+            else
+            {
+                TestTrue(Names[Index] + TEXT(" disallowed upper placement fails because its footprint is occupied"),
+                    Facility.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+            }
         }
     }
     return true;

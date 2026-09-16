@@ -736,9 +736,9 @@ void AFFZSFacilityActor::RefreshPlayerCollision()
     VisualMesh->SetCollisionObjectType(FFZSCollision::FacilityPlayerObjectChannel);
     VisualMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
     VisualMesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Block);
-    // Roads are shallow walkable support. Other facility roofs stay invisible to ground traces.
+    // Roads and tiles are walkable support. Other facility roofs stay invisible to ground traces.
     VisualMesh->SetCollisionResponseToChannel(ECC_Visibility,
-        FacilitySpec.Category == EFFZSFacilityCategory::Road ? ECR_Block : ECR_Ignore);
+        FacilitySpec.IsGroundSurface() ? ECR_Block : ECR_Ignore);
 
     const bool bShouldEnable = bPlayerCollisionEnabled && FacilityInstanceId.IsValid()
         && FacilityState != EFFZSFacilityState::Removed && !IsActorBeingDestroyed()
@@ -775,7 +775,7 @@ void AFFZSFacilityActor::SetNavigationObstacleEnabled(const bool bEnabled)
         Extent.Y > UE_KINDA_SMALL_NUMBER && Extent.Z > UE_KINDA_SMALL_NUMBER;
     const bool bShouldEnable = bEnabled && FacilityInstanceId.IsValid() &&
         FacilityState != EFFZSFacilityState::Removed && bHasValidFootprint &&
-        FacilitySpec.Category != EFFZSFacilityCategory::Road;
+        !FacilitySpec.IsGroundSurface();
     if (NavigationObstacleBounds->CanEverAffectNavigation() != bShouldEnable)
     {
         NavigationObstacleBounds->SetCanEverAffectNavigation(bShouldEnable);

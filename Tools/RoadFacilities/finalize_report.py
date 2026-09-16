@@ -69,11 +69,11 @@ UV0는 공유 색상 팔레트이므로 의도적으로 중첩한다. UV1은 삼
 
 ## 게임 연결
 
-시설 메뉴의 **길** 카테고리에6종이 표시되며 설치 비용은각100Gold다. 정의는 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_*`에 있다.
+시설 메뉴의 **길**과 **타일** 카테고리에 각각6종이 표시된다. 정의는 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_*`와 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_*`에 있다. 설치 비용은 각각 `Cost.Road.Surface.*`와 `Cost.Tile.Surface.*` 행의 현재 작성값을 사용한다.
 
-각 정의의 **Spec → Placement → 길 위 시설 설치 허용**(`bAllowFacilityPlacementOnTop`)을 켜면 위에 일반 시설·여유공간·대기열을 배치할 수 있다.6종 기본값은켜짐이다. 끄면 해당 길이 시설 배치를 막는다. 설정은 설치 당시 Spec에 복사되어 저장·불러오기로 유지되며 PDA 편집은 이후 설치분에 적용된다.
+**Road는 일반 시설·여유공간·대기열을 차단하고 Tile은 상부 배치를 지원한다.** 이전 `bAllowFacilityPlacementOnTop` 필드는 저장 호환용이며 현재 배치 정책은 카테고리로 결정한다.
 
-시설 바닥은 노면8cm에 맞춰진다. 길끼리 또는 일반 시설끼리의 중복은 허용하지 않는다. 기존 시설 밑으로 새 길을 밀어 넣는 배치는 막고, 길을 먼저 설치한다. 시설이 올라간 길의 이동·철거는 위 시설을 먼저 옮긴 후 가능하다. NPC는 길을 서비스 목적지나 회피 벽으로 취급하지 않으며 노면 높이를 따른다.
+시설 바닥은 Tile PDA에 작성된 윗면 높이에 맞춰진다. Road/Tile끼리 또는 일반 시설끼리의 중복은 허용하지 않는다. 기존 시설 밑으로 새 바닥을 밀어 넣는 배치는 막고, Tile을 먼저 설치한다. 시설이 올라간 Tile의 이동·철거는 위 시설을 먼저 옮긴 후 가능하다. NPC는 두 바닥을 서비스 목적지나 회피 벽으로 취급하지 않으며 표면 높이를 따른다.
 
 ## 실제 검사 결과
 
@@ -93,7 +93,7 @@ UV0는 공유 색상 팔레트이므로 의도적으로 중첩한다. UV1은 삼
 
 시각 재현은 주요 디자인 특징 기준이다. 모래의 미세 굴곡·발자국, 목재 결, 연석 분할은 단순화했고 콘크리트 배수구는 원본보다 밝다.8cm 두께와 안 보이는 밑면은 보행과 연속 배치를 고려해 추정했다. 여러 닫힌 부품 사이의 구조적 맞물림은 허용하며, 검사 코드는 부품 내부의 교차와 중복면을 검사하고 접합부는 렌더로 별도 검수했다.
 
-실제 6종 길의 단순 UCX 충돌면은 자동화에서 총 54개 지점의 액터와 8cm 높이를 확인했다. `FacilityOnRoads.png`는 실제 시설 메시를 수동으로 배치한 시각 예시이며, 명령을 통한 설치·차단 여부는 자동화 검사로 확인했다.
+실제 Road/Tile의 단순 UCX 충돌면과 작성된 표면 높이는 표면 자동화 테스트로 확인한다. `FacilityOnTiles.png`는 Tile 정의와 실제 시설 메시를 수동으로 배치한 시각 예시이며, 명령을 통한 설치·차단 여부의 증거는 자동화 보고서를 따른다.
 
 상세 수치와 근거는 `validation_report.json`, `qa/unreal`, `UE_IMPORT_GUIDE.md`를 참고한다.
 '''

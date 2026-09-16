@@ -9,11 +9,13 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/FF_BuildCatalogModel.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/Spacer.h"
 #include "Components/VerticalBox.h"
@@ -21,6 +23,9 @@
 #include "Components/WidgetSwitcher.h"
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
+#include "Engine/World.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/UI/FF_BuildFacilityCard.h"
 #include "Building/UI/FF_BuildMinorSection.h"
@@ -56,6 +61,7 @@ namespace
 		EFFZSFacilityCategory::PhotoSpot,
 		EFFZSFacilityCategory::Lighting,
 		EFFZSFacilityCategory::Road,
+		EFFZSFacilityCategory::Tile,
 	};
 
 	// 아래 색상은 WBP가 없을 때 만들어지는 Slate 폴백 전용이다. 디자이너 경로의 색은 UPROPERTY를 따른다.
@@ -167,6 +173,7 @@ UFF_BuildCatalogScreen::UFF_BuildCatalogScreen()
 
 void UFF_BuildCatalogScreen::SetCatalogEntries(const TArray<FFF_BuildCatalogEntry>& InEntries)
 {
+	BindRequiredFacilities();
 	// 데이터 공급자가 NativeConstruct보다 먼저 호출되는 경우에도 이미 BindWidget 계약이 성립했다면
 	// 먼저 이벤트와 초기 UI를 연결한다. InitializeDesignerBindings는 멱등이라 중복 호출해도 안전하다.
 	if (!bDesignerBindingsInitialized && HasUsableDesignerBindings())
@@ -175,9 +182,97 @@ void UFF_BuildCatalogScreen::SetCatalogEntries(const TArray<FFF_BuildCatalogEntr
 	}
 	// 호출자 배열의 수명과 분리된 스냅샷을 보관한 뒤 전체 동적 UI를 재생성한다.
 	CatalogEntries = InEntries;
-	SelectFirstPopulatedCategory();
+	FFBuildCatalogModel::ApplyRequiredFacilities(CatalogEntries, RequiredSnapshot);
+	if (!bHasInitializedCategory && !CatalogEntries.IsEmpty())
+	{
+		SelectFirstPopulatedCategory();
+		bHasInitializedCategory = true;
+	}
+	if (bSelectInitialSynergyCategory && !CatalogEntries.IsEmpty())
+	{
+		if (const FFF_BuildCatalogEntry* Related = CatalogEntries.FindByPredicate([this](const FFF_BuildCatalogEntry& Entry)
+			{ return SynergyFacilityIds.Contains(Entry.FacilityDefinitionId); }))
+		{
+			SelectedCategory = Related->Category;
+		}
+		bSelectInitialSynergyCategory = false;
+	}
 	RefreshCategoryButtons();
 	RefreshContent();
+}
+
+TOptional<EFFZSFacilityCategory> UFF_BuildCatalogScreen::GetSelectedCategory() const
+{
+	return bHasInitializedCategory ? TOptional<EFFZSFacilityCategory>(SelectedCategory) : TOptional<EFFZSFacilityCategory>();
+}
+
+void UFF_BuildCatalogScreen::RestoreSelectedCategory(const EFFZSFacilityCategory Category)
+{
+	SelectedCategory = Category;
+	bHasInitializedCategory = true;
+	RefreshCategoryButtons();
+	RefreshContent();
+}
+
+bool UFF_BuildCatalogScreen::FocusFacility(const FName FacilityDefinitionId)
+{
+	const FFF_BuildCatalogEntry* Entry = FacilityDefinitionId.IsNone() ? nullptr :
+		CatalogEntries.FindByPredicate([FacilityDefinitionId](const FFF_BuildCatalogEntry& Candidate)
+		{
+			return Candidate.FacilityDefinitionId == FacilityDefinitionId;
+		});
+	if (!Entry) return false;
+
+	SelectedTopTab = ETopTab::Build;
+	SelectedCategory = Entry->Category;
+	bHasInitializedCategory = true;
+	bSelectInitialSynergyCategory = false;
+	RefreshTabStyles();
+	RefreshCategoryButtons();
+	RefreshContent();
+
+	if (bUsingDesignerWidgetTree)
+	{
+		for (const TWeakObjectPtr<UFF_BuildFacilityCard>& WeakCard : FacilityCards)
+		{
+			UFF_BuildFacilityCard* Card = WeakCard.Get();
+			if (!Card || Card->GetFacilityDefinitionId() != FacilityDefinitionId) continue;
+			// Walk the authored container so moving it inside another layout wrapper is safe.
+			for (UWidget* Parent = BOX_MinorSections; Parent; Parent = Parent->GetParent())
+			{
+				if (UScrollBox* Scroll = Cast<UScrollBox>(Parent))
+				{
+					Scroll->ScrollWidgetIntoView(Card, false, EDescendantScrollDestination::IntoView, 8.0f);
+					break;
+				}
+			}
+			Card->SetFocus();
+			break;
+		}
+	}
+	else if (const TWeakPtr<SButton>* Found = NativeFacilityButtons.Find(FacilityDefinitionId))
+	{
+		if (const TSharedPtr<SButton> Button = Found->Pin())
+		{
+			if (NativeCatalogScroll)
+				NativeCatalogScroll->ScrollDescendantIntoView(Button, false, EDescendantScrollDestination::IntoView, 8.0f);
+			if (FSlateApplication::IsInitialized())
+				FSlateApplication::Get().SetKeyboardFocus(Button, EFocusCause::SetDirectly);
+		}
+	}
+	return true;
+}
+
+void UFF_BuildCatalogScreen::SetSynergyContext(const TArray<FName>& FacilityIds,
+	const FText& SourceName, const bool bSelectInitialRelatedCategory)
+{
+	SynergyFacilityIds.Reset();
+	for (const FName FacilityId : FacilityIds) SynergyFacilityIds.Add(FacilityId);
+	SynergySourceName = SourceName;
+	bSelectInitialSynergyCategory = bSelectInitialRelatedCategory && !FacilityIds.IsEmpty();
+	RefreshCategoryButtons();
+	RefreshContent();
+	ApplyStatusText();
 }
 
 void UFF_BuildCatalogScreen::RefreshLoadedThumbnails()
@@ -507,7 +602,7 @@ TSharedRef<SWidget> UFF_BuildCatalogScreen::RebuildWidget()
 			.FillHeight(1.0f)
 			.Padding(0.0f, 14.0f)
 			[
-				SNew(SScrollBox)
+				SAssignNew(NativeCatalogScroll, SScrollBox)
 				+ SScrollBox::Slot()
 				[
 					SAssignNew(ContentBox, SVerticalBox)
@@ -535,6 +630,7 @@ void UFF_BuildCatalogScreen::NativeConstruct()
 	// PIE/런타임의 일반 생성 경로. Initialized와 호출 순서가 달라도 멱등 가드가 중복 바인딩을 막는다.
 	InitializeDesignerBindings();
 	BindGoldReadModel();
+	BindRequiredFacilities();
 }
 
 void UFF_BuildCatalogScreen::NativeOnInitialized()
@@ -595,6 +691,7 @@ void UFF_BuildCatalogScreen::InitializeDesignerBindings()
 void UFF_BuildCatalogScreen::NativeDestruct()
 {
 	UnbindGoldReadModel();
+	UnbindRequiredFacilities();
 
 	// UMG 동적 멀티캐스트 델리게이트는 UObject 수명과 별도로 연결을 보유하므로 명시적으로 제거한다.
 	// 화면이 다시 Construct될 때 이전 연결이 남아 클릭 한 번에 핸들러가 여러 번 실행되는 것도 방지한다.
@@ -625,8 +722,80 @@ void UFF_BuildCatalogScreen::ReleaseSlateResources(const bool bReleaseChildren)
 	CategoryBox.Reset();
 	InitialFocusButton.Reset();
 	ContentBox.Reset();
+	NativeCatalogScroll.Reset();
+	NativeFacilityButtons.Reset();
 	StatusTextBlock.Reset();
 	GoldTextBlock.Reset();
+	NativeRequiredTexts.Reset();
+	NativeCategoryTexts.Reset();
+}
+
+void UFF_BuildCatalogScreen::BindRequiredFacilities()
+{
+	UFF_RequiredFacilitiesSubsystem* Current = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	if (RequiredFacilities == Current) return;
+	UnbindRequiredFacilities();
+	RequiredFacilities = Current;
+	if (RequiredFacilities)
+	{
+		RequiredFacilities->OnRequiredFacilitiesChanged.AddUniqueDynamic(this, &ThisClass::HandleRequiredFacilitiesChanged);
+		HandleRequiredFacilitiesChanged();
+	}
+}
+
+void UFF_BuildCatalogScreen::UnbindRequiredFacilities()
+{
+	if (RequiredFacilities)
+		RequiredFacilities->OnRequiredFacilitiesChanged.RemoveDynamic(this, &ThisClass::HandleRequiredFacilitiesChanged);
+	RequiredFacilities = nullptr;
+	RequiredSnapshot = FFF_RequiredFacilitiesStatus();
+}
+
+void UFF_BuildCatalogScreen::HandleRequiredFacilitiesChanged()
+{
+	if (!RequiredFacilities) return;
+	// One authority snapshot per notification, never a world query from each card.
+	RequiredSnapshot = RequiredFacilities->GetRequiredFacilitiesStatus();
+	FFBuildCatalogModel::ApplyRequiredFacilities(CatalogEntries, RequiredSnapshot);
+	RefreshRequiredCardPresentation();
+}
+
+FText UFF_BuildCatalogScreen::MakeRequiredFacilityText(const FFF_BuildCatalogEntry& Entry)
+{
+	if (!Entry.bRequiredForSetup) return FText::GetEmpty();
+	if (Entry.RequiredMinimumCount <= 0) return LOCTEXT("RequiredSetupInvalid", "필수 · 설정 확인");
+	return FText::Format(Entry.bRequiredSetupSatisfied
+		? LOCTEXT("RequiredSetupSatisfied", "필수 · 설치 완료 {0}/{1}")
+		: LOCTEXT("RequiredSetupMissing", "필수 · 설치 {0}/{1}"),
+		FText::AsNumber(Entry.RequiredInstalledCount), FText::AsNumber(Entry.RequiredMinimumCount));
+}
+
+void UFF_BuildCatalogScreen::RefreshRequiredCardPresentation()
+{
+	TMap<FName, const FFF_BuildCatalogEntry*> EntriesById;
+	for (const FFF_BuildCatalogEntry& Entry : CatalogEntries) EntriesById.Add(Entry.FacilityDefinitionId, &Entry);
+	for (const TWeakObjectPtr<UFF_BuildFacilityCard>& Card : FacilityCards)
+	{
+		if (!Card.IsValid()) continue;
+		const FFF_BuildCatalogEntry* const* Found = EntriesById.Find(Card->GetFacilityDefinitionId());
+		if (!Found) continue;
+		const FFF_BuildCatalogEntry& Entry = **Found;
+		Card->SetRequiredFacilityStatus(Entry.bRequiredForSetup, Entry.bRequiredSetupSatisfied,
+			Entry.RequiredInstalledCount, Entry.RequiredMinimumCount);
+	}
+	for (const auto& Pair : NativeRequiredTexts)
+	{
+		const FFF_BuildCatalogEntry* const* Found = EntriesById.Find(Pair.Key);
+		if (!Found || !Pair.Value.IsValid()) continue;
+		Pair.Value->SetText(MakeRequiredFacilityText(**Found));
+		Pair.Value->SetVisibility((*Found)->bRequiredForSetup ? EVisibility::Visible : EVisibility::Collapsed);
+	}
+	// Update the existing labels; no card or category widget is recreated by a count change.
+	for (const auto& Pair : CategoryByButton)
+		if (Pair.Key) Pair.Key->SetButtonLabel(GetCategoryLabel(Pair.Value));
+	for (const auto& Pair : NativeCategoryTexts)
+		if (Pair.Value.IsValid()) Pair.Value->SetText(GetCategoryLabel(Pair.Key));
 }
 
 FReply UFF_BuildCatalogScreen::NativeOnPreviewKeyDown(
@@ -708,6 +877,7 @@ void UFF_BuildCatalogScreen::ClearDynamicUMGBindings()
 
 void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 {
+	NativeCategoryTexts.Reset();
 	// 운영 경로: WBP의 HorizontalBox를 데이터로 다시 채운다.
 	if (bUsingDesignerWidgetTree && BOX_CategoryButtons)
 	{
@@ -750,11 +920,12 @@ void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 			}
 
 			// 선택 가능 CommonButton으로 구성하고, 자동 선택 이벤트는 발생시키지 않은 채 현재 상태만 투영한다.
-			Button->SetButtonLabel(GetCategoryDisplayName(Category));
+			Button->SetButtonLabel(GetCategoryLabel(Category));
 			ApplyButtonIconBrush(Button, MakeAtlasIconBrush(GetCategoryAtlasIndex(Category)));
-			if (Category == EFFZSFacilityCategory::Lighting || Category == EFFZSFacilityCategory::Road)
+			if (Category == EFFZSFacilityCategory::Lighting || Category == EFFZSFacilityCategory::Road ||
+				Category == EFFZSFacilityCategory::Tile)
 			{
-				// The existing ten-cell atlas has no lighting or road glyph. Keep the readable label
+				// The existing ten-cell atlas has no lighting, road, or tile glyph. Keep the readable label
 				// and its layout instead of displaying the template's empty white image.
 				if (UImage* Icon = Cast<UImage>(Button->GetWidgetFromName(TEXT("Image_Icon"))))
 				{
@@ -794,6 +965,7 @@ void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 	// Slate는 각 OnClicked 델리게이트에 Category 값을 직접 바인딩하므로 별도 역매핑이 필요 없다.
 	for (const EFFZSFacilityCategory Category : AllCategories)
 	{
+		TSharedPtr<STextBlock> CategoryLabel;
 		CategoryBox->AddSlot()
 		.AutoWidth()
 		.Padding(0.0f, 0.0f, 8.0f, 0.0f)
@@ -806,15 +978,18 @@ void UFF_BuildCatalogScreen::RefreshCategoryButtons()
 					this, &UFF_BuildCatalogScreen::GetCategoryColor, Category)))
 			.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleCategoryClicked, Category)
 			[
-				SNew(STextBlock).Text(GetCategoryDisplayName(Category))
+				SAssignNew(CategoryLabel, STextBlock).Text(GetCategoryLabel(Category))
 			]
 		];
+		NativeCategoryTexts.Add(Category, CategoryLabel);
 		++DisplayedCategoryCount;
 	}
 }
 
 void UFF_BuildCatalogScreen::RefreshContent()
 {
+	NativeRequiredTexts.Reset();
+	NativeFacilityButtons.Reset();
 	// 운영 경로: WBP의 Build 컨테이너를 선택 분류의 소분류 섹션/카드 계층으로 다시 채운다.
 	if (bUsingDesignerWidgetTree && BOX_MinorSections && SWITCHER_Content)
 	{
@@ -893,6 +1068,9 @@ void UFF_BuildCatalogScreen::RefreshContent()
 					continue;
 				}
 				Card->Configure(*Entry);
+				Card->SetRequiredFacilityStatus(Entry->bRequiredForSetup, Entry->bRequiredSetupSatisfied,
+					Entry->RequiredInstalledCount, Entry->RequiredMinimumCount);
+				Card->SetSynergyHighlighted(SynergyFacilityIds.Contains(Entry->FacilityDefinitionId));
 				MakeButtonSurfaceTransparent(Card, TEXT("Card_Surface"));
 				// 공통 버튼 클릭을 화면의 시설 선택 델리게이트로 변환하기 위해 카드 자신을 인수로 받는다.
 				Card->OnFFButtonClicked.AddUniqueDynamic(this, &ThisClass::HandleFacilityCardPressed);
@@ -971,6 +1149,8 @@ void UFF_BuildCatalogScreen::RefreshContent()
 		TSharedRef<SWrapBox> Cards = SNew(SWrapBox).UseAllottedSize(true);
 		for (const FFF_BuildCatalogEntry* Entry : MatchingEntries)
 		{
+			TSharedPtr<STextBlock> RequiredText;
+			TSharedPtr<SButton> FacilityButton;
 			Cards->AddSlot()
 			.Padding(FMargin(0.0f, 0.0f, 10.0f, 10.0f))
 			[
@@ -978,7 +1158,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 				.WidthOverride(210.0f)
 				.MinDesiredHeight(96.0f)
 				[
-					SNew(SButton)
+					SAssignNew(FacilityButton, SButton)
 					.ContentPadding(FMargin(14.0f, 12.0f))
 					.ButtonColorAndOpacity(FLinearColor::Transparent)
 					.ToolTipText(UFF_BuildFacilityCard::MakeFacilityCostToolTip(*Entry))
@@ -986,6 +1166,23 @@ void UFF_BuildCatalogScreen::RefreshContent()
 					.OnClicked_UObject(this, &UFF_BuildCatalogScreen::HandleFacilityClicked, Entry->FacilityDefinitionId)
 					[
 						SNew(SVerticalBox)
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SAssignNew(RequiredText, STextBlock)
+							.Text(MakeRequiredFacilityText(*Entry))
+							.Visibility(Entry->bRequiredForSetup ? EVisibility::Visible : EVisibility::Collapsed)
+							.AutoWrapText(true)
+						]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("SynergyCardBadge", "조합 시설"))
+							.ColorAndOpacity(NativeSelectedColor)
+							.Visibility(SynergyFacilityIds.Contains(Entry->FacilityDefinitionId)
+								? EVisibility::Visible : EVisibility::Collapsed)
+						]
 						+ SVerticalBox::Slot()
 						.AutoHeight()
 						[
@@ -1000,7 +1197,7 @@ void UFF_BuildCatalogScreen::RefreshContent()
 						.Padding(0.0f, 8.0f, 0.0f, 0.0f)
 						[
 							SNew(STextBlock)
-							.Text(FText::FromName(Entry->FacilityDefinitionId))
+							.Text(GetCategoryDisplayName(Entry->Category))
 							.ColorAndOpacity(NativeIdleColor)
 							.AutoWrapText(true)
 						]
@@ -1018,6 +1215,8 @@ void UFF_BuildCatalogScreen::RefreshContent()
 					]
 				]
 			];
+			NativeRequiredTexts.Add(Entry->FacilityDefinitionId, RequiredText);
+			NativeFacilityButtons.Add(Entry->FacilityDefinitionId, FacilityButton);
 			++DisplayedFacilityCardCount;
 		}
 
@@ -1099,20 +1298,43 @@ int32 UFF_BuildCatalogScreen::GetCategoryAtlasIndex(const EFFZSFacilityCategory 
 
 void UFF_BuildCatalogScreen::ApplyStatusText()
 {
+	FText DisplayStatus = CurrentStatusText;
+	if (!bCurrentStatusIsError && !SynergySourceName.IsEmpty())
+	{
+		DisplayStatus = SynergyFacilityIds.IsEmpty()
+			? FText::Format(LOCTEXT("SynergyNoPartners", "{0} · 목록에 조합 시설이 없습니다"), SynergySourceName)
+			: FText::Format(LOCTEXT("SynergyCatalogGuide", "{0} 조합 시설 강조 · 거리 조건은 배치 중 확인"), SynergySourceName);
+	}
 	// 초기화 시점에 따라 UMG와 Slate 포인터 중 하나 또는 둘 다 없을 수 있다.
 	// 저장된 단일 상태를 존재하는 출력 경로 각각에 적용해 경로별 동작 차이를 없앤다.
 	if (TXT_Status)
 	{
-		TXT_Status->SetText(CurrentStatusText);
+		TXT_Status->SetText(DisplayStatus);
 		TXT_Status->SetColorAndOpacity(FSlateColor(
 			bCurrentStatusIsError ? ErrorStatusColor : NormalStatusColor));
 	}
 	if (StatusTextBlock.IsValid())
 	{
-		StatusTextBlock->SetText(CurrentStatusText);
+		StatusTextBlock->SetText(DisplayStatus);
 		StatusTextBlock->SetColorAndOpacity(FSlateColor(
 			bCurrentStatusIsError ? ErrorStatusColor : NormalStatusColor));
 	}
+}
+
+FText UFF_BuildCatalogScreen::GetCategoryLabel(const EFFZSFacilityCategory Category) const
+{
+	int32 RelatedCount = 0;
+	bool bHasRequired = false;
+	for (const FFF_BuildCatalogEntry& Entry : CatalogEntries)
+	{
+		if (Entry.Category == Category && SynergyFacilityIds.Contains(Entry.FacilityDefinitionId)) ++RelatedCount;
+		bHasRequired |= Entry.Category == Category && Entry.bRequiredForSetup;
+	}
+	const FText Label = RelatedCount > 0
+		? FText::Format(LOCTEXT("SynergyCategoryCount", "{0} · 조합 {1}"),
+			GetCategoryDisplayName(Category), FText::AsNumber(RelatedCount))
+		: GetCategoryDisplayName(Category);
+	return bHasRequired ? FText::Format(LOCTEXT("RequiredCategory", "{0} · 필수"), Label) : Label;
 }
 
 void UFF_BuildCatalogScreen::SelectFirstPopulatedCategory()
@@ -1163,6 +1385,7 @@ void UFF_BuildCatalogScreen::HandleCategoryPressed(UFF_CommonButtonBase* Button)
 	if (const EFFZSFacilityCategory* Category = CategoryByButton.Find(Button))
 	{
 		SelectedCategory = *Category;
+		bHasInitializedCategory = true;
 		RefreshCategoryButtons();
 		RefreshContent();
 	}
@@ -1213,6 +1436,7 @@ FReply UFF_BuildCatalogScreen::HandleCategoryClicked(const EFFZSFacilityCategory
 {
 	// 분류 값은 Slate 델리게이트에 값으로 바인딩되어 별도 버튼-분류 맵 없이 직접 상태를 갱신한다.
 	SelectedCategory = Category;
+	bHasInitializedCategory = true;
 	RefreshCategoryButtons();
 	RefreshContent();
 	return FReply::Handled();
@@ -1266,6 +1490,7 @@ FText UFF_BuildCatalogScreen::GetCategoryDisplayName(const EFFZSFacilityCategory
 	case EFFZSFacilityCategory::PhotoSpot: return LOCTEXT("CategoryPhotoSpot", "포토스팟");
 	case EFFZSFacilityCategory::Lighting: return LOCTEXT("CategoryLighting", "조명");
 	case EFFZSFacilityCategory::Road: return LOCTEXT("CategoryRoad", "길");
+	case EFFZSFacilityCategory::Tile: return LOCTEXT("CategoryTile", "타일");
 	default: return LOCTEXT("CategoryUnknown", "기타");
 	}
 }
@@ -1275,7 +1500,7 @@ FText UFF_BuildCatalogScreen::GetMinorDisplayName(const FName MinorToken)
 	// 시설 이름 파싱에서 사용하는 안정적인 토큰을 현지화 가능한 표시 텍스트로 매핑한다.
 	// 새 토큰이 NamingLibrary에 먼저 추가되더라도 원본 이름을 대체 표시해 UI가 공백이 되지 않게 한다.
 	static const TMap<FName, FText> Labels = {
-		{ TEXT("Surface"), LOCTEXT("MinorSurface", "길 바닥") },
+		{ TEXT("Surface"), LOCTEXT("MinorSurface", "바닥") },
 		{ TEXT("FoodStall"), LOCTEXT("MinorFoodStall", "먹거리·음료") },
 		{ TEXT("MarketGoods"), LOCTEXT("MinorMarketGoods", "상품 판매") },
 		{ TEXT("CraftExperience"), LOCTEXT("MinorCraftExperience", "공예·제작 체험") },

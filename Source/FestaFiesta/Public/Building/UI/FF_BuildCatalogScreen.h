@@ -9,17 +9,20 @@
 
 #include "CoreMinimal.h"
 #include "Building/FF_BuildCatalogTypes.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "UI/FF_ActivatableScreenBase.h"
 #include "FF_BuildCatalogScreen.generated.h"
 
 class SHorizontalBox;
 class SButton;
+class SScrollBox;
 class STextBlock;
 class SVerticalBox;
 class UCommonTextBlock;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildFacilityCard;
 class UFF_BuildMinorSection;
+class UFF_RequiredFacilitiesSubsystem;
 class UFF_CommonButtonBase;
 class UHorizontalBox;
 class UTexture2D;
@@ -63,10 +66,21 @@ public:
 	FOnBuildModeKeyRequested OnBuildModeKeyRequested;
 	FOnPauseMenuKeyRequested OnPauseMenuKeyRequested;
 
-	// 화면에 표시할 스냅샷을 교체하고, 최초로 항목이 존재하는 대분류를 선택한 뒤 UI를 재구성한다.
+	// 화면에 표시할 스냅샷을 교체하고, 선택 이력이 없을 때만 첫 항목 보유 대분류를 선택한다.
 	// 호출 시점이 NativeConstruct보다 빠른 경우도 허용하므로 사용 가능한 BindWidget이 있으면 먼저 초기화한다.
 	 
 	void SetCatalogEntries(const TArray<FFF_BuildCatalogEntry>& InEntries);
+
+	/** 화면 재생성 전후에 선택 이력을 전달한다. 첫 데이터 로드 전 기본값은 저장하지 않는다. */
+	TOptional<EFFZSFacilityCategory> GetSelectedCategory() const;
+	void RestoreSelectedCategory(EFFZSFacilityCategory Category);
+
+	/** Reveal an existing facility once without selecting it for placement. False means the catalog has no matching entry. */
+	bool FocusFacility(FName FacilityDefinitionId);
+
+	/** Highlight authored partners without treating them as guaranteed active bonuses. */
+	void SetSynergyContext(const TArray<FName>& FacilityIds, const FText& SourceName,
+		bool bSelectInitialRelatedCategory = false);
 
 	// 선택 탭·대분류와 카드 객체를 유지한 채, 현재 보이는 카드들의 이미지만 다시 적용합니다.
 	void RefreshLoadedThumbnails();
@@ -109,6 +123,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildCatalogWidgetBlueprintContractTest;
 	friend class FFF_BuildCatalogCurrentGoldTest;
+	friend class FFF_BuildSynergyCatalogContextTest;
 #endif
 	// 상단 탭 상태. Skin은 현재 안내 패널을 표시하고 Build만 카탈로그를 채운다. 
 	enum class ETopTab : uint8
@@ -119,6 +134,10 @@ private:
 
 	// 외부에서 받은 표시 데이터의 화면 소유 복사본. 동적 카드가 이 배열의 항목을 복사해 사용한다. 
 	TArray<FFF_BuildCatalogEntry> CatalogEntries;
+	TSet<FName> SynergyFacilityIds;
+	FText SynergySourceName;
+	bool bSelectInitialSynergyCategory = false;
+	bool bHasInitializedCategory = false;
 	EFFZSFacilityCategory SelectedCategory = EFFZSFacilityCategory::Booth;
 	ETopTab SelectedTopTab = ETopTab::Build;
 	FText CurrentStatusText;
@@ -138,8 +157,15 @@ private:
 	TSharedPtr<SHorizontalBox> CategoryBox;
 	TSharedPtr<SButton> InitialFocusButton;
 	TSharedPtr<SVerticalBox> ContentBox;
+	TSharedPtr<SScrollBox> NativeCatalogScroll;
+	TMap<FName, TWeakPtr<SButton>> NativeFacilityButtons;
 	TSharedPtr<STextBlock> StatusTextBlock;
 	TSharedPtr<STextBlock> GoldTextBlock;
+	TMap<FName, TSharedPtr<STextBlock>> NativeRequiredTexts;
+	TMap<EFFZSFacilityCategory, TSharedPtr<STextBlock>> NativeCategoryTexts;
+	FFF_RequiredFacilitiesStatus RequiredSnapshot;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_RequiredFacilitiesSubsystem> RequiredFacilities;
 
 	// WBP_FF_BuildCatalogScreen과의 이름 기반 계약이다. 이름/타입 변경 시 BindWidget 연결과 자동화 테스트가 실패한다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
@@ -218,8 +244,15 @@ private:
 	void BindGoldReadModel();
 	void UnbindGoldReadModel();
 	void ApplyGoldText();
+	void BindRequiredFacilities();
+	void UnbindRequiredFacilities();
+	void RefreshRequiredCardPresentation();
+	static FText MakeRequiredFacilityText(const FFF_BuildCatalogEntry& Entry);
+	UFUNCTION()
+	void HandleRequiredFacilitiesChanged();
 	// 빈 기본 분류 대신 실제 데이터가 존재하는 첫 분류가 처음 보이도록 선택한다. 
 	void SelectFirstPopulatedCategory();
+	FText GetCategoryLabel(EFFZSFacilityCategory Category) const;
 	// 필수 BindWidget과 Switcher의 두 페이지 계약이 모두 유효한지 검사한다. 
 	bool HasUsableDesignerBindings() const;
 	// 멱등적으로 정적 버튼 이벤트를 연결하고 초기 데이터를 디자이너 트리에 투영한다. 

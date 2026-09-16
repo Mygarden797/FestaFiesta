@@ -4,6 +4,7 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
@@ -50,16 +51,17 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 		EFFZSFacilityCategory::Safety,
 		EFFZSFacilityCategory::PhotoSpot,
 		EFFZSFacilityCategory::Lighting,
-		EFFZSFacilityCategory::Road
+		EFFZSFacilityCategory::Road,
+		EFFZSFacilityCategory::Tile
 	};
 	const TCHAR* ExpectedLabels[] = {
 		TEXT("부스"), TEXT("화장실"), TEXT("안내"), TEXT("휴게"),
-		TEXT("공연"), TEXT("안전"), TEXT("포토스팟"), TEXT("조명"), TEXT("길")
+		TEXT("공연"), TEXT("안전"), TEXT("포토스팟"), TEXT("조명"), TEXT("길"), TEXT("타일")
 	};
 
 	const TConstArrayView<EFFZSFacilityCategory> Categories =
 		FFF_PrepBuildPresentationRules::GetCategoryOrder();
-	TestEqual(TEXT("시설 대분류 칩은 길을 포함한 아홉 종류다"), Categories.Num(), 9);
+	TestEqual(TEXT("시설 대분류 칩은 길과 타일을 포함한 열 종류다"), Categories.Num(), 10);
 
 	TArray<FFF_BuildCatalogEntry> Entries;
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(ExpectedCategories); ++Index)
@@ -86,7 +88,7 @@ bool FFF_PrepBuildPresentation_CategoryContractTest::RunTest(const FString& Para
 	{
 		VisibleCount += FFF_PrepBuildPresentationRules::IsEntryVisible(Entry, Filter) ? 1 : 0;
 	}
-	TestEqual(TEXT("전체 칩은 아홉 카테고리를 모두 통과시킨다"), VisibleCount, 9);
+	TestEqual(TEXT("전체 칩은 열 카테고리를 모두 통과시킨다"), VisibleCount, 10);
 
 	Filter.bFilterByCategory = true;
 	for (const EFFZSFacilityCategory Category : Categories)
@@ -372,6 +374,29 @@ bool FFF_PrepBuildPresentation_TileDataTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("잔액 이벤트만으로 구매 가능 상태가 갱신된다"), Tile->IsAffordable());
 	TestEqual(TEXT("부족 원인이 유지된다"),
 		Tile->GetTileState(), EFF_PrepBuildTileState::InsufficientFunds);
+
+	Entry.MaxInstancesPerWorld = 1;
+	Entry.CurrentInstanceCount = 0;
+	Tile->Initialize(Entry, 900, true);
+	TestEqual(TEXT("미설치 제한 시설은 상태 칸에 0/1을 표시한다"), Tile->GetStateLabelText().ToString(), FString(TEXT("0/1")));
+	TestTrue(TEXT("0/1 시설은 잔액이 충분하면 배치할 수 있다"), Tile->IsAffordable());
+	Entry.CurrentInstanceCount = 1;
+	Entry.bBuildLimitReached = true;
+	Tile->Initialize(Entry, 900, true);
+	TestEqual(TEXT("설치 후 상태 칸은 1/1로 갱신된다"), Tile->GetStateLabelText().ToString(), FString(TEXT("1/1")));
+	TestFalse(TEXT("1/1 시설은 한도에 도달해 추가 배치할 수 없다"), Tile->IsAffordable());
+	Entry.CurrentInstanceCount = 0;
+	Entry.bBuildLimitReached = false;
+	Tile->Initialize(Entry, 900, true);
+	TestEqual(TEXT("철거 후 상태 칸은 다시 0/1로 돌아온다"), Tile->GetStateLabelText().ToString(), FString(TEXT("0/1")));
+	Tile->RefreshGold(699, true);
+	TestTrue(TEXT("잔액 부족이어도 카운트는 유지하고 배치는 막는다"),
+		Tile->GetStateLabelText().ToString() == TEXT("0/1") && !Tile->IsAffordable() &&
+		Tile->GetTileState() == EFF_PrepBuildTileState::InsufficientFunds);
+	Entry.MaxInstancesPerWorld = 0;
+	Tile->Initialize(Entry, 900, true);
+	TestEqual(TEXT("무제한 시설은 기존 배치 가능 라벨로 돌아온다"), Tile->GetStateLabelText(),
+		FFF_PrepBuildPresentationRules::ResolveTileStateLabel(EFF_PrepBuildTileState::Available));
 	return true;
 }
 
@@ -424,6 +449,119 @@ bool FFF_PrepBuildPresentation_ModelReuseTest::RunTest(const FString& Parameters
 	Model->RefreshGold(100, true);
 	TestEqual(TEXT("모델 잔액 경량 갱신이 풀의 항목까지 전달된다"),
 		OriginalFoodTruck->GetTileState(), EFF_PrepBuildTileState::InsufficientFunds);
+
+	FFF_RequiredFacilityRow Requirement;
+	Requirement.FacilityDefinitionId = Entries[0].FacilityDefinitionId;
+	Requirement.MinimumCount = 2;
+	Requirement.InstalledCount = 1;
+	Requirement.MissingCount = 1;
+	Requirement.bDefinitionValid = true;
+	FFF_RequiredFacilityRow InvalidDuplicate = Requirement;
+	InvalidDuplicate.bDefinitionValid = false;
+	InvalidDuplicate.MinimumCount = 99;
+	FFF_RequiredFacilityRow InvalidKnown;
+	InvalidKnown.FacilityDefinitionId = Entries[1].FacilityDefinitionId;
+	InvalidKnown.MinimumCount = 1;
+	FFF_RequiredFacilitiesStatus RequiredStatus;
+	RequiredStatus.Facilities = { InvalidDuplicate, Requirement, InvalidKnown, InvalidDuplicate };
+	Model->SetSynergyHighlightIds({ Entries[0].FacilityDefinitionId });
+	auto ReconcileRequirements = [&]()
+	{
+		FFBuildCatalogModel::ApplyRequiredFacilities(Entries, RequiredStatus);
+		Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 100, true, FText::GetEmpty());
+	};
+	ReconcileRequirements();
+	TestTrue(TEXT("권위 필수 상태를 같은 풀 객체에 투영한다"),
+		Model->FindTile(Entries[0].FacilityDefinitionId) == OriginalFoodTruck &&
+		OriginalFoodTruck->IsRequiredFacility() && !OriginalFoodTruck->IsRequiredFacilitySatisfied());
+	TestEqual(TEXT("필수 시설 현재 설치 개수를 보존한다"), OriginalFoodTruck->GetRequiredFacilityCurrentCount(), 1);
+	TestEqual(TEXT("앞뒤 무효 중복 행이 정상 행의 최소 개수를 덮지 않는다"), OriginalFoodTruck->GetRequiredFacilityMinimumCount(), 2);
+	const UFF_PrepBuildTileData* InvalidTile = Model->FindTile(Entries[1].FacilityDefinitionId);
+	TestTrue(TEXT("ID가 있는 무효 필수 행은 누락 개수가 0이어도 충족으로 표시하지 않는다"),
+		InvalidTile && InvalidTile->IsRequiredFacility() && !InvalidTile->IsRequiredFacilitySatisfied());
+	TestTrue(TEXT("필수 표시는 조합 추천과 잔액 부족 판정을 유지한다"),
+		OriginalFoodTruck->IsSynergyHighlighted() && !OriginalFoodTruck->IsAffordable());
+	RequiredStatus.Facilities[1].InstalledCount = 2;
+	RequiredStatus.Facilities[1].MissingCount = 0;
+	ReconcileRequirements();
+	TestTrue(TEXT("중복 무효 행이 있어도 정상 행의 최신 충족 상태를 표시한다"),
+		OriginalFoodTruck->IsRequiredFacilitySatisfied() && OriginalFoodTruck->GetRequiredFacilityCurrentCount() == 2);
+	Model->RefreshGold(1000, true);
+	TestTrue(TEXT("골드만 바뀌어도 필수 충족과 조합 추천은 유지한다"),
+		OriginalFoodTruck->IsAffordable() && OriginalFoodTruck->IsRequiredFacilitySatisfied() && OriginalFoodTruck->IsSynergyHighlighted());
+	RequiredStatus.Facilities.Reset();
+	ReconcileRequirements();
+	TestTrue(TEXT("필수 목록에서 제거되면 풀 객체의 이전 표시와 개수를 모두 초기화한다"),
+		Model->FindTile(Entries[0].FacilityDefinitionId) == OriginalFoodTruck &&
+		!OriginalFoodTruck->IsRequiredFacility() && !OriginalFoodTruck->IsRequiredFacilitySatisfied() &&
+		OriginalFoodTruck->GetRequiredFacilityCurrentCount() == 0 && OriginalFoodTruck->GetRequiredFacilityMinimumCount() == 0);
+	TestTrue(TEXT("필수 표시 초기화는 조합 추천이나 가격 판정을 바꾸지 않는다"),
+		OriginalFoodTruck->IsSynergyHighlighted() && !OriginalFoodTruck->IsAffordable());
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_SynergyHighlightTest,
+	"FestaFiesta.UI.PrepBuild.SynergyHighlightPreservesFiltersAndPool",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_SynergyHighlightTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+	TArray<FFF_BuildCatalogEntry> Entries = {
+		MakeEntry(TEXT("Booth_FoodStall_Burger"), TEXT("버거 부스"), EFFZSFacilityCategory::Booth, TEXT("FoodStall"), 100),
+		MakeEntry(TEXT("Rest_Seating_Seating"), TEXT("휴식 벤치"), EFFZSFacilityCategory::Rest, TEXT("Seating"), 700),
+		MakeEntry(TEXT("Toilet_Standard_Default"), TEXT("일반 화장실"), EFFZSFacilityCategory::Toilet, TEXT("Standard"), 100),
+		MakeEntry(TEXT("Rest_Shade_Shade"), TEXT("그늘 쉼터"), EFFZSFacilityCategory::Rest, TEXT("Shade"), 300)
+	};
+	Entries[3].MaxInstancesPerWorld = 1;
+	Entries[3].CurrentInstanceCount = 1;
+	Entries[3].bBuildLimitReached = true;
+	UFF_PrepBuildPresentationModel* Model = NewObject<UFF_PrepBuildPresentationModel>();
+	FFF_PrepBuildFilter Filter;
+	auto Reconcile = [&]() { Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 500, true, FText::GetEmpty()); };
+	Reconcile();
+	const TArray<UObject*> OriginalItems = Model->GetListItems();
+	if (!TestEqual(TEXT("The source catalog starts with four distinct entries"), OriginalItems.Num(), 4)) return false;
+	UFF_PrepBuildTileData* Seating = Model->FindTile(Entries[1].FacilityDefinitionId);
+	UFF_PrepBuildTileData* Shade = Model->FindTile(Entries[3].FacilityDefinitionId);
+	if (!TestNotNull(TEXT("The catalog has the bench tile"), Seating) || !TestNotNull(TEXT("The catalog has the shade tile"), Shade)) return false;
+
+	// Reversed recommendation input, duplicates and unknown IDs must not change stable catalog order.
+	Model->SetSynergyHighlightIds({Entries[3].FacilityDefinitionId, Entries[1].FacilityDefinitionId,
+		Entries[1].FacilityDefinitionId, FName(TEXT("Unknown_Facility")), NAME_None});
+	Reconcile();
+	const TArray<UObject*> HighlightedItems = Model->GetListItems();
+	if (!TestEqual(TEXT("Highlighting does not add or remove catalog entries"), HighlightedItems.Num(), 4)) return false;
+	TestTrue(TEXT("Recommended items come first, preserving the order within both groups"),
+		HighlightedItems[0] == OriginalItems[1] && HighlightedItems[1] == OriginalItems[3]
+		&& HighlightedItems[2] == OriginalItems[0] && HighlightedItems[3] == OriginalItems[2]);
+	TestTrue(TEXT("Both matching pooled items receive the highlight"), Seating->IsSynergyHighlighted() && Shade->IsSynergyHighlighted());
+	TestEqual(TEXT("A recommendation does not waive insufficient funds"), Seating->GetTileState(), EFF_PrepBuildTileState::InsufficientFunds);
+	TestFalse(TEXT("A recommended item at its construction cap stays unavailable"), Shade->IsAffordable());
+	Model->RefreshGold(1000, true);
+	TestTrue(TEXT("Gold refresh preserves the highlight and permits the now affordable bench"), Seating->IsSynergyHighlighted() && Seating->IsAffordable());
+	TestTrue(TEXT("Gold refresh preserves the highlight without overriding the construction cap"), Shade->IsSynergyHighlighted() && !Shade->IsAffordable());
+	TestTrue(TEXT("Gold refresh preserves ordered pooled identities"), Model->GetListItems() == HighlightedItems);
+
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Rest;
+	Filter.MinorToken = TEXT("Seating");
+	Filter.SearchText = TEXT("벤치");
+	Filter.bFavoritesOnly = true;
+	Filter.FavoriteIds = {Entries[1].FacilityDefinitionId};
+	Reconcile();
+	TestTrue(TEXT("Recommendations cannot bypass category, minor, search or favorites filters"),
+		Model->GetVisibleTiles().Num() == 1 && Model->GetVisibleTiles()[0] == Seating);
+	TestTrue(TEXT("The hidden recommended shade remains the same pooled object"), Model->FindTile(Entries[3].FacilityDefinitionId) == Shade);
+
+	Model->SetSynergyHighlightIds({});
+	Filter = FFF_PrepBuildFilter();
+	Reconcile();
+	TestTrue(TEXT("Clearing the selected combination restores the original order and all pooled identities"), Model->GetListItems() == OriginalItems);
+	TestFalse(TEXT("Clearing removes a previously visible highlight"), Seating->IsSynergyHighlighted());
+	TestFalse(TEXT("Clearing also removes a previously filtered-out highlight"), Shade->IsSynergyHighlighted());
 	return true;
 }
 

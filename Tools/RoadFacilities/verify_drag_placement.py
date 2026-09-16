@@ -30,7 +30,7 @@ def run():
         rows.append(dict(name=name, definition=definition.get_path_name(),
                          enable_drag_placement=True,
                          footprint_cm=[int(footprint.x), int(footprint.y)],
-                         allow_facility_placement_on_top=bool(spec.get_editor_property('allow_facility_placement_on_top')),
+                         allow_facility_placement_on_top=bool(spec.get_editor_property('bAllowFacilityPlacementOnTop')),
                          clearance_cm=int(spec.get_editor_property('clearance_cells')),
                          spec_export_text=spec_text,
                          spec_sha256=hashlib.sha256(spec_text.encode('utf-8')).hexdigest()))

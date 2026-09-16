@@ -40,6 +40,12 @@ Cost.Safety.Evacuation.Evacuation,300
 Cost.Safety.FireSafety.FireSafety,300
 Cost.Safety.FirstAid.FirstAid,300
 Cost.Safety.Security.Security,300
+Cost.Tile.Surface.Sand,10
+Cost.Tile.Surface.Asphalt,10
+Cost.Tile.Surface.Wood,10
+Cost.Tile.Surface.Stone,10
+Cost.Tile.Surface.Herringbone,10
+Cost.Tile.Surface.Concrete,10
 Cost.Toilet.Accessible.Accessible,300
 Cost.Toilet.Family.Family,300
 Cost.Toilet.Standard.Standard,300

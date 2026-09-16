@@ -2,6 +2,7 @@
 
 #include "UI/Facility/FF_FacilityInfoTypes.h"
 #include "Building/FF_FacilityUpgradeTypes.h"
+#include "Building/Synergy/FF_FacilitySynergyTypes.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityInfoModel"
 
@@ -14,6 +15,117 @@ namespace FFFacilityInfoModel
 			const FText Number = FText::AsNumber(Value, Options);
 			return Value > 0.0 ? FText::Format(LOCTEXT("PositiveChange", "+{0}"), Number) : Number;
 		}
+	}
+
+	void ApplySynergyPreview(const FFF_FacilitySynergyPreview* Preview, const bool bSelectionEligible,
+		const float SelectedBonusPercent, const TMap<FName, FText>& FacilityNames,
+		FFF_FacilityInfoViewData& ViewData)
+	{
+		ViewData.SynergyEntries.Reset();
+		if (!Preview)
+		{
+			ViewData.SynergySummaryText = LOCTEXT("SynergyUnavailable", "조합 정보를 준비하고 있습니다.");
+			return;
+		}
+		if (!Preview->bRulesAvailable || Preview->Entries.IsEmpty())
+		{
+			ViewData.SynergySummaryText = LOCTEXT("NoSynergyRules", "이 시설에 설정된 조합이 없습니다.");
+			return;
+		}
+		FNumberFormattingOptions Format;
+		Format.SetMaximumFractionalDigits(1);
+		auto Number = [&Format](float Value) { return FText::AsNumber(Value, &Format); };
+		auto Name = [&FacilityNames](FName Id)
+		{
+			const FText* Found = FacilityNames.Find(Id);
+			return Found && !Found->IsEmpty() ? *Found : LOCTEXT("SynergyUnnamedFacility", "이름이 설정되지 않은 시설");
+		};
+		auto Range = [&Number](float Minimum, float Maximum)
+		{
+			return FMath::IsNearlyEqual(Minimum, Maximum) ? Number(Maximum)
+				: FText::Format(LOCTEXT("SynergyPercentRange", "{0}~{1}"), Number(Minimum), Number(Maximum));
+		};
+		struct FRuleGroup
+		{
+			const FFF_FacilitySynergyPreviewEntry* Representative = nullptr;
+			bool bHasTargetRole = false;
+			bool bHasPartnerRole = false;
+			bool bHasCounterpart = false;
+			int32 NearbyCount = 0;
+			int32 ActiveCount = 0;
+			float NearestMeters = TNumericLimits<float>::Max();
+			float MinApplied = TNumericLimits<float>::Max();
+			float MaxApplied = 0.f;
+			float MinTotal = TNumericLimits<float>::Max();
+			float MaxTotal = 0.f;
+			TSet<FGuid> SeenTargets;
+		};
+		TArray<FRuleGroup> Groups;
+		TMap<FName, int32> GroupByRule;
+		for (const FFF_FacilitySynergyPreviewEntry& Entry : Preview->Entries)
+		{
+			int32* GroupIndex = GroupByRule.Find(Entry.RuleId);
+			if (!GroupIndex)
+			{
+				const int32 NewIndex = Groups.AddDefaulted();
+				GroupByRule.Add(Entry.RuleId, NewIndex);
+				GroupIndex = GroupByRule.Find(Entry.RuleId);
+			}
+			FRuleGroup& Group = Groups[*GroupIndex];
+			if (!Group.Representative || Entry.bCandidateIsTarget) Group.Representative = &Entry;
+			Group.bHasTargetRole |= Entry.bCandidateIsTarget;
+			Group.bHasPartnerRole |= !Entry.bCandidateIsTarget;
+			Group.bHasCounterpart |= Entry.bHasPartner;
+			if (Entry.bHasPartner) Group.NearestMeters = FMath::Min(Group.NearestMeters, Entry.DistanceMeters);
+			if (!Entry.bHasPartner || !Entry.bInRange || Group.SeenTargets.Contains(Entry.TargetInstanceId)) continue;
+			Group.SeenTargets.Add(Entry.TargetInstanceId);
+			++Group.NearbyCount;
+			// An ineligible selection is absent from the live index; its placement preview is a
+			// hypothetical repair. Do not advertise that hypothetical bonus as currently applied.
+			const float Applied = bSelectionEligible ? Entry.AppliedBonusPercent : 0.f;
+			if (Applied > 0.f) ++Group.ActiveCount;
+			Group.MinApplied = FMath::Min(Group.MinApplied, Applied);
+			Group.MaxApplied = FMath::Max(Group.MaxApplied, Applied);
+			Group.MinTotal = FMath::Min(Group.MinTotal, Entry.CurrentTotalBonusPercent);
+			Group.MaxTotal = FMath::Max(Group.MaxTotal, Entry.CurrentTotalBonusPercent);
+		}
+		int32 ActiveRules = 0;
+		for (const FRuleGroup& Group : Groups)
+		{
+			const FFF_FacilitySynergyPreviewEntry& Source = *Group.Representative;
+			FFF_FacilityInfoSynergyEntry& Entry = ViewData.SynergyEntries.AddDefaulted_GetRef();
+			Entry.RuleId = Source.RuleId;
+			Entry.PartnerFacilityDefinitionId = Group.bHasTargetRole ? Source.PartnerFacilityId : Source.TargetFacilityId;
+			Entry.TitleText = Source.DisplayName;
+			Entry.PartnerText = Group.bHasTargetRole
+				? FText::Format(LOCTEXT("SynergyPartner", "함께 놓을 시설: {0}"), Name(Source.PartnerFacilityId))
+				: FText::Format(LOCTEXT("SynergyBeneficiary", "수익을 받는 시설: {0}"), Name(Source.TargetFacilityId));
+			const float MinApplied = Group.NearbyCount > 0 ? Group.MinApplied : 0.f;
+			const float MaxApplied = Group.NearbyCount > 0 ? Group.MaxApplied : 0.f;
+			Entry.EffectText = FText::Format(LOCTEXT("SynergyRuleEffect", "{0} 이용 수수료\n설정 +{1}% · 현재 적용 +{2}%"),
+				Name(Source.TargetFacilityId), Number(Source.ConfiguredBonusPercent), Range(MinApplied, MaxApplied));
+			if (Group.bHasPartnerRole && Group.NearbyCount > 0)
+			{
+				Entry.EffectText = FText::Format(LOCTEXT("SynergyBeneficiaryTotal", "{0}\n범위 내 수익 시설 {1}개 · 시설별 전체 조합 +{2}%"),
+					Entry.EffectText, FText::AsNumber(Group.NearbyCount), Range(Group.MinTotal, Group.MaxTotal));
+			}
+			Entry.ConditionText = Group.bHasCounterpart
+				? FText::Format(LOCTEXT("SynergyDistanceCondition", "중심 간 {0}m 이내 · 가장 가까운 상대 {1}m"), Number(Source.MaxDistanceMeters), Number(Group.NearestMeters))
+				: FText::Format(LOCTEXT("SynergyMissingCondition", "중심 간 {0}m 이내 · 필요한 상대 시설 없음"), Number(Source.MaxDistanceMeters));
+			Entry.bActive = Group.ActiveCount > 0;
+			if (!bSelectionEligible) Entry.StatusText = LOCTEXT("SynergyIneligible", "현재 위치·시설 상태에서는 조합 적용 불가");
+			else if (!Group.bHasCounterpart) Entry.StatusText = LOCTEXT("SynergyMissingPartner", "필요 시설을 설치해 주세요");
+			else if (Group.NearbyCount == 0) Entry.StatusText = LOCTEXT("SynergyOutsideRange", "거리 초과 · 더 가까이 배치해 주세요");
+			else if (!Entry.bActive) Entry.StatusText = LOCTEXT("SynergySuppressed", "중복 그룹 / 전체 상한으로 미적용");
+			else if (Group.bHasPartnerRole) Entry.StatusText = FText::Format(
+				LOCTEXT("SynergyAppliedToCount", "범위 내 수익 시설 {0}/{1}개에 적용 중"), FText::AsNumber(Group.ActiveCount), FText::AsNumber(Group.NearbyCount));
+			else Entry.StatusText = LOCTEXT("SynergyApplied", "적용 중");
+			if (Entry.bActive) ++ActiveRules;
+		}
+		ViewData.SynergySummaryText = bSelectionEligible
+			? FText::Format(LOCTEXT("SynergySummary", "조합 {0}개 · 적용 중 {1}개\n이 시설의 이용 수수료 보너스 +{2}%"),
+				FText::AsNumber(ViewData.SynergyEntries.Num()), FText::AsNumber(ActiveRules), Number(SelectedBonusPercent))
+			: LOCTEXT("SynergySelectionIneligible", "현재 시설은 조합 효과를 받을 수 없습니다.\n유효한 위치에 배치한 뒤 다시 확인해 주세요.");
 	}
 
 	void ApplyUpgradePreview(
@@ -132,6 +244,8 @@ namespace FFFacilityInfoModel
 			return LOCTEXT("CategoryLighting", "조명");
 		case EFFZSFacilityCategory::Road:
 			return LOCTEXT("CategoryRoad", "길");
+		case EFFZSFacilityCategory::Tile:
+			return LOCTEXT("CategoryTile", "타일");
 		default:
 			return LOCTEXT("CategoryUnknown", "기타 시설");
 		}

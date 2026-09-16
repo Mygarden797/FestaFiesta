@@ -9,7 +9,9 @@
 
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
 #include "CommonTextBlock.h"
+#include "Components/Border.h"
 #include "Components/Image.h"
+#include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "UI/FF_UILog.h"
 
@@ -29,6 +31,14 @@ UFF_BuildFacilityCard::UFF_BuildFacilityCard()
 
 void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)
 {
+	if (Entry.FacilityDefinitionId != InEntry.FacilityDefinitionId)
+	{
+		SetSynergyHighlighted(false);
+		bRequiredFacility = false;
+		bRequiredFacilitySatisfied = false;
+		RequiredFacilityCurrentCount = RequiredFacilityMinimumCount = 0;
+		ApplyRequiredFacilityStatus();
+	}
 	// 원본 배열의 재할당이나 화면 갱신과 무관하게 카드가 안정적으로 데이터를 유지하도록 값을 복사한다.
 	Entry = InEntry;
 
@@ -118,6 +128,68 @@ void UFF_BuildFacilityCard::RefreshThumbnail()
 	ApplyThumbnailToWidget();
 }
 
+void UFF_BuildFacilityCard::SetSynergyHighlighted(const bool bHighlighted)
+{
+	const bool bChanged = bSynergyHighlighted != bHighlighted;
+	bSynergyHighlighted = bHighlighted;
+	ApplySynergyHighlight();
+	if (bChanged) { BP_OnSynergyHighlightChanged(bHighlighted); }
+}
+
+void UFF_BuildFacilityCard::ApplySynergyHighlight()
+{
+	const ESlateVisibility AccentVisibility = bSynergyHighlighted
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_SynergyHighlight) { Border_SynergyHighlight->SetVisibility(AccentVisibility); }
+	if (Text_SynergyBadge) { Text_SynergyBadge->SetVisibility(AccentVisibility); }
+}
+
+FText UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(const bool bSatisfied,
+	const int32 CurrentCount, const int32 MinimumCount)
+{
+	if (MinimumCount <= 0)
+	{
+		return LOCTEXT("RequiredFacilityInvalidMinimum", "필수 시설 설정 확인 필요 · 최소 설치 개수는 1 이상이어야 합니다.");
+	}
+	return FText::Format(bSatisfied
+		? LOCTEXT("RequiredFacilitySatisfied", "필수 설치 충족 · 현재 {0}개 / 필요 최소 {1}개")
+		: LOCTEXT("RequiredFacilityMissing", "필수 설치 부족 · 현재 {0}개 / 필요 최소 {1}개"),
+		FText::AsNumber(FMath::Max(0, CurrentCount)), FText::AsNumber(FMath::Max(1, MinimumCount)));
+}
+
+void UFF_BuildFacilityCard::SetRequiredFacilityStatus(const bool bRequired, const bool bSatisfied,
+	const int32 CurrentCount, const int32 MinimumCount)
+{
+	const bool bNewRequired = bRequired;
+	const bool bNewSatisfied = bNewRequired && MinimumCount > 0 && bSatisfied;
+	const int32 NewCurrent = bNewRequired ? FMath::Max(0, CurrentCount) : 0;
+	const int32 NewMinimum = bNewRequired ? FMath::Max(0, MinimumCount) : 0;
+	const bool bChanged = bRequiredFacility != bNewRequired || bRequiredFacilitySatisfied != bNewSatisfied ||
+		RequiredFacilityCurrentCount != NewCurrent || RequiredFacilityMinimumCount != NewMinimum;
+	bRequiredFacility = bNewRequired;
+	bRequiredFacilitySatisfied = bNewSatisfied;
+	RequiredFacilityCurrentCount = NewCurrent;
+	RequiredFacilityMinimumCount = NewMinimum;
+	ApplyRequiredFacilityStatus();
+	if (bChanged)
+	{
+		RefreshFacilityCostTooltip();
+		BP_OnRequiredFacilityStatusChanged(bNewRequired, bNewSatisfied, NewCurrent, NewMinimum);
+	}
+}
+
+void UFF_BuildFacilityCard::ApplyRequiredFacilityStatus()
+{
+	const ESlateVisibility MissingVisibility = bRequiredFacility && !bRequiredFacilitySatisfied
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	const ESlateVisibility SatisfiedVisibility = bRequiredFacility && bRequiredFacilitySatisfied
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_RequiredMissing) { Border_RequiredMissing->SetVisibility(MissingVisibility); }
+	if (Border_RequiredSatisfied) { Border_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
+	if (Text_RequiredMissing) { Text_RequiredMissing->SetVisibility(MissingVisibility); }
+	if (Text_RequiredSatisfied) { Text_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
+}
+
 UTexture2D* UFF_BuildFacilityCard::ResolveLoadedThumbnail(
 	const TSoftObjectPtr<UTexture2D>& RequestedThumbnail,
 	const TSoftObjectPtr<UTexture2D>& FallbackThumbnail)
@@ -140,6 +212,7 @@ void UFF_BuildFacilityCard::NativePreConstruct()
 	{
 		ApplyFacilityCostTextFallback();
 	}
+	else { ApplySynergyHighlight(); ApplyRequiredFacilityStatus(); }
 }
 
 void UFF_BuildFacilityCard::NativeConstruct()
@@ -148,11 +221,18 @@ void UFF_BuildFacilityCard::NativeConstruct()
 	// 재부착 또는 WBP 재구성으로 자식 포인터가 새로 바인딩된 경우까지 보장한다.
 	// SetText/SetBrush 연산은 같은 값으로 반복 적용해도 안전하므로 수명주기 훅 양쪽에서 호출한다.
 	ApplyEntryToWidgets();
+	ApplySynergyHighlight();
+	ApplyRequiredFacilityStatus();
 	RefreshFacilityCostTooltip();
 }
 
 void UFF_BuildFacilityCard::NativeDestruct()
 {
+	SetSynergyHighlighted(false);
+	bRequiredFacility = false;
+	bRequiredFacilitySatisfied = false;
+	RequiredFacilityCurrentCount = RequiredFacilityMinimumCount = 0;
+	ApplyRequiredFacilityStatus();
 	SetToolTip(nullptr);
 	FacilityCostTooltip = nullptr;
 	Super::NativeDestruct();
@@ -196,6 +276,13 @@ void UFF_BuildFacilityCard::ApplyThumbnailToWidget()
 
 void UFF_BuildFacilityCard::RefreshFacilityCostTooltip()
 {
+	// The existing authored price tooltip has no requirement row. Preserve its cost
+	// information in the shared text fallback while showing the minimum/count here.
+	if (bRequiredFacility)
+	{
+		ApplyFacilityCostTextFallback();
+		return;
+	}
 	// 한도 도달 카드는 클릭을 유지해 사유를 안내하므로, 기존 WBP가 한도 행을 갖지 않아도
 	// 반드시 전체 사유가 보이는 지역화 텍스트 툴팁으로 표시합니다.
 	if (Entry.bBuildLimitReached)
@@ -251,7 +338,9 @@ void UFF_BuildFacilityCard::RefreshFacilityCostTooltip()
 void UFF_BuildFacilityCard::ApplyFacilityCostTextFallback()
 {
 	SetToolTip(nullptr);
-	SetToolTipText(MakeFacilityCostToolTip(Entry));
+	const FText CostText = MakeFacilityCostToolTip(Entry);
+	SetToolTipText(bRequiredFacility ? FText::Format(LOCTEXT("CostWithRequirement", "{0}\n{1}"), CostText,
+		MakeRequiredFacilityToolTip(bRequiredFacilitySatisfied, RequiredFacilityCurrentCount, RequiredFacilityMinimumCount)) : CostText);
 }
 
 #undef LOCTEXT_NAMESPACE

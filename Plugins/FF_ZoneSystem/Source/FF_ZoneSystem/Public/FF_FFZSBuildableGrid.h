@@ -37,7 +37,7 @@ struct FF_ZONESYSTEM_API FFFZSBuildableGridMask
 
     TArray<FFFZSBuildGridObstacle> DeferredWorldObstacles;
     double ObstacleHeightCm = 250.0;
-    bool bIncludeRoadSupport = true;
+    bool bIncludeGroundSurfaceSupport = true;
 
 private:
     FVector2D MinLocalCm = FVector2D::ZeroVector;

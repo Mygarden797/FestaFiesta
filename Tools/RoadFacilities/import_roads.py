@@ -1,6 +1,6 @@
-"""Import Blender roads and connect all six to the production build catalog.
+"""Import Blender surfaces and connect six Roads and six Tiles to the catalog.
 
-Run with the compiled Road category through Run-RoadEditor.ps1. The only shared
+Run with compiled Road and Tile categories through Run-RoadEditor.ps1. The only shared
 package changed is DT_FacilityCosts; existing prices and unrelated rows survive.
 All package writes use the project's recoverable save transaction.
 """
@@ -149,7 +149,7 @@ def create_definition(name, label, mesh, thumbnail):
         spec = definition.get_editor_property('spec')
         for key, value in dict(facility_definition_id='Road_Surface_' + name, display_name=unreal.Text(label),
                                category=unreal.FFZSFacilityCategory.ROAD, footprint_size_cells=unreal.IntPoint(400, 400),
-                               allow_facility_placement_on_top=True,
+                               bAllowFacilityPlacementOnTop=False,
                                clearance_cells=0, placement_obstacle_height_cm=8.0,
                                visual_mesh=mesh, visual_sizing_mode=unreal.FFZSVisualSizingMode.MATCH_PLACEMENT_BOUNDS,
                                visual_rotation=unreal.Rotator(pitch=0, yaw=0, roll=0), uses_facility_levels=False,
@@ -164,6 +164,10 @@ def create_definition(name, label, mesh, thumbnail):
         definition.set_editor_property('show_in_build_catalog', True)
         # Input policy belongs to the Definition. Reimport must retain later author choices.
         definition.set_editor_property('enable_drag_placement', True)
+    # The category now owns this policy. Never reintroduce permissive legacy Roads.
+    spec = definition.get_editor_property('spec')
+    spec.set_editor_property('bAllowFacilityPlacementOnTop', False)
+    definition.set_editor_property('spec', spec)
     definition.set_editor_property('catalog_thumbnail', thumbnail)
     errors = definition.is_definition_valid()
     assert errors is not None and len(errors) == 0, (name, errors)
@@ -173,7 +177,10 @@ def create_definition(name, label, mesh, thumbnail):
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    assert hasattr(unreal.FFZSFacilityCategory, 'ROAD'), 'Compile the Road category before importing'
+    assert hasattr(unreal.FFZSFacilityCategory, 'TILE'), 'Compile the Road/Tile categories before importing'
+    from split_road_tiles import run as split_surfaces, tile_definition_path
+    from enable_drag_placement import require_isolated_editor
+    require_isolated_editor()
     sources = [SOURCE / 'textures/T_Road_Palette.png']
     sources += [SOURCE / 'export' / ('SM_Road_' + name + suffix + '.fbx') for name, _ in ROADS for suffix in ('', '_LOD1', '_LOD2')]
     sources += [SOURCE / 'qa' / ('SM_Road_' + name + '_Hero.png') for name, _ in ROADS]
@@ -182,6 +189,7 @@ def main():
     packages = [BASE + '/Materials/T_Road_Palette', BASE + '/Materials/M_Road_Palette', COST_TABLE]
     packages += [BASE + '/SM_Road_' + name for name, _ in ROADS]
     packages += [definition_path(name) for name, _ in ROADS] + [thumbnail_path(name) for name, _ in ROADS]
+    packages += [tile_definition_path(name) for name, _ in ROADS]
     packages += [BASE + '/QA/Calibration/' + name for name, _, _ in CALIBRATION]
     transaction = AssetSaveTransaction(packages, 'RoadFacilitiesImport')
     try:
@@ -240,8 +248,11 @@ def main():
         if additions:
             assert unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(table, json.dumps(costs + additions))
             save(table)
+        # The outer import transaction also snapshots Tile packages. Standalone
+        # migration uses its own transaction and can safely run without FBX import.
+        split_report = split_surfaces()
         transaction.commit()
-        report = dict(status='PASS', roads=records, added_cost_rows=additions, calibration=calibration,
+        report = dict(status='PASS', roads=records, tiles=split_report['surfaces'], added_cost_rows=additions, calibration=calibration,
                       axis_contract=dict(forward='+X', up='+Z', source_y_to_unreal_y=-1, unit_scale='1m=100cm'),
                       source_sha256={str(path.relative_to(SOURCE)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources})
         (OUT / 'import_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')

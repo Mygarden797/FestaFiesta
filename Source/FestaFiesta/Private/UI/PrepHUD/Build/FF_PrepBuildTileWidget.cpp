@@ -5,6 +5,7 @@
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/UI/FF_BuildFacilityCard.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -154,6 +155,8 @@ void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 	RefreshFromItem();
 	RefreshVisualState(false);
 	RefreshFavorite();
+	SetSynergyHighlighted(false);
+	SetRequiredFacilityStatus(false, false, 0, 0);
 	IUserObjectListEntry::NativeOnEntryReleased();
 }
 
@@ -176,6 +179,55 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 	RefreshFromItem();
 	RefreshVisualState(Item && IsListItemSelected());
 	RefreshFavorite();
+	SetSynergyHighlighted(Item && Item->IsSynergyHighlighted());
+	SetRequiredFacilityStatus(Item && Item->IsRequiredFacility(), Item && Item->IsRequiredFacilitySatisfied(),
+		Item ? Item->GetRequiredFacilityCurrentCount() : 0, Item ? Item->GetRequiredFacilityMinimumCount() : 0);
+}
+
+void UFF_PrepBuildTileWidget::SetSynergyHighlighted(const bool bHighlighted)
+{
+	const bool bChanged = bSynergyHighlighted != bHighlighted;
+	bSynergyHighlighted = bHighlighted;
+	ApplySynergyHighlight();
+	if (bChanged) { BP_OnSynergyHighlightChanged(bHighlighted); }
+}
+
+void UFF_PrepBuildTileWidget::ApplySynergyHighlight()
+{
+	// The independent overlay leaves the authored card brush, selection and price state intact.
+	const ESlateVisibility AccentVisibility = bSynergyHighlighted
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_SynergyHighlight) { Border_SynergyHighlight->SetVisibility(AccentVisibility); }
+	if (Text_SynergyBadge) { Text_SynergyBadge->SetVisibility(AccentVisibility); }
+}
+
+void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, const bool bSatisfied,
+	const int32 CurrentCount, const int32 MinimumCount)
+{
+	const bool bNewRequired = bRequired;
+	const bool bNewSatisfied = bNewRequired && MinimumCount > 0 && bSatisfied;
+	const int32 NewCurrent = bNewRequired ? FMath::Max(0, CurrentCount) : 0;
+	const int32 NewMinimum = bNewRequired ? FMath::Max(0, MinimumCount) : 0;
+	const bool bChanged = bRequiredFacility != bNewRequired || bRequiredFacilitySatisfied != bNewSatisfied ||
+		RequiredFacilityCurrentCount != NewCurrent || RequiredFacilityMinimumCount != NewMinimum;
+	bRequiredFacility = bNewRequired;
+	bRequiredFacilitySatisfied = bNewSatisfied;
+	RequiredFacilityCurrentCount = NewCurrent;
+	RequiredFacilityMinimumCount = NewMinimum;
+	ApplyRequiredFacilityStatus();
+	if (bChanged) { BP_OnRequiredFacilityStatusChanged(bNewRequired, bNewSatisfied, NewCurrent, NewMinimum); }
+}
+
+void UFF_PrepBuildTileWidget::ApplyRequiredFacilityStatus()
+{
+	const ESlateVisibility MissingVisibility = bRequiredFacility && !bRequiredFacilitySatisfied
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	const ESlateVisibility SatisfiedVisibility = bRequiredFacility && bRequiredFacilitySatisfied
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_RequiredMissing) { Border_RequiredMissing->SetVisibility(MissingVisibility); }
+	if (Border_RequiredSatisfied) { Border_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
+	if (Text_RequiredMissing) { Text_RequiredMissing->SetVisibility(MissingVisibility); }
+	if (Text_RequiredSatisfied) { Text_RequiredSatisfied->SetVisibility(SatisfiedVisibility); }
 }
 
 void UFF_PrepBuildTileWidget::HandleFavoriteClicked()
@@ -249,9 +301,16 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 				NSLOCTEXT("FestaFiestaPrepBuild", "TileUniqueName", "{0}\n고유 이름: {1}"),
 				NameAndCategory, FText::FromString(UniqueName));
 		}
-		SetToolTipText(FText::Format(
+		FText Description = FText::Format(
 			NSLOCTEXT("FestaFiestaPrepBuild", "TileFullDescription", "{0}\n{1} · {2}\n{3}"),
-			NameAndCategory, Item->GetCostText(), Item->GetBuildLimitText(), Item->GetStateText()));
+			NameAndCategory, Item->GetCostText(), Item->GetBuildLimitText(), Item->GetStateText());
+		if (Item->IsRequiredFacility())
+		{
+			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithRequirement", "{0}\n{1}"),
+				Description, UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(Item->IsRequiredFacilitySatisfied(),
+					Item->GetRequiredFacilityCurrentCount(), Item->GetRequiredFacilityMinimumCount()));
+		}
+		SetToolTipText(Description);
 	}
 	else
 	{

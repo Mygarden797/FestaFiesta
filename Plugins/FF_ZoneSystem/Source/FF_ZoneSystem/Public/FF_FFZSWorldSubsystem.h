@@ -26,13 +26,13 @@ struct FFFZSBuildableGridMask;
 struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
-    // Roads reserve their own ground layer; facilities and queues reserve the layer above.
-    bool bIsRoad = false;
+    // Roads and tiles share one ground layer. Only tiles permit reservations in the layer above.
+    bool bIsGroundSurface = false;
     bool bAllowsFacilitiesOnTop = true;
 
-    bool BlocksLayer(bool bOtherIsRoad, bool bOtherAllowsFacilitiesOnTop = true) const
+    bool BlocksLayer(bool bOtherIsGroundSurface, bool bOtherAllowsFacilitiesOnTop = true) const
     {
-        return bIsRoad == bOtherIsRoad || (bIsRoad ? !bAllowsFacilitiesOnTop : !bOtherAllowsFacilitiesOnTop);
+        return bIsGroundSurface == bOtherIsGroundSurface || (bIsGroundSurface ? !bAllowsFacilitiesOnTop : !bOtherAllowsFacilitiesOnTop);
     }
     TArray<FFFZSOrientedRect> Regions;
     // Derived broad/narrow-phase data; saved placements and NPC region IDs stay unchanged.
@@ -163,6 +163,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Workflow")
     int64 GetWorldRevision() const { return WorldRevision; }
     // 성공한 권한 명령마다 증가하는 낙관적 동시성 리비전을 반환.
+
+    // 파생 공간 캐시용 세대 번호. 직접 등록/해제·재배치 필요 상태·스냅샷 복원도 감지하며,
+    // 저장된 WorldRevision으로 되돌아가지 않는다. 트랜잭션 ExpectedWorldRevision에는 사용하지 않는다.
+    uint64 GetFacilityRegistryRevision() const { return FacilityRegistryRevision; }
     
     // 권한 상태를 바꾸지 않고 로컬 데이터·기하·점유·지면·충돌·내비·보호 영역을 검증.
     // 로컬 검증이 성공한 경우에만 등록 정책 스냅샷의 PreValidate를 호출.
@@ -270,7 +274,7 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    // Schema 7의 시설별 강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    // Schema 8의 Road/Tile 구분·강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
     // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨과 배수를 보존하며 7로 이관한 뒤 원자적으로 교체한다.
@@ -324,6 +328,7 @@ private:
     // 저장할 성공 결과가 참조하는 시설 GUID 집합으로 제거 뒤 UObject 포인터 재연결 판단에 쓴다.
     
     int64 WorldRevision = 0;
+    uint64 FacilityRegistryRevision = 0;
     bool bIsBroadcastingLightingChange = false;
     // 성공한 권한 명령 확정 횟수. 실패·미리보기·단계 변경은 증가시키지 않는다.
 
@@ -378,8 +383,8 @@ private:
 
     void OccupyFacilityRegions(const AFFZSFacilityActor& Facility);
     void ReleaseFacilityRegions(const AFFZSFacilityActor& Facility);
-    bool DoesRoadSupportFacility(const AFFZSFacilityActor& Road) const;
-    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId, bool bIsRoad, bool bAllowsFacilitiesOnTop) const;
+    bool DoesGroundSurfaceSupportFacility(const AFFZSFacilityActor& Surface) const;
+    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId, bool bIsGroundSurface, bool bAllowsFacilitiesOnTop) const;
     void RefreshWorldActors() const;
 
     bool ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors) const;
