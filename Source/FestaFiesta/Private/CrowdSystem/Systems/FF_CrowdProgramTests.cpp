@@ -38,6 +38,9 @@ struct FFF_CrowdProgramTestAccess
 	{ C.PartyLeaderByID.Add(C.UnitDatas[I].PartyID, I); }
 	static bool Deadline(UFF_CrowdSimulationSubsystem& C, int32 I, const FFF_ProgramReservation& R, float Now)
 	{ return C.TryBeginProgramReturnIfDue(I, R, FVector(1500, 0, 0), Now); }
+	static FVector Wander(UFF_CrowdSimulationSubsystem& C, int32 I) { return C.PickWanderDestination(I); }
+	static bool InBounds(const UFF_CrowdSimulationSubsystem& C, const FVector& P)
+	{ return C.IsInsideFestivalBounds(P); }
 };
 
 struct FFF_CrowdProgramDecisionTestAccess
@@ -339,6 +342,90 @@ bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
 	Decisions::EndMain(*Decision);
 	TestFalse(TEXT("Main end removes global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
 	Crowd->OnPartyNeedsDecision.Unbind();
+	return true;
+}
+
+// 배회 봉쇄. 원판을 Zone보다 크게, SimRadius는 느슨하게 둬서 Zone 검사만 일하도록 만들어 놓고 본다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWanderZoneConfinement,
+	"FestaFiesta.Crowd.Wander.ZoneConfinement", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game)) { Fixture.ForwardErrorMessages(this); return false; }
+	UWorld* World = Fixture.GetTestWorld();
+	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
+
+	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
+	if (!TestNotNull(TEXT("Zone subsystem"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) { return false; }
+	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")))
+		|| !TestTrue(TEXT("Zone registration"), Zones->RegisterZone(Zone))) { return false; }
+
+	const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();
+	if (!TestTrue(TEXT("Zone has a polygon"), Polygon.Num() >= 3)) { return false; }
+
+	FVector2D CenterLocal = FVector2D::ZeroVector;
+	for (const FVector2D& Point : Polygon) { CenterLocal += Point; }
+	CenterLocal /= Polygon.Num();
+
+	float MaxRadiusCm = 0.f;
+	for (const FVector2D& Point : Polygon)
+	{
+		MaxRadiusCm = FMath::Max(MaxRadiusCm, static_cast<float>(FVector2D::Distance(Point, CenterLocal)));
+	}
+
+	const FVector ZoneCenter = Zone->GetActorTransform().TransformPosition(FVector(CenterLocal, 0.f));
+	if (!TestEqual(TEXT("중심은 Zone 안이다"), Zones->ResolveZoneAtWorldLocation(ZoneCenter), Zone->ZoneId))
+	{
+		return false;
+	}
+
+	UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	if (!TestNotNull(TEXT("Crowd subsystem"), Crowd)) { return false; }
+
+	Crowd->bEnablePartyGrouping = false;
+	Crowd->MaxWalkableHeightAboveOriginUU = 0.f;
+	Crowd->OnPartyNeedsDecision.Unbind();
+	Crowd->InitializeSimulation(ZoneCenter, 100000.f, 2, 4, AFF_BaseCrowd::StaticClass());
+
+	// 원판이 Zone을 넘도록 키운다. 작으면 후보가 전부 안쪽에 떨어져 봉쇄가 없어도 통과한다
+	Crowd->WanderRadiusUU = MaxRadiusCm * 3.f;
+
+	const int32 Leader = Crowd->SpawnAgent(*World, ZoneCenter, FRotator::ZeroRotator);
+	if (!TestTrue(TEXT("Leader spawned"), Leader != INDEX_NONE)) { return false; }
+
+	using Access = FFF_CrowdProgramTestAccess;
+
+	int32 OutsideCount = 0;
+	for (int32 Round = 0; Round < 64; ++Round)
+	{
+		Access::State(*Crowd, Leader).ChoiceRoundIndex = Round;
+		const FVector Destination = Access::Wander(*Crowd, Leader);
+		if (!Access::InBounds(*Crowd, Destination))
+		{
+			++OutsideCount;
+		}
+	}
+	TestEqual(TEXT("배회 목적지는 한 번도 Zone 밖으로 나가지 않는다"), OutsideCount, 0);
+	TestTrue(TEXT("봉쇄가 실제로 후보를 기각했다"), Crowd->GetWanderZoneRejects() > 0);
+
+	// 밖에 선 개체의 복귀. 원판을 좁혀야 그 원판이 Zone을 다시 덮지 않아 복귀 경로가 실제로 불린다
+	Crowd->WanderRadiusUU = MaxRadiusCm * 0.5f;
+	const FVector Outside = ZoneCenter + FVector(MaxRadiusCm * 4.f, 0.f, 0.f);
+	if (!TestFalse(TEXT("시험 지점은 Zone 밖이다"), Access::InBounds(*Crowd, Outside)))
+	{
+		return false;
+	}
+
+	Access::Unit(*Crowd, Leader).Position = Outside;
+	Access::State(*Crowd, Leader).ChoiceRoundIndex = 0;
+	const FVector Recovered = Access::Wander(*Crowd, Leader);
+
+	TestTrue(TEXT("밖에 있던 개체는 제자리를 받지 않는다"), !Recovered.Equals(Outside, 1.f));
+	TestTrue(TEXT("밖에 있던 개체는 축제장 쪽으로 당겨진다"),
+		FVector::Dist2D(Recovered, ZoneCenter) < FVector::Dist2D(Outside, ZoneCenter));
+	TestTrue(TEXT("복귀 계수기가 올랐다"), Crowd->GetWanderContainmentNudges() > 0);
+
 	return true;
 }
 #endif

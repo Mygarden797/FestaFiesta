@@ -673,6 +673,9 @@ static void CrowdLanesCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		RoadStats.bTruncated ? TEXT("  ※ 상한에 걸려 잘림") : TEXT(""));
 	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회  (순회 비율이 낮으면 도로가 동선과 멀다)"),
 		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+	Ar.Logf(TEXT("  Zone 봉쇄    : %s   기각 %d회 / 복귀 %d회  (기각이 0이면 봉쇄가 한 번도 안 걸렸다)"),
+		CrowdSim->bConfineWanderToZones ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetWanderZoneRejects(), CrowdSim->GetWanderContainmentNudges());
 
 	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
 	{
@@ -761,6 +764,9 @@ static void CrowdSpreadCommand(const TArray<FString>& Args, UWorld* World, FOutp
 		Evenness);
 	Ar.Logf(TEXT("  배회 출처   : 순회 %d회 / 원판 %d회"),
 		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+	Ar.Logf(TEXT("  Zone 봉쇄   : %s   기각 %d회 / 복귀 %d회"),
+		CrowdSim->bConfineWanderToZones ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetWanderZoneRejects(), CrowdSim->GetWanderContainmentNudges());
 }
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpreadCommand(
@@ -1158,6 +1164,8 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
 		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,
 		  TEXT("지면을 못 찾은 격자점도 통행 불가로. maxwalkheight가 켜져 있을 때만 의미가 있다") },
+		{ TEXT("confinezones"), &CrowdSim->bConfineWanderToZones,
+		  TEXT("배회·순회 목적지를 Zone 안으로 제한. 끄면 봉쇄가 SimRadius(기본 1km) 하나만 남는다") },
 	};
 
 	struct FIntKnob

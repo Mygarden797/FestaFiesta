@@ -684,6 +684,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "100.0", Units = "cm"))
 	float PatrolLoopStepCm = 4000.f;
 
+	// 배회·순회 목적지를 Zone 안으로 제한한다. 끄면 봉쇄가 SimRadiusUU(기본 1km) 하나만 남는다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
+	bool bConfineWanderToZones = true;
+
+	// Zone 밖이라 기각한 배회·순회 후보 수. 0이면 봉쇄가 한 번도 안 걸린 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetWanderZoneRejects() const { return WanderZoneRejects; }
+
+	// 이미 Zone 밖에 있던 파티를 축제장 쪽으로 되돌린 횟수
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetWanderContainmentNudges() const { return WanderContainmentNudges; }
+
 	// 순회로 목적지를 뽑은 횟수. 원판 배회와의 비율이 도로가 실제로 먹는지를 말해 준다.
 	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
 	int32 GetPatrolWanderCount() const { return PatrolWanderCount; }
@@ -976,6 +988,10 @@ private:
 
 	bool TryPickPatrolDestination(int32 LeaderAgentIndex, uint32 BaseSeed, FVector& OutDestination) const;
 
+	bool IsInsideFestivalBounds(const FVector& WorldPointCm) const;
+
+	FVector MakeContainmentDestination(const FVector& FromPositionCm) const;
+
 	void RebuildCombinedLanes();
 
 	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount,
@@ -1221,6 +1237,13 @@ private:
 
 	mutable int32 PatrolWanderCount = 0;
 	mutable int32 DiscWanderCount = 0;
+	mutable int32 WanderZoneRejects = 0;
+	mutable int32 WanderContainmentNudges = 0;
+
+	// "이 월드에 Zone 이 있는가"만 WorldRevision 을 키로 캐시한다. 등록 목록 조회가 TArray를 할당해서다
+	mutable TWeakObjectPtr<UFFZSWorldSubsystem> WanderBoundsSystem;
+	mutable int64 WanderBoundsRevision = -1;
+	mutable bool bWanderBoundsActive = false;
 
 	// --- 지형 ------------------------------------------------------------------------------
 

@@ -2928,6 +2928,51 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 	QueuePatienceAbandons = 0;
 }
 
+// 점이 축제장 안인지 본다. Zone 이 하나도 없으면 통과다 — 막으면 Zone 없는 맵에서 배회가 전멸한다
+bool UFF_CrowdSimulationSubsystem::IsInsideFestivalBounds(const FVector& WorldPointCm) const
+{
+	if (!bConfineWanderToZones)
+	{
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (!ZoneSystem)
+	{
+		return true;
+	}
+
+	const int64 Revision = ZoneSystem->GetWorldRevision();
+	if (WanderBoundsSystem.Get() != ZoneSystem || WanderBoundsRevision != Revision)
+	{
+		WanderBoundsSystem = ZoneSystem;
+		WanderBoundsRevision = Revision;
+		bWanderBoundsActive = !ZoneSystem->GetRegisteredZoneIds().IsEmpty();
+	}
+
+	if (!bWanderBoundsActive)
+	{
+		return true;
+	}
+
+	return !ZoneSystem->ResolveZoneAtWorldLocation(WorldPointCm).IsNone();
+}
+
+// 밖에 선 파티를 SimOrigin 쪽으로 한 걸음 당긴다. 끝까지 보내면 전원이 원점 한 점으로 수렴한다
+FVector UFF_CrowdSimulationSubsystem::MakeContainmentDestination(const FVector& FromPositionCm) const
+{
+	const FVector ToOrigin(SimOrigin.X - FromPositionCm.X, SimOrigin.Y - FromPositionCm.Y, 0.f);
+	const double DistanceCm = ToOrigin.Size();
+
+	if (DistanceCm <= static_cast<double>(WanderRadiusUU))
+	{
+		return FVector(SimOrigin.X, SimOrigin.Y, FromPositionCm.Z);
+	}
+
+	return FromPositionCm + ToOrigin / DistanceCm * WanderRadiusUU;
+}
+
 // 조정자가 목적지를 못 정했을 때의 국소 배회. **살아 있는 유일한 랜덤 목적지 생성기다.**
 //
 // ★ Rng(FRandomStream)를 쓰지 않는 것이 핵심이다. 시드를 (전역시드, StableAgentID, 라운드)에서
@@ -2940,16 +2985,21 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 //   배회 범위를 넓히고 싶으면 그것을 되살리지 말고 WanderRadiusUU를 올릴 것 —
 //   그래야 결정론이 유지된다.
 //
+// ★ 실제 울타리는 IsInsideFestivalBounds다. SimRadiusUU 클램프는 밀도 그리드 범위(기본 1km)라
+//   울타리가 못 되고, 원판은 Unit.Position 중심이라 반복하면 그 상한까지 순수 확산이 된다.
+//
 // ★ 통행 상한에 걸리는 좌표는 여기서 걸러 낸다. 안 걸러도 이동 쪽이 막아 주지만, 갈 수 없는
 //   곳을 목표로 잡은 파티는 경계에 붙어 서서 StuckSteps를 채우고 MoveFailed로 다시 여기
-//   들어온다. 그 왕복이 결정 큐를 잡아먹으므로 뽑는 자리에서 끊는 것이 맞다.
+//   들어온다. 그 왕복이 결정 큐를 잡아먹으므로 뽑는 자리에서 끊는 것이 맞다. Zone 기각도
+//   같은 이유로 뽑는 자리에 둔다.
 //
 // ★ 재추첨 시드는 MakeDecisionSeed의 salt를 더 쓰지 않고 기본 시드에서 갈라낸다. salt 공간이
 //   라운드당 두 칸(ChoiceRoundIndex * 2, * 2 + 1)으로 이미 꽉 차 있어, 더 쓰면 다음 라운드의
 //   시드와 겹쳐 배회 좌표가 라운드 간에 상관된다.
 //
 // ★ 전부 막히면 제자리를 돌려준다. 다음 스텝에 도착 판정이 서고 재결정이 걸리지만 쿨다운을
-//   타므로 폭주하지 않으며, 그때는 ChoiceRoundIndex가 올라 새 시드로 다시 뽑는다.
+//   타므로 폭주하지 않으며, 그때는 ChoiceRoundIndex가 올라 새 시드로 다시 뽑는다. 단 이미
+//   Zone 밖에 선 개체는 예외다 — 제자리를 주면 영영 못 돌아오므로 안쪽으로 되돌린다.
 FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentIndex) const
 {
 	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
@@ -2997,10 +3047,25 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 			Destination.Z = Unit.Position.Z;
 		}
 
-		if (HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
 		{
-			return Destination;
+			continue;
 		}
+
+		if (!IsInsideFestivalBounds(Destination))
+		{
+			++WanderZoneRejects;
+			continue;
+		}
+
+		return Destination;
+	}
+
+	// 전부 기각됐을 때, 밖에 선 개체만 되돌린다. 안쪽이면 제자리로 둬도 다음 라운드에 다시 뽑는다
+	if (!IsInsideFestivalBounds(Unit.Position))
+	{
+		++WanderContainmentNudges;
+		return MakeContainmentDestination(Unit.Position);
 	}
 
 	return Unit.Position;
@@ -3111,7 +3176,15 @@ bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAg
 			continue;
 		}
 
+		// Zone 판정 전에 Z를 맞춘다 — ContainsWorldPoint가 수직 범위도 보기 때문이다
 		Destination.Z = Unit.Position.Z;
+
+		if (!IsInsideFestivalBounds(Destination))
+		{
+			++WanderZoneRejects;
+			continue;
+		}
+
 		OutDestination = Destination;
 		return true;
 	}
