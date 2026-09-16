@@ -14,6 +14,7 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
@@ -28,6 +29,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	// 지금 없으면 Tick에서 다시 시도한다.
 	TryBindStageSubsystem();
 	TryBindProgressionSubsystem();
+	TryBindSatisfactionSubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -56,6 +58,12 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnPromotionGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged);
 	}
 	CachedProgressionSubsystem = nullptr;
+
+	if (CachedSatisfactionSubsystem)
+	{
+		CachedSatisfactionSubsystem->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged);
+	}
+	CachedSatisfactionSubsystem = nullptr;
 
 	Super::Deinitialize();
 }
@@ -289,6 +297,57 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged(int32 NewValue)
 {
 	// 소유자 값이 들어오는 순간부터 더미는 의미가 없다. 변화 감지는 ApplyIntMetric이 한다.
 	ApplyIntMetric(Gold, NewValue, OnGoldChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindSatisfactionSubsystem()
+{
+	if (CachedSatisfactionSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_SatisfactionMetricsSubsystem* Satisfaction = GI->GetSubsystem<UFF_SatisfactionMetricsSubsystem>();
+	if (!Satisfaction)
+	{
+		++SatisfactionBindRetryCount;
+		if (SatisfactionBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_SatisfactionMetricsSubsystem을 %d회 시도해도 찾지 못했다. SimSatisfaction이 중립값으로 남는다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedSatisfactionSubsystem = Satisfaction;
+
+	// Bind + Sync. 구독 전에 이미 한 번 이상 확정됐을 수 있으므로 현재값을 바로 반영한다 —
+	// Gold와 다르게 "축제 시작 전엔 안 쓴다" 게이트는 없다. 만족도 중립값(50)은 Gold의
+	// 더미 0과 달리 그 자체로 "아직 데이터 없음"을 오도하지 않는 값이기 때문이다.
+	CachedSatisfactionSubsystem->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged);
+	HandleOwnerSimSatisfactionChanged(CachedSatisfactionSubsystem->GetSimSatisfaction());
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged(int32 NewValue)
+{
+	ApplyIntMetric(SimSatisfaction, NewValue, OnSimSatisfactionChanged);
+
+	// 분해값 4종도 같은 확정 주기에 나온 값이라 여기서 같이 읽는다 — 소유자가 델리게이트를
+	// 따로 넷 더 쏘게 만들지 않는다. 이 핸들러가 불렸다는 것 자체가 CachedSatisfactionSubsystem이
+	// 존재한다는 뜻이다(구독도 그 포인터로 걸었고, Bind + Sync 호출도 그 직후에만 한다).
+	if (CachedSatisfactionSubsystem)
+	{
+		ApplyIntMetric(SimSatisfactionWaitScore, CachedSatisfactionSubsystem->GetWaitScore(), OnSimSatisfactionWaitScoreChanged);
+		ApplyIntMetric(SimSatisfactionDensityScore, CachedSatisfactionSubsystem->GetDensityScore(), OnSimSatisfactionDensityScoreChanged);
+		ApplyIntMetric(SimSatisfactionPreferenceScore, CachedSatisfactionSubsystem->GetPreferenceScore(), OnSimSatisfactionPreferenceScoreChanged);
+		ApplyIntMetric(SimSatisfactionNeedFulfillmentScore, CachedSatisfactionSubsystem->GetNeedFulfillmentScore(), OnSimSatisfactionNeedFulfillmentScoreChanged);
+	}
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged(int32 NewValue)
@@ -1211,6 +1270,11 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	if (!CachedProgressionSubsystem)
 	{
 		TryBindProgressionSubsystem();
+	}
+
+	if (!CachedSatisfactionSubsystem)
+	{
+		TryBindSatisfactionSubsystem();
 	}
 
 	// 남은 시간은 여기서 폴링하지 않는다.

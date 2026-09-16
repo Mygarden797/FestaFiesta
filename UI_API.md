@@ -1353,8 +1353,9 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 
 | 값                 | Getter                                | 델리게이트                        | 현재        |
 | ----------------- | ------------------------------------- | ---------------------------- | --------- |
-| SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | 더미 72     |
-| ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72     |
+| SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | **원본 연결 완료 (2026-09-15)** — 대기·밀도·취향매칭 3항 산출. 첫 확정 전엔 중립값 50 |
+| SimSatisfaction 분해 3종 | `GetSimSatisfactionWaitScore()` / `GetSimSatisfactionDensityScore()` / `GetSimSatisfactionPreferenceScore()` | `OnSimSatisfactionWaitScoreChanged` 등 (이름은 각 Getter + `Changed`) | **원본 연결 완료 (2026-09-15)**. SimSatisfaction과 같은 순간(1초 주기)에 같이 갱신됩니다. "지금 만족도가 왜 이 숫자인지" 분해해 보여주는 용도라 필수는 아니고 화면에 넣으면 원인 진단에 도움이 됩니다 |
+| ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72 (SimSatisfaction + FinaleBonus 합산은 아직 미구현) |
 | Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
 | Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 연결 완료 · ViewModel 구독 중** |
 | TotalRevenue      | `GetTotalRevenue()`                   | `OnTotalRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
@@ -1384,8 +1385,12 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 ### 값 규격 (2026-08-06 UI 결정)
 
 ```cpp
-int32 SimSatisfaction;    // 0~100, 높을수록 좋음. 대기·밀도·취향 매칭에서 나오는 트윈 산출물
-int32 ScoreSatisfaction;  // 0~100, 높을수록 좋음. SimSatisfaction + FinaleBonus + 연출 보정
+int32 SimSatisfaction;                    // 0~100, 높을수록 좋음. 아래 네 입력의 2단 가중합
+int32 SimSatisfactionWaitScore;           // 0~100, 대기 항 하위 점수(큐 성공률 보정 포함)
+int32 SimSatisfactionDensityScore;        // 0~100, 밀도 항 하위 점수
+int32 SimSatisfactionPreferenceScore;     // 0~100, 취향매칭 항 하위 점수
+int32 SimSatisfactionNeedFulfillmentScore; // 0~100, Need 충족도 하위 점수
+int32 ScoreSatisfaction;  // 0~100, 높을수록 좋음. SimSatisfaction + FinaleBonus + 연출 보정 (합산 로직은 아직 더미)
 int32 Safety;             // 0~100, 높을수록 안전 (2026-08-06 확정)
 int32 Gold;               // 잔액. 지출로 줄어들고, 매출·시설 철거 환급으로 늘어난다. 초기 10,000 (밸런스 시드 v0)
 int32 TotalRevenue;       // 축제 전체 누적 매출. 줄어들지 않는다
@@ -1426,6 +1431,16 @@ Gold는 음수가 되지 않습니다. 잔액 부족 지출은 0으로 클램프
 
 화면 라벨은 내부 이름을 그대로 쓰지 않습니다 — `SimSatisfaction` → **관객 만족도**,
 `ScoreSatisfaction` → **평가 점수**. Report 드릴다운(AT-005)은 왼쪽 항인 관객 만족도에 걸립니다.
+
+#### 분해값 4종
+
+`SimSatisfaction` 하위 점수 4개(대기·밀도·취향매칭·Need 충족도)가 ViewModel에 있습니다.
+Getter + 델리게이트 쌍, 0~100, SimSatisfaction과 같은 주기(1초)로 갱신됩니다. 화면에
+넣을지·어디에 넣을지는 UI 판단입니다 — 최종 숫자 하나로는 원인을 못 짚을 때 쓰시면 됩니다.
+
+산식은 2단 계층입니다: 환경 축(대기+밀도)과 개인 부합도 축(취향+Need)을 각각 합친 뒤
+그 둘을 다시 합칩니다. 축 가중치(현재 0.5/0.5)는 draft_assumption이라 조정 대상이지만
+API 계약(Getter·델리게이트·0~100 범위)은 안 바뀝니다.
 
 ### Slot을 노출하지 않습니다
 
@@ -1550,7 +1565,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 
 | 필요한 것 | 소유자 | UI에서 쓰는 곳 |
 | --- | --- | --- |
-| **Satisfaction** (`SimSatisfaction` 0~100) | 김시리 · 이정원 | Overview 지표, Report, SNS. **`ScoreSatisfaction` 합산도 이것 때문에 막혀 있습니다** — `GetFinaleSatisfactionBonus()` 는 이미 있습니다 |
+| ~~**Satisfaction** (`SimSatisfaction` 0~100)~~ | 김시리 · 이정원 | ✅ **연결 완료.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층(환경 축/개인 부합도 축)으로 산출 + 분해값 4종. 위 「값 규격」·「분해값 4종」 절 참조. `ScoreSatisfaction` 합산(SimSatisfaction + FinaleBonus)은 **아직 남았습니다** — `GetFinaleSatisfactionBonus()` 는 이미 있습니다 |
 | **Safety** | 이정원 | Overview 지표, 경고 |
 | **예상 방문객 범위·가정값 미리보기** | 김시리 | 현재 구매 상태의 하루 단일값은 구현됨. `Min`/`Max`와 구매 전 등급별 미리보기 API는 없음. 단일값을 임의 범위로 늘리지 않음 |
 | **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 김시리 · 백종태 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
@@ -1992,3 +2007,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 2026-08-29 | 백종태 | 🆕 **라이브 HUD 요청 7건.** 문서 끝 `라이브 HUD 를 만들며 나온 요청 7건` 절에 적었습니다 — 누적 방문객(이정원)·시설 표시 이름(한광훈)·`CompletedCount`(한광훈)·큐 id 다리(장원재)·줄 포기 손님(장원재)·시설별 스태프 배치(김시리)·입력 모드 정책(카메라). ⚠️ **동시 관객 수는 요청 대상이 아닙니다** — `GetActiveAgentCount()` 가 이미 있어서 상태 바에 붙였고, 누적 방문객과는 **다른 값**입니다 (동시 인원을 일일 목표 분자로 쓰면 진행률이 안 올라갑니다) |
 | 2026-09-02 | 백종태 | 🆕 **요청 8번 추가 — 마감·준비 단계 배속(강민서).**
 | 2026-09-08 | 김시리 | ⚠️ **필수 설치 시설 게이트 — 계약 변경 2건.** `IsCurrentStageSkippable()` 이 필수 시설 조건도 보게 되어 **무대가 없으면 스킵 버튼이 비활성됩니다**(`CanSkipCurrentStage` 가 그대로 중계). **`RemainingTime == 0` 이 오래 지속되는 상태가 생겼습니다**(값 범위는 그대로, 0 에서 머무는 시간이 길어진 것). 신규 API: `CanTransitionTo` · `GetStageAdvanceBlockingReason`(Stage 절) / `UFF_RequiredFacilitiesSubsystem` · `OnFestivalDefinitionChanged`(김시리 절). 막힌 사유는 종태님이 만들어 두신 `Text_CtaReason`(CTA 버튼 왼쪽, AT-011 대비) 자리에 값을 흘려 넣어 **이미 표시됩니다** — 부탁드리는 것은 PIE 확인 하나입니다. 탐색을 더 빠르게 하는 백로그 3건(카탈로그 느낌표·`00:00` 상태 표시·카드 진행도)은 급하지 않으며 김시리 절에 정리했습니다. Stage 서브시스템은 강민서 님 소유이므로 함께 확인 부탁드립니다 `TimeScale` 이 `Tick` 의 Live 분기에서만 쓰여서, 마감·리포트·셋업·개장 준비에는 **배속 버튼을 못 답니다**(눌러도 안 되는 버튼이 됩니다). 비-Live 분기에도 적용해 주시면 UI 는 버튼만 열면 됩니다. ❓ **개장 준비는 기획상 시간이 멈추는 단계인데 코드는 흐릅니다** — 어느 쪽이 맞는지 확인 부탁드립니다. ✅ 그리고 **마지막 날 배속 잠금은 UI 쪽 착오였습니다** — 웹 프로토타입 규칙을 옮긴 것이고 소유자 코드에는 없어서 지웠습니다 |
+| 2026-09-15 | 김시리 | ✅ **`SimSatisfaction` 더미 해제.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층으로 산출하는 실값입니다. 분해값 4종(`GetSimSatisfactionWaitScore/DensityScore/PreferenceScore/NeedFulfillmentScore` + 각 `OnXxxChanged`)도 ViewModel에 있습니다. `ScoreSatisfaction` 합산(FinaleBonus 더하기)은 아직 더미입니다 |
