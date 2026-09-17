@@ -29,6 +29,19 @@ struct FFF_SnsFeedSignals
 
 	bool bMainProgramLocked = false;
 	int32 CurrentDay = 1;
+
+	// 이하 넷은 UFFZSWorldSubsystem::BuildReadModel().Facilities에서 뽑는다
+	// 화제10·12 점수와 화제1·10의 {시설} 치환에 쓴다. 설치된 시설이 하나도 없으면 전부 기본값(0·빈 문자열)
+
+	// 화제12(축제 초반 시설 부족) 점수 산출용 — 설치된 시설 총 수
+	int32 FacilityCount = 0;
+
+	// 화제1(대기시간 김)의 {시설} 치환용 — AverageCompletedWaitSeconds가 가장 큰 시설의 이름
+	FString WorstWaitFacilityDisplayName;
+
+	// 화제10(인기 시설) 점수 산출 + {시설} 치환용 — WaitingCount가 가장 큰 시설과 그 값
+	FString MostQueuedFacilityDisplayName;
+	int32 MaxWaitingCount = 0;
 };
 
 // SNS 피드 화제 선택·문장 선택의 순수 계산기.
@@ -54,11 +67,19 @@ public:
 		int32 GlobalSimulationSeed, int32 PostSequenceIndex, float MinSeconds, float MaxSeconds);
 
 	/**
-	 * 이 문장을 지금 후보 풀에 넣어도 되는지. 지금 아키텍처는 화제별 전역 집계라 포스트 하나를
-	 * 특정 시설에 못 묶는다 — `{시설}` 자리표시자가 있는 행은 치환 없이 그대로 나가면 깨진
-	 * 텍스트가 되므로 뺀다(`FFFZSFacilityReadModel`에 시설 표시 이름이 실리기 전까지, §10·§11).
+	 * 이 문장을 지금 후보 풀에 넣어도 되는지. `{시설}` 자리표시자가 있는 행은 화제1·10만
+	 * 통과시킨다 — 이 둘만 "어떤 시설을 가리켜야 하는지"가 신호로 분명하기 때문이다
+	 * (화제1=제일 오래 기다리는 곳, 화제10=제일 붐비는 곳). 화제2·3·5·7·14는 가리킬 시설을
+	 * 정할 신호가 아직 없어서 계속 뺀다(§13 참조).
 	 */
 	static bool ShouldIncludeTemplateRow(const FFF_SnsPostTemplateRow& Row);
+
+	/**
+	 * 고른 문장의 `{시설}`을 실제 이름으로 채운다. 화제1·10이 아니거나 애초에 자리표시자가
+	 * 없으면 원문 그대로. 그 순간 이름 신호가 비어 있으면(시설이 하나도 없는 등) "여기"로
+	 * 대체해 깨진 텍스트를 막는다.
+	 */
+	static FText ResolveBodyText(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals);
 
 	// CSV의 Sentiment 열이 GetTopicPolarity(Row.TopicId)와 일치하는지. 실제 극성 판정에는
 	// 안 쓰이고(그건 GetTopicPolarity 전용), 콘텐츠 작성 실수를 로드 시점에 잡기 위한 것이다

@@ -66,12 +66,12 @@ float FFF_SnsFeedGenerator::ComputeTopicScore(int32 TopicId, const FFF_SnsFeedSi
 		return static_cast<float>(Signals.NeedFulfillmentScore0To100);
 	case 8: // 공연 직전 기대감
 		return Signals.StimulationAverage0To1 * 100.f;
-	case 10: // 인기 시설 — 스코프 밖(ZoneSystem 연결 미포함), 고정 낮은 점수
-		return 10.f;
+	case 10: // 인기 시설 — 제일 붐비는 시설의 대기 인원 수를 근사치로 쓴다
+		return FMath::Clamp(static_cast<float>(Signals.MaxWaitingCount) * 5.f, 0.f, 100.f);
 	case 11: // 한산해서 쾌적함
 		return static_cast<float>(Signals.DensityScore0To100);
-	case 12: // 축제 초반 시설 부족 — 스코프 밖, 고정 낮은 점수
-		return 10.f;
+	case 12: // 축제 초반 시설 부족 — 시설 수가 적을수록 높은 점수
+		return FMath::Clamp(100.f - static_cast<float>(Signals.FacilityCount) * 10.f, 0.f, 100.f);
 	case 13: // 구역 쏠림 — 혼잡 셀 수를 거친 근사치. Zone별 밀도 분해가 없어 전역값을 대신 쓴다
 		return FMath::Clamp(static_cast<float>(Signals.CongestedCellCount) * 10.f, 0.f, 100.f);
 	case 14: // 재방문·단골 — utility_ai_todo.md §10 결정대로 가볍게, 고정 낮은 점수
@@ -172,7 +172,39 @@ FString FFF_SnsFeedGenerator::MakeDisplayHandle(int32 GlobalSimulationSeed, int3
 
 bool FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(const FFF_SnsPostTemplateRow& Row)
 {
-	return !Row.bUsesFacilityPlaceholder;
+	if (!Row.bUsesFacilityPlaceholder)
+	{
+		return true;
+	}
+
+	// 화제1(최장 대기)·10(최다 대기줄)만 어떤 시설을 가리켜야 하는지가 분명하다.
+	// 나머지 화제는 가리킬 시설을 정할 신호가 없어 계속 뺀다
+	return Row.TopicId == 1 || Row.TopicId == 10;
+}
+
+FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals)
+{
+	if (!Row.bUsesFacilityPlaceholder)
+	{
+		return Row.Text;
+	}
+
+	FString FacilityName;
+	if (Row.TopicId == 1)
+	{
+		FacilityName = Signals.WorstWaitFacilityDisplayName;
+	}
+	else if (Row.TopicId == 10)
+	{
+		FacilityName = Signals.MostQueuedFacilityDisplayName;
+	}
+
+	if (FacilityName.IsEmpty())
+	{
+		FacilityName = TEXT("여기"); // 그 순간 가리킬 시설이 없을 때(예: 아직 시설이 하나도 없음)의 안전한 대체
+	}
+
+	return FText::FromString(Row.Text.ToString().Replace(TEXT("{시설}"), *FacilityName));
 }
 
 bool FFF_SnsFeedGenerator::DoesSentimentMatchTopic(const FFF_SnsPostTemplateRow& Row)
@@ -232,7 +264,9 @@ FFF_SnsPostRow FFF_SnsFeedGenerator::GeneratePost(
 		static_cast<uint32>(GlobalSimulationSeed), static_cast<uint32>(PostSequenceIndex));
 
 	NewPost.DisplayHandle = MakeDisplayHandle(GlobalSimulationSeed, PostSequenceIndex);
-	NewPost.FacilityCategory = NAME_None; // utility_ai_todo.md §10 — 시설 표기 방식(실명/카테고리) 미정
+	// 화제1·10은 시설 실명을 Body에 직접 치환해 넣는다(ResolveBodyText) — 이 필드는 그것과
+	// 별개로 구조화된 카테고리 노출 용도인데 아직 쓰는 곳이 없어 NAME_None으로 둔다
+	NewPost.FacilityCategory = NAME_None;
 	NewPost.Sentiment = Polarity;
 	NewPost.TopicId = TopicId;
 
@@ -240,7 +274,7 @@ FFF_SnsPostRow FFF_SnsFeedGenerator::GeneratePost(
 			PickTemplateRow(GlobalSimulationSeed, PostSequenceIndex, TopicId, TemplatesByTopic))
 	{
 		NewPost.MessageTemplateId = Row->TemplateId;
-		NewPost.Body = Row->Text;
+		NewPost.Body = ResolveBodyText(*Row, Signals);
 	}
 
 	NewPost.GameTimestampSeconds = GameTimestampSeconds;
