@@ -16,6 +16,7 @@
 | visitor_group_size_distribution_v0.csv | FFF_GroupSizeDistributionRow | Source/FestaFiesta/Public/DataTables/FF_GroupSizeDistributionRow.h |
 | group_child_composition_v0.csv | FFF_GroupChildCompositionRow | Source/FestaFiesta/Public/DataTables/FF_GroupChildCompositionRow.h |
 | group_composition_rules_v0.csv | FFF_GroupCompositionRuleRow | Source/FestaFiesta/Public/DataTables/FF_GroupCompositionRuleRow.h |
+| sns_post_templates_v0.csv | FFF_SnsPostTemplateRow | Source/FestaFiesta/Public/DataTables/FF_SnsPostTemplateRow.h |
 
 재생성: `node Tools/data/build_unreal_datatables.mjs`
 

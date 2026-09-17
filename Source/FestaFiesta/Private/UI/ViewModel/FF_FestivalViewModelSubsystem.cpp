@@ -13,6 +13,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "NPC/Insights/FF_CrowdInsightsSubsystem.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -30,6 +31,7 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	TryBindStageSubsystem();
 	TryBindProgressionSubsystem();
 	TryBindSatisfactionSubsystem();
+	TryBindInsightsSubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -64,6 +66,12 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedSatisfactionSubsystem->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged);
 	}
 	CachedSatisfactionSubsystem = nullptr;
+
+	if (CachedInsightsSubsystem)
+	{
+		CachedInsightsSubsystem->OnSnsPostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+	}
+	CachedInsightsSubsystem = nullptr;
 
 	Super::Deinitialize();
 }
@@ -348,6 +356,71 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged(int32 New
 		ApplyIntMetric(SimSatisfactionPreferenceScore, CachedSatisfactionSubsystem->GetPreferenceScore(), OnSimSatisfactionPreferenceScoreChanged);
 		ApplyIntMetric(SimSatisfactionNeedFulfillmentScore, CachedSatisfactionSubsystem->GetNeedFulfillmentScore(), OnSimSatisfactionNeedFulfillmentScoreChanged);
 	}
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
+{
+	if (CachedInsightsSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_CrowdInsightsSubsystem* Insights = GI->GetSubsystem<UFF_CrowdInsightsSubsystem>();
+	if (!Insights)
+	{
+		++InsightsBindRetryCount;
+		if (InsightsBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_CrowdInsightsSubsystem을 %d회 시도해도 찾지 못했다. SNS 피드가 비어 있다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedInsightsSubsystem = Insights;
+	CachedInsightsSubsystem->OnSnsPostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+
+	// SimSatisfaction과 다르게 "현재값 1개"가 아니라 "지금까지의 글 목록"이라, bind 시점에
+	// 이미 쌓여 있던 글도 놓치지 않게 전부 변환해 채운다.
+	RecentSnsPosts.Empty();
+	for (const FFF_SnsPostRow& Row : CachedInsightsSubsystem->GetRecentPosts())
+	{
+		RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost)
+{
+	const FFF_LiveSocialPost Converted = ConvertSnsPostToLiveSocialPost(NewPost);
+
+	RecentSnsPosts.Insert(Converted, 0);
+	if (RecentSnsPosts.Num() > SnsPostViewCapacity)
+	{
+		RecentSnsPosts.SetNum(SnsPostViewCapacity);
+	}
+
+	OnSnsPostAdded.Broadcast(Converted);
+}
+
+FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row)
+{
+	FFF_LiveSocialPost Converted;
+	Converted.Author = FText::FromString(Row.DisplayHandle);
+	Converted.Body = Row.Body;
+
+	// TopicSalience0To100은 "이 화제를 고른 신호가 얼마나 강했는지"다 — 임의 상수가 아니라
+	// 화제 선택에 실제로 쓰인 값을 그대로 세기로 재사용한다(utility_ai_todo.md §11).
+	const int32 Magnitude = FMath::RoundToInt(Row.TopicSalience0To100);
+	Converted.SentimentScore = (Row.Sentiment == EFF_SnsSentiment::Positive) ? Magnitude : -Magnitude;
+
+	return Converted;
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged(int32 NewValue)
@@ -1275,6 +1348,11 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	if (!CachedSatisfactionSubsystem)
 	{
 		TryBindSatisfactionSubsystem();
+	}
+
+	if (!CachedInsightsSubsystem)
+	{
+		TryBindInsightsSubsystem();
 	}
 
 	// 남은 시간은 여기서 폴링하지 않는다.

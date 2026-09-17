@@ -1353,8 +1353,8 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 
 | 값                 | Getter                                | 델리게이트                        | 현재        |
 | ----------------- | ------------------------------------- | ---------------------------- | --------- |
-| SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | **원본 연결 완료 (2026-09-15)** — 대기·밀도·취향매칭 3항 산출. 첫 확정 전엔 중립값 50 |
-| SimSatisfaction 분해 3종 | `GetSimSatisfactionWaitScore()` / `GetSimSatisfactionDensityScore()` / `GetSimSatisfactionPreferenceScore()` | `OnSimSatisfactionWaitScoreChanged` 등 (이름은 각 Getter + `Changed`) | **원본 연결 완료 (2026-09-15)**. SimSatisfaction과 같은 순간(1초 주기)에 같이 갱신됩니다. "지금 만족도가 왜 이 숫자인지" 분해해 보여주는 용도라 필수는 아니고 화면에 넣으면 원인 진단에 도움이 됩니다 |
+| SimSatisfaction   | `GetSimSatisfaction()`                | `OnSimSatisfactionChanged`   | **원본 연결 완료** — 대기·밀도·취향매칭·Need 충족도 4항의 2단 계층 산출. 첫 확정 전엔 중립값 50 |
+| SimSatisfaction 분해 4종 | `GetSimSatisfactionWaitScore()` / `GetSimSatisfactionDensityScore()` / `GetSimSatisfactionPreferenceScore()` / `GetSimSatisfactionNeedFulfillmentScore()` | `OnSimSatisfactionWaitScoreChanged` 등 (이름은 각 Getter + `Changed`) | **원본 연결 완료**. SimSatisfaction과 같은 순간(1초 주기)에 같이 갱신됩니다. "지금 만족도가 왜 이 숫자인지" 분해해 보여주는 용도라 필수는 아니고 화면에 넣으면 원인 진단에 도움이 됩니다 |
 | ScoreSatisfaction | `GetScoreSatisfaction()`              | `OnScoreSatisfactionChanged` | 더미 72 (SimSatisfaction + FinaleBonus 합산은 아직 미구현) |
 | Safety            | `GetSafety()`                         | `OnSafetyChanged`            | 더미 88     |
 | Gold              | `GetGold()`                           | `OnGoldChanged`              | **원본 연결 완료 · ViewModel 구독 중** |
@@ -1573,7 +1573,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | **뒷정리 등급 효과 계수** | 김시리 | Day 마감 시트. 가격 3개만 있음(`FF_FestivalDefinition.h:110` TODO) — 지금은 `효과 계수 미확정` 배지 |
 | **최종 점수 산식·등급 가중치** | 김시리 | 최종 결산 — 지금은 `가중치 잠정` 문구 |
 | **저장 슬롯 목록 + 저장·불러오기 Command** | 김시리 | ESC 수동 저장, 플레이 허브 |
-| **SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑 | 미정 | Live `SNS` 패널 |
+| ~~**SNS 반응 Read Model** + `MessageTemplateId` → 현지화 문장 매핑~~ | 김시리 (+ 백종태 UI 연결) | 🟡 **값은 준비 완료, UI 연결만 남음(2026-09-16).** `UFF_CrowdInsightsSubsystem`이 3~10초마다 화제·문장을 결정론적으로 골라 글을 만듭니다. `UFF_FestivalViewModelSubsystem::GetRecentSnsPosts()`(`TArray<FFF_LiveSocialPost>`, 최신이 `[0]`)와 `OnSnsPostAdded`(`FFF_LiveSocialPost`)가 이미 있습니다 — Gold·SimSatisfaction과 같은 Bind+Sync 패턴이라 `FF_LivePanelSNS`의 `Debug_SetPosts` 자리를 이걸로 바꾸시면 됩니다. `SentimentScore`는 화제가 그 순간 얼마나 두드러졌는지(0~100)를 그대로 부호만 붙여 보냅니다. 시설 표기(`{시설}` 문장 12개)는 `FFFZSFacilityReadModel`에 `DisplayName`이 아직 안 실려서 당분간 후보에서 뺐습니다 — 필요하시면 한광훈 님께 스레딩 요청 부탁드립니다 |
 | **준비 단계 관객 수** | 이정원 | 하단 바 `관객` 칸. 준비 단계에 관객이 없는 것은 정상이고, **값이 없으면 칸을 숨깁니다** — `0` 을 띄우면 틀린 사실이 됩니다 |
 
 PrepHUD의 예상 방문객 범위와 관객 수는 아직 `Debug_SetPlaceholders()`로만 채웁니다.
@@ -2008,3 +2008,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 2026-09-02 | 백종태 | 🆕 **요청 8번 추가 — 마감·준비 단계 배속(강민서).**
 | 2026-09-08 | 김시리 | ⚠️ **필수 설치 시설 게이트 — 계약 변경 2건.** `IsCurrentStageSkippable()` 이 필수 시설 조건도 보게 되어 **무대가 없으면 스킵 버튼이 비활성됩니다**(`CanSkipCurrentStage` 가 그대로 중계). **`RemainingTime == 0` 이 오래 지속되는 상태가 생겼습니다**(값 범위는 그대로, 0 에서 머무는 시간이 길어진 것). 신규 API: `CanTransitionTo` · `GetStageAdvanceBlockingReason`(Stage 절) / `UFF_RequiredFacilitiesSubsystem` · `OnFestivalDefinitionChanged`(김시리 절). 막힌 사유는 종태님이 만들어 두신 `Text_CtaReason`(CTA 버튼 왼쪽, AT-011 대비) 자리에 값을 흘려 넣어 **이미 표시됩니다** — 부탁드리는 것은 PIE 확인 하나입니다. 탐색을 더 빠르게 하는 백로그 3건(카탈로그 느낌표·`00:00` 상태 표시·카드 진행도)은 급하지 않으며 김시리 절에 정리했습니다. Stage 서브시스템은 강민서 님 소유이므로 함께 확인 부탁드립니다 `TimeScale` 이 `Tick` 의 Live 분기에서만 쓰여서, 마감·리포트·셋업·개장 준비에는 **배속 버튼을 못 답니다**(눌러도 안 되는 버튼이 됩니다). 비-Live 분기에도 적용해 주시면 UI 는 버튼만 열면 됩니다. ❓ **개장 준비는 기획상 시간이 멈추는 단계인데 코드는 흐릅니다** — 어느 쪽이 맞는지 확인 부탁드립니다. ✅ 그리고 **마지막 날 배속 잠금은 UI 쪽 착오였습니다** — 웹 프로토타입 규칙을 옮긴 것이고 소유자 코드에는 없어서 지웠습니다 |
 | 2026-09-15 | 김시리 | ✅ **`SimSatisfaction` 더미 해제.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층으로 산출하는 실값입니다. 분해값 4종(`GetSimSatisfactionWaitScore/DensityScore/PreferenceScore/NeedFulfillmentScore` + 각 `OnXxxChanged`)도 ViewModel에 있습니다. `ScoreSatisfaction` 합산(FinaleBonus 더하기)은 아직 더미입니다 |
+| 2026-09-16 | 김시리 | 🆕 **SNS Read Model 값 쪽 완성 — UI 연결만 남았습니다.** 위 B표 항목 참조. `UFF_CrowdInsightsSubsystem`이 3~10초마다 화제·문장을 결정론적으로 골라 `FFF_SnsPostRow`를 만들고, `FF_FestivalViewModelSubsystem::GetRecentSnsPosts()`/`OnSnsPostAdded`가 Gold·SimSatisfaction과 같은 방식으로 `FFF_LiveSocialPost`를 중계합니다. **부탁드리는 것 두 가지**: ① `FF_LivePanelSNS`가 `Debug_SetPosts` 대신 이 두 API를 구독하도록 바꿔주세요(구조·감정 표현은 그대로 `FFF_LiveSocialPost`라 위젯 트리는 안 건드리셔도 될 것 같습니다) ② 화면에 몇 건까지 보여줄지·스크롤 정책은 UI 쪽 판단으로 정해주세요. `{시설}` 문장은 `FFFZSFacilityReadModel`에 시설 표시 이름이 실리기 전까지 후보에서 뺐습니다(한광훈 님 쪽 스레딩 필요, 요청 #2와 같은 건) |
