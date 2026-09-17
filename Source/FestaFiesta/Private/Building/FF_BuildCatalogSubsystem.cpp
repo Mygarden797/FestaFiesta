@@ -49,6 +49,7 @@ void UFF_BuildCatalogSubsystem::Deinitialize()
 	Entries.Reset();
 	CategoryGroups.Reset();
 	LoadState = EFF_BuildCatalogLoadState::NotRequested;
+	++CatalogRevision;
 	LastError = FText::GetEmpty();
 	SkippedAssetCount = 0;
 
@@ -78,6 +79,7 @@ void UFF_BuildCatalogSubsystem::RefreshCatalog()
 	SkippedAssetCount = 0;
 	LastError = FText::GetEmpty();
 	LoadState = EFF_BuildCatalogLoadState::Loading;
+	++CatalogRevision;
 
 	UAssetManager& AssetManager = UAssetManager::Get();
 	FPrimaryAssetTypeInfo TypeInfo;
@@ -184,6 +186,18 @@ UFFZSFacilityDefinition* UFF_BuildCatalogSubsystem::FindDefinition(
 	return EntryIndex && Entries.IsValidIndex(*EntryIndex)
 		? Entries[*EntryIndex].Definition.Get()
 		: nullptr;
+}
+
+FText UFF_BuildCatalogSubsystem::ResolveFacilityDisplayName(const FName FacilityDefinitionId) const
+{
+	const int32* EntryIndex = EntryIndexByDefinitionId.Find(FacilityDefinitionId);
+	if (EntryIndex && Entries.IsValidIndex(*EntryIndex) && !Entries[*EntryIndex].DisplayName.IsEmpty())
+	{
+		return Entries[*EntryIndex].DisplayName;
+	}
+	return LoadState == EFF_BuildCatalogLoadState::NotRequested || LoadState == EFF_BuildCatalogLoadState::Loading
+		? LOCTEXT("FacilityNameLoading", "시설 이름 불러오는 중")
+		: LOCTEXT("FacilityNameMissing", "이름이 설정되지 않은 시설");
 }
 
 bool UFF_BuildCatalogSubsystem::TryGetDefinitionSpec(
@@ -470,6 +484,7 @@ void UFF_BuildCatalogSubsystem::FinishRefresh(
 	// 상태와 오류를 먼저 저장하여 이벤트를 받은 구독자가 즉시 일관된 최종 스냅샷을 읽게 합니다.
 	LoadState = NewState;
 	LastError = Error;
+	++CatalogRevision;
 	OnCatalogChanged.Broadcast();
 
 	if (NewState == EFF_BuildCatalogLoadState::Ready)

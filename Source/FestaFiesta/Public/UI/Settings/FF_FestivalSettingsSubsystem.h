@@ -132,7 +132,7 @@ private:
 	void RemoveConflictingDebugBindings(APlayerController* Controller) const;
 	bool ShouldDeferOpenToActiveGameplayMode(const APlayerController& Controller) const;
 	bool OpenPauseMenuInternal(APlayerController* RequestingController, const FKey& TriggerKey);
-	bool OpenSettingsLayer(EFF_FestivalSettingsCategory Category);
+	bool OpenSettingsLayer(TOptional<EFF_FestivalSettingsCategory> Category = {});
 	bool CloseSettingsLayer();
 	bool ClosePauseSession();
 	void ForceClosePauseSession();

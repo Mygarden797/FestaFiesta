@@ -108,6 +108,20 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Limit")
 	bool bBuildLimitReached = false;
 
+	// 현재 축제의 권위 필수시설 상태를 화면용으로 투영한 값입니다. 가격·건축 한도와 독립적입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
+	bool bRequiredForSetup = false;
+
+	// 설정이 유효하고 필요한 개수가 모두 설치된 경우에만 true입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
+	bool bRequiredSetupSatisfied = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
+	int32 RequiredInstalledCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
+	int32 RequiredMinimumCount = 0;
+
 	// 현재 Festival의 FacilityCostTable에서 해석한 설치비입니다. 카탈로그 구성 시 한 번 계산해
 	// UMG/Slate 표현이 같은 가격 원천을 사용하게 하며, 실패하면 bHasResolvedInstallCost가 false입니다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")

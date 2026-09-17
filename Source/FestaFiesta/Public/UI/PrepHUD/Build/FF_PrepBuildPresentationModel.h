@@ -35,6 +35,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
 	void RefreshGold(int32 Gold, bool bHasAuthoritativeGold = true);
 
+	/** 다음 Reconcile에서 추천 배지를 적용하고, 필터를 통과한 추천 항목을 먼저 보여 줍니다. */
+	void SetSynergyHighlightIds(const TArray<FName>& DefinitionIds);
+
 	/** UListView/UTileView::SetListItems에 바로 넘길 수 있는 배열 복사본입니다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	TArray<UObject*> GetListItems() const;
@@ -52,6 +55,8 @@ public:
 	FFF_OnPrepBuildPresentationChanged OnPresentationChanged;
 
 private:
+	TSet<FName> SynergyHighlightIds;
+
 	/** 필터에서 잠시 빠진 항목도 같은 카탈로그에 있으면 identity를 유지합니다. */
 	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UFF_PrepBuildTileData>> TilePool;

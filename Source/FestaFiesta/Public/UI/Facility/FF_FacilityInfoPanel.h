@@ -13,6 +13,8 @@ class UButton;
 class UCommonTextBlock;
 class UImage;
 class UWidget;
+class UVerticalBox;
+class UFF_FacilitySynergyEntryWidget;
 
 /**
  * Native contract for WBP_FF_FacilityInfoPanel.
@@ -82,16 +84,36 @@ private:
 	void HandleUpgradeClicked();
 
 	UFUNCTION() void HandleOverviewClicked();
+	UFUNCTION() void HandleSynergyClicked();
 	UFUNCTION() void HandleOperationClicked();
 	UFUNCTION() void HandleUpgradeTabClicked();
 	UFUNCTION() void HandleFavoriteClicked();
 	UFUNCTION() void HandleRemoveConfirmClicked();
 	UFUNCTION() void HandleRemoveCancelClicked();
 	void RefreshPageVisibility();
+	void RefreshSynergyEntries();
+	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);
 	EFF_FacilityInfoPage ActivePage = EFF_FacilityInfoPage::Overview;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_TabOverview;
+	/** Optional only to support additive migration of an older panel WBP. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabSynergy;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_SynergySection;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_SynergySummary;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UVerticalBox> VerticalBox_SynergyEntries;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Synergy",
+		meta = (AllowPrivateAccess = "true", DisplayName = "조합 행 위젯", ToolTip = "조합 탭의 각 항목을 그리는 WBP입니다. 글꼴·색·간격은 이 WBP의 Designer에서 수정합니다."))
+	TSoftClassPtr<UFF_FacilitySynergyEntryWidget> SynergyEntryWidgetClass =
+		TSoftClassPtr<UFF_FacilitySynergyEntryWidget>(FSoftObjectPath(
+			TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilitySynergyEntryWidget>> SynergyEntryPool;
+	UPROPERTY(Transient) TSubclassOf<UFF_FacilitySynergyEntryWidget> LoadedSynergyEntryClass;
+	bool bSynergyEntryLoadFailed = false;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_TabOperation;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
