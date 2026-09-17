@@ -59,6 +59,22 @@ public:
 	// Rebind visible data after a price/thumbnail change without releasing the virtualized row.
 	void RefreshItemPresentation();
 
+	/** 선택한 기존 시설과 관련된 설치 후보를 강조합니다. 스타일은 WBP가 소유합니다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Synergy")
+	void SetSynergyHighlighted(bool bHighlighted);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Synergy")
+	bool IsSynergyHighlighted() const { return bSynergyHighlighted; }
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Required")
+	void SetRequiredFacilityStatus(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
+	bool IsRequiredFacility() const { return bRequiredFacility; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
+	bool IsRequiredFacilitySatisfied() const { return bRequiredFacilitySatisfied; }
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -68,6 +84,33 @@ protected:
 	virtual void NativeOnEntryReleased() override;
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
+
+	/** 추가 애니메이션 등을 연결합니다. 재활용 해제 시에도 false 상태를 받습니다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI|Prep|Build|Synergy")
+	void BP_OnSynergyHighlightChanged(bool bHighlighted);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI|Prep|Build|Required")
+	void BP_OnRequiredFacilityStatusChanged(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+
+	/** 부족·충족 각각의 문구/색상/폰트/배치는 WBP에서 편집합니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Required")
+	TObjectPtr<UBorder> Border_RequiredMissing;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Required")
+	TObjectPtr<UBorder> Border_RequiredSatisfied;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Required")
+	TObjectPtr<UTextBlock> Text_RequiredMissing;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Required")
+	TObjectPtr<UTextBlock> Text_RequiredSatisfied;
+
+	/** 표시만 제어하는 독립 레이어라 기존 선택·호버 색상과 충돌하지 않습니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Synergy")
+	TObjectPtr<UBorder> Border_SynergyHighlight;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Synergy")
+	TObjectPtr<UTextBlock> Text_SynergyBadge;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UBorder> Border_Card;
@@ -124,12 +167,19 @@ private:
 	void RefreshFavorite();
 	void RefreshFromItem();
 	void RefreshVisualState(bool bIsSelected);
+	void ApplySynergyHighlight();
+	void ApplyRequiredFacilityStatus();
 	FVector2D GetAuthoredThumbnailBounds() const;
 	TWeakObjectPtr<USizeBox> ThumbnailFrame;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_PrepBuildTileData> Item;
 	bool bCardHovered = false;
+	bool bSynergyHighlighted = false;
+	bool bRequiredFacility = false;
+	bool bRequiredFacilitySatisfied = false;
+	int32 RequiredFacilityCurrentCount = 0;
+	int32 RequiredFacilityMinimumCount = 0;
 	FSlateBrush AuthoredCardBrush;
 	FSlateColor AuthoredCostColor;
 	FSlateColor AuthoredStateColor;

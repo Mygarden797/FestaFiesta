@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "Styling/SlateTypes.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationTypes.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
@@ -20,6 +21,7 @@ class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeSubsystem;
 class UFF_BuildFavoritesSubsystem;
+class UFF_RequiredFacilitiesSubsystem;
 class UFF_PrepChoiceButton;
 class UFF_PrepBuildPresentationModel;
 class UFF_PrepBuildTileView;
@@ -81,6 +83,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
 	bool CanGoToNextPage() const;
 
+	/** Reveal one card once, clearing filters that would hide it. Never starts placement. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
+	void RequestFacilityFocus(FName FacilityDefinitionId);
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
@@ -106,6 +112,15 @@ protected:
 
 	UFUNCTION()
 	void HandleBuildCatalogFocusRestoreRequested();
+
+	UFUNCTION()
+	void HandleSynergyCatalogContextChanged();
+
+	UFUNCTION()
+	void HandleCatalogFacilityFocusRequested(FName FacilityDefinitionId);
+
+	UFUNCTION()
+	void HandleRequiredFacilitiesChanged();
 
 	UFUNCTION()
 	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);
@@ -284,6 +299,9 @@ private:
 	void RefreshVisibleTiles();
 	void ApplyPresentation(bool bReplaceListItems = true);
 	void ApplyBuildModeState(EFF_BuildModeState State);
+	void RevealSynergyRecommendations();
+	void RefreshRequiredFacilitiesPresentation();
+	void ApplyRequiredFacilitiesSnapshot();
 
 	/** 카탈로그를 펼쳤을 때의 패널 높이(px). `FF_PrepHudBar` 의 `PanelLayouts` 표와 같아야 한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
@@ -338,6 +356,13 @@ private:
 	TObjectPtr<UFF_BuildFavoritesSubsystem> FavoritesSubsystem;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UFF_RequiredFacilitiesSubsystem> RequiredFacilitiesSubsystem;
+
+	FFF_RequiredFacilitiesStatus RequiredFacilitiesSnapshot;
+	FTimerHandle RequiredFacilitiesRefreshTimer;
+	bool bRequiredFacilitiesDirty = true;
+
+	UPROPERTY(Transient)
 	TArray<FFF_BuildCatalogEntry> PricedEntries;
 
 	UPROPERTY(Transient)
@@ -365,4 +390,7 @@ private:
 	bool bPanelOpen = false;
 	bool bClosingPanel = false;
 	bool bHasLegacyCategoryStyles = false;
+	bool bRevealSynergyOnCatalogOpen = false;
+	FName PendingCatalogFocusId;
+	bool bApplyingCatalogFocus = false;
 };

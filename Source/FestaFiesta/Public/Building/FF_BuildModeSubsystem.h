@@ -21,6 +21,7 @@ class UFF_BuildCatalogScreen;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeGuide;
 class UFF_BuildToolsWidget;
+class UFF_BuildSynergyWidget;
 class UFF_BuildPlacementFailureFeedback;
 class UFF_FacilityInfoSubsystem;
 class UFFZSWorldSubsystem;
@@ -53,6 +54,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 // 외부 PrepHUD 카탈로그의 exact Slate focus가 사라졌을 때 안정적인 카테고리 버튼으로 복구하도록 요청한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildCatalogFocusRestoreRequested);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildToolsChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSynergyCatalogContextChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBuildCatalogFacilityFocusRequested, FName, FacilityDefinitionId);
 
 // 입력과 부작용을 분리해 자동화 테스트에서도 실제 B 키 상태표를 검증할 수 있게 한다.
 namespace FFBuildModeModel
@@ -339,6 +342,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_BuildFacilityInspectionTest;
 	friend class FFF_BuildGridOverviewTest;
 	friend class FFF_BuildDragPlacementTest;
+	friend class FFF_BuildSynergyCatalogContextTest;
 #endif
 
 public:
@@ -370,6 +374,16 @@ public:
 	 * this action opens the existing information panel and never installs, moves or removes. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	bool InspectFacility(AFFZSFacilityActor* Facility);
+
+	/** Authored combo partners of the last inspected facility; no distance or income guarantee. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Synergy")
+	TArray<FName> GetSynergyCatalogFacilityIds() const { return SynergyCatalogFacilityIds; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Synergy")
+	FText GetSynergyCatalogSourceName() const { return SynergyCatalogSourceName; }
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building|Synergy")
+	FFF_OnSynergyCatalogContextChanged OnSynergyCatalogContextChanged;
 
 	/** Pause Hub가 건축 상태를 파괴하지 않고 입력 소유권만 임시로 넘긴다. 활성 세션에서만 true. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Pause")
@@ -413,6 +427,16 @@ public:
 	 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
 	void OpenCatalog();
+
+	/** Open the catalog at one facility without starting placement. Loading can complete asynchronously. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building")
+	bool OpenCatalogForFacility(FName FacilityDefinitionId);
+
+	FName GetPendingCatalogFacilityId() const { return PendingCatalogFacilityId; }
+	void AcknowledgeCatalogFacilityFocus(FName FacilityDefinitionId);
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Building")
+	FFF_OnBuildCatalogFacilityFocusRequested OnBuildCatalogFacilityFocusRequested;
 
 	
 	// 카탈로그 ID에 해당하는 시설 정의를 검증하고 Placing 상태로 전환한다.
@@ -504,6 +528,8 @@ private:
 	// 현재 표시 중인 카탈로그 위젯. CatalogOpen 외 상태에서는 원칙적으로 null이다. 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildCatalogScreen> CatalogScreen;
+	// 위젯이 제거되어도 같은 월드에서 마지막으로 본 분류는 유지한다.
+	TOptional<EFFZSFacilityCategory> LastCatalogCategory;
 
 	// Install/Move 전 검증과 시각화를 담당하는 일회성 액터. Placing/Moving 동안만 존재한다.
 	UPROPERTY(Transient)
@@ -515,12 +541,28 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildToolsWidget> BuildToolsWidget;
 
+	// Read-only combo presentation shares placement validation cadence and never owns placement authority.
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildSynergyWidget> BuildSynergyWidget;
+	UPROPERTY(EditDefaultsOnly, Category = "Building|Synergy")
+	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+	bool bHasSynergyPreviewKey = false;
+	FName SynergyPreviewDefinitionId;
+	FGuid SynergyPreviewMovingId;
+	FVector SynergyPreviewLocation = FVector::ZeroVector;
+	uint64 SynergyPreviewRevision = 0;
+	uint64 SynergyPreviewCatalogRevision = 0;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
 	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(
 		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
 
 	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;
+	FGuid SynergyCatalogSourceId;
+	TArray<FName> SynergyCatalogFacilityIds;
+	FText SynergyCatalogSourceName;
 	// Moving 세션이 대상으로 삼은 권위 액터. 외부 이동·삭제 및 스냅샷 복원 시 무효화한다.
 	TWeakObjectPtr<AFFZSFacilityActor> MovingFacility;
 
@@ -593,6 +635,7 @@ private:
 	int32 PreferredPositionSnapCm = 0;
 	// 썸네일 해제 방송 중 공개 전환 API가 재진입해 Closed 불변식을 깨뜨리지 않게 한다.
 	bool bIsExitingBuildMode = false;
+	FName PendingCatalogFacilityId;
 	// 현재 CommitPreview의 Move 이벤트가 돌아오는 동안만 true다.
 	bool bMoveCommitInFlight = false;
 	// 건축 세션 진입 직전 PlayerController의 커서 표시 상태. 
@@ -637,6 +680,8 @@ private:
 	void CreateBuildModeGuide(APlayerController& Controller);
 	void CreateBuildTools(APlayerController& Controller);
 	void RemoveBuildTools();
+	void RefreshBuildSynergyPreview();
+	void ClearBuildSynergyPreview(bool bRemoveFromParent = false);
 	// 저장된 WBP의 named text가 존재할 때만 현재 상태·각도·설정값을 안전하게 반영한다.
 	void RefreshBuildModeGuide();
 	// 조작 안내 패널을 뷰포트에서 제거한다. 여러 번 호출해도 안전하다.
@@ -669,7 +714,9 @@ private:
 	bool CanInspectClosedPreparation(const APlayerController& Controller) const;
 	// 현재 작업 대상을 범위로 강조하고, 이전 대상이 있으면 강조를 해제한다.
 	// 선택 강조와 약한 참조를 함께 정리한다. 카탈로그/종료/스냅샷 복원에서도 호출한다.
-	void ClearPendingRemovalSelection();
+	void ClearPendingRemovalSelection(bool bPreserveSynergyContext = false);
+	void SetSynergyCatalogContext(const AFFZSFacilityActor& Facility);
+	void ClearSynergyCatalogContext();
 	// 공용 우측 시설 정보 WBP를 건축 컨텍스트로 열거나 닫는다.
 	void RemoveRemovalConfirmation(FGuid FacilityInstanceId);
 	void ShowFacilityInfoFeedback(const FText& Feedback, bool bIsError) const;

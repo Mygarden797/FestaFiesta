@@ -360,6 +360,7 @@ private:
 	int32 PresentedConfirmSeconds = -1;
 
 	EFF_OptionCategory SelectedCategory = EFF_OptionCategory::Accessibility;
+	bool bHasSelectedCategory = false;
 	FDraft Draft;
 	FDraft Saved;
 

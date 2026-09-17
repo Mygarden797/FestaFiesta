@@ -603,6 +603,7 @@ FFFZSFacilityReadModel AFFZSFacilityActor::GetReadModel() const
     FFFZSFacilityReadModel Result;
     Result.FacilityInstanceId = FacilityInstanceId;
     Result.FacilityDefinitionId = FacilitySpec.FacilityDefinitionId;
+    Result.DisplayName = FacilitySpec.DisplayName;
     Result.UpgradeLevel = UpgradeLevel;
     Result.UpgradeServiceDurationMultiplier = UpgradeServiceDurationMultiplier;
     Result.UpgradeSizeMultiplier = UpgradeSizeMultiplier;

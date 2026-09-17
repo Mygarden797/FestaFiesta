@@ -115,6 +115,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
 	DayLedger.Reset();
+	// 시설별 장부는 축제 단위 누적이라 하루 경계가 아니라 여기서만 비운다.
+	FacilityRevenueBook.Reset();
 	// 새 축제에 이전 판 스냅샷이 남지 않게 한다.
 	// [주의] 지금은 아래 TryProcessNewDay(1) 이 어차피 덮으므로 이 두 줄이 없어도 동작이 같다
 	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
@@ -227,6 +229,24 @@ void UFF_FestivalProgressionSubsystem::PublishFacilityUpgradeSpend(const FGuid C
 
 void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
 {
+	RecordRevenue(Amount, Reason, FacilityId, FGuid());
+}
+
+void UFF_FestivalProgressionSubsystem::AddFacilityRevenue(
+	int32 Amount, EFF_EarnReason Reason, FName FacilityId, FGuid FacilityInstanceId)
+{
+	RecordRevenue(Amount, Reason, FacilityId, FacilityInstanceId);
+}
+
+bool UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue(
+	FGuid FacilityInstanceId, FFF_FacilityInstanceRevenue& OutRevenue) const
+{
+	return FacilityRevenueBook.Find(FacilityInstanceId, OutRevenue);
+}
+
+void UFF_FestivalProgressionSubsystem::RecordRevenue(
+	int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId)
+{
 	if (Amount > 0)
 	{
 		// 잔액과 누적 매출 중 먼저 상한에 닿는 값에 맞춰 동일한 수용액을 원장에도 기록한다.
@@ -241,7 +261,10 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 
 	Funds.AddRevenue(Amount);
 	DayLedger.RecordEarn(Reason, Amount, FacilityId);
-	
+	// 시설 핸들이 없는 매출(입장료·보너스)은 시설별 장부에 들어가지 않는다. 같은 금액을 같은 호출에서
+	// 세 장부에 넣으므로 시설 정보 패널의 값과 결산 표의 합이 어긋날 수 없다.
+	const bool bFacilityRevenueChanged = FacilityRevenueBook.Record(FacilityInstanceId, Amount);
+
 	// 미납이 있으면 방금 들어온 돈이 잔액에 남지 않고 먼저 임대료를 갚는다.
 	RepayArrearsFromGold();
 
@@ -249,6 +272,10 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
+	if (bFacilityRevenueChanged)
+	{
+		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
+	}
 }
 
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
@@ -714,7 +741,8 @@ int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
 
 	if (Fee > 0)
 	{
-		AddRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId);
+		// 체험비는 프로그램을 연 설치 시설에도 귀속된다 — 시설 정보 패널이 "이 시설이 번 돈"으로 보여 준다.
+		AddFacilityRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId, Reservation.FacilityInstanceId);
 	}
 
 	return Fee;
@@ -926,6 +954,8 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	EndedDay = JustEndedDay;
 
 	DayLedger.Reset();
+	// 시설별 장부는 오늘 값만 0 으로 돌아가고 누적은 남는다 (시설 정보 패널의 "누적 매출").
+	FacilityRevenueBook.BeginNewDay();
 	
 	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.
 	StaffPool.SetTemporaryStaffCount(0);

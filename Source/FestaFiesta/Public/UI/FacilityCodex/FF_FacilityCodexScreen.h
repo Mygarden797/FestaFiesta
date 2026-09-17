@@ -1,0 +1,90 @@
+// Event-driven UMG collection screen. All layout is authored in the saved WBP.
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "Building/Codex/FF_FacilityCodexTypes.h"
+#include "FF_FacilityCodexScreen.generated.h"
+
+class UButton;
+class UEditableTextBox;
+class UFF_FacilityCodexImage;
+class UTextBlock;
+class UFF_FacilityCodexItem;
+class UFF_FacilityCodexSubsystem;
+class UFF_FacilityCodexTileView;
+
+UCLASS(Abstract, Blueprintable, meta=(DisplayName="FF Facility Codex Screen"))
+class FESTAFIESTA_API UFF_FacilityCodexScreen : public UUserWidget
+{
+	GENERATED_BODY()
+public:
+	FSimpleMulticastDelegate OnCloseRequested;
+	/** Both the benefiting facility and its nearby partner match this filter. None means all. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	void SetFacilityFilter(FName FacilityId);
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	void SetDiscoveryFilter(EFF_FacilityCodexFilterState State);
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	void SetSearchText(const FText& SearchText);
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	FName GetSelectedRuleId() const { return SelectedRuleId; }
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	int32 GetVisibleEntryCount() const { return VisibleItems.Num(); }
+#if WITH_EDITOR || WITH_DEV_AUTOMATION_TESTS
+	/** Deterministic editor/test presentation without changing gameplay or discovery saves. */
+	void SetPreviewEntries(const TArray<FFF_FacilityCodexEntry>& Entries);
+#endif
+protected:
+	virtual void NativeOnInitialized() override;
+	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& MouseEvent) override;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UFF_FacilityCodexTileView> TileView_Entries;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UEditableTextBox> Search_Entries;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Close;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_All;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Discovered;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Undiscovered;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_ClearFacility;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Summary;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Filter;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Empty;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UWidget> Panel_Detail;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_DetailTitle;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_TargetName;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_PartnerName;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Bonus;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Distance;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Discovery;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Condition;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Applied;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Target;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Partner;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_TargetFallback;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_PartnerFallback;
+private:
+	UFUNCTION() void RefreshFromSubsystem();
+	UFUNCTION() void HandleClose();
+	UFUNCTION() void HandleAll();
+	UFUNCTION() void HandleDiscovered();
+	UFUNCTION() void HandleUndiscovered();
+	UFUNCTION() void HandleClearFacility();
+	UFUNCTION() void HandleSearchChanged(const FText& Text);
+	void ApplyEntries(const TArray<FFF_FacilityCodexEntry>& Entries);
+	void RefreshFilter();
+	void RefreshDetail();
+	void HandleSelectionChanged(UObject* SelectedItem);
+	UPROPERTY(Transient) TObjectPtr<UFF_FacilityCodexSubsystem> Codex;
+	UPROPERTY(Transient) TMap<FName, TObjectPtr<UFF_FacilityCodexItem>> ItemsByRule;
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilityCodexItem>> AllItems;
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilityCodexItem>> VisibleItems;
+	FFF_FacilityCodexFilter Filter;
+	FFF_FacilityCodexSummary Summary;
+	FName SelectedRuleId;
+	TSoftObjectPtr<UTexture2D> ShownTarget;
+	TSoftObjectPtr<UTexture2D> ShownPartner;
+	bool bApplyingFilter = false;
+	bool bPreviewData = false;
+};

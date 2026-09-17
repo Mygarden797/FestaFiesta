@@ -13,8 +13,10 @@
 #include "FF_BuildFacilityCard.generated.h"
 
 class UCommonTextBlock;
+class UBorder;
 class UFF_BuildFacilityCostTooltip;
 class UImage;
+class UTextBlock;
 class UTexture2D;
 
 
@@ -36,6 +38,25 @@ public:
 	// soft reference를 동기 로드하지 않고 이미 메모리에 있는 텍스처만 사용합니다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|UI")
 	void RefreshThumbnail();
+
+	/** 선택한 기존 시설과 조합할 수 있는 설치 후보입니다. 실제 수익 적용 여부와는 별개입니다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|UI|Synergy")
+	void SetSynergyHighlighted(bool bHighlighted);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI|Synergy")
+	bool IsSynergyHighlighted() const { return bSynergyHighlighted; }
+
+	/** 필수 설치 조건의 읽기 전용 스냅샷입니다. 배지 스타일은 WBP가 소유합니다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|UI|Required")
+	void SetRequiredFacilityStatus(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI|Required")
+	bool IsRequiredFacility() const { return bRequiredFacility; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI|Required")
+	bool IsRequiredFacilitySatisfied() const { return bRequiredFacilitySatisfied; }
+
+	static FText MakeRequiredFacilityToolTip(bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
 
 	// 요청 이미지가 이미 로드돼 있으면 우선 사용하고, 아니면 이미 로드된 공용 대체 이미지를 반환합니다.
 	static UTexture2D* ResolveLoadedThumbnail(
@@ -59,12 +80,26 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
+	/** 테두리·배지 외에 디자이너가 추가할 상태 표현입니다. 상태가 바뀔 때만 호출됩니다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Building|UI|Synergy")
+	void BP_OnSynergyHighlightChanged(bool bHighlighted);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Building|UI|Required")
+	void BP_OnRequiredFacilityStatusChanged(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+
 private:
 	// Configure 호출 시점과 WidgetTree 생성 시점이 달라도 같은 결과가 되도록 바인딩을 한곳에 모은다. 
 	void ApplyEntryToWidgets();
 	void ApplyThumbnailToWidget();
 	void RefreshFacilityCostTooltip();
 	void ApplyFacilityCostTextFallback();
+	void ApplySynergyHighlight();
+	void ApplyRequiredFacilityStatus();
+	bool bSynergyHighlighted = false;
+	bool bRequiredFacility = false;
+	bool bRequiredFacilitySatisfied = false;
+	int32 RequiredFacilityCurrentCount = 0;
+	int32 RequiredFacilityMinimumCount = 0;
 
 	// 원본 카탈로그 배열 수명과 분리된 카드별 데이터 스냅샷이다. 
 	UPROPERTY(Transient)
@@ -77,6 +112,26 @@ private:
 	// 썸네일 메타데이터가 아직 없는 카탈로그도 허용하기 위한 선택적 WBP 계약이다. 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;
+
+	/** 런타임은 표시 여부만 바꿉니다. 색상·두께·배치·문구는 WBP에서 편집합니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Synergy", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_SynergyHighlight;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Synergy", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_SynergyBadge;
+
+	/** 부족·충족 각각의 문구/색상/폰트/배치는 WBP가 소유합니다. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Required", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_RequiredMissing;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Required", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_RequiredSatisfied;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Required", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_RequiredMissing;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Required", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_RequiredSatisfied;
 
 	// 시설별 이미지가 아직 준비되지 않았을 때 사용하는 공용 대체 이미지입니다.
 	// 카드에서는 로드하지 않으므로 UI 클래스 등 다른 소유자가 이미 메모리에 올린 경우에만 사용합니다.

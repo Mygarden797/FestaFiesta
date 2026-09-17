@@ -6,6 +6,9 @@
 
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "Building/FF_FacilityUpgradeSubsystem.h"
+#include "Building/Synergy/FF_FacilitySynergySettings.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
+#include "UObject/StrongObjectPtr.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
@@ -444,6 +447,14 @@ bool FFF_QueueEconomyBridge_ServedExitAddsCommission::RunTest(const FString& Par
 	TestEqual(TEXT("표의 키가 FacilityDefinitionId 다"), FacilityRows[0].FacilityId, BoothDefinitionId);
 	TestEqual(TEXT("표의 금액이 수수료와 같다"), FacilityRows[0].Amount, Expected);
 
+	// 설치 시설 인스턴스 장부 — 같은 종류의 부스가 여러 개여도 이 부스 한 곳의 값이다 (시설 정보 패널용).
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	TestTrue(TEXT("인스턴스 장부에 이 부스가 있다"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, InstanceRevenue));
+	TestEqual(TEXT("인스턴스 오늘 매출이 수수료와 같다"), InstanceRevenue.TodayGold, Expected);
+	TestEqual(TEXT("인스턴스 누적 매출이 수수료와 같다"), InstanceRevenue.TotalGold, Expected);
+	TestEqual(TEXT("인스턴스 결제 건수는 파티 한 번이다"), InstanceRevenue.TodayPaymentCount, 1);
+
 	return true;
 }
 
@@ -483,6 +494,9 @@ bool FFF_QueueEconomyBridge_UnpaidExitAddsNothing::RunTest(const FString& Parame
 		Harness.Progression->GetTodayRevenue(), RevenueBefore);
 	TestEqual(TEXT("부스별 표도 비어 있다"),
 		Harness.Progression->GetRevenueByFacilityRowsForDay(1).Num(), 0);
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	TestFalse(TEXT("인스턴스 장부에도 결제가 없다"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, InstanceRevenue));
 
 	return true;
 }
@@ -619,6 +633,101 @@ bool FFF_QueueEconomyBridge_UpgradeRevenueRespectsFundsCapacity::RunTest(const F
 	const TArray<FFF_FacilityRevenueRow> RowsAfterRejectedPayout = Harness.Progression->GetRevenueByFacilityRowsForDay(1);
 	if (!TestEqual(TEXT("Rejected overflow does not append another facility row"), RowsAfterRejectedPayout.Num(), 1)) return false;
 	TestEqual(TEXT("Rejected overflow does not increase the existing ledger row"), RowsAfterRejectedPayout[0].Amount, AcceptedAmount);
+	return true;
+}
+
+// One end-to-end contract: preview, authority, integer commission, movement and restore agree.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_SynergyPreviewPaymentAndLifecycle,
+	"FestaFiesta.Building.Synergy.PreviewPaymentAndLifecycle",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_SynergyPreviewPaymentAndLifecycle::RunTest(const FString& Parameters)
+{
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	TStrongObjectPtr<UDataTable> SynergyTable(NewObject<UDataTable>());
+	SynergyTable->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	const FName PartnerDefinitionId(TEXT("Booth_FoodStall_SynergyPartner"));
+	FFF_FacilitySynergyRow Rule;
+	Rule.DisplayName = FText::FromString(TEXT("Test food pair"));
+	Rule.TargetFacilityId = BoothDefinitionId;
+	Rule.PartnerFacilityId = PartnerDefinitionId;
+	Rule.MaxDistanceMeters = 15.f;
+	Rule.RevenueBonusPercent = 25.f;
+	Rule.StackingGroup = TEXT("FoodComfort");
+	SynergyTable->AddRow(TEXT("FoodComfort"), Rule);
+	UFF_FacilitySynergySettings* Settings = GetMutableDefault<UFF_FacilitySynergySettings>();
+	TGuardValue<TSoftObjectPtr<UDataTable>> TableGuard(Settings->SynergyTable, TSoftObjectPtr<UDataTable>(SynergyTable.Get()));
+	TGuardValue<float> CapGuard(Settings->MaxTotalBonusPercent, 50.f);
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Synergy payment world initializes"), Harness.Initialize(this))) return false;
+	Harness.Definition->RevenuePerUseByMinorToken.Add(TEXT("FoodStall"), 100);
+	Harness.Definition->BoothCommissionRate = .2f;
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, true)) { AddError(Failure); return false; }
+	UFF_FacilitySynergySubsystem* Synergy = Harness.World->GetSubsystem<UFF_FacilitySynergySubsystem>();
+	UFF_FacilityUpgradeSubsystem* Upgrades = Harness.World->GetSubsystem<UFF_FacilityUpgradeSubsystem>();
+	if (!TestNotNull(TEXT("Synergy subsystem exists"), Synergy) || !TestNotNull(TEXT("Upgrade subsystem exists"), Upgrades)) return false;
+	FText UpgradeFailure;
+	if (!TestTrue(TEXT("Revenue-only upgrade applies"), Upgrades->TryUpgradeFacility(Harness.FacilityInstanceId, 1, UpgradeFailure))) return false;
+	TestEqual(TEXT("No partner means no bonus"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 0.f);
+	const FVector TargetLocation = Harness.ZoneSystem->FindFacility(Harness.FacilityInstanceId)->GetActorLocation();
+	FFF_FacilitySynergyPreview Preview;
+	Synergy->BuildPlacementPreview(PartnerDefinitionId, TargetLocation + FVector(1500, 0, 0), FGuid(), Preview);
+	if (!TestEqual(TEXT("Placing the helper explains the affected revenue facility"), Preview.Entries.Num(), 1)) return false;
+	TestEqual(TEXT("Preview includes the exact radius boundary"), Preview.Entries[0].ProposedTotalBonusPercent, 25.f);
+	TestEqual(TEXT("Preview does not mutate actual income"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 0.f);
+
+	FFFZSFacilitySpec PartnerSpec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	PartnerSpec.FacilityDefinitionId = PartnerDefinitionId;
+	PartnerSpec.InstallCostKey = NAME_None;
+	FFFZSGridPlacement PartnerPlacement;
+	PartnerPlacement.OriginCell = FIntPoint(2500, 1000);
+	const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(PartnerSpec, TestZoneId, PartnerPlacement, Harness.ZoneSystem->GetWorldRevision());
+	const FFFZSCommandResult InstallResult = Harness.ZoneSystem->ExecuteCommand(Install);
+	if (!TestTrue(*FString::Printf(TEXT("Partner installs: %s"), *InstallResult.Message.ToString()), InstallResult.bSucceeded)) return false;
+	TestEqual(TEXT("Installed result agrees with preview"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 25.f);
+	TestEqual(TEXT("One-way rule grants no income to the helper"), Synergy->GetBonusPercent(Install.FacilityInstanceId), 0.f);
+	FFF_FacilityUpgradePreview Quote;
+	if (!TestTrue(TEXT("Facility quote remains available"), Upgrades->GetUpgradePreview(Harness.FacilityInstanceId, Quote))) return false;
+	TestEqual(TEXT("Quote combines upgrade and synergy before rounding"), Quote.CurrentRevenuePerUseGold,
+		FFF_BoothRevenueRules::ResolveCommission(100, 1, .2f, 1.5f * 1.25f));
+	const int32 MemberCount = Harness.SpawnPartyAndGetMemberCount();
+	if (!TestTrue(TEXT("Real party data exists"), MemberCount > 0)) return false;
+	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
+	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueFacilityId, Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	TestEqual(TEXT("Paid completion posts the same combined multiplier to the ledger"), Harness.Progression->GetTodayRevenue() - RevenueBefore,
+		FFF_BoothRevenueRules::ResolveCommission(100, MemberCount, .2f, 1.5f * 1.25f));
+	FFFZSWorldSnapshot Snapshot = Harness.ZoneSystem->CaptureWorldSnapshot();
+	const uint64 RegistryBefore = Harness.ZoneSystem->GetFacilityRegistryRevision();
+	FFFZSCommand Move;
+	Move.CommandId = FGuid::NewGuid();
+	Move.TransactionId = FGuid::NewGuid();
+	Move.Type = EFFZSCommandType::Move;
+	Move.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Move.FacilityInstanceId = Install.FacilityInstanceId;
+	Move.ZoneId = TestZoneId;
+	Move.Placement.OriginCell = FIntPoint(5000, 1000);
+	if (!TestTrue(TEXT("Partner moves outside the radius"), Harness.ZoneSystem->ExecuteCommand(Move).bSucceeded)) return false;
+	TestEqual(TEXT("Move invalidates the revenue cache"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 0.f);
+	// Reuse the current transaction revision with different saved placements. A cache keyed
+	// only by WorldRevision would retain the incorrect zero bonus after this restore.
+	Snapshot.WorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	TArray<FText> RestoreErrors;
+	if (!TestTrue(TEXT("Authoritative snapshot restores"), Harness.QueueBridge->RestoreZoneWorldSnapshotAndSynchronize(Snapshot, RestoreErrors)))
+	{
+		for (const FText& Error : RestoreErrors) AddError(Error.ToString());
+		return false;
+	}
+	TestTrue(TEXT("Registry generation never rewinds with saved world revision"), Harness.ZoneSystem->GetFacilityRegistryRevision() > RegistryBefore);
+	TestEqual(TEXT("Restore rebuilds derived income instead of retaining the moved cache"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 25.f);
+	FFFZSCommand Remove;
+	Remove.CommandId = FGuid::NewGuid();
+	Remove.TransactionId = FGuid::NewGuid();
+	Remove.Type = EFFZSCommandType::Remove;
+	Remove.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Remove.FacilityInstanceId = Install.FacilityInstanceId;
+	if (!TestTrue(TEXT("Restored helper can be removed"), Harness.ZoneSystem->ExecuteCommand(Remove).bSucceeded)) return false;
+	TestEqual(TEXT("Removal invalidates the income cache"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 0.f);
 	return true;
 }
 
