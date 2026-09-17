@@ -99,13 +99,12 @@ struct FESTAFIESTA_API FFF_AtlasPinInstance
  *   `AFF_OverviewCameraPawn` 과 같은 규칙이다 — **입력 차단 판단은 Controller·화면 쪽 책임**이라
  *   씬 액터가 키를 직접 읽으면 UI 가 떠 있는 동안에도 지구가 돌아간다.
  * - 카메라 연출은 U3-c 다. 여기서는 지구의 자전·기울기만 소유한다.
- * - 국가 클릭 판정은 **넓은 UMG 핀 버튼**이 한다 (2026-08-21 확정). 그래서 이 액터의
- *   모든 컴포넌트는 **콜리전이 꺼져 있다** — 켜 두면 지구가 월드 클릭을 먹는다.
+ * - 국가 선택은 목록과 조형물 광선 판정이 공유한다. 지구 컴포넌트의 콜리전은 끈다.
  *
- * === 🔴 레벨에 놓는 방법 — 액터의 `+X` 화살표가 카메라를 향해야 한다 ===
- * 좌표 규약은 `FFF_AtlasGeo` 가 갖는다. 정면이 로컬 `+X` 이므로 **카메라를 액터의 +X 쪽에
- * 두거나, 액터를 돌려 +X 가 카메라를 보게 한다.** 에디터에서 보이는 빨간 화살표가 그 방향이다.
- * 이 규약 하나만 지키면 액터를 레벨 어디에 어떤 각도로 놓아도 핀·조형물·앞뒤 판정이 다 맞는다.
+ * === 레벨 기준 방향과 국가 선택 화면 ===
+ * 시작 구도·타이틀의 기본 정면은 로컬 `+X` 다. 빨간 화살표를 카메라 쪽으로 놓는다.
+ * 국가 선택 화면은 실제 뷰포트 목표 광선을 사용하므로 카메라의 옆·위 오프셋도 반영한다.
+ * 이때 선택 지점은 UI를 제외한 영역 중앙에 오며 앞뒤 판정도 실제 관측자 방향을 쓴다.
  *
  * === 회전은 루트가 아니라 `GlobeRoot` 가 한다 ===
  * 액터 자신을 돌리면 레벨에 놓은 방향(= 정면 규약)이 함께 돌아가 버린다.
@@ -176,6 +175,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
 	void FocusOnCountry(FName CountryId, bool bInstant = false);
 
+	/** 나라별 보기 기준점. 사용자 지정이 꺼져 있으면 기존 조형물 위치를 돌려준다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas")
+	FFF_AtlasLatLong GetCountryInspectionLocation(FName CountryId) const;
+
+	/** 국가 선택 화면이 전달하는 뷰포트 정규화 목표. 타이틀에서는 해제한다. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
+	void SetFocusViewportPosition(FVector2D Position);
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
+	void ClearFocusViewportPosition();
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas")
+	FVector2D GetFocusViewportPosition() const { return FocusViewportPosition; }
+
 	/**
 	 * 좌우 입력으로 다음 핀. `ScreenDirection` 은 **화면 기준**이다 — `+1` 이 오른쪽.
 	 * 잠긴 국가도 후보에 넣는다 (포커스는 가고 선택만 막는다).
@@ -196,7 +209,7 @@ public:
 	 * `NAME_None` 을 넣으면 선택을 해제한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
-	void SetSelectedCountry(FName CountryId);
+	void SetSelectedCountry(FName CountryId, bool bKeepCameraPosition = false);
 
 	/** 진행 중인 회전을 끝 상태로 즉시 끝낸다. **모든 연출은 입력으로 Skip 된다.** 도착으로 처리한다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas")
@@ -446,6 +459,9 @@ private:
 	 */
 	FFF_AtlasGlobeOrientation ComputeStartOrientation() const;
 
+	/** 현재 카메라·창 크기로 목표 광선을 구한다. 에디터/뷰포트 부재 시 기존 정면 규약을 쓴다. */
+	FFF_AtlasGlobeOrientation ComputeCountryFocusOrientation(FName CountryId) const;
+
 	/** 뒤편 핀·조형물을 숨기고 선택 표시를 갱신한다. Tick 이 매 프레임 부른다. */
 	void UpdatePinPresentation();
 
@@ -510,6 +526,8 @@ private:
 	TArray<FFF_AtlasPinInstance> Pins;
 
 	FFF_AtlasGlobeOrientation Orientation;
+	bool bUseFocusViewportPosition = false;
+	FVector2D FocusViewportPosition = FVector2D(0.5, 0.5);
 
 	FName FocusedCountryId;
 	FName HoveredCountryId;

@@ -179,6 +179,21 @@ struct FESTAFIESTA_API FFF_AtlasGeo
 		const FFF_AtlasLatLong& LatLong,
 		float MaxTiltDegrees);
 
+	/**
+	 * 국가 지점을 지정 방향으로 가져온다. 방향은 **회전 전 액터의 고정 로컬 공간**이며,
+	 * 화면 목표 위치의 구면 교점 법선을 호출부에서 변환해 넘긴다. 카메라·뷰포트를 읽지 않는다.
+	 *
+	 * 기존 `Ry(Tilt) * Rz(Spin)` 두 축만 사용한다. 도달 가능한 방향은 정확히 맞추고,
+	 * 고위도의 수평 이동 또는 기울기 제한 때문에 불가능하면 허용 범위에서 각도 오차가
+	 * 가장 작은 회전을 선택한다. 동률이면 기존 +X 정렬을 먼저 고려한 후보 순서를 유지한다.
+	 * `+X` 입력은 기존 `MakeFocusOrientation`과 같다. 영벡터·비유한 방향도 +X로 대체하고,
+	 * 비유한 위경도 성분은 0, 비유한 기울기 한계는 0으로 처리한다.
+	 */
+	static FFF_AtlasGlobeOrientation MakeFocusOrientationToward(
+		const FFF_AtlasLatLong& LatLong,
+		const FVector& DesiredLocalDirection,
+		float MaxTiltDegrees);
+
 	/** 지금 정면에 와 있는 위경도. `MakeOrientationFacing` 의 역이다. */
 	static FFF_AtlasLatLong OrientationToFrontLatLong(const FFF_AtlasGlobeOrientation& Orientation);
 
