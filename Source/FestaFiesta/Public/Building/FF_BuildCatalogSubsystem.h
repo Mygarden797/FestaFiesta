@@ -99,6 +99,13 @@ public:
 	 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Catalog")
 	UFFZSFacilityDefinition* FindDefinition(FName FacilityDefinitionId) const;
+
+	/** Uses exactly the construction menu's authored name; never exposes internal IDs. No asset load. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|Catalog")
+	FText ResolveFacilityDisplayName(FName FacilityDefinitionId) const;
+
+	/** Changes when names are cleared or replaced, so presentation caches follow async loading. */
+	uint64 GetCatalogRevision() const { return CatalogRevision; }
 	
 	// 선택한 정의의 Spec을 배치 명령 생성에 사용할 값으로 복사합니다.
 	// 실패 시 OutSpec은 기본값으로 초기화되며, 원본 Data Asset은 변경하지 않습니다.
@@ -121,6 +128,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildCatalogRetiredDefinitionTest;
 	friend class FFF_BuildDragPlacementTest;
+	friend class FFF_PrepProgramFacilityNavigationTest;
 #endif
 
 	// 로드 완료 콜백입니다. Generation이 최신 요청과 일치할 때만 결과를 재구성합니다. 
@@ -186,6 +194,7 @@ private:
 
 	// 늦게 도착한 이전 요청 콜백을 거부하기 위해 새 요청/종료 때마다 증가하는 세대값입니다. 
 	uint64 RequestGeneration = 0;
+	uint64 CatalogRevision = 0;
 	uint64 ThumbnailRequestGeneration = 0;
 
 	// 여러 월드/소비자가 같은 GameInstance 카탈로그를 사용할 수 있어 세션 소유권을 참조 수로 관리합니다.

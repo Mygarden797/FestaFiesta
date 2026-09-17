@@ -46,7 +46,8 @@ bool FFF_RequiredFacilitiesRulesTest::RunTest(const FString& Parameters)
 		Row.State = State;
 		Model.Facilities.Add(Row);
 		const auto Result = UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Definition, Model);
-		const bool bCounts = State == EFFZSFacilityState::Validated || State == EFFZSFacilityState::Active || State == EFFZSFacilityState::Closed;
+		const bool bCounts = State == EFFZSFacilityState::Validated || State == EFFZSFacilityState::Active
+			|| State == EFFZSFacilityState::Closed || State == EFFZSFacilityState::MovePending;
 		TestEqual(TEXT("Only installed usable lifecycle states count"), Result.Facilities[0].InstalledCount, bCounts ? 1 : 0);
 		TestFalse(TEXT("One cannot meet a requirement of two"), Result.bCanProceed);
 	}

@@ -7,6 +7,7 @@
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 #include "Building/FF_FacilityUpgradeTypes.h"
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
@@ -109,6 +110,8 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	{
 		BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
 			this, &ThisClass::HandleScheduledProgramsChanged);
+		BoundProgression->OnFacilityRevenueChanged.RemoveDynamic(
+			this, &ThisClass::HandleFacilityRevenueChanged);
 		BoundProgression = nullptr;
 	}
 	if (BoundStage)
@@ -134,6 +137,9 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	PauseMenuSuppressedFacilityId.Invalidate();
 	PauseMenuSuppressedContext = EFF_FacilityInfoContext::None;
 	SelectedFacilityId.Invalidate();
+	CachedSynergyFacilityId.Invalidate();
+	CachedSynergyEntries.Reset();
+	CachedSynergySummary = FText::GetEmpty();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	if (Panel)
 	{
@@ -200,12 +206,16 @@ void UFF_FacilityInfoSubsystem::EnsureProgramReadModelBindings()
 		{
 			BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
 				this, &ThisClass::HandleScheduledProgramsChanged);
+			BoundProgression->OnFacilityRevenueChanged.RemoveDynamic(
+				this, &ThisClass::HandleFacilityRevenueChanged);
 		}
 		BoundProgression = Progression;
 		if (BoundProgression)
 		{
 			BoundProgression->OnScheduledProgramsChanged.AddUniqueDynamic(
 				this, &ThisClass::HandleScheduledProgramsChanged);
+			BoundProgression->OnFacilityRevenueChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleFacilityRevenueChanged);
 		}
 	}
 
@@ -508,6 +518,9 @@ void UFF_FacilityInfoSubsystem::ClearSelection()
 	const bool bHadSelection = HasSelection();
 	ClosePaidProgramPicker();
 	SelectedFacilityId.Invalidate();
+	CachedSynergyFacilityId.Invalidate();
+	CachedSynergyEntries.Reset();
+	CachedSynergySummary = FText::GetEmpty();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	if (bPauseMenuPresentationSuppressed)
 	{
@@ -644,6 +657,56 @@ bool UFF_FacilityInfoSubsystem::IsContextCurrentlyAllowed(
 	return Stage && Stage->CurrentStage == EFF_FestivalStage::Live;
 }
 
+void UFF_FacilityInfoSubsystem::ApplySynergyViewData(
+	const AFFZSFacilityActor& Facility, FFF_FacilityInfoViewData& OutViewData) const
+{
+	const UWorld* World = GetWorld();
+	const UFF_FacilitySynergySubsystem* Synergies = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_BuildCatalogSubsystem* Catalog = GameInstance ? GameInstance->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	const bool bEligible = !Facility.NeedsRelocation() && Facility.GetFacilityState() != EFFZSFacilityState::Planned
+		&& Facility.GetFacilityState() != EFFZSFacilityState::Removed;
+	const uint64 Revision = Synergies ? Synergies->GetRevision() : 0;
+	const uint64 CatalogRevision = Catalog ? Catalog->GetCatalogRevision() : 0;
+	const FGuid FacilityId = Facility.GetFacilityInstanceId();
+	if (CachedSynergyFacilityId != FacilityId || CachedSynergyRevision != Revision ||
+		CachedSynergyCatalogRevision != CatalogRevision || bCachedSynergyEligible != bEligible)
+	{
+		FFF_FacilitySynergyPreview Preview;
+		if (Synergies)
+		{
+			// Same identity and centre produce an installed-state view, including reverse beneficiaries.
+			Synergies->BuildPlacementPreview(Facility.GetFacilitySpec().FacilityDefinitionId,
+				Facility.GetActorLocation(), FacilityId, Preview);
+		}
+		TMap<FName, FText> Names;
+		for (const FFF_FacilitySynergyPreviewEntry& Entry : Preview.Entries)
+		{
+			for (const FName DefinitionId : {Entry.TargetFacilityId, Entry.PartnerFacilityId})
+			{
+				if (Names.Contains(DefinitionId)) continue;
+				Names.Add(DefinitionId, Catalog ? Catalog->ResolveFacilityDisplayName(DefinitionId)
+					: LOCTEXT("SynergyNamesLoading", "시설 이름 불러오는 중"));
+			}
+		}
+		// The selected installed facility uses the same authored display name as this inspector's heading.
+		if (!Facility.GetFacilitySpec().DisplayName.IsEmpty())
+			Names.Add(Facility.GetFacilitySpec().FacilityDefinitionId, Facility.GetFacilitySpec().DisplayName);
+		FFFacilityInfoModel::ApplySynergyPreview(Synergies ? &Preview : nullptr, bEligible,
+			Synergies ? Synergies->GetBonusPercent(FacilityId) : 0.f, Names, OutViewData);
+		CachedSynergyFacilityId = FacilityId;
+		CachedSynergyRevision = Revision;
+		CachedSynergyCatalogRevision = CatalogRevision;
+		bCachedSynergyEligible = bEligible;
+		CachedSynergySummary = OutViewData.SynergySummaryText;
+		CachedSynergyEntries = OutViewData.SynergyEntries;
+		return;
+	}
+	// Queue/occupancy refreshes copy the prepared presentation instead of repeating spatial evaluation.
+	OutViewData.SynergySummaryText = CachedSynergySummary;
+	OutViewData.SynergyEntries = CachedSynergyEntries;
+}
+
 bool UFF_FacilityInfoSubsystem::BuildViewData(
 	AFFZSFacilityActor& Facility,
 	FFF_FacilityInfoViewData& OutViewData) const
@@ -702,6 +765,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	const bool bHasUpgradePreview = Upgrades &&
 		Upgrades->GetUpgradePreview(OutViewData.FacilityInstanceId, UpgradePreview);
 	FFFacilityInfoModel::ApplyUpgradePreview(bHasUpgradePreview ? &UpgradePreview : nullptr, OutViewData);
+	ApplySynergyViewData(Facility, OutViewData);
 	if (bHasUpgradePreview && UpgradePreview.CurrentServiceDurationSeconds > 0.0f)
 	{
 		OutViewData.ServiceDurationText = FText::Format(
@@ -970,6 +1034,24 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			}
 		}
 	}
+
+	// This installed facility's actual earnings. The ledger's per-definition rows merge booths of
+	// the same type; the panel reads the per-instance book so two identical booths stay distinct.
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	const bool bEconomyAvailable = Progression && Progression->IsFestivalStarted();
+	if (bEconomyAvailable)
+	{
+		Progression->GetFacilityInstanceRevenue(OutViewData.FacilityInstanceId, InstanceRevenue);
+	}
+	const bool bGeneratesDirectRevenue =
+		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable && UpgradePreview.CurrentRevenuePerUseGold > 0) ||
+		OutViewData.bHasScheduledProgram;
+	FFFacilityInfoModel::ApplyFacilityRevenue(
+		bEconomyAvailable ? &InstanceRevenue : nullptr,
+		!(Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface()),
+		bGeneratesDirectRevenue,
+		bEconomyAvailable ? Progression->GetTodayRevenue() : 0,
+		OutViewData);
 
 	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
 		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
@@ -1653,6 +1735,16 @@ void UFF_FacilityInfoSubsystem::HandleScheduledProgramsChanged()
 	if (HasSelection())
 	{
 		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandleFacilityRevenueChanged(const FGuid FacilityInstanceId)
+{
+	// Several parties can settle in one frame. Instead of re-projecting per payment, pull the
+	// next 0.25 s sample forward so the card shows the new amount on the following tick.
+	if (HasSelection() && FacilityInstanceId == SelectedFacilityId)
+	{
+		RefreshAccumulatorSeconds = RefreshIntervalSeconds;
 	}
 }
 

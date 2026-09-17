@@ -188,7 +188,7 @@ bool FFFZSBuildGridSurfaceGroundRulesTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSBuildGridSurfaceExpiryTest,
-    "FF_ZoneSystem.Integration.BuildableGrid.Surface.ExpiredFloorIsHiddenUntilResampled",
+    "FF_ZoneSystem.Integration.BuildableGrid.Surface.ConfirmedFloorPersistsUntilChanged",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FFFZSBuildGridSurfaceExpiryTest::RunTest(const FString& Parameters)
@@ -208,12 +208,38 @@ bool FFFZSBuildGridSurfaceExpiryTest::RunTest(const FString& Parameters)
     FFFZSBuildableGridMask Mask = MakeGroundMask();
     Cache.Update(*World, FTransform::Identity, 100.0, Mask);
     TestEqual(TEXT("Initial floor is visible"), Mask.GetBuildableCellCount(), 1);
-    Floor->Destroy();
     FPlatformProcess::Sleep(2.55f);
     Mask = MakeGroundMask();
     Cache.Update(*World, FTransform::Identity, 100.0, Mask, 0);
-    TestEqual(TEXT("Expired samples cannot draw over removed terrain"), Mask.GetBuildableCellCount(), 0);
-    TestTrue(TEXT("Expired work requests a bounded follow-up"), Cache.HasPendingSamples());
+    TestEqual(TEXT("A delayed verification cannot hide already confirmed unchanged ground"), Mask.GetBuildableCellCount(), 1);
+    TestTrue(TEXT("Overdue verification still requests a bounded follow-up"), Cache.HasPendingSamples());
+    TestEqual(TEXT("Confirmed vertices retain their actual height past the verification deadline"),
+        Cache.GetWorldPoint(FVector2D::ZeroVector).Z, 100.0);
+    Mask = MakeGroundMask();
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("Verifying unchanged terrain preserves the visible cell"), Mask.GetBuildableCellCount(), 1);
+
+    Floor->SetActorLocation(FVector(50.0, 50.0, 140.0));
+    Mask = MakeGroundMask();
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 0);
+    TestEqual(TEXT("Moving the real support invalidates its previous height without waiting for a timer"), Mask.GetBuildableCellCount(), 0);
+    Mask = MakeGroundMask();
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("A moved support is resampled at its new height"), Cache.GetWorldPoint(FVector2D::ZeroVector).Z, 150.0);
+    auto* Ground = Cast<UBoxComponent>(Floor->GetRootComponent());
+    Ground->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Mask = MakeGroundMask();
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 0);
+    TestEqual(TEXT("Disabling support collision invalidates confirmed samples immediately"), Mask.GetBuildableCellCount(), 0);
+    Ground->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Mask = MakeGroundMask();
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
+    TestEqual(TEXT("Repaired collision restores the real floor"), Mask.GetBuildableCellCount(), 1);
+
+    Floor->Destroy();
+    Mask = MakeGroundMask();
+    Cache.Update(*World, FTransform::Identity, 100.0, Mask, 0);
+    TestEqual(TEXT("Destroyed support cannot retain a confirmed sample"), Mask.GetBuildableCellCount(), 0);
     Mask = MakeGroundMask();
     Cache.Update(*World, FTransform::Identity, 100.0, Mask, 4);
     TestEqual(TEXT("Resampling confirms the floor is gone"), Mask.GetBuildableCellCount(), 0);

@@ -163,6 +163,10 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Workflow")
     int64 GetWorldRevision() const { return WorldRevision; }
     // 성공한 권한 명령마다 증가하는 낙관적 동시성 리비전을 반환.
+
+    // 파생 공간 캐시용 세대 번호. 직접 등록/해제·재배치 필요 상태·스냅샷 복원도 감지하며,
+    // 저장된 WorldRevision으로 되돌아가지 않는다. 트랜잭션 ExpectedWorldRevision에는 사용하지 않는다.
+    uint64 GetFacilityRegistryRevision() const { return FacilityRegistryRevision; }
     
     // 권한 상태를 바꾸지 않고 로컬 데이터·기하·점유·지면·충돌·내비·보호 영역을 검증.
     // 로컬 검증이 성공한 경우에만 등록 정책 스냅샷의 PreValidate를 호출.
@@ -324,6 +328,7 @@ private:
     // 저장할 성공 결과가 참조하는 시설 GUID 집합으로 제거 뒤 UObject 포인터 재연결 판단에 쓴다.
     
     int64 WorldRevision = 0;
+    uint64 FacilityRegistryRevision = 0;
     bool bIsBroadcastingLightingChange = false;
     // 성공한 권한 명령 확정 횟수. 실패·미리보기·단계 변경은 증가시키지 않는다.
 

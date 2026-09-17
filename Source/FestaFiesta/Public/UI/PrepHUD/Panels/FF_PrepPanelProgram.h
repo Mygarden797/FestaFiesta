@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Building/FF_BuildCatalogTypes.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
 #include "UI/PrepHUD/Panels/FF_PrepProgramCard.h"
@@ -205,6 +206,11 @@ protected:
 	/** 시설 클릭. `ChoiceId` 는 시설 목록 순번이다. */
 	void HandleFacilityClicked(int32 ChoiceId);
 
+	void HandleCatalogFacilityClicked(int32 ChoiceId);
+
+	UFUNCTION()
+	void HandleBuildCatalogChanged();
+
 	// --- 결과 이벤트 ---
 
 	UFUNCTION()
@@ -238,6 +244,10 @@ protected:
 	/** `열 수 있는 시설이 없습니다. 배치 탭에서 먼저 지으세요.` */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_FacilityNotice;
+
+	/** Compatible facilities: each button opens its exact construction catalog entry. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
+	TObjectPtr<UPanelWidget> Box_CatalogChoices;
 
 	// --- 견적 ---
 
@@ -297,6 +307,10 @@ protected:
 	FText DailyNoticeText;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_PrepProgramFacilityNavigationTest;
+#endif
+
 	UFF_FestivalViewModelSubsystem* GetViewModel() const;
 
 	void BindViewModel();
@@ -307,6 +321,9 @@ private:
 
 	/** 고른 카드의 시설 목록을 다시 만든다. 카드가 바뀔 때마다 부른다. */
 	void RebuildFacilityChoices();
+
+	void EnsureCatalogChoices();
+	void RebuildCatalogChoices();
 
 	/** 견적을 다시 만들고 화면 전체를 다시 그린다. 부분 갱신하지 않는다. */
 	void RefreshAll();
@@ -328,6 +345,11 @@ private:
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> FacilityWidgets;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UFF_PrepChoiceButton>> CatalogChoiceWidgets;
+
+	TArray<FFF_BuildCatalogEntry> CompatibleCatalogEntries;
 
 	/** 화면에 그린 카탈로그 사본. 순번 → 카드를 되돌리는 데 쓴다. */
 	TArray<FFF_ProgramCard> Catalog;
