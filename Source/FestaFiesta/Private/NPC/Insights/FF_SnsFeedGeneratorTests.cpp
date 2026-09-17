@@ -206,17 +206,85 @@ bool FFF_SnsFeedGenerator_SalienceReflectsChosenTopicScore::RunTest(const FStrin
 	return true;
 }
 
-// {시설} 자리표시자가 있는 행은 실제 시설 데이터가 없는 지금 후보에서 빠져야 한다
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_ExcludesFacilityPlaceholderRows, "FestaFiesta.NPC.SnsFeedGenerator.ExcludesFacilityPlaceholderRows", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_SnsFeedGenerator_ExcludesFacilityPlaceholderRows::RunTest(const FString& Parameters)
+// {시설} 자리표시자는 화제1·10만 통과한다 — 이 둘만 가리킬 시설이 신호로 분명하기 때문
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForTopic1And10, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForTopic1And10", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForTopic1And10::RunTest(const FString& Parameters)
 {
-	FFF_SnsPostTemplateRow WithPlaceholder;
-	WithPlaceholder.bUsesFacilityPlaceholder = true;
-	TestFalse(TEXT("{시설} 있는 행은 제외된다"), FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(WithPlaceholder));
+	FFF_SnsPostTemplateRow Topic1;
+	Topic1.TopicId = 1;
+	Topic1.bUsesFacilityPlaceholder = true;
+	TestTrue(TEXT("화제1의 {시설} 문장은 포함된다"), FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(Topic1));
 
-	FFF_SnsPostTemplateRow WithoutPlaceholder;
-	WithoutPlaceholder.bUsesFacilityPlaceholder = false;
-	TestTrue(TEXT("일반 문장은 포함된다"), FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(WithoutPlaceholder));
+	FFF_SnsPostTemplateRow Topic10;
+	Topic10.TopicId = 10;
+	Topic10.bUsesFacilityPlaceholder = true;
+	TestTrue(TEXT("화제10의 {시설} 문장은 포함된다"), FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(Topic10));
+
+	FFF_SnsPostTemplateRow Topic2;
+	Topic2.TopicId = 2;
+	Topic2.bUsesFacilityPlaceholder = true;
+	TestFalse(TEXT("화제2의 {시설} 문장은 아직 제외된다(가리킬 시설 신호가 없음)"),
+		FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(Topic2));
+
+	FFF_SnsPostTemplateRow NoPlaceholder;
+	NoPlaceholder.TopicId = 2;
+	NoPlaceholder.bUsesFacilityPlaceholder = false;
+	TestTrue(TEXT("자리표시자 없는 문장은 화제와 무관하게 항상 포함된다"),
+		FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(NoPlaceholder));
+
+	return true;
+}
+
+// ResolveBodyText가 {시설}을 실제 이름으로 치환한다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_ResolveBodyTextSubstitutesFacilityName, "FestaFiesta.NPC.SnsFeedGenerator.ResolveBodyTextSubstitutesFacilityName", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsFeedGenerator_ResolveBodyTextSubstitutesFacilityName::RunTest(const FString& Parameters)
+{
+	FFF_SnsPostTemplateRow Row;
+	Row.TopicId = 1;
+	Row.bUsesFacilityPlaceholder = true;
+	Row.Text = FText::FromString(TEXT("{시설} 줄 실화냐"));
+
+	FFF_SnsFeedSignals WithName;
+	WithName.WorstWaitFacilityDisplayName = TEXT("타코 트럭");
+	TestEqual(TEXT("화제1은 WorstWaitFacilityDisplayName으로 치환된다"),
+		FFF_SnsFeedGenerator::ResolveBodyText(Row, WithName).ToString(), FString(TEXT("타코 트럭 줄 실화냐")));
+
+	FFF_SnsFeedSignals WithoutName; // 이름 신호가 비어있는 상황(시설이 아직 없는 등)
+	TestEqual(TEXT("이름이 없으면 \"여기\"로 안전하게 대체된다"),
+		FFF_SnsFeedGenerator::ResolveBodyText(Row, WithoutName).ToString(), FString(TEXT("여기 줄 실화냐")));
+
+	FFF_SnsPostTemplateRow PlainRow;
+	PlainRow.bUsesFacilityPlaceholder = false;
+	PlainRow.Text = FText::FromString(TEXT("그대로 나가는 문장"));
+	TestEqual(TEXT("자리표시자가 없으면 원문 그대로"),
+		FFF_SnsFeedGenerator::ResolveBodyText(PlainRow, WithName).ToString(), FString(TEXT("그대로 나가는 문장")));
+
+	return true;
+}
+
+// 화제10(인기 시설)·12(초반 시설부족) 점수가 실제 시설 신호를 반영한다(2026-09-17, 한광훈의
+// DisplayName 스레딩 이후 배선)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityTopicScoresReflectSignals, "FestaFiesta.NPC.SnsFeedGenerator.FacilityTopicScoresReflectSignals", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsFeedGenerator_FacilityTopicScoresReflectSignals::RunTest(const FString& Parameters)
+{
+	FFF_SnsFeedSignals Busy;
+	Busy.MaxWaitingCount = 10;
+	TestEqual(TEXT("화제10 점수는 MaxWaitingCount에 비례한다"),
+		FFF_SnsFeedGenerator::ComputeTopicScore(10, Busy), 50.f);
+
+	FFF_SnsFeedSignals Empty;
+	TestEqual(TEXT("대기 인원이 없으면 화제10 점수는 0"),
+		FFF_SnsFeedGenerator::ComputeTopicScore(10, Empty), 0.f);
+
+	FFF_SnsFeedSignals FewFacilities;
+	FewFacilities.FacilityCount = 2;
+	TestEqual(TEXT("시설이 적으면 화제12 점수가 높다"),
+		FFF_SnsFeedGenerator::ComputeTopicScore(12, FewFacilities), 80.f);
+
+	FFF_SnsFeedSignals ManyFacilities;
+	ManyFacilities.FacilityCount = 15;
+	TestEqual(TEXT("시설이 충분히 많으면 화제12 점수는 0으로 바닥난다"),
+		FFF_SnsFeedGenerator::ComputeTopicScore(12, ManyFacilities), 0.f);
 
 	return true;
 }

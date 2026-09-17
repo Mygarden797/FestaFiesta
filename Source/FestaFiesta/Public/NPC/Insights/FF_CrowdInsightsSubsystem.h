@@ -16,6 +16,7 @@ class UFF_NpcNeedMetricsSubsystem;
 class UFF_FestivalStageSubsystem;
 class UFF_CrowdSimulationSubsystem;
 class UFF_CrowdDecisionSubsystem;
+class UFFZSWorldSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsPostAdded, FFF_SnsPostRow, NewPost);
 
@@ -24,7 +25,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsPostAdded, FFF_SnsPostRow, 
  * 화제·문장 선택의 실제 계산은 `FFF_SnsFeedGenerator`(순수 함수 모음)가 한다.
  * GameInstanceSubsystem은 테스트에서 만들 수 없으므로 계산 로직을 UObject 밖으로 뺐다.
  *
- * 신호 출처와 스코프에서 뺀 것(화제 10·12, 재방문)은 `FF_SnsFeedGenerator.h` 주석 참조.
+ * 신호 출처는 `FF_SnsFeedGenerator.h`·`FillFacilitySignals` 주석 참조. 재방문(화제14)만
+ * 아직 스코프 밖(고정 낮은 점수) — §10 결정대로 실측 전까지 보류.
  */
 UCLASS()
 class FESTAFIESTA_API UFF_CrowdInsightsSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
@@ -62,6 +64,8 @@ private:
 	void ScheduleNextPost();
 	// DataTable을 최초 1회만 읽어 화제별 풀(TemplatesByTopic)로 캐싱, 자리표시자 행은 제외
 	void EnsureTemplatesLoaded();
+	// ZoneSystem의 시설 목록을 훑어 시설 수·최장 대기 시설·최다 대기줄 시설을 Signals에 채운다
+	void FillFacilitySignals(struct FFF_SnsFeedSignals& Signals) const;
 
 	// Report 단계 + 마지막 날이면 화제9(피날레)를 강제로 한 번만 생성
 	UFUNCTION()
@@ -74,6 +78,7 @@ private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_CrowdSimulationSubsystem* GetCrowdSimulationSubsystem() const;
 	UFF_CrowdDecisionSubsystem* GetCrowdDecisionSubsystem() const;
+	UFFZSWorldSubsystem* GetZoneSystemSubsystem() const;
 
 	static constexpr int32 RingBufferCapacity = 80;
 

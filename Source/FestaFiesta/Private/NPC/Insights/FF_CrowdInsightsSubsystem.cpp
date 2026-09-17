@@ -15,6 +15,8 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSTypes.h"
 
 void UFF_CrowdInsightsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -114,6 +116,7 @@ void UFF_CrowdInsightsSubsystem::MaybeGeneratePost(float DeltaTime)
 	}
 	Signals.bMainProgramLocked = Stage->IsMainProgramLocked();
 	Signals.CurrentDay = Stage->CurrentDay;
+	FillFacilitySignals(Signals);
 
 	FFF_SnsPostRow NewPost = FFF_SnsFeedGenerator::GeneratePost(
 		GlobalSimulationSeed, PostSequenceIndex, Signals, TemplatesByTopic, Stage->ElapsedLiveSeconds);
@@ -147,6 +150,7 @@ FFF_SnsPostRow UFF_CrowdInsightsSubsystem::Debug_ForceGeneratePost()
 		Signals.PreferenceScore0To100 = Satisfaction->GetPreferenceScore();
 		Signals.NeedFulfillmentScore0To100 = Satisfaction->GetNeedFulfillmentScore();
 	}
+	FillFacilitySignals(Signals);
 
 	const float Timestamp = GetStageSubsystem() ? GetStageSubsystem()->ElapsedLiveSeconds : 0.f;
 	FFF_SnsPostRow NewPost = FFF_SnsFeedGenerator::GeneratePost(
@@ -204,6 +208,42 @@ void UFF_CrowdInsightsSubsystem::EnsureTemplatesLoaded()
 			TemplatesByTopic.FindOrAdd(Row->TopicId).Add(Row);
 		}
 	}
+}
+
+void UFF_CrowdInsightsSubsystem::FillFacilitySignals(FFF_SnsFeedSignals& Signals) const
+{
+	const UFFZSWorldSubsystem* ZoneSystem = GetZoneSystemSubsystem();
+	if (!ZoneSystem)
+	{
+		return;
+	}
+
+	const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+	Signals.FacilityCount = ReadModel.Facilities.Num();
+
+	float WorstWaitSeconds = 0.f;
+	int32 MaxWaiting = 0;
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.AverageCompletedWaitSeconds > WorstWaitSeconds)
+		{
+			WorstWaitSeconds = Facility.AverageCompletedWaitSeconds;
+			Signals.WorstWaitFacilityDisplayName = Facility.DisplayName.ToString();
+		}
+		if (Facility.WaitingCount > MaxWaiting)
+		{
+			MaxWaiting = Facility.WaitingCount;
+			Signals.MostQueuedFacilityDisplayName = Facility.DisplayName.ToString();
+		}
+	}
+	Signals.MaxWaitingCount = MaxWaiting;
+}
+
+UFFZSWorldSubsystem* UFF_CrowdInsightsSubsystem::GetZoneSystemSubsystem() const
+{
+	UGameInstance* GI = GetGameInstance();
+	UWorld* World = GI ? GI->GetWorld() : nullptr;
+	return World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
 }
 
 UFF_SatisfactionMetricsSubsystem* UFF_CrowdInsightsSubsystem::GetSatisfactionSubsystem() const
