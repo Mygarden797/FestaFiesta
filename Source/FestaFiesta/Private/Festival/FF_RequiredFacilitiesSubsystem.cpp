@@ -145,9 +145,10 @@ FFF_RequiredFacilitiesStatus UFF_RequiredFacilitiesSubsystem::EvaluateRequiremen
 		{
 			for (const FFFZSFacilityReadModel& Installed : Model.Facilities)
 			{
-				// Setup 설치는 Validated, 전날 마감 시설은 Closed다. Active만 요구하면 개장 전 진행이 막힌다.
 				const bool bInstalled = Installed.State == EFFZSFacilityState::Validated
-					|| Installed.State == EFFZSFacilityState::Active || Installed.State == EFFZSFacilityState::Closed;
+					|| Installed.State == EFFZSFacilityState::Active
+					|| Installed.State == EFFZSFacilityState::Closed
+					|| Installed.State == EFFZSFacilityState::MovePending;
 				if (Installed.FacilityDefinitionId == Row.FacilityDefinitionId && bInstalled && !Installed.bNeedsRelocation)
 				{
 					++Row.InstalledCount;
@@ -171,6 +172,49 @@ FFF_RequiredFacilitiesStatus UFF_RequiredFacilitiesSubsystem::EvaluateRequiremen
 	}
 	Result.BlockingReason = FText::Join(FText::FromString(TEXT("\n")), Reasons);
 	return Result;
+}
+
+FString UFF_RequiredFacilitiesSubsystem::DebugDescribeRequiredFacilities() const
+{
+	const UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const auto* Current = GI ? GI->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	const UFF_FestivalDefinition* Definition = Current ? Current->GetDefinition() : nullptr;
+	if (!Definition)
+	{
+		return TEXT("(축제 정의 없음)");
+	}
+	if (!ZoneSystem)
+	{
+		return TEXT("(ZoneSystem 없음)");
+	}
+
+	const FFFZSReadModel Model = ZoneSystem->BuildReadModel();
+	TArray<FString> Lines;
+	for (const FFF_RequiredFacility& Requirement : Definition->RequiredSetupFacilities)
+	{
+		const UFFZSFacilityDefinition* Facility = Requirement.FacilityDefinition.LoadSynchronous();
+		const FName Id = Facility ? Facility->Spec.FacilityDefinitionId : NAME_None;
+		if (Id.IsNone())
+		{
+			Lines.Add(TEXT("(정의 로드 실패)"));
+			continue;
+		}
+
+		TArray<FString> Instances;
+		for (const FFFZSFacilityReadModel& Installed : Model.Facilities)
+		{
+			if (Installed.FacilityDefinitionId == Id)
+			{
+				Instances.Add(FString::Printf(TEXT("State=%s NeedsRelocation=%s"),
+					*UEnum::GetValueAsString(Installed.State),
+					Installed.bNeedsRelocation ? TEXT("true") : TEXT("false")));
+			}
+		}
+
+		Lines.Add(FString::Printf(TEXT("%s(최소 %d개): %s"), *Id.ToString(), Requirement.MinimumCount,
+			Instances.IsEmpty() ? TEXT("월드에 0개") : *FString::Join(Instances, TEXT(" / "))));
+	}
+	return Lines.IsEmpty() ? TEXT("(필수 시설 목록 없음)") : FString::Join(Lines, TEXT(" | "));
 }
 
 #undef LOCTEXT_NAMESPACE
