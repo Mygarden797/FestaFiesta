@@ -236,10 +236,11 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | 값                     | 실제 소유자      | 현재        |
  * |------------------------|------------------|-------------|
  * | Stage / Day            | 강민서           | **진짜 값** |
- * | 남은 시간			    | 강민서           | **진짜 값** |
+ * | 남은 시간              | 강민서           | **진짜 값** |
  * | Gold                   | 김시리           | **진짜 값** (`OnGoldChanged` 구독) |
- * | SimSatisfaction        | 김시리/이정원     | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭 3항 산출) |
- * | ScoreSatisfaction      | 김시리           | 더미        |
+ * | SimSatisfaction        | 김시리           | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭·Need 충족도 **4항**) |
+ * | └ 분해값 4종           | 김시리           | **진짜 값** — SimSatisfaction과 같은 1초 주기에 같이 갱신된다 |
+ * | ScoreSatisfaction      | 김시리           | 더미 72 — `SimSatisfaction + FinaleBonus` 합산이 **아직 없다** |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
  * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
  * | TodayRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
