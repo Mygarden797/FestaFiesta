@@ -186,6 +186,22 @@ writeCsv('data/unreal/group_composition_rules_v0.csv',
   ['Name', 'RuleId', 'Value', 'ValueType', 'Status', 'SourceBasis', 'Description'], groupRulesOut);
 console.log(`생성: data/unreal/group_composition_rules_v0.csv (${groupRulesOut.length}행)`);
 
+// ---------- 6. sns_post_templates_v0 (이미 wide, 열 이름만 구조체에 맞춤) ----------
+const snsPosts = readCsv('data/derived/sns_post_templates_v0.csv');
+const snsPostsOut = snsPosts.map(r => ({
+  Name: r.template_id,
+  TemplateId: r.template_id,
+  TopicId: r.topic_id,
+  TopicName: r.topic_name,
+  Sentiment: r.sentiment,
+  bUsesFacilityPlaceholder: r.uses_facility_placeholder,
+  Text: r.text,
+}));
+writeCsv('data/unreal/sns_post_templates_v0.csv',
+  ['Name', 'TemplateId', 'TopicId', 'TopicName', 'Sentiment', 'bUsesFacilityPlaceholder', 'Text'],
+  snsPostsOut);
+console.log(`생성: data/unreal/sns_post_templates_v0.csv (${snsPostsOut.length}행)`);
+
 writeFileSync('data/unreal/README.md', `# Unreal DataTable CSV
 
 이 폴더의 CSV는 UE5 \`Import as DataTable\` 로 바로 임포트할 수 있도록 헤더를 구조체 프로퍼티명과 일치시킨 파일이다.
@@ -204,6 +220,7 @@ writeFileSync('data/unreal/README.md', `# Unreal DataTable CSV
 | visitor_group_size_distribution_v0.csv | FFF_GroupSizeDistributionRow | Source/FestaFiesta/Public/DataTables/FF_GroupSizeDistributionRow.h |
 | group_child_composition_v0.csv | FFF_GroupChildCompositionRow | Source/FestaFiesta/Public/DataTables/FF_GroupChildCompositionRow.h |
 | group_composition_rules_v0.csv | FFF_GroupCompositionRuleRow | Source/FestaFiesta/Public/DataTables/FF_GroupCompositionRuleRow.h |
+| sns_post_templates_v0.csv | FFF_SnsPostTemplateRow | Source/FestaFiesta/Public/DataTables/FF_SnsPostTemplateRow.h |
 
 재생성: \`node Tools/data/build_unreal_datatables.mjs\`
 

@@ -57,5 +57,8 @@ public:
 	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Arrival")
 	FName ArrivalScenarioId = TEXT("flat_v0");
-	
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "SNS")
+	TSoftObjectPtr<UDataTable> SnsPostTemplateTable;
+
 };
