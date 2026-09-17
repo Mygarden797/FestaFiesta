@@ -151,3 +151,28 @@ UE 5.7의 `MaterialEditingLibrary.set_material_instance_vector_parameter_value`�
 `RenderOffscreen`의 `FNullApplication`은 `r.SetRes` 값을 가상 작업영역 크기로 사용한다. 이전 PIE 창 크기가 남으면 다음 큰 창이 그 크기에 제한되어 실행 인자와 실제 뷰포트가 달라질 수 있다. 현재 캡처 스크립트는 매 PIE 생성 전에 `r.SetRes 4096x2160w`를 실행하고 다음 단계까지 2초 기다린 뒤 창을 만든다. 창 생성 크기의 −2/−12 보정은 이 환경의 실측값이며, 결과 보고서의 viewport 일치 여부로 다시 검증한다. 일반 사용자 창에 적용하는 게임 해상도 설정이 아니다.
 
 v001은 WidgetTree 대체 탐색 실패, v002/v003/v004는 UI가 있어도 목표 해상도가 다른 진단 결과다. 최종 검토나 성능 근거로 인용하지 않는다. 원본을 찾지 못할 때 임의 WidgetTree를 선택하지 않고 런타임 타이틀 인스턴스의 Outer로 유일성을 확인한다.
+
+## P12-A 국가 대표 선택지점 중앙 정렬 (2026-09-17)
+
+- 왼쪽 국가 목록을 선택했을 때 대표점이 화면 아래에 남는 문제를 수정했다. `FF_AtlasGlobeScreen`이 실제 패널 우측 경계로 UI를 제외한 화면 중앙을 계산하고 `FF_AtlasGlobeActor`에 전달한다. 액터는 해당 픽셀의 카메라 광선과 지구 교점을 기준으로 회전한다. 화면을 떠날 때 진행 중 포커스를 취소하며 드래그 후 이전 국가로 다시 끌어당기지 않는다. StepFocus는 원본 국가 경도를 기준으로 다음 나라를 찾는다.
+- **기존 `Country.Location` 대표 조형물 지점을 정렬하는 단계다.** 국가 영토 도형 중심·외곽선/색 채움·나라 영역 클릭·국가별 제한 확대는 아직 구현하지 않았다. 조형물도 계속 표시하며 인트로/국가 선택 모드 분리는 다음 단계다. 지구 텍스처·UV·지형을 다시 만들지 않았다.
+- Editor 빌드 77.70초 성공, `Saved/BrightGlobe/p12_automation/` 자동화 22개는 성공 21·경고 포함 1·실패 0이다. 경고는 Controller가 없는 기존 합성 테스트 월드의 진단이다.
+- `verify_country_focus.py`는 실제 타이틀 `Btn_Play`→허브 `Button_NewFestival` 델리게이트로 Atlas에 들어간 뒤 `InspectCountry` API로 각 국가를 살펴본다. 목록 클릭과 공유하는 코어를 검증하지만 물리 입력이나 국가 행 클릭 델리게이트 자체를 검증하지 않는다. 1600×900에서 8개국, 960×720/1680×720에서 한국을 검사하고 총 6개 SHOWUI 이미지를 저장한다.
+- 설정은 `Saved/BrightGlobe/country_focus_request.json`의 `output`, `before`, `tolerance`를 사용한다. 새 output 이름을 지정해야 한다. `before=true`는 기존 위치 오차 측정만 하고, 수정 후에는 `get_focus_viewport_position()`에서 읽은 실제 UI 목표와 투영 좌표를 비교한다. `expected_uv` 임시값을 실제 UI 경계 측정값이라고 설명하지 않는다.
+- **최종 결과:** `p12_focus_after_v003/report.json` passed, 10개 위치 + 생명주기 API 11개, 최대 화면 오차 0.554016px(<1px), 117.42초, 에셋 무변경·PIE 종료. `p12_focus_after_v003.process.json` exit 0 / Python 오류 0. 한국의 정규화 V는 수정 전 0.6302088759→수정 후 0.5이고, 일반 1600×900에서 목표 U 0.6759712601에 대해 실제 픽셀 반올림 투영 U는 0.675625다.
+- 생명주기 검사는 일본→한국 이전 국가, 빠른 다음 국가 2회, 드래그·포커스 기준 취소, 재선택, 회전 중 Atlas→허브→타이틀 이탈 뒤 강제 재정렬 방지까지 확인했다. 자동 자전을 일시정지한 API 검사이므로 실제 키보드·마우스·게임패드 입력 통과로 확대하지 않는다.
+- 최종 v003의 PNG 6개를 직접 검토하고 같은 폴더의 `visual_review.json`에 기록했다. 국가 선택 UI는 읽히고 4:3에서는 지구 일부가 패널 뒤에 놓이며 21:9에서는 여백이 남는다. 서로 다른 크기의 별도 PIE 3회이므로 **선택한 채 창을 실시간으로 늘리고 줄이는 동작은 미검증**이다. 비표시 창의 geometry 캐시가 0인 UI 배치는 이미지로만 확인한다. 새 시안 생성·외부 경계 에셋 도입은 하지 않았다.
+- `after_v001`의 실패는 ExecutePythonScript에서 `__file__`을 기대한 검사 코드, v002는 CommonUI 비동기 활성화를 같은 프레임에 확인한 검사 코드 때문이었다. 소스 경로를 명시하고 다음 tick의 활성화를 기다린 v003이 최종 결과다. 구버전 실패 보고서를 덮어쓰지 않는다.
+- 별도 `p12_frontend_verify.json` 14개 전체 흐름 회귀도 passed·18.969초, 에셋 무변경·PIE 종료, process exit 0 / Python 오류 0이다. 모든 UE 프로세스 종료를 확인하고 `P11-TitleUI/EditorPerProjectUserSettings.ini` 초기 백업으로 사용자 설정을 복원·해시 일치 확인했다. 사용자 에디터는 닫힌 상태다.
+- 타이틀 체크포인트 HEAD는 `fb9c1df6`이고 P12 코드는 아직 미커밋이다. 다음 제작은 한국 외곽선·영역 클릭 시험이며, 전체 8개국과 조형물 모드 분리·제한 확대는 후속이다.
+
+## 햇살 움직임·사용자 지정 국가 보기 (2026-09-17)
+
+- `apply_sun_motion.py`는 기존 `P10/M_BrightGlobe_SunnyBackdrop` 부모 한 개에만 Time 입력과 느린 움직임 파라미터를 추가한다. 기존 MI의 밝기·색·위치·크기 오버라이드는 보존한다. `SunMotionAmount=1`, `SunMotionSpeed=.035`(약 29초 왕복), `SunRayDriftDegrees=7`, `SunPulseAmount=.035`(최대 ±3.5%)이며 Amount 또는 Speed가 0이면 기존 고정 햇살이다.
+- `FF_TitleSunlightController`는 실제 Frontend 배경의 런타임 MID에 `SunMotionEnabled`를 전달한다. 플레이어의 움직임 감소 설정과 연결하며 부모/MI 파일을 런타임에서 변경하지 않는다. 수동 정지는 `SunMotionAmount`를 쓴다.
+- `setup_country_view_tools.py`는 실제 Frontend에 `FF_Editor/CountryViews`의 에디터 전용 마커 8개와 햇살 컨트롤러를 배치한다. 재실행 시 기존 마커 위치를 덮어쓰지 않는다. **렌더링을 켜고 실행한다.** NullRHI의 액터 배치 경로에서 엔진 정수 나눗셈 예외가 발생했으며 저장 전 원본 맵 해시를 확인했다.
+- 나라별 `bOverrideInspectionView`, `InspectionLocation`, `InspectionApproachFraction`은 기존 조형물 `Location`과 독립적이다. 기본은 override 비활성이라 기존 카탈로그를 변경하지 않아도 종전 동작을 유지한다. 명시 설정은 접근 비율 0~0.5, 실제 거리는 지구 반지름×1.35보다 가까워지지 않도록 제한한다.
+- 사용법: Frontend에서 `FF_CountryView_KR` 등 선택 → **저장된 보기 불러오기** → 이동 도구 W로 기준점 이동 → **카메라 접근 비율** 조절 → **현재 위치와 거리 저장**. 저장 버튼은 카탈로그 파일을 저장하고, 마커 배치 자체는 레벨 저장으로 보존한다. **지형 미리보기**는 에디터 뷰포트만 옮긴다. UI가 포함된 구도는 저장 후 PIE에서 해당 나라를 선택해 확인한다.
+- 드래그하면 진행 중 자동 회전과 카메라 접근을 현 위치에 멈춘다. 다음 국가 선택은 그 위치부터 보간한다. 화면 이탈 때 기본 카메라 위치로 복원한다. 목록·프랍·좌우 탐색 모두 같은 보기 데이터를 사용한다.
+- `verify_custom_views.py`는 transient 카탈로그에 서로 다른 KR/DE/BR 보기 설정을 넣어 3개 화면비, 중간 선택 교체, 드래그 취소, 접근성, 타이틀 복귀, 마커의 변환 왕복을 검사한다. 원본 카탈로그·맵·재질을 저장하지 않으며 물리 입력 검사를 대신하지 않는다. 실행 전 `custom_views_request.json`에 새 output 폴더를 지정하고, `.process.json`·결과 보고서·실제 PNG를 함께 확인한다.
+- 이 기능은 국가 외곽선/영역 클릭/조형물 숨김을 추가하지 않는다. 해당 P12-B/C 작업은 별도다.

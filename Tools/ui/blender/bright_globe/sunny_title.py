@@ -5,6 +5,82 @@ BASE = '/Game/FestaFiesta/UI/Atlas/Earth/BrightGlobe_v1'
 DEST = BASE + '/P10'
 mel = unreal.MaterialEditingLibrary
 
+# 기존 색상·햇살 값은 그대로 두고 움직임만 별도 제어한다.
+SUN_MOTION_PARAMETERS = {
+    'SunMotionAmount': (1., 0., 1., '움직임 전체 강도. 0이면 기존 고정 햇살로 표시한다.'),
+    'SunMotionSpeed': (.035, 0., .1, '빛줄기 왕복 횟수/초. 0.035는 약 29초, 0은 정지다.'),
+    'SunRayDriftDegrees': (7., 0., 30., '빛줄기가 천천히 왕복하는 최대 각도(도).'),
+    'SunPulseAmount': (.035, 0., .25, '햇살 밝기의 변화 비율. 0.035는 최대 ±3.5%다.'),
+    'SunMotionEnabled': (1., 0., 1., '런타임 움직임 감소 설정용 게이트. 일반 조절은 SunMotionAmount를 사용한다.'),
+}
+BACKGROUND_INPUT_NAMES = ['UV', 'ViewSize', 'Cream', 'Sky', 'SunPosition', 'Brightness',
+                          'GradientStart', 'GradientEnd', 'SunGlow', 'SunRadius', 'RayStrength']
+STATIC_BACKGROUND_CODE = '''
+float t = smoothstep(GradientStart, max(GradientStart + 0.01, GradientEnd), UV.x);
+t *= 1.0 - 0.10 * smoothstep(0.35, 1.0, UV.y);
+float3 color = lerp(Cream, Sky, t);
+float2 p = (UV - SunPosition.xy) * float2(ViewSize.x / max(ViewSize.y, 1.0), 1.0);
+float r2 = dot(p, p);
+float halo = exp(-r2 / max(SunRadius * SunRadius, 0.001));
+float core = exp(-r2 / 0.004);
+float a = atan2(p.y, p.x);
+float rays = pow(saturate(0.5 + 0.5 * cos(a * 12.0)), 24.0) * exp(-r2 / 0.22);
+color += float3(1.0, 0.98, 0.94) * (SunGlow * (halo + core) + RayStrength * rays);
+return max(color, 0.0) * Brightness;
+'''
+ANIMATED_BACKGROUND_CODE = STATIC_BACKGROUND_CODE.replace(
+    'float a = atan2(p.y, p.x);', '''// FF_SUN_MOTION_V1: 위치·배경 그라데이션은 고정하고 햇살만 완만하게 움직인다.
+float motion = saturate(SunMotionAmount) * saturate(SunMotionEnabled);
+float phase = SunTime * max(SunMotionSpeed, 0.0) * 6.28318530718;
+float drift = motion * clamp(SunRayDriftDegrees, 0.0, 30.0) * 0.01745329252 * sin(phase);
+float pulse = 1.0 + motion * clamp(SunPulseAmount, 0.0, 0.25) * sin(phase * 0.5);
+float a = atan2(p.y, p.x) + drift;''').replace(
+    'SunGlow * (halo + core) + RayStrength * rays',
+    'pulse * (SunGlow * (halo + core) + RayStrength * rays)')
+
+
+def add_sun_motion(mat):
+    """기존 Custom 입력 연결·파라미터 값·MI 오버라이드를 보존하는 재실행 가능한 패치."""
+    custom = mel.get_material_property_input_node(mat, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    assert isinstance(custom, unreal.MaterialExpressionCustom), '기존 햇살 Custom 노드 확인 실패'
+    code = custom.get_editor_property('code').strip()
+    assert code in (STATIC_BACKGROUND_CODE.strip(), ANIMATED_BACKGROUND_CODE.strip()), \
+        '사용자가 수정한 셰이더 코드가 있으므로 자동 덮어쓰기를 중단한다'
+    inputs = list(custom.get_editor_property('inputs'))
+    names = [str(entry.get_editor_property('input_name')) for entry in inputs]
+    assert names[:len(BACKGROUND_INPUT_NAMES)] == BACKGROUND_INPUT_NAMES
+    before = list(mel.get_inputs_for_material_expression(mat, custom))
+    assert len(before) == len(names) and all(before), '기존 입력의 끊어진 연결 확인'
+    required = ['SunTime'] + list(SUN_MOTION_PARAMETERS)
+    assert set(names[len(BACKGROUND_INPUT_NAMES):]).issubset(required), '예상하지 못한 입력'
+    assert len(names) == len(set(names)), '중복 입력'
+    missing = [name for name in required if name not in names]
+    for name in missing:
+        entry = unreal.CustomInput()
+        entry.set_editor_property('input_name', name)
+        inputs.append(entry)
+    custom.set_editor_property('inputs', inputs)
+    custom.set_editor_property('code', ANIMATED_BACKGROUND_CODE)
+    custom.set_editor_property('description', '고정 하늘과 천천히 흐르는 햇살 · SunMotionAmount=0으로 정지')
+    for name in missing:
+        if name == 'SunTime':
+            expr = mel.create_material_expression(mat, unreal.MaterialExpressionTime, -600, 1000)
+            expr.set_editor_property('ignore_pause', True)
+        else:
+            value, lower, upper, description = SUN_MOTION_PARAMETERS[name]
+            expr = mel.create_material_expression(mat, unreal.MaterialExpressionScalarParameter, -600, 1200)
+            for key, value in {'parameter_name': name, 'default_value': value,
+                               'slider_min': lower, 'slider_max': upper,
+                               'group': '햇살 움직임', 'desc': description,
+                               'sort_priority': list(SUN_MOTION_PARAMETERS).index(name)}.items():
+                expr.set_editor_property(key, value)
+        assert mel.connect_material_expressions(expr, '', custom, name), name
+    after = list(mel.get_inputs_for_material_expression(mat, custom))
+    assert after[:len(before)] == before, '기존 입력 연결 변경'
+    assert len(after) == len(inputs) and all(after), '움직임 입력 연결 누락'
+    return {'new_inputs': missing, 'original_input_connections_preserved': True,
+            'schema': 'FF_SUN_MOTION_V1'}
+
 
 def save(obj):
     assert unreal.EditorAssetLibrary.save_loaded_asset(obj, False), obj.get_path_name()
@@ -32,26 +108,13 @@ def build_background():
                   output_type=unreal.CustomMaterialOutputType.CMOT_FLOAT3,
                   description='화면 오른쪽 위의 맑은 하늘과 은은한 햇살')
     inputs = []
-    names = ['UV', 'ViewSize', 'Cream', 'Sky', 'SunPosition', 'Brightness',
-             'GradientStart', 'GradientEnd', 'SunGlow', 'SunRadius', 'RayStrength']
+    names = BACKGROUND_INPUT_NAMES
     for name in names:
         entry = unreal.CustomInput()
         entry.set_editor_property('input_name', name)
         inputs.append(entry)
     custom.set_editor_property('inputs', inputs)
-    custom.set_editor_property('code', '''
-float t = smoothstep(GradientStart, max(GradientStart + 0.01, GradientEnd), UV.x);
-t *= 1.0 - 0.10 * smoothstep(0.35, 1.0, UV.y);
-float3 color = lerp(Cream, Sky, t);
-float2 p = (UV - SunPosition.xy) * float2(ViewSize.x / max(ViewSize.y, 1.0), 1.0);
-float r2 = dot(p, p);
-float halo = exp(-r2 / max(SunRadius * SunRadius, 0.001));
-float core = exp(-r2 / 0.004);
-float a = atan2(p.y, p.x);
-float rays = pow(saturate(0.5 + 0.5 * cos(a * 12.0)), 24.0) * exp(-r2 / 0.22);
-color += float3(1.0, 0.98, 0.94) * (SunGlow * (halo + core) + RayStrength * rays);
-return max(color, 0.0) * Brightness;
-''')
+    custom.set_editor_property('code', STATIC_BACKGROUND_CODE)
     uv = node(unreal.MaterialExpressionScreenPosition)
     assert mel.connect_material_expressions(uv, 'ViewportUV', custom, 'UV')
     size = node(unreal.MaterialExpressionViewSize)
@@ -67,6 +130,7 @@ return max(color, 0.0) * Brightness;
         expr = node(unreal.MaterialExpressionScalarParameter, parameter_name=name, default_value=value)
         assert mel.connect_material_expressions(expr, '', custom, name)
     assert mel.connect_material_property(custom, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    add_sun_motion(mat)
     mel.layout_material_expressions(mat)
     mel.recompile_material(mat)
     save(mat)
