@@ -25,11 +25,15 @@ public:
         const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, int32 SurfaceSampleBudget = 512);
     void HideGrid();
     void InvalidateGrid() { bCacheValid = false; }
+    // Changes only when visible line geometry changes, not when background checks run.
+    uint64 GetPresentationRevision() const { return PresentationRevision; }
 
 private:
     bool bCacheValid = false;
     uint32 CachedContextHash = 0;
     int64 CachedRevision = -1;
+    uint64 CachedRegistryRevision = 0;
+    uint64 PresentationRevision = 0;
     double LastRefreshTimeSeconds = -1.0;
     FVector2D CachedMin = FVector2D::ZeroVector;
     FVector2D CachedMax = FVector2D::ZeroVector;

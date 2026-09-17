@@ -47,6 +47,9 @@ public:
 	static FFF_RequiredFacilitiesStatus EvaluateRequirements(
 		const UFF_FestivalDefinition* Definition, const FFFZSReadModel& Model, bool bWorldAvailable = true);
 
+	// 디버그 전용(매일 재검사 원인 조사)
+	FString DebugDescribeRequiredFacilities() const;
+
 private:
 	void BindProgression();
 	UFUNCTION()

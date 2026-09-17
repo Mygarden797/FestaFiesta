@@ -19,7 +19,9 @@ namespace FFZSBuildGridSurface
 class FF_ZONESYSTEM_API FFFZSBuildGridSurfaceCache
 {
 public:
-    // Pass a fresh authority mask: unknown/expired/invalid terrain cells are removed in place.
+    // Pass a fresh authority mask: unknown/invalid terrain cells are removed in place.
+    // Confirmed samples remain visible during budgeted background verification; elapsed time
+    // alone never hides a valid floor. Changed/removed collision support invalidates immediately.
     // Returns whether the cache or visible mask changed. At most 512 collision traces per call;
     // callers schedule pending work, rather than calling this from a component tick. Physical
     // queries use the authority zone transform; ReferenceWorldZ only supplies the disabled-check plane.
@@ -40,6 +42,8 @@ private:
         double SampledAtSeconds = 0.0;
         double ExpiresAtSeconds = 0.0;
         bool bHit = false;
+        bool bSupportCurrent = false;
+        uint32 SupportGeometryHash = 0;
         TWeakObjectPtr<UPrimitiveComponent> SupportComponent;
         int32 SupportInstance = INDEX_NONE;
     };

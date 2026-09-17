@@ -4,6 +4,9 @@
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildCatalogModel.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
+#include "TimerManager.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
 #include "Building/Presentation/FF_BuildCategoryIcons.h"
@@ -288,7 +291,11 @@ void UFF_PrepPanelBuild::NativeOnPanelOpened()
 
 	bPanelOpen = true;
 	bClosingPanel = false;
-	Filter = FFF_PrepBuildFilter();
+	// The HUD reuses this panel: retain the last major/minor category on reopen.
+	// Search and favorites remain scoped to each browsing session.
+	Filter.SearchText.Reset();
+	Filter.bFavoritesOnly = false;
+	Filter.FavoriteIds.Reset();
 	CatalogPageIndex = 0;
 	RefreshCategoryChoiceSelection();
 	if (Search_Facilities)
@@ -319,6 +326,7 @@ void UFF_PrepPanelBuild::NativeOnPanelOpened()
 		return;
 	}
 
+	RevealSynergyRecommendations();
 	RefreshPricedEntries();
 	ReconcilePresentation();
 	ApplyBuildModeState(BuildModeSubsystem->GetBuildModeState());
@@ -374,6 +382,13 @@ void UFF_PrepPanelBuild::BindExternalSources()
 		? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>()
 		: nullptr;
 	FavoritesSubsystem = GameInstance ? GameInstance->GetSubsystem<UFF_BuildFavoritesSubsystem>() : nullptr;
+	RequiredFacilitiesSubsystem = GetWorld() ? GetWorld()->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	bRequiredFacilitiesDirty = true;
+	if (RequiredFacilitiesSubsystem)
+	{
+		RequiredFacilitiesSubsystem->OnRequiredFacilitiesChanged.AddUniqueDynamic(
+			this, &ThisClass::HandleRequiredFacilitiesChanged);
+	}
 	if (FavoritesSubsystem)
 	{
 		FavoritesSubsystem->OnFavoritesChanged.RemoveAll(this);
@@ -397,6 +412,13 @@ void UFF_PrepPanelBuild::BindExternalSources()
 			this, &ThisClass::HandleBuildModeStateChanged);
 		BuildModeSubsystem->OnBuildCatalogFocusRestoreRequested.AddUniqueDynamic(
 			this, &ThisClass::HandleBuildCatalogFocusRestoreRequested);
+		BuildModeSubsystem->OnSynergyCatalogContextChanged.AddUniqueDynamic(
+			this, &ThisClass::HandleSynergyCatalogContextChanged);
+		BuildModeSubsystem->OnBuildCatalogFacilityFocusRequested.AddUniqueDynamic(
+			this, &ThisClass::HandleCatalogFacilityFocusRequested);
+		PendingCatalogFocusId = BuildModeSubsystem->GetPendingCatalogFacilityId();
+		// The inspector may have been opened before this panel existed.
+		bRevealSynergyOnCatalogOpen = !BuildModeSubsystem->GetSynergyCatalogFacilityIds().IsEmpty();
 	}
 	if (ZoneSystem)
 	{
@@ -408,6 +430,15 @@ void UFF_PrepPanelBuild::BindExternalSources()
 
 void UFF_PrepPanelBuild::UnbindExternalSources()
 {
+	if (GetWorld()) { GetWorld()->GetTimerManager().ClearTimer(RequiredFacilitiesRefreshTimer); }
+	if (RequiredFacilitiesSubsystem)
+	{
+		RequiredFacilitiesSubsystem->OnRequiredFacilitiesChanged.RemoveDynamic(
+			this, &ThisClass::HandleRequiredFacilitiesChanged);
+	}
+	RequiredFacilitiesSubsystem = nullptr;
+	RequiredFacilitiesSnapshot = FFF_RequiredFacilitiesStatus();
+	bRequiredFacilitiesDirty = true;
 	if (FavoritesSubsystem) { FavoritesSubsystem->OnFavoritesChanged.RemoveAll(this); }
 	FavoritesSubsystem = nullptr;
 	if (CatalogSubsystem)
@@ -426,6 +457,10 @@ void UFF_PrepPanelBuild::UnbindExternalSources()
 			this, &ThisClass::HandleBuildModeStateChanged);
 		BuildModeSubsystem->OnBuildCatalogFocusRestoreRequested.RemoveDynamic(
 			this, &ThisClass::HandleBuildCatalogFocusRestoreRequested);
+		BuildModeSubsystem->OnSynergyCatalogContextChanged.RemoveDynamic(
+			this, &ThisClass::HandleSynergyCatalogContextChanged);
+		BuildModeSubsystem->OnBuildCatalogFacilityFocusRequested.RemoveDynamic(
+			this, &ThisClass::HandleCatalogFacilityFocusRequested);
 	}
 	if (ZoneSystem)
 	{
@@ -438,6 +473,8 @@ void UFF_PrepPanelBuild::UnbindExternalSources()
 	EconomyReadModel = nullptr;
 	BuildModeSubsystem = nullptr;
 	ZoneSystem = nullptr;
+	bRevealSynergyOnCatalogOpen = false;
+	PendingCatalogFocusId = NAME_None;
 }
 
 void UFF_PrepPanelBuild::HandleCatalogChanged()
@@ -475,6 +512,7 @@ void UFF_PrepPanelBuild::HandleBuildModeStateChanged(
 		TEXT("[%s] 배치 표현 상태 전환: %s -> %s"),
 		*GetName(), *UEnum::GetValueAsString(PreviousState), *UEnum::GetValueAsString(NewState));
 
+	if (NewState != EFF_BuildModeState::CatalogOpen) { PendingCatalogFocusId = NAME_None; }
 	if (!bPanelOpen || bClosingPanel)
 	{
 		return;
@@ -482,6 +520,8 @@ void UFF_PrepPanelBuild::HandleBuildModeStateChanged(
 
 	if (NewState == EFF_BuildModeState::CatalogOpen)
 	{
+		bRequiredFacilitiesDirty = true;
+		RevealSynergyRecommendations();
 		// 설치·철거 뒤 목록으로 돌아올 때 현재 등록 수를 새 스냅샷으로 투영합니다.
 		RefreshPricedEntries();
 		ReconcilePresentation();
@@ -524,6 +564,85 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 	}
 
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+void UFF_PrepPanelBuild::HandleSynergyCatalogContextChanged()
+{
+	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem) { return; }
+	bRevealSynergyOnCatalogOpen = !BuildModeSubsystem->GetSynergyCatalogFacilityIds().IsEmpty();
+	if (BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
+	{
+		RevealSynergyRecommendations();
+		ReconcilePresentation();
+	}
+}
+
+void UFF_PrepPanelBuild::HandleCatalogFacilityFocusRequested(const FName FacilityDefinitionId)
+{
+	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem ||
+		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen) { return; }
+	RequestFacilityFocus(FacilityDefinitionId);
+}
+
+void UFF_PrepPanelBuild::RequestFacilityFocus(const FName FacilityDefinitionId)
+{
+	if (FacilityDefinitionId.IsNone()) { return; }
+	PendingCatalogFocusId = FacilityDefinitionId;
+	ReconcilePresentation();
+}
+
+void UFF_PrepPanelBuild::HandleRequiredFacilitiesChanged()
+{
+	bRequiredFacilitiesDirty = true;
+	// Coalesce this notification with Install/Remove's existing catalog update.
+	// Hidden placement sessions only invalidate; browsing refreshes once on return.
+	if (bPanelOpen && !bClosingPanel && BuildModeSubsystem && GetWorld() &&
+		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen &&
+		!RequiredFacilitiesRefreshTimer.IsValid())
+	{
+		RequiredFacilitiesRefreshTimer = GetWorld()->GetTimerManager().SetTimerForNextTick(
+			this, &ThisClass::RefreshRequiredFacilitiesPresentation);
+	}
+}
+
+void UFF_PrepPanelBuild::RefreshRequiredFacilitiesPresentation()
+{
+	RequiredFacilitiesRefreshTimer.Invalidate();
+	if (bRequiredFacilitiesDirty && bPanelOpen && !bClosingPanel && BuildModeSubsystem &&
+		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
+	{
+		ReconcilePresentation();
+	}
+}
+
+void UFF_PrepPanelBuild::ApplyRequiredFacilitiesSnapshot()
+{
+	const bool bCatalogVisible = bPanelOpen && BuildModeSubsystem &&
+		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen;
+	if (bRequiredFacilitiesDirty && (bCatalogVisible || !RequiredFacilitiesSubsystem))
+	{
+		RequiredFacilitiesSnapshot = RequiredFacilitiesSubsystem
+			? RequiredFacilitiesSubsystem->GetRequiredFacilitiesStatus() : FFF_RequiredFacilitiesStatus();
+		bRequiredFacilitiesDirty = false;
+	}
+	FFBuildCatalogModel::ApplyRequiredFacilities(PricedEntries, RequiredFacilitiesSnapshot);
+}
+
+void UFF_PrepPanelBuild::RevealSynergyRecommendations()
+{
+	if (!bRevealSynergyOnCatalogOpen) { return; }
+	bRevealSynergyOnCatalogOpen = false;
+	// A newly inspected facility starts on all categories so cross-category partners are visible.
+	// Later category/search/favorites choices remain under the player's control.
+	Filter.bFilterByCategory = false;
+	Filter.MinorToken = NAME_None;
+	Filter.SearchText.Reset();
+	Filter.bFavoritesOnly = false;
+	CatalogPageIndex = 0;
+	if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
+	RefreshCategoryChoiceSelection();
+	RefreshMinorCategorySurface();
+	if (TileView_Facilities) { TileView_Facilities->ScrollToTop(); }
 }
 
 void UFF_PrepPanelBuild::HandleBuildCatalogFocusRestoreRequested()
@@ -645,6 +764,7 @@ void UFF_PrepPanelBuild::HandleFilterPerformanceClicked()
 
 void UFF_PrepPanelBuild::HandleSearchTextChanged(const FText& NewText)
 {
+	if (bApplyingCatalogFocus) { return; }
 	if (Filter.SearchText != NewText.ToString()) CatalogPageIndex = 0;
 	Filter.SearchText = NewText.ToString();
 	if (TileView_Facilities)
@@ -785,7 +905,10 @@ void UFF_PrepPanelBuild::RefreshMinorCategorySurface()
 			FFF_PrepBuildPresentationRules::ResolveMinorDisplayName(B).ToString();
 	});
 	AvailableTokens.Insert(NAME_None, 0);
-	if (!AvailableTokens.Contains(Filter.MinorToken))
+	// A reconstructed or loading panel has no snapshot yet; it cannot invalidate
+	// the remembered subcategory until the catalog has finished loading.
+	if (CatalogSubsystem && CatalogSubsystem->GetLoadState() == EFF_BuildCatalogLoadState::Ready &&
+		!AvailableTokens.Contains(Filter.MinorToken))
 	{
 		Filter.MinorToken = NAME_None;
 		CatalogPageIndex = 0;
@@ -1158,9 +1281,67 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 		? CatalogSubsystem->GetLastError()
 		: LOCTEXT("CatalogUnavailable", "시설 카탈로그를 초기화할 수 없습니다.");
 
+	FName FocusId;
+	bool bFocusTargetMissing = false;
+	const bool bCanFocusCatalog = !BuildModeSubsystem ||
+		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen;
+	if (bCanFocusCatalog && !PendingCatalogFocusId.IsNone() && LoadState == EFF_BuildCatalogLoadState::Ready)
+	{
+		FocusId = PendingCatalogFocusId;
+		PendingCatalogFocusId = NAME_None;
+		const FFF_BuildCatalogEntry* Target = PricedEntries.FindByPredicate([FocusId](const FFF_BuildCatalogEntry& Entry)
+		{
+			return Entry.FacilityDefinitionId == FocusId;
+		});
+		bFocusTargetMissing = !Target;
+		if (Target)
+		{
+			TGuardValue<bool> FocusGuard(bApplyingCatalogFocus, true);
+			bRevealSynergyOnCatalogOpen = false;
+			Filter.bFilterByCategory = true;
+			Filter.Category = Target->Category;
+			Filter.MinorToken = Target->MinorToken;
+			Filter.SearchText.Reset();
+			Filter.bFavoritesOnly = false;
+			if (Search_Facilities) { Search_Facilities->SetText(FText::GetEmpty()); }
+			RefreshCategoryChoiceSelection();
+			RefreshMinorCategorySurface();
+		}
+	}
+
+	PresentationModel->SetSynergyHighlightIds(BuildModeSubsystem
+		? BuildModeSubsystem->GetSynergyCatalogFacilityIds() : TArray<FName>());
+	ApplyRequiredFacilitiesSnapshot();
 	PresentationModel->Reconcile(
 		LoadState, PricedEntries, Filter, Gold, bHasGold, FailureText);
+	UFF_PrepBuildTileData* FocusTile = nullptr;
+	if (!FocusId.IsNone() && !bFocusTargetMissing)
+	{
+		const auto& VisibleTiles = PresentationModel->GetVisibleTiles();
+		const int32 Index = VisibleTiles.IndexOfByPredicate([FocusId](const UFF_PrepBuildTileData* Tile)
+		{
+			return Tile && Tile->GetFacilityDefinitionId() == FocusId;
+		});
+		if (Index != INDEX_NONE)
+		{
+			CatalogPageIndex = bUsePagination ? Index / FMath::Max(1, CardsPerPage) : 0;
+			FocusTile = VisibleTiles[Index];
+		}
+	}
 	ApplyPresentation(true);
+	if (!FocusId.IsNone())
+	{
+		if (FocusTile && TileView_Facilities)
+		{
+			TileView_Facilities->SetSelectedItem(FocusTile);
+			TileView_Facilities->RequestNavigateToItem(FocusTile);
+		}
+		if (BuildModeSubsystem) { BuildModeSubsystem->AcknowledgeCatalogFacilityFocus(FocusId); }
+		if (bFocusTargetMissing && Text_Status)
+		{
+			Text_Status->SetText(LOCTEXT("CatalogFocusUnavailable", "이 시설은 현재 건축 목록에서 사용할 수 없습니다."));
+		}
+	}
 }
 
 void UFF_PrepPanelBuild::RefreshVisibleTiles()
@@ -1301,6 +1482,26 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
 				: LOCTEXT("ApprovedCatalogReady", "카드 선택 → 배치 시작  ·  ☆ 즐겨찾기  ·  B 시설 확인");
+		}
+		const FText SynergySource = BuildModeSubsystem
+			? BuildModeSubsystem->GetSynergyCatalogSourceName() : FText::GetEmpty();
+		if (!SynergySource.IsEmpty() && (Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Ready ||
+			Snapshot.SurfaceState == EFF_PrepBuildSurfaceState::Empty))
+		{
+			int32 VisibleMatches = 0;
+			int32 TotalMatches = 0;
+			for (const FName Id : BuildModeSubsystem->GetSynergyCatalogFacilityIds())
+			{
+				if (PresentationModel->FindTile(Id)) { ++TotalMatches; }
+			}
+			for (const UFF_PrepBuildTileData* Tile : PresentationModel->GetVisibleTiles())
+			{
+				VisibleMatches += Tile && Tile->IsSynergyHighlighted() ? 1 : 0;
+			}
+			Status = TotalMatches == 0
+				? FText::Format(LOCTEXT("NoSynergyCatalogPartners", "{0} · 목록에 조합 시설이 없습니다."), SynergySource)
+				: FText::Format(LOCTEXT("SynergyCatalogPartners", "{0} 조합 {1}/{2}종 강조 · 배치 시 거리 조건 확인"),
+					SynergySource, FText::AsNumber(VisibleMatches), FText::AsNumber(TotalMatches));
 		}
 		Text_Status->SetText(Status);
 	}

@@ -1,6 +1,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
+#include "Building/FF_BuildModeSubsystem.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
 
 #include "CommonTextBlock.h"
 #include "Blueprint/WidgetTree.h"
@@ -9,6 +12,7 @@
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
 #include "Components/VerticalBox.h"
+#include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/InputSettings.h"
 #include "HAL/PlatformTime.h"
@@ -23,6 +27,7 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	// Layout is authored in WBP, including optional tabs and confirmation. Use the editor
 	// migration command for old assets; never append runtime controls over designer work.
 	if (Button_TabOverview) Button_TabOverview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOverviewClicked);
+	if (Button_TabSynergy) Button_TabSynergy->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSynergyClicked);
 	if (Button_TabOperation) Button_TabOperation->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOperationClicked);
 	if (Button_TabUpgrade) Button_TabUpgrade->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUpgradeTabClicked);
 	if (Button_Favorite) Button_Favorite->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoriteClicked);
@@ -104,6 +109,34 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	{
 		Text_FacilityRevenue->SetVisibility(ViewData.FacilityInstanceId.IsValid()
 			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	const bool bShowRevenue = ViewData.bShowRevenueSection && ViewData.FacilityInstanceId.IsValid();
+	SetText(Text_FacilityTodayRevenue, ViewData.TodayRevenueText);
+	if (Text_FacilityTodayRevenue)
+	{
+		Text_FacilityTodayRevenue->SetColorAndOpacity(FSlateColor(
+			ViewData.TodayRevenueGold > 0 ? RevenueEarnedColor : RevenueIdleColor));
+	}
+	SetText(Text_FacilityTotalRevenue, ViewData.TotalRevenueText);
+	SetText(Text_FacilityRevenueCount, ViewData.RevenuePaymentCountText);
+	SetText(Text_FacilityRevenueShare, ViewData.RevenueShareText);
+	SetText(Text_FacilityRevenueStatus, ViewData.RevenueStatusText);
+	if (Text_FacilityRevenueStatus)
+	{
+		Text_FacilityRevenueStatus->SetVisibility(ViewData.RevenueStatusText.IsEmpty()
+			? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	SetText(Text_FacilityRevenueSummary, ViewData.RevenueSummaryText);
+	if (Text_FacilityRevenueSummary)
+	{
+		Text_FacilityRevenueSummary->SetVisibility(bShowRevenue
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (Panel_RevenueSection)
+	{
+		// Legacy panels without tabs keep this; tabbed panels refine it per page in RefreshPageVisibility.
+		Panel_RevenueSection->SetVisibility(bShowRevenue
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
 	SetText(Text_RelocationWarning, LOCTEXT("NeedsRelocation", "! 재배치가 필요합니다."));
 	SetText(Text_Footprint, ViewData.FootprintText);
@@ -331,14 +364,21 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		ActivePage = EFF_FacilityInfoPage::Overview;
 	if (ActivePage == EFF_FacilityInfoPage::RemoveConfirmation && (!bBuild || !CurrentViewData.bCanRemove))
 		ActivePage = EFF_FacilityInfoPage::Overview;
+	if (ActivePage == EFF_FacilityInfoPage::Synergy && (!Button_TabSynergy || !Panel_SynergySection))
+		ActivePage = EFF_FacilityInfoPage::Overview;
 	auto Show = [](UWidget* Widget, const bool bShow)
 	{
 		if (Widget) Widget->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	};
 	Show(Panel_BuildSection, ActivePage == EFF_FacilityInfoPage::Overview);
+	Show(Panel_SynergySection, ActivePage == EFF_FacilityInfoPage::Synergy);
+	if (ActivePage == EFF_FacilityInfoPage::Synergy) RefreshSynergyEntries();
 	Show(Panel_LiveSection, ActivePage == EFF_FacilityInfoPage::Operation);
 	Show(Panel_UpgradeSection, ActivePage == EFF_FacilityInfoPage::Upgrade);
 	Show(Panel_ProgramSection, ActivePage == EFF_FacilityInfoPage::Overview && CurrentViewData.bShowProgramSection);
+	// Earnings matter both when planning (overview) and while watching live operation.
+	Show(Panel_RevenueSection, CurrentViewData.bShowRevenueSection && CurrentViewData.FacilityInstanceId.IsValid() &&
+		(ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation));
 	Show(Panel_RemoveConfirmation, ActivePage == EFF_FacilityInfoPage::RemoveConfirmation);
 	// The persistent header still identifies the facility. Give task-specific pages their
 	// full scroll area instead of repeating the overview thumbnail above every action.
@@ -350,6 +390,7 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		if (ActivePage != EFF_FacilityInfoPage::Overview) Show(Widget_LightingControls, false);
 	}
 	Button_TabOverview->SetIsEnabled(ActivePage != EFF_FacilityInfoPage::Overview);
+	if (Button_TabSynergy) Button_TabSynergy->SetIsEnabled(ActivePage != EFF_FacilityInfoPage::Synergy);
 	Button_TabOperation->SetIsEnabled(ActivePage != EFF_FacilityInfoPage::Operation);
 	Button_TabUpgrade->SetIsEnabled(bBuild && CurrentViewData.bHasFacilityLevels && ActivePage != EFF_FacilityInfoPage::Upgrade);
 	Show(Button_TabUpgrade, bBuild && CurrentViewData.bHasFacilityLevels);
@@ -357,7 +398,79 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 		(bBuild || CurrentViewData.bHasMinigame));
 }
 
+void UFF_FacilityInfoPanel::RefreshSynergyEntries()
+{
+	SetText(Text_SynergySummary, CurrentViewData.SynergySummaryText);
+	if (!VerticalBox_SynergyEntries) return;
+	const int32 EntryCount = CurrentViewData.SynergyEntries.Num();
+	if (EntryCount > SynergyEntryPool.Num() && !LoadedSynergyEntryClass && !bSynergyEntryLoadFailed)
+	{
+		UClass* RowClass = SynergyEntryWidgetClass.LoadSynchronous();
+		if (RowClass && RowClass->IsChildOf(UFF_FacilitySynergyEntryWidget::StaticClass()))
+		{
+			LoadedSynergyEntryClass = RowClass;
+		}
+		else
+		{
+			bSynergyEntryLoadFailed = true;
+			UE_LOG(LogTemp, Error, TEXT("Facility synergy row WBP is unavailable: %s"),
+				*SynergyEntryWidgetClass.ToSoftObjectPath().ToString());
+		}
+	}
+	while (SynergyEntryPool.Num() < EntryCount && LoadedSynergyEntryClass)
+	{
+		UFF_FacilitySynergyEntryWidget* Row = GetOwningPlayer()
+			? CreateWidget<UFF_FacilitySynergyEntryWidget>(GetOwningPlayer(), LoadedSynergyEntryClass)
+			: CreateWidget<UFF_FacilitySynergyEntryWidget>(GetWorld(), LoadedSynergyEntryClass);
+		if (!Row) break;
+		Row->OnPartnerCatalogRequested.AddUObject(this, &ThisClass::HandleSynergyPartnerCatalogRequested);
+		// Spacing and typography belong to the child WBP. Keep pooled rows attached so
+		// repeated queue/world refreshes change data without rebuilding the Slate tree.
+		VerticalBox_SynergyEntries->AddChildToVerticalBox(Row);
+		SynergyEntryPool.Add(Row);
+	}
+	for (int32 Index = 0; Index < SynergyEntryPool.Num(); ++Index)
+	{
+		UFF_FacilitySynergyEntryWidget* Row = SynergyEntryPool[Index];
+		if (Index < EntryCount)
+		{
+			Row->ApplyEntry(CurrentViewData.SynergyEntries[Index]);
+			Row->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+		}
+		else Row->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (EntryCount > 0 && SynergyEntryPool.Num() < EntryCount)
+	{
+		SetText(Text_SynergySummary, LOCTEXT("SynergyRowsUnavailable", "조합 정보를 표시할 수 없습니다."));
+	}
+}
+
+void UFF_FacilityInfoPanel::HandleSynergyPartnerCatalogRequested(const FName FacilityDefinitionId)
+{
+	// A pooled row can retain old data while hidden. Only the currently displayed
+	// selection may request navigation, and BuildMode owns all state/permission checks.
+	if (ActivePage != EFF_FacilityInfoPage::Synergy || FacilityDefinitionId.IsNone() ||
+		GetVisibility() == ESlateVisibility::Collapsed || GetVisibility() == ESlateVisibility::Hidden ||
+		!CurrentViewData.SynergyEntries.ContainsByPredicate([FacilityDefinitionId](const FFF_FacilityInfoSynergyEntry& Entry)
+			{ return Entry.PartnerFacilityDefinitionId == FacilityDefinitionId; })) return;
+	UWorld* World = GetWorld();
+	UFF_BuildModeSubsystem* BuildMode = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	if (BuildMode && BuildMode->OpenCatalogForFacility(FacilityDefinitionId)) return;
+	const FText Failure = LOCTEXT("PartnerCatalogUnavailable", "지금은 시설 건축 목록을 열 수 없습니다. 건축 가능한 단계에서 다시 선택해 주세요.");
+	if (UFF_FacilityInfoSubsystem* Info = World ? World->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr)
+		Info->SetFeedback(Failure, true);
+	CurrentViewData.FeedbackText = Failure;
+	CurrentViewData.bFeedbackIsError = true;
+	SetText(Text_Feedback, Failure);
+	if (Text_Feedback)
+	{
+		Text_Feedback->SetColorAndOpacity(FeedbackErrorColor);
+		Text_Feedback->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+}
+
 void UFF_FacilityInfoPanel::HandleOverviewClicked() { SetInfoPage(EFF_FacilityInfoPage::Overview); }
+void UFF_FacilityInfoPanel::HandleSynergyClicked() { SetInfoPage(EFF_FacilityInfoPage::Synergy); }
 void UFF_FacilityInfoPanel::HandleOperationClicked() { SetInfoPage(EFF_FacilityInfoPage::Operation); }
 void UFF_FacilityInfoPanel::HandleUpgradeTabClicked() { SetInfoPage(EFF_FacilityInfoPage::Upgrade); }
 void UFF_FacilityInfoPanel::HandleFavoriteClicked()
