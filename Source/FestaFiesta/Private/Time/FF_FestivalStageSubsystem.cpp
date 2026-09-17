@@ -26,6 +26,16 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 			UE_LOG(LogTemp, Log,
 				TEXT("[축제 단계] %d -> %d 전환이 막혔다: %s"),
 				static_cast<int32>(CurrentStage), static_cast<int32>(NewStage), *ReasonText);
+
+			// 디버그(매일 재검사 원인 조사)
+			if (const UWorld* World = GetWorld())
+			{
+				if (const auto* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>())
+				{
+					UE_LOG(LogTemp, Log, TEXT("[축제 단계] 필수 시설 실제 상태: %s"),
+						*Required->DebugDescribeRequiredFacilities());
+				}
+			}
 		}
 		return;
 	}
