@@ -168,6 +168,19 @@ private:
 	FLinearColor InstanceLimitReachedColor =
 		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
 
+	/** Today's earnings number switches to this color once the facility has settled a payment today. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Revenue",
+		meta = (AllowPrivateAccess = "true", DisplayName = "오늘 수익 있음 색",
+			ToolTip = "이 시설이 오늘 결제를 한 건이라도 받았을 때 오늘 매출 숫자에 쓰는 색입니다."))
+	FLinearColor RevenueEarnedColor =
+		FLinearColor::FromSRGBColor(FColor(0x2F, 0x7D, 0x5C));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Revenue",
+		meta = (AllowPrivateAccess = "true", DisplayName = "오늘 수익 없음 색",
+			ToolTip = "오늘 결제가 아직 없을 때 오늘 매출 숫자에 쓰는 색입니다."))
+	FLinearColor RevenueIdleColor =
+		FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
 
@@ -213,6 +226,32 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_FacilityRevenue;
+
+	/**
+	 * Per-facility earnings card, added once by FF.MigrateFacilityRevenueSection. Layout, labels
+	 * and styling stay in the WBP; the native class only projects the numbers.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_RevenueSection;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityTodayRevenue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityTotalRevenue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueShare;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueStatus;
+
+	/** Optional one-line alternative for compact designer layouts that skip the stat cards. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueSummary;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_UpgradeEffect;

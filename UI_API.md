@@ -593,6 +593,7 @@ FFZS Phase의 교집합 게이트를 유지하며, 이동·철거 액션 경계�
 | 운영·Queue | `OperationStateText`, `WaitingPartiesText`, `OccupancyText`, `RemainingServiceText`, `ExpectedWaitText`, `ThroughputText` |
 | 유료 프로그램 | `bShowProgramSection`, `bHasScheduledProgram`, `ProgramStatusText`, `ScheduledProgramSummaryText`, `bShowProgramScheduleAction`, `bCanScheduleProgram`, `ProgramScheduleActionText`, `ProgramScheduleDisabledReasonText` |
 | 액션·피드백 | `bNeedsRelocation`, `bCanMove`, `bCanRemove`, `bHasMinigame`, `bCanStartMinigame`, `MinigameActionText`, `FeedbackText`, `bFeedbackIsError` |
+| 시설 수익 (2026-09-17 추가) | `bShowRevenueSection`, `bFacilityGeneratesRevenue`, `TodayRevenueGold`, `TotalRevenueGold`, `TodayPaymentCount`, `TotalPaymentCount`, `TodayRevenueSharePercent`, `TodayRevenueText`, `TotalRevenueText`, `RevenuePaymentCountText`, `RevenueShareText`, `RevenueStatusText`, `RevenueSummaryText` — **이 설치 시설 한 곳**이 실제로 번 돈. 원본은 `UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue(FGuid)`이며 종류별 합계(`GetRevenueByFacilityRowsForDay`)와 다르다. 조명·바닥은 `bShowRevenueSection=false` |
 
 문자열 필드는 모두 표시용 `FText`다. 포맷터가 만든 수치에는 단위와 지역화된 숫자 포맷이 적용되지만,
 `ZoneText`·`DisplayName`·`FeedbackText`의 현지화 여부는 원본 데이터에 따른다. 예상 대기는 1인 진입
@@ -626,7 +627,10 @@ Text_RemainingService, Text_ExpectedWait, Text_Throughput, Text_Feedback
 Text_InstanceLimit, Button_StartMinigame, Text_StartMinigame,
 Panel_ProgramSection, Text_ProgramStatus, Text_ScheduledProgramSummary,
 Text_ProgramScheduleReason, Button_ScheduleProgram, Text_ScheduleProgram,
-Panel_Actions, Panel_BuildActions, Panel_LiveActions
+Panel_Actions, Panel_BuildActions, Panel_LiveActions,
+Panel_RevenueSection, Text_FacilityTodayRevenue, Text_FacilityTotalRevenue,
+Text_FacilityRevenueCount, Text_FacilityRevenueShare, Text_FacilityRevenueStatus,
+Text_FacilityRevenueSummary
 ```
 
 **유료 프로그램 Picker·Card WBP 계약**
@@ -651,6 +655,15 @@ Panel_Actions, Panel_BuildActions, Panel_LiveActions
 `FF.RefreshFacilityInfoUMG`를 사용한다. 이 명령은 **시설 정보 패널뿐 아니라 유료 Picker와 유료 Card까지
 세 WidgetTree를 모두 LightTeal/Pretendard 템플릿으로 재생성하고 Compile/Save**한다. 실행 전 변경분을
 커밋하거나 백업한다.
+
+**시설 수익 카드 (2026-09-17 추가)** — `FF.MigrateFacilityRevenueSection`이 기존 패널의 `Panel_Content`에서
+강화 블록 바로 뒤에 `Panel_RevenueSection`(제목 `시설 수익`, 오늘/누적 매출·결제 건수·오늘 매출 비중 stat 카드,
+안내 문구 `Text_FacilityRevenueStatus`)을 **한 번만** 추가한다. 이후 색·글꼴·간격·라벨은 Designer에서 수정하고
+재실행은 아무것도 바꾸지 않는다. 카드는 `시설 정보`·`운영` 두 페이지에서 보이며 조명·바닥 시설에서는 접힌다.
+오늘 매출 숫자의 색은 WBP Class Defaults `Appearance|Revenue`의 두 색(오늘 수익 있음/없음)으로 바꾼다.
+`Text_FacilityRevenueSummary`(한 줄 요약)는 선택 사항이라 좁은 레이아웃에서 stat 카드 대신 쓸 수 있다.
+`FF.BuildFacilityInfoUMG`도 같은 마이그레이션을 포함하며, 새로 만드는 WBP에는 카드가 기본 포함된다.
+갱신은 선택 중 0.25초 샘플과 별개로, 이 시설의 결제가 원장에 들어오면(`OnFacilityRevenueChanged`) 다음 Tick에 앞당겨진다.
 
 **C++ 전용 어댑터 계약**
 
@@ -1298,9 +1311,27 @@ struct FFF_FacilityRevenueRow { FName FacilityId; int32 Amount; };   // DisplayN
 비교는 안 됩니다 — 인스턴스별 구분은 v1 입니다. 지금 표가 답하는 질문은
 "어떤 **종류**가 잘 버는가" 입니다.
 
+> ✅ **2026-09-17: 인스턴스별 값은 시설 정보 패널용으로 따로 생겼습니다.** 이 표(종류별 합계)는 그대로이고,
+> 설치 시설 한 곳의 오늘/누적 매출·결제 건수는 `GetFacilityInstanceRevenue(FGuid)` 로 읽습니다 — 바로 아래 항목.
+
 - 무료 시설(휴식·포토존·화장실·공연)은 애초에 줄이 생기지 않습니다. 공연은 직접 수익이 없고
   사람을 모아 주변 부스를 먹여살리는 집객 장치입니다(`economy_spec.md` §2.4)
 - 대기 포기·취소로 빠진 파티는 매출을 만들지 않습니다
+
+### 설치 시설별 매출 — `GetFacilityInstanceRevenue` (2026-09-17 추가, 한광훈)
+
+- **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`, `Public/Economy/FF_FestivalEconomyTypes.h`
+- **접근**: `GameInstanceSubsystem`
+- **시그니처**: `bool GetFacilityInstanceRevenue(FGuid FacilityInstanceId, FFF_FacilityInstanceRevenue& OutRevenue) const` (`BlueprintPure`)
+- **갱신 주기**: 이벤트 — `OnFacilityRevenueChanged(FGuid FacilityInstanceId)`. 결제가 원장에 들어갈 때마다 해당 시설 GUID 로 발행
+- **상태**: `구현완료`
+- **비고**: 부스별 표가 **종류**(`FacilityDefinitionId`) 합계인 것과 달리 **설치 시설 한 곳**(Zone 인스턴스 GUID)의 값이다.
+  `FFF_FacilityInstanceRevenue { TodayGold, TotalGold, TodayPaymentCount, TotalPaymentCount }`.
+  기록이 없으면 `false` + 전부 0 ("아직 결제 없음"). 오늘 값은 하루 경계에서 0, 누적은 새 축제에서만 0.
+  부스 수수료(`Served` 파티 1회 = 1건)와 유료 프로그램 체험비(프로그램 1회 = 1건)가 들어가고, 입장료·보너스처럼
+  시설 핸들이 없는 매출은 들어가지 않는다. 자금·원장과 **같은 호출**(`AddFacilityRevenue(Amount, Reason, FacilityId, FacilityInstanceId)`)에서
+  쌓이므로 결산 표와 합이 어긋나지 않는다. 경제 쪽 변경은 가산뿐이다 — `AddRevenue` 시그니처·기존 표 4종은 그대로다
+  (김시리 님 확인 부탁드립니다). 사용처: 설치 시설 공용 정보 패널의 `시설 수익` 카드.
 
 ### 🔴 enum 의 `DisplayName` 을 직접 읽지 마세요
 
@@ -2008,4 +2039,8 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 | 2026-09-02 | 백종태 | 🆕 **요청 8번 추가 — 마감·준비 단계 배속(강민서).**
 | 2026-09-08 | 김시리 | ⚠️ **필수 설치 시설 게이트 — 계약 변경 2건.** `IsCurrentStageSkippable()` 이 필수 시설 조건도 보게 되어 **무대가 없으면 스킵 버튼이 비활성됩니다**(`CanSkipCurrentStage` 가 그대로 중계). **`RemainingTime == 0` 이 오래 지속되는 상태가 생겼습니다**(값 범위는 그대로, 0 에서 머무는 시간이 길어진 것). 신규 API: `CanTransitionTo` · `GetStageAdvanceBlockingReason`(Stage 절) / `UFF_RequiredFacilitiesSubsystem` · `OnFestivalDefinitionChanged`(김시리 절). 막힌 사유는 종태님이 만들어 두신 `Text_CtaReason`(CTA 버튼 왼쪽, AT-011 대비) 자리에 값을 흘려 넣어 **이미 표시됩니다** — 부탁드리는 것은 PIE 확인 하나입니다. 탐색을 더 빠르게 하는 백로그 3건(카탈로그 느낌표·`00:00` 상태 표시·카드 진행도)은 급하지 않으며 김시리 절에 정리했습니다. Stage 서브시스템은 강민서 님 소유이므로 함께 확인 부탁드립니다 `TimeScale` 이 `Tick` 의 Live 분기에서만 쓰여서, 마감·리포트·셋업·개장 준비에는 **배속 버튼을 못 답니다**(눌러도 안 되는 버튼이 됩니다). 비-Live 분기에도 적용해 주시면 UI 는 버튼만 열면 됩니다. ❓ **개장 준비는 기획상 시간이 멈추는 단계인데 코드는 흐릅니다** — 어느 쪽이 맞는지 확인 부탁드립니다. ✅ 그리고 **마지막 날 배속 잠금은 UI 쪽 착오였습니다** — 웹 프로토타입 규칙을 옮긴 것이고 소유자 코드에는 없어서 지웠습니다 |
 | 2026-09-15 | 김시리 | ✅ **`SimSatisfaction` 더미 해제.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층으로 산출하는 실값입니다. 분해값 4종(`GetSimSatisfactionWaitScore/DensityScore/PreferenceScore/NeedFulfillmentScore` + 각 `OnXxxChanged`)도 ViewModel에 있습니다. `ScoreSatisfaction` 합산(FinaleBonus 더하기)은 아직 더미입니다 |
+
+| 2026-09-17 | 한광훈 | 🆕 **시설 정보 패널에 `시설 수익` 카드 추가.** 설치 시설 **한 곳**의 오늘/누적 매출·결제 건수·오늘 매출 비중을 실값으로 보여 줍니다. 원본은 경제에 가산한 `GetFacilityInstanceRevenue(FGuid)` + `OnFacilityRevenueChanged` (김시리 절에 항목 추가, 기존 `AddRevenue`·결산 표 4종은 그대로). 부스 수수료·프로그램 체험비가 `AddFacilityRevenue` 로 시설 GUID 까지 함께 기록됩니다. WBP 는 `FF.MigrateFacilityRevenueSection` 으로 기존 디자이너 에셋에 카드만 비파괴 추가하며, 이후 스타일·라벨은 Designer 에서 수정합니다 |
+
 | 2026-09-16 | 김시리 | 🆕 **SNS Read Model 값 쪽 완성 — UI 연결만 남았습니다.** 위 B표 항목 참조. `UFF_CrowdInsightsSubsystem`이 3~10초마다 화제·문장을 결정론적으로 골라 `FFF_SnsPostRow`를 만들고, `FF_FestivalViewModelSubsystem::GetRecentSnsPosts()`/`OnSnsPostAdded`가 Gold·SimSatisfaction과 같은 방식으로 `FFF_LiveSocialPost`를 중계합니다. **부탁드리는 것 두 가지**: ① `FF_LivePanelSNS`가 `Debug_SetPosts` 대신 이 두 API를 구독하도록 바꿔주세요(구조·감정 표현은 그대로 `FFF_LiveSocialPost`라 위젯 트리는 안 건드리셔도 될 것 같습니다) ② 화면에 몇 건까지 보여줄지·스크롤 정책은 UI 쪽 판단으로 정해주세요. `{시설}` 문장은 `FFFZSFacilityReadModel`에 시설 표시 이름이 실리기 전까지 후보에서 뺐습니다(한광훈 님 쪽 스레딩 필요, 요청 #2와 같은 건) |
+

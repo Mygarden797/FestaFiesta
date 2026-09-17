@@ -293,7 +293,10 @@ private:
 	FSlateColor GetSkinTabColor() const;
 	FSlateColor GetCategoryColor(EFFZSFacilityCategory Category) const;
 
+	FText MakeCurrentGoldText() const;
+
+public:
+	/** Shared with program facility guidance so catalog paths use the same labels. */
 	static FText GetCategoryDisplayName(EFFZSFacilityCategory Category);
 	static FText GetMinorDisplayName(FName MinorToken);
-	FText MakeCurrentGoldText() const;
 };

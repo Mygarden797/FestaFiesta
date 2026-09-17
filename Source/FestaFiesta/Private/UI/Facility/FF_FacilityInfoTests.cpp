@@ -54,6 +54,7 @@
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
+#include "UI/Facility/FF_FacilityInfoWbpBuilder.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "WidgetBlueprint.h"
@@ -478,6 +479,22 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	{
 		return false;
 	}
+	// 설치 시설 한 곳의 실제 매출은 경제의 인스턴스 장부에서 온다. 종류별 합계로 대체하지 않는다.
+	TestTrue(TEXT("설치 시설은 수익 섹션을 표시한다"), ViewData.bShowRevenueSection);
+	TestEqual(TEXT("결제 전 오늘 매출은 0 이다"), ViewData.TodayRevenueGold, 0);
+	TestFalse(TEXT("결제 전에는 안내 문구가 붙는다"), ViewData.RevenueStatusText.IsEmpty());
+	Progression->AddFacilityRevenue(180, EFF_EarnReason::FacilityCommission,
+		FacilitySpec.FacilityDefinitionId, InstallCommand.FacilityInstanceId);
+	Progression->AddRevenue(720, EFF_EarnReason::AdmissionFee);
+	TestTrue(TEXT("결제 뒤 시설 정보를 다시 평탄화한다"), Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("이 시설에 귀속된 오늘 매출을 읽는다"), ViewData.TodayRevenueGold, 180);
+	TestEqual(TEXT("이 시설에 귀속된 누적 매출을 읽는다"), ViewData.TotalRevenueGold, 180);
+	TestEqual(TEXT("이 시설의 결제 건수를 읽는다"), ViewData.TodayPaymentCount, 1);
+	TestTrue(TEXT("오늘 매출 문구는 금액을 포함한다"), ViewData.TodayRevenueText.ToString().Contains(TEXT("180 Gold")));
+	TestTrue(TEXT("오늘 전체 매출 900 중 180 은 20% 다"),
+		FMath::IsNearlyEqual(ViewData.TodayRevenueSharePercent, 20.f, 0.01f));
+	TestTrue(TEXT("실제 매출이 있으면 수익 시설로 본다"), ViewData.bFacilityGeneratesRevenue);
+	TestTrue(TEXT("오늘 결제가 있으면 안내 문구를 비운다"), ViewData.RevenueStatusText.IsEmpty());
 	TestTrue(TEXT("Setup Build 시설은 프로그램 섹션을 표시한다"), ViewData.bShowProgramSection);
 	TestTrue(TEXT("Setup Build 시설은 편성 CTA를 표시한다"), ViewData.bShowProgramScheduleAction);
 	TestTrue(TEXT("호환 프로그램과 자원이 있으면 CTA가 활성화된다"), ViewData.bCanScheduleProgram);
@@ -1215,6 +1232,25 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 				Panel->GetWidgetFromName(TEXT("Panel_UpgradeSection"))->GetVisibility(), ESlateVisibility::Collapsed);
 			TestEqual(TEXT("레벨 없는 시설에도 수익 항목을 유지한다"),
 				Panel->GetWidgetFromName(TEXT("Text_FacilityRevenue"))->GetVisibility(), ESlateVisibility::HitTestInvisible);
+			if (UWidget* RevenueSection = Panel->GetWidgetFromName(TEXT("Panel_RevenueSection")))
+			{
+				// Present only after FF.MigrateFacilityRevenueSection; the tree contract is covered separately.
+				ViewData.Context = EFF_FacilityInfoContext::Build;
+				ViewData.bShowRevenueSection = true;
+				ViewData.TodayRevenueText = FText::FromString(TEXT("180 Gold"));
+				ViewData.RevenueStatusText = FText::GetEmpty();
+				Panel->ApplyViewData(ViewData);
+				TestEqual(TEXT("수익 섹션은 시설 정보 페이지에서 보인다"),
+					RevenueSection->GetVisibility(), ESlateVisibility::Visible);
+				if (UWidget* Status = Panel->GetWidgetFromName(TEXT("Text_FacilityRevenueStatus")))
+				{
+					TestEqual(TEXT("빈 안내 문구는 접는다"), Status->GetVisibility(), ESlateVisibility::Collapsed);
+				}
+				ViewData.bShowRevenueSection = false;
+				Panel->ApplyViewData(ViewData);
+				TestEqual(TEXT("조명·바닥처럼 결제가 없는 시설은 수익 섹션을 접는다"),
+					RevenueSection->GetVisibility(), ESlateVisibility::Collapsed);
+			}
 		}
 		Panel->SetPanelOpen(true);
 		TestEqual(TEXT("열린 full-screen wrapper는 카드 밖 클릭을 통과시킨다"),
@@ -1222,6 +1258,143 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		Panel->SetPanelOpen(false);
 		TestEqual(TEXT("닫힌 패널은 완전히 접힌다"),
 			Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoRevenueReadModelTest,
+	"FestaFiesta.UI.FacilityInfo.RevenueReadModel",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoRevenueReadModelTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFF_FacilityInfoViewData ViewData;
+	FFFacilityInfoModel::ApplyFacilityRevenue(nullptr, true, true, 0, ViewData);
+	TestTrue(TEXT("경제가 없어도 섹션 자리는 유지한다"), ViewData.bShowRevenueSection);
+	TestTrue(TEXT("경제가 없으면 금액 대신 정보 없음을 표시한다"),
+		ViewData.TodayRevenueText.ToString().Contains(TEXT("정보 없음")));
+	TestTrue(TEXT("경제가 없으면 준비 중 안내를 붙인다"),
+		ViewData.RevenueStatusText.ToString().Contains(TEXT("준비 중")));
+
+	FFF_FacilityInstanceRevenue Revenue;
+	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, false, 500, ViewData);
+	TestFalse(TEXT("객단가도 매출도 없는 시설은 수익 시설이 아니다"), ViewData.bFacilityGeneratesRevenue);
+	TestTrue(TEXT("무료 시설은 집객 안내를 붙인다"), ViewData.RevenueStatusText.ToString().Contains(TEXT("집객")));
+	TestTrue(TEXT("무료 시설도 0 Gold 를 표시한다"), ViewData.TodayRevenueText.ToString().Contains(TEXT("0 Gold")));
+
+	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 500, ViewData);
+	TestTrue(TEXT("객단가가 있으면 결제 전에도 수익 시설이다"), ViewData.bFacilityGeneratesRevenue);
+	TestTrue(TEXT("결제가 없으면 아직 결제 없음 안내를 붙인다"),
+		ViewData.RevenueStatusText.ToString().Contains(TEXT("아직 결제")));
+	TestTrue(TEXT("결제가 없으면 비중은 0% 다"), ViewData.RevenueShareText.ToString().Contains(TEXT("0%")));
+
+	Revenue.TodayGold = 250;
+	Revenue.TotalGold = 1250;
+	Revenue.TodayPaymentCount = 3;
+	Revenue.TotalPaymentCount = 12;
+	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, false, 1000, ViewData);
+	TestTrue(TEXT("실제 매출이 있으면 객단가 정보가 없어도 수익 시설이다"), ViewData.bFacilityGeneratesRevenue);
+	TestEqual(TEXT("오늘 매출 원본 값을 그대로 넘긴다"), ViewData.TodayRevenueGold, 250);
+	TestEqual(TEXT("누적 매출 원본 값을 그대로 넘긴다"), ViewData.TotalRevenueGold, 1250);
+	TestTrue(TEXT("오늘 매출 문구"), ViewData.TodayRevenueText.ToString().Contains(TEXT("250 Gold")));
+	TestTrue(TEXT("누적 매출 문구는 Gold 단위다"), ViewData.TotalRevenueText.ToString().Contains(TEXT("Gold")));
+	TestTrue(TEXT("결제 건수 문구는 오늘·누적을 함께 쓴다"),
+		ViewData.RevenuePaymentCountText.ToString().Contains(TEXT("3건")) &&
+		ViewData.RevenuePaymentCountText.ToString().Contains(TEXT("12건")));
+	TestTrue(TEXT("오늘 전체 1000 중 250 은 25% 다"), FMath::IsNearlyEqual(ViewData.TodayRevenueSharePercent, 25.f));
+	TestTrue(TEXT("비중 문구"), ViewData.RevenueShareText.ToString().Contains(TEXT("25%")));
+	TestTrue(TEXT("한 줄 요약은 오늘과 누적을 함께 쓴다"),
+		ViewData.RevenueSummaryText.ToString().Contains(TEXT("오늘")) &&
+		ViewData.RevenueSummaryText.ToString().Contains(TEXT("누적")));
+	TestTrue(TEXT("오늘 결제가 있으면 안내 문구를 비운다"), ViewData.RevenueStatusText.IsEmpty());
+
+	Revenue.TodayGold = 0;
+	Revenue.TodayPaymentCount = 0;
+	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 1000, ViewData);
+	TestTrue(TEXT("누적은 있는데 오늘 결제가 없으면 오늘 기준 안내를 붙인다"),
+		ViewData.RevenueStatusText.ToString().Contains(TEXT("오늘")));
+	TestTrue(TEXT("오늘 매출이 없으면 비중은 0 이다"), FMath::IsNearlyZero(ViewData.TodayRevenueSharePercent));
+
+	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, false, true, 1000, ViewData);
+	TestFalse(TEXT("조명·바닥 시설은 수익 섹션을 숨긴다"), ViewData.bShowRevenueSection);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoRevenueSectionContractTest,
+	"FestaFiesta.UI.FacilityInfo.RevenueSectionContract",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoRevenueSectionContractTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, FacilityInfoObjectPath);
+	if (!TestNotNull(TEXT("시설 정보 WBP 에셋이 로드된다"), Blueprint) || !Blueprint->WidgetTree)
+	{
+		return false;
+	}
+
+	// 실제 에셋은 저장하지 않는다. 메모리 사본에서 비파괴 마이그레이션을 돌려 계약과 위치만 검증한다.
+	UWidgetBlueprint* Copy = DuplicateObject<UWidgetBlueprint>(Blueprint, GetTransientPackage(),
+		MakeUniqueObjectName(GetTransientPackage(), UWidgetBlueprint::StaticClass(),
+			TEXT("WBP_FF_FacilityInfoPanel_RevenueContractCopy")));
+	if (!TestNotNull(TEXT("WBP 메모리 사본"), Copy) || !Copy->WidgetTree)
+	{
+		return false;
+	}
+	Copy->SetFlags(RF_Transient);
+
+	const bool bAlreadyMigrated = FFFacilityInfoWbpBuilder::HasRevenueWidgetContract(*Copy);
+	bool bAdded = false;
+	TestTrue(TEXT("기존 디자이너 에셋에 수익 카드를 비파괴로 추가한다"),
+		FFFacilityInfoWbpBuilder::EnsureRevenueWidgetContract(*Copy, *Copy->WidgetTree, bAdded));
+	TestEqual(TEXT("이미 마이그레이션된 에셋에는 다시 추가하지 않는다"), bAdded, !bAlreadyMigrated);
+	TestTrue(TEXT("마이그레이션 뒤 수익 계약을 만족한다"), FFFacilityInfoWbpBuilder::HasRevenueWidgetContract(*Copy));
+	bool bAddedAgain = true;
+	TestTrue(TEXT("재실행도 성공한다"),
+		FFFacilityInfoWbpBuilder::EnsureRevenueWidgetContract(*Copy, *Copy->WidgetTree, bAddedAgain));
+	TestFalse(TEXT("재실행은 아무것도 추가하지 않는다"), bAddedAgain);
+
+	UWidgetTree* Tree = Copy->WidgetTree;
+	for (const FName Name : FFFacilityInfoWbpBuilder::GetRevenueContractVariableNames())
+	{
+		const UWidget* Widget = Tree->FindWidget(Name);
+		TestTrue(*FString::Printf(TEXT("BindWidgetOptional 변수/GUID 계약: %s"), *Name.ToString()),
+			Widget && Widget->bIsVariable && Copy->WidgetVariableNameToGuidMap.Contains(Name));
+	}
+	for (const FName Name : {FName(TEXT("Text_FacilityTodayRevenue")), FName(TEXT("Text_FacilityTotalRevenue")),
+		FName(TEXT("Text_FacilityRevenueCount")), FName(TEXT("Text_FacilityRevenueShare")),
+		FName(TEXT("Text_FacilityRevenueStatus"))})
+	{
+		TestNotNull(*FString::Printf(TEXT("수익 텍스트 위젯: %s"), *Name.ToString()),
+			Cast<UCommonTextBlock>(Tree->FindWidget(Name)));
+	}
+	UVerticalBox* Content = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content")));
+	UWidget* Section = Tree->FindWidget(TEXT("Panel_RevenueSection"));
+	if (TestNotNull(TEXT("상세 스크롤 콘텐츠"), Content) && TestNotNull(TEXT("수익 섹션"), Section))
+	{
+		UWidget* SectionInContent = FFFacilityInfoUpgradeLayout::FindContentChild(Section, *Content);
+		const UWidget* Upgrade = FFFacilityInfoUpgradeLayout::FindContentChild(
+			Tree->FindWidget(TEXT("Panel_UpgradeSection")), *Content);
+		const UWidget* Summary = FFFacilityInfoUpgradeLayout::FindContentChild(
+			Tree->FindWidget(TEXT("Summary_Card")), *Content);
+		TestNotNull(TEXT("수익 섹션은 기존 상세 스크롤 안에 있다"), SectionInContent);
+		const int32 SectionIndex = SectionInContent ? Content->GetChildIndex(SectionInContent) : INDEX_NONE;
+		TestTrue(TEXT("수익 섹션은 요약 카드보다 뒤에 있다"),
+			Summary && SectionIndex > Content->GetChildIndex(Summary));
+		if (Upgrade)
+		{
+			TestTrue(TEXT("수익 섹션은 강화 블록 바로 다음이다"), SectionIndex == Content->GetChildIndex(Upgrade) + 1);
+		}
+		for (const FName Name : {FName(TEXT("Panel_BuildSection")), FName(TEXT("Panel_LiveSection")),
+			FName(TEXT("Panel_ProgramSection"))})
+		{
+			const UWidget* Other = FFFacilityInfoUpgradeLayout::FindContentChild(Tree->FindWidget(Name), *Content);
+			TestTrue(*FString::Printf(TEXT("수익 섹션은 %s보다 먼저 표시한다"), *Name.ToString()),
+				Other && SectionIndex < Content->GetChildIndex(Other));
+		}
 	}
 	return true;
 }
@@ -1425,6 +1598,19 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.ServiceDurationText = FText::FromString(TEXT("4초"));
 	Data.bCanMove = true;
 	Data.bCanRemove = true;
+	// Per-facility earnings card, as projected by FFFacilityInfoModel::ApplyFacilityRevenue.
+	Data.bShowRevenueSection = true;
+	Data.bFacilityGeneratesRevenue = true;
+	Data.TodayRevenueGold = 180;
+	Data.TotalRevenueGold = 1250;
+	Data.TodayPaymentCount = 3;
+	Data.TotalPaymentCount = 12;
+	Data.TodayRevenueSharePercent = 20.f;
+	Data.TodayRevenueText = FText::FromString(TEXT("180 Gold"));
+	Data.TotalRevenueText = FText::FromString(TEXT("1,250 Gold"));
+	Data.RevenuePaymentCountText = FText::FromString(TEXT("3건 · 누적 12건"));
+	Data.RevenueShareText = FText::FromString(TEXT("20%"));
+	Data.RevenueSummaryText = FText::FromString(TEXT("오늘 180 Gold · 누적 1,250 Gold"));
 	Panel->ApplyViewData(Data);
 	Panel->SetPanelOpen(true);
 	// The renderer's virtual window is temporary. Retain SObjectWidget until after

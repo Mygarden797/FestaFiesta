@@ -110,6 +110,8 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	{
 		BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
 			this, &ThisClass::HandleScheduledProgramsChanged);
+		BoundProgression->OnFacilityRevenueChanged.RemoveDynamic(
+			this, &ThisClass::HandleFacilityRevenueChanged);
 		BoundProgression = nullptr;
 	}
 	if (BoundStage)
@@ -204,12 +206,16 @@ void UFF_FacilityInfoSubsystem::EnsureProgramReadModelBindings()
 		{
 			BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
 				this, &ThisClass::HandleScheduledProgramsChanged);
+			BoundProgression->OnFacilityRevenueChanged.RemoveDynamic(
+				this, &ThisClass::HandleFacilityRevenueChanged);
 		}
 		BoundProgression = Progression;
 		if (BoundProgression)
 		{
 			BoundProgression->OnScheduledProgramsChanged.AddUniqueDynamic(
 				this, &ThisClass::HandleScheduledProgramsChanged);
+			BoundProgression->OnFacilityRevenueChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleFacilityRevenueChanged);
 		}
 	}
 
@@ -1029,6 +1035,24 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		}
 	}
 
+	// This installed facility's actual earnings. The ledger's per-definition rows merge booths of
+	// the same type; the panel reads the per-instance book so two identical booths stay distinct.
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	const bool bEconomyAvailable = Progression && Progression->IsFestivalStarted();
+	if (bEconomyAvailable)
+	{
+		Progression->GetFacilityInstanceRevenue(OutViewData.FacilityInstanceId, InstanceRevenue);
+	}
+	const bool bGeneratesDirectRevenue =
+		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable && UpgradePreview.CurrentRevenuePerUseGold > 0) ||
+		OutViewData.bHasScheduledProgram;
+	FFFacilityInfoModel::ApplyFacilityRevenue(
+		bEconomyAvailable ? &InstanceRevenue : nullptr,
+		!(Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface()),
+		bGeneratesDirectRevenue,
+		bEconomyAvailable ? Progression->GetTodayRevenue() : 0,
+		OutViewData);
+
 	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
 		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
 		: nullptr;
@@ -1711,6 +1735,16 @@ void UFF_FacilityInfoSubsystem::HandleScheduledProgramsChanged()
 	if (HasSelection())
 	{
 		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandleFacilityRevenueChanged(const FGuid FacilityInstanceId)
+{
+	// Several parties can settle in one frame. Instead of re-projecting per payment, pull the
+	// next 0.25 s sample forward so the card shows the new amount on the following tick.
+	if (HasSelection() && FacilityInstanceId == SelectedFacilityId)
+	{
+		RefreshAccumulatorSeconds = RefreshIntervalSeconds;
 	}
 }
 

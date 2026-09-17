@@ -1543,6 +1543,7 @@ namespace FFPrepHudWbpBuilder
 		UTextBlock* FacilityLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_FacilityLabel"));
 		UWrapBox* FacilityChoices = MakeWidget<UWrapBox>(Blueprint, Tree, TEXT("Box_FacilityChoices"), true);
 		UTextBlock* FacilityNotice = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_FacilityNotice"), true);
+		UWrapBox* CatalogChoices = MakeWidget<UWrapBox>(Blueprint, Tree, TEXT("Box_CatalogChoices"), true);
 
 		UVerticalBox* QuoteBox = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("VerticalBox_Quote"));
 		UTextBlock* CostPreview = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CostPreview"), true);
@@ -1556,7 +1557,7 @@ namespace FFPrepHudWbpBuilder
 		UTextBlock* ScheduleLabel = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_ScheduleLabel"));
 
 		if (!Root || !Content || !Header || !DailyNotice || !Scroll || !Cards
-			|| !FacilityRow || !FacilityLabel || !FacilityChoices || !FacilityNotice
+			|| !FacilityRow || !FacilityLabel || !FacilityChoices || !FacilityNotice || !CatalogChoices
 			|| !QuoteBox || !CostPreview || !RevenuePreview || !GoldAfter || !StaffAfter
 			|| !ActionRow || !BlockReason || !Schedule || !ScheduleLabel)
 		{
@@ -1618,12 +1619,20 @@ namespace FFPrepHudWbpBuilder
 
 		StyleText(*FacilityNotice, 13, Palette->InGame.Amber, TEXT("Medium"));
 		FacilityNotice->SetText(LOCTEXT("PrepProgram_FacilityNoticePreview",
-			"이 프로그램을 열 수 있는 시설이 없습니다. `배치` 탭에서 먼저 지으세요."));
+			"프로그램을 선택하면 필요한 시설과 건축목록 위치를 안내합니다."));
 		FacilityNotice->SetAutoWrapText(true);
 		if (UScrollBoxSlot* Slot_FacilityNotice = Cast<UScrollBoxSlot>(Scroll->AddChild(FacilityNotice)))
 		{
 			Slot_FacilityNotice->SetHorizontalAlignment(HAlign_Fill);
 			Slot_FacilityNotice->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+		}
+
+		CatalogChoices->SetInnerSlotPadding(FVector2D(8.f, 8.f));
+		CatalogChoices->SetVisibility(ESlateVisibility::Collapsed);
+		if (UScrollBoxSlot* Slot_Catalog = Cast<UScrollBoxSlot>(Scroll->AddChild(CatalogChoices)))
+		{
+			Slot_Catalog->SetHorizontalAlignment(HAlign_Fill);
+			Slot_Catalog->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
 		}
 
 		// --- 견적 ---

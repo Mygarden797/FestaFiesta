@@ -128,6 +128,7 @@ private:
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildCatalogRetiredDefinitionTest;
 	friend class FFF_BuildDragPlacementTest;
+	friend class FFF_PrepProgramFacilityNavigationTest;
 #endif
 
 	// 로드 완료 콜백입니다. Generation이 최신 요청과 일치할 때만 결과를 재구성합니다. 
