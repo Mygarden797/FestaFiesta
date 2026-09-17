@@ -178,6 +178,9 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     {
         return false;
     }
+    TestFalse(TEXT("Facility Read Model은 표시 이름을 비우지 않는다"), InstalledFacilityModel->DisplayName.IsEmpty());
+    TestTrue(TEXT("Facility Read Model은 FacilitySpec의 표시 이름을 복사한다"),
+        InstalledFacilityModel->DisplayName.EqualTo(FirstFacility->GetFacilitySpec().DisplayName));
     TestTrue(TEXT("Facility Read Model은 Actor 대표 월드 위치(cm)를 복사한다"),
         InstalledFacilityModel->WorldLocation.Equals(FirstFacility->GetActorLocation()));
     TestTrue(TEXT("Facility Read Model 위치는 저장 Snapshot Transform의 위치와 같다"),

@@ -1058,6 +1058,10 @@ struct FF_ZONESYSTEM_API FFFZSFacilityReadModel
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     FName FacilityDefinitionId = NAME_None;
 
+    // 설치 Actor에 복사된 FacilitySpec의 현지화 표시 이름. SNS 후기 등 UI 문구에 카탈로그 재조회 없이 사용한다.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
+    FText DisplayName;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Read Model")
     int32 UpgradeLevel = 1;
 
