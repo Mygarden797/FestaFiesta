@@ -42,17 +42,53 @@ namespace
             FFFZSQueueGeometry::LocalPointCmToReservationGrid(
                 LocalCenterCm,
                 Spec.FootprintSizeCells);
-        const double RadiusCells = RadiusCm / CellSizeCm;
-        const double ToleranceCells = MovementTargetDistanceToleranceCm / CellSizeCm;
-        return Spec.QueueReservedRects.ContainsByPredicate(
-            [&GridCenter, RadiusCells, ToleranceCells](const FFFZSCellRect& Rect)
+        const double RadiusCells = FMath::Max(0.0,
+            (RadiusCm - MovementTargetDistanceToleranceCm) / CellSizeCm);
+        if (RadiusCells == 0.0)
+        {
+            return FFFZSQueueGeometry::IsLocalPointInsideReservation(
+                LocalCenterCm, Spec.FootprintSizeCells, Spec.QueueReservedRects);
+        }
+        const FVector2D BodyMin = GridCenter - FVector2D(RadiusCells, RadiusCells);
+        const FVector2D BodyMax = GridCenter + FVector2D(RadiusCells, RadiusCells);
+
+        // Queue rectangles form a union. A body crossing an internal rectangle
+        // seam is protected when that union covers its complete bounding box.
+        // Sweep every X band and require uninterrupted Y coverage; actual gaps
+        // still fail instead of being hidden by one large outer bounding box.
+        TArray<double> XEdges{ BodyMin.X, BodyMax.X };
+        for (const FFFZSCellRect& Rect : Spec.QueueReservedRects)
+        {
+            if (!Rect.IsValid()) continue;
+            XEdges.Add(FMath::Clamp(static_cast<double>(Rect.Min.X), BodyMin.X, BodyMax.X));
+            XEdges.Add(FMath::Clamp(static_cast<double>(Rect.Max.X), BodyMin.X, BodyMax.X));
+        }
+        XEdges.Sort();
+        for (int32 Index = 1; Index < XEdges.Num(); ++Index)
+        {
+            if (XEdges[Index] <= XEdges[Index - 1]) continue;
+            const double SampleX = (XEdges[Index] + XEdges[Index - 1]) * 0.5;
+            TArray<FVector2D> YIntervals;
+            for (const FFFZSCellRect& Rect : Spec.QueueReservedRects)
             {
-                return Rect.IsValid() &&
-                    GridCenter.X - RadiusCells + ToleranceCells >= Rect.Min.X &&
-                    GridCenter.X + RadiusCells - ToleranceCells < Rect.Max.X &&
-                    GridCenter.Y - RadiusCells + ToleranceCells >= Rect.Min.Y &&
-                    GridCenter.Y + RadiusCells - ToleranceCells < Rect.Max.Y;
+                if (Rect.IsValid() && Rect.Min.X <= SampleX && Rect.Max.X >= SampleX)
+                {
+                    YIntervals.Emplace(Rect.Min.Y, Rect.Max.Y);
+                }
+            }
+            YIntervals.Sort([](const FVector2D& Left, const FVector2D& Right)
+            {
+                return Left.X < Right.X;
             });
+            double CoveredY = BodyMin.Y;
+            for (const FVector2D& Interval : YIntervals)
+            {
+                if (Interval.X > CoveredY) break;
+                CoveredY = FMath::Max(CoveredY, Interval.Y);
+            }
+            if (CoveredY < BodyMax.Y) return false;
+        }
+        return true;
     }
 
     bool IsWithinAuthoritativeBounds(const FBox& Bounds, const FFFZSFacilitySpec& Spec)
@@ -69,6 +105,31 @@ namespace
             Bounds.Min.Z >= -ToleranceCm &&
             Bounds.Max.Z <= Spec.PlacementObstacleHeightCm + ToleranceCm;
     }
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFFacilityReservationUnionTest,
+    "FestaFiesta.Content.FacilityDefinitions.ReservationUnionProtectsBodies",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFFacilityReservationUnionTest::RunTest(const FString& Parameters)
+{
+    (void)Parameters;
+    FFFZSFacilitySpec Spec;
+    Spec.FootprintSizeCells = FIntPoint(1000, 500);
+    Spec.QueueReservedRects = {
+        FFFZSCellRect(FIntPoint(650, 500), FIntPoint(750, 750)),
+        FFFZSCellRect(FIntPoint(551, 750), FIntPoint(750, 963))
+    };
+    const FVector SeamCenter(200.0, 500.0, 0.0);
+    TestTrue(TEXT("Adjacent queue rectangles jointly protect the whole Crowd body"),
+        IsLocalDiscInsideQueueReservation(SeamCenter, 34.0, Spec));
+    Spec.QueueReservedRects[1].Min.Y = 751;
+    TestFalse(TEXT("A one-centimeter gap through the body remains unprotected"),
+        IsLocalDiscInsideQueueReservation(SeamCenter, 34.0, Spec));
+    TestFalse(TEXT("An entry beyond the reservation is not protected by its outer bounds"),
+        IsLocalDiscInsideQueueReservation(FVector(400.0, 300.0, 0.0), 34.0, Spec));
+    return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
@@ -128,6 +189,22 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
                     *AssetId.ToString(),
                     *Error.ToString()));
             }
+        }
+
+        // Roads, tiles, and lighting deliberately have no visitor service or queue.
+        // Keep their placement/visual checks, and verify the absence contract
+        // instead of requiring fabricated Entry anchors and queue lanes.
+        const bool bHasVisitorService =
+            !Definition->Spec.IsGroundSurface() &&
+            Definition->Spec.Category != EFFZSFacilityCategory::Lighting;
+        if (!bHasVisitorService)
+        {
+            TestEqual(*FString::Printf(TEXT("Non-service facility has no service capacity: %s"), *AssetId.ToString()),
+                Definition->Spec.QueueRules.ServiceCapacity, 0);
+            TestEqual(*FString::Printf(TEXT("Non-service facility has no waiting slots: %s"), *AssetId.ToString()),
+                Definition->Spec.QueueRules.MaxWaitingAgents, 0);
+            TestTrue(*FString::Printf(TEXT("Non-service facility has no visitor anchors: %s"), *AssetId.ToString()),
+                Definition->Spec.Anchors.IsEmpty());
         }
 
         // FFZS 공용 검증은 의미상 목표점 간격만 보장한다. FestaFiesta 제품 콘텐츠는 실제 Crowd
@@ -227,9 +304,12 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
             }
         }
 
-        TestNotNull(
-            *FString::Printf(TEXT("Entry[0] exists for Approach QA: %s"), *AssetId.ToString()),
-            EntryZero);
+        if (bHasVisitorService)
+        {
+            TestNotNull(
+                *FString::Printf(TEXT("Entry[0] exists for Approach QA: %s"), *AssetId.ToString()),
+                EntryZero);
+        }
         if (EntryZero)
         {
             TestTrue(
@@ -274,16 +354,55 @@ bool FFFFacilityDefinitionContentProjectionTest::RunTest(const FString& Paramete
             IsWithinAuthoritativeBounds(VisualBounds, Definition->Spec));
 
         FFF_QueueLaneGeometry Lane;
-        TestTrue(
-            *FString::Printf(TEXT("Party Queue가 frozen Spec에서 투영된다: %s"), *AssetId.ToString()),
+        TestEqual(
+            *FString::Printf(TEXT("Party Queue projection matches the facility service contract: %s"), *AssetId.ToString()),
             UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
                 Definition->Spec,
                 FTransform::Identity,
-                Lane));
+                Lane),
+            bHasVisitorService);
         TestEqual(
             *FString::Printf(TEXT("Party Queue 슬롯 수가 MaxWaitingAgents와 같다: %s"), *AssetId.ToString()),
             Lane.ExplicitSlotTransforms.Num(),
             Definition->Spec.QueueRules.MaxWaitingAgents);
+
+        // Check authored upgrade geometry against the project's real Crowd radius as well.
+        if (Definition->Spec.bUsesFacilityLevels)
+        {
+            for (const FFFZSFacilityUpgradeTier& Tier : Definition->Spec.UpgradeTiers)
+            {
+                const FString Label = FString::Printf(TEXT("%s Lv.%d"), *AssetId.ToString(), Tier.TargetLevel);
+                const FFFZSFacilitySpec Upgraded = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+                    Definition->Spec, Tier.TargetLevel, Tier.SizeMultiplier);
+                FFF_QueueLaneGeometry UpgradedLane;
+                TestEqual(*FString::Printf(TEXT("Upgraded Party Queue matches the service contract: %s"), *Label),
+                    UFF_ZoneSystemQueueBridgeSubsystem::BuildProjectQueueLaneGeometry(
+                        Upgraded, FTransform::Identity, UpgradedLane),
+                    bHasVisitorService);
+                for (const FTransform& Slot : UpgradedLane.ExplicitSlotTransforms)
+                {
+                    TestTrue(*FString::Printf(TEXT("Upgraded waiting body stays reserved: %s"), *Label),
+                        IsLocalDiscInsideQueueReservation(Slot.GetLocation(), FUnitData().Radius, Upgraded));
+                }
+                for (const FFFZSAnchorDefinition& Anchor : Upgraded.Anchors)
+                {
+                    if (Anchor.Type == EFFZSAnchorType::Entry && Anchor.Index == 0)
+                    {
+                        TestTrue(*FString::Printf(TEXT("Upgraded entry body stays reserved: %s"), *Label),
+                            IsLocalDiscInsideQueueReservation(
+                                Anchor.LocalTransform.GetLocation(), FUnitData().Radius, Upgraded));
+                    }
+                }
+                UStaticMesh* LevelMesh = Upgraded.VisualMesh.LoadSynchronous();
+                if (TestNotNull(*FString::Printf(TEXT("Authored or base level mesh loads: %s"), *Label), LevelMesh))
+                {
+                    const FTransform LevelTransform = FFZSVisualGeometry::ResolveVisualMeshTransform(Upgraded, LevelMesh);
+                    TestTrue(*FString::Printf(TEXT("Upgraded visual fits its actual building bounds: %s"), *Label),
+                        IsWithinAuthoritativeBounds(FFZSVisualGeometry::TransformBounds(
+                            LevelMesh->GetBoundingBox(), LevelTransform), Upgraded));
+                }
+            }
+        }
     }
 
     return true;

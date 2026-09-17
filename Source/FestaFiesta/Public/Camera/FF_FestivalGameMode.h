@@ -44,6 +44,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Finale")
 	TSoftObjectPtr<class UFF_FinaleShowData> FinaleShowDataOverride;
 
+	// 이 레벨이 시작될 때 재생할 튜토리얼 대사.
+	//
+	// 튜토리얼 레벨에만 지정한다. 비워두면 아무것도 시작하지 않으므로
+	// 본편 레벨의 GameMode 는 손댈 필요가 없다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Tutorial")
+	TSoftObjectPtr<class UFF_DialogueScriptData> TutorialStartScript;
+
+	// CSV 로 만든 대사 표. 위 애셋보다 먼저 본다.
+	//
+	// 대사가 길어지면 표가 편하다. 엑셀에서 쓰고 찾아바꾸기가 되고,
+	// 깃에서도 줄 단위로 합쳐진다.
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Tutorial")
+	TSoftObjectPtr<class UDataTable> TutorialStartTable;
+
 	// 이 레벨에서 쓸 사운드 표.
 	//
 	// 비워두면 Project Settings 의 기본값을 쓴다. 분위기가 다른 레벨에서만 지정하면 된다.

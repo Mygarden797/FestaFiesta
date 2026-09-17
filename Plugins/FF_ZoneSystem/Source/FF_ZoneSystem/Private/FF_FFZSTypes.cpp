@@ -11,6 +11,8 @@
 #include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
 
+#include <cfloat>
+
 #define LOCTEXT_NAMESPACE "FFZSTypes"
 
 namespace
@@ -26,6 +28,221 @@ namespace
         const double DeltaY = A.Y - B.Y;
         return DeltaX * DeltaX + DeltaY * DeltaY;
     }
+}
+
+bool FFZSFacilityUpgradeRules::ValidateTiers(const TArray<FFFZSFacilityUpgradeTier>& Tiers, FText& OutError)
+{
+    OutError = FText::GetEmpty();
+    TSet<int32> Levels;
+    Levels.Reserve(Tiers.Num());
+    for (int32 Index = 0; Index < Tiers.Num(); ++Index)
+    {
+        const FFFZSFacilityUpgradeTier& Tier = Tiers[Index];
+        const auto Fail = [&OutError, Index, &Tier](const FText& Field, const FText& Reason)
+        {
+            OutError = FText::Format(LOCTEXT("InvalidFacilityUpgradeField", "강화 항목 {0} (Lv.{1})의 {2}: {3}"),
+                FText::AsNumber(Index + 1), FText::AsNumber(Tier.TargetLevel), Field, Reason);
+            return false;
+        };
+        if (Tier.TargetLevel <= 1)
+        {
+            return Fail(LOCTEXT("UpgradeTargetField", "Target Level"), LOCTEXT("UpgradeTargetPositive", "레벨 번호는 1보다 커야 합니다."));
+        }
+        if (Levels.Contains(Tier.TargetLevel))
+        {
+            return Fail(LOCTEXT("UpgradeTargetField", "Target Level"), LOCTEXT("UpgradeTargetUnique", "다른 강화 항목과 레벨 번호가 중복됩니다."));
+        }
+        if (!FMath::IsFinite(Tier.CostMultiplier) || Tier.CostMultiplier < 0.0f)
+        {
+            return Fail(LOCTEXT("UpgradeCostField", "Cost Multiplier"), LOCTEXT("UpgradeCostNonnegative", "비용 배수는 0 이상의 유한한 값이어야 합니다."));
+        }
+        if (!FMath::IsFinite(Tier.ServiceDurationMultiplier) || Tier.ServiceDurationMultiplier <= 0.0f)
+        {
+            return Fail(LOCTEXT("UpgradeDurationField", "Service Duration Multiplier"), LOCTEXT("UpgradeDurationPositive", "시간 배수는 0보다 큰 유한한 값이어야 합니다."));
+        }
+        if (!FMath::IsFinite(Tier.RevenueMultiplier) || Tier.RevenueMultiplier < 0.0f)
+        {
+            return Fail(LOCTEXT("UpgradeRevenueField", "Revenue Multiplier"), LOCTEXT("UpgradeRevenueNonnegative", "수익 배수는 0 이상의 유한한 값이어야 합니다."));
+        }
+        if (!FMath::IsFinite(Tier.SizeMultiplier) || Tier.SizeMultiplier <= 0.0f)
+        {
+            return Fail(LOCTEXT("UpgradeSizeField", "Size Multiplier"), LOCTEXT("UpgradeSizePositive", "크기 배수는 0보다 큰 유한한 값이어야 합니다."));
+        }
+        Levels.Add(Tier.TargetLevel);
+    }
+    return true;
+}
+
+const FFFZSFacilityUpgradeTier* FFZSFacilityUpgradeRules::FindTier(
+    const TArray<FFFZSFacilityUpgradeTier>& Tiers, const int32 TargetLevel)
+{
+    return TargetLevel > 1 ? Tiers.FindByPredicate([TargetLevel](const FFFZSFacilityUpgradeTier& Tier)
+        { return Tier.TargetLevel == TargetLevel; }) : nullptr;
+}
+
+const FFFZSFacilityUpgradeTier* FFZSFacilityUpgradeRules::FindNextTier(
+    const TArray<FFFZSFacilityUpgradeTier>& Tiers, const int32 CurrentLevel)
+{
+    const FFFZSFacilityUpgradeTier* Next = nullptr;
+    for (const FFFZSFacilityUpgradeTier& Tier : Tiers)
+    {
+        if (Tier.TargetLevel > 1 && Tier.TargetLevel > CurrentLevel && (!Next || Tier.TargetLevel < Next->TargetLevel))
+        {
+            Next = &Tier;
+        }
+    }
+    return Next;
+}
+
+int32 FFZSFacilityUpgradeRules::GetMaxLevel(const TArray<FFFZSFacilityUpgradeTier>& Tiers)
+{
+    int32 MaxLevel = 1;
+    for (const FFFZSFacilityUpgradeTier& Tier : Tiers)
+    {
+        MaxLevel = FMath::Max(MaxLevel, Tier.TargetLevel);
+    }
+    return MaxLevel;
+}
+
+FFFZSFacilitySpec FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+    const FFFZSFacilitySpec& BaseSpec, const int32 Level, const float SizeMultiplier)
+{
+    FFFZSFacilitySpec Result = BaseSpec;
+    if (!FMath::IsFinite(SizeMultiplier) || SizeMultiplier <= 0.0f)
+    {
+        Result.FootprintSizeCells = FIntPoint::ZeroValue;
+        return Result;
+    }
+    if (BaseSpec.bUsesFacilityLevels)
+    {
+        if (const FFFZSFacilityUpgradeTier* Tier = FindTier(BaseSpec.UpgradeTiers, Level);
+            Tier && !Tier->VisualMesh.IsNull())
+        {
+            Result.VisualMesh = Tier->VisualMesh;
+        }
+    }
+    // Unspecified tier visuals always fall back to Lv.1, and identity scale preserves legacy geometry byte for byte.
+    if (SizeMultiplier == 1.0f)
+    {
+        return Result;
+    }
+    const auto ScaleCoordinate = [SizeMultiplier](const int32 Input, const bool bUpperBound, int32& Output)
+    {
+        double Scaled = static_cast<double>(Input) * SizeMultiplier;
+        // Decimal editor values are stored as floats (e.g. 1.15f is just below 1.15).
+        // Remove only float-representation noise near an integer, capped far below one cm.
+        const double NearestInteger = FMath::RoundToDouble(Scaled);
+        const double IntegerSnapTolerance = FMath::Min(
+            0.001, FMath::Abs(Scaled) * static_cast<double>(FLT_EPSILON) * 0.5);
+        if (FMath::Abs(Scaled - NearestInteger) <= IntegerSnapTolerance)
+        {
+            Scaled = NearestInteger;
+        }
+        const double Rounded = bUpperBound ? FMath::CeilToDouble(Scaled) : FMath::FloorToDouble(Scaled);
+        if (!FMath::IsFinite(Rounded) || Rounded < MIN_int32 || Rounded > MAX_int32)
+        {
+            return false;
+        }
+        Output = static_cast<int32>(Rounded);
+        return true;
+    };
+    if (!ScaleCoordinate(BaseSpec.FootprintSizeCells.X, true, Result.FootprintSizeCells.X) ||
+        !ScaleCoordinate(BaseSpec.FootprintSizeCells.Y, true, Result.FootprintSizeCells.Y))
+    {
+        Result.FootprintSizeCells = FIntPoint::ZeroValue;
+        return Result;
+    }
+    if (!BaseSpec.QueueReservedCells.IsEmpty())
+    {
+        // Merge old individual cells into their exact half-open region before scaling;
+        // expanding a cell by rounding its centre would otherwise lose occupied space.
+        Result.QueueReservedRects = UFFZSGridLibrary::GetQueueRects(BaseSpec, FFFZSGridPlacement());
+        Result.QueueReservedCells.Reset();
+        if (Result.QueueReservedRects.IsEmpty())
+        {
+            Result.FootprintSizeCells = FIntPoint::ZeroValue;
+            return Result;
+        }
+    }
+    // Both shapes share the same quantized building edge. Independently flooring a
+    // queue's minimum while ceiling the footprint would otherwise create a 1cm overlap.
+    // Keep every originally external region external, including a small positive gap
+    // that vanishes when shrinking. Tiny regions still reserve at least one outer cell.
+    const auto PreserveOuterSide = [](const int32 OriginalMin, const int32 BaseEdge,
+        const int32 EffectiveEdge, int32& Min, int32& Max)
+    {
+        if (OriginalMin >= BaseEdge)
+        {
+            Min = FMath::Max(Min, EffectiveEdge);
+            if (Max <= Min)
+            {
+                if (Min == MAX_int32)
+                {
+                    return false;
+                }
+                Max = Min + 1;
+            }
+        }
+        return true;
+    };
+    for (FFFZSCellRect& Rect : Result.QueueReservedRects)
+    {
+        const FFFZSCellRect Original = Rect;
+        if (!Original.IsValid() ||
+            !ScaleCoordinate(Original.Min.X, false, Rect.Min.X) ||
+            !ScaleCoordinate(Original.Min.Y, false, Rect.Min.Y) ||
+            !ScaleCoordinate(Original.Max.X, true, Rect.Max.X) ||
+            !ScaleCoordinate(Original.Max.Y, true, Rect.Max.Y))
+        {
+            Result.FootprintSizeCells = FIntPoint::ZeroValue;
+            return Result;
+        }
+        if (!PreserveOuterSide(Original.Min.X, BaseSpec.FootprintSizeCells.X,
+                Result.FootprintSizeCells.X, Rect.Min.X, Rect.Max.X) ||
+            !PreserveOuterSide(Original.Min.Y, BaseSpec.FootprintSizeCells.Y,
+                Result.FootprintSizeCells.Y, Rect.Min.Y, Rect.Max.Y))
+        {
+            Result.FootprintSizeCells = FIntPoint::ZeroValue;
+            return Result;
+        }
+    }
+    Result.PlacementObstacleHeightCm *= SizeMultiplier;
+    Result.VisualOffsetCm *= SizeMultiplier;
+    Result.AudioSettings.LocalOffsetCm *= SizeMultiplier;
+    Result.Audience.ApplySizeMultiplier(SizeMultiplier);
+    for (FVector& Point : Result.QueueSplinePointsCm)
+    {
+        Point *= SizeMultiplier;
+    }
+    for (FFFZSAnchorDefinition& Anchor : Result.Anchors)
+    {
+        Anchor.LocalTransform.SetTranslation(Anchor.LocalTransform.GetTranslation() * SizeMultiplier);
+    }
+    return Result;
+}
+
+bool FFFZSFacilityLightingState::IsValid() const
+{
+    return FMath::IsFinite(BrightnessMultiplier) && BrightnessMultiplier >= 0.0f && BrightnessMultiplier <= 5.0f
+        && FMath::IsFinite(Color.R) && FMath::IsFinite(Color.G) && FMath::IsFinite(Color.B) && FMath::IsFinite(Color.A)
+        && Color.R >= 0.0f && Color.R <= 1.0f && Color.G >= 0.0f && Color.G <= 1.0f
+        && Color.B >= 0.0f && Color.B <= 1.0f && Color.A >= 0.0f && Color.A <= 1.0f;
+}
+
+FFFZSFacilityLightingState FFFZSFacilityLightingSettings::GetDefaultState() const
+{
+    FFFZSFacilityLightingState Result;
+    Result.bEnabled = bEnabled;
+    Result.BrightnessMultiplier = BrightnessMultiplier;
+    Result.bOverrideColor = bOverrideColor;
+    Result.Color = Color;
+    return Result;
+}
+
+bool FFFZSFacilityLightingSettings::HasNonDefaultValues() const
+{
+    return !LightingRigClass.IsNull() || !bEnabled || BrightnessMultiplier != 1.0f
+        || bOverrideColor || Color != FLinearColor::White;
 }
 
 bool FFFZSFacilityAudioSettings::IsValid(TArray<FText>& OutErrors) const
@@ -88,7 +305,14 @@ bool FFFZSFacilityAudioSettings::HasNonDefaultValues() const
 bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 {
     OutErrors.Reset();
-
+    const bool bHasNoService = Category == EFFZSFacilityCategory::Lighting || IsGroundSurface();
+    Audience.IsValid(OutErrors);
+    FText UpgradeError;
+    // Disabled levels keep authored data, so malformed tiers still fail validation before re-enabling.
+    if (!FFZSFacilityUpgradeRules::ValidateTiers(UpgradeTiers, UpgradeError))
+    {
+        OutErrors.Add(UpgradeError);
+    }
     if (SchemaVersion != CurrentSchemaVersion)
     {
         OutErrors.Add(FText::Format(
@@ -128,11 +352,17 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         OutErrors.Add(FText::Format(
             LOCTEXT(
                 "FacilityCellEnumerationLimit",
-                "Footprint, 여유 공간 및 Queue 예약 영역은 최대 {0}개의 1cm Cell만 표현할 수 있습니다."),
+                "시설 본체·여유 공간·일반 Queue는 공통 면적 한도 {0}cm² 안에 있어야 합니다. 관람 영역은 Audience Area Limit이 0이면 공통 한도에 합산하고, 양수면 설정한 m² 한도를 따릅니다. 관람 인원을 늘리려면 해당 시설의 Audience Area Limit을 먼저 확인하세요."),
             FText::AsNumber(UFFZSGridLibrary::GetMaxEnumeratedCellsPerFacility())));
     }
 
-    if (QueueRules.MaxWaitingAgents <= 0 || QueueRules.ServiceCapacity <= 0 ||
+    if (bHasNoService && (QueueRules.MaxWaitingAgents != 0 || QueueRules.ServiceCapacity != 0 ||
+        !QueueReservedRects.IsEmpty() || !QueueReservedCells.IsEmpty() ||
+        !QueueSplinePointsCm.IsEmpty() || !Anchors.IsEmpty() || Audience.bEnabled))
+    {
+        OutErrors.Add(LOCTEXT("NonServiceFacilityHasServiceData", "조명, 길, 타일 시설은 대기·서비스 정원이 0이어야 하며 대기열, 서비스 Anchor, 관람 영역을 사용할 수 없습니다."));
+    }
+    if ((!bHasNoService && (QueueRules.MaxWaitingAgents <= 0 || QueueRules.ServiceCapacity <= 0)) ||
         !FMath::IsFinite(QueueRules.SlotSpacingCm) || QueueRules.SlotSpacingCm <= 0.0f ||
         !FMath::IsFinite(QueueRules.ServiceDurationSeconds) || QueueRules.ServiceDurationSeconds <= 0.0f)
     {
@@ -200,11 +430,11 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         OutErrors.Add(LOCTEXT("InvalidQueueMovementRules", "Queue 이탈, 도착, 내비게이션, 차단 시간 제한 또는 재탐색 값이 잘못되었습니다."));
     }
 
-    if (QueueSplinePointsCm.Num() < 2)
+    if (!bHasNoService && QueueSplinePointsCm.Num() < 2)
     {
         OutErrors.Add(LOCTEXT("MissingQueueSpline", "QueueSplinePointsCm은 최소 2개가 필요합니다."));
     }
-    else
+    else if (QueueSplinePointsCm.Num() >= 2)
     {
         int32 FirstNonFinitePointIndex = INDEX_NONE;
         const double QueueSplineLengthCm = FFFZSQueueGeometry::GetLinearPolylineLengthCm(
@@ -229,7 +459,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     }
 
     TArray<FFFZSCellRect> LocalQueueRects = QueueReservedRects;
-    if (QueueReservedRects.IsEmpty() && QueueReservedCells.IsEmpty())
+    if (!bHasNoService && QueueReservedRects.IsEmpty() && QueueReservedCells.IsEmpty())
     {
         OutErrors.Add(LOCTEXT(
             "MissingQueueRects",
@@ -266,6 +496,20 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         LocalQueueRects.Emplace(Cell, FIntPoint(Cell.X + 1, Cell.Y + 1));
     }
     LocalQueueRects = UFFZSGridLibrary::CanonicalizeCellRects(LocalQueueRects);
+
+    if (Audience.bEnabled)
+    {
+        FFFZSCellRect AudienceRect;
+        if (UFFZSGridLibrary::TryGetAudienceReservedRect(*this, AudienceRect))
+        {
+            const FFFZSCellRect Body(FIntPoint::ZeroValue, FootprintSizeCells);
+            if (AudienceRect.Intersects(Body)
+                || UFFZSGridLibrary::DoCellRectSetsOverlap({ AudienceRect }, LocalQueueRects))
+            {
+                OutErrors.Add(LOCTEXT("AudienceOverlap", "Audience: 관람 예약 영역은 건물 바닥이나 일반 Queue 예약 영역과 겹칠 수 없습니다. 첫 자리 위치를 옮기세요."));
+            }
+        }
+    }
 
     const TArray<FFFZSCellRect> LocalFootprintRects = {
         FFFZSCellRect(FIntPoint::ZeroValue, FootprintSizeCells)
@@ -368,7 +612,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         }
     }
 
-    if (EntryCount < 1 || !EntryIndices.Contains(0))
+    if (!bHasNoService && (EntryCount < 1 || !EntryIndices.Contains(0)))
     {
         OutErrors.Add(LOCTEXT("MissingEntry", "최소한 Entry[0]이 필요합니다."));
     }
@@ -388,7 +632,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             }
         }
     }
-    if (ExitCount < 1 || !ExitIndices.Contains(0))
+    if (!bHasNoService && (ExitCount < 1 || !ExitIndices.Contains(0)))
     {
         OutErrors.Add(LOCTEXT("MissingExit", "최소한 Exit[0]이 필요합니다."));
     }
@@ -492,9 +736,10 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         }
         UniqueAllowedZones.Add(AllowedZoneId);
     }
-    if (!FMath::IsFinite(PlacementObstacleHeightCm) || PlacementObstacleHeightCm < 10.0f)
+    const float MinimumObstacleHeightCm = IsGroundSurface() ? 1.0f : 10.0f;
+    if (!FMath::IsFinite(PlacementObstacleHeightCm) || PlacementObstacleHeightCm < MinimumObstacleHeightCm)
     {
-        OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm은 유한한 값이며 최소 10cm여야 합니다."));
+        OutErrors.Add(LOCTEXT("InvalidObstacleHeight", "PlacementObstacleHeightCm은 유한한 값이며 길과 타일은 최소 1cm, 그 외 시설은 최소 10cm여야 합니다."));
     }
     if (!StaticEnum<EFFZSVisualSizingMode>()->IsValidEnumValue(static_cast<int64>(VisualSizingMode)))
     {
@@ -520,6 +765,10 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
     }
 
     AudioSettings.IsValid(OutErrors);
+    if (!LightingSettings.GetDefaultState().IsValid())
+    {
+        OutErrors.Add(LOCTEXT("InvalidFacilityLighting", "시설 조명의 밝기 배수는 0~5, 색상 채널은 유한한 0~1이어야 합니다."));
+    }
 
     return OutErrors.IsEmpty();
 }

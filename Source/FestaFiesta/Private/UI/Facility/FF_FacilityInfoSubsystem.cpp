@@ -4,6 +4,10 @@
 
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
+#include "Building/FF_FacilityUpgradeSubsystem.h"
+#include "Building/FF_FacilityUpgradeTypes.h"
+#include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Economy/FF_FacilityCostResolver.h"
@@ -27,7 +31,9 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
+#include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
+#include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityInfoSubsystem"
@@ -91,6 +97,7 @@ void UFF_FacilityInfoSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleWorldChanged);
 		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(
 			this, &ThisClass::HandleWorldSnapshotRestored);
+		ZoneSystem->OnFacilityLightingChanged.AddUniqueDynamic(this, &ThisClass::HandleFacilityLightingChanged);
 	}
 	EnsureProgramReadModelBindings();
 }
@@ -103,6 +110,8 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	{
 		BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
 			this, &ThisClass::HandleScheduledProgramsChanged);
+		BoundProgression->OnFacilityRevenueChanged.RemoveDynamic(
+			this, &ThisClass::HandleFacilityRevenueChanged);
 		BoundProgression = nullptr;
 	}
 	if (BoundStage)
@@ -116,6 +125,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		{
 			ZoneSystem->OnWorldChanged.RemoveAll(this);
 			ZoneSystem->OnWorldSnapshotRestored.RemoveAll(this);
+			ZoneSystem->OnFacilityLightingChanged.RemoveAll(this);
 		}
 	}
 
@@ -127,12 +137,19 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 	PauseMenuSuppressedFacilityId.Invalidate();
 	PauseMenuSuppressedContext = EFF_FacilityInfoContext::None;
 	SelectedFacilityId.Invalidate();
+	CachedSynergyFacilityId.Invalidate();
+	CachedSynergyEntries.Reset();
+	CachedSynergySummary = FText::GetEmpty();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	if (Panel)
 	{
+		Panel->OnFavoriteRequested.RemoveAll(this);
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
+		Panel->OnUpgradeRequested.RemoveAll(this);
+		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -189,12 +206,16 @@ void UFF_FacilityInfoSubsystem::EnsureProgramReadModelBindings()
 		{
 			BoundProgression->OnScheduledProgramsChanged.RemoveDynamic(
 				this, &ThisClass::HandleScheduledProgramsChanged);
+			BoundProgression->OnFacilityRevenueChanged.RemoveDynamic(
+				this, &ThisClass::HandleFacilityRevenueChanged);
 		}
 		BoundProgression = Progression;
 		if (BoundProgression)
 		{
 			BoundProgression->OnScheduledProgramsChanged.AddUniqueDynamic(
 				this, &ThisClass::HandleScheduledProgramsChanged);
+			BoundProgression->OnFacilityRevenueChanged.AddUniqueDynamic(
+				this, &ThisClass::HandleFacilityRevenueChanged);
 		}
 	}
 
@@ -244,9 +265,13 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 
 		// Seamless controller replacement is uncommon in this single-player project, but keeping
 		// the panel bound to a stale LocalPlayer would route input and viewport ownership incorrectly.
+		Panel->OnFavoriteRequested.RemoveAll(this);
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
+		Panel->OnUpgradeRequested.RemoveAll(this);
+		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -276,9 +301,13 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	}
 
 	Panel->OnMoveRequested.AddUObject(this, &ThisClass::HandlePanelMoveRequested);
+	Panel->OnFavoriteRequested.AddUObject(this, &ThisClass::HandlePanelFavoriteRequested);
 	Panel->OnRemoveRequested.AddUObject(this, &ThisClass::HandlePanelRemoveRequested);
 	Panel->OnProgramScheduleRequested.AddUObject(
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
+	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
+	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
+	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
@@ -289,9 +318,13 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	{
 		UE_LOG(LogFestaFiestaFacilityInfo, Error,
 			TEXT("시설 정보 패널을 Viewport 화면에 추가하지 못했습니다."));
+		Panel->OnFavoriteRequested.RemoveAll(this);
 		Panel->OnMoveRequested.RemoveAll(this);
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
+		Panel->OnUpgradeRequested.RemoveAll(this);
+		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel = nullptr;
@@ -485,6 +518,9 @@ void UFF_FacilityInfoSubsystem::ClearSelection()
 	const bool bHadSelection = HasSelection();
 	ClosePaidProgramPicker();
 	SelectedFacilityId.Invalidate();
+	CachedSynergyFacilityId.Invalidate();
+	CachedSynergyEntries.Reset();
+	CachedSynergySummary = FText::GetEmpty();
 	SelectionContext = EFF_FacilityInfoContext::None;
 	if (bPauseMenuPresentationSuppressed)
 	{
@@ -621,6 +657,56 @@ bool UFF_FacilityInfoSubsystem::IsContextCurrentlyAllowed(
 	return Stage && Stage->CurrentStage == EFF_FestivalStage::Live;
 }
 
+void UFF_FacilityInfoSubsystem::ApplySynergyViewData(
+	const AFFZSFacilityActor& Facility, FFF_FacilityInfoViewData& OutViewData) const
+{
+	const UWorld* World = GetWorld();
+	const UFF_FacilitySynergySubsystem* Synergies = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_BuildCatalogSubsystem* Catalog = GameInstance ? GameInstance->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	const bool bEligible = !Facility.NeedsRelocation() && Facility.GetFacilityState() != EFFZSFacilityState::Planned
+		&& Facility.GetFacilityState() != EFFZSFacilityState::Removed;
+	const uint64 Revision = Synergies ? Synergies->GetRevision() : 0;
+	const uint64 CatalogRevision = Catalog ? Catalog->GetCatalogRevision() : 0;
+	const FGuid FacilityId = Facility.GetFacilityInstanceId();
+	if (CachedSynergyFacilityId != FacilityId || CachedSynergyRevision != Revision ||
+		CachedSynergyCatalogRevision != CatalogRevision || bCachedSynergyEligible != bEligible)
+	{
+		FFF_FacilitySynergyPreview Preview;
+		if (Synergies)
+		{
+			// Same identity and centre produce an installed-state view, including reverse beneficiaries.
+			Synergies->BuildPlacementPreview(Facility.GetFacilitySpec().FacilityDefinitionId,
+				Facility.GetActorLocation(), FacilityId, Preview);
+		}
+		TMap<FName, FText> Names;
+		for (const FFF_FacilitySynergyPreviewEntry& Entry : Preview.Entries)
+		{
+			for (const FName DefinitionId : {Entry.TargetFacilityId, Entry.PartnerFacilityId})
+			{
+				if (Names.Contains(DefinitionId)) continue;
+				Names.Add(DefinitionId, Catalog ? Catalog->ResolveFacilityDisplayName(DefinitionId)
+					: LOCTEXT("SynergyNamesLoading", "시설 이름 불러오는 중"));
+			}
+		}
+		// The selected installed facility uses the same authored display name as this inspector's heading.
+		if (!Facility.GetFacilitySpec().DisplayName.IsEmpty())
+			Names.Add(Facility.GetFacilitySpec().FacilityDefinitionId, Facility.GetFacilitySpec().DisplayName);
+		FFFacilityInfoModel::ApplySynergyPreview(Synergies ? &Preview : nullptr, bEligible,
+			Synergies ? Synergies->GetBonusPercent(FacilityId) : 0.f, Names, OutViewData);
+		CachedSynergyFacilityId = FacilityId;
+		CachedSynergyRevision = Revision;
+		CachedSynergyCatalogRevision = CatalogRevision;
+		bCachedSynergyEligible = bEligible;
+		CachedSynergySummary = OutViewData.SynergySummaryText;
+		CachedSynergyEntries = OutViewData.SynergyEntries;
+		return;
+	}
+	// Queue/occupancy refreshes copy the prepared presentation instead of repeating spatial evaluation.
+	OutViewData.SynergySummaryText = CachedSynergySummary;
+	OutViewData.SynergyEntries = CachedSynergyEntries;
+}
+
 bool UFF_FacilityInfoSubsystem::BuildViewData(
 	AFFZSFacilityActor& Facility,
 	FFF_FacilityInfoViewData& OutViewData) const
@@ -636,6 +722,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	const FFFZSFacilitySpec& Spec = Facility.GetFacilitySpec();
 	const FFFZSFacilityReadModel ReadModel = Facility.GetReadModel();
 	OutViewData.FacilityInstanceId = Facility.GetFacilityInstanceId();
+	OutViewData.FacilityDefinitionId = Spec.FacilityDefinitionId;
 	OutViewData.Context = SelectionContext;
 	OutViewData.ContextTitle = SelectionContext == EFF_FacilityInfoContext::Build
 		? LOCTEXT("BuildContextTitle", "배치 시설")
@@ -643,7 +730,12 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.DisplayName = Spec.DisplayName.IsEmpty()
 		? LOCTEXT("UnknownFacility", "이름 없는 시설")
 		: Spec.DisplayName;
-	OutViewData.CategoryText = FFFacilityInfoModel::GetCategoryText(Spec.Category);
+	FFF_FacilityNameParts NameParts;
+	FString NamingFailure;
+	UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+		Spec.Category, Spec.FacilityDefinitionId, NameParts, NamingFailure);
+	OutViewData.CategoryText = FFF_PrepBuildPresentationRules::ResolveCategoryPathText(
+		Spec.Category, NameParts.MinorToken);
 	OutViewData.ZoneText = Facility.GetZoneId().IsNone()
 		? LOCTEXT("UnknownZone", "구역 정보 없음")
 		: FText::FromName(Facility.GetZoneId());
@@ -667,11 +759,38 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.ServiceDurationText = FText::Format(
 		LOCTEXT("ServiceDurationFormat", "{0}초"),
 		FText::AsNumber(Spec.QueueRules.ServiceDurationSeconds));
+	const UFF_FacilityUpgradeSubsystem* Upgrades = World
+		? World->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
+	FFF_FacilityUpgradePreview UpgradePreview;
+	const bool bHasUpgradePreview = Upgrades &&
+		Upgrades->GetUpgradePreview(OutViewData.FacilityInstanceId, UpgradePreview);
+	FFFacilityInfoModel::ApplyUpgradePreview(bHasUpgradePreview ? &UpgradePreview : nullptr, OutViewData);
+	ApplySynergyViewData(Facility, OutViewData);
+	if (bHasUpgradePreview && UpgradePreview.CurrentServiceDurationSeconds > 0.0f)
+	{
+		OutViewData.ServiceDurationText = FText::Format(
+			LOCTEXT("ServiceDurationFormat", "{0}초"),
+			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
+	}
+	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
+	{
+		OutViewData.QueueCapacityText = LOCTEXT("LightingNoQueue", "대기열 없음");
+		OutViewData.ServiceDurationText = LOCTEXT("LightingNoService", "이용 서비스 없음");
+	}
 	OutViewData.bNeedsRelocation = ReadModel.bNeedsRelocation;
+	OutViewData.bHasLightingRig = Facility.HasLightingRig();
+	OutViewData.bCanEditLighting = OutViewData.bHasLightingRig &&
+		IsContextCurrentlyAllowed(SelectionContext) && !bPauseMenuPresentationSuppressed;
+	OutViewData.LightingState = Facility.GetLightingState();
 	OutViewData.FeedbackText = FeedbackText;
 	OutViewData.bFeedbackIsError = bFeedbackIsError;
 
 	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	if (const UFF_BuildFavoritesSubsystem* Favorites = GameInstance
+		? GameInstance->GetSubsystem<UFF_BuildFavoritesSubsystem>() : nullptr)
+	{
+		OutViewData.bIsFavorite = Favorites->IsFavorite(Spec.FacilityDefinitionId);
+	}
 	const UFF_BuildCatalogSubsystem* Catalog = GameInstance
 		? GameInstance->GetSubsystem<UFF_BuildCatalogSubsystem>()
 		: nullptr;
@@ -774,6 +893,21 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.ThroughputText = bQueueAvailable
 		? FFFacilityInfoModel::FormatThroughput(true, QueueState.GetServiceRatePerMinute())
 		: MissingQueueMetric;
+	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
+	{
+		OutViewData.OperationStateText = Spec.IsGroundSurface()
+			? (Spec.AllowsFacilityPlacementOnTop()
+				? LOCTEXT("TileSurface", "통행 · 시설 설치 가능")
+				: LOCTEXT("RoadSurfaceWithoutFacilities", "통행 전용 · 시설 설치 불가"))
+			: (Facility.GetLightingState().bEnabled
+				? LOCTEXT("LightingOn", "조명 켜짐") : LOCTEXT("LightingOff", "조명 꺼짐"));
+		const FText NotApplicable = LOCTEXT("LightingMetricNotApplicable", "해당 없음");
+		OutViewData.WaitingPartiesText = NotApplicable;
+		OutViewData.OccupancyText = NotApplicable;
+		OutViewData.RemainingServiceText = NotApplicable;
+		OutViewData.ExpectedWaitText = NotApplicable;
+		OutViewData.ThroughputText = NotApplicable;
+	}
 
 	const bool bReconfigurePhase = ZoneSystem->GetChangePhase() == EFFZSChangePhase::InitialSetup ||
 		ZoneSystem->GetChangePhase() == EFFZSChangePhase::MorningCheck;
@@ -900,6 +1034,24 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			}
 		}
 	}
+
+	// This installed facility's actual earnings. The ledger's per-definition rows merge booths of
+	// the same type; the panel reads the per-instance book so two identical booths stay distinct.
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	const bool bEconomyAvailable = Progression && Progression->IsFestivalStarted();
+	if (bEconomyAvailable)
+	{
+		Progression->GetFacilityInstanceRevenue(OutViewData.FacilityInstanceId, InstanceRevenue);
+	}
+	const bool bGeneratesDirectRevenue =
+		(bHasUpgradePreview && UpgradePreview.bRevenueAvailable && UpgradePreview.CurrentRevenuePerUseGold > 0) ||
+		OutViewData.bHasScheduledProgram;
+	FFFacilityInfoModel::ApplyFacilityRevenue(
+		bEconomyAvailable ? &InstanceRevenue : nullptr,
+		!(Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface()),
+		bGeneratesDirectRevenue,
+		bEconomyAvailable ? Progression->GetTodayRevenue() : 0,
+		OutViewData);
 
 	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
 		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
@@ -1261,6 +1413,19 @@ void UFF_FacilityInfoSubsystem::HandlePanelMoveRequested()
 	}
 }
 
+void UFF_FacilityInfoSubsystem::HandlePanelFavoriteRequested()
+{
+	const AFFZSFacilityActor* Facility = GetSelectedFacility();
+	UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UFF_BuildFavoritesSubsystem* Favorites = GameInstance
+		? GameInstance->GetSubsystem<UFF_BuildFavoritesSubsystem>() : nullptr;
+	if (!bPauseMenuPresentationSuppressed && Facility && Favorites)
+	{
+		Favorites->ToggleFavorite(Facility->GetFacilitySpec().FacilityDefinitionId);
+		RefreshPanel();
+	}
+}
+
 void UFF_FacilityInfoSubsystem::HandlePanelRemoveRequested()
 {
 	if (bPauseMenuPresentationSuppressed)
@@ -1271,6 +1436,87 @@ void UFF_FacilityInfoSubsystem::HandlePanelRemoveRequested()
 	{
 		OnRemoveRequested.Broadcast(SelectedFacilityId);
 	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelUpgradeRequested()
+{
+	if (bPauseMenuPresentationSuppressed || !Panel ||
+		Panel->GetVisibility() == ESlateVisibility::Collapsed ||
+		SelectionContext != EFF_FacilityInfoContext::Build || !SelectedFacilityId.IsValid())
+	{
+		return;
+	}
+	const FFF_FacilityInfoViewData& ViewData = Panel->GetCurrentViewData();
+	if (ViewData.FacilityInstanceId != SelectedFacilityId || !ViewData.bShowUpgradeDetails ||
+		!ViewData.bShowUpgradeAction || !ViewData.bCanUpgrade)
+	{
+		return;
+	}
+
+	// Copy the reviewed identity/level before the command emits world events and refreshes the UI.
+	const FGuid RequestedFacilityId = SelectedFacilityId;
+	const int32 ExpectedLevel = ViewData.CurrentUpgradeLevel;
+	UFF_FacilityUpgradeSubsystem* Upgrades = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
+	FText FailureReason;
+	const bool bSucceeded = Upgrades &&
+		Upgrades->TryUpgradeFacility(RequestedFacilityId, ExpectedLevel, FailureReason);
+	if (SelectedFacilityId != RequestedFacilityId)
+	{
+		return;
+	}
+	SetFeedback(bSucceeded
+		? FText::Format(LOCTEXT("UpgradeSucceeded", "Lv.{0} 강화 완료! 손님을 더 빠르게 응대합니다."),
+			FText::AsNumber(ExpectedLevel + 1))
+		: (FailureReason.IsEmpty()
+			? LOCTEXT("UpgradeFailed", "강화할 수 없습니다. 시설 상태를 다시 확인해 주세요.")
+			: FailureReason), !bSucceeded);
+}
+
+void UFF_FacilityInfoSubsystem::HandleFacilityLightingChanged(const FGuid FacilityInstanceId)
+{
+	if (FacilityInstanceId == SelectedFacilityId) RefreshPanel();
+}
+
+bool UFF_FacilityInfoSubsystem::CanEditSelectedLighting(const FGuid FacilityId) const
+{
+	if (bPauseMenuPresentationSuppressed || !Panel ||
+		Panel->GetVisibility() == ESlateVisibility::Collapsed || !FacilityId.IsValid() ||
+		SelectedFacilityId != FacilityId || !IsContextCurrentlyAllowed(SelectionContext)) return false;
+	const FFF_FacilityInfoViewData& ViewData = Panel->GetCurrentViewData();
+	const AFFZSFacilityActor* Facility = GetSelectedFacility();
+	return ViewData.FacilityInstanceId == FacilityId && ViewData.bCanEditLighting &&
+		Facility && Facility->HasLightingRig();
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelLightingRequested(
+	const FGuid FacilityId, const FFFZSFacilityLightingState& State)
+{
+	if (!CanEditSelectedLighting(FacilityId)) return;
+	UFFZSWorldSubsystem* ZoneSystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	FText Failure;
+	const bool bSucceeded = ZoneSystem && ZoneSystem->SetFacilityLighting(FacilityId, State, Failure);
+	if (SelectedFacilityId != FacilityId) return;
+	// World events may refresh synchronously. Always reread after a failed command as well.
+	if (!bSucceeded) SetFeedback(Failure.IsEmpty()
+		? LOCTEXT("LightingFailed", "조명을 바꿀 수 없습니다. 시설 상태를 확인해 주세요.") : Failure, true);
+	else
+	{
+		FeedbackText = FText::GetEmpty();
+		bFeedbackIsError = false;
+		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelLightingResetRequested(const FGuid FacilityId)
+{
+	if (!CanEditSelectedLighting(FacilityId)) return;
+	UFFZSWorldSubsystem* ZoneSystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	FText Failure;
+	const bool bSucceeded = ZoneSystem && ZoneSystem->ResetFacilityLighting(FacilityId, Failure);
+	if (SelectedFacilityId != FacilityId) return;
+	SetFeedback(bSucceeded ? LOCTEXT("LightingReset", "시설의 기본 조명 설정으로 되돌렸습니다.")
+		: (Failure.IsEmpty() ? LOCTEXT("LightingResetFailed", "기본 조명을 복원할 수 없습니다.") : Failure), !bSucceeded);
 }
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
@@ -1341,6 +1587,8 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 	}
 
 	OutViewData.FacilityInstanceId = FacilityId;
+	OutViewData.AvailableGold = Progression->GetGold();
+	OutViewData.AvailableStaff = Progression->GetAvailableStaffCount();
 	OutViewData.FacilityName = Facility.GetFacilitySpec().DisplayName.IsEmpty()
 		? FText::FromName(Facility.GetFacilitySpec().FacilityDefinitionId)
 		: Facility.GetFacilitySpec().DisplayName;
@@ -1362,11 +1610,15 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 			? FText::FromName(Card.ProgramId)
 			: Card.DisplayName;
 		CardViewData.Description = FText::Format(
-			LOCTEXT("ProgramCardDescription", "당일 한정 프로그램 · 최대 매출 {0} Gold"),
+			LOCTEXT("ProgramCardDescription", "최대 매출 {0} Gold · 정원 모두 참여 시\n당일 한정 프로그램"),
 			FText::AsNumber(Card.CalcMaxRevenue()));
 		CardViewData.TimeText =
 			FFFacilityInfoModel::FormatProgramTimeRange(Card.StartMinutes, Card.EndMinutes);
 		CardViewData.CostGold = Card.CostGold;
+		CardViewData.RequiredStaff = Card.RequiredStaff;
+		CardViewData.CapacityPeople = Card.Capacity;
+		CardViewData.TicketFeeGold = Card.FeePerPerson;
+		CardViewData.MaxRevenueGold = Card.CalcMaxRevenue();
 		CardViewData.CostText = FFFacilityInfoModel::FormatGold(true, Card.CostGold);
 		CardViewData.StaffText = FText::Format(
 			LOCTEXT("ProgramRequiredStaff", "필요 인원 {0}명"),
@@ -1411,7 +1663,13 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 	}
 	if (Result == EFF_PaidProgramScheduleResult::Success)
 	{
-		SetPaidProgramPickerOpen(false);
+		const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+		const UFF_FestivalProgressionSubsystem* Progression = GameInstance
+			? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+		ActivePicker->ShowPurchaseComplete(ProgramId,
+			Progression ? Progression->GetGold() : 0,
+			Progression ? Progression->GetAvailableStaffCount() : 0);
+		SetPaidProgramPickerOpen(true);
 		SetFeedback(LOCTEXT("PaidProgramScheduled", "유료 프로그램 구매·편성이 완료되었습니다."), false);
 		RefreshPanel();
 		return;
@@ -1477,6 +1735,16 @@ void UFF_FacilityInfoSubsystem::HandleScheduledProgramsChanged()
 	if (HasSelection())
 	{
 		RefreshPanel();
+	}
+}
+
+void UFF_FacilityInfoSubsystem::HandleFacilityRevenueChanged(const FGuid FacilityInstanceId)
+{
+	// Several parties can settle in one frame. Instead of re-projecting per payment, pull the
+	// next 0.25 s sample forward so the card shows the new amount on the following tick.
+	if (HasSelection() && FacilityInstanceId == SelectedFacilityId)
+	{
+		RefreshAccumulatorSeconds = RefreshIntervalSeconds;
 	}
 }
 

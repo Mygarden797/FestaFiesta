@@ -3,16 +3,19 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CrowdSystem/Lane/FF_CrowdRoadLaneBuilder.h"
 #include "CrowdSystem/Systems/FF_CrowdActorPool.h"
 #include "CrowdSystem/Systems/FF_CrowdDensityGrid.h"
 #include "CrowdSystem/Systems/FF_CrowdForces.h"
 #include "CrowdSystem/Systems/FF_CrowdHeightField.h"
 #include "CrowdSystem/Systems/FF_CrowdPathFollow.h"
 #include "CrowdSystem/Systems/FF_CrowdSpatialGrid.h"
+#include "CrowdSystem/Systems/FF_CrowdSplinePath.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
+#include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Party/FF_VisitorDistributionBuilder.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -22,6 +25,32 @@
 
 class AFF_BaseCrowd;
 class UDataTable;
+class UFFZSWorldSubsystem;
+
+// 개체 하나가 레인의 어디를 어디까지 타고 있는가. 디버그 표시와 콘솔 전용이다.
+//
+// "레인이 몇 % 채택됐다"는 집계로는 **어느 지점에서 레인에 올라탔는지**를 알 수 없다.
+// 진입점이 개체 바로 옆이면 레인이 동선과 맞는 것이고, 20m 뒤라면 개체는 레인에 닿기까지
+// 직선으로 걸어간다 — 같은 "채택 100%"인데 둘은 전혀 다른 상태다.
+struct FFF_CrowdLaneFollowInfo
+{
+	bool bHasPath = false;
+
+	// INDEX_NONE이면 이 경로는 NavMesh가 낸 것이다.
+	int32 LaneIndex = INDEX_NONE;
+
+	// 레인 경로의 첫 점. 개체가 레인에 올라타는 자리다.
+	FVector EntryPointCm = FVector::ZeroVector;
+
+	// 개체 현재 위치에서 진입점까지의 평면 거리. 이미 지났으면 지난 거리다.
+	float DistanceToEntryCm = 0.f;
+
+	// 진입점을 아직 소비하지 않았다 = 레인에 올라타기 전 직선 구간을 걷는 중이다.
+	bool bApproachingEntry = false;
+
+	int32 ConsumedCount = 0;
+	int32 TotalCount = 0;
+};
 
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
 	const FFF_PartyDecisionContext& , FFF_PartyDecisionResult& );
@@ -102,6 +131,31 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
 	void ConfigureSimArea(FVector NewOrigin, float NewRadiusUU);
+
+	// 게이트를 등록한다. InitializeSimulation 직후 1회만 부르며, 재검증하면 인덱스가 밀려 소속이 바뀐다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Gate")
+	void GatherCrowdGates(const TArray<FFF_CrowdGate>& InGates);
+
+	// 검증을 통과한 게이트. 저작 배열이 아니라 이쪽이 런타임의 진실이다.
+	const TArray<FFF_CrowdGate>& GetValidGates() const { return ValidGates; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetValidGateCount() const { return ValidGates.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetSpawnGateCount() const { return SpawnGateIndices.Num(); }
+
+	// 검증에서 제외된 게이트 수. 0 이 아니면 로그를 확인해야 한다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetRejectedGateCount() const { return RejectedGateCount; }
+
+	// NavMesh 가 아직 없어 검증을 건너뛴 게이트 수. "검증 통과"와 "검증 안 함"은 다르다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	int32 GetUnverifiedGateCount() const { return UnverifiedGateCount; }
+
+	// 저작 게이트가 하나도 유효하지 않아 폴백 게이트로 돌고 있는가.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Gate")
+	bool IsUsingFallbackGate() const { return bUsingFallbackGate; }
 
 	UFUNCTION(BlueprintPure, Category = "Crowd")
 	bool IsSimulationInitialized() const { return bSimulationInitialized; }
@@ -207,6 +261,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	int32 GetSnapshotCount() const { return SnapshotCount; }
 
+	// 스텝 상한에 걸려 버려진 시뮬 시간의 총합, 초
+	float GetDroppedSimSeconds() const { return DroppedSimSeconds; }
+
+	// 위가 발생한 프레임 수
+	int32 GetDroppedStepFrames() const { return DroppedStepFrames; }
+
+	// 시뮬 시간 / 실시간. 1.0 미만이면 시뮬이 실시간을 따라가지 못하고 있다
+	float GetSimTimeFidelity() const
+	{
+		const float Elapsed = SimTimeSeconds + DroppedSimSeconds;
+		return (Elapsed > KINDA_SMALL_NUMBER) ? (SimTimeSeconds / Elapsed) : 1.f;
+	}
+
 	// 스냅샷 발행 주기, 고정 스텝 단위. 30 = 1초(30Hz).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 SnapshotIntervalSteps = 30;
@@ -215,6 +282,13 @@ public:
 	// 매 프레임 확정하면 OnNeedUnmetRatioChanged 가 초당 수십 번 뜬다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Metrics", meta = (ClampMin = "1"))
 	int32 NeedMetricsIntervalSteps = 30;
+
+	// 만족도 대기 항의 큐 성공률 계산용 — 직전 확정 창에서의 누적 카운터 스냅샷.
+	// QueueJoinAccepted/QueueJoinRejected/QueuePatienceAbandons는 시뮬레이션 시작부터의
+	// 누적값이라, 이번 창만의 델타를 구하려면 지난 창의 값을 들고 있어야 한다.
+	int32 LastWindowQueueJoinAccepted = 0;
+	int32 LastWindowQueueJoinRejected = 0;
+	int32 LastWindowQueuePatienceAbandons = 0;
 
 	void DespawnParty(int32 PartyID);
 
@@ -269,11 +343,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue", meta = (ClampMin = "0.0"))
 	float QueueHoldTimeoutSeconds = 1200.f;
 
-	// 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	/**
+	 * 프로그램 종료 직후 다시 자유활동할 최소 체류 예산(축제 분).
+	 *
+	 * ★ UtilityCoefficientTable 의 `reservation_exit_buffer_minutes` 행이 OnWorldBeginPlay 에서
+	 *   이 값을 덮는다. 여기서 편집한 값은 그 행이 **없을 때만** 남는다 — 튜닝은 CSV 에서 할 것.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
 	float ProgramExitGraceMinutes = 10.f;
 
-	// 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	/**
+	 * 프로그램 시작보다 이만큼 일찍 도착하도록 복귀한다. 후보 귀환 판정에도 같은 축제분을 사용한다.
+	 *
+	 * ★ `reservation_return_buffer_minutes` 행이 OnWorldBeginPlay 에서 이 값을 덮는다
+	 *   (위 ProgramExitGraceMinutes 와 같은 규칙).
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Reservation", meta = (ClampMin = "0.0"))
 	float ProgramReturnBufferMinutes = 10.f;
 
@@ -379,7 +463,7 @@ public:
 
 	// SimOrigin 기준 반경. 밀도 그리드는 이 반경을 감싸는 정사각형으로 만들어진다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float SimRadiusUU = 100000.f;
+	float SimRadiusUU = 1000000.f;
 
 	// 목적지에 이만큼 가까워지면 도착으로 본다(접근점·배회 목적지 기준), UU.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
@@ -408,6 +492,23 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Flow")
 	int32 GetDecisionsProcessed() const { return DecisionsProcessed; }
+
+	// 개인 주기가 차서 걷던 중 재평가한 횟수(reevaluate_interval_multiplier 결선 지점).
+	// 끄려면 bEnablePeriodicReevaluation 을 false 로 둔다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Flow")
+	int32 GetReevaluateRequests() const { return ReevaluateRequests; }
+
+	// 인내심 한계로 줄에서 이탈한 파티 수(patience_multiplier 결선 지점).
+	UFUNCTION(BlueprintPure, Category = "Crowd|Queue")
+	int32 GetQueuePatienceAbandons() const { return QueuePatienceAbandons; }
+
+	// 걷는 도중 개인 주기가 차면 목적지를 다시 고른다(jockeying).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
+	bool bEnablePeriodicReevaluation = true;
+
+	// 줄에서 개인 인내심 한계를 넘기면 이탈한다(reneging).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Queue")
+	bool bEnableQueuePatienceAbandon = true;
 
 	// 목적지 앞에서 감속을 시작하는 거리, UU. 0이면 ArrivalRadiusUU * 3으로 폴백한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
@@ -516,6 +617,129 @@ public:
 	// 배치가 바뀌어 경로를 통째로 버린 횟수. 시설 설치·이동·철거 횟수와 맞아야 한다
 	UFUNCTION(BlueprintPure, Category = "Crowd|Path")
 	int32 GetPathLayoutInvalidations() const { return PathLayoutInvalidations; }
+
+	// --- 레인 경로 --------------------------------------------------------------------------
+	//
+	// 저작된 AFF_CrowdLane 스플라인을 NavMesh보다 먼저 시도한다. 레인이 없거나 진입·이탈
+	// 반경 밖이면 NavMesh로 떨어지므로, 레인을 한 개도 깔지 않은 맵의 동작은 그대로다.
+	//
+	// 레인은 "여기로 다녔으면 하는 길"이고 NavMesh는 "갈 수 있는 길"이다. 둘을 섞으면
+	// 어느 쪽이 경로를 냈는지 알 수 없어져서, 레인이 실제로 먹었는지는 GetLanePathCount와
+	// GetNavFallbackCount의 비율로만 판정한다.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableLanePathing = true;
+
+	// 개체가 이보다 멀리 있으면 그 레인은 후보에서 빠진다. 넓히면 레인과 무관한 위치의
+	// 개체까지 먼 레인으로 끌려가 직선으로 진입점까지 걸어간다.b
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
+	float LaneEntrySnapRadiusCm = 2000.f;
+
+	// 목적지가 이보다 멀면 그 레인으로는 못 간다. 시설 접근점이 레인에서 떨어져 있으면
+	// 여기를 키우기보다 레인을 시설 쪽으로 늘리는 것이 맞다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
+	float LaneExitSnapRadiusCm = 1500.f;
+
+	// 직선 거리의 몇 배까지 레인 우회를 허용하는가. 1.0이면 우회를 아예 안 받는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "1.0"))
+	float LaneMaxDetourRatio = 5.f;
+
+	// 월드의 AFF_CrowdLane을 모두 훑어 폴리라인으로 다시 굽고 살아 있는 경로를 버린다.
+	// 저작 액터를 PIE 중에 옮겼거나 인게임 배치가 레인을 바꾼 뒤 호출한다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Lane")
+	int32 RefreshLanesFromWorld();
+
+	// 레인 권위가 Crowd 밖으로 나가는 날의 진입점. 인게임 배치 서브시스템이 여기로 밀어 넣는다.
+	// 저작 레인 자리만 갈아 끼우며 도로에서 구운 레인은 건드리지 않는다.
+	void SetLanes(TArray<FFF_CrowdSplineLane> NewLanes);
+
+	// --- 도로 순회 --------------------------------------------------------------------------
+	//
+	// 배회 목적지가 현재 위치 중심 원판이면 순수 랜덤워크라 확산이 √n으로 느리고, 개체가
+	// 스폰 지점 주변을 벗어나지 못한다. 도로 레인 위의 먼 지점을 목적지로 주면 한 걸음이
+	// 세그먼트 길이가 되어 같은 횟수로 훨씬 멀리 퍼진다.
+	//
+	// 세그먼트 끝에 도착한 개체는 그 지점에서 다시 뽑는데, 교차로에서는 이어진 세그먼트가
+	// 모두 후보로 들어오므로 갈림길을 한 번 고른 것과 같아진다. 막다른 길에서는 왔던
+	// 방향만 남아 자연히 되돌아선다.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableRoadPatrolWander = true;
+
+	// 도로에서 레인을 구울지. 끄면 저작 레인만 남아 도로를 깔기 전과 동작이 같다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableRoadLanes = true;
+
+	// 이 안에 레인이 있는 개체만 순회로 뽑는다. LaneEntrySnapRadiusCm보다 좁게 잡는 이유는,
+	// 넓히면 도로에서 먼 개체까지 레인으로 끌려가 직선으로 걸어오기 때문이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
+	float PatrolLaneSnapRadiusCm = 800.f;
+
+	// 목적지가 현재 호 위치에서 이보다 가깝지 않은 후보만 쓴다. 세그먼트 끝에 이미 서 있는
+	// 개체가 같은 끝을 다시 목적지로 받아 제자리 재결정을 반복하는 것을 여기서 끊는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
+	float PatrolMinTravelCm = 600.f;
+
+	// 닫힌 레인에는 끝이 없으므로 전진 거리를 값으로 준다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "100.0", Units = "cm"))
+	float PatrolLoopStepCm = 4000.f;
+
+	// 순회로 목적지를 뽑은 횟수. 원판 배회와의 비율이 도로가 실제로 먹는지를 말해 준다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetPatrolWanderCount() const { return PatrolWanderCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetDiscWanderCount() const { return DiscWanderCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetRoadLaneCount() const { return RoadLanes.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetAuthoredLaneCount() const { return AuthoredLanes.Num(); }
+
+	const FFF_CrowdRoadLaneBuildStats& GetRoadLaneStats() const { return RoadLaneStats; }
+
+	// 도로 타일을 다시 읽어 순회 레인을 굽는다. 리비전이 그대로면 아무 일도 하지 않는다.
+	int32 EnsureRoadLanes();
+
+	// --- 확산 계측 --------------------------------------------------------------------------
+	//
+	// "퍼진다"를 눈으로 판정하면 안 된다. 표준편차는 무리가 얼마나 넓게 흩어졌는지를,
+	// 엔트로피는 그 넓이가 한쪽에 쏠려 있는지를 본다 — 두 개체가 축제장 양 끝에만 있어도
+	// 표준편차는 크게 나오므로 엔트로피 없이는 속는다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Spread")
+	bool GetSpreadStats(FVector& OutCentroidCm, float& OutStdDevCm,
+		float& OutNormalizedEntropy, int32& OutSampleCount, int32& OutOccupiedBuckets) const;
+
+	// 엔트로피를 셀 때 쓰는 격자 한 칸의 크기.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Spread", meta = (ClampMin = "100.0", Units = "cm"))
+	float SpreadBucketSizeCm = 5000.f;
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetLaneCount() const { return Lanes.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetUsableLaneCount() const;
+
+	// 레인으로 경로를 낸 횟수.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetLanePathCount() const { return LanePathCount; }
+
+	// 레인이 후보를 못 내서 NavMesh로 떨어진 횟수. 레인을 깔았는데 이쪽만 오르면
+	// 진입·이탈 반경이나 레인 배치가 실제 동선과 맞지 않는다는 뜻이다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetNavFallbackCount() const { return NavFallbackCount; }
+
+	// 마지막으로 레인 경로를 낸 개체가 쓴 레인 인덱스. 디버그 표시 전용이다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetLastLaneIndexForAgent(int32 AgentIndex) const
+	{
+		return AgentLaneIndices.IsValidIndex(AgentIndex) ? AgentLaneIndices[AgentIndex] : INDEX_NONE;
+	}
+
+	const TArray<FFF_CrowdSplineLane>& GetLanes() const { return Lanes; }
+
+	bool GetLaneFollowInfo(int32 AgentIndex, FFF_CrowdLaneFollowInfo& OutInfo) const;
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Avoidance")
 	bool WasAvoidanceAppliedLastStep() const { return bAvoidanceAppliedLastStep; }
@@ -671,6 +895,10 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
 	int32 GetArrivalBucketCount() const { return CachedBucketCount;}
+
+	// Inspect the live cache without loading an asset and accidentally hiding a lifetime failure.
+	const UDataTable* GetLoadedArrivalCurveTable() const { return CachedArrivalCurveTable.Get(); }
+	int32 GetArrivalPlannedCount() const { return ArrivalTotalVisitorCount; }
 	
 	void BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter, float SpawnRadiusUU,
 		const TArray<FFF_ReservedPartyRequest>& ReservedParties = TArray<FFF_ReservedPartyRequest>());
@@ -681,9 +909,21 @@ public:
 
 private:
 
+	// 게이트 하나를 검증하고, 통과하면 OutGate 의 GateLocation 을 NavMesh 투영 좌표로 덮는다.
+	bool ValidateGate(const FFF_CrowdGate& InGate, int32 AuthoredIndex, FFF_CrowdGate& OutGate);
+
+	// bAllowSpawn 게이트만으로 CDF 를 다시 만든다. 가중치만 바뀌면 검증 없이 이것만 부르면 된다.
+	void RebuildSpawnGateCdf();
+
+	// 입장 게이트가 없을 때 단일 앵커로 폴백을 합성한다. 게이트로 만들어야 뽑는 쪽에 분기가 안 생긴다.
+	void EnsureFallbackGate();
 	
+	// 파티 하나가 들어올 게이트를 고른다. 반환값은 ValidGates 인덱스이며 항상 유효해야 한다.
+	int32 PickSpawnGate(int32 InVisitorCursor) const;
+	
+
 	bool IsFestivalLive();
-	
+
 	void StepSimulation(float FixedDt);
 
 	void PushPresentationToActors(float DeltaTime, float InterpAlpha);
@@ -700,6 +940,10 @@ private:
 
 	void InvalidatePathsOnLayoutChange();
 
+	bool TryBuildLanePathForAgent(int32 AgentIndex);
+
+	int32 DropAllPaths();
+
 	CrowdSteering::FStepParams MakeStepParams() const;
 
 	void ClearAvoidanceForces();
@@ -715,6 +959,9 @@ public:
 
 private:
 	void SnapUnitToGround(FUnitData& Unit) const;
+	void EnsureRoadSupportCache() const;
+	UFUNCTION()
+	void HandleRoadSupportSnapshotRestored();
 
 	void RebuildHeightField();
 	void RebuildAvoidanceWalls();
@@ -726,6 +973,10 @@ private:
 	void ProcessDecisions();
 
 	FVector PickWanderDestination(int32 LeaderAgentIndex) const;
+
+	bool TryPickPatrolDestination(int32 LeaderAgentIndex, uint32 BaseSeed, FVector& OutDestination) const;
+
+	void RebuildCombinedLanes();
 
 	FFF_VisitorDistribution BuildVisitorDistribution(int32 RequestedCount,
 		const TArray<FFF_ReservedPartyRequest>& ReservedParties) const;
@@ -786,11 +1037,15 @@ private:
 	
 	void AllAgentLeavingTrigger();
 	
-public:
+	//AgentMesh 적용
+	void ApplyAgentAppearance(int32 AgentIndex);
+
 private:
 	
-	//스케줄 관련 변수
-	TSoftObjectPtr<UDataTable> CachedArrivalCurveTable;
+	// Settings keep a soft asset path; the running world must retain the loaded
+	// table. A soft cache lets GC stop arrivals after Setup or between days.
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> CachedArrivalCurveTable;
 	
 	FName CachedArrivalScenarioId;
 	
@@ -807,6 +1062,33 @@ private:
 	float ArrivalSpawnRadiusUU = 100.f;
 	
 	bool bArrivalPoolExhaustedLogged = false;
+
+
+	//게이트 관련 변수
+	// GateLocation 은 NavMesh 투영 좌표로 덮여 있다. 저작 좌표를 그대로 쓰면 지면에서 뜬 곳에 사람이 나온다.
+	TArray<FFF_CrowdGate> ValidGates;
+
+	TArray<int32> SpawnGateIndices;
+
+	// SpawnGateIndices 와 같은 길이. 마지막 원소로 정규화돼 있어 뽑을 때 나눗셈이 없다.
+	TArray<float> SpawnGateCdf;
+
+	bool bGatesGathered = false;
+
+	bool bUsingFallbackGate = false;
+
+	int32 RejectedGateCount = 0;
+
+	int32 UnverifiedGateCount = 0;
+
+	//Live 재진입 시에 상승시켜서, 매일 같은 배분이 나오지 못하도록 하는 장치이다.
+	int32 ArrivalGeneration = 0;
+
+	// Appearance is read again for later arrivals and pooled actors after GC.
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> CachedAppearenceTable;
+	
+	
 	
 	
 	// 다음에 발급할 파티 ID. 슬롯 인덱스와 달리 재사용하지 않아 로그를 되짚을 수 있다
@@ -820,6 +1102,13 @@ private:
 
 	// 아직 소비하지 못한 프레임 시간, 초
 	float SimAccumulator = 0.f;
+
+	// 스텝 상한(MaxStepsPerFrame)에 걸려 버려진 시뮬 시간의 총합, 초. 프레임률과 무관하게
+	// 이 값이 늘어나면 축제 시간이 실시간보다 느리게 흐른 것이다 — 인원수 한계 판정에 쓴다.
+	float DroppedSimSeconds = 0.f;
+
+	// 위가 발생한 프레임 수
+	int32 DroppedStepFrames = 0;
 
 	// 시뮬레이션 누적 시간, 초
 	float SimTimeSeconds = 0.f;
@@ -907,9 +1196,48 @@ private:
 
 	int32 PathLayoutInvalidations = 0;
 
+	// --- 레인 상태 --------------------------------------------------------------------------
+
+	// 베이크된 레인. USplineComponent를 매 쿼리마다 들여다보지 않기 위해 폴리라인으로 들고 있다.
+	// AuthoredLanes + RoadLanes를 이어 붙인 결과이며, 쿼리는 전부 이것만 본다
+	TArray<FFF_CrowdSplineLane> Lanes;
+
+	// AFF_CrowdLane 저작 액터에서 온 레인. 레벨 로드와 SetLanes로만 바뀐다
+	TArray<FFF_CrowdSplineLane> AuthoredLanes;
+
+	// 건설로 깔린 도로 타일에서 구운 레인. 배치 리비전이 바뀔 때마다 다시 굽는다
+	TArray<FFF_CrowdSplineLane> RoadLanes;
+
+	// RoadLanes를 구운 시점의 배치 리비전
+	int64 RoadLaneRevision = -1;
+
+	FFF_CrowdRoadLaneBuildStats RoadLaneStats;
+
+	// AgentIndex와 같은 인덱스. 마지막으로 쓴 레인이며 NavMesh로 떨어졌으면 INDEX_NONE이다
+	TArray<int32> AgentLaneIndices;
+
+	int32 LanePathCount = 0;
+	int32 NavFallbackCount = 0;
+
+	mutable int32 PatrolWanderCount = 0;
+	mutable int32 DiscWanderCount = 0;
+
 	// --- 지형 ------------------------------------------------------------------------------
 
 	FFF_CrowdHeightField HeightField;
+
+	// Roads overlay the coarse terrain height without rebuilding its physics samples.
+	// Buckets refresh once per layout revision; each NPC only inspects its local bucket.
+	struct FRoadSupportSurface
+	{
+		FTransform Transform;
+		FVector2D HalfExtentCm = FVector2D::ZeroVector;
+		double TopZ = 0.0;
+	};
+	mutable TArray<FRoadSupportSurface> RoadSupportSurfaces;
+	mutable TMap<FIntPoint, TArray<int32>> RoadSupportBuckets;
+	mutable TWeakObjectPtr<UFFZSWorldSubsystem> RoadSupportSystem;
+	mutable int64 RoadSupportRevision = -1;
 
 	// 직전 스텝에 회피가 실제로 적용됐는지. 껐을 때 낡은 Force를 한 번만 지우기 위한 것이다
 	bool bAvoidanceAppliedLastStep = false;
@@ -934,6 +1262,18 @@ private:
 	TArray<FFF_NeedState> PartyAggregatedNeeds;
 	TArray<int32> PartyMemberCounts;
 	TArray<float> PartyRemainingStayMinutes;
+
+	/**
+	 * 개체별로 확정된 변주값. AgentIndex 로 인덱싱한다. (StableAgentID 가 아니다)
+	 * 스폰 시 한 번 Resolve 해서 여기 넣는다. 리더가 아닌 멤버 자리도 채운다.
+	 */
+	TArray<FFF_ResolvedIndividualTraits> AgentTraits;
+
+	/**
+	 * AgentTraits 에 전역 재평가 계수를 곱해 둔 개인 임계값. 인덱싱 규칙은 AgentTraits 와 같다.
+	 * 계수는 런타임에 안 바뀌므로 스폰 때 한 번 곱한 값을 들고 있는다.
+	 */
+	TArray<FFF_PersonalReevaluationThresholds> AgentPersonalThresholds;
 	UPROPERTY()
 	TObjectPtr<UDataTable> CachedCoefficientTable;
 	float StayDrainMultiplierAtMaxNeed = 1.f;
@@ -964,6 +1304,14 @@ private:
 	// 쿨다운 스킵만 크면 임계가 짧아서 같은 파티가 계속 재시도하는 것이다
 	int32 StuckDecisionRequests = 0;
 
+	// 개인 주기가 차서 걷던 중 재평가한 횟수. DecisionsProcessed 와 같이 봐야 한다 —
+	// 이 값이 처리량의 대부분을 차지하면 reevaluate_interval_seconds 가 너무 짧다
+	int32 ReevaluateRequests = 0;
+
+	// 인내심 한계로 줄에서 이탈한 파티 수(reneging). QueueJoinAccepted 대비 비율로 읽는다.
+	// QueueHoldTimeouts 와 구분할 것 — 그쪽은 큐 이벤트 유실 신호고 이쪽은 정상 행동이다
+	int32 QueuePatienceAbandons = 0;
+
 	// 통행 상한에 막혀 되돌린 스텝 수. 이 값이 계속 오르는데 StuckDecisionRequests가 안 오르면
 	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다
 	int32 HeightBlockedSteps = 0;
@@ -988,6 +1336,9 @@ private:
 	
 	TMap<FName, int32> InTransitMemberCounts;
 	
+	
+	
+
 	void RebuildInTransitMemberCounts();
 
 	// 상대 통행 상한 손잡이를 높이 격자가 쓰는 절대 Z(cm)로 환산해 밀어넣는다.

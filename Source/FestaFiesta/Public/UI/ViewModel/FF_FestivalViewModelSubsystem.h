@@ -6,31 +6,25 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
-
-// !! 전방 선언으로는 안 된다 !!
-// `EFF_WeatherType` 이 `UFUNCTION` 반환형이라 UHT 가 전체 정의를 요구한다.
-// 그 enum 은 강민서님의 `FF_FestivalStageSubsystem.h` 에 있고, 남의 파일에서 enum 을
-// 꺼내 옮기지 않는다 (AGENTS.md 규칙 3).
 #include "Time/FF_FestivalStageSubsystem.h"
-
-// 같은 이유로 `EFF_NeedType` 도 전방 선언으로는 안 된다 — `FFF_LiveNeedView` 의
-// `UPROPERTY` 라 UHT 가 전체 정의를 요구한다.
 #include "NPC/Party/FF_NeedState.h"
+#include "NPC/Insights/FF_SnsTypes.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
 class UFF_FestivalStageSubsystem;
 class UFF_FestivalProgressionSubsystem;
 class UFF_StageEconomyBridgeSubsystem;
-// !! class가 아니라 struct다 !! (Core/Public/HAL/IConsoleManager.h)
-// class로 쓰면 C4099가 나고, 이 프로젝트는 경고를 에러로 취급한다.
-struct IConsoleCommand;
+class UFF_SatisfactionMetricsSubsystem;
+class UFF_CrowdInsightsSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsSocialPostChanged, FFF_LiveSocialPost, NewPost);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
@@ -238,9 +232,9 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | 값                     | 실제 소유자      | 현재        |
  * |------------------------|------------------|-------------|
  * | Stage / Day            | 강민서           | **진짜 값** |
- * | 남은 시간              | 강민서           | **진짜 값** |
+ * | 남은 시간			    | 강민서           | **진짜 값** |
  * | Gold                   | 김시리           | **진짜 값** (`OnGoldChanged` 구독) |
- * | SimSatisfaction        | 김시리 · 이정원  | 더미        |
+ * | SimSatisfaction        | 김시리/이정원     | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭 3항 산출) |
  * | ScoreSatisfaction      | 김시리           | 더미        |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
  * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
@@ -298,6 +292,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetSimSatisfaction() const { return SimSatisfaction; }
 
+	/**
+	 * SimSatisfaction 분해값 4종. 왜 지금 만족도가 그 숫자인지 보여주기 위한 것이다 —
+	 * 최종 숫자 하나만 보면 플레이어가 뭘 고쳐야 할지 모른다. 넷 다 0~100이고
+	 * SimSatisfaction과 같은 주기(1초)에 같이 갱신된다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionWaitScore() const { return SimSatisfactionWaitScore; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionDensityScore() const { return SimSatisfactionDensityScore; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionPreferenceScore() const { return SimSatisfactionPreferenceScore; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
+	int32 GetSimSatisfactionNeedFulfillmentScore() const { return SimSatisfactionNeedFulfillmentScore; }
+
 	/** 0~100. SimSatisfaction + FinaleBonus + 연출 보정. 등급 산출용 게임 점수. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetScoreSatisfaction() const { return ScoreSatisfaction; }
@@ -308,6 +319,31 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionChanged;
+
+	/** 분해값 4종의 변경 델리게이트. 넷 다 OnSimSatisfactionChanged와 같은 순간에 함께 쏜다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionWaitScoreChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionDensityScoreChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionPreferenceScoreChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
+	FFF_OnIntMetricChanged OnSimSatisfactionNeedFulfillmentScoreChanged;
+
+	/**
+	 * SNS 라이브 피드. `UFF_CrowdInsightsSubsystem`의 `FFF_SnsPostRow` 링버퍼를
+	 * `FFF_LiveSocialPost`(`FF_LivePanelSNS.h`, 백종태 소유)로 변환해 그대로 중계한다 —
+	 * Insights는 자기 도메인 타입만 알고, 표현 타입은 여기서만 만든다. 최신 글이 [0].
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	const TArray<FFF_LiveSocialPost>& GetRecentSnsPosts() const { return RecentSnsPosts; }
+
+	/** 새 글이 하나 생길 때마다. 위젯이 늦게 열려도 GetRecentSnsPosts()로 지금까지 쌓인 걸 한 번에 읽을 수 있다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsSocialPostChanged OnSnsPostAdded;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
@@ -951,6 +987,17 @@ protected:
 	UFUNCTION()
 	void HandleOwnerFinaleGradeChanged(EFF_FinaleGrade NewGrade);
 
+	/** 만족도 시스템이 쏘는 SimSatisfaction을 받아 위젯에 중계한다. */
+	UFUNCTION()
+	void HandleOwnerSimSatisfactionChanged(int32 NewValue);
+
+	/** Insights가 쏘는 글 한 건을 변환해 목록 맨 앞에 얹고 위젯에 중계한다. */
+	UFUNCTION()
+	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
+
+	/** `FFF_SnsPostRow`(값)를 `FFF_LiveSocialPost`(표현)로 바꾼다. 도메인↔표현 경계는 이 함수 하나뿐이다. */
+	static FFF_LiveSocialPost ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row);
+
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
@@ -966,11 +1013,17 @@ private:
 	 */
 	void RefreshAvailableStaffCount();
 
-	/** Stage 시스템 구독을 시도한다. 아직 없으면 재시도를 예약한다. */
+	/** Stage 시스템 구독을 시도한다. */
 	void TryBindStageSubsystem();
 
-	/** 경제 시스템 구독을 시도한다. Stage와 같은 재시도 규칙을 쓴다. */
+	/** 경제 시스템 구독을 시도한다. */
 	void TryBindProgressionSubsystem();
+
+	/** 만족도 시스템 구독을 시도한다. */
+	void TryBindSatisfactionSubsystem();
+
+	/** SNS Insights 구독을 시도한다. */
+	void TryBindInsightsSubsystem();
 
 	/**
 	 * 소유자 시스템에서 지표를 읽어 온다. PollInterval마다 Tick에서 호출된다.
@@ -982,12 +1035,27 @@ private:
 	/** 값이 실제로 바뀔 때만 통지한다. 같은 값을 계속 쏘면 위젯이 헛돈다. */
 	static void ApplyIntMetric(int32& Current, int32 NewValue, FFF_OnIntMetricChanged& ChangedDelegate);
 
-	// --- 지표 더미값 ---
-	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
+	
+	// 만족도 시스템 쪽 기본값과 맞춰 기본값 50
+	// TryBindSatisfactionSubsystem이 실제 값으로 덮어쓴다
+	UPROPERTY()
+	int32 SimSatisfaction = 50;
+
+	// 분해값 4종. SimSatisfaction과 같은 순간에 같이 갱신된다(HandleOwnerSimSatisfactionChanged)
+	UPROPERTY()
+	int32 SimSatisfactionWaitScore = 50;
 
 	UPROPERTY()
-	int32 SimSatisfaction = 72;
+	int32 SimSatisfactionDensityScore = 50;
 
+	UPROPERTY()
+	int32 SimSatisfactionPreferenceScore = 50;
+
+	UPROPERTY()
+	int32 SimSatisfactionNeedFulfillmentScore = 50;
+
+	// --- 지표 더미값 ---
+	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
 	UPROPERTY()
 	int32 ScoreSatisfaction = 72;
 
@@ -1059,6 +1127,23 @@ private:
 	/** 경제 시스템을 못 찾았을 때 재시도한 횟수. */
 	int32 ProgressionBindRetryCount = 0;
 
+	UPROPERTY()
+	TObjectPtr<UFF_SatisfactionMetricsSubsystem> CachedSatisfactionSubsystem;
+
+	/** 만족도 시스템을 못 찾았을 때 재시도한 횟수. */
+	int32 SatisfactionBindRetryCount = 0;
+
+	UPROPERTY()
+	TObjectPtr<UFF_CrowdInsightsSubsystem> CachedInsightsSubsystem;
+
+	/** SNS Insights 시스템을 못 찾았을 때 재시도한 횟수. */
+	int32 InsightsBindRetryCount = 0;
+
+	/** 최신 글이 [0]. Insights 링버퍼 용량(80)과 맞춘다 — 몇 건을 화면에 그릴지는 위젯 몫이다. */
+	UPROPERTY()
+	TArray<FFF_LiveSocialPost> RecentSnsPosts;
+	static constexpr int32 SnsPostViewCapacity = 80;
+
 	/** 남은 시간 중복 방송 차단용. 구독 중계와 Sync가 같은 값을 두 번 쏘지 않게 한다. */
 	int32 LastBroadcastRemainingSeconds = INDEX_NONE;
 
@@ -1077,31 +1162,6 @@ private:
 	/** Stage 시스템을 못 찾았을 때 재시도한 횟수. 상한을 두고 로그를 남긴다. */
 	int32 StageBindRetryCount = 0;
 	static constexpr int32 MaxStageBindRetry = 100;
-
-#if !UE_BUILD_SHIPPING
-	/**
-	 * 디버그 콘솔 명령을 등록한다.
-	 *
-	 * === 왜 콘솔인가 ===
-	 * 화면이 `ECommonInputMode::Menu`면 **게임 입력이 차단**되어, 레벨 블루프린트의 키 이벤트로는
-	 * `Debug_Set*`을 부를 수 없다 (2026-08-07에 실제로 막혔다). 콘솔은 입력 모드와 무관하게 동작한다.
-	 *
-	 * === UFUNCTION(Exec)을 쓰지 않은 이유 ===
-	 * 엔진의 `UGameInstance`에 `ProcessConsoleExec`이 없어서 **콘솔이 서브시스템의 Exec 함수를
-	 * 찾아가지 않는다.** 그래서 `IConsoleManager`에 직접 등록한다.
-	 *
-	 * === 해제를 반드시 하는 이유 ===
-	 * PIE는 한 에디터 세션에서 여러 번 돌아간다. 해제하지 않으면 두 번째 PIE에서 같은 이름 등록이
-	 * 실패하고, 파괴된 this를 가리키는 델리게이트가 콘솔에 남는다.
-	 * 람다는 `CreateWeakLambda`로 묶어 두 번째 방어선을 만든다.
-	 */
-	void RegisterDebugConsoleCommands();
-	void UnregisterDebugConsoleCommands();
-
-	IConsoleCommand* SetMetricsConsoleCommand = nullptr;
-	IConsoleCommand* SetEconomyConsoleCommand = nullptr;
-	IConsoleCommand* DumpMetricsConsoleCommand = nullptr;
-#endif
 
 public:
 	/** 0~100 지표의 상한. 위젯이 게이지 비율을 계산할 때 이 값을 쓴다. 하드코딩하지 않게 하기 위함. */

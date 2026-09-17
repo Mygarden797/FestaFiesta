@@ -1,0 +1,30 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Subsystems/GameInstanceSubsystem.h"
+#include "FF_FacilityCodexProgressSubsystem.generated.h"
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFacilityCodexProgressChanged);
+
+/** Local profile collection history. Survives map changes and restarts; independent of festival slots. */
+UCLASS()
+class FESTAFIESTA_API UFF_FacilityCodexProgressSubsystem : public UGameInstanceSubsystem
+{
+	GENERATED_BODY()
+public:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	bool IsDiscovered(FName RuleId) const { return DiscoveredRuleIds.Contains(RuleId); }
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	TSet<FName> GetDiscoveredRuleIds() const { return DiscoveredRuleIds; }
+	const TSet<FName>& GetDiscoveredRuleIdsView() const { return DiscoveredRuleIds; }
+	/** Called only with confirmed live matches, never preview placement or UI selection. */
+	bool RecordDiscoveries(const TSet<FName>& RuleIds);
+	UPROPERTY(BlueprintAssignable, Category="FestaFiesta|Facility Codex")
+	FFF_OnFacilityCodexProgressChanged OnProgressChanged;
+
+private:
+	UPROPERTY(Transient) TSet<FName> DiscoveredRuleIds;
+	void SaveProgress() const;
+};

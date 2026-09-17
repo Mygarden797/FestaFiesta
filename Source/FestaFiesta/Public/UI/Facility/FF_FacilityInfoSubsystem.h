@@ -153,6 +153,7 @@ private:
 	void EnsureProgramReadModelBindings();
 	bool IsContextCurrentlyAllowed(EFF_FacilityInfoContext Context) const;
 	bool BuildViewData(AFFZSFacilityActor& Facility, FFF_FacilityInfoViewData& OutViewData) const;
+	void ApplySynergyViewData(const AFFZSFacilityActor& Facility, FFF_FacilityInfoViewData& OutViewData) const;
 	void RefreshPanel();
 	void AcquireThumbnailSession();
 	void ReleaseThumbnailSession();
@@ -170,8 +171,13 @@ private:
 	void ClearLiveSelectionIndicators();
 
 	void HandlePanelMoveRequested();
+	void HandlePanelFavoriteRequested();
 	void HandlePanelRemoveRequested();
 	void HandlePanelProgramScheduleRequested();
+	void HandlePanelUpgradeRequested();
+	void HandlePanelLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
+	void HandlePanelLightingResetRequested(FGuid FacilityId);
+	bool CanEditSelectedLighting(FGuid FacilityId) const;
 	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);
 	void HandlePaidProgramPickerCloseRequested();
 	void HandlePanelMinigameRequested();
@@ -179,6 +185,10 @@ private:
 
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
+
+	/** Pulls the next read-model sample forward when the selected facility settles a payment. */
+	UFUNCTION()
+	void HandleFacilityRevenueChanged(FGuid FacilityInstanceId);
 
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
@@ -188,6 +198,9 @@ private:
 
 	UFUNCTION()
 	void HandleWorldSnapshotRestored();
+
+	UFUNCTION()
+	void HandleFacilityLightingChanged(FGuid FacilityInstanceId);
 
 	/** Adapts the existing camera pick signal without changing Camera module files. */
 	UFUNCTION()
@@ -210,6 +223,12 @@ private:
 	TWeakObjectPtr<AFFZSFacilityActor> SelectionIndicatorHoverFacility;
 	TWeakObjectPtr<AFFZSFacilityActor> SelectionIndicatorSelectedFacility;
 	FGuid SelectedFacilityId;
+	mutable FGuid CachedSynergyFacilityId;
+	mutable uint64 CachedSynergyRevision = MAX_uint64;
+	mutable uint64 CachedSynergyCatalogRevision = MAX_uint64;
+	mutable bool bCachedSynergyEligible = false;
+	mutable FText CachedSynergySummary;
+	mutable TArray<FFF_FacilityInfoSynergyEntry> CachedSynergyEntries;
 	EFF_FacilityInfoContext SelectionContext = EFF_FacilityInfoContext::None;
 	FText FeedbackText;
 	bool bFeedbackIsError = false;

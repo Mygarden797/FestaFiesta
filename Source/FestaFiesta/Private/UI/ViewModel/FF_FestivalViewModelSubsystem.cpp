@@ -3,15 +3,20 @@
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Economy/FF_StageEconomyBridgeSubsystem.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "HAL/IConsoleManager.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "NPC/Insights/FF_CrowdInsightsSubsystem.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
@@ -26,10 +31,8 @@ void UFF_FestivalViewModelSubsystem::Initialize(FSubsystemCollectionBase& Collec
 	// 지금 없으면 Tick에서 다시 시도한다.
 	TryBindStageSubsystem();
 	TryBindProgressionSubsystem();
-
-#if !UE_BUILD_SHIPPING
-	RegisterDebugConsoleCommands();
-#endif
+	TryBindSatisfactionSubsystem();
+	TryBindInsightsSubsystem();
 }
 
 void UFF_FestivalViewModelSubsystem::Deinitialize()
@@ -59,90 +62,89 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 	}
 	CachedProgressionSubsystem = nullptr;
 
-#if !UE_BUILD_SHIPPING
-	UnregisterDebugConsoleCommands();
-#endif
+	if (CachedSatisfactionSubsystem)
+	{
+		CachedSatisfactionSubsystem->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged);
+	}
+	CachedSatisfactionSubsystem = nullptr;
+
+	if (CachedInsightsSubsystem)
+	{
+		CachedInsightsSubsystem->OnSnsPostAdded.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+	}
+	CachedInsightsSubsystem = nullptr;
 
 	Super::Deinitialize();
 }
 
 #if !UE_BUILD_SHIPPING
-void UFF_FestivalViewModelSubsystem::RegisterDebugConsoleCommands()
+namespace FFFestivalViewModelConsole
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	// 중복 등록 방어. 어떤 이유로 해제가 안 됐어도 두 번째 PIE가 조용히 망가지지 않게 한다.
-	UnregisterDebugConsoleCommands();
-
-	SetMetricsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.SetMetrics"),
-		TEXT("0~100 지표를 설정한다. 사용법: FF.SetMetrics <SimSatisfaction> <ScoreSatisfaction> <Safety>"),
-		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-		{
-			if (Args.Num() < 3)
-			{
-				UE_LOG(LogFestaFiestaUI, Warning,
-					TEXT("FF.SetMetrics <Sim> <Score> <Safety> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
-				return;
-			}
-
-			Debug_SetMetrics(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
-			Debug_DumpToLog();
-		}),
-		ECVF_Cheat);
-
-	SetEconomyConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.SetEconomy"),
-		TEXT("경제 값을 설정한다. 사용법: FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue>"),
-		FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-		{
-			if (Args.Num() < 3)
-			{
-				UE_LOG(LogFestaFiestaUI, Warning,
-					TEXT("FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
-				return;
-			}
-
-			Debug_SetEconomy(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
-			Debug_DumpToLog();
-		}),
-		ECVF_Cheat);
-
-	DumpMetricsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-		TEXT("FF.DumpMetrics"),
-		TEXT("현재 지표·경제·Stage 값을 로그에 찍는다."),
-		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-		{
-			Debug_DumpToLog();
-		}),
-		ECVF_Cheat);
-
-	UE_LOG(LogFestaFiestaUI, Log,
-		TEXT("[ViewModel] 디버그 콘솔 명령 등록 완료 — FF.SetMetrics / FF.SetEconomy / FF.DumpMetrics"));
+// Console names are process-wide, whereas ViewModels belong to individual game
+// instances. Register once for the module and resolve the caller's world only
+// when executing; overlapping PIE/test worlds must not replace each other's handles.
+UFF_FestivalViewModelSubsystem* ResolveViewModel(UWorld* World)
+{
+	UGameInstance* GameInstance = IsValid(World) && !World->bIsTearingDown
+		? World->GetGameInstance() : nullptr;
+	return IsValid(GameInstance) ? GameInstance->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 }
 
-void UFF_FestivalViewModelSubsystem::UnregisterDebugConsoleCommands()
+void SetMetrics(const TArray<FString>& Args, UWorld* World)
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	// 해제는 조건부, 정리(nullptr 대입)는 무조건.
-	if (SetMetricsConsoleCommand)
+	if (Args.Num() < 3)
 	{
-		ConsoleManager.UnregisterConsoleObject(SetMetricsConsoleCommand);
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("FF.SetMetrics <Sim> <Score> <Safety> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
+		return;
 	}
-	SetMetricsConsoleCommand = nullptr;
-
-	if (SetEconomyConsoleCommand)
+	if (UFF_FestivalViewModelSubsystem* ViewModel = ResolveViewModel(World))
 	{
-		ConsoleManager.UnregisterConsoleObject(SetEconomyConsoleCommand);
+		ViewModel->Debug_SetMetrics(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
+		ViewModel->Debug_DumpToLog();
 	}
-	SetEconomyConsoleCommand = nullptr;
+}
 
-	if (DumpMetricsConsoleCommand)
+void SetEconomy(const TArray<FString>& Args, UWorld* World)
+{
+	if (Args.Num() < 3)
 	{
-		ConsoleManager.UnregisterConsoleObject(DumpMetricsConsoleCommand);
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue> — 인자 3개가 필요하다. 받은 것: %d개"), Args.Num());
+		return;
 	}
-	DumpMetricsConsoleCommand = nullptr;
+	if (UFF_FestivalViewModelSubsystem* ViewModel = ResolveViewModel(World))
+	{
+		ViewModel->Debug_SetEconomy(FCString::Atoi(*Args[0]), FCString::Atoi(*Args[1]), FCString::Atoi(*Args[2]));
+		ViewModel->Debug_DumpToLog();
+	}
+}
+
+void DumpMetrics(UWorld* World)
+{
+	if (UFF_FestivalViewModelSubsystem* ViewModel = ResolveViewModel(World))
+	{
+		ViewModel->Debug_DumpToLog();
+	}
+}
+
+static FAutoConsoleCommandWithWorldAndArgs SetMetricsCommand(
+		TEXT("FF.SetMetrics"),
+		TEXT("0~100 지표를 설정한다. 사용법: FF.SetMetrics <SimSatisfaction> <ScoreSatisfaction> <Safety>"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetMetrics),
+		ECVF_Cheat);
+
+static FAutoConsoleCommandWithWorldAndArgs SetEconomyCommand(
+		TEXT("FF.SetEconomy"),
+		TEXT("경제 값을 설정한다. 사용법: FF.SetEconomy <Gold> <TotalRevenue> <TodayRevenue>"),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SetEconomy),
+		ECVF_Cheat);
+
+static FAutoConsoleCommandWithWorld DumpMetricsCommand(
+		TEXT("FF.DumpMetrics"),
+		TEXT("현재 지표·경제·Stage 값을 로그에 찍는다."),
+		FConsoleCommandWithWorldDelegate::CreateStatic(&DumpMetrics),
+		ECVF_Cheat);
 }
 #endif
 
@@ -304,6 +306,122 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerGoldChanged(int32 NewValue)
 {
 	// 소유자 값이 들어오는 순간부터 더미는 의미가 없다. 변화 감지는 ApplyIntMetric이 한다.
 	ApplyIntMetric(Gold, NewValue, OnGoldChanged);
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindSatisfactionSubsystem()
+{
+	if (CachedSatisfactionSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_SatisfactionMetricsSubsystem* Satisfaction = GI->GetSubsystem<UFF_SatisfactionMetricsSubsystem>();
+	if (!Satisfaction)
+	{
+		++SatisfactionBindRetryCount;
+		if (SatisfactionBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_SatisfactionMetricsSubsystem을 %d회 시도해도 찾지 못했다. SimSatisfaction이 중립값으로 남는다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedSatisfactionSubsystem = Satisfaction;
+
+	// Bind + Sync. 구독 전에 이미 한 번 이상 확정됐을 수 있으므로 현재값을 바로 반영한다 —
+	// Gold와 다르게 "축제 시작 전엔 안 쓴다" 게이트는 없다. 만족도 중립값(50)은 Gold의
+	// 더미 0과 달리 그 자체로 "아직 데이터 없음"을 오도하지 않는 값이기 때문이다.
+	CachedSatisfactionSubsystem->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged);
+	HandleOwnerSimSatisfactionChanged(CachedSatisfactionSubsystem->GetSimSatisfaction());
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged(int32 NewValue)
+{
+	ApplyIntMetric(SimSatisfaction, NewValue, OnSimSatisfactionChanged);
+
+	// 분해값 4종도 같은 확정 주기에 나온 값이라 여기서 같이 읽는다 — 소유자가 델리게이트를
+	// 따로 넷 더 쏘게 만들지 않는다. 이 핸들러가 불렸다는 것 자체가 CachedSatisfactionSubsystem이
+	// 존재한다는 뜻이다(구독도 그 포인터로 걸었고, Bind + Sync 호출도 그 직후에만 한다).
+	if (CachedSatisfactionSubsystem)
+	{
+		ApplyIntMetric(SimSatisfactionWaitScore, CachedSatisfactionSubsystem->GetWaitScore(), OnSimSatisfactionWaitScoreChanged);
+		ApplyIntMetric(SimSatisfactionDensityScore, CachedSatisfactionSubsystem->GetDensityScore(), OnSimSatisfactionDensityScoreChanged);
+		ApplyIntMetric(SimSatisfactionPreferenceScore, CachedSatisfactionSubsystem->GetPreferenceScore(), OnSimSatisfactionPreferenceScoreChanged);
+		ApplyIntMetric(SimSatisfactionNeedFulfillmentScore, CachedSatisfactionSubsystem->GetNeedFulfillmentScore(), OnSimSatisfactionNeedFulfillmentScoreChanged);
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
+{
+	if (CachedInsightsSubsystem)
+	{
+		return;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	if (!GI)
+	{
+		return;
+	}
+
+	UFF_CrowdInsightsSubsystem* Insights = GI->GetSubsystem<UFF_CrowdInsightsSubsystem>();
+	if (!Insights)
+	{
+		++InsightsBindRetryCount;
+		if (InsightsBindRetryCount == MaxStageBindRetry)
+		{
+			UE_LOG(LogFestaFiestaUI, Error,
+				TEXT("[ViewModel] UFF_CrowdInsightsSubsystem을 %d회 시도해도 찾지 못했다. SNS 피드가 비어 있다."),
+				MaxStageBindRetry);
+		}
+		return;
+	}
+
+	CachedInsightsSubsystem = Insights;
+	CachedInsightsSubsystem->OnSnsPostAdded.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded);
+
+	// SimSatisfaction과 다르게 "현재값 1개"가 아니라 "지금까지의 글 목록"이라, bind 시점에
+	// 이미 쌓여 있던 글도 놓치지 않게 전부 변환해 채운다.
+	RecentSnsPosts.Empty();
+	for (const FFF_SnsPostRow& Row : CachedInsightsSubsystem->GetRecentPosts())
+	{
+		RecentSnsPosts.Add(ConvertSnsPostToLiveSocialPost(Row));
+	}
+}
+
+void UFF_FestivalViewModelSubsystem::HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost)
+{
+	const FFF_LiveSocialPost Converted = ConvertSnsPostToLiveSocialPost(NewPost);
+
+	RecentSnsPosts.Insert(Converted, 0);
+	if (RecentSnsPosts.Num() > SnsPostViewCapacity)
+	{
+		RecentSnsPosts.SetNum(SnsPostViewCapacity);
+	}
+
+	OnSnsPostAdded.Broadcast(Converted);
+}
+
+FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row)
+{
+	FFF_LiveSocialPost Converted;
+	Converted.Author = FText::FromString(Row.DisplayHandle);
+	Converted.Body = Row.Body;
+
+	// TopicSalience0To100은 "이 화제를 고른 신호가 얼마나 강했는지"다 — 임의 상수가 아니라
+	// 화제 선택에 실제로 쓰인 값을 그대로 세기로 재사용한다(utility_ai_todo.md §11).
+	const int32 Magnitude = FMath::RoundToInt(Row.TopicSalience0To100);
+	Converted.SentimentScore = (Row.Sentiment == EFF_SnsSentiment::Positive) ? Magnitude : -Magnitude;
+
+	return Converted;
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged(int32 NewValue)
@@ -588,10 +706,11 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 		Option.FacilityInstanceId = Facility.FacilityInstanceId;
 		Option.ZoneId = Facility.ZoneId;
 
-		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다.
-		Option.DisplayName = Parts.UniqueToken.IsEmpty()
-			? FText::FromName(Facility.FacilityDefinitionId)
-			: FText::FromString(Parts.UniqueToken);
+		// Use the same authored name as the guide and construction catalog.
+		const UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+		Option.DisplayName = BuildCatalog
+			? BuildCatalog->ResolveFacilityDisplayName(Facility.FacilityDefinitionId)
+			: NSLOCTEXT("FestaFiestaPrepProgram", "FacilityNameUnavailable", "프로그램 시설");
 	}
 
 	return Options;
@@ -1226,6 +1345,16 @@ void UFF_FestivalViewModelSubsystem::Tick(float DeltaTime)
 	if (!CachedProgressionSubsystem)
 	{
 		TryBindProgressionSubsystem();
+	}
+
+	if (!CachedSatisfactionSubsystem)
+	{
+		TryBindSatisfactionSubsystem();
+	}
+
+	if (!CachedInsightsSubsystem)
+	{
+		TryBindInsightsSubsystem();
 	}
 
 	// 남은 시간은 여기서 폴링하지 않는다.

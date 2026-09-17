@@ -11,8 +11,11 @@
 #include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Misc/ScopeExit.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -112,6 +115,7 @@ void UFF_ZoneSystemQueueBridgeSubsystem::Deinitialize()
 	}
 
 	bPolicyRegistered = false;
+	PendingUpgradeQueues.Reset();
 	ZoneToQueueFacilityIds.Reset();
 	QueueToZoneFacilityIds.Reset();
 	ActiveBridgeQueueFacilityIds.Reset();
@@ -387,7 +391,9 @@ float UFF_ZoneSystemQueueBridgeSubsystem::ToProjectMaxWaitSeconds(
 
 bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacilityActor& Facility)
 {
-	if (!QueueSystem)
+	// 조명·길·타일은 Party 서비스 시설이 아니므로 Queue ID나 이동 슬롯을 만들지 않는다.
+	if (!QueueSystem || Facility.GetFacilitySpec().Category == EFFZSFacilityCategory::Lighting ||
+		Facility.GetFacilitySpec().IsGroundSurface())
 	{
 		return false;
 	}
@@ -411,7 +417,7 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RegisterOrRefreshFacility(AFFZSFacility
 	}
 
 	const FFFZSFacilitySpec& Spec = Facility.GetFacilitySpec();
-	const FFFZSQueueRules& Rules = Spec.QueueRules;
+	const FFFZSQueueRules Rules = Facility.GetEffectiveQueueRules();
 
 	const FFF_QueueConfig Config = ToProjectQueueConfig(Rules, ZoneQueue->GetExitWorldLocation(0));
 
@@ -539,7 +545,36 @@ bool UFF_ZoneSystemQueueBridgeSubsystem::RestoreZoneWorldSnapshotAndSynchronize(
 		}
 	}
 
-	if (!ZoneSystem || !ZoneSystem->RestoreWorldSnapshot(Snapshot, OutErrors))
+	if (!ZoneSystem)
+	{
+		return false;
+	}
+
+	// 저장된 배치는 저장 시점에 이미 배치 검증을 통과했으므로 복원은 권위 상태를 신뢰한다.
+	// 이 가드가 없으면 Crowd 레인이 구운 GeneralRoute 보호 구역 때문에 레인 도입 이전 세이브가
+	// 복원에 실패한다. 게다가 ProtectedArea 등록은 BeginPlay라 복원 시점에 등록이 끝났는지가
+	// 보장되지 않아(비었으면 fail-open) 결과가 액터 순서에 따라 갈린다 — 여기서 결정적으로 만든다.
+	TArray<AFFZSProtectedArea*> SuspendedProtectedAreas;
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<AFFZSProtectedArea> It(World); It; ++It)
+		{
+			if (ZoneSystem->UnregisterProtectedArea(*It))
+			{
+				SuspendedProtectedAreas.Add(*It);
+			}
+		}
+	}
+
+	ON_SCOPE_EXIT
+	{
+		for (AFFZSProtectedArea* Area : SuspendedProtectedAreas)
+		{
+			ZoneSystem->RegisterProtectedArea(Area);
+		}
+	};
+
+	if (!ZoneSystem->RestoreWorldSnapshot(Snapshot, OutErrors))
 	{
 		return false;
 	}
@@ -579,7 +614,9 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 	case EFFZSCommandType::Move:
 		if (AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId))
 		{
-			if (!RegisterOrRefreshFacility(*Facility))
+			if (Facility->GetFacilitySpec().Category != EFFZSFacilityCategory::Lighting &&
+				!Facility->GetFacilitySpec().IsGroundSurface() &&
+				!RegisterOrRefreshFacility(*Facility))
 			{
 				// Move는 Zone 권위 배치가 커밋된 뒤 이 이벤트를 방송한다. 새 Queue geometry를 만들지
 				// 못한 경우 이전 위치의 Queue를 남기면 다음 Open에서 잘못된 동선을 재활성화할 수 있다.
@@ -661,6 +698,11 @@ void UFF_ZoneSystemQueueBridgeSubsystem::HandleZoneWorldChanged(const FFFZSWorld
 		UnregisterFacility(Event.FacilityInstanceId);
 		break;
 
+	case EFFZSCommandType::Upgrade:
+		// ApplyTentative에서 같은 ID에 새 처리율을 적용했고 Commit에서 확정했다.
+		// 여기서 재등록하면 이미 확정한 큐를 다시 초기화하게 된다.
+		break;
+
 	default:
 		break;
 	}
@@ -688,7 +730,9 @@ FFF_QueueJoinResponse UFF_ZoneSystemQueueBridgeSubsystem::TryJoinZoneFacility(
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response; // 예약자는 슬롯 좌표만 사용하고 일반 서비스 Queue에는 가입하지 않는다.
 	}
-	if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::Active)
+	if (!Facility || Facility->GetFacilityState() != EFFZSFacilityState::Active ||
+		Facility->GetFacilitySpec().Category == EFFZSFacilityCategory::Lighting ||
+		Facility->GetFacilitySpec().IsGroundSurface())
 	{
 		Response.Result = EFF_QueueJoinResult::RejectedClosed;
 		return Response;
@@ -1026,9 +1070,32 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::PreValidateFFZoneSystemC
 	const FFFZSPolicyContext& Context) const
 {
 	FFFZSPolicyDecision Decision;
-	// Party의 월드 동선이나 목적지가 사라지는 명령만 점유 검사가 필요하다.
+	// 동선 변경과 강화 재구성은 두 Queue 모두 완전히 비어 있어야 한다.
 	const bool bNeedsEmptyQueue = Context.Command.Type == EFFZSCommandType::Move
-		|| Context.Command.Type == EFFZSCommandType::Remove;
+		|| Context.Command.Type == EFFZSCommandType::Remove
+		|| Context.Command.Type == EFFZSCommandType::Upgrade;
+	if (Context.Command.Type == EFFZSCommandType::Upgrade)
+	{
+		const AFFZSFacilityActor* Facility = ZoneSystem
+			? ZoneSystem->FindFacility(Context.Command.FacilityInstanceId) : nullptr;
+		const int32 QueueFacilityId = FindQueueFacilityId(Context.Command.FacilityInstanceId);
+		if (!Facility || !Facility->GetQueueComponent() || !QueueSystem
+			|| !ActiveBridgeQueueFacilityIds.Contains(QueueFacilityId)
+			|| !QueueSystem->IsFacilityRegistered(QueueFacilityId))
+		{
+			Decision.bAllowed = false;
+			Decision.FailureReason = EFFZSPlacementFailure::ExternalPolicyRejected;
+			Decision.Message = LOCTEXT("UpgradeQueueUnavailable", "시설 대기열 연결을 확인한 뒤 강화할 수 있습니다.");
+			return Decision;
+		}
+		if (Facility->GetQueueComponent()->IsOccupied())
+		{
+			Decision.bAllowed = false;
+			Decision.FailureReason = EFFZSPlacementFailure::FacilityOccupied;
+			Decision.Message = LOCTEXT("UpgradeAgentQueueOccupied", "시설의 대기·서비스·퇴장이 모두 끝나야 강화할 수 있습니다.");
+			return Decision;
+		}
+	}
 	if (!bNeedsEmptyQueue || !QueueSystem)
 	{
 		return Decision;
@@ -1046,7 +1113,7 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::PreValidateFFZoneSystemC
 			Decision.FailureReason = EFFZSPlacementFailure::FacilityOccupied;
 			Decision.Message = LOCTEXT(
 				"ProjectQueueOccupied",
-				"프로젝트 Party 대기열이 비기 전에는 시설을 이동하거나 제거할 수 없습니다.");
+				"프로젝트 Party 대기열이 비기 전에는 시설을 이동·제거·강화할 수 없습니다.");
 		}
 	}
 	return Decision;
@@ -1055,21 +1122,82 @@ FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::PreValidateFFZoneSystemC
 FFFZSPolicyDecision UFF_ZoneSystemQueueBridgeSubsystem::ApplyTentativeFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
-	// UFF_QueueSubsystem에는 Snapshot/Rollback API가 없으므로 정책 단계에서는 절대 상태를 바꾸지 않는다.
-	return PreValidateFFZoneSystemChange_Implementation(Context);
+	FFFZSPolicyDecision Decision = PreValidateFFZoneSystemChange_Implementation(Context);
+	if (!Decision.bAllowed || Context.Command.Type != EFFZSCommandType::Upgrade
+		|| PendingUpgradeQueues.Contains(Context.Command.CommandId))
+	{
+		return Decision;
+	}
+
+	const int32 QueueFacilityId = FindQueueFacilityId(Context.Command.FacilityInstanceId);
+	FFF_FacilityQueue* Existing = QueueSystem->FindQueue(QueueFacilityId);
+	// The Zone authority has already resolved the new footprint, spline, anchors and actor center.
+	FFFZSFacilitySpec CandidateSpec = Context.Command.FacilitySpec;
+	const FTransform& CandidateTransform = Context.Validation.PlacementTransform;
+	CandidateSpec.QueueRules = AFFZSFacilityActor::BuildEffectiveQueueRules(
+		CandidateSpec.QueueRules, Context.Command.UpgradeServiceDurationMultiplier);
+	const FFFZSAnchorDefinition* ExitAnchor = CandidateSpec.Anchors.FindByPredicate(
+		[](const FFFZSAnchorDefinition& Anchor)
+		{
+			return Anchor.Type == EFFZSAnchorType::Exit && Anchor.Index == 0;
+		});
+	TArray<FText> Errors;
+	FFF_QueueLaneGeometry Lane;
+	if (!Existing || !ExitAnchor || !CandidateSpec.IsValid(Errors)
+		|| !BuildProjectQueueLaneGeometry(CandidateSpec, CandidateTransform, Lane))
+	{
+		Decision.bAllowed = false;
+		Decision.FailureReason = EFFZSPlacementFailure::DataInvalid;
+		Decision.Message = LOCTEXT("UpgradeQueueInvalid", "강화 후 대기열 설정이 유효하지 않습니다.");
+		return Decision;
+	}
+
+	FPendingUpgradeQueue& Pending = PendingUpgradeQueues.Add(Context.Command.CommandId);
+	Pending.QueueFacilityId = QueueFacilityId;
+	Pending.PreviousQueue = *Existing;
+	Pending.bWasSlotDirty = QueueSystem->DirtySlotFacilities.Contains(QueueFacilityId);
+	const FFF_QueueConfig Config = ToProjectQueueConfig(
+		CandidateSpec.QueueRules, CandidateTransform.TransformPosition(ExitAnchor->LocalTransform.GetLocation()));
+	if (!QueueSystem->RegisterFacility(QueueFacilityId, Config, Lane))
+	{
+		Decision.bAllowed = false;
+		Decision.FailureReason = EFFZSPlacementFailure::DataInvalid;
+		Decision.Message = LOCTEXT("UpgradeQueueRejected", "강화 후 대기열을 구성할 수 없습니다.");
+		return Decision;
+	}
+	// 공개 Queue 이벤트는 아직 내보내지 않는다. 기존 큐는 비어 있으므로 취소도 발생하지 않는다.
+	QueueSystem->FindQueue(QueueFacilityId)->CloseFacility(
+		EFF_QueueCloseReason::Reconfigure, QueueSystem->GetSimTimeSeconds());
+	return Decision;
 }
 
 void UFF_ZoneSystemQueueBridgeSubsystem::CommitFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
-	// 실제 반영은 모든 정책 Commit 뒤에 오는 OnWorldChanged 성공 이벤트 한 곳에서만 수행한다.
-	(void)Context;
+	if (FPendingUpgradeQueue* Pending = PendingUpgradeQueues.Find(Context.Command.CommandId))
+	{
+		// 재구성 전 남아 있던 관찰 이벤트/로그도 유실시키지 않는다. 이 단계는 실패하지 않는다.
+		Pending->PreviousQueue.ConsumePendingEvents(QueueSystem->PendingEvents);
+		Pending->PreviousQueue.ConsumePendingLogs(QueueSystem->QueueLogs);
+		PendingUpgradeQueues.Remove(Context.Command.CommandId);
+	}
 }
 
 void UFF_ZoneSystemQueueBridgeSubsystem::RollbackFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
-	(void)Context;
+	if (FPendingUpgradeQueue* Pending = PendingUpgradeQueues.Find(Context.Command.CommandId))
+	{
+		if (FFF_FacilityQueue* Existing = QueueSystem->FindQueue(Pending->QueueFacilityId))
+		{
+			*Existing = MoveTemp(Pending->PreviousQueue);
+		}
+		if (!Pending->bWasSlotDirty)
+		{
+			QueueSystem->DirtySlotFacilities.Remove(Pending->QueueFacilityId);
+		}
+		PendingUpgradeQueues.Remove(Context.Command.CommandId);
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -38,6 +38,12 @@ public:
 	FText GetDisplayName() const { return DisplayName; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FText GetCategoryPathText() const { return CategoryPathText; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FString GetUniqueNameToken() const { return Entry.UniqueNameToken; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	int32 GetInstallCost() const { return Entry.InstallCost; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
@@ -45,6 +51,25 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	bool IsAffordable() const { return TileState == EFF_PrepBuildTileState::Available; }
+
+	/** 필수 설치 안내는 권위 상태의 스냅샷이며 가격·건축 한도·조합 추천과 독립적입니다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
+	bool IsRequiredFacility() const { return Entry.bRequiredForSetup; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
+	bool IsRequiredFacilitySatisfied() const { return Entry.bRequiredSetupSatisfied; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
+	int32 GetRequiredFacilityCurrentCount() const { return Entry.RequiredInstalledCount; }
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
+	int32 GetRequiredFacilityMinimumCount() const { return Entry.RequiredMinimumCount; }
+
+	/** 조합 추천은 건축 가능 여부와 별개이며, 가격·건축 한도를 변경하지 않습니다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Synergy")
+	bool IsSynergyHighlighted() const { return bSynergyHighlighted; }
+
+	void SetSynergyHighlighted(bool bHighlighted) { bSynergyHighlighted = bHighlighted; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	EFF_PrepBuildTileState GetTileState() const { return TileState; }
@@ -81,6 +106,9 @@ private:
 	FText DisplayName;
 
 	UPROPERTY(Transient)
+	FText CategoryPathText;
+
+	UPROPERTY(Transient)
 	FText CostText;
 
 	UPROPERTY(Transient)
@@ -97,6 +125,7 @@ private:
 	EFF_PrepBuildTileState TileState = EFF_PrepBuildTileState::GoldUnavailable;
 
 	int32 Gold = 0;
+	bool bSynergyHighlighted = false;
 	bool bHasAuthoritativeGold = false;
 };
 

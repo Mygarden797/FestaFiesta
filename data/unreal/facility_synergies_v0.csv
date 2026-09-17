@@ -1,0 +1,3 @@
+Name,bEnabled,DisplayName,TargetFacilityId,PartnerFacilityId,MaxDistanceMeters,RevenueBonusPercent,StackingGroup
+BurgerPicnic,True,Burger + Seating,Booth_FoodStall_Burger,Rest_Seating_Seating,15,10,FoodComfort
+IceCreamShade,True,IceCream + Shade,Booth_FoodStall_IceCream,Rest_Shade_Shade,15,10,FoodComfort

@@ -211,6 +211,22 @@ public:
 	void RequestTransition(EFF_FestivalStage NewStage);
 	// 단계 바꿔달라는 요청 함수
 
+	// 필수 시설에 의한 전환 허용 여부와 UI 안내. 단계 표의 스킵 가능 여부는 별도다.
+	UFUNCTION(BlueprintPure, Category = "Festival Stage|Setup")
+	bool CanTransitionTo(EFF_FestivalStage NewStage, FText& OutBlockingReason) const;
+
+	// 현재 단계의 다음 단계가 필수 시설 때문에 막혔을 때 안내 문구.
+	UFUNCTION(BlueprintPure, Category = "Festival Stage|Setup")
+	FText GetStageAdvanceBlockingReason();
+
+private:
+	// 직전에 전환이 막혔던 사유와 목표 단계. 로그 중복만 막는 용도이며 판정에는 쓰지 않는다.
+	// 사유가 바뀔 때만 한 번 남긴다.
+	FString LastBlockedTransitionReason;
+	EFF_FestivalStage LastBlockedTransitionStage = EFF_FestivalStage::Setup;
+
+public:
+
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsReconfigureAllowed() const;
 	// 지금 배치 바꿔도 되는 단계인지 t/f로 알려줌 
@@ -250,6 +266,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMinigameInProgress() const { return bMinigameInProgress; }
 	// 지금 미니게임 중인지 바로 확인하는 함수
+
+	UFUNCTION(BlueprintPure, Category = "Festival Stage")
+	float GetEffectiveTimeScale() const;
+	// 실제로 적용되는 배속. Crowd 등 다른 시스템은 TimeScale 대신 이 함수를 써야 함
+	// (공연 잠금·미니게임·마감 등 모든 상황이 반영된 "진짜" 배속)
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
 	void AdvanceToNextDay();

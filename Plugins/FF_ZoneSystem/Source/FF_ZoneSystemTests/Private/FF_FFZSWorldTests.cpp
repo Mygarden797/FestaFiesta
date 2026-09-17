@@ -36,6 +36,7 @@
 #include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSTestExternalPolicy.h"
 #include "FF_FFZSZoneActor.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 
@@ -177,6 +178,9 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
     {
         return false;
     }
+    TestFalse(TEXT("Facility Read Model은 표시 이름을 비우지 않는다"), InstalledFacilityModel->DisplayName.IsEmpty());
+    TestTrue(TEXT("Facility Read Model은 FacilitySpec의 표시 이름을 복사한다"),
+        InstalledFacilityModel->DisplayName.EqualTo(FirstFacility->GetFacilitySpec().DisplayName));
     TestTrue(TEXT("Facility Read Model은 Actor 대표 월드 위치(cm)를 복사한다"),
         InstalledFacilityModel->WorldLocation.Equals(FirstFacility->GetActorLocation()));
     TestTrue(TEXT("Facility Read Model 위치는 저장 Snapshot Transform의 위치와 같다"),
@@ -342,7 +346,7 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         Subsystem->ReportQueueSlotArrival(SavedAgentId, FirstFacility->GetQueueComponent()->GetQueueSlotWorldLocation(0)));
 
     const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, 5);
+    TestEqual(TEXT("Snapshot Schema가 현재 버전이다"), Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
     TestEqual(TEXT("Snapshot이 두 Facility를 모두 캡처한다"), Snapshot.Facilities.Num(), 2);
     TestTrue(TEXT("Snapshot이 영속 Command Receipt를 보존한다"), Snapshot.CommandReceipts.Num() > 0);
     int32 StagedFacilitySpawnCount = 0;
@@ -525,9 +529,13 @@ bool FFFZSWorldFacilityLookupAtWorldPointTest::RunTest(const FString& Parameters
         return false;
     }
 
-    TestEqual(TEXT("비주얼 메시에는 충돌이 없다"),
+    TestEqual(TEXT("메시가 없는 시설에는 플레이어 충돌이 없다"),
         HigherFacility->VisualMesh->GetCollisionEnabled(),
         ECollisionEnabled::NoCollision);
+    TestEqual(TEXT("비주얼 메시의 충돌 ObjectType은 플레이어 전용 시설 채널이다"),
+        HigherFacility->VisualMesh->GetCollisionObjectType(), FFZSCollision::FacilityPlayerObjectChannel);
+    TestEqual(TEXT("비주얼 메시가 시설 선택 Trace를 가로채지 않는다"),
+        HigherFacility->VisualMesh->GetCollisionResponseToChannel(FFZSCollision::FacilitySelectionTraceChannel), ECR_Ignore);
     TestFalse(TEXT("비주얼 메시가 Navigation에 영향을 주지 않는다"),
         HigherFacility->VisualMesh->CanEverAffectNavigation());
     TestEqual(TEXT("선택 Proxy는 QueryOnly다"),
@@ -1164,7 +1172,7 @@ bool FFFZSSchema5FreeYawSnapshotRestoreTest::RunTest(const FString& Parameters)
             FMath::DegreesToRadians(0.01));
 
     const FFFZSWorldSnapshot Snapshot = Subsystem->CaptureWorldSnapshot();
-    if (!TestEqual(TEXT("자유 Yaw Capture는 schema 5를 사용한다"), Snapshot.SchemaVersion, 5) ||
+    if (!TestEqual(TEXT("자유 Yaw Capture는 현재 schema를 사용한다"), Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion) ||
         !TestEqual(TEXT("자유 Yaw Capture는 Facility 하나를 저장한다"), Snapshot.Facilities.Num(), 1))
     {
         return false;
@@ -1332,7 +1340,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
 
     Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation);
     const FFFZSWorldSnapshot DrainingSnapshot = Subsystem->CaptureWorldSnapshot();
-    TestEqual(TEXT("Snapshot Schema는 자유 Yaw와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, 5);
+    TestEqual(TEXT("Snapshot Schema는 자유 Yaw와 1cm Region 계약을 포함한다"), DrainingSnapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
     TestEqual(TEXT("Snapshot이 초기값이 아닌 Phase를 캡처한다"), DrainingSnapshot.CurrentPhase, EFFZSChangePhase::LiveOperation);
     TestEqual(TEXT("Snapshot이 권위 Revision을 캡처한다"), DrainingSnapshot.WorldRevision, int64(3));
     TestTrue(TEXT("Snapshot이 Normal Close의 Drain Intent를 캡처한다"),
@@ -1419,7 +1427,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         }
         const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV5Snapshot.Facilities[0];
         TestEqual(*FString::Printf(TEXT("%s: Schema 5로 다시 캡처된다"), *CaseLabel),
-            MigratedV5Snapshot.SchemaVersion, 5);
+            MigratedV5Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
         TestEqual(*FString::Printf(TEXT("%s: 정확한 centidegree Yaw로 승격된다"), *CaseLabel),
             MigratedSaved.Placement.YawCentidegrees, QuarterTurn * 9000);
         TestEqual(*FString::Printf(TEXT("%s: legacy QuarterTurns를 비운다"), *CaseLabel),
@@ -1545,7 +1553,7 @@ bool FFFZSSnapshotPhaseReentrancyAndDrainIntentTest::RunTest(const FString& Para
         }
         const FFFZSFacilityInstanceSnapshot& MigratedSaved = MigratedV5Snapshot.Facilities[0];
         TestEqual(*FString::Printf(TEXT("%s: Schema 5로 저장된다"), *CaseLabel),
-            MigratedV5Snapshot.SchemaVersion, 5);
+            MigratedV5Snapshot.SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
         TestEqual(*FString::Printf(TEXT("%s: FacilitySpec은 Schema 2를 사용한다"), *CaseLabel),
             MigratedSaved.FacilitySpec.SchemaVersion, 2);
         TestEqual(*FString::Printf(TEXT("%s: 6m x 3m Footprint를 보존한다"), *CaseLabel),
@@ -1888,6 +1896,479 @@ bool FFFZSZoneReadModelSpatialMetadataTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("Read Model의 출입 기준점 Transform과 순서가 보존된다"),
             ZoneReadModel->EntryExitAnchors[Index].Equals(ExpectedEntryExitAnchors[Index]));
     }
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FFFZSFacilityUpgradeTransactionTest,
+    "FF_ZoneSystem.Integration.World.FacilityUpgradeTransactionAndPersistence",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityUpgradeTransactionTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Upgrade test world"), World))
+    {
+        return false;
+    }
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!TestNotNull(TEXT("Upgrade subsystem"), Subsystem) ||
+        !TestNotNull(TEXT("Upgrade zone"), Zone) ||
+        !TestTrue(TEXT("Register upgrade zone"), Subsystem->RegisterZone(Zone)))
+    {
+        return false;
+    }
+
+    FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Spec.bUsesFacilityLevels = true;
+    FFFZSFacilityUpgradeTier Level2;
+    FFFZSFacilityUpgradeTier Level3;
+    Level2.RevenueMultiplier = 1.0f;
+    Level3.RevenueMultiplier = 1.0f;
+    Level3.TargetLevel = 3;
+    Level3.CostMultiplier = 0.6f;
+    Level3.ServiceDurationMultiplier = 0.65f;
+    Spec.UpgradeTiers = { Level2, Level3 };
+    FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
+        Spec, ZoneId, FFFZSGridPlacement{FIntPoint(1000, 1000), 0}, -1);
+    const FString OriginalInstallFingerprint = UFFZSGridLibrary::BuildCommandFingerprint(Install);
+    Install.TargetUpgradeLevel = 99;
+    Install.UpgradeServiceDurationMultiplier = 0.01f;
+    TestEqual(TEXT("Non-upgrade commands preserve legacy receipt bytes"),
+        UFFZSGridLibrary::BuildCommandFingerprint(Install), OriginalInstallFingerprint);
+    if (!TestTrue(TEXT("Install succeeds without applying injected upgrade fields"),
+        Subsystem->ExecuteCommand(Install).bSucceeded))
+    {
+        return false;
+    }
+    const FGuid FacilityId = Install.FacilityInstanceId;
+    AFFZSFacilityActor* Facility = Subsystem->FindFacility(FacilityId);
+    if (!TestNotNull(TEXT("Installed upgrade subject"), Facility))
+    {
+        return false;
+    }
+    TestEqual(TEXT("Installation always starts at level one"), Facility->GetUpgradeLevel(), 1);
+    TestEqual(TEXT("Installation always starts with original performance"),
+        Facility->GetUpgradeServiceDurationMultiplier(), 1.0f);
+
+    const FFFZSCommand OtherInstall = UFFZSGridLibrary::MakeInstallCommand(
+        Spec, ZoneId, FFFZSGridPlacement{FIntPoint(4000, 1000), 0}, -1);
+    if (!TestTrue(TEXT("Install another copy of same facility type"), Subsystem->ExecuteCommand(OtherInstall).bSucceeded))
+    {
+        return false;
+    }
+    FFFZSWorldSnapshot LegacySnapshot = Subsystem->CaptureWorldSnapshot();
+    LegacySnapshot.SchemaVersion = 5;
+    const auto UpgradeCommand = [FacilityId](const int32 Level, const float Multiplier)
+    {
+        FFFZSCommand Command = MakeFacilityCommand(EFFZSCommandType::Upgrade, FacilityId);
+        Command.TargetUpgradeLevel = Level;
+        Command.UpgradeServiceDurationMultiplier = Multiplier;
+        return Command;
+    };
+
+    const int64 BeforeUpgradeRevision = Subsystem->GetWorldRevision();
+    TestEqual(TEXT("Skipping an upgrade level is rejected"),
+        Subsystem->ExecuteCommand(UpgradeCommand(3, 0.65f)).FailureReason, EFFZSPlacementFailure::DataInvalid);
+    TestEqual(TEXT("Nonpositive multiplier is rejected"),
+        Subsystem->ExecuteCommand(UpgradeCommand(2, 0.0f)).FailureReason, EFFZSPlacementFailure::DataInvalid);
+    TestEqual(TEXT("An unauthored multiplier is rejected"),
+        Subsystem->ExecuteCommand(UpgradeCommand(2, 1.0f)).FailureReason, EFFZSPlacementFailure::DataInvalid);
+    TestEqual(TEXT("Rejected upgrade leaves revision unchanged"), Subsystem->GetWorldRevision(), BeforeUpgradeRevision);
+
+    const FFFZSCommand Upgrade2 = UpgradeCommand(2, 0.8f);
+    const FFFZSCommandResult Upgraded = Subsystem->ExecuteCommand(Upgrade2);
+    TestTrue(TEXT("Upgrade commits successfully"), Upgraded.bSucceeded);
+    TestTrue(TEXT("Upgrade retains the actor and identity"), Upgraded.FacilityActor == Facility);
+    TestEqual(TEXT("Upgrade increments revision once"), Subsystem->GetWorldRevision(), BeforeUpgradeRevision + 1);
+    TestEqual(TEXT("Upgrade publishes level two"), Facility->GetUpgradeLevel(), 2);
+    TestEqual(TEXT("Base specification remains immutable"),
+        Facility->GetFacilitySpec().QueueRules.ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds);
+    TestEqual(TEXT("Queue runtime uses the improved service duration"),
+        Facility->GetQueueComponent()->GetRules().ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds * 0.8f);
+    TestEqual(TEXT("Another instance keeps its original service duration"),
+        Subsystem->FindFacility(OtherInstall.FacilityInstanceId)->GetEffectiveQueueRules().ServiceDurationSeconds,
+        Spec.QueueRules.ServiceDurationSeconds);
+    TestEqual(TEXT("Read model publishes effective service duration"),
+        Facility->GetReadModel().EffectiveQueueRules.ServiceDurationSeconds,
+        Facility->GetQueueComponent()->GetRules().ServiceDurationSeconds);
+    const FFFZSCommandResult Replay = Subsystem->ExecuteCommand(Upgrade2);
+    TestTrue(TEXT("Repeated click reuses committed receipt"), Replay.bSucceeded && Replay.bWasDuplicateReplay);
+    TestEqual(TEXT("Repeated click does not upgrade twice"), Facility->GetUpgradeLevel(), 2);
+    FFFZSCommand Mismatch = Upgrade2;
+    Mismatch.UpgradeServiceDurationMultiplier = 0.7f;
+    TestEqual(TEXT("Changed multiplier cannot reuse an existing command ID"),
+        Subsystem->ExecuteCommand(Mismatch).FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
+    Mismatch = Upgrade2;
+    Mismatch.TargetUpgradeLevel = 3;
+    TestEqual(TEXT("Changed target level cannot reuse an existing command ID"),
+        Subsystem->ExecuteCommand(Mismatch).FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
+
+    TestTrue(TEXT("Open upgraded facility"),
+        Subsystem->ExecuteCommand(MakeFacilityCommand(EFFZSCommandType::Open, FacilityId)).bSucceeded);
+    TestEqual(TEXT("Open facility cannot be upgraded"),
+        Subsystem->ExecuteCommand(UpgradeCommand(3, 0.65f)).FailureReason, EFFZSPlacementFailure::InvalidFacilityState);
+    FGuid Ticket;
+    TestEqual(TEXT("Guest joins upgraded queue"),
+        Subsystem->JoinFacilityQueue(FacilityId, TEXT("Upgrade.Guest"), nullptr, Ticket), EFFZSQueueJoinResult::Joined);
+    TestTrue(TEXT("Close starts draining occupied upgraded facility"),
+        Subsystem->ExecuteCommand(MakeFacilityCommand(EFFZSCommandType::Close, FacilityId)).bSucceeded);
+    TestEqual(TEXT("Draining guests block upgrade"),
+        Subsystem->ExecuteCommand(UpgradeCommand(3, 0.65f)).FailureReason, EFFZSPlacementFailure::FacilityOccupied);
+    TestTrue(TEXT("Clear synthetic guest"),
+        Subsystem->ExecuteCommand(MakeFacilityCommand(EFFZSCommandType::EmergencyClose, FacilityId)).bSucceeded);
+    TestTrue(TEXT("Enter live operation"), Subsystem->SetChangePhase(EFFZSChangePhase::LiveOperation));
+    TestEqual(TEXT("Live operation blocks upgrade"),
+        Subsystem->ExecuteCommand(UpgradeCommand(3, 0.65f)).FailureReason, EFFZSPlacementFailure::WrongStage);
+    TestTrue(TEXT("Enter morning check"), Subsystem->SetChangePhase(EFFZSChangePhase::MorningCheck));
+    TestTrue(TEXT("Move upgraded facility"),
+        Subsystem->ExecuteCommand(MakeMoveCommand(FacilityId, ZoneId, FIntPoint(1000, 4000), -1)).bSucceeded);
+    TestEqual(TEXT("Move preserves upgrade"), Facility->GetUpgradeLevel(), 2);
+
+    FFFZSWorldSnapshot Saved = Subsystem->CaptureWorldSnapshot();
+    FFFZSFacilityInstanceSnapshot* SavedFacility = Saved.Facilities.FindByPredicate(
+        [FacilityId](const FFFZSFacilityInstanceSnapshot& Candidate) { return Candidate.FacilityInstanceId == FacilityId; });
+    if (!TestNotNull(TEXT("Saved upgraded instance"), SavedFacility))
+    {
+        return false;
+    }
+    SavedFacility->Queue.CompletedCount = 7;
+    SavedFacility->Queue.TotalCompletedWaitSeconds = 14.0f;
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Restore upgraded snapshot"), Subsystem->RestoreWorldSnapshot(Saved, Errors)))
+    {
+        return false;
+    }
+    Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Restore retains the original base"),
+        Facility->GetFacilitySpec().QueueRules.ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds);
+    TestEqual(TEXT("Restore applies the modifier only once"),
+        Facility->GetEffectiveQueueRules().ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds * 0.8f);
+    TestTrue(TEXT("Upgrade receipt remains idempotent after load"), Subsystem->ExecuteCommand(Upgrade2).bWasDuplicateReplay);
+
+    FFFZSWorldSnapshot Version6 = Saved;
+    Version6.SchemaVersion = 6;
+    for (FFFZSFacilityInstanceSnapshot& LegacyFacility : Version6.Facilities)
+    {
+        LegacyFacility.FacilitySpec.bUsesFacilityLevels = false;
+        LegacyFacility.FacilitySpec.UpgradeTiers.Reset();
+        LegacyFacility.UpgradeSizeMultiplier = 3.0f; // A v6 archive never owned this modern field.
+        LegacyFacility.UpgradeRevenueMultiplier = 5.0f;
+    }
+    if (!TestTrue(TEXT("Schema six preserves already paid upgrades"), Subsystem->RestoreWorldSnapshot(Version6, Errors)))
+    {
+        return false;
+    }
+    Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Schema six retains paid level"), Facility->GetUpgradeLevel(), 2);
+    TestEqual(TEXT("Schema six retains paid duration"), Facility->GetUpgradeServiceDurationMultiplier(), 0.8f);
+    TestEqual(TEXT("Schema six defaults size to the original building"), Facility->GetUpgradeSizeMultiplier(), 1.0f);
+    TestEqual(TEXT("Schema six defaults revenue to its original value"), Facility->GetUpgradeRevenueMultiplier(), 1.0f);
+    TestTrue(TEXT("Schema six paid level remains visible"), Facility->GetBaseFacilitySpec().bUsesFacilityLevels);
+    TestTrue(TEXT("Schema six upgrade receipt is still replayable"), Subsystem->ExecuteCommand(Upgrade2).bWasDuplicateReplay);
+    if (!TestTrue(TEXT("Restore authored schema seven fixture"), Subsystem->RestoreWorldSnapshot(Saved, Errors)))
+    {
+        return false;
+    }
+    Facility = Subsystem->FindFacility(FacilityId);
+
+    UFFZSTestExternalPolicy* Economy = NewObject<UFFZSTestExternalPolicy>();
+    Economy->PolicyName = TEXT("Upgrade.Economy");
+    Economy->PolicyDomain = EFFZSPolicyDomain::Economy;
+    UFFZSTestExternalPolicy* LateReject = NewObject<UFFZSTestExternalPolicy>();
+    LateReject->PolicyName = TEXT("Upgrade.LateReject");
+    LateReject->PolicyDomain = EFFZSPolicyDomain::SimulationTime;
+    LateReject->bAllowTentativeApply = false;
+    TestTrue(TEXT("Register economy transaction probe"), Subsystem->RegisterExternalPolicy(Economy));
+    TestTrue(TEXT("Register late rejecting policy"), Subsystem->RegisterExternalPolicy(LateReject));
+    const int64 BeforeRejectedRevision = Subsystem->GetWorldRevision();
+    TestEqual(TEXT("Later policy can reject upgrade"),
+        Subsystem->ExecuteCommand(UpgradeCommand(3, 0.65f)).FailureReason, EFFZSPlacementFailure::ExternalPolicyRejected);
+    TestEqual(TEXT("Economy reservation is rolled back"), Economy->RollbackCount, 1);
+    TestEqual(TEXT("Rejecting policy is also rolled back"), LateReject->RollbackCount, 1);
+    TestEqual(TEXT("Failed transaction keeps level unchanged"), Facility->GetUpgradeLevel(), 2);
+    TestEqual(TEXT("Failed transaction keeps revision unchanged"), Subsystem->GetWorldRevision(), BeforeRejectedRevision);
+    LateReject->bAllowTentativeApply = true;
+    const FFFZSCommand Upgrade3 = UpgradeCommand(3, 0.65f);
+    TestTrue(TEXT("Morning upgrade succeeds after all policies agree"), Subsystem->ExecuteCommand(Upgrade3).bSucceeded);
+    TestEqual(TEXT("Successful upgrade commits payment exactly once"), Economy->CommitCount, 1);
+    TestEqual(TEXT("Level three uses original base, not compounded level two"),
+        Facility->GetQueueComponent()->GetRules().ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds * 0.65f);
+    TestEqual(TEXT("Upgrade preserves completed guest statistics"), Facility->GetQueueComponent()->GetCompletedCount(), 7);
+    Subsystem->ExecuteCommand(Upgrade3);
+    TestEqual(TEXT("Replay never charges again"), Economy->CommitCount, 1);
+
+    FFFZSWorldSnapshot Corrupt = Subsystem->CaptureWorldSnapshot();
+    Corrupt.Facilities[0].UpgradeServiceDurationMultiplier = 0.0f;
+    TestFalse(TEXT("Corrupt saved multiplier is rejected atomically"), Subsystem->RestoreWorldSnapshot(Corrupt, Errors));
+    TestTrue(TEXT("Failed restore keeps the current actor"), Subsystem->FindFacility(FacilityId) == Facility);
+    // The old schema never owned upgrade fields: ignore even stray modern values in a legacy fixture.
+    for (FFFZSFacilityInstanceSnapshot& LegacyFacility : LegacySnapshot.Facilities)
+    {
+        LegacyFacility.UpgradeLevel = 99;
+        LegacyFacility.UpgradeServiceDurationMultiplier = 0.01f;
+    }
+    if (!TestTrue(TEXT("Schema five saves migrate to level one"), Subsystem->RestoreWorldSnapshot(LegacySnapshot, Errors)))
+    {
+        return false;
+    }
+    Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Legacy facility is level one"), Facility->GetUpgradeLevel(), 1);
+    TestEqual(TEXT("Legacy facility retains original service duration"),
+        Facility->GetQueueComponent()->GetRules().ServiceDurationSeconds, Spec.QueueRules.ServiceDurationSeconds);
+    TestEqual(TEXT("Migrated save writes current schema"), Subsystem->CaptureWorldSnapshot().SchemaVersion, FFFZSWorldSnapshot::CurrentSchemaVersion);
+    TestTrue(TEXT("Legacy install receipt remains replayable after migration"), Subsystem->ExecuteCommand(Install).bWasDuplicateReplay);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSFacilityFlexibleUpgradeTransactionTest,
+    "FF_ZoneSystem.Integration.World.FacilityFlexibleUpgradeLevelsAndValues",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityFlexibleUpgradeTransactionTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Flexible upgrade world"), World)) return false;
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Base.bUsesFacilityLevels = true;
+    FFFZSFacilityUpgradeTier Level20;
+    Level20.TargetLevel = 20;
+    Level20.CostMultiplier = 0.f;
+    Level20.ServiceDurationMultiplier = 1.f;
+    Level20.RevenueMultiplier = 0.f;
+    FFFZSFacilityUpgradeTier Level42 = Level20;
+    Level42.TargetLevel = 42;
+    Level42.CostMultiplier = 50.f;
+    Level42.ServiceDurationMultiplier = 3.f;
+    Level42.RevenueMultiplier = 1000.f;
+    FFFZSFacilityUpgradeTier Last = Level42;
+    Last.TargetLevel = MAX_int32;
+    Base.UpgradeTiers = { Last, Level42, Level20 };
+    const FFFZSCommandResult Installed = Subsystem->ExecuteCommand(UFFZSGridLibrary::MakeInstallCommand(
+        Base, ZoneId, FFFZSGridPlacement{FIntPoint(1000, 1000), 0}, -1));
+    if (!TestTrue(TEXT("Unordered high-level configuration installs"), Installed.bSucceeded)) return false;
+    const FGuid FacilityId = Installed.FacilityActor->GetFacilityInstanceId();
+    const auto Upgrade = [FacilityId](const FFFZSFacilityUpgradeTier& Tier)
+    {
+        FFFZSCommand Command = MakeFacilityCommand(EFFZSCommandType::Upgrade, FacilityId);
+        Command.TargetUpgradeLevel = Tier.TargetLevel;
+        Command.UpgradeServiceDurationMultiplier = Tier.ServiceDurationMultiplier;
+        Command.UpgradeSizeMultiplier = Tier.SizeMultiplier;
+        Command.UpgradeRevenueMultiplier = Tier.RevenueMultiplier;
+        return Command;
+    };
+    TestFalse(TEXT("Cannot skip the smallest larger authored level"), Subsystem->ExecuteCommand(Upgrade(Level42)).bSucceeded);
+    TestTrue(TEXT("Sparse next-level geometry can be previewed"), Subsystem->ValidateUpgradePlacement(FacilityId, 1.f).bIsValid);
+    if (!TestTrue(TEXT("First authored tier can lower revenue to zero"), Subsystem->ExecuteCommand(Upgrade(Level20)).bSucceeded)) return false;
+    AFFZSFacilityActor* Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Sparse target is used instead of current level plus one"), Facility->GetUpgradeLevel(), 20);
+    TestEqual(TEXT("Zero paid revenue is retained"), Facility->GetUpgradeRevenueMultiplier(), 0.f);
+    const FFFZSCommand Paid42 = Upgrade(Level42);
+    if (!TestTrue(TEXT("A later tier may slow service and exceed old revenue caps"), Subsystem->ExecuteCommand(Paid42).bSucceeded)) return false;
+    TestEqual(TEXT("Duration increase is applied from the base"), Facility->GetEffectiveQueueRules().ServiceDurationSeconds, Base.QueueRules.ServiceDurationSeconds * 3.f);
+    TestEqual(TEXT("Revenue above the former limit is retained"), Facility->GetUpgradeRevenueMultiplier(), 1000.f);
+    TestTrue(TEXT("Flexible upgrade still has idempotent receipts"), Subsystem->ExecuteCommand(Paid42).bWasDuplicateReplay);
+    FFFZSCommand Changed = Paid42;
+    Changed.UpgradeRevenueMultiplier = 1001.f;
+    TestEqual(TEXT("Changed payload still cannot reuse a receipt"), Subsystem->ExecuteCommand(Changed).FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
+    const FFFZSWorldSnapshot Saved = Subsystem->CaptureWorldSnapshot();
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Sparse high-level paid state restores"), Subsystem->RestoreWorldSnapshot(Saved, Errors))) return false;
+    Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Restored sparse level"), Facility->GetUpgradeLevel(), 42);
+    TestEqual(TEXT("Restored unrestricted revenue"), Facility->GetUpgradeRevenueMultiplier(), 1000.f);
+    TestEqual(TEXT("Restored duration is not compounded"), Facility->GetEffectiveQueueRules().ServiceDurationSeconds, Base.QueueRules.ServiceDurationSeconds * 3.f);
+    TestTrue(TEXT("Receipt survives unrestricted-state restore"), Subsystem->ExecuteCommand(Paid42).bWasDuplicateReplay);
+    if (!TestTrue(TEXT("A tier with unchanged effects may advance to the final authored level"), Subsystem->ExecuteCommand(Upgrade(Last)).bSucceeded)) return false;
+    TestEqual(TEXT("Highest representable level applies without arithmetic overflow"), Facility->GetUpgradeLevel(), MAX_int32);
+    TestFalse(TEXT("No next tier is returned at the highest level"), Subsystem->ValidateUpgradePlacement(FacilityId, 1.f).bIsValid);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSFacilityRevenueUpgradeTransactionTest,
+    "FF_ZoneSystem.Integration.World.FacilityRevenueUpgradeTransactionAndSave",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityRevenueUpgradeTransactionTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Revenue upgrade world"), World)) return false;
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Base.bUsesFacilityLevels = true;
+    FFFZSFacilityUpgradeTier Level2;
+    Level2.ServiceDurationMultiplier = 1.0f;
+    FFFZSFacilityUpgradeTier Level3 = Level2;
+    Level3.TargetLevel = 3;
+    Level3.RevenueMultiplier = 2.0f;
+    Base.UpgradeTiers = { Level2, Level3 };
+    FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
+        Base, ZoneId, FFFZSGridPlacement{FIntPoint(1000, 1000), 0}, -1);
+    Install.UpgradeRevenueMultiplier = 100.0f;
+    const FFFZSCommandResult Installed = Subsystem->ExecuteCommand(Install);
+    if (!TestTrue(TEXT("Revenue upgrade subject installs"), Installed.bSucceeded)) return false;
+    AFFZSFacilityActor* Facility = Installed.FacilityActor.Get();
+    const FGuid FacilityId = Facility->GetFacilityInstanceId();
+    TestEqual(TEXT("Install cannot inject a paid revenue boost"), Facility->GetUpgradeRevenueMultiplier(), 1.0f);
+    const auto Upgrade = [FacilityId](const int32 Level, const float Revenue)
+    {
+        FFFZSCommand Command = MakeFacilityCommand(EFFZSCommandType::Upgrade, FacilityId);
+        Command.TargetUpgradeLevel = Level;
+        Command.UpgradeRevenueMultiplier = Revenue;
+        return Command;
+    };
+    TestFalse(TEXT("An unauthored revenue increase cannot be purchased"), Subsystem->ExecuteCommand(Upgrade(2, 3.0f)).bSucceeded);
+    UFFZSTestExternalPolicy* Policy = NewObject<UFFZSTestExternalPolicy>();
+    Policy->PolicyName = TEXT("Upgrade.Revenue");
+    Policy->bAllowTentativeApply = false;
+    if (!TestTrue(TEXT("Register revenue policy"), Subsystem->RegisterExternalPolicy(Policy))) return false;
+    const int64 OriginalRevision = Subsystem->GetWorldRevision();
+    TestFalse(TEXT("A revenue upgrade can be rolled back"), Subsystem->ExecuteCommand(Upgrade(2, 1.5f)).bSucceeded);
+    TestEqual(TEXT("Rejected revenue boost rolls back the policy"), Policy->RollbackCount, 1);
+    TestEqual(TEXT("Rejected revenue boost leaves paid revenue unchanged"), Facility->GetUpgradeRevenueMultiplier(), 1.0f);
+    TestEqual(TEXT("Rejected revenue boost leaves revision unchanged"), Subsystem->GetWorldRevision(), OriginalRevision);
+    Policy->bAllowTentativeApply = true;
+    const FFFZSCommand Paid = Upgrade(2, 1.5f);
+    if (!TestTrue(TEXT("Revenue-only upgrade succeeds with unchanged service duration"), Subsystem->ExecuteCommand(Paid).bSucceeded)) return false;
+    TestEqual(TEXT("Paid revenue is stored as an absolute multiplier"), Facility->GetUpgradeRevenueMultiplier(), 1.5f);
+    TestEqual(TEXT("Revenue-only upgrade keeps service duration"), Facility->GetEffectiveQueueRules().ServiceDurationSeconds, Base.QueueRules.ServiceDurationSeconds);
+    TestEqual(TEXT("Read model publishes paid revenue"), Facility->GetReadModel().UpgradeRevenueMultiplier, 1.5f);
+    TestTrue(TEXT("Repeated revenue upgrade is idempotent"), Subsystem->ExecuteCommand(Paid).bWasDuplicateReplay);
+    TestEqual(TEXT("Repeated revenue upgrade commits policy once"), Policy->CommitCount, 1);
+    FFFZSCommand Tampered = Paid;
+    Tampered.UpgradeRevenueMultiplier = 2.0f;
+    TestEqual(TEXT("A receipt cannot be replayed with changed revenue"), Subsystem->ExecuteCommand(Tampered).FailureReason, EFFZSPlacementFailure::DuplicatePayloadMismatch);
+    const FFFZSWorldSnapshot Saved = Subsystem->CaptureWorldSnapshot();
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Paid revenue survives snapshot restore"), Subsystem->RestoreWorldSnapshot(Saved, Errors))) return false;
+    Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Restore does not compound revenue"), Facility->GetUpgradeRevenueMultiplier(), 1.5f);
+    TestTrue(TEXT("Revenue receipt survives restore"), Subsystem->ExecuteCommand(Paid).bWasDuplicateReplay);
+    if (!TestTrue(TEXT("Next revenue tier can keep the same duration"), Subsystem->ExecuteCommand(Upgrade(3, 2.0f)).bSucceeded)) return false;
+    TestEqual(TEXT("Next revenue tier stays relative to Lv1"), Facility->GetUpgradeRevenueMultiplier(), 2.0f);
+    FFFZSWorldSnapshot InvalidSaved = Subsystem->CaptureWorldSnapshot();
+    InvalidSaved.Facilities[0].UpgradeRevenueMultiplier = -1.0f;
+    TestFalse(TEXT("Unsafe saved revenue is rejected atomically"), Subsystem->RestoreWorldSnapshot(InvalidSaved, Errors));
+    TestTrue(TEXT("Rejected saved revenue leaves the committed actor"), Subsystem->FindFacility(FacilityId) == Facility);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSFacilityUpgradeSizeTransactionTest,
+    "FF_ZoneSystem.Integration.World.FacilityUpgradeSizeCollisionRollbackAndSave",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    GetMutableDefault<UFFZSDeveloperSettings>()->MaxEnumeratedCellsPerFacility = 10'000'000;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Size upgrade test world"), World)) return false;
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+
+    FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+    Base.bUsesFacilityLevels = true;
+    FFFZSFacilityUpgradeTier Tier;
+    Tier.SizeMultiplier = 2.f;
+    Tier.RevenueMultiplier = 1.f;
+    Base.UpgradeTiers = { Tier };
+    const auto InstallAt = [Subsystem, ZoneId, &Base](const FIntPoint Origin)
+    {
+        return Subsystem->ExecuteCommand(UFFZSGridLibrary::MakeInstallCommand(
+            Base, ZoneId, FFFZSGridPlacement{Origin, 0}, -1));
+    };
+    const FFFZSCommandResult Installed = InstallAt(FIntPoint(1000, 1000));
+    const FFFZSCommandResult Neighbor = InstallAt(FIntPoint(2000, 1000));
+    const FFFZSCommandResult Edge = InstallAt(FIntPoint(9000, 9000));
+    if (!TestTrue(TEXT("Three initial facilities fit their original footprints"),
+        Installed.bSucceeded && Neighbor.bSucceeded && Edge.bSucceeded)) return false;
+    AFFZSFacilityActor* Facility = Installed.FacilityActor.Get();
+    const FGuid FacilityId = Facility->GetFacilityInstanceId();
+    const auto Upgrade = [](const FGuid Id)
+    {
+        FFFZSCommand Command = MakeFacilityCommand(EFFZSCommandType::Upgrade, Id);
+        Command.TargetUpgradeLevel = 2;
+        Command.UpgradeServiceDurationMultiplier = 0.8f;
+        Command.UpgradeSizeMultiplier = 2.f;
+        return Command;
+    };
+    const FTransform OriginalTransform = Facility->GetActorTransform();
+    const int64 BeforeFailure = Subsystem->GetWorldRevision();
+    const FFFZSPlacementValidation Collision = Subsystem->ValidateUpgradePlacement(FacilityId, 2.f);
+    TestFalse(TEXT("Enlargement preview rejects neighboring occupied space"), Collision.bIsValid);
+    TestTrue(TEXT("Enlargement reports occupied geometry"),
+        Collision.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision) ||
+        Collision.Reasons.Contains(EFFZSPlacementFailure::InsufficientClearance) ||
+        Collision.Reasons.Contains(EFFZSPlacementFailure::QueueFootprintBlocked));
+    TestFalse(TEXT("Colliding enlargement cannot commit"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded);
+    TestEqual(TEXT("Colliding enlargement preserves revision"), Subsystem->GetWorldRevision(), BeforeFailure);
+    TestEqual(TEXT("Colliding enlargement preserves dimensions"), Facility->GetFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
+    TestTrue(TEXT("Colliding enlargement preserves actor placement"), Facility->GetActorTransform().Equals(OriginalTransform));
+    const FFFZSPlacementValidation Outside = Subsystem->ValidateUpgradePlacement(Edge.FacilityActor->GetFacilityInstanceId(), 2.f);
+    TestTrue(TEXT("Enlargement validates zone boundaries against new geometry"), Outside.Reasons.Contains(EFFZSPlacementFailure::OutsideZone));
+
+    if (!TestTrue(TEXT("Remove neighboring blocker"), Subsystem->ExecuteCommand(
+        MakeFacilityCommand(EFFZSCommandType::Remove, Neighbor.FacilityActor->GetFacilityInstanceId())).bSucceeded)) return false;
+    UFFZSTestExternalPolicy* RejectingPolicy = NewObject<UFFZSTestExternalPolicy>();
+    RejectingPolicy->PolicyName = TEXT("Upgrade.SizeReject");
+    RejectingPolicy->bAllowTentativeApply = false;
+    Subsystem->RegisterExternalPolicy(RejectingPolicy);
+    const int64 BeforeRollback = Subsystem->GetWorldRevision();
+    TestFalse(TEXT("Late policy can reject a spatially valid enlargement"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded);
+    TestEqual(TEXT("Rejected size transaction invokes rollback"), RejectingPolicy->RollbackCount, 1);
+    TestEqual(TEXT("Rollback preserves the old dimensions"), Facility->GetFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
+    TestEqual(TEXT("Rollback preserves the original revision"), Subsystem->GetWorldRevision(), BeforeRollback);
+    Subsystem->UnregisterExternalPolicy(RejectingPolicy);
+    if (!TestTrue(TEXT("Enlargement succeeds after space and policies allow it"), Subsystem->ExecuteCommand(Upgrade(FacilityId)).bSucceeded)) return false;
+    TestEqual(TEXT("The authoritative footprint doubles"), Facility->GetFacilitySpec().FootprintSizeCells, FIntPoint(1200, 600));
+    TestEqual(TEXT("Original installation footprint is retained"), Facility->GetBaseFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
+    TestEqual(TEXT("The paid physical size is stored"), Facility->GetUpgradeSizeMultiplier(), 2.f);
+    TestTrue(TEXT("Actor centre updates while placement origin stays fixed"),
+        Facility->GetActorLocation().Equals(OriginalTransform.GetLocation() + FVector(300, 150, 0)));
+    TestFalse(TEXT("New authoritative occupancy blocks an install in the enlarged area"), InstallAt(FIntPoint(2000, 1000)).bSucceeded);
+
+    const FFFZSWorldSnapshot Saved = Subsystem->CaptureWorldSnapshot();
+    const FTransform EnlargedTransform = Facility->GetActorTransform();
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("Enlarged world snapshot restores"), Subsystem->RestoreWorldSnapshot(Saved, Errors)))
+    {
+        for (const FText& Error : Errors) AddError(Error.ToString());
+        return false;
+    }
+    Facility = Subsystem->FindFacility(FacilityId);
+    TestEqual(TEXT("Restore applies saved size only once"), Facility->GetFacilitySpec().FootprintSizeCells, FIntPoint(1200, 600));
+    TestEqual(TEXT("Restore retains the original base dimensions"), Facility->GetBaseFacilitySpec().FootprintSizeCells, Base.FootprintSizeCells);
+    TestTrue(TEXT("Restore validates and keeps the enlarged centre"), Facility->GetActorTransform().Equals(EnlargedTransform));
+    TestFalse(TEXT("Restored occupancy covers the enlarged area"), InstallAt(FIntPoint(2000, 1000)).bSucceeded);
+
+    FFFZSFacilitySpec NoLevels = Base;
+    NoLevels.bUsesFacilityLevels = false;
+    const FFFZSCommandResult Disabled = Subsystem->ExecuteCommand(UFFZSGridLibrary::MakeInstallCommand(
+        NoLevels, ZoneId, FFFZSGridPlacement{FIntPoint(5000, 1000), 0}, -1));
+    if (!TestTrue(TEXT("Disabled level facility retains its authored tiers"), Disabled.bSucceeded)) return false;
+    TestFalse(TEXT("Raw upgrade cannot bypass disabled levels"),
+        Subsystem->ExecuteCommand(Upgrade(Disabled.FacilityActor->GetFacilityInstanceId())).bSucceeded);
+    NoLevels.bUsesFacilityLevels = true;
+    NoLevels.UpgradeTiers.Reset();
+    const FFFZSCommandResult LevelOne = Subsystem->ExecuteCommand(UFFZSGridLibrary::MakeInstallCommand(
+        NoLevels, ZoneId, FFFZSGridPlacement{FIntPoint(7000, 1000), 0}, -1));
+    if (!TestTrue(TEXT("Explicit Lv1-only facility installs"), LevelOne.bSucceeded)) return false;
+    TestFalse(TEXT("Lv1-only facility cannot purchase an unauthored tier"),
+        Subsystem->ExecuteCommand(Upgrade(LevelOne.FacilityActor->GetFacilityInstanceId())).bSucceeded);
     return true;
 }
 

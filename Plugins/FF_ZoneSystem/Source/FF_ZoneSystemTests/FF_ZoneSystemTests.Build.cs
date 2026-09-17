@@ -27,6 +27,9 @@ public class FF_ZoneSystemTests : ModuleRules
             "Core",
             "CoreUObject",
             "Engine",
+            "AssetRegistry",
+            "RenderCore",
+            "RHI",
             "NavigationSystem",
             "UnrealEd",
             "FF_ZoneSystem"

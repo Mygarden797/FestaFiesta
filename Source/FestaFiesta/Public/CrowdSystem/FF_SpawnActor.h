@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "GameFramework/Actor.h"
 #include "Templates/SubclassOf.h"
 #include "FF_SpawnActor.generated.h"
@@ -53,7 +54,7 @@ protected:
 	// 시뮬레이션/밀도 그리드가 덮는 반경, UU. 목적지도 이 안에서 뽑힌다.
 	// 스폰 반경보다 넉넉해야 한다 — 좁으면 목적지가 몰려 인위적인 혼잡이 생긴다
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
-	float SimRadiusUU = 10000.f;
+	float SimRadiusUU = 100000.f;
 
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Temp")
 	FVector Temp_ExitOffsetFromOrigin = FVector(-4000.f, 0.f, 0.f);
@@ -71,4 +72,11 @@ protected:
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
 	TObjectPtr<AActor> SpawnAchor;
+
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd")
+	TObjectPtr<AActor> DespawnAchor;
+
+	// 입장·퇴장 게이트. 비워두면 단일 앵커로 돌고, 순서가 인덱스라 중간에 끼우지 말고 뒤에 추가한다.
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "FF|Crowd|Gate")
+	TArray<FFF_CrowdGate> CrowdGates;
 };

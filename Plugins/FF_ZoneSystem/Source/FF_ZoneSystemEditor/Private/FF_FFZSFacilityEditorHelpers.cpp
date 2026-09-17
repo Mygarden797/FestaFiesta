@@ -5,6 +5,144 @@
 #include "FF_FFZSQueueGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
 
+bool FFFZSFacilityEditorHelpers::TryFitAudienceAfterCapacityEdit(
+    const FFFZSFacilitySpec& Spec, FFFZSAudienceLayout& OutAudience, TArray<FText>& OutErrors,
+    TArray<FText>* OutAdjustments)
+{
+    OutErrors.Reset();
+    if (OutAdjustments) OutAdjustments->Reset();
+    const auto Fail = [&](const FText& Error) { OutErrors.Add(Error); return false; };
+    const auto Explain = [&](const FText& Message) { if (OutAdjustments) OutAdjustments->Add(Message); };
+    if (!Spec.Audience.bEnabled || Spec.Audience.GetCapacity() == 0)
+    {
+        return Fail(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "RequestedCountLimit",
+            "요청: {0}열 × {1}줄 = {2}명. 현재 지원 한도는 8192명, 행·열 각각 1~512입니다. 이 수치를 그대로 쓰려면 시설 정원 한도와 NPC 처리 예산 확장이 필요합니다. 자동으로 인원을 줄이지 않았습니다."),
+            FText::AsNumber(Spec.Audience.Columns), FText::AsNumber(Spec.Audience.Rows),
+            FText::AsNumber(static_cast<int64>(Spec.Audience.Columns) * Spec.Audience.Rows)));
+    }
+    if (!UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Spec))
+        return Fail(NSLOCTEXT("FFZSAudienceEditor", "OtherCardinality", "일반 Queue·앵커·허용 구역 배열이 시설 안전 한도를 초과했습니다. 관람 인원이 원인이 아니므로 해당 배열을 먼저 수정하세요."));
+    FFFZSFacilitySpec Candidate = Spec;
+    FFFZSAudienceLayout& A = Candidate.Audience;
+    const double Envelope = static_cast<double>(A.AgentRadiusCm) + A.ArrivalToleranceCm;
+    double MinScale = 1.;
+    if (Spec.bUsesFacilityLevels)
+    {
+        FText TierError;
+        if (!FFZSFacilityUpgradeRules::ValidateTiers(Spec.UpgradeTiers, TierError)) return Fail(TierError);
+        for (const FFFZSFacilityUpgradeTier& Tier : Spec.UpgradeTiers)
+            MinScale = FMath::Min(MinScale, static_cast<double>(Tier.SizeMultiplier));
+    }
+    if (!FMath::IsFinite(A.AgentRadiusCm) || A.AgentRadiusCm <= 0.f
+        || !FMath::IsFinite(A.ArrivalToleranceCm) || A.ArrivalToleranceCm <= 0.f
+        || !FMath::IsFinite(A.ColumnSpacingCm) || !FMath::IsFinite(A.RowSpacingCm)
+        || !FMath::IsFinite(A.PerimeterMarginCm) || !FMath::IsFinite(A.CenterAisleWidthCm)
+        || A.FirstSlotLocalCm.ContainsNaN() || A.FocusLocalCm.ContainsNaN()
+        || Spec.FootprintSizeCells.X <= 0 || Spec.FootprintSizeCells.Y <= 0)
+    {
+        return Fail(NSLOCTEXT("FFZSAudienceEditor", "Inputs", "NPC 반경·도착 오차·자리 좌표·시설 크기를 먼저 확인하세요."));
+    }
+    // At the smallest enabled level, leave a little room past the strict seat-envelope edge.
+    const double MinimumSpacing = FMath::CeilToDouble((2. * Envelope + 2.) / MinScale);
+    if (!FMath::IsFinite(MinimumSpacing) || MinimumSpacing > 1000000.)
+        return Fail(NSLOCTEXT("FFZSAudienceEditor", "Scale", "NPC 크기 또는 업그레이드 축소 배율 때문에 안전한 관람 간격을 만들 수 없습니다."));
+    A.ColumnSpacingCm = FMath::Max(A.ColumnSpacingCm, static_cast<float>(MinimumSpacing));
+    A.RowSpacingCm = FMath::Max(A.RowSpacingCm, static_cast<float>(MinimumSpacing));
+    A.PerimeterMarginCm = FMath::Max(A.PerimeterMarginCm, static_cast<float>(MinimumSpacing));
+    A.CenterAisleWidthCm = FMath::Max(A.CenterAisleWidthCm, 0.f);
+    const auto ExplainNumber = [&](const FText& Name, const double Before, const double After, const FText& Reason)
+    {
+        if (Before != After) Explain(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "NumberRepair", "{0}: {1} → {2}cm. 이유: {3}"),
+            Name, FText::AsNumber(Before), FText::AsNumber(After), Reason));
+    };
+    const FText SpacingReason = NSLOCTEXT("FFZSAudienceEditor", "SpacingReason", "NPC 반경·도착 오차와 가장 작은 사용 레벨의 배율을 고려해 겹치지 않는 간격을 확보했습니다.");
+    ExplainNumber(NSLOCTEXT("FFZSAudienceEditor", "ColumnSpacing", "좌우 자리 간격"), Spec.Audience.ColumnSpacingCm, A.ColumnSpacingCm, SpacingReason);
+    ExplainNumber(NSLOCTEXT("FFZSAudienceEditor", "RowSpacing", "앞뒤 자리 간격"), Spec.Audience.RowSpacingCm, A.RowSpacingCm, SpacingReason);
+    ExplainNumber(NSLOCTEXT("FFZSAudienceEditor", "Perimeter", "바깥 여백"), Spec.Audience.PerimeterMarginCm, A.PerimeterMarginCm, SpacingReason);
+    ExplainNumber(NSLOCTEXT("FFZSAudienceEditor", "Aisle", "추가 중앙 통로"), Spec.Audience.CenterAisleWidthCm, A.CenterAisleWidthCm,
+        NSLOCTEXT("FFZSAudienceEditor", "NegativeAisle", "통로 폭에 음수를 사용할 수 없어 0으로 보정했습니다."));
+    A.FirstSlotLocalCm.Y = FMath::Max(A.FirstSlotLocalCm.Y,
+        FMath::Max(Spec.FootprintSizeCells.Y * .5 + A.PerimeterMarginCm + 2.,
+            A.FocusLocalCm.Y + Envelope / MinScale + 2.));
+    if (!A.TryCenterAndArrangePortals())
+    {
+        A.IsValid(OutErrors);
+        if (OutErrors.IsEmpty()) return Fail(NSLOCTEXT("FFZSAudienceEditor", "Layout", "관람 배치를 계산할 수 없습니다. 좌표·정원·면적 한도를 확인하세요."));
+        return false;
+    }
+    TArray<FFFZSCellRect> QueueRects = Spec.QueueReservedRects;
+    for (const FIntPoint& Cell : Spec.QueueReservedCells)
+    {
+        if (Cell.X == MAX_int32 || Cell.Y == MAX_int32)
+            return Fail(NSLOCTEXT("FFZSAudienceEditor", "LegacyCell", "기존 Queue 좌표 범위를 먼저 수정하세요."));
+        QueueRects.Emplace(Cell, FIntPoint(Cell.X + 1, Cell.Y + 1));
+    }
+    // Moving only toward +Y strictly clears at least one rectangle per pass. No cell rasterization.
+    for (int32 Pass = 0; Pass <= QueueRects.Num(); ++Pass)
+    {
+        FFFZSCellRect Bounds;
+        if (!UFFZSGridLibrary::TryGetAudienceReservedRect(Candidate, Bounds))
+            return Fail(NSLOCTEXT("FFZSAudienceEditor", "Bounds", "관람 좌표가 지원 범위를 초과했습니다."));
+        const FFFZSCellRect* Overlap = QueueRects.FindByPredicate(
+            [&](const FFFZSCellRect& Rect) { return Rect.IsValid() && Rect.Intersects(Bounds); });
+        if (!Overlap) break;
+        A.FirstSlotLocalCm.Y = Overlap->Max.Y - Spec.FootprintSizeCells.Y * .5 + A.PerimeterMarginCm + 2.;
+        if (!A.TryCenterAndArrangePortals())
+            return Fail(NSLOCTEXT("FFZSAudienceEditor", "QueueClearance", "일반 Queue를 피할 수 있는 관람 공간을 만들 수 없습니다."));
+    }
+    ExplainNumber(NSLOCTEXT("FFZSAudienceEditor", "FirstX", "첫 자리 X"), Spec.Audience.FirstSlotLocalCm.X, A.FirstSlotLocalCm.X,
+        NSLOCTEXT("FFZSAudienceEditor", "CenterReason", "입력한 열 수에 맞춰 관람 자리를 무대 중앙으로 정렬했습니다."));
+    ExplainNumber(NSLOCTEXT("FFZSAudienceEditor", "FirstY", "첫 자리 Y"), Spec.Audience.FirstSlotLocalCm.Y, A.FirstSlotLocalCm.Y,
+        NSLOCTEXT("FFZSAudienceEditor", "ClearanceReason", "무대·일반 Queue와 겹치지 않고 무대를 앞에 바라보도록 뒤로 옮겼습니다."));
+    const auto ExplainPortal = [&](const FText& Name, const FVector& Before, const FVector& After)
+    {
+        if (!Before.Equals(After)) Explain(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "PortalRepair", "{0}: {1} → {2}cm. 이유: 변경된 자리 배열 뒤쪽의 통로로 맞췄습니다."),
+            Name, FText::FromString(Before.ToCompactString()), FText::FromString(After.ToCompactString())));
+    };
+    ExplainPortal(NSLOCTEXT("FFZSAudienceEditor", "Entry", "관람 입구"), Spec.Audience.EntryLocalCm, A.EntryLocalCm);
+    ExplainPortal(NSLOCTEXT("FFZSAudienceEditor", "Exit", "관람 출구"), Spec.Audience.ExitLocalCm, A.ExitLocalCm);
+
+    // Calculate real, outward-quantized reservation sizes rather than estimating count × spacing.
+    // A single base allowance must cover the largest enabled upgrade as well.
+    int64 RequiredAreaCm2 = 0;
+    bool bNeedsSeparateBudget = false;
+    const auto InspectLevel = [&](const FFFZSFacilitySpec& Effective, const int32 Level)
+    {
+        FFFZSCellRect Bounds;
+        if (!UFFZSGridLibrary::TryGetAudienceReservedRect(Effective, Bounds))
+            return Fail(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "LevelBounds", "Lv.{0}의 관람 좌표가 지원 범위를 벗어납니다. 자리 간격·여백 또는 업그레이드 배율을 줄여야 합니다."), FText::AsNumber(Level)));
+        RequiredAreaCm2 = FMath::Max(RequiredAreaCm2, Bounds.GetArea());
+        FFFZSFacilitySpec BodyOnly = Effective;
+        BodyOnly.Audience.bEnabled = false;
+        if (!UFFZSGridLibrary::CanEnumerateFacilityCells(BodyOnly))
+            return Fail(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "BodyBudget", "Lv.{0}의 무대 본체·여유 공간·일반 Queue가 공통 면적 한도를 넘었거나 잘못되었습니다. 관람 면적 확대만으로 해결할 수 없으므로 해당 시설 값을 수정하세요."), FText::AsNumber(Level)));
+        bNeedsSeparateBudget |= !UFFZSGridLibrary::CanEnumerateFacilityCells(Effective);
+        return true;
+    };
+    if (!InspectLevel(Candidate, 1)) return false;
+    if (Candidate.bUsesFacilityLevels)
+    {
+        FFFZSFacilitySpec GeometryBase = Candidate;
+        GeometryBase.bUsesFacilityLevels = false;
+        GeometryBase.UpgradeTiers.Reset();
+        for (const FFFZSFacilityUpgradeTier& Tier : Candidate.UpgradeTiers)
+            if (!InspectLevel(FFZSFacilityUpgradeRules::BuildEffectiveSpec(GeometryBase, Tier.TargetLevel, Tier.SizeMultiplier), Tier.TargetLevel)) return false;
+    }
+    if (bNeedsSeparateBudget)
+    {
+        const double RequiredM2 = FMath::CeilToDouble(RequiredAreaCm2 / 10000.);
+        if (RequiredM2 > FFFZSAudienceLayout::MaxAreaLimitM2)
+            return Fail(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "AreaHardLimit", "요청 인원의 현재 배치에는 최소 {0}m²가 필요하지만 관람 면적 지원 한도는 {1}m²입니다. 행·열은 보관했습니다. 자리 간격·바깥 여백·중앙 통로 또는 확대 레벨 배율을 줄인 뒤 다시 적용하세요."),
+                FText::AsNumber(RequiredM2), FText::AsNumber(FFFZSAudienceLayout::MaxAreaLimitM2)));
+        A.AreaLimitM2 = static_cast<float>(RequiredM2);
+        Explain(FText::Format(NSLOCTEXT("FFZSAudienceEditor", "AreaRepair", "Audience Area Limit: {0} → {1}m². 이유: 기존 한도로는 요청 인원의 관람 영역을 수용할 수 없어 모든 사용 레벨에 필요한 최소 면적으로 늘렸습니다. 0은 기존 공통 한도입니다."),
+            FText::AsNumber(Spec.Audience.AreaLimitM2), FText::AsNumber(A.AreaLimitM2)));
+    }
+    if (!Candidate.IsValid(OutErrors)) return false;
+    OutAudience = MoveTemp(A);
+    return true;
+}
+
 namespace FFZSFacilityEditorHelpersPrivate
 {
     int32 CeilToPlacementCell(const double SizeCm)
@@ -279,6 +417,19 @@ bool FFFZSFacilityEditorHelpers::TryResizeFootprintKeepingLayout(
         Anchor.LocalTransform.SetTranslation(LocationCm);
     }
 
+    if (Candidate.Audience.bEnabled)
+    {
+        // Audience rows grow toward +Y. Keep the entire grid and its portals together,
+        // at the same distance from the stage front; do not stretch the people spacing.
+        const FVector Shift(0., (static_cast<double>(NewFootprintSizeCells.Y) - Spec.FootprintSizeCells.Y) * .5, 0.);
+        Candidate.Audience.FirstSlotLocalCm += Shift;
+        Candidate.Audience.EntryLocalCm += Shift;
+        Candidate.Audience.ExitLocalCm += Shift;
+        Candidate.Audience.FocusLocalCm.X = ShiftCenteredCoordinateCm(
+            Candidate.Audience.FocusLocalCm.X, Spec.FootprintSizeCells.X, NewFootprintSizeCells.X);
+        Candidate.Audience.FocusLocalCm.Y = ShiftCenteredCoordinateCm(
+            Candidate.Audience.FocusLocalCm.Y, Spec.FootprintSizeCells.Y, NewFootprintSizeCells.Y);
+    }
     OutSpec = MoveTemp(Candidate);
     return true;
 }

@@ -175,7 +175,7 @@ bool FFF_ZoneSystemBridge_FiltersByLifecycleOnly::RunTest(const FString& Paramet
 	return true;
 }
 
-// Info·Safety 는 목적지 후보 자체가 아니다 — 취향도 Need 도 없어 점수가 항상 같고 상한만 먹는다.
+// Info·Safety·Lighting 은 목적지 후보 자체가 아니다 — 방문객 서비스가 없는 시설이다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_ExcludesInfoAndSafety, "FestaFiesta.NPC.ZoneSystemBridge.ExcludesInfoAndSafety", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ZoneSystemBridge_ExcludesInfoAndSafety::RunTest(const FString& Parameters)
 {
@@ -187,12 +187,20 @@ bool FFF_ZoneSystemBridge_ExcludesInfoAndSafety::RunTest(const FString& Paramete
 		EFFZSFacilityCategory::Safety, TEXT("Safety_FirstAid_Test")));
 	ReadModel.Facilities.Add(MakeBridgeTestFacility(3, TEXT("ZoneA"),
 		EFFZSFacilityCategory::Toilet, TEXT("Toilet_Standard_Test")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(4, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Lighting, TEXT("Lighting_Streetlamp_FestivalStreetlamp")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(5, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Road, TEXT("Road_Surface_Sand")));
+	ReadModel.Facilities.Add(MakeBridgeTestFacility(6, TEXT("ZoneA"),
+		EFFZSFacilityCategory::Tile, TEXT("Tile_Surface_Sand")));
 
 	const TArray<FFF_DestinationCandidate> Candidates =
 		FFF_ZoneSystemBridge::BuildCandidates(ReadModel, TEXT("ZoneA"), FVector::ZeroVector);
 
 	TestEqual(TEXT("Toilet 만 후보로 남는다"), Candidates.Num(), 1);
 	TestTrue(TEXT("Toilet 은 후보다 — Need 로만 해소되지만 목적지는 될 수 있다"), ContainsFacility(Candidates, 3));
+	TestFalse(TEXT("조명은 방문객 서비스 목적지가 아니다"), ContainsFacility(Candidates, 4));
+	TestFalse(TEXT("길은 방문객 서비스 목적지가 아니다"), ContainsFacility(Candidates, 5));
 	if (Candidates.Num() == 1)
 	{
 		TestTrue(TEXT("Toilet 후보는 Restroom 을 해소한다"), Candidates[0].NeedRelief.bRelievesRestroom);
@@ -396,9 +404,9 @@ bool FFF_ZoneSystemBridge_CandidateCarriesPreferenceAndNeedRelief::RunTest(const
 // 좌석만 있는 벤치가 갈증을 풀어주는 상태가 조용히 부활한다.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 7개 카테고리 전수. Booth 만 소분류가 취향을 갈라내고, 나머지는 대분류 1:1 또는 NAME_None 이다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_MapsAllSevenCategories, "FestaFiesta.NPC.ZoneSystemBridge.MapsAllSevenCategories", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_ZoneSystemBridge_MapsAllSevenCategories::RunTest(const FString& Parameters)
+// 8개 카테고리 전수. Booth 만 소분류가 취향을 갈라내고, 나머지는 대분류 1:1 또는 NAME_None 이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ZoneSystemBridge_MapsAllEightCategories, "FestaFiesta.NPC.ZoneSystemBridge.MapsAllEightCategories", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ZoneSystemBridge_MapsAllEightCategories::RunTest(const FString& Parameters)
 {
 	// Booth — 소분류 5종이 각각 다른 취향 카테고리로 간다
 	TestEqual(TEXT("Booth_FoodStall → food_stall"),
@@ -453,6 +461,12 @@ bool FFF_ZoneSystemBridge_MapsAllSevenCategories::RunTest(const FString& Paramet
 		FFF_ZoneSystemBridge::MapToPreferenceCategory(EFFZSFacilityCategory::Info, TEXT("Info_GeneralInfo_Test")).IsNone());
 	TestTrue(TEXT("Safety 는 취향 카테고리가 없다"),
 		FFF_ZoneSystemBridge::MapToPreferenceCategory(EFFZSFacilityCategory::Safety, TEXT("Safety_FirstAid_Test")).IsNone());
+	for (const TCHAR* Minor : { TEXT("Decorative"), TEXT("Pendant"), TEXT("Streetlamp") })
+	{
+		const FName Id(*FString::Printf(TEXT("Lighting_%s_Test"), Minor));
+		TestTrue(TEXT("조명은 취향 서비스 카테고리가 없다"),
+			FFF_ZoneSystemBridge::MapToPreferenceCategory(EFFZSFacilityCategory::Lighting, Id).IsNone());
+	}
 	return true;
 }
 

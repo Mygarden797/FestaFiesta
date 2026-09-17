@@ -47,6 +47,9 @@ public:
 	TSoftObjectPtr<UDataTable> ChildCompositionTable;
 	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
+	TSoftObjectPtr<UDataTable> CrowdAppearanceTable;
+	
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Population")
 	FName GroupScopeId = TEXT("tourism_daytrip");
 	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Arrival")
@@ -54,5 +57,8 @@ public:
 	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Arrival")
 	FName ArrivalScenarioId = TEXT("flat_v0");
-	
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "SNS")
+	TSoftObjectPtr<UDataTable> SnsPostTemplateTable;
+
 };

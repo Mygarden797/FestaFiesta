@@ -83,6 +83,11 @@ void UFF_FestivalProgressionSubsystem::RestartFestival()
 
 void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinition* InDefinition)
 {
+	// A policy callback cannot restart the economy in the middle of an atomic facility purchase.
+	if (PendingFacilityUpgradeCommand.IsValid())
+	{
+		return;
+	}
 	if (InDefinition == nullptr)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Error,
@@ -110,6 +115,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
 	DayLedger.Reset();
+	// 시설별 장부는 축제 단위 누적이라 하루 경계가 아니라 여기서만 비운다.
+	FacilityRevenueBook.Reset();
 	// 새 축제에 이전 판 스냅샷이 남지 않게 한다.
 	// [주의] 지금은 아래 TryProcessNewDay(1) 이 어차피 덮으므로 이 두 줄이 없어도 동작이 같다
 	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
@@ -140,6 +147,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
+	OnFestivalDefinitionChanged.Broadcast();
 }
 
 bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Reason)
@@ -158,8 +166,94 @@ bool UFF_FestivalProgressionSubsystem::TrySpend(int32 Amount, EFF_SpendReason Re
 	return true;
 }
 
+bool UFF_FestivalProgressionSubsystem::ReserveFacilityUpgradeSpend(const FGuid CommandId, const int32 Amount)
+{
+	if (!IsInGameThread() || !IsFestivalStarted() || !CommandId.IsValid()
+		|| PendingFacilityUpgradeCommand.IsValid() || Amount < 0
+		|| DayLedger.GetSpendByReason(EFF_SpendReason::FacilityUpgrade) > MAX_int32 - Amount)
+	{
+		return false;
+	}
+	const int32 PreviousGold = Funds.GetGold();
+	if (!Funds.TrySpend(Amount))
+	{
+		return false;
+	}
+	PendingFacilityUpgradeCommand = CommandId;
+	PendingFacilityUpgradeCost = Amount;
+	GoldBeforeFacilityUpgrade = PreviousGold;
+	bFacilityUpgradeSpendCommitted = false;
+	return true;
+}
+
+void UFF_FestivalProgressionSubsystem::CommitFacilityUpgradeSpend(const FGuid CommandId)
+{
+	if (!ensure(PendingFacilityUpgradeCommand == CommandId) || bFacilityUpgradeSpendCommitted)
+	{
+		return;
+	}
+	// Free authored tiers still reserve a command, but do not create a fictitious expense.
+	if (PendingFacilityUpgradeCost > 0)
+	{
+		DayLedger.RecordSpend(EFF_SpendReason::FacilityUpgrade, PendingFacilityUpgradeCost);
+	}
+	bFacilityUpgradeSpendCommitted = true;
+}
+
+void UFF_FestivalProgressionSubsystem::RollbackFacilityUpgradeSpend(const FGuid CommandId)
+{
+	if (PendingFacilityUpgradeCommand != CommandId || bFacilityUpgradeSpendCommitted)
+	{
+		return;
+	}
+	// Release a reservation, not a player refund: do not alter refund/revenue ledgers or broadcast.
+	Funds.Refund(PendingFacilityUpgradeCost);
+	PendingFacilityUpgradeCommand.Invalidate();
+	PendingFacilityUpgradeCost = 0;
+	GoldBeforeFacilityUpgrade = 0;
+}
+
+void UFF_FestivalProgressionSubsystem::PublishFacilityUpgradeSpend(const FGuid CommandId)
+{
+	if (PendingFacilityUpgradeCommand != CommandId || !bFacilityUpgradeSpendCommitted)
+	{
+		return;
+	}
+	const int32 PreviousGold = GoldBeforeFacilityUpgrade;
+	PendingFacilityUpgradeCommand.Invalidate();
+	PendingFacilityUpgradeCost = 0;
+	GoldBeforeFacilityUpgrade = 0;
+	bFacilityUpgradeSpendCommitted = false;
+	BroadcastGoldIfChanged(PreviousGold);
+}
+
 void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
 {
+	RecordRevenue(Amount, Reason, FacilityId, FGuid());
+}
+
+void UFF_FestivalProgressionSubsystem::AddFacilityRevenue(
+	int32 Amount, EFF_EarnReason Reason, FName FacilityId, FGuid FacilityInstanceId)
+{
+	RecordRevenue(Amount, Reason, FacilityId, FacilityInstanceId);
+}
+
+bool UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue(
+	FGuid FacilityInstanceId, FFF_FacilityInstanceRevenue& OutRevenue) const
+{
+	return FacilityRevenueBook.Find(FacilityInstanceId, OutRevenue);
+}
+
+void UFF_FestivalProgressionSubsystem::RecordRevenue(
+	int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId)
+{
+	if (Amount > 0)
+	{
+		// 잔액과 누적 매출 중 먼저 상한에 닿는 값에 맞춰 동일한 수용액을 원장에도 기록한다.
+		const int32 Capacity = MAX_int32 - FMath::Max3(Funds.GetGold(), Funds.GetTotalRevenue(), Funds.GetTodayRevenue());
+		Amount = FMath::Min(Amount, Capacity);
+		if (Amount == 0) return;
+	}
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
@@ -167,7 +261,10 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 
 	Funds.AddRevenue(Amount);
 	DayLedger.RecordEarn(Reason, Amount, FacilityId);
-	
+	// 시설 핸들이 없는 매출(입장료·보너스)은 시설별 장부에 들어가지 않는다. 같은 금액을 같은 호출에서
+	// 세 장부에 넣으므로 시설 정보 패널의 값과 결산 표의 합이 어긋날 수 없다.
+	const bool bFacilityRevenueChanged = FacilityRevenueBook.Record(FacilityInstanceId, Amount);
+
 	// 미납이 있으면 방금 들어온 돈이 잔액에 남지 않고 먼저 임대료를 갚는다.
 	RepayArrearsFromGold();
 
@@ -175,6 +272,10 @@ void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason R
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
+	if (bFacilityRevenueChanged)
+	{
+		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
+	}
 }
 
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
@@ -239,8 +340,8 @@ TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetSpendRowsForDay(int32
 	}
 
 	const UEnum* ReasonEnum = StaticEnum<EFF_SpendReason>();
-
-	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FinaleFireworks); ++Value)
+	
+	for (int64 Value = 0; Value <= static_cast<int64>(EFF_SpendReason::FacilityUpgrade); ++Value)
 	{
 		const int32 Amount = Ledger->GetSpendByReason(static_cast<EFF_SpendReason>(Value));
 		if (Amount == 0)
@@ -640,7 +741,8 @@ int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
 
 	if (Fee > 0)
 	{
-		AddRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId);
+		// 체험비는 프로그램을 연 설치 시설에도 귀속된다 — 시설 정보 패널이 "이 시설이 번 돈"으로 보여 준다.
+		AddFacilityRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId, Reservation.FacilityInstanceId);
 	}
 
 	return Fee;
@@ -852,6 +954,8 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	EndedDay = JustEndedDay;
 
 	DayLedger.Reset();
+	// 시설별 장부는 오늘 값만 0 으로 돌아가고 누적은 남는다 (시설 정보 패널의 "누적 매출").
+	FacilityRevenueBook.BeginNewDay();
 	
 	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.
 	StaffPool.SetTemporaryStaffCount(0);

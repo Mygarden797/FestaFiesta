@@ -74,7 +74,7 @@ namespace FFF_FinalePurchaseTestHelpers
 			const FFF_DayLedger& Ledger = Progression->GetDayLedger();
 			int32 Total = 0;
 			for (int32 Index = 0;
-				Index <= static_cast<int32>(EFF_SpendReason::FinaleFireworks);
+				Index <= static_cast<int32>(EFF_SpendReason::FacilityUpgrade);
 				++Index)
 			{
 				Total += Ledger.GetSpendByReason(static_cast<EFF_SpendReason>(Index));

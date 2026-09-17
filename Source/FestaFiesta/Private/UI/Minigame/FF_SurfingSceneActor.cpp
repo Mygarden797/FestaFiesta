@@ -26,8 +26,6 @@ namespace
 	constexpr TCHAR SurfingSceneConeMeshPath[] = TEXT("/Engine/BasicShapes/Cone.Cone");
 	constexpr TCHAR SurfingSceneBasicShapeMaterialPath[] =
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
-	constexpr TCHAR SurfingSceneProjectSeaMaterialPath[] =
-		TEXT("/Game/Level/Demo_Matereal/Sea_Material/Mi_Sea_Inst.Mi_Sea_Inst");
 	constexpr float CharacterCaptureRefreshIntervalSeconds = 0.5f;
 
 	int32 ObjectTypeIndex(const EFF_SurfingObjectType Type)
@@ -114,8 +112,6 @@ AFF_SurfingSceneActor::AFF_SurfingSceneActor()
 		SurfingSceneConeMeshPath);
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BasicMaterialFinder(
 		SurfingSceneBasicShapeMaterialPath);
-	static ConstructorHelpers::FObjectFinder<UMaterialInterface> SeaMaterialFinder(
-		SurfingSceneProjectSeaMaterialPath);
 
 	PlaneMesh = PlaneFinder.Object;
 	CubeMesh = CubeFinder.Object;
@@ -123,7 +119,6 @@ AFF_SurfingSceneActor::AFF_SurfingSceneActor()
 	CylinderMesh = CylinderFinder.Object;
 	ConeMesh = ConeFinder.Object;
 	BasicShapeMaterial = BasicMaterialFinder.Object;
-	ProjectSeaMaterial = SeaMaterialFinder.Object;
 
 	TArray<UStaticMeshComponent*> FixedMeshes = {
 		OceanFloor,

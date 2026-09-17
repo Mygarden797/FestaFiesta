@@ -5,6 +5,7 @@
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
 #include "UI/Facility/FF_FacilityInfoTypes.h"
+#include "UI/Facility/FF_FacilityLightingControls.h"
 #include "FF_FacilityInfoPanel.generated.h"
 
 class UBorder;
@@ -12,6 +13,8 @@ class UButton;
 class UCommonTextBlock;
 class UImage;
 class UWidget;
+class UVerticalBox;
+class UFF_FacilitySynergyEntryWidget;
 
 /**
  * Native contract for WBP_FF_FacilityInfoPanel.
@@ -28,11 +31,22 @@ public:
 	FSimpleMulticastDelegate OnMoveRequested;
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
+	FSimpleMulticastDelegate OnUpgradeRequested;
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
+	FSimpleMulticastDelegate OnFavoriteRequested;
+	FFF_OnFacilityLightingRequested OnLightingRequested;
+	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
 	void ApplyViewData(const FFF_FacilityInfoViewData& ViewData);
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
+	void SetInfoPage(EFF_FacilityInfoPage Page);
+
+	/** Optional authored animation or presentation; the native class never builds a widget tree. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info")
+	void OnViewDataApplied(const FFF_FacilityInfoViewData& ViewData);
 
 	/** Opens without making the full-screen wrapper a hit target; closes by collapsing it. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
@@ -66,16 +80,72 @@ private:
 	UFUNCTION()
 	void HandleProgramScheduleClicked();
 
-	/** Keeps the shipped facility-info WBP compatible while designers migrate the new button. */
-	void EnsureMinigameButton();
+	UFUNCTION()
+	void HandleUpgradeClicked();
 
-	/** Adds only the missing compact program block; authored WBP layout remains authoritative. */
-	void EnsureProgramSection();
+	UFUNCTION() void HandleOverviewClicked();
+	UFUNCTION() void HandleSynergyClicked();
+	UFUNCTION() void HandleOperationClicked();
+	UFUNCTION() void HandleUpgradeTabClicked();
+	UFUNCTION() void HandleFavoriteClicked();
+	UFUNCTION() void HandleRemoveConfirmClicked();
+	UFUNCTION() void HandleRemoveCancelClicked();
+	void RefreshPageVisibility();
+	void RefreshSynergyEntries();
+	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);
+	EFF_FacilityInfoPage ActivePage = EFF_FacilityInfoPage::Overview;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabOverview;
+	/** Optional only to support additive migration of an older panel WBP. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabSynergy;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_SynergySection;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_SynergySummary;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UVerticalBox> VerticalBox_SynergyEntries;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Synergy",
+		meta = (AllowPrivateAccess = "true", DisplayName = "조합 행 위젯", ToolTip = "조합 탭의 각 항목을 그리는 WBP입니다. 글꼴·색·간격은 이 WBP의 Designer에서 수정합니다."))
+	TSoftClassPtr<UFF_FacilitySynergyEntryWidget> SynergyEntryWidgetClass =
+		TSoftClassPtr<UFF_FacilitySynergyEntryWidget>(FSoftObjectPath(
+			TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilitySynergyEntryWidget>> SynergyEntryPool;
+	UPROPERTY(Transient) TSubclassOf<UFF_FacilitySynergyEntryWidget> LoadedSynergyEntryClass;
+	bool bSynergyEntryLoadFailed = false;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabOperation;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_TabUpgrade;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Favorite;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_Favorite;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_LevelSummary;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_RemoveConfirmation;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_RemoveConfirmation;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_RemoveConfirm;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_RemoveCancel;
 
 	void SetText(UCommonTextBlock* Target, const FText& Text) const;
+	void HandleLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
+	void HandleLightingResetRequested(FGuid FacilityId);
+
+	/** Authored child WBP, migrated by FF.BuildFacilityInfoUMG without replacing designer layout. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UFF_FacilityLightingControls> Widget_LightingControls;
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;
+
+	/** A double-click must not also purchase the newly displayed next level. */
+	double LastUpgradeClickSeconds = -1.0;
 
 	/** Designer-tunable feedback states; edit these in the panel WBP Class Defaults. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
@@ -97,6 +167,19 @@ private:
 		meta = (AllowPrivateAccess = "true"))
 	FLinearColor InstanceLimitReachedColor =
 		FLinearColor::FromSRGBColor(FColor(0xD7, 0x4E, 0x43));
+
+	/** Today's earnings number switches to this color once the facility has settled a payment today. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Revenue",
+		meta = (AllowPrivateAccess = "true", DisplayName = "오늘 수익 있음 색",
+			ToolTip = "이 시설이 오늘 결제를 한 건이라도 받았을 때 오늘 매출 숫자에 쓰는 색입니다."))
+	FLinearColor RevenueEarnedColor =
+		FLinearColor::FromSRGBColor(FColor(0x2F, 0x7D, 0x5C));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Revenue",
+		meta = (AllowPrivateAccess = "true", DisplayName = "오늘 수익 없음 색",
+			ToolTip = "오늘 결제가 아직 없을 때 오늘 매출 숫자에 쓰는 색입니다."))
+	FLinearColor RevenueIdleColor =
+		FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
@@ -134,6 +217,66 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_ScheduleProgram;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_UpgradeSection;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityLevel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenue;
+
+	/**
+	 * Per-facility earnings card, added once by FF.MigrateFacilityRevenueSection. Layout, labels
+	 * and styling stay in the WBP; the native class only projects the numbers.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_RevenueSection;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityTodayRevenue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityTotalRevenue;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueShare;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueStatus;
+
+	/** Optional one-line alternative for compact designer layouts that skip the stat cards. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_FacilityRevenueSummary;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeEffect;
+
+	/** Optional so existing designer panels keep the complete legacy effect text. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UWidget> Panel_UpgradeComparison;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeCurrent;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeNext;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeCost;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_UpgradeReason;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UButton> Button_Upgrade;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UCommonTextBlock> Text_Upgrade;
 
 	/** Fixed footer surfaces in the LightTeal WBP; optional for legacy designer assets. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))

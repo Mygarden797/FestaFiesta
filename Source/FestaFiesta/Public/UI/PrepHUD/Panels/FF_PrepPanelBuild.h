@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "Styling/SlateTypes.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationTypes.h"
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
@@ -12,12 +13,15 @@
 class UButton;
 class UEditableTextBox;
 class UHorizontalBox;
+class UVerticalBox;
 class UScrollBox;
 class UTextBlock;
 class UWidget;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeSubsystem;
+class UFF_BuildFavoritesSubsystem;
+class UFF_RequiredFacilitiesSubsystem;
 class UFF_PrepChoiceButton;
 class UFF_PrepBuildPresentationModel;
 class UFF_PrepBuildTileView;
@@ -42,7 +46,8 @@ namespace FFPrepBuildPauseModel
  * PrepHUD's production build panel.
  *
  * Domain state and placement remain owned by BuildCatalog/BuildMode. This class opts into the
- * external catalog presentation seam, owns a virtualized presentation model, and never ticks.
+ * external catalog presentation seam and owns a virtualized presentation model. Its tick only
+ * adjusts page tile width when the actual list geometry changes; gameplay remains event driven.
  */
 UCLASS(Abstract, Blueprintable, meta = (DisplayName = "FF Prep Panel - Build"))
 class FESTAFIESTA_API UFF_PrepPanelBuild : public UFF_PrepPanelBase
@@ -52,10 +57,41 @@ class FESTAFIESTA_API UFF_PrepPanelBuild : public UFF_PrepPanelBase
 public:
 	UFF_PrepPanelBuild(const FObjectInitializer& ObjectInitializer);
 
+	/** Zero-based local page selection. It never changes filtering or starts placement. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	void SetCatalogPage(int32 PageIndex);
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	void NextCatalogPage();
+
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	void PreviousCatalogPage();
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	int32 GetCatalogPageIndex() const;
+
+	/** Empty results have zero pages; their page index remains zero. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	int32 GetCatalogPageCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	TArray<UObject*> GetCatalogPageItems() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	bool CanGoToPreviousPage() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Pages")
+	bool CanGoToNextPage() const;
+
+	/** Reveal one card once, clearing filters that would hide it. Never starts placement. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
+	void RequestFacilityFocus(FName FacilityDefinitionId);
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual FReply NativeOnPreviewKeyDown(
 		const FGeometry& InGeometry,
 		const FKeyEvent& InKeyEvent) override;
@@ -78,6 +114,15 @@ protected:
 	void HandleBuildCatalogFocusRestoreRequested();
 
 	UFUNCTION()
+	void HandleSynergyCatalogContextChanged();
+
+	UFUNCTION()
+	void HandleCatalogFacilityFocusRequested(FName FacilityDefinitionId);
+
+	UFUNCTION()
+	void HandleRequiredFacilitiesChanged();
+
+	UFUNCTION()
 	void HandleZoneWorldChanged(const FFFZSWorldChangeEvent& Event);
 
 	UFUNCTION()
@@ -90,6 +135,9 @@ protected:
 	void HandleExitBuildModeClicked();
 
 	UFUNCTION()
+	void HandleInspectFacilitiesClicked();
+
+	UFUNCTION()
 	void HandleFilterAllClicked();
 
 	UFUNCTION()
@@ -100,6 +148,12 @@ protected:
 
 	UFUNCTION()
 	void HandleSearchTextChanged(const FText& NewText);
+
+	UFUNCTION()
+	void HandleFavoritesOnlyClicked();
+
+	UFUNCTION()
+	void HandleResetFiltersClicked();
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UWidget> Panel_Catalog;
@@ -139,6 +193,21 @@ protected:
 	TObjectPtr<UTextBlock> Text_ItemCount;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UButton> Button_PreviousPage;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UButton> Button_NextPage;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_PageIndex;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Pages", meta = (ClampMin = "1"))
+	int32 CardsPerPage = 6;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Pages")
+	bool bUsePagination = true;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_PlacementGuide;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
@@ -146,6 +215,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UButton> Button_ExitBuildMode;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UButton> Button_InspectFacilities;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UButton> Button_FilterAll;
@@ -160,6 +232,44 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UHorizontalBox> HorizontalBox_Tools;
 
+	/** Designer-owned second level; populated from the selected major category's catalog data. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UHorizontalBox> HorizontalBox_Subcategories;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UScrollBox> ScrollBox_Subcategories;
+
+	/** Designer-owned major-category row. Legacy assets alone use the migration fallback. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UHorizontalBox> HorizontalBox_Categories;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UButton> Button_FavoritesOnly;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_FavoritesOnly;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_FavoriteCount;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UWidget> Panel_Empty;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_EmptyTitle;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_EmptyHint;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UButton> Button_ResetFilters;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Category")
+	FMargin CategoryItemPadding = FMargin(0, 0, 5, 0);
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<UTextBlock> Text_CategoryBreadcrumb;
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UEditableTextBox> Search_Facilities;
 
@@ -172,8 +282,11 @@ protected:
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton");
 
 private:
+	void HandleFavoritesChanged();
 	void HandleTileClicked(UObject* ItemObject);
 	void HandleCategoryChoiceClicked(int32 ChoiceId);
+	void HandleMinorChoiceClicked(int32 ChoiceId);
+	void RefreshMinorCategorySurface();
 	void BindExternalSources();
 	void UnbindExternalSources();
 	void EndPanelSession();
@@ -183,12 +296,20 @@ private:
 	void FocusSelectedCategoryChoice();
 	void RefreshPricedEntries();
 	void ReconcilePresentation();
+	void RefreshVisibleTiles();
 	void ApplyPresentation(bool bReplaceListItems = true);
 	void ApplyBuildModeState(EFF_BuildModeState State);
+	void RevealSynergyRecommendations();
+	void RefreshRequiredFacilitiesPresentation();
+	void ApplyRequiredFacilitiesSnapshot();
 
 	/** 카탈로그를 펼쳤을 때의 패널 높이(px). `FF_PrepHudBar` 의 `PanelLayouts` 표와 같아야 한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
-	float CatalogHeight = 320.f;
+	float CatalogHeight = 392.f;
+
+	/** The teammate bar docks panels above its 29px status row; -41 reserves the remaining tab row and gap. */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build")
+	float CatalogOffsetY = -41.f;
 
 	/**
 	 * 배치 중(목록을 접었을 때)의 패널 높이(px).
@@ -201,7 +322,7 @@ private:
 	//   겹치면 흰 띠 안에 초록 칩이 들어가고, 띠를 키울수록 칩이 아래로 밀린다 —
 	//   아래는 상태 행이라 늘릴 수 없어서 가운데로 맞출 방법이 없다 (2026-09-03).
 	//   겹치지 않게 두면 그 문제 자체가 사라지고 높이를 자유롭게 잡을 수 있다.
-	float CompactHeight = 36.f;
+	float CompactHeight = 42.f;
 
 	/**
 	 * 배치 중 띠를 위로 더 올리는 양(px). 기본값은 탭 줄 높이만큼이라 **바 바로 위**에 붙는다.
@@ -212,7 +333,7 @@ private:
 	 * 0 으로 두면 예전처럼 탭 줄과 겹친다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build")
-	float CompactOffsetY = -29.f;
+	float CompactOffsetY = -41.f;
 	void SetCategoryFilter(bool bEnabled, EFFZSFacilityCategory Category);
 	TArray<FFF_BuildCatalogEntry> MakePricedEntries() const;
 
@@ -232,21 +353,44 @@ private:
 	TObjectPtr<UFF_PrepBuildPresentationModel> PresentationModel;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildFavoritesSubsystem> FavoritesSubsystem;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_RequiredFacilitiesSubsystem> RequiredFacilitiesSubsystem;
+
+	FFF_RequiredFacilitiesStatus RequiredFacilitiesSnapshot;
+	FTimerHandle RequiredFacilitiesRefreshTimer;
+	bool bRequiredFacilitiesDirty = true;
+
+	UPROPERTY(Transient)
 	TArray<FFF_BuildCatalogEntry> PricedEntries;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UScrollBox> RuntimeCategoryScroll;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UHorizontalBox> RuntimeCategoryBox;
+	TObjectPtr<UVerticalBox> RuntimeCategoryBox;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_PrepChoiceButton>> CategoryChoices;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UFF_PrepChoiceButton>> MinorChoices;
+
+	TArray<FName> MinorTokens;
+
 	FFF_PrepBuildFilter Filter;
+	int32 CatalogPageIndex = 0;
+	float LastResponsiveListWidth = -1.0f;
+	int32 LastResponsiveColumnCount = 0;
 	FButtonStyle LegacySelectedCategoryStyle;
 	FButtonStyle LegacyIdleCategoryStyle;
+	FButtonStyle FavoritesFilterStyle;
+	bool bHasFavoritesFilterStyle = false;
 	bool bPanelOpen = false;
 	bool bClosingPanel = false;
 	bool bHasLegacyCategoryStyles = false;
+	bool bRevealSynergyOnCatalogOpen = false;
+	FName PendingCatalogFocusId;
+	bool bApplyingCatalogFocus = false;
 };

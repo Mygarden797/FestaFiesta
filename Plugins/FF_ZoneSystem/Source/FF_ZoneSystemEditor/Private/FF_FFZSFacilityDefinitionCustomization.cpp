@@ -1,4 +1,5 @@
 #include "FF_FFZSFacilityDefinitionCustomization.h"
+#include "FF_FFZSAudienceCapacityEditor.h"
 
 #include "DetailCategoryBuilder.h"
 #include "DetailLayoutBuilder.h"
@@ -6,6 +7,7 @@
 #include "Editor.h"
 #include "EditorValidatorSubsystem.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "FF_FFZSFacilityLevelPreview.h"
 #include "FF_FFZSFacilityEditorHelpers.h"
 #include "FF_FFZSVisualGeometry.h"
 #include "Engine/StaticMesh.h"
@@ -298,9 +300,91 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
         DetailBuilder, TEXT("FF Zone System|Presentation"), LOCTEXT("PresentationCategory", "Presentation"),
         LOCTEXT("PresentationCategoryTip", "카탈로그처럼 게임 화면에 표시할 선택적 정보를 편집합니다."));
     FFZSFacilityDefinitionCustomizationPrivate::LocalizeCategory(
+        DetailBuilder, TEXT("FF Zone System|Placement"), LOCTEXT("PlacementCategory", "Placement"),
+        LOCTEXT("PlacementCategoryTip", "신규 시설의 건설 입력 방식을 설정합니다. 기존 인스턴스나 저장된 시설 사양은 변경하지 않습니다."));
+    FFZSFacilityDefinitionCustomizationPrivate::LocalizeCategory(
         DetailBuilder, TEXT("FF Zone System|Authoring"), LOCTEXT("AuthoringCategory", "Authoring"),
         LOCTEXT("AuthoringCategoryTip", "에디터와 절차형 아트 도구 전용 소유권 정보를 편집합니다."));
     FFZSFacilityDefinitionCustomizationPrivate::LocalizeSpecCoordinateChildren(DetailBuilder);
+
+    // Expose the captured Spec settings at the Data Asset's top level without a second copy.
+    const TSharedRef<IPropertyHandle> SpecHandle = DetailBuilder.GetProperty(
+        GET_MEMBER_NAME_CHECKED(UFFZSFacilityDefinition, Spec));
+    const TSharedPtr<IPropertyHandle> AudienceHandle = SpecHandle->GetChildHandle(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Audience));
+    IDetailCategoryBuilder& AudienceCategory = DetailBuilder.EditCategory(
+        TEXT("FF Zone System|Facility Audience"), LOCTEXT("AudienceCategory", "Facility Audience"), ECategoryPriority::Important);
+    AudienceCategory.SetToolTip(LOCTEXT("AudienceCategoryTip", "공연 관람 공간과 사람별 자리를 설정합니다. 설정은 Spec 안에 한 번만 저장되며 Queue 정원과 별개입니다."));
+    if (AudienceHandle)
+    {
+        DetailBuilder.HideProperty(AudienceHandle);
+        AudienceCategory.AddProperty(AudienceHandle.ToSharedRef());
+    }
+    AudienceCategory.AddCustomRow(LOCTEXT("AudienceCapacitySearch", "Audience Capacity 관람 정원"))
+    .WholeRowContent()
+    [
+        SNew(STextBlock).AutoWrapText(true).Text_Lambda([this]
+        {
+            if (Definitions.Num() != 1 || !Definitions[0].IsValid())
+                return LOCTEXT("AudienceSelectOne", "시설 하나를 선택하면 관람 정원을 표시합니다.");
+            const FFFZSAudienceLayout& Audience = Definitions[0]->Spec.Audience;
+            return FText::Format(LOCTEXT("AudienceCapacity", "관람 정원: {0}명 · 미리보기: Preview Facility Levels → Refresh Preview\n초록: 관람 자리/예약 영역 · 파랑: 입구 · 주황: 출구 · 흰색: 무대 방향"), FText::AsNumber(Audience.GetCapacity()));
+        })
+    ];
+    AudienceCategory.AddCustomRow(LOCTEXT("AudienceAutoStatusSearch", "Audience Auto Validation 자동 보정 검증 결과 면적"))
+    .WholeRowContent()
+    [
+        SNew(STextBlock).AutoWrapText(true).Text_Lambda([this]
+        {
+            return FFFZSAudienceCapacityEditor::GetStatus(Definitions.Num() == 1 ? Definitions[0].Get() : nullptr);
+        })
+    ];
+    AudienceCategory.AddCustomRow(LOCTEXT("RetryAudienceSearch", "Apply Requested Audience Values 보관한 요청 인원 다시 적용"))
+    .WholeRowContent()
+    [
+        SNew(SButton).Text(LOCTEXT("RetryAudienceButton", "Apply Requested Audience Values"))
+        .ToolTipText(LOCTEXT("RetryAudienceTip", "전체 검증을 막던 오류를 수정한 뒤 누르세요. 보관한 인원을 다시 입력하지 않고 현재 시설 설정으로 재계산해 적용합니다. 요청은 현재 에디터 세션에 보관됩니다."))
+        .IsEnabled_Lambda([this] { return Definitions.Num() == 1 && FFFZSAudienceCapacityEditor::CanRetry(Definitions[0].Get()); })
+        .OnClicked_Lambda([this]
+        {
+            if (Definitions.Num() == 1 && Definitions[0].IsValid()) FFFZSAudienceCapacityEditor::Retry(*Definitions[0]);
+            return FReply::Handled();
+        })
+    ];
+    AudienceCategory.AddCustomRow(LOCTEXT("ArrangeAudienceSearch", "Arrange Audience 관람 자리 입구 출구 자동 정렬"))
+    .WholeRowContent()
+    [
+        SNew(SButton).Text(LOCTEXT("ArrangeAudienceButton", "Arrange Audience Layout"))
+        .ToolTipText(LOCTEXT("ArrangeAudienceTip", "행·열 변경은 자동 보정됩니다. 첫 줄 위치나 간격을 수동 조절한 뒤 이 버튼으로 가운데 정렬과 입퇴장 위치를 다시 맞출 수 있습니다. Ctrl+Z로 되돌릴 수 있습니다."))
+        .IsEnabled_Lambda([this] { return Definitions.Num() == 1 && Definitions[0].IsValid() && Definitions[0]->Spec.Audience.bEnabled; })
+        .OnClicked(this, &FFFZSFacilityDefinitionCustomization::ArrangeAudienceLayout)
+    ];
+    const TSharedPtr<IPropertyHandle> UsesLevels = SpecHandle->GetChildHandle(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bUsesFacilityLevels));
+    const TSharedPtr<IPropertyHandle> UpgradeTiers = SpecHandle->GetChildHandle(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, UpgradeTiers));
+    IDetailCategoryBuilder& UpgradeCategory = DetailBuilder.EditCategory(
+        TEXT("FF Zone System|Facility Upgrade"), LOCTEXT("FacilityUpgradeCategory", "Facility Upgrade"),
+        ECategoryPriority::Important);
+    UpgradeCategory.SetToolTip(LOCTEXT("FacilityUpgradeTip",
+        "이 시설만의 레벨 사용 여부와 단계별 비용·수익·속도·외형·실제 건물 크기를 설정합니다. 레벨을 끄면 UI에 레벨과 강화 버튼이 표시되지 않습니다."));
+    if (UsesLevels && UpgradeTiers)
+    {
+        DetailBuilder.HideProperty(UsesLevels);
+        DetailBuilder.HideProperty(UpgradeTiers);
+        UpgradeCategory.AddProperty(UsesLevels.ToSharedRef());
+        UpgradeCategory.AddProperty(UpgradeTiers.ToSharedRef());
+    }
+    UpgradeCategory.AddCustomRow(LOCTEXT("PreviewLevelsSearch", "Preview Levels 강화 레벨 외형 크기 미리보기"))
+    .WholeRowContent()
+    [
+        SNew(SButton)
+        .Text(LOCTEXT("PreviewLevelsButton", "Preview Facility Levels"))
+        .ToolTipText(LOCTEXT("PreviewLevelsTooltip",
+            "별도 미리보기 창에서 레벨별 메시와 크기를 비교합니다. 에셋과 현재 작업 중인 맵은 변경하지 않습니다. 레벨 메시가 비어 있으면 언제나 Lv.1 기본 메시를 사용합니다."))
+        .IsEnabled_Lambda([this] { return Definitions.Num() == 1 && Definitions[0].IsValid(); })
+        .OnClicked(this, &FFFZSFacilityDefinitionCustomization::PreviewFacilityLevels)
+    ];
 
     IDetailCategoryBuilder& ToolsCategory = DetailBuilder.EditCategory(
         TEXT("FF Zone System|Authoring Tools"),
@@ -525,6 +609,21 @@ FReply FFFZSFacilityDefinitionCustomization::ShowKoreanHelp()
         EAppMsgType::Ok,
         LOCTEXT(
             "KoreanAuthoringHelpBody",
+            "[공연 관람 공간]\n"
+            "Facility Audience의 Audience Layout을 펼치고 Enable Audience Area를 켭니다. 총 정원은 Columns × Rows이며 사람 수입니다. 행·열을 확정하면 자리·입퇴장 자동 보정 후 전체 검증합니다.\n"
+            "면적 부족 시 모든 사용 레벨에 필요한 최소 관람 면적을 자동 계산해 늘립니다. 보정 이유와 변경 전후 값이 표시됩니다.\n"
+            "다른 시설 오류 때문에 적용할 수 없으면 요청 인원을 보관합니다. 해당 오류를 고친 뒤 Apply Requested Audience Values를 누르세요.\n"
+            "First Seat는 건물 중심 기준 첫 줄 왼쪽 자리입니다. 뒤쪽 줄은 +Y 방향으로 늘어납니다. 입구와 출구는 관람 영역 가장자리 통로에 놓습니다.\n"
+            "Preview Facility Levels에서 초록 자리·파랑 입구·주황 출구를 확인하고, 수정 후 Refresh Preview를 누릅니다. 실제 맵의 NavMesh와 NPC 이동은 별도 확인이 필요합니다.\n"
+            "PDA 변경은 새로 설치하는 시설부터 적용됩니다. 기존 저장 시설은 원래 사양을 보존합니다. NPC가 모이는 시각은 시간/NPC 담당자가 연결합니다.\n\n"
+            "[시설 강화]\n"
+            "Facility Upgrade에서 Use Facility Levels를 켜고 Upgrade Tiers에 단계를 추가합니다. Target Level은 2 이상의 서로 다른 번호로 작성합니다. 번호 누락과 배열 순서를 허용하며 게임은 현재보다 높은 가장 가까운 레벨로 진행합니다. 끄면 레벨 없는 시설입니다.\n"
+            "각 단계의 Cost Multiplier는 설치비 배율, Service Duration Multiplier는 원래 서비스 시간 배율, Size Multiplier는 원래 건물의 가로·깊이·높이에 대한 절대 배율입니다.\n"
+            "Revenue Multiplier는 Lv.1 수익에 곱하는 배율입니다. 매 강화마다 1.5배라면 Lv.2에 1.5, Lv.3에 2.25를 입력합니다. 실제 이용 완료 정산과 시설 정보의 1명당 예상 수익에 함께 적용됩니다.\n"
+            "레벨 수와 배율의 기획상 상한은 없습니다. 비용·수익은 0 이상, 시간·크기는 0보다 크게 작성합니다. 이전 값 유지·감소·증가와 외형만 바꾸는 단계도 허용합니다.\n"
+            "실제 실행에는 계산 가능한 숫자, 유효한 건물·대기 공간과 길찾기가 필요합니다. 크기 축소도 이 검사를 통과해야 적용됩니다.\n"
+            "단계의 Visual Mesh가 비어 있으면 항상 Lv.1 기본 Visual Mesh를 사용합니다. 커질 공간이 없으면 실제 게임의 강화는 결제 전에 거절됩니다.\n"
+            "Preview Facility Levels 창에서 레벨을 바꿔 외형과 크기를 확인할 수 있습니다. 데이터 수정 후 Refresh Preview를 누르십시오.\n\n"
             "[건물 크기]\n"
             "Footprint Size (cm)는 회전 전 바닥 크기이며 1단위는 1cm입니다. 높이는 Placement Obstacle Height (cm)에서 바꿉니다.\n"
             "Visual Sizing Mode는 프로덕션에서 Match Placement Bounds를 사용하고 Visual Offset은 0을 유지하십시오.\n\n"
@@ -548,6 +647,35 @@ FReply FFFZSFacilityDefinitionCustomization::ShowKoreanHelp()
             "Validate Facility Definition: 내부 규칙·ID 중복·메시 참조까지 전체 검증합니다.\n\n"
             "항상 보이는 명칭은 영어이며, 각 항목에 마우스를 올리면 더 자세한 한국어 설명을 확인할 수 있습니다."),
         LOCTEXT("KoreanAuthoringHelpTitle", "시설 저작 한국어 도움말"));
+    return FReply::Handled();
+}
+
+FReply FFFZSFacilityDefinitionCustomization::PreviewFacilityLevels()
+{
+    if (Definitions.Num() == 1)
+    {
+        OpenFFZSFacilityLevelPreview(Definitions[0].Get());
+    }
+    return FReply::Handled();
+}
+
+FReply FFFZSFacilityDefinitionCustomization::ArrangeAudienceLayout()
+{
+    TArray<FText> Errors;
+    const FProperty* Property = FFZSFacilityDefinitionCustomizationPrivate::FindSpecProperty(
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Audience));
+    const int32 Changed = MutateDefinitions(LOCTEXT("ArrangeAudienceTransaction", "관람 자리와 입퇴장 위치 정렬"),
+        [&](UFFZSFacilityDefinition& Definition)
+        {
+            FFFZSFacilitySpec Candidate = Definition.Spec;
+            if (!Candidate.Audience.TryCenterAndArrangePortals()) return false;
+            if (!Candidate.IsValid(Errors)) return false;
+            Definition.Spec = MoveTemp(Candidate);
+            FFZSFacilityDefinitionCustomizationPrivate::NotifyPropertyChanged(Definition, Property);
+            return true;
+        });
+    ShowNotification(Changed > 0 ? LOCTEXT("AudienceArranged", "관람 자리를 가운데로 정렬하고 입퇴장 위치를 맞췄습니다. 미리보기를 새로고침하세요.")
+        : Errors.IsEmpty() ? LOCTEXT("AudienceArrangeFailed", "행·열·간격·가장자리 여백을 확인하세요. 전체 검증을 통과할 때만 정렬됩니다.") : Errors[0], Changed > 0);
     return FReply::Handled();
 }
 
@@ -671,6 +799,7 @@ FReply FFFZSFacilityDefinitionCustomization::ResizeFacilityKeepingLayout()
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, PlacementObstacleHeightCm),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueReservedRects),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, QueueSplinePointsCm),
+            GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Audience),
             GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Anchors) })
     {
         ChangedProperties.Add(FFZSFacilityDefinitionCustomizationPrivate::FindSpecProperty(PropertyName));

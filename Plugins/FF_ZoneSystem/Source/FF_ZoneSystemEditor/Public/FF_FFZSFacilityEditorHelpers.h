@@ -10,6 +10,13 @@
  */
 struct FF_ZONESYSTEMEDITOR_API FFFZSFacilityEditorHelpers
 {
+    /** Preserves requested rows/columns, repairs geometry and raises insufficient audience area
+     * to the minimum whole m² required by all enabled levels. OutAdjustments explains each repair.
+     * Never changes non-audience fields, reduces requested population or waives validation. */
+    static bool TryFitAudienceAfterCapacityEdit(
+        const FFFZSFacilitySpec& Spec, FFFZSAudienceLayout& OutAudience, TArray<FText>& OutErrors,
+        TArray<FText>* OutAdjustments = nullptr);
+
     /** Converts a mesh's local bounds size to conservative 1 cm footprint cells. */
     static bool TryCalculateFootprintCells(
         const FVector& MeshBoundsSizeCm,

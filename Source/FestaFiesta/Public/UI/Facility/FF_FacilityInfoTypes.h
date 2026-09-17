@@ -7,6 +7,9 @@
 #include "FF_FacilityInfoTypes.generated.h"
 
 class UTexture2D;
+struct FFF_FacilityInstanceRevenue;
+struct FFF_FacilityUpgradePreview;
+struct FFF_FacilitySynergyPreview;
 
 /** The gameplay context that opened the shared facility inspector. */
 UENUM(BlueprintType)
@@ -15,6 +18,34 @@ enum class EFF_FacilityInfoContext : uint8
 	None UMETA(Hidden),
 	Build UMETA(DisplayName = "Build Mode"),
 	Live UMETA(DisplayName = "Live Operation")
+};
+
+/** Local inspector navigation; changing pages never issues a gameplay command. */
+UENUM(BlueprintType)
+enum class EFF_FacilityInfoPage : uint8
+{
+	Overview,
+	Operation,
+	Upgrade,
+	RemoveConfirmation,
+	/** Append only: existing WBP navigation values stay stable. */
+	Synergy
+};
+
+/** One authored combination; repeated nearby instances are summarized in this row. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_FacilityInfoSynergyEntry
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FName RuleId;
+	/** 실제 건축 카드의 식별자입니다. 표시 이름에서 추론하지 않습니다. */
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FName PartnerFacilityDefinitionId;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText TitleText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText PartnerText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText EffectText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText ConditionText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") FText StatusText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") bool bActive = false;
 };
 
 /**
@@ -30,6 +61,12 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FGuid FacilityInstanceId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
+	FName FacilityDefinitionId = NAME_None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
+	bool bIsFavorite = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	EFF_FacilityInfoContext Context = EFF_FacilityInfoContext::None;
@@ -48,6 +85,15 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText FacilityStateText;
+
+	/** Current one-person settlement estimate, visible even when the facility has no levels. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText FacilityRevenueText;
+
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy")
+	FText SynergySummaryText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy")
+	TArray<FFF_FacilityInfoSynergyEntry> SynergyEntries;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText OperationStateText;
@@ -85,6 +131,51 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ServiceDurationText;
 
+	/** The level the player reviewed; the purchase command rejects a stale level. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	int32 CurrentUpgradeLevel = 1;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText FacilityLevelText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeEffectText;
+
+	/** Parallel, labelled current/quoted values for the game panel; never parsed from display text. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeCurrentText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeNextText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeSizeEffectText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeRevenueEffectText;
+
+	/** Facilities without authored levels have neither a level label nor an upgrade section. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bHasFacilityLevels = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeCostText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeActionText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FText UpgradeDisabledReasonText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bShowUpgradeDetails = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bShowUpgradeAction = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	bool bCanUpgrade = false;
+
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText WaitingPartiesText;
 
@@ -118,6 +209,16 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bCanRemove = false;
 
+	/** Lighting is independently editable in Build and Live for facilities with an authored rig. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Lighting")
+	bool bHasLightingRig = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Lighting")
+	bool bCanEditLighting = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Lighting")
+	FFFZSFacilityLightingState LightingState;
+
 	/** True when the inspector should expose today's paid-program state for this facility. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
 	bool bShowProgramSection = false;
@@ -148,6 +249,54 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Program")
 	FText ProgramScheduleDisabledReasonText;
 
+	/**
+	 * Revenue actually earned by this installed facility instance. Unlike the ledger's
+	 * per-definition rows, two booths of the same type are kept apart here.
+	 * Hidden for lighting and ground surfaces, which never take payments.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	bool bShowRevenueSection = false;
+
+	/** False for attraction-only facilities (rest, photo zone, performance) with no direct sales. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	bool bFacilityGeneratesRevenue = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	int32 TodayRevenueGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	int32 TotalRevenueGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	int32 TodayPaymentCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	int32 TotalPaymentCount = 0;
+
+	/** Share of today's festival-wide revenue, 0..100. Zero while the festival has no revenue yet. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	float TodayRevenueSharePercent = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText TodayRevenueText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText TotalRevenueText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText RevenuePaymentCountText;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText RevenueShareText;
+
+	/** Player-facing note (no sales yet, attraction-only facility, economy not ready). Empty hides it. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText RevenueStatusText;
+
+	/** One-line today/total summary for compact or legacy designer layouts. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
+	FText RevenueSummaryText;
+
 	/** True when a data-authored minigame is mapped to this installed facility type. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bHasMinigame = false;
@@ -166,6 +315,24 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 /** Pure formatting policy shared by runtime presentation and automation tests. */
 namespace FFFacilityInfoModel
 {
+	/** Uses current-location preview truth, with eligibility guarding hypothetical relocation bonuses. */
+	FESTAFIESTA_API void ApplySynergyPreview(const FFF_FacilitySynergyPreview* Preview,
+		bool bSelectionEligible, float SelectedBonusPercent, const TMap<FName, FText>& FacilityNames,
+		FFF_FacilityInfoViewData& ViewData);
+	/** Replaces all upgrade fields, including when the next snapshot is unavailable or read-only. */
+	FESTAFIESTA_API void ApplyUpgradePreview(
+		const FFF_FacilityUpgradePreview* Preview, FFF_FacilityInfoViewData& ViewData);
+	/**
+	 * Projects one installed facility's actual earnings. A null Revenue means the festival economy
+	 * is not running yet; a zeroed record means no payment has been settled for this instance.
+	 * bSectionApplicable is false for lighting and ground surfaces, which never take payments.
+	 */
+	FESTAFIESTA_API void ApplyFacilityRevenue(
+		const FFF_FacilityInstanceRevenue* Revenue,
+		bool bSectionApplicable,
+		bool bGeneratesDirectRevenue,
+		int32 FestivalTodayRevenueGold,
+		FFF_FacilityInfoViewData& ViewData);
 	FESTAFIESTA_API FText GetCategoryText(EFFZSFacilityCategory Category);
 	FESTAFIESTA_API FText GetFacilityStateText(EFFZSFacilityState State);
 	FESTAFIESTA_API FText FormatFootprint(const FIntPoint& SizeCentimeters);

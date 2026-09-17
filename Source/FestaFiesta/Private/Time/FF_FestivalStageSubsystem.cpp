@@ -2,10 +2,37 @@
 
 
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Engine/World.h"
+#include "Engine/GameInstance.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_RequiredFacilitiesSubsystem.h"
 
 
 void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 {
+	FText BlockingReason;
+	if (!CanTransitionTo(NewStage, BlockingReason))
+	{
+		// 자동 시간 만료도 같은 경계를 통과하므로 매 Tick 경고를 반복하면 로그가 넘친다.
+		// 막힌 사유가 바뀔 때만 한 번 남긴다.
+		const FString ReasonText = BlockingReason.IsEmpty()
+			? TEXT("(사유 미제공)") : BlockingReason.ToString();
+		if (LastBlockedTransitionReason != ReasonText || LastBlockedTransitionStage != NewStage)
+		{
+			LastBlockedTransitionReason = ReasonText;
+			LastBlockedTransitionStage = NewStage;
+
+			UE_LOG(LogTemp, Log,
+				TEXT("[축제 단계] %d -> %d 전환이 막혔다: %s"),
+				static_cast<int32>(CurrentStage), static_cast<int32>(NewStage), *ReasonText);
+		}
+		return;
+	}
+
+	// 통과했으니 다음 차단은 다시 한 번 찍혀야 한다.
+	LastBlockedTransitionReason.Reset();
+	LastBlockedTransitionStage = CurrentStage;
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
 	ElapsedLiveSeconds = 0.f;
@@ -34,6 +61,35 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 	}
 }
 
+
+bool UFF_FestivalStageSubsystem::CanTransitionTo(EFF_FestivalStage NewStage, FText& OutBlockingReason) const
+{
+	OutBlockingReason = FText::GetEmpty();
+	const bool bNextAllowsBuilding = NewStage == EFF_FestivalStage::Setup
+		|| NewStage == EFF_FestivalStage::PromotionPreview || NewStage == EFF_FestivalStage::MorningCheck;
+	const bool bRequiresFacilities = NewStage != CurrentStage &&
+		(CurrentStage == EFF_FestivalStage::Setup || NewStage == EFF_FestivalStage::Live
+			|| (IsReconfigureAllowed() && !bNextAllowsBuilding));
+	if (!bRequiresFacilities) { return true; }
+
+	const UGameInstance* GI = GetGameInstance();
+	const auto* Progression = GI ? GI->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	// 축제 정의가 없는 독립 시간 테스트/프리뷰의 기존 흐름은 유지한다.
+	if (!Progression || !Progression->GetDefinition()) { return true; }
+	const UWorld* World = GetWorld();
+	const auto* Required = World ? World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>() : nullptr;
+	const FFF_RequiredFacilitiesStatus Status = Required ? Required->GetRequiredFacilitiesStatus()
+		: UFF_RequiredFacilitiesSubsystem::EvaluateRequirements(Progression->GetDefinition(), FFFZSReadModel(), false);
+	OutBlockingReason = Status.BlockingReason;
+	return Status.bCanProceed;
+}
+
+FText UFF_FestivalStageSubsystem::GetStageAdvanceBlockingReason()
+{
+	FText Reason;
+	CanTransitionTo(GetPhaseTimeRange(CurrentStage).NextStage, Reason);
+	return Reason;
+}
 
 bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 {
@@ -210,7 +266,7 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		bWasMainProgramLocked = bIsLockedNow;
 		// 다음 프레임 비교용으로 저장
 
-		const float EffectiveScale = (bIsLockedNow || bMinigameInProgress) ? 1.f : TimeScale;
+		const float EffectiveScale = GetEffectiveTimeScale();
 		// 메인 공연 구간이면 배속을 1배속으로 고정
 
 		ElapsedLiveSeconds += DeltaTime * EffectiveScale;
@@ -271,6 +327,8 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		// 이 단계의 최대 시간 - 흐른 시간 = 남은 시간 
 	}
 
+	// 필수 시설 때문에 시간이 만료된 채 대기할 수 있다. UI에는 음수 시간을 보내지 않는다.
+	RemainingTime = FMath::Max(0.f, RemainingTime);
 	const int32 CurrentSeconds = FMath::CeilToInt(RemainingTime);
 	
 	if (CurrentSeconds != LastBroadcastSeconds)
@@ -374,6 +432,24 @@ void UFF_FestivalStageSubsystem::SetMinigameInProgress(bool bInProgress)
 	UE_LOG(LogTemp, Log, TEXT("[Festival] 미니게임 상태 변경: %s"), bInProgress ? TEXT("시작(1배속 고정)") : TEXT("종료(배속 해제)"));
 }
 
+float UFF_FestivalStageSubsystem::GetEffectiveTimeScale() const
+{
+	// 미니게임 중이면 어느 단계든 무조건 1배속
+	if (bMinigameInProgress)
+	{
+		return 1.f;
+	}
+
+	// Live 단계에서 메인 공연 잠금 구간이면 1배속
+	// (Tick()에서 매 프레임 갱신해두는 bWasMainProgramLocked를 사용 - 한 프레임 지연은 무시 가능한 수준)
+	if (CurrentStage == EFF_FestivalStage::Live && bWasMainProgramLocked)
+	{
+		return 1.f;
+	}
+
+	return TimeScale;
+}
+
 void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -451,7 +527,8 @@ bool UFF_FestivalStageSubsystem::IsCurrentStageSkippable()
 {
 	FFF_PhaseTimeRange Range = GetPhaseTimeRange(CurrentStage);
 	// 지금 Stage의 시간 정보를 가져와서
-	return Range.bSkippable;
+	FText BlockingReason;
+	return Range.bSkippable && CanTransitionTo(Range.NextStage, BlockingReason);
 	// 그 안의 스킵 가능 여부만 꺼내서 반환
 }
 

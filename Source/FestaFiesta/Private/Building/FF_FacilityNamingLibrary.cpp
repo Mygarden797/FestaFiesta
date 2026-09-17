@@ -23,6 +23,9 @@ namespace
 			{ EFFZSFacilityCategory::Performance, TEXT("Performance") },
 			{ EFFZSFacilityCategory::Safety,      TEXT("Safety") },
 			{ EFFZSFacilityCategory::PhotoSpot,   TEXT("PhotoSpot") },
+			{ EFFZSFacilityCategory::Lighting,    TEXT("Lighting") },
+			{ EFFZSFacilityCategory::Road,        TEXT("Road") },
+			{ EFFZSFacilityCategory::Tile,        TEXT("Tile") },
 		};
 		return Table;
 	}
@@ -41,6 +44,9 @@ namespace
 			{ EFFZSFacilityCategory::Performance, { TEXT("MainStage"), TEXT("SubStage"), TEXT("Busking"), TEXT("ExperienceStage") } },
 			{ EFFZSFacilityCategory::Safety,      { TEXT("FirstAid"), TEXT("Security"), TEXT("FireSafety"), TEXT("Evacuation") } },
 			{ EFFZSFacilityCategory::PhotoSpot,   { TEXT("Landmark"), TEXT("Theme"), TEXT("Scenic"), TEXT("Interactive") } },
+			{ EFFZSFacilityCategory::Lighting,    { TEXT("Decorative"), TEXT("Pendant"), TEXT("Streetlamp") } },
+			{ EFFZSFacilityCategory::Road,        { TEXT("Surface") } },
+			{ EFFZSFacilityCategory::Tile,        { TEXT("Surface") } },
 		};
 		return Table;
 	}

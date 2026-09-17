@@ -6,6 +6,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Economy/Rules/FF_FestivalFunds.h"
 #include "Economy/Rules/FF_DayLedger.h"
+#include "Economy/Rules/FF_FacilityRevenueBook.h"
 #include "Economy/Rules/FF_FixedCostArrears.h"
 #include "Economy/Rules/FF_StaffPool.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
@@ -21,6 +22,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, Ne
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPromotionGradeChanged, EFF_PromotionGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFestivalDefinitionChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid, FacilityInstanceId);
 
 /**
  * 잔액 규칙은 FFF_FestivalFunds(순수 구조체)가 갖고, 여기는 "상태 보관과 통지"만 한다.
@@ -55,6 +58,10 @@ public:
 	// 현재 축제 정의. 시작 전이면 nullptr.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	const UFF_FestivalDefinition* GetDefinition() const { return Definition; }
+
+	// StartFestival 완료 후 발행. 같은 자금으로 다른 축제를 시작해도 UI 조건을 갱신한다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Festival")
+	FFF_OnFestivalDefinitionChanged OnFestivalDefinitionChanged;
 
 	// --- Gold ------------------------------------------------------------
 
@@ -91,6 +98,22 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
+
+	// 설치 시설 한 곳에 귀속되는 매출. FacilityId(종류)는 부스별 표로, FacilityInstanceId(Zone 인스턴스)는
+	// 시설별 장부로 간다. 자금·원장은 AddRevenue 와 같은 경로라 세 장부의 합이 항상 맞는다.
+	// 부스 수수료(Queue 브리지)와 유료 프로그램 체험비가 부른다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	void AddFacilityRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId, FGuid FacilityInstanceId);
+
+	// 설치 시설 한 곳의 오늘·누적 매출과 결제 건수. 시설 정보 패널이 읽는다.
+	// 기록이 없으면 false 이고 OutRevenue 는 전부 0 이다 — "아직 결제 없음"과 같은 뜻이다.
+	// 오늘 값은 하루 경계에서 0 이 되고 누적은 새 축제에서만 0 이 된다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool GetFacilityInstanceRevenue(FGuid FacilityInstanceId, FFF_FacilityInstanceRevenue& OutRevenue) const;
+
+	// 시설 한 곳의 매출이 바뀔 때 그 시설의 GUID 로 쏜다. 구독 직후 현재값은 GetFacilityInstanceRevenue 로 읽는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnFacilityRevenueChanged OnFacilityRevenueChanged;
 
 	// 잔액을 늘린다. 시설 철거 환급이 유일한 호출자다.
 	// TotalRevenue는 안 건드린다 — 환급은 새 매출이 아니라 이미 쓴 돈이 되돌아온 것이다.
@@ -129,7 +152,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_LedgerRow> GetEarnRowsForDay(int32 Day) const;
 
-	// 지출 9종을 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
+	// 지출 사유를 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
 	// [주의] 장소 임대료는 하루치(2,400)를 넘을 수 있다 — 어제 못 낸 몫을 오늘 갚으면 합산된다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_LedgerRow> GetSpendRowsForDay(int32 Day) const;
@@ -327,6 +350,17 @@ public:
 	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
+	friend class UFF_FacilityUpgradeSubsystem;
+	// Synchronous facility purchase: reserve without events, record on commit, publish only after all systems commit.
+	bool ReserveFacilityUpgradeSpend(FGuid CommandId, int32 Amount);
+	void CommitFacilityUpgradeSpend(FGuid CommandId);
+	void RollbackFacilityUpgradeSpend(FGuid CommandId);
+	void PublishFacilityUpgradeSpend(FGuid CommandId);
+	FGuid PendingFacilityUpgradeCommand;
+	int32 PendingFacilityUpgradeCost = 0;
+	int32 GoldBeforeFacilityUpgrade = 0;
+	bool bFacilityUpgradeSpendCommitted = false;
+
 	// Project Settings 의 DefaultFestival 을 읽어 축제를 시작한다.
 	// 저작이 비어 있으면 Warning 만 남기고 시작하지 않는다.
 	void StartConfiguredFestival();
@@ -375,6 +409,12 @@ private:
 	
 	// 직전 하루의 원장 스냅샷. TryProcessNewDay 의 Reset 직전에서만 갱신한다
 	FFF_DayLedger EndedDayLedger;
+
+	// 설치 시설별(인스턴스) 매출. 부스별 표(종류)와 달리 하루 경계에서 오늘 값만 지운다.
+	FFF_FacilityRevenueBook FacilityRevenueBook;
+
+	// AddRevenue·AddFacilityRevenue 의 유일한 구현. 자금·원장·시설별 장부를 한 번에 갱신하고 통지한다.
+	void RecordRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId, const FGuid& FacilityInstanceId);
 
 	// EndedDayLedger 가 담고 있는 날짜. 0 = 아직 끝난 하루 없음.
 	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.

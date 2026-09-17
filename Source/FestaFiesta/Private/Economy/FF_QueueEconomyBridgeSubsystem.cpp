@@ -3,6 +3,7 @@
 
 #include "Economy/FF_QueueEconomyBridgeSubsystem.h"
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "FF_FFZSFacilityActor.h"
@@ -115,11 +116,15 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 	}
 	
 	// [6] 수수료 → 원장.
+	const UFF_FacilitySynergySubsystem* Synergies = World->GetSubsystem<UFF_FacilitySynergySubsystem>();
+	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(ZoneFacilityId) : 1.f;
 	const int32 Commission = FFF_BoothRevenueRules::ResolveCommission(
-		RevenuePerUse, MemberCount, Definition->BoothCommissionRate);
+		RevenuePerUse, MemberCount, Definition->BoothCommissionRate, Facility->GetUpgradeRevenueMultiplier() * SynergyMultiplier);
 	if (Commission <= 0) return;
 
-	Progression->AddRevenue(Commission, EFF_EarnReason::FacilityCommission, Spec.FacilityDefinitionId);
+	// 종류(FacilityDefinitionId)는 결산 표로, 인스턴스(ZoneFacilityId)는 시설 정보 패널의 시설별 장부로 간다.
+	Progression->AddFacilityRevenue(
+		Commission, EFF_EarnReason::FacilityCommission, Spec.FacilityDefinitionId, ZoneFacilityId);
 }
 
 UFF_FestivalProgressionSubsystem*

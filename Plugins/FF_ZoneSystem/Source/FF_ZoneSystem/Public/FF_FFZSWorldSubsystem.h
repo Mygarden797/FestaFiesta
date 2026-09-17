@@ -15,7 +15,10 @@
 class AActor;
 class AFFZSFacilityActor;
 class AFFZSGameplayZone;
+class AFFZSBuildArea;
+class FFFZSSpatialHash2D;
 class AFFZSProtectedArea;
+struct FFFZSBuildableGridMask;
 
 // 시설 한 개의 ZoneId와 서로 겹치지 않는 회전 예약 사각형을 묶은 권위 점유 레코드.
 // GUID별 한 레코드이므로 메모리는 물리 셀 수가 아니라 시설 수와 사각형 수에 비례.
@@ -23,13 +26,25 @@ class AFFZSProtectedArea;
 struct FFFZSFacilityRegionOccupancy
 {
     FName ZoneId = NAME_None;
+    // Roads and tiles share one ground layer. Only tiles permit reservations in the layer above.
+    bool bIsGroundSurface = false;
+    bool bAllowsFacilitiesOnTop = true;
+
+    bool BlocksLayer(bool bOtherIsGroundSurface, bool bOtherAllowsFacilitiesOnTop = true) const
+    {
+        return bIsGroundSurface == bOtherIsGroundSurface || (bIsGroundSurface ? !bAllowsFacilitiesOnTop : !bOtherAllowsFacilitiesOnTop);
+    }
     TArray<FFFZSOrientedRect> Regions;
+    // Derived broad/narrow-phase data; saved placements and NPC region IDs stay unchanged.
+    TArray<FFFZSOrientedRect> WorldRegions;
+    FBox2D WorldBounds = FBox2D(ForceInit);
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSWorldChangedSignature, const FFFZSWorldChangeEvent&, Event);
 // 성공한 권한 명령이 확정되고 WorldRevision이 증가한 뒤 방송하는 불변 이벤트.
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFFZSWorldSnapshotRestoredSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFFZSFacilityLightingChangedSignature, FGuid, FacilityInstanceId);
 // 원자적 스냅샷 복원이 끝나 시설 Actor 레지스트리가 한 번에 교체됐음을 알리는 수명주기 이벤트.
 
 
@@ -47,6 +62,18 @@ class FF_ZONESYSTEM_API UFFZSWorldSubsystem : public UWorldSubsystem
     GENERATED_BODY()
 
 public:
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RegisterBuildArea(AFFZSBuildArea* BuildArea);
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool UnregisterBuildArea(AFFZSBuildArea* BuildArea);
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Construction")
+    AFFZSBuildArea* FindBuildArea() const;
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Construction")
+    bool RefreshBuildArea();
+
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
     // InitialPhase 설정을 읽고 이미 월드에 존재하는 존·보호 영역·유효 시설을 등록한다. 월드당 한 번 호출.
     
@@ -62,6 +89,9 @@ public:
 
     UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
     FFFZSWorldSnapshotRestoredSignature OnWorldSnapshotRestored;
+
+    UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
+    FFFZSFacilityLightingChangedSignature OnFacilityLightingChanged;
     // 명령 이벤트로 표현할 수 없는 전체 시설 레지스트리 복원이 끝난 뒤 한 번 방송한다.
     
     UPROPERTY(BlueprintAssignable, Category = "FF Zone System|Events")
@@ -103,6 +133,11 @@ public:
     // 전체 시설 읽기 모델을 만들지 않고 유효한 등록 Zone이 하나라도 있는지 확인한다.
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
+    TArray<FName> GetRegisteredZoneIds() const;
+    // 유효한 등록 존 ID를 ZoneId 사전순으로 반환한다. BuildReadModel과 같은 정렬이다.
+    // 존 전체를 주기적으로 순회해야 하는 호출자(예: 인구 보고)가 시설 요약까지 만드는 비용을 피하는 경로다.
+
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacility(FGuid FacilityInstanceId) const;
     // 현재 유효한 등록 시설을 반환한다. 잘못된 GUID나 소멸한 액터면 nullptr. 
 
@@ -128,12 +163,32 @@ public:
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Workflow")
     int64 GetWorldRevision() const { return WorldRevision; }
     // 성공한 권한 명령마다 증가하는 낙관적 동시성 리비전을 반환.
+
+    // 파생 공간 캐시용 세대 번호. 직접 등록/해제·재배치 필요 상태·스냅샷 복원도 감지하며,
+    // 저장된 WorldRevision으로 되돌아가지 않는다. 트랜잭션 ExpectedWorldRevision에는 사용하지 않는다.
+    uint64 GetFacilityRegistryRevision() const { return FacilityRegistryRevision; }
     
     // 권한 상태를 바꾸지 않고 로컬 데이터·기하·점유·지면·충돌·내비·보호 영역을 검증.
     // 로컬 검증이 성공한 경우에만 등록 정책 스냅샷의 PreValidate를 호출.
     // @note 결과는 호출 시점 스냅샷이므로 ExecuteCommand가 최신 상태에서 다시 검증한.
 
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
+
+    // Read-only, bounded spatial overview using the same zone ownership, reservations and
+    // protected areas as placement. An empty definition selects overview mode. Physical
+    // obstacles are conservatively masked from one broad-phase query; no per-cell policies,
+    // navigation or ground traces. A visible cell is free land, not a full facility approval.
+    bool BuildPlacementGridMask(
+        const FFFZSCommand& Command,
+        const FVector2D& MinLocalCm,
+        const FVector2D& MaxLocalCm,
+        int32 GridStepCm,
+        double GroundWorldZ,
+        FFFZSBuildableGridMask& OutMask) const;
+
+    // Candidate geometry only; never calls external policies, so purchase previews cannot recurse.
+    UFUNCTION(BlueprintPure, Category = "FF Zone System|Upgrade")
+    FFFZSPlacementValidation ValidateUpgradePlacement(FGuid FacilityInstanceId, float SizeMultiplier) const;
      // Install·Move·Remove·Open·Close·EmergencyClose의 유일한 공개 변경 경로.
      // CommandId 지문 멱등성, ExpectedWorldRevision, 단계, 로컬 검증, 정책 트랜잭션을 적용한다.
      //실패하면 권한 상태를 확정하지 않고 FFFZSCommandResult로 이유를 반환한다.
@@ -159,6 +214,13 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
     bool SetFacilityQueueBlocked(FGuid FacilityInstanceId, bool bBlocked);
+
+    // 설치된 한 시설의 조명만 변경한다. PDA 기본값과 다른 시설은 수정하지 않는다.
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Lighting")
+    bool SetFacilityLighting(FGuid FacilityInstanceId, const FFFZSFacilityLightingState& Settings, FText& OutFailureReason);
+
+    UFUNCTION(BlueprintCallable, Category = "FF Zone System|Facility|Lighting")
+    bool ResetFacilityLighting(FGuid FacilityInstanceId, FText& OutFailureReason);
     // Navigation·Safety 어댑터가 활성 시설 접근 차단을 설정하는 권한 진입점. 성공 시 큐의 실제 Blocked 여부가 요청과 일치.
 
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Queue")
@@ -200,8 +262,11 @@ public:
     // 아니면 ZoneId 사전순으로 정확한 경계를 검사하며 어느 존에도 없으면 NAME_None이다.
     
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Zone")
-    void ReportZonePopulation(FName ZoneId, int32 Population, float DeltaSeconds);
-    // 외부 시뮬레이션의 인구 표본을 존에 전달한다. 음수 값은 존에서 0으로 보정하고 무효 ID는 무시.
+    bool ReportZonePopulation(FName ZoneId, int32 Population, float DeltaSeconds);
+    // 외부 시뮬레이션의 인구 표본을 존에 전달한다. 음수 값은 존에서 0으로 보정한다.
+    // 표본이 실제로 반영됐을 때만 true다. 권한 변경이 차단 중이거나 무효 ID면 false이며 이때 상태는 바뀌지 않는다.
+    // 밀도 단계 승격은 DeltaSeconds 누적으로 판정하므로, false를 받은 호출자는 그 경과 시간을
+    // 다음 보고로 이월해야 Warning·Critical 유지 시간이 실제보다 길게 걸리지 않는다.
     
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Read Model")
     FFFZSReadModel BuildReadModel() const;
@@ -209,10 +274,10 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Save")
     FFFZSWorldSnapshot CaptureWorldSnapshot() const;
-    //Schema 5의 1 cm 위치·0.01도 자유 Yaw 계약, 운영 단계·리비전·시설/큐·완료 영수증을 결정적 순서로 캡처.
+    // Schema 8의 Road/Tile 구분·강화 설정·외형·1cm 위치·운영 단계·시설/큐·완료 영수증을 결정적 순서로 캡처.
     //제작 존·보호 영역·외부 정책·외부 시스템 저장 데이터는 포함하지 않는다.
     
-    // Schema 5를 검증하고, 알려진 Schema 3/4는 안전 검사 후 메모리상 Schema 5로 변환한 뒤 시설과 운영 상태를 교체한다.
+    // Schema 3/4/5는 Lv.1로, Schema 6은 구매한 레벨과 배수를 보존하며 7로 이관한 뒤 원자적으로 교체한다.
     // 제작 존·보호 영역·등록 정책은 유지하며 게임 스레드 밖이나 명령·정책 콜백 중에는 실패한다.
     UFUNCTION(BlueprintCallable, Category = "FF Zone System|Save")
     bool RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors);
@@ -227,6 +292,18 @@ public:
 
 private:
     TMap<FName, TWeakObjectPtr<AFFZSGameplayZone>> ZonesById;
+    TWeakObjectPtr<AFFZSBuildArea> UnifiedBuildArea;
+    TSharedPtr<FFFZSSpatialHash2D> FacilitySpatialIndex;
+    TSharedPtr<FFFZSSpatialHash2D> RegionSpatialIndex;
+    TArray<FName> SpatialRegionIds;
+
+    void RebuildBuildArea();
+    void CacheFacilityOccupancy(FGuid FacilityId, FFFZSFacilityRegionOccupancy&& Occupancy);
+    void RebuildFacilitySpatialIndex();
+    void RebuildRegionSpatialIndex();
+    TArray<FFFZSOrientedRect> ToWorldRegions(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions) const;
+    bool IsOccupancyRelevant(FName ZoneId, const FFFZSFacilityRegionOccupancy& Occupancy) const;
+    void QueryFacilityCandidates(const TArray<FFFZSOrientedRect>& WorldRegions, TArray<FGuid>& Candidates) const;
     // 안정 ZoneId → 제작 존 약한 참조의 권한 레지스트리다.
     
     TMap<FGuid, TWeakObjectPtr<AFFZSFacilityActor>> FacilitiesById;
@@ -251,6 +328,8 @@ private:
     // 저장할 성공 결과가 참조하는 시설 GUID 집합으로 제거 뒤 UObject 포인터 재연결 판단에 쓴다.
     
     int64 WorldRevision = 0;
+    uint64 FacilityRegistryRevision = 0;
+    bool bIsBroadcastingLightingChange = false;
     // 성공한 권한 명령 확정 횟수. 실패·미리보기·단계 변경은 증가시키지 않는다.
 
     EFFZSChangePhase CurrentPhase = EFFZSChangePhase::InitialSetup;
@@ -274,7 +353,7 @@ private:
     bool IsAuthorityMutationBlocked() const;
     // 게임 스레드 밖·복원·정책 콜백·명령 실행 중이면 true인 공통 fail-closed 차단기다. 
 
-    FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility) const;
+    FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility, bool bRevalidateExisting = false) const;
     // 외부 정책 없이 플러그인 소유 데이터·기하·점유·월드 검사만 수행한다. Move는 기존 시설 점유를 IgnoreFacility로 제외한다. 
     FTransform BuildPlacementTransform(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement) const;
     void ValidateGround(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
@@ -297,13 +376,15 @@ private:
     FFFZSCommandResult ExecuteInstall(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     FFFZSCommandResult ExecuteMove(const FFFZSCommand& Command, const FFFZSPlacementValidation& Validation);
     FFFZSCommandResult ExecuteRemove(const FFFZSCommand& Command);
+    FFFZSCommandResult ExecuteUpgrade(const FFFZSCommand& Command);
     FFFZSCommandResult ExecuteLifecycleCommand(const FFFZSCommand& Command);
     FFFZSCommandResult MakeFailure(EFFZSPlacementFailure Failure, const FText& Message) const;
     FFFZSCommandResult FinalizeSuccess(const FFFZSCommand& Command, AFFZSFacilityActor* Facility, FName PreviousZoneId);
 
     void OccupyFacilityRegions(const AFFZSFacilityActor& Facility);
     void ReleaseFacilityRegions(const AFFZSFacilityActor& Facility);
-    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId) const;
+    bool DoesGroundSurfaceSupportFacility(const AFFZSFacilityActor& Surface) const;
+    bool AreRegionsOccupiedByOther(FName ZoneId, const TArray<FFFZSOrientedRect>& Regions, FGuid IgnoreFacilityId, bool bIsGroundSurface, bool bAllowsFacilitiesOnTop) const;
     void RefreshWorldActors() const;
 
     bool ValidateSnapshotBeforeRestore(const FFFZSWorldSnapshot& Snapshot, TArray<FText>& OutErrors) const;

@@ -119,6 +119,21 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "1.0", ClampMax = "2.0"))
 	float SelectedLandmarkScale = 1.12f;
 
+	/** 정면은 1배, 가장자리는 이 배율로 부드럽게 작아진다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "0.3", ClampMax = "1.0"))
+	float LandmarkEdgeScale = 0.65f;
+
+	/** 선택 표시는 정보 패널과 카메라가 주도하고 조명은 은은하게만 보조한다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LandmarkSelectionLightScale = 0.12f;
+
+	/** 선택은 조형물 확대보다 카메라 접근으로 강조한다. 0이면 접근하지 않는다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "0.0", ClampMax = "0.2"))
+	float CountryInspectionApproachFraction = 0.08f;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Presentation", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float CountryInspectionSeconds = 0.65f;
+
 	/**
 	 * 핀이 지구 테두리에서 얼마나 안쪽으로 들어와야 나타나는가 (내적 여유).
 	 *

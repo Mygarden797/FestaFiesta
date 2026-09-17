@@ -4,12 +4,16 @@
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
+#include "CrowdSystem/Lane/FF_CrowdLane.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Engine/DataTable.h"
 #include "NPC/Destination/FF_UtilityCoefficientHelpers.h"
+#include "NPC/Destination/FF_UtilityDestinationSelector.h"
 #include "NPC/Metrics/FF_NpcNeedMetricsSubsystem.h"
+#include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
 #include "NPC/Party/FF_NeedRules.h"
 #include "NPC/Integration/FF_ZoneSystemBridge.h"
 #include "Queue/FF_QueueSubsystem.h"
@@ -22,13 +26,22 @@
 #include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "NavigationSystemTypes.h"
+#include "DataTables/FF_CrowdAppearenceRow.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
+#include "ProfilingDebugging/CsvProfiler.h"
+
+// 인원수별 프레임 부하를 재기 위한 프레임 단위 카운터.
+// `CsvProfile start` / `CsvProfile stop` 로 뜬 CSV에 FrameTime·GameThreadTime과 같은 행에 실린다.
+// N을 손으로 기록할 필요가 없어지고, StepsThisFrame 이 MaxStepsPerFrame(3)에 붙는 지점이
+// 곧 시뮬이 실시간을 놓치기 시작하는 한계선이다.
+CSV_DEFINE_CATEGORY(FFCrowd, true);
 
 namespace
 {
 	constexpr int32 NoSpawnGeneration = 0;
+	constexpr double RoadSupportBucketSizeCm = 400.0;
 
 	// 서비스를 마친 파티는 시설의 퇴장 지점으로 보내진다.
 	constexpr float QueueExitMatchToleranceUU = 50.f;
@@ -41,14 +54,28 @@ namespace
 
 	// 이 속도 이하의 리더는 서 있는 것으로 본다, UU/s. 잼에서의 미세 진동을 걷는 것으로 세지 않는다.
 	constexpr float PartyLeaderStoppedSpeedUU = 5.f;
+
+	// 게이트 투영 익스텐트. 공용 앵커용(300, 300, 2000)은 수평이 넓어 벽 안의 문이 옆 통로에 붙어 통과한다.
+	const FVector GateProbeExtentCm(50.0, 50.0, 250.0);
+
+	// 투영 낙차가 이보다 크면 공중이나 지형 아래에 놓인 것이다. 통과시키되 경고한다.
+	constexpr double GateProjectionDropWarnCm = 150.0;
+
+	// 게이트 원판 둘레를 몇 방향 찍어볼지. 중심만 보면 벽에 걸친 문을 못 잡는다.
+	constexpr int32 GateRimSampleCount = 8;
+
+	// 가중치 총합이 이보다 작으면 정규화가 폭발한다.
+	constexpr float MinGateWeightSum = KINDA_SMALL_NUMBER;
+
+	// 폴백 게이트 ID. 지표에서 "오늘은 폴백으로 돌았다"가 바로 보인다.
+	const FName FallbackGateId(TEXT("gate_fallback"));
 }
 
 void UFF_CrowdSimulationSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
-	
-	
 
+	RefreshLanesFromWorld();
 }
 
 void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
@@ -89,6 +116,15 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 	CachedArrivalScenarioId = Settings->ArrivalScenarioId;
 	CachedBucketCount = 0;
 	
+	CachedAppearenceTable = Settings->CrowdAppearanceTable.LoadSynchronous();
+
+	if (!CachedAppearenceTable)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] CrowdAppearanceTable 미설정 — 전원 프록시 원기둥으로 표시된다. ")
+			TEXT("Project Settings에 지정했는지, 지정한 DataTable 애셋이 이동·삭제되지 않았는지 확인할 것"));
+	}
+
 	if (CachedCoefficientTable)
 	{
 		NeedRiseRates = FFF_NeedRules::LoadRiseRates(CachedCoefficientTable.Get());
@@ -97,6 +133,16 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin, float
 			FFF_NeedRules::LoadStayDrainMultiplierAtMaxNeed(CachedCoefficientTable.Get());
 		FFF_NeedRules::LoadInitialNeedFractions(
 			CachedCoefficientTable.Get(), InitialNeedModeFraction, InitialNeedMaxFraction);
+
+		// 기존 멤버 값을 기본값으로 넘긴다: 행이 없거나 테이블이 없으면 저작값이 살아남고,
+		// 행이 있으면 CSV 가 이긴다. UPROPERTY 로 편집한 값도 여기서 덮이므로 그 의미를
+		// 헤더 주석에 적어 두었다.
+		ProgramReturnBufferMinutes = FFF_UtilityCoefficientHelpers::GetCoefficient(
+			CachedCoefficientTable.Get(), TEXT("reservation_return_buffer_minutes"),
+			ProgramReturnBufferMinutes);
+		ProgramExitGraceMinutes = FFF_UtilityCoefficientHelpers::GetCoefficient(
+			CachedCoefficientTable.Get(), TEXT("reservation_exit_buffer_minutes"),
+			ProgramExitGraceMinutes);
 	}
 	else
 	{
@@ -225,8 +271,15 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 
 	const float Time = DeltaTime * SimulationTimeScale;
 
+	float DiscardedSimSeconds = 0.f;
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
-		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame);
+		SimAccumulator, Time, FixedStepSeconds, MaxStepsPerFrame, &DiscardedSimSeconds);
+
+	if (DiscardedSimSeconds > 0.f)
+	{
+		DroppedSimSeconds += DiscardedSimSeconds;
+		++DroppedStepFrames;
+	}
 
 	for (int32 Step = 0; Step < StepsThisFrame; ++Step)
 	{
@@ -273,6 +326,289 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	{
 		DrawDebugAgents();
 	}
+
+	CSV_CUSTOM_STAT(FFCrowd, ActiveAgents, ActiveAgentCount, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, BoundActors, PoolBinding.GetBoundCount(), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, StepsThisFrame, StepsThisFrame, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, DiscardedSimMs, DiscardedSimSeconds * 1000.f, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, DroppedSimSeconds, DroppedSimSeconds, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, MaxDensity, DensityGrid.GetMaxDensity(), ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, PathQueryBacklog, PathQueryBacklog, ECsvCustomStatOp::Set);
+	CSV_CUSTOM_STAT(FFCrowd, PendingDecisions, DecisionQueue.Num(), ECsvCustomStatOp::Set);
+}
+
+bool UFF_CrowdSimulationSubsystem::ValidateGate(const FFF_CrowdGate& InGate, int32 AuthoredIndex,
+	FFF_CrowdGate& OutGate)
+{
+	// 싼 검사부터 돌린다. NavMesh 쿼리까지 가기 전에 걸러낼 수 있는 것을 먼저 본다.
+	// 투영 실패와 도달 불가는 제외, 낙차와 둘레 결손은 통과시키고 경고만 남긴다.
+	OutGate = InGate;
+
+	if (OutGate.GateId.IsNone())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 %d 제외 — GateId가 비었다. 지표 집계 키가 없으면 ")
+			TEXT("게이트별 유입/유출을 셀 수 없다"), AuthoredIndex);
+		return false;
+	}
+
+	if (!OutGate.bAllowSpawn && !OutGate.bAllowExit)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 입장도 퇴장도 허용하지 않는다"),
+			*OutGate.GateId.ToString());
+		return false;
+	}
+
+	if (OutGate.GateRadiusUU <= 0.f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — GateRadiusUU가 %.1f다"),
+			*OutGate.GateId.ToString(), OutGate.GateRadiusUU);
+		return false;
+	}
+
+	if (OutGate.bAllowSpawn && OutGate.GateWeight <= 0.f)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 입장 게이트인데 GateWeight가 %.3f다"),
+			*OutGate.GateId.ToString(), OutGate.GateWeight);
+		return false;
+	}
+
+	if (IsValid(OutGate.GateAnchor))
+	{
+		OutGate.GateLocation = OutGate.GateAnchor->GetActorLocation();
+	}
+
+	const double DistFromOriginSq = FVector::DistSquared2D(OutGate.GateLocation, SimOrigin);
+	if (DistFromOriginSq > static_cast<double>(SimRadiusUU) * SimRadiusUU)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 시뮬 영역(반경 %.0f) 밖이다. 중심에서 %.0f"),
+			*OutGate.GateId.ToString(), SimRadiusUU, FMath::Sqrt(DistFromOriginSq));
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+	const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
+
+	// 검증 안 함과 검증 실패는 다르다. Dynamic 생성이면 BeginPlay 시점에 NavMesh가 아직 없다.
+	if (!NavData)
+	{
+		++UnverifiedGateCount;
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' NavMesh 검증 생략 — NavigationData가 없다. ")
+			TEXT("NavMesh 생성이 Dynamic이면 BeginPlay 시점에 아직 안 올라와 있다"),
+			*OutGate.GateId.ToString());
+		return true;
+	}
+
+	FNavLocation Projected;
+	if (!NavSys->ProjectPointToNavigation(OutGate.GateLocation, Projected, GateProbeExtentCm))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — NavMesh 투영 실패. 좌표 %s"),
+			*OutGate.GateId.ToString(), *OutGate.GateLocation.ToCompactString());
+		return false;
+	}
+
+	const double DropCm = FMath::Abs(OutGate.GateLocation.Z - Projected.Location.Z);
+	if (DropCm > GateProjectionDropWarnCm)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 투영 낙차 %.0fcm — 공중이나 지형 아래에 놓였는지 확인할 것"),
+			*OutGate.GateId.ToString(), DropCm);
+	}
+
+	OutGate.GateLocation = Projected.Location;
+
+	// 원판 검사. 스폰은 중심이 아니라 원판에 흩어지고 멤버는 거기서 대형만큼 더 나간다.
+	if (OutGate.bAllowSpawn)
+	{
+		// 그룹 크기 상한. 대형 반경은 PartySpacingUU * sqrt(SlotIndex)이므로 마지막 슬롯이 가장 멀다.
+		constexpr int32 MaxExpectedPartySize = 6;
+		const double RimRadius = OutGate.GateRadiusUU
+			+ GetPartyFormationOffset(MaxExpectedPartySize - 1).Size2D();
+
+		int32 RimFailures = 0;
+		for (int32 Sample = 0; Sample < GateRimSampleCount; ++Sample)
+		{
+			const double Angle = 2.0 * PI * Sample / GateRimSampleCount;
+			const FVector RimPoint = OutGate.GateLocation
+				+ FVector(RimRadius * FMath::Cos(Angle), RimRadius * FMath::Sin(Angle), 0.0);
+
+			FNavLocation RimProjected;
+			if (!NavSys->ProjectPointToNavigation(RimPoint, RimProjected, GateProbeExtentCm))
+			{
+				++RimFailures;
+			}
+		}
+
+		if (RimFailures > 0)
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 둘레 %d/%d 방향이 NavMesh 밖이다 — ")
+				TEXT("이 문은 반쪽만 쓸 수 있다. 대형이 삐져나가면 파티 크기 상한을 검토할 것"),
+				*OutGate.GateId.ToString(), RimFailures, GateRimSampleCount);
+		}
+	}
+
+	// 도달성. 강 건너·펜스 밖에도 NavMesh는 깔려 있어 투영만으로는 끊긴 섬을 못 거른다.
+	// 부분 경로를 금지해야 "강가까지는 간다"가 성공 처리되지 않는다.
+	// 끝점에 NavMesh를 요구하지 않는 것은 SimOrigin이 지면에서 떠 있으면 전 게이트가 탈락해서다.
+	FPathFindingQuery Query(nullptr, *NavData, OutGate.GateLocation, SimOrigin);
+	Query.SetAllowPartialPaths(false);
+	Query.SetRequireNavigableEndLocation(false);
+
+	const FPathFindingResult Result = NavSys->FindPathSync(Query);
+	if (!Result.IsSuccessful() || !Result.Path.IsValid())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — 시뮬 중심까지 경로가 없다. ")
+			TEXT("NavMesh 위이지만 축제장과 끊긴 섬이다"),
+			*OutGate.GateId.ToString());
+		return false;
+	}
+
+	return true;
+}
+
+void UFF_CrowdSimulationSubsystem::RebuildSpawnGateCdf()
+{
+	SpawnGateIndices.Reset();
+	SpawnGateCdf.Reset();
+
+	float RunningSum = 0.f;
+	for (int32 GateIndex = 0; GateIndex < ValidGates.Num(); ++GateIndex)
+	{
+		const FFF_CrowdGate& Gate = ValidGates[GateIndex];
+		if (!Gate.bAllowSpawn)
+		{
+			continue;
+		}
+
+		RunningSum += Gate.GateWeight;
+		SpawnGateIndices.Add(GateIndex);
+		SpawnGateCdf.Add(RunningSum);
+	}
+
+	if (SpawnGateCdf.Num() == 0 || RunningSum <= MinGateWeightSum)
+	{
+		if (SpawnGateCdf.Num() > 0)
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[CrowdSimulationSubsystem] 입장 게이트 %d개의 가중치 총합이 %.6f다 — 정규화할 수 없다. 폴백으로 돌린다"),
+				SpawnGateCdf.Num(), RunningSum);
+		}
+		SpawnGateIndices.Reset();
+		SpawnGateCdf.Reset();
+		return;
+	}
+
+	// 마지막 원소로 정규화한다. 뽑을 때 나눗셈이 없다.
+	for (float& Cumulative : SpawnGateCdf)
+	{
+		Cumulative /= RunningSum;
+	}
+	SpawnGateCdf.Last() = 1.f;
+}
+
+void UFF_CrowdSimulationSubsystem::EnsureFallbackGate()
+{
+	if (SpawnGateIndices.Num() > 0)
+	{
+		bUsingFallbackGate = false;
+		return;
+	}
+
+	// 좌표만 갱신한다. 날마다 새로 붙이면 배열이 자라고 남아 있는 게이트 인덱스가 딴 문을 가리킨다.
+	int32 FallbackIndex = ValidGates.IndexOfByPredicate(
+		[](const FFF_CrowdGate& Gate) { return Gate.GateId == FallbackGateId; });
+
+	if (FallbackIndex == INDEX_NONE)
+	{
+		// 퇴장 전용 게이트가 살아 있을 수 있으므로 배열을 비우지 않고 뒤에 붙인다.
+		FFF_CrowdGate Fallback;
+		Fallback.GateId = FallbackGateId;
+		Fallback.bAllowSpawn = true;
+		Fallback.bAllowExit = true;
+		FallbackIndex = ValidGates.Add(Fallback);
+	}
+
+	FFF_CrowdGate& Fallback = ValidGates[FallbackIndex];
+	Fallback.GateLocation = ArrivalSpawnCenter;
+	Fallback.GateRadiusUU = FMath::Max(ArrivalSpawnRadiusUU, 1.f);
+	Fallback.GateWeight = 1.f;
+
+	RebuildSpawnGateCdf();
+	bUsingFallbackGate = true;
+}
+
+int32 UFF_CrowdSimulationSubsystem::PickSpawnGate(int32 InVisitorCursor) const
+{
+	static const FName EntryGateTraitKey(TEXT("entry_gate_choice"));
+	static const FName EntryGatePurpose(TEXT("Gate"));
+	
+	const uint32 Seed = FFF_DeterministicRandom::MakeTraitSeed(GlobalSimulationSeed,InVisitorCursor,EntryGateTraitKey,ArrivalGeneration,EntryGatePurpose);
+	const float Fraction = FFF_DeterministicRandom::MakeUniformFraction(Seed);
+	
+	const int32 Slot = Algo::UpperBound(SpawnGateCdf,Fraction);
+	return SpawnGateIndices[FMath::Min(Slot, SpawnGateIndices.Num()-1)];
+	
+}
+
+
+
+void UFF_CrowdSimulationSubsystem::GatherCrowdGates(const TArray<FFF_CrowdGate>& InGates)
+{
+	ValidGates.Reset();
+	RejectedGateCount = 0;
+	UnverifiedGateCount = 0;
+
+	TSet<FName> SeenGateIds;
+	SeenGateIds.Reserve(InGates.Num());
+
+	for (int32 AuthoredIndex = 0; AuthoredIndex < InGates.Num(); ++AuthoredIndex)
+	{
+		const FFF_CrowdGate& Authored = InGates[AuthoredIndex];
+
+		if (!Authored.GateId.IsNone() && SeenGateIds.Contains(Authored.GateId))
+		{
+			++RejectedGateCount;
+			UE_LOG(LogTemp, Error,
+				TEXT("[CrowdSimulationSubsystem] 게이트 '%s' 제외 — GateId가 중복이다. 두 문의 지표가 ")
+				TEXT("합쳐지면 한쪽이 죽어도 안 보인다"),
+				*Authored.GateId.ToString());
+			continue;
+		}
+
+		FFF_CrowdGate Validated;
+		if (!ValidateGate(Authored, AuthoredIndex, Validated))
+		{
+			++RejectedGateCount;
+			continue;
+		}
+
+		SeenGateIds.Add(Validated.GateId);
+		ValidGates.Add(Validated);
+	}
+
+	RebuildSpawnGateCdf();
+	bGatesGathered = true;
+
+	// 폴백 합성은 BeginArrivalSchedule 이 한다. ArrivalSpawnCenter 가 아직 안 채워져 있다.
+	UE_LOG(LogTemp, Log,
+		TEXT("[CrowdSimulationSubsystem] 게이트 등록: 저작 %d개 → 유효 %d개(입장 %d개), 제외 %d개, 미검증 %d개"),
+		InGates.Num(), ValidGates.Num(), SpawnGateIndices.Num(), RejectedGateCount, UnverifiedGateCount);
+
+	if (SpawnGateIndices.Num() == 0 && InGates.Num() > 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[CrowdSimulationSubsystem] 쓸 수 있는 입장 게이트가 하나도 없다 — 단일 앵커 폴백으로 돈다. ")
+			TEXT("위의 제외 사유를 확인할 것"));
+	}
 }
 
 void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount, FVector SpawnCenter,
@@ -282,13 +618,17 @@ void UFF_CrowdSimulationSubsystem::BeginArrivalSchedule(int32 TotalVisitorCount,
 	// 재사용하지 않는 것은 바로 아래에서 그 구조체를 덮기 때문이고, ActualVisitorCount 를
 	// 쓰지 않는 것은 그룹을 통째로만 만드느라 요청보다 작아서 날마다 인원이 깎이기 때문이다.
 	ArrivalRequestedVisitorCount = TotalVisitorCount;
+	++ArrivalGeneration;
 
 	CachedDistribution = BuildVisitorDistribution(TotalVisitorCount, ReservedParties);
 	VisitorCursor = 0;
 	ArrivalTotalVisitorCount = CachedDistribution.ActualVisitorCount;
+	// 게이트를 쓰더라도 이 두 값은 남긴다. 폴백 게이트의 원본이다.
 	ArrivalSpawnCenter = SpawnCenter;
 	ArrivalSpawnRadiusUU = SpawnRadiusUU;
 	bArrivalPoolExhaustedLogged = false;
+
+	EnsureFallbackGate();
 	
 	
 	if (CachedDistribution.Visitors.Num() == 0)
@@ -345,9 +685,13 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 		checkf(!LeadVisitor.bIsDependentChildSlot || !bEnablePartyGrouping,
 			TEXT("SpawnAgents: 그룹 선두가 아동 슬롯이다 — 빌더가 성인을 먼저 배출한다는 전제가 깨졌다. ")
 			TEXT("아동이 리더가 되면 목적지를 상속할 대상이 없다"));
+		
+		const int32 GateIndex = PickSpawnGate(VisitorCursor);
+		const FFF_CrowdGate& Gate = ValidGates[GateIndex];
+		
 		const float Angle = Rng.FRandRange(0.f, 2.f * PI);
-		const float Radius = ArrivalSpawnRadiusUU * FMath::Sqrt(Rng.FRand());
-		const FVector Anchor = ArrivalSpawnCenter + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
+		const float Radius = Gate.GateRadiusUU * FMath::Sqrt(Rng.FRand());
+		const FVector Anchor = Gate.GateLocation + FVector(Radius * FMath::Cos(Angle), Radius * FMath::Sin(Angle), 0.f);
 
 		const FRotator PartyRotation(0.f, Rng.FRandRange(0.f, 360.f), 0.f);
 
@@ -374,6 +718,10 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			FUnitData& Unit = UnitDatas[AgentIndex];
 			Unit.ArchetypeID = Visitor.ArchetypeId;
 			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
+			Unit.EntryGateIndex = GateIndex;
+			
+			ApplyAgentAppearance(AgentIndex);
+			
 			if (Unit.bIsDependentChild)
 			{
 				++ChildrenSpawned;
@@ -409,6 +757,17 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					Unit.PartyID,
 					0,
 					CachedCorrelationStrength);
+
+			// 값을 보관한다. 안 하면 아래에서 속도·체류시간에 녹아든 2종만 남고 나머지가 버려져,
+			// 변주를 8종 뽑아 놓고 화면에는 걷는 속도 차이만 나오는 상태가 된다.
+			if (AgentTraits.IsValidIndex(AgentIndex) && AgentPersonalThresholds.IsValidIndex(AgentIndex))
+			{
+				AgentTraits[AgentIndex] = Traits;
+				AgentPersonalThresholds[AgentIndex] =
+					FFF_IndividualVariationResolver::ResolvePersonalThresholds(
+						Traits, CachedCoefficientTable.Get());
+			}
+
 			const float MemberBoost = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedBoost,1.f);
 			const float MemberBoost2 = (Slot == 0) ? 1.f : FMath::Max(PartyMemberSpeedMultiplier,1.f);
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
@@ -423,7 +782,8 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 					FMath::Max(Temp_LiveStageMinutes * StayShare * Traits.StayDurationMultiplier, 0.f);
 			}
 
-
+			ApplyAgentAppearance(AgentIndex);
+			
 			++SpawnedCount;
 			++MembersSpawnedThisParty;
 		}
@@ -628,6 +988,50 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 					Unit.PartyID, DecisionStuckSteps);
 
 				RequestDecision(AgentIndex, EFF_DecisionReason::MoveFailed);
+			}
+			else if (bEnablePeriodicReevaluation
+				&& State.QueuePhase == EFF_PartyQueuePhase::None
+				&& State.ProgramPhase == EFF_PartyProgramPhase::None
+				&& !State.bNeedsDecision
+				&& AgentPersonalThresholds.IsValidIndex(AgentIndex))
+			{
+				// 개인 주기 재평가. reevaluate_interval_multiplier 의 결선 지점이다.
+				//
+				// ★ 큐·프로그램 구간을 뺀다. 줄에 선 파티를 주기로 끌어내면 인내심과 무관하게
+				//   전원이 같은 주기로 이탈하고, patience_multiplier 를 개인별로 뽑은 의미가
+				//   사라진다 — 줄에서의 이탈은 AdvancePartyQueueOnArrival 이 판정한다.
+				//
+				// ★ bNeedsDecision 을 확인한다. 이미 결정 대기 줄에 들어간 파티에 또 걸면
+				//   프레임 예산에 밀린 파티가 매 스텝 요청을 반복해 DecisionQueue 가 넘친다.
+				//
+				// ★ LastDecisionSimTime 을 기준으로 잰다. 목적지를 고른 시점이 재평가 주기의
+				//   시작이라, 결정이 늦게 처리된 파티는 그만큼 다음 재평가도 늦어진다.
+				//   0(아직 한 번도 결정 안 됨)이면 Spawned 요청이 처리되기 전이므로 건너뛴다.
+				const float SecondsSinceLastDecision = (State.LastDecisionSimTime > 0.f)
+					? FMath::Max(SimTimeSeconds - State.LastDecisionSimTime, 0.f)
+					: 0.f;
+
+				// 대기·밀집 항은 끈다 — 각각 큐 이탈과 조정자의 Relocate 경로가 맡는다.
+				const bool bReevaluate = (State.LastDecisionSimTime > 0.f)
+					&& FFF_UtilityDestinationSelector::ShouldReevaluate(
+						/*CurrentWaitMinutes=*/0.f, /*PersonalWaitThresholdMinutes=*/TNumericLimits<float>::Max(),
+						/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
+						SecondsSinceLastDecision,
+						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds,
+						/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
+
+				if (bReevaluate)
+				{
+					// 계수기만으로는 "주기가 짧아서 자주 걸리는가"와 "주기가 안 차는가"를 못 가른다.
+					// 개인 주기를 같이 찍어 두면 0회일 때 원인이 바로 보인다.
+					UE_LOG(LogFestaFiestaNpc, Verbose,
+						TEXT("[주기 재평가] 파티 %d가 %.1f초 만에 다시 고른다 (개인 주기 %.1f초)"),
+						UnitDatas[AgentIndex].PartyID, SecondsSinceLastDecision,
+						AgentPersonalThresholds[AgentIndex].ReevaluateIntervalSeconds);
+
+					++ReevaluateRequests;
+					RequestDecision(AgentIndex, EFF_DecisionReason::Reevaluated);
+				}
 			}
 		}
 		else
@@ -935,6 +1339,7 @@ void UFF_CrowdSimulationSubsystem::ApplyWalkableCeiling()
 void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 {
 	HeightField.Reset();
+	RoadSupportRevision = -1;
 
 	if (!bEnableHeightField)
 	{
@@ -1080,7 +1485,95 @@ void UFF_CrowdSimulationSubsystem::RebuildHeightField()
 
 bool UFF_CrowdSimulationSubsystem::TryGetGroundZ(const FVector& WorldLocation, double& OutZ) const
 {
-	return HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	bool bHasGround = HeightField.TryGetHeightCm(FVector2D(WorldLocation.X, WorldLocation.Y), OutZ);
+	if (!bEnableHeightField || WorldLocation.ContainsNaN()) return bHasGround;
+	EnsureRoadSupportCache();
+	const FIntPoint Bucket(FMath::FloorToInt(WorldLocation.X / RoadSupportBucketSizeCm),
+		FMath::FloorToInt(WorldLocation.Y / RoadSupportBucketSizeCm));
+	if (const TArray<int32>* Surfaces = RoadSupportBuckets.Find(Bucket))
+	{
+		for (const int32 Index : *Surfaces)
+		{
+			const FRoadSupportSurface& Surface = RoadSupportSurfaces[Index];
+			const FVector Local = Surface.Transform.InverseTransformPosition(WorldLocation);
+			if (FMath::Abs(Local.X) <= Surface.HalfExtentCm.X + UE_KINDA_SMALL_NUMBER &&
+				FMath::Abs(Local.Y) <= Surface.HalfExtentCm.Y + UE_KINDA_SMALL_NUMBER)
+			{
+				OutZ = bHasGround ? FMath::Max(OutZ, Surface.TopZ) : Surface.TopZ;
+				bHasGround = true;
+			}
+		}
+	}
+	return bHasGround;
+}
+
+void UFF_CrowdSimulationSubsystem::EnsureRoadSupportCache() const
+{
+	UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* System = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const int64 Revision = System ? System->GetWorldRevision() : -1;
+	if (RoadSupportSystem.Get() == System && RoadSupportRevision == Revision) return;
+	if (RoadSupportSystem.Get() != System)
+	{
+		UFF_CrowdSimulationSubsystem* MutableThis = const_cast<UFF_CrowdSimulationSubsystem*>(this);
+		if (UFFZSWorldSubsystem* Previous = RoadSupportSystem.Get())
+		{
+			Previous->OnWorldSnapshotRestored.RemoveDynamic(MutableThis,
+				&UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored);
+		}
+		if (System)
+		{
+			System->OnWorldSnapshotRestored.AddUniqueDynamic(MutableThis,
+				&UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored);
+		}
+	}
+	RoadSupportSystem = System;
+	RoadSupportRevision = Revision;
+	RoadSupportSurfaces.Reset();
+	RoadSupportBuckets.Reset();
+	if (!System) return;
+	const FFFZSReadModel ReadModel = System->BuildReadModel();
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.Category != EFFZSFacilityCategory::Road && Facility.Category != EFFZSFacilityCategory::Tile) continue;
+		const AFFZSFacilityActor* Actor = System->FindFacility(Facility.FacilityInstanceId);
+		if (!IsValid(Actor)) continue;
+		const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
+		FRoadSupportSurface Surface;
+		Surface.Transform = Actor->GetActorTransform();
+		Surface.HalfExtentCm = FVector2D(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y) * 0.5;
+		Surface.TopZ = Actor->GetActorLocation().Z + Spec.PlacementObstacleHeightCm;
+		FBox2D Bounds(ForceInit);
+		for (const double XSign : {-1.0, 1.0})
+		{
+			for (const double YSign : {-1.0, 1.0})
+			{
+				const FVector Corner = Surface.Transform.TransformPosition(FVector(
+					Surface.HalfExtentCm.X * XSign, Surface.HalfExtentCm.Y * YSign, 0.0));
+				Bounds += FVector2D(Corner.X, Corner.Y);
+			}
+		}
+		const int32 Index = RoadSupportSurfaces.Add(Surface);
+		const FIntPoint Min(FMath::FloorToInt(Bounds.Min.X / RoadSupportBucketSizeCm),
+			FMath::FloorToInt(Bounds.Min.Y / RoadSupportBucketSizeCm));
+		const FIntPoint Max(FMath::FloorToInt(Bounds.Max.X / RoadSupportBucketSizeCm),
+			FMath::FloorToInt(Bounds.Max.Y / RoadSupportBucketSizeCm));
+		for (int32 Y = Min.Y; Y <= Max.Y; ++Y)
+		{
+			for (int32 X = Min.X; X <= Max.X; ++X) RoadSupportBuckets.FindOrAdd(FIntPoint(X, Y)).Add(Index);
+		}
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::HandleRoadSupportSnapshotRestored()
+{
+	// Restore may reuse the same serialized revision with a different set of actors.
+	RoadSupportRevision = -1;
+	FacilityWallsRevision = -1;
+
+	// 순회 레인도 같은 리비전을 보고 캐시를 유지하므로 같이 무효화한다. 빠뜨리면 복원된
+	// 도로와 레인이 어긋난 채 남아 개체가 없어진 길 위의 목적지를 받는다.
+	RoadLaneRevision = -1;
 }
 
 void UFF_CrowdSimulationSubsystem::SnapUnitToGround(FUnitData& Unit) const
@@ -1124,6 +1617,7 @@ int32 UFF_CrowdSimulationSubsystem::AppendFacilityWalls()
 		}
 
 		const FFFZSFacilitySpec Spec = Actor->GetFacilitySpec();
+		if (Spec.IsGroundSurface()) continue;
 
 		float HalfXCm = static_cast<float>(Spec.FootprintSizeCells.X) * 0.5f;
 		float HalfYCm = static_cast<float>(Spec.FootprintSizeCells.Y) * 0.5f;
@@ -1240,6 +1734,18 @@ void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 		return;
 	}
 
+	const int32 Dropped = DropAllPaths();
+	++PathLayoutInvalidations;
+
+	UE_LOG(LogTemp, Log,
+		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
+		Revision, Dropped, PathQueriesPerStep);
+}
+
+// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
+// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다.
+int32 UFF_CrowdSimulationSubsystem::DropAllPaths()
+{
 	int32 Dropped = 0;
 	for (FFF_CrowdPathFollower& Follower : PathFollowers)
 	{
@@ -1250,14 +1756,215 @@ void UFF_CrowdSimulationSubsystem::InvalidatePathsOnLayoutChange()
 		}
 	}
 
-	// 커서를 되돌려 첫 파티부터 예산을 받게 한다. 그대로 두면 커서 앞쪽 파티가
-	// 한 바퀴 도는 동안 낡은 경로 없이 직선 조향으로 남는다
+	for (int32& LaneIndex : AgentLaneIndices)
+	{
+		LaneIndex = INDEX_NONE;
+	}
+
 	PathQueryCursor = 0;
-	++PathLayoutInvalidations;
+	return Dropped;
+}
+
+// 저작 액터에서 폴리라인을 다시 굽는다.
+//
+// AFF_CrowdLane은 아무 곳에도 자기를 등록하지 않으므로 BeginPlay 순서에 기대지 않고
+// TActorIterator로 직접 훑는다. 빈도가 낮은 연산이고(맵 로드 / 레인 변경 시 1회)
+// 스플라인을 매 경로 쿼리에서 들여다보는 것을 이걸로 막는다.
+//
+// 레벨에 레인이 하나도 없으면 Lanes가 비고, TryBuildPath가 항상 실패해 NavMesh로만
+// 돈다 — 레인을 도입하기 전과 동작이 같다.
+int32 UFF_CrowdSimulationSubsystem::RefreshLanesFromWorld()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return 0;
+	}
+
+	TArray<FFF_CrowdSplineLane> Collected;
+	int32 SkippedCount = 0;
+
+	for (TActorIterator<AFF_CrowdLane> It(World); It; ++It)
+	{
+		const AFF_CrowdLane* LaneActor = *It;
+		if (!IsValid(LaneActor))
+		{
+			continue;
+		}
+
+		TArray<FVector> PointsCm;
+		LaneActor->BuildPolylineCm(PointsCm);
+
+		if (PointsCm.Num() < 2)
+		{
+			++SkippedCount;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[CrowdSimulationSubsystem] 레인 %s: 점이 %d개라 건너뛴다 (스플라인 점 2개 이상 필요)"),
+				*LaneActor->GetActorNameOrLabel(), PointsCm.Num());
+			continue;
+		}
+
+		FFF_CrowdSplineLane Lane;
+		Lane.Points = MoveTemp(PointsCm);
+		Lane.HalfWidthCm = LaneActor->LaneHalfWidthCm;
+		Lane.bOneWay = LaneActor->bOneWay;
+		Lane.RebuildDerived();
+
+		if (!Lane.IsUsable())
+		{
+			++SkippedCount;
+			continue;
+		}
+
+		Collected.Add(MoveTemp(Lane));
+	}
+
+	const int32 LaneNum = Collected.Num();
+	SetLanes(MoveTemp(Collected));
+
+	// 도로 레인도 같은 호출에서 다시 굽는다. 콘솔에서 refresh를 쳤는데 한쪽만 갱신되면
+	// 어느 쪽이 낡았는지 알 수 없다.
+	RoadLaneRevision = -1;
+	const int32 RoadLaneNum = EnsureRoadLanes();
 
 	UE_LOG(LogTemp, Log,
-		TEXT("배치 변경으로 경로 폐기: 리비전 %lld, 경로 %d개 (예산 %d건/스텝으로 재계산)"),
-		Revision, Dropped, PathQueriesPerStep);
+		TEXT("[CrowdSimulationSubsystem] 레인 %d개 베이크 (저작 %d개 + 도로 %d개, 건너뜀 %d개), "
+		     "경로추종 %s, 레인경로 %s"),
+		Lanes.Num(), LaneNum, RoadLaneNum, SkippedCount,
+		bEnablePathFollowing ? TEXT("on") : TEXT("off"),
+		bEnableLanePathing ? TEXT("on") : TEXT("off"));
+
+	return Lanes.Num();
+}
+
+void UFF_CrowdSimulationSubsystem::SetLanes(TArray<FFF_CrowdSplineLane> NewLanes)
+{
+	AuthoredLanes = MoveTemp(NewLanes);
+	RebuildCombinedLanes();
+}
+
+// 저작 레인과 도로 레인을 한 배열로 잇는다. 쿼리는 Lanes만 보므로 출처가 섞여도
+// TryBuildPath는 총 거리로만 고른다 — 도로 레인에 우선권을 주지 않는 것이 의도다.
+//
+// 저작 레인을 앞에 두는 이유는 도로가 깔리고 걷혀도 저작 레인의 인덱스가 안 밀리게 하기
+// 위해서다. AgentLaneIndices와 디버그 표시가 인덱스를 그대로 쓴다.
+void UFF_CrowdSimulationSubsystem::RebuildCombinedLanes()
+{
+	Lanes.Reset(AuthoredLanes.Num() + RoadLanes.Num());
+	Lanes.Append(AuthoredLanes);
+	Lanes.Append(RoadLanes);
+
+	// 낡은 경로는 이전 레인 배치로 뽑힌 것이다. 목적지가 그대로여서 UpdatePathFollowing의
+	// Reset 조건에 걸리지 않으므로 여기서 버려야 한다 — 배치 변경 무효화와 같은 이유다
+	DropAllPaths();
+}
+
+// 도로 타일에서 순회 레인을 굽는다. 배치 리비전으로 걸러 실제 변경이 있을 때만 돈다 —
+// 매 스텝 호출되는 자리에서 불리므로 이 게이트가 없으면 그래프를 프레임마다 다시 만든다.
+int32 UFF_CrowdSimulationSubsystem::EnsureRoadLanes()
+{
+	const UWorld* World = GetWorld();
+	UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const int64 Revision = ZoneSystem ? ZoneSystem->GetWorldRevision() : -1;
+
+	if (!bEnableRoadLanes)
+	{
+		if (RoadLanes.IsEmpty())
+		{
+			return 0;
+		}
+
+		RoadLanes.Reset();
+		RoadLaneStats = FFF_CrowdRoadLaneBuildStats();
+		RoadLaneRevision = Revision;
+		RebuildCombinedLanes();
+		return 0;
+	}
+
+	if (Revision == RoadLaneRevision)
+	{
+		return RoadLanes.Num();
+	}
+
+	RoadLaneRevision = Revision;
+
+	TArray<FFF_CrowdRoadTile> Tiles;
+	if (ZoneSystem)
+	{
+		const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+		for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+		{
+			if (Facility.Category != EFFZSFacilityCategory::Road && Facility.Category != EFFZSFacilityCategory::Tile) continue;
+
+			const AFFZSFacilityActor* Actor = ZoneSystem->FindFacility(Facility.FacilityInstanceId);
+			if (!IsValid(Actor)) continue;
+
+			const FFFZSFacilitySpec& Spec = Actor->GetFacilitySpec();
+			FFF_CrowdRoadTile& Tile = Tiles.AddDefaulted_GetRef();
+			Tile.CenterCm = Actor->GetActorLocation();
+			Tile.HalfExtentCm = FVector2D(Spec.FootprintSizeCells.X, Spec.FootprintSizeCells.Y) * 0.5;
+			Tile.YawDegrees = static_cast<float>(Actor->GetActorRotation().Yaw);
+		}
+	}
+
+	FFF_CrowdRoadLaneBuildParams Params;
+	RoadLaneStats = CrowdRoadLanes::BuildLanes(Tiles, Params, RoadLanes);
+
+	if (RoadLaneStats.bTruncated)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[CrowdSimulationSubsystem] 도로 레인이 상한 %d개를 넘어 잘렸다. 잘린 쪽 도로는 "
+			     "순회에 안 쓰인다 — 도로 타일 %d개, 교차점 %d개"),
+			Params.MaxLanes, RoadLaneStats.TileCount, RoadLaneStats.JunctionCount);
+	}
+
+	RebuildCombinedLanes();
+	return RoadLanes.Num();
+}
+
+// 레인 경로의 Points[0]은 언제나 TryBuildPath가 낸 진입점이다 — 중간 정점은
+// 1cm 병합을 거쳐 그 뒤에 붙으므로 첫 원소가 밀려나지 않는다.
+bool UFF_CrowdSimulationSubsystem::GetLaneFollowInfo(int32 AgentIndex,
+	FFF_CrowdLaneFollowInfo& OutInfo) const
+{
+	OutInfo = FFF_CrowdLaneFollowInfo();
+
+	if (!UnitDatas.IsValidIndex(AgentIndex) || !PathFollowers.IsValidIndex(AgentIndex))
+	{
+		return false;
+	}
+
+	const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+	if (!Follower.bHasPath || Follower.Points.IsEmpty())
+	{
+		return false;
+	}
+
+	OutInfo.bHasPath = true;
+	OutInfo.LaneIndex = AgentLaneIndices.IsValidIndex(AgentIndex)
+		? AgentLaneIndices[AgentIndex]
+		: INDEX_NONE;
+	OutInfo.EntryPointCm = Follower.Points[0];
+	OutInfo.DistanceToEntryCm = static_cast<float>(
+		FVector::Dist2D(UnitDatas[AgentIndex].Position, Follower.Points[0]));
+	OutInfo.bApproachingEntry = (Follower.NextIndex == 0);
+	OutInfo.ConsumedCount = Follower.NextIndex;
+	OutInfo.TotalCount = Follower.Points.Num();
+
+	return true;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetUsableLaneCount() const
+{
+	int32 Count = 0;
+	for (const FFF_CrowdSplineLane& Lane : Lanes)
+	{
+		if (Lane.IsUsable())
+		{
+			++Count;
+		}
+	}
+	return Count;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetPathFollowingCount() const
@@ -1290,6 +1997,12 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 		PathFollowers.SetNum(PoolSize);
 	}
 
+	if (AgentLaneIndices.Num() != PoolSize)
+	{
+		AgentLaneIndices.Init(INDEX_NONE, PoolSize);
+	}
+
+	EnsureRoadLanes();
 	InvalidatePathsOnLayoutChange();
 
 	for (FUnitData& Unit : UnitDatas)
@@ -1377,6 +2090,56 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 	PathQueryBacklog = Backlog;
 }
 
+// 저작된 레인으로 경로를 낸다. 실패하면 호출부가 NavMesh로 떨어진다.
+//
+// TryBuildPath가 내는 점 목록은 [진입점, 중간 정점들, 이탈점, 목적지] 순서이고
+// 시작점을 포함하지 않는다 — FFF_CrowdPathFollower::Points의 규약과 그대로 맞는다.
+// 마지막 원소가 목적지 자체이므로 NavMesh 완전 경로와 도착 판정이 같다.
+//
+// 레인은 NavMesh와 달리 진입점까지의 직선을 검사하지 않는다. 그 구간의 건물 우회는
+// 사회력의 벽 반발이 맡고, 진입 반경(LaneEntrySnapRadiusCm)이 그 직선의 길이 상한이다.
+bool UFF_CrowdSimulationSubsystem::TryBuildLanePathForAgent(int32 AgentIndex)
+{
+	if (!bEnableLanePathing || Lanes.IsEmpty())
+	{
+		return false;
+	}
+
+	const FUnitData& Unit = UnitDatas[AgentIndex];
+	FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+
+	CrowdSplinePath::FQueryParams Params;
+	Params.EntrySnapRadiusCm = LaneEntrySnapRadiusCm;
+	Params.ExitSnapRadiusCm = LaneExitSnapRadiusCm;
+	Params.MaxDetourRatio = LaneMaxDetourRatio;
+
+	TArray<FVector> LanePoints;
+	int32 LaneIndex = INDEX_NONE;
+
+	if (!CrowdSplinePath::TryBuildPath(Lanes, Unit.Position, Unit.TargetLocation,
+		Params, LanePoints, LaneIndex))
+	{
+		++NavFallbackCount;
+		return false;
+	}
+
+	if (LanePoints.Num() < 1)
+	{
+		++NavFallbackCount;
+		return false;
+	}
+
+	Follower.Points = MoveTemp(LanePoints);
+	Follower.NextIndex = 0;
+	Follower.bHasPath = true;
+	Follower.bQueryFailed = false;
+
+	AgentLaneIndices[AgentIndex] = LaneIndex;
+	++LanePathCount;
+
+	return true;
+}
+
 bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 {
 	if (!UnitDatas.IsValidIndex(AgentIndex) || !PathFollowers.IsValidIndex(AgentIndex))
@@ -1389,6 +2152,18 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 
 	Follower.PlannedForTarget = Unit.TargetLocation;
 	++PathQueriesIssued;
+
+	if (AgentLaneIndices.Num() != UnitDatas.Num())
+	{
+		AgentLaneIndices.Init(INDEX_NONE, UnitDatas.Num());
+	}
+	AgentLaneIndices[AgentIndex] = INDEX_NONE;
+
+	// 레인이 먼저다. 실패는 정상 경로이며 그대로 NavMesh로 내려간다
+	if (TryBuildLanePathForAgent(AgentIndex))
+	{
+		return true;
+	}
 
 	UWorld* World = GetWorld();
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
@@ -1986,6 +2761,66 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		return false;
 	}
 
+	// 인내심 한계 이탈(reneging). patience_multiplier 의 결선 지점이다.
+	//
+	// ★ 판정은 AtSlot 에서만 한다. Joined(배정 슬롯으로 걸어가는 중)에 이탈시키면 걸어가다
+	//   포기하는 것이 되고, 그 구간에서 진척이 없는 경우는 MoveFailed 가 이미 맡고 있다.
+	//
+	// ★ 기준점은 QueueEnteredSimTime = **줄에 가입한 시각**이라, 슬롯까지 걸어간 시간이
+	//   대기 시간에 포함된다. 슬롯 도착 시각을 따로 들지 않은 것은 의도다 — 손님 입장에서
+	//   "이 시설에 매인 시간"은 가입 시점부터이고, 필드를 하나 더 늘릴 값어치가 없다.
+	//   순수 슬롯 대기만 재야 할 이유가 생기면 그때 타임스탬프를 추가할 것.
+	//
+	// ★ ClearPartyQueueState 를 bLeaveQueue=true 로 먼저 부른다. 이 순서가 중요하다 —
+	//   RequestDecision 이 내부에서 부르는 것은 bLeaveQueue=false 라 큐에 통지하지 않고,
+	//   그러면 Queue 는 이 파티를 계속 들고 있어 자리가 영영 안 비운다(헤더 주석의 그 문제).
+	//   먼저 지우고 나면 QueuePhase 가 None 이라 RequestDecision 쪽 호출은 무해해진다.
+	//
+	// ★ 재결정을 여기서 직접 걸고 true 를 돌려준다. false 를 돌려주면 호출부가 Arrived 로
+	//   요청하는데, 그 사유는 조정자가 직전 목적지를 감점하지 않아 같은 줄에 다시 선다.
+	//   Arrived 는 쿨다운도 타므로 이탈 직후 요청이 조용히 버려질 수 있다.
+	if (bEnableQueuePatienceAbandon
+		&& State.QueuePhase == EFF_PartyQueuePhase::AtSlot
+		&& AgentPersonalThresholds.IsValidIndex(LeaderAgentIndex))
+	{
+		const float WaitedMinutes = FMath::Max(SimTimeSeconds - State.QueueEnteredSimTime, 0.f)
+			* Temp_FestivalMinutesPerRealSecond;
+
+		// 대기 항만 켜서 부른다. 밀집은 조정자의 Relocate 경로가 이미 판정하고 있고,
+		// 개장·라이브 변화는 DestinationOpened 가 밖에서 밀어 넣는다 — 여기서 또 보면
+		// 같은 사건에 두 경로가 반응한다.
+		//
+		// ★ 끄는 항은 조건이 **성립할 수 없는 값**을 넣는다. 부등호 방향을 확인할 것 —
+		//   밀집은 `>` 라 (0, 1) 로 꺼지지만, 주기는 `>=` 라 (0, 0) 을 넣으면 0 >= 0 이
+		//   참이 되어 매번 발화한다. 2026-09-08 실측에서 실제로 그 버그가 났고, 인내심과
+		//   무관하게 슬롯 도착 즉시 전원이 이탈했다(`0.1분 기다리다 떠난다`).
+		//   주기를 끌 때는 Max 를 넣어야 한다.
+		const bool bAbandon = FFF_UtilityDestinationSelector::ShouldReevaluate(
+			WaitedMinutes, AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes,
+			/*CurrentDensityRatio=*/0.f, /*PersonalDensityThresholdRatio=*/1.f,
+			/*SecondsSinceLastEvaluation=*/0.f,
+			/*PersonalReevaluateIntervalSeconds=*/TNumericLimits<float>::Max(),
+			/*bDestinationOpenStateChanged=*/false, /*bLiveEventStateChanged=*/false);
+
+		if (bAbandon)
+		{
+			// LogFestaFiestaNpc 에 붙인다 — 개체 변주 진단은 `Log LogFestaFiestaNpc Verbose` 하나로
+			// 다 켜져야 한다. LogTemp 에 두면 [개체]·항별 덤프를 켜도 이 줄만 빠져서,
+			// 계수기는 31회인데 로그는 0줄인 상태가 된다(2026-09-08 실측에서 실제로 겪었다).
+			UE_LOG(LogFestaFiestaNpc, Verbose,
+				TEXT("[줄 이탈] 파티 %d가 %.1f분 기다리다 떠난다 (개인 한계 %.1f분)"),
+				Leader.PartyID, WaitedMinutes,
+				AgentPersonalThresholds[LeaderAgentIndex].WaitThresholdMinutes);
+
+			++QueuePatienceAbandons;
+
+			// 큐에 먼저 통지하고(위 주석) 그 다음 재결정을 건다. 이 순서를 바꾸면 안 된다.
+			ClearPartyQueueState(LeaderAgentIndex, true);
+			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::QueuePatienceExpired);
+			return true;
+		}
+	}
+
 	switch (State.QueuePhase)
 	{
 	case EFF_PartyQueuePhase::None:
@@ -2090,6 +2925,7 @@ void UFF_CrowdSimulationSubsystem::ResetQueueStats()
 	QueueArrivalNotifies = 0;
 	QueueHoldTimeouts = 0;
 	QueueStalledSkips = 0;
+	QueuePatienceAbandons = 0;
 }
 
 // 조정자가 목적지를 못 정했을 때의 국소 배회. **살아 있는 유일한 랜덤 목적지 생성기다.**
@@ -2131,6 +2967,20 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 		return (Attempt == 0) ? BaseSeed : HashCombine(BaseSeed, GetTypeHash(Attempt));
 	};
 
+	// 도로 위(또는 도로 곁)의 개체는 원판 대신 레인을 따라 멀리 보낸다. 실패하면 아래 원판으로
+	// 떨어지므로 도로를 한 칸도 안 깐 맵의 동작은 그대로다.
+	if (bEnableRoadPatrolWander)
+	{
+		FVector PatrolDestination = FVector::ZeroVector;
+		if (TryPickPatrolDestination(LeaderAgentIndex, SeedAngle, PatrolDestination))
+		{
+			++PatrolWanderCount;
+			return PatrolDestination;
+		}
+	}
+
+	++DiscWanderCount;
+
 	for (int32 Attempt = 0; Attempt < MaxAttempts; ++Attempt)
 	{
 		const float Angle =
@@ -2154,6 +3004,193 @@ FVector UFF_CrowdSimulationSubsystem::PickWanderDestination(int32 LeaderAgentInd
 	}
 
 	return Unit.Position;
+}
+
+// 레인 위의 먼 지점을 배회 목적지로 고른다.
+//
+// ★ 후보는 "가까운 레인 x 두 방향"이다. 열린 레인은 양 끝이, 닫힌 레인은 앞뒤로 한 걸음이
+//   후보가 된다. 교차로에 선 개체는 이어진 세그먼트가 전부 반경 안에 들어오므로 후보가
+//   여러 개가 되고, 그중 하나를 뽑는 것이 곧 갈림길 선택이다. 막다른 길에서는 되돌아가는
+//   방향만 남는다.
+//
+// ★ 끝까지 보내는 것이 핵심이다. 중간에 세워 두면 다음 추첨도 같은 세그먼트 안에서 일어나
+//   교차로에 영영 못 닿고, 확산이 다시 원판 배회 수준으로 떨어진다.
+//
+// ★ 시드는 PickWanderDestination이 쓰는 것에서 갈라 쓴다. MakeDecisionSeed의 salt 공간은
+//   라운드당 두 칸으로 이미 꽉 차 있어 새 salt를 쓰면 다음 라운드 시드와 겹친다.
+//
+// ★ 후보를 못 내거나 전부 통행 상한·비보행 지점이면 false를 돌려 원판 배회로 떨어진다.
+//   도로를 한 칸도 안 깐 맵에서는 항상 이 경로를 탄다.
+bool UFF_CrowdSimulationSubsystem::TryPickPatrolDestination(const int32 LeaderAgentIndex,
+	const uint32 BaseSeed, FVector& OutDestination) const
+{
+	if (Lanes.IsEmpty() || !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+
+	const FUnitData& Unit = UnitDatas[LeaderAgentIndex];
+
+	struct FPatrolCandidate
+	{
+		int32 LaneIndex = INDEX_NONE;
+		float TargetArcCm = 0.f;
+	};
+
+	TArray<FPatrolCandidate, TInlineAllocator<8>> Candidates;
+
+	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
+	{
+		const FFF_CrowdSplineLane& Lane = Lanes[LaneIndex];
+		if (!Lane.IsUsable())
+		{
+			continue;
+		}
+
+		FVector ClosestCm = FVector::ZeroVector;
+		float ArcCm = 0.f;
+		float DistCm = 0.f;
+		if (!CrowdSplinePath::FindClosestOnLane(Lane, Unit.Position, ClosestCm, ArcCm, DistCm)
+			|| DistCm > PatrolLaneSnapRadiusCm)
+		{
+			continue;
+		}
+
+		if (Lane.bClosedLoop)
+		{
+			Candidates.Add({ LaneIndex, ArcCm + PatrolLoopStepCm });
+			Candidates.Add({ LaneIndex, ArcCm - PatrolLoopStepCm });
+			continue;
+		}
+
+		const float TotalCm = Lane.TotalLengthCm();
+		if (TotalCm - ArcCm >= PatrolMinTravelCm)
+		{
+			Candidates.Add({ LaneIndex, TotalCm });
+		}
+		if (ArcCm >= PatrolMinTravelCm)
+		{
+			Candidates.Add({ LaneIndex, 0.f });
+		}
+	}
+
+	if (Candidates.IsEmpty())
+	{
+		return false;
+	}
+
+	constexpr uint32 PatrolSeedSalt = 0x9E3779B9u;
+	const uint32 PatrolSeed = HashCombine(BaseSeed, PatrolSeedSalt);
+	const int32 FirstPick = FMath::Clamp(
+		FMath::FloorToInt(FFF_DeterministicRandom::MakeUniformFraction(PatrolSeed) * Candidates.Num()),
+		0, Candidates.Num() - 1);
+
+	for (int32 Offset = 0; Offset < Candidates.Num(); ++Offset)
+	{
+		const FPatrolCandidate& Candidate = Candidates[(FirstPick + Offset) % Candidates.Num()];
+
+		FVector Destination = FVector::ZeroVector;
+		if (!CrowdSplinePath::PointAtArc(Lanes[Candidate.LaneIndex], Candidate.TargetArcCm, Destination))
+		{
+			continue;
+		}
+
+		if (FVector::Dist2D(Destination, Unit.Position) < PatrolMinTravelCm)
+		{
+			continue;
+		}
+
+		const FVector FromOrigin(Destination.X - SimOrigin.X, Destination.Y - SimOrigin.Y, 0.f);
+		if (FromOrigin.SizeSquared() > FMath::Square(SimRadiusUU))
+		{
+			continue;
+		}
+
+		if (!HeightField.IsWalkable(FVector2D(Destination.X, Destination.Y)))
+		{
+			continue;
+		}
+
+		Destination.Z = Unit.Position.Z;
+		OutDestination = Destination;
+		return true;
+	}
+
+	return false;
+}
+
+// 개체가 실제로 퍼졌는지 재는 두 값.
+//
+// 표준편차는 중심에서 얼마나 멀리 흩어졌는지만 본다. 개체가 축제장 양 끝 두 덩어리로
+// 뭉쳐 있어도 크게 나오므로 이것만 보면 속는다. 엔트로피(Pielou 균등도)는 점유한 칸들에
+// 인원이 고르게 퍼졌는지를 0..1로 내므로, 두 값을 같이 봐야 판정이 선다.
+bool UFF_CrowdSimulationSubsystem::GetSpreadStats(FVector& OutCentroidCm, float& OutStdDevCm,
+	float& OutNormalizedEntropy, int32& OutSampleCount, int32& OutOccupiedBuckets) const
+{
+	OutCentroidCm = FVector::ZeroVector;
+	OutStdDevCm = 0.f;
+	OutNormalizedEntropy = 0.f;
+	OutSampleCount = 0;
+	OutOccupiedBuckets = 0;
+
+	const float BucketSizeCm = FMath::Max(SpreadBucketSizeCm, 1.f);
+
+	double SumX = 0.0;
+	double SumY = 0.0;
+	TMap<FIntPoint, int32> Buckets;
+
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+
+		SumX += Unit.Position.X;
+		SumY += Unit.Position.Y;
+		++OutSampleCount;
+
+		const FIntPoint Key(
+			FMath::FloorToInt(Unit.Position.X / BucketSizeCm),
+			FMath::FloorToInt(Unit.Position.Y / BucketSizeCm));
+		++Buckets.FindOrAdd(Key);
+	}
+
+	if (OutSampleCount == 0)
+	{
+		return false;
+	}
+
+	OutCentroidCm = FVector(SumX / OutSampleCount, SumY / OutSampleCount, 0.0);
+
+	double SumSquaredCm = 0.0;
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (!Unit.bIsActive)
+		{
+			continue;
+		}
+
+		SumSquaredCm += FVector::DistSquared2D(Unit.Position, OutCentroidCm);
+	}
+
+	OutStdDevCm = static_cast<float>(FMath::Sqrt(SumSquaredCm / OutSampleCount));
+	OutOccupiedBuckets = Buckets.Num();
+
+	if (Buckets.Num() <= 1)
+	{
+		return true;
+	}
+
+	double Entropy = 0.0;
+	for (const TPair<FIntPoint, int32>& Bucket : Buckets)
+	{
+		const double Probability = static_cast<double>(Bucket.Value) / OutSampleCount;
+		Entropy -= Probability * FMath::Loge(Probability);
+	}
+
+	OutNormalizedEntropy = static_cast<float>(Entropy / FMath::Loge(static_cast<double>(Buckets.Num())));
+	return true;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetMaxInTransitMemberCount() const
@@ -2207,7 +3244,7 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
-	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
+	if (CurrentStage == EFF_FestivalStage::Closing)
 	{
 		AllAgentLeavingTrigger();
 	}
@@ -2218,7 +3255,7 @@ void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage Previous
 			GatherReservedPartyRequests());
 		
 	}
-	else if (PreviousStage == EFF_FestivalStage::Closing)
+	else if (CurrentStage == EFF_FestivalStage::Report)
 	{
 		DespawnAllAgent();
 	}
@@ -2287,6 +3324,20 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 			Context.VisitHistory = PartyVisitHistories[LeaderIndex];
 		}
 		Context.RemainingStayMinutes = GetPartyRemainingStayMinutes(LeaderIndex);
+
+		// 리더의 개체 변주를 실어 보낸다. 파티 단위 결정이므로 리더 값만 넘어간다 —
+		// 멤버 값을 섞으면 "누구 취향으로 고른 목적지인가"가 불명확해지고, 리더 상속 모델
+		// (FFF_Party 주석)에서 결정을 내리는 것은 리더 한 명이다.
+		if (AgentTraits.IsValidIndex(LeaderIndex))
+		{
+			Context.NoveltySeekingMultiplier = AgentTraits[LeaderIndex].NoveltySeekingMultiplier;
+			Context.PreferenceStrengthMultiplier = AgentTraits[LeaderIndex].PreferenceStrengthMultiplier;
+		}
+		if (AgentPersonalThresholds.IsValidIndex(LeaderIndex))
+		{
+			Context.PersonalDensityThresholdRatio =
+				AgentPersonalThresholds[LeaderIndex].DensityThresholdRatio;
+		}
 		if (UWorld* World = GetWorld())
 		{
 			if (UGameInstance* GameInstance = World->GetGameInstance())
@@ -2738,6 +3789,7 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 	// GameInstance 스코프라 캐시하지 않는다 — 이 서브시스템(World)보다 오래 산다.
 	// 집계하는 스텝에만 조회하므로 매 프레임 비용이 아니다.
 	UFF_NpcNeedMetricsSubsystem* NeedMetrics = nullptr;
+	UFF_SatisfactionMetricsSubsystem* Satisfaction = nullptr;
 	if (bAggregateMetrics)
 	{
 		if (const UWorld* World = GetWorld())
@@ -2745,6 +3797,7 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 			if (UGameInstance* GameInstance = World->GetGameInstance())
 			{
 				NeedMetrics = GameInstance->GetSubsystem<UFF_NpcNeedMetricsSubsystem>();
+				Satisfaction = GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>();
 			}
 		}
 	}
@@ -2752,6 +3805,10 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 	if (NeedMetrics)
 	{
 		NeedMetrics->BeginAggregation();
+	}
+	if (Satisfaction)
+	{
+		Satisfaction->BeginAggregation();
 	}
 	for (FFF_NeedState& Aggregated : PartyAggregatedNeeds)
 	{
@@ -2790,6 +3847,87 @@ void UFF_CrowdSimulationSubsystem::AdvanceNeeds(bool bAggregateMetrics)
 	if (NeedMetrics)
 	{
 		NeedMetrics->CommitAggregation();
+	}
+
+	// 만족도의 대기·밀도 입력. 취향매칭 입력은 FF_CrowdDecisionSubsystem이 결정 확정
+	// 시점마다 이미 넣어 뒀다 — 여기서는 이번 창의 대기·밀도만 채우고 셋을 함께 확정한다.
+	if (Satisfaction)
+	{
+		const FFF_SatisfactionCoefficients Coefficients =
+			FFF_SatisfactionCoefficients::LoadFromTable(CachedCoefficientTable);
+
+		// 대기: Zone 시설 전수의 평균 완료 대기시간(초). 완료자가 없는 시설(0.0)은 뺀다 —
+		// "아직 모름"과 "대기 없음"을 섞지 않는다(ViewModel::GetLiveFacilities와 같은 판단).
+		if (const UWorld* World = GetWorld())
+		{
+			if (const UFFZSWorldSubsystem* Zone = World->GetSubsystem<UFFZSWorldSubsystem>())
+			{
+				const FFFZSReadModel ReadModel = Zone->BuildReadModel();
+				for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+				{
+					if (Facility.State == EFFZSFacilityState::Removed)
+					{
+						continue;
+					}
+					if (Facility.AverageCompletedWaitSeconds > 0.f)
+					{
+						Satisfaction->AddWaitSample(Facility.AverageCompletedWaitSeconds);
+					}
+				}
+			}
+		}
+
+		// 밀도: 점유 셀마다 LOS 등급 점수를 매겨 그 셀의 인원 수로 가중한다 — "사람이 몇 명이나
+		// 어떤 등급에 서 있는가"를 반영하기 위해서다. 새 순회가 아니라 이번 스텝에 이미
+		// 갱신된 CrowdReadModel(SnapshotIntervalSteps)을 그대로 읽는다.
+		for (const FFF_CrowdCellSample& Cell : CrowdReadModel.OccupiedCells)
+		{
+			if (Cell.Occupancy <= 0)
+			{
+				continue;
+			}
+			const ECrowdLOS Grade = FCrowdDensityGrid::DensityToLOS(Cell.DensityPerSqm);
+			const float GradeScore = Coefficients.ScoreForLOSGrade(static_cast<uint8>(Grade));
+			Satisfaction->AddDensitySample(GradeScore, Cell.Occupancy);
+		}
+
+		// 큐 가입 성공률
+		// 이번 창(델타)의 수락/거절/인내이탈 비율을 대기 점수에 곱한다. 
+		// 누적 카운터의 이번 창 델타만 쓴다 — 매 창마다 스냅샷을 남겨 두고 다음 창에서 뺀다.
+		{
+			const int32 AcceptedThisWindow = QueueJoinAccepted - LastWindowQueueJoinAccepted;
+			const int32 RejectedThisWindow = QueueJoinRejected - LastWindowQueueJoinRejected;
+			const int32 AbandonedThisWindow = QueuePatienceAbandons - LastWindowQueuePatienceAbandons;
+			LastWindowQueueJoinAccepted = QueueJoinAccepted;
+			LastWindowQueueJoinRejected = QueueJoinRejected;
+			LastWindowQueuePatienceAbandons = QueuePatienceAbandons;
+
+			const int32 TotalAttemptsThisWindow = AcceptedThisWindow + RejectedThisWindow + AbandonedThisWindow;
+			if (TotalAttemptsThisWindow > 0)
+			{
+				Satisfaction->SetQueueSuccessRate(
+					static_cast<float>(AcceptedThisWindow) / TotalAttemptsThisWindow);
+			}
+		}
+
+		// Need 충족도
+		// 지금 켜져 있는 성분(Hunger·Restroom·Stimulation)만 평균한다. 
+		// Thirst·Fatigue는 Phase 게이트로 상승 계수가 0이라 넣으면 항상 100% 충족으로 왜곡된다
+		// NeedMetrics 표본이 0이면(아직 아무도 안 들어왔거나 집계가 안 돌았으면) 넣지 않는다 —
+		// "미해소 0%"가 진짜 0%인지 데이터 없음인지 구분해야 한다.
+		if (NeedMetrics && NeedMetrics->GetSampleCount() > 0)
+		{
+			static const EFF_NeedType ActiveNeedTypes[] =
+			{
+				EFF_NeedType::Hunger, EFF_NeedType::Restroom, EFF_NeedType::Stimulation
+			};
+			for (const EFF_NeedType NeedType : ActiveNeedTypes)
+			{
+				Satisfaction->AddNeedFulfillmentSample(100.f - NeedMetrics->GetNeedUnmetRatio(NeedType));
+			}
+		}
+
+		Satisfaction->CommitAggregation(Coefficients);
 	}
 
 	if (ElapsedMinutes > 0.f)
@@ -2953,6 +4091,12 @@ void UFF_CrowdSimulationSubsystem::InitializeCrowdAgentPool(UWorld& InWorld, FVe
 	PartyMemberCounts.SetNumZeroed(UnitDatas.Num());
 	PartyRemainingStayMinutes.Reset();
 	PartyRemainingStayMinutes.SetNumZeroed(UnitDatas.Num());
+	// SetNumZeroed 를 쓰지 않는다 — 두 구조체의 기본값은 0 이 아니라 "변주 없음"(1.0)이고,
+	// 0 으로 채우면 Resolve 가 아직 안 걸린 슬롯이 "속도 0배·임계 0"으로 동작한다.
+	AgentTraits.Reset();
+	AgentTraits.SetNum(UnitDatas.Num());
+	AgentPersonalThresholds.Reset();
+	AgentPersonalThresholds.SetNum(UnitDatas.Num());
 	PathFollowers.Reset();
 	PathFollowers.SetNum(UnitDatas.Num());
 	PathQueryCursor = 0;
@@ -3002,14 +4146,41 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 				const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
 				constexpr float PathDrawZ = 10.f;
 
+				// 경로를 낸 쪽을 색으로 가른다. 레인과 NavMesh가 같은 색이면 "레인이 먹었는지"를
+				// 그림만 보고 판정할 수 없다
+				const int32 LaneIndex = AgentLaneIndices.IsValidIndex(AgentIndex)
+					? AgentLaneIndices[AgentIndex]
+					: INDEX_NONE;
+				const bool bOnLane = (LaneIndex != INDEX_NONE);
+
+				const FColor PathColor = bOnLane ? FColor(0, 255, 255) : FColor(120, 200, 255);
+
 				FVector Previous = Unit.Position;
 				for (int32 PointIndex = Follower.NextIndex; PointIndex < Follower.Points.Num(); ++PointIndex)
 				{
 					const FVector Point = Follower.Points[PointIndex] + FVector(0, 0, PathDrawZ);
 					DrawDebugLine(World, Previous + FVector(0, 0, PathDrawZ), Point,
-						FColor(120, 200, 255), false, -1.f, 0, 2.f);
+						PathColor, false, -1.f, 0, 2.f);
 					DrawDebugPoint(World, Point, 8.f, FColor(255, 255, 120), false, -1.f, 0);
 					Previous = Follower.Points[PointIndex];
+				}
+
+				// 진입점 = 레인에 올라타는 자리. 아직 소비하지 않았으면 개체에서 그 자리까지가
+				// 레인 밖 직선 구간이므로 굵게 따로 긋는다
+				if (bOnLane)
+				{
+					const FVector Entry = Follower.Points[0];
+
+					DrawDebugLine(World, Entry, Entry + FVector(0, 0, 250.f),
+						FColor(255, 0, 255), false, -1.f, 0, 3.f);
+					DrawDebugSphere(World, Entry + FVector(0, 0, PathDrawZ), 35.f, 8,
+						FColor(255, 0, 255), false, -1.f, 0, 2.f);
+
+					if (Follower.NextIndex == 0)
+					{
+						DrawDebugLine(World, Unit.Position + FVector(0, 0, PathDrawZ),
+							Entry + FVector(0, 0, PathDrawZ), FColor(255, 0, 255), false, -1.f, 0, 4.f);
+					}
 				}
 			}
 		}
@@ -3085,14 +4256,30 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		int PartyIndex = Party.Key;
 		int LeaderIndex = Party.Value;
 		
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !PartyDecisionStates.IsValidIndex(LeaderIndex))
+		{
+			continue;
+		}
+
 		FUnitData& Unit = UnitDatas[LeaderIndex];
 		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
-		
+
 		if (State.bIsLeaving) continue;
-		
+
+		// 게이트가 없거나 EntryGateIndex 가 안 잡힌 개체는 기존 단일 출구로 보낸다.
+		//
+		// ★ 임시 크래시 가드 추가
+		//	 EntryGateIndex 기본값이 INDEX_NONE 이고 대입 지점이
+		//   SpawnAgents 하나뿐이라, 콘솔 FF.Crowd.Spawn 이나 테스트의 직접 스폰으로 만든
+		//   개체는 -1 로 남는다. 그대로 ValidGates[-1] 을 읽어 Crowd.Reservation.Lifecycle 이
+		//   죽고 자동화 런 전체가 중단됐다.
+		const FVector ExitLocation = ValidGates.IsValidIndex(Unit.EntryGateIndex)
+			? ValidGates[Unit.EntryGateIndex].GateLocation
+			: Temp_ExitWorldLocation;
+
 		State.bIsLeaving = true;
 		State.LeaveStartedSimTime = SimTimeSeconds;
-		Unit.TargetLocation = Temp_ExitWorldLocation;
+		Unit.TargetLocation = ExitLocation;
 		State.ProgramPhase = EFF_PartyProgramPhase::None;
 		State.ProgramFacilityId.Invalidate();
 		State.CurrentDestinationId = NAME_None;
@@ -3100,10 +4287,52 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		State.LastDecisionSimTime = SimTimeSeconds;
 		State.CurrentNeedRelief = FFF_NeedReliefFlags();
 		ClearPartyQueueState(LeaderIndex, true);
-		UnitDatas[LeaderIndex].TargetLocation = Temp_ExitWorldLocation;
 		
 		
 		
 	}
+	
+}
+
+void UFF_CrowdSimulationSubsystem::ApplyAgentAppearance(int32 AgentIndex)
+{
+	
+	if (!UnitDatas.IsValidIndex(AgentIndex))
+	{
+		return;
+	}
+	
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot)) {return;}
+	
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	if (!IsValid(Actor)) { return; }
+	
+	FUnitData& Unit = UnitDatas[AgentIndex];
+	
+	const FName RowKey = Unit.bIsDependentChild ? FName(TEXT("child")) : (Unit.ArchetypeID.IsNone() ? FName(TEXT("default")) : Unit.ArchetypeID);
+	
+	
+
+	const UDataTable* AppearenceTable = CachedAppearenceTable.Get();
+	if (AppearenceTable == nullptr)
+	{
+		Actor->ApplyAppearance(nullptr,nullptr ,0.f, 1.f);
+		return;
+	}
+
+	const FFF_CrowdAppearenceRow* Row = AppearenceTable->FindRow<FFF_CrowdAppearenceRow>(RowKey,TEXT("UFF_CrowdSimulationSubsystem::ApplyAgentAppearance"),false );
+
+	if (Row == nullptr)
+	{
+		Actor->ApplyAppearance(nullptr, nullptr,0.f,1.f);
+		return;
+	}
+	
+	Actor->ApplyAppearance(Row->Mesh.LoadSynchronous(), Row->AnimClass.LoadSynchronous(), Row->MeshYawOffset, Row->MeshUniformScale);
+	
+	
+	
+	
 	
 }

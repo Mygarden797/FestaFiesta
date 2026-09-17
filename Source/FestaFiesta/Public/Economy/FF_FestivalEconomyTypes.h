@@ -223,6 +223,7 @@ struct FFF_PromotionTier
 };
 
 // 지출 원인
+
 // [주의] 저장 슬롯에 들어갈 값이다 — 새 원인은 뒤에만 추가한다.
 UENUM(BlueprintType)
 enum class EFF_SpendReason : uint8
@@ -235,7 +236,8 @@ enum class EFF_SpendReason : uint8
 	StaffHire       = 5		UMETA(DisplayName = "추가 고용"),
 	EventSupplies   = 6		UMETA(DisplayName = "Event 소모품"),
 	Cleanup         = 7		UMETA(DisplayName = "뒷정리"),
-	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽")
+	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽"),
+	FacilityUpgrade = 9		UMETA(DisplayName = "시설 강화비")
 };
 
 // 매출 원인
@@ -281,4 +283,28 @@ struct FFF_FacilityRevenueRow
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	int32 Amount = 0;
+};
+
+// 설치 시설 한 곳(Zone 인스턴스 GUID)이 벌어들인 매출. 시설 정보 패널용 읽기 모델이다.
+// 부스별 표(FFF_FacilityRevenueRow)가 종류별 합계인 것과 달리 "1번 음식 부스 vs 2번 음식 부스"를 구분한다.
+// UFF_FestivalProgressionSubsystem::GetFacilityInstanceRevenue 가 돌려준다.
+USTRUCT(BlueprintType)
+struct FFF_FacilityInstanceRevenue
+{
+	GENERATED_BODY()
+
+	// 오늘 매출(Gold). 하루 경계에서 0 으로 돌아간다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 TodayGold = 0;
+
+	// 축제 누적 매출(Gold). 줄어들지 않고 새 축제에서만 0 이 된다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 TotalGold = 0;
+
+	// 오늘 결제 건수. 부스 수수료는 파티 1회 이용이, 프로그램 체험비는 프로그램 1회가 한 건이다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 TodayPaymentCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 TotalPaymentCount = 0;
 };

@@ -39,6 +39,48 @@ void UFF_CommonButtonBase::ApplyIconBrush()
 	Image_Icon->SetBrush(IconBrush);
 }
 
+#if WITH_EDITOR
+void UFF_CommonButtonBase::ApplyGeneratedButtonDefaults(
+	TSubclassOf<UCommonButtonStyle> InStyle,
+	const FLinearColor& InNormalContentColor,
+	const FLinearColor& InHighlightedContentColor,
+	const FLinearColor& InDisabledContentColor,
+	const bool bInTintLabel,
+	const bool bInFocusOnHover,
+	const bool bInShowChevronOnlyWhenHighlighted)
+{
+	// 스타일이 비어 있으면 기존 값을 지우지 않는다. 생성기가 CBS_ 로드에 실패했을 때
+	// 멀쩡한 버튼의 배경을 없애 버리는 것이 가장 나쁜 결과다.
+	if (InStyle)
+	{
+		Style = InStyle;
+	}
+
+	NormalContentColor = InNormalContentColor;
+	HighlightedContentColor = InHighlightedContentColor;
+	DisabledContentColor = InDisabledContentColor;
+	bTintLabel = bInTintLabel;
+	bFocusOnHover = bInFocusOnHover;
+	bShowChevronOnlyWhenHighlighted = bInShowChevronOnlyWhenHighlighted;
+}
+
+void UFF_CommonButtonBase::ApplyGeneratedButtonContent(
+	const FText& InLabel,
+	const FSlateBrush& InIconBrush,
+	const FVector2D& InButtonSizeOverride)
+{
+	ButtonLabel = InLabel;
+	ButtonSizeOverride = InButtonSizeOverride;
+
+	// 리소스가 없는 브러시를 넣으면 `ApplyIconBrush` 가 "지정 안 함" 으로 읽어 WBP 기본값을 쓴다.
+	// 여기서 걸러 두면 생성기가 텍스처를 못 찾았을 때 의도가 분명해진다.
+	if (InIconBrush.GetResourceObject() != nullptr)
+	{
+		IconBrush = InIconBrush;
+	}
+}
+#endif // WITH_EDITOR
+
 void UFF_CommonButtonBase::NativePreConstruct()
 {
 	Super::NativePreConstruct();
@@ -193,10 +235,19 @@ void UFF_CommonButtonBase::RefreshVisualState()
 
 	// 포커스는 색이 아니라 형태로 표시한다.
 	// 색상만으로 상태를 구분하면 안 되고(AT-011), 배경이 어두운 상태에서도 보여야 한다.
+	const ESlateVisibility FocusVisibility =
+		(bInteractable && bHasFocusPath) ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden;
+
 	if (Image_FocusRing)
 	{
-		Image_FocusRing->SetVisibility(
-			(bInteractable && bHasFocusPath) ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+		Image_FocusRing->SetVisibility(FocusVisibility);
+	}
+
+	// 표면 전체 포커스 이미지도 링과 **같은 조건**으로 켠다.
+	// 조건을 나누면 마우스와 게임패드에서 다른 그림이 나온다 — bFocusOnHover 주석 참고.
+	if (Image_FocusSurface)
+	{
+		Image_FocusSurface->SetVisibility(FocusVisibility);
 	}
 
 	// 비활성은 색뿐 아니라 불투명도로도 표시한다.

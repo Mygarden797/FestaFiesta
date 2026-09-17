@@ -8,8 +8,49 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "Misc/AutomationTest.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildFacilityInspectionInputTest,
+	"FestaFiesta.Building.BuildMode.FacilityInspectionInput",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildFacilityInspectionInputTest::RunTest(const FString& Parameters)
+{
+	using namespace FFBuildModeModel;
+	for (const EFF_BuildModeState InspectState : { EFF_BuildModeState::BuildMode, EFF_BuildModeState::CatalogOpen })
+	{
+		TestTrue(TEXT("Existing facilities can be inspected with the catalog open or folded"),
+			CanInspectFromWorldPointer(InspectState, false, true));
+		TestFalse(TEXT("Catalog cards, toolbars and modal backdrops cannot select through UI"),
+			CanInspectFromWorldPointer(InspectState, false, false));
+		TestFalse(TEXT("The click which changes build mode is not reused for inspection"),
+			CanInspectFromWorldPointer(InspectState, true, true));
+	}
+	for (const EFF_BuildModeState OtherState : { EFF_BuildModeState::Closed,
+		EFF_BuildModeState::Placing, EFF_BuildModeState::Moving })
+	{
+		TestFalse(TEXT("Normal play and an active placement preview do not become inspection clicks"),
+			CanInspectFromWorldPointer(OtherState, false, true));
+	}
+	TestTrue(TEXT("A world click in eligible preparation can open inspection from the closed workspace"),
+		CanInspectFromWorldPointer(EFF_BuildModeState::Closed, false, true, true));
+	TestFalse(TEXT("Preparation eligibility does not permit clicking through UI"),
+		CanInspectFromWorldPointer(EFF_BuildModeState::Closed, false, false, true));
+	TestFalse(TEXT("Preparation eligibility preserves consumed-click suppression"),
+		CanInspectFromWorldPointer(EFF_BuildModeState::Closed, true, true, true));
+	for (const EFF_BuildModeState PreviewState : { EFF_BuildModeState::Placing, EFF_BuildModeState::Moving })
+	{
+		TestFalse(TEXT("Preparation inspection never takes ownership from placement or moving"),
+			CanInspectFromWorldPointer(PreviewState, false, true, true));
+	}
+	TestFalse(TEXT("Allowing catalog inspection does not grant catalog demolition permission"),
+		CanRemoveInstalledFacility(EFF_BuildModeState::CatalogOpen));
+	TestEqual(TEXT("Folding the catalog enters the existing inspection workspace"),
+		ResolveBuildKeyState(EFF_BuildModeState::CatalogOpen), EFF_BuildModeState::BuildMode);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_BuildModeStateTransitionTest,
@@ -59,13 +100,13 @@ bool FFF_BuildModeStateTransitionTest::RunTest(const FString& Parameters)
 		IsPreviewActive(EFF_BuildModeState::BuildMode));
 	TestFalse(TEXT("일반 플레이에는 사용자용 격자가 없다"),
 		ShouldShowPlacementGrid(EFF_BuildModeState::Closed));
-	TestFalse(TEXT("시설 선택 전 기본 건축 상태에는 사용자용 격자가 없다"),
+	TestTrue(TEXT("시설 선택 전에도 사용 가능한 건축 공간을 표시한다"),
 		ShouldShowPlacementGrid(EFF_BuildModeState::BuildMode));
-	TestFalse(TEXT("카탈로그가 월드를 가리는 동안 사용자용 격자가 없다"),
+	TestTrue(TEXT("카탈로그 탐색 중에도 주변 건축 공간을 표시한다"),
 		ShouldShowPlacementGrid(EFF_BuildModeState::CatalogOpen));
-	TestTrue(TEXT("신규 시설 배치 중에는 로컬 격자를 표시한다"),
+	TestTrue(TEXT("신규 시설 배치 중에도 주변 전체 격자를 표시한다"),
 		ShouldShowPlacementGrid(EFF_BuildModeState::Placing));
-	TestTrue(TEXT("기존 시설 이동 중에는 로컬 격자를 표시한다"),
+	TestTrue(TEXT("기존 시설 이동 중에도 주변 전체 격자를 표시한다"),
 		ShouldShowPlacementGrid(EFF_BuildModeState::Moving));
 	TestEqual(TEXT("이동 취소는 선택 가능한 BuildMode로 복귀한다"),
 		ResolvePreviewCancelState(EFF_BuildModeState::Moving),
@@ -254,6 +295,120 @@ bool FFF_BuildModeRotationInputModelTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("패치 가장자리는 지형을 가리지 않도록 25퍼센트로 흐려진다"),
 		ResolveEdgeOpacity(1000.0, 0.0, 1000.0), 0.25f);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_BuildModeToolsInputIsolationTest,
+	"FestaFiesta.Building.BuildMode.ToolsInputIsolation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildModeToolsInputIsolationTest::RunTest(const FString& Parameters)
+{
+	using namespace FFBuildModeModel;
+	struct FActionCase
+	{
+		const TCHAR* Label;
+		bool bSuppressed;
+		bool bEditing;
+		bool bOverTools;
+		bool bAllowed;
+	};
+	// Both world mouse-down and Enter use this policy. In particular, nonfocusable toolbar
+	// buttons still own Enter while hovered, before Slate sends a button click callback.
+	const FActionCase Cases[] = {
+		{TEXT("월드에서 새로 누른 입력은 배치 또는 선택 작업을 허용한다"), false, false, false, true},
+		{TEXT("도구 클릭을 아직 놓지 않았으면 월드로 이동해도 같은 누름을 재사용하지 않는다"), true, false, false, false},
+		{TEXT("각도 입력창의 Enter는 시설 설치나 철거를 실행하지 않는다"), false, true, false, false},
+		{TEXT("포커스를 받지 않는 도구 위의 Enter도 시설을 설치하지 않는다"), false, false, true, false},
+		{TEXT("입력창과 클릭 억제가 동시에 활성화되면 월드 작업을 막는다"), true, true, false, false},
+		{TEXT("도구 위에서 놓지 않은 클릭은 월드 작업을 막는다"), true, false, true, false},
+		{TEXT("도구 위에서 각도를 편집하면 월드 작업을 막는다"), false, true, true, false},
+		{TEXT("모든 UI 입력 보호가 활성화되어도 월드 작업을 허용하지 않는다"), true, true, true, false}
+	};
+	for (const FActionCase& Case : Cases)
+	{
+		TestEqual(Case.Label, CanAcceptWorldBuildAction(Case.bSuppressed, Case.bEditing, Case.bOverTools), Case.bAllowed);
+	}
+
+	// Releasing one guard does not release the others. A fresh world action becomes possible
+	// only after the click latch, editor focus and toolbar hover have all ended.
+	TestFalse(TEXT("클릭을 놓아도 포인터가 도구 위면 Enter를 배치로 전달하지 않는다"),
+		CanAcceptWorldBuildAction(false, false, true));
+	TestFalse(TEXT("포인터가 월드로 돌아와도 각도 입력 포커스가 남으면 Enter를 전달하지 않는다"),
+		CanAcceptWorldBuildAction(false, true, false));
+	TestFalse(TEXT("포커스와 hover가 끝나도 같은 클릭을 놓기 전에는 월드 작업을 막는다"),
+		CanAcceptWorldBuildAction(true, false, false));
+	TestTrue(TEXT("모든 UI 입력 소유권을 해제한 다음 새 월드 입력을 허용한다"),
+		CanAcceptWorldBuildAction(false, false, false));
+
+	TestFalse(TEXT("도구를 사용하지 않을 때 커서로 배치 위치를 갱신한다"),
+		ShouldFreezePlacementTarget(false, false));
+	TestTrue(TEXT("화살표 도구 위에서는 미세 이동한 위치를 커서로 덮어쓰지 않는다"),
+		ShouldFreezePlacementTarget(true, false));
+	TestTrue(TEXT("도구 밖으로 마우스를 옮겨도 각도 편집 중이면 배치 위치를 유지한다"),
+		ShouldFreezePlacementTarget(false, true));
+	TestTrue(TEXT("각도 편집과 도구 hover가 겹쳐도 배치 위치를 유지한다"),
+		ShouldFreezePlacementTarget(true, true));
+
+	const FName EditableTypes[] = {
+		TEXT("SEditableText"), TEXT("SEditableTextBox"),
+		TEXT("SMultiLineEditableText"), TEXT("SMultiLineEditableTextBox")
+	};
+	for (const FName WidgetType : EditableTypes)
+	{
+		TestTrue(*FString::Printf(TEXT("%s는 편집 가능한 텍스트 입력이다"), *WidgetType.ToString()),
+			IsEditableSlateTextWidgetType(WidgetType));
+	}
+	TestFalse(TEXT("일반 표시용 텍스트는 건축 입력을 가로막지 않는다"),
+		IsEditableSlateTextWidgetType(TEXT("STextBlock")));
+	TestFalse(TEXT("각도 또는 카탈로그 검색 입력 중 B는 건축 모드를 전환하지 않는다"),
+		ShouldProcessRawBuildKey(false, true, true));
+	TestTrue(TEXT("텍스트 편집 종료 후 새 B 입력은 다시 작동한다"),
+		ShouldProcessRawBuildKey(false, true, false));
+	TestFalse(TEXT("편집을 끝냈어도 새 B 누름이 없으면 전환하지 않는다"),
+		ShouldProcessRawBuildKey(false, false, false));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildUnifiedWorldManipulationTest,
+	"FestaFiesta.Building.BuildMode.UnifiedWorldManipulation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildUnifiedWorldManipulationTest::RunTest(const FString& Parameters)
+{
+	const FIntPoint Size(601, 401);
+	const float WorldYaw = 37.25f;
+	for (const FVector Cursor : { FVector(1049.0, 246.0, 0.0), FVector(-1049.0, -246.0, 0.0) })
+	{
+		FVector ReferenceCenter = FVector::ZeroVector;
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			// Deliberately do not align region origins to the player's 100 cm snap interval.
+			const FTransform Region(FRotator(0.0, Index * 90.0, 0.0), FVector(Index * 1037.0, Index * -1063.0, 0.0));
+			const FFFZSGridPlacement Placement = FFBuildModeModel::ResolveWorldSnappedPlacement(
+				Cursor, WorldYaw, Region, Size, 100);
+			const float LocalYaw = UFFZSGridLibrary::YawCentidegreesToDegrees(Placement.YawCentidegrees);
+			const FVector2D LocalCenter = FVector2D(Placement.OriginCell) +
+				FFBuildModeModel::ResolveRotatedFootprintCenterOffset(Size, LocalYaw);
+			const FVector WorldCenter = Region.TransformPosition(FVector(LocalCenter, 0.0));
+			const FVector SnappedCursor(FMath::GridSnap(Cursor.X, 100.0), FMath::GridSnap(Cursor.Y, 100.0), 0.0);
+			TestTrue(TEXT("The center follows world snapping within the 1 cm storage precision"),
+				FVector::Dist2D(WorldCenter, SnappedCursor) <= 0.71);
+			TestTrue(TEXT("Region rotation does not change the user's world angle"),
+				FMath::Abs(FMath::FindDeltaAngleDegrees(LocalYaw + Region.Rotator().Yaw, WorldYaw)) < 0.01);
+			TestEqual(TEXT("Unified commands use canonical free rotation"), Placement.QuarterTurns, 0);
+			if (Index == 0)
+			{
+				ReferenceCenter = WorldCenter;
+			}
+			else
+			{
+				TestTrue(TEXT("Changing the coordinate region does not move the preview"),
+					WorldCenter.Equals(ReferenceCenter, 0.01));
+			}
+		}
+	}
 	return true;
 }
 

@@ -16,6 +16,7 @@ class UFF_FestivalAtlasCatalog;
 class UImage;
 class UTextBlock;
 class UVerticalBox;
+class UScrollBox;
 
 /** 국가 하나를 골랐다는 알림. `FName` 은 `CountryId` 다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnAtlasCountryPicked, FName, CountryId);
@@ -24,32 +25,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnAtlasCountryPicked, FName, Cou
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnAtlasScreenRequest);
 
 /**
- * 나라 선택 화면. **지구가 주인공이고 UI 는 왼쪽에만 둔다** (2026-08-21 확정).
- *
- * === 3D 씬 위에 얹히는 오버레이다 ===
- * 지구는 `AFF_AtlasGlobeActor` 가 그린다. 이 화면은 그 위에 **국가 핀 버튼**을 얹고
- * 왼쪽 패널에 고른 나라를 보여준다. 오른쪽은 비워 지구가 크게 보이게 한다.
- *
- * === 베이스가 `UFF_ActivatableScreenBase` 인 이유 ===
- * 흐름 설정의 `FrontendScreens` 가 `TSoftClassPtr<UFF_ActivatableScreenBase>` 라
- * **그 파생만 받는다.** 일반 `UUserWidget` 으로 만들면 흐름에 꽂을 자리가 없고 뒤로 가기
- * 히스토리도 못 쓴다. 계획서 화면 목록표가 `일반 UUserWidget` 으로 적혀 있던 것은 낡은 것이다.
- *
- * === 🔴 이 화면이 Tick 을 쓰는 이유 ===
- * 이 프로젝트의 다른 UI 는 전부 델리게이트 구독이고 `NativeTick` 을 쓰는 위젯이 하나도 없다.
- * 여기가 처음이다 — **지구가 상시 자전하므로 핀의 화면 좌표가 매 프레임 바뀐다.**
- * 이벤트로 알릴 수 있는 종류의 변화가 아니다. 대신 Tick 이 하는 일은 좁다:
- * 액터에서 핀 상태를 받아 **좌표만 갱신한다.** 판단은 전부 순수 함수와 액터가 한다.
- *
- * === 🔴 드래그 회전 — 마우스 캡처가 필요하다 ===
- * 프론트엔드 화면은 `bShowMouseCursor=true` → `EMouseCaptureMode::NoCapture` 라
- * 뷰포트가 마우스를 잡지 않는다. 그래서 **위젯이 직접 캡처해야** 커서가 위젯 밖으로 나가도
- * 드래그가 이어진다. 이 리포에 `CaptureMouse` 사용례가 없어 여기가 첫 사례다.
- *
- * 핀 버튼이 위에 있으므로 핀을 누르면 그 클릭은 버튼이 먹고 드래그는 시작되지 않는다 —
- * 그게 맞는 동작이다. 빈 곳을 누르면 이 화면이 받아 지구를 돌린다.
- * 그래도 **같은 클릭이 둘 다에 먹히는 경우**가 있어 `FFF_AtlasDragTracker` 로
- * 임계 픽셀 안에서 떼면 클릭, 넘으면 드래그로 갈라 준다.
+ * 지구 위 이름표 대신 왼쪽 국가 목록을 표시하는 CommonUI 화면.
+ * 목록과 프랍 클릭은 InspectCountry를 공유하고 국가 지도 진입은 별도로 확인한다.
+ * 드래그는 캡처 없이 Slate 커서로 추적한다. Tick은 드래그와 프랍 호버에만 사용한다.
  */
 UCLASS(meta = (DisplayName = "FF Atlas Globe Screen"))
 class FESTAFIESTA_API UFF_AtlasGlobeScreen : public UFF_ActivatableScreenBase
@@ -58,6 +36,14 @@ class FESTAFIESTA_API UFF_AtlasGlobeScreen : public UFF_ActivatableScreenBase
 
 public:
 	UFF_AtlasGlobeScreen(const FObjectInitializer& ObjectInitializer);
+
+	/** 나라 목록·상세 카드용 국기. UI 전용 참조라 지구 액터의 데이터와 분리한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Atlas|Appearance")
+	TMap<FName, TObjectPtr<UTexture2D>> CountryFlagTextures;
+
+	/** 목록과 프랍이 공유하는 국가 살펴보기. 잠긴 나라도 회전하되 지도 진입은 막는다. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Atlas")
+	void InspectCountry(FName CountryId);
 
 	/** `축제 둘러보기` — 국가 지도로 간다. 흐름 서브시스템이 받는다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Atlas")
@@ -71,9 +57,11 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeOnActivated() override;
+	virtual void NativeOnDeactivated() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual UWidget* NativeGetDesiredFocusTarget() const override;
 	virtual bool NativeOnHandleBackAction() override;
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	// --- 입력 ---
 
@@ -86,7 +74,7 @@ protected:
 	 */
 	void TickDrag();
 
-	/** 드래그를 끝내고 가까운 핀으로 재스냅한다. 위젯 안/밖 어디서 떼든 여기로 모인다. */
+	/** 드래그를 끝내거나 이동 없는 프랍 클릭을 확정한다. 위젯 안/밖 어디서 떼든 여기로 모인다. */
 	void EndDrag();
 	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
@@ -96,6 +84,12 @@ protected:
 	/** 국가를 누르기 전에는 접혀 있다. 지구 구도를 바꾸지 않고 그 위에 겹친다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UBorder> Border_Panel;
+
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional), Category="FestaFiesta|Atlas")
+	TObjectPtr<UScrollBox> ScrollBox_Countries;
+
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional), Category="FestaFiesta|Atlas")
+	TObjectPtr<UScrollBox> ScrollBox_CountryDetails;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas")
 	TObjectPtr<UTextBlock> Text_CountryName;
@@ -181,7 +175,7 @@ private:
 	/** 액터에서 핀 상태를 받아 버튼을 만들거나 재사용한다. */
 	void RebuildPinButtons();
 
-	/** 매 프레임 핀의 화면 좌표와 가시성을 갱신한다. */
+	/** 국가 목록의 선택 표시를 갱신한다. */
 	void UpdatePinPositions();
 
 	/** 왼쪽 패널을 지금 포커스된 국가로 다시 채운다. */
@@ -197,9 +191,14 @@ private:
 	/** 패널이 닫혔을 때 포커스를 돌려줄 첫 가시 국가 핀. */
 	UFF_AtlasPinButton* FindFirstVisiblePin() const;
 
-	/** 핀이 눌렸을 때. 잠긴 국가면 사유만 띄우고 선택하지 않는다. */
+	/** 목록 버튼을 눌렀을 때. 잠긴 국가도 살펴보되 지도 진입은 막는다. */
 	UFUNCTION()
 	void HandlePinClicked(UFF_CommonButtonBase* Button);
+
+	UFUNCTION()
+	void HandleListFocused(UFF_AtlasPinButton* Button);
+
+	FName PickCursorLandmark() const;
 
 	UFUNCTION()
 	void HandleSelectCountryClicked(UFF_CommonButtonBase* Button);
@@ -223,7 +222,7 @@ private:
 
 	/** 패널에서 정보 행으로만 쓰는 축제 핀 위젯. 입력은 받지 않는다. */
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UFF_AtlasPinButton>> FestivalRows;
+
 
 	/**
 	 * 지구 액터. 월드와 함께 죽으므로 약참조로 든다.
@@ -235,4 +234,5 @@ private:
 
 	/** 지금 왼쪽 패널이 보여주는 국가. */
 	FName PanelCountryId;
+	FName PressedCountryId;
 };

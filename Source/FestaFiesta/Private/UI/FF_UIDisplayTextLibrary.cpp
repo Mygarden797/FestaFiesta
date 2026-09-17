@@ -50,6 +50,7 @@ FText UFF_UIDisplayTextLibrary::GetLiveTabText(EFF_LiveTab Tab)
 	case EFF_LiveTab::SNS:			return LOCTEXT("LiveTab_SNS", "SNS");
 	case EFF_LiveTab::Report:		return LOCTEXT("LiveTab_Report", "리포트");
 	case EFF_LiveTab::Staff:		return LOCTEXT("LiveTab_Staff", "스태프");
+	case EFF_LiveTab::Density:		return LOCTEXT("LiveTab_Density", "밀집");
 	case EFF_LiveTab::Finale:		return LOCTEXT("LiveTab_Finale", "피날레");
 	}
 
@@ -69,6 +70,21 @@ FText UFF_UIDisplayTextLibrary::GetLiveHudTabText(EFF_LiveHudTab Tab)
 	case EFF_LiveHudTab::SNS:			return LOCTEXT("LiveHudTab_SNS", "SNS");
 	case EFF_LiveHudTab::Report:		return LOCTEXT("LiveHudTab_Report", "리포트");
 	case EFF_LiveHudTab::Staff:			return LOCTEXT("LiveHudTab_Staff", "스태프");
+	}
+
+	return FText::GetEmpty();
+}
+
+FText UFF_UIDisplayTextLibrary::GetOptionCategoryText(EFF_OptionCategory Category)
+{
+	switch (Category)
+	{
+	case EFF_OptionCategory::Language:		return LOCTEXT("OptionCategory_Language", "언어");
+	case EFF_OptionCategory::Accessibility:	return LOCTEXT("OptionCategory_Accessibility", "접근성");
+	case EFF_OptionCategory::Sound:			return LOCTEXT("OptionCategory_Sound", "사운드");
+	case EFF_OptionCategory::Graphics:		return LOCTEXT("OptionCategory_Graphics", "그래픽");
+	case EFF_OptionCategory::Controls:		return LOCTEXT("OptionCategory_Controls", "조작");
+	case EFF_OptionCategory::Credits:		return LOCTEXT("OptionCategory_Credits", "크레딧");
 	}
 
 	return FText::GetEmpty();

@@ -83,7 +83,7 @@ namespace
 	{
 		FFFZSFacilitySpec Spec =
 			FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
-		Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.DadaPochaFoodTruck");
+		Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Taco");
 		return Spec;
 	}
 }

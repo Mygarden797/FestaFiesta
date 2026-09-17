@@ -8,6 +8,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "DataTables/FF_ArrivalCurveRow.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -192,7 +193,12 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdClassCommand(
 
 namespace FFCrowdConsole
 {
-	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU, float SimRadiusUU)
+	// AgentPool / ActorPool 은 0이면 Count 로 채운다(기존 동작). 둘을 다르게 주면
+	// Agent 만 늘리고 화면 Actor 수는 묶어둘 수 있어서 시뮬 비용과 표현 비용을 나눠 잴 수 있다.
+	// 풀 크기는 최초 1회만 정해지므로, 계단식 인원 스윕을 한 PIE 세션에서 돌리려면
+	// 첫 호출에서 목표 최대 인원만큼 풀을 잡아둬야 한다.
+	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU, float SimRadiusUU,
+		int32 AgentPoolSize = 0, int32 ActorPoolSize = 0)
 	{
 		UFF_CrowdSimulationSubsystem* CrowdSim = GetCrowdSim(World, Ar);
 		if (!CrowdSim)
@@ -206,10 +212,24 @@ namespace FFCrowdConsole
 		{
 			const TSubclassOf<AFF_BaseCrowd> CrowdClass = ResolvePendingCrowdClass();
 
-			CrowdSim->InitializeSimulation(Origin, SimRadiusUU, Count, Count, CrowdClass);
+			const int32 ResolvedAgentPool = FMath::Max(AgentPoolSize > 0 ? AgentPoolSize : Count, Count);
+			const int32 ResolvedActorPool = FMath::Max(ActorPoolSize > 0 ? ActorPoolSize : ResolvedAgentPool, 1);
+
+			CrowdSim->InitializeSimulation(Origin, SimRadiusUU, ResolvedActorPool, ResolvedAgentPool, CrowdClass);
+
+			Ar.Logf(TEXT("풀 — Agent %d, Actor %d%s"),
+				ResolvedAgentPool, ResolvedActorPool,
+				(ResolvedActorPool < ResolvedAgentPool)
+					? TEXT("  <-- Actor가 모자라 일부는 표시되지 않는다(시뮬 비용만 재는 모드)")
+					: TEXT(""));
 
 			Ar.Logf(TEXT("표시 클래스: %s"),
 				CrowdClass ? *CrowdClass->GetName() : TEXT("AFF_BaseCrowd (대체 원기둥) - FF.Crowd.Class로 BP 지정 가능"));
+		}
+		else if (AgentPoolSize > 0 || ActorPoolSize > 0)
+		{
+			Ar.Logf(ELogVerbosity::Warning,
+				TEXT("풀 크기 인자는 무시된다 — 이미 초기화가 끝났다. 풀은 최초 스폰 때만 정해진다"));
 		}
 
 		const int32 Spawned = CrowdSim->SpawnAgents(Count, Origin, SpawnRadiusUU);
@@ -227,8 +247,10 @@ static void CrowdSpawnCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	const int32 Count = FFCrowdConsole::ParseIntArg(Args, 0, 500);
 	const float SpawnRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 1, 3000.f);
 	const float SimRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 2, 10000.f);
+	const int32 AgentPoolSize = FFCrowdConsole::ParseIntArg(Args, 3, 0);
+	const int32 ActorPoolSize = FFCrowdConsole::ParseIntArg(Args, 4, 0);
 
-	if (FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, SimRadiusUU))
+	if (FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, SimRadiusUU, AgentPoolSize, ActorPoolSize))
 	{
 		Ar.Logf(TEXT("FF.Crowd.Debug 1 로 밀도 그리드를, 2로 Agent까지 표시합니다"));
 		Ar.Logf(TEXT("메시가 붙은 BP로 보려면 스폰 전에 FF.Crowd.Class <BP경로>"));
@@ -237,7 +259,8 @@ static void CrowdSpawnCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpawnCommand(
 	TEXT("FF.Crowd.Spawn"),
-	TEXT("군중을 스폰한다. FF.Crowd.Spawn [인원=500] [스폰반경UU=3000] [시뮬반경UU=10000]"),
+	TEXT("군중을 스폰한다. FF.Crowd.Spawn [인원=500] [스폰반경UU=3000] [시뮬반경UU=10000] [Agent풀=인원] [Actor풀=Agent풀]  "
+	     "풀은 최초 1회만 정해진다 — 계단식 스윕은 첫 호출에서 목표 최대 인원으로 풀을 잡을 것"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdSpawnCommand));
 
 static void CrowdDebugCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
@@ -284,6 +307,18 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 	Ar.Logf(TEXT("--- Crowd ---"));
 	Ar.Logf(TEXT("활성 Agent    : %d"), ActiveAgents);
+
+	const float Fidelity = CrowdSim->GetSimTimeFidelity();
+	Ar.Logf(TEXT("시뮬 충실도   : %.1f%% (버린 시간 %.2fs, %d프레임)"),
+		Fidelity * 100.f, CrowdSim->GetDroppedSimSeconds(), CrowdSim->GetDroppedStepFrames());
+
+	if (Fidelity < 0.99f)
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("시뮬이 실시간을 놓치고 있다 — 프레임률이 멀쩡해도 축제 시간이 느리게 흐른다. "
+			     "인원을 줄이거나 부하 항목을 끄고 다시 잴 것 (CsvProfile start/stop, FFCrowd 카테고리)"));
+	}
+
 	Ar.Logf(TEXT("파티          : %d개 (평균 %.2f명, 그룹핑 %s)"),
 		PartyCount, AveragePartySize, CrowdSim->bEnablePartyGrouping ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("화면 표시 Actor: %d"), CrowdSim->GetBoundActorCount());
@@ -313,6 +348,9 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("  막혀서 포기   : %d회 (임계 %d스텝 = %.1fs)  <-- 0이면 이 경로가 안 걸린다"),
 		CrowdSim->GetStuckDecisionRequests(), CrowdSim->DecisionStuckSteps,
 		CrowdSim->DecisionStuckSteps / 30.f);
+	Ar.Logf(TEXT("  주기 재평가   : %d회 (%s)  <-- 켰는데 0이면 개인 주기가 안 차고 있다"),
+		CrowdSim->GetReevaluateRequests(),
+		CrowdSim->bEnablePeriodicReevaluation ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("막힘          : %d (%.1f%%)  <-- 가려는데 못 가는 사람"),
 		Flow.Blocked, BlockedPercent);
 	Ar.Logf(TEXT("  탈출 가속 중: %d  (임계 %d스텝, 최장 %d스텝 = %.1f초)"),
@@ -407,6 +445,38 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 			Ar.Logf(ELogVerbosity::Warning,
 				TEXT("경로 예산이 모자란다(%d명 대기) — PathQueriesPerStep을 올릴 것"), Backlog);
 		}
+
+		const int32 LaneCount = CrowdSim->GetLaneCount();
+		const int32 LanePaths = CrowdSim->GetLanePathCount();
+		const int32 NavFallbacks = CrowdSim->GetNavFallbackCount();
+		const int32 LaneAttempts = LanePaths + NavFallbacks;
+
+		Ar.Logf(TEXT("--- 레인 ---"));
+		if (!CrowdSim->bEnableLanePathing)
+		{
+			Ar.Logf(TEXT("레인 경로     : off — NavMesh만 쓴다"));
+		}
+		else if (LaneCount == 0)
+		{
+			Ar.Logf(TEXT("레인 경로     : 레벨에 AFF_CrowdLane이 없다 (FF.Crowd.Lanes refresh 로 재수집)"));
+		}
+		else
+		{
+			Ar.Logf(TEXT("레인          : %d개 (사용 가능 %d개)"), LaneCount, CrowdSim->GetUsableLaneCount());
+			Ar.Logf(TEXT("레인 / NavMesh: %d / %d건 (레인 채택 %.0f%%)  <-- 레인을 깔았는데 0%%면 반경이 안 맞는다"),
+				LanePaths, NavFallbacks,
+				LaneAttempts > 0 ? (100.f * LanePaths / LaneAttempts) : 0.f);
+			Ar.Logf(TEXT("진입 / 이탈   : %.0f / %.0fcm   우회 상한 %.1f배"),
+				CrowdSim->LaneEntrySnapRadiusCm, CrowdSim->LaneExitSnapRadiusCm,
+				CrowdSim->LaneMaxDetourRatio);
+
+			if (LaneAttempts > 0 && LanePaths == 0)
+			{
+				Ar.Logf(ELogVerbosity::Warning,
+					TEXT("레인이 %d개 있는데 채택이 0건이다 — 개체가 진입 반경 밖이거나 목적지가 이탈 반경 밖이다. "
+					     "FF.Crowd.Lanes 로 레인 끝점과 목적지 거리를 볼 것"), LaneCount);
+			}
+		}
 	}
 	else
 	{
@@ -472,6 +542,236 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdStatsCommand(
 	TEXT("FF.Crowd.Stats"),
 	TEXT("현재 군중/혼잡도 수치를 출력한다"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdStatsCommand));
+
+// 레인이 실제로 먹었는지 보는 명령.
+//
+// 수치만으로는 "레인이 없다"와 "레인이 있는데 반경이 안 맞는다"를 못 가른다. 그래서
+// 목록에 시야 위치까지의 거리를 같이 찍고, draw로 폴리라인을 월드에 그려 눈으로 맞춘다.
+static void CrowdLanesCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	const FString Mode = Args.Num() > 0 ? Args[0].ToLower() : FString();
+
+	if (Mode == TEXT("refresh"))
+	{
+		const int32 LaneNum = CrowdSim->RefreshLanesFromWorld();
+		Ar.Logf(TEXT("레인 %d개를 다시 구웠다. 살아 있던 경로는 전부 버렸다"), LaneNum);
+		return;
+	}
+
+	if (Mode == TEXT("off") || Mode == TEXT("on"))
+	{
+		CrowdSim->bEnableLanePathing = (Mode == TEXT("on"));
+		CrowdSim->RefreshLanesFromWorld();
+		Ar.Logf(TEXT("레인 경로: %s (경로를 버려 즉시 반영됨)"),
+			CrowdSim->bEnableLanePathing ? TEXT("on") : TEXT("off"));
+		return;
+	}
+
+	if (Mode == TEXT("agents"))
+	{
+		const int32 Limit = Args.Num() > 1 ? FMath::Max(FCString::Atoi(*Args[1]), 1) : 12;
+		const FVector Viewer = FFCrowdConsole::GetViewerLocation(World);
+
+		// 가까운 리더부터 본다. 멀리 있는 개체를 섞어 찍으면 눈으로 맞출 수가 없다
+		TArray<TPair<float, int32>> Leaders;
+		for (int32 AgentIndex = 0; AgentIndex < CrowdSim->GetAgentPoolSize(); ++AgentIndex)
+		{
+			if (!CrowdSim->IsAgentActive(AgentIndex)
+				|| CrowdSim->GetPartyLeader(AgentIndex) != AgentIndex)
+			{
+				continue;
+			}
+
+			Leaders.Emplace(
+				static_cast<float>(FVector::Dist2D(Viewer, CrowdSim->GetAgentPosition(AgentIndex))),
+				AgentIndex);
+		}
+
+		if (Leaders.IsEmpty())
+		{
+			Ar.Logf(ELogVerbosity::Warning, TEXT("활성 파티 리더가 없다 — 아직 스폰되지 않았다"));
+			return;
+		}
+
+		Leaders.Sort([](const TPair<float, int32>& A, const TPair<float, int32>& B)
+		{
+			return A.Key < B.Key;
+		});
+
+		Ar.Logf(TEXT("가까운 리더 %d명 (전체 %d명)"), FMath::Min(Limit, Leaders.Num()), Leaders.Num());
+		Ar.Logf(TEXT("  Agent  경로원천   진입까지    소비/전체   상태"));
+
+		int32 LaneRiders = 0;
+		int32 Approaching = 0;
+
+		for (int32 Rank = 0; Rank < Leaders.Num() && Rank < Limit; ++Rank)
+		{
+			const int32 AgentIndex = Leaders[Rank].Value;
+
+			FFF_CrowdLaneFollowInfo Info;
+			if (!CrowdSim->GetLaneFollowInfo(AgentIndex, Info))
+			{
+				Ar.Logf(TEXT("  %5d  경로없음   -           -           직선 조향 (목적지가 코앞이거나 쿼리 실패)"),
+					AgentIndex);
+				continue;
+			}
+
+			if (Info.LaneIndex == INDEX_NONE)
+			{
+				Ar.Logf(TEXT("  %5d  NavMesh    -           %d/%d         레인 미채택"),
+					AgentIndex, Info.ConsumedCount, Info.TotalCount);
+				continue;
+			}
+
+			++LaneRiders;
+			if (Info.bApproachingEntry)
+			{
+				++Approaching;
+			}
+
+			Ar.Logf(TEXT("  %5d  레인 %-2d    %7.0fcm   %d/%d         %s"),
+				AgentIndex, Info.LaneIndex, Info.DistanceToEntryCm,
+				Info.ConsumedCount, Info.TotalCount,
+				Info.bApproachingEntry
+					? TEXT("진입 전 — 레인까지 직선으로 걷는 중")
+					: TEXT("레인 위"));
+
+			Ar.Logf(TEXT("           진입점 (%.0f, %.0f, %.0f)"),
+				Info.EntryPointCm.X, Info.EntryPointCm.Y, Info.EntryPointCm.Z);
+		}
+
+		Ar.Logf(TEXT("레인 탑승 %d명 (그 중 진입 전 %d명)"), LaneRiders, Approaching);
+		Ar.Logf(TEXT("(bDrawDebugAgents 를 켜면 청록=레인 경로, 하늘색=NavMesh 경로, 자홍 기둥=진입점)"));
+		return;
+	}
+
+	const TArray<FFF_CrowdSplineLane>& Lanes = CrowdSim->GetLanes();
+
+	if (Lanes.IsEmpty())
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("레인이 없다. 레벨에 AFF_CrowdLane을 놓거나 도로를 깐 뒤 "
+			     "FF.Crowd.Lanes refresh 를 실행할 것"));
+		return;
+	}
+
+	const FVector Viewer = FFCrowdConsole::GetViewerLocation(World);
+	const int32 AuthoredCount = CrowdSim->GetAuthoredLaneCount();
+	const FFF_CrowdRoadLaneBuildStats& RoadStats = CrowdSim->GetRoadLaneStats();
+
+	Ar.Logf(TEXT("레인 %d개 = 저작 %d + 도로 %d (시야 위치 기준 거리)"),
+		Lanes.Num(), AuthoredCount, CrowdSim->GetRoadLaneCount());
+	Ar.Logf(TEXT("  도로 그래프  : 타일 %d개, 간선 %d개, 교차·막다른 %d개, 고립 %d개, 루프 %d개%s"),
+		RoadStats.TileCount, RoadStats.EdgeCount, RoadStats.JunctionCount,
+		RoadStats.IsolatedTileCount, RoadStats.ClosedLoopCount,
+		RoadStats.bTruncated ? TEXT("  ※ 상한에 걸려 잘림") : TEXT(""));
+	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회  (순회 비율이 낮으면 도로가 동선과 멀다)"),
+		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+
+	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
+	{
+		const FFF_CrowdSplineLane& Lane = Lanes[LaneIndex];
+		const TCHAR* Source = LaneIndex < AuthoredCount ? TEXT("저작") : TEXT("도로");
+
+		FVector Closest = FVector::ZeroVector;
+		float ArcCm = 0.f;
+		float DistCm = 0.f;
+		const bool bProjected = CrowdSplinePath::FindClosestOnLane(Lane, Viewer, Closest, ArcCm, DistCm);
+
+		Ar.Logf(TEXT("  [%d] %s 점 %d개, 길이 %.0fcm(%.0fm), 반폭 %.0fcm, %s%s, 시야까지 %s"),
+			LaneIndex, Source, Lane.Points.Num(),
+			Lane.TotalLengthCm(), Lane.TotalLengthCm() * 0.01f,
+			Lane.HalfWidthCm,
+			Lane.bOneWay ? TEXT("일방통행") : TEXT("양방향"),
+			Lane.bClosedLoop ? TEXT("/루프") : TEXT(""),
+			bProjected ? *FString::Printf(TEXT("%.0fcm"), DistCm) : TEXT("측정 실패"));
+
+		if (bProjected && DistCm > CrowdSim->LaneEntrySnapRadiusCm)
+		{
+			Ar.Logf(TEXT("       진입 반경(%.0fcm) 밖이다 — 여기 있는 개체는 이 레인을 못 쓴다"),
+				CrowdSim->LaneEntrySnapRadiusCm);
+		}
+	}
+
+	if (Mode != TEXT("draw"))
+	{
+		Ar.Logf(TEXT("(FF.Crowd.Lanes draw [초] 로 월드에 그린다)"));
+		return;
+	}
+
+	const float Duration = Args.Num() > 1 ? FCString::Atof(*Args[1]) : 20.f;
+
+	for (const FFF_CrowdSplineLane& Lane : Lanes)
+	{
+		for (int32 Index = 0; Index + 1 < Lane.Points.Num(); ++Index)
+		{
+			DrawDebugLine(World, Lane.Points[Index], Lane.Points[Index + 1],
+				FColor::Cyan, false, Duration, 0, 12.f);
+		}
+
+		for (const FVector& Point : Lane.Points)
+		{
+			DrawDebugPoint(World, Point, 14.f, FColor::Yellow, false, Duration);
+		}
+	}
+
+	Ar.Logf(TEXT("레인 %d개를 %.0f초간 그렸다 (청록 선 = 개체가 따라갈 폴리라인)"),
+		Lanes.Num(), Duration);
+}
+
+// 개체가 얼마나 퍼졌는지 한 줄로 본다. 도로 순회를 켜기 전후로 같은 시각에 찍어 비교하는
+// 것이 목적이므로, 판단 근거가 되는 두 값(표준편차·균등도)을 항상 같이 낸다.
+static void CrowdSpreadCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	if (Args.Num() > 0)
+	{
+		CrowdSim->SpreadBucketSizeCm = FMath::Max(FCString::Atof(*Args[0]), 100.f);
+	}
+
+	FVector Centroid = FVector::ZeroVector;
+	float StdDevCm = 0.f;
+	float Evenness = 0.f;
+	int32 SampleCount = 0;
+	int32 OccupiedBuckets = 0;
+
+	if (!CrowdSim->GetSpreadStats(Centroid, StdDevCm, Evenness, SampleCount, OccupiedBuckets))
+	{
+		Ar.Logf(ELogVerbosity::Warning, TEXT("활성 개체가 없다 — 아직 스폰되지 않았다"));
+		return;
+	}
+
+	Ar.Logf(TEXT("개체 %d명, 격자 %.0fm"), SampleCount, CrowdSim->SpreadBucketSizeCm * 0.01f);
+	Ar.Logf(TEXT("  중심        : (%.0f, %.0f)"), Centroid.X, Centroid.Y);
+	Ar.Logf(TEXT("  표준편차    : %.0fcm (%.0fm)   ← 중심에서 얼마나 멀리 흩어졌나"),
+		StdDevCm, StdDevCm * 0.01f);
+	Ar.Logf(TEXT("  점유 칸     : %d개"), OccupiedBuckets);
+	Ar.Logf(TEXT("  균등도      : %.3f (1에 가까울수록 고르게 퍼짐)   ← 덩어리로 뭉쳤는지"),
+		Evenness);
+	Ar.Logf(TEXT("  배회 출처   : 순회 %d회 / 원판 %d회"),
+		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpreadCommand(
+	TEXT("FF.Crowd.Spread"),
+	TEXT("개체 확산을 잰다 (표준편차·균등도). [격자크기cm] 로 칸 크기를 바꾼다"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdSpreadCommand));
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdLanesCommand(
+	TEXT("FF.Crowd.Lanes"),
+	TEXT("레인 목록/채택 여부를 본다. refresh | draw [초] | agents [명] | on | off"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdLanesCommand));
 
 static void CrowdDumpTraitsCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
 {
@@ -596,6 +896,48 @@ static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdPartyCommand(
 	TEXT("FF.Crowd.Party"),
 	TEXT("파티 그룹핑을 켜고 끈다(스폰 전에 설정). FF.Crowd.Party [0|1=1]"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdPartyCommand));
+
+// 개체 변주가 만드는 두 행동을 런타임에 끄고 켠다. **재스폰이 필요 없다** —
+// 두 판정 모두 매 스텝 플래그를 다시 보므로, 같은 세션에서 전/후를 대조할 수 있다.
+// (특성값 자체는 스폰 때 확정되므로 여기서 끈다고 값이 사라지지는 않는다)
+static void CrowdVariationCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
+{
+	UFF_CrowdSimulationSubsystem* CrowdSim = FFCrowdConsole::GetCrowdSim(World, Ar);
+	if (!CrowdSim)
+	{
+		return;
+	}
+
+	if (Args.Num() > 0)
+	{
+		CrowdSim->bEnableQueuePatienceAbandon = (FFCrowdConsole::ParseIntArg(Args, 0, 1) != 0);
+	}
+	if (Args.Num() > 1)
+	{
+		CrowdSim->bEnablePeriodicReevaluation = (FFCrowdConsole::ParseIntArg(Args, 1, 1) != 0);
+	}
+
+	Ar.Logf(TEXT("--- 개체 변주 행동 ---"));
+	Ar.Logf(TEXT("인내심 이탈   : %s   %d회   (wait_threshold_minutes x patience_multiplier)"),
+		CrowdSim->bEnableQueuePatienceAbandon ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetQueuePatienceAbandons());
+	Ar.Logf(TEXT("주기 재평가   : %s   %d회   (reevaluate_interval_seconds x reevaluate_interval_multiplier)"),
+		CrowdSim->bEnablePeriodicReevaluation ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetReevaluateRequests());
+	Ar.Logf(TEXT("끄면 두 값은 그 자리에 멈춘다(0으로 돌아가지 않는다). 리셋은 FF.Crowd.Queue 쪽 통계 초기화를 쓴다"));
+
+	if (!CrowdSim->IsQueueAdvancing())
+	{
+		Ar.Logf(ELogVerbosity::Warning,
+			TEXT("★ 큐가 진행 중이 아니다 — 인내심 이탈은 큐 진행 판정 뒤에 있어서 절대 발화하지 않는다. ")
+			TEXT("FF.Crowd.GoLive 로 Live 로 올리고 FF.Crowd.Queue 를 볼 것"));
+	}
+}
+
+static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdVariationCommand(
+	TEXT("FF.Crowd.Variation"),
+	TEXT("개체 변주 행동(인내심 이탈·주기 재평가)을 켜고 끈다. FF.Crowd.Variation [인내심 0|1] [주기 0|1] (인자 없으면 현재 상태)"),
+	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdVariationCommand));
 
 static void CrowdDemoCommand(const TArray<FString>& Args, UWorld* World, FOutputDevice& Ar)
 {
@@ -974,6 +1316,9 @@ static void CrowdQueueCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	Ar.Logf(TEXT("시설 미해결      : %d   (GUID 파싱 실패 + 큐 미등록 시설. 배회는 여기 안 들어온다)"), Unresolved);
 	Ar.Logf(TEXT("슬롯 도착 통지   : %d"), CrowdSim->GetQueueArrivalNotifyCount());
 	Ar.Logf(TEXT("지금 줄에 선 파티: %d"), CrowdSim->GetQueuedPartyCount());
+	Ar.Logf(TEXT("인내심 이탈      : %d   (%s) <- 정상 행동이다. 아래 '강제 해제'와 다른 것이니 구분할 것"),
+		CrowdSim->GetQueuePatienceAbandons(),
+		CrowdSim->bEnableQueuePatienceAbandon ? TEXT("켬") : TEXT("끔"));
 
 	if (!CrowdSim->IsQueueAdvancing())
 	{
@@ -1079,19 +1424,35 @@ static void CrowdArrivalCommand(const TArray<FString>& Args, UWorld* World, FOut
 		return;
 	}
 
-	// 설정에서 표를 독립적으로 다시 읽는다. 서브시스템의 캐시를 그대로 믿고 출력하면
-	// "설정은 됐는데 캐시가 비었다"(= 부트스트랩 실패)를 이 커맨드로 진단할 수 없다.
+	// Inspect the cache used by UpdateArrivalSchedule. Loading the configured soft
+	// reference here would revive a collected table and hide the spawning failure.
 	const UFF_SimulationSettings* Settings = UFF_SimulationSettings::Get();
-	const UDataTable* Table = Settings ? Settings->ArrivalCurveTable.LoadSynchronous() : nullptr;
+	const UDataTable* Table = CrowdSim->GetLoadedArrivalCurveTable();
 	const FName ScenarioId = Settings ? Settings->ArrivalScenarioId : NAME_None;
+	const UGameInstance* DiagnosticGI = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* DiagnosticStage = DiagnosticGI
+		? DiagnosticGI->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	Ar.Logf(TEXT("[CrowdArrival] Initialized=%d Stage=%s Started=%d TimeScale=%.2f TableLoaded=%d Planned=%d Admitted=%d Active=%d Bound=%d"),
+		CrowdSim->IsSimulationInitialized(), DiagnosticStage
+			? *UEnum::GetValueAsString(DiagnosticStage->CurrentStage) : TEXT("NoStage"),
+		DiagnosticStage ? DiagnosticStage->bFestivalStarted : true,
+		DiagnosticStage ? DiagnosticStage->GetEffectiveTimeScale() : CrowdSim->SimulationTimeScale,
+		Table != nullptr, CrowdSim->GetArrivalPlannedCount(), CrowdSim->GetArrivalSpawnedCount(),
+		CrowdSim->GetActiveAgentCount(), CrowdSim->GetBoundActorCount());
 
 	Ar.Logf(TEXT("--- 입장 곡선 ---"));
-	Ar.Logf(TEXT("설정 표          : %s"), Table ? *Table->GetName() : TEXT("<미설정>"));
+	Ar.Logf(TEXT("설정 경로        : %s"), Settings ? *Settings->ArrivalCurveTable.ToString() : TEXT("<미설정>"));
+	Ar.Logf(TEXT("실행 중인 표     : %s"), Table ? *Table->GetName() : TEXT("<로드되지 않음>"));
 	Ar.Logf(TEXT("설정 ScenarioId  : %s"), *ScenarioId.ToString());
 	Ar.Logf(TEXT("곡선 활성        : %s"),
 		CrowdSim->IsArrivalCurveActive() ? TEXT("예") : TEXT("아니오 — 일괄 스폰으로 폴백했다"));
 	Ar.Logf(TEXT("캐시 버킷 수     : %d   <- 0이면 InitializeSimulation의 _00 행 조회가 실패했다"),
 		CrowdSim->GetArrivalBucketCount());
+	if (CrowdSim->IsArrivalCurveActive() && !Table)
+	{
+		Ar.Logf(ELogVerbosity::Error, TEXT("입장 시간표가 메모리에 없다. 입장이 중단된 상태이며 진단 명령은 표를 다시 로드하지 않는다."));
+		return;
+	}
 
 	if (!CrowdSim->IsArrivalCurveActive())
 	{

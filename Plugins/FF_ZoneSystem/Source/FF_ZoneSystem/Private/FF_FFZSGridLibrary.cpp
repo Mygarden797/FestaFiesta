@@ -166,7 +166,15 @@ namespace
 
         TArray<FFFZSCellRect> Cuts = Regions.Footprint;
         Cuts.Append(Regions.Queue);
-        Regions.Clearance = SubtractRectSets(TArray<FFFZSCellRect>{ Expanded }, Cuts);
+        TArray<FFFZSCellRect> WalkableReservedInput{ Expanded };
+        if (Spec.Audience.bEnabled)
+        {
+            FFFZSCellRect AudienceRect;
+            if (!UFFZSGridLibrary::TryGetAudienceReservedRect(Spec, AudienceRect)) return {};
+            WalkableReservedInput.Add(AudienceRect);
+        }
+        // Audience belongs to walkable clearance, never the building/NavMesh obstacle or FIFO queue.
+        Regions.Clearance = SubtractRectSets(WalkableReservedInput, Cuts);
 
         TArray<FFFZSCellRect> ReservedInput = Regions.Footprint;
         ReservedInput.Append(Regions.Clearance);
@@ -272,7 +280,42 @@ bool UFFZSGridLibrary::CanEnumerateFacilityCells(const FFFZSFacilitySpec& Spec)
 
     const int64 ExpandedArea = ExpandedWidth * ExpandedHeight;
     const int64 QueueArea = GetCellRectArea(LocalQueue);
-    return QueueArea >= 0 && QueueArea <= Limit - ExpandedArea;
+    int64 AudienceArea = 0;
+    if (Spec.Audience.bEnabled)
+    {
+        FFFZSCellRect AudienceRect;
+        if (!TryGetAudienceReservedRect(Spec, AudienceRect)) return false;
+        AudienceArea = AudienceRect.GetArea();
+    }
+    if (QueueArea < 0 || AudienceArea < 0 || QueueArea > Limit - ExpandedArea) return false;
+    if (Spec.Audience.bEnabled)
+    {
+        const float AreaLimitM2 = Spec.Audience.AreaLimitM2;
+        if (!FMath::IsFinite(AreaLimitM2) || AreaLimitM2 < 0.f
+            || AreaLimitM2 > FFFZSAudienceLayout::MaxAreaLimitM2) return false;
+        if (AreaLimitM2 > 0.f)
+        {
+            // Explicit per-facility audience allowance. Never enlarges the building/Queue budget
+            // or the legacy/debug rasterization limit; runtime continues using rectangles.
+            return AudienceArea <= FMath::FloorToInt64(static_cast<double>(AreaLimitM2) * 10000.);
+        }
+    }
+    return AudienceArea <= Limit - ExpandedArea - QueueArea;
+}
+
+bool UFFZSGridLibrary::TryGetAudienceReservedRect(const FFFZSFacilitySpec& Spec, FFFZSCellRect& OutRect)
+{
+    FBox2D Bounds;
+    if (!Spec.Audience.TryGetLocalBounds(Bounds)) return false;
+    const FVector2D Half(Spec.FootprintSizeCells.X * .5, Spec.FootprintSizeCells.Y * .5);
+    const FVector2D Min = Bounds.Min + Half;
+    const FVector2D Max = Bounds.Max + Half;
+    if (Min.X < MIN_int32 || Min.Y < MIN_int32 || Max.X > MAX_int32 || Max.Y > MAX_int32) return false;
+    const FFFZSCellRect Rect(FIntPoint(FMath::FloorToInt(Min.X), FMath::FloorToInt(Min.Y)),
+        FIntPoint(FMath::CeilToInt(Max.X), FMath::CeilToInt(Max.Y)));
+    if (!Rect.IsValid()) return false;
+    OutRect = Rect;
+    return true;
 }
 
 int32 UFFZSGridLibrary::NormalizeQuarterTurns(const int32 QuarterTurns)
@@ -862,7 +905,43 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     AppendInt(TEXT("placement.origin_y"), Command.Placement.OriginCell.Y);
     AppendInt(TEXT("placement.yaw_centidegrees"), GetEffectiveYawCentidegrees(Command.Placement));
 
+    // Preserve every existing command's v5 receipt byte for byte across the save migration.
+    if (Command.Type == EFFZSCommandType::Upgrade)
+    {
+        AppendInt(TEXT("upgrade.target_level"), Command.TargetUpgradeLevel);
+        AppendFloat(TEXT("upgrade.service_duration_multiplier"), Command.UpgradeServiceDurationMultiplier);
+        if (Command.UpgradeSizeMultiplier != 1.0f)
+        {
+            AppendFloat(TEXT("upgrade.size_multiplier"), Command.UpgradeSizeMultiplier);
+        }
+        if (Command.UpgradeRevenueMultiplier != 1.0f)
+        {
+            AppendFloat(TEXT("upgrade.revenue_multiplier"), Command.UpgradeRevenueMultiplier);
+        }
+    }
+
     const FFFZSFacilitySpec& Spec = Command.FacilitySpec;
+    // Optional extension: unchanged/default layouts preserve all legacy v5 receipt bytes.
+    const FFFZSAudienceLayout DefaultAudience;
+    if (!FFFZSAudienceLayout::StaticStruct()->CompareScriptStruct(&Spec.Audience, &DefaultAudience, 0))
+    {
+        const FFFZSAudienceLayout& A = Spec.Audience;
+        AppendInt(TEXT("spec.audience.enabled"), A.bEnabled);
+        AppendInt(TEXT("spec.audience.columns"), A.Columns);
+        AppendInt(TEXT("spec.audience.rows"), A.Rows);
+        AppendVector(TEXT("spec.audience.first"), A.FirstSlotLocalCm);
+        AppendFloat(TEXT("spec.audience.column_spacing"), A.ColumnSpacingCm);
+        AppendFloat(TEXT("spec.audience.row_spacing"), A.RowSpacingCm);
+        AppendFloat(TEXT("spec.audience.aisle"), A.CenterAisleWidthCm);
+        AppendFloat(TEXT("spec.audience.margin"), A.PerimeterMarginCm);
+        AppendFloat(TEXT("spec.audience.radius"), A.AgentRadiusCm);
+        AppendFloat(TEXT("spec.audience.tolerance"), A.ArrivalToleranceCm);
+        AppendVector(TEXT("spec.audience.entry"), A.EntryLocalCm);
+        AppendVector(TEXT("spec.audience.exit"), A.ExitLocalCm);
+        AppendVector(TEXT("spec.audience.focus"), A.FocusLocalCm);
+        // Omit the additive default so pre-limit audience receipts remain byte-identical.
+        if (A.AreaLimitM2 != 0.f) AppendFloat(TEXT("spec.audience.area_limit_m2"), A.AreaLimitM2);
+    }
     AppendInt(TEXT("spec.schema_version"), Spec.SchemaVersion);
     AppendString(TEXT("spec.definition_id"), Spec.FacilityDefinitionId.ToString());
     FString CanonicalDisplayName;
@@ -977,12 +1056,50 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
             Spec.AudioSettings.bPlayOnlyWhileActive ? 1 : 0);
         AppendInt(TEXT("spec.audio.loop"), Spec.AudioSettings.bLoop ? 1 : 0);
     }
+    // 빈 기본 조명은 기존 저장 영수증의 지문을 보존한다.
+    if (Spec.LightingSettings.HasNonDefaultValues())
+    {
+        AppendString(TEXT("spec.lighting.rig_class"), Spec.LightingSettings.LightingRigClass.ToSoftObjectPath().ToString());
+        AppendInt(TEXT("spec.lighting.enabled"), Spec.LightingSettings.bEnabled ? 1 : 0);
+        AppendFloat(TEXT("spec.lighting.brightness"), Spec.LightingSettings.BrightnessMultiplier);
+        AppendInt(TEXT("spec.lighting.override_color"), Spec.LightingSettings.bOverrideColor ? 1 : 0);
+        AppendFloat(TEXT("spec.lighting.color.r"), Spec.LightingSettings.Color.R);
+        AppendFloat(TEXT("spec.lighting.color.g"), Spec.LightingSettings.Color.G);
+        AppendFloat(TEXT("spec.lighting.color.b"), Spec.LightingSettings.Color.B);
+        AppendFloat(TEXT("spec.lighting.color.a"), Spec.LightingSettings.Color.A);
+    }
     AppendFloat(TEXT("spec.placement_obstacle_height_cm"), Spec.PlacementObstacleHeightCm);
+    // Preserve the legacy Road receipt bytes for save/replay compatibility only.
+    // This serialized flag never determines placement permission; the category does.
+    if (Spec.Category == EFFZSFacilityCategory::Road)
+    {
+        AppendInt(TEXT("spec.allow_facility_placement_on_top"), Spec.bAllowFacilityPlacementOnTop ? 1 : 0);
+    }
     // 새 필드의 기본값 0(무제한)은 기존 v5 영수증 지문과 완전히 같은 문자열을 유지한다.
     // 검증 전 음수 입력도 서로 다른 의미 Payload이므로 0이 아닐 때는 지문에 기록한다.
     if (Spec.MaxInstancesPerWorld != 0)
     {
         AppendInt(TEXT("spec.max_instances_per_world"), Spec.MaxInstancesPerWorld);
+    }
+    // Default false + empty is the old spec; preserve existing install receipt bytes exactly.
+    if (Spec.bUsesFacilityLevels || !Spec.UpgradeTiers.IsEmpty())
+    {
+        AppendInt(TEXT("spec.uses_facility_levels"), Spec.bUsesFacilityLevels ? 1 : 0);
+        AppendInt(TEXT("spec.upgrade_tiers.count"), Spec.UpgradeTiers.Num());
+        for (int32 Index = 0; Index < Spec.UpgradeTiers.Num(); ++Index)
+        {
+            const FFFZSFacilityUpgradeTier& Tier = Spec.UpgradeTiers[Index];
+            const FString Prefix = FString::Printf(TEXT("spec.upgrade_tiers[%d]"), Index);
+            AppendInt(*(Prefix + TEXT(".target_level")), Tier.TargetLevel);
+            AppendFloat(*(Prefix + TEXT(".cost_multiplier")), Tier.CostMultiplier);
+            AppendFloat(*(Prefix + TEXT(".service_duration_multiplier")), Tier.ServiceDurationMultiplier);
+            AppendFloat(*(Prefix + TEXT(".size_multiplier")), Tier.SizeMultiplier);
+            if (Tier.RevenueMultiplier != 1.0f)
+            {
+                AppendFloat(*(Prefix + TEXT(".revenue_multiplier")), Tier.RevenueMultiplier);
+            }
+            AppendString(*(Prefix + TEXT(".visual_mesh")), Tier.VisualMesh.ToSoftObjectPath().ToString());
+        }
     }
     return Canonical;
 }
