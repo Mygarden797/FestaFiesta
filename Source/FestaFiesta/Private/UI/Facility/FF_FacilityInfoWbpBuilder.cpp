@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "CoreMinimal.h"
+#include "UI/Facility/FF_FacilityInfoWbpBuilder.h"
 
 #if WITH_EDITOR
 
@@ -38,6 +38,7 @@
 #include "Modules/ModuleManager.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "Components/PanelWidget.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
@@ -1191,6 +1192,121 @@ namespace FFFacilityInfoWbpBuilder
 		return Section;
 	}
 
+	const TArray<FName>& GetRevenueContractVariableNames()
+	{
+		static const TArray<FName> Names = {
+			TEXT("Panel_RevenueSection"), TEXT("Text_FacilityTodayRevenue"), TEXT("Text_FacilityTotalRevenue"),
+			TEXT("Text_FacilityRevenueCount"), TEXT("Text_FacilityRevenueShare"), TEXT("Text_FacilityRevenueStatus")
+		};
+		return Names;
+	}
+
+	bool HasRevenueWidgetContract(const UWidgetBlueprint& Blueprint)
+	{
+		for (const FName Name : GetRevenueContractVariableNames())
+		{
+			// Designers may re-parent the section into any panel; only the text nodes are typed.
+			const UClass& ExpectedClass = Name == TEXT("Panel_RevenueSection")
+				? *UPanelWidget::StaticClass()
+				: *UCommonTextBlock::StaticClass();
+			if (!HasNamedVariable(Blueprint, Name, ExpectedClass))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** 시설 수익 카드. 오늘/누적 매출과 결제 건수·비중을 stat 카드로, 안내 문구를 한 줄로 둔다. */
+	UVerticalBox* BuildRevenueSection(
+		UWidgetBlueprint& Blueprint, UWidgetTree& Tree, const UFF_UIPalette& Palette)
+	{
+		UVerticalBox* Section = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_RevenueSection"), true);
+		UBorder* Card = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Revenue_Card"));
+		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Revenue_Content"));
+		UCommonTextBlock* Title = MakeWidget<UCommonTextBlock>(Blueprint, Tree, TEXT("Revenue_Title"));
+		UCommonTextBlock* Status = MakeWidget<UCommonTextBlock>(
+			Blueprint, Tree, TEXT("Text_FacilityRevenueStatus"), true);
+		if (!Section || !Card || !Content || !Title || !Status)
+		{
+			return nullptr;
+		}
+		PaintBorder(*Card, MakeSolidBrush(Palette.InGame.Paper, 6.0f, Palette.InGame.Line, 1.0f));
+		Card->SetPadding(FMargin(10.0f));
+		Title->SetText(FText::FromString(TEXT("시설 수익")));
+		StyleLightText(*Title, 14, Palette.InGame.TealDeep, TEXT("SemiBold"));
+		AddVertical(*Content, *Title, FMargin(2.0f, 0.0f, 0.0f, 7.0f));
+		if (!AddStatPair(Blueprint, Tree, *Content, Palette,
+				TEXT("Text_FacilityTodayRevenue"), TEXT("오늘 매출"),
+				TEXT("Text_FacilityTotalRevenue"), TEXT("누적 매출")) ||
+			!AddStatPair(Blueprint, Tree, *Content, Palette,
+				TEXT("Text_FacilityRevenueCount"), TEXT("결제 건수"),
+				TEXT("Text_FacilityRevenueShare"), TEXT("오늘 매출 비중")))
+		{
+			return nullptr;
+		}
+		Status->SetText(FText::FromString(TEXT("아직 결제가 없습니다. 손님이 이용을 마치면 수수료가 들어옵니다.")));
+		Status->SetAutoWrapText(true);
+		StyleLightText(*Status, 11, Palette.InGame.InkMuted, TEXT("Medium"));
+		AddVertical(*Content, *Status, FMargin(2.0f, 0.0f, 2.0f, 0.0f));
+		Card->AddChild(Content);
+		AddVertical(*Section, *Card);
+		return Section;
+	}
+
+	/** Adds only the missing revenue card right after the upgrade block; designer nodes and slots stay intact. */
+	bool EnsureRevenueWidgetContract(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		bOutModified = false;
+		if (HasRevenueWidgetContract(Blueprint))
+		{
+			return true;
+		}
+		// Refuse a partially authored designer card rather than duplicating or replacing it.
+		for (const FName Name : GetRevenueContractVariableNames())
+		{
+			if (Tree.FindWidget(Name))
+			{
+				return false;
+			}
+		}
+		if (Tree.FindWidget(TEXT("Revenue_Card")))
+		{
+			return false;
+		}
+		UVerticalBox* Content = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Content")));
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Content || !Palette)
+		{
+			return false;
+		}
+		Blueprint.Modify();
+		Content->Modify();
+		UVerticalBox* Section = BuildRevenueSection(Blueprint, Tree, *Palette);
+		if (!Section || !AddVertical(*Content, *Section, FMargin(0.0f, 0.0f, 0.0f, 8.0f)))
+		{
+			return false;
+		}
+		// Sit right after the upgrade block (or the identity summary) so both the overview and the
+		// operation page open with earnings directly under the facility header.
+		UWidget* Anchor = FFFacilityInfoUpgradeLayout::FindContentChild(
+			Tree.FindWidget(TEXT("Panel_UpgradeSection")), *Content);
+		if (!Anchor)
+		{
+			Anchor = FFFacilityInfoUpgradeLayout::FindContentChild(Tree.FindWidget(TEXT("Summary_Card")), *Content);
+		}
+		if (!Anchor)
+		{
+			Anchor = FFFacilityInfoUpgradeLayout::FindContentChild(Tree.FindWidget(TEXT("Image_Thumbnail")), *Content);
+		}
+		if (Anchor && Anchor != Section)
+		{
+			Content->ShiftChild(Content->GetChildIndex(Anchor) + 1, Section);
+		}
+		bOutModified = true;
+		return HasRevenueWidgetContract(Blueprint);
+	}
+
 	UBorder* BuildInformationSection(
 		UWidgetBlueprint& Blueprint,
 		UWidgetTree& Tree,
@@ -1699,6 +1815,7 @@ namespace FFFacilityInfoWbpBuilder
 		UVerticalBox* Content = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_Content"));
 		UBorder* Summary = BuildIdentitySummary(Blueprint, Tree, *Palette);
 		UVerticalBox* UpgradeSection = BuildUpgradeSection(Blueprint, Tree, *Palette);
+		UVerticalBox* RevenueSection = BuildRevenueSection(Blueprint, Tree, *Palette);
 		UCommonTextBlock* RelocationWarning = MakeWidget<UCommonTextBlock>(
 			Blueprint, Tree, TEXT("Text_RelocationWarning"), true);
 		UBorder* BuildSection = BuildInformationSection(Blueprint, Tree, *Palette, false);
@@ -1708,8 +1825,8 @@ namespace FFFacilityInfoWbpBuilder
 			Blueprint, Tree, TEXT("Text_Feedback"), true);
 		UBorder* Actions = BuildActionRail(Blueprint, Tree, *Palette);
 		if (!Root || !ShadowSize || !Shadow || !PanelSize || !Panel || !Shell || !Header ||
-			!Body || !DetailsScroll || !Content || !Summary || !UpgradeSection || !RelocationWarning ||
-			!BuildSection || !LiveSection || !ProgramSection || !Feedback || !Actions)
+			!Body || !DetailsScroll || !Content || !Summary || !UpgradeSection || !RevenueSection ||
+			!RelocationWarning || !BuildSection || !LiveSection || !ProgramSection || !Feedback || !Actions)
 		{
 			return false;
 		}
@@ -1743,6 +1860,7 @@ namespace FFFacilityInfoWbpBuilder
 
 		AddVertical(*Content, *Summary, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 		AddVertical(*Content, *UpgradeSection, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
+		AddVertical(*Content, *RevenueSection, FMargin(0.0f, 0.0f, 0.0f, 8.0f));
 		RelocationWarning->SetText(FText::FromString(TEXT("! 재배치가 필요합니다.")));
 		RelocationWarning->SetAutoWrapText(true);
 		RelocationWarning->SetVisibility(ESlateVisibility::Collapsed);
@@ -2374,6 +2492,7 @@ namespace FFFacilityInfoWbpBuilder
 				bool bMigratedInstanceLimitContract = false;
 				bool bMigratedUpgradeContract = false;
 				bool bMigratedLightingContract = false;
+				bool bMigratedRevenueContract = false;
 				if (!EnsureProgramWidgetContract(
 						*Existing,
 						*Existing->WidgetTree,
@@ -2386,15 +2505,18 @@ namespace FFFacilityInfoWbpBuilder
 					!HasInstanceLimitWidgetContract(*Existing) ||
 					!EnsureUpgradeWidgetContract(*Existing, *Existing->WidgetTree, bMigratedUpgradeContract) ||
 					!HasUpgradeWidgetContract(*Existing) ||
-					!EnsureLightingWidgetContract(*Existing, *Existing->WidgetTree, bMigratedLightingContract))
+					!EnsureLightingWidgetContract(*Existing, *Existing->WidgetTree, bMigratedLightingContract) ||
+					!EnsureRevenueWidgetContract(*Existing, *Existing->WidgetTree, bMigratedRevenueContract) ||
+					!HasRevenueWidgetContract(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 						TEXT("FF_FACILITY_INFO_UMG_FAIL: existing asset cannot accept a non-destructive widget contract migration: %s"),
 						*PanelPackage);
 					return;
 				}
-				if ((bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract || bMigratedLightingContract) &&
-					!SaveBlueprint(*Existing))
+				const bool bMigratedAnyContract = bMigratedProgramContract || bMigratedInstanceLimitContract ||
+					bMigratedUpgradeContract || bMigratedLightingContract || bMigratedRevenueContract;
+				if (bMigratedAnyContract && !SaveBlueprint(*Existing))
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
 						TEXT("FF_FACILITY_INFO_UMG_FAIL: could not save migrated asset: %s"),
@@ -2402,7 +2524,7 @@ namespace FFFacilityInfoWbpBuilder
 					return;
 				}
 
-				if (bMigratedProgramContract || bMigratedInstanceLimitContract || bMigratedUpgradeContract || bMigratedLightingContract)
+				if (bMigratedAnyContract)
 				{
 					UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
 						TEXT("FF_FACILITY_INFO_UMG_MIGRATED: %s (existing designer nodes preserved)"),
@@ -2438,6 +2560,7 @@ namespace FFFacilityInfoWbpBuilder
 			!HasProgramWidgetContract(*Blueprint) ||
 			!HasInstanceLimitWidgetContract(*Blueprint) ||
 			!HasUpgradeWidgetContract(*Blueprint) ||
+			!HasRevenueWidgetContract(*Blueprint) ||
 			!SaveBlueprint(*Blueprint))
 		{
 			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
@@ -2515,6 +2638,7 @@ namespace FFFacilityInfoWbpBuilder
 			!HasProgramWidgetContract(Blueprint) ||
 			!HasInstanceLimitWidgetContract(Blueprint) ||
 			!HasUpgradeWidgetContract(Blueprint) ||
+			!HasRevenueWidgetContract(Blueprint) ||
 			!SaveBlueprint(Blueprint))
 		{
 			Rollback();
@@ -2812,6 +2936,34 @@ namespace FFFacilityInfoWbpBuilder
 				TEXT("FF_FACILITY_INSPECTOR_MIGRATION_FAIL: incompatible or partially authored contract; no destructive rebuild performed."));
 		}
 	}
+
+	void MigrateFacilityRevenueSection()
+	{
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		if (!Inspector || !Inspector->WidgetTree || !Inspector->GeneratedClass ||
+			!Inspector->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_REVENUE_SECTION_FAIL: installed-facility inspector is missing or has a different native parent."));
+			return;
+		}
+		bool bAdded = false;
+		if (!EnsureRevenueWidgetContract(*Inspector, *Inspector->WidgetTree, bAdded) ||
+			(bAdded && !SaveBlueprint(*Inspector)))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_REVENUE_SECTION_FAIL: incompatible inspector seam or save failure; no tree reset performed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+			TEXT("FF_FACILITY_REVENUE_SECTION_%s: %s; existing Designer widgets, slots and events preserved."),
+			bAdded ? TEXT("ADDED") : TEXT("REUSE"), *PanelPackage);
+	}
+
+	FAutoConsoleCommand MigrateFacilityRevenueSectionCommand(
+		TEXT("FF.MigrateFacilityRevenueSection"),
+		TEXT("Adds the editable per-facility revenue card (today/total earnings, payment count, share) after the upgrade block; reruns preserve Designer edits."),
+		FConsoleCommandDelegate::CreateStatic(&MigrateFacilityRevenueSection));
 
 	void MigrateFacilitySynergyTab()
 	{

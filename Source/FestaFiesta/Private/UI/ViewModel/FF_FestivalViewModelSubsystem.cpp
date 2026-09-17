@@ -3,6 +3,7 @@
 #include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Economy/FF_StageEconomyBridgeSubsystem.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Engine/GameInstance.h"
@@ -632,10 +633,11 @@ TArray<FFF_PrepFacilityOption> UFF_FestivalViewModelSubsystem::GetEligibleFacili
 		Option.FacilityInstanceId = Facility.FacilityInstanceId;
 		Option.ZoneId = Facility.ZoneId;
 
-		// 사람이 읽을 이름이 시설 데이터에 없다. 고유 토큰이 그나마 구분되는 값이다.
-		Option.DisplayName = Parts.UniqueToken.IsEmpty()
-			? FText::FromName(Facility.FacilityDefinitionId)
-			: FText::FromString(Parts.UniqueToken);
+		// Use the same authored name as the guide and construction catalog.
+		const UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>();
+		Option.DisplayName = BuildCatalog
+			? BuildCatalog->ResolveFacilityDisplayName(Facility.FacilityDefinitionId)
+			: NSLOCTEXT("FestaFiestaPrepProgram", "FacilityNameUnavailable", "프로그램 시설");
 	}
 
 	return Options;

@@ -448,6 +448,14 @@ bool FFF_QueueEconomyBridge_ServedExitAddsCommission::RunTest(const FString& Par
 	TestEqual(TEXT("표의 키가 FacilityDefinitionId 다"), FacilityRows[0].FacilityId, BoothDefinitionId);
 	TestEqual(TEXT("표의 금액이 수수료와 같다"), FacilityRows[0].Amount, Expected);
 
+	// 설치 시설 인스턴스 장부 — 같은 종류의 부스가 여러 개여도 이 부스 한 곳의 값이다 (시설 정보 패널용).
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	TestTrue(TEXT("인스턴스 장부에 이 부스가 있다"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, InstanceRevenue));
+	TestEqual(TEXT("인스턴스 오늘 매출이 수수료와 같다"), InstanceRevenue.TodayGold, Expected);
+	TestEqual(TEXT("인스턴스 누적 매출이 수수료와 같다"), InstanceRevenue.TotalGold, Expected);
+	TestEqual(TEXT("인스턴스 결제 건수는 파티 한 번이다"), InstanceRevenue.TodayPaymentCount, 1);
+
 	return true;
 }
 
@@ -487,6 +495,9 @@ bool FFF_QueueEconomyBridge_UnpaidExitAddsNothing::RunTest(const FString& Parame
 		Harness.Progression->GetTodayRevenue(), RevenueBefore);
 	TestEqual(TEXT("부스별 표도 비어 있다"),
 		Harness.Progression->GetRevenueByFacilityRowsForDay(1).Num(), 0);
+	FFF_FacilityInstanceRevenue InstanceRevenue;
+	TestFalse(TEXT("인스턴스 장부에도 결제가 없다"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, InstanceRevenue));
 
 	return true;
 }
