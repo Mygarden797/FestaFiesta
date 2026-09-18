@@ -111,6 +111,10 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
 	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
+	// 재시작 시 등급이 지워지는데 이 셋을 안 알리면 UI 캐시가 "이미 구매함"으로 남는다
+	const int32 PreviousExpectedVisitors = GetExpectedVisitors();
+	const EFF_PromotionGrade PreviousPromotionGrade = PurchasedPromotionGrade;
+	const EFF_FinaleGrade PreviousFinaleGrade = PurchasedFinaleGrade;
 
 	Definition = InDefinition;
 	Funds.Initialize(InDefinition->InitialGold);
@@ -147,6 +151,15 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
 	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
+	if (PurchasedPromotionGrade != PreviousPromotionGrade)
+	{
+		OnPromotionGradeChanged.Broadcast(PurchasedPromotionGrade);
+	}
+	if (PurchasedFinaleGrade != PreviousFinaleGrade)
+	{
+		OnFinaleGradeChanged.Broadcast(PurchasedFinaleGrade);
+	}
+	BroadcastExpectedVisitorsIfChanged(PreviousExpectedVisitors);
 	OnFestivalDefinitionChanged.Broadcast();
 }
 

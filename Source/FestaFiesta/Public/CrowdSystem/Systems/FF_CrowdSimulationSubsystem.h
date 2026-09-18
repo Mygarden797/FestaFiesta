@@ -98,6 +98,11 @@ struct FESTAFIESTA_API FFF_CrowdFlowBreakdown
 //        -> PushPresentationToActors     (바인딩된 Actor에만 결과 전달)
 //
 // Actor는 시뮬레이션에 참여하지 않고 계산이 끝난 위치·회전·속도를 받기만 한다.
+
+// 방문객이 실제로 입장(스폰)했음을 알린다. 개인 단위가 아니라 한 번의 DrainVisitorUntil 호출에서
+// 스폰된 인원 수를 묶어서 보낸다 — 경제의 입장료 연결용. 스폰 로직 자체엔 관여하지 않는다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVisitorsAdmitted, int32, AdmittedCount);
+
 UCLASS()
 class FESTAFIESTA_API UFF_CrowdSimulationSubsystem : public UTickableWorldSubsystem
 {
@@ -482,6 +487,10 @@ public:
 	float WanderArrivalRadiusUU = 400.f;
 	
 	int32 ArrivalRequestedVisitorCount = 0;
+
+	// 외부(경제)가 채워주는 값. INDEX_NONE 이 아니면 다음 Live 진입부터 ArrivalRequestedVisitorCount
+	// 대신 이 값을 쓴다 — Crowd는 이 값의 출처를 모른다, 누가 채우든 상관없는 순수 입력 슬롯이다.
+	int32 ExpectedVisitorCountOverride = INDEX_NONE;
 
 	// 같은 파티가 '도착'으로 다시 결정하기까지의 최소 간격, 초. 0이면 끈다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
@@ -904,8 +913,20 @@ public:
 		const TArray<FFF_ReservedPartyRequest>& ReservedParties = TArray<FFF_ReservedPartyRequest>());
 	
 	int32 DrainVisitorUntil(int32 TargetCumulativeCount);
-	
+
 	void UpdateArrivalSchedule();
+
+	// 방문객이 입장할 때마다(이번 Drain 호출에서 스폰된 인원 수) 알린다. 경제의 입장료 연결용.
+	UPROPERTY(BlueprintAssignable, Category = "Crowd|Arrival")
+	FOnVisitorsAdmitted OnVisitorsAdmitted;
+
+	// 다음 Live 진입부터 쓸 방문객 수를 외부에서 채운다(홍보 배수 반영용). INDEX_NONE 이면
+	// 기존 캐시값을 그대로 쓴다 — 아무도 안 채우면 예전과 동작이 같다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Arrival")
+	void SetExpectedVisitorCountOverride(int32 NewCount) { ExpectedVisitorCountOverride = NewCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
+	int32 GetExpectedVisitorCountOverride() const { return ExpectedVisitorCountOverride; }
 
 private:
 
