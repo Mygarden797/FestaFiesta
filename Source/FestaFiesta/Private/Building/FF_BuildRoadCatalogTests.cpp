@@ -15,8 +15,9 @@
 
 namespace FFBuildRoadCatalogTest
 {
-    const TCHAR* Names[] = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Wood"),
-        TEXT("Stone"), TEXT("Herringbone"), TEXT("Concrete") };
+    // Wood and Stone moved from roads to tiles; the remaining four stay roads only.
+    const TCHAR* RoadNames[] = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Herringbone"), TEXT("Concrete") };
+    const TCHAR* TileNames[] = { TEXT("Wood"), TEXT("Stone") };
 
     // Load through the same asynchronous discovery and validation path as the player's menu.
     class FVerifyCatalog final : public IAutomationLatentCommand
@@ -53,7 +54,7 @@ namespace FFBuildRoadCatalogTest
                 const FFF_BuildCatalogCategoryGroup* CategoryGroup = Groups.FindByPredicate(
                     [Category](const FFF_BuildCatalogCategoryGroup& Group) { return Group.Category == Category; });
                 Test->TestNotNull(*FString::Printf(TEXT("Build menu exposes %s separately"), MajorToken), CategoryGroup);
-                for (const TCHAR* Name : Names)
+                for (const TCHAR* Name : bIsTile ? MakeArrayView(TileNames) : MakeArrayView(RoadNames))
                 {
                     const FName Id(*FString::Printf(TEXT("%s_Surface_%s"), MajorToken, Name));
                     const FPrimaryAssetId PrimaryId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), Id);
@@ -95,18 +96,6 @@ namespace FFBuildRoadCatalogTest
                     Test->TestFalse(TEXT("Surface mesh is linked"), Spec.VisualMesh.IsNull());
                     Test->TestFalse(TEXT("Surface upgrades are disabled"), Spec.bUsesFacilityLevels);
                     Test->TestTrue(TEXT("Both surface categories support drag placement"), Definition->bEnableDragPlacement);
-                    if (bIsTile)
-                    {
-                        const FName RoadId(*FString::Printf(TEXT("Road_Surface_%s"), Name));
-                        const UFFZSFacilityDefinition* RoadDefinition = Catalog->FindDefinition(RoadId);
-                        if (Test->TestNotNull(TEXT("Each tile retains a matching road variant"), RoadDefinition))
-                        {
-                            Test->TestEqual(TEXT("Matching road and tile keep the same authored footprint"),
-                                Spec.FootprintSizeCells, RoadDefinition->Spec.FootprintSizeCells);
-                            Test->TestTrue(TEXT("Matching road and tile use the same surface mesh"),
-                                Spec.VisualMesh == RoadDefinition->Spec.VisualMesh);
-                        }
-                    }
                     int32 Cost = 0;
                     FName MatchedRow;
                     FString Failure;
