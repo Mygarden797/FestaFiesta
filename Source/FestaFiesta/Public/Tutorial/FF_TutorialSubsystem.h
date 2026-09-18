@@ -7,6 +7,7 @@
 #include "Tickable.h"
 #include "FF_FFZSTypes.h"
 #include "Time/FF_FestivalStage.h"
+#include "UI/PrepHUD/FF_PrepHudTypes.h"
 #include "Tutorial/FF_TutorialTypes.h"
 #include "FF_TutorialSubsystem.generated.h"
 
@@ -201,6 +202,17 @@ private:
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 
+	// 준비 화면 탭이 열리거나 닫히면 온다.
+	UFUNCTION()
+	void HandlePrepTabSelectionChanged(FFF_PrepTabSelection Selection);
+
+	/* 탭 바를 구독한다. 화면이 만들어진 뒤에야 가능하므로 여러 번 시도한다.
+
+	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 레벨을 옮기면 다시 만들어진다.
+	   한 번만 시도하면 그 사이에 놓친다.
+	*/
+	void TryBindPrepHudBar();
+
 	void BindGameSignals();
 	void UnbindGameSignals();
 
@@ -290,6 +302,9 @@ private:
 
 	// 확인용으로 만든 줄. 데이터에 없는 줄이라 여기서 들고 있는다.
 	FFF_DialogueLine SkipConfirmLine;
+
+	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
+	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
 
 	bool bBoundZoneWorld = false;
 	bool bBoundStage = false;

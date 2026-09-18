@@ -79,6 +79,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UButton> SkipButton;
 
+	/* 대사창 안에서만 클릭을 받는 버튼.
+
+	   AdvanceButton 은 화면 전체를 덮는다. 스토리 구간에서는 그게 맞지만
+	   운영 화면 위에서는 시설을 고르려는 클릭까지 가로챈다.
+
+	   줄이 BoxOnly 면 이쪽을 쓰고 전체 버튼은 숨긴다.
+	   둘을 한 버튼의 크기 변경으로 처리하지 않는 이유는, 앵커와 오프셋을 코드에서
+	   갈아끼우면 BP 에서 잡은 배치를 코드가 덮어쓰게 되기 때문이다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UButton> BoxAdvanceButton;
+
 private:
 	UFUNCTION()
 	void HandleLineChanged(const FFF_DialogueLine& Line);
@@ -95,9 +107,8 @@ private:
 	void RebuildChoices(const FFF_DialogueLine& Line);
 	void ClearChoices();
 
-	// 선택지가 떠 있는 동안에는 클릭으로 넘기지 못하게 한다.
-	// 안 그러면 아무 데나 눌러서 선택을 건너뛰게 된다.
-	void SetAdvanceEnabled(bool bEnabled);
+	// 어느 클릭 판을 켤지 정한다. 선택지나 조작 대기 줄에서는 둘 다 끈다.
+	void ApplyClickArea(const FFF_DialogueLine& Line);
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_DialogueChoiceButton>> ChoiceButtons;
