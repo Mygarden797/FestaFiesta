@@ -68,6 +68,26 @@ function Resolve-PayloadRoot {
     throw "UAT completed without producing a complete FestaFiesta payload below: $ArchiveRoot"
 }
 
+function Assert-LockedToolchainSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $LogPath,
+
+        [Parameter(Mandatory = $true)]
+        [object] $Lock
+    )
+
+    $selections = @(Select-String -LiteralPath $LogPath -Pattern (
+        'Using Visual Studio .*?([0-9]+\.[0-9]+\.[0-9]+) toolchain.*?Windows ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) SDK'))
+    foreach ($selection in $selections) {
+        if ($selection.Matches[0].Groups[1].Value -ne [string]$Lock.windows.msvcToolchain -or
+            $selection.Matches[0].Groups[2].Value -ne [string]$Lock.windows.sdk) {
+            throw "UBT selected a toolchain different from toolchain.lock.json: $($selection.Line)"
+        }
+    }
+    return , $selections
+}
+
 $gameBinaryBaseName = Get-FFGameBinaryBaseName -Configuration $Configuration
 $projectRoot = Get-FFProjectRoot
 $projectFile = Get-FFProjectFile
@@ -122,8 +142,20 @@ if ($driveInfo.AvailableFreeSpace -lt 10GB) {
         ($driveInfo.AvailableFreeSpace / 1GB), $outputDriveRoot)
 }
 
+# A clean build deletes the project's editor DLLs; an open editor (or a game
+# started from Binaries) holds them and fails UAT only after validation ran.
+$projectFileName = [System.IO.Path]::GetFileName($projectFile)
+$lockingProcesses = @(Get-CimInstance Win32_Process | Where-Object {
+        ($_.Name -like 'UnrealEditor*.exe' -and [string]$_.CommandLine -like "*$projectFileName*") -or
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($projectRoot, [System.StringComparison]::OrdinalIgnoreCase))
+    })
+if ($lockingProcesses.Count -gt 0) {
+    $processText = ($lockingProcesses | ForEach-Object { "  - $($_.Name) (PID $($_.ProcessId))" }) -join [Environment]::NewLine
+    throw "Close the editor/game using this project before packaging:$([Environment]::NewLine)$processText"
+}
+
 Assert-FFAssetsMaterialized
-$gitLfsVersion = Assert-FFGitLfsHealth -ExpectedVersion ([string]$toolchainLock.sourceControl.gitLfs)
+$gitLfsVersion = Assert-FFGitLfsHealth -MinimumVersion ([string]$toolchainLock.sourceControl.gitLfsMinimum)
 
 $git = Get-FFGitMetadata
 $projectVersion = Get-FFProjectVersion
@@ -141,6 +173,17 @@ $stagingParent = Join-Path $OutputRoot '.staging'
 $releaseRoot = Join-Path $stagingParent $BuildLabel
 if ((Test-Path -LiteralPath $finalReleaseRoot) -or (Test-Path -LiteralPath $releaseRoot)) {
     throw "Release or staging output already exists; refusing to overwrite build label '$BuildLabel'."
+}
+
+# .NET ZipFile and several Windows tools stop at MAX_PATH (260). The deepest
+# staged file is ~80 characters below the payload root (Engine ThirdParty DLLs),
+# so fail before the long build instead of at the archive step.
+$payloadPathBudget = 100
+$deepestPayloadRoot = Join-Path $releaseRoot 'Package\Windows\'
+if ($deepestPayloadRoot.Length + $payloadPathBudget -ge 260) {
+    throw ("Output path is too deep for Windows MAX_PATH: '{0}' ({1} chars) leaves less than {2} characters for staged files. " +
+        'Use a shorter -OutputRoot (for example C:\Builds\FestaFiesta) or a shorter -BuildLabel.') -f
+        $deepestPayloadRoot, $deepestPayloadRoot.Length, $payloadPathBudget
 }
 
 $archiveRoot = Join-Path $releaseRoot 'Package'
@@ -164,6 +207,21 @@ try {
     Write-Host "Output:  $releaseRoot"
     Write-Host ('Mode:    {0}' -f $(if ($Incremental) { 'incremental' } else { 'clean release' }))
 
+    if ($git.Dirty) {
+        # A commit hash alone cannot rebuild a dirty artifact. Keep the exact
+        # tracked delta and the untracked file list beside the build metadata.
+        $safeRoot = $projectRoot.Replace('\', '/')
+        & git -c "safe.directory=$safeRoot" -C $projectRoot diff HEAD --binary `
+            "--output=$(Join-Path $metadataRoot 'source-dirty.patch')"
+        $untracked = @(& git -c "safe.directory=$safeRoot" -C $projectRoot status --porcelain --untracked-files=all |
+            Where-Object { $_.StartsWith('??') })
+        [System.IO.File]::WriteAllLines(
+            (Join-Path $metadataRoot 'source-dirty-untracked.txt'),
+            [string[]]$untracked,
+            (New-Object System.Text.UTF8Encoding($false)))
+        Write-Warning 'Building from a dirty working tree; the delta is stored in Metadata/source-dirty.patch.'
+    }
+
     $currentPhase = 'validation'
     $currentLog = 'Validation'
     if (-not $SkipTests) {
@@ -178,6 +236,10 @@ try {
             -OutputRoot $validationRoot `
             -TestFilter @()
     }
+    # The editor build selects the same toolchain as the game build. Checking
+    # its log here fails a drifted machine before the long clean BuildCookRun.
+    $null = Assert-LockedToolchainSelection `
+        -LogPath (Join-Path $validationRoot 'EditorBuild.log') -Lock $toolchainLock
 
     $runUat = Join-Path $resolvedEngineRoot 'Engine\Build\BatchFiles\RunUAT.bat'
     $uatLog = Join-Path $logsRoot 'BuildCookRun.log'
@@ -225,17 +287,18 @@ try {
         throw "BuildCookRun failed with exit code $uatExitCode. See: $uatLog"
     }
 
+    # The cooker still succeeds when a cooked package hard-references content
+    # it did not cook (NeverCook rules, editor-only targets). The player would
+    # get a null reference at runtime, so treat it as a release blocker.
+    $missingContent = @(Select-String -LiteralPath $uatLog -Pattern 'Content is missing from cook')
+    if ($missingContent.Count -gt 0) {
+        throw "The cook dropped $($missingContent.Count) referenced package(s): $($missingContent[0].Line.Trim()) See: $uatLog"
+    }
+
     # Installation presence is not evidence that UBT selected that toolchain.
     # An up-to-date build may omit these lines; record unknown rather than
     # attributing the requested version to binaries without evidence.
-    $toolchainSelections = @(Select-String -LiteralPath $uatLog -Pattern (
-        'Using Visual Studio .*?([0-9]+\.[0-9]+\.[0-9]+) toolchain.*?Windows ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) SDK'))
-    foreach ($selection in $toolchainSelections) {
-        if ($selection.Matches[0].Groups[1].Value -ne [string]$toolchainLock.windows.msvcToolchain -or
-            $selection.Matches[0].Groups[2].Value -ne [string]$toolchainLock.windows.sdk) {
-            throw "UBT selected a toolchain different from toolchain.lock.json: $($selection.Line)"
-        }
-    }
+    $toolchainSelections = Assert-LockedToolchainSelection -LogPath $uatLog -Lock $toolchainLock
     $selectedMsvc = if ($toolchainSelections.Count -gt 0) { $toolchainSelections[0].Matches[0].Groups[1].Value } else { $null }
     $selectedSdk = if ($toolchainSelections.Count -gt 0) { $toolchainSelections[0].Matches[0].Groups[2].Value } else { $null }
 
@@ -423,6 +486,30 @@ try {
             (Join-Path $metadataRoot 'ARCHIVE-SHA256.txt'),
             "$zipHash  $([System.IO.Path]::GetFileName($zipPath))$([Environment]::NewLine)",
             (New-Object System.Text.UTF8Encoding($false)))
+    }
+
+    # Size is a release budget: record where the bytes go and the change
+    # against the last promoted build so regressions are caught per release.
+    $currentPhase = 'size-report'
+    $previousSizeReport = $null
+    $latestIndexPath = Join-Path $OutputRoot 'latest.json'
+    if (Test-Path -LiteralPath $latestIndexPath -PathType Leaf) {
+        $previousLatest = Get-Content -LiteralPath $latestIndexPath -Raw | ConvertFrom-Json
+        $previousSizeReport = Join-Path $OutputRoot "$($previousLatest.releasePath)\Metadata\size-report.json"
+    }
+    $sizeReport = Write-FFSizeReport `
+        -PayloadRoot $payloadRoot `
+        -IoStoreCsv (Join-Path $metadataRoot 'IoStore-Contents.csv') `
+        -OutputFile (Join-Path $metadataRoot 'size-report.json') `
+        -ArchivePath $zipPath `
+        -PreviousReport $previousSizeReport
+    Write-Host ('Size:    payload {0:N1} MiB, containers {1:N1} MiB{2}' -f
+        ($sizeReport.payloadBytes / 1MB),
+        ($sizeReport.mainContainer.compressedBytes / 1MB),
+        $(if ($null -ne $sizeReport.archiveBytes) { ', archive {0:N1} MiB' -f ($sizeReport.archiveBytes / 1MB) } else { '' }))
+    if ($null -ne $sizeReport.comparedTo) {
+        Write-Host ('         vs {0}: payload {1:+#,0;-#,0;0} bytes' -f
+            $previousLatest.buildLabel, $sizeReport.comparedTo.payloadBytesDelta)
     }
 
     $latest = [ordered]@{

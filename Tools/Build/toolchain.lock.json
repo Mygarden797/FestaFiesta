@@ -10,10 +10,10 @@
   "windows": {
     "targetPlatform": "Win64",
     "sdk": "10.0.22621.0",
-    "msvcToolchain": "14.44.35225",
+    "msvcToolchain": "14.44.35228",
     "msvcInstall": "14.44.35207"
   },
   "sourceControl": {
-    "gitLfs": "3.5.1"
+    "gitLfsMinimum": "3.5.1"
   }
 }
