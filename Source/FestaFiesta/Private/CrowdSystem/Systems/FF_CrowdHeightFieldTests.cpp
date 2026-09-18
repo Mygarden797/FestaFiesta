@@ -7,7 +7,7 @@
 
 namespace FFF_HeightFieldTestHelpers
 {
-	// 시뮬 반경 100m 규모. 실제 SimRadiusUU 기본값과 같은 자릿수다
+	// 100m 규모의 격자. 실제 맵의 NavMesh 경계와 같은 자릿수다
 	constexpr double HalfSizeCm = 10000.0;
 	constexpr double SpacingCm = 200.0;
 

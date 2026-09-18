@@ -5,6 +5,8 @@
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
+#include "Tutorial/FF_SkipConfirmWidget.h"
+#include "Tutorial/FF_TutorialSettings.h"
 #include "Tutorial/FF_TutorialSubsystem.h"
 
 void UFF_DialogueBoxWidget::NativeConstruct()
@@ -14,6 +16,16 @@ void UFF_DialogueBoxWidget::NativeConstruct()
 	if (AdvanceButton)
 	{
 		AdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
+	if (SkipButton)
+	{
+		SkipButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
 	}
 
 	UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this);
@@ -57,6 +69,16 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 		AdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
 	}
 
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
+	if (SkipButton)
+	{
+		SkipButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
+	}
+
 	ClearChoices();
 	Super::NativeDestruct();
 }
@@ -79,10 +101,7 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 
 	RebuildChoices(Line);
 
-	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
-	const bool bCanAdvance =
-		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
-	SetAdvanceEnabled(bCanAdvance);
+	ApplyClickArea(Line);
 
 	BP_OnLineChanged(Line);
 }
@@ -111,6 +130,41 @@ void UFF_DialogueBoxWidget::HandleAdvanceClicked()
 	{
 		// 넘길 수 있는지는 서브시스템이 판단한다. 여기서 또 검사하면 규칙이 두 곳에 생긴다.
 		Tutorial->Advance();
+	}
+}
+
+void UFF_DialogueBoxWidget::HandleSkipClicked()
+{
+	// 바로 끝내지 않는다. 되돌릴 수 없는 선택이라 확인을 받는다.
+	//
+	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
+	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	UClass* ConfirmClass = Settings ? Settings->SkipConfirmWidgetClass.LoadSynchronous() : nullptr;
+
+	if (!ConfirmClass)
+	{
+		// 확인 창이 지정되지 않았다. 확인 없이 끝내지는 않는다.
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[튜토리얼] 건너뛰기 확인 창이 지정되지 않았다. Project Settings 를 확인할 것."));
+		BP_OnSkipRequested();
+		return;
+	}
+
+	UFF_SkipConfirmWidget* Confirm = CreateWidget<UFF_SkipConfirmWidget>(GetOwningPlayer(), ConfirmClass);
+	if (Confirm)
+	{
+		Confirm->AddToViewport(Settings->SkipConfirmZOrder);
+	}
+
+	BP_OnSkipRequested();
+}
+
+void UFF_DialogueBoxWidget::ConfirmSkipTutorial()
+{
+	if (UFF_TutorialSubsystem* Tutorial = UFF_TutorialSubsystem::Get(this))
+	{
+		Tutorial->SkipTutorial();
 	}
 }
 
@@ -163,19 +217,30 @@ void UFF_DialogueBoxWidget::ClearChoices()
 	}
 }
 
-void UFF_DialogueBoxWidget::SetAdvanceEnabled(const bool bEnabled)
+void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
 {
-	if (!AdvanceButton)
-	{
-		return;
-	}
+	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
+	const bool bCanAdvance =
+		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
 
-	AdvanceButton->SetIsEnabled(bEnabled);
+	const bool bFullScreen = bCanAdvance
+		&& Line.ClickArea == EFF_DialogueClickArea::FullScreen;
+	const bool bBoxOnly = bCanAdvance
+		&& Line.ClickArea == EFF_DialogueClickArea::BoxOnly;
 
-	// 클릭 영역이 선택지를 덮고 있으면 선택지를 못 누른다.
 	// 비활성만으로는 히트 판정이 남는 경우가 있어 아예 숨긴다.
-	AdvanceButton->SetVisibility(
-		bEnabled ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	auto Apply = [](UButton* Button, const bool bOn)
+	{
+		if (!Button)
+		{
+			return;
+		}
+		Button->SetIsEnabled(bOn);
+		Button->SetVisibility(bOn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+
+	Apply(AdvanceButton, bFullScreen);
+	Apply(BoxAdvanceButton, bBoxOnly);
 }
 
 // ── 선택지 버튼 ─────────────────────────────────────────────────────────────

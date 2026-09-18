@@ -253,6 +253,8 @@ void AFF_AtlasGlobeActor::Tick(float DeltaSeconds)
 
 	if (bTransitioning)
 	{
+		// 접근 연출 중에는 카메라도 움직인다. 현재 시점에서 목표를 갱신해 도착 후 밀리지 않게 한다.
+		TransitionTo = ComputeCountryFocusOrientation(TransitionTargetCountryId);
 		TransitionElapsed += DeltaSeconds;
 
 		if (TransitionDuration <= UE_KINDA_SMALL_NUMBER || TransitionElapsed >= TransitionDuration)
@@ -267,6 +269,11 @@ void AFF_AtlasGlobeActor::Tick(float DeltaSeconds)
 	}
 	else
 	{
+		if (bUseFocusViewportPosition && !SelectedCountryId.IsNone())
+		{
+			// 선택이 유지되는 동안에만 창 크기·접근 거리 변화를 따른다. 드래그는 선택을 해제한다.
+			Orientation = ComputeCountryFocusOrientation(SelectedCountryId);
+		}
 		SecondsSinceInput += DeltaSeconds;
 
 		// 손을 뗀 직후에 지구가 스스로 움직이면 조작을 빼앗긴 느낌이 된다. 그래서 지연이 있다.
@@ -302,7 +309,8 @@ void AFF_AtlasGlobeActor::Tick(float DeltaSeconds)
 
 void AFF_AtlasGlobeActor::AddDragInput(const FVector2D& DragPixels)
 {
-	SetSelectedCountry(NAME_None);
+	SetSelectedCountry(NAME_None, true);
+	if (AFF_AtlasCameraRig* Rig = AFF_AtlasCameraRig::Find(this, false)) { Rig->PauseCountryInspection(); }
 	const UFF_AtlasSettings& Settings = GetAtlasSettings();
 
 	// 손으로 돌리는 중에 연출이 겹치면 지구가 두 방향으로 끌린다. 진행 중인 회전은 버린다.
@@ -329,12 +337,13 @@ void AFF_AtlasGlobeActor::FocusOnCountry(FName CountryId, bool bInstant)
 		return;
 	}
 
+	// 목록·조형물·좌우 이동 모두 나라 선택 화면에서는 같은 보기 기준점과 접근 값을 쓴다.
+	if (bUseFocusViewportPosition) { SetSelectedCountry(CountryId); }
 	TransitionFrom = Orientation;
 
 	// ★ 목표를 만드는 지점에서 기울기를 클램프한다. 목표를 안 누르고 도착할 때만 누르면
 	//   보간 중에 한계를 넘어갔다가 마지막 프레임에 툭 되돌아온다.
-	TransitionTo = FFF_AtlasGeo::MakeFocusOrientation(
-		Pins[PinIndex].Location, GetAtlasSettings().MaxTiltDegrees);
+	TransitionTo = ComputeCountryFocusOrientation(CountryId);
 
 	TransitionTargetCountryId = CountryId;
 	TransitionElapsed = 0.f;
@@ -358,6 +367,72 @@ void AFF_AtlasGlobeActor::FocusOnCountry(FName CountryId, bool bInstant)
 	}
 }
 
+void AFF_AtlasGlobeActor::SetFocusViewportPosition(FVector2D Position)
+{
+	if (Position.ContainsNaN()) { return; }
+	FocusViewportPosition = FVector2D(FMath::Clamp(Position.X, 0.0, 1.0), FMath::Clamp(Position.Y, 0.0, 1.0));
+	bUseFocusViewportPosition = true;
+}
+
+void AFF_AtlasGlobeActor::ClearFocusViewportPosition()
+{
+	// 화면을 떠날 때 기존 정면 규약으로 목표를 다시 만들지 않는다.
+	if (bUseFocusViewportPosition && bTransitioning) { CancelTransition(); }
+	bUseFocusViewportPosition = false;
+}
+
+FFF_AtlasLatLong AFF_AtlasGlobeActor::GetCountryInspectionLocation(FName CountryId) const
+{
+	if (const UFF_FestivalAtlasCatalog* Catalog = ResolveCatalog())
+	{
+		if (const FFF_AtlasCountryEntry* Country = Catalog->FindCountry(CountryId))
+		{
+			return FFF_AtlasGeo::NormalizeLatLong(Country->bOverrideInspectionView ? Country->InspectionLocation : Country->Location);
+		}
+	}
+	return FFF_AtlasLatLong();
+}
+
+FFF_AtlasGlobeOrientation AFF_AtlasGlobeActor::ComputeCountryFocusOrientation(FName CountryId) const
+{
+	const int32 Index = FindPinIndex(CountryId);
+	if (!Pins.IsValidIndex(Index)) { return Orientation; }
+	const FFF_AtlasLatLong Location = GetCountryInspectionLocation(CountryId);
+	const float MaxTilt = GetAtlasSettings().MaxTiltDegrees;
+	if (!bUseFocusViewportPosition) { return FFF_AtlasGeo::MakeFocusOrientation(Location, MaxTilt); }
+
+	const APlayerController* Controller = UGameplayStatics::GetPlayerController(this, 0);
+	int32 Width = 0, Height = 0;
+	if (Controller) { Controller->GetViewportSize(Width, Height); }
+	FVector RayOrigin, RayDirection;
+	if (!Controller || Width <= 0 || Height <= 0
+		|| !Controller->DeprojectScreenPositionToWorld(FocusViewportPosition.X * Width,
+			FocusViewportPosition.Y * Height, RayOrigin, RayDirection))
+	{
+		return FFF_AtlasGeo::MakeFocusOrientation(Location, MaxTilt);
+	}
+
+	// 액터의 고정 로컬 공간에서 교차시켜 레벨 회전·스케일과 지리 좌표를 분리한다.
+	// 방향을 정규화한 뒤 가까운 교점만 사용한다. 멀리 있는 뒤쪽 국가는 목표가 될 수 없다.
+	const FTransform ActorTransform = GetActorTransform();
+	const FVector Origin = ActorTransform.InverseTransformPosition(RayOrigin);
+	const FVector Direction = ActorTransform.InverseTransformVector(RayDirection).GetSafeNormal();
+	const double Along = FVector::DotProduct(Origin, Direction);
+	const double Discriminant = Along * Along - (Origin.SizeSquared() - FMath::Square(double(GlobeRadius)));
+	if (!Direction.IsNearlyZero() && Discriminant >= 0.0)
+	{
+		const double Distance = -Along - FMath::Sqrt(Discriminant);
+		if (Distance > 0.0)
+		{
+			return FFF_AtlasGeo::MakeFocusOrientationToward(Location,
+				(Origin + Direction * Distance).GetSafeNormal(), MaxTilt);
+		}
+	}
+
+	// 레벨 구도가 바뀌어 목표 픽셀이 지구 밖이면 가장 잘 보이는 면에 놓는다.
+	return FFF_AtlasGeo::MakeFocusOrientationToward(Location, Origin.GetSafeNormal(), MaxTilt);
+}
+
 void AFF_AtlasGlobeActor::StepFocus(int32 ScreenDirection)
 {
 	if (Pins.Num() == 0)
@@ -370,18 +445,15 @@ void AFF_AtlasGlobeActor::StepFocus(int32 ScreenDirection)
 	TArray<FFF_AtlasLatLong> Locations;
 	GetPinLocations(Locations);
 
-	// ★ 전환 중이면 **목표**가 기준이다. 보간 중인 각도를 기준으로 하면 이미 향해 가고 있는
-	//   핀이 여전히 그 방향의 최근접이라 같은 핀을 다시 고르고 연출만 되돌린다.
-	//   판정은 순수 함수가 갖는다 (`StepReferenceLongitude` 테스트 참고).
-	const float ReferenceLongitude = FFF_AtlasGeo::StepReferenceLongitude(
-		FFF_AtlasGeo::OrientationToFrontLatLong(Orientation).Longitude,
-		TransitionTo.Spin,
-		bTransitioning);
-
+	// 전환 중에는 도착할 국가가 기준이다. 보간 중 각도를 쓰면 연타 때 같은 핀을 다시 고른다.
 	// 동률(경도가 같은 핀)을 순서로 깨기 위해 지금 기준이 되는 핀을 알려 준다.
 	const int32 CurrentIndex = bTransitioning
 		? FindPinIndex(TransitionTargetCountryId)
 		: FindPinIndex(FocusedCountryId);
+	// 화면 중앙 보정 후 Spin은 지리 경도가 아니다. 기준 국가가 있으면 보기 지점의 경도를 쓴다.
+	const float ReferenceLongitude = Pins.IsValidIndex(CurrentIndex)
+		? GetCountryInspectionLocation(Pins[CurrentIndex].CountryId).Longitude
+		: FFF_AtlasGeo::OrientationToFrontLatLong(Orientation).Longitude;
 
 	const int32 NextIndex = FFF_AtlasGeo::FindAdjacentPinIndex(
 		Locations, ReferenceLongitude, ScreenDirection, CurrentIndex);
@@ -416,7 +488,7 @@ void AFF_AtlasGlobeActor::ReSnapToNearestCountry()
 	}
 }
 
-void AFF_AtlasGlobeActor::SetSelectedCountry(FName CountryId)
+void AFF_AtlasGlobeActor::SetSelectedCountry(FName CountryId, bool bKeepCameraPosition)
 {
 	if (SelectedCountryId == CountryId)
 	{
@@ -444,7 +516,17 @@ void AFF_AtlasGlobeActor::SetSelectedCountry(FName CountryId)
 	}
 	if (AFF_AtlasCameraRig* Rig = AFF_AtlasCameraRig::Find(this, false))
 	{
-		Rig->SetCountryInspection(!CountryId.IsNone());
+		if (bKeepCameraPosition)
+		{
+			Rig->PauseCountryInspection();
+		}
+		else
+		{
+			const UFF_FestivalAtlasCatalog* Catalog = ResolveCatalog();
+			const FFF_AtlasCountryEntry* Country = Catalog ? Catalog->FindCountry(CountryId) : nullptr;
+			Rig->SetCountryInspection(!CountryId.IsNone(), Country && Country->bOverrideInspectionView
+				? Country->InspectionApproachFraction : -1.f);
+		}
 	}
 	ApplySelectionVisuals();
 	OnSelectedCountryChanged.Broadcast(SelectedCountryId);
@@ -460,6 +542,7 @@ void AFF_AtlasGlobeActor::SkipTransition()
 	bTransitioning = false;
 
 	// `TransitionTo` 는 이미 클램프된 목표다 (`MakeFocusOrientation`). 여기서 다시 누르지 않는다.
+	TransitionTo = ComputeCountryFocusOrientation(TransitionTargetCountryId);
 	Orientation = TransitionTo;
 	ApplyOrientationToScene();
 
@@ -515,6 +598,9 @@ void AFF_AtlasGlobeActor::GetPinStates(TArray<FFF_AtlasPinState>& OutPins) const
 	OutPins.Reset(Pins.Num());
 
 	const float MinDot = ComputePinVisibleMinDot();
+	FVector Viewer = FVector::ZeroVector;
+	const bool bUseViewer = bUseFocusViewportPosition && GetViewerLocation(Viewer);
+	const FVector ViewDirection = (Viewer - GetActorLocation()).GetSafeNormal();
 
 	for (const FFF_AtlasPinInstance& Pin : Pins)
 	{
@@ -523,6 +609,11 @@ void AFF_AtlasGlobeActor::GetPinStates(TArray<FFF_AtlasPinState>& OutPins) const
 		State.bSelectable = Pin.bSelectable;
 		State.bFacingViewer = FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, MinDot);
 		State.WorldLocation = Pin.Anchor ? Pin.Anchor->GetComponentLocation() : GetActorLocation();
+		if (bUseViewer)
+		{
+			State.bFacingViewer = FFF_AtlasGeo::IsFacingViewer(
+				(State.WorldLocation - GetActorLocation()).GetSafeNormal(), ViewDirection, MinDot);
+		}
 
 		OutPins.Add(State);
 	}
@@ -556,7 +647,7 @@ void AFF_AtlasGlobeActor::GetPinLocations(TArray<FFF_AtlasLatLong>& OutLocations
 	OutLocations.Reset(Pins.Num());
 	for (const FFF_AtlasPinInstance& Pin : Pins)
 	{
-		OutLocations.Add(Pin.Location);
+		OutLocations.Add(GetCountryInspectionLocation(Pin.CountryId));
 	}
 }
 
@@ -983,11 +1074,12 @@ void AFF_AtlasGlobeActor::UpdatePinPresentation()
 		const float VisualScale = EdgeScale * ((bSelected || Pin.CountryId == HoveredCountryId) ? SelectedScale : 1.f);
 		const float EffectiveHeight = Pin.LandmarkSurfaceOffset + Pin.BaseLandmarkHeight * VisualScale;
 		const float LandmarkMinDot = ComputeLandmarkVisibleMinDot(EffectiveHeight / FMath::Max(LandmarkHeight, 1.f));
-		const bool bLandmarkVisible =
-			FFF_AtlasGeo::IsPinFacingFront(
-				Pin.Location, Orientation, LandmarkMinDot);
-		const bool bSurfaceVisible =
-			FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, PinMinDot);
+		const bool bLandmarkVisible = bUseFocusViewportPosition && bHasViewer
+			? FFF_AtlasGeo::IsFacingViewer(SurfaceDirection, ViewDirection, LandmarkMinDot)
+			: FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, LandmarkMinDot);
+		const bool bSurfaceVisible = bUseFocusViewportPosition && bHasViewer
+			? FFF_AtlasGeo::IsFacingViewer(SurfaceDirection, ViewDirection, PinMinDot)
+			: FFF_AtlasGeo::IsPinFacingFront(Pin.Location, Orientation, PinMinDot);
 
 		if (Pin.Anchor)
 		{

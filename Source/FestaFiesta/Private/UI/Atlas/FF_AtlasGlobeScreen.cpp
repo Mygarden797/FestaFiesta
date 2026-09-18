@@ -3,6 +3,7 @@
 #include "UI/Atlas/FF_AtlasGlobeScreen.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/SlateBlueprintLibrary.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -126,6 +127,7 @@ void UFF_AtlasGlobeScreen::NativeDestruct()
 	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get())
 	{
 		Globe->SetHoveredCountry(NAME_None);
+		Globe->ClearFocusViewportPosition();
 		Globe->OnCountryFocused.RemoveDynamic(this, &UFF_AtlasGlobeScreen::HandleCountryFocused);
 	}
 
@@ -140,6 +142,7 @@ void UFF_AtlasGlobeScreen::NativeDestruct()
 
 void UFF_AtlasGlobeScreen::NativeOnActivated()
 {
+	UpdateCountryFocusViewport();
 	// 화면에 올라올 때마다 핀을 다시 만든다. 카탈로그가 이 화면 밖에서 바뀔 수 있고
 	// (`FF.Atlas.Rebuild`), 위젯이 풀에서 재사용되므로 이전 핀이 남아 있을 수 있다.
 	RebuildPinButtons();
@@ -160,6 +163,7 @@ void UFF_AtlasGlobeScreen::NativeOnActivated()
 void UFF_AtlasGlobeScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+	UpdateCountryFocusViewport();
 
 	// 지구 자전 중에도 커서 아래 프랍이 바뀌므로 호버를 매 프레임 확인한다.
 	UpdatePinPositions();
@@ -174,7 +178,12 @@ void UFF_AtlasGlobeScreen::NativeTick(const FGeometry& MyGeometry, float InDelta
 
 void UFF_AtlasGlobeScreen::NativeOnDeactivated()
 {
-	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get()) { Globe->SetSelectedCountry(NAME_None); Globe->SetHoveredCountry(NAME_None); }
+	if (AFF_AtlasGlobeActor* Globe = CachedGlobe.Get())
+	{
+		Globe->SetSelectedCountry(NAME_None);
+		Globe->SetHoveredCountry(NAME_None);
+		Globe->ClearFocusViewportPosition();
+	}
 	PanelCountryId = NAME_None;
 	DragTracker.Reset();
 	Super::NativeOnDeactivated();
@@ -235,8 +244,8 @@ FReply UFF_AtlasGlobeScreen::NativeOnMouseButtonDown(const FGeometry& InGeometry
 	}
 
 	if (!Border_DragSurface || !Border_DragSurface->IsHovered()) { return FReply::Unhandled(); }
-	// 연출 중에 손을 대면 즉시 끝낸다. 반복 플레이에서 매번 다 보게 하지 않는다.
-	SkipPresentation();
+	// 처음 진입하는 카메라 블렌드만 끝낸다. 국가 회전·접근은 드래그가 시작된 위치에서 멈춘다.
+	SkipEntranceCameraMove();
 
 	// 🔴 **이 줄이 로그에 안 뜨면 원인이 다른 곳이다.**
 	//
@@ -635,12 +644,55 @@ void UFF_AtlasGlobeScreen::InspectCountry(FName CountryId)
 	if (!Catalog || !Catalog->FindCountry(CountryId)) { return; }
 	AFF_AtlasGlobeActor* Globe = GetGlobe();
 	if (!Globe) { return; }
-	SkipPresentation();
+	SkipEntranceCameraMove();
+	UpdateCountryFocusViewport();
 	Globe->FocusOnCountry(CountryId);
 	Globe->SetSelectedCountry(CountryId);
 	PanelCountryId = CountryId;
 	RefreshCountryPanel();
 	if (ScrollBox_CountryDetails) { ScrollBox_CountryDetails->ScrollToStart(); }
+}
+
+void UFF_AtlasGlobeScreen::UpdateCountryFocusViewport()
+{
+	if (!IsActivated()) { return; }
+	AFF_AtlasGlobeActor* Globe = GetGlobe();
+	APlayerController* Controller = GetOwningPlayer();
+	if (!Globe || !Controller) { return; }
+	int32 Width = 0, Height = 0;
+	Controller->GetViewportSize(Width, Height);
+	if (Width <= 0 || Height <= 0) { return; }
+
+	FVector2D Target = FallbackCountryFocusPosition;
+	if (UWidget* Panel = GetWidgetFromName(TEXT("Border_LeftPanel")))
+	{
+		const FGeometry& Geometry = Panel->GetCachedGeometry();
+		const FVector2D Size = Geometry.GetLocalSize();
+		double RightPixel = -1.0;
+		if (Size.X > 0.0 && Size.Y > 0.0)
+		{
+			FVector2D Pixel, Viewport;
+			USlateBlueprintLibrary::LocalToViewport(this, Geometry, Size, Pixel, Viewport);
+			RightPixel = Pixel.X;
+		}
+		else if (const UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Panel->Slot))
+		{
+			// 첫 프레임과 비표시 PIE에서는 geometry 캐시가 비어 있다.
+			// 현재 WBP의 루트 캔버스에 직접 붙은 고정 폭 패널만 슬롯·DPI로 계산한다.
+			const FAnchors Anchors = CanvasSlot->GetAnchors();
+			if (Panel->GetParent() == GetRootWidget() && FMath::IsNearlyEqual(Anchors.Minimum.X, Anchors.Maximum.X))
+			{
+				const double Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+				RightPixel = Anchors.Minimum.X * Width + (CanvasSlot->GetPosition().X
+					+ CanvasSlot->GetSize().X * (1.0 - CanvasSlot->GetAlignment().X)) * Scale;
+			}
+		}
+		if (RightPixel >= 0.0 && RightPixel < Width)
+		{
+			Target = FVector2D((RightPixel / Width + 1.0) * 0.5, 0.5);
+		}
+	}
+	Globe->SetFocusViewportPosition(Target);
 }
 
 void UFF_AtlasGlobeScreen::HandleSelectCountryClicked(UFF_CommonButtonBase* Button)
@@ -720,16 +772,12 @@ const UFF_FestivalAtlasCatalog* UFF_AtlasGlobeScreen::GetCatalog() const
 	return Settings->AtlasCatalog.LoadSynchronous();
 }
 
-void UFF_AtlasGlobeScreen::SkipPresentation()
+void UFF_AtlasGlobeScreen::SkipEntranceCameraMove()
 {
-	// 카메라와 지구 회전 둘 다 끝낸다. 하나만 끊으면 반쪽만 멈춘 상태가 된다.
+	// 새 나라를 누를 때 이전 나라의 도착점으로 순간이동하지 않는다.
 	if (AFF_AtlasCameraRig* Rig = AFF_AtlasCameraRig::Find(this, /*bLogIfMissing=*/false))
 	{
-		Rig->SkipCameraMove();
-	}
-	if (AFF_AtlasGlobeActor* Globe = GetGlobe())
-	{
-		Globe->SkipTransition();
+		Rig->SkipCameraMove(false);
 	}
 }
 

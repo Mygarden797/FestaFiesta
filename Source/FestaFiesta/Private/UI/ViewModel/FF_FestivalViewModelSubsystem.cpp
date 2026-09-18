@@ -357,6 +357,8 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerSimSatisfactionChanged(int32 New
 		ApplyIntMetric(SimSatisfactionPreferenceScore, CachedSatisfactionSubsystem->GetPreferenceScore(), OnSimSatisfactionPreferenceScoreChanged);
 		ApplyIntMetric(SimSatisfactionNeedFulfillmentScore, CachedSatisfactionSubsystem->GetNeedFulfillmentScore(), OnSimSatisfactionNeedFulfillmentScoreChanged);
 	}
+
+	RecomputeScoreSatisfaction();
 }
 
 void UFF_FestivalViewModelSubsystem::TryBindInsightsSubsystem()
@@ -1025,14 +1027,24 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerPromotionGradeChanged(EFF_Promot
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged(EFF_FinaleGrade NewGrade)
 {
-	// Bind + Sync 로 한 번, 실제 구매 방송으로 또 한 번 같은 값이 올 수 있다.
-	if (NewGrade == LastBroadcastFinaleGrade)
+	// Bind + Sync 로 한 번, 실제 구매 방송으로 또 한 번 같은 값이 올 수 있다
+	// 위젯 델리게이트는 값이 바뀔 때만 쏜다.
+	if (NewGrade != LastBroadcastFinaleGrade)
 	{
-		return;
+		LastBroadcastFinaleGrade = NewGrade;
+		OnPurchasedFinaleGradeChanged.Broadcast(NewGrade);
 	}
 
-	LastBroadcastFinaleGrade = NewGrade;
-	OnPurchasedFinaleGradeChanged.Broadcast(NewGrade);
+	// FinaleBonus는 등급에서 파생값이라 델리게이트가 없다 — 등급이 바뀔 때(Bind + Sync 포함)
+	// ScoreSatisfaction도 같이 다시 잰다. 값이 실제로 그대로면 ApplyIntMetric이 조용히 넘어간다.
+	RecomputeScoreSatisfaction();
+}
+
+void UFF_FestivalViewModelSubsystem::RecomputeScoreSatisfaction()
+{
+	const int32 FinaleBonus = GetFinaleSatisfactionBonus();
+	const int32 NewScoreSatisfaction = FMath::Clamp(SimSatisfaction + FinaleBonus, 0, MetricMax);
+	ApplyIntMetric(ScoreSatisfaction, NewScoreSatisfaction, OnScoreSatisfactionChanged);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerEnvironmentChanged(EFF_WeatherType NewWeather, bool bIsNight)

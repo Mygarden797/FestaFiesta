@@ -26,6 +26,16 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 			UE_LOG(LogTemp, Log,
 				TEXT("[축제 단계] %d -> %d 전환이 막혔다: %s"),
 				static_cast<int32>(CurrentStage), static_cast<int32>(NewStage), *ReasonText);
+
+			// 디버그(매일 재검사 원인 조사)
+			if (const UWorld* World = GetWorld())
+			{
+				if (const auto* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>())
+				{
+					UE_LOG(LogTemp, Log, TEXT("[축제 단계] 필수 시설 실제 상태: %s"),
+						*Required->DebugDescribeRequiredFacilities());
+				}
+			}
 		}
 		return;
 	}
@@ -36,7 +46,7 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
 	ElapsedLiveSeconds = 0.f;
-		// 날마다 길이가 달라, 시계를 0으로 리셋함
+	// 날마다 길이가 달라, 시계를 0으로 리셋함
 	bWasMainProgramLocked = false;
 	// 날짜 바뀔 때 공연 시작 체크도 초기화
 	bNightLightingActivated = false;

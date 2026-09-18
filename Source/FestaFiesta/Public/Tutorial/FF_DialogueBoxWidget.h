@@ -35,6 +35,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Dialogue")
 	void HandleChoiceSelected(int32 ChoiceIndex);
 
+	// 확인 창에서 "건너뛰기" 를 골랐을 때 BP 가 부른다.
+	//
+	// 버튼을 누르는 즉시 끝내지 않는 이유는, 되돌릴 수 없는 선택이라서다.
+	// 조작 안내까지 사라지므로 한 번 물어봐야 한다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Dialogue")
+	void ConfirmSkipTutorial();
+
 protected:
 	// 줄이 바뀌었다. 애니메이션이나 초상화 교체를 여기에 붙인다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Dialogue", meta = (DisplayName = "On Line Changed"))
@@ -43,6 +50,14 @@ protected:
 	// 대사창이 뜨거나 내려간다. 페이드를 여기에 붙인다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Dialogue", meta = (DisplayName = "On Dialogue Active Changed"))
 	void BP_OnDialogueActiveChanged(bool bActive);
+
+	// 건너뛰기 버튼을 눌렀다. 여기서 확인 창을 띄운다.
+	//
+	// 확인 창을 C++ 에서 만들지 않는 이유는, 그러면 이 위젯이 다른 UI 를 알아야 하고
+	// 창 모양을 바꿀 때마다 여기도 고쳐야 하기 때문이다.
+	// 띄우는 건 BP 가 하고, 사용자가 확인하면 ConfirmSkipTutorial 을 부른다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Dialogue", meta = (DisplayName = "On Skip Requested"))
+	void BP_OnSkipRequested();
 
 	// 선택지 버튼을 만들 클래스. 지정하지 않으면 선택지가 표시되지 않는다.
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Dialogue")
@@ -60,6 +75,22 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UPanelWidget> ChoiceContainer;
 
+	// 건너뛰기 버튼. 없어도 동작한다.
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UButton> SkipButton;
+
+	/* 대사창 안에서만 클릭을 받는 버튼.
+
+	   AdvanceButton 은 화면 전체를 덮는다. 스토리 구간에서는 그게 맞지만
+	   운영 화면 위에서는 시설을 고르려는 클릭까지 가로챈다.
+
+	   줄이 BoxOnly 면 이쪽을 쓰고 전체 버튼은 숨긴다.
+	   둘을 한 버튼의 크기 변경으로 처리하지 않는 이유는, 앵커와 오프셋을 코드에서
+	   갈아끼우면 BP 에서 잡은 배치를 코드가 덮어쓰게 되기 때문이다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UButton> BoxAdvanceButton;
+
 private:
 	UFUNCTION()
 	void HandleLineChanged(const FFF_DialogueLine& Line);
@@ -70,12 +101,14 @@ private:
 	UFUNCTION()
 	void HandleAdvanceClicked();
 
+	UFUNCTION()
+	void HandleSkipClicked();
+
 	void RebuildChoices(const FFF_DialogueLine& Line);
 	void ClearChoices();
 
-	// 선택지가 떠 있는 동안에는 클릭으로 넘기지 못하게 한다.
-	// 안 그러면 아무 데나 눌러서 선택을 건너뛰게 된다.
-	void SetAdvanceEnabled(bool bEnabled);
+	// 어느 클릭 판을 켤지 정한다. 선택지나 조작 대기 줄에서는 둘 다 끈다.
+	void ApplyClickArea(const FFF_DialogueLine& Line);
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_DialogueChoiceButton>> ChoiceButtons;

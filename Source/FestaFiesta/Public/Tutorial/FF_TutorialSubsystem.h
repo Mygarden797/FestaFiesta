@@ -7,6 +7,7 @@
 #include "Tickable.h"
 #include "FF_FFZSTypes.h"
 #include "Time/FF_FestivalStage.h"
+#include "UI/PrepHUD/FF_PrepHudTypes.h"
 #include "Tutorial/FF_TutorialTypes.h"
 #include "FF_TutorialSubsystem.generated.h"
 
@@ -22,6 +23,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnDialogueLineChanged, const FFF
 
 // 대화가 시작되거나 끝났다. 대사창을 띄우고 내리는 데 쓴다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnDialogueActiveChanged, bool, bActive);
+
+// 튜토리얼을 건너뛰었다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTutorialSkipped);
 
 // 어디를 강조할지 바뀌었다. 비어 있으면 강조를 끈다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnHighlightAnchorChanged, FName, AnchorId);
@@ -86,6 +90,38 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
 	void StopScript();
+
+	// 건너뛸지 물어본다. 버튼을 누르면 이걸 부른다.
+	//
+	// 바로 끝내지 않는 이유는 되돌릴 수 없는 선택이기 때문이다.
+	// 확인은 대사창의 선택지로 띄운다. 창을 따로 만들지 않아도 되고,
+	// 대사를 읽던 흐름 그대로라 눈이 다른 데로 가지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	void RequestSkipConfirm();
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	bool IsAwaitingSkipConfirm() const { return bAwaitingSkipConfirm; }
+
+	// 튜토리얼을 통째로 끝낸다.
+	//
+	// SkipNarration 과 다르다. 저쪽은 서사만 넘기고 조작 안내는 남기는데,
+	// 이건 안내까지 전부 없앤다. 운영 자체를 즐기려는 사람을 위한 문이다.
+	//
+	// 되돌릴 수 없으므로 호출하기 전에 확인을 받아야 한다.
+	// 확인 창을 여기서 만들지 않는 이유는, 그러면 이 시스템이 UI 를 알아야 하고
+	// 창 모양을 바꿀 때마다 여기도 고쳐야 하기 때문이다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Tutorial")
+	void SkipTutorial();
+
+	// 이번 판에서 튜토리얼을 건너뛰었는지.
+	//
+	// 한 번 건너뛰면 다시 시작하지 않는다. 레벨을 다시 들어와도 마찬가지다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	bool WasTutorialSkipped() const { return bTutorialSkipped; }
+
+	// 지금 건너뛸 수 있는지. 버튼을 보일지 말지 정하는 데 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	bool CanSkipTutorial() const;
 
 	// ── 조회 ────────────────────────────────────────────────────────────────
 
@@ -154,6 +190,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
 	FFF_OnHighlightAnchorChanged OnHighlightAnchorChanged;
 
+	// 튜토리얼을 건너뛰었다. 진행 상태를 저장하거나 안내를 띄우는 데 쓴다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
+	FFF_OnTutorialSkipped OnTutorialSkipped;
+
 private:
 	// 시설이 설치·철거되면 온다. Zone 이 확정한 뒤에만 방송되므로 실제 성공만 잡힌다.
 	UFUNCTION()
@@ -161,6 +201,17 @@ private:
 
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	// 준비 화면 탭이 열리거나 닫히면 온다.
+	UFUNCTION()
+	void HandlePrepTabSelectionChanged(FFF_PrepTabSelection Selection);
+
+	/* 탭 바를 구독한다. 화면이 만들어진 뒤에야 가능하므로 여러 번 시도한다.
+
+	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 레벨을 옮기면 다시 만들어진다.
+	   한 번만 시도하면 그 사이에 놓친다.
+	*/
+	void TryBindPrepHudBar();
 
 	void BindGameSignals();
 	void UnbindGameSignals();
@@ -240,6 +291,21 @@ private:
 	float CameraBaselineArmLength = 0.f;
 	bool bCameraBaselineValid = false;
 
+	// 건너뛰었으면 다시 시작하지 않는다.
+	bool bTutorialSkipped = false;
+
+	// 건너뛸지 물어보는 중. 이때는 원래 대사 대신 확인 줄을 보여준다.
+	bool bAwaitingSkipConfirm = false;
+
+	// 확인을 취소하면 돌아갈 자리.
+	int32 ResumeLineIndex = INDEX_NONE;
+
+	// 확인용으로 만든 줄. 데이터에 없는 줄이라 여기서 들고 있는다.
+	FFF_DialogueLine SkipConfirmLine;
+
+	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
+	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
+
 	bool bBoundZoneWorld = false;
 	bool bBoundStage = false;
 
@@ -252,4 +318,5 @@ private:
 	IConsoleCommand* SkipConsoleCommand = nullptr;
 	IConsoleCommand* StatConsoleCommand = nullptr;
 	IConsoleCommand* HighlightConsoleCommand = nullptr;
+	IConsoleCommand* SkipAllConsoleCommand = nullptr;
 };

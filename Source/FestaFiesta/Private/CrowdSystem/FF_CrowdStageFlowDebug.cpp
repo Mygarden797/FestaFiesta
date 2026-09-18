@@ -94,9 +94,13 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 	}
 	Ar.Logf(TEXT("ActiveParties=%d outsideZoneParties=%d queuedParties=%d pendingDecisions=%d"),
 		Crowd->GetActivePartyCount(), LeadersByZone.FindRef(NAME_None), Crowd->GetQueuedPartyCount(), Crowd->GetPendingDecisionCount());
-	Ar.Logf(TEXT("SimOrigin=%s SimRadiusCm=%.1f avoidance=%d boundaryWalls=%d pathFollowing=%d pathFailures=%d partialPaths=%d pathBacklog=%d"),
-		*Crowd->SimOrigin.ToCompactString(), Crowd->SimRadiusUU, Crowd->bEnableAvoidance,
-		Crowd->bAvoidanceUseBoundaryWalls, Crowd->bEnablePathFollowing, Crowd->GetPathQueryFailures(),
+	const FBox& SimArea = Crowd->GetSimAreaBounds();
+	Ar.Logf(TEXT("SimOrigin=%s simAreaMin=%s simAreaMax=%s avoidance=%d pathFollowing=%d pathFailures=%d partialPaths=%d pathBacklog=%d"),
+		*Crowd->SimOrigin.ToCompactString(),
+		SimArea.IsValid ? *SimArea.Min.ToCompactString() : TEXT("none"),
+		SimArea.IsValid ? *SimArea.Max.ToCompactString() : TEXT("none"),
+		Crowd->bEnableAvoidance,
+		Crowd->bEnablePathFollowing, Crowd->GetPathQueryFailures(),
 		Crowd->GetPartialPathCount(), Crowd->GetPathQueryBacklog());
 	for (const FFFZSZoneReadModel& Zone : Model.Zones)
 	{
@@ -194,9 +198,9 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 		else { Ar.Logf(TEXT("  Queue missing/unregistered (id=%d). Check queue bridge/geometry."), QueueId); }
 		if (Facility.bHasApproachWorldTransform)
 		{
-			const FVector Delta = Facility.ApproachWorldTransform.GetLocation() - Crowd->SimOrigin;
-			Ar.Logf(TEXT("  ApproachOutsideSimSquare=%d (boundary repulsion applies when avoidance/boundaryWalls are on)"),
-				FMath::Abs(Delta.X) > Crowd->SimRadiusUU || FMath::Abs(Delta.Y) > Crowd->SimRadiusUU);
+			const FBox& Area = Crowd->GetSimAreaBounds();
+			Ar.Logf(TEXT("  ApproachOutsideSimArea=%d (density/height grids do not cover it)"),
+				Area.IsValid && !Area.IsInsideXY(Facility.ApproachWorldTransform.GetLocation()));
 			Ar.Logf(TEXT("  Approach=%s"), *Facility.ApproachWorldTransform.GetLocation().ToCompactString());
 			FFStageFlowDebug::ProbePath(World, Position, Facility.ApproachWorldTransform.GetLocation(), TEXT("approach"), Ar);
 		}

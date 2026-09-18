@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "Tutorial/FF_DialogueBoxWidget.h"
+#include "Tutorial/FF_SkipConfirmWidget.h"
 #include "Tutorial/FF_TutorialOverlayWidget.h"
 #include "FF_TutorialSettings.generated.h"
 
@@ -50,6 +51,17 @@ public:
 		meta = (DisplayName = "Dialogue Box Widget Class"))
 	TSoftClassPtr<UFF_DialogueBoxWidget> DialogueBoxWidgetClass;
 
+	// 건너뛰기 확인 창. 비워두면 건너뛰기 버튼이 눌려도 아무 일도 없다.
+	//
+	// 확인 없이 바로 끝내지 않는 이유는 되돌릴 수 없는 선택이라서다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Skip Confirm Widget Class"))
+	TSoftClassPtr<UFF_SkipConfirmWidget> SkipConfirmWidgetClass;
+
+	// 확인 창의 화면 순서. 대사창보다 위여야 가려지지 않는다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
+	int32 SkipConfirmZOrder = 200;
+
 	// 강조 오버레이 위젯. 비워두면 강조 표시가 나오지 않는다.
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
 		meta = (DisplayName = "Overlay Widget Class"))
@@ -63,6 +75,21 @@ public:
 
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
 	int32 DialogueBoxZOrder = 110;
+
+	// 건너뛰기를 눌렀을 때 물어볼 문구.
+	//
+	// 확인 창을 따로 만들지 않고 대사창의 선택지를 그대로 쓴다.
+	// 창을 새로 만들면 위젯과 그걸 띄울 자리가 필요한데, 물어보는 것뿐이라
+	// 이미 있는 것으로 충분하다.
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
+	FText SkipConfirmText = FText::FromString(
+		TEXT("튜토리얼을 건너뛰면 조작 안내가 더 이상 나오지 않습니다. 계속하시겠습니까?"));
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
+	FText SkipConfirmYesText = FText::FromString(TEXT("건너뛰기"));
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial|Skip")
+	FText SkipConfirmNoText = FText::FromString(TEXT("계속하기"));
 
 	// 카메라를 이 거리 이상 움직이면 이동한 것으로 본다.
 	//
