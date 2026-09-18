@@ -68,6 +68,12 @@ void UFF_TutorialSubsystem::Deinitialize()
 
 const FFF_DialogueLine& UFF_TutorialSubsystem::GetCurrentLine() const
 {
+	// 확인 중에는 원래 대사 대신 확인 줄을 보여준다.
+	if (bAwaitingSkipConfirm)
+	{
+		return SkipConfirmLine;
+	}
+
 	if (!ActiveLines.IsValidIndex(CurrentLineIndex))
 	{
 		return GetEmptyLine();
@@ -342,6 +348,13 @@ void UFF_TutorialSubsystem::TryAutoStart()
 		return;
 	}
 
+	// 건너뛴 뒤에는 다시 시작하지 않는다.
+	// 레벨을 다시 들어와도 마찬가지다. 한 번 넘긴 걸 또 보여주면 성가시다.
+	if (bTutorialSkipped)
+	{
+		return;
+	}
+
 	// 레벨 지정이 먼저다. 튜토리얼 레벨에만 대사를 걸 수 있어야 한다.
 	const UWorld* World = GetWorld();
 	const AFF_FestivalGameMode* GameMode =
@@ -528,6 +541,23 @@ void UFF_TutorialSubsystem::SelectChoice(const int32 ChoiceIndex)
 		return;
 	}
 
+	// 건너뛸지 물어보는 중이면 그 답부터 처리한다.
+	if (bAwaitingSkipConfirm)
+	{
+		bAwaitingSkipConfirm = false;
+
+		if (ChoiceIndex == 0)
+		{
+			SkipTutorial();
+			return;
+		}
+
+		// 취소했다. 읽던 줄로 되돌아간다.
+		GoToLine(ResumeLineIndex);
+		ResumeLineIndex = INDEX_NONE;
+		return;
+	}
+
 	const FFF_DialogueLine& Line = GetCurrentLine();
 	if (Line.Kind != EFF_DialogueLineKind::Choice || !Line.Choices.IsValidIndex(ChoiceIndex))
 	{
@@ -628,6 +658,73 @@ void UFF_TutorialSubsystem::FinishScript()
 	StopScript();
 }
 
+void UFF_TutorialSubsystem::RequestSkipConfirm()
+{
+	if (!CanSkipTutorial())
+	{
+		return;
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	if (!Settings)
+	{
+		// 설정이 없으면 물어볼 문구도 없다. 그냥 건너뛴다.
+		SkipTutorial();
+		return;
+	}
+
+	// 돌아올 자리를 기억해둔다. 취소하면 읽던 줄로 되돌아가야 한다.
+	ResumeLineIndex = CurrentLineIndex;
+
+	// 확인 줄을 만든다. 선택지 두 개짜리 대사와 구조가 같다.
+	SkipConfirmLine = FFF_DialogueLine();
+	SkipConfirmLine.Kind = EFF_DialogueLineKind::Choice;
+	SkipConfirmLine.Text = Settings->SkipConfirmText;
+	SkipConfirmLine.bSkippable = false;
+
+	FFF_DialogueChoice Yes;
+	Yes.Text = Settings->SkipConfirmYesText;
+	SkipConfirmLine.Choices.Add(Yes);
+
+	FFF_DialogueChoice No;
+	No.Text = Settings->SkipConfirmNoText;
+	SkipConfirmLine.Choices.Add(No);
+
+	bAwaitingSkipConfirm = true;
+
+	// 물어보는 동안에는 강조를 끈다. 화면에서 다른 곳을 가리키고 있으면 헷갈린다.
+	ApplyHighlight(NAME_None);
+
+	OnLineChanged.Broadcast(SkipConfirmLine);
+}
+
+bool UFF_TutorialSubsystem::CanSkipTutorial() const
+{
+	// 진행 중이 아니면 건너뛸 것도 없다. 이미 물어보는 중이어도 마찬가지다.
+	return bDialogueActive && !bTutorialSkipped && !bAwaitingSkipConfirm;
+}
+
+void UFF_TutorialSubsystem::SkipTutorial()
+{
+	if (bTutorialSkipped)
+	{
+		return;
+	}
+
+	bTutorialSkipped = true;
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 건너뛰었다. 줄 %d/%d 에서 중단."),
+		CurrentLineIndex, ActiveLines.Num());
+
+	StopScript();
+
+	// 위젯도 내린다. 건너뛴 뒤에도 대사창이 남아 있으면 화면을 가린다.
+	RemoveWidgets();
+
+	OnTutorialSkipped.Broadcast();
+}
+
 void UFF_TutorialSubsystem::StopScript()
 {
 	if (!bDialogueActive)
@@ -638,6 +735,8 @@ void UFF_TutorialSubsystem::StopScript()
 	ActiveLines.Reset();
 	ActiveScriptId = NAME_None;
 	PendingNextScript = nullptr;
+	bAwaitingSkipConfirm = false;
+	ResumeLineIndex = INDEX_NONE;
 	CurrentLineIndex = INDEX_NONE;
 	bDialogueActive = false;
 
@@ -826,6 +925,17 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 			}));
 	}
 
+	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.SkipAll")))
+	{
+		SkipAllConsoleCommand = ConsoleManager.RegisterConsoleCommand(
+			TEXT("FF.Tutorial.SkipAll"),
+			TEXT("튜토리얼을 통째로 건너뛴다. 확인 없이 바로 끝난다."),
+			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+			{
+				SkipTutorial();
+			}));
+	}
+
 	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Tutorial.Highlight")))
 	{
 		HighlightConsoleCommand = ConsoleManager.RegisterConsoleCommand(
@@ -862,7 +972,7 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 			{
 				UE_LOG(LogFestaFiestaTutorial, Display,
 					TEXT("[튜토리얼] 진행=%s Script=%s 줄=%d/%d"),
-					bDialogueActive ? TEXT("예") : TEXT("아니오"),
+					bDialogueActive ? TEXT("예") : (bTutorialSkipped ? TEXT("건너뜀") : TEXT("아니오")),
 					ActiveScriptId.IsNone() ? TEXT("없음") : *ActiveScriptId.ToString(),
 					CurrentLineIndex,
 					ActiveLines.Num());
@@ -949,4 +1059,10 @@ void UFF_TutorialSubsystem::UnregisterDebugConsoleCommands()
 		ConsoleManager.UnregisterConsoleObject(HighlightConsoleCommand);
 	}
 	HighlightConsoleCommand = nullptr;
+
+	if (SkipAllConsoleCommand)
+	{
+		ConsoleManager.UnregisterConsoleObject(SkipAllConsoleCommand);
+	}
+	SkipAllConsoleCommand = nullptr;
 }

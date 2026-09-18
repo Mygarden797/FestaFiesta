@@ -88,6 +88,96 @@ FFF_AtlasGlobeOrientation FFF_AtlasGeo::MakeFocusOrientation(
 	return NormalizeOrientation(MakeOrientationFacing(LatLong), MaxTiltDegrees);
 }
 
+FFF_AtlasGlobeOrientation FFF_AtlasGeo::MakeFocusOrientationToward(
+	const FFF_AtlasLatLong& LatLong,
+	const FVector& DesiredLocalDirection,
+	float MaxTiltDegrees)
+{
+	const FFF_AtlasLatLong SafeLocation = NormalizeLatLong(FFF_AtlasLatLong(
+		FMath::IsFinite(LatLong.Latitude) ? LatLong.Latitude : 0.f,
+		// UnwindDegrees는 반복 감기이므로 극단적으로 큰 유한 입력을 먼저 한 바퀴로 줄인다.
+		FMath::IsFinite(LatLong.Longitude) ? FMath::Fmod(LatLong.Longitude, 360.f) : 0.f));
+	const float SafeMaxTilt = FMath::IsFinite(MaxTiltDegrees)
+		? FMath::Clamp(FMath::Abs(MaxTiltDegrees), 0.f, 90.f) : 0.f;
+	const FFF_AtlasGlobeOrientation Fallback = MakeFocusOrientation(SafeLocation, SafeMaxTilt);
+	if (!FMath::IsFinite(DesiredLocalDirection.X) || !FMath::IsFinite(DesiredLocalDirection.Y)
+		|| !FMath::IsFinite(DesiredLocalDirection.Z))
+	{
+		return Fallback;
+	}
+
+	// 먼저 최대 성분으로 나누면 큰 유한 벡터의 길이 제곱이 넘치는 경우도 안전하다.
+	const double DirectionScale = DesiredLocalDirection.GetAbsMax();
+	if (DirectionScale <= UE_DOUBLE_SMALL_NUMBER)
+	{
+		return Fallback;
+	}
+	const FVector Desired = (DesiredLocalDirection / DirectionScale).GetSafeNormal();
+	if (Desired.Equals(FVector::ForwardVector, UE_DOUBLE_SMALL_NUMBER))
+	{
+		return Fallback;
+	}
+
+	const double Latitude = FMath::DegreesToRadians(static_cast<double>(SafeLocation.Latitude));
+	const double Longitude = FMath::DegreesToRadians(static_cast<double>(SafeLocation.Longitude));
+	const double MaxTilt = FMath::DegreesToRadians(static_cast<double>(SafeMaxTilt));
+	const double CosLatitude = FMath::Cos(Latitude);
+	const double SinLatitude = FMath::Sin(Latitude);
+	FFF_AtlasGlobeOrientation Best = Fallback;
+	double BestDot = FVector::DotProduct(
+		OrientationToQuat(Best).RotateVector(LatLongToUnitVector(SafeLocation)), Desired);
+
+	// 기울기 하나가 정해지면 역회전한 목표의 XY 방향이 최적 자전각이다.
+	// 최대 내적 = cos(위도)*sqrt(1-A*A) + sin(위도)*A,
+	// A = Desired.X*sin(Tilt) + Desired.Z*cos(Tilt).
+	// 최적점은 A=sin(위도)의 정확한 해, Tilt 구간 끝, 또는 A의 극값 중 하나다.
+	const auto ConsiderTilt = [&](double Tilt)
+	{
+		if (Tilt < -MaxTilt - 1.e-10 || Tilt > MaxTilt + 1.e-10)
+		{
+			return;
+		}
+		Tilt = FMath::Clamp(Tilt, -MaxTilt, MaxTilt);
+		const double SinTilt = FMath::Sin(Tilt);
+		const double CosTilt = FMath::Cos(Tilt);
+		const double TargetX = Desired.X * CosTilt - Desired.Z * SinTilt;
+		const double TargetZ = Desired.X * SinTilt + Desired.Z * CosTilt;
+		const double Horizontal = FMath::Sqrt(TargetX * TargetX + Desired.Y * Desired.Y);
+		const double Dot = CosLatitude * Horizontal + SinLatitude * TargetZ;
+		if (Dot > BestDot + 1.e-12)
+		{
+			// 극점 또는 목표가 Z축인 동률에서는 경도를 그대로 두어 자전각이 튀지 않게 한다.
+			const double SpinOffset = CosLatitude <= PoleEpsilon || Horizontal <= PoleEpsilon
+				? 0.0 : FMath::Atan2(Desired.Y, TargetX);
+			Best = FFF_AtlasGlobeOrientation(
+				AtlasWrapDegrees(AtlasToFloat(FMath::RadiansToDegrees(Longitude + SpinOffset))),
+				AtlasToFloat(FMath::RadiansToDegrees(Tilt)));
+			BestDot = Dot;
+		}
+	};
+
+	ConsiderTilt(FMath::DegreesToRadians(static_cast<double>(Fallback.Tilt)));
+	// Ry는 Y를 바꾸지 않는다. sin(Spin-경도)=Desired.Y/cos(위도)의 두 가지 해를 본다.
+	if (CosLatitude > PoleEpsilon && FMath::Abs(Desired.Y) <= CosLatitude + 1.e-12)
+	{
+		const double Offset = FMath::Asin(FMath::Clamp(Desired.Y / CosLatitude, -1.0, 1.0));
+		for (const double SpinOffset : { Offset, UE_DOUBLE_PI - Offset })
+		{
+			const double Tilt = FMath::Atan2(SinLatitude, CosLatitude * FMath::Cos(SpinOffset))
+				- FMath::Atan2(Desired.Z, Desired.X);
+			ConsiderTilt(FMath::UnwindRadians(Tilt));
+		}
+	}
+
+	ConsiderTilt(-MaxTilt);
+	ConsiderTilt(MaxTilt);
+	ConsiderTilt(0.0);
+	const double Extremum = FMath::Atan2(Desired.X, Desired.Z);
+	ConsiderTilt(FMath::UnwindRadians(Extremum));
+	ConsiderTilt(FMath::UnwindRadians(Extremum + UE_DOUBLE_PI));
+	return Best;
+}
+
 FFF_AtlasLatLong FFF_AtlasGeo::OrientationToFrontLatLong(const FFF_AtlasGlobeOrientation& Orientation)
 {
 	return FFF_AtlasLatLong(

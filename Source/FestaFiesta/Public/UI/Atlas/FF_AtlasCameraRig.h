@@ -72,10 +72,20 @@ public:
 	 * 확정 요구사항 — 모든 연출은 입력으로 즉시 Skip 된다. 반복 플레이에서 매번 다 보게 하지 않는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Atlas|Camera")
-	void SkipCameraMove();
+	void SkipCameraMove(bool bIncludeInspection = true);
 
-	/** 국가를 살펴보는 동안 기존 지구 카메라 구도에서 조금 접근한다. */
-	void SetCountryInspection(bool bInspect);
+	/** 국가별 접근 비율. 음수면 Atlas Settings의 공통 값을 사용한다. */
+	void SetCountryInspection(bool bInspect, float ApproachFractionOverride = -1.f);
+
+	/** 드래그가 자동 접근을 취소한다. 현재 카메라 위치를 유지하고 다음 선택부터 다시 보간한다. */
+	void PauseCountryInspection();
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Camera")
+	bool IsCountryInspectionMoving() const { return bInspectionTransitioning; }
+
+	/** 나라 구도 미리보기가 사용하는 카메라. Globe 슬롯이 비면 Title 슬롯을 돌려준다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Atlas|Camera")
+	ACameraActor* GetGlobeCamera() const;
 	virtual void Tick(float DeltaSeconds) override;
 
 	/** 지금 카메라가 두 구도 사이를 이동하는 중인가. */
@@ -143,6 +153,10 @@ private:
 	void ResetCountryInspection();
 	TWeakObjectPtr<ACameraActor> InspectionCamera;
 	FVector InspectionBaseLocation = FVector::ZeroVector;
+	FVector InspectionFromLocation = FVector::ZeroVector;
+	FVector InspectionTargetLocation = FVector::ZeroVector;
 	float InspectionAlpha = 0.f;
 	bool bCountryInspection = false;
+	bool bInspectionTransitioning = false;
+	bool bInspectionPaused = false;
 };
