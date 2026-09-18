@@ -5,7 +5,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+#include "DataTables/FF_FacilityCostRow.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
+#include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
@@ -23,6 +25,24 @@
 namespace FFF_CrowdEconomyBridgeTestHelpers
 {
 	const FName HandlerName(TEXT("HandleVisitorsAdmitted"));
+
+	// StartFestival은 IsDefinitionValid를 거친다 — FacilityCostTable이 비어 있으면
+	// "[경제] 축제 정의 오류" Error 로그가 찍히고, 자동화 프레임워크는 테스트 중 Error 로그
+	// 하나만 떠도 그 테스트를 자동으로 Fail 처리한다(어서션과 무관하게). 이 프로젝트의
+	// GameInstance 기반 테스트는 GameInstance 생성 시 Config의 DefaultFestival(정상 가격표
+	// 있는 실제 자산)을 먼저 자동 시작하는데, 바로 뒤에 이 픽스처가 자기 Definition으로
+	// 덮어 시작하면서 그 정의에 가격표가 없어 위 Error가 났다(`FF_FinalePurchaseTests.cpp`와
+	// 같은 이유 — 2026-09-18 전체 스위트 첫 실행에서 발견).
+	UDataTable* MakeMinimalFacilityCostTable(UObject* Outer)
+	{
+		UDataTable* CostTable = NewObject<UDataTable>(Outer);
+		if (CostTable)
+		{
+			CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
+			CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), FFF_FacilityCostRow());
+		}
+		return CostTable;
+	}
 
 	// Queue 브리지 테스트와 같은 이유로 격리 월드를 쓴다 — Crowd 서브시스템도 지면·내비게이션
 	// 설정에 영향을 받을 수 있어 기존 관례를 그대로 따른다.
@@ -55,8 +75,10 @@ namespace FFF_CrowdEconomyBridgeTestHelpers
 			Bridge->OnWorldBeginPlay(*World);
 
 			Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
-			if (!Definition) { return false; }
+			CostTable = MakeMinimalFacilityCostTable(GameInstance);
+			if (!Definition || !CostTable) { return false; }
 
+			Definition->FacilityCostTable = CostTable;
 			Definition->FestivalId = TEXT("CrowdEconomyAutomationFestival");
 			Definition->AdmissionFeeGold = AdmissionFeeGold;
 			// 이 테스트는 입장료만 본다. 임대료가 걷히면 잔액 기대값에 섞인다.
@@ -72,6 +94,7 @@ namespace FFF_CrowdEconomyBridgeTestHelpers
 		UFF_CrowdEconomyBridgeSubsystem* Bridge = nullptr;
 		UFF_FestivalProgressionSubsystem* Progression = nullptr;
 		UFF_FestivalDefinition* Definition = nullptr;
+		UDataTable* CostTable = nullptr;
 	};
 }
 
@@ -219,6 +242,7 @@ bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Pa
 	TestEqual(TEXT("축제 시작 전 입장은 매출을 만들지 않는다"), Progression->GetTotalRevenue(), 0);
 
 	auto* Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
+	Definition->FacilityCostTable = MakeMinimalFacilityCostTable(GameInstance);
 	Definition->FestivalId = TEXT("CrowdEconomyZeroCountFestival");
 	Definition->AdmissionFeeGold = 5;
 	Definition->DailyVenueRentGold = 0;
@@ -265,6 +289,7 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 		Crowd->GetExpectedVisitorCountOverride(), INDEX_NONE);
 
 	auto* Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
+	Definition->FacilityCostTable = MakeMinimalFacilityCostTable(GameInstance);
 	Definition->FestivalId = TEXT("CrowdEconomyExpectedVisitorsFestival");
 	Definition->BaseDailyVisitors = 500;
 	Definition->DailyVenueRentGold = 0;
