@@ -23,6 +23,9 @@ class UFF_FestivalViewModelSubsystem;
  * === 아직 안 하는 것 ===
  * - 색상 구분: Satisfaction·Revenue·Safety의 좋고 나쁨 구간이 아직 정해지지 않았다.
  *   임의로 정해서 칠하면 나중에 전부 바꿔야 하고, 색만으로 구분하면 AT-011 위반이다.
+ * - 만족도 분해 표시: **2026-09-15부터 값은 있다** — ViewModel의 `GetSimSatisfactionWaitScore()` /
+ *   `DensityScore` / `PreferenceScore` / `NeedFulfillmentScore` 넷이 0~100으로 같이 갱신된다.
+ *   이 스텁 HUD는 배선 확인용이라 넣지 않는다. 쓸 자리는 Report 드릴다운(AT-005)의 **첫 단계**다.
  * - Heat Map: **밀도 구간이 확정되지 않았다 (2026-08-14 확인).** UI 문서는 3구간(초록 <2 / 노랑 2~4 /
  *   빨강 >=4 명/㎡)인데, Crowd가 구현한 `ECrowdLOS`는 Fruin 보행로 LOS 6등급
  *   (0.31 / 0.43 / 0.72 / 1.08 / 2.17 명/㎡)이라 자릿수가 다르다. 보행로 기준으로는 2.17부터 이미 최악 등급이라
@@ -40,6 +43,12 @@ class UFF_FestivalViewModelSubsystem;
  *   몰려도 20%라 **Zone 기준으로는 늘 Normal이다.** 정원 산정 방식이 정해지기 전에는 밀집 표시가
  *   "항상 평온"으로 보이는 것이 정상이다. 근거는 `Collaboration/FestaFiesta_ZoneCongestion_Team_Handoff.md`.
  *   상세는 open-conflicts.md의 C-029·C-042.
+ *
+ *   **2026-09-15 갱신** — 김시리의 신규 `UFF_SatisfactionMetricsSubsystem`도 밀도 항을 `ECrowdLOS`
+ *   6등급으로 잡았다(등급별 쾌적도 100/85/65/40/15/0). **이제 만족도 산출 자체가 6등급에 묶여 있어**
+ *   3구간으로 되돌리면 색·범례만이 아니라 만족도 계수까지 다시 잡아야 한다. 되돌리기 비용이 올랐다는 뜻이지
+ *   6등급이 확정됐다는 뜻은 아니다 — 소유자 본인이 "Fruin은 보행 흐름 기준이라 축제장 붐빔에 맞는지
+ *   미검증"이라고 draft_assumption으로 달아 두었다. 요청 11번 답은 여전히 없다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Metrics HUD Widget"))
 class FESTAFIESTA_API UFF_MetricsHudWidget : public UUserWidget

@@ -186,6 +186,10 @@ private:
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
 
+	/** Pulls the next read-model sample forward when the selected facility settles a payment. */
+	UFUNCTION()
+	void HandleFacilityRevenueChanged(FGuid FacilityInstanceId);
+
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
 

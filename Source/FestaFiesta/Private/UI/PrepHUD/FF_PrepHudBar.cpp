@@ -1086,6 +1086,16 @@ void UFF_PrepHudBar::RefreshCta()
 			TEXT("[%s] `%s` 단계를 넘길 수 없어 개장을 막았다. "
 				 "의도한 것이 아니면 `DT_DaySequence` 의 Day%d_%s 행에서 bSkippable 을 확인한다."),
 			*GetName(), *UEnum::GetValueAsString(Stage), Day, *UEnum::GetValueAsString(Stage));
+
+		// 디버그(매일 재검사 원인 조사)
+		if (const UWorld* World = GetWorld())
+		{
+			if (const auto* Required = World->GetSubsystem<UFF_RequiredFacilitiesSubsystem>())
+			{
+				UE_LOG(LogFestaFiestaUI, Warning, TEXT("[%s] 필수 시설 실제 상태: %s"),
+					*GetName(), *Required->DebugDescribeRequiredFacilities());
+			}
+		}
 	}
 
 	SetCtaState(State);

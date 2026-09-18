@@ -110,6 +110,34 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		Text_FacilityRevenue->SetVisibility(ViewData.FacilityInstanceId.IsValid()
 			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
+	const bool bShowRevenue = ViewData.bShowRevenueSection && ViewData.FacilityInstanceId.IsValid();
+	SetText(Text_FacilityTodayRevenue, ViewData.TodayRevenueText);
+	if (Text_FacilityTodayRevenue)
+	{
+		Text_FacilityTodayRevenue->SetColorAndOpacity(FSlateColor(
+			ViewData.TodayRevenueGold > 0 ? RevenueEarnedColor : RevenueIdleColor));
+	}
+	SetText(Text_FacilityTotalRevenue, ViewData.TotalRevenueText);
+	SetText(Text_FacilityRevenueCount, ViewData.RevenuePaymentCountText);
+	SetText(Text_FacilityRevenueShare, ViewData.RevenueShareText);
+	SetText(Text_FacilityRevenueStatus, ViewData.RevenueStatusText);
+	if (Text_FacilityRevenueStatus)
+	{
+		Text_FacilityRevenueStatus->SetVisibility(ViewData.RevenueStatusText.IsEmpty()
+			? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	SetText(Text_FacilityRevenueSummary, ViewData.RevenueSummaryText);
+	if (Text_FacilityRevenueSummary)
+	{
+		Text_FacilityRevenueSummary->SetVisibility(bShowRevenue
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (Panel_RevenueSection)
+	{
+		// Legacy panels without tabs keep this; tabbed panels refine it per page in RefreshPageVisibility.
+		Panel_RevenueSection->SetVisibility(bShowRevenue
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
 	SetText(Text_RelocationWarning, LOCTEXT("NeedsRelocation", "! 재배치가 필요합니다."));
 	SetText(Text_Footprint, ViewData.FootprintText);
 	SetText(Text_Clearance, ViewData.ClearanceText);
@@ -348,6 +376,9 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	Show(Panel_LiveSection, ActivePage == EFF_FacilityInfoPage::Operation);
 	Show(Panel_UpgradeSection, ActivePage == EFF_FacilityInfoPage::Upgrade);
 	Show(Panel_ProgramSection, ActivePage == EFF_FacilityInfoPage::Overview && CurrentViewData.bShowProgramSection);
+	// Earnings matter both when planning (overview) and while watching live operation.
+	Show(Panel_RevenueSection, CurrentViewData.bShowRevenueSection && CurrentViewData.FacilityInstanceId.IsValid() &&
+		(ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation));
 	Show(Panel_RemoveConfirmation, ActivePage == EFF_FacilityInfoPage::RemoveConfirmation);
 	// The persistent header still identifies the facility. Give task-specific pages their
 	// full scroll area instead of repeating the overview thumbnail above every action.

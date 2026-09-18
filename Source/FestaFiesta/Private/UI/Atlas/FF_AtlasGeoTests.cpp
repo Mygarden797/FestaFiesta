@@ -5,6 +5,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "UI/Atlas/FF_AtlasGeo.h"
+#include <limits>
 
 /**
  * 지구본 좌표 규약 고정 테스트 (U3-a).
@@ -201,6 +202,127 @@ bool FFF_AtlasGeo_OrientationBringsPinToFront::RunTest(const FString& Parameters
 	TestEqual(TEXT("Spin 은 경도와 같다"), Dadaepo.Spin, 128.97f, AtlasGeoAngleTolerance);
 	TestEqual(TEXT("Tilt 는 위도와 같다"), Dadaepo.Tilt, 35.04f, AtlasGeoAngleTolerance);
 
+	return true;
+}
+
+// 새 화면 목표 경로가 기존 +X 정렬·기울기 제한을 바꾸지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasGeo_FocusTowardKeepsForwardContract, "FestaFiesta.UI.AtlasGeo.FocusTowardKeepsForwardContract", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_AtlasGeo_FocusTowardKeepsForwardContract::RunTest(const FString& Parameters)
+{
+	TArray<FFF_AtlasLatLong> Samples = FFF_AtlasGeoTestHelpers::MakeAtlasGeoSamples();
+	Samples.Add(FFF_AtlasLatLong(90.f, 120.f));
+	Samples.Add(FFF_AtlasLatLong(-90.f, -120.f));
+	for (const FFF_AtlasLatLong& Sample : Samples)
+	{
+		for (const float Limit : { 0.f, 30.f, 80.f, 90.f })
+		{
+			const FFF_AtlasGlobeOrientation Expected = FFF_AtlasGeo::MakeFocusOrientation(Sample, Limit);
+			const FFF_AtlasGlobeOrientation Actual = FFF_AtlasGeo::MakeFocusOrientationToward(
+				Sample, FVector::ForwardVector, Limit);
+			TestEqual(TEXT("기존 +X 자전각 보존"), Actual.Spin, Expected.Spin);
+			TestEqual(TEXT("기존 +X 기울기 보존"), Actual.Tilt, Expected.Tilt);
+		}
+	}
+	return true;
+}
+
+// 실제 Frontend의 카메라는 고정 +X에서 약 10.5도 떨어져 있다. 그 방향과 UI 목표를 모두 맞춘다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasGeo_FocusTowardAlignsCameraAndPanelTargets, "FestaFiesta.UI.AtlasGeo.FocusTowardAlignsCameraAndPanelTargets", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_AtlasGeo_FocusTowardAlignsCameraAndPanelTargets::RunTest(const FString& Parameters)
+{
+	const FFF_AtlasLatLong Countries[] = {
+		{35.04f, 128.97f}, {-15.f, -47.f}, {45.f, 9.f}, {36.f, 138.f},
+		{-35.f, 149.f}, {0.f, 179.9f}, {0.f, -179.9f}
+	};
+	const FVector Directions[] = {
+		FVector(11784.537573, 1374.080712, 1704.215041).GetSafeNormal(),
+		FVector(0.9634698945, -0.2048046194, 0.1725712327).GetSafeNormal(),
+		FVector(1.0, 0.25, -0.2).GetSafeNormal(),
+		FVector(1.0, -0.25, -0.2).GetSafeNormal()
+	};
+	for (const FFF_AtlasLatLong& Country : Countries)
+	{
+		for (const FVector& Desired : Directions)
+		{
+			const FFF_AtlasGlobeOrientation Actual = FFF_AtlasGeo::MakeFocusOrientationToward(Country, Desired, 80.f);
+			const FVector Arrived = FFF_AtlasGeo::OrientationToQuat(Actual).RotateVector(
+				FFF_AtlasGeo::LatLongToUnitVector(Country));
+			TestTrue(TEXT("카메라·패널 목표 법선에 도착"), Arrived.Equals(Desired, 1.e-6));
+			TestEqual(TEXT("별도 Roll을 추가하지 않는다"),
+				FFF_AtlasGeo::OrientationToQuat(Actual).RotateVector(FVector::UpVector).Y, 0.0, 1.e-6);
+			const FFF_AtlasGlobeOrientation Scaled = FFF_AtlasGeo::MakeFocusOrientationToward(Country, Desired * 5000.0, 80.f);
+			TestEqual(TEXT("목표 벡터 길이와 무관한 자전각"), Scaled.Spin, Actual.Spin, 1.e-4f);
+			TestEqual(TEXT("목표 벡터 길이와 무관한 기울기"), Scaled.Tilt, Actual.Tilt, 1.e-4f);
+		}
+	}
+	return true;
+}
+
+// 잘못된 데이터가 NaN 회전을 액터에 전달하지 않게 한다. FVector 생성자의 NaN 진단도 피해서 넣는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasGeo_FocusTowardRejectsInvalidInput, "FestaFiesta.UI.AtlasGeo.FocusTowardRejectsInvalidInput", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_AtlasGeo_FocusTowardRejectsInvalidInput::RunTest(const FString& Parameters)
+{
+	const FFF_AtlasLatLong Country(35.04f, 128.97f);
+	const FFF_AtlasGlobeOrientation Expected = FFF_AtlasGeo::MakeFocusOrientation(Country, 80.f);
+	FVector InvalidNan = FVector::ZeroVector;
+	InvalidNan.X = std::numeric_limits<double>::quiet_NaN();
+	FVector InvalidInfinity = FVector::ZeroVector;
+	InvalidInfinity.Z = std::numeric_limits<double>::infinity();
+	for (const FVector& Desired : { FVector::ZeroVector, InvalidNan, InvalidInfinity })
+	{
+		const FFF_AtlasGlobeOrientation Actual = FFF_AtlasGeo::MakeFocusOrientationToward(Country, Desired, 80.f);
+		TestEqual(TEXT("잘못된 방향의 자전각은 +X 폴백"), Actual.Spin, Expected.Spin);
+		TestEqual(TEXT("잘못된 방향의 기울기는 +X 폴백"), Actual.Tilt, Expected.Tilt);
+	}
+	const float Nan = std::numeric_limits<float>::quiet_NaN();
+	const FFF_AtlasGlobeOrientation InvalidLocation = FFF_AtlasGeo::MakeFocusOrientationToward(
+		FFF_AtlasLatLong(Nan, Nan), FVector::ForwardVector, Nan);
+	TestEqual(TEXT("비유한 위경도·한계의 자전각은 0"), InvalidLocation.Spin, 0.f);
+	TestEqual(TEXT("비유한 위경도·한계의 기울기는 0"), InvalidLocation.Tilt, 0.f);
+	const FFF_AtlasGlobeOrientation InvalidLimit = FFF_AtlasGeo::MakeFocusOrientationToward(Country, FVector(1.0, 0.2, 0.1), Nan);
+	TestTrue(TEXT("비유한 한계에서도 자전각 유한"), FMath::IsFinite(InvalidLimit.Spin));
+	TestEqual(TEXT("비유한 한계는 기울기 0"), InvalidLimit.Tilt, 0.f);
+	const FFF_AtlasGlobeOrientation LargeDirection = FFF_AtlasGeo::MakeFocusOrientationToward(Country, FVector(1.e300, 1.e299, 1.e299), 80.f);
+	TestTrue(TEXT("큰 유한 벡터도 오버플로 없이 처리"), FMath::IsFinite(LargeDirection.Spin) && FMath::IsFinite(LargeDirection.Tilt));
+	const FFF_AtlasGlobeOrientation LargeLocation = FFF_AtlasGeo::MakeFocusOrientationToward(
+		FFF_AtlasLatLong(1.e30f, 1.e30f), FVector::ForwardVector, 80.f);
+	TestTrue(TEXT("큰 유한 경도도 무한 반복 없이 정규화"), FMath::IsFinite(LargeLocation.Spin) && FMath::Abs(LargeLocation.Spin) <= 180.f);
+	return true;
+}
+
+// 불가능한 목표는 허용 각도 안에서 가장 가까운 위치를 고른다. 별도의 각도 격자로 결과를 대조한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AtlasGeo_FocusTowardHonorsLimits, "FestaFiesta.UI.AtlasGeo.FocusTowardHonorsLimits", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_AtlasGeo_FocusTowardHonorsLimits::RunTest(const FString& Parameters)
+{
+	const FFF_AtlasLatLong Countries[] = {{75.f, 128.f}, {-75.f, -160.f}, {90.f, 40.f}, {-90.f, 40.f}, {20.f, 179.f}};
+	const FVector Directions[] = {FVector(1.0, 0.5, -0.3).GetSafeNormal(), FVector::YAxisVector, FVector(-1.0, 0.2, 0.3).GetSafeNormal()};
+	for (const FFF_AtlasLatLong& Country : Countries)
+	{
+		const FVector Point = FFF_AtlasGeo::LatLongToUnitVector(Country);
+		for (const FVector& Desired : Directions)
+		{
+			for (const float Limit : {0.f, 15.f, 80.f})
+			{
+				const FFF_AtlasGlobeOrientation Actual = FFF_AtlasGeo::MakeFocusOrientationToward(Country, Desired, Limit);
+				TestTrue(TEXT("기울기 제한을 넘지 않는다"), FMath::IsFinite(Actual.Tilt) && FMath::Abs(Actual.Tilt) <= Limit);
+				TestTrue(TEXT("자전각은 유한한 -180~180"), FMath::IsFinite(Actual.Spin) && FMath::Abs(Actual.Spin) <= 180.f);
+				const double ActualDot = FVector::DotProduct(FFF_AtlasGeo::OrientationToQuat(Actual).RotateVector(Point), Desired);
+				double GridBest = -1.0;
+				for (int32 TiltIndex = -16; TiltIndex <= 16; ++TiltIndex)
+				{
+					for (int32 Spin = -180; Spin < 180; Spin += 10)
+					{
+						const FFF_AtlasGlobeOrientation Candidate(static_cast<float>(Spin), Limit * static_cast<float>(TiltIndex) / 16.f);
+						GridBest = FMath::Max(GridBest, FVector::DotProduct(FFF_AtlasGeo::OrientationToQuat(Candidate).RotateVector(Point), Desired));
+					}
+				}
+				TestTrue(TEXT("독립 각도 격자보다 목표에서 멀어지지 않는다"), ActualDot + 1.e-6 >= GridBest);
+				const FFF_AtlasGlobeOrientation Repeat = FFF_AtlasGeo::MakeFocusOrientationToward(Country, Desired, Limit);
+				TestEqual(TEXT("같은 입력은 같은 자전각"), Repeat.Spin, Actual.Spin);
+				TestEqual(TEXT("같은 입력은 같은 기울기"), Repeat.Tilt, Actual.Tilt);
+			}
+		}
+	}
 	return true;
 }
 

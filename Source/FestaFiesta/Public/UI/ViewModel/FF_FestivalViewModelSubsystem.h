@@ -6,16 +6,10 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
-
-// !! 전방 선언으로는 안 된다 !!
-// `EFF_WeatherType` 이 `UFUNCTION` 반환형이라 UHT 가 전체 정의를 요구한다.
-// 그 enum 은 강민서님의 `FF_FestivalStageSubsystem.h` 에 있고, 남의 파일에서 enum 을
-// 꺼내 옮기지 않는다 (AGENTS.md 규칙 3).
 #include "Time/FF_FestivalStageSubsystem.h"
-
-// 같은 이유로 `EFF_NeedType` 도 전방 선언으로는 안 된다 — `FFF_LiveNeedView` 의
-// `UPROPERTY` 라 UHT 가 전체 정의를 요구한다.
 #include "NPC/Party/FF_NeedState.h"
+#include "NPC/Insights/FF_SnsTypes.h"
+#include "UI/LiveHUD/Panels/FF_LivePanelSNS.h"
 
 #include "FF_FestivalViewModelSubsystem.generated.h"
 
@@ -23,12 +17,14 @@ class UFF_FestivalStageSubsystem;
 class UFF_FestivalProgressionSubsystem;
 class UFF_StageEconomyBridgeSubsystem;
 class UFF_SatisfactionMetricsSubsystem;
+class UFF_CrowdInsightsSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIntMetricChanged, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFF_OnStageViewChanged, EFF_FestivalStage, NewStage, int32, NewDay);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnWeatherViewChanged, EFF_WeatherType, NewWeather);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBoolViewChanged, bool, bNewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeViewChanged, EFF_FinaleGrade, NewGrade);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSnsSocialPostChanged, FFF_LiveSocialPost, NewPost);
 
 // 편성 목록이 바뀌었다. 원본과 같이 인자를 싣지 않는다 — 무엇이 바뀌었는지는 다시 읽는다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
@@ -236,10 +232,11 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | 값                     | 실제 소유자      | 현재        |
  * |------------------------|------------------|-------------|
  * | Stage / Day            | 강민서           | **진짜 값** |
- * | 남은 시간			    | 강민서           | **진짜 값** |
+ * | 남은 시간              | 강민서           | **진짜 값** |
  * | Gold                   | 김시리           | **진짜 값** (`OnGoldChanged` 구독) |
- * | SimSatisfaction        | 김시리/이정원     | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭 3항 산출) |
- * | ScoreSatisfaction      | 김시리           | 더미        |
+ * | SimSatisfaction        | 김시리           | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭·Need 충족도 **4항**) |
+ * | └ 분해값 4종           | 김시리           | **진짜 값** — SimSatisfaction과 같은 1초 주기에 같이 갱신된다 |
+ * | ScoreSatisfaction      | 김시리           | 더미 72 — `SimSatisfaction + FinaleBonus` 합산이 **아직 없다** |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
  * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
  * | TodayRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
@@ -336,6 +333,18 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnSimSatisfactionNeedFulfillmentScoreChanged;
+
+	/**
+	 * SNS 라이브 피드. `UFF_CrowdInsightsSubsystem`의 `FFF_SnsPostRow` 링버퍼를
+	 * `FFF_LiveSocialPost`(`FF_LivePanelSNS.h`, 백종태 소유)로 변환해 그대로 중계한다 —
+	 * Insights는 자기 도메인 타입만 알고, 표현 타입은 여기서만 만든다. 최신 글이 [0].
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|SNS")
+	const TArray<FFF_LiveSocialPost>& GetRecentSnsPosts() const { return RecentSnsPosts; }
+
+	/** 새 글이 하나 생길 때마다. 위젯이 늦게 열려도 GetRecentSnsPosts()로 지금까지 쌓인 걸 한 번에 읽을 수 있다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|SNS")
+	FFF_OnSnsSocialPostChanged OnSnsPostAdded;
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Metrics")
 	FFF_OnIntMetricChanged OnScoreSatisfactionChanged;
@@ -983,6 +992,13 @@ protected:
 	UFUNCTION()
 	void HandleOwnerSimSatisfactionChanged(int32 NewValue);
 
+	/** Insights가 쏘는 글 한 건을 변환해 목록 맨 앞에 얹고 위젯에 중계한다. */
+	UFUNCTION()
+	void HandleOwnerSnsPostAdded(FFF_SnsPostRow NewPost);
+
+	/** `FFF_SnsPostRow`(값)를 `FFF_LiveSocialPost`(표현)로 바꾼다. 도메인↔표현 경계는 이 함수 하나뿐이다. */
+	static FFF_LiveSocialPost ConvertSnsPostToLiveSocialPost(const FFF_SnsPostRow& Row);
+
 private:
 	UFF_FestivalStageSubsystem* GetStageSubsystem() const;
 	UFF_FestivalProgressionSubsystem* GetProgressionSubsystem() const;
@@ -998,14 +1014,17 @@ private:
 	 */
 	void RefreshAvailableStaffCount();
 
-	/** Stage 시스템 구독을 시도한다. 아직 없으면 재시도를 예약한다. */
+	/** Stage 시스템 구독을 시도한다. */
 	void TryBindStageSubsystem();
 
-	/** 경제 시스템 구독을 시도한다. Stage와 같은 재시도 규칙을 쓴다. */
+	/** 경제 시스템 구독을 시도한다. */
 	void TryBindProgressionSubsystem();
 
-	/** 만족도 시스템 구독을 시도한다. Stage·경제와 같은 재시도 규칙을 쓴다. */
+	/** 만족도 시스템 구독을 시도한다. */
 	void TryBindSatisfactionSubsystem();
+
+	/** SNS Insights 구독을 시도한다. */
+	void TryBindInsightsSubsystem();
 
 	/**
 	 * 소유자 시스템에서 지표를 읽어 온다. PollInterval마다 Tick에서 호출된다.
@@ -1114,6 +1133,17 @@ private:
 
 	/** 만족도 시스템을 못 찾았을 때 재시도한 횟수. */
 	int32 SatisfactionBindRetryCount = 0;
+
+	UPROPERTY()
+	TObjectPtr<UFF_CrowdInsightsSubsystem> CachedInsightsSubsystem;
+
+	/** SNS Insights 시스템을 못 찾았을 때 재시도한 횟수. */
+	int32 InsightsBindRetryCount = 0;
+
+	/** 최신 글이 [0]. Insights 링버퍼 용량(80)과 맞춘다 — 몇 건을 화면에 그릴지는 위젯 몫이다. */
+	UPROPERTY()
+	TArray<FFF_LiveSocialPost> RecentSnsPosts;
+	static constexpr int32 SnsPostViewCapacity = 80;
 
 	/** 남은 시간 중복 방송 차단용. 구독 중계와 Sync가 같은 값을 두 번 쏘지 않게 한다. */
 	int32 LastBroadcastRemainingSeconds = INDEX_NONE;

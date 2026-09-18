@@ -168,7 +168,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Atlas", meta = (ClampMin = "0.0"))
 	float DragThresholdPixels = 5.f;
 
+	/** 왼쪽 패널 배치를 읽을 수 없는 첫 프레임/구버전 위젯의 국가 포커스 위치(0~1). */
+	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Atlas|Presentation")
+	FVector2D FallbackCountryFocusPosition = FVector2D(0.68, 0.5);
+
 private:
+	/** 실제 패널 오른쪽부터 뷰포트 끝까지의 중앙을 지구에 전달한다. */
+	void UpdateCountryFocusViewport();
+
 	/** 추적 중인 핀과 미추적 잔여 핀을 모두 제거한다. */
 	void ClearPinButtons();
 
@@ -213,8 +220,8 @@ private:
 	AFF_AtlasGlobeActor* GetGlobe() const;
 	const UFF_FestivalAtlasCatalog* GetCatalog() const;
 
-	/** 진행 중인 카메라·회전 연출을 즉시 끝낸다. **모든 연출은 입력으로 Skip 된다.** */
-	void SkipPresentation();
+	/** 화면 진입 카메라만 즉시 끝낸다. 기존 국가 회전·접근은 현재 위치에서 새 입력으로 이어진다. */
+	void SkipEntranceCameraMove();
 
 	/** `CountryId` → 핀 버튼. 인덱스로 짝짓지 않는다 (안티패턴 15). */
 	UPROPERTY(Transient)

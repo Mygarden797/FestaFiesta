@@ -3,6 +3,7 @@
 #include "UI/Facility/FF_FacilityInfoTypes.h"
 #include "Building/FF_FacilityUpgradeTypes.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
+#include "Economy/FF_FestivalEconomyTypes.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityInfoModel"
 
@@ -220,6 +221,70 @@ namespace FFFacilityInfoModel
 			? FText::Format(LOCTEXT("UpgradeTargetLevelFree", "Lv.{0} 강화 · 무료"), FText::AsNumber(Preview->TargetLevel))
 			: FText::Format(LOCTEXT("UpgradeTargetLevel", "Lv.{0} 강화 · {1} Gold"),
 				FText::AsNumber(Preview->TargetLevel), FText::AsNumber(Preview->CostGold));
+	}
+
+	void ApplyFacilityRevenue(
+		const FFF_FacilityInstanceRevenue* Revenue,
+		const bool bSectionApplicable,
+		const bool bGeneratesDirectRevenue,
+		const int32 FestivalTodayRevenueGold,
+		FFF_FacilityInfoViewData& ViewData)
+	{
+		ViewData.bShowRevenueSection = bSectionApplicable;
+		ViewData.TodayRevenueGold = Revenue ? Revenue->TodayGold : 0;
+		ViewData.TotalRevenueGold = Revenue ? Revenue->TotalGold : 0;
+		ViewData.TodayPaymentCount = Revenue ? Revenue->TodayPaymentCount : 0;
+		ViewData.TotalPaymentCount = Revenue ? Revenue->TotalPaymentCount : 0;
+		// Money already earned proves the facility sells even when its per-use price is unknown.
+		ViewData.bFacilityGeneratesRevenue = bGeneratesDirectRevenue || ViewData.TotalRevenueGold > 0;
+		ViewData.TodayRevenueSharePercent =
+			Revenue && FestivalTodayRevenueGold > 0 && ViewData.TodayRevenueGold > 0
+				? FMath::Clamp(100.f * static_cast<float>(ViewData.TodayRevenueGold) /
+					static_cast<float>(FestivalTodayRevenueGold), 0.f, 100.f)
+				: 0.f;
+		if (!Revenue)
+		{
+			const FText Unknown = LOCTEXT("FacilityRevenueUnknown", "정보 없음");
+			ViewData.TodayRevenueText = Unknown;
+			ViewData.TotalRevenueText = Unknown;
+			ViewData.RevenuePaymentCountText = Unknown;
+			ViewData.RevenueShareText = Unknown;
+			ViewData.RevenueSummaryText = LOCTEXT("FacilityRevenueSummaryUnknown", "시설 수익  정보 없음");
+			ViewData.RevenueStatusText = LOCTEXT("FacilityRevenueEconomyNotReady", "축제 경제 정보를 준비 중입니다.");
+			return;
+		}
+		ViewData.TodayRevenueText = FormatGold(true, ViewData.TodayRevenueGold);
+		ViewData.TotalRevenueText = FormatGold(true, ViewData.TotalRevenueGold);
+		// Stat-card values stay on one line at the authored 15pt; the card labels carry the context.
+		ViewData.RevenuePaymentCountText = FText::Format(
+			LOCTEXT("FacilityRevenuePaymentCount", "{0}건 · 누적 {1}건"),
+			FText::AsNumber(ViewData.TodayPaymentCount), FText::AsNumber(ViewData.TotalPaymentCount));
+		FNumberFormattingOptions PercentOptions;
+		PercentOptions.MaximumFractionalDigits = 1;
+		ViewData.RevenueShareText = FText::Format(
+			LOCTEXT("FacilityRevenueShare", "{0}%"),
+			FText::AsNumber(ViewData.TodayRevenueSharePercent, &PercentOptions));
+		ViewData.RevenueSummaryText = FText::Format(
+			LOCTEXT("FacilityRevenueSummary", "오늘 {0} · 누적 {1}"),
+			ViewData.TodayRevenueText, ViewData.TotalRevenueText);
+		if (!ViewData.bFacilityGeneratesRevenue)
+		{
+			ViewData.RevenueStatusText = LOCTEXT("FacilityRevenueAttractionOnly",
+				"직접 수익이 없는 집객 시설입니다. 주변 부스의 손님을 늘려 줍니다.");
+		}
+		else if (ViewData.TotalPaymentCount == 0)
+		{
+			ViewData.RevenueStatusText = LOCTEXT("FacilityRevenueNoPayments",
+				"아직 결제가 없습니다. 손님이 이용을 마치면 수수료가 들어옵니다.");
+		}
+		else if (ViewData.TodayPaymentCount == 0)
+		{
+			ViewData.RevenueStatusText = LOCTEXT("FacilityRevenueNoPaymentsToday", "오늘은 아직 결제가 없습니다.");
+		}
+		else
+		{
+			ViewData.RevenueStatusText = FText::GetEmpty();
+		}
 	}
 
 	FText GetCategoryText(const EFFZSFacilityCategory Category)

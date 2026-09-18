@@ -122,7 +122,9 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 		RevenuePerUse, MemberCount, Definition->BoothCommissionRate, Facility->GetUpgradeRevenueMultiplier() * SynergyMultiplier);
 	if (Commission <= 0) return;
 
-	Progression->AddRevenue(Commission, EFF_EarnReason::FacilityCommission, Spec.FacilityDefinitionId);
+	// 종류(FacilityDefinitionId)는 결산 표로, 인스턴스(ZoneFacilityId)는 시설 정보 패널의 시설별 장부로 간다.
+	Progression->AddFacilityRevenue(
+		Commission, EFF_EarnReason::FacilityCommission, Spec.FacilityDefinitionId, ZoneFacilityId);
 }
 
 UFF_FestivalProgressionSubsystem*

@@ -2,13 +2,20 @@
 
 #include "UI/PrepHUD/Panels/FF_PrepPanelProgram.h"
 
+#include "Blueprint/WidgetTree.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
+#include "Building/FF_BuildModeSubsystem.h"
 #include "Components/Button.h"
 #include "Components/PanelWidget.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/TextBlock.h"
+#include "Components/WrapBox.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "UI/FF_UILog.h"
+#include "UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h"
 
 #define LOCTEXT_NAMESPACE "FestaFiestaPrepProgram"
 
@@ -135,6 +142,7 @@ FFF_PrepProgramQuote FFF_PrepProgramRules::BuildQuote(
 void UFF_PrepPanelProgram::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	EnsureCatalogChoices();
 
 	if (DailyNoticeText.IsEmpty())
 	{
@@ -202,6 +210,10 @@ UFF_FestivalViewModelSubsystem* UFF_PrepPanelProgram::GetViewModel() const
 void UFF_PrepPanelProgram::BindViewModel()
 {
 	UGameInstance* GI = GetGameInstance();
+	if (UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr)
+	{
+		BuildCatalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleBuildCatalogChanged);
+	}
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
 
 	if (!CachedViewModel)
@@ -225,6 +237,13 @@ void UFF_PrepPanelProgram::BindViewModel()
 
 void UFF_PrepPanelProgram::UnbindViewModel()
 {
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>())
+		{
+			BuildCatalog->OnCatalogChanged.RemoveDynamic(this, &ThisClass::HandleBuildCatalogChanged);
+		}
+	}
 	// 해제는 조건부, 정리는 무조건.
 	if (CachedViewModel)
 	{
@@ -303,6 +322,7 @@ void UFF_PrepPanelProgram::RebuildCards()
 
 void UFF_PrepPanelProgram::RebuildFacilityChoices()
 {
+	RebuildCatalogChoices();
 	FacilityWidgets.Reset();
 	if (Box_FacilityChoices)
 	{
@@ -362,6 +382,57 @@ void UFF_PrepPanelProgram::RebuildFacilityChoices()
 	if (FacilityOptions.Num() == 1)
 	{
 		SelectedFacilityIndex = 0;
+	}
+}
+
+void UFF_PrepPanelProgram::EnsureCatalogChoices()
+{
+	if (Box_CatalogChoices || !WidgetTree || !Text_FacilityNotice) { return; }
+	UPanelWidget* Parent = Text_FacilityNotice->GetParent();
+	if (!Parent) { return; }
+
+	// Extend existing designer-authored panels before Slate construction, without replacing their tree.
+	UWrapBox* Choices = WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), TEXT("Box_CatalogChoices"));
+	Choices->SetInnerSlotPadding(FVector2D(8.f, 8.f));
+	Choices->SetVisibility(ESlateVisibility::Collapsed);
+	UPanelSlot* ChoiceSlot = Parent->InsertChildAt(Parent->GetChildIndex(Text_FacilityNotice) + 1, Choices);
+	if (!ChoiceSlot) { return; }
+	if (UScrollBoxSlot* ScrollSlot = Cast<UScrollBoxSlot>(ChoiceSlot))
+	{
+		ScrollSlot->SetHorizontalAlignment(HAlign_Fill);
+		ScrollSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+	}
+	Box_CatalogChoices = Choices;
+}
+
+void UFF_PrepPanelProgram::RebuildCatalogChoices()
+{
+	CatalogChoiceWidgets.Reset();
+	CompatibleCatalogEntries.Reset();
+	if (Box_CatalogChoices) { Box_CatalogChoices->ClearChildren(); }
+	const UGameInstance* GI = GetGameInstance();
+	const UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	const FFF_ProgramCard* Card = FindSelectedCard();
+	if (Card && BuildCatalog && BuildCatalog->IsCatalogReady())
+	{
+		CompatibleCatalogEntries = FFF_ProgramFacilityGuide::FindCompatibleEntries(*Card, BuildCatalog->GetEntriesView());
+	}
+	if (!Box_CatalogChoices) { return; }
+	Box_CatalogChoices->SetVisibility(CompatibleCatalogEntries.IsEmpty()
+		? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+	UClass* ChoiceClass = ResolveWidgetClass(FacilityChoiceClass, FacilityChoiceFallbackPath);
+	if (!ChoiceClass) { return; }
+	for (int32 Index = 0; Index < CompatibleCatalogEntries.Num(); ++Index)
+	{
+		UFF_PrepChoiceButton* Choice = CreateWidget<UFF_PrepChoiceButton>(this, ChoiceClass);
+		if (!Choice) { continue; }
+		const FFF_BuildCatalogEntry& Entry = CompatibleCatalogEntries[Index];
+		Choice->ConfigureChoice(Index, FText::Format(
+			LOCTEXT("PrepProgram_FindInCatalog", "{0} · 건축목록에서 보기"), Entry.DisplayName));
+		Choice->SetToolTipText(FFF_ProgramFacilityGuide::GetCatalogPath(Entry));
+		Choice->OnHudTabButtonClicked.BindUObject(this, &ThisClass::HandleCatalogFacilityClicked);
+		Box_CatalogChoices->AddChild(Choice);
+		CatalogChoiceWidgets.Add(Choice);
 	}
 }
 
@@ -438,9 +509,20 @@ void UFF_PrepPanelProgram::RefreshAll()
 	}
 
 	const bool bShowFacilityNotice = (SelectedCard && FacilityOptions.Num() == 0);
-	SetTextOrHide(Text_FacilityNotice, bShowFacilityNotice
-		? LOCTEXT("PrepProgram_NoFacility", "이 프로그램을 열 수 있는 시설이 없습니다. `배치` 탭에서 먼저 지으세요.")
-		: FText::GetEmpty());
+	FText FacilityNotice;
+	if (SelectedCard)
+	{
+		const UGameInstance* GI = GetGameInstance();
+		const UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+		FacilityNotice = BuildCatalog && BuildCatalog->IsCatalogReady()
+			? FFF_ProgramFacilityGuide::BuildFacilityNotice(*SelectedCard, CompatibleCatalogEntries, FacilityCount)
+			: LOCTEXT("PrepProgram_LoadingFacilities", "프로그램을 열 수 있는 시설 목록을 불러오는 중입니다.");
+		if (!BuildCatalog || BuildCatalog->GetLoadState() == EFF_BuildCatalogLoadState::Failed)
+		{
+			FacilityNotice = LOCTEXT("PrepProgram_FacilityCatalogFailed", "시설 목록을 불러오지 못했습니다. 배치 탭에서 건축목록을 다시 열어 주세요.");
+		}
+	}
+	SetTextOrHide(Text_FacilityNotice, FacilityNotice);
 
 	// --- 견적 ---
 	SetTextOrHide(Text_CostPreview, (Quote.CostGold != INDEX_NONE && Quote.RequiredStaff != INDEX_NONE)
@@ -575,6 +657,25 @@ void UFF_PrepPanelProgram::HandleFacilityClicked(int32 ChoiceId)
 	}
 
 	SelectedFacilityIndex = ChoiceId;
+	RefreshAll();
+}
+
+void UFF_PrepPanelProgram::HandleCatalogFacilityClicked(int32 ChoiceId)
+{
+	if (!CompatibleCatalogEntries.IsValidIndex(ChoiceId)) { return; }
+	const FName DefinitionId = CompatibleCatalogEntries[ChoiceId].FacilityDefinitionId;
+	UFF_BuildModeSubsystem* BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	// The build input bridge switches the owning HUD to the build tab and focuses this exact card.
+	if (!BuildMode || !BuildMode->OpenCatalogForFacility(DefinitionId))
+	{
+		SetTextOrHide(Text_BlockReason, LOCTEXT("PrepProgram_CatalogOpenFailed",
+			"지금은 건축목록을 열 수 없습니다. 준비 단계에서 다시 시도해 주세요."));
+	}
+}
+
+void UFF_PrepPanelProgram::HandleBuildCatalogChanged()
+{
+	RebuildFacilityChoices();
 	RefreshAll();
 }
 

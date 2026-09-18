@@ -59,6 +59,18 @@ struct FESTAFIESTA_API FFF_AtlasCountryEntry
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe")
 	FFF_AtlasLatLong Location;
 
+	/** 나라 선택 시 바라볼 지점과 접근 거리를 따로 지정한다. 조형물 위치에는 영향을 주지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe|Inspection", meta = (DisplayName = "Use Custom Country View"))
+	bool bOverrideInspectionView = false;
+
+	/** 지구 위 보기 기준점. 에디터의 FF Atlas Country View Marker로 옮기고 저장할 수 있다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe|Inspection", meta = (EditCondition = "bOverrideInspectionView"))
+	FFF_AtlasLatLong InspectionLocation;
+
+	/** 기본 지구 카메라와 지구 중심 거리 중 다가갈 비율. 0은 접근 없음, 0.5는 절반. 안전거리는 별도로 제한한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Globe|Inspection", meta = (EditCondition = "bOverrideInspectionView", ClampMin = "0.0", ClampMax = "0.5"))
+	float InspectionApproachFraction = 0.08f;
+
 	/**
 	 * 지구본에 서는 국가 대표 조형물. 현재 대표 축제를 상징한다.
 	 * **비어 있어도 동작해야 한다** — 액터가 프리미티브로 대신 세운다.
