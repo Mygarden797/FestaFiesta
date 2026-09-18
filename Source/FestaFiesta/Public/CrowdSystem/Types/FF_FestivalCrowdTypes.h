@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "FF_FestivalCrowdTypes.h"
 #include "NPC/Party/FF_NeedState.h"
 #include "NPC/Party/FF_ProgramReservation.h"
 #include "NPC/Party/FF_VisitHistory.h"
