@@ -46,7 +46,7 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 	EFF_FestivalStage PreviousStage = CurrentStage;
 	CurrentStage = NewStage;
 	ElapsedLiveSeconds = 0.f;
-		// 날마다 길이가 달라, 시계를 0으로 리셋함
+	// 날마다 길이가 달라, 시계를 0으로 리셋함
 	bWasMainProgramLocked = false;
 	// 날짜 바뀔 때 공연 시작 체크도 초기화
 	bNightLightingActivated = false;

@@ -810,7 +810,12 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			TEXT("곡선 뒷부분이 잘려 분석 결과가 왜곡된다. AgentPoolSize를 UnitCount 이상으로 올릴 것"),
 			VisitorCursor, ArrivalTotalVisitorCount);
 	}
-	
+
+	if (SpawnedCount > 0)
+	{
+		OnVisitorsAdmitted.Broadcast(SpawnedCount);
+	}
+
 	return SpawnedCount;
 }
 
@@ -3251,9 +3256,14 @@ void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage Previous
 	else if (CurrentStage == EFF_FestivalStage::Live)
 	{
 		LiveStartSimTime = SimTimeSeconds;
-		BeginArrivalSchedule(ArrivalRequestedVisitorCount,ArrivalSpawnCenter,ArrivalSpawnRadiusUU,
+		// 홍보 배수 반영. 외부가 채워준 값이 있으면 그걸 쓰고, 없으면(경제 없는
+		// 독립 테스트 등) 기존처럼 지난 캐시값을 그대로 쓴다 — 아무도 안 채우면 동작이 안 바뀐다.
+		const int32 VisitorCount = ExpectedVisitorCountOverride != INDEX_NONE
+			? ExpectedVisitorCountOverride
+			: ArrivalRequestedVisitorCount;
+		BeginArrivalSchedule(VisitorCount,ArrivalSpawnCenter,ArrivalSpawnRadiusUU,
 			GatherReservedPartyRequests());
-		
+
 	}
 	else if (CurrentStage == EFF_FestivalStage::Report)
 	{
