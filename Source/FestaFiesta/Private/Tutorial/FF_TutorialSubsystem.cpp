@@ -15,6 +15,7 @@
 #include "Tutorial/FF_DialogueRow.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
 #include "Tutorial/FF_DialogueScriptData.h"
@@ -256,6 +257,13 @@ void UFF_TutorialSubsystem::UnbindGameSignals()
 		bBoundZoneWorld = false;
 	}
 
+	if (UFF_PrepHudBar* Bar = BoundPrepHudBar.Get())
+	{
+		Bar->OnTabSelectionChanged.RemoveDynamic(
+			this, &UFF_TutorialSubsystem::HandlePrepTabSelectionChanged);
+	}
+	BoundPrepHudBar.Reset();
+
 	if (bBoundStage)
 	{
 		const UGameInstance* GameInstance = World->GetGameInstance();
@@ -275,6 +283,66 @@ void UFF_TutorialSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Even
 	{
 		NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
 	}
+}
+
+void UFF_TutorialSubsystem::TryBindPrepHudBar()
+{
+	// 이미 살아 있는 것을 구독 중이면 그대로 둔다.
+	if (BoundPrepHudBar.IsValid())
+	{
+		return;
+	}
+
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
+		this, FoundWidgets, UFF_PrepHudBar::StaticClass(), false);
+
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		UFF_PrepHudBar* Bar = Cast<UFF_PrepHudBar>(Widget);
+		if (!Bar)
+		{
+			continue;
+		}
+
+		Bar->OnTabSelectionChanged.AddUniqueDynamic(
+			this, &UFF_TutorialSubsystem::HandlePrepTabSelectionChanged);
+		BoundPrepHudBar = Bar;
+
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 준비 화면 탭 바를 구독했다."));
+		return;
+	}
+}
+
+void UFF_TutorialSubsystem::HandlePrepTabSelectionChanged(const FFF_PrepTabSelection Selection)
+{
+	// 닫힐 때도 온다. 여는 것만 본다.
+	if (!Selection.bHasSelection)
+	{
+		return;
+	}
+
+	const FFF_DialogueLine& Line = GetCurrentLine();
+	if (Line.WaitCondition != EFF_TutorialWaitCondition::PrepTabOpened)
+	{
+		return;
+	}
+
+	// 어느 탭인지 정해뒀으면 그것만 통과시킨다.
+	if (!Line.ExpectedTab.IsNone())
+	{
+		const UEnum* EnumClass = StaticEnum<EFF_PrepHudTab>();
+		const FString Opened = EnumClass
+			? EnumClass->GetNameStringByValue(static_cast<int64>(Selection.Tab))
+			: FString();
+
+		if (!Opened.Equals(Line.ExpectedTab.ToString(), ESearchCase::IgnoreCase))
+		{
+			return;
+		}
+	}
+
+	NotifyAction(EFF_TutorialWaitCondition::PrepTabOpened);
 }
 
 void UFF_TutorialSubsystem::HandleStageChanged(
@@ -504,6 +572,12 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	if (Line.RequiresPlayerAction())
 	{
 		ResetCameraBaseline();
+
+		// 탭을 기다리는 줄이면 지금 구독한다. 화면이 대사보다 늦게 뜨기 때문이다.
+		if (Line.WaitCondition == EFF_TutorialWaitCondition::PrepTabOpened)
+		{
+			TryBindPrepHudBar();
+		}
 	}
 
 	OnLineChanged.Broadcast(Line);
@@ -1028,6 +1102,10 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 					UE_LOG(LogFestaFiestaTutorial, Display,
 						TEXT("  등록된 이름: %s"), *FString::Join(Names, TEXT(", ")));
 				}
+
+				UE_LOG(LogFestaFiestaTutorial, Display,
+					TEXT("  탭 바 구독=%s"),
+					BoundPrepHudBar.IsValid() ? TEXT("예") : TEXT("아니오"));
 
 				UE_LOG(LogFestaFiestaTutorial, Display,
 					TEXT("  구독: Zone=%s 단계=%s / 카메라 기준점=%s"),
