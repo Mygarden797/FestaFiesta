@@ -197,7 +197,7 @@ namespace FFCrowdConsole
 	// Agent 만 늘리고 화면 Actor 수는 묶어둘 수 있어서 시뮬 비용과 표현 비용을 나눠 잴 수 있다.
 	// 풀 크기는 최초 1회만 정해지므로, 계단식 인원 스윕을 한 PIE 세션에서 돌리려면
 	// 첫 호출에서 목표 최대 인원만큼 풀을 잡아둬야 한다.
-	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU, float SimRadiusUU,
+	bool SpawnCrowd(UWorld* World, FOutputDevice& Ar, int32 Count, float SpawnRadiusUU,
 		int32 AgentPoolSize = 0, int32 ActorPoolSize = 0)
 	{
 		UFF_CrowdSimulationSubsystem* CrowdSim = GetCrowdSim(World, Ar);
@@ -215,7 +215,7 @@ namespace FFCrowdConsole
 			const int32 ResolvedAgentPool = FMath::Max(AgentPoolSize > 0 ? AgentPoolSize : Count, Count);
 			const int32 ResolvedActorPool = FMath::Max(ActorPoolSize > 0 ? ActorPoolSize : ResolvedAgentPool, 1);
 
-			CrowdSim->InitializeSimulation(Origin, SimRadiusUU, ResolvedActorPool, ResolvedAgentPool, CrowdClass);
+			CrowdSim->InitializeSimulation(Origin, ResolvedActorPool, ResolvedAgentPool, CrowdClass);
 
 			Ar.Logf(TEXT("풀 — Agent %d, Actor %d%s"),
 				ResolvedAgentPool, ResolvedActorPool,
@@ -246,11 +246,10 @@ static void CrowdSpawnCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 {
 	const int32 Count = FFCrowdConsole::ParseIntArg(Args, 0, 500);
 	const float SpawnRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 1, 3000.f);
-	const float SimRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 2, 10000.f);
-	const int32 AgentPoolSize = FFCrowdConsole::ParseIntArg(Args, 3, 0);
-	const int32 ActorPoolSize = FFCrowdConsole::ParseIntArg(Args, 4, 0);
+	const int32 AgentPoolSize = FFCrowdConsole::ParseIntArg(Args, 2, 0);
+	const int32 ActorPoolSize = FFCrowdConsole::ParseIntArg(Args, 3, 0);
 
-	if (FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, SimRadiusUU, AgentPoolSize, ActorPoolSize))
+	if (FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, AgentPoolSize, ActorPoolSize))
 	{
 		Ar.Logf(TEXT("FF.Crowd.Debug 1 로 밀도 그리드를, 2로 Agent까지 표시합니다"));
 		Ar.Logf(TEXT("메시가 붙은 BP로 보려면 스폰 전에 FF.Crowd.Class <BP경로>"));
@@ -259,7 +258,7 @@ static void CrowdSpawnCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpawnCommand(
 	TEXT("FF.Crowd.Spawn"),
-	TEXT("군중을 스폰한다. FF.Crowd.Spawn [인원=500] [스폰반경UU=3000] [시뮬반경UU=10000] [Agent풀=인원] [Actor풀=Agent풀]  "
+	TEXT("군중을 스폰한다. FF.Crowd.Spawn [인원=500] [스폰반경UU=3000] [Agent풀=인원] [Actor풀=Agent풀]  "
 	     "풀은 최초 1회만 정해진다 — 계단식 스윕은 첫 호출에서 목표 최대 인원으로 풀을 잡을 것"),
 	FConsoleCommandWithWorldArgsAndOutputDeviceDelegate::CreateStatic(&CrowdSpawnCommand));
 
@@ -361,9 +360,7 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 	const int32 WallSegments = CrowdSim->GetWallSegmentCount();
 
 	Ar.Logf(TEXT("--- 벽 ---"));
-	Ar.Logf(TEXT("선분          : %d개  (시설 %d개 × 4 + 경계 %s)"),
-		WallSegments, FacilityWalls,
-		CrowdSim->bAvoidanceUseBoundaryWalls ? TEXT("4") : TEXT("0"));
+	Ar.Logf(TEXT("선분          : %d개  (시설 %d개 × 4)"), WallSegments, FacilityWalls);
 	Ar.Logf(TEXT("시설 벽       : %s%s"),
 		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"),
 		CrowdSim->bAvoidanceFacilityWallsIncludeClearance ? TEXT(" + 여유 1m 링") : TEXT(""));
@@ -671,8 +668,14 @@ static void CrowdLanesCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 		RoadStats.TileCount, RoadStats.EdgeCount, RoadStats.JunctionCount,
 		RoadStats.IsolatedTileCount, RoadStats.ClosedLoopCount,
 		RoadStats.bTruncated ? TEXT("  ※ 상한에 걸려 잘림") : TEXT(""));
-	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회  (순회 비율이 낮으면 도로가 동선과 멀다)"),
-		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+	Ar.Logf(TEXT("  배회 출처    : 순회 %d회 / 원판 %d회(%s)  (순회 비율이 낮으면 도로가 동선과 멀다)"),
+		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount(),
+		CrowdSim->bEnableDiscWander ? TEXT("켬") : TEXT("끔"));
+	Ar.Logf(TEXT("  Zone 봉쇄    : %s   기각 %d회 / 복귀 %d회  (기각이 0이면 봉쇄가 한 번도 안 걸렸다)"),
+		CrowdSim->bConfineWanderToZones ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetWanderZoneRejects(), CrowdSim->GetWanderContainmentNudges());
+	Ar.Logf(TEXT("  목적지 없음  : %d회  ← 배회가 제자리를 돌려준 횟수. 원판을 끄면 여기가 오른다"),
+		CrowdSim->GetWanderStalls());
 
 	for (int32 LaneIndex = 0; LaneIndex < Lanes.Num(); ++LaneIndex)
 	{
@@ -761,6 +764,10 @@ static void CrowdSpreadCommand(const TArray<FString>& Args, UWorld* World, FOutp
 		Evenness);
 	Ar.Logf(TEXT("  배회 출처   : 순회 %d회 / 원판 %d회"),
 		CrowdSim->GetPatrolWanderCount(), CrowdSim->GetDiscWanderCount());
+	Ar.Logf(TEXT("  Zone 봉쇄   : %s   기각 %d회 / 복귀 %d회"),
+		CrowdSim->bConfineWanderToZones ? TEXT("켬") : TEXT("끔"),
+		CrowdSim->GetWanderZoneRejects(), CrowdSim->GetWanderContainmentNudges());
+	Ar.Logf(TEXT("  목적지 없음 : %d회"), CrowdSim->GetWanderStalls());
 }
 
 static FAutoConsoleCommandWithWorldArgsAndOutputDevice GCrowdSpreadCommand(
@@ -944,7 +951,7 @@ static void CrowdDemoCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	const int32 Count = FFCrowdConsole::ParseIntArg(Args, 0, 500);
 	const float SpawnRadiusUU = FFCrowdConsole::ParseFloatArg(Args, 1, 1500.f);
 
-	if (!FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU, SpawnRadiusUU * 4.f))
+	if (!FFCrowdConsole::SpawnCrowd(World, Ar, Count, SpawnRadiusUU))
 	{
 		return;
 	}
@@ -1070,7 +1077,6 @@ static void CrowdAvoidanceCommand(const TArray<FString>& Args, UWorld* World, FO
 
 	Ar.Logf(TEXT("--- 회피(사회력) ---"));
 	Ar.Logf(TEXT("bEnableAvoidance : %s"), CrowdSim->bEnableAvoidance ? TEXT("켬") : TEXT("끔"));
-	Ar.Logf(TEXT("경계 4벽         : %s"), CrowdSim->bAvoidanceUseBoundaryWalls ? TEXT("켬") : TEXT("끔"));
 	Ar.Logf(TEXT("목표 추종        : %s"), CrowdSim->bAvoidanceDrivesVelocity
 		? TEXT("구동력 (tau)") : TEXT("지수 평활 (Lerp)"));
 	Ar.Logf(TEXT("이웃 반경 / 셀   : %.2fm / %.2fm  (셀 >= 반경이어야 한다)"),
@@ -1150,14 +1156,18 @@ static void CrowdTuneCommand(const TArray<FString>& Args, UWorld* World, FOutput
 	const FSwitch Switches[] = {
 		{ TEXT("facilitywalls"), &CrowdSim->bAvoidanceUseFacilityWalls,
 		  TEXT("시설 footprint를 벽으로. 끄면 부스를 통과한다") },
-		{ TEXT("boundarywalls"), &CrowdSim->bAvoidanceUseBoundaryWalls,
-		  TEXT("시뮬 사각 경계 4벽") },
 		{ TEXT("clearance"), &CrowdSim->bAvoidanceFacilityWallsIncludeClearance,
 		  TEXT("시설 벽에 여유 링 포함. 켜면 nav 구멍보다 벽이 커져 경로와 힘이 어긋난다") },
 		{ TEXT("pathfollow"), &CrowdSim->bEnablePathFollowing,
 		  TEXT("NavMesh 경로 우회. 끄면 최종 목적지로 직선 조향(벽에 붙어 미끄러진다)") },
 		{ TEXT("blockunknown"), &CrowdSim->bBlockUnknownGround,
 		  TEXT("지면을 못 찾은 격자점도 통행 불가로. maxwalkheight가 켜져 있을 때만 의미가 있다") },
+		{ TEXT("confinezones"), &CrowdSim->bConfineWanderToZones,
+		  TEXT("배회·순회 목적지를 Zone 안으로 제한. 끄면 봉쇄가 NavMesh 통행성 하나만 남는다") },
+		{ TEXT("discwander"), &CrowdSim->bEnableDiscWander,
+		  TEXT("원판 배회. 끄면 레인 순회만 남는다 — 레인에서 먼 개체는 제자리에 서므로 stall을 같이 볼 것") },
+		{ TEXT("patrolwander"), &CrowdSim->bEnableRoadPatrolWander,
+		  TEXT("레인 순회 배회. discwander와 함께 끄면 배회가 전멸한다") },
 	};
 
 	struct FIntKnob
