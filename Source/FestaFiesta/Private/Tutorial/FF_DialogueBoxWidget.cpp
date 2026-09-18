@@ -18,6 +18,11 @@ void UFF_DialogueBoxWidget::NativeConstruct()
 		AdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
 	}
 
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
 	if (SkipButton)
 	{
 		SkipButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
@@ -64,6 +69,11 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 		AdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
 	}
 
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
 	if (SkipButton)
 	{
 		SkipButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
@@ -91,10 +101,7 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 
 	RebuildChoices(Line);
 
-	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
-	const bool bCanAdvance =
-		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
-	SetAdvanceEnabled(bCanAdvance);
+	ApplyClickArea(Line);
 
 	BP_OnLineChanged(Line);
 }
@@ -210,19 +217,30 @@ void UFF_DialogueBoxWidget::ClearChoices()
 	}
 }
 
-void UFF_DialogueBoxWidget::SetAdvanceEnabled(const bool bEnabled)
+void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
 {
-	if (!AdvanceButton)
-	{
-		return;
-	}
+	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
+	const bool bCanAdvance =
+		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
 
-	AdvanceButton->SetIsEnabled(bEnabled);
+	const bool bFullScreen = bCanAdvance
+		&& Line.ClickArea == EFF_DialogueClickArea::FullScreen;
+	const bool bBoxOnly = bCanAdvance
+		&& Line.ClickArea == EFF_DialogueClickArea::BoxOnly;
 
-	// 클릭 영역이 선택지를 덮고 있으면 선택지를 못 누른다.
 	// 비활성만으로는 히트 판정이 남는 경우가 있어 아예 숨긴다.
-	AdvanceButton->SetVisibility(
-		bEnabled ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	auto Apply = [](UButton* Button, const bool bOn)
+	{
+		if (!Button)
+		{
+			return;
+		}
+		Button->SetIsEnabled(bOn);
+		Button->SetVisibility(bOn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+
+	Apply(AdvanceButton, bFullScreen);
+	Apply(BoxAdvanceButton, bBoxOnly);
 }
 
 // ── 선택지 버튼 ─────────────────────────────────────────────────────────────
