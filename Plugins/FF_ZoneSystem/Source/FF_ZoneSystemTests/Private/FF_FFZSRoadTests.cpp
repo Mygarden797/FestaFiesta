@@ -522,10 +522,13 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Production road world"), System)) return false;
     if (!TestNotNull(TEXT("Physical terrain"), SpawnRoadTestBox(*World,
         FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;
-    const TArray<FString> Names = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Wood"), TEXT("Stone"), TEXT("Herringbone"), TEXT("Concrete") };
+    // Wood and Stone moved from roads to tiles; the remaining four stay roads only.
+    const TArray<FString> RoadNames = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Herringbone"), TEXT("Concrete") };
+    const TArray<FString> TileNames = { TEXT("Wood"), TEXT("Stone") };
     for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
     {
         const FString SurfaceType = Category == EFFZSFacilityCategory::Tile ? TEXT("Tile") : TEXT("Road");
+        const TArray<FString>& Names = Category == EFFZSFacilityCategory::Tile ? TileNames : RoadNames;
         for (int32 Index = 0; Index < Names.Num(); ++Index)
         {
             const FString Path = TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/") + SurfaceType + TEXT("/PDA_FFZS_") + SurfaceType + TEXT("_Surface_") + Names[Index];
