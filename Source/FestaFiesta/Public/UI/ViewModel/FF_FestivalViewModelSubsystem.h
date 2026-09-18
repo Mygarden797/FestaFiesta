@@ -236,7 +236,7 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | Gold                   | 김시리           | **진짜 값** (`OnGoldChanged` 구독) |
  * | SimSatisfaction        | 김시리           | **진짜 값** (`OnSimSatisfactionChanged` 구독. 대기·밀도·취향매칭·Need 충족도 **4항**) |
  * | └ 분해값 4종           | 김시리           | **진짜 값** — SimSatisfaction과 같은 1초 주기에 같이 갱신된다 |
- * | ScoreSatisfaction      | 김시리           | 더미 72 — `SimSatisfaction + FinaleBonus` 합산이 **아직 없다** |
+ * | ScoreSatisfaction      | 김시리           | **진짜 값** — `Clamp(SimSatisfaction + FinaleBonus, 0, 100)`. `OnSimSatisfactionChanged`·`OnFinaleGradeChanged` 둘 다 바뀔 때 재계산한다. UI 문구의 "연출 보정" 항은 정의·계수가 없어 이번엔 포함하지 않았다(`FF_LivePanelReport.h` 참고, 백종태 소유 문구라 별도 결정 필요) |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
  * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
  * | TodayRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
@@ -310,7 +310,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetSimSatisfactionNeedFulfillmentScore() const { return SimSatisfactionNeedFulfillmentScore; }
 
-	/** 0~100. SimSatisfaction + FinaleBonus + 연출 보정. 등급 산출용 게임 점수. */
+	/**
+	 * 0~100. `Clamp(SimSatisfaction + FinaleBonus, 0, 100)`. 등급 산출용 게임 점수.
+	 * "연출 보정" 항은 아직 정의가 없어 포함하지 않는다(위 클래스 주석 표 참고).
+	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Metrics")
 	int32 GetScoreSatisfaction() const { return ScoreSatisfaction; }
 
@@ -1027,6 +1030,14 @@ private:
 	void TryBindInsightsSubsystem();
 
 	/**
+	 * `ScoreSatisfaction = Clamp(SimSatisfaction + FinaleBonus, 0, 100)`을 다시 잰다.
+	 * 두 입력 중 하나라도 바뀔 때마다 부른다(`HandleOwnerSimSatisfactionChanged`,
+	 * `HandleOwnerFinaleGradeChanged`) — 소유자가 둘로 나뉘어 있어 한쪽만 구독해서는
+	 * 최신값을 보장할 수 없다.
+	 */
+	void RecomputeScoreSatisfaction();
+
+	/**
 	 * 소유자 시스템에서 지표를 읽어 온다. PollInterval마다 Tick에서 호출된다.
 	 * 지금은 소유자가 없어 아무것도 하지 않는다 — 구현이 붙으면 **여기 한 곳만** 채운다.
 	 * 변화 감지와 통지는 ApplyIntMetric이 이미 처리하므로 위젯은 손대지 않는다.
@@ -1055,10 +1066,10 @@ private:
 	UPROPERTY()
 	int32 SimSatisfactionNeedFulfillmentScore = 50;
 
-	// --- 지표 더미값 ---
-	// !! 하드코딩 !! 실제 값이 생기면 이 초기화를 지우고 소유자 시스템 구독으로 바꾼다.
+	// SimSatisfaction·FinaleBonus 기본값(50, 0)과 맞춘 중립값.
+	// RecomputeScoreSatisfaction이 두 소유자가 바인딩되는 대로 실값으로 덮어쓴다.
 	UPROPERTY()
-	int32 ScoreSatisfaction = 72;
+	int32 ScoreSatisfaction = 50;
 
 	UPROPERTY()
 	int32 Safety = 88;
