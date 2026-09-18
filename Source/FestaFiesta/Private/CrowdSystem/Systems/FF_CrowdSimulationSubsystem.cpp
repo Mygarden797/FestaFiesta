@@ -779,6 +779,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			FUnitData& Unit = UnitDatas[AgentIndex];
 			Unit.ArchetypeID = Visitor.ArchetypeId;
 			Unit.bIsDependentChild = Visitor.bIsDependentChildSlot;
+			Unit.CrowdRole = EFF_CrowdRole::Visitor;
 			Unit.EntryGateIndex = GateIndex;
 			
 			ApplyAgentAppearance(AgentIndex);
@@ -3499,7 +3500,9 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 			}
 			State.bIsLeaving = true;
 			State.LeaveStartedSimTime = SimTimeSeconds;
-			Unit.TargetLocation = Temp_ExitWorldLocation;
+			Unit.TargetLocation = ValidGates.IsValidIndex(Unit.EntryGateIndex)
+			? ValidGates[Unit.EntryGateIndex].GateLocation
+			: Temp_ExitWorldLocation;
 			State.CurrentDestinationId = bDecided ? Result.DestinationId : NAME_None;;
 			State.CurrentNeedRelief = bDecided ? Result.NeedRelief : FFF_NeedReliefFlags();
 			State.bNeedsDecision = false;
