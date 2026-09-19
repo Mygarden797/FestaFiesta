@@ -126,8 +126,8 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	// DT_FacilityCosts 의 FoodTruck 값이 400 → 700 으로 바뀌자(2026-08-24) 두 줄이 같이 깨졌다.
 	// 이 테스트가 보려는 것은 금액 자체가 아니라 **Read Model 이 살아 있는 표를 그대로 비추는가**다.
 	const int32 LiveInstallCost = PricedEntry.InstallCost;
-	TestTrue(TEXT("Building Read Model projects a positive live FoodTruck install cost"),
-		LiveInstallCost > 0);
+	TestTrue(TEXT("Building Read Model projects a valid live FoodTruck install cost"),
+		PricedEntry.HasValidInstallCost());
 	TestEqual(TEXT("Building Read Model projects the configured demolition recovery cost"),
 		PricedEntry.RecoveryCost, FMath::RoundToInt(LiveInstallCost * 0.5f));
 	TestTrue(TEXT("A zero-capable recovery cost has an independent resolved flag"),

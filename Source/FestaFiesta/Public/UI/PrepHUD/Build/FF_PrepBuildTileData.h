@@ -47,7 +47,7 @@ public:
 	int32 GetInstallCost() const { return Entry.InstallCost; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
-	bool HasResolvedCost() const { return Entry.bHasResolvedInstallCost && Entry.InstallCost > 0; }
+	bool HasResolvedCost() const { return Entry.HasValidInstallCost(); }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	bool IsAffordable() const { return TileState == EFF_PrepBuildTileState::Available; }

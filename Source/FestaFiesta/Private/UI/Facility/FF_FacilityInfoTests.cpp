@@ -206,6 +206,9 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("가격 실패는 0 Gold로 오해되지 않는다"),
 		FFFacilityInfoModel::FormatGold(false, 0).ToString(),
 		FString(TEXT("가격 정보 없음")));
+	TestEqual(TEXT("확정된 무료 가격은 0 Gold로 표시한다"),
+		FFFacilityInfoModel::FormatGold(true, 0).ToString(),
+		FString(TEXT("0 Gold")));
 	TestEqual(TEXT("즉시 이용 가능한 Queue는 대기 0분 대신 의미를 표시한다"),
 		FFFacilityInfoModel::FormatExpectedWait(true, 0.0f).ToString(),
 		FString(TEXT("바로 이용 가능")));
@@ -563,6 +566,33 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Live에서도 오늘 편성 요약은 읽을 수 있다"), ViewData.bShowProgramSection);
 	TestFalse(TEXT("Live에서는 편성 CTA를 숨긴다"), ViewData.bShowProgramScheduleAction);
 	TestFalse(TEXT("숨긴 Live CTA는 활성 상태를 갖지 않는다"), ViewData.bCanScheduleProgram);
+
+	// Reuse the installed-facility fixture to exercise price resolution through the inspector,
+	// including refreshes that must replace a previously valid free price with an error.
+	const FName CostKey(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"));
+	CostRow.InstallCost = 0;
+	CostTable->AddRow(CostKey, CostRow);
+	TestTrue(TEXT("무료 설치비를 시설 정보에 다시 반영한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("시설 정보도 확정된 무료 설치비를 0 Gold로 표시한다"),
+		ViewData.InstallCostText.ToString(), FString(TEXT("0 Gold")));
+	TestEqual(TEXT("무료 시설의 회수 비용도 0 Gold다"),
+		ViewData.RecoveryCostText.ToString(), FString(TEXT("0 Gold")));
+
+	CostRow.InstallCost = -1;
+	CostTable->AddRow(CostKey, CostRow);
+	TestTrue(TEXT("잘못된 가격이어도 나머지 시설 정보를 유지한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("음수 설치비는 시설 정보에서 사용할 수 없는 가격이다"),
+		ViewData.InstallCostText.ToString(), FString(TEXT("가격 정보 없음")));
+	TestEqual(TEXT("음수 설치비로부터 무료 회수 비용을 만들지 않는다"),
+		ViewData.RecoveryCostText.ToString(), FString(TEXT("가격 정보 없음")));
+
+	CostTable->RemoveRow(CostKey);
+	TestTrue(TEXT("가격 행이 없어도 나머지 시설 정보를 유지한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("누락된 가격 행은 무료 설치비와 구분한다"),
+		ViewData.InstallCostText.ToString(), FString(TEXT("가격 정보 없음")));
 	return true;
 }
 

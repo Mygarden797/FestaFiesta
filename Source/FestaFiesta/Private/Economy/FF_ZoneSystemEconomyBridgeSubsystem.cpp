@@ -148,15 +148,6 @@ FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ValidateInstallCost(
 				FText::FromString(FailureReason)));
 	}
 
-	if (OutInstallCost <= 0)
-	{
-		return MakeRejectedDecision(
-			EFFZSPlacementFailure::DataInvalid,
-			FText::Format(
-				LOCTEXT("NonPositiveCost", "시설 설치비 키 '{0}'의 금액이 0 이하이므로 설치할 수 없습니다."),
-				FText::FromString(OutMatchedCostRow.ToString())));
-	}
-
 	if (!Progression->CanAfford(OutInstallCost))
 	{
 		return MakeRejectedDecision(

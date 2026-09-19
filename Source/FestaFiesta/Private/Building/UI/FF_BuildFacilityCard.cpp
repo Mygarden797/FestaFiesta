@@ -58,7 +58,7 @@ FText UFF_BuildFacilityCard::MakeFacilityCostToolTip(
 {
 	const FText UnavailableText = LOCTEXT("FacilityCostUnavailable", "가격 정보 없음");
 	const FText InstallCostText =
-		CatalogEntry.bHasResolvedInstallCost && CatalogEntry.InstallCost > 0
+		CatalogEntry.HasValidInstallCost()
 		? FText::Format(
 			LOCTEXT("FacilityCostGoldFormat", "{0} Gold"),
 			FText::AsNumber(CatalogEntry.InstallCost))

@@ -8,6 +8,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Economy/FF_FacilityCostResolver.h"
 #include "FF_FFZSTypes.h"
 #include "UObject/PrimaryAssetId.h"
 #include "FF_BuildCatalogTypes.generated.h"
@@ -129,6 +130,12 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
 	bool bHasResolvedInstallCost = false;
+
+	// 표시/선택 경로가 같은 기준을 사용한다. 기본값 0만으로는 무료 가격이 되지 않는다.
+	bool HasValidInstallCost() const
+	{
+		return bHasResolvedInstallCost && FFF_FacilityCostResolver::IsValidInstallCost(InstallCost);
+	}
 
 	// 현재 Festival의 철거 환급률을 설치비에 적용한 회수 금액입니다.
 	// 환급률 0은 유효한 설정이므로 값이 0인지와 해석 성공 여부를 별도로 보관합니다.

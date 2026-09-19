@@ -305,6 +305,63 @@ bool FFF_PrepBuildPresentation_TileStateTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_PrepBuildPresentation_FreeInstallCostTest,
+	"FestaFiesta.UI.PrepBuild.FreeInstallCost",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_FreeInstallCostTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+
+	FFF_BuildCatalogEntry Entry = MakeEntry(
+		TEXT("Booth_FoodStall_FreeTest"), TEXT("무료 시설"),
+		EFFZSFacilityCategory::Booth, TEXT("FoodStall"), 0);
+	UFF_PrepBuildTileData* Tile = NewObject<UFF_PrepBuildTileData>();
+	if (!TestNotNull(TEXT("A tile can display a free facility"), Tile))
+	{
+		return false;
+	}
+
+	Tile->Initialize(Entry, 0, true);
+	TestTrue(TEXT("Resolved zero is a valid price"), Tile->HasResolvedCost());
+	TestTrue(TEXT("A free facility is available with zero Gold"), Tile->IsAffordable());
+	TestEqual(TEXT("A free facility displays its resolved price"),
+		Tile->GetCostText().ToString(), FString(TEXT("0 Gold")));
+	TestTrue(TEXT("A free facility has no price failure message"), Tile->GetStateText().IsEmpty());
+
+	Tile->RefreshGold(0, false);
+	TestEqual(TEXT("A free price does not bypass unavailable authoritative Gold"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::GoldUnavailable);
+	Tile->RefreshGold(0, true);
+	TestTrue(TEXT("Resolving zero Gold makes the free facility available again"), Tile->IsAffordable());
+
+	Entry.bBuildLimitReached = true;
+	Tile->Initialize(Entry, 0, true);
+	TestEqual(TEXT("Free facilities still respect their build limit"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::BuildLimitReached);
+	Entry.bBuildLimitReached = false;
+
+	Entry.bHasResolvedInstallCost = false;
+	Tile->Initialize(Entry, 0, true);
+	TestFalse(TEXT("An unresolved zero never becomes a free price"), Tile->HasResolvedCost());
+	TestEqual(TEXT("An unresolved zero remains unavailable"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::PriceUnavailable);
+	TestEqual(TEXT("An unresolved zero replaces the previously displayed free price"),
+		Tile->GetCostText().ToString(), FString(TEXT("가격 확인 중")));
+
+	Entry.bHasResolvedInstallCost = true;
+	Entry.InstallCost = -1;
+	Tile->Initialize(Entry, 0, true);
+	TestFalse(TEXT("A negative price remains invalid even with the resolved flag"), Tile->HasResolvedCost());
+	TestEqual(TEXT("A negative price remains unavailable"),
+		Tile->GetTileState(), EFF_PrepBuildTileState::PriceUnavailable);
+	TestEqual(TEXT("A negative price is not presented as a free facility"),
+		Tile->GetCostText().ToString(), FString(TEXT("가격 확인 중")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_PrepBuildPresentation_SurfaceStateTest,
 	"FestaFiesta.UI.PrepBuild.SurfaceStates",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

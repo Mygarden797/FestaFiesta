@@ -20,7 +20,7 @@ Cost.Lighting.Decorative.StarTree,50
 Cost.Lighting.Streetlamp.FestivalStreetlamp,50
 Cost.Performance.Busking.Busking,1000
 Cost.Performance.ExperienceStage.Experience,800
-Cost.Performance.MainStage.SunsetMainStage,2000
+Cost.Performance.MainStage.SunsetMainStage,0
 Cost.Performance.SubStage.LocalArtist,1500
 Cost.PhotoSpot.Interactive.Interactive,300
 Cost.PhotoSpot.Landmark.SunsetLandmark,300

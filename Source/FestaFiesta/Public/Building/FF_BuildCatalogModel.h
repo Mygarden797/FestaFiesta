@@ -78,14 +78,6 @@ namespace FFBuildCatalogModel
 		{
 			return false;
 		}
-		if (Entry.InstallCost <= 0)
-		{
-			Entry.InstallCost = 0;
-			Entry.MatchedInstallCostRow = NAME_None;
-			OutFailureReason = TEXT("설치비는 0보다 커야 합니다.");
-			return false;
-		}
-
 		Entry.bHasResolvedInstallCost = true;
 		Entry.RecoveryCost = FFF_FacilityCostResolver::CalculateDemolitionRefund(
 			Entry.InstallCost,

@@ -881,14 +881,13 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			Festival->FacilityCostTable,
 			InstallCost,
 			MatchedCostRow,
-			CostFailureReason) &&
-		InstallCost > 0;
+			CostFailureReason);
 	const int32 RecoveryCost = bHasInstallCost
 		? FFF_FacilityCostResolver::CalculateDemolitionRefund(
 			InstallCost, Festival->FacilityDemolitionRefundRate)
 		: 0;
 	OutViewData.InstallCostText = FFFacilityInfoModel::FormatGold(bHasInstallCost, InstallCost);
-	// A zero-Gold refund is valid when the authored refund rate is zero.
+	// A zero-Gold refund is valid for a free facility or a zero refund rate.
 	OutViewData.RecoveryCostText = FFFacilityInfoModel::FormatGold(bHasInstallCost, RecoveryCost);
 
 	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World
