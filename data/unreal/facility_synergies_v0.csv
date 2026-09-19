@@ -1,3 +1,23 @@
 Name,bEnabled,DisplayName,TargetFacilityId,PartnerFacilityId,MaxDistanceMeters,RevenueBonusPercent,StackingGroup
-BurgerPicnic,True,Burger + Seating,Booth_FoodStall_Burger,Rest_Seating_Seating,15,10,FoodComfort
-IceCreamShade,True,IceCream + Shade,Booth_FoodStall_IceCream,Rest_Shade_Shade,15,10,FoodComfort
+BurgerPicnic,True,버거,Booth_FoodStall_Burger,Rest_Seating_Seating,15,10,FoodComfort
+IceCreamShade,True,아이스크림,Booth_FoodStall_IceCream,Rest_Shade_Shade,15,10,FoodComfort
+MainFoodSeating,True,든든한 쉼표,Booth_FoodStall_MainFood,Rest_Seating_Seating,15,10,FoodComfort
+PizzaPicnic,True,피크닉 한 판,Booth_FoodStall_Pizza,Rest_Picnic_Picnic,15,10,FoodComfort
+TacoShade,True,그늘 아래 타코,Booth_FoodStall_Taco,Rest_Shade_Shade,12,8,FoodComfort
+BurgerCooling,True,시원한 버거 타임,Booth_FoodStall_Burger,Rest_Cooling_Cooling,12,8,FoodComfort
+IceCreamCooling,True,더위를 잊는 한 입,Booth_FoodStall_IceCream,Rest_Cooling_Cooling,12,8,FoodComfort
+GameSeating,True,쉬었다 한 판,Booth_ActivityGame_Game,Rest_Seating_Seating,12,8,FoodComfort
+SandArtShade,True,그늘 속 모래공방,Booth_CraftExperience_SandArt,Rest_Shade_Shade,12,8,FoodComfort
+BurgerFestoon,True,불빛 아래 버거,Booth_FoodStall_Burger,Lighting_Decorative_Festoon,14,8,Ambience
+PizzaRattan,True,따뜻한 피자 테이블,Booth_FoodStall_Pizza,Lighting_Pendant_RattanPendant,12,8,Ambience
+TacoFestoon,True,타코의 반짝이는 밤,Booth_FoodStall_Taco,Lighting_Decorative_Festoon,14,8,Ambience
+MainFoodStreetlamp,True,환한 저녁 한 끼,Booth_FoodStall_MainFood,Lighting_Streetlamp_FestivalStreetlamp,16,6,Ambience
+IceCreamStarTree,True,별빛 아이스크림,Booth_FoodStall_IceCream,Lighting_Decorative_StarTree,14,8,Ambience
+MarketGoldenTree,True,반짝이는 기념품,Booth_MarketGoods_Market,Lighting_Decorative_GoldenTree,16,8,Ambience
+EdmCurtainArch,True,빛의 무대 입구,Booth_Nightlife_EdmBar,Lighting_Decorative_CurtainArch,16,10,Ambience
+EdmFestoon,True,리듬을 밝히는 조명,Booth_Nightlife_EdmBar,Lighting_Decorative_Festoon,18,8,Ambience
+GameInteractivePhoto,True,한 판의 추억,Booth_ActivityGame_Game,PhotoSpot_Interactive_Interactive,15,10,Attraction
+SandArtThemePhoto,True,작품과 함께 찰칵,Booth_CraftExperience_SandArt,PhotoSpot_Theme_Theme,15,10,Attraction
+MarketLandmark,True,축제를 담은 기념품,Booth_MarketGoods_Market,PhotoSpot_Landmark_SunsetLandmark,18,12,Attraction
+EdmBusking,True,음악이 이어지는 거리,Booth_Nightlife_EdmBar,Performance_Busking_Busking,18,10,Attraction
+MainFoodScenicPhoto,True,풍경과 함께 한 끼,Booth_FoodStall_MainFood,PhotoSpot_Scenic_Scenic,16,8,Attraction

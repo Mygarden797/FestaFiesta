@@ -1,4 +1,4 @@
-// One-time, editor-only UMG scaffolding. Existing assets are never regenerated.
+// Editor-only UMG scaffolding. Normal builds preserve existing assets; layout migrations are explicit.
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR
@@ -15,6 +15,8 @@
 #include "Components/ScaleBox.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
+#include "Components/StackBox.h"
+#include "Components/StackBoxSlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -27,6 +29,8 @@
 #include "UI/FacilityCodex/FF_FacilityCodexLauncher.h"
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
 #include "WidgetBlueprint.h"
+#include "UObject/MetaData.h"
+#include "UObject/Package.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityCodexBuilder"
 
@@ -39,6 +43,10 @@ namespace FFFacilityCodexWbpBuilder
 	const FString ScreenPath = Folder / TEXT("WBP_FF_FacilityCodexScreen");
 	const FString LauncherPath = Folder / TEXT("WBP_FF_FacilityCodexLauncher");
 	const FString CatalogLauncherPath = Folder / TEXT("WBP_FF_FacilityCodexCatalogLauncher");
+	const TCHAR* const LayoutVersionKey = TEXT("FF.FacilityCodex.Layout");
+	const TCHAR* const LayoutVersion = TEXT("SixColumns20260919");
+	const TCHAR* const CardFitKey = TEXT("FF.FacilityCodex.CardFit20260919");
+	const TCHAR* const ScreenFitKey = TEXT("FF.FacilityCodex.ScreenFit72020260919");
 
 	FSlateBrush Brush(FLinearColor Fill, FLinearColor Line = FLinearColor::Transparent, float Width = 0.f, float Radius = 10.f)
 	{
@@ -81,8 +89,8 @@ namespace FFFacilityCodexWbpBuilder
 			Style.Pressed = Brush(P.TealSoft, P.TealDeep, 2.f, 7.f);
 			// Selected tabs are disabled: an explicit outline and filled background identifies them.
 			Style.Disabled = Brush(P.TealSoft, P.TealDeep, 2.f, 7.f);
-			Style.NormalPadding = FMargin(18.f, 10.f);
-			Style.PressedPadding = FMargin(18.f, 11.f, 18.f, 9.f);
+			Style.NormalPadding = FMargin(18.f, 8.f);
+			Style.PressedPadding = FMargin(18.f, 9.f, 18.f, 7.f);
 			Result->SetStyle(Style);
 			UTextBlock* Label = Text(FName(Name.ToString() + TEXT("_Label")), Caption, 17);
 			Label->SetAutoWrapText(false);
@@ -144,36 +152,109 @@ namespace FFFacilityCodexWbpBuilder
 	bool Card(UWidgetBlueprint& BP, UWidgetTree& Tree)
 	{
 		FLayout L{ BP, Tree };
-		USizeBox* Bounds = L.Size(TEXT("Size_Card"), 236, 224);
+		// Width comes from the six-column TileView. Every visual remains editable in the WBP.
+		USizeBox* Bounds = L.Size(TEXT("Size_Card"), 0, 208);
 		Tree.RootWidget = Bounds;
 		UOverlay* Overlay = L.Make<UOverlay>(TEXT("Overlay_Card"));
 		Bounds->AddChild(Overlay);
-		UBorder* CardBody = L.Border(TEXT("Border_Card"), L.P.White, FMargin(12));
+		UBorder* CardBody = L.Border(TEXT("Border_Card"), L.P.White, FMargin(10));
 		CardBody->SetBrush(Brush(L.P.White, L.P.Line, 1));
 		L.O(Overlay, CardBody);
 		UVerticalBox* Content = L.Make<UVerticalBox>(TEXT("Vertical_Card"));
 		CardBody->AddChild(Content);
-		USizeBox* NameBounds = L.Size(TEXT("Size_Name"), 0, 28);
+		USizeBox* NameBounds = L.Size(TEXT("Size_Name"), 0, 52);
 		NameBounds->AddChild(L.Text(TEXT("Text_Name"), LOCTEXT("CardName", "함께 즐기는 달콤한 휴식"), 16, true));
 		NameBounds->SetClipping(EWidgetClipping::ClipToBounds);
 		L.V(Content, NameBounds);
 		UHorizontalBox* RecipeImages = L.Make<UHorizontalBox>(TEXT("Horizontal_RecipeImages"));
-		L.H(RecipeImages, L.Thumbnail(TEXT("Target"), 88, 68));
-		L.H(RecipeImages, L.Text(TEXT("Text_Plus"), LOCTEXT("Plus", "+"), 23), FMargin(7, 0));
-		L.H(RecipeImages, L.Thumbnail(TEXT("Partner"), 88, 68));
-		L.V(Content, RecipeImages, FMargin(0, 0, 0, 5));
+		L.H(RecipeImages, L.Thumbnail(TEXT("Target"), 0, 56), FMargin(0), true);
+		L.H(RecipeImages, L.Text(TEXT("Text_Plus"), LOCTEXT("Plus", "+"), 20), FMargin(6, 0));
+		L.H(RecipeImages, L.Thumbnail(TEXT("Partner"), 0, 56), FMargin(0), true);
+		L.V(Content, RecipeImages, FMargin(0, 0, 0, 10));
 		USizeBox* RecipeBounds = L.Size(TEXT("Size_Recipe"), 0, 34);
 		RecipeBounds->AddChild(L.Text(TEXT("Text_Recipe"), LOCTEXT("Recipe", "아이스크림 + 그늘 쉼터"), 13, true, true));
 		RecipeBounds->SetClipping(EWidgetClipping::ClipToBounds);
+		// The recipe names already appear in the title. Keep the binding for designer variants.
+		RecipeBounds->SetVisibility(ESlateVisibility::Collapsed);
 		L.V(Content, RecipeBounds);
 		UTextBlock* Bonus = L.Text(TEXT("Text_Bonus"), LOCTEXT("CardBonus", "수익 +10%"), 19, true);
 		Bonus->SetColorAndOpacity(L.P.TealDeep);
 		L.V(Content, Bonus);
-		L.V(Content, L.Text(TEXT("Text_State"), LOCTEXT("CardState", "미발견 · 시설 설치 필요"), 12, true, true), FMargin(0, 3, 0, 0));
+		UBorder* State = L.Border(TEXT("Border_State"), L.P.TealSoft, FMargin(8, 3));
+		UTextBlock* StateText = L.Text(TEXT("Text_State"), LOCTEXT("CardState", "미발견"), 13, true, true);
+		StateText->SetAutoWrapText(false);
+		State->AddChild(StateText);
+		L.V(Content, State, FMargin(0, 7, 0, 0))->SetHorizontalAlignment(HAlign_Left);
 		UBorder* Selection = L.Border(TEXT("Border_Selection"), FLinearColor::Transparent, FMargin(0), true);
 		Selection->SetBrush(Brush(FLinearColor::Transparent, L.P.TealDeep, 3));
 		Selection->SetVisibility(ESlateVisibility::Collapsed);
 		L.O(Overlay, Selection);
+		BP.GetOutermost()->GetMetaData().SetValue(&BP, LayoutVersionKey, LayoutVersion);
+		BP.GetOutermost()->GetMetaData().SetValue(&BP, CardFitKey, TEXT("1"));
+		return true;
+	}
+
+	bool FitScreenTop(UWidgetBlueprint& BP, UWidgetTree& Tree)
+	{
+		// Keep the screen frame, card metrics and detail width. Reclaim vertical space from
+		// the title/controls so a complete card row remains visible beside the compact detail.
+		for (const FName Name : { TEXT("Border_Header"), TEXT("Border_Body"), TEXT("Border_Summary"),
+			TEXT("Text_Title"), TEXT("Text_Intro"), TEXT("Text_Summary"), TEXT("Text_Filter"), TEXT("Text_Footer"),
+			TEXT("Horizontal_Toolbar"), TEXT("Horizontal_Filter"), TEXT("Search_Entries"),
+			TEXT("Button_All"), TEXT("Button_Discovered"), TEXT("Button_Undiscovered"), TEXT("Button_Close"), TEXT("Button_ClearFacility") })
+		{
+			if (!Tree.FindWidget(Name)) return false;
+		}
+		auto Font = [&](FName Name, int32 Before, int32 After)
+		{
+			if (UTextBlock* Text = Cast<UTextBlock>(Tree.FindWidget(Name)))
+			{
+				FSlateFontInfo Value = Text->GetFont();
+				if (Value.Size == Before) { Value.Size = After; Text->SetFont(Value); }
+			}
+		};
+		auto Padding = [&](FName Name, FMargin Before, FMargin After)
+		{
+			if (UBorder* Border = Cast<UBorder>(Tree.FindWidget(Name)); Border && Border->GetPadding() == Before) Border->SetPadding(After);
+		};
+		auto SlotPadding = [&](FName Name, FMargin Before, FMargin After)
+		{
+			if (UWidget* Widget = Tree.FindWidget(Name))
+				if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Widget->Slot); Slot && Slot->GetPadding() == Before) Slot->SetPadding(After);
+		};
+		Font(TEXT("Text_Title"), 30, 24);
+		Font(TEXT("Text_Intro"), 16, 13);
+		Font(TEXT("Text_Summary"), 18, 16);
+		Font(TEXT("Text_Filter"), 16, 14);
+		Font(TEXT("Text_Footer"), 14, 13);
+		Padding(TEXT("Border_Header"), FMargin(24, 14), FMargin(24, 10));
+		Padding(TEXT("Border_Body"), FMargin(16), FMargin(16, 12));
+		Padding(TEXT("Border_Summary"), FMargin(14, 8), FMargin(14, 5));
+		SlotPadding(TEXT("Text_Intro"), FMargin(0, 5, 0, 0), FMargin(0, 3, 0, 0));
+		SlotPadding(TEXT("Border_Summary"), FMargin(0, 0, 0, 10), FMargin(0, 0, 0, 6));
+		SlotPadding(TEXT("Horizontal_Toolbar"), FMargin(0, 0, 0, 8), FMargin(0, 0, 0, 6));
+		SlotPadding(TEXT("Horizontal_Filter"), FMargin(0, 0, 0, 8), FMargin(0, 0, 0, 4));
+		SlotPadding(TEXT("Text_Footer"), FMargin(0, 8, 0, 0), FMargin(0, 6, 0, 0));
+		for (const FName Name : { TEXT("Button_All"), TEXT("Button_Discovered"), TEXT("Button_Undiscovered"), TEXT("Button_Close"), TEXT("Button_ClearFacility") })
+		{
+			if (UButton* Button = Cast<UButton>(Tree.FindWidget(Name)))
+			{
+				const bool bClear = Name == TEXT("Button_ClearFacility");
+				Font(FName(Name.ToString() + TEXT("_Label")), 17, bClear ? 13 : 15);
+				FButtonStyle Style = Button->GetStyle();
+				if (Style.NormalPadding == FMargin(18, 8)) Style.NormalPadding = bClear ? FMargin(12, 4) : FMargin(18, 6);
+				if (Style.PressedPadding == FMargin(18, 9, 18, 7)) Style.PressedPadding = bClear ? FMargin(12, 5, 12, 3) : FMargin(18, 7, 18, 5);
+				Button->SetStyle(Style);
+			}
+		}
+		if (UEditableTextBox* Search = Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Search_Entries"))))
+		{
+			FEditableTextBoxStyle Style = Search->GetWidgetStyle();
+			if (Style.TextStyle.Font.Size == 17) Style.TextStyle.Font.Size = 15;
+			if (Style.Padding == FMargin(16, 8)) Style.SetPadding(FMargin(16, 6));
+			Search->SetWidgetStyle(Style);
+		}
+		BP.GetOutermost()->GetMetaData().SetValue(&BP, ScreenFitKey, TEXT("1"));
 		return true;
 	}
 
@@ -181,20 +262,14 @@ namespace FFFacilityCodexWbpBuilder
 	{
 		FLayout L{ BP, Tree };
 		// This transparent fullscreen hit target blocks clicks outside the panel without implying pause.
-		UBorder* Root = L.Border(TEXT("Border_InputShield"), FLinearColor::Transparent, FMargin(24));
+		UBorder* Root = L.Border(TEXT("Border_InputShield"), FLinearColor::Transparent, FMargin(24, 24, 24, 64));
 		Tree.RootWidget = Root;
-		UScaleBox* Fit = L.Make<UScaleBox>(TEXT("Scale_Screen"));
-		Fit->SetStretch(EStretch::ScaleToFit);
-		Fit->SetStretchDirection(EStretchDirection::DownOnly);
-		Root->AddChild(Fit);
-		USizeBox* Bounds = L.Size(TEXT("Size_Screen"), 1400, 860);
-		Fit->AddChild(Bounds);
 		UBorder* Paper = L.Border(TEXT("Border_Paper"), L.P.Paper);
 		Paper->SetBrush(Brush(L.P.Paper, L.P.LineStrong, 1.f, 14.f));
-		Bounds->AddChild(Paper);
+		Root->AddChild(Paper);
 		UVerticalBox* ScreenColumn = L.Make<UVerticalBox>(TEXT("Vertical_Screen"));
 		Paper->AddChild(ScreenColumn);
-		UBorder* Header = L.Border(TEXT("Border_Header"), L.P.Teal, FMargin(26, 18));
+		UBorder* Header = L.Border(TEXT("Border_Header"), L.P.Teal, FMargin(24, 14));
 		UHorizontalBox* HeaderRow = L.Make<UHorizontalBox>(TEXT("Horizontal_Header"));
 		Header->AddChild(HeaderRow);
 		UVerticalBox* Heading = L.Make<UVerticalBox>(TEXT("Vertical_Heading"));
@@ -207,13 +282,13 @@ namespace FFFacilityCodexWbpBuilder
 		L.H(HeaderRow, Heading, FMargin(0), true);
 		L.H(HeaderRow, L.Button(TEXT("Button_Close"), LOCTEXT("Close", "닫기  ×")));
 		L.V(ScreenColumn, Header);
-		UBorder* Body = L.Border(TEXT("Border_Body"), FLinearColor::Transparent, FMargin(24, 18));
+		UBorder* Body = L.Border(TEXT("Border_Body"), FLinearColor::Transparent, FMargin(16));
 		L.V(ScreenColumn, Body, FMargin(0), true);
 		UVerticalBox* BodyColumn = L.Make<UVerticalBox>(TEXT("Vertical_Body"));
 		Body->AddChild(BodyColumn);
-		UBorder* Summary = L.Border(TEXT("Border_Summary"), L.P.PaperSunken, FMargin(16, 12));
-		Summary->AddChild(L.Text(TEXT("Text_Summary"), LOCTEXT("Summary", "발견 0 / 0    ·    효과 적용 중 0"), 21, true));
-		L.V(BodyColumn, Summary, FMargin(0, 0, 0, 14));
+		UBorder* Summary = L.Border(TEXT("Border_Summary"), L.P.PaperSunken, FMargin(14, 8));
+		Summary->AddChild(L.Text(TEXT("Text_Summary"), LOCTEXT("Summary", "발견 0 / 0    ·    효과 적용 중 0"), 18, true));
+		L.V(BodyColumn, Summary, FMargin(0, 0, 0, 10));
 		UHorizontalBox* Toolbar = L.Make<UHorizontalBox>(TEXT("Horizontal_Toolbar"));
 		L.H(Toolbar, L.Button(TEXT("Button_All"), LOCTEXT("All", "전체")), FMargin(0, 0, 8, 0));
 		L.H(Toolbar, L.Button(TEXT("Button_Discovered"), LOCTEXT("Discovered", "발견")), FMargin(0, 0, 8, 0));
@@ -224,23 +299,26 @@ namespace FFFacilityCodexWbpBuilder
 		SearchStyle.SetBackgroundImageNormal(Brush(L.P.White, L.P.Line, 1.f, 7.f))
 			.SetBackgroundImageHovered(Brush(L.P.Hover, L.P.Teal, 1.f, 7.f))
 			.SetBackgroundImageFocused(Brush(L.P.White, L.P.TealDeep, 2.f, 7.f))
-			.SetForegroundColor(L.P.Ink).SetFocusedForegroundColor(L.P.Ink).SetPadding(FMargin(16, 10));
+			.SetForegroundColor(L.P.Ink).SetFocusedForegroundColor(L.P.Ink).SetPadding(FMargin(16, 8));
 		SearchStyle.TextStyle.Font.FontObject = LoadObject<UFont>(nullptr, *MakeObjectPath(GetUiFontPackage()));
 		SearchStyle.TextStyle.Font.TypefaceFontName = TEXT("Regular");
 		SearchStyle.TextStyle.Font.Size = 17;
 		Search->SetWidgetStyle(SearchStyle);
 		L.H(Toolbar, Search, FMargin(0), true);
-		L.V(BodyColumn, Toolbar, FMargin(0, 0, 0, 10));
+		L.V(BodyColumn, Toolbar, FMargin(0, 0, 0, 8));
 		UHorizontalBox* FilterRow = L.Make<UHorizontalBox>(TEXT("Horizontal_Filter"));
 		L.H(FilterRow, L.Text(TEXT("Text_Filter"), LOCTEXT("Filter", "모든 시설 · 0개 조합"), 16, true, true), FMargin(0), true);
 		UButton* ClearFacility = L.Button(TEXT("Button_ClearFacility"), LOCTEXT("ClearFacility", "모든 시설 보기"));
 		ClearFacility->SetVisibility(ESlateVisibility::Collapsed);
 		L.H(FilterRow, ClearFacility);
-		L.V(BodyColumn, FilterRow, FMargin(0, 0, 0, 12));
-		UHorizontalBox* MainRow = L.Make<UHorizontalBox>(TEXT("Horizontal_Main"));
+		L.V(BodyColumn, FilterRow, FMargin(0, 0, 0, 8));
+		UStackBox* MainRow = L.Make<UStackBox>(TEXT("Stack_Main"), true);
+		MainRow->SetOrientation(Orient_Horizontal);
 		L.V(BodyColumn, MainRow, FMargin(0), true);
 		UOverlay* GridOverlay = L.Make<UOverlay>(TEXT("Overlay_Grid"));
-		L.H(MainRow, GridOverlay, FMargin(0, 0, 20, 0), true)->SetVerticalAlignment(VAlign_Fill);
+		UStackBoxSlot* GridSlot = MainRow->AddChildToStackBox(GridOverlay);
+		GridSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		GridSlot->SetPadding(FMargin(0, 0, 20, 0));
 		UFF_FacilityCodexTileView* Tiles = L.Make<UFF_FacilityCodexTileView>(TEXT("TileView_Entries"), true);
 		Tiles->ConfigureEntryClass(CardClass);
 		Tiles->SetScrollbarVisibility(ESlateVisibility::Visible);
@@ -252,8 +330,9 @@ namespace FFFacilityCodexWbpBuilder
 		EmptySlot->SetHorizontalAlignment(HAlign_Center);
 		EmptySlot->SetVerticalAlignment(VAlign_Center);
 		// Detail is an authored UMG composition. Designers can freely adjust all spacing and typography.
-		USizeBox* DetailBounds = L.Size(TEXT("Size_Detail"), 500, 0);
-		L.H(MainRow, DetailBounds)->SetVerticalAlignment(VAlign_Fill);
+		USizeBox* DetailBounds = L.Size(TEXT("Size_Detail"), 460, 0);
+		DetailBounds->bIsVariable = true;
+		MainRow->AddChildToStackBox(DetailBounds);
 		UBorder* Detail = L.Border(TEXT("Panel_Detail"), L.P.White, FMargin(22, 16), true);
 		Detail->SetBrush(Brush(L.P.White, L.P.Line, 1));
 		DetailBounds->AddChild(Detail);
@@ -290,8 +369,9 @@ namespace FFFacilityCodexWbpBuilder
 		L.V(DetailColumn, L.Text(TEXT("Text_Discovery"), LOCTEXT("Discovery", "미발견 · 조합에 필요한 두 시설을 설치해 보세요"), 15, true), FMargin(0, 0, 0, 9));
 		L.V(DetailColumn, L.Text(TEXT("Text_Condition"), LOCTEXT("Condition", "현재 조건 미충족: 필요한 시설을 설치해 주세요"), 15, true, true), FMargin(0, 0, 0, 9));
 		L.V(DetailColumn, L.Text(TEXT("Text_Applied"), LOCTEXT("Applied", "현재 적용 효과 없음 · 배치 조건을 충족하면 자동으로 적용됩니다."), 14, true, true));
-		L.V(BodyColumn, L.Text(TEXT("Text_Footer"), LOCTEXT("Footer", "한 번 발견한 조합은 기록에 남아요. 현재 배치에 따라 실제 효과는 달라질 수 있어요."), 15, false, true), FMargin(0, 14, 0, 0));
-		return true;
+		L.V(BodyColumn, L.Text(TEXT("Text_Footer"), LOCTEXT("Footer", "한 번 발견한 조합은 기록에 남아요. 현재 배치에 따라 실제 효과는 달라질 수 있어요."), 14, false, true), FMargin(0, 8, 0, 0));
+		BP.GetOutermost()->GetMetaData().SetValue(&BP, LayoutVersionKey, LayoutVersion);
+		return FitScreenTop(BP, Tree);
 	}
 
 	bool Launcher(UWidgetBlueprint& BP, UWidgetTree& Tree)
@@ -336,9 +416,80 @@ namespace FFFacilityCodexWbpBuilder
 		UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_READY: Screen, Card, Launcher, CatalogLauncher ready. Existing designer layouts were preserved."), Prefix);
 	}
 
+	bool HasSixColumnLayout(UWidgetBlueprint* BP)
+	{
+		return BP && BP->GetOutermost()->GetMetaData().GetValue(BP, LayoutVersionKey) == LayoutVersion;
+	}
+
+	void ApplySixColumnsOnce()
+	{
+		// This is the only replacement path, deliberately separate from normal authoring.
+		// The saved per-asset version makes later invocations preserve designer edits as well.
+		for (const TPair<FString, UClass*>& Asset : {
+			TPair<FString, UClass*>(CardPath, UFF_FacilityCodexCard::StaticClass()),
+			TPair<FString, UClass*>(ScreenPath, UFF_FacilityCodexScreen::StaticClass()) })
+		{
+			if (UWidgetBlueprint* BP = LoadExistingBlueprint(Asset.Key))
+			{
+				if (!BP->GeneratedClass || !BP->GeneratedClass->IsChildOf(Asset.Value))
+				{
+					UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_MIGRATION_ABORT: unexpected parent at %s"), Prefix, *Asset.Key);
+					return;
+				}
+			}
+		}
+		if (!HasSixColumnLayout(LoadExistingBlueprint(CardPath)) &&
+			!ReplaceWidgetBlueprint(Prefix, CardPath, Folder, *UFF_FacilityCodexCard::StaticClass(), Card)) return;
+		UClass* CardClass = LoadGeneratedClass(CardPath);
+		if (!CardClass || !CardClass->IsChildOf(UFF_FacilityCodexCard::StaticClass())) return;
+		if (!HasSixColumnLayout(LoadExistingBlueprint(ScreenPath)) &&
+			!ReplaceWidgetBlueprint(Prefix, ScreenPath, Folder, *UFF_FacilityCodexScreen::StaticClass(),
+				[CardClass](UWidgetBlueprint& BP, UWidgetTree& Tree) { return Screen(BP, Tree, CardClass); })) return;
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_SIX_COLUMNS_READY: Card and Screen migrated once. Versioned layouts and all launchers preserved."), Prefix);
+	}
+
+	void ApplyCardFitOnce()
+	{
+		UWidgetBlueprint* BP = LoadExistingBlueprint(CardPath);
+		if (!BP || !BP->WidgetTree || !BP->GeneratedClass || !BP->GeneratedClass->IsChildOf(UFF_FacilityCodexCard::StaticClass())) return;
+		if (BP->GetOutermost()->GetMetaData().GetValue(BP, CardFitKey) == TEXT("1")) return;
+		auto* State = Cast<UTextBlock>(BP->WidgetTree->FindWidget(TEXT("Text_State")));
+		auto* Name = Cast<USizeBox>(BP->WidgetTree->FindWidget(TEXT("Size_Name")));
+		auto* Target = Cast<USizeBox>(BP->WidgetTree->FindWidget(TEXT("Size_ThumbTarget")));
+		auto* Partner = Cast<USizeBox>(BP->WidgetTree->FindWidget(TEXT("Size_ThumbPartner")));
+		auto* Body = Cast<UBorder>(BP->WidgetTree->FindWidget(TEXT("Border_Card")));
+		if (!State || !Name || !Target || !Partner || !Body) return;
+		// Patch only the known seed values; retain unrelated designer overrides and the outer card.
+		State->SetAutoWrapText(false);
+		if (Name->IsHeightOverride() && FMath::IsNearlyEqual(Name->GetHeightOverride(), 42.f)) Name->SetHeightOverride(52.f);
+		for (USizeBox* Thumbnail : { Target, Partner })
+			if (Thumbnail->IsHeightOverride() && FMath::IsNearlyEqual(Thumbnail->GetHeightOverride(), 64.f)) Thumbnail->SetHeightOverride(56.f);
+		if (Body->GetPadding() == FMargin(12)) Body->SetPadding(FMargin(10));
+		BP->GetOutermost()->GetMetaData().SetValue(BP, CardFitKey, TEXT("1"));
+		SaveNewBlueprint(Prefix, *BP);
+	}
+
+	void ApplyScreenFitOnce()
+	{
+		UWidgetBlueprint* BP = LoadExistingBlueprint(ScreenPath);
+		if (!BP || !BP->WidgetTree || !BP->GeneratedClass || !BP->GeneratedClass->IsChildOf(UFF_FacilityCodexScreen::StaticClass())) return;
+		if (BP->GetOutermost()->GetMetaData().GetValue(BP, ScreenFitKey) == TEXT("1")) return;
+		if (FitScreenTop(*BP, *BP->WidgetTree)) SaveNewBlueprint(Prefix, *BP);
+	}
+
 	FAutoConsoleCommand Command(TEXT("FF.BuildFacilityCodexUMG"),
 		TEXT("Create missing facility codex WBP assets only. Existing designer layouts are preserved."),
 		FConsoleCommandDelegate::CreateStatic(&Build));
+	FAutoConsoleCommand SixColumnMigration(TEXT("FF.ApplyFacilityCodexSixColumns20260919"),
+		TEXT("Explicit one-time replacement of the codex Card and Screen layouts only. Already migrated assets preserve designer edits."),
+		FConsoleCommandDelegate::CreateStatic(&ApplySixColumnsOnce));
+	FAutoConsoleCommand CardFitMigration(TEXT("FF.ApplyFacilityCodexCardFit20260919"),
+		TEXT("One-time internal card fit repair; preserve card/screen outer dimensions and unrelated designer values."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyCardFitOnce));
+	FAutoConsoleCommand ScreenFitMigration(TEXT("FF.ApplyFacilityCodexScreenFit72020260919"),
+		TEXT("One-time title/control spacing repair for a complete 720p card row. Preserve screen frame, detail width and custom values."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyScreenFitOnce));
 }
 
 #undef LOCTEXT_NAMESPACE

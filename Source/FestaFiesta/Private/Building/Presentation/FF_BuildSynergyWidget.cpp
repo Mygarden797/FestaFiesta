@@ -173,8 +173,12 @@ void UFF_BuildSynergyWidget::PresentPreview(
                 : LOCTEXT("OtherPartnerActive", "거리 초과 · 기존 유지"))
             : !Entry.bInRange ? LOCTEXT("OutOfRange", "거리 초과")
             : bActive ? LOCTEXT("Active", "조합 성립") : LOCTEXT("Limited", "중복 / 상한 적용");
+        const FText RecipeTitle = Entry.DisplayName.IsEmpty()
+            ? FText::Format(LOCTEXT("UnnamedRecipe", "{0} + {1}"),
+                ResolveFacilityName(Entry.TargetFacilityId), ResolveFacilityName(Entry.PartnerFacilityId))
+            : Entry.DisplayName;
         RowTitles[Index]->SetText(FText::Format(LOCTEXT("RowTitle", "{0}. {1}"),
-            FText::AsNumber(Index + 1), Entry.DisplayName));
+            FText::AsNumber(Index + 1), RecipeTitle));
         if (bApplyStateTextColors)
         { RowTitles[Index]->SetColorAndOpacity(bActive ? ActiveTextColor : InactiveTextColor); }
 

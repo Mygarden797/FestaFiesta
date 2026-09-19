@@ -31,6 +31,7 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
+#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
@@ -131,6 +132,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 
 	ReleaseThumbnailSession();
 	ClosePaidProgramPicker();
+	bRevenueRankingPresentationOpen = false;
 	bPauseMenuPresentationSuppressed = false;
 	bPanelWasVisibleBeforePause = false;
 	bPaidProgramPickerWasVisibleBeforePause = false;
@@ -152,6 +154,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
+		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
 	}
@@ -274,6 +277,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
+		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
 		ClosePaidProgramPicker();
@@ -310,6 +314,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
+	Panel->OnRevenueRankingRequested.AddUObject(this, &ThisClass::HandlePanelRevenueRankingRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
 	// Player game layer, so its local Z-order can never rise above a newly-created PrepHUD in the
 	// Viewport layer (UE 5.7: Player=100, Viewport=200). Keep this card in the same global layer.
@@ -327,6 +332,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
+		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel = nullptr;
 		return false;
 	}
@@ -402,7 +408,7 @@ void UFF_FacilityInfoSubsystem::ClosePaidProgramPicker()
 		}
 		else
 		{
-			Panel->SetPanelOpen(true);
+			Panel->SetPanelOpen(!bRevenueRankingPresentationOpen);
 		}
 	}
 }
@@ -432,7 +438,7 @@ void UFF_FacilityInfoSubsystem::SetPaidProgramPickerOpen(const bool bOpen)
 	PaidProgramPicker->SetPickerOpen(bOpen);
 	if (Panel)
 	{
-		Panel->SetPanelOpen(!bOpen && HasSelection());
+		Panel->SetPanelOpen(!bOpen && HasSelection() && !bRevenueRankingPresentationOpen);
 	}
 }
 
@@ -483,7 +489,7 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	}
 	const bool bPickerOpen = PaidProgramPicker &&
 		PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
-	Panel->SetPanelOpen(!bPickerOpen);
+	Panel->SetPanelOpen(!bPickerOpen && !bRevenueRankingPresentationOpen);
 	if (Context == EFF_FacilityInfoContext::Live)
 	{
 		ApplyLiveSelectionIndicatorTargets(SelectionIndicatorHoverFacility.Get(), Facility);
@@ -527,6 +533,12 @@ void UFF_FacilityInfoSubsystem::ClearSelection()
 		bPanelWasVisibleBeforePause = false;
 		bPaidProgramPickerWasVisibleBeforePause = false;
 	}
+	if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+	{
+		if (Ranking->IsOpen()) Ranking->Close();
+	}
+	bRevenueRankingPresentationOpen = false;
 	FeedbackText = FText::GetEmpty();
 	bFeedbackIsError = false;
 	RefreshAccumulatorSeconds = 0.0f;
@@ -572,8 +584,26 @@ bool UFF_FacilityInfoSubsystem::IsPointerOverPanel() const
 	{
 		return false;
 	}
+	const UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr;
 	return (Panel && Panel->IsPointerOverInteractivePanel()) ||
-		(PaidProgramPicker && PaidProgramPicker->IsPointerOverInteractivePanel());
+		(PaidProgramPicker && PaidProgramPicker->IsPointerOverInteractivePanel()) ||
+		(Ranking && Ranking->IsPointerOverPanel());
+}
+
+void UFF_FacilityInfoSubsystem::SetRevenueRankingPresentationOpen(const bool bOpen)
+{
+	bRevenueRankingPresentationOpen = bOpen;
+	const bool bPickerOpen = PaidProgramPicker && PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
+	if (Panel) Panel->SetPanelOpen(!bOpen && !bPauseMenuPresentationSuppressed && !bPickerOpen &&
+		HasSelection() && IsContextCurrentlyAllowed(SelectionContext));
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelRevenueRankingRequested()
+{
+	if (!bPauseMenuPresentationSuppressed && !bRevenueRankingPresentationOpen && Panel && HasSelection() &&
+		Panel->GetCurrentViewData().FacilityInstanceId == SelectedFacilityId && IsContextCurrentlyAllowed(SelectionContext))
+		OnRevenueRankingRequested.Broadcast();
 }
 
 void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bSuppressed)
@@ -585,6 +615,12 @@ void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bS
 
 	if (bSuppressed)
 	{
+		// Close the replacement presentation before recording the inspector surface to restore.
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			if (Ranking->IsOpen()) Ranking->Close();
+		}
 		const auto IsPresented = [](const ESlateVisibility Visibility)
 		{
 			return Visibility != ESlateVisibility::Collapsed &&
@@ -623,7 +659,7 @@ void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bS
 	}
 	if (Panel)
 	{
-		Panel->SetPanelOpen(bRestorePanel);
+		Panel->SetPanelOpen(bRestorePanel && !bRevenueRankingPresentationOpen);
 	}
 	bPanelWasVisibleBeforePause = false;
 	bPaidProgramPickerWasVisibleBeforePause = false;
@@ -1093,6 +1129,7 @@ void UFF_FacilityInfoSubsystem::RefreshPanel()
 		return;
 	}
 	Panel->ApplyViewData(ViewData);
+	if (bRevenueRankingPresentationOpen) Panel->SetPanelOpen(false);
 }
 
 void UFF_FacilityInfoSubsystem::AcquireThumbnailSession()

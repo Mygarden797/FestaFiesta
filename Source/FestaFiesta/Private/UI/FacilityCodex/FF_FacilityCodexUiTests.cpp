@@ -3,16 +3,23 @@
 #include "UI/FacilityCodex/FF_FacilityCodexLauncher.h"
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/Codex/FF_FacilityCodexModel.h"
+#include "Building/Synergy/FF_FacilitySynergySettings.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
 #include "Components/EditableTextBox.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
+#include "Components/StackBox.h"
 #include "Components/TextBlock.h"
 #include "Components/TileView.h"
 #include "Components/VerticalBox.h"
 #include "Editor.h"
+#include "Engine/AssetManager.h"
+#include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
@@ -134,6 +141,13 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     Tile->SetSelectedItem(Tile->GetListItems()[0]);
     TestEqual(TEXT("Tile selection drives recipe detail"), Screen->GetSelectedRuleId(), FName(TEXT("BurgerPicnic")));
     const FSlateFontInfo AuthoredFont = Detail->GetFont();
+    const float AuthoredEntryWidth = Tile->GetEntryWidth();
+    const float AuthoredEntryHeight = Tile->GetEntryHeight();
+    auto* Main = Cast<UStackBox>(Screen->GetWidgetFromName(TEXT("Stack_Main")));
+    auto* DetailBounds = Cast<USizeBox>(Screen->GetWidgetFromName(TEXT("Size_Detail")));
+    if (!TestNotNull(TEXT("Migrated responsive main panel"), Main) ||
+        !TestNotNull(TEXT("Authored detail bounds"), DetailBounds)) return false;
+    const float AuthoredDetailWidth = DetailBounds->GetWidthOverride();
     Screen->SetPreviewEntries(Entries);
     TestTrue(TEXT("Data refresh preserves Designer typography"), AuthoredFont == Detail->GetFont());
 
@@ -146,7 +160,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
         auto Window = SNew(SVirtualWindow).Size(Size);
         Window->SetContent(Slate);
         FHittestGrid Grid;
-        for (int32 Frame = 0; Frame < 4; ++Frame)
+        for (int32 Frame = 0; Frame < 8; ++Frame)
         {
             Screen->ForceLayoutPrepass();
             Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
@@ -156,6 +170,57 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
             CloseRect.Right <= Width && CloseRect.Bottom <= Height && CloseRect.GetSize().GetMin() > 0);
         TestTrue(TEXT("Visible recipes generate cards"), Screen->GetVisibleEntryCount() == 0 || Tile->GetDisplayedEntryWidgets().Num() > 0);
         const TArray<UUserWidget*>& Cards = Tile->GetDisplayedEntryWidgets();
+        TestEqual(TEXT("Responsive layout preserves authored TileView width"), Tile->GetEntryWidth(), AuthoredEntryWidth);
+        TestEqual(TEXT("Responsive layout preserves authored TileView height"), Tile->GetEntryHeight(), AuthoredEntryHeight);
+        TestTrue(TEXT("Responsive layout preserves Designer typography"), Detail->GetFont() == AuthoredFont);
+        if (Width == 1280)
+        {
+            TestEqual(TEXT("720p places detail below readable cards"), Main->GetOrientation(), Orient_Vertical);
+            TestTrue(TEXT("Compact detail uses its own scrolling surface"),
+                DetailBounds->GetPaintSpaceGeometry().GetLayoutBoundingRect().Top >=
+                Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect().Bottom - 1.f);
+            const FSlateRect ListBounds = Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+            for (int32 Index = 0; Index < FMath::Min(6, Tile->GetListItems().Num()); ++Index)
+            {
+                UUserWidget* Card = Tile->GetEntryWidgetFromItem(Tile->GetListItems()[Index]);
+                if (!TestNotNull(TEXT("720p first row is generated"), Card)) continue;
+                const FSlateRect CardBounds = Card->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                TestTrue(TEXT("720p shows the complete first card row including its status"),
+                    CardBounds.Top >= ListBounds.Top - 1.f && CardBounds.Bottom <= ListBounds.Bottom + 1.f);
+            }
+        }
+        else if (Width == 1920)
+        {
+            TestEqual(TEXT("1080p restores detail alongside cards"), Main->GetOrientation(), Orient_Horizontal);
+            TestTrue(TEXT("Wide layout restores the saved detail width"),
+                DetailBounds->IsWidthOverride() && FMath::IsNearlyEqual(DetailBounds->GetWidthOverride(), AuthoredDetailWidth));
+        }
+        if (Tile->GetListItems().Num() >= 7)
+        {
+            auto* FirstCard = Tile->GetEntryWidgetFromItem(Tile->GetListItems()[0]);
+            auto* SeventhCard = Tile->GetEntryWidgetFromItem(Tile->GetListItems()[6]);
+            if (TestNotNull(TEXT("First virtualized row exists"), FirstCard))
+            {
+                const FSlateRect First = FirstCard->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                for (int32 Index = 1; Index < 6; ++Index)
+                {
+                    auto* Card = Tile->GetEntryWidgetFromItem(Tile->GetListItems()[Index]);
+                    if (!TestNotNull(TEXT("Each of six columns is generated"), Card)) continue;
+                    const FSlateRect Rect = Card->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                    TestTrue(TEXT("First six recipes share one row"), FMath::IsNearlyEqual(Rect.Top, First.Top, 1.f));
+                    TestTrue(TEXT("Each column advances horizontally"), Rect.Left > First.Left);
+                    TestTrue(TEXT("Sixth column remains inside the list"), Rect.Right <=
+                        Tile->GetPaintSpaceGeometry().GetLayoutBoundingRect().Right + 1.f);
+                }
+                if (Width == 1920) TestNotNull(TEXT("Wide grid generates another visible row"), SeventhCard);
+                if (SeventhCard)
+                {
+                    const FSlateRect Seventh = SeventhCard->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+                    TestTrue(TEXT("Seventh recipe begins the next row"), Seventh.Top > First.Top &&
+                        FMath::IsNearlyEqual(Seventh.Left, First.Left, 1.f));
+                }
+            }
+        }
         if (Cards.Num() >= 2)
         {
             const FSlateRect First = Cards[0]->GetPaintSpaceGeometry().GetLayoutBoundingRect();
@@ -226,11 +291,115 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     Screen->SetPreviewEntries(ManyEntries);
     TestEqual(TEXT("Large recipe table remains available"), Screen->GetVisibleEntryCount(), 120);
     TestTrue(TEXT("Virtualized grid visual preview"), Capture(1280, 720, TEXT("FacilityCodexGrid720.png")));
+    Screen->SetFacilityFilter(Burger->Spec.FacilityDefinitionId);
+    TestTrue(TEXT("Filtered grid keeps a complete row with its clear-filter action"),
+        Capture(1280, 720, TEXT("FacilityCodexFilteredGrid720.png")));
+    Screen->SetFacilityFilter(NAME_None);
+    TestTrue(TEXT("Six-column wide grid visual preview"), Capture(1920, 1080, TEXT("FacilityCodexGrid1080.png")));
     if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
         TestTrue(TEXT("Large table creates only viewport cards"), Tile->GetDisplayedEntryWidgets().Num() < 120);
     Screen->SetPreviewEntries({});
     TestEqual(TEXT("Empty table releases all items"), Screen->GetVisibleEntryCount(), 0);
     TestTrue(TEXT("Empty table visual preview"), Capture(1280, 720, TEXT("FacilityCodexEmpty720.png")));
+
+    // Keep the synthetic 2/120-item cases above. These last previews use every enabled,
+    // usable authored recipe and real PDA presentation, evaluated against an empty placement
+    // fixture. They neither read nor write the player's discovery history or game save.
+    const auto* SynergySettings = GetDefault<UFF_FacilitySynergySettings>();
+    TStrongObjectPtr<UDataTable> ProductionTable(SynergySettings->SynergyTable.LoadSynchronous());
+    if (TestNotNull(TEXT("Configured production synergy table"), ProductionTable.Get()) &&
+        TestTrue(TEXT("Production table uses the synergy row schema"),
+            ProductionTable->GetRowStruct() == FFF_FacilitySynergyRow::StaticStruct()))
+    {
+        TArray<FFF_FacilitySynergyRule> ProductionRules;
+        for (const auto& Pair : ProductionTable->GetRowMap())
+        {
+            const auto& Row = *reinterpret_cast<const FFF_FacilitySynergyRow*>(Pair.Value);
+            if (Row.bEnabled && Row.IsUsable()) ProductionRules.Add({Pair.Key, Row});
+        }
+        const int32 EnabledUsableCount = ProductionRules.Num();
+        TestTrue(TEXT("Production table contains enabled usable recipes"), EnabledUsableCount > 0);
+        FFF_FacilityCodexModel ProductionModel;
+        ProductionModel.SetRules(MoveTemp(ProductionRules), SynergySettings->MaxTotalBonusPercent);
+        ProductionModel.Evaluate(FFFZSReadModel(), TSet<FName>());
+        TArray<FFF_FacilityCodexEntry> ProductionEntries = ProductionModel.GetEntries();
+        TArray<TStrongObjectPtr<UFFZSFacilityDefinition>> KeptDefinitions;
+        TArray<TStrongObjectPtr<UTexture2D>> KeptThumbnails;
+        auto LoadProductionDefinition = [&](FName Id, FName RuleId) {
+            const FSoftObjectPath Path = UAssetManager::Get().GetPrimaryAssetPath(
+                FPrimaryAssetId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), Id));
+            auto* Asset = Cast<UFFZSFacilityDefinition>(Path.TryLoad());
+            if (TestNotNull(FString::Printf(TEXT("Recipe %s resolves facility %s (%s)"),
+                *RuleId.ToString(), *Id.ToString(), *Path.ToString()), Asset))
+            {
+                KeptDefinitions.Emplace(Asset);
+                if (!Asset->CatalogThumbnail.IsNull())
+                {
+                    UTexture2D* Texture = Asset->CatalogThumbnail.LoadSynchronous();
+                    TestNotNull(FString::Printf(TEXT("%s loads authored thumbnail %s"),
+                        *Asset->GetPathName(), *Asset->CatalogThumbnail.ToString()), Texture);
+                    if (Texture) KeptThumbnails.Emplace(Texture);
+                }
+            }
+            return Asset;
+        };
+        for (auto& Entry : ProductionEntries)
+        {
+            if (const auto* Asset = LoadProductionDefinition(Entry.TargetFacilityId, Entry.RuleId))
+            {
+                Entry.TargetName = Asset->Spec.DisplayName;
+                Entry.TargetThumbnail = Asset->CatalogThumbnail;
+                Entry.TargetCategory = Asset->Spec.Category;
+            }
+            if (const auto* Asset = LoadProductionDefinition(Entry.PartnerFacilityId, Entry.RuleId))
+            {
+                Entry.PartnerName = Asset->Spec.DisplayName;
+                Entry.PartnerThumbnail = Asset->CatalogThumbnail;
+            }
+            TestTrue(FString::Printf(TEXT("Recipe %s remains undiscovered and unapplied in the empty placement fixture"),
+                *Entry.RuleId.ToString()), !Entry.bDiscovered && !Entry.bConditionMet && !Entry.bEffectApplied &&
+                !Entry.bTargetInstalled && !Entry.bPartnerInstalled && Entry.AppliedBonusPercent == 0.f);
+        }
+        Screen->SetDiscoveryFilter(EFF_FacilityCodexFilterState::All);
+        Screen->SetFacilityFilter(NAME_None);
+        Screen->SetSearchText(FText::GetEmpty());
+        Screen->SetPreviewEntries(ProductionEntries);
+        TestEqual(TEXT("Every enabled usable production recipe reaches the visible list"),
+            Screen->GetVisibleEntryCount(), EnabledUsableCount);
+        auto* TargetName = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_TargetName")));
+        auto* PartnerName = Cast<UTextBlock>(Screen->GetWidgetFromName(TEXT("Text_PartnerName")));
+        auto* TargetImage = Cast<UImage>(Screen->GetWidgetFromName(TEXT("Image_Target")));
+        auto* PartnerImage = Cast<UImage>(Screen->GetWidgetFromName(TEXT("Image_Partner")));
+        if (TestNotNull(TEXT("Production detail target name"), TargetName) &&
+            TestNotNull(TEXT("Production detail partner name"), PartnerName) &&
+            TestNotNull(TEXT("Production detail target image"), TargetImage) &&
+            TestNotNull(TEXT("Production detail partner image"), PartnerImage))
+        {
+            for (UObject* Object : Tile->GetListItems())
+            {
+                const auto* Item = CastChecked<UFF_FacilityCodexItem>(Object);
+                const auto& Entry = Item->Entry;
+                Tile->SetSelectedItem(Object);
+                const FString Context = FString::Printf(TEXT("Production recipe %s"), *Entry.RuleId.ToString());
+                TestTrue(Context + TEXT(" displays its authored title"), Detail->GetText().EqualTo(Entry.DisplayName));
+                TestTrue(Context + TEXT(" displays both PDA names"), TargetName->GetText().EqualTo(Entry.TargetName) &&
+                    PartnerName->GetText().EqualTo(Entry.PartnerName));
+                if (Entry.TargetThumbnail.IsValid())
+                    TestTrue(Context + TEXT(" displays its target PDA thumbnail"),
+                        TargetImage->GetBrush().GetResourceObject() == Entry.TargetThumbnail.Get());
+                if (Entry.PartnerThumbnail.IsValid())
+                    TestTrue(Context + TEXT(" displays its partner PDA thumbnail"),
+                        PartnerImage->GetBrush().GetResourceObject() == Entry.PartnerThumbnail.Get());
+            }
+        }
+        if (!Tile->GetListItems().IsEmpty()) Tile->SetSelectedItem(Tile->GetListItems()[0]);
+        Tile->ScrollToTop();
+        AddInfo(FString::Printf(TEXT("ProductionCodex1080.png / ProductionCodex720.png: %d actual enabled usable "
+            "recipes from %s, real PDA names/thumbnails, empty-placement fixture (undiscovered/unapplied)."),
+            EnabledUsableCount, *ProductionTable->GetPathName()));
+        TestTrue(TEXT("Production data empty-placement fixture at 1080p"), Capture(1920, 1080, TEXT("ProductionCodex1080.png")));
+        TestTrue(TEXT("Production data empty-placement fixture at 720p"), Capture(1280, 720, TEXT("ProductionCodex720.png")));
+    }
     int32 CloseCount = 0;
     Screen->OnCloseRequested.AddLambda([&CloseCount]() { ++CloseCount; });
     Close->OnClicked.Broadcast();

@@ -3,6 +3,9 @@
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
+#include "Components/SizeBox.h"
+#include "Components/StackBox.h"
+#include "Components/StackBoxSlot.h"
 #include "Engine/World.h"
 #include "InputCoreTypes.h"
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
@@ -45,6 +48,52 @@ void UFF_FacilityCodexScreen::NativeDestruct()
 	// Also release presenter-owned input/build leases when another screen removes this widget.
 	OnCloseRequested.Broadcast();
 	Super::NativeDestruct();
+}
+
+void UFF_FacilityCodexScreen::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	// Layout-only resize handling. Gameplay data still refreshes exclusively through events.
+	UpdateResponsiveLayout();
+}
+
+void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
+{
+	if (!Stack_Main || !Size_Detail || Stack_Main->GetChildrenCount() != 2) return;
+	UStackBoxSlot* GridSlot = Cast<UStackBoxSlot>(Stack_Main->GetChildAt(0)->Slot);
+	if (!GridSlot) return;
+	if (!bCapturedResponsiveLayout)
+	{
+		bAuthoredDetailWidth = Size_Detail->IsWidthOverride();
+		bAuthoredDetailHeight = Size_Detail->IsHeightOverride();
+		AuthoredDetailWidth = Size_Detail->GetWidthOverride();
+		AuthoredDetailHeight = Size_Detail->GetHeightOverride();
+		AuthoredGridPadding = GridSlot->GetPadding();
+		bCapturedResponsiveLayout = true;
+	}
+	const float Width = Stack_Main->GetCachedGeometry().GetLocalSize().X;
+	if (Width <= 1.f) return;
+	const float DetailWidth = bAuthoredDetailWidth ? AuthoredDetailWidth : Size_Detail->GetDesiredSize().X;
+	const float Spacing = TileView_Entries ? TileView_Entries->GetHorizontalEntrySpacing() : 0.f;
+	const bool bCompact = bEnableResponsiveDetail && Width <
+		6.f * (MinimumCardWidth + Spacing) + DetailWidth + AuthoredGridPadding.Left + AuthoredGridPadding.Right + 20.f;
+	if (bCompact == bCompactDetail) return;
+	bCompactDetail = bCompact;
+	Stack_Main->SetOrientation(bCompact ? Orient_Vertical : Orient_Horizontal);
+	if (bCompact)
+	{
+		Size_Detail->ClearWidthOverride();
+		Size_Detail->SetHeightOverride(CompactDetailHeight);
+		GridSlot->SetPadding(FMargin(0, 0, 0, CompactDetailGap));
+	}
+	else
+	{
+		if (bAuthoredDetailWidth) Size_Detail->SetWidthOverride(AuthoredDetailWidth);
+		else Size_Detail->ClearWidthOverride();
+		if (bAuthoredDetailHeight) Size_Detail->SetHeightOverride(AuthoredDetailHeight);
+		else Size_Detail->ClearHeightOverride();
+		GridSlot->SetPadding(AuthoredGridPadding);
+	}
 }
 
 FReply UFF_FacilityCodexScreen::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)

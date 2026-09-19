@@ -72,8 +72,11 @@ private:
 	// The original WBP did not expose Border_Card as a variable. Resolve its stable name without
 	// changing/recompiling existing assets or adding a new required BindWidget contract.
 	UPROPERTY(Transient) TObjectPtr<UBorder> CardBackground;
+	UPROPERTY(Transient) TObjectPtr<UBorder> StateBackground;
 	UPROPERTY(Transient) FSlateBrush AuthoredCardBrush;
+	UPROPERTY(Transient) FSlateBrush AuthoredStateBrush;
 	FLinearColor AuthoredCardBrushColor = FLinearColor::White;
+	FLinearColor AuthoredStateBrushColor = FLinearColor::White;
 	FSlateColor AuthoredNameColor;
 	FSlateColor AuthoredRecipeColor;
 	FSlateColor AuthoredBonusColor;

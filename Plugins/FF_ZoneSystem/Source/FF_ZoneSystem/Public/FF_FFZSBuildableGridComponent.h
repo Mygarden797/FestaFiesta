@@ -22,7 +22,8 @@ public:
 
     void RefreshGrid(UFFZSWorldSubsystem& WorldSystem, const FFFZSCommand& Command,
         const FVector2D& CenterLocalCm, const FVector2D& HalfExtentCm, int32 GridStepCm,
-        const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, int32 SurfaceSampleBudget = 512);
+        const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, int32 SurfaceSampleBudget = 512,
+        FName SelectionCoordinateZoneId = NAME_None);
     void HideGrid();
     void InvalidateGrid() { bCacheValid = false; }
     // Changes only when visible line geometry changes, not when background checks run.
@@ -31,6 +32,7 @@ public:
 private:
     bool bCacheValid = false;
     uint32 CachedContextHash = 0;
+    uint32 CachedPresentationHash = 0;
     int64 CachedRevision = -1;
     uint64 CachedRegistryRevision = 0;
     uint64 PresentationRevision = 0;

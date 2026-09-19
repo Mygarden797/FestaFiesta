@@ -2,6 +2,16 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
+#if WITH_EDITOR
+#include "FF_FacilitySynergyTableBuilder.h"
+#include "Building/Synergy/FF_FacilitySynergySettings.h"
+#include "Engine/AssetManager.h"
+#include "Engine/DataTable.h"
+#include "Economy/Rules/FF_BoothRevenueRules.h"
+#include "FF_FFZSFacilityDefinition.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#endif
 
 namespace
 {
@@ -115,4 +125,186 @@ bool FFF_SynergyPreviewOverlayTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("Moving facility cannot count its old position as its own partner"), Entry.ProposedTotalBonusPercent, 0.f);
 	return true;
 }
+
+#if WITH_EDITOR
+namespace
+{
+	UDataTable* ReadProductionSynergyCsv(FAutomationTestBase& Test)
+	{
+		FString Csv;
+		if (!Test.TestTrue(TEXT("Production synergy CSV is readable"), FFileHelper::LoadFileToString(Csv,
+			*(FPaths::ProjectDir() / TEXT("data/unreal/facility_synergies_v0.csv"))))) return nullptr;
+		UDataTable* Table = NewObject<UDataTable>(GetTransientPackage());
+		Table->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+		const TArray<FString> Problems = Table->CreateTableFromCSVString(Csv);
+		if (!Test.TestTrue(*FString::Printf(TEXT("Production CSV imports without problems: %s"),
+			*FString::Join(Problems, TEXT("; "))), Problems.IsEmpty())) return nullptr;
+		return Table;
+	}
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SynergyProductionExpansionTest,
+	"FestaFiesta.Building.Synergy.ProductionDataAndEvaluatorParity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_SynergyProductionExpansionTest::RunTest(const FString& Parameters)
+{
+	// Gameplay reads the configured DataTable. Test that actual authored data, so a
+	// later Designer edit is validated without forcing it back to CSV seed values.
+	const UDataTable* Table = GetDefault<UFF_FacilitySynergySettings>()->SynergyTable.LoadSynchronous();
+	if (!TestNotNull(TEXT("Configured runtime synergy table loads"), Table)) return false;
+	FString FailureReason;
+	const bool bReferencesValid = FFFacilitySynergyTableBuilder::ValidateReferencedDefinitions(*Table, FailureReason);
+	if (!TestTrue(*FString::Printf(TEXT("All enabled production IDs resolve to their actual PDA Spec: %s"), *FailureReason),
+		bReferencesValid)) return false;
+
+	TArray<FFF_FacilitySynergyRule> Rules;
+	TSet<FName> TargetIds, PartnerIds;
+	float MaximumRadius = 0.f;
+	const UAssetManager* Manager = UAssetManager::GetIfInitialized();
+	for (const FName RowName : Table->GetRowNames())
+	{
+		const auto& Row = *Table->FindRow<FFF_FacilitySynergyRow>(RowName, TEXT("Production balance"));
+		if (!Row.bEnabled) continue;
+		TestTrue(*FString::Printf(TEXT("%s obeys the authored numeric contract"), *RowName.ToString()), Row.IsUsable());
+		TestFalse(*FString::Printf(TEXT("%s has a designer-authored display title"), *RowName.ToString()), Row.DisplayName.IsEmpty());
+		const auto* Target = Cast<UFFZSFacilityDefinition>(Manager->GetPrimaryAssetPath(FPrimaryAssetId(
+			UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), Row.TargetFacilityId)).TryLoad());
+		if (TestNotNull(TEXT("Revenue target definition loads"), Target))
+			TestTrue(TEXT("Every beneficiary is an actual Booth"), Target->Spec.Category == EFFZSFacilityCategory::Booth);
+		Rules.Add({RowName, Row});
+		TargetIds.Add(Row.TargetFacilityId);
+		PartnerIds.Add(Row.PartnerFacilityId);
+		MaximumRadius = FMath::Max(MaximumRadius, Row.MaxDistanceMeters);
+	}
+
+	FFF_FacilitySynergyEvaluator Evaluator;
+	const float ConfiguredCap = GetDefault<UFF_FacilitySynergySettings>()->MaxTotalBonusPercent;
+	const float Cap = FMath::IsFinite(ConfiguredCap) ? FMath::Clamp(ConfiguredCap, 0.f, 1000.f) : 0.f;
+	for (const auto& Rule : Rules)
+	{
+		// Isolate one authored rule so future overlapping target/partner rows remain legal.
+		Evaluator.SetRules({Rule}, Cap);
+		TestTrue(TEXT("Production codex relation includes the helper before installation"),
+			Evaluator.GetRelatedFacilityDefinitionIds(Rule.Row.TargetFacilityId).Contains(Rule.Row.PartnerFacilityId));
+		TestTrue(TEXT("Helper-side codex relation links back to its actual income target"),
+			Evaluator.GetRelatedFacilityDefinitionIds(Rule.Row.PartnerFacilityId).Contains(Rule.Row.TargetFacilityId));
+		const auto Target = Point(1, Rule.Row.TargetFacilityId, 0.);
+		const double RadiusCm = Rule.Row.MaxDistanceMeters * 100.;
+		Evaluator.SetFacilities({Target, Point(2, Rule.Row.PartnerFacilityId, RadiusCm, 0., 5000.)});
+		TestEqual(*FString::Printf(TEXT("%s applies its real bonus at the inclusive boundary"), *Rule.Id.ToString()),
+			Evaluator.Evaluate(Target).TotalPercent, FMath::Min(Rule.Row.RevenueBonusPercent, Cap));
+		Evaluator.SetFacilities({Target, Point(2, Rule.Row.PartnerFacilityId, RadiusCm + 1.)});
+		TestEqual(*FString::Printf(TEXT("%s stops paying outside its own radius"), *Rule.Id.ToString()),
+			Evaluator.Evaluate(Target).TotalPercent, 0.f);
+	}
+	Evaluator.SetRules(Rules, Cap);
+	for (const FName TargetId : TargetIds)
+	{
+		// This small non-spatial reference calculation follows current authoring values;
+		// adding combinations, renaming them or tuning bonuses does not require test edits.
+		TMap<FName, float> GroupMaximums;
+		float ExpectedTotal = 0.f;
+		for (const auto& Rule : Rules)
+		{
+			if (Rule.Row.TargetFacilityId != TargetId) continue;
+			if (Rule.Row.StackingGroup.IsNone()) ExpectedTotal += Rule.Row.RevenueBonusPercent;
+			else
+			{
+				float& Maximum = GroupMaximums.FindOrAdd(Rule.Row.StackingGroup);
+				Maximum = FMath::Max(Maximum, Rule.Row.RevenueBonusPercent);
+			}
+		}
+		for (const auto& Group : GroupMaximums) ExpectedTotal += Group.Value;
+		ExpectedTotal = FMath::Min(ExpectedTotal, Cap);
+		const auto Target = Point(1, TargetId, 0.);
+		TArray<FFF_FacilitySynergyPoint> Facilities{Target};
+		int32 Instance = 2;
+		for (const FName PartnerId : PartnerIds)
+		{
+			Facilities.Add(Point(Instance++, PartnerId, 0.));
+			Facilities.Add(Point(Instance++, PartnerId, 0.));
+		}
+		Evaluator.SetFacilities(Facilities);
+		const float ActualBonus = Evaluator.Evaluate(Target).TotalPercent;
+		TestEqual(*FString::Printf(TEXT("%s: all helpers and duplicate copies obey the authored group budget"), *TargetId.ToString()),
+			ActualBonus, ExpectedTotal);
+		FFF_FacilitySynergyPreview Preview;
+		Evaluator.BuildPreview(TargetId, Target.WorldLocation, Target.InstanceId, Preview);
+		TestTrue(TEXT("Every production beneficiary has a placement/inspector preview"), Preview.bRulesAvailable && !Preview.Entries.IsEmpty());
+		for (const auto& Entry : Preview.Entries)
+		{
+			if (Entry.TargetInstanceId != Target.InstanceId) continue;
+			TestEqual(TEXT("Inspector current bonus matches committed evaluation"), Entry.CurrentTotalBonusPercent, ActualBonus);
+			TestEqual(TEXT("Unchanged-location preview matches committed evaluation"), Entry.ProposedTotalBonusPercent, ActualBonus);
+		}
+		// A large fixture receipt exposes every conservative bonus without changing the
+		// shipping settlement rule: commission is rounded once after all multipliers.
+		TestEqual(TEXT("Existing settlement combines the production bonus with a level multiplier"),
+			FFF_BoothRevenueRules::ResolveCommission(1000, 3, .2f, 1.5f * (1.f + ActualBonus / 100.f)),
+			FFF_BoothRevenueRules::ResolveCommission(1000, 3, .2f, 1.5f * (1.f + ExpectedTotal / 100.f)));
+		for (int32 Index = 1; Index < Facilities.Num(); ++Index) Facilities[Index].WorldLocation.X = MaximumRadius * 100. + 1.;
+		Evaluator.SetFacilities(Facilities);
+		TestEqual(TEXT("Moving every helper away removes all derived bonuses"), Evaluator.Evaluate(Target).TotalPercent, 0.f);
+	}
+	TestEqual(TEXT("Existing rounding can leave a small receipt unchanged despite a valid six-percent bonus"),
+		FFF_BoothRevenueRules::ResolveCommission(10, 1, .2f, 1.06f),
+		FFF_BoothRevenueRules::ResolveCommission(10, 1, .2f));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SynergyAppendOnlyTest,
+	"FestaFiesta.Building.Synergy.AppendOnlyPreservesDesignerRows",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_SynergyAppendOnlyTest::RunTest(const FString& Parameters)
+{
+	const UDataTable* Source = ReadProductionSynergyCsv(*this);
+	if (!Source) return false;
+	UDataTable* Destination = NewObject<UDataTable>(GetTransientPackage());
+	Destination->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	const auto* SeedBurger = Source->FindRow<FFF_FacilitySynergyRow>(TEXT("BurgerPicnic"), TEXT("Append fixture"));
+	const auto* SeedIceCream = Source->FindRow<FFF_FacilitySynergyRow>(TEXT("IceCreamShade"), TEXT("Append fixture"));
+	if (!SeedBurger || !SeedIceCream) return false;
+	FFF_FacilitySynergyRow DesignerBurger = *SeedBurger;
+	DesignerBurger.DisplayName = NSLOCTEXT("FFSynergyAppendTest", "CustomName", "내가 만든 한낮의 작은 축제");
+	DesignerBurger.RevenueBonusPercent = 11.f;
+	DesignerBurger.MaxDistanceMeters = 13.f;
+	Destination->AddRow(TEXT("BurgerPicnic"), DesignerBurger);
+	Destination->AddRow(TEXT("IceCreamShade"), *SeedIceCream);
+	Destination->AddRow(TEXT("DesignerOnlyCombination"), DesignerBurger);
+	TArray<FName> Added;
+	FString Failure;
+	if (!TestTrue(TEXT("Explicit append accepts independent designer names and existing numeric edits"),
+		FFFacilitySynergyTableBuilder::AppendMissingRows(*Destination, *Source, Added, Failure)))
+	{
+		AddError(Failure);
+		return false;
+	}
+	TestEqual(TEXT("Only the currently missing CSV row keys are appended"), Added.Num(), Source->GetRowNames().Num() - 2);
+	TestEqual(TEXT("User-only rows are retained alongside all current seed rows"), Destination->GetRowNames().Num(), Source->GetRowNames().Num() + 1);
+	TestTrue(TEXT("Every field and localized name in the edited existing row remains intact"),
+		FFF_FacilitySynergyRow::StaticStruct()->CompareScriptStruct(&DesignerBurger,
+			Destination->FindRow<FFF_FacilitySynergyRow>(TEXT("BurgerPicnic"), TEXT("Check preserved row")), 0));
+	TestTrue(TEXT("The untouched second starter row remains intact"),
+		FFF_FacilitySynergyRow::StaticStruct()->CompareScriptStruct(SeedIceCream,
+			Destination->FindRow<FFF_FacilitySynergyRow>(TEXT("IceCreamShade"), TEXT("Check preserved row")), 0));
+	const FString BeforeRepeat = Destination->GetTableAsJSON();
+	TestTrue(TEXT("Repeated append succeeds"), FFFacilitySynergyTableBuilder::AppendMissingRows(*Destination, *Source, Added, Failure));
+	TestEqual(TEXT("Repeated append has no new rows"), Added.Num(), 0);
+	TestEqual(TEXT("Repeated append leaves the complete table unchanged"), Destination->GetTableAsJSON(), BeforeRepeat);
+
+	UDataTable* BadBatch = NewObject<UDataTable>(GetTransientPackage());
+	BadBatch->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	BadBatch->AddRow(TEXT("OtherwiseValidNewRow"), *SeedBurger);
+	FFF_FacilitySynergyRow BadReference = *SeedBurger;
+	// This plausible filename-derived value differs from the real SunsetLandmark Spec ID.
+	BadReference.PartnerFacilityId = TEXT("PhotoSpot_Landmark_Landmark");
+	BadBatch->AddRow(TEXT("BadNewRow"), BadReference);
+	TestFalse(TEXT("An unknown new facility ID rejects the whole append batch"),
+		FFFacilitySynergyTableBuilder::AppendMissingRows(*Destination, *BadBatch, Added, Failure));
+	TestTrue(TEXT("Failure identifies the actual bad reference"), Failure.Contains(TEXT("PhotoSpot_Landmark_Landmark")));
+	TestEqual(TEXT("Rejected append does not report any committed rows"), Added.Num(), 0);
+	TestEqual(TEXT("No partial additions or designer data changes on failed preflight"), Destination->GetTableAsJSON(), BeforeRepeat);
+	return true;
+}
+#endif // WITH_EDITOR
 #endif
