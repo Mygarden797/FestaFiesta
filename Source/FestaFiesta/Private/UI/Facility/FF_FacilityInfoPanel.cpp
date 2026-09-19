@@ -33,6 +33,7 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	if (Button_Favorite) Button_Favorite->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleFavoriteClicked);
 	if (Button_RemoveConfirm) Button_RemoveConfirm->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveConfirmClicked);
 	if (Button_RemoveCancel) Button_RemoveCancel->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveCancelClicked);
+	if (Button_RevenueRanking) Button_RevenueRanking->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRevenueRankingClicked);
 	if (Widget_LightingControls)
 	{
 		Widget_LightingControls->OnLightingRequested.AddUObject(this, &ThisClass::HandleLightingRequested);
@@ -178,11 +179,25 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 			Effects, ViewData.UpgradeSizeEffectText));
 	SetText(Text_UpgradeCurrent, ViewData.UpgradeCurrentText);
 	SetText(Text_UpgradeNext, ViewData.UpgradeNextText);
+	SetText(Text_UpgradeCurrentRevenue, ViewData.UpgradeCurrentValues.Revenue);
+	SetText(Text_UpgradeNextRevenue, ViewData.UpgradeNextValues.Revenue);
+	SetText(Text_UpgradeCurrentTime, ViewData.UpgradeCurrentValues.ServiceTime);
+	SetText(Text_UpgradeNextTime, ViewData.UpgradeNextValues.ServiceTime);
+	SetText(Text_UpgradeCurrentThroughput, ViewData.UpgradeCurrentValues.Throughput);
+	SetText(Text_UpgradeNextThroughput, ViewData.UpgradeNextValues.Throughput);
+	SetText(Text_UpgradeCurrentSize, ViewData.UpgradeCurrentValues.Footprint);
+	SetText(Text_UpgradeNextSize, ViewData.UpgradeNextValues.Footprint);
+	SetText(Text_UpgradePrice, ViewData.UpgradePriceText);
+	SetText(Text_UpgradeBalance, ViewData.UpgradeBalanceText);
+	SetText(Text_UpgradeBalanceLabel, ViewData.UpgradeBalanceLabel);
+	for (UWidget* Surface : {Panel_UpgradeMetricRows.Get(), Panel_UpgradeQuote.Get()})
+		if (Surface) Surface->SetVisibility(bBuildContext && ViewData.bShowUpgradeDetails
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	const bool bHasComparison = Panel_UpgradeComparison && Text_UpgradeCurrent && Text_UpgradeNext &&
 		!ViewData.UpgradeCurrentText.IsEmpty() && !ViewData.UpgradeNextText.IsEmpty();
 	if (Panel_UpgradeComparison)
 	{
-		Panel_UpgradeComparison->SetVisibility(bHasComparison && bBuildContext && ViewData.bShowUpgradeDetails
+		Panel_UpgradeComparison->SetVisibility(!Panel_UpgradeMetricRows && bHasComparison && bBuildContext && ViewData.bShowUpgradeDetails
 			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		// Keep authored multipliers, signed changes and footprint details available without
 		// making the first screen taller. Legacy WBP assets continue to show the full text.
@@ -201,7 +216,8 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		if (Detail)
 		{
 			Detail->SetVisibility(bBuildContext && ViewData.bShowUpgradeDetails
-				&& (Detail != Text_UpgradeEffect.Get() || !bHasComparison)
+				&& (Detail != Text_UpgradeEffect.Get() || (!bHasComparison && !Panel_UpgradeMetricRows))
+				&& (Detail != Text_UpgradeCost.Get() || !Panel_UpgradeQuote)
 				? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		}
 	}
@@ -331,15 +347,22 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		Text_ThumbnailPlaceholder->SetVisibility(
 			bHasThumbnail ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	}
-	SetText(Text_Favorite, ViewData.bIsFavorite
-		? LOCTEXT("FavoriteSaved", "★ 즐겨찾기") : LOCTEXT("FavoriteAdd", "☆ 즐겨찾기"));
+	SetText(Text_Favorite, Panel_PersistentIdentity
+		? (ViewData.bIsFavorite ? FText::FromString(TEXT("★")) : FText::FromString(TEXT("☆")))
+		: (ViewData.bIsFavorite ? LOCTEXT("FavoriteSaved", "★ 즐겨찾기") : LOCTEXT("FavoriteAdd", "☆ 즐겨찾기")));
+	if (Button_Favorite) Button_Favorite->SetToolTipText(ViewData.bIsFavorite
+		? LOCTEXT("FavoriteRemoveTooltip", "즐겨찾기 해제") : LOCTEXT("FavoriteAddTooltip", "즐겨찾기 추가"));
 	if (Button_Favorite) Button_Favorite->SetIsEnabled(!ViewData.FacilityDefinitionId.IsNone());
 	SetText(Text_LevelSummary, ViewData.FacilityLevelText);
 	if (Text_LevelSummary) Text_LevelSummary->SetVisibility(ViewData.bHasFacilityLevels
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-	SetText(Text_RemoveConfirmation, FText::Format(
+	SetText(Text_RemoveConfirmation, Text_RemoveRecovery
+		? FText::Format(LOCTEXT("RemoveQuestion", "{0} 시설을 철거할까요?"), ViewData.DisplayName)
+		: FText::Format(
 		LOCTEXT("RemoveConfirmation", "{0} 시설을 철거할까요?\n회수 금액 {1}\n강화에 사용한 비용은 환불되지 않습니다."),
 		ViewData.DisplayName, ViewData.RecoveryCostText));
+	SetText(Text_RemoveRecovery, ViewData.RecoveryCostText);
+	SetText(Text_RemoveInstallCost, ViewData.InstallCostText);
 	if (Button_RemoveConfirm) Button_RemoveConfirm->SetIsEnabled(bBuildContext && ViewData.bCanRemove);
 	RefreshPageVisibility();
 	OnViewDataApplied(ViewData);
@@ -380,6 +403,10 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	Show(Panel_RevenueSection, CurrentViewData.bShowRevenueSection && CurrentViewData.FacilityInstanceId.IsValid() &&
 		(ActivePage == EFF_FacilityInfoPage::Overview || ActivePage == EFF_FacilityInfoPage::Operation));
 	Show(Panel_RemoveConfirmation, ActivePage == EFF_FacilityInfoPage::RemoveConfirmation);
+	Show(Panel_RemoveActions, ActivePage == EFF_FacilityInfoPage::RemoveConfirmation);
+	Show(Panel_UpgradeActions, ActivePage == EFF_FacilityInfoPage::Upgrade && CurrentViewData.bShowUpgradeAction);
+	Show(Button_RevenueRanking, ActivePage == EFF_FacilityInfoPage::Operation &&
+		CurrentViewData.FacilityInstanceId.IsValid());
 	// The persistent header still identifies the facility. Give task-specific pages their
 	// full scroll area instead of repeating the overview thumbnail above every action.
 	if (WidgetTree) Show(WidgetTree->FindWidget(TEXT("Summary_Card")), ActivePage == EFF_FacilityInfoPage::Overview);
@@ -394,6 +421,13 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	Button_TabOperation->SetIsEnabled(ActivePage != EFF_FacilityInfoPage::Operation);
 	Button_TabUpgrade->SetIsEnabled(bBuild && CurrentViewData.bHasFacilityLevels && ActivePage != EFF_FacilityInfoPage::Upgrade);
 	Show(Button_TabUpgrade, bBuild && CurrentViewData.bHasFacilityLevels);
+	if (Panel_PersistentIdentity)
+	{
+		for (UButton* Tab : {Button_TabOverview.Get(), Button_TabSynergy.Get(), Button_TabOperation.Get(), Button_TabUpgrade.Get()})
+			if (Tab)
+				if (UCommonTextBlock* Label = Cast<UCommonTextBlock>(Tab->GetContent()))
+					Label->SetColorAndOpacity(FSlateColor(Tab->GetIsEnabled() ? InactiveTabTextColor : SelectedTabTextColor));
+	}
 	Show(Panel_Actions, ActivePage != EFF_FacilityInfoPage::RemoveConfirmation &&
 		(bBuild || CurrentViewData.bHasMinigame));
 }
@@ -476,6 +510,11 @@ void UFF_FacilityInfoPanel::HandleUpgradeTabClicked() { SetInfoPage(EFF_Facility
 void UFF_FacilityInfoPanel::HandleFavoriteClicked()
 {
 	if (!CurrentViewData.FacilityDefinitionId.IsNone()) OnFavoriteRequested.Broadcast();
+}
+void UFF_FacilityInfoPanel::HandleRevenueRankingClicked()
+{
+	if (ActivePage == EFF_FacilityInfoPage::Operation && CurrentViewData.FacilityInstanceId.IsValid())
+		OnRevenueRankingRequested.Broadcast();
 }
 void UFF_FacilityInfoPanel::HandleRemoveCancelClicked()
 {

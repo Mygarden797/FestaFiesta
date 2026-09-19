@@ -35,6 +35,7 @@ public:
 	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnFavoriteRequested;
+	FSimpleMulticastDelegate OnRevenueRankingRequested;
 	FFF_OnFacilityLightingRequested OnLightingRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
 
@@ -90,6 +91,7 @@ private:
 	UFUNCTION() void HandleFavoriteClicked();
 	UFUNCTION() void HandleRemoveConfirmClicked();
 	UFUNCTION() void HandleRemoveCancelClicked();
+	UFUNCTION() void HandleRevenueRankingClicked();
 	void RefreshPageVisibility();
 	void RefreshSynergyEntries();
 	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);
@@ -180,6 +182,10 @@ private:
 			ToolTip = "오늘 결제가 아직 없을 때 오늘 매출 숫자에 쓰는 색입니다."))
 	FLinearColor RevenueIdleColor =
 		FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
+	FLinearColor SelectedTabTextColor = FLinearColor::White;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
+	FLinearColor InactiveTabTextColor = FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Panel;
@@ -265,6 +271,27 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_UpgradeNext;
+
+	/** V2 named cells remain optional so older authored panels keep their original presentation. */
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_UpgradeMetricRows;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_UpgradeQuote;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_UpgradeActions;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentRevenue;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextRevenue;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentTime;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextTime;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentThroughput;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextThroughput;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeCurrentSize;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeNextSize;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradePrice;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeBalance;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_UpgradeBalanceLabel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_PersistentIdentity;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_RemoveActions;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_RemoveRecovery;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_RemoveInstallCost;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RevenueRanking;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_UpgradeCost;

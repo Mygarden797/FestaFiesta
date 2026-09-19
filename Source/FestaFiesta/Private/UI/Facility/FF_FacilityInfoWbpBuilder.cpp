@@ -3021,6 +3021,296 @@ namespace FFFacilityInfoWbpBuilder
 		TEXT("Adds approved inspector tabs, favorites, remove confirmation and paid-program receipt once; reruns preserve designer changes."),
 		FConsoleCommandDelegate::CreateStatic(&MigrateFacilityInspectorUmg));
 
+	bool ApplyInspectorV2Design(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		bOutModified = false;
+		// The named surface is a version marker. Never repaint/reparent a designer's V2 edits.
+		if (Tree.FindWidget(TEXT("Panel_PersistentIdentity")))
+			return HasNamedVariable(Blueprint, TEXT("Panel_PersistentIdentity"), *UBorder::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Panel_UpgradeMetricRows"), *UVerticalBox::StaticClass()) &&
+				HasNamedVariable(Blueprint, TEXT("Button_RevenueRanking"), *UButton::StaticClass());
+		auto* Shell = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Shell")));
+		auto* HeaderIdentity = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Header_Identity")));
+		auto* ThumbnailSize = Cast<USizeBox>(Tree.FindWidget(TEXT("Thumbnail_Size")));
+		auto* Name = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_FacilityName")));
+		auto* CategoryRow = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Meta_Row")));
+		auto* Favorite = Cast<UButton>(Tree.FindWidget(TEXT("Button_Favorite")));
+		auto* UpgradeContent = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Upgrade_Content")));
+		auto* Comparison = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Panel_UpgradeComparison")));
+		auto* Confirmation = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_RemoveConfirmation")));
+		auto* Confirm = Cast<UButton>(Tree.FindWidget(TEXT("Button_RemoveConfirm")));
+		auto* Cancel = Cast<UButton>(Tree.FindWidget(TEXT("Button_RemoveCancel")));
+		auto* Synergy = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_SynergySection")));
+		auto* SynergySummary = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_SynergySummary")));
+		auto* RevenueContent = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Revenue_Content")));
+		auto* LiveContent = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Live_Content")));
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette || !Shell || !HeaderIdentity || !ThumbnailSize || !Name || !CategoryRow || !Favorite ||
+			!UpgradeContent || !Comparison || !Confirmation || !Confirm || !Cancel || !Synergy ||
+			!SynergySummary || !RevenueContent || !LiveContent || !HasRequiredLayout(Blueprint) ||
+			!HasRevenueWidgetContract(Blueprint) || !HasSynergyInspectorContract(Blueprint)) return false;
+		const FFF_UIPaletteInGame& P = Palette->InGame;
+		Blueprint.Modify();
+		Tree.Modify();
+		auto Text = [&](const FName WidgetName, const TCHAR* Copy, const int32 Size,
+			const bool bVariable = false, const bool bStrong = false)
+		{
+			auto* Widget = MakeWidget<UCommonTextBlock>(Blueprint, Tree, WidgetName, bVariable);
+			Widget->SetText(FText::FromString(Copy));
+			Widget->SetAutoWrapText(true);
+			StyleLightText(*Widget, Size, bStrong ? P.TealDeep : P.InkMuted, bStrong ? TEXT("SemiBold") : TEXT("Regular"));
+			return Widget;
+		};
+		// Reuse the actual thumbnail, facility name and category bindings in a fixed shared header.
+		auto* Identity = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Panel_PersistentIdentity"), true);
+		auto* IdentityRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("V2_IdentityRow"));
+		auto* IdentityMeta = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("V2_IdentityMeta"));
+		PaintBorder(*Identity, MakeSolidBrush(P.PaperSunken, 7.f, P.Line, .5f));
+		Identity->SetPadding(FMargin(8.f));
+		ThumbnailSize->RemoveFromParent();
+		ThumbnailSize->SetWidthOverride(80.f);
+		ThumbnailSize->SetHeightOverride(76.f);
+		AddHorizontal(*IdentityRow, *ThumbnailSize, FMargin(0, 0, 10, 0));
+		Name->RemoveFromParent();
+		StyleLightText(*Name, 20, P.Ink, TEXT("SemiBold"));
+		AddVertical(*IdentityMeta, *Name, FMargin(0, 0, 0, 6));
+		CategoryRow->RemoveFromParent();
+		AddVertical(*IdentityMeta, *CategoryRow);
+		AddHorizontal(*IdentityRow, *IdentityMeta, FMargin(0), ESlateSizeRule::Fill);
+		Favorite->RemoveFromParent();
+		auto* FavoriteSize = MakeWidget<USizeBox>(Blueprint, Tree, TEXT("V2_FavoriteSize"));
+		FavoriteSize->SetWidthOverride(36.f);
+		FavoriteSize->SetHeightOverride(34.f);
+		FavoriteSize->AddChild(Favorite);
+		AddHorizontal(*IdentityRow, *FavoriteSize);
+		Identity->AddChild(IdentityRow);
+		AddVertical(*Shell, *Identity, FMargin(10, 0, 10, 6));
+		Shell->ShiftChild(1, Identity);
+		if (auto* Context = Tree.FindWidget(TEXT("Text_Context"))) Context->SetVisibility(ESlateVisibility::Collapsed);
+		AddVertical(*HeaderIdentity, *Text(TEXT("V2_InspectorTitle"), TEXT("시설 정보"), 17, false, true));
+		if (auto* Header = Cast<UBorder>(Tree.FindWidget(TEXT("Header_Surface"))))
+		{
+			PaintBorder(*Header, MakeSolidBrush(P.Paper, 7.f));
+			Header->SetPadding(FMargin(12, 6, 8, 6));
+		}
+		if (auto* Header = Cast<USizeBox>(Tree.FindWidget(TEXT("Header_Size")))) Header->SetHeightOverride(44.f);
+		if (auto* CloseLabel = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Close_Label"))))
+			StyleLightText(*CloseLabel, 20, P.TealDeep, TEXT("SemiBold"));
+		for (const FName TabName : {FName(TEXT("Button_TabOverview")), FName(TEXT("Button_TabSynergy")),
+			FName(TEXT("Button_TabOperation")), FName(TEXT("Button_TabUpgrade"))})
+			if (auto* Tab = Cast<UButton>(Tree.FindWidget(TabName)))
+			{
+				FButtonStyle Style = Tab->GetStyle();
+				Style.Disabled = MakeSolidBrush(P.TealDeep, 5.f);
+				Style.NormalPadding = FMargin(4, 8);
+				Style.PressedPadding = Style.NormalPadding;
+				Tab->SetStyle(Style);
+			}
+		// New comparison rows carry separate native values; legacy columns remain for older assets.
+		auto* Metrics = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_UpgradeMetricRows"), true);
+		auto* Captions = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("V2_UpgradeCaptions"));
+		for (const auto& Entry : TArray<TPair<FName, FString>>{
+			{TEXT("V2_UpgradeMetricCaption"), TEXT("항목")}, {TEXT("V2_UpgradeCurrentCaption"), TEXT("현재")},
+			{TEXT("V2_UpgradeNextCaption"), TEXT("강화 후")}})
+			AddHorizontal(*Captions, *Text(Entry.Key, *Entry.Value, 11, false, true), FMargin(5, 4), ESlateSizeRule::Fill);
+		AddVertical(*Metrics, *Captions, FMargin(0, 0, 0, 4));
+		const TCHAR* Keys[] = {TEXT("Revenue"), TEXT("Time"), TEXT("Throughput"), TEXT("Size")};
+		const TCHAR* Labels[] = {TEXT("1인 수익"), TEXT("1인 시간"), TEXT("처리 속도"), TEXT("크기")};
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Keys); ++Index)
+		{
+			auto* Row = MakeWidget<UHorizontalBox>(Blueprint, Tree, FName(FString(TEXT("V2_UpgradeRow")) + Keys[Index]));
+			AddHorizontal(*Row, *Text(FName(FString(TEXT("V2_UpgradeLabel")) + Keys[Index]), Labels[Index], 11, false, true),
+				FMargin(5, 5), ESlateSizeRule::Fill);
+			for (const bool bNext : {false, true})
+			{
+				const FString CellName = FString(bNext ? TEXT("Text_UpgradeNext") : TEXT("Text_UpgradeCurrent")) + Keys[Index];
+				auto* Cell = MakeWidget<UBorder>(Blueprint, Tree, FName(CellName + TEXT("_Cell")));
+				PaintBorder(*Cell, MakeSolidBrush(bNext ? P.TealSoft : P.PaperSunken, 4.f));
+				Cell->SetPadding(FMargin(5, 6));
+				Cell->AddChild(Text(FName(CellName), TEXT("—"), 12, true, true));
+				AddHorizontal(*Row, *Cell, FMargin(2, 0), ESlateSizeRule::Fill);
+			}
+			AddVertical(*Metrics, *Row, FMargin(0, 0, 0, 4));
+		}
+		AddVertical(*UpgradeContent, *Metrics, FMargin(0, 0, 0, 8));
+		UpgradeContent->ShiftChild(UpgradeContent->GetChildIndex(Comparison), Metrics);
+		auto* Quote = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("Panel_UpgradeQuote"), true);
+		AddStatPair(Blueprint, Tree, *Quote, *Palette, TEXT("Text_UpgradePrice"), TEXT("강화 비용"));
+		auto* BalanceRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("V2_UpgradeBalanceRow"));
+		AddHorizontal(*BalanceRow, *Text(TEXT("Text_UpgradeBalanceLabel"), TEXT("구매 후 잔액"), 11, true), FMargin(0), ESlateSizeRule::Fill);
+		AddHorizontal(*BalanceRow, *Text(TEXT("Text_UpgradeBalance"), TEXT("—"), 13, true, true));
+		AddVertical(*Quote, *BalanceRow, FMargin(8, 2, 8, 8));
+		AddVertical(*Quote, *Text(TEXT("V2_UpgradeRefundNotice"), TEXT("강화비는 철거 시 환급되지 않습니다."), 11), FMargin(2, 0, 2, 8));
+		AddVertical(*UpgradeContent, *Quote);
+		UpgradeContent->ShiftChild(UpgradeContent->GetChildIndex(Metrics) + 1, Quote);
+		// The operation model's occupancy includes waiting/processing parties, not concurrent service capacity.
+		if (auto* Label = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_Occupancy_Label"))))
+			Label->SetText(FText::FromString(TEXT("대기·처리 중 인원")));
+		if (auto* Label = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_WaitingParties_Label"))))
+			Label->SetText(FText::FromString(TEXT("대기·처리 중 일행")));
+		if (auto* Occupancy = Tree.FindWidget(TEXT("Text_Occupancy")))
+			Occupancy->SetToolTipText(FText::FromString(TEXT("대기·처리 중 일행의 전체 인원입니다. 일행 전체 이용이 끝날 때까지 점유에 포함됩니다.")));
+		if (auto* Today = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_FacilityTodayRevenue"))))
+			StyleLightText(*Today, 25, P.TealDeep, TEXT("SemiBold"));
+		auto* Ranking = MakeLightTextButton(Blueprint, Tree, TEXT("Button_RevenueRanking"), TEXT("V2_RevenueRankingLabel"),
+			FText::FromString(TEXT("시설별 매출 순위  →")), P.PaperSunken, P.TealSoft, P.TealSoft, P.Line, P.TealDeep, true, false);
+		AddVertical(*LiveContent, *Ranking, FMargin(0, 6, 0, 0));
+		// A summary card is also the honest empty/loading state; real entries keep their existing pool.
+		SynergySummary->RemoveFromParent();
+		auto* SummaryCard = MakeWidget<UBorder>(Blueprint, Tree, TEXT("V2_SynergySummaryCard"));
+		PaintBorder(*SummaryCard, MakeSolidBrush(P.PaperSunken, 7.f));
+		SummaryCard->SetPadding(FMargin(14, 22));
+		StyleLightText(*SynergySummary, 14, P.TealDeep, TEXT("Medium"), ETextJustify::Center);
+		SummaryCard->AddChild(SynergySummary);
+		AddVertical(*Synergy, *SummaryCard, FMargin(0, 0, 0, 12));
+		Synergy->ShiftChild(0, SummaryCard);
+		if (UWidget* Launcher = Tree.FindWidget(TEXT("Widget_FacilityCodexLauncher")))
+			Synergy->ShiftChild(1, Launcher);
+		// Destructive confirmation keeps its original guarded buttons, now in a fixed footer.
+		Cancel->RemoveFromParent();
+		Confirm->RemoveFromParent();
+		if (auto* ConfirmLabel = Cast<UCommonTextBlock>(Confirm->GetContent()))
+		{
+			ConfirmLabel->SetAutoWrapText(true);
+			StyleLightText(*ConfirmLabel, 12, P.White, TEXT("SemiBold"), ETextJustify::Center);
+		}
+		auto* RemoveActions = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_RemoveActions"), true);
+		AddHorizontal(*RemoveActions, *Cancel, FMargin(0, 0, 5, 0), ESlateSizeRule::Fill);
+		AddHorizontal(*RemoveActions, *Confirm, FMargin(5, 0, 0, 0), ESlateSizeRule::Fill);
+		AddVertical(*Shell, *RemoveActions, FMargin(10, 8, 10, 10));
+		RemoveActions->SetVisibility(ESlateVisibility::Collapsed);
+		AddStatPair(Blueprint, Tree, *Confirmation, *Palette, TEXT("Text_RemoveRecovery"), TEXT("회수 금액"));
+		if (auto* Recovery = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_RemoveRecovery"))))
+			StyleLightText(*Recovery, 28, P.TealDeep, TEXT("SemiBold"));
+		AddStatPair(Blueprint, Tree, *Confirmation, *Palette, TEXT("Text_RemoveInstallCost"), TEXT("설치 비용"));
+		auto* RemoveWarning = MakeWidget<UBorder>(Blueprint, Tree, TEXT("V2_RemoveWarning"));
+		FLinearColor WarningColor = P.Danger; WarningColor.A = .08f;
+		PaintBorder(*RemoveWarning, MakeSolidBrush(WarningColor, 6.f, P.Danger, .5f));
+		RemoveWarning->SetPadding(FMargin(10, 12));
+		auto* Warning = Text(TEXT("V2_RemoveRefundNotice"), TEXT("강화에 사용한 비용은 환불되지 않습니다."), 12);
+		Warning->SetColorAndOpacity(FSlateColor(P.Danger));
+		RemoveWarning->AddChild(Warning);
+		AddVertical(*Confirmation, *RemoveWarning, FMargin(0, 8, 0, 8));
+		AddVertical(*Confirmation, *Text(TEXT("V2_RemoveExplanation"), TEXT("철거하면 시설이 제거됩니다."), 12));
+		// Bindings, input routes, outer Canvas slots, scroll body and normal footer remain intact.
+		bOutModified = true;
+		return true;
+	}
+
+	bool RefineInspectorV2Layout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified)
+	{
+		bOutModified = false;
+		if (Tree.FindWidget(TEXT("Panel_UpgradeActions")))
+			return HasNamedVariable(Blueprint, TEXT("Panel_UpgradeActions"), *UBorder::StaticClass());
+		auto* Shell = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Panel_Shell")));
+		auto* NormalActions = Tree.FindWidget(TEXT("Panel_Actions"));
+		auto* Upgrade = Cast<UButton>(Tree.FindWidget(TEXT("Button_Upgrade")));
+		auto* Notice = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("V2_UpgradeRefundNotice")));
+		auto* PriceContent = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Text_UpgradePrice_Content")));
+		auto* PriceLabel = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_UpgradePrice_Label")));
+		auto* PriceValue = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_UpgradePrice")));
+		const UFF_UIPalette* Palette = UFF_UIPalette::Get();
+		if (!Palette || !Shell || !NormalActions || NormalActions->GetParent() != Shell || !Upgrade ||
+			!Notice || !PriceContent || !PriceLabel || !PriceValue || !Tree.FindWidget(TEXT("Panel_PersistentIdentity"))) return false;
+		Blueprint.Modify();
+		Tree.Modify();
+		const auto& P = Palette->InGame;
+		// The quote can grow with localization and failure reasons. Keep its existing guarded action
+		// and the non-refundable-cost notice visible above the unchanged move/remove footer.
+		auto* Actions = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Panel_UpgradeActions"), true);
+		auto* ActionsContent = MakeWidget<UVerticalBox>(Blueprint, Tree, TEXT("V2_UpgradeFooterContent"));
+		PaintBorder(*Actions, MakeSolidBrush(P.Paper, 0.f));
+		Actions->SetPadding(FMargin(12, 4, 12, 4));
+		Notice->RemoveFromParent();
+		AddVertical(*ActionsContent, *Notice, FMargin(0, 0, 0, 4));
+		Upgrade->RemoveFromParent();
+		AddVertical(*ActionsContent, *Upgrade);
+		Actions->AddChild(ActionsContent);
+		AddVertical(*Shell, *Actions);
+		Shell->ShiftChild(Shell->GetChildIndex(NormalActions), Actions);
+		Actions->SetVisibility(ESlateVisibility::Collapsed);
+		// A horizontal cost row matches the approved comparison design and leaves useful scroll space.
+		auto* PriceRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("V2_UpgradePriceRow"));
+		PriceLabel->RemoveFromParent();
+		PriceValue->RemoveFromParent();
+		StyleLightText(*PriceLabel, 11, P.TealDeep, TEXT("Medium"));
+		StyleLightText(*PriceValue, 15, P.TealDeep, TEXT("SemiBold"), ETextJustify::Right);
+		AddHorizontal(*PriceRow, *PriceLabel, FMargin(0, 0, 8, 0), ESlateSizeRule::Fill);
+		AddHorizontal(*PriceRow, *PriceValue);
+		AddVertical(*PriceContent, *PriceRow);
+		if (auto* Card = Cast<UBorder>(Tree.FindWidget(TEXT("Text_UpgradePrice_Card")))) Card->SetPadding(FMargin(8, 6));
+		for (const TCHAR* Key : {TEXT("Revenue"), TEXT("Time"), TEXT("Throughput"), TEXT("Size")})
+			for (const TCHAR* Period : {TEXT("Current"), TEXT("Next")})
+				if (auto* Cell = Cast<UBorder>(Tree.FindWidget(FName(FString(TEXT("Text_Upgrade")) + Period + Key + TEXT("_Cell")))))
+					Cell->SetPadding(FMargin(5, 3));
+		if (auto* Level = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_FacilityLevel"))))
+		{
+			StyleLightText(*Level, 11, P.TealDeep, TEXT("SemiBold"));
+			if (auto* Slot = Cast<UVerticalBoxSlot>(Level->Slot)) Slot->SetPadding(FMargin(0, 0, 0, 2));
+		}
+		if (UWidget* Metrics = Tree.FindWidget(TEXT("Panel_UpgradeMetricRows")))
+			if (auto* Slot = Cast<UVerticalBoxSlot>(Metrics->Slot)) Slot->SetPadding(FMargin(0, 0, 0, 4));
+		bOutModified = true;
+		return true;
+	}
+
+	void RefineFacilityInfoV2Umg()
+	{
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		if (!Inspector || !Inspector->WidgetTree) return;
+		auto* Probe = DuplicateObject<UWidgetBlueprint>(Inspector, GetTransientPackage(),
+			MakeUniqueObjectName(GetTransientPackage(), UWidgetBlueprint::StaticClass(), TEXT("FacilityInfoV2LayoutProbe")));
+		if (!Probe || !Probe->WidgetTree) return;
+		Probe->SetFlags(RF_Transient);
+		bool bProbeChanged = false;
+		if (!RefineInspectorV2Layout(*Probe, *Probe->WidgetTree, bProbeChanged))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_INFO_V2_LAYOUT_FAIL: incompatible V2 inspector; original unchanged."));
+			return;
+		}
+		bool bChanged = false;
+		if (!RefineInspectorV2Layout(*Inspector, *Inspector->WidgetTree, bChanged) || (bChanged && !SaveBlueprint(*Inspector)))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_INFO_V2_LAYOUT_FAIL: save failed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_INFO_V2_LAYOUT_%s"), bChanged ? TEXT("APPLIED") : TEXT("REUSE"));
+	}
+
+	FAutoConsoleCommand RefineFacilityInfoV2Command(TEXT("FF.FixFacilityInfoV2Layout"),
+		TEXT("One-time inspector-only V2 refinement: fixed upgrade action and compact quote; preserves subsequent Designer edits."),
+		FConsoleCommandDelegate::CreateStatic(&RefineFacilityInfoV2Umg));
+
+	void ApplyFacilityInfoV2Umg()
+	{
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		if (!Inspector || !Inspector->WidgetTree || !Inspector->ParentClass ||
+			!Inspector->ParentClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass())) return;
+		// Preflight a transient copy first. No other Blueprint is created, refreshed or saved.
+		UWidgetBlueprint* Probe = DuplicateObject<UWidgetBlueprint>(Inspector, GetTransientPackage(),
+			MakeUniqueObjectName(GetTransientPackage(), UWidgetBlueprint::StaticClass(), TEXT("FacilityInfoV2Probe")));
+		if (!Probe) return;
+		Probe->SetFlags(RF_Transient);
+		bool bProbeChanged = false;
+		if (!Probe->WidgetTree || !ApplyInspectorV2Design(*Probe, *Probe->WidgetTree, bProbeChanged))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_INFO_V2_FAIL: incompatible inspector; original asset unchanged."));
+			return;
+		}
+		bool bChanged = false;
+		if (!ApplyInspectorV2Design(*Inspector, *Inspector->WidgetTree, bChanged) || (bChanged && !SaveBlueprint(*Inspector)))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error, TEXT("FF_FACILITY_INFO_V2_FAIL: inspector save failed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display, TEXT("FF_FACILITY_INFO_V2_%s: inspector only; Designer layout retained on reuse."),
+			bChanged ? TEXT("APPLIED") : TEXT("REUSE"));
+	}
+
+	FAutoConsoleCommand ApplyFacilityInfoV2Command(TEXT("FF.ApplyFacilityInfoV2UMG"),
+		TEXT("Applies the approved V2 inspector design once; saves only FacilityInfoPanel, never Picker/Card or HUD."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyFacilityInfoV2Umg));
+
 	FAutoConsoleCommand RefreshFacilityInfoGameUmgCommand(
 		TEXT("FF.RefreshFacilityInfoGameUMG"),
 		TEXT("Explicitly rebuilds only the facility information panel using the editable festival-game template."),

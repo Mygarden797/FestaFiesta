@@ -97,7 +97,12 @@ namespace FFFacilityInfoModel
 			FFF_FacilityInfoSynergyEntry& Entry = ViewData.SynergyEntries.AddDefaulted_GetRef();
 			Entry.RuleId = Source.RuleId;
 			Entry.PartnerFacilityDefinitionId = Group.bHasTargetRole ? Source.PartnerFacilityId : Source.TargetFacilityId;
-			Entry.TitleText = Source.DisplayName;
+			// A recipe may have its own name. Renaming/localizing either ingredient must
+			// not overwrite it or change navigation; missing titles use current ID-resolved names.
+			Entry.TitleText = Source.DisplayName.IsEmpty()
+				? FText::Format(LOCTEXT("SynergyUnnamedRecipe", "{0} + {1}"),
+					Name(Source.TargetFacilityId), Name(Source.PartnerFacilityId))
+				: Source.DisplayName;
 			Entry.PartnerText = Group.bHasTargetRole
 				? FText::Format(LOCTEXT("SynergyPartner", "함께 놓을 시설: {0}"), Name(Source.PartnerFacilityId))
 				: FText::Format(LOCTEXT("SynergyBeneficiary", "수익을 받는 시설: {0}"), Name(Source.TargetFacilityId));
@@ -149,6 +154,11 @@ namespace FFFacilityInfoModel
 		ViewData.UpgradeEffectText = FText::GetEmpty();
 		ViewData.UpgradeCurrentText = FText::GetEmpty();
 		ViewData.UpgradeNextText = FText::GetEmpty();
+		ViewData.UpgradeCurrentValues = FFF_FacilityUpgradeColumnData();
+		ViewData.UpgradeNextValues = FFF_FacilityUpgradeColumnData();
+		ViewData.UpgradePriceText = FText::GetEmpty();
+		ViewData.UpgradeBalanceText = FText::GetEmpty();
+		ViewData.UpgradeBalanceLabel = FText::GetEmpty();
 		ViewData.UpgradeSizeEffectText = FText::GetEmpty();
 		ViewData.UpgradeRevenueEffectText = FText::GetEmpty();
 		ViewData.UpgradeCostText = FText::GetEmpty();
@@ -184,6 +194,26 @@ namespace FFFacilityInfoModel
 		};
 		ViewData.UpgradeCurrentText = FormatComparison(false);
 		ViewData.UpgradeNextText = FormatComparison(true);
+		auto MakeColumn = [&](const bool bNext)
+		{
+			FFF_FacilityUpgradeColumnData Values;
+			Values.Revenue = Preview->bRevenueAvailable
+				? FormatGold(true, bNext ? Preview->NextRevenuePerUseGold : Preview->CurrentRevenuePerUseGold)
+				: LOCTEXT("ComparisonRevenueUnavailable", "정보 없음");
+			Values.ServiceTime = FText::Format(LOCTEXT("UpgradeCellSeconds", "{0}초"),
+				FText::AsNumber(bNext ? Preview->NextServiceDurationSeconds : Preview->CurrentServiceDurationSeconds, &SecondsOptions));
+			Values.Throughput = FText::Format(LOCTEXT("UpgradeCellThroughput", "{0}명/분"),
+				FText::AsNumber(bNext ? Preview->NextThroughputPerMinute : Preview->CurrentThroughputPerMinute, &Options));
+			Values.Footprint = FormatFootprint(bNext ? Preview->NextFootprintCentimeters : Preview->CurrentFootprintCentimeters);
+			return Values;
+		};
+		ViewData.UpgradeCurrentValues = MakeColumn(false);
+		ViewData.UpgradeNextValues = MakeColumn(true);
+		ViewData.UpgradePriceText = FormatGold(true, Preview->CostGold);
+		ViewData.UpgradeBalanceLabel = Preview->GoldAfterUpgrade < 0
+			? LOCTEXT("UpgradeBalanceShortage", "부족한 금액") : LOCTEXT("UpgradeBalanceAfter", "구매 후 잔액");
+		ViewData.UpgradeBalanceText = FText::Format(LOCTEXT("UpgradeBalanceGold", "{0} Gold"),
+			FText::AsNumber(FMath::Abs(static_cast<int64>(Preview->GoldAfterUpgrade))));
 		ViewData.UpgradeEffectText = FText::Format(
 			LOCTEXT("UpgradeEffectsCompact", "시간 {0}초 → {1}초 · 분당 {2}명 → {3}명"),
 			FText::AsNumber(Preview->CurrentServiceDurationSeconds, &SecondsOptions),

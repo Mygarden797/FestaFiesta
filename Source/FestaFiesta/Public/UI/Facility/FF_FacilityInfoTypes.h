@@ -48,6 +48,17 @@ struct FESTAFIESTA_API FFF_FacilityInfoSynergyEntry
 	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info|Synergy") bool bActive = false;
 };
 
+/** Individually bindable comparison values, formatted from the authoritative upgrade quote. */
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_FacilityUpgradeColumnData
+{
+	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText Revenue;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText ServiceTime;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText Throughput;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText Footprint;
+};
+
 /**
  * Immutable UI snapshot for one installed facility.
  *
@@ -147,6 +158,15 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
 	FText UpgradeNextText;
+
+	/** Individually editable UMG cells; produced from the same authoritative quote as legacy text. */
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FFF_FacilityUpgradeColumnData UpgradeCurrentValues;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
+	FFF_FacilityUpgradeColumnData UpgradeNextValues;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText UpgradePriceText;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText UpgradeBalanceText;
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade") FText UpgradeBalanceLabel;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Upgrade")
 	FText UpgradeSizeEffectText;

@@ -10,6 +10,8 @@ class UButton;
 class UEditableTextBox;
 class UFF_FacilityCodexImage;
 class UTextBlock;
+class USizeBox;
+class UStackBox;
 class UFF_FacilityCodexItem;
 class UFF_FacilityCodexSubsystem;
 class UFF_FacilityCodexTileView;
@@ -39,6 +41,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& MouseEvent) override;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UFF_FacilityCodexTileView> TileView_Entries;
@@ -64,7 +67,20 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Partner;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_TargetFallback;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_PartnerFallback;
+	/** Optional for compatibility with the original authored screen before its explicit migration. */
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UStackBox> Stack_Main;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<USizeBox> Size_Detail;
+	/** Move detail below six readable columns instead of reducing card typography. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive")
+	bool bEnableResponsiveDetail = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive", meta=(ClampMin="1"))
+	float MinimumCardWidth = 176.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive", meta=(ClampMin="80"))
+	float CompactDetailHeight = 128.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive", meta=(ClampMin="0"))
+	float CompactDetailGap = 12.f;
 private:
+	void UpdateResponsiveLayout();
 	UFUNCTION() void RefreshFromSubsystem();
 	UFUNCTION() void HandleClose();
 	UFUNCTION() void HandleAll();
@@ -87,4 +103,11 @@ private:
 	TSoftObjectPtr<UTexture2D> ShownPartner;
 	bool bApplyingFilter = false;
 	bool bPreviewData = false;
+	bool bCapturedResponsiveLayout = false;
+	bool bCompactDetail = false;
+	bool bAuthoredDetailWidth = false;
+	bool bAuthoredDetailHeight = false;
+	float AuthoredDetailWidth = 0.f;
+	float AuthoredDetailHeight = 0.f;
+	FMargin AuthoredGridPadding;
 };

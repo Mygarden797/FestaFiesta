@@ -14,6 +14,7 @@
 #include "FF_FFZSBuildArea.h"
 #include "FF_FFZSBuildableGridActor.h"
 #include "FF_FFZSBuildableGridComponent.h"
+#include "FF_FFZSBuildPresentationSettings.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSGridLibrary.h"
@@ -507,12 +508,15 @@ bool FFFZSUnifiedBuildableGridMajorLinesTest::RunTest(const FString& Parameters)
     TArray<UFFZSBuildableGridComponent*> Grids;
     Overview->GetComponents(Grids);
     int32 MajorLines = 0;
+    const FLinearColor MajorColor = GetDefault<UFFZSBuildPresentationSettings>()->MajorLineColor;
     for (const UFFZSBuildableGridComponent* Grid : Grids)
     {
         for (const FBatchedLine& Line : Grid->BatchedLines)
         {
-            // Foreground major strokes are 1.8 px; halos and exterior contours differ.
-            if (!FMath::IsNearlyEqual(Line.Thickness, 1.8f)) continue;
+            // Designer-owned thickness may change; identify the foreground major color, allowing edge fade.
+            if (!FMath::IsNearlyEqual(Line.Color.R, MajorColor.R) ||
+                !FMath::IsNearlyEqual(Line.Color.G, MajorColor.G) ||
+                !FMath::IsNearlyEqual(Line.Color.B, MajorColor.B)) continue;
             ++MajorLines;
             const bool bWorldVertical = FMath::IsNearlyEqual(Line.Start.X, Line.End.X, 0.01);
             const double Coordinate = bWorldVertical ? Line.Start.X : Line.Start.Y;

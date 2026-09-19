@@ -12,7 +12,8 @@ struct FESTAFIESTA_API FFF_FacilitySynergyRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="사용", ToolTip="끄면 이 행의 조합을 적용하지 않습니다."))
 	bool bEnabled = true;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="조합 이름", ToolTip="배치 화면에 표시할 이름입니다."))
+	/** Authored recipe title, independent of either facility's localized display name. IDs define the relation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="조합 이름", ToolTip="디자이너가 정하는 조합 제목입니다. 시설 표시명과 별개이며 시설 연결은 아래 ID를 사용합니다."))
 	FText DisplayName;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="수익을 받는 시설 ID", GetOptions="FestaFiesta.FF_FacilitySynergySettings.GetFacilityIdOptions", ToolTip="시설 정의의 FacilityDefinitionId를 선택합니다. 이 시설의 이용 수수료가 증가합니다."))
 	FName TargetFacilityId;
@@ -37,6 +38,7 @@ struct FESTAFIESTA_API FFF_FacilitySynergyPreviewEntry
 {
 	GENERATED_BODY()
 	UPROPERTY(BlueprintReadOnly) FName RuleId;
+	/** Original localized recipe title; UI supplies a readable fallback when empty, never a rule ID. */
 	UPROPERTY(BlueprintReadOnly) FText DisplayName;
 	UPROPERTY(BlueprintReadOnly) FName TargetFacilityId;
 	UPROPERTY(BlueprintReadOnly) FName PartnerFacilityId;

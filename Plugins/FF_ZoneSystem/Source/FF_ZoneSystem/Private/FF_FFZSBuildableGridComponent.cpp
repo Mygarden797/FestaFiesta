@@ -1,12 +1,17 @@
 #include "FF_FFZSBuildableGridComponent.h"
 
 #include "FF_FFZSBuildableGrid.h"
+#include "FF_FFZSBuildPresentationSettings.h"
+#include "FF_FFZSBuildRangePresentation.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSPlacementGridModel.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "HAL/PlatformTime.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 #include "SceneManagement.h"
 #include "PrimitiveSceneProxy.h"
 #include "PrimitiveViewRelevance.h"
@@ -14,6 +19,38 @@
 
 namespace
 {
+    float ProjectGridSpacing(const UWorld* World, const FTransform& ZoneTransform,
+        const FVector& SurfacePointWorld, const int32 StepCm)
+    {
+        const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+        FVector2D Center, X, Y;
+        if (!Controller || !Controller->IsLocalController() ||
+            !Controller->ProjectWorldLocationToScreen(SurfacePointWorld, Center) ||
+            !Controller->ProjectWorldLocationToScreen(SurfacePointWorld +
+                ZoneTransform.TransformVectorNoScale(FVector(StepCm, 0, 0)), X) ||
+            !Controller->ProjectWorldLocationToScreen(SurfacePointWorld +
+                ZoneTransform.TransformVectorNoScale(FVector(0, StepCm, 0)), Y)) return 0.0f;
+        return static_cast<float>(FMath::Min(FVector2D::Distance(Center, X), FVector2D::Distance(Center, Y)));
+    }
+
+    uint32 GridStyleHash(const UFFZSBuildPresentationSettings& Style)
+    {
+        uint32 Hash = 0;
+        for (const FLinearColor& Color : { Style.MinorLineColor, Style.MajorLineColor, Style.BoundaryLineColor })
+        {
+            Hash = HashCombine(Hash, GetTypeHash(Color.R));
+            Hash = HashCombine(Hash, GetTypeHash(Color.G));
+            Hash = HashCombine(Hash, GetTypeHash(Color.B));
+            Hash = HashCombine(Hash, GetTypeHash(Color.A));
+        }
+        for (const float Value : { Style.MinorLineThickness, Style.MajorLineThickness,
+            Style.BoundaryLineThickness, Style.HaloOpacity, Style.SelectionDetailPaddingCm })
+        {
+            Hash = HashCombine(Hash, GetTypeHash(Value));
+        }
+        return Hash;
+    }
+
     // A production scene proxy: unlike the engine's debug line batcher, this uses the
     // normal render path in every build and keeps stroke width in pixels when zooming.
     class FFFZSBuildGridSceneProxy final : public FPrimitiveSceneProxy
@@ -89,7 +126,8 @@ void UFFZSBuildableGridComponent::HideGrid()
 void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     const FFFZSCommand& Command, const FVector2D& CenterLocalCm,
     const FVector2D& HalfExtentCm, const int32 GridStepCm,
-    const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, const int32 SurfaceSampleBudget)
+    const FVector& SurfacePointWorld, const FVector& SurfaceNormalWorld, const int32 SurfaceSampleBudget,
+    const FName SelectionCoordinateZoneId)
 {
     const AFFZSGameplayZone* Zone = WorldSystem.FindZone(Command.ZoneId);
     if (!Zone || CenterLocalCm.ContainsNaN() || HalfExtentCm.ContainsNaN() ||
@@ -133,6 +171,31 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     const double Now = FPlatformTime::Seconds();
     const double PlaneDistance = FVector::DotProduct(Normal, SurfacePointWorld);
     const FTransform ZoneTransform = Zone->GetActorTransform();
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
+    const int32 ProjectedStep = bCacheValid && CachedContextHash == ContextHash && CachedSpatialMask.GetStepCm() > 0.0
+        ? FMath::Max(1, FMath::RoundToInt(CachedSpatialMask.GetStepCm())) : Step;
+    const int32 MinorStride = FFZSBuildRangePresentation::ResolveMinorLineStride(
+        ProjectGridSpacing(GetWorld(), ZoneTransform, SurfacePointWorld, ProjectedStep), Style.MinimumMinorSpacingPixels);
+    const AFFZSGameplayZone* SelectionZone = SelectionCoordinateZoneId.IsNone()
+        ? Zone : WorldSystem.FindZone(SelectionCoordinateZoneId);
+    const bool bHasSelection = SelectionZone && !Command.FacilitySpec.FacilityDefinitionId.IsNone();
+    const FFFZSOrientedRect SelectionRect = FFZSOrientedGeometry::MakeFromLocalRect(
+        FFFZSCellRect(FIntPoint::ZeroValue, Command.FacilitySpec.FootprintSizeCells),
+        Command.Placement.OriginCell, UFFZSGridLibrary::YawCentidegreesToDegrees(
+            UFFZSGridLibrary::GetEffectiveYawCentidegrees(Command.Placement)));
+    const double SelectionRadius = SelectionRect.HalfExtentCells.Size() +
+        FMath::Clamp(Style.SelectionDetailPaddingCm, 0.0f, 2000.0f);
+    // Overview components each use their own zone; the placement stays in its original coordinate zone.
+    const FVector SelectionLocal = bHasSelection ? ZoneTransform.InverseTransformPosition(
+        SelectionZone->GetActorTransform().TransformPosition(FVector(SelectionRect.CenterCell, 0.0))) : FVector::ZeroVector;
+    const FVector2D SelectionCenter(SelectionLocal.X, SelectionLocal.Y);
+    uint32 PresentationHash = HashCombine(GridStyleHash(Style), GetTypeHash(MinorStride));
+    PresentationHash = HashCombine(PresentationHash, GetTypeHash(bHasSelection));
+    if (bHasSelection)
+    {
+        PresentationHash = HashCombine(PresentationHash, GetTypeHash(SelectionCenter));
+        PresentationHash = HashCombine(PresentationHash, GetTypeHash(SelectionRadius));
+    }
     // Movement within one visual cell reuses the scene proxy. The bounded refresh catches
     // moved scenery/protected areas whose edits do not issue an authority world command.
     const bool bSpatialCacheCurrent = bCacheValid && CachedContextHash == ContextHash &&
@@ -141,7 +204,7 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
         CachedMax.Equals(Max, 0.01) && CachedSurfaceNormal.Equals(Normal, 0.001) &&
         FMath::IsNearlyEqual(CachedPlaneDistance, PlaneDistance, 0.5) &&
         CachedZoneTransform.Equals(ZoneTransform) && Now - LastRefreshTimeSeconds < 0.5;
-    if (bSpatialCacheCurrent && !SurfaceCache.HasPendingSamples())
+    if (bSpatialCacheCurrent && !SurfaceCache.HasPendingSamples() && CachedPresentationHash == PresentationHash)
     {
         return;
     }
@@ -190,6 +253,9 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
         const bool bVertical = FMath::IsNearlyEqual(StyleStart.X, StyleEnd.X);
         const bool bMajor = FFZSPlacementGridModel::IsMajorGridCoordinate(
             bVertical ? StyleStart.X : StyleStart.Y, VisibleMajorInterval);
+        const bool bKeepMinorLine = MinorStride == 1 || (MinorStride > 1 &&
+            FFZSPlacementGridModel::IsMajorGridCoordinate(
+                bVertical ? StyleStart.X : StyleStart.Y, VisibleStep * MinorStride));
         // Sample every lattice endpoint to follow terrain rather than spanning hills with
         // a single chord. Merge straight runs inside each fade band before scene submission.
         const int32 SectionCount = FMath::Max(1, FMath::RoundToInt(
@@ -198,10 +264,13 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
         FVector RunEnd = RunStart;
         FVector RunDirection = FVector::ZeroVector;
         int32 RunBand = -1;
-        const float Thickness = Segment.bBoundary ? 2.6f : bMajor ? 1.8f : 1.0f;
+        const float Thickness = FMath::Clamp(Segment.bBoundary ? Style.BoundaryLineThickness :
+            bMajor ? Style.MajorLineThickness : Style.MinorLineThickness, 0.5f, 4.0f);
+        const FLinearColor StrokeColor = Segment.bBoundary ? Style.BoundaryLineColor :
+            bMajor ? Style.MajorLineColor : Style.MinorLineColor;
         const auto AppendRun = [&](const FVector& A, const FVector& B, const int32 Band)
         {
-            if (A.Equals(B, 0.01))
+            if (Band < 0 || A.Equals(B, 0.01))
             {
                 return;
             }
@@ -209,12 +278,15 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
             // Separate halo depth from the color stroke so equal-depth primitives cannot
             // cover each other in a platform-dependent order.
             const FVector HaloOffset = FVector::UpVector * 0.1;
-            Lines.Emplace(A - HaloOffset, B - HaloOffset, FLinearColor(0.005f, 0.02f, 0.025f, 0.68f * Opacity),
-                0.0f, Thickness + 2.0f, SDPG_World);
-            Lines.Emplace(A, B,
-                Segment.bBoundary ? FLinearColor(1.0f, 1.0f, 1.0f, 0.95f * Opacity) :
-                    FLinearColor(1.0f, 1.0f, 1.0f, (bMajor ? 0.7f : 0.42f) * Opacity),
-                0.0f, Thickness, SDPG_World);
+            const float HaloAlpha = FMath::Clamp(Style.HaloOpacity, 0.0f, 1.0f) * Opacity;
+            if (HaloAlpha > 0.0f)
+            {
+                Lines.Emplace(A - HaloOffset, B - HaloOffset, FLinearColor(0.005f, 0.02f, 0.025f, HaloAlpha),
+                    0.0f, Thickness + 0.8f, SDPG_World);
+            }
+            FLinearColor Color = StrokeColor;
+            Color.A = FMath::Clamp(Color.A * Opacity, 0.0f, 1.0f);
+            Lines.Emplace(A, B, Color, 0.0f, Thickness, SDPG_World);
         };
         for (int32 Index = 0; Index < SectionCount; ++Index)
         {
@@ -223,6 +295,14 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
             const FVector2D B = FMath::Lerp(Segment.StartLocalCm, Segment.EndLocalCm,
                 static_cast<double>(Index + 1) / SectionCount);
             const FVector2D Mid = (A + B) * 0.5;
+            const bool bNearSelection = bHasSelection && SelectionRect.IsValid() &&
+                FVector2D::DistSquared(Mid, SelectionCenter) <= FMath::Square(SelectionRadius);
+            if (!Segment.bBoundary && !bMajor && !bKeepMinorLine && !bNearSelection)
+            {
+                AppendRun(RunStart, RunEnd, RunBand);
+                RunBand = -1;
+                continue;
+            }
             const float Opacity = FFZSPlacementGridModel::ResolveEdgeOpacity(Mid.X, StableCenter.X, StableExtent.X) *
                 FFZSPlacementGridModel::ResolveEdgeOpacity(Mid.Y, StableCenter.Y, StableExtent.Y);
             const int32 Band = FMath::Max(1, FMath::RoundToInt(Opacity * 8.0f));
@@ -259,6 +339,7 @@ void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     }
     SetHiddenInGame(BatchedLines.IsEmpty());
     CachedContextHash = ContextHash;
+    CachedPresentationHash = PresentationHash;
     CachedRevision = WorldSystem.GetWorldRevision();
     CachedRegistryRevision = WorldSystem.GetFacilityRegistryRevision();
     CachedMin = Min;

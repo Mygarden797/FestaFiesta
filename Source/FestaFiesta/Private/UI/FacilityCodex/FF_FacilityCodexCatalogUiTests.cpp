@@ -100,13 +100,17 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	auto* Search = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Search_Facilities")));
 	auto* Gold = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Gold")));
 	auto* Launcher = Cast<UFF_FacilityCodexLauncher>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
+	auto* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking")));
 	auto* Tiles = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
 	if (!TestNotNull(TEXT("Authored catalog header"), Header) || !TestNotNull(TEXT("Existing search field"), Search) ||
 		!TestNotNull(TEXT("Existing gold balance"), Gold) || !TestNotNull(TEXT("Added catalog codex launcher"), Launcher) ||
+		!TestNotNull(TEXT("Added revenue ranking action"), Ranking) ||
 		!TestNotNull(TEXT("Actual facility tile view"), Tiles)) return false;
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
 	TestTrue(TEXT("Search and launcher share the original header"), Search->GetParent() == Header && Launcher->GetParent() == Header);
-	TestEqual(TEXT("Codex entry sits immediately after search"), Header->GetChildIndex(Launcher), Header->GetChildIndex(Search) + 1);
+	TestTrue(TEXT("Ranking shares the original catalog header"), Ranking->GetParent() == Header);
+	TestEqual(TEXT("Revenue ranking immediately follows search"), Header->GetChildIndex(Ranking), Header->GetChildIndex(Search) + 1);
+	TestEqual(TEXT("Codex follows the added revenue ranking action"), Header->GetChildIndex(Launcher), Header->GetChildIndex(Ranking) + 1);
 	auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex")));
 	auto* Label = Button ? Cast<UTextBlock>(Button->GetContent()) : nullptr;
 	if (!TestNotNull(TEXT("Compact launcher button"), Button) || !TestNotNull(TEXT("Authored button label"), Label)) return false;

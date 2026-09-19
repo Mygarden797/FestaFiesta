@@ -17,6 +17,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSBuildableGridComponent.h"
+#include "FF_FFZSBuildPresentationSettings.h"
+#include "FF_FFZSBuildRangePresentation.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSOrientedGeometry.h"
 #include "FF_FFZSVisualGeometry.h"
@@ -266,44 +268,40 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
     }
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const FColor BaseColor = LastValidation.bIsValid ? FColor::Green : FColor::Red;
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
+    TArray<FBatchedLine> Lines;
     // [하드코딩 제거] 건축 모드 범위 표시와 같은 상한을 설정 헤더에서 공유한다.
     constexpr int32 MaxDisplayedRectsPerGroup =
         UFFZSDeveloperSettings::MaxDisplayedRangeRectsPerGroup;
-    const auto DrawRect = [this, Zone, CellSizeCm](const FFFZSOrientedRect& Rect, const FLinearColor& Color)
+    const auto DrawRect = [this, Zone, CellSizeCm, &Style, &Lines](const FFFZSOrientedRect& Rect,
+        const FLinearColor& Color, const bool bDashed, const bool bAccentCorners)
     {
-        const FVector Center = Zone->GetActorTransform().TransformPosition(FVector(
-            Rect.CenterCell.X * CellSizeCm,
-            Rect.CenterCell.Y * CellSizeCm,
-            5.0));
-        const FVector Extent(
-            FMath::Max(0.25, Rect.HalfExtentCells.X * CellSizeCm - 0.02),
-            FMath::Max(0.25, Rect.HalfExtentCells.Y * CellSizeCm - 0.02),
-            5.0);
-        const FQuat Rotation = Zone->GetActorQuat() * FQuat(
-            FVector::UpVector,
-            FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees)));
-        RangeLines->DrawBox(
-            Center,
-            Extent,
-            Rotation,
-            Color,
-            0.0f,
-            SDPG_World,
-            2.0f);
+        const auto RegionCorners = FFZSOrientedGeometry::GetCorners(Rect);
+        FFZSBuildRangePresentation::FWorldCorners Corners;
+        for (int32 Index = 0; Index < 4; ++Index)
+        {
+            Corners[Index] = Zone->GetActorTransform().TransformPosition(FVector(RegionCorners[Index] * CellSizeCm, 0.0));
+            Corners[Index].Z = LastValidation.PlacementTransform.GetLocation().Z +
+                FMath::Clamp(Style.RangeSurfaceLiftCm, 0.5f, 20.0f);
+        }
+        FFZSBuildRangePresentation::AppendOutline(Lines, Corners, Color, bDashed, bAccentCorners, Style);
     };
-    const auto DrawGroup = [&DrawRect, BaseColor](
+    const auto DrawGroup = [this, &DrawRect, &Style](
         const TArray<FFFZSOrientedRect>& Rects,
-        const FColor& ValidColor)
+        const FLinearColor& ValidColor, const FFZSBuildRangePresentation::ERegion Region)
     {
-        const FLinearColor Color(BaseColor == FColor::Red ? BaseColor : ValidColor);
+        const FLinearColor Color = FFZSBuildRangePresentation::HasRegionFailure(LastValidation, Region)
+            ? Style.FailureColor : ValidColor;
+        // Highly fragmented content retains exact solid outlines without multiplying dash work.
+        const bool bDashed = Region == FFZSBuildRangePresentation::ERegion::Clearance && Rects.Num() <= 64;
+        const bool bAccentCorners = Region == FFZSBuildRangePresentation::ERegion::Footprint;
         if (Rects.Num() <= MaxDisplayedRectsPerGroup)
         {
             for (const FFFZSOrientedRect& Rect : Rects)
             {
                 if (Rect.IsValid())
                 {
-                    DrawRect(Rect, Color);
+                    DrawRect(Rect, Color, bDashed, bAccentCorners);
                 }
             }
             return;
@@ -324,12 +322,18 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
         if (Bounds.bIsValid)
         {
             DrawRect(FFFZSOrientedRect(
-                Bounds.GetCenter(), Bounds.GetExtent(), 0.0f), Color);
+                Bounds.GetCenter(), Bounds.GetExtent(), 0.0f), Color, true, false);
         }
     };
-    DrawGroup(LastValidation.FootprintOrientedRects, FColor::Green);
-    DrawGroup(LastValidation.ClearanceOrientedRects, FColor::Cyan);
-    DrawGroup(LastValidation.QueueOrientedRects, FColor::Yellow);
+    DrawGroup(LastValidation.FootprintOrientedRects, Style.FootprintColor, FFZSBuildRangePresentation::ERegion::Footprint);
+    DrawGroup(LastValidation.ClearanceOrientedRects, Style.ClearanceColor, FFZSBuildRangePresentation::ERegion::Clearance);
+    DrawGroup(LastValidation.QueueOrientedRects, Style.QueueColor, FFZSBuildRangePresentation::ERegion::Queue);
+    if (!LastValidation.QueueOrientedRects.IsEmpty())
+    {
+        FFZSBuildRangePresentation::AppendQueueSlots(Lines, PreviewCommand.FacilitySpec,
+            LastValidation.PlacementTransform, Style.QueueColor, Style);
+    }
+    RangeLines->DrawLines(Lines);
 }
 
 // The same available-land renderer powers placement and the pre-selection overview.

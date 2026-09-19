@@ -13,11 +13,21 @@ namespace
 	public:
 		virtual STableViewBase::FReGenerateResults ReGenerateItems(const FGeometry& Geometry) override
 		{
+			// Geometry is the actual items panel, after its scrollbar has taken space.
+			// Change Slate's layout pitch only: never overwrite the saved WBP entry settings.
+			const float Width = Geometry.GetLocalSize().X;
+			if (Width > 1.f)
+			{
+				const float Pitch = FMath::Max(1.f, Width / 6.f - .01f);
+				if (!FMath::IsNearlyEqual(this->GetItemWidth(), Pitch)) this->SetItemWidth(Pitch);
+			}
 			// UE 5.7 skips row cleanup for an empty tile source. Release pooled bindings here,
 			// at regeneration, rather than the temporary empty state during SetListItems.
 			if (this->GetItems().IsEmpty()) this->WidgetGenerator.Clear();
 			return STileView<ItemType>::ReGenerateItems(Geometry);
 		}
+	protected:
+		virtual int32 GetNumItemsPerLine() const override { return 6; }
 	};
 }
 
@@ -26,11 +36,11 @@ void UFF_FacilityCodexTileView::ConfigureEntryClass(TSubclassOf<UUserWidget> InE
 	if (!InEntryClass || !InEntryClass->ImplementsInterface(UUserObjectListEntry::StaticClass())) return;
 	EntryWidgetClass = InEntryClass;
 	SetSelectionMode(ESelectionMode::Single);
-	// The authored card is 236 x 224; UTileView includes its 12px entry spacing by default.
-	EntryWidth = 248.f;
-	EntryHeight = 236.f;
-	SetHorizontalEntrySpacing(12.f);
-	SetVerticalEntrySpacing(12.f);
+	// One-time authoring defaults. Runtime derives only the horizontal pitch from available width.
+	EntryWidth = 200.f;
+	EntryHeight = 218.f;
+	SetHorizontalEntrySpacing(10.f);
+	SetVerticalEntrySpacing(10.f);
 	TileAlignment = EListItemAlignment::LeftAligned;
 	AllowOverscroll = false;
 	bEnableScrollAnimation = false;
@@ -61,6 +71,12 @@ void UFF_FacilityCodexCard::CaptureAuthoredAppearance()
 		AuthoredCardBrush = CardBackground->Background;
 		AuthoredCardBrushColor = CardBackground->GetBrushColor();
 	}
+	StateBackground = Cast<UBorder>(GetWidgetFromName(TEXT("Border_State")));
+	if (StateBackground)
+	{
+		AuthoredStateBrush = StateBackground->Background;
+		AuthoredStateBrushColor = StateBackground->GetBrushColor();
+	}
 	if (Text_Name) AuthoredNameColor = Text_Name->GetColorAndOpacity();
 	if (Text_Recipe) AuthoredRecipeColor = Text_Recipe->GetColorAndOpacity();
 	if (Text_Bonus) AuthoredBonusColor = Text_Bonus->GetColorAndOpacity();
@@ -84,6 +100,13 @@ void UFF_FacilityCodexCard::RefreshDiscoveryAppearance()
 		}
 		CardBackground->SetBrush(Brush);
 		CardBackground->SetBrushColor(bUndiscovered ? FLinearColor::White : AuthoredCardBrushColor);
+	}
+	if (StateBackground)
+	{
+		FSlateBrush Brush = AuthoredStateBrush;
+		if (bUndiscovered) Brush.TintColor = FSlateColor(UndiscoveredOutlineColor);
+		StateBackground->SetBrush(Brush);
+		StateBackground->SetBrushColor(bUndiscovered ? FLinearColor::White : AuthoredStateBrushColor);
 	}
 	if (Text_Name) Text_Name->SetColorAndOpacity(bUndiscovered ? FSlateColor(UndiscoveredTitleColor) : AuthoredNameColor);
 	if (Text_Recipe) Text_Recipe->SetColorAndOpacity(bUndiscovered ? FSlateColor(UndiscoveredBodyColor) : AuthoredRecipeColor);
@@ -138,8 +161,8 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 	if (Text_Recipe) Text_Recipe->SetText(FText::Format(LOCTEXT("Recipe", "{0} + {1}"), Entry.TargetName, Entry.PartnerName));
 	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("Bonus", "수익 +{0}%"), Number(Entry.ConfiguredBonusPercent)));
 	if (Text_State) Text_State->SetText(Entry.bEffectApplied
-		? LOCTEXT("Applied", "발견 · 효과 적용 중") : Entry.bDiscovered
-		? LOCTEXT("Discovered", "발견 완료") : LOCTEXT("Undiscovered", "미발견 · 시설 설치 필요"));
+		? LOCTEXT("AppliedCompact", "효과 적용 중") : Entry.bDiscovered
+		? LOCTEXT("Discovered", "발견 완료") : LOCTEXT("UndiscoveredCompact", "미발견"));
 	Thumbnail(Image_Target, Text_TargetFallback, Entry.TargetThumbnail, ShownTarget);
 	Thumbnail(Image_Partner, Text_PartnerFallback, Entry.PartnerThumbnail, ShownPartner);
 	if (Border_Selection) Border_Selection->SetVisibility(IsListItemSelected() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);

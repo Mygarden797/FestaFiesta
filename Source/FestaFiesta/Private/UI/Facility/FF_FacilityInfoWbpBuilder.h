@@ -22,6 +22,10 @@ namespace FFFacilityInfoWbpBuilder
 
 	/** 없는 노드만 Panel_Content 의 강화 섹션 바로 뒤에 추가한다. 기존 디자이너 노드는 건드리지 않는다. */
 	bool EnsureRevenueWidgetContract(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified);
+	/** Explicit approved V2 migration. Only this inspector tree changes; repeated calls preserve Designer edits. */
+	bool ApplyInspectorV2Design(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified);
+	/** Keep purchase controls outside the scroll body; repair the first approved V2 asset once. */
+	bool RefineInspectorV2Layout(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, bool& bOutModified);
 }
 
 #endif // WITH_EDITOR

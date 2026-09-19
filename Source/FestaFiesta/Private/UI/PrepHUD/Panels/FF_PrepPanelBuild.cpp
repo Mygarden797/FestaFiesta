@@ -29,6 +29,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/Data/FF_UIPalette.h"
+#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileData.h"
@@ -79,6 +80,14 @@ void UFF_PrepPanelBuild::NativeOnInitialized()
 void UFF_PrepPanelBuild::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UButton* RankingButton = WidgetTree ? Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RevenueRanking"))) : nullptr)
+	{
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			RankingButton->OnClicked.AddUniqueDynamic(Ranking, &UFF_FacilityRevenueRankingSubsystem::Open);
+		}
+	}
 	LastResponsiveListWidth = -1.0f;
 	LastResponsiveColumnCount = 0;
 	if (Button_PreviousPage) Button_PreviousPage->OnClicked.AddUniqueDynamic(this, &ThisClass::PreviousCatalogPage);
@@ -148,6 +157,14 @@ void UFF_PrepPanelBuild::NativeConstruct()
 
 void UFF_PrepPanelBuild::NativeDestruct()
 {
+	if (UButton* RankingButton = WidgetTree ? Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RevenueRanking"))) : nullptr)
+	{
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			RankingButton->OnClicked.RemoveAll(Ranking);
+		}
+	}
 	if (Button_PreviousPage) Button_PreviousPage->OnClicked.RemoveDynamic(this, &ThisClass::PreviousCatalogPage);
 	if (Button_NextPage) Button_NextPage->OnClicked.RemoveDynamic(this, &ThisClass::NextCatalogPage);
 	if (Button_FavoritesOnly) { Button_FavoritesOnly->OnClicked.RemoveDynamic(this, &ThisClass::HandleFavoritesOnlyClicked); }
