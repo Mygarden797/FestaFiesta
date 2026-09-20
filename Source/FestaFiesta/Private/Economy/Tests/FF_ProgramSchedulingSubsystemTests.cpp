@@ -223,7 +223,7 @@ bool FFF_ProgramSchedulingSubsystem_AuthoritativeCommand::RunTest(const FString&
 		UFF_ProgramSchedulingSubsystem::IsFacilityStateSchedulable(EFFZSFacilityState::Validated));
 	TestTrue(TEXT("Closed 시설은 편성 가능한 상태다"),
 		UFF_ProgramSchedulingSubsystem::IsFacilityStateSchedulable(EFFZSFacilityState::Closed));
-	TestFalse(TEXT("이동 중 시설에는 편성하지 않는다"),
+	TestTrue(TEXT("하루가 끝나 자동으로 닫힌 MovePending 시설도 편성 가능한 상태다"),
 		UFF_ProgramSchedulingSubsystem::IsFacilityStateSchedulable(EFFZSFacilityState::MovePending));
 	TestFalse(TEXT("운영 중 시설에는 편성하지 않는다"),
 		UFF_ProgramSchedulingSubsystem::IsFacilityStateSchedulable(EFFZSFacilityState::Active));

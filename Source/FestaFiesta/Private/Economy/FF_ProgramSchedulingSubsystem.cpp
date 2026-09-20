@@ -168,8 +168,12 @@ EFF_PaidProgramScheduleResult UFF_ProgramSchedulingSubsystem::EvaluateCommand(
 bool UFF_ProgramSchedulingSubsystem::IsFacilityStateSchedulable(
 	const EFFZSFacilityState FacilityState)
 {
+	// MovePending은 실제 이동 중이 아니라 하루가 끝나 Queue가 빈 채로 자동 Close된 상태도
+	// 포함한다(재오픈 판정과 동일하게 취급 — FF_ZoneSystemStageBridgeSubsystem 참고).
+	// 진짜 이동 의도는 별도로 Facility->NeedsRelocation()에서 걸러진다.
 	return FacilityState == EFFZSFacilityState::Validated
-		|| FacilityState == EFFZSFacilityState::Closed;
+		|| FacilityState == EFFZSFacilityState::Closed
+		|| FacilityState == EFFZSFacilityState::MovePending;
 }
 
 EFF_PaidProgramScheduleResult UFF_ProgramSchedulingSubsystem::CanScheduleProgramAtFacility(
