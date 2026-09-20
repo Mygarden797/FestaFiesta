@@ -39,6 +39,17 @@ public:
 	virtual void PawnClientRestart() override;
 	virtual void UnPossessed() override;
 
+	/* 시야 고정을 켜고 끈다. 로블록스의 시프트락과 같은 동작이다.
+
+	   끈 상태는 카메라만 돌고 캐릭터는 걷는 방향을 본다. 주변을 둘러보기 좋다.
+	   켠 상태는 캐릭터가 카메라를 따라 돈다. 조준하듯 움직일 때 편하다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Character")
+	void SetShiftLock(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Character")
+	bool IsShiftLockEnabled() const { return bShiftLock; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Character")
 	UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
@@ -75,6 +86,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Input")
 	TObjectPtr<UInputAction> SprintAction;
 
+	/* 시야 고정 전환. 로블록스의 시프트락과 같은 동작이다.
+
+	   끈 상태는 카메라만 돌고 캐릭터는 걷는 방향을 본다. 주변을 둘러보기 좋다.
+	   켠 상태는 캐릭터가 카메라를 따라 돈다. 조준하듯 움직일 때 편하다.
+	*/
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|Character|Input")
+	TObjectPtr<UInputAction> ShiftLockAction;
+
 	// ── 이동 ─────────────────────────────────────────────────────────────────
 
 	// 걷기 속도. 축제 방문객은 관람하며 다니므로 표준 600 보다 느리게 잡는다.
@@ -91,6 +110,17 @@ public:
 protected:
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
+
+	void HandleShiftLockToggled(const FInputActionValue& Value);
+
+	/* 시야 고정 상태.
+
+	   켜면 캐릭터가 컨트롤러 회전을 따라가고 이동 방향 정렬을 끈다.
+	   두 가지를 동시에 바꿔야 한다. 하나만 바꾸면 한쪽은 카메라를 따라 돌리려 하고
+	   다른 쪽은 걷는 방향으로 돌리려 해서 캐릭터가 떨린다.
+	*/
+	bool bShiftLock = false;
+
 	void HandleJumpStarted(const FInputActionValue& Value);
 	void HandleJumpCompleted(const FInputActionValue& Value);
 	void HandleSprintStarted(const FInputActionValue& Value);
