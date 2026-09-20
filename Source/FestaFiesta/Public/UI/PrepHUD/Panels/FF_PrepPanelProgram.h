@@ -14,6 +14,8 @@ class UButton;
 class UPanelWidget;
 class UTextBlock;
 class UWidget;
+class UDataTable;
+class UFF_FestivalProgressionSubsystem;
 
 /**
  * 프로그램을 편성할 수 없는 이유.
@@ -194,6 +196,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
 
 	// --- 버튼 ---
 
@@ -225,6 +228,9 @@ protected:
 
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
+
+	UFUNCTION()
+	void HandleFestivalDefinitionChanged();
 
 protected:
 	// --- 위젯 바인딩. 전부 Optional 이다 ---
@@ -315,6 +321,8 @@ private:
 
 	void BindViewModel();
 	void UnbindViewModel();
+	void BindRevenueTable();
+	void HandleRevenueTableChanged();
 
 	/** 카탈로그를 읽어 카드를 다시 만든다. 패널을 열 때와 편성이 바뀔 때만 부른다. */
 	void RebuildCards();
@@ -339,6 +347,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FestivalProgressionSubsystem> BoundProgression;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> BoundRevenueTable;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepProgramCard>> CardWidgets;

@@ -11,6 +11,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "DataTables/FF_FacilityCostRow.h"
+#include "DataTables/FF_FacilityRevenueTableRow.h"
 #include "Engine/DataTable.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Economy/Rules/FF_BoothRevenueRules.h"
@@ -19,16 +20,23 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
+#include "Minigame/FF_MinigameDefinition.h"
+#include "Minigame/FF_MinigameSubsystem.h"
+#include "Minigame/FF_TargetShootingRuntime.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/Facility/FF_FacilityProgramMarkerSubsystem.h"
+#include "UI/Minigame/FF_TargetShootingScreen.h"
+#include "UObject/UnrealType.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
 /**
@@ -143,6 +151,8 @@ namespace FFF_QueueEconomyBridgeTestHelpers
 			FoodStallRow.InstallCost = 400;
 			CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), FoodStallRow);
 			Definition->FacilityCostTable = CostTable;
+			// Legacy-price fixtures must not depend on changes to the production revenue table.
+			Definition->FacilityRevenueTable.Reset();
 
 			Definition->FestivalId = TEXT("QueueEconomyAutomationFestival");
 			Definition->InitialGold = StartingGold;
@@ -165,7 +175,8 @@ namespace FFF_QueueEconomyBridgeTestHelpers
 
 		// 음식 부스 하나를 설치한다. 성공하면 Queue 쪽 int32 ID 까지 잡아 둔다.
 		// 실패 지점을 갈라서 보고한다 — 설치 실패와 Queue 미등록은 원인이 완전히 다르다.
-		bool InstallFoodStall(FString& OutFailure, bool bWithLevels = false)
+		bool InstallFoodStall(FString& OutFailure, bool bWithLevels = false,
+			const FFFZSFacilitySpec* AuthoredSpec = nullptr, int32 X = 1000)
 		{
 			FFFZSFacilitySpec Spec =
 				FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
@@ -185,9 +196,13 @@ namespace FFF_QueueEconomyBridgeTestHelpers
 				Level3.RevenueMultiplier = 2.25f;
 				Spec.UpgradeTiers = { Level2, Level3 };
 			}
+			if (AuthoredSpec)
+			{
+				Spec = *AuthoredSpec;
+			}
 
 			FFFZSGridPlacement Placement;
-			Placement.OriginCell = FIntPoint(1000, 1000);
+			Placement.OriginCell = FIntPoint(X, 1000);
 
 			const FFFZSCommand InstallCommand = UFFZSGridLibrary::MakeInstallCommand(
 				Spec, TestZoneId, Placement, ZoneSystem->GetWorldRevision());
@@ -501,6 +516,357 @@ bool FFF_QueueEconomyBridge_UnpaidExitAddsNothing::RunTest(const FString& Parame
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_FacilityAuthoredRevenue,
+	"FestaFiesta.Economy.QueueBridge.FacilityAuthoredRevenue",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_FacilityAuthoredRevenue::RunTest(const FString& Parameters)
+{
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Facility revenue world initializes"), Harness.Initialize(this))) return false;
+	Harness.Definition->RevenuePerUseByMinorToken.Add(TEXT("FoodStall"), 20);
+	Harness.Definition->BoothCommissionRate = .25f;
+	UFF_FacilityUpgradeSubsystem* Upgrades = Harness.World->GetSubsystem<UFF_FacilityUpgradeSubsystem>();
+	UFF_FacilityProgramMarkerSubsystem* Markers = Harness.World->GetSubsystem<UFF_FacilityProgramMarkerSubsystem>();
+	if (!TestNotNull(TEXT("Upgrade quote owner"), Upgrades) || !TestNotNull(TEXT("Revenue badge owner"), Markers)) return false;
+
+	// Each definition has the same minor category, but supplies its own copied installation spec.
+	const int32 AuthoredAmounts[] = {40, 80, 0, 999};
+	const int32 EffectiveAmounts[] = {40, 80, 0, 20};
+	TArray<TStrongObjectPtr<UFFZSFacilityDefinition>> Assets;
+	TArray<FGuid> FacilityIds;
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(AuthoredAmounts); ++Index)
+	{
+		TStrongObjectPtr<UFFZSFacilityDefinition> Asset(NewObject<UFFZSFacilityDefinition>());
+		Asset->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+		Asset->Spec.FacilityDefinitionId = FName(*FString::Printf(TEXT("Booth_FoodStall_AuthoredRevenue%d"), Index));
+		Asset->Spec.InstallCostKey = NAME_None;
+		Asset->Spec.bOverrideRevenuePerUseGold = Index != 3;
+		Asset->Spec.RevenuePerUseGold = AuthoredAmounts[Index];
+		Asset->Spec.bUsesFacilityLevels = true;
+		FFFZSFacilityUpgradeTier Tier;
+		Tier.TargetLevel = 2;
+		Tier.ServiceDurationMultiplier = 1.f;
+		Tier.RevenueMultiplier = 1.5f;
+		Asset->Spec.UpgradeTiers = {Tier};
+		FString Failure;
+		if (!Harness.InstallFoodStall(Failure, false, &Asset->Spec, 1000 + Index * 1500))
+		{
+			AddError(Failure);
+			return false;
+		}
+		FacilityIds.Add(Harness.FacilityInstanceId);
+		Assets.Add(MoveTemp(Asset));
+		FFF_FacilityUpgradePreview Quote;
+		if (!TestTrue(TEXT("Every facility exposes its revenue quote"), Upgrades->GetUpgradePreview(FacilityIds.Last(), Quote))) return false;
+		TestTrue(TEXT("An explicit free price is still an available quote"), Quote.bRevenueAvailable);
+		TestEqual(TEXT("Displayed base income resolves the individual definition"),
+			Quote.BaseRevenuePerUseGold, EffectiveAmounts[Index] / 4);
+		TestEqual(TEXT("Displayed current income resolves the individual definition"),
+			Quote.CurrentRevenuePerUseGold, EffectiveAmounts[Index] / 4);
+		TestEqual(TEXT("Displayed upgrade income multiplies the authored base"),
+			Quote.NextRevenuePerUseGold, FMath::RoundToInt(EffectiveAmounts[Index] * .25f * 1.5f));
+	}
+
+	Markers->Tick(0.f);
+	FFF_FacilityWorldBadgeData Badge;
+	TestTrue(TEXT("A paid facility shows a zero-to-date revenue badge before its first use"),
+		Markers->GetBadgeData(FacilityIds[0], Badge) && Badge.bShowRevenue && Badge.TodayGold == 0);
+	TestFalse(TEXT("An explicit free FoodStall does not inherit the paid legacy badge"),
+		Markers->GetBadgeData(FacilityIds[2], Badge) && Badge.bShowRevenue);
+	const int32 MemberCount = Harness.SpawnPartyAndGetMemberCount();
+	if (!TestTrue(TEXT("Real paying party exists"), MemberCount > 0)) return false;
+	for (int32 Index = 0; Index < FacilityIds.Num(); ++Index)
+	{
+		const int32 Before = Harness.Progression->GetTodayRevenue();
+		Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[Index]),
+			Harness.PartyId, EFF_QueueExit::Served, 0.f);
+		const int32 Expected = EffectiveAmounts[Index] * MemberCount / 4;
+		TestEqual(TEXT("Actual settlement uses the same per-facility amount as its quote"),
+			Harness.Progression->GetTodayRevenue() - Before, Expected);
+		FFF_FacilityInstanceRevenue Ledger;
+		const bool bHasLedger = Harness.Progression->GetFacilityInstanceRevenue(FacilityIds[Index], Ledger);
+		TestEqual(TEXT("Only paid uses create a facility ledger"), bHasLedger, Expected > 0);
+		if (bHasLedger)
+		{
+			TestEqual(TEXT("Facility ledger records its own payout"), Ledger.TodayGold, Expected);
+			Markers->Tick(0.f);
+			TestTrue(TEXT("World badge displays the same actual earned amount"),
+				Markers->GetBadgeData(FacilityIds[Index], Badge) && Badge.TodayGold == Expected);
+		}
+	}
+
+	const FFFZSWorldSnapshot Snapshot = Harness.ZoneSystem->CaptureWorldSnapshot();
+	Assets[0]->Spec.RevenuePerUseGold = 999;
+	TArray<FText> Errors;
+	if (!TestTrue(TEXT("Saved facilities restore with their captured revenue settings"),
+		Harness.QueueBridge->RestoreZoneWorldSnapshotAndSynchronize(Snapshot, Errors)))
+	{
+		for (const FText& Error : Errors) AddError(Error.ToString());
+		return false;
+	}
+	const AFFZSFacilityActor* Restored = Harness.ZoneSystem->FindFacility(FacilityIds[0]);
+	if (!TestNotNull(TEXT("Restored facility"), Restored)) return false;
+	TestTrue(TEXT("Snapshot preserves explicit pricing mode"), Restored->GetFacilitySpec().bOverrideRevenuePerUseGold);
+	TestEqual(TEXT("Snapshot uses the installed amount even after the source asset changes"),
+		Restored->GetFacilitySpec().RevenuePerUseGold, 40);
+	const int32 BeforeRestoredUse = Harness.Progression->GetTodayRevenue();
+	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]),
+		Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	TestEqual(TEXT("Restored settlement still uses the saved facility amount"),
+		Harness.Progression->GetTodayRevenue() - BeforeRestoredUse, 10 * MemberCount);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_TableRevenueEditsInstalledAndRestoredFacilities,
+	"FestaFiesta.Economy.QueueBridge.TableRevenueEditsInstalledAndRestoredFacilities",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_TableRevenueEditsInstalledAndRestoredFacilities::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Table revenue world initializes"), Harness.Initialize(this))) return false;
+	Harness.Definition->RevenuePerUseByMinorToken.Add(TEXT("FoodStall"), 20);
+	Harness.Definition->BoothCommissionRate = .25f;
+	TStrongObjectPtr<UDataTable> Table(NewObject<UDataTable>());
+	Table->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
+	Harness.Definition->FacilityRevenueTable = Table.Get();
+	UFF_FacilityUpgradeSubsystem* Upgrades = Harness.World->GetSubsystem<UFF_FacilityUpgradeSubsystem>();
+	UFF_FacilityProgramMarkerSubsystem* Markers = Harness.World->GetSubsystem<UFF_FacilityProgramMarkerSubsystem>();
+	if (!TestNotNull(TEXT("Upgrade quote owner"), Upgrades) || !TestNotNull(TEXT("Revenue badge owner"), Markers)) return false;
+
+	// Three explicit rows and both compatibility paths share one paid minor category.
+	const int32 EffectiveAmounts[] = {48, 80, 0, 64, 20};
+	TArray<TStrongObjectPtr<UFFZSFacilityDefinition>> Assets;
+	TArray<FGuid> FacilityIds;
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(EffectiveAmounts); ++Index)
+	{
+		TStrongObjectPtr<UFFZSFacilityDefinition> Asset(NewObject<UFFZSFacilityDefinition>());
+		Asset->Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+		Asset->Spec.FacilityDefinitionId = FName(*FString::Printf(TEXT("Booth_FoodStall_TableRevenue%d"), Index));
+		Asset->Spec.InstallCostKey = NAME_None;
+		Asset->Spec.bOverrideRevenuePerUseGold = Index != 4;
+		Asset->Spec.RevenuePerUseGold = Index == 3 ? 64 : 120;
+		Asset->Spec.bUsesFacilityLevels = true;
+		FFFZSFacilityUpgradeTier Tier;
+		Tier.TargetLevel = 2;
+		Tier.ServiceDurationMultiplier = 1.f;
+		Tier.RevenueMultiplier = 1.5f;
+		Asset->Spec.UpgradeTiers = {Tier};
+		if (Index < 3)
+		{
+			FFF_FacilityRevenueTableRow Row;
+			Row.RevenuePerUseGold = EffectiveAmounts[Index];
+			if (Index == 0)
+			{
+				Row.bOverrideCommissionRate = true;
+				Row.CommissionRate = .5f;
+				Row.RevenueMultiplierByLevel = {{1, .75f}, {2, 2.f}};
+			}
+			Table->AddRow(Asset->Spec.FacilityDefinitionId, Row);
+		}
+		FString Failure;
+		if (!Harness.InstallFoodStall(Failure, false, &Asset->Spec, 1000 + Index * 1500))
+		{
+			AddError(Failure);
+			return false;
+		}
+		FacilityIds.Add(Harness.FacilityInstanceId);
+		Assets.Add(MoveTemp(Asset));
+		FFF_FacilityUpgradePreview Quote;
+		if (!TestTrue(TEXT("Every table and fallback facility exposes a quote"), Upgrades->GetUpgradePreview(FacilityIds.Last(), Quote))) return false;
+		TestTrue(TEXT("Zero authored revenue is an available quote"), Quote.bRevenueAvailable);
+		const int32 BaseQuote = Index == 0 ? 18 : EffectiveAmounts[Index] / 4;
+		TestEqual(TEXT("The quote combines the row's commission and level-one multiplier"), Quote.BaseRevenuePerUseGold, BaseQuote);
+		TestEqual(TEXT("Current quote agrees with the base at level one"), Quote.CurrentRevenuePerUseGold, BaseQuote);
+		TestEqual(TEXT("The next-level quote multiplies table revenue before rounding"),
+			Quote.NextRevenuePerUseGold, Index == 0 ? 48 : FMath::RoundToInt(EffectiveAmounts[Index] * .25f * 1.5f));
+	}
+	Markers->Tick(0.f);
+	FFF_FacilityWorldBadgeData Badge;
+	TestTrue(TEXT("A paid table row displays a revenue badge before earning"),
+		Markers->GetBadgeData(FacilityIds[0], Badge) && Badge.bShowRevenue && Badge.TodayGold == 0);
+	TestFalse(TEXT("A free table row suppresses the old paid Data Asset badge"),
+		Markers->GetBadgeData(FacilityIds[2], Badge) && Badge.bShowRevenue);
+	FText UpgradeFailure;
+	if (!TestTrue(TEXT("A table-priced facility can upgrade"), Upgrades->TryUpgradeFacility(FacilityIds[0], 1, UpgradeFailure)))
+	{
+		AddError(UpgradeFailure.ToString());
+		return false;
+	}
+	const int32 MemberCount = Harness.SpawnPartyAndGetMemberCount();
+	if (!TestTrue(TEXT("A real party supplies the settlement member count"), MemberCount > 0)) return false;
+	for (int32 Index = 0; Index < FacilityIds.Num(); ++Index)
+	{
+		const int32 Before = Harness.Progression->GetTodayRevenue();
+		Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[Index]),
+			Harness.PartyId, EFF_QueueExit::Served, 0.f);
+		const int32 Expected = FFF_BoothRevenueRules::ResolveCommission(
+			EffectiveAmounts[Index], MemberCount, Index == 0 ? .5f : .25f, Index == 0 ? 2.f : 1.f);
+		TestEqual(TEXT("Settlement consumes the same table/fallback value as the quote"),
+			Harness.Progression->GetTodayRevenue() - Before, Expected);
+		FFF_FacilityInstanceRevenue Ledger;
+		const bool bHasLedger = Harness.Progression->GetFacilityInstanceRevenue(FacilityIds[Index], Ledger);
+		TestEqual(TEXT("Free uses do not create a paid ledger entry"), bHasLedger, Expected > 0);
+		if (bHasLedger) TestEqual(TEXT("Each installation records its own actual income"), Ledger.TodayGold, Expected);
+	}
+
+	const FFFZSWorldSnapshot Snapshot = Harness.ZoneSystem->CaptureWorldSnapshot();
+	const int32 EarnedBeforeEdit = Harness.Progression->GetTodayRevenue();
+	FFF_FacilityRevenueTableRow Edited;
+	Edited.RevenuePerUseGold = 100;
+	Edited.bOverrideCommissionRate = true;
+	Edited.CommissionRate = .25f;
+	Edited.RevenueMultiplierByLevel = {{1, .75f}, {2, 3.f}};
+	Table->AddRow(Assets[0]->Spec.FacilityDefinitionId, Edited);
+	Edited = FFF_FacilityRevenueTableRow();
+	Edited.RevenuePerUseGold = 36;
+	Table->AddRow(Assets[2]->Spec.FacilityDefinitionId, Edited);
+	Markers->Tick(0.f);
+	TestTrue(TEXT("Editing zero to paid refreshes a previously free badge without a new payment"),
+		Markers->GetBadgeData(FacilityIds[2], Badge) && Badge.bShowRevenue && Badge.TodayGold == 0);
+	TestEqual(TEXT("Balance edits never rewrite already earned money"), Harness.Progression->GetTodayRevenue(), EarnedBeforeEdit);
+	FFF_FacilityUpgradePreview EditedQuote;
+	if (!TestTrue(TEXT("The existing upgraded facility refreshes its quote"), Upgrades->GetUpgradePreview(FacilityIds[0], EditedQuote))) return false;
+	TestEqual(TEXT("The installed facility uses its edited base, rate and level-one multiplier"), EditedQuote.BaseRevenuePerUseGold, 19);
+	TestEqual(TEXT("Its current level immediately uses the edited multiplier before rounding"), EditedQuote.CurrentRevenuePerUseGold, 75);
+	const int32 ChangedCommission = FFF_BoothRevenueRules::ResolveCommission(100, MemberCount, .25f, 3.f);
+	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]), Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	TestEqual(TEXT("The next use pays the edited price without reinstalling"),
+		Harness.Progression->GetTodayRevenue(), EarnedBeforeEdit + ChangedCommission);
+
+	Assets[0]->Spec.RevenuePerUseGold = 999;
+	TArray<FText> Errors;
+	if (!TestTrue(TEXT("A snapshot captured before the balance edit restores"),
+		Harness.QueueBridge->RestoreZoneWorldSnapshotAndSynchronize(Snapshot, Errors)))
+	{
+		for (const FText& Error : Errors) AddError(Error.ToString());
+		return false;
+	}
+	const AFFZSFacilityActor* Restored = Harness.ZoneSystem->FindFacility(FacilityIds[0]);
+	if (!TestNotNull(TEXT("The saved facility exists again"), Restored)) return false;
+	TestEqual(TEXT("The old save still contains its original per-asset amount"), Restored->GetFacilitySpec().RevenuePerUseGold, 120);
+	TestEqual(TEXT("The saved upgrade multiplier is preserved"), Restored->GetUpgradeRevenueMultiplier(), 1.5f);
+	if (!TestTrue(TEXT("The restored facility exposes a fresh quote"), Upgrades->GetUpgradePreview(FacilityIds[0], EditedQuote))) return false;
+	TestEqual(TEXT("The table supersedes both the saved price and multiplier after restore"), EditedQuote.CurrentRevenuePerUseGold, 75);
+	const int32 BeforeRestoredUse = Harness.Progression->GetTodayRevenue();
+	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]), Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	TestEqual(TEXT("The restored facility settles at the newly edited table price"),
+		Harness.Progression->GetTodayRevenue() - BeforeRestoredUse, ChangedCommission);
+	Markers->Tick(0.f);
+	FFF_FacilityInstanceRevenue RestoredLedger;
+	TestTrue(TEXT("Restored settlement retains its per-installation ledger"), Harness.Progression->GetFacilityInstanceRevenue(FacilityIds[0], RestoredLedger));
+	TestTrue(TEXT("The badge displays the actual ledger total after restore"),
+		Markers->GetBadgeData(FacilityIds[0], Badge) && Badge.TodayGold == RestoredLedger.TodayGold);
+	Edited.bOverrideCommissionRate = true;
+	Edited.CommissionRate = 0.f;
+	Table->AddRow(Assets[2]->Spec.FacilityDefinitionId, Edited);
+	Markers->Tick(0.f);
+	TestFalse(TEXT("Zero table commission suppresses an unearned facility's income badge"),
+		Markers->GetBadgeData(FacilityIds[2], Badge) && Badge.bShowRevenue);
+	Edited.CommissionRate = .25f;
+	Edited.RevenueMultiplierByLevel.Add(1, 0.f);
+	Table->AddRow(Assets[2]->Spec.FacilityDefinitionId, Edited);
+	Markers->Tick(0.f);
+	TestFalse(TEXT("Zero table level multiplier also suppresses an unearned income badge"),
+		Markers->GetBadgeData(FacilityIds[2], Badge) && Badge.bShowRevenue);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Minigame_TableRewardSettlement,
+	"FestaFiesta.Minigame.TargetShooting.TableRewardSettlement",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+bool FFF_Minigame_TableRewardSettlement::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Minigame reward world initializes"), Harness.Initialize(this))) return false;
+	const FName FacilityDefinitionId(TEXT("Booth_ActivityGame_RevenueAutomation"));
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	Spec.FacilityDefinitionId = FacilityDefinitionId;
+	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall");
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
+	FFFZSCommand Open;
+	Open.CommandId = FGuid::NewGuid();
+	Open.TransactionId = FGuid::NewGuid();
+	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Open.Type = EFFZSCommandType::Open;
+	Open.FacilityInstanceId = Harness.FacilityInstanceId;
+	if (!TestTrue(TEXT("A real active facility hosts the minigame"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
+	UFF_MinigameSubsystem* Coordinator = Harness.World->GetSubsystem<UFF_MinigameSubsystem>();
+	if (!TestNotNull(TEXT("The real reward coordinator exists"), Coordinator)) return false;
+	TStrongObjectPtr<UDataTable> Table(NewObject<UDataTable>());
+	Table->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
+	Harness.Definition->FacilityRevenueTable = Table.Get();
+
+	// Supply a deterministic playing session through reflected transient properties. This
+	// headless fixture omits modal input setup, then exercises the production Tick, result
+	// presentation callback and economy transaction without calling a private completion API.
+	const FObjectProperty* RuntimeProperty = FindFProperty<FObjectProperty>(Coordinator->GetClass(), TEXT("Runtime"));
+	const FObjectProperty* ScreenProperty = FindFProperty<FObjectProperty>(Coordinator->GetClass(), TEXT("Screen"));
+	const FObjectProperty* DefinitionProperty = FindFProperty<FObjectProperty>(Coordinator->GetClass(), TEXT("ActiveDefinition"));
+	const FStructProperty* ResultProperty = FindFProperty<FStructProperty>(UFF_TargetShootingScreen::StaticClass(), TEXT("DisplayedResult"));
+	if (!TestNotNull(TEXT("Reflected session runtime"), RuntimeProperty) || !TestNotNull(TEXT("Reflected result screen"), ScreenProperty)
+		|| !TestNotNull(TEXT("Reflected session definition"), DefinitionProperty) || !TestNotNull(TEXT("Actual presented result"), ResultProperty)) return false;
+	int32 TotalReward = 0;
+	for (const int32 EditedReward : {90, 0})
+	{
+		UFF_TargetShootingDefinition* Minigame = NewObject<UFF_TargetShootingDefinition>(Coordinator);
+		Minigame->CompatibleFacilityDefinitionIds = {FacilityDefinitionId};
+		Minigame->ScoreForMaxReward = 1;
+		Minigame->RewardGoldAtMaxScore = 150;
+		FFF_MinigameSessionContext Context;
+		Context.SessionId = FGuid::NewGuid();
+		Context.FacilityInstanceId = Harness.FacilityInstanceId;
+		Context.FacilityDefinitionId = FacilityDefinitionId;
+		Context.MinigameId = Minigame->MinigameId;
+		Context.RandomSeed = 123;
+		UFF_TargetShootingRuntime* Runtime = NewObject<UFF_TargetShootingRuntime>(Coordinator);
+		if (!TestTrue(TEXT("The deterministic target-shooting session initializes"), Runtime->Initialize(Minigame, Context, &Failure)))
+		{
+			AddError(Failure);
+			return false;
+		}
+		UFF_TargetShootingScreen* Screen = NewObject<UFF_TargetShootingScreen>(Harness.World);
+		if (!TestTrue(TEXT("The real result presenter accepts the playing session"), Screen->BindRuntime(Runtime))) return false;
+		RuntimeProperty->SetObjectPropertyValue_InContainer(Coordinator, Runtime);
+		ScreenProperty->SetObjectPropertyValue_InContainer(Coordinator, Screen);
+		DefinitionProperty->SetObjectPropertyValue_InContainer(Coordinator, Minigame);
+		FFF_FacilityRevenueTableRow Row;
+		Row.bOverrideMinigameRewardGold = true;
+		Row.MinigameRewardAtMaxScoreGold = 150;
+		Table->AddRow(FacilityDefinitionId, Row);
+		const FFF_TargetShootingSnapshot Target = Runtime->GetTargetSnapshot();
+		TestEqual(TEXT("A real hit qualifies for the full reward"), Runtime->SubmitShot(Context.SessionId,
+			Target.TargetCenterNormalized, Target.TargetSerial), EFF_TargetShootingShotResult::Hit);
+		const int32 Before = Harness.Progression->GetGold();
+		Row.MinigameRewardAtMaxScoreGold = EditedReward;
+		Table->AddRow(FacilityDefinitionId, Row);
+		Coordinator->Tick(Minigame->DurationSeconds + 1.f);
+		TestEqual(TEXT("The real coordinator completes the active session"), Runtime->GetSnapshot().State, EFF_MinigameSessionState::Completed);
+		const FFF_MinigameResult* Presented = ResultProperty->ContainerPtrToValuePtr<FFF_MinigameResult>(Screen);
+		TestEqual(TEXT("The result screen receives this session's actual completion result"), Presented->SessionId, Context.SessionId);
+		TestEqual(TEXT("Completion reads the reward edited after the session began"), Presented->RewardGold, EditedReward);
+		TestEqual(TEXT("The balance receives exactly the presented reward"), Harness.Progression->GetGold() - Before, EditedReward);
+		TotalReward += EditedReward;
+		TestEqual(TEXT("The minigame ledger agrees with all accepted session rewards"),
+			Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::MinigameReward), TotalReward);
+		Row.MinigameRewardAtMaxScoreGold = 999;
+		Table->AddRow(FacilityDefinitionId, Row);
+		Coordinator->Tick(60.f);
+		TestEqual(TEXT("Repeated completion cannot pay again, including a formerly free session"), Harness.Progression->GetGold(), Before + EditedReward);
+		TestEqual(TEXT("A completed result is not repriced by later table edits"), Presented->RewardGold, EditedReward);
+		Coordinator->CancelActiveMinigame();
+	}
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_UpgradeRevenueCompletesAndRestores,
 	"FestaFiesta.Economy.QueueBridge.UpgradeRevenueCompletesAndRestores",
 	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -660,10 +1026,21 @@ bool FFF_QueueEconomyBridge_SynergyPreviewPaymentAndLifecycle::RunTest(const FSt
 	TGuardValue<float> CapGuard(Settings->MaxTotalBonusPercent, 50.f);
 	FQueueEconomyHarness Harness;
 	if (!TestTrue(TEXT("Synergy payment world initializes"), Harness.Initialize(this))) return false;
-	Harness.Definition->RevenuePerUseByMinorToken.Add(TEXT("FoodStall"), 100);
+	Harness.Definition->RevenuePerUseByMinorToken.Add(TEXT("FoodStall"), 20);
 	Harness.Definition->BoothCommissionRate = .2f;
+	FFFZSFacilitySpec AuthoredSpec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	AuthoredSpec.FacilityDefinitionId = BoothDefinitionId;
+	AuthoredSpec.InstallCostKey = NAME_None;
+	AuthoredSpec.bOverrideRevenuePerUseGold = true;
+	AuthoredSpec.RevenuePerUseGold = 100;
+	AuthoredSpec.bUsesFacilityLevels = true;
+	FFFZSFacilityUpgradeTier AuthoredTier;
+	AuthoredTier.TargetLevel = 2;
+	AuthoredTier.ServiceDurationMultiplier = 1.f;
+	AuthoredTier.RevenueMultiplier = 1.5f;
+	AuthoredSpec.UpgradeTiers = {AuthoredTier};
 	FString Failure;
-	if (!Harness.InstallFoodStall(Failure, true)) { AddError(Failure); return false; }
+	if (!Harness.InstallFoodStall(Failure, true, &AuthoredSpec)) { AddError(Failure); return false; }
 	UFF_FacilitySynergySubsystem* Synergy = Harness.World->GetSubsystem<UFF_FacilitySynergySubsystem>();
 	UFF_FacilityUpgradeSubsystem* Upgrades = Harness.World->GetSubsystem<UFF_FacilityUpgradeSubsystem>();
 	if (!TestNotNull(TEXT("Synergy subsystem exists"), Synergy) || !TestNotNull(TEXT("Upgrade subsystem exists"), Upgrades)) return false;
@@ -689,13 +1066,13 @@ bool FFF_QueueEconomyBridge_SynergyPreviewPaymentAndLifecycle::RunTest(const FSt
 	TestEqual(TEXT("One-way rule grants no income to the helper"), Synergy->GetBonusPercent(Install.FacilityInstanceId), 0.f);
 	FFF_FacilityUpgradePreview Quote;
 	if (!TestTrue(TEXT("Facility quote remains available"), Upgrades->GetUpgradePreview(Harness.FacilityInstanceId, Quote))) return false;
-	TestEqual(TEXT("Quote combines upgrade and synergy before rounding"), Quote.CurrentRevenuePerUseGold,
+	TestEqual(TEXT("Quote combines authored base, upgrade and synergy before rounding"), Quote.CurrentRevenuePerUseGold,
 		FFF_BoothRevenueRules::ResolveCommission(100, 1, .2f, 1.5f * 1.25f));
 	const int32 MemberCount = Harness.SpawnPartyAndGetMemberCount();
 	if (!TestTrue(TEXT("Real party data exists"), MemberCount > 0)) return false;
 	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
 	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueFacilityId, Harness.PartyId, EFF_QueueExit::Served, 0.f);
-	TestEqual(TEXT("Paid completion posts the same combined multiplier to the ledger"), Harness.Progression->GetTodayRevenue() - RevenueBefore,
+	TestEqual(TEXT("Paid completion uses the authored base and combined multiplier"), Harness.Progression->GetTodayRevenue() - RevenueBefore,
 		FFF_BoothRevenueRules::ResolveCommission(100, MemberCount, .2f, 1.5f * 1.25f));
 	FFFZSWorldSnapshot Snapshot = Harness.ZoneSystem->CaptureWorldSnapshot();
 	const uint64 RegistryBefore = Harness.ZoneSystem->GetFacilityRegistryRevision();

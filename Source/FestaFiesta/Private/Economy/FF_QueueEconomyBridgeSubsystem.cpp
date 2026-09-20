@@ -78,10 +78,12 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 
 	const FFFZSFacilitySpec& Spec = Facility->GetFacilitySpec();
 	
-	//   [3] FacilityDefinitionId → 소분류 토큰
+	const UDataTable* RevenueTable = Definition->GetFacilityRevenueTable();
+	//   [3] 시설별 표와 개별 설정이 없는 기존 시설만 소분류 이름을 확인한다.
 	FFF_FacilityNameParts Parts;
 	FString FailureReason;
-	if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+	if (!FFF_BoothRevenueRules::HasFacilityRevenueRow(Spec, RevenueTable)
+		&& !Spec.bOverrideRevenuePerUseGold && !UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
 			Spec.Category, Spec.FacilityDefinitionId, Parts, FailureReason))
 	{
 		// 이 부스는 앞으로도 계속 매출이 0 이다. 조용히 두면 "인기 없는 부스" 로 보인다.
@@ -95,9 +97,9 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 		return;
 	}
 	
-	//   [4] 소분류 → 객단가. 0 은 무료 시설이라 정상 경로다(휴식·포토존·공연)
-	const int32 RevenuePerUse = FFF_BoothRevenueRules::FindRevenuePerUse(
-		Definition->RevenuePerUseByMinorToken, Parts.MinorToken);
+	//   [4] 시설별 표 → Data Asset의 개별 설정 → 소분류 기본값. 명시한 0은 무료다.
+	const int32 RevenuePerUse = FFF_BoothRevenueRules::ResolveRevenuePerUse(
+		Spec, Definition->RevenuePerUseByMinorToken, RevenueTable);
 	if (RevenuePerUse <= 0) return;
 
 	//   [5] 인원
@@ -118,8 +120,12 @@ void UFF_QueueEconomyBridgeSubsystem::HandlePartyExited(
 	// [6] 수수료 → 원장.
 	const UFF_FacilitySynergySubsystem* Synergies = World->GetSubsystem<UFF_FacilitySynergySubsystem>();
 	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(ZoneFacilityId) : 1.f;
+	const float CommissionRate = FFF_BoothRevenueRules::ResolveCommissionRate(
+		Spec, Definition->BoothCommissionRate, RevenueTable);
+	const float RevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+		Spec, Facility->GetUpgradeLevel(), Facility->GetUpgradeRevenueMultiplier(), RevenueTable);
 	const int32 Commission = FFF_BoothRevenueRules::ResolveCommission(
-		RevenuePerUse, MemberCount, Definition->BoothCommissionRate, Facility->GetUpgradeRevenueMultiplier() * SynergyMultiplier);
+		RevenuePerUse, MemberCount, CommissionRate, static_cast<double>(RevenueMultiplier) * SynergyMultiplier);
 	if (Commission <= 0) return;
 
 	// 종류(FacilityDefinitionId)는 결산 표로, 인스턴스(ZoneFacilityId)는 시설 정보 패널의 시설별 장부로 간다.

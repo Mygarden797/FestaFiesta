@@ -61,7 +61,7 @@ bool FFF_ProgramAuthoringValidation_ReportsAllErrors::RunTest(const FString& Par
 	Catalog[1].CostGold = 0;
 	Catalog[1].RequiredStaff = 0;
 	Catalog[1].Capacity = 0;
-	Catalog[1].FeePerPerson = 0;
+	Catalog[1].FeePerPerson = -1;
 	Catalog[1].StartMinutes = std::numeric_limits<float>::quiet_NaN();
 	Catalog[1].EndMinutes = std::numeric_limits<float>::infinity();
 	Catalog[1].AllowedFacilityTypes = {
@@ -78,6 +78,32 @@ bool FFF_ProgramAuthoringValidation_ReportsAllErrors::RunTest(const FString& Par
 	TestTrue(TEXT("NaN/Infinity 시간 범위를 설명한다"), ContainsError(Errors, TEXT("시간 범위")));
 	TestTrue(TEXT("시설 타입 형식을 설명한다"), ContainsError(Errors, TEXT("대분류_소분류")));
 	TestTrue(TEXT("중복 시설 타입을 설명한다"), ContainsError(Errors, TEXT("중복")));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_ProgramAuthoringValidation_FreeProgramsAreValid,
+	"FestaFiesta.Economy.ProgramAuthoring.FreeProgramsAreValid",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramAuthoringValidation_FreeProgramsAreValid::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	const UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>();
+	TArray<FFF_ProgramCard> Catalog = Definition->ProgramCatalog;
+	for (FFF_ProgramCard& Card : Catalog)
+	{
+		Card.FeePerPerson = 0;
+		TestTrue(TEXT("An intentionally free program remains a valid schedulable card"), Card.IsValid());
+		TestEqual(TEXT("Free attendance cannot generate projected revenue"), Card.CalcMaxRevenue(), 0);
+	}
+	TArray<FText> Errors;
+	TestTrue(TEXT("The editor authoring contract accepts zero admission fees"),
+		UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(Catalog, Errors));
+	Catalog[0].FeePerPerson = -1;
+	Errors.Reset();
+	TestFalse(TEXT("Negative fees remain invalid after introducing free programs"),
+		UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(Catalog, Errors));
+	TestFalse(TEXT("Negative fees cannot pass the runtime card guard"), Catalog[0].IsValid());
 	return true;
 }
 

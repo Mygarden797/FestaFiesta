@@ -1129,6 +1129,15 @@ void UFF_FacilityInfoSubsystem::RefreshPanel()
 	}
 	Panel->ApplyViewData(ViewData);
 	if (bRevenueRankingPresentationOpen) Panel->SetPanelOpen(false);
+	if (!bPauseMenuPresentationSuppressed && PaidProgramPicker && IsValid(Facility)
+		&& PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed)
+	{
+		FFF_FacilityPaidProgramPickerViewData PickerViewData;
+		if (BuildPaidProgramPickerViewData(*Facility, PickerViewData))
+		{
+			PaidProgramPicker->RefreshViewData(PickerViewData);
+		}
+	}
 }
 
 void UFF_FacilityInfoSubsystem::AcquireThumbnailSession()
@@ -1630,7 +1639,7 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 		: Facility.GetFacilitySpec().DisplayName;
 	OutViewData.FeedbackText = Feedback;
 	OutViewData.bFeedbackIsError = bIsFeedbackError;
-	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalog())
+	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalogForFacility(FacilityId))
 	{
 		const EFF_PaidProgramScheduleResult Result =
 			Scheduling->CanScheduleProgramAtFacility(Card.ProgramId, FacilityId);

@@ -310,6 +310,30 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
     // Expose the captured Spec settings at the Data Asset's top level without a second copy.
     const TSharedRef<IPropertyHandle> SpecHandle = DetailBuilder.GetProperty(
         GET_MEMBER_NAME_CHECKED(UFFZSFacilityDefinition, Spec));
+    IDetailCategoryBuilder& RevenueCategory = DetailBuilder.EditCategory(
+        TEXT("FF Zone System|Facility Revenue"), LOCTEXT("FacilityRevenueCategory", "Facility Revenue"),
+        ECategoryPriority::Important);
+    RevenueCategory.SetToolTip(LOCTEXT("FacilityRevenueCategoryTip",
+        "일반 수익 조정은 DT_FacilityRevenues에서 합니다. 아래 값은 표에 해당 시설 행이 없을 때 사용하는 호환 설정입니다."));
+    for (const FName PropertyName : {
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, bOverrideRevenuePerUseGold),
+        GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, RevenuePerUseGold) })
+    {
+        if (const TSharedPtr<IPropertyHandle> RevenueProperty = SpecHandle->GetChildHandle(PropertyName))
+        {
+            DetailBuilder.HideProperty(RevenueProperty);
+            RevenueCategory.AddProperty(RevenueProperty.ToSharedRef());
+        }
+    }
+    RevenueCategory.AddCustomRow(LOCTEXT("FacilityRevenueHelpSearch", "Revenue 매출 수익 이용 금액"))
+    .WholeRowContent()
+    [
+        SNew(STextBlock).AutoWrapText(true).Text(LOCTEXT("FacilityRevenueHelp",
+            "시설별 수익은 Content/FestaFiesta/Data/Economy/DT_FacilityRevenues에서 수정하세요.\n"
+            "Row Name이 이 시설의 Facility Definition ID인 행의 '1인 1회 매출 (Gold)'을 바꾸고 저장합니다. 0은 무료입니다.\n"
+            "표의 금액은 아래 값보다 우선하며 기존 설치·저장 시설에도 다음 정산부터 적용됩니다. 축제 수수료·강화·시너지 배율은 별도로 계산합니다.\n"
+            "표에 해당 행이 없을 때만 아래 설정을 사용합니다. 이 호환 설정의 변경은 새로 설치하는 시설부터 적용됩니다."))
+    ];
     const TSharedPtr<IPropertyHandle> AudienceHandle = SpecHandle->GetChildHandle(
         GET_MEMBER_NAME_CHECKED(FFFZSFacilitySpec, Audience));
     IDetailCategoryBuilder& AudienceCategory = DetailBuilder.EditCategory(

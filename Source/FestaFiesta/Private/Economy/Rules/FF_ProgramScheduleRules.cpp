@@ -70,8 +70,9 @@ int32 FFF_ProgramScheduleRules::CalcProgramRevenue(
 	const FFF_ProgramCard& Card, const int32 AttendeeCount)
 {
 	// 정원을 넘는 배정은 규칙상 나오지 않지만, 넘어와도 산 것보다 더 받지는 않는다.
-	const int32 PaidCount = FMath::Clamp(AttendeeCount, 0, Card.Capacity);
-	return PaidCount * Card.FeePerPerson;
+	const int32 PaidCount = FMath::Clamp(AttendeeCount, 0, FMath::Max(0, Card.Capacity));
+	return static_cast<int32>(FMath::Min<int64>(MAX_int32,
+		static_cast<int64>(PaidCount) * FMath::Max(0, Card.FeePerPerson)));
 }
 
 bool FFF_ProgramScheduleRules::IsFacilityTypeAllowed(

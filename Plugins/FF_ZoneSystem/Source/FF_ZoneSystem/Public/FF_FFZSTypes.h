@@ -634,6 +634,12 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Revenue Rule Key", ToolTip = "외부 경제 시스템에서 시설 수익 규칙을 조회할 키입니다."))
     FName RevenueRuleKey = NAME_None;
 
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Economy", meta = (DisplayName = "Override Revenue per Use", ToolTip = "시설 수익 DataTable에 이 Facility Definition ID의 행이 없을 때만 사용하는 호환 설정입니다. 표에 행이 있으면 표의 금액이 항상 우선합니다. 행이 없고 이 옵션을 켜면 아래 금액, 끄면 Festival Definition의 소분류 기본값을 사용합니다. 이 호환 설정은 설치할 때 복사됩니다."))
+    bool bOverrideRevenuePerUseGold = false;
+
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Economy", meta = (DisplayName = "Revenue per Use (Gold)", ToolTip = "수익 DataTable에 해당 시설 행이 없고 Override Revenue per Use를 켰을 때만 사용하는 1명당 1회 매출입니다. 표의 금액이 우선하므로 일반 밸런스 조정은 DT_FacilityRevenues에서 합니다. 축제 수수료·강화·시너지 배율을 적용하기 전 금액이며 0은 무료입니다.", EditCondition = "bOverrideRevenuePerUseGold", ClampMin = "0", UIMin = "0"))
+    int32 RevenuePerUseGold = 0;
+
     UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "External Keys", meta = (DisplayName = "Experience Effect Key", ToolTip = "외부 경험·만족도 시스템에서 시설 효과를 조회할 키입니다."))
     FName ExperienceEffectKey = NAME_None;
 

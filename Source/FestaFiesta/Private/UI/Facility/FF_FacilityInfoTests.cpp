@@ -1987,6 +1987,7 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	Program.bCanSchedule = true;
 	FFF_FacilityPaidProgramCardViewData OtherProgram = Program;
 	OtherProgram.ProgramId = TEXT("Program_TestAlternative");
+	OtherProgram.DisplayName = FText::FromString(TEXT("대안 프로그램"));
 	Data.Cards.Add(OtherProgram);
 	Picker->ApplyViewData(Data);
 	Picker->SetPickerOpen(true);
@@ -2027,7 +2028,22 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 			Maximum->GetText().ToString().Contains(TEXT("정원 모두 참여")));
 		TestEqual(TEXT("분리한 지표가 있으면 예전 묶음 텍스트는 숨긴다"),
 			Picker->GetWidgetFromName(TEXT("Text_PreviewDetails"))->GetVisibility(), ESlateVisibility::Collapsed);
+		Program.TicketFeeGold = 70;
+		Program.MaxRevenueGold = 840;
+		Picker->RefreshViewData(Data);
+		TestTrue(TEXT("An open selected picker refreshes its edited maximum revenue"),
+			Maximum && Maximum->GetText().ToString().Contains(TEXT("840")));
+		UCommonTextBlock* Fee = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_TicketFee")));
+		UCommonTextBlock* SelectedName = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_PreviewName")));
+		TestTrue(TEXT("The selected ticket fee refreshes with its projection"), Fee && Fee->GetText().ToString().Contains(TEXT("70")));
+		TestTrue(TEXT("Refresh keeps the user's selection among multiple programs"),
+			SelectedName && SelectedName->GetText().EqualTo(Program.DisplayName) && Confirm->GetIsEnabled());
+		TestEqual(TEXT("A price refresh never purchases a program"), PurchaseRequests, 0);
 		Confirm->OnClicked.Broadcast();
+		Program.TicketFeeGold = 80;
+		Program.MaxRevenueGold = 960;
+		Picker->RefreshViewData(Data);
+		TestFalse(TEXT("A refresh cannot enable duplicate confirmation while purchase is pending"), Confirm->GetIsEnabled());
 		Confirm->OnClicked.Broadcast();
 		TestEqual(TEXT("결과 대기 중 중복 구매 요청 차단"), PurchaseRequests, 1);
 		Picker->ShowPurchaseComplete(Program.ProgramId, 7400, 5);
@@ -2036,6 +2052,12 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 			Picker->GetWidgetFromName(TEXT("Border_Footer"))->GetVisibility(), ESlateVisibility::Collapsed);
 		UCommonTextBlock* Receipt = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_PurchaseReceipt")));
 		TestTrue(TEXT("완료 영수증은 실제 결제금액을 표시"), Receipt && Receipt->GetText().ToString().Contains(TEXT("200")));
+		const FText CompletedReceipt = Receipt ? Receipt->GetText() : FText::GetEmpty();
+		Program.CostGold = 999;
+		Picker->RefreshViewData(Data);
+		TestEqual(TEXT("Live refresh preserves the completed purchase screen"), Complete->GetVisibility(), ESlateVisibility::Visible);
+		TestTrue(TEXT("A completed receipt retains the actual payment despite changed data"), Receipt && Receipt->GetText().EqualTo(CompletedReceipt));
+		Program.CostGold = 200;
 		Return->OnClicked.Broadcast();
 		TestEqual(TEXT("완료에서 시설 정보로 복귀"), CloseRequests, 1);
 		Confirm->OnClicked.Broadcast();

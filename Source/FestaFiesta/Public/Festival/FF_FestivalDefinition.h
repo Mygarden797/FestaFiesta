@@ -12,7 +12,7 @@ class UDataTable;
 
 /**
  * 축제 1종의 운영 규칙과 밸런스 값. 
- * 밸런스 값을 여기 한 곳에 모아 코드 상수로 박지 않는다.
+ * 축제 공통 밸런스 값을 관리한다. 시설별 이용 매출은 FacilityRevenueTable에서 설정한다.
  * [참고] data/metadata/spec/economy_spec.md §2.
  * 
  * 주석의 [기획서]는 팀 합의가 필요한 값, [밸런스]는 자유롭게 조정하는 값이다.
@@ -101,9 +101,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float BoothCommissionRate = 0.12f;
 	
-	// 부스 1회 이용당 발생하는 매출(Gold). 키는 FacilityDefinitionId의 소분류 토큰이다.
-	// [밸런스] economy_spec.md §2.4
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue")
+	// 시설별 수익표에 행이 없고 Data Asset의 개별 매출도 끈 기존 시설만 쓰는 기본값.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (DisplayName = "Default Revenue Per Use by Minor Token", ToolTip = "시설 수익표에 해당 시설 행이 없고 시설 Data Asset의 개별 매출 설정도 꺼져 있을 때만 적용합니다. 시설별 조정은 Facility Revenue Table의 수치를 바꾸세요. 금액은 1명당 1회 매출이며 실제 수입에는 Booth Commission Rate가 적용됩니다."))
 	TMap<FName, int32> RevenuePerUseByMinorToken;
 
 	// 일일 목표(DailyVisitorGoal) 달성 보너스 (Gold). [밸런스]
@@ -112,7 +111,7 @@ public:
 
 	// 미니게임 1회 최대 보상 (Gold). [밸런스] 플레이 성과에 따라 0~이 값
 	// [기획서] 미니게임 성과가 자원에 영향을 준다
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0", ToolTip = "시설 수익표의 미니게임 보상 사용이 꺼져 있고 미니게임 Data Asset의 최대 보상도 -1일 때 쓰는 공통 기본값입니다. 시설별 보상 조정은 DT_FacilityRevenues의 미니게임 최대 보상을 사용하세요."))
 	int32 MinigameRewardMaxGold = 150;
 
 	// --- 홍보 -------------------------------------------------------------
@@ -163,6 +162,13 @@ public:
 	// Facility Spec의 InstallCostKey가 명시되면 그 예외 키가 자동 생성 키보다 우선한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Tables")
 	TObjectPtr<UDataTable> FacilityCostTable;
+
+	// 행 이름은 시설의 FacilityDefinitionId와 동일하다. 표에 없는 시설만 기존 설정을 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Tables", meta = (RequiredAssetDataTags = "RowStructure=/Script/FestaFiesta.FF_FacilityRevenueTableRow", ToolTip = "시설별 매출을 한곳에서 조정하는 표입니다. 기본 표는 /Game/FestaFiesta/Data/Economy/DT_FacilityRevenues입니다. Row Name이 Facility Definition Id와 같은 행의 1인 1회 매출을 사용합니다. 시설 Data Asset 설정보다 우선하며, 변경하면 이미 설치하거나 저장 후 복원한 시설도 다음 정산부터 적용됩니다."))
+	TSoftObjectPtr<UDataTable> FacilityRevenueTable;
+
+	UFUNCTION(BlueprintPure, Category = "Festival|Tables")
+	UDataTable* GetFacilityRevenueTable() const;
 
 	// --- 철거 ------------------------------------------------------------
 

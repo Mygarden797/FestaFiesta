@@ -34,6 +34,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
 	void ApplyViewData(const FFF_FacilityPaidProgramPickerViewData& ViewData);
 
+	/** Refresh an open preview without losing its selection, receipt, or an in-flight confirmation. */
+	void RefreshViewData(const FFF_FacilityPaidProgramPickerViewData& ViewData);
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
 	void SetPickerOpen(bool bOpen);
 

@@ -613,6 +613,13 @@ TArray<FFF_ProgramCard> UFF_FestivalViewModelSubsystem::GetProgramCatalog() cons
 	return Progression ? Progression->GetProgramCatalog() : TArray<FFF_ProgramCard>();
 }
 
+TArray<FFF_ProgramCard> UFF_FestivalViewModelSubsystem::GetProgramCatalogForFacility(
+	const FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetProgramCatalogForFacility(FacilityInstanceId) : TArray<FFF_ProgramCard>();
+}
+
 TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIds() const
 {
 	TArray<FName> Ids;

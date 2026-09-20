@@ -345,6 +345,13 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
             "InvalidMaxInstancesPerWorld",
             "MaxInstancesPerWorld는 0(무제한) 이상이어야 합니다."));
     }
+    // Preserve disabled authoring values, but do not allow an invalid amount to be enabled later.
+    if (RevenuePerUseGold < 0)
+    {
+        OutErrors.Add(LOCTEXT(
+            "InvalidRevenuePerUseGold",
+            "Revenue per Use (Gold)는 0(무료) 이상이어야 합니다."));
+    }
     // 양수/비음수 조건을 먼저 통과한 경우에만 예산 계산을 호출해 오류 중복과 오버플로를 피한다.
     if (FootprintSizeCells.X > 0 && FootprintSizeCells.Y > 0 && ClearanceCells >= 0 &&
         !UFFZSGridLibrary::CanEnumerateFacilityCells(*this))

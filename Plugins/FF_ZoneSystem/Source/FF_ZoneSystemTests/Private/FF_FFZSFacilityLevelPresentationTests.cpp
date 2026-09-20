@@ -32,6 +32,8 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
 
     FFFZSFacilitySpec Base = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
     Base.bUsesFacilityLevels = true;
+    Base.bOverrideRevenuePerUseGold = true;
+    Base.RevenuePerUseGold = 275;
     Base.VisualMesh = BaseMesh;
     Base.VisualSizingMode = EFFZSVisualSizingMode::SourceMeshSize;
     FFFZSFacilityUpgradeTier Level2;
@@ -121,6 +123,8 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Snapshot stores the original footprint"), Snapshot.FacilitySpec.FootprintSizeCells, Base.FootprintSizeCells);
     TestEqual(TEXT("Snapshot stores the absolute size"), Snapshot.UpgradeSizeMultiplier, 2.f);
     TestEqual(TEXT("Snapshot stores the absolute revenue"), Snapshot.UpgradeRevenueMultiplier, 2.25f);
+    TestTrue(TEXT("Snapshot keeps the installed facility's revenue override"), Snapshot.FacilitySpec.bOverrideRevenuePerUseGold);
+    TestEqual(TEXT("Upgrades preserve the installed base revenue amount"), Snapshot.FacilitySpec.RevenuePerUseGold, 275);
     TestTrue(TEXT("Read model reports levels"), Actor->GetReadModel().bUsesFacilityLevels);
     TestEqual(TEXT("Read model reports current size"), Actor->GetReadModel().UpgradeSizeMultiplier, 2.f);
     TestEqual(TEXT("Read model reports current revenue"), Actor->GetReadModel().UpgradeRevenueMultiplier, 2.25f);
@@ -132,6 +136,9 @@ bool FFFZSFacilityLevelPresentationTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Restore does not double the footprint multiplier"), Restored->GetFacilitySpec().FootprintSizeCells, Actor->GetFacilitySpec().FootprintSizeCells);
     TestTrue(TEXT("Restore preserves visual size"), Restored->VisualMesh->GetRelativeScale3D().Equals(FVector(2.f)));
     TestEqual(TEXT("Restore preserves revenue"), Restored->GetUpgradeRevenueMultiplier(), 2.25f);
+    TestTrue(TEXT("Restore preserves the facility's revenue policy"), Restored->GetFacilitySpec().bOverrideRevenuePerUseGold);
+    TestEqual(TEXT("Restore keeps the original base amount separate from the level multiplier"),
+        Restored->GetFacilitySpec().RevenuePerUseGold, 275);
     TestTrue(TEXT("Moving the restored actor succeeds"), Restored->ApplyPlacement(Snapshot.ZoneId, Snapshot.Placement, FTransform(FVector(500, 0, 0))));
     TestTrue(TEXT("Movement never compounds visual size"), Restored->VisualMesh->GetRelativeScale3D().Equals(FVector(2.f)));
     TestEqual(TEXT("Movement never compounds physical size"), Restored->GetFacilitySpec().FootprintSizeCells, Actor->GetFacilitySpec().FootprintSizeCells);

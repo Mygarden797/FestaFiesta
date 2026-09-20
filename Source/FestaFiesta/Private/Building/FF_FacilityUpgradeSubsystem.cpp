@@ -100,27 +100,33 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	OutPreview.NextServiceDurationSeconds = CurrentRules.ServiceDurationSeconds;
 	OutPreview.CurrentThroughputPerMinute = CurrentRules.ServiceCapacity * 60.f / CurrentRules.ServiceDurationSeconds;
 	OutPreview.NextThroughputPerMinute = OutPreview.CurrentThroughputPerMinute;
-	OutPreview.CurrentRevenueMultiplier = Facility->GetUpgradeRevenueMultiplier();
-	OutPreview.NextRevenueMultiplier = OutPreview.CurrentRevenueMultiplier;
 	const UFF_FacilitySynergySubsystem* Synergies = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
 	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(FacilityInstanceId) : 1.f;
 	const UFF_FestivalProgressionSubsystem* Progression = ResolveProgression();
 	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
+	const UDataTable* RevenueTable = Definition ? Definition->GetFacilityRevenueTable() : nullptr;
+	const float CommissionRate = Definition ? FFF_BoothRevenueRules::ResolveCommissionRate(
+		BaseSpec, Definition->BoothCommissionRate, RevenueTable) : 0.f;
+	OutPreview.CurrentRevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+		BaseSpec, OutPreview.CurrentLevel, Facility->GetUpgradeRevenueMultiplier(), RevenueTable);
+	OutPreview.NextRevenueMultiplier = OutPreview.CurrentRevenueMultiplier;
 	int32 RevenuePerUse = 0;
 	if (Definition)
 	{
 		FFF_FacilityNameParts Parts;
 		FString NamingError;
-		OutPreview.bRevenueAvailable = UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+		OutPreview.bRevenueAvailable = FFF_BoothRevenueRules::HasFacilityRevenueRow(BaseSpec, RevenueTable)
+			|| BaseSpec.bOverrideRevenuePerUseGold || UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
 			BaseSpec.Category, BaseSpec.FacilityDefinitionId, Parts, NamingError);
 		if (OutPreview.bRevenueAvailable)
 		{
-			RevenuePerUse = FFF_BoothRevenueRules::FindRevenuePerUse(
-				Definition->RevenuePerUseByMinorToken, Parts.MinorToken);
+			RevenuePerUse = FFF_BoothRevenueRules::ResolveRevenuePerUse(
+				BaseSpec, Definition->RevenuePerUseByMinorToken, RevenueTable);
 			OutPreview.BaseRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-				RevenuePerUse, 1, Definition->BoothCommissionRate, 1.f);
+				RevenuePerUse, 1, CommissionRate,
+				FFF_BoothRevenueRules::ResolveRevenueMultiplier(BaseSpec, 1, 1.f, RevenueTable));
 			OutPreview.CurrentRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-				RevenuePerUse, 1, Definition->BoothCommissionRate, OutPreview.CurrentRevenueMultiplier * SynergyMultiplier);
+				RevenuePerUse, 1, CommissionRate, static_cast<double>(OutPreview.CurrentRevenueMultiplier) * SynergyMultiplier);
 			OutPreview.NextRevenuePerUseGold = OutPreview.CurrentRevenuePerUseGold;
 		}
 	}
@@ -174,11 +180,12 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 		BaseSpec.QueueRules, Tier->ServiceDurationMultiplier);
 	OutPreview.NextServiceDurationSeconds = NextRules.ServiceDurationSeconds;
 	OutPreview.NextThroughputPerMinute = NextRules.ServiceCapacity * 60.f / NextRules.ServiceDurationSeconds;
-	OutPreview.NextRevenueMultiplier = Tier->RevenueMultiplier;
+	OutPreview.NextRevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+		BaseSpec, Tier->TargetLevel, Tier->RevenueMultiplier, RevenueTable);
 	if (OutPreview.bRevenueAvailable)
 	{
 		OutPreview.NextRevenuePerUseGold = FFF_BoothRevenueRules::ResolveCommission(
-			RevenuePerUse, 1, Definition->BoothCommissionRate, Tier->RevenueMultiplier * NextSynergyMultiplier);
+			RevenuePerUse, 1, CommissionRate, static_cast<double>(OutPreview.NextRevenueMultiplier) * NextSynergyMultiplier);
 	}
 	int32 InstallCost = 0;
 	FName CostRow;

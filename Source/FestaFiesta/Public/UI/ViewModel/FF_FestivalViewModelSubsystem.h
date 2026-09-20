@@ -557,6 +557,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FFF_ProgramCard> GetProgramCatalog() const;
 
+	/** 선택 시설의 수익 표 참가비로 계산한 프로그램 카드. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FFF_ProgramCard> GetProgramCatalogForFacility(FGuid FacilityInstanceId) const;
+
 	/** 오늘 이미 편성한 카드 id. 하루 경계에서 비워진다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FName> GetScheduledProgramIds() const;

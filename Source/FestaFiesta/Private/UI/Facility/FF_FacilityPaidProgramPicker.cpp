@@ -117,6 +117,45 @@ void UFF_FacilityPaidProgramPicker::ApplyViewData(
 	OnViewDataApplied(ViewData);
 }
 
+void UFF_FacilityPaidProgramPicker::RefreshViewData(
+	const FFF_FacilityPaidProgramPickerViewData& ViewData)
+{
+	if (bPurchaseCompleted || bCommitPending || ViewData.FacilityInstanceId != CurrentViewData.FacilityInstanceId)
+	{
+		return;
+	}
+	FFF_FacilityPaidProgramPickerViewData RefreshedData = ViewData;
+	RefreshedData.FeedbackText = CurrentViewData.FeedbackText;
+	RefreshedData.bFeedbackIsError = CurrentViewData.bFeedbackIsError;
+	const FName PreviousSelection = SelectedProgramId;
+	bool bSamePrograms = CurrentViewData.Cards.Num() == ViewData.Cards.Num();
+	for (int32 Index = 0; bSamePrograms && Index < ViewData.Cards.Num(); ++Index)
+	{
+		bSamePrograms = CurrentViewData.Cards[Index].ProgramId == ViewData.Cards[Index].ProgramId;
+	}
+	if (!bSamePrograms)
+	{
+		ApplyViewData(RefreshedData);
+		if (FindCard(PreviousSelection)) HandleCardSelected(PreviousSelection);
+		return;
+	}
+
+	// Keep the same widgets so polling does not reset the scroll position or an ongoing pointer action.
+	CurrentViewData = MoveTemp(RefreshedData);
+	for (UFF_FacilityPaidProgramCard* CardWidget : SpawnedCards)
+	{
+		if (CardWidget)
+		{
+			if (const FFF_FacilityPaidProgramCardViewData* CardData = FindCard(CardWidget->GetProgramId()))
+			{
+				CardWidget->ApplyViewData(*CardData);
+			}
+		}
+	}
+	if (!PreviousSelection.IsNone()) HandleCardSelected(PreviousSelection);
+	OnViewDataApplied(CurrentViewData);
+}
+
 void UFF_FacilityPaidProgramPicker::ShowPurchaseComplete(
 	const FName ProgramId, const int32 RemainingGold, const int32 RemainingStaff)
 {

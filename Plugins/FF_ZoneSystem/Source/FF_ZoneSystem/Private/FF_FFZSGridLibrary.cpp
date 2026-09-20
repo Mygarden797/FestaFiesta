@@ -1003,6 +1003,13 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     }
     AppendString(TEXT("spec.install_cost_key"), Spec.InstallCostKey.ToString());
     AppendString(TEXT("spec.revenue_rule_key"), Spec.RevenueRuleKey.ToString());
+    // false + zero is the legacy festival-default policy, so existing receipt bytes stay unchanged.
+    // Include stored amounts even when disabled: canonical Definition comparison covers all authored data.
+    if (Spec.bOverrideRevenuePerUseGold || Spec.RevenuePerUseGold != 0)
+    {
+        AppendInt(TEXT("spec.override_revenue_per_use_gold"), Spec.bOverrideRevenuePerUseGold ? 1 : 0);
+        AppendInt(TEXT("spec.revenue_per_use_gold"), Spec.RevenuePerUseGold);
+    }
     AppendString(TEXT("spec.experience_effect_key"), Spec.ExperienceEffectKey.ToString());
     AppendString(TEXT("spec.visual_mesh"), Spec.VisualMesh.ToSoftObjectPath().ToString());
     // 기존 Schema 2 명령/영수증은 세 필드가 없었으며 그 의미는 SourceMeshSize + identity였다.

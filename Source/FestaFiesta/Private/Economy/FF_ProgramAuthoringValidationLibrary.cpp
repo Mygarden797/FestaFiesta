@@ -82,10 +82,10 @@ bool UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(
 		}
 
 		if (Card.CostGold <= 0 || Card.RequiredStaff <= 0
-			|| Card.Capacity <= 0 || Card.FeePerPerson <= 0)
+			|| Card.Capacity <= 0 || Card.FeePerPerson < 0)
 		{
 			OutErrors.Add(FText::Format(
-				LOCTEXT("NonPositiveEconomy", "{0}: CostGold, RequiredStaff, Capacity, FeePerPerson는 모두 1 이상이어야 한다."),
+				LOCTEXT("NonPositiveEconomy", "{0}: CostGold, RequiredStaff, Capacity는 1 이상, FeePerPerson는 0 이상이어야 한다."),
 				Label));
 		}
 
