@@ -231,13 +231,12 @@ enum class EFF_SpendReason : uint8
 	FacilityInstall	= 0		UMETA(DisplayName = "시설 설치비"),
 	ProgramPurchase	= 1		UMETA(DisplayName = "유료 프로그램 구매"),
 	Promotion       = 2		UMETA(DisplayName = "홍보비"),
-	VenueRent       = 3		UMETA(DisplayName = "장소 임대료"),
-	StaffWages      = 4		UMETA(DisplayName = "Staff 임금"),
-	StaffHire       = 5		UMETA(DisplayName = "추가 고용"),
-	EventSupplies   = 6		UMETA(DisplayName = "Event 소모품"),
-	Cleanup         = 7		UMETA(DisplayName = "뒷정리"),
-	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽"),
-	FacilityUpgrade = 9		UMETA(DisplayName = "시설 강화비")
+	StaffWages      = 3		UMETA(DisplayName = "Staff 임금"),
+	StaffHire       = 4		UMETA(DisplayName = "추가 고용"),
+	EventSupplies   = 5		UMETA(DisplayName = "Event 소모품"),
+	Cleanup         = 6		UMETA(DisplayName = "뒷정리"),
+	FinaleFireworks = 7		UMETA(DisplayName = "피날레 폭죽"),
+	FacilityUpgrade = 8		UMETA(DisplayName = "시설 강화비")
 };
 
 // 매출 원인
@@ -261,7 +260,7 @@ struct FFF_LedgerRow
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	FText DisplayName;
 
-	// 줄을 식별하는 키. 짧은 enum 이름이다 (VenueRent 등).
+	// 줄을 식별하는 키. 짧은 enum 이름이다 (StaffWages 등).
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	FName ReasonId;
 

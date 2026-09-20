@@ -97,9 +97,6 @@ protected:
 	UFUNCTION()
 	void HandleTodayRevenueChanged(int32 NewValue);
 
-	UFUNCTION()
-	void HandleArrearsChanged(int32 NewValue);
-
 	/** 피날레 등급이 바뀌면 탭이 생기거나 사라진다. 값만 바뀌는 것이 아니다. */
 	UFUNCTION()
 	void HandleFinaleGradeChanged(EFF_FinaleGrade NewGrade);
@@ -193,7 +190,7 @@ protected:
 	// "관객 아이콘 옆에 아무것도 없는" 화면이 된다.
 
 	// === 왼쪽 묶음 — 준비 단계 바와 같은 순서다 (2026-08-27 백종태 요청) ===
-	// 축제 → 금화 → 미납 → 오늘 매출 → 인력 → 관객.
+	// 축제 → 금화 → 오늘 매출 → 인력 → 관객.
 	// 두 화면이 같은 자리에 같은 값을 두면 단계가 바뀌어도 눈이 다시 찾지 않는다.
 	//
 	// ★ 관객 만족도·안전은 여기 없다. **운영 패널로 옮겼다** (U6 계획).
@@ -211,17 +208,6 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
 	TObjectPtr<UWidget> Box_Gold;
-
-	/**
-	 * ★ 밀린 임대료. **잔액 바로 옆에 둔다.**
-	 * 미납이 있으면 매출이 들어와도 잔액이 안 늘어나므로 이 칸이 없으면 설명이 안 된다.
-	 * 0 이면 칸을 숨긴다.
-	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UTextBlock> Text_Arrears;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
-	TObjectPtr<UWidget> Box_Arrears;
 
 	/** 오늘 매출. **보유 금화와 다른 값이다** — 잔액은 지출로 줄어든다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")

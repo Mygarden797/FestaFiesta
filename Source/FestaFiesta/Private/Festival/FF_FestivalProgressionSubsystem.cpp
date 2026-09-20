@@ -109,7 +109,6 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 	// 재시작 시 등급이 지워지는데 이 셋을 안 알리면 UI 캐시가 "이미 구매함"으로 남는다
 	const int32 PreviousExpectedVisitors = GetExpectedVisitors();
@@ -126,7 +125,6 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
 	EndedDayLedger.Reset();
 	EndedDay = 0;
-	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
 	PurchasedPromotionGrade = EFF_PromotionGrade::None;
@@ -149,7 +147,6 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
 	if (PurchasedPromotionGrade != PreviousPromotionGrade)
 	{
@@ -270,7 +267,6 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 
 	Funds.AddRevenue(Amount);
 	DayLedger.RecordEarn(Reason, Amount, FacilityId);
@@ -278,13 +274,9 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	// 세 장부에 넣으므로 시설 정보 패널의 값과 결산 표의 합이 어긋날 수 없다.
 	const bool bFacilityRevenueChanged = FacilityRevenueBook.Record(FacilityInstanceId, Amount);
 
-	// 미납이 있으면 방금 들어온 돈이 잔액에 남지 않고 먼저 임대료를 갚는다.
-	RepayArrearsFromGold();
-
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	if (bFacilityRevenueChanged)
 	{
 		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
@@ -294,16 +286,11 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
 {
 	const int32 PreviousGold = Funds.GetGold();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	
 	Funds.Refund(Amount);
 	DayLedger.RecordRefund(Amount);
-	
-	// 미납이 있으면 방금 들어온 돈이 잔액에 남지 않고 먼저 임대료를 갚는다.
-	RepayArrearsFromGold();
-	
+
 	BroadcastGoldIfChanged(PreviousGold);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 }
 
 bool UFF_FestivalProgressionSubsystem::HasLedgerForDay(int32 Day) const
@@ -420,7 +407,6 @@ void UFF_FestivalProgressionSubsystem::BeginNewDay(int32 NewDay)
 {
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 	
 	// 실제로 정산했으면 true, 같은 날 중복 호출이라 건너뛰었으면 false.
@@ -428,7 +414,6 @@ void UFF_FestivalProgressionSubsystem::BeginNewDay(int32 NewDay)
 	
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
 }
 
@@ -920,14 +905,6 @@ void UFF_FestivalProgressionSubsystem::BroadcastTodayRevenueIfChanged(int32 Prev
 	OnTodayRevenueChanged.Broadcast(CurrentTodayRevenue);
 }
 
-void UFF_FestivalProgressionSubsystem::BroadcastTotalArrearsIfChanged(int32 PreviousTotalArrears)
-{
-	const int32 CurrentTotalArrears = Arrears.GetTotalArrears();
-	if (CurrentTotalArrears == PreviousTotalArrears) return;
-
-	OnTotalArrearsChanged.Broadcast(CurrentTotalArrears);
-}
-
 void UFF_FestivalProgressionSubsystem::BroadcastTotalStaffCountIfChanged(int32 PreviousTotalStaffCount)
 {
 	const int32 CurrentTotalStaffCount = StaffPool.GetTotalStaffCount();
@@ -986,17 +963,9 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	}
 	ScheduledPrograms.Reset();
 
-	SettleVenueRent();       // 거절할 수 없다 — 못 내면 미납
-	
-	ensureMsgf(Arrears.HasNoArrears() || Funds.GetGold() == 0,
-		TEXT("미납 %d 이 남았는데 잔액이 %d 다. 상환 훅을 안 부르는 유입 경로가 있다."),
-		Arrears.GetTotalArrears(), Funds.GetGold());
-	
-	RepayArrearsFromGold();  // 남은 잔액으로 밀린 것부터
-
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] Day %d 시작. 정산 후 Gold %d, 미납 %d, Staff %d명(기본 %d + 알바 %d)"),
-		NewDay, Funds.GetGold(), Arrears.GetTotalArrears(),
+		TEXT("[경제] Day %d 시작. Gold %d, Staff %d명(기본 %d + 알바 %d)"),
+		NewDay, Funds.GetGold(),
 		StaffPool.GetTotalStaffCount(), StaffPool.GetBaseStaffCount(),
 		StaffPool.GetTemporaryStaffCount());
 
@@ -1019,42 +988,3 @@ const FFF_DayLedger* UFF_FestivalProgressionSubsystem::FindLedgerForDay(int32 Da
 	return nullptr;
 }
 
-void UFF_FestivalProgressionSubsystem::SettleVenueRent()
-{
-	const int32 Rent = Definition->DailyVenueRentGold;
-	if (Rent <= 0) return;
-	
-	const int32 Paid = Funds.PayMandatoryCost(Rent);
-	if (Paid > 0)
-	{
-		// 실제로 빠져나간 금액을 기록
-		DayLedger.RecordSpend(EFF_SpendReason::VenueRent, Paid);
-	}
-	
-	// 못 낸 부분은 미납이 된다.
-	Arrears.AddArrears(Rent - Paid);
-}
-
-
-int32 UFF_FestivalProgressionSubsystem::RepayArrearsFromGold()
-{
-	// 정상적으로 미납금을 내고 있었다면 얼리 리턴
-	if (Arrears.HasNoArrears() || Funds.GetGold() <= 0) return 0;
-
-	const int32 Repaid = Arrears.RepayArrears(Funds.GetGold());
-	if (Repaid <= 0) return 0;
-
-	// 상환액은 잔액을 넘지 않게 잘라 왔으므로 전액이 빠져야 한다.
-	const int32 Deducted = Funds.PayMandatoryCost(Repaid);
-	
-	ensureMsgf(Deducted == Repaid,
-		TEXT("미납 상환액이 잔액을 넘었다. Repaid=%d Deducted=%d"), Repaid, Deducted);
-
-	// 임대료 지출로 기록
-	DayLedger.RecordSpend(EFF_SpendReason::VenueRent, Deducted);
-
-	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 밀린 임대료 %d 상환. 남은 미납 %d"),
-		Deducted, Arrears.GetTotalArrears());
-
-	return Deducted;
-}

@@ -15,7 +15,6 @@ FText UFF_EconomyDisplayTextLibrary::GetSpendReasonText(EFF_SpendReason Reason)
 	case EFF_SpendReason::FacilityInstall: return LOCTEXT("Spend_FacilityInstall", "시설 설치비");
 	case EFF_SpendReason::ProgramPurchase: return LOCTEXT("Spend_ProgramPurchase", "유료 프로그램 구매");
 	case EFF_SpendReason::Promotion:       return LOCTEXT("Spend_Promotion",       "홍보비");
-	case EFF_SpendReason::VenueRent:       return LOCTEXT("Spend_VenueRent",       "장소 임대료");
 	case EFF_SpendReason::StaffWages:      return LOCTEXT("Spend_StaffWages",      "Staff 임금");
 	case EFF_SpendReason::StaffHire:       return LOCTEXT("Spend_StaffHire",       "추가 고용");
 	case EFF_SpendReason::EventSupplies:   return LOCTEXT("Spend_EventSupplies",   "Event 소모품");

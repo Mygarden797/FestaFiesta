@@ -168,13 +168,9 @@ void UFF_LivePanelOperations::RefreshAll()
 	}
 
 	// --- 주의 항목 ---
-	// 지금 말할 수 있는 것은 미납뿐이다. 사건·대기열 원인은 소유자 API 가 오면 붙인다.
-	const int32 Arrears = ViewModel->GetArrears();
-	SetGroupTextOrHide(Box_Warning, Text_Warning, (Arrears > 0)
-		? FText::Format(
-			LOCTEXT("LiveOps_WarnArrears", "임대료 {0} 이 밀려 있습니다. 매출이 들어와도 잔액이 늘지 않습니다."),
-			FText::AsNumber(Arrears))
-		: FText::GetEmpty());
+	// 지금은 띄울 것이 없어 칸째 숨긴다.
+	// 사건·대기열 원인은 소유자 API 가 오면 여기에 붙인다.
+	SetGroupTextOrHide(Box_Warning, Text_Warning, FText::GetEmpty());
 }
 
 void UFF_LivePanelOperations::Debug_SetVisitorCount(int32 InVisitorCount)

@@ -147,7 +147,6 @@ void UFF_LiveHudScreen::BindViewModel()
 	CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
-	CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleArrearsChanged);
 
 	// 🔴 전체 인원과 가용 인원 **둘 다** 받는다. 프로그램 편성은 전체를 바꾸지 않고,
 	// 알바 고용은 편성을 바꾸지 않는다 — 하나만 받으면 한쪽 변화를 놓친다.
@@ -166,7 +165,6 @@ void UFF_LiveHudScreen::UnbindViewModel()
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleRemainingSecondsChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
-		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
 		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
 	}
@@ -706,19 +704,13 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 		return;
 	}
 
-	// --- 왼쪽: 축제 → 금화 → 미납 → 오늘 매출 → 인력 → 관객 ---
+	// --- 왼쪽: 축제 → 금화 → 오늘 매출 → 인력 → 관객 ---
 	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
 	SetGroupTextOrHide(Box_FestivalName, Text_FestivalName,
 		Flow ? Flow->GetActiveFestivalDisplayName() : FText::GetEmpty());
 
 	SetGroupTextOrHide(Box_Gold, Text_Gold,
 		FText::AsNumber(ViewModel->GetGold()));
-
-	// 미납은 0 이면 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다.
-	const int32 Arrears = ViewModel->GetArrears();
-	SetGroupTextOrHide(Box_Arrears, Text_Arrears, (Arrears > 0)
-		? FText::Format(LOCTEXT("LiveStatus_Arrears", "미납 {0}"), FText::AsNumber(Arrears))
-		: FText::GetEmpty());
 
 	SetGroupTextOrHide(Box_TodayRevenue, Text_TodayRevenue,
 		FText::AsNumber(ViewModel->GetTodayRevenue()));
@@ -1022,11 +1014,6 @@ void UFF_LiveHudScreen::RefreshCta()
 		Button_Cta->SetIsEnabled(bShowBarCta);
 	}
 	SetTextOrHide(Text_CtaLabel, bShowBarCta ? GetCtaLabelText() : FText::GetEmpty());
-}
-
-void UFF_LiveHudScreen::HandleArrearsChanged(int32 NewValue)
-{
-	RefreshStatusRow();
 }
 
 void UFF_LiveHudScreen::HandleStaffCountChanged(int32 NewValue)

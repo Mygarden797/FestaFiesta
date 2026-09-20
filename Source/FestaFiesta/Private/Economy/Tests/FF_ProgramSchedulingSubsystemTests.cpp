@@ -117,7 +117,6 @@ namespace FFF_ProgramSchedulingCommandTestHelpers
 			Definition->FestivalId = TEXT("ProgramSchedulingCommandAutomationFestival");
 			Definition->InitialGold = 10000;
 			Definition->InitialStaffCount = 10;
-			Definition->DailyVenueRentGold = 0;
 			Definition->FacilityCostTable = CostTable;
 
 			const FFF_ProgramCard* WorkshopCard = Definition->ProgramCatalog.FindByPredicate(

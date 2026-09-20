@@ -146,8 +146,6 @@ namespace FFF_QueueEconomyBridgeTestHelpers
 
 			Definition->FestivalId = TEXT("QueueEconomyAutomationFestival");
 			Definition->InitialGold = StartingGold;
-			// 이 테스트는 매출만 본다. 임대료가 걷히면 잔액 기대값에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			Progression->StartFestival(Definition);
 			Queue->SetPaused(true);

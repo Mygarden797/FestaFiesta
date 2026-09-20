@@ -47,7 +47,6 @@ EFF_PrepCapacityRisk FFF_PrepCheckRules::ClassifyCapacityRisk(
 }
 
 FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
-	int32 RentCost,
 	int32 TemporaryStaffCount,
 	int32 WagePerStaff,
 	int32 ExpectedVisitors,
@@ -56,17 +55,10 @@ FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
 	int32 DailyGoalBonus)
 {
 	FFF_PrepDayEstimate Result;
-	Result.RentCost = RentCost;
 
 	if (TemporaryStaffCount >= 0 && WagePerStaff != INDEX_NONE)
 	{
 		Result.StaffWageCost = TemporaryStaffCount * WagePerStaff;
-	}
-
-	// 둘 중 하나라도 모르면 합계를 만들지 않는다. 절반만 더한 값은 틀린 사실이다.
-	if (Result.RentCost != INDEX_NONE && Result.StaffWageCost != INDEX_NONE)
-	{
-		Result.FixedCostTotal = Result.RentCost + Result.StaffWageCost;
 	}
 
 	if (ExpectedVisitors != INDEX_NONE && AdmissionFee != INDEX_NONE)
@@ -522,7 +514,6 @@ void UFF_PrepPanelCheck::RefreshEstimate()
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 
 	const FFF_PrepDayEstimate Estimate = FFF_PrepCheckRules::BuildDayEstimate(
-		ViewModel ? ViewModel->GetDailyVenueRentGold() : INDEX_NONE,
 		ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE,
 		ViewModel ? ViewModel->GetDailyStaffWageGold() : INDEX_NONE,
 		// 수입은 **범위의 아래쪽**으로 잡는다. 위쪽으로 잡으면 개장 판단이 낙관적으로 기운다.
@@ -531,9 +522,7 @@ void UFF_PrepPanelCheck::RefreshEstimate()
 		ViewModel ? ViewModel->GetDailyVisitorGoal() : INDEX_NONE,
 		ViewModel ? ViewModel->GetDailyGoalBonusGold() : INDEX_NONE);
 
-	SetTextOrHide(Text_RentCost, FormatGoldOrUnknown(Estimate.RentCost));
 	SetTextOrHide(Text_StaffWageCost, FormatGoldOrUnknown(Estimate.StaffWageCost));
-	SetTextOrHide(Text_FixedCostTotal, FormatGoldOrUnknown(Estimate.FixedCostTotal));
 	SetTextOrHide(Text_ExpectedAdmission, FormatGoldOrUnknown(Estimate.ExpectedAdmissionRevenue));
 	SetTextOrHide(Text_ExpectedGoalBonus, FormatGoldOrUnknown(Estimate.ExpectedGoalBonus));
 }

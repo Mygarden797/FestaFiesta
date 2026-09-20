@@ -51,8 +51,6 @@ namespace FFF_ProgramScheduleSubsystemTestHelpers
 			Definition->FestivalId = TEXT("ProgramScheduleAutomationFestival");
 			Definition->InitialGold = InitialGold;
 			Definition->InitialStaffCount = BaseStaff;
-			// 임대료는 이 파일의 관심사가 아니다. 0 으로 두지 않으면 잔액 기대값에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			// 프로덕션은 Initialize 가 물린다. 여기서는 서브시스템 컬렉션이 없으므로 직접 준다.
 			Progression->SetProgramReservations(Reservations);

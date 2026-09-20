@@ -18,7 +18,7 @@
  *
  *     return FText::FromString(GetNameStringByIndex(NameIndex));
  *
- * 즉 "장소 임대료" 가 아니라 **"VenueRent"** 가 나온다 — ReasonId 와 글자 하나 안 틀리게 같다.
+ * 즉 "Staff 임금" 이 아니라 **"StaffWages"** 가 나온다 — ReasonId 와 글자 하나 안 틀리게 같다.
  * 그래서 문자열의 원본을 UFF_EconomyDisplayTextLibrary(NSLOCTEXT) 에 두고 UMETA 는 에디터 장식으로 남긴다.
  *
  * **이 파일의 두 번째 테스트가 그 둘이 어긋나지 않게 잡는다.** 한쪽만 고치면 깨진다.
@@ -110,9 +110,9 @@ bool FFF_EconomyDisplayText_EveryValueHasTextThatIsNotTheEnumName::RunTest(const
 		UFF_EconomyDisplayTextLibrary::GetFinalePurchaseResultText(
 			EFF_FinalePurchaseResult::AlreadyPurchased).ToString(),
 		FString(TEXT("이미 구매했다")));
-	TestEqual(TEXT("장소 임대료 문구"),
-		UFF_EconomyDisplayTextLibrary::GetSpendReasonText(EFF_SpendReason::VenueRent).ToString(),
-		FString(TEXT("장소 임대료")));
+	TestEqual(TEXT("Staff 임금 문구"),
+		UFF_EconomyDisplayTextLibrary::GetSpendReasonText(EFF_SpendReason::StaffWages).ToString(),
+		FString(TEXT("Staff 임금")));
 
 	return true;
 }
@@ -202,8 +202,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_EconomyDisplayText_EnumSizesMatchExpectatio
 bool FFF_EconomyDisplayText_EnumSizesMatchExpectations::RunTest(const FString& Parameters)
 {
 	// UEnum 은 _MAX 를 한 칸 더 갖는다. 저작된 값 개수는 NumEnums() - 1 이다.
-	TestEqual(TEXT("지출 원인이 10종이다"),
-		StaticEnum<EFF_SpendReason>()->NumEnums() - 1, 10);
+	TestEqual(TEXT("지출 원인이 9종이다"),
+		StaticEnum<EFF_SpendReason>()->NumEnums() - 1, 9);
 	TestEqual(TEXT("매출 원인이 5종이다"),
 		StaticEnum<EFF_EarnReason>()->NumEnums() - 1, 5);
 	TestEqual(TEXT("피날레 구매 결과가 6종이다"),
@@ -214,8 +214,8 @@ bool FFF_EconomyDisplayText_EnumSizesMatchExpectations::RunTest(const FString& P
 		StaticEnum<EFF_ProgramPurchaseResult>()->NumEnums() - 1, 7);
 
 	// 위 개수가 바뀌면 이 파일의 Last* 상수와 문자열 switch 도 같이 고쳐야 한다.
-	TestEqual(TEXT("지출 마지막 값이 9 이다"),
-		FFF_EconomyDisplayTextTestHelpers::LastSpendReason, static_cast<int64>(9));
+	TestEqual(TEXT("지출 마지막 값이 8 이다"),
+		FFF_EconomyDisplayTextTestHelpers::LastSpendReason, static_cast<int64>(8));
 	TestEqual(TEXT("매출 마지막 값이 4 이다"),
 		FFF_EconomyDisplayTextTestHelpers::LastEarnReason, static_cast<int64>(4));
 

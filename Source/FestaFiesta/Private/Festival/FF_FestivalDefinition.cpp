@@ -128,12 +128,6 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 		OutErrors.Add(LOCTEXT("BadStaffCount", "InitialStaffCount 가 음수다."));
 	}
 
-	// --- 고정비 ---
-	if (DailyVenueRentGold < 0)
-	{
-		OutErrors.Add(LOCTEXT("BadRecurringCost", "고정비에 음수가 있다."));
-	}
-
 	// --- 스태프 임금/고용 ---
 	if (DailyStaffWageGold < 0 || MaxHiredStaffPerDay < 0)
 	{

@@ -468,7 +468,6 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	CostTable->AddRow(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"), CostRow);
 	Definition->FestivalId = TEXT("FacilityInfoProgramReadModelFestival");
 	Definition->FacilityCostTable = CostTable;
-	Definition->DailyVenueRentGold = 0;
 	Progression->SetProgramReservations(Reservations);
 	Progression->StartFestival(Definition);
 

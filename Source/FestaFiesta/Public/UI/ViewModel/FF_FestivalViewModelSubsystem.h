@@ -249,7 +249,8 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  *
  * Staff도 소유자 API가 생겼다 — `GetBaseStaffCount()`/`GetTemporaryStaffCount()`/`GetTotalStaffCount()`.
  * 무페이 기본 팀 + 당일 알바 구성이고 임금은 알바에만 붙는다. 이 ViewModel에는 아직 Staff 필드가 없다.
- * 임대료 미납은 `FFF_FixedCostArrears`에 누적된다. 상세는 리포 루트 `UI_API.md`.
+ * 거절할 수 없는 지출은 없다 — 잔액이 모자라면 그 지출이 거부되고 화면에서는 버튼이 막힌다.
+ * 상세는 리포 루트 `UI_API.md`.
  *
  * === 값 규격 (2026-08-06 결정) ===
  * - Satisfaction / Safety : int32 0~100, 높을수록 좋음.
@@ -379,19 +380,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
 	FFF_OnIntMetricChanged OnTodayRevenueChanged;
 
-	// --- 고정비 미납 (2026-08-26 추가 — U4 준비 단계 HUD) ---
-	//
-	// !! 잔액과 함께 보여야 하는 값이다 !!
-	// 미납이 남아 있으면 매출이 들어와도 잔액이 안 늘어난다(`RepayArrearsFromGold`).
-	// 이 칸이 없으면 "돈을 벌었는데 잔액이 그대로"인 화면을 설명할 방법이 없다.
-	// 0 이면 화면에서 칸을 숨긴다 — 0 을 띄우면 없는 문제를 있는 것처럼 만든다.
-
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
-	int32 GetArrears() const { return Arrears; }
-
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
-	FFF_OnIntMetricChanged OnArrearsChanged;
-
 	// --- 스태프 (2026-08-26 추가 — U4 준비 단계 HUD) ---
 	//
 	// 무페이 기본 팀 + 당일 알바다. 임금은 알바에만 붙고 매일 재계약한다.
@@ -459,17 +447,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetRemainingTemporaryStaffCap() const;
 
-	/** 알바 1명·1일 임금. 고정비 표와 견적에 쓴다. */
+	/** 알바 1명·1일 임금. 지출 표와 견적에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetDailyStaffWageGold() const;
 
 	/** 하루 알바 상한. 화면에 `오늘 최대 N명` 을 쓰기 위한 값이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetMaxTemporaryStaffPerDay() const;
-
-	/** 장소 임대료(Gold/일). 고정비 표에 임금과 함께 보여준다. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
-	int32 GetDailyVenueRentGold() const;
 
 	// --- 환경: 날씨 (2026-08-26 추가 — U5 점검 패널) ---
 	//
@@ -958,10 +942,6 @@ protected:
 	UFUNCTION()
 	void HandleOwnerExpectedVisitorsChanged(int32 NewValue);
 
-	/** 미납 총액을 받아 중계한다. */
-	UFUNCTION()
-	void HandleOwnerArrearsChanged(int32 NewValue);
-
 	/**
 	 * 환경 상태를 받아 **날씨만** 중계한다.
 	 *
@@ -1083,10 +1063,6 @@ private:
 
 	UPROPERTY()
 	int32 TodayRevenue = 0;
-
-	/** 임대료 미납 누적. 하루 경계에서 리셋되지 않는다. */
-	UPROPERTY()
-	int32 Arrears = 0;
 
 	/** 중복 방송 차단용. 야간 전환으로 원본이 울려도 날씨가 같으면 넘긴다. */
 	UPROPERTY()

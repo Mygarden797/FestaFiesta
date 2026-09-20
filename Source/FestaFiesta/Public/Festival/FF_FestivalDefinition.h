@@ -64,15 +64,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Initial", meta = (ClampMin = "0"))
 	int32 InitialStaffCount = 6;
 
-	// --- 고정비 -----------------------------------------------------------
-
-	// 임대료 3일 합계가 7,200 이다. 초기 자금의 72% 가 가만히 있어도 나가기 때문에
-	// "돈을 벌어야 하는 이유"가 된다.
-
-	// 장소 임대료 (Gold/일). [기획서] §8.2
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Recurring", meta = (ClampMin = "0"))
-	int32 DailyVenueRentGold = 2400;
-	
 	// --- 스태프 임금 -----------------------------------------------------------
 	
 	// 기본 Staff 는 무페이이고 임금은 1일 알바에만 붙는다.
@@ -89,10 +80,14 @@ public:
 	// --- 수익원 -----------------------------------------------------------
 
 	// 두 수익원의 역할이 다르다 (economy_spec.md §2.6):
-	//   입장료   → 고정비를 덮는 안정 수입. 방문객을 늘려서 키운다
+	//   입장료   → 손님 수만 따라오는 안정 수입. 방문객을 늘려서 키운다
 	//   수수료   → Finale 를 사는 성장 자금. 부스를 잘 지어서 키운다
+	//
+	// [주의] 원래 입장료의 역할은 "고정비(임대료)를 덮는 것"이었다. 임대료를 없앤 뒤로
+	//        덮을 것이 없어져 3일 7,500 이 통째로 순이익이 됐다 — 초기 자금과 함께
+	//        다시 앉혀야 하는 값이다.
 
-	// 1인당 입장료 (Gold). [밸런스] 3일 7,500 으로 고정비 7,200 을 덮는다
+	// 1인당 입장료 (Gold). [밸런스] 3일 7,500
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
 	int32 AdmissionFeeGold = 5;
 

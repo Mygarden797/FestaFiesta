@@ -156,7 +156,6 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Festival->FestivalId = TEXT("BuildDragPlacementAutomation");
     Festival->FacilityCostTable = Costs.Get();
     Festival->InitialGold = 100000;
-    Festival->DailyVenueRentGold = 0;
     Economy->StartFestival(Festival.Get());
 
     const FName ZoneId(TEXT("GZ_DadaPocha"));

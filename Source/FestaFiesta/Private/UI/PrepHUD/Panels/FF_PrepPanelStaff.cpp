@@ -164,7 +164,6 @@ void UFF_PrepPanelStaff::BindViewModel()
 	// 둘 다 구독하지 않으면 다른 패널에서 돈을 쓴 뒤 이 화면이 거짓 견적을 띄운다.
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
-	CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleArrearsChanged);
 
 	// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이걸 함께 구독하지 않으면
 	// 프로그램을 편성한 뒤 `사용 가능` 숫자가 그대로 남는다.
@@ -178,7 +177,6 @@ void UFF_PrepPanelStaff::UnbindViewModel()
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
-		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleArrearsChanged);
 		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleAvailableStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
@@ -198,9 +196,7 @@ void UFF_PrepPanelStaff::RefreshAll()
 	const int32 Available = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
 	const int32 MaxPerDay = ViewModel ? ViewModel->GetMaxTemporaryStaffPerDay() : INDEX_NONE;
 	const int32 Wage = ViewModel ? ViewModel->GetDailyStaffWageGold() : INDEX_NONE;
-	const int32 Rent = ViewModel ? ViewModel->GetDailyVenueRentGold() : INDEX_NONE;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
-	const int32 Arrears = ViewModel ? ViewModel->GetArrears() : 0;
 
 	Quote = FFF_PrepStaffRules::BuildQuote(
 		DesiredCount,
@@ -296,18 +292,9 @@ void UFF_PrepPanelStaff::RefreshAll()
 	}
 	SetTextOrHide(Text_HireBlockReason, BlockReason);
 
-	// --- 고정비 표 ---
-	SetTextOrHide(Text_RentCost, (Rent != INDEX_NONE)
-		? FText::Format(LOCTEXT("PrepStaff_Rent", "{0} / 일"), FText::AsNumber(Rent))
-		: FText::GetEmpty());
-
-	// 오늘 이미 낸 알바 임금이다. 선택 중인 견적과 다른 값이므로 섞지 않는다.
+	// 오늘 나가는 돈은 알바 임금 하나뿐이다.
 	SetTextOrHide(Text_WageCost, (Temporary >= 0 && Wage != INDEX_NONE)
 		? FText::Format(LOCTEXT("PrepStaff_WageToday", "{0} / 일"), FText::AsNumber(Temporary * Wage))
-		: FText::GetEmpty());
-
-	SetGroupTextOrHide(Box_ArrearsRow, Text_ArrearsCost, (Arrears > 0)
-		? FText::Format(LOCTEXT("PrepStaff_Arrears", "미납 {0}"), FText::AsNumber(Arrears))
 		: FText::GetEmpty());
 }
 
@@ -382,11 +369,6 @@ void UFF_PrepPanelStaff::HandleStaffCountChanged(int32 NewValue)
 void UFF_PrepPanelStaff::HandleAvailableStaffCountChanged(int32 NewValue)
 {
 	// 선택은 건드리지 않는다. 편성이 바뀌었을 뿐 이 화면에서 고른 인원은 그대로다.
-	RefreshAll();
-}
-
-void UFF_PrepPanelStaff::HandleArrearsChanged(int32 NewValue)
-{
 	RefreshAll();
 }
 

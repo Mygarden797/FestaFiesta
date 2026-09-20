@@ -115,7 +115,7 @@ struct FESTAFIESTA_API FFF_PrepStaffRules
  * 구성 —
  *   현재 인원 `6명 (기본 6 · 알바 0)` · 오늘 최대 `12명`
  *   알바 고용 `[-] 3 [+]` → `3명 × 150 = 450 Gold` · `고용 후 잔액 7,150`
- *   고정비 표 `장소 임대료 2,400 / 알바 임금 450 / (미납 있으면) 미납 2,400`
+ *   오늘 지출 표 `알바 임금 450`
  *   ★ `알바는 하루짜리입니다. 매일 다시 고용해야 합니다.`
  *
  * === ★ 하루짜리라는 것을 반드시 화면에 쓴다 ===
@@ -166,9 +166,6 @@ protected:
 	UFUNCTION()
 	void HandleAvailableStaffCountChanged(int32 NewValue);
 
-	UFUNCTION()
-	void HandleArrearsChanged(int32 NewValue);
-
 protected:
 	// --- 위젯 바인딩. 전부 Optional 이다 ---
 	// 목업의 일부만 만든 WBP 도 통과시킨다. 빠진 것은 조용히 넘기지 않고 로그로 알린다.
@@ -209,20 +206,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_HireBlockReason;
 
-	// --- 고정비 표 ---
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
-	TObjectPtr<UTextBlock> Text_RentCost;
+	// --- 오늘 지출 표 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_WageCost;
-
-	/** 미납이 0 이면 줄째 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
-	TObjectPtr<UTextBlock> Text_ArrearsCost;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
-	TObjectPtr<UWidget> Box_ArrearsRow;
 
 	/** 하루짜리라는 안내. 문구를 바꿀 수 있게 값으로 뺀다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")

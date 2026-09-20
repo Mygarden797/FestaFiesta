@@ -24,8 +24,6 @@
  */
 namespace FFF_StageEconomyBridgeTestHelpers
 {
-	// 2026-08-14 결정값 (E-23). 임금은 고정비가 아니라 하루 고정비는 임대료뿐이다.
-	constexpr int32 DailyRent = 2400;
 	constexpr int32 InitialGold = 10000;
 	constexpr int32 BaseStaff = 6;
 
@@ -65,7 +63,6 @@ namespace FFF_StageEconomyBridgeTestHelpers
 
 			Definition->FestivalId = TEXT("StageBridgeAutomationFestival");
 			Definition->InitialGold = InitialGold;
-			Definition->DailyVenueRentGold = DailyRent;
 			Definition->InitialStaffCount = BaseStaff;
 
 			// StartFestival 이 Day1 을 정산한다. 브리지는 Day2 부터 관여한다.
@@ -172,8 +169,8 @@ bool FFF_StageEconomyBridge_OnlyMorningStagesAllowProgramScheduling::RunTest(con
 	return true;
 }
 
-// Day2·3 MorningCheck 진입이 실제로 정산을 연다.
-// 3일 임대료 합계 7,200 은 §2.6 의 입장료 7,500 이 덮는 값이라 여기서 어긋나면 수지가 무너진다.
+// Day2·3 MorningCheck 진입이 실제로 하루를 연다.
+// 경계는 어제를 닫고 오늘을 열 뿐 아무것도 걷지 않는다 — 잔액이 한 푼도 안 움직여야 한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_MorningCheckEntryOpensNewDay, "FestaFiesta.Economy.StageEconomyBridge.MorningCheckEntryOpensNewDay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StageEconomyBridge_MorningCheckEntryOpensNewDay::RunTest(const FString& Parameters)
 {
@@ -186,33 +183,33 @@ bool FFF_StageEconomyBridge_MorningCheckEntryOpensNewDay::RunTest(const FString&
 	// 브리지가 관여하기 전 상태. Day1 은 StartFestival 이 이미 정산했다.
 	TestEqual(TEXT("Day1 은 브리지 없이 정산돼 있다"),
 		Harness.Progression->GetLastProcessedDay(), 1);
-	TestEqual(TEXT("Day1 임대료가 빠져 있다"), Harness.Progression->GetGold(),
-		FFF_StageEconomyBridgeTestHelpers::InitialGold
-			- FFF_StageEconomyBridgeTestHelpers::DailyRent);
+	TestEqual(TEXT("Day1 을 열어도 잔액은 초기 자금 그대로다"), Harness.Progression->GetGold(),
+		FFF_StageEconomyBridgeTestHelpers::InitialGold);
 
 	// Day2 진입. AdvanceToNextDay 가 CurrentDay 를 먼저 올리므로 브리지가 받는 날짜는 2 다.
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 2);
 	TestEqual(TEXT("Day2 가 정산된다"), Harness.Progression->GetLastProcessedDay(), 2);
-	TestEqual(TEXT("임대료가 이틀치 나갔다"), Harness.Progression->GetGold(),
-		FFF_StageEconomyBridgeTestHelpers::InitialGold
-			- FFF_StageEconomyBridgeTestHelpers::DailyRent * 2);
+	TestEqual(TEXT("Day2 를 열어도 잔액이 안 줄어든다"), Harness.Progression->GetGold(),
+		FFF_StageEconomyBridgeTestHelpers::InitialGold);
 
 	// Day3 진입.
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 3);
 	TestEqual(TEXT("Day3 가 정산된다"), Harness.Progression->GetLastProcessedDay(), 3);
-	TestEqual(TEXT("3일 임대료 합계가 7,200 이다"), Harness.Progression->GetGold(),
-		FFF_StageEconomyBridgeTestHelpers::InitialGold - 7200);
+	TestEqual(TEXT("사흘을 다 열어도 잔액이 초기 자금 그대로다"), Harness.Progression->GetGold(),
+		FFF_StageEconomyBridgeTestHelpers::InitialGold);
 
-	// 미납이 생기지 않는 잔액이었다 — 임대료가 전액 현금으로 나갔다는 뜻이다.
-	TestEqual(TEXT("미납이 없다"), Harness.Progression->GetTotalArrears(), 0);
+	// 지출 줄도 하나도 안 생긴다 — 경계가 걷는 돈이 없다는 뜻이다.
+	TestEqual(TEXT("경계가 만든 지출 줄이 없다"),
+		Harness.Progression->GetSpendRowsForDay(3).Num(), 0);
 
 	return true;
 }
 
-// 같은 날 MorningCheck 에 다시 들어와도 두 번 걷지 않는다.
+// 같은 날 MorningCheck 에 다시 들어와도 하루를 두 번 열지 않는다.
 //
 // RequestTransition 에 같은 단계 가드가 없어서 재진입이 실제로 가능하다.
-// 이중 징수는 크래시도 Error 로그도 없이 3일 수지만 조용히 깨뜨리는 종류의 사고다.
+// 두 번 열리면 장중에 TodayRevenue 와 원장이 지워진다 — 크래시도 Error 로그도 없이
+// 그날 결산만 조용히 비는 종류의 사고다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_ReEntryOnSameDayDoesNotChargeTwice, "FestaFiesta.Economy.StageEconomyBridge.ReEntryOnSameDayDoesNotChargeTwice", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StageEconomyBridge_ReEntryOnSameDayDoesNotChargeTwice::RunTest(const FString& Parameters)
 {
@@ -223,21 +220,24 @@ bool FFF_StageEconomyBridge_ReEntryOnSameDayDoesNotChargeTwice::RunTest(const FS
 	}
 
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 2);
-	const int32 GoldAfterFirstEntry = Harness.Progression->GetGold();
+
+	// 하루가 열린 뒤 오늘 매출을 만든다. 경계가 다시 돌면 이 값이 0 으로 지워진다.
+	Harness.Progression->AddRevenue(900, EFF_EarnReason::AdmissionFee);
+	TestEqual(TEXT("오늘 매출이 쌓였다"), Harness.Progression->GetTodayRevenue(), 900);
 
 	// MorningCheck → 다른 단계 → 다시 MorningCheck. 스킵·되돌림으로 실제로 생기는 경로다.
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::Live, 2);
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 2);
 
-	TestEqual(TEXT("같은 날 재진입에서 임대료가 두 번 빠지지 않는다"),
-		Harness.Progression->GetGold(), GoldAfterFirstEntry);
+	TestEqual(TEXT("같은 날 재진입이 오늘 매출을 지우지 않는다"),
+		Harness.Progression->GetTodayRevenue(), 900);
 	TestEqual(TEXT("마지막 정산일이 그대로다"),
 		Harness.Progression->GetLastProcessedDay(), 2);
 
 	// 지난 날로 되돌아오는 진입도 무시된다 — 날짜의 권위는 Stage 지만 가드는 경제가 쥔다.
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 1);
 	TestEqual(TEXT("지난 날 진입은 무시된다"),
-		Harness.Progression->GetGold(), GoldAfterFirstEntry);
+		Harness.Progression->GetTodayRevenue(), 900);
 	TestEqual(TEXT("마지막 정산일이 되돌아가지 않는다"),
 		Harness.Progression->GetLastProcessedDay(), 2);
 
@@ -245,7 +245,7 @@ bool FFF_StageEconomyBridge_ReEntryOnSameDayDoesNotChargeTwice::RunTest(const FS
 }
 
 // MorningCheck 이 아닌 진입은 아무것도 하지 않는다.
-// Live 진입이 하루를 열면 매일 두 번 임대료가 나가고, TodayRevenue 가 장중에 리셋된다.
+// Live 진입이 하루를 열면 TodayRevenue 와 원장이 장중에 리셋된다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_OtherStagesDoNotSettle, "FestaFiesta.Economy.StageEconomyBridge.OtherStagesDoNotSettle", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StageEconomyBridge_OtherStagesDoNotSettle::RunTest(const FString& Parameters)
 {
@@ -303,7 +303,7 @@ bool FFF_StageEconomyBridge_FestivalStartedResetsEconomy::RunTest(const FString&
 
 	const int32 GoldAfterFirstDay = Harness.Progression->GetGold();
 
-	// 1회차를 끝까지 굴린다 — 사흘치 임대료, 매출, 알바, 예약 슬롯까지 상태를 더럽힌다.
+	// 1회차를 끝까지 굴린다 — 사흘치 경계, 매출, 예약 슬롯까지 상태를 더럽힌다.
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 2);
 	Harness.Bridge->ProcessStageEntry(EFF_FestivalStage::MorningCheck, 3);
 	Harness.Progression->AddRevenue(1500, EFF_EarnReason::AdmissionFee);
@@ -324,7 +324,6 @@ bool FFF_StageEconomyBridge_FestivalStartedResetsEconomy::RunTest(const FString&
 	TestEqual(TEXT("정산일이 Day1 로 돌아온다"),
 		Harness.Progression->GetLastProcessedDay(), 1);
 	TestEqual(TEXT("누적 매출이 비워진다"), Harness.Progression->GetTotalRevenue(), 0);
-	TestEqual(TEXT("미납이 비워진다"), Harness.Progression->GetTotalArrears(), 0);
 	TestEqual(TEXT("인원이 기본값으로 돌아온다"),
 		Harness.Progression->GetTotalStaffCount(),
 		FFF_StageEconomyBridgeTestHelpers::BaseStaff);
@@ -338,7 +337,7 @@ bool FFF_StageEconomyBridge_FestivalStartedResetsEconomy::RunTest(const FString&
 //
 // 1회차에는 Initialize 의 StartFestival 과 이 신호가 겹친다. StartFestival 이 완전한
 // 리셋 함수라 겹쳐도 되는 것이 이 배선의 전제이므로, 그 전제를 고정해 둔다 —
-// 만약 부분 리셋으로 바뀌면 Day1 임대료가 두 번 빠지고 여기서 먼저 깨진다.
+// 만약 부분 리셋으로 바뀌면 여기서 먼저 깨진다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_FestivalStartedIsIdempotent, "FestaFiesta.Economy.StageEconomyBridge.FestivalStartedIsIdempotent", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StageEconomyBridge_FestivalStartedIsIdempotent::RunTest(const FString& Parameters)
 {
@@ -354,7 +353,7 @@ bool FFF_StageEconomyBridge_FestivalStartedIsIdempotent::RunTest(const FString& 
 	Harness.Bridge->ProcessFestivalStarted();
 	const int32 GoldAfterFirstSignal = Harness.Progression->GetGold();
 
-	TestEqual(TEXT("첫 신호가 Day1 임대료를 두 번 걷지 않는다"),
+	TestEqual(TEXT("첫 신호가 잔액을 흔들지 않는다"),
 		GoldAfterFirstSignal, GoldAfterInitialize);
 
 	Harness.Bridge->ProcessFestivalStarted();

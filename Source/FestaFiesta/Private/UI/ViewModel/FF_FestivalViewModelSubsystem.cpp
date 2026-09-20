@@ -54,7 +54,6 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 		CachedProgressionSubsystem->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
 		CachedProgressionSubsystem->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
-		CachedProgressionSubsystem->OnTotalArrearsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
 		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 		CachedProgressionSubsystem->OnFinaleGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
@@ -270,7 +269,6 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	CachedProgressionSubsystem->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 	CachedProgressionSubsystem->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
 	CachedProgressionSubsystem->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
-	CachedProgressionSubsystem->OnTotalArrearsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged);
 	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 	CachedProgressionSubsystem->OnFinaleGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
@@ -288,7 +286,6 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 		HandleOwnerTotalRevenueChanged(CachedProgressionSubsystem->GetTotalRevenue());
 		HandleOwnerTodayRevenueChanged(CachedProgressionSubsystem->GetTodayRevenue());
 		HandleOwnerExpectedVisitorsChanged(CachedProgressionSubsystem->GetExpectedVisitors());
-		HandleOwnerArrearsChanged(CachedProgressionSubsystem->GetTotalArrears());
 		HandleOwnerStaffCountChanged(CachedProgressionSubsystem->GetTotalStaffCount());
 
 		// 피날레는 이어하기로 들어오면 이미 사 둔 상태일 수 있다. 방송을 놓쳤으므로 현재값을
@@ -441,11 +438,6 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged(int32 Ne
 	// 🔴 소유자는 정의가 없을 때 `INDEX_NONE` 을 준다. 그대로 넘긴다 —
 	// 0 으로 바꾸면 `아무도 안 온다` 는 확정 사실이 된다.
 	ApplyIntMetric(ExpectedVisitors, NewValue, OnExpectedVisitorsChanged);
-}
-
-void UFF_FestivalViewModelSubsystem::HandleOwnerArrearsChanged(int32 NewValue)
-{
-	ApplyIntMetric(Arrears, NewValue, OnArrearsChanged);
 }
 
 void UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged(int32 NewValue)
@@ -1106,13 +1098,6 @@ int32 UFF_FestivalViewModelSubsystem::GetMaxTemporaryStaffPerDay() const
 	return Definition ? Definition->MaxHiredStaffPerDay : INDEX_NONE;
 }
 
-int32 UFF_FestivalViewModelSubsystem::GetDailyVenueRentGold() const
-{
-	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->DailyVenueRentGold : INDEX_NONE;
-}
-
 bool UFF_FestivalViewModelSubsystem::RequestHireTemporaryStaff(int32 Count)
 {
 	UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
@@ -1301,9 +1286,8 @@ void UFF_FestivalViewModelSubsystem::Debug_SetMetrics(int32 InSimSatisfaction, i
 void UFF_FestivalViewModelSubsystem::Debug_SetEconomy(int32 InGold, int32 InTotalRevenue, int32 InTodayRevenue)
 {
 	// 금액이라 0~100 상한을 두지 않는다.
-	// Gold는 음수가 되지 않는 것으로 확정됐다 (2026-08-18, `FFF_FestivalFunds` 주석) — 잔액이 모자라면
-	// 구매를 거부한다. 임대료처럼 거절할 수 없는 의무비용만 있는 만큼 내고 부족분이
-	// `FFF_FixedCostArrears`에 미납으로 쌓인다. 그래도 여기서 클램프하지는 않는다 — 값의 주인은 소유자다.
+	// Gold는 음수가 되지 않는다 (`FFF_FestivalFunds` 주석) — 잔액이 모자라면 그 지출이 거부되고
+	// 화면에서는 버튼이 막힌다. 그래도 여기서 클램프하지는 않는다 — 값의 주인은 소유자다.
 	ApplyIntMetric(Gold, InGold, OnGoldChanged);
 	ApplyIntMetric(TotalRevenue, InTotalRevenue, OnTotalRevenueChanged);
 	ApplyIntMetric(TodayRevenue, InTodayRevenue, OnTodayRevenueChanged);

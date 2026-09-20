@@ -1527,10 +1527,6 @@ namespace FFLiveHudWbpBuilder
 			Slot_Money->SetHorizontalAlignment(HAlign_Fill);
 		}
 
-		// 미납은 0 이면 런타임에 접힌다.
-		AddResultNote(Blueprint, Tree, *Content, TEXT("Text_Arrears"),
-			Palette->InGame.Danger, 13, LOCTEXT("LiveReportPv_Arrears", "미납 2,400"), 18.f);
-
 		// --- 평가 ---
 		const bool bScoreOk =
 			AddMetricCell(Blueprint, Tree, *ScoreRow, *Palette, TEXT("Text_SimSatisfaction"),
@@ -1948,8 +1944,7 @@ namespace FFLiveHudWbpBuilder
 		}
 
 		// --- 왼쪽 묶음. **준비 단계 바와 같은 순서다** (2026-08-27 백종태 요청) ---
-		// 축제 → 금화 → 미납 → 오늘 매출 → 인력 → 관객.
-		// ★ 미납은 잔액 바로 옆이어야 "매출이 들어와도 잔액이 안 느는" 것이 설명된다.
+		// 축제 → 금화 → 오늘 매출 → 인력 → 관객.
 		const bool bLeftCellsOk =
 			AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_FestivalName"), TEXT("Text_FestivalName"),
@@ -1957,9 +1952,6 @@ namespace FFLiveHudWbpBuilder
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Gold"), TEXT("Text_Gold"),
 				LOCTEXT("LiveStatusPreview_Gold", "7,600"), Palette->InGame.Ink, TEXT("Gold"))
-			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
-				TEXT("Box_Arrears"), TEXT("Text_Arrears"),
-				LOCTEXT("LiveStatusPreview_Arrears", "미납 2,400"), Palette->InGame.Danger)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_TodayRevenue"), TEXT("Text_TodayRevenue"),
 				LOCTEXT("LiveStatusPreview_Revenue", "3,200"), Palette->InGame.Ink, TEXT("Revenue"))

@@ -14,12 +14,12 @@ bool FFF_DayLedger_RecordSpendAccumulatesByReason::RunTest(const FString& Parame
 
 	Ledger.RecordSpend(EFF_SpendReason::FacilityInstall, 400);
 	Ledger.RecordSpend(EFF_SpendReason::FacilityInstall, 500);
-	Ledger.RecordSpend(EFF_SpendReason::VenueRent, 1500);
+	Ledger.RecordSpend(EFF_SpendReason::StaffWages, 1500);
 
 	TestEqual(TEXT("같은 원인은 누적된다"),
 		Ledger.GetSpendByReason(EFF_SpendReason::FacilityInstall), 900);
 	TestEqual(TEXT("다른 원인은 서로 안 섞인다"),
-		Ledger.GetSpendByReason(EFF_SpendReason::VenueRent), 1500);
+		Ledger.GetSpendByReason(EFF_SpendReason::StaffWages), 1500);
 	TestEqual(TEXT("기록한 적 없는 원인은 0이다"),
 		Ledger.GetSpendByReason(EFF_SpendReason::Cleanup), 0);
 

@@ -40,7 +40,6 @@ namespace FFF_PromotionPurchaseTestHelpers
 
 			Definition->FestivalId = TEXT("PromotionAutomationFestival");
 			Definition->InitialGold = Gold;
-			Definition->DailyVenueRentGold = 0;
 			Definition->BaseDailyVisitors = BaseVisitors;
 
 			Progression->StartFestival(Definition);

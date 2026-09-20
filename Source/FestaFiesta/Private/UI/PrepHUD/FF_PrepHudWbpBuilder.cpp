@@ -331,7 +331,7 @@ namespace FFPrepHudWbpBuilder
 	// 3) 인력 패널
 	// =========================================================================
 
-	/** 고정비 표의 한 줄. `이름 ....... 금액` 두 칸이다. */
+	/** 지출 표의 한 줄. `이름 ....... 금액` 두 칸이다. */
 	bool AddCostRow(
 		UWidgetBlueprint& Blueprint,
 		UWidgetTree& Tree,
@@ -550,9 +550,9 @@ namespace FFPrepHudWbpBuilder
 			Slot_GoldAfter->SetPadding(FMargin(0.f, 4.f, 0.f, 24.f));
 		}
 
-		// --- 고정비 표 ---
+		// --- 오늘 지출 표 ---
 		StyleText(*CostTableTitle, 14, Palette->InGame.Ink, TEXT("SemiBold"));
-		CostTableTitle->SetText(LOCTEXT("PrepStaff_CostTableTitle", "오늘 고정비"));
+		CostTableTitle->SetText(LOCTEXT("PrepStaff_CostTableTitle", "오늘 지출"));
 		if (UVerticalBoxSlot* Slot_CostTitle = CostTable->AddChildToVerticalBox(CostTableTitle))
 		{
 			Slot_CostTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -560,20 +560,12 @@ namespace FFPrepHudWbpBuilder
 			Slot_CostTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 		}
 
+		// 장소 임대료·미납 줄은 임대료를 없애면서 같이 뺐다. 오늘 나가는 돈은 알바 임금 하나뿐이다
 		const bool bRowsOk =
 			AddCostRow(Blueprint, Tree, *CostTable, *Palette,
-				TEXT("Box_RentRow"), TEXT("Text_RentCost"),
-				LOCTEXT("PrepStaff_RentLabel", "장소 임대료"),
-				LOCTEXT("PrepStaff_RentPreview", "2,400 / 일"), Palette->InGame.Ink)
-			&& AddCostRow(Blueprint, Tree, *CostTable, *Palette,
 				TEXT("Box_WageRow"), TEXT("Text_WageCost"),
 				LOCTEXT("PrepStaff_WageLabel", "알바 임금"),
-				LOCTEXT("PrepStaff_WagePreviewRow", "0 / 일"), Palette->InGame.Ink)
-			// 미납은 경고다. 색 + `미납` 문구를 함께 쓴다 (AT-011). 0 이면 코드가 줄째 접는다.
-			&& AddCostRow(Blueprint, Tree, *CostTable, *Palette,
-				TEXT("Box_ArrearsRow"), TEXT("Text_ArrearsCost"),
-				LOCTEXT("PrepStaff_ArrearsLabel", "밀린 임대료"),
-				LOCTEXT("PrepStaff_ArrearsPreview", "미납 2,400"), Palette->InGame.Danger);
+				LOCTEXT("PrepStaff_WagePreviewRow", "0 / 일"), Palette->InGame.Ink);
 
 		if (!bRowsOk)
 		{
@@ -989,17 +981,9 @@ namespace FFPrepHudWbpBuilder
 
 		const bool bEstimateOk =
 			AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
-				TEXT("Box_RentRow"), TEXT("Text_RentCost"),
-				LOCTEXT("PrepCheck_RentLabel", "장소 임대료"),
-				LOCTEXT("PrepCheck_RentPreview", "2,400"), Palette->InGame.Ink)
-			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
 				TEXT("Box_WageRow"), TEXT("Text_StaffWageCost"),
 				LOCTEXT("PrepCheck_WageLabel", "알바 임금"),
 				LOCTEXT("PrepCheck_WagePreview", "0"), Palette->InGame.Ink)
-			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
-				TEXT("Box_FixedCostRow"), TEXT("Text_FixedCostTotal"),
-				LOCTEXT("PrepCheck_FixedLabel", "고정비 합계"),
-				LOCTEXT("PrepCheck_FixedPreview", "2,400"), Palette->InGame.Danger)
 			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
 				TEXT("Box_AdmissionRow"), TEXT("Text_ExpectedAdmission"),
 				LOCTEXT("PrepCheck_AdmissionLabel", "예상 입장료 수입"),
@@ -1179,7 +1163,7 @@ namespace FFPrepHudWbpBuilder
 
 		// === 상태 행은 Overlay 다 (2026-08-26) ===
 		// `HorizontalBox` 에 나열하면 **앞의 칸이 접힐 때마다 일차·단계가 좌우로 흔들린다.**
-		// 미납·관객처럼 값이 없으면 숨는 칸이 앞에 있어서 매번 위치가 달라진다.
+		// 관객처럼 값이 없으면 숨는 칸이 앞에 있어서 매번 위치가 달라진다.
 		// 왼쪽 묶음 / 중앙 칩 / 오른쪽 묶음을 겹쳐 두면 중앙은 **화면 정중앙에 고정**된다.
 		UOverlay* StatusOverlay = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Status"));
 		UHorizontalBox* StatusLeft = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_StatusLeft"));
@@ -1274,7 +1258,7 @@ namespace FFPrepHudWbpBuilder
 			Slot_StatusRow->SetHorizontalAlignment(HAlign_Fill);
 		}
 
-		// --- 왼쪽 묶음. 축제 → 금화 → 미납 순서다. **미납은 잔액 바로 옆**이어야 설명이 된다 ---
+		// --- 왼쪽 묶음. 축제 → 금화 순서다 ---
 		const bool bLeftCellsOk =
 			AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_FestivalName"), TEXT("Text_FestivalName"),
@@ -1282,9 +1266,6 @@ namespace FFPrepHudWbpBuilder
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Gold"), TEXT("Text_Gold"),
 				LOCTEXT("PrepStatusPreview_Gold", "10,000"), Palette->InGame.Ink)
-			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
-				TEXT("Box_Arrears"), TEXT("Text_Arrears"),
-				LOCTEXT("PrepStatusPreview_Arrears", "미납 2,400"), Palette->InGame.Danger)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_VisitorCount"), TEXT("Text_VisitorCount"),
 				LOCTEXT("PrepStatusPreview_Visitors", "0"), Palette->InGame.Ink)

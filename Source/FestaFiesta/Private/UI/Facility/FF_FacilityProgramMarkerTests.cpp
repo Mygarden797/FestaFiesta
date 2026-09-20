@@ -98,7 +98,6 @@ bool FFF_FacilityProgramMarkerLifecycleTest::RunTest(const FString& Parameters)
 	Costs->AddRow(TEXT("Cost.Booth.FoodStall.MarkerFood"), Cost);
 	Definition->FestivalId = TEXT("FacilityProgramMarkerTest");
 	Definition->FacilityCostTable = Costs;
-	Definition->DailyVenueRentGold = 0;
 	Progression->SetProgramReservations(Reservations);
 	Progression->StartFestival(Definition);
 

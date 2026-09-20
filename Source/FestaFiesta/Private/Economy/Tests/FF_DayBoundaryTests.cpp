@@ -23,8 +23,6 @@
  */
 namespace FFF_DayBoundaryTestHelpers
 {
-	// 2026-08-14 결정값 (E-22 · E-23). 하루 고정비 = 임대료 2,400 (임금은 고정비가 아니다).
-	constexpr int32 DailyRent = 2400;
 	constexpr int32 WagePerStaff = 150;
 	constexpr int32 BaseStaff = 6;
 	constexpr int32 MaxHires = 6;
@@ -82,7 +80,6 @@ namespace FFF_DayBoundaryTestHelpers
 
 			Definition->FestivalId = TEXT("DayBoundaryAutomationFestival");
 			Definition->InitialGold = InitialGold;
-			Definition->DailyVenueRentGold = DailyRent;
 			Definition->DailyStaffWageGold = WagePerStaff;
 			Definition->InitialStaffCount = BaseStaff;
 			Definition->MaxHiredStaffPerDay = MaxHires;
@@ -94,7 +91,6 @@ namespace FFF_DayBoundaryTestHelpers
 		}
 
 		// Σ지출. 정합성 불변식(초기Gold + Σ매출 − Σ지출 == Gold) 검산용.
-		// 미납은 아직 안 나간 돈이라 여기 들어가지 않는다.
 		int32 CalcLedgerSpendTotal() const
 		{
 			return SumSpend(Progression->GetDayLedger());
@@ -113,11 +109,13 @@ namespace FFF_DayBoundaryTestHelpers
 	};
 }
 
-// 임대료가 **날마다 정확히 1회** 징수된다. 같은 날을 두 번 열어도 두 번 빠지지 않는다.
+// 하루를 여는 것은 **날마다 정확히 1회**다. 같은 날을 두 번 열어도 두 번 열리지 않는다.
 // RequestTransition 에 같은 단계 가드가 없어서 MorningCheck 재진입이 실제로 가능하고,
-// 이중 징수는 크래시도 로그도 없이 3일 수지(§2.5)만 조용히 깨뜨린다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RentSettlesExactlyOncePerDay, "FestaFiesta.Economy.DayBoundary.RentSettlesExactlyOncePerDay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_DayBoundary_RentSettlesExactlyOncePerDay::RunTest(const FString& Parameters)
+// 두 번 열리면 장중에 그날 원장이 지워진다 — 크래시도 로그도 없이 결산만 조용히 빈다.
+//
+// 경계 자체는 아무것도 걷지 않는다. 임대료를 없앤 뒤로 잔액을 줄이는 경로는 구매뿐이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_OpensExactlyOncePerDay, "FestaFiesta.Economy.DayBoundary.OpensExactlyOncePerDay", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_OpensExactlyOncePerDay::RunTest(const FString& Parameters)
 {
 	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(10000)))
@@ -125,41 +123,44 @@ bool FFF_DayBoundary_RentSettlesExactlyOncePerDay::RunTest(const FString& Parame
 		return false;
 	}
 
-	// StartFestival 이 Day1 을 정산했다. 임금은 고정비가 아니므로 임대료만 나간다.
-	TestEqual(TEXT("Day1 이 축제 시작과 함께 정산된다"),
-		Harness.Progression->GetGold(), 10000 - FFF_DayBoundaryTestHelpers::DailyRent);
+	// StartFestival 이 Day1 을 열었다. 여는 것만으로는 한 푼도 안 나간다.
+	TestEqual(TEXT("Day1 을 열어도 잔액이 초기 자금 그대로다"),
+		Harness.Progression->GetGold(), 10000);
 	TestEqual(TEXT("마지막 정산일이 1 이다"), Harness.Progression->GetLastProcessedDay(), 1);
+
+	// 오늘 매출을 만들어 두면 "하루가 다시 열렸는가"를 잔액이 아니라 이 값으로 볼 수 있다.
+	Harness.Progression->AddRevenue(900, EFF_EarnReason::AdmissionFee);
 
 	// 같은 날을 다시 열어도 아무 일도 없어야 한다. 이 줄이 "정확히 1회"를 고정한다.
 	Harness.Progression->BeginNewDay(1);
-	TestEqual(TEXT("Day1 을 다시 열어도 임대료가 두 번 빠지지 않는다"),
-		Harness.Progression->GetGold(), 10000 - FFF_DayBoundaryTestHelpers::DailyRent);
+	TestEqual(TEXT("Day1 을 다시 열어도 그날 매출이 안 지워진다"),
+		Harness.Progression->GetTodayRevenue(), 900);
 
 	// 지난 날로 되돌리는 호출도 무시된다.
 	Harness.Progression->BeginNewDay(0);
 	TestEqual(TEXT("지난 날 호출은 무시된다"),
-		Harness.Progression->GetGold(), 10000 - FFF_DayBoundaryTestHelpers::DailyRent);
+		Harness.Progression->GetTodayRevenue(), 900);
 	TestEqual(TEXT("마지막 정산일이 되돌아가지 않는다"),
 		Harness.Progression->GetLastProcessedDay(), 1);
 
+	// 다음 날은 실제로 열린다 — 그날 매출이 0 으로 돌아간다.
 	Harness.Progression->BeginNewDay(2);
-	TestEqual(TEXT("Day2 가 정산된다"), Harness.Progression->GetGold(),
-		10000 - FFF_DayBoundaryTestHelpers::DailyRent * 2);
-	Harness.Progression->BeginNewDay(2);
-	TestEqual(TEXT("Day2 재진입도 무시된다"), Harness.Progression->GetGold(),
-		10000 - FFF_DayBoundaryTestHelpers::DailyRent * 2);
+	TestEqual(TEXT("Day2 가 열리면 그날 매출이 0 이 된다"),
+		Harness.Progression->GetTodayRevenue(), 0);
+	TestEqual(TEXT("마지막 정산일이 2 가 된다"), Harness.Progression->GetLastProcessedDay(), 2);
 
-	// 3일 임대료 합계가 7,200 이어야 한다 — §2.6 입장료 7,500 이 이를 덮는다.
+	// 사흘을 다 열어도 잔액은 초기 자금 그대로다. 누적 매출은 경계를 넘어 살아남는다.
 	Harness.Progression->BeginNewDay(3);
-	TestEqual(TEXT("3일 임대료 합계가 7,200 이다"),
-		10000 - Harness.Progression->GetGold(), 7200);
-	TestEqual(TEXT("미납 없이 전액 정산됐다"), Harness.Progression->GetTotalArrears(), 0);
+	TestEqual(TEXT("사흘을 다 열어도 잔액이 안 줄어든다"),
+		Harness.Progression->GetGold(), 10000 + 900);
+	TestEqual(TEXT("경계가 만든 지출 줄이 없다"),
+		FFF_DayBoundaryTestHelpers::SumSpend(Harness.Progression->GetDayLedger()), 0);
 
 	return true;
 }
 
 // 하루 경계는 TodayRevenue·DayLedger·알바 인원만 리셋한다.
-// 누적 매출·잔액·미납·기본 Staff 는 날을 넘어간다.
+// 누적 매출·잔액·기본 Staff 는 날을 넘어간다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_ResetsOnlyDailyScopedValues, "FestaFiesta.Economy.DayBoundary.ResetsOnlyDailyScopedValues", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_ResetsOnlyDailyScopedValues::RunTest(const FString& Parameters)
 {
@@ -195,8 +196,8 @@ bool FFF_DayBoundary_ResetsOnlyDailyScopedValues::RunTest(const FString& Paramet
 	TestEqual(TEXT("전체 인원은 기본 팀만 남는다"),
 		Harness.Progression->GetTotalStaffCount(), FFF_DayBoundaryTestHelpers::BaseStaff);
 	// 잔액은 리셋되지 않는다 — 어제 번 돈으로 오늘을 산다.
-	TestEqual(TEXT("잔액은 어제 값에서 오늘 임대료만 빠진다"),
-		Harness.Progression->GetGold(), GoldBeforeNewDay - FFF_DayBoundaryTestHelpers::DailyRent);
+	TestEqual(TEXT("잔액은 어제 값 그대로다 — 경계가 걷는 돈이 없다"),
+		Harness.Progression->GetGold(), GoldBeforeNewDay);
 
 	return true;
 }
@@ -217,8 +218,8 @@ bool FFF_DayBoundary_DoesNotAutoHire::RunTest(const FString& Parameters)
 		Harness.Progression->GetTemporaryStaffCount(), 0);
 	TestEqual(TEXT("임금이 한 푼도 안 나갔다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffWages), 0);
-	TestEqual(TEXT("잔액에서 임대료만 빠졌다"),
-		Harness.Progression->GetGold(), 100'000 - FFF_DayBoundaryTestHelpers::DailyRent);
+	TestEqual(TEXT("잔액이 초기 자금 그대로다"),
+		Harness.Progression->GetGold(), 100'000);
 
 	Harness.Progression->BeginNewDay(2);
 	TestEqual(TEXT("새 날에도 자동 고용하지 않는다"),
@@ -233,22 +234,21 @@ bool FFF_DayBoundary_DoesNotAutoHire::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 잔액이 모자라면 임대료는 미납이 되고, 그래도 기본 Staff 는 일한다.
-// 임금은 절대 미납이 되지 않는다 (§3.7 의 비대칭).
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RentBecomesArrearsButBaseStaffSurvives, "FestaFiesta.Economy.DayBoundary.RentBecomesArrearsButBaseStaffSurvives", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_DayBoundary_RentBecomesArrearsButBaseStaffSurvives::RunTest(const FString& Parameters)
+// 잔액이 0 이어도 기본 Staff 는 일한다. 자금난의 바닥이 "아무것도 못 사는 상태"이지
+// "인원이 사라지는 상태"가 아니어야 회복이 가능하다 (§2.5.1).
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_ZeroGoldKeepsBaseStaff, "FestaFiesta.Economy.DayBoundary.ZeroGoldKeepsBaseStaff", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_ZeroGoldKeepsBaseStaff::RunTest(const FString& Parameters)
 {
-	// 임대료 2,400 인데 1,000 뿐이다.
 	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(1000)))
 	{
 		return false;
 	}
 
-	TestEqual(TEXT("낼 수 있는 만큼만 임대료로 나간다"),
-		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::VenueRent), 1000);
-	TestEqual(TEXT("부족분 1,400 이 미납이 된다"), Harness.Progression->GetTotalArrears(), 1400);
-	TestEqual(TEXT("잔액은 음수가 되지 않는다"), Harness.Progression->GetGold(), 0);
+	// 가진 돈을 전부 쓴다. 거절할 수 없는 지출이 없으니 잔액이 0 이 되는 것은 이 경로뿐이다.
+	TestTrue(TEXT("잔액 전액을 지출한다"),
+		Harness.Progression->TrySpend(1000, EFF_SpendReason::FacilityInstall));
+	TestEqual(TEXT("잔액이 0 이다"), Harness.Progression->GetGold(), 0);
 
 	// 자금난의 바닥 — 잔액 0 이어도 기본 팀은 일한다.
 	TestEqual(TEXT("잔액 0 이어도 기본 Staff 는 일한다"),
@@ -258,18 +258,22 @@ bool FFF_DayBoundary_RentBecomesArrearsButBaseStaffSurvives::RunTest(const FStri
 	TestEqual(TEXT("살 수 있는 알바가 0명이다"),
 		Harness.Progression->GetAffordableTemporaryStaffCount(), 0);
 
-	// 임금은 미납에 섞이지 않는다 — 미납 총액은 임대료 부족분 그대로다.
-	TestEqual(TEXT("임금 지출은 0 이다"),
-		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffWages), 0);
-	TestEqual(TEXT("임금이 미납에 섞이지 않는다"), Harness.Progression->GetTotalArrears(), 1400);
+	// 잔액 0 에서는 더 살 수 없을 뿐이고 잔액이 음수로 내려가지 않는다.
+	TestFalse(TEXT("잔액 0 에서는 더 못 산다"),
+		Harness.Progression->TrySpend(1, EFF_SpendReason::FacilityInstall));
+	TestEqual(TEXT("거부 후에도 잔액이 0 이다"), Harness.Progression->GetGold(), 0);
+
+	// 하루가 넘어가도 빚이 생기지 않는다 — 걷는 것이 없으니 잔액은 0 에 머문다.
+	Harness.Progression->BeginNewDay(2);
+	TestEqual(TEXT("하루를 넘겨도 잔액이 0 에 머문다"), Harness.Progression->GetGold(), 0);
+	TestEqual(TEXT("경계가 만든 지출도 없다"), Harness.CalcLedgerSpendTotal(), 0);
 
 	return true;
 }
 
-// 미납이 있으면 들어온 돈이 잔액에 남지 않고 **먼저 임대료 미납을 갚는다.**
-// 상환은 임대료 지출로 기록되어 정합성 불변식이 유지된다 (§5.1).
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RevenueRepaysArrearsFirst, "FestaFiesta.Economy.DayBoundary.RevenueRepaysArrearsFirst", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_DayBoundary_RevenueRepaysArrearsFirst::RunTest(const FString& Parameters)
+// 매출과 환급은 그대로 잔액이 된다. 중간에서 가져가는 것이 없다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_RevenueAndRefundLandInGoldDirectly, "FestaFiesta.Economy.DayBoundary.RevenueAndRefundLandInGoldDirectly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_DayBoundary_RevenueAndRefundLandInGoldDirectly::RunTest(const FString& Parameters)
 {
 	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
 	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(1000)))
@@ -277,41 +281,24 @@ bool FFF_DayBoundary_RevenueRepaysArrearsFirst::RunTest(const FString& Parameter
 		return false;
 	}
 
-	TestEqual(TEXT("미납 1,400 으로 시작한다"), Harness.Progression->GetTotalArrears(), 1400);
-	TestEqual(TEXT("잔액 0 으로 시작한다"), Harness.Progression->GetGold(), 0);
-
-	// 매출 300 -> 전액이 상환에 쓰인다. 잔액은 0 에 붙어 있다.
 	Harness.Progression->AddRevenue(300, EFF_EarnReason::AdmissionFee);
-	TestEqual(TEXT("매출이 미납을 갚아 잔액이 오르지 않는다"), Harness.Progression->GetGold(), 0);
-	TestEqual(TEXT("미납이 300 줄어든다"), Harness.Progression->GetTotalArrears(), 1100);
-	// 매출은 상환과 무관하게 전액 잡힌다 — 매출은 "번 돈"이다.
-	TestEqual(TEXT("누적 매출은 전액 잡힌다"), Harness.Progression->GetTotalRevenue(), 300);
+	TestEqual(TEXT("매출이 전액 잔액이 된다"), Harness.Progression->GetGold(), 1300);
+	TestEqual(TEXT("누적 매출도 전액 잡힌다"), Harness.Progression->GetTotalRevenue(), 300);
 	TestEqual(TEXT("오늘 매출도 전액 잡힌다"), Harness.Progression->GetTodayRevenue(), 300);
 
-	// 환급도 같은 규칙을 받는다 — 밀린 채로 시설을 팔아 현금을 쥐는 경로를 막는다.
+	// 환급은 매출이 아니다 — 잔액만 늘고 누적 매출은 그대로다.
 	Harness.Progression->Refund(100);
-	TestEqual(TEXT("환급도 미납 상환에 쓰인다"), Harness.Progression->GetGold(), 0);
-	TestEqual(TEXT("환급만큼 미납이 줄어든다"), Harness.Progression->GetTotalArrears(), 1000);
+	TestEqual(TEXT("환급도 전액 잔액이 된다"), Harness.Progression->GetGold(), 1400);
+	TestEqual(TEXT("환급은 매출에 안 섞인다"), Harness.Progression->GetTotalRevenue(), 300);
 
-	// 미납을 다 갚고 남은 돈은 잔액이 된다.
 	Harness.Progression->AddRevenue(1300, EFF_EarnReason::FacilityCommission, TEXT("Booth_FoodStall"));
-	TestEqual(TEXT("미납을 다 갚으면 나머지가 잔액이 된다"), Harness.Progression->GetGold(), 300);
-	TestEqual(TEXT("미납이 사라진다"), Harness.Progression->GetTotalArrears(), 0);
+	TestEqual(TEXT("매출이 계속 그대로 쌓인다"), Harness.Progression->GetGold(), 2700);
 
-	// 상환분까지 합쳐 임대료 지출이 하루치 2,400 이 된다 — 늦게 나갔을 뿐 같은 임대료다.
-	TestEqual(TEXT("임대료 지출이 하루치로 채워진다"),
-		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::VenueRent),
-		FFF_DayBoundaryTestHelpers::DailyRent);
-
-	// 정합성 불변식: 초기Gold + Σ매출 − Σ지출 == Gold. 환급은 매출이 아니라 별도다.
+	// 정합성 불변식: 초기Gold + Σ매출 + 환급 − Σ지출 == Gold.
 	const int32 Refunded = Harness.Progression->GetDayLedger().GetTotalRefund();
 	TestEqual(TEXT("초기Gold + Σ매출 + 환급 − Σ지출 == Gold"),
 		1000 + Harness.Progression->GetTotalRevenue() + Refunded - Harness.CalcLedgerSpendTotal(),
 		Harness.Progression->GetGold());
-
-	// 미납이 없으면 매출이 그대로 잔액에 쌓인다.
-	Harness.Progression->AddRevenue(100, EFF_EarnReason::AdmissionFee);
-	TestEqual(TEXT("미납이 없으면 매출이 잔액을 늘린다"), Harness.Progression->GetGold(), 400);
 
 	return true;
 }
@@ -399,14 +386,14 @@ bool FFF_DayBoundary_HireRejectsInsteadOfPartialHiring::RunTest(const FString& P
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_HireRejectedWhenGoldIsShort, "FestaFiesta.Economy.DayBoundary.HireRejectedWhenGoldIsShort", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_HireRejectedWhenGoldIsShort::RunTest(const FString& Parameters)
 {
-	// 임대료 2,400 을 내고 400 이 남는다 -> 2명분(300)만 살 수 있다.
+	// 400 만 남기면 2명분(300)만 살 수 있다.
 	FFF_DayBoundaryTestHelpers::FDayBoundaryHarness Harness;
-	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(2800)))
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(400)))
 	{
 		return false;
 	}
 
-	TestEqual(TEXT("임대료 뒤 400 이 남는다"), Harness.Progression->GetGold(), 400);
+	TestEqual(TEXT("잔액이 400 이다"), Harness.Progression->GetGold(), 400);
 	TestEqual(TEXT("살 수 있는 인원은 2명이다"),
 		Harness.Progression->GetAffordableTemporaryStaffCount(), 2);
 
@@ -446,7 +433,6 @@ bool FFF_DayBoundary_IgnoredBeforeFestivalStarts::RunTest(const FString& Paramet
 
 	TestEqual(TEXT("잔액이 0 으로 남는다"), Progression->GetGold(), 0);
 	TestEqual(TEXT("정산되지 않았다"), Progression->GetLastProcessedDay(), 0);
-	TestEqual(TEXT("미납도 생기지 않는다"), Progression->GetTotalArrears(), 0);
 
 	TestFalse(TEXT("고용도 거부된다"), Progression->TryHireTemporaryStaff(1));
 	TestEqual(TEXT("살 수 있는 인원도 0 이다"),
@@ -498,9 +484,8 @@ bool FFF_DayBoundary_EndedDayLedgerIsEmptyBeforeFirstBoundary::RunTest(const FSt
 
 	// 반면 라이브 원장에는 Day1 이 살아 있다 — Report 단계에서 봐야 할 쪽은 이것이다.
 	TestEqual(TEXT("라이브 원장에는 Day1 매출이 있다"), Harness.CalcLedgerEarnTotal(), 1200);
-	TestEqual(TEXT("라이브 원장에 Day1 임대료가 있다"),
-		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::VenueRent),
-		FFF_DayBoundaryTestHelpers::DailyRent);
+	TestEqual(TEXT("라이브 원장에 Day1 지출은 아직 없다"),
+		Harness.CalcLedgerSpendTotal(), 0);
 
 	return true;
 }
@@ -536,9 +521,6 @@ bool FFF_DayBoundary_EndedDayLedgerHoldsTheClosedDay::RunTest(const FString& Par
 	TestEqual(TEXT("스냅샷 매출 합이 1,500 이다"), FFF_DayBoundaryTestHelpers::SumEarn(Snapshot), 1500);
 
 	// --- 원인별 지출 ---
-	TestEqual(TEXT("스냅샷에 Day1 임대료가 남는다"),
-		Snapshot.GetSpendByReason(EFF_SpendReason::VenueRent),
-		FFF_DayBoundaryTestHelpers::DailyRent);
 	TestEqual(TEXT("스냅샷에 Day1 임금이 남는다"),
 		Snapshot.GetSpendByReason(EFF_SpendReason::StaffWages),
 		2 * FFF_DayBoundaryTestHelpers::WagePerStaff);
@@ -556,10 +538,11 @@ bool FFF_DayBoundary_EndedDayLedgerHoldsTheClosedDay::RunTest(const FString& Par
 	}
 
 	// --- 라이브는 새 하루다. 두 원장이 실제로 갈렸는지 지출 합으로 구분한다 ---
-	// 스냅샷 = 임대료 2,400 + 임금 300 = 2,700 / 라이브 = Day2 임대료 2,400 뿐.
-	TestEqual(TEXT("스냅샷 지출 합이 2,700 이다"), FFF_DayBoundaryTestHelpers::SumSpend(Snapshot), 2700);
-	TestEqual(TEXT("라이브 지출 합은 Day2 임대료뿐이다"), Harness.CalcLedgerSpendTotal(),
-		FFF_DayBoundaryTestHelpers::DailyRent);
+	// 스냅샷 = 임금 300 / 라이브 = Day2 에 아직 아무 지출도 없다.
+	TestEqual(TEXT("스냅샷 지출 합이 임금 300 이다"),
+		FFF_DayBoundaryTestHelpers::SumSpend(Snapshot),
+		2 * FFF_DayBoundaryTestHelpers::WagePerStaff);
+	TestEqual(TEXT("라이브 지출 합은 0 이다"), Harness.CalcLedgerSpendTotal(), 0);
 	TestEqual(TEXT("라이브에 어제 임금이 넘어오지 않는다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffWages), 0);
 	TestEqual(TEXT("라이브 매출은 0 이다"), Harness.CalcLedgerEarnTotal(), 0);
@@ -573,7 +556,7 @@ bool FFF_DayBoundary_EndedDayLedgerHoldsTheClosedDay::RunTest(const FString& Par
 
 // 🔴 중복 정산 가드가 스냅샷도 지켜야 한다.
 // 스냅샷 갱신을 LastProcessedDay 가드 **밖**에 두면, MorningCheck 재진입 한 번에
-// 어제 결산이 "오늘 임대료만 찍힌 반쪽 원장"으로 덮인다. 크래시도 로그도 없이 표만 틀린다.
+// 어제 결산이 "오늘 막 열린 빈 원장"으로 덮인다. 크래시도 로그도 없이 표만 틀린다.
 // 그리고 스냅샷이 참조가 아니라 **값 복사**인지도 여기서 같이 고정한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_DuplicateBoundaryDoesNotOverwriteSnapshot, "FestaFiesta.Economy.DayBoundary.DuplicateBoundaryDoesNotOverwriteSnapshot", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_DuplicateBoundaryDoesNotOverwriteSnapshot::RunTest(const FString& Parameters)

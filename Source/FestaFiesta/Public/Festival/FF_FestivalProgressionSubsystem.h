@@ -7,7 +7,6 @@
 #include "Economy/Rules/FF_FestivalFunds.h"
 #include "Economy/Rules/FF_DayLedger.h"
 #include "Economy/Rules/FF_FacilityRevenueBook.h"
-#include "Economy/Rules/FF_FixedCostArrears.h"
 #include "Economy/Rules/FF_StaffPool.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "NPC/Party/FF_ProgramReservation.h"
@@ -153,7 +152,6 @@ public:
 	TArray<FFF_LedgerRow> GetEarnRowsForDay(int32 Day) const;
 
 	// 지출 사유를 enum 선언 순서로. 값 0 인 사유는 줄을 만들지 않는다.
-	// [주의] 장소 임대료는 하루치(2,400)를 넘을 수 있다 — 어제 못 낸 몫을 오늘 갚으면 합산된다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_LedgerRow> GetSpendRowsForDay(int32 Day) const;
 
@@ -173,7 +171,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void BeginNewDay(int32 NewDay);
 	
-	// 임대료를 마지막으로 정산한 날. 축제 시작 전이면 0.
+	// 하루 경계를 마지막으로 처리한 날. 축제 시작 전이면 0.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetLastProcessedDay() const { return LastProcessedDay; }
 	
@@ -338,16 +336,6 @@ public:
 	// 오늘 편성 목록이 바뀌면 쏜다. 인원 표시도 같이 갱신해야 한다.
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnProgramScheduleChanged OnScheduledProgramsChanged;
-	
-	
-	// --- 미납 -------------------------------------------------------------
-	
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetTotalArrears() const { return Arrears.GetTotalArrears(); }
-
-	// 미납 총액이 바뀌면 쏜다. 자금난 경고·엔딩 평가가 붙을 자리다 (E-24).
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
-	FFF_OnEconomyValueChanged OnTotalArrearsChanged;
 
 private:
 	friend class UFF_FacilityUpgradeSubsystem;
@@ -383,7 +371,6 @@ private:
 	void BroadcastGoldIfChanged(int32 PreviousGold);
 	void BroadcastTotalRevenueIfChanged(int32 PreviousTotalRevenue);
 	void BroadcastTodayRevenueIfChanged(int32 PreviousTodayRevenue);
-	void BroadcastTotalArrearsIfChanged(int32 PreviousTotalArrears);
 	void BroadcastTotalStaffCountIfChanged(int32 PreviousTotalStaffCount);
 	
 	// 하루 경제 정산을 수행한다.
@@ -392,14 +379,6 @@ private:
 	
 	// Day 에 해당하는 원장을 찾는다. 안 들고 있으면 nullptr.
 	const FFF_DayLedger* FindLedgerForDay(int32 Day) const;
-
-	// 당일 임대료를 정산한다.
-	// 잔액이 부족해도 거부하지 않으며, 낼 수 있는 만큼 차감하고 부족분은 미납으로 남긴다.
-	void SettleVenueRent();
-
-	// 현재 Gold 로 기존 미납을 상환하고 실제 상환액을 반환한다.
-	// 미납이 남아 있는 동안 Gold 가 잔액으로 남지 않도록 가능한 만큼 전액 상환에 사용한다.
-	int32 RepayArrearsFromGold();
 
 	// 잔액 규칙의 소유자. UObject 가 아니라 값 타입이다.
 	FFF_FestivalFunds Funds;
@@ -419,14 +398,11 @@ private:
 	// EndedDayLedger 가 담고 있는 날짜. 0 = 아직 끝난 하루 없음.
 	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.
 	int32 EndedDay = 0;
-	
-	// 임대료 미납. 하루 경계에서 리셋되지 않는다.
-	FFF_FixedCostArrears Arrears;
 
 	// 무페이 기본 팀 + 오늘 고용한 알바.
 	FFF_StaffPool StaffPool;
-	
-	// 임대료를 마지막으로 정산한 날. 같은 날 중복 정산을 막는 수단이다.
+
+	// 하루 경계를 마지막으로 처리한 날. 같은 날 중복 처리를 막는 수단이다.
 	int32 LastProcessedDay = 0;
 	
 	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.

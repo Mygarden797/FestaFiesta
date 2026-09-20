@@ -158,11 +158,6 @@ void UFF_PrepHudBar::NativePreConstruct()
 		Text_DayStage->SetColorAndOpacity(FSlateColor(Palette->InGame.White));
 	}
 
-	if (Text_Arrears)
-	{
-		// 미납은 경고다. **색만으로 알리지 않는다** (AT-011) — 문구에 `미납` 을 함께 넣는다.
-		Text_Arrears->SetColorAndOpacity(FSlateColor(Palette->InGame.Danger));
-	}
 	if (Text_CtaReason)
 	{
 		Text_CtaReason->SetColorAndOpacity(FSlateColor(Palette->InGame.InkMuted));
@@ -282,7 +277,6 @@ void UFF_PrepHudBar::BindSources()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleGoldChanged);
-		CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
 
@@ -296,7 +290,7 @@ void UFF_PrepHudBar::BindSources()
 	else
 	{
 		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] ViewModel 을 찾지 못했다. 금화·미납·스태프·단계가 전부 비어 보인다."),
+			TEXT("[%s] ViewModel 을 찾지 못했다. 금화·스태프·단계가 전부 비어 보인다."),
 			*GetName());
 	}
 
@@ -334,7 +328,6 @@ void UFF_PrepHudBar::UnbindSources()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleGoldChanged);
-		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
@@ -968,7 +961,6 @@ void UFF_PrepHudBar::RefreshStatusRow()
 	}
 
 	HandleGoldChanged(ViewModel->GetGold());
-	HandleArrearsChanged(ViewModel->GetArrears());
 	HandleStaffCountChanged(ViewModel->GetTotalStaffCount());
 	RefreshDayStageText(ViewModel->GetCurrentStage(), ViewModel->GetCurrentDay());
 
@@ -1175,15 +1167,6 @@ void UFF_PrepHudBar::HandleGoldChanged(int32 NewValue)
 	{
 		Text_Gold->SetText(FormatGold(NewValue));
 	}
-}
-
-void UFF_PrepHudBar::HandleArrearsChanged(int32 NewValue)
-{
-	// 0 이면 칸을 숨긴다. `미납 0` 을 띄우면 없는 문제를 있는 것처럼 만든다.
-	SetGroupTextOrHide(Box_Arrears, Text_Arrears,
-		(NewValue > 0)
-			? FText::Format(LOCTEXT("PrepStatus_Arrears", "미납 {0}"), FormatGold(NewValue))
-			: FText::GetEmpty());
 }
 
 void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
