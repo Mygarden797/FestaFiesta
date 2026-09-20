@@ -43,6 +43,8 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	auto* RequiredSatisfied = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_RequiredSatisfied")));
 	auto* RequiredMissingText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_RequiredMissing")));
 	auto* RequiredSatisfiedText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_RequiredSatisfied")));
+	auto* ProgramBadge = Cast<UBorder>(Tile->GetWidgetFromName(TEXT("Border_ProgramBadge")));
+	auto* ProgramText = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_ProgramBadge")));
 	auto* StateLabel = Cast<UTextBlock>(Tile->GetWidgetFromName(TEXT("Text_State")));
 	const FObjectPropertyBase* ItemProperty = FindFProperty<FObjectPropertyBase>(Class, TEXT("Item"));
 	if (!TestNotNull(TEXT("Designer card SizeBox"), Size) || !TestNotNull(TEXT("Designer card border"), Card) ||
@@ -56,6 +58,8 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 		!TestNotNull(TEXT("Designer required satisfied badge"), RequiredSatisfied) ||
 		!TestNotNull(TEXT("Designer required missing text"), RequiredMissingText) ||
 		!TestNotNull(TEXT("Designer required satisfied text"), RequiredSatisfiedText) ||
+		!TestNotNull(TEXT("Designer program badge"), ProgramBadge) ||
+		!TestNotNull(TEXT("Designer program caption"), ProgramText) ||
 		!TestNotNull(TEXT("Designer installation state label"), StateLabel)) { return false; }
 	// These are instance-only edits made before PreConstruct captures the authored appearance.
 	Size->SetWidthOverride(196.f);
@@ -85,6 +89,16 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	FSlateFontInfo RequiredFont = RequiredMissingText->GetFont();
 	RequiredFont.Size = 13;
 	RequiredMissingText->SetFont(RequiredFont);
+	FSlateBrush AuthoredProgramBrush = ProgramBadge->Background;
+	AuthoredProgramBrush.TintColor = FSlateColor(FLinearColor(0.19f, 0.11f, 0.38f, 1.0f));
+	ProgramBadge->SetBrush(AuthoredProgramBrush);
+	const FText AuthoredProgramLabel = FText::FromString(TEXT("체험 프로그램"));
+	ProgramText->SetText(AuthoredProgramLabel);
+	FSlateFontInfo ProgramFont = ProgramText->GetFont();
+	ProgramFont.Size = 12;
+	ProgramText->SetFont(ProgramFont);
+	const FSlateColor AuthoredProgramColor(FLinearColor(0.96f, 0.90f, 1.0f, 1.0f));
+	ProgramText->SetColorAndOpacity(AuthoredProgramColor);
 	ThumbnailFrame->SetWidthOverride(176.f);
 	ThumbnailFrame->SetHeightOverride(88.f);
 	TStrongObjectPtr<UTexture2D> WideTexture(UTexture2D::CreateTransient(400, 200));
@@ -159,6 +173,8 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	// Required progress is independent from combo recommendations. Both states can
 	// coexist while the model's 0/1 -> 1/1 progress still reaches the original label.
 	Entry.bRequiredForSetup = true;
+	Entry.CompatibleProgramCount = 2;
+	Entry.CompatibleProgramNames = FText::FromString(TEXT("바다향기 공방, 선셋 요가"));
 	Entry.bRequiredSetupSatisfied = false;
 	Entry.RequiredInstalledCount = 0;
 	Entry.RequiredMinimumCount = 1;
@@ -166,10 +182,19 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Entry.CurrentInstanceCount = 0;
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
-	TestTrue(TEXT("Missing requirement coexists with the combination highlight"),
-		Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() &&
+	TestTrue(TEXT("Missing requirement, compatible programs and combination highlight coexist"),
+		Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() && Tile->HasCompatiblePrograms() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::HitTestInvisible &&
-		RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
+		RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed &&
+		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+		ProgramText->GetVisibility() == ESlateVisibility::HitTestInvisible);
+	TestTrue(TEXT("Program compatibility preserves the Designer badge brush, caption, font and color"),
+		ProgramBadge->Background.TintColor == AuthoredProgramBrush.TintColor &&
+		ProgramText->GetText().EqualTo(AuthoredProgramLabel) && ProgramText->GetFont().Size == ProgramFont.Size &&
+		ProgramText->GetColorAndOpacity() == AuthoredProgramColor);
+	TestTrue(TEXT("Program names are explained alongside the requirement and price"),
+		Tile->GetToolTipText().ToString().Contains(TEXT("바다향기 공방")) &&
+		Tile->GetToolTipText().ToString().Contains(TEXT("선셋 요가")));
 	TestEqual(TEXT("Limited facility displays empty installation progress in the original state slot"),
 		StateLabel->GetText().ToString(), FString(TEXT("0/1")));
 	TestTrue(TEXT("Missing requirement preserves Designer brush, font and caption"),
@@ -185,9 +210,10 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
 	TestTrue(TEXT("Installing required facility swaps badges while preserving combination recommendation"),
-		Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() &&
+		Tile->IsRequiredFacilitySatisfied() && Tile->IsSynergyHighlighted() && Tile->HasCompatiblePrograms() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed &&
-		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible);
+		RequiredSatisfied->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+		ProgramBadge->GetVisibility() == ESlateVisibility::HitTestInvisible);
 	TestEqual(TEXT("Completed installation retains its real 1/1 progress instead of availability wording"),
 		StateLabel->GetText().ToString(), FString(TEXT("1/1")));
 	Entry.RequiredMinimumCount = 0;
@@ -203,7 +229,18 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Removing requirement clears both badge surfaces on a reused row"),
 		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
+	Entry.CompatibleProgramCount = 0;
+	Entry.CompatibleProgramNames = FText::GetEmpty();
+	Data->Initialize(Entry, 1000, true);
+	Tile->RefreshItemPresentation();
+	TestTrue(TEXT("Reusing a program row for an ordinary facility clears both program badge surfaces"),
+		!Tile->HasCompatiblePrograms() && ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed &&
+		ProgramText->GetVisibility() == ESlateVisibility::Collapsed && Tile->IsSynergyHighlighted());
+	TestFalse(TEXT("Ordinary facility tooltip cannot retain the previous program names"),
+		Tile->GetToolTipText().ToString().Contains(TEXT("바다향기 공방")));
 	Entry.bRequiredForSetup = true;
+	Entry.CompatibleProgramCount = 1;
+	Entry.CompatibleProgramNames = FText::FromString(TEXT("바다향기 공방"));
 	Data->Initialize(Entry, 1000, true);
 	Tile->RefreshItemPresentation();
 	IUserListEntry::ReleaseEntry(*Tile.Get());
@@ -212,6 +249,9 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Released row contains no stale required status"),
 		!Tile->IsRequiredFacility() && !Tile->IsRequiredFacilitySatisfied() &&
 		RequiredMissing->GetVisibility() == ESlateVisibility::Collapsed && RequiredSatisfied->GetVisibility() == ESlateVisibility::Collapsed);
+	TestTrue(TEXT("Released row contains no stale program compatibility badge"),
+		!Tile->HasCompatiblePrograms() && ProgramBadge->GetVisibility() == ESlateVisibility::Collapsed &&
+		ProgramText->GetVisibility() == ESlateVisibility::Collapsed);
 	return true;
 }
 

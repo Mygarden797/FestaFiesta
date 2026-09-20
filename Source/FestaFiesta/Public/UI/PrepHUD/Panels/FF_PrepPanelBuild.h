@@ -87,6 +87,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
 	void RequestFacilityFocus(FName FacilityDefinitionId);
 
+	/** 설치 조건을 충족하면 안내와 그 안내의 여백을 함께 접습니다. 상태를 변경하지 않는 표현 함수입니다. */
+	void RefreshRequiredFacilityGuide(const FFF_RequiredFacilitiesStatus& Status);
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
@@ -175,6 +178,9 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UWidget> Box_Header;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<class UBorder> Border_CatalogRequiredGuide;
 
 	/**
 	 * 패널 바깥 테두리.

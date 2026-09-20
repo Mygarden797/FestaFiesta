@@ -8,7 +8,9 @@
 #pragma once
 
 #include "Building/FF_BuildCatalogTypes.h"
+#include "Building/FF_FacilityNamingLibrary.h"
 #include "Economy/FF_FacilityCostResolver.h"
+#include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Festival/FF_RequiredFacilityTypes.h"
 
@@ -16,6 +18,40 @@ class UDataTable;
 
 namespace FFBuildCatalogModel
 {
+	// 시설의 실제 정의 ID와 편성 도메인 규칙으로 프로그램 기능을 투영합니다.
+	// 카탈로그 교체/비가용 상태에서도 이전 배지가 남지 않도록 매번 초기화합니다.
+	inline void ApplyCompatiblePrograms(
+		FFF_BuildCatalogEntry& Entry,
+		const TArray<FFF_ProgramCard>& Catalog)
+	{
+		Entry.CompatibleProgramCount = 0;
+		Entry.CompatibleProgramNames = FText::GetEmpty();
+		FFF_FacilityNameParts Parts;
+		FString ParseFailure;
+		if (!UFF_FacilityNamingLibrary::TryParseFacilityDefinitionId(
+			Entry.Category, Entry.FacilityDefinitionId, Parts, ParseFailure)) { return; }
+
+		TSet<FName> SeenProgramIds;
+		TArray<FText> Names;
+		for (const FFF_ProgramCard& Card : Catalog)
+		{
+			// 실제 편성의 FindCard와 동일하게 중복 ID의 첫 번째 카드만 사용합니다.
+			if (SeenProgramIds.Contains(Card.ProgramId)) { continue; }
+			SeenProgramIds.Add(Card.ProgramId);
+			if (!Card.IsValid() || !FMath::IsFinite(Card.StartMinutes) || !FMath::IsFinite(Card.EndMinutes)
+				|| Card.StartMinutes < 0.f
+				|| !FFF_ProgramScheduleRules::IsFacilityTypeAllowed(Card, Parts.MajorToken, Parts.MinorToken))
+			{
+				continue;
+			}
+			++Entry.CompatibleProgramCount;
+			Names.Add(Card.DisplayName.IsEmpty() || Card.DisplayName.ToString() == Card.ProgramId.ToString()
+				? NSLOCTEXT("FestaFiestaBuildCatalog", "UnnamedCompatibleProgram", "이름 없는 프로그램")
+				: Card.DisplayName);
+		}
+		Entry.CompatibleProgramNames = FText::Join(FText::FromString(TEXT(", ")), Names);
+	}
+
 	// 이미 조회한 권위 상태를 O(시설 수 + 필수 행 수)로 투영합니다. 설치 개수나 충족 판정을
 	// 다시 계산하지 않으며, 축제 변경으로 목록에서 빠진 시설의 이전 표시는 초기화합니다.
 	inline void ApplyRequiredFacilities(

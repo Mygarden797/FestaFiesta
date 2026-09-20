@@ -628,6 +628,9 @@ void UFF_PrepPanelBuild::RefreshRequiredFacilitiesPresentation()
 	if (bRequiredFacilitiesDirty && bPanelOpen && !bClosingPanel && BuildModeSubsystem &&
 		BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
 	{
+		// The same notification also covers switching festivals. Refresh program
+		// compatibility and prices before reusing the existing pooled card objects.
+		RefreshPricedEntries();
 		ReconcilePresentation();
 	}
 }
@@ -643,6 +646,21 @@ void UFF_PrepPanelBuild::ApplyRequiredFacilitiesSnapshot()
 		bRequiredFacilitiesDirty = false;
 	}
 	FFBuildCatalogModel::ApplyRequiredFacilities(PricedEntries, RequiredFacilitiesSnapshot);
+	RefreshRequiredFacilityGuide(RequiredFacilitiesSnapshot);
+}
+
+void UFF_PrepPanelBuild::RefreshRequiredFacilityGuide(const FFF_RequiredFacilitiesStatus& Status)
+{
+	// Older saved panels did not expose the guide as a variable. Their existing
+	// Designer widget still supports the same presentation without regenerating it.
+	UBorder* Guide = Border_CatalogRequiredGuide ? Border_CatalogRequiredGuide.Get()
+		: Cast<UBorder>(GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
+	if (Guide)
+	{
+		const bool bNeedsInstallation = !Status.Facilities.IsEmpty() && !Status.bCanProceed;
+		Guide->SetVisibility(bNeedsInstallation
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 }
 
 void UFF_PrepPanelBuild::RevealSynergyRecommendations()

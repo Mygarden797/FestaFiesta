@@ -157,6 +157,7 @@ void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 	RefreshFavorite();
 	SetSynergyHighlighted(false);
 	SetRequiredFacilityStatus(false, false, 0, 0);
+	ApplyProgramAvailability();
 	IUserObjectListEntry::NativeOnEntryReleased();
 }
 
@@ -182,6 +183,16 @@ void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 	SetSynergyHighlighted(Item && Item->IsSynergyHighlighted());
 	SetRequiredFacilityStatus(Item && Item->IsRequiredFacility(), Item && Item->IsRequiredFacilitySatisfied(),
 		Item ? Item->GetRequiredFacilityCurrentCount() : 0, Item ? Item->GetRequiredFacilityMinimumCount() : 0);
+	ApplyProgramAvailability();
+}
+
+void UFF_PrepBuildTileWidget::ApplyProgramAvailability()
+{
+	bHasCompatiblePrograms = Item && Item->HasCompatiblePrograms();
+	const ESlateVisibility BadgeVisibility = bHasCompatiblePrograms
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Border_ProgramBadge) { Border_ProgramBadge->SetVisibility(BadgeVisibility); }
+	if (Text_ProgramBadge) { Text_ProgramBadge->SetVisibility(BadgeVisibility); }
 }
 
 void UFF_PrepBuildTileWidget::SetSynergyHighlighted(const bool bHighlighted)
@@ -309,6 +320,11 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithRequirement", "{0}\n{1}"),
 				Description, UFF_BuildFacilityCard::MakeRequiredFacilityToolTip(Item->IsRequiredFacilitySatisfied(),
 					Item->GetRequiredFacilityCurrentCount(), Item->GetRequiredFacilityMinimumCount()));
+		}
+		if (Item->HasCompatiblePrograms())
+		{
+			Description = FText::Format(NSLOCTEXT("FestaFiestaPrepBuild", "TileDescriptionWithPrograms", "{0}\n{1}"),
+				Description, UFF_BuildFacilityCard::MakeProgramFacilityToolTip(Item->GetEntry()));
 		}
 		SetToolTipText(Description);
 	}

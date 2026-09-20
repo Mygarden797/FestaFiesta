@@ -123,6 +123,15 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
 	int32 RequiredMinimumCount = 0;
 
+	// 현재 축제 프로그램 중 이 시설 종류에서 운영 가능한 유효한 프로그램 수입니다.
+	// 설치/구매 여부, 보유 골드와 독립적인 시설 기능 안내입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Program")
+	int32 CompatibleProgramCount = 0;
+
+	// 호환 프로그램의 표시 이름을 카탈로그 순서로 모은 툴팁용 목록입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Program")
+	FText CompatibleProgramNames;
+
 	// 현재 Festival의 FacilityCostTable에서 해석한 설치비입니다. 카탈로그 구성 시 한 번 계산해
 	// UMG/Slate 표현이 같은 가격 원천을 사용하게 하며, 실패하면 bHasResolvedInstallCost가 false입니다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")

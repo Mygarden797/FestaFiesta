@@ -64,6 +64,10 @@ bool UFF_BuildCatalogEconomyReadModel::TryProjectFacilityCosts(
 		ProgressionSubsystem && ProgressionSubsystem->IsFestivalStarted()
 		? ProgressionSubsystem->GetDefinition()
 		: nullptr;
+	// 프로그램 기능은 설치비 해석 실패나 구매 가능 여부와 관계없이 안내합니다.
+	const TArray<FFF_ProgramCard> EmptyProgramCatalog;
+	FFBuildCatalogModel::ApplyCompatiblePrograms(
+		Entry, Festival ? Festival->ProgramCatalog : EmptyProgramCatalog);
 	const UDataTable* CostTable = Festival ? Festival->FacilityCostTable.Get() : nullptr;
 	const float DemolitionRefundRate = Festival
 		? Festival->FacilityDemolitionRefundRate

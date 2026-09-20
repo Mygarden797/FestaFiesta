@@ -75,6 +75,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
 	bool IsRequiredFacilitySatisfied() const { return bRequiredFacilitySatisfied; }
 
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Program")
+	bool HasCompatiblePrograms() const { return bHasCompatiblePrograms; }
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -91,6 +94,13 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|UI|Prep|Build|Required")
 	void BP_OnRequiredFacilityStatusChanged(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+
+	/** 배지의 색상·문구·위치는 WBP에서 편집하며 런타임은 표시 여부만 갱신합니다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Program")
+	TObjectPtr<UBorder> Border_ProgramBadge;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Program")
+	TObjectPtr<UTextBlock> Text_ProgramBadge;
 
 	/** 부족·충족 각각의 문구/색상/폰트/배치는 WBP에서 편집합니다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Required")
@@ -169,6 +179,7 @@ private:
 	void RefreshVisualState(bool bIsSelected);
 	void ApplySynergyHighlight();
 	void ApplyRequiredFacilityStatus();
+	void ApplyProgramAvailability();
 	FVector2D GetAuthoredThumbnailBounds() const;
 	TWeakObjectPtr<USizeBox> ThumbnailFrame;
 
@@ -178,6 +189,7 @@ private:
 	bool bSynergyHighlighted = false;
 	bool bRequiredFacility = false;
 	bool bRequiredFacilitySatisfied = false;
+	bool bHasCompatiblePrograms = false;
 	int32 RequiredFacilityCurrentCount = 0;
 	int32 RequiredFacilityMinimumCount = 0;
 	FSlateBrush AuthoredCardBrush;

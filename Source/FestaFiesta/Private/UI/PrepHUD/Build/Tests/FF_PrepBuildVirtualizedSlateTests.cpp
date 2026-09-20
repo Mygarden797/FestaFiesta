@@ -190,8 +190,16 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Entry.CurrentInstanceCount = Index % 4;
                 Entry.bBuildLimitReached = Entry.CurrentInstanceCount >= Entry.MaxInstancesPerWorld;
                 Entry.Thumbnail = Textures[Index % Textures.Num()].Get();
+                Entry.CompatibleProgramCount = Index % 3 == 0 ? 1 : 0;
+                Entry.CompatibleProgramNames = Entry.CompatibleProgramCount > 0
+                    ? FText::FromString(TEXT("가상화 검증 프로그램")) : FText::GetEmpty();
+                Entry.bRequiredForSetup = Index % 4 < 2;
+                Entry.RequiredMinimumCount = Entry.bRequiredForSetup ? 1 : 0;
+                Entry.RequiredInstalledCount = Entry.bRequiredForSetup ? FMath::Min(Entry.CurrentInstanceCount, 1) : 0;
+                Entry.bRequiredSetupSatisfied = Entry.bRequiredForSetup && Entry.RequiredInstalledCount >= 1;
                 UFF_PrepBuildTileData* Item = NewObject<UFF_PrepBuildTileData>(Panel.Get());
                 Item->Initialize(Entry, 7500);
+                Item->SetSynergyHighlighted(Index % 5 == 0);
                 ListItems.Add(Item);
             }
             List->SetListItems(ListItems);
@@ -351,6 +359,7 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Entry.Definition = Definition;
                 Entry.Thumbnail = Texture;
                 Entry.MaxInstancesPerWorld = Definition->Spec.MaxInstancesPerWorld;
+                FFBuildCatalogModel::ApplyCompatiblePrograms(Entry, Festival->ProgramCatalog);
                 FString CostFailure;
                 if (!Test.TestTrue(*FString::Printf(TEXT("Source facility price resolves: %s"), *DefinitionName),
                     FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, Costs,
@@ -591,8 +600,9 @@ namespace FFPrepBuildVirtualizedSlateTest
             Filter.bFilterByCategory = true;
             Filter.Category = EFFZSFacilityCategory::Performance;
             // The playerless panel has no required-facilities subsystem. Supply the same
-            // authoritative projection directly to its real model after normal filtering.
+            // authoritative projection to its real model and header after normal filtering.
             Model->Reconcile(EFF_BuildCatalogLoadState::Ready, SourceEntries, Filter, 7500, true, FText::GetEmpty());
+            Panel->RefreshRequiredFacilityGuide(Status);
             UFF_PrepBuildTileData* Tile = Model->FindTile(RequiredPreviewFacilityId);
             if (!Test.TestNotNull(TEXT("Required facility remains in the production tile pool"), Tile)) { return false; }
             if (RequiredPreviewTile.IsValid())
@@ -611,6 +621,52 @@ namespace FFPrepBuildVirtualizedSlateTest
 
         bool CheckRequiredCatalogPreview(FAutomationTestBase& Test, const bool bInstalled)
         {
+            auto* RequiredGuide = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_CatalogRequiredGuide")));
+            auto* ProgramLegend = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_CatalogProgramLegend")));
+            auto* ProgramLabel = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_CatalogProgramLegend")));
+            auto* ProgramGuide = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_CatalogProgramGuide")));
+            auto* Title = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_PanelTitle")));
+            UWidget* Header = Panel->GetWidgetFromName(TEXT("Box_Header"));
+            if (!Test.TestNotNull(TEXT("Required header guide uses the actual saved WBP border"), RequiredGuide) ||
+                !Test.TestNotNull(TEXT("Program header legend uses the actual saved WBP border"), ProgramLegend) ||
+                !Test.TestNotNull(TEXT("Program header legend retains its authored caption"), ProgramLabel) ||
+                !Test.TestNotNull(TEXT("Program header legend retains its authored explanation"), ProgramGuide) ||
+                !Test.TestNotNull(TEXT("Catalog title anchors the header legend"), Title) ||
+                !Test.TestNotNull(TEXT("Catalog header contains the legend"), Header)) { return false; }
+            Test.TestTrue(TEXT("The required header guide collapses on installation and reappears after removal"),
+                RequiredGuide->GetVisibility() == (bInstalled ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible));
+            Test.TestTrue(TEXT("The program legend stays visible and does not intercept input"),
+                ProgramLegend->GetVisibility() == ESlateVisibility::HitTestInvisible &&
+                ProgramGuide->GetVisibility() == ESlateVisibility::HitTestInvisible);
+            const FSlateRect HeaderRect = Header->GetCachedGeometry().GetLayoutBoundingRect();
+            const FSlateRect TitleRect = Title->GetCachedGeometry().GetLayoutBoundingRect();
+            const FSlateRect ProgramRect = ProgramLegend->GetCachedGeometry().GetLayoutBoundingRect();
+            const FSlateRect ProgramGuideRect = ProgramGuide->GetCachedGeometry().GetLayoutBoundingRect();
+            Test.TestTrue(TEXT("The program legend remains below the title and its explanation does not overlap"),
+                ProgramRect.Top >= TitleRect.Bottom - 1.5f && ProgramRect.Right <= ProgramGuideRect.Left + 1.5f);
+            for (const UTextBlock* Label : { ProgramLabel, ProgramGuide })
+            {
+                const FSlateRect Rect = Label->GetCachedGeometry().GetLayoutBoundingRect();
+                Test.TestTrue(TEXT("Program header labels retain readable space inside the header"),
+                    Rect.GetSize().X >= Label->GetDesiredSize().X * DpiScale - 1.5f &&
+                    Rect.GetSize().Y >= Label->GetFont().Size * DpiScale * 0.7f &&
+                    Rect.Left >= HeaderRect.Left - 1.5f && Rect.Right <= HeaderRect.Right + 1.5f &&
+                    Rect.Top >= HeaderRect.Top - 1.5f && Rect.Bottom <= HeaderRect.Bottom + 1.5f);
+            }
+            if (bInstalled)
+            {
+                Test.TestTrue(TEXT("Collapsing the required guide moves the program legend to the title's left edge without a gap"),
+                    FMath::IsNearlyEqual(ProgramRect.Left, TitleRect.Left, 1.5f));
+            }
+            else
+            {
+                const FSlateRect RequiredGuideRect = RequiredGuide->GetCachedGeometry().GetLayoutBoundingRect();
+                Test.TestTrue(TEXT("A missing or removed main facility restores the guide before the program legend without overlap"),
+                    RequiredGuideRect.GetSize().X > 1.0f && RequiredGuideRect.GetSize().Y > 1.0f &&
+                    FMath::IsNearlyEqual(RequiredGuideRect.Left, TitleRect.Left, 1.5f) &&
+                    ProgramRect.Left > RequiredGuideRect.Right);
+            }
+
             UFF_PrepBuildTileWidget* RequiredRow = nullptr;
             for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
             {
@@ -645,17 +701,78 @@ namespace FFPrepBuildVirtualizedSlateTest
                     Border->GetVisibility() == Expected && Badge->GetVisibility() == Expected);
                 if (!bActive) { continue; }
                 Test.TestEqual(TEXT("Required badge retains the authored readable label"), Badge->GetText().ToString(),
-                    FString(bInstalled ? TEXT("필수 충족") : TEXT("필수 설치")));
+                    FString(bInstalled ? TEXT("1일차 필수 완료") : TEXT("1일차 필수 설치")));
                 for (const UWidget* Decoration : { static_cast<UWidget*>(Border), static_cast<UWidget*>(Badge) })
                 {
                     const FSlateRect Rect = Decoration->GetCachedGeometry().GetLayoutBoundingRect();
-                    Test.TestTrue(TEXT("Required badge fits inside the actual card at 1280x720"),
+                    Test.TestTrue(TEXT("Required badge fits inside the actual card at the current viewport"),
                         Rect.GetSize().X > 1.0f && Rect.GetSize().Y > 1.0f &&
                         Rect.Left >= CardRect.Left - 1.5f && Rect.Right <= CardRect.Right + 1.5f &&
                         Rect.Top >= CardRect.Top - 1.5f && Rect.Bottom <= CardRect.Bottom + 1.5f);
                 }
             }
             return CheckFavoriteInputIsolation(Test, RequiredPreviewFacilityId);
+        }
+
+        bool UseProgramCatalogPreview(FAutomationTestBase& Test)
+        {
+            const FFF_BuildCatalogEntry* Source = SourceEntries.FindByPredicate([](const FFF_BuildCatalogEntry& Entry)
+            {
+                return Entry.Category == EFFZSFacilityCategory::Booth && Entry.CompatibleProgramCount > 0;
+            });
+            const auto* ModelProperty = FindFProperty<FObjectPropertyBase>(Panel->GetClass(), TEXT("PresentationModel"));
+            auto* Model = ModelProperty ? Cast<UFF_PrepBuildPresentationModel>(
+                ModelProperty->GetObjectPropertyValue_InContainer(Panel.Get())) : nullptr;
+            UFunction* BoothHandler = Panel->FindFunction(TEXT("HandleFilterBoothClicked"));
+            const auto* PageSize = FindFProperty<FIntProperty>(Panel->GetClass(), TEXT("CardsPerPage"));
+            if (!Test.TestNotNull(TEXT("The actual festival exposes a program-compatible booth"), Source) ||
+                !Test.TestNotNull(TEXT("Actual panel model for program preview"), Model) ||
+                !Test.TestNotNull(TEXT("Production booth category action"), BoothHandler) ||
+                !Test.TestNotNull(TEXT("Authored catalog page capacity for program preview"), PageSize)) { return false; }
+            ProgramPreviewFacilityId = Source->FacilityDefinitionId;
+            Panel->ProcessEvent(BoothHandler, nullptr);
+            FFF_PrepBuildFilter Filter;
+            Filter.bFilterByCategory = true;
+            Filter.Category = EFFZSFacilityCategory::Booth;
+            // Retain the complete category; a valid program host can be beyond the first
+            // page as the production catalog grows. Navigate by its actual filtered index.
+            Model->Reconcile(EFF_BuildCatalogLoadState::Ready, SourceEntries, Filter, 7500, true, FText::GetEmpty());
+            const int32 TargetIndex = Model->GetVisibleTiles().IndexOfByPredicate([this](const TObjectPtr<UFF_PrepBuildTileData>& Tile)
+            {
+                return Tile && Tile->GetFacilityDefinitionId() == ProgramPreviewFacilityId;
+            });
+            if (!Test.TestTrue(TEXT("Actual program host remains in the filtered booth catalog"), TargetIndex != INDEX_NONE)) { return false; }
+            Panel->SetCatalogPage(TargetIndex / FMath::Max(1, PageSize->GetPropertyValue_InContainer(Panel.Get())));
+            const TArray<UObject*> PageItems = Panel->GetCatalogPageItems();
+            if (!Test.TestTrue(TEXT("Production pagination selects the program host's real page"),
+                PageItems.Contains(Model->FindTile(ProgramPreviewFacilityId)))) { return false; }
+            List->SetListItems(PageItems);
+            List->ScrollToTop();
+            List->RegenerateAllEntries();
+            return true;
+        }
+
+        bool CheckProgramCatalogPreview(FAutomationTestBase& Test)
+        {
+            UFF_PrepBuildTileWidget* ProgramRow = nullptr;
+            for (UUserWidget* Row : List->GetDisplayedEntryWidgets())
+            {
+                const auto* Item = Cast<UFF_PrepBuildTileData>(List->GetListObjectFromEntry(*Row));
+                if (Item && Item->GetFacilityDefinitionId() == ProgramPreviewFacilityId)
+                {
+                    ProgramRow = Cast<UFF_PrepBuildTileWidget>(Row);
+                    Test.TestFalse(TEXT("Actual compatible program names reach the card data"), Item->GetEntry().CompatibleProgramNames.IsEmpty());
+                    Test.TestTrue(TEXT("Actual compatible program names are explained in the card tooltip"),
+                        ProgramRow && ProgramRow->GetToolTipText().ToString().Contains(Item->GetEntry().CompatibleProgramNames.ToString()));
+                    break;
+                }
+            }
+            if (!Test.TestNotNull(TEXT("A facility from the actual program catalog is painted"), ProgramRow)) { return false; }
+            auto* Badge = Cast<UTextBlock>(ProgramRow->GetWidgetFromName(TEXT("Text_ProgramBadge")));
+            if (!Test.TestNotNull(TEXT("Program badge caption is authored in the saved WBP"), Badge)) { return false; }
+            Test.TestTrue(TEXT("Actual compatible program state is visible on the pooled card"), ProgramRow->HasCompatiblePrograms());
+            Test.TestEqual(TEXT("Program badge retains its authored concise caption"), Badge->GetText().ToString(), FString(TEXT("프로그램")));
+            return CheckFavoriteInputIsolation(Test, ProgramPreviewFacilityId);
         }
 
         void Paint()
@@ -882,11 +999,17 @@ namespace FFPrepBuildVirtualizedSlateTest
                 UImage* Thumbnail = Cast<UImage>(Row->GetWidgetFromName(TEXT("Image_Thumbnail")));
                 USizeBox* ThumbnailFrame = Cast<USizeBox>(Row->GetWidgetFromName(TEXT("SizeBox_Thumbnail")));
                 UBorder* Card = Cast<UBorder>(Row->GetWidgetFromName(TEXT("Border_Card")));
+                auto* Tile = Cast<UFF_PrepBuildTileWidget>(Row);
+                auto* ProgramBorder = Cast<UBorder>(Row->GetWidgetFromName(TEXT("Border_ProgramBadge")));
+                auto* ProgramLabel = Cast<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_ProgramBadge")));
                 if (!Test.TestNotNull(TEXT("Realized row has its current list item"), Item) ||
                     !Test.TestNotNull(TEXT("Realized row name"), Name) ||
                     !Test.TestNotNull(TEXT("Realized row thumbnail"), Thumbnail) ||
                     !Test.TestNotNull(TEXT("Realized row fixed thumbnail frame"), ThumbnailFrame) ||
-                    !Test.TestNotNull(TEXT("Realized row card"), Card))
+                    !Test.TestNotNull(TEXT("Realized row card"), Card) ||
+                    !Test.TestNotNull(TEXT("Realized native tile"), Tile) ||
+                    !Test.TestNotNull(TEXT("Realized program badge border"), ProgramBorder) ||
+                    !Test.TestNotNull(TEXT("Realized program badge caption"), ProgramLabel))
                 {
                     continue;
                 }
@@ -897,6 +1020,15 @@ namespace FFPrepBuildVirtualizedSlateTest
                 Measurements.LastItemByRow.Add(Row, Item);
                 Measurements.SeenItems.Add(Item);
                 const FString Label = FString::Printf(TEXT("%s / %s"), *Step, *Item->GetFacilityDefinitionId().ToString());
+                const bool bHasPrograms = Item->GetEntry().CompatibleProgramCount > 0;
+                const ESlateVisibility ProgramVisibility = bHasPrograms ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+                Test.TestTrue(*FString::Printf(TEXT("%s: pooled program badge belongs to the current facility and cannot intercept input"), *Label),
+                    Tile->HasCompatiblePrograms() == bHasPrograms && ProgramBorder->GetVisibility() == ProgramVisibility &&
+                    ProgramLabel->GetVisibility() == ProgramVisibility);
+                Test.TestTrue(*FString::Printf(TEXT("%s: pooled required and synergy flags belong to the current facility"), *Label),
+                    Tile->IsRequiredFacility() == Item->IsRequiredFacility() &&
+                    Tile->IsRequiredFacilitySatisfied() == Item->IsRequiredFacilitySatisfied() &&
+                    Tile->IsSynergyHighlighted() == Item->IsSynergyHighlighted());
                 Test.TestFalse(*FString::Printf(TEXT("%s: recycled name never becomes blank"), *Label), Name->GetText().IsEmpty());
                 Test.TestEqual(*FString::Printf(TEXT("%s: name belongs to the new item"), *Label),
                     Name->GetText().ToString(), Item->GetDisplayName().ToString());
@@ -931,6 +1063,27 @@ namespace FFPrepBuildVirtualizedSlateTest
                 // Data and desired-size checks above still cover every pooled row; inspect
                 // painted child geometry only where the entire card was actually painted.
                 if (!bFullyVisible) { continue; }
+                TArray<const UWidget*> VisibleBadges;
+                for (const TCHAR* BadgeName : { TEXT("Text_RequiredMissing"), TEXT("Text_RequiredSatisfied"),
+                    TEXT("Text_ProgramBadge"), TEXT("Text_SynergyBadge") })
+                {
+                    const UWidget* Badge = Row->GetWidgetFromName(BadgeName);
+                    if (!Badge || !Badge->IsVisible()) { continue; }
+                    const FSlateRect BadgeRect = Badge->GetCachedGeometry().GetLayoutBoundingRect();
+                    Test.TestTrue(*FString::Printf(TEXT("%s: %s fits inside the card"), *Label, BadgeName),
+                        BadgeRect.GetSize().X > 1 && BadgeRect.GetSize().Y > 1 &&
+                        BadgeRect.Left >= CardRect.Left - 1.5 && BadgeRect.Right <= CardRect.Right + 1.5 &&
+                        BadgeRect.Top >= CardRect.Top - 1.5 && BadgeRect.Bottom <= CardRect.Bottom + 1.5);
+                    for (const UWidget* PreviousBadge : VisibleBadges)
+                    {
+                        const FSlateRect PreviousRect = PreviousBadge->GetCachedGeometry().GetLayoutBoundingRect();
+                        const bool bOverlap = BadgeRect.Left < PreviousRect.Right - 1 && BadgeRect.Right > PreviousRect.Left + 1 &&
+                            BadgeRect.Top < PreviousRect.Bottom - 1 && BadgeRect.Bottom > PreviousRect.Top + 1;
+                        Test.TestFalse(*FString::Printf(TEXT("%s: %s and %s remain independently readable"),
+                            *Label, BadgeName, *PreviousBadge->GetName()), bOverlap);
+                    }
+                    VisibleBadges.Add(Badge);
+                }
                 const FVector2D CardSize = Card->GetCachedGeometry().GetLocalSize();
                 const FVector2D ThumbnailSize = ThumbnailFrame->GetCachedGeometry().GetLocalSize();
                 if (Measurements.CardSize.IsNearlyZero())
@@ -1045,6 +1198,7 @@ namespace FFPrepBuildVirtualizedSlateTest
         TStrongObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
         TArray<FFF_BuildCatalogEntry> SourceEntries;
         FName RequiredPreviewFacilityId = NAME_None;
+        FName ProgramPreviewFacilityId = NAME_None;
         TWeakObjectPtr<UFF_PrepBuildTileData> RequiredPreviewTile;
 #if !UE_BUILD_SHIPPING
         TWeakObjectPtr<UFF_PrepHudBar> PreviousActiveBar;
@@ -1163,19 +1317,32 @@ namespace FFPrepBuildVirtualizedSlateTest
     bool RunRequiredCatalogFixture(FAutomationTestBase& Test)
     {
         if (!Test.TestTrue(TEXT("Slate application is initialized"), FSlateApplication::IsInitialized())) { return false; }
-        Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 1);
-        FCatalogFixture Fixture;
-        if (!Fixture.Initialize(Test, FVector2D(1280, 720), true) || !Fixture.UseSourceCatalogEntries(Test)) { return false; }
-        FMeasurements Measurements;
-        for (const bool bInstalled : { false, true })
+        Test.AddExpectedError(TEXT("ViewModel 을 찾지 못했다"), EAutomationExpectedErrorFlags::Contains, 2);
+        for (const FIntPoint Resolution : { FIntPoint(1280, 720), FIntPoint(1920, 1080) })
         {
-            if (!Fixture.UseRequiredCatalogPreview(Test, bInstalled)) { return false; }
+            FCatalogFixture Fixture;
+            if (!Fixture.Initialize(Test, FVector2D(Resolution.X, Resolution.Y), true) ||
+                !Fixture.UseSourceCatalogEntries(Test)) { return false; }
+            FMeasurements Measurements;
+            for (int32 Step = 0; Step < 3; ++Step)
+            {
+                const bool bInstalled = Step == 1;
+                const TCHAR* State = Step == 0 ? TEXT("Required stage missing")
+                    : bInstalled ? TEXT("Required stage installed") : TEXT("Required stage removed");
+                const TCHAR* CaptureSuffix = Step == 0 ? TEXT("RequiredMissing")
+                    : bInstalled ? TEXT("RequiredSatisfied") : TEXT("RequiredRemoved");
+                if (!Fixture.UseRequiredCatalogPreview(Test, bInstalled)) { return false; }
+                Fixture.Paint();
+                Fixture.CheckRows(Test, Measurements, State, true);
+                if (!Fixture.CheckRequiredCatalogPreview(Test, bInstalled) ||
+                    !Fixture.Capture(Test, CaptureSuffix)) { return false; }
+            }
+            if (!Fixture.UseProgramCatalogPreview(Test)) { return false; }
             Fixture.Paint();
-            Fixture.CheckRows(Test, Measurements, bInstalled ? TEXT("Required stage installed") : TEXT("Required stage missing"), true);
-            if (!Fixture.CheckRequiredCatalogPreview(Test, bInstalled) ||
-                !Fixture.Capture(Test, bInstalled ? TEXT("RequiredSatisfied") : TEXT("RequiredMissing"))) { return false; }
+            Fixture.CheckRows(Test, Measurements, TEXT("Actual program-compatible booths"), true);
+            if (!Fixture.CheckProgramCatalogPreview(Test) || !Fixture.Capture(Test, TEXT("ProgramFacilities"))) { return false; }
+            Fixture.List->ClearListItems();
         }
-        Fixture.List->ClearListItems();
         return true;
     }
 

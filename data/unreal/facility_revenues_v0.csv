@@ -2,13 +2,10 @@
 Booth_ActivityGame_BalloonDartStall,풍선 다트 부스,30,True,0.12,"((1,1.000000))",(),False,0
 Booth_ActivityGame_BasketballShotChallenge,농구 슛 챌린지,32,True,0.12,"((1,1.000000))",(),False,0
 Booth_ActivityGame_BoardGameTent,보드게임 텐트,34,True,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_ClawMachine,인형뽑기 미니게임 (연결용),30,True,0.12,"((1,1.000000))",(),True,150
 Booth_ActivityGame_Game,게임장,28,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
 Booth_ActivityGame_MiniArcheryRange,미니 양궁장,36,True,0.12,"((1,1.000000))",(),False,0
 Booth_ActivityGame_RhythmGameStall,리듬 게임 부스,32,True,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_Shoot,사격 미니게임 (연결용),30,True,0.12,"((1,1.000000))",(),True,150
 Booth_ActivityGame_SurfBalanceExperience,서핑 밸런스 체험장,32,True,0.12,"((1,1.000000))",(),False,0
-Booth_ActivityGame_Surfing,서핑 미니게임 (연결용),30,True,0.12,"((1,1.000000))",(),True,150
 Booth_CraftExperience_PersonalFanWorkshop,나만의 부채 공방,26,True,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
 Booth_CraftExperience_SandArt,모래공방,24,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000),(4,3.375000))","((Program_SandArtWorkshop,30))",False,0
 Booth_CraftExperience_ShellBraceletWorkshop,조개 팔찌 공방,28,True,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
@@ -60,7 +57,6 @@ Performance_Busking_StreetMagicStage,거리 마술 스테이지,0,True,0.12,"((1
 Performance_ExperienceStage_AudienceDanceChallengeStage,관객 댄스 챌린지 무대,0,True,0.12,"((1,1.000000))","((Program_SunsetYoga,25))",False,0
 Performance_ExperienceStage_Experience,체험장,0,True,0.12,"((1,1.000000))","((Program_SunsetYoga,25))",False,0
 Performance_MainStage_SunsetMainStage,메인공연장,0,True,0.12,"((1,1.000000))",(),False,0
-Performance_MainStage_WaveConcertStage,파도형 콘서트 무대,0,True,0.12,"((1,1.000000))",(),False,0
 Performance_SubStage_FamilyPuppetTheater,가족 인형극장,0,True,0.12,"((1,1.000000))",(),False,0
 Performance_SubStage_LocalArtist,지역 예술가,0,True,0.12,"((1,1.000000))",(),False,0
 Performance_SubStage_LocalBandShowcase,로컬 밴드 쇼케이스,0,True,0.12,"((1,1.000000))",(),False,0
