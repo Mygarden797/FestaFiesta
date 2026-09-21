@@ -1075,6 +1075,17 @@ int32 UFF_FestivalViewModelSubsystem::GetStaffHireCostGold() const
 	return Definition ? Definition->StaffHireCostGold : INDEX_NONE;
 }
 
+int32 UFF_FestivalViewModelSubsystem::GetTodayStaffHireCostGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return INDEX_NONE;
+	}
+
+	return Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffHire);
+}
+
 int32 UFF_FestivalViewModelSubsystem::GetMaxHiredStaffCount() const
 {
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();

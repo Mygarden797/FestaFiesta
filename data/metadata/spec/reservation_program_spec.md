@@ -1,16 +1,18 @@
 # 유료 프로그램 예약 시스템
 
-- 갱신: 2026-09-03 — 현재 구매·배정·Crowd 실행 경로 대조
-- 관련: `../request/facility_naming_convention.md` 5.4, `utility_ai_spec.md` §2·§9, `../SiriKim_Docs/economy_spec.md`
+- 갱신: 2026-09-21 — PR #217의 Staff 분리와 현재 하루 편성·예약 수명 반영（Crowd 실행 경로 대조는 2026-09-03 기준）
+- 관련: `../request/facility_naming_convention.md` 5.4, `utility_ai_spec.md` §2·§9, [UI_API.md](../../../UI_API.md)의 시설 기반 유료 프로그램 편성·Staff 고용 절
 - 배경: 시설 태그에 `예약 필요`가 있는데 Utility AI 가 이 태그를 모르고 NPC 가 그냥 들어간다
 
 ## 1. 확정된 규칙
+
+**현재 구매 계약(2026-09-21)**: 설치 시설에 **오늘 하루치** 프로그램을 편성하며, 소모 자원은 **Gold뿐**이다. Staff는 사건 대응 전담으로 프로그램의 구매 조건·배정 자원이 아니다. 다음 날에는 편성 목록과 해당 예약 슬롯을 함께 제거하므로 같은 카드를 다시 구매할 수 있다. 고용한 Staff는 하루 경계에서 유지된다.
 
 （2026-09-03 코드 대조: 표의 “사면 즉시 찬다/반드시 시작 전 입장”은 기획 의도다. 코드는 구매 때 슬롯 등록·차감, 예약 명단 생성·그룹 스폰 시 배정 확정으로 나뉜다. 풀 부족·경로 실패가 있을 수 있어 구매 성공만으로 물리적 정시 도착을 보장하지 않는다.）
 
 | #   | 규칙                                             | 왜                                                |
 | --- | ---------------------------------------------- | ------------------------------------------------ |
-| 1   | 플레이어가 **Setup·MorningCheck 에 타임테이블로 프로그램을 산다** | 기획서 §9.1                                         |
+| 1   | 플레이어가 **Setup·MorningCheck 에 설치 시설을 골라 오늘 하루치 프로그램을 산다** | 현재 시설 기반 편성 계약                                         |
 | 2   | **사면 정원이 즉시 찬다.** 플레이어가 개별 NPC 를 배정하지 않는다      | 구매는 "그날 방문할 NPC 를 확보하는 것"이다                      |
 | 3   | **예약 NPC 외에는 그 시설에 못 들어간다**                    | `예약 필요` 태그의 뜻                                    |
 | 4   | **배정 단위는 그룹**이다. 1인도 그룹이라 예외가 없다               | 그룹은 통째로 움직이는 것이 전제(스폰·이동·퇴장 전부)                  |
@@ -136,36 +138,36 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 | API | 비고 |
 |---|---|
 | `RegisterProgram` / `RemoveReservation` | 슬롯 등록·삭제. 저작 오류(정원 0·종료<시작·무효 시설)는 무효 핸들로 거부 |
-| `ClearAssignments` | **배정만** 비운다. 하루 경계용 |
+| `ClearAssignments` | **배정만** 비운다. 슬롯은 남으므로 하루 편성을 종료하는 API가 아니다 |
 | `AssignGroups` | 규칙 함수 호출 전에 **다른 예약에 이미 배정된 그룹을 걸러낸다** |
 | `GetReservationIds` / `FindReservation` / `GetRemainingSeats` | 목록은 **시작 시각 오름차순** |
 | `FindActiveReservationForParty` / `IsPartyLockedAt` / `IsPartyExitBlockedAt` | 결정 계층·퇴장 판정이 쓰는 창구 |
 | `OnReservationChanged` | UI 갱신 |
 
-**슬롯과 배정의 수명이 다르다.** 프로그램은 남은 축제 기간 전체 구매(E-10)이고 그룹 배정은
-매일 새로 한다 — 어제 배정된 파티 ID 가 오늘까지 잠긴 채로 남으면 안 된다. 테스트 6개로 고정했다.
+**구매한 프로그램은 하루짜리다.** 슬롯은 구매할 때 만들고, 배정은 이후 예약 명단 생성·그룹 스폰 때 확정한다.
+`UFF_FestivalProgressionSubsystem::BeginNewDay`가 전날 편성의 `ReservationId`마다 `RemoveReservation`을 호출한 뒤 편성 목록을 비운다.
+슬롯과 배정을 함께 제거하므로 전날 파티의 잠금·퇴장 금지가 다음 날로 넘어가지 않는다. `ClearAssignments`만 호출해 슬롯을 유지하는 기간권 계약은 현재 사용하지 않는다.
 
-> 위 5.1 표의 `IsGroupLockedAt`·`IsGroupExitBlockedAt`·`ClearReservations` 는 이 서브시스템의
-> `IsPartyLockedAt`·`IsPartyExitBlockedAt`·`ClearAssignments` 로 실현됐다. 이름이 Group→Party 로
-> 바뀐 것은 crowdAI 의 `PartyID` 와 같은 값이기 때문이다.
+> 초안의 `IsGroupLockedAt`·`IsGroupExitBlockedAt`는 이 서브시스템의 `IsPartyLockedAt`·`IsPartyExitBlockedAt`로 실현됐다.
+> 이름이 Group→Party로 바뀐 것은 crowdAI의 `PartyID`와 같은 값이기 때문이다. 새 날을 시작할 때 예약 제거는 `RemoveReservation`을 사용한다.
 
 ### 5.1 배선 — `UFF_FestivalProgressionSubsystem` (경제 S8)
 
 구매가 Gold 차감이고 기획서 §7 이 경제·진행을 한 소유자로 두므로,
 **슬롯 등록과 비용 차감은 함께 성공해야 한다.** 실제 `TryScheduleProgram`은 슬롯 등록 뒤 차감하고 차감 실패 시 슬롯을 되돌린다（그룹 배정·스폰은 이후 단계이며 구매와 같은 트랜잭션이 아님）.
 
-| 만들 API                                                              | 쓰는 쪽                   |
+| 현재 API                                                              | 쓰는 쪽                   |
 | ------------------------------------------------------------------- | ---------------------- |
-| `TryScheduleProgram(ProgramId, FacilityInstanceId)` | 시설 편성 UI에서 호출（초안 `TryPurchaseProgram`을 대체） |
-| ~~`GetReservations()` + `OnReservationsChanged`~~ ✅ §5.0 이 제공        | 타임테이블 UI               |
-| ~~`IsGroupLockedAt` / `IsGroupExitBlockedAt` / `ClearReservations`~~ ✅ §5.0 이 제공 | L3 · 새 날 |
-| `GetLockedFacilityForGroup(GroupId, Now)`                           | L3 — 잠금 중 목적지 고정 (`FindActiveReservationForParty` 로 대체 가능) |
+| `TryScheduleProgram(ProgramId, FacilityInstanceId)` | 시설 편성 명령이 최종 구매에 사용（초안 `TryPurchaseProgram`을 대체） |
+| `GetReservationIds` / `FindReservation` / `OnReservationChanged` | 예약 현황 UI — §5.0의 예약 서브시스템이 제공 |
+| `IsPartyLockedAt` / `IsPartyExitBlockedAt` / `FindActiveReservationForParty` | Crowd의 잠금·퇴장·목적지 판정 |
+| `RemoveReservation` | `BeginNewDay`에서 전날 구매한 슬롯·배정 제거 |
 
-**실제 구매 순서**: 카탈로그·중복·잔액·스태프 검증 → 시설 타입 적합성 → `RegisterProgram` → `TrySpend` → 편성 목록 추가·통지. 차감 실패는 예약 슬롯을 제거한다.
+**실제 구매 순서**: 시설 편성 명령(`UFF_ProgramSchedulingSubsystem`)이 허용 단계·시설 상태·호환 타입·중복·잔액·예약 시간 충돌을 검증한다. 이어 경제의 `TryScheduleProgram`이 카탈로그·중복·잔액·시설 타입을 확인하고 `RegisterProgram` → `TrySpend` → 편성 목록 추가·통지를 수행한다. 차감 실패는 예약 슬롯을 제거한다. Staff 검증이나 차감은 없다.
 
 （초안의 “배정 0명이면 차감 안 함”은 현재 구매 계약과 다르다. 구매 시 그룹 후보를 받지 않고, 이후 예약 전용 명단 생성·스폰 배정으로 정원을 채운다. 풀 부족·배정 실패 처리와 환불 보장은 별도 미완료 사항이다.）
 
-`EFF_ProgramPurchaseResult`는 잔액·스태프·중복·시설 타입 등 실패 사유를 구분한다. UI가 허용 단계를 관리하는 경로와 순수 규칙의 책임을 구분한다.
+`EFF_ProgramPurchaseResult`는 축제 미시작·알 수 없는 카드·중복·잔액 부족·시설 타입 불일치를 구분한다. `NotEnoughStaff`는 제거됐다. 허용 단계·시설 상태·시간 충돌은 시설 편성 명령의 `EFF_PaidProgramScheduleResult`에서 구분하며, 순수 구매 규칙은 단계나 Staff를 검사하지 않는다.
 
 （2026-09-08부터 예약 귀환·종료 유예는 **CSV가 출처다.** `reservation_return_buffer_minutes`·`reservation_exit_buffer_minutes`(둘 다 10축제분)를 `OnWorldBeginPlay`에서 읽어 `ProgramReturnBufferMinutes`·`ProgramExitGraceMinutes`를 덮는다. 그 전에는 코드 기본값 10만 살아 있고 CSV 행은 0으로 방치돼 아무도 읽지 않았다 — 결선하면서 CSV 값을 10으로 맞춰 동작이 바뀌지 않게 했다. UPROPERTY로 편집한 값은 해당 행이 없을 때만 남는다.
 
@@ -190,9 +192,11 @@ selector 에 예약 개념을 넣으면 순수 함수성이 깨진다(지금 sel
 | 장원재 | 예약자는 일반 Queue 서비스에 가입하지 않는다. 저작된 줄 좌표를 예약 대기로 재사용하며, 시설별 슬롯 수·대형 간격은 확인이 필요하다 |
 | 백종태 | 타임테이블 UI — 예약 현황·정원·시간 표시                                                                               |
 
-## 코드 대조 근거 (2026-09-03)
+## 코드 대조 근거 (구매·예약 수명 2026-09-21, Crowd 2026-09-03)
 
 - [FF_FestivalProgressionSubsystem.cpp](../../../Source/FestaFiesta/Private/Festival/FF_FestivalProgressionSubsystem.cpp)
+- [FF_ProgramSchedulingSubsystem.cpp](../../../Source/FestaFiesta/Private/Economy/FF_ProgramSchedulingSubsystem.cpp) — 2026-09-21 시설 편성 명령 대조
+- [FF_ProgramScheduleRules.cpp](../../../Source/FestaFiesta/Private/Economy/Rules/FF_ProgramScheduleRules.cpp) — 2026-09-21 Staff 없는 구매 규칙 대조
 - [FF_ProgramReservationSubsystem.cpp](../../../Source/FestaFiesta/Private/NPC/Party/FF_ProgramReservationSubsystem.cpp)
 - [FF_CrowdSimulationSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdSimulationSubsystem.cpp)
 - [FF_CrowdDecisionSubsystem.cpp](../../../Source/FestaFiesta/Private/CrowdSystem/Systems/FF_CrowdDecisionSubsystem.cpp)

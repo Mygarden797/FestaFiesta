@@ -142,7 +142,6 @@ bool FFF_BuildPlacementAssistanceIntegrationTest::RunTest(const FString& Paramet
     Festival->FestivalId = TEXT("BuildPlacementAssistanceAutomation");
     Festival->FacilityCostTable = Costs.Get();
     Festival->InitialGold = 10000;
-    Festival->DailyVenueRentGold = 0;
     Economy->StartFestival(Festival.Get());
     Zones->SetChangePhase(EFFZSChangePhase::InitialSetup);
     const FName ZoneId(TEXT("GZ_DadaPocha"));

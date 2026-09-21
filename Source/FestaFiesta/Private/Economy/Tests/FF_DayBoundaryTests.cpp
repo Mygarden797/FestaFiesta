@@ -159,8 +159,8 @@ bool FFF_DayBoundary_OpensExactlyOncePerDay::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 하루 경계는 TodayRevenue·DayLedger·고용 인원은 리셋하지 않는다.
-// 누적 매출·잔액·기본 Staff 는 날을 넘어간다.
+// 하루 경계는 TodayRevenue·DayLedger만 리셋한다.
+// 누적 매출·잔액·기본 Staff·고용 인원은 날을 넘어간다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_DayBoundary_ResetsOnlyDailyScopedValues, "FestaFiesta.Economy.DayBoundary.ResetsOnlyDailyScopedValues", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_DayBoundary_ResetsOnlyDailyScopedValues::RunTest(const FString& Parameters)
 {
@@ -199,6 +199,58 @@ bool FFF_DayBoundary_ResetsOnlyDailyScopedValues::RunTest(const FString& Paramet
 	// 잔액은 리셋되지 않는다 — 어제 번 돈으로 오늘을 산다.
 	TestEqual(TEXT("잔액은 어제 값 그대로다 — 경계가 걷는 돈이 없다"),
 		Harness.Progression->GetGold(), GoldBeforeNewDay);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_DayBoundary_PermanentHireCapPersistsAcrossDays,
+	"FestaFiesta.Economy.DayBoundary.PermanentHireCapPersistsAcrossDays",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_DayBoundary_PermanentHireCapPersistsAcrossDays::RunTest(const FString& Parameters)
+{
+	using namespace FFF_DayBoundaryTestHelpers;
+	(void)Parameters;
+	FDayBoundaryHarness Harness;
+	if (!TestTrue(TEXT("영구 고용 상한 픽스처가 구성된다"), Harness.Initialize(10000))) return false;
+
+	if (!TestTrue(TEXT("첫날 4명을 고용한다"), Harness.Progression->TryHireStaff(4))) return false;
+	const int32 GoldAfterFirstHire = 10000 - 4 * HireCost;
+	TestEqual(TEXT("첫날 고용비는 한 번만 지불한다"), Harness.Progression->GetGold(), GoldAfterFirstHire);
+	Harness.Progression->BeginNewDay(2);
+	TestEqual(TEXT("둘째 날에도 첫날 고용 인원이 남는다"), Harness.Progression->GetHiredStaffCount(), 4);
+	TestEqual(TEXT("둘째 날 고용 상한은 2명만 남는다"), Harness.Progression->GetRemainingHireCap(), MaxHires - 4);
+	TestEqual(TEXT("돈이 충분해도 남은 총원 상한만 고용할 수 있다"),
+		Harness.Progression->GetAffordableHireCount(), MaxHires - 4);
+	TestEqual(TEXT("둘째 날 기존 인원 비용을 다시 내지 않는다"),
+		Harness.Progression->GetGold(), GoldAfterFirstHire);
+	TestEqual(TEXT("둘째 날 자동 지출이 없다"), Harness.CalcLedgerSpendTotal(), 0);
+	TestFalse(TEXT("날짜가 바뀌어도 총원 상한을 넘기는 3명 고용은 거절된다"),
+		Harness.Progression->TryHireStaff(3));
+	TestEqual(TEXT("거절 후에도 Gold가 보존된다"), Harness.Progression->GetGold(), GoldAfterFirstHire);
+	TestEqual(TEXT("거절 후에도 인원이 보존된다"), Harness.Progression->GetHiredStaffCount(), 4);
+	TestEqual(TEXT("거절한 고용은 지출에 기록되지 않는다"), Harness.CalcLedgerSpendTotal(), 0);
+
+	if (!TestTrue(TEXT("둘째 날 남은 2명은 고용할 수 있다"),
+		Harness.Progression->TryHireStaff(MaxHires - 4))) return false;
+	TestEqual(TEXT("둘째 날 원장에는 새 고용 비용만 기록된다"),
+		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffHire),
+		(MaxHires - 4) * HireCost);
+	const int32 GoldAfterAllHires = 10000 - MaxHires * HireCost;
+	Harness.Progression->BeginNewDay(3);
+	TestEqual(TEXT("셋째 날에도 축제 전체 고용 인원이 남는다"),
+		Harness.Progression->GetHiredStaffCount(), MaxHires);
+	TestEqual(TEXT("셋째 날 총원은 기본 인원과 누적 고용 인원의 합이다"),
+		Harness.Progression->GetTotalStaffCount(), BaseStaff + MaxHires);
+	TestEqual(TEXT("셋째 날에도 고용 상한이 다시 열리지 않는다"),
+		Harness.Progression->GetRemainingHireCap(), 0);
+	TestEqual(TEXT("상한을 다 쓰면 잔액이 있어도 추가 고용할 수 없다"),
+		Harness.Progression->GetAffordableHireCount(), 0);
+	TestFalse(TEXT("셋째 날 1명 추가 고용도 거절된다"), Harness.Progression->TryHireStaff(1));
+	TestEqual(TEXT("세 날 전체에서 각 인원의 비용은 한 번씩만 지불한다"),
+		Harness.Progression->GetGold(), GoldAfterAllHires);
+	TestEqual(TEXT("셋째 날에도 자동 지출이 없다"), Harness.CalcLedgerSpendTotal(), 0);
 
 	return true;
 }

@@ -291,6 +291,96 @@ bool FFF_ProgramSchedulingSubsystem_AuthoritativeCommand::RunTest(const FString&
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_ProgramSchedulingSubsystem_ReusesClosedFacilityOnNextDay,
+	"FestaFiesta.Economy.ProgramScheduling.ReusesClosedFacilityOnNextDay",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFF_ProgramSchedulingSubsystem_ReusesClosedFacilityOnNextDay::RunTest(const FString& Parameters)
+{
+	using namespace FFF_ProgramSchedulingCommandTestHelpers;
+	(void)Parameters;
+
+	FScopedProgramSchedulingSettings SettingsGuard;
+	FProgramSchedulingHarness Harness;
+	if (!TestTrue(TEXT("다음 날 재편성 픽스처가 구성된다"), Harness.Initialize(this)))
+	{
+		return false;
+	}
+
+	const FGuid FacilityId = Harness.InstallCommand.FacilityInstanceId;
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Setup;
+	if (!TestEqual(TEXT("첫날 설치한 시설에 프로그램을 편성한다"),
+		Harness.Scheduling->TryScheduleProgramAtFacility(Workshop, FacilityId),
+		EFF_PaidProgramScheduleResult::Success))
+	{
+		return false;
+	}
+
+	const TArray<FFF_ScheduledProgram> FirstDayPrograms = Harness.Progression->GetScheduledPrograms();
+	if (!TestEqual(TEXT("첫날 예약이 하나 생긴다"), FirstDayPrograms.Num(), 1)) return false;
+	const FGuid FirstReservationId = FirstDayPrograms[0].ReservationId;
+	const int32 GoldAfterFirstPurchase = Harness.Progression->GetGold();
+	const int32 StaffBeforeNewDay = Harness.Progression->GetTotalStaffCount();
+	FFF_ProgramCard Card;
+	if (!TestTrue(TEXT("설치 시설의 프로그램 가격을 읽는다"),
+		Harness.FindEffectiveCard(FacilityId, Workshop, Card))) return false;
+
+	// 상태를 직접 덮지 않고 실제 개장·폐장 명령으로 빈 시설의 MovePending 전환을 재현한다.
+	const auto ExecuteLifecycleCommand = [&](const EFFZSCommandType Type)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = FGuid::NewGuid();
+		Command.ExpectedWorldRevision = Harness.Zone->GetWorldRevision();
+		Command.Type = Type;
+		Command.FacilityInstanceId = FacilityId;
+		return Harness.Zone->ExecuteCommand(Command).bSucceeded;
+	};
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Live;
+	if (!TestTrue(TEXT("첫날 편성 시설을 실제로 개장한다"),
+		ExecuteLifecycleCommand(EFFZSCommandType::Open))) return false;
+	TestEqual(TEXT("개장한 시설은 운영 중이다"),
+		Harness.Facility->GetFacilityState(), EFFZSFacilityState::Active);
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Closing;
+	if (!TestTrue(TEXT("첫날 영업을 마친 시설을 실제로 닫는다"),
+		ExecuteLifecycleCommand(EFFZSCommandType::Close))) return false;
+	TestEqual(TEXT("빈 시설은 폐장 후 MovePending이 된다"),
+		Harness.Facility->GetFacilityState(), EFFZSFacilityState::MovePending);
+	TestFalse(TEXT("정상 폐장은 재배치가 필요한 상태가 아니다"), Harness.Facility->NeedsRelocation());
+
+	Harness.Stage->CurrentDay = 2;
+	Harness.Stage->CurrentStage = EFF_FestivalStage::MorningCheck;
+	Harness.Progression->BeginNewDay(2);
+	TestEqual(TEXT("하루 경계는 추가 비용을 청구하지 않는다"),
+		Harness.Progression->GetGold(), GoldAfterFirstPurchase);
+	TestEqual(TEXT("하루 경계는 인원을 바꾸지 않는다"),
+		Harness.Progression->GetTotalStaffCount(), StaffBeforeNewDay);
+	TestEqual(TEXT("어제 편성은 비워진다"), Harness.Progression->GetScheduledPrograms().Num(), 0);
+	FFF_ProgramReservation PreviousReservation;
+	TestFalse(TEXT("어제 예약은 제거된다"),
+		Harness.Reservations->FindReservation(FirstReservationId, PreviousReservation));
+	TestTrue(TEXT("어제 설치한 동일 시설이 그대로 남아 있다"),
+		Harness.Zone->FindFacility(FacilityId) == Harness.Facility);
+
+	if (!TestEqual(TEXT("둘째 날 같은 MovePending 시설에 같은 프로그램을 다시 편성한다"),
+		Harness.Scheduling->TryScheduleProgramAtFacility(Workshop, FacilityId),
+		EFF_PaidProgramScheduleResult::Success)) return false;
+	TestEqual(TEXT("둘째 날 구매 비용만 한 번 차감된다"),
+		Harness.Progression->GetGold(), GoldAfterFirstPurchase - Card.CostGold);
+	TestEqual(TEXT("둘째 날 원장에는 새 프로그램 구매만 기록된다"),
+		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::ProgramPurchase),
+		Card.CostGold);
+	const TArray<FFF_ScheduledProgram> SecondDayPrograms =
+		Harness.Scheduling->GetScheduledProgramsForFacility(FacilityId);
+	if (!TestEqual(TEXT("동일 시설의 오늘 편성이 하나다"), SecondDayPrograms.Num(), 1)) return false;
+	TestTrue(TEXT("새 편성에는 어제와 다른 예약이 생긴다"),
+		SecondDayPrograms[0].ReservationId != FirstReservationId);
+	TestEqual(TEXT("전체 예약에도 오늘 예약만 남는다"), Harness.Reservations->GetReservationIds().Num(), 1);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedulingSubsystem_TableFeesRemainLive,
 	"FestaFiesta.Economy.ProgramScheduling.TableFeesRemainLive",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -347,10 +437,10 @@ bool FFF_ProgramSchedulingSubsystem_TableFeesRemainLive::RunTest(const FString& 
 	if (!TestTrue(TEXT("The facility quote refreshes after a scheduled fee edit"), Harness.FindEffectiveCard(FirstId, Workshop, ChangedQuote))) return false;
 	TestEqual(TEXT("The quote shows the newly edited fee immediately"), ChangedQuote.FeePerPerson, 70);
 	const FFF_PrepProgramQuote UiQuote = FFF_PrepProgramRules::BuildQuote(&ChangedQuote,
-		EFF_ProgramPurchaseResult::Success, true, 1, GoldBefore, 10);
+		EFF_ProgramPurchaseResult::Success, true, 1, GoldBefore);
 	TestEqual(TEXT("The preparation panel's projection uses the effective facility fee"), UiQuote.MaxRevenue, ChangedQuote.Capacity * 70);
 	const FFF_PrepProgramQuote FreeUiQuote = FFF_PrepProgramRules::BuildQuote(&FreeCard,
-		EFF_ProgramPurchaseResult::Success, true, 1, GoldBefore, 10);
+		EFF_ProgramPurchaseResult::Success, true, 1, GoldBefore);
 	TestEqual(TEXT("A free facility program is quoted as zero revenue"), FreeUiQuote.MaxRevenue, 0);
 	TestEqual(TEXT("Fee edits do not themselves create revenue"), Harness.Progression->GetGold(), GoldBefore);
 	const int32 Expected = FirstCard.Capacity * 70;
