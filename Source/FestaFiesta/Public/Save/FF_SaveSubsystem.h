@@ -50,6 +50,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool LoadFromSlot(FName SlotId);
 
+	/* 이 축제의 저장이 있으면 이어서 시작한다.
+
+	   축제 레벨이 열리고 모든 시스템이 준비된 뒤에 부른다. 서브시스템 Initialize
+	   에서 부르면 안 되는데, 그 시점에는 다른 시스템이 아직 자기 초기화를 하는
+	   중이라 복원한 값을 곧바로 덮어쓴다.
+
+	   저장된 축제와 지금 축제가 다르면 아무것도 하지 않는다. 다대포 저장으로
+	   실습장을 시작하면 엉뚱한 상태가 된다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	bool TryContinueFestival(FName FestivalId);
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool DeleteSlot(FName SlotId);
 

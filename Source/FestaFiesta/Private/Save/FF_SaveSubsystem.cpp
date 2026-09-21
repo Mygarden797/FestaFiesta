@@ -4,6 +4,7 @@
 
 #include "Engine/Engine.h"
 #include "HAL/IConsoleManager.h"
+#include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "NPC/Metrics/FF_SatisfactionMetricsSubsystem.h"
@@ -340,6 +341,12 @@ void UFF_SaveSubsystem::CaptureSession(FFF_SessionSave& Out) const
 		{
 			Out.Gold = Progression->GetGold();
 			Out.TotalRevenue = Progression->GetTotalRevenue();
+
+			// 어느 축제인지 담는다. 이걸로 저장과 지금 축제가 같은지 가린다.
+			if (const UFF_FestivalDefinition* Definition = Progression->GetDefinition())
+			{
+				Out.FestivalId = Definition->FestivalId;
+			}
 		}
 	}
 
@@ -389,6 +396,64 @@ bool UFF_SaveSubsystem::LoadFromSlot(const FName SlotId)
 		*MakeSlotName(SlotId), Meta.ClearedFestivals.Num());
 
 	OnSaveLoaded.Broadcast(SlotId);
+	return true;
+}
+
+bool UFF_SaveSubsystem::TryContinueFestival(const FName FestivalId)
+{
+	if (FestivalId.IsNone())
+	{
+		return false;
+	}
+
+	// 가장 최근 자동 저장을 본다.
+	const FName Candidates[] = { TEXT("AutoSave_A"), TEXT("AutoSave_B") };
+
+	UFF_SaveGame* Newest = nullptr;
+	FName NewestSlot;
+
+	for (const FName& Candidate : Candidates)
+	{
+		UFF_SaveGame* Found = nullptr;
+		if (!PeekSlot(Candidate, Found) || !Found)
+		{
+			continue;
+		}
+		if (!Newest || Found->SavedAt > Newest->SavedAt)
+		{
+			Newest = Found;
+			NewestSlot = Candidate;
+		}
+	}
+
+	if (!Newest)
+	{
+		return false;
+	}
+
+	// 다른 축제의 저장이면 건드리지 않는다.
+	if (Newest->Session.FestivalId != FestivalId)
+	{
+		UE_LOG(LogFestaFiestaSave, Log,
+			TEXT("[저장] 저장된 축제(%s)와 지금 축제(%s)가 달라 이어하지 않는다."),
+			*Newest->Session.FestivalId.ToString(), *FestivalId.ToString());
+		return false;
+	}
+
+	if (!Newest->Session.IsValid())
+	{
+		return false;
+	}
+
+	Meta = Newest->Meta;
+	LastUsedSlotId = NewestSlot;
+	RestorePartData(Newest->PartData);
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] %s 를 이어서 시작한다. %d일차"),
+		*FestivalId.ToString(), Newest->Session.Day);
+
+	OnSaveLoaded.Broadcast(NewestSlot);
 	return true;
 }
 

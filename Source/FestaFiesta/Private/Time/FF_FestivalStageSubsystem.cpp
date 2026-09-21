@@ -2,6 +2,9 @@
 
 
 #include "Time/FF_FestivalStageSubsystem.h"
+
+#include "Save/FF_SaveArchive.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
 #include "Festival/FF_FestivalDefinition.h"
@@ -508,6 +511,11 @@ void UFF_FestivalStageSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	{
 		UE_LOG(LogTemp, Warning, TEXT("DaySequenceTable 로드 실패! 경로를 확인하세요."));
 	}
+	// 저장에 참여한다.
+	if (UFF_SaveSubsystem* Save = GetGameInstance()->GetSubsystem<UFF_SaveSubsystem>())
+	{
+		Save->RegisterSaveable(this);
+	}
 }
 
 FFF_PhaseTimeRange UFF_FestivalStageSubsystem::GetPhaseTimeRange(EFF_FestivalStage Stage)
@@ -661,4 +669,61 @@ bool UFF_FestivalStageSubsystem::TryGetLiveDurationMinutes(float& OutMinutes)
 	if (DurationSeconds <= 0.f) return false;
 	OutMinutes = StageSecondsToFestivalMinutes(DurationSeconds);
 	return true;
+}
+
+void UFF_FestivalStageSubsystem::WriteSaveData(TArray<uint8>& OutBytes) const
+{
+	FFF_StageSave State;
+	State.Day = CurrentDay;
+	State.Weather = static_cast<uint8>(SelectedWeather);
+
+	if (const UEnum* EnumClass = StaticEnum<EFF_FestivalStage>())
+	{
+		State.StageId = FName(*EnumClass->GetNameStringByValue(
+			static_cast<int64>(CurrentStage)));
+	}
+
+	UFF_SaveArchive::WriteStruct(OutBytes, State);
+}
+
+void UFF_FestivalStageSubsystem::ReadSaveData(const TArray<uint8>& InBytes)
+{
+	FFF_StageSave State;
+	if (!UFF_SaveArchive::ReadStruct(InBytes, State))
+	{
+		return;
+	}
+
+	CurrentDay = FMath::Max(1, State.Day);
+	SelectedWeather = static_cast<EFF_WeatherType>(State.Weather);
+
+	/* 단계는 이름으로 되돌린다.
+
+	   못 찾으면 Setup 으로 둔다. 저장은 정산 직후에만 하므로 불러온 시점은
+	   언제나 하루의 시작이고, 그때가 Setup 이다.
+	*/
+	EFF_FestivalStage Restored = EFF_FestivalStage::Setup;
+
+	if (!State.StageId.IsNone())
+	{
+		if (const UEnum* EnumClass = StaticEnum<EFF_FestivalStage>())
+		{
+			const int64 Found = EnumClass->GetValueByNameString(State.StageId.ToString());
+			if (Found != INDEX_NONE)
+			{
+				Restored = static_cast<EFF_FestivalStage>(Found);
+			}
+		}
+	}
+
+	const EFF_FestivalStage Previous = CurrentStage;
+	CurrentStage = Restored;
+
+	/* 화면이 따라오게 알린다.
+
+	   값만 바꾸면 UI 도 사운드도 옛 단계를 계속 붙들고 있다. 전이 함수를
+	   부르지 않는 이유는, 그쪽이 전이 규칙을 검사해서 Report 에서 Setup 으로
+	   바로 못 갈 수 있기 때문이다.
+	*/
+	OnStageChanged.Broadcast(Previous, CurrentStage);
 }

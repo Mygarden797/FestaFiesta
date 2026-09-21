@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Save/FF_Saveable.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "FF_FestivalStage.h"
@@ -126,13 +127,45 @@ struct FFF_PhaseTimeRange : public FTableRowBase
 };
 
 UCLASS()
-class FESTAFIESTA_API UFF_FestivalStageSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+/* 저장에 담기는 단계 상태.
+
+   하루가 시작되는 순간만 저장하므로 단계는 언제나 Setup 이다. 그래도 담는
+   이유는, 나중에 다른 시점에서 저장하게 됐을 때 형식을 안 바꿔도 되게 하려는 것이다.
+
+   단계를 열거형 값이 아니라 이름으로 담는다. 값으로 담으면 항목을 중간에
+   끼워 넣을 때 그 뒤가 전부 밀려서, 옛 저장이 조용히 다른 단계를 가리킨다.
+*/
+USTRUCT()
+struct FFF_StageSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY() int32 Day = 1;
+	UPROPERTY() FName StageId;
+	UPROPERTY() uint8 Weather = 0;
+};
+
+class FESTAFIESTA_API UFF_FestivalStageSubsystem
+	: public UGameInstanceSubsystem, public FTickableGameObject, public IFF_Saveable
 {
 	GENERATED_BODY()
 
 public:
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// ── 저장 참여 ───────────────────────────────────────────────────────────
+
+	virtual FName GetSaveKey() const override { return TEXT("Stage"); }
+
+	// 날짜는 다른 것이 기대는 값이라 가장 먼저 복원한다.
+	virtual EFF_SaveLoadPhase GetSaveLoadPhase() const override
+	{
+		return EFF_SaveLoadPhase::Global;
+	}
+
+	virtual void WriteSaveData(TArray<uint8>& OutBytes) const override;
+	virtual void ReadSaveData(const TArray<uint8>& InBytes) override;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage")
 	EFF_FestivalStage CurrentStage = EFF_FestivalStage::Setup;

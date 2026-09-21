@@ -575,6 +575,22 @@ void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 	int32 ViewportY = 0;
 	GetViewportSize(ViewportX, ViewportY);
 
+	/* 화면 아래쪽은 가장자리로 치지 않는다.
+
+	   하단에 탭 바와 패널이 있어서, 그것들을 누르려고 마우스를 내릴 때마다
+	   카메라가 밀린다. UI 조작과 화면 밀기가 같은 자리에서 일어나면 둘 중
+	   하나는 늘 방해가 된다.
+
+	   위와 좌우는 가릴 것이 없으므로 그대로 둔다.
+	*/
+	const float BottomDeadZone = FMath::Max(0.f,
+		CameraPawn->CameraSettings.EdgeScrollBottomDeadZonePixels);
+
+	if (MouseY >= static_cast<float>(ViewportY) - BottomDeadZone)
+	{
+		return;
+	}
+
 	const FVector2D EdgeInput = FFF_OverviewCameraRig::ComputeEdgeScrollInput(
 		FVector2D(MouseX, MouseY),
 		FVector2D(static_cast<float>(ViewportX), static_cast<float>(ViewportY)),

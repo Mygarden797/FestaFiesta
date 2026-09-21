@@ -386,8 +386,15 @@ void FFF_OverviewCameraRig::AdvanceInterpolation(float DeltaSeconds)
 	}
 
 	Display.FocusLocation = FMath::VInterpTo(Display.FocusLocation, Target.FocusLocation, DeltaSeconds, Settings.InterpSpeed);
-	Display.ArmLength = FMath::FInterpTo(Display.ArmLength, Target.ArmLength, DeltaSeconds, Settings.InterpSpeed);
-	Display.Pitch = FMath::FInterpTo(Display.Pitch, Target.Pitch, DeltaSeconds, Settings.InterpSpeed);
+	// 줌은 따로 둔다. 이동과 같은 속도면 굴린 뒤에도 한참 더 들어가서
+	// 조작한 것보다 과하게 확대된 것처럼 느껴진다.
+	const float ZoomSpeed = Settings.ZoomInterpSpeed > 0.f
+		? Settings.ZoomInterpSpeed
+		: Settings.InterpSpeed;
+
+	Display.ArmLength = FMath::FInterpTo(Display.ArmLength, Target.ArmLength, DeltaSeconds, ZoomSpeed);
+	// 각도는 줌을 따라가므로 같은 속도로 맞춘다. 아니면 줌이 멈춘 뒤에 각도가 따라온다.
+	Display.Pitch = FMath::FInterpTo(Display.Pitch, Target.Pitch, DeltaSeconds, ZoomSpeed);
 
 	// Yaw 는 최단 경로로 돌아야 한다. 그냥 보간하면 179도에서 -179도로 갈 때 한 바퀴 돈다.
 	Display.Yaw = NormalizeYaw(FMath::FInterpTo(
