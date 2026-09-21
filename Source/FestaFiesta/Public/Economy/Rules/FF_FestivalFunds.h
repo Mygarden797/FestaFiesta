@@ -43,6 +43,24 @@ struct FESTAFIESTA_API FFF_FestivalFunds
 	// 하루 경계에서 '오늘 매출'만 리셋한다.
 	void ResetTodayRevenue();
 
+	/* 저장에서 불러올 때 값을 그대로 되돌린다.
+
+	   Initialize 와 나누는 이유는 뜻이 다르기 때문이다. 저쪽은 축제를 처음
+	   시작하는 것이고, 이쪽은 있던 것을 되돌리는 것이다.
+
+	   AddRevenue 로 맞추면 장부에 없던 수입이 기록돼 결산이 틀어진다.
+	   그래서 값을 직접 넣는 경로를 따로 둔다. 저장 복원 말고는 쓰지 않는다.
+	*/
+	void RestoreFromSave(int32 InGold, int32 InTotalRevenue)
+	{
+		Gold = FMath::Max(0, InGold);
+		TotalRevenue = FMath::Max(0, InTotalRevenue);
+
+		// 오늘 수입은 하루가 시작될 때 0 이다. 저장은 정산 직후에만 하므로
+		// 불러온 시점은 언제나 하루의 시작이다.
+		TodayRevenue = 0;
+	}
+
 private:
 	// 잔액 (Gold). 음수가 되지 않는다.
 	int32 Gold = 0;

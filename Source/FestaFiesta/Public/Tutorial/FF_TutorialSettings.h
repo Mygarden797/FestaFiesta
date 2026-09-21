@@ -9,6 +9,7 @@
 #include "Tutorial/FF_TutorialOverlayWidget.h"
 #include "FF_TutorialSettings.generated.h"
 
+class UDataTable;
 class UFF_DialogueScriptData;
 
 // 튜토리얼의 프로젝트 기본값.
@@ -26,6 +27,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	static const UFF_TutorialSettings* Get();
+
+	/* 새 게임을 누르면 재생할 대사.
+
+	   축제 레벨이 아니라 로비에서 돈다. 사무실 장면처럼 축제장에 도착하기 전의
+	   이야기가 여기 들어간다.
+
+	   튜토리얼을 이미 봤으면 재생하지 않는다. 저장에서 읽는다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Lobby Intro Table"))
+	TSoftObjectPtr<UDataTable> LobbyIntroTable;
 
 	// 어느 레벨에서든 시작할 대사. 보통 비워둔다.
 	//
