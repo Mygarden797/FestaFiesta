@@ -50,12 +50,12 @@ public:
 
 	/** A score at or above this value receives the coordinator's full reward cap. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "클리어 보상",
-		meta = (ClampMin = "1", UIMin = "1", DisplayName = "최대 보상 달성 점수", ToolTip = "이 점수 이상이면 아래의 '클리어 최대 획득 골드'를 전부 받습니다. 더 낮은 점수는 달성 비율만큼 골드를 받습니다."))
+		meta = (ClampMin = "1", UIMin = "1", DisplayName = "최대 보상 달성 점수", ToolTip = "이 점수 이상이면 최대 보상을 전부 받습니다. 시설 수익표에서 미니게임 보상 사용을 켰다면 표의 최대 보상, 껐다면 아래의 클리어 최대 획득 골드를 사용합니다. 더 낮은 점수는 달성 비율만큼 골드를 받습니다."))
 	int32 ScoreForMaxReward = 1000;
 
 	/** Per-minigame reward at ScoreForMaxReward. -1 keeps the festival-wide fallback. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "클리어 보상",
-		meta = (ClampMin = "-1", UIMin = "-1", DisplayName = "클리어 최대 획득 골드", ToolTip = "게임을 정상 완료하고 '최대 보상 달성 점수'를 채웠을 때 받는 골드입니다. 점수가 낮으면 비율에 따라 줄어듭니다. -1은 축제 공통 설정을 사용하고, 0은 골드 보상을 주지 않습니다."))
+		meta = (ClampMin = "-1", UIMin = "-1", DisplayName = "클리어 최대 획득 골드", ToolTip = "시설 수익표에서 미니게임 보상 사용이 꺼져 있거나 시설 행이 없을 때 쓰는 최대 보상입니다. 표에서 사용을 켰다면 DT_FacilityRevenues의 미니게임 최대 보상이 우선합니다. 게임을 정상 완료하고 최대 보상 달성 점수를 채워야 전부 받으며, 낮은 점수는 비율에 따라 줄어듭니다. -1은 축제 공통 설정을 사용하고 0은 보상 없음입니다."))
 	int32 RewardGoldAtMaxScore = -1;
 
 	/** Sound assets and playback policy live with balance data, not in screen code. */

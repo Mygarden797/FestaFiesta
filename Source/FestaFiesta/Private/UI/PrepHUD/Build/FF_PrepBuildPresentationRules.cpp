@@ -170,7 +170,7 @@ EFF_PrepBuildTileState FFF_PrepBuildPresentationRules::ResolveTileState(
 	}
 
 	// 가격과 잔액 중 어느 값을 못 읽었는지 보존해야 UI가 잘못된 해결 방법을 안내하지 않습니다.
-	if (!Entry.bHasResolvedInstallCost || Entry.InstallCost <= 0)
+	if (!Entry.HasValidInstallCost())
 	{
 		return EFF_PrepBuildTileState::PriceUnavailable;
 	}
@@ -186,7 +186,7 @@ EFF_PrepBuildTileState FFF_PrepBuildPresentationRules::ResolveTileState(
 
 FText FFF_PrepBuildPresentationRules::ResolveCostText(const FFF_BuildCatalogEntry& Entry)
 {
-	if (!Entry.bHasResolvedInstallCost || Entry.InstallCost <= 0)
+	if (!Entry.HasValidInstallCost())
 	{
 		return LOCTEXT("PricePending", "가격 확인 중");
 	}

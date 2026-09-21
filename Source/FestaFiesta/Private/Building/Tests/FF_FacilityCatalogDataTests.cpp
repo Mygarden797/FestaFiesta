@@ -116,9 +116,9 @@ bool FFFFacilityCatalogActiveDataTest::RunTest(const FString& Parameters)
                 AddError(FString::Printf(TEXT("%s: installation price could not be resolved from %s: %s."),
                     *Path, *Costs->GetPathName(), *Failure));
             }
-            else if (Cost <= 0 || MatchedRow.IsNone())
+            else if (!FFF_FacilityCostResolver::IsValidInstallCost(Cost) || MatchedRow.IsNone())
             {
-                AddError(FString::Printf(TEXT("%s: resolved installation price must be positive; table=%s, row=%s, Gold=%d."),
+                AddError(FString::Printf(TEXT("%s: resolved installation price must be non-negative with a matched row; table=%s, row=%s, Gold=%d."),
                     *Path, *Costs->GetPathName(), *MatchedRow.ToString(), Cost));
             }
         }

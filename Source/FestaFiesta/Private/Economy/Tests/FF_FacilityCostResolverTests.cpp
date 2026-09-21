@@ -85,6 +85,66 @@ bool FFF_FacilityCostResolverTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityCostResolverFreeAndInvalidPricesTest,
+	"FestaFiesta.Economy.FacilityCostResolver.FreeAndInvalidPrices",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFF_FacilityCostResolverFreeAndInvalidPricesTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	FFFZSFacilitySpec Spec;
+	Spec.Category = EFFZSFacilityCategory::Booth;
+	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_FreeFacility");
+	const FName ExactKey(TEXT("Cost.Booth.FoodStall.FreeFacility"));
+	const FName MinorKey(TEXT("Cost.Booth.FoodStall"));
+	const FName DefaultKey(TEXT("Cost.Booth.Default"));
+	const FName OverrideKey(TEXT("Cost.Special.FreeFacility"));
+	UDataTable* Table = NewObject<UDataTable>();
+	Table->RowStruct = FFF_FacilityCostRow::StaticStruct();
+
+	int32 Cost = 0;
+	FName MatchedRow;
+	FString Failure;
+	// Every supported lookup path shares the same free/invalid-price contract.
+	for (const FName Key : { ExactKey, MinorKey, DefaultKey, OverrideKey })
+	{
+		Table->EmptyTable();
+		Spec.InstallCostKey = Key == OverrideKey ? OverrideKey : NAME_None;
+		if (Key != DefaultKey)
+		{
+			FFF_FacilityCostRow FallbackRow;
+			FallbackRow.InstallCost = 400;
+			Table->AddRow(DefaultKey, FallbackRow);
+		}
+		FFF_FacilityCostRow Row;
+		Row.InstallCost = 0;
+		Table->AddRow(Key, Row);
+		TestTrue(*FString::Printf(TEXT("Authored zero resolves through %s"), *Key.ToString()),
+			FFF_FacilityCostResolver::FindInstallCost(Spec, Table, Cost, MatchedRow, Failure));
+		TestEqual(TEXT("A free row is not replaced by a paid fallback"), Cost, 0);
+		TestEqual(TEXT("A free row retains its identity"), MatchedRow, Key);
+		TestTrue(TEXT("A free quote has no failure reason"), Failure.IsEmpty());
+
+		Row.InstallCost = -1;
+		Table->AddRow(Key, Row);
+		Cost = 999;
+		TestFalse(TEXT("An invalid authored row is rejected instead of falling back"),
+			FFF_FacilityCostResolver::FindInstallCost(Spec, Table, Cost, MatchedRow, Failure));
+		TestEqual(TEXT("A failed lookup clears the previous cost"), Cost, 0);
+		TestEqual(TEXT("A failed lookup clears the matched row"), MatchedRow, NAME_None);
+		TestTrue(TEXT("Invalid-price diagnostics identify the authored row"), Failure.Contains(Key.ToString()));
+	}
+	Table->EmptyTable();
+	TestFalse(TEXT("A missing price row is not a free facility"),
+		FFF_FacilityCostResolver::FindInstallCost(Spec, Table, Cost, MatchedRow, Failure));
+	TestFalse(TEXT("A missing price table is not a free facility"),
+		FFF_FacilityCostResolver::FindInstallCost(Spec, nullptr, Cost, MatchedRow, Failure));
+	TestEqual(TEXT("Free facilities cannot produce a demolition refund"),
+		FFF_FacilityCostResolver::CalculateDemolitionRefund(0, 0.5f), 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityDemolitionRefundCalculationTest,
 	"FestaFiesta.Economy.FacilityCostResolver.DemolitionRefundCalculation",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

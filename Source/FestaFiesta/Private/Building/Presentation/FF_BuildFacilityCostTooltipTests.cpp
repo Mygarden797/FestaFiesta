@@ -215,6 +215,22 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 		FString(TEXT("0 Gold")));
 
 	Entry.InstallCost = 0;
+	Card->Configure(Entry);
+	TestTrue(TEXT("The card tooltip recognizes a resolved free installation"),
+		AttachedTooltip->HasResolvedInstallCost());
+	TestEqual(TEXT("The card-attached WBP displays a resolved free installation as zero Gold"),
+		AttachedTooltip->GetDisplayedInstallCostText().ToString(),
+		FString(TEXT("0 Gold")));
+
+	Entry.InstallCost = -1;
+	Card->Configure(Entry);
+	TestFalse(TEXT("A negative price is invalid even with a resolved flag"),
+		AttachedTooltip->HasResolvedInstallCost());
+	TestEqual(TEXT("A negative price replaces the previous free price with unavailable text"),
+		AttachedTooltip->GetDisplayedInstallCostText().ToString(),
+		FString(TEXT("가격 정보 없음")));
+
+	Entry.InstallCost = 0;
 	Entry.bHasResolvedInstallCost = false;
 	Entry.RecoveryCost = 0;
 	Entry.bHasResolvedRecoveryCost = false;

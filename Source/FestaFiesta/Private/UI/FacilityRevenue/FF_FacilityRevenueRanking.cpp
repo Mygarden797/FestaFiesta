@@ -5,6 +5,7 @@
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "Components/ProgressBar.h"
+#include "Components/SizeBox.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -63,6 +64,14 @@ void UFF_FacilityRevenueRankRow::ApplyItem(const UFF_FacilityRevenueRankItem *It
 	Text_Name->SetText(Item->Name);
 	Text_Location->SetText(Item->Location);
 	Text_Amount->SetText(FText::Format(LOCTEXT("Gold", "{0} Gold"), FText::AsNumber(Item->Amount)));
+	if (Text_Share)
+	{
+		FNumberFormattingOptions Format;
+		Format.MinimumFractionalDigits = Format.MaximumFractionalDigits = 1;
+		Text_Share->SetText(Item->bHasShare
+			? FText::Format(LOCTEXT("RowShare", "비중 {0}%"), FText::AsNumber(Item->Share * 100., &Format))
+			: LOCTEXT("RowShareUnavailable", "비중 —"));
+	}
 	Bar_Revenue->SetPercent(Item->RelativeRevenue);
 	Image_Thumbnail->ShowThumbnail(Item->Thumbnail, Text_ThumbnailFallback);
 }
@@ -100,23 +109,51 @@ void UFF_FacilityRevenueRankingPanel::NativeDestruct()
 	List_Ranking->OnItemSelectionChanged().RemoveAll(this);
 	Super::NativeDestruct();
 }
+void UFF_FacilityRevenueRankingPanel::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+	Super::NativeTick(Geometry, DeltaTime);
+	UpdateFrameSize(Geometry.GetLocalSize());
+}
+void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
+{
+	if (!Size_ClarityFrame || Viewport.GetMin() <= 1.f) return;
+	// The frame is a right-side floating surface. Leave the upper and lower HUD clear;
+	// only the virtualized list uses the remaining space when there are many facilities.
+	const float Width = FMath::Min(500.f, FMath::Max(1.f, Viewport.X - 48.f));
+	const float Height = FMath::Min(DesiredFrameHeight, FMath::Max(1.f, Viewport.Y - 176.f));
+	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetWidthOverride(), Width)) Size_ClarityFrame->SetWidthOverride(Width);
+	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetHeightOverride(), Height)) Size_ClarityFrame->SetHeightOverride(Height);
+}
 void UFF_FacilityRevenueRankingPanel::Today()
 {
+	if (!bCumulative) return;
 	bCumulative = false;
 	UpdatePeriod();
 	OnPeriodChanged.Broadcast();
 }
 void UFF_FacilityRevenueRankingPanel::Total()
 {
+	if (bCumulative) return;
 	bCumulative = true;
 	UpdatePeriod();
 	OnPeriodChanged.Broadcast();
 }
 void UFF_FacilityRevenueRankingPanel::UpdatePeriod()
 {
-	// The selected/disabled appearance belongs to the saved WBP button style.
-	Button_Today->SetIsEnabled(bCumulative);
-	Button_Total->SetIsEnabled(!bCumulative);
+	for (UButton* Button : {Button_Today.Get(), Button_Total.Get()})
+	{
+		if (!Button) continue;
+		const bool bSelected = Button == (bCumulative ? Button_Total.Get() : Button_Today.Get());
+		const FButtonStyle& Authored = AuthoredPeriodStyles.FindOrAdd(Button->GetFName(), Button->GetStyle());
+		FButtonStyle Style = Authored;
+		// Use the saved selected surface without Slate's disabled-content desaturation.
+		// Repeated activation is ignored by Today/Total while focus stays accessible.
+		if (bSelected) Style.Normal = Style.Hovered = Style.Pressed = Authored.Disabled;
+		Button->SetStyle(Style);
+		Button->SetIsEnabled(true);
+		if (UTextBlock* Label = Cast<UTextBlock>(Button->GetContent()))
+			Label->SetColorAndOpacity(FSlateColor(bSelected ? SelectedPeriodTextColor : InactivePeriodTextColor));
+	}
 }
 void UFF_FacilityRevenueRankingPanel::CloseClicked()
 {
@@ -146,6 +183,15 @@ void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRa
 	Text_Empty->SetText(bAvailable ? LOCTEXT("Empty", "설치된 수익 시설이 없습니다.")
 								   : LOCTEXT("NotReady", "매출 정보를 준비 중입니다."));
 	Text_Empty->SetVisibility(Rows.IsEmpty() ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	if (Border_FirstRevenue)
+		Border_FirstRevenue->SetVisibility(bAvailable && !Rows.IsEmpty() && Sum == 0
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	// The saved title, tabs, total, outer padding, and inspect action occupy up to
+	// 279 logical pixels at the project font/DPI. Reserve 290 so sparse lists keep
+	// each 88px row whole after text metrics and pixel rounding are applied.
+	DesiredFrameHeight = FMath::Min(600.f, 290.f + FMath::Clamp(Rows.Num(), 1, 4) * 88.f
+		+ (bAvailable && !Rows.IsEmpty() && Sum == 0 ? 42.f : 0.f));
+	UpdateFrameSize(GetCachedGeometry().GetLocalSize());
 	UFF_FacilityRevenueRankItem *Selected = nullptr;
 	for (auto *Item : Rows)
 		if (Item->FacilityId == Preferred)
@@ -383,7 +429,7 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 			Item->FacilityId = Facility.FacilityInstanceId;
 			Item->Name =
 				Facility.DisplayName.IsEmpty() ? FText::FromName(Facility.FacilityDefinitionId) : Facility.DisplayName;
-			Item->Location = FText::Format(LOCTEXT("Location", "{0} · {1}, {2} m"), FText::FromName(Facility.ZoneId),
+			Item->Location = FText::Format(LOCTEXT("PlayerLocation", "위치 {0}, {1} m"),
 										   FText::AsNumber(FMath::RoundToInt(Facility.WorldLocation.X / 100.)),
 										   FText::AsNumber(FMath::RoundToInt(Facility.WorldLocation.Y / 100.)));
 			Item->TodayGold = Revenue.TodayGold;

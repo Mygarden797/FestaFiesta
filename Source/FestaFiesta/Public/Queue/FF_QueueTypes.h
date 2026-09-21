@@ -96,22 +96,19 @@ struct FFF_QueueConfig
 {
 	GENERATED_BODY()
 
-	// 슬롯 총량. Party 수가 아니라 "인원" 기준이다 — 4인 가족이 2칸 남은 줄에 오면 전원 거절된다.
+	// 이용 중인 팀을 포함한 총 팀 자리 수. 일행 인원수와 무관하게 한 팀이 한 칸을 쓴다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0", ClampMax = "512"))
-	int32 MaxCapacityMembers = 20;
+	int32 MaxCapacityParties = 20;
 
-	// 한 사이클에 동시에 처리하는 인원. 기본은 1 명이다.
+	// 동시에 이용하는 팀 수. 각 팀은 자기 이용 시간을 독립적으로 진행한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "1", ClampMax = "32"))
 	int32 ConcurrentServiceSlots = 1;
 
-	// 1인 서비스 소요 시간(초). 4인 가족 · 동시서비스 1명이면 이 값의 4배가 걸린다.
+	// 한 팀의 이용 시간(초). 1인 팀과 4인 팀에 같은 시간을 적용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
-	float ServiceSecondsPerMember = 20.f;
+	float ServiceSecondsPerParty = 20.f;
 
-	// 일행이 리더 주위로 뭉치는 반경. Crowd 의 포메이션 간격과 맞춰야 한다.
-	//
-	// 줄에서 일행이 몇 칸을 먹는지 계산하는 데 쓴다. 4인 가족이 한 줄로 서지는 않고
-	// 리더 주위에 뭉치므로, 인원수만큼 칸을 잡으면 줄이 실제보다 길어진다.
+	// 같은 팀 자리 안에서 리더 양옆에 멤버를 배치하는 간격. 팀 자리 수에는 영향을 주지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (ClampMin = "0.0"))
 	float PartyFormationSpacing = 90.f;
 
@@ -151,7 +148,7 @@ struct FFF_QueueLaneGeometry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	TArray<FTransform> ExplicitSlotTransforms;
 
-	// 슬롯 0 = 창구 바로 앞 위치
+	// 슬롯 0 = 첫 번째 팀 자리. 앞쪽 ConcurrentServiceSlots개가 이용 자리다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	FVector HeadLocation = FVector::ZeroVector;
 
@@ -159,7 +156,7 @@ struct FFF_QueueLaneGeometry
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	FVector TailDirection = FVector(1.f, 0.f, 0.f);
 
-	// 1열 115cm 면 약 0.87인/㎡ 다. 그 자체는 위험 밀도가 아니다.
+	// 연속한 팀 자리 사이의 간격.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Queue")
 	float SlotSpacingCm = 115.f;
 
@@ -173,22 +170,22 @@ struct FFF_QueueLaneGeometry
  * Queue는 절대 트랜스폼을 직접 건드리지 않는다 — 순간이동도 Lerp도 아니고, Crowd가 걸어서 간다.
  * 그래야 앞사람 지연이 뒷사람에게 전파되고 실제 대기시간에 반영된다.
  *
- * 일행당 하나씩 나온다. 멤버마다 자리를 지정하지 않는 이유는 Crowd 가 일행을 리더 기준
- * 포메이션으로 묶어 다루기 때문이다. 멤버별로 다른 목적지를 주면 그 포메이션과 싸운다.
+ * Crowd의 SetPartyQueueColumn용으로 멤버마다 하나씩 나온다. 같은 팀의 모든 배정은
+ * 하나의 SlotIndex를 공유하며, 저작된 팀 자리 안에서 멤버별 위치만 달라진다.
  */
 USTRUCT(BlueprintType)
 struct FFF_SlotAssignment
 {
 	GENERATED_BODY()
 
-	// 일행의 리더. 나머지 멤버는 Crowd 포메이션이 이 주위에 배치한다.
+	// 이 멤버의 AgentId. PartyMemberIndex 0이 리더다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 AgentId = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 PartyId = INDEX_NONE;
 
-	// 0 = 창구 바로 앞. 일행 인원에 따라 다음 일행과의 간격이 벌어지므로 연속이 아닐 수 있다.
+	// 팀 자리 번호. 같은 팀의 모든 멤버가 같은 번호를 사용한다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 SlotIndex = INDEX_NONE;
 
@@ -238,9 +235,8 @@ struct FFF_JoinRequest
 /**
  * Queue → Decision(스냅샷 경유). FFF_QueueState.
  *
- * 문서의 CurrentLength는 "인원"인지 "Party 수"인지 모호해서 셋으로 쪼갰다.
- * ExpectedWait 분자는 RemainingServiceMemberCount, 용량 판정은 OccupiedMemberCount다.
- * 하나로 합치면 4인 가족이 들어오는 순간 반드시 틀린다.
+ * WaitingPartyCount는 이용 중인 팀을 포함한 전체 팀 수다. 용량도 팀 수로 판정한다.
+ * 실제 인원은 통계와 정산용으로 별도 유지한다. 예상 대기는 현재 팀별 진행 시간을 반영한다.
  */
 USTRUCT(BlueprintType)
 struct FFF_QueueState
@@ -253,22 +249,40 @@ struct FFF_QueueState
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 WaitingPartyCount = 0;
 
-	// 슬롯을 점유 중인 총 인원. 밀도 집계·용량 판정이 봐야 하는 값.
+	// 이용 중인 팀도 포함한 총 인원. 밀도·통계 전용이며 팀 용량 판정에는 쓰지 않는다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 OccupiedMemberCount = 0;
 
-	// 아직 서비스를 못 받은 인원. ExpectedWait 계산의 분자.
+	// 아직 이용을 완료하지 않은 인원. 통계 전용이다.
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	int32 RemainingServiceMemberCount = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
-	int32 MaxCapacityMembers = 0;
+	int32 MaxCapacityParties = 0;
 
-	// 초당 처리 인원 = ConcurrentServiceSlots / ServiceSecondsPerMember
+	// 아직 이용을 완료하지 않은 팀 수(이용 중 포함).
+	UPROPERTY(BlueprintReadOnly, Category = "Queue")
+	int32 RemainingServicePartyCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Queue")
+	int32 ActiveServicePartyCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Queue")
+	int32 CompletedPartyCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Queue")
+	float AverageCompletedWaitSeconds = 0.f;
+
+	// 지금 한 팀이 추가되면 이용을 시작할 때까지의 시간. 현재 이용 팀의 경과 시간을 반영한다.
+	// 도착까지 걸을 시간과 미래 포기는 예측하지 않는다.
+	UPROPERTY(BlueprintReadOnly, Category = "Queue")
+	float NextServiceStartWaitSeconds = 0.f;
+
+	// 초당 처리 팀 수 = Min(ConcurrentServiceSlots, MaxCapacityParties) / ServiceSecondsPerParty
 	UPROPERTY(BlueprintReadOnly, Category = "Queue")
 	float ServiceRate = 0.f;
 
-	// 운영 중이고 최소 1인 이상 들어갈 자리가 남았는지. 만석·폐쇄면 false.
+	// 운영 중이고 한 팀이 들어갈 자리가 남았는지. 만석·폐쇄면 false.
 	//
 	// ⚠ 목적지 후보를 거르는 게이트로 쓰지 말 것.
 	//   이 값은 "지금 이 순간 TryJoin 이 성공하는가"라서 폐쇄와 '잠깐 만석'이 뭉쳐 있다.
@@ -377,4 +391,8 @@ struct FFF_QueueEvent
 	// PartyExited일 때만 유효
 	UPROPERTY()
 	EFF_QueueExit ExitType = EFF_QueueExit::Served;
+
+	// PartyExited + Served일 때 확정된 실제 이용 인원. 취소·포기는 0이며 정산하지 않는다.
+	UPROPERTY()
+	int32 ServedMemberCount = 0;
 };

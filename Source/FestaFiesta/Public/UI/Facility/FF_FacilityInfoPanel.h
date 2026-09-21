@@ -4,6 +4,8 @@
 
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
+#include "Styling/SlateTypes.h"
+#include "Widgets/Layout/Anchors.h"
 #include "UI/Facility/FF_FacilityInfoTypes.h"
 #include "UI/Facility/FF_FacilityLightingControls.h"
 #include "FF_FacilityInfoPanel.generated.h"
@@ -37,6 +39,7 @@ public:
 	FSimpleMulticastDelegate OnFavoriteRequested;
 	FSimpleMulticastDelegate OnRevenueRankingRequested;
 	FFF_OnFacilityLightingRequested OnLightingRequested;
+	FFF_OnFacilityLightingRequested OnLightingRollbackRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info")
@@ -56,6 +59,8 @@ public:
 	/** True only while the cursor is over the visible card, not the full-screen overlay. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverInteractivePanel() const;
+	bool IsLightingTextInputFocused() const;
+	void CancelLightingEdit();
 
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
@@ -64,6 +69,10 @@ protected:
 	virtual FReply NativeOnMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& Event) override;
 
 private:
 	UFUNCTION()
@@ -88,6 +97,15 @@ private:
 	UFUNCTION() void HandleSynergyClicked();
 	UFUNCTION() void HandleOperationClicked();
 	UFUNCTION() void HandleUpgradeTabClicked();
+	UFUNCTION() void HandleLightingTabClicked();
+	UFUNCTION() void HandleRevenueTabClicked();
+	UFUNCTION() void HandleProgramsTabClicked();
+	UFUNCTION() void HandleSynergyPreviousClicked();
+	UFUNCTION() void HandleSynergyNextClicked();
+	UFUNCTION() void HandleLightingMinimizeClicked();
+	void HandleLightingEditFinished();
+	void RefreshLightingPanelLayout();
+	void HandleLightingRollbackRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	UFUNCTION() void HandleFavoriteClicked();
 	UFUNCTION() void HandleRemoveConfirmClicked();
 	UFUNCTION() void HandleRemoveCancelClicked();
@@ -96,6 +114,24 @@ private:
 	void RefreshSynergyEntries();
 	void HandleSynergyPartnerCatalogRequested(FName FacilityDefinitionId);
 	EFF_FacilityInfoPage ActivePage = EFF_FacilityInfoPage::Overview;
+	int32 SynergyPageIndex = 0;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabRevenue;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabPrograms;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_SynergyPrevious;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_SynergyNext;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_SynergyPage;
+	bool bLightingMinimized = false;
+	bool bDraggingLighting = false;
+	FVector2D LightingDragStart;
+	FVector2D LightingPanelTranslation;
+	FVector2D LightingDragTranslation;
+	FMargin ExpandedLightingOffsets;
+	FAnchors ExpandedLightingAnchors;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_TabLighting;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingMinimize;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_LightingMinimize;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Panel_LightingCompact;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_LightingCompactSummary;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_TabOverview;
@@ -145,6 +181,9 @@ private:
 
 	UPROPERTY(Transient)
 	FFF_FacilityInfoViewData CurrentViewData;
+	/** Preserve authored inactive/selected brushes while selection remains an enabled state. */
+	UPROPERTY(Transient)
+	TMap<EFF_FacilityInfoPage, FButtonStyle> AuthoredTabStyles;
 
 	/** A double-click must not also purchase the newly displayed next level. */
 	double LastUpgradeClickSeconds = -1.0;
@@ -363,6 +402,8 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_QueueCapacity;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_QueueCapacityValue;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_ServiceCapacityValue;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_ServiceDuration;

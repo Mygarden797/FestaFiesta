@@ -35,7 +35,6 @@ namespace FFF_ProgramScheduleTestHelpers
 		WorkshopCard.ProgramId = Workshop;
 		WorkshopCard.DisplayName = FText::FromString(TEXT("바다향기 공방"));
 		WorkshopCard.CostGold = WorkshopCost;
-		WorkshopCard.RequiredStaff = 1;
 		WorkshopCard.Capacity = WorkshopCapacity;
 		WorkshopCard.FeePerPerson = WorkshopFee;
 		WorkshopCard.StartMinutes = 30.f;
@@ -45,7 +44,6 @@ namespace FFF_ProgramScheduleTestHelpers
 		YogaCard.ProgramId = Yoga;
 		YogaCard.DisplayName = FText::FromString(TEXT("선셋 요가"));
 		YogaCard.CostGold = YogaCost;
-		YogaCard.RequiredStaff = 2;
 		YogaCard.Capacity = YogaCapacity;
 		YogaCard.FeePerPerson = YogaFee;
 		YogaCard.StartMinutes = 90.f;
@@ -66,7 +64,7 @@ bool FFF_ProgramSchedule_AffordableProgramSucceeds::RunTest(const FString& Param
 
 	TestEqual(TEXT("잔액·인원이 충분하면 편성된다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, {}, /*Gold=*/10000, /*Staff=*/6, Card),
+			Catalog, Workshop, {}, /*Gold=*/10000, Card),
 		EFF_ProgramPurchaseResult::Success);
 
 	// UI 가 비용을 다시 조회하지 않아도 되게 카드를 돌려준다.
@@ -88,32 +86,27 @@ bool FFF_ProgramSchedule_EachFailureIsDistinct::RunTest(const FString& Parameter
 
 	TestEqual(TEXT("카탈로그에 없는 id"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, TEXT("Program_DoesNotExist"), {}, 10000, 6, Card),
+			Catalog, TEXT("Program_DoesNotExist"), {}, 10000, Card),
 		EFF_ProgramPurchaseResult::UnknownProgram);
 
 	TestEqual(TEXT("오늘 이미 편성했다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, { Workshop }, 10000, 6, Card),
+			Catalog, Workshop, { Workshop }, 10000, Card),
 		EFF_ProgramPurchaseResult::AlreadyScheduled);
-
-	TestEqual(TEXT("인원이 모자라다"),
-		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Yoga, {}, 10000, /*Staff=*/1, Card),
-		EFF_ProgramPurchaseResult::NotEnoughStaff);
 
 	TestEqual(TEXT("잔액이 모자라다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, {}, /*Gold=*/WorkshopCost - 1, 6, Card),
+			Catalog, Workshop, {}, /*Gold=*/WorkshopCost - 1, Card),
 		EFF_ProgramPurchaseResult::InsufficientGold);
 
-	// 딱 맞는 잔액·인원은 통과한다. 경계에서 한 칸 어긋나는 사고를 막는다.
+	// 딱 맞는 잔액은 통과한다. 경계에서 한 칸 어긋나는 사고를 막는다.
 	TestEqual(TEXT("잔액이 정확히 비용만큼이면 편성된다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, {}, /*Gold=*/WorkshopCost, 6, Card),
+			Catalog, Workshop, {}, /*Gold=*/WorkshopCost, Card),
 		EFF_ProgramPurchaseResult::Success);
 	TestEqual(TEXT("인원이 정확히 요구만큼이면 편성된다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Yoga, {}, 10000, /*Staff=*/2, Card),
+			Catalog, Yoga, {}, 10000, Card),
 		EFF_ProgramPurchaseResult::Success);
 
 	return true;
@@ -131,37 +124,28 @@ bool FFF_ProgramSchedule_EarlierReasonWinsOverLater::RunTest(const FString& Para
 	const TArray<FFF_ProgramCard> Catalog = MakeCatalog();
 	FFF_ProgramCard Card;
 
-	// 없는 카드 + 잔액 0 + 인원 0 → 없는 카드가 이긴다.
-	TestEqual(TEXT("없는 카드가 잔액·인원보다 먼저다"),
+	// 없는 카드 + 잔액 0 → 없는 카드가 이긴다.
+	TestEqual(TEXT("없는 카드가 잔액보다 먼저다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, TEXT("Program_DoesNotExist"), {}, 0, 0, Card),
+			Catalog, TEXT("Program_DoesNotExist"), {}, 0, Card),
 		EFF_ProgramPurchaseResult::UnknownProgram);
 
-	// 이미 편성 + 잔액 0 + 인원 0 → 중복이 이긴다.
-	TestEqual(TEXT("중복이 잔액·인원보다 먼저다"),
+	// 이미 편성 + 잔액 0 → 중복이 이긴다.
+	TestEqual(TEXT("중복이 잔액보다 먼저다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, { Workshop }, 0, 0, Card),
+			Catalog, Workshop, { Workshop }, 0, Card),
 		EFF_ProgramPurchaseResult::AlreadyScheduled);
-
-	// 인원 0 + 잔액 0 → 인원이 이긴다.
-	// 알바 고용으로 푸는 문제와 매출로 푸는 문제가 달라 플레이어의 다음 행동이 갈린다.
-	TestEqual(TEXT("인원이 잔액보다 먼저다"),
-		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, {}, 0, 0, Card),
-		EFF_ProgramPurchaseResult::NotEnoughStaff);
-
 	return true;
 }
 
 // 저작이 깨진 카드는 카탈로그에 있어도 못 산다.
-// 0 원짜리 "유료" 프로그램이나 정원 0 이 조용히 통과하면 그날 매출이 이유 없이 0 이 된다.
+// 음수 체험비나 정원 0은 저작 오류다. 명시한 체험비 0은 무료 프로그램이다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedule_MalformedCardIsUnbuyable, "FestaFiesta.Economy.ProgramSchedule.MalformedCardIsUnbuyable", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ProgramSchedule_MalformedCardIsUnbuyable::RunTest(const FString& Parameters)
 {
 	FFF_ProgramCard Broken;
 	Broken.ProgramId = TEXT("Program_Broken");
 	Broken.CostGold = 200;
-	Broken.RequiredStaff = 1;
 	Broken.Capacity = 12;
 	Broken.FeePerPerson = 30;
 	Broken.StartMinutes = 30.f;
@@ -171,7 +155,7 @@ bool FFF_ProgramSchedule_MalformedCardIsUnbuyable::RunTest(const FString& Parame
 	{
 		FFF_ProgramCard Out;
 		return FFF_ProgramScheduleRules::EvaluatePurchase(
-			{ Card }, Card.ProgramId, {}, 10000, 6, Out);
+			{ Card }, Card.ProgramId, {}, 10000, Out);
 	};
 
 	TestEqual(TEXT("온전한 카드는 통과한다"),
@@ -189,13 +173,11 @@ bool FFF_ProgramSchedule_MalformedCardIsUnbuyable::RunTest(const FString& Parame
 
 	FFF_ProgramCard NoFee = Broken;
 	NoFee.FeePerPerson = 0;
-	TestEqual(TEXT("체험비 0 은 저작 오류다"),
+	TestEqual(TEXT("체험비 0 은 명시한 무료 프로그램이다"),
+		EvaluateWith(NoFee), EFF_ProgramPurchaseResult::Success);
+	NoFee.FeePerPerson = -1;
+	TestEqual(TEXT("음수 체험비는 저작 오류다"),
 		EvaluateWith(NoFee), EFF_ProgramPurchaseResult::UnknownProgram);
-
-	FFF_ProgramCard NoStaff = Broken;
-	NoStaff.RequiredStaff = 0;
-	TestEqual(TEXT("필요 인원 0 은 저작 오류다"),
-		EvaluateWith(NoStaff), EFF_ProgramPurchaseResult::UnknownProgram);
 
 	// 🔴 시간이 없거나 뒤집힌 카드도 막는다. 이대로 편성되면 RegisterProgram 이
 	// 무효한 슬롯을 만들고, 잠금·퇴장 금지·도착 판정이 전부 조용히 꺼진다
@@ -215,37 +197,27 @@ bool FFF_ProgramSchedule_MalformedCardIsUnbuyable::RunTest(const FString& Parame
 	return true;
 }
 
-// 편성된 카드들이 인원을 합해서 묶는다. 이 값이 틀리면 인원 판정 전체가 같이 틀어진다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedule_StaffAssignedAccumulates, "FestaFiesta.Economy.ProgramSchedule.StaffAssignedAccumulates", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_ProgramSchedule_StaffAssignedAccumulates::RunTest(const FString& Parameters)
+// 🔴 프로그램은 인원을 쓰지 않는다. 인원이 0 이어도 Gold 만 있으면 편성된다 —
+// Staff 는 사건 대응 축이라 편성에 끌려가면 안 된다. 이 줄이 두 축의 분리를 고정한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedule_StaffDoesNotGateScheduling, "FestaFiesta.Economy.ProgramSchedule.StaffDoesNotGateScheduling", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramSchedule_StaffDoesNotGateScheduling::RunTest(const FString& Parameters)
 {
 	using namespace FFF_ProgramScheduleTestHelpers;
 
 	const TArray<FFF_ProgramCard> Catalog = MakeCatalog();
-
-	TestEqual(TEXT("편성이 없으면 0 이다"),
-		FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(Catalog, {}), 0);
-	TestEqual(TEXT("공방 하나면 1 이다"),
-		FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(Catalog, { Workshop }), 1);
-	TestEqual(TEXT("공방 + 요가면 3 이다"),
-		FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(Catalog, { Workshop, Yoga }), 3);
-
-	// 카탈로그에서 사라진 카드가 편성 목록에 남아 있어도 인원을 먹지 않는다.
-	// (저작이 바뀐 저장 슬롯을 불러오는 경로에서 실제로 생길 수 있다)
-	TestEqual(TEXT("모르는 카드는 인원을 안 먹는다"),
-		FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(
-			Catalog, { Workshop, TEXT("Program_Removed") }), 1);
-
-	// 🔴 인원 축이 실제로 편성을 막는지 — 기본 6명으로 요가(2) 를 세 번 열면 네 번째가 막힌다.
 	FFF_ProgramCard Card;
-	const int32 BaseStaff = 6;
-	const TArray<FName> ThreeYogas = { Yoga, Yoga, Yoga };
-	const int32 Used = FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(Catalog, ThreeYogas);
-	TestEqual(TEXT("요가 3 개면 인원 6 을 다 쓴다"), Used, 6);
-	TestEqual(TEXT("남은 인원이 0 이면 공방도 못 연다"),
+
+	// 인원 개념이 판정에서 아예 빠졌으므로 카드를 몇 장 열어 두든 다음 카드가 막히지 않는다.
+	TestEqual(TEXT("요가를 열어 둬도 공방이 막히지 않는다"),
 		FFF_ProgramScheduleRules::EvaluatePurchase(
-			Catalog, Workshop, ThreeYogas, 10000, BaseStaff - Used, Card),
-		EFF_ProgramPurchaseResult::NotEnoughStaff);
+			Catalog, Workshop, { Yoga }, 10000, Card),
+		EFF_ProgramPurchaseResult::Success);
+
+	// 막는 것은 잔액뿐이다.
+	TestEqual(TEXT("막는 것은 잔액뿐이다"),
+		FFF_ProgramScheduleRules::EvaluatePurchase(
+			Catalog, Workshop, { Yoga }, 0, Card),
+		EFF_ProgramPurchaseResult::InsufficientGold);
 
 	return true;
 }

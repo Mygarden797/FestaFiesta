@@ -6,6 +6,8 @@
 
 #include "Components/WidgetComponent.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
 #include "Components/TextBlock.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Editor.h"
@@ -27,6 +29,9 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Materials/MaterialInterface.h"
+#include "RenderingThread.h"
+#include "ShaderCompiler.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Slate/WidgetRenderer.h"
 #include "Styling/CoreStyle.h"
@@ -98,7 +103,6 @@ bool FFF_FacilityProgramMarkerLifecycleTest::RunTest(const FString& Parameters)
 	Costs->AddRow(TEXT("Cost.Booth.FoodStall.MarkerFood"), Cost);
 	Definition->FestivalId = TEXT("FacilityProgramMarkerTest");
 	Definition->FacilityCostTable = Costs;
-	Definition->DailyVenueRentGold = 0;
 	Progression->SetProgramReservations(Reservations);
 	Progression->StartFestival(Definition);
 
@@ -252,9 +256,10 @@ bool FFF_FacilityWorldBadgeAuthoredTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("Authored badge"), Widget.Get())) return false;
 	const TSharedRef<SWidget> Slate = Widget->TakeWidget();
 	auto* Amount = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_RevenueValue")));
+	UWidget* Label = Widget->GetWidgetFromName(TEXT("Text_RevenueLabel"));
 	UWidget* Program = Widget->GetWidgetFromName(TEXT("Panel_Program"));
 	UWidget* Revenue = Widget->GetWidgetFromName(TEXT("Panel_Revenue"));
-	if (!TestNotNull(TEXT("Authored amount"), Amount) || !TestNotNull(TEXT("Separate program row"), Program) ||
+	if (!TestNotNull(TEXT("Authored amount"), Amount) || !TestNotNull(TEXT("Authored revenue label"), Label) || !TestNotNull(TEXT("Separate program row"), Program) ||
 		!TestNotNull(TEXT("Separate revenue row"), Revenue)) return false;
 	const FSlateFontInfo Font = Amount->GetFont();
 	Widget->SetMarkerState(EFF_FacilityProgramMarkerState::Scheduled);
@@ -269,10 +274,23 @@ bool FFF_FacilityWorldBadgeAuthoredTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Authored unavailable text matches native fallback"), Amount->GetText().ToString(), FString(TEXT("—")));
 	if (!FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
 	{
+		TSet<UMaterialInterface*> Materials;
+		Widget->WidgetTree->ForEachWidget([&Materials](UWidget* W)
+		{
+			if (auto* Border = Cast<UBorder>(W))
+				if (auto* Material = Cast<UMaterialInterface>(Border->Background.GetResourceObject())) Materials.Add(Material);
+		});
+		for (auto* Material : Materials) Material->EnsureIsComplete();
+		if (GShaderCompilingManager) GShaderCompilingManager->FinishAllCompilation();
+		FlushRenderingCommands();
 		Widget->SetMarkerState(EFF_FacilityProgramMarkerState::Scheduled);
 		Widget->SetRevenue(true, true, MAX_int32);
+		Widget->ForceLayoutPrepass();
 		FWidgetRenderer Renderer(false, true);
-		const FVector2D Size(220, 72);
+		// World markers use their authored desired size without the viewport DPI scaler.
+		const FVector2D Desired = Widget->GetDesiredSize();
+		TestTrue(TEXT("World badge stays compact around its facility"),Desired.X <= 221.f && Desired.Y <= 72.f);
+		const FVector2D Size(FMath::CeilToInt(Desired.X), FMath::CeilToInt(Desired.Y));
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
 		if (!TestNotNull(TEXT("Authored badge render target"), Target.Get())) return false;
 		for (int32 Frame = 0; Frame < 3; ++Frame)
@@ -284,12 +302,19 @@ bool FFF_FacilityWorldBadgeAuthoredTest::RunTest(const FString& Parameters)
 			Revenue->GetPaintSpaceGeometry().GetLayoutBoundingRect().Top >= Program->GetPaintSpaceGeometry().GetLayoutBoundingRect().Bottom);
 		TestTrue(TEXT("Largest supported amount fits the authored row"),
 			Amount->GetDesiredSize().X <= Amount->GetPaintSpaceGeometry().GetLocalSize().X + 1.f);
+		const FSlateRect AmountRect = Amount->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect LabelRect = Label->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect RevenueRect = Revenue->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		TestTrue(TEXT("Largest amount cannot overlap the today-revenue label"), AmountRect.Left >= LabelRect.Right + 3.f);
+		TestTrue(TEXT("Largest amount remains fully inside the revenue band"),
+			AmountRect.Right <= RevenueRect.Right && AmountRect.Top >= RevenueRect.Top && AmountRect.Bottom <= RevenueRect.Bottom);
+		TestTrue(TEXT("Largest amount remains readable after downscaling"), AmountRect.GetSize().Y >= 12.f);
 		TArray<FColor> Pixels;
 		FReadSurfaceDataFlags Flags;
 		Flags.SetLinearToGamma(false);
 		if (!TestTrue(TEXT("Authored rows render"), Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels, Flags))) return false;
 		TArray64<uint8> Png;
-		FImageUtils::PNGCompressImageArray(220, 72, Pixels, Png);
+		FImageUtils::PNGCompressImageArray(FMath::RoundToInt(Size.X), FMath::RoundToInt(Size.Y), Pixels, Png);
 		const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation");
 		IFileManager::Get().MakeDirectory(*Directory, true);
 		TestTrue(TEXT("Authored badge preview saved"), FFileHelper::SaveArrayToFile(Png, *(Directory / TEXT("FacilityWorldBadgeLargestAmount.png"))));

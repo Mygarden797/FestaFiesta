@@ -1,7 +1,9 @@
 #include "UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Camera/FF_FestivalPlayerController.h"
+#include "Components/PanelWidget.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -13,6 +15,8 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
 #include "Widgets/SWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityCodexPresenter, Log, All);
@@ -87,6 +91,7 @@ bool UFF_FacilityCodexPresenterSubsystem::OpenCodex(
 		PreviousFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	}
 	if (BuildMode && BuildMode->SuspendInputForPauseMenu()) SuspendedBuildMode = BuildMode;
+	SuppressCatalogVisibility(*Controller);
 	if (FacilityInfo)
 	{
 		SuppressedFacilityInfo = FacilityInfo;
@@ -132,6 +137,57 @@ void UFF_FacilityCodexPresenterSubsystem::CloseCodex()
 	CloseSession(true);
 }
 
+void UFF_FacilityCodexPresenterSubsystem::SuppressCatalogVisibility(AFF_FestivalPlayerController& Controller)
+{
+	const UFF_BuildModeSubsystem* BuildMode = GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>();
+	if (!BuildMode || BuildMode->GetBuildModeState() != EFF_BuildModeState::CatalogOpen) return;
+	TArray<UUserWidget*> Panels;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), Panels, UFF_PrepPanelBuild::StaticClass(), false);
+	for (UUserWidget* Widget : Panels)
+	{
+		UFF_PrepPanelBuild* Panel = Cast<UFF_PrepPanelBuild>(Widget);
+		if (!Panel || Panel->GetWorld() != GetWorld() || Panel->GetOwningPlayer() != &Controller || !Panel->IsVisible()) continue;
+		UFF_PrepHudBar* Bar = Panel->GetOwningBar();
+		const bool bMounted = Panel->IsInViewport() || (Panel->GetParent() && Bar && Bar->GetSelection().IsSelected(EFF_PrepHudTab::Build));
+		if (!bMounted) continue;
+		SuppressedCatalog = Panel;
+		SuppressedCatalogParent = Panel->GetParent();
+		SuppressedCatalogBar = Bar;
+		bCatalogWasInViewport = Panel->IsInViewport();
+		bCatalogHadOwningBar = Bar != nullptr;
+		PreviousCatalogVisibility = Panel->GetVisibility();
+		// This is a temporary modal presentation lease, not a close/open of the
+		// bar-owned browsing session. Filters, page, selection and subscriptions survive.
+		Panel->SetVisibility(ESlateVisibility::Hidden);
+		break;
+	}
+}
+
+void UFF_FacilityCodexPresenterSubsystem::RestoreCatalogVisibility()
+{
+	UFF_PrepPanelBuild* Panel = SuppressedCatalog.Get();
+	const UFF_BuildModeSubsystem* BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	UFF_PrepHudBar* Bar = SuppressedCatalogBar.Get();
+	const bool bSameOwner = !bCatalogHadOwningBar || (Bar && Panel && Panel->GetOwningBar() == Bar &&
+		Bar->GetSelection().IsSelected(EFF_PrepHudTab::Build));
+	const bool bSameAttachment = Panel && Panel->GetParent() == SuppressedCatalogParent.Get() &&
+		(bCatalogWasInViewport ? Panel->IsInViewport() : Panel->GetParent() != nullptr);
+	if (Panel && Panel->GetOwningPlayer() == OwningController.Get() && bSameOwner && bSameAttachment &&
+		BuildMode && BuildMode->GetBuildModeState() == EFF_BuildModeState::CatalogOpen &&
+		Panel->GetVisibility() == ESlateVisibility::Hidden)
+	{
+		// If its owner closed, replaced or removed the panel while the codex was up,
+		// do not resurrect it or overwrite that owner's newer visibility decision.
+		Panel->SetVisibility(PreviousCatalogVisibility);
+	}
+	SuppressedCatalog.Reset();
+	SuppressedCatalogParent.Reset();
+	SuppressedCatalogBar.Reset();
+	PreviousCatalogVisibility = ESlateVisibility::Collapsed;
+	bCatalogWasInViewport = false;
+	bCatalogHadOwningBar = false;
+}
+
 void UFF_FacilityCodexPresenterSubsystem::CloseSession(const bool bRestoreFocus)
 {
 	if (bClosing) return;
@@ -170,6 +226,7 @@ void UFF_FacilityCodexPresenterSubsystem::CloseSession(const bool bRestoreFocus)
 		FacilityInfo->SetPauseMenuPresentationSuppressed(false);
 	}
 	SuppressedFacilityInfo.Reset();
+	RestoreCatalogVisibility();
 	if (Controller && bOwnsModalInput && bRestoreFocus) RestoreInput(*Controller);
 	// A viewport can survive controller/world replacement. Clear our UIOnly block
 	// even if that controller can no longer restore focus during EndPlay.

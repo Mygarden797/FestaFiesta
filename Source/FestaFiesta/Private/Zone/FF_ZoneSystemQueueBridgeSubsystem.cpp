@@ -240,17 +240,14 @@ FFF_QueueConfig UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(
 	const FVector& ExitLocation)
 {
 	FFF_QueueConfig Config;
-	// 물리 대기 지점은 MaxWaitingAgents개뿐이다. 서비스 중 Party도 core 용량에 남으므로 같은 값을
-	// 보수적 총원 상한으로 사용해 M개 동선에 M+S명이 들어오는 것을 막는다.
-	Config.MaxCapacityMembers = static_cast<int32>(FMath::Clamp<int64>(
+	// 저장된 MaxWaitingAgents는 팀별 대기 지점 수다. 이용 중인 팀도 종료까지 한 자리를 유지한다.
+	Config.MaxCapacityParties = static_cast<int32>(FMath::Clamp<int64>(
 		static_cast<int64>(Rules.MaxWaitingAgents), 1, MAX_int32));
 
-	// Legacy Queue는 선두 Party 하나만 처리하므로 여러 FFZS 창구를 '한 개의 더 빠른 창구'로 환산한다.
-	// 이렇게 해야 예상 처리율과 실제 장기 처리율이 모두 ServiceCapacity / Duration으로 일치한다.
-	const int32 ServiceCapacity = FMath::Max(1, Rules.ServiceCapacity);
-	Config.ConcurrentServiceSlots = 1;
-	Config.ServiceSecondsPerMember = FMath::Max(
-		Rules.ServiceDurationSeconds / static_cast<float>(ServiceCapacity), KINDA_SMALL_NUMBER);
+	// 처리 정원은 동시에 이용하는 팀 수, 시간은 팀 전체의 이용 시간이다.
+	// 인원이 많은 팀도 같은 시간이 걸리며 실제 이용 인원은 완료 이벤트로 별도 정산한다.
+	Config.ConcurrentServiceSlots = FMath::Max(1, Rules.ServiceCapacity);
+	Config.ServiceSecondsPerParty = FMath::Max(Rules.ServiceDurationSeconds, KINDA_SMALL_NUMBER);
 	Config.ExitLocation = ExitLocation;
 
 	// 현재 생산 Crowd에는 NotifyPartyArrived 호출자가 없다. 기본값 false로 두어 서비스 정지를 막고,

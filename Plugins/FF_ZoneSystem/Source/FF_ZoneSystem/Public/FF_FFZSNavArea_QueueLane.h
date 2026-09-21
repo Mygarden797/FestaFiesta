@@ -4,7 +4,7 @@
 //
 // ─── 왜 NavArea_Null이 아닌가 ──────────────────────────────────────────────────
 // 통행을 끊는 가장 단순한 방법은 NavArea_Null이지만, 그러면 그 자리의 NavMesh가 사라진다.
-// UFFZSWorldSubsystem::ValidateNavigation은 최대 수용 인원의 모든 Queue 슬롯을 NavMesh에
+// UFFZSWorldSubsystem::ValidateNavigation은 최대 대기 팀 수에 해당하는 모든 Queue 슬롯을 NavMesh에
 // 투영하고 Entry에서 각 지점까지 완전한 경로가 있는지 확인한다. 레인을 도려내면 그 시설은
 // 영원히 배치 검증을 통과하지 못한다 — 대기열이 갈 수 없는 곳이 되어 버리기 때문이다.
 //

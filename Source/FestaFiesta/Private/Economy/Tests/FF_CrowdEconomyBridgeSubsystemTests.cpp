@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
@@ -81,8 +82,6 @@ namespace FFF_CrowdEconomyBridgeTestHelpers
 			Definition->FacilityCostTable = CostTable;
 			Definition->FestivalId = TEXT("CrowdEconomyAutomationFestival");
 			Definition->AdmissionFeeGold = AdmissionFeeGold;
-			// 이 테스트는 입장료만 본다. 임대료가 걷히면 잔액 기대값에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			Progression->StartFestival(Definition);
 			return true;
@@ -214,6 +213,11 @@ bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Pa
 {
 	using namespace FFF_CrowdEconomyBridgeTestHelpers;
 
+	// Keep this world genuinely pre-festival until the explicit StartFestival below.
+	TGuardValue<TSoftObjectPtr<UFF_FestivalDefinition>> DefaultFestivalGuard(
+		GetMutableDefault<UFF_FestivalSettings>()->DefaultFestival, TSoftObjectPtr<UFF_FestivalDefinition>());
+	AddExpectedMessage(TEXT("DefaultFestival 이 지정되지 않았다"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, 1, false);
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 	{
@@ -245,7 +249,6 @@ bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Pa
 	Definition->FacilityCostTable = MakeMinimalFacilityCostTable(GameInstance);
 	Definition->FestivalId = TEXT("CrowdEconomyZeroCountFestival");
 	Definition->AdmissionFeeGold = 5;
-	Definition->DailyVenueRentGold = 0;
 	Progression->StartFestival(Definition);
 
 	const int32 RevenueBefore = Progression->GetTodayRevenue();
@@ -263,6 +266,11 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 {
 	using namespace FFF_CrowdEconomyBridgeTestHelpers;
 
+	// Prevent project bootstrap from supplying visitors before this test starts its Festival.
+	TGuardValue<TSoftObjectPtr<UFF_FestivalDefinition>> DefaultFestivalGuard(
+		GetMutableDefault<UFF_FestivalSettings>()->DefaultFestival, TSoftObjectPtr<UFF_FestivalDefinition>());
+	AddExpectedMessage(TEXT("DefaultFestival 이 지정되지 않았다"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, 1, false);
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 	{
@@ -292,7 +300,6 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 	Definition->FacilityCostTable = MakeMinimalFacilityCostTable(GameInstance);
 	Definition->FestivalId = TEXT("CrowdEconomyExpectedVisitorsFestival");
 	Definition->BaseDailyVisitors = 500;
-	Definition->DailyVenueRentGold = 0;
 	Progression->StartFestival(Definition);
 
 	TestEqual(TEXT("홍보를 안 사도 BaseDailyVisitors 로 채워진다"),

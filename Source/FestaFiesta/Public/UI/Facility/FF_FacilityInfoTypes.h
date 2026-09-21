@@ -29,7 +29,11 @@ enum class EFF_FacilityInfoPage : uint8
 	Upgrade,
 	RemoveConfirmation,
 	/** Append only: existing WBP navigation values stay stable. */
-	Synergy
+	Synergy,
+	Lighting,
+	/** Separate pages keep planning and operation facts visible without scrolling. */
+	Revenue,
+	Programs
 };
 
 /** One authored combination; repeated nearby instances are summarized in this row. */
@@ -138,6 +142,8 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText QueueCapacityText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info") FText QueueCapacityValueText;
+	UPROPERTY(BlueprintReadOnly, Category="FestaFiesta|Facility Info") FText ServiceCapacityValueText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	FText ServiceDurationText;
@@ -366,7 +372,7 @@ namespace FFFacilityInfoModel
 		bool bCostAvailable,
 		int32 CostGold);
 	FESTAFIESTA_API FText FormatExpectedWait(bool bAvailable, float Seconds);
-	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float PeoplePerMinute);
+	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float TeamsPerMinute);
 	FESTAFIESTA_API FText GetOperationStateText(
 		bool bQueueSupported,
 		bool bQueueAvailable,

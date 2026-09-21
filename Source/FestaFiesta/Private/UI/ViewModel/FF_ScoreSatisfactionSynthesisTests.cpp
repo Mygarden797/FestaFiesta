@@ -64,8 +64,6 @@ namespace FFF_ScoreSatisfactionSynthesisTestHelpers
 			Definition->FacilityCostTable = CostTable;
 
 			Definition->FestivalId = TEXT("ScoreSatisfactionAutomationFestival");
-			// 이 테스트는 만족도 합성만 본다. 임대료·미납이 걷히면 피날레 구매 잔액에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			Progression->StartFestival(Definition);
 			return true;

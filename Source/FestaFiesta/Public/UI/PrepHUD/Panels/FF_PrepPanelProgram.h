@@ -14,12 +14,14 @@ class UButton;
 class UPanelWidget;
 class UTextBlock;
 class UWidget;
+class UDataTable;
+class UFF_FestivalProgressionSubsystem;
 
 /**
  * 프로그램을 편성할 수 없는 이유.
  *
  * !! 하나로 합치지 않는다 !!
- * 이유마다 플레이어가 할 행동이 다르다 — 인원은 `인력` 탭에서 알바를 고용하면 풀리고,
+ * 이유마다 플레이어가 할 행동이 다르다 —
  * 시설은 `배치` 탭에서 부스를 지어야 하며, 단계는 기다리는 것 말고 할 수 있는 게 없다.
  * 카드를 흐리게만 하면 셋을 구분할 수 없다 (AT-011).
  */
@@ -44,8 +46,6 @@ enum class EFF_PrepProgramBlockReason : uint8
 	/** 이 카드를 열 수 있는 시설이 하나도 없다. 부스를 먼저 지어야 한다. */
 	NoEligibleFacility	UMETA(DisplayName = "열 수 있는 시설 없음"),
 
-	/** 쓸 수 있는 인원이 모자란다. 알바를 고용하면 풀린다. */
-	NotEnoughStaff		UMETA(DisplayName = "인원 부족"),
 
 	/** 비용을 낼 잔액이 없다. */
 	NotEnoughGold		UMETA(DisplayName = "잔액 부족"),
@@ -70,10 +70,6 @@ struct FESTAFIESTA_API FFF_PrepProgramQuote
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 CostGold = INDEX_NONE;
 
-	/** 편성 동안 묶이는 인원. 모르면 `INDEX_NONE`. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
-	int32 RequiredStaff = INDEX_NONE;
-
 	/**
 	 * 정원을 다 채웠을 때 그날 체험비. **정원이 보장되므로 확정 매출이다** —
 	 * 그래서 `예상` 이 아니라 그대로 쓴다.
@@ -81,9 +77,9 @@ struct FESTAFIESTA_API FFF_PrepProgramQuote
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 MaxRevenue = INDEX_NONE;
 
-	// 🔴 **아래 둘은 `INDEX_NONE` 으로 `모름` 을 나타낼 수 없다.**
+	// 🔴 **아래 값은 `INDEX_NONE` 으로 `모름` 을 나타낼 수 없다.**
 	// 모자라는 양을 보여주려고 음수를 자르지 않는데, 그러면 계산 결과가 정확히 -1 인 순간
-	// (`가용 1명 - 필요 2명`, `잔액 199 - 비용 200`) 이 `모름` 과 구별되지 않는다.
+	// (`잔액 199 - 비용 200`) 이 `모름` 과 구별되지 않는다.
 	// 실제로 겪기 쉬운 값이라 **별도 플래그로 모름을 표현한다.** 표시부는 플래그만 본다.
 
 	/** 편성 후 잔액. `bHasGoldAfterSchedule` 가 false 면 이 값은 의미가 없다. */
@@ -93,12 +89,6 @@ struct FESTAFIESTA_API FFF_PrepProgramQuote
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	bool bHasGoldAfterSchedule = false;
 
-	/** 편성 후 남는 가용 인원. `bHasAvailableStaffAfter` 가 false 면 이 값은 의미가 없다. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
-	int32 AvailableStaffAfter = INDEX_NONE;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
-	bool bHasAvailableStaffAfter = false;
 
 	/** 이 카드를 열 수 있는 시설 수. 모르면 `INDEX_NONE`. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
@@ -115,7 +105,7 @@ struct FESTAFIESTA_API FFF_PrepProgramQuote
  * 프로그램 패널의 판단 규칙. **순수 함수만 둔다.**
  *
  * === 왜 위젯 밖으로 뺐나 ===
- * "인원은 되는데 열 시설이 없다" 같은 조합은 에디터에서 **부스를 실제로 지웠다 세워야** 재현된다.
+ * "잔액은 되는데 열 시설이 없다" 같은 조합은 에디터에서 **부스를 실제로 지웠다 세워야** 재현된다.
  * 여기 있으면 자동화 테스트가 못으로 박는다. `FFF_PrepStaffRules` 와 같은 이유다.
  *
  * !! 여기서 편성 허용 여부를 최종 판정하지 않는다 !!
@@ -130,9 +120,9 @@ struct FESTAFIESTA_API FFF_PrepProgramRules
 	 *
 	 * ★ **순서가 곧 안내다.** 가장 바깥 조건부터 본다 —
 	 *   ① 축제 전(모름) → ② 편성 단계 아님 → ③ 카드 미선택 → ④ 오늘 이미 편성
-	 *   → ⑤ 열 수 있는 시설 없음 → ⑥ 인원 부족 → ⑦ 잔액 부족
+	 *   → ⑤ 열 수 있는 시설 없음 → ⑥ 잔액 부족
 	 *
-	 * ⑤ 를 ⑥·⑦ 보다 먼저 보는 이유는, 열 장소가 없으면 알바를 고용하거나 돈을 모아도
+	 * ⑤ 를 ⑥ 보다 먼저 보는 이유는, 열 장소가 없으면 돈을 모아도
 	 * 이 카드를 못 열기 때문이다. 더 근본적인 막힘을 먼저 알려 준다.
 	 *
 	 * ④ 가 ⑤ 보다 먼저인 이유는, 이미 편성한 카드에 대해 "부스를 지으세요" 는 틀린 안내라서다.
@@ -150,19 +140,17 @@ struct FESTAFIESTA_API FFF_PrepProgramRules
 
 	/**
 	 * 견적을 만든다. 값이 없으면 그 칸을 `INDEX_NONE` 으로 둔다 — **0 을 넣지 않는다.**
-	 * `0 Gold` 는 "공짜", `인원 0` 은 "사람이 안 든다" 는 틀린 사실이 된다.
+	 * `0 Gold` 는 "공짜" 라는 틀린 사실이 된다.
 	 *
 	 * @param Card                   고른 카드. `nullptr` 이면 금액 칸이 전부 비고 이유만 채워진다
 	 * @param CurrentGold            현재 잔액. `INDEX_NONE` 이면 잔액 계산을 건너뛴다
-	 * @param AvailableStaffCount    지금 쓸 수 있는 인원. `INDEX_NONE` 이면 인원 계산을 건너뛴다
 	 */
 	static FFF_PrepProgramQuote BuildQuote(
 		const FFF_ProgramCard* Card,
 		EFF_ProgramPurchaseResult OwnerResult,
 		bool bCanScheduleNow,
 		int32 EligibleFacilityCount,
-		int32 CurrentGold,
-		int32 AvailableStaffCount);
+		int32 CurrentGold);
 };
 
 /**
@@ -194,6 +182,7 @@ protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeOnPanelOpened() override;
 	virtual void NativeOnPanelClosed() override;
+	virtual void NativeDestruct() override;
 
 	// --- 버튼 ---
 
@@ -216,15 +205,15 @@ protected:
 	UFUNCTION()
 	void HandleGoldChanged(int32 NewValue);
 
-	UFUNCTION()
-	void HandleAvailableStaffCountChanged(int32 NewValue);
-
-	/** 편성 목록이 바뀌었다. 카드 잠금과 인원 표시가 함께 바뀐다. */
+	/** 편성 목록이 바뀌었다. 카드 잠금이 따라 바뀐다. */
 	UFUNCTION()
 	void HandleScheduledProgramsChanged();
 
 	UFUNCTION()
 	void HandleStageViewChanged(EFF_FestivalStage NewStage, int32 NewDay);
+
+	UFUNCTION()
+	void HandleFestivalDefinitionChanged();
 
 protected:
 	// --- 위젯 바인딩. 전부 Optional 이다 ---
@@ -251,17 +240,13 @@ protected:
 
 	// --- 견적 ---
 
-	/** `250 Gold · 인원 2명`. */
+	/** `250 Gold`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_CostPreview;
 
 	/** `편성 후 잔액 7,350`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_GoldAfter;
-
-	/** `편성 후 사용 가능 4명`. 인원이 묶이는 것이 이 카드의 진짜 대가다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
-	TObjectPtr<UTextBlock> Text_StaffAfter;
 
 	/** `확정 매출 400`. 정원이 보장되므로 `예상` 이 아니다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
@@ -274,7 +259,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_BlockReason;
 
-	/** 하루짜리라는 안내. 인력 패널과 같은 이유로 값으로 뺀다. */
+	/** 하루짜리라는 안내. 값으로 빼서 문구를 바꿀 수 있게 한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_DailyNotice;
 
@@ -315,6 +300,8 @@ private:
 
 	void BindViewModel();
 	void UnbindViewModel();
+	void BindRevenueTable();
+	void HandleRevenueTableChanged();
 
 	/** 카탈로그를 읽어 카드를 다시 만든다. 패널을 열 때와 편성이 바뀔 때만 부른다. */
 	void RebuildCards();
@@ -339,6 +326,12 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UFF_FestivalViewModelSubsystem> CachedViewModel;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_FestivalProgressionSubsystem> BoundProgression;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> BoundRevenueTable;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UFF_PrepProgramCard>> CardWidgets;

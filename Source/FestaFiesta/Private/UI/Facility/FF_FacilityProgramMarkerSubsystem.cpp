@@ -11,6 +11,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Economy/Rules/FF_BoothRevenueRules.h"
+#include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -112,6 +113,10 @@ void UFF_FacilityProgramMarkerSubsystem::Deinitialize()
 		BoundStage->OnStageChanged.RemoveAll(this);
 		BoundStage->OnFestivalStarted.RemoveAll(this);
 	}
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
+	}
 	if (UFFZSWorldSubsystem* Zones = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>())
 	{
 		Zones->OnWorldChanged.RemoveAll(this);
@@ -120,6 +125,7 @@ void UFF_FacilityProgramMarkerSubsystem::Deinitialize()
 	BoundProgression = nullptr;
 	BoundStage = nullptr;
 	BoundReservations = nullptr;
+	BoundRevenueTable = nullptr;
 	MarkerStates.Reset();
 	BadgeStates.Reset();
 	MarkerActors.Reset();
@@ -178,6 +184,21 @@ void UFF_FacilityProgramMarkerSubsystem::EnsureReadModelBindings()
 	if (BoundReservations != Reservations)
 	{
 		BoundReservations = Reservations;
+		bStateDirty = true;
+	}
+	const UFF_FestivalDefinition* Definition = BoundProgression ? BoundProgression->GetDefinition() : nullptr;
+	UDataTable* RevenueTable = Definition ? Definition->GetFacilityRevenueTable() : nullptr;
+	if (BoundRevenueTable != RevenueTable)
+	{
+		if (BoundRevenueTable)
+		{
+			BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
+		}
+		BoundRevenueTable = RevenueTable;
+		if (BoundRevenueTable)
+		{
+			BoundRevenueTable->OnDataTableChanged().AddUObject(this, &ThisClass::HandleStateChanged);
+		}
 		bStateDirty = true;
 	}
 }
@@ -258,6 +279,7 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshMarkerStates()
 
 	const TArray<FFF_ProgramCard> Catalog = BoundProgression->GetProgramCatalog();
 	const UFF_FestivalDefinition* Definition = BoundProgression->GetDefinition();
+	const UDataTable* RevenueTable = Definition ? Definition->GetFacilityRevenueTable() : nullptr;
 	const bool bEconomyAvailable = Definition != nullptr;
 	const UFF_FacilitySynergySubsystem* Synergies = GetWorld()->GetSubsystem<UFF_FacilitySynergySubsystem>();
 	TSet<FGuid> ScheduledFacilities;
@@ -297,11 +319,15 @@ void UFF_FacilityProgramMarkerSubsystem::RefreshMarkerStates()
 		const bool bHasLedger = BoundProgression->GetFacilityInstanceRevenue(Facility.FacilityInstanceId, Revenue);
 		// Reuse the settlement rules directly. Upgrade previews can validate a future footprint;
 		// displaying today's ledger must never trigger placement validation for every facility.
-		const int32 RevenuePerUse = Definition && bNamed ? FFF_BoothRevenueRules::FindRevenuePerUse(
-			Definition->RevenuePerUseByMinorToken, Parts.MinorToken) : 0;
+		const int32 RevenuePerUse = Definition ? FFF_BoothRevenueRules::ResolveRevenuePerUse(
+			Actor->GetFacilitySpec(), Definition->RevenuePerUseByMinorToken, RevenueTable) : 0;
 		const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(Facility.FacilityInstanceId) : 1.f;
+		const float CommissionRate = Definition ? FFF_BoothRevenueRules::ResolveCommissionRate(
+			Actor->GetFacilitySpec(), Definition->BoothCommissionRate, RevenueTable) : 0.f;
+		const float RevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
+			Actor->GetFacilitySpec(), Actor->GetUpgradeLevel(), Actor->GetUpgradeRevenueMultiplier(), RevenueTable);
 		const bool bDirectRevenue = Definition && FFF_BoothRevenueRules::ResolveCommission(
-			RevenuePerUse, 1, Definition->BoothCommissionRate, Actor->GetUpgradeRevenueMultiplier() * SynergyMultiplier) > 0;
+			RevenuePerUse, 1, CommissionRate, static_cast<double>(RevenueMultiplier) * SynergyMultiplier) > 0;
 		Badge.bShowRevenue = bCompatible || bHasLedger || bDirectRevenue;
 		Badge.bEconomyAvailable = bEconomyAvailable;
 		Badge.TodayGold = bEconomyAvailable ? Revenue.TodayGold : 0;

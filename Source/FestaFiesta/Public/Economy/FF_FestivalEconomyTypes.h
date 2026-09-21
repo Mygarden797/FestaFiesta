@@ -59,11 +59,12 @@ enum class EFF_FinalePurchaseResult : uint8
 /**
  * 하루짜리 유료 프로그램 한 장.
  *
- * 아침(Setup·MorningCheck)에 Gold 와 Staff 를 걸고 편성하면, 그 프로그램을 좋아하는 손님이
+ * 아침(Setup·MorningCheck)에 Gold 를 걸고 편성하면, 그 프로그램을 좋아하는 손님이
  * 정원만큼 추가로 방문한다. 정원이 보장되므로 체험비는 확정값이다 — 이 카드의 값어치는
  * 체험비뿐 아니라 데려온 손님이 부스에서 쓰는 돈에도 있다.
  *
- * 대가는 묶이는 Staff 와 기회비용이다.
+ * 대가는 Gold 와 기회비용뿐이다. **Staff 는 쓰지 않는다** — Staff 는 사건 대응 축이라
+ * 편성에 끌려가면 안 된다.
  * 같은 Gold 로 부스를 지으면 남은 날 내내 벌지만, 프로그램은 그날 하루만 번다.
  *
  * DisplayName 을 FText 로 직접 갖는다. 카드 이름은 enum 이 아니라 데이터라
@@ -85,16 +86,12 @@ struct FFF_ProgramCard
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
 	int32 CostGold = 0;
 
-	// 편성 동안 묶이는 인원. Event 대응에 쓸 수 있는 인원이 그만큼 줄어든다.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
-	int32 RequiredStaff = 1;
-
 	// 그날 받을 수 있는 최대 참가 인원.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
 	int32 Capacity = 0;
 
-	// 참가자 1명당 받는 Gold. 부스 수수료와 달리 **전액**이다.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "1"))
+	// 시설 수익 표에 참가비가 없는 경우의 기본값. 부스 수수료와 달리 전액이며 0은 무료다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Program", meta = (ClampMin = "0", ToolTip = "시설 수익 데이터테이블의 프로그램 참가비가 우선합니다. 해당 시설·프로그램 항목이 없으면 이 값을 사용하며, 0은 무료입니다."))
 	int32 FeePerPerson = 0;
 
 	/**
@@ -138,15 +135,18 @@ struct FFF_ProgramCard
 	TArray<FName> AllowedFacilityTypes;
 
 	// 정원을 다 채웠을 때 그날 매출. 정원이 보장되므로 확정 매출이기도 하다.
-	int32 CalcMaxRevenue() const { return Capacity * FeePerPerson; }
+	int32 CalcMaxRevenue() const
+	{
+		return static_cast<int32>(FMath::Min<int64>(MAX_int32,
+			static_cast<int64>(FMath::Max(0, Capacity)) * FMath::Max(0, FeePerPerson)));
+	}
 
 	bool IsValid() const
 	{
 		return !ProgramId.IsNone()
 			&& CostGold > 0
-			&& RequiredStaff > 0
 			&& Capacity > 0
-			&& FeePerPerson > 0
+			&& FeePerPerson >= 0
 			&& EndMinutes > StartMinutes;
 	}
 };
@@ -170,6 +170,10 @@ struct FFF_ScheduledProgram
 	// 시작 정산과 Closing 안전망이 같은 카드를 두 번 걷지 않게 막는 수단이다.
 	UPROPERTY(BlueprintReadOnly, Category = "Program")
 	bool bFeeSettled = false;
+
+	// 편성 당시 시설 종류. 시설 액터가 사라져도 최신 수익 표에서 해당 참가비를 찾는다.
+	UPROPERTY(BlueprintReadOnly, Category = "Program")
+	FName FacilityDefinitionId;
 };
 
 // 프로그램 편성 결과. UI 가 실패 이유를 그대로 화면에 쓸 수 있게 bool 이 아니다.
@@ -181,7 +185,6 @@ enum class EFF_ProgramPurchaseResult : uint8
 	FestivalNotStarted  UMETA(DisplayName = "축제가 시작되지 않았다"),
 	UnknownProgram      UMETA(DisplayName = "없는 프로그램"),
 	AlreadyScheduled    UMETA(DisplayName = "오늘 이미 편성했다"),
-	NotEnoughStaff      UMETA(DisplayName = "인원이 부족하다"),
 	InsufficientGold    UMETA(DisplayName = "Gold 부족"),
 	FacilityTypeMismatch UMETA(DisplayName = "이 시설에서는 열 수 없다")
 };
@@ -231,13 +234,11 @@ enum class EFF_SpendReason : uint8
 	FacilityInstall	= 0		UMETA(DisplayName = "시설 설치비"),
 	ProgramPurchase	= 1		UMETA(DisplayName = "유료 프로그램 구매"),
 	Promotion       = 2		UMETA(DisplayName = "홍보비"),
-	VenueRent       = 3		UMETA(DisplayName = "장소 임대료"),
-	StaffWages      = 4		UMETA(DisplayName = "Staff 임금"),
-	StaffHire       = 5		UMETA(DisplayName = "추가 고용"),
-	EventSupplies   = 6		UMETA(DisplayName = "Event 소모품"),
-	Cleanup         = 7		UMETA(DisplayName = "뒷정리"),
-	FinaleFireworks = 8		UMETA(DisplayName = "피날레 폭죽"),
-	FacilityUpgrade = 9		UMETA(DisplayName = "시설 강화비")
+	StaffHire       = 3		UMETA(DisplayName = "Staff 고용"),
+	EventSupplies   = 4		UMETA(DisplayName = "Event 소모품"),
+	Cleanup         = 5		UMETA(DisplayName = "뒷정리"),
+	FinaleFireworks = 6		UMETA(DisplayName = "피날레 폭죽"),
+	FacilityUpgrade = 7		UMETA(DisplayName = "시설 강화비")
 };
 
 // 매출 원인
@@ -261,7 +262,7 @@ struct FFF_LedgerRow
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	FText DisplayName;
 
-	// 줄을 식별하는 키. 짧은 enum 이름이다 (VenueRent 등).
+	// 줄을 식별하는 키. 짧은 enum 이름이다 (StaffHire 등).
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
 	FName ReasonId;
 

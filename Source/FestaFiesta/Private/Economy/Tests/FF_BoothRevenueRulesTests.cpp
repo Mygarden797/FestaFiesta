@@ -5,6 +5,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Economy/Rules/FF_BoothRevenueRules.h"
+#include "FF_FFZSTypes.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include <limits>
 
@@ -93,6 +94,54 @@ bool FFF_BoothRevenue_NegativeAuthoredValueIsClamped::RunTest(const FString& Par
 
 	TestEqual(TEXT("음수 저작은 0 으로 막힌다"), FFF_BoothRevenueRules::FindRevenuePerUse(Table, TEXT("FoodStall")), 0);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BoothRevenue_FacilityOverridesLegacy,
+	"FestaFiesta.Economy.BoothRevenue.FacilityOverridesLegacy",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_BoothRevenue_FacilityOverridesLegacy::RunTest(const FString& Parameters)
+{
+	const TMap<FName, int32> Table = FFF_BoothRevenueTestHelpers::MakeBoothRevenueTable();
+	FFFZSFacilitySpec First;
+	First.FacilityDefinitionId = TEXT("Booth_FoodStall_RevenueFirst");
+	First.bOverrideRevenuePerUseGold = true;
+	First.RevenuePerUseGold = 40;
+	FFFZSFacilitySpec Second = First;
+	Second.FacilityDefinitionId = TEXT("Booth_FoodStall_RevenueSecond");
+	Second.RevenuePerUseGold = 75;
+	TestEqual(TEXT("First facility overrides the category price"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(First, Table), 40);
+	TestEqual(TEXT("Same-category facility has its own independent price"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(Second, Table), 75);
+	First.RevenuePerUseGold = 0;
+	TestEqual(TEXT("Explicit zero stays free despite a paid legacy category"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(First, Table), 0);
+	First.RevenuePerUseGold = -40;
+	TestEqual(TEXT("Invalid negative override never falls back to a paid category"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(First, Table), 0);
+	First.FacilityDefinitionId = NAME_None;
+	First.RevenuePerUseGold = 40;
+	TestEqual(TEXT("An explicit price does not require legacy category parsing"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(First, Table), 40);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BoothRevenue_LegacySpecKeepsCategoryPrice,
+	"FestaFiesta.Economy.BoothRevenue.LegacySpecKeepsCategoryPrice",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_BoothRevenue_LegacySpecKeepsCategoryPrice::RunTest(const FString& Parameters)
+{
+	const TMap<FName, int32> Table = FFF_BoothRevenueTestHelpers::MakeBoothRevenueTable();
+	FFFZSFacilitySpec Spec;
+	TestFalse(TEXT("Unmodified assets and old saves retain legacy pricing"), Spec.bOverrideRevenuePerUseGold);
+	Spec.FacilityDefinitionId = TEXT("Booth_FoodStall_RevenueLegacy");
+	Spec.RevenuePerUseGold = 999;
+	TestEqual(TEXT("Disabled override ignores its stored amount and uses the category"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(Spec, Table), 20);
+	Spec.FacilityDefinitionId = NAME_None;
+	TestEqual(TEXT("An unparseable legacy ID safely earns zero"),
+		FFF_BoothRevenueRules::ResolveRevenuePerUse(Spec, Table), 0);
 	return true;
 }
 
@@ -243,6 +292,8 @@ bool FFF_BoothRevenue_UpgradeRejectsNonFiniteAndSaturates::RunTest(const FString
 	}
 	TestEqual(TEXT("Large finite amounts saturate instead of overflowing"),
 		FFF_BoothRevenueRules::ResolveCommission(MAX_int32, MAX_int32, 1.f, 100.f), MAX_int32);
+	TestEqual(TEXT("A finite table multiplier combined with synergy saturates instead of becoming infinite float"),
+		FFF_BoothRevenueRules::ResolveCommission(1, 1, 1.f, static_cast<double>(MAX_flt) * 2.0), MAX_int32);
 	TestEqual(TEXT("A valid amount at the integer limit remains payable"),
 		FFF_BoothRevenueRules::ResolveCommission(MAX_int32, 1, 1.f, 1.f), MAX_int32);
 	return true;

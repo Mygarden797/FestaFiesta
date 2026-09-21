@@ -8,6 +8,7 @@
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/ProgressBar.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -23,7 +24,12 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Materials/MaterialInterface.h"
+#include "RenderingThread.h"
+#include "ShaderCompiler.h"
 #include "Slate/WidgetRenderer.h"
+#include "Engine/UserInterfaceSettings.h"
+#include "Widgets/Layout/SDPIScaler.h"
 #include "TextureResource.h"
 #include "UObject/StrongObjectPtr.h"
 #include "WidgetBlueprint.h"
@@ -184,15 +190,21 @@ bool FFF_FacilityRevenueAuthoredWidgetsTest::RunTest(const FString& Parameters)
 		Panel->Present(Rows, FFFacilityRevenueRanking::Rank(Rows, Panel->IsCumulative()), true, Selected);
 	});
 	Total->OnClicked.Broadcast();
-	TestTrue(TEXT("Actual cumulative button switches the displayed period"), Panel->IsCumulative() && !Total->GetIsEnabled() && Today->GetIsEnabled());
+	TestTrue(TEXT("Cumulative tab is selected without disabling either readable focus target"), Panel->IsCumulative() && Total->GetIsEnabled() && Today->GetIsEnabled());
+	TestTrue(TEXT("Selected cumulative label retains its full bright color"),
+		CastChecked<UTextBlock>(Total->GetContent())->GetColorAndOpacity().GetSpecifiedColor().Equals(FLinearColor::White));
+	TestTrue(TEXT("Selected cumulative tab uses the authored selected surface"), Total->GetStyle().Normal == Total->GetStyle().Disabled);
 	TestEqual(TEXT("Period refresh keeps selected installation through reordering"), Panel->GetSelectedFacilityId(), Second->FacilityId);
 	TestEqual(TEXT("Cumulative UI total is recomputed from its ledger column"), SumText->GetText().ToString(), RevenueGold(950).ToString());
+	Total->OnClicked.Broadcast();
+	TestEqual(TEXT("Activating the selected cumulative tab does not refresh its data again"),PeriodRequests,1);
 	Today->OnClicked.Broadcast();
-	TestTrue(TEXT("Actual today button returns to the today ledger"), !Panel->IsCumulative() && !Today->GetIsEnabled() && Total->GetIsEnabled());
+	TestTrue(TEXT("Today tab returns to its ledger while both tabs stay readable"), !Panel->IsCumulative() && Today->GetIsEnabled() && Total->GetIsEnabled());
+	Today->OnClicked.Broadcast();
 	TestEqual(TEXT("Each period button dispatches one refresh"), PeriodRequests, 2);
 	TestEqual(TEXT("Today amount is not the cumulative amount"), SumText->GetText().ToString(), RevenueGold(150).ToString());
 	TestTrue(TEXT("Data and period refresh preserve Designer typography"), SumText->GetFont() == DesignerFont);
-	TestTrue(TEXT("Period state does not overwrite Designer button brushes"), Today->GetStyle().Normal == DesignerTodayStyle.Normal &&
+	TestTrue(TEXT("Returning to a period restores its original authored selected brushes"), Today->GetStyle().Normal == DesignerTodayStyle.Normal &&
 		Today->GetStyle().Disabled == DesignerTodayStyle.Disabled);
 	Rows = {First};
 	Panel->Present(Rows, FFFacilityRevenueRanking::Rank(Rows, false), true, Second->FacilityId);
@@ -200,8 +212,12 @@ bool FFF_FacilityRevenueAuthoredWidgetsTest::RunTest(const FString& Parameters)
 	First->TodayGold = 0;
 	Panel->Present(Rows, FFFacilityRevenueRanking::Rank(Rows, false), true, First->FacilityId);
 	TestEqual(TEXT("Zero total share is unavailable, not invented zero percent"), ShareText->GetText().ToString(), FString(TEXT("—")));
+	auto* FirstRevenue = Panel->GetWidgetFromName(TEXT("Border_FirstRevenue"));
+	if (!TestNotNull(TEXT("Approved first-revenue explanation"), FirstRevenue)) return false;
+	TestTrue(TEXT("Installed zero earners show the first-revenue explanation"), FirstRevenue->IsVisible());
 	Rows.Reset();
 	Panel->Present(Rows, 0, true, First->FacilityId);
+	TestFalse(TEXT("No facilities uses the empty state instead of the first-revenue explanation"), FirstRevenue->IsVisible());
 	TestFalse(TEXT("An empty list immediately clears stale selected GUID"), Panel->GetSelectedFacilityId().IsValid());
 	TestFalse(TEXT("An empty list disables inspect"), Inspect->GetIsEnabled());
 	TestEqual(TEXT("Known empty ledger still reports actual zero Gold"), SumText->GetText().ToString(), RevenueGold(0).ToString());
@@ -279,6 +295,21 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 	auto* List = Cast<UFF_FacilityRevenueListView>(Panel->GetWidgetFromName(TEXT("List_Ranking")));
 	auto* Body = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Border_Panel")));
 	if (!TestNotNull(TEXT("ListView"), List) || !TestNotNull(TEXT("Panel surface"), Body)) return false;
+	if (!TestNotNull(TEXT("Adaptive compact frame is an authored binding"),
+		Cast<USizeBox>(Panel->GetWidgetFromName(TEXT("Size_ClarityFrame"))))) return false;
+	// Standalone captures must wait for the shared UI materials, just like BuildTools.
+	TSet<UMaterialInterface*> Materials;
+	auto Gather = [&Materials](const FSlateBrush& Brush)
+	{ if (auto* Material = Cast<UMaterialInterface>(Brush.GetResourceObject())) Materials.Add(Material); };
+	Panel->WidgetTree->ForEachWidget([&](UWidget* W)
+	{
+		if (auto* B = Cast<UBorder>(W)) Gather(B->Background);
+		if (auto* B = Cast<UButton>(W))
+		{ Gather(B->GetStyle().Normal); Gather(B->GetStyle().Hovered); Gather(B->GetStyle().Pressed); Gather(B->GetStyle().Disabled); }
+	});
+	for (auto* Material : Materials) Material->EnsureIsComplete();
+	if (GShaderCompilingManager) GShaderCompilingManager->FinishAllCompilation();
+	FlushRenderingCommands();
 	FRevenueFixture Fixture;
 	TArray<UFF_FacilityRevenueRankItem*> Rows;
 	for (int32 Index = 0; Index < 100; ++Index)
@@ -291,11 +322,12 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 	auto Draw = [&](const int32 Width, const int32 Height, const TCHAR* Filename)
 	{
 		const FVector2D Size(Width, Height);
+		const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(FIntPoint(Width, Height));
 		FWidgetRenderer Renderer(false, true);
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
 		if (!Target) return false;
 		auto Window = SNew(SVirtualWindow).Size(Size);
-		Window->SetContent(Slate);
+		Window->SetContent(SNew(SDPIScaler).DPIScale(Dpi)[Slate]);
 		FHittestGrid Grid;
 		for (int32 Frame = 0; Frame < 8; ++Frame)
 		{
@@ -303,13 +335,49 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 			Renderer.DrawWindow(Target.Get(), Grid, Window, 1.f, Size, .016f, false);
 		}
 		const FSlateRect BodyRect = Body->GetPaintSpaceGeometry().GetLayoutBoundingRect();
-		TestTrue(TEXT("Revenue panel stays above the bottom HUD reserve"), BodyRect.Top >= 0 && BodyRect.Bottom <= Height - 80.f &&
+		TestTrue(TEXT("Revenue panel stays above its 70-logical-unit bottom HUD reserve at project DPI"), BodyRect.Top >= 0 && BodyRect.Bottom <= Height - 69.5f * Dpi &&
 			BodyRect.Left >= 0 && BodyRect.Right <= Width && BodyRect.GetSize().GetMin() > 0);
-		TestEqual(TEXT("All 100 rows remain in the data source"), List->GetNumItems(), 100);
-		TestTrue(TEXT("Only viewport rows are generated"), List->GetDisplayedEntryWidgets().Num() > 0 && List->GetDisplayedEntryWidgets().Num() < 100);
+		TestTrue(TEXT("Ranking stays a compact 500-wide floating surface capped at 600 logical pixels"),
+			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, 500.f, 1.f) && BodyRect.GetSize().Y / Dpi <= 601.f);
+		TestTrue(TEXT("Ranking leaves the center of the world clear"), BodyRect.Left > Width * .65f);
+		if (Rows.Num() <= 2)
+			TestTrue(TEXT("Sparse and empty rankings shrink instead of reserving a full-height blank list"), BodyRect.GetSize().Y / Dpi < 480.f);
+		TestEqual(TEXT("Every installation remains in the data source"), List->GetNumItems(), Rows.Num());
+		if (Rows.Num() > 4)
+			TestTrue(TEXT("Only viewport rows are generated"), List->GetDisplayedEntryWidgets().Num() > 0 && List->GetDisplayedEntryWidgets().Num() < Rows.Num());
+		if (Rows.Num() >= 2)
 		if (UUserWidget* FirstRow = List->GetEntryWidgetFromItem(Rows[0]))
 			TestTrue(TEXT("The viewport has room for at least two complete revenue rows"),
 				List->GetPaintSpaceGeometry().GetLocalSize().Y + 1.f >= 2.f * FirstRow->GetPaintSpaceGeometry().GetLocalSize().Y);
+		const FSlateRect ListRect = List->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		for (int32 Index = 0; Index < FMath::Min(2,Rows.Num()); ++Index)
+		{
+			UUserWidget* Row = List->GetEntryWidgetFromItem(Rows[Index]);
+			if (!TestNotNull(TEXT("Both leading revenue rows are generated"), Row)) continue;
+			const FSlateRect RowRect = Row->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			TestTrue(TEXT("Each leading revenue row is fully visible at project DPI"),
+				RowRect.Top >= ListRect.Top - 1.f && RowRect.Bottom <= ListRect.Bottom + 1.f);
+			TestTrue(TEXT("Revenue rows remain compact and readable"),
+				Row->GetPaintSpaceGeometry().GetLocalSize().Y <= 90.f);
+			const FSlateRect NameRect = Row->GetWidgetFromName(TEXT("Text_Name"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			const FSlateRect AmountRect = Row->GetWidgetFromName(TEXT("Text_Amount"))->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			TestTrue(TEXT("Row name and amount have distinct horizontal regions"), NameRect.Right <= AmountRect.Left + 1.f);
+		}
+		TArray<FSlateRect> Controls;
+		for (const TCHAR* Name : {TEXT("Button_Today"),TEXT("Button_Total"),TEXT("Button_Close"),TEXT("Button_Inspect")})
+		{
+			UWidget* W = Panel->GetWidgetFromName(FName(Name));
+			const FSlateRect Rect = W->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			TestTrue(TEXT("Every ranking action has a consistent 40px hit target"), FMath::IsNearlyEqual(Rect.GetSize().Y / Dpi,40.f,1.f));
+			TestTrue(TEXT("Ranking actions remain within the paper"), Rect.Left >= BodyRect.Left && Rect.Right <= BodyRect.Right &&
+				Rect.Top >= BodyRect.Top && Rect.Bottom <= BodyRect.Bottom);
+			for (const FSlateRect& Other : Controls)
+				TestFalse(TEXT("No ranking action overlaps another action"), Rect.Left < Other.Right -.5f && Rect.Right > Other.Left +.5f &&
+					Rect.Top < Other.Bottom -.5f && Rect.Bottom > Other.Top +.5f);
+			Controls.Add(Rect);
+		}
+		AddInfo(FString::Printf(TEXT("Revenue viewport %dx%d uses project DPI %.3f; list height %.1f logical units."),
+			Width, Height, Dpi, List->GetPaintSpaceGeometry().GetLocalSize().Y));
 		if (!Filename) return true;
 		TArray<FColor> Pixels;
 		FReadSurfaceDataFlags Flags;
@@ -341,6 +409,19 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 			TestTrue(TEXT("Updated leading bar is normalized"), FMath::IsNearlyEqual(Bar->GetPercent(), 1.f));
 		}
 	}
+	// Sparse and zero-income installations are the case that exposed the original
+	// full-height empty panel. Exercise actual data/state changes at both viewport sizes.
+	Rows.SetNum(2);
+	Panel->Present(Rows, FFFacilityRevenueRanking::Rank(Rows,false),true,Rows[1]->FacilityId);
+	TestTrue(TEXT("Two-row compact ranking at 720p"),Draw(1280,720,TEXT("RevenueRankingTwoRows720.png")));
+	TestTrue(TEXT("Two-row compact ranking at 1080p"),Draw(1920,1080,TEXT("RevenueRankingTwoRows1080.png")));
+	TestEqual(TEXT("Resizing retains the selected installation"),Panel->GetSelectedFacilityId(),Rows[1]->FacilityId);
+	Rows.SetNum(1); Rows[0]->TodayGold = 0;
+	Panel->Present(Rows, FFFacilityRevenueRanking::Rank(Rows,false),true,Rows[0]->FacilityId);
+	TestTrue(TEXT("One zero-income row at 720p"),Draw(1280,720,TEXT("RevenueRankingFirstRevenue720.png")));
+	TestTrue(TEXT("One zero-income row at 1080p"),Draw(1920,1080,TEXT("RevenueRankingFirstRevenue1080.png")));
+	Rows.Reset(); Panel->Present(Rows,0,true,FGuid());
+	TestTrue(TEXT("Empty ranking shrinks to its empty-state content"),Draw(1280,720,TEXT("RevenueRankingEmpty720.png")));
 	Panel->ReleaseSlateResources(true);
 	return true;
 }

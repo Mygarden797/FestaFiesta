@@ -42,8 +42,8 @@ public:
 	}
 
 	/**
-	 * 식을 스냅샷만으로 재현한다. Queue 인스턴스 없이도 계산할 수 있어야
-	 * 다른 스레드에서 스냅샷을 읽는 경로가 열린다.
+	 * 코어가 현재 팀별 진행 시간으로 계산한 이용 시작 대기를 스냅샷에서 읽는다.
+	 * IncomingMemberCount는 호환용이며 한 팀의 인원수로 대기를 늘리지 않는다.
 	 * ServiceRate 가 0이면 영원히 안 빠지는 줄이므로 큰 값을 돌려준다.
 	 */
 	static float ComputeExpectedWaitSeconds(const FFF_QueueState& State, int32 IncomingMemberCount);
