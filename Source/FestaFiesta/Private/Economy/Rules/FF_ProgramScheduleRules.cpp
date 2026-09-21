@@ -19,7 +19,6 @@ EFF_ProgramPurchaseResult FFF_ProgramScheduleRules::EvaluatePurchase(
 	const FName ProgramId,
 	const TArray<FName>& ScheduledToday,
 	const int32 CurrentGold,
-	const int32 AvailableStaffCount,
 	FFF_ProgramCard& OutCard)
 {
 	const FFF_ProgramCard* Card = FindCard(Catalog, ProgramId);
@@ -39,31 +38,12 @@ EFF_ProgramPurchaseResult FFF_ProgramScheduleRules::EvaluatePurchase(
 		return EFF_ProgramPurchaseResult::AlreadyScheduled;
 	}
 
-	if (AvailableStaffCount < Card->RequiredStaff)
-	{
-		return EFF_ProgramPurchaseResult::NotEnoughStaff;
-	}
-
 	if (CurrentGold < Card->CostGold)
 	{
 		return EFF_ProgramPurchaseResult::InsufficientGold;
 	}
 
 	return EFF_ProgramPurchaseResult::Success;
-}
-
-int32 FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(
-	const TArray<FFF_ProgramCard>& Catalog, const TArray<FName>& ScheduledToday)
-{
-	int32 Total = 0;
-	for (const FName ProgramId : ScheduledToday)
-	{
-		if (const FFF_ProgramCard* Card = FindCard(Catalog, ProgramId))
-		{
-			Total += Card->RequiredStaff;
-		}
-	}
-	return Total;
 }
 
 int32 FFF_ProgramScheduleRules::CalcProgramRevenue(

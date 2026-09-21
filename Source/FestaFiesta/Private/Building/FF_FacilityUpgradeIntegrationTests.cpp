@@ -131,7 +131,6 @@ namespace FFFacilityUpgradeIntegrationTest
 			// These isolated quotes exercise legacy prices, independent of production balance edits.
 			Definition->FacilityRevenueTable.Reset();
 			Definition->InitialGold = Gold;
-			Definition->DailyVenueRentGold = 0;
 			Progression->StartFestival(Definition);
 			Queues->SetPaused(true);
 

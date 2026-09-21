@@ -25,7 +25,7 @@ enum class EFF_LiveStaffIdleState : uint8
 	/** 전원이 어딘가에 묶여 있다. */
 	AllBusy		UMETA(DisplayName = "전원 배치"),
 
-	/** 놀고 있는 인원이 있다. 임금은 나가는데 쓰이지 않는다. */
+	/** 남는 인원이 있다. 사건이 더 터져도 받아낼 여력이 있다는 뜻이다. */
 	HasIdle		UMETA(DisplayName = "남는 인원 있음"),
 
 	/**
@@ -52,9 +52,9 @@ struct FESTAFIESTA_API FFF_LiveStaffSummary
 	int32 Base = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
-	int32 Temporary = INDEX_NONE;
+	int32 Hired = INDEX_NONE;
 
-	/** 프로그램에 묶인 인원. 모르면 `INDEX_NONE`. */
+	/** 사건 대응에 배치된 인원. 모르면 `INDEX_NONE`. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Live")
 	int32 Assigned = INDEX_NONE;
 
@@ -81,21 +81,23 @@ struct FESTAFIESTA_API FFF_LiveStaffRules
 	 * `0명` 이라는 **틀린 사실**을 말한다.
 	 */
 	static FFF_LiveStaffSummary BuildSummary(
-		int32 TotalStaff, int32 BaseStaff, int32 TemporaryStaff, int32 AssignedStaff);
+		int32 TotalStaff, int32 BaseStaff, int32 HiredStaff, int32 AssignedStaff);
 };
 
 /**
  * 라이브 `스태프` 패널.
  *
  * === 🔴 읽기 전용이다 ===
- * 알바 고용은 **셋업·개장 준비 전용**이고 하루짜리다. 라이브 중에 늘릴 수 있게 하면
+ * 인원 고용은 **셋업·개장 준비 전용**이고 축제 끝까지 남는다. 라이브 중에 늘릴 수 있게 하면
  * "부족하면 그때 사면 된다" 가 되어 준비 단계의 결정이 의미를 잃는다.
  * 그래서 여기에는 명령 버튼이 없고, **대신 언제 늘릴 수 있는지 적는다** —
  * 못 하는 것을 흐려 놓기만 하면 왜 못 하는지 알 수 없다 (AT-011 과 같은 이유).
  *
  * === 그럼 왜 필요한가 ===
- * **놀고 있는 인원**을 보여주는 것이 이 패널의 값어치다. 임금은 인원 수대로 나가는데
- * 프로그램에 안 묶인 인원은 아무것도 하지 않는다. 그 낭비는 다른 어느 화면에도 안 뜬다.
+ * **사건에 대응 중인 인원과 남는 인원**을 보여주는 것이 이 패널의 값어치다.
+ * 사건이 몰릴 때 사람이 모자란지가 여기서만 보인다.
+ *
+ * [주의] 유료 프로그램은 인원을 쓰지 않는다. 배치는 사건 대응 전용이다.
  *
  * === 없는 것 ===
  * 시설별 배치·개인 상태(피로도·위치)는 소유자 API 가 없다. 화면에 그 사실을 적는다.
@@ -116,16 +118,13 @@ protected:
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
 
-	UFUNCTION()
-	void HandleScheduledProgramsChanged();
-
 protected:
 	// --- 요약 3칸 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UTextBlock> Text_TotalStaff;
 
-	/** `기본 6 · 알바 1` 같은 내역. 전체 숫자만으로는 내일 몇 명이 남는지 알 수 없다. */
+	/** `기본 6 · 고용 1` 같은 내역. 전체 숫자만으로는 내일 몇 명이 남는지 알 수 없다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UTextBlock> Text_StaffBreakdown;
 
@@ -139,9 +138,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UTextBlock> Text_IdleNote;
 
-	// --- 오늘 편성 ---
+	// --- 사건 대응 ---
 
-	/** 프로그램 줄이 쌓이는 곳. 비면 통째로 숨긴다. */
+	/** 대응 중인 사건 줄이 쌓이는 곳. 비면 통째로 숨긴다. 사건 시스템이 오면 채워진다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UVerticalBox> Box_Assignments;
 
@@ -150,6 +149,11 @@ protected:
 
 	// --- 비용과 안내 ---
 
+	/**
+	 * 1명당 고용비. 1회 구매라 하루치가 아니다.
+	 * [주의] 위젯 이름이 `DailyWage` 인 것은 일당 알바 시절의 잔재다. 바꾸려면 WBP 를
+	 *        다시 구워야 해서 이름만 남겨 뒀다 — 뜻은 이 주석이 가진다.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UTextBlock> Text_DailyWage;
 
@@ -161,7 +165,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Staff")
 	TObjectPtr<UTextBlock> Text_MissingNote;
 
-	/** 편성 한 줄을 만드는 데 쓴다. 없으면 목록을 만들지 않는다. */
+	/** 대응 중인 사건 한 줄을 만드는 데 쓴다. 없으면 목록을 만들지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Live|Staff")
 	TSubclassOf<UUserWidget> AssignmentRowClass;
 

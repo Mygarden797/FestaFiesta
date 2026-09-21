@@ -14,7 +14,7 @@ class UTextBlock;
  * 마감·리포트의 `리포트` 패널 — 하루 성적표.
  *
  * === 무엇을 보여주나 ===
- *   돈    오늘 매출 · 전체 매출 · 보유 금화 · 미납
+ *   돈    오늘 매출 · 전체 매출 · 보유 금화
  *   평가  관객 만족도 · 평가 점수 · 안전
  *   운영  인력 · 오늘 편성한 프로그램 수
  *
@@ -61,10 +61,6 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
 	TObjectPtr<UTextBlock> Text_Gold;
-
-	/** 미납은 0 이면 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Report")
-	TObjectPtr<UTextBlock> Text_Arrears;
 
 	// --- 평가 ---
 

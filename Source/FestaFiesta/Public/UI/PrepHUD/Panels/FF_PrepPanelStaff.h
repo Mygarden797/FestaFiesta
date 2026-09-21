@@ -12,12 +12,12 @@ class UWidget;
 class UFF_FestivalViewModelSubsystem;
 
 /**
- * 알바를 더 고용할 수 없는 이유.
+ * 인원을 더 고용할 수 없는 이유.
  *
  * !! 하나로 합치지 않는다 !!
- * `상한을 다 썼다` 와 `돈이 없다` 는 플레이어가 할 행동이 완전히 다르다 — 앞은 내일까지
- * 기다려야 하고 뒤는 돈을 벌거나 다른 지출을 줄여야 한다. 버튼을 흐리게만 하면 둘을 구분할
- * 수 없다 (AT-011).
+ * `상한을 다 썼다` 와 `돈이 없다` 는 플레이어가 할 행동이 완전히 다르다 — 앞은 축제 총원
+ * 상한이라 이번 축제에서는 무엇을 해도 안 되고, 뒤는 돈을 벌거나 다른 지출을 줄이면 된다.
+ * 버튼을 흐리게만 하면 둘을 구분할 수 없다 (AT-011).
  */
 UENUM(BlueprintType)
 enum class EFF_PrepHireBlockReason : uint8
@@ -28,10 +28,10 @@ enum class EFF_PrepHireBlockReason : uint8
 	/** 아직 값을 못 읽었다. 축제가 시작되기 전이면 정상이다. */
 	Unknown			UMETA(DisplayName = "모름"),
 
-	/** 오늘 상한을 다 썼다. 돈이 있어도 안 된다. */
-	CapReached		UMETA(DisplayName = "오늘 상한 도달"),
+	/** 축제 총원 상한을 다 썼다. 돈이 있어도 안 된다. */
+	CapReached		UMETA(DisplayName = "총원 상한 도달"),
 
-	/** 상한은 남았지만 임금을 낼 잔액이 없다. */
+	/** 상한은 남았지만 고용비를 낼 잔액이 없다. */
 	NotEnoughGold	UMETA(DisplayName = "잔액 부족")
 };
 
@@ -51,9 +51,9 @@ struct FESTAFIESTA_API FFF_PrepHireQuote
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 SelectedCount = 0;
 
-	/** `SelectedCount` 명의 하루치 총 임금. 모르면 `INDEX_NONE`. */
+	/** `SelectedCount` 명의 총 고용비. 모르면 `INDEX_NONE`. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
-	int32 WageTotal = INDEX_NONE;
+	int32 HireCostTotal = INDEX_NONE;
 
 	/** 고용 후 잔액. 모르면 `INDEX_NONE`. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
@@ -74,7 +74,7 @@ struct FESTAFIESTA_API FFF_PrepHireQuote
  * 여기 있으면 자동화 테스트가 못으로 박는다. U4 의 `FFF_PrepHudRules` 와 같은 이유다.
  *
  * !! 여기서 고용 허용 여부를 최종 판정하지 않는다 !!
- * 화면 표시용 계산이고, 실제 허용은 `UFF_FestivalProgressionSubsystem::TryHireTemporaryStaff`
+ * 화면 표시용 계산이고, 실제 허용은 `UFF_FestivalProgressionSubsystem::TryHireStaff`
  * 가 정한다. 두 곳에서 판정하면 규칙이 갈라진다 (UI 규칙 2).
  */
 struct FESTAFIESTA_API FFF_PrepStaffRules
@@ -85,8 +85,8 @@ struct FESTAFIESTA_API FFF_PrepStaffRules
 	 * ★ **상한을 잔액보다 먼저 본다.** 상한을 다 쓴 상태에서 `돈을 모으세요` 라고 하면
 	 *   돈을 모아도 안 되는 행동을 안내하게 된다.
 	 *
-	 * @param Affordable   `GetAffordableTemporaryStaffCount()` — 잔액·상한을 둘 다 반영한 값
-	 * @param RemainingCap `GetRemainingTemporaryStaffCap()` — 상한만 본 값
+	 * @param Affordable   `GetAffordableHireCount()` — 잔액·상한을 둘 다 반영한 값
+	 * @param RemainingCap `GetRemainingHireCap()` — 상한만 본 값
 	 *                     둘 중 하나라도 `INDEX_NONE` 이면 `Unknown`
 	 */
 	static EFF_PrepHireBlockReason ResolveBlockReason(int32 Affordable, int32 RemainingCap);
@@ -101,7 +101,7 @@ struct FESTAFIESTA_API FFF_PrepStaffRules
 		int32 DesiredCount,
 		int32 Affordable,
 		int32 RemainingCap,
-		int32 WagePerStaff,
+		int32 HireCostPerStaff,
 		int32 Gold);
 };
 
@@ -113,13 +113,13 @@ struct FESTAFIESTA_API FFF_PrepStaffRules
  * 배타 규칙이 실제로 도는지 여기서 처음 검증된다.
  *
  * 구성 —
- *   현재 인원 `6명 (기본 6 · 알바 0)` · 오늘 최대 `12명`
- *   알바 고용 `[-] 3 [+]` → `3명 × 150 = 450 Gold` · `고용 후 잔액 7,150`
- *   고정비 표 `장소 임대료 2,400 / 알바 임금 450 / (미납 있으면) 미납 2,400`
- *   ★ `알바는 하루짜리입니다. 매일 다시 고용해야 합니다.`
+ *   현재 인원 `6명 (기본 6 · 고용 0)` · 최대 `12명 (기본 6 + 고용 6)`
+ *   인원 고용 `[-] 3 [+]` → `3명 × 450 = 1,350 Gold` · `고용 후 잔액 8,650`
+ *   고용비 표 `1,350 (누계)` — "오늘" 이 아니라 축제 누계다
+ *   ★ `고용한 인원은 축제가 끝날 때까지 남습니다.`
  *
- * === ★ 하루짜리라는 것을 반드시 화면에 쓴다 ===
- * 안 쓰면 다음 날 인원이 줄어 있는 이유를 플레이어가 알 수 없다. 기본 팀만 무페이로 남는다.
+ * === ★ 영구 고용이라는 것을 반드시 화면에 쓴다 ===
+ * 안 쓰면 "내일 또 뽑아야 하나" 를 플레이어가 알 수 없다. 일찍 뽑을수록 오래 쓰는 것이 규칙이다.
  */
 UCLASS(Abstract, meta = (DisplayName = "FF Prep Panel - Staff"))
 class FESTAFIESTA_API UFF_PrepPanelStaff : public UFF_PrepPanelBase
@@ -156,28 +156,19 @@ protected:
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
 
-	/**
-	 * 가용 인원만 바뀐 경우 — 다시 그리기만 한다.
-	 *
-	 * !! `HandleStaffCountChanged` 를 재사용하면 안 된다 !! 그쪽은 "고용이 성공했다"로 보고
-	 * 스텝퍼 선택을 초기화한다. 다른 패널에서 프로그램을 편성했을 뿐인데 이 화면에서 고르던
-	 * 인원이 조용히 사라지면 안 된다.
-	 */
-	UFUNCTION()
-	void HandleAvailableStaffCountChanged(int32 NewValue);
-
-	UFUNCTION()
-	void HandleArrearsChanged(int32 NewValue);
-
 protected:
 	// --- 위젯 바인딩. 전부 Optional 이다 ---
 	// 목업의 일부만 만든 WBP 도 통과시킨다. 빠진 것은 조용히 넘기지 않고 로그로 알린다.
 
-	/** `6명 (기본 6 · 알바 0)`. */
+	/** `6명 (기본 6 · 고용 0)`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_CurrentStaff;
 
-	/** `오늘 최대 12명`. 상한을 모르면 숨긴다. */
+	/**
+	 * `최대 12명 (기본 6 + 고용 6)`. **기본 팀까지 더한 총원**이고 고용 상한만이 아니다.
+	 * 상한(6)만 쓰면 `최대 6명` 으로 읽혀 이미 있는 기본 팀이 화면에서 사라진다.
+	 * 모르면 숨긴다.
+	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_MaxStaff;
 
@@ -194,11 +185,11 @@ protected:
 
 	// --- 견적 ---
 
-	/** `3명 × 150 = 450 Gold`. */
+	/** `3명 × 450 = 1,350 Gold`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_WagePreview;
 
-	/** `고용 후 잔액 7,150`. */
+	/** `고용 후 잔액 8,650`. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_GoldAfterHire;
 
@@ -209,29 +200,20 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_HireBlockReason;
 
-	// --- 고정비 표 ---
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
-	TObjectPtr<UTextBlock> Text_RentCost;
+	// --- 고용비 표 ---
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_WageCost;
 
-	/** 미납이 0 이면 줄째 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
-	TObjectPtr<UTextBlock> Text_ArrearsCost;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
-	TObjectPtr<UWidget> Box_ArrearsRow;
-
-	/** 하루짜리라는 안내. 문구를 바꿀 수 있게 값으로 뺀다. */
+	/** 축제 끝까지 남는다는 안내. 문구를 바꿀 수 있게 값으로 뺀다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Staff")
 	TObjectPtr<UTextBlock> Text_DailyNotice;
 
 	// --- 설정 ---
 
 	/**
-	 * ★ 이 문구를 비우지 않는다. 안 쓰면 다음 날 인원이 줄어 있는 이유를 알 수 없다.
+	 * ★ 이 문구를 비우지 않는다. 안 쓰면 "내일 또 뽑아야 하나" 를 플레이어가 알 수 없고,
+	 * 일찍 뽑을수록 이득이라는 규칙이 화면에서 사라진다.
 	 * WBP 에 박지 않고 값으로 두는 이유는 현지화와 문구 수정 때문이다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Staff")

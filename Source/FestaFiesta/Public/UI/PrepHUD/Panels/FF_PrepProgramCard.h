@@ -48,11 +48,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_Cost;
 
-	/** `인원 1명`. 이 카드가 묶는 인원이다. */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
-	TObjectPtr<UTextBlock> Text_Staff;
 
-	/** 선택 시설 기준 `정원 12명 · 최대 360 Gold`. */
+	/** `정원 12명 · 확정 360`. 정원이 보장되므로 `예상` 이 아니다. */
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_Capacity;
 

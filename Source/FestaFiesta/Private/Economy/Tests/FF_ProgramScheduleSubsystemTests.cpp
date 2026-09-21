@@ -12,7 +12,7 @@
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 
 /**
- * 프로그램 편성이 Gold·인원·예약 슬롯을 한 트랜잭션으로 움직이는지 검증한다 (S8 2·3단계).
+ * 프로그램 편성이 Gold·예약 슬롯을 한 트랜잭션으로 움직이는지 검증한다 (S8 2·3단계).
  *
  * 판정 규칙은 FF_ProgramScheduleRulesTests.cpp 가, 배정 DP 는
  * FF_ProgramReservationSubsystemTests.cpp 가 갖는다. 여기는 **셋이 실제로 이어지는가**를 본다.
@@ -51,8 +51,6 @@ namespace FFF_ProgramScheduleSubsystemTestHelpers
 			Definition->FestivalId = TEXT("ProgramScheduleAutomationFestival");
 			Definition->InitialGold = InitialGold;
 			Definition->InitialStaffCount = BaseStaff;
-			// 임대료는 이 파일의 관심사가 아니다. 0 으로 두지 않으면 잔액 기대값에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			// 프로덕션은 Initialize 가 물린다. 여기서는 서브시스템 컬렉션이 없으므로 직접 준다.
 			Progression->SetProgramReservations(Reservations);
@@ -130,7 +128,7 @@ namespace FFF_ProgramScheduleSubsystemTestHelpers
 	};
 }
 
-// 편성하면 Gold 가 한 번 빠지고, 인원이 묶이고, **예약 슬롯이 생긴다.**
+// 편성하면 Gold 가 한 번 빠지고, **예약 슬롯이 생긴다.** 인원은 건드리지 않는다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramScheduleSub_SchedulingOpensReservation, "FestaFiesta.Economy.ProgramSchedule.SchedulingOpensReservation", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ProgramScheduleSub_SchedulingOpensReservation::RunTest(const FString& Parameters)
 {
@@ -142,18 +140,14 @@ bool FFF_ProgramScheduleSub_SchedulingOpensReservation::RunTest(const FString& P
 	FFF_ProgramCard Card;
 	if (!TestTrue(TEXT("공방 카드가 카탈로그에 있다"), Harness.FindCard(Workshop, Card))) return false;
 
-	TestEqual(TEXT("편성 전에는 전체 인원이 다 남아 있다"),
-		Harness.Progression->GetAvailableStaffCount(), BaseStaff);
-
 	TestEqual(TEXT("편성된다"), Harness.Schedule(Workshop),
 		EFF_ProgramPurchaseResult::Success);
 
 	TestEqual(TEXT("비용이 한 번 빠진다"),
 		Harness.Progression->GetGold(), 10000 - Card.CostGold);
-	TestEqual(TEXT("인원이 묶인다"),
-		Harness.Progression->GetStaffAssignedToPrograms(), Card.RequiredStaff);
-	TestEqual(TEXT("쓸 수 있는 인원이 그만큼 줄어든다"),
-		Harness.Progression->GetAvailableStaffCount(), BaseStaff - Card.RequiredStaff);
+	// ★ 프로그램은 인원을 쓰지 않는다. 편성해도 Staff 총원이 그대로여야 한다.
+	TestEqual(TEXT("편성해도 인원이 줄지 않는다"),
+		Harness.Progression->GetTotalStaffCount(), BaseStaff);
 	TestEqual(TEXT("원장에 프로그램 구매로 기록된다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::ProgramPurchase),
 		Card.CostGold);
@@ -193,8 +187,6 @@ bool FFF_ProgramScheduleSub_FailedScheduleChangesNothing::RunTest(const FString&
 	TestEqual(TEXT("잔액이 그대로다"), Harness.Progression->GetGold(), 100);
 	TestEqual(TEXT("편성 목록이 비어 있다"),
 		Harness.Progression->GetScheduledPrograms().Num(), 0);
-	TestEqual(TEXT("인원이 안 묶인다"),
-		Harness.Progression->GetAvailableStaffCount(), BaseStaff);
 	TestEqual(TEXT("원장에 지출이 안 남는다"),
 		Harness.Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::ProgramPurchase), 0);
 
@@ -231,9 +223,10 @@ bool FFF_ProgramScheduleSub_InvalidFacilityDoesNotSpend::RunTest(const FString& 
 	return true;
 }
 
-// 🔴 인원이 실제로 편성을 막는다 — 이 기능의 트레이드오프가 성립하는 지점이다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramScheduleSub_StaffLimitsHowManyProgramsRun, "FestaFiesta.Economy.ProgramSchedule.StaffLimitsHowManyProgramsRun", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_ProgramScheduleSub_StaffLimitsHowManyProgramsRun::RunTest(const FString& Parameters)
+// ★ 몇 개를 열든 인원은 그대로다. 편성을 막는 것은 잔액과 하루 중복뿐이다 —
+// 두 축(시설=버는 축, Staff=지키는 축)이 갈라져 있다는 사실을 소유자 쪽에서 고정한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramScheduleSub_SchedulingLeavesStaffUntouched, "FestaFiesta.Economy.ProgramSchedule.SchedulingLeavesStaffUntouched", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_ProgramScheduleSub_SchedulingLeavesStaffUntouched::RunTest(const FString& Parameters)
 {
 	using namespace FFF_ProgramScheduleSubsystemTestHelpers;
 
@@ -253,13 +246,9 @@ bool FFF_ProgramScheduleSub_StaffLimitsHowManyProgramsRun::RunTest(const FString
 	TestEqual(TEXT("요가도 편성된다"), Harness.Schedule(Yoga),
 		EFF_ProgramPurchaseResult::Success);
 
-	const int32 Held = WorkshopCard.RequiredStaff + YogaCard.RequiredStaff;
-	TestEqual(TEXT("둘이 인원을 합해서 묶는다"),
-		Harness.Progression->GetStaffAssignedToPrograms(), Held);
-
-	// 🔴 Event 대응에 쓸 수 있는 인원이 절반으로 줄었다. 이것이 편성의 대가다.
-	TestEqual(TEXT("쓸 수 있는 인원이 절반이 된다"),
-		Harness.Progression->GetAvailableStaffCount(), BaseStaff - Held);
+	// 둘을 열어도 Staff 는 한 명도 안 묶인다. 편성의 대가는 Gold 뿐이다.
+	TestEqual(TEXT("둘을 열어도 인원이 그대로다"),
+		Harness.Progression->GetTotalStaffCount(), BaseStaff);
 	TestEqual(TEXT("예약 슬롯이 둘이다"), Harness.Reservations->GetReservationIds().Num(), 2);
 
 	TestEqual(TEXT("같은 카드는 하루에 한 번만"), Harness.Schedule(Workshop),
@@ -317,10 +306,6 @@ bool FFF_ProgramScheduleSub_ScheduleAndSlotsClearAtDayBoundary::RunTest(const FS
 		Harness.Progression->GetScheduledPrograms().Num(), 0);
 	TestEqual(TEXT("예약 슬롯도 같이 지워진다"),
 		Harness.Reservations->GetReservationIds().Num(), 0);
-	TestEqual(TEXT("묶였던 인원이 풀린다"),
-		Harness.Progression->GetStaffAssignedToPrograms(), 0);
-	TestEqual(TEXT("전체 인원을 다시 쓸 수 있다"),
-		Harness.Progression->GetAvailableStaffCount(), BaseStaff);
 
 	// 어제 산 것이 오늘 또 막지 않는다 — 매일 다시 사는 것이 이 기능의 리듬이다.
 	TestEqual(TEXT("같은 카드를 오늘 다시 편성할 수 있다"), Harness.Schedule(Workshop),
@@ -347,9 +332,6 @@ bool FFF_ProgramScheduleSub_RestartClearsSchedule::RunTest(const FString& Parame
 		Harness.Progression->GetScheduledPrograms().Num(), 0);
 	TestEqual(TEXT("새 판에는 슬롯도 없다"),
 		Harness.Reservations->GetReservationIds().Num(), 0);
-	TestEqual(TEXT("인원도 다 돌아온다"),
-		Harness.Progression->GetAvailableStaffCount(), BaseStaff);
-
 	return true;
 }
 
@@ -371,7 +353,6 @@ bool FFF_ProgramScheduleSub_BeforeFestivalStartsNothingWorks::RunTest(const FStr
 	TestEqual(TEXT("편성 시도도 축제 미시작이다"),
 		Progression->TryScheduleProgram(Workshop, FGuid::NewGuid()),
 		EFF_ProgramPurchaseResult::FestivalNotStarted);
-	TestEqual(TEXT("묶인 인원이 0 이다"), Progression->GetStaffAssignedToPrograms(), 0);
 	TestEqual(TEXT("시작 정산이 0 이다"), Progression->SettleStartedPrograms(240.f), 0);
 	TestEqual(TEXT("안전망 정산도 0 이다"), Progression->SettleScheduledPrograms(), 0);
 

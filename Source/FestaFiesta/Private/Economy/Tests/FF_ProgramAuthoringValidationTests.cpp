@@ -59,7 +59,6 @@ bool FFF_ProgramAuthoringValidation_ReportsAllErrors::RunTest(const FString& Par
 	Catalog[1].ProgramId = Catalog[0].ProgramId;
 	Catalog[1].DisplayName = FText::FromString(TEXT("   "));
 	Catalog[1].CostGold = 0;
-	Catalog[1].RequiredStaff = 0;
 	Catalog[1].Capacity = 0;
 	Catalog[1].FeePerPerson = -1;
 	Catalog[1].StartMinutes = std::numeric_limits<float>::quiet_NaN();

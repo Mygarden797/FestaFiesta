@@ -475,7 +475,6 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	CostTable->AddRow(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"), CostRow);
 	Definition->FestivalId = TEXT("FacilityInfoProgramReadModelFestival");
 	Definition->FacilityCostTable = CostTable;
-	Definition->DailyVenueRentGold = 0;
 	Progression->SetProgramReservations(Reservations);
 	Progression->StartFestival(Definition);
 
@@ -1978,7 +1977,7 @@ bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("구매 완료 상태"), PickerTree->FindWidget(TEXT("Panel_PurchaseComplete")));
 	TestNotNull(TEXT("시설 정보 복귀 버튼"), Cast<UButton>(PickerTree->FindWidget(TEXT("Button_ReturnToFacility"))));
 	TestNotNull(TEXT("짧은 뷰포트 구매 내용 스크롤"), Cast<UScrollBox>(PickerTree->FindWidget(TEXT("ScrollBox_PurchaseDetails"))));
-	for (const FName Name : {FName(TEXT("Text_PreviewTime")), FName(TEXT("Text_RequiredStaff")),
+	for (const FName Name : {FName(TEXT("Text_PreviewTime")),
 		FName(TEXT("Text_Capacity")), FName(TEXT("Text_TicketFee")), FName(TEXT("Text_MaxRevenue")),
 		FName(TEXT("Text_PurchaseCost")), FName(TEXT("Text_ReceiptProgramName")), FName(TEXT("Text_ReceiptResources"))})
 	{
@@ -2015,13 +2014,11 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	Data.FacilityInstanceId = FGuid::NewGuid();
 	Data.FacilityName = FText::FromString(TEXT("체험 공방"));
 	Data.AvailableGold = 7600;
-	Data.AvailableStaff = 6;
 	Data.Cards.Reserve(2);
 	FFF_FacilityPaidProgramCardViewData& Program = Data.Cards.AddDefaulted_GetRef();
 	Program.ProgramId = TEXT("Program_SandArtWorkshop");
 	Program.DisplayName = FText::FromString(TEXT("바다향기 공방"));
 	Program.CostGold = 200;
-	Program.RequiredStaff = 1;
 	Program.CapacityPeople = 12;
 	Program.TicketFeeGold = 30;
 	Program.MaxRevenueGold = 360;
@@ -2098,7 +2095,7 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("A refresh cannot enable duplicate confirmation while purchase is pending"), Confirm->GetIsEnabled());
 		Confirm->OnClicked.Broadcast();
 		TestEqual(TEXT("결과 대기 중 중복 구매 요청 차단"), PurchaseRequests, 1);
-		Picker->ShowPurchaseComplete(Program.ProgramId, 7400, 5);
+		Picker->ShowPurchaseComplete(Program.ProgramId, 7400);
 		TestEqual(TEXT("권위 명령 성공 후 완료 패널 표시"), Complete->GetVisibility(), ESlateVisibility::Visible);
 		TestEqual(TEXT("완료 상태는 구매 footer를 숨긴다"),
 			Picker->GetWidgetFromName(TEXT("Border_Footer"))->GetVisibility(), ESlateVisibility::Collapsed);
@@ -2130,7 +2127,6 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("호환 프로그램 한 개면 상세를 자동 선택한다"), Confirm->GetIsEnabled());
 	TestEqual(TEXT("단일 프로그램 자동 선택은 결제하지 않는다"), PurchaseRequests, 1);
 	Data.AvailableGold = 100;
-	Data.AvailableStaff = 0;
 	Data.Cards[0].bCanSchedule = false;
 	Picker->ApplyViewData(Data);
 	UCommonTextBlock* Resources = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_ResourcePreview")));

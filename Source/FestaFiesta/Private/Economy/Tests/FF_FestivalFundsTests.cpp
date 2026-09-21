@@ -185,41 +185,25 @@ bool FFF_FestivalFunds_RefundAddsGold::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 의무 비용(임대료)은 **거부하지 않고 있는 만큼만** 가져간다 — TrySpend 와 규칙이 반대다 (S6).
-// 두 규칙이 한 구조체에 공존하는 것이 의도다: 거부만 있으면 돈이 없을 때 임대료가 공짜가 되고,
-// 클램프만 있으면 "돈이 없는데 물건은 샀다"가 생긴다. economy_spec.md §3.7.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalFunds_MandatoryCostClampsInsteadOfRejecting, "FestaFiesta.Economy.FestivalFunds.MandatoryCostClampsInsteadOfRejecting", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FestivalFunds_MandatoryCostClampsInsteadOfRejecting::RunTest(const FString& Parameters)
+// 거절할 수 없는 지출이 없어진 뒤로 잔액을 줄이는 경로는 TrySpend 하나뿐이다.
+// 모자라면 거부하고 상태를 그대로 둔다 — 화면에서는 버튼이 막힌다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FestivalFunds_SpendIsTheOnlyWayGoldLeaves, "FestaFiesta.Economy.FestivalFunds.SpendIsTheOnlyWayGoldLeaves", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FestivalFunds_SpendIsTheOnlyWayGoldLeaves::RunTest(const FString& Parameters)
 {
-	// 잔액이 넉넉하면 전액이 빠지고 그 금액이 반환된다.
-	FFF_FestivalFunds Funds = MakeFundsWithGold(3000);
-	TestEqual(TEXT("전액 낼 수 있으면 청구액이 그대로 지불된다"), Funds.PayMandatoryCost(2400), 2400);
-	TestEqual(TEXT("잔액이 그만큼 줄어든다"), Funds.GetGold(), 600);
+	FFF_FestivalFunds Funds = MakeFundsWithGold(1000);
 
-	// 잔액이 모자라면 있는 만큼만. **거부(0)가 아니다** — 이 줄이 TrySpend 와 구분한다.
-	TestEqual(TEXT("모자라면 남은 잔액만큼만 지불한다"), Funds.PayMandatoryCost(2400), 600);
-	TestEqual(TEXT("잔액은 0 이 되고 음수가 되지 않는다"), Funds.GetGold(), 0);
+	TestFalse(TEXT("잔액보다 1 많으면 거부한다"), Funds.TrySpend(1001));
+	TestEqual(TEXT("거부는 잔액을 바꾸지 않는다"), Funds.GetGold(), 1000);
 
-	// 잔액 0 에서 청구해도 음수로 내려가지 않는다. 부족분 전액이 호출부의 미납이 된다.
-	TestEqual(TEXT("잔액 0 에서는 0 만 지불된다"), Funds.PayMandatoryCost(2400), 0);
+	TestTrue(TEXT("전액은 지출할 수 있다"), Funds.TrySpend(1000));
+	TestEqual(TEXT("잔액이 0 이 된다"), Funds.GetGold(), 0);
+
+	// 0 에서도 음수로 내려가지 않는다. 더 살 수 없을 뿐이다.
+	TestFalse(TEXT("잔액 0 에서는 아무것도 못 산다"), Funds.TrySpend(1));
 	TestEqual(TEXT("잔액이 음수가 되지 않는다"), Funds.GetGold(), 0);
 
-	// 같은 구조체의 TrySpend 는 여전히 거부해야 한다 — 두 규칙이 섞이지 않았음을 확인한다.
-	FFF_FestivalFunds Both = MakeFundsWithGold(1000);
-	TestFalse(TEXT("TrySpend 는 여전히 거부한다"), Both.TrySpend(1001));
-	TestEqual(TEXT("거부는 잔액을 바꾸지 않는다"), Both.GetGold(), 1000);
-	TestEqual(TEXT("같은 금액도 PayMandatoryCost 는 클램프한다"), Both.PayMandatoryCost(1001), 1000);
-	TestEqual(TEXT("클램프는 잔액을 0 으로 만든다"), Both.GetGold(), 0);
-
-	// 청구 0 은 상태를 바꾸지 않는다 (알바 0명인 날의 임금이 0 이다).
-	FFF_FestivalFunds Other = MakeFundsWithGold(100);
-	TestEqual(TEXT("청구 0 은 0 을 지불한다"), Other.PayMandatoryCost(0), 0);
-	TestEqual(TEXT("청구 0 은 잔액을 안 바꾼다"), Other.GetGold(), 100);
-
-	// 음수 청구로 돈을 벌 수 없다.
-	AddExpectedError(TEXT(""), EAutomationExpectedErrorFlags::Contains, 0);
-	TestEqual(TEXT("음수 청구는 0 을 지불한다"), Other.PayMandatoryCost(-500), 0);
-	TestEqual(TEXT("음수 청구로 잔액이 늘지 않는다"), Other.GetGold(), 100);
+	// 비용 0 인 명령은 통과한다.
+	TestTrue(TEXT("비용 0 은 잔액 0 에서도 통과한다"), Funds.TrySpend(0));
 
 	return true;
 }

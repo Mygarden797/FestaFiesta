@@ -189,7 +189,6 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Festival->FestivalId = TEXT("BuildFacilityInspectionAutomation");
     Festival->FacilityCostTable = Costs;
     Festival->InitialGold = 10000;
-    Festival->DailyVenueRentGold = 0;
     Progression->StartFestival(Festival);
 
     const FName ZoneId(TEXT("GZ_DadaPocha"));

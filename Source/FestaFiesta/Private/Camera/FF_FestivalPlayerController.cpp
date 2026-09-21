@@ -2,6 +2,8 @@
 
 #include "Camera/FF_FestivalPlayerController.h"
 
+#include "Character/FF_FestivalCharacter.h"
+
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 #include "Camera/FF_FinaleViewpoint.h"
@@ -45,6 +47,9 @@ AFF_FestivalPlayerController::AFF_FestivalPlayerController()
 void AFF_FestivalPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 시작은 관찰 카메라다. 생성자에서 커서만 켜두면 입력 모드가 안 걸린다.
+	ApplyViewInputMode(ViewMode);
 
 	// 시작 시점의 빙의 대상이 관찰 카메라다. 이후 캐릭터로 빙의가 옮겨가도 이 참조는 유지된다.
 	OverviewPawn = ResolveOverviewPawn();
@@ -370,6 +375,7 @@ bool AFF_FestivalPlayerController::SwitchToActorView(AActor* TargetActor, float 
 	SetViewTargetWithBlend(TargetActor, FMath::Max(0.f, BlendTime));
 
 	ViewMode = EFF_CameraViewMode::Actor;
+	ApplyViewInputMode(ViewMode);
 	ViewedActor = TargetActor;
 	LastViewedActor = TargetActor;
 
@@ -394,8 +400,60 @@ bool AFF_FestivalPlayerController::PossessCharacter(APawn* TargetCharacter, floa
 	ViewedActor = TargetCharacter;
 	LastViewedActor = TargetCharacter;
 
+	ApplyViewInputMode(ViewMode);
+
 	OnViewModeChanged.Broadcast(ViewMode, TargetCharacter);
 	return true;
+}
+
+void AFF_FestivalPlayerController::RefreshViewInputMode()
+{
+	ApplyViewInputMode(ViewMode);
+}
+
+void AFF_FestivalPlayerController::ApplyViewInputMode(const EFF_CameraViewMode Mode)
+{
+	if (Mode == EFF_CameraViewMode::Character)
+	{
+		// AController 에 이미 Character 멤버가 있어 다른 이름을 쓴다.
+		const AFF_FestivalCharacter* Possessed = Cast<AFF_FestivalCharacter>(GetPawn());
+		const bool bShiftLock = Possessed && Possessed->IsShiftLockEnabled();
+
+		if (bShiftLock)
+		{
+			/* 커서를 치우고 마우스를 화면 안에 가둔다.
+
+			   가두지 않으면 마우스가 창 밖으로 나가고, 그 순간부터 시점이 안 돌아간다.
+			   시야 고정은 계속 돌릴 때 쓰는 기능이라 갇혀 있는 편이 맞다.
+			*/
+			FInputModeGameOnly InputMode;
+			SetInputMode(InputMode);
+			SetShowMouseCursor(false);
+			return;
+		}
+
+		// 평소에는 커서를 둔다. 클릭해서 무언가 고를 수 있어야 한다.
+		//
+		// 대신 커서 아래 위젯이 마우스 움직임을 먼저 가져가므로,
+		// 시점 회전은 마우스 버튼을 누른 채로만 되게 입력에서 묶어야 한다.
+		FInputModeGameAndUI CharacterInputMode;
+		CharacterInputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		CharacterInputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(CharacterInputMode);
+		SetShowMouseCursor(true);
+		return;
+	}
+
+	/* 관찰과 연출은 커서를 쓴다.
+
+	   GameAndUI 로 두고 캡처를 걸지 않는 이유는, 화면 가장자리로 마우스를 옮겨
+	   카메라를 미는 조작이 있기 때문이다. 캡처를 걸면 커서가 화면 안에 갇힌다.
+	*/
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	SetShowMouseCursor(true);
 }
 
 void AFF_FestivalPlayerController::SetVisitorCharacter(APawn* InCharacter)
@@ -427,6 +485,7 @@ void AFF_FestivalPlayerController::SwitchToOverview(float BlendTime)
 	SetViewTargetWithBlend(CameraPawn, FMath::Max(0.f, BlendTime));
 
 	ViewMode = EFF_CameraViewMode::Overview;
+	ApplyViewInputMode(ViewMode);
 	ViewedActor = nullptr;
 
 	OnViewModeChanged.Broadcast(ViewMode, nullptr);

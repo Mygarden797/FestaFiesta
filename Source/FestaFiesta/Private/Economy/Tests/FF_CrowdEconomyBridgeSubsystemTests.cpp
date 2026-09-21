@@ -82,8 +82,6 @@ namespace FFF_CrowdEconomyBridgeTestHelpers
 			Definition->FacilityCostTable = CostTable;
 			Definition->FestivalId = TEXT("CrowdEconomyAutomationFestival");
 			Definition->AdmissionFeeGold = AdmissionFeeGold;
-			// 이 테스트는 입장료만 본다. 임대료가 걷히면 잔액 기대값에 섞인다.
-			Definition->DailyVenueRentGold = 0;
 
 			Progression->StartFestival(Definition);
 			return true;
@@ -251,7 +249,6 @@ bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Pa
 	Definition->FacilityCostTable = MakeMinimalFacilityCostTable(GameInstance);
 	Definition->FestivalId = TEXT("CrowdEconomyZeroCountFestival");
 	Definition->AdmissionFeeGold = 5;
-	Definition->DailyVenueRentGold = 0;
 	Progression->StartFestival(Definition);
 
 	const int32 RevenueBefore = Progression->GetTodayRevenue();
@@ -303,7 +300,6 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 	Definition->FacilityCostTable = MakeMinimalFacilityCostTable(GameInstance);
 	Definition->FestivalId = TEXT("CrowdEconomyExpectedVisitorsFestival");
 	Definition->BaseDailyVisitors = 500;
-	Definition->DailyVenueRentGold = 0;
 	Progression->StartFestival(Definition);
 
 	TestEqual(TEXT("홍보를 안 사도 BaseDailyVisitors 로 채워진다"),

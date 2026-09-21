@@ -158,11 +158,6 @@ void UFF_PrepHudBar::NativePreConstruct()
 		Text_DayStage->SetColorAndOpacity(FSlateColor(Palette->InGame.White));
 	}
 
-	if (Text_Arrears)
-	{
-		// 미납은 경고다. **색만으로 알리지 않는다** (AT-011) — 문구에 `미납` 을 함께 넣는다.
-		Text_Arrears->SetColorAndOpacity(FSlateColor(Palette->InGame.Danger));
-	}
 	if (Text_CtaReason)
 	{
 		Text_CtaReason->SetColorAndOpacity(FSlateColor(Palette->InGame.InkMuted));
@@ -282,7 +277,6 @@ void UFF_PrepHudBar::BindSources()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleGoldChanged);
-		CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
 
@@ -290,13 +284,11 @@ void UFF_PrepHudBar::BindSources()
 		// 남은 시간이 실제로 줄어들려면 이 구독이 필요하다.
 		CachedViewModel->OnRemainingSecondsChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
 
-		// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이것까지 받아야 상태 행이 따라간다.
-		CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
 	else
 	{
 		UE_LOG(LogFestaFiestaUI, Error,
-			TEXT("[%s] ViewModel 을 찾지 못했다. 금화·미납·스태프·단계가 전부 비어 보인다."),
+			TEXT("[%s] ViewModel 을 찾지 못했다. 금화·스태프·단계가 전부 비어 보인다."),
 			*GetName());
 	}
 
@@ -334,11 +326,9 @@ void UFF_PrepHudBar::UnbindSources()
 	if (CachedViewModel)
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleGoldChanged);
-		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleArrearsChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStageViewChanged);
 		CachedViewModel->OnRemainingSecondsChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleRemainingSecondsChanged);
-		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepHudBar::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 
@@ -968,7 +958,6 @@ void UFF_PrepHudBar::RefreshStatusRow()
 	}
 
 	HandleGoldChanged(ViewModel->GetGold());
-	HandleArrearsChanged(ViewModel->GetArrears());
 	HandleStaffCountChanged(ViewModel->GetTotalStaffCount());
 	RefreshDayStageText(ViewModel->GetCurrentStage(), ViewModel->GetCurrentDay());
 
@@ -1177,44 +1166,22 @@ void UFF_PrepHudBar::HandleGoldChanged(int32 NewValue)
 	}
 }
 
-void UFF_PrepHudBar::HandleArrearsChanged(int32 NewValue)
-{
-	// 0 이면 칸을 숨긴다. `미납 0` 을 띄우면 없는 문제를 있는 것처럼 만든다.
-	SetGroupTextOrHide(Box_Arrears, Text_Arrears,
-		(NewValue > 0)
-			? FText::Format(LOCTEXT("PrepStatus_Arrears", "미납 {0}"), FormatGold(NewValue))
-			: FText::GetEmpty());
-}
-
 void UFF_PrepHudBar::HandleStaffCountChanged(int32 NewValue)
 {
-	// !! 인자를 쓰지 않는다 !! 이 핸들러는 전체 인원과 가용 인원 **두 델리게이트**가 함께 부른다.
-	// 인자를 믿으면 가용 인원이 울렸을 때 그 숫자가 전체 자리에 들어간다.
+	// !! 인자를 쓰지 않는다 !! 내역까지 다시 읽어야 한 프레임 어긋나지 않는다.
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
 	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
-	const int32 Temporary = ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE;
-	const int32 Available = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
+	const int32 Hired = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 
 	FText StaffText;
 	if (Total >= 0)
 	{
-		// 바는 폭이 좁아 내역까지 다 넣으면 잘린다. 여기서는 **Event 에 쓸 수 있는 인원**을
-		// 우선한다 — 기본·알바 내역은 인력 패널에서 본다.
-		if (Available >= 0)
-		{
-			StaffText = FText::Format(
-				LOCTEXT("PrepStatus_StaffAvailable", "{0}명 중 {1}명 사용 가능"),
-				FText::AsNumber(Total), FText::AsNumber(Available));
-		}
-		else
-		{
-			StaffText = (Base >= 0 && Temporary >= 0)
-				? FText::Format(
-					LOCTEXT("PrepStatus_StaffDetailed", "{0}명 (기본 {1} · 알바 {2})"),
-					FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary))
-				: FText::Format(LOCTEXT("PrepStatus_Staff", "{0}명"), FText::AsNumber(Total));
-		}
+		StaffText = (Base >= 0 && Hired >= 0)
+			? FText::Format(
+				LOCTEXT("PrepStatus_StaffDetailed", "{0}명 (기본 {1} · 고용 {2})"),
+				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Hired))
+			: FText::Format(LOCTEXT("PrepStatus_Staff", "{0}명"), FText::AsNumber(Total));
 	}
 
 	SetGroupTextOrHide(Box_Staff, Text_Staff, StaffText);

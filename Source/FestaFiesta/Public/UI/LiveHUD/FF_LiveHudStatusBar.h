@@ -23,7 +23,7 @@ class UFF_FestivalViewModelSubsystem;
  * 근거: docs/ui/ui-tech-decision.md 7절
  *
  * === 아직 소유자가 없는 값 3개 ===
- * 관객 수 · 스태프 가용 인원 · 다음 프로그램 이름/시각은 읽을 창구가 없다 (2026-08-12).
+ * 관객 수 · 다음 프로그램 이름/시각은 읽을 창구가 없다.
  * **비어 있으면 그 칸을 숨긴다.** 0이나 `-`를 넣으면 "관객이 0명"이라는 틀린 사실이 된다.
  * 요청은 `UI_API.md`에 적어 뒀다.
  */
@@ -86,7 +86,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_VisitorCount;
 
-	/** 스태프 `가용/전체`. **가용 인원 소유자 없음** — 없으면 숨긴다. */
+	/** 스태프 전체 인원. 사건 대응 배치는 소유자가 아직 없어 `가용/전체` 로 못 쓴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI")
 	TObjectPtr<UTextBlock> Text_Staff;
 
