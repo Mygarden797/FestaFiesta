@@ -83,7 +83,7 @@ bool FFFacilityWorldBadgeLayout::Place(const FVector2D& Anchor, const FVector2D&
 
 FSoftClassPath UFF_FacilityProgramMarkerSubsystem::GetDefaultWidgetClassPath()
 {
-	return FSoftClassPath(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge.WBP_FF_FacilityWorldBadge_C"));
+	return FSoftClassPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge.WBP_FF_FacilityWorldBadge_C"));
 }
 
 void UFF_FacilityProgramMarkerSubsystem::Initialize(FSubsystemCollectionBase& Collection)

@@ -403,7 +403,7 @@ bool Apply(const TCHAR* Path, UClass* Parent, bool (*Edit)(FEdit&))
 
 void MigrateWorldBadgeAmountFit()
 {
-	auto* BP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"));
+	auto* BP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"));
 	if (!BP || !BP->WidgetTree || !BP->GeneratedClass ||
 		!BP->GeneratedClass->IsChildOf(UFF_FacilityProgramMarkerWidget::StaticClass())) return;
 	FEdit Context{*BP, *BP->WidgetTree};
@@ -417,14 +417,14 @@ void MigrateWorldBadgeAmountFit()
 void Migrate()
 {
 	bool Success = true;
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"), UFF_FacilityRevenueRankRow::StaticClass(), RevenueRow);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"), UFF_FacilityRevenueRankingPanel::StaticClass(), RevenuePanel);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"), UFF_FacilityProgramMarkerWidget::StaticClass(), WorldBadge);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"), UFF_FacilityRevenueRankRow::StaticClass(), RevenueRow);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"), UFF_FacilityRevenueRankingPanel::StaticClass(), RevenuePanel);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"), UFF_FacilityProgramMarkerWidget::StaticClass(), WorldBadge);
 	MigrateWorldBadgeAmountFit();
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"), UFF_FacilityCodexCard::StaticClass(), CodexCard);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"), UFF_FacilityCodexScreen::StaticClass(), CodexScreen);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"), UFF_FacilityPaidProgramCard::StaticClass(), ProgramCard);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"), UFF_FacilityPaidProgramPicker::StaticClass(), ProgramPicker);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"), UFF_FacilityCodexCard::StaticClass(), CodexCard);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"), UFF_FacilityCodexScreen::StaticClass(), CodexScreen);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"), UFF_FacilityPaidProgramCard::StaticClass(), ProgramCard);
+	Success &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"), UFF_FacilityPaidProgramPicker::StaticClass(), ProgramPicker);
 	if (Success) UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_AURORA_REVENUE_PROGRAMS_DONE: V7 layouts saved; runtime ledger and scheduling authority unchanged."));
 }
 

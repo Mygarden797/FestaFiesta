@@ -27,7 +27,7 @@ from ffzs_definition_source import require_unattended_commandlet
 
 
 MESH_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
-TEXTURE_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/image"
+TEXTURE_DESTINATION = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"
 MANIFEST_RELATIVE = os.path.join(
     "Tools", "facilities", "notion_facility_examples.json"
 )

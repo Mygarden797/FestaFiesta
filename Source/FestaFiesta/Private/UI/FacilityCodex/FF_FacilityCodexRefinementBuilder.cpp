@@ -145,11 +145,11 @@ static bool Apply(const TCHAR* Path, UClass* Expected, bool(*Edit)(UWidgetBluepr
 }
 static void Run()
 {
-    bool Ok = Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),Card);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),CardTooltip,TooltipVersion);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"),UFF_FacilityCodexScreen::StaticClass(),Screen);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),CardTitleFit,TitleFitVersion);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"),UFF_FacilityCodexScreen::StaticClass(),ScreenTitleFit,TitleFitVersion);
+    bool Ok = Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),Card);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),CardTooltip,TooltipVersion);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"),UFF_FacilityCodexScreen::StaticClass(),Screen);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),CardTitleFit,TitleFitVersion);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"),UFF_FacilityCodexScreen::StaticClass(),ScreenTitleFit,TitleFitVersion);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("%s_COMPLETE_%s"),Prefix,Ok ? TEXT("PASS") : TEXT("FAIL"));
 }
 static FAutoConsoleCommand Command(TEXT("FF.ApplyBuildModeClarityCodexRefinement"),

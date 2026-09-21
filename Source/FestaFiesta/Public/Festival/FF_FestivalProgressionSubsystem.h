@@ -119,6 +119,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void Refund(int32 Amount);
 
+	/** Credits a one-time codex reward without counting it as facility sales or demolition refunds.
+	 * The codex progress subsystem owns the persistent first-discovery check. */
+	void GrantDiscoveryGold(int32 Amount);
+
 	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
 	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }
 	

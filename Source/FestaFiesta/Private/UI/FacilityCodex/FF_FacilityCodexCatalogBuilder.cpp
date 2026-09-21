@@ -15,8 +15,8 @@
 namespace FFFacilityCodexCatalogBuilder
 {
     constexpr const TCHAR* Prefix = TEXT("FF_FACILITY_CODEX_CATALOG");
-    constexpr const TCHAR* PanelPath = TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild");
-    constexpr const TCHAR* LauncherPath = TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher");
+    constexpr const TCHAR* PanelPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild");
+    constexpr const TCHAR* LauncherPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher");
     const FName LauncherName(TEXT("Widget_FacilityCodexCatalogLauncher"));
 
     void Migrate()

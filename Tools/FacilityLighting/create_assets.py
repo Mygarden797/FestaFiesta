@@ -13,9 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'Saved/FacilityLighting_20260910'
 OUT.mkdir(parents=True, exist_ok=True)
 STAGE = '/Game/Asset/FacilitiesAsset_HKH/Performance/MainStage_Grand_20260909'
-PDA = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
-PANEL = '/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel'
-CONTROLS = '/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls'
+PDA = '/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
+PANEL = '/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel'
+CONTROLS = '/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls'
 RIG = STAGE + '/BP_MainStage_Grand_Lighting'
 EXPECTED_RUNTIME_LIGHTS = {
     'Overhead_00_Spot', 'Overhead_02_Spot', 'Overhead_04_Spot',

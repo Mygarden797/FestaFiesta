@@ -2,7 +2,7 @@
 
 `Test_Main`에서 시설 Lifecycle 권위 API를 관찰하고 수동 실행하는 비모달 개발자 도구다. 실제 게임 UI와 섞여 보여도 이질적이지 않도록 인게임 `LightTeal` 팔레트와 Pretendard를 사용하며, 기본 상태에서는 보이지 않는다.
 
-- 런타임 WBP: `/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel`
+- 런타임 WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel`
 - 네이티브 클래스: `UFF_ZoneLifecycleTestPanel`
 - 표시 범위: Editor·Shipping 패키지의 `Test_Main` Game/PIE
 - 표시 토글: 게임 뷰포트 포커스 상태에서 `Ctrl+G`

@@ -5,8 +5,8 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
-PACKAGE = '/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge'
-FILE = ROOT / 'Content/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge.uasset'
+PACKAGE = '/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge'
+FILE = ROOT / 'Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge.uasset'
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 assert world and world.get_path_name().startswith('/Engine/Maps/Entry.'), 'Use the Entry world.'
 

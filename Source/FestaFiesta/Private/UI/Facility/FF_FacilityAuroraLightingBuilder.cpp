@@ -25,8 +25,8 @@
 namespace FFFacilityAuroraLighting
 {
     using namespace FFUIWbpBuilder;
-    const FString LightingPath=TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls");
-    const FString PanelPath=TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel");
+    const FString LightingPath=TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls");
+    const FString PanelPath=TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel");
     const TCHAR* LogPrefix=TEXT("FF_AURORA_LIGHTING");
     FLinearColor Green() { return FLinearColor::FromSRGBColor(FColor(0x24,0x55,0x43)); }
     FLinearColor Paper() { return FLinearColor::FromSRGBColor(FColor(0xED,0xF5,0xEE)); }

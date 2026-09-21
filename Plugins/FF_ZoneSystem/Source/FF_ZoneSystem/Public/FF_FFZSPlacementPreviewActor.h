@@ -41,7 +41,7 @@ public:
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Preview|Feedback")
     TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial = TSoftObjectPtr<UMaterialInterface>(
-        FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/Clarity/M_BuildPlacementFeedback.M_BuildPlacementFeedback")));
+        FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/M_BuildPlacementFeedback.M_BuildPlacementFeedback")));
 
     // Reused, non-colliding planes. Source facility materials and assets are never edited.
     UPROPERTY(Transient)

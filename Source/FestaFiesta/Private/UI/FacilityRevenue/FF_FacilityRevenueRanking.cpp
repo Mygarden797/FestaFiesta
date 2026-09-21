@@ -329,7 +329,7 @@ void UFF_FacilityRevenueRankingSubsystem::Open()
 	BindEconomy();
 	if (!Panel)
 	{
-		UClass *Class = FSoftClassPath(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/"
+		UClass *Class = FSoftClassPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/"
 											"WBP_FF_FacilityRevenueRanking.WBP_FF_FacilityRevenueRanking_C"))
 							.TryLoadClass<UFF_FacilityRevenueRankingPanel>();
 		if (!Class)

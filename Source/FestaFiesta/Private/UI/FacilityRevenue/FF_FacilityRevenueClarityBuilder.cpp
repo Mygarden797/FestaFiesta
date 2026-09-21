@@ -39,7 +39,7 @@ static FSlateBrush Round(FLinearColor Fill, float Radius = 8.f)
 static FSlateBrush Material(const TCHAR* Role, FLinearColor Fallback)
 {
     const FString Name = FString(TEXT("MI_UI_BuildClarity_")) + Role;
-    const FString Path = TEXT("/Game/FestaFiesta/UI/Building/Clarity/") + Name + TEXT(".") + Name;
+    const FString Path = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/") + Name + TEXT(".") + Name;
     FSlateBrush B = Round(Fallback, 12);
     if (auto* M = LoadObject<UMaterialInterface>(nullptr, *Path))
     { B = FSlateBrush(); B.DrawAs = ESlateBrushDrawType::Image; B.SetResourceObject(M); B.ImageSize = FVector2D(128,48); }
@@ -213,15 +213,15 @@ static bool Apply(const TCHAR* Path, UClass* Expected, bool(*Edit)(UWidgetBluepr
 }
 static void Run()
 {
-    bool Ok = Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),UFF_FacilityRevenueRankRow::StaticClass(),RankRow);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),UFF_FacilityRevenueRankingPanel::StaticClass(),Ranking);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),UFF_FacilityRevenueRankingPanel::StaticClass(),FrameFit,FrameFitVersion);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"),UFF_FacilityProgramMarkerWidget::StaticClass(),Badge);
+    bool Ok = Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),UFF_FacilityRevenueRankRow::StaticClass(),RankRow);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),UFF_FacilityRevenueRankingPanel::StaticClass(),Ranking);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),UFF_FacilityRevenueRankingPanel::StaticClass(),FrameFit,FrameFitVersion);
+    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"),UFF_FacilityProgramMarkerWidget::StaticClass(),Badge);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("%s_COMPLETE_%s"),Prefix,Ok ? TEXT("PASS") : TEXT("FAIL"));
 }
 static void RunFrameFit()
 {
-    const bool Ok = Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
+    const bool Ok = Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
         UFF_FacilityRevenueRankingPanel::StaticClass(),FrameFit,FrameFitVersion);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_REVENUE_FIT_COMPLETE_%s"),Ok ? TEXT("PASS") : TEXT("FAIL"));
 }

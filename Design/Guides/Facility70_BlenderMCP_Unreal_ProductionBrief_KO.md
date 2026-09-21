@@ -288,7 +288,7 @@ MCP에서는 연결된 서버의 파일/오브젝트 요약, Python 실행, 뷰�
 | 충돌 | `UCX_SM_FF_Booth_FoodStall_CafeTruck_00` |
 | 신규 원본 폴더 제안 | `SourceArt/FacilityExpansion70/Booth/Booth_FoodStall_CafeTruck/` |
 | 신규 언리얼 아트 경로 제안 | `/Game/FestaFiesta/Art/FacilityExpansion70/Booth/CafeTruck` |
-| 시설 정의 경로 | 기존 대분류 체계인 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth` 아래에 등록 검토 |
+| 시설 정의 경로 | 기존 대분류 체계인 `/Game/FestaFiesta/Building/FF_Data_Building/Booth` 아래에 등록 검토 |
 
 시설 하나의 납품에는 다음을 포함한다.
 

@@ -70,6 +70,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Synergy")
 	bool IsSynergyHighlighted() const { return bSynergyHighlighted; }
 
+	/** The codex destination uses a separate authored iridescent rim and caption. */
+	bool IsCodexFocused() const { return bCodexFocused; }
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Required")
 	void SetRequiredFacilityStatus(bool bRequired, bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
 
@@ -125,6 +128,12 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Synergy")
 	TObjectPtr<UTextBlock> Text_SynergyBadge;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Codex")
+	TObjectPtr<UImage> Image_CodexFocusRim;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Codex")
+	TObjectPtr<UBorder> Border_CodexFocusBadge;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UBorder> Border_Card;
@@ -203,8 +212,9 @@ private:
 	void HandleFavoriteClicked();
 	void RefreshFavorite();
 	void RefreshFromItem();
-	void RefreshVisualState(bool bIsSelected);
+	void RefreshVisualState();
 	void ApplySynergyHighlight();
+	void ApplyCodexFocus();
 	void ApplyRequiredFacilityStatus();
 	void ApplyProgramAvailability();
 	FVector2D GetAuthoredThumbnailBounds() const;
@@ -212,8 +222,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_PrepBuildTileData> Item;
+	// Pointer events can outlive a released Slate row's item mapping. Render the
+	// selection delivered by the list-entry callback instead of querying that row.
+	bool bCardSelected = false;
 	bool bCardHovered = false;
 	bool bSynergyHighlighted = false;
+	bool bCodexFocused = false;
 	bool bRequiredFacility = false;
 	bool bRequiredFacilitySatisfied = false;
 	bool bHasCompatiblePrograms = false;

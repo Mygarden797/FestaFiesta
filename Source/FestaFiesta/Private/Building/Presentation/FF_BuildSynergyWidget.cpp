@@ -1,4 +1,5 @@
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
+#include "Building/Presentation/FF_BuildTypography.h"
 
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
@@ -26,7 +27,7 @@ UFF_BuildSynergyWidget::UFF_BuildSynergyWidget(const FObjectInitializer& ObjectI
     : Super(ObjectInitializer)
 {
     static ConstructorHelpers::FObjectFinder<UFont> Font(
-        TEXT("/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard.F_UI_Pretendard"));
+        TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Medium_Font.NEXON_Lv2_Gothic_OTF_Medium_Font"));
     PresentationFont = Font.Object;
     const FFF_UIPaletteInGame& Palette = UFF_UIPalette::Get()->InGame;
     ActiveTextColor = FSlateColor(Palette.Info);
@@ -104,13 +105,8 @@ void UFF_BuildSynergyWidget::BuildNativeTree()
         const bool bBold, const float BottomPadding, const FName Name = NAME_None)
     {
         UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), Name);
-        FSlateFontInfo Font = Label->GetFont();
-        if (PresentationFont)
-        {
-            Font.FontObject = PresentationFont;
-            Font.TypefaceFontName = bBold ? TEXT("SemiBold") : TEXT("Regular");
-        }
-        Font.Size = FontSize;
+        const FSlateFontInfo Font = FFBuildTypography::Make(bBold
+            ? FFBuildTypography::ERole::Number : FFBuildTypography::ERole::Body, FontSize);
         Label->SetFont(Font);
         Label->SetColorAndOpacity(FSlateColor(Color));
         Label->SetText(Text);
@@ -341,7 +337,7 @@ int32 UFF_BuildSynergyWidget::NativePaint(const FPaintArgs& Args, const FGeometr
                 Partner + FVector2f(-Radius, 0.0f) };
             for (int32 Index = 0; Index < 4; ++Index)
             { Line(Corners[Index], Corners[(Index + 1) % 4], Color, FMath::Clamp(MarkerThickness, 0.5f, 12.0f)); }
-            const FSlateFontInfo Font = FCoreStyle::GetDefaultFontStyle(TEXT("Bold"), FMath::Clamp(MarkerFontSize, 8, 32));
+            const FSlateFontInfo Font = FFBuildTypography::Make(FFBuildTypography::ERole::Number, FMath::Clamp(MarkerFontSize, 8, 32));
             FSlateDrawElement::MakeText(OutDrawElements, BaseLayer + 2,
                 AllottedGeometry.ToPaintGeometry(FVector2D(28.0, 22.0),
                     FSlateLayoutTransform(FVector2D(Partner.X + 18.0f, Partner.Y - 12.0f))),

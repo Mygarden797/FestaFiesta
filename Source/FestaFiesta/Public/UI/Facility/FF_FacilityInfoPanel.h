@@ -148,7 +148,7 @@ private:
 		meta = (AllowPrivateAccess = "true", DisplayName = "조합 행 위젯", ToolTip = "조합 탭의 각 항목을 그리는 WBP입니다. 글꼴·색·간격은 이 WBP의 Designer에서 수정합니다."))
 	TSoftClassPtr<UFF_FacilitySynergyEntryWidget> SynergyEntryWidgetClass =
 		TSoftClassPtr<UFF_FacilitySynergyEntryWidget>(FSoftObjectPath(
-			TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
 	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilitySynergyEntryWidget>> SynergyEntryPool;
 	UPROPERTY(Transient) TSubclassOf<UFF_FacilitySynergyEntryWidget> LoadedSynergyEntryClass;
 	bool bSynergyEntryLoadFailed = false;

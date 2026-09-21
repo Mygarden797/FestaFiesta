@@ -1,7 +1,7 @@
 """One-time follow-up for the just-created revenue WBP, after 720p render QA."""
 import unreal
 
-BASE = "/Game/FestaFiesta/UI/FacilityRevenue/"
+BASE = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/"
 VERSION = "FF.Revenue.Compact20260919"
 
 

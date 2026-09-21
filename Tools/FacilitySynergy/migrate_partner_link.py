@@ -6,7 +6,7 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGE = "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"
+PACKAGE = "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"
 COMMAND = "FF.MigrateFacilitySynergyPartnerLink"
 
 

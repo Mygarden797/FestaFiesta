@@ -22,7 +22,7 @@ namespace FFFacilityWorldBadgeBuilder
 {
 	using namespace FFUIWbpBuilder;
 	const TCHAR* const Prefix = TEXT("FF_FACILITY_WORLD_BADGE_UMG");
-	const FString Folder(TEXT("/Game/FestaFiesta/UI/FacilityRevenue"));
+	const FString Folder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue"));
 	const TCHAR* const AmountFitKey = TEXT("FF.FacilityWorldBadge.AmountFit20260919");
 	FSlateBrush Brush(FLinearColor Color, float Radius = 6.f)
 	{

@@ -70,7 +70,7 @@ bool FFF_BuildPlacementPointerPolicyTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("A hovered HUD button blocks held placement through its full path"), IsBlockedByUiPath(ButtonPath));
 
 	UClass* PanelClass = LoadClass<UFF_PrepPanelBase>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
 	if (!TestNotNull(TEXT("The production Prep panel class exists"), PanelClass)) { return false; }
 	TStrongObjectPtr<UFF_PrepPanelBase> Panel(NewObject<UFF_PrepPanelBase>(GetTransientPackage(), PanelClass));
 	const TSharedRef<SObjectWidget> PanelWrapper = SNew(SObjectWidget, Panel.Get())[SNew(SBorder)];

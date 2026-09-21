@@ -35,9 +35,9 @@
 namespace FFBuildStudioWbp
 {
 using namespace FFUIWbpBuilder;
-const FString ChoicePackage = TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildCategoryChoice");
-const FString TilePackage = TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile");
-const FString PanelPackage = TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild");
+const FString ChoicePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice");
+const FString TilePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile");
+const FString PanelPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild");
 constexpr const TCHAR* LogPrefix = TEXT("FF_BUILD_STUDIO_UMG");
 
 FSlateBrush Brush(const FLinearColor Color, float Radius = 6, const FLinearColor Outline = FLinearColor::Transparent)
@@ -399,7 +399,7 @@ bool ReplaceVisualTree(UWidgetBlueprint& BP, BuildFunction Build)
 void RefreshBuildStudio()
 {
 	UWidgetBlueprint* Choice = EnsureWidgetBlueprint(LogPrefix, ChoicePackage,
-		TEXT("/Game/FestaFiesta/UI/Building"), *UFF_PrepChoiceButton::StaticClass(), BuildChoice);
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls"), *UFF_PrepChoiceButton::StaticClass(), BuildChoice);
 	UWidgetBlueprint* Tile = LoadExistingBlueprint(TilePackage);
 	UWidgetBlueprint* Panel = LoadExistingBlueprint(PanelPackage);
 	if (!Choice || !Choice->GeneratedClass || !Tile || !Panel || !Panel->WidgetTree)

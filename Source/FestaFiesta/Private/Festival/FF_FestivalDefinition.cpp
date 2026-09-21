@@ -21,7 +21,7 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 
 	FFF_RequiredFacility MainStage;
 	MainStage.FacilityDefinition = TSoftObjectPtr<UFFZSFacilityDefinition>(FSoftObjectPath(
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
 	RequiredSetupFacilities.Add(MainStage);
 
 	// 등급이 올라갈수록 비용과 보너스가 함께 커진다.

@@ -40,7 +40,7 @@ bool FFFAuroraLightingDraftTest::RunTest(const FString&)
 {
     UWorld* World=GEditor?GEditor->GetEditorWorldContext().World():nullptr;
     auto* Class=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
     if(!TestNotNull(TEXT("Lighting WBP"),Class)||!TestNotNull(TEXT("Editor world"),World)) return false;
     struct FInitializationScope
     {
@@ -140,7 +140,7 @@ bool FFFAuroraLightingPanelTest::RunTest(const FString&)
 {
     UWorld* World=GEditor?GEditor->GetEditorWorldContext().World():nullptr;
     auto* Class=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
     if(!TestNotNull(TEXT("Inspector WBP"),Class)||!TestNotNull(TEXT("Editor world"),World))return false;
     const bool Previous=Class->bCanCallInitializedWithoutPlayerContext;
     Class->bCanCallInitializedWithoutPlayerContext=true;

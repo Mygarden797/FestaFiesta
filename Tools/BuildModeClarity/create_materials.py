@@ -9,7 +9,7 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
-FOLDER = '/Game/FestaFiesta/UI/Building/Clarity'
+FOLDER = '/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity'
 shader_code = (ROOT / 'Tools/BuildModeClarity/shaders/BuildSurface.ush').read_text(encoding='utf-8')
 SOURCE = ROOT / 'SourceAssets/UI/Building/Clarity/T_UI_BuildCircleSDF.tga'
 SOURCE.parent.mkdir(parents=True, exist_ok=True)

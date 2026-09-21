@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | 카탈로그 | 길 → 바닥 | 타일 → 바닥 |
 | 시설 ID | `Road_Surface_<종류>` | `Tile_Surface_<종류>` |
-| PDA 폴더 | `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road` | `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile` |
+| PDA 폴더 | `/Game/FestaFiesta/Building/FF_Data_Building/Road` | `/Game/FestaFiesta/Building/FF_Data_Building/Tile` |
 | PDA 이름 | `PDA_FFZS_Road_Surface_<종류>` | `PDA_FFZS_Tile_Surface_<종류>` |
 | 기본 비용 키 | `Cost.Road.Surface.<종류>` | `Cost.Tile.Surface.<종류>` |
 | 다른 시설과 겹침 | 본체·여유 공간·대기열 모두 차단 | 상부 시설의 배치 허용 |

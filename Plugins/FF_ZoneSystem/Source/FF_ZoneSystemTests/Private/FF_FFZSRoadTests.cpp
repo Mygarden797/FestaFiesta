@@ -531,7 +531,7 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
         const TArray<FString>& Names = Category == EFFZSFacilityCategory::Tile ? TileNames : RoadNames;
         for (int32 Index = 0; Index < Names.Num(); ++Index)
         {
-            const FString Path = TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/") + SurfaceType + TEXT("/PDA_FFZS_") + SurfaceType + TEXT("_Surface_") + Names[Index];
+            const FString Path = TEXT("/Game/FestaFiesta/Building/FF_Data_Building/") + SurfaceType + TEXT("/PDA_FFZS_") + SurfaceType + TEXT("_Surface_") + Names[Index];
             UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, *Path);
             if (!TestNotNull(Names[Index] + TEXT(" production definition"), Definition)) return false;
             UStaticMesh* Mesh = Definition->Spec.VisualMesh.LoadSynchronous();

@@ -285,7 +285,7 @@ protected:
 
 	/** `FacilityChoiceClass` 가 비었을 때 쓸 경로. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program")
-	FString FacilityChoiceFallbackPath = TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton");
+	FString FacilityChoiceFallbackPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton");
 
 	/** ★ 비우지 않는다. 안 쓰면 다음 날 편성이 사라진 이유를 알 수 없다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Program")

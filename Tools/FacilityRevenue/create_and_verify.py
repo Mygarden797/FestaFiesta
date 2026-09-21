@@ -26,7 +26,7 @@ SOURCE = ROOT / "data/unreal/facility_revenues_v0.csv"
 ASSET_PATH = "/Game/FestaFiesta/Data/Economy/DT_FacilityRevenues"
 ASSET_FILE = ROOT / "Content/FestaFiesta/Data/Economy/DT_FacilityRevenues.uasset"
 STRUCT_PATH = "/Script/FestaFiesta.FF_FacilityRevenueTableRow"
-DEFINITION_ROOT = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions"
+DEFINITION_ROOT = "/Game/FestaFiesta/Building/FF_Data_Building"
 FESTIVAL_PATH = "/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan"
 
 

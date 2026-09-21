@@ -39,7 +39,7 @@ def expected_paths(entry):
     identity, category, slug = entry["id"], entry["category"], entry["slug"]
     base = f"/Game/FestaFiesta/Art/FacilityExpansion70/{category}/{slug}"
     return {
-        "definition": f"/Game/FestaFiesta/Zone/Data/FacilityDefinitions/{category}/PDA_FFZS_{identity}",
+        "definition": f"/Game/FestaFiesta/Building/FF_Data_Building/{category}/PDA_FFZS_{identity}",
         "mesh": f"{base}/SM_FF_{identity}",
         "thumbnail": f"{base}/T_UI_F70_{identity}",
         "rig": f"{base}/BP_F70_{identity}_LightingRig",

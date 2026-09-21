@@ -39,7 +39,7 @@ static bool Apply(UWidgetBlueprint& BP)
     Brush.TintColor=FLinearColor::FromSRGBColor(FColor(242,247,238));
     Brush.OutlineSettings=FSlateBrushOutlineSettings(10,FSlateColor(FLinearColor::FromSRGBColor(FColor(198,214,196))),1);
     if(auto* Material=LoadObject<UMaterialInterface>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/Clarity/MI_UI_BuildClarity_Paper.MI_UI_BuildClarity_Paper")))
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/MI_UI_BuildClarity_Paper.MI_UI_BuildClarity_Paper")))
     { Brush.SetResourceObject(Material);Brush.DrawAs=ESlateBrushDrawType::Image;Brush.TintColor=FLinearColor::White; }
     Panel->SetBrush(Brush);Panel->SetBrushColor(FLinearColor::White);Panel->SetPadding(FMargin(14,10));
     Tree->ForEachWidget([&](UWidget* Widget)
@@ -68,7 +68,7 @@ static bool Apply(UWidgetBlueprint& BP)
 }
 static void Run()
 {
-    auto* BP=LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy"));
+    auto* BP=LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy"));
     const bool Success=BP&&Apply(*BP);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_SYNERGY_%s"),Success?TEXT("PASS"):TEXT("FAIL"));
 }

@@ -13,12 +13,12 @@ import unreal
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Saved/FacilityCodex"
 ASSETS = {
-    "Screen": "/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen",
-    "Card": "/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard",
-    "Launcher": "/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexLauncher",
-    "CatalogLauncher": "/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher",
-    "Inspector": "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel",
-    "CatalogPanel": "/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild",
+    "Screen": "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen",
+    "Card": "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard",
+    "Launcher": "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher",
+    "CatalogLauncher": "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher",
+    "Inspector": "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel",
+    "CatalogPanel": "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild",
 }
 PARENTS = {
     "CatalogLauncher": "FF_FacilityCodexLauncher",

@@ -17,7 +17,7 @@
 namespace FFFacilityAuroraInfo
 {
 using namespace FFUIWbpBuilder;
-static const TCHAR* Package = TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel");
+static const TCHAR* Package = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel");
 static const FLinearColor Ink = FLinearColor::FromSRGBColor(FColor(0x20,0x4c,0x36));
 
 static void Add(UVerticalBox& Box, UWidget& Child, FMargin Padding = FMargin(0,0,0,8))

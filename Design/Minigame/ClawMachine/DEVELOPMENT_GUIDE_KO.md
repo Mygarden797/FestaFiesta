@@ -224,7 +224,7 @@ WBP가 없거나 로드에 실패해도 `UFF_MinigameSubsystem`이 완성된 네
 
 | 용도 | 프로젝트 경로 |
 |---|---|
-| 시설 카탈로그 이미지 | `/Game/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine` |
+| 시설 카탈로그 이미지 | `/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine` |
 | 기계 내부 배경 텍스처 | `/Game/FestaFiesta/UI/Minigame/ClawMachine/T_MG_ClawMachine_Interior_ImageGen` |
 | 내부 배경 재질 | `/Game/FestaFiesta/UI/Minigame/ClawMachine/M_MG_ClawMachine_Backdrop` |
 | 시설 Static Mesh | `/Game/FestaFiesta/Zone/Test_Asset/Asset/SM_FFZS_Booth_ActivityGame_ClawMachine` |
@@ -232,7 +232,7 @@ WBP가 없거나 로드에 실패해도 `UFF_MinigameSubsystem`이 완성된 네
 원본은 다음 위치에 보관한다.
 
 ```text
-Content/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine.png
+Content/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine.png
 SourceAssets/UI/Minigame/ClawMachine/T_MG_ClawMachine_Interior_ImageGen.png
 SourceAssets/Zone/FacilityMeshes/SM_FFZS_Booth_ActivityGame_ClawMachine.fbx
 ```
@@ -291,7 +291,7 @@ Use case: stylized-concept. Asset type: replaceable Unreal 3D claw-machine rear 
 | 미니게임 데이터 | `/Game/FestaFiesta/Minigame/Data/DA_Minigame_ClawMachine` |
 | 인형 카탈로그 | `/Game/FestaFiesta/Minigame/Data/DT_ClawMachinePrizes` |
 | 디자이너 조이스틱 | `/Game/FestaFiesta/UI/Minigame/WBP_FF_ClawMachineJoystick` |
-| 시설 정의 | `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_ClawMachine` |
+| 시설 정의 | `/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_ActivityGame_ClawMachine` |
 
 ## 8. 재생성·임포트·검증 절차
 

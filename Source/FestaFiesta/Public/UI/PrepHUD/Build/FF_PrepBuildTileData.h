@@ -75,6 +75,10 @@ public:
 
 	void SetSynergyHighlighted(bool bHighlighted) { bSynergyHighlighted = bHighlighted; }
 
+	/** The codex destination is independent of placement, selection and synergy recommendations. */
+	bool IsCodexFocused() const { return bCodexFocused; }
+	void SetCodexFocused(bool bFocused) { bCodexFocused = bFocused; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	EFF_PrepBuildTileState GetTileState() const { return TileState; }
 
@@ -130,6 +134,7 @@ private:
 
 	int32 Gold = 0;
 	bool bSynergyHighlighted = false;
+	bool bCodexFocused = false;
 	bool bHasAuthoritativeGold = false;
 };
 

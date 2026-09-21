@@ -27,7 +27,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AuroraCatalogSelectionTest,
 bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
 {
     UClass* PanelClass = LoadClass<UFF_PrepPanelBuild>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
     if (!TestNotNull(TEXT("Saved production catalog class"), PanelClass)) return false;
     // Real authority and economy live in an isolated world. No install/confirm call is made.
     auto* Settings = GetMutableDefault<UFFZSDeveloperSettings>();
@@ -44,7 +44,7 @@ bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
     auto* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
         TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
     auto* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
     if (!TestNotNull(TEXT("Real build mode"), Mode) || !TestNotNull(TEXT("Real zones"), Zones) ||
         !TestNotNull(TEXT("Real catalog"), Catalog) || !TestNotNull(TEXT("Real economy"), Progression) ||
         !TestNotNull(TEXT("Catalog economy projection"), Economy) || !TestNotNull(TEXT("Source festival"), Festival) ||

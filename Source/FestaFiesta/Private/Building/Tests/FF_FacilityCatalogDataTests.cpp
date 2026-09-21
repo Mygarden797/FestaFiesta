@@ -44,7 +44,7 @@ bool FFFFacilityCatalogActiveDataTest::RunTest(const FString& Parameters)
     // Enumerate the registry by asset path, not the PrimaryAssetId map. Duplicate IDs can
     // hide a definition in that map, which is precisely one of the errors this test detects.
     FARFilter Filter;
-    Filter.PackagePaths.Add(TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions"));
+    Filter.PackagePaths.Add(TEXT("/Game/FestaFiesta/Building/FF_Data_Building"));
     Filter.ClassPaths.Add(UFFZSFacilityDefinition::StaticClass()->GetClassPathName());
     Filter.bRecursivePaths = true;
     Filter.bRecursiveClasses = true;
