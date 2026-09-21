@@ -4,6 +4,9 @@
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Building/Presentation/FF_BuildFeedback.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
 #include "Components/EditableTextBox.h"
@@ -90,6 +93,12 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_Grid, HandleGrid)
     FF_BIND_TOOL(Button_Confirm, HandleConfirm)
     FF_BIND_TOOL(Button_Catalog, ReturnToCatalog)
+    FF_BIND_TOOL(Button_Details, ToggleDetails)
+    FF_BIND_TOOL(Button_Facts, ToggleFacts)
+    FF_BIND_TOOL(Button_Help, ToggleHelp)
+    FF_BIND_TOOL(Button_DirectAdjustment, ToggleDirectAdjustment)
+    FF_BIND_TOOL(Button_FindNearby, FindNearbyPlacement)
+    FF_BIND_TOOL(Button_NextPlacementProblem, ShowNextPlacementProblem)
     FF_BIND_TOOL(Button_SnapMeter, HandleSnapMeter)
     FF_BIND_TOOL(Button_SnapPrecision, HandleSnapPrecision)
     FF_BIND_TOOL(Button_SnapFree, HandleSnapFree)
@@ -136,15 +145,154 @@ void UFF_BuildToolsWidget::NativeDestruct()
 
 bool UFF_BuildToolsWidget::IsPointerOverTools() const
 {
-    if (!Border_Tools || GetVisibility() == ESlateVisibility::Hidden ||
+    if (GetVisibility() == ESlateVisibility::Hidden ||
         GetVisibility() == ESlateVisibility::Collapsed)
     {
         return false;
     }
     // Raw BuildMode input runs before Slate's button mouse-up. Geometry also covers that
     // first mouse-down, so clicking a tool never places a building underneath the toolbar.
-    return Border_Tools->IsHovered() || (FSlateApplication::IsInitialized() &&
-        Border_Tools->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos()));
+    for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(), Border_PlacementHelp.Get() })
+    {
+        if (Panel && Panel->IsVisible() && (Panel->IsHovered() || (FSlateApplication::IsInitialized() &&
+            Panel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos())))) return true;
+    }
+    return false;
+}
+
+bool UFF_BuildToolsWidget::IsRadialMenuOpen() const
+{
+    return false;
+}
+
+bool UFF_BuildToolsWidget::IsAuxiliaryPanelOpen() const
+{
+    return IsRadialMenuOpen() || (Panel_Details && Panel_Details->IsVisible());
+}
+
+void UFF_BuildToolsWidget::CloseRadialMenu()
+{
+    if (Panel_Radial) Panel_Radial->SetVisibility(ESlateVisibility::Collapsed);
+    if (Button_Radial) Button_Radial->SetVisibility(ESlateVisibility::Collapsed);
+    if (auto* System = BuildMode.Get()) System->RefreshBuildToolsOcclusion();
+}
+
+void UFF_BuildToolsWidget::ToggleRadialMenu()
+{
+    // Keep old Blueprint callers loadable, but the removed R menu cannot reopen.
+    CloseRadialMenu();
+}
+
+void UFF_BuildToolsWidget::ToggleFacts()
+{
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+    if (Panel_PlacementFacts)
+        Panel_PlacementFacts->SetVisibility(Panel_PlacementFacts->GetVisibility() == ESlateVisibility::Collapsed
+            ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UFF_BuildToolsWidget::ToggleHelp()
+{
+    if (!ViewData.bPreviewActive) return;
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+    SetHelpExpanded(Border_PlacementHelp && Border_PlacementHelp->GetVisibility() == ESlateVisibility::Collapsed);
+    if (auto* System = BuildMode.Get()) System->RefreshBuildToolsOcclusion();
+}
+
+void UFF_BuildToolsWidget::SetHelpExpanded(const bool bExpanded)
+{
+    if (Border_PlacementHelp)
+        Border_PlacementHelp->SetVisibility(bExpanded ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+    if (Button_Help)
+        if (auto* Label = Cast<UTextBlock>(Button_Help->GetContent()))
+            Label->SetText(bExpanded ? LOCTEXT("ClosePlacementHelp", "안내 닫기") : LOCTEXT("OpenPlacementHelp", "조작 안내"));
+}
+
+void UFF_BuildToolsWidget::ToggleDirectAdjustment()
+{
+    if (auto* System = BuildMode.Get()) System->ToggleDirectPlacementAdjustment();
+}
+
+void UFF_BuildToolsWidget::FindNearbyPlacement()
+{
+    if (auto* System = BuildMode.Get()) System->FindNearbyPlacement();
+}
+
+void UFF_BuildToolsWidget::ShowNextPlacementProblem()
+{
+    if (auto* System = BuildMode.Get())
+    {
+        System->NotifyBuildToolsInteraction();
+        const int32 Count = System->GetPlacementGuidance().ProblemCount;
+        PlacementProblemIndex = Count > 0 ? (PlacementProblemIndex + 1) % Count : 0;
+        RefreshTools();
+    }
+}
+
+void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
+{
+    Super::NativeTick(Geometry, DeltaTime);
+    if (!Border_ContextPing) return;
+    auto* PingSlot = Cast<UCanvasPanelSlot>(Border_ContextPing->Slot);
+    FVector Target;
+    FVector2D Projected;
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const bool bShow = PingSlot && System && !System->IsInputSuspendedForPauseMenu() &&
+        System->GetPlacementMarkerLocation(Target) && !IsRadialMenuOpen() && !IsPointerOverTools() &&
+        UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(GetOwningPlayer(), Target, Projected, true);
+    Border_ContextPing->SetVisibility(ESlateVisibility::Collapsed);
+    if (!bShow) return;
+    const FGeometry Screen = UWidgetLayoutLibrary::GetPlayerScreenWidgetGeometry(GetOwningPlayer());
+    Projected = Geometry.AbsoluteToLocal(Screen.LocalToAbsolute(Projected));
+    const FVector2D Size = Geometry.GetLocalSize();
+    // The ping yields to every persistent surface. If no free spot exists it stays hidden;
+    // the same status remains readable in the summary, never covering another control.
+    const FVector2D PingSize = System->IsCurrentPlacementValid() ? FVector2D(280, 40) : FVector2D(360, 60);
+    PingSlot->SetSize(PingSize);
+    const float Gap = System->IsDirectPlacementAdjustment() ? 100.f : 52.f;
+    const FVector2D Offsets[] = { FVector2D(Gap, -PingSize.Y - 24), FVector2D(-PingSize.X - Gap, -PingSize.Y - 24),
+        FVector2D(Gap, 64), FVector2D(-PingSize.X - Gap, 64) };
+    for (const FVector2D& Offset : Offsets)
+    {
+        const FVector2D Pos = Projected + Offset;
+        if (Pos.X < 24 || Pos.Y < 40 || Pos.X + PingSize.X > Size.X - 24 || Pos.Y + PingSize.Y > Size.Y - 100) continue;
+        const FSlateRect Candidate(Pos.X, Pos.Y, Pos.X + PingSize.X, Pos.Y + PingSize.Y);
+        // Reserve the top-right combination preview and the bottom HUD in every state.
+        if (Candidate.IntersectionWith(FSlateRect(Size.X - 490, 36, Size.X, 490)).GetArea() > 0) continue;
+        bool bOccupied = false;
+        for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(), Border_PlacementHelp.Get() })
+        {
+            if (!Panel || !Panel->IsVisible()) continue;
+            const FGeometry& Bounds = Panel->GetCachedGeometry();
+            const FVector2D Min = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)) - FVector2D(12);
+            const FVector2D Max = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(Bounds.GetLocalSize())) + FVector2D(12);
+            if (Candidate.IntersectionWith(FSlateRect(Min.X, Min.Y, Max.X, Max.Y)).GetArea() > 0) { bOccupied = true; break; }
+        }
+        if (bOccupied) continue;
+        PingSlot->SetPosition(Pos);
+        Border_ContextPing->SetVisibility(ESlateVisibility::HitTestInvisible);
+        break;
+    }
+}
+
+void UFF_BuildToolsWidget::ToggleDetails()
+{
+    if (!Panel_Details) return;
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->NotifyBuildToolsInteraction();
+    const bool bClosing = Panel_Details->GetVisibility() != ESlateVisibility::Collapsed;
+    CloseRadialMenu();
+    if (bClosing)
+    {
+        if (!ApplyPendingAngle()) return;
+        StopPointerFreeRotation();
+        if (Editable_Angle && Editable_Angle->HasKeyboardFocus())
+            FSlateApplication::Get().SetAllUserFocusToGameViewport();
+    }
+    Panel_Details->SetVisibility(bClosing ? ESlateVisibility::Collapsed : ESlateVisibility::SelfHitTestInvisible);
+    if (auto* System = BuildMode.Get()) System->RefreshBuildToolsOcclusion();
+    if (Button_Details)
+        if (UTextBlock* Label = Cast<UTextBlock>(Button_Details->GetContent()))
+            Label->SetText(bClosing ? LOCTEXT("DetailsOpen", "세부 조정 +") : LOCTEXT("DetailsClose", "세부 조정 −"));
 }
 
 bool UFF_BuildToolsWidget::IsEditingAngle() const
@@ -219,17 +367,31 @@ void UFF_BuildToolsWidget::RefreshTools()
     const UFF_BuildModeSubsystem* System = BuildMode.Get();
     const EFF_BuildModeState State = System ? System->GetBuildModeState() : EFF_BuildModeState::Closed;
     const bool bPreview = FFBuildModeModel::IsPreviewActive(State);
+    // Also retire the button for older, not-yet-migrated widget assets.
+    if (Button_Radial) Button_Radial->SetVisibility(ESlateVisibility::Collapsed);
+    if (Panel_Radial) Panel_Radial->SetVisibility(ESlateVisibility::Collapsed);
+    const bool bStartingPreview = bPreview && !ViewData.bPreviewActive;
+    if (bStartingPreview || !bPreview || (System && System->IsCurrentPlacementValid())) PlacementProblemIndex = 0;
     // The build panel owns the browsing/inspection strip. This surface is for the active
     // placement only and does not cover the teammate's tab/status bar.
     SetVisibility(bPreview ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     if (!bPreview || (System && System->IsInputSuspendedForPauseMenu())) { StopPointerFreeRotation(); }
+    if (!bPreview)
+    {
+        CloseRadialMenu();
+        if (Panel_Details) Panel_Details->SetVisibility(ESlateVisibility::Collapsed);
+        if (Panel_PlacementFacts) Panel_PlacementFacts->SetVisibility(ESlateVisibility::Collapsed);
+        SetHelpExpanded(false);
+    }
+    // Open once on entry. Cursor, rotation and economy refreshes preserve a user's dismissal.
+    else if (bStartingPreview) SetHelpExpanded(true);
     const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(State);
     const bool bGrid = System && System->IsPlacementGridVisible();
     const int32 PreferredSnap = System ? System->GetPreferredPositionSnapCm() : 100;
     const int32 ActiveSnap = System ? System->GetActivePositionSnapCm() : PreferredSnap;
     ViewData.bPreviewActive = bPreview;
     ViewData.bMoving = State == EFF_BuildModeState::Moving;
-    ViewData.bDragPlacementEnabled = System && System->IsDragPlacementEnabled();
+    ViewData.bDragPlacementEnabled = System && System->IsDragPlacementEnabled() && !System->IsDirectPlacementAdjustment();
     ViewData.bGridVisible = bGrid;
     ViewData.PreferredSnapCm = PreferredSnap;
     ViewData.ActiveSnapCm = ActiveSnap;
@@ -237,6 +399,20 @@ void UFF_BuildToolsWidget::RefreshTools()
     ViewData.FacilityName = System && !System->GetSelectedFacilityDisplayName().IsEmpty()
         ? System->GetSelectedFacilityDisplayName() : LOCTEXT("NoFacility", "시설을 선택해 주세요");
     ViewData.CostText = ViewData.bMoving ? LOCTEXT("MoveCost", "이동 비용 없음") : FText::GetEmpty();
+    ViewData.BalanceText = LOCTEXT("BalanceUnknown", "보유 골드 확인 중");
+    ViewData.FootprintText = FText::GetEmpty();
+    ViewData.QueueText = FText::GetEmpty();
+    if (System && bPreview)
+    {
+        const FFFZSFacilitySpec& Spec = System->GetSelectedFacilitySpec();
+        const FFFZSQueueRules Queue = System->GetSelectedFacilityQueueRules();
+        ViewData.FootprintText = FText::Format(LOCTEXT("FootprintInfo", "시설 크기  {0} × {1} m\n안전 여유  {2} m"),
+            FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0),
+            FText::AsNumber(Spec.ClearanceCells / 100.0));
+        ViewData.QueueText = FText::Format(LOCTEXT("QueueInfo", "대기 정원  {0}명\n동시 이용  {1}명  ·  1인 서비스  {2}초"),
+            FText::AsNumber(Queue.MaxWaitingAgents), FText::AsNumber(Queue.ServiceCapacity),
+            FText::AsNumber(Queue.ServiceDurationSeconds));
+    }
     UFF_BuildCatalogSubsystem* Catalog = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
     FFF_BuildCatalogEntry Entry;
     if (System && Catalog && Catalog->FindEntry(System->GetSelectedFacilityDefinitionId(), Entry))
@@ -247,9 +423,24 @@ void UFF_BuildToolsWidget::RefreshTools()
         ViewData.CostText = ViewData.bMoving ? LOCTEXT("MoveCost", "이동 비용 없음") : bCostKnown
             ? FText::Format(LOCTEXT("InstallCost", "설치 {0} Gold"), FText::AsNumber(Entry.InstallCost))
             : LOCTEXT("UnknownCost", "설치 비용 확인 필요");
+        if (Economy.IsValid() && Economy->HasAuthoritativeGold())
+        {
+            ViewData.BalanceText = bCostKnown || ViewData.bMoving
+                ? FText::Format(LOCTEXT("PlacementBalance", "보유 {0} Gold\n확정 후 {1} Gold"),
+                    FText::AsNumber(Economy->GetGold()), FText::AsNumber(Economy->GetGold() - (ViewData.bMoving ? 0 : Entry.InstallCost)))
+                : FText::Format(LOCTEXT("CurrentBalanceOnly", "보유 {0} Gold"), FText::AsNumber(Economy->GetGold()));
+        }
     }
     if (Text_FacilityName) { Text_FacilityName->SetText(ViewData.FacilityName); }
     if (Text_Cost) { Text_Cost->SetText(ViewData.CostText); }
+    if (Text_Balance) Text_Balance->SetText(ViewData.BalanceText);
+    if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
+    if (Text_Queue) Text_Queue->SetText(ViewData.QueueText);
+    if (Text_ControlHelp) Text_ControlHelp->SetText(ViewData.bDragPlacementEnabled
+        ? LOCTEXT("DragControls", "좌클릭 드래그  연속 설치\nQ / E  45° 회전 · 드래그 종료\nShift + Q / E  자유 회전\nCtrl / Alt  첫 위치 미세 조정\nG  격자 표시\nB / 우클릭  시설 목록\nW A S D  카메라 이동\nEsc  일시정지")
+        : System && System->IsDirectPlacementAdjustment()
+        ? LOCTEXT("DirectControls", "화살표 드래그  가로·세로 이동\n원 드래그  회전 · Shift  자유 회전\nEnter / 배치 확정  설치\nT  마우스로 위치 다시 선택\nCtrl  25 cm · Alt  1 cm\nG  격자 표시\nB / 우클릭  시설 목록\nW A S D  카메라 이동 · Esc  일시정지")
+        : LOCTEXT("PlacementControls", "좌클릭 / Enter  설치 확정\nT  직접 조정 · 화살표 이동/원 회전\nQ / E  45°씩 회전\nShift + Q / E  자유 회전\nCtrl  25 cm · Alt  1 cm\nG  격자 표시\nB / 우클릭  시설 목록\nW A S D  카메라 이동 · Esc  일시정지"));
     if (Text_ActiveSnap)
     {
         Text_ActiveSnap->SetText(FText::Format(ActiveSnap == PreferredSnap
@@ -279,6 +470,8 @@ void UFF_BuildToolsWidget::RefreshTools()
             : UFF_BuildModeGuide::MakeBuildOverviewHelpText());
     }
     {
+        const FFF_BuildPlacementGuidance Guidance = System ? System->GetPlacementGuidance(PlacementProblemIndex) : FFF_BuildPlacementGuidance{};
+        PlacementProblemIndex = Guidance.ProblemIndex;
         FText Status = LOCTEXT("OverviewLegend", "시설 클릭: 정보 확인 · 격자: 빈 건축 공간");
         FSlateColor Color = NeutralStatusColor;
         if (bPreview && !System->HasPlacementTarget())
@@ -294,16 +487,54 @@ void UFF_BuildToolsWidget::RefreshTools()
         }
         else if (bPreview)
         {
-            Status = System->GetPlacementStatusText();
+            Status = Guidance.ProblemCount > 1
+                ? FText::Format(LOCTEXT("MultipleProblems", "{0}  ·  {1}/{2}"), Guidance.Title,
+                    FText::AsNumber(Guidance.ProblemIndex + 1), FText::AsNumber(Guidance.ProblemCount)) : Guidance.Title;
             Color = InvalidStatusColor;
         }
         ViewData.StatusText = Status;
+        if (Text_ContextPing)
+        {
+            Text_ContextPing->SetText(System && System->IsCurrentPlacementValid()
+                ? System->IsDirectPlacementAdjustment() ? LOCTEXT("PingPinned", "직접 조정  ·  Enter로 확정")
+                    : LOCTEXT("PingReady", "배치 가능  ·  클릭 / Enter") : Guidance.Title);
+            Text_ContextPing->SetColorAndOpacity(Color);
+        }
         if (Text_Legend)
         {
             Text_Legend->SetText(Status);
             Text_Legend->SetColorAndOpacity(Color);
             Text_Legend->SetToolTipText(Status);
         }
+        const auto SetOptional = [](UTextBlock* Text, const FText& Value)
+        {
+            if (!Text) return;
+            Text->SetText(Value);
+            Text->SetVisibility(Value.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+        };
+        SetOptional(Text_PlacementAdvice, bPreview && (!System->IsCurrentPlacementValid() || System->IsDirectPlacementAdjustment()) ? Guidance.Advice : FText::GetEmpty());
+        SetOptional(Text_PlacementObstruction, Guidance.Obstruction);
+        SetOptional(Text_AssistanceMessage, System ? System->GetPlacementAssistanceMessage() : FText::GetEmpty());
+        if (Button_DirectAdjustment)
+        {
+            Button_DirectAdjustment->SetIsEnabled(bPreview && System->HasPlacementTarget());
+            if (auto* Label = Cast<UTextBlock>(Button_DirectAdjustment->GetContent()))
+            {
+                const bool bDirect = System && System->IsDirectPlacementAdjustment();
+                Label->SetText(bDirect ? LOCTEXT("FollowCursor", "위치 다시 선택  T") : LOCTEXT("AdjustDirect", "직접 조정  T"));
+                SetChoiceState(Button_DirectAdjustment, Label, bDirect);
+            }
+        }
+        if (Button_FindNearby)
+        {
+            const bool bFinding = System && System->IsFindingNearbyPlacement();
+            Button_FindNearby->SetVisibility(Guidance.bCanFindNearby || bFinding ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+            Button_FindNearby->SetIsEnabled(!bFinding);
+            if (auto* Label = Cast<UTextBlock>(Button_FindNearby->GetContent()))
+                Label->SetText(bFinding ? LOCTEXT("FindingNearby", "찾는 중…") : LOCTEXT("FindNearby", "가까운 빈자리"));
+        }
+        if (Button_NextPlacementProblem)
+            Button_NextPlacementProblem->SetVisibility(Guidance.ProblemCount > 1 ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
     if (Text_Grid)
     {
@@ -353,6 +584,8 @@ void UFF_BuildToolsWidget::HandleGrid()
     {
         System->NotifyBuildToolsInteraction();
         System->SetPlacementGridVisible(!System->IsPlacementGridVisible());
+        FFBuildFeedback::Pulse(GetOwningPlayer());
+        CloseRadialMenu();
     }
 }
 
@@ -379,6 +612,8 @@ void UFF_BuildToolsWidget::SetSnap(const int32 StepCm)
     {
         System->NotifyBuildToolsInteraction();
         System->SetPreferredPositionSnapCm(StepCm);
+        FFBuildFeedback::Pulse(GetOwningPlayer());
+        CloseRadialMenu();
     }
 }
 
@@ -394,6 +629,8 @@ void UFF_BuildToolsWidget::RotateToNextSnap(const int32 Direction)
         System->SetPlacementYawDegrees(FFBuildModeModel::ResolveNextSnappedYawDegrees(
             System->GetPlacementYawDegrees(), System->GetPlacementRotationSnapDegrees(), Direction));
         RefreshAngleText();
+        FFBuildFeedback::Pulse(GetOwningPlayer());
+        CloseRadialMenu();
     }
 }
 

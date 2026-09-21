@@ -39,6 +39,8 @@ class FESTAFIESTA_API UFF_PrepBuildTileView final : public UTileView
 public:
 	/** Builder-only configuration. Runtime code never changes the generated entry contract. */
 	void ConfigureEntryClass(TSubclassOf<UUserWidget> InEntryClass);
+	/** Saved paged catalogs route wheel input to their panel, before constructing Slate. */
+	void ConfigureCatalogWheelRouting() { ConsumeMouseWheel = EConsumeMouseWheel::Never; }
 
 protected:
 	virtual TSharedRef<STableViewBase> RebuildListWidget() override;
@@ -58,6 +60,8 @@ class FESTAFIESTA_API UFF_PrepBuildTileWidget
 public:
 	// Rebind visible data after a price/thumbnail change without releasing the virtualized row.
 	void RefreshItemPresentation();
+	/** Catalog drag selection reads the current pooled item only after a click is released. */
+	UFF_PrepBuildTileData* GetPresentedItem() const { return Item.Get(); }
 
 	/** 선택한 기존 시설과 관련된 설치 후보를 강조합니다. 스타일은 WBP가 소유합니다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build|Synergy")
@@ -124,6 +128,29 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UBorder> Border_Card;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build|Program")
+	TObjectPtr<UBorder> Border_ThumbnailBackdrop;
+
+	/** Authored pearl material brush; no asset loads occur while cards are recycled. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Program")
+	FSlateBrush ProgramThumbnailBrush;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Program")
+	FLinearColor ProgramCardTint = FLinearColor::FromSRGBColor(FColor(0xED, 0xEC, 0xF8));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Program")
+	FLinearColor ProgramOutlineColor = FLinearColor::FromSRGBColor(FColor(0xB8, 0xB4, 0xD5));
+
+	/** Authored rose material takes priority when a required facility also supports programs. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Required")
+	FSlateBrush RequiredThumbnailBrush;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Required")
+	FLinearColor RequiredCardTint = FLinearColor::FromSRGBColor(FColor(0xF8, 0xEB, 0xE9));
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Required")
+	FLinearColor RequiredOutlineColor = FLinearColor::FromSRGBColor(FColor(0xD0, 0xA0, 0xA3));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UImage> Image_Thumbnail;
@@ -193,6 +220,7 @@ private:
 	int32 RequiredFacilityCurrentCount = 0;
 	int32 RequiredFacilityMinimumCount = 0;
 	FSlateBrush AuthoredCardBrush;
+	FSlateBrush AuthoredThumbnailBrush;
 	FSlateColor AuthoredCostColor;
 	FSlateColor AuthoredStateColor;
 	FSlateColor AuthoredFavoriteColor;

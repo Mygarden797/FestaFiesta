@@ -694,6 +694,43 @@ namespace FFZSFacilityUpgradeRules
     FF_ZONESYSTEM_API FFFZSFacilitySpec BuildEffectiveSpec(const FFFZSFacilitySpec& BaseSpec, int32 Level, float SizeMultiplier);
 }
 
+UENUM(BlueprintType)
+enum class EFFZSPlacementObstructionKind : uint8
+{
+    Facility,
+    WorldObstacle,
+    ProtectedArea
+};
+
+// Read-only explanation of an already failed authority check. Never used for occupancy or commits.
+USTRUCT(BlueprintType)
+struct FF_ZONESYSTEM_API FFFZSPlacementObstruction
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    EFFZSPlacementFailure Reason = EFFZSPlacementFailure::None;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    EFFZSPlacementObstructionKind Kind = EFFZSPlacementObstructionKind::WorldObstacle;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FText DisplayName;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FGuid FacilityInstanceId;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FBox WorldBounds = FBox(ForceInit);
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FVector WorldCenter = FVector::ZeroVector;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FVector WorldHalfExtent = FVector::ZeroVector;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FQuat WorldRotation = FQuat::Identity;
+
+    // Unlike zone-local reservation arrays, this diagnostic rectangle is WORLD XY CENTIMETERS.
+    // It identifies the tested facility region, not the intersection polygon with the blocker.
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    FFFZSOrientedRect AffectedWorldRegion;
+};
+
 USTRUCT(BlueprintType)
  // 배치 읽기 검증 결과와 계산 산출물.
  // 유효할 때 Transform과 네 압축 사각형 배열을 실행 단계가 재사용하며, 실패 시 Reasons와 Summary가 원인을 보존한다.
@@ -712,6 +749,13 @@ struct FF_ZONESYSTEM_API FFFZSPlacementValidation
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     FText Summary;
     // 누적 실패 설명. 로직 분기에는 Reasons를 사용하고 이 값은 UI 표시용으로 취급한다.
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
+    TArray<FFFZSPlacementObstruction> Obstructions;
+
+    static constexpr int32 MaxObstructions = 12;
+    // Bounded explanatory data only; does not add a failure or change validity.
+    void AddObstruction(FFFZSPlacementObstruction Obstruction);
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Validation")
     FTransform PlacementTransform = FTransform::Identity;

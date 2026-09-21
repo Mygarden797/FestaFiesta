@@ -782,6 +782,25 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
 
 // 실패 이유는 중복 없이 누적하지만 Summary는 최초의 사람이 읽을 수 있는 메시지를 보존한다.
 // 한 번 실패한 검증은 뒤 단계가 성공해도 다시 true가 되지 않는 단조 상태다.
+void FFFZSPlacementValidation::AddObstruction(FFFZSPlacementObstruction Obstruction)
+{
+    if (Obstructions.Num() >= MaxObstructions || Obstruction.Reason == EFFZSPlacementFailure::None ||
+        Obstruction.WorldCenter.ContainsNaN() || Obstruction.WorldHalfExtent.ContainsNaN() ||
+        Obstruction.WorldHalfExtent.GetMin() < 0.0 || Obstruction.WorldRotation.ContainsNaN() ||
+        !Obstruction.WorldRotation.IsNormalized()) return;
+    for (const FFFZSPlacementObstruction& Existing : Obstructions)
+    {
+        if (Existing.Reason == Obstruction.Reason && Existing.Kind == Obstruction.Kind &&
+            Existing.FacilityInstanceId == Obstruction.FacilityInstanceId &&
+            Existing.WorldCenter.Equals(Obstruction.WorldCenter, 0.01) &&
+            Existing.WorldHalfExtent.Equals(Obstruction.WorldHalfExtent, 0.01) &&
+            Existing.WorldRotation.Equals(Obstruction.WorldRotation, 0.0001)) return;
+    }
+    Obstruction.WorldBounds = FBox(-Obstruction.WorldHalfExtent, Obstruction.WorldHalfExtent)
+        .TransformBy(FTransform(Obstruction.WorldRotation, Obstruction.WorldCenter));
+    Obstructions.Add(MoveTemp(Obstruction));
+}
+
 void FFFZSPlacementValidation::AddFailure(const EFFZSPlacementFailure Reason, const FText& Message)
 {
     const bool bWasValid = bIsValid;

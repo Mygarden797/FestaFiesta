@@ -622,6 +622,96 @@ bool FFF_PrepBuildPresentation_SynergyHighlightTest::RunTest(const FString& Para
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepBuildPresentation_RequiredPriorityTest,
+	"FestaFiesta.UI.PrepBuild.RequiredFacilitiesLeadAllCatalog",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+
+bool FFF_PrepBuildPresentation_RequiredPriorityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_PrepBuildPresentationTestHelpers;
+	TArray<FFF_BuildCatalogEntry> Entries;
+	for (int32 Index = 0; Index < 12; ++Index)
+	{
+		const FString Id = FString::Printf(TEXT("Fixture_%02d"), Index);
+		Entries.Add(MakeEntry(*Id, *FString::Printf(TEXT("공통 시설 %02d"), Index),
+			Index < 8 ? EFFZSFacilityCategory::Booth : EFFZSFacilityCategory::Performance,
+			Index < 8 ? TEXT("FoodStall") : TEXT("MainStage"), 100));
+		if (Index >= 8)
+		{
+			Entries.Last().bRequiredForSetup = true;
+			Entries.Last().RequiredMinimumCount = 1;
+			Entries.Last().bRequiredSetupSatisfied = Index % 2 == 1;
+			Entries.Last().RequiredInstalledCount = Index % 2;
+		}
+	}
+	auto* Model = NewObject<UFF_PrepBuildPresentationModel>();
+	FFF_PrepBuildFilter Filter;
+	const auto Reconcile = [&]() { Model->Reconcile(EFF_BuildCatalogLoadState::Ready, Entries, Filter, 500, true, FText::GetEmpty()); };
+	Reconcile();
+	TArray<UObject*> OriginalObjects;
+	for (const auto& Entry : Entries) OriginalObjects.Add(Model->FindTile(Entry.FacilityDefinitionId));
+	const auto ExpectOrder = [&](const TCHAR* Context, const TArray<int32>& ExpectedIndices)
+	{
+		TArray<UObject*> Expected;
+		for (const int32 Index : ExpectedIndices) Expected.Add(OriginalObjects[Index]);
+		TestTrue(Context, Model->GetListItems() == Expected);
+	};
+	ExpectOrder(TEXT("Required facilities originally beyond page one lead the six-card catalog, missing before completed"),
+		{8, 10, 9, 11, 0, 1, 2, 3, 4, 5, 6, 7});
+	const TArray<UObject*> Prioritized = Model->GetListItems();
+	Model->RefreshGold(0);
+	TestTrue(TEXT("Balance updates preserve order and every pooled card"), Model->GetListItems() == Prioritized);
+	TestFalse(TEXT("Prioritizing an unaffordable requirement never makes it purchasable"), Model->FindTile(Entries[8].FacilityDefinitionId)->IsAffordable());
+	Model->SetSynergyHighlightIds({Entries[3].FacilityDefinitionId, Entries[11].FacilityDefinitionId});
+	Reconcile();
+	ExpectOrder(TEXT("Requirements stay ahead of ordinary recommendations; existing recommendation priority remains inside each group"),
+		{8, 10, 11, 9, 3, 0, 1, 2, 4, 5, 6, 7});
+	Model->SetSynergyHighlightIds({});
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Performance;
+	Reconcile();
+	ExpectOrder(TEXT("An explicit category retains its original order without injecting unrelated facilities"), {8, 9, 10, 11});
+	Filter.bFilterByCategory = false;
+	Filter.SearchText = TEXT("공통");
+	Reconcile();
+	ExpectOrder(TEXT("Explicit search results retain their existing stable order"), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
+	Filter.SearchText = TEXT("시설 02");
+	Reconcile();
+	ExpectOrder(TEXT("Missing requirements cannot bypass a search term"), {2});
+	Filter.SearchText.Reset();
+	Filter.bFavoritesOnly = true;
+	Filter.FavoriteIds = {Entries[0].FacilityDefinitionId, Entries[9].FacilityDefinitionId};
+	Reconcile();
+	ExpectOrder(TEXT("Favorites retain their membership and order even when other required facilities are missing"), {0, 9});
+	Filter.bFilterByCategory = true;
+	Filter.Category = EFFZSFacilityCategory::Performance;
+	Filter.MinorToken = TEXT("MainStage");
+	Filter.SearchText = TEXT("시설 09");
+	Reconcile();
+	ExpectOrder(TEXT("Category, subcategory, search and favorites still compose"), {9});
+	Filter = FFF_PrepBuildFilter();
+	Filter.SearchText = TEXT("  ");
+	Entries[8].bRequiredSetupSatisfied = true;
+	Entries[8].RequiredInstalledCount = 1;
+	Reconcile();
+	ExpectOrder(TEXT("After completion the remaining missing requirement comes first without recreating any card"),
+		{10, 8, 9, 11, 0, 1, 2, 3, 4, 5, 6, 7});
+	TestTrue(TEXT("Requirement progress still reaches its original pooled object"),
+		Model->FindTile(Entries[8].FacilityDefinitionId) == OriginalObjects[8] &&
+		Model->FindTile(Entries[8].FacilityDefinitionId)->GetRequiredFacilityCurrentCount() == 1);
+	for (int32 Index = 0; Index < Entries.Num(); ++Index)
+	{
+		TestEqual(TEXT("Presentation sorting never mutates the source catalog order"), Entries[Index].FacilityDefinitionId,
+			FName(*FString::Printf(TEXT("Fixture_%02d"), Index)));
+		Entries[Index].bRequiredForSetup = false;
+	}
+	Reconcile();
+	ExpectOrder(TEXT("Removing requirements restores the original order and original card objects"),
+		{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_PrepBuildPresentation_TaxonomyTest,
 	"FestaFiesta.UI.PrepBuild.TaxonomyLabelsAndNameFallback",

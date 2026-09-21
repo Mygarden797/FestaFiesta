@@ -150,7 +150,9 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
@@ -273,7 +275,9 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
@@ -311,6 +315,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
+	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
@@ -328,7 +333,9 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
@@ -591,6 +598,9 @@ bool UFF_FacilityInfoSubsystem::IsPointerOverPanel() const
 		(Ranking && Ranking->IsPointerOverPanel());
 }
 
+bool UFF_FacilityInfoSubsystem::IsLightingTextInputFocused() const
+{ return Panel && Panel->IsLightingTextInputFocused(); }
+
 void UFF_FacilityInfoSubsystem::SetRevenueRankingPresentationOpen(const bool bOpen)
 {
 	bRevenueRankingPresentationOpen = bOpen;
@@ -792,6 +802,8 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		LOCTEXT("QueueCapacityFormat", "대기 {0}명 · 동시 이용 {1}명"),
 		FText::AsNumber(Spec.QueueRules.MaxWaitingAgents),
 		FText::AsNumber(Spec.QueueRules.ServiceCapacity));
+	OutViewData.QueueCapacityValueText=FText::Format(LOCTEXT("QueuePeopleValue","{0}명"),FText::AsNumber(Spec.QueueRules.MaxWaitingAgents));
+	OutViewData.ServiceCapacityValueText=FText::Format(LOCTEXT("QueuePeopleValue","{0}명"),FText::AsNumber(Spec.QueueRules.ServiceCapacity));
 	OutViewData.ServiceDurationText = FText::Format(
 		LOCTEXT("ServiceDurationFormat", "{0}초"),
 		FText::AsNumber(Spec.QueueRules.ServiceDurationSeconds));
@@ -811,6 +823,8 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
 	{
 		OutViewData.QueueCapacityText = LOCTEXT("LightingNoQueue", "대기열 없음");
+		OutViewData.QueueCapacityValueText=FText::FromString(TEXT("—"));
+		OutViewData.ServiceCapacityValueText=FText::FromString(TEXT("—"));
 		OutViewData.ServiceDurationText = LOCTEXT("LightingNoService", "이용 서비스 없음");
 	}
 	OutViewData.bNeedsRelocation = ReadModel.bNeedsRelocation;
@@ -1562,6 +1576,14 @@ void UFF_FacilityInfoSubsystem::HandlePanelLightingResetRequested(const FGuid Fa
 	if (SelectedFacilityId != FacilityId) return;
 	SetFeedback(bSucceeded ? LOCTEXT("LightingReset", "시설의 기본 조명 설정으로 되돌렸습니다.")
 		: (Failure.IsEmpty() ? LOCTEXT("LightingResetFailed", "기본 조명을 복원할 수 없습니다.") : Failure), !bSucceeded);
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelLightingRollbackRequested(const FGuid FacilityId,const FFFZSFacilityLightingState& State)
+{
+	// Rollback targets the transaction's original instance, even if selection/phase changed.
+	// The Zone subsystem rejects removed instances and validates every restored value.
+	if(UFFZSWorldSubsystem* ZoneSystem=GetWorld()?GetWorld()->GetSubsystem<UFFZSWorldSubsystem>():nullptr)
+	{ FText Failure; ZoneSystem->SetFacilityLighting(FacilityId,State,Failure); }
 }
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()

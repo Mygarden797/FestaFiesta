@@ -21,4 +21,9 @@ namespace FFZSBuildRangePresentation
     void AppendQueueSlots(TArray<FBatchedLine>& Lines, const FFFZSFacilitySpec& Spec,
         const FTransform& FacilityTransform, const FLinearColor& Color,
         const UFFZSBuildPresentationSettings& Style);
+    // Bounded, depth-independent diagonals identify failure even without color perception.
+    void AppendFailureHatching(TArray<FBatchedLine>& Lines, const FWorldCorners& Corners,
+        const FLinearColor& Color);
+    void AppendObstructionOutline(TArray<FBatchedLine>& Lines,
+        const FFFZSPlacementObstruction& Obstruction, const FLinearColor& Color);
 }

@@ -1,53 +1,61 @@
-// Renders the actual Designer asset and checks its laid-out control bounds. This is a
-// playerless UI fixture: sample labels/enabled controls do not invoke any building command.
-
+// Render each real authored HUD state without a player or building authority.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
-
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/EditableTextBox.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Engine/UserInterfaceSettings.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
+#include "Input/HittestGrid.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "RenderingThread.h"
+#include "ShaderCompiler.h"
 #include "Slate/WidgetRenderer.h"
 #include "TextureResource.h"
+#include "UObject/StrongObjectPtr.h"
+#include "UObject/UnrealType.h"
+#include "Widgets/Layout/SDPIScaler.h"
+#include "Widgets/SVirtualWindow.h"
 
-namespace
+namespace FFBuildToolsVisual
 {
-    class FScopedBuildToolsPlayerlessInitialization
-    {
-    public:
-        explicit FScopedBuildToolsPlayerlessInitialization(UWidgetBlueprintGeneratedClass& InClass)
-            : Class(InClass), bPrevious(InClass.bCanCallInitializedWithoutPlayerContext)
-        {
-            Class.bCanCallInitializedWithoutPlayerContext = true;
-        }
-        ~FScopedBuildToolsPlayerlessInitialization()
-        {
-            Class.bCanCallInitializedWithoutPlayerContext = bPrevious;
-        }
-    private:
-        UWidgetBlueprintGeneratedClass& Class;
-        bool bPrevious;
-    };
-
-    const FName BuildToolsControls[] = {
-        TEXT("Button_Confirm"), TEXT("Button_Grid"), TEXT("Button_Catalog"),
-        TEXT("Button_SnapMeter"), TEXT("Button_SnapPrecision"), TEXT("Button_SnapFree"),
-        TEXT("Button_RotateLeft"), TEXT("Editable_Angle"), TEXT("Button_RotateRight"),
-        TEXT("Button_NudgeLeft"), TEXT("Button_NudgeDown"), TEXT("Button_NudgeUp"), TEXT("Button_NudgeRight"),
-        TEXT("Button_FreeRotateLeft"), TEXT("Button_FreeRotateRight")
-    };
+struct FPlayerlessInitialization
+{
+    explicit FPlayerlessInitialization(UWidgetBlueprintGeneratedClass& InClass)
+        : Class(InClass), bPrevious(InClass.bCanCallInitializedWithoutPlayerContext)
+    { Class.bCanCallInitializedWithoutPlayerContext = true; }
+    ~FPlayerlessInitialization() { Class.bCanCallInitializedWithoutPlayerContext = bPrevious; }
+    UWidgetBlueprintGeneratedClass& Class;
+    bool bPrevious;
+};
+bool IsRendered(const UWidget* Widget)
+{
+    for (const UWidget* Current = Widget; Current; Current = Current->GetParent())
+        if (Current->GetVisibility() == ESlateVisibility::Collapsed || Current->GetVisibility() == ESlateVisibility::Hidden) return false;
+    return Widget != nullptr;
+}
+bool Contains(const FSlateRect& Outer, const FSlateRect& Inner)
+{
+    return Inner.Left >= Outer.Left - 1 && Inner.Right <= Outer.Right + 1 &&
+        Inner.Top >= Outer.Top - 1 && Inner.Bottom <= Outer.Bottom + 1;
+}
+bool Overlaps(const FSlateRect& A, const FSlateRect& B)
+{
+    return A.Left < B.Right - .5f && A.Right > B.Left + .5f && A.Top < B.Bottom - .5f && A.Bottom > B.Top + .5f;
+}
+FSlateRect Bounds(const UWidget* Widget) { return Widget->GetPaintSpaceGeometry().GetLayoutBoundingRect(); }
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRenderedPreviewTest,
@@ -56,181 +64,180 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsRenderedPreviewTest,
 
 bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
 {
+    using namespace FFBuildToolsVisual;
     if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
     {
-        AddInfo(TEXT("SKIPPED: Build tools PNG capture needs a real RHI. Run with -RenderOffscreen."));
+        AddInfo(TEXT("SKIPPED: HUD screenshots require a real RHI; use -RenderOffscreen."));
         return true;
     }
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
-    UWidgetBlueprintGeneratedClass* WidgetClass = Cast<UWidgetBlueprintGeneratedClass>(
-        LoadClass<UFF_BuildToolsWidget>(nullptr,
-            TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
-    if (!TestNotNull(TEXT("Editor world for playerless visual fixture"), World) ||
-        !TestNotNull(TEXT("Actual WBP_FF_BuildTools asset (create with FF.BuildToolsUMG first)"), WidgetClass))
-    {
-        return false;
-    }
-    FScopedBuildToolsPlayerlessInitialization Initialization(*WidgetClass);
-    UFF_BuildToolsWidget* Widget = CreateWidget<UFF_BuildToolsWidget>(World, WidgetClass);
-    if (!TestNotNull(TEXT("Actual toolbar instance"), Widget))
-    {
-        return false;
-    }
-    // NativeConstruct projects Closed in this playerless world. Materialize it first, then
-    // supply a visible preview example without touching runtime state or calling action handlers.
-    const TSharedRef<SWidget> SlateWidget = Widget->TakeWidget();
+    auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
+        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+    if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Saved compact build HUD"), Class)) return false;
+    FPlayerlessInitialization Context(*Class);
+    TStrongObjectPtr<UFF_BuildToolsWidget> Widget(CreateWidget<UFF_BuildToolsWidget>(World, Class));
+    if (!TestNotNull(TEXT("Production tools widget"), Widget.Get())) return false;
+    const TSharedRef<SWidget> Slate = Widget->TakeWidget();
     Widget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     Widget->SetIsEnabled(true);
-    for (const FName Name : BuildToolsControls)
+    auto* Data = FindFProperty<FStructProperty>(Class, TEXT("ViewData"));
+    if (!TestNotNull(TEXT("Presentation-only fixture seam"), Data)) return false;
+    Data->ContainerPtrToValuePtr<FFF_BuildToolsViewData>(Widget.Get())->bPreviewActive = true;
+    auto Text = [&](FName Name, const TCHAR* Value)
     {
-        UWidget* Control = Widget->GetWidgetFromName(Name);
-        if (TestNotNull(*FString::Printf(TEXT("Designer control %s exists"), *Name.ToString()), Control))
-        {
-            Control->SetIsEnabled(true);
-        }
-    }
-    const auto SetFixtureText = [Widget](const FName Name, const TCHAR* Text)
-    {
-        if (UTextBlock* Label = Cast<UTextBlock>(Widget->GetWidgetFromName(Name)))
-        {
-            Label->SetText(FText::FromString(Text));
-        }
+        if (UTextBlock* Label = Cast<UTextBlock>(Widget->GetWidgetFromName(Name))) Label->SetText(FText::FromString(Value));
     };
-    SetFixtureText(TEXT("Text_Mode"), TEXT("시설 배치"));
-    SetFixtureText(TEXT("Text_Legend"), TEXT("현재 100cm 맞춤 · 초록: 배치 가능 · 빨강: 배치 불가"));
-    SetFixtureText(TEXT("Text_Grid"), TEXT("격자 켜짐"));
-    SetFixtureText(TEXT("Text_Confirm"), TEXT("배치 확정"));
-    SetFixtureText(TEXT("Text_FacilityName"), TEXT("바다 공방"));
-    SetFixtureText(TEXT("Text_Cost"), TEXT("설치 300 Gold"));
-    SetFixtureText(TEXT("Text_ActiveSnap"), TEXT("임시 25cm 적용 중"));
-    // The playerless Closed state has no valid placement/grid. Project those fixture
-    // selection visuals explicitly, just as RefreshTools does for a valid runtime preview.
-    for (const TPair<FName, FName>& Names : {
-        TPair<FName, FName>(TEXT("Button_Confirm"), TEXT("Text_Confirm")),
-        TPair<FName, FName>(TEXT("Button_Grid"), TEXT("Text_Grid")) })
+    Text(TEXT("Text_Mode"), TEXT("시설 배치"));
+    Text(TEXT("Text_FacilityName"), TEXT("구름 솜사탕 부스"));
+    Text(TEXT("Text_Cost"), TEXT("설치 400 Gold"));
+    Text(TEXT("Text_Balance"), TEXT("보유 7,200 Gold  ·  확정 후 6,800 Gold"));
+    Text(TEXT("Text_Legend"), TEXT("배치 가능 · 좌클릭 / Enter로 확정"));
+    Text(TEXT("Text_ActiveSnap"), TEXT("100 cm 맞춤"));
+    Text(TEXT("Text_Confirm"), TEXT("배치 확정"));
+    Text(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m\n안전 여유  1 m"));
+    Text(TEXT("Text_Queue"), TEXT("대기 정원  5명\n동시 이용  1명  ·  1인 서비스  6초"));
+    Text(TEXT("Text_ControlHelp"), TEXT("좌클릭 / Enter  설치 확정\nQ / E  45°씩 회전\nShift + Q / E  자유 회전\nCtrl  25 cm · Alt  1 cm\nT  직접 조정 · G  격자 표시\nB / 우클릭  시설 목록\nW A S D  카메라 이동\nEsc  일시정지"));
+    auto* Dock = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_Tools")));
+    auto* Info = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementInfo")));
+    auto* Help = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementHelp")));
+    if (!TestNotNull(TEXT("Compact tool dock"), Dock) || !TestNotNull(TEXT("Compact facility summary"), Info)) return false;
+    TArray<UWidget*> Controls;
+    TSet<UMaterialInterface*> Materials;
+    auto Material = [&](const FSlateBrush& Brush)
+    { if (auto* Value = Cast<UMaterialInterface>(Brush.GetResourceObject())) Materials.Add(Value); };
+    Widget->WidgetTree->ForEachWidget([&](UWidget* Child)
     {
-        if (auto* Button = Cast<UFF_BuildToolsActionButton>(Widget->GetWidgetFromName(Names.Key)))
+        if (UButton* Button = Cast<UButton>(Child))
         {
-            Button->ApplySelection(true, Cast<UTextBlock>(Widget->GetWidgetFromName(Names.Value)));
+            Button->SetIsEnabled(true); Controls.Add(Button);
+            Material(Button->GetStyle().Normal); Material(Button->GetStyle().Hovered);
+            Material(Button->GetStyle().Pressed); Material(Button->GetStyle().Disabled);
         }
-    }
-    if (auto* Legend = Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_Legend"))))
+        if (const UBorder* Border = Cast<UBorder>(Child)) Material(Border->Background);
+        if (const UImage* Image = Cast<UImage>(Child)) Material(Image->GetBrush());
+    });
+    auto* Confirm = Cast<UFF_BuildToolsActionButton>(Widget->GetWidgetFromName(TEXT("Button_Confirm")));
+    if (Confirm)
     {
-        Legend->SetColorAndOpacity(Widget->ReadyStatusColor);
+        Confirm->ApplySelection(true, Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_Confirm"))));
+        Material(Confirm->SelectionStyle.Normal);
     }
-    if (UEditableTextBox* Angle = Cast<UEditableTextBox>(Widget->GetWidgetFromName(TEXT("Editable_Angle"))))
-    {
-        Angle->SetText(FText::FromString(TEXT("37.5")));
-    }
-    UBorder* Panel = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_Tools")));
-    if (!TestNotNull(TEXT("Designer toolbar panel"), Panel))
-    {
-        return false;
-    }
-    Widget->ForceLayoutPrepass();
-    constexpr int32 Width = 1280;
-    constexpr int32 Height = 720;
-    // Explicitly request the sRGB target used by facility/paid-program captures. The
-    // convenience DrawWidget overload would create a linear target for this renderer.
-    FWidgetRenderer Renderer(false, true);
-    UTextureRenderTarget2D* Target = FWidgetRenderer::CreateTargetFor(FVector2D(Width, Height), TF_Bilinear, true);
-    if (!TestNotNull(TEXT("sRGB toolbar capture target"), Target)) { return false; }
-    Renderer.DrawWidget(Target, SlateWidget, FVector2D(Width, Height), 0.0f, false);
-    TArray<FColor> Pixels;
-    FTextureRenderTargetResource* Resource = Target ? Target->GameThread_GetRenderTargetResource() : nullptr;
-    FReadSurfaceDataFlags ReadFlags;
-    ReadFlags.SetLinearToGamma(false);
-    if (!TestTrue(TEXT("Actual WBP renders into a complete image"),
-        Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == Width * Height))
-    {
-        return false;
-    }
-    const FGeometry& PanelGeometry = Panel->GetCachedGeometry();
-    const FVector2D PanelTop = PanelGeometry.LocalToAbsolute(FVector2D::ZeroVector);
-    const FVector2D PanelBottom = PanelGeometry.LocalToAbsolute(PanelGeometry.GetLocalSize());
-    TestTrue(TEXT("Toolbar panel has a real arranged size"),
-        PanelGeometry.GetLocalSize().X > 100.0 && PanelGeometry.GetLocalSize().Y > 30.0);
-    TestTrue(TEXT("Bottom anchored panel fits the 1280 by 720 viewport"),
-        PanelTop.X >= 0.0 && PanelTop.Y >= 0.0 && PanelBottom.X <= Width + 1.0 && PanelBottom.Y <= Height + 1.0);
-    AddInfo(FString::Printf(TEXT("Toolbar panel: %.1f x %.1f at (%.1f, %.1f), bottom (%.1f, %.1f)"),
-        PanelGeometry.GetLocalSize().X, PanelGeometry.GetLocalSize().Y,
-        PanelTop.X, PanelTop.Y, PanelBottom.X, PanelBottom.Y));
-    for (const FName Name : BuildToolsControls)
-    {
-        const UWidget* Control = Widget->GetWidgetFromName(Name);
-        if (!Control)
-        {
-            continue;
-        }
-        TestTrue(*FString::Printf(TEXT("%s is enabled in the placement fixture"), *Name.ToString()), Control->GetIsEnabled());
-        const FGeometry& Geometry = Control->GetCachedGeometry();
-        const FVector2D Top = Geometry.LocalToAbsolute(FVector2D::ZeroVector);
-        const FVector2D Bottom = Geometry.LocalToAbsolute(Geometry.GetLocalSize());
-        TestTrue(*FString::Printf(TEXT("%s retains a usable control height"), *Name.ToString()),
-            Geometry.GetLocalSize().X > 10.0 && Geometry.GetLocalSize().Y >= 20.0);
-        TestTrue(*FString::Printf(TEXT("%s stays fully inside the toolbar panel"), *Name.ToString()),
-            Top.X >= PanelTop.X - 0.5 && Top.Y >= PanelTop.Y - 0.5 &&
-            Bottom.X <= PanelBottom.X + 0.5 && Bottom.Y <= PanelBottom.Y + 0.5);
-        AddInfo(FString::Printf(TEXT("%s: x %.1f..%.1f, y %.1f..%.1f, size %.1f x %.1f"),
-            *Name.ToString(), Top.X, Bottom.X, Top.Y, Bottom.Y,
-            Geometry.GetLocalSize().X, Geometry.GetLocalSize().Y));
-    }
-    int32 VisiblePixels = 0;
-    for (const FColor& Pixel : Pixels)
-    {
-        VisiblePixels += Pixel.R > 20 || Pixel.G > 20 || Pixel.B > 20 ? 1 : 0;
-    }
-    TestTrue(TEXT("Captured toolbar contains visible palette/text pixels"), VisiblePixels > 10000);
-    const auto CheckSelectionColor = [this, Widget](const TArray<FColor>& Capture, const int32 CaptureWidth,
-        const int32 CaptureHeight, const TCHAR* CaptureName)
-    {
-        const auto* Confirm = Cast<UFF_BuildToolsActionButton>(Widget->GetWidgetFromName(TEXT("Button_Confirm")));
-        if (!TestNotNull(TEXT("Selected confirmation button for palette verification"), Confirm)) { return; }
-        const FGeometry& Geometry = Confirm->GetCachedGeometry();
-        // Sample inside the solid fill, left of the label and clear of the rounded outline.
-        const FVector2D Point = Geometry.LocalToAbsolute(FVector2D(8.0, Geometry.GetLocalSize().Y * 0.5));
-        const int32 X = FMath::FloorToInt(Point.X);
-        const int32 Y = FMath::FloorToInt(Point.Y);
-        if (!TestTrue(TEXT("Palette sample lies inside the capture"), X >= 0 && Y >= 0 &&
-            X < CaptureWidth && Y < CaptureHeight)) { return; }
-        const FColor Actual = Capture[Y * CaptureWidth + X];
-        // The approved selection brush is #315747. Derive the expected sRGB bytes from
-        // the authored brush so intentional subsequent Designer palette edits remain valid.
-        const FColor Expected = Confirm->SelectionStyle.Normal.TintColor.GetSpecifiedColor().ToFColor(true);
-        const bool bMatches = FMath::Abs(int32(Actual.R) - int32(Expected.R)) <= 2 &&
-            FMath::Abs(int32(Actual.G) - int32(Expected.G)) <= 2 &&
-            FMath::Abs(int32(Actual.B) - int32(Expected.B)) <= 2 && Actual.A >= 250;
-        TestTrue(*FString::Printf(TEXT("%s: selected fill round-trips to authored sRGB (actual #%02X%02X%02X, expected #%02X%02X%02X)"),
-            CaptureName, Actual.R, Actual.G, Actual.B, Expected.R, Expected.G, Expected.B), bMatches);
-    };
-    CheckSelectionColor(Pixels, Width, Height, TEXT("Toolbar"));
-    const FString Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Automation/BuildableGrid"));
+    for (UMaterialInterface* Value : Materials) Value->EnsureIsComplete();
+    if (GShaderCompilingManager) GShaderCompilingManager->FinishAllCompilation();
+    FlushRenderingCommands();
+    const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation/BuildableGrid");
     IFileManager::Get().MakeDirectory(*Directory, true);
-    const FString Path = FPaths::Combine(Directory, TEXT("BuildTools.png"));
-    TArray64<uint8> Png;
-    FImageUtils::PNGCompressImageArray(Width, Height, Pixels, Png);
-    const bool bSaved = FFileHelper::SaveArrayToFile(Png, *Path);
-    TestTrue(TEXT("Actual toolbar PNG exists on disk"), bSaved && IFileManager::Get().FileSize(*Path) > 0);
-    AddInfo(FString::Printf(TEXT("Build tools Designer fixture PNG: %s"), *FPaths::ConvertRelativePathToFull(Path)));
-
-    // Also export the same real panel subtree at its measured size for legible close-up review.
-    const int32 DetailWidth = FMath::Max(1, FMath::CeilToInt(PanelGeometry.GetLocalSize().X));
-    const int32 DetailHeight = FMath::Max(1, FMath::CeilToInt(PanelGeometry.GetLocalSize().Y));
-    UTextureRenderTarget2D* DetailTarget = FWidgetRenderer::CreateTargetFor(FVector2D(DetailWidth, DetailHeight), TF_Bilinear, true);
-    if (!TestNotNull(TEXT("sRGB toolbar detail capture target"), DetailTarget)) { return false; }
-    Renderer.DrawWidget(DetailTarget, Panel->TakeWidget(), FVector2D(DetailWidth, DetailHeight), 0.0f, false);
-    FTextureRenderTargetResource* DetailResource = DetailTarget ? DetailTarget->GameThread_GetRenderTargetResource() : nullptr;
-    Pixels.Reset();
-    if (DetailResource && DetailResource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == DetailWidth * DetailHeight)
+    auto Click = [&](FName Name)
     {
-        CheckSelectionColor(Pixels, DetailWidth, DetailHeight, TEXT("Toolbar close-up"));
-        Png.Reset();
-        FImageUtils::PNGCompressImageArray(DetailWidth, DetailHeight, Pixels, Png);
-        const FString DetailPath = FPaths::Combine(Directory, TEXT("BuildToolsDetail.png"));
-        TestTrue(TEXT("Toolbar close-up PNG saved"), FFileHelper::SaveArrayToFile(Png, *DetailPath));
-        AddInfo(FString::Printf(TEXT("Build tools close-up: %s"), *FPaths::ConvertRelativePathToFull(DetailPath)));
+        UButton* Button = Cast<UButton>(Widget->GetWidgetFromName(Name));
+        if (TestNotNull(*Name.ToString(), Button)) Button->OnClicked.Broadcast();
+    };
+    bool bAllSaved = true;
+    for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
+    {
+        const FVector2D Size(Resolution.X, Resolution.Y);
+        const float Dpi = GetDefault<UUserInterfaceSettings>()->GetDPIScaleBasedOnSize(Resolution);
+        auto Window = SNew(SVirtualWindow).Size(Size);
+        Window->SetContent(SNew(SDPIScaler).DPIScale(Dpi)[Slate]);
+        FWidgetRenderer Renderer(false, true);
+        TStrongObjectPtr<UTextureRenderTarget2D> Target(FWidgetRenderer::CreateTargetFor(Size, TF_Bilinear, true));
+        if (!TestNotNull(TEXT("HUD render target"), Target.Get())) return false;
+        FHittestGrid HitGrid;
+        for (FName Name : {TEXT("Border_PlacementHelp"), TEXT("Panel_PlacementFacts")})
+            if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
+        for (FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage"),
+            TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
+            if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
+        auto Capture = [&](const TCHAR* State)
+        {
+            for (int32 Frame = 0; Frame < 4; ++Frame)
+            {
+                Widget->ForceLayoutPrepass();
+                Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
+            }
+            const FString ContextName = FString::Printf(TEXT("%s %dx%d"), State, Resolution.X, Resolution.Y);
+            const FSlateRect Viewport(0, 0, Resolution.X, Resolution.Y);
+            const FSlateRect DockRect = Bounds(Dock), InfoRect = Bounds(Info);
+            TestTrue(ContextName + TEXT(": summary and dock fit the viewport"), Contains(Viewport, DockRect) && Contains(Viewport, InfoRect));
+            TestFalse(ContextName + TEXT(": summary and dock do not overlap"), Overlaps(DockRect, InfoRect));
+            TestTrue(ContextName + TEXT(": dock leaves bottom navigation clear"), DockRect.Bottom <= Resolution.Y - 80.f * Dpi);
+            TestTrue(ContextName + TEXT(": world center remains clear"),
+                DockRect.Left > Resolution.X * .65f && InfoRect.Right < Resolution.X * .35f);
+            if (IsRendered(Help))
+            {
+                const FSlateRect HelpRect = Bounds(Help);
+                TestTrue(ContextName + TEXT(": help follows the left summary without overlap"),
+                    Contains(Viewport, HelpRect) && FMath::IsNearlyEqual(HelpRect.Left, InfoRect.Left, 1.f) &&
+                    FMath::IsNearlyEqual(HelpRect.Right, InfoRect.Right, 1.f) && HelpRect.Top >= InfoRect.Bottom + 8.f * Dpi);
+                TestTrue(ContextName + TEXT(": help leaves the bottom navigation clear"), HelpRect.Bottom <= Resolution.Y - 80.f * Dpi);
+                TestFalse(ContextName + TEXT(": left help and right tools are separate"), Overlaps(HelpRect, DockRect));
+            }
+            TArray<UWidget*> VisibleControls;
+            for (UWidget* Control : Controls)
+            {
+                if (!IsRendered(Control)) continue;
+                VisibleControls.Add(Control);
+                const FSlateRect Rect = Bounds(Control);
+                const FString Label = ContextName + TEXT(": ") + Control->GetName();
+                TestTrue(Label + TEXT(" has a usable target"), Control->GetCachedGeometry().GetLocalSize().X >= 30 && Control->GetCachedGeometry().GetLocalSize().Y >= 20);
+                TestTrue(Label + TEXT(" remains inside its own surface"), Contains(
+                    Control->GetName() == TEXT("Button_Facts") || Control->GetName() == TEXT("Button_Help") ||
+                    Control->GetName() == TEXT("Button_DirectAdjustment") || Control->GetName() == TEXT("Button_FindNearby") ||
+                    Control->GetName() == TEXT("Button_NextPlacementProblem") ? InfoRect : DockRect, Rect));
+                if (const UButton* Button = Cast<UButton>(Control))
+                    if (const UWidget* Content = Button->GetContent()) TestTrue(Label + TEXT(" contains its label"), Contains(Rect, Bounds(Content)));
+            }
+            for (int32 A = 0; A < VisibleControls.Num(); ++A)
+                for (int32 B = A + 1; B < VisibleControls.Num(); ++B)
+                    TestFalse(ContextName + TEXT(": controls do not overlap: ") + VisibleControls[A]->GetName() + TEXT(" / ") + VisibleControls[B]->GetName(),
+                        Overlaps(Bounds(VisibleControls[A]), Bounds(VisibleControls[B])));
+            for (FName Name : {TEXT("Text_ControlHelp"), TEXT("Text_Footprint"), TEXT("Text_Queue"), TEXT("Text_RangeLegend"),
+                TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage")})
+            {
+                UWidget* Label = Widget->GetWidgetFromName(Name);
+                if (IsRendered(Label)) TestTrue(ContextName + TEXT(": expanded information stays inside its surface: ") + Name.ToString(),
+                    Contains(Name == TEXT("Text_ControlHelp") ? Bounds(Help) : InfoRect, Bounds(Label)));
+            }
+            for (FName Name : {TEXT("Button_Radial"), TEXT("Panel_Radial"), TEXT("Panel_Details")})
+                TestNull(ContextName + TEXT(": removed tool menu has no render or hit-test surface: ") + Name.ToString(),
+                    Widget->GetWidgetFromName(Name));
+            TestFalse(ContextName + TEXT(": legacy menu calls cannot reopen a panel"), Widget->IsAuxiliaryPanelOpen());
+            TArray<FColor> Pixels;
+            FReadSurfaceDataFlags Flags; Flags.SetLinearToGamma(false);
+            if (!TestTrue(ContextName + TEXT(": complete rendered image"), Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels, Flags) && Pixels.Num() == Resolution.X * Resolution.Y))
+            { bAllSaved = false; return; }
+            if (Confirm)
+            {
+                const FVector2D Point = Confirm->GetCachedGeometry().LocalToAbsolute(FVector2D(10, Confirm->GetCachedGeometry().GetLocalSize().Y * .5));
+                const int32 X = FMath::FloorToInt(Point.X), Y = FMath::FloorToInt(Point.Y);
+                if (X >= 0 && Y >= 0 && X < Resolution.X && Y < Resolution.Y)
+                    TestTrue(ContextName + TEXT(": primary action remains opaque enough to read"), Pixels[Y * Resolution.X + X].A >= 210);
+            }
+            TArray64<uint8> Png;
+            FImageUtils::PNGCompressImageArray(Resolution.X, Resolution.Y, Pixels, Png);
+            const FString Path = Directory / FString::Printf(TEXT("BuildTools_%s_%d.png"), State, Resolution.Y);
+            const bool bSaved = FFileHelper::SaveArrayToFile(Png, *Path);
+            bAllSaved &= bSaved;
+            TestTrue(ContextName + TEXT(": screenshot saved"), bSaved);
+            AddInfo(FString::Printf(TEXT("Saved %s"), *FPaths::ConvertRelativePathToFull(Path)));
+        };
+        Click(TEXT("Button_Help")); Capture(TEXT("DefaultHelp"));
+        Click(TEXT("Button_Help")); Capture(TEXT("Compact"));
+        Widget->ToggleRadialMenu(); Capture(TEXT("RemovedMenuEntry"));
+        Click(TEXT("Button_Help")); Capture(TEXT("Help"));
+        Click(TEXT("Button_Facts")); Capture(TEXT("FactsAndHelp"));
+        Click(TEXT("Button_Help")); Capture(TEXT("Facts"));
+        Click(TEXT("Button_Help")); Widget->ToggleRadialMenu(); Capture(TEXT("HelpAfterRemovedMenuEntry"));
+        Text(TEXT("Text_Legend"), TEXT("대기 줄이 들어갈 공간이 없어요 · 1/2"));
+        Text(TEXT("Text_PlacementAdvice"), TEXT("대기 줄 공간이 부족해요 · 입구 앞을 비워 주세요"));
+        Text(TEXT("Text_PlacementObstruction"), TEXT("겹치는 대상: 구름 솜사탕 부스"));
+        Text(TEXT("Text_AssistanceMessage"), TEXT("주변 6m의 후보 위치에서 자리를 찾지 못했어요. 회전하거나 T로 위치를 다시 선택해 주세요."));
+        for (FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage"),
+            TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
+            if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Visible);
+        Capture(TEXT("PlacementProblemAndHelp"));
+        Text(TEXT("Text_Legend"), TEXT("배치 가능 · 좌클릭 / Enter로 확정"));
     }
-    return bSaved;
+    return bAllSaved;
 }
-
 #endif

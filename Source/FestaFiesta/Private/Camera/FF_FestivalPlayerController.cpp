@@ -15,6 +15,24 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Framework/Application/SlateApplication.h"
+
+namespace
+{
+	bool IsFacilityLightingInputCaptured(const UWorld* World)
+	{
+		const UFF_FacilityInfoSubsystem* Info=World?World->GetSubsystem<UFF_FacilityInfoSubsystem>():nullptr;
+		if(!Info) return false;
+		return Info->IsLightingTextInputFocused() || (Info->IsPointerOverPanel() &&
+			FSlateApplication::IsInitialized() && FSlateApplication::Get().HasAnyMouseCaptor());
+	}
+	bool IsPointerOverFacilityUI(const UWorld* World)
+	{
+		const UFF_FacilityInfoSubsystem* Info=World?World->GetSubsystem<UFF_FacilityInfoSubsystem>():nullptr;
+		return Info && Info->IsPointerOverPanel();
+	}
+}
 
 AFF_FestivalPlayerController::AFF_FestivalPlayerController()
 {
@@ -190,12 +208,12 @@ EFF_CameraInputBlock AFF_FestivalPlayerController::GetInputBlockReason() const
 bool AFF_FestivalPlayerController::IsCameraMovementAllowed() const
 {
 	// 건축 중에도 화면은 움직여야 한다. 부스를 놓을 자리를 봐야 하니까.
-	return FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
+	return !IsFacilityLightingInputCaptured(GetWorld()) && FFCameraInputModel::IsMovementAllowed(GetInputBlockReason());
 }
 
 bool AFF_FestivalPlayerController::IsCameraRotationAllowed() const
 {
-	return FFCameraInputModel::IsRotationAllowed(
+	return !IsFacilityLightingInputCaptured(GetWorld()) && FFCameraInputModel::IsRotationAllowed(
 		GetInputBlockReason(),
 		IsBuildPreviewActive());
 }
@@ -277,7 +295,7 @@ void AFF_FestivalPlayerController::HandlePan(const FInputActionValue& Value)
 
 void AFF_FestivalPlayerController::HandleZoom(const FInputActionValue& Value)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraMovementAllowed() || IsPointerOverFacilityUI(GetWorld()))
 	{
 		return;
 	}
@@ -470,7 +488,7 @@ void AFF_FestivalPlayerController::EnsureViewTargetAlive()
 
 void AFF_FestivalPlayerController::TickEdgeScroll(float DeltaTime)
 {
-	if (!IsCameraMovementAllowed())
+	if (!IsCameraMovementAllowed() || IsPointerOverFacilityUI(GetWorld()))
 	{
 		return;
 	}

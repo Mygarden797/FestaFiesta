@@ -66,6 +66,8 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
+	UFUNCTION() void HandleBackToProgramsClicked();
+	void SetReviewVisible(bool bReview);
 
 	const FFF_FacilityPaidProgramCardViewData* FindCard(FName ProgramId) const;
 	void ClearPreview();
@@ -79,6 +81,10 @@ private:
 	FName SelectedProgramId = NAME_None;
 	bool bPurchaseCompleted = false;
 	bool bCommitPending = false;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_BackToPrograms;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Size_ProgramList;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Border_Preview;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_Instruction;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Border_Body;

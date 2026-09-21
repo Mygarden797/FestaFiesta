@@ -637,7 +637,9 @@ void UFFZSGridLibrary::BuildPlacementOrientedRegions(
 
 bool UFFZSGridLibrary::DoOrientedRectSetsOverlap(
     const TArray<FFFZSOrientedRect>& A,
-    const TArray<FFFZSOrientedRect>& B)
+    const TArray<FFFZSOrientedRect>& B,
+    FFFZSOrientedRect* OutFirstA,
+    FFFZSOrientedRect* OutFirstB)
 {
     for (const FFFZSOrientedRect& RectA : A)
     {
@@ -657,6 +659,8 @@ bool UFFZSGridLibrary::DoOrientedRectSetsOverlap(
             }
             if (FFZSOrientedGeometry::IntersectsPositiveArea(RectA, RectB))
             {
+                if (OutFirstA) *OutFirstA = RectA;
+                if (OutFirstB) *OutFirstB = RectB;
                 return true;
             }
         }

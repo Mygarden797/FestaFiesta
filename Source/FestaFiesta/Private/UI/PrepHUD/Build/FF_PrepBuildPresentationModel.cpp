@@ -52,11 +52,22 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 		}
 	}
 
-	// Stable ordering preserves the catalog order inside each group and object identity across pages.
-	if (!SynergyHighlightIds.IsEmpty())
+	// Opening the unfiltered catalog should expose setup work immediately. Explicit
+	// category/search/favorite choices retain their existing ordering and membership.
+	const bool bPrioritizeRequired = !Filter.bFilterByCategory && Filter.MinorToken.IsNone() &&
+		!Filter.bFavoritesOnly && Filter.SearchText.TrimStartAndEnd().IsEmpty();
+	if (bPrioritizeRequired || !SynergyHighlightIds.IsEmpty())
 	{
-		VisibleTiles.StableSort([](const UFF_PrepBuildTileData& A, const UFF_PrepBuildTileData& B)
+		VisibleTiles.StableSort([bPrioritizeRequired](const UFF_PrepBuildTileData& A, const UFF_PrepBuildTileData& B)
 		{
+			if (bPrioritizeRequired)
+			{
+				if (A.IsRequiredFacility() != B.IsRequiredFacility()) return A.IsRequiredFacility();
+				if (A.IsRequiredFacility() && A.IsRequiredFacilitySatisfied() != B.IsRequiredFacilitySatisfied())
+					return !A.IsRequiredFacilitySatisfied();
+			}
+			// Keep existing recommendation priority within each requirement group;
+			// equal priorities retain source order and their pooled UObject identities.
 			return A.IsSynergyHighlighted() && !B.IsSynergyHighlighted();
 		});
 	}
