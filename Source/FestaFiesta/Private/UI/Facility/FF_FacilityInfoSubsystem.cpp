@@ -55,7 +55,7 @@ namespace
 	FText FormatOccupancy(const int32 Occupied, const int32 Capacity)
 	{
 		return FText::Format(
-			LOCTEXT("OccupancyFormat", "{0} / {1}명"),
+			LOCTEXT("OccupancyFormat", "{0} / {1}팀"),
 			FText::AsNumber(Occupied),
 			FText::AsNumber(Capacity));
 	}
@@ -150,7 +150,9 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
@@ -273,7 +275,9 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
@@ -311,6 +315,7 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
+	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
@@ -328,7 +333,9 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
@@ -591,6 +598,9 @@ bool UFF_FacilityInfoSubsystem::IsPointerOverPanel() const
 		(Ranking && Ranking->IsPointerOverPanel());
 }
 
+bool UFF_FacilityInfoSubsystem::IsLightingTextInputFocused() const
+{ return Panel && Panel->IsLightingTextInputFocused(); }
+
 void UFF_FacilityInfoSubsystem::SetRevenueRankingPresentationOpen(const bool bOpen)
 {
 	bRevenueRankingPresentationOpen = bOpen;
@@ -789,11 +799,13 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
 	OutViewData.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Spec.ClearanceCells);
 	OutViewData.QueueCapacityText = FText::Format(
-		LOCTEXT("QueueCapacityFormat", "대기 {0}명 · 동시 이용 {1}명"),
+		LOCTEXT("QueueCapacityFormat", "대기 {0}팀 · 동시 이용 {1}팀"),
 		FText::AsNumber(Spec.QueueRules.MaxWaitingAgents),
 		FText::AsNumber(Spec.QueueRules.ServiceCapacity));
+	OutViewData.QueueCapacityValueText=FText::Format(LOCTEXT("QueueTeamsValue","{0}팀"),FText::AsNumber(Spec.QueueRules.MaxWaitingAgents));
+	OutViewData.ServiceCapacityValueText=FText::Format(LOCTEXT("QueueTeamsValue","{0}팀"),FText::AsNumber(Spec.QueueRules.ServiceCapacity));
 	OutViewData.ServiceDurationText = FText::Format(
-		LOCTEXT("ServiceDurationFormat", "{0}초"),
+		LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 		FText::AsNumber(Spec.QueueRules.ServiceDurationSeconds));
 	const UFF_FacilityUpgradeSubsystem* Upgrades = World
 		? World->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
@@ -805,12 +817,14 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	if (bHasUpgradePreview && UpgradePreview.CurrentServiceDurationSeconds > 0.0f)
 	{
 		OutViewData.ServiceDurationText = FText::Format(
-			LOCTEXT("ServiceDurationFormat", "{0}초"),
+			LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
 	}
 	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
 	{
 		OutViewData.QueueCapacityText = LOCTEXT("LightingNoQueue", "대기열 없음");
+		OutViewData.QueueCapacityValueText=FText::FromString(TEXT("—"));
+		OutViewData.ServiceCapacityValueText=FText::FromString(TEXT("—"));
 		OutViewData.ServiceDurationText = LOCTEXT("LightingNoService", "이용 서비스 없음");
 	}
 	OutViewData.bNeedsRelocation = ReadModel.bNeedsRelocation;
@@ -881,14 +895,13 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			Festival->FacilityCostTable,
 			InstallCost,
 			MatchedCostRow,
-			CostFailureReason) &&
-		InstallCost > 0;
+			CostFailureReason);
 	const int32 RecoveryCost = bHasInstallCost
 		? FFF_FacilityCostResolver::CalculateDemolitionRefund(
 			InstallCost, Festival->FacilityDemolitionRefundRate)
 		: 0;
 	OutViewData.InstallCostText = FFFacilityInfoModel::FormatGold(bHasInstallCost, InstallCost);
-	// A zero-Gold refund is valid when the authored refund rate is zero.
+	// A zero-Gold refund is valid for a free facility or a zero refund rate.
 	OutViewData.RecoveryCostText = FFFacilityInfoModel::FormatGold(bHasInstallCost, RecoveryCost);
 
 	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World
@@ -915,10 +928,10 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? FormatIntegerWithSuffix(QueueState.WaitingPartyCount, LOCTEXT("TeamSuffix", "팀"))
 		: MissingQueueMetric;
 	OutViewData.OccupancyText = bQueueAvailable
-		? FormatOccupancy(QueueState.OccupiedMemberCount, QueueState.MaxCapacityMembers)
+		? FormatOccupancy(QueueState.WaitingPartyCount, QueueState.MaxCapacityParties)
 		: MissingQueueMetric;
 	OutViewData.RemainingServiceText = bQueueAvailable
-		? FormatIntegerWithSuffix(QueueState.RemainingServiceMemberCount, LOCTEXT("PeopleSuffix", "명"))
+		? FormatIntegerWithSuffix(QueueState.RemainingServicePartyCount, LOCTEXT("TeamSuffix", "팀"))
 		: MissingQueueMetric;
 	const float ExpectedWaitSeconds = bQueueAvailable && QueueState.bIsOpen
 		? QueueSystem->GetExpectedWaitSeconds(QueueFacilityId, 1)
@@ -1129,6 +1142,15 @@ void UFF_FacilityInfoSubsystem::RefreshPanel()
 	}
 	Panel->ApplyViewData(ViewData);
 	if (bRevenueRankingPresentationOpen) Panel->SetPanelOpen(false);
+	if (!bPauseMenuPresentationSuppressed && PaidProgramPicker && IsValid(Facility)
+		&& PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed)
+	{
+		FFF_FacilityPaidProgramPickerViewData PickerViewData;
+		if (BuildPaidProgramPickerViewData(*Facility, PickerViewData))
+		{
+			PaidProgramPicker->RefreshViewData(PickerViewData);
+		}
+	}
 }
 
 void UFF_FacilityInfoSubsystem::AcquireThumbnailSession()
@@ -1555,6 +1577,14 @@ void UFF_FacilityInfoSubsystem::HandlePanelLightingResetRequested(const FGuid Fa
 		: (Failure.IsEmpty() ? LOCTEXT("LightingResetFailed", "기본 조명을 복원할 수 없습니다.") : Failure), !bSucceeded);
 }
 
+void UFF_FacilityInfoSubsystem::HandlePanelLightingRollbackRequested(const FGuid FacilityId,const FFFZSFacilityLightingState& State)
+{
+	// Rollback targets the transaction's original instance, even if selection/phase changed.
+	// The Zone subsystem rejects removed instances and validates every restored value.
+	if(UFFZSWorldSubsystem* ZoneSystem=GetWorld()?GetWorld()->GetSubsystem<UFFZSWorldSubsystem>():nullptr)
+	{ FText Failure; ZoneSystem->SetFacilityLighting(FacilityId,State,Failure); }
+}
+
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
 {
 	return FSoftClassPath(TEXT(
@@ -1629,7 +1659,7 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 		: Facility.GetFacilitySpec().DisplayName;
 	OutViewData.FeedbackText = Feedback;
 	OutViewData.bFeedbackIsError = bIsFeedbackError;
-	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalog())
+	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalogForFacility(FacilityId))
 	{
 		const EFF_PaidProgramScheduleResult Result =
 			Scheduling->CanScheduleProgramAtFacility(Card.ProgramId, FacilityId);

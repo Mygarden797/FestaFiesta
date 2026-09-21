@@ -97,6 +97,7 @@ public:
 	/** Used by raw build/camera input to prevent clicking through the visible card. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Facility Info")
 	bool IsPointerOverPanel() const;
+	bool IsLightingTextInputFocused() const;
 
 	/**
 	 * Resolves a currently registered installed facility from its dedicated padded selection proxy.
@@ -180,6 +181,7 @@ private:
 	void HandlePanelProgramScheduleRequested();
 	void HandlePanelUpgradeRequested();
 	void HandlePanelLightingRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
+	void HandlePanelLightingRollbackRequested(FGuid FacilityId, const FFFZSFacilityLightingState& State);
 	void HandlePanelLightingResetRequested(FGuid FacilityId);
 	bool CanEditSelectedLighting(FGuid FacilityId) const;
 	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);

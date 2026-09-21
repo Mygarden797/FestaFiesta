@@ -12,6 +12,8 @@ class UButton;
 class UCommonTextBlock;
 class UEditableTextBox;
 class USlider;
+class UFF_FacilityColorPicker;
+class UWidget;
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FFF_OnFacilityLightingRequested,
 	FGuid, const FFFZSFacilityLightingState&);
@@ -25,7 +27,15 @@ class FESTAFIESTA_API UFF_FacilityLightingControls : public UUserWidget
 
 public:
 	FFF_OnFacilityLightingRequested OnLightingRequested;
+	FFF_OnFacilityLightingRequested OnLightingRollbackRequested;
 	FFF_OnFacilityLightingResetRequested OnLightingResetRequested;
+	FSimpleMulticastDelegate OnObserveRequested;
+	FSimpleMulticastDelegate OnEditFinished;
+	void BeginEdit();
+	void CancelEdit();
+	bool IsEditing() const { return bEditing; }
+	bool IsEditingText() const;
+	bool IsPointerCaptured() const;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Lighting")
 	void ApplyViewData(const FFF_FacilityInfoViewData& ViewData);
@@ -50,6 +60,18 @@ private:
 	UFUNCTION() void HandleColorTextChanged(const FText& Text);
 	UFUNCTION() void HandleColorCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 	UFUNCTION() void HandleResetClicked();
+	UFUNCTION() void HandleApplyClicked();
+	UFUNCTION() void HandleCancelClicked();
+	UFUNCTION() void HandleObserveClicked();
+	UFUNCTION() void HandlePrecisionClicked();
+	UFUNCTION() void HandleBrightnessLowClicked();
+	UFUNCTION() void HandleBrightnessNormalClicked();
+	UFUNCTION() void HandleBrightnessHighClicked();
+	void RefreshPrecisionVisibility();
+	UFUNCTION() void HandleChannelsCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+	UFUNCTION() void HandleChannelTextChanged(const FText& Text);
+	void HandlePickerColor(FLinearColor Color);
+	void RefreshColorFields();
 	void RequestColor(const FLinearColor& Color, bool bOverride);
 	bool CanSendCommand() const;
 
@@ -58,6 +80,13 @@ private:
 	bool bBrightnessCaptured = false;
 	FGuid BrightnessCaptureFacilityId;
 	FGuid ColorEditFacilityId;
+	FGuid ChannelEditFacilityId;
+	FGuid EditingFacilityId;
+	FGuid PickerCaptureFacilityId;
+	FFFZSFacilityLightingState OriginalState;
+	bool bEditing = false;
+	bool bChannelEditingHSV = false;
+	bool bPrecisionVisible = false;
 
 	/** Preset colors can be changed in WBP Class Defaults without editing C++. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lighting|Presets", meta = (AllowPrivateAccess = "true"))
@@ -78,4 +107,21 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true")) TObjectPtr<UEditableTextBox> Input_LightingColor;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true")) TObjectPtr<UCommonTextBlock> Text_LightingColorStatus;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true")) TObjectPtr<UButton> Button_LightingReset;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UFF_FacilityColorPicker> ColorPicker_Lighting;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UEditableTextBox> Input_LightingH;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UEditableTextBox> Input_LightingS;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UEditableTextBox> Input_LightingV;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UEditableTextBox> Input_LightingR;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UEditableTextBox> Input_LightingG;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UEditableTextBox> Input_LightingB;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingApply;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingCancel;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingObserve;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingPrecision;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UCommonTextBlock> Text_LightingPrecision;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Panel_LightingBasic;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UWidget> Panel_LightingPrecision;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingBrightnessLow;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingBrightnessNormal;
+	UPROPERTY(meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_LightingBrightnessHigh;
 };

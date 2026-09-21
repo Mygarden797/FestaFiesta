@@ -47,7 +47,7 @@ public:
 	int32 GetInstallCost() const { return Entry.InstallCost; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
-	bool HasResolvedCost() const { return Entry.bHasResolvedInstallCost && Entry.InstallCost > 0; }
+	bool HasResolvedCost() const { return Entry.HasValidInstallCost(); }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	bool IsAffordable() const { return TileState == EFF_PrepBuildTileState::Available; }
@@ -58,6 +58,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
 	bool IsRequiredFacilitySatisfied() const { return Entry.bRequiredSetupSatisfied; }
+
+	/** 현재 축제에서 편성 가능한 프로그램을 가진 시설입니다. 구매/편성 완료 여부와 별개입니다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Program")
+	bool HasCompatiblePrograms() const { return Entry.CompatibleProgramCount > 0; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build|Required")
 	int32 GetRequiredFacilityCurrentCount() const { return Entry.RequiredInstalledCount; }

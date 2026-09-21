@@ -3,6 +3,7 @@
 #include "Minigame/FF_MinigameSubsystem.h"
 
 #include "Camera/FF_FestivalPlayerController.h"
+#include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
@@ -425,6 +426,9 @@ void UFF_MinigameSubsystem::CompleteActiveSession()
 		RewardCap = RuntimeDefinition
 			? RuntimeDefinition->ResolveRewardGoldAtMaxScore(FestivalFallbackGold)
 			: FestivalFallbackGold;
+		RewardCap = FFF_BoothRevenueRules::ResolveMinigameRewardGold(
+			Runtime->GetSnapshot().Context.FacilityDefinitionId, RewardCap,
+			FestivalDefinition ? FestivalDefinition->GetFacilityRevenueTable() : nullptr);
 	}
 	const FFF_MinigameResult Result = Runtime->BuildResult(RewardCap);
 	if (UFF_MinigameAudioSubsystem* Audio = GetWorld()

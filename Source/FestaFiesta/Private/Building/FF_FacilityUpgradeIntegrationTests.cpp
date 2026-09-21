@@ -128,6 +128,8 @@ namespace FFFacilityUpgradeIntegrationTest
 			Costs->AddRow(CostKey, Cost);
 			Definition->FestivalId = TEXT("FacilityUpgradeAutomation");
 			Definition->FacilityCostTable = Costs;
+			// These isolated quotes exercise legacy prices, independent of production balance edits.
+			Definition->FacilityRevenueTable.Reset();
 			Definition->InitialGold = Gold;
 			Progression->StartFestival(Definition);
 			Queues->SetPaused(true);
@@ -810,8 +812,8 @@ bool FFFFacilityUpgradeFreeInstallationTest::RunTest(const FString& Parameters)
 	FScopedSettings Settings;
 	FHarness H;
 	if (!H.Initialize(this, InstallCostGold)) return false;
-	// Installation retains its existing positive-price policy. Only the later upgrade quote
-	// reads a zero base price, with the wallet already emptied by a legitimate installation.
+	// Repricing an existing facility to zero also makes its later upgrade quote free,
+	// with the wallet already emptied by the original paid installation.
 	const FGuid Id = H.Install(this);
 	if (!Id.IsValid()) return false;
 	TestEqual(TEXT("A normally priced installation empties the wallet"), H.Progression->GetGold(), 0);

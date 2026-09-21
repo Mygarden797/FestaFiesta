@@ -275,6 +275,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_ProgramCard> GetProgramCatalog() const;
 
+	// 선택 시설의 최신 수익 표 참가비를 적용한 카드 전체. 비용·정원·허용 시설은 그대로다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_ProgramCard> GetProgramCatalogForFacility(FGuid FacilityInstanceId) const;
+
 	// 오늘 편성한 카드와 그 예약 핸들. 하루 경계에서 비워진다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_ScheduledProgram> GetScheduledPrograms() const { return ScheduledPrograms; }
@@ -353,6 +357,8 @@ private:
 	// 이 시설에서 이 프로그램을 열 수 있는가.
 	// 시설 종류를 ZoneSystem 에서 읽어 카드의 허용 목록과 대조한다.
 	bool IsFacilityTypeAllowedForCard(const FFF_ProgramCard& Card, const FGuid& FacilityInstanceId) const;
+
+	FName ResolveFacilityDefinitionId(FGuid FacilityInstanceId) const;
 
 	/**
 	 * 프로그램 하나의 체험비를 원장에 넣고 `bFeeSettled` 를 켠다.

@@ -12,8 +12,11 @@
 #include "Components/WrapBox.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
+#include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "UI/FF_UILog.h"
 #include "UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h"
 
@@ -181,6 +184,12 @@ void UFF_PrepPanelProgram::NativeOnPanelClosed()
 	Super::NativeOnPanelClosed();
 }
 
+void UFF_PrepPanelProgram::NativeDestruct()
+{
+	UnbindViewModel();
+	Super::NativeDestruct();
+}
+
 // =============================================================================
 // 구독
 // =============================================================================
@@ -198,12 +207,19 @@ UFF_FestivalViewModelSubsystem* UFF_PrepPanelProgram::GetViewModel() const
 
 void UFF_PrepPanelProgram::BindViewModel()
 {
+	UnbindViewModel();
 	UGameInstance* GI = GetGameInstance();
 	if (UFF_BuildCatalogSubsystem* BuildCatalog = GI ? GI->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr)
 	{
 		BuildCatalog->OnCatalogChanged.AddUniqueDynamic(this, &ThisClass::HandleBuildCatalogChanged);
 	}
 	CachedViewModel = GI ? GI->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
+	BoundProgression = GI ? GI->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	if (BoundProgression)
+	{
+		BoundProgression->OnFestivalDefinitionChanged.AddUniqueDynamic(this, &ThisClass::HandleFestivalDefinitionChanged);
+	}
+	BindRevenueTable();
 
 	if (!CachedViewModel)
 	{
@@ -224,6 +240,16 @@ void UFF_PrepPanelProgram::BindViewModel()
 
 void UFF_PrepPanelProgram::UnbindViewModel()
 {
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
+		BoundRevenueTable = nullptr;
+	}
+	if (BoundProgression)
+	{
+		BoundProgression->OnFestivalDefinitionChanged.RemoveAll(this);
+		BoundProgression = nullptr;
+	}
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UFF_BuildCatalogSubsystem* BuildCatalog = GI->GetSubsystem<UFF_BuildCatalogSubsystem>())
@@ -240,6 +266,38 @@ void UFF_PrepPanelProgram::UnbindViewModel()
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelProgram::HandleStageViewChanged);
 	}
 	CachedViewModel = nullptr;
+}
+
+void UFF_PrepPanelProgram::BindRevenueTable()
+{
+	const UFF_FestivalDefinition* Definition = BoundProgression ? BoundProgression->GetDefinition() : nullptr;
+	UDataTable* RevenueTable = Definition ? Definition->GetFacilityRevenueTable() : nullptr;
+	if (BoundRevenueTable == RevenueTable) return;
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().RemoveAll(this);
+	}
+	BoundRevenueTable = RevenueTable;
+	if (BoundRevenueTable)
+	{
+		BoundRevenueTable->OnDataTableChanged().AddUObject(this, &ThisClass::HandleRevenueTableChanged);
+	}
+}
+
+void UFF_PrepPanelProgram::HandleRevenueTableChanged()
+{
+	// 금액만 다시 조회하여 프로그램과 시설 선택은 그대로 유지한다.
+	RefreshAll();
+}
+
+void UFF_PrepPanelProgram::HandleFestivalDefinitionChanged()
+{
+	BindRevenueTable();
+	SelectedCardIndex = INDEX_NONE;
+	SelectedFacilityIndex = INDEX_NONE;
+	RebuildCards();
+	RebuildFacilityChoices();
+	RefreshAll();
 }
 
 // =============================================================================
@@ -291,6 +349,7 @@ void UFF_PrepPanelProgram::RebuildCards()
 		}
 
 		CardWidget->ConfigureCard(Index, Card, TimeRange);
+		CardWidget->SetRevenuePreview(nullptr);
 		CardWidget->OnHudTabButtonClicked.BindUObject(this, &UFF_PrepPanelProgram::HandleCardClicked);
 
 		Box_ProgramCards->AddChild(CardWidget);
@@ -432,8 +491,15 @@ const FFF_ProgramCard* UFF_PrepPanelProgram::FindSelectedCard() const
 
 void UFF_PrepPanelProgram::RefreshAll()
 {
+	BindRevenueTable();
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 	const FFF_ProgramCard* SelectedCard = FindSelectedCard();
+	const bool bHasFacility = FacilityOptions.IsValidIndex(SelectedFacilityIndex);
+	const TArray<FFF_ProgramCard> FacilityCatalog = ViewModel && bHasFacility
+		? ViewModel->GetProgramCatalogForFacility(FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
+		: TArray<FFF_ProgramCard>();
+	const FFF_ProgramCard* FacilityCard = SelectedCard
+		? FFF_ProgramScheduleRules::FindCard(FacilityCatalog, SelectedCard->ProgramId) : nullptr;
 
 	const bool bCanScheduleNow = ViewModel ? ViewModel->CanScheduleProgramNow() : false;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
@@ -447,7 +513,13 @@ void UFF_PrepPanelProgram::RefreshAll()
 		: (ViewModel ? EFF_ProgramPurchaseResult::Success : EFF_ProgramPurchaseResult::FestivalNotStarted);
 
 	Quote = FFF_PrepProgramRules::BuildQuote(
-		SelectedCard, OwnerResult, bCanScheduleNow, FacilityCount, Gold);
+		FacilityCard ? FacilityCard : SelectedCard, OwnerResult, bCanScheduleNow, FacilityCount, Gold);
+	if (!FacilityCard)
+	{
+		// 한 프로그램도 시설마다 참가비가 다를 수 있다. 장소를 고르기 전에는 금액을 확정하지 않는다.
+		Quote.MaxRevenue = INDEX_NONE;
+	}
+
 
 	// --- 카드 상태 ---
 	const TArray<FName> ScheduledIds = ViewModel ? ViewModel->GetScheduledProgramIds() : TArray<FName>();
@@ -461,6 +533,7 @@ void UFF_PrepPanelProgram::RefreshAll()
 		}
 
 		const FFF_ProgramCard& Card = Catalog[Index];
+		CardWidget->SetRevenuePreview(Index == SelectedCardIndex ? FacilityCard : nullptr);
 
 		// 상태를 매번 전부 다시 정한다. 부분 갱신하면 편성 뒤에도 선택 표시가 남는다.
 		if (ScheduledIds.Contains(Card.ProgramId))
@@ -525,13 +598,12 @@ void UFF_PrepPanelProgram::RefreshAll()
 
 	SetTextOrHide(Text_RevenuePreview, (Quote.MaxRevenue != INDEX_NONE)
 		? FText::Format(
-			LOCTEXT("PrepProgram_Revenue", "확정 매출 {0}"),
+			LOCTEXT("PrepProgram_FacilityRevenue", "선택 시설 최대 매출 {0} Gold"),
 			FText::AsNumber(Quote.MaxRevenue))
-		: FText::GetEmpty());
+		: (SelectedCard ? LOCTEXT("PrepProgram_RevenueAfterFacility", "시설 선택 후 매출을 확인할 수 있습니다.") : FText::GetEmpty()));
 
 	// --- 편성 버튼 ---
 	// 시설을 골랐는지는 규칙 struct 가 모른다 — 그건 화면의 상태이지 경제 판정이 아니다.
-	const bool bHasFacility = FacilityOptions.IsValidIndex(SelectedFacilityIndex);
 	if (Button_Schedule)
 	{
 		Button_Schedule->SetIsEnabled(Quote.CanSchedule() && bHasFacility);

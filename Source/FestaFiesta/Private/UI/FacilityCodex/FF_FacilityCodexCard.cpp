@@ -11,6 +11,7 @@ namespace
 	class SFFCodexTileView final : public STileView<ItemType>
 	{
 	public:
+		void SetColumnCount(int32 Value) { Columns = FMath::Clamp(Value, 1, 6); }
 		virtual STableViewBase::FReGenerateResults ReGenerateItems(const FGeometry& Geometry) override
 		{
 			// Geometry is the actual items panel, after its scrollbar has taken space.
@@ -18,7 +19,7 @@ namespace
 			const float Width = Geometry.GetLocalSize().X;
 			if (Width > 1.f)
 			{
-				const float Pitch = FMath::Max(1.f, Width / 6.f - .01f);
+				const float Pitch = FMath::Max(1.f, Width / float(Columns) - .01f);
 				if (!FMath::IsNearlyEqual(this->GetItemWidth(), Pitch)) this->SetItemWidth(Pitch);
 			}
 			// UE 5.7 skips row cleanup for an empty tile source. Release pooled bindings here,
@@ -27,7 +28,9 @@ namespace
 			return STileView<ItemType>::ReGenerateItems(Geometry);
 		}
 	protected:
-		virtual int32 GetNumItemsPerLine() const override { return 6; }
+		virtual int32 GetNumItemsPerLine() const override { return Columns; }
+	private:
+		int32 Columns = 6;
 	};
 }
 
@@ -49,7 +52,11 @@ void UFF_FacilityCodexTileView::ConfigureEntryClass(TSubclassOf<UUserWidget> InE
 TSharedRef<STableViewBase> UFF_FacilityCodexTileView::RebuildListWidget()
 {
 	// Preserve all authored TileView options, including whether entry size includes spacing.
-	return ConstructTileView<SFFCodexTileView>();
+	auto View = ConstructTileView<SFFCodexTileView>();
+	// An older serialized WBP can still contain the former three-column value.
+	ColumnCount = 6;
+	View->SetColumnCount(6);
+	return View;
 }
 
 void UFF_FacilityCodexCard::NativePreConstruct()
@@ -144,6 +151,10 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 {
 	using namespace FFFacilityCodexPresentation;
 	RefreshDiscoveryAppearance();
+	// The selected recipe already has a dedicated detail region. A generic tooltip
+	// merely repeats the title and ingredients while covering neighbouring cards.
+	SetToolTip(nullptr);
+	SetToolTipText(FText::GetEmpty());
 	if (!Item)
 	{
 		Thumbnail(Image_Target, Text_TargetFallback, {}, ShownTarget);
@@ -156,10 +167,9 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 		return;
 	}
 	const FFF_FacilityCodexEntry& Entry = Item->Entry;
-	SetToolTipText(FText::Format(LOCTEXT("Tooltip", "{0}\n{1} + {2}"), Entry.DisplayName, Entry.TargetName, Entry.PartnerName));
 	if (Text_Name) Text_Name->SetText(Entry.DisplayName);
 	if (Text_Recipe) Text_Recipe->SetText(FText::Format(LOCTEXT("Recipe", "{0} + {1}"), Entry.TargetName, Entry.PartnerName));
-	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("Bonus", "수익 +{0}%"), Number(Entry.ConfiguredBonusPercent)));
+	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("Bonus", "수수료 +{0}%"), Number(Entry.ConfiguredBonusPercent)));
 	if (Text_State) Text_State->SetText(Entry.bEffectApplied
 		? LOCTEXT("AppliedCompact", "효과 적용 중") : Entry.bDiscovered
 		? LOCTEXT("Discovered", "발견 완료") : LOCTEXT("UndiscoveredCompact", "미발견"));

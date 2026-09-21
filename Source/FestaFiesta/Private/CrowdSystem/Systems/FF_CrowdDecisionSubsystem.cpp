@@ -694,11 +694,9 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 		// 이 호출이 없으면 EstimatedWaitMinutes 는 전부 0 이고, 0 은 Choose 에서 "줄이 없다"로 
 		// 계산되어 wait_cost 항이 통째로 죽는다.
 		//
-		// IncomingMemberCount 에 파티 전원을 넘긴다. Queue 가 파티를 쪼개지 않기 때문이다 —
-		// FFF_FacilityQueue::TryJoin 이 "4인 가족인데 슬롯이 2칸 남았다면 2명만 넣지 않고
-		// 전원 거절한다" 로 동작한다. 그래서 알고 싶은 값이 "내 마지막 일행까지 끝나는 시각" 이고,
-		// 그게 (앞에 남은 인원 + 내 일행) / 처리율 이다.
-		// Queue 가 부분 가입을 허용하는 쪽으로 바뀌면 이 인자도 같이 바꿔야 한다.
+		// 멤버 수는 가입할 일행이 유효한지 알리는 입력이다. 양수면 한 팀으로 계산한다.
+		// 예상 대기는 앞선 팀 수·동시 처리 팀 수·진행 중인 이용의 남은 시간으로 정하며,
+		// 큰 팀이라고 기다리는 시간을 다시 인원수 배로 늘리지 않는다.
 		Stats.QueueWaitApplied += FFF_QueueWaitAdapter::ApplyFromZoneBridge(
 			GetWorld(), Candidates, Context.PartySize);
 
@@ -724,7 +722,6 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 	// 복귀 전환은 후보 유무와 무관하게 Simulation의 고정 스텝이 처리한다.
 	/*
 	 * [주의]
-	 * CandidateUseMinutes는 아직 채우지 않아 이용시간을 0으로 계산합니다.
 	 * 예약 시설까지의 복귀 거리는 직선거리입니다.
 	 */
 	if (Context.bHasActiveReservation)
@@ -767,6 +764,9 @@ bool UFF_CrowdDecisionSubsystem::HandlePartyNeedsDecision(
 				Input.DistanceToCandidateMeters = Candidate.DistanceMeters;
 				// Queue 어댑터의 실제 분을 프로그램의 축제 분으로 환산한다.
 				Input.CandidateWaitMinutes = FFF_QueueWaitAdapter::ToQueueSeconds(Candidate.EstimatedWaitMinutes)
+					* UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes(1.f);
+				// 예상 대기는 이용 시작까지다. 예약 복귀 판단에는 팀의 이용 시간도 한 번 더한다.
+				Input.CandidateUseMinutes = FMath::Max(0.f, CandidateFacility->EffectiveQueueRules.ServiceDurationSeconds)
 					* UFF_FestivalStageSubsystem::StageSecondsToFestivalMinutes(1.f);
 				Input.CandidateToProgramMeters = FVector::Dist2D(
 					CandidateFacility->ApproachWorldTransform.GetLocation(), ProgramLocation) / 100.f;

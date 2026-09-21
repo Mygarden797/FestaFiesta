@@ -574,6 +574,13 @@ TArray<FFF_ProgramCard> UFF_FestivalViewModelSubsystem::GetProgramCatalog() cons
 	return Progression ? Progression->GetProgramCatalog() : TArray<FFF_ProgramCard>();
 }
 
+TArray<FFF_ProgramCard> UFF_FestivalViewModelSubsystem::GetProgramCatalogForFacility(
+	const FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetProgramCatalogForFacility(FacilityInstanceId) : TArray<FFF_ProgramCard>();
+}
+
 TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIds() const
 {
 	TArray<FName> Ids;
@@ -819,12 +826,20 @@ TArray<FFF_LiveFacilityView> UFF_FestivalViewModelSubsystem::GetLiveFacilities()
 			? FMath::RoundToInt(Facility.AverageCompletedWaitSeconds)
 			: INDEX_NONE;
 
-		// --- 예상 대기: 지금 한 명이 서면 얼마나 기다리나 ---
+		// --- 게임 대기열의 팀 수와 지금 한 팀이 서면 기다릴 시간 ---
 		if (QueueBridge && Queue)
 		{
 			const int32 QueueFacilityId = QueueBridge->FindQueueFacilityId(Facility.FacilityInstanceId);
-			if (QueueFacilityId != INDEX_NONE)
+			if (QueueFacilityId != INDEX_NONE && Queue->IsFacilityRegistered(QueueFacilityId))
 			{
+				const FFF_QueueState TeamQueue = QueueBridge->GetZoneFacilityQueueState(Facility.FacilityInstanceId);
+				View.WaitingCount = FMath::Max(0, TeamQueue.WaitingPartyCount - TeamQueue.ActiveServicePartyCount);
+				View.ActiveServiceCount = FMath::Max(0, TeamQueue.ActiveServicePartyCount);
+				View.QueueState = !TeamQueue.bIsOpen
+					? (TeamQueue.WaitingPartyCount > 0 ? EFF_LiveFacilityQueueState::Draining : EFF_LiveFacilityQueueState::Closed)
+					: (TeamQueue.bAcceptingNew ? EFF_LiveFacilityQueueState::Open : EFF_LiveFacilityQueueState::Full);
+				View.AverageWaitSeconds = TeamQueue.CompletedPartyCount > 0
+					? FMath::Max(0, FMath::RoundToInt(TeamQueue.AverageCompletedWaitSeconds)) : INDEX_NONE;
 				const float WaitSeconds = Queue->GetExpectedWaitSeconds(QueueFacilityId, /*IncomingMemberCount=*/1);
 
 				// 🔴 `UnreachableWaitSeconds` 는 **시간이 아니라 표식**이다. Queue 쪽 주석에
@@ -1058,6 +1073,17 @@ int32 UFF_FestivalViewModelSubsystem::GetStaffHireCostGold() const
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
 	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
 	return Definition ? Definition->StaffHireCostGold : INDEX_NONE;
+}
+
+int32 UFF_FestivalViewModelSubsystem::GetTodayStaffHireCostGold() const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return INDEX_NONE;
+	}
+
+	return Progression->GetDayLedger().GetSpendByReason(EFF_SpendReason::StaffHire);
 }
 
 int32 UFF_FestivalViewModelSubsystem::GetMaxHiredStaffCount() const

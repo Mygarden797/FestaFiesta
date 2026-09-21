@@ -230,10 +230,12 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     Panel->SetPanelOpen(true);
     TestEqual(TEXT("Overview does not eagerly create hidden combo rows"), Entries->GetChildrenCount(), 0);
     Synergy->OnClicked.Broadcast();
-    TestTrue(TEXT("Actual button opens synergy content"), Section->GetVisibility() == ESlateVisibility::Visible && !Synergy->GetIsEnabled());
-    if (!TestEqual(TEXT("Two rules instantiate two authored cards"), Entries->GetChildrenCount(), 2)) return false;
+    TestTrue(TEXT("Actual button opens synergy content while retaining enabled contrast"), Section->GetVisibility() == ESlateVisibility::Visible && Synergy->GetIsEnabled());
+    const bool bPaged = Panel->GetWidgetFromName(TEXT("Button_SynergyNext")) != nullptr;
+    const int32 ExpectedPoolSize = bPaged ? 1 : 2;
+    if (!TestEqual(TEXT("Rules use the authored visible-card pool"), Entries->GetChildrenCount(), ExpectedPoolSize)) return false;
     UWidget* FirstRow = Entries->GetChildAt(0);
-    UWidget* SecondRow = Entries->GetChildAt(1);
+    UWidget* SecondRow = bPaged ? nullptr : Entries->GetChildAt(1);
     auto* Row = Cast<UFF_FacilitySynergyEntryWidget>(FirstRow);
     if (!TestNotNull(TEXT("Row uses the authored child native contract"), Row)) return false;
     for (const FName Name : { TEXT("Text_Title"), TEXT("Text_Partner"), TEXT("Text_Effect"), TEXT("Text_Condition"), TEXT("Text_Status") })
@@ -261,7 +263,7 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     const FSlateColor AuthoredColor = PartnerText->GetColorAndOpacity();
     Panel->ApplyViewData(Data);
     TestTrue(TEXT("World refreshes reuse existing row objects and designer typography"),
-        Entries->GetChildAt(0) == FirstRow && Entries->GetChildAt(1) == SecondRow &&
+        Entries->GetChildAt(0) == FirstRow && (bPaged || Entries->GetChildAt(1) == SecondRow) &&
         PartnerText->GetFont() == AuthoredFont && PartnerText->GetColorAndOpacity() == AuthoredColor);
     int32 PartnerRequests = 0;
     FName RequestedDefinition;
@@ -292,6 +294,18 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
         !PartnerButton->GetIsEnabled() && PartnerRequests == 1);
     Row->OnPartnerCatalogRequested.Remove(PartnerHandle);
     Panel->ApplyViewData(Data);
+    if (bPaged)
+    {
+        auto* Next = CastChecked<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyNext")));
+        auto* Previous = CastChecked<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyPrevious")));
+        Next->OnClicked.Broadcast();
+        TestTrue(TEXT("Next displays the second actual recipe in the same authored card"),
+            Entries->GetChildAt(0) == FirstRow &&
+            CastChecked<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Title")))->GetText().IdenticalTo(Data.SynergyEntries[1].TitleText));
+        Previous->OnClicked.Broadcast();
+        TestTrue(TEXT("Previous restores the first actual recipe"),
+            CastChecked<UTextBlock>(Row->GetWidgetFromName(TEXT("Text_Title")))->GetText().IdenticalTo(Data.SynergyEntries[0].TitleText));
+    }
     Operation->OnClicked.Broadcast();
     TestEqual(TEXT("Switching tabs hides the combo section"), Section->GetVisibility(), ESlateVisibility::Collapsed);
     Synergy->OnClicked.Broadcast();
@@ -365,8 +379,8 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
     FFFacilityInfoModel::ApplySynergyPreview(&EmptyPreview, true, 0.0f, Names, Data);
     Panel->ApplyViewData(Data);
     TestTrue(TEXT("Empty selection clears old cards while retaining the pool"),
-        !Summary->GetText().IsEmpty() && Entries->GetChildrenCount() == 2 &&
-        FirstRow->GetVisibility() == ESlateVisibility::Collapsed && SecondRow->GetVisibility() == ESlateVisibility::Collapsed);
+        !Summary->GetText().IsEmpty() && Entries->GetChildrenCount() == ExpectedPoolSize &&
+        FirstRow->GetVisibility() == ESlateVisibility::Collapsed && (!SecondRow || SecondRow->GetVisibility() == ESlateVisibility::Collapsed));
     bSaved &= Capture(TEXT("FacilitySynergyTabEmpty720.png"));
     Data.FacilityInstanceId = FGuid::NewGuid();
     Panel->ApplyViewData(Data);

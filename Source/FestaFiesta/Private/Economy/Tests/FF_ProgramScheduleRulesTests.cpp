@@ -139,7 +139,7 @@ bool FFF_ProgramSchedule_EarlierReasonWinsOverLater::RunTest(const FString& Para
 }
 
 // 저작이 깨진 카드는 카탈로그에 있어도 못 산다.
-// 0 원짜리 "유료" 프로그램이나 정원 0 이 조용히 통과하면 그날 매출이 이유 없이 0 이 된다.
+// 음수 체험비나 정원 0은 저작 오류다. 명시한 체험비 0은 무료 프로그램이다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedule_MalformedCardIsUnbuyable, "FestaFiesta.Economy.ProgramSchedule.MalformedCardIsUnbuyable", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_ProgramSchedule_MalformedCardIsUnbuyable::RunTest(const FString& Parameters)
 {
@@ -173,7 +173,10 @@ bool FFF_ProgramSchedule_MalformedCardIsUnbuyable::RunTest(const FString& Parame
 
 	FFF_ProgramCard NoFee = Broken;
 	NoFee.FeePerPerson = 0;
-	TestEqual(TEXT("체험비 0 은 저작 오류다"),
+	TestEqual(TEXT("체험비 0 은 명시한 무료 프로그램이다"),
+		EvaluateWith(NoFee), EFF_ProgramPurchaseResult::Success);
+	NoFee.FeePerPerson = -1;
+	TestEqual(TEXT("음수 체험비는 저작 오류다"),
 		EvaluateWith(NoFee), EFF_ProgramPurchaseResult::UnknownProgram);
 
 	// 🔴 시간이 없거나 뒤집힌 카드도 막는다. 이대로 편성되면 RegisterProgram 이

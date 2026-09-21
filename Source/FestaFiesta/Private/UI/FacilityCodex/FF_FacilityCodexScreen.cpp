@@ -6,6 +6,7 @@
 #include "Components/SizeBox.h"
 #include "Components/StackBox.h"
 #include "Components/StackBoxSlot.h"
+#include "Components/WidgetSwitcher.h"
 #include "Engine/World.h"
 #include "InputCoreTypes.h"
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
@@ -21,7 +22,12 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 	if (Button_All) Button_All->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleAll);
 	if (Button_Discovered) Button_Discovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDiscovered);
 	if (Button_Undiscovered) Button_Undiscovered->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleUndiscovered);
+	if (Button_Active) Button_Active->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleActive);
 	if (Button_ClearFacility) Button_ClearFacility->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClearFacility);
+	if (Button_DetailRecipe) Button_DetailRecipe->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDetailRecipe);
+	if (Button_DetailPlacement) Button_DetailPlacement->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDetailPlacement);
+	if (Button_DetailEffect) Button_DetailEffect->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDetailEffect);
+	SetDetailPage(0);
 	if (Search_Entries) Search_Entries->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleSearchChanged);
 	if (TileView_Entries) TileView_Entries->OnItemSelectionChanged().AddUObject(this, &ThisClass::HandleSelectionChanged);
 }
@@ -59,6 +65,20 @@ void UFF_FacilityCodexScreen::NativeTick(const FGeometry& Geometry, float DeltaT
 
 void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
 {
+	if (Size_Dialog)
+	{
+		// Use the actual widget viewport in logical units, including the project's DPI scale.
+		// New recipes add rows; only the grid scrolls once the medium-sized frame is full.
+		const FVector2D Viewport = GetCachedGeometry().GetLocalSize();
+		if (Viewport.X <= 1.f || Viewport.Y <= 1.f) return;
+		const int32 Rows = FMath::Max(1, FMath::DivideAndRoundUp(VisibleItems.Num(), 6));
+		const float Width = FMath::Min(1320.f, Viewport.X * .9f);
+		const float RowHeight = TileView_Entries ? TileView_Entries->GetEntryHeight() : 180.f;
+		const float Height = FMath::Min(FMath::Min(800.f, Viewport.Y * .78f), 450.f + Rows * RowHeight);
+		if (!FMath::IsNearlyEqual(Size_Dialog->GetWidthOverride(), Width)) Size_Dialog->SetWidthOverride(Width);
+		if (!FMath::IsNearlyEqual(Size_Dialog->GetHeightOverride(), Height)) Size_Dialog->SetHeightOverride(Height);
+		return;
+	}
 	if (!Stack_Main || !Size_Detail || Stack_Main->GetChildrenCount() != 2) return;
 	UStackBoxSlot* GridSlot = Cast<UStackBoxSlot>(Stack_Main->GetChildAt(0)->Slot);
 	if (!GridSlot) return;
@@ -76,7 +96,8 @@ void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
 	const float DetailWidth = bAuthoredDetailWidth ? AuthoredDetailWidth : Size_Detail->GetDesiredSize().X;
 	const float Spacing = TileView_Entries ? TileView_Entries->GetHorizontalEntrySpacing() : 0.f;
 	const bool bCompact = bEnableResponsiveDetail && Width <
-		6.f * (MinimumCardWidth + Spacing) + DetailWidth + AuthoredGridPadding.Left + AuthoredGridPadding.Right + 20.f;
+		float(TileView_Entries ? TileView_Entries->ColumnCount : 3) * (MinimumCardWidth + Spacing) +
+		DetailWidth + AuthoredGridPadding.Left + AuthoredGridPadding.Right + 20.f;
 	if (bCompact == bCompactDetail) return;
 	bCompactDetail = bCompact;
 	Stack_Main->SetOrientation(bCompact ? Orient_Vertical : Orient_Horizontal);
@@ -119,6 +140,7 @@ void UFF_FacilityCodexScreen::SetFacilityFilter(FName FacilityId)
 
 void UFF_FacilityCodexScreen::SetDiscoveryFilter(EFF_FacilityCodexFilterState State)
 {
+	if (Filter.State == State) return;
 	Filter.State = State;
 	RefreshFilter();
 }
@@ -199,9 +221,10 @@ void UFF_FacilityCodexScreen::RefreshFilter()
 			if (auto* Card = Cast<UFF_FacilityCodexCard>(Widget)) Card->RefreshPresentation();
 		}
 	}
-	if (Button_All) Button_All->SetIsEnabled(Filter.State != EFF_FacilityCodexFilterState::All);
-	if (Button_Discovered) Button_Discovered->SetIsEnabled(Filter.State != EFF_FacilityCodexFilterState::Discovered);
-	if (Button_Undiscovered) Button_Undiscovered->SetIsEnabled(Filter.State != EFF_FacilityCodexFilterState::Undiscovered);
+	SetTabSelected(Button_All, Filter.State == EFF_FacilityCodexFilterState::All);
+	SetTabSelected(Button_Discovered, Filter.State == EFF_FacilityCodexFilterState::Discovered);
+	SetTabSelected(Button_Undiscovered, Filter.State == EFF_FacilityCodexFilterState::Undiscovered);
+	SetTabSelected(Button_Active, Filter.State == EFF_FacilityCodexFilterState::Active);
 	if (Button_ClearFacility) Button_ClearFacility->SetVisibility(Filter.FacilityDefinitionId.IsNone()
 		? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	if (Text_Summary) Text_Summary->SetText(FText::Format(LOCTEXT("Summary", "발견 {0} / {1}    ·    효과 적용 중 {2}"),
@@ -249,7 +272,7 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 	if (Text_DetailTitle) Text_DetailTitle->SetText(Entry.DisplayName);
 	if (Text_TargetName) Text_TargetName->SetText(Entry.TargetName);
 	if (Text_PartnerName) Text_PartnerName->SetText(Entry.PartnerName);
-	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0}\n수익 +{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
+	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 이용 수수료\n+{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
 	if (Text_Distance) Text_Distance->SetText(FText::Format(LOCTEXT("Distance", "시설 중심 사이 {0}m 이내에 배치"), Number(Entry.MaxDistanceMeters)));
 	if (Text_Discovery) Text_Discovery->SetText(Entry.bDiscovered ? LOCTEXT("Found", "발견 완료 · 두 시설의 설치가 기록되었어요") : LOCTEXT("NotFound", "미발견 · 조합에 필요한 두 시설을 설치해 보세요"));
 	FText Condition;
@@ -267,7 +290,11 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 	}
 	else if (Entry.bHasInstalledPair) Condition = LOCTEXT("Placement", "두 시설 설치 완료 · 현재 배치 상태를 확인해 주세요");
 	else Condition = LOCTEXT("Pair", "현재 조건 미충족: 서로 다른 두 시설이 필요해요");
-	if (Text_Condition) Text_Condition->SetText(Condition);
+	if (Text_Condition) Text_Condition->SetText(FText::Format(
+		LOCTEXT("ConditionChecklist", "{0} {1} 설치\n{2} {3} 설치\n{4} {5}"),
+		FText::FromString(Entry.bTargetInstalled ? TEXT("✓") : TEXT("○")), Entry.TargetName,
+		FText::FromString(Entry.bPartnerInstalled ? TEXT("✓") : TEXT("○")), Entry.PartnerName,
+		FText::FromString(Entry.bConditionMet ? TEXT("✓") : TEXT("○")), Condition));
 	if (Text_Applied) Text_Applied->SetText(Entry.bEffectApplied
 		? FText::Format(LOCTEXT("EffectApplied", "현재 {0}개 시설에 적용 중 · 최대 +{1}%\n같은 그룹의 더 높은 효과와 수익 상한에 따라 실제 보너스가 달라집니다."),
 			FText::AsNumber(Entry.EffectAppliedCount), Number(Entry.AppliedBonusPercent))
@@ -281,7 +308,36 @@ void UFF_FacilityCodexScreen::HandleClose() { OnCloseRequested.Broadcast(); }
 void UFF_FacilityCodexScreen::HandleAll() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::All); }
 void UFF_FacilityCodexScreen::HandleDiscovered() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::Discovered); }
 void UFF_FacilityCodexScreen::HandleUndiscovered() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::Undiscovered); }
+void UFF_FacilityCodexScreen::HandleActive() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::Active); }
 void UFF_FacilityCodexScreen::HandleClearFacility() { SetFacilityFilter(NAME_None); }
+void UFF_FacilityCodexScreen::HandleDetailRecipe() { SetDetailPage(0); }
+void UFF_FacilityCodexScreen::HandleDetailPlacement() { SetDetailPage(1); }
+void UFF_FacilityCodexScreen::HandleDetailEffect() { SetDetailPage(2); }
+void UFF_FacilityCodexScreen::SetDetailPage(int32 Page)
+{
+	if (!Switcher_Detail) return;
+	if (ActiveDetailPage == Page && Switcher_Detail->GetActiveWidgetIndex() == Page) return;
+	ActiveDetailPage = Page;
+	Switcher_Detail->SetActiveWidgetIndex(Page);
+	const TArray<UButton*> Buttons{ Button_DetailRecipe, Button_DetailPlacement, Button_DetailEffect };
+	for (int32 Index = 0; Index < Buttons.Num(); ++Index)
+	{
+		SetTabSelected(Buttons[Index], Index == Page);
+	}
+}
+void UFF_FacilityCodexScreen::SetTabSelected(UButton* Button, bool bSelected)
+{
+	if (!Button) return;
+	const FButtonStyle& Authored = AuthoredTabStyles.FindOrAdd(Button->GetFName(), Button->GetStyle());
+	FButtonStyle Style = Authored;
+	// Keep a selected tab focusable and fully colored; its handler prevents a
+	// redundant refresh. The selected fill remains editable in the saved WBP.
+	if (bSelected) Style.Normal = Style.Hovered = Style.Pressed = Authored.Disabled;
+	Button->SetStyle(Style);
+	Button->SetIsEnabled(true);
+	if (UTextBlock* Label = Cast<UTextBlock>(Button->GetContent()))
+		Label->SetColorAndOpacity(FSlateColor(bSelected ? SelectedFilterTextColor : InactiveFilterTextColor));
+}
 void UFF_FacilityCodexScreen::HandleSearchChanged(const FText& Text) { Filter.SearchText = Text.ToString(); RefreshFilter(); }
 
 #undef LOCTEXT_NAMESPACE

@@ -35,6 +35,9 @@ public:
 	 */
 	void ConfigureCard(int32 InIndex, const FFF_ProgramCard& InCard, const FText& InTimeRangeText);
 
+	/** 시설을 고르기 전에는 정원만, 고른 후에는 그 시설의 참가비로 계산한 매출을 표시한다. */
+	void SetRevenuePreview(const FFF_ProgramCard* FacilityCard);
+
 protected:
 	virtual void CollectStateTexts(TArray<UTextBlock*>& OutTexts) const override;
 
@@ -45,7 +48,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_Cost;
 
+
 	/** `정원 12명 · 확정 360`. 정원이 보장되므로 `예상` 이 아니다. */
+
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Program")
 	TObjectPtr<UTextBlock> Text_Capacity;
 

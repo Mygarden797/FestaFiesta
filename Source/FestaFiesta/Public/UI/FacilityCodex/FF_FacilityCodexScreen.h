@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Building/Codex/FF_FacilityCodexTypes.h"
+#include "Styling/SlateTypes.h"
 #include "FF_FacilityCodexScreen.generated.h"
 
 class UButton;
@@ -12,6 +13,7 @@ class UFF_FacilityCodexImage;
 class UTextBlock;
 class USizeBox;
 class UStackBox;
+class UWidgetSwitcher;
 class UFF_FacilityCodexItem;
 class UFF_FacilityCodexSubsystem;
 class UFF_FacilityCodexTileView;
@@ -50,6 +52,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_All;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Discovered;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_Undiscovered;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_Active;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UButton> Button_ClearFacility;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Summary;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidget)) TObjectPtr<UTextBlock> Text_Filter;
@@ -70,7 +73,13 @@ protected:
 	/** Optional for compatibility with the original authored screen before its explicit migration. */
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UStackBox> Stack_Main;
 	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<USizeBox> Size_Detail;
-	/** Move detail below six readable columns instead of reducing card typography. */
+	/** The compact codex reserves a centered frame and a separate, non-scrolling detail region. */
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<USizeBox> Size_Dialog;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UWidgetSwitcher> Switcher_Detail;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_DetailRecipe;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_DetailPlacement;
+	UPROPERTY(BlueprintReadOnly, meta=(BindWidgetOptional)) TObjectPtr<UButton> Button_DetailEffect;
+	/** Move detail below readable columns instead of reducing card typography. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive")
 	bool bEnableResponsiveDetail = true;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive", meta=(ClampMin="1"))
@@ -79,6 +88,10 @@ protected:
 	float CompactDetailHeight = 128.f;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Layout|Responsive", meta=(ClampMin="0"))
 	float CompactDetailGap = 12.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Appearance|Tabs")
+	FLinearColor SelectedFilterTextColor = FLinearColor::White;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Appearance|Tabs")
+	FLinearColor InactiveFilterTextColor = FLinearColor::FromSRGBColor(FColor(0x20, 0x4c, 0x36));
 private:
 	void UpdateResponsiveLayout();
 	UFUNCTION() void RefreshFromSubsystem();
@@ -86,7 +99,13 @@ private:
 	UFUNCTION() void HandleAll();
 	UFUNCTION() void HandleDiscovered();
 	UFUNCTION() void HandleUndiscovered();
+	UFUNCTION() void HandleActive();
 	UFUNCTION() void HandleClearFacility();
+	UFUNCTION() void HandleDetailRecipe();
+	UFUNCTION() void HandleDetailPlacement();
+	UFUNCTION() void HandleDetailEffect();
+	void SetDetailPage(int32 Page);
+	void SetTabSelected(UButton* Button, bool bSelected);
 	UFUNCTION() void HandleSearchChanged(const FText& Text);
 	void ApplyEntries(const TArray<FFF_FacilityCodexEntry>& Entries);
 	void RefreshFilter();
@@ -96,6 +115,8 @@ private:
 	UPROPERTY(Transient) TMap<FName, TObjectPtr<UFF_FacilityCodexItem>> ItemsByRule;
 	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilityCodexItem>> AllItems;
 	UPROPERTY(Transient) TArray<TObjectPtr<UFF_FacilityCodexItem>> VisibleItems;
+	UPROPERTY(Transient) TMap<FName, FButtonStyle> AuthoredTabStyles;
+	int32 ActiveDetailPage = INDEX_NONE;
 	FFF_FacilityCodexFilter Filter;
 	FFF_FacilityCodexSummary Summary;
 	FName SelectedRuleId;

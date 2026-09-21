@@ -142,11 +142,11 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	EFF_LiveFacilityQueueState QueueState = EFF_LiveFacilityQueueState::Unknown;
 
-	/** 줄 서 있는 인원. */
+	/** 줄 서 있는 팀 수. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 WaitingCount = 0;
 
-	/** 지금 이용 중인 인원. */
+	/** 지금 이용 중인 팀 수. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 ActiveServiceCount = 0;
 
@@ -168,7 +168,7 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 ExpectedWaitSeconds = INDEX_NONE;
 
-	/** 분당 처리 인원. 모르면 음수. 대기가 긴 이유가 `느림` 인지 `사람이 많음` 인지 가른다. */
+	/** 분당 처리 팀 수. 모르면 음수. 대기가 긴 이유가 `느림` 인지 `사람이 많음` 인지 가른다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	float ServiceRatePerMinute = -1.f;
 
@@ -420,9 +420,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetRemainingHireCap() const;
 
-	/** Staff 1명 고용 비용(1회). 지출 표와 견적에 쓴다. */
+	/** Staff 1명 고용 비용(1회). 추가 고용 견적에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetStaffHireCostGold() const;
+
+	/** 오늘 원장에 기록된 실제 고용비. 축제 시작 전에는 `INDEX_NONE`이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetTodayStaffHireCostGold() const;
 
 	/** 축제 총원 고용 상한. 화면에 `최대 N명` 을 쓰기 위한 값이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
@@ -513,6 +517,10 @@ public:
 	/** 편성할 수 있는 카드 전체. 축제가 시작되지 않았으면 빈 배열이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FFF_ProgramCard> GetProgramCatalog() const;
+
+	/** 선택 시설의 수익 표 참가비로 계산한 프로그램 카드. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FFF_ProgramCard> GetProgramCatalogForFacility(FGuid FacilityInstanceId) const;
 
 	/** 오늘 이미 편성한 카드 id. 하루 경계에서 비워진다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")

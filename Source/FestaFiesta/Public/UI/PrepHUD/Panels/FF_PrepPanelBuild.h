@@ -16,6 +16,7 @@ class UHorizontalBox;
 class UVerticalBox;
 class UScrollBox;
 class UTextBlock;
+class USizeBox;
 class UWidget;
 class UFF_BuildCatalogEconomyReadModel;
 class UFF_BuildCatalogSubsystem;
@@ -25,6 +26,7 @@ class UFF_RequiredFacilitiesSubsystem;
 class UFF_PrepChoiceButton;
 class UFF_PrepBuildPresentationModel;
 class UFF_PrepBuildTileView;
+class UFF_PrepBuildTileData;
 class UFFZSWorldSubsystem;
 
 namespace FFPrepBuildPauseModel
@@ -87,11 +89,29 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
 	void RequestFacilityFocus(FName FacilityDefinitionId);
 
+	/** 설치 조건을 충족하면 안내와 그 안내의 여백을 함께 접습니다. 상태를 변경하지 않는 표현 함수입니다. */
+	void RefreshRequiredFacilityGuide(const FFF_RequiredFacilitiesStatus& Status);
+
+	/** Activate a visible card. Starts a world preview; installation and payment require world confirmation. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
+	bool ActivateCatalogFacility(FName FacilityDefinitionId);
+
+	/** Keyboard/legacy activation of the focused card. Focus alone never starts placement. */
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
+	void BeginSelectedFacilityPlacement();
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
+	FName GetSelectedCatalogFacilityId() const { return SelectedCatalogFacilityId; }
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual FReply NativeOnPreviewMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual FReply NativeOnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void NativeOnMouseCaptureLost(const FCaptureLostEvent& Event) override;
 	virtual FReply NativeOnPreviewKeyDown(
 		const FGeometry& InGeometry,
 		const FKeyEvent& InKeyEvent) override;
@@ -175,6 +195,9 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UWidget> Box_Header;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
+	TObjectPtr<class UBorder> Border_CatalogRequiredGuide;
 
 	/**
 	 * 패널 바깥 테두리.
@@ -282,8 +305,29 @@ protected:
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton");
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_AuroraCatalogSelectionTest;
+	friend class FFF_ClarityCatalogDragTest;
+#endif
+	bool IsPointerOverCatalog(const FVector2D& ScreenPosition) const;
+	void ResetCatalogDrag();
+	void MatchCatalogHeaderActions();
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_ClarityCatalogDock;
+	TWeakObjectPtr<UFF_PrepBuildTileData> CatalogPressedItem;
+	FVector2D CatalogDragOrigin = FVector2D::ZeroVector;
+	bool bCatalogPointerDown = false;
+	bool bCatalogPointerMoved = false;
+	FName SelectedCatalogFacilityId = NAME_None;
+	void RefreshSelectedFacilityPresentation();
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_PlaceSelected;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectedFacility;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectedCost;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_AfterPlacementGold;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectionHint;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlaceSelected;
 	void HandleFavoritesChanged();
 	void HandleTileClicked(UObject* ItemObject);
+	void HandleTileSelectionChanged(UObject* ItemObject);
 	void HandleCategoryChoiceClicked(int32 ChoiceId);
 	void HandleMinorChoiceClicked(int32 ChoiceId);
 	void RefreshMinorCategorySurface();

@@ -108,9 +108,12 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 		!TestNotNull(TEXT("Actual facility tile view"), Tiles)) return false;
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
 	TestTrue(TEXT("Search and launcher share the original header"), Search->GetParent() == Header && Launcher->GetParent() == Header);
-	TestTrue(TEXT("Ranking shares the original catalog header"), Ranking->GetParent() == Header);
-	TestEqual(TEXT("Revenue ranking immediately follows search"), Header->GetChildIndex(Ranking), Header->GetChildIndex(Search) + 1);
-	TestEqual(TEXT("Codex follows the added revenue ranking action"), Header->GetChildIndex(Launcher), Header->GetChildIndex(Ranking) + 1);
+	UWidget* RankingHeaderItem = Ranking;
+	while (RankingHeaderItem->GetParent() && RankingHeaderItem->GetParent() != Header)
+		RankingHeaderItem = RankingHeaderItem->GetParent();
+	TestTrue(TEXT("Ranking's authored size wrapper shares the original catalog header"), RankingHeaderItem->GetParent() == Header);
+	TestEqual(TEXT("Revenue ranking immediately follows search"), Header->GetChildIndex(RankingHeaderItem), Header->GetChildIndex(Search) + 1);
+	TestEqual(TEXT("Codex follows the added revenue ranking action"), Header->GetChildIndex(Launcher), Header->GetChildIndex(RankingHeaderItem) + 1);
 	auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex")));
 	auto* Label = Button ? Cast<UTextBlock>(Button->GetContent()) : nullptr;
 	if (!TestNotNull(TEXT("Compact launcher button"), Button) || !TestNotNull(TEXT("Authored button label"), Label)) return false;
@@ -194,8 +197,15 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 				TestFalse(TEXT("Search does not overlap gold"), Overlaps(SearchRect, GoldRect));
 				TestTrue(TEXT("Codex stays to the right of the search field"), ButtonRect.Left >= SearchRect.Right - 1.f);
 				TestTrue(TEXT("Complete button label stays inside its button"), Contains(ButtonRect, LabelRect));
-				const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Label->GetText(), Label->GetFont());
-				TestTrue(TEXT("Button label has enough unscaled space for all glyphs"), Label->GetCachedGeometry().GetLocalSize().X + 1.f >= TextSize.X && Label->GetCachedGeometry().GetLocalSize().Y + 1.f >= TextSize.Y);
+				for (UTextBlock* ActionLabel : { Label, Cast<UTextBlock>(Ranking->GetContent()) })
+				{
+					if (!TestNotNull(TEXT("Header action retains its readable text label"), ActionLabel)) continue;
+					const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(ActionLabel->GetText(), ActionLabel->GetFont());
+					const FVector2D Allotted = ActionLabel->GetCachedGeometry().GetLocalSize();
+					TestTrue(*FString::Printf(TEXT("%s label has space for every glyph: allotted %.2fx%.2f, measured %.2fx%.2f"),
+						*ActionLabel->GetName(), Allotted.X, Allotted.Y, TextSize.X, TextSize.Y),
+						Allotted.X + 1.f >= TextSize.X && Allotted.Y + 1.f >= TextSize.Y);
+				}
 			};
 			Gold->SetText(FText::FromString(TEXT("보유 7,500 Gold")));
 			Paint();

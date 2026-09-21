@@ -4,6 +4,49 @@
 #include "FF_FFZSQueueGeometry.h"
 #include "SceneManagement.h"
 
+void FFZSBuildRangePresentation::AppendFailureHatching(TArray<FBatchedLine>& Lines,
+    const FWorldCorners& Corners, const FLinearColor& Color)
+{
+    for (const FVector& Corner : Corners) if (Corner.ContainsNaN()) return;
+    // Clip diagonals in the rectangle's own UV frame, preserving arbitrary yaw and aspect.
+    constexpr int32 HatchCount = 11;
+    for (int32 Index = 1; Index <= HatchCount; ++Index)
+    {
+        const double T = 2.0 * Index / (HatchCount + 1);
+        const double U0 = FMath::Max(0.0, T - 1.0);
+        const double U1 = FMath::Min(1.0, T);
+        const FVector A = Corners[0] + (Corners[1] - Corners[0]) * U0 + (Corners[3] - Corners[0]) * (T - U0);
+        const FVector B = Corners[0] + (Corners[1] - Corners[0]) * U1 + (Corners[3] - Corners[0]) * (T - U1);
+        Lines.Emplace(A, B, Color, 0.0f, 1.4f, SDPG_Foreground);
+    }
+    for (int32 Edge = 0; Edge < 4; ++Edge)
+        Lines.Emplace(Corners[Edge], Corners[(Edge + 1) % 4], Color, 0.0f, 2.5f, SDPG_Foreground);
+}
+
+void FFZSBuildRangePresentation::AppendObstructionOutline(TArray<FBatchedLine>& Lines,
+    const FFFZSPlacementObstruction& Obstruction, const FLinearColor& Color)
+{
+    if (!Obstruction.WorldBounds.IsValid) return;
+    const FTransform Transform(Obstruction.WorldRotation, Obstruction.WorldCenter);
+    FVector Corners[8];
+    for (int32 Index = 0; Index < 8; ++Index)
+        Corners[Index] = Transform.TransformPosition(Obstruction.WorldHalfExtent * FVector(
+            (Index & 1) ? 1 : -1, (Index & 2) ? 1 : -1, (Index & 4) ? 1 : -1));
+    // Corner brackets and vertical edges differ from the failed area's diagonal hatching.
+    for (int32 Index = 0; Index < 8; ++Index)
+    {
+        for (int32 Axis = 0; Axis < 3; ++Axis)
+        {
+            const int32 Other = Index ^ (1 << Axis);
+            if (Index >= Other) continue;
+            const FVector A = Corners[Index], B = Corners[Other];
+            const double Fraction = FMath::Min(0.35, 60.0 / FMath::Max(1.0, FVector::Distance(A, B)));
+            Lines.Emplace(A, FMath::Lerp(A, B, Fraction), Color, 0.0f, 3.0f, SDPG_Foreground);
+            Lines.Emplace(FMath::Lerp(A, B, 1.0 - Fraction), B, Color, 0.0f, 3.0f, SDPG_Foreground);
+        }
+    }
+}
+
 bool FFZSBuildRangePresentation::HasRegionFailure(
     const FFFZSPlacementValidation& Validation, const ERegion Region)
 {

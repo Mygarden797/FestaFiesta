@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
@@ -212,6 +213,11 @@ bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Pa
 {
 	using namespace FFF_CrowdEconomyBridgeTestHelpers;
 
+	// Keep this world genuinely pre-festival until the explicit StartFestival below.
+	TGuardValue<TSoftObjectPtr<UFF_FestivalDefinition>> DefaultFestivalGuard(
+		GetMutableDefault<UFF_FestivalSettings>()->DefaultFestival, TSoftObjectPtr<UFF_FestivalDefinition>());
+	AddExpectedMessage(TEXT("DefaultFestival 이 지정되지 않았다"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, 1, false);
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 	{
@@ -260,6 +266,11 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 {
 	using namespace FFF_CrowdEconomyBridgeTestHelpers;
 
+	// Prevent project bootstrap from supplying visitors before this test starts its Festival.
+	TGuardValue<TSoftObjectPtr<UFF_FestivalDefinition>> DefaultFestivalGuard(
+		GetMutableDefault<UFF_FestivalSettings>()->DefaultFestival, TSoftObjectPtr<UFF_FestivalDefinition>());
+	AddExpectedMessage(TEXT("DefaultFestival 이 지정되지 않았다"), ELogVerbosity::Warning,
+		EAutomationExpectedMessageFlags::Contains, 1, false);
 	FTestWorldWrapper TestWorld;
 	if (!TestWorld.CreateTestWorld(EWorldType::Game))
 	{

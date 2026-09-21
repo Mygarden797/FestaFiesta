@@ -3644,10 +3644,14 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		}
 
 		const TArray<int32> Members = GetPartyMembers(Leader.PartyID);
+		if (Members.IsEmpty())
+		{
+			return false;
+		}
 
 		FFF_JoinRequest Request;
 		Request.PartyId = Leader.PartyID;
-		Request.MemberCount = FMath::Max(Members.Num(), 1);
+		Request.MemberCount = Members.Num();
 		Request.MemberAgentIds = Members;
 		Request.CauseId = State.CurrentDestinationId;
 

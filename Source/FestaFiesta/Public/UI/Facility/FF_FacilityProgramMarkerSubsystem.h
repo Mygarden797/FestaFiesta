@@ -11,6 +11,7 @@
 class UFF_FestivalProgressionSubsystem;
 class UFF_FestivalStageSubsystem;
 class UFF_ProgramReservationSubsystem;
+class UDataTable;
 class AFFZSFacilityActor;
 class APlayerController;
 struct FFFZSWorldChangeEvent;
@@ -71,6 +72,8 @@ private:
 	TObjectPtr<UFF_FestivalStageSubsystem> BoundStage;
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_ProgramReservationSubsystem> BoundReservations;
+	UPROPERTY(Transient)
+	TObjectPtr<UDataTable> BoundRevenueTable;
 	UPROPERTY(Transient)
 	TMap<FGuid, TObjectPtr<UFF_FacilityProgramMarkerWidget>> Markers;
 	UPROPERTY(Transient)

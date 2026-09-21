@@ -47,8 +47,7 @@ EFF_PrepCapacityRisk FFF_PrepCheckRules::ClassifyCapacityRisk(
 }
 
 FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
-	int32 HiredStaffCount,
-	int32 HireCostPerStaff,
+	int32 TodayStaffHireCost,
 	int32 ExpectedVisitors,
 	int32 AdmissionFee,
 	int32 DailyVisitorGoal,
@@ -56,9 +55,10 @@ FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
 {
 	FFF_PrepDayEstimate Result;
 
-	if (HiredStaffCount >= 0 && HireCostPerStaff != INDEX_NONE)
+	if (TodayStaffHireCost >= 0)
 	{
-		Result.StaffHireCost = HiredStaffCount * HireCostPerStaff;
+		// 영구 고용 인원이나 현재 단가로 과거 지출을 다시 계산하지 않는다.
+		Result.StaffHireCost = TodayStaffHireCost;
 	}
 
 	if (ExpectedVisitors != INDEX_NONE && AdmissionFee != INDEX_NONE)
@@ -505,8 +505,7 @@ void UFF_PrepPanelCheck::RefreshEstimate()
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 
 	const FFF_PrepDayEstimate Estimate = FFF_PrepCheckRules::BuildDayEstimate(
-		ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE,
-		ViewModel ? ViewModel->GetStaffHireCostGold() : INDEX_NONE,
+		ViewModel ? ViewModel->GetTodayStaffHireCostGold() : INDEX_NONE,
 		// 수입은 **범위의 아래쪽**으로 잡는다. 위쪽으로 잡으면 개장 판단이 낙관적으로 기운다.
 		ExpectedVisitorsMin,
 		ViewModel ? ViewModel->GetAdmissionFeeGold() : INDEX_NONE,
