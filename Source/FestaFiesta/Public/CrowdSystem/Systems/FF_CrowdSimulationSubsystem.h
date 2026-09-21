@@ -26,6 +26,7 @@
 class AFF_BaseCrowd;
 class UDataTable;
 class UFFZSWorldSubsystem;
+struct FFFZSAudienceSnapshot;
 
 // 개체 하나가 레인의 어디를 어디까지 타고 있는가. 디버그 표시와 콘솔 전용이다.
 //
@@ -327,6 +328,116 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
 	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
+
+	/** 메인 공연장의 Audience 정원만큼 적격 파티를 Utility를 거치지 않고 직접 집결시킨다. */
+	int32 GatherPartiesToMainStageAudience();
+
+	/**
+	 * 집결을 검토하기 시작하는 시점(공연 시각 이만큼 전, Live 초 = 축제 분).
+	 *
+	 * 실제 출발 시각은 파티마다 다르다 — 아래 `AudienceTravelSlack` 로 자기 이동시간을
+	 * 환산해서 **늦지 않을 만큼만 일찍** 떠난다. 이 값은 그 판정을 시작하는 바깥 창일 뿐이라
+	 * 넉넉히 잡아도 가까운 손님이 일찍 끌려가지 않는다.
+	 *
+	 * ★ 배속 잠금(`MainProgramLockLeadSeconds`)과 다른 값이다. 잠금은 플레이어가 공연을
+	 *   1배속으로 보게 하는 구간이고, 이 값은 군중 동선의 창이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float AudienceGatherLeadSeconds = 180.f;
+
+	/**
+	 * 직선거리 이동시간에 곱하는 여유 배수. 실제 경로는 시설을 우회하고 군중에 막혀 느리다.
+	 * 1.0 이면 직선거리 그대로라 대부분 지각한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "1.0"))
+	float AudienceTravelSlack = 1.6f;
+
+	/** 이동시간 환산과 별개로 붙이는 고정 여유(초). 자리 배정·경로 재계산 지연을 흡수한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float AudienceGatherSafetySeconds = 10.f;
+
+	/**
+	 * 집결 구간 동안 이 주기로 다시 훑는다. 한 번만 부르면 그 뒤에 입장한 손님과
+	 * 그때 줄에 있어서 빠진 손님이 영영 안 온다 — 입장은 Live 내내 이어진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.5"))
+	float AudienceGatherIntervalSeconds = 5.f;
+
+	/**
+	 * 좌석·대기 슬롯 좌표에 정확히 못 닿고 막혔을 때 이 거리 안이면 그 자리에 선다.
+	 *
+	 * 밀집 관람에서는 이미 앉은 사람들의 회피력 때문에 뒤에 온 사람이 지정 좌표까지
+	 * 못 들어간다. 이게 없으면 자리 앞에서 영원히 밀고 있고(관람 잠금 중에는 목적지 포기도
+	 * 꺼져 있다) 관람객 수가 늘지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float ScheduledSettleRadiusUU = 300.f;
+
+	/**
+	 * 관람 중인 개체의 사회력(개인 공간) 배수. 1.0 이면 평소와 같다.
+	 *
+	 * 공연 관람은 서로 어깨가 닿을 만큼 붙어 서는 상황이라, 통로 보행용 개인 공간을
+	 * 그대로 쓰면 자리가 아무리 많아도 블록이 안 채워진다 — 뒤에 온 사람이 앞사람의
+	 * 반발에 밀려 자기 좌석에 못 들어간다.
+	 *
+	 * ★ 줄어드는 것은 **심리적 거리(Social)** 뿐이다. 겹침 방지(Contact)와 벽 반발은
+	 *   그대로라 몸이 관통하거나 무대 안으로 들어가지 않는다.
+	 * ★ 0 으로 두면 탈출(unstuck) 가속까지 꺼져 완전히 정지한다. 밀집 연출에는 맞지만
+	 *   진짜로 낀 개체도 못 빠져나온다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AudienceSocialForceScale = 0.25f;
+
+	/**
+	 * 약속된 장소(관람 좌석·유료 프로그램 대기 슬롯)로 가는 동안의 보행 속도 배수.
+	 *
+	 * 실측에서 공연 시각의 관객이 좌석까지 평균 124m·최대 230m 남아 있었다. 기본 1.5 m/s 로는
+	 * 230m 에 153초가 걸리는데 공연까지 남은 시간은 그 절반도 안 된다 — 방문객 입장 곡선상
+	 * 대부분이 공연 40초 전에는 아직 스폰되지도 않았다. 리드타임만으로는 못 메운다.
+	 *
+	 * 공연을 보러 뛰어가는 것은 실제 축제에서도 나오는 행동이라 연출로도 맞다.
+	 * 1.0 이면 이 기능이 꺼진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "1.0"))
+	float ScheduledHurrySpeedMultiplier = 2.f;
+
+	/** 좌석으로 걸어가는 동안의 사회력 배수. 착석분보다는 높게 둬야 서로 뚫고 들어가지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AudienceApproachSocialForceScale = 0.5f;
+
+	// 이 시설에 지금 잡혀 있는 관람 좌석 수. 진단 전용이다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	int32 GetOccupiedAudienceSlotCount(FGuid FacilityInstanceId) const;
+
+	// 관람 상태에 묶여 있는 파티 수.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	int32 GetAudiencePartyCount() const;
+
+	// 도착 불가로 돌려받은 좌석 수(파티 단위, 누적).
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	int32 GetAudienceSeatsReclaimed() const { return AudienceSeatsReclaimed; }
+
+	// 집결 구간인가. 잠금 진입(공연 시각 - 리드타임)부터 공연 종료까지 true 다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	bool IsMainProgramAudienceActive() const { return bMainProgramAudienceActive; }
+
+	// 공연이 실제로 시작했는가. 관람 도착이 Waiting 으로 갈지 Spectating 으로 갈지를 가른다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	bool IsMainProgramShowStarted() const { return bMainProgramShowStarted; }
+
+	/**
+	 * 약속된 장소에 묶인 파티 수. 관람과 유료 프로그램을 나눠 센다.
+	 *
+	 * `걷는 중` 과 `도착` 을 가르는 것이 핵심이다 — 배정만 되고 못 닿는 상태를
+	 * 배정 수만 보면 성공으로 오인한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	void GetScheduledPhaseCounts(int32& OutAudienceSeated, int32& OutAudienceWalking,
+		int32& OutProgramAtVenue, int32& OutProgramWalking) const;
+
+	// 집결 시도 / 집결 파티 / 정원 부족 거절 / 스냅샷 실패 / 예약 우선 제외.
+	void GetAudienceStats(int32& OutAttempts, int32& OutGatheredParties, int32& OutGatheredMembers,
+		int32& OutCapacityRejects, int32& OutSnapshotFailures, int32& OutProgramConflicts) const;
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetPendingDecisionCount() const { return DecisionQueue.Num(); }
@@ -1051,6 +1162,33 @@ private:
 
 	bool AdvancePartyQueueOnArrival(int32 LeaderAgentIndex);
 
+	// Audience가 활성화된 공연장 도착을 FIFO Queue보다 먼저 처리한다.
+	bool HandleAudienceArrival(int32 LeaderAgentIndex);
+	// 집결 구간이 끝나고 공연이 시작하는 순간 착석한 파티를 관람으로 넘긴다.
+	void UpdateAudienceShowState();
+	// 집결을 시작한다. 잠금 신호보다 먼저 올 수 있어 멱등하게 둔다.
+	void BeginMainStageGathering(float ShowStartSeconds);
+	// 공연이 끝나기 전에 못 닿는 파티의 좌석을 돌려놓는다. 반환값은 회수한 파티 수다.
+	int32 ReclaimUnreachableAudienceSeats();
+	bool BeginAudienceVisit(int32 LeaderAgentIndex, const FGuid& FacilityId,
+		const FFFZSAudienceSnapshot& Snapshot);
+	// 파티원 각자에게 좌석 좌표를 물린다. 한 자리라도 못 받으면 전부 되돌리고 false 다.
+	bool AssignAudienceSeats(int32 LeaderAgentIndex, const FFFZSAudienceSnapshot& Snapshot,
+		const TArray<int32>& Members);
+	// 관람 파티가 지금 어느 단계에 몇이나 있는가. 집결이 실제로 도착까지 갔는지 보는 유일한 창구다.
+	void LogAudiencePhaseBreakdown(const TCHAR* Reason) const;
+	bool AllocateAudienceSlots(const FGuid& FacilityId, int32 RequiredSlots, int32 Capacity,
+		int32& OutFirstSlotIndex);
+	void ReleaseAudienceParty(int32 LeaderAgentIndex, bool bMoveToExit);
+	void ReleaseAllAudienceParties(bool bMoveToExit);
+	bool IsAudienceLocked(const FPartyDecisionState& State) const;
+	// 유료 프로그램 약속이 남아 있는가. 관람 집결이 예약자를 가로채지 못하게 막는다.
+	bool HasPendingProgramObligation(int32 LeaderAgentIndex) const;
+	bool FindMainStageAudience(FGuid& OutFacilityId, FFFZSAudienceSnapshot& OutSnapshot) const;
+
+	// 시설 접근점. ZoneSystem WorldRevision 이 바뀔 때만 다시 짓는다.
+	bool TryGetProgramApproachLocation(const FGuid& FacilityInstanceId, FVector& OutApproach);
+
 	// 매 고정 스텝에서 예약 파티의 복귀 마감·참여 시작·종료를 검사하고 상태를 전환한다.
 	void UpdateProgramReservationStates();
 	
@@ -1204,6 +1342,8 @@ private:
 
 	// 이번 스텝의 희망 속도(m/s). 구동력을 쓰는 스텝에만 채운다 — 비면 솔버가 구동력을 건너뛴다
 	TArray<FVector2f> ScratchDesiredVel2DMeters;
+	// 개체별 사회력 배수. 관람 단계에 따라 매 스텝 채운다.
+	TArray<float> ScratchSocialScale;
 
 	// 활성 개체의 조밀 인덱스. 오름차순으로 채운다 — 힘 합산 순서가 결정성의 전제다
 	TArray<int32> ScratchActiveIds;
@@ -1398,6 +1538,33 @@ private:
 	TArray<int32> DecisionQueue;
 	
 	TMap<FName, int32> InTransitMemberCounts;
+
+	// 시설별 점유 좌석. 좌석 API는 예약을 소유하지 않으므로 Crowd가 수명과 중복을 관리한다.
+	TMap<FGuid, TSet<int32>> OccupiedAudienceSlots;
+	TSet<FGuid> MissingProgramApproachWarnings;
+	TMap<FGuid, FVector> CachedProgramApproachByFacility;
+	int64 ProgramApproachCacheRevision = -1;
+	bool bMainProgramAudienceActive = false;
+
+	// 리드타임 구간(집결 중)과 공연 중을 가른다. Stage 시계로 매 스텝 판정한다 —
+	// 시작 전용 델리게이트를 새로 만들면 구독자마다 두 신호의 순서를 또 맞춰야 한다.
+	bool bMainProgramShowStarted = false;
+	float MainProgramStartLiveSeconds = 0.f;
+	float MainProgramEndLiveSeconds = 0.f;
+	float NextAudienceGatherSimTime = 0.f;
+	// 무대가 없는 맵에서 5초마다 같은 경고를 찍지 않는다. 집결 창마다 한 번이면 충분하다.
+	bool bWarnedMissingAudienceThisShow = false;
+	FName ActiveMainStageEventLabel = NAME_None;
+
+	int32 AudienceGatherAttempts = 0;
+	int32 AudienceGatheredParties = 0;
+	int32 AudienceGatheredMembers = 0;
+	int32 AudienceCapacityRejects = 0;
+	int32 AudienceSnapshotFailures = 0;
+	int32 AudienceProgramConflictSkips = 0;
+	int32 AudienceSettledInPlace = 0;
+	int32 ProgramSettledInPlace = 0;
+	int32 AudienceSeatsReclaimed = 0;
 	
 	
 	
@@ -1410,4 +1577,10 @@ private:
 
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage);
+
+	UFUNCTION()
+	void HandleMainProgramStarted(FString EventLabel);
+
+	UFUNCTION()
+	void HandleMainProgramEnded(FString EventLabel);
 };

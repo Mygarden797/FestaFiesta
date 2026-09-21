@@ -48,6 +48,8 @@ void UFF_FestivalStageSubsystem::RequestTransition(EFF_FestivalStage NewStage)
 	ElapsedLiveSeconds = 0.f;
 	// 날마다 길이가 달라, 시계를 0으로 리셋함
 	bWasMainProgramLocked = false;
+	bLastLoggedMainProgramLockState = false;
+	ActiveMainProgramEventIndex = INDEX_NONE;
 	// 날짜 바뀔 때 공연 시작 체크도 초기화
 	bNightLightingActivated = false;
 	// 단계/날짜 바뀔 때 밤 조명 트리거도 다시 켤 수 있게 초기화
@@ -112,7 +114,7 @@ bool UFF_FestivalStageSubsystem::IsReconfigureAllowed() const
 void UFF_FestivalStageSubsystem::SetTimeScale(float NewScale)
 {
 	TimeScale = NewScale;
-	OnTimeScaleChange.Broadcast(TimeScale);
+	OnTimeScaleChange.Broadcast(GetEffectiveTimeScale());
 }
 // 배속값을 저장하는 함수
 
@@ -211,14 +213,91 @@ bool UFF_FestivalStageSubsystem::IsMainProgramLocked()
 				: GetLiveDurationForCurrentDay();
 			// 다음 이벤트가 있으면 그 시각, 없으면 그날 Live 전체 끝까지를 락 구간으로 봄
 
-			return ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd;
-			// 지금이 그 구간 안에 있는지 true/false로 반환
+			if (ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd)
+			{
+				return true;
+			}
 		}
 	}
 	return false;
 	// 메인 공연 이벤트 자체가 없으면 항상 false
 }
 
+
+bool UFF_FestivalStageSubsystem::TryGetNextMainProgramEndSeconds(float& OutSeconds)
+{
+	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
+	for (int32 i = 0; i < Events.Num(); i++)
+	{
+		if (!Events[i].bIsMainProgramLockStart)
+		{
+			continue;
+		}
+		const float ShowEnd = Events.IsValidIndex(i + 1)
+			? Events[i + 1].TriggerSeconds
+			: GetLiveDurationForCurrentDay();
+		if (ElapsedLiveSeconds <= ShowEnd)
+		{
+			OutSeconds = ShowEnd;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UFF_FestivalStageSubsystem::TryGetNextMainProgramStartSeconds(float& OutSeconds)
+{
+	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
+	for (int32 i = 0; i < Events.Num(); i++)
+	{
+		if (!Events[i].bIsMainProgramLockStart)
+		{
+			continue;
+		}
+		const float ShowEnd = Events.IsValidIndex(i + 1)
+			? Events[i + 1].TriggerSeconds
+			: GetLiveDurationForCurrentDay();
+		if (ElapsedLiveSeconds <= ShowEnd)
+		{
+			OutSeconds = Events[i].TriggerSeconds;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool UFF_FestivalStageSubsystem::TryGetActiveMainProgramStartSeconds(float& OutSeconds)
+{
+	float LeadSeconds = 10.f;
+	if (TimeSettingsTable)
+	{
+		TArray<FFF_TimeSettingRow*> AllSettings;
+		TimeSettingsTable->GetAllRows<FFF_TimeSettingRow>(TEXT("TryGetActiveMainProgramStartSeconds"), AllSettings);
+		if (!AllSettings.IsEmpty())
+		{
+			LeadSeconds = AllSettings[0]->MainProgramLockLeadSeconds;
+		}
+	}
+
+	const TArray<FFF_LiveTriggerEvent>& Events = GetEventsForCurrentDay();
+	for (int32 i = 0; i < Events.Num(); i++)
+	{
+		if (!Events[i].bIsMainProgramLockStart)
+		{
+			continue;
+		}
+		const float LockStart = Events[i].TriggerSeconds - LeadSeconds;
+		const float LockEnd = Events.IsValidIndex(i + 1)
+			? Events[i + 1].TriggerSeconds
+			: GetLiveDurationForCurrentDay();
+		if (ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd)
+		{
+			OutSeconds = Events[i].TriggerSeconds;
+			return true;
+		}
+	}
+	return false;
+}
 
 void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 {
@@ -231,49 +310,62 @@ void UFF_FestivalStageSubsystem::Tick(float DeltaTime)
 		const bool bIsLockedNow = IsMainProgramLocked();
 		// 지금 메인 공연 락(1배속만가능한) 구간인지 확인
 
-		static bool bLastLoggedState = false;
-		if (bIsLockedNow != bLastLoggedState)
+		if (bIsLockedNow != bLastLoggedMainProgramLockState)
 		{
 			UE_LOG(LogTemp, Log, TEXT("락 상태 변화: %s, ElapsedLiveSeconds=%f"), bIsLockedNow ? TEXT("true") : TEXT("false"), ElapsedLiveSeconds);
-			bLastLoggedState = bIsLockedNow;
+			bLastLoggedMainProgramLockState = bIsLockedNow;
 		}
 
 		const TArray<FFF_LiveTriggerEvent>& TodayEvents = GetEventsForCurrentDay();
 		// 오늘 이벤트 목록 가져옴
 
-		if (bIsLockedNow && !bWasMainProgramLocked)
-			
+		float LeadSeconds = 10.f;
+		if (TimeSettingsTable)
 		{
-			UE_LOG(LogTemp, Log, TEXT("공연 시작 감지! ElapsedLiveSeconds: %f"), ElapsedLiveSeconds);
-			// 디버그용
-
-			for (int32 i = 0; i < TodayEvents.Num(); i++)
-				// 이벤트들 중에서 
+			TArray<FFF_TimeSettingRow*> Settings;
+			TimeSettingsTable->GetAllRows<FFF_TimeSettingRow>(TEXT("Tick_MainProgram"), Settings);
+			if (!Settings.IsEmpty()) LeadSeconds = Settings[0]->MainProgramLockLeadSeconds;
+		}
+		int32 NewActiveEventIndex = INDEX_NONE;
+		for (int32 EventIndex = 0; EventIndex < TodayEvents.Num(); ++EventIndex)
+		{
+			if (!TodayEvents[EventIndex].bIsMainProgramLockStart) continue;
+			const float LockStart = TodayEvents[EventIndex].TriggerSeconds - LeadSeconds;
+			const float LockEnd = TodayEvents.IsValidIndex(EventIndex + 1)
+				? TodayEvents[EventIndex + 1].TriggerSeconds
+				: GetLiveDurationForCurrentDay();
+			if (ElapsedLiveSeconds >= LockStart && ElapsedLiveSeconds <= LockEnd)
 			{
-				if (TodayEvents[i].bIsMainProgramLockStart)
-					// 공연 시작 이벤트를 찾으면
-				{
-					OnMainProgramStarted.Broadcast(TodayEvents[i].EventLabel);
-					// 시작 라벨과 함께 알림 보냄
-
-					CachedMainProgramEndLabel = TodayEvents.IsValidIndex(i + 1) ? TodayEvents[i + 1].EventLabel : TEXT("");
-					// 바로 다음 이벤트를 종료 라벨로 저장해둠
-
-					break;
-					// 찾았으니 반복 종료
-				}
+				NewActiveEventIndex = EventIndex;
+				break;
 			}
 		}
-		else if (!bIsLockedNow && bWasMainProgramLocked)
-			// 방금 막 잠금 구간에서 벗어난 순간이면
+		if (NewActiveEventIndex != ActiveMainProgramEventIndex)
 		{
-			UE_LOG(LogTemp, Log, TEXT("공연 종료 감지! 라벨: %s"), *CachedMainProgramEndLabel);
-			// 디버그용 - 실제로 이 코드가 실행되는지 확인용 로그
-			OnMainProgramEnded.Broadcast(CachedMainProgramEndLabel);
-			// 저장해둔 종료 라벨로 알림 보냄
+			// 구독자가 핸들러 안에서 GetEffectiveTimeScale() 을 읽는다. 잠금 상태를 먼저 세우지
+			// 않으면 공연 시작 핸들러가 공연 전 배속을 보고 판단한다.
+			bWasMainProgramLocked = NewActiveEventIndex != INDEX_NONE;
+			if (TodayEvents.IsValidIndex(ActiveMainProgramEventIndex))
+			{
+				const FString EndLabel = TodayEvents.IsValidIndex(ActiveMainProgramEventIndex + 1)
+					? TodayEvents[ActiveMainProgramEventIndex + 1].EventLabel : CachedMainProgramEndLabel;
+				UE_LOG(LogTemp, Log, TEXT("공연 종료 감지! 라벨: %s"), *EndLabel);
+				OnMainProgramEnded.Broadcast(EndLabel);
+			}
+			ActiveMainProgramEventIndex = NewActiveEventIndex;
+			if (TodayEvents.IsValidIndex(ActiveMainProgramEventIndex))
+			{
+				CachedMainProgramEndLabel = TodayEvents.IsValidIndex(ActiveMainProgramEventIndex + 1)
+					? TodayEvents[ActiveMainProgramEventIndex + 1].EventLabel : TEXT("");
+				UE_LOG(LogTemp, Log, TEXT("공연 시작 감지! ElapsedLiveSeconds: %f"), ElapsedLiveSeconds);
+				OnMainProgramStarted.Broadcast(TodayEvents[ActiveMainProgramEventIndex].EventLabel);
+			}
+			OnTimeScaleChange.Broadcast(GetEffectiveTimeScale());
 		}
-
-		bWasMainProgramLocked = bIsLockedNow;
+		else
+		{
+			bWasMainProgramLocked = bIsLockedNow;
+		}
 		// 다음 프레임 비교용으로 저장
 
 		const float EffectiveScale = GetEffectiveTimeScale();
@@ -440,6 +532,7 @@ void UFF_FestivalStageSubsystem::SetMinigameInProgress(bool bInProgress)
 {
 	bMinigameInProgress = bInProgress;
 	UE_LOG(LogTemp, Log, TEXT("[Festival] 미니게임 상태 변경: %s"), bInProgress ? TEXT("시작(1배속 고정)") : TEXT("종료(배속 해제)"));
+	OnTimeScaleChange.Broadcast(GetEffectiveTimeScale());
 }
 
 float UFF_FestivalStageSubsystem::GetEffectiveTimeScale() const

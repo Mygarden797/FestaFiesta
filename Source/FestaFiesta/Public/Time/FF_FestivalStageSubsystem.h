@@ -253,6 +253,30 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMainProgramLocked();
+
+	/**
+	 * 지금 잠금 구간인 메인 공연의 실제 시작 시각(Live 경과 초).
+	 *
+	 * 잠금은 시작보다 MainProgramLockLeadSeconds 만큼 먼저 들어간다. 그 구간은 관객이
+	 * 무대로 모이는 시간이지 공연 중이 아니다 — 둘을 같은 신호로 쓰면 리드타임을 늘린 만큼
+	 * "공연 중"이 길어진다. 잠금 구간이 아니면 false 이고 OutSeconds 는 유지한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool TryGetActiveMainProgramStartSeconds(float& OutSeconds);
+
+	/**
+	 * 아직 끝나지 않은 다음 메인 공연의 시작 시각(Live 경과 초). 잠금 구간과 무관하다.
+	 *
+	 * 배속 잠금 리드타임과 관객 집결 리드타임은 서로 다른 값이다 — 잠금은 "플레이어가
+	 * 공연을 1배속으로 본다"이고 집결은 "먼 NPC 가 걸어올 시간"이라 훨씬 길어야 한다.
+	 * 둘을 한 값으로 묶으면 집결을 늘리는 순간 하루 대부분이 1배속으로 잠긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool TryGetNextMainProgramStartSeconds(float& OutSeconds);
+
+	/** 아직 끝나지 않은 다음 메인 공연의 종료 시각(Live 경과 초). 다음 이벤트가 없으면 그날 Live 끝이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool TryGetNextMainProgramEndSeconds(float& OutSeconds);
 	// 지금 메인 공연 배속 잠금 구간인지 확인
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
@@ -366,6 +390,8 @@ private:
 
 	bool bWasMainProgramLocked = false;
 	// 공연 시작 알림을 한 번만 보내기 위한 체크용
+	bool bLastLoggedMainProgramLockState = false;
+	int32 ActiveMainProgramEventIndex = INDEX_NONE;
 
 	FString CachedMainProgramEndLabel;
 	// 종료 알림에 쓸 라벨을 시작 시점에 미리 저장
