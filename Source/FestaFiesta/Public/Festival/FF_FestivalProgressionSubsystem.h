@@ -32,24 +32,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid,
  * [참고] Getter + 변경 델리게이트를 쌍으로 준다
  * [참고] 전부 Gold(int32)이고 상한이 없다.
  */
-/* 저장에 담기는 경제 상태.
-
-   하루가 시작되는 순간만 저장하므로 담을 것이 적다. 장부와 편성은 정산할 때
-   정리되고, 알바는 매일 다시 뽑는다. 그래서 남는 것은 누적된 값뿐이다.
-
-   스타듀밸리처럼 "정산이 끝난 상태" 만 저장하고 다음 날 아침부터 시작한다.
-*/
+ 
 USTRUCT()
 struct FFF_ProgressionSave
 {
 	GENERATED_BODY()
-
-	UPROPERTY() int32 Gold = 0;
-	UPROPERTY() int32 TotalRevenue = 0;
-	UPROPERTY() int32 LastProcessedDay = 0;
+	
+ 	UPROPERTY() int32 Gold = 0;
+ 	UPROPERTY() int32 TotalRevenue = 0;
+ 	UPROPERTY() int32 LastProcessedDay = 0;
 	UPROPERTY() int32 EndedDay = 0;
 };
-
+ 
 UCLASS()
 class FESTAFIESTA_API UFF_FestivalProgressionSubsystem
 	: public UGameInstanceSubsystem, public IFF_Saveable
