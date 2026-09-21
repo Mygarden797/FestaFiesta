@@ -24,7 +24,7 @@ FSlateBrush FFBuildCategoryIcons::Resolve(const bool bAll, const EFFZSFacilityCa
 		}
 	}
 	const FString GlyphAsset = FString::Printf(TEXT("MI_UI_CategoryClarity_%s"), GlyphName);
-	const FString GlyphPath = TEXT("/Game/FestaFiesta/UI/Building/Clarity/") + GlyphAsset + TEXT(".") + GlyphAsset;
+	const FString GlyphPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/") + GlyphAsset + TEXT(".") + GlyphAsset;
 	if (UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *GlyphPath, nullptr, LOAD_NoWarn))
 	{
 		FSlateBrush Pictogram;

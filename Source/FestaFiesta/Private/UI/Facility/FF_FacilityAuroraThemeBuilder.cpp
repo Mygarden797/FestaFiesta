@@ -32,7 +32,7 @@ static bool IsPrimary(const FString& Name)
 static FSlateBrush MaterialBrush(const TCHAR* Role)
 {
     FString Name=FString(TEXT("MI_UI_FacilityAurora_"))+Role;
-    FString Path=FString(TEXT("/Game/FestaFiesta/UI/Facility/Aurora/"))+Name+TEXT(".")+Name;
+    FString Path=FString(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/Aurora/"))+Name+TEXT(".")+Name;
     FSlateBrush Brush; Brush.DrawAs=ESlateBrushDrawType::Image;
     Brush.SetResourceObject(LoadObject<UMaterialInterface>(nullptr,*Path));
     Brush.ImageSize=FVector2D(128,48); Brush.TintColor=FSlateColor(FLinearColor::White);
@@ -121,21 +121,21 @@ static bool Apply(UWidgetBlueprint& BP)
 static void Run()
 {
     const TCHAR* Paths[]={
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"),
-        TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"),
-        TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
-        TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),
-        TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"),
-        TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"),
-        TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexLauncher"),
-        TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild"),
-        TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile"),
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools"),
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy")};
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools"),
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy")};
     bool Success=true;
     for(const TCHAR* Path:Paths)
     {

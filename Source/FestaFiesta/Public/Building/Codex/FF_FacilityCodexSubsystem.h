@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "TimerManager.h"
 #include "Building/Codex/FF_FacilityCodexModel.h"
 #include "FF_FacilityCodexSubsystem.generated.h"
 
@@ -9,6 +10,7 @@ class UDataTable;
 class UFFZSWorldSubsystem;
 class UFF_BuildCatalogSubsystem;
 class UFF_FacilityCodexProgressSubsystem;
+class UFF_FestivalProgressionSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFacilityCodexChanged);
 
@@ -31,6 +33,9 @@ public:
 	bool FindEntry(FName RuleId, FFF_FacilityCodexEntry& OutEntry) const;
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	TArray<FFF_FacilityCodexEntry> GetFilteredEntries(const FFF_FacilityCodexFilter& Filter) const;
+	/** Claims a discovered recipe's authored reward once per profile. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	bool ClaimDiscoveryReward(FName RuleId);
 	/** Explicit boundary refresh, useful after external registry reconstruction. Not a per-frame call. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	void Refresh();
@@ -40,6 +45,7 @@ public:
 private:
 	void BindGameInstance();
 	void PublishEntries();
+	void CompleteStartup();
 	UFUNCTION() void HandleWorldChanged(const FFFZSWorldChangeEvent& Event);
 	UFUNCTION() void HandleCatalogChanged();
 	UFUNCTION() void HandleProgressChanged();
@@ -47,6 +53,7 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;
 	UPROPERTY(Transient) TObjectPtr<UFF_BuildCatalogSubsystem> Catalog;
 	UPROPERTY(Transient) TObjectPtr<UFF_FacilityCodexProgressSubsystem> Progress;
+	UPROPERTY(Transient) TObjectPtr<UFF_FestivalProgressionSubsystem> Economy;
 	UPROPERTY(Transient) TArray<FFF_FacilityCodexEntry> CachedEntries;
 	FFF_FacilityCodexSummary CachedSummary;
 	FFF_FacilityCodexModel Model;
@@ -54,5 +61,7 @@ private:
 	TMap<FName, int32> EntryByRuleId;
 	TSet<FGuid> EligibleInstanceIds;
 	uint64 CachedRegistryRevision = MAX_uint64;
+	FTimerHandle StartupRewardTimer;
+	bool bReadyToClaimRewards = false;
 	bool bRefreshing = false;
 };

@@ -16,7 +16,7 @@
 FSoftClassPath UFF_FacilityPaidProgramPicker::GetDefaultCardClassPath()
 {
 	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
+		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard."
 		"WBP_FF_FacilityPaidProgramCard_C"));
 }
 

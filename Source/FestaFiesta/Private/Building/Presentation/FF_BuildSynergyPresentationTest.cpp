@@ -49,7 +49,7 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     if (!TestNotNull(TEXT("Editor world for isolated presentation fixture"), World)) { return false; }
     UWidgetBlueprintGeneratedClass* SynergyClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildSynergyWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
     if (!TestNotNull(TEXT("Editable synergy WBP (generate with FF.CreateBuildSynergyWidget)"), SynergyClass)) { return false; }
     FScopedSynergyPlayerlessInitialization SynergyInitialization(*SynergyClass);
     TStrongObjectPtr<UFF_BuildSynergyWidget> Widget(CreateWidget<UFF_BuildSynergyWidget>(World, SynergyClass));
@@ -115,7 +115,7 @@ bool FFFBuildSynergyPresentationTest::RunTest(const FString& Parameters)
         Widget->RowDetails[1]->SetText(FText::FromString(TEXT("함께: 추억을 담는 포토 키오스크 · 20m 이내\n거리 초과 · 현재 31m · 적용 +0%\n게임장 조합 보너스: +0% → +10%")));
     }
     UWidgetBlueprintGeneratedClass* ToolsClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
     if (!TestNotNull(TEXT("Existing production placement toolbar"), ToolsClass)) { return false; }
     FScopedSynergyPlayerlessInitialization ToolsInitialization(*ToolsClass);
     TStrongObjectPtr<UFF_BuildToolsWidget> ToolsWidget(CreateWidget<UFF_BuildToolsWidget>(World, ToolsClass));

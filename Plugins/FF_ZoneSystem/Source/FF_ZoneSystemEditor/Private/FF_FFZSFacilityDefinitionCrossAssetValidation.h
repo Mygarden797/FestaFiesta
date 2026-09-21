@@ -22,7 +22,7 @@ struct FFFZSFacilityIdentityCollisions
 namespace FFZSFacilityDefinitionCrossAssetValidation
 {
     inline constexpr TCHAR RequiredDefinitionRoot[] =
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions");
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building");
 
     bool IsWithinRequiredDefinitionRoot(FName PackagePath);
     bool HasFiniteBounds(const FBox& Bounds);

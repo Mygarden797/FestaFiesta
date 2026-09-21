@@ -30,7 +30,7 @@ bool FFFZoneLifecycleTestPanelAssetContractTest::RunTest(const FString& Paramete
 	// 루트 계약이 깨진 경우 자식 순회를 중단해 null 접근보다 실제 에셋 원인을 먼저 보고한다.
 	(void)Parameters;
 	static const TCHAR* PanelAssetPath =
-		TEXT("/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel."
 			"WBP_FF_ZoneLifecycleTestPanel");
 	UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, PanelAssetPath);
 	if (!TestNotNull(TEXT("시설 Lifecycle 테스트 WBP가 존재한다"), Blueprint)

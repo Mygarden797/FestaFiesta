@@ -76,7 +76,7 @@ namespace
 	UTexture2D* LoadCaptureFoodTruckTexture(FAutomationTestBase& Test)
 	{
 		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
 		if (!Test.TestNotNull(TEXT("실제 카탈로그 푸드트럭 썸네일"), Texture)) return nullptr;
 		TArray<UTexture*> Textures = {Texture};
 		FTextureCompilingManager::Get().FinishCompilation(Textures);
@@ -86,16 +86,16 @@ namespace
 	}
 
 	const TCHAR* FacilityInfoObjectPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
 			"WBP_FF_FacilityInfoPanel");
 	const TCHAR* FacilityInfoClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
 			"WBP_FF_FacilityInfoPanel_C");
 	const TCHAR* PaidProgramPickerClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
 			"WBP_FF_FacilityPaidProgramPicker_C");
 	const TCHAR* PaidProgramCardClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard."
 			"WBP_FF_FacilityPaidProgramCard_C");
 
 	class FScopedFacilityInfoPlayerlessWidgetInitialization
@@ -684,7 +684,7 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 	// Keep the synthetic geometry stable, but inherit the current authored identity/cost
 	// contract. The retired DadaPochaFoodTruck row and category Default no longer exist.
 	const UFFZSFacilityDefinition* PricedDefinition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger."
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger."
 			"PDA_FFZS_Booth_FoodStall_Burger"));
 	if (!TestNotNull(TEXT("선택 fixture가 사용하는 현행 Burger 시설 정의"), PricedDefinition) ||
 		!TestEqual(TEXT("기하 fixture와 가격 정의의 카테고리가 같다"),
@@ -1858,7 +1858,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 			// A UI material's brush tint is white; its shader authors the visible color.
 			// Keep checking both the intended material and the rendered sage/readability range.
 			TestTrue(TEXT("Clarity header uses its authored material"),HeaderMaterial && HeaderMaterial->GetPathName()==
-				TEXT("/Game/FestaFiesta/UI/Building/Clarity/MI_UI_BuildClarity_Header.MI_UI_BuildClarity_Header"));
+				TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/MI_UI_BuildClarity_Header.MI_UI_BuildClarity_Header"));
 			TestTrue(TEXT("Rendered Clarity header remains opaque pale sage"),HeaderPixel.A>=245 &&
 				HeaderPixel.R>=215 && HeaderPixel.R<=245 && HeaderPixel.G>=225 && HeaderPixel.G<=250 &&
 				HeaderPixel.B>=205 && HeaderPixel.B<=242 && HeaderPixel.G>=HeaderPixel.R+3 && HeaderPixel.G>=HeaderPixel.B+6);
@@ -2356,7 +2356,7 @@ bool FFF_FacilityLightingControlsTest::RunTest(const FString& Parameters)
 {
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
 	if (!TestNotNull(TEXT("Lighting WBP class"), Class) || !TestNotNull(TEXT("Editor world"), World)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	UFF_FacilityLightingControls* Controls = CreateWidget<UFF_FacilityLightingControls>(World, Class);
@@ -2449,7 +2449,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
 	auto* LightingClass=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
 	if (!TestNotNull(TEXT("Panel WBP"), Class) || !TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Lighting child WBP"),LightingClass)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	FScopedFacilityInfoPlayerlessWidgetInitialization LightingInitializationGuard(*LightingClass);
@@ -2476,7 +2476,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	Data.LightingState.bOverrideColor = true;
 	Data.LightingState.Color = FLinearColor::FromSRGBColor(FColor(0x56, 0xDC, 0xE7));
 	UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
 	if (!TestNotNull(TEXT("Current main-stage PDA"), Definition)) return false;
 	Data.DisplayName = Definition->Spec.DisplayName;
 	Data.FootprintText = FFFacilityInfoModel::FormatFootprint(Definition->Spec.FootprintSizeCells);

@@ -342,6 +342,10 @@ FReply UFF_PrepPanelBuild::NativeOnMouseButtonUp(const FGeometry& Geometry, cons
 	{
 		if (Delta.X < 0) NextCatalogPage(); else PreviousCatalogPage();
 	}
+	else if (FMath::Abs(Delta.Y) >= 42.0 && FMath::Abs(Delta.Y) > FMath::Abs(Delta.X) * 1.25)
+	{
+		if (Delta.Y < 0) NextCatalogPage(); else PreviousCatalogPage();
+	}
 	else if (!bMoved && PressedItem && TileView_Facilities && IsPointerOverCatalog(Event.GetScreenSpacePosition()))
 	{
 		for (UUserWidget* Entry : TileView_Facilities->GetDisplayedEntryWidgets())
@@ -390,8 +394,10 @@ TArray<UObject*> UFF_PrepPanelBuild::GetCatalogPageItems() const
 	if (!PresentationModel) return PageItems;
 	const TArray<TObjectPtr<UFF_PrepBuildTileData>>& FilteredItems = PresentationModel->GetVisibleTiles();
 	const int32 Start = bUsePagination ? GetCatalogPageIndex() * FMath::Max(1, CardsPerPage) : 0;
+	// Advance one full row at a time, retaining the next row below the viewport's
+	// clipping edge so its partial cards show that more facilities are available.
 	const int32 Count = bUsePagination
-		? FMath::Min(FMath::Max(1, CardsPerPage), FilteredItems.Num() - Start) : FilteredItems.Num();
+		? FMath::Min(FMath::Max(1, CardsPerPage) * 2, FilteredItems.Num() - Start) : FilteredItems.Num();
 	PageItems.Reserve(Count);
 	for (int32 Index = Start; Index < Start + Count; ++Index) PageItems.Add(FilteredItems[Index]);
 	return PageItems;
@@ -622,6 +628,7 @@ void UFF_PrepPanelBuild::UnbindExternalSources()
 	bRevealSynergyOnCatalogOpen = false;
 	PendingCatalogFocusId = NAME_None;
 	SelectedCatalogFacilityId = NAME_None;
+	ClearCodexFocus();
 }
 
 void UFF_PrepPanelBuild::HandleCatalogChanged()
@@ -659,7 +666,11 @@ void UFF_PrepPanelBuild::HandleBuildModeStateChanged(
 		TEXT("[%s] 배치 표현 상태 전환: %s -> %s"),
 		*GetName(), *UEnum::GetValueAsString(PreviousState), *UEnum::GetValueAsString(NewState));
 
-	if (NewState != EFF_BuildModeState::CatalogOpen) { PendingCatalogFocusId = NAME_None; }
+	if (NewState != EFF_BuildModeState::CatalogOpen)
+	{
+		PendingCatalogFocusId = NAME_None;
+		ClearCodexFocus();
+	}
 	if (!bPanelOpen || bClosingPanel)
 	{
 		return;
@@ -726,6 +737,7 @@ FReply UFF_PrepPanelBuild::NativeOnPreviewKeyDown(
 void UFF_PrepPanelBuild::HandleSynergyCatalogContextChanged()
 {
 	if (!bPanelOpen || bClosingPanel || !BuildModeSubsystem) { return; }
+	ClearCodexFocus();
 	bRevealSynergyOnCatalogOpen = !BuildModeSubsystem->GetSynergyCatalogFacilityIds().IsEmpty();
 	if (BuildModeSubsystem->GetBuildModeState() == EFF_BuildModeState::CatalogOpen)
 	{
@@ -743,7 +755,12 @@ void UFF_PrepPanelBuild::HandleCatalogFacilityFocusRequested(const FName Facilit
 
 void UFF_PrepPanelBuild::RequestFacilityFocus(const FName FacilityDefinitionId)
 {
-	if (FacilityDefinitionId.IsNone()) { return; }
+	if (FacilityDefinitionId.IsNone())
+	{
+		PendingCatalogFocusId = NAME_None;
+		ClearCodexFocus();
+		return;
+	}
 	PendingCatalogFocusId = FacilityDefinitionId;
 	ReconcilePresentation();
 }
@@ -870,6 +887,8 @@ void UFF_PrepPanelBuild::HandleTileSelectionChanged(UObject* ItemObject)
 	// SetListItems briefly clears selection during reconciliation. Only a real focus
 	// transition updates the candidate; visibility reconciliation clears stale IDs.
 	if (!Tile) return;
+	if (!bApplyingCatalogFocus && PresentationModel &&
+		Tile->GetFacilityDefinitionId() != PresentationModel->GetCodexFocusId()) { ClearCodexFocus(); }
 	SelectedCatalogFacilityId = Tile->GetFacilityDefinitionId();
 	RefreshSelectedFacilityPresentation();
 }
@@ -885,6 +904,7 @@ bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionI
 		BuildModeSubsystem->GetBuildModeState() != EFF_BuildModeState::CatalogOpen) return false;
 	const auto* Candidate = PresentationModel->FindTile(FacilityDefinitionId);
 	if (!Candidate || !GetCatalogPageItems().Contains(const_cast<UFF_PrepBuildTileData*>(Candidate))) return false;
+	if (FacilityDefinitionId != PresentationModel->GetCodexFocusId()) { ClearCodexFocus(); }
 	SelectedCatalogFacilityId = FacilityDefinitionId;
 	// Re-read authoritative prices/limits at activation, never use the selection-time copy.
 	const FName SelectedId = FacilityDefinitionId;
@@ -925,6 +945,19 @@ bool UFF_PrepPanelBuild::ActivateCatalogFacility(const FName FacilityDefinitionI
 	}
 	FFBuildFeedback::Pulse(GetOwningPlayer());
 	return true;
+}
+
+void UFF_PrepPanelBuild::ClearCodexFocus()
+{
+	if (!PresentationModel || PresentationModel->GetCodexFocusId().IsNone()) { return; }
+	PresentationModel->SetCodexFocusId(NAME_None);
+	if (TileView_Facilities)
+	{
+		for (UUserWidget* Row : TileView_Facilities->GetDisplayedEntryWidgets())
+		{
+			if (auto* Tile = Cast<UFF_PrepBuildTileWidget>(Row)) { Tile->RefreshItemPresentation(); }
+		}
+	}
 }
 
 void UFF_PrepPanelBuild::RefreshSelectedFacilityPresentation()
@@ -1495,6 +1528,9 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 	{
 		return;
 	}
+	// Restoring selection after list reconciliation is not a new player choice.
+	// In particular, filtering the destination away must retain its identity accent.
+	TGuardValue<bool> SelectionGuard(bApplyingCatalogFocus, true);
 
 	const EFF_BuildCatalogLoadState LoadState = CatalogSubsystem
 		? CatalogSubsystem->GetLoadState()
@@ -1518,6 +1554,7 @@ void UFF_PrepPanelBuild::ReconcilePresentation()
 			return Entry.FacilityDefinitionId == FocusId;
 		});
 		bFocusTargetMissing = !Target;
+		PresentationModel->SetCodexFocusId(Target ? FocusId : NAME_None);
 		if (Target)
 		{
 			TGuardValue<bool> FocusGuard(bApplyingCatalogFocus, true);
@@ -1708,7 +1745,7 @@ void UFF_PrepPanelBuild::ApplyPresentation(const bool bReplaceListItems)
 			Status = (ThumbnailState == EFF_BuildCatalogThumbnailLoadState::Loading ||
 				ThumbnailState == EFF_BuildCatalogThumbnailLoadState::WaitingForCatalog)
 				? LOCTEXT("ThumbnailsLoading", "시설 이미지를 불러오는 중입니다. 목록은 먼저 선택할 수 있습니다.")
-				: LOCTEXT("ClarityCatalogReadyV4", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기");
+				: LOCTEXT("ClarityCatalogReadyV9", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  위아래 드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기");
 		}
 		const FText SynergySource = BuildModeSubsystem
 			? BuildModeSubsystem->GetSynergyCatalogSourceName() : FText::GetEmpty();

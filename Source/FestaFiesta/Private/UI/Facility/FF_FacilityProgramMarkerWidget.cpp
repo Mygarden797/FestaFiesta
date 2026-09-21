@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityProgramMarkerWidget.h"
+#include "Building/Presentation/FF_BuildTypography.h"
 
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Blueprint/WidgetTree.h"
@@ -27,10 +28,10 @@ TSharedRef<SWidget> UFF_FacilityProgramMarkerWidget::RebuildWidget()
 	if (bAuthoredLayout) return Super::RebuildWidget();
 	LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 11);
 	FontAsset = LoadObject<UFont>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard.F_UI_Pretendard"));
+		TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Bold_Font.NEXON_Lv2_Gothic_OTF_Bold_Font"));
 	if (FontAsset)
 	{
-		LabelFont = FSlateFontInfo(FontAsset, 11, FName(TEXT("SemiBold")));
+		LabelFont = FSlateFontInfo(FontAsset, 11, FFBuildTypography::Typeface(*CastChecked<UFont>(FontAsset.Get())));
 	}
 	return SAssignNew(NativeBounds, SBox).WidthOverride(bShowRevenue ? 220.f : 156.f)
 		.HeightOverride(bShowRevenue && MarkerState != EFF_FacilityProgramMarkerState::Hidden ? 70.f : 34.f)

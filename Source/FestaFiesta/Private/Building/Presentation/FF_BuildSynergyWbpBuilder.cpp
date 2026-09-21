@@ -22,7 +22,7 @@
 namespace FFBuildSynergyWbpBuilder
 {
 using namespace FFUIWbpBuilder;
-const FString WidgetFolder(TEXT("/Game/FestaFiesta/UI/Building"));
+const FString WidgetFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls"));
 const FString WidgetPackage(WidgetFolder / TEXT("WBP_FF_BuildSynergy"));
 
 bool ValidateWidgetContract(const UWidgetBlueprint& Blueprint)

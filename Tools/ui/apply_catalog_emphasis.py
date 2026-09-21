@@ -25,9 +25,9 @@ VERSION_KEY = "FF.BuildCatalog.EmphasisVersion"
 VERSION = "20260920.v1"
 GUIDE_VERSION_KEY = "FF.BuildCatalog.RequiredGuideVersion"
 PACKAGES = {
-    "/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile": "SizeBox_Card",
-    "/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard": "Root_Size",
-    "/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild": "Border_ApprovedCatalogV9",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile": "SizeBox_Card",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard": "Root_Size",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild": "Border_ApprovedCatalogV9",
 }
 MIGRATED_WIDGETS = {
     "Overlay_RequiredStatus", "Border_RequiredMissing", "Border_RequiredSatisfied",

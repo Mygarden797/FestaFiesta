@@ -98,13 +98,13 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 	}
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto* PickerClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityPaidProgramPicker>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C")));
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityPaidProgramCard>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C")));
 	const auto* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	const auto* Facility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
 	if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Actual picker WBP"), PickerClass) ||
 		!TestNotNull(TEXT("Actual program-card WBP"), CardClass) || !TestNotNull(TEXT("Actual Busan festival definition"), Festival) ||
 		!TestNotNull(TEXT("Actual SandArt facility definition"), Facility)) { return false; }

@@ -29,7 +29,7 @@
 namespace FFBuildToolsWbpBuilder
 {
     using namespace FFUIWbpBuilder;
-    const FString ToolsFolder(TEXT("/Game/FestaFiesta/UI/Building"));
+    const FString ToolsFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls"));
     const FString ToolsPackage = ToolsFolder / TEXT("WBP_FF_BuildTools");
     const TCHAR* ApprovedLayoutKey = TEXT("FFApprovedBuildToolsLayoutVersion");
     const TCHAR* ApprovedLayoutVersion = TEXT("2");

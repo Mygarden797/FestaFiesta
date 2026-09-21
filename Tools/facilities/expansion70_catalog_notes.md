@@ -17,7 +17,7 @@ The initial centimetre dimensions are authored targets based on the brief and vi
 
 ## Definition construction
 
-The definition class is `/Script/FF_ZoneSystem.FFZSFacilityDefinition`, a `UPrimaryDataAsset`. The expected package is `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/<Category>/PDA_FFZS_<id>`; the primary asset identity comes from `Spec.FacilityDefinitionId`.
+The definition class is `/Script/FF_ZoneSystem.FFZSFacilityDefinition`, a `UPrimaryDataAsset`. The expected package is `/Game/FestaFiesta/Building/FF_Data_Building/<Category>/PDA_FFZS_<id>`; the primary asset identity comes from `Spec.FacilityDefinitionId`.
 
 Use current `FFFZSFacilitySpec::CurrentSchemaVersion` (2). For exact visual sizing, use zero `VisualOffsetCm`, a permitted right-angle Yaw, and a ground-centred mesh whose front is local +Y. Road/Tile retain +X travel direction and 400×400×8 cm source geometry. Keep new artwork separate from the legacy procedural mesh ownership flag and metadata unless deliberately integrating that ownership contract.
 

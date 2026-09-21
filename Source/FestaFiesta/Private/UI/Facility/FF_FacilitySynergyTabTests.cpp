@@ -126,15 +126,15 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
     auto* EntryClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilitySynergyEntryWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
     const auto* Burger = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
     const auto* Seating = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"));
     const auto* Shade = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade"));
     const auto* SynergyTable = LoadObject<UDataTable>(nullptr,
         TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies.DT_FacilitySynergies"));
     if (!TestNotNull(TEXT("Editor fixture world"), World) || !TestNotNull(TEXT("Actual facility inspector WBP"), PanelClass) ||

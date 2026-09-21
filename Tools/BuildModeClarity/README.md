@@ -5,7 +5,8 @@
 
 ## 사용
 
-- **건축 목록:** 하단 중앙 6개 카드. 좌우 드래그, 마우스 휠, 페이지 버튼으로 탐색한다.
+- **건축 목록:** 하단 중앙 6열, 첫 줄 전체와 다음 줄 약 30%를 표시한다.
+  상하·좌우 드래그, 마우스 휠, 페이지 버튼으로 한 줄씩 탐색하며 마지막 줄에는 다음 줄 미리보기가 없다.
   필터 없는 `전체 시설`에서는 미설치 필수 시설, 설치 완료된 필수 시설, 일반 시설 순으로 표시한다.
   검색·카테고리·즐겨찾기 등 명시적인 필터의 결과와 기존 순서는 유지한다.
   이동한 포인터는 카드 클릭으로 처리하지 않는다. 즐겨찾기는 독립 버튼이다.
@@ -73,7 +74,7 @@
   플레이어의 Force Feedback 설정을 존중하며 `FF.UI.BuildHaptics 0`으로 비활성화할 수 있다.
   진동 호출은 120ms 간격으로 제한한다. 실제 하드웨어 진동은 별도 기기 확인이 필요하다.
 - 카탈로그 11개 선택지에는 부스·공연·휴게·편의·안전 등을 나타내는 원본 SDF 픽토그램을 사용한다.
-  한글 이름과 기존 분류 ID·키보드 이동·6개 카드 가상화는 유지한다.
+  한글 이름과 기존 분류 ID·키보드 이동·6열 카드 가상화는 유지한다.
 - 배치 고스트에는 원본 재질 위에 유효/불가 상태색을 얹는다. 이 임시 컴포넌트만 Nanite fallback을
   사용하며, 설치된 시설이나 원본 메시·재질·맵·전역 포스트프로세스는 변경하지 않는다.
   깊이에 가려지지 않는 핸들·장애물 모서리와 투명 고스트로 가려진 배치 위치도 확인할 수 있다.
@@ -95,6 +96,9 @@
 4. 대상 외 UI 해시와 두 번째 실행의 멱등성을 검사한다.
 5. 관련 자동 검사는 `FestaFiesta.Building.BuildTools`, `FestaFiesta.UI.PrepBuild`,
    `FestaFiesta.UI.FacilityInfo`, `FestaFiesta.FacilityCodex.UI`에 있다.
+
+1.3줄 목록만 반영할 때는 `apply_catalog_row_preview.py`를 사용한다. 현재 패널을 백업한 뒤
+높이·클리핑·재실행 멱등성과 다른 UI 에셋 보존을 확인하며, 결과는 `Saved/CatalogRowPreview_20260921`에 저장한다.
 
 ### 전체 목록 필수 시설 우선·도구 R 제거 검증 · 2026-09-21
 
@@ -148,7 +152,7 @@ PlayerInput 부재 4건, 정산 참가자 부재 1건, Navigation/Crowd 설정·
 
 `FF.ApplyBuildModeClarityFacilityV2`는 기존 트리와 기능 바인딩을 보존하는 명시적 1회 보정이다.
 이미 적용한 V2 표식이 있으면 같은 레이아웃을 재생성하지 않는다. 대상은
-`/Game/FestaFiesta/UI/Facility/` 아래의 다음 4개 WBP다.
+`/Game/FestaFiesta/Building/FF_WBP_Building/Facility/` 아래의 다음 4개 WBP다.
 
 - `WBP_FF_FacilityInfoPanel`: `ClarityV2_Info` 표식, 프로그램 강조와 조명 편집 크기/탐색 전환.
 - `WBP_FF_FacilityLightingControls`: `ClarityV2_Lighting` 표식,

@@ -119,9 +119,9 @@ bool AddHighlightLayer(const FString& Package, const UClass& ExpectedParent)
 
 void AddBuildSynergyCardHighlights()
 {
-	const bool bPrep = AddHighlightLayer(TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile"),
+	const bool bPrep = AddHighlightLayer(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"),
 		*UFF_PrepBuildTileWidget::StaticClass());
-	const bool bLegacy = AddHighlightLayer(TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard"),
+	const bool bLegacy = AddHighlightLayer(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"),
 		*UFF_BuildFacilityCard::StaticClass());
 	UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_RESULT: Prep=%s Legacy=%s"), LogPrefix,
 		bPrep ? TEXT("OK") : TEXT("FAIL"), bLegacy ? TEXT("OK") : TEXT("FAIL"));
@@ -226,9 +226,9 @@ bool AddRequiredFacilityBadges(const FString& Package, const UClass& ExpectedPar
 
 void AddBuildRequiredFacilityBadges()
 {
-	const bool bPrep = AddRequiredFacilityBadges(TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile"),
+	const bool bPrep = AddRequiredFacilityBadges(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"),
 		*UFF_PrepBuildTileWidget::StaticClass());
-	const bool bLegacy = AddRequiredFacilityBadges(TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard"),
+	const bool bLegacy = AddRequiredFacilityBadges(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"),
 		*UFF_BuildFacilityCard::StaticClass());
 	UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REQUIRED_CARD_UMG_RESULT: Prep=%s Legacy=%s"),
 		bPrep ? TEXT("OK") : TEXT("FAIL"), bLegacy ? TEXT("OK") : TEXT("FAIL"));
@@ -478,9 +478,9 @@ bool MigrateEmphasisPanel(UWidgetBlueprint& Blueprint)
 
 void RefreshBuildCatalogEmphasis()
 {
-	UWidgetBlueprint* Prep = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile"));
-	UWidgetBlueprint* Legacy = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard"));
-	UWidgetBlueprint* Panel = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild"));
+	UWidgetBlueprint* Prep = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"));
+	UWidgetBlueprint* Legacy = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"));
+	UWidgetBlueprint* Panel = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild"));
 	// Validate all existing structures before modifying or saving any target.
 	if (!ValidateEmphasisCard(Prep, *UFF_PrepBuildTileWidget::StaticClass(), TEXT("Overlay_Thumbnail")) ||
 		!ValidateEmphasisCard(Legacy, *UFF_BuildFacilityCard::StaticClass(), TEXT("Thumbnail_Layer")) ||

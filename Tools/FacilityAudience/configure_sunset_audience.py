@@ -13,7 +13,7 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Saved/FacilityAudience"
-PDA = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage"
+PDA = "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage"
 ASSET = ROOT / "Content" / (PDA.removeprefix("/Game/") + ".uasset")
 
 

@@ -142,13 +142,13 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepProgramCard>(nullptr,
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramCard.WBP_FF_PrepProgramCard_C")));
 	auto* ChoiceClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepChoiceButton>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C")));
 	const UFF_FestivalDefinition* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	UFFZSFacilityDefinition* WorkshopFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
 	UFFZSFacilityDefinition* YogaFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience"));
 	if (!TestNotNull(TEXT("Isolated game instance"), Game) || !TestNotNull(TEXT("Production catalog"), Catalog) ||
 		!TestNotNull(TEXT("Production progression"), Progression) || !TestNotNull(TEXT("Production build mode"), Build) ||
 		!TestNotNull(TEXT("Production zone subsystem"), Zones) || !TestNotNull(TEXT("Saved program panel WBP"), PanelClass) ||

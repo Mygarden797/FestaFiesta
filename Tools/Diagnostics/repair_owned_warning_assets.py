@@ -11,9 +11,9 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "Artifacts" / "WarningRepair"
-LEGACY = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodTruck_Taco"
-CURRENT = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Taco"
-GUIDE = "/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide"
+LEGACY = "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodTruck_Taco"
+CURRENT = "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Taco"
+GUIDE = "/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_FF_BuildModeGuide"
 
 
 def run():

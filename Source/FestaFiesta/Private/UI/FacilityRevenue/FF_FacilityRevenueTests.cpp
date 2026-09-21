@@ -37,8 +37,8 @@
 
 namespace
 {
-	const TCHAR* RevenuePanelPath = TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking.WBP_FF_FacilityRevenueRanking");
-	const TCHAR* RevenueRowPath = TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.WBP_FF_FacilityRevenueRankRow");
+	const TCHAR* RevenuePanelPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking.WBP_FF_FacilityRevenueRanking");
+	const TCHAR* RevenueRowPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.WBP_FF_FacilityRevenueRankRow");
 
 	struct FRevenueFixture
 	{

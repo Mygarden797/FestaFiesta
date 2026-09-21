@@ -3,9 +3,9 @@
 선택한 시설의 상태와 다음 행동을 한눈에 판단하는 비모달 운영 카드다. 지도와 하단 Build HUD를 계속 볼 수 있어야 하며, 장식보다 `상태 → 강화 → 핵심 수치 → 프로그램 → 행동` 순서를 우선한다.
 
 - 기준 시안: [FF_FacilityInfo_NoOverlap_LightTeal_v1.png](Generated/FF_FacilityInfo_NoOverlap_LightTeal_v1.png)
-- 런타임 WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel`
-- 유료 프로그램 Picker WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker`
-- 유료 프로그램 Card WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard`
+- 런타임 WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel`
+- 유료 프로그램 Picker WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker`
+- 유료 프로그램 Card WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard`
 - 네이티브 계약: `UFF_FacilityInfoPanel`, `UFF_FacilityPaidProgramPicker`, `UFF_FacilityPaidProgramCard`
 - 데이터 원천: `FFF_FacilityInfoViewData`, `FFF_FacilityPaidProgramPickerViewData`, `FFF_FacilityPaidProgramCardViewData`; Designer에 운영 수치를 하드코딩하지 않는다.
 - 강화 규칙·비용·구매 API: [시설 강화 구현 문서](../../FacilityUpgrade/README_KO.md).

@@ -23,7 +23,7 @@ bool FFF_PrepBuildDesignerAppearanceTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepBuildTileWidget>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C")));
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!TestNotNull(TEXT("Actual Designer tile class"), Class) || !TestNotNull(TEXT("Editor world"), World)) { return false; }
 	const bool Previous = Class->bCanCallInitializedWithoutPlayerContext;

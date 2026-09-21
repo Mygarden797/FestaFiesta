@@ -104,7 +104,7 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	const UFFZSFacilityDefinition* FoodTruckDefinition =
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+			TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 				"PDA_FFZS_Booth_FoodStall_Taco."
 				"PDA_FFZS_Booth_FoodStall_Taco"));
 	TestNotNull(TEXT("The production FoodTruck definition loads for catalog pricing"),
@@ -151,7 +151,7 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestDefinition->FacilityDemolitionRefundRate = 0.5f;
 
 	const TCHAR* ScreenClassPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
 	UWidgetBlueprintGeneratedClass* ScreenClass =
 		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, ScreenClassPath));
 	TestNotNull(TEXT("Build catalog WBP generated class loads"), ScreenClass);

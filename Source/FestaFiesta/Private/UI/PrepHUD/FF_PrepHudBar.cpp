@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/PrepHUD/FF_PrepHudBar.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 
 #include "Components/Border.h"
@@ -546,6 +547,22 @@ UClass* UFF_PrepHudBar::ResolvePanelClass(EFF_PrepHudTab Tab, const FString& Enu
 				TEXT("[%s] `%s` 탭의 패널 클래스를 로드하지 못했다 (%s). 이름 규칙으로 다시 찾는다."),
 				*GetName(), *EnumName, *Mapped->ToString());
 		}
+	}
+
+	// The shipped Build panel moved to the construction catalog. Old WBP CDOs
+	// still contain the original FString folder/name convention, so resolve that
+	// one case explicitly. Custom mappings above and custom folders still win.
+	if (Tab == EFF_PrepHudTab::Build &&
+		FFBuildUIAssetPaths::UsesOriginalPanelConvention(PanelClassFolder, PanelClassNameFormat))
+	{
+		if (UClass* BuildClass = LoadObject<UClass>(nullptr, FFBuildUIAssetPaths::BuildPanelClass))
+		{
+			return BuildClass;
+		}
+		UE_LOG(LogFestaFiestaUI, Error, TEXT("[%s] Construction catalog class is missing (%s)."),
+			*GetName(), FFBuildUIAssetPaths::BuildPanelClass);
+		bOutIsPlaceholder = true;
+		return PlaceholderPanelClass.IsNull() ? nullptr : PlaceholderPanelClass.LoadSynchronous();
 	}
 
 	// 2) 이름 규칙. U5 에서 패널을 하나 만들 때마다 표를 채우지 않아도 되게 한다.

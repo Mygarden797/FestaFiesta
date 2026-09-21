@@ -38,7 +38,7 @@ namespace FFFacilityCodexWbpBuilder
 {
 	using namespace FFUIWbpBuilder;
 	const TCHAR* const Prefix = TEXT("FF_FACILITY_CODEX_UMG");
-	const FString Folder(TEXT("/Game/FestaFiesta/UI/FacilityCodex"));
+	const FString Folder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex"));
 	const FString CardPath = Folder / TEXT("WBP_FF_FacilityCodexCard");
 	const FString ScreenPath = Folder / TEXT("WBP_FF_FacilityCodexScreen");
 	const FString LauncherPath = Folder / TEXT("WBP_FF_FacilityCodexLauncher");

@@ -14,7 +14,7 @@ import unreal
 
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+BASE = "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 LEGACY = BASE + "PDA_FFZS_Booth_FoodTruck_Taco"
 CURRENT = BASE + "PDA_FFZS_Booth_FoodStall_Taco"
 COSTS = "/Game/FestaFiesta/Data/Economy/DT_FacilityCosts"

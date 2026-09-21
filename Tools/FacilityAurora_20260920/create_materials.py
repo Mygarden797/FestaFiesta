@@ -4,7 +4,7 @@ No source images, game-world materials, or global palette are recolored.
 """
 import unreal
 
-FOLDER = "/Game/FestaFiesta/UI/Facility/Aurora"
+FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/Aurora"
 NAME = "M_UI_FacilityAurora"
 unreal.EditorAssetLibrary.make_directory(FOLDER)
 tools = unreal.AssetToolsHelpers.get_asset_tools()

@@ -1,6 +1,10 @@
 # crowdAI ↔ Utility AI 연동 안내
 
-이정원님께 전달할 요청과 변경 사항입니다. 갱신: 2026-09-08.
+이정원님께 전달할 요청과 변경 사항입니다. 갱신: 2026-09-21.
+
+> 🔴 **2026-09-21 에 crowdAI 파일을 크게 고쳤습니다. 아래 「공연 관람 연동」 절을 먼저 봐 주세요.**
+> `FF_CrowdSimulationSubsystem` +1054줄, `FF_CrowdForces` 에 입력 필드 1개 추가,
+> `FF_FestivalCrowdTypes` 에 상태 enum 1개 추가입니다. 되돌려야 할 부분이 있으면 말씀해 주세요.
 
 ## 승인된 작업 — Q2·Q3·Q4 반영
 
@@ -273,6 +277,189 @@ Expected '막힌 사람이 이식 이전보다 적다 (기본값 0 < old 0)' to 
 진행 순서는 **Queue 시간 의미 확인 → 판정 불가 후보 처리 합의 → 기존 Nav·거리 행렬 재사용 범위 확인 → 필요한 조회 기능만 보완**입니다. 예약 쪽에 별도 거리 필드를 새로 만들기보다 이동 쪽이 거리·예상시간을 제공하고 예약 쪽이 방문 가능 여부를 판단하는 구조를 제안합니다.
 
 경로 거리를 사용해도 혼잡으로 지연될 수 있으므로 복귀 여유와 이동 중 마감 재검사는 유지합니다. 경로 질의가 반복되지 않도록 기존 캐시 재사용·갱신 기준도 함께 확인 부탁드립니다. 위 내용은 개선 제안이며 아직 코드에는 반영하지 않았습니다.
+
+---
+
+## 공연 관람 연동 (2026-09-21) — 정원님 파일 대규모 변경
+
+공연장에 관객이 안 모이는 문제를 쫓다가 원인이 Crowd 안쪽에 있어서 크게 손댔습니다.
+먼저 상의드리지 못하고 진행한 점 양해 부탁드립니다. **관람 파티 0 → 102 까지 올렸습니다.**
+
+### 변경 규모
+
+| 파일 | 추가/삭제 | 무엇 |
+|---|---:|---|
+| `FF_CrowdSimulationSubsystem.cpp` | +1054 / -28 | 관람 상태머신, 집결, 좌석 관리 |
+| `FF_CrowdSimulationSubsystem.h` | +173 / -0 | 상태·노브·진단 API |
+| `FF_CrowdForces.cpp` | +7 / -2 | **개체별 사회력 배수 적용** |
+| `FF_CrowdForces.h` | +14 / -1 | **`SocialScale` 입력 필드** |
+| `FF_FestivalCrowdTypes.h` | +26 / -0 | `EFF_PartyAudiencePhase`, `CruiseMaxSpeed` |
+
+---
+
+### 1. 🔴 `FF_CrowdForces` — 가장 확인이 필요한 부분입니다
+
+`FFF_CrowdForceInput` 에 필드 하나를 추가했습니다.
+
+```cpp
+// 개체별 사회력 배수. nullptr 이면 전원 1.0 이다.
+const TArray<float>* SocialScale = nullptr;
+```
+
+`ComputeAll` 의 이웃 순회 뒤에서 **`Terms.Social` 에만** 곱합니다.
+
+```cpp
+const float SocialGain = SocialScale ? (*SocialScale)[i] : 1.f;
+Terms.Social *= SocialGain;
+```
+
+**왜 필요했나.** 반경 34cm 두 명이 1.5m 떨어져 있을 때 반발이 1.1 m/s² 인데 구동력이 3.0 m/s² 입니다.
+앞에 세 명만 있어도 합산 반발이 구동력을 이깁니다. 그래서 관람석이 500자리여도 뒤에 온 사람이
+자기 자리에 못 들어가고, 좌석까지 평균 124m 를 남긴 채 멈춰 있었습니다.
+
+**건드리지 않은 것.**
+- `Terms.Contact`(강성 120000 N/m, 마찰) — 그대로라 몸이 관통하지 않습니다
+- `WallTerms` — 그대로라 무대 안으로 들어가지 않습니다
+- 기존 호출부 — `SocialScale` 이 `nullptr` 이면 전원 1.0 이라 동작이 같습니다
+
+**같이 건 것 하나.** 탈출(unstuck) 임펄스에도 같은 배수를 곱했습니다.
+제자리에 선 관객은 진척이 0 이라 `StuckSteps` 가 계속 오르고, 안 막으면 매 스텝 옆으로
+밀려나 대열이 스스로 흩어집니다.
+
+**적용 대상.** 관람 중인 개체만입니다. 파티원은 리더의 단계를 물려받습니다(리더만 붙어 서면
+일행이 갈라집니다).
+
+| 단계 | 배수 |
+|---|---:|
+| `Waiting` · `Spectating` | 0.25 |
+| `GoingToSlot` | 0.5 |
+| 그 외 전부 | 1.0 |
+
+**회귀 테스트**: `FestaFiesta.Crowd.Avoidance.AudienceSocialScaleKeepsContact`
+— 비례 감소 / 겹침 시 Contact 유지 / 배수 0 세 경우를 고정했습니다.
+
+> ⚠️ 테스트 작성 중 한 번 헛디뎠습니다. 표본 간격을 1.0m 로 잡으니 원본 사회력이 7.9 m/s² 라
+> `MaxSocialAccelMps2`(6.0) 상한에 걸리고 배수 건 쪽(1.99)은 안 걸려서, 정상 동작인데도
+> 비율이 1/4 로 안 나왔습니다. 표본을 포화 구간 밖(1.6m)으로 옮겨 해결했습니다.
+
+**이 설계가 거슬리시면 되돌리고 다른 방식을 찾겠습니다.** 대안으로 생각해 본 것은
+`FUnitData` 에 배수를 넣는 것인데, 미러 배열(`Scratch*`)과 인덱스를 또 맞춰야 해서
+입력 구조체 쪽이 깔끔하다고 판단했습니다.
+
+---
+
+### 2. `FF_FestivalCrowdTypes` — 상태 enum 과 필드 하나
+
+```cpp
+enum class EFF_PartyAudiencePhase : uint8
+{ None, GoingToEntry, GoingToSlot, Waiting, Spectating, Exiting };
+```
+
+`FPartyDecisionState` 에 관람 필드 7개(단계·시설·첫 좌석·좌석 수·입구·출구·허용오차)를 붙였습니다.
+기존 `ProgramPhase`(예약)와 같은 자리, 같은 방식입니다.
+
+`FUnitData` 에는 `CruiseMaxSpeed` 하나를 추가했습니다. 스폰 시점의 `MaxSpeed` 를 보관해
+일시적으로 속도를 올린 뒤 되돌릴 기준으로 씁니다.
+
+---
+
+### 3. `FF_CrowdSimulationSubsystem` — 관람 상태머신
+
+예약 복귀(`ProgramPhase`)와 **같은 구조**로 만들었습니다. 도착 처리 순서가
+`HandleProgramArrival → HandleAudienceArrival → AdvancePartyQueueOnArrival` 입니다.
+
+- 관람 공간이 켜진 시설은 **일반 Queue 로 폴백하지 않습니다.** 만석이면 `JoinRejected` 로 재결정합니다.
+- 좌석은 **사람 단위**입니다. 파티 인원만큼 연속 좌석을 잡고 멤버는 `bHasQueueSlot` 으로 각자 섭니다.
+  (기존 예약 대기 슬롯은 파티 하나가 한 칸이라 6명이 겹쳐 있었습니다. 그쪽도 사람 단위로 고쳤습니다.)
+- 잠금 중에는 주기 재평가·막힘 재결정·`RequestDecision`·`ProcessDecisions` 가 전부 비켜갑니다.
+- 좌석 소유권은 Crowd 가 `OccupiedAudienceSlots` 로 관리합니다(좌석 API 는 예약을 소유하지 않습니다).
+  퇴장·디스폰·Live 이탈·전체 퇴장 트리거에서 반납합니다.
+
+#### 기존 동작을 바꾼 곳 — 이 셋만 봐 주시면 됩니다
+
+**(a) `ClearPartyQueueState` 가 양쪽 분기에서 멤버 슬롯을 풉니다**
+
+`QueuePhase != None` 분기가 `ClearPartyQueueColumn` 을 부르지 않고 있었습니다.
+그래서 줄에 서 있던 파티를 빼내면 **리더만 떠나고 일행은 옛 슬롯 좌표에 묶여 남았습니다**
+(`UpdatePartyMemberTarget` 이 계속 그 좌표로 보냅니다). `QueuePhase == None` 분기는 이미
+풀고 있었으니 누락으로 보고 맞췄습니다.
+
+**(b) 큐 가입 거절이 `JoinRejected` 로 재결정합니다**
+
+`AdvancePartyQueueOnArrival` 이 거절 시 `false` 를 돌려주면 호출부가 `Arrived` 로 요청하는데,
+그 사유는 직전 목적지를 감점하지 않아 **같은 줄에 바로 다시 들어갑니다.** 게다가 `Arrived` 는
+쿨다운을 타서 요청이 조용히 버려지기도 합니다.
+
+**(c) 도착 반경을 상황별로 나눴습니다**
+
+| 상황 | 반경 | 왜 |
+|---|---|---|
+| 예약 복귀(`Returning`) | `FacilityApproachRadiusUU` | 슬롯 저작이 없으면 전원이 접근점 한 점을 공유합니다 |
+| 관람 입구·출구 | `FacilityApproachRadiusUU` | 좌표 하나를 수백 명이 공유합니다 |
+| 관람 좌석 | `max(허용오차, 45, 자리간격/2)` | 밀집 블록에서 45cm 는 못 들어갑니다 |
+
+좌표 하나를 여러 파티가 공유하는 지점에 45cm 를 쓰면 그 반경 안에 물리적으로 다 들어갈 수
+없어서 **영원히 맴돕니다.** 관람 잠금 중에는 목적지 포기도 꺼져 있어 스스로 빠져나오지도 못합니다.
+안전망으로 `ScheduledSettleRadiusUU`(3m) 안에서 막히면 그 자리에 서게 했습니다.
+
+#### 성능
+
+`UpdateProgramReservationStates` 가 **고정 스텝마다** `ZoneSystem->BuildReadModel()` 을 부르고
+있었습니다(미복귀 예약자가 한 명만 남아도 계속). `WorldRevision` 이 바뀔 때만 다시 짓도록
+접근점 캐시를 넣었습니다.
+
+---
+
+### 4. 제가 밟은 지뢰 — 정원님 설계에 의존하게 된 부분
+
+**리더의 `Unit.Speed` 는 매 스텝 다시 세워지지 않습니다.** 멤버만 `UpdatePartyMemberTarget` 이
+갱신하더군요. 이걸 모르고 걸음 재촉을 `Unit.Speed *= 2` 로 썼다가 **1초 만에 2³⁰ 배**가 됐고,
+`ComputeDesiredVelocity` 의 감속항 `Speed × clamp(거리/제동거리)` 가 무의미해져 자리를 지나쳐
+영원히 맴돌았습니다. 관람 파티가 52 → 2 로 폭락했습니다.
+
+지금은 절대값으로 세웁니다(리더는 `CruiseSpeed × 배수`). 그리고 `StepAgent` 가 `Velocity` 를
+`MaxSpeed` 로 자르기 때문에 **`MaxSpeed` 도 같이 올려야** 실제로 빨라집니다.
+비누적을 고정하는 테스트를 붙여 뒀습니다.
+
+혹시 리더 `Speed` 를 매 스텝 세우는 쪽으로 바꾸실 계획이 있으면 알려 주세요. 제 쪽 가정이 깨집니다.
+
+---
+
+### 5. 정원님께 여쭙는 것
+
+1. **`FFF_CrowdForceInput::SocialScale` 설계 승인** — 위 1절. 거슬리면 되돌리겠습니다.
+2. **`Crowd.Arrival.RuntimeTablesSurviveFestivalGarbageCollection` 이 계속 실패합니다.**
+   Agent 풀 소진(67/498). 제 작업 전부터 있던 것이고 손대지 않았습니다.
+3. **맵 존 6개가 NavMesh 로 출구에 안 닿습니다**(`GZ_TestMain_11/12/15/26/27/28`).
+   그 존의 NPC 는 어디로도 못 갑니다. 광훈님께도 전달했습니다.
+4. **시설 155개가 31개 존 중 6개에 몰려 있어** 나머지 18개 존은 후보가 0개입니다.
+   배치 문제로 보이는데, 스폰 지점이 그 안에 있으면 배회만 하다 나갑니다.
+
+---
+
+### 6. 앞 절 서술 정정
+
+- 「예약자 전용 시설」의 *"예약 파티 ID 순서로 리더의 슬롯을 배정하고, 일행은 기존 그룹 대형을
+  유지합니다"* 는 **폐기됐습니다.** 지금은 사람 단위로 슬롯을 나눕니다.
+- *"`ProgramReturnBufferMinutes` 기본 10축제분"* 은 사실이 아니었습니다. `DT_UtilityCoefficients`
+  의 값이 **0** 이라 코드 기본값 10 을 덮고 있었고, 그래서 예약자가 정시 출발해 지각했습니다.
+  CSV 를 10 으로 고치고 DataTable 을 리임포트했습니다.
+  (**CSV 만 고치면 게임은 안 바뀝니다** — `Tools/DataTables/reimport_utility_coefficients.py`)
+
+---
+
+### 7. 검증
+
+**671 통과 / 6 실패.** 6건은 전부 이 작업 전부터 있던 것이고 baseline 은 7 이었습니다
+(`Crowd.Reservation.Lifecycle` 을 고쳤습니다). `git stash` 로 baseline 을 실제로 측정해 비교했습니다.
+
+새로 추가한 테스트
+- `Crowd.Audience.UsesIndividualSlotsWithoutFIFO` — 사람 단위 좌석·FIFO 미사용·좌석 반납·
+  줄에서 멤버 동반·재촉 속도 비누적·도착 불가 시 좌석 회수
+- `Crowd.Avoidance.AudienceSocialScaleKeepsContact`
+- `Scenario.MainStageDayOne` — 실제 맵 Day1 을 헤드리스로 계측(기본 건너뜀, `-FFScenario`)
+
+실제 맵 자동 측정으로 최고 착석 95~97 파티를 재현했습니다(수동 플레이 102 와 일치).
 
 ## 연동 계약
 

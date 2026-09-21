@@ -4,6 +4,7 @@
 
 #if WITH_EDITOR
 
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/BorderSlot.h"
 #include "Components/Button.h"
@@ -71,9 +72,10 @@ namespace FFPrepHudWbpBuilder
 
 	const FString PrepFolder = TEXT("/Game/FestaFiesta/UI/PrepHUD");
 	const FString PrepPanelsFolder = PrepFolder / TEXT("Panels");
+	const FString SharedBuildFolder = FFBuildUIAssetPaths::SharedFolder;
 
-	const FString TabButtonPackage = PrepFolder / TEXT("WBP_FF_PrepHudTabButton");
-	const FString BarPackage = PrepFolder / TEXT("WBP_FF_PrepHudBar");
+	const FString TabButtonPackage = SharedBuildFolder / TEXT("WBP_FF_PrepHudTabButton");
+	const FString BarPackage = SharedBuildFolder / TEXT("WBP_FF_PrepHudBar");
 	const FString PlaceholderPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPlaceholderPanel");
 
 	// ★ 이름이 계약이다. `UFF_PrepHudBar::PanelClassNameFormat`(`WBP_FF_PrepPanel{0}`) 이
@@ -90,7 +92,7 @@ namespace FFPrepHudWbpBuilder
 	const FString PromotionCardPackage = PrepFolder / TEXT("WBP_FF_PrepPromotionCard");
 
 	/** 패널 안에서 여러 개 중 하나를 고르는 버튼. 날씨 선택이 첫 사용처다. */
-	const FString ChoiceButtonPackage = PrepFolder / TEXT("WBP_FF_PrepChoiceButton");
+	const FString ChoiceButtonPackage = SharedBuildFolder / TEXT("WBP_FF_PrepChoiceButton");
 
 	/** 목업 규격. 메뉴 29 + 상태 29 = 58. 대략만 맞추고 마감은 에디터에서 한다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -1953,7 +1955,7 @@ namespace FFPrepHudWbpBuilder
 		EnsureWidgetBlueprint(
 			PrepLogPrefix,
 			TabButtonPackage,
-			PrepFolder,
+			SharedBuildFolder,
 			*UFF_PrepHudTabButton::StaticClass(),
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
@@ -1983,7 +1985,7 @@ namespace FFPrepHudWbpBuilder
 		EnsureWidgetBlueprint(
 			PrepLogPrefix,
 			ChoiceButtonPackage,
-			PrepFolder,
+			SharedBuildFolder,
 			*UFF_PrepChoiceButton::StaticClass(),
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
@@ -2070,7 +2072,7 @@ namespace FFPrepHudWbpBuilder
 		EnsureWidgetBlueprint(
 			PrepLogPrefix,
 			BarPackage,
-			PrepFolder,
+			SharedBuildFolder,
 			*UFF_PrepHudBar::StaticClass(),
 			[TabButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
@@ -2166,7 +2168,7 @@ namespace FFPrepHudWbpBuilder
 			ReplaceWidgetBlueprint(
 				PrepLogPrefix,
 				BarPackage,
-				PrepFolder,
+				SharedBuildFolder,
 				*UFF_PrepHudBar::StaticClass(),
 				[TabButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 				{

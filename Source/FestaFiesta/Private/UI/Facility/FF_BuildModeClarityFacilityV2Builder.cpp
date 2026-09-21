@@ -37,7 +37,7 @@ static FSlateBrush Material(const TCHAR* Role)
     FSlateBrush B;B.DrawAs=ESlateBrushDrawType::RoundedBox;B.TintColor=Paper;
     B.OutlineSettings=FSlateBrushOutlineSettings(8,FSlateColor(FLinearColor::FromSRGBColor(FColor(202,217,200))),.7f);
     const FString Name=FString(TEXT("MI_UI_BuildClarity_"))+Role;
-    const FString Path=FString(TEXT("/Game/FestaFiesta/UI/Building/Clarity/"))+Name+TEXT(".")+Name;
+    const FString Path=FString(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/"))+Name+TEXT(".")+Name;
     if(auto* M=LoadObject<UMaterialInterface>(nullptr,*Path))
     { B.DrawAs=ESlateBrushDrawType::Image;B.SetResourceObject(M);B.TintColor=FLinearColor::White; }
     return B;
@@ -249,10 +249,10 @@ static void Run()
 {
     struct FTarget{const TCHAR* Path;bool(*Apply)(UWidgetBlueprint&);};
     const FTarget Targets[]={
-        {TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"),Lighting},
-        {TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"),Inspector},
-        {TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"),ProgramCard},
-        {TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"),ProgramPicker}};
+        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"),Lighting},
+        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"),Inspector},
+        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"),ProgramCard},
+        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"),ProgramPicker}};
     bool Success=true;
     for(const auto& Target:Targets)
     {auto* BP=LoadExistingBlueprint(Target.Path);const bool Result=BP&&BP->WidgetTree&&Target.Apply(*BP);Success&=Result;UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_CLARITY_FACILITY_V2_%s %s"),Result?TEXT("PASS"):TEXT("FAIL"),Target.Path);}

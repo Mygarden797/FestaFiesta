@@ -7,8 +7,8 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = {
-    "/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile": "SizeBox_Card",
-    "/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard": "Root_Size",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile": "SizeBox_Card",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard": "Root_Size",
 }
 COMMAND = "FF.AddBuildSynergyCardHighlights"
 

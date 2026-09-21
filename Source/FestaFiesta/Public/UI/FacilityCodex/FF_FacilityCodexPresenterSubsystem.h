@@ -5,6 +5,7 @@
 #include "Components/SlateWrapperTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Time/FF_FestivalStage.h"
+#include "TimerManager.h"
 #include "FF_FacilityCodexPresenterSubsystem.generated.h"
 
 class AActor;
@@ -49,7 +50,10 @@ public:
 	static FSoftClassPath GetDefaultScreenClassPath();
 
 private:
+	void BindSessionLifecycle(AFF_FestivalPlayerController& Controller);
 	void CloseSession(bool bRestoreFocus);
+	void HandleFacilityCatalogRequested(FName FacilityDefinitionId);
+	void CompleteCatalogNavigation(FName FacilityDefinitionId);
 	void RestoreInput(AFF_FestivalPlayerController& Controller);
 	void SuppressCatalogVisibility(AFF_FestivalPlayerController& Controller);
 	void RestoreCatalogVisibility();
@@ -79,6 +83,7 @@ private:
 	bool bCatalogWasInViewport = false;
 	bool bCatalogHadOwningBar = false;
 	TWeakPtr<SWidget> PreviousFocusedWidget;
+	FTimerHandle CatalogNavigationTimer;
 	bool bOwnsModalInput = false;
 	bool bPreviousCursorVisible = false;
 	bool bPreviousViewportIgnoredInput = false;

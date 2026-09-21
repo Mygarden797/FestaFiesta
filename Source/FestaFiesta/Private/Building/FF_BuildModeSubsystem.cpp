@@ -134,15 +134,15 @@ namespace
 	// UFF_BuildCatalogScreen의 C++ 구현으로 폴백하므로 에셋 누락이 건축 모드 전체를 중단시키지 않는다.
 	const TSoftClassPtr<UFF_BuildCatalogScreen> BuildCatalogScreenClass(
 		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C")));
+			"/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C")));
 	const TSoftClassPtr<UFF_BuildPlacementFailureFeedback> PlacementFailureFeedbackClass(
 		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
+			"/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback_C")));
 	// FF.BuildModeGuideUMG 콘솔 명령이 만든 좌하단 조작 안내 패널. 없으면 조용히 건너뛴다.
 	const TSoftClassPtr<UFF_BuildModeGuide> BuildModeGuideClass(
 		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide."
+			"/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_FF_BuildModeGuide."
 			"WBP_FF_BuildModeGuide_C")));
 }
 
@@ -619,6 +619,11 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	ResetPlacementSelection();
 	RemoveCatalogScreen();
 	SetState(EFF_BuildModeState::CatalogOpen);
+	// Opening the ordinary catalog also resets an earlier codex destination when
+	// CatalogOpen is already the current state (and therefore emits no state change).
+	// OpenCatalogForFacility sends its validated destination after this common route.
+	PendingCatalogFacilityId = NAME_None;
+	OnBuildCatalogFacilityFocusRequested.Broadcast(NAME_None);
 	bCatalogWasApplied = false;
 	bCatalogThumbnailsApplied = false;
 	if (!bExternalCatalogPresentationActive)

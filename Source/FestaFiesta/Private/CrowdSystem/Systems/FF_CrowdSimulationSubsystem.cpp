@@ -21,6 +21,7 @@
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSAudienceLibrary.h"
 #include "DataTables/FF_ArrivalCurveRow.h"
 #include "Serialization/GameplayAbilityTargetingLocationInfoNetSerializer.h"
 #include "NavigationData.h"
@@ -212,6 +213,9 @@ void UFF_CrowdSimulationSubsystem::InitializeSimulation(FVector NewOrigin,
 	{
 		Stage->OnStageChanged.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleStageChanged);
 		Stage->OnTimeScaleChange.AddDynamic(this,&UFF_CrowdSimulationSubsystem::GetTimeScale);
+		Stage->OnMainProgramStarted.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleMainProgramStarted);
+		Stage->OnMainProgramEnded.AddUniqueDynamic(this, &UFF_CrowdSimulationSubsystem::HandleMainProgramEnded);
+		SimulationTimeScale = Stage->GetEffectiveTimeScale();
 	}
 }
 
@@ -339,7 +343,18 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	HeightField.SetCliffStepCm(static_cast<double>(HeightFieldCliffStepUU));
 	ApplyWalkableCeiling();
 
-	const float Time = DeltaTime * SimulationTimeScale;
+	// OnTimeScaleChange는 사용자가 고른 raw 배속만 알린다. 공연/미니게임 잠금은 매 프레임
+	// Effective 값을 읽어야 Stage 시계와 Crowd 이동이 같은 속도로 흐른다.
+	float EffectiveSimulationTimeScale = SimulationTimeScale;
+	if (const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (const UFF_FestivalStageSubsystem* Stage =
+			GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			EffectiveSimulationTimeScale = Stage->GetEffectiveTimeScale();
+		}
+	}
+	const float Time = DeltaTime * EffectiveSimulationTimeScale;
 
 	float DiscardedSimSeconds = 0.f;
 	const int32 StepsThisFrame = CrowdSteering::ConsumeFixedSteps(
@@ -835,6 +850,7 @@ int32 UFF_CrowdSimulationSubsystem::DrainVisitorUntil(int32 TargetCumulativeCoun
 			Unit.Speed = BaseSpeed * Traits.WalkSpeedMultiplier* MemberBoost;
 			Unit.MaxSpeed = Unit.Speed * MemberBoost2;
 			Unit.CruiseSpeed = Unit.Speed;
+			Unit.CruiseMaxSpeed = Unit.MaxSpeed;
 
 			if (Slot == 0 && PartyRemainingStayMinutes.IsValidIndex(LeaderIndex))
 			{
@@ -960,6 +976,7 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 
 	SampleQueueLiveness();
 	UpdateProgramReservationStates();
+	UpdateAudienceShowState();
 
 	UpdatePathFollowing();
 
@@ -991,10 +1008,29 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			{
 				Unit.ArrivalRadiusUU = Temp_ExitArrivalRadiusUU;
 			}
+			else if (RadiusState.ProgramPhase == EFF_PartyProgramPhase::Returning)
+			{
+				// 슬롯 저작이 없으면 전원이 접근점 한 점으로 모인다. 45cm 로는 그 안에
+				// 다 못 들어가 시설 앞에서 맴돌다 프로그램이 끝난다.
+				Unit.ArrivalRadiusUU = FacilityApproachRadiusUU;
+			}
 			else if (RadiusState.QueuePhase != EFF_PartyQueuePhase::None
 				|| RadiusState.ProgramPhase != EFF_PartyProgramPhase::None)
 			{
 				Unit.ArrivalRadiusUU = QueueSlotArrivalRadiusUU;
+			}
+			else if (RadiusState.AudiencePhase == EFF_PartyAudiencePhase::GoingToEntry
+				|| RadiusState.AudiencePhase == EFF_PartyAudiencePhase::Exiting)
+			{
+				// 입구·출구는 좌표 하나를 여러 파티가 공유한다. 좌석과 같은 허용 오차를 쓰면
+				// 그 점 반경 안에 다 들어갈 수 없어 게이트 앞에서 영원히 맴돈다.
+				Unit.ArrivalRadiusUU = FacilityApproachRadiusUU;
+			}
+			else if (RadiusState.AudiencePhase != EFF_PartyAudiencePhase::None)
+			{
+				Unit.ArrivalRadiusUU = RadiusState.AudienceArrivalTolerance > 0.f
+					? RadiusState.AudienceArrivalTolerance
+					: QueueSlotArrivalRadiusUU;
 			}
 			else if (!RadiusState.CurrentDestinationId.IsNone())
 			{
@@ -1027,15 +1063,40 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			else if (CrowdSteering::HasArrived(Unit, Unit.ArrivalRadiusUU))
 			{
 				if (!HandleProgramArrival(AgentIndex)
+					&& !HandleAudienceArrival(AgentIndex)
 					&& !AdvancePartyQueueOnArrival(AgentIndex))
 				{
 					RequestDecision(AgentIndex, EFF_DecisionReason::Arrived);
 				}
 			}
+			else if ((State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot
+					|| State.ProgramPhase == EFF_PartyProgramPhase::Returning)
+				&& DecisionStuckSteps > 0
+				&& Unit.StuckSteps >= DecisionStuckSteps)
+			{
+				// 관람·예약 잠금 중에는 목적지 포기가 꺼져 있다. 자리 근처까지 왔는데 앞사람들에
+				// 막혀 지정 좌표를 못 밟으면, 그대로 두면 프로그램이 끝날 때까지 밀고 있는다.
+				Unit.StuckSteps = 0;
+				if (FVector::DistSquared2D(Unit.Position, Unit.TargetLocation)
+					<= FMath::Square(ScheduledSettleRadiusUU))
+				{
+					if (State.ProgramPhase == EFF_PartyProgramPhase::Returning)
+					{
+						++ProgramSettledInPlace;
+						HandleProgramArrival(AgentIndex);
+					}
+					else
+					{
+						++AudienceSettledInPlace;
+						HandleAudienceArrival(AgentIndex);
+					}
+				}
+			}
 			else if (DecisionStuckSteps > 0
 				&& Unit.StuckSteps >= DecisionStuckSteps
 				&& State.QueuePhase == EFF_PartyQueuePhase::None
-				&& State.ProgramPhase == EFF_PartyProgramPhase::None)
+				&& State.ProgramPhase == EFF_PartyProgramPhase::None
+				&& State.AudiencePhase == EFF_PartyAudiencePhase::None)
 			{
 				// ★ 큐 구간을 반드시 뺀다. 줄에 서 있으면 진척이 0인 것이 정상이고, 도착 반경도
 				// 슬롯 기준(작다)이라 슬롯에 닿기 전까지 조향이 계속 막힘으로 센다. 이 조건이
@@ -1059,6 +1120,7 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			else if (bEnablePeriodicReevaluation
 				&& State.QueuePhase == EFF_PartyQueuePhase::None
 				&& State.ProgramPhase == EFF_PartyProgramPhase::None
+				&& State.AudiencePhase == EFF_PartyAudiencePhase::None
 				&& !State.bNeedsDecision
 				&& AgentPersonalThresholds.IsValidIndex(AgentIndex))
 			{
@@ -1106,6 +1168,51 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			if (!UpdatePartyMemberTarget(AgentIndex, Unit))
 			{
 				continue;
+			}
+		}
+
+		// 공연 보러 갈 때는 걸음을 재촉한다. 리더·멤버 두 경로가 방금 Speed 를 세웠으므로
+		// 여기서 한 번만 곱한다 — 상태 전환 시점에 걸면 멤버 추종이 매 스텝 되돌린다.
+		//
+		// ★ MaxSpeed 도 같이 올려야 한다. StepAgent 가 Velocity 를 MaxSpeed 로 자르기 때문에
+		//   Speed 만 올리면 숫자만 커지고 실제 이동은 그대로다.
+		{
+			const int32 AudienceLeaderIndex = Unit.LeaderAgentIndex;
+			// 마지막 3m 는 평소 속도로 걷는다. 전력으로 들어오면 감속 거리가 모자라 자리를
+			// 지나치고, 빠르게 맴도는 동안은 StuckSteps 도 안 쌓여 제자리착석 폴백까지 죽는다.
+			const bool bFinalApproach = FVector::DistSquared2D(Unit.Position, Unit.TargetLocation)
+				<= FMath::Square(FMath::Max(ScheduledSettleRadiusUU, 1.f));
+			const bool bHeadingToSchedule = PartyDecisionStates.IsValidIndex(AudienceLeaderIndex)
+				&& (PartyDecisionStates[AudienceLeaderIndex].AudiencePhase
+						== EFF_PartyAudiencePhase::GoingToSlot
+					|| PartyDecisionStates[AudienceLeaderIndex].ProgramPhase
+						== EFF_PartyProgramPhase::Returning);
+			const bool bHurrying = !bFinalApproach && bHeadingToSchedule;
+			if (bHurrying)
+			{
+				const float Hurry = FMath::Max(ScheduledHurrySpeedMultiplier, 1.f);
+				Unit.MaxSpeed = Unit.CruiseMaxSpeed * Hurry;
+
+				// ★ 곱셈 누적 금지. 리더의 Speed 는 매 스텝 다시 세워지지 않고, 멤버의 추격
+				//   분기는 방금 올려둔 MaxSpeed 를 그대로 받아쓴다 — 어느 쪽이든 `*=` 로 쓰면
+				//   매 스텝 배가돼 1초 안에 감속 구간이 사라지고 자리를 영원히 지나친다.
+				if (Unit.LeaderAgentIndex == AgentIndex)
+				{
+					Unit.Speed = Unit.CruiseSpeed * Hurry;
+				}
+				else if (Unit.Speed > KINDA_SMALL_NUMBER)
+				{
+					// 멤버는 UpdatePartyMemberTarget 이 방금 세웠다. 0(자리 도착)은 그대로 둔다.
+					Unit.Speed = FMath::Min(Unit.Speed, Unit.CruiseMaxSpeed) * Hurry;
+				}
+			}
+			else
+			{
+				Unit.MaxSpeed = Unit.CruiseMaxSpeed;
+				if (Unit.LeaderAgentIndex == AgentIndex)
+				{
+					Unit.Speed = FMath::Min(Unit.Speed, Unit.CruiseSpeed);
+				}
 			}
 		}
 
@@ -1323,6 +1430,32 @@ void UFF_CrowdSimulationSubsystem::ComputeAvoidanceForces(const CrowdSteering::F
 
 	Input.DesiredVelMeters = &ScratchDesiredVel2DMeters;
 
+	// 관람 중인 개체만 개인 공간을 좁힌다. 리더의 단계를 파티원 전원이 물려받는다 —
+	// 일행 중 리더만 붙어 서면 대열이 갈라진다.
+	ScratchSocialScale.SetNum(UnitDatas.Num(), EAllowShrinking::No);
+	for (int32 AgentIndex = 0; AgentIndex < UnitDatas.Num(); ++AgentIndex)
+	{
+		float Scale = 1.f;
+		const int32 LeaderIndex = UnitDatas[AgentIndex].LeaderAgentIndex;
+		if (UnitDatas[AgentIndex].bIsActive && PartyDecisionStates.IsValidIndex(LeaderIndex))
+		{
+			switch (PartyDecisionStates[LeaderIndex].AudiencePhase)
+			{
+			case EFF_PartyAudiencePhase::Waiting:
+			case EFF_PartyAudiencePhase::Spectating:
+				Scale = FMath::Clamp(AudienceSocialForceScale, 0.f, 1.f);
+				break;
+			case EFF_PartyAudiencePhase::GoingToSlot:
+				Scale = FMath::Clamp(AudienceApproachSocialForceScale, 0.f, 1.f);
+				break;
+			default:
+				break;
+			}
+		}
+		ScratchSocialScale[AgentIndex] = Scale;
+	}
+	Input.SocialScale = &ScratchSocialScale;
+
 	Input.bApplyDrivingForce = Params.bDrivingForceInForce;
 	Input.FixedDtSeconds = FixedStepSeconds;
 
@@ -1356,6 +1489,7 @@ void UFF_CrowdSimulationSubsystem::ClearAvoidanceForces()
 	AvoidanceNeighbourCounts.Reset();
 
 	ScratchDesiredVel2DMeters.Reset();
+	ScratchSocialScale.Reset();
 }
 
 void UFF_CrowdSimulationSubsystem::RebuildAvoidanceWalls()
@@ -2318,6 +2452,10 @@ void UFF_CrowdSimulationSubsystem::RequestDecision(int32 LeaderAgentIndex, EFF_D
 		}
 		return;
 	}
+	if (IsAudienceLocked(State))
+	{
+		return;
+	}
 	float ProgramNow = 0.f;
 	if (TryGetProgramLiveMinutes(ProgramNow) && UnitDatas.IsValidIndex(LeaderAgentIndex))
 	{
@@ -2481,7 +2619,8 @@ int32 UFF_CrowdSimulationSubsystem::RequestRedecisionForIdleParties(int32 MaxPar
 		const FPartyDecisionState& State = PartyDecisionStates[AgentIndex];
 
 		// 헤더 주석의 이유로 줄에 선 파티와 퇴장 중인 파티는 제외한다.
-		if (State.QueuePhase != EFF_PartyQueuePhase::None || State.bIsLeaving)
+		if (State.QueuePhase != EFF_PartyQueuePhase::None || State.bIsLeaving
+			|| State.ProgramPhase != EFF_PartyProgramPhase::None || IsAudienceLocked(State))
 		{
 			continue;
 		}
@@ -2491,6 +2630,535 @@ int32 UFF_CrowdSimulationSubsystem::RequestRedecisionForIdleParties(int32 MaxPar
 	}
 
 	return RequestedCount;
+}
+
+bool UFF_CrowdSimulationSubsystem::IsAudienceLocked(const FPartyDecisionState& State) const
+{
+	return State.AudiencePhase != EFF_PartyAudiencePhase::None;
+}
+
+bool UFF_CrowdSimulationSubsystem::AllocateAudienceSlots(
+	const FGuid& FacilityId, const int32 RequiredSlots, const int32 Capacity, int32& OutFirstSlotIndex)
+{
+	OutFirstSlotIndex = INDEX_NONE;
+	if (!FacilityId.IsValid() || RequiredSlots <= 0 || Capacity < RequiredSlots)
+	{
+		return false;
+	}
+
+	TSet<int32>& Occupied = OccupiedAudienceSlots.FindOrAdd(FacilityId);
+	for (int32 First = 0; First <= Capacity - RequiredSlots; ++First)
+	{
+		bool bFree = true;
+		for (int32 Offset = 0; Offset < RequiredSlots; ++Offset)
+		{
+			if (Occupied.Contains(First + Offset))
+			{
+				bFree = false;
+				First += Offset;
+				break;
+			}
+		}
+		if (!bFree)
+		{
+			continue;
+		}
+		for (int32 Offset = 0; Offset < RequiredSlots; ++Offset)
+		{
+			Occupied.Add(First + Offset);
+		}
+		OutFirstSlotIndex = First;
+		return true;
+	}
+	return false;
+}
+
+bool UFF_CrowdSimulationSubsystem::HasPendingProgramObligation(const int32 LeaderAgentIndex) const
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex) || !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+	if (PartyDecisionStates[LeaderAgentIndex].ProgramPhase != EFF_PartyProgramPhase::None)
+	{
+		return true;
+	}
+
+	// 시작 전 자유 행동 중인 예약자도 붙잡으면 안 된다. 관람 잠금이 걸린 파티에 복귀 마감이
+	// 오면 UpdateProgramReservationStates 가 ProgramPhase 를 따로 세워서, 한 파티에
+	// ProgramPhase 와 AudiencePhase 가 동시에 살아 있는 상태가 만들어진다.
+	float NowMinutes = 0.f;
+	if (!TryGetProgramLiveMinutes(NowMinutes))
+	{
+		return false;
+	}
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_ProgramReservationSubsystem* Reservations = GameInstance
+		? GameInstance->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
+	return Reservations
+		&& Reservations->IsPartyExitBlockedAt(UnitDatas[LeaderAgentIndex].PartyID, NowMinutes);
+}
+
+bool UFF_CrowdSimulationSubsystem::BeginAudienceVisit(
+	const int32 LeaderAgentIndex, const FGuid& FacilityId, const FFFZSAudienceSnapshot& Snapshot)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
+		|| !UnitDatas.IsValidIndex(LeaderAgentIndex)
+		|| IsAudienceLocked(PartyDecisionStates[LeaderAgentIndex]))
+	{
+		return false;
+	}
+
+	// 유료 프로그램이 관람보다 우선한다. 돈을 받은 약속이고 정원이 이미 확정돼 있다.
+	if (HasPendingProgramObligation(LeaderAgentIndex))
+	{
+		++AudienceProgramConflictSkips;
+		return false;
+	}
+
+	TArray<int32> Members = GetPartyMembers(UnitDatas[LeaderAgentIndex].PartyID);
+	Members.RemoveAll([this](const int32 Index)
+	{
+		return !UnitDatas.IsValidIndex(Index) || !UnitDatas[Index].bIsActive;
+	});
+	Members.Sort();
+	if (Members.IsEmpty())
+	{
+		Members.Add(LeaderAgentIndex);
+	}
+
+	int32 FirstSlot = INDEX_NONE;
+	if (!AllocateAudienceSlots(FacilityId, Members.Num(), Snapshot.Capacity, FirstSlot))
+	{
+		++AudienceCapacityRejects;
+		return false;
+	}
+
+	ClearPartyQueueState(LeaderAgentIndex, true);
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+	State.AudiencePhase = EFF_PartyAudiencePhase::GoingToEntry;
+	State.AudienceFacilityId = FacilityId;
+	State.AudienceFirstSlotIndex = FirstSlot;
+	State.AudienceSlotCount = Members.Num();
+	State.AudienceEntryLocation = Snapshot.EntryWorldCm;
+	State.AudienceExitLocation = Snapshot.ExitWorldCm;
+	// 45cm 는 줄(한 줄 12명)에서나 통한다. 수백 명이 한 블록에 들어차면 이미 앉은 사람들의
+	// 회피력에 밀려 지정 좌표 45cm 안에 못 들어간다 - 자리 간격 절반까지 넓힌다.
+	State.AudienceArrivalTolerance = FMath::Max3(
+		Snapshot.Layout.ArrivalToleranceCm, QueueSlotArrivalRadiusUU,
+		0.5f * FMath::Min(Snapshot.Layout.ColumnSpacingCm, Snapshot.Layout.RowSpacingCm));
+	State.CurrentDestinationId = FFF_ZoneSystemBridge::FacilityInstanceIdToDestinationId(FacilityId);
+	State.CurrentNeedRelief = FFF_ZoneSystemBridge::GetNeedReliefFlags(
+		EFFZSFacilityCategory::Performance, TEXT("Performance_MainStage_SunsetMainStage"));
+	State.ConsecutiveNoChoiceCount = 0;
+	State.bNeedsDecision = false;
+	UnitDatas[LeaderAgentIndex].TargetLocation = Snapshot.EntryWorldCm;
+
+	// 좌석을 지금 나눠 준다. 입구는 좌표 하나뿐이라 수백 명이 같은 점을 목표로 삼으면
+	// 도착 판정 반경 안에 들어가려고 서로 밀어내며 게이트에서 멈춘다 — 관람석이 비고
+	// 입구에만 뭉치는 그림이 된다. 좌석은 사람마다 다른 좌표라 자연히 흩어진다.
+	if (AssignAudienceSeats(LeaderAgentIndex, Snapshot, Members))
+	{
+		State.AudiencePhase = EFF_PartyAudiencePhase::GoingToSlot;
+	}
+
+	UE_LOG(LogTemp, Verbose, TEXT("[Audience] 파티 %d(%d명) 좌석 %d~%d 배정(%s)"),
+		UnitDatas[LeaderAgentIndex].PartyID, Members.Num(), FirstSlot, FirstSlot + Members.Num() - 1,
+		State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot ? TEXT("좌석 직행") : TEXT("입구 경유"));
+	return true;
+}
+
+bool UFF_CrowdSimulationSubsystem::AssignAudienceSeats(
+	const int32 LeaderAgentIndex, const FFFZSAudienceSnapshot& Snapshot, const TArray<int32>& Members)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+	const FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+
+	// 한 자리라도 못 받으면 전부 되돌린다. 일부만 좌석을 들고 나머지가 리더를 따라가면
+	// 같은 파티가 두 곳으로 갈라진다.
+	TArray<FVector> SeatLocations;
+	SeatLocations.Reserve(Members.Num());
+	for (int32 MemberOffset = 0; MemberOffset < Members.Num(); ++MemberOffset)
+	{
+		FTransform Seat;
+		if (!UFFZSAudienceLibrary::GetAudienceSlotTransform(
+			Snapshot, State.AudienceFirstSlotIndex + MemberOffset, Seat))
+		{
+			return false;
+		}
+		SeatLocations.Add(Seat.GetLocation());
+	}
+
+	for (int32 MemberOffset = 0; MemberOffset < Members.Num(); ++MemberOffset)
+	{
+		if (!UnitDatas.IsValidIndex(Members[MemberOffset]))
+		{
+			continue;
+		}
+		FUnitData& Member = UnitDatas[Members[MemberOffset]];
+		Member.QueueSlotLocation = SeatLocations[MemberOffset];
+		Member.bHasQueueSlot = Members[MemberOffset] != LeaderAgentIndex;
+		if (Members[MemberOffset] == LeaderAgentIndex)
+		{
+			Member.TargetLocation = SeatLocations[MemberOffset];
+		}
+	}
+	return true;
+}
+
+bool UFF_CrowdSimulationSubsystem::HandleAudienceArrival(const int32 LeaderAgentIndex)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
+		|| !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return false;
+	}
+
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+	if (State.AudiencePhase == EFF_PartyAudiencePhase::Exiting)
+	{
+		ReleaseAudienceParty(LeaderAgentIndex, false);
+		RequestDecision(LeaderAgentIndex, EFF_DecisionReason::Arrived);
+		return true;
+	}
+	if (State.AudiencePhase == EFF_PartyAudiencePhase::GoingToEntry)
+	{
+		FFFZSAudienceSnapshot Snapshot;
+		FText Error;
+		if (!UFFZSAudienceLibrary::GetFacilityAudienceSnapshot(
+			GetWorld(), State.AudienceFacilityId, Snapshot, Error))
+		{
+			++AudienceSnapshotFailures;
+			UE_LOG(LogTemp, Warning, TEXT("[Audience] 파티 %d 좌석 이동 취소: %s"),
+				UnitDatas[LeaderAgentIndex].PartyID, *Error.ToString());
+			ReleaseAudienceParty(LeaderAgentIndex, false);
+			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::Interrupted);
+			return true;
+		}
+
+		TArray<int32> Members = GetPartyMembers(UnitDatas[LeaderAgentIndex].PartyID);
+		Members.RemoveAll([this](const int32 Index)
+		{
+			return !UnitDatas.IsValidIndex(Index) || !UnitDatas[Index].bIsActive;
+		});
+		Members.Sort();
+		if (!AssignAudienceSeats(LeaderAgentIndex, Snapshot, Members))
+		{
+			++AudienceSnapshotFailures;
+			ReleaseAudienceParty(LeaderAgentIndex, false);
+			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::Interrupted);
+			return true;
+		}
+		State.AudiencePhase = EFF_PartyAudiencePhase::GoingToSlot;
+		return true;
+	}
+	if (State.AudiencePhase == EFF_PartyAudiencePhase::GoingToSlot)
+	{
+			State.AudiencePhase = bMainProgramShowStarted
+			? EFF_PartyAudiencePhase::Spectating
+			: EFF_PartyAudiencePhase::Waiting;
+		UnitDatas[LeaderAgentIndex].Speed = 0.f;
+		return true;
+	}
+	if (State.AudiencePhase == EFF_PartyAudiencePhase::Waiting
+		|| State.AudiencePhase == EFF_PartyAudiencePhase::Spectating)
+	{
+		UnitDatas[LeaderAgentIndex].Speed = 0.f;
+		return true;
+	}
+
+	if (State.AudiencePhase != EFF_PartyAudiencePhase::None)
+	{
+		return true;
+	}
+
+	FGuid FacilityId;
+	if (!FFF_ZoneSystemBridge::TryParseDestinationId(State.CurrentDestinationId, FacilityId))
+	{
+		return false;
+	}
+	FFFZSAudienceSnapshot Snapshot;
+	FText Error;
+	if (!UFFZSAudienceLibrary::GetFacilityAudienceSnapshot(GetWorld(), FacilityId, Snapshot, Error))
+	{
+		return false;
+	}
+	if (BeginAudienceVisit(LeaderAgentIndex, FacilityId, Snapshot))
+	{
+		return true;
+	}
+
+	// Audience 시설은 만석이어도 12명 FIFO Queue로 폴백하지 않는다.
+	RequestDecision(LeaderAgentIndex, EFF_DecisionReason::JoinRejected);
+	return true;
+}
+
+void UFF_CrowdSimulationSubsystem::ReleaseAudienceParty(
+	const int32 LeaderAgentIndex, const bool bMoveToExit)
+{
+	if (!PartyDecisionStates.IsValidIndex(LeaderAgentIndex)
+		|| !UnitDatas.IsValidIndex(LeaderAgentIndex))
+	{
+		return;
+	}
+	FPartyDecisionState& State = PartyDecisionStates[LeaderAgentIndex];
+	if (State.AudiencePhase == EFF_PartyAudiencePhase::None)
+	{
+		return;
+	}
+
+	if (TSet<int32>* Occupied = OccupiedAudienceSlots.Find(State.AudienceFacilityId))
+	{
+		for (int32 Offset = 0; Offset < State.AudienceSlotCount; ++Offset)
+		{
+			Occupied->Remove(State.AudienceFirstSlotIndex + Offset);
+		}
+		if (Occupied->IsEmpty())
+		{
+			OccupiedAudienceSlots.Remove(State.AudienceFacilityId);
+		}
+	}
+
+	const FVector ExitLocation = State.AudienceExitLocation;
+	for (const int32 MemberIndex : GetPartyMembers(UnitDatas[LeaderAgentIndex].PartyID))
+	{
+		if (UnitDatas.IsValidIndex(MemberIndex))
+		{
+			UnitDatas[MemberIndex].bHasQueueSlot = false;
+			UnitDatas[MemberIndex].QueueSlotLocation = FVector::ZeroVector;
+			UnitDatas[MemberIndex].Speed = UnitDatas[MemberIndex].CruiseSpeed;
+		}
+	}
+
+	State.AudienceFacilityId.Invalidate();
+	State.AudienceFirstSlotIndex = INDEX_NONE;
+	State.AudienceSlotCount = 0;
+	State.AudienceEntryLocation = FVector::ZeroVector;
+	State.AudienceExitLocation = FVector::ZeroVector;
+	State.AudienceArrivalTolerance = 0.f;
+	if (bMoveToExit)
+	{
+		State.AudiencePhase = EFF_PartyAudiencePhase::Exiting;
+		UnitDatas[LeaderAgentIndex].TargetLocation = ExitLocation;
+	}
+	else
+	{
+		State.AudiencePhase = EFF_PartyAudiencePhase::None;
+		State.CurrentDestinationId = NAME_None;
+		State.CurrentNeedRelief = FFF_NeedReliefFlags();
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::ReleaseAllAudienceParties(const bool bMoveToExit)
+{
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (UnitDatas.IsValidIndex(LeaderIndex)
+			&& UnitDatas[LeaderIndex].bIsActive
+			&& UnitDatas[LeaderIndex].LeaderAgentIndex == LeaderIndex
+			&& IsAudienceLocked(PartyDecisionStates[LeaderIndex]))
+		{
+			ReleaseAudienceParty(LeaderIndex, bMoveToExit);
+		}
+	}
+	if (!bMoveToExit)
+	{
+		OccupiedAudienceSlots.Reset();
+	}
+}
+
+bool UFF_CrowdSimulationSubsystem::FindMainStageAudience(
+	FGuid& OutFacilityId, FFFZSAudienceSnapshot& OutSnapshot) const
+{
+	OutFacilityId.Invalidate();
+	OutSnapshot = FFFZSAudienceSnapshot();
+	const UWorld* World = GetWorld();
+	const UFFZSWorldSubsystem* Zones = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (!Zones)
+	{
+		return false;
+	}
+	const FFFZSReadModel ReadModel = Zones->BuildReadModel();
+	for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+	{
+		if (Facility.State != EFFZSFacilityState::Active || Facility.bNeedsRelocation
+			|| !FFF_ZoneSystemBridge::IsMainStageFacility(
+				Facility.Category, Facility.FacilityDefinitionId))
+		{
+			continue;
+		}
+		FText Error;
+		if (UFFZSAudienceLibrary::GetFacilityAudienceSnapshot(
+			World, Facility.FacilityInstanceId, OutSnapshot, Error))
+		{
+			OutFacilityId = Facility.FacilityInstanceId;
+			return true;
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[Audience] 메인 무대 관람 데이터 사용 불가: %s"), *Error.ToString());
+	}
+	return false;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GatherPartiesToMainStageAudience()
+{
+	++AudienceGatherAttempts;
+	FGuid FacilityId;
+	FFFZSAudienceSnapshot Snapshot;
+	if (!FindMainStageAudience(FacilityId, Snapshot))
+	{
+		++AudienceSnapshotFailures;
+		if (!bWarnedMissingAudienceThisShow)
+		{
+			bWarnedMissingAudienceThisShow = true;
+			UE_LOG(LogTemp, Warning,
+				TEXT("[Audience] 메인 공연 강제 집결을 건너뛴다 — 관람 공간이 켜진 활성 SunsetMainStage가 없다. ")
+				TEXT("무대가 설치됐는지, PDA 의 Audience.bEnabled 가 켜져 있는지 확인할 것"));
+		}
+		return 0;
+	}
+
+	TArray<int32> Leaders;
+	for (int32 LeaderIndex = 0; LeaderIndex < UnitDatas.Num(); ++LeaderIndex)
+	{
+		if (!PartyDecisionStates.IsValidIndex(LeaderIndex)) continue;
+		const FUnitData& Unit = UnitDatas[LeaderIndex];
+		const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		if (Unit.bIsActive && Unit.LeaderAgentIndex == LeaderIndex && !State.bIsLeaving
+			&& State.ProgramPhase == EFF_PartyProgramPhase::None
+			&& State.AudiencePhase == EFF_PartyAudiencePhase::None)
+		{
+			Leaders.Add(LeaderIndex);
+		}
+	}
+	Leaders.Sort([this, &Snapshot](const int32 A, const int32 B)
+	{
+		const double DistA = FVector::DistSquared2D(UnitDatas[A].Position, Snapshot.EntryWorldCm);
+		const double DistB = FVector::DistSquared2D(UnitDatas[B].Position, Snapshot.EntryWorldCm);
+		return DistA == DistB ? UnitDatas[A].PartyID < UnitDatas[B].PartyID : DistA < DistB;
+	});
+
+	// 자기 이동시간만큼만 일찍 떠난다. 전원을 같은 시각에 끌어내면 하루 대부분이
+	// "무대로 걸어가기"가 되어 부스가 비고, 반대로 다 같이 늦게 떠나면 먼 손님이 못 온다.
+	float RemainingSeconds = TNumericLimits<float>::Max();
+	if (const UFF_FestivalStageSubsystem* GatherStage = GetWorld() && GetWorld()->GetGameInstance()
+		? GetWorld()->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+	{
+		RemainingSeconds = MainProgramStartLiveSeconds - GatherStage->ElapsedLiveSeconds;
+	}
+
+	int32 GatheredParties = 0;
+	int32 GatheredMembers = 0;
+	int32 NotDueYet = 0;
+	for (const int32 LeaderIndex : Leaders)
+	{
+		const float SpeedCmPerSecond = FMath::Max(UnitDatas[LeaderIndex].CruiseSpeed, 1.f);
+		const float TravelSeconds = static_cast<float>(FVector::Dist2D(
+			UnitDatas[LeaderIndex].Position, Snapshot.EntryWorldCm)) / SpeedCmPerSecond;
+		const float DueSeconds = TravelSeconds * FMath::Max(AudienceTravelSlack, 1.f)
+			+ FMath::Max(AudienceGatherSafetySeconds, 0.f);
+		if (RemainingSeconds > DueSeconds)
+		{
+			++NotDueYet;
+			continue;
+		}
+		if (BeginAudienceVisit(LeaderIndex, FacilityId, Snapshot))
+		{
+			++GatheredParties;
+			GatheredMembers += FMath::Max(GetPartyMembers(UnitDatas[LeaderIndex].PartyID).Num(), 1);
+		}
+	}
+	AudienceGatheredParties += GatheredParties;
+	AudienceGatheredMembers += GatheredMembers;
+	if (GatheredParties > 0 || NotDueYet > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Audience] 집결 판정: 출발 %d파티 %d명 / 아직 여유 %d파티, 정원 %d, 점유 %d"),
+			GatheredParties, GatheredMembers, NotDueYet, Snapshot.Capacity,
+			OccupiedAudienceSlots.FindRef(FacilityId).Num());
+	}
+	return GatheredParties;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetOccupiedAudienceSlotCount(const FGuid FacilityInstanceId) const
+{
+	const TSet<int32>* Occupied = OccupiedAudienceSlots.Find(FacilityInstanceId);
+	return Occupied ? Occupied->Num() : 0;
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetAudiencePartyCount() const
+{
+	int32 Count = 0;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (UnitDatas.IsValidIndex(LeaderIndex)
+			&& UnitDatas[LeaderIndex].bIsActive
+			&& UnitDatas[LeaderIndex].LeaderAgentIndex == LeaderIndex
+			&& IsAudienceLocked(PartyDecisionStates[LeaderIndex]))
+		{
+			++Count;
+		}
+	}
+	return Count;
+}
+
+void UFF_CrowdSimulationSubsystem::GetScheduledPhaseCounts(
+	int32& OutAudienceSeated, int32& OutAudienceWalking,
+	int32& OutProgramAtVenue, int32& OutProgramWalking) const
+{
+	OutAudienceSeated = 0;
+	OutAudienceWalking = 0;
+	OutProgramAtVenue = 0;
+	OutProgramWalking = 0;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !UnitDatas[LeaderIndex].bIsActive
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex)
+		{
+			continue;
+		}
+		const FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
+		switch (State.AudiencePhase)
+		{
+		case EFF_PartyAudiencePhase::Waiting:
+		case EFF_PartyAudiencePhase::Spectating:
+			++OutAudienceSeated;
+			break;
+		case EFF_PartyAudiencePhase::GoingToEntry:
+		case EFF_PartyAudiencePhase::GoingToSlot:
+			++OutAudienceWalking;
+			break;
+		default:
+			break;
+		}
+		switch (State.ProgramPhase)
+		{
+		case EFF_PartyProgramPhase::Waiting:
+		case EFF_PartyProgramPhase::Participating:
+			++OutProgramAtVenue;
+			break;
+		case EFF_PartyProgramPhase::Returning:
+			++OutProgramWalking;
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::GetAudienceStats(
+	int32& OutAttempts, int32& OutGatheredParties, int32& OutGatheredMembers,
+	int32& OutCapacityRejects, int32& OutSnapshotFailures, int32& OutProgramConflicts) const
+{
+	OutAttempts = AudienceGatherAttempts;
+	OutGatheredParties = AudienceGatheredParties;
+	OutGatheredMembers = AudienceGatheredMembers;
+	OutCapacityRejects = AudienceCapacityRejects;
+	OutSnapshotFailures = AudienceSnapshotFailures;
+	OutProgramConflicts = AudienceProgramConflictSkips;
 }
 
 void UFF_CrowdSimulationSubsystem::ClearPartyQueueState(int32 LeaderAgentIndex, bool bLeaveQueue)
@@ -2521,6 +3189,10 @@ void UFF_CrowdSimulationSubsystem::ClearPartyQueueState(int32 LeaderAgentIndex, 
 
 	State.QueuePhase = EFF_PartyQueuePhase::None;
 	State.QueuedFacilityId.Invalidate();
+
+	// 멤버 슬롯도 같이 푼다. 안 풀면 UpdatePartyMemberTarget 이 계속 옛 슬롯 좌표로 보내서
+	// 리더만 떠나고 일행은 그 부스 앞에 남는다(QueuePhase 가 None 인 분기는 이미 풀고 있었다).
+	ClearPartyQueueColumn(GetAgentPartyID(LeaderAgentIndex));
 }
 
 bool UFF_CrowdSimulationSubsystem::BeginProgramReturn(
@@ -2539,8 +3211,12 @@ bool UFF_CrowdSimulationSubsystem::BeginProgramReturn(
 	FUnitData& Leader = UnitDatas[LeaderAgentIndex];
 	ClearPartyQueueState(LeaderAgentIndex, true);
 
-	int32 WaitingIndex = Reservation.AssignedGroupIds.IndexOfByKey(Leader.PartyID);
-	WaitingIndex = FMath::Max(WaitingIndex, 0);
+	int32 WaitingIndex = 0;
+	for (const int32 AssignedPartyId : Reservation.AssignedGroupIds)
+	{
+		if (AssignedPartyId == Leader.PartyID) break;
+		WaitingIndex += FMath::Max(GetPartyMembers(AssignedPartyId).Num(), 1);
+	}
 	FTransform WaitingTransform;
 	const UWorld* World = GetWorld();
 	const UFF_ZoneSystemQueueBridgeSubsystem* Bridge =
@@ -2561,6 +3237,32 @@ bool UFF_CrowdSimulationSubsystem::BeginProgramReturn(
 	State.ConsecutiveNoChoiceCount = 0;
 	State.bNeedsDecision = false;
 	Leader.TargetLocation = State.ProgramWaitingLocation;
+	TArray<int32> Members = GetPartyMembers(Leader.PartyID);
+	Members.Sort();
+	for (int32 MemberOffset = 0; MemberOffset < Members.Num(); ++MemberOffset)
+	{
+		if (!UnitDatas.IsValidIndex(Members[MemberOffset])) continue;
+		FTransform MemberWaitingTransform;
+		const bool bHasMemberSlot = Bridge && Bridge->TryGetProgramWaitingTransform(
+			Reservation.FacilityInstanceId, WaitingIndex + MemberOffset, MemberWaitingTransform);
+		FUnitData& Member = UnitDatas[Members[MemberOffset]];
+		const FVector MemberTarget = bHasMemberSlot
+			? MemberWaitingTransform.GetLocation()
+			: State.ProgramWaitingLocation + GetPartyFormationOffset(MemberOffset);
+		if (Members[MemberOffset] == LeaderAgentIndex)
+		{
+			Member.TargetLocation = MemberTarget;
+			State.ProgramWaitingLocation = MemberTarget;
+		}
+		else
+		{
+			Member.bHasQueueSlot = true;
+			Member.QueueSlotLocation = MemberTarget;
+		}
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[예약] 파티 %d(%d명) 프로그램 시설로 출발 — 시작 %.1f분, 첫 대기 슬롯 %d"),
+		Leader.PartyID, Members.Num(), Reservation.StartMinutes, WaitingIndex);
 	return true;
 }
 
@@ -2587,6 +3289,10 @@ bool UFF_CrowdSimulationSubsystem::HandleProgramArrival(const int32 LeaderAgentI
 		State.ProgramPhase = NowMinutes >= State.ProgramStartMinutes
 			? EFF_PartyProgramPhase::Participating
 			: EFF_PartyProgramPhase::Waiting;
+		UE_LOG(LogTemp, Log, TEXT("[예약] 파티 %d 프로그램 시설 도착 (%.1f분, %s)"),
+			UnitDatas[LeaderAgentIndex].PartyID, NowMinutes,
+			State.ProgramPhase == EFF_PartyProgramPhase::Participating
+				? TEXT("바로 참여") : TEXT("시작까지 대기"));
 		State.CurrentDestinationId = NAME_None;
 		State.CurrentNeedRelief = FFF_NeedReliefFlags();
 		UnitDatas[LeaderAgentIndex].TargetLocation = State.ProgramWaitingLocation;
@@ -2608,10 +3314,32 @@ void UFF_CrowdSimulationSubsystem::ReleaseProgramParty(const int32 LeaderAgentIn
 	{
 		return;
 	}
+
+	// 어느 단계에서 풀렸는지가 중요하다. Returning/Waiting 으로 끝났으면 그 파티는
+	// 프로그램을 못 본 것이고, 체험비는 이미 정원 기준으로 걷혔다.
+	{
+		const TCHAR* PhaseName =
+			State.ProgramPhase == EFF_PartyProgramPhase::Participating ? TEXT("참여 완료")
+			: State.ProgramPhase == EFF_PartyProgramPhase::Waiting ? TEXT("대기 중 종료(미참여)")
+			: TEXT("이동 중 종료(미도착)");
+		const float RemainingM = 0.01f * static_cast<float>(
+			FVector::Dist2D(Leader.Position, State.ProgramWaitingLocation));
+		UE_LOG(LogTemp, Log, TEXT("[예약] 파티 %d 프로그램 종료 — %s (시설까지 %.0fm)"),
+			Leader.PartyID, PhaseName, RemainingM);
+	}
 	if (PartyRemainingStayMinutes.IsValidIndex(LeaderAgentIndex))
 	{
 		PartyRemainingStayMinutes[LeaderAgentIndex] = FFF_ProgramReservationRules::ApplyExitGrace(
 			PartyRemainingStayMinutes[LeaderAgentIndex], ProgramExitGraceMinutes);
+	}
+	for (const int32 MemberIndex : GetPartyMembers(Leader.PartyID))
+	{
+		if (UnitDatas.IsValidIndex(MemberIndex))
+		{
+			UnitDatas[MemberIndex].bHasQueueSlot = false;
+			UnitDatas[MemberIndex].QueueSlotLocation = FVector::ZeroVector;
+			UnitDatas[MemberIndex].Speed = UnitDatas[MemberIndex].CruiseSpeed;
+		}
 	}
 
 	FVector ExitLocation = State.ProgramWaitingLocation;
@@ -2664,6 +3392,42 @@ bool UFF_CrowdSimulationSubsystem::TryBeginProgramReturnIfDue(
 		&& BeginProgramReturn(LeaderIndex, Reservation, Approach);
 }
 
+bool UFF_CrowdSimulationSubsystem::TryGetProgramApproachLocation(
+	const FGuid& FacilityInstanceId, FVector& OutApproach)
+{
+	// BuildReadModel 은 전 시설을 정렬해 값 복사하는 함수다. 고정 스텝마다 부르면 미복귀
+	// 예약자가 한 명만 남아도 그 비용이 계속 나간다. 배치가 바뀔 때만 다시 짓는다.
+	const UWorld* World = GetWorld();
+	const UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	if (!ZoneSystem)
+	{
+		return false;
+	}
+
+	const int64 Revision = ZoneSystem->GetWorldRevision();
+	if (Revision != ProgramApproachCacheRevision)
+	{
+		ProgramApproachCacheRevision = Revision;
+		CachedProgramApproachByFacility.Reset();
+		const FFFZSReadModel ReadModel = ZoneSystem->BuildReadModel();
+		for (const FFFZSFacilityReadModel& Facility : ReadModel.Facilities)
+		{
+			if (Facility.bHasApproachWorldTransform)
+			{
+				CachedProgramApproachByFacility.Add(
+					Facility.FacilityInstanceId, Facility.ApproachWorldTransform.GetLocation());
+			}
+		}
+	}
+
+	if (const FVector* Found = CachedProgramApproachByFacility.Find(FacilityInstanceId))
+	{
+		OutApproach = *Found;
+		return true;
+	}
+	return false;
+}
+
 void UFF_CrowdSimulationSubsystem::UpdateProgramReservationStates()
 {
 	float NowMinutes = 0.f;
@@ -2680,8 +3444,6 @@ void UFF_CrowdSimulationSubsystem::UpdateProgramReservationStates()
 		return;
 	}
 
-	const UFFZSWorldSubsystem* ZoneSystem = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
-	TOptional<FFFZSReadModel> ProgramReadModel;
 	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
 	{
 		if (!UnitDatas.IsValidIndex(LeaderIndex)
@@ -2706,6 +3468,8 @@ void UFF_CrowdSimulationSubsystem::UpdateProgramReservationStates()
 			&& NowMinutes >= State.ProgramStartMinutes)
 		{
 			State.ProgramPhase = EFF_PartyProgramPhase::Participating;
+			UE_LOG(LogTemp, Log, TEXT("[예약] 파티 %d 프로그램 참여 시작 (%.1f분)"),
+				UnitDatas[LeaderIndex].PartyID, NowMinutes);
 			continue;
 		}
 		if (State.ProgramPhase != EFF_PartyProgramPhase::None)
@@ -2720,30 +3484,26 @@ void UFF_CrowdSimulationSubsystem::UpdateProgramReservationStates()
 			continue;
 		}
 
-		FVector Approach = FVector::ZeroVector;
-		bool bHasApproach = false;
-		if (ZoneSystem)
+		// 예약이 관람보다 우선한다. 잠금이 걸려 있으면 자리를 반납하고 복귀 판정으로 넘긴다 —
+		// 두 상태를 동시에 들고 있으면 목적지를 세우는 주체가 둘이 된다.
+		if (IsAudienceLocked(State))
 		{
-			if (!ProgramReadModel.IsSet())
-			{
-				ProgramReadModel = ZoneSystem->BuildReadModel();
-			}
-			if (const FFFZSFacilityReadModel* Facility = ProgramReadModel->Facilities.FindByPredicate(
-				[&Reservation](const FFFZSFacilityReadModel& Candidate)
-				{
-					return Candidate.FacilityInstanceId == Reservation.FacilityInstanceId;
-				}))
-			{
-				if (Facility->bHasApproachWorldTransform)
-				{
-					Approach = Facility->ApproachWorldTransform.GetLocation();
-					bHasApproach = true;
-				}
-			}
+			ReleaseAudienceParty(LeaderIndex, false);
 		}
+
+		FVector Approach = FVector::ZeroVector;
+		const bool bHasApproach =
+			TryGetProgramApproachLocation(Reservation.FacilityInstanceId, Approach);
 		if (bHasApproach)
 		{
 			TryBeginProgramReturnIfDue(LeaderIndex, Reservation, Approach, NowMinutes);
+		}
+		else if (!MissingProgramApproachWarnings.Contains(Reservation.FacilityInstanceId))
+		{
+			MissingProgramApproachWarnings.Add(Reservation.FacilityInstanceId);
+			UE_LOG(LogTemp, Error,
+				TEXT("[예약 복귀] 시설 %s에 유효한 접근점이 없어 예약 파티가 복귀할 수 없다"),
+				*Reservation.FacilityInstanceId.ToString());
 		}
 	}
 }
@@ -2901,7 +3661,8 @@ bool UFF_CrowdSimulationSubsystem::AdvancePartyQueueOnArrival(int32 LeaderAgentI
 		if (!Response.bAccepted)
 		{
 			++QueueJoinRejected;
-			return false;
+			RequestDecision(LeaderAgentIndex, EFF_DecisionReason::JoinRejected);
+			return true;
 		}
 
 		++QueueJoinAccepted;
@@ -3370,6 +4131,17 @@ void UFF_CrowdSimulationSubsystem::RebuildInTransitMemberCounts()
 
 void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage)
 {
+	if (PreviousStage == EFF_FestivalStage::Live && CurrentStage != EFF_FestivalStage::Live)
+	{
+		bMainProgramAudienceActive = false;
+		bMainProgramShowStarted = false;
+		MainProgramStartLiveSeconds = 0.f;
+		MainProgramEndLiveSeconds = 0.f;
+		NextAudienceGatherSimTime = 0.f;
+		bWarnedMissingAudienceThisShow = false;
+		ActiveMainStageEventLabel = NAME_None;
+		ReleaseAllAudienceParties(false);
+	}
 	if (CurrentStage == EFF_FestivalStage::Closing)
 	{
 		AllAgentLeavingTrigger();
@@ -3390,6 +4162,251 @@ void UFF_CrowdSimulationSubsystem::HandleStageChanged(EFF_FestivalStage Previous
 	{
 		DespawnAllAgent();
 	}
+}
+
+void UFF_CrowdSimulationSubsystem::LogAudiencePhaseBreakdown(const TCHAR* Reason) const
+{
+	int32 Counts[6] = {0, 0, 0, 0, 0, 0};
+	int32 Members = 0;
+	// 좌석까지 남은 거리. 이동 시간이 모자란 것과 자리 앞에서 막힌 것을 가르는 유일한 수치다.
+	float WalkingDistanceSumM = 0.f;
+	float FarthestWalkingM = 0.f;
+	int32 NearlyThereCount = 0;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex) || !UnitDatas[LeaderIndex].bIsActive
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex)
+		{
+			continue;
+		}
+		const EFF_PartyAudiencePhase Phase = PartyDecisionStates[LeaderIndex].AudiencePhase;
+		if (Phase == EFF_PartyAudiencePhase::None)
+		{
+			continue;
+		}
+		++Counts[static_cast<uint8>(Phase)];
+		Members += PartyDecisionStates[LeaderIndex].AudienceSlotCount;
+
+		if (Phase == EFF_PartyAudiencePhase::GoingToSlot)
+		{
+			const float DistanceM = 0.01f * static_cast<float>(FVector::Dist2D(
+				UnitDatas[LeaderIndex].Position, UnitDatas[LeaderIndex].TargetLocation));
+			WalkingDistanceSumM += DistanceM;
+			FarthestWalkingM = FMath::Max(FarthestWalkingM, DistanceM);
+			if (DistanceM <= 5.f)
+			{
+				++NearlyThereCount;
+			}
+		}
+	}
+	UE_LOG(LogTemp, Log,
+		TEXT("[Audience] %s — 좌석이동 %d / 착석대기 %d / 관람 %d / 퇴장 %d / 입구이동 %d 파티, 좌석 %d석"),
+		Reason,
+		Counts[static_cast<uint8>(EFF_PartyAudiencePhase::GoingToSlot)],
+		Counts[static_cast<uint8>(EFF_PartyAudiencePhase::Waiting)],
+		Counts[static_cast<uint8>(EFF_PartyAudiencePhase::Spectating)],
+		Counts[static_cast<uint8>(EFF_PartyAudiencePhase::Exiting)],
+		Counts[static_cast<uint8>(EFF_PartyAudiencePhase::GoingToEntry)],
+		Members);
+
+	const int32 Walking = Counts[static_cast<uint8>(EFF_PartyAudiencePhase::GoingToSlot)];
+	if (Walking > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Audience]   좌석까지 평균 %.0fm / 최대 %.0fm, 5m 안 %d파티, 제자리착석 누적 %d"),
+			WalkingDistanceSumM / Walking, FarthestWalkingM, NearlyThereCount, AudienceSettledInPlace);
+		UE_LOG(LogTemp, Log, TEXT("[Audience]   좌석 회수 누적 %d파티"), AudienceSeatsReclaimed);
+	}
+}
+
+int32 UFF_CrowdSimulationSubsystem::ReclaimUnreachableAudienceSeats()
+{
+	// 좌석은 배정 시점에 잡힌다. 끝내 못 오는 파티가 자리를 쥐고 있으면 그 자리는 공연 내내
+	// 비어 있고, 정작 닿을 수 있는 손님이 정원에서 밀린다(`capacityRejects`).
+	if (MainProgramEndLiveSeconds <= 0.f)
+	{
+		return 0;
+	}
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage)
+	{
+		return 0;
+	}
+
+	const float RemainingShowSeconds = MainProgramEndLiveSeconds - Stage->ElapsedLiveSeconds;
+	const float Hurry = FMath::Max(ScheduledHurrySpeedMultiplier, 1.f);
+	const float Slack = FMath::Max(AudienceTravelSlack, 1.f);
+
+	int32 Reclaimed = 0;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex)
+			|| !UnitDatas[LeaderIndex].bIsActive
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex
+			|| PartyDecisionStates[LeaderIndex].AudiencePhase != EFF_PartyAudiencePhase::GoingToSlot)
+		{
+			continue;
+		}
+
+		const FUnitData& Leader = UnitDatas[LeaderIndex];
+		const float SpeedCmPerSecond = FMath::Max(Leader.CruiseSpeed, 1.f) * Hurry;
+		const float TravelSeconds = static_cast<float>(
+			FVector::Dist2D(Leader.Position, Leader.TargetLocation)) / SpeedCmPerSecond;
+		if (TravelSeconds * Slack <= RemainingShowSeconds)
+		{
+			continue;
+		}
+
+		// 자리를 돌려주고 평소 행동으로 보낸다. 출구로 보내지 않는다 — 들어간 적이 없다.
+		ReleaseAudienceParty(LeaderIndex, false);
+		RequestDecision(LeaderIndex, EFF_DecisionReason::Interrupted);
+		++Reclaimed;
+	}
+
+	if (Reclaimed > 0)
+	{
+		AudienceSeatsReclaimed += Reclaimed;
+		UE_LOG(LogTemp, Log,
+			TEXT("[Audience] 좌석 회수: %d파티 — 공연 종료까지 %.1f초라 도착 불가. 누적 %d"),
+			Reclaimed, RemainingShowSeconds, AudienceSeatsReclaimed);
+	}
+	return Reclaimed;
+}
+
+void UFF_CrowdSimulationSubsystem::BeginMainStageGathering(const float ShowStartSeconds)
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+
+	const bool bFirstCall = !bMainProgramAudienceActive;
+	bMainProgramAudienceActive = true;
+	MainProgramStartLiveSeconds = ShowStartSeconds;
+	if (bFirstCall)
+	{
+		bMainProgramShowStarted = Stage && Stage->ElapsedLiveSeconds >= ShowStartSeconds;
+	}
+
+	ReclaimUnreachableAudienceSeats();
+	const int32 Gathered = GatherPartiesToMainStageAudience();
+	NextAudienceGatherSimTime = SimTimeSeconds + FMath::Max(AudienceGatherIntervalSeconds, 0.5f);
+
+	if (bFirstCall || Gathered > 0)
+	{
+		UE_LOG(LogTemp, Log,
+			TEXT("[Audience] %s: %d파티 배정, 공연 시각 %.1f초, 현재 %.1f초"),
+			bFirstCall ? TEXT("집결 시작") : TEXT("집결 추가"), Gathered, ShowStartSeconds,
+			Stage ? Stage->ElapsedLiveSeconds : -1.f);
+	}
+}
+
+void UFF_CrowdSimulationSubsystem::UpdateAudienceShowState()
+{
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+	if (!Stage || Stage->CurrentStage != EFF_FestivalStage::Live)
+	{
+		return;
+	}
+
+	// 집결은 배속 잠금과 따로 움직인다. 공연 시각까지 남은 시간이 리드타임 안에 들면 시작한다.
+	if (!bMainProgramAudienceActive)
+	{
+		float NextStart = 0.f;
+		if (Stage->TryGetNextMainProgramStartSeconds(NextStart)
+			&& NextStart - Stage->ElapsedLiveSeconds <= FMath::Max(AudienceGatherLeadSeconds, 0.f))
+		{
+			float NextEnd = 0.f;
+			MainProgramEndLiveSeconds = Stage->TryGetNextMainProgramEndSeconds(NextEnd) ? NextEnd : 0.f;
+			BeginMainStageGathering(NextStart);
+		}
+		return;
+	}
+
+	// 입장은 Live 내내 이어진다. 한 번만 훑으면 그 뒤에 온 손님이 영영 안 온다.
+	if (SimTimeSeconds >= NextAudienceGatherSimTime)
+	{
+		BeginMainStageGathering(MainProgramStartLiveSeconds);
+	}
+
+	if (bMainProgramShowStarted || Stage->ElapsedLiveSeconds < MainProgramStartLiveSeconds)
+	{
+		return;
+	}
+
+	bMainProgramShowStarted = true;
+	int32 SeatedCount = 0;
+	for (FPartyDecisionState& State : PartyDecisionStates)
+	{
+		if (State.AudiencePhase == EFF_PartyAudiencePhase::Waiting)
+		{
+			State.AudiencePhase = EFF_PartyAudiencePhase::Spectating;
+			++SeatedCount;
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Audience] 공연 시작 — 대기 중이던 %d파티가 관람으로 넘어간다"), SeatedCount);
+	LogAudiencePhaseBreakdown(TEXT("공연 시각"));
+}
+
+void UFF_CrowdSimulationSubsystem::HandleMainProgramStarted(FString EventLabel)
+{
+	// 이 신호는 공연 시각이 아니라 배속 잠금 진입이다. 집결은 대개 이보다 먼저
+	// AudienceGatherLeadSeconds 로 시작해 있다 - 여기서는 못 걸린 경우만 늦게라도 연다.
+	ActiveMainStageEventLabel = FName(*EventLabel);
+
+	const UWorld* World = GetWorld();
+	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	UFF_FestivalStageSubsystem* Stage = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+
+	float StartSeconds = MainProgramStartLiveSeconds;
+	if (Stage && Stage->TryGetActiveMainProgramStartSeconds(StartSeconds))
+	{
+		BeginMainStageGathering(StartSeconds);
+	}
+	else if (!bMainProgramAudienceActive)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Audience] 잠금 진입에 공연 시각을 못 찾았다, 집결을 건너뛴다 (%s)"), *EventLabel);
+	}
+
+	UpdateAudienceShowState();
+}
+
+void UFF_CrowdSimulationSubsystem::HandleMainProgramEnded(FString EventLabel)
+{
+	LogAudiencePhaseBreakdown(TEXT("공연 종료 직전"));
+	bMainProgramAudienceActive = false;
+	bMainProgramShowStarted = false;
+	MainProgramStartLiveSeconds = 0.f;
+	MainProgramEndLiveSeconds = 0.f;
+	NextAudienceGatherSimTime = 0.f;
+	bWarnedMissingAudienceThisShow = false;
+	ActiveMainStageEventLabel = NAME_None;
+	for (int32 LeaderIndex = 0; LeaderIndex < PartyDecisionStates.Num(); ++LeaderIndex)
+	{
+		if (!UnitDatas.IsValidIndex(LeaderIndex)
+			|| UnitDatas[LeaderIndex].LeaderAgentIndex != LeaderIndex
+			|| !IsAudienceLocked(PartyDecisionStates[LeaderIndex]))
+		{
+			continue;
+		}
+		// 자리에 앉아 본 파티만 자극이 풀린다. 걸어오던 중에 끝났으면 관람한 것이 아니고,
+		// 여기서 풀어 주면 방문 이력까지 남아 다음 공연의 revisit 감점을 먹는다.
+		const EFF_PartyAudiencePhase Phase = PartyDecisionStates[LeaderIndex].AudiencePhase;
+		if (Phase == EFF_PartyAudiencePhase::Waiting || Phase == EFF_PartyAudiencePhase::Spectating)
+		{
+			ApplyPartyNeedRelief(UnitDatas[LeaderIndex].PartyID);
+		}
+		ReleaseAudienceParty(LeaderIndex, true);
+	}
+	UE_LOG(LogTemp, Log, TEXT("[Audience] 메인 공연 종료('%s') — 관객을 Audience 출구로 이동"), *EventLabel);
 }
 
 void UFF_CrowdSimulationSubsystem::ProcessDecisions()
@@ -3426,7 +4443,8 @@ void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 		State.bQueued = false;
 
 		if (!Unit.bIsActive || Unit.LeaderAgentIndex != LeaderIndex || !State.bNeedsDecision
-			|| State.bIsLeaving || State.ProgramPhase != EFF_PartyProgramPhase::None)
+			|| State.bIsLeaving || State.ProgramPhase != EFF_PartyProgramPhase::None
+			|| IsAudienceLocked(State))
 		{
 			continue;
 		}
@@ -3682,6 +4700,13 @@ void UFF_CrowdSimulationSubsystem::ProcessPendingDespawns()
 
 	TSet<int32> DeleteParty = MoveTemp(PendingDespawnParty);
 	PendingDespawnParty.Reset();
+	for (const int32 PartyId : DeleteParty)
+	{
+		if (const int32* LeaderIndex = PartyLeaderByID.Find(PartyId))
+		{
+			ReleaseAudienceParty(*LeaderIndex, false);
+		}
+	}
 
 	for (int32 AgentIndex = 0;AgentIndex < UnitDatas.Num();++AgentIndex)
 	{
@@ -4398,6 +5423,7 @@ void UFF_CrowdSimulationSubsystem::AllAgentLeavingTrigger()
 		FPartyDecisionState& State = PartyDecisionStates[LeaderIndex];
 
 		if (State.bIsLeaving) continue;
+		ReleaseAudienceParty(LeaderIndex, false);
 
 		// 게이트가 없거나 EntryGateIndex 가 안 잡힌 개체는 기존 단일 출구로 보낸다.
 		//

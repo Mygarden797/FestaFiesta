@@ -13,14 +13,14 @@
 
 | WBP | 위젯 | 편집 내용 |
 |---|---|---|
-| `/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile` | `Overlay_Thumbnail` → `Overlay_RequiredStatus` | 필수 배지 위치 |
+| `/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile` | `Overlay_Thumbnail` → `Overlay_RequiredStatus` | 필수 배지 위치 |
 | 같은 카드 | `Border_RequiredMissing`, `Text_RequiredMissing` | `1일차 필수 설치` 배경·문구·글꼴 |
 | 같은 카드 | `Border_RequiredSatisfied`, `Text_RequiredSatisfied` | `1일차 필수 완료` 배경·문구·글꼴 |
 | 같은 카드 | `Border_ProgramBadge`, `Text_ProgramBadge` | 프로그램 배경·문구·글꼴 |
-| `/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild` | `VerticalBox_CatalogTitle` → `HorizontalBox_CatalogEmphasisGuide` | 기존 제목 아래 공간의 안내·범례 |
+| `/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild` | `VerticalBox_CatalogTitle` → `HorizontalBox_CatalogEmphasisGuide` | 기존 제목 아래 공간의 안내·범례 |
 | 같은 패널 | `Border_CatalogRequiredGuide` → `Text_StudioHint` | `메인시설은 1일차 시작 전 필수 설치` 안내 |
 | 같은 패널 | `Border_CatalogProgramLegend`, `Text_CatalogProgramLegend`, `Text_CatalogProgramGuide` | 보라색 프로그램 범례와 `편성 가능한 시설` 설명 |
-| `/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard` | `Thumbnail_Layer` 및 같은 배지 이름 | 구형 카탈로그의 동일 상태 표시 |
+| `/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard` | `Thumbnail_Layer` 및 같은 배지 이름 | 구형 카탈로그의 동일 상태 표시 |
 
 카드 배지의 Border/Text 이름과 타입, **Is Variable**을 유지합니다. 런타임은 데이터와 표시 상태를
 갱신하며 배경·글꼴·문구·배치는 저장된 WBP에서 가져옵니다. 배지는 클릭을 가로채지 않는

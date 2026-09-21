@@ -52,17 +52,17 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityInfoWbpBuilder, Log, All);
 
 namespace FFFacilityInfoWbpBuilder
 {
-	const FString PanelPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
-	const FString LightingPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"));
-	const FString SynergyEntryPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"));
+	const FString PanelPackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"));
+	const FString LightingPackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"));
+	const FString SynergyEntryPackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"));
 	bool SaveBlueprint(UWidgetBlueprint& Blueprint);
 	bool HasNamedVariable(const UWidgetBlueprint& Blueprint, FName Name, const UClass& ExpectedClass);
 	bool MigrateInspectorControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	bool MigratePurchaseControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	const FString PaidProgramPickerPackage(
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"));
 	const FString PaidProgramCardPackage(
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"));
 
 	const FLinearColor ColorPanel(0.018f, 0.047f, 0.070f, 0.985f);
 	const FLinearColor ColorSection(0.027f, 0.080f, 0.102f, 0.96f);
