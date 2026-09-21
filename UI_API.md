@@ -1051,7 +1051,7 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 
 **실패 이유는 한글로 드립니다** —
 `UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(Result)`.
-`없는 프로그램` / `오늘 이미 편성했다` / `인원이 부족하다` / `Gold 부족` /
+`없는 프로그램` / `오늘 이미 편성했다` / `Gold 부족` /
 `축제가 시작되지 않았다`. ⚠️ enum 의 `DisplayName` 을 직접 읽으면 패키징 빌드에서 영문이 뜹니다.
 
 **⚠️ 시설 핸들이 필요합니다.** `TryScheduleProgram` 의 두 번째 인자는 ZoneSystem 의
@@ -1275,6 +1275,7 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 | 전체 인원 | `GetTotalStaffCount()` | 기본 + 고용 |
 | 내역 | `GetBaseStaffCount()` · `GetHiredStaffCount()` | 무페이 기본 팀 / 고용한 인원 |
 | 1명당 단가 | `GetStaffHireCostGold()` | **1회 구매 비용**입니다. `/일` 이 아닙니다 |
+| 오늘 지불한 고용비 | `ViewModel.GetTodayStaffHireCostGold()` | 현재 일자의 원장에 기록된 `StaffHire` 지출입니다. 점검 패널의 `오늘 견적`에 사용하며 전날 고용비를 다시 포함하지 않습니다. 단가 변경으로 과거 지출을 재계산하지 않으며, 축제 시작 전에는 `INDEX_NONE`입니다 |
 
 조회 함수는 상태를 바꾸지 않습니다. `TryHireStaff` 만 비용·인원을 바꾸는 Command입니다.
 

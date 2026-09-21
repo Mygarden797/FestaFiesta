@@ -4,7 +4,15 @@
 
 #if WITH_DEV_AUTOMATION_TESTS
 
+#include "DataTables/FF_FacilityCostRow.h"
+#include "Engine/DataTable.h"
+#include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Tests/AutomationCommon.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelCheck.h"
+#include "UI/ViewModel/FF_FestivalViewModelSubsystem.h"
 
 /**
  * 점검 패널 견적 고정 테스트 (U5).
@@ -90,47 +98,114 @@ bool FFF_PrepCheckRules_CapacityBands::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 오늘 나가는 돈은 고용비 하나뿐이다. 1회 구매라 단가 × 고용한 인원이다.
+// 오늘 실제로 지불한 고용비만 표시한다. 영구 고용 인원은 매일 다시 비용이 되지 않는다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_StaffHireCost, "FestaFiesta.UI.PrepCheck.StaffHireCost", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_PrepCheckRules_StaffHireCost::RunTest(const FString& Parameters)
 {
 	using namespace FFF_PrepCheckRulesTestHelpers;
 
-	// 고용 3명 — 450 × 3.
+	// 원장이 확정한 실제 지출을 표시한다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*Hired*/ 3, HireCostPerStaff,
+			/*TodayStaffHireCost*/ 1350,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("고용비 1,350"), E.StaffHireCost, 1350);
 	}
 
-	// 고용 0명 — 0 은 확정 정보다. `모름` 으로 바뀌면 안 된다.
+	// 오늘 구매하지 않았다면 이전 날 고용 인원이 남아 있어도 지출은 0 이다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*Hired*/ 0, HireCostPerStaff,
+			/*TodayStaffHireCost*/ 0,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
-		TestEqual(TEXT("고용 0명이면 고용비 0"), E.StaffHireCost, 0);
+		TestEqual(TEXT("오늘 지출이 없으면 고용비 0"), E.StaffHireCost, 0);
 	}
 
-	// 단가를 모르면 비운다. 0 으로 바꾸면 "오늘 나갈 돈이 없다"는 확정 사실이 된다.
+	// 원장을 읽지 못한 상태를 "오늘 지출 없음"으로 바꾸지 않는다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*Hired*/ 3, /*HireCost*/ INDEX_NONE,
+			/*TodayStaffHireCost*/ INDEX_NONE,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("고용비는 비운다"), E.StaffHireCost, static_cast<int32>(INDEX_NONE));
 	}
 
-	// 인원을 모르면(축제 시작 전) 고용비도 비운다.
-	{
-		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*Hired*/ INDEX_NONE, HireCostPerStaff,
-			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
+	return true;
+}
 
-		TestEqual(TEXT("인원을 모르면 고용비도 모른다"), E.StaffHireCost, static_cast<int32>(INDEX_NONE));
+// 실제 고용 → 가격 변경 → 다음 날 이월까지 ViewModel과 점검 견적이 원장과 일치해야 한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_StaffHireLedgerAcrossDays,
+	"FestaFiesta.UI.PrepCheck.StaffHireLedgerAcrossDays",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepCheckRules_StaffHireLedgerAcrossDays::RunTest(const FString& Parameters)
+{
+	using namespace FFF_PrepCheckRulesTestHelpers;
+
+	// 경제 서브시스템이 없는 초기 화면에서는 0이 아니라 모름이다.
+	UGameInstance* UninitializedGameInstance = NewObject<UGameInstance>(GetTransientPackage());
+	UFF_FestivalViewModelSubsystem* UninitializedViewModel =
+		NewObject<UFF_FestivalViewModelSubsystem>(UninitializedGameInstance);
+	TestEqual(TEXT("축제 시작 전 오늘 고용비는 모름"),
+		UninitializedViewModel->GetTodayStaffHireCostGold(), static_cast<int32>(INDEX_NONE));
+
+	FTestWorldWrapper TestWorld;
+	if (!TestWorld.CreateTestWorld(EWorldType::Game))
+	{
+		TestWorld.ForwardErrorMessages(this);
+		return false;
 	}
+	UGameInstance* GameInstance = TestWorld.GetTestWorld()->GetGameInstance();
+	UFF_FestivalViewModelSubsystem* ViewModel = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalViewModelSubsystem>() : nullptr;
+	UFF_FestivalProgressionSubsystem* Progression = GameInstance
+		? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	if (!TestNotNull(TEXT("ViewModel"), ViewModel) || !TestNotNull(TEXT("경제 시스템"), Progression))
+	{
+		return false;
+	}
+
+	UFF_FestivalDefinition* Definition = NewObject<UFF_FestivalDefinition>(GameInstance);
+	UDataTable* CostTable = NewObject<UDataTable>(GameInstance);
+	CostTable->RowStruct = FFF_FacilityCostRow::StaticStruct();
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), FFF_FacilityCostRow());
+	Definition->FacilityCostTable = CostTable;
+	Definition->FestivalId = TEXT("PrepCheckStaffHireLedgerAutomationFestival");
+	Definition->InitialGold = 10000;
+	Definition->InitialStaffCount = 6;
+	Definition->StaffHireCostGold = HireCostPerStaff;
+	Definition->MaxHiredStaffCount = 6;
+	Progression->StartFestival(Definition);
+
+	const auto ReadEstimate = [ViewModel]()
+	{
+		return FFF_PrepCheckRules::BuildDayEstimate(
+			ViewModel->GetTodayStaffHireCostGold(), INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
+	};
+	TestEqual(TEXT("축제 시작 후 아직 고용하지 않았으면 0"), ReadEstimate().StaffHireCost, 0);
+	if (!TestTrue(TEXT("Day1 인원 2명 고용"), Progression->TryHireStaff(2)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Day1 실제 지출은 900"), ReadEstimate().StaffHireCost, 900);
+
+	// 이후 단가가 달라져도 과거에 낸 900 Gold를 1,400으로 바꾸지 않는다.
+	Definition->StaffHireCostGold = 700;
+	TestEqual(TEXT("단가 변경은 오늘의 기존 지출을 바꾸지 않는다"), ReadEstimate().StaffHireCost, 900);
+
+	const int32 GoldBeforeNextDay = Progression->GetGold();
+	Progression->BeginNewDay(2);
+	TestEqual(TEXT("Day2에도 고용 인원은 남는다"), Progression->GetHiredStaffCount(), 2);
+	TestEqual(TEXT("날이 바뀌어도 고용비를 다시 내지 않는다"), Progression->GetGold(), GoldBeforeNextDay);
+	TestEqual(TEXT("Day2 추가 고용 전 오늘 고용비는 0"), ReadEstimate().StaffHireCost, 0);
+	if (!TestTrue(TEXT("Day2 변경된 단가로 인원 1명 추가 고용"), Progression->TryHireStaff(1)))
+	{
+		return false;
+	}
+	TestEqual(TEXT("Day2 고용 인원은 누적 3명"), Progression->GetHiredStaffCount(), 3);
+	TestEqual(TEXT("Day2에는 그날의 실제 지출 700만 표시"), ReadEstimate().StaffHireCost, 700);
+	TestEqual(TEXT("Day1 원장 지출은 계속 900"),
+		Progression->GetEndedDayLedger().GetSpendByReason(EFF_SpendReason::StaffHire), 900);
 	return true;
 }
 
@@ -143,7 +218,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 목표 달성 — 600명 × 5 = 3,000 수입 + 보너스 300.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, HireCostPerStaff, /*Expected*/ 600, AdmissionFee, DailyGoal, GoalBonus);
+			0, /*Expected*/ 600, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("입장료 수입 3,000"), E.ExpectedAdmissionRevenue, 3000);
 		TestEqual(TEXT("목표를 넘으면 보너스"), E.ExpectedGoalBonus, 300);
@@ -152,7 +227,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 경계 — 목표와 같으면 달성이다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, HireCostPerStaff, /*Expected*/ 500, AdmissionFee, DailyGoal, GoalBonus);
+			0, /*Expected*/ 500, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("목표와 같으면 달성"), E.ExpectedGoalBonus, 300);
 	}
@@ -160,7 +235,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 미달 — 0 은 `모름` 이 아니라 "못 받는다"는 확정 정보다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, HireCostPerStaff, /*Expected*/ 400, AdmissionFee, DailyGoal, GoalBonus);
+			0, /*Expected*/ 400, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("미달이면 보너스 0"), E.ExpectedGoalBonus, 0);
 		TestEqual(TEXT("수입은 그대로 계산된다"), E.ExpectedAdmissionRevenue, 2000);
@@ -169,7 +244,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 예상 방문객을 모르면 수입과 보너스를 둘 다 비운다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, HireCostPerStaff, /*Expected*/ INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
+			0, /*Expected*/ INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("수입을 비운다"), E.ExpectedAdmissionRevenue, static_cast<int32>(INDEX_NONE));
 		TestEqual(TEXT("보너스도 비운다 — 0 으로 두면 못 받는다는 뜻이 된다"),
@@ -179,7 +254,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 목표를 모르면 보너스만 비우고 수입은 계산한다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, HireCostPerStaff, 600, AdmissionFee, /*Goal*/ INDEX_NONE, GoalBonus);
+			0, 600, AdmissionFee, /*Goal*/ INDEX_NONE, GoalBonus);
 
 		TestEqual(TEXT("수입은 계산된다"), E.ExpectedAdmissionRevenue, 3000);
 		TestEqual(TEXT("보너스는 비운다"), E.ExpectedGoalBonus, static_cast<int32>(INDEX_NONE));

@@ -23,7 +23,6 @@ namespace FFBuildCatalogProgramTests
 		Card.ProgramId = Id;
 		Card.DisplayName = FText::FromString(Name);
 		Card.CostGold = 200;
-		Card.RequiredStaff = 1;
 		Card.Capacity = 12;
 		Card.StartMinutes = 30.f;
 		Card.EndMinutes = 60.f;

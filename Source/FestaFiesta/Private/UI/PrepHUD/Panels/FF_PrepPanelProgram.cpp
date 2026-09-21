@@ -513,8 +513,7 @@ void UFF_PrepPanelProgram::RefreshAll()
 		: (ViewModel ? EFF_ProgramPurchaseResult::Success : EFF_ProgramPurchaseResult::FestivalNotStarted);
 
 	Quote = FFF_PrepProgramRules::BuildQuote(
-
-		FacilityCard ? FacilityCard : SelectedCard, OwnerResult, bCanScheduleNow, FacilityCount, Gold, AvailableStaff);
+		FacilityCard ? FacilityCard : SelectedCard, OwnerResult, bCanScheduleNow, FacilityCount, Gold);
 	if (!FacilityCard)
 	{
 		// 한 프로그램도 시설마다 참가비가 다를 수 있다. 장소를 고르기 전에는 금액을 확정하지 않는다.

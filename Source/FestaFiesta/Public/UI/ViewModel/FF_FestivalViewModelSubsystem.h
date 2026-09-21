@@ -420,9 +420,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetRemainingHireCap() const;
 
-	/** Staff 1명 고용 비용(1회). 지출 표와 견적에 쓴다. */
+	/** Staff 1명 고용 비용(1회). 추가 고용 견적에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetStaffHireCostGold() const;
+
+	/** 오늘 원장에 기록된 실제 고용비. 축제 시작 전에는 `INDEX_NONE`이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
+	int32 GetTodayStaffHireCostGold() const;
 
 	/** 축제 총원 고용 상한. 화면에 `최대 N명` 을 쓰기 위한 값이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")

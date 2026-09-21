@@ -603,7 +603,7 @@ namespace FFLiveHudWbpBuilder
 				LOCTEXT("LiveStaffPreview_Assigned", "0명"))
 			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
 				TEXT("Text_IdleStaff"), LOCTEXT("LiveStaff_Idle", "남는 인원"),
-				LOCTEXT("LiveStaffPreview_Idle", "7명"));
+				LOCTEXT("LiveStaffPreview_Idle", "12명"));
 
 		if (!bSummaryOk)
 		{
@@ -637,9 +637,9 @@ namespace FFLiveHudWbpBuilder
 			Slot_IdleNote->SetPadding(FMargin(0.f, 4.f, 0.f, 18.f));
 		}
 
-		// --- 오늘 편성 ---
+		// --- 사건 대응 ---
 		StyleText(*AssignTitle, 13, Palette->InGame.InkMuted, TEXT("Medium"));
-		AssignTitle->SetText(LOCTEXT("LiveStaff_AssignmentsTitle", "오늘 편성"));
+		AssignTitle->SetText(LOCTEXT("LiveStaff_AssignmentsTitle", "사건 대응 현황"));
 		if (UVerticalBoxSlot* Slot_AssignTitle = Content->AddChildToVerticalBox(AssignTitle))
 		{
 			Slot_AssignTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -1959,7 +1959,7 @@ namespace FFLiveHudWbpBuilder
 				LOCTEXT("LiveStatusPreview_Revenue", "3,200"), Palette->InGame.Ink, TEXT("Revenue"))
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Staff"), TEXT("Text_Staff"),
-				LOCTEXT("LiveStatusPreview_Staff", "6명 중 4명 사용 가능"), Palette->InGame.Ink,
+				LOCTEXT("LiveStatusPreview_Staff", "6명"), Palette->InGame.Ink,
 				TEXT("StaffCount"))
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_VisitorCount"), TEXT("Text_VisitorCount"),

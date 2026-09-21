@@ -42,7 +42,7 @@ struct FESTAFIESTA_API FFF_PrepDayEstimate
 {
 	GENERATED_BODY()
 
-	/** 오늘 이미 지불한 고용비 총액.*/
+	/** 오늘 원장에 기록된 실제 고용비. 이전 날의 고용비는 포함하지 않는다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
 	int32 StaffHireCost = INDEX_NONE;
 
@@ -88,12 +88,12 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
 	/**
 	 * 하루 견적을 만든다. 모르는 값은 전파되고 0 으로 바뀌지 않는다.
 	 *
+	 * @param TodayStaffHireCost 오늘 실제로 지불한 고용비. 모르면 `INDEX_NONE`
 	 * @param ExpectedVisitors 모르면 `INDEX_NONE` — 수입과 보너스가 함께 비워진다
 	 * @param DailyVisitorGoal 목표. 모르면 보너스를 비운다
 	 */
 	static FFF_PrepDayEstimate BuildDayEstimate(
-		int32 HiredStaffCount,
-		int32 HireCostPerStaff,
+		int32 TodayStaffHireCost,
 		int32 ExpectedVisitors,
 		int32 AdmissionFee,
 		int32 DailyVisitorGoal,

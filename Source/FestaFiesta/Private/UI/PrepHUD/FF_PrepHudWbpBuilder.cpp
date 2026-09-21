@@ -533,7 +533,7 @@ namespace FFPrepHudWbpBuilder
 
 		// --- 견적 ---
 		StyleText(*WagePreview, 16, Palette->InGame.Ink, TEXT("Medium"));
-		WagePreview->SetText(LOCTEXT("PrepStaff_WagePreviewText", "1명 x 150 = 150 Gold"));
+		WagePreview->SetText(LOCTEXT("PrepStaff_WagePreviewText", "1명 x 450 = 450 Gold"));
 		if (UVerticalBoxSlot* Slot_Wage = Content->AddChildToVerticalBox(WagePreview))
 		{
 			Slot_Wage->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -542,7 +542,7 @@ namespace FFPrepHudWbpBuilder
 		}
 
 		StyleText(*GoldAfterHire, 14, Palette->InGame.InkMuted, TEXT("Medium"));
-		GoldAfterHire->SetText(LOCTEXT("PrepStaff_GoldAfterPreview", "고용 후 잔액 7,450"));
+		GoldAfterHire->SetText(LOCTEXT("PrepStaff_GoldAfterPreview", "고용 후 잔액 7,150"));
 		if (UVerticalBoxSlot* Slot_GoldAfter = Content->AddChildToVerticalBox(GoldAfterHire))
 		{
 			Slot_GoldAfter->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -1609,7 +1609,7 @@ namespace FFPrepHudWbpBuilder
 
 		// --- 견적 ---
 		StyleText(*CostPreview, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		CostPreview->SetText(LOCTEXT("PrepProgram_CostPreviewText", "250 Gold · 인원 2명"));
+		CostPreview->SetText(LOCTEXT("PrepProgram_CostPreviewText", "250 Gold"));
 		if (UVerticalBoxSlot* Slot_Cost = QuoteBox->AddChildToVerticalBox(CostPreview))
 		{
 			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
