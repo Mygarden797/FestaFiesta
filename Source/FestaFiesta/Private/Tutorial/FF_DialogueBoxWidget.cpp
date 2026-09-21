@@ -3,6 +3,7 @@
 #include "Tutorial/FF_DialogueBoxWidget.h"
 
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Tutorial/FF_SkipConfirmWidget.h"
@@ -102,6 +103,7 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 	RebuildChoices(Line);
 
 	ApplyClickArea(Line);
+	ApplyBackground(Line);
 
 	BP_OnLineChanged(Line);
 }
@@ -119,6 +121,12 @@ void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
 	if (!bActive)
 	{
 		ClearChoices();
+
+		// 대사가 끝나면 배경도 치운다. 안 그러면 그림이 화면에 남는다.
+		if (BackgroundImage)
+		{
+			BackgroundImage->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 
 	BP_OnDialogueActiveChanged(bActive);
@@ -215,6 +223,40 @@ void UFF_DialogueBoxWidget::ClearChoices()
 	{
 		ChoiceContainer->ClearChildren();
 	}
+}
+
+void UFF_DialogueBoxWidget::ApplyBackground(const FFF_DialogueLine& Line)
+{
+	if (!BackgroundImage)
+	{
+		return;
+	}
+
+	if (Line.bClearBackground)
+	{
+		BackgroundImage->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	// 지정이 없으면 앞 줄의 그림을 그대로 둔다.
+	// 한 장면이 여러 줄로 이어질 때 매 줄에 같은 경로를 적지 않아도 된다.
+	if (Line.BackgroundImage.IsNull())
+	{
+		return;
+	}
+
+	UTexture2D* Texture = Line.BackgroundImage.LoadSynchronous();
+	if (!Texture)
+	{
+		// 경로를 잘못 적었다. 앞 그림을 그대로 두고 알린다.
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[대사] 배경 그림 %s 를 불러오지 못했다."),
+			*Line.BackgroundImage.ToString());
+		return;
+	}
+
+	BackgroundImage->SetBrushFromTexture(Texture, false);
+	BackgroundImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
 void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
