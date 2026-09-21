@@ -126,7 +126,6 @@ struct FFF_PhaseTimeRange : public FTableRowBase
 	//이 단계가 끝나면 다음에 어느 단계로 가는지
 };
 
-UCLASS()
 /* 저장에 담기는 단계 상태.
 
    하루가 시작되는 순간만 저장하므로 단계는 언제나 Setup 이다. 그래도 담는
@@ -145,6 +144,7 @@ struct FFF_StageSave
 	UPROPERTY() uint8 Weather = 0;
 };
 
+UCLASS()
 class FESTAFIESTA_API UFF_FestivalStageSubsystem
 	: public UGameInstanceSubsystem, public FTickableGameObject, public IFF_Saveable
 {

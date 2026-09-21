@@ -32,7 +32,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid,
  * [참고] Getter + 변경 델리게이트를 쌍으로 준다
  * [참고] 전부 Gold(int32)이고 상한이 없다.
  */
-UCLASS()
 /* 저장에 담기는 경제 상태.
 
    하루가 시작되는 순간만 저장하므로 담을 것이 적다. 장부와 편성은 정산할 때
@@ -51,6 +50,7 @@ struct FFF_ProgressionSave
 	UPROPERTY() int32 EndedDay = 0;
 };
 
+UCLASS()
 class FESTAFIESTA_API UFF_FestivalProgressionSubsystem
 	: public UGameInstanceSubsystem, public IFF_Saveable
 {
