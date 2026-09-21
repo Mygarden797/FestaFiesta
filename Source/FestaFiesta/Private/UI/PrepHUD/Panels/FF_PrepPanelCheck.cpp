@@ -47,8 +47,8 @@ EFF_PrepCapacityRisk FFF_PrepCheckRules::ClassifyCapacityRisk(
 }
 
 FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
-	int32 TemporaryStaffCount,
-	int32 WagePerStaff,
+	int32 HiredStaffCount,
+	int32 HireCostPerStaff,
 	int32 ExpectedVisitors,
 	int32 AdmissionFee,
 	int32 DailyVisitorGoal,
@@ -56,9 +56,9 @@ FFF_PrepDayEstimate FFF_PrepCheckRules::BuildDayEstimate(
 {
 	FFF_PrepDayEstimate Result;
 
-	if (TemporaryStaffCount >= 0 && WagePerStaff != INDEX_NONE)
+	if (HiredStaffCount >= 0 && HireCostPerStaff != INDEX_NONE)
 	{
-		Result.StaffWageCost = TemporaryStaffCount * WagePerStaff;
+		Result.StaffHireCost = HiredStaffCount * HireCostPerStaff;
 	}
 
 	if (ExpectedVisitors != INDEX_NONE && AdmissionFee != INDEX_NONE)
@@ -193,8 +193,6 @@ void UFF_PrepPanelCheck::BindViewModel()
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 
-	// 프로그램 편성은 전체 인원을 바꾸지 않으므로 위 구독만으로는 `사용 가능` 이 안 바뀐다.
-	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 
 	// 피날레는 다른 패널에서 산다. 이 요약 줄이 갱신되려면 결과 이벤트를 받아야 한다.
 	CachedViewModel->OnPurchasedFinaleGradeChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged);
@@ -210,7 +208,6 @@ void UFF_PrepPanelCheck::UnbindViewModel()
 		CachedViewModel->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
-		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged);
 	}
 	CachedViewModel = nullptr;
@@ -435,19 +432,13 @@ void UFF_PrepPanelCheck::RefreshSummary()
 
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
 	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
-	const int32 Temporary = ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE;
-	const int32 Available = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
+	const int32 Temporary = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 
-	// 개장 직전 요약이라 **Event 에 쓸 수 있는 인원**이 전체보다 중요하다.
-	// 전체만 띄우면 프로그램에 묶인 인원까지 쓸 수 있다고 읽힌다.
+	// 프로그램은 인원을 묶지 않으므로 전체 인원이 곧 사건에 쓸 수 있는 인원이다.
 	SetTextOrHide(Text_StaffSummary, (Total >= 0 && Base >= 0 && Temporary >= 0)
-		? (Available >= 0
-			? FText::Format(
-				LOCTEXT("PrepCheck_StaffWithAvailable", "{0}명 (기본 {1} · 알바 {2}) · {3}명 사용 가능"),
-				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary), FText::AsNumber(Available))
-			: FText::Format(
-				LOCTEXT("PrepCheck_Staff", "{0}명 (기본 {1} · 알바 {2})"),
-				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary)))
+		? FText::Format(
+			LOCTEXT("PrepCheck_Staff", "{0}명 (기본 {1} · 고용 {2})"),
+			FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary))
 		: LOCTEXT("PrepCheck_Unknown", "아직 알 수 없습니다"));
 
 	const int32 ProgramCount = GetProgramCount();
@@ -514,15 +505,15 @@ void UFF_PrepPanelCheck::RefreshEstimate()
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 
 	const FFF_PrepDayEstimate Estimate = FFF_PrepCheckRules::BuildDayEstimate(
-		ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE,
-		ViewModel ? ViewModel->GetDailyStaffWageGold() : INDEX_NONE,
+		ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE,
+		ViewModel ? ViewModel->GetStaffHireCostGold() : INDEX_NONE,
 		// 수입은 **범위의 아래쪽**으로 잡는다. 위쪽으로 잡으면 개장 판단이 낙관적으로 기운다.
 		ExpectedVisitorsMin,
 		ViewModel ? ViewModel->GetAdmissionFeeGold() : INDEX_NONE,
 		ViewModel ? ViewModel->GetDailyVisitorGoal() : INDEX_NONE,
 		ViewModel ? ViewModel->GetDailyGoalBonusGold() : INDEX_NONE);
 
-	SetTextOrHide(Text_StaffWageCost, FormatGoldOrUnknown(Estimate.StaffWageCost));
+	SetTextOrHide(Text_StaffWageCost, FormatGoldOrUnknown(Estimate.StaffHireCost));
 	SetTextOrHide(Text_ExpectedAdmission, FormatGoldOrUnknown(Estimate.ExpectedAdmissionRevenue));
 	SetTextOrHide(Text_ExpectedGoalBonus, FormatGoldOrUnknown(Estimate.ExpectedGoalBonus));
 }

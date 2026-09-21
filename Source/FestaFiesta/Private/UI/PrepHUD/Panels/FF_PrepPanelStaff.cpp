@@ -40,7 +40,7 @@ FFF_PrepHireQuote FFF_PrepStaffRules::BuildQuote(
 	int32 DesiredCount,
 	int32 Affordable,
 	int32 RemainingCap,
-	int32 WagePerStaff,
+	int32 HireCostPerStaff,
 	int32 Gold)
 {
 	FFF_PrepHireQuote Result;
@@ -55,17 +55,17 @@ FFF_PrepHireQuote FFF_PrepStaffRules::BuildQuote(
 	Result.MaxHireable = FMath::Max(0, Affordable);
 	Result.SelectedCount = FMath::Clamp(DesiredCount, 0, Result.MaxHireable);
 
-	if (WagePerStaff == INDEX_NONE)
+	if (HireCostPerStaff == INDEX_NONE)
 	{
-		// 임금을 모르면 금액 칸을 비운다. 인원은 이미 소유자 판정에서 나온 값이라 유효하다.
+		// 고용비 단가를 모르면 금액 칸을 비운다. 인원은 이미 소유자 판정에서 나온 값이라 유효하다.
 		return Result;
 	}
 
-	Result.WageTotal = Result.SelectedCount * WagePerStaff;
+	Result.HireCostTotal = Result.SelectedCount * HireCostPerStaff;
 
 	if (Gold != INDEX_NONE)
 	{
-		Result.GoldAfterHire = Gold - Result.WageTotal;
+		Result.GoldAfterHire = Gold - Result.HireCostTotal;
 	}
 	return Result;
 }
@@ -78,11 +78,11 @@ void UFF_PrepPanelStaff::NativePreConstruct()
 {
 	Super::NativePreConstruct();
 
-	// ★ 하루짜리라는 안내는 비어 있으면 안 된다. 값을 안 넣은 WBP 도 문구가 나오게 기본을 채운다.
+	// ★ 영구 고용이라는 안내는 비어 있으면 안 된다. 값을 안 넣은 WBP 도 문구가 나오게 기본을 채운다.
 	if (DailyNoticeText.IsEmpty())
 	{
-		DailyNoticeText = LOCTEXT("PrepStaff_DailyNotice",
-			"알바는 하루짜리입니다. 다음 날에는 기본 팀만 남으므로 매일 다시 고용해야 합니다.");
+		DailyNoticeText = LOCTEXT("PrepStaff_HireNotice",
+			"고용한 인원은 축제가 끝날 때까지 남습니다. 일찍 뽑을수록 오래 씁니다.");
 	}
 
 	if (Text_DailyNotice)
@@ -165,9 +165,6 @@ void UFF_PrepPanelStaff::BindViewModel()
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
 
-	// 프로그램 편성은 전체 인원을 바꾸지 않는다. 이걸 함께 구독하지 않으면
-	// 프로그램을 편성한 뒤 `사용 가능` 숫자가 그대로 남는다.
-	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelStaff::HandleAvailableStaffCountChanged);
 }
 
 void UFF_PrepPanelStaff::UnbindViewModel()
@@ -177,7 +174,6 @@ void UFF_PrepPanelStaff::UnbindViewModel()
 	{
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleStaffCountChanged);
-		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelStaff::HandleAvailableStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -191,39 +187,34 @@ void UFF_PrepPanelStaff::RefreshAll()
 	const UFF_FestivalViewModelSubsystem* ViewModel = GetViewModel();
 
 	const int32 Base = ViewModel ? ViewModel->GetBaseStaffCount() : INDEX_NONE;
-	const int32 Temporary = ViewModel ? ViewModel->GetTemporaryStaffCount() : INDEX_NONE;
+	const int32 Hired = ViewModel ? ViewModel->GetHiredStaffCount() : INDEX_NONE;
 	const int32 Total = ViewModel ? ViewModel->GetTotalStaffCount() : INDEX_NONE;
-	const int32 Available = ViewModel ? ViewModel->GetAvailableStaffCount() : INDEX_NONE;
-	const int32 MaxPerDay = ViewModel ? ViewModel->GetMaxTemporaryStaffPerDay() : INDEX_NONE;
-	const int32 Wage = ViewModel ? ViewModel->GetDailyStaffWageGold() : INDEX_NONE;
+	const int32 MaxHired = ViewModel ? ViewModel->GetMaxHiredStaffCount() : INDEX_NONE;
+	const int32 HireCost = ViewModel ? ViewModel->GetStaffHireCostGold() : INDEX_NONE;
 	const int32 Gold = ViewModel ? ViewModel->GetGold() : INDEX_NONE;
 
 	Quote = FFF_PrepStaffRules::BuildQuote(
 		DesiredCount,
-		ViewModel ? ViewModel->GetAffordableTemporaryStaffCount() : INDEX_NONE,
-		ViewModel ? ViewModel->GetRemainingTemporaryStaffCap() : INDEX_NONE,
-		Wage,
+		ViewModel ? ViewModel->GetAffordableHireCount() : INDEX_NONE,
+		ViewModel ? ViewModel->GetRemainingHireCap() : INDEX_NONE,
+		HireCost,
 		Gold);
 
 	// --- 현재 인원 ---
 	//
-	// !! 전체 인원만 띄우면 안 된다 !! 프로그램에 묶인 인원은 Event 대응에 쓸 수 없다.
-	// 내역(기본 · 알바)은 이 화면에서 플레이어가 직접 바꾸는 숫자라 지우지 않고 뒤에 덧붙인다.
-	SetTextOrHide(Text_CurrentStaff, (Total >= 0 && Base >= 0 && Temporary >= 0)
-		? (Available >= 0
-			? FText::Format(
-				LOCTEXT("PrepStaff_CurrentWithAvailable", "{0}명 (기본 {1} · 알바 {2}) · {3}명 사용 가능"),
-				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary), FText::AsNumber(Available))
-			: FText::Format(
-				LOCTEXT("PrepStaff_Current", "{0}명 (기본 {1} · 알바 {2})"),
-				FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Temporary)))
+	// 내역(기본 · 고용)은 이 화면에서 플레이어가 직접 바꾸는 숫자라 지우지 않고 뒤에 덧붙인다.
+	// 프로그램은 인원을 묶지 않으므로 전체가 곧 사건에 쓸 수 있는 인원이다.
+	SetTextOrHide(Text_CurrentStaff, (Total >= 0 && Base >= 0 && Hired >= 0)
+		? FText::Format(
+			LOCTEXT("PrepStaff_Current", "{0}명 (기본 {1} · 고용 {2})"),
+			FText::AsNumber(Total), FText::AsNumber(Base), FText::AsNumber(Hired))
 		: FText::GetEmpty());
 
-	// 오늘 최대는 기본 팀 + 하루 상한이다. 상한만 쓰면 "최대 6명"으로 읽혀 절반이 사라진다.
-	SetTextOrHide(Text_MaxStaff, (Base >= 0 && MaxPerDay >= 0)
+	// 최대는 기본 팀 + 총원 상한이다. 상한만 쓰면 "최대 6명"으로 읽혀 절반이 사라진다.
+	SetTextOrHide(Text_MaxStaff, (Base >= 0 && MaxHired >= 0)
 		? FText::Format(
-			LOCTEXT("PrepStaff_Max", "오늘 최대 {0}명 (기본 {1} + 알바 {2})"),
-			FText::AsNumber(Base + MaxPerDay), FText::AsNumber(Base), FText::AsNumber(MaxPerDay))
+			LOCTEXT("PrepStaff_Max", "최대 {0}명 (기본 {1} + 고용 {2})"),
+			FText::AsNumber(Base + MaxHired), FText::AsNumber(Base), FText::AsNumber(MaxHired))
 		: FText::GetEmpty());
 
 	// --- 스텝퍼 ---
@@ -241,10 +232,10 @@ void UFF_PrepPanelStaff::RefreshAll()
 	}
 
 	// --- 견적 ---
-	SetTextOrHide(Text_WagePreview, (Quote.WageTotal != INDEX_NONE && Wage != INDEX_NONE)
+	SetTextOrHide(Text_WagePreview, (Quote.HireCostTotal != INDEX_NONE && HireCost != INDEX_NONE)
 		? FText::Format(
-			LOCTEXT("PrepStaff_WagePreview", "{0}명 × {1} = {2} Gold"),
-			FText::AsNumber(Quote.SelectedCount), FText::AsNumber(Wage), FText::AsNumber(Quote.WageTotal))
+			LOCTEXT("PrepStaff_HirePreview", "{0}명 × {1} = {2} Gold"),
+			FText::AsNumber(Quote.SelectedCount), FText::AsNumber(HireCost), FText::AsNumber(Quote.HireCostTotal))
 		: FText::GetEmpty());
 
 	SetTextOrHide(Text_GoldAfterHire, (Quote.GoldAfterHire != INDEX_NONE)
@@ -263,19 +254,19 @@ void UFF_PrepPanelStaff::RefreshAll()
 	switch (Quote.BlockReason)
 	{
 	case EFF_PrepHireBlockReason::CapReached:
-		BlockReason = (MaxPerDay >= 0)
+		BlockReason = (MaxHired >= 0)
 			? FText::Format(
-				LOCTEXT("PrepStaff_CapReached", "오늘 알바 상한 {0}명을 다 썼습니다. 내일 다시 고용할 수 있습니다."),
-				FText::AsNumber(MaxPerDay))
-			: LOCTEXT("PrepStaff_CapReachedNoMax", "오늘 알바 상한을 다 썼습니다. 내일 다시 고용할 수 있습니다.");
+				LOCTEXT("PrepStaff_CapReached", "고용 상한 {0}명을 다 썼습니다. 더 뽑을 수 없습니다."),
+				FText::AsNumber(MaxHired))
+			: LOCTEXT("PrepStaff_CapReachedNoMax", "고용 상한을 다 썼습니다. 더 뽑을 수 없습니다.");
 		break;
 
 	case EFF_PrepHireBlockReason::NotEnoughGold:
-		BlockReason = (Wage != INDEX_NONE)
+		BlockReason = (HireCost != INDEX_NONE)
 			? FText::Format(
-				LOCTEXT("PrepStaff_NotEnoughGold", "1명 임금 {0} Gold 를 낼 잔액이 없습니다."),
-				FText::AsNumber(Wage))
-			: LOCTEXT("PrepStaff_NotEnoughGoldNoWage", "임금을 낼 잔액이 없습니다.");
+				LOCTEXT("PrepStaff_NotEnoughGold", "1명 고용비 {0} Gold 를 낼 잔액이 없습니다."),
+				FText::AsNumber(HireCost))
+			: LOCTEXT("PrepStaff_NotEnoughGoldNoCost", "고용비를 낼 잔액이 없습니다.");
 		break;
 
 	case EFF_PrepHireBlockReason::Unknown:
@@ -292,9 +283,9 @@ void UFF_PrepPanelStaff::RefreshAll()
 	}
 	SetTextOrHide(Text_HireBlockReason, BlockReason);
 
-	// 오늘 나가는 돈은 알바 임금 하나뿐이다.
-	SetTextOrHide(Text_WageCost, (Temporary >= 0 && Wage != INDEX_NONE)
-		? FText::Format(LOCTEXT("PrepStaff_WageToday", "{0} / 일"), FText::AsNumber(Temporary * Wage))
+	// 이번 축제에 고용비로 쓴 누계다. 1회 구매라 "/ 일" 이 아니다.
+	SetTextOrHide(Text_WageCost, (Hired >= 0 && HireCost != INDEX_NONE)
+		? FText::Format(LOCTEXT("PrepStaff_HireSpent", "{0} (누계)"), FText::AsNumber(Hired * HireCost))
 		: FText::GetEmpty());
 }
 
@@ -341,7 +332,7 @@ void UFF_PrepPanelStaff::HandleHireClicked()
 
 	// !! 낙관적 갱신을 하지 않는다 !!
 	// 부분 고용이 없어서 실패하면 아무것도 바뀌지 않는다. 화면은 결과 이벤트로만 갱신된다.
-	if (!ViewModel->RequestHireTemporaryStaff(RequestCount))
+	if (!ViewModel->RequestHireStaff(RequestCount))
 	{
 		// 실패해도 이벤트가 오지 않으므로 여기서 한 번 다시 그린다 —
 		// 그러지 않으면 거부된 이유가 화면에 반영되지 않는다.
@@ -363,12 +354,6 @@ void UFF_PrepPanelStaff::HandleStaffCountChanged(int32 NewValue)
 	// 고용이 성공했으면 선택을 초기값으로 되돌린다. 그러지 않으면 같은 인원이 선택된 채로
 	// 남아 실수로 두 번 고용하기 쉽다.
 	DesiredCount = FMath::Max(0, DefaultSelectedCount);
-	RefreshAll();
-}
-
-void UFF_PrepPanelStaff::HandleAvailableStaffCountChanged(int32 NewValue)
-{
-	// 선택은 건드리지 않는다. 편성이 바뀌었을 뿐 이 화면에서 고른 인원은 그대로다.
 	RefreshAll();
 }
 

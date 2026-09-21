@@ -176,11 +176,11 @@ void UFF_LivePanelReport::RefreshAll()
 
 	// --- 운영 ---
 	const int32 TotalStaff = ViewModel->GetTotalStaffCount();
-	const int32 TempStaff = ViewModel->GetTemporaryStaffCount();
-	SetTextOrHide(Text_Staff, (TotalStaff >= 0 && TempStaff >= 0)
+	const int32 HiredStaff = ViewModel->GetHiredStaffCount();
+	SetTextOrHide(Text_Staff, (TotalStaff >= 0 && HiredStaff >= 0)
 		? FText::Format(
-			LOCTEXT("LiveReport_Staff", "{0}명 (알바 {1})"),
-			FText::AsNumber(TotalStaff), FText::AsNumber(TempStaff))
+			LOCTEXT("LiveReport_Staff", "{0}명 (고용 {1})"),
+			FText::AsNumber(TotalStaff), FText::AsNumber(HiredStaff))
 		: FText::GetEmpty());
 
 	SetTextOrHide(Text_Programs, FText::Format(

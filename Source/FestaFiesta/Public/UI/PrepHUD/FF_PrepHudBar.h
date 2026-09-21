@@ -283,7 +283,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UWidget> Box_VisitorCount;
 
-	/** `6명 (기본 4 · 알바 2)`. 축제 시작 전에는 숨긴다. */
+	/** `6명 (기본 4 · 고용 2)`. 축제 시작 전에는 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UTextBlock> Text_Staff;
 

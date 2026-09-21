@@ -417,37 +417,42 @@ void UFF_FestivalProgressionSubsystem::BeginNewDay(int32 NewDay)
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
 }
 
-bool UFF_FestivalProgressionSubsystem::TryHireTemporaryStaff(int32 RequestedCount)
+bool UFF_FestivalProgressionSubsystem::TryHireStaff(int32 RequestedCount)
 {
 	if (Definition == nullptr || RequestedCount <= 0) return false;
 
-	const int32 AlreadyHired = StaffPool.GetTemporaryStaffCount();
+	const int32 AlreadyHired = StaffPool.GetHiredStaffCount();
 	const int32 RemainingCap = GetRemainingHireCap();
-	
+
 	if (RequestedCount > RemainingCap)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 알바 고용 거부: 상한 초과 (오늘 %d명 + 요청 %d명 > 상한 %d명)"),
-			AlreadyHired, RequestedCount, Definition->MaxHiredStaffPerDay);
+			TEXT("[경제] 고용 거부: 총원 상한 초과 (고용 %d명 + 요청 %d명 > 상한 %d명)"),
+			AlreadyHired, RequestedCount, Definition->MaxHiredStaffCount);
 		return false;
 	}
 
-	const int32 Wage = FFF_StaffPool::CalcTemporaryStaffWage(
-		RequestedCount, Definition->DailyStaffWageGold);
+	const int32 Cost = FFF_StaffPool::CalcHireCost(
+		RequestedCount, Definition->StaffHireCostGold);
 
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 
-	// 일일 알바 채용이기 때문에 보유 Gold 내에서만 임금을 낸다. 즉, 지출 거부 가능하다.
-	if (!Funds.TrySpend(Wage))
+	// 고용은 플레이어가 고르는 지출이라 잔액 안에서만 낸다. 모자라면 거부하고 상태를 안 바꾼다.
+	if (!Funds.TrySpend(Cost))
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 알바 고용 거부: 잔액 부족 (임금 %d, 잔액 %d)"), Wage, Funds.GetGold());
+			TEXT("[경제] 고용 거부: 잔액 부족 (고용비 %d, 잔액 %d)"), Cost, Funds.GetGold());
 		return false;
 	}
 
-	StaffPool.SetTemporaryStaffCount(AlreadyHired + RequestedCount);
-	DayLedger.RecordSpend(EFF_SpendReason::StaffWages, Wage);
+	StaffPool.SetHiredStaffCount(AlreadyHired + RequestedCount);
+	DayLedger.RecordSpend(EFF_SpendReason::StaffHire, Cost);
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] Staff %d명 고용. 비용 %d, 총원 %d명(기본 %d + 고용 %d). 축제 끝까지 남는다"),
+		RequestedCount, Cost, StaffPool.GetTotalStaffCount(),
+		StaffPool.GetBaseStaffCount(), StaffPool.GetHiredStaffCount());
 
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
@@ -458,16 +463,17 @@ int32 UFF_FestivalProgressionSubsystem::GetRemainingHireCap() const
 {
 	if (Definition == nullptr) return 0;
 
+	// 축제 전체 상한이다. 하루 경계에서 다시 열리지 않는다.
 	return FMath::Max(0,
-		Definition->MaxHiredStaffPerDay - StaffPool.GetTemporaryStaffCount());
+		Definition->MaxHiredStaffCount - StaffPool.GetHiredStaffCount());
 }
 
-int32 UFF_FestivalProgressionSubsystem::GetAffordableTemporaryStaffCount() const
+int32 UFF_FestivalProgressionSubsystem::GetAffordableHireCount() const
 {
 	if (Definition == nullptr) return 0;
 
-	return StaffPool.CalcAffordableTemporaryStaffCount(
-		Definition->DailyStaffWageGold, Funds.GetGold(), GetRemainingHireCap());
+	return StaffPool.CalcAffordableHireCount(
+		Definition->StaffHireCostGold, Funds.GetGold(), GetRemainingHireCap());
 }
 
 EFF_FinalePurchaseResult UFF_FestivalProgressionSubsystem::TryPurchaseFinale(EFF_FinaleGrade Grade)
@@ -588,21 +594,6 @@ TArray<FName> UFF_FestivalProgressionSubsystem::GetScheduledProgramIds() const
 	return Ids;
 }
 
-int32 UFF_FestivalProgressionSubsystem::GetStaffAssignedToPrograms() const
-{
-	if (Definition == nullptr) return 0;
-
-	return FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(
-		Definition->ProgramCatalog, GetScheduledProgramIds());
-}
-
-int32 UFF_FestivalProgressionSubsystem::GetAvailableStaffCount() const
-{
-	// 음수로 내려가지 않게 한다. 카탈로그가 바뀌어 요구 인원이 늘어난 저장 슬롯을
-	// 불러오면 묶인 인원이 전체를 넘을 수 있다.
-	return FMath::Max(0, StaffPool.GetTotalStaffCount() - GetStaffAssignedToPrograms());
-}
-
 EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::CanScheduleProgram(
 	const FName ProgramId) const
 {
@@ -611,7 +602,7 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::CanScheduleProgram(
 	FFF_ProgramCard Unused;
 	return FFF_ProgramScheduleRules::EvaluatePurchase(
 		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
-		Funds.GetGold(), GetAvailableStaffCount(), Unused);
+		Funds.GetGold(), Unused);
 }
 
 EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
@@ -622,14 +613,14 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 	FFF_ProgramCard Card;
 	const EFF_ProgramPurchaseResult Result = FFF_ProgramScheduleRules::EvaluatePurchase(
 		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
-		Funds.GetGold(), GetAvailableStaffCount(), Card);
+		Funds.GetGold(), Card);
 
 	if (Result != EFF_ProgramPurchaseResult::Success)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 프로그램 편성 거부: %s (요청 %s, 잔액 %d, 남은 인원 %d)"),
+			TEXT("[경제] 프로그램 편성 거부: %s (요청 %s, 잔액 %d)"),
 			*UEnum::GetValueAsString(Result), *ProgramId.ToString(),
-			Funds.GetGold(), GetAvailableStaffCount());
+			Funds.GetGold());
 		return Result;
 	}
 
@@ -679,13 +670,13 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 	ScheduledPrograms.Add(FFF_ScheduledProgram{ ProgramId, ReservationId });
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] 프로그램 '%s' 편성. 비용 %d, 남은 Gold %d, 인원 %d명 묶임(남은 인원 %d), "
+		TEXT("[경제] 프로그램 '%s' 편성. 비용 %d, 남은 Gold %d, "
 			 "정원 %d명·체험비 %d, %.0f~%.0f분"),
 		*ProgramId.ToString(), Card.CostGold, Funds.GetGold(),
-		Card.RequiredStaff, GetAvailableStaffCount(), Card.Capacity, Card.FeePerPerson,
+		Card.Capacity, Card.FeePerPerson,
 		Card.StartMinutes, Card.EndMinutes);
 
-	// TrySpend 가 Gold 를 이미 쏘지만, 편성 목록·인원은 여기서만 바뀐다.
+	// TrySpend 가 Gold 를 이미 쏘지만, 편성 목록은 여기서만 바뀐다.
 	BroadcastGoldIfChanged(PreviousGold);
 	OnScheduledProgramsChanged.Broadcast();
 
@@ -947,10 +938,7 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	// 시설별 장부는 오늘 값만 0 으로 돌아가고 누적은 남는다 (시설 정보 패널의 "누적 매출").
 	FacilityRevenueBook.BeginNewDay();
 	
-	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.
-	StaffPool.SetTemporaryStaffCount(0);
-
-	// 프로그램 카드도 하루짜리다. 비우지 않으면 어제 편성이 오늘 인원을 계속 묶는다.
+	// 프로그램 카드도 하루짜리다. 비우지 않으면 어제 편성이 오늘 "이미 편성함" 으로 막는다.
 	// 슬롯까지 같이 지운다 — 어제 예약이 남아 있으면 오늘 스폰된 파티가 어제 시각에
 	// 잠기거나 퇴장을 막힌다.
 	const bool bHadPrograms = ScheduledPrograms.Num() > 0;
@@ -964,10 +952,10 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	ScheduledPrograms.Reset();
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] Day %d 시작. Gold %d, Staff %d명(기본 %d + 알바 %d)"),
+		TEXT("[경제] Day %d 시작. Gold %d, Staff %d명(기본 %d + 고용 %d)"),
 		NewDay, Funds.GetGold(),
 		StaffPool.GetTotalStaffCount(), StaffPool.GetBaseStaffCount(),
-		StaffPool.GetTemporaryStaffCount());
+		StaffPool.GetHiredStaffCount());
 
 	if (bHadPrograms)
 	{

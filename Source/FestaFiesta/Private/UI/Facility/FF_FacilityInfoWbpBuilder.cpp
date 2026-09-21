@@ -2799,7 +2799,6 @@ namespace FFFacilityInfoWbpBuilder
 				HasNamedVariable(Blueprint, TEXT("Button_ReturnToFacility"), *UButton::StaticClass()) &&
 				HasNamedVariable(Blueprint, TEXT("Text_ResourcePreview"), *UCommonTextBlock::StaticClass()) &&
 				HasNamedVariable(Blueprint, TEXT("Text_PreviewTime"), *UCommonTextBlock::StaticClass()) &&
-				HasNamedVariable(Blueprint, TEXT("Text_RequiredStaff"), *UCommonTextBlock::StaticClass()) &&
 				HasNamedVariable(Blueprint, TEXT("Text_Capacity"), *UCommonTextBlock::StaticClass()) &&
 				HasNamedVariable(Blueprint, TEXT("Text_TicketFee"), *UCommonTextBlock::StaticClass()) &&
 				HasNamedVariable(Blueprint, TEXT("Text_MaxRevenue"), *UCommonTextBlock::StaticClass()) &&
@@ -2845,14 +2844,15 @@ namespace FFFacilityInfoWbpBuilder
 		Time->SetAutoWrapText(true);
 		StyleLightText(*Time, 13, Palette->InGame.InkMuted, TEXT("Medium"));
 		Preview->InsertChildAt(1, Time);
-		const FName ValueNames[] = {TEXT("Text_RequiredStaff"), TEXT("Text_Capacity"), TEXT("Text_TicketFee")};
-		const TCHAR* MetricLabels[] = {TEXT("필요 인력"), TEXT("참가 정원"), TEXT("1인 참가비")};
-		for (int32 Index = 0; Index < 3; ++Index)
+		// 프로그램은 인력을 쓰지 않아 `필요 인력` 칸을 뺐다.
+		const FName ValueNames[] = {TEXT("Text_Capacity"), TEXT("Text_TicketFee")};
+		const TCHAR* MetricLabels[] = {TEXT("참가 정원"), TEXT("1인 참가비")};
+		for (int32 Index = 0; Index < 2; ++Index)
 		{
 			UBorder* Metric = BuildStatCard(Blueprint, Tree, *Palette, ValueNames[Index], MetricLabels[Index]);
 			if (!Metric) return false;
 			AddHorizontal(*Metrics, *Metric, FMargin(Index == 0 ? 0.0f : 3.0f, 0.0f,
-				Index == 2 ? 0.0f : 3.0f, 0.0f), ESlateSizeRule::Fill);
+				Index == 1 ? 0.0f : 3.0f, 0.0f), ESlateSizeRule::Fill);
 		}
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Preview->InsertChildAt(2, Metrics)))
 			Slot->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 10.0f));
@@ -2869,7 +2869,7 @@ namespace FFFacilityInfoWbpBuilder
 		AddHorizontal(*CostRow, *PurchaseCost);
 		if (UVerticalBoxSlot* Slot = Cast<UVerticalBoxSlot>(Footer->InsertChildAt(0, CostRow)))
 			Slot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 8.0f));
-		Resources->SetText(FText::FromString(TEXT("보유금 · 가용 인력")));
+		Resources->SetText(FText::FromString(TEXT("보유금")));
 		Resources->SetAutoWrapText(true);
 		StyleLightText(*Resources, 13, Palette->InGame.TealDeep, TEXT("SemiBold"));
 		AddVertical(*Body, *Resources, FMargin(2.0f, 10.0f));
@@ -2888,7 +2888,7 @@ namespace FFFacilityInfoWbpBuilder
 		ReceiptName->SetText(FText::FromString(TEXT("프로그램명")));
 		ReceiptName->SetAutoWrapText(true);
 		StyleLightText(*ReceiptName, 24, Palette->InGame.TealDeep, TEXT("SemiBold"));
-		ReceiptResources->SetText(FText::FromString(TEXT("남은 보유금 · 가용 인력")));
+		ReceiptResources->SetText(FText::FromString(TEXT("남은 보유금")));
 		ReceiptResources->SetAutoWrapText(true);
 		StyleLightText(*ReceiptResources, 16, Palette->InGame.TealDeep, TEXT("SemiBold"));
 		Receipt->SetText(FText::FromString(TEXT("프로그램 구매가 완료되었습니다.")));

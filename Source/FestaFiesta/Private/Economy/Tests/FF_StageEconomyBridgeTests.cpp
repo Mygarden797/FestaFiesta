@@ -290,7 +290,7 @@ bool FFF_StageEconomyBridge_OtherStagesDoNotSettle::RunTest(const FString& Param
 // 🔴 2회차 축제가 1회차 값을 물려받지 않는다 (§B0).
 //
 // GameInstance 는 OpenLevel 을 넘어 살아남아서 경제의 Initialize 는 게임을 켤 때 한 번만
-// 돈다. 이 신호가 없으면 프론트엔드를 다녀온 뒤 Gold·원장·미납·인원·예약이 1회차 마지막
+// 돈다. 이 신호가 없으면 프론트엔드를 다녀온 뒤 Gold·원장·인원·예약이 1회차 마지막
 // 값으로 남는다 — 크래시도 로그도 없이 두 번째 판이 처음부터 망가진 채로 시작한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageEconomyBridge_FestivalStartedResetsEconomy, "FestaFiesta.Economy.StageEconomyBridge.FestivalStartedResetsEconomy", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_StageEconomyBridge_FestivalStartedResetsEconomy::RunTest(const FString& Parameters)

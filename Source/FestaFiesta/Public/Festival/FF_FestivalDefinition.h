@@ -64,18 +64,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Initial", meta = (ClampMin = "0"))
 	int32 InitialStaffCount = 6;
 
-	// --- 스태프 임금 -----------------------------------------------------------
-	
-	// 기본 Staff 는 무페이이고 임금은 1일 알바에만 붙는다.
-	
-	// Staff 임금 (Gold/명·일). [기획서] §8.2
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Recurring", meta = (ClampMin = "0"))
-	int32 DailyStaffWageGold = 150;
+	// --- 스태프 고용 -----------------------------------------------------------
 
-	// 하루에 고용할 수 있는 알바 상한 (명). [밸런스]
+	// 기본 Staff 는 무페이다. 추가 인원은 **1회 구매이고 축제가 끝날 때까지 남는다** —
+	// 매일 다시 뽑는 일당 알바가 아니다.
+	//
+	// 영구라서 값어치가 남은 날짜에 비례한다. 고정가라 일찍 살수록 이득이고,
+	// 그것을 규칙으로 받아들인 것이다(Day2·3 의 수요는 숙련도 강화가 담당한다).
+
+	// 1명 고용 비용 (Gold, 1회). [밸런스]
+	// 예전 일당 150 x 3일 = 450 이 등가 기준점이었다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Staff", meta = (ClampMin = "0"))
+	int32 StaffHireCostGold = 450;
+
+	// 축제 전체에서 고용할 수 있는 인원 상한 (명). [밸런스]
+	// [주의] '하루 상한' 이 아니라 **총원 상한** 이다. 영구 고용이라 하루로 끊으면
+	//        상한이 사실상 없어진다(사흘이면 18명).
 	// 기본 6명 대비 +6 이면 최대 12명
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Recurring", meta = (ClampMin = "0"))
-	int32 MaxHiredStaffPerDay = 6;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Staff", meta = (ClampMin = "0"))
+	int32 MaxHiredStaffCount = 6;
 
 	// --- 수익원 -----------------------------------------------------------
 

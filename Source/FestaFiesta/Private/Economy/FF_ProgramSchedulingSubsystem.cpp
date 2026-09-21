@@ -30,8 +30,6 @@ namespace
 			return EFF_PaidProgramScheduleResult::UnknownProgram;
 		case EFF_ProgramPurchaseResult::AlreadyScheduled:
 			return EFF_PaidProgramScheduleResult::AlreadyScheduled;
-		case EFF_ProgramPurchaseResult::NotEnoughStaff:
-			return EFF_PaidProgramScheduleResult::NotEnoughStaff;
 		case EFF_ProgramPurchaseResult::InsufficientGold:
 			return EFF_PaidProgramScheduleResult::InsufficientGold;
 		case EFF_ProgramPurchaseResult::FacilityTypeMismatch:
@@ -133,8 +131,8 @@ EFF_PaidProgramScheduleResult UFF_ProgramSchedulingSubsystem::EvaluateCommand(
 		return EFF_PaidProgramScheduleResult::FacilityTypeMismatch;
 	}
 
-	// 호환되지 않는 카드는 현재 Gold/Staff와 무관하게 picker가 일관되게 숨길 수 있도록
-	// 시설 타입을 먼저 판정하고, 그 뒤 기존 경제 규칙(중복→Staff→Gold)을 적용한다.
+	// 호환되지 않는 카드는 현재 Gold와 무관하게 picker가 일관되게 숨길 수 있도록
+	// 시설 타입을 먼저 판정하고, 그 뒤 기존 경제 규칙(중복→Gold)을 적용한다.
 	const EFF_PaidProgramScheduleResult EconomyResult =
 		MapEconomyResult(OutProgression->CanScheduleProgram(ProgramId));
 	if (EconomyResult != EFF_PaidProgramScheduleResult::Success)
@@ -262,7 +260,6 @@ FText UFF_ProgramSchedulingSubsystem::GetResultText(const EFF_PaidProgramSchedul
 	case EFF_PaidProgramScheduleResult::FacilityUnavailable: return LOCTEXT("FacilityUnavailable", "설치가 확정되고 운영 전인 시설에만 편성할 수 있습니다.");
 	case EFF_PaidProgramScheduleResult::UnknownProgram: return LOCTEXT("UnknownProgram", "선택한 프로그램 정보를 찾을 수 없습니다.");
 	case EFF_PaidProgramScheduleResult::AlreadyScheduled: return LOCTEXT("AlreadyScheduled", "이 프로그램은 오늘 이미 편성했습니다.");
-	case EFF_PaidProgramScheduleResult::NotEnoughStaff: return LOCTEXT("NotEnoughStaff", "프로그램에 배치할 인원이 부족합니다.");
 	case EFF_PaidProgramScheduleResult::InsufficientGold: return LOCTEXT("InsufficientGold", "프로그램 구매에 필요한 Gold가 부족합니다.");
 	case EFF_PaidProgramScheduleResult::FacilityTypeMismatch: return LOCTEXT("FacilityTypeMismatch", "이 프로그램은 선택한 시설에서 운영할 수 없습니다.");
 	case EFF_PaidProgramScheduleResult::FacilityTimeConflict: return LOCTEXT("FacilityTimeConflict", "이 시설의 다른 프로그램과 운영 시간이 겹칩니다.");

@@ -16,13 +16,13 @@
  * 네 가지를 못으로 박는다 —
  *   ① 모르는 값이 `여유` 나 `0` 으로 바뀌지 않는 것
  *   ② 경계값이 뒤집혀 설정돼도 더 심한 판정이 남는 것
- *   ③ 임금을 모를 때 0 으로 바꾸지 않는 것
+ *   ③ 고용비를 모를 때 0 으로 바꾸지 않는 것
  *   ④ 목표 보너스의 `0`(못 받음)과 `모름`이 구분되는 것
  */
 namespace FFF_PrepCheckRulesTestHelpers
 {
 	/** 첫 축제 기준값. 규칙 자체는 이 숫자를 모른다 — 전부 인자로 들어간다. */
-	constexpr int32 WagePerStaff = 150;
+	constexpr int32 HireCostPerStaff = 450;
 	constexpr int32 AdmissionFee = 5;
 	constexpr int32 DailyGoal = 500;
 	constexpr int32 GoalBonus = 300;
@@ -90,46 +90,46 @@ bool FFF_PrepCheckRules_CapacityBands::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 오늘 나가는 돈은 알바 임금 하나뿐이다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_StaffWageCost, "FestaFiesta.UI.PrepCheck.StaffWageCost", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_PrepCheckRules_StaffWageCost::RunTest(const FString& Parameters)
+// 오늘 나가는 돈은 고용비 하나뿐이다. 1회 구매라 단가 × 고용한 인원이다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_PrepCheckRules_StaffHireCost, "FestaFiesta.UI.PrepCheck.StaffHireCost", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_PrepCheckRules_StaffHireCost::RunTest(const FString& Parameters)
 {
 	using namespace FFF_PrepCheckRulesTestHelpers;
 
-	// 알바 3명 — 450.
+	// 고용 3명 — 450 × 3.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*TempStaff*/ 3, WagePerStaff,
+			/*Hired*/ 3, HireCostPerStaff,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
-		TestEqual(TEXT("알바 임금 450"), E.StaffWageCost, 450);
+		TestEqual(TEXT("고용비 1,350"), E.StaffHireCost, 1350);
 	}
 
-	// 알바 0명 — 임금 0 은 확정 정보다. `모름` 으로 바뀌면 안 된다.
+	// 고용 0명 — 0 은 확정 정보다. `모름` 으로 바뀌면 안 된다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*TempStaff*/ 0, WagePerStaff,
+			/*Hired*/ 0, HireCostPerStaff,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
-		TestEqual(TEXT("알바 0명이면 임금 0"), E.StaffWageCost, 0);
+		TestEqual(TEXT("고용 0명이면 고용비 0"), E.StaffHireCost, 0);
 	}
 
-	// 임금을 모르면 비운다. 0 으로 바꾸면 "오늘 나갈 돈이 없다"는 확정 사실이 된다.
+	// 단가를 모르면 비운다. 0 으로 바꾸면 "오늘 나갈 돈이 없다"는 확정 사실이 된다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*TempStaff*/ 3, /*Wage*/ INDEX_NONE,
+			/*Hired*/ 3, /*HireCost*/ INDEX_NONE,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
-		TestEqual(TEXT("임금은 비운다"), E.StaffWageCost, static_cast<int32>(INDEX_NONE));
+		TestEqual(TEXT("고용비는 비운다"), E.StaffHireCost, static_cast<int32>(INDEX_NONE));
 	}
 
-	// 인원을 모르면(축제 시작 전) 임금도 비운다.
+	// 인원을 모르면(축제 시작 전) 고용비도 비운다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			/*TempStaff*/ INDEX_NONE, WagePerStaff,
+			/*Hired*/ INDEX_NONE, HireCostPerStaff,
 			INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
-		TestEqual(TEXT("인원을 모르면 임금도 모른다"), E.StaffWageCost, static_cast<int32>(INDEX_NONE));
+		TestEqual(TEXT("인원을 모르면 고용비도 모른다"), E.StaffHireCost, static_cast<int32>(INDEX_NONE));
 	}
 	return true;
 }
@@ -143,7 +143,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 목표 달성 — 600명 × 5 = 3,000 수입 + 보너스 300.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, WagePerStaff, /*Expected*/ 600, AdmissionFee, DailyGoal, GoalBonus);
+			0, HireCostPerStaff, /*Expected*/ 600, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("입장료 수입 3,000"), E.ExpectedAdmissionRevenue, 3000);
 		TestEqual(TEXT("목표를 넘으면 보너스"), E.ExpectedGoalBonus, 300);
@@ -152,7 +152,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 경계 — 목표와 같으면 달성이다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, WagePerStaff, /*Expected*/ 500, AdmissionFee, DailyGoal, GoalBonus);
+			0, HireCostPerStaff, /*Expected*/ 500, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("목표와 같으면 달성"), E.ExpectedGoalBonus, 300);
 	}
@@ -160,7 +160,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 미달 — 0 은 `모름` 이 아니라 "못 받는다"는 확정 정보다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, WagePerStaff, /*Expected*/ 400, AdmissionFee, DailyGoal, GoalBonus);
+			0, HireCostPerStaff, /*Expected*/ 400, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("미달이면 보너스 0"), E.ExpectedGoalBonus, 0);
 		TestEqual(TEXT("수입은 그대로 계산된다"), E.ExpectedAdmissionRevenue, 2000);
@@ -169,7 +169,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 예상 방문객을 모르면 수입과 보너스를 둘 다 비운다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, WagePerStaff, /*Expected*/ INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
+			0, HireCostPerStaff, /*Expected*/ INDEX_NONE, AdmissionFee, DailyGoal, GoalBonus);
 
 		TestEqual(TEXT("수입을 비운다"), E.ExpectedAdmissionRevenue, static_cast<int32>(INDEX_NONE));
 		TestEqual(TEXT("보너스도 비운다 — 0 으로 두면 못 받는다는 뜻이 된다"),
@@ -179,7 +179,7 @@ bool FFF_PrepCheckRules_RevenueAndBonus::RunTest(const FString& Parameters)
 	// 목표를 모르면 보너스만 비우고 수입은 계산한다.
 	{
 		const FFF_PrepDayEstimate E = FFF_PrepCheckRules::BuildDayEstimate(
-			0, WagePerStaff, 600, AdmissionFee, /*Goal*/ INDEX_NONE, GoalBonus);
+			0, HireCostPerStaff, 600, AdmissionFee, /*Goal*/ INDEX_NONE, GoalBonus);
 
 		TestEqual(TEXT("수입은 계산된다"), E.ExpectedAdmissionRevenue, 3000);
 		TestEqual(TEXT("보너스는 비운다"), E.ExpectedGoalBonus, static_cast<int32>(INDEX_NONE));

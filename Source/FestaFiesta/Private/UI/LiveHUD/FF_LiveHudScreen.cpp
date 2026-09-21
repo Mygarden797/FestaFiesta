@@ -148,10 +148,7 @@ void UFF_LiveHudScreen::BindViewModel()
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
 
-	// 🔴 전체 인원과 가용 인원 **둘 다** 받는다. 프로그램 편성은 전체를 바꾸지 않고,
-	// 알바 고용은 편성을 바꾸지 않는다 — 하나만 받으면 한쪽 변화를 놓친다.
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
-	CachedViewModel->OnAvailableStaffCountChanged.AddUniqueDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
 }
 
 void UFF_LiveHudScreen::UnbindViewModel()
@@ -166,7 +163,6 @@ void UFF_LiveHudScreen::UnbindViewModel()
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleGoldChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleTodayRevenueChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
-		CachedViewModel->OnAvailableStaffCountChanged.RemoveDynamic(this, &UFF_LiveHudScreen::HandleStaffCountChanged);
 	}
 	CachedViewModel = nullptr;
 }
@@ -715,14 +711,10 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 	SetGroupTextOrHide(Box_TodayRevenue, Text_TodayRevenue,
 		FText::AsNumber(ViewModel->GetTodayRevenue()));
 
-	// 🔴 전체만 띄우지 않는다. 프로그램에 묶인 인원은 Event 대응에 못 쓴다 —
-	// 라이브에서는 그 구분이 준비 단계보다 더 중요하다.
+	// 프로그램은 인원을 묶지 않는다. 배치 개념은 사건 시스템이 와야 생긴다.
 	const int32 TotalStaff = ViewModel->GetTotalStaffCount();
-	const int32 AvailableStaff = ViewModel->GetAvailableStaffCount();
-	SetGroupTextOrHide(Box_Staff, Text_Staff, (TotalStaff >= 0 && AvailableStaff >= 0)
-		? FText::Format(
-			LOCTEXT("LiveStatus_Staff", "{0}명 중 {1}명 사용 가능"),
-			FText::AsNumber(TotalStaff), FText::AsNumber(AvailableStaff))
+	SetGroupTextOrHide(Box_Staff, Text_Staff, (TotalStaff >= 0)
+		? FText::Format(LOCTEXT("LiveStatus_Staff", "{0}명"), FText::AsNumber(TotalStaff))
 		: FText::GetEmpty());
 
 	// 🔴 이 값은 **동시 인원**이다 (지금 축제장 안에 있는 사람 수).
@@ -1018,8 +1010,8 @@ void UFF_LiveHudScreen::RefreshCta()
 
 void UFF_LiveHudScreen::HandleStaffCountChanged(int32 NewValue)
 {
-	// !! 인자를 쓰지 않는다 !! 전체 인원과 가용 인원 두 델리게이트가 함께 부른다.
-	// 인자를 믿으면 가용 인원이 울렸을 때 그 숫자가 전체 자리에 들어간다.
+	// !! 인자를 쓰지 않는다 !! 값이 울릴 때마다 전체를 다시 읽는다 —
+	// 인자를 믿으면 다른 지표가 울렸을 때 그 숫자가 인원 자리에 들어간다.
 	RefreshStatusRow();
 }
 

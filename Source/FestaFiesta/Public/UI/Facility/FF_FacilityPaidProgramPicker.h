@@ -39,7 +39,7 @@ public:
 
 	/** Called only after the authoritative scheduling transaction succeeds. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Facility Info|Paid Program")
-	void ShowPurchaseComplete(FName ProgramId, int32 RemainingGold, int32 RemainingStaff);
+	void ShowPurchaseComplete(FName ProgramId, int32 RemainingGold);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Facility Info|Paid Program")
 	void OnViewDataApplied(const FFF_FacilityPaidProgramPickerViewData& ViewData);
@@ -89,8 +89,6 @@ private:
 	TObjectPtr<UCommonTextBlock> Text_ResourcePreview;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_PreviewTime;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UCommonTextBlock> Text_RequiredStaff;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UCommonTextBlock> Text_Capacity;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))

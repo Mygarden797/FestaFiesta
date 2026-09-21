@@ -177,7 +177,12 @@ public:
 	
 	
 	// --- Staff ------------------------------------------------------------
-	
+	//
+	// 고용은 1회 구매이고 축제가 끝날 때까지 남는다. 하루 경계에서 줄지 않는다.
+	// [주의] 스태프는 시설 성능(회전율·객단가)에도, 유료 프로그램 편성에도 관여하지 않는다.
+	//        시설은 시설 강화가 올리고, 프로그램은 Gold 로만 산다. 스태프가 쓰일 곳은
+	//        앞으로 붙을 사건 대응뿐이다.
+
 	// 무페이 기본 Staff.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetBaseStaffCount() const
@@ -185,32 +190,33 @@ public:
 		return StaffPool.GetBaseStaffCount();
 	}
 
-	// 오늘 고용한 알바. 임금을 낸 만큼이다.
+	// 이번 축제에 고용한 인원. 돈을 낸 만큼이고 남은 날 내내 유지된다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetTemporaryStaffCount() const
+	int32 GetHiredStaffCount() const
 	{
-		return StaffPool.GetTemporaryStaffCount();
+		return StaffPool.GetHiredStaffCount();
 	}
 
-	// 오늘 실제로 일하는 전체 인원.
+	// 지금 일하는 전체 인원.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetTotalStaffCount() const
 	{
 		return StaffPool.GetTotalStaffCount();
 	}
-	
-	// 오늘 알바를 RequestedCount 명 고용하고 임금 지불
+
+	// RequestedCount 명을 고용하고 비용을 지불한다. 축제가 끝날 때까지 남는다.
+	// 잔액이 모자라거나 총원 상한을 넘으면 거부하고 상태를 전혀 바꾸지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
-	bool TryHireTemporaryStaff(int32 RequestedCount);
-	
+	bool TryHireStaff(int32 RequestedCount);
+
 	// 지금 잔액으로 추가 고용할 수 있는 최대 인원. 상태를 바꾸지 않는다.
 	// UI 슬라이더 상한과 버튼 비활성화 판정용.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetAffordableTemporaryStaffCount() const;
+	int32 GetAffordableHireCount() const;
 
-	// 오늘 하루 상한까지 남은 고용 가능 인원. 잔액은 보지 않는다.
-	// `GetAffordableTemporaryStaffCount()`과 다르면 막은 것이 상한인지 돈인지 화면에서 구분할 수 있다.
-	// [주의] "왜 더 못 뽑는가"를 화면에 쓰기 위한 것이다. 고용 가능 판정에 쓰지 말 것. 
+	// 축제 총원 상한까지 남은 고용 가능 인원. 잔액은 보지 않는다.
+	// `GetAffordableHireCount()`과 다르면 막은 것이 상한인지 돈인지 화면에서 구분할 수 있다.
+	// [주의] "왜 더 못 뽑는가"를 화면에 쓰기 위한 것이다. 고용 가능 판정에 쓰지 말 것.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetRemainingHireCap() const;
 
@@ -272,15 +278,6 @@ public:
 	// 오늘 편성한 카드와 그 예약 핸들. 하루 경계에서 비워진다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	TArray<FFF_ScheduledProgram> GetScheduledPrograms() const { return ScheduledPrograms; }
-
-	// 오늘 프로그램에 묶여 있는 인원.
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetStaffAssignedToPrograms() const;
-
-	// vent 대응에 쓸 수 있는 인원 = 전체 − 프로그램에 묶인 인원.
-	// 즉, 프로그램을 편성하면 줄어든다.
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
-	int32 GetAvailableStaffCount() const;
 
 	// 편성 가능한지만 본다. 상태를 바꾸지 않으므로 버튼 활성화·툴팁에 그대로 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
@@ -399,7 +396,7 @@ private:
 	// LastProcessedDay 와 하루 어긋난다 (닫힌 날 vs 열린 날). 둘을 섞어 쓰지 않는다.
 	int32 EndedDay = 0;
 
-	// 무페이 기본 팀 + 오늘 고용한 알바.
+	// 무페이 기본 팀 + 지금까지 고용한 인원.
 	FFF_StaffPool StaffPool;
 
 	// 하루 경계를 마지막으로 처리한 날. 같은 날 중복 처리를 막는 수단이다.

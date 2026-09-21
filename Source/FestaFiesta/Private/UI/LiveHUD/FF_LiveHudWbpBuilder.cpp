@@ -474,8 +474,10 @@ namespace FFLiveHudWbpBuilder
 
 		// --- 주의 항목. 없으면 줄째 접힌다 ---
 		StyleText(*WarningText, 13, Palette->InGame.Amber, TEXT("Medium"));
+		// 미리보기 문구다. 런타임에는 띄울 것이 없어 칸째 접히고, 사건·대기열 원인이
+		// 붙으면 그때 채워진다. 없는 규칙(임대료·미납)을 여기 적어 두면 읽는 사람이 믿는다.
 		WarningText->SetText(LOCTEXT("LiveOpsPreview_Warning",
-			"임대료 2,400 이 밀려 있습니다. 매출이 들어와도 잔액이 늘지 않습니다."));
+			"3번 구역 화장실 대기가 길어지고 있습니다."));
 		WarningText->SetAutoWrapText(true);
 		if (UHorizontalBoxSlot* Slot_WarningText = WarningBox->AddChildToHorizontalBox(WarningText))
 		{
@@ -597,8 +599,8 @@ namespace FFLiveHudWbpBuilder
 				TEXT("Text_TotalStaff"), LOCTEXT("LiveStaff_Total", "전체 인원"),
 				LOCTEXT("LiveStaffPreview_Total", "12명"))
 			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
-				TEXT("Text_AssignedStaff"), LOCTEXT("LiveStaff_Assigned", "프로그램 배치"),
-				LOCTEXT("LiveStaffPreview_Assigned", "5명"))
+				TEXT("Text_AssignedStaff"), LOCTEXT("LiveStaff_Assigned", "사건 대응"),
+				LOCTEXT("LiveStaffPreview_Assigned", "0명"))
 			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
 				TEXT("Text_IdleStaff"), LOCTEXT("LiveStaff_Idle", "남는 인원"),
 				LOCTEXT("LiveStaffPreview_Idle", "7명"));
@@ -614,9 +616,9 @@ namespace FFLiveHudWbpBuilder
 			Slot_Summary->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
 		}
 
-		// 전체 숫자만으로는 내일 몇 명이 남는지 알 수 없다. 알바는 하루짜리다.
+		// 전체 숫자만으로는 기본 팀과 고용 인원의 비율을 알 수 없다.
 		StyleText(*Breakdown, 13, Palette->InGame.InkMuted, TEXT("Medium"));
-		Breakdown->SetText(LOCTEXT("LiveStaffPreview_Breakdown", "기본 6 · 알바 6"));
+		Breakdown->SetText(LOCTEXT("LiveStaffPreview_Breakdown", "기본 6 · 고용 6"));
 		if (UVerticalBoxSlot* Slot_Breakdown = Content->AddChildToVerticalBox(Breakdown))
 		{
 			Slot_Breakdown->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -626,7 +628,7 @@ namespace FFLiveHudWbpBuilder
 		// !! 숫자만 두지 않는다 !! 남는 것이 좋은 일인지 나쁜 일인지 숫자로는 알 수 없다 (AT-011).
 		StyleText(*IdleNote, 13, Palette->InGame.Amber, TEXT("Medium"));
 		IdleNote->SetText(LOCTEXT("LiveStaffPreview_IdleNote",
-			"임금은 그대로 나가는데 아무 프로그램에도 묶여 있지 않습니다."));
+			"사건이 나면 이 인원이 대응에 들어갑니다."));
 		IdleNote->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_IdleNote = Content->AddChildToVerticalBox(IdleNote))
 		{
@@ -654,7 +656,7 @@ namespace FFLiveHudWbpBuilder
 
 		StyleText(*AssignEmpty, 13, Palette->InGame.InkFaint, TEXT("Medium"));
 		AssignEmpty->SetText(LOCTEXT("LiveStaffPreview_AssignEmpty",
-			"오늘 편성한 유료 프로그램이 없어 인력이 묶여 있지 않습니다."));
+			"지금 대응 중인 사건이 없습니다."));
 		AssignEmpty->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_AssignEmpty = Content->AddChildToVerticalBox(AssignEmpty))
 		{
@@ -665,7 +667,7 @@ namespace FFLiveHudWbpBuilder
 
 		// --- 비용과 안내 ---
 		StyleText(*Wage, 13, Palette->InGame.Ink, TEXT("Medium"));
-		Wage->SetText(LOCTEXT("LiveStaffPreview_Wage", "오늘 알바 임금 900 / 일"));
+		Wage->SetText(LOCTEXT("LiveStaffPreview_HireCost", "1명 고용비 450"));
 		if (UVerticalBoxSlot* Slot_Wage = Content->AddChildToVerticalBox(Wage))
 		{
 			Slot_Wage->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -676,7 +678,7 @@ namespace FFLiveHudWbpBuilder
 		// ★ 못 하는 것은 흐려 놓지 말고 이유를 적는다 (AT-011 과 같은 이유).
 		StyleText(*HireNote, 12, Palette->InGame.InkMuted, TEXT("Medium"));
 		HireNote->SetText(LOCTEXT("LiveStaffPreview_HireNote",
-			"알바는 하루짜리라 셋업과 개장 준비에서만 뽑습니다. 라이브 중에는 늘릴 수 없습니다."));
+			"고용은 셋업과 개장 준비에서만 합니다. 라이브 중에는 늘릴 수 없습니다."));
 		HireNote->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_HireNote = Content->AddChildToVerticalBox(HireNote))
 		{
@@ -1554,7 +1556,7 @@ namespace FFLiveHudWbpBuilder
 		// --- 운영 ---
 		const bool bOpsOk =
 			AddMetricCell(Blueprint, Tree, *OpsRow, *Palette, TEXT("Text_Staff"),
-				LOCTEXT("LiveReport_Staff", "인력"), LOCTEXT("LiveReportPv_Staff", "12명 (알바 6)"))
+				LOCTEXT("LiveReport_Staff", "인력"), LOCTEXT("LiveReportPv_Staff", "12명 (고용 6)"))
 			&& AddMetricCell(Blueprint, Tree, *OpsRow, *Palette, TEXT("Text_Programs"),
 				LOCTEXT("LiveReport_Programs", "편성한 프로그램"), LOCTEXT("LiveReportPv_Programs", "2개"));
 		if (!bOpsOk)
@@ -2270,11 +2272,75 @@ namespace FFLiveHudWbpBuilder
 			LiveLogPrefix);
 	}
 
+	/**
+	 * 임대료·미납이 없어지면서 칸이 빠진 WBP 2종(결산 패널·HUD 화면)만 다시 굽는다.
+	 *
+	 * `FF.LiveHudUMG` 는 이미 있는 자산에 손대지 않으므로 **위젯이 사라진 변경은 자산에
+	 * 영원히 반영되지 않는다.** 결산 패널과 HUD 화면에 `Text_Arrears`·`Box_Arrears` 가
+	 * 죽은 채로 남아, 구워 둔 `미납` 문구가 그대로 화면에 나간다.
+	 *
+	 * !! 🔴 파괴적이다 !! 이 2종의 디자이너 수정은 사라진다.
+	 */
+	void RebuildLiveHudStaffUmg()
+	{
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_REBUILD_BEGIN: 결산 패널·라이브 HUD 화면을 다시 굽는다. "
+				 "이 2종의 디자이너 수정은 사라진다."),
+			LiveLogPrefix);
+
+		ReplaceWidgetBlueprint(
+			LiveLogPrefix,
+			ReportPanelPackage,
+			LivePanelsFolder,
+			*UFF_LivePanelReport::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildReportPanel(Blueprint, Tree);
+			});
+
+		// [주의] 인력 패널(WBP_FF_LivePanelStaff)은 **일부러 뺐다.** 죽은 위젯이 없어서
+		// 다시 구울 이유가 없다 — 그 패널의 칸은 전부 바인딩이 살아 있고 런타임에 C++ 가
+		// 덮어쓴다. 필요 없는 자산까지 굽으면 남의 디자이너 작업만 더 지운다.
+
+		// 화면 본체에도 상단 미납 칸(Box_Arrears)이 남아 있다. 탭 버튼 클래스가 있어야
+		// 만들 수 있으므로 못 얻으면 화면만 건너뛴다 — 위 둘은 이미 처리됐다.
+		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
+		if (TabButtonClass)
+		{
+			ReplaceWidgetBlueprint(
+				LiveLogPrefix,
+				ScreenPackage,
+				LiveFolder,
+				*UFF_LiveHudScreen::StaticClass(),
+				[TabButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+				{
+					return BuildScreen(Blueprint, Tree, *TabButtonClass);
+				});
+		}
+		else
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: 탭 버튼 클래스를 얻지 못해 화면은 그대로 뒀다 (%s). "
+					 "상단 미납 칸이 남는다."),
+				LiveLogPrefix, *TabButtonPackage);
+		}
+
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_REBUILD_END: 미납 칸이 자산에서 빠졌다."),
+			LiveLogPrefix);
+	}
+
 	FAutoConsoleCommand LiveHudUmgCommand(
 		TEXT("FF.LiveHudUMG"),
 		TEXT("라이브 운영 HUD 의 WBP 4종(탭 버튼·자리표시 패널·운영 패널·라이브 HUD)을 만든다. "
 			 "이미 있으면 건드리지 않는다."),
 		FConsoleCommandDelegate::CreateStatic(&RunLiveHudUmg));
+
+	FAutoConsoleCommand RebuildLiveHudStaffUmgCommand(
+		TEXT("FF.RebuildLiveHudStaffUI"),
+		TEXT("결산 패널·라이브 HUD 화면을 다시 굽는다. 임대료·미납이 없어지면서 자산에만 남은 칸을 걷어낸다. "
+			 "🔴 이 2종의 디자이너 수정은 사라진다."),
+		FConsoleCommandDelegate::CreateStatic(&RebuildLiveHudStaffUmg));
 }
 
 #undef LOCTEXT_NAMESPACE

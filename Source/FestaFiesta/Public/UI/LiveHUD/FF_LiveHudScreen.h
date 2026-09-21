@@ -104,7 +104,7 @@ protected:
 	UFUNCTION()
 	void HandleCtaClicked();
 
-	/** 전체 인원과 가용 인원 **양쪽**이 이 핸들러를 부른다. 인자를 믿지 않는다. */
+	/** 값이 울릴 때마다 전체를 다시 읽는다. 인자를 믿지 않는다. */
 	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
 
@@ -217,8 +217,7 @@ protected:
 	TObjectPtr<UWidget> Box_TodayRevenue;
 
 	/**
-	 * `6명 중 4명 사용 가능`. **전체만 띄우지 않는다** — 프로그램에 묶인 인원은
-	 * Event 대응에 못 쓴다. 라이브에서는 그 구분이 준비 단계보다 더 중요하다.
+	 * `6명`. 유료 프로그램은 인원을 묶지 않으므로 전체 인원이 곧 사건에 쓸 수 있는 인원이다.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Live|Status")
 	TObjectPtr<UTextBlock> Text_Staff;

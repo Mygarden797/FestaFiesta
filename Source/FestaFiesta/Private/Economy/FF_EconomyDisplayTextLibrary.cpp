@@ -15,8 +15,7 @@ FText UFF_EconomyDisplayTextLibrary::GetSpendReasonText(EFF_SpendReason Reason)
 	case EFF_SpendReason::FacilityInstall: return LOCTEXT("Spend_FacilityInstall", "시설 설치비");
 	case EFF_SpendReason::ProgramPurchase: return LOCTEXT("Spend_ProgramPurchase", "유료 프로그램 구매");
 	case EFF_SpendReason::Promotion:       return LOCTEXT("Spend_Promotion",       "홍보비");
-	case EFF_SpendReason::StaffWages:      return LOCTEXT("Spend_StaffWages",      "Staff 임금");
-	case EFF_SpendReason::StaffHire:       return LOCTEXT("Spend_StaffHire",       "추가 고용");
+	case EFF_SpendReason::StaffHire:       return LOCTEXT("Spend_StaffHire",       "Staff 고용");
 	case EFF_SpendReason::EventSupplies:   return LOCTEXT("Spend_EventSupplies",   "Event 소모품");
 	case EFF_SpendReason::Cleanup:         return LOCTEXT("Spend_Cleanup",         "뒷정리");
 	case EFF_SpendReason::FinaleFireworks: return LOCTEXT("Spend_FinaleFireworks", "피날레 폭죽");
@@ -77,7 +76,6 @@ FText UFF_EconomyDisplayTextLibrary::GetProgramPurchaseResultText(EFF_ProgramPur
 	case EFF_ProgramPurchaseResult::FestivalNotStarted: return LOCTEXT("Program_FestivalNotStarted", "축제가 시작되지 않았다");
 	case EFF_ProgramPurchaseResult::UnknownProgram:     return LOCTEXT("Program_UnknownProgram",     "없는 프로그램");
 	case EFF_ProgramPurchaseResult::AlreadyScheduled:   return LOCTEXT("Program_AlreadyScheduled",   "오늘 이미 편성했다");
-	case EFF_ProgramPurchaseResult::NotEnoughStaff:     return LOCTEXT("Program_NotEnoughStaff",     "인원이 부족하다");
 	case EFF_ProgramPurchaseResult::InsufficientGold:   return LOCTEXT("Program_InsufficientGold",   "Gold 부족");
 	case EFF_ProgramPurchaseResult::FacilityTypeMismatch:
 		return LOCTEXT("Program_FacilityTypeMismatch", "이 시설에서는 열 수 없다");

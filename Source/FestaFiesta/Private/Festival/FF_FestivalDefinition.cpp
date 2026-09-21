@@ -42,7 +42,6 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		Workshop.ProgramId = TEXT("Program_SandArtWorkshop");
 		Workshop.DisplayName = LOCTEXT("Program_SandArtWorkshop", "바다향기 공방");
 		Workshop.CostGold = 200;
-		Workshop.RequiredStaff = 1;
 		Workshop.Capacity = 12;
 		Workshop.FeePerPerson = 30;   // 정원 다 차면 360, 확정 매출이다
 		Workshop.StartMinutes = 30.f; 
@@ -57,7 +56,6 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 		Yoga.ProgramId = TEXT("Program_SunsetYoga");
 		Yoga.DisplayName = LOCTEXT("Program_SunsetYoga", "선셋 요가");
 		Yoga.CostGold = 250;
-		Yoga.RequiredStaff = 2;
 		Yoga.Capacity = 16;
 		Yoga.FeePerPerson = 25;       // 정원 다 차면 400, 확정 매출이다
 		Yoga.StartMinutes = 90.f;
@@ -128,10 +126,10 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 		OutErrors.Add(LOCTEXT("BadStaffCount", "InitialStaffCount 가 음수다."));
 	}
 
-	// --- 스태프 임금/고용 ---
-	if (DailyStaffWageGold < 0 || MaxHiredStaffPerDay < 0)
+	// --- 스태프 고용 ---
+	if (StaffHireCostGold < 0 || MaxHiredStaffCount < 0)
 	{
-		OutErrors.Add(LOCTEXT("BadWageOrHireCap", "임금·고용 상한에 음수가 있다."));
+		OutErrors.Add(LOCTEXT("BadHireCostOrCap", "고용 비용·총원 상한에 음수가 있다."));
 	}
 	
 	// --- 뒷정리 ---

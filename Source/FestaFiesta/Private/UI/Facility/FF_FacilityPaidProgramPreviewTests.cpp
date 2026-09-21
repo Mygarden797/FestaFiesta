@@ -113,19 +113,16 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 	Data.FacilityInstanceId = FGuid::NewGuid();
 	Data.FacilityName = Facility->Spec.DisplayName;
 	Data.AvailableGold = FMath::Max(7600, Source->CostGold);
-	Data.AvailableStaff = FMath::Max(6, Source->RequiredStaff);
 	FFF_FacilityPaidProgramCardViewData& CardData = Data.Cards.AddDefaulted_GetRef();
 	CardData.ProgramId = Source->ProgramId;
 	CardData.DisplayName = Source->DisplayName;
 	CardData.Description = FText::Format(NSLOCTEXT("PaidProgramPreview", "Revenue", "당일 한정 프로그램 · 최대 매출 {0} Gold"), FText::AsNumber(Source->CalcMaxRevenue()));
 	CardData.TimeText = FFFacilityInfoModel::FormatProgramTimeRange(Source->StartMinutes, Source->EndMinutes);
 	CardData.CostGold = Source->CostGold;
-	CardData.RequiredStaff = Source->RequiredStaff;
 	CardData.CapacityPeople = Source->Capacity;
 	CardData.TicketFeeGold = Source->FeePerPerson;
 	CardData.MaxRevenueGold = Source->CalcMaxRevenue();
 	CardData.CostText = FFFacilityInfoModel::FormatGold(true, Source->CostGold);
-	CardData.StaffText = FText::Format(NSLOCTEXT("PaidProgramPreview", "Staff", "필요 인원 {0}명"), FText::AsNumber(Source->RequiredStaff));
 	CardData.CapacityText = FText::Format(NSLOCTEXT("PaidProgramPreview", "Capacity", "정원 {0}명"), FText::AsNumber(Source->Capacity));
 	CardData.TicketFeeText = FText::Format(NSLOCTEXT("PaidProgramPreview", "Fee", "참가비 {0} Gold/인"), FText::AsNumber(Source->FeePerPerson));
 	CardData.AvailabilityText = FText::FromString(TEXT("구매·편성 가능"));
@@ -168,8 +165,7 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 			CheckControl(*this, *Confirm, Border->GetCachedGeometry().GetLayoutBoundingRect());
 		}
 		// The fixture supplies an authoritative-success result without submitting a purchase.
-		Picker->ShowPurchaseComplete(Source->ProgramId, Data.AvailableGold - Source->CostGold,
-			Data.AvailableStaff - Source->RequiredStaff);
+		Picker->ShowPurchaseComplete(Source->ProgramId, Data.AvailableGold - Source->CostGold);
 		Picker->ForceLayoutPrepass();
 		bAllSaved &= SaveCapture(*this, Renderer, Slate, Resolution, Prefix + TEXT("Complete"));
 		CheckControl(*this, *Return, Border->GetCachedGeometry().GetLayoutBoundingRect());

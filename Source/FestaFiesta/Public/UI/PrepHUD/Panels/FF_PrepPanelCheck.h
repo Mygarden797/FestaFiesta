@@ -42,9 +42,9 @@ struct FESTAFIESTA_API FFF_PrepDayEstimate
 {
 	GENERATED_BODY()
 
-	/** 오늘 이미 지불한 알바 임금 총액.*/
+	/** 오늘 이미 지불한 고용비 총액.*/
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
-	int32 StaffWageCost = INDEX_NONE;
+	int32 StaffHireCost = INDEX_NONE;
 
 	/** 예상 방문객 × 입장료. 예상 방문객을 모르면 `INDEX_NONE`. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|UI|Prep")
@@ -92,8 +92,8 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
 	 * @param DailyVisitorGoal 목표. 모르면 보너스를 비운다
 	 */
 	static FFF_PrepDayEstimate BuildDayEstimate(
-		int32 TemporaryStaffCount,
-		int32 WagePerStaff,
+		int32 HiredStaffCount,
+		int32 HireCostPerStaff,
 		int32 ExpectedVisitors,
 		int32 AdmissionFee,
 		int32 DailyVisitorGoal,
@@ -112,7 +112,7 @@ struct FESTAFIESTA_API FFF_PrepCheckRules
  *   카드 4장   날씨(선택 가능) · 일일 목표 · 예상 방문객 · 보유 금화
  *   수용 위험  예상 방문객 vs Zone 정원 합. 색 + 아이콘 + 문구
  *   요약       인력 · 프로그램 · (마지막 날) 피날레
- *   견적표     알바 임금 · 예상 입장료 수입 · 목표 보너스
+ *   견적표     고용비 · 예상 입장료 수입 · 목표 보너스
  *   버튼       `배치 계속하기` · `개장하기`
  *
  * === ★ 날씨 선택이 여기 있는 이유 ===
