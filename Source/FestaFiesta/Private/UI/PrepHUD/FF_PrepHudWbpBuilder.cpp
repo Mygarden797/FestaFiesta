@@ -2085,7 +2085,7 @@ namespace FFPrepHudWbpBuilder
 	}
 
 	/**
-	 * Staff 를 영구 고용으로 바꾸면서 레이아웃이 달라진 WBP 3종만 다시 굽는다.
+	 * Staff 영구 고용·임대료 제거로 레이아웃이 달라진 WBP 5종만 다시 굽는다.
 	 *
 	 * === 왜 따로 있어야 하나 ===
 	 * `FF.PrepHudUMG` 는 **이미 있으면 손대지 않는다.** 디자이너 수정을 지키려고 그렇게
@@ -2094,14 +2094,14 @@ namespace FFPrepHudWbpBuilder
 	 * WBP 에 구워 둔 미리보기 문구(`인원 2명`·`장소 임대료 2,400 / 일`)가 화면에 그대로
 	 * 나간다 — 코드에 없는 규칙이 화면에서만 살아 있는 상태가 된다.
 	 *
-	 * !! 🔴 파괴적이다 !! 이 3종의 디자이너 수정은 사라진다. 그래서 `FF.PrepHudUMG` 에
-	 * 섞지 않고 따로 부르게 뒀다. 나머지 7종은 건드리지 않는다.
+	 * !! 🔴 파괴적이다 !! 이들의 디자이너 수정은 사라진다. 그래서 `FF.PrepHudUMG` 에
+	 * 섞지 않고 따로 부르게 뒀다. 나머지는 건드리지 않는다.
 	 */
 	void RebuildPrepHudStaffUmg()
 	{
 		UE_LOG(LogFFUIWbpBuilder, Display,
-			TEXT("%s_REBUILD_BEGIN: 인력·프로그램 패널·프로그램 카드를 다시 굽는다. "
-				 "이 3종의 디자이너 수정은 사라진다."),
+			TEXT("%s_REBUILD_BEGIN: 인력·점검·프로그램 패널·프로그램 카드·하단 바를 다시 굽는다. "
+				 "이들의 디자이너 수정은 사라진다."),
 			PrepLogPrefix);
 
 		ReplaceWidgetBlueprint(
@@ -2113,6 +2113,30 @@ namespace FFPrepHudWbpBuilder
 			{
 				return BuildStaffPanel(Blueprint, Tree);
 			});
+
+		// 점검 패널의 견적 표에도 `장소 임대료` 줄이 남아 있다. 빌더는 이미 안 만드는데
+		// 자산에만 시체로 남아, 없어진 고정비를 화면이 계속 말한다.
+		// 선택 버튼 클래스가 있어야 만들 수 있으므로 못 얻으면 점검만 건너뛴다.
+		UClass* ChoiceButtonClass = LoadGeneratedClass(ChoiceButtonPackage);
+		if (ChoiceButtonClass)
+		{
+			ReplaceWidgetBlueprint(
+				PrepLogPrefix,
+				CheckPanelPackage,
+				PrepPanelsFolder,
+				*UFF_PrepPanelCheck::StaticClass(),
+				[ChoiceButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+				{
+					return BuildCheckPanel(Blueprint, Tree, *ChoiceButtonClass);
+				});
+		}
+		else
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: 선택 버튼 클래스를 얻지 못해 점검 패널은 그대로 뒀다 (%s). "
+					 "견적 표에 임대료 줄이 남는다."),
+				PrepLogPrefix, *ChoiceButtonPackage);
+		}
 
 		ReplaceWidgetBlueprint(
 			PrepLogPrefix,
@@ -2171,9 +2195,9 @@ namespace FFPrepHudWbpBuilder
 
 	FAutoConsoleCommand RebuildPrepHudStaffUmgCommand(
 		TEXT("FF.RebuildPrepHudStaffUI"),
-		TEXT("인력 패널·프로그램 패널·프로그램 카드를 다시 굽는다. "
+		TEXT("인력·점검·프로그램 패널·프로그램 카드·하단 바를 다시 굽는다. "
 			 "Staff 가 영구 고용이 되고 임대료가 없어지면서 자산에만 남은 칸을 걷어낸다. "
-			 "🔴 이 3종의 디자이너 수정은 사라진다."),
+			 "🔴 이들의 디자이너 수정은 사라진다."),
 		FConsoleCommandDelegate::CreateStatic(&RebuildPrepHudStaffUmg));
 }
 
