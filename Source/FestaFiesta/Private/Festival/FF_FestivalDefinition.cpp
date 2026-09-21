@@ -3,6 +3,7 @@
 #include "Festival/FF_FestivalDefinition.h"
 
 #include "DataTables/FF_FacilityCostRow.h"
+#include "DataTables/FF_FacilityRevenueTableRow.h"
 #include "Engine/DataTable.h"
 #include "FF_FFZSFacilityDefinition.h"
 
@@ -14,6 +15,10 @@
 
 UFF_FestivalDefinition::UFF_FestivalDefinition()
 {
+	// 경로만 지정한다. CDO 생성 중에는 에셋을 로드하지 않는다.
+	FacilityRevenueTable = TSoftObjectPtr<UDataTable>(FSoftObjectPath(
+		TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilityRevenues.DT_FacilityRevenues")));
+
 	FFF_RequiredFacility MainStage;
 	MainStage.FacilityDefinition = TSoftObjectPtr<UFFZSFacilityDefinition>(FSoftObjectPath(
 		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage")));
@@ -73,6 +78,11 @@ UFF_FestivalDefinition::UFF_FestivalDefinition()
 
 	PromotionFocused.CostGold = 1200;
 	PromotionFocused.VisitorMultiplier = 1.18f;
+}
+
+UDataTable* UFF_FestivalDefinition::GetFacilityRevenueTable() const
+{
+	return FacilityRevenueTable.LoadSynchronous();
 }
 
 bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
@@ -190,7 +200,7 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	}
 
 	// --- 수익원 ---
-	if (BoothCommissionRate < 0.f || BoothCommissionRate > 1.f)
+	if (!FMath::IsFinite(BoothCommissionRate) || BoothCommissionRate < 0.f || BoothCommissionRate > 1.f)
 	{
 		OutErrors.Add(FText::Format(
 			LOCTEXT("BadCommissionRate", "BoothCommissionRate 가 {0} 이다. 0.0~1.0 이어야 한다."),
@@ -246,6 +256,42 @@ bool UFF_FestivalDefinition::IsDefinitionValid(TArray<FText>& OutErrors) const
 	else if (FacilityCostTable->GetRowMap().Num() == 0)
 	{
 		OutErrors.Add(LOCTEXT("EmptyFacilityCostTable", "FacilityCostTable 에 행이 없다."));
+	}
+
+	// 표 연결을 비운 축제는 기존 시설 Data Asset/소분류 기본값을 그대로 사용할 수 있다.
+	if (!FacilityRevenueTable.IsNull())
+	{
+		const UDataTable* RevenueTable = GetFacilityRevenueTable();
+		if (!RevenueTable)
+		{
+			OutErrors.Add(LOCTEXT("MissingFacilityRevenueTable", "Facility Revenue Table을 불러올 수 없습니다. DT_FacilityRevenues 연결을 확인하세요."));
+		}
+		else if (RevenueTable->GetRowStruct() != FFF_FacilityRevenueTableRow::StaticStruct())
+		{
+			OutErrors.Add(LOCTEXT("BadFacilityRevenueRowStruct", "Facility Revenue Table의 행 구조체는 FF_FacilityRevenueTableRow여야 합니다."));
+		}
+		else
+		{
+			for (const auto& Entry : RevenueTable->GetRowMap())
+			{
+				const FFF_FacilityRevenueTableRow* Row = reinterpret_cast<const FFF_FacilityRevenueTableRow*>(Entry.Value);
+				if (Entry.Key.IsNone() || !Row)
+				{
+					OutErrors.Add(FText::Format(LOCTEXT("BadFacilityRevenueRow", "시설 수익표의 '{0}' 행을 확인하세요. 행 이름은 유효한 Facility Definition Id여야 합니다."),
+						FText::FromName(Entry.Key)));
+				}
+				if (Row)
+				{
+					TArray<FText> RowErrors;
+					Row->IsRowValid(RowErrors);
+					for (const FText& Error : RowErrors)
+					{
+						OutErrors.Add(FText::Format(LOCTEXT("InvalidFacilityRevenueFields", "시설 수익표 '{0}': {1}"),
+							FText::FromName(Entry.Key), Error));
+					}
+				}
+			}
+		}
 	}
 
 	return OutErrors.Num() == ErrorCountBefore;

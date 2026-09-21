@@ -5,6 +5,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "DataTables/FF_FacilityCostRow.h"
+#include "DataTables/FF_FacilityRevenueTableRow.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -20,6 +21,8 @@
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelProgram.h"
+#include "UObject/StrongObjectPtr.h"
 
 namespace FFF_ProgramSchedulingCommandTestHelpers
 {
@@ -118,6 +121,7 @@ namespace FFF_ProgramSchedulingCommandTestHelpers
 			Definition->InitialGold = 10000;
 			Definition->InitialStaffCount = 10;
 			Definition->FacilityCostTable = CostTable;
+			Definition->FacilityRevenueTable.Reset();
 
 			const FFF_ProgramCard* WorkshopCard = Definition->ProgramCatalog.FindByPredicate(
 				[](const FFF_ProgramCard& Card) { return Card.ProgramId == Workshop; });
@@ -175,6 +179,29 @@ namespace FFF_ProgramSchedulingCommandTestHelpers
 			Facility = Zone->FindFacility(InstallCommand.FacilityInstanceId);
 			return Facility != nullptr
 				&& Facility->GetFacilityState() == EFFZSFacilityState::Validated;
+		}
+
+		int32 ConfirmAllReservedParties()
+		{
+			int32 Confirmed = 0;
+			int32 PartyId = 1;
+			for (const FFF_ReservedPartyRequest& Request : Progression->GetReservedPartyRequests())
+			{
+				if (Reservations->ConfirmReservedParty(Request.ReservationId, PartyId++, Request.GroupSize))
+				{
+					Confirmed += Request.GroupSize;
+				}
+			}
+			return Confirmed;
+		}
+
+		bool FindEffectiveCard(const FGuid& FacilityId, FName ProgramId, FFF_ProgramCard& OutCard) const
+		{
+			const TArray<FFF_ProgramCard> Catalog = Progression->GetProgramCatalogForFacility(FacilityId);
+			const FFF_ProgramCard* Found = Catalog.FindByPredicate([&](const FFF_ProgramCard& Card) { return Card.ProgramId == ProgramId; });
+			if (!Found) return false;
+			OutCard = *Found;
+			return true;
 		}
 
 		FTestWorldWrapper TestWorld;
@@ -261,6 +288,121 @@ bool FFF_ProgramSchedulingSubsystem_AuthoritativeCommand::RunTest(const FString&
 		Harness.Scheduling->TryScheduleProgramAtFacility(Workshop, FacilityId),
 		EFF_PaidProgramScheduleResult::AlreadyScheduled);
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedulingSubsystem_TableFeesRemainLive,
+	"FestaFiesta.Economy.ProgramScheduling.TableFeesRemainLive",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_ProgramSchedulingSubsystem_TableFeesRemainLive::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_ProgramSchedulingCommandTestHelpers;
+	FScopedProgramSchedulingSettings SettingsGuard;
+	FProgramSchedulingHarness Harness;
+	if (!TestTrue(TEXT("Program table test world initializes"), Harness.Initialize(this))) return false;
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Setup;
+	const FGuid FirstId = Harness.InstallCommand.FacilityInstanceId;
+	const FName FirstDefinitionId = Harness.Facility->GetFacilitySpec().FacilityDefinitionId;
+	FFFZSFacilitySpec SecondSpec = Harness.Facility->GetFacilitySpec();
+	SecondSpec.FacilityDefinitionId = TEXT("Booth_CraftExperience_ProgramFeeSibling");
+	FFFZSGridPlacement Placement;
+	Placement.OriginCell = FIntPoint(2500, 1000);
+	const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(SecondSpec, ZoneId, Placement, Harness.Zone->GetWorldRevision());
+	if (!TestTrue(TEXT("A sibling facility in the same category installs"), Harness.Zone->ExecuteCommand(Install).bSucceeded)) return false;
+	const FGuid SecondId = Install.FacilityInstanceId;
+	TStrongObjectPtr<UDataTable> Revenues(NewObject<UDataTable>());
+	Revenues->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
+	FFF_FacilityRevenueTableRow FirstRow;
+	FirstRow.ProgramFeesPerPerson.Add(Workshop, 40);
+	Revenues->AddRow(FirstDefinitionId, FirstRow);
+	FFF_FacilityRevenueTableRow SecondRow;
+	SecondRow.ProgramFeesPerPerson.Add(Workshop, 55);
+	SecondRow.ProgramFeesPerPerson.Add(Overlap, 0);
+	Revenues->AddRow(SecondSpec.FacilityDefinitionId, SecondRow);
+	Harness.Definition->FacilityRevenueTable = Revenues.Get();
+	FFF_ProgramCard FirstCard, SecondCard, FreeCard;
+	if (!TestTrue(TEXT("First facility's UI catalog has its workshop"), Harness.FindEffectiveCard(FirstId, Workshop, FirstCard))
+		|| !TestTrue(TEXT("Second facility's UI catalog has the same workshop"), Harness.FindEffectiveCard(SecondId, Workshop, SecondCard))
+		|| !TestTrue(TEXT("The free program is retained in the facility's catalog"), Harness.FindEffectiveCard(SecondId, Overlap, FreeCard))) return false;
+	TestEqual(TEXT("The first facility quotes its own program admission fee"), FirstCard.FeePerPerson, 40);
+	TestEqual(TEXT("The same program has an independent fee at the sibling facility"), SecondCard.FeePerPerson, 55);
+	TestEqual(TEXT("Free admission is presented as zero, not the global paid fee"), FreeCard.FeePerPerson, 0);
+	const FFF_ProgramCard* DefaultWorkshop = Harness.Definition->ProgramCatalog.FindByPredicate([](const FFF_ProgramCard& Card) { return Card.ProgramId == Workshop; });
+	if (!TestNotNull(TEXT("The shared program template still exists"), DefaultWorkshop)) return false;
+	TestEqual(TEXT("Facility quotes never mutate the shared program template"), DefaultWorkshop->FeePerPerson, 30);
+	TestEqual(TEXT("The effective quote preserves program capacity"), FirstCard.Capacity, DefaultWorkshop->Capacity);
+	TestEqual(TEXT("The effective quote preserves setup cost"), FirstCard.CostGold, DefaultWorkshop->CostGold);
+	if (!TestEqual(TEXT("The first facility schedules its paid program"), Harness.Scheduling->TryScheduleProgramAtFacility(Workshop, FirstId), EFF_PaidProgramScheduleResult::Success)
+		|| !TestEqual(TEXT("The sibling schedules a zero-fee program through the real boundary"), Harness.Scheduling->TryScheduleProgramAtFacility(Overlap, SecondId), EFF_PaidProgramScheduleResult::Success)) return false;
+	const TArray<FFF_ScheduledProgram> Scheduled = Harness.Progression->GetScheduledPrograms();
+	if (!TestEqual(TEXT("Both programs have reservations"), Scheduled.Num(), 2)) return false;
+	TestEqual(TEXT("The paid schedule retains its facility definition for later table lookup"), Scheduled[0].FacilityDefinitionId, FirstDefinitionId);
+	TestEqual(TEXT("The free schedule retains its own facility definition"), Scheduled[1].FacilityDefinitionId, SecondSpec.FacilityDefinitionId);
+	TestEqual(TEXT("Confirmed program guests fill both reservations"), Harness.ConfirmAllReservedParties(), FirstCard.Capacity + FreeCard.Capacity);
+	const int32 GoldBefore = Harness.Progression->GetGold();
+	FirstRow.ProgramFeesPerPerson.Add(Workshop, 70);
+	Revenues->AddRow(FirstDefinitionId, FirstRow);
+	FFF_ProgramCard ChangedQuote;
+	if (!TestTrue(TEXT("The facility quote refreshes after a scheduled fee edit"), Harness.FindEffectiveCard(FirstId, Workshop, ChangedQuote))) return false;
+	TestEqual(TEXT("The quote shows the newly edited fee immediately"), ChangedQuote.FeePerPerson, 70);
+	const FFF_PrepProgramQuote UiQuote = FFF_PrepProgramRules::BuildQuote(&ChangedQuote,
+		EFF_ProgramPurchaseResult::Success, true, 1, GoldBefore, 10);
+	TestEqual(TEXT("The preparation panel's projection uses the effective facility fee"), UiQuote.MaxRevenue, ChangedQuote.Capacity * 70);
+	const FFF_PrepProgramQuote FreeUiQuote = FFF_PrepProgramRules::BuildQuote(&FreeCard,
+		EFF_ProgramPurchaseResult::Success, true, 1, GoldBefore, 10);
+	TestEqual(TEXT("A free facility program is quoted as zero revenue"), FreeUiQuote.MaxRevenue, 0);
+	TestEqual(TEXT("Fee edits do not themselves create revenue"), Harness.Progression->GetGold(), GoldBefore);
+	const int32 Expected = FirstCard.Capacity * 70;
+	TestEqual(TEXT("At program start the new fee supersedes the value from scheduling time"),
+		Harness.Progression->SettleStartedPrograms(FirstCard.StartMinutes), Expected);
+	TestEqual(TEXT("Only the accepted program fee is credited to funds"), Harness.Progression->GetGold(), GoldBefore + Expected);
+	FFF_FacilityInstanceRevenue FirstLedger;
+	TestTrue(TEXT("Program income belongs to its actual installed facility"), Harness.Progression->GetFacilityInstanceRevenue(FirstId, FirstLedger));
+	TestEqual(TEXT("The installation ledger agrees with the edited program price"), FirstLedger.TodayGold, Expected);
+	TestEqual(TEXT("The program ledger agrees with the installation ledger"), Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::ProgramFee), Expected);
+	TestEqual(TEXT("A full free program settles without a paid fallback"), Harness.Progression->SettleStartedPrograms(FreeCard.StartMinutes), 0);
+	FFF_FacilityInstanceRevenue FreeLedger;
+	TestFalse(TEXT("Free attendance does not fabricate facility income"), Harness.Progression->GetFacilityInstanceRevenue(SecondId, FreeLedger));
+	SecondRow.ProgramFeesPerPerson.Add(Overlap, 100);
+	Revenues->AddRow(SecondSpec.FacilityDefinitionId, SecondRow);
+	TestEqual(TEXT("Increasing a fee after free settlement cannot bill the guests again"), Harness.Progression->SettleStartedPrograms(FreeCard.StartMinutes + 1.f), 0);
+	TestEqual(TEXT("The closing fallback also cannot charge a settled free program"), Harness.Progression->SettleScheduledPrograms(), 0);
+	TestEqual(TEXT("Changing a completed fee leaves historical funds unchanged"), Harness.Progression->GetGold(), GoldBefore + Expected);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_ProgramSchedulingSubsystem_TableFeesRespectFundsCapacity,
+	"FestaFiesta.Economy.ProgramScheduling.TableFeesRespectFundsCapacity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_ProgramSchedulingSubsystem_TableFeesRespectFundsCapacity::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	using namespace FFF_ProgramSchedulingCommandTestHelpers;
+	FScopedProgramSchedulingSettings SettingsGuard;
+	FProgramSchedulingHarness Harness;
+	if (!TestTrue(TEXT("Large program fee world initializes"), Harness.Initialize(this))) return false;
+	Harness.Stage->CurrentStage = EFF_FestivalStage::Setup;
+	TStrongObjectPtr<UDataTable> Revenues(NewObject<UDataTable>());
+	Revenues->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
+	FFF_FacilityRevenueTableRow Row;
+	Row.ProgramFeesPerPerson.Add(Workshop, MAX_int32);
+	Revenues->AddRow(Harness.Facility->GetFacilitySpec().FacilityDefinitionId, Row);
+	Harness.Definition->FacilityRevenueTable = Revenues.Get();
+	Harness.Definition->InitialGold = MAX_int32 - 100;
+	Harness.Progression->StartFestival(Harness.Definition);
+	const FGuid FacilityId = Harness.InstallCommand.FacilityInstanceId;
+	FFF_ProgramCard Card;
+	if (!TestTrue(TEXT("The effective maximum-price program quote is available"), Harness.FindEffectiveCard(FacilityId, Workshop, Card))) return false;
+	TestEqual(TEXT("Projected capacity times fee saturates without integer overflow"), Card.CalcMaxRevenue(), MAX_int32);
+	if (!TestEqual(TEXT("A high-value program can still be scheduled"), Harness.Scheduling->TryScheduleProgramAtFacility(Workshop, FacilityId), EFF_PaidProgramScheduleResult::Success)) return false;
+	TestEqual(TEXT("The full capacity is confirmed"), Harness.ConfirmAllReservedParties(), Card.Capacity);
+	const int32 Expected = MAX_int32 - Harness.Progression->GetGold();
+	TestEqual(TEXT("Settlement returns the accepted amount, not the overflowing request"), Harness.Progression->SettleStartedPrograms(Card.StartMinutes), Expected);
+	TestEqual(TEXT("Program income saturates the balance safely"), Harness.Progression->GetGold(), MAX_int32);
+	TestEqual(TEXT("Reported revenue equals the amount actually credited"), Harness.Progression->GetTodayRevenue(), Expected);
+	TestEqual(TEXT("Program ledger records only accepted funds"), Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::ProgramFee), Expected);
+	TestEqual(TEXT("An already settled saturated program cannot pay twice"), Harness.Progression->SettleStartedPrograms(Card.StartMinutes + 1.f), 0);
 	return true;
 }
 

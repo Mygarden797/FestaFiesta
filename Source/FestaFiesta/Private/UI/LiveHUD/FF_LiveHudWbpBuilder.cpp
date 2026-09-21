@@ -924,10 +924,10 @@ namespace FFLiveHudWbpBuilder
 		const bool bSummaryOk =
 			AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
 				TEXT("Text_TotalWaiting"), LOCTEXT("LiveQueue_TotalLabel", "총 대기"),
-				LOCTEXT("LiveQueuePreview_Total", "26명"))
+				LOCTEXT("LiveQueuePreview_Total", "26팀"))
 			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
 				TEXT("Text_InService"), LOCTEXT("LiveQueue_ServiceLabel", "이용 중"),
-				LOCTEXT("LiveQueuePreview_Service", "7명"))
+				LOCTEXT("LiveQueuePreview_Service", "7팀"))
 			&& AddMetricCell(Blueprint, Tree, *SummaryRow, *Palette,
 				TEXT("Text_AverageWait"), LOCTEXT("LiveQueue_AvgLabel", "평균 대기"),
 				LOCTEXT("LiveQueuePreview_Avg", "62초"));
@@ -954,7 +954,7 @@ namespace FFLiveHudWbpBuilder
 		}
 
 		StyleText(*Longest, 14, Palette->InGame.Ink, TEXT("SemiBold"));
-		Longest->SetText(LOCTEXT("LiveQueuePreview_Longest", "가장 긴 줄 · 화장실A 14명"));
+		Longest->SetText(LOCTEXT("LiveQueuePreview_Longest", "가장 긴 줄 · 화장실A 14팀"));
 		Longest->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_Longest = Content->AddChildToVerticalBox(Longest))
 		{

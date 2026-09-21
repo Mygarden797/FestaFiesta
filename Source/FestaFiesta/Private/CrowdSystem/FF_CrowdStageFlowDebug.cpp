@@ -185,9 +185,9 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 		if (Queue && QueueId != INDEX_NONE && Queue->IsFacilityRegistered(QueueId))
 		{
 			const FFF_QueueState Q = Queue->GetQueueState(QueueId);
-			Ar.Logf(TEXT("  Queue id=%d open=%d occupied=%d capacity=%d samplePartyFitsNow=%d serviceMembersPerSec=%.3f estimatedWaitMin=%.2f"),
-				QueueId, Q.bIsOpen, Q.OccupiedMemberCount, Q.MaxCapacityMembers,
-				Q.bIsOpen && Q.OccupiedMemberCount + PartySize <= Q.MaxCapacityMembers, Q.ServiceRate,
+			Ar.Logf(TEXT("  Queue id=%d open=%d occupiedTeams=%d capacityTeams=%d samplePartyFitsNow=%d serviceTeamsPerSec=%.3f estimatedWaitMin=%.2f"),
+				QueueId, Q.bIsOpen, Q.WaitingPartyCount, Q.MaxCapacityParties,
+				Q.bIsOpen && Q.WaitingPartyCount < Q.MaxCapacityParties, Q.ServiceRate,
 				FFF_QueueWaitAdapter::ToDecisionMinutes(FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(Q, PartySize)));
 			FTransform Slot;
 			if (Bridge->TryGetProgramWaitingTransform(Facility.FacilityInstanceId, 0, Slot))

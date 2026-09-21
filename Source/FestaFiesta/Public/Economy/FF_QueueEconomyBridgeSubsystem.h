@@ -34,12 +34,12 @@ public:
 	}
 	
 private:
-	// 파티가 시설 이용을 마쳤을 때 수수료를 계산해 원장에 넣는다.
+	// 시설 이용을 마친 팀의 확정 인원으로 수수료를 계산해 원장에 넣는다.
 	UFUNCTION()
-	void HandlePartyExited(
+	void HandlePartyServiceCompleted(
 		int32 FacilityId,
 		int32 PartyId,
-		EFF_QueueExit ExitType,
+		int32 ServedMemberCount,
 		float WaitedSeconds);
 	
 	// 경제는 GameInstance 스코프라 호출 시점에 찾는다. 초기화 순서에 기대지 않는다.

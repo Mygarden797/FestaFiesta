@@ -29,6 +29,7 @@ void UFF_FacilityPaidProgramPicker::NativePreConstruct()
 void UFF_FacilityPaidProgramPicker::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	if(Button_BackToPrograms) Button_BackToPrograms->OnClicked.AddUniqueDynamic(this,&ThisClass::HandleBackToProgramsClicked);
 	if (Button_ReturnToFacility)
 		Button_ReturnToFacility->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
 	if (Button_Close)
@@ -117,6 +118,45 @@ void UFF_FacilityPaidProgramPicker::ApplyViewData(
 	OnViewDataApplied(ViewData);
 }
 
+void UFF_FacilityPaidProgramPicker::RefreshViewData(
+	const FFF_FacilityPaidProgramPickerViewData& ViewData)
+{
+	if (bPurchaseCompleted || bCommitPending || ViewData.FacilityInstanceId != CurrentViewData.FacilityInstanceId)
+	{
+		return;
+	}
+	FFF_FacilityPaidProgramPickerViewData RefreshedData = ViewData;
+	RefreshedData.FeedbackText = CurrentViewData.FeedbackText;
+	RefreshedData.bFeedbackIsError = CurrentViewData.bFeedbackIsError;
+	const FName PreviousSelection = SelectedProgramId;
+	bool bSamePrograms = CurrentViewData.Cards.Num() == ViewData.Cards.Num();
+	for (int32 Index = 0; bSamePrograms && Index < ViewData.Cards.Num(); ++Index)
+	{
+		bSamePrograms = CurrentViewData.Cards[Index].ProgramId == ViewData.Cards[Index].ProgramId;
+	}
+	if (!bSamePrograms)
+	{
+		ApplyViewData(RefreshedData);
+		if (FindCard(PreviousSelection)) HandleCardSelected(PreviousSelection);
+		return;
+	}
+
+	// Keep the same widgets so polling does not reset the scroll position or an ongoing pointer action.
+	CurrentViewData = MoveTemp(RefreshedData);
+	for (UFF_FacilityPaidProgramCard* CardWidget : SpawnedCards)
+	{
+		if (CardWidget)
+		{
+			if (const FFF_FacilityPaidProgramCardViewData* CardData = FindCard(CardWidget->GetProgramId()))
+			{
+				CardWidget->ApplyViewData(*CardData);
+			}
+		}
+	}
+	if (!PreviousSelection.IsNone()) HandleCardSelected(PreviousSelection);
+	OnViewDataApplied(CurrentViewData);
+}
+
 void UFF_FacilityPaidProgramPicker::ShowPurchaseComplete(
 	const FName ProgramId, const int32 RemainingGold)
 {
@@ -124,6 +164,7 @@ void UFF_FacilityPaidProgramPicker::ShowPurchaseComplete(
 	if (!Card) return;
 	bCommitPending = false;
 	bPurchaseCompleted = true;
+	if (Button_BackToPrograms) Button_BackToPrograms->SetVisibility(ESlateVisibility::Collapsed);
 	const FText Receipt = FText::Format(
 		LOCTEXT("PurchaseReceipt", "{0}\n{1}\n{2}\n\n결제 {3} Gold\n남은 보유금 {4} Gold\n\n오늘 프로그램이 편성되었습니다.\n당일 취소 및 환불은 불가합니다.\n이 시설의 이동·강화·철거가 제한됩니다."),
 		Card->DisplayName, CurrentViewData.FacilityName, Card->TimeText,
@@ -179,6 +220,7 @@ void UFF_FacilityPaidProgramPicker::HandleCardSelected(const FName ProgramId)
 		return;
 	}
 	SelectedProgramId = ProgramId;
+	SetReviewVisible(true);
 	for (UFF_FacilityPaidProgramCard* Card : SpawnedCards)
 	{
 		if (Card)
@@ -207,7 +249,7 @@ void UFF_FacilityPaidProgramPicker::HandleCardSelected(const FName ProgramId)
 		Text_TicketFee && Text_MaxRevenue && Text_PurchaseCost;
 	if (Text_PreviewDetails) Text_PreviewDetails->SetVisibility(bSeparateMetrics
 		? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
-	if (Text_PreviewDescription) Text_PreviewDescription->SetVisibility(bSeparateMetrics
+	if (Text_PreviewDescription) Text_PreviewDescription->SetVisibility(CardData->Description.IsEmpty()
 		? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	if (Text_PreviewTime) Text_PreviewTime->SetText(CardData->TimeText);
 	if (Text_Capacity) Text_Capacity->SetText(FText::Format(
@@ -267,6 +309,25 @@ void UFF_FacilityPaidProgramPicker::HandleCloseClicked()
 	OnCloseRequested.Broadcast();
 }
 
+void UFF_FacilityPaidProgramPicker::SetReviewVisible(const bool bReview)
+{
+	// Older Designer assets retain the combined list and preview. The compact V2
+	// picker keeps the same selection/transaction contract but gives each step room.
+	if(!Button_BackToPrograms) return;
+	Button_BackToPrograms->SetVisibility(bReview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
+	if(Size_ProgramList) Size_ProgramList->SetVisibility(bReview?ESlateVisibility::Collapsed:ESlateVisibility::Visible);
+	if(Border_Preview) Border_Preview->SetVisibility(bReview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
+	if(Border_Footer) Border_Footer->SetVisibility(bReview?ESlateVisibility::Visible:ESlateVisibility::Collapsed);
+	if(Text_Instruction) Text_Instruction->SetVisibility(bReview?ESlateVisibility::Collapsed:ESlateVisibility::HitTestInvisible);
+}
+
+void UFF_FacilityPaidProgramPicker::HandleBackToProgramsClicked()
+{
+	if(bCommitPending || bPurchaseCompleted) return;
+	ClearPreview();
+	for(UFF_FacilityPaidProgramCard* Card:SpawnedCards) if(Card) Card->SetSelected(false);
+}
+
 const FFF_FacilityPaidProgramCardViewData* UFF_FacilityPaidProgramPicker::FindCard(
 	const FName ProgramId) const
 {
@@ -280,7 +341,9 @@ const FFF_FacilityPaidProgramCardViewData* UFF_FacilityPaidProgramPicker::FindCa
 void UFF_FacilityPaidProgramPicker::ClearPreview()
 {
 	SelectedProgramId = NAME_None;
+
 	for (UCommonTextBlock* Metric : {Text_PreviewTime.Get(), Text_Capacity.Get(),
+
 		Text_TicketFee.Get(), Text_MaxRevenue.Get(), Text_PurchaseCost.Get()})
 		if (Metric) Metric->SetText(FText::FromString(TEXT("—")));
 	if (ScrollBox_Programs) ScrollBox_Programs->SetIsEnabled(true);

@@ -17,6 +17,8 @@ struct FStreamableHandle;
 class USceneComponent;
 class UStaticMeshComponent;
 class ULineBatchComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 
 // UI와 독립적인 비권한 배치 고스트.
 // UI가 입력과 수명주기를 소유하고 이 액터는 검증 결과·비주얼·디버그 표시만 보관.
@@ -36,6 +38,14 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Preview")
     TObjectPtr<UStaticMeshComponent> PreviewMesh;
     // 충돌과 권한이 없는 고스트 표현 컴포넌트다. 
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Preview|Feedback")
+    TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial = TSoftObjectPtr<UMaterialInterface>(
+        FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/Clarity/M_BuildPlacementFeedback.M_BuildPlacementFeedback")));
+
+    // Reused, non-colliding planes. Source facility materials and assets are never edited.
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<UStaticMeshComponent>> FailureSurfaces;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Preview")
     TObjectPtr<ULineBatchComponent> RangeLines;
@@ -120,6 +130,13 @@ protected:
     // 자동 갱신이 켜진 동안만 누적 간격에 맞춰 RefreshPreview를 호출한다. 
 
 private:
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> GhostFeedbackMaterial;
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> FailureSurfaceMaterial;
+    bool bFeedbackMaterialLoadAttempted = false;
+    void RefreshGhostFeedback();
+    void ShowFailureSurface(const FFFZSOrientedRect& WorldRegion, double BaseZ, int32 SurfaceIndex);
     UPROPERTY(VisibleAnywhere, Category = "Preview")
     FFFZSPlacementValidation LastValidation;
     // UI 표시용 마지막 검증 캐시. 권한 판정이나 저장 상태가 아니다. 

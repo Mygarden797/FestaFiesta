@@ -3,6 +3,9 @@
 #include "Misc/AutomationTest.h"
 #include "FF_FFZSBuildPresentationSettings.h"
 #include "FF_FFZSBuildRangePresentation.h"
+#include "FF_FFZSGridLibrary.h"
+#include "FF_FFZSOrientedGeometry.h"
+#include "SceneManagement.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRangeFailurePresentationTest,
     "FF_ZoneSystem.Unit.BuildPresentation.FailureRegionContract",
@@ -84,6 +87,80 @@ bool FFFZSRangeOutlinePresentationTest::RunTest(const FString& Parameters)
         FFZSBuildRangePresentation::ResolveMinorLineStride(20.0f, 9.0f), 1);
     TestEqual(TEXT("Distant grid keeps major and boundary lines only"),
         FFZSBuildRangePresentation::ResolveMinorLineStride(1.0f, 9.0f), 0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSPlacementObstructionBudgetTest,
+    "FF_ZoneSystem.Unit.BuildPresentation.ObstructionBudgetAndAuthorityIsolation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPlacementObstructionBudgetTest::RunTest(const FString& Parameters)
+{
+    FFFZSPlacementValidation Validation;
+    Validation.bIsValid = true;
+    FFFZSPlacementObstruction Obstruction;
+    Obstruction.Reason = EFFZSPlacementFailure::PlacementCollision;
+    Obstruction.WorldCenter = FVector(200, 300, 40);
+    Obstruction.WorldHalfExtent = FVector(100, 20, 40);
+    Obstruction.WorldRotation = FQuat(FVector::UpVector, PI / 4.0);
+    Validation.AddObstruction(Obstruction);
+    Validation.AddObstruction(Obstruction);
+    TestEqual(TEXT("Identical obstruction is not duplicated"), Validation.Obstructions.Num(), 1);
+    TestTrue(TEXT("Diagnostics never authorize or reject a command"), Validation.bIsValid && Validation.Reasons.IsEmpty());
+    if (!Validation.Obstructions.IsEmpty())
+        TestTrue(TEXT("World bounds contain the rotated box, not an unrotated extent"),
+            Validation.Obstructions[0].WorldBounds.GetExtent().Y > 80.0);
+    for (int32 Index = 0; Index < 1000; ++Index)
+    {
+        Obstruction.WorldCenter.X += 10;
+        Validation.AddObstruction(Obstruction);
+    }
+    TestEqual(TEXT("Dense scenes keep a fixed diagnostic memory budget"),
+        Validation.Obstructions.Num(), FFFZSPlacementValidation::MaxObstructions);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSPlacementFeedbackGeometryTest,
+    "FF_ZoneSystem.Unit.BuildPresentation.PlacementFeedbackGeometry",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPlacementFeedbackGeometryTest::RunTest(const FString& Parameters)
+{
+    using namespace FFZSBuildRangePresentation;
+    const FFFZSOrientedRect Region(FVector2D(1700, 2400), FVector2D(400, 70), 37.0f);
+    FWorldCorners Corners;
+    const auto XY = FFZSOrientedGeometry::GetCorners(Region);
+    for (int32 Index = 0; Index < 4; ++Index) Corners[Index] = FVector(XY[Index], 8);
+    TArray<FBatchedLine> Lines;
+    AppendFailureHatching(Lines, Corners, FLinearColor::Red);
+    TestEqual(TEXT("Hatching cost is independent of world area"), Lines.Num(), 15);
+    for (const FBatchedLine& Line : Lines)
+    {
+        TestEqual(TEXT("Feedback remains visible behind a building"), Line.DepthPriority, uint8(SDPG_Foreground));
+        TestEqual(TEXT("Persistent actor owns lifetime, not one debug frame"), Line.RemainingLifeTime, 0.0f);
+        for (const FVector& Point : {Line.Start, Line.End})
+        {
+            const FVector2D Local = (FVector2D(Point) - Region.CenterCell).GetRotated(-Region.YawDegrees);
+            TestTrue(TEXT("Every hatch endpoint is inside the exact rotated reservation"),
+                FMath::Abs(Local.X) <= Region.HalfExtentCells.X + 0.01 &&
+                FMath::Abs(Local.Y) <= Region.HalfExtentCells.Y + 0.01);
+        }
+    }
+    FFFZSOrientedRect FoundA, FoundB;
+    const TArray<FFFZSOrientedRect> A = {Region};
+    const TArray<FFFZSOrientedRect> B = {FFFZSOrientedRect(Region.CenterCell, FVector2D(20, 20), 0)};
+    TestTrue(TEXT("Existing SAT returns its actual first collision pair"),
+        UFFZSGridLibrary::DoOrientedRectSetsOverlap(A, B, &FoundA, &FoundB));
+    TestTrue(TEXT("Diagnostic retains the authoritative yaw"), FMath::IsNearlyEqual(FoundA.YawDegrees, 37.0f));
+    FFFZSPlacementValidation Validation;
+    FFFZSPlacementObstruction Obstruction;
+    Obstruction.Reason = EFFZSPlacementFailure::PlacementCollision;
+    Obstruction.WorldCenter = FVector(100, 200, 50);
+    Obstruction.WorldHalfExtent = FVector(40, 30, 50);
+    Validation.AddObstruction(Obstruction);
+    Lines.Reset();
+    AppendObstructionOutline(Lines, Validation.Obstructions[0], FLinearColor::Yellow);
+    TestEqual(TEXT("Blocker brackets have a fixed 24 segment budget"), Lines.Num(), 24);
     return true;
 }
 

@@ -46,12 +46,12 @@ void UFF_QueueSubsystem::RebuildFacilityIndex()
 bool UFF_QueueSubsystem::RegisterFacility(int32 FacilityId, const FFF_QueueConfig& Config, const FFF_QueueLaneGeometry& Lane)
 {
 	const bool bConfigValid =
-		Config.MaxCapacityMembers >= 0 &&
-		Config.MaxCapacityMembers <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
+		Config.MaxCapacityParties >= 0 &&
+		Config.MaxCapacityParties <= UFFZSDeveloperSettings::MaxQueueWaitingAgents &&
 		Config.ConcurrentServiceSlots > 0 &&
 		Config.ConcurrentServiceSlots <= UFFZSDeveloperSettings::MaxFacilityServiceCapacity &&
-		FMath::IsFinite(Config.ServiceSecondsPerMember) &&
-		Config.ServiceSecondsPerMember > 0.0f &&
+		FMath::IsFinite(Config.ServiceSecondsPerParty) &&
+		Config.ServiceSecondsPerParty > 0.0f &&
 		!Config.ExitLocation.ContainsNaN();
 	const bool bLaneValid =
 		Lane.PolylinePoints.Num() <= UFFZSDeveloperSettings::MaxQueueSplinePoints &&
@@ -369,6 +369,13 @@ void UFF_QueueSubsystem::FlushPendingEvents()
 				OnServiceStarted.Broadcast(Event.FacilityId, Event.PartyId, Event.WaitSeconds);
 				break;
 			case EFF_QueueEventType::PartyExited:
+				// 코어가 완료한 팀을 제거하면서 만든 스냅샷을 한 번만 전달한다.
+				// Crowd의 퇴장 핸들러가 팀 상태를 바꾸기 전에 정산을 알린다.
+				if (Event.ExitType == EFF_QueueExit::Served && Event.ServedMemberCount > 0)
+				{
+					OnPartyServiceCompleted.Broadcast(
+						Event.FacilityId, Event.PartyId, Event.ServedMemberCount, Event.WaitSeconds);
+				}
 				OnPartyExited.Broadcast(Event.FacilityId, Event.PartyId, Event.ExitType, Event.WaitSeconds);
 				break;
 			default:

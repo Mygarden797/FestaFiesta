@@ -758,6 +758,16 @@ void UFF_BuildCatalogScreen::HandleRequiredFacilitiesChanged()
 	// One authority snapshot per notification, never a world query from each card.
 	RequiredSnapshot = RequiredFacilities->GetRequiredFacilitiesStatus();
 	FFBuildCatalogModel::ApplyRequiredFacilities(CatalogEntries, RequiredSnapshot);
+	// Festival changes share this notification with installation changes.
+	// Reproject program support for the existing cards without rebuilding the catalog.
+	if (CachedEconomyReadModel)
+	{
+		for (FFF_BuildCatalogEntry& Entry : CatalogEntries)
+		{
+			FString FailureReason;
+			CachedEconomyReadModel->TryProjectFacilityCosts(Entry, Entry.Definition.Get(), FailureReason);
+		}
+	}
 	RefreshRequiredCardPresentation();
 }
 
@@ -781,6 +791,7 @@ void UFF_BuildCatalogScreen::RefreshRequiredCardPresentation()
 		const FFF_BuildCatalogEntry* const* Found = EntriesById.Find(Card->GetFacilityDefinitionId());
 		if (!Found) continue;
 		const FFF_BuildCatalogEntry& Entry = **Found;
+		Card->Configure(Entry);
 		Card->SetRequiredFacilityStatus(Entry.bRequiredForSetup, Entry.bRequiredSetupSatisfied,
 			Entry.RequiredInstalledCount, Entry.RequiredMinimumCount);
 	}

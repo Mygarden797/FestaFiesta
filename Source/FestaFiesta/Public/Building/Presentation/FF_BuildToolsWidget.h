@@ -27,6 +27,9 @@ struct FESTAFIESTA_API FFF_BuildToolsViewData
     UPROPERTY(BlueprintReadOnly) FText FacilityName;
     UPROPERTY(BlueprintReadOnly) FText CostText;
     UPROPERTY(BlueprintReadOnly) FText StatusText;
+    UPROPERTY(BlueprintReadOnly) FText BalanceText;
+    UPROPERTY(BlueprintReadOnly) FText FootprintText;
+    UPROPERTY(BlueprintReadOnly) FText QueueText;
 };
 
 namespace FFBuildToolsModel
@@ -43,6 +46,8 @@ class FESTAFIESTA_API UFF_BuildToolsActionButton final : public UButton
     GENERATED_BODY()
 public:
     UFF_BuildToolsActionButton();
+    /** Editor builder only, before Slate construction. Catalog activation remains focusable. */
+    void ConfigureFocusable(bool bFocusable) { InitIsFocusable(bFocusable); }
 
     // Normal/hover/pressed remain the ordinary Designer Button Style. Only the selected
     // variant lives here, so refreshes never replace a designer's brushes or padding.
@@ -59,8 +64,8 @@ private:
 };
 
 // The editable WBP owns layout and styling. This class only binds user actions and projects
-// BuildModeSubsystem state; it has no tick, placement authority or duplicated snap state.
-UCLASS(Blueprintable, meta = (DisplayName = "FF Build Tools", DisableNativeTick))
+// BuildModeSubsystem state; tick only reprojects the small, non-interactive context marker.
+UCLASS(Blueprintable, meta = (DisplayName = "FF Build Tools"))
 class FESTAFIESTA_API UFF_BuildToolsWidget : public UUserWidget
 {
     GENERATED_BODY()
@@ -68,6 +73,10 @@ class FESTAFIESTA_API UFF_BuildToolsWidget : public UUserWidget
 public:
     bool IsPointerOverTools() const;
     bool IsEditingAngle() const;
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleRadialMenu();
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleHelp();
+    bool IsRadialMenuOpen() const;
+    bool IsAuxiliaryPanelOpen() const;
 
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools")
     void RefreshTools();
@@ -81,6 +90,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void RotateToNextSnap(int32 Direction);
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void MoveInZoneAxes(FIntPoint Direction);
     UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") bool ApplyYawText(const FText& Text);
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ToggleDirectAdjustment();
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void FindNearbyPlacement();
+    UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Building|Tools") void ShowNextPlacementProblem();
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Appearance|Status")
     FSlateColor ReadyStatusColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(0x31, 0x57, 0x47)));
@@ -92,12 +104,34 @@ public:
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
+    virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
     virtual FReply NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 
     UFUNCTION(BlueprintImplementableEvent, Category = "FestaFiesta|Building|Tools")
     void BP_OnToolsStateChanged(const FFF_BuildToolsViewData& Data);
 
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_Tools;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_PlacementInfo;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_PlacementHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_ContextPing;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ContextPing;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementAdvice;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_PlacementObstruction;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_AssistanceMessage;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_DirectAdjustment;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_FindNearby;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_NextPlacementProblem;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_Radial;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_PlacementFacts;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Radial;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Facts;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Help;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Balance;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Footprint;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Queue;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ControlHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_Details;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Panel_Details;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Mode;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Legend;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_FacilityName;
@@ -131,7 +165,12 @@ private:
     UPROPERTY(Transient) FFF_BuildToolsViewData ViewData;
     FTimerHandle FreeRotationTimer;
     int32 PointerRotationDirection = 0;
+    int32 PlacementProblemIndex = 0;
     double LastPointerRotationTime = 0.0;
+    UFUNCTION() void ToggleDetails();
+    UFUNCTION() void ToggleFacts();
+    void SetHelpExpanded(bool bExpanded);
+    void CloseRadialMenu();
     void StartPointerFreeRotation(int32 Direction);
     void AdvancePointerFreeRotation();
     UFUNCTION() void StopPointerFreeRotation();

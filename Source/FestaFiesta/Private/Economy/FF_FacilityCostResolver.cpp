@@ -91,11 +91,23 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 	}
 
 	const FString Context = TEXT("FFF_FacilityCostResolver");
+	const auto ResolveRow = [&](const FFF_FacilityCostRow& Row, const FName RowName)
+	{
+		if (!IsValidInstallCost(Row.InstallCost))
+		{
+			OutFailureReason = FString::Printf(
+				TEXT("설치비 행 '%s'의 금액은 0 이상이어야 합니다: %d Gold."),
+				*RowName.ToString(), Row.InstallCost);
+			return false;
+		}
+		OutInstallCost = Row.InstallCost;
+		OutMatchedRow = RowName;
+		return true;
+	};
+
 	if (const FFF_FacilityCostRow* ExactRow = CostTable->FindRow<FFF_FacilityCostRow>(ExactKey, Context, false))
 	{
-		OutInstallCost = ExactRow->InstallCost;
-		OutMatchedRow = ExactKey;
-		return true;
+		return ResolveRow(*ExactRow, ExactKey);
 	}
 
 	// 4단계 시설별 행이 아직 저작되지 않은 콘텐츠는 기존 3단계 소분류 가격을 계속 사용한다.
@@ -105,9 +117,7 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 		if (const FFF_FacilityCostRow* MinorRow =
 			CostTable->FindRow<FFF_FacilityCostRow>(LegacyMinorKey, Context, false))
 		{
-			OutInstallCost = MinorRow->InstallCost;
-			OutMatchedRow = LegacyMinorKey;
-			return true;
+			return ResolveRow(*MinorRow, LegacyMinorKey);
 		}
 	}
 
@@ -117,9 +127,7 @@ bool FFF_FacilityCostResolver::FindInstallCost(
 		const FName DefaultKey(*FString::Printf(TEXT("Cost.%s.Default"), *MajorToken.ToString()));
 		if (const FFF_FacilityCostRow* DefaultRow = CostTable->FindRow<FFF_FacilityCostRow>(DefaultKey, Context, false))
 		{
-			OutInstallCost = DefaultRow->InstallCost;
-			OutMatchedRow = DefaultKey;
-			return true;
+			return ResolveRow(*DefaultRow, DefaultKey);
 		}
 	}
 

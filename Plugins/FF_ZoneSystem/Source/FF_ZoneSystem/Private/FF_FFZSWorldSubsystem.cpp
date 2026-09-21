@@ -1736,6 +1736,25 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     const TArray<FFFZSOrientedRect> WorldFootprint = ToWorldRegions(Command.ZoneId, Result.FootprintOrientedRects);
     const TArray<FFFZSOrientedRect> WorldClearance = ToWorldRegions(Command.ZoneId, Result.ClearanceOrientedRects);
     const TArray<FFFZSOrientedRect> WorldQueue = ToWorldRegions(Command.ZoneId, Result.QueueOrientedRects);
+    const auto RecordFacilityObstruction = [this, &Result](const FGuid Id,
+        const EFFZSPlacementFailure Reason, const FFFZSOrientedRect& Affected,
+        const FFFZSOrientedRect& Blocking)
+    {
+        if (Result.Obstructions.Num() >= FFFZSPlacementValidation::MaxObstructions) return;
+        const AFFZSFacilityActor* Existing = FindFacility(Id);
+        const double Height = Existing ? Existing->GetFacilitySpec().PlacementObstacleHeightCm : 10.0;
+        const double BaseZ = Existing ? Existing->GetActorLocation().Z : Result.PlacementTransform.GetLocation().Z;
+        FFFZSPlacementObstruction Diagnostic;
+        Diagnostic.Kind = EFFZSPlacementObstructionKind::Facility;
+        Diagnostic.Reason = Reason;
+        Diagnostic.FacilityInstanceId = Id;
+        Diagnostic.DisplayName = Existing ? Existing->GetFacilitySpec().DisplayName : LOCTEXT("BlockingFacility", "기존 시설");
+        Diagnostic.WorldCenter = FVector(Blocking.CenterCell, BaseZ + Height * 0.5);
+        Diagnostic.WorldHalfExtent = FVector(Blocking.HalfExtentCells, Height * 0.5);
+        Diagnostic.WorldRotation = FQuat(FVector::UpVector, FMath::DegreesToRadians(Blocking.YawDegrees));
+        Diagnostic.AffectedWorldRegion = Affected;
+        Result.AddObstruction(MoveTemp(Diagnostic));
+    };
     TArray<FGuid> Candidates;
     QueryFacilityCandidates(WorldReserved, Candidates);
     for (const FGuid Id : Candidates)
@@ -1755,8 +1774,11 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
                 TArray<FFFZSOrientedRect> ExistingFootprint, ExistingClearance, ExistingQueue, ExistingReserved;
                 UFFZSGridLibrary::BuildPlacementOrientedRegions(Existing->GetFacilitySpec(), Existing->GetGridPlacement(),
                     ExistingFootprint, ExistingClearance, ExistingQueue, ExistingReserved);
-                bFootprintOccupied |= UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldFootprint,
-                    ToWorldRegions(Existing->GetZoneId(), ExistingFootprint));
+                FFFZSOrientedRect Affected, Blocking;
+                const bool bOverlap = UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldFootprint,
+                    ToWorldRegions(Existing->GetZoneId(), ExistingFootprint), &Affected, &Blocking);
+                bFootprintOccupied |= bOverlap;
+                if (bOverlap) RecordFacilityObstruction(Id, EFFZSPlacementFailure::PlacementCollision, Affected, Blocking);
             }
             continue;
         }
@@ -1770,18 +1792,24 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
             UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldReserved, Occupancy->WorldRegions);
         if (!bFootprintOccupied)
         {
+            FFFZSOrientedRect Affected, Blocking;
             bFootprintOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
-                WorldFootprint, Occupancy->WorldRegions);
+                WorldFootprint, Occupancy->WorldRegions, &Affected, &Blocking);
+            if (bFootprintOccupied) RecordFacilityObstruction(Id, EFFZSPlacementFailure::PlacementCollision, Affected, Blocking);
         }
         if (!bClearanceOccupied)
         {
+            FFFZSOrientedRect Affected, Blocking;
             bClearanceOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
-                WorldClearance, Occupancy->WorldRegions);
+                WorldClearance, Occupancy->WorldRegions, &Affected, &Blocking);
+            if (bClearanceOccupied) RecordFacilityObstruction(Id, EFFZSPlacementFailure::InsufficientClearance, Affected, Blocking);
         }
         if (!bQueueOccupied)
         {
+            FFFZSOrientedRect Affected, Blocking;
             bQueueOccupied = UFFZSGridLibrary::DoOrientedRectSetsOverlap(
-                WorldQueue, Occupancy->WorldRegions);
+                WorldQueue, Occupancy->WorldRegions, &Affected, &Blocking);
+            if (bQueueOccupied) RecordFacilityObstruction(Id, EFFZSPlacementFailure::QueueFootprintBlocked, Affected, Blocking);
         }
         if (bFootprintOccupied && bClearanceOccupied && bQueueOccupied)
         {
@@ -1998,8 +2026,9 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
     // Rect마다 새로 할당하지 않고 Overlap 결과 버퍼를 재사용한다.
     TArray<FOverlapResult> Overlaps;
     Overlaps.Reserve(16);
-    const auto HasBlockingOverlap = [World, &Params, &Overlaps](
-        const FVector& Center, const FQuat& Rotation, const FVector& HalfExtent) -> bool
+    const auto HasBlockingOverlap = [World, &Params, &Overlaps, &InOutValidation](
+        const FVector& Center, const FQuat& Rotation, const FVector& HalfExtent,
+        const EFFZSPlacementFailure Failure, const FFFZSOrientedRect& Affected) -> bool
     {
         Overlaps.Reset();
         if (!World->OverlapMultiByChannel(
@@ -2018,6 +2047,37 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
             }
             if (!Component || Component->GetCollisionResponseToChannel(ECC_Visibility) != ECR_Ignore)
             {
+                // Reuse this exact overlap; never issue a second scene query for presentation.
+                FBox Bounds = Component ? Component->Bounds.GetBox() : Actor->GetComponentsBoundingBox();
+                if (const UInstancedStaticMeshComponent* Instances = Cast<UInstancedStaticMeshComponent>(Component))
+                {
+                    FTransform InstanceTransform;
+                    if (Instances->GetStaticMesh() && Overlap.ItemIndex != INDEX_NONE &&
+                        Instances->GetInstanceTransform(Overlap.ItemIndex, InstanceTransform, true))
+                    {
+                        Bounds = Instances->GetStaticMesh()->GetBoundingBox().TransformBy(InstanceTransform);
+                        if (const UBodySetup* Body = Instances->GetStaticMesh()->GetBodySetup())
+                        {
+                            Bounds += Body->AggGeom.CalcAABB(InstanceTransform);
+                        }
+                    }
+                    else
+                    {
+                        // An unresolvable foliage instance must not outline a whole-map ISM.
+                        Bounds = FBox(Center - HalfExtent, Center + HalfExtent);
+                    }
+                }
+                if (Bounds.IsValid && InOutValidation.Obstructions.Num() < FFFZSPlacementValidation::MaxObstructions)
+                {
+                    FFFZSPlacementObstruction Diagnostic;
+                    Diagnostic.Reason = Failure;
+                    Diagnostic.Kind = EFFZSPlacementObstructionKind::WorldObstacle;
+                    Diagnostic.DisplayName = LOCTEXT("WorldPlacementObstacle", "월드 장애물");
+                    Diagnostic.WorldCenter = Bounds.GetCenter();
+                    Diagnostic.WorldHalfExtent = Bounds.GetExtent();
+                    Diagnostic.AffectedWorldRegion = Affected;
+                    InOutValidation.AddObstruction(MoveTemp(Diagnostic));
+                }
                 return true;
             }
         }
@@ -2057,7 +2117,7 @@ void UFFZSWorldSubsystem::ValidateWorldCollision(
             const FQuat Rotation = ZoneTransform.GetRotation() * FQuat(
                 FVector::UpVector,
                 FMath::DegreesToRadians(static_cast<double>(Rect.YawDegrees)));
-            if (HasBlockingOverlap(Center, Rotation, HalfExtent))
+            if (HasBlockingOverlap(Center, Rotation, HalfExtent, Failure, TransformRegion(Rect, ZoneTransform)))
             {
                 InOutValidation.AddFailure(Failure, Message);
                 return;
@@ -2135,7 +2195,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
     const auto AddQueueSlotOffNavFailure = [&]()
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-            LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
+            LOCTEXT("QueueSlotOffNav", "최대 대기 팀 수에 해당하는 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
     };
     TArray<FVector> LocalQueueSlotPoints;
     if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(
@@ -2241,6 +2301,18 @@ void UFFZSWorldSubsystem::ValidateProtectedAreas(const FName ZoneId, const AFFZS
                 RegionBox.Center, RegionBox.HalfExtent, RegionBox.Rotation))
             {
                 const bool bAccessibility = Area->AreaType == EFFZSProtectedAreaType::AccessibilityRoute || Area->AreaType == EFFZSProtectedAreaType::ViewingArea;
+                FFFZSPlacementObstruction Diagnostic;
+                Diagnostic.Kind = EFFZSPlacementObstructionKind::ProtectedArea;
+                Diagnostic.Reason = bAccessibility ? EFFZSPlacementFailure::AccessibilityRouteBlocked : EFFZSPlacementFailure::ProtectedRouteBlocked;
+                Diagnostic.DisplayName = bAccessibility ? LOCTEXT("AccessibilityObstruction", "접근성 보호 공간")
+                    : Area->AreaType == EFFZSProtectedAreaType::NoBuild ? LOCTEXT("NoBuildObstruction", "건설 금지 영역")
+                    : LOCTEXT("ProtectedRouteObstruction", "보호 통행로");
+                Diagnostic.AffectedWorldRegion = FFFZSOrientedRect(FVector2D(RegionBox.Center),
+                    FVector2D(RegionBox.HalfExtent), RegionBox.Rotation.Rotator().Yaw);
+                if (Area->GetEffectiveWorldBox(Diagnostic.WorldCenter, Diagnostic.WorldHalfExtent, Diagnostic.WorldRotation))
+                {
+                    InOutValidation.AddObstruction(MoveTemp(Diagnostic));
+                }
                 InOutValidation.AddFailure(
                     bAccessibility ? EFFZSPlacementFailure::AccessibilityRouteBlocked : EFFZSPlacementFailure::ProtectedRouteBlocked,
                     bAccessibility ? LOCTEXT("AccessibilityArea", "배치 영역이 접근성 경로 또는 보호 관람 영역과 겹칩니다.") : LOCTEXT("ProtectedArea", "배치 영역이 보호 경로 또는 건설 금지 영역과 겹칩니다."));

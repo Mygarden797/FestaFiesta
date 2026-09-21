@@ -109,7 +109,8 @@ namespace FFBuildLightingCatalogTest
                 const FFF_FacilityCostRow* ExactRow = CostTable->FindRow<FFF_FacilityCostRow>(
                     ExpectedCostKey, TEXT("LightingCatalogEconomyContract"), false);
                 if (!Test->TestNotNull(*FString::Printf(TEXT("%s has an exact authored economy row"), Expected.Name), ExactRow)) continue;
-                Test->TestTrue(TEXT("Authored price is positive and accepted by construction economy"), ExactRow->InstallCost > 0);
+                Test->TestTrue(TEXT("Authored price is accepted by construction economy"),
+                    FFF_FacilityCostResolver::IsValidInstallCost(ExactRow->InstallCost));
                 FName ResolvedKey;
                 FString Failure;
                 Test->TestTrue(TEXT("Lighting cost convention resolves"),

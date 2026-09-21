@@ -175,7 +175,7 @@ public:
 		FName FacilityDefinitionId);
 
 	/**
-	 * 시설의 분당 처리율(ServiceCapacity / 분 단위 서비스시간).
+	 * 시설의 분당 팀 처리율(ServiceCapacity / 분 단위 팀 서비스시간).
 	 * FacilityDefinitionId 로 UFFZSFacilityDefinition(PrimaryDataAsset)을 Asset Manager로 조회한다.
 	 * 자산이 아직 로드되지 않았으면 0을 반환한다 — 호출부가 0을 "모름"으로 처리할 것.
 	 */

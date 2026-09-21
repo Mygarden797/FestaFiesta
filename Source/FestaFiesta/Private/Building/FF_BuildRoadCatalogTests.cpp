@@ -103,7 +103,7 @@ namespace FFBuildRoadCatalogTest
                     Test->TestTrue(TEXT("Production economy resolves surface cost"),
                         FFF_FacilityCostResolver::FindInstallCost(Spec, CostTable, Cost, MatchedRow, Failure));
                     Test->TestEqual(TEXT("Surface cost uses its exact category row"), MatchedRow, ExpectedRow);
-                    Test->TestTrue(TEXT("Surface installation cost is positive"), Cost > 0);
+                    Test->TestTrue(TEXT("Surface installation cost is valid"), FFF_FacilityCostResolver::IsValidInstallCost(Cost));
                     if (Festival)
                     {
                         Test->TestTrue(TEXT("Card price resolves from the installation table"), FFBuildCatalogModel::ApplyFacilityCosts(

@@ -4,6 +4,7 @@
 
 #include "Economy/FF_EconomyLog.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
+#include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "Economy/Rules/FF_FinaleRules.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Economy/Rules/FF_PromotionRules.h"
@@ -577,6 +578,30 @@ TArray<FFF_ProgramCard> UFF_FestivalProgressionSubsystem::GetProgramCatalog() co
 	return Definition != nullptr ? Definition->ProgramCatalog : TArray<FFF_ProgramCard>();
 }
 
+FName UFF_FestivalProgressionSubsystem::ResolveFacilityDefinitionId(const FGuid FacilityInstanceId) const
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
+	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSFacilityActor* Facility = Zone ? Zone->FindFacility(FacilityInstanceId) : nullptr;
+	return Facility ? Facility->GetFacilitySpec().FacilityDefinitionId : NAME_None;
+}
+
+TArray<FFF_ProgramCard> UFF_FestivalProgressionSubsystem::GetProgramCatalogForFacility(
+	const FGuid FacilityInstanceId) const
+{
+	TArray<FFF_ProgramCard> Catalog = GetProgramCatalog();
+	if (!Definition) return Catalog;
+	const FName FacilityDefinitionId = ResolveFacilityDefinitionId(FacilityInstanceId);
+	const UDataTable* RevenueTable = Definition->GetFacilityRevenueTable();
+	for (FFF_ProgramCard& Card : Catalog)
+	{
+		Card.FeePerPerson = FFF_BoothRevenueRules::ResolveProgramFeePerPerson(
+			FacilityDefinitionId, Card.ProgramId, Card.FeePerPerson, RevenueTable);
+	}
+	return Catalog;
+}
+
 void UFF_FestivalProgressionSubsystem::SetProgramReservations(
 	UFF_ProgramReservationSubsystem* InReservations)
 {
@@ -611,9 +636,12 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 	if (Definition == nullptr) return EFF_ProgramPurchaseResult::FestivalNotStarted;
 
 	FFF_ProgramCard Card;
+	const TArray<FFF_ProgramCard> Catalog = GetProgramCatalogForFacility(FacilityInstanceId);
 	const EFF_ProgramPurchaseResult Result = FFF_ProgramScheduleRules::EvaluatePurchase(
+
 		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
 		Funds.GetGold(), Card);
+
 
 	if (Result != EFF_ProgramPurchaseResult::Success)
 	{
@@ -642,6 +670,8 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 		return EFF_ProgramPurchaseResult::UnknownProgram;
 	}
 
+	// 이후 비용 차감 알림에서 월드가 바뀌더라도 편성 장소의 수익 행은 유지한다.
+	const FName FacilityDefinitionId = ResolveFacilityDefinitionId(FacilityInstanceId);
 	const FGuid ReservationId = ProgramReservations->RegisterProgram(
 		FacilityInstanceId, Card.StartMinutes, Card.EndMinutes, Card.Capacity);
 
@@ -667,7 +697,9 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 		return EFF_ProgramPurchaseResult::InsufficientGold;
 	}
 
-	ScheduledPrograms.Add(FFF_ScheduledProgram{ ProgramId, ReservationId });
+	FFF_ScheduledProgram Scheduled{ ProgramId, ReservationId };
+	Scheduled.FacilityDefinitionId = FacilityDefinitionId;
+	ScheduledPrograms.Add(Scheduled);
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
 		TEXT("[경제] 프로그램 '%s' 편성. 비용 %d, 남은 Gold %d, "
@@ -700,8 +732,16 @@ int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
 		return 0;
 	}
 
+	if (Scheduled.FacilityDefinitionId.IsNone())
+	{
+		Scheduled.FacilityDefinitionId = ResolveFacilityDefinitionId(Reservation.FacilityInstanceId);
+	}
+	FFF_ProgramCard RevenueCard = *Card;
+	RevenueCard.FeePerPerson = FFF_BoothRevenueRules::ResolveProgramFeePerPerson(
+		Scheduled.FacilityDefinitionId, Scheduled.ProgramId, Card->FeePerPerson,
+		Definition->GetFacilityRevenueTable());
 	const int32 Fee = FFF_ProgramScheduleRules::CalcProgramRevenue(
-		*Card, Reservation.AssignedHeadcount);
+		RevenueCard, Reservation.AssignedHeadcount);
 
 	// 여기까지 왔으면 이 카드는 오늘 처리가 끝났다. 금액이 0 이어도 다시 걷지 않는다 —
 	// 안 그러면 아무도 안 온 프로그램을 Closing 안전망이 또 집어 Warning 이 두 번 난다.
@@ -731,10 +771,13 @@ int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
 	if (Fee > 0)
 	{
 		// 체험비는 프로그램을 연 설치 시설에도 귀속된다 — 시설 정보 패널이 "이 시설이 번 돈"으로 보여 준다.
+		const int32 PreviousRevenue = Funds.GetTotalRevenue();
 		AddFacilityRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId, Reservation.FacilityInstanceId);
+		// 잔액 상한이나 미납 상환이 있어도 원장에 수용된 매출만 반환한다.
+		return Funds.GetTotalRevenue() - PreviousRevenue;
 	}
 
-	return Fee;
+	return 0;
 }
 
 int32 UFF_FestivalProgressionSubsystem::SettleStartedPrograms(const float NowMinutes)
@@ -754,7 +797,8 @@ int32 UFF_FestivalProgressionSubsystem::SettleStartedPrograms(const float NowMin
 			Definition->ProgramCatalog, Scheduled.ProgramId);
 		if (Card == nullptr || NowMinutes < Card->StartMinutes) continue;
 
-		TotalFee += SettleOneProgram(Scheduled, /*bLateSettlement=*/false);
+		TotalFee = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+			static_cast<int64>(TotalFee) + SettleOneProgram(Scheduled, /*bLateSettlement=*/false)));
 		++SettledCount;
 	}
 
@@ -782,7 +826,8 @@ int32 UFF_FestivalProgressionSubsystem::SettleScheduledPrograms()
 	{
 		if (Scheduled.bFeeSettled) continue;
 
-		TotalFee += SettleOneProgram(Scheduled, /*bLateSettlement=*/true);
+		TotalFee = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+			static_cast<int64>(TotalFee) + SettleOneProgram(Scheduled, /*bLateSettlement=*/true)));
 		++SettledCount;
 	}
 

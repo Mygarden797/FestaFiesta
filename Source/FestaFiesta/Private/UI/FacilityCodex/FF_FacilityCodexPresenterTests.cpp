@@ -33,6 +33,7 @@
 #include "UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h"
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "UObject/StrongObjectPtr.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/SViewport.h"
 
@@ -256,11 +257,15 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		Prep->SetCatalogPage(1);
 		const int32 PageBefore = Prep->GetCatalogPageIndex();
 		const TArray<UObject*> PageItemsBefore = Prep->GetCatalogPageItems();
+		const ESlateVisibility VisibilityBefore = Prep->GetVisibility();
 		CatalogOpenButton->OnClicked.Broadcast();
 		if (!TestTrue(TEXT("Search-adjacent launcher opens the codex"), Presenter->IsCodexOpen())) return false;
 		TestEqual(TEXT("Opening codex retains CatalogOpen state"), Build->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);
 		TestTrue(TEXT("Catalog input is suspended beneath the codex"), Build->IsInputSuspendedForPauseMenu());
 		TestTrue(TEXT("Catalog instance remains mounted beneath the input shield"), Prep->IsInViewport());
+		TestEqual(TEXT("Catalog cannot show behind the medium-sized codex"), Prep->GetVisibility(), ESlateVisibility::Hidden);
+		TestTrue(TEXT("Repeated codex open preserves the existing catalog lease"), Presenter->OpenCodex(Controller));
+		TestEqual(TEXT("Repeated open keeps the original catalog hidden"), Prep->GetVisibility(), ESlateVisibility::Hidden);
 		CodexWidgets.Reset();
 		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, CodexWidgets, UFF_FacilityCodexScreen::StaticClass(), true);
 		UFF_FacilityCodexScreen* CatalogCodex = CodexWidgets.IsEmpty()
@@ -276,6 +281,35 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("The second catalog page survives codex open and close"), Prep->GetCatalogPageIndex(), PageBefore);
 		TestTrue(TEXT("Catalog item identities and order survive codex open and close"), Prep->GetCatalogPageItems() == PageItemsBefore);
 		TestTrue(TEXT("The same catalog instance is still mounted after closing codex"), Prep->IsInViewport());
+		TestEqual(TEXT("Closing codex restores the original catalog visibility"), Prep->GetVisibility(), VisibilityBefore);
+
+		if (!TestTrue(TEXT("Codex opens before an owner visibility change"), Presenter->OpenCodex(Controller))) return false;
+		Prep->SetVisibility(ESlateVisibility::Collapsed);
+		Presenter->CloseCodex();
+		TestEqual(TEXT("A newer owner visibility decision wins over modal restoration"), Prep->GetVisibility(), ESlateVisibility::Collapsed);
+		TestTrue(TEXT("Advance after owner visibility change"), AdvanceFrame());
+		Prep->SetVisibility(VisibilityBefore);
+
+		// A separately owned presenter exercises deinitialization without deinitializing
+		// the world's real subsystem before the remaining lifecycle cases below.
+		TStrongObjectPtr<UFF_FacilityCodexPresenterSubsystem> TeardownPresenter(NewObject<UFF_FacilityCodexPresenterSubsystem>(World));
+		if (!TestTrue(TEXT("Teardown presenter acquires the existing catalog surface"), TeardownPresenter->OpenCodex(Controller))) return false;
+		TestEqual(TEXT("Catalog is hidden during the teardown session"), Prep->GetVisibility(), ESlateVisibility::Hidden);
+		TeardownPresenter->Deinitialize();
+		TestEqual(TEXT("Deinitialize releases visibility of the same still-open catalog"), Prep->GetVisibility(), VisibilityBefore);
+		TestTrue(TEXT("Advance after presenter deinitialization"), AdvanceFrame());
+		TestEqual(TEXT("Deinitialize does not change the existing catalog mode"), Build->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);
+
+		if (!TestTrue(TEXT("Codex opens before catalog removal"), Presenter->OpenCodex(Controller))) return false;
+		Prep->HandlePanelClosed();
+		Prep->RemoveFromParent();
+		Presenter->CloseCodex();
+		TestTrue(TEXT("Advance after catalog removal"), AdvanceFrame());
+		TestFalse(TEXT("Closing codex never remounts a removed catalog"), Prep->IsInViewport());
+		TestEqual(TEXT("An externally closed catalog mode is never reopened"), Build->GetBuildModeState(), EFF_BuildModeState::Closed);
+		TArray<UUserWidget*> RemainingCatalogs;
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, RemainingCatalogs, UFF_PrepPanelBuild::StaticClass(), true);
+		TestTrue(TEXT("Restoration creates no replacement catalog instance"), RemainingCatalogs.IsEmpty());
 	}
 	Build->EnterBuildMode();
 

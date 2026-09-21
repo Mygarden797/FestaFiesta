@@ -17,8 +17,9 @@ float FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(const FFF_QueueState& Sta
 		// float::Max 대신 유한한 24시간을 쓴다 — Queue 코어와 같은 센티널이다.
 		return FFF_QueueTimings::UnreachableWaitSeconds;
 	}
-	const int32 Ahead = FMath::Max(0, State.RemainingServiceMemberCount);
-	return static_cast<float>(Ahead + FMath::Max(0, IncomingMemberCount)) / State.ServiceRate;
+	// 이용 인원은 요금에만 영향을 준다. 팀 크기와 관계없는 이용 시작 예측을 그대로 쓴다.
+	(void)IncomingMemberCount;
+	return FMath::Clamp(State.NextServiceStartWaitSeconds, 0.f, FFF_QueueTimings::UnreachableWaitSeconds);
 }
 
 void FFF_QueueWaitAdapter::ApplyQueueStateToCandidate(

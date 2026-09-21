@@ -424,6 +424,53 @@ Hover는 Live UI Accent `#14F2E0` 3px, 선택된 정보 패널 대상은 같은 
 Overview 등 공통 지표는 `UFF_FestivalViewModelSubsystem`이, 설치 시설 정보 패널은
 `UFF_FacilityInfoSubsystem`이 `FFF_FacilityInfoViewData`로 평탄화한 값을 제공합니다.
 
+### 시설 Aurora / Clarity UI 갱신 (2026-09-20)
+
+- 실제 건축 카탈로그는 `UFF_PrepPanelBuild`입니다. 카드 클릭은 `ActivateCatalogFacility`로 바로 배치
+  미리보기를 엽니다. Gold 차감은 권위 설치 명령 성공 시에만 일어납니다. 방향키 및
+  `RequestFacilityFocus`는 포커스만 이동합니다. 좌우 드래그·휠은 탐색만 하고 카드를 활성화하지 않습니다.
+- 필터 없는 전체 건축 목록은 미설치 필수→설치 완료 필수→일반 시설 순으로 표시합니다.
+  카테고리·검색·즐겨찾기 선택 결과는 기존 순서와 필터 의미를 유지합니다.
+- 배치 위젯은 좌측 시설 요약과 그 아래 조작 안내, 우측 하단의 목록·확정으로 구성됩니다.
+  `도구 R` 버튼·원형/정밀 패널·R 키 진입은 제거했습니다. 기존 `ToggleRadialMenu` 호출은
+  메뉴를 열지 않는 호환용 API이며 Q/E, Shift 회전, Ctrl/Alt 간격, G 격자, T 직접 조정은 유지합니다.
+  조작 안내는 배치 진입 시 기본으로 열립니다. `안내 닫기`/`조작 안내`로 전환하고,
+  같은 배치 중에는 닫힘을 유지하며 다음 배치 진입에서 다시 기본 표시합니다.
+  기존 시설을 옮길 때의 서비스 시간은 `GetSelectedFacilityQueueRules()`가 강화된 실제 Queue 규칙에서 읽습니다.
+- 시설 정보의 `QueueCapacityValueText`와 `ServiceCapacityValueText`는 대기 정원과 동시 이용 정원을 분리합니다.
+  실시간 이용 현황·처리 속도는 기존 `FFF_FacilityInfoViewData`를 통해 표시합니다.
+- 조명 지원 시설은 공용 패널의 `조명 편집` 탭을 사용합니다. HSV/RGB/HEX·밝기는 기존 조명 명령으로
+  즉시 미리보기되며, `설정 적용` 전 취소·패널 닫기·시설 선택 변경은 편집 시작 당시 시설 GUID에 원본을 복원합니다.
+  적용 후에는 새 값이 기준이 됩니다. 밝기는 0~500%, 슬라이더 간격은 5%입니다.
+- 조명 패널은 이동·접기가 가능하며 텍스트 입력, 색상 선택, 밝기 조절, 제목 드래그 동안 카메라 입력을 차단합니다.
+  조명·강화 지원 여부와 건축/운영 단계 판정은 기존 권위 규칙을 유지합니다.
+- 시설 정보는 직접 탭으로 전환하고, 조합은 이전/다음 버튼으로 확인합니다. 조명은 480×620 영역에서
+  색상 휠·프리셋과 HSV/RGB 정밀 입력을 전환합니다. 유료 프로그램은 목록/상세를 전환하지만
+  구매는 비용이 적힌 별도 확정 버튼에서만 요청합니다.
+- 매출 순위는 오늘/축제 누적과 해당 기간의 비중을 표시합니다. 합계가 0이면 비중은 `—`이며,
+  수익 시설 없음과 아직 결제 없음 상태를 구분합니다. 도감은 발견 이력과 현재 적용 여부를 구분합니다.
+- `/Game/FestaFiesta/UI/Facility/Aurora`의 UI 재질이 초록·민트·연두 광택을 만듭니다.
+  저장된 WBP의 브러시가 재질을 직접 참조하므로 실행 중 위젯 트리를 다시 만들지 않습니다.
+- 건축 화면은 `/Game/FestaFiesta/UI/Building/Clarity`의 세이지 표면과 얇은 간섭광을 사용하며,
+  프로그램 시설은 별도의 라벤더·청색 펄 재질과 배지로 구분합니다. 도감은 중간 크기의 중앙 창에서
+  6열을 유지하고, 매출 순위는 시설 수에 맞춰 높이를 조절합니다.
+  1일차 필수 시설은 붉은 펄 카드와 썸네일 왼쪽 아래의 필수 배지로 표시하며, 프로그램 배지와 겹치지 않습니다.
+- 마이그레이션·조작·검증 절차는 `Tools/BuildModeClarity/README.md`를 참고합니다.
+
+배치 보조 확장(2026-09-21): `UFF_BuildModeSubsystem::GetPlacementGuidance(Index)`는 기존 검증의
+원인 제목·해결 안내·실제 방해 대상과 원인 페이지 수를 제공합니다. `ToggleDirectPlacementAdjustment()`는
+프리뷰를 고정하고 `AFF_BuildPlacementGizmo`의 월드 XY/회전 핸들을 사용합니다. `T`로 다시 커서 배치에
+돌아가며, 직접 조정 중에는 Enter/확정 버튼만 설치합니다. `FindNearbyPlacement()`는 현재 방향을 보존한
+6m 이내 후보를 제한된 프레임 예산으로 검증하고 프리뷰만 이동합니다. `IsFindingNearbyPlacement()`로
+진행 상태를 표시하며 자금·한도·단계 문제에는 이 액션을 제공하지 않습니다. 검색·조정은 비용과
+시설 상태를 변경하지 않으며, 확정은 기존 `CommitPlacement()`의 재검증 경로를 사용합니다.
+`FFFZSPlacementValidation::Obstructions`는 최대 12개의 표시 전용 진단입니다. 기존 충돌 쿼리에서
+얻은 대상 이름·회전 경계·실패 영역을 제공하며 별도의 권위 판정이나 저장 데이터로 사용하지 않습니다.
+카탈로그 분류 아이콘은 `Building/Clarity/MI_UI_CategoryClarity_*` SDF 픽토그램을 사용합니다.
+- 명시적인 1회 적용 및 재실행 보존 검사는 `Tools/FacilityAurora_20260920/apply_and_verify.py`에 있습니다.
+  일반 실행이나 WBP 열기에서 마이그레이션을 자동 실행하지 않습니다. 작업 전 에셋 사본은
+  `Saved/FacilityAurora_20260920/before_assets`에 보관했습니다.
+
 ### 개발용 Zone·시설 QA 도구 (참고)
 
 현재 수동 통합 QA는 `Content/FestaFiesta/Maps/Test_Main`에서 프로덕션

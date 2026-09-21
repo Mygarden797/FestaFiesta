@@ -8,6 +8,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Economy/FF_FacilityCostResolver.h"
 #include "FF_FFZSTypes.h"
 #include "UObject/PrimaryAssetId.h"
 #include "FF_BuildCatalogTypes.generated.h"
@@ -122,6 +123,15 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Required")
 	int32 RequiredMinimumCount = 0;
 
+	// 현재 축제 프로그램 중 이 시설 종류에서 운영 가능한 유효한 프로그램 수입니다.
+	// 설치/구매 여부, 보유 골드와 독립적인 시설 기능 안내입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Program")
+	int32 CompatibleProgramCount = 0;
+
+	// 호환 프로그램의 표시 이름을 카탈로그 순서로 모은 툴팁용 목록입니다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Program")
+	FText CompatibleProgramNames;
+
 	// 현재 Festival의 FacilityCostTable에서 해석한 설치비입니다. 카탈로그 구성 시 한 번 계산해
 	// UMG/Slate 표현이 같은 가격 원천을 사용하게 하며, 실패하면 bHasResolvedInstallCost가 false입니다.
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
@@ -129,6 +139,12 @@ struct FESTAFIESTA_API FFF_BuildCatalogEntry
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|Catalog|Economy")
 	bool bHasResolvedInstallCost = false;
+
+	// 표시/선택 경로가 같은 기준을 사용한다. 기본값 0만으로는 무료 가격이 되지 않는다.
+	bool HasValidInstallCost() const
+	{
+		return bHasResolvedInstallCost && FFF_FacilityCostResolver::IsValidInstallCost(InstallCost);
+	}
 
 	// 현재 Festival의 철거 환급률을 설치비에 적용한 회수 금액입니다.
 	// 환급률 0은 유효한 설정이므로 값이 0인지와 해석 성공 여부를 별도로 보관합니다.

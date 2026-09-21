@@ -563,7 +563,7 @@ bool FFFZoneSystemQueueProjectionTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 
-	// Legacy 단일 선두 처리 모델로 환산해도 FFZS의 장기 Service 처리율은 보존해야 한다.
+	// 시설 설정을 팀 수와 팀당 시간 그대로 전달한다. 창구 수로 시간을 나누지 않는다.
 	FFFZSQueueRules Rules;
 	Rules.MaxWaitingAgents = 12;
 	Rules.ServiceCapacity = 4;
@@ -573,11 +573,11 @@ bool FFFZoneSystemQueueProjectionTest::RunTest(const FString& Parameters)
 	const FFF_QueueConfig Config =
 		UFF_ZoneSystemQueueBridgeSubsystem::ToProjectQueueConfig(Rules, ExitLocation);
 
-	TestEqual(TEXT("물리 waiting 슬롯 수를 넘겨 배정하지 않는다"), Config.MaxCapacityMembers, 12);
-	TestEqual(TEXT("Legacy 선두 Party 모델은 단일 처리 슬롯을 쓴다"), Config.ConcurrentServiceSlots, 1);
-	TestEqual(TEXT("4개 창구 처리율을 2초/인원으로 환산한다"), Config.ServiceSecondsPerMember, 2.0f);
-	TestEqual(TEXT("Legacy 호환 처리율은 ServiceCapacity / Duration을 보존한다"),
-		static_cast<float>(Config.ConcurrentServiceSlots) / Config.ServiceSecondsPerMember,
+	TestEqual(TEXT("팀별 waiting 슬롯 수를 보존한다"), Config.MaxCapacityParties, 12);
+	TestEqual(TEXT("4개 창구에서 4팀을 동시에 처리한다"), Config.ConcurrentServiceSlots, 4);
+	TestEqual(TEXT("인원과 무관하게 한 팀의 이용 시간은 8초다"), Config.ServiceSecondsPerParty, 8.0f);
+	TestEqual(TEXT("팀 처리율은 ServiceCapacity / Duration이다"),
+		static_cast<float>(Config.ConcurrentServiceSlots) / Config.ServiceSecondsPerParty,
 		0.5f,
 		0.001f);
 	TestEqual(TEXT("Exit Anchor 위치를 전달한다"), Config.ExitLocation, ExitLocation);

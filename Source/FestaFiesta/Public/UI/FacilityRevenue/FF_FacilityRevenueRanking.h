@@ -3,6 +3,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/IUserObjectListEntry.h"
 #include "Components/ListView.h"
+#include "Styling/SlateTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoTypes.h"
 #include "FF_FacilityRevenueRanking.generated.h"
@@ -11,6 +12,7 @@ class UBorder;
 class UButton;
 class UTextBlock;
 class UProgressBar;
+class USizeBox;
 class UFF_FacilityCodexImage;
 class UFF_FestivalProgressionSubsystem;
 class UFF_BuildCatalogSubsystem;
@@ -65,6 +67,7 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankRow : public UUserWidget, public IU
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Name;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Location;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Amount;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Share;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_ThumbnailFallback;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UFF_FacilityCodexImage> Image_Thumbnail;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UProgressBar> Bar_Revenue;
@@ -96,12 +99,15 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
   protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& Geometry, float DeltaTime) override;
 	virtual FReply NativeOnKeyDown(const FGeometry &Geometry, const FKeyEvent &Event) override;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UBorder> Border_Panel;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_ClarityFrame;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UFF_FacilityRevenueListView> List_Ranking;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Total;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Count;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_Empty;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Border_FirstRevenue;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_SelectedName;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_SelectedRank;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> Text_SelectedShare;
@@ -109,6 +115,10 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> Button_Total;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> Button_Close;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UButton> Button_Inspect;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
+	FLinearColor SelectedPeriodTextColor = FLinearColor::White;
+	UPROPERTY(EditDefaultsOnly, Category = "Appearance|Tabs")
+	FLinearColor InactivePeriodTextColor = FLinearColor::FromSRGBColor(FColor(0x20, 0x4c, 0x36));
 
   private:
 	UFUNCTION() void Today();
@@ -117,6 +127,9 @@ class FESTAFIESTA_API UFF_FacilityRevenueRankingPanel : public UUserWidget
 	UFUNCTION() void InspectClicked();
 	void SelectionChanged(UObject *Object);
 	void UpdatePeriod();
+	UPROPERTY(Transient) TMap<FName, FButtonStyle> AuthoredPeriodStyles;
+	void UpdateFrameSize(const FVector2D& Viewport);
+	float DesiredFrameHeight = 600.f;
 	bool bCumulative = false;
 };
 UCLASS()

@@ -186,7 +186,7 @@ namespace FFFacilityInfoModel
 			const FText Revenue = Preview->bRevenueAvailable
 				? FormatGold(true, bNext ? Preview->NextRevenuePerUseGold : Preview->CurrentRevenuePerUseGold)
 				: LOCTEXT("ComparisonRevenueUnavailable", "정보 없음");
-			return FText::Format(LOCTEXT("UpgradeComparisonValues", "1인 수익  {0}\n1인 시간  {1}초\n분당  {2}명\n크기  {3}"),
+			return FText::Format(LOCTEXT("UpgradeComparisonValues", "1인 수익  {0}\n팀당 시간  {1}초\n분당  {2}팀\n크기  {3}"),
 				Revenue,
 				FText::AsNumber(bNext ? Preview->NextServiceDurationSeconds : Preview->CurrentServiceDurationSeconds, &SecondsOptions),
 				FText::AsNumber(bNext ? Preview->NextThroughputPerMinute : Preview->CurrentThroughputPerMinute, &Options),
@@ -202,7 +202,7 @@ namespace FFFacilityInfoModel
 				: LOCTEXT("ComparisonRevenueUnavailable", "정보 없음");
 			Values.ServiceTime = FText::Format(LOCTEXT("UpgradeCellSeconds", "{0}초"),
 				FText::AsNumber(bNext ? Preview->NextServiceDurationSeconds : Preview->CurrentServiceDurationSeconds, &SecondsOptions));
-			Values.Throughput = FText::Format(LOCTEXT("UpgradeCellThroughput", "{0}명/분"),
+			Values.Throughput = FText::Format(LOCTEXT("UpgradeCellThroughput", "{0}팀/분"),
 				FText::AsNumber(bNext ? Preview->NextThroughputPerMinute : Preview->CurrentThroughputPerMinute, &Options));
 			Values.Footprint = FormatFootprint(bNext ? Preview->NextFootprintCentimeters : Preview->CurrentFootprintCentimeters);
 			return Values;
@@ -215,7 +215,7 @@ namespace FFFacilityInfoModel
 		ViewData.UpgradeBalanceText = FText::Format(LOCTEXT("UpgradeBalanceGold", "{0} Gold"),
 			FText::AsNumber(FMath::Abs(static_cast<int64>(Preview->GoldAfterUpgrade))));
 		ViewData.UpgradeEffectText = FText::Format(
-			LOCTEXT("UpgradeEffectsCompact", "시간 {0}초 → {1}초 · 분당 {2}명 → {3}명"),
+			LOCTEXT("UpgradeEffectsCompact", "팀당 시간 {0}초 → {1}초 · 분당 {2}팀 → {3}팀"),
 			FText::AsNumber(Preview->CurrentServiceDurationSeconds, &SecondsOptions),
 			FText::AsNumber(Preview->NextServiceDurationSeconds, &SecondsOptions),
 			FText::AsNumber(Preview->CurrentThroughputPerMinute, &Options),
@@ -436,9 +436,9 @@ namespace FFFacilityInfoModel
 		return FText::Format(LOCTEXT("WaitMinutesFormat", "약 {0}분"), FText::AsNumber(Minutes));
 	}
 
-	FText FormatThroughput(const bool bAvailable, const float PeoplePerMinute)
+	FText FormatThroughput(const bool bAvailable, const float TeamsPerMinute)
 	{
-		if (!bAvailable || !FMath::IsFinite(PeoplePerMinute) || PeoplePerMinute < 0.0f)
+		if (!bAvailable || !FMath::IsFinite(TeamsPerMinute) || TeamsPerMinute < 0.0f)
 		{
 			return LOCTEXT("UnavailableThroughput", "계산 불가");
 		}
@@ -446,8 +446,8 @@ namespace FFFacilityInfoModel
 		Options.MinimumFractionalDigits = 1;
 		Options.MaximumFractionalDigits = 1;
 		return FText::Format(
-			LOCTEXT("ThroughputFormat", "분당 {0}명"),
-			FText::AsNumber(PeoplePerMinute, &Options));
+			LOCTEXT("ThroughputFormat", "분당 {0}팀"),
+			FText::AsNumber(TeamsPerMinute, &Options));
 	}
 
 	FText GetOperationStateText(

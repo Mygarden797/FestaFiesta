@@ -28,6 +28,9 @@ class FESTAFIESTA_API UFF_FacilityCodexTileView final : public UTileView
 	GENERATED_BODY()
 public:
 	void ConfigureEntryClass(TSubclassOf<UUserWidget> InEntryClass);
+	/** Recipe collection always uses six columns, regardless of row count or viewport. */
+	UPROPERTY(VisibleAnywhere, Category="Layout")
+	int32 ColumnCount = 6;
 protected:
 	virtual TSharedRef<STableViewBase> RebuildListWidget() override;
 };

@@ -89,6 +89,12 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Text_State")),
 			FName(TEXT("Button_Favorite")),
 			FName(TEXT("Text_Favorite")),
+			FName(TEXT("Border_RequiredMissing")),
+			FName(TEXT("Text_RequiredMissing")),
+			FName(TEXT("Border_RequiredSatisfied")),
+			FName(TEXT("Text_RequiredSatisfied")),
+			FName(TEXT("Border_ProgramBadge")),
+			FName(TEXT("Text_ProgramBadge")),
 			FName(TEXT("SizeBox_Card")) })
 		{
 			TestNotNull(
@@ -108,6 +114,11 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	{
 		for (const FName RequiredName : {
 			FName(TEXT("Text_PanelTitle")),
+			FName(TEXT("HorizontalBox_CatalogEmphasisGuide")),
+			FName(TEXT("Border_CatalogRequiredGuide")),
+			FName(TEXT("Border_CatalogProgramLegend")),
+			FName(TEXT("Text_CatalogProgramLegend")),
+			FName(TEXT("Text_CatalogProgramGuide")),
 			FName(TEXT("Button_Close")),
 			FName(TEXT("Panel_Catalog")),
 			FName(TEXT("Panel_PlacementCompact")),
