@@ -247,9 +247,10 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * 원인별 지출·원인별 매출·부스별 매출(`GetRevenueByFacility()`)·철거 환급을 따로 쌓고 하루 경계에서
  * `Reset()`된다. Blueprint 노출은 없고 C++ const 참조라 Report 화면이 직접 읽는다.
  *
- * Staff도 소유자 API가 생겼다 — `GetBaseStaffCount()`/`GetTemporaryStaffCount()`/`GetTotalStaffCount()`.
- * 무페이 기본 팀 + 당일 알바 구성이고 임금은 알바에만 붙는다. 이 ViewModel에는 아직 Staff 필드가 없다.
- * 임대료 미납은 `FFF_FixedCostArrears`에 누적된다. 상세는 리포 루트 `UI_API.md`.
+ * Staff도 소유자 API가 생겼다 — `GetBaseStaffCount()`/`GetHiredStaffCount()`/`GetTotalStaffCount()`.
+ * 무페이 기본 팀 + 고용 인원 구성이고, 고용은 1회 구매라 축제가 끝날 때까지 남는다.
+ * 거절할 수 없는 지출은 없다 — 잔액이 모자라면 그 지출이 거부되고 화면에서는 버튼이 막힌다.
+ * 상세는 리포 루트 `UI_API.md`.
  *
  * === 값 규격 (2026-08-06 결정) ===
  * - Satisfaction / Safety : int32 0~100, 높을수록 좋음.
@@ -379,97 +380,53 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
 	FFF_OnIntMetricChanged OnTodayRevenueChanged;
 
-	// --- 고정비 미납 (2026-08-26 추가 — U4 준비 단계 HUD) ---
-	//
-	// !! 잔액과 함께 보여야 하는 값이다 !!
-	// 미납이 남아 있으면 매출이 들어와도 잔액이 안 늘어난다(`RepayArrearsFromGold`).
-	// 이 칸이 없으면 "돈을 벌었는데 잔액이 그대로"인 화면을 설명할 방법이 없다.
-	// 0 이면 화면에서 칸을 숨긴다 — 0 을 띄우면 없는 문제를 있는 것처럼 만든다.
-
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
-	int32 GetArrears() const { return Arrears; }
-
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
-	FFF_OnIntMetricChanged OnArrearsChanged;
-
 	// --- 스태프 (2026-08-26 추가 — U4 준비 단계 HUD) ---
 	//
-	// 무페이 기본 팀 + 당일 알바다. 임금은 알바에만 붙고 매일 재계약한다.
+	// 무페이 기본 팀 + 이번 축제에 고용한 인원이다. 고용은 1회 구매이고 축제 끝까지 남는다.
 	// **축제 시작 전에는 `INDEX_NONE`(모름)이다.** 0 을 띄우면 "스태프가 없다"는 틀린 사실이 된다.
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetBaseStaffCount() const { return BaseStaffCount; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetTemporaryStaffCount() const { return TemporaryStaffCount; }
+	int32 GetHiredStaffCount() const { return HiredStaffCount; }
 
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
 	int32 GetTotalStaffCount() const { return TotalStaffCount; }
 
-	/** 전체 인원이 바뀔 때. 기본·알바 내역도 이때 함께 갱신된다. */
+	/** 전체 인원이 바뀔 때. 기본·고용 내역도 이때 함께 갱신된다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
 	FFF_OnIntMetricChanged OnTotalStaffCountChanged;
 
-	// --- 가용 인원 (2026-08-27 추가 — 2026-08-25 김시리 지시) ---
+	// --- 고용 (2026-08-26 추가 — U5 인력 패널) ---
 	//
-	// !! 전체 인원만 보여주면 안 된다 !!
-	// 프로그램을 편성하면 그만큼 인원이 묶여서 Event 대응에 쓸 수 없다. 전체만 띄우면
-	// 플레이어가 6명을 다 쓸 수 있다고 착각한다. 화면 표기는 `6명 중 3명 사용 가능` 형태다.
-	//
-	// 지금은 프로그램이 0개라 두 값이 같아서 증상이 안 보인다. 프로그램 패널이 생기는 순간
-	// 조용히 틀린 숫자가 되므로 먼저 넣어 둔다.
-
-	/** Event 대응에 쓸 수 있는 인원 = 전체 − 프로그램에 묶인 인원. 시작 전에는 `INDEX_NONE`. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetAvailableStaffCount() const { return AvailableStaffCount; }
-
-	/** 프로그램에 묶여 있는 인원. 막힌 이유를 화면이 설명할 때 쓴다. 시작 전에는 `INDEX_NONE`. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetStaffAssignedToPrograms() const;
-
-	/**
-	 * 가용 인원이 바뀔 때.
-	 *
-	 * !! `OnTotalStaffCountChanged` 하나만 구독하면 안 된다 !!
-	 * 프로그램 편성은 전체 인원을 바꾸지 않으므로 그 델리게이트가 울리지 않는다.
-	 * 반대로 알바 고용은 편성을 바꾸지 않아도 가용 인원을 늘린다 — 그래서 둘 다 필요하다.
-	 */
-	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Staff")
-	FFF_OnIntMetricChanged OnAvailableStaffCountChanged;
-
-	// --- 알바 고용 (2026-08-26 추가 — U5 인력 패널) ---
-	//
-	// 판정의 소유자는 경제 시스템이다. **UI 가 `Gold / 임금` 을 직접 계산하지 않는다** —
+	// 판정의 소유자는 경제 시스템이다. **UI 가 `Gold / 고용비` 를 직접 계산하지 않는다** —
 	// 상한 규칙이 바뀌면 UI 의 계산식이 조용히 틀리게 된다.
 	// 값이 없으면 전부 `INDEX_NONE`(모름)이고 화면은 그 칸을 숨긴다.
 
 	/**
-	 * 지금 추가로 고용할 수 있는 최대 인원. **잔액과 하루 상한을 둘 다 반영한 값**이다.
+	 * 지금 추가로 고용할 수 있는 최대 인원. **잔액과 축제 총원 상한을 둘 다 반영한 값**이다.
 	 * 스텝퍼 상한과 버튼 비활성 판정에 쓴다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetAffordableTemporaryStaffCount() const;
+	int32 GetAffordableHireCount() const;
 
 	/**
-	 * 오늘 상한까지 남은 자리. 잔액은 보지 않는다.
+	 * 축제 총원 상한까지 남은 자리. 잔액은 보지 않는다.
 	 *
-	 * `GetAffordableTemporaryStaffCount()` 와 **둘 다 필요한 이유**는 막힌 이유를 구분하기
+	 * `GetAffordableHireCount()` 와 **둘 다 필요한 이유**는 막힌 이유를 구분하기
 	 * 위해서다 — `상한을 다 썼다` 와 `돈이 없다` 는 플레이어가 할 행동이 다르다 (AT-011).
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetRemainingTemporaryStaffCap() const;
+	int32 GetRemainingHireCap() const;
 
-	/** 알바 1명·1일 임금. 고정비 표와 견적에 쓴다. */
+	/** Staff 1명 고용 비용(1회). 지출 표와 견적에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetDailyStaffWageGold() const;
+	int32 GetStaffHireCostGold() const;
 
-	/** 하루 알바 상한. 화면에 `오늘 최대 N명` 을 쓰기 위한 값이다. */
+	/** 축제 총원 고용 상한. 화면에 `최대 N명` 을 쓰기 위한 값이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Staff")
-	int32 GetMaxTemporaryStaffPerDay() const;
-
-	/** 장소 임대료(Gold/일). 고정비 표에 임금과 함께 보여준다. */
-	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Economy")
-	int32 GetDailyVenueRentGold() const;
+	int32 GetMaxHiredStaffCount() const;
 
 	// --- 환경: 날씨 (2026-08-26 추가 — U5 점검 패널) ---
 	//
@@ -550,8 +507,8 @@ public:
 
 	// --- 유료 프로그램 (2026-08-27 추가 — U5 프로그램 패널) ---
 	//
-	// 하루짜리 카드다. 아침에 Gold 와 인원을 걸고 편성하면 정원만큼 손님이 추가로 온다.
-	// **인원이 묶이는 것이 대가**라 `GetAvailableStaffCount()` 와 짝으로 봐야 한다.
+	// 하루짜리 카드다. 아침에 Gold 를 걸고 편성하면 정원만큼 손님이 추가로 온다.
+	// [주의] 인원은 걸지 않는다 — Staff 는 사건 대응 축이라 프로그램과 분리돼 있다.
 
 	/** 편성할 수 있는 카드 전체. 축제가 시작되지 않았으면 빈 배열이다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
@@ -588,7 +545,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	TArray<FFF_PrepFacilityOption> GetEligibleFacilitiesForProgram(FName ProgramId) const;
 
-	/** 오늘 편성이 바뀔 때. 가용 인원도 같이 바뀌므로 두 표시를 함께 갱신한다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Program")
 	FFF_OnProgramScheduleViewChanged OnScheduledProgramsChanged;
 
@@ -709,22 +665,22 @@ public:
 	void RequestSetWeather(EFF_WeatherType NewWeather);
 
 	/**
-	 * 알바를 `Count` 명 고용해 달라고 **요청한다.**
+	 * Staff 를 `Count` 명 고용해 달라고 **요청한다.** 축제가 끝날 때까지 남는다.
 	 *
 	 * !! 부분 고용이 없다 !! 실패하면 아무것도 바뀌지 않는다. 그래서 낙관적 갱신을 하지 않고
 	 * 화면은 `OnGoldChanged`·`OnTotalStaffCountChanged` 결과 이벤트로만 갱신된다.
 	 *
 	 * 돌려주는 값은 "요청이 받아들여졌는지"일 뿐이다. **실패 이유는 이 값에 없다** —
-	 * 이유는 `GetRemainingTemporaryStaffCap()` 과 `GetAffordableTemporaryStaffCount()` 로
+	 * 이유는 `GetRemainingHireCap()` 과 `GetAffordableHireCount()` 로
 	 * 화면이 구분한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|ViewModel|Command")
-	bool RequestHireTemporaryStaff(int32 Count);
+	bool RequestHireStaff(int32 Count);
 
 	/**
 	 * 피날레를 구매해 달라고 **요청한다.** 확인창을 통과한 뒤에만 부른다 — 되돌릴 수 없다.
 	 *
-	 * 알바 고용과 달리 **실패 이유를 그대로 돌려준다.** 등급마다 막히는 이유가 다르고
+	 * 인원 고용과 달리 **실패 이유를 그대로 돌려준다.** 등급마다 막히는 이유가 다르고
 	 * (`Gold 부족` / `이미 구매` / `단계 아님`) 플레이어가 할 행동도 다르기 때문이다 (AT-011).
 	 *
 	 * !! 화면 문구를 이 enum 에서 직접 만들지 않는다 !!
@@ -958,10 +914,6 @@ protected:
 	UFUNCTION()
 	void HandleOwnerExpectedVisitorsChanged(int32 NewValue);
 
-	/** 미납 총액을 받아 중계한다. */
-	UFUNCTION()
-	void HandleOwnerArrearsChanged(int32 NewValue);
-
 	/**
 	 * 환경 상태를 받아 **날씨만** 중계한다.
 	 *
@@ -972,14 +924,13 @@ protected:
 	void HandleOwnerEnvironmentChanged(EFF_WeatherType NewWeather, bool bIsNight);
 
 	/**
-	 * 전체 인원을 받아 중계한다. 기본·알바 내역은 방송에 실려 오지 않으므로 여기서 다시 읽는다.
-	 * 인자 하나만 믿고 내역을 갱신하지 않으면 "총 6명인데 기본 4 + 알바 0" 같은 화면이 된다.
+	 * 전체 인원을 받아 중계한다. 기본·고용 내역은 방송에 실려 오지 않으므로 여기서 다시 읽는다.
+	 * 인자 하나만 믿고 내역을 갱신하지 않으면 "총 6명인데 기본 4 + 고용 0" 같은 화면이 된다.
 	 */
 	UFUNCTION()
 	void HandleOwnerStaffCountChanged(int32 NewValue);
 
 	/**
-	 * 프로그램 편성이 바뀌었을 때 가용 인원을 다시 읽는다.
 	 *
 	 * 원본 델리게이트가 **인자를 싣지 않으므로** 핸들러도 파라미터가 없어야 한다
 	 * (`FFF_OnProgramScheduleChanged` 는 `DECLARE_DYNAMIC_MULTICAST_DELEGATE`).
@@ -1008,14 +959,6 @@ private:
 
 	/** 피날레 구매 시점 판정의 소유자. Stage 와 경제를 함께 봐야 해서 브리지가 갖고 있다. */
 	UFF_StageEconomyBridgeSubsystem* GetStageEconomyBridgeSubsystem() const;
-
-	/**
-	 * 가용 인원을 소유자에게서 다시 읽어 반영한다.
-	 *
-	 * 전체 인원 변경(알바 고용)과 편성 변경(프로그램) 양쪽에서 부른다.
-	 * 축제 시작 전에는 `INDEX_NONE` 이다 — 0 을 띄우면 "쓸 사람이 없다"는 틀린 사실이 된다.
-	 */
-	void RefreshAvailableStaffCount();
 
 	/** Stage 시스템 구독을 시도한다. */
 	void TryBindStageSubsystem();
@@ -1084,10 +1027,6 @@ private:
 	UPROPERTY()
 	int32 TodayRevenue = 0;
 
-	/** 임대료 미납 누적. 하루 경계에서 리셋되지 않는다. */
-	UPROPERTY()
-	int32 Arrears = 0;
-
 	/** 중복 방송 차단용. 야간 전환으로 원본이 울려도 날씨가 같으면 넘긴다. */
 	UPROPERTY()
 	EFF_WeatherType LastBroadcastWeather = EFF_WeatherType::Clear;
@@ -1098,13 +1037,10 @@ private:
 	int32 BaseStaffCount = INDEX_NONE;
 
 	UPROPERTY()
-	int32 TemporaryStaffCount = INDEX_NONE;
+	int32 HiredStaffCount = INDEX_NONE;
 
 	UPROPERTY()
 	int32 TotalStaffCount = INDEX_NONE;
-
-	UPROPERTY()
-	int32 AvailableStaffCount = INDEX_NONE;
 
 	/** 오늘 예상 방문객. 소유자 값이 오기 전에는 `모름` 이다. */
 	UPROPERTY(Transient)

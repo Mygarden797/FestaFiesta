@@ -129,7 +129,6 @@ namespace FFFacilityUpgradeIntegrationTest
 			Definition->FestivalId = TEXT("FacilityUpgradeAutomation");
 			Definition->FacilityCostTable = Costs;
 			Definition->InitialGold = Gold;
-			Definition->DailyVenueRentGold = 0;
 			Progression->StartFestival(Definition);
 			Queues->SetPaused(true);
 

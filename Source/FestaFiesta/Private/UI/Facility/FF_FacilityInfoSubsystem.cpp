@@ -1038,7 +1038,6 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 
 				bHasCompatibleCard = true;
 				if (Result == EFF_PaidProgramScheduleResult::Success ||
-					Result == EFF_PaidProgramScheduleResult::NotEnoughStaff ||
 					Result == EFF_PaidProgramScheduleResult::InsufficientGold ||
 					Result == EFF_PaidProgramScheduleResult::AlreadyScheduled ||
 					Result == EFF_PaidProgramScheduleResult::FacilityTimeConflict)
@@ -1625,7 +1624,6 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 
 	OutViewData.FacilityInstanceId = FacilityId;
 	OutViewData.AvailableGold = Progression->GetGold();
-	OutViewData.AvailableStaff = Progression->GetAvailableStaffCount();
 	OutViewData.FacilityName = Facility.GetFacilitySpec().DisplayName.IsEmpty()
 		? FText::FromName(Facility.GetFacilitySpec().FacilityDefinitionId)
 		: Facility.GetFacilitySpec().DisplayName;
@@ -1652,14 +1650,10 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 		CardViewData.TimeText =
 			FFFacilityInfoModel::FormatProgramTimeRange(Card.StartMinutes, Card.EndMinutes);
 		CardViewData.CostGold = Card.CostGold;
-		CardViewData.RequiredStaff = Card.RequiredStaff;
 		CardViewData.CapacityPeople = Card.Capacity;
 		CardViewData.TicketFeeGold = Card.FeePerPerson;
 		CardViewData.MaxRevenueGold = Card.CalcMaxRevenue();
 		CardViewData.CostText = FFFacilityInfoModel::FormatGold(true, Card.CostGold);
-		CardViewData.StaffText = FText::Format(
-			LOCTEXT("ProgramRequiredStaff", "필요 인원 {0}명"),
-			FText::AsNumber(Card.RequiredStaff));
 		CardViewData.CapacityText = FText::Format(
 			LOCTEXT("ProgramCapacity", "정원 {0}명"), FText::AsNumber(Card.Capacity));
 		CardViewData.TicketFeeText = FText::Format(
@@ -1704,8 +1698,7 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 		const UFF_FestivalProgressionSubsystem* Progression = GameInstance
 			? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
 		ActivePicker->ShowPurchaseComplete(ProgramId,
-			Progression ? Progression->GetGold() : 0,
-			Progression ? Progression->GetAvailableStaffCount() : 0);
+			Progression ? Progression->GetGold() : 0);
 		SetPaidProgramPickerOpen(true);
 		SetFeedback(LOCTEXT("PaidProgramScheduled", "유료 프로그램 구매·편성이 완료되었습니다."), false);
 		RefreshPanel();

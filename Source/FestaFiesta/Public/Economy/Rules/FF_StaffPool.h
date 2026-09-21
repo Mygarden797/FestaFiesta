@@ -3,52 +3,57 @@
 #include "CoreMinimal.h"
 
 /**
- * Staff 인원. 
- * 무페이 기본 팀과 오늘 고용한 1일 알바로 이루어진다.
+ * Staff 인원.
+ * 무페이 기본 팀과 축제 동안 고용한 인원으로 이루어진다.
  * [참고] economy_spec.md §3.7 · §2.5.1 · §5 S6.
- * 
- * 임금은 아침마다 고용하는 알바에만 붙는다(하루 최대 MaxTemporaryStaffCount 명).
- * 고용 조건은 그날 하루뿐이다. 다음 날 아침에 다시 정한다. 기본 팀은 줄지 않는다.
  *
- * [미정] 어느 시설에 몇 명을 배정하는가는 아직 없다. S9 에서 붙인다.
+ * 고용은 **1회 구매이고 축제가 끝날 때까지 남는다.** 하루 경계에서 줄어들지 않는다 —
+ *
+ * 영구라서 값어치가 남은 날짜에 비례한다 — 일찍 살수록 이득이고, 그것이 규칙이다.
+ * 총원은 MaxTotalStaffCount 로 막는다(예전의 '하루 상한'이 아니라 축제 전체 상한이다).
+ *
+ * [주의] 스태프는 **시설 성능에 관여하지 않는다.** 시설의 회전율·객단가는 시설 강화가
+ *        올리고(UFF_FacilityUpgradeSubsystem), 스태프는 사건 대응에 쓰인다.
+ *        두 축을 겹치면 같은 것을 두 번 사게 된다.
+ *
+ * [미정] 사건에 몇 명을 어떻게 보내는가는 아직 없다. UFF_FestivalEventSubsystem 에서 붙인다.
  */
 
 struct FESTAFIESTA_API FFF_StaffPool
 {
 	void Initialize(int32 InBaseCount);
-	
-	// 무페이 기본 팀 인원.
+
+	// 무페이 기본 팀 인원. 축제 내내 줄지 않는다.
 	int32 GetBaseStaffCount() const { return BaseStaffCount; }
 
-	// 오늘 하루 고용한 임시 Staff 인원.
-	int32 GetTemporaryStaffCount() const { return TemporaryStaffCount; }
+	// 이번 축제에 고용한 인원. 하루 경계를 넘어 유지된다.
+	int32 GetHiredStaffCount() const { return HiredStaffCount; }
 
-	// 오늘 실제로 사용할 수 있는 전체 Staff 인원 = 기본 팀 + 당일 고용 인원.
+	// 지금 쓸 수 있는 전체 Staff 인원 = 기본 팀 + 고용 인원.
 	int32 GetTotalStaffCount() const
 	{
-		return BaseStaffCount + TemporaryStaffCount;
+		return BaseStaffCount + HiredStaffCount;
 	}
-	
-	// Budget 안에서 하루치 임금을 지불할 수 있는 최대 임시 Staff 수를 계산한다.
-	// MaxTemporaryStaffCount를 넘지 않으며 상태는 변경하지 않는다.
-	int32 CalcAffordableTemporaryStaffCount(
-		int32 WagePerStaffGold,
+
+	// Budget 안에서 고용비를 지불할 수 있는 최대 인원을 계산한다.
+	// RemainingCap 을 넘지 않으며 상태는 변경하지 않는다.
+	int32 CalcAffordableHireCount(
+		int32 HireCostGold,
 		int32 Budget,
-		int32 MaxTemporaryStaffCount) const;
+		int32 RemainingCap) const;
 
-	// 오늘 하루 고용할 임시 Staff 인원을 설정한다.
-	void SetTemporaryStaffCount(int32 InTemporaryStaffCount);
+	// 고용 인원을 설정한다. 음수는 0 으로 막는다.
+	void SetHiredStaffCount(int32 InHiredStaffCount);
 
-	// 임시 Staff InStaffCount명의 하루치 총 임금을 계산한다.
-	// 상태는 변경하지 않는다.
-	static int32 CalcTemporaryStaffWage(
+	// InStaffCount 명을 고용하는 총 비용을 계산한다. 상태는 변경하지 않는다.
+	static int32 CalcHireCost(
 		int32 InStaffCount,
-		int32 WagePerStaffGold);
+		int32 HireCostGold);
 
 private:
 	// 무페이 기본 팀.
 	int32 BaseStaffCount = 0;
 
-	// 오늘 하루 고용한 임시 Staff.
-	int32 TemporaryStaffCount = 0;
+	// 이번 축제에 고용한 인원. 새 축제에서만 0 으로 돌아간다.
+	int32 HiredStaffCount = 0;
 };

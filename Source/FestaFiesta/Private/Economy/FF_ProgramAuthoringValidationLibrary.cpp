@@ -81,11 +81,11 @@ bool UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(
 				LOCTEXT("EmptyDisplayName", "{0}: 화면 표시 이름이 비어 있다."), Label));
 		}
 
-		if (Card.CostGold <= 0 || Card.RequiredStaff <= 0
+		if (Card.CostGold <= 0
 			|| Card.Capacity <= 0 || Card.FeePerPerson <= 0)
 		{
 			OutErrors.Add(FText::Format(
-				LOCTEXT("NonPositiveEconomy", "{0}: CostGold, RequiredStaff, Capacity, FeePerPerson는 모두 1 이상이어야 한다."),
+				LOCTEXT("NonPositiveEconomy", "{0}: CostGold, Capacity, FeePerPerson는 모두 1 이상이어야 한다."),
 				Label));
 		}
 

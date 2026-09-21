@@ -21,6 +21,7 @@
 namespace FFF_FinalePurchaseTestHelpers
 {
 	// [기획서] §10. 여기 값이 바뀌면 아래 기대값도 같이 바꿔야 한다.
+	constexpr int32 CostC = 2000;
 	constexpr int32 CostA = 6000;
 	constexpr int32 BonusA = 20;
 	constexpr int32 CostS = 8000;
@@ -38,7 +39,7 @@ namespace FFF_FinalePurchaseTestHelpers
 	// Unity Build 동명 헬퍼 충돌을 피하려고 파일 전용 이름을 쓴다.
 	struct FFinalePurchaseHarness
 	{
-		bool Initialize(int32 InitialGold, int32 DailyRent = 0)
+		bool Initialize(int32 InitialGold)
 		{
 			GameInstance = NewObject<UGameInstance>(GetTransientPackage());
 			if (GameInstance == nullptr)
@@ -61,8 +62,6 @@ namespace FFF_FinalePurchaseTestHelpers
 
 			Definition->FestivalId = TEXT("FinalePurchaseAutomationFestival");
 			Definition->InitialGold = InitialGold;
-			// 대부분의 테스트는 임대료를 0 으로 둔다. 하루 경계는 FF_DayBoundaryTests 가 갖는다.
-			Definition->DailyVenueRentGold = DailyRent;
 
 			Progression->StartFestival(Definition);
 			return true;
@@ -205,39 +204,32 @@ bool FFF_FinalePurchase_BonusIsNotRevenue::RunTest(const FString& Parameters)
 	return true;
 }
 
-// 미납이 남아 있으면 잔액이 0 이라 자연히 못 산다 (§3.7).
-// "미납이면 구매 금지" 같은 규칙을 새로 만들지 않는다 — 같은 판정을 두 곳에 두지 않는다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_ArrearsBlockThroughZeroBalance, "FestaFiesta.Economy.FinalePurchase.ArrearsBlockThroughZeroBalance", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_FinalePurchase_ArrearsBlockThroughZeroBalance::RunTest(const FString& Parameters)
+// 잔액이 모자라면 추가 규칙 없이 CanAfford 하나가 막는다. "무엇무엇이면 구매 금지" 같은
+// 판정을 따로 만들지 않는다 — 같은 판정을 두 곳에 두지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_InsufficientGoldBlocksCheapestGrade, "FestaFiesta.Economy.FinalePurchase.InsufficientGoldBlocksCheapestGrade", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinalePurchase_InsufficientGoldBlocksCheapestGrade::RunTest(const FString& Parameters)
 {
-	// 초기 1,000 · 임대료 2,400 → StartFestival 이 Day1 을 정산해 잔액 0 · 미납 1,400.
+	// 가장 싼 등급(C = 2,000)보다 1 적게 들고 시작한다.
 	FFF_FinalePurchaseTestHelpers::FFinalePurchaseHarness Harness;
-	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(1000, 2400)))
+	if (!TestTrue(TEXT("픽스처가 구성된다"), Harness.Initialize(FFF_FinalePurchaseTestHelpers::CostC - 1)))
 	{
 		return false;
 	}
 
-	TestEqual(TEXT("잔액이 0 이다"), Harness.Progression->GetGold(), 0);
-	TestEqual(TEXT("미납이 1,400 이다"), Harness.Progression->GetTotalArrears(), 1400);
-
-	// 매출 1,000 이 들어와도 전액 미납 상환에 쓰여 잔액에 남지 않는다.
-	Harness.Progression->AddRevenue(1000, EFF_EarnReason::FacilityCommission);
-	TestEqual(TEXT("매출이 들어와도 잔액은 0 이다"), Harness.Progression->GetGold(), 0);
-	TestEqual(TEXT("미납이 400 으로 줄었다"), Harness.Progression->GetTotalArrears(), 400);
-
-	// 그래서 가장 싼 등급도 못 산다. 추가 규칙 없이 CanAfford 가 막는다.
-	TestEqual(TEXT("미납이 남아 있으면 가장 싼 등급도 못 산다"),
+	TestEqual(TEXT("가장 싼 등급도 못 산다"),
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::C),
 		EFF_FinalePurchaseResult::InsufficientGold);
 	TestEqual(TEXT("거부 후에도 미구매 상태다"),
 		Harness.Progression->GetPurchasedFinaleGrade(), EFF_FinaleGrade::None);
+	TestEqual(TEXT("거부는 잔액을 바꾸지 않는다"),
+		Harness.Progression->GetGold(), FFF_FinalePurchaseTestHelpers::CostC - 1);
 
 	return true;
 }
 
 // 🔴 3일 루프가 닫혔다는 증거 — §2.5 순이익 7,930 으로 A 는 사지고 S 는 70 부족하다.
 //
-// 3일을 실제로 시뮬레이션하지 않고 순이익을 직접 넣는다. 유입·유출 순서에 따라 미납이 끼면
+// 3일을 실제로 시뮬레이션하지 않고 순이익을 직접 넣는다. 유입·유출 순서가 섞이면
 // 최종 잔액이 달라져서, 검산의 결론("A 는 되고 S 는 안 된다")이 아니라 진행 순서를 테스트하게 된다.
 // 하루 경계 자체는 FF_DayBoundaryTests 와 FF_StageEconomyBridgeTests 가 이미 고정한다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinalePurchase_ThreeDayNetProfitBuysAButNotS, "FestaFiesta.Economy.FinalePurchase.ThreeDayNetProfitBuysAButNotS", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -293,7 +285,7 @@ bool FFF_FinalePurchase_StartFestivalResetsPurchase::RunTest(const FString& Para
 		Harness.Progression->TryPurchaseFinale(EFF_FinaleGrade::A),
 		EFF_FinalePurchaseResult::Success);
 
-	// 같은 정의로 축제를 다시 시작한다. Gold·원장·미납이 초기화되는 그 경로다.
+	// 같은 정의로 축제를 다시 시작한다. Gold·원장이 초기화되는 그 경로다.
 	Harness.Progression->StartFestival(Harness.Definition);
 
 	TestEqual(TEXT("구매 상태가 미구매로 돌아간다"),

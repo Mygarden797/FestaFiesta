@@ -10,7 +10,7 @@
  * 라이브 스태프 패널 인력 현황 고정 테스트 (U6).
  *
  * === 왜 이 테스트가 있어야 하나 ===
- * 손으로 재현하려면 축제를 켜고 알바를 뽑고 프로그램을 편성해야 하는데, 정작 확인해야 할
+ * 손으로 재현하려면 축제를 켜고 인원을 뽑아야 하는데, 정작 확인해야 할
  * 세 경우는 그렇게 해서는 잘 안 나온다 —
  *   ① **못 읽은 값**. 축제 시작 전에는 인력 API 가 `INDEX_NONE` 이다. `0명` 으로 보이면
  *      "아무도 없다" 는 틀린 사실이 된다
@@ -60,7 +60,7 @@ bool FFF_LiveStaffRules_Summary::RunTest(const FString& Parameters)
 	}
 
 	{
-		// 아무도 배치되지 않은 것은 정상이다 — 유료 프로그램을 안 넣은 날이 그렇다.
+		// 아무도 배치되지 않은 것은 정상이다 — 사건 시스템이 아직 없다.
 		const FFF_LiveStaffSummary S = FFF_LiveStaffRules::BuildSummary(12, 6, 6, /*Assigned*/ 0);
 
 		TestEqual(TEXT("전원이 논다"), S.IdleState, EFF_LiveStaffIdleState::HasIdle);

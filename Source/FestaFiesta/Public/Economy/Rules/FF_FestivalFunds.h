@@ -6,7 +6,11 @@
 
 /**
  * 축제 자금 - 단위는 Gold(int32)이다. Gold 잔액을 들고 지출 가능 여부를 판정한다.
- * [참고] Gold 는 음수가 되지 않는다. 잔액 부족 시 "구매 거부"를 한다.
+ *
+ * Gold 는 음수가 되지 않는다. 잔액이 모자라면 그 지출은 거부되고 상태는 그대로다 —
+ * 화면에서는 버튼이 막히는 것으로 나타난다.
+ *
+ * 거절할 수 없는 지출은 없다. 모든 지출은 플레이어가 누른 것이라 빚·미납이 생길 자리가 없다.
  * [참고] data/metadata/spec/economy_spec.md §3.1 / §4.2.
  * 
  * 상태 보관과 통지는 Festival/FF_FestivalProgressionSubsystem 이 맡는다.
@@ -25,14 +29,7 @@ struct FESTAFIESTA_API FFF_FestivalFunds
 
 	// 지출한다. 성공하면 true 이고 잔액이 그만큼 줄어든다.
 	bool TrySpend(int32 Amount);
-	
-	/* 
-	 * 임대료처럼 거절할 수 없는 비용을 지불한다. 거부하지 않는다. (TrySpend와 규칙 반대)
-	 * 잔액이 모자라면 있는 만큼만 내고 '실제 지불액'을 돌려준다.
-	 * 부족분은 호출부가 FFF_FixedCostArrears 에 미납으로 남긴다.
-	*/
-	int32 PayMandatoryCost(int32 CostAmount);
-	
+
 	// Gold 와 TotalRevenue·TodayRevenue 를 함께 늘린다.
 	void AddRevenue(int32 Amount);
 	

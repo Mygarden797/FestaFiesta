@@ -925,8 +925,12 @@ Setup·MorningCheck 에서 설치 시설을 선택하고 **그 시설에서 그�
 PrepHUD에도 `UFF_PrepPanelProgram`이 구현돼 있다. 카드와 호환 시설을 선택한 뒤
 ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자리뿐이라는 이전 안내는 더 이상 유효하지 않다.
 
-**한 줄 요약** — 아침에 Gold 와 인원을 걸면 **그 프로그램을 좋아하는 손님이 정원만큼 축제에 옵니다.**
+**한 줄 요약** — 아침에 Gold 를 걸면 **그 프로그램을 좋아하는 손님이 정원만큼 축제에 옵니다.**
 프로그램은 "유료 광고"에 가깝습니다 — 체험비도 벌지만, 데려온 손님이 부스에서도 쓰기 때문입니다.
+
+> ⚠️ **2026-09-21 변경 — 프로그램은 이제 인원을 쓰지 않습니다.** 걸리는 자원은 Gold 하나뿐입니다.
+> Staff 는 사건 대응 전담 축이 되어 편성과 완전히 분리됐습니다. 아래 표와 화면 예시에서
+> `필요 인원`·`가용 인원` 칸을 **전부 빼 주세요.** (자세한 배경은 `### Staff 고용` 절)
 
 > 🔴 **순익은 범위가 아니라 숫자 하나입니다.** 정원이 반드시 채워지므로 "정원을 못 채우면 손해"
 > 같은 상황이 없습니다.
@@ -957,7 +961,7 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 | 오늘 편성한 것 | `GetScheduledPrograms()` → `TArray<FFF_ScheduledProgram>`(카드 id + 예약 핸들) |
 | 버튼 활성화 | `CanScheduleProgram(ProgramId)` — **상태를 안 바꿉니다.** 매 프레임 부르셔도 됩니다 |
 | 편성 | `TryScheduleProgram(ProgramId, FacilityInstanceId)` → `EFF_ProgramPurchaseResult` |
-| 갱신 통지 | `OnScheduledProgramsChanged`(인자 없음) — 목록과 인원을 같이 다시 그려 주세요 |
+| 갱신 통지 | `OnScheduledProgramsChanged`(인자 없음) — 편성 목록만 다시 그리시면 됩니다. **인원은 안 바뀝니다** |
 
 > 🔴 **단계 판정은 `CanScheduleProgramNow()` 로 해주세요.** `TryScheduleProgram` 은
 > **단계를 안 봅니다** — Live 중에 불러도 편성이 됩니다. 피날레의 `CanPurchaseFinaleNow()` 와
@@ -977,8 +981,7 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 | 필드 | 화면에서 |
 |---|---|
 | `DisplayName` | 카드 이름. **`FText` 라 그대로 쓰시면 됩니다**(enum 이 아니라 패키징 함정 없음) |
-| `CostGold` | 비용 |
-| `RequiredStaff` | 필요 인원 |
+| `CostGold` | 비용. **편성에 드는 유일한 자원입니다** |
 | `Capacity` · `FeePerPerson` | 정원 · 1인당 체험비 |
 | `CalcMaxRevenue()` | 체험비 매출 = `Capacity × FeePerPerson`. **이름은 `Max` 지만 정원이 보장되므로 확정값으로 쓰시면 됩니다** (이름은 배선이 끝날 때 정리하겠습니다) |
 | `StartMinutes` · `EndMinutes` | **Live 경과분**입니다. 표시 방법은 아래 "프로그램 시각 표시" 절 |
@@ -986,13 +989,11 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 **화면 예시** — 리스트 한 줄에 이 정도면 판단이 됩니다:
 
 ```
-바다향기 공방   30~60분   정원 12 · 체험비 30 · 인원 1명   비용 200   [편성]
+바다향기 공방   30~60분   정원 12 · 체험비 30   비용 200   [편성]
    순익 +160      손님 12명이 축제에 옵니다
 
-선셋 요가       90~120분  정원 16 · 체험비 25 · 인원 2명   비용 250   [편성]
+선셋 요가       90~120분  정원 16 · 체험비 25   비용 250   [편성]
    순익 +150      손님 16명이 축제에 옵니다
-
-오늘 쓸 수 있는 인원   6명 중 6명
 ```
 
 순익은 `CalcMaxRevenue() - CostGold` 하나입니다.
@@ -1040,20 +1041,21 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 > Day2·3 은 22:00 입니다. 카드 시각은 세 날 모두 같습니다(가장 짧은 날 안에 들어가는 것을
 > 테스트로 고정해 뒀습니다).
 
-#### 🔴 인원 표시는 `GetTotalStaffCount()` 가 아니라 `GetAvailableStaffCount()` 입니다
+#### 인원 표시는 `GetTotalStaffCount()` 하나면 됩니다 (2026-09-21 정정)
 
-프로그램이 인원을 묶습니다. **전체 인원만 보여주면 플레이어가 Event 에 6명을 다 쓸 수 있다고
-착각합니다.**
+> ⚠️ **2026-08-25 에 드린 안내를 뒤집습니다.** 그때는 "프로그램이 인원을 묶으니
+> `GetAvailableStaffCount()` 를 띄워 달라"고 했는데, **프로그램이 인원을 안 쓰게 바뀌었습니다.**
+> 그 함수와 `GetStaffAssignedToPrograms()` 는 **없어졌습니다.**
 
 | 값 | 뜻 |
 |---|---|
-| `GetTotalStaffCount()` | 오늘 가진 전체 인원 (기본 6 + 알바) |
-| `GetStaffAssignedToPrograms()` | 프로그램에 묶인 인원 |
-| **`GetAvailableStaffCount()`** | **지금 Event 대응에 쓸 수 있는 인원** = 전체 − 묶인 인원 |
+| `GetTotalStaffCount()` | 가진 전체 인원 (기본 + 고용) |
+| `GetBaseStaffCount()` · `GetHiredStaffCount()` | 내역이 필요하면 |
 
-아침 화면·상단 바에는 **`GetAvailableStaffCount()`** 를 띄워 주세요. 전체 인원을 같이
-보여주시려면 `6명 중 3명 사용 가능` 처럼 두 값을 나란히 쓰시면 됩니다.
-갱신은 `OnScheduledProgramsChanged` 와 `OnTotalStaffCountChanged` 둘 다 받아야 합니다.
+**전체 인원이 곧 사건에 쓸 수 있는 인원**입니다. `6명 중 3명 사용 가능` 은 `6명` 으로
+줄여 주세요 — 나눠서 보여줄 근거가 없어졌습니다.
+갱신은 `OnTotalStaffCountChanged` 하나만 받으시면 됩니다. `OnScheduledProgramsChanged` 는
+**인원과 무관**하므로 인원 갱신용으로 구독하지 마세요(아무것도 안 바뀐 화면을 다시 그립니다).
 
 #### 체험비는 프로그램이 **열리는 시각**에 들어옵니다
 
@@ -1068,22 +1070,30 @@ ViewModel의 `RequestScheduleProgram`으로 요청한다. 전역 탭이 빈 자�
 - 마감 화면에는 **`유료 프로그램 체험비` 줄 하나면 됩니다.** `공방 8/12명 (빈자리 4)` 같은
   빈자리 표시는 정원이 보장되므로 생길 상황이 없습니다
 
-### 경제 값 5종 — ViewModel 연결 (2026-09-02 확인)
+### 경제 값 4종 — ViewModel 연결 (2026-09-21 갱신)
 
 - **헤더**: `Public/Festival/FF_FestivalProgressionSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- **상태**: 원본 API 전부 `구현완료`. 잔액·미납·가용 스태프는 연결됐고 매출 2종은 미연결
+- **상태**: 원본 API 전부 `구현완료`. 잔액·인원은 연결됐고 매출 2종은 미연결
 
 | 값 | Getter | 델리게이트 | 단위·범위 | 연결 |
 |---|---|---|---|---|
 | 잔액 | `GetGold()` | `OnGoldChanged` | Gold, 0 이상·상한 없음 | ✅ |
 | **누적 매출** | `GetTotalRevenue()` | `OnTotalRevenueChanged` | Gold, **줄어들지 않음** | 🔴 **아직 더미** — ViewModel 이 값을 들고만 있고 원본을 안 구독합니다 |
 | **오늘 매출** | `GetTodayRevenue()` | `OnTodayRevenueChanged` | Gold, 매일 아침 0 | 🔴 **아직 더미** — 위와 같음 |
-| 밀린 임대료 | `GetTotalArrears()` | `OnTotalArrearsChanged` | Gold, 0 이상 | ✅ `HandleOwnerArrearsChanged` 로 연결 (8/26 백종태) |
-| **쓸 수 있는 인원** | `GetAvailableStaffCount()` | `OnTotalStaffCountChanged` + `OnScheduledProgramsChanged` | 명, 상한은 Definition 기준 | ✅ ViewModel의 `OnAvailableStaffCountChanged`로 중계, PrepHUD 구독 |
+| **전체 인원** | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 명, 상한은 Definition 기준 | ✅ ViewModel 중계, PrepHUD·LiveHUD 구독 |
 
-ViewModel은 `RefreshAvailableStaffCount()`로 가용 인원을 갱신하고 PrepHUD가 구독합니다.
-전체·가용 인원을 함께 보여 주며, 프로그램 편성 변경도 반영합니다.
+> ⚠️ **2026-09-21 — 없어진 값 2종**
+>
+> | 없어진 것 | 대신 |
+> |---|---|
+> | `GetTotalArrears()` · `OnTotalArrearsChanged` (밀린 임대료) | **없습니다.** 임대료가 사라져 미납이라는 개념 자체가 없어졌습니다 |
+> | `GetAvailableStaffCount()` · `OnAvailableStaffCountChanged` | **`GetTotalStaffCount()`** 하나만 쓰시면 됩니다 |
+>
+> `RefreshAvailableStaffCount()` 도 없어졌습니다. 프로그램이 인원을 묶지 않으므로
+> **전체 인원이 곧 쓸 수 있는 인원**이고, 두 숫자를 나눠 보여줄 이유가 없습니다.
+> `전체 6명 중 4명 사용 가능` 같은 표시는 `6명` 으로 줄여 주세요.
+
 원본이 준비되지 않은 ViewModel 인원 값은 `INDEX_NONE`으로 구분합니다.
 
 **남은 연결 작업 — 매출 2종**
@@ -1101,26 +1111,34 @@ Gold 와 **같은 모양**이라 `HandleOwnerGoldChanged` 를 복사하시면 �
 
 > 연결 여부는 현재 호출부 기준입니다. 헤더의 오래된 더미 주석보다 실제 구독·갱신 경로를 우선합니다.
 
-- 인원은 **기본 팀(`GetBaseStaffCount()`, 무페이·해고 불가) + 오늘 쓴 알바(`GetTemporaryStaffCount()`)** 로
-  쪼개서 보여주실 수 있습니다. 두 숫자 다 데이터 애셋 값이라 밸런싱으로 바뀝니다
+- 인원은 **기본 팀(`GetBaseStaffCount()`, 무페이·해고 불가) + 고용한 인원(`GetHiredStaffCount()`)** 로
+  쪼개서 보여주실 수 있습니다. 두 숫자 다 데이터 애셋 값이라 밸런싱으로 바뀝니다.
+  **고용한 인원은 축제가 끝날 때까지 남습니다** — 하루 경계에서 줄지 않습니다
 - **오늘 매출을 누적 매출에서 빼서 만들지 마세요.** 따로 들고 있는 값입니다 — 하루 경계에서 오늘 매출만 0이 되고
   누적은 남기 때문에 빼서 만들면 날짜가 바뀔 때마다 어긋납니다
 
-### 🔴 화면 만들 때 알아야 하는 것 5가지
+### 🔴 화면 만들 때 알아야 하는 것 3가지
 
-**1. "다음 날" 버튼이 돈을 걷습니다. 종태님이 고치실 것은 없습니다.**
-`RequestAdvanceToNextDay()`가 하루치 임대료 2,400을 걷고, 오늘 매출을 0으로 되돌리고, 어제 쓴 알바를 퇴근시킵니다.
-값 4개(잔액·밀린 임대료·오늘 매출·인원)가 한꺼번에 바뀌고 전부 델리게이트가 옵니다.
+> ⚠️ **2026-09-21 — 5가지에서 3가지로 줄었습니다.** 임대료와 미납이 없어지면서
+> 4·5번(밀린 임대료 표시, 매출이 빚부터 갚는 규칙)이 통째로 사라졌습니다.
+> **미납 관련 UI 는 전부 빼 주세요** — 띄울 값이 없습니다.
 
-**2. 잔액을 UI가 직접 계산하지 말아 주세요.** 버튼 직후에 `잔액 − 2,400`을 계산하면 어긋납니다 — 잔액이 부족하면
-실제로 빠지는 금액은 2,400이 아니라 "있는 만큼"입니다. 델리게이트가 주는 값을 그리시면 항상 맞습니다.
+**1. "다음 날" 버튼은 이제 돈을 걷지 않습니다.**
+`RequestAdvanceToNextDay()`가 하는 일은 **오늘 매출을 0으로 되돌리고 원장을 넘기는 것**뿐입니다.
+임대료가 없어졌고 고용은 1회 구매라 **하루 경계에서 잔액이 줄어드는 경로가 없습니다.**
+인원도 안 줄어듭니다 — 고용한 사람은 축제가 끝날 때까지 남습니다.
 
-**3. 🔴 Day1 셋업 예산은 7,600입니다.** 프로토타입이 10,000 기준이면 **셋업·홍보 구간 표시를
-바꿔 주셔야 합니다.**
+**2. 잔액을 UI가 직접 계산하지 말아 주세요.** 델리게이트가 주는 값을 그리시면 항상 맞습니다.
+
+> **Gold 는 음수가 되지 않습니다.** 잔액이 모자라면 그 지출은 **거부되고 상태가 그대로**입니다 —
+> 부분 결제나 외상이 없습니다. 화면에서는 **버튼이 막히는 것**으로 나타나면 됩니다.
+> 거절할 수 없는 지출이 하나도 없어서 빚이 생길 자리가 없습니다.
+
+**3. 🔴 Day1 셋업 예산은 초기 자금 그대로입니다.**
 
 `DT_DaySequence` 에 `Day1_MorningCheck` 행이 없습니다 — Day1만 개장 준비를 건너뜁니다(팀 의도).
-그래서 Day1 임대료 2,400은 Day2·3처럼 아침에 걷을 자리가 없어 **축제 시작과 함께** 걷힙니다.
-표에 있는 각 날의 흐름입니다:
+예전에는 이것 때문에 Day1 임대료를 축제 시작과 함께 걷었지만, **임대료 자체가 없어져서 그 특례도
+사라졌습니다.** 단계 흐름만 기억하시면 됩니다:
 
 | Day | 단계 흐름 |
 |---|---|
@@ -1131,60 +1149,27 @@ Gold 와 **같은 모양**이라 `HandleOwnerGoldChanged` 를 복사하시면 �
 `Live` 앞에 `SunsetTransition`(20초)이 있는 것도 표 기준이니 프로토타입 단계 순서도 같이
 확인해 주세요.
 
-**Day1 알바 고용은 `Setup` 화면에서 하시면 됩니다** — Day1 에는 `MorningCheck` 가 없습니다.
+**Day1 고용은 `Setup` 화면에서 하시면 됩니다** — Day1 에는 `MorningCheck` 가 없습니다.
 
-**4. 잔액이 부족하면 "밀린 임대료"가 생깁니다.** 시설은 안 사면 되지만 축제장 임대료는 거절할 수가 없어서,
-있는 만큼만 내고 못 낸 금액을 따로 적어 둡니다. 이자는 없습니다.
+⚠️ 헤더에 `BeginNewDay()`가 보이는데 **UI에서 부르지 말아 주세요.** 날짜를 넘기는 쪽이 둘이 되면
+원장 스냅샷이 한 칸 어긋나 결산 표가 엉뚱한 날 값을 그립니다. 부르는 곳은 경제 쪽에서 한 곳으로
+잡아 두었습니다.
 
-- **잔액은 음수가 되지 않습니다.** "잔액 −1,400"이 아니라 잔액 0 + 밀린 임대료 1,400입니다
-- **`GetGold()`만 보면 자금난이 안 보입니다.** 잔액 0은 "다 썼다"일 수도 "빚까지 있다"일 수도 있어서,
-  경고는 **밀린 임대료 > 0** 으로 판정해 주세요
-- 날짜가 바뀌어도 **사라지지 않고 쌓입니다.** 매일 아침 0으로 돌아가는 건 오늘 매출과 알바뿐입니다
-- 축제가 끝났을 때 남은 미납을 어떻게 처리할지는 **아직 안 정했습니다.** 결산 화면에 필요하면 같이 정하겠습니다
+### 셋업 예산 — 초기 자금이 그대로 예산입니다
 
-**5. 밀린 임대료가 있는 동안에는 매출이 들어와도 잔액이 안 늘어납니다.** 들어온 돈이 잔액에 쌓이기 전에 빚을 먼저
-갚기 때문입니다. 예: 밀린 임대료 1,400인 상태에서 매출 500이 들어오면 매출 2종과 `OnTotalArrearsChanged`(1,400 →
-900)는 발행되지만 **`OnGoldChanged`는 발행되지 않습니다**(잔액 0 → 0).
-
-- 값이 바뀔 때만 발행하는 규칙 때문에 **"매출은 올랐는데 잔액 이벤트가 안 오는" 구간이 정상적으로 존재합니다.**
-  누락이 아닙니다
-- 플레이어에게는 "매출이 늘었는데 돈이 안 늘었다"로 보입니다. **밀린 임대료를 잔액 옆에 상시 노출**하시면 숫자가
-  줄어드는 게 보여서 설명이 됩니다(0일 때는 숨기셔도 됩니다)
-- `OnTotalArrearsChanged`는 하루 경계뿐 아니라 **매출·철거 환급이 들어오는 아무 시점에나** 옵니다
-- ⚠️ 같은 이유로 **Report의 임대료 지출이 2,400을 넘을 수 있습니다.** 어제 못 낸 몫을 오늘 갚으면 오늘 임대료에
-  합산됩니다(늦게 나간 임대료라 별도 항목을 만들지 않았습니다). 하루 임대료를 2,400으로 박아두지 마세요
-
-⚠️ 헤더에 `BeginNewDay()`가 보이는데 **UI에서 부르지 말아 주세요.** 날짜를 넘기는 쪽이 둘이 되면 하루에 임대료가
-두 번 빠집니다. 부르는 곳은 경제 쪽에서 한 곳으로 잡아 두었습니다.
-
-### 🔴 셋업 예산 내역 — "왜 10,000이 아닌가"에 답합니다
-
-셋업 화면의 예산 표시를 숫자 하나에서 세 줄로. **경제 쪽 추가 작업은 없습니다.**
+> ⚠️ **2026-09-21 — 이 절이 통째로 단순해졌습니다.** 예전에는 `초기 자금 10,000 −
+> 장소 임대료 2,400 = 사용 가능 7,600` 세 줄짜리 표가 필요했는데, **임대료가 없어져서
+> 초기 자금이 곧 사용 가능 금액**입니다. 세 줄 표는 빼 주세요.
 
 ```
-초기 자금        10,000
-장소 임대료      −2,400
-────────────────────────
-사용 가능         7,600
+사용 가능        10,000
 ```
 
-| 줄 | 어디서 |
-|---|---|
-| 초기 자금 10,000 | `GetDefinition()->InitialGold` |
-| 장소 임대료 −2,400 | `GetSpendRowsForDay(1)` 의 임대료 줄(`DisplayName` 한글 포함). 셋업 중에도 `HasLedgerForDay(1) == true` 라 조회됩니다 |
-| 사용 가능 7,600 | `GetGold()` (이미 연결돼 있습니다) |
+`GetGold()` 하나면 되고 이미 연결돼 있습니다. `GetDefinition()->InitialGold` 와 같은 값으로
+시작합니다.
 
-⚠️ **델리게이트가 아니라 원장 조회로 만들어 주세요** — `HasLedgerForDay(Day)` +
-`GetSpendRowsForDay(Day)`. Day1 임대료는 `StartFestival` 안에서 걷혀 그 시점엔 ViewModel이
-구독 전이라(`FF_FestivalViewModelSubsystem.cpp:225` 주석의 그 상황) **`OnGoldChanged` 는
-Day1에 안 옵니다.**
-
-⚠️ **문구는 잠정으로 두세요.** Day1 임대료가 "오늘의 임대료"인지 **"첫날 선납·계약금"** 인지
-기획 확인 중입니다. 후자면 Day1만 `장소 임대료(첫날 선납)` 로 바뀝니다.
-
-> `10,000 → 7,600` 카운트다운 같은 **연출**을 원하시면 Day1은 `OnGoldChanged` 로 못 받아서
-> 경제 쪽에 "아직 안 보여준 정산" API 를 하나 만들어야 합니다. **말씀만 주시면 만들어
-> 드리겠습니다** — 지금 하실 필요는 없습니다.
+> 예전에 안내드린 "Day1 은 `OnGoldChanged` 가 안 온다"는 제약도 없어졌습니다 —
+> `StartFestival` 안에서 걷어가는 것이 이제 없기 때문입니다.
 
 ### 🔴 피날레 구매 화면이 필요합니다 (담당 백종태)
 
@@ -1212,39 +1197,85 @@ Day3 아침(MorningCheck)에 피날레 등급을 사는 화면입니다. 경제 
 돌려주는데, 매출에도 잔액에도 섞이지 않습니다. 최종 평가 점수(`ScoreSatisfaction` = 관객 만족도 + 이 보너스)의
 합산은 관객 만족도가 아직 없어서 붙이지 않았습니다 — 지금은 "몇 점짜리를 샀는가"까지만 보여드릴 수 있습니다.
 
-밀린 임대료가 있으면 잔액이 0이라 자연히 못 삽니다. 이때 실패 이유는 `Gold 부족`으로 옵니다.
+잔액이 모자라면 자연히 못 삽니다. 이때 실패 이유는 `Gold 부족`으로 옵니다.
 
-### 알바 고용 — API 는 다 있습니다
+### Staff 고용 — 영구 고용입니다 (2026-09-21 개편)
 
-표시 단계는 **Day1 `Setup` 과 Day2·3 `MorningCheck`** 입니다.
+> ⚠️ **일당 알바가 아닙니다.** 한 번 고용하면 **축제가 끝날 때까지 남습니다.**
+> 하루 경계에서 줄어들지 않고, 매일 다시 뽑을 필요가 없습니다.
+> 화면 문구를 `알바` → `고용` 으로 바꿔 주세요.
+
+**Staff 는 무엇에 쓰나** — 앞으로 붙을 **사건 대응 전담**입니다.
+
+| 축 | 담당 |
+|---|---|
+| **버는 축** | 시설 강화 (회전율·객단가를 올립니다) |
+| **지키는 축** | Staff (사건을 처리합니다) |
+
+- **유료 프로그램은 Staff 를 쓰지 않습니다.** 편성에 걸리는 자원은 Gold 하나뿐입니다
+- **시설 성능에도 관여하지 않습니다.** 회전율·객단가는 시설 강화가 올립니다
+- 사건 시스템(`UFF_FestivalEventSubsystem`, 담당 이정원)이 오기 전까지 **Staff 는 실제 소비처가
+  없습니다.** 인원 숫자는 정확하지만 아직 게임에 영향을 주지 않는 상태입니다
+
+표시 단계는 **Day1 `Setup` 과 Day2·3 `MorningCheck`** 입니다. **Live 중에는 고용할 수 없습니다** —
+버튼을 두지 마시고 대신 언제 뽑을 수 있는지 문구로 적어 주세요.
 
 | 필요한 것 | 함수 | 무엇을 보는가 |
 |---|---|---|
-| 고용 실행 | `TryHireTemporaryStaff(int32 인원)` | — |
-| 슬라이더 최대치·버튼 판정 | `GetAffordableTemporaryStaffCount()` | 상한 **과** 잔액 |
-| 오늘 상한까지 남은 인원 | `GetRemainingHireCap()` | 상한만 (잔액 무시) |
+| 고용 실행 | `TryHireStaff(int32 인원)` | — |
+| 스텝퍼 최대치·버튼 판정 | `GetAffordableHireCount()` | 상한 **과** 잔액 |
+| 상한까지 남은 인원 | `GetRemainingHireCap()` | 상한만 (잔액 무시) |
+| 전체 인원 | `GetTotalStaffCount()` | 기본 + 고용 |
+| 내역 | `GetBaseStaffCount()` · `GetHiredStaffCount()` | 무페이 기본 팀 / 고용한 인원 |
+| 1명당 단가 | `GetStaffHireCostGold()` | **1회 구매 비용**입니다. `/일` 이 아닙니다 |
 
-조회 함수 두 개는 상태를 바꾸지 않습니다. `TryHireTemporaryStaff`는 비용·인원을 바꾸는 Command입니다.
+조회 함수는 상태를 바꾸지 않습니다. `TryHireStaff` 만 비용·인원을 바꾸는 Command입니다.
+
+⚠️ **이름이 바뀐 API 3종** — 옛 이름은 더 이상 없습니다.
+
+| 예전 | 지금 |
+|---|---|
+| `TryHireTemporaryStaff` | `TryHireStaff` |
+| `GetAffordableTemporaryStaffCount` | `GetAffordableHireCount` |
+| `GetTemporaryStaffCount` | `GetHiredStaffCount` |
 
 ⚠️ **부분 고용은 없습니다** — 5명 요청에 3명분 돈만 있으면 **전부 거부**되고 아무것도 바뀌지 않습니다.
+
+**상한은 축제 전체 총원 상한입니다.** `MaxHiredStaffCount`(기본 6) 는 **하루 상한이 아닙니다** —
+축제 내내 고용할 수 있는 총 인원입니다. 하루 상한으로 읽으시면 "내일 또 뽑을 수 있다"는 안내가
+나가는데 사실이 아닙니다.
+
+> 화면의 `최대 N명` 은 **기본 팀 + 고용 상한**으로 보여 주세요. 상한(6)만 쓰면 `최대 6명` 이
+> 되어 이미 있는 기본 팀 6명이 화면에서 사라집니다. → `최대 12명 (기본 6 + 고용 6)`
 
 **"왜 더 못 뽑는가"를 문구로 가르는 법** — 거부 사유가 `bool` 하나뿐이라 두 값을 비교하는 것이
 유일한 구분 수단입니다:
 
 ```
-GetRemainingHireCap() == 0                        →  "오늘 고용 상한에 도달했습니다"
-GetAffordable... < GetRemainingHireCap()          →  "Gold 가 부족합니다"
+GetRemainingHireCap() == 0                        →  "고용 상한에 도달했습니다"
+GetAffordableHireCount() < GetRemainingHireCap()  →  "Gold 가 부족합니다"
 ```
+
+두 문구는 플레이어가 할 행동이 다릅니다. 앞은 **이번 축제에서는 무엇을 해도 안 되고**, 뒤는
+돈을 벌거나 다른 지출을 줄이면 됩니다. 버튼을 흐리게만 두면 구분이 안 됩니다 (AT-011).
 
 ⚠️ **Definition 이 아직 안 붙은 상태에서 두 창구의 값이 갈립니다.**
 
 | 부르는 곳 | 그때 값 |
 |---|---|
 | 경제 직접 (`GetRemainingHireCap()`) | `0` |
-| ViewModel (`GetRemainingTemporaryStaffCap()`) | `INDEX_NONE` = 모름 |
+| ViewModel (`GetRemainingHireCap()`) | `INDEX_NONE` = 모름 |
 
 이 화면에서 `0` 은 이미 **"상한 도달"** 이라는 뜻을 갖고 있어서 겹칩니다.
 **ViewModel 쪽을 쓰시는 편이 안전합니다.**
+
+> ✅ **2026-08-26 백종태 님 요청 해결** — `GetRemainingHireCap()` 을 `public` +
+> `BlueprintPure` 로 열었습니다. UI 에서 같은 식을 다시 쓰실 필요 없습니다.
+
+**아직 미정 — 스태프 강화(승급)**
+
+Staff 에 개인별 레벨을 붙여 사건 처리 속도를 올리는 방향을 검토 중입니다. **세부 규칙이
+확정되지 않아 이번에는 API 도 UI 요청도 넣지 않았습니다.** 확정되면 이 절에 추가하겠습니다.
 
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
@@ -1290,7 +1321,6 @@ if (Progression->HasLedgerForDay(DayToDraw)) { /* 4종 호출 */ }
 - 값 0 인 사유는 줄이 없습니다. 순서는 enum 선언 순서로 고정입니다
 - 부스별은 `FacilityId` 오름차순으로 드립니다
 - 환급은 `GetTotalRefundForDay()` 로 분리했습니다. 매출 표에 안 섞입니다
-- 임대료 줄은 2,400 을 넘을 수 있습니다(미납 상환 합산). 원장 값을 그대로 그려 주세요
 - 합계 줄은 따로 안 드립니다 — 0 인 줄이 빠져 있어서 `Amount` 를 더하면 정확합니다
 
 **부스별만 구조체가 다릅니다.**
@@ -1375,7 +1405,7 @@ GetSpendReasonText(EFF_SpendReason)                     GetEarnReasonText(EFF_Ea
 
 - **헤더**: `Public/UI/ViewModel/FF_FestivalViewModelSubsystem.h`
 - **접근**: `GameInstanceSubsystem`
-- **상태**: **부분 연동**. Stage·시간·Gold·미납·스태프·프로그램·홍보 구매 상태는 연결됐습니다. 만족도·안전·매출은 아래 표 참조
+- **상태**: **부분 연동**. Stage·시간·Gold·스태프·프로그램·홍보 구매 상태는 연결됐습니다. 만족도·안전·매출은 아래 표 참조
 - **역할**: 위 모든 소스를 UI가 쓰기 좋은 형태로 합쳐서 제공
 
 Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**하고 원본 시스템을 직접 보지 않습니다.
@@ -1393,7 +1423,7 @@ Overview HUD·Report·공통 지표 위젯은 **이 서브시스템만 참조**�
 | TodayRevenue      | `GetTodayRevenue()`                   | `OnTodayRevenueChanged`      | **원본 API 완료 · ViewModel 연결 요청** |
 | Stage / Day       | `GetCurrentStage()` `GetCurrentDay()` | `OnStageViewChanged`         | **진짜 값**  |
 | 남은 시간             | `GetRemainingSeconds()`               | `OnRemainingSecondsChanged`  | **진짜 값 · 구독 중계** |
-| 가용 스태프 | `GetAvailableStaffCount()` | `OnAvailableStaffCountChanged` | 원본 연결, 모르면 `INDEX_NONE` |
+| 전체 스태프 | `GetTotalStaffCount()` | `OnTotalStaffCountChanged` | 원본 연결, 모르면 `INDEX_NONE`. 가용/전체 구분은 없어졌습니다 |
 | 구매 홍보 | `GetPurchasedPromotion()` | `OnPurchasedPromotionChanged` | 원본 등급 미러링. 재시작 통지는 아래 주의 |
 | 예상 방문객 | 아직 ViewModel API 없음 | 아직 중계 없음 | 경제 원본 `GetExpectedVisitors()`는 구현됨 |
 
@@ -1437,7 +1467,7 @@ int32 TodayRevenue;       // 오늘 하루 매출
 매출이 아니라 이미 쓴 돈이 되돌아온 것입니다. `Gold`만 구독하고 있다면 그대로 잘 작동하지만,
 "Gold가 늘었다 = 매출이 늘었다"로 가정하는 코드가 있다면 깨집니다.
 
-**갱신 방식:** Stage·Gold·미납·스태프·편성·홍보 구매는 소유자 이벤트를 ViewModel이 중계합니다.
+**갱신 방식:** Stage·Gold·스태프·편성·홍보 구매는 소유자 이벤트를 ViewModel이 중계합니다.
 미연결 지표는 이 구독과 별개입니다. 모든 지표가 0.1초 폴링으로 갱신된다고 가정하지 않습니다.
 
 **좋고 나쁨 구간 (2026-08-06 UI 결정):** 0~100 지표 셋은 방향이 같아서(높을수록 좋음) 구간을 공유합니다.
@@ -1586,7 +1616,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | 무엇 | 담당 | 지금 무슨 일이 벌어지나 | 어떻게 |
 |---|---|---|---|
 | 런타임 enum 메타데이터 조회 **2개 파일** | 백종태 | 옵션 카테고리·개발용 스텁 제목에 남음 | 위 `표시 문자열 연결 상태` 절 |
-| `TotalRevenue` · `TodayRevenue` | 백종태 | 상단 바 누적 매출이 안 움직입니다 (ViewModel 이 더미를 들고 있음) | Gold 와 같은 모양. 위 `경제 값 5종` 절 |
+| `TotalRevenue` · `TodayRevenue` | 백종태 | 상단 바 누적 매출이 안 움직입니다 (ViewModel 이 더미를 들고 있음) | Gold 와 같은 모양. 위 `경제 값 4종` 절 |
 | Heat Map 셀 크기 | 백종태 | 5m 가정이면 밀도 분모가 틀려 색 구간이 통째로 어긋납니다 | `CellSizeMeters`(=2m) 를 읽기. 위 `Crowd · 밀집` 절 |
 | `CauseId` 롤업 | 김시리 · 백종태 | Need 집계는 연결됨. 지표에서 Report 원인으로 묶는 표시는 별도 | `GetNeedUnmetRatio`·`GetSampleCount` 사용 |
 | 예상 방문객 UI·스폰 연결 | 백종태 · 이정원 | 경제의 하루 단일 예상치는 구현됨. HUD 범위 표시와 실제 유입 수는 미연결 | 아래 홍보 절 |
@@ -1599,8 +1629,8 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | ~~**Satisfaction** (`SimSatisfaction` 0~100)~~ | 김시리 · 이정원 | ✅ **연결 완료.** 대기·밀도·취향매칭·Need 충족도 4항을 2단 계층(환경 축/개인 부합도 축)으로 산출 + 분해값 4종. 위 「값 규격」·「분해값 4종」 절 참조. `ScoreSatisfaction` 합산(SimSatisfaction + FinaleBonus)은 **아직 남았습니다** — `GetFinaleSatisfactionBonus()` 는 이미 있습니다 |
 | **Safety** | 이정원 | Overview 지표, 경고 |
 | **예상 방문객 범위·가정값 미리보기** | 김시리 | 현재 구매 상태의 하루 단일값은 구현됨. `Min`/`Max`와 구매 전 등급별 미리보기 API는 없음. 단일값을 임의 범위로 늘리지 않음 |
-| **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 김시리 · 백종태 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
-| **스태프 배치 Command + 결과 이벤트** | 김시리 | 사건 트레이의 `스태프 N명 배치` |
+| **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 이정원 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
+| **스태프 배치 Command + 결과 이벤트** | 이정원 · 김시리 | 사건 트레이의 `스태프 N명 배치` |
 | **뒷정리 등급 효과 계수** | 김시리 | Day 마감 시트. 가격 3개만 있음(`FF_FestivalDefinition.h:110` TODO) — 지금은 `효과 계수 미확정` 배지 |
 | **최종 점수 산식·등급 가중치** | 김시리 | 최종 결산 — 지금은 `가중치 잠정` 문구 |
 | **저장 슬롯 목록 + 저장·불러오기 Command** | 김시리 | ESC 수동 저장, 플레이 허브 |
@@ -1700,13 +1730,18 @@ UI 가 쓸 수 있는 변환 함수 하나면 됩니다 — `FGuid → int32` �
 - 시설별 / 오늘 누적 둘 다 있으면 좋습니다
 - `FFF_QueueLog` 에 조인 기록은 있는데 포기 기록이 있는지 확인 부탁드립니다
 
-#### 6. 시설별 스태프 배치
+#### 6. 사건별 스태프 배치
 
-`GetStaffAssignedToPrograms()` 로 "프로그램에 묶인 인원" 은 압니다. 그런데 시설 하나하나에
-누가 붙어 있는지는 모릅니다. 스태프 패널이 "어디에 몇 명" 을 못 말하고 총합만 말합니다.
+지금은 **총원밖에 없습니다.** 어느 사건에 누가 몇 명 붙어 있는지 읽을 창구가 없어서,
+스태프 패널이 "어디에 몇 명" 을 못 말하고 총합만 말합니다.
 
-Event 대응(`스태프 N명 배치`)이 들어오면 이 값이 반드시 필요해집니다 — 배치 Command 는
-이미 B 표에 요청해 둔 것과 같은 건입니다.
+> 2026-09-21 정정: 예전에 여기 적혀 있던 `GetStaffAssignedToPrograms()` 는 **없어졌습니다.**
+> 프로그램이 인원을 안 쓰게 되면서 "묶인 인원" 자체가 0 이 됐습니다. 배치라는 개념은
+> 사건 시스템이 와야 처음 생깁니다.
+
+사건 대응(`스태프 N명 배치`)이 들어오면 이 값이 반드시 필요해집니다 — 배치 Command 는
+이미 B 표에 요청해 둔 것과 같은 건입니다. Live 인력 패널에 자리를 비워 뒀습니다
+(`Box_Assignments` — 지금은 `지금 대응 중인 사건이 없습니다` 로 접혀 있습니다).
 
 #### 7. 입력 모드 정책 — **UI 전반에 영향**
 
@@ -2048,3 +2083,5 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 | 2026-09-16 | 김시리 | 🆕 **SNS Read Model 값 쪽 완성 — UI 연결만 남았습니다.** 위 B표 항목 참조. `UFF_CrowdInsightsSubsystem`이 3~10초마다 화제·문장을 결정론적으로 골라 `FFF_SnsPostRow`를 만들고, `FF_FestivalViewModelSubsystem::GetRecentSnsPosts()`/`OnSnsPostAdded`가 Gold·SimSatisfaction과 같은 방식으로 `FFF_LiveSocialPost`를 중계합니다. **부탁드리는 것 두 가지**: ① `FF_LivePanelSNS`가 `Debug_SetPosts` 대신 이 두 API를 구독하도록 바꿔주세요(구조·감정 표현은 그대로 `FFF_LiveSocialPost`라 위젯 트리는 안 건드리셔도 될 것 같습니다) ② 화면에 몇 건까지 보여줄지·스크롤 정책은 UI 쪽 판단으로 정해주세요. `{시설}` 문장은 `FFFZSFacilityReadModel`에 시설 표시 이름이 실리기 전까지 후보에서 뺐습니다(한광훈 님 쪽 스레딩 필요, 요청 #2와 같은 건) |
 
+
+| 2026-09-21 | 김시리 | 🔴 **임대료·미납 제거 + Staff 영구 고용 + 프로그램에서 Staff 분리.** 화면에서 **빼셔야 하는 것**: ① 미납 관련 전부(`GetTotalArrears`·`OnTotalArrearsChanged` **삭제**) ② `가용 인원` 개념 전부(`GetAvailableStaffCount`·`GetStaffAssignedToPrograms`·`OnAvailableStaffCountChanged` **삭제**) — 프로그램이 인원을 안 쓰므로 `GetTotalStaffCount()` 하나면 됩니다 ③ 프로그램 카드·패널·시설 피커의 `필요 인력` 칸(`FFF_ProgramCard::RequiredStaff` **필드째 삭제**). **이름이 바뀐 것**: `TryHireTemporaryStaff`→`TryHireStaff`, `GetAffordableTemporaryStaffCount`→`GetAffordableHireCount`, `GetTemporaryStaffCount`→`GetHiredStaffCount`, `DailyStaffWageGold`→`StaffHireCostGold`(150/일 → 450/1회), `MaxHiredStaffPerDay`→`MaxHiredStaffCount`(**하루 상한이 아니라 축제 총원 상한**). `EFF_SpendReason::StaffWages` 와 결과 enum 3종의 `NotEnoughStaff` 도 삭제됐고 뒤 값이 재번호됐습니다. ✅ 8/26 요청하신 `GetRemainingHireCap()` public 전환 완료 — UI 쪽 중복 식 지우셔도 됩니다. ⚠️ **WBP 자산 9종은 재생성했습니다**(`FF.RebuildPrepHudStaffUI`·`FF.RebuildLiveHudStaffUI`·`FF.RefreshFacilityPaidProgramUMG`) — 죽은 칸이 자산에만 남아 `밀린 임대료 미납 2,400` 이 화면에 나오던 문제입니다. 스태프 강화(승급)는 **세부 미정이라 이번에 안 넣었습니다** |

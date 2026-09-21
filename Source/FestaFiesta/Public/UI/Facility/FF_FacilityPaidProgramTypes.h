@@ -31,8 +31,6 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramCardViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	FText CostText;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
-	FText StaffText;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	FText CapacityText;
@@ -46,8 +44,6 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramCardViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	int32 CostGold = 0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
-	int32 RequiredStaff = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	int32 CapacityPeople = 0;
@@ -78,8 +74,6 @@ struct FESTAFIESTA_API FFF_FacilityPaidProgramPickerViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
 	int32 AvailableGold = 0;
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")
-	int32 AvailableStaff = 0;
 
 	/** Only facility-compatible cards are projected into this array. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Paid Program")

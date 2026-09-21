@@ -25,9 +25,7 @@
  */
 namespace FFF_LedgerRowsTestHelpers
 {
-	// 2026-08-14 결정값 (E-23). 하루 고정비 = 임대료 2,400.
-	constexpr int32 DailyRent = 2400;
-	constexpr int32 WagePerStaff = 150;
+	constexpr int32 HireCost = 150;
 	constexpr int32 BaseStaff = 6;
 	constexpr int32 MaxHires = 6;
 
@@ -58,10 +56,9 @@ namespace FFF_LedgerRowsTestHelpers
 
 			Definition->FestivalId = TEXT("LedgerRowsAutomationFestival");
 			Definition->InitialGold = InitialGold;
-			Definition->DailyVenueRentGold = DailyRent;
-			Definition->DailyStaffWageGold = WagePerStaff;
+			Definition->StaffHireCostGold = HireCost;
 			Definition->InitialStaffCount = BaseStaff;
-			Definition->MaxHiredStaffPerDay = MaxHires;
+			Definition->MaxHiredStaffCount = MaxHires;
 
 			Progression->StartFestival(Definition);
 			return true;
@@ -127,24 +124,22 @@ bool FFF_LedgerRows_ZeroReasonsAreExcluded::RunTest(const FString& Parameters)
 	TestNull(TEXT("0 인 부스 수수료는 줄이 없다"),
 		FFF_LedgerRowsTestHelpers::FindRow(EarnRows, TEXT("FacilityCommission")));
 
-	// 지출 9종 중 임대료만 나갔다.
+	// 거절할 수 없는 지출이 없어져서 아무것도 안 사면 지출 줄이 하나도 없다.
 	const TArray<FFF_LedgerRow> SpendRows = Harness.Progression->GetSpendRowsForDay(1);
-	TestEqual(TEXT("임대료 한 줄만 있다"), SpendRows.Num(), 1);
-	TestNull(TEXT("0 인 임금은 줄이 없다"),
-		FFF_LedgerRowsTestHelpers::FindRow(SpendRows, TEXT("StaffWages")));
+	TestEqual(TEXT("산 것이 없으면 지출 줄도 없다"), SpendRows.Num(), 0);
 
-	// 알바를 고용하면 임금 줄이 생긴다.
-	TestTrue(TEXT("알바 2명을 고용한다"), Harness.Progression->TryHireTemporaryStaff(2));
+	// 인원을 고용하면 고용비 줄이 생긴다.
+	TestTrue(TEXT("인원 2명을 고용한다"), Harness.Progression->TryHireStaff(2));
 	const TArray<FFF_LedgerRow> SpendRowsAfterHire = Harness.Progression->GetSpendRowsForDay(1);
-	TestEqual(TEXT("임금 줄이 생겨 2줄이 된다"), SpendRowsAfterHire.Num(), 2);
+	TestEqual(TEXT("고용비 한 줄이 생긴다"), SpendRowsAfterHire.Num(), 1);
 
 	// 줄이 생기면 금액도 실제 값이어야 한다.
-	const FFF_LedgerRow* WageRow =
-		FFF_LedgerRowsTestHelpers::FindRow(SpendRowsAfterHire, TEXT("StaffWages"));
-	if (TestNotNull(TEXT("임금 줄을 찾는다"), WageRow))
+	const FFF_LedgerRow* HireRow =
+		FFF_LedgerRowsTestHelpers::FindRow(SpendRowsAfterHire, TEXT("StaffHire"));
+	if (TestNotNull(TEXT("고용비 줄을 찾는다"), HireRow))
 	{
-		TestEqual(TEXT("임금 금액이 2명분이다"), WageRow->Amount,
-			2 * FFF_LedgerRowsTestHelpers::WagePerStaff);
+		TestEqual(TEXT("고용비가 2명분이다"), HireRow->Amount,
+			2 * FFF_LedgerRowsTestHelpers::HireCost);
 	}
 
 	// 만들어진 줄의 금액은 절대 0 이 아니다 (0 제외 규칙의 반대 방향).
@@ -198,27 +193,31 @@ bool FFF_LedgerRows_RowCarriesKoreanNameAndShortId::RunTest(const FString& Param
 		return false;
 	}
 
-	const TArray<FFF_LedgerRow> SpendRows = Harness.Progression->GetSpendRowsForDay(1);
-	const FFF_LedgerRow* RentRow =
-		FFF_LedgerRowsTestHelpers::FindRow(SpendRows, TEXT("VenueRent"));
+	// 지출 줄은 플레이어가 산 것으로만 생긴다. 인원을 고용해 한 줄을 만든다.
+	const int32 HireCount = 2;
+	TestTrue(TEXT("인원을 고용한다"), Harness.Progression->TryHireStaff(HireCount));
 
-	if (!TestNotNull(TEXT("임대료 줄을 찾는다"), RentRow))
+	const TArray<FFF_LedgerRow> SpendRows = Harness.Progression->GetSpendRowsForDay(1);
+	const FFF_LedgerRow* HireRow =
+		FFF_LedgerRowsTestHelpers::FindRow(SpendRows, TEXT("StaffHire"));
+
+	if (!TestNotNull(TEXT("고용비 줄을 찾는다"), HireRow))
 	{
 		return false;
 	}
 
-	// ReasonId 는 **짧은 이름**이다. "EFF_SpendReason::VenueRent" 가 아니다.
+	// ReasonId 는 **짧은 이름**이다. "EFF_SpendReason::StaffHire" 가 아니다.
 	TestEqual(TEXT("ReasonId 가 짧은 enum 이름이다"),
-		RentRow->ReasonId.ToString(), FString(TEXT("VenueRent")));
+		HireRow->ReasonId.ToString(), FString(TEXT("StaffHire")));
 
 	// DisplayName 은 UMETA(DisplayName) 한글이다.
 	// [주의] UMETA 메타데이터는 에디터 전용이라 패키징 빌드에서는 폴백될 수 있다.
 	//        이 테스트는 에디터 동작만 고정한다 (피날레 실패 이유도 같은 방식이다).
 	TestEqual(TEXT("DisplayName 이 한글이다"),
-		RentRow->DisplayName.ToString(), FString(TEXT("장소 임대료")));
+		HireRow->DisplayName.ToString(), FString(TEXT("Staff 고용")));
 
-	TestEqual(TEXT("금액이 하루 임대료다"), RentRow->Amount,
-		FFF_LedgerRowsTestHelpers::DailyRent);
+	TestEqual(TEXT("금액이 실제 고용비다"), HireRow->Amount,
+		HireCount * FFF_LedgerRowsTestHelpers::HireCost);
 
 	return true;
 }
@@ -341,14 +340,12 @@ bool FFF_LedgerRows_DayResolvesLiveAndSnapshot::RunTest(const FString& Parameter
 	}
 
 	{
-		// Day2 는 방금 열렸으니 임대료만 있고 매출은 없다.
+		// Day2 는 방금 열렸으니 매출도 지출도 없다. 하루 경계는 아무것도 걷지 않는다.
 		const TArray<FFF_LedgerRow> Day2Earn = Harness.Progression->GetEarnRowsForDay(2);
 		TestEqual(TEXT("Day2 매출은 아직 없다"), Day2Earn.Num(), 0);
 
 		const TArray<FFF_LedgerRow> Day2Spend = Harness.Progression->GetSpendRowsForDay(2);
-		TestEqual(TEXT("Day2 지출은 임대료 한 줄"), Day2Spend.Num(), 1);
-		TestEqual(TEXT("Day2 임대료 금액"), Day2Spend[0].Amount,
-			FFF_LedgerRowsTestHelpers::DailyRent);
+		TestEqual(TEXT("Day2 지출도 아직 없다"), Day2Spend.Num(), 0);
 	}
 
 	// --- Day2 에 매출을 넣어도 Day1 스냅샷은 안 흔들린다 ---
