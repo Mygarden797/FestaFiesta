@@ -517,5 +517,6 @@ float FFF_ZoneSystemBridge::GetServiceRatePerMinute(FName FacilityDefinitionId)
 	}
 
 	const float ServiceDurationMinutes = SecondsToMinutes(ServiceDurationSeconds);
-	return static_cast<float>(Definition->Spec.QueueRules.ServiceCapacity) / ServiceDurationMinutes;
+	return static_cast<float>(FMath::Min(Definition->Spec.QueueRules.ServiceCapacity,
+		Definition->Spec.QueueRules.MaxWaitingAgents)) / ServiceDurationMinutes;
 }

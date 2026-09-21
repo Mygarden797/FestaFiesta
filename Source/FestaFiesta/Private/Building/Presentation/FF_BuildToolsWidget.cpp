@@ -409,7 +409,7 @@ void UFF_BuildToolsWidget::RefreshTools()
         ViewData.FootprintText = FText::Format(LOCTEXT("FootprintInfo", "시설 크기  {0} × {1} m\n안전 여유  {2} m"),
             FText::AsNumber(Spec.FootprintSizeCells.X / 100.0), FText::AsNumber(Spec.FootprintSizeCells.Y / 100.0),
             FText::AsNumber(Spec.ClearanceCells / 100.0));
-        ViewData.QueueText = FText::Format(LOCTEXT("QueueInfo", "대기 정원  {0}명\n동시 이용  {1}명  ·  1인 서비스  {2}초"),
+        ViewData.QueueText = FText::Format(LOCTEXT("QueueInfo", "대기·이용 정원  {0}팀\n동시 이용  {1}팀  ·  팀당 이용  {2}초"),
             FText::AsNumber(Queue.MaxWaitingAgents), FText::AsNumber(Queue.ServiceCapacity),
             FText::AsNumber(Queue.ServiceDurationSeconds));
     }

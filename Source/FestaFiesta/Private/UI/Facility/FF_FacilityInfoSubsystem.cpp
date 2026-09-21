@@ -55,7 +55,7 @@ namespace
 	FText FormatOccupancy(const int32 Occupied, const int32 Capacity)
 	{
 		return FText::Format(
-			LOCTEXT("OccupancyFormat", "{0} / {1}명"),
+			LOCTEXT("OccupancyFormat", "{0} / {1}팀"),
 			FText::AsNumber(Occupied),
 			FText::AsNumber(Capacity));
 	}
@@ -799,13 +799,13 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
 	OutViewData.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Spec.ClearanceCells);
 	OutViewData.QueueCapacityText = FText::Format(
-		LOCTEXT("QueueCapacityFormat", "대기 {0}명 · 동시 이용 {1}명"),
+		LOCTEXT("QueueCapacityFormat", "대기 {0}팀 · 동시 이용 {1}팀"),
 		FText::AsNumber(Spec.QueueRules.MaxWaitingAgents),
 		FText::AsNumber(Spec.QueueRules.ServiceCapacity));
-	OutViewData.QueueCapacityValueText=FText::Format(LOCTEXT("QueuePeopleValue","{0}명"),FText::AsNumber(Spec.QueueRules.MaxWaitingAgents));
-	OutViewData.ServiceCapacityValueText=FText::Format(LOCTEXT("QueuePeopleValue","{0}명"),FText::AsNumber(Spec.QueueRules.ServiceCapacity));
+	OutViewData.QueueCapacityValueText=FText::Format(LOCTEXT("QueueTeamsValue","{0}팀"),FText::AsNumber(Spec.QueueRules.MaxWaitingAgents));
+	OutViewData.ServiceCapacityValueText=FText::Format(LOCTEXT("QueueTeamsValue","{0}팀"),FText::AsNumber(Spec.QueueRules.ServiceCapacity));
 	OutViewData.ServiceDurationText = FText::Format(
-		LOCTEXT("ServiceDurationFormat", "{0}초"),
+		LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 		FText::AsNumber(Spec.QueueRules.ServiceDurationSeconds));
 	const UFF_FacilityUpgradeSubsystem* Upgrades = World
 		? World->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
@@ -817,7 +817,7 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	if (bHasUpgradePreview && UpgradePreview.CurrentServiceDurationSeconds > 0.0f)
 	{
 		OutViewData.ServiceDurationText = FText::Format(
-			LOCTEXT("ServiceDurationFormat", "{0}초"),
+			LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
 	}
 	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
@@ -928,10 +928,10 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? FormatIntegerWithSuffix(QueueState.WaitingPartyCount, LOCTEXT("TeamSuffix", "팀"))
 		: MissingQueueMetric;
 	OutViewData.OccupancyText = bQueueAvailable
-		? FormatOccupancy(QueueState.OccupiedMemberCount, QueueState.MaxCapacityMembers)
+		? FormatOccupancy(QueueState.WaitingPartyCount, QueueState.MaxCapacityParties)
 		: MissingQueueMetric;
 	OutViewData.RemainingServiceText = bQueueAvailable
-		? FormatIntegerWithSuffix(QueueState.RemainingServiceMemberCount, LOCTEXT("PeopleSuffix", "명"))
+		? FormatIntegerWithSuffix(QueueState.RemainingServicePartyCount, LOCTEXT("TeamSuffix", "팀"))
 		: MissingQueueMetric;
 	const float ExpectedWaitSeconds = bQueueAvailable && QueueState.bIsOpen
 		? QueueSystem->GetExpectedWaitSeconds(QueueFacilityId, 1)

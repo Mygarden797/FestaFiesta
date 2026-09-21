@@ -557,7 +557,7 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             .Text(LOCTEXT("QueueRectsFromPathButton", "Queue Rects <- Queue Path"))
             .ToolTipText(LOCTEXT(
                 "QueueRectsFromPathTooltip",
-                "시설 Data Asset 하나만 선택해야 합니다. 최대 대기 인원이 실제로 사용하는 경로 구간만 여백만큼 넓혀 예약 영역을 다시 만듭니다. 경로가 꺾여 있으면 구간마다 사각형을 만들어 회랑처럼 따라가므로 L자·ㄷ자 대기열도 남는 면적 없이 확보합니다. 건물 한 변 바깥을 지나는 구간은 그 변에 붙여 잘라내며, 저작 경로가 필요한 길이보다 길면 남는 꼬리는 예약하지 않습니다. 결과 Spec 전체가 검증을 통과할 때만 적용합니다."))
+                "시설 Data Asset 하나만 선택해야 합니다. 최대 대기 팀 수이 실제로 사용하는 경로 구간만 여백만큼 넓혀 예약 영역을 다시 만듭니다. 경로가 꺾여 있으면 구간마다 사각형을 만들어 회랑처럼 따라가므로 L자·ㄷ자 대기열도 남는 면적 없이 확보합니다. 건물 한 변 바깥을 지나는 구간은 그 변에 붙여 잘라내며, 저작 경로가 필요한 길이보다 길면 남는 꼬리는 예약하지 않습니다. 결과 Spec 전체가 검증을 통과할 때만 적용합니다."))
             .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanBuildQueueRectsFromPath)
             .OnClicked(this, &FFFZSFacilityDefinitionCustomization::BuildQueueRectsFromPath)
         ]
@@ -584,7 +584,7 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             .Text(LOCTEXT("TailFromCapacityButton", "Queue Tail <- Max Capacity"))
             .ToolTipText(LOCTEXT(
                 "TailFromCapacityTooltip",
-                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 대기열에서 마지막 선분 방향으로 꼬리 점을 이동하거나 새 꼬리 점을 추가해 전체 길이를 (최대 대기 인원 - 1) × 슬롯 간격으로 맞춥니다. 생성되는 모든 슬롯이 대기열 예약 사각형 안에 남을 때만 적용합니다."))
+                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 대기열에서 마지막 선분 방향으로 꼬리 점을 이동하거나 새 꼬리 점을 추가해 전체 길이를 (최대 대기 팀 수 - 1) × 슬롯 간격으로 맞춥니다. 생성되는 모든 슬롯이 대기열 예약 사각형 안에 남을 때만 적용합니다."))
             .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanResizeQueueTailToCapacity)
             .OnClicked(this, &FFFZSFacilityDefinitionCustomization::ResizeQueueTailToCapacity)
         ]
@@ -594,7 +594,7 @@ void FFFZSFacilityDefinitionCustomization::CustomizeDetails(IDetailLayoutBuilder
             .Text(LOCTEXT("CapacityFromLengthButton", "Max Capacity <- Queue Length"))
             .ToolTipText(LOCTEXT(
                 "CapacityFromLengthTooltip",
-                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 현재 대기열에서 들어갈 수 있는 최대 대기 인원을 계산합니다. 줄 머리의 0번 슬롯을 포함해 floor(길이 ÷ 간격) + 1이며, 결과 슬롯이 모두 예약 영역 안에 있을 때만 적용합니다."))
+                "시설 Data Asset 하나만 선택해야 합니다. 점이 2개 이상이고 슬롯 간격이 양수인 현재 대기열에서 들어갈 수 있는 최대 대기 팀 수을 계산합니다. 줄 머리의 0번 슬롯을 포함해 floor(길이 ÷ 간격) + 1이며, 결과 슬롯이 모두 예약 영역 안에 있을 때만 적용합니다."))
             .IsEnabled(this, &FFFZSFacilityDefinitionCustomization::CanSetCapacityFromQueueLength)
             .OnClicked(this, &FFFZSFacilityDefinitionCustomization::SetCapacityFromQueueLength)
         ]
@@ -1025,7 +1025,7 @@ FReply FFFZSFacilityDefinitionCustomization::SetCapacityFromQueueLength()
             return true;
         });
     ShowNotification(
-        FText::Format(LOCTEXT("CapacityUpdated", "시설 정의 {0}개의 최대 대기 인원을 갱신했습니다."), ChangedCount),
+        FText::Format(LOCTEXT("CapacityUpdated", "시설 정의 {0}개의 최대 대기 팀 수을 갱신했습니다."), ChangedCount),
         ChangedCount > 0);
     return FReply::Handled();
 }

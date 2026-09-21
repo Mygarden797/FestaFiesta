@@ -98,7 +98,8 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	const FFFZSQueueRules CurrentRules = Facility->GetEffectiveQueueRules();
 	OutPreview.CurrentServiceDurationSeconds = CurrentRules.ServiceDurationSeconds;
 	OutPreview.NextServiceDurationSeconds = CurrentRules.ServiceDurationSeconds;
-	OutPreview.CurrentThroughputPerMinute = CurrentRules.ServiceCapacity * 60.f / CurrentRules.ServiceDurationSeconds;
+	OutPreview.CurrentThroughputPerMinute = FMath::Min(CurrentRules.ServiceCapacity, CurrentRules.MaxWaitingAgents)
+		* 60.f / CurrentRules.ServiceDurationSeconds;
 	OutPreview.NextThroughputPerMinute = OutPreview.CurrentThroughputPerMinute;
 	const UFF_FacilitySynergySubsystem* Synergies = World ? World->GetSubsystem<UFF_FacilitySynergySubsystem>() : nullptr;
 	const float SynergyMultiplier = Synergies ? Synergies->GetRevenueMultiplier(FacilityInstanceId) : 1.f;
@@ -179,7 +180,8 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	const FFFZSQueueRules NextRules = AFFZSFacilityActor::BuildEffectiveQueueRules(
 		BaseSpec.QueueRules, Tier->ServiceDurationMultiplier);
 	OutPreview.NextServiceDurationSeconds = NextRules.ServiceDurationSeconds;
-	OutPreview.NextThroughputPerMinute = NextRules.ServiceCapacity * 60.f / NextRules.ServiceDurationSeconds;
+	OutPreview.NextThroughputPerMinute = FMath::Min(NextRules.ServiceCapacity, NextRules.MaxWaitingAgents)
+		* 60.f / NextRules.ServiceDurationSeconds;
 	OutPreview.NextRevenueMultiplier = FFF_BoothRevenueRules::ResolveRevenueMultiplier(
 		BaseSpec, Tier->TargetLevel, Tier->RevenueMultiplier, RevenueTable);
 	if (OutPreview.bRevenueAvailable)

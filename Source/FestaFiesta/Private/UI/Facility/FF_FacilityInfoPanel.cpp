@@ -28,6 +28,31 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	Super::NativeOnInitialized();
 	// Layout is authored in WBP, including optional tabs and confirmation. Use the editor
 	// migration command for old assets; never append runtime controls over designer work.
+	// Existing WBP assets can still carry the former per-person captions. Refresh only
+	// known labels so the new team values stay correct without rebuilding the layout.
+	if (WidgetTree)
+	{
+		auto SetMetricLabel = [this](const TCHAR* ValueName, const TCHAR* LegacyRow, const FText& Caption)
+		{
+			for (const FString& Name : {
+				FString(ValueName) + TEXT("_Label"),
+				FString(TEXT("Clarity_Label_")) + ValueName,
+				FString(TEXT("Aurora_Label_")) + ValueName,
+				FString(LegacyRow) + TEXT("_Label")})
+			{
+				if (auto* Label = Cast<UCommonTextBlock>(WidgetTree->FindWidget(FName(*Name))))
+					Label->SetText(Caption);
+			}
+		};
+		SetMetricLabel(TEXT("Text_ServiceDuration"), TEXT("ServiceDuration_Row"), LOCTEXT("TeamServiceDuration", "팀당 이용 시간"));
+		SetMetricLabel(TEXT("Text_Occupancy"), TEXT("Occupancy_Row"), LOCTEXT("TeamOccupancy", "대기·처리 중 팀"));
+		SetMetricLabel(TEXT("Text_RemainingService"), TEXT("RemainingService_Row"), LOCTEXT("RemainingTeams", "남은 서비스 팀"));
+		SetMetricLabel(TEXT("Text_ExpectedWait"), TEXT("ExpectedWait_Row"), LOCTEXT("TeamExpectedWait", "한 팀 예상 대기"));
+		if (auto* Label = Cast<UCommonTextBlock>(WidgetTree->FindWidget(TEXT("V2_UpgradeLabelTime"))))
+			Label->SetText(LOCTEXT("TeamUpgradeTime", "팀당 시간"));
+		if (Text_Occupancy)
+			Text_Occupancy->SetToolTipText(LOCTEXT("TeamOccupancyTip", "대기·처리 중인 팀 수와 최대 팀 수입니다. 인원수와 관계없이 한 팀이 한 자리를 사용합니다."));
+	}
 	if (Button_TabOverview) Button_TabOverview->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOverviewClicked);
 	if (Button_TabSynergy) Button_TabSynergy->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSynergyClicked);
 	if (Button_TabOperation) Button_TabOperation->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOperationClicked);

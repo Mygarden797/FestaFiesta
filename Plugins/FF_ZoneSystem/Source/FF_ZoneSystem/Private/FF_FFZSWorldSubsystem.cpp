@@ -2195,7 +2195,7 @@ void UFFZSWorldSubsystem::ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZ
     const auto AddQueueSlotOffNavFailure = [&]()
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::RequiredRouteDisconnected,
-            LOCTEXT("QueueSlotOffNav", "최대 수용 인원의 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
+            LOCTEXT("QueueSlotOffNav", "최대 대기 팀 수에 해당하는 Queue 슬롯을 내비게이션에 투영할 수 없습니다."));
     };
     TArray<FVector> LocalQueueSlotPoints;
     if (!FFFZSQueueGeometry::BuildLinearQueueSlotPoints(

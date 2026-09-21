@@ -94,7 +94,7 @@ static bool Apply(UWidgetBlueprint& BP)
     Font(Capacity,48,true); Add(*Queue,*Capacity,FMargin(0,4,0,8));
     Add(*Retired,*Label(BP,*Tree,TEXT("Text_ServiceCapacityValue"),TEXT("—"),18,true));
     Pair(BP,*Tree,*Queue,TEXT("Text_ServiceCapacityValue"),TEXT("동시 이용"));
-    Pair(BP,*Tree,*Queue,TEXT("Text_ServiceDuration"),TEXT("1인 서비스 시간"));
+    Pair(BP,*Tree,*Queue,TEXT("Text_ServiceDuration"),TEXT("팀당 이용 시간"));
     Add(*Queue,*Label(BP,*Tree,TEXT("Aurora_QueueNotice"),TEXT("실시간 대기 현황은 운영 탭에서 확인하세요."),15),FMargin(0,6,0,0));
     auto* Facts=Card(BP,*Tree,*BuildBody,TEXT("Aurora_BuildFacts"),TEXT("배치 정보"));
     Pair(BP,*Tree,*Facts,TEXT("Text_Footprint"),TEXT("시설 크기"));
@@ -107,7 +107,7 @@ static bool Apply(UWidgetBlueprint& BP)
     if(auto* State=Bound(*Tree,TEXT("Text_OperationState"))){Font(State,17,true);Add(*Occupancy,*State);}
     auto* Count=Bound(*Tree,TEXT("Text_Occupancy")); Font(Count,42,true); Add(*Occupancy,*Count);
     Pair(BP,*Tree,*Occupancy,TEXT("Text_WaitingParties"),TEXT("대기·처리 중 일행"));
-    Pair(BP,*Tree,*Occupancy,TEXT("Text_RemainingService"),TEXT("남은 서비스 인원"));
+    Pair(BP,*Tree,*Occupancy,TEXT("Text_RemainingService"),TEXT("남은 서비스 팀"));
     Pair(BP,*Tree,*Occupancy,TEXT("Text_ExpectedWait"),TEXT("1인 이용 완료 예상"));
     Pair(BP,*Tree,*Occupancy,TEXT("Text_Throughput"),TEXT("처리 속도"));
     if(UWidget* Ranking=Tree->FindWidget(TEXT("Button_RevenueRanking"))) Add(*LiveBody,*Ranking);

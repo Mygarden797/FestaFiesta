@@ -95,7 +95,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     Text(TEXT("Text_ActiveSnap"), TEXT("100 cm 맞춤"));
     Text(TEXT("Text_Confirm"), TEXT("배치 확정"));
     Text(TEXT("Text_Footprint"), TEXT("시설 크기  3.2 × 1.97 m\n안전 여유  1 m"));
-    Text(TEXT("Text_Queue"), TEXT("대기 정원  5명\n동시 이용  1명  ·  1인 서비스  6초"));
+    Text(TEXT("Text_Queue"), TEXT("대기·이용 정원  5팀\n동시 이용  1팀  ·  팀당 이용  6초"));
     Text(TEXT("Text_ControlHelp"), TEXT("좌클릭 / Enter  설치 확정\nQ / E  45°씩 회전\nShift + Q / E  자유 회전\nCtrl  25 cm · Alt  1 cm\nT  직접 조정 · G  격자 표시\nB / 우클릭  시설 목록\nW A S D  카메라 이동\nEsc  일시정지"));
     auto* Dock = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_Tools")));
     auto* Info = Cast<UBorder>(Widget->GetWidgetFromName(TEXT("Border_PlacementInfo")));

@@ -857,9 +857,9 @@ namespace FFFacilityInfoWbpBuilder
 		if (!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("WaitingParties_Row"),
 			FText::FromString(TEXT("대기/처리 중 일행")), TEXT("Text_WaitingParties"), WaitingParties) ||
 			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("Occupancy_Row"),
-				FText::FromString(TEXT("점유 인원")), TEXT("Text_Occupancy"), Occupancy) ||
+				FText::FromString(TEXT("점유 팀")), TEXT("Text_Occupancy"), Occupancy) ||
 			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("RemainingService_Row"),
-				FText::FromString(TEXT("남은 서비스 인원")), TEXT("Text_RemainingService"), RemainingService) ||
+				FText::FromString(TEXT("남은 서비스 팀")), TEXT("Text_RemainingService"), RemainingService) ||
 			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("ExpectedWait_Row"),
 				FText::FromString(TEXT("1인 기준 예상 대기")), TEXT("Text_ExpectedWait"), ExpectedWait) ||
 			!AddInfoRow(Blueprint, Tree, *LiveSection, *Palette, TEXT("Throughput_Row"),
@@ -1343,9 +1343,9 @@ namespace FFFacilityInfoWbpBuilder
 			StyleLightText(*OperationState, 13, Palette.InGame.TealDeep, TEXT("SemiBold"));
 			AddVertical(*SectionContent, *OperationState, FMargin(2.0f, 0.0f, 0.0f, 7.0f));
 			if (!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
-				TEXT("Text_WaitingParties"), TEXT("대기 / 처리 중 일행"), TEXT("Text_Occupancy"), TEXT("이용 중 인원")) ||
+				TEXT("Text_WaitingParties"), TEXT("대기 / 처리 중 일행"), TEXT("Text_Occupancy"), TEXT("점유 팀")) ||
 				!AddStatPair(Blueprint, Tree, *SectionContent, Palette,
-				TEXT("Text_RemainingService"), TEXT("남은 서비스 인원"), TEXT("Text_ExpectedWait"), TEXT("1인 예상 대기")) ||
+				TEXT("Text_RemainingService"), TEXT("남은 서비스 팀"), TEXT("Text_ExpectedWait"), TEXT("한 팀 예상 대기")) ||
 				!AddStatPair(Blueprint, Tree, *SectionContent, Palette, TEXT("Text_Throughput"), TEXT("처리 속도")))
 			{
 				return nullptr;
@@ -3115,7 +3115,7 @@ namespace FFFacilityInfoWbpBuilder
 			AddHorizontal(*Captions, *Text(Entry.Key, *Entry.Value, 11, false, true), FMargin(5, 4), ESlateSizeRule::Fill);
 		AddVertical(*Metrics, *Captions, FMargin(0, 0, 0, 4));
 		const TCHAR* Keys[] = {TEXT("Revenue"), TEXT("Time"), TEXT("Throughput"), TEXT("Size")};
-		const TCHAR* Labels[] = {TEXT("1인 수익"), TEXT("1인 시간"), TEXT("처리 속도"), TEXT("크기")};
+		const TCHAR* Labels[] = {TEXT("1인 수익"), TEXT("팀당 시간"), TEXT("처리 속도"), TEXT("크기")};
 		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Keys); ++Index)
 		{
 			auto* Row = MakeWidget<UHorizontalBox>(Blueprint, Tree, FName(FString(TEXT("V2_UpgradeRow")) + Keys[Index]));
@@ -3145,11 +3145,11 @@ namespace FFFacilityInfoWbpBuilder
 		UpgradeContent->ShiftChild(UpgradeContent->GetChildIndex(Metrics) + 1, Quote);
 		// The operation model's occupancy includes waiting/processing parties, not concurrent service capacity.
 		if (auto* Label = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_Occupancy_Label"))))
-			Label->SetText(FText::FromString(TEXT("대기·처리 중 인원")));
+			Label->SetText(FText::FromString(TEXT("대기·처리 중 팀")));
 		if (auto* Label = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_WaitingParties_Label"))))
 			Label->SetText(FText::FromString(TEXT("대기·처리 중 일행")));
 		if (auto* Occupancy = Tree.FindWidget(TEXT("Text_Occupancy")))
-			Occupancy->SetToolTipText(FText::FromString(TEXT("대기·처리 중 일행의 전체 인원입니다. 일행 전체 이용이 끝날 때까지 점유에 포함됩니다.")));
+			Occupancy->SetToolTipText(FText::FromString(TEXT("대기·처리 중인 팀 수와 최대 팀 수입니다. 인원수와 관계없이 한 팀이 한 자리를 사용합니다.")));
 		if (auto* Today = Cast<UCommonTextBlock>(Tree.FindWidget(TEXT("Text_FacilityTodayRevenue"))))
 			StyleLightText(*Today, 25, P.TealDeep, TEXT("SemiBold"));
 		auto* Ranking = MakeLightTextButton(Blueprint, Tree, TEXT("Button_RevenueRanking"), TEXT("V2_RevenueRankingLabel"),

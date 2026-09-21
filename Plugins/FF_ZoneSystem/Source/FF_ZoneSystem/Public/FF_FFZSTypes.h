@@ -290,20 +290,19 @@ struct FF_ZONESYSTEM_API FFFZSQueueRules
 {
     GENERATED_BODY()
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Max Waiting Agents", ToolTip = "줄에 동시에 기다릴 수 있는 최대 인원입니다. 서비스 중·퇴장 중 인원은 포함하지 않습니다. 경로 길이만 늘려도 이 값은 자동 증가하지 않습니다.", ClampMin = "1"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Max Waiting Teams", ToolTip = "게임 대기열에서 대기·이용 중인 팀 합계의 최대값입니다. 함께 방문한 일행은 인원수와 관계없이 한 팀이며, 슬롯 하나를 사용하고 이용 완료 시 자리를 비웁니다. 경로 길이만 늘려도 이 값은 자동 증가하지 않습니다.", ClampMin = "1"))
     int32 MaxWaitingAgents = 12;
-    // Waiting 배열에 허용할 최대 인원. ActiveServices와 Exiting은 이 수에 포함하지 않는다.
+    // 저장 호환성을 위해 필드 이름을 유지한다. 게임에서는 대기 팀 수이며 슬롯 하나가 한 팀이다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Slot Spacing (cm)", ToolTip = "대기열 경로를 따라 배치되는 인접 슬롯 중심 사이 거리(cm)입니다. 필요한 경로 길이는 (최대 대기 인원 - 1) × 슬롯 간격입니다.", ClampMin = "1.0", Units = "cm"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Slot Spacing (cm)", ToolTip = "대기열 경로를 따라 배치되는 인접 팀 슬롯 중심 사이 거리(cm)입니다. 필요한 경로 길이는 (최대 대기 팀 수 - 1) × 슬롯 간격입니다.", ClampMin = "1.0", Units = "cm"))
     float SlotSpacingCm = 115.0f;
     // queue spline 위 인접 대기 슬롯 중심 간격 cm. 115 cm는 측정이 필요한 프로토타입 기본값이다.
 
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Capacity", ToolTip = "동시에 서비스를 받을 수 있는 손님 수입니다. 같은 수의 Service 앵커를 0부터 연속 번호로 만들어야 합니다.", ClampMin = "1"))
-    // 동시에 ServiceIndex를 배정할 수 있는 최대 항목 수다.
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Capacity (Teams)", ToolTip = "동시에 서비스를 받을 수 있는 팀 수입니다. 혼자 온 손님도 여러 명의 일행도 한 팀으로 계산합니다. 같은 수의 Service 앵커를 0부터 연속 번호로 만들어야 합니다.", ClampMin = "1"))
     int32 ServiceCapacity = 1;
-    // 동시에 ServiceIndex를 배정할 수 있는 최대 항목 수다.
+    // 동시에 ServiceIndex를 배정할 수 있는 최대 팀 수다.
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Duration (Seconds)", ToolTip = "손님이 Service 앵커에 도착한 뒤 서비스가 완료될 때까지 걸리는 시간(초)입니다.", ClampMin = "0.01", Units = "s"))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Queue", meta = (DisplayName = "Service Duration per Team (Seconds)", ToolTip = "한 팀이 Service 앵커에 도착한 뒤 이용을 완료할 때까지 걸리는 시간(초)입니다. 팀 인원수와 관계없이 같은 시간이 걸리며, 완료 수익은 실제 이용 인원수로 계산합니다.", ClampMin = "0.01", Units = "s"))
     float ServiceDurationSeconds = 4.0f;
     // Service 앵커 도착 보고 뒤 완료까지 필요한 시뮬레이션 시간이다.
 
@@ -591,7 +590,7 @@ struct FF_ZONESYSTEM_API FFFZSFacilitySpec
     int32 ClearanceCells = 100;
     // 시설 둘레 확보 폭을 1 cm 셀 수로 저장한다. 예: 1 m는 100이다.//
     
-    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Queue Reserved Rects", ToolTip = "다른 시설과 장애물이 침범하지 못하도록 확보할 대기열 영역입니다. 좌표 원점은 회전 전 건물의 왼쪽 아래이고 단위는 1cm이며 Max 경계는 포함하지 않습니다. 건물 바닥과 면적으로 겹치면 안 되고, 예약 면적은 10,000,000셀 안전 예산에 포함됩니다. 영역만 늘려도 실제 대기 인원은 늘지 않습니다."))
+    UPROPERTY(SaveGame, EditAnywhere, BlueprintReadWrite, Category = "Placement", meta = (DisplayName = "Queue Reserved Rects", ToolTip = "다른 시설과 장애물이 침범하지 못하도록 확보할 대기열 영역입니다. 좌표 원점은 회전 전 건물의 왼쪽 아래이고 단위는 1cm이며 Max 경계는 포함하지 않습니다. 건물 바닥과 면적으로 겹치면 안 되고, 예약 면적은 10,000,000셀 안전 예산에 포함됩니다. 영역만 늘려도 실제 대기 팀 수는 늘지 않습니다."))
     TArray<FFFZSCellRect> QueueReservedRects;
     // 회전 전 footprint 왼쪽 아래를 원점으로 하는 최대 대기열 예약 사각형들이다.
     // 서로 겹치거나 맞닿아도 런타임에서 결정적으로 합쳐지며 실제 좌표 단위는 1 cm 셀이다.

@@ -156,7 +156,7 @@ static bool Apply(UWidgetBlueprint& BP)
     auto* Basics=Replace(*Build,TEXT("Clarity_BasicFacts"));
     Pair(BP,*Tree,*Basics,TEXT("Text_QueueCapacityValue"),TEXT("대기 정원"),true);
     Pair(BP,*Tree,*Basics,TEXT("Text_ServiceCapacityValue"),TEXT("동시 이용"));
-    Pair(BP,*Tree,*Basics,TEXT("Text_ServiceDuration"),TEXT("1인 서비스"));
+    Pair(BP,*Tree,*Basics,TEXT("Text_ServiceDuration"),TEXT("팀당 이용 시간"));
     Pair(BP,*Tree,*Basics,TEXT("Text_Footprint"),TEXT("시설 크기"));
     Pair(BP,*Tree,*Basics,TEXT("Text_Clearance"),TEXT("안전 여유"));
     Pair(BP,*Tree,*Basics,TEXT("Text_InstallCost"),TEXT("설치 비용"));
@@ -165,9 +165,9 @@ static bool Apply(UWidgetBlueprint& BP)
     auto* Operation=Replace(*Live,TEXT("Clarity_OperationFacts"));
     if(auto* State=FindText(*Tree,TEXT("Text_OperationState")))
     { Font(State,16,true); V(*Operation,*State,FMargin(0,0,0,8)); }
-    Pair(BP,*Tree,*Operation,TEXT("Text_Occupancy"),TEXT("대기·처리 중 인원"),true);
+    Pair(BP,*Tree,*Operation,TEXT("Text_Occupancy"),TEXT("대기·처리 중 팀"),true);
     Pair(BP,*Tree,*Operation,TEXT("Text_WaitingParties"),TEXT("대기·처리 중 일행"));
-    Pair(BP,*Tree,*Operation,TEXT("Text_RemainingService"),TEXT("남은 서비스 인원"));
+    Pair(BP,*Tree,*Operation,TEXT("Text_RemainingService"),TEXT("남은 서비스 팀"));
     Pair(BP,*Tree,*Operation,TEXT("Text_ExpectedWait"),TEXT("1인 완료 예상"));
     Pair(BP,*Tree,*Operation,TEXT("Text_Throughput"),TEXT("처리 속도"));
     for(UWidget* Old:Revenue->GetAllChildren()) V(*Retired,*Old);

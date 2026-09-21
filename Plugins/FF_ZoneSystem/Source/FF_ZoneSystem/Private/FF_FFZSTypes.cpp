@@ -460,7 +460,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
                 static_cast<double>(QueueRules.SlotSpacingCm);
             if (QueueSplineLengthCm + UE_KINDA_SMALL_NUMBER < RequiredQueueLengthCm)
             {
-                OutErrors.Add(LOCTEXT("QueueSplineTooShort", "Queue Spline은 SlotSpacingCm 간격으로 최대 수용 인원의 모든 슬롯을 배치할 수 있을 만큼 길어야 합니다."));
+                OutErrors.Add(LOCTEXT("QueueSplineTooShort", "Queue Spline은 SlotSpacingCm 간격으로 최대 대기 팀 수에 해당하는 모든 슬롯을 배치할 수 있을 만큼 길어야 합니다."));
             }
         }
     }
@@ -569,7 +569,7 @@ bool FFFZSFacilitySpec::IsValid(TArray<FText>& OutErrors) const
         {
             OutErrors.Add(LOCTEXT(
                 "QueueSlotOutsideReservation",
-                "최대 수용 인원의 모든 Queue 슬롯은 QueueReservedRects 안에 있어야 합니다."));
+                "최대 대기 팀 수에 해당하는 모든 Queue 슬롯은 QueueReservedRects 안에 있어야 합니다."));
         }
     }
 

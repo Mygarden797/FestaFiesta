@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Economy/FF_QueueEconomyBridgeSubsystem.h"
 
@@ -42,18 +42,17 @@
 /**
  * Queue → 경제 브리지를 검증한다 (S10).
  *
- * 앞쪽 세 테스트는 배선만 본다(누가 무엇에 연결돼 있는가).
- * 마지막 두 개는 **실제로 원장이 움직이는지** 를 본다 — 시설 설치부터 결제까지
- * 체인 전체를 태우는 유일한 테스트이고, 오늘 작업의 완료 증거다.
+ * 완료 신호 구독, 시설별 요금·효과, 실제 팀 이용 완료에서 원장까지의 정산을 검증한다.
+ * 실제 Queue 테스트는 가입 때의 인원 보존, 완료당 한 번 정산, 포기·취소 무과금을 확인한다.
  *
  * 수수료 금액 자체의 규칙(반올림·파티 단위)은 FF_BoothRevenueRulesTests.cpp 가 갖는다.
  */
 namespace FFF_QueueEconomyBridgeTestHelpers
 {
-	// 구독을 이름으로 확인한다. HandlePartyExited 는 private 이라 메서드 포인터를 못 쓰므로
+	// 구독을 이름으로 확인한다. HandlePartyServiceCompleted 는 private 이라 메서드 포인터를 못 쓰므로
 	// (IsAlreadyBound 는 &Class::Method 를 요구한다) FMulticastScriptDelegate::Contains 를 쓴다.
 	// UFUNCTION 이라 동적 델리게이트가 이름으로 들고 있어서 이쪽으로 조회된다.
-	const FName HandlerName(TEXT("HandlePartyExited"));
+	const FName HandlerName(TEXT("HandlePartyServiceCompleted"));
 
 	const FName TestZoneId(TEXT("GZ_DadaPocha"));
 
@@ -301,10 +300,10 @@ bool FFF_QueueEconomyBridge_PaidExitIsServedOnly::RunTest(const FString& Paramet
 
 // --- 배선 -----------------------------------------------------------------
 
-// 브리지가 월드에 생기고 Queue 의 퇴장 신호를 실제로 구독한다.
+// 브리지가 월드에 생기고 Queue 의 확정 인원이 담긴 완료 신호를 실제로 구독한다.
 // 구독이 빠지면 매출이 0 이 되는데 게임은 정상으로 보이므로, 이 배선 자체를 고정한다.
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_SubscribesToPartyExited, "FestaFiesta.Economy.QueueBridge.SubscribesToPartyExited", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_QueueEconomyBridge_SubscribesToPartyExited::RunTest(const FString& Parameters)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_SubscribesToPartyServiceCompleted, "FestaFiesta.Economy.QueueBridge.SubscribesToPartyServiceCompleted", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_SubscribesToPartyServiceCompleted::RunTest(const FString& Parameters)
 {
 	using namespace FFF_QueueEconomyBridgeTestHelpers;
 
@@ -330,7 +329,9 @@ bool FFF_QueueEconomyBridge_SubscribesToPartyExited::RunTest(const FString& Para
 		return false;
 	}
 
-	TestTrue(TEXT("브리지가 퇴장 신호를 구독한다"),
+	TestTrue(TEXT("브리지가 확정 인원이 담긴 이용 완료 신호를 구독한다"),
+		Queue->OnPartyServiceCompleted.Contains(Bridge, HandlerName));
+	TestFalse(TEXT("일반 퇴장 신호는 중복 정산 경로가 아니다"),
 		Queue->OnPartyExited.Contains(Bridge, HandlerName));
 
 	return true;
@@ -371,7 +372,7 @@ bool FFF_QueueEconomyBridge_UnsubscribesWithWorld::RunTest(const FString& Parame
 		}
 
 		TestTrue(TEXT("월드가 사는 동안은 구독돼 있다"),
-			Queue->OnPartyExited.Contains(Bridge, HandlerName));
+			Queue->OnPartyServiceCompleted.Contains(Bridge, HandlerName));
 	}
 
 	// 여기서 TestWorld 소멸자가 월드를 정리하고 두 서브시스템의 Deinitialize 가 불린다.
@@ -388,7 +389,7 @@ bool FFF_QueueEconomyBridge_UnsubscribesWithWorld::RunTest(const FString& Parame
  *
  * 부스를 실제로 설치하고 파티를 실제로 스폰한 뒤 이용 완료 신호를 흘려서,
  * 매출이 원장에 꽂히는 것까지 본다. 체인의 어느 고리도 흉내내지 않는다 —
- * ID 변환(int32→FGuid) · 이름 파싱 · 객단가 조회 · 인원 조회 · 원장 기록이 전부 진짜다.
+ * ID 변환(int32→FGuid) · 이름 파싱 · 객단가 조회 · 전달받은 인원 · 원장 기록을 검증한다.
  *
  * 이 프로젝트에서 프로덕션 경로로 매출이 들어오는 첫 테스트다.
  */
@@ -420,8 +421,8 @@ bool FFF_QueueEconomyBridge_ServedExitAddsCommission::RunTest(const FString& Par
 	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
 
 	// 실제 신호를 그대로 흘린다.
-	Harness.Queue->OnPartyExited.Broadcast(
-		Harness.QueueFacilityId, Harness.PartyId, EFF_QueueExit::Served, 30.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(
+		Harness.QueueFacilityId, Harness.PartyId, MemberCount, 30.f);
 
 	// 금액 규칙 자체는 순수 함수 테스트가 갖는다. 여기서 보는 것은
 	// **브리지가 올바른 객단가·인원·수수료율을 집어넣었는가** 다.
@@ -580,8 +581,8 @@ bool FFF_QueueEconomyBridge_FacilityAuthoredRevenue::RunTest(const FString& Para
 	for (int32 Index = 0; Index < FacilityIds.Num(); ++Index)
 	{
 		const int32 Before = Harness.Progression->GetTodayRevenue();
-		Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[Index]),
-			Harness.PartyId, EFF_QueueExit::Served, 0.f);
+		Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[Index]),
+			Harness.PartyId, MemberCount, 0.f);
 		const int32 Expected = EffectiveAmounts[Index] * MemberCount / 4;
 		TestEqual(TEXT("Actual settlement uses the same per-facility amount as its quote"),
 			Harness.Progression->GetTodayRevenue() - Before, Expected);
@@ -612,8 +613,8 @@ bool FFF_QueueEconomyBridge_FacilityAuthoredRevenue::RunTest(const FString& Para
 	TestEqual(TEXT("Snapshot uses the installed amount even after the source asset changes"),
 		Restored->GetFacilitySpec().RevenuePerUseGold, 40);
 	const int32 BeforeRestoredUse = Harness.Progression->GetTodayRevenue();
-	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]),
-		Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]),
+		Harness.PartyId, MemberCount, 0.f);
 	TestEqual(TEXT("Restored settlement still uses the saved facility amount"),
 		Harness.Progression->GetTodayRevenue() - BeforeRestoredUse, 10 * MemberCount);
 	return true;
@@ -702,8 +703,8 @@ bool FFF_QueueEconomyBridge_TableRevenueEditsInstalledAndRestoredFacilities::Run
 	for (int32 Index = 0; Index < FacilityIds.Num(); ++Index)
 	{
 		const int32 Before = Harness.Progression->GetTodayRevenue();
-		Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[Index]),
-			Harness.PartyId, EFF_QueueExit::Served, 0.f);
+		Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[Index]),
+			Harness.PartyId, MemberCount, 0.f);
 		const int32 Expected = FFF_BoothRevenueRules::ResolveCommission(
 			EffectiveAmounts[Index], MemberCount, Index == 0 ? .5f : .25f, Index == 0 ? 2.f : 1.f);
 		TestEqual(TEXT("Settlement consumes the same table/fallback value as the quote"),
@@ -734,7 +735,7 @@ bool FFF_QueueEconomyBridge_TableRevenueEditsInstalledAndRestoredFacilities::Run
 	TestEqual(TEXT("The installed facility uses its edited base, rate and level-one multiplier"), EditedQuote.BaseRevenuePerUseGold, 19);
 	TestEqual(TEXT("Its current level immediately uses the edited multiplier before rounding"), EditedQuote.CurrentRevenuePerUseGold, 75);
 	const int32 ChangedCommission = FFF_BoothRevenueRules::ResolveCommission(100, MemberCount, .25f, 3.f);
-	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]), Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]), Harness.PartyId, MemberCount, 0.f);
 	TestEqual(TEXT("The next use pays the edited price without reinstalling"),
 		Harness.Progression->GetTodayRevenue(), EarnedBeforeEdit + ChangedCommission);
 
@@ -753,7 +754,7 @@ bool FFF_QueueEconomyBridge_TableRevenueEditsInstalledAndRestoredFacilities::Run
 	if (!TestTrue(TEXT("The restored facility exposes a fresh quote"), Upgrades->GetUpgradePreview(FacilityIds[0], EditedQuote))) return false;
 	TestEqual(TEXT("The table supersedes both the saved price and multiplier after restore"), EditedQuote.CurrentRevenuePerUseGold, 75);
 	const int32 BeforeRestoredUse = Harness.Progression->GetTodayRevenue();
-	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]), Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueBridge->FindQueueFacilityId(FacilityIds[0]), Harness.PartyId, MemberCount, 0.f);
 	TestEqual(TEXT("The restored facility settles at the newly edited table price"),
 		Harness.Progression->GetTodayRevenue() - BeforeRestoredUse, ChangedCommission);
 	Markers->Tick(0.f);
@@ -980,7 +981,7 @@ bool FFF_QueueEconomyBridge_UpgradeRevenueRespectsFundsCapacity::RunTest(const F
 	const int32 QuotedAmount = FFF_BoothRevenueRules::ResolveCommission(
 		MAX_int32, MemberCount, Harness.Definition->BoothCommissionRate, 1.5f);
 	if (!TestTrue(TEXT("Upgraded commission exceeds the remaining balance capacity"), QuotedAmount > AcceptedAmount)) return false;
-	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueFacilityId, Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueFacilityId, Harness.PartyId, MemberCount, 0.f);
 	TestEqual(TEXT("The balance saturates without becoming negative"), Harness.Progression->GetGold(), MAX_int32);
 	TestEqual(TEXT("Total revenue records only the accepted amount"), Harness.Progression->GetTotalRevenue(), AcceptedAmount);
 	TestEqual(TEXT("Today's revenue records the same accepted amount"), Harness.Progression->GetTodayRevenue(), AcceptedAmount);
@@ -993,7 +994,7 @@ bool FFF_QueueEconomyBridge_UpgradeRevenueRespectsFundsCapacity::RunTest(const F
 	const TArray<FFF_FacilityRevenueRow> FacilityRows = Harness.Progression->GetRevenueByFacilityRowsForDay(1);
 	if (!TestEqual(TEXT("There is one facility revenue row"), FacilityRows.Num(), 1)) return false;
 	TestEqual(TEXT("The facility breakdown also records the accepted amount"), FacilityRows[0].Amount, AcceptedAmount);
-	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueFacilityId, Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueFacilityId, Harness.PartyId, MemberCount, 0.f);
 	TestEqual(TEXT("Further payouts at the balance limit leave funds unchanged"), Harness.Progression->GetGold(), MAX_int32);
 	TestEqual(TEXT("Rejected overflow is not reported as earned revenue"), Harness.Progression->GetTotalRevenue(), AcceptedAmount);
 	const TArray<FFF_FacilityRevenueRow> RowsAfterRejectedPayout = Harness.Progression->GetRevenueByFacilityRowsForDay(1);
@@ -1071,7 +1072,7 @@ bool FFF_QueueEconomyBridge_SynergyPreviewPaymentAndLifecycle::RunTest(const FSt
 	const int32 MemberCount = Harness.SpawnPartyAndGetMemberCount();
 	if (!TestTrue(TEXT("Real party data exists"), MemberCount > 0)) return false;
 	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
-	Harness.Queue->OnPartyExited.Broadcast(Harness.QueueFacilityId, Harness.PartyId, EFF_QueueExit::Served, 0.f);
+	Harness.Queue->OnPartyServiceCompleted.Broadcast(Harness.QueueFacilityId, Harness.PartyId, MemberCount, 0.f);
 	TestEqual(TEXT("Paid completion uses the authored base and combined multiplier"), Harness.Progression->GetTodayRevenue() - RevenueBefore,
 		FFF_BoothRevenueRules::ResolveCommission(100, MemberCount, .2f, 1.5f * 1.25f));
 	FFFZSWorldSnapshot Snapshot = Harness.ZoneSystem->CaptureWorldSnapshot();
@@ -1105,6 +1106,137 @@ bool FFF_QueueEconomyBridge_SynergyPreviewPaymentAndLifecycle::RunTest(const FSt
 	Remove.FacilityInstanceId = Install.FacilityInstanceId;
 	if (!TestTrue(TEXT("Restored helper can be removed"), Harness.ZoneSystem->ExecuteCommand(Remove).bSucceeded)) return false;
 	TestEqual(TEXT("Removal invalidates the income cache"), Synergy->GetBonusPercent(Harness.FacilityInstanceId), 0.f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_TeamCompletionUsesCapturedMembers,
+	"FestaFiesta.Economy.QueueBridge.TeamCompletionUsesCapturedMembers",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_TeamCompletionUsesCapturedMembers::RunTest(const FString& Parameters)
+{
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Team settlement world initializes"), Harness.Initialize(this))) return false;
+	Harness.Definition->BoothCommissionRate = .25f;
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
+	Spec.FacilityDefinitionId = BoothDefinitionId;
+	Spec.InstallCostKey = NAME_None;
+	Spec.bOverrideRevenuePerUseGold = true;
+	Spec.RevenuePerUseGold = 100;
+	Spec.QueueRules.ServiceCapacity = 2;
+	Spec.QueueRules.ServiceDurationSeconds = 1.f;
+	const FFFZSAnchorDefinition* FirstServiceAnchor = Spec.Anchors.FindByPredicate(
+		[](const FFFZSAnchorDefinition& Anchor) { return Anchor.Type == EFFZSAnchorType::Service && Anchor.Index == 0; });
+	if (!TestNotNull(TEXT("The fixture provides service anchor zero"), FirstServiceAnchor)) return false;
+	FFFZSAnchorDefinition SecondServiceAnchor = *FirstServiceAnchor;
+	SecondServiceAnchor.Index = 1;
+	SecondServiceAnchor.LocalTransform.AddToTranslation(FVector(-100.f, 0.f, 0.f));
+	Spec.Anchors.Add(SecondServiceAnchor);
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
+	FFFZSCommand Open;
+	Open.CommandId = FGuid::NewGuid();
+	Open.TransactionId = FGuid::NewGuid();
+	Open.Type = EFFZSCommandType::Open;
+	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+	Open.FacilityInstanceId = Harness.FacilityInstanceId;
+	if (!TestTrue(TEXT("Team booth opens"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
+	Harness.Queue->SimulationStepSeconds = .05f;
+
+	// Deterministic queue requests have no live Crowd record. Completion must carry its
+	// admitted roster itself rather than asking Crowd for a potentially changed party.
+	FFF_JoinRequest Solo;
+	Solo.PartyId = 400001;
+	Solo.MemberCount = 1;
+	FFF_JoinRequest Family;
+	Family.PartyId = 400002;
+	Family.MemberCount = 4;
+	if (!TestTrue(TEXT("One-person team is admitted"),
+		Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Solo).bAccepted)
+		|| !TestTrue(TEXT("Four-person team is admitted"),
+			Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Family).bAccepted)) return false;
+	TestEqual(TEXT("Both teams retain five people for occupancy"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).OccupiedMemberCount, 5);
+	Family.MemberCount = 99;
+	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
+	Harness.Queue->AdvanceFixedSteps(19);
+	TestEqual(TEXT("Admission and service start do not charge"), Harness.Progression->GetTodayRevenue(), RevenueBefore);
+	Harness.Queue->AdvanceFixedSteps(2);
+	TestEqual(TEXT("Both teams finish within the same one-second service interval"),
+		Harness.Queue->GetQueueState(Harness.QueueFacilityId).OccupiedMemberCount, 0);
+	TestEqual(TEXT("Completed one-person and four-person teams pay for exactly five people"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 125);
+	FFF_FacilityInstanceRevenue Revenue;
+	if (!TestTrue(TEXT("Team payments enter the facility ledger"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, Revenue))) return false;
+	TestEqual(TEXT("There are two payments, independent of the number of people"), Revenue.TodayPaymentCount, 2);
+	Harness.Queue->FlushPendingEvents();
+	Harness.Queue->AdvanceFixedSteps(40);
+	TestEqual(TEXT("Flushing and advancing completed teams cannot pay again"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 125);
+
+	// Reusing the party ID for a genuinely new visit remains a new paid completion.
+	Family.MemberCount = 4;
+	if (!TestTrue(TEXT("A completed team may visit again"),
+		Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Family).bAccepted)) return false;
+	Harness.Queue->AdvanceFixedSteps(21);
+	TestEqual(TEXT("A new completed visit pays once using its own captured count"),
+		Harness.Progression->GetTodayRevenue() - RevenueBefore, 225);
+	Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, Revenue);
+	TestEqual(TEXT("The repeat visit creates exactly one additional payment"), Revenue.TodayPaymentCount, 3);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueEconomyBridge_UnfinishedTeamsNeverPay,
+	"FestaFiesta.Economy.QueueBridge.UnfinishedTeamsNeverPay",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_QueueEconomyBridge_UnfinishedTeamsNeverPay::RunTest(const FString& Parameters)
+{
+	using namespace FFF_QueueEconomyBridgeTestHelpers;
+	FScopedQueueEconomyTestSettings SettingsGuard;
+	FQueueEconomyHarness Harness;
+	if (!TestTrue(TEXT("Unfinished-team world initializes"), Harness.Initialize(this))) return false;
+	FString Failure;
+	if (!Harness.InstallFoodStall(Failure)) { AddError(Failure); return false; }
+	const auto ChangeLifecycle = [&](EFFZSCommandType Type)
+	{
+		FFFZSCommand Command;
+		Command.CommandId = FGuid::NewGuid();
+		Command.TransactionId = FGuid::NewGuid();
+		Command.Type = Type;
+		Command.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
+		Command.FacilityInstanceId = Harness.FacilityInstanceId;
+		return Harness.ZoneSystem->ExecuteCommand(Command).bSucceeded;
+	};
+	if (!TestTrue(TEXT("Unfinished-team booth opens"), ChangeLifecycle(EFFZSCommandType::Open))) return false;
+	const int32 RevenueBefore = Harness.Progression->GetTodayRevenue();
+	FFF_JoinRequest Request;
+	Request.PartyId = 500001;
+	Request.MemberCount = 3;
+	Request.MaxWaitSeconds = .001f;
+	if (!TestTrue(TEXT("Waiting team joins"),
+		Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Request).bAccepted)) return false;
+	Harness.Queue->AdvanceFixedSteps(1);
+	Request.PartyId = 500002;
+	Request.MemberCount = 4;
+	Request.MaxWaitSeconds = 600.f;
+	if (!TestTrue(TEXT("Next team joins"),
+		Harness.QueueBridge->TryJoinZoneFacility(Harness.FacilityInstanceId, Request).bAccepted)) return false;
+	Harness.Queue->AdvanceFixedSteps(1);
+	if (!TestTrue(TEXT("Emergency closure cancels the active team"),
+		ChangeLifecycle(EFFZSCommandType::EmergencyClose))) return false;
+	Harness.Queue->FlushPendingEvents();
+	Harness.Queue->AdvanceFixedSteps(1500);
+	TestEqual(TEXT("Abandonment and active-service cancellation produce no income"),
+		Harness.Progression->GetTodayRevenue(), RevenueBefore);
+	FFF_FacilityInstanceRevenue Revenue;
+	TestFalse(TEXT("No payment entry exists for either unfinished team"),
+		Harness.Progression->GetFacilityInstanceRevenue(Harness.FacilityInstanceId, Revenue));
+	const TArray<FFF_QueueLog>& Logs = Harness.Queue->GetQueueLogsRef();
+	if (!TestEqual(TEXT("Both unfinished visits have exit records"), Logs.Num(), 2)) return false;
+	TestEqual(TEXT("The first team abandoned"), Logs[0].ExitType, EFF_QueueExit::Abandoned);
+	TestEqual(TEXT("The second team was cancelled"), Logs[1].ExitType, EFF_QueueExit::Cancelled);
 	return true;
 }
 

@@ -142,11 +142,11 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	EFF_LiveFacilityQueueState QueueState = EFF_LiveFacilityQueueState::Unknown;
 
-	/** 줄 서 있는 인원. */
+	/** 줄 서 있는 팀 수. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 WaitingCount = 0;
 
-	/** 지금 이용 중인 인원. */
+	/** 지금 이용 중인 팀 수. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 ActiveServiceCount = 0;
 
@@ -168,7 +168,7 @@ struct FESTAFIESTA_API FFF_LiveFacilityView
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	int32 ExpectedWaitSeconds = INDEX_NONE;
 
-	/** 분당 처리 인원. 모르면 음수. 대기가 긴 이유가 `느림` 인지 `사람이 많음` 인지 가른다. */
+	/** 분당 처리 팀 수. 모르면 음수. 대기가 긴 이유가 `느림` 인지 `사람이 많음` 인지 가른다. */
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|ViewModel|Facility")
 	float ServiceRatePerMinute = -1.f;
 

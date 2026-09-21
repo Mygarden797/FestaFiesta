@@ -372,7 +372,7 @@ namespace FFFacilityInfoModel
 		bool bCostAvailable,
 		int32 CostGold);
 	FESTAFIESTA_API FText FormatExpectedWait(bool bAvailable, float Seconds);
-	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float PeoplePerMinute);
+	FESTAFIESTA_API FText FormatThroughput(bool bAvailable, float TeamsPerMinute);
 	FESTAFIESTA_API FText GetOperationStateText(
 		bool bQueueSupported,
 		bool bQueueAvailable,

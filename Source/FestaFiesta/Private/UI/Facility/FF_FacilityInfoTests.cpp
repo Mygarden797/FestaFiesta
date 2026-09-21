@@ -219,6 +219,9 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("61초는 과소 예측하지 않고 2분으로 올림한다"),
 		FFFacilityInfoModel::FormatExpectedWait(true, 61.0f).ToString(),
 		FString(TEXT("약 2분")));
+	TestEqual(TEXT("처리 속도는 실제 인원 수가 아닌 팀 단위로 표시한다"),
+		FFFacilityInfoModel::FormatThroughput(true, 15.0f).ToString(),
+		FString(TEXT("분당 15.0팀")));
 	TestEqual(TEXT("미등록 Queue 기본값을 열린 시설로 표시하지 않는다"),
 		FFFacilityInfoModel::GetOperationStateText(true, false, true, true).ToString(),
 		FString(TEXT("운영 정보 준비 중")));
@@ -284,7 +287,7 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("분리된 현재 처리 시간은 정밀도를 보존한다"),
 		ViewData.UpgradeCurrentValues.ServiceTime.ToString(), FString(TEXT("4.0초")));
 	TestEqual(TEXT("분리된 다음 처리 속도는 견적의 반올림값이다"),
-		ViewData.UpgradeNextValues.Throughput.ToString(), FString(TEXT("18.8명/분")));
+		ViewData.UpgradeNextValues.Throughput.ToString(), FString(TEXT("18.8팀/분")));
 	TestEqual(TEXT("독립 금액 필드에는 캡션을 섞지 않는다"),
 		ViewData.UpgradePriceText.ToString(), FString(TEXT("120 Gold")));
 	TestEqual(TEXT("정상 견적은 잔액을 독립 표시한다"),
@@ -1159,6 +1162,16 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("시설 정보 BindWidget 계약으로 WBP 인스턴스를 만들 수 있다"), Panel);
 	if (Panel)
 	{
+		for (const FName Name : {FName(TEXT("Text_Occupancy_Label")),
+			FName(TEXT("Clarity_Label_Text_Occupancy")), FName(TEXT("Aurora_Label_Text_Occupancy"))})
+		{
+			if (auto* Label = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(Name)))
+				TestEqual(TEXT("저장된 기존 WBP도 실행 시 팀 점유 설명을 표시한다"),
+					Label->GetText().ToString(), FString(TEXT("대기·처리 중 팀")));
+		}
+		if (auto* Label = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("V2_UpgradeLabelTime"))))
+			TestEqual(TEXT("강화 비교의 이용 시간은 팀 기준이다"),
+				Label->GetText().ToString(), FString(TEXT("팀당 시간")));
 		FFF_FacilityInfoViewData ViewData;
 		ViewData.FacilityInstanceId = FGuid::NewGuid();
 		ViewData.Context = EFF_FacilityInfoContext::Build;
@@ -1417,6 +1430,8 @@ bool FFF_FacilityInfoInspectorV2MigrationTest::RunTest(const FString& Parameters
 	UWidgetTree* Tree = Copy->WidgetTree;
 	const bool bAlreadyV2 = Tree->FindWidget(TEXT("Panel_PersistentIdentity")) != nullptr;
 	const bool bAlreadyRefined = Tree->FindWidget(TEXT("Panel_UpgradeActions")) != nullptr;
+	const UCommonTextBlock* OriginalOccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
+	const FString OriginalOccupancyCaption = OriginalOccupancyLabel ? OriginalOccupancyLabel->GetText().ToString() : FString();
 	UWidget* OriginalRoot = Tree->RootWidget;
 	USizeBox* PanelSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Panel_Size")));
 	UCanvasPanelSlot* PanelSlot = PanelSize ? Cast<UCanvasPanelSlot>(PanelSize->Slot) : nullptr;
@@ -1487,8 +1502,9 @@ bool FFF_FacilityInfoInspectorV2MigrationTest::RunTest(const FString& Parameters
 			Widget && Widget->bIsVariable && Copy->WidgetVariableNameToGuidMap.Contains(Name));
 	}
 	UCommonTextBlock* OccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
-	TestTrue(TEXT("D01 caption identifies waiting and processing occupancy"),
-		OccupancyLabel && OccupancyLabel->GetText().ToString() == TEXT("대기·처리 중 인원"));
+	TestTrue(TEXT("New layouts use team occupancy; existing authored captions remain for runtime normalization"),
+		OccupancyLabel && OccupancyLabel->GetText().ToString() ==
+			(bAlreadyV2 ? OriginalOccupancyCaption : FString(TEXT("대기·처리 중 팀"))));
 	// Designer changes must survive the command after its one-time structural migration.
 	const FMargin AuthoredPadding(17.f, 9.f, 13.f, 11.f);
 	Identity->SetPadding(AuthoredPadding);
@@ -1792,9 +1808,9 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.InstallCostText = FText::FromString(TEXT("120 Gold"));
 	Data.RecoveryCostText = FText::FromString(TEXT("60 Gold"));
 	Data.InstanceLimitText = FText::FromString(TEXT("2 / 8개"));
-	Data.QueueCapacityText = FText::FromString(TEXT("8명"));
-	Data.QueueCapacityValueText = FText::FromString(TEXT("8명"));
-	Data.ServiceCapacityValueText = FText::FromString(TEXT("1명"));
+	Data.QueueCapacityText = FText::FromString(TEXT("8팀"));
+	Data.QueueCapacityValueText = FText::FromString(TEXT("8팀"));
+	Data.ServiceCapacityValueText = FText::FromString(TEXT("1팀"));
 	Data.ServiceDurationText = FText::FromString(TEXT("4초"));
 	Data.bCanMove = true;
 	Data.bCanRemove = true;
@@ -1881,10 +1897,10 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.FacilityStateText = FText::FromString(TEXT("운영 중"));
 	Data.OperationStateText = FText::FromString(TEXT("손님을 맞이하고 있어요"));
 	Data.WaitingPartiesText = FText::FromString(TEXT("3 / 1팀"));
-	Data.OccupancyText = FText::FromString(TEXT("4 / 8명"));
-	Data.RemainingServiceText = FText::FromString(TEXT("4명"));
+	Data.OccupancyText = FText::FromString(TEXT("4 / 8팀"));
+	Data.RemainingServiceText = FText::FromString(TEXT("4팀"));
 	Data.ExpectedWaitText = FText::FromString(TEXT("12초"));
-	Data.ThroughputText = FText::FromString(TEXT("분당 15명"));
+	Data.ThroughputText = FText::FromString(TEXT("분당 15팀"));
 	Data.bHasMinigame = true;
 	Data.bCanStartMinigame = true;
 	Panel->ApplyViewData(Data);
@@ -2641,8 +2657,8 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	Data.bCanMove = Data.bCanRemove = true;
 	Data.InstallCostText = FText::FromString(TEXT("300 Gold"));
 	Data.RecoveryCostText = FText::FromString(TEXT("150 Gold"));
-	Data.QueueCapacityValueText = FText::FromString(TEXT("5명"));
-	Data.ServiceCapacityValueText = FText::FromString(TEXT("1명"));
+	Data.QueueCapacityValueText = FText::FromString(TEXT("5팀"));
+	Data.ServiceCapacityValueText = FText::FromString(TEXT("1팀"));
 	Data.ServiceDurationText = FText::FromString(TEXT("6초"));
 	Data.FootprintText = FText::FromString(TEXT("3.2 × 1.97 m"));
 	Data.ClearanceText = FText::FromString(TEXT("1 m"));
@@ -2653,10 +2669,10 @@ bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Paramet
 	Data.ProgramScheduleActionText = FText::FromString(TEXT("유료 프로그램 편성"));
 	Data.OperationStateText = FText::FromString(TEXT("운영 종료"));
 	Data.WaitingPartiesText = FText::FromString(TEXT("0팀"));
-	Data.OccupancyText = FText::FromString(TEXT("0 / 5명"));
-	Data.RemainingServiceText = FText::FromString(TEXT("0명"));
+	Data.OccupancyText = FText::FromString(TEXT("0 / 5팀"));
+	Data.RemainingServiceText = FText::FromString(TEXT("0팀"));
 	Data.ExpectedWaitText = FText::FromString(TEXT("계산 불가"));
-	Data.ThroughputText = FText::FromString(TEXT("분당 10.0명"));
+	Data.ThroughputText = FText::FromString(TEXT("분당 10.0팀"));
 	Data.SynergySummaryText = FText::FromString(TEXT("이 시설에 등록된 조합이 없습니다."));
 	FFF_FacilityInstanceRevenue Revenue;
 	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 0, Data);
