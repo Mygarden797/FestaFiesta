@@ -29,16 +29,22 @@ BR:'<path fill="#15934f" d="M0 0h96v60H0z"/><path fill="#ffcc34" d="m48 6 40 24-
 ES:'<path fill="#c8213f" d="M0 0h96v60H0z"/><path fill="#ffce36" d="M0 15h96v30H0z"/><path fill="#bd3040" d="M25 24h12v13l-6 5-6-5z"/><path fill="#ad7124" d="M24 21h14v4H24zM21 26h3v14h-3zM38 26h3v14h-3z"/>',
 US:'<path fill="white" d="M0 0h96v60H0z"/>'+Array.from({length:7},(_,i)=>`<path fill="#c83246" d="M0 ${i*120/13}h96v${60/13}H0z"/>`).join('')+'<path fill="#25466e" d="M0 0h40v32H0z"/>'+Array.from({length:9},(_,r)=>Array.from({length:r%2?5:6},(_,c)=>star(3.3+c*6.7+(r%2?3.3:0),2.4+r*3.35,1.65)).join('')).join(''),
 AU:'<path fill="#234976" d="M0 0h96v60H0z"/><path stroke="white" stroke-width="10" d="m0 0 44 28M44 0 0 28"/><path stroke="#cf354a" stroke-width="3" d="m0 0 44 28M44 0 0 28"/><path stroke="white" stroke-width="12" d="M22 0v28M0 14h44"/><path stroke="#cf354a" stroke-width="7" d="M22 0v28M0 14h44"/>'+star(23,45,9,7)+star(74,12,5,7)+star(62,31,5,7)+star(85,27,5,7)+star(74,49,5,7)+star(80,37,3),
-KR:'<path fill="white" d="M0 0h96v60H0z"/><g transform="translate(48 30) rotate(33)"><circle r="16" fill="#cd3344"/><path d="M-16 0a16 16 0 0 0 32 0 8 8 0 0 0-16 0 8 8 0 0 1-16 0" fill="#27629c"/></g>'+[[21,13,-56,0],[75,47,-56,7],[75,13,56,5],[21,47,56,2]].map(([x,y,a,mask])=>`<g transform="translate(${x} ${y}) rotate(${a})" fill="#26332f">`+[0,1,2].map(i=>mask&(1<<i)?`<rect x="-10" y="${i*5-6}" width="8" height="3"/><rect x="2" y="${i*5-6}" width="8" height="3"/>`:`<rect x="-10" y="${i*5-6}" width="20" height="3"/>`).join('')+'</g>').join('')
+// 태극·4괘가 공통 국기 프레임에 닿지 않도록 내부 문양만 중심 기준으로 축소한다.
+KR:'<path fill="white" d="M0 0h96v60H0z"/><g transform="translate(48 30) scale(0.84) translate(-48 -30)"><g transform="translate(48 30) rotate(33)"><circle r="16" fill="#cd3344"/><path d="M-16 0a16 16 0 0 0 32 0 8 8 0 0 0-16 0 8 8 0 0 1-16 0" fill="#27629c"/></g>'+[[21,13,-56,0],[75,47,-56,7],[75,13,56,5],[21,47,56,2]].map(([x,y,a,mask])=>`<g transform="translate(${x} ${y}) rotate(${a})" fill="#26332f">`+[0,1,2].map(i=>mask&(1<<i)?`<rect x="-10" y="${i*5-6}" width="8" height="3"/><rect x="2" y="${i*5-6}" width="8" height="3"/>`:`<rect x="-10" y="${i*5-6}" width="20" height="3"/>`).join('')+'</g>').join('')+'</g>'
 };
 (async()=>{
-for(const [name,body] of Object.entries(icons)){
+// --flag KR로 한 국기만 다시 만들 수 있다. 인수가 없으면 기존 전체 생성 동작을 유지한다.
+const args=process.argv.slice(2);
+const onlyFlag=args.length===2 && args[0]==='--flag'?args[1].toUpperCase():null;
+if(args.length && (!onlyFlag || !Object.hasOwn(flags,onlyFlag)))throw new Error('사용법: node generate_frontend_casual_art.js [--flag KR]');
+for(const [name,body] of (onlyFlag?[]:Object.entries(icons))){
  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">${body}</g></svg>`;
  fs.writeFileSync(path.join(out,'T_FF_'+name+'.svg'),svg);await sharp(Buffer.from(svg)).resize(128,128).png().toFile(path.join(out,'T_FF_'+name+'.png'));
 }
 for(const [name,body] of Object.entries(flags)){
+ if(onlyFlag && name!==onlyFlag)continue;
  let svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 60"><defs><clipPath id="c"><rect x="0" y="0" width="96" height="60" rx="8"/></clipPath></defs><g clip-path="url(#c)">${body}</g><rect x="0.8" y="0.8" width="94.4" height="58.4" rx="8" fill="none" stroke="#b5c8b9" stroke-width="1.6"/></svg>`;
  fs.writeFileSync(path.join(out,'T_FF_Flag_'+name+'.svg'),svg);await sharp(Buffer.from(svg)).resize(192,120).png().toFile(path.join(out,'T_FF_Flag_'+name+'.png'));
 }
-console.log('자체 제작 아이콘 '+Object.keys(icons).length+'종 / 국기 8종 생성');
+console.log(onlyFlag?'국기 '+onlyFlag+' 1종 생성':'자체 제작 아이콘 '+Object.keys(icons).length+'종 / 국기 8종 생성');
 })();

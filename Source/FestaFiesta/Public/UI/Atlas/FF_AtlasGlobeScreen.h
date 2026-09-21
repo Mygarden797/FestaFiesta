@@ -205,7 +205,9 @@ private:
 	UFUNCTION()
 	void HandleListFocused(UFF_AtlasPinButton* Button);
 
-	FName PickCursorLandmark() const;
+	FName PickCursorCountry() const;
+	/** 지구 드래그 표면에만 커서·도움말을 적용한다. 왼쪽 CommonUI 버튼은 자체 커서를 유지한다. */
+	void UpdateGlobeHoverFeedback(FName CountryId, bool bForce = false);
 
 	UFUNCTION()
 	void HandleSelectCountryClicked(UFF_CommonButtonBase* Button);
@@ -242,4 +244,5 @@ private:
 	/** 지금 왼쪽 패널이 보여주는 국가. */
 	FName PanelCountryId;
 	FName PressedCountryId;
+	FName HoverFeedbackCountryId;
 };
