@@ -22,7 +22,7 @@ TEST_ASSET_ID = "Booth_ActivityGame_Surfing"
 MESH_NAME = "SM_FFZS_" + TEST_ASSET_ID
 TEXTURE_NAME = "T_UI_BuildCatalog_" + TEST_ASSET_ID
 MESH_PATH = "/Game/FestaFiesta/Zone/Test_Asset/Asset/" + MESH_NAME
-TEXTURE_PATH = "/Game/FestaFiesta/Zone/Test_Asset/image/" + TEXTURE_NAME
+TEXTURE_PATH = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/" + TEXTURE_NAME
 FBX_RELATIVE = os.path.join(
     "SourceAssets", "Zone", "FacilityMeshes", MESH_NAME + ".fbx"
 )

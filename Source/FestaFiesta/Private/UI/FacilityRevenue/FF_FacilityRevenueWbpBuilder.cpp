@@ -31,7 +31,7 @@ namespace FFRevenueBuilder
 {
 using namespace FFUIWbpBuilder;
 const TCHAR *Prefix = TEXT("FF_REVENUE_UMG");
-const FString Folder(TEXT("/Game/FestaFiesta/UI/FacilityRevenue"));
+const FString Folder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue"));
 const FString RowPath = Folder / TEXT("WBP_FF_FacilityRevenueRankRow");
 const FString PanelPath = Folder / TEXT("WBP_FF_FacilityRevenueRanking");
 FSlateBrush Brush(FLinearColor Color, FLinearColor Line = FLinearColor::Transparent, float Width = 0.f)

@@ -64,8 +64,8 @@
 - `Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildPresentationTypes.h`
 - `Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildTileWidget.cpp`
 - `Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.uasset`
-- `Content/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.uasset`
 
 첨부 카탈로그의 주 구현은 PrepHUD 경로다. 구형 `FF_BuildCatalogScreen`만 변경하고 완료 처리하지 않는다.
 
@@ -87,8 +87,8 @@
 - `Source/FestaFiesta/Public/UI/FacilityRevenue/FF_FacilityRevenueRanking.h`
 - `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueRanking.cpp`
 - `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking.uasset`
-- `Content/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.uasset`
 
 ### 2.3 시설 배치 시 그리드
 
@@ -165,7 +165,7 @@
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.uasset`
 
 ### 2.6 시설 조합
 
@@ -186,7 +186,7 @@
 - `Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyEvaluator.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyEntryWidget.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry.uasset`
 - `data/unreal/facility_synergies_v0.csv`
 
 ### 2.7 시설 운영
@@ -227,8 +227,8 @@
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramCard.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.uasset`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard.uasset`
 
 ### 2.9 시설 강화
 
@@ -273,8 +273,8 @@
 - `Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexScreen.cpp`
 - `Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.cpp`
 - `Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen.uasset`
-- `Content/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard.uasset`
 
 ## 3. 부가 기능 보존
 
@@ -282,7 +282,7 @@
 
 `bHasLightingRig`인 시설만 조명 영역을 보이고 `bCanEditLighting`에 따라 활성화한다. 켜기/끄기, 밝기 슬라이더, 원래 색/청록/노을/보라 프리셋, 6자리 sRGB 입력, 기본 설정으로 되돌리기를 보존한다. 색 입력이 잘못되면 권위 명령을 보내지 않는다. 입력·슬라이더 드래그 중 시설 선택이 바뀌어도 다른 시설에 이전 편집을 보내지 않는다. 준비/라이브 문맥 모두 지원한다.
 
-파일: `Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp`, `Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h`, `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.uasset`.
+파일: `Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp`, `Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h`, `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.uasset`.
 
 ### 미니게임
 

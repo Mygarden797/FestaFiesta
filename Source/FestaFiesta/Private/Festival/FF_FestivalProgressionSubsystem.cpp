@@ -284,6 +284,14 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	}
 }
 
+void UFF_FestivalProgressionSubsystem::GrantDiscoveryGold(int32 Amount)
+{
+	if (Amount <= 0 || !IsFestivalStarted()) { return; }
+	const int32 PreviousGold = Funds.GetGold();
+	Funds.Refund(Amount);
+	BroadcastGoldIfChanged(PreviousGold);
+}
+
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
 {
 	const int32 PreviousGold = Funds.GetGold();

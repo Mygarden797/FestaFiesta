@@ -13,7 +13,7 @@ import unreal
 
 
 MESH_ROOT = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
-TEXTURE_ROOT = "/Game/FestaFiesta/Zone/Test_Asset/image"
+TEXTURE_ROOT = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"
 MANIFEST_RELATIVE = os.path.join(
     "Tools", "facilities", "notion_facility_examples.json"
 )

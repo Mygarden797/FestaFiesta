@@ -66,7 +66,8 @@ def hash_files():
     # These are read-only checks: no save or editor transaction is performed.
     paths = set()
     for folder in ('Content/FestaFiesta/Maps', 'Content/FestaFiesta/Data',
-                   'Content/FestaFiesta/UI', 'Config'):
+                   'Content/FestaFiesta/UI', 'Content/FestaFiesta/Building/FF_WBP_Building',
+                   'Content/FestaFiesta/Building/FF_Data_Building', 'Config'):
         paths.update(p for p in (ROOT / folder).rglob('*') if p.is_file())
     result = {}
     for path in sorted(paths):

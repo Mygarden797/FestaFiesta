@@ -29,7 +29,7 @@ from ffzs_definition_source import require_unattended_commandlet
 SOURCE = ROOT / "SourceArt/FacilityExpansion70"
 OUT = ROOT / "Saved/FacilityExpansion70"
 ART = "/Game/FestaFiesta/Art/FacilityExpansion70"
-DEFINITIONS = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions"
+DEFINITIONS = "/Game/FestaFiesta/Building/FF_Data_Building"
 OWNER = "FacilityExpansion70.v1"
 NO_SERVICE = {"Road", "Tile", "Lighting"}
 CATEGORIES = {"Booth", "Toilet", "Info", "Rest", "Performance", "Safety", "PhotoSpot", "Lighting", "Road", "Tile"}

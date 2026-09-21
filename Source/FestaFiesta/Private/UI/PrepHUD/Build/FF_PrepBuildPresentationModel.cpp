@@ -34,6 +34,7 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 		}
 		Tile->Initialize(Entry, Gold, bHasAuthoritativeGold);
 		Tile->SetSynergyHighlighted(SynergyHighlightIds.Contains(FacilityId));
+		Tile->SetCodexFocused(FacilityId == CodexFocusId);
 
 		// 로딩/실패 중에는 이전 프레임 목록을 눌러 배치하지 못하게 본문을 비웁니다.
 		if (LoadState == EFF_BuildCatalogLoadState::Ready
@@ -86,6 +87,15 @@ void UFF_PrepBuildPresentationModel::SetSynergyHighlightIds(const TArray<FName>&
 	for (const FName Id : DefinitionIds)
 	{
 		if (!Id.IsNone()) { SynergyHighlightIds.Add(Id); }
+	}
+}
+
+void UFF_PrepBuildPresentationModel::SetCodexFocusId(const FName DefinitionId)
+{
+	CodexFocusId = DefinitionId;
+	for (const auto& Pair : TilePool)
+	{
+		if (Pair.Value) { Pair.Value->SetCodexFocused(!DefinitionId.IsNone() && Pair.Key == DefinitionId); }
 	}
 }
 

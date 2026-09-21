@@ -10,7 +10,7 @@ Road는 다른 시설을 설치할 수 없는 통행용 바닥이고, Tile은 �
 기존 카테고리의 저장값은 바뀌지 않는다. 카탈로그에는 길과 타일을 별도로 표시한다.
 새 Tile ID는 `Tile_Surface_<종류>`다. 종류는 `Sand`, `Asphalt`, `Wood`, `Stone`, `Herringbone`, `Concrete`다.
 
-시설 정의는 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road`와 `/Tile`에 두고,
+시설 정의는 `/Game/FestaFiesta/Building/FF_Data_Building/Road`와 `/Tile`에 두고,
 두 종류는 `/Game/Asset/FacilitiesAsset_HKH/Roads`의 메시·재질과 기존 썸네일을 공유한다.
 원본 제작 규격은 400 × 400 × 8 cm이나, 실제 배치와 드래그 간격은 각 PDA의 작성된 크기를 따른다.
 최초 Tile 복제 시 Road에 저장된 크기·높이·회전·입력 설정을 그대로 복사한다.

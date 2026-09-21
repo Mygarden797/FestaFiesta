@@ -52,8 +52,8 @@ namespace FFBuildCatalogWbpBuilder
 {
 	// 생성 대상의 패키지 경로와 원본 PNG 경로를 한곳에 고정한다. 런타임 화면의 soft reference 및
 	// 자동화 테스트가 이 정확한 경로를 계약으로 사용하므로 이름을 바꾸면 세 위치를 함께 갱신해야 한다.
-	const FString UiFolder(TEXT("/Game/FestaFiesta/Zone/UI/Building"));
-	const FString ImageFolder(TEXT("/Game/FestaFiesta/Zone/Test_Asset/Image"));
+	const FString UiFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy"));
+	const FString ImageFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"));
 	const FString TopButtonPackage(UiFolder / TEXT("WBP_FF_BuildTopButton"));
 	const FString CategoryButtonPackage(UiFolder / TEXT("WBP_FF_BuildCategoryButton"));
 	const FString FacilityCardPackage(UiFolder / TEXT("WBP_FF_BuildFacilityCard"));

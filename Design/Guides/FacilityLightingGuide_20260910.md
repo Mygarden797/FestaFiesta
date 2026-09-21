@@ -92,7 +92,7 @@ PDA의 `Brightness Multiplier`는 각 램프의 원래 밝기에 곱하는 배�
 
 ## 5. 조명 설정창의 모양을 UMG에서 바꾸기
 
-1. `Content/FestaFiesta/UI/Facility`에서 `WBP_FF_FacilityLightingControls`를 엽니다.
+1. `Content/FestaFiesta/Building/FF_WBP_Building/Facility`에서 `WBP_FF_FacilityLightingControls`를 엽니다.
 2. 상단에서 `Designer`를 선택합니다.
 3. 왼쪽 `Hierarchy`에서 바꾸려는 글자·버튼·슬라이더를 선택합니다.
 4. 오른쪽 `Details`에서 글자 크기, 색, 여백, 정렬, 크기를 변경합니다.
@@ -190,11 +190,11 @@ Blueprint의 부모 클래스는 `FFZSFacilityLightingRig`를 유지합니다. �
 
 ## 담당자가 확인할 연결 정보
 
-- 시설 PDA: `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage`
+- 시설 PDA: `/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage`
 - 무대 메시: `/Game/Asset/FacilitiesAsset_HKH/Performance/MainStage_Grand_20260909/Meshes/SM_MainStage_Grand`
 - 조명 Blueprint: `/Game/Asset/FacilitiesAsset_HKH/Performance/MainStage_Grand_20260909/BP_MainStage_Grand_Lighting`
-- 조명 WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls`
-- 시설 정보창 WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel`, 안의 `Widget_LightingControls`가 조명 카드를 표시합니다.
+- 조명 WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls`
+- 시설 정보창 WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel`, 안의 `Widget_LightingControls`가 조명 카드를 표시합니다.
 - 조명 설정의 저장 범위: 설치된 시설 한 개의 켜짐 상태·밝기 배수·색상 적용 여부·색상을 시설 스냅샷에 기록합니다. PDA 원본을 수정하지 않습니다.
 - 기존 시설의 최신 PDA 적용 정책: 설치 당시 기본값을 유지합니다. 최신 PDA 기본값은 새로 설치한 시설에 적용합니다. 초기화도 설치 당시 값으로 복원합니다.
 - Notion 게시 대상: https://app.notion.com/p/3d796c43a7f78005b0aec644df576b61

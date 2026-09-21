@@ -9,7 +9,7 @@ root = Path(unreal.Paths.project_dir()).resolve()
 out = root / "Saved/BuildModeUI/20260919_maintenance"
 out.mkdir(parents=True, exist_ok=True)
 packages = [
-    "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_Ticketing_Ticket",
+    "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_Ticketing_Ticket",
     "/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies",
 ]
 backup = {}
@@ -22,7 +22,7 @@ for package in packages:
     backup[package] = hashlib.sha256(saved.read_bytes()).hexdigest()
 
 definitions = []
-for path in unreal.EditorAssetLibrary.list_assets("/Game/FestaFiesta/Zone/Data/FacilityDefinitions", recursive=True, include_folder=False):
+for path in unreal.EditorAssetLibrary.list_assets("/Game/FestaFiesta/Building/FF_Data_Building", recursive=True, include_folder=False):
     if "/PDA_" not in path:
         continue
     asset = unreal.load_asset(path)

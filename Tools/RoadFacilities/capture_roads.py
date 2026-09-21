@@ -64,7 +64,7 @@ def start():
     tile_footprint = tile_spec.get_editor_property('footprint_size_cells')
     support_height = tile_spec.get_editor_property('placement_obstacle_height_cm')
     # Keep the existing facility at its authoritative size on the Tile support plane.
-    definition = unreal.load_asset('/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream')
+    definition = unreal.load_asset('/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_IceCream')
     assert definition
     spec = definition.get_editor_property('spec')
     mesh = spec.get_editor_property('visual_mesh')

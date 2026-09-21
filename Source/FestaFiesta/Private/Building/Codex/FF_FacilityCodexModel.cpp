@@ -22,6 +22,7 @@ void FFF_FacilityCodexModel::SetRules(TArray<FFF_FacilitySynergyRule> InRules, c
 		Entry.PartnerFacilityId = Rule.Row.PartnerFacilityId;
 		Entry.MaxDistanceMeters = Rule.Row.MaxDistanceMeters;
 		Entry.ConfiguredBonusPercent = Rule.Row.RevenueBonusPercent;
+		Entry.DiscoveryRewardGold = Rule.Row.DiscoveryRewardGold;
 		Entry.StackingGroup = Rule.Row.StackingGroup;
 	}
 }
@@ -138,6 +139,8 @@ bool FFF_FacilityCodexModel::MatchesFilter(const FFF_FacilityCodexEntry& Entry, 
 	if (Filter.State == EFF_FacilityCodexFilterState::Undiscovered && Entry.bDiscovered) { return false; }
 	if (Filter.State == EFF_FacilityCodexFilterState::Discovered && !Entry.bDiscovered) { return false; }
 	if (Filter.State == EFF_FacilityCodexFilterState::Active && !Entry.bEffectApplied) { return false; }
+	if (Filter.State == EFF_FacilityCodexFilterState::RewardReady &&
+		(!Entry.bDiscovered || Entry.bDiscoveryRewardClaimed || Entry.DiscoveryRewardGold <= 0)) { return false; }
 	const FString Query = Filter.SearchText.TrimStartAndEnd();
 	return Query.IsEmpty() || Entry.DisplayName.ToString().Contains(Query)
 		|| Entry.TargetName.ToString().Contains(Query) || Entry.PartnerName.ToString().Contains(Query);

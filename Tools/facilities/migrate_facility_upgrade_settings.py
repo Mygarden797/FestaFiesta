@@ -20,7 +20,7 @@ if SCRIPT_DIR not in sys.path:
 from ffzs_asset_save_transaction import AssetSaveTransaction
 from ffzs_definition_source import require_unattended_commandlet
 
-ROOT = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/'
+ROOT = '/Game/FestaFiesta/Building/FF_Data_Building/'
 MARKER = 'FF_FacilityUpgrade_PerDefinition_V1'
 
 

@@ -85,7 +85,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsDesignerContractTest,
 bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
 {
     UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools"));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools"));
     if (!TestNotNull(TEXT("Run FF.ApplyBuildModeClarityTools to migrate the editable toolbar"), Blueprint) ||
         !TestNotNull(TEXT("Toolbar has a designer widget tree"), Blueprint ? Blueprint->WidgetTree.Get() : nullptr))
     {
@@ -160,7 +160,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
     if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Production compact tools"), Class)) return false;
     const bool bPrevious = Class->bCanCallInitializedWithoutPlayerContext;
     Class->bCanCallInitializedWithoutPlayerContext = true;

@@ -1,14 +1,17 @@
 #include "UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildCatalogSubsystem.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Components/PanelWidget.h"
 #include "Engine/GameInstance.h"
+#include "Engine/AssetManager.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "FF_FFZSWorldSubsystem.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Kismet/GameplayStatics.h"
 #include "Layout/WidgetPath.h"
@@ -29,7 +32,7 @@ bool UFF_FacilityCodexPresenterSubsystem::DoesSupportWorldType(const EWorldType:
 FSoftClassPath UFF_FacilityCodexPresenterSubsystem::GetDefaultScreenClassPath()
 {
 	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen.WBP_FF_FacilityCodexScreen_C"));
+		"/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen.WBP_FF_FacilityCodexScreen_C"));
 }
 
 bool UFF_FacilityCodexPresenterSubsystem::IsCodexOpen() const
@@ -55,7 +58,7 @@ bool UFF_FacilityCodexPresenterSubsystem::OpenCodex(
 		return true;
 	}
 	// Recover an externally detached screen before acquiring a new session.
-	if (Screen || bOwnsModalInput) CloseSession(true);
+	if (Screen || bOwnsModalInput || CatalogNavigationTimer.IsValid()) CloseSession(true);
 
 	UFF_BuildModeSubsystem* BuildMode = World->GetSubsystem<UFF_BuildModeSubsystem>();
 	UFF_FacilityInfoSubsystem* FacilityInfo = World->GetSubsystem<UFF_FacilityInfoSubsystem>();
@@ -99,21 +102,9 @@ bool UFF_FacilityCodexPresenterSubsystem::OpenCodex(
 	}
 	Controller->SetModalUiActive(true);
 	bOwnsModalInput = true;
-	Controller->OnEndPlay.AddUniqueDynamic(this, &ThisClass::HandleControllerEndPlay);
-	if (UGameInstance* GameInstance = World->GetGameInstance())
-	{
-		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
-		{
-			BoundStage = Stage;
-			Stage->OnStageChanged.AddUniqueDynamic(this, &ThisClass::HandleStageChanged);
-		}
-	}
-	if (UFFZSWorldSubsystem* ZoneSystem = World->GetSubsystem<UFFZSWorldSubsystem>())
-	{
-		BoundZoneSystem = ZoneSystem;
-		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(this, &ThisClass::HandleSnapshotRestored);
-	}
+	BindSessionLifecycle(*Controller);
 	Candidate->OnCloseRequested.AddUObject(this, &ThisClass::CloseCodex);
+	Candidate->OnFacilityCatalogRequested.AddUObject(this, &ThisClass::HandleFacilityCatalogRequested);
 	Candidate->SetFacilityFilter(FocusFacilityId);
 	// The facility inspector uses global Viewport Z=95. PlayerScreen Z is a
 	// different layer, so even a large player Z cannot reliably cover it.
@@ -132,9 +123,74 @@ bool UFF_FacilityCodexPresenterSubsystem::OpenCodex(
 	return true;
 }
 
+void UFF_FacilityCodexPresenterSubsystem::BindSessionLifecycle(AFF_FestivalPlayerController& Controller)
+{
+	Controller.OnEndPlay.AddUniqueDynamic(this, &ThisClass::HandleControllerEndPlay);
+	if (UGameInstance* GameInstance = GetWorld()->GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage = GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			BoundStage = Stage;
+			Stage->OnStageChanged.AddUniqueDynamic(this, &ThisClass::HandleStageChanged);
+		}
+	}
+	if (UFFZSWorldSubsystem* ZoneSystem = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>())
+	{
+		BoundZoneSystem = ZoneSystem;
+		ZoneSystem->OnWorldSnapshotRestored.AddUniqueDynamic(this, &ThisClass::HandleSnapshotRestored);
+	}
+}
+
 void UFF_FacilityCodexPresenterSubsystem::CloseCodex()
 {
 	CloseSession(true);
+}
+
+void UFF_FacilityCodexPresenterSubsystem::HandleFacilityCatalogRequested(const FName FacilityDefinitionId)
+{
+	UWorld* World = GetWorld();
+	AFF_FestivalPlayerController* Controller = OwningController.Get();
+	UGameInstance* Game = World ? World->GetGameInstance() : nullptr;
+	UFF_BuildCatalogSubsystem* Catalog = Game ? Game->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
+	if (bClosing || bDeinitializing || !IsCodexOpen() || !Controller || !Catalog ||
+		FacilityDefinitionId.IsNone() || !World->GetSubsystem<UFF_BuildModeSubsystem>()) return;
+	FFF_BuildCatalogEntry Entry;
+	if (Catalog->IsCatalogReady())
+	{
+		if (!Catalog->FindEntry(FacilityDefinitionId, Entry)) return;
+	}
+	else
+	{
+		// The menu can still be loading, but a stale/unknown facility must not close
+		// the codex. The catalog owns final validation once its async load completes.
+		const FPrimaryAssetId AssetId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), FacilityDefinitionId);
+		if (!UAssetManager::Get().GetPrimaryAssetPath(AssetId).IsValid()) return;
+	}
+
+	CloseSession(true);
+	// Closing releases the modal now and the suspended placement input next tick.
+	// Keep lifecycle guards during that boundary so transitions cannot reopen UI.
+	OwningController = Controller;
+	BindSessionLifecycle(*Controller);
+	CatalogNavigationTimer = World->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateUObject(this, &ThisClass::CompleteCatalogNavigation, FacilityDefinitionId));
+}
+
+void UFF_FacilityCodexPresenterSubsystem::CompleteCatalogNavigation(const FName FacilityDefinitionId)
+{
+	CatalogNavigationTimer.Invalidate();
+	UWorld* World = GetWorld();
+	AFF_FestivalPlayerController* Controller = OwningController.Get();
+	UFF_BuildModeSubsystem* BuildMode = World ? World->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	const bool bCanNavigate = !bDeinitializing && !IsCodexOpen() && Controller &&
+		Controller->GetWorld() == World && Controller->IsLocalPlayerController() && BuildMode &&
+		!BuildMode->IsInputSuspendedForPauseMenu() && !UGameplayStatics::IsGamePaused(World) &&
+		Controller->GetInputBlockReason() != EFF_CameraInputBlock::ModalUi &&
+		Controller->GetInputBlockReason() != EFF_CameraInputBlock::Scripted;
+	CloseSession(false);
+	// This route resets any old preview, reveals the requested category/page and
+	// focuses its card. It never starts placement or spends construction funds.
+	if (bCanNavigate) BuildMode->OpenCatalogForFacility(FacilityDefinitionId);
 }
 
 void UFF_FacilityCodexPresenterSubsystem::SuppressCatalogVisibility(AFF_FestivalPlayerController& Controller)
@@ -192,6 +248,11 @@ void UFF_FacilityCodexPresenterSubsystem::CloseSession(const bool bRestoreFocus)
 {
 	if (bClosing) return;
 	TGuardValue<bool> ClosingGuard(bClosing, true);
+	if (UWorld* World = GetWorld(); World && CatalogNavigationTimer.IsValid())
+	{
+		World->GetTimerManager().ClearTimer(CatalogNavigationTimer);
+	}
+	CatalogNavigationTimer.Invalidate();
 	if (UFF_FestivalStageSubsystem* Stage = BoundStage.Get())
 	{
 		Stage->OnStageChanged.RemoveDynamic(this, &ThisClass::HandleStageChanged);
@@ -207,6 +268,7 @@ void UFF_FacilityCodexPresenterSubsystem::CloseSession(const bool bRestoreFocus)
 		// NativeDestruct also requests close if somebody removes this widget.
 		// Unbind first so normal teardown cannot recurse through that signal.
 		Screen->OnCloseRequested.RemoveAll(this);
+		Screen->OnFacilityCatalogRequested.RemoveAll(this);
 		Screen->RemoveFromParent();
 		Screen = nullptr;
 	}

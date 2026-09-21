@@ -47,11 +47,11 @@ bool FFFZSFacilityDefinitionCrossAssetValidationTest::RunTest(
     TestTrue(
         TEXT("A descendant of the required root is accepted"),
         IsWithinRequiredDefinitionRoot(
-            TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Food")));
+            TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Food")));
     TestFalse(
         TEXT("A prefix lookalike outside the root is rejected"),
         IsWithinRequiredDefinitionRoot(
-            TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitionsBackup")));
+            TEXT("/Game/FestaFiesta/Building/FF_Data_BuildingBackup")));
 
     TestTrue(
         TEXT("Finite valid bounds pass"),

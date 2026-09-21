@@ -35,7 +35,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFBuildPlacementFailureWbpBuilder, Log, All);
 namespace FFBuildPlacementFailureFeedbackWbpBuilder
 {
 	const FString FeedbackPackage(
-		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback"));
 
 	template <typename TWidget>
 	TWidget* MakeWidget(

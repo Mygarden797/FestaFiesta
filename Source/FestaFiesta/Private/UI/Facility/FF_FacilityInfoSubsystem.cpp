@@ -249,7 +249,7 @@ TStatId UFF_FacilityInfoSubsystem::GetStatId() const
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPanelClassPath()
 {
 	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
+		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
 		"WBP_FF_FacilityInfoPanel_C"));
 }
 
@@ -1588,7 +1588,7 @@ void UFF_FacilityInfoSubsystem::HandlePanelLightingRollbackRequested(const FGuid
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
 {
 	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
+		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
 		"WBP_FF_FacilityPaidProgramPicker_C"));
 }
 

@@ -31,7 +31,7 @@ const FLinearColor Paper = FLinearColor::FromSRGBColor(FColor(242, 247, 238));
 FSlateBrush Brush(const TCHAR* Role)
 {
     FSlateBrush B;
-    const FString Path = FString(TEXT("/Game/FestaFiesta/UI/Building/Clarity/MI_UI_BuildClarity_")) + Role;
+    const FString Path = FString(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/MI_UI_BuildClarity_")) + Role;
     if (auto* M = LoadObject<UMaterialInterface>(nullptr, *Path))
     {
         B.SetResourceObject(M); B.DrawAs = ESlateBrushDrawType::Image; B.TintColor = FLinearColor::White;
@@ -228,11 +228,11 @@ bool RemoveRadialTools(UWidgetBlueprint& BP)
 
 void Apply()
 {
-    const FString Package(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools"));
+    const FString Package(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools"));
     if (auto* Existing = LoadExistingBlueprint(Package))
         if (Existing->WidgetTree && Existing->WidgetTree->FindWidget(TEXT("Canvas_BuildClarity")))
         { UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_CLARITY_TOOLS_%s"), RefineLeftHelp(*Existing) && RefinePlacementAssistance(*Existing) && RemoveRadialTools(*Existing) ? TEXT("PASS") : TEXT("FAIL")); return; }
-    if (ReplaceWidgetBlueprint(TEXT("FF_BUILD_CLARITY_TOOLS"), Package, TEXT("/Game/FestaFiesta/UI/Building"),
+    if (ReplaceWidgetBlueprint(TEXT("FF_BUILD_CLARITY_TOOLS"), Package, TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls"),
         *UFF_BuildToolsWidget::StaticClass(), Layout))
         if (auto* Existing = LoadExistingBlueprint(Package)) { RefineLeftHelp(*Existing); RefinePlacementAssistance(*Existing); RemoveRadialTools(*Existing); }
 }

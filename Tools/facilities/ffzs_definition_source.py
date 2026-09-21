@@ -14,7 +14,7 @@ import re
 import shlex
 
 
-DEFINITION_ROOT = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions"
+DEFINITION_ROOT = "/Game/FestaFiesta/Building/FF_Data_Building"
 DEFINITION_CLASS_NAME = "FFZSFacilityDefinition"
 GENERATED_MESH_ROOT = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
 

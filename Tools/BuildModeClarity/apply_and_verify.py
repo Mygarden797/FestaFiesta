@@ -11,16 +11,19 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
+BUILD_UI = ROOT / 'Content/FestaFiesta/Building/FF_WBP_Building'
+BUILD_UI_PACKAGE = '/Game/FestaFiesta/Building/FF_WBP_Building/'
+UI_ROOTS = (ROOT / 'Content/FestaFiesta/UI', BUILD_UI)
 OUT = ROOT / 'Saved/BuildModeClarity'
 OUT.mkdir(parents=True, exist_ok=True)
 NAMES = [
-    'Building/WBP_FF_BuildTools',
-    'PrepHUD/Panels/WBP_FF_PrepPanelBuild',
-    'PrepHUD/Build/WBP_FF_PrepBuildTile',
+    'Controls/WBP_FF_BuildTools',
+    'Catalog/WBP_FF_PrepPanelBuild',
+    'Catalog/WBP_FF_PrepBuildTile',
     'Facility/WBP_FF_FacilityInfoPanel',
     'FacilityCodex/WBP_FF_FacilityCodexScreen',
     'FacilityCodex/WBP_FF_FacilityCodexCard',
-    'Building/WBP_FF_BuildSynergy',
+    'Controls/WBP_FF_BuildSynergy',
     'Facility/WBP_FF_FacilityLightingControls',
     'Facility/WBP_FF_FacilityPaidProgramCard',
     'Facility/WBP_FF_FacilityPaidProgramPicker',
@@ -28,7 +31,7 @@ NAMES = [
     'FacilityRevenue/WBP_FF_FacilityRevenueRankRow',
     'FacilityRevenue/WBP_FF_FacilityWorldBadge',
     'FacilityCodex/WBP_FF_FacilityCodexLauncher',
-    'Building/WBP_FF_BuildCategoryChoice',
+    'Controls/WBP_FF_BuildCategoryChoice',
 ]
 COMMANDS = ['FF.ApplyBuildModeClarityTools', 'FF.ApplyBuildModeClarityCatalog',
             'FF.ApplyBuildModeClarityInfo', 'FF.RefineBuildModeClarityInfoFit',
@@ -39,14 +42,14 @@ COMMANDS = ['FF.ApplyBuildModeClarityTools', 'FF.ApplyBuildModeClarityCatalog',
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
-paths = [ROOT / ('Content/FestaFiesta/UI/' + name + '.uasset') for name in NAMES]
+paths = [BUILD_UI / (name + '.uasset') for name in NAMES]
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 assert world and world.get_path_name().startswith('/Engine/Maps/Entry.'), 'Use Entry world'
-protected = {p: digest(p) for p in (ROOT / 'Content/FestaFiesta/UI').rglob('*.uasset')
-             if p not in paths and '/Building/Clarity/' not in p.as_posix()}
+protected = {p: digest(p) for base in UI_ROOTS for p in base.rglob('*.uasset')
+             if p not in paths and not p.is_relative_to(BUILD_UI / 'Controls/Clarity')}
 for path in paths:
     assert path.is_file(), path
-    backup = OUT / 'before_assets' / path.relative_to(ROOT / 'Content/FestaFiesta/UI')
+    backup = OUT / 'before_assets' / path.relative_to(BUILD_UI)
     backup.parent.mkdir(parents=True, exist_ok=True)
     if not backup.exists(): shutil.copy2(path, backup)
 
@@ -69,7 +72,7 @@ required = {
 }
 widgets = {}
 for name in NAMES:
-    bp = unreal.load_asset('/Game/FestaFiesta/UI/' + name)
+    bp = unreal.load_asset(BUILD_UI_PACKAGE + name)
     assert bp
     owned = [w for w in unreal.ObjectIterator(unreal.Widget)
              if w.get_outer() and w.get_outer().get_class().get_name() == 'WidgetTree'

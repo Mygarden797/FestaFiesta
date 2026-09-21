@@ -584,7 +584,7 @@ private:
 	TObjectPtr<UFF_BuildSynergyWidget> BuildSynergyWidget;
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Synergy")
 	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
 	bool bHasSynergyPreviewKey = false;
 	FName SynergyPreviewDefinitionId;
 	FGuid SynergyPreviewMovingId;
@@ -594,7 +594,7 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
 	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
 
 	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;

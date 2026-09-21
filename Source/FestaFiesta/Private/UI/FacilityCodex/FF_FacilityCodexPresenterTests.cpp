@@ -149,7 +149,9 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		!TestTrue(TEXT("Launcher fixture zone registers"), Zones->RegisterZone(Zone))) return false;
 	FFFZSFacilitySpec FacilitySpec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
 	FacilitySpec.FacilityDefinitionId = SelectedDefinitionId;
-	FacilitySpec.InstallCostKey = NAME_None;
+	// Only the ID is borrowed for collection filtering; keep this synthetic FoodTruck's
+	// price explicit so newly added recipe categories cannot change the routing fixture.
+	FacilitySpec.InstallCostKey = TEXT("Cost.Booth.FoodStall.Burger");
 	FFFZSGridPlacement Placement;
 	Placement.OriginCell = FIntPoint(1000, 1000);
 	const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
@@ -215,9 +217,13 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 	// closing the codex must not close/recreate its browsing session or reset filters.
 	{
 		UClass* PrepClass = LoadClass<UFF_PrepPanelBuild>(nullptr,
-			TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
 		if (!TestNotNull(TEXT("Production prep catalog WBP"), PrepClass)) return false;
-		UFF_PrepPanelBuild* Prep = CreateWidget<UFF_PrepPanelBuild>(Controller, PrepClass);
+		// This fixture deliberately detaches the catalog and inspects it afterwards.
+		// A preview world requests GC when it closes, so a raw local cannot own that
+		// detached widget through the next frame and the scope-exit cleanup below.
+		TStrongObjectPtr<UFF_PrepPanelBuild> PrepOwner(CreateWidget<UFF_PrepPanelBuild>(Controller, PrepClass));
+		UFF_PrepPanelBuild* Prep = PrepOwner.Get();
 		if (!TestNotNull(TEXT("Production prep catalog instance"), Prep)) return false;
 		Prep->AddToViewport();
 		Prep->HandlePanelOpened();
@@ -283,6 +289,60 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("The same catalog instance is still mounted after closing codex"), Prep->IsInViewport());
 		TestEqual(TEXT("Closing codex restores the original catalog visibility"), Prep->GetVisibility(), VisibilityBefore);
 
+		// Follow both authored detail links through the presenter, including the
+		// next-tick input handoff. Focusing a card must never activate placement.
+		for (const bool bTargetLink : {true, false})
+		{
+			Search->SetText(FText::FromString(TEXT("No catalog facility matches this filter")));
+			CatalogOpenButton->OnClicked.Broadcast();
+			if (!TestTrue(TEXT("Codex opens for facility catalog navigation"), Presenter->IsCodexOpen())) return false;
+			CodexWidgets.Reset();
+			UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, CodexWidgets, UFF_FacilityCodexScreen::StaticClass(), true);
+			UFF_FacilityCodexScreen* NavigationScreen = CodexWidgets.IsEmpty()
+				? nullptr : Cast<UFF_FacilityCodexScreen>(CodexWidgets[0]);
+			if (!TestNotNull(TEXT("Navigation codex screen"), NavigationScreen)) return false;
+			FFF_FacilityCodexEntry NavigationEntry;
+			if (!TestTrue(TEXT("Selected navigation recipe exists"),
+				Codex->FindEntry(NavigationScreen->GetSelectedRuleId(), NavigationEntry))) return false;
+			const FName ExpectedId = bTargetLink ? NavigationEntry.TargetFacilityId : NavigationEntry.PartnerFacilityId;
+			UButton* FacilityLink = Cast<UButton>(NavigationScreen->GetWidgetFromName(
+				bTargetLink ? TEXT("Button_TargetCatalog") : TEXT("Button_PartnerCatalog")));
+			if (!TestNotNull(TEXT("Authored facility catalog link"), FacilityLink)) return false;
+			NavigationScreen->OnFacilityCatalogRequested.Broadcast(TEXT("Facility.Codex.Missing"));
+			TestTrue(TEXT("An unknown facility cannot dismiss the codex"), Presenter->IsCodexOpen());
+			FacilityLink->OnClicked.Broadcast();
+			TestFalse(TEXT("Facility detail click closes the codex"), Presenter->IsCodexOpen());
+			TestTrue(TEXT("Navigation retains the closing-click input guard"), Build->IsInputSuspendedForPauseMenu());
+			if (!TestTrue(TEXT("Advance facility catalog navigation"), AdvanceFrame())) return false;
+			TestFalse(TEXT("Catalog navigation releases modal input"), Viewport->IgnoreInput());
+			TestFalse(TEXT("Catalog navigation resumes build input"), Build->IsInputSuspendedForPauseMenu());
+			TestEqual(TEXT("A detail link opens catalog browsing without placing"), Build->GetBuildModeState(), EFF_BuildModeState::CatalogOpen);
+			TestEqual(TEXT("The clicked facility is selected in the catalog"), Prep->GetSelectedCatalogFacilityId(), ExpectedId);
+			TestTrue(TEXT("Navigation clears a search that would hide the facility"), Search->GetText().IsEmpty());
+			TestTrue(TEXT("Navigation never selects a facility for installation"), Build->GetSelectedFacilityDefinitionId().IsNone());
+			TestTrue(TEXT("Navigation keeps the same catalog panel mounted"), Prep->IsInViewport());
+			TestEqual(TEXT("Navigation restores catalog visibility"), Prep->GetVisibility(), VisibilityBefore);
+		}
+
+		const FName SelectedBeforeSnapshot = Prep->GetSelectedCatalogFacilityId();
+		CatalogOpenButton->OnClicked.Broadcast();
+		CodexWidgets.Reset();
+		UWidgetBlueprintLibrary::GetAllWidgetsOfClass(World, CodexWidgets, UFF_FacilityCodexScreen::StaticClass(), true);
+		UFF_FacilityCodexScreen* PendingScreen = CodexWidgets.IsEmpty()
+			? nullptr : Cast<UFF_FacilityCodexScreen>(CodexWidgets[0]);
+		if (!TestNotNull(TEXT("Codex before navigation cancellation"), PendingScreen)) return false;
+		FFF_FacilityCodexEntry PendingEntry;
+		if (!TestTrue(TEXT("Pending navigation recipe exists"), Codex->FindEntry(PendingScreen->GetSelectedRuleId(), PendingEntry)) ||
+			!TestTrue(TEXT("Cancelled request would change selection"), PendingEntry.TargetFacilityId != SelectedBeforeSnapshot)) return false;
+		UButton* PendingLink = Cast<UButton>(PendingScreen->GetWidgetFromName(TEXT("Button_TargetCatalog")));
+		if (!TestNotNull(TEXT("Target link before snapshot cancellation"), PendingLink)) return false;
+		PendingLink->OnClicked.Broadcast();
+		Zones->OnWorldSnapshotRestored.Broadcast();
+		if (!TestTrue(TEXT("Advance after cancelled catalog navigation"), AdvanceFrame())) return false;
+		TestEqual(TEXT("A snapshot cancels navigation before it changes catalog selection"),
+			Prep->GetSelectedCatalogFacilityId(), SelectedBeforeSnapshot);
+		TestFalse(TEXT("Cancelled navigation leaves no modal input lease"), Build->IsInputSuspendedForPauseMenu());
+
 		if (!TestTrue(TEXT("Codex opens before an owner visibility change"), Presenter->OpenCodex(Controller))) return false;
 		Prep->SetVisibility(ESlateVisibility::Collapsed);
 		Presenter->CloseCodex();
@@ -305,6 +365,8 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 		Prep->RemoveFromParent();
 		Presenter->CloseCodex();
 		TestTrue(TEXT("Advance after catalog removal"), AdvanceFrame());
+		CollectGarbage(RF_NoFlags);
+		TestTrue(TEXT("The fixture retains its detached catalog through preview-world garbage collection"), IsValid(Prep));
 		TestFalse(TEXT("Closing codex never remounts a removed catalog"), Prep->IsInViewport());
 		TestEqual(TEXT("An externally closed catalog mode is never reopened"), Build->GetBuildModeState(), EFF_BuildModeState::Closed);
 		TArray<UUserWidget*> RemainingCatalogs;

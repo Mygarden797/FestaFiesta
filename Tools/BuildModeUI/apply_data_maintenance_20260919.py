@@ -8,7 +8,7 @@ import unreal
 root = Path(unreal.Paths.project_dir()).resolve()
 out = root / "Saved/BuildModeUI/20260919_maintenance"
 before = json.loads((out / "production-data-before.json").read_text(encoding="utf-8"))
-ticket_path = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_Ticketing_Ticket"
+ticket_path = "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_Ticketing_Ticket"
 table_path = "/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies"
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 assert world and world.get_path_name().startswith("/Engine/Maps/Entry.")

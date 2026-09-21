@@ -32,9 +32,9 @@ namespace FFBuildModeClarityCatalog
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Prefix = TEXT("FF_BUILD_CLARITY_CATALOG");
 constexpr const TCHAR* VersionKey = TEXT("FF.BuildModeClarity.CatalogV1");
-const FString PanelPackage = TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild");
-const FString TilePackage = TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile");
-const FString ChoicePackage = TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildCategoryChoice");
+const FString PanelPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild");
+const FString TilePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile");
+const FString ChoicePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice");
 const FLinearColor Ink = FLinearColor::FromSRGBColor(FColor(0x27, 0x4C, 0x3B));
 const FLinearColor Muted = FLinearColor::FromSRGBColor(FColor(0x66, 0x7B, 0x6B));
 const FLinearColor Paper = FLinearColor::FromSRGBColor(FColor(0xF0, 0xF5, 0xEC));
@@ -53,7 +53,7 @@ FSlateBrush Brush(const FLinearColor Color, const TCHAR* MaterialRole = nullptr)
     if (MaterialRole)
     {
         const FString Name = FString::Printf(TEXT("MI_UI_BuildClarity_%s"), MaterialRole);
-        const FString Path = TEXT("/Game/FestaFiesta/UI/Building/Clarity/") + Name + TEXT(".") + Name;
+        const FString Path = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/") + Name + TEXT(".") + Name;
         if (auto* Material = LoadObject<UMaterialInterface>(nullptr, *Path))
         {
             Result.DrawAs = ESlateBrushDrawType::Image;
@@ -589,7 +589,7 @@ bool RefineCategoryPictogramsV8(UWidgetBlueprint& BP)
         TEXT("Performance"), TEXT("Safety"), TEXT("PhotoSpot"), TEXT("Lighting"), TEXT("Road"), TEXT("Tile") })
     {
         const FString Asset = FString::Printf(TEXT("MI_UI_CategoryClarity_%s"), Name);
-        const FString Path = TEXT("/Game/FestaFiesta/UI/Building/Clarity/") + Asset + TEXT(".") + Asset;
+        const FString Path = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/") + Asset + TEXT(".") + Asset;
         if (!LoadObject<UMaterialInterface>(nullptr, *Path))
         {
             UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: run create_category_icons.py before V8"), Prefix);
@@ -621,6 +621,33 @@ bool RefineCategoryPictogramsV8(UWidgetBlueprint& BP)
     return false;
 }
 
+bool RefineCatalogRowPreviewV9(UWidgetBlueprint& BP)
+{
+    constexpr const TCHAR* Key = TEXT("FF.BuildModeClarity.RowPreviewV9");
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, Key) == TEXT("1")) return true;
+    auto& Tree = *BP.WidgetTree;
+    auto* Dock = Cast<USizeBox>(Tree.FindWidget(TEXT("Size_ClarityCatalogDock")));
+    auto* Tiles = Cast<UFF_PrepBuildTileView>(Tree.FindWidget(TEXT("TileView_Facilities")));
+    if (!Dock || !Tiles) return false;
+    BP.Modify();
+    Tree.Modify();
+    // Keep the six columns and full-size cards. The extra 62 logical pixels expose
+    // approximately 30% of the next 204px row above the existing footer.
+    Dock->SetHeightOverride(454.f);
+    Tiles->SetClipping(EWidgetClipping::ClipToBounds);
+    if (auto* Status = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_Status"))))
+        Status->SetText(LOCTEXT("BrowseRowsV9", "카드 선택 → 위치 지정  ·  확정 시 결제  ·  위아래 드래그 / 휠로 넘기기  ·  ☆ 즐겨찾기"));
+    if (!SaveNewBlueprint(Prefix, BP)) return false;
+    auto* HeightProperty = FindFProperty<FFloatProperty>(BP.GeneratedClass.Get(), TEXT("CatalogHeight"));
+    if (!HeightProperty) return false;
+    HeightProperty->SetPropertyValue_InContainer(BP.GeneratedClass->GetDefaultObject(), 454.f);
+    Metadata.SetValue(&BP, Key, TEXT("1"));
+    if (SaveAssetPackage(Prefix, BP)) return true;
+    Metadata.RemoveValue(&BP, Key);
+    return false;
+}
+
 void Apply()
 {
     auto* Panel = LoadExistingBlueprint(PanelPackage);
@@ -636,12 +663,13 @@ void Apply()
     const bool bSaved = MigrateTile(*Tile) && MigratePanel(*Panel) && RefineRowClearance(*Panel) &&
         RefineHeaderDecoration(*Panel) && RefineDirectPlacementTile(*Tile) && RefineDirectPlacementPanel(*Panel) &&
         RefineCatalogClearanceV5(*Panel) && RefineHeaderGlyphClearanceV6(*Panel) &&
-        RefineRequiredTileV7(*Tile) && RefineRequiredGuideV7(*Panel) && RefineCategoryPictogramsV8(*Choice);
-    UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_%s: direct preview, pearl program/required cards and compact six-card browsing"), Prefix,
+        RefineRequiredTileV7(*Tile) && RefineRequiredGuideV7(*Panel) && RefineCategoryPictogramsV8(*Choice) &&
+        RefineCatalogRowPreviewV9(*Panel);
+    UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_%s: direct preview, pearl program/required cards and six-column browsing with a partial next row"), Prefix,
         bSaved ? TEXT("DONE") : TEXT("FAIL"));
 }
 FAutoConsoleCommand Command(TEXT("FF.ApplyBuildModeClarityCatalog"),
-    TEXT("Apply the compact six-card Clarity catalog once; keep subsequent Designer changes."),
+    TEXT("Apply the six-column Clarity catalog with a partial next row once; keep subsequent Designer changes."),
     FConsoleCommandDelegate::CreateStatic(&Apply));
 }
 #undef LOCTEXT_NAMESPACE

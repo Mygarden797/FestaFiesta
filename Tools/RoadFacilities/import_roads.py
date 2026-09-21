@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'SourceArt/Roads_20260910'
 OUT = ROOT / 'Saved/Roads_20260910'
 BASE = '/Game/Asset/FacilitiesAsset_HKH/Roads'
-DEFINITIONS = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road'
+DEFINITIONS = '/Game/FestaFiesta/Building/FF_Data_Building/Road'
 COST_TABLE = '/Game/FestaFiesta/Data/Economy/DT_FacilityCosts'
 ROADS = (
     ('Sand', '모래길'), ('Asphalt', '아스팔트길'), ('Wood', '나무 데크길'),

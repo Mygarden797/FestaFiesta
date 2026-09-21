@@ -365,7 +365,7 @@ bool FFFZoneSystemEconomyContentContractTest::RunTest(const FString& Parameters)
 	const UFFZSFacilityDefinition* FoodTruckDefinition =
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+			TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 				"PDA_FFZS_Booth_FoodStall_Taco."
 				"PDA_FFZS_Booth_FoodStall_Taco"));
 	if (!TestNotNull(TEXT("The production FoodTruck FacilityDefinition loads"),

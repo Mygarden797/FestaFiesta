@@ -7,7 +7,7 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
-FOLDER = '/Game/FestaFiesta/UI/Building/Clarity'
+FOLDER = '/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity'
 SOURCE = ROOT / 'Tools/BuildModeClarity/shaders/CategoryPictograms.ush'
 GLYPHS = ('All', 'Booth', 'Toilet', 'Info', 'Rest', 'Performance', 'Safety',
           'PhotoSpot', 'Lighting', 'Road', 'Tile')

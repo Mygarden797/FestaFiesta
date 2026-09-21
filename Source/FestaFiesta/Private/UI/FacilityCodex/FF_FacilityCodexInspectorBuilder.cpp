@@ -14,8 +14,8 @@
 namespace FFFacilityCodexInspectorBuilder
 {
     constexpr const TCHAR* Prefix = TEXT("FF_FACILITY_CODEX_INSPECTOR");
-    constexpr const TCHAR* InspectorPath = TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel");
-    constexpr const TCHAR* LauncherPath = TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexLauncher");
+    constexpr const TCHAR* InspectorPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel");
+    constexpr const TCHAR* LauncherPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher");
     const FName LauncherName(TEXT("Widget_FacilityCodexLauncher"));
 
     void Migrate()

@@ -112,7 +112,7 @@ Lv.2는 수입 1.5배·서비스 시간 0.8배, Lv.3는 수입 2.25배·시간 0
 
 ## 확인 근거
 
-- 시설: `Content/FestaFiesta/Zone/Data/FacilityDefinitions`의 실제 `UFFZSFacilityDefinition` 115개와 클래스 기반 Asset Registry 전체 목록 대조.
+- 시설: `Content/FestaFiesta/Building/FF_Data_Building`의 실제 `UFFZSFacilityDefinition` 115개와 클래스 기반 Asset Registry 전체 목록 대조.
 - 축제: `Content/FestaFiesta/Data/Festivals/DA_Festival_Busan.uasset`.
 - 비용·시간표: `Content/FestaFiesta/Data/Economy/DT_FacilityCosts.uasset`, `Content/FestaFiesta/Data/Time/DT_ProgramSchedule.uasset`.
 - 수수료 계산: `Source/FestaFiesta/Private/Economy/Rules/FF_BoothRevenueRules.cpp`.

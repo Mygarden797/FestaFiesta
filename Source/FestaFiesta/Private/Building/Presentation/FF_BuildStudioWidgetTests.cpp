@@ -17,7 +17,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildStudioWidgetBindings,
 bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 {
 	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelBuild>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C")));
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!TestNotNull(TEXT("Actual studio WBP"), Class) || !TestNotNull(TEXT("Editor fixture world"), World)) { return false; }
 	const bool PreviousInitialization = Class->bCanCallInitializedWithoutPlayerContext;

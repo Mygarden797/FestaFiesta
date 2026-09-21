@@ -5,7 +5,7 @@ settings are untouched. Repeat invocation does not save an existing completed as
 """
 import unreal
 
-FOLDER = '/Game/FestaFiesta/UI/Building/Clarity'
+FOLDER = '/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity'
 NAME = 'M_BuildPlacementFeedback'
 PATH = FOLDER + '/' + NAME
 VERSION_KEY = 'FF.BuildPlacementFeedback.Version'

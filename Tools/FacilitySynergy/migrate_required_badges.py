@@ -6,8 +6,8 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGES = ["/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile",
-            "/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard"]
+PACKAGES = ["/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile",
+            "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"]
 COMMAND = "FF.AddBuildRequiredFacilityBadges"
 
 

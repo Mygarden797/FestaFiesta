@@ -139,24 +139,33 @@ void UFF_PrepBuildTileWidget::NativePreConstruct()
 
 void UFF_PrepBuildTileWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
 {
+	UFF_PrepBuildTileData* NewItem = Cast<UFF_PrepBuildTileData>(ListItemObject);
+	if (Item != NewItem)
+	{
+		bCardSelected = false;
+		bCardHovered = false;
+	}
+	Item = NewItem;
 	IUserObjectListEntry::NativeOnListItemObjectSet(ListItemObject);
-	Item = Cast<UFF_PrepBuildTileData>(ListItemObject);
 	RefreshItemPresentation();
 }
 
 void UFF_PrepBuildTileWidget::NativeOnItemSelectionChanged(const bool bIsSelected)
 {
+	bCardSelected = bIsSelected;
 	IUserObjectListEntry::NativeOnItemSelectionChanged(bIsSelected);
-	RefreshVisualState(bIsSelected);
+	RefreshVisualState();
 }
 
 void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 {
 	Item = nullptr;
+	bCardSelected = false;
 	bCardHovered = false;
 	// Released entries retain their fixed layout but no previous data or selection.
 	RefreshFromItem();
 	RefreshFavorite();
+	ApplyCodexFocus();
 	SetSynergyHighlighted(false);
 	SetRequiredFacilityStatus(false, false, 0, 0);
 	IUserObjectListEntry::NativeOnEntryReleased();
@@ -165,21 +174,22 @@ void UFF_PrepBuildTileWidget::NativeOnEntryReleased()
 void UFF_PrepBuildTileWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
-	bCardHovered = true;
-	RefreshVisualState(IsListItemSelected());
+	bCardHovered = Item != nullptr;
+	RefreshVisualState();
 }
 
 void UFF_PrepBuildTileWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
 {
 	Super::NativeOnMouseLeave(InMouseEvent);
 	bCardHovered = false;
-	RefreshVisualState(IsListItemSelected());
+	RefreshVisualState();
 }
 
 void UFF_PrepBuildTileWidget::RefreshItemPresentation()
 {
 	RefreshFromItem();
 	RefreshFavorite();
+	ApplyCodexFocus();
 	SetSynergyHighlighted(Item && Item->IsSynergyHighlighted());
 	SetRequiredFacilityStatus(Item && Item->IsRequiredFacility(), Item && Item->IsRequiredFacilitySatisfied(),
 		Item ? Item->GetRequiredFacilityCurrentCount() : 0, Item ? Item->GetRequiredFacilityMinimumCount() : 0);
@@ -220,10 +230,19 @@ void UFF_PrepBuildTileWidget::SetSynergyHighlighted(const bool bHighlighted)
 void UFF_PrepBuildTileWidget::ApplySynergyHighlight()
 {
 	// The independent overlay leaves the authored card brush, selection and price state intact.
-	const ESlateVisibility AccentVisibility = bSynergyHighlighted
+	const ESlateVisibility AccentVisibility = bSynergyHighlighted && !bCodexFocused
 		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 	if (Border_SynergyHighlight) { Border_SynergyHighlight->SetVisibility(AccentVisibility); }
 	if (Text_SynergyBadge) { Text_SynergyBadge->SetVisibility(AccentVisibility); }
+}
+
+void UFF_PrepBuildTileWidget::ApplyCodexFocus()
+{
+	bCodexFocused = Item && Item->IsCodexFocused();
+	const ESlateVisibility CodexFocusVisibility = bCodexFocused
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (Image_CodexFocusRim) { Image_CodexFocusRim->SetVisibility(CodexFocusVisibility); }
+	if (Border_CodexFocusBadge) { Border_CodexFocusBadge->SetVisibility(CodexFocusVisibility); }
 }
 
 void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, const bool bSatisfied,
@@ -241,7 +260,7 @@ void UFF_PrepBuildTileWidget::SetRequiredFacilityStatus(const bool bRequired, co
 	RequiredFacilityMinimumCount = NewMinimum;
 	ApplyRequiredFacilityStatus();
 	ApplyProgramAvailability();
-	RefreshVisualState(Item && IsListItemSelected());
+	RefreshVisualState();
 	if (bChanged) { BP_OnRequiredFacilityStatusChanged(bNewRequired, bNewSatisfied, NewCurrent, NewMinimum); }
 }
 
@@ -384,7 +403,7 @@ FVector2D UFF_PrepBuildTileWidget::GetAuthoredThumbnailBounds() const
 	return Bounds;
 }
 
-void UFF_PrepBuildTileWidget::RefreshVisualState(const bool bIsSelected)
+void UFF_PrepBuildTileWidget::RefreshVisualState()
 {
 	const bool bAvailable = Item && Item->IsAffordable();
 	if (Border_Card && bCapturedAppearance)
@@ -398,7 +417,7 @@ void UFF_PrepBuildTileWidget::RefreshVisualState(const bool bIsSelected)
 			Brush.OutlineSettings.Color = bRequiredFacility ? RequiredOutlineColor : ProgramOutlineColor;
 			Brush.OutlineSettings.Width = 1.f;
 		}
-		if (bIsSelected) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, SelectedTint, 0.25f) : SelectedTint; }
+		if (bCardSelected) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, SelectedTint, 0.25f) : SelectedTint; }
 		else if (bCardHovered) { Brush.TintColor = bAccented ? FMath::Lerp(AccentTint, HoverTint, 0.2f) : HoverTint; }
 		Border_Card->SetBrush(Brush);
 	}

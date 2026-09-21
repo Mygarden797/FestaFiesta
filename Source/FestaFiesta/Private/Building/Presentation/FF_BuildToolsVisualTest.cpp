@@ -72,7 +72,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     }
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
     if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Saved compact build HUD"), Class)) return false;
     FPlayerlessInitialization Context(*Class);
     TStrongObjectPtr<UFF_BuildToolsWidget> Widget(CreateWidget<UFF_BuildToolsWidget>(World, Class));

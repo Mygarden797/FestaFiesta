@@ -5,7 +5,7 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTPUT = ROOT / "Artifacts" / "WarningRepair"
-BASE = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+BASE = "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 legacy = unreal.load_asset(BASE + "PDA_FFZS_Booth_FoodTruck_Taco")
 current = unreal.load_asset(BASE + "PDA_FFZS_Booth_FoodStall_Taco")
 assert legacy and current
@@ -20,7 +20,7 @@ for label, asset in [("legacy", legacy), ("current", current)]:
     assert errors is not None and len(errors) == 0, str(errors)
     validation[label] = True
 
-guide = unreal.load_asset("/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide")
+guide = unreal.load_asset("/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_FF_BuildModeGuide")
 assert guide and guide.generated_class()
 assert unreal.MathLibrary.class_is_child_of(
     guide.generated_class(), unreal.load_class(None, "/Script/FestaFiesta.FF_BuildModeGuide"))

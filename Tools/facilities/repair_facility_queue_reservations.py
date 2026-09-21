@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFINITION_ROOT = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions'
+DEFINITION_ROOT = '/Game/FestaFiesta/Building/FF_Data_Building'
 CROWD_RADIUS_CM = 34.0
 BODY_TOLERANCE_CM = 0.01
 ROUNDING_MARGIN_CM = 1.0

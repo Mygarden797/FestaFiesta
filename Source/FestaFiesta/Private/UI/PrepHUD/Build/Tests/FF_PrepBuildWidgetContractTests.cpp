@@ -15,17 +15,17 @@
 namespace FFPrepBuildWidgetContractTest
 {
 	constexpr const TCHAR* TileClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
 	constexpr const TCHAR* PanelClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
 	constexpr const TCHAR* CookLabelPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/PAL_FF_PrepBuildUI.PAL_FF_PrepBuildUI");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/PAL_FF_PrepBuildUI.PAL_FF_PrepBuildUI");
 	constexpr const TCHAR* ChoiceClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C");
 	constexpr const TCHAR* ChoiceAssetPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton");
 	constexpr const TCHAR* CategoryDependencyCookLabelPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/PAL_FF_PrepBuildCategoryDependencies."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/PAL_FF_PrepBuildCategoryDependencies."
 			"PAL_FF_PrepBuildCategoryDependencies");
 
 	UWidgetTree* ResolveWidgetTree(UClass* WidgetClass)
