@@ -9,7 +9,7 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FF_SaveSubsystem.generated.h"
 
-class IConsoleCommand;
+struct IConsoleCommand;
 
 // 저장이 끝났다. 목록 화면이 이걸 받아 다시 그린다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveCompleted, FName, SlotId);
