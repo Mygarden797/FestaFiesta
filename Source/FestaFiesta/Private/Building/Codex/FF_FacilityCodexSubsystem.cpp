@@ -10,6 +10,7 @@
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
@@ -35,6 +36,12 @@ void UFF_FacilityCodexSubsystem::Initialize(FSubsystemCollectionBase& Collection
 		UE_LOG(LogFacilityCodex, Warning, TEXT("%s"), *Warning);
 	}
 	Model.SetRules(MoveTemp(Rules), Settings->MaxTotalBonusPercent);
+	ReferencedDefinitionIds.Reset();
+	for (const FFF_FacilityCodexEntry& Entry : Model.GetEntries())
+	{
+		ReferencedDefinitionIds.Add(Entry.TargetFacilityId);
+		ReferencedDefinitionIds.Add(Entry.PartnerFacilityId);
+	}
 	if (ZoneSystem)
 	{
 		ZoneSystem->OnWorldChanged.AddUniqueDynamic(this, &ThisClass::HandleWorldChanged);
@@ -102,9 +109,14 @@ void UFF_FacilityCodexSubsystem::Refresh()
 	const FFFZSReadModel WorldModel = ZoneSystem ? ZoneSystem->BuildReadModel() : FFFZSReadModel();
 	CachedRegistryRevision = ZoneSystem ? ZoneSystem->GetFacilityRegistryRevision() : MAX_uint64;
 	EligibleInstanceIds.Reset();
+	UnreferencedInstanceIds.Reset();
 	for (const FFFZSFacilityReadModel& Facility : WorldModel.Facilities)
 	{
 		if (FFF_FacilityCodexModel::IsEligibleFacility(Facility)) { EligibleInstanceIds.Add(Facility.FacilityInstanceId); }
+		if (!ReferencedDefinitionIds.Contains(Facility.FacilityDefinitionId))
+		{
+			UnreferencedInstanceIds.Add(Facility.FacilityInstanceId);
+		}
 	}
 	Model.Evaluate(WorldModel, SessionDiscoveries);
 	SessionDiscoveries.Append(Model.GetNewDiscoveries());
@@ -151,6 +163,38 @@ void UFF_FacilityCodexSubsystem::PublishEntries()
 // 조합 조건에 영향을 줄 수 있는 배치·등록 변경만 다시 계산한다. 단순 영업 열기·닫기는 재계산을 생략한다.
 void UFF_FacilityCodexSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
+	if (ZoneSystem)
+	{
+		const uint64 RegistryRevision = ZoneSystem->GetFacilityRegistryRevision();
+		const AFFZSFacilityActor* Facility = ZoneSystem->FindFacility(Event.FacilityInstanceId);
+		const bool bUnreferencedNow = Facility
+			&& !ReferencedDefinitionIds.Contains(Facility->GetFacilitySpec().FacilityDefinitionId);
+		const bool bWasUnreferenced = UnreferencedInstanceIds.Contains(Event.FacilityInstanceId);
+		const bool bRegistryMutation = Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Remove;
+		// Install/remove changes the registry once. Any other revision change may include an
+		// external registration or revalidation, so retain the full reconciliation in that case.
+		const bool bExpectedRegistryRevision = CachedRegistryRevision != MAX_uint64
+			&& RegistryRevision == CachedRegistryRevision + (bRegistryMutation ? 1 : 0);
+		const bool bUnreferencedChange = Event.Type == EFFZSCommandType::Remove
+			? bWasUnreferenced && !Facility
+			: bUnreferencedNow && (bWasUnreferenced || Event.Type == EFFZSCommandType::Install);
+		if (bExpectedRegistryRevision && bUnreferencedChange)
+		{
+			// Most dragged surfaces never occur in a recipe. Avoid copying and evaluating the
+			// entire world for each tile, while still supporting recipes that explicitly use roads.
+			if (Event.Type == EFFZSCommandType::Remove)
+			{
+				UnreferencedInstanceIds.Remove(Event.FacilityInstanceId);
+				EligibleInstanceIds.Remove(Event.FacilityInstanceId);
+			}
+			else
+			{
+				UnreferencedInstanceIds.Add(Event.FacilityInstanceId);
+			}
+			CachedRegistryRevision = RegistryRevision;
+			return;
+		}
+	}
 	// Open/Close changes no geometry once an instance is eligible. Planned-to-installed transitions still refresh.
 	if (Event.Type == EFFZSCommandType::Install || Event.Type == EFFZSCommandType::Move
 		|| Event.Type == EFFZSCommandType::Remove || Event.Type == EFFZSCommandType::Upgrade
@@ -220,6 +264,8 @@ void UFF_FacilityCodexSubsystem::Deinitialize()
 	CachedEntries.Reset();
 	EntryByRuleId.Reset();
 	EligibleInstanceIds.Reset();
+	UnreferencedInstanceIds.Reset();
+	ReferencedDefinitionIds.Reset();
 	SessionDiscoveries.Reset();
 	ZoneSystem = nullptr;
 	Catalog = nullptr;

@@ -972,6 +972,20 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstan
     return nullptr;
 }
 
+int32 UFFZSWorldSubsystem::GetPlacedFacilityCount() const
+{
+    int32 Count = 0;
+    for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+    {
+        const AFFZSFacilityActor* Facility = Pair.Value.Get();
+        if (IsValid(Facility) && Facility->GetFacilityState() != EFFZSFacilityState::Removed)
+        {
+            ++Count;
+        }
+    }
+    return Count;
+}
+
 int32 UFFZSWorldSubsystem::CountFacilitiesByDefinitionId(
     const FName FacilityDefinitionId) const
 {
@@ -1899,16 +1913,21 @@ void UFFZSWorldSubsystem::ValidateGround(
 
     FCollisionQueryParams Params(SCENE_QUERY_STAT(FFZoneSystemGround), false);
     Params.AddIgnoredActor(&Zone);
+    TSet<const AFFZSFacilityActor*> IgnoredGroundSurfaces;
     if (Spec.IsGroundSurface())
     {
         // Repositioning a road or tile, or laying a neighbor at a shared edge, samples the underlying
-        // terrain rather than the existing paving. Same-layer occupancy still rejects stacking.
-        for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+        // terrain rather than existing paving. The world-space index includes touching neighbors
+        // across zone boundaries without scanning every installed facility for every drag sample.
+        TArray<FGuid> SurfaceCandidates;
+        QueryFacilityCandidates(ToWorldRegions(Zone.ZoneId, InOutValidation.FootprintOrientedRects), SurfaceCandidates);
+        for (const FGuid Id : SurfaceCandidates)
         {
-            if (const AFFZSFacilityActor* Facility = Pair.Value.Get(); Facility &&
+            if (const AFFZSFacilityActor* Facility = FindFacility(Id); Facility &&
                 Facility->GetFacilitySpec().IsGroundSurface())
             {
                 Params.AddIgnoredActor(Facility);
+                IgnoredGroundSurfaces.Add(Facility);
             }
         }
     }
@@ -1916,6 +1935,26 @@ void UFFZSWorldSubsystem::ValidateGround(
     {
         Params.AddIgnoredActor(IgnoreFacility);
     }
+
+    const auto TraceGround = [&](const FVector& Start, const FVector& End, FHitResult& Hit)
+    {
+        while (World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+        {
+            const AFFZSFacilityActor* Surface = Cast<AFFZSFacilityActor>(Hit.GetActor());
+            if (!Spec.IsGroundSurface() || !Surface || !Surface->GetFacilitySpec().IsGroundSurface() ||
+                FindFacility(Surface->GetFacilityInstanceId()) != Surface)
+            {
+                return true;
+            }
+            // Authored mesh offsets and source-size collision can extend outside the indexed
+            // footprint. Ignore a registered surface reached there too, preserving terrain-only
+            // sampling. Keep the ignore for later samples and fail closed if a query repeats it.
+            if (IgnoredGroundSurfaces.Contains(Surface)) { return false; }
+            IgnoredGroundSurfaces.Add(Surface);
+            Params.AddIgnoredActor(Surface);
+        }
+        return false;
+    };
 
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
     const FFFZSGroundValidationSettings Ground = Settings->ResolveGroundValidationSettings();
@@ -1963,7 +2002,7 @@ void UFFZSWorldSubsystem::ValidateGround(
                 const FVector Start = Sample + TraceAbove;
                 const FVector End = Sample - TraceBelow;
                 FHitResult Hit;
-                if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+                if (!TraceGround(Start, End, Hit))
                 {
                     if (Settings->bRequireEveryGroundSample)
                     {

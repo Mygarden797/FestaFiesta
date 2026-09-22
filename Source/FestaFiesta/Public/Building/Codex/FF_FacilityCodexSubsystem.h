@@ -63,6 +63,8 @@ private:
 	TSet<FName> SessionDiscoveries;
 	TMap<FName, int32> EntryByRuleId;
 	TSet<FGuid> EligibleInstanceIds;
+	TSet<FGuid> UnreferencedInstanceIds;
+	TSet<FName> ReferencedDefinitionIds;
 	uint64 CachedRegistryRevision = MAX_uint64;
 	FTimerHandle StartupRewardTimer;
 	bool bReadyToClaimRewards = false;

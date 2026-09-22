@@ -117,8 +117,10 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
     if (UFFZSWorldSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr)
     {
         LastValidation = Subsystem->ValidatePlacement(PreviewCommand);
+        bHasUnvalidatedPreviewTransform = false;
         SetActorTransform(LastValidation.PlacementTransform);
         RequestPreviewMesh();
+        PreviewMesh->SetRenderCustomDepth(true);
         PreviewMesh->SetCustomDepthStencilValue(LastValidation.bIsValid ? 1 : 2);
         RefreshGhostFeedback();
         RefreshRangePresentation();
@@ -138,6 +140,31 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
         }
     }
     return LastValidation;
+}
+
+void AFFZSPlacementPreviewActor::SetUnvalidatedPreviewTransform(const FTransform& Transform)
+{
+    SetActorTransform(Transform);
+    if (bHasUnvalidatedPreviewTransform) return;
+    bHasUnvalidatedPreviewTransform = true;
+    PreviewMesh->SetRenderCustomDepth(false);
+    // Reuse the loaded material without asset requests or per-frame allocations. A neutral
+    // ghost must not inherit the previous target's green/red verdict or blocker geometry.
+    if (GhostFeedbackMaterial)
+    {
+        GhostFeedbackMaterial->SetVectorParameterValue(TEXT("StatusColor"), FLinearColor::White);
+        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(
+            GetDefault<UFFZSBuildPresentationSettings>()->ValidPlacementOpacity, 0.0f, 1.0f));
+        PreviewMesh->SetOverlayMaterial(GhostFeedbackMaterial);
+    }
+    else
+    {
+        PreviewMesh->SetOverlayMaterial(nullptr);
+    }
+    for (UStaticMeshComponent* Surface : FailureSurfaces) if (Surface) Surface->SetVisibility(false);
+    if (RangeLines) RangeLines->Flush();
+    if (UFFZSBuildableGridComponent* Grid = Cast<UFFZSBuildableGridComponent>(PlacementGridLines)) Grid->HideGrid();
+    else if (PlacementGridLines) PlacementGridLines->Flush();
 }
 
 // 공통 설정과 마지막 판정으로 고스트 재질을 갱신한다. 원본 시설 재질은 수정하지 않는다.
@@ -465,7 +492,7 @@ void AFFZSPlacementPreviewActor::RefreshPlacementGridPresentation()
     UFFZSWorldSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
     const AFFZSGameplayZone* Zone = Subsystem ? Subsystem->FindZone(PreviewCommand.ZoneId) : nullptr;
     const FIntPoint Size = PreviewCommand.FacilitySpec.FootprintSizeCells;
-    if (!bDrawPlacementGrid || !Zone || Size.X <= 0 || Size.Y <= 0)
+    if (bHasUnvalidatedPreviewTransform || !bDrawPlacementGrid || !Zone || Size.X <= 0 || Size.Y <= 0)
     {
         Grid->HideGrid();
         return;
