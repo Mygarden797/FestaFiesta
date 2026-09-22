@@ -167,6 +167,17 @@ struct FFF_OverviewCameraSettings
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Feel", meta = (ClampMin = "0.0"))
 	float InterpSpeed = 12.f;
 
+	/* 줌에만 쓰는 보간 속도. 0 이하면 InterpSpeed 를 쓴다.
+
+	   이동과 줌을 같은 속도로 두면 줌이 늘어지게 느껴진다. 이동은 목표가
+	   계속 바뀌어서 따라가는 느낌이 자연스러운데, 줌은 한 번 굴리면 목표가
+	   정해져서 그 자리에 빨리 닿아야 조작한 만큼 움직였다고 느낀다.
+
+	   느리면 굴린 뒤에도 한참 더 들어가서 과하게 확대된 것처럼 보인다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera", meta = (ClampMin = "0.0"))
+	float ZoomInterpSpeed = 22.f;
+
 	// true 면 커서 아래 지점을 향해 줌한다. false 면 화면 중앙 기준이다.
 	// 배치 작업에서는 커서 기준이 훨씬 편하다. "저기 확대해서 보자"가 한 동작으로 끝난다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Zoom")
@@ -202,6 +213,17 @@ struct FFF_OverviewCameraSettings
 	// 1 이면 줌과 무관하게 항상 최대 속도다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.05", ClampMax = "1.0"))
 	float EdgeScrollMinSpeedScale = 0.6f;
+
+	/* 화면 아래쪽 이만큼은 가장자리로 치지 않는다.
+
+	   하단에 탭 바와 패널이 있어서, 그것들을 누르려고 마우스를 내릴 때마다
+	   카메라가 밀린다. UI 를 조작하는 것과 화면을 미는 것이 같은 자리에서
+	   일어나면 둘 중 하나는 늘 방해가 된다.
+
+	   위와 좌우는 가릴 것이 없으므로 그대로 둔다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Edge Scroll", meta = (ClampMin = "0.0"))
+	float EdgeScrollBottomDeadZonePixels = 120.f;
 
 	// 초점을 지형 표면에 붙여 다닐지.
 	//

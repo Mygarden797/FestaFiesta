@@ -74,9 +74,9 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	{
 		return Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(Path).TryLoadClass<UUserWidget>());
 	};
-	auto* PanelClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
-	auto* LauncherClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher.WBP_FF_FacilityCodexCatalogLauncher_C"));
-	auto* TileClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C"));
+	auto* PanelClass = LoadWbp(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+	auto* LauncherClass = LoadWbp(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher.WBP_FF_FacilityCodexCatalogLauncher_C"));
+	auto* TileClass = LoadWbp(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C"));
 	if (!TestNotNull(TEXT("Isolated editor world"), World) || !TestNotNull(TEXT("Saved facility catalog WBP"), PanelClass) ||
 		!TestNotNull(TEXT("Saved compact codex launcher WBP"), LauncherClass) || !TestNotNull(TEXT("Saved facility tile WBP"), TileClass)) return false;
 	FPlayerlessInitialization PanelContext(*PanelClass), LauncherContext(*LauncherClass), TileContext(*TileClass);
@@ -100,13 +100,20 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	auto* Search = Cast<UEditableTextBox>(Panel->GetWidgetFromName(TEXT("Search_Facilities")));
 	auto* Gold = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_Gold")));
 	auto* Launcher = Cast<UFF_FacilityCodexLauncher>(Panel->GetWidgetFromName(TEXT("Widget_FacilityCodexCatalogLauncher")));
+	auto* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking")));
 	auto* Tiles = Cast<UFF_PrepBuildTileView>(Panel->GetWidgetFromName(TEXT("TileView_Facilities")));
 	if (!TestNotNull(TEXT("Authored catalog header"), Header) || !TestNotNull(TEXT("Existing search field"), Search) ||
 		!TestNotNull(TEXT("Existing gold balance"), Gold) || !TestNotNull(TEXT("Added catalog codex launcher"), Launcher) ||
+		!TestNotNull(TEXT("Added revenue ranking action"), Ranking) ||
 		!TestNotNull(TEXT("Actual facility tile view"), Tiles)) return false;
 	TestTrue(TEXT("Additive entry is the saved compact launcher class"), Launcher->GetClass() == LauncherClass);
 	TestTrue(TEXT("Search and launcher share the original header"), Search->GetParent() == Header && Launcher->GetParent() == Header);
-	TestEqual(TEXT("Codex entry sits immediately after search"), Header->GetChildIndex(Launcher), Header->GetChildIndex(Search) + 1);
+	UWidget* RankingHeaderItem = Ranking;
+	while (RankingHeaderItem->GetParent() && RankingHeaderItem->GetParent() != Header)
+		RankingHeaderItem = RankingHeaderItem->GetParent();
+	TestTrue(TEXT("Ranking's authored size wrapper shares the original catalog header"), RankingHeaderItem->GetParent() == Header);
+	TestEqual(TEXT("Revenue ranking immediately follows search"), Header->GetChildIndex(RankingHeaderItem), Header->GetChildIndex(Search) + 1);
+	TestEqual(TEXT("Codex follows the added revenue ranking action"), Header->GetChildIndex(Launcher), Header->GetChildIndex(RankingHeaderItem) + 1);
 	auto* Button = Cast<UButton>(Launcher->GetWidgetFromName(TEXT("Button_OpenCodex")));
 	auto* Label = Button ? Cast<UTextBlock>(Button->GetContent()) : nullptr;
 	if (!TestNotNull(TEXT("Compact launcher button"), Button) || !TestNotNull(TEXT("Authored button label"), Label)) return false;
@@ -123,10 +130,10 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 
 	// Real source thumbnails make the surrounding palette visible; entries are transient view data.
 	const TCHAR* Definitions[] = {
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade") };
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade") };
 	TArray<UObject*> Items;
 	TArray<UTexture*> Textures;
 	for (const TCHAR* Path : Definitions)
@@ -190,8 +197,15 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 				TestFalse(TEXT("Search does not overlap gold"), Overlaps(SearchRect, GoldRect));
 				TestTrue(TEXT("Codex stays to the right of the search field"), ButtonRect.Left >= SearchRect.Right - 1.f);
 				TestTrue(TEXT("Complete button label stays inside its button"), Contains(ButtonRect, LabelRect));
-				const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Label->GetText(), Label->GetFont());
-				TestTrue(TEXT("Button label has enough unscaled space for all glyphs"), Label->GetCachedGeometry().GetLocalSize().X + 1.f >= TextSize.X && Label->GetCachedGeometry().GetLocalSize().Y + 1.f >= TextSize.Y);
+				for (UTextBlock* ActionLabel : { Label, Cast<UTextBlock>(Ranking->GetContent()) })
+				{
+					if (!TestNotNull(TEXT("Header action retains its readable text label"), ActionLabel)) continue;
+					const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(ActionLabel->GetText(), ActionLabel->GetFont());
+					const FVector2D Allotted = ActionLabel->GetCachedGeometry().GetLocalSize();
+					TestTrue(*FString::Printf(TEXT("%s label has space for every glyph: allotted %.2fx%.2f, measured %.2fx%.2f"),
+						*ActionLabel->GetName(), Allotted.X, Allotted.Y, TextSize.X, TextSize.Y),
+						Allotted.X + 1.f >= TextSize.X && Allotted.Y + 1.f >= TextSize.Y);
+				}
 			};
 			Gold->SetText(FText::FromString(TEXT("보유 7,500 Gold")));
 			Paint();

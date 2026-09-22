@@ -175,7 +175,10 @@ function Assert-FFAssetsMaterialized {
 function Assert-FFGitLfsHealth {
     [CmdletBinding()]
     param(
-        [string] $ExpectedVersion
+        # The LFS client only materializes files and `lfs fsck` proves their
+        # integrity, so it does not shape build output. Require a floor rather
+        # than an exact patch; exact pins stay reserved for engine/MSVC/SDK.
+        [string] $MinimumVersion
     )
 
     $projectRoot = Get-FFProjectRoot
@@ -193,9 +196,9 @@ function Assert-FFGitLfsHealth {
     }
 
     $installedVersion = $versionMatch.Groups[1].Value
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion) -and
-        $installedVersion -ne $ExpectedVersion) {
-        throw "Git LFS version mismatch (expected $ExpectedVersion, found $installedVersion)."
+    if (-not [string]::IsNullOrWhiteSpace($MinimumVersion) -and
+        [version]$installedVersion -lt [version]$MinimumVersion) {
+        throw "Git LFS is too old (minimum $MinimumVersion, found $installedVersion)."
     }
 
     $fsckOutput = @(& git -c "safe.directory=$safeRoot" lfs fsck 2>&1)
@@ -268,6 +271,168 @@ function Write-FFSha256Manifest {
         (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function Get-FFContentBucket {
+    param(
+        [string] $FileName,
+        [string] $ChunkType
+    )
+
+    $path = $FileName.Replace('\', '/')
+    if ($path -match '/ShaderArchive-([^/]+)\.ushaderbytecode$') {
+        return "Shaders/$($Matches[1])"
+    }
+    # IoStore names chunks without a package file as <ShaderCode>, <ContainerHeader>, ...
+    if ($path -match '^<(.+)>$') {
+        return $(if ($Matches[1] -eq 'ShaderCode') { 'Shaders/ShaderCode' } else { "Internal/$($Matches[1])" })
+    }
+    if ($path -match '^\.\./\.\./\.\./FestaFiesta/Content/([^/]+)(?:/([^/]+))?/') {
+        $second = if ($Matches[2]) { "/$($Matches[2])" } else { '' }
+        return "Game/$($Matches[1])$second"
+    }
+    if ($path -match '^\.\./\.\./\.\./FestaFiesta/Plugins/(?:.+/)?([^/]+)/Content/') {
+        return "ProjectPlugin/$($Matches[1])"
+    }
+    if ($path -match '^\.\./\.\./\.\./Engine/Plugins/(?:.+/)?([^/]+)/Content/') {
+        return "EnginePlugin/$($Matches[1])"
+    }
+    if ($path -match '^\.\./\.\./\.\./Engine/Content/([^/]+)/') {
+        return "Engine/$($Matches[1])"
+    }
+    if ([string]::IsNullOrWhiteSpace($path)) {
+        return "Unnamed/$ChunkType"
+    }
+    return 'Other'
+}
+
+function Write-FFSizeReport {
+    <#
+    Summarizes where the shipped bytes go so every release can be compared
+    against the previous one. Container sizes come from the IoStore listing
+    (compressed, i.e. what the player downloads and reads from disk).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $PayloadRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string] $IoStoreCsv,
+
+        [Parameter(Mandatory = $true)]
+        [string] $OutputFile,
+
+        [string] $ArchivePath,
+
+        [string] $PreviousReport,
+
+        [int] $TopCount = 30
+    )
+
+    $bucketBytes = @{}
+    $chunkTypeBytes = @{}
+    $assetBytes = @{}
+    $uncompressedTotal = [int64]0
+    $compressedTotal = [int64]0
+    $reader = New-Object System.IO.StreamReader($IoStoreCsv)
+    try {
+        $null = $reader.ReadLine()
+        while ($null -ne ($line = $reader.ReadLine())) {
+            $fields = $line.Split(',')
+            if ($fields.Count -lt 17) {
+                continue
+            }
+            # Numeric and trailing columns are read from the end so a comma in a
+            # file name cannot shift them.
+            $count = $fields.Count
+            $size = [int64]$fields[$count - 9].Trim()
+            $compressed = [int64]$fields[$count - 8].Trim()
+            $chunkType = $fields[$count - 6].Trim()
+            $fileName = ($fields[4..($count - 13)] -join ',').Trim()
+
+            $uncompressedTotal += $size
+            $compressedTotal += $compressed
+            $bucket = Get-FFContentBucket -FileName $fileName -ChunkType $chunkType
+            $bucketBytes[$bucket] = [int64]$bucketBytes[$bucket] + $compressed
+            $chunkTypeBytes[$chunkType] = [int64]$chunkTypeBytes[$chunkType] + $compressed
+            if (-not [string]::IsNullOrWhiteSpace($fileName)) {
+                # .uasset/.uexp/.ubulk/.uptnl of one package are reported together.
+                # String ops only: cooked names may contain characters Path APIs reject.
+                $asset = ($fileName.Replace('\', '/') -replace '\.[^./]+$', '') -replace '^(\.\./)+', ''
+                $assetBytes[$asset] = [int64]$assetBytes[$asset] + $compressed
+            }
+        }
+    }
+    finally {
+        $reader.Dispose()
+    }
+
+    $payloadFiles = @(Get-ChildItem -LiteralPath $PayloadRoot -Recurse -File)
+    $payloadGroups = @{}
+    foreach ($file in $payloadFiles) {
+        $relative = Get-FFRelativePath -BasePath $PayloadRoot -Path $file.FullName
+        $group = switch -Regex ($relative) {
+            '^FestaFiesta/Content/Paks/' { 'containers'; break }
+            '^FestaFiesta/Binaries/' { 'gameBinaries'; break }
+            '^Engine/Extras/Redist/' { 'prerequisites'; break }
+            '^Engine/Binaries/' { 'engineBinaries'; break }
+            '^Engine/' { 'engineOther'; break }
+            '^[^/]+\.exe$' { 'launcher'; break }
+            default { 'documents' }
+        }
+        $payloadGroups[$group] = [int64]$payloadGroups[$group] + $file.Length
+    }
+
+    $toSortedList = {
+        param($Table, $Take)
+        $rows = $Table.GetEnumerator() | Sort-Object Value -Descending
+        if ($Take -gt 0) {
+            $rows = $rows | Select-Object -First $Take
+        }
+        @($rows | ForEach-Object { [ordered]@{ name = $_.Key; bytes = [int64]$_.Value } })
+    }
+
+    $report = [ordered]@{
+        schemaVersion = 1
+        payloadBytes = [int64]($payloadFiles | Measure-Object Length -Sum).Sum
+        archiveBytes = if ($ArchivePath -and (Test-Path -LiteralPath $ArchivePath -PathType Leaf)) {
+            (Get-Item -LiteralPath $ArchivePath).Length
+        }
+        else {
+            $null
+        }
+        payloadGroups = & $toSortedList $payloadGroups 0
+        mainContainer = [ordered]@{
+            uncompressedBytes = $uncompressedTotal
+            compressedBytes = $compressedTotal
+            byBucket = & $toSortedList $bucketBytes 0
+            byChunkType = & $toSortedList $chunkTypeBytes 0
+            largestAssets = & $toSortedList $assetBytes $TopCount
+        }
+        comparedTo = $null
+    }
+
+    if ($PreviousReport -and (Test-Path -LiteralPath $PreviousReport -PathType Leaf)) {
+        $previous = Get-Content -LiteralPath $PreviousReport -Raw | ConvertFrom-Json
+        $report.comparedTo = [ordered]@{
+            report = $PreviousReport
+            payloadBytesDelta = $report.payloadBytes - [int64]$previous.payloadBytes
+            archiveBytesDelta = if ($null -ne $report.archiveBytes -and $null -ne $previous.archiveBytes) {
+                [int64]$report.archiveBytes - [int64]$previous.archiveBytes
+            }
+            else {
+                $null
+            }
+            containerBytesDelta = $compressedTotal - [int64]$previous.mainContainer.compressedBytes
+        }
+    }
+
+    [System.IO.File]::WriteAllText(
+        [System.IO.Path]::GetFullPath($OutputFile),
+        ($report | ConvertTo-Json -Depth 6) + [Environment]::NewLine,
+        (New-Object System.Text.UTF8Encoding($false)))
+    return $report
+}
+
 Export-ModuleMember -Function @(
     'Get-FFProjectRoot',
     'Get-FFProjectFile',
@@ -279,5 +444,6 @@ Export-ModuleMember -Function @(
     'Assert-FFGitLfsHealth',
     'Get-FFGameBinaryBaseName',
     'Get-FFRelativePath',
-    'Write-FFSha256Manifest'
+    'Write-FFSha256Manifest',
+    'Write-FFSizeReport'
 )

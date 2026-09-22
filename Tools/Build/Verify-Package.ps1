@@ -325,7 +325,7 @@ $requiredAssets = @(
     '/Game/FestaFiesta/Data/Time/DT_DaySequence',
     '/Game/FestaFiesta/Data/Time/DT_TimeSettings',
     '/Game/FestaFiesta/Data/Time/DT_ProgramSchedule',
-    '/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel',
+    '/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel',
     '/Game/FestaFiesta/UI/Frontend/WBP_FF_ConfirmDialog',
     '/Game/FestaFiesta/UI/Settings/WBP_FF_FestivalSettings',
     '/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan',

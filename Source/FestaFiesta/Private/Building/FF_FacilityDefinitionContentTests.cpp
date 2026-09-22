@@ -21,7 +21,7 @@
 namespace
 {
     constexpr const TCHAR* DefinitionRoot =
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/");
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/");
 
     constexpr double MovementTargetDistanceToleranceCm = 0.01;
 

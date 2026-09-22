@@ -11,7 +11,7 @@
 namespace FFPrepBuildInputBridgeTest
 {
 	constexpr const TCHAR* HudBarClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C");
 
 	UWidgetTree* ResolveWidgetTree(UClass* WidgetClass)
 	{

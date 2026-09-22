@@ -1,4 +1,4 @@
-// Runtime-loaded arrival and appearance tables must survive GC for the whole festival.
+﻿// Runtime-loaded arrival and appearance tables must survive GC for the whole festival.
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -130,7 +130,7 @@ bool FFF_CrowdArrivalTablesSurviveFestivalGarbageCollection::RunTest(const FStri
     {
         return false;
     }
-    Crowd->InitializeSimulation(FVector::ZeroVector, 10000.f, PoolSize, PoolSize, AFF_BaseCrowd::StaticClass());
+    Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), PoolSize, PoolSize, AFF_BaseCrowd::StaticClass());
     Crowd->BeginArrivalSchedule(RequestedVisitors, FVector::ZeroVector, 500.f);
     TestTrue(TEXT("Project arrival curve was loaded during initialization"), Crowd->IsArrivalCurveActive());
     TestTrue(TEXT("The real visitor distribution contains whole parties"), Crowd->GetArrivalPlannedCount() > 0);

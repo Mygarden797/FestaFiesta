@@ -13,6 +13,7 @@
 #include "Building/FF_BuildCatalogTypes.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildFeedback.h"
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
@@ -133,15 +134,15 @@ namespace
 	// UFF_BuildCatalogScreen의 C++ 구현으로 폴백하므로 에셋 누락이 건축 모드 전체를 중단시키지 않는다.
 	const TSoftClassPtr<UFF_BuildCatalogScreen> BuildCatalogScreenClass(
 		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C")));
+			"/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C")));
 	const TSoftClassPtr<UFF_BuildPlacementFailureFeedback> PlacementFailureFeedbackClass(
 		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
+			"/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback_C")));
 	// FF.BuildModeGuideUMG 콘솔 명령이 만든 좌하단 조작 안내 패널. 없으면 조용히 건너뛴다.
 	const TSoftClassPtr<UFF_BuildModeGuide> BuildModeGuideClass(
 		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide."
+			"/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_FF_BuildModeGuide."
 			"WBP_FF_BuildModeGuide_C")));
 }
 
@@ -264,6 +265,7 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 	if (bInputSuspendedForPauseMenu)
 	{
 		// Pause 중에는 상태·선택·프리뷰 액터를 그대로 보존하고 입력 및 비싼 커서 재검증만 멈춘다.
+		RefreshPlacementGizmo();
 		EndDragPlacement();
 		ResetPlacementRotationInput();
 		return;
@@ -286,6 +288,7 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 
 	// 입력 처리에서 상태가 바뀔 수 있으므로 처리 직후의 State를 기준으로 아래 작업을 선택한다.
 	HandleInput(*Controller, DeltaTime);
+	TickPlacementAssistance();
 	RefreshBuildModeGuide();
 
 	if (!FFBuildModeModel::IsBuildSessionActive(State))
@@ -336,6 +339,9 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 	PauseMenuResumeTimerHandle.Invalidate();
 	bPauseMenuResumePending = false;
 	bInputSuspendedForPauseMenu = true;
+	CancelNearbyPlacementSearch();
+	if (auto* Controller = GetLocalPlayerController()) HandlePlacementGizmoInput(*Controller, true);
+	RefreshPlacementGizmo();
 	ClearBuildSynergyPreview();
 	if (!bWasAlreadySuspended && FSlateApplication::IsInitialized())
 	{
@@ -473,6 +479,7 @@ void UFF_BuildModeSubsystem::SetState(const EFF_BuildModeState NewState)
 	if (State != EFF_BuildModeState::CatalogOpen) { PendingCatalogFacilityId = NAME_None; }
 	if (!FFBuildModeModel::IsPreviewActive(State))
 	{
+		ResetPlacementAssistance();
 		ClearBuildSynergyPreview(State == EFF_BuildModeState::Closed);
 	}
 	if (State == EFF_BuildModeState::Closed)
@@ -612,6 +619,11 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	ResetPlacementSelection();
 	RemoveCatalogScreen();
 	SetState(EFF_BuildModeState::CatalogOpen);
+	// Opening the ordinary catalog also resets an earlier codex destination when
+	// CatalogOpen is already the current state (and therefore emits no state change).
+	// OpenCatalogForFacility sends its validated destination after this common route.
+	PendingCatalogFacilityId = NAME_None;
+	OnBuildCatalogFacilityFocusRequested.Broadcast(NAME_None);
 	bCatalogWasApplied = false;
 	bCatalogThumbnailsApplied = false;
 	if (!bExternalCatalogPresentationActive)
@@ -876,8 +888,10 @@ void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 
 	// BuildMode에서는 centidegree가 canonical이다. QuarterTurns는 레거시 호출 승격에만 사용되므로
 	// 새 각도를 쓰는 순간 지워 FFZS 명령/액터 경계에서 두 표현이 경쟁하지 않게 한다.
-	if (bHasPlacementTarget && BuildToolsWidget &&
-		(BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsEditingAngle()))
+	CancelNearbyPlacementSearch();
+	PlacementAssistanceMessage = FText::GetEmpty();
+	if (bHasPlacementTarget && (bDirectPlacementAdjustment || (BuildToolsWidget &&
+		(BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsEditingAngle()))))
 	{
 		const FVector2D OldOffset = FFBuildModeModel::ResolveRotatedFootprintCenterOffset(
 			SelectedSpec.FootprintSizeCells, UFFZSGridLibrary::YawCentidegreesToDegrees(
@@ -913,6 +927,7 @@ float UFF_BuildModeSubsystem::GetPlacementYawDegrees() const
 bool UFF_BuildModeSubsystem::CommitPlacement()
 {
 	EndDragPlacement();
+	CancelNearbyPlacementSearch();
 	if (bInputSuspendedForPauseMenu)
 	{
 		return false;
@@ -967,6 +982,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	}
 	if (!LastValidation.bIsValid)
 	{
+		FFBuildFeedback::Pulse(GetLocalPlayerController(), false, true);
 		const EFFZSPlacementFailure FailureReason = LastValidation.Reasons.IsEmpty()
 			? EFFZSPlacementFailure::InternalError
 			: LastValidation.Reasons[0];
@@ -1038,6 +1054,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 		return false;
 	}
 
+	FFBuildFeedback::Pulse(GetLocalPlayerController(), true, true);
 	if (bIsMoving)
 	{
 		if (!FFBuildModeModel::IsCurrentMoveSession(
@@ -1068,6 +1085,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 	}
 
 	ShowStatus(FString::Printf(TEXT("%s 설치 완료"), *SelectedSpec.DisplayName.ToString()), false);
+	ResetPlacementAssistance();
 	DismissPlacementFailureFeedback();
 	// 연속 배치를 지원하므로 성공 후 Placing 상태를 유지한다. 설치로 revision/점유 셀이 바뀌었으므로
 	// 같은 위치의 다음 프리뷰도 즉시 다시 검증한다.
@@ -1136,6 +1154,7 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	}
 	if (IsEditableSlateTextFocused())
 	{
+		HandlePlacementGizmoInput(Controller, true);
 		ResetPlacementRotationInput();
 		return;
 	}
@@ -1185,12 +1204,19 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 		}
 		return;
 	}
+	if (Controller.WasInputKeyJustPressed(EKeys::T))
+	{
+		ToggleDirectPlacementAdjustment();
+		return;
+	}
+	if (HandlePlacementGizmoInput(Controller, bBlockWorldClickThisFrame || bPointerOverDebugPanel ||
+		bPointerOverTools || bPointerOverFacilityInfo || IsPointerBlockedByUi())) return;
 	// 회전과 설치 입력은 독립적으로 검사하므로 같은 프레임에 들어오면 최신 회전을 포함한 배치를 설치한다.
 	HandlePlacementRotationInput(Controller, DeltaTime);
 	// PlayerController has already received this press through GameAndUI routing.
 	// Do not require the deepest Slate hit to be SViewport: non-consuming HUD wrappers
 	// also legitimately bubble world clicks. Actual tool/panel rectangles remain blocked.
-	if (!bBlockWorldClickThisFrame && !bPointerOverDebugPanel && !bPointerOverTools && !bPointerOverFacilityInfo &&
+	if (!bDirectPlacementAdjustment && !bBlockWorldClickThisFrame && !bPointerOverDebugPanel && !bPointerOverTools && !bPointerOverFacilityInfo &&
 		Controller.WasInputKeyJustPressed(EKeys::LeftMouseButton))
 	{
 		HandlePlacementPrimaryPress(Controller.IsInputKeyDown(EKeys::LeftMouseButton));
@@ -1285,6 +1311,8 @@ void UFF_BuildModeSubsystem::NudgePlacement(const FIntPoint Direction)
 	{
 		return;
 	}
+	CancelNearbyPlacementSearch();
+	PlacementAssistanceMessage = FText::GetEmpty();
 	const int32 Step = GetPlacementPositionSnapCm();
 	const int64 X = static_cast<int64>(CurrentPlacement.OriginCell.X) + FMath::Clamp(Direction.X, -1, 1) * Step;
 	const int64 Y = static_cast<int64>(CurrentPlacement.OriginCell.Y) + FMath::Clamp(Direction.Y, -1, 1) * Step;
@@ -1294,6 +1322,13 @@ void UFF_BuildModeSubsystem::NudgePlacement(const FIntPoint Direction)
 	}
 	CurrentPlacement.OriginCell = FIntPoint(static_cast<int32>(X), static_cast<int32>(Y));
 	RefreshCurrentPlacementValidation();
+}
+
+bool UFF_BuildModeSubsystem::GetPlacementMarkerLocation(FVector& OutLocation) const
+{
+	if (!bHasPlacementTarget || !FFBuildModeModel::IsPreviewActive(State)) return false;
+	OutLocation = LastValidation.PlacementTransform.GetLocation();
+	return !OutLocation.ContainsNaN();
 }
 
 FText UFF_BuildModeSubsystem::GetPlacementStatusText() const
@@ -1311,8 +1346,7 @@ FText UFF_BuildModeSubsystem::GetPlacementStatusText() const
 		return FText::FromString(State == EFF_BuildModeState::Moving
 			? TEXT("이동 가능 · 좌클릭/Enter로 확정") : TEXT("배치 가능 · 좌클릭/Enter로 연속 설치"));
 	}
-	return LastValidation.Summary.IsEmpty() ? FText::FromString(TEXT("배치 불가 · 위치와 방향을 조절해 주세요")) :
-		FText::Format(NSLOCTEXT("FFBuildTools", "InvalidPlacement", "배치 불가 · {0}"), LastValidation.Summary);
+	return GetPlacementGuidance().Title;
 }
 
 void UFF_BuildModeSubsystem::DestroyBuildGridOverview()
@@ -1755,9 +1789,15 @@ void UFF_BuildModeSubsystem::RemoveBuildTools()
 	}
 }
 
+void UFF_BuildModeSubsystem::RefreshBuildToolsOcclusion()
+{
+	RefreshBuildSynergyPreview();
+}
+
 void UFF_BuildModeSubsystem::RefreshBuildSynergyPreview()
 {
 	if (bInputSuspendedForPauseMenu || !FFBuildModeModel::IsPreviewActive(State) ||
+		(BuildToolsWidget && BuildToolsWidget->IsAuxiliaryPanelOpen()) ||
 		!bHasPlacementTarget || !LastValidation.bIsValid || !IsValid(PlacementPreview))
 	{
 		ClearBuildSynergyPreview();
@@ -2012,6 +2052,7 @@ void UFF_BuildModeSubsystem::DestroyPlacementPreview()
 void UFF_BuildModeSubsystem::ResetPlacementSelection()
 {
 	EndDragPlacement();
+	ResetPlacementAssistance();
 	SelectedFacilityDefinitionId = NAME_None;
 	SelectedSpec = FFFZSFacilitySpec{};
 	CurrentPlacement = FFFZSGridPlacement{};
@@ -2537,8 +2578,8 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 	}
 
 	// Hovering a tool or typing an angle must not drag the building underneath that UI.
-	if (BuildToolsWidget && FFBuildModeModel::ShouldFreezePlacementTarget(
-		BuildToolsWidget->IsPointerOverTools(), BuildToolsWidget->IsEditingAngle()))
+	if (bDirectPlacementAdjustment || (BuildToolsWidget && FFBuildModeModel::ShouldFreezePlacementTarget(
+		BuildToolsWidget->IsPointerOverTools() || BuildToolsWidget->IsRadialMenuOpen(), BuildToolsWidget->IsEditingAngle())))
 	{
 		if (bHasPlacementTarget)
 		{
@@ -3090,4 +3131,9 @@ UFF_FacilityInfoSubsystem* UFF_BuildModeSubsystem::GetFacilityInfoSubsystem() co
 {
 	UWorld* World = GetWorld();
 	return World ? World->GetSubsystem<UFF_FacilityInfoSubsystem>() : nullptr;
+}
+
+FFFZSQueueRules UFF_BuildModeSubsystem::GetSelectedFacilityQueueRules() const
+{
+	return MovingFacility.IsValid() ? MovingFacility->GetEffectiveQueueRules() : SelectedSpec.QueueRules;
 }

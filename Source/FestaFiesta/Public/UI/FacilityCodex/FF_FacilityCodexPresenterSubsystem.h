@@ -2,8 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Engine/EngineTypes.h"
+#include "Components/SlateWrapperTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Time/FF_FestivalStage.h"
+#include "TimerManager.h"
 #include "FF_FacilityCodexPresenterSubsystem.generated.h"
 
 class AActor;
@@ -16,6 +18,9 @@ class UFF_FacilityInfoSubsystem;
 class UFF_FestivalStageSubsystem;
 class UFFZSWorldSubsystem;
 class UGameViewportClient;
+class UPanelWidget;
+class UFF_PrepHudBar;
+class UFF_PrepPanelBuild;
 
 /**
  * Facilities open an authored codex through this event-driven presentation boundary.
@@ -45,8 +50,13 @@ public:
 	static FSoftClassPath GetDefaultScreenClassPath();
 
 private:
+	void BindSessionLifecycle(AFF_FestivalPlayerController& Controller);
 	void CloseSession(bool bRestoreFocus);
+	void HandleFacilityCatalogRequested(FName FacilityDefinitionId);
+	void CompleteCatalogNavigation(FName FacilityDefinitionId);
 	void RestoreInput(AFF_FestivalPlayerController& Controller);
+	void SuppressCatalogVisibility(AFF_FestivalPlayerController& Controller);
+	void RestoreCatalogVisibility();
 
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
@@ -66,7 +76,14 @@ private:
 	TWeakObjectPtr<UFF_FacilityInfoSubsystem> SuppressedFacilityInfo;
 	TWeakObjectPtr<UFF_FestivalStageSubsystem> BoundStage;
 	TWeakObjectPtr<UFFZSWorldSubsystem> BoundZoneSystem;
+	TWeakObjectPtr<UFF_PrepPanelBuild> SuppressedCatalog;
+	TWeakObjectPtr<UPanelWidget> SuppressedCatalogParent;
+	TWeakObjectPtr<UFF_PrepHudBar> SuppressedCatalogBar;
+	ESlateVisibility PreviousCatalogVisibility = ESlateVisibility::Collapsed;
+	bool bCatalogWasInViewport = false;
+	bool bCatalogHadOwningBar = false;
 	TWeakPtr<SWidget> PreviousFocusedWidget;
+	FTimerHandle CatalogNavigationTimer;
 	bool bOwnsModalInput = false;
 	bool bPreviousCursorVisible = false;
 	bool bPreviousViewportIgnoredInput = false;

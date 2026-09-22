@@ -210,7 +210,9 @@ void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const 
 		const FFF_FacilitySynergyRule& Rule = Rules[RuleIndex];
 		FFF_FacilitySynergyPreviewEntry& Entry = Out.Entries.AddDefaulted_GetRef();
 		Entry.RuleId = Rule.Id;
-		Entry.DisplayName = Rule.Row.DisplayName.IsEmpty() ? FText::FromName(Rule.Id) : Rule.Row.DisplayName;
+		// Keep text identity/localization intact. Only the presentation layer can resolve
+		// current catalog names for an absent title; a rule ID is not player-facing text.
+		Entry.DisplayName = Rule.Row.DisplayName;
 		Entry.TargetFacilityId = Rule.Row.TargetFacilityId;
 		Entry.PartnerFacilityId = Rule.Row.PartnerFacilityId;
 		Entry.TargetInstanceId = Target.InstanceId;

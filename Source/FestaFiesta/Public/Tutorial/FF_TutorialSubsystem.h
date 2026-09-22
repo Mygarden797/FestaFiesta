@@ -7,6 +7,7 @@
 #include "Tickable.h"
 #include "FF_FFZSTypes.h"
 #include "Time/FF_FestivalStage.h"
+#include "UI/PrepHUD/FF_PrepHudTypes.h"
 #include "Tutorial/FF_TutorialTypes.h"
 #include "FF_TutorialSubsystem.generated.h"
 
@@ -25,6 +26,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnDialogueActiveChanged, bool, b
 
 // 튜토리얼을 건너뛰었다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTutorialSkipped);
+
+// 튜토리얼을 끝까지 봤다.
+//
+// 건너뛴 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
+// 건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTutorialCompleted);
 
 // 어디를 강조할지 바뀌었다. 비어 있으면 강조를 끈다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnHighlightAnchorChanged, FName, AnchorId);
@@ -193,6 +200,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
 	FFF_OnTutorialSkipped OnTutorialSkipped;
 
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Tutorial")
+	FFF_OnTutorialCompleted OnTutorialCompleted;
+
 private:
 	// 시설이 설치·철거되면 온다. Zone 이 확정한 뒤에만 방송되므로 실제 성공만 잡힌다.
 	UFUNCTION()
@@ -200,6 +210,17 @@ private:
 
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	// 준비 화면 탭이 열리거나 닫히면 온다.
+	UFUNCTION()
+	void HandlePrepTabSelectionChanged(FFF_PrepTabSelection Selection);
+
+	/* 탭 바를 구독한다. 화면이 만들어진 뒤에야 가능하므로 여러 번 시도한다.
+
+	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 레벨을 옮기면 다시 만들어진다.
+	   한 번만 시도하면 그 사이에 놓친다.
+	*/
+	void TryBindPrepHudBar();
 
 	void BindGameSignals();
 	void UnbindGameSignals();
@@ -212,6 +233,16 @@ private:
 
 	// 지금 줄 다음에 갈 자리. NextLabel 이 있으면 그리로, 없으면 바로 다음 줄로.
 	int32 ResolveNextLineIndex() const;
+
+	/* 새 게임 버튼을 구독한다. 화면이 만들어진 뒤에야 가능하다.
+
+	   플레이 허브는 타이틀에서 넘어올 때 만들어지므로, 월드가 시작하는 시점에는
+	   아직 없다. 매 틱 훑으면 낭비라 화면이 바뀌는 신호에 맞춰 시도한다.
+	*/
+	void TryBindPlayHub();
+
+	UFUNCTION()
+	void HandleNewGameRequested();
 
 	// 레벨이 뜨면 설정에 지정된 대사를 시작한다. 지정이 없으면 아무것도 하지 않는다.
 	void TryAutoStart();
@@ -290,6 +321,14 @@ private:
 
 	// 확인용으로 만든 줄. 데이터에 없는 줄이라 여기서 들고 있는다.
 	FFF_DialogueLine SkipConfirmLine;
+
+	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
+	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
+
+	TWeakObjectPtr<class UFF_PlayHubScreen> BoundPlayHub;
+
+	// 다음 구독 시도까지 남은 시간. 매 틱 훑지 않기 위한 것이다.
+	float PlayHubScanCountdown = 0.f;
 
 	bool bBoundZoneWorld = false;
 	bool bBoundStage = false;

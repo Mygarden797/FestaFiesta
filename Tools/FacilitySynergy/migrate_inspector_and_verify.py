@@ -7,8 +7,8 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Saved/FacilitySynergy"
-PANEL = "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"
-ENTRY = "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"
+PANEL = "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"
+ENTRY = "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"
 COMMAND = "FF.MigrateFacilitySynergyTab"
 
 
@@ -116,7 +116,7 @@ for category, asset_name in (
     ("Rest", "PDA_FFZS_Rest_Seating_Seating"),
     ("Rest", "PDA_FFZS_Rest_Shade_Shade"),
 ):
-    definition = unreal.load_asset(f"/Game/FestaFiesta/Zone/Data/FacilityDefinitions/{category}/{asset_name}")
+    definition = unreal.load_asset(f"/Game/FestaFiesta/Building/FF_Data_Building/{category}/{asset_name}")
     require(definition is not None, f"Missing production facility: {asset_name}")
     spec = definition.get_editor_property("spec")
     facility_names[str(spec.get_editor_property("facility_definition_id"))] = str(spec.get_editor_property("display_name"))

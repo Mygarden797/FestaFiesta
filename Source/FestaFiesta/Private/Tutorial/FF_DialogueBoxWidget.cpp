@@ -3,6 +3,7 @@
 #include "Tutorial/FF_DialogueBoxWidget.h"
 
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Tutorial/FF_SkipConfirmWidget.h"
@@ -16,6 +17,11 @@ void UFF_DialogueBoxWidget::NativeConstruct()
 	if (AdvanceButton)
 	{
 		AdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->OnClicked.AddDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
 	}
 
 	if (SkipButton)
@@ -64,6 +70,11 @@ void UFF_DialogueBoxWidget::NativeDestruct()
 		AdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
 	}
 
+	if (BoxAdvanceButton)
+	{
+		BoxAdvanceButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleAdvanceClicked);
+	}
+
 	if (SkipButton)
 	{
 		SkipButton->OnClicked.RemoveDynamic(this, &UFF_DialogueBoxWidget::HandleSkipClicked);
@@ -91,10 +102,8 @@ void UFF_DialogueBoxWidget::HandleLineChanged(const FFF_DialogueLine& Line)
 
 	RebuildChoices(Line);
 
-	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
-	const bool bCanAdvance =
-		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
-	SetAdvanceEnabled(bCanAdvance);
+	ApplyClickArea(Line);
+	ApplyBackground(Line);
 
 	BP_OnLineChanged(Line);
 }
@@ -112,6 +121,12 @@ void UFF_DialogueBoxWidget::HandleDialogueActiveChanged(const bool bActive)
 	if (!bActive)
 	{
 		ClearChoices();
+
+		// 대사가 끝나면 배경도 치운다. 안 그러면 그림이 화면에 남는다.
+		if (BackgroundImage)
+		{
+			BackgroundImage->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 
 	BP_OnDialogueActiveChanged(bActive);
@@ -210,19 +225,64 @@ void UFF_DialogueBoxWidget::ClearChoices()
 	}
 }
 
-void UFF_DialogueBoxWidget::SetAdvanceEnabled(const bool bEnabled)
+void UFF_DialogueBoxWidget::ApplyBackground(const FFF_DialogueLine& Line)
 {
-	if (!AdvanceButton)
+	if (!BackgroundImage)
 	{
 		return;
 	}
 
-	AdvanceButton->SetIsEnabled(bEnabled);
+	if (Line.bClearBackground)
+	{
+		BackgroundImage->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
 
-	// 클릭 영역이 선택지를 덮고 있으면 선택지를 못 누른다.
+	// 지정이 없으면 앞 줄의 그림을 그대로 둔다.
+	// 한 장면이 여러 줄로 이어질 때 매 줄에 같은 경로를 적지 않아도 된다.
+	if (Line.BackgroundImage.IsNull())
+	{
+		return;
+	}
+
+	UTexture2D* Texture = Line.BackgroundImage.LoadSynchronous();
+	if (!Texture)
+	{
+		// 경로를 잘못 적었다. 앞 그림을 그대로 두고 알린다.
+		UE_LOG(LogFestaFiestaTutorial, Warning,
+			TEXT("[대사] 배경 그림 %s 를 불러오지 못했다."),
+			*Line.BackgroundImage.ToString());
+		return;
+	}
+
+	BackgroundImage->SetBrushFromTexture(Texture, false);
+	BackgroundImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+void UFF_DialogueBoxWidget::ApplyClickArea(const FFF_DialogueLine& Line)
+{
+	// 선택지가 있으면 클릭으로 넘길 수 없다. 조작을 기다리는 줄도 마찬가지다.
+	const bool bCanAdvance =
+		Line.Kind != EFF_DialogueLineKind::Choice && !Line.RequiresPlayerAction();
+
+	const bool bFullScreen = bCanAdvance
+		&& Line.ClickArea == EFF_DialogueClickArea::FullScreen;
+	const bool bBoxOnly = bCanAdvance
+		&& Line.ClickArea == EFF_DialogueClickArea::BoxOnly;
+
 	// 비활성만으로는 히트 판정이 남는 경우가 있어 아예 숨긴다.
-	AdvanceButton->SetVisibility(
-		bEnabled ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	auto Apply = [](UButton* Button, const bool bOn)
+	{
+		if (!Button)
+		{
+			return;
+		}
+		Button->SetIsEnabled(bOn);
+		Button->SetVisibility(bOn ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	};
+
+	Apply(AdvanceButton, bFullScreen);
+	Apply(BoxAdvanceButton, bBoxOnly);
 }
 
 // ── 선택지 버튼 ─────────────────────────────────────────────────────────────

@@ -191,6 +191,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|Camera", meta = (ClampMin = "1000.0"))
 	float PickTraceDistance = 100000.f;
 
+	/* 지금 시점과 시야 고정 상태에 맞는 입력 모드를 건다.
+
+	   관찰 카메라는 커서가 필요하다. 시설을 클릭하고 UI 를 누르기 때문이다.
+
+	   캐릭터 조작은 두 갈래다. 평소에는 커서를 두어 클릭할 수 있게 하고,
+	   시야 고정을 켜면 커서를 치워 마우스 움직임이 전부 시점으로 가게 한다.
+
+	   커서가 떠 있으면 그 아래 위젯이 마우스 움직임을 먼저 가져간다.
+	   그래서 커서를 켠 채로는 시점 회전을 마우스 버튼과 함께 눌러야 한다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Camera")
+	void RefreshViewInputMode();
+
+	void ApplyViewInputMode(EFF_CameraViewMode Mode);
+
 private:
 	void HandlePan(const FInputActionValue& Value);
 	void HandleZoom(const FInputActionValue& Value);

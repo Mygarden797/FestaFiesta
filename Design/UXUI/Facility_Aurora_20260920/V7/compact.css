@@ -1,0 +1,48 @@
+.inspector{bottom:45px;width:375px}
+.inspector .topline{padding:5px 12px;min-height:39px}
+.inspector .topline .iconbutton{width:25px;height:25px;min-height:25px;font-size:17px}
+.identity{padding:8px 12px 6px;gap:10px}
+.identity .thumb{width:58px;height:51px}
+.identity h2{font-size:18px;margin:2px 0 5px}
+.identity .badge{font-size:10px;padding:3px 6px}
+.tabs{padding:2px 12px 8px}
+.tab{padding:6px 3px;font-size:12px}
+.content{gap:8px;padding-bottom:8px}
+.section{padding:8px 10px;flex-shrink:0}
+.section h3{font-size:13px;margin-bottom:6px}
+.kv{min-height:21px}
+.rule{margin:5px 0}
+.metric{padding:5px 8px}
+.metric strong{font-size:15px}
+.metric.large strong{font-size:22px;line-height:1.35}
+.metric .label{line-height:1.4}
+.notice{padding:6px 8px;font-size:10px;line-height:1.5}
+.people{gap:8px;margin:6px 0}
+.person{height:22px;width:24px}
+.route{padding:5px 0}
+.content>.btn{min-height:32px;padding:5px 12px}
+.footer{padding:8px 12px}
+.footer .btn{min-height:30px;padding:5px 12px}
+.level{padding:5px 0;font-size:25px}
+.table{border-spacing:0 3px}
+.table td{padding:5px}
+.program{width:408px}
+.programoption{padding:8px;gap:9px}
+.programoption .thumb{width:55px;height:49px}
+.programoption h3{font-size:15px;margin:0 0 3px}
+.program .content{padding-top:6px}
+.rankrow{min-height:88px}
+.ranking .firstsale{padding:12px 10px;min-height:0}
+.ranking .section{padding:12px}
+.ranking .content{gap:12px}
+.range{margin:14px 6px}
+.codexdetail .section{padding:12px}
+.codexdetail .effect{font-size:24px}
+.context{background:#1d392f}
+[data-screen="04-combo"] .recipe .images{margin:5px 0}
+[data-screen="04-combo"] .recipe .thumb{height:35px;width:48px}
+[data-screen="04-combo"] .recipe .notice{padding:4px 7px}
+[data-screen="04-combo"] .recipe .effect{font-size:17px}
+[data-screen="05-operation"] .content{gap:5px}
+[data-screen="05-operation"] .section{padding:6px 10px}
+[data-screen="05-operation"] .people{margin:4px 0}

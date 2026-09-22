@@ -107,7 +107,9 @@ public:
 
     static bool DoOrientedRectSetsOverlap(
         const TArray<FFFZSOrientedRect>& A,
-        const TArray<FFFZSOrientedRect>& B);
+        const TArray<FFFZSOrientedRect>& B,
+        FFFZSOrientedRect* OutFirstA = nullptr,
+        FFFZSOrientedRect* OutFirstB = nullptr);
 	// SAT 좁은 단계로 양의 면적 교집합만 검사한다. 경계 접촉은 겹침이 아니다.
 
     // [최적화] 네 영역을 한 번의 계산으로 함께 만든다.

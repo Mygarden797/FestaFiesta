@@ -1,9 +1,40 @@
 #include "Building/Presentation/FF_BuildCategoryIcons.h"
 
 #include "Engine/Texture2D.h"
+#include "Materials/MaterialInterface.h"
 
 FSlateBrush FFBuildCategoryIcons::Resolve(const bool bAll, const EFFZSFacilityCategory Category)
 {
+	const TCHAR* GlyphName = TEXT("All");
+	if (!bAll)
+	{
+		switch (Category)
+		{
+		case EFFZSFacilityCategory::Booth: GlyphName = TEXT("Booth"); break;
+		case EFFZSFacilityCategory::Toilet: GlyphName = TEXT("Toilet"); break;
+		case EFFZSFacilityCategory::Info: GlyphName = TEXT("Info"); break;
+		case EFFZSFacilityCategory::Rest: GlyphName = TEXT("Rest"); break;
+		case EFFZSFacilityCategory::Performance: GlyphName = TEXT("Performance"); break;
+		case EFFZSFacilityCategory::Safety: GlyphName = TEXT("Safety"); break;
+		case EFFZSFacilityCategory::PhotoSpot: GlyphName = TEXT("PhotoSpot"); break;
+		case EFFZSFacilityCategory::Lighting: GlyphName = TEXT("Lighting"); break;
+		case EFFZSFacilityCategory::Road: GlyphName = TEXT("Road"); break;
+		case EFFZSFacilityCategory::Tile: GlyphName = TEXT("Tile"); break;
+		default: break;
+		}
+	}
+	const FString GlyphAsset = FString::Printf(TEXT("MI_UI_CategoryClarity_%s"), GlyphName);
+	const FString GlyphPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/") + GlyphAsset + TEXT(".") + GlyphAsset;
+	if (UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *GlyphPath, nullptr, LOAD_NoWarn))
+	{
+		FSlateBrush Pictogram;
+		Pictogram.SetResourceObject(Material);
+		Pictogram.DrawAs = ESlateBrushDrawType::Image;
+		Pictogram.SetImageSize(FVector2D(22.f, 22.f));
+		Pictogram.TintColor = FSlateColor(FLinearColor::White);
+		return Pictogram;
+	}
+	// Existing artwork is a safe fallback until the explicit asset migration runs.
 	const TCHAR* Folder = TEXT("Navigation");
 	const TCHAR* IconName = TEXT("Facilities");
 	if (!bAll)

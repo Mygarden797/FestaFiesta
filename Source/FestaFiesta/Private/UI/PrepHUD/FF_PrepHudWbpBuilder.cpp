@@ -4,6 +4,7 @@
 
 #if WITH_EDITOR
 
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/BorderSlot.h"
 #include "Components/Button.h"
@@ -71,9 +72,10 @@ namespace FFPrepHudWbpBuilder
 
 	const FString PrepFolder = TEXT("/Game/FestaFiesta/UI/PrepHUD");
 	const FString PrepPanelsFolder = PrepFolder / TEXT("Panels");
+	const FString SharedBuildFolder = FFBuildUIAssetPaths::SharedFolder;
 
-	const FString TabButtonPackage = PrepFolder / TEXT("WBP_FF_PrepHudTabButton");
-	const FString BarPackage = PrepFolder / TEXT("WBP_FF_PrepHudBar");
+	const FString TabButtonPackage = SharedBuildFolder / TEXT("WBP_FF_PrepHudTabButton");
+	const FString BarPackage = SharedBuildFolder / TEXT("WBP_FF_PrepHudBar");
 	const FString PlaceholderPanelPackage = PrepPanelsFolder / TEXT("WBP_FF_PrepPlaceholderPanel");
 
 	// ★ 이름이 계약이다. `UFF_PrepHudBar::PanelClassNameFormat`(`WBP_FF_PrepPanel{0}`) 이
@@ -90,7 +92,7 @@ namespace FFPrepHudWbpBuilder
 	const FString PromotionCardPackage = PrepFolder / TEXT("WBP_FF_PrepPromotionCard");
 
 	/** 패널 안에서 여러 개 중 하나를 고르는 버튼. 날씨 선택이 첫 사용처다. */
-	const FString ChoiceButtonPackage = PrepFolder / TEXT("WBP_FF_PrepChoiceButton");
+	const FString ChoiceButtonPackage = SharedBuildFolder / TEXT("WBP_FF_PrepChoiceButton");
 
 	/** 목업 규격. 메뉴 29 + 상태 29 = 58. 대략만 맞추고 마감은 에디터에서 한다. */
 	constexpr float MenuRowHeight = 29.f;
@@ -331,7 +333,7 @@ namespace FFPrepHudWbpBuilder
 	// 3) 인력 패널
 	// =========================================================================
 
-	/** 고정비 표의 한 줄. `이름 ....... 금액` 두 칸이다. */
+	/** 지출 표의 한 줄. `이름 ....... 금액` 두 칸이다. */
 	bool AddCostRow(
 		UWidgetBlueprint& Blueprint,
 		UWidgetTree& Tree,
@@ -480,7 +482,7 @@ namespace FFPrepHudWbpBuilder
 		}
 
 		StyleText(*CurrentStaff, 28, Palette->InGame.Ink, TEXT("SemiBold"));
-		CurrentStaff->SetText(LOCTEXT("PrepStaff_CurrentPreview", "6명 (기본 6 · 알바 0)"));
+		CurrentStaff->SetText(LOCTEXT("PrepStaff_CurrentPreview", "6명 (기본 6 · 고용 0)"));
 		if (UVerticalBoxSlot* Slot_Current = Content->AddChildToVerticalBox(CurrentStaff))
 		{
 			Slot_Current->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -488,7 +490,7 @@ namespace FFPrepHudWbpBuilder
 		}
 
 		StyleText(*MaxStaff, 14, Palette->InGame.InkMuted, TEXT("Medium"));
-		MaxStaff->SetText(LOCTEXT("PrepStaff_MaxPreview", "오늘 최대 12명 (기본 6 + 알바 6)"));
+		MaxStaff->SetText(LOCTEXT("PrepStaff_MaxPreview", "최대 12명 (기본 6 + 고용 6)"));
 		if (UVerticalBoxSlot* Slot_Max = Content->AddChildToVerticalBox(MaxStaff))
 		{
 			Slot_Max->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -498,7 +500,7 @@ namespace FFPrepHudWbpBuilder
 
 		// --- 스텝퍼 ---
 		StyleText(*StepperLabel, 14, Palette->InGame.Ink, TEXT("Medium"));
-		StepperLabel->SetText(LOCTEXT("PrepStaff_StepperLabel", "알바 고용"));
+		StepperLabel->SetText(LOCTEXT("PrepStaff_StepperLabel", "인원 고용"));
 		if (UHorizontalBoxSlot* Slot_StepperLabel = StepperRow->AddChildToHorizontalBox(StepperLabel))
 		{
 			Slot_StepperLabel->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -533,7 +535,7 @@ namespace FFPrepHudWbpBuilder
 
 		// --- 견적 ---
 		StyleText(*WagePreview, 16, Palette->InGame.Ink, TEXT("Medium"));
-		WagePreview->SetText(LOCTEXT("PrepStaff_WagePreviewText", "1명 x 150 = 150 Gold"));
+		WagePreview->SetText(LOCTEXT("PrepStaff_WagePreviewText", "1명 x 450 = 450 Gold"));
 		if (UVerticalBoxSlot* Slot_Wage = Content->AddChildToVerticalBox(WagePreview))
 		{
 			Slot_Wage->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -542,7 +544,7 @@ namespace FFPrepHudWbpBuilder
 		}
 
 		StyleText(*GoldAfterHire, 14, Palette->InGame.InkMuted, TEXT("Medium"));
-		GoldAfterHire->SetText(LOCTEXT("PrepStaff_GoldAfterPreview", "고용 후 잔액 7,450"));
+		GoldAfterHire->SetText(LOCTEXT("PrepStaff_GoldAfterPreview", "고용 후 잔액 7,150"));
 		if (UVerticalBoxSlot* Slot_GoldAfter = Content->AddChildToVerticalBox(GoldAfterHire))
 		{
 			Slot_GoldAfter->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -550,9 +552,11 @@ namespace FFPrepHudWbpBuilder
 			Slot_GoldAfter->SetPadding(FMargin(0.f, 4.f, 0.f, 24.f));
 		}
 
-		// --- 고정비 표 ---
+		// --- 고용비 표 ---
+		// "오늘" 이 아니다. 고용이 1회 구매라 이 값은 축제 누계이고, Day2 에 아무도 안 뽑아도
+		// 어제 쓴 돈이 그대로 남아 있다. 제목에 "오늘" 을 쓰면 그 숫자가 거짓말이 된다.
 		StyleText(*CostTableTitle, 14, Palette->InGame.Ink, TEXT("SemiBold"));
-		CostTableTitle->SetText(LOCTEXT("PrepStaff_CostTableTitle", "오늘 고정비"));
+		CostTableTitle->SetText(LOCTEXT("PrepStaff_CostTableTitle", "고용비"));
 		if (UVerticalBoxSlot* Slot_CostTitle = CostTable->AddChildToVerticalBox(CostTableTitle))
 		{
 			Slot_CostTitle->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -560,20 +564,12 @@ namespace FFPrepHudWbpBuilder
 			Slot_CostTitle->SetPadding(FMargin(0.f, 0.f, 0.f, 10.f));
 		}
 
+		// 장소 임대료·미납 줄은 임대료를 없애면서 같이 뺐다. 오늘 나가는 돈은 고용비 하나뿐이다
 		const bool bRowsOk =
 			AddCostRow(Blueprint, Tree, *CostTable, *Palette,
-				TEXT("Box_RentRow"), TEXT("Text_RentCost"),
-				LOCTEXT("PrepStaff_RentLabel", "장소 임대료"),
-				LOCTEXT("PrepStaff_RentPreview", "2,400 / 일"), Palette->InGame.Ink)
-			&& AddCostRow(Blueprint, Tree, *CostTable, *Palette,
 				TEXT("Box_WageRow"), TEXT("Text_WageCost"),
-				LOCTEXT("PrepStaff_WageLabel", "알바 임금"),
-				LOCTEXT("PrepStaff_WagePreviewRow", "0 / 일"), Palette->InGame.Ink)
-			// 미납은 경고다. 색 + `미납` 문구를 함께 쓴다 (AT-011). 0 이면 코드가 줄째 접는다.
-			&& AddCostRow(Blueprint, Tree, *CostTable, *Palette,
-				TEXT("Box_ArrearsRow"), TEXT("Text_ArrearsCost"),
-				LOCTEXT("PrepStaff_ArrearsLabel", "밀린 임대료"),
-				LOCTEXT("PrepStaff_ArrearsPreview", "미납 2,400"), Palette->InGame.Danger);
+				LOCTEXT("PrepStaff_HireCostLabel", "고용비"),
+				LOCTEXT("PrepStaff_HireCostPreviewRow", "0 (누계)"), Palette->InGame.Ink);
 
 		if (!bRowsOk)
 		{
@@ -586,10 +582,10 @@ namespace FFPrepHudWbpBuilder
 			Slot_CostTable->SetHorizontalAlignment(HAlign_Fill);
 		}
 
-		// --- 하루짜리 안내. 문구는 코드가 채운다 ---
+		// --- 영구 고용 안내. 문구는 코드가 채운다 ---
 		StyleText(*DailyNotice, 13, Palette->InGame.InkMuted, TEXT("Medium"));
 		DailyNotice->SetText(LOCTEXT("PrepStaff_DailyNoticePreview",
-			"알바는 하루짜리입니다. 다음 날에는 기본 팀만 남으므로 매일 다시 고용해야 합니다."));
+			"고용한 인원은 축제가 끝날 때까지 남습니다. 일찍 뽑을수록 오래 씁니다."));
 		DailyNotice->SetAutoWrapText(true);
 		if (UVerticalBoxSlot* Slot_Notice = Content->AddChildToVerticalBox(DailyNotice))
 		{
@@ -600,7 +596,7 @@ namespace FFPrepHudWbpBuilder
 
 		// --- 이유 + 고용 버튼 ---
 		StyleText(*BlockReason, 13, Palette->InGame.InkMuted, TEXT("Medium"));
-		BlockReason->SetText(LOCTEXT("PrepStaff_ReasonPreview", "오늘 알바 상한 6명을 다 썼습니다."));
+		BlockReason->SetText(LOCTEXT("PrepStaff_ReasonPreview", "고용 상한 6명을 다 썼습니다."));
 		BlockReason->SetAutoWrapText(true);
 		if (UHorizontalBoxSlot* Slot_Reason = ActionRow->AddChildToHorizontalBox(BlockReason))
 		{
@@ -947,7 +943,7 @@ namespace FFPrepHudWbpBuilder
 			AddCostRow(Blueprint, Tree, *SummaryTable, *Palette,
 				TEXT("Box_StaffSummaryRow"), TEXT("Text_StaffSummary"),
 				LOCTEXT("PrepCheck_StaffLabel", "인력"),
-				LOCTEXT("PrepCheck_StaffPreview", "6명 (기본 6 · 알바 0)"), Palette->InGame.Ink)
+				LOCTEXT("PrepCheck_StaffPreview", "6명 (기본 6 · 고용 0)"), Palette->InGame.Ink)
 			&& AddCostRow(Blueprint, Tree, *SummaryTable, *Palette,
 				TEXT("Box_ProgramSummaryRow"), TEXT("Text_ProgramSummary"),
 				LOCTEXT("PrepCheck_ProgramLabel", "유료 프로그램"),
@@ -989,17 +985,9 @@ namespace FFPrepHudWbpBuilder
 
 		const bool bEstimateOk =
 			AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
-				TEXT("Box_RentRow"), TEXT("Text_RentCost"),
-				LOCTEXT("PrepCheck_RentLabel", "장소 임대료"),
-				LOCTEXT("PrepCheck_RentPreview", "2,400"), Palette->InGame.Ink)
-			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
 				TEXT("Box_WageRow"), TEXT("Text_StaffWageCost"),
-				LOCTEXT("PrepCheck_WageLabel", "알바 임금"),
+				LOCTEXT("PrepCheck_WageLabel", "고용비"),
 				LOCTEXT("PrepCheck_WagePreview", "0"), Palette->InGame.Ink)
-			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
-				TEXT("Box_FixedCostRow"), TEXT("Text_FixedCostTotal"),
-				LOCTEXT("PrepCheck_FixedLabel", "고정비 합계"),
-				LOCTEXT("PrepCheck_FixedPreview", "2,400"), Palette->InGame.Danger)
 			&& AddCostRow(Blueprint, Tree, *EstimateTable, *Palette,
 				TEXT("Box_AdmissionRow"), TEXT("Text_ExpectedAdmission"),
 				LOCTEXT("PrepCheck_AdmissionLabel", "예상 입장료 수입"),
@@ -1179,7 +1167,7 @@ namespace FFPrepHudWbpBuilder
 
 		// === 상태 행은 Overlay 다 (2026-08-26) ===
 		// `HorizontalBox` 에 나열하면 **앞의 칸이 접힐 때마다 일차·단계가 좌우로 흔들린다.**
-		// 미납·관객처럼 값이 없으면 숨는 칸이 앞에 있어서 매번 위치가 달라진다.
+		// 관객처럼 값이 없으면 숨는 칸이 앞에 있어서 매번 위치가 달라진다.
 		// 왼쪽 묶음 / 중앙 칩 / 오른쪽 묶음을 겹쳐 두면 중앙은 **화면 정중앙에 고정**된다.
 		UOverlay* StatusOverlay = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Overlay_Status"));
 		UHorizontalBox* StatusLeft = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_StatusLeft"));
@@ -1274,7 +1262,7 @@ namespace FFPrepHudWbpBuilder
 			Slot_StatusRow->SetHorizontalAlignment(HAlign_Fill);
 		}
 
-		// --- 왼쪽 묶음. 축제 → 금화 → 미납 순서다. **미납은 잔액 바로 옆**이어야 설명이 된다 ---
+		// --- 왼쪽 묶음. 축제 → 금화 순서다 ---
 		const bool bLeftCellsOk =
 			AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_FestivalName"), TEXT("Text_FestivalName"),
@@ -1283,14 +1271,11 @@ namespace FFPrepHudWbpBuilder
 				TEXT("Box_Gold"), TEXT("Text_Gold"),
 				LOCTEXT("PrepStatusPreview_Gold", "10,000"), Palette->InGame.Ink)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
-				TEXT("Box_Arrears"), TEXT("Text_Arrears"),
-				LOCTEXT("PrepStatusPreview_Arrears", "미납 2,400"), Palette->InGame.Danger)
-			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_VisitorCount"), TEXT("Text_VisitorCount"),
 				LOCTEXT("PrepStatusPreview_Visitors", "0"), Palette->InGame.Ink)
 			&& AddStatusCell(Blueprint, Tree, *StatusLeft,
 				TEXT("Box_Staff"), TEXT("Text_Staff"),
-				LOCTEXT("PrepStatusPreview_Staff", "6명 (기본 6 · 알바 0)"), Palette->InGame.Ink);
+				LOCTEXT("PrepStatusPreview_Staff", "6명 (기본 6 · 고용 0)"), Palette->InGame.Ink);
 
 		// --- 오른쪽 묶음. 예상 방문객 → CTA ---
 		const bool bRightCellsOk =
@@ -1424,11 +1409,10 @@ namespace FFPrepHudWbpBuilder
 		UTextBlock* Label = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Label"), true);
 		UTextBlock* TimeRange = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_TimeRange"), true);
 		UTextBlock* Cost = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Cost"), true);
-		UTextBlock* Staff = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Staff"), true);
 		UTextBlock* Capacity = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Capacity"), true);
 		UTextBlock* Badge = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_Badge"), true);
 
-		if (!Root || !Frame || !Content || !Label || !TimeRange || !Cost || !Staff || !Capacity || !Badge)
+		if (!Root || !Frame || !Content || !Label || !TimeRange || !Cost || !Capacity || !Badge)
 		{
 			return false;
 		}
@@ -1475,15 +1459,6 @@ namespace FFPrepHudWbpBuilder
 		{
 			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			Slot_Cost->SetHorizontalAlignment(HAlign_Fill);
-		}
-
-		StyleText(*Staff, 13, Palette->InGame.InkMuted, TEXT("Medium"));
-		Staff->SetText(LOCTEXT("PrepProgram_StaffPreview", "인원 2명"));
-		if (UVerticalBoxSlot* Slot_Staff = Content->AddChildToVerticalBox(Staff))
-		{
-			Slot_Staff->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Staff->SetHorizontalAlignment(HAlign_Fill);
-			Slot_Staff->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
 		}
 
 		StyleText(*Capacity, 13, Palette->InGame.InkMuted, TEXT("Medium"));
@@ -1549,7 +1524,6 @@ namespace FFPrepHudWbpBuilder
 		UTextBlock* CostPreview = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_CostPreview"), true);
 		UTextBlock* RevenuePreview = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_RevenuePreview"), true);
 		UTextBlock* GoldAfter = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_GoldAfter"), true);
-		UTextBlock* StaffAfter = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_StaffAfter"), true);
 
 		UHorizontalBox* ActionRow = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("HorizontalBox_Action"));
 		UTextBlock* BlockReason = MakeWidget<UTextBlock>(Blueprint, Tree, TEXT("Text_BlockReason"), true);
@@ -1558,7 +1532,7 @@ namespace FFPrepHudWbpBuilder
 
 		if (!Root || !Content || !Header || !DailyNotice || !Scroll || !Cards
 			|| !FacilityRow || !FacilityLabel || !FacilityChoices || !FacilityNotice || !CatalogChoices
-			|| !QuoteBox || !CostPreview || !RevenuePreview || !GoldAfter || !StaffAfter
+			|| !QuoteBox || !CostPreview || !RevenuePreview || !GoldAfter
 			|| !ActionRow || !BlockReason || !Schedule || !ScheduleLabel)
 		{
 			return false;
@@ -1637,7 +1611,7 @@ namespace FFPrepHudWbpBuilder
 
 		// --- 견적 ---
 		StyleText(*CostPreview, 18, Palette->InGame.Ink, TEXT("SemiBold"));
-		CostPreview->SetText(LOCTEXT("PrepProgram_CostPreviewText", "250 Gold · 인원 2명"));
+		CostPreview->SetText(LOCTEXT("PrepProgram_CostPreviewText", "250 Gold"));
 		if (UVerticalBoxSlot* Slot_Cost = QuoteBox->AddChildToVerticalBox(CostPreview))
 		{
 			Slot_Cost->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
@@ -1660,16 +1634,6 @@ namespace FFPrepHudWbpBuilder
 			Slot_Gold->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 			Slot_Gold->SetHorizontalAlignment(HAlign_Fill);
 			Slot_Gold->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
-		}
-
-		// ★ 인원이 묶이는 것이 이 카드의 진짜 대가다. 잔액 바로 아래에 둔다.
-		StyleText(*StaffAfter, 14, Palette->InGame.InkMuted, TEXT("Medium"));
-		StaffAfter->SetText(LOCTEXT("PrepProgram_StaffAfterPreview", "편성 후 사용 가능 4명"));
-		if (UVerticalBoxSlot* Slot_Staff = QuoteBox->AddChildToVerticalBox(StaffAfter))
-		{
-			Slot_Staff->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
-			Slot_Staff->SetHorizontalAlignment(HAlign_Fill);
-			Slot_Staff->SetPadding(FMargin(0.f, 4.f, 0.f, 0.f));
 		}
 
 		if (UScrollBoxSlot* Slot_Quote = Cast<UScrollBoxSlot>(Scroll->AddChild(QuoteBox)))
@@ -1991,7 +1955,7 @@ namespace FFPrepHudWbpBuilder
 		EnsureWidgetBlueprint(
 			PrepLogPrefix,
 			TabButtonPackage,
-			PrepFolder,
+			SharedBuildFolder,
 			*UFF_PrepHudTabButton::StaticClass(),
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
@@ -2021,7 +1985,7 @@ namespace FFPrepHudWbpBuilder
 		EnsureWidgetBlueprint(
 			PrepLogPrefix,
 			ChoiceButtonPackage,
-			PrepFolder,
+			SharedBuildFolder,
 			*UFF_PrepChoiceButton::StaticClass(),
 			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
@@ -2108,7 +2072,7 @@ namespace FFPrepHudWbpBuilder
 		EnsureWidgetBlueprint(
 			PrepLogPrefix,
 			BarPackage,
-			PrepFolder,
+			SharedBuildFolder,
 			*UFF_PrepHudBar::StaticClass(),
 			[TabButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
 			{
@@ -2122,12 +2086,121 @@ namespace FFPrepHudWbpBuilder
 			PrepLogPrefix);
 	}
 
+	/**
+	 * Staff 영구 고용·임대료 제거로 레이아웃이 달라진 WBP 5종만 다시 굽는다.
+	 *
+	 * === 왜 따로 있어야 하나 ===
+	 * `FF.PrepHudUMG` 는 **이미 있으면 손대지 않는다.** 디자이너 수정을 지키려고 그렇게
+	 * 만든 것이라 옳은데, 그 대신 **위젯이 사라진 변경은 자산에 절대 반영되지 않는다.**
+	 * C++ 에서 `Text_Staff` 를 지워도 자산에는 그대로 남고, 이제 아무도 안 채우므로
+	 * WBP 에 구워 둔 미리보기 문구(`인원 2명`·`장소 임대료 2,400 / 일`)가 화면에 그대로
+	 * 나간다 — 코드에 없는 규칙이 화면에서만 살아 있는 상태가 된다.
+	 *
+	 * !! 🔴 파괴적이다 !! 이들의 디자이너 수정은 사라진다. 그래서 `FF.PrepHudUMG` 에
+	 * 섞지 않고 따로 부르게 뒀다. 나머지는 건드리지 않는다.
+	 */
+	void RebuildPrepHudStaffUmg()
+	{
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_REBUILD_BEGIN: 인력·점검·프로그램 패널·프로그램 카드·하단 바를 다시 굽는다. "
+				 "이들의 디자이너 수정은 사라진다."),
+			PrepLogPrefix);
+
+		ReplaceWidgetBlueprint(
+			PrepLogPrefix,
+			StaffPanelPackage,
+			PrepPanelsFolder,
+			*UFF_PrepPanelStaff::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildStaffPanel(Blueprint, Tree);
+			});
+
+		// 점검 패널의 견적 표에도 `장소 임대료` 줄이 남아 있다. 빌더는 이미 안 만드는데
+		// 자산에만 시체로 남아, 없어진 고정비를 화면이 계속 말한다.
+		// 선택 버튼 클래스가 있어야 만들 수 있으므로 못 얻으면 점검만 건너뛴다.
+		UClass* ChoiceButtonClass = LoadGeneratedClass(ChoiceButtonPackage);
+		if (ChoiceButtonClass)
+		{
+			ReplaceWidgetBlueprint(
+				PrepLogPrefix,
+				CheckPanelPackage,
+				PrepPanelsFolder,
+				*UFF_PrepPanelCheck::StaticClass(),
+				[ChoiceButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+				{
+					return BuildCheckPanel(Blueprint, Tree, *ChoiceButtonClass);
+				});
+		}
+		else
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: 선택 버튼 클래스를 얻지 못해 점검 패널은 그대로 뒀다 (%s). "
+					 "견적 표에 임대료 줄이 남는다."),
+				PrepLogPrefix, *ChoiceButtonPackage);
+		}
+
+		ReplaceWidgetBlueprint(
+			PrepLogPrefix,
+			ProgramCardPackage,
+			PrepFolder,
+			*UFF_PrepProgramCard::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildProgramCard(Blueprint, Tree);
+			});
+
+		ReplaceWidgetBlueprint(
+			PrepLogPrefix,
+			ProgramPanelPackage,
+			PrepPanelsFolder,
+			*UFF_PrepPanelProgram::StaticClass(),
+			[](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+			{
+				return BuildProgramPanel(Blueprint, Tree);
+			});
+
+		// 하단 바에도 상단 미납 칸(Box_Arrears)이 남아 있다. 탭 버튼 클래스가 있어야
+		// 만들 수 있으므로 못 얻으면 바만 건너뛴다 — 위 셋은 이미 처리됐다.
+		UClass* TabButtonClass = LoadGeneratedClass(TabButtonPackage);
+		if (TabButtonClass)
+		{
+			ReplaceWidgetBlueprint(
+				PrepLogPrefix,
+				BarPackage,
+				SharedBuildFolder,
+				*UFF_PrepHudBar::StaticClass(),
+				[TabButtonClass](UWidgetBlueprint& Blueprint, UWidgetTree& Tree)
+				{
+					return BuildBar(Blueprint, Tree, *TabButtonClass);
+				});
+		}
+		else
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error,
+				TEXT("%s_REBUILD_FAIL: 탭 버튼 클래스를 얻지 못해 하단 바는 그대로 뒀다 (%s). "
+					 "상단 미납 칸이 남는다."),
+				PrepLogPrefix, *TabButtonPackage);
+		}
+
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_REBUILD_END: 임대료·미납·알바·필요 인력 칸이 자산에서 빠졌다."),
+			PrepLogPrefix);
+	}
+
 	FAutoConsoleCommand PrepHudUmgCommand(
 		TEXT("FF.PrepHudUMG"),
 		TEXT("준비 단계 HUD 의 WBP 10종"
 			 "(탭 버튼·자리표시·인력·선택 버튼·점검·프로그램 카드/패널·홍보 카드/패널·하단 바)을 만든다. "
 			 "이미 있으면 건드리지 않는다."),
 		FConsoleCommandDelegate::CreateStatic(&RunPrepHudUmg));
+
+	FAutoConsoleCommand RebuildPrepHudStaffUmgCommand(
+		TEXT("FF.RebuildPrepHudStaffUI"),
+		TEXT("인력·점검·프로그램 패널·프로그램 카드·하단 바를 다시 굽는다. "
+			 "Staff 가 영구 고용이 되고 임대료가 없어지면서 자산에만 남은 칸을 걷어낸다. "
+			 "🔴 이들의 디자이너 수정은 사라진다."),
+		FConsoleCommandDelegate::CreateStatic(&RebuildPrepHudStaffUmg));
 }
 
 #undef LOCTEXT_NAMESPACE

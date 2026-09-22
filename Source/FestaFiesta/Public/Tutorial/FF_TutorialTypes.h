@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/Texture2D.h"
 #include "FF_TutorialTypes.generated.h"
 
 // 튜토리얼과 대화 관련 타입.
@@ -28,6 +29,24 @@ enum class EFF_DialogueLineKind : uint8
 
 	// 화면 전환, 암전 같은 연출. 대사 없이 지나간다.
 	Direction       UMETA(DisplayName = "연출")
+};
+
+/* 대사를 넘기려면 어디를 눌러야 하는가.
+
+   비주얼 노벨은 화면 아무 데나 눌러 넘기는 게 기본이다. 그런데 운영 화면 위에서
+   그렇게 하면 시설을 고르려고 누른 것까지 대사 넘기기로 먹힌다.
+
+   그래서 줄마다 정한다. 스토리 구간은 어디나, 운영 구간은 대사창만.
+   "어디를 눌렀나" 로 결과가 갈리게 두면 플레이어가 예측할 수 없다.
+*/
+UENUM(BlueprintType)
+enum class EFF_DialogueClickArea : uint8
+{
+	// 화면 전체. 스토리 구간에 쓴다.
+	FullScreen  UMETA(DisplayName = "화면 전체"),
+
+	// 대사창 안에서만. 운영 화면 위에 대사가 뜰 때 쓴다.
+	BoxOnly     UMETA(DisplayName = "대사창만")
 };
 
 // 무엇을 기다리는가.
@@ -110,12 +129,45 @@ struct FFF_DialogueLine
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	EFF_TutorialWaitCondition WaitCondition = EFF_TutorialWaitCondition::None;
 
+	/* 이 줄에서 보여줄 배경 그림.
+
+	   비어 있으면 배경을 바꾸지 않는다. 앞 줄의 그림이 그대로 남는다.
+	   줄마다 적지 않아도 되게 하려는 것이다. 한 장면이 여러 줄로 이어질 때
+	   같은 그림을 매 줄에 적으면 나중에 바꿀 때 전부 고쳐야 한다.
+
+	   비우고 싶으면 None 이라고 적는다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	TSoftObjectPtr<UTexture2D> BackgroundImage;
+
+	// 배경을 지울지. BackgroundImage 가 비어 있고 이 값이 참이면 배경이 사라진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	bool bClearBackground = false;
+
+	/* 어느 탭이 열리기를 기다리는가. PrepTabOpened 일 때만 쓴다.
+
+	   조건과 따로 두는 이유는, 조건 열거형에 탭 종류를 전부 넣으면 값이 여섯 개 늘어서다.
+	   무엇을 기다리는지와 어느 것을 기다리는지는 다른 질문이다.
+
+	   비어 있으면 아무 탭이나 열리면 통과한다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
+	FName ExpectedTab;
+
 	// 어디를 가리킬지. 비어 있으면 강조하지 않는다.
 	//
 	// 위젯을 직접 참조하지 않고 이름으로 두는 이유는, 데이터가 UI 구조를 몰라야
 	// UI 를 바꿔도 대사가 안 깨지기 때문이다. 실제 연결은 실행 중에 등록받는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FName HighlightAnchor;
+
+	/* 이 줄을 넘기려면 어디를 눌러야 하는가.
+
+	   기본이 화면 전체인 이유는 대사의 대부분이 스토리라서다.
+	   운영 화면이 함께 보이는 구간에서만 대사창으로 좁힌다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	EFF_DialogueClickArea ClickArea = EFF_DialogueClickArea::FullScreen;
 
 	// 이 줄을 건너뛸 수 있는가.
 	//

@@ -23,12 +23,10 @@ struct FESTAFIESTA_API FFF_ProgramScheduleRules
 	 * 이 프로그램을 오늘 편성할 수 있는가.
 	 *
 	 * 판정 순서
-	 * ① 카드 존재·유효 → ② 오늘 중복 → ③ 인원 → ④ 잔액.
+	 * ① 카드 존재·유효 → ② 오늘 중복 → ③ 잔액.
 	 *
-	 * **인원을 잔액보다 먼저 본다.** 둘 다 부족할 때 플레이어가 할 수 있는 행동이 다르다 —
-	 * 인원은 알바 고용으로 풀린다. 더 가까운 행동을 먼저 알려 준다.
-	 *
-	 * @param AvailableStaffCount 전체 인원에서 이미 다른 프로그램에 묶인 인원을 뺀 값
+	 * [주의] 인원은 보지 않는다. 프로그램은 Staff 를 쓰지 않는다 — Staff 는 사건 대응 축이고
+	 *        프로그램은 Gold 로만 산다. 두 축을 엮으면 사건 대응 여력이 편성에 끌려간다.
 	 * @param OutCard 성공·실패와 무관하게, 카드를 찾았으면 채워진다(UI 가 비용을 다시 조회하지 않게)
 	 */
 	static EFF_ProgramPurchaseResult EvaluatePurchase(
@@ -36,12 +34,7 @@ struct FESTAFIESTA_API FFF_ProgramScheduleRules
 		FName ProgramId,
 		const TArray<FName>& ScheduledToday,
 		int32 CurrentGold,
-		int32 AvailableStaffCount,
 		FFF_ProgramCard& OutCard);
-
-	// 편성된 카드들이 묶고 있는 인원 합. 없는 카드는 0 으로 친다.
-	static int32 CalcStaffAssignedToPrograms(
-		const TArray<FFF_ProgramCard>& Catalog, const TArray<FName>& ScheduledToday);
 
 	// 참가 인원에 대한 그날 체험비 매출. 정원을 넘겨 받아도 정원에서 자른다.
 	static int32 CalcProgramRevenue(const FFF_ProgramCard& Card, int32 AttendeeCount);

@@ -40,7 +40,6 @@ namespace FFF_PromotionPurchaseTestHelpers
 
 			Definition->FestivalId = TEXT("PromotionAutomationFestival");
 			Definition->InitialGold = Gold;
-			Definition->DailyVenueRentGold = 0;
 			Definition->BaseDailyVisitors = BaseVisitors;
 
 			Progression->StartFestival(Definition);
@@ -217,6 +216,10 @@ bool FFF_Promotion_RestartClearsPromotion::RunTest(const FString& Parameters)
 
 	return true;
 }
+
+// 이벤트가 실제로 나가는지는 FF_CrowdEconomyBridgeSubsystemTests.cpp 의
+// RestartResetsExpectedVisitors 가 본다 — 이 델리게이트들은 전부 Dynamic(Blueprint용)이라
+// 여기서는 AddLambda 로 못 걸고, Crowd 브리지가 이미 실제 UFUNCTION 구독자로 존재한다.
 
 // 순수 계산 — 내림하고, 배수 1.0 미만은 1.0 으로 본다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Promotion_VisitorCalcRoundsDown, "FestaFiesta.Economy.Promotion.VisitorCalcRoundsDown", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)

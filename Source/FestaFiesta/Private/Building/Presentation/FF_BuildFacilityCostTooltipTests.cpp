@@ -22,15 +22,15 @@
 namespace
 {
 	const TCHAR* TooltipPackagePath =
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Tooltips/WBP_FF_BuildFacilityCostTooltip");
 	const TCHAR* TooltipObjectPath =
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
 			"WBP_FF_BuildFacilityCostTooltip");
 	const TCHAR* TooltipClassPath =
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
 			"WBP_FF_BuildFacilityCostTooltip_C");
 	const TCHAR* FacilityCardClassPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard."
 			"WBP_FF_BuildFacilityCard_C");
 
 	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
@@ -67,7 +67,7 @@ bool FFF_BuildFacilityCostTooltipAssetContractTest::RunTest(const FString& Param
 	(void)Parameters;
 
 	TestFalse(TEXT("The tooltip lives outside the team-owned Zone/UI/Building path"),
-		FString(TooltipPackagePath).StartsWith(TEXT("/Game/FestaFiesta/Zone/UI/Building")));
+		FString(TooltipPackagePath).StartsWith(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy")));
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, TooltipObjectPath);
 	TestNotNull(TEXT("The independent editable tooltip WBP loads"), Blueprint);
 	if (!Blueprint)
@@ -213,6 +213,22 @@ bool FFF_BuildFacilityCostTooltipCardIntegrationTest::RunTest(const FString& Par
 	TestEqual(TEXT("A resolved zero-percent recovery rate is displayed as zero Gold"),
 		AttachedTooltip->GetDisplayedRecoveryCostText().ToString(),
 		FString(TEXT("0 Gold")));
+
+	Entry.InstallCost = 0;
+	Card->Configure(Entry);
+	TestTrue(TEXT("The card tooltip recognizes a resolved free installation"),
+		AttachedTooltip->HasResolvedInstallCost());
+	TestEqual(TEXT("The card-attached WBP displays a resolved free installation as zero Gold"),
+		AttachedTooltip->GetDisplayedInstallCostText().ToString(),
+		FString(TEXT("0 Gold")));
+
+	Entry.InstallCost = -1;
+	Card->Configure(Entry);
+	TestFalse(TEXT("A negative price is invalid even with a resolved flag"),
+		AttachedTooltip->HasResolvedInstallCost());
+	TestEqual(TEXT("A negative price replaces the previous free price with unavailable text"),
+		AttachedTooltip->GetDisplayedInstallCostText().ToString(),
+		FString(TEXT("가격 정보 없음")));
 
 	Entry.InstallCost = 0;
 	Entry.bHasResolvedInstallCost = false;

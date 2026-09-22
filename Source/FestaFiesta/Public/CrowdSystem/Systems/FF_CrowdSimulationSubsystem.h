@@ -26,6 +26,7 @@
 class AFF_BaseCrowd;
 class UDataTable;
 class UFFZSWorldSubsystem;
+struct FFFZSAudienceSnapshot;
 
 // 개체 하나가 레인의 어디를 어디까지 타고 있는가. 디버그 표시와 콘솔 전용이다.
 //
@@ -98,6 +99,11 @@ struct FESTAFIESTA_API FFF_CrowdFlowBreakdown
 //        -> PushPresentationToActors     (바인딩된 Actor에만 결과 전달)
 //
 // Actor는 시뮬레이션에 참여하지 않고 계산이 끝난 위치·회전·속도를 받기만 한다.
+
+// 방문객이 실제로 입장(스폰)했음을 알린다. 개인 단위가 아니라 한 번의 DrainVisitorUntil 호출에서
+// 스폰된 인원 수를 묶어서 보낸다 — 경제의 입장료 연결용. 스폰 로직 자체엔 관여하지 않는다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnVisitorsAdmitted, int32, AdmittedCount);
+
 UCLASS()
 class FESTAFIESTA_API UFF_CrowdSimulationSubsystem : public UTickableWorldSubsystem
 {
@@ -126,11 +132,22 @@ public:
 	void InitializeCrowdAgentPool(UWorld& InWorld, FVector AgentPoolLocation);
 
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
-	void InitializeSimulation(FVector NewOrigin, float NewRadiusUU,
+	void InitializeSimulation(FVector NewOrigin,
 		int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass);
 
+	// 분석 격자 범위를 NavMesh 경계에서 뽑는다. 시뮬레이션 반경 개념은 없다
 	UFUNCTION(BlueprintCallable, Category = "Crowd")
-	void ConfigureSimArea(FVector NewOrigin, float NewRadiusUU);
+	void ConfigureSimArea(FVector NewOrigin);
+
+	// NavMesh가 없는 맵·테스트에서 격자 범위를 직접 지정한다. 넘긴 상자는 이후 재구축에서도 유지된다.
+	void ConfigureSimAreaWithBounds(FVector NewOrigin, const FBox& AreaBoundsCm);
+
+	// 위 둘을 묶은 편의 함수. NavMesh를 깔 수 없는 테스트 월드에서 쓴다
+	void InitializeSimulationWithBounds(FVector NewOrigin, const FBox& AreaBoundsCm,
+		int32 NewActorPoolSize, int32 NewAgentPoolSize, TSubclassOf<AFF_BaseCrowd> InCrowdActorClass);
+
+	// 분석 격자(밀도·높이)가 덮는 범위, cm. 유효하지 않으면 격자가 서지 않았다는 뜻이다.
+	const FBox& GetSimAreaBounds() const { return SimAreaBoundsCm; }
 
 	// 게이트를 등록한다. InitializeSimulation 직후 1회만 부르며, 재검증하면 인덱스가 밀려 소속이 바뀐다.
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Gate")
@@ -312,6 +329,116 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Crowd|Decision")
 	int32 RequestRedecisionForIdleParties(int32 MaxParties = 0);
 
+	/** 메인 공연장의 Audience 정원만큼 적격 파티를 Utility를 거치지 않고 직접 집결시킨다. */
+	int32 GatherPartiesToMainStageAudience();
+
+	/**
+	 * 집결을 검토하기 시작하는 시점(공연 시각 이만큼 전, Live 초 = 축제 분).
+	 *
+	 * 실제 출발 시각은 파티마다 다르다 — 아래 `AudienceTravelSlack` 로 자기 이동시간을
+	 * 환산해서 **늦지 않을 만큼만 일찍** 떠난다. 이 값은 그 판정을 시작하는 바깥 창일 뿐이라
+	 * 넉넉히 잡아도 가까운 손님이 일찍 끌려가지 않는다.
+	 *
+	 * ★ 배속 잠금(`MainProgramLockLeadSeconds`)과 다른 값이다. 잠금은 플레이어가 공연을
+	 *   1배속으로 보게 하는 구간이고, 이 값은 군중 동선의 창이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float AudienceGatherLeadSeconds = 180.f;
+
+	/**
+	 * 직선거리 이동시간에 곱하는 여유 배수. 실제 경로는 시설을 우회하고 군중에 막혀 느리다.
+	 * 1.0 이면 직선거리 그대로라 대부분 지각한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "1.0"))
+	float AudienceTravelSlack = 1.6f;
+
+	/** 이동시간 환산과 별개로 붙이는 고정 여유(초). 자리 배정·경로 재계산 지연을 흡수한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float AudienceGatherSafetySeconds = 10.f;
+
+	/**
+	 * 집결 구간 동안 이 주기로 다시 훑는다. 한 번만 부르면 그 뒤에 입장한 손님과
+	 * 그때 줄에 있어서 빠진 손님이 영영 안 온다 — 입장은 Live 내내 이어진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.5"))
+	float AudienceGatherIntervalSeconds = 5.f;
+
+	/**
+	 * 좌석·대기 슬롯 좌표에 정확히 못 닿고 막혔을 때 이 거리 안이면 그 자리에 선다.
+	 *
+	 * 밀집 관람에서는 이미 앉은 사람들의 회피력 때문에 뒤에 온 사람이 지정 좌표까지
+	 * 못 들어간다. 이게 없으면 자리 앞에서 영원히 밀고 있고(관람 잠금 중에는 목적지 포기도
+	 * 꺼져 있다) 관람객 수가 늘지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0"))
+	float ScheduledSettleRadiusUU = 300.f;
+
+	/**
+	 * 관람 중인 개체의 사회력(개인 공간) 배수. 1.0 이면 평소와 같다.
+	 *
+	 * 공연 관람은 서로 어깨가 닿을 만큼 붙어 서는 상황이라, 통로 보행용 개인 공간을
+	 * 그대로 쓰면 자리가 아무리 많아도 블록이 안 채워진다 — 뒤에 온 사람이 앞사람의
+	 * 반발에 밀려 자기 좌석에 못 들어간다.
+	 *
+	 * ★ 줄어드는 것은 **심리적 거리(Social)** 뿐이다. 겹침 방지(Contact)와 벽 반발은
+	 *   그대로라 몸이 관통하거나 무대 안으로 들어가지 않는다.
+	 * ★ 0 으로 두면 탈출(unstuck) 가속까지 꺼져 완전히 정지한다. 밀집 연출에는 맞지만
+	 *   진짜로 낀 개체도 못 빠져나온다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AudienceSocialForceScale = 0.25f;
+
+	/**
+	 * 약속된 장소(관람 좌석·유료 프로그램 대기 슬롯)로 가는 동안의 보행 속도 배수.
+	 *
+	 * 실측에서 공연 시각의 관객이 좌석까지 평균 124m·최대 230m 남아 있었다. 기본 1.5 m/s 로는
+	 * 230m 에 153초가 걸리는데 공연까지 남은 시간은 그 절반도 안 된다 — 방문객 입장 곡선상
+	 * 대부분이 공연 40초 전에는 아직 스폰되지도 않았다. 리드타임만으로는 못 메운다.
+	 *
+	 * 공연을 보러 뛰어가는 것은 실제 축제에서도 나오는 행동이라 연출로도 맞다.
+	 * 1.0 이면 이 기능이 꺼진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "1.0"))
+	float ScheduledHurrySpeedMultiplier = 2.f;
+
+	/** 좌석으로 걸어가는 동안의 사회력 배수. 착석분보다는 높게 둬야 서로 뚫고 들어가지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Audience", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float AudienceApproachSocialForceScale = 0.5f;
+
+	// 이 시설에 지금 잡혀 있는 관람 좌석 수. 진단 전용이다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	int32 GetOccupiedAudienceSlotCount(FGuid FacilityInstanceId) const;
+
+	// 관람 상태에 묶여 있는 파티 수.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	int32 GetAudiencePartyCount() const;
+
+	// 도착 불가로 돌려받은 좌석 수(파티 단위, 누적).
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	int32 GetAudienceSeatsReclaimed() const { return AudienceSeatsReclaimed; }
+
+	// 집결 구간인가. 잠금 진입(공연 시각 - 리드타임)부터 공연 종료까지 true 다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	bool IsMainProgramAudienceActive() const { return bMainProgramAudienceActive; }
+
+	// 공연이 실제로 시작했는가. 관람 도착이 Waiting 으로 갈지 Spectating 으로 갈지를 가른다.
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	bool IsMainProgramShowStarted() const { return bMainProgramShowStarted; }
+
+	/**
+	 * 약속된 장소에 묶인 파티 수. 관람과 유료 프로그램을 나눠 센다.
+	 *
+	 * `걷는 중` 과 `도착` 을 가르는 것이 핵심이다 — 배정만 되고 못 닿는 상태를
+	 * 배정 수만 보면 성공으로 오인한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Crowd|Audience")
+	void GetScheduledPhaseCounts(int32& OutAudienceSeated, int32& OutAudienceWalking,
+		int32& OutProgramAtVenue, int32& OutProgramWalking) const;
+
+	// 집결 시도 / 집결 파티 / 정원 부족 거절 / 스냅샷 실패 / 예약 우선 제외.
+	void GetAudienceStats(int32& OutAttempts, int32& OutGatheredParties, int32& OutGatheredMembers,
+		int32& OutCapacityRejects, int32& OutSnapshotFailures, int32& OutProgramConflicts) const;
+
 	UFUNCTION(BlueprintPure, Category = "Crowd|Decision")
 	int32 GetPendingDecisionCount() const { return DecisionQueue.Num(); }
 
@@ -457,13 +584,9 @@ public:
 	// Agent <-> Actor 슬롯 바인딩 장부. 실제 Actor 조작은 이 클래스가 하고, 장부만 여기 위임한다
 	FCrowdActorPoolBinding PoolBinding;
 
-	// 시뮬레이션/밀도 그리드가 덮는 영역의 중심, 월드 좌표
+	// 축제장 기준점, 월드 좌표. 통행 상한 Z와 임시 퇴장 지점의 기준면이다
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
 	FVector SimOrigin = FVector::ZeroVector;
-
-	// SimOrigin 기준 반경. 밀도 그리드는 이 반경을 감싸는 정사각형으로 만들어진다
-	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
-	float SimRadiusUU = 1000000.f;
 
 	// 목적지에 이만큼 가까워지면 도착으로 본다(접근점·배회 목적지 기준), UU.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Sim")
@@ -482,6 +605,10 @@ public:
 	float WanderArrivalRadiusUU = 400.f;
 	
 	int32 ArrivalRequestedVisitorCount = 0;
+
+	// 외부(경제)가 채워주는 값. INDEX_NONE 이 아니면 다음 Live 진입부터 ArrivalRequestedVisitorCount
+	// 대신 이 값을 쓴다 — Crowd는 이 값의 출처를 모른다, 누가 채우든 상관없는 순수 입력 슬롯이다.
+	int32 ExpectedVisitorCountOverride = INDEX_NONE;
 
 	// 같은 파티가 '도착'으로 다시 결정하기까지의 최소 간격, 초. 0이면 끈다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim", meta = (ClampMin = "0.0"))
@@ -522,10 +649,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	FFF_CrowdAvoidanceConfig AvoidanceConfig;
 
-	// 시뮬 사각 경계(SimOrigin ± SimRadiusUU) 4벽을 벽 반발의 대상으로 넣는다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
-	bool bAvoidanceUseBoundaryWalls = true;
-
 	// 시설(부스·무대·화장실 등) footprint를 벽 반발의 대상으로 넣는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Avoidance")
 	bool bAvoidanceUseFacilityWalls = true;
@@ -546,11 +669,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldSpacingUU = 500.f;
 
-	// 격자를 NavMesh 경계에 맞춘다. 끄면 SimRadius 밖이 가장자리 높이로 클램프된다
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
-	bool bHeightFieldFitToNavBounds = true;
-
-	// 격자 반경(UU). 0이면 SimRadiusUU. bHeightFieldFitToNavBounds가 이긴다
+	// 높이 격자만 따로 좁힐 때 쓰는 반폭(UU). 0이면 분석 격자 범위(NavMesh 경계)를 그대로 쓴다
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Terrain")
 	float HeightFieldRadiusUU = 0.f;
 
@@ -673,7 +792,7 @@ public:
 	// 이 안에 레인이 있는 개체만 순회로 뽑는다. LaneEntrySnapRadiusCm보다 좁게 잡는 이유는,
 	// 넓히면 도로에서 먼 개체까지 레인으로 끌려가 직선으로 걸어오기 때문이다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "0.0", Units = "cm"))
-	float PatrolLaneSnapRadiusCm = 800.f;
+	float PatrolLaneSnapRadiusCm = 1000.f;
 
 	// 목적지가 현재 호 위치에서 이보다 가깝지 않은 후보만 쓴다. 세그먼트 끝에 이미 서 있는
 	// 개체가 같은 끝을 다시 목적지로 받아 제자리 재결정을 반복하는 것을 여기서 끊는다.
@@ -683,6 +802,26 @@ public:
 	// 닫힌 레인에는 끝이 없으므로 전진 거리를 값으로 준다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane", meta = (ClampMin = "100.0", Units = "cm"))
 	float PatrolLoopStepCm = 4000.f;
+
+	// 배회·순회 목적지를 Zone 안으로 제한한다. 끄면 봉쇄가 NavMesh 통행성 하나만 남는다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Sim")
+	bool bConfineWanderToZones = true;
+
+	// 원판 배회. 끄면 레인 순회만 남고, 레인에서 먼 개체는 목적지를 못 받아 제자리에 선다
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Crowd|Lane")
+	bool bEnableDiscWander = false;
+
+	// 배회 목적지를 못 내 제자리를 돌려준 횟수. 원판을 끄기 전후로 이 값을 비교할 것
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetWanderStalls() const { return WanderStalls; }
+
+	// Zone 밖이라 기각한 배회·순회 후보 수. 0이면 봉쇄가 한 번도 안 걸린 것이다
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetWanderZoneRejects() const { return WanderZoneRejects; }
+
+	// 이미 Zone 밖에 있던 파티를 축제장 쪽으로 되돌린 횟수
+	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
+	int32 GetWanderContainmentNudges() const { return WanderContainmentNudges; }
 
 	// 순회로 목적지를 뽑은 횟수. 원판 배회와의 비율이 도로가 실제로 먹는지를 말해 준다.
 	UFUNCTION(BlueprintPure, Category = "Crowd|Lane")
@@ -904,8 +1043,20 @@ public:
 		const TArray<FFF_ReservedPartyRequest>& ReservedParties = TArray<FFF_ReservedPartyRequest>());
 	
 	int32 DrainVisitorUntil(int32 TargetCumulativeCount);
-	
+
 	void UpdateArrivalSchedule();
+
+	// 방문객이 입장할 때마다(이번 Drain 호출에서 스폰된 인원 수) 알린다. 경제의 입장료 연결용.
+	UPROPERTY(BlueprintAssignable, Category = "Crowd|Arrival")
+	FOnVisitorsAdmitted OnVisitorsAdmitted;
+
+	// 다음 Live 진입부터 쓸 방문객 수를 외부에서 채운다(홍보 배수 반영용). INDEX_NONE 이면
+	// 기존 캐시값을 그대로 쓴다 — 아무도 안 채우면 예전과 동작이 같다.
+	UFUNCTION(BlueprintCallable, Category = "Crowd|Arrival")
+	void SetExpectedVisitorCountOverride(int32 NewCount) { ExpectedVisitorCountOverride = NewCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Arrival")
+	int32 GetExpectedVisitorCountOverride() const { return ExpectedVisitorCountOverride; }
 
 private:
 
@@ -963,6 +1114,12 @@ private:
 	UFUNCTION()
 	void HandleRoadSupportSnapshotRestored();
 
+	// 분석 격자 범위를 NavMesh 경계에서 뽑는다. 직접 지정된 범위가 있으면 그것이 이긴다
+	bool ResolveSimAreaBounds(FBox& OutBoundsCm) const;
+
+	void ApplySimArea(FVector NewOrigin, const FBox& AreaBoundsCm);
+
+	void RebuildDensityGrid();
 	void RebuildHeightField();
 	void RebuildAvoidanceWalls();
 
@@ -975,6 +1132,10 @@ private:
 	FVector PickWanderDestination(int32 LeaderAgentIndex) const;
 
 	bool TryPickPatrolDestination(int32 LeaderAgentIndex, uint32 BaseSeed, FVector& OutDestination) const;
+
+	bool IsInsideFestivalBounds(const FVector& WorldPointCm) const;
+
+	FVector MakeContainmentDestination(const FVector& FromPositionCm) const;
 
 	void RebuildCombinedLanes();
 
@@ -1000,6 +1161,33 @@ private:
 	bool UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
 
 	bool AdvancePartyQueueOnArrival(int32 LeaderAgentIndex);
+
+	// Audience가 활성화된 공연장 도착을 FIFO Queue보다 먼저 처리한다.
+	bool HandleAudienceArrival(int32 LeaderAgentIndex);
+	// 집결 구간이 끝나고 공연이 시작하는 순간 착석한 파티를 관람으로 넘긴다.
+	void UpdateAudienceShowState();
+	// 집결을 시작한다. 잠금 신호보다 먼저 올 수 있어 멱등하게 둔다.
+	void BeginMainStageGathering(float ShowStartSeconds);
+	// 공연이 끝나기 전에 못 닿는 파티의 좌석을 돌려놓는다. 반환값은 회수한 파티 수다.
+	int32 ReclaimUnreachableAudienceSeats();
+	bool BeginAudienceVisit(int32 LeaderAgentIndex, const FGuid& FacilityId,
+		const FFFZSAudienceSnapshot& Snapshot);
+	// 파티원 각자에게 좌석 좌표를 물린다. 한 자리라도 못 받으면 전부 되돌리고 false 다.
+	bool AssignAudienceSeats(int32 LeaderAgentIndex, const FFFZSAudienceSnapshot& Snapshot,
+		const TArray<int32>& Members);
+	// 관람 파티가 지금 어느 단계에 몇이나 있는가. 집결이 실제로 도착까지 갔는지 보는 유일한 창구다.
+	void LogAudiencePhaseBreakdown(const TCHAR* Reason) const;
+	bool AllocateAudienceSlots(const FGuid& FacilityId, int32 RequiredSlots, int32 Capacity,
+		int32& OutFirstSlotIndex);
+	void ReleaseAudienceParty(int32 LeaderAgentIndex, bool bMoveToExit);
+	void ReleaseAllAudienceParties(bool bMoveToExit);
+	bool IsAudienceLocked(const FPartyDecisionState& State) const;
+	// 유료 프로그램 약속이 남아 있는가. 관람 집결이 예약자를 가로채지 못하게 막는다.
+	bool HasPendingProgramObligation(int32 LeaderAgentIndex) const;
+	bool FindMainStageAudience(FGuid& OutFacilityId, FFFZSAudienceSnapshot& OutSnapshot) const;
+
+	// 시설 접근점. ZoneSystem WorldRevision 이 바뀔 때만 다시 짓는다.
+	bool TryGetProgramApproachLocation(const FGuid& FacilityInstanceId, FVector& OutApproach);
 
 	// 매 고정 스텝에서 예약 파티의 복귀 마감·참여 시작·종료를 검사하고 상태를 전환한다.
 	void UpdateProgramReservationStates();
@@ -1128,6 +1316,12 @@ private:
 	// 혼잡도 계측용 밀도 그리드
 	FCrowdDensityGrid DensityGrid;
 
+	// 분석 격자가 덮는 범위(cm). NavMesh 경계에서 뽑거나 ConfigureSimAreaWithBounds로 직접 받는다
+	FBox SimAreaBoundsCm = FBox(ForceInit);
+
+	// 직접 받은 범위인가. true면 NavMesh 경계로 덮어쓰지 않는다
+	bool bSimAreaBoundsOverridden = false;
+
 	// 결정·UI가 읽는 사본. 발행 주기 사이에는 값이 그대로 남아 있다
 	FFF_CrowdReadModel CrowdReadModel;
 
@@ -1148,6 +1342,8 @@ private:
 
 	// 이번 스텝의 희망 속도(m/s). 구동력을 쓰는 스텝에만 채운다 — 비면 솔버가 구동력을 건너뛴다
 	TArray<FVector2f> ScratchDesiredVel2DMeters;
+	// 개체별 사회력 배수. 관람 단계에 따라 매 스텝 채운다.
+	TArray<float> ScratchSocialScale;
 
 	// 활성 개체의 조밀 인덱스. 오름차순으로 채운다 — 힘 합산 순서가 결정성의 전제다
 	TArray<int32> ScratchActiveIds;
@@ -1163,7 +1359,7 @@ private:
 	// 이웃 버퍼를 청크별로 들고 있으므로 스텝 간 재사용을 위해 멤버로 둔다
 	FFF_CrowdForceSolver ForceSolver;
 
-	// 경계 4벽(m). ConfigureSimArea에서 갱신된다
+	// 벽 반발 대상 선분(m). 시설 footprint만 들어간다 — 시뮬 경계 벽은 존재하지 않는다
 	TArray<FFF_CrowdWallSegment> AvoidanceWalls;
 
 	// AvoidanceWalls를 마지막으로 지은 시점의 ZoneSystem WorldRevision.
@@ -1176,7 +1372,6 @@ private:
 	bool bFacilityWallsSawZoneSystem = true;
 
 	// 마지막 재구축이 어떤 손잡이 값으로 지어졌는지.
-	bool bBuiltWithBoundaryWalls = false;
 	bool bBuiltWithFacilityWalls = false;
 	bool bBuiltWithClearance = false;
 
@@ -1221,6 +1416,14 @@ private:
 
 	mutable int32 PatrolWanderCount = 0;
 	mutable int32 DiscWanderCount = 0;
+	mutable int32 WanderZoneRejects = 0;
+	mutable int32 WanderContainmentNudges = 0;
+	mutable int32 WanderStalls = 0;
+
+	// "이 월드에 Zone 이 있는가"만 WorldRevision 을 키로 캐시한다. 등록 목록 조회가 TArray를 할당해서다
+	mutable TWeakObjectPtr<UFFZSWorldSubsystem> WanderBoundsSystem;
+	mutable int64 WanderBoundsRevision = -1;
+	mutable bool bWanderBoundsActive = false;
 
 	// --- 지형 ------------------------------------------------------------------------------
 
@@ -1335,6 +1538,33 @@ private:
 	TArray<int32> DecisionQueue;
 	
 	TMap<FName, int32> InTransitMemberCounts;
+
+	// 시설별 점유 좌석. 좌석 API는 예약을 소유하지 않으므로 Crowd가 수명과 중복을 관리한다.
+	TMap<FGuid, TSet<int32>> OccupiedAudienceSlots;
+	TSet<FGuid> MissingProgramApproachWarnings;
+	TMap<FGuid, FVector> CachedProgramApproachByFacility;
+	int64 ProgramApproachCacheRevision = -1;
+	bool bMainProgramAudienceActive = false;
+
+	// 리드타임 구간(집결 중)과 공연 중을 가른다. Stage 시계로 매 스텝 판정한다 —
+	// 시작 전용 델리게이트를 새로 만들면 구독자마다 두 신호의 순서를 또 맞춰야 한다.
+	bool bMainProgramShowStarted = false;
+	float MainProgramStartLiveSeconds = 0.f;
+	float MainProgramEndLiveSeconds = 0.f;
+	float NextAudienceGatherSimTime = 0.f;
+	// 무대가 없는 맵에서 5초마다 같은 경고를 찍지 않는다. 집결 창마다 한 번이면 충분하다.
+	bool bWarnedMissingAudienceThisShow = false;
+	FName ActiveMainStageEventLabel = NAME_None;
+
+	int32 AudienceGatherAttempts = 0;
+	int32 AudienceGatheredParties = 0;
+	int32 AudienceGatheredMembers = 0;
+	int32 AudienceCapacityRejects = 0;
+	int32 AudienceSnapshotFailures = 0;
+	int32 AudienceProgramConflictSkips = 0;
+	int32 AudienceSettledInPlace = 0;
+	int32 ProgramSettledInPlace = 0;
+	int32 AudienceSeatsReclaimed = 0;
 	
 	
 	
@@ -1347,4 +1577,10 @@ private:
 
 	UFUNCTION()
 	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage CurrentStage);
+
+	UFUNCTION()
+	void HandleMainProgramStarted(FString EventLabel);
+
+	UFUNCTION()
+	void HandleMainProgramEnded(FString EventLabel);
 };

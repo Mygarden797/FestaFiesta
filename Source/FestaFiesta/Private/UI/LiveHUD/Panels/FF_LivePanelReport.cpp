@@ -66,7 +66,6 @@ void UFF_LivePanelReport::BindViewModel()
 	CachedViewModel->OnGoldChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-	CachedViewModel->OnArrearsChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnSimSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnScoreSatisfactionChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 	CachedViewModel->OnSafetyChanged.AddUniqueDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
@@ -81,7 +80,6 @@ void UFF_LivePanelReport::UnbindViewModel()
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
-		CachedViewModel->OnArrearsChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnSimSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnScoreSatisfactionChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
 		CachedViewModel->OnSafetyChanged.RemoveDynamic(this, &UFF_LivePanelReport::HandleIntMetricChanged);
@@ -159,12 +157,6 @@ void UFF_LivePanelReport::RefreshAll()
 	SetTextOrHide(Text_TotalRevenue, FText::AsNumber(ViewModel->GetTotalRevenue()));
 	SetTextOrHide(Text_Gold, FText::AsNumber(ViewModel->GetGold()));
 
-	// 🔴 미납은 0 이면 숨긴다. `미납 0` 은 없는 문제를 있는 것처럼 만든다.
-	const int32 Arrears = ViewModel->GetArrears();
-	SetTextOrHide(Text_Arrears, (Arrears > 0)
-		? FText::Format(LOCTEXT("LiveReport_Arrears", "미납 {0}"), FText::AsNumber(Arrears))
-		: FText::GetEmpty());
-
 	// --- 평가 ---
 	const int32 Sim = ViewModel->GetSimSatisfaction();
 	const int32 Score = ViewModel->GetScoreSatisfaction();
@@ -184,11 +176,11 @@ void UFF_LivePanelReport::RefreshAll()
 
 	// --- 운영 ---
 	const int32 TotalStaff = ViewModel->GetTotalStaffCount();
-	const int32 TempStaff = ViewModel->GetTemporaryStaffCount();
-	SetTextOrHide(Text_Staff, (TotalStaff >= 0 && TempStaff >= 0)
+	const int32 HiredStaff = ViewModel->GetHiredStaffCount();
+	SetTextOrHide(Text_Staff, (TotalStaff >= 0 && HiredStaff >= 0)
 		? FText::Format(
-			LOCTEXT("LiveReport_Staff", "{0}명 (알바 {1})"),
-			FText::AsNumber(TotalStaff), FText::AsNumber(TempStaff))
+			LOCTEXT("LiveReport_Staff", "{0}명 (고용 {1})"),
+			FText::AsNumber(TotalStaff), FText::AsNumber(HiredStaff))
 		: FText::GetEmpty());
 
 	SetTextOrHide(Text_Programs, FText::Format(

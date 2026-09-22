@@ -78,7 +78,18 @@ bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameter
 
 	CostRow.InstallCost = 0;
 	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
-	TestFalse(TEXT("A non-positive price is not displayable"),
+	TestTrue(TEXT("An authored zero price is displayable"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	TestTrue(TEXT("A free facility has a valid resolved price"), Entry.HasValidInstallCost());
+	TestEqual(TEXT("A free facility projects zero Gold"), Entry.InstallCost, 0);
+	TestTrue(TEXT("A free facility has a resolved recovery price"), Entry.bHasResolvedRecoveryCost);
+	TestEqual(TEXT("A free facility refunds zero Gold"), Entry.RecoveryCost, 0);
+	TestEqual(TEXT("A free facility retains the authored row"),
+		Entry.MatchedInstallCostRow, FName(TEXT("Cost.Booth.FoodStall")));
+
+	CostRow.InstallCost = -1;
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
+	TestFalse(TEXT("A negative price is not displayable"),
 		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
 	TestFalse(TEXT("A failed projection clears the resolved flag"),
 		Entry.bHasResolvedInstallCost);
@@ -87,6 +98,17 @@ bool FFF_BuildCatalogInstallCostProjectionTest::RunTest(const FString& Parameter
 	TestEqual(TEXT("A failed projection clears the recovery cost"), Entry.RecoveryCost, 0);
 	TestEqual(TEXT("A failed projection never leaves a misleading zero-price row"),
 		Entry.MatchedInstallCostRow, NAME_None);
+	TestFalse(TEXT("A failed projection is not a valid free price"), Entry.HasValidInstallCost());
+
+	CostRow.InstallCost = 0;
+	CostTable->AddRow(TEXT("Cost.Booth.FoodStall"), CostRow);
+	TestTrue(TEXT("A corrected free price recovers without stale failure state"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	CostTable->EmptyTable();
+	TestFalse(TEXT("Removing the free row makes its price unavailable"),
+		FFBuildCatalogModel::ApplyFacilityCosts(Entry, Definition, CostTable, 0.5f, FailureReason));
+	TestFalse(TEXT("A missing row does not leave the old free price valid"), Entry.HasValidInstallCost());
+	TestFalse(TEXT("A missing row also invalidates its refund"), Entry.bHasResolvedRecoveryCost);
 	return true;
 }
 

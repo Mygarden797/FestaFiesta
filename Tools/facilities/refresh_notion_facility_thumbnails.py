@@ -22,7 +22,7 @@ from ffzs_asset_save_transaction import AssetSaveTransaction
 from ffzs_definition_source import require_unattended_commandlet
 
 
-TEXTURE_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/image"
+TEXTURE_DESTINATION = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"
 MANIFEST_RELATIVE = os.path.join(
     "Tools", "facilities", "notion_facility_examples.json"
 )

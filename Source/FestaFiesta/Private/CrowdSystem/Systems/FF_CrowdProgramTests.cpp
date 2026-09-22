@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -6,6 +6,11 @@
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
+#include "FF_FFZSFacilityActor.h"
+#include "FF_FFZSAudienceLibrary.h"
+#include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSGridLibrary.h"
+#include "Zone/FF_ZoneSystemStageBridgeSubsystem.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -13,6 +18,7 @@
 #include "NPC/Party/FF_ProgramReservationReturnTrip.h"
 #include "Tests/AutomationCommon.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Tests/FF_FFZSTestFixtures.h"
 
 // 실제 상태 전이 함수를 호출한다. 테스트용 로직 복제는 하지 않는다.
 struct FFF_CrowdProgramTestAccess
@@ -38,6 +44,28 @@ struct FFF_CrowdProgramTestAccess
 	{ C.PartyLeaderByID.Add(C.UnitDatas[I].PartyID, I); }
 	static bool Deadline(UFF_CrowdSimulationSubsystem& C, int32 I, const FFF_ProgramReservation& R, float Now)
 	{ return C.TryBeginProgramReturnIfDue(I, R, FVector(1500, 0, 0), Now); }
+	static FVector Wander(UFF_CrowdSimulationSubsystem& C, int32 I) { return C.PickWanderDestination(I); }
+	static bool InBounds(const UFF_CrowdSimulationSubsystem& C, const FVector& P)
+	{ return C.IsInsideFestivalBounds(P); }
+	static bool Audience(UFF_CrowdSimulationSubsystem& C, int32 I, const FGuid& Facility,
+		const FFFZSAudienceSnapshot& Snapshot) { return C.BeginAudienceVisit(I, Facility, Snapshot); }
+	static bool AudienceArrive(UFF_CrowdSimulationSubsystem& C, int32 I)
+	{ return C.HandleAudienceArrival(I); }
+	static void EndMainAudience(UFF_CrowdSimulationSubsystem& C)
+	{ C.HandleMainProgramEnded(TEXT("TestShow")); }
+	// 집결 구간 진입. Stage 표 없이 리드타임 구간만 재현한다.
+	static void BeginGathering(UFF_CrowdSimulationSubsystem& C, float ShowStartSeconds)
+	{
+		C.bMainProgramAudienceActive = true;
+		C.bMainProgramShowStarted = false;
+		C.MainProgramStartLiveSeconds = ShowStartSeconds;
+	}
+	static void TickShowState(UFF_CrowdSimulationSubsystem& C) { C.UpdateAudienceShowState(); }
+	static void Step(UFF_CrowdSimulationSubsystem& C, float Dt) { C.StepSimulation(Dt); }
+	static void ClearQueue(UFF_CrowdSimulationSubsystem& C, int32 I, bool bLeave)
+	{ C.ClearPartyQueueState(I, bLeave); }
+	static int32 Reclaim(UFF_CrowdSimulationSubsystem& C, float ShowEndSeconds)
+	{ C.MainProgramEndLiveSeconds = ShowEndSeconds; return C.ReclaimUnreachableAudienceSeats(); }
 };
 
 struct FFF_CrowdProgramDecisionTestAccess
@@ -64,7 +92,7 @@ bool FFF_CrowdProgramLifecycle::RunTest(const FString& Parameters)
 	Stage->CurrentStage = EFF_FestivalStage::Live;
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
-	Crowd->InitializeSimulation(FVector::ZeroVector, 10000.f, 1, 4, AFF_BaseCrowd::StaticClass());
+	Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 1, 4, AFF_BaseCrowd::StaticClass());
 	const int32 Leader = Crowd->SpawnAgent(*World, FVector::ZeroVector, FRotator::ZeroRotator);
 	if (!TestTrue(TEXT("Leader spawned"), Leader != INDEX_NONE)) { return false; }
 	using Access = FFF_CrowdProgramTestAccess;
@@ -284,7 +312,7 @@ bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
 	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
 	auto* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
 	auto* Decision = World->GetSubsystem<UFF_CrowdDecisionSubsystem>();
-	Crowd->InitializeSimulation(FVector::ZeroVector, 10000.f, 1, 78, AFF_BaseCrowd::StaticClass());
+	Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 1, 78, AFF_BaseCrowd::StaticClass());
 	using Access = FFF_CrowdProgramTestAccess;
 	using Decisions = FFF_CrowdProgramDecisionTestAccess;
 	TArray<int32> Agents;
@@ -320,6 +348,7 @@ bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
 	});
 	TestFalse(TEXT("Standalone open gate is not global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
 	Decisions::EnterLive(*Decision);
+	TestTrue(TEXT("Main stage is open before the show"), Decision->IsMainStageOpen());
 	TestFalse(TEXT("Before main event global discovery is off"), Decision->IsGlobalMainStageDiscoveryActive());
 	Decisions::StartMain(*Decision);
 	TestTrue(TEXT("Main event enables global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
@@ -338,7 +367,288 @@ bool FFF_MainStageBroadcast::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Broadcast drained"), Crowd->GetPendingDecisionCount(), 0);
 	Decisions::EndMain(*Decision);
 	TestFalse(TEXT("Main end removes global discovery"), Decision->IsGlobalMainStageDiscoveryActive());
+	TestTrue(TEXT("Main stage remains open after the show"), Decision->IsMainStageOpen());
 	Crowd->OnPartyNeedsDecision.Unbind();
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAudienceLifecycle,
+	"FestaFiesta.Crowd.Audience.UsesIndividualSlotsWithoutFIFO",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAudienceLifecycle::RunTest(const FString& Parameters)
+{
+	// 설치 검증을 결정적으로 만든다. TGuardValue 라 조기 반환에서도 복원된다.
+	UFFZSDeveloperSettings* ZoneSettings = GetMutableDefault<UFFZSDeveloperSettings>();
+	TGuardValue<bool> GroundChecks(ZoneSettings->bEnableGroundChecks, false);
+	TGuardValue<bool> CollisionChecks(ZoneSettings->bEnableWorldCollisionChecks, false);
+	TGuardValue<bool> NavigationChecks(ZoneSettings->bEnableNavigationProjectionChecks, false);
+	TGuardValue<bool> ProductionPolicies(ZoneSettings->bRequireProductionPolicyDomains, false);
+	TGuardValue<EFFZSChangePhase> InitialPhase(ZoneSettings->InitialPhase, EFFZSChangePhase::InitialSetup);
+
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game)) { Fixture.ForwardErrorMessages(this); return false; }
+	UWorld* World = Fixture.GetTestWorld();
+	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
+	auto* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+	auto* Zone = World->SpawnActor<AFFZSGameplayZone>();
+	if (!TestNotNull(TEXT("Zones"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) return false;
+	if (!Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")) || !Zones->RegisterZone(Zone)) return false;
+
+	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::Performance);
+	Spec.FacilityDefinitionId = TEXT("Performance_MainStage_SunsetMainStage");
+	Spec.InstallCostKey = NAME_None;
+	Spec.Audience.bEnabled = true;
+	Spec.Audience.Columns = 2;
+	Spec.Audience.Rows = 1;
+	// 관람 영역은 건물 바닥·일반 Queue 예약 영역과 겹치면 설치가 거부된다.
+	// 이 fixture 의 Queue 는 +Y 로 21m 뻗으므로 좌석은 반대쪽에 둔다.
+	Spec.Audience.FirstSlotLocalCm = FVector(-60, -900, 0);
+	Spec.Audience.FocusLocalCm = FVector(0, 100, 200);
+	Spec.Audience.CenterAisleWidthCm = 0.f;
+	// 입퇴장 좌표는 저작 API 가 계산한다. 손으로 적으면 가장자리 통로 폭 규칙을 놓친다.
+	if (!TestTrue(TEXT("Audience portals are authored by the layout API"),
+		Spec.Audience.TryCenterAndArrangePortals())) return false;
+
+	// 설치는 권위 명령으로만 한다. InitializeFacility 는 ZoneSystem 내부 API 다.
+	FFFZSGridPlacement Placement;
+	Placement.OriginCell = FIntPoint(1000, 1000);
+	const FFFZSCommand Install = UFFZSGridLibrary::MakeInstallCommand(
+		Spec, Zone->ZoneId, Placement, Zones->GetWorldRevision());
+	const FFFZSCommandResult InstallResult = Zones->ExecuteCommand(Install);
+	if (!TestTrue(*FString::Printf(TEXT("Audience facility installs: %s"),
+		*InstallResult.Message.ToString()), InstallResult.bSucceeded)) return false;
+	const FGuid FacilityId = Install.FacilityInstanceId;
+
+	// 설치 직후는 Validated 다. 관람 스냅샷은 Active 시설에만 열린다.
+	auto* StageBridge = World->GetSubsystem<UFF_ZoneSystemStageBridgeSubsystem>();
+	if (!TestNotNull(TEXT("Stage bridge"), StageBridge)) return false;
+	StageBridge->OpenEligibleFacilities(false);
+	if (!TestEqual(TEXT("Installed stage is Active"), Zones->FindFacility(FacilityId)->GetFacilityState(),
+		EFFZSFacilityState::Active)) return false;
+
+	FFFZSAudienceSnapshot Snapshot;
+	FText Error;
+	if (!TestTrue(*FString::Printf(TEXT("Audience snapshot: %s"), *Error.ToString()),
+		UFFZSAudienceLibrary::GetFacilityAudienceSnapshot(World, FacilityId, Snapshot, Error))) return false;
+	TestEqual(TEXT("Audience capacity comes from the layout, not the FIFO queue"), Snapshot.Capacity, 2);
+	auto* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	Crowd->InitializeSimulationWithBounds(FVector::ZeroVector,
+		FBox::BuildAABB(FVector::ZeroVector, FVector(10000)), 1, 3, AFF_BaseCrowd::StaticClass());
+	const int32 Leader = Crowd->SpawnAgent(*World, FVector::ZeroVector, FRotator::ZeroRotator);
+	const int32 Member = Crowd->SpawnAgent(*World, FVector::ZeroVector, FRotator::ZeroRotator);
+	if (Leader == INDEX_NONE || Member == INDEX_NONE) return false;
+	using Access = FFF_CrowdProgramTestAccess;
+	const int32 PartyId = Access::Unit(*Crowd, Leader).PartyID;
+	Access::Unit(*Crowd, Leader).LeaderAgentIndex = Leader;
+	Access::Unit(*Crowd, Member).PartyID = PartyId;
+	Access::Unit(*Crowd, Member).LeaderAgentIndex = Leader;
+	Access::RegisterLeader(*Crowd, Leader);
+	TestTrue(TEXT("Party reserves two individual audience slots"),
+		Access::Audience(*Crowd, Leader, FacilityId, Snapshot));
+
+	// 좌석은 배정 시점에 바로 나눠 준다. 입구 좌표 하나를 수백 명이 공유하면 그 점에서 막힌다.
+	TestEqual(TEXT("Party heads straight to its seats, not to the shared entry"),
+		Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::GoingToSlot);
+	TestTrue(TEXT("Member owns an individual slot"), Access::Unit(*Crowd, Member).bHasQueueSlot);
+	TestFalse(TEXT("Member and leader slots differ"), Access::Unit(*Crowd, Member).QueueSlotLocation.Equals(
+		Access::Unit(*Crowd, Leader).TargetLocation));
+	TestFalse(TEXT("Leader does not target the shared entry"),
+		Access::Unit(*Crowd, Leader).TargetLocation.Equals(Snapshot.EntryWorldCm));
+	TestTrue(TEXT("Seat arrival is retained"), Access::AudienceArrive(*Crowd, Leader));
+	TestEqual(TEXT("Audience waits instead of entering FIFO"), Access::State(*Crowd, Leader).AudiencePhase,
+		EFF_PartyAudiencePhase::Waiting);
+
+	// 리드타임 구간에 도착한 파티는 공연 시각이 될 때까지 기다린다. 잠금 진입을 공연 시작으로
+	// 쓰면 리드타임을 늘린 만큼 "관람 중"이 길어진다.
+	UFF_FestivalStageSubsystem* Stage = World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>();
+	Stage->CurrentStage = EFF_FestivalStage::Live;
+	Stage->ElapsedLiveSeconds = 120.f;
+	Access::BeginGathering(*Crowd, 180.f);
+	Access::TickShowState(*Crowd);
+	TestEqual(TEXT("Gathering window keeps the party waiting"),
+		Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::Waiting);
+	TestFalse(TEXT("Show has not started during the lead window"), Crowd->IsMainProgramShowStarted());
+	Stage->ElapsedLiveSeconds = 180.f;
+	Access::TickShowState(*Crowd);
+	TestTrue(TEXT("Show starts on the schedule time, not on the lock entry"),
+		Crowd->IsMainProgramShowStarted());
+	TestEqual(TEXT("Waiting party becomes an audience at the show time"),
+		Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::Spectating);
+	TestEqual(TEXT("Audience never attempted ordinary queue"), Crowd->GetQueueJoinAttemptCount(), 0);
+	TestEqual(TEXT("Both seats are held while the party is inside"),
+		Crowd->GetOccupiedAudienceSlotCount(FacilityId), 2);
+	TestEqual(TEXT("One party is seated"), Crowd->GetAudiencePartyCount(), 1);
+
+	// 공연이 끝나면 좌석을 반납하고 출구로 나간다. 반납이 빠지면 다음 공연 정원이 줄어든다.
+	Access::EndMainAudience(*Crowd);
+	TestEqual(TEXT("Seats are released when the show ends"),
+		Crowd->GetOccupiedAudienceSlotCount(FacilityId), 0);
+	TestEqual(TEXT("Released party walks to the audience exit"),
+		Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::Exiting);
+	TestTrue(TEXT("Exit arrival returns the party to ordinary decisions"),
+		Access::AudienceArrive(*Crowd, Leader));
+	TestEqual(TEXT("Audience state is cleared after exiting"),
+		Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::None);
+
+	// 줄에 서 있던 파티를 무대로 끌어낼 때 일행도 같이 풀려야 한다. 안 풀면
+	// UpdatePartyMemberTarget 이 옛 슬롯 좌표로 계속 보내서 리더만 무대로 간다.
+	Access::Unit(*Crowd, Member).bHasQueueSlot = true;
+	Access::Unit(*Crowd, Member).QueueSlotLocation = FVector(9000, 9000, 0);
+	Access::State(*Crowd, Leader).QueuePhase = EFF_PartyQueuePhase::AtSlot;
+	Access::ClearQueue(*Crowd, Leader, false);
+	TestFalse(TEXT("Leaving a queue releases the member slots too"),
+		Access::Unit(*Crowd, Member).bHasQueueSlot);
+	TestTrue(TEXT("Released member slot coordinate is cleared"),
+		Access::Unit(*Crowd, Member).QueueSlotLocation.IsNearlyZero());
+
+	TestTrue(TEXT("Re-seating a previously queued party keeps the whole party"),
+		Access::Audience(*Crowd, Leader, FacilityId, Snapshot));
+	TestTrue(TEXT("Member is handed its own seat, not left at the old queue slot"),
+		Access::Unit(*Crowd, Member).bHasQueueSlot
+		&& !Access::Unit(*Crowd, Member).QueueSlotLocation.Equals(FVector(9000, 9000, 0)));
+
+	// 걸음 재촉은 매 스텝 곱하면 안 된다. 리더의 Speed 는 다시 세워지지 않아서
+	// 누적되면 1초 안에 감속 구간이 사라지고 자리를 영원히 지나친다.
+	Crowd->ScheduledHurrySpeedMultiplier = 2.f;
+	Access::Unit(*Crowd, Leader).Position = FVector(-50000, 0, 0);
+	Access::Unit(*Crowd, Member).Position = FVector(-50000, 0, 0);
+	const float CruiseSpeed = Access::Unit(*Crowd, Leader).CruiseSpeed;
+	for (int32 StepIndex = 0; StepIndex < 5; ++StepIndex)
+	{
+		Access::Step(*Crowd, 1.f / 30.f);
+	}
+	TestEqual(TEXT("Hurry speed is absolute, not compounded per step"),
+		Access::Unit(*Crowd, Leader).Speed, CruiseSpeed * 2.f, CruiseSpeed * 0.01f);
+	TestTrue(TEXT("Hurry raises MaxSpeed too, otherwise the clamp eats it"),
+		Access::Unit(*Crowd, Leader).MaxSpeed
+			> Access::Unit(*Crowd, Leader).CruiseMaxSpeed * 1.5f);
+
+	// 못 올 파티가 자리를 쥐고 있으면 그 자리는 공연 내내 비고, 닿을 수 있는 손님이 정원에서 밀린다.
+	{
+		UFF_FestivalStageSubsystem* ReclaimStage =
+			World->GetGameInstance()->GetSubsystem<UFF_FestivalStageSubsystem>();
+		ReclaimStage->CurrentStage = EFF_FestivalStage::Live;
+		ReclaimStage->ElapsedLiveSeconds = 200.f;
+		TestEqual(TEXT("Party is still walking to its seat"),
+			Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::GoingToSlot);
+
+		TestEqual(TEXT("A party that can still make it keeps its seat"),
+			Access::Reclaim(*Crowd, 200.f + 100000.f), 0);
+		TestTrue(TEXT("Seat is still held"), Crowd->GetOccupiedAudienceSlotCount(FacilityId) > 0);
+
+		TestEqual(TEXT("A party that cannot arrive before the end gives its seat back"),
+			Access::Reclaim(*Crowd, 201.f), 1);
+		TestEqual(TEXT("Reclaimed seats return to the pool"),
+			Crowd->GetOccupiedAudienceSlotCount(FacilityId), 0);
+		TestEqual(TEXT("Reclaimed party leaves the audience state machine"),
+			Access::State(*Crowd, Leader).AudiencePhase, EFF_PartyAudiencePhase::None);
+	}
+	return true;
+}
+
+// 배회 봉쇄. 원판을 Zone보다 크게 둬서 Zone 검사만 일하도록 만들어 놓고 본다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdWanderZoneConfinement,
+	"FestaFiesta.Crowd.Wander.ZoneConfinement", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdWanderZoneConfinement::RunTest(const FString& Parameters)
+{
+	FTestWorldWrapper Fixture;
+	if (!Fixture.CreateTestWorld(EWorldType::Game)) { Fixture.ForwardErrorMessages(this); return false; }
+	UWorld* World = Fixture.GetTestWorld();
+	if (!Fixture.BeginPlayInTestWorld()) { Fixture.ForwardErrorMessages(this); return false; }
+
+	UFFZSWorldSubsystem* Zones = World->GetSubsystem<UFFZSWorldSubsystem>();
+	AFFZSGameplayZone* Zone = World->SpawnActor<AFFZSGameplayZone>();
+	if (!TestNotNull(TEXT("Zone subsystem"), Zones) || !TestNotNull(TEXT("Zone"), Zone)) { return false; }
+	if (!TestTrue(TEXT("Zone preset"), Zone->ApplyAcceptedZonePreset(TEXT("GZ_DadaPocha")))
+		|| !TestTrue(TEXT("Zone registration"), Zones->RegisterZone(Zone))) { return false; }
+
+	const TArray<FVector2D> Polygon = Zone->GetBoundaryPolygonLocalCm();
+	if (!TestTrue(TEXT("Zone has a polygon"), Polygon.Num() >= 3)) { return false; }
+
+	FVector2D CenterLocal = FVector2D::ZeroVector;
+	for (const FVector2D& Point : Polygon) { CenterLocal += Point; }
+	CenterLocal /= Polygon.Num();
+
+	float MaxRadiusCm = 0.f;
+	for (const FVector2D& Point : Polygon)
+	{
+		MaxRadiusCm = FMath::Max(MaxRadiusCm, static_cast<float>(FVector2D::Distance(Point, CenterLocal)));
+	}
+
+	const FVector ZoneCenter = Zone->GetActorTransform().TransformPosition(FVector(CenterLocal, 0.f));
+	if (!TestEqual(TEXT("중심은 Zone 안이다"), Zones->ResolveZoneAtWorldLocation(ZoneCenter), Zone->ZoneId))
+	{
+		return false;
+	}
+
+	UFF_CrowdSimulationSubsystem* Crowd = World->GetSubsystem<UFF_CrowdSimulationSubsystem>();
+	if (!TestNotNull(TEXT("Crowd subsystem"), Crowd)) { return false; }
+
+	Crowd->bEnablePartyGrouping = false;
+	Crowd->MaxWalkableHeightAboveOriginUU = 0.f;
+	Crowd->OnPartyNeedsDecision.Unbind();
+	Crowd->InitializeSimulationWithBounds(ZoneCenter, FBox::BuildAABB(ZoneCenter, FVector(100000.f, 100000.f, 100000.f)), 2, 4, AFF_BaseCrowd::StaticClass());
+
+	// 원판이 Zone을 넘도록 키운다. 작으면 후보가 전부 안쪽에 떨어져 봉쇄가 없어도 통과한다
+	Crowd->WanderRadiusUU = MaxRadiusCm * 3.f;
+
+	// 두 경로를 프로젝트 기본값에 맡기지 않고 여기서 못 박는다. 이 블록은 원판 봉쇄를 보는
+	// 것이라, 기본값이 바뀌면 조용히 다른 경로를 재게 된다
+	Crowd->bEnableDiscWander = true;
+	Crowd->bEnableRoadPatrolWander = false;
+
+	const int32 Leader = Crowd->SpawnAgent(*World, ZoneCenter, FRotator::ZeroRotator);
+	if (!TestTrue(TEXT("Leader spawned"), Leader != INDEX_NONE)) { return false; }
+
+	using Access = FFF_CrowdProgramTestAccess;
+
+	int32 OutsideCount = 0;
+	for (int32 Round = 0; Round < 64; ++Round)
+	{
+		Access::State(*Crowd, Leader).ChoiceRoundIndex = Round;
+		const FVector Destination = Access::Wander(*Crowd, Leader);
+		if (!Access::InBounds(*Crowd, Destination))
+		{
+			++OutsideCount;
+		}
+	}
+	TestEqual(TEXT("배회 목적지는 한 번도 Zone 밖으로 나가지 않는다"), OutsideCount, 0);
+	TestTrue(TEXT("봉쇄가 실제로 후보를 기각했다"), Crowd->GetWanderZoneRejects() > 0);
+
+	// 밖에 선 개체의 복귀. 원판을 좁혀야 그 원판이 Zone을 다시 덮지 않아 복귀 경로가 실제로 불린다
+	Crowd->WanderRadiusUU = MaxRadiusCm * 0.5f;
+	const FVector Outside = ZoneCenter + FVector(MaxRadiusCm * 4.f, 0.f, 0.f);
+	if (!TestFalse(TEXT("시험 지점은 Zone 밖이다"), Access::InBounds(*Crowd, Outside)))
+	{
+		return false;
+	}
+
+	Access::Unit(*Crowd, Leader).Position = Outside;
+	Access::State(*Crowd, Leader).ChoiceRoundIndex = 0;
+	const FVector Recovered = Access::Wander(*Crowd, Leader);
+
+	TestTrue(TEXT("밖에 있던 개체는 제자리를 받지 않는다"), !Recovered.Equals(Outside, 1.f));
+	TestTrue(TEXT("밖에 있던 개체는 축제장 쪽으로 당겨진다"),
+		FVector::Dist2D(Recovered, ZoneCenter) < FVector::Dist2D(Outside, ZoneCenter));
+	TestTrue(TEXT("복귀 계수기가 올랐다"), Crowd->GetWanderContainmentNudges() > 0);
+
+	// 원판을 끄면 레인이 없는 이 월드에서는 목적지가 안 나온다. 그래도 밖에 선 개체의 복귀만은
+	// 살아 있어야 한다 — 그게 죽으면 나간 개체를 되돌릴 수단이 하나도 안 남는다
+	Crowd->bEnableDiscWander = false;
+	const int32 DiscBefore = Crowd->GetDiscWanderCount();
+	const int32 StallsBefore = Crowd->GetWanderStalls();
+
+	Access::Unit(*Crowd, Leader).Position = ZoneCenter;
+	const FVector Stalled = Access::Wander(*Crowd, Leader);
+	TestTrue(TEXT("원판을 끄면 안쪽 개체는 제자리를 받는다"), Stalled.Equals(ZoneCenter, 1.f));
+	TestEqual(TEXT("원판을 끄면 원판 계수기가 안 오른다"), Crowd->GetDiscWanderCount(), DiscBefore);
+	TestEqual(TEXT("제자리는 stall로 집계된다"), Crowd->GetWanderStalls(), StallsBefore + 1);
+
+	Access::Unit(*Crowd, Leader).Position = Outside;
+	const FVector StillRecovers = Access::Wander(*Crowd, Leader);
+	TestTrue(TEXT("원판을 꺼도 밖에 선 개체는 되돌아온다"),
+		FVector::Dist2D(StillRecovers, ZoneCenter) < FVector::Dist2D(Outside, ZoneCenter));
+
 	return true;
 }
 #endif

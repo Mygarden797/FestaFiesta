@@ -65,11 +65,30 @@ namespace FFF_DialogueTable
 		Line.Kind = ParseEnum<EFF_DialogueLineKind>(
 			Row.Kind, EFF_DialogueLineKind::Speech, TEXT("Kind"), RowName);
 
+		Line.ClickArea = ParseEnum<EFF_DialogueClickArea>(
+			Row.ClickArea, EFF_DialogueClickArea::FullScreen, TEXT("ClickArea"), RowName);
+
 		Line.WaitCondition = ParseEnum<EFF_TutorialWaitCondition>(
 			Row.WaitCondition, EFF_TutorialWaitCondition::None, TEXT("WaitCondition"), RowName);
 
 		Line.Speaker = Row.Speaker.IsEmpty() ? FText::GetEmpty() : FText::FromString(Row.Speaker);
 		Line.Text = Row.Text.IsEmpty() ? FText::GetEmpty() : FText::FromString(Row.Text);
+
+		Line.ExpectedTab = Row.ExpectedTab.IsEmpty() ? NAME_None : FName(*Row.ExpectedTab);
+
+		/* 배경 그림. "None" 은 지우라는 뜻이다.
+
+		   빈 칸과 구분하는 이유는, 빈 칸이 "앞 그림을 그대로" 를 뜻하기 때문이다.
+		   한 장면이 여러 줄로 이어질 때 매 줄에 같은 경로를 적지 않아도 된다.
+		*/
+		if (Row.BackgroundImage.Equals(TEXT("None"), ESearchCase::IgnoreCase))
+		{
+			Line.bClearBackground = true;
+		}
+		else if (!Row.BackgroundImage.IsEmpty())
+		{
+			Line.BackgroundImage = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(Row.BackgroundImage));
+		}
 
 		Line.HighlightAnchor = Row.HighlightAnchor.IsEmpty()
 			? NAME_None : FName(*Row.HighlightAnchor);
@@ -89,6 +108,22 @@ namespace FFF_DialogueTable
 				TEXT("[대사] %s 행에 선택지가 있는데 Kind 가 Choice 가 아니다. Choice 로 바꾼다."),
 				*RowName.ToString());
 			Line.Kind = EFF_DialogueLineKind::Choice;
+		}
+
+		/* 조작을 기다리지 않는 줄의 강조는 떼어낸다.
+
+		   강조는 화면을 어둡게 덮는다. 플레이어가 무언가 해야 하는 순간에는
+		   시선을 모아주지만, 그냥 읽고 넘기는 대사에서는 시야만 가린다.
+
+		   안내하는 줄과 기다리는 줄 양쪽에 같은 대상을 적기 쉬운데, 그러면
+		   안내를 읽는 내내 화면이 어둡다.
+		*/
+		if (!Line.HighlightAnchor.IsNone() && !Line.RequiresPlayerAction())
+		{
+			UE_LOG(LogFestaFiestaTutorial, Verbose,
+				TEXT("[대사] %s 행은 조작을 기다리지 않으므로 강조 '%s' 를 쓰지 않는다."),
+				*RowName.ToString(), *Line.HighlightAnchor.ToString());
+			Line.HighlightAnchor = NAME_None;
 		}
 
 		// 반대로 조건 없는 조작 대기 줄은 영영 멈춘다. 대사로 낮춰서 진행을 막지 않는다.

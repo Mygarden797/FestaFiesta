@@ -126,6 +126,7 @@ public:
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_AuroraCatalogSelectionTest;
 	friend class FFF_BuildCatalogRetiredDefinitionTest;
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_PrepProgramFacilityNavigationTest;

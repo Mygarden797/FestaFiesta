@@ -8,6 +8,22 @@ Development 진단 빌드도 같은 스크립트의 `-Configuration Development`
 
 목표는 **한 Windows 패키지에 DX11 + SM5와 DX12 + SM6 셰이더를 함께 담고, 사용자는 `FestaFiesta.exe` 하나를 더블클릭해 시작하게 만드는 것**이다. 엔진이 시작할 때 지원 여부를 확인해 그래픽 경로를 선택한다. 데이터는 함께 제공하는 폴더에 유지한다. 이것만으로 모든 SM5 그래픽카드에서 같은 화면과 성능을 보장하지는 않는다. 게임 시작, 실제 장면, 입력, 저장, 성능을 두 경로에서 확인한 뒤 검증된 GPU와 드라이버 범위를 배포 조건에 적는다.
 
+## 0-1. 2026-09-18 최적화 적용 빌드 기록
+
+8장의 최적화(Shipping LTCG, 텍스처 RDO, 지구본 시안 제외, GameplayCue 경로 한정)와 파이프라인 보강(경로 길이·잠금 프로세스 사전검사, 툴체인 조기 검사, 쿠킹 누락 게이트, 용량 리포트, dirty 패치 보관)을 적용한 첫 빌드다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 빌드 라벨 / 소스 | `FestaFiesta-Win64-QA-20260918` / `feature/Package`의 `29b8765b7c1c` + 이번 수정 작업 트리(`dirty=true`, 차이는 `Metadata/source-dirty.patch`) |
+| 판정 | **`quality-override` 내부 QA 빌드.** `latest.json`으로 승격하지 않음 |
+| 자동화 테스트 | **Dev HEAD에서 6건 실패로 표준 절차 중단.** 수정 전 설정으로 되돌려도 같은 6건이 실패해 패키징 변경과 무관함을 확인. 도로 카탈로그 2건(9/14 `9ef52a79`에서 삭제된 `Road_Surface_Wood/Stone`을 테스트가 기대), 군중 도착·프로그램 2건, 경제 브리지 2건 |
+| 데이터 검증 | 오류 0건·경고 1건 통과 |
+| Shipping Build / Cook / Stage / Package / Archive | 전체 성공. 실제 선택 툴체인 MSVC `14.44.35228` + SDK `10.0.22621.0`, 쿠킹 누락 0건 |
+| 초기 실행 검사 | NullRHI, DX11 SM5, DX12 SM6, 기본 실행(DX12 SM6 자동 선택) 모두 통과 |
+| 크기 | 설치 775.6 MiB, ZIP 655.1 MiB(686,940,536바이트), SHA-256 `da150db4fc2751e744f2ecabdd42577cf7ee39b06959e253545f68f1164b0bda` |
+
+공개 배포 후보는 위 6건을 담당자가 고친 커밋에서 **생략 옵션 없이** 5장의 표준 절차로 다시 만든다. 같은 날 표준 절차로 시도한 `FestaFiesta-Win64-Shipping-20260918`은 테스트 단계에서 멈췄고 실패 기록은 `Artifacts/Releases/.staging/FestaFiesta-Win64-Shipping-20260918/Metadata/failure.json`에 남아 있다.
+
 ## 0. 최초 Shipping 실행 이력과 문서의 적용 범위
 
 아래는 `FestaFiesta-Win64-SM5SM6-20260911`의 **정규 패키징 완료 · 전체 자동 검사 통과 이력**이다. 이후 Development 및 실행 방식 변경 빌드의 완료 수치는 이 표에 포함하지 않는다. 방법 설명, 설정 완료, 패키지 생성 성공, 실기기 호환성 검증은 서로 다른 상태다. 최초 검사와 중간 QA 빌드에서 발견한 문제의 원인·수정·개별 검증은 부록에 보존했으며, 중간 결과를 새 빌드의 결과로 대신 사용하지 않는다.
@@ -95,10 +111,10 @@ Lumen에 대해서는 일반 기능 표만 보고 SM5에서 동일하게 동작�
 | --- | --- | --- |
 | Unreal Engine | `5.7.4`, CL `51494982` | 같은 5.7이라도 패치에 따라 쿠커·셰이더·빌드 결과가 달라질 수 있음 |
 | Visual Studio | VS 2022, 17.14 계열 권장 | Unreal 5.7의 C++ 개발 환경 기준 |
-| MSVC 실제 도구 버전 | `14.44.35225` | 컴파일과 링크 도구 일치 |
+| MSVC 실제 도구 버전 | `14.44.35228` | 컴파일과 링크 도구 일치. 2026-09-18 VS 17.14 서비스 업데이트로 `35225`→`35228` 갱신 |
 | MSVC 설치 폴더 버전 | `14.44.35207` | 버전 표시와 폴더 이름이 서로 다를 수 있음 |
 | Windows SDK | `10.0.22621.0` | Windows 헤더와 라이브러리 일치 |
-| Git LFS | `3.5.1` | 대용량 에셋 다운로드와 무결성 검사 |
+| Git LFS | `3.5.1` **이상** | 대용량 에셋 다운로드와 무결성 검사. 결과물에 영향을 주지 않는 도구라 정확한 패치 대신 최소 버전만 요구 |
 | 결과 대상 | `Win64`, `Shipping` | 64비트 Windows 배포본 |
 
 위의 정확한 값은 `Tools/Build/toolchain.lock.json`에서 읽는다. Epic의 일반 최소 요구 버전과 **이 프로젝트가 재현을 위해 고정한 버전**은 다를 수 있다. “더 최신이 설치됐으니 같은 것”으로 취급하지 않는다. 버전을 올리려면 잠금 파일, 설치 환경, 실제 빌드 로그를 함께 갱신하고 다시 검증한다. [Epic: Unreal 5.7 Visual Studio 설정](https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine?application_version=5.7)
@@ -143,7 +159,7 @@ git lfs fsck
 git status --short
 ```
 
-`git lfs version`에서 `3.5.1`을 확인하고, `git lfs fsck`가 정상 완료되어야 한다. 다운로드 실패, 인증 실패, 용량 제한이 나오면 해당 문제를 해결한 뒤 `git lfs pull`을 다시 수행한다. 파일 내용을 텍스트로 수정해서 포인터 오류를 없애려 하면 에셋을 손상시킨다.
+`git lfs version`이 `3.5.1` 이상인지 확인하고, `git lfs fsck`가 정상 완료되어야 한다. 다운로드 실패, 인증 실패, 용량 제한이 나오면 해당 문제를 해결한 뒤 `git lfs pull`을 다시 수행한다. 파일 내용을 텍스트로 수정해서 포인터 오류를 없애려 하면 에셋을 손상시킨다.
 
 ### 3-4. 디스크와 작업 폴더
 
@@ -191,6 +207,8 @@ GPU를 직접 사용할 수 있는 제작 PC에서는 다음 명령으로 자동
 
 아무 출력이 잠시 없다고 곧바로 실패는 아니다. 처음에는 셰이더 컴파일과 데이터 가공에 시간이 많이 걸릴 수 있다. 작업 관리자에서 프로세스의 CPU·디스크 사용과 로그의 최종 수정 시간을 확인한다. 기종·캐시·변경량에 따라 시간 차이가 커서 고정 소요 시간을 약속하지 않는다.
 
+**경로 길이 주의.** 스크립트는 시작할 때 출력 경로가 Windows 260자 제한 안에 들어오는지 먼저 검사한다. 프로젝트가 `OneDrive\Desktop\...`처럼 깊은 곳에 있으면 자동 라벨로는 한도를 넘어 바로 멈춘다. 이때는 `-BuildLabel 'FestaFiesta-Win64-Shipping-20260918'`처럼 짧은 라벨을 쓰거나 `-OutputRoot 'C:\Builds\FestaFiesta'`처럼 짧은 출력 위치를 지정한다.
+
 기본 결과 위치는 `Artifacts\Releases`다. 빌드 라벨은 UTC 시각과 Git 커밋으로 자동 생성된다. 예를 들어 `FestaFiesta-Win64-Shipping-20260911-120000-abcdef123456`처럼 구분되며, 변경된 작업 트리는 `-dirty`가 붙을 수 있다.
 
 ### 5-2. 결과 위치와 이름을 직접 지정
@@ -204,7 +222,7 @@ $FFLabel = 'FestaFiesta-Win64-Shipping-SM5-SM6-20260911-01'
 
 ### 5-3. 스크립트가 자동으로 하는 일
 
-1. 선택한 엔진 버전과 CL, 고정 SDK·MSVC 설치 위치, Git LFS 버전·파일 무결성·포인터 잔존 여부, 출력 드라이브 여유를 검사한다.
+1. 선택한 엔진 버전과 CL, 고정 SDK·MSVC 설치 위치, Git LFS 최소 버전·파일 무결성·포인터 잔존 여부, 출력 드라이브 여유를 검사한다.
 2. 검증에 사용할 `FestaFiestaEditor Win64 Development`를 빌드한다.
 3. 기본 `FestaFiesta`, `FF_ZoneSystem` 자동화 테스트와 프로젝트 데이터 검증을 실행한다.
 4. UAT로 `FestaFiesta Win64 Shipping`을 Build → Cook → Stage → Package → Archive한다. UAT 로그에 실제 MSVC·SDK 선택이 보고되면 잠금 버전과 대조하고 불일치 시 중단한다.
@@ -287,6 +305,10 @@ $FFLabel = 'FestaFiesta-Win64-Shipping-SM5-SM6-20260911-01'
 | en / ko 문화권 스테이징 | 지원 언어에 맞게 국제화 데이터 구성 | 실제 한글 글꼴·문자 줄바꿈도 확인 |
 | x64 prerequisite만 포함 | Win64 대상에 맞는 실행 의존성 제공 | 새 PC에서 설치와 첫 실행 확인 필요 |
 | Chunk 생성 안 함 | 현재 단일 배포 흐름을 단순하게 유지 | DLC·차등 업데이트는 별도 설계가 필요 |
+| Shipping LTCG (`FestaFiesta.Target.cs`) | 게임·`FF_ZoneSystem` 코드의 모듈 경계를 넘는 인라이닝과 미사용 코드 제거 | 링크 시간 증가. 런처 엔진 라이브러리는 미리 빌드돼 대상이 아님. 공유 빌드 환경 검사 때문에 `bDefineForceInlineHintToInline=false`를 함께 고정 |
+| Oodle Texture RDO, lambda 30 (`DefaultEngine.ini`) | 텍스처 데이터가 Kraken으로 더 잘 압축됨. 2026-09-18 측정 −18.3 MiB | 설정 변경 후 첫 쿠킹에서 텍스처 재인코딩. 번짐이 보이는 텍스처는 개별적으로 Lossy Compression Amount를 끔 |
+| 미사용 지구본 시안 NeverCook (`BrightGlobe_v1/P02`, `P03`) | UI 폴더 AlwaysCook이 끌고 오던 이전 시안 제외. −35.8 MiB | 참조 그래프로 게임 루트에서 도달 불가함을 확인. 쿠킹 대상이 하드 참조하면 쿠킹 누락 게이트가 빌드를 실패시킴 |
+| GameplayCue 스캔 경로 한정 (`DefaultGame.ini`) | 쿠킹·게임 시작 때의 `/Game` 전체 스캔과 경고 제거 | GameplayCue를 추가할 때는 `/Game/FestaFiesta/GameplayCues`에 둠 |
 
 ### 압축을 더 세게 하면 FPS도 올라가나
 
@@ -300,13 +322,36 @@ $FFLabel = 'FestaFiesta-Win64-Shipping-SM5-SM6-20260911-01'
 
 코드가 에셋을 객체 참조로 갖고 있으면 쿠커가 참조를 따라갈 수 있다. 그러나 C++의 문자열 경로로 나중에 로드하는 에셋은 자동 수집에서 놓칠 수 있다. 이 프로젝트는 과거 홍보 확인창과 시간표 데이터 누락 때문에 패키지에서만 UI가 안 열리거나 개장이 진행되지 않은 기록이 있어 관련 경로를 `DirectoriesToAlwaysCook`으로 명시했다.
 
-현재 핵심 경로는 `Zone/UI`, `Building/Tooltips`, `Building/Feedback`, `Building/Debug`, `UI`, `Data`, `Building/Guide`, `Minigame`이다. 새로 문자열 경로 로딩을 추가하면 해당 에셋의 Cook 규칙도 함께 검토한다. 장기적으로는 Asset Manager의 Primary Asset, 명시적 soft reference와 규칙을 정리하여 필요한 에셋만 정확하게 포함시키는 방향으로 개선할 수 있다. **폴더 제외부터 하는 것보다 참조 설계를 먼저 고치는 것이 안전하다.**
+현재 핵심 경로는 `Zone/UI`, `Building/FF_WBP_Building`, `UI`, `Data`, `Minigame`이다. 새로 문자열 경로 로딩을 추가하면 해당 에셋의 Cook 규칙도 함께 검토한다. 장기적으로는 Asset Manager의 Primary Asset, 명시적 soft reference와 규칙을 정리하여 필요한 에셋만 정확하게 포함시키는 방향으로 개선할 수 있다. **폴더 제외부터 하는 것보다 참조 설계를 먼저 고치는 것이 안전하다.**
 
 ### 런타임 성능은 따로 측정한다
 
 비교 조건은 같은 맵·같은 카메라 경로·같은 군중 규모·같은 해상도·같은 그래픽 품질로 맞춘다. 프레임 시간 16.7 ms는 약 60 FPS, 33.3 ms는 약 30 FPS다. 평균 FPS뿐 아니라 간헐적으로 한 프레임이 길어지는 현상을 기록한다. GPU가 느리면 해상도·그림자·재질 비용을 보고, CPU가 느리면 AI·군중·틱·경로 탐색 비용을 본다. 디스크 크기 최적화와 별도의 문제다.
 
 Unreal Insights 등 상세 진단은 필요한 기능이 포함된 Development 또는 Test 빌드로 수행하고, 최종 체감과 장시간 안정성은 Shipping 결과물에서도 확인한다. Shipping 콘솔에서 `stat unit`이나 `-ExecCmds`가 반드시 동작할 것이라고 가정한 절차를 만들지 않는다.
+### 2026-09-18 최적화 측정: 무엇이 얼마나 줄었나
+
+같은 커밋(`29b8765b`)과 같은 UAT 인자로 베이스라인과 최적화본을 각각 Clean Shipping 패키징한 뒤 IoStore 목록을 패키지 단위로 비교했다. 원인별로 분리한 컨테이너(압축 후) 기준 수치다.
+
+| 원인 | 컨테이너 변화 | 판정 근거 |
+| --- | --- | --- |
+| 지구본 이전 시안 P02·P03 제외 | −35.8 MiB | 사라진 패키지는 정확히 이 두 폴더의 37개뿐이고 추가된 패키지는 0개 |
+| Oodle Texture RDO | −18.3 MiB | 메시 외 패키지 381.4 → 363.1 MiB. 대부분 텍스처 mip(`.ubulk`) |
+| (참고) 메시 인덱스 버퍼 | −19.8 MiB | 설정 변경 효과가 **아니다**. 아래 설명 참고 |
+
+합계는 ZIP 721.1 → 655.1 MiB(−9.2%), 설치 용량 849.7 → 775.6 MiB(−8.7%)다. LTCG는 실행 파일 크기를 거의 바꾸지 않는다(143.9 → 144.0 MiB). 효과는 CPU 시간이므로 크기가 아니라 10장의 같은 시나리오 프레임 시간으로 비교한다.
+
+**메시 인덱스 버퍼 차이에 대해.** UE 5.7 기본값 `r.SupportDepthOnlyIndexBuffers=0`, `r.SupportReversedIndexBuffers=0`에서는 뎁스 전용·역방향 인덱스 버퍼를 쓰지 않는다. 그런데 메시가 바뀐 직후 DDC가 비어 있는 첫 쿠킹에서는 새로 빌드된 렌더 데이터의 이 버퍼가 그대로 저장되어, 32비트 인덱스 메시에서 삼각형당 정확히 24바이트가 더 들어갔다(예: `SM_BrightWorld_04_Top` 307,737 × 24 = 7,385,688바이트). 베이스라인 설정 그대로 다시 쿠킹해도 작은 쪽 크기가 나왔으므로 이번 설정 변경의 효과로 계산하지 않았다. 기능 차이는 없으며, 같은 패키지 크기를 비교하려면 DDC가 채워진 상태에서 두 번째 쿠킹 결과를 기준으로 삼는다.
+
+### 다음 크기 최적화 후보
+
+매 릴리스의 `Metadata/size-report.json`에서 확인한다. 아래는 2026-09-18 측정에서 나온, 담당자 판단이 필요한 후보다.
+
+| 후보 | 규모(압축 후) | 막는 이유와 해결 방법 |
+| --- | --- | --- |
+| `UI/Atlas/Earth`의 나머지 미사용 메시(`DioramaWorld_v1`, `P03v2`) | 약 114 MiB | 실사용 P05·P10 머티리얼이 이 폴더의 텍스처 3개(`T_Diorama_Height`, `T_Bright_BiomeSource`, `T_Bright_LandClass`)를 공유한다. 담당자가 세 텍스처를 실사용 폴더로 옮긴 뒤 두 폴더를 NeverCook하거나 UI 밖으로 보관 |
+| 달 텍스처(`Environment/moon`) | 약 36 MiB | 하늘의 먼 물체에 초고해상도 텍스처. Maximum Texture Size 또는 LOD Bias로 해상도 제한 후 화면 비교 |
+| 셰이더(SM5 + SM6) | 약 144 MiB | 두 그래픽 경로와 레이 트레이싱이 켜져 있어 크다. 렌더링 기능 결정이므로 패키징에서 단독으로 바꾸지 않음 |
 
 ## 9. 결과 폴더 읽기와 자동 재검사
 
@@ -338,6 +383,8 @@ Artifacts/Releases/
       Smoke-DX11-SM5.json       # GraphicsSmokeTest를 수행한 경우
       Smoke-DX12-SM6.json       # GraphicsSmokeTest를 수행한 경우
       IoStore-Contents.csv
+      size-report.json          # 용량 분해·직전 승격 빌드 대비 증감
+      source-dirty.patch        # dirty 작업 트리에서 만든 경우에만
       PACKAGE-SHA256SUMS.txt
       SYMBOLS-SHA256SUMS.txt
       ARCHIVE-SHA256.txt
@@ -475,7 +522,7 @@ Select-String -LiteralPath (Join-Path $FFFailed 'Logs\BuildCookRun.log') -Patter
 | `Engine build does not match` | 엔진 패치 또는 CL 불일치 | `$FFEngine`와 Build.version 확인 → 5.7.4 CL 51494982 설치 선택 |
 | `Locked Windows SDK ... not installed` | 고정 SDK 없음 | VS Installer에서 22621 SDK 추가 → 경로 확인 |
 | `Locked MSVC ... not installed` | 고정 설치 폴더 없음 | 14.44 계열과 설치 위치 확인 → 실제 파일 버전·빌드 로그 대조 |
-| `Git LFS version mismatch` | LFS 버전 불일치 | 팀 기준 3.5.1 도구 사용 또는 검증된 도구 업그레이드 작업 수행 |
+| `Git LFS is too old` | LFS가 최소 버전 미만 | Git LFS를 3.5.1 이상으로 업데이트 |
 | `LFS objects are not materialized` | 에셋이 안내장 상태 | 인증·다운로드 문제 해결 → `git lfs pull` → `git lfs fsck` |
 | `Development Editor build failed` | 검증용 에디터 모듈 컴파일 실패 | `Validation/EditorBuild.log`의 첫 C++·링크 오류 해결 |
 | `Automation validation failed` | 로직·에셋 계약 테스트 실패 | 해당 필터의 Automation.log와 Report 확인 → 원인 수정 |
@@ -484,6 +531,10 @@ Select-String -LiteralPath (Join-Path $FFFailed 'Logs\BuildCookRun.log') -Patter
 | 셰이더 컴파일 오류 / shader archive missing | 특정 형식의 머티리얼·셰이더 누락 | 최초 오류의 플랫폼과 머티리얼 확인 → 두 TargetedShaderFormats → 재쿠킹 |
 | DLL 또는 `.exe` 파일 사용 중 | 게임·에디터·Live Coding이 파일 보유 | 관련 프로세스 정상 종료 → 새 라벨로 재실행 |
 | 출력 이미 존재 | 기존 결과 보호 장치 | 새 라벨 사용; 이전 로그는 원인 분석용으로 보관 |
+| `Output path is too deep for Windows MAX_PATH` | 출력 경로가 너무 깊어 ZIP 단계에서 실패할 상태 | 더 짧은 `-BuildLabel` 또는 `-OutputRoot` 사용 |
+| `Close the editor/game using this project` | 에디터·게임이 프로젝트 DLL을 잡고 있어 Clean 빌드가 실패할 상태 | 에디터, Rider에서 띄운 에디터, 실행 중인 패키지 게임을 종료 후 재실행 |
+| `UBT selected a toolchain different from toolchain.lock.json` | VS 업데이트 등으로 실제 컴파일러가 잠금 버전과 다름. 에디터 빌드 직후 검사하므로 긴 빌드 전에 멈춤 | 로그의 실제 버전을 확인하고, 의도한 업데이트라면 잠금 파일을 갱신해 새 기준으로 전체 검증 |
+| `The cook dropped ... referenced package(s)` | 쿠킹된 에셋이 NeverCook 등으로 빠진 에셋을 하드 참조 | 로그의 `Content is missing from cook` 줄에서 Source·Target 패키지를 확인하고, 참조를 고치거나 NeverCook 규칙을 좁힘 |
 | 디스크 부족 | 스테이징·ZIP·캐시 동시 사용량 초과 | 완료된 오래된 산출물 보관 정책 적용 또는 출력 드라이브 변경 |
 | prerequisite / VCRUNTIME 관련 오류 | 플레이 PC 실행 런타임 미설치·손상 | 동봉 x64 재배포 설치기의 설치·복구 후 재실행 |
 | 지원되는 GPU / SM6 필요 오류 | 강제 DX12 SM6 경로 또는 드라이버·OS 조건 불충족 | 실제 GPU 확인 → 제조사 드라이버 확인 → 일반 EXE 실행과 10장의 고급 DX11 검사 결과 비교 |

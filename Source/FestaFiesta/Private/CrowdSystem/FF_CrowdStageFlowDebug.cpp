@@ -16,6 +16,7 @@
 #include "Queue/FF_QueueWaitAdapter.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
+#include "FF_FFZSAudienceLibrary.h"
 
 namespace FFStageFlowDebug
 {
@@ -85,6 +86,14 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 		static_cast<int32>(DecisionMode), IsMainStageOpen(), MaxCandidates, MaxPartiesRedecidedOnStageOpen);
 	Ar.Logf(TEXT("GlobalMainStageDiscovery=%d (main stages bypass local candidate cap; reservation filter still applies)"),
 		IsGlobalMainStageDiscoveryActive());
+	{
+		int32 Attempts = 0, Parties = 0, Members = 0, CapacityRejects = 0, SnapshotFailures = 0, ProgramConflicts = 0;
+		Crowd->GetAudienceStats(Attempts, Parties, Members, CapacityRejects, SnapshotFailures, ProgramConflicts);
+		Ar.Logf(TEXT("Audience showActive=%d seatedParties=%d gatherAttempts=%d gathered=%dparties/%dmembers ")
+			TEXT("capacityRejects=%d snapshotFailures=%d reservationPriorityskips=%d"),
+			Crowd->IsMainProgramAudienceActive(), Crowd->GetAudiencePartyCount(), Attempts, Parties, Members,
+			CapacityRejects, SnapshotFailures, ProgramConflicts);
+	}
 	const UGameInstance* GI = World->GetGameInstance();
 	const UFF_FestivalStageSubsystem* Stage = GI ? GI->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
 	const UFF_ProgramReservationSubsystem* Reservations = GI ? GI->GetSubsystem<UFF_ProgramReservationSubsystem>() : nullptr;
@@ -94,9 +103,13 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 	}
 	Ar.Logf(TEXT("ActiveParties=%d outsideZoneParties=%d queuedParties=%d pendingDecisions=%d"),
 		Crowd->GetActivePartyCount(), LeadersByZone.FindRef(NAME_None), Crowd->GetQueuedPartyCount(), Crowd->GetPendingDecisionCount());
-	Ar.Logf(TEXT("SimOrigin=%s SimRadiusCm=%.1f avoidance=%d boundaryWalls=%d pathFollowing=%d pathFailures=%d partialPaths=%d pathBacklog=%d"),
-		*Crowd->SimOrigin.ToCompactString(), Crowd->SimRadiusUU, Crowd->bEnableAvoidance,
-		Crowd->bAvoidanceUseBoundaryWalls, Crowd->bEnablePathFollowing, Crowd->GetPathQueryFailures(),
+	const FBox& SimArea = Crowd->GetSimAreaBounds();
+	Ar.Logf(TEXT("SimOrigin=%s simAreaMin=%s simAreaMax=%s avoidance=%d pathFollowing=%d pathFailures=%d partialPaths=%d pathBacklog=%d"),
+		*Crowd->SimOrigin.ToCompactString(),
+		SimArea.IsValid ? *SimArea.Min.ToCompactString() : TEXT("none"),
+		SimArea.IsValid ? *SimArea.Max.ToCompactString() : TEXT("none"),
+		Crowd->bEnableAvoidance,
+		Crowd->bEnablePathFollowing, Crowd->GetPathQueryFailures(),
 		Crowd->GetPartialPathCount(), Crowd->GetPathQueryBacklog());
 	for (const FFFZSZoneReadModel& Zone : Model.Zones)
 	{
@@ -177,13 +190,37 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 				}
 			}
 		}
+		FFFZSAudienceSnapshot Audience;
+		FText AudienceError;
+		if (UFFZSAudienceLibrary::GetFacilityAudienceSnapshot(
+			World, Facility.FacilityInstanceId, Audience, AudienceError))
+		{
+			Ar.Logf(TEXT("  Audience enabled=1 capacity=%d(%dx%d) occupiedSlots=%d entry=%s exit=%s arrivalToleranceCm=%.0f"),
+				Audience.Capacity, Audience.Layout.Columns, Audience.Layout.Rows,
+				Crowd->GetOccupiedAudienceSlotCount(Facility.FacilityInstanceId),
+				*Audience.EntryWorldCm.ToCompactString(), *Audience.ExitWorldCm.ToCompactString(),
+				Audience.Layout.ArrivalToleranceCm);
+			FFStageFlowDebug::ProbePath(World, Position, Audience.EntryWorldCm, TEXT("audience entry"), Ar);
+			FTransform FirstSeat;
+			if (UFFZSAudienceLibrary::GetAudienceSlotTransform(Audience, 0, FirstSeat))
+			{
+				FFStageFlowDebug::ProbePath(World, Audience.EntryWorldCm, FirstSeat.GetLocation(),
+					TEXT("audience entry->seat0"), Ar);
+			}
+		}
+		else
+		{
+			// 관람 공간이 꺼진 공연장은 12명 FIFO Queue 로 처리된다 — 쏠림이 안 나오는 상태다.
+			Ar.Logf(TEXT("  Audience enabled=0 (%s) — 이 무대는 일반 Queue 로만 동작한다"),
+				*AudienceError.ToString());
+		}
 		const int32 QueueId = Bridge ? Bridge->FindQueueFacilityId(Facility.FacilityInstanceId) : INDEX_NONE;
 		if (Queue && QueueId != INDEX_NONE && Queue->IsFacilityRegistered(QueueId))
 		{
 			const FFF_QueueState Q = Queue->GetQueueState(QueueId);
-			Ar.Logf(TEXT("  Queue id=%d open=%d occupied=%d capacity=%d samplePartyFitsNow=%d serviceMembersPerSec=%.3f estimatedWaitMin=%.2f"),
-				QueueId, Q.bIsOpen, Q.OccupiedMemberCount, Q.MaxCapacityMembers,
-				Q.bIsOpen && Q.OccupiedMemberCount + PartySize <= Q.MaxCapacityMembers, Q.ServiceRate,
+			Ar.Logf(TEXT("  Queue id=%d open=%d occupiedTeams=%d capacityTeams=%d samplePartyFitsNow=%d serviceTeamsPerSec=%.3f estimatedWaitMin=%.2f"),
+				QueueId, Q.bIsOpen, Q.WaitingPartyCount, Q.MaxCapacityParties,
+				Q.bIsOpen && Q.WaitingPartyCount < Q.MaxCapacityParties, Q.ServiceRate,
 				FFF_QueueWaitAdapter::ToDecisionMinutes(FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(Q, PartySize)));
 			FTransform Slot;
 			if (Bridge->TryGetProgramWaitingTransform(Facility.FacilityInstanceId, 0, Slot))
@@ -194,9 +231,9 @@ void UFF_CrowdDecisionSubsystem::DebugDumpStageFlow(int32 LeaderAgentIndex, FOut
 		else { Ar.Logf(TEXT("  Queue missing/unregistered (id=%d). Check queue bridge/geometry."), QueueId); }
 		if (Facility.bHasApproachWorldTransform)
 		{
-			const FVector Delta = Facility.ApproachWorldTransform.GetLocation() - Crowd->SimOrigin;
-			Ar.Logf(TEXT("  ApproachOutsideSimSquare=%d (boundary repulsion applies when avoidance/boundaryWalls are on)"),
-				FMath::Abs(Delta.X) > Crowd->SimRadiusUU || FMath::Abs(Delta.Y) > Crowd->SimRadiusUU);
+			const FBox& Area = Crowd->GetSimAreaBounds();
+			Ar.Logf(TEXT("  ApproachOutsideSimArea=%d (density/height grids do not cover it)"),
+				Area.IsValid && !Area.IsInsideXY(Facility.ApproachWorldTransform.GetLocation()));
 			Ar.Logf(TEXT("  Approach=%s"), *Facility.ApproachWorldTransform.GetLocation().ToCompactString());
 			FFStageFlowDebug::ProbePath(World, Position, Facility.ApproachWorldTransform.GetLocation(), TEXT("approach"), Ar);
 		}

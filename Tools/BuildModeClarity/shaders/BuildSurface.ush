@@ -1,0 +1,49 @@
+// Shared UI surface. Static thin-film interference stays at the edges so text remains quiet.
+float2 p = saturate(UV);
+float py = max(length(ddy(UV)), 0.00001);
+float px = max(length(ddx(UV)), 0.00001);
+float ratio = clamp(py / px, 0.1, 40.0);
+float radius = min(0.14, py * 10.0);
+float2 q = abs((p - 0.5) * float2(ratio, 1)) - (float2(ratio, 1) * 0.5 - radius);
+float distance = length(max(q, 0)) + min(max(q.x, q.y), 0) - radius;
+float aa = max(fwidth(distance), 0.0005);
+float coverage = 1 - smoothstep(-aa, aa, distance);
+float rim = 1 - smoothstep(0.0, max(aa * 1.8, 0.006), -distance);
+float3 base = float3(0.952, 0.969, 0.932);
+float opacity = 0.97;
+if (Role > .5 && Role < 2.5) base = float3(.891, .931, .882);
+if (Role > 2.5 && Role < 4.5) {
+    base = Role > 3.5 ? float3(.17, .29, .23) : float3(.22, .37, .29);
+    opacity = 1;
+}
+if (Role > 4.5 && Role < 5.5) base = float3(.92, .926, .851);
+float thickness = 370 + 75 * p.x + 32 * p.y;
+float3 interference = .5 + .5 * cos(6.2831853 * (2 * 1.38 * thickness) / float3(650, 510, 475));
+float3 sageFilm = lerp(float3(.67, .81, .71), float3(.86, .86, .72), interference);
+float3 color = lerp(base, sageFilm, rim * .22);
+color += (1 - p.y) * .007;
+if (Role > 5.5 && Role < 6.5) {
+    // A true signed-distance texture, not a raster ring scaled to the viewport.
+    float sd = SDF.r - .5;
+    float sa = max(fwidth(sd), .004);
+    coverage = (1 - smoothstep(-sa, sa, sd)) * smoothstep(-.078 - sa, -.078 + sa, sd);
+    color = lerp(float3(.62, .76, .64), sageFilm, .20);
+    opacity = .48;
+}
+if (Role > 6.5 && Role < 7.5) {
+    // Program facilities carry a distinct pearl-lavender identity plus a text badge.
+    float3 pearl = lerp(float3(.78, .84, .96), float3(.91, .79, .91), interference);
+    float ribbon = 1 - smoothstep(.08, .32, abs(p.x + p.y * .3 - .57));
+    color = lerp(float3(.916, .913, .972), pearl, .20 + ribbon * .20 + rim * .38);
+    color += (1 - p.y) * .012;
+    opacity = .97;
+}
+if (Role > 7.5 && Role < 8.5) {
+    // Required facilities use the same quiet pearl surface in a distinct rose family.
+    float3 rose = lerp(float3(.95, .76, .77), float3(.98, .84, .80), interference);
+    float ribbon = 1 - smoothstep(.08, .32, abs(p.x + p.y * .3 - .57));
+    color = lerp(float3(.973, .922, .914), rose, .14 + ribbon * .13 + rim * .32);
+    color += (1 - p.y) * .009;
+    opacity = .97;
+}
+return float4(pow(saturate(color), 2.2), coverage * opacity);

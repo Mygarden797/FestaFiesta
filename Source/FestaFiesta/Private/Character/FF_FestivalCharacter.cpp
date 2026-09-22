@@ -2,6 +2,8 @@
 
 #include "Character/FF_FestivalCharacter.h"
 
+#include "Camera/FF_FestivalPlayerController.h"
+
 #include "Camera/CameraComponent.h"
 #include "Camera/FF_CameraTypes.h"
 #include "Components/CapsuleComponent.h"
@@ -168,6 +170,11 @@ void AFF_FestivalCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 		EnhancedInput->BindAction(SprintAction, ETriggerEvent::Started, this, &AFF_FestivalCharacter::HandleSprintStarted);
 		EnhancedInput->BindAction(SprintAction, ETriggerEvent::Completed, this, &AFF_FestivalCharacter::HandleSprintCompleted);
 	}
+	if (ShiftLockAction)
+	{
+		// 누를 때마다 켜고 끈다. 누르는 동안만 켜지게 하면 오래 조준할 때 손가락이 아프다.
+		EnhancedInput->BindAction(ShiftLockAction, ETriggerEvent::Started, this, &AFF_FestivalCharacter::HandleShiftLockToggled);
+	}
 }
 
 void AFF_FestivalCharacter::HandleMove(const FInputActionValue& Value)
@@ -198,6 +205,44 @@ void AFF_FestivalCharacter::HandleLook(const FInputActionValue& Value)
 	const FVector2D Input = Value.Get<FVector2D>();
 	AddControllerYawInput(Input.X * LookSensitivity);
 	AddControllerPitchInput(Input.Y * LookSensitivity);
+}
+
+void AFF_FestivalCharacter::HandleShiftLockToggled(const FInputActionValue& Value)
+{
+	SetShiftLock(!bShiftLock);
+}
+
+void AFF_FestivalCharacter::SetShiftLock(const bool bEnabled)
+{
+	if (bShiftLock == bEnabled)
+	{
+		return;
+	}
+
+	bShiftLock = bEnabled;
+
+	/* 둘을 함께 바꾼다.
+
+	   컨트롤러 회전 추종만 켜고 이동 방향 정렬을 남겨두면, 한쪽은 카메라를
+	   따라 돌리려 하고 다른 쪽은 걷는 방향으로 돌리려 해서 캐릭터가 떨린다.
+	*/
+	bUseControllerRotationYaw = bEnabled;
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->bOrientRotationToMovement = !bEnabled;
+	}
+
+	// 커서를 켜고 끄는 건 컨트롤러가 맡는다. 입력 모드는 한 곳에서만 정해야
+	// 서로 다른 값을 걸어 덮어쓰는 일이 없다.
+	if (AFF_FestivalPlayerController* FestivalController =
+		Cast<AFF_FestivalPlayerController>(GetController()))
+	{
+		FestivalController->RefreshViewInputMode();
+	}
+
+	UE_LOG(LogFestaFiestaCamera, Verbose,
+		TEXT("[캐릭터] 시야 고정 %s"), bEnabled ? TEXT("켬") : TEXT("끔"));
 }
 
 void AFF_FestivalCharacter::HandleJumpStarted(const FInputActionValue& Value)

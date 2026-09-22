@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Save/FF_Saveable.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Tickable.h"
 #include "FF_FestivalStage.h"
@@ -125,14 +126,46 @@ struct FFF_PhaseTimeRange : public FTableRowBase
 	//이 단계가 끝나면 다음에 어느 단계로 가는지
 };
 
+/* 저장에 담기는 단계 상태.
+
+   하루가 시작되는 순간만 저장하므로 단계는 언제나 Setup 이다. 그래도 담는
+   이유는, 나중에 다른 시점에서 저장하게 됐을 때 형식을 안 바꿔도 되게 하려는 것이다.
+
+   단계를 열거형 값이 아니라 이름으로 담는다. 값으로 담으면 항목을 중간에
+   끼워 넣을 때 그 뒤가 전부 밀려서, 옛 저장이 조용히 다른 단계를 가리킨다.
+*/
+USTRUCT()
+struct FFF_StageSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY() int32 Day = 1;
+	UPROPERTY() FName StageId;
+	UPROPERTY() uint8 Weather = 0;
+};
+
 UCLASS()
-class FESTAFIESTA_API UFF_FestivalStageSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+class FESTAFIESTA_API UFF_FestivalStageSubsystem
+	: public UGameInstanceSubsystem, public FTickableGameObject, public IFF_Saveable
 {
 	GENERATED_BODY()
 
 public:
 
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// ── 저장 참여 ───────────────────────────────────────────────────────────
+
+	virtual FName GetSaveKey() const override { return TEXT("Stage"); }
+
+	// 날짜는 다른 것이 기대는 값이라 가장 먼저 복원한다.
+	virtual EFF_SaveLoadPhase GetSaveLoadPhase() const override
+	{
+		return EFF_SaveLoadPhase::Global;
+	}
+
+	virtual void WriteSaveData(TArray<uint8>& OutBytes) const override;
+	virtual void ReadSaveData(const TArray<uint8>& InBytes) override;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Festival Stage")
 	EFF_FestivalStage CurrentStage = EFF_FestivalStage::Setup;
@@ -253,6 +286,30 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Festival Stage")
 	bool IsMainProgramLocked();
+
+	/**
+	 * 지금 잠금 구간인 메인 공연의 실제 시작 시각(Live 경과 초).
+	 *
+	 * 잠금은 시작보다 MainProgramLockLeadSeconds 만큼 먼저 들어간다. 그 구간은 관객이
+	 * 무대로 모이는 시간이지 공연 중이 아니다 — 둘을 같은 신호로 쓰면 리드타임을 늘린 만큼
+	 * "공연 중"이 길어진다. 잠금 구간이 아니면 false 이고 OutSeconds 는 유지한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool TryGetActiveMainProgramStartSeconds(float& OutSeconds);
+
+	/**
+	 * 아직 끝나지 않은 다음 메인 공연의 시작 시각(Live 경과 초). 잠금 구간과 무관하다.
+	 *
+	 * 배속 잠금 리드타임과 관객 집결 리드타임은 서로 다른 값이다 — 잠금은 "플레이어가
+	 * 공연을 1배속으로 본다"이고 집결은 "먼 NPC 가 걸어올 시간"이라 훨씬 길어야 한다.
+	 * 둘을 한 값으로 묶으면 집결을 늘리는 순간 하루 대부분이 1배속으로 잠긴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool TryGetNextMainProgramStartSeconds(float& OutSeconds);
+
+	/** 아직 끝나지 않은 다음 메인 공연의 종료 시각(Live 경과 초). 다음 이벤트가 없으면 그날 Live 끝이다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Time")
+	bool TryGetNextMainProgramEndSeconds(float& OutSeconds);
 	// 지금 메인 공연 배속 잠금 구간인지 확인
 
 	UFUNCTION(BlueprintCallable, Category = "Festival Stage")
@@ -366,6 +423,8 @@ private:
 
 	bool bWasMainProgramLocked = false;
 	// 공연 시작 알림을 한 번만 보내기 위한 체크용
+	bool bLastLoggedMainProgramLockState = false;
+	int32 ActiveMainProgramEventIndex = INDEX_NONE;
 
 	FString CachedMainProgramEndLabel;
 	// 종료 알림에 쓸 라벨을 시작 시점에 미리 저장

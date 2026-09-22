@@ -8,12 +8,12 @@ OWNER_TAG = "FF.ClawMachine.Owner"
 OWNER_VALUE = "FestaFiesta.ClawMachine.v1"
 ASSET_PATHS = (
     "/Game/FestaFiesta/Zone/Test_Asset/Asset/SM_FFZS_Booth_ActivityGame_ClawMachine",
-    "/Game/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine",
     "/Game/FestaFiesta/UI/Minigame/ClawMachine/T_MG_ClawMachine_Interior_ImageGen",
     "/Game/FestaFiesta/UI/Minigame/ClawMachine/M_MG_ClawMachine_Backdrop",
     "/Game/FestaFiesta/Minigame/Data/DT_ClawMachinePrizes",
     "/Game/FestaFiesta/Minigame/Data/DA_Minigame_ClawMachine",
-    "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_ClawMachine",
+    "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_ActivityGame_ClawMachine",
 )
 SCREEN_PATH = "/Game/FestaFiesta/UI/Minigame/WBP_FF_ClawMachine"
 JOYSTICK_SCREEN_PATH = "/Game/FestaFiesta/UI/Minigame/WBP_FF_ClawMachineJoystick"

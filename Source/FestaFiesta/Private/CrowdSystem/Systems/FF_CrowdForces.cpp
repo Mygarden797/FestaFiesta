@@ -349,6 +349,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 	const bool bUseLaneBias = bHasDesired && (Config.LaneBiasGain > 0.f);
 	const bool bCullWalls = (Config.WallCullRadiusMeters > 0.f);
 	const TArray<FVector2f>* DesiredVel = In.DesiredVelMeters;
+	const TArray<float>* SocialScale = In.SocialScale;
 
 	const int32 N = ActiveIds.Num();
 	if (N == 0)
@@ -409,6 +410,10 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 				++NeighbourCount;
 			}
 
+			// 개인 공간만 좁힌다. Contact 는 그대로라 몸은 여전히 안 겹친다.
+			const float SocialGain = SocialScale ? (*SocialScale)[i] : 1.f;
+			Terms.Social *= SocialGain;
+
 			FFF_CrowdForceTerms WallTerms;
 			{
 				const float CullDist = (bCullWalls ? (Radius[i] + Config.WallCullRadiusMeters) : 0.f);
@@ -445,7 +450,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 					? 1.f
 					: static_cast<float>(FMath::Min(U.UnstuckHoldSteps, HoldMax)) / static_cast<float>(HoldMax);
 
-				if (HoldScale > 0.f)
+				if (HoldScale > 0.f && SocialGain > 0.f)
 				{
 					FVector2f Suggested = FVector2f::ZeroVector;
 					FVector2f CellCenter;
@@ -454,7 +459,7 @@ void FFF_CrowdForceSolver::ComputeAll(const TArray<FUnitData>& Units, const FFF_
 						Suggested = CellCenter - Pos[i];
 					}
 					Accel += ComputeUnstuckImpulse(U.StableAgentID, Suggested)
-						* (Config.UnstuckAccelMps2 * HoldScale);
+						* (Config.UnstuckAccelMps2 * HoldScale * SocialGain);
 				}
 			}
 

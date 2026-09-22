@@ -49,7 +49,7 @@ EFF_LiveFacilityAlert FFF_LiveFacilityRules::ResolveAlert(
 		return EFF_LiveFacilityAlert::Watch;
 	}
 
-	// ⑥ 임계가 0 이하면 대기 인원을 보지 않는다 — 끄는 방법을 남겨 둔다.
+	// ⑥ 임계가 0 이하면 대기 팀 수을 보지 않는다 — 끄는 방법을 남겨 둔다.
 	if (WaitingThreshold > 0 && View.WaitingCount >= WaitingThreshold)
 	{
 		return EFF_LiveFacilityAlert::Watch;
@@ -120,7 +120,7 @@ FText FFF_LiveFacilityRules::DescribeAlert(const FFF_LiveFacilityRow& Row)
 			return LOCTEXT("LiveFac_QueueFull", "정원이 찼습니다");
 		}
 		return FText::Format(
-			LOCTEXT("LiveFac_LongQueue", "{0}명이 줄 서 있습니다"),
+			LOCTEXT("LiveFac_LongQueue", "{0}팀이 줄 서 있습니다"),
 			FText::AsNumber(Row.View.WaitingCount));
 
 	case EFF_LiveFacilityAlert::Unknown:
@@ -266,7 +266,7 @@ void UFF_LivePanelFacilities::RefreshAll()
 			: FText::Format(LOCTEXT("LiveFac_ReasonSuffix", "  —  {0}"), Reason);
 
 		Line->SetText(FText::Format(
-			LOCTEXT("LiveFac_Row", "{0}  대기 {1} · 이용 {2}{3}{4}{5}"),
+			LOCTEXT("LiveFac_Row", "{0}  대기 {1}팀 · 이용 {2}팀{3}{4}{5}"),
 			Row.View.DisplayName,
 			FText::AsNumber(Row.View.WaitingCount),
 			FText::AsNumber(Row.View.ActiveServiceCount),

@@ -17,15 +17,17 @@
 
 namespace FFF_QueueWaitAdapterTestHelpers
 {
-	FFF_QueueState MakeState(int32 RemainingMembers, float ServiceRate, bool bAcceptingNew = true,
+	FFF_QueueState MakeState(int32 RemainingParties, float ServiceRate, bool bAcceptingNew = true,
 		bool bIsOpen = true)
 	{
 		FFF_QueueState State;
 		State.FacilityId = 1;
-		State.RemainingServiceMemberCount = RemainingMembers;
-		State.OccupiedMemberCount = RemainingMembers;
-		State.WaitingPartyCount = RemainingMembers;
-		State.MaxCapacityMembers = 50;
+		State.RemainingServiceMemberCount = RemainingParties;
+		State.OccupiedMemberCount = RemainingParties;
+		State.WaitingPartyCount = RemainingParties;
+		State.RemainingServicePartyCount = RemainingParties;
+		State.NextServiceStartWaitSeconds = ServiceRate > 0.f ? RemainingParties / ServiceRate : 0.f;
+		State.MaxCapacityParties = 50;
 		State.ServiceRate = ServiceRate;
 		State.bIsOpen = bIsOpen;
 		State.bAcceptingNew = bAcceptingNew;
@@ -103,10 +105,12 @@ bool FFF_QueueWaitAdapter_UnitConversionRoundTrips::RunTest(const FString& Param
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_ComputesExpectedWaitFromSnapshot, "FestaFiesta.Queue.WaitAdapter.ComputesExpectedWaitFromSnapshot", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_QueueWaitAdapter_ComputesExpectedWaitFromSnapshot::RunTest(const FString& Parameters)
 {
-	// 20초/인 → 처리율 0.05. 앞에 9명, 내 일행 1명 → 10 / 0.05 = 200초
-	const FFF_QueueState State = MakeState(/*RemainingMembers=*/9, /*ServiceRate=*/0.05f);
-	TestEqual(TEXT("(앞 9명 + 나 1명) / 0.05 = 200초"),
-		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(State, 1), 200.f, 0.01f);
+	// 앞에 9팀, 팀당 20초이면 이용 시작까지 180초다. 자기 이용 시간은 제외한다.
+	const FFF_QueueState State = MakeState(/*RemainingParties=*/9, /*ServiceRate=*/0.05f);
+	TestEqual(TEXT("앞 9팀 × 20초 = 180초"),
+		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(State, 1), 180.f, 0.01f);
+	TestEqual(TEXT("4인 팀도 같은 이용 시작 예측"),
+		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(State, 4), 180.f, 0.01f);
 
 	// 처리율 0을 0초로 돌려주면 "대기 없음"으로 읽혀 모든 Party가 여기로 몰린다.
 	const FFF_QueueState Stalled = MakeState(5, 0.f);
@@ -124,15 +128,15 @@ bool FFF_QueueWaitAdapter_ComputesExpectedWaitFromSnapshot::RunTest(const FStrin
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_DoesNotLeakSecondsIntoMinutesField, "FestaFiesta.Queue.WaitAdapter.DoesNotLeakSecondsIntoMinutesField", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_QueueWaitAdapter_DoesNotLeakSecondsIntoMinutesField::RunTest(const FString& Parameters)
 {
-	// 앞에 9명, 20초/인 → 200초 = 3분 20초. 현실적인 인기 부스 대기다.
+	// 앞에 9팀, 20초/팀 → 180초 = 3분.
 	const FFF_QueueState State = MakeState(9, 0.05f);
 	FFF_DestinationCandidate Candidate = MakeQueueCandidate(TEXT("FoodStallA"), TEXT("food_stall"));
 
 	FFF_QueueWaitAdapter::ApplyQueueStateToCandidate(Candidate, State, /*IncomingMemberCount=*/1);
 
-	TestEqual(TEXT("분 단위로 3.33이 들어간다"), Candidate.EstimatedWaitMinutes, 200.f / 60.f, 0.001f);
-	// 초가 새면 200이 들어가고, wait_ref_minutes=30 기준으로 정규화가 1.0에 박혀 버린다.
-	TestTrue(TEXT("초 값(200)이 분 필드로 새지 않는다"), Candidate.EstimatedWaitMinutes < 30.f);
+	TestEqual(TEXT("분 단위로 3이 들어간다"), Candidate.EstimatedWaitMinutes, 180.f / 60.f, 0.001f);
+	// 초가 새면 180이 들어가고, wait_ref_minutes=30 기준으로 정규화가 1.0에 박혀 버린다.
+	TestTrue(TEXT("초 값(180)이 분 필드로 새지 않는다"), Candidate.EstimatedWaitMinutes < 30.f);
 	return true;
 }
 
@@ -144,7 +148,7 @@ bool FFF_QueueWaitAdapter_CorrectUnitKeepsCandidateCompetitive::RunTest(const FS
 	TMap<FName, float> Preference;
 	Preference.Add(TEXT("food_stall"), 10.f);
 
-	const FFF_QueueState State = MakeState(9, 0.05f);   // 200초 = 3분 20초
+	const FFF_QueueState State = MakeState(9, 0.05f);   // 180초 = 3분
 
 	// (가) 어댑터를 거친 올바른 값
 	TArray<FFF_DestinationCandidate> Correct;
@@ -225,8 +229,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_MatchesQueueCoreFormula, "
 bool FFF_QueueWaitAdapter_MatchesQueueCoreFormula::RunTest(const FString& Parameters)
 {
 	FFF_QueueConfig Config;
-	Config.MaxCapacityMembers = 50;
-	Config.ServiceSecondsPerMember = 20.f;
+	Config.MaxCapacityParties = 50;
+	Config.ServiceSecondsPerParty = 20.f;
 	Config.ConcurrentServiceSlots = 1;
 
 	FFF_QueueLaneGeometry Lane;
@@ -257,9 +261,13 @@ bool FFF_QueueWaitAdapter_MatchesQueueCoreFormula::RunTest(const FString& Parame
 			Queue.GetExpectedWaitMinutes(PartySize), 0.001f);
 	}
 
-	// (앞 7명 + 나 1명) / (1/20) = 160초. 손으로 계산한 값과도 맞아야 한다.
+	// 앞의 7인 팀 한 팀은 20초면 완료한다. 자기 이용 시간은 대기에서 제외한다.
 	TestEqual(TEXT("실제 값이 손계산과 일치한다"),
-		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(State, 1), 160.f, 0.001f);
+		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(State, 1), 20.f, 0.001f);
+	Queue.Advance(5.f, 5.f);
+	const FFF_QueueState InProgress = Queue.GetState();
+	TestEqual(TEXT("경과한 시간을 반영한 코어 예측과 일치"),
+		FFF_QueueWaitAdapter::ComputeExpectedWaitSeconds(InProgress, 4), 15.f, 0.001f);
 	return true;
 }
 
@@ -267,9 +275,9 @@ bool FFF_QueueWaitAdapter_MatchesQueueCoreFormula::RunTest(const FString& Parame
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_QueueWaitAdapter_ServiceRateAccessorsCarryUnits, "FestaFiesta.Queue.WaitAdapter.ServiceRateAccessorsCarryUnits", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_QueueWaitAdapter_ServiceRateAccessorsCarryUnits::RunTest(const FString& Parameters)
 {
-	const FFF_QueueState State = MakeState(0, 0.05f);   // 20초에 1명
+	const FFF_QueueState State = MakeState(0, 0.05f);   // 20초에 1팀
 	TestEqual(TEXT("초당 접근자는 원본 그대로다"), State.GetServiceRatePerSecond(), 0.05f, 1e-6f);
-	TestEqual(TEXT("분당 접근자는 60배 — 20초에 1명이면 분당 3명"), State.GetServiceRatePerMinute(), 3.f, 1e-4f);
+	TestEqual(TEXT("분당 접근자는 60배 — 20초에 1팀이면 분당 3팀"), State.GetServiceRatePerMinute(), 3.f, 1e-4f);
 	TestTrue(TEXT("두 접근자가 같은 값을 돌려주지 않는다"),
 		!FMath::IsNearlyEqual(State.GetServiceRatePerSecond(), State.GetServiceRatePerMinute()));
 	return true;

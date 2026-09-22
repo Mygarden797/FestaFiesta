@@ -9,11 +9,20 @@
 #include "FF_FestivalCrowdTypes.generated.h"
 
 
+
 enum class EUnitAnimationState : uint8
 {
 	Idle,
 	Walk,
 	Run
+};
+
+UENUM()
+enum class EFF_CrowdRole : uint8
+{
+	Visitor,
+	Staff,
+	Undefined
 };
 
 
@@ -82,22 +91,7 @@ struct FUnitData
 	
 	//---회피 관련 변수들 ---//
 
-	/**
-	 * 이번 스텝의 가속도, UU/s^2. (이름은 Force지만 이미 질량으로 나눈 값이다)
-	 *
-	 * 사회력 계산은 SI(N, m)로 하고, 질량으로 나눠 가속도로 만든 뒤 UU/s^2로 되돌려 여기 담는다.
-	 * 왜 힘(N)을 그대로 담지 않는가: 그러면 StepAgent이 질량을 알아야 하고,
-	 * 단위 변환 지점이 두 곳으로 늘어난다. 변환이 두 곳이 되는 순간 100배 오차가 숨을 자리가 생긴다.
-	 *
-	 * ★ 안에 무엇이 들어 있는지는 bAvoidanceDrivesVelocity에 달려 있다.
-	 *   켜짐: 구동력 + 회피. StepAgent은 Lerp 없이 이 값만 적분한다
-	 *   꺼짐: 회피분만. 목표 추종은 StepAgent의 지수 평활이 맡는다
-	 *   판단은 CrowdSteering::FStepParams::bDrivingForceInForce로 전달된다.
-	 *
-	 * bEnableAvoidance가 false면 항상 0이고(그때는 Lerp 경로가 강제된다),
-	 * StepAgent에서 0을 더하는 것은 결과를 바꾸지 않는다 —
-	 * 그래서 회피를 껐을 때 기존 수치와 완전히 같다(회귀 판정의 근거).
-	 */
+	//이번 스텝의 가속도
 	FVector Force = FVector::ZeroVector;
 
 	/**
@@ -108,12 +102,7 @@ struct FUnitData
 	 */
 	float MassKg = 70.f;
 
-	/**
-	 * 연속으로 제자리에 머문 고정 스텝 수. 임계를 넘으면 탈출 가속을 받는다.
-	 *
-	 * 회피를 붙이는 것과 같은 커밋에 넣는다. 나중에 붙이면
-	 * "가끔 안 움직이는 NPC"를 재현하느라 하루를 쓴다.
-	 */
+	//연속으로 머문 횟수. 일정 이상이면 탈출  속도를 발동시킨다.
 	int32 StuckSteps = 0;
 
 	int32 UnstuckHoldSteps = 0;
@@ -126,39 +115,29 @@ struct FUnitData
 
 	float Radius = 34.f;
 
-	/**
-	 * 이 개체의 도착 판정 반경, UU. ★ 개체마다 다르다.
-	 *
-	 * ── 왜 전역 값이 아닌가 (실측 근거) ──
-	 *
-	 * 부스의 대기열 슬롯 간격은 90cm다(FFFZSQueueRules::SlotSpacingCm).
-	 * 전역 150UU를 쓰면 도착 반경이 슬롯 간격보다 커서, 슬롯 5번으로 걸어가던 파티가
-	 * 슬롯 3~4번 자리에서 이미 '도착'으로 판정되어 그 자리에 선다.
-	 * 인접 슬롯 두세 개가 서로의 반경 안에 들어가므로 9.9m로 펴져야 할 줄이
-	 * 1.5m 뭉치로 압축된다 — 부스 앞 덩어리의 직접 원인이다.
-	 * 큐 자신은 25cm(SlotArrivalToleranceCm)로 판정하므로 두 시스템이 6배 다른 기준을 쓰고 있었다.
-	 *
-	 * 그래서 목적지 종류에 따라 값이 달라야 한다.
-	 *   큐 슬롯·서비스 지점 : QueueSlotArrivalRadiusUU (슬롯 간격의 절반 미만)
-	 *   그 밖(접근점·배회)  : ArrivalRadiusUU
-	 *
-	 * 갱신은 UFF_CrowdSimulationSubsystem::StepSimulation이 스텝마다 한 번 한다 —
-	 * 큐 단계를 아는 것은 그쪽뿐이다. 여기 값을 직접 쓰지 말 것.
-	 */
+	//개체의 도착 판정
 	float ArrivalRadiusUU = 150.f;
 
 	// 추격 중이 아닐 때 내는 속도, UU/s. Speed가 MaxSpeed로 덮이므로 역산할 수 없다
 	float CruiseSpeed = 150.f;
+
+	// 스폰 시점의 MaxSpeed. 공연 집결처럼 일시적으로 속도를 올린 뒤 되돌릴 기준값이다.
+	// Velocity 가 MaxSpeed 로 잘리므로 Speed 만 올리면 실제로는 안 빨라진다.
+	float CruiseMaxSpeed = 150.f;
 
 	// 멤버가 리더를 따라붙는 중인가. 켜는 임계와 푸는 임계가 다르다(히스테리시스)
 	bool bCatchingUpToLeader = false;
 
 	//Animation
 	
-
+	
 	
 	//이 개체가 들어온 게이트. ValidGates 인덱스이다.
 	int32 EntryGateIndex = INDEX_NONE;
+	
+	EFF_CrowdRole CrowdRole = EFF_CrowdRole::Undefined;
+	
+	
 	
 	
 };
@@ -360,6 +339,8 @@ enum class EFF_PartyQueuePhase : uint8
 	AtSlot,
 };
 
+
+
 // 일반 시설 Queue와 독립적인 예약 프로그램 이동 상태.
 UENUM()
 enum class EFF_PartyProgramPhase : uint8
@@ -368,6 +349,19 @@ enum class EFF_PartyProgramPhase : uint8
 	Returning,		// 복귀 중
 	Waiting,		// 대기 중 
 	Participating   // 참여 중
+};
+
+// 일반 Queue 및 유료 프로그램과 독립적인 공연 관람 상태.
+// Audience 자리는 사람 단위지만 행동 잠금은 파티 리더가 소유한다.
+UENUM()
+enum class EFF_PartyAudiencePhase : uint8
+{
+	None,
+	GoingToEntry,
+	GoingToSlot,
+	Waiting,
+	Spectating,
+	Exiting
 };
 
 USTRUCT()
@@ -419,6 +413,15 @@ struct FPartyDecisionState
 	float ProgramStartMinutes = 0.f;
 	float ProgramEndMinutes = 0.f;
 	FVector ProgramWaitingLocation = FVector::ZeroVector;
+
+	// --- 공연 관람 -----------------------------------------------------------------------
+	EFF_PartyAudiencePhase AudiencePhase = EFF_PartyAudiencePhase::None;
+	FGuid AudienceFacilityId;
+	int32 AudienceFirstSlotIndex = INDEX_NONE;
+	int32 AudienceSlotCount = 0;
+	FVector AudienceEntryLocation = FVector::ZeroVector;
+	FVector AudienceExitLocation = FVector::ZeroVector;
+	float AudienceArrivalTolerance = 0.f;
 };
 
 // 입장, 퇴장 게이트 하나. 저작 데이터만 담고, 배열 순서가 곧 게이트 인덱스라 저작 순서가 결정성의 계약이다.
@@ -455,4 +458,6 @@ struct FESTAFIESTA_API FFF_CrowdGate
 	
 
 };
+
+
 

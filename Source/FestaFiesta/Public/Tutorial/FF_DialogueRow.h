@@ -49,6 +49,20 @@ struct FFF_DialogueRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FString WaitCondition;
 
+	// FullScreen / BoxOnly. 비어 있으면 화면 전체.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	FString ClickArea;
+
+	// PrepTabOpened 일 때 기다릴 탭. Build / Program / Staff / Promotion / Finale / Check
+	// 비어 있으면 아무 탭이나 열리면 통과한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
+	FString ExpectedTab;
+
+	// 이 줄에서 보여줄 배경 그림의 경로. 비어 있으면 앞 줄 그림이 남는다.
+	// 지우려면 None 이라고 적는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	FString BackgroundImage;
+
 	// 강조할 대상 이름. 비어 있으면 강조하지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FString HighlightAnchor;

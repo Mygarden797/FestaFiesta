@@ -96,8 +96,6 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestDefinition->InitialGold = 12'345;
 
 	// 이 테스트는 **Read Model 이 잔액을 그대로 비추는지**만 본다. StartFestival 이 Day1
-	// 임대료를 징수하므로(economy_spec.md §5 S6) 임대료를 0 으로 두지 않으면 12,345 가 안 나온다.
-	TestDefinition->DailyVenueRentGold = 0;
 
 	Progression->StartFestival(TestDefinition);
 	TestEqual(TEXT("Building Read Model synchronously mirrors Progression initial Gold"),
@@ -106,7 +104,7 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	const UFFZSFacilityDefinition* FoodTruckDefinition =
 		LoadObject<UFFZSFacilityDefinition>(
 			nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+			TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 				"PDA_FFZS_Booth_FoodStall_Taco."
 				"PDA_FFZS_Booth_FoodStall_Taco"));
 	TestNotNull(TEXT("The production FoodTruck definition loads for catalog pricing"),
@@ -126,8 +124,8 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	// DT_FacilityCosts 의 FoodTruck 값이 400 → 700 으로 바뀌자(2026-08-24) 두 줄이 같이 깨졌다.
 	// 이 테스트가 보려는 것은 금액 자체가 아니라 **Read Model 이 살아 있는 표를 그대로 비추는가**다.
 	const int32 LiveInstallCost = PricedEntry.InstallCost;
-	TestTrue(TEXT("Building Read Model projects a positive live FoodTruck install cost"),
-		LiveInstallCost > 0);
+	TestTrue(TEXT("Building Read Model projects a valid live FoodTruck install cost"),
+		PricedEntry.HasValidInstallCost());
 	TestEqual(TEXT("Building Read Model projects the configured demolition recovery cost"),
 		PricedEntry.RecoveryCost, FMath::RoundToInt(LiveInstallCost * 0.5f));
 	TestTrue(TEXT("A zero-capable recovery cost has an independent resolved flag"),
@@ -153,7 +151,7 @@ bool FFF_BuildCatalogCurrentGoldTest::RunTest(const FString& Parameters)
 	TestDefinition->FacilityDemolitionRefundRate = 0.5f;
 
 	const TCHAR* ScreenClassPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
 	UWidgetBlueprintGeneratedClass* ScreenClass =
 		Cast<UWidgetBlueprintGeneratedClass>(LoadObject<UClass>(nullptr, ScreenClassPath));
 	TestNotNull(TEXT("Build catalog WBP generated class loads"), ScreenClass);

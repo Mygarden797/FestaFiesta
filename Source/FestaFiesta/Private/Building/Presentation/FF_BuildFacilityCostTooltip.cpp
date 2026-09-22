@@ -2,7 +2,7 @@
 
 // 카탈로그 항목의 시설명과 설치·복구 비용을 툴팁 표시 값으로 변환한다.
 // 흐름: 항목 스냅샷 저장 -> 비용 해석 여부에 따른 문구 계산 -> 준비된 BindWidget에 적용.
-// 불변식: 비용 미확정 상태와 유효한 0 Gold 복구 비용을 서로 다른 조건으로 판정한다.
+// 불변식: 비용 미확정 상태와 유효한 0 Gold 설치·복구 비용을 구분한다.
 // 실패/수명: Configure가 위젯 생성 전 호출되어도 상태를 보존하고 PreConstruct에서 다시 적용한다.
 
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
@@ -70,12 +70,12 @@ FText UFF_BuildFacilityCostTooltip::GetDisplayedRecoveryCostText() const
 
 bool UFF_BuildFacilityCostTooltip::HasResolvedInstallCost() const
 {
-	return bConfigured && Entry.bHasResolvedInstallCost && Entry.InstallCost > 0;
+	return bConfigured && Entry.HasValidInstallCost();
 }
 
 bool UFF_BuildFacilityCostTooltip::HasResolvedRecoveryCost() const
 {
-	// 철거 환급은 0 Gold도 유효하지만 설치 비용 0은 잘못된 비용표이므로 두 조건을 분리한다.
+	// 설치비와 환급률 모두 0일 수 있으므로 숫자와 해석 성공 여부를 함께 확인한다.
 	return bConfigured && Entry.bHasResolvedRecoveryCost && Entry.RecoveryCost >= 0;
 }
 

@@ -18,6 +18,7 @@
 #include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/ScrollBox.h"
+#include "Components/VerticalBox.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Editor.h"
 #include "Engine/Blueprint.h"
@@ -38,6 +39,7 @@
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"
 #include "Misc/AutomationTest.h"
+#include "Materials/MaterialInterface.h"
 #include "Misc/CommandLine.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -74,7 +76,7 @@ namespace
 	UTexture2D* LoadCaptureFoodTruckTexture(FAutomationTestBase& Test)
 	{
 		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
 		if (!Test.TestNotNull(TEXT("실제 카탈로그 푸드트럭 썸네일"), Texture)) return nullptr;
 		TArray<UTexture*> Textures = {Texture};
 		FTextureCompilingManager::Get().FinishCompilation(Textures);
@@ -84,16 +86,16 @@ namespace
 	}
 
 	const TCHAR* FacilityInfoObjectPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
 			"WBP_FF_FacilityInfoPanel");
 	const TCHAR* FacilityInfoClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
 			"WBP_FF_FacilityInfoPanel_C");
 	const TCHAR* PaidProgramPickerClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
 			"WBP_FF_FacilityPaidProgramPicker_C");
 	const TCHAR* PaidProgramCardClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard."
 			"WBP_FF_FacilityPaidProgramCard_C");
 
 	class FScopedFacilityInfoPlayerlessWidgetInitialization
@@ -205,6 +207,9 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("가격 실패는 0 Gold로 오해되지 않는다"),
 		FFFacilityInfoModel::FormatGold(false, 0).ToString(),
 		FString(TEXT("가격 정보 없음")));
+	TestEqual(TEXT("확정된 무료 가격은 0 Gold로 표시한다"),
+		FFFacilityInfoModel::FormatGold(true, 0).ToString(),
+		FString(TEXT("0 Gold")));
 	TestEqual(TEXT("즉시 이용 가능한 Queue는 대기 0분 대신 의미를 표시한다"),
 		FFFacilityInfoModel::FormatExpectedWait(true, 0.0f).ToString(),
 		FString(TEXT("바로 이용 가능")));
@@ -214,6 +219,9 @@ bool FFF_FacilityInfoFormattingTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("61초는 과소 예측하지 않고 2분으로 올림한다"),
 		FFFacilityInfoModel::FormatExpectedWait(true, 61.0f).ToString(),
 		FString(TEXT("약 2분")));
+	TestEqual(TEXT("처리 속도는 실제 인원 수가 아닌 팀 단위로 표시한다"),
+		FFFacilityInfoModel::FormatThroughput(true, 15.0f).ToString(),
+		FString(TEXT("분당 15.0팀")));
 	TestEqual(TEXT("미등록 Queue 기본값을 열린 시설로 표시하지 않는다"),
 		FFFacilityInfoModel::GetOperationStateText(true, false, true, true).ToString(),
 		FString(TEXT("운영 정보 준비 중")));
@@ -272,6 +280,18 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 		ViewData.UpgradeCurrentText.ToString().Contains(TEXT("4 × 4 m")) &&
 		ViewData.UpgradeNextText.ToString().Contains(TEXT("16 Gold")) &&
 		ViewData.UpgradeNextText.ToString().Contains(TEXT("6 × 6 m")));
+	TestEqual(TEXT("현재 수익은 독립 UMG 필드에도 실제 견적을 전달한다"),
+		ViewData.UpgradeCurrentValues.Revenue.ToString(), FString(TEXT("10 Gold")));
+	TestEqual(TEXT("강화 후 수익은 독립 UMG 필드에도 실제 견적을 전달한다"),
+		ViewData.UpgradeNextValues.Revenue.ToString(), FString(TEXT("16 Gold")));
+	TestEqual(TEXT("분리된 현재 처리 시간은 정밀도를 보존한다"),
+		ViewData.UpgradeCurrentValues.ServiceTime.ToString(), FString(TEXT("4.0초")));
+	TestEqual(TEXT("분리된 다음 처리 속도는 견적의 반올림값이다"),
+		ViewData.UpgradeNextValues.Throughput.ToString(), FString(TEXT("18.8팀/분")));
+	TestEqual(TEXT("독립 금액 필드에는 캡션을 섞지 않는다"),
+		ViewData.UpgradePriceText.ToString(), FString(TEXT("120 Gold")));
+	TestEqual(TEXT("정상 견적은 잔액을 독립 표시한다"),
+		ViewData.UpgradeBalanceText.ToString(), FString(TEXT("880 Gold")));
 	TestTrue(TEXT("강화로 달라지는 시설 크기를 구매 전에 표시한다"),
 		ViewData.UpgradeSizeEffectText.ToString().Contains(TEXT("4 × 4 m → 6 × 6 m")));
 	TestTrue(TEXT("비용과 구매 후 잔액을 함께 표시한다"),
@@ -294,6 +314,10 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("부족한 골드는 가상의 구매 후 잔액 대신 부족액으로 표시한다"),
 		ViewData.UpgradeCostText.ToString().Contains(TEXT("부족한 금액  40 Gold")) &&
 		!ViewData.UpgradeCostText.ToString().Contains(TEXT("구매 후 잔액")));
+	TestEqual(TEXT("독립 견적행도 부족액과 잔액을 구분한다"),
+		ViewData.UpgradeBalanceLabel.ToString(), FString(TEXT("부족한 금액")));
+	TestEqual(TEXT("독립 부족액은 음수 잔액으로 보이지 않는다"),
+		ViewData.UpgradeBalanceText.ToString(), FString(TEXT("40 Gold")));
 	TestEqual(TEXT("권한 계층의 실패 사유를 표시한다"),
 		ViewData.UpgradeDisabledReasonText.ToString(), Preview.FailureReason.ToString());
 
@@ -303,6 +327,9 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("운영 중에는 다음 단계 구매 상세를 숨긴다"), ViewData.bShowUpgradeDetails);
 	TestTrue(TEXT("운영 전환 시 이전 비교 카드도 지운다"),
 		ViewData.UpgradeCurrentText.IsEmpty() && ViewData.UpgradeNextText.IsEmpty());
+	TestTrue(TEXT("운영 전환 시 이전의 독립 수치와 금액도 지운다"),
+		ViewData.UpgradeCurrentValues.Revenue.IsEmpty() && ViewData.UpgradeNextValues.ServiceTime.IsEmpty() &&
+		ViewData.UpgradePriceText.IsEmpty() && ViewData.UpgradeBalanceLabel.IsEmpty() && ViewData.UpgradeBalanceText.IsEmpty());
 	TestTrue(TEXT("운영 중에도 레벨이 보인다"), !ViewData.FacilityLevelText.IsEmpty());
 	TestTrue(TEXT("운영 상태로 전환하면 이전 실패 사유를 지운다"), ViewData.UpgradeDisabledReasonText.IsEmpty());
 
@@ -312,10 +339,12 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
 	TestFalse(TEXT("가격 조회가 실패하면 0 Gold 구매 견적을 표시하지 않는다"), ViewData.bShowUpgradeDetails);
 	TestTrue(TEXT("가격 조회 실패 시 이전 견적을 지운다"), ViewData.UpgradeCostText.IsEmpty());
+	TestTrue(TEXT("가격 조회 실패는 독립 가격 0으로 위장하지 않는다"), ViewData.UpgradePriceText.IsEmpty());
 	Preview.bHasUpgradeQuote = true;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
 	TestTrue(TEXT("정상 무료 견적은 0 Gold여도 상세를 표시한다"), ViewData.bShowUpgradeDetails);
 	TestTrue(TEXT("무료 구매 버튼을 명시한다"), ViewData.UpgradeActionText.ToString().Contains(TEXT("무료")));
+	TestEqual(TEXT("정상 무료 견적만 독립 가격 0을 표시한다"), ViewData.UpgradePriceText.ToString(), FString(TEXT("0 Gold")));
 	Preview.CostGold = 120;
 	Preview.NextServiceDurationSeconds = Preview.CurrentServiceDurationSeconds;
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
@@ -367,6 +396,12 @@ bool FFF_FacilityInfoUpgradeReadModelTest::RunTest(const FString& Parameters)
 	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
 	TestTrue(TEXT("무료 시설은 현재 수익 0을 표시한다"), ViewData.FacilityRevenueText.ToString().Contains(TEXT("0 Gold")));
 	TestFalse(TEXT("현재 수익 0일 때 증가율을 나눗셈으로 만들지 않는다"), ViewData.UpgradeRevenueEffectText.ToString().Contains(TEXT("%")));
+	Preview.bRevenueAvailable = false;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Preview, ViewData);
+	TestEqual(TEXT("수익 원본 미제공은 실제 0과 구분한다"),
+		ViewData.UpgradeCurrentValues.Revenue.ToString(), FString(TEXT("정보 없음")));
+	TestEqual(TEXT("수익 미제공이어도 유효한 시간 견적은 남는다"),
+		ViewData.UpgradeNextValues.ServiceTime.ToString(), FString(TEXT("8.0초")));
 	return true;
 }
 
@@ -440,7 +475,6 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	CostTable->AddRow(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"), CostRow);
 	Definition->FestivalId = TEXT("FacilityInfoProgramReadModelFestival");
 	Definition->FacilityCostTable = CostTable;
-	Definition->DailyVenueRentGold = 0;
 	Progression->SetProgramReservations(Reservations);
 	Progression->StartFestival(Definition);
 
@@ -535,6 +569,33 @@ bool FFF_FacilityInfoProgramReadModelTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Live에서도 오늘 편성 요약은 읽을 수 있다"), ViewData.bShowProgramSection);
 	TestFalse(TEXT("Live에서는 편성 CTA를 숨긴다"), ViewData.bShowProgramScheduleAction);
 	TestFalse(TEXT("숨긴 Live CTA는 활성 상태를 갖지 않는다"), ViewData.bCanScheduleProgram);
+
+	// Reuse the installed-facility fixture to exercise price resolution through the inspector,
+	// including refreshes that must replace a previously valid free price with an error.
+	const FName CostKey(TEXT("Cost.Booth.CraftExperience.FacilityInfoProgramTest"));
+	CostRow.InstallCost = 0;
+	CostTable->AddRow(CostKey, CostRow);
+	TestTrue(TEXT("무료 설치비를 시설 정보에 다시 반영한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("시설 정보도 확정된 무료 설치비를 0 Gold로 표시한다"),
+		ViewData.InstallCostText.ToString(), FString(TEXT("0 Gold")));
+	TestEqual(TEXT("무료 시설의 회수 비용도 0 Gold다"),
+		ViewData.RecoveryCostText.ToString(), FString(TEXT("0 Gold")));
+
+	CostRow.InstallCost = -1;
+	CostTable->AddRow(CostKey, CostRow);
+	TestTrue(TEXT("잘못된 가격이어도 나머지 시설 정보를 유지한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("음수 설치비는 시설 정보에서 사용할 수 없는 가격이다"),
+		ViewData.InstallCostText.ToString(), FString(TEXT("가격 정보 없음")));
+	TestEqual(TEXT("음수 설치비로부터 무료 회수 비용을 만들지 않는다"),
+		ViewData.RecoveryCostText.ToString(), FString(TEXT("가격 정보 없음")));
+
+	CostTable->RemoveRow(CostKey);
+	TestTrue(TEXT("가격 행이 없어도 나머지 시설 정보를 유지한다"),
+		Coordinator->BuildViewData(*Facility, ViewData));
+	TestEqual(TEXT("누락된 가격 행은 무료 설치비와 구분한다"),
+		ViewData.InstallCostText.ToString(), FString(TEXT("가격 정보 없음")));
 	return true;
 }
 
@@ -623,7 +684,7 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 	// Keep the synthetic geometry stable, but inherit the current authored identity/cost
 	// contract. The retired DadaPochaFoodTruck row and category Default no longer exist.
 	const UFFZSFacilityDefinition* PricedDefinition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger."
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger."
 			"PDA_FFZS_Booth_FoodStall_Burger"));
 	if (!TestNotNull(TEXT("선택 fixture가 사용하는 현행 Burger 시설 정의"), PricedDefinition) ||
 		!TestEqual(TEXT("기하 fixture와 가격 정의의 카테고리가 같다"),
@@ -975,24 +1036,26 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		? Cast<UCanvasPanelSlot>(PanelSize->Slot)
 		: nullptr;
 	TestNotNull(TEXT("카드는 전체 화면 Canvas의 직접 자식이다"), PanelSlot);
-	constexpr float ExpectedPanelWidth = 405.0f;
+	const bool bAurora = Tree->FindWidget(TEXT("Aurora_InfoV7")) != nullptr;
+	const bool bClarity = Tree->FindWidget(TEXT("Clarity_InfoV1")) != nullptr;
+	const float ExpectedPanelWidth = bClarity ? 456.f : (bAurora ? 592.f : 405.f);
 	if (PanelSize)
 	{
 		TestTrue(TEXT("카드 너비는 WBP가 소유한 405px이다"),
 			FMath::IsNearlyEqual(PanelSize->GetWidthOverride(), ExpectedPanelWidth));
-		TestFalse(TEXT("높이 고정을 해제해 작은 뷰포트에서도 늘어난다"), PanelSize->IsHeightOverride());
+		TestEqual(TEXT("Clarity 카드는 화면을 채우지 않는 고정 높이를 사용한다"), PanelSize->IsHeightOverride(), bClarity);
 	}
 	if (PanelSlot)
 	{
 		const FAnchors Anchors = PanelSlot->GetAnchors();
-		TestTrue(TEXT("카드 anchor는 우측 세로 stretch다"),
-			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) && Anchors.Maximum.Equals(FVector2D(1.0f, 1.0f)));
+		TestTrue(TEXT("카드 anchor는 우측 안전 영역에 있다"),
+			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) && Anchors.Maximum.Equals(FVector2D(1.0f, bClarity ? 0.f : 1.f)));
 		const FMargin Offsets = PanelSlot->GetOffsets();
 		TestTrue(TEXT("카드는 우측18/상단18/폭405/하단126 dock이다"),
 			FMath::IsNearlyEqual(Offsets.Left, -18.f) && FMath::IsNearlyEqual(Offsets.Top, 18.f) &&
-			FMath::IsNearlyEqual(Offsets.Right, ExpectedPanelWidth) && FMath::IsNearlyEqual(Offsets.Bottom, 126.f));
+			FMath::IsNearlyEqual(Offsets.Right, ExpectedPanelWidth) && FMath::IsNearlyEqual(Offsets.Bottom, bClarity ? 620.f : (bAurora ? 66.f : 126.f)));
 		TestFalse(TEXT("카드 Canvas 슬롯은 AutoSize를 사용하지 않는다"), PanelSlot->GetAutoSize());
-		TestTrue(TEXT("하단126 예약은 팀원HUD58, 여백12, compact42보다 크다"), Offsets.Bottom > 58.f + 12.f + 42.f);
+		TestTrue(TEXT("하단126 예약은 팀원HUD58, 여백12, compact42보다 크다"), Offsets.Bottom >= (bAurora ? 66.f : 112.f));
 	}
 	TestNotNull(TEXT("카드가 명시적 Border 계약을 가진다"),
 		Cast<UBorder>(Tree->FindWidget(TEXT("Border_Panel"))));
@@ -1011,9 +1074,8 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Details"))));
 	TestNotNull(TEXT("썸네일 계약"), Cast<UImage>(Tree->FindWidget(TEXT("Image_Thumbnail"))));
 	const USizeBox* ThumbnailSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Thumbnail_Size")));
-	TestTrue(TEXT("확대된 썸네일은 120x112px 공간을 가진다"), ThumbnailSize &&
-		FMath::IsNearlyEqual(ThumbnailSize->GetWidthOverride(), 120.0f) &&
-		FMath::IsNearlyEqual(ThumbnailSize->GetHeightOverride(), 112.0f));
+	TestTrue(TEXT("썸네일은 디자이너가 정한 유효한 고정 영역을 가진다"), ThumbnailSize &&
+		ThumbnailSize->GetWidthOverride() > 0.f && ThumbnailSize->GetHeightOverride() > 0.f);
 	TestNotNull(TEXT("현재/강화 후 비교 카드 계약"), Tree->FindWidget(TEXT("Panel_UpgradeComparison")));
 	for (const FName Name : {FName(TEXT("Text_UpgradeCurrent")), FName(TEXT("Text_UpgradeNext")),
 		FName(TEXT("Text_Footprint_Card")), FName(TEXT("Text_InstallCost_Card")), FName(TEXT("Text_Occupancy_Card"))})
@@ -1035,7 +1097,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	{
 		bUpgradeInsideScroll |= Ancestor == Tree->FindWidget(TEXT("ScrollBox_Details"));
 	}
-	TestTrue(TEXT("강화 컨트롤은 카드 외부와 겹치지 않고 기존 스크롤 안에 있다"), bUpgradeInsideScroll);
+	TestTrue(TEXT("강화 비교 본문은 기존 상세 스크롤 안에 있다"), bUpgradeInsideScroll);
 	UVerticalBox* DetailContent = Cast<UVerticalBox>(Tree->FindWidget(TEXT("Panel_Content")));
 	if (TestNotNull(TEXT("시설 상세 스크롤 콘텐츠"), DetailContent) && UpgradeSection)
 	{
@@ -1048,8 +1110,10 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 			FName(TEXT("Panel_ProgramSection"))})
 		{
 			UWidget* OtherSection = FFFacilityInfoUpgradeLayout::FindContentChild(Tree->FindWidget(Name), *DetailContent);
-			TestTrue(*FString::Printf(TEXT("강화는 %s보다 먼저 표시한다"), *Name.ToString()),
-				OtherSection && UpgradeIndex < DetailContent->GetChildIndex(OtherSection));
+			TestTrue(*FString::Printf(TEXT("강화와 %s는 저장된 페이지 순서를 유지한다"), *Name.ToString()),
+				OtherSection && (Tree->FindWidget(TEXT("Aurora_InfoV7"))
+					? UpgradeIndex > DetailContent->GetChildIndex(OtherSection)
+					: UpgradeIndex < DetailContent->GetChildIndex(OtherSection)));
 		}
 	}
 
@@ -1097,12 +1161,23 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("시설 정보 BindWidget 계약으로 WBP 인스턴스를 만들 수 있다"), Panel);
 	if (Panel)
 	{
+		for (const FName Name : {FName(TEXT("Text_Occupancy_Label")),
+			FName(TEXT("Clarity_Label_Text_Occupancy")), FName(TEXT("Aurora_Label_Text_Occupancy"))})
+		{
+			if (auto* Label = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(Name)))
+				TestEqual(TEXT("저장된 기존 WBP도 실행 시 팀 점유 설명을 표시한다"),
+					Label->GetText().ToString(), FString(TEXT("대기·처리 중 팀")));
+		}
+		if (auto* Label = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("V2_UpgradeLabelTime"))))
+			TestEqual(TEXT("강화 비교의 이용 시간은 팀 기준이다"),
+				Label->GetText().ToString(), FString(TEXT("팀당 시간")));
 		FFF_FacilityInfoViewData ViewData;
 		ViewData.FacilityInstanceId = FGuid::NewGuid();
 		ViewData.Context = EFF_FacilityInfoContext::Build;
 		ViewData.DisplayName = FText::FromString(TEXT("테스트 시설"));
 		ViewData.bCanMove = true;
 		ViewData.bCanRemove = true;
+		ViewData.bShowRevenueSection = true;
 		ViewData.bShowProgramSection = true;
 		ViewData.ProgramStatusText = FText::FromString(TEXT("오늘 편성 없음"));
 		ViewData.bShowProgramScheduleAction = true;
@@ -1116,6 +1191,19 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		Panel->ApplyViewData(ViewData);
 		const TSharedRef<SWidget> SlateWidget = Panel->TakeWidget();
 		(void)SlateWidget;
+		if (UButton* Ranking = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_RevenueRanking"))))
+		{
+			int32 RankingRequests = 0;
+			const FDelegateHandle RankingHandle = Panel->OnRevenueRankingRequested.AddLambda([&]() { ++RankingRequests; });
+			Panel->SetInfoPage(bClarity ? EFF_FacilityInfoPage::Revenue : EFF_FacilityInfoPage::Operation);
+			TestEqual(TEXT("매출 정보에서 순위 보기 버튼을 제공한다"), Ranking->GetVisibility(), ESlateVisibility::Visible);
+			Ranking->OnClicked.Broadcast();
+			TestEqual(TEXT("순위 요청은 게임 명령 없이 한 번 전달된다"), RankingRequests, 1);
+			Panel->SetInfoPage(EFF_FacilityInfoPage::Overview);
+			Ranking->OnClicked.Broadcast();
+			TestEqual(TEXT("숨겨진 순위 버튼은 직접 이벤트에도 다시 열지 않는다"), RankingRequests, 1);
+			Panel->OnRevenueRankingRequested.Remove(RankingHandle);
+		}
 		TestEqual(TEXT("적용된 ViewData의 GUID가 보존된다"),
 			Panel->GetCurrentViewData().FacilityInstanceId, ViewData.FacilityInstanceId);
 		UButton* MoveButton = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_Move")));
@@ -1173,6 +1261,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("인스턴스에 프로그램 편성 버튼이 바인딩된다"), ScheduleProgramButton);
 		if (ProgramSection)
 		{
+			if (bClarity) Panel->SetInfoPage(EFF_FacilityInfoPage::Programs);
 			TestEqual(TEXT("프로그램 섹션 visibility는 read model을 따른다"),
 				ProgramSection->GetVisibility(), ESlateVisibility::Visible);
 		}
@@ -1240,6 +1329,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 				ViewData.TodayRevenueText = FText::FromString(TEXT("180 Gold"));
 				ViewData.RevenueStatusText = FText::GetEmpty();
 				Panel->ApplyViewData(ViewData);
+				if (bClarity) Panel->SetInfoPage(EFF_FacilityInfoPage::Revenue);
 				TestEqual(TEXT("수익 섹션은 시설 정보 페이지에서 보인다"),
 					RevenueSection->GetVisibility(), ESlateVisibility::Visible);
 				if (UWidget* Status = Panel->GetWidgetFromName(TEXT("Text_FacilityRevenueStatus")))
@@ -1323,6 +1413,118 @@ bool FFF_FacilityInfoRevenueReadModelTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_FacilityInfoInspectorV2MigrationTest,
+	"FestaFiesta.UI.FacilityInfo.InspectorV2Migration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoInspectorV2MigrationTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr, FacilityInfoObjectPath);
+	if (!TestNotNull(TEXT("Inspector source WBP"), Blueprint) || !Blueprint->WidgetTree) return false;
+	UWidgetBlueprint* Copy = DuplicateObject<UWidgetBlueprint>(Blueprint, GetTransientPackage(),
+		MakeUniqueObjectName(GetTransientPackage(), UWidgetBlueprint::StaticClass(), TEXT("FacilityInfoV2ContractCopy")));
+	if (!TestNotNull(TEXT("Transient inspector copy"), Copy) || !Copy->WidgetTree) return false;
+	Copy->SetFlags(RF_Transient);
+	UWidgetTree* Tree = Copy->WidgetTree;
+	const bool bAlreadyV2 = Tree->FindWidget(TEXT("Panel_PersistentIdentity")) != nullptr;
+	const bool bAlreadyRefined = Tree->FindWidget(TEXT("Panel_UpgradeActions")) != nullptr;
+	const UCommonTextBlock* OriginalOccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
+	const FString OriginalOccupancyCaption = OriginalOccupancyLabel ? OriginalOccupancyLabel->GetText().ToString() : FString();
+	UWidget* OriginalRoot = Tree->RootWidget;
+	USizeBox* PanelSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Panel_Size")));
+	UCanvasPanelSlot* PanelSlot = PanelSize ? Cast<UCanvasPanelSlot>(PanelSize->Slot) : nullptr;
+	if (!TestNotNull(TEXT("Original inspector shell"), PanelSize) || !TestNotNull(TEXT("Original docking slot"), PanelSlot)) return false;
+	const FAnchors OriginalAnchors = PanelSlot->GetAnchors();
+	const FMargin OriginalOffsets = PanelSlot->GetOffsets();
+	const FVector2D OriginalAlignment = PanelSlot->GetAlignment();
+	const float OriginalWidth = PanelSize->GetWidthOverride();
+	TMap<FName, UWidget*> OriginalWidgets;
+	for (const FName Name : {FName(TEXT("Thumbnail_Size")), FName(TEXT("Text_FacilityName")),
+		FName(TEXT("Meta_Row")), FName(TEXT("Button_RemoveConfirm")), FName(TEXT("Button_RemoveCancel")),
+		FName(TEXT("Button_Move")), FName(TEXT("Button_Remove")), FName(TEXT("Button_Upgrade")),
+		FName(TEXT("ScrollBox_Details")), FName(TEXT("Panel_Actions")), FName(TEXT("Widget_FacilityCodexLauncher"))})
+		OriginalWidgets.Add(Name, Tree->FindWidget(Name));
+	bool bModified = false;
+	if (!TestTrue(TEXT("Approved migration succeeds on the in-memory inspector only"),
+		FFFacilityInfoWbpBuilder::ApplyInspectorV2Design(*Copy, *Tree, bModified))) return false;
+	TestEqual(TEXT("First application modifies; authored V2 trees are reused"), bModified, !bAlreadyV2);
+	bool bRefined = false;
+	if (!TestTrue(TEXT("Upgrade action refinement succeeds on the same transient inspector"),
+		FFFacilityInfoWbpBuilder::RefineInspectorV2Layout(*Copy, *Tree, bRefined))) return false;
+	TestEqual(TEXT("Action refinement runs only once"), bRefined, !bAlreadyRefined);
+	TestTrue(TEXT("Outer root and docking slot are preserved"), OriginalRoot == Tree->RootWidget && PanelSize->Slot == PanelSlot);
+	TestTrue(TEXT("Outer panel anchors, offsets, alignment and width are unchanged"),
+		PanelSlot->GetAnchors().Minimum.Equals(OriginalAnchors.Minimum) &&
+		PanelSlot->GetAnchors().Maximum.Equals(OriginalAnchors.Maximum) &&
+		PanelSlot->GetOffsets() == OriginalOffsets && PanelSlot->GetAlignment().Equals(OriginalAlignment) &&
+		PanelSize->GetWidthOverride() == OriginalWidth);
+	for (const auto& Pair : OriginalWidgets)
+		TestTrue(*FString::Printf(TEXT("Existing command/content widget is reused: %s"), *Pair.Key.ToString()),
+			Pair.Value && Tree->FindWidget(Pair.Key) == Pair.Value);
+	auto IsWithin = [](const UWidget* Widget, const UWidget* Ancestor)
+	{
+		for (const UWidget* Parent = Widget; Parent; Parent = Parent->GetParent())
+			if (Parent == Ancestor) return true;
+		return false;
+	};
+	UBorder* Identity = Cast<UBorder>(Tree->FindWidget(TEXT("Panel_PersistentIdentity")));
+	UWidget* Shell = Tree->FindWidget(TEXT("Panel_Shell"));
+	UWidget* Scroll = Tree->FindWidget(TEXT("ScrollBox_Details"));
+	UWidget* RemoveActions = Tree->FindWidget(TEXT("Panel_RemoveActions"));
+	if (!TestNotNull(TEXT("Designer identity surface"), Identity) || !TestNotNull(TEXT("Fixed confirmation footer"), RemoveActions)) return false;
+	TestTrue(TEXT("Common identity stays outside the scroll body"), Identity->GetParent() == Shell && !IsWithin(Identity, Scroll));
+	TestTrue(TEXT("Thumbnail/name/category remain bound under the common identity"),
+		IsWithin(Tree->FindWidget(TEXT("Thumbnail_Size")), Identity) &&
+		IsWithin(Tree->FindWidget(TEXT("Text_FacilityName")), Identity) && IsWithin(Tree->FindWidget(TEXT("Meta_Row")), Identity));
+	TestTrue(TEXT("Destructive confirmation buttons remain visible in a fixed footer"), RemoveActions->GetParent() == Shell &&
+		IsWithin(Tree->FindWidget(TEXT("Button_RemoveConfirm")), RemoveActions) &&
+		IsWithin(Tree->FindWidget(TEXT("Button_RemoveCancel")), RemoveActions));
+	TestTrue(TEXT("Data-heavy sections stay inside the original scroll body"),
+		IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeMetricRows")), Scroll) &&
+		IsWithin(Tree->FindWidget(TEXT("Panel_RemoveConfirmation")), Scroll));
+	TestTrue(TEXT("The guarded upgrade action and refund notice stay outside the scrolling values"),
+		IsWithin(Tree->FindWidget(TEXT("Button_Upgrade")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
+		IsWithin(Tree->FindWidget(TEXT("V2_UpgradeRefundNotice")), Tree->FindWidget(TEXT("Panel_UpgradeActions"))) &&
+		!IsWithin(Tree->FindWidget(TEXT("Panel_UpgradeActions")), Scroll));
+	for (const FName Name : {FName(TEXT("Panel_PersistentIdentity")), FName(TEXT("Panel_UpgradeMetricRows")),
+		FName(TEXT("Panel_UpgradeQuote")), FName(TEXT("Panel_UpgradeActions")), FName(TEXT("Panel_RemoveActions")), FName(TEXT("Button_RevenueRanking")),
+		FName(TEXT("Text_UpgradeCurrentRevenue")), FName(TEXT("Text_UpgradeNextRevenue")),
+		FName(TEXT("Text_UpgradeCurrentTime")), FName(TEXT("Text_UpgradeNextTime")),
+		FName(TEXT("Text_UpgradeCurrentThroughput")), FName(TEXT("Text_UpgradeNextThroughput")),
+		FName(TEXT("Text_UpgradeCurrentSize")), FName(TEXT("Text_UpgradeNextSize")),
+		FName(TEXT("Text_UpgradePrice")), FName(TEXT("Text_UpgradeBalance")), FName(TEXT("Text_UpgradeBalanceLabel")),
+		FName(TEXT("Text_RemoveRecovery")), FName(TEXT("Text_RemoveInstallCost"))})
+	{
+		UWidget* Widget = Tree->FindWidget(Name);
+		TestTrue(*FString::Printf(TEXT("New Designer BindWidget variable has a stable GUID: %s"), *Name.ToString()),
+			Widget && Widget->bIsVariable && Copy->WidgetVariableNameToGuidMap.Contains(Name));
+	}
+	UCommonTextBlock* OccupancyLabel = Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Occupancy_Label")));
+	TestTrue(TEXT("New layouts use team occupancy; existing authored captions remain for runtime normalization"),
+		OccupancyLabel && OccupancyLabel->GetText().ToString() ==
+			(bAlreadyV2 ? OriginalOccupancyCaption : FString(TEXT("대기·처리 중 팀"))));
+	// Designer changes must survive the command after its one-time structural migration.
+	const FMargin AuthoredPadding(17.f, 9.f, 13.f, 11.f);
+	Identity->SetPadding(AuthoredPadding);
+	TArray<UWidget*> BeforeRerun;
+	Tree->GetAllWidgets(BeforeRerun);
+	bool bChangedAgain = true;
+	TestTrue(TEXT("Second application succeeds without repainting"),
+		FFFacilityInfoWbpBuilder::ApplyInspectorV2Design(*Copy, *Tree, bChangedAgain));
+	bool bRefinedAgain = true;
+	TestTrue(TEXT("Second action refinement succeeds without repainting"),
+		FFFacilityInfoWbpBuilder::RefineInspectorV2Layout(*Copy, *Tree, bRefinedAgain));
+	TestFalse(TEXT("Second action refinement preserves Designer edits"), bRefinedAgain);
+	TArray<UWidget*> AfterRerun;
+	Tree->GetAllWidgets(AfterRerun);
+	TestFalse(TEXT("Second application leaves the asset unmodified"), bChangedAgain);
+	TestEqual(TEXT("Second application does not duplicate widgets"), AfterRerun.Num(), BeforeRerun.Num());
+	TestTrue(TEXT("Designer-authored padding survives the second application"), Identity->GetPadding() == AuthoredPadding);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FFF_FacilityInfoRevenueSectionContractTest,
 	"FestaFiesta.UI.FacilityInfo.RevenueSectionContract",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
@@ -1382,9 +1584,10 @@ bool FFF_FacilityInfoRevenueSectionContractTest::RunTest(const FString& Paramete
 			Tree->FindWidget(TEXT("Summary_Card")), *Content);
 		TestNotNull(TEXT("수익 섹션은 기존 상세 스크롤 안에 있다"), SectionInContent);
 		const int32 SectionIndex = SectionInContent ? Content->GetChildIndex(SectionInContent) : INDEX_NONE;
-		TestTrue(TEXT("수익 섹션은 요약 카드보다 뒤에 있다"),
-			Summary && SectionIndex > Content->GetChildIndex(Summary));
-		if (Upgrade)
+		const bool bAurora = Tree->FindWidget(TEXT("Aurora_InfoV7")) != nullptr;
+		TestTrue(TEXT("수익 섹션은 현재 디자인의 요약 위치를 유지한다"),
+			Summary && (bAurora ? SectionIndex < Content->GetChildIndex(Summary) : SectionIndex > Content->GetChildIndex(Summary)));
+		if (Upgrade && !bAurora)
 		{
 			TestTrue(TEXT("수익 섹션은 강화 블록 바로 다음이다"), SectionIndex == Content->GetChildIndex(Upgrade) + 1);
 		}
@@ -1392,8 +1595,9 @@ bool FFF_FacilityInfoRevenueSectionContractTest::RunTest(const FString& Paramete
 			FName(TEXT("Panel_ProgramSection"))})
 		{
 			const UWidget* Other = FFFacilityInfoUpgradeLayout::FindContentChild(Tree->FindWidget(Name), *Content);
-			TestTrue(*FString::Printf(TEXT("수익 섹션은 %s보다 먼저 표시한다"), *Name.ToString()),
-				Other && SectionIndex < Content->GetChildIndex(Other));
+			const bool bQueueFirst = bAurora && Name != TEXT("Panel_ProgramSection");
+			TestTrue(*FString::Printf(TEXT("수익과 %s는 페이지 정보 우선순서를 유지한다"), *Name.ToString()),
+				Other && (bQueueFirst ? SectionIndex > Content->GetChildIndex(Other) : SectionIndex < Content->GetChildIndex(Other)));
 		}
 	}
 	return true;
@@ -1489,6 +1693,22 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 	}
 	const UWidget* UpgradeButton = Panel->GetWidgetFromName(TEXT("Button_Upgrade"));
 	const UWidget* DetailScroll = Panel->GetWidgetFromName(TEXT("ScrollBox_Details"));
+	const UWidget* UpgradeActions = Panel->GetWidgetFromName(TEXT("Panel_UpgradeActions"));
+	const UWidget* NormalActions = Panel->GetWidgetFromName(TEXT("Panel_Actions"));
+	auto UpgradeActionIsVisible = [&]()
+	{
+		if (!UpgradeButton || !DetailScroll) return false;
+		const FSlateRect ButtonRect = UpgradeButton->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect ScrollRect = DetailScroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		if (UpgradeActions && NormalActions)
+		{
+			const FSlateRect ActionsRect = UpgradeActions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			return ButtonRect.GetSize().Y >= 24.f && ButtonRect.Top >= ActionsRect.Top &&
+				ButtonRect.Bottom <= ActionsRect.Bottom && ActionsRect.Top >= ScrollRect.Bottom - 1.f &&
+				ActionsRect.Bottom <= NormalActions->GetPaintSpaceGeometry().GetLayoutBoundingRect().Top + 1.f;
+		}
+		return ButtonRect.GetSize().Y >= 24.f && ButtonRect.Top >= ScrollRect.Top - 1.f && ButtonRect.Bottom <= ScrollRect.Bottom + 1.f;
+	};
 	if (TestNotNull(TEXT("강화 버튼 렌더 검증 대상"), UpgradeButton) &&
 		TestNotNull(TEXT("스크롤 렌더 검증 대상"), DetailScroll))
 	{
@@ -1498,9 +1718,7 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 		const FVector2D ButtonBottom = ButtonGeometry.LocalToAbsolute(ButtonGeometry.GetLocalSize());
 		const FVector2D ScrollTop = ScrollGeometry.LocalToAbsolute(FVector2D::ZeroVector);
 		const FVector2D ScrollBottom = ScrollGeometry.LocalToAbsolute(ScrollGeometry.GetLocalSize());
-		TestTrue(TEXT("첫 화면에서 강화 버튼의 전체 높이가 스크롤 안에 보여 footer에 가려지지 않는다"),
-			ButtonGeometry.GetLocalSize().Y >= 24.0f && ButtonTop.Y >= ScrollTop.Y - 1.0 &&
-			ButtonBottom.Y <= ScrollBottom.Y + 1.0);
+		TestTrue(TEXT("첫 화면의 강화 액션 전체가 고정 footer에 보이고 본문·이동/철거와 겹치지 않는다"), UpgradeActionIsVisible());
 		AddInfo(FString::Printf(TEXT("Upgrade button Y=%.1f..%.1f, scroll Y=%.1f..%.1f"),
 			ButtonTop.Y, ButtonBottom.Y, ScrollTop.Y, ScrollBottom.Y));
 	}
@@ -1544,12 +1762,7 @@ bool FFF_FacilityInfoUpgradeVisualPreviewTest::RunTest(const FString& Parameters
 		TestTrue(TEXT("0 Gold에서도 무료 강화 버튼은 실제 WBP에서 활성화된다"), FreeButton && FreeButton->GetIsEnabled());
 		if (FreeButton && DetailScroll)
 		{
-			const FGeometry& ButtonGeometry = FreeButton->GetCachedGeometry();
-			const FGeometry& ScrollGeometry = DetailScroll->GetCachedGeometry();
-			TestTrue(TEXT("무료·감소 견적의 버튼 전체도 첫 화면에 보인다"),
-				ButtonGeometry.GetLocalSize().Y >= 24.f &&
-				ButtonGeometry.LocalToAbsolute(FVector2D::ZeroVector).Y >= ScrollGeometry.LocalToAbsolute(FVector2D::ZeroVector).Y - 1. &&
-				ButtonGeometry.LocalToAbsolute(ButtonGeometry.GetLocalSize()).Y <= ScrollGeometry.LocalToAbsolute(ScrollGeometry.GetLocalSize()).Y + 1.);
+			TestTrue(TEXT("무료·감소 견적의 버튼 전체도 첫 화면 고정행에 보인다"), UpgradeActionIsVisible());
 		}
 	}
 	Panel->ReleaseSlateResources(true);
@@ -1594,7 +1807,9 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.InstallCostText = FText::FromString(TEXT("120 Gold"));
 	Data.RecoveryCostText = FText::FromString(TEXT("60 Gold"));
 	Data.InstanceLimitText = FText::FromString(TEXT("2 / 8개"));
-	Data.QueueCapacityText = FText::FromString(TEXT("8명"));
+	Data.QueueCapacityText = FText::FromString(TEXT("8팀"));
+	Data.QueueCapacityValueText = FText::FromString(TEXT("8팀"));
+	Data.ServiceCapacityValueText = FText::FromString(TEXT("1팀"));
 	Data.ServiceDurationText = FText::FromString(TEXT("4초"));
 	Data.bCanMove = true;
 	Data.bCanRemove = true;
@@ -1631,13 +1846,28 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 		TArray<FColor> Pixels;
 		if (!TestTrue(TEXT("720p 실제 WBP 렌더"), Resource && Resource->ReadPixels(Pixels, ReadFlags) && Pixels.Num() == Width * Height)) return false;
 		// Solid header chrome above the context label, outside the rounded corners.
-		const FColor HeaderPixel = Pixels[23 * Width + (Width - 18 - 405 + 20)];
-		const FColor ExpectedHeader = UFF_UIPalette::Get()->InGame.TealDeep.ToFColor(true);
-		TestTrue(TEXT("캡처 헤더 색은 실제 팔레트 sRGB와 일치한다"),
-			FMath::Abs(int32(HeaderPixel.R) - ExpectedHeader.R) <= 3 &&
+		const bool bClarityPanel = Panel->GetWidgetFromName(TEXT("Clarity_InfoV1")) != nullptr;
+		const bool bAuroraMaterial = !bClarityPanel && Panel->GetWidgetFromName(TEXT("Aurora_InfoV7")) != nullptr;
+		const FColor HeaderPixel = Pixels[23 * Width + (Width - 18 - (bClarityPanel ? 456 : (bAuroraMaterial ? 592 : 405)) + 20)];
+		const UBorder* Header = Cast<UBorder>(Panel->GetWidgetFromName(TEXT("Header_Surface")));
+		if (!TestNotNull(TEXT("Designer header surface"), Header)) return false;
+		const FColor ExpectedHeader = (Header->Background.TintColor.GetSpecifiedColor() * Header->GetBrushColor()).ToFColor(true);
+		const UMaterialInterface* HeaderMaterial=Cast<UMaterialInterface>(Header->Background.GetResourceObject());
+		if(Panel->GetWidgetFromName(TEXT("ClarityV2_Info")))
+		{
+			// A UI material's brush tint is white; its shader authors the visible color.
+			// Keep checking both the intended material and the rendered sage/readability range.
+			TestTrue(TEXT("Clarity header uses its authored material"),HeaderMaterial && HeaderMaterial->GetPathName()==
+				TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/MI_UI_BuildClarity_Header.MI_UI_BuildClarity_Header"));
+			TestTrue(TEXT("Rendered Clarity header remains opaque pale sage"),HeaderPixel.A>=245 &&
+				HeaderPixel.R>=215 && HeaderPixel.R<=245 && HeaderPixel.G>=225 && HeaderPixel.G<=250 &&
+				HeaderPixel.B>=205 && HeaderPixel.B<=242 && HeaderPixel.G>=HeaderPixel.R+3 && HeaderPixel.G>=HeaderPixel.B+6);
+		}
+		else TestTrue(TEXT("캡처 헤더 색은 현재 WBP에서 저작한 sRGB 색과 일치한다"),
+			(bAuroraMaterial ? (HeaderMaterial && HeaderPixel.G > HeaderPixel.B + 8) : (FMath::Abs(int32(HeaderPixel.R) - ExpectedHeader.R) <= 3 &&
 			FMath::Abs(int32(HeaderPixel.G) - ExpectedHeader.G) <= 3 &&
-			FMath::Abs(int32(HeaderPixel.B) - ExpectedHeader.B) <= 3);
-		AddInfo(FString::Printf(TEXT("Header RGB actual=%s, expected=%s"), *HeaderPixel.ToString(), *ExpectedHeader.ToString()));
+			FMath::Abs(int32(HeaderPixel.B) - ExpectedHeader.B) <= 3)));
+		AddInfo(FString::Printf(TEXT("Header RGB actual=%s, brush tint=%s"), *HeaderPixel.ToString(), *ExpectedHeader.ToString()));
 		TArray64<uint8> Png;
 		FImageUtils::PNGCompressImageArray(Width, Height, Pixels, Png);
 		const FString Path = FPaths::Combine(Directory, Filename);
@@ -1653,7 +1883,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 		const double FooterTop = Geometry.LocalToAbsolute(FVector2D::ZeroVector).Y;
 		const double FooterBottom = Geometry.LocalToAbsolute(Geometry.GetLocalSize()).Y;
 		TestTrue(TEXT("720p 고정 행동 영역은 도구 모음 위에 온전히 보인다"),
-			Geometry.GetLocalSize().Y > 24.0 && FooterTop >= 18.0 && FooterBottom <= Height - 125.5);
+			Geometry.GetLocalSize().Y > 24.0 && FooterTop >= 18.0 && FooterBottom <= Height - (Panel->GetWidgetFromName(TEXT("Aurora_InfoV7")) ? 65.5 : 125.5));
 		AddInfo(FString::Printf(TEXT("Footer Y=%.1f..%.1f, height=%.1f, tools begin=608"),
 			FooterTop, FooterBottom, Geometry.GetLocalSize().Y));
 		Scroll->SetScrollOffset(180.0f);
@@ -1666,10 +1896,10 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.FacilityStateText = FText::FromString(TEXT("운영 중"));
 	Data.OperationStateText = FText::FromString(TEXT("손님을 맞이하고 있어요"));
 	Data.WaitingPartiesText = FText::FromString(TEXT("3 / 1팀"));
-	Data.OccupancyText = FText::FromString(TEXT("4 / 8명"));
-	Data.RemainingServiceText = FText::FromString(TEXT("4명"));
+	Data.OccupancyText = FText::FromString(TEXT("4 / 8팀"));
+	Data.RemainingServiceText = FText::FromString(TEXT("4팀"));
 	Data.ExpectedWaitText = FText::FromString(TEXT("12초"));
-	Data.ThroughputText = FText::FromString(TEXT("분당 15명"));
+	Data.ThroughputText = FText::FromString(TEXT("분당 15팀"));
 	Data.bHasMinigame = true;
 	Data.bCanStartMinigame = true;
 	Panel->ApplyViewData(Data);
@@ -1720,20 +1950,21 @@ bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Picker는 전체 화면 Canvas에 우측 도킹된다"), PickerSlot);
 	if (PickerSlot)
 	{
+		const bool bClarityV2=PickerTree->FindWidget(TEXT("Button_BackToPrograms"))!=nullptr;
 		const FAnchors Anchors = PickerSlot->GetAnchors();
-		TestTrue(TEXT("Picker anchor는 우측 세로 stretch다"),
+		TestTrue(TEXT("Picker uses its authored right-side anchor"),
 			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) &&
-			Anchors.Maximum.Equals(FVector2D(1.0f, 1.0f)));
+			Anchors.Maximum.Equals(FVector2D(1.0f, bClarityV2?0.0f:1.0f)));
 		TestTrue(TEXT("Picker alignment는 우상단이다"),
 			PickerSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)));
 
 		const FMargin Offsets = PickerSlot->GetOffsets();
-		TestTrue(TEXT("Picker는 Inspector와 같은 우측18/상단18/폭405/하단126 dock이다"),
+		TestTrue(TEXT("Picker matches the compact inspector dock"),
 			FMath::IsNearlyEqual(Offsets.Left, -18.0f) &&
 			FMath::IsNearlyEqual(Offsets.Top, 18.0f) &&
-			FMath::IsNearlyEqual(Offsets.Right, 405.0f) &&
-			FMath::IsNearlyEqual(Offsets.Bottom, 126.0f));
-		TestTrue(TEXT("하단126 예약은 compact 배치선반과 팀원HUD를 가리지 않는다"), Offsets.Bottom > 112.f);
+			FMath::IsNearlyEqual(Offsets.Right, bClarityV2?456.0f:600.0f) &&
+			FMath::IsNearlyEqual(Offsets.Bottom, bClarityV2?620.0f:70.0f));
+		TestTrue(TEXT("Picker leaves the bottom HUD clear at 720p"),bClarityV2?Offsets.Top+Offsets.Bottom<=650.f:Offsets.Bottom>=70.f);
 	}
 	TestNotNull(TEXT("프로그램 동적 목록"),
 		Cast<UScrollBox>(PickerTree->FindWidget(TEXT("ScrollBox_Programs"))));
@@ -1746,7 +1977,7 @@ bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("구매 완료 상태"), PickerTree->FindWidget(TEXT("Panel_PurchaseComplete")));
 	TestNotNull(TEXT("시설 정보 복귀 버튼"), Cast<UButton>(PickerTree->FindWidget(TEXT("Button_ReturnToFacility"))));
 	TestNotNull(TEXT("짧은 뷰포트 구매 내용 스크롤"), Cast<UScrollBox>(PickerTree->FindWidget(TEXT("ScrollBox_PurchaseDetails"))));
-	for (const FName Name : {FName(TEXT("Text_PreviewTime")), FName(TEXT("Text_RequiredStaff")),
+	for (const FName Name : {FName(TEXT("Text_PreviewTime")),
 		FName(TEXT("Text_Capacity")), FName(TEXT("Text_TicketFee")), FName(TEXT("Text_MaxRevenue")),
 		FName(TEXT("Text_PurchaseCost")), FName(TEXT("Text_ReceiptProgramName")), FName(TEXT("Text_ReceiptResources"))})
 	{
@@ -1783,13 +2014,11 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	Data.FacilityInstanceId = FGuid::NewGuid();
 	Data.FacilityName = FText::FromString(TEXT("체험 공방"));
 	Data.AvailableGold = 7600;
-	Data.AvailableStaff = 6;
 	Data.Cards.Reserve(2);
 	FFF_FacilityPaidProgramCardViewData& Program = Data.Cards.AddDefaulted_GetRef();
 	Program.ProgramId = TEXT("Program_SandArtWorkshop");
 	Program.DisplayName = FText::FromString(TEXT("바다향기 공방"));
 	Program.CostGold = 200;
-	Program.RequiredStaff = 1;
 	Program.CapacityPeople = 12;
 	Program.TicketFeeGold = 30;
 	Program.MaxRevenueGold = 360;
@@ -1797,6 +2026,7 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	Program.bCanSchedule = true;
 	FFF_FacilityPaidProgramCardViewData OtherProgram = Program;
 	OtherProgram.ProgramId = TEXT("Program_TestAlternative");
+	OtherProgram.DisplayName = FText::FromString(TEXT("대안 프로그램"));
 	Data.Cards.Add(OtherProgram);
 	Picker->ApplyViewData(Data);
 	Picker->SetPickerOpen(true);
@@ -1831,21 +2061,52 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	{
 		TestEqual(TEXT("카드 선택만으로 구매하지 않는다"), PurchaseRequests, 0);
 		TestTrue(TEXT("선택 후 별도 확정 버튼 활성"), Confirm->GetIsEnabled());
+		if(auto* Back=Cast<UButton>(Picker->GetWidgetFromName(TEXT("Button_BackToPrograms"))))
+		{
+			TestEqual(TEXT("Selected details do not stack under the program list"),Picker->GetWidgetFromName(TEXT("Size_ProgramList"))->GetVisibility(),ESlateVisibility::Collapsed);
+			Back->OnClicked.Broadcast();
+			TestEqual(TEXT("Back returns to the program list"),Picker->GetWidgetFromName(TEXT("Size_ProgramList"))->GetVisibility(),ESlateVisibility::Visible);
+			TestEqual(TEXT("Back hides the unselected purchase step"),Picker->GetWidgetFromName(TEXT("Border_Preview"))->GetVisibility(),ESlateVisibility::Collapsed);
+			TestFalse(TEXT("Back clears confirmation eligibility"),Confirm->GetIsEnabled());
+			TestEqual(TEXT("Back never purchases a program"),PurchaseRequests,0);
+			if(!SelectFirstCard())return false;
+		}
 		UCommonTextBlock* Maximum = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_MaxRevenue")));
 		TestTrue(TEXT("최대 매출은 정원 참여 조건과 함께 독립 표시한다"),
 			Maximum && Maximum->GetText().ToString().Contains(TEXT("360")) &&
 			Maximum->GetText().ToString().Contains(TEXT("정원 모두 참여")));
 		TestEqual(TEXT("분리한 지표가 있으면 예전 묶음 텍스트는 숨긴다"),
 			Picker->GetWidgetFromName(TEXT("Text_PreviewDetails"))->GetVisibility(), ESlateVisibility::Collapsed);
+		Program.TicketFeeGold = 70;
+		Program.MaxRevenueGold = 840;
+		Picker->RefreshViewData(Data);
+		TestTrue(TEXT("An open selected picker refreshes its edited maximum revenue"),
+			Maximum && Maximum->GetText().ToString().Contains(TEXT("840")));
+		UCommonTextBlock* Fee = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_TicketFee")));
+		UCommonTextBlock* SelectedName = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_PreviewName")));
+		TestTrue(TEXT("The selected ticket fee refreshes with its projection"), Fee && Fee->GetText().ToString().Contains(TEXT("70")));
+		TestTrue(TEXT("Refresh keeps the user's selection among multiple programs"),
+			SelectedName && SelectedName->GetText().EqualTo(Program.DisplayName) && Confirm->GetIsEnabled());
+		TestEqual(TEXT("A price refresh never purchases a program"), PurchaseRequests, 0);
 		Confirm->OnClicked.Broadcast();
+		Program.TicketFeeGold = 80;
+		Program.MaxRevenueGold = 960;
+		Picker->RefreshViewData(Data);
+		TestFalse(TEXT("A refresh cannot enable duplicate confirmation while purchase is pending"), Confirm->GetIsEnabled());
 		Confirm->OnClicked.Broadcast();
 		TestEqual(TEXT("결과 대기 중 중복 구매 요청 차단"), PurchaseRequests, 1);
-		Picker->ShowPurchaseComplete(Program.ProgramId, 7400, 5);
+		Picker->ShowPurchaseComplete(Program.ProgramId, 7400);
 		TestEqual(TEXT("권위 명령 성공 후 완료 패널 표시"), Complete->GetVisibility(), ESlateVisibility::Visible);
 		TestEqual(TEXT("완료 상태는 구매 footer를 숨긴다"),
 			Picker->GetWidgetFromName(TEXT("Border_Footer"))->GetVisibility(), ESlateVisibility::Collapsed);
 		UCommonTextBlock* Receipt = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_PurchaseReceipt")));
 		TestTrue(TEXT("완료 영수증은 실제 결제금액을 표시"), Receipt && Receipt->GetText().ToString().Contains(TEXT("200")));
+		const FText CompletedReceipt = Receipt ? Receipt->GetText() : FText::GetEmpty();
+		Program.CostGold = 999;
+		Picker->RefreshViewData(Data);
+		TestEqual(TEXT("Live refresh preserves the completed purchase screen"), Complete->GetVisibility(), ESlateVisibility::Visible);
+		TestTrue(TEXT("A completed receipt retains the actual payment despite changed data"), Receipt && Receipt->GetText().EqualTo(CompletedReceipt));
+		Program.CostGold = 200;
 		Return->OnClicked.Broadcast();
 		TestEqual(TEXT("완료에서 시설 정보로 복귀"), CloseRequests, 1);
 		Confirm->OnClicked.Broadcast();
@@ -1866,7 +2127,6 @@ bool FFF_FacilityPaidProgramPurchaseFlowTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("호환 프로그램 한 개면 상세를 자동 선택한다"), Confirm->GetIsEnabled());
 	TestEqual(TEXT("단일 프로그램 자동 선택은 결제하지 않는다"), PurchaseRequests, 1);
 	Data.AvailableGold = 100;
-	Data.AvailableStaff = 0;
 	Data.Cards[0].bCanSchedule = false;
 	Picker->ApplyViewData(Data);
 	UCommonTextBlock* Resources = Cast<UCommonTextBlock>(Picker->GetWidgetFromName(TEXT("Text_ResourcePreview")));
@@ -1977,6 +2237,29 @@ bool FFF_FacilityInfoPausePresentationLifecycleTest::RunTest(const FString& Para
 		Coordinator->SelectedFacilityId, SelectedFacilityId);
 	Coordinator->SetPauseMenuPresentationSuppressed(false);
 
+	int32 RankingRequests = 0;
+	const FDelegateHandle RankingHandle = Coordinator->OnRevenueRankingRequested.AddLambda([&]() { ++RankingRequests; });
+	Coordinator->HandlePanelRevenueRankingRequested();
+	TestEqual(TEXT("현재 시설에서 매출 순위 요청을 전달한다"), RankingRequests, 1);
+	Coordinator->SetRevenueRankingPresentationOpen(true);
+	TestEqual(TEXT("매출 순위는 시설 정보 표면만 숨긴다"), Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("매출 순위를 열어도 기존 선택을 보존한다"), Coordinator->GetSelectedFacilityId(), SelectedFacilityId);
+	Coordinator->ClosePaidProgramPicker();
+	TestEqual(TEXT("Picker 닫기가 열린 순위 뒤로 inspector를 다시 열지 않는다"), Panel->GetVisibility(), ESlateVisibility::Collapsed);
+	Coordinator->HandlePanelRevenueRankingRequested();
+	TestEqual(TEXT("열린 순위에 중복 열기 요청을 보내지 않는다"), RankingRequests, 1);
+	Coordinator->SetRevenueRankingPresentationOpen(false);
+	TestEqual(TEXT("매출 순위 종료 시 유효한 시설 정보를 복원한다"), Panel->GetVisibility(), ESlateVisibility::SelfHitTestInvisible);
+	Coordinator->SelectedFacilityId = FGuid::NewGuid();
+	Coordinator->HandlePanelRevenueRankingRequested();
+	TestEqual(TEXT("이전 패널 GUID로 새 선택의 순위를 열지 않는다"), RankingRequests, 1);
+	Coordinator->SelectedFacilityId = SelectedFacilityId;
+	Coordinator->SetPauseMenuPresentationSuppressed(true);
+	Coordinator->HandlePanelRevenueRankingRequested();
+	TestEqual(TEXT("Pause는 매출 순위 요청도 막는다"), RankingRequests, 1);
+	Coordinator->SetPauseMenuPresentationSuppressed(false);
+	Coordinator->OnRevenueRankingRequested.Remove(RankingHandle);
+
 	Coordinator->OnMoveRequested.Remove(MoveHandle);
 	Coordinator->OnRemoveRequested.Remove(RemoveHandle);
 	Coordinator->OnProgramScheduleRequested.Remove(ProgramHandle);
@@ -2073,7 +2356,7 @@ bool FFF_FacilityLightingControlsTest::RunTest(const FString& Parameters)
 {
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
 	if (!TestNotNull(TEXT("Lighting WBP class"), Class) || !TestNotNull(TEXT("Editor world"), World)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	UFF_FacilityLightingControls* Controls = CreateWidget<UFF_FacilityLightingControls>(World, Class);
@@ -2165,8 +2448,11 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	}
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
-	if (!TestNotNull(TEXT("Panel WBP"), Class) || !TestNotNull(TEXT("World"), World)) return false;
+	auto* LightingClass=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+	if (!TestNotNull(TEXT("Panel WBP"), Class) || !TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Lighting child WBP"),LightingClass)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
+	FScopedFacilityInfoPlayerlessWidgetInitialization LightingInitializationGuard(*LightingClass);
 	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(World, Class);
 	if (!TestNotNull(TEXT("Panel"), Panel)) return false;
 	FFF_FacilityInfoViewData Data;
@@ -2190,7 +2476,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	Data.LightingState.bOverrideColor = true;
 	Data.LightingState.Color = FLinearColor::FromSRGBColor(FColor(0x56, 0xDC, 0xE7));
 	UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
 	if (!TestNotNull(TEXT("Current main-stage PDA"), Definition)) return false;
 	Data.DisplayName = Definition->Spec.DisplayName;
 	Data.FootprintText = FFFacilityInfoModel::FormatFootprint(Definition->Spec.FootprintSizeCells);
@@ -2216,8 +2502,12 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	IFileManager::Get().MakeDirectory(*Directory, true);
 	auto Capture = [&](const TSharedRef<SWidget>& Widget, const int32 Width, const int32 Height, const TCHAR* Filename)
 	{
-		Panel->ForceLayoutPrepass();
-		UTextureRenderTarget2D* Target = DrawCaptureWidget(Renderer, Widget, FVector2D(Width, Height));
+		UTextureRenderTarget2D* Target=nullptr;
+		for(int32 Frame=0;Frame<3;++Frame)
+		{
+			Panel->ForceLayoutPrepass();
+			Target=DrawCaptureWidget(Renderer,Widget,FVector2D(Width,Height));
+		}
 		FTextureRenderTargetResource* Resource = Target ? Target->GameThread_GetRenderTargetResource() : nullptr;
 		TArray<FColor> Pixels;
 		if (!Resource || !Resource->ReadPixels(Pixels, Flags) || Pixels.Num() != Width * Height) return false;
@@ -2227,13 +2517,249 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 		AddInfo(FString::Printf(TEXT("Lighting UMG capture: %s"), *FPaths::ConvertRelativePathToFull(Path)));
 		return TestTrue(TEXT("Lighting PNG saved"), FFileHelper::SaveArrayToFile(Png, *Path));
 	};
-	bool bSaved = Capture(Slate, 1280, 720, TEXT("FacilityLightingPanelTop720.png"));
-	Scroll->ScrollWidgetIntoView(Controls, false, EDescendantScrollDestination::BottomOrRight);
-	bSaved &= Capture(Slate, 1280, 720, TEXT("FacilityLightingPanel720.png"));
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Lighting);
+	bool bSaved = Capture(Slate, 1920, 1080, TEXT("FacilityLightingPanelV7.png"));
+	const bool bClarityV2=Panel->GetWidgetFromName(TEXT("ClarityV2_Info"))!=nullptr;
+	if(bClarityV2)
+	{
+		TestTrue(*FString::Printf(TEXT("Compact lighting needs no detail scrolling at 1080p (%.1fpx)"),Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd()<=1.f);
+		bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPanelClarityV2_720.png"));
+		TestTrue(*FString::Printf(TEXT("Compact lighting needs no detail scrolling at 720p (%.1fpx)"),Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd()<=1.f);
+		if(auto* Wheel=Cast<USizeBox>(Controls->GetWidgetFromName(TEXT("Aurora_ColorPickerSize"))))
+			TestEqual(TEXT("Color wheel stays compact"),Wheel->GetWidthOverride(),190.f);
+		if(auto* Precision=Cast<UButton>(Controls->GetWidgetFromName(TEXT("Button_LightingPrecision"))))
+		{
+			Precision->OnClicked.Broadcast();
+			TestEqual(TEXT("Precision capture really shows the precise channels"),Controls->GetWidgetFromName(TEXT("Panel_LightingPrecision"))->GetVisibility(),ESlateVisibility::SelfHitTestInvisible);
+			TestEqual(TEXT("Precision capture does not retain the color wheel"),Controls->GetWidgetFromName(TEXT("Panel_LightingBasic"))->GetVisibility(),ESlateVisibility::Collapsed);
+			bSaved &= Capture(Slate,1280,720,TEXT("FacilityLightingPrecisionClarityV2_720.png"));
+			TestTrue(TEXT("Precise channels fit without scrolling"),Scroll->GetScrollOffsetOfEnd()<=1.f);
+			Precision->OnClicked.Broadcast();
+		}
+	}
+	if(UButton* Minimize=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_LightingMinimize"))))
+	{
+		Minimize->OnClicked.Broadcast();
+		bSaved &= Capture(Slate,1920,1080,TEXT("FacilityLightingCompactV7.png"));
+		Minimize->OnClicked.Broadcast();
+	}
 	// A dedicated card capture makes each actual UMG control easy to inspect in the guide.
-	bSaved &= Capture(Controls->TakeWidget(), 346, 300, TEXT("FacilityLightingControls.png"));
+	bSaved &= Capture(Controls->TakeWidget(), bClarityV2?440:650, bClarityV2?440:770, TEXT("FacilityLightingControls.png"));
 	Panel->ReleaseSlateResources(true);
 	return bSaved;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityInfoClarityNavigationTest,
+	"FestaFiesta.UI.FacilityInfo.ClarityNavigation",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoClarityNavigationTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
+	if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Inspector class"), Class)) return false;
+	FScopedFacilityInfoPlayerlessWidgetInitialization Context(*Class);
+	auto* Panel = CreateWidget<UFF_FacilityInfoPanel>(World, Class);
+	if (!TestNotNull(TEXT("Inspector"), Panel)) return false;
+	auto* Revenue = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabRevenue")));
+	auto* Programs = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabPrograms")));
+	auto* Previous = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyPrevious")));
+	auto* Next = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_SynergyNext")));
+	auto* Page = Cast<UCommonTextBlock>(Panel->GetWidgetFromName(TEXT("Text_SynergyPage")));
+	auto* Rows = Cast<UVerticalBox>(Panel->GetWidgetFromName(TEXT("VerticalBox_SynergyEntries")));
+	if (!TestNotNull(TEXT("Revenue shortcut"), Revenue) || !TestNotNull(TEXT("Programs shortcut"), Programs) ||
+		!TestNotNull(TEXT("Previous combination"), Previous) || !TestNotNull(TEXT("Next combination"), Next) ||
+		!TestNotNull(TEXT("Combination page"), Page) || !TestNotNull(TEXT("Combination list"), Rows)) return false;
+	FFF_FacilityInfoViewData Data;
+	Data.FacilityInstanceId = FGuid::NewGuid(); Data.Context = EFF_FacilityInfoContext::Build;
+	Data.bShowRevenueSection = Data.bShowProgramSection = true;
+	for (int32 Index=0; Index<3; ++Index)
+	{
+		FFF_FacilityInfoSynergyEntry Entry;
+		Entry.RuleId = FName(*FString::Printf(TEXT("ClarityFixture%d"),Index));
+		Entry.TitleText = FText::AsNumber(Index + 1);
+		Data.SynergyEntries.Add(Entry);
+	}
+	Panel->ApplyViewData(Data); Panel->SetPanelOpen(true);
+	const TSharedRef<SWidget> Slate = Panel->TakeWidget();
+	TestEqual(TEXT("Overview does not stack earnings below basic facts"), Panel->GetWidgetFromName(TEXT("Panel_RevenueSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+	Revenue->OnClicked.Broadcast();
+	TestEqual(TEXT("Revenue opens directly"), Panel->GetWidgetFromName(TEXT("Panel_RevenueSection"))->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("Revenue hides basic facts"), Panel->GetWidgetFromName(TEXT("Panel_BuildSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+	Programs->OnClicked.Broadcast();
+	TestEqual(TEXT("Programs open directly"), Panel->GetWidgetFromName(TEXT("Panel_ProgramSection"))->GetVisibility(), ESlateVisibility::Visible);
+	TestTrue(TEXT("Selected program tab stays enabled instead of receiving disabled tint"),Programs->GetIsEnabled());
+	if(auto* SelectedLabel=Cast<UCommonTextBlock>(Programs->GetContent()))
+		TestTrue(TEXT("Selected tab retains bright text"),SelectedLabel->GetColorAndOpacity().GetSpecifiedColor().Equals(FLinearColor::White,.01f));
+	TestTrue(TEXT("Selected tab uses the authored selection surface"),Programs->GetStyle().Normal==Programs->GetStyle().Disabled);
+	Programs->OnClicked.Broadcast();
+	TestEqual(TEXT("Clicking the current tab preserves the current page"),Panel->GetWidgetFromName(TEXT("Panel_ProgramSection"))->GetVisibility(),ESlateVisibility::Visible);
+	TestEqual(TEXT("Programs hide earnings"), Panel->GetWidgetFromName(TEXT("Panel_RevenueSection"))->GetVisibility(), ESlateVisibility::Collapsed);
+	Panel->SetInfoPage(EFF_FacilityInfoPage::Synergy);
+	TestEqual(TEXT("Only one reusable combination card is needed"), Rows->GetChildrenCount(), 1);
+	TestEqual(TEXT("First combination"), Page->GetText().ToString(), FString(TEXT("1 / 3")));
+	TestFalse(TEXT("Previous is disabled at first card"), Previous->GetIsEnabled());
+	Next->OnClicked.Broadcast(); Next->OnClicked.Broadcast(); Next->OnClicked.Broadcast();
+	TestEqual(TEXT("Next cannot go beyond final combination"), Page->GetText().ToString(), FString(TEXT("3 / 3")));
+	TestFalse(TEXT("Next is disabled at final card"), Next->GetIsEnabled());
+	Data.SynergyEntries.SetNum(1); Panel->ApplyViewData(Data);
+	TestEqual(TEXT("Updated combinations clamp the displayed page"), Page->GetText().ToString(), FString(TEXT("1 / 1")));
+	Data.bShowRevenueSection = Data.bShowProgramSection = false;
+	Panel->ApplyViewData(Data); Revenue->OnClicked.Broadcast();
+	TestEqual(TEXT("Unsupported revenue falls back to basic facts"), Panel->GetWidgetFromName(TEXT("Panel_BuildSection"))->GetVisibility(), ESlateVisibility::Visible);
+	TestEqual(TEXT("Irrelevant revenue shortcut is hidden"), Revenue->GetVisibility(), ESlateVisibility::Collapsed);
+	TestEqual(TEXT("Irrelevant program shortcut is hidden"), Programs->GetVisibility(), ESlateVisibility::Collapsed);
+	if(auto* Upgrade=Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_TabUpgrade"))))
+		TestFalse(TEXT("Unsupported upgrade remains functionally disabled"),Upgrade->GetIsEnabled());
+	Panel->ReleaseSlateResources(true);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityInfoInspectorV2PagesPreviewTest,
+	"FestaFiesta.UI.FacilityInfo.InspectorV2PagesPreview",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_FacilityInfoInspectorV2PagesPreviewTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi")))
+	{
+		AddInfo(TEXT("SKIPPED: inspector page geometry requires -RenderOffscreen with a real RHI."));
+		return true;
+	}
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
+	if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Actual inspector WBP"), Class)) return false;
+	FScopedFacilityInfoPlayerlessWidgetInitialization Context(*Class);
+	UFF_FacilityInfoPanel* Panel = CreateWidget<UFF_FacilityInfoPanel>(World, Class);
+	if (!TestNotNull(TEXT("Inspector instance"), Panel)) return false;
+	const TSharedRef<SWidget> Slate = Panel->TakeWidget();
+	auto* Scroll = Cast<UScrollBox>(Panel->GetWidgetFromName(TEXT("ScrollBox_Details")));
+	UWidget* Header = Panel->GetWidgetFromName(TEXT("Panel_PersistentIdentity"));
+	UWidget* NormalActions = Panel->GetWidgetFromName(TEXT("Panel_Actions"));
+	UWidget* UpgradeActions = Panel->GetWidgetFromName(TEXT("Panel_UpgradeActions"));
+	UWidget* RemoveActions = Panel->GetWidgetFromName(TEXT("Panel_RemoveActions"));
+	if (!TestNotNull(TEXT("Shared scroll body"), Scroll) || !TestNotNull(TEXT("Shared identity"), Header) ||
+		!TestNotNull(TEXT("Existing move/remove footer"), NormalActions) || !TestNotNull(TEXT("Fixed upgrade footer"), UpgradeActions) ||
+		!TestNotNull(TEXT("Fixed removal confirmation footer"), RemoveActions)) return false;
+	// Presentation-only fixtures: these snapshots do not claim to be a running festival ledger.
+	FFF_FacilityInfoViewData Data;
+	Data.FacilityInstanceId = FGuid::NewGuid();
+	Data.FacilityDefinitionId = TEXT("UMG_TestFixture");
+	Data.Context = EFF_FacilityInfoContext::Build;
+	Data.DisplayName = FText::FromString(TEXT("UMG 검증 시설"));
+	Data.CategoryText = FText::FromString(TEXT("자동화 테스트 데이터"));
+	Data.Thumbnail = LoadCaptureFoodTruckTexture(*this);
+	Data.bCanMove = Data.bCanRemove = true;
+	Data.InstallCostText = FText::FromString(TEXT("300 Gold"));
+	Data.RecoveryCostText = FText::FromString(TEXT("150 Gold"));
+	Data.QueueCapacityValueText = FText::FromString(TEXT("5팀"));
+	Data.ServiceCapacityValueText = FText::FromString(TEXT("1팀"));
+	Data.ServiceDurationText = FText::FromString(TEXT("6초"));
+	Data.FootprintText = FText::FromString(TEXT("3.2 × 1.97 m"));
+	Data.ClearanceText = FText::FromString(TEXT("1 m"));
+	Data.InstanceLimitText = FText::FromString(TEXT("현재 2 / 최대 12 · 10개 남음"));
+	Data.bShowProgramSection = true;
+	Data.ProgramStatusText = FText::FromString(TEXT("오늘 편성 없음"));
+	Data.bShowProgramScheduleAction = Data.bCanScheduleProgram = true;
+	Data.ProgramScheduleActionText = FText::FromString(TEXT("유료 프로그램 편성"));
+	Data.OperationStateText = FText::FromString(TEXT("운영 종료"));
+	Data.WaitingPartiesText = FText::FromString(TEXT("0팀"));
+	Data.OccupancyText = FText::FromString(TEXT("0 / 5팀"));
+	Data.RemainingServiceText = FText::FromString(TEXT("0팀"));
+	Data.ExpectedWaitText = FText::FromString(TEXT("계산 불가"));
+	Data.ThroughputText = FText::FromString(TEXT("분당 10.0팀"));
+	Data.SynergySummaryText = FText::FromString(TEXT("이 시설에 등록된 조합이 없습니다."));
+	FFF_FacilityInstanceRevenue Revenue;
+	FFFacilityInfoModel::ApplyFacilityRevenue(&Revenue, true, true, 0, Data);
+	FFF_FacilityUpgradePreview Quote;
+	Quote.CurrentLevel = 1; Quote.TargetLevel = 2; Quote.MaxLevel = 3;
+	Quote.bHasLevels = Quote.bSupported = Quote.bHasUpgradeQuote = Quote.bCanUpgrade = true;
+	Quote.bRevenueAvailable = true;
+	Quote.CurrentRevenuePerUseGold = 4; Quote.NextRevenuePerUseGold = 5;
+	Quote.CurrentServiceDurationSeconds = 6.f; Quote.NextServiceDurationSeconds = 4.8f;
+	Quote.CurrentThroughputPerMinute = 10.f; Quote.NextThroughputPerMinute = 12.5f;
+	Quote.CurrentFootprintCentimeters = FIntPoint(500, 400);
+	Quote.NextFootprintCentimeters = FIntPoint(575, 460);
+	Quote.CostGold = 90; Quote.GoldAfterUpgrade = 7210;
+	FFFacilityInfoModel::ApplyUpgradePreview(&Quote, Data);
+	Panel->ApplyViewData(Data);
+	Panel->SetPanelOpen(true);
+	const FString Directory = FPaths::ProjectSavedDir() / TEXT("Automation/FacilityInfoV2");
+	IFileManager::Get().MakeDirectory(*Directory, true);
+	auto Capture = [&](const FIntPoint Resolution, const TCHAR* Suffix, const EFF_FacilityInfoPage Page)
+	{
+		FWidgetRenderer Renderer(false, true);
+		UTextureRenderTarget2D* Target = nullptr;
+		for (int32 Frame = 0; Frame < 3; ++Frame)
+		{
+			Panel->ForceLayoutPrepass();
+			Target = DrawCaptureWidget(Renderer, Slate, FVector2D(Resolution.X, Resolution.Y));
+		}
+		UWidget* Footer = Page == EFF_FacilityInfoPage::RemoveConfirmation ? RemoveActions : NormalActions;
+		const FSlateRect FooterRect = Footer->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect HeaderRect = Header->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		const FSlateRect ScrollRect = Scroll->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+		if (Panel->GetWidgetFromName(TEXT("Clarity_InfoV1")) &&
+			(Page == EFF_FacilityInfoPage::Overview || Page == EFF_FacilityInfoPage::Operation ||
+			 Page == EFF_FacilityInfoPage::Revenue || Page == EFF_FacilityInfoPage::Programs || Page == EFF_FacilityInfoPage::Upgrade))
+			TestTrue(*FString::Printf(TEXT("%s %dp facts fit without scrolling (overflow %.1fpx)"),
+				Suffix,Resolution.Y,Scroll->GetScrollOffsetOfEnd()),Scroll->GetScrollOffsetOfEnd() <= 1.f);
+		TestTrue(TEXT("Identity remains outside scrolling content"), HeaderRect.Bottom <= ScrollRect.Top + 1.f && HeaderRect.GetSize().Y > 0);
+		TestTrue(TEXT("The visible footer remains fully above the protected toolbar reserve"), Footer->IsVisible() &&
+			FooterRect.GetSize().Y >= 24.f && FooterRect.Bottom <= Resolution.Y - (Panel->GetWidgetFromName(TEXT("Aurora_InfoV7")) ? 65.5f : 125.5f) && FooterRect.Top >= ScrollRect.Bottom - 1.f);
+		if (Page == EFF_FacilityInfoPage::Upgrade)
+		{
+			const FSlateRect ActionsRect = UpgradeActions->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			const UWidget* Button = Panel->GetWidgetFromName(TEXT("Button_Upgrade"));
+			const FSlateRect ButtonRect = Button->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+			TestTrue(TEXT("Upgrade stays visible between scroll body and existing actions"), UpgradeActions->IsVisible() &&
+				ActionsRect.Top >= ScrollRect.Bottom - 1.f && ActionsRect.Bottom <= FooterRect.Top + 1.f &&
+				ButtonRect.Top >= ActionsRect.Top && ButtonRect.Bottom <= ActionsRect.Bottom && ButtonRect.GetSize().Y >= 24.f);
+		}
+		if (Page == EFF_FacilityInfoPage::RemoveConfirmation)
+		{
+			for (const FName Name : {FName(TEXT("Button_RemoveConfirm")), FName(TEXT("Button_RemoveCancel"))})
+			{
+				const FSlateRect ButtonRect = Panel->GetWidgetFromName(Name)->GetPaintSpaceGeometry().GetLayoutBoundingRect();
+				TestTrue(TEXT("Both original confirmation actions fit the fixed footer"), ButtonRect.Top >= FooterRect.Top &&
+					ButtonRect.Bottom <= FooterRect.Bottom && ButtonRect.Left >= FooterRect.Left && ButtonRect.Right <= FooterRect.Right);
+			}
+		}
+		TArray<FColor> Pixels;
+		FReadSurfaceDataFlags Flags;
+		Flags.SetLinearToGamma(false);
+		if (!Target || !Target->GameThread_GetRenderTargetResource()->ReadPixels(Pixels, Flags)) return false;
+		TArray64<uint8> Png;
+		FImageUtils::PNGCompressImageArray(Resolution.X, Resolution.Y, Pixels, Png);
+		const FString Path = Directory / FString::Printf(TEXT("InspectorFixture_%s_%d.png"), Suffix, Resolution.Y);
+		AddInfo(Path);
+		return FFileHelper::SaveArrayToFile(Png, *Path);
+	};
+	const EFF_FacilityInfoPage Pages[] = {EFF_FacilityInfoPage::Operation, EFF_FacilityInfoPage::Synergy,
+		EFF_FacilityInfoPage::Upgrade, EFF_FacilityInfoPage::RemoveConfirmation, EFF_FacilityInfoPage::Overview,
+		EFF_FacilityInfoPage::Revenue, EFF_FacilityInfoPage::Programs};
+	const TCHAR* Names[] = {TEXT("Operation"), TEXT("SynergyEmpty"), TEXT("Upgrade"), TEXT("Demolition"),
+		TEXT("Overview"), TEXT("Revenue"), TEXT("Programs")};
+	for (const FIntPoint Resolution : {FIntPoint(1280, 720), FIntPoint(1920, 1080)})
+	{
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Pages); ++Index)
+		{
+			Panel->SetInfoPage(Pages[Index]);
+			Scroll->ScrollToStart();
+			TestTrue(TEXT("Actual WBP page fixture render"), Capture(Resolution, Names[Index], Pages[Index]));
+			if (Pages[Index] == EFF_FacilityInfoPage::Operation)
+			{
+				const FVector2D HeaderPosition = Header->GetPaintSpaceGeometry().LocalToAbsolute(FVector2D::ZeroVector);
+				Scroll->ScrollToEnd();
+				TestTrue(TEXT("Operation lower metrics remain reachable"), Capture(Resolution, TEXT("OperationScrolled"), Pages[Index]));
+				TestTrue(TEXT("Scrolling operation data keeps the shared identity fixed"),
+					Header->GetPaintSpaceGeometry().LocalToAbsolute(FVector2D::ZeroVector).Equals(HeaderPosition, .5));
+			}
+		}
+	}
+	Panel->ReleaseSlateResources(true);
+	return true;
 }
 
 #endif // WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

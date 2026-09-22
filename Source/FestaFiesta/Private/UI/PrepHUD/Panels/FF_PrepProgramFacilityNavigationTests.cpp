@@ -10,6 +10,8 @@
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
+#include "DataTables/FF_FacilityRevenueTableRow.h"
+#include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
@@ -18,6 +20,8 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "FF_FFZSFacilityDefinition.h"
+#include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Festival/FF_FestivalDefinition.h"
@@ -114,6 +118,12 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 {
 	(void)Parameters;
 	using namespace FFPrepProgramFacilityNavigationTest;
+	UFFZSDeveloperSettings* Settings = GetMutableDefault<UFFZSDeveloperSettings>();
+	TGuardValue<bool> GroundChecks(Settings->bEnableGroundChecks, false);
+	TGuardValue<bool> CollisionChecks(Settings->bEnableWorldCollisionChecks, false);
+	TGuardValue<bool> NavigationChecks(Settings->bEnableNavigationProjectionChecks, false);
+	TGuardValue<bool> ProductionPolicies(Settings->bRequireProductionPolicyDomains, false);
+	TGuardValue<EFFZSChangePhase> InitialPhase(Settings->InitialPhase, EFFZSChangePhase::InitialSetup);
 	const TSharedRef<SOverlay> ViewportOverlay = SNew(SOverlay);
 	FTestWorldWrapper Fixture;
 	if (!Fixture.CreateTestWorld(EWorldType::Game))
@@ -132,13 +142,13 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepProgramCard>(nullptr,
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramCard.WBP_FF_PrepProgramCard_C")));
 	auto* ChoiceClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepChoiceButton>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C")));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C")));
 	const UFF_FestivalDefinition* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	UFFZSFacilityDefinition* WorkshopFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
 	UFFZSFacilityDefinition* YogaFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience"));
 	if (!TestNotNull(TEXT("Isolated game instance"), Game) || !TestNotNull(TEXT("Production catalog"), Catalog) ||
 		!TestNotNull(TEXT("Production progression"), Progression) || !TestNotNull(TEXT("Production build mode"), Build) ||
 		!TestNotNull(TEXT("Production zone subsystem"), Zones) || !TestNotNull(TEXT("Saved program panel WBP"), PanelClass) ||
@@ -255,6 +265,45 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Guide action focuses the exact compatible facility"),
 		Build->GetPendingCatalogFacilityId(), YogaFacility->Spec.FacilityDefinitionId);
 	TestEqual(TEXT("Browsing construction guidance does not buy a facility"), Progression->GetGold(), GoldBefore);
+
+	// Keep the visible WBP open and edit only transient balancing data. No manual refresh
+	// occurs after AddRow: the table change delegate must invalidate the selected quote.
+	Build->ExitBuildMode();
+	FFFZSGridPlacement YogaPlacement;
+	YogaPlacement.OriginCell = FIntPoint(1000, 1000);
+	const FFFZSCommand InstallYoga = UFFZSGridLibrary::MakeInstallCommand(
+		YogaFacility->Spec, TEXT("GZ_DadaPocha"), YogaPlacement, Zones->GetWorldRevision());
+	const FFFZSCommandResult InstallResult = Zones->ExecuteCommand(InstallYoga);
+	if (!TestTrue(*FString::Printf(TEXT("The quote's real facility installs: %s"), *InstallResult.Message.ToString()), InstallResult.bSucceeded)) return false;
+	const FGuid InstalledYogaId = InstallYoga.FacilityInstanceId;
+	TStrongObjectPtr<UDataTable> RevenueTable(NewObject<UDataTable>());
+	RevenueTable->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
+	FFF_FacilityRevenueTableRow RevenueRow;
+	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 25);
+	RevenueTable->AddRow(YogaFacility->Spec.FacilityDefinitionId, RevenueRow);
+	TStrongObjectPtr<UFF_FestivalDefinition> IsolatedFestival(DuplicateObject<UFF_FestivalDefinition>(Festival, Game));
+	IsolatedFestival->FacilityRevenueTable = RevenueTable.Get();
+	Progression->StartFestival(IsolatedFestival.Get());
+	Panel->SelectedCardIndex = YogaIndex;
+	Panel->RebuildFacilityChoices();
+	Panel->RefreshAll();
+	if (!TestEqual(TEXT("The real panel finds its installed yoga facility"), Panel->FacilityOptions.Num(), 1)) return false;
+	if (!TestTrue(TEXT("The installed facility selection is valid"), Panel->FacilityOptions.IsValidIndex(Panel->SelectedFacilityIndex))) return false;
+	TestEqual(TEXT("The sole installed facility is selected"), Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId, InstalledYogaId);
+	const int32 YogaCapacity = Panel->Catalog[YogaIndex].Capacity;
+	TestEqual(TEXT("The open panel initially quotes the facility's authored fee"), Panel->GetQuote().MaxRevenue, YogaCapacity * 25);
+	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 45);
+	RevenueTable->AddRow(YogaFacility->Spec.FacilityDefinitionId, RevenueRow);
+	TestEqual(TEXT("A table edit automatically updates the already open program quote"), Panel->GetQuote().MaxRevenue, YogaCapacity * 45);
+	TestEqual(TEXT("A live fee refresh preserves the selected program"), Panel->SelectedCardIndex, YogaIndex);
+	TestEqual(TEXT("A live fee refresh preserves the selected installed facility"), Panel->SelectedFacilityIndex, 0);
+	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 0);
+	RevenueTable->AddRow(YogaFacility->Spec.FacilityDefinitionId, RevenueRow);
+	TestEqual(TEXT("An open quote immediately reflects a newly free program"), Panel->GetQuote().MaxRevenue, 0);
+	Panel->HandlePanelClosed();
+	RevenueRow.ProgramFeesPerPerson.Add(TEXT("Program_SunsetYoga"), 100);
+	RevenueTable->AddRow(YogaFacility->Spec.FacilityDefinitionId, RevenueRow);
+	TestEqual(TEXT("Closing the panel detaches the table-change listener"), Panel->GetQuote().MaxRevenue, 0);
 	return true;
 }
 

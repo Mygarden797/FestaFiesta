@@ -69,7 +69,7 @@ UV0는 공유 색상 팔레트이므로 의도적으로 중첩한다. UV1은 삼
 
 ## 게임 연결
 
-시설 메뉴의 **길**과 **타일** 카테고리에 각각6종이 표시된다. 정의는 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_*`와 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_*`에 있다. 설치 비용은 각각 `Cost.Road.Surface.*`와 `Cost.Tile.Surface.*` 행의 현재 작성값을 사용한다.
+시설 메뉴의 **길**과 **타일** 카테고리에 각각6종이 표시된다. 정의는 `/Game/FestaFiesta/Building/FF_Data_Building/Road/PDA_FFZS_Road_Surface_*`와 `/Game/FestaFiesta/Building/FF_Data_Building/Tile/PDA_FFZS_Tile_Surface_*`에 있다. 설치 비용은 각각 `Cost.Road.Surface.*`와 `Cost.Tile.Surface.*` 행의 현재 작성값을 사용한다.
 
 **Road는 일반 시설·여유공간·대기열을 차단하고 Tile은 상부 배치를 지원한다.** 이전 `bAllowFacilityPlacementOnTop` 필드는 저장 호환용이며 현재 배치 정책은 카테고리로 결정한다.
 

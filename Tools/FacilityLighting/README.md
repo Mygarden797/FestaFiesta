@@ -13,7 +13,7 @@
 | 펜던트 조명 | RattanPendant | 라탄 펜던트 조명 |
 | 가로등 | FestivalStreetlamp | 축제 가로등 |
 
-정의는 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting`의 PDA에서 관리한다.
+정의는 `/Game/FestaFiesta/Building/FF_Data_Building/Lighting`의 PDA에서 관리한다.
 가격은 기존 시설과 동일하게 `DT_FacilityCosts`에서 조회하며 추가 6종의 초기 가격은
 각 300 Gold다. 재수입용 원본은 `data/unreal/facility_costs_v0.csv`다.
 조명은 고객 서비스·관람·대기열을 사용하지 않으므로 정원은 0, 관련 배열은 비운다.

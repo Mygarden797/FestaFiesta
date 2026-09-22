@@ -14,7 +14,10 @@
 #include "Engine/DataTable.h"
 #include "Tutorial/FF_DialogueRow.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "UI/Frontend/FF_PlayHubScreen.h"
+#include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
 #include "UI/PrepHUD/FF_PrepHudTypes.h"
 #include "Tutorial/FF_DialogueScriptData.h"
@@ -206,6 +209,21 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 	{
 		TickCameraWatch();
 	}
+
+	/* 로비 버튼 구독을 주기적으로 시도한다.
+
+	   플레이 허브는 타이틀에서 넘어올 때 만들어져서, 월드가 시작하는 시점에는
+	   아직 없다. 매 틱 훑으면 낭비라 한 번씩만 두드린다.
+	*/
+	if (!bDialogueActive && !BoundPlayHub.IsValid())
+	{
+		PlayHubScanCountdown -= DeltaTime;
+		if (PlayHubScanCountdown <= 0.f)
+		{
+			PlayHubScanCountdown = 1.f;
+			TryBindPlayHub();
+		}
+	}
 }
 
 void UFF_TutorialSubsystem::BindGameSignals()
@@ -256,6 +274,13 @@ void UFF_TutorialSubsystem::UnbindGameSignals()
 		bBoundZoneWorld = false;
 	}
 
+	if (UFF_PrepHudBar* Bar = BoundPrepHudBar.Get())
+	{
+		Bar->OnTabSelectionChanged.RemoveDynamic(
+			this, &UFF_TutorialSubsystem::HandlePrepTabSelectionChanged);
+	}
+	BoundPrepHudBar.Reset();
+
 	if (bBoundStage)
 	{
 		const UGameInstance* GameInstance = World->GetGameInstance();
@@ -275,6 +300,66 @@ void UFF_TutorialSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Even
 	{
 		NotifyAction(EFF_TutorialWaitCondition::FacilityPlaced);
 	}
+}
+
+void UFF_TutorialSubsystem::TryBindPrepHudBar()
+{
+	// 이미 살아 있는 것을 구독 중이면 그대로 둔다.
+	if (BoundPrepHudBar.IsValid())
+	{
+		return;
+	}
+
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
+		this, FoundWidgets, UFF_PrepHudBar::StaticClass(), false);
+
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		UFF_PrepHudBar* Bar = Cast<UFF_PrepHudBar>(Widget);
+		if (!Bar)
+		{
+			continue;
+		}
+
+		Bar->OnTabSelectionChanged.AddUniqueDynamic(
+			this, &UFF_TutorialSubsystem::HandlePrepTabSelectionChanged);
+		BoundPrepHudBar = Bar;
+
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 준비 화면 탭 바를 구독했다."));
+		return;
+	}
+}
+
+void UFF_TutorialSubsystem::HandlePrepTabSelectionChanged(const FFF_PrepTabSelection Selection)
+{
+	// 닫힐 때도 온다. 여는 것만 본다.
+	if (!Selection.bHasSelection)
+	{
+		return;
+	}
+
+	const FFF_DialogueLine& Line = GetCurrentLine();
+	if (Line.WaitCondition != EFF_TutorialWaitCondition::PrepTabOpened)
+	{
+		return;
+	}
+
+	// 어느 탭인지 정해뒀으면 그것만 통과시킨다.
+	if (!Line.ExpectedTab.IsNone())
+	{
+		const UEnum* EnumClass = StaticEnum<EFF_PrepHudTab>();
+		const FString Opened = EnumClass
+			? EnumClass->GetNameStringByValue(static_cast<int64>(Selection.Tab))
+			: FString();
+
+		if (!Opened.Equals(Line.ExpectedTab.ToString(), ESearchCase::IgnoreCase))
+		{
+			return;
+		}
+	}
+
+	NotifyAction(EFF_TutorialWaitCondition::PrepTabOpened);
 }
 
 void UFF_TutorialSubsystem::HandleStageChanged(
@@ -340,6 +425,71 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 	}
 }
 
+void UFF_TutorialSubsystem::TryBindPlayHub()
+{
+	if (BoundPlayHub.IsValid())
+	{
+		return;
+	}
+
+	// 이미 봤으면 구독할 이유가 없다.
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		if (Save->WasTutorialSeen())
+		{
+			return;
+		}
+	}
+
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
+		this, FoundWidgets, UFF_PlayHubScreen::StaticClass(), false);
+
+	for (UUserWidget* Widget : FoundWidgets)
+	{
+		UFF_PlayHubScreen* PlayHub = Cast<UFF_PlayHubScreen>(Widget);
+		if (!PlayHub)
+		{
+			continue;
+		}
+
+		PlayHub->OnNewFestivalRequested.AddUniqueDynamic(
+			this, &UFF_TutorialSubsystem::HandleNewGameRequested);
+		BoundPlayHub = PlayHub;
+
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 새 게임 버튼을 구독했다."));
+		return;
+	}
+}
+
+void UFF_TutorialSubsystem::HandleNewGameRequested()
+{
+	// 이미 봤으면 넘어간다.
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		if (Save->WasTutorialSeen())
+		{
+			return;
+		}
+	}
+
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	UDataTable* Table = Settings ? Settings->LobbyIntroTable.LoadSynchronous() : nullptr;
+
+	if (!Table)
+	{
+		// 로비 대사가 없는 것은 정상이다. 바로 지구본으로 넘어간다.
+		return;
+	}
+
+	/* 지구본이 먼저 뜨고 그 위에 우리 대사가 얹힌다.
+
+	   새 게임 버튼은 우리보다 먼저 UI 플로우가 받아 화면을 바꾼다. 그 순서를
+	   우리가 바꿀 수 없으므로, 배경 그림으로 화면을 덮어 가리는 편이 단순하다.
+	*/
+	PlayTable(Table);
+}
+
 void UFF_TutorialSubsystem::TryAutoStart()
 {
 	// 이미 다른 경로로 시작했으면 건드리지 않는다.
@@ -353,6 +503,18 @@ void UFF_TutorialSubsystem::TryAutoStart()
 	if (bTutorialSkipped)
 	{
 		return;
+	}
+
+	// 지난 판에서 이미 봤으면 다시 보여주지 않는다.
+	// 게임을 껐다 켜도 남아야 하므로 저장에서 읽는다.
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		if (Save->WasTutorialSeen())
+		{
+			UE_LOG(LogFestaFiestaTutorial, Log,
+				TEXT("[튜토리얼] 지난 판에서 이미 봤으므로 시작하지 않는다."));
+			return;
+		}
 	}
 
 	// 레벨 지정이 먼저다. 튜토리얼 레벨에만 대사를 걸 수 있어야 한다.
@@ -504,6 +666,12 @@ void UFF_TutorialSubsystem::GoToLine(const int32 LineIndex)
 	if (Line.RequiresPlayerAction())
 	{
 		ResetCameraBaseline();
+
+		// 탭을 기다리는 줄이면 지금 구독한다. 화면이 대사보다 늦게 뜨기 때문이다.
+		if (Line.WaitCondition == EFF_TutorialWaitCondition::PrepTabOpened)
+		{
+			TryBindPrepHudBar();
+		}
 	}
 
 	OnLineChanged.Broadcast(Line);
@@ -655,6 +823,19 @@ void UFF_TutorialSubsystem::FinishScript()
 		return;
 	}
 
+	/* 끝까지 봤다. 건너뛴 경우는 여기로 오지 않는다.
+
+	   저장을 여기서 직접 부르지 않고 신호만 쏘는 이유는, 튜토리얼이 저장 시점을
+	   정하기 시작하면 나중에 "여기서도 저장해야 하나" 가 계속 늘어나기 때문이다.
+	   무엇이 끝났는지만 알리고 저장 여부는 받는 쪽이 정한다.
+	*/
+	OnTutorialCompleted.Broadcast();
+
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Save->MarkTutorialCompleted(false);
+	}
+
 	StopScript();
 }
 
@@ -721,6 +902,11 @@ void UFF_TutorialSubsystem::SkipTutorial()
 
 	// 위젯도 내린다. 건너뛴 뒤에도 대사창이 남아 있으면 화면을 가린다.
 	RemoveWidgets();
+
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Save->MarkTutorialCompleted(true);
+	}
 
 	OnTutorialSkipped.Broadcast();
 }
@@ -1028,6 +1214,10 @@ void UFF_TutorialSubsystem::RegisterDebugConsoleCommands()
 					UE_LOG(LogFestaFiestaTutorial, Display,
 						TEXT("  등록된 이름: %s"), *FString::Join(Names, TEXT(", ")));
 				}
+
+				UE_LOG(LogFestaFiestaTutorial, Display,
+					TEXT("  탭 바 구독=%s"),
+					BoundPrepHudBar.IsValid() ? TEXT("예") : TEXT("아니오"));
 
 				UE_LOG(LogFestaFiestaTutorial, Display,
 					TEXT("  구독: Zone=%s 단계=%s / 카메라 기준점=%s"),

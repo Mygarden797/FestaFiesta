@@ -1,0 +1,102 @@
+// Original, static 24-unit schematic line icons. SDF coverage stays crisp at 22px.
+// The UImage owns sage/white state tint; this shader only supplies a white silhouette.
+struct FFCategoryShapes
+{
+    float Line(float2 p, float2 a, float2 b)
+    {
+        float2 ab = b - a;
+        return length(p - a - ab * saturate(dot(p - a, ab) / max(dot(ab, ab), .0001)));
+    }
+    float Ring(float2 p, float2 center, float radius)
+    {
+        return abs(length(p - center) - radius);
+    }
+    float Box(float2 p, float2 center, float2 extent)
+    {
+        float2 q = abs(p - center) - extent;
+        return abs(length(max(q, 0)) + min(max(q.x, q.y), 0));
+    }
+};
+FFCategoryShapes s;
+float2 p = UV * 24;
+float d = 100;
+if (Glyph < .5) // All: four clear inventory cells.
+{
+    d = min(s.Box(p, float2(6.5, 6.5), float2(3, 3)), s.Box(p, float2(17.5, 6.5), float2(3, 3)));
+    d = min(d, min(s.Box(p, float2(6.5, 17.5), float2(3, 3)), s.Box(p, float2(17.5, 17.5), float2(3, 3))));
+}
+else if (Glyph < 1.5) // Booth: festival tent + counter, independent of food/program type.
+{
+    d = min(s.Line(p, float2(3, 9), float2(12, 3)), s.Line(p, float2(12, 3), float2(21, 9)));
+    d = min(d, s.Line(p, float2(3, 10), float2(21, 10)));
+    d = min(d, min(s.Line(p, float2(5, 10), float2(5, 21)), s.Line(p, float2(19, 10), float2(19, 21))));
+    d = min(d, min(s.Line(p, float2(5, 16), float2(19, 16)), s.Line(p, float2(5, 21), float2(19, 21))));
+}
+else if (Glyph < 2.5) // Restroom: familiar paired restroom figures.
+{
+    d = min(length(p - float2(7, 5)) - 1.4, length(p - float2(17, 5)) - 1.4);
+    d = min(d, s.Line(p, float2(4, 10), float2(10, 10)));
+    d = min(d, s.Line(p, float2(7, 10), float2(7, 16)));
+    d = min(d, min(s.Line(p, float2(7, 16), float2(5, 21)), s.Line(p, float2(7, 16), float2(9, 21))));
+    d = min(d, min(s.Line(p, float2(17, 10), float2(13, 16)), s.Line(p, float2(17, 10), float2(21, 16))));
+    d = min(d, s.Line(p, float2(13, 16), float2(21, 16)));
+    d = min(d, min(s.Line(p, float2(15, 16), float2(15, 21)), s.Line(p, float2(19, 16), float2(19, 21))));
+}
+else if (Glyph < 3.5) // Information: circled i.
+{
+    d = s.Ring(p, float2(12, 12), 9);
+    d = min(d, length(p - float2(12, 7)) - .8);
+    d = min(d, s.Line(p, float2(12, 11), float2(12, 17)));
+    d = min(d, s.Line(p, float2(10, 17), float2(14, 17)));
+}
+else if (Glyph < 4.5) // Rest: bench, including seat and legs.
+{
+    d = s.Box(p, float2(12, 8), float2(7, 3));
+    d = min(d, s.Line(p, float2(3, 15), float2(21, 15)));
+    d = min(d, min(s.Line(p, float2(5, 11), float2(5, 20)), s.Line(p, float2(19, 11), float2(19, 20))));
+}
+else if (Glyph < 5.5) // Performance: canopy, side posts and raised stage.
+{
+    d = s.Line(p, float2(3, 4), float2(21, 4));
+    d = min(d, min(s.Line(p, float2(4, 4), float2(4, 16)), s.Line(p, float2(20, 4), float2(20, 16))));
+    d = min(d, s.Box(p, float2(12, 18.5), float2(9, 2.5)));
+    d = min(d, s.Line(p, float2(12, 9), float2(12, 16)));
+    d = min(d, s.Ring(p, float2(12, 8), 1.5));
+}
+else if (Glyph < 6.5) // Safety: shield and first-aid cross.
+{
+    d = min(s.Line(p, float2(4, 5), float2(12, 2)), s.Line(p, float2(12, 2), float2(20, 5)));
+    d = min(d, min(s.Line(p, float2(4, 5), float2(5, 15)), s.Line(p, float2(20, 5), float2(19, 15))));
+    d = min(d, min(s.Line(p, float2(5, 15), float2(12, 22)), s.Line(p, float2(19, 15), float2(12, 22))));
+    d = min(d, min(s.Line(p, float2(12, 7), float2(12, 14)), s.Line(p, float2(8.5, 10.5), float2(15.5, 10.5))));
+}
+else if (Glyph < 7.5) // Photo spot: camera with a large readable lens.
+{
+    d = s.Box(p, float2(12, 14), float2(9, 6));
+    d = min(d, min(s.Line(p, float2(7, 8), float2(9, 4)), s.Line(p, float2(9, 4), float2(15, 4))));
+    d = min(d, s.Line(p, float2(15, 4), float2(17, 8)));
+    d = min(d, s.Ring(p, float2(12, 14), 3.5));
+}
+else if (Glyph < 8.5) // Lighting: standing lamp, shade and emitted light.
+{
+    d = s.Line(p, float2(8, 21), float2(8, 5));
+    d = min(d, min(s.Line(p, float2(8, 5), float2(11, 3)), s.Line(p, float2(11, 3), float2(18, 3))));
+    d = min(d, s.Line(p, float2(18, 3), float2(18, 6)));
+    d = min(d, min(s.Line(p, float2(16, 6), float2(20, 6)), s.Line(p, float2(14, 9), float2(22, 9))));
+    d = min(d, min(s.Line(p, float2(16, 6), float2(14, 9)), s.Line(p, float2(20, 6), float2(22, 9))));
+    d = min(d, min(s.Line(p, float2(18, 12), float2(18, 14)), s.Line(p, float2(5, 21), float2(11, 21))));
+}
+else if (Glyph < 9.5) // Road: boundaries plus dashed centerline.
+{
+    d = min(s.Line(p, float2(7, 3), float2(3, 21)), s.Line(p, float2(17, 3), float2(21, 21)));
+    d = min(d, min(s.Line(p, float2(12, 3), float2(12, 6)), s.Line(p, float2(12, 10), float2(12, 14))));
+    d = min(d, s.Line(p, float2(12, 18), float2(12, 21)));
+}
+else // Tile: a surface slab, distinct from the All inventory grid.
+{
+    d = min(s.Line(p, float2(2, 9), float2(12, 3)), s.Line(p, float2(12, 3), float2(22, 9)));
+    d = min(d, min(s.Line(p, float2(22, 9), float2(12, 15)), s.Line(p, float2(12, 15), float2(2, 9))));
+    d = min(d, min(s.Line(p, float2(2, 14), float2(12, 20)), s.Line(p, float2(12, 20), float2(22, 14))));
+}
+float aa = max(fwidth(d), .18);
+return 1 - smoothstep(.72 - aa * .5, .72 + aa * .5, d);

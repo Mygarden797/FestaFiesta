@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"
 
@@ -687,7 +687,7 @@ bool FFF_CrowdWorld_InitializeSpawnsHiddenPool::RunTest(const FString& Parameter
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 8, 20, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 8, 20, AFF_BaseCrowd::StaticClass());
 
 	TestTrue(TEXT("초기화 완료 표시"), CrowdSim->IsSimulationInitialized());
 	TestEqual(TEXT("요청한 만큼 Actor가 스폰됐다"), CrowdSim->CrowdPool.Num(), 8);
@@ -724,8 +724,7 @@ bool FFF_CrowdWorld_SpawnAgentsBindsAndRevealsActors::RunTest(const FString& Par
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(
-		FVector::ZeroVector, 10000.f, ActorPoolSize, 20, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), ActorPoolSize, 20, AFF_BaseCrowd::StaticClass());
 
 	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 500.f);
 
@@ -761,7 +760,7 @@ bool FFF_CrowdWorld_TickMovesAgentsAndTheirActors::RunTest(const FString& Parame
 	}
 
 	constexpr int32 Requested = 4;
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 4, Requested, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 4, Requested, AFF_BaseCrowd::StaticClass());
 	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 0.f);
 	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
 		*this, TEXT("Movement"), Requested, Spawned);
@@ -805,8 +804,7 @@ bool FFF_CrowdWorld_ActorShortageDoesNotAffectMetrics::RunTest(const FString& Pa
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(
-		FVector::ZeroVector, 10000.f, ActorPoolSize, Requested, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), ActorPoolSize, Requested, AFF_BaseCrowd::StaticClass());
 
 	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 300.f);
 	const int32 ExpectedBoundActors = FMath::Min(Spawned, ActorPoolSize);
@@ -864,7 +862,7 @@ namespace FFF_CounterFlowScenario
 			CrowdSim.AvoidanceConfig.MaxSocialAccelMps2 = CrowdSim.AvoidanceConfig.MaxAccelerationMps2;
 		}
 
-		CrowdSim.InitializeSimulation(FVector::ZeroVector, 10000.f, 2, PerSide * 2 + 8,
+		CrowdSim.InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, PerSide * 2 + 8,
 			AFF_BaseCrowd::StaticClass());
 
 		const int32 SpawnedLeft = CrowdSim.SpawnAgents(PerSide, FVector(-StartOffsetUU, 0.f, 0.f), SpawnRadiusUU);
@@ -1079,7 +1077,7 @@ namespace FFF_MillingScenario
 			CrowdSim.AvoidanceConfig.ContactFriction = Setup.ContactFriction;
 		}
 
-		CrowdSim.InitializeSimulation(FVector::ZeroVector, 10000.f, 2, AgentCount + 8,
+		CrowdSim.InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, AgentCount + 8,
 			AFF_BaseCrowd::StaticClass());
 
 		const int32 Spawned = CrowdSim.SpawnAgents(AgentCount, FVector::ZeroVector, RingRadiusUU);
@@ -1265,7 +1263,7 @@ bool FFF_CrowdQueue_SlotArrivalRadiusIsSmallerThanSlotSpacing::RunTest(const FSt
 	}
 
 	constexpr int32 Requested = 4;
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, 8, AFF_BaseCrowd::StaticClass());
 	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 300.f);
 	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
 		*this, TEXT("Arrival radius"), Requested, Spawned);
@@ -1298,7 +1296,7 @@ bool FFF_CrowdDecision_ArrivalCooldownThrottlesRechoice::RunTest(const FString& 
 		CrowdSim->DecisionCooldownSeconds = 2.f;
 		CrowdSim->bEnablePartyGrouping = false;
 
-		CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+		CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, 8, AFF_BaseCrowd::StaticClass());
 		Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 100.f);
 		FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
 			*this, TEXT("Arrival cooldown treatment"), Requested, Spawned);
@@ -1340,7 +1338,7 @@ bool FFF_CrowdDecision_ArrivalCooldownThrottlesRechoice::RunTest(const FString& 
 
 		NoCooldown->DecisionCooldownSeconds = 0.f;
 		NoCooldown->bEnablePartyGrouping = false;
-		NoCooldown->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+		NoCooldown->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, 8, AFF_BaseCrowd::StaticClass());
 		NoCooldownSpawned = NoCooldown->SpawnAgents(Requested, FVector::ZeroVector, 100.f);
 		FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
 			*this, TEXT("Arrival cooldown control"), Requested, NoCooldownSpawned);
@@ -1432,7 +1430,7 @@ bool FFF_CrowdDecision_StuckPartyGivesUpDestination::RunTest(const FString& Para
 				return true;
 			});
 
-		CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 64, AFF_BaseCrowd::StaticClass());
+		CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, 64, AFF_BaseCrowd::StaticClass());
 		CrowdSim->SpawnAgents(60, FVector::ZeroVector, 300.f);
 
 		FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 10.f);
@@ -1531,7 +1529,7 @@ bool FFF_CrowdDecision_InTransitCountsAccumulateWithinBatch::RunTest(const FStri
 				return true;
 			});
 
-		CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 8, 16, AFF_BaseCrowd::StaticClass());
+		CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 8, 16, AFF_BaseCrowd::StaticClass());
 		// ★ 실제 스폰 수는 요청 수와 다르다. 방문객 분포 빌더가 그룹을 통째로만 방출하므로
 		// 8명을 요청해도 6~8명이 나온다(로그: "요청 N명 중 M명"). 그래서 아래 검증은 요청 수가
 		// 아니라 실제로 온 결정 건수를 기준으로 한다 — 숫자를 박아두면 분포가 바뀔 때마다 깨진다.
@@ -1584,7 +1582,7 @@ bool FFF_CrowdDecision_InTransitCountsAccumulateWithinBatch::RunTest(const FStri
 
 		Wander->bEnablePartyGrouping = false;
 		Wander->OnPartyNeedsDecision.Unbind();
-		Wander->InitializeSimulation(FVector::ZeroVector, 10000.f, 2, 8, AFF_BaseCrowd::StaticClass());
+		Wander->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 2, 8, AFF_BaseCrowd::StaticClass());
 		Wander->SpawnAgents(4, FVector::ZeroVector, 100.f);
 		FFF_CrowdWorldTestHelpers::TickFor(*Wander, 0.1f);
 
@@ -1611,8 +1609,7 @@ bool FFF_CrowdWorld_ReleaseReturnsActorAndHidesIt::RunTest(const FString& Parame
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(
-		FVector::ZeroVector, 10000.f, ActorPoolSize, 4, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), ActorPoolSize, 4, AFF_BaseCrowd::StaticClass());
 	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 100.f);
 	FFF_CrowdWorldTestHelpers::TestWholePartySpawnCount(
 		*this, TEXT("Actor release"), Requested, Spawned);
@@ -1659,11 +1656,11 @@ bool FFF_CrowdWorld_DoubleInitializeIsIgnored::RunTest(const FString& Parameters
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 4, 10, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 4, 10, AFF_BaseCrowd::StaticClass());
 	TestEqual(TEXT("첫 초기화로 4개"), CrowdSim->CrowdPool.Num(), 4);
 
 	AddExpectedError(TEXT("Already initialized"), EAutomationExpectedErrorFlags::Contains, 0);
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 4, 10, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 4, 10, AFF_BaseCrowd::StaticClass());
 
 	TestEqual(TEXT("두 번째 초기화는 무시된다"), CrowdSim->CrowdPool.Num(), 4);
 	TestEqual(TEXT("장부도 그대로"), CrowdSim->PoolBinding.GetNumActorSlots(), 4);
@@ -1685,7 +1682,7 @@ bool FFF_CrowdParty_SpawnHitsExactRequestedCount::RunTest(const FString& Paramet
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 0, 64, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 0, 64, AFF_BaseCrowd::StaticClass());
 
 	const int32 Spawned = CrowdSim->SpawnAgents(Requested, FVector::ZeroVector, 2000.f);
 
@@ -1714,7 +1711,7 @@ bool FFF_CrowdParty_MembersPointAtLiveLeaderOfSameParty::RunTest(const FString& 
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 0, 64, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 0, 64, AFF_BaseCrowd::StaticClass());
 	const int32 Spawned = CrowdSim->SpawnAgents(50, FVector::ZeroVector, 3000.f);
 
 	int32 MemberCount = 0;
@@ -1769,7 +1766,7 @@ bool FFF_CrowdParty_GroupingOffMakesEveryoneSolo::RunTest(const FString& Paramet
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 0, 32, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 0, 32, AFF_BaseCrowd::StaticClass());
 
 	CrowdSim->bEnablePartyGrouping = false;
 
@@ -1820,7 +1817,7 @@ bool FFF_CrowdParty_MemberDestinationRedirectsToLeader::RunTest(const FString& P
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 10000.f, 0, 32, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), 0, 32, AFF_BaseCrowd::StaticClass());
 	CrowdSim->bEnablePartyGrouping = true;
 
 	const int32 Spawned = CrowdSim->SpawnAgents(20, FVector::ZeroVector, 2000.f);
@@ -1870,7 +1867,7 @@ bool FFF_CrowdParty_MembersStayWithinCohesionRadius::RunTest(const FString& Para
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 5000.f, 0, 64, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(5000.f, 5000.f, 5000.f)), 0, 64, AFF_BaseCrowd::StaticClass());
 	const int32 Spawned = CrowdSim->SpawnAgents(48, FVector::ZeroVector, 2000.f);
 
 	FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 30.f);
@@ -1922,7 +1919,7 @@ bool FFF_CrowdParty_MembersDoNotPickOwnDestination::RunTest(const FString& Param
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 5000.f, 0, 64, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(5000.f, 5000.f, 5000.f)), 0, 64, AFF_BaseCrowd::StaticClass());
 	const int32 Spawned = CrowdSim->SpawnAgents(48, FVector::ZeroVector, 1000.f);
 
 	FFF_CrowdWorldTestHelpers::TickFor(*CrowdSim, 5.f);
@@ -2017,6 +2014,104 @@ namespace FFF_AvoidanceTestHelpers
 
 		return MinDistance;
 	}
+}
+
+namespace FFF_AudienceSocialScaleHelpers
+{
+	using namespace FFF_AvoidanceTestHelpers;
+
+	// 두 사람을 GapMeters 만큼 떨어뜨려 두고 0번이 받는 가속도를 돌려준다.
+	// ComputeAll 을 그대로 부른다 - 배수를 적용하는 곳이 거기라 순수 함수만 보면 못 잡는다.
+	FVector2f SolveAccel(float GapMeters, const float* SocialScaleOrNull)
+	{
+		FFF_CrowdAvoidanceConfig Config = MakeConfig();
+		Config.StuckDetectSteps = 0; // 탈출 임펄스를 빼고 회피력만 본다
+
+		TArray<FUnitData> Units;
+		Units.SetNum(2);
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			Units[Index].bIsActive = true;
+			Units[Index].MassKg = PersonMassKg;
+			Units[Index].StableAgentID = Index;
+		}
+
+		TArray<FVector2f> Pos = {FVector2f(0.f, 0.f), FVector2f(GapMeters, 0.f)};
+		TArray<FVector2f> Vel = {FVector2f::ZeroVector, FVector2f::ZeroVector};
+		TArray<float> Radius = {PersonRadiusMeters, PersonRadiusMeters};
+		TArray<uint8> Active = {1, 1};
+		TArray<int32> ActiveIds = {0, 1};
+		TArray<float> Scale = {
+			SocialScaleOrNull ? *SocialScaleOrNull : 1.f,
+			SocialScaleOrNull ? *SocialScaleOrNull : 1.f};
+
+		FFF_CrowdSpatialGrid Grid;
+		Grid.Build(Pos, Active, ActiveIds, Config.BroadphaseCellSizeMeters);
+
+		FFF_CrowdForceInput Input;
+		Input.PosMeters = &Pos;
+		Input.VelMeters = &Vel;
+		Input.RadiusMeters = &Radius;
+		Input.ActiveIds = &ActiveIds;
+		Input.FixedDtSeconds = FixedStep;
+		if (SocialScaleOrNull)
+		{
+			Input.SocialScale = &Scale;
+		}
+
+		FFF_CrowdForceSolver Solver;
+		TArray<FFF_CrowdWallSegment> NoWalls;
+		TArray<FVector2f> Accel;
+		Solver.ComputeAll(Units, Input, Grid, NoWalls, Config, Accel);
+		return Accel.IsValidIndex(0) ? Accel[0] : FVector2f::ZeroVector;
+	}
+}
+
+// 공연 관람은 어깨가 닿을 만큼 붙어 서는 상황이라 통로 보행용 개인 공간을 그대로 쓰면
+// 자리가 남아도 블록이 안 채워진다. 줄이는 것은 심리적 거리뿐이고 겹침 방지는 그대로여야 한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_AudienceSocialScaleKeepsContact,
+	"FestaFiesta.Crowd.Avoidance.AudienceSocialScaleKeepsContact",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdAvoidance_AudienceSocialScaleKeepsContact::RunTest(const FString& Parameters)
+{
+	using namespace FFF_AvoidanceTestHelpers;
+	using namespace FFF_AudienceSocialScaleHelpers;
+
+	const float ContactDistance = PersonRadiusMeters * 2.f;
+	const float Quarter = 0.25f;
+
+	// 1. 닿지 않은 거리에서는 Social 만 작동한다 - 배수가 그대로 비례해야 한다.
+	//
+	// ★ 간격을 MaxSocialAccelMps2(6.0) 포화 구간 밖으로 잡는다. 가까이 붙이면 원본만
+	//   상한에 걸리고 배수를 건 쪽은 안 걸려서, 정상 동작인데도 비율이 1/4 로 안 나온다.
+	const float SocialOnlyGap = 1.6f;
+	TestTrue(TEXT("표본 간격이 접촉 거리보다 멀다"), SocialOnlyGap > ContactDistance);
+	const float FullSocial = SolveAccel(SocialOnlyGap, nullptr).Size();
+	const float ScaledSocial = SolveAccel(SocialOnlyGap, &Quarter).Size();
+	TestTrue(TEXT("기준 사회력이 0 이 아니다"), FullSocial > KINDA_SMALL_NUMBER);
+	TestTrue(
+		*FString::Printf(TEXT("표본이 사회력 상한에 안 걸린다 (%.3f < %.1f)"),
+			FullSocial, MakeConfig().MaxSocialAccelMps2),
+		FullSocial < MakeConfig().MaxSocialAccelMps2 * 0.9f);
+	TestEqual(TEXT("배수 0.25 는 사회력을 정확히 1/4 로 줄인다"),
+		ScaledSocial, FullSocial * Quarter, FullSocial * 0.02f);
+
+	// 2. 겹친 거리에서는 Contact 가 살아 있어야 한다. 몸이 관통하면 밀집이 아니라 버그다.
+	const float OverlapGap = 0.5f;
+	TestTrue(TEXT("표본 간격이 접촉 거리보다 가깝다"), OverlapGap < ContactDistance);
+	const float ScaledContact = SolveAccel(OverlapGap, &Quarter).Size();
+	TestTrue(
+		*FString::Printf(TEXT("겹친 상태의 밀어내기는 배수와 무관하게 남는다 (%.2f m/s^2)"), ScaledContact),
+		ScaledContact > FullSocial);
+
+	// 3. 0 은 개인 공간을 완전히 끄지만 겹침 방지는 그대로다.
+	const float Zero = 0.f;
+	TestEqual(TEXT("배수 0 이면 닿기 전 반발이 사라진다"),
+		SolveAccel(SocialOnlyGap, &Zero).Size(), 0.f, 0.001f);
+	TestTrue(TEXT("배수 0 이어도 겹치면 밀어낸다"),
+		SolveAccel(OverlapGap, &Zero).Size() > KINDA_SMALL_NUMBER);
+
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdAvoidance_HeadOnDoesNotPenetrate, "FestaFiesta.Crowd.Avoidance.HeadOnDoesNotPenetrate", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
@@ -3147,7 +3242,7 @@ bool FFF_CrowdWorld_ReadModelIsPublishedOnInterval::RunTest(const FString& Param
 		return false;
 	}
 
-	CrowdSim->InitializeSimulation(FVector::ZeroVector, 5000.f, 8, 32, AFF_BaseCrowd::StaticClass());
+	CrowdSim->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(5000.f, 5000.f, 5000.f)), 8, 32, AFF_BaseCrowd::StaticClass());
 	CrowdSim->SpawnAgents(8, FVector::ZeroVector, 500.f);
 
 	TestEqual(TEXT("Tick 전에는 발행 0회"), CrowdSim->GetSnapshotCount(), 0);
