@@ -72,6 +72,7 @@ struct FESTAFIESTA_API FFF_IncidentHandle
 
 	bool operator!=(const FFF_IncidentHandle& Other) const { return !(*this == Other); }
 
+	//해쉬 값을 만들기 위한 함수
 	friend uint32 GetTypeHash(const FFF_IncidentHandle& Handle)
 	{
 		return HashCombine(::GetTypeHash(Handle.Index), ::GetTypeHash(Handle.Serial));

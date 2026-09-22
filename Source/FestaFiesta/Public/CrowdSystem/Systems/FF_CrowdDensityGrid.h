@@ -77,7 +77,16 @@ struct FESTAFIESTA_API FCrowdDensityGrid
 
 	float GetMaxDensity() const { return MaxDensity; }
 
-	int32 GetCongestedCellCount() const { return CongestedCellCount; }
+	int32 GetCongestedCellCount() const { return CongestedCells.Num(); }
+
+	/**
+	 * LOS D를 넘은 셀의 인덱스 목록. Density와 같은 인덱스 공간이다.
+	 *
+	 * Update가 밀도를 환산하는 그 루프에서 그대로 모은다 — 혼잡 셀을 알려고
+	 * 격자를 다시 훑는 코드를 밖에 만들지 않기 위해서다. 같은 판정을 두 곳에서 하면
+	 * 임계를 한쪽만 고쳤을 때 "리포트에는 혼잡인데 사건은 안 뜨는" 상태가 된다.
+	 */
+	const TArray<int32>& GetCongestedCells() const { return CongestedCells; }
 
 	int32 GetSampledUnitCount() const { return SampledUnitCount; }
 
@@ -143,6 +152,9 @@ private:
 	TArray<float> Density;
 
 	float MaxDensity = 0.f;
-	int32 CongestedCellCount = 0;
+
+	// 혼잡 셀 인덱스. 개수를 따로 세지 않는다 — 두 값이 어긋날 여지를 남기지 않는다
+	TArray<int32> CongestedCells;
+
 	int32 SampledUnitCount = 0;
 };
