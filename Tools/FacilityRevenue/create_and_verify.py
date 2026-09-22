@@ -5,7 +5,6 @@
 Run with UnrealEditor-Cmd -run=pythonscript -script=<this file> after building.
 Optional -FFVerifyRevenueSeed checks every amount against the initial balance CSV.
 One-time -FFMigrateFacilityIncome fills newly added income fields on a legacy table.
-For a table already migrated before minigames, -FFMigrateMinigameIncome only adds that portion.
 Migration preserves all existing names/base revenues and backs up the original asset.
 The CSV seeds creation only; gameplay reads the saved DataTable directly.
 """
@@ -20,7 +19,6 @@ import traceback
 from pathlib import Path
 
 import unreal
-
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Saved/FacilityIncomeTable_20260920"
@@ -62,6 +60,25 @@ def normalized(value):
     return value
 
 
+def save_migrated_rows(table, staging, row_struct, merged, previous_digest):
+    """임시 표로 모든 값을 대조하고 원본을 백업한 뒤에만 실제 표를 저장한다."""
+    payload = json.dumps(merged, ensure_ascii=False)
+    require(unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(staging, payload, row_struct),
+            "Cannot validate migrated income fields")
+    expected_rows = {row["Name"]: row for row in merged}
+    staged_rows = {row["Name"]: row for row in read_rows(staging)}
+    require(normalized(staged_rows) == normalized(expected_rows), "Migration changed authored values in staging")
+    backup = OUT / ("DT_FacilityRevenues.before_income_" + previous_digest[:12] + ".uasset")
+    if not backup.exists():
+        shutil.copy2(ASSET_FILE, backup)
+    require(hashlib.sha256(backup.read_bytes()).hexdigest() == previous_digest, "Backup does not match the original asset")
+    require(unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(table, payload, row_struct),
+            "Cannot apply migrated income fields")
+    require(normalized({row["Name"]: row for row in read_rows(table)}) == normalized(expected_rows),
+            "Migration changed authored values in the destination; original backup is available")
+    require(unreal.EditorAssetLibrary.save_loaded_asset(table, only_if_is_dirty=False), "Cannot save migrated table")
+
+
 def main():
     with SOURCE.open(encoding="utf-8-sig", newline="") as handle:
         source_rows = list(csv.DictReader(handle))
@@ -72,14 +89,15 @@ def main():
     require(row_struct, "Build FestaFiestaEditor first: revenue row struct is missing")
     command_line = unreal.SystemLibrary.get_command_line()
     migrate = bool(re.search(r"(?:^|\s)-FFMigrateFacilityIncome(?:\s|$)", command_line))
-    migrate_minigames = bool(re.search(r"(?:^|\s)-FFMigrateMinigameIncome(?:\s|$)", command_line))
-    require(not (migrate and migrate_minigames), "Use only one explicit migration mode")
     staging = unreal.new_object(unreal.DataTable)
     require(unreal.DataTableFunctionLibrary.fill_data_table_from_csv_file(staging, str(SOURCE), row_struct),
             "Cannot parse the revenue seed CSV")
     seed_rows = {row["Name"]: row for row in read_rows(staging)}
     require({name: int(row["RevenuePerUseGold"]) for name, row in seed_rows.items()} == expected,
             "CSV import did not preserve all seed amounts")
+
+    festival = unreal.load_asset(FESTIVAL_PATH)
+    require(festival, "Cannot load the production festival")
 
     existed_before = ASSET_FILE.exists()
     previous_digest = digest() if existed_before else None
@@ -99,39 +117,21 @@ def main():
     require(isinstance(table, unreal.DataTable), "Existing package is not a DataTable; preserved")
     require(table.get_editor_property("row_struct").get_path_name() == STRUCT_PATH,
             "Existing row struct differs; preserved")
-    if existed_before and (migrate or migrate_minigames):
+    if existed_before and migrate:
         original_rows = read_rows(table)
-        minigame_fields = ("bOverrideMinigameRewardGold", "MinigameRewardAtMaxScoreGold")
-        income_fields = minigame_fields if migrate_minigames else (
-            "bOverrideCommissionRate", "CommissionRate", "RevenueMultiplierByLevel", "ProgramFeesPerPerson", *minigame_fields)
+        income_fields = ("bOverrideCommissionRate", "CommissionRate", "RevenueMultiplierByLevel", "ProgramFeesPerPerson")
         # Refuse to guess whether a designer deliberately cleared a map/override.
         # The explicit migration is only for a wholly pristine legacy table.
-        require(migrate_minigames or all(not row["bOverrideCommissionRate"] and not row["RevenueMultiplierByLevel"]
+        require(all(not row["bOverrideCommissionRate"] and not row["RevenueMultiplierByLevel"]
                     and not row["ProgramFeesPerPerson"] and abs(row["CommissionRate"] - 0.12) < 1e-6
                     for row in original_rows),
                 "Income fields are already authored; run without -FFMigrateFacilityIncome to preserve them")
-        require(all(not row["bOverrideMinigameRewardGold"] and row["MinigameRewardAtMaxScoreGold"] == 0
-                    for row in original_rows), "Minigame income is already authored; use verification only")
         original_ids = {row["Name"] for row in original_rows}
         require(original_ids <= set(seed_rows), "Migration would discard an authored facility row")
         merged = [{**row, **{key: seed_rows[row["Name"]][key] for key in income_fields}}
                   for row in original_rows]
         merged.extend(row for name, row in seed_rows.items() if name not in original_ids)
-        payload = json.dumps(merged, ensure_ascii=False)
-        require(unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(staging, payload, row_struct),
-                "Cannot validate migrated income fields")
-        staged_rows = {row["Name"]: row for row in read_rows(staging)}
-        merged_rows = {row["Name"]: row for row in merged}
-        if normalized(staged_rows) != normalized(merged_rows):
-            (OUT / "migration_comparison.json").write_text(json.dumps(
-                {"expected": merged_rows, "actual": staged_rows}, ensure_ascii=False, indent=2), encoding="utf-8")
-        require(normalized(staged_rows) == normalized(merged_rows), "Migration changed authored values")
-        backup = OUT / ("DT_FacilityRevenues.before_income_" + previous_digest[:12] + ".uasset")
-        if not backup.exists():
-            shutil.copy2(ASSET_FILE, backup)
-        require(unreal.DataTableFunctionLibrary.fill_data_table_from_json_string(table, payload, row_struct),
-                "Cannot apply migrated income fields")
-        require(unreal.EditorAssetLibrary.save_loaded_asset(table, only_if_is_dirty=False), "Cannot save migrated table")
+        save_migrated_rows(table, staging, row_struct, merged, previous_digest)
         migrated = True
     rows = read_rows(table)
     actual = {row["Name"]: int(row["RevenuePerUseGold"]) for row in rows}
@@ -160,26 +160,8 @@ def main():
         require(facility_id in actual, f"Revenue table misses {facility_id}")
         definitions.append(facility_id)
     require(definitions and len(set(definitions)) == len(definitions), "Facility IDs are missing or duplicated")
-    minigames = []
-    minigame_targets = set()
-    for record in registry.get_assets_by_path("/Game/FestaFiesta/Minigame/Data", recursive=True):
-        asset = record.get_asset()
-        if not isinstance(asset, unreal.FF_MinigameDefinition):
-            continue
-        for facility_id in asset.get_editor_property("compatible_facility_definition_ids"):
-            facility_id = str(facility_id)
-            minigame_targets.add(facility_id)
-            require(facility_id in actual, f"Missing minigame target row: {facility_id}")
-            row = next(item for item in rows if item["Name"] == facility_id)
-            require(row["bOverrideMinigameRewardGold"], f"Minigame reward is not table-controlled: {facility_id}")
-            minigames.append({"facility": facility_id, "minigame": str(asset.get_editor_property("minigame_id")),
-                              "cap": row["MinigameRewardAtMaxScoreGold"]})
-    require(minigames, "No minigame definitions found")
-    require(set(actual) == set(definitions) | minigame_targets,
-            "Table has rows without facility definitions or registered minigame targets")
+    require(set(actual) == set(definitions), "Table has rows without facility definitions")
 
-    festival = unreal.load_asset(FESTIVAL_PATH)
-    require(festival, "Cannot load the production festival")
     configured_table = festival.get_editor_property("facility_revenue_table")
     require(configured_table == table, "Production festival does not use DT_FacilityRevenues")
     actual_rows = {row["Name"]: row for row in rows}
@@ -212,7 +194,6 @@ def main():
         "row_count": len(actual), "paid_count": sum(value > 0 for value in actual.values()),
         "free_count": sum(value == 0 for value in actual.values()),
         "facility_definition_count": len(definitions),
-        "reserved_minigame_target_count": len(minigame_targets - set(definitions)), "minigames": minigames,
         "production_festival": festival.get_path_name(),
         "festival_table": configured_table.get_path_name(),
         "seed_matches": seed_matches, "asset_existed_before": existed_before,

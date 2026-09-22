@@ -136,7 +136,6 @@ public:
 	FFF_OnFacilityInfoActionRequested OnMoveRequested;
 	FFF_OnFacilityInfoActionRequested OnRemoveRequested;
 	FFF_OnFacilityInfoActionRequested OnProgramScheduleRequested;
-	FFF_OnFacilityInfoActionRequested OnMinigameRequested;
 	FFF_OnFacilityInfoActionRequested OnCloseRequested;
 
 private:
@@ -189,7 +188,6 @@ private:
 	bool CanEditSelectedLighting(FGuid FacilityId) const;
 	void HandlePaidProgramConfirmed(FName ProgramId, FGuid FacilityInstanceId);
 	void HandlePaidProgramPickerCloseRequested();
-	void HandlePanelMinigameRequested();
 	void HandlePanelCloseRequested();
 	void HandlePanelRevenueRankingRequested();
 

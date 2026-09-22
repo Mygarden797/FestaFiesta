@@ -293,7 +293,7 @@ void UFF_PauseHubScreen::SetContextCopy(const EFF_PauseHubAction Action)
 		Eyebrow = LOCTEXT("KeyboardEyebrow", "CONTROLS");
 		Title = LOCTEXT("KeyboardTitle", "조작 가이드");
 		Description = LOCTEXT("KeyboardDescription",
-			"관찰 카메라, 건축, 캐릭터와 미니게임에서 사용하는 실제 키를 문맥별로 확인합니다.");
+			"관찰 카메라, 건축, 캐릭터에서 사용하는 실제 키를 문맥별로 확인합니다.");
 		break;
 	case EFF_PauseHubAction::Account:
 		Eyebrow = LOCTEXT("AccountEyebrow", "PROFILE");

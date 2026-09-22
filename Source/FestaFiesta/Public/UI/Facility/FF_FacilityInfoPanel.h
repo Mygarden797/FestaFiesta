@@ -37,7 +37,6 @@ public:
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
 	FSimpleMulticastDelegate OnUpgradeRequested;
-	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnFavoriteRequested;
 	FSimpleMulticastDelegate OnRevenueRankingRequested;
@@ -86,9 +85,6 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
-
-	UFUNCTION()
-	void HandleMinigameClicked();
 
 	UFUNCTION()
 	void HandleProgramScheduleClicked();
@@ -241,12 +237,6 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_Remove;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UButton> Button_StartMinigame;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UCommonTextBlock> Text_StartMinigame;
-
 	/** Optional during the non-destructive WBP migration; the builder authors it for new assets. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Panel_ProgramSection;
@@ -353,9 +343,6 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Panel_BuildActions;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UWidget> Panel_LiveActions;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;

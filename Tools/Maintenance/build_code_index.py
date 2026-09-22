@@ -68,7 +68,7 @@ def main():
     lines=['# 담당 코드 파일별 찾아보기','',
            '각 행은 현재 존재하는 파일의 역할과 탐색할 함수 이름이다. 함수의 입력·실패 조건은 파일 안 설명을 따른다.',
            'Git의 이름 변경 추적과 최초 추가 커밋에서 생성자가 HanKwangHoon/Asera인 파일만 포함한다. 이번에 분리한 보조 파일은 소유 코드의 유지보수를 위한 신규 파일로 따로 기록했다.',
-           '재생성: `python Tools/Maintenance/build_code_index.py`. 미니게임 완전 삭제는 보류되어 전용 코드를 원래 상태로 유지하며 이 작업 목록에서 제외한다.','']
+           '재생성: `python Tools/Maintenance/build_code_index.py`. 미니게임 삭제 범위와 남은 타인 코드 의존성은 Collaboration/Minigame_Removal_KO.md에서 확인한다.','']
     count=0
     for group,paths in sorted(groups.items()):
         lines += ['## '+group, '', '| 파일 | 역할 | 주요 진입점 |','| --- | --- | --- |']

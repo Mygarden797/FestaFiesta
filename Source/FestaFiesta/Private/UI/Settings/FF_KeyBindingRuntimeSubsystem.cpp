@@ -205,25 +205,7 @@ bool UFF_KeyBindingRuntimeSubsystem::EnsureReady()
 
 FKey UFF_KeyBindingRuntimeSubsystem::GetCurrentKey(const FName MappingName) const
 {
-	if (UserSettings)
-	{
-		if (const FPlayerKeyMapping* Mapping = UserSettings->FindCurrentMappingForSlot(
-			MappingName, EPlayerMappableKeySlot::First))
-		{
-			const FKey CurrentKey = Mapping->GetCurrentKey();
-			if (CurrentKey.IsValid())
-			{
-				return CurrentKey;
-			}
-		}
-	}
-
-	if (const FFF_KeyBindingDefinition* Definition =
-		FFKeyBindingDefinitions::Find(MappingName))
-	{
-		return Definition->DefaultKey;
-	}
-	return EKeys::Invalid;
+	return FFKeyBindingDefinitions::ResolveCurrentKey(UserSettings, MappingName);
 }
 
 TArray<FKey> UFF_KeyBindingRuntimeSubsystem::GetOpenCloseKeys() const
@@ -597,7 +579,7 @@ void UFF_KeyBindingRuntimeSubsystem::ApplyOptionToggleBindings()
 {
 	APlayerController* Controller = ResolvePlayerController();
 	// The pause/settings stack is owned exclusively by the festival controller.
-	// Do not consume keys in frontend, minigame test, or editor utility worlds.
+	// Do not consume keys in frontend or editor utility worlds.
 	if (!Cast<AFF_FestivalPlayerController>(Controller))
 	{
 		return;

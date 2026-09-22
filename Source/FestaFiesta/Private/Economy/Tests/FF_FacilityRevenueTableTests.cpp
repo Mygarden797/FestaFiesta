@@ -1,4 +1,5 @@
-// Contracts for the editor-authored facility revenue table.
+// FF_FacilityRevenueTableTests.cpp
+// 역할: 실제 건설 시설의 수익표 범위와 작성·정산 규칙을 검증한다.
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -11,7 +12,6 @@
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "Misc/AutomationTest.h"
-#include "Minigame/FF_MinigameDefinition.h"
 #include "UObject/StrongObjectPtr.h"
 #include <limits>
 
@@ -316,28 +316,9 @@ bool FFF_FacilityRevenueTable_ContentCoverage::RunTest(const FString& Parameters
 		TestEqual(*FString::Printf(TEXT("Runtime resolves the actual table price: %s"), *Id.ToString()),
 			FFF_BoothRevenueRules::ResolveRevenuePerUse(Definition->Spec, Festival->RevenuePerUseByMinorToken, Table), Row->RevenuePerUseGold);
 	}
-	// Minigame definitions may reserve a facility ID before its buildable asset is added.
-	// Accept only IDs actually routed by registered minigame assets, never arbitrary orphans.
-	TArray<FPrimaryAssetId> MinigameAssets;
-	AssetManager.GetPrimaryAssetIdList(UFF_MinigameDefinition::GetMinigameDefinitionAssetType(), MinigameAssets);
-	TestTrue(TEXT("Registered minigame routing assets are discoverable"), !MinigameAssets.IsEmpty());
-	for (const FPrimaryAssetId& AssetId : MinigameAssets)
-	{
-		const UFF_MinigameDefinition* Minigame = Cast<UFF_MinigameDefinition>(AssetManager.GetPrimaryAssetPath(AssetId).TryLoad());
-		if (!TestNotNull(*FString::Printf(TEXT("Minigame routing asset loads: %s"), *AssetId.ToString()), Minigame)) continue;
-		for (const FName FacilityId : Minigame->CompatibleFacilityDefinitionIds)
-		{
-			DefinitionIds.Add(FacilityId);
-			const FFF_FacilityRevenueTableRow* Row = Table->FindRow<FFF_FacilityRevenueTableRow>(FacilityId, TEXT("MinigameRevenueContentTest"), false);
-			if (!TestNotNull(*FString::Printf(TEXT("A registered minigame target has an editable reward row: %s"), *FacilityId.ToString()), Row)) continue;
-			TestTrue(TEXT("Registered minigame target rewards are controlled by the table"), Row->bOverrideMinigameRewardGold);
-			TArray<FText> RowErrors;
-			TestTrue(TEXT("Reserved minigame revenue rows validate"), Row->IsRowValid(RowErrors));
-		}
-	}
 	for (const FName RowName : Table->GetRowNames())
 	{
-		TestTrue(*FString::Printf(TEXT("Table rows refer to a current facility or registered minigame target: %s"), *RowName.ToString()), DefinitionIds.Contains(RowName));
+		TestTrue(*FString::Printf(TEXT("Table rows refer to a current buildable facility: %s"), *RowName.ToString()), DefinitionIds.Contains(RowName));
 	}
 	return true;
 }

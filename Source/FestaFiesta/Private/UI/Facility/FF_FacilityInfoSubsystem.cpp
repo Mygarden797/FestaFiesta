@@ -28,8 +28,6 @@
 #include "GameFramework/Pawn.h"
 #include "Layout/Margin.h"
 #include "InputCoreTypes.h"
-#include "Minigame/FF_MinigameCatalogSubsystem.h"
-#include "Minigame/FF_MinigameDefinition.h"
 #include "NPC/Party/FF_ProgramReservationSubsystem.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Time/FF_FestivalStageSubsystem.h"
@@ -158,7 +156,6 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
         Panel->OnLightingRollbackRequested.RemoveAll(this);
         Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -282,7 +279,6 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
         Panel->OnLightingRollbackRequested.RemoveAll(this);
         Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
@@ -320,7 +316,6 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
 	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
-	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
 	Panel->OnRevenueRankingRequested.AddUObject(this, &ThisClass::HandlePanelRevenueRankingRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
@@ -340,7 +335,6 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
         Panel->OnLightingRollbackRequested.RemoveAll(this);
         Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
-		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
 		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel = nullptr;
@@ -1104,23 +1098,6 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		bEconomyAvailable ? Progression->GetTodayRevenue() : 0,
 		OutViewData);
 
-	const UFF_MinigameCatalogSubsystem* MinigameCatalog = GameInstance
-		? GameInstance->GetSubsystem<UFF_MinigameCatalogSubsystem>()
-		: nullptr;
-	const UFF_MinigameDefinition* MinigameDefinition = MinigameCatalog
-		? MinigameCatalog->FindDefinitionForFacility(Spec.FacilityDefinitionId)
-		: nullptr;
-	OutViewData.bHasMinigame = MinigameDefinition != nullptr;
-	OutViewData.bCanStartMinigame =
-		SelectionContext == EFF_FacilityInfoContext::Live &&
-		MinigameDefinition &&
-		ReadModel.State == EFFZSFacilityState::Active &&
-		!ReadModel.bNeedsRelocation;
-	OutViewData.MinigameActionText = MinigameDefinition
-		? FText::Format(
-			LOCTEXT("StartNamedMinigame", "{0} 시작"),
-			MinigameDefinition->DisplayName)
-		: FText::GetEmpty();
 	return true;
 }
 
@@ -1758,18 +1735,6 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramPickerCloseRequested()
 	if (PaidProgramPicker)
 	{
 		SetPaidProgramPickerOpen(false);
-	}
-}
-
-void UFF_FacilityInfoSubsystem::HandlePanelMinigameRequested()
-{
-	if (bPauseMenuPresentationSuppressed)
-	{
-		return;
-	}
-	if (SelectionContext == EFF_FacilityInfoContext::Live && SelectedFacilityId.IsValid())
-	{
-		OnMinigameRequested.Broadcast(SelectedFacilityId);
 	}
 }
 

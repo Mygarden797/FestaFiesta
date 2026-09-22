@@ -46,6 +46,7 @@
 #include "UI/Core/FF_PauseOptionsLightTealStyle.h"
 #include "UI/Data/FF_UIPalette.h"
 #include "UI/Settings/FF_KeyBindingLayoutMetrics.h"
+#include "UI/Settings/FF_KeyBindingDefinitions.h"
 #include "UI/Settings/FF_KeyBindingPanel.h"
 #include "UObject/SavePackage.h"
 #include "UObject/UnrealType.h"
@@ -63,7 +64,7 @@ namespace FFKeyBindingWbpBuilder
 	const FString TexturePackage(TextureFolder / TEXT("T_UI_Settings_Keyboard_ImageGen_v2"));
 	const FString PanelPackage(SettingsFolder / TEXT("WBP_FF_KeyBindingPanel"));
 	const FString TextureSource = FPaths::ProjectDir()
-		/ TEXT("SourceAssets/UI/Settings/T_UI_Settings_Keyboard_ImageGen_v2.png");
+		/ TEXT("Design/SourceAssets/UI/Settings/T_UI_Settings_Keyboard_ImageGen_v2.png");
 
 	const TCHAR* const CameraContextPath =
 		TEXT("/Game/FestaFiesta/Input/IMC_Camera.IMC_Camera");
@@ -546,46 +547,19 @@ namespace FFKeyBindingWbpBuilder
 		TArray<FResolvedMapping> Mappings;
 	};
 
-	TArray<FMappingSpec> MakeCameraMappingSpecs()
+	/** 작성기와 런타임이 동일한 동작 ID·키·안내 이름을 사용한다. */
+	TArray<FMappingSpec> MakeMappingSpecs(const EFF_KeyBindingContext Context)
 	{
-		const FText Category = LOCTEXT("CameraCategory", "관찰 카메라");
-		return {
-			{ TEXT("IA_Pan"), EKeys::W, TEXT("FF.Camera.Move.Forward"),
-				LOCTEXT("CameraForward", "카메라 앞으로 이동"), Category },
-			{ TEXT("IA_Pan"), EKeys::S, TEXT("FF.Camera.Move.Backward"),
-				LOCTEXT("CameraBackward", "카메라 뒤로 이동"), Category },
-			{ TEXT("IA_Pan"), EKeys::A, TEXT("FF.Camera.Move.Left"),
-				LOCTEXT("CameraLeft", "카메라 왼쪽 이동"), Category },
-			{ TEXT("IA_Pan"), EKeys::D, TEXT("FF.Camera.Move.Right"),
-				LOCTEXT("CameraRight", "카메라 오른쪽 이동"), Category },
-			{ TEXT("IA_SnapRotate"), EKeys::Q, TEXT("FF.Camera.Rotate.Left"),
-				LOCTEXT("CameraRotateLeft", "카메라 왼쪽 회전"), Category },
-			{ TEXT("IA_SnapRotate"), EKeys::E, TEXT("FF.Camera.Rotate.Right"),
-				LOCTEXT("CameraRotateRight", "카메라 오른쪽 회전"), Category },
-			{ TEXT("IA_ResetView"), EKeys::Home, TEXT("FF.Camera.ResetView"),
-				LOCTEXT("CameraResetView", "관찰 카메라 초기화"), Category },
-			{ TEXT("IA_ToggleView"), EKeys::Tab, TEXT("FF.Camera.ToggleView"),
-				LOCTEXT("CameraToggleView", "관찰 / 캐릭터 시점 전환"), Category },
-		};
-	}
-
-	TArray<FMappingSpec> MakeCharacterMappingSpecs()
-	{
-		const FText Category = LOCTEXT("CharacterCategory", "캐릭터");
-		return {
-			{ TEXT("IA_Move"), EKeys::W, TEXT("FF.Character.Move.Forward"),
-				LOCTEXT("CharacterForward", "캐릭터 앞으로 이동"), Category },
-			{ TEXT("IA_Move"), EKeys::S, TEXT("FF.Character.Move.Backward"),
-				LOCTEXT("CharacterBackward", "캐릭터 뒤로 이동"), Category },
-			{ TEXT("IA_Move"), EKeys::A, TEXT("FF.Character.Move.Left"),
-				LOCTEXT("CharacterLeft", "캐릭터 왼쪽 이동"), Category },
-			{ TEXT("IA_Move"), EKeys::D, TEXT("FF.Character.Move.Right"),
-				LOCTEXT("CharacterRight", "캐릭터 오른쪽 이동"), Category },
-			{ TEXT("IA_Jump"), EKeys::SpaceBar, TEXT("FF.Character.Jump"),
-				LOCTEXT("CharacterJump", "점프"), Category },
-			{ TEXT("IA_Sprint"), EKeys::LeftShift, TEXT("FF.Character.Sprint"),
-				LOCTEXT("CharacterSprint", "달리기"), Category },
-		};
+		TArray<FMappingSpec> Specs;
+		for (const FFF_KeyBindingDefinition& Definition : FFKeyBindingDefinitions::GetAll())
+		{
+			if (Definition.Context == Context && !Definition.SourceActionName.IsNone())
+			{
+				Specs.Add({ Definition.SourceActionName, Definition.DefaultKey, Definition.MappingName,
+					Definition.ActionLabel, FFKeyBindingDefinitions::GetContextLabel(Context) });
+			}
+		}
+		return Specs;
 	}
 
 	bool ResolveContextPlan(
@@ -831,8 +805,8 @@ namespace FFKeyBindingWbpBuilder
 
 		FContextPlan CameraPlan;
 		FContextPlan CharacterPlan;
-		if (!ResolveContextPlan(CameraContextPath, MakeCameraMappingSpecs(), CameraPlan)
-			|| !ResolveContextPlan(CharacterContextPath, MakeCharacterMappingSpecs(), CharacterPlan))
+		if (!ResolveContextPlan(CameraContextPath, MakeMappingSpecs(EFF_KeyBindingContext::Camera), CameraPlan)
+			|| !ResolveContextPlan(CharacterContextPath, MakeMappingSpecs(EFF_KeyBindingContext::Character), CharacterPlan))
 		{
 			return;
 		}

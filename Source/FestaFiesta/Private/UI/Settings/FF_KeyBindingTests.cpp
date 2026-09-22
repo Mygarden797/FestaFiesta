@@ -21,8 +21,11 @@
 #include "InputMappingContext.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/PackageName.h"
+#include "UI/Settings/FF_KeyBindingDefinitions.h"
 #include "UI/Settings/FF_KeyBindingLayoutMetrics.h"
 #include "UI/Settings/FF_KeyBindingPanel.h"
+#include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
+#include "UserSettings/EnhancedInputUserSettings.h"
 
 namespace FFKeyBindingTests
 {
@@ -156,11 +159,21 @@ bool FFF_KeyBindingDefaultKeyFallbackContractTest::RunTest(const FString& Parame
 		{ TEXT("FF.Character.Move.Left"), TEXT("IA_Move"), EKeys::A, true },
 		{ TEXT("FF.Character.Move.Right"), TEXT("IA_Move"), EKeys::D, true },
 		{ TEXT("FF.Character.Jump"), TEXT("IA_Jump"), EKeys::SpaceBar, true },
-		{ TEXT("FF.Character.Sprint"), TEXT("IA_Sprint"), EKeys::LeftShift, true },
+		{ TEXT("FF.Character.ShiftLock"), TEXT("IA_ShiftLock"), EKeys::LeftShift, true },
 	};
 
 	for (const FExpectedDefault& Expected : Defaults)
 	{
+		const FFF_KeyBindingDefinition* Definition = FFKeyBindingDefinitions::Find(Expected.MappingName);
+		TestNotNull(*FString::Printf(TEXT("%s의 공통 정의가 있다"), *Expected.MappingName.ToString()), Definition);
+		if (Definition)
+		{
+			TestEqual(TEXT("런타임이 찾는 Action도 실제 IMC의 Action과 같다"),
+				Definition->SourceActionName, Expected.ActionName);
+			TestTrue(TEXT("런타임 입력 컨텍스트가 기본키 검사와 같다"),
+				Definition->Context == (Expected.bCharacter
+					? EFF_KeyBindingContext::Character : EFF_KeyBindingContext::Camera));
+		}
 		TestTrue(*FString::Printf(TEXT("%s는 기본키 %s를 표시한다"),
 			*Expected.MappingName.ToString(), *Expected.Key.ToString()),
 			UFF_KeyBindingPanel::GetDefaultKeyForMapping(Expected.MappingName) == Expected.Key);
@@ -180,6 +193,8 @@ bool FFF_KeyBindingDefaultKeyFallbackContractTest::RunTest(const FString& Parame
 
 	TestFalse(TEXT("기본 정의 자체가 없는 동작만 미지정 후보가 된다"),
 		UFF_KeyBindingPanel::GetDefaultKeyForMapping(TEXT("FF.Unknown.Unassigned")).IsValid());
+	TestFalse(TEXT("잘못 노출되던 Sprint는 변경 가능한 기본 동작으로 남지 않는다"),
+		UFF_KeyBindingPanel::GetDefaultKeyForMapping(TEXT("FF.Character.Sprint")).IsValid());
 
 	const UFF_KeyBindingPanel* Panel = GetDefault<UFF_KeyBindingPanel>();
 	TestNotNull(TEXT("기본키 요약을 위한 키 배치 패널 CDO를 로드한다"), Panel);
@@ -192,10 +207,100 @@ bool FFF_KeyBindingDefaultKeyFallbackContractTest::RunTest(const FString& Parame
 			WSummary.Contains(TEXT("캐릭터 앞으로 이동")));
 		TestTrue(TEXT("Home 기본키는 카메라 초기화를 표시한다"),
 			Panel->GetCurrentBindingSummary(EKeys::Home).ToString().Contains(TEXT("카메라 시점 초기화")));
+		const FString ShiftSummary = Panel->GetCurrentBindingSummary(EKeys::LeftShift).ToString();
+		TestTrue(TEXT("LeftShift는 Shift Lock 켜기/끄기로 안내한다"),
+			ShiftSummary.Contains(TEXT("시점 고정 켜기 / 끄기 (Shift Lock)")));
+		TestFalse(TEXT("LeftShift를 달리기로 잘못 안내하지 않는다"),
+			ShiftSummary.Contains(TEXT("달리기")) || ShiftSummary.Contains(TEXT("전력 질주")));
 		TestTrue(TEXT("사용되지 않는 F2는 미지정 액션을 꾸며내지 않는다"),
 			Panel->GetCurrentBindingSummary(EKeys::F2).ToString().Contains(TEXT("연결된 동작이 없습니다")));
 	}
 
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FFF_KeyBindingRetiredMappingProfileCompatibilityTest,
+	"FestaFiesta.UI.Settings.KeyBinding.RetiredMappingProfileCompatibility",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_KeyBindingRetiredMappingProfileCompatibilityTest::RunTest(const FString& Parameters)
+{
+	(void)Parameters;
+	// 디스크 저장 없이 실제 Enhanced Input 프로필에 이전 버전의 저장 행을 재현한다.
+	UEnhancedInputUserSettings* Settings = NewObject<UEnhancedInputUserSettings>(GetTransientPackage());
+	FPlayerMappableKeyProfileCreationArgs ProfileArgs;
+	ProfileArgs.ProfileType = UEnhancedPlayerMappableKeyProfile::StaticClass();
+	ProfileArgs.ProfileStringIdentifier = TEXT("FF.KeyBinding.CompatibilityTest");
+	ProfileArgs.bSetAsCurrentProfile = true;
+	if (!TestNotNull(TEXT("격리된 입력 프로필을 만든다"), Settings->CreateNewKeyProfile(ProfileArgs)))
+	{
+		return false;
+	}
+
+	const FName RetiredName(TEXT("FF.Character.Sprint"));
+	const FName ShiftLockName(TEXT("FF.Character.ShiftLock"));
+	const FName JumpName(TEXT("FF.Character.Jump"));
+	const FFF_KeyBindingDefinition* ShiftLock = FFKeyBindingDefinitions::Find(ShiftLockName);
+	if (!TestNotNull(TEXT("새 ShiftLock 정의가 있다"), ShiftLock))
+	{
+		return false;
+	}
+	const auto AddProfileRow = [](UInputMappingContext* Context, const FName Name, const FKey Key)
+	{
+		UFF_KeyBindingProfileAction* Action = NewObject<UFF_KeyBindingProfileAction>(Context);
+		Action->Configure(Name, FText::FromName(Name), FText::GetEmpty(), false);
+		Context->MapKey(Action, Key);
+	};
+	const auto SetKey = [this, Settings](const FName Name, const FKey Key)
+	{
+		FMapPlayerKeyArgs Args;
+		Args.MappingName = Name;
+		Args.Slot = EPlayerMappableKeySlot::First;
+		Args.NewKey = Key;
+		FGameplayTagContainer FailureReasons;
+		Settings->MapPlayerKey(Args, FailureReasons);
+		return TestTrue(TEXT("테스트 프로필의 키 변경이 성공한다"), FailureReasons.IsEmpty());
+	};
+
+	UInputMappingContext* LegacyContext = NewObject<UInputMappingContext>(Settings);
+	AddProfileRow(LegacyContext, RetiredName, EKeys::LeftShift);
+	AddProfileRow(LegacyContext, JumpName, EKeys::SpaceBar);
+	if (!TestTrue(TEXT("이전 저장 행을 등록한다"), Settings->RegisterInputMappingContext(LegacyContext))
+		|| !SetKey(RetiredName, EKeys::LeftAlt) || !SetKey(JumpName, EKeys::J))
+	{
+		return false;
+	}
+	TestTrue(TEXT("새 행이 없는 이전 프로필에서도 ShiftLock은 LeftShift로 시작한다"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, ShiftLockName) == EKeys::LeftShift);
+	TestFalse(TEXT("이전 Sprint 저장 키는 UI와 런타임에 노출하지 않는다"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, RetiredName).IsValid());
+	TestTrue(TEXT("관련 없는 점프 사용자 키는 보존한다"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, JumpName) == EKeys::J);
+
+	UInputMappingContext* CurrentContext = NewObject<UInputMappingContext>(Settings);
+	AddProfileRow(CurrentContext, ShiftLockName, ShiftLock->DefaultKey);
+	if (!TestTrue(TEXT("현재 ShiftLock 행을 추가한다"), Settings->RegisterInputMappingContext(CurrentContext))
+		|| !SetKey(ShiftLockName, EKeys::V))
+	{
+		return false;
+	}
+	TestTrue(TEXT("명시적으로 바꾼 ShiftLock 키를 사용한다"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, ShiftLockName) == EKeys::V);
+
+	FMapPlayerKeyArgs ResetArgs;
+	ResetArgs.MappingName = ShiftLockName;
+	FGameplayTagContainer ResetFailures;
+	Settings->ResetAllPlayerKeysInRow(ResetArgs, ResetFailures);
+	TestTrue(TEXT("ShiftLock 기본값 복원이 성공한다"), ResetFailures.IsEmpty());
+	TestTrue(TEXT("복원 후에는 이전 Sprint 키가 아닌 LeftShift를 쓴다"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, ShiftLockName) == EKeys::LeftShift);
+	const FPlayerKeyMapping* RetiredMapping = Settings->FindCurrentMappingForSlot(
+		RetiredName, EPlayerMappableKeySlot::First);
+	TestTrue(TEXT("이전 저장 행을 삭제하거나 덮어쓰지 않는다"),
+		RetiredMapping && RetiredMapping->GetCurrentKey() == EKeys::LeftAlt);
+	TestTrue(TEXT("새 동작의 초기화가 다른 사용자 키를 초기화하지 않는다"),
+		FFKeyBindingDefinitions::ResolveCurrentKey(Settings, JumpName) == EKeys::J);
 	return true;
 }
 

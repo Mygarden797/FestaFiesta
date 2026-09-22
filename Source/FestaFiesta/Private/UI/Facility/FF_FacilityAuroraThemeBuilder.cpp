@@ -32,7 +32,7 @@ static bool IsDark(const FString& Name)
 {return Name==TEXT("Border_Tools")||Has(Name,{TEXT("PlacementHelp"),TEXT("QuickTools"),TEXT("BuildGuide"),TEXT("CameraHint")});}
 static bool IsPrimary(const FString& Name)
 {return Has(Name,{TEXT("PlaceSelected"),TEXT("ConfirmPlacement"),TEXT("Button_Upgrade"),TEXT("Button_Move"),
-    TEXT("ScheduleProgram"),TEXT("Button_Purchase"),TEXT("Button_Apply"),TEXT("LightingApply"),TEXT("Button_ViewFacility"),TEXT("Button_Inspect"),TEXT("Button_Confirm"),TEXT("Button_StartMinigame")});}
+    TEXT("ScheduleProgram"),TEXT("Button_Purchase"),TEXT("Button_Apply"),TEXT("LightingApply"),TEXT("Button_ViewFacility"),TEXT("Button_Inspect"),TEXT("Button_Confirm")});}
 static FSlateBrush MaterialBrush(const TCHAR* Role)
 {
     FString Name=FString(TEXT("MI_UI_FacilityAurora_"))+Role;

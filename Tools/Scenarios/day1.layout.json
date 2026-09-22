@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "description": "Test_Main Day 1: 지정된 메인 공연장과 SandArt 유료 프로그램 시설의 미개장 배치. origin_cm은 존 내부의 cm 좌표이고 27000은 270도다.",
+  "map": "/Game/FestaFiesta/Maps/Test_Main",
+  "slot": "day1",
+  "facilities": [
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage",
+      "zone_id": "GZ_DadaPocha",
+      "expected_audience_capacity": 500,
+      "origin_cm": [2500, 4025],
+      "yaw_centidegrees": 27000
+    },
+    {
+      "definition": "/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
+      "zone_id": "GZ_DadaPocha",
+      "origin_cm": [1500, 1150],
+      "yaw_centidegrees": 0
+    }
+  ]
+}

@@ -91,10 +91,6 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	{
 		Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
 	}
-	if (Button_StartMinigame)
-	{
-		Button_StartMinigame->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMinigameClicked);
-	}
 	if (Button_ScheduleProgram)
 	{
 		Button_ScheduleProgram->OnClicked.AddUniqueDynamic(
@@ -296,21 +292,15 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	{
 		Panel_LiveSection->SetVisibility(!bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
-	const bool bShowLiveActions = !bBuildContext && ViewData.bHasMinigame;
 	if (Panel_BuildActions)
 	{
 		Panel_BuildActions->SetVisibility(
 			bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
-	if (Panel_LiveActions)
-	{
-		Panel_LiveActions->SetVisibility(
-			bShowLiveActions ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	}
 	if (Panel_Actions)
 	{
 		Panel_Actions->SetVisibility(
-			(bBuildContext || bShowLiveActions)
+			bBuildContext
 				? ESlateVisibility::Visible
 				: ESlateVisibility::Collapsed);
 	}
@@ -369,19 +359,6 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		ViewData.ProgramScheduleActionText.IsEmpty()
 			? LOCTEXT("ScheduleProgram", "유료 프로그램 편성")
 			: ViewData.ProgramScheduleActionText);
-	if (Button_StartMinigame)
-	{
-		Button_StartMinigame->SetVisibility(
-			!bBuildContext && ViewData.bHasMinigame
-				? ESlateVisibility::Visible
-				: ESlateVisibility::Collapsed);
-		Button_StartMinigame->SetIsEnabled(
-			!bBuildContext && ViewData.bCanStartMinigame);
-	}
-	SetText(Text_StartMinigame,
-		ViewData.MinigameActionText.IsEmpty()
-			? LOCTEXT("StartMinigame", "게임 시작")
-			: ViewData.MinigameActionText);
 
 	const bool bHasThumbnail = IsValid(ViewData.Thumbnail);
 	if (Image_Thumbnail)
@@ -517,7 +494,7 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	UpdateTab(Button_TabRevenue,EFF_FacilityInfoPage::Revenue,bRevenueAvailable);
 	UpdateTab(Button_TabPrograms,EFF_FacilityInfoPage::Programs,CurrentViewData.bShowProgramSection);
 	Show(Panel_Actions, ActivePage != EFF_FacilityInfoPage::Lighting && ActivePage != EFF_FacilityInfoPage::RemoveConfirmation &&
-		(bBuild || CurrentViewData.bHasMinigame));
+		bBuild);
 	RefreshLightingPanelLayout();
 }
 
@@ -700,15 +677,6 @@ void UFF_FacilityInfoPanel::HandleRemoveClicked()
 void UFF_FacilityInfoPanel::HandleCloseClicked()
 {
 	OnCloseRequested.Broadcast();
-}
-
-void UFF_FacilityInfoPanel::HandleMinigameClicked()
-{
-	if (CurrentViewData.Context == EFF_FacilityInfoContext::Live &&
-		CurrentViewData.bCanStartMinigame)
-	{
-		OnMinigameRequested.Broadcast();
-	}
 }
 
 void UFF_FacilityInfoPanel::HandleProgramScheduleClicked()

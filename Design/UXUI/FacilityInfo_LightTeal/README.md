@@ -78,7 +78,7 @@ Picker는 `시설명 → 호환 프로그램 카드 목록 → 선택 미리보�
 - 문맥 섹션: `Panel_BuildSection`, `Panel_LiveSection`; 브러시·간격·폰트·애니메이션은 수정 가능하다.
 - 강화: `Panel_UpgradeSection`은 `VerticalBox`, `Button_Upgrade`는 `Button`이다. `Text_FacilityLevel`, `Text_UpgradeEffect`, `Text_UpgradeCost`, `Text_UpgradeReason`, `Text_Upgrade`는 `CommonTextBlock`이다. 이 이름들은 네이티브 `BindWidgetOptional` 계약이며, 생성된 WBP에서는 모두 변수로 노출한다.
 - 프로그램: `Panel_ProgramSection`, 상태/요약/사유 텍스트와 `Button_ScheduleProgram`.
-- 행동: `Panel_Actions`, `Panel_BuildActions`, `Panel_LiveActions`, `Button_Move`, `Button_Remove`, `Button_StartMinigame`; 레이블, 단축키 표기와 상태 브러시를 정리한다.
+- 행동: `Panel_Actions`, `Panel_BuildActions`, `Button_Move`, `Button_Remove`; 레이블, 단축키 표기와 상태 브러시를 정리한다.
 - Picker: `Border_Picker`, `Button_Close`, `Text_FacilityName`, `Text_Empty`, `ScrollBox_Programs`, `Text_PreviewName`, `Text_PreviewDescription`, `Text_PreviewDetails`, `Text_PreviewAvailability`, `Text_NoRefundNotice`, `Text_Feedback`, `Button_Confirm`, `Text_Confirm`.
 - Card: `Button_Select`, `Text_ProgramName`, `Text_ProgramMeta`, `Text_ProgramAvailability`.
 

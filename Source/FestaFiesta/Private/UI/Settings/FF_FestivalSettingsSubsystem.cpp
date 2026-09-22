@@ -15,7 +15,6 @@
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/PlayerInput.h"
 #include "Kismet/GameplayStatics.h"
-#include "Minigame/FF_MinigameSubsystem.h"
 #include "TimerManager.h"
 #include "UI/FF_UILog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
@@ -220,12 +219,7 @@ bool UFF_FestivalSettingsSubsystem::ShouldDeferOpenToActiveGameplayMode(
 		return true;
 	}
 
-	// 건축은 아래의 명시적 suspend/resume 계약으로 안전하게 중첩한다. 미니게임은 별도 Modal
-	// lease와 결과 수명주기를 소유하므로 해당 기능이 전용 suspend 계약을 제공하기 전까지 양보한다.
-	if (const UFF_MinigameSubsystem* Minigame = World->GetSubsystem<UFF_MinigameSubsystem>())
-	{
-		return Minigame->HasActiveSession();
-	}
+	// 건축 중에는 아래의 일시정지/복원 절차로 배치 상태를 유지한다.
 	return false;
 }
 

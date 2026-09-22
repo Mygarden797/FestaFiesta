@@ -326,17 +326,6 @@ struct FESTAFIESTA_API FFF_FacilityInfoViewData
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info|Revenue")
 	FText RevenueSummaryText;
 
-	/** True when a data-authored minigame is mapped to this installed facility type. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	bool bHasMinigame = false;
-
-	/** The button is visible for mapped facilities, but enabled only while the session may start. */
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	bool bCanStartMinigame = false;
-
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
-	FText MinigameActionText;
-
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Facility Info")
 	bool bFeedbackIsError = false;
 };

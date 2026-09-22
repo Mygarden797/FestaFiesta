@@ -26,15 +26,11 @@ guide = unreal.load_asset("/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_
 assert guide and guide.generated_class()
 assert unreal.MathLibrary.class_is_child_of(
     guide.generated_class(), unreal.load_class(None, "/Script/FestaFiesta.FF_BuildModeGuide"))
-scene_class = unreal.load_class(None, "/Script/FestaFiesta.FF_SurfingSceneActor")
-scene_default = unreal.get_default_object(scene_class)
-assert scene_default
 report = {
     "definition_validation": validation,
     "legacy_hidden_and_identity_preserved": True,
     "replacement_available": True,
     "guide_loads_with_expected_parent": True,
-    "surfing_class_default_loads": True,
 }
 OUTPUT.mkdir(parents=True, exist_ok=True)
 (OUTPUT / "owned-asset-verification.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

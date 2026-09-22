@@ -330,9 +330,7 @@ $requiredAssets = @(
     '/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel',
     '/Game/FestaFiesta/UI/Frontend/WBP_FF_ConfirmDialog',
     '/Game/FestaFiesta/UI/Settings/WBP_FF_FestivalSettings',
-    '/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan',
-    '/Game/FestaFiesta/Minigame/Data/DA_Minigame_Surfing',
-    '/Game/FestaFiesta/Minigame/Data/DT_SurfingCourse'
+    '/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan'
 )
 $ioStoreContents = (Get-Content -LiteralPath $ioStoreCsv -Raw).Replace('\', '/')
 $missingAssets = @($requiredAssets | Where-Object {

@@ -241,7 +241,7 @@ static bool Apply(UWidgetBlueprint& BP)
         }
     if(auto* Scroll=Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Details"))))
     { Scroll->SetAnimateWheelScrolling(false); Scroll->SetScrollBarVisibility(ESlateVisibility::Collapsed); }
-    for(const TCHAR* Name:{TEXT("Button_Move"),TEXT("Button_Remove"),TEXT("Button_Upgrade"),TEXT("Button_ScheduleProgram"),TEXT("Button_StartMinigame")})
+    for(const TCHAR* Name:{TEXT("Button_Move"),TEXT("Button_Remove"),TEXT("Button_Upgrade"),TEXT("Button_ScheduleProgram")})
         if(auto* Action=Cast<UButton>(Tree->FindWidget(Name)))
             StyleButton(*Action,FCString::Strcmp(Name,TEXT("Button_Remove"))!=0);
     return SaveNewBlueprint(TEXT("FF_BUILD_CLARITY_INFO"),BP);

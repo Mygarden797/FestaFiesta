@@ -5,6 +5,7 @@
 #if WITH_EDITOR
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "UI/Facility/FF_FacilityPaidProgramLayout.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -221,7 +222,7 @@ static bool ProgramPicker(UWidgetBlueprint& BP)
     auto* ListSize=Find<USizeBox>(T,TEXT("Size_ProgramList"));if(!Picker||!Header||!ListSize||!T.FindWidget(TEXT("Panel_Preview")))return false;
     BP.Modify();T.Modify();
     if(auto* S=Cast<UCanvasPanelSlot>(Picker->Slot))
-    {S->SetAnchors(FAnchors(1,0));S->SetAlignment(FVector2D(1,0));S->SetOffsets(FMargin(-18,18,456,620));S->SetAutoSize(false);}
+    {FFFacilityPaidProgramLayout::Apply(*S, FFFacilityPaidProgramLayout::EVariant::ClarityV2);}
     Picker->SetBrush(Material(TEXT("Paper")));Picker->SetBrushColor(FLinearColor::White);
     for(const TCHAR* Name:{TEXT("Size_ProgramList"),TEXT("Border_Preview"),TEXT("Text_Instruction")})Variable(BP,T.FindWidget(Name));
     auto* Back=Button(BP,T,TEXT("Button_BackToPrograms"),TEXT("Text_BackToPrograms"),TEXT("‹ 목록"));H(*Header,*Back,false,8);Header->ShiftChild(0,Back);Back->SetVisibility(ESlateVisibility::Collapsed);

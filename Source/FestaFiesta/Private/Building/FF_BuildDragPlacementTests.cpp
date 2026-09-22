@@ -543,7 +543,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("The real economy never overspends"), Economy->GetGold(), 0);
     TestEqual(TEXT("Money rejection reaches the real failure presenter"),
         Build->PlacementFailureFeedback->GetFailureType(), EFF_BuildPlacementFailureType::InsufficientGold);
-    Economy->AddRevenue(10 * InstallCost, EFF_EarnReason::MinigameReward);
+    Economy->AddRevenue(10 * InstallCost, EFF_EarnReason::DailyGoalBonus);
     Build->UpdateDragPlacement(CursorAt(FIntPoint(2600, 9000)));
     Drain();
     TestEqual(TEXT("New income does not silently restart the cancelled stroke"), Count(Road.Get()) - BeforeMoney, 2);
@@ -562,7 +562,7 @@ bool FFF_BuildDragPlacementTest::RunTest(const FString& Parameters)
     Build->HandlePlacementPrimaryPress(true);
     TestFalse(TEXT("An unaffordable initial click never arms a held purchase session"), Build->DragPlacementSession.IsValid());
     TestEqual(TEXT("An unaffordable initial click never commits"), Zones->GetWorldRevision(), RevisionBeforeUnaffordableClick);
-    Economy->AddRevenue(3 * InstallCost, EFF_EarnReason::MinigameReward);
+    Economy->AddRevenue(3 * InstallCost, EFF_EarnReason::DailyGoalBonus);
     Build->UpdateDragPlacement(CursorAt(FIntPoint(4200, 9000)));
     Drain();
     TestEqual(TEXT("Income after an unaffordable initial click requires a fresh press"),
