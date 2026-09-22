@@ -72,14 +72,16 @@ void UFF_FestivalProgressionSubsystem::WriteSaveData(TArray<uint8>& OutBytes) co
 	State.TotalRevenue = Funds.GetTotalRevenue();
 	State.LastProcessedDay = LastProcessedDay;
 	State.EndedDay = EndedDay;
+	State.AdmittedVisitorsToday = AdmittedVisitorsToday;
+	State.bDailyGoalBonusPaid = bDailyGoalBonusPaid;
+	State.StaffRoster = StaffPool.GetAllStaff();
+	State.PurchasedFinaleGrade = PurchasedFinaleGrade;
+	State.PurchasedPromotionGrade = PurchasedPromotionGrade;
 
-	/* 장부와 편성은 담지 않는다.
-
-	   저장은 정산이 끝난 뒤에만 하므로 그때 장부는 비어 있고 편성은 해제돼 있다.
-	   비어 있는 것을 담으면 파일만 커지고 복원할 때 맞출 것이 늘어난다.
-
-	   알바도 마찬가지다. 매일 다시 뽑는 것이라 하루가 시작되는 시점에는 0 이다.
-	*/
+	/* 당일 원장(DayLedger)과 프로그램 편성(ScheduledPrograms)은 여전히 안 담는다.
+	   저장은 정산이 끝난 뒤에만 일어나는데(장원재, 이어하기), 그 시점엔 하루 경계가
+	   이미 원장을 비우고 편성을 해제한 뒤라 담을 것이 없다 — 호출 시점이 바뀌면 이 가정도
+	   같이 재검토할 것. */
 
 	UFF_SaveArchive::WriteStruct(OutBytes, State);
 }
@@ -95,6 +97,9 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
+	const EFF_PromotionGrade PreviousPromotionGrade = PurchasedPromotionGrade;
+	const EFF_FinaleGrade PreviousFinaleGrade = PurchasedFinaleGrade;
 
 	/* 값을 직접 되돌린다.
 
@@ -105,14 +110,30 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 
 	LastProcessedDay = State.LastProcessedDay;
 	EndedDay = State.EndedDay;
+	AdmittedVisitorsToday = FMath::Max(0, State.AdmittedVisitorsToday);
+	bDailyGoalBonusPaid = State.bDailyGoalBonusPaid;
+	StaffPool.RestoreAllStaff(State.StaffRoster);
+	PurchasedFinaleGrade = State.PurchasedFinaleGrade;
+	PurchasedPromotionGrade = State.PurchasedPromotionGrade;
 
 	// 화면이 따라오게 알린다. 값만 바꾸면 UI 가 옛 숫자를 계속 보여준다.
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
+	// 레벨·승급 이력은 총원 수로 안 드러난다 — 복원할 때마다 무조건 한 번 알린다.
+	OnStaffRosterChanged.Broadcast();
+	if (PurchasedPromotionGrade != PreviousPromotionGrade)
+	{
+		OnPromotionGradeChanged.Broadcast(PurchasedPromotionGrade);
+	}
+	if (PurchasedFinaleGrade != PreviousFinaleGrade)
+	{
+		OnFinaleGradeChanged.Broadcast(PurchasedFinaleGrade);
+	}
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] 저장에서 되돌렸다. 금화 %d / 누적 %d / %d일차"),
-		State.Gold, State.TotalRevenue, State.LastProcessedDay);
+		TEXT("[경제] 저장에서 되돌렸다. 금화 %d / 누적 %d / %d일차 / 고용 %d명"),
+		State.Gold, State.TotalRevenue, State.LastProcessedDay, State.StaffRoster.Num());
 }
 
 void UFF_FestivalProgressionSubsystem::StartConfiguredFestival()
@@ -201,6 +222,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	
 	// 새 축제
 	LastProcessedDay = 0;
+	AdmittedVisitorsToday = 0;
+	bDailyGoalBonusPaid = false;
 
 	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 축제 시작: %s, 초기 Gold %d, 기본 Staff %d명"),
 		*InDefinition->FestivalId.ToString(), Funds.GetGold(), StaffPool.GetBaseStaffCount());
@@ -304,6 +327,32 @@ void UFF_FestivalProgressionSubsystem::PublishFacilityUpgradeSpend(const FGuid C
 void UFF_FestivalProgressionSubsystem::AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId)
 {
 	RecordRevenue(Amount, Reason, FacilityId, FGuid());
+}
+
+void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount)
+{
+	if (Definition == nullptr || LastProcessedDay <= 0 || AdmittedCount <= 0)
+	{
+		return;
+	}
+
+	AdmittedVisitorsToday = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+		static_cast<int64>(AdmittedVisitorsToday) + AdmittedCount));
+
+	const int32 Goal = Definition->DailyVisitorGoal;
+	if (bDailyGoalBonusPaid || Goal <= 0 || AdmittedVisitorsToday < Goal)
+	{
+		return;
+	}
+
+	bDailyGoalBonusPaid = true;
+	if (Definition->DailyGoalBonusGold > 0)
+	{
+		AddRevenue(Definition->DailyGoalBonusGold, EFF_EarnReason::DailyGoalBonus);
+	}
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] Day %d 방문객 목표 달성: %d/%d명, 보너스 %d Gold"),
+		LastProcessedDay, AdmittedVisitorsToday, Goal, Definition->DailyGoalBonusGold);
 }
 
 void UFF_FestivalProgressionSubsystem::AddFacilityRevenue(
@@ -518,16 +567,37 @@ bool UFF_FestivalProgressionSubsystem::TryHireStaff(int32 RequestedCount)
 		return false;
 	}
 
-	StaffPool.SetHiredStaffCount(AlreadyHired + RequestedCount);
+	// 오늘(LastProcessedDay) 고용한 것으로 남긴다 — 승급 가능 시점(다음 날 아침)이 여기서 갈린다.
+	StaffPool.HireStaffMembers(RequestedCount, LastProcessedDay);
 	DayLedger.RecordSpend(EFF_SpendReason::StaffHire, Cost);
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] Staff %d명 고용. 비용 %d, 총원 %d명(기본 %d + 고용 %d). 축제 끝까지 남는다"),
-		RequestedCount, Cost, StaffPool.GetTotalStaffCount(),
+		TEXT("[경제] Staff %d명 고용(%d일차). 비용 %d, 총원 %d명(기본 %d + 고용 %d). 축제 끝까지 남는다"),
+		RequestedCount, LastProcessedDay, Cost, StaffPool.GetTotalStaffCount(),
 		StaffPool.GetBaseStaffCount(), StaffPool.GetHiredStaffCount());
 
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
+	OnStaffRosterChanged.Broadcast();
+	return true;
+}
+
+bool UFF_FestivalProgressionSubsystem::TryPromoteStaff(int32 StaffId)
+{
+	if (Definition == nullptr)
+	{
+		return false;
+	}
+
+	if (!StaffPool.TryPromoteStaffMember(StaffId, LastProcessedDay))
+	{
+		return false;
+	}
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] Staff #%d 승급 (%d일차)"), StaffId, LastProcessedDay);
+
+	OnStaffRosterChanged.Broadcast();
 	return true;
 }
 
@@ -1042,6 +1112,8 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	const int32 JustEndedDay = LastProcessedDay;
 
 	LastProcessedDay = NewDay;
+	AdmittedVisitorsToday = 0;
+	bDailyGoalBonusPaid = false;
 
 	// TodayRevenue & DayLedger 리셋
 	Funds.ResetTodayRevenue();

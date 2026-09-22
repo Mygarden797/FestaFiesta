@@ -22,6 +22,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnEconomyValueChanged, int32, Ne
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFinaleGradeChanged, EFF_FinaleGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnPromotionGradeChanged, EFF_PromotionGrade, NewGrade);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnStaffRosterChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFestivalDefinitionChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid, FacilityInstanceId);
 
@@ -42,6 +43,12 @@ struct FFF_ProgressionSave
  	UPROPERTY() int32 TotalRevenue = 0;
  	UPROPERTY() int32 LastProcessedDay = 0;
 	UPROPERTY() int32 EndedDay = 0;
+	UPROPERTY() int32 AdmittedVisitorsToday = 0;
+	UPROPERTY() bool bDailyGoalBonusPaid = false;
+	// 기본 팀 + 고용 인원 전체 명단. 개인별 레벨·승급 이력이 여기 담긴다.
+	UPROPERTY() TArray<FFF_StaffMember> StaffRoster;
+	UPROPERTY() EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
+	UPROPERTY() EFF_PromotionGrade PurchasedPromotionGrade = EFF_PromotionGrade::None;
 };
  
 UCLASS()
@@ -127,6 +134,9 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void AddRevenue(int32 Amount, EFF_EarnReason Reason, FName FacilityId = NAME_None);
+
+	// 실제 입장 인원을 하루 단위로 기록하고 목표를 처음 달성했을 때만 보너스를 지급한다.
+	void RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount);
 
 	// 설치 시설 한 곳에 귀속되는 매출. FacilityId(종류)는 부스별 표로, FacilityInstanceId(Zone 인스턴스)는
 	// 시설별 장부로 간다. 자금·원장은 AddRevenue 와 같은 경로라 세 장부의 합이 항상 맞는다.
@@ -256,8 +266,23 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
 	FFF_OnEconomyValueChanged OnTotalStaffCountChanged;
-	
-	
+
+	// 개인별 명단(기본 + 고용). 사건 UI·사건 시스템이 능력치 계산에 이 값을 그대로 쓴다.
+	// [참고] FFF_StaffEventRules(순수 함수)가 이 목록으로 능력치 합·소요시간을 계산한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	TArray<FFF_StaffMember> GetStaffRoster() const { return StaffPool.GetAllStaff(); }
+
+	// StaffId 한 명을 승급시킨다. 고용 당일이거나, 오늘 이미 승급했거나, 이미 Lv3 면 거부하고
+	// 상태를 바꾸지 않는다. 가능 여부 판정은 FFF_StaffEventRules::CanPromote 를 따른다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
+	bool TryPromoteStaff(int32 StaffId);
+
+	// 명단이 바뀌면(고용·승급) 알린다. 인원 수만 바뀌는 게 아니라 레벨만 바뀌어도 쏜다 —
+	// OnTotalStaffCountChanged 는 승급으론 안 움직이므로 목록 화면은 이 델리게이트를 따로 듣는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnStaffRosterChanged OnStaffRosterChanged;
+
+
 	// --- 피날레 -----------------------------------------------------------
 
 	// 피날레를 구매한다. 실패 이유를 결과로 돌려주고, 실패 시 상태를 전혀 바꾸지 않는다.
@@ -441,6 +466,8 @@ private:
 
 	// 하루 경계를 마지막으로 처리한 날. 같은 날 중복 처리를 막는 수단이다.
 	int32 LastProcessedDay = 0;
+	int32 AdmittedVisitorsToday = 0;
+	bool bDailyGoalBonusPaid = false;
 	
 	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.
 	EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
