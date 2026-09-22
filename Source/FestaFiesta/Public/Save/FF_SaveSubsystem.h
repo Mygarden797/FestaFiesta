@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Save/FF_SaveTypes.h"
 #include "Save/FF_Saveable.h"
+#include "Time/FF_FestivalStage.h"
 #include "UObject/WeakInterfacePtr.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FF_SaveSubsystem.generated.h"
@@ -169,6 +170,33 @@ public:
 	void CaptureSession(FFF_SessionSave& Out) const;
 
 private:
+	/* 하루 경계와 축제 종료를 듣는다. 자동 저장이 걸리는 자리다.
+
+	   ─── 왜 저장 쪽이 구독하는가 ────────────────────────────────────────────
+	   각 파트가 "여기서 저장해줘" 를 부르게 하면, 파트마다 저장 시점을 알아야 하고
+	   하나가 늘 때마다 그 판단이 한 벌씩 는다. RegisterSaveable 이 "언제 저장되는지
+	   몰라도 된다" 고 약속한 것과도 어긋난다. 신호는 이미 공개돼 있으니 여기서 듣는다.
+	*/
+	void BindFestivalStage(FSubsystemCollectionBase& Collection);
+	void UnbindFestivalStage();
+
+	UFUNCTION()
+	void HandleStageChanged(EFF_FestivalStage PreviousStage, EFF_FestivalStage NewStage);
+
+	UFUNCTION()
+	void HandleFestivalEnded();
+
+	/* 다음 틱에 자동 저장한다. 바로 담지 않는다.
+
+	   하루 경계는 OnStageChanged 로 굴러가고 Zone·Crowd·경제가 모두 같은 신호를
+	   듣는다. 델리게이트 호출 순서는 등록 순서라 보장이 없어서, 그 자리에서 담으면
+	   아직 새 날 처리를 안 한 파트의 바이트가 섞인다 — 경제만 새 날이고 나머지는
+	   어제인 저장이 나온다.
+
+	   한 프레임 미루면 누가 먼저 등록했든 전부 끝난 뒤가 된다.
+	*/
+	void RequestDeferredAutoSave(const TCHAR* Reason);
+
 	// 슬롯 이름을 실제 파일 이름으로. 공백이나 기호가 섞이면 파일이 안 만들어진다.
 	static FString MakeSlotName(FName SlotId);
 
@@ -223,6 +251,16 @@ private:
 
 	// 다음 자동 저장에 쓸 차례. 둘을 번갈아 쓴다.
 	bool bAutoSaveUsesSecondSlot = false;
+
+	/* 자동 저장을 마지막으로 건 날. 같은 날에 두 번 걸지 않는다.
+
+	   하루의 시작으로 보는 단계가 둘(1일차 셋업, 2·3일차 모닝체크)이라 하루에
+	   두 번 걸릴 수 있다. 날짜로 막는 편이 단계 목록이 바뀌어도 견딘다.
+	*/
+	int32 LastAutoSavedDay = 0;
+
+	// 단계 신호에 물려 있는지. 해제할 때 중복 호출을 막는다.
+	bool bStageBound = false;
 
 	IConsoleCommand* SaveConsoleCommand = nullptr;
 	IConsoleCommand* LoadConsoleCommand = nullptr;

@@ -3,7 +3,9 @@
 #include "Save/FF_SaveSubsystem.h"
 
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "HAL/IConsoleManager.h"
+#include "TimerManager.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Kismet/GameplayStatics.h"
@@ -79,13 +81,168 @@ void UFF_SaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 			Meta.ClearedFestivals.Num());
 	}
 
+	BindFestivalStage(Collection);
 	RegisterDebugConsoleCommands();
 }
 
 void UFF_SaveSubsystem::Deinitialize()
 {
+	UnbindFestivalStage();
 	UnregisterDebugConsoleCommands();
 	Super::Deinitialize();
+}
+
+void UFF_SaveSubsystem::BindFestivalStage(FSubsystemCollectionBase& Collection)
+{
+	if (bStageBound)
+	{
+		return;
+	}
+
+	/* 의존을 선언해 초기화를 보장받는다.
+
+	   그냥 GetSubsystem 으로 꺼내면 아직 안 만들어졌을 수 있다. 그때는 조용히
+	   구독에 실패하고, 증상은 "하루가 지나도 저장이 안 된다" 로만 나타난다.
+	*/
+	UFF_FestivalStageSubsystem* Stage =
+		Collection.InitializeDependency<UFF_FestivalStageSubsystem>();
+
+	if (!Stage)
+	{
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] 단계 시스템이 없어 자동 저장을 걸지 못한다. "
+				 "콘솔(FF.Save.Write)로만 저장된다."));
+		return;
+	}
+
+	Stage->OnStageChanged.AddDynamic(this, &UFF_SaveSubsystem::HandleStageChanged);
+	Stage->OnFestivalEnded.AddDynamic(this, &UFF_SaveSubsystem::HandleFestivalEnded);
+	bStageBound = true;
+}
+
+void UFF_SaveSubsystem::UnbindFestivalStage()
+{
+	if (!bStageBound)
+	{
+		return;
+	}
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFF_FestivalStageSubsystem* Stage =
+			GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>())
+		{
+			Stage->OnStageChanged.RemoveDynamic(this, &UFF_SaveSubsystem::HandleStageChanged);
+			Stage->OnFestivalEnded.RemoveDynamic(this, &UFF_SaveSubsystem::HandleFestivalEnded);
+		}
+	}
+
+	bStageBound = false;
+}
+
+void UFF_SaveSubsystem::HandleStageChanged(
+	const EFF_FestivalStage PreviousStage, const EFF_FestivalStage NewStage)
+{
+	(void)PreviousStage;
+
+	/* 하루가 시작되는 순간에만 담는다.
+
+	   1일차는 셋업으로 시작하고 2·3일차는 모닝체크로 들어온다. 하루가 끝나는
+	   쪽(마감·리포트)에 걸지 않는 이유는, 그 시점에는 경제의 하루 정산이 아직
+	   안 돌아서 장부가 어중간하기 때문이다. 정산까지 끝난 다음 날 아침이
+	   "여기서 이어하면 되는" 지점이다.
+
+	   잃어봐야 하루치다. 매 단계마다 담으면 잦고, 수동만 두면 사람이 잊는다.
+	*/
+	const bool bDayStart =
+		NewStage == EFF_FestivalStage::Setup || NewStage == EFF_FestivalStage::MorningCheck;
+
+	if (!bDayStart)
+	{
+		return;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UFF_FestivalStageSubsystem* Stage =
+		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+
+	const int32 Day = Stage ? Stage->CurrentDay : 0;
+
+	if (Day <= 0 || Day == LastAutoSavedDay)
+	{
+		return;
+	}
+
+	LastAutoSavedDay = Day;
+	RequestDeferredAutoSave(TEXT("하루 시작"));
+}
+
+void UFF_SaveSubsystem::HandleFestivalEnded()
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+
+	const UFF_FestivalProgressionSubsystem* Progression =
+		GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>();
+
+	if (!Progression || !Progression->IsFestivalStarted())
+	{
+		return;
+	}
+
+	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
+	if (!Definition || Definition->FestivalId.IsNone())
+	{
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] 축제를 식별하지 못해 기록을 남기지 않는다."));
+		return;
+	}
+
+	FFF_FestivalRecord Record;
+
+	/* 남긴 돈으로 성적을 잰다. 누적 매출이 아니라 초기 자금과의 차이다.
+
+	   매출만 보면 돈을 아무리 써도 숫자가 올라가서, 많이 벌고 많이 쓴 판과
+	   적게 벌고 아낀 판이 구분되지 않는다.
+	*/
+	Record.BestProfit = Progression->GetGold() - Definition->InitialGold;
+
+	if (const UFF_SatisfactionMetricsSubsystem* Metrics =
+		GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>())
+	{
+		Record.BestSatisfaction = static_cast<float>(Metrics->GetSimSatisfaction());
+	}
+
+	/* 방문객 수는 아직 못 담는다.
+
+	   축제 전체 누적 방문객을 밖에 내주는 창구가 없다. 만족도의 표본 수로 대신하면
+	   표본 규칙이 바뀔 때마다 기록이 조용히 달라지므로 0 으로 둔다.
+	   Crowd 쪽에 누적 방문객 getter 가 생기면 여기만 채우면 된다.
+	*/
+	Record.PlayCount = 1;
+
+	MarkFestivalCleared(Definition->FestivalId, Record);
+}
+
+void UFF_SaveSubsystem::RequestDeferredAutoSave(const TCHAR* Reason)
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+
+	const FString ReasonText = Reason;
+
+	GameInstance->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(this, [this, ReasonText]()
+		{
+			UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 자동 저장 — %s"), *ReasonText);
+			WriteAutoSave();
+		}));
 }
 
 UFF_SaveSubsystem* UFF_SaveSubsystem::Get(const UObject* WorldContextObject)
@@ -361,11 +518,6 @@ void UFF_SaveSubsystem::CaptureSession(FFF_SessionSave& Out) const
 		Out.Satisfaction = Metrics->GetSimSatisfaction();
 	}
 
-	/* 축제 아이디는 담지 못한다.
-
-	   진행 서브시스템이 들고 있는 정의를 밖에서 꺼낼 방법이 없다.
-	   호출부가 아는 값이라 저장할 때 넘겨받는 편이 낫고, 그전까지는 비어 있다.
-	*/
 }
 
 bool UFF_SaveSubsystem::LoadFromSlot(const FName SlotId)
