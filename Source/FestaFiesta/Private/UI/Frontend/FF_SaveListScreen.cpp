@@ -154,11 +154,15 @@ void UFF_SaveListScreen::RebuildList()
 
 void UFF_SaveListScreen::HandleSlotSelected(FName SlotId)
 {
-	// 불러오기 Command 가 없다. 낙관적으로 화면을 바꾸지 않는다 —
-	// 결과 이벤트를 받은 뒤에 전환하는 것이 저장 UI 경계 규칙이다.
+	/* 알리기만 한다. 여기서 레벨을 열지 않는다.
+
+	   불러오기는 레벨 전환을 동반한다. 화면이 자기를 없애는 전환을 스스로 시작하면
+	   전환 도중 이 위젯이 사라져 수명이 꼬인다. 흐름 쪽이 받아서 연다.
+	*/
 	UE_LOG(LogFestaFiestaUI, Log,
-		TEXT("UFF_SaveListScreen: 슬롯 `%s` 선택. 불러오기 API 가 아직 없어 아무것도 하지 않는다."),
-		*SlotId.ToString());
+		TEXT("UFF_SaveListScreen: 슬롯 `%s` 선택."), *SlotId.ToString());
+
+	OnSlotChosen.Broadcast(SlotId);
 }
 
 void UFF_SaveListScreen::HandleBackClicked(UFF_CommonButtonBase* Button)

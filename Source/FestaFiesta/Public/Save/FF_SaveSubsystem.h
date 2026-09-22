@@ -63,6 +63,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool TryContinueFestival(FName FestivalId);
 
+	/* 이어할 슬롯을 지정한다. 레벨을 열기 전에 프론트엔드가 부른다.
+
+	   지정하지 않으면 가장 최근 자동 저장으로 이어한다. 목록에서 옛 기록이나 수동
+	   저장을 고른 경우에는 그 슬롯이어야 하는데, 레벨을 열면 화면이 사라져서
+	   선택을 넘겨줄 자리가 없다. 그래서 여기 맡겨둔다.
+
+	   한 번 쓰면 비운다. 남겨두면 다음에 새 게임으로 들어와도 그 슬롯을 물고 들어간다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void RequestContinueFromSlot(FName SlotId);
+
+	// 지정된 슬롯의 축제. 프론트엔드가 어느 레벨을 열지 정할 때 쓴다. 없으면 None.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	FName PeekFestivalIdInSlot(FName SlotId) const;
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool DeleteSlot(FName SlotId);
 
@@ -227,6 +242,9 @@ private:
 
 	// 마지막으로 쓴 슬롯. 이어하기 기본값으로 쓴다.
 	FName LastUsedSlotId;
+
+	// 프론트엔드가 고른 이어하기 슬롯. 한 번 쓰면 비운다.
+	FName PendingContinueSlotId;
 
 	/* 저장에 참여하는 시스템들.
 

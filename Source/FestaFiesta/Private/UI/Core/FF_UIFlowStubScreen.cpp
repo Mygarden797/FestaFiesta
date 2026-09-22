@@ -127,13 +127,26 @@ void UFF_UIFlowStubScreen::SyncFromFlow()
 
 	if (Button_Advance)
 	{
-		// 스킵할 수 없는 단계에서 눌리는 버튼을 두지 않는다.
-		// Report 는 스킵 대상이 아니지만 `다음 날` 로 넘어가므로 켠다.
+		/* 스킵할 수 없는 단계에서 눌리는 버튼을 두지 않는다.
+		   Report 는 스킵 대상이 아니지만 `다음 날` 로 넘어가므로 켠다.
+
+		   [주의] 마지막 날 Report 는 넘어갈 다음 날이 없어서 예전에는 껐다. 그런데 이
+		   화면이 최종 결산 자리에도 임시로 들어가 있어서, 끄면 축제가 끝난 뒤 아무 데도
+		   못 가고 갇힌다. 그래서 켜두고 로비로 보낸다.
+		   실제 결산 화면이 붙으면 이 갈래는 지운다.
+		*/
+		const bool bFinalReport = Stage->IsReportStage() && Stage->IsFinalDay();
+
 		const bool bCanAdvance = Stage->IsReportStage()
-			? !Stage->IsFinalDay()
-			: Stage->IsCurrentStageSkippable();
+			|| Stage->IsCurrentStageSkippable();
 
 		Button_Advance->SetIsEnabled(bCanAdvance);
+
+		if (Text_Hint && bFinalReport)
+		{
+			Text_Hint->SetText(LOCTEXT("FlowStubFinalHint",
+				"축제가 끝났습니다 · 임시 화면 — 진행을 누르면 로비로 돌아갑니다"));
+		}
 	}
 }
 

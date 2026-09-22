@@ -71,15 +71,18 @@ class FESTAFIESTA_API UFF_SaveListProvider : public UGameInstanceSubsystem
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+	virtual void Deinitialize() override;
 
 	static UFF_SaveListProvider* Get(const UObject* WorldContextObject);
 
 	/**
 	 * 실제 저장 시스템에 연결돼 있는가.
 	 * **false 인 동안 화면은 `저장 기능 준비 중` 을 함께 띄운다.**
+	 *
+	 * 저장 API 는 붙었다. 이제 false 가 되는 경우는 더미를 일부러 켜둔 때뿐이다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Save")
-	bool IsBackedByRealSaveSystem() const { return false; }
+	bool IsBackedByRealSaveSystem() const { return !bShowingDummySlots; }
 
 	/** 기록이 하나라도 있는가. 플레이 허브의 `최근 축제 계속하기` 활성 판정에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Save")
@@ -107,6 +110,24 @@ private:
 	 * **기본은 꺼짐** — 첫 실행이 기본 상태이고, 플레이 허브는 그 상태를 보여줘야 한다.
 	 */
 	void BuildDummySlots();
+
+	/**
+	 * 저장 시스템에서 실제 슬롯을 읽어 표시용으로 바꾼다.
+	 *
+	 * 저장 파일은 축제 식별자만 들고 있고 표시명은 카탈로그가 갖는다. 표시명을 저장에
+	 * 같이 담으면 이름을 고쳤을 때 옛 저장이 옛 이름을 계속 보여준다.
+	 */
+	void BuildRealSlots();
+
+	/** 흐름 설정. 카탈로그와 더미 스위치를 여기서 읽는다. */
+	static const class UFF_UIFlowSettings* Settings();
+
+	/** 저장이 끝나거나 불러오면 목록을 다시 읽는다. */
+	UFUNCTION()
+	void HandleSaveChanged(FName SlotId);
+
+	/** 지금 보여주는 것이 더미인가. 화면이 그 사실을 함께 표시한다. */
+	bool bShowingDummySlots = false;
 
 	UPROPERTY()
 	TArray<FFF_SaveSlotEntry> Slots;

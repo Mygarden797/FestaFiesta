@@ -565,23 +565,48 @@ bool UFF_SaveSubsystem::TryContinueFestival(const FName FestivalId)
 		return false;
 	}
 
-	// 가장 최근 자동 저장을 본다.
-	const FName Candidates[] = { TEXT("AutoSave_A"), TEXT("AutoSave_B") };
-
 	UFF_SaveGame* Newest = nullptr;
 	FName NewestSlot;
 
-	for (const FName& Candidate : Candidates)
+	/* 프론트엔드가 슬롯을 골랐으면 그것을 쓴다.
+
+	   한 번 쓰고 비운다. 남겨두면 다음에 새 게임으로 들어와도 이 슬롯을 물고 들어간다.
+	*/
+	const FName Requested = PendingContinueSlotId;
+	PendingContinueSlotId = NAME_None;
+
+	if (!Requested.IsNone())
 	{
-		UFF_SaveGame* Found = nullptr;
-		if (!PeekSlot(Candidate, Found) || !Found)
+		if (PeekSlot(Requested, Newest) && Newest)
 		{
-			continue;
+			NewestSlot = Requested;
 		}
-		if (!Newest || Found->SavedAt > Newest->SavedAt)
+		else
 		{
-			Newest = Found;
-			NewestSlot = Candidate;
+			// 고른 슬롯이 사라졌다. 자동 저장으로 떨어지지 않는다 —
+			// 사용자가 고른 것과 다른 판이 열리면 그게 더 나쁘다.
+			UE_LOG(LogFestaFiestaSave, Warning,
+				TEXT("[저장] 고른 슬롯 %s 를 읽지 못해 이어하지 않는다."), *Requested.ToString());
+			return false;
+		}
+	}
+	else
+	{
+		// 지정이 없으면 가장 최근 자동 저장을 본다.
+		const FName Candidates[] = { TEXT("AutoSave_A"), TEXT("AutoSave_B") };
+
+		for (const FName& Candidate : Candidates)
+		{
+			UFF_SaveGame* Found = nullptr;
+			if (!PeekSlot(Candidate, Found) || !Found)
+			{
+				continue;
+			}
+			if (!Newest || Found->SavedAt > Newest->SavedAt)
+			{
+				Newest = Found;
+				NewestSlot = Candidate;
+			}
 		}
 	}
 
@@ -681,6 +706,25 @@ TArray<FName> UFF_SaveSubsystem::GetKnownSlotIds() const
 	}
 
 	return Result;
+}
+
+void UFF_SaveSubsystem::RequestContinueFromSlot(const FName SlotId)
+{
+	PendingContinueSlotId = SlotId;
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] 이어할 슬롯을 %s 로 지정했다."),
+		SlotId.IsNone() ? TEXT("(최근 자동 저장)") : *SlotId.ToString());
+}
+
+FName UFF_SaveSubsystem::PeekFestivalIdInSlot(const FName SlotId) const
+{
+	UFF_SaveGame* Loaded = nullptr;
+	if (!PeekSlot(SlotId, Loaded) || !Loaded)
+	{
+		return NAME_None;
+	}
+	return Loaded->Session.FestivalId;
 }
 
 void UFF_SaveSubsystem::MigrateMeta(FFF_MetaSave& InOutMeta, const int32 SavedVersion)

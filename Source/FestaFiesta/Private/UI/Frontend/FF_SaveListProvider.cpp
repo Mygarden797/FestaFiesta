@@ -6,6 +6,10 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "Save/FF_SaveSubsystem.h"
+#include "Save/FF_SaveTypes.h"
+#include "Time/FF_FestivalStage.h"
+#include "UI/Atlas/FF_FestivalAtlasCatalog.h"
 #include "UI/Core/FF_UIFlowSettings.h"
 #include "UI/FF_UILog.h"
 
@@ -14,6 +18,38 @@
 void UFF_SaveListProvider::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
+
+	/* 저장이 끝나거나 불러오면 목록을 다시 읽는다.
+
+	   화면이 직접 갱신을 부르게 하면 저장이 일어나는 자리를 화면이 알아야 한다.
+	   자동 저장은 화면과 무관하게 하루 경계에서 걸리므로 화면은 그 시점을 모른다.
+	*/
+	if (UFF_SaveSubsystem* Save = Collection.InitializeDependency<UFF_SaveSubsystem>())
+	{
+		Save->OnSaveCompleted.AddDynamic(this, &UFF_SaveListProvider::HandleSaveChanged);
+		Save->OnSaveLoaded.AddDynamic(this, &UFF_SaveListProvider::HandleSaveChanged);
+	}
+
+	RefreshSlots();
+}
+
+void UFF_SaveListProvider::Deinitialize()
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UFF_SaveSubsystem* Save = GameInstance->GetSubsystem<UFF_SaveSubsystem>())
+		{
+			Save->OnSaveCompleted.RemoveDynamic(this, &UFF_SaveListProvider::HandleSaveChanged);
+			Save->OnSaveLoaded.RemoveDynamic(this, &UFF_SaveListProvider::HandleSaveChanged);
+		}
+	}
+
+	Super::Deinitialize();
+}
+
+void UFF_SaveListProvider::HandleSaveChanged(FName SlotId)
+{
+	(void)SlotId;
 	RefreshSlots();
 }
 
@@ -52,10 +88,17 @@ void UFF_SaveListProvider::RefreshSlots()
 {
 	Slots.Reset();
 
-	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
-	if (Settings && Settings->bUseDummySaveSlots)
+	const UFF_UIFlowSettings* FlowSettings = Settings();
+	bShowingDummySlots = FlowSettings && FlowSettings->bUseDummySaveSlots;
+
+	if (bShowingDummySlots)
 	{
+		// 더미가 켜져 있으면 실제 기록을 읽지 않는다. 섞으면 어느 쪽이 진짜인지 모른다.
 		BuildDummySlots();
+	}
+	else
+	{
+		BuildRealSlots();
 	}
 
 	// 저장 시각 내림차순. 자동/수동 분류는 화면이 한다 — 목록의 순서는 시간 하나로 정한다.
@@ -67,9 +110,89 @@ void UFF_SaveListProvider::RefreshSlots()
 	UE_LOG(LogFestaFiestaUI, Log,
 		TEXT("UFF_SaveListProvider: 저장 기록 %d건 (%s)."),
 		Slots.Num(),
-		IsBackedByRealSaveSystem() ? TEXT("실제 저장 시스템") : TEXT("더미 — 저장 API 미구현"));
+		IsBackedByRealSaveSystem() ? TEXT("실제 저장 시스템") : TEXT("더미 — 설정에서 켜짐"));
 
 	OnSaveListChanged.Broadcast();
+}
+
+void UFF_SaveListProvider::BuildRealSlots()
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	UFF_SaveSubsystem* Save =
+		GameInstance ? GameInstance->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+
+	if (!Save)
+	{
+		UE_LOG(LogFestaFiestaUI, Warning,
+			TEXT("UFF_SaveListProvider: 저장 시스템이 없어 목록이 빈다."));
+		return;
+	}
+
+	/* 이름은 카탈로그에서 가져온다.
+
+	   저장 파일은 축제 식별자만 들고 있다. 표시명을 저장에 같이 담으면 나중에
+	   이름을 고쳤을 때 옛 저장이 옛 이름을 계속 보여준다. 식별자만 담고 그릴 때
+	   찾는 편이 한 곳만 고치면 되게 한다.
+	*/
+	const UFF_FestivalAtlasCatalog* Catalog =
+		(Settings() && !Settings()->AtlasCatalog.IsNull())
+			? Settings()->AtlasCatalog.LoadSynchronous()
+			: nullptr;
+
+	const UEnum* StageEnum = StaticEnum<EFF_FestivalStage>();
+
+	for (const FName& SlotId : Save->GetKnownSlotIds())
+	{
+		UFF_SaveGame* Loaded = nullptr;
+		if (!Save->PeekSlot(SlotId, Loaded) || !Loaded)
+		{
+			// 목록과 실제 파일이 어긋난 경우다. 목록은 참고일 뿐이라 조용히 건너뛴다.
+			continue;
+		}
+
+		FFF_SaveSlotEntry Entry;
+		Entry.SlotId = SlotId;
+		Entry.bAutoSave = Loaded->bAutoSave;
+		Entry.Day = Loaded->Session.Day;
+		Entry.SavedAt = Loaded->SavedAt;
+
+		if (const FFF_FestivalAtlasEntry* Festival =
+			Catalog ? Catalog->FindEntry(Loaded->Session.FestivalId) : nullptr)
+		{
+			Entry.FestivalName = Festival->FestivalName;
+
+			if (const FFF_AtlasCountryEntry* Country = Catalog->FindCountry(Festival->CountryId))
+			{
+				Entry.RegionName = Country->DisplayName;
+			}
+		}
+		else if (!Loaded->Session.FestivalId.IsNone())
+		{
+			// 카탈로그에 없는 축제다. 빈칸보다 식별자라도 보여야 어느 저장인지 가린다.
+			Entry.FestivalName = FText::FromName(Loaded->Session.FestivalId);
+		}
+
+		/* 단계는 이름으로 저장돼 있다. 표시명은 열거형이 갖고 있다.
+
+		   저장이 이름을 담는 이유(항목 순서가 바뀌어도 안 밀림)는 그대로 살리면서,
+		   화면에는 내부 이름이 아니라 한글 표시명을 보여준다.
+		*/
+		if (StageEnum && !Loaded->Session.StageId.IsNone())
+		{
+			const int64 Value = StageEnum->GetValueByNameString(Loaded->Session.StageId.ToString());
+			if (Value != INDEX_NONE)
+			{
+				Entry.StageName = StageEnum->GetDisplayNameTextByValue(Value);
+			}
+		}
+
+		Slots.Add(Entry);
+	}
+}
+
+const UFF_UIFlowSettings* UFF_SaveListProvider::Settings()
+{
+	return UFF_UIFlowSettings::Get();
 }
 
 void UFF_SaveListProvider::BuildDummySlots()
