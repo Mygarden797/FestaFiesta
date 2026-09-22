@@ -60,6 +60,14 @@ public:
 	// 여러 개면 Priority 가 가장 높은 것을 고른다.
 	static AFF_FinaleViewpoint* FindBest(const UWorld* World);
 
+	/* 순회 연출에 쓸 시점들을 TourOrder 순으로 모은다.
+
+	   FindBest 는 한 자리만 고르는 함수다. 낮은 등급은 그것으로 충분하지만
+	   최고 등급은 여러 자리를 돌아야 해서 목록이 필요하다.
+	   같은 액터를 두 용도로 쓰되 고르는 기준만 나눈다.
+	*/
+	static void CollectTour(const UWorld* World, TArray<AFF_FinaleViewpoint*>& OutViewpoints);
+
 	// 바라볼 대상. 레벨에서 지정한다.
 	UPROPERTY(EditInstanceOnly, BlueprintReadWrite, Category = "FestaFiesta|Finale")
 	TObjectPtr<AActor> LookTargetActor;
@@ -72,6 +80,30 @@ public:
 	// 순차로 터질 때 쓴다. 고정 연출이면 꺼두는 편이 화면이 안정적이다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Finale")
 	bool bTrackTargetEveryFrame = false;
+
+	// 순회 연출에 이 시점을 넣을지.
+	//
+	// 고정 연출용으로만 두고 순회에서는 빼고 싶은 자리가 있다. 예를 들어
+	// 전체를 넓게 잡는 시점은 처음과 끝에만 쓰고 중간에는 안 쓰는 편이 낫다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Finale|Tour")
+	bool bIncludeInTour = true;
+
+	// 순회 순서. 작은 쪽부터 간다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Finale|Tour")
+	int32 TourOrder = 0;
+
+	// 이 자리에 머무는 시간(초).
+	//
+	// 자리마다 다르게 두는 이유는 볼거리가 다르기 때문이다. 발사대 바로 옆은
+	// 짧게 스치고, 전체가 보이는 자리는 오래 둬야 한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Finale|Tour", meta = (ClampMin = "0.5"))
+	float TourHoldSeconds = 6.f;
+
+	// 이 자리로 넘어올 때 걸리는 시간(초).
+	//
+	// 0 이면 즉시 잘린다. 컷 전환을 원하면 0 으로 두고, 흐르듯 이어가려면 값을 준다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Finale|Tour", meta = (ClampMin = "0.0"))
+	float TourBlendSeconds = 2.f;
 
 	// 시점이 여럿일 때 고르는 기준. 큰 쪽이 이긴다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "FestaFiesta|Finale")
