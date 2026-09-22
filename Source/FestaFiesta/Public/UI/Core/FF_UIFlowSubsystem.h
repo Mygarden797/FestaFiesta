@@ -214,6 +214,11 @@ protected:
 	void HandleAtlasStartFestival(FName FestivalId);
 
 private:
+	/** 지구본↔국가 지도만 암전으로 감싼다. 화면/히스토리는 완전히 가려진 뒤 바꾼다. */
+	bool BeginAtlasScreenTransition(EFF_UIFlowScreen Destination, bool bGoingBack);
+	void GoToScreenImmediate(EFF_UIFlowScreen Screen);
+	bool GoBackImmediate();
+
 	/** 이 GameInstance가 시작한 축제 맵 로드에만 MoviePlayer 화면을 준비한다. */
 	void HandlePreLoadMapWithContext(const FWorldContext& WorldContext, const FString& MapName);
 

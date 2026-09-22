@@ -414,6 +414,9 @@ FFF_LiveSocialPost UFF_FestivalViewModelSubsystem::ConvertSnsPostToLiveSocialPos
 	FFF_LiveSocialPost Converted;
 	Converted.Author = FText::FromString(Row.DisplayHandle);
 	Converted.Body = Row.Body;
+	// 강도 0 또는 -1도 실제 반응이다. 방향을 명시해 예전 미확정 센티널과 구분한다.
+	Converted.Sentiment = Row.Sentiment == EFF_SnsSentiment::Positive
+		? EFF_LiveSnsSentiment::Positive : EFF_LiveSnsSentiment::Negative;
 
 	// TopicSalience0To100은 "이 화제를 고른 신호가 얼마나 강했는지"다 — 임의 상수가 아니라
 	// 화제 선택에 실제로 쓰인 값을 그대로 세기로 재사용한다(utility_ai_todo.md §11).

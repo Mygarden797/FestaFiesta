@@ -18,6 +18,7 @@
 class UBorder;
 class UButton;
 class UPanelWidget;
+class USizeBox;
 class UTextBlock;
 class UWidget;
 class UWidgetAnimation;
@@ -165,6 +166,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep")
 	void RefreshAll();
 
+	/** 디자이너 SizeBox 행 높이를 읽는다. 바 크기와 패널 도킹을 따로 맞출 필요가 없다. */
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Layout")
+	float GetBottomBarHeight() const;
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Layout")
+	float GetBottomStatusRowHeight() const;
+
 	/** 열린 탭이 바뀔 때. 패널 밖에서 반응해야 하는 쪽(예: 배치 모드)이 구독한다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|UI|Prep")
 	FFF_OnPrepTabSelectionChanged OnTabSelectionChanged;
@@ -246,6 +254,12 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep")
 	TObjectPtr<UBorder> Border_StatusRow;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Layout")
+	TObjectPtr<USizeBox> SizeBox_MenuRow;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Layout")
+	TObjectPtr<USizeBox> SizeBox_StatusRow;
+
 	// --- 패널이 들어가는 자리 ---
 
 	/**
@@ -283,7 +297,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UWidget> Box_VisitorCount;
 
-	/** `6명 (기본 4 · 고용 2)`. 축제 시작 전에는 숨긴다. */
+	/** 사람 아이콘 옆에 총원만 표시한다. 기본/고용 상세는 인력 패널에서 확인한다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UTextBlock> Text_Staff;
 
@@ -333,6 +347,22 @@ protected:
 	// =========================================================================
 	// 설정
 	// =========================================================================
+
+	/** 켜면 색·배경·폰트·패딩은 Designer가 소유한다. 런타임에는 값과 선택 상태만 갱신한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Appearance")
+	bool bUseDesignerStyle = false;
+
+	/** {Amount}에 현재 보유 금화가 들어간다. 글꼴/크기는 Text_Gold에서 수정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Text")
+	FText GoldTextFormat;
+
+	/** {Count}에 총 인원이 들어간다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Text")
+	FText StaffTextFormat;
+
+	/** {Day}와 {Stage}에 현재 일차와 단계가 들어간다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Text")
+	FText DayStageTextFormat;
 
 	/**
 	 * ★ **탭 하나 = 한 줄.** 그 탭을 열었을 때 패널이 어디에 얼마나 크게 열릴지 정한다.

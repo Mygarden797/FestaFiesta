@@ -1797,6 +1797,316 @@ namespace FFAtlasNaturalWbpBuilder
 	}
 
 	// =========================================================================
+	// 밝은 지도 마감 — 기존 트리/그래프를 보존하는 명시적 적용 명령
+	// =========================================================================
+
+	FAtlasTheme MakeBrightTheme()
+	{
+		const auto Color = [](const TCHAR* Hex)
+		{
+			return FLinearColor::FromSRGBColor(FColor::FromHex(Hex));
+		};
+		FAtlasTheme Theme;
+		Theme.Backdrop = Color(TEXT("77D8E8"));
+		Theme.Panel = Color(TEXT("FFFEF4"));
+		Theme.PanelRaised = Color(TEXT("DFEFDC"));
+		Theme.Edge = Color(TEXT("AFD3B6"));
+		Theme.EdgeStrong = Color(TEXT("147F5B"));
+		Theme.Title = Color(TEXT("103F35"));
+		Theme.Text = Color(TEXT("204F44"));
+		Theme.Sub = Color(TEXT("4D7774"));
+		Theme.Dim = Color(TEXT("617A73"));
+		Theme.Accent = Color(TEXT("18835A"));
+		Theme.AccentHover = Color(TEXT("259569"));
+		Theme.AccentPressed = Color(TEXT("116846"));
+		Theme.AccentText = Color(TEXT("FFFFFF"));
+		return Theme;
+	}
+
+	template <typename T>
+	T* FindBrightWidget(UWidgetBlueprint& Blueprint, const TCHAR* Name)
+	{
+		return Blueprint.WidgetTree ? Cast<T>(Blueprint.WidgetTree->FindWidget(FName(Name))) : nullptr;
+	}
+
+	void StyleBrightText(UWidgetBlueprint& Blueprint, const TCHAR* Name, int32 Size,
+		const FLinearColor& Color, const FName Typeface = TEXT("Medium"))
+	{
+		if (UTextBlock* Text = FindBrightWidget<UTextBlock>(Blueprint, Name))
+		{
+			// CommonTextStyle이 SynchronizeProperties 때 Designer 폰트/색을 되돌리지 않게 한다.
+			if (UCommonTextBlock* CommonText = Cast<UCommonTextBlock>(Text))
+			{
+				CommonText->SetStyle(nullptr);
+			}
+			Text->Modify();
+			StyleText(*Text, Size, Color, Typeface);
+			Text->SetShadowOffset(FVector2D::ZeroVector);
+			Text->SetShadowColorAndOpacity(FLinearColor::Transparent);
+		}
+	}
+
+	void SetBrightMarker(UWidgetBlueprint& Blueprint, const TCHAR* Name,
+		const FSlateBrush& Brush, float Size, float Band)
+	{
+		if (UImage* Marker = FindBrightWidget<UImage>(Blueprint, Name))
+		{
+			const ESlateVisibility PreviousVisibility = Marker->GetVisibility();
+			PaintImage(*Marker, Brush);
+			Marker->SetVisibility(PreviousVisibility);
+			Marker->SetDesiredSizeOverride(FVector2D(Size));
+			if (UOverlaySlot* Slot = Cast<UOverlaySlot>(Marker->Slot))
+			{
+				Slot->SetPadding(FMargin(0.f, (Band - Size) * 0.5f, 0.f, 0.f));
+			}
+		}
+	}
+
+	bool ApplyBrightPin(UWidgetBlueprint& Blueprint, const FAtlasTheme& Theme,
+		UTexture2D* LockIcon, UTexture2D* CheckIcon)
+	{
+		USizeBox* Root = FindBrightWidget<USizeBox>(Blueprint, TEXT("SizeBox_Root"));
+		UOverlay* Overlay = FindBrightWidget<UOverlay>(Blueprint, TEXT("Overlay_Root"));
+		UBorder* Chip = FindBrightWidget<UBorder>(Blueprint, TEXT("Border_PinLabel"));
+		if (!Root || !Overlay || !Chip)
+		{
+			return false;
+		}
+		// 여기 값은 최초 시안 적용값이다. 실행 중에는 크기/폰트/브러시를 덮어쓰지 않는다.
+		constexpr float BrightPinBand = 36.f;
+		constexpr float BrightPinHeight = 116.f;
+		Root->SetWidthOverride(128.f);
+		Root->SetHeightOverride(BrightPinHeight);
+		PaintBorder(*Chip, MakeSolidBrush(Theme.Panel, 10.f, Theme.Edge, 1.f));
+		Chip->SetPadding(FMargin(4.f, 5.f, 4.f, 6.f));
+		if (UOverlaySlot* Slot = Cast<UOverlaySlot>(Chip->Slot))
+		{
+			Slot->SetPadding(FMargin(0.f, BrightPinBand + 1.f, 0.f, 0.f));
+		}
+		StyleBrightText(Blueprint, TEXT("Text_Label"), 14, Theme.Title, TEXT("SemiBold"));
+		if (UTextBlock* Label = FindBrightWidget<UTextBlock>(Blueprint, TEXT("Text_Label")))
+		{
+			// 가까운 축제 핀의 이름표가 서로 덮이지 않게 단어 단위로 두 줄에 배치한다.
+			Label->SetWrapTextAt(95.f);
+		}
+		StyleBrightText(Blueprint, TEXT("Text_PinBadge"), 12, Theme.Sub);
+		SetBrightMarker(Blueprint, TEXT("Image_FocusRing"),
+			MakeRoundBrush(FLinearColor::Transparent, Theme.EdgeStrong, 2.f), 36.f, BrightPinBand);
+		SetBrightMarker(Blueprint, TEXT("Image_PinChevrons"),
+			MakeRoundBrush(WithAlpha(Theme.Accent, 0.22f)), 34.f, BrightPinBand);
+		SetBrightMarker(Blueprint, TEXT("Image_PinDefault"),
+			MakeRoundBrush(Theme.Accent, Theme.Panel, 2.f), 24.f, BrightPinBand);
+		SetBrightMarker(Blueprint, TEXT("Image_PinLock"),
+			MakeRoundBrush(Theme.Dim, Theme.Panel, 2.f), 28.f, BrightPinBand);
+		SetBrightMarker(Blueprint, TEXT("Image_PinSelected"),
+			MakeRoundBrush(Theme.Accent, FLinearColor::FromSRGBColor(FColor::FromHex(TEXT("FFD575"))), 3.f),
+			32.f, BrightPinBand);
+
+		const auto AddGlyph = [&](const TCHAR* Name, UTexture2D* Texture, float Size)
+		{
+			UImage* Glyph = FindBrightWidget<UImage>(Blueprint, Name);
+			if (!Glyph)
+			{
+				Glyph = MakeWidget<UImage>(Blueprint, *Blueprint.WidgetTree, FName(Name), true);
+				if (Glyph)
+				{
+					AddMarkerLayer(*Overlay, *Glyph, Size, BrightPinBand);
+				}
+			}
+			if (!Glyph)
+			{
+				return false;
+			}
+			SetImageTexture(*Glyph, Texture, FVector2D(Size));
+			Glyph->SetVisibility(ESlateVisibility::Collapsed);
+			return true;
+		};
+		if (!AddGlyph(TEXT("Image_PinLockGlyph"), LockIcon, 16.f)
+			|| !AddGlyph(TEXT("Image_PinSelectedGlyph"), CheckIcon, 19.f)
+			|| !SaveNewBlueprint(TEXT("FF_ATLAS_BRIGHT"), Blueprint))
+		{
+			return false;
+		}
+		return SetCdoVector2D(Blueprint, TEXT("MapAnchor"), FVector2D(0.5f, BrightPinBand * 0.5f / BrightPinHeight))
+			&& SetCdoLinearColor(Blueprint, TEXT("NormalContentColor"), Theme.Title)
+			&& SetCdoLinearColor(Blueprint, TEXT("HighlightedContentColor"), Theme.AccentPressed)
+			&& SetCdoLinearColor(Blueprint, TEXT("DisabledContentColor"), Theme.Dim)
+			&& SaveBlueprintDefaults(Blueprint);
+	}
+
+	bool ApplyBrightCountry(UWidgetBlueprint& Blueprint, const FAtlasTheme& Theme, UClass* BrightPrimaryStyle)
+	{
+		UCanvasPanel* Root = FindBrightWidget<UCanvasPanel>(Blueprint, TEXT("CanvasPanel_Root"));
+		UImage* Backdrop = FindBrightWidget<UImage>(Blueprint, TEXT("Image_Backdrop"));
+		UBorder* Card = FindBrightWidget<UBorder>(Blueprint, TEXT("Panel_FestivalCard"));
+		USizeBox* CardBox = FindBrightWidget<USizeBox>(Blueprint, TEXT("SizeBox_Card"));
+		if (!Root || !Backdrop || !Card || !CardBox)
+		{
+			return false;
+		}
+		PaintImage(*Backdrop, MakeSolidBrush(Theme.Backdrop, 0.f));
+		PaintBorder(*Card, MakeSolidBrush(Theme.Panel, 18.f, Theme.Edge, 2.f));
+		Card->SetPadding(FMargin(22.f));
+		CardBox->SetWidthOverride(380.f);
+		if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(CardBox->Slot))
+		{
+			Slot->SetPosition(FVector2D(-48.f, 16.f));
+		}
+		if (USizeBox* Preview = FindBrightWidget<USizeBox>(Blueprint, TEXT("SizeBox_Preview")))
+		{
+			Preview->SetHeightOverride(170.f);
+		}
+		if (USizeBox* Start = FindBrightWidget<USizeBox>(Blueprint, TEXT("SizeBox_StartFestival")))
+		{
+			Start->SetHeightOverride(58.f);
+		}
+		if (UBorder* Pill = FindBrightWidget<UBorder>(Blueprint, TEXT("Panel_AvailabilityPill")))
+		{
+			PaintBorder(*Pill, MakeRoundBrush(Theme.PanelRaised, Theme.Edge, 1.f));
+			Pill->SetPadding(FMargin(12.f, 5.f, 12.f, 5.f));
+		}
+		StyleBrightText(Blueprint, TEXT("Text_CountryName"), 20, Theme.Title, TEXT("SemiBold"));
+		StyleBrightText(Blueprint, TEXT("Text_BreadcrumbSeparator"), 18, Theme.Sub);
+		StyleBrightText(Blueprint, TEXT("Text_RegionName"), 16, Theme.Sub);
+		StyleBrightText(Blueprint, TEXT("Text_FestivalName"), 28, Theme.Title, TEXT("Bold"));
+		StyleBrightText(Blueprint, TEXT("Text_Availability"), 15, Theme.AccentPressed, TEXT("SemiBold"));
+		StyleBrightText(Blueprint, TEXT("Text_OperatingDays"), 15, Theme.Text);
+		StyleBrightText(Blueprint, TEXT("Text_LockReason"), 15, Theme.Sub);
+		StyleBrightText(Blueprint, TEXT("Text_EmptyHint"), 17, Theme.Sub);
+		if (UTextBlock* Hint = FindBrightWidget<UTextBlock>(Blueprint, TEXT("Text_EmptyHint")))
+		{
+			if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Hint->Slot))
+			{
+				Slot->SetPosition(FVector2D(-48.f, 16.f));
+				Slot->SetSize(FVector2D(380.f, 64.f));
+			}
+		}
+		for (const TCHAR* ChipName : { TEXT("Chip_Move"), TEXT("Chip_Enter"), TEXT("Chip_Esc") })
+		{
+			if (UBorder* Chip = FindBrightWidget<UBorder>(Blueprint, ChipName))
+			{
+				PaintBorder(*Chip, MakeSolidBrush(Theme.Panel, 6.f, Theme.Edge, 1.f));
+				Chip->SetPadding(FMargin(12.f, 6.f));
+			}
+			StyleBrightText(Blueprint, *(FString(ChipName) + TEXT("_Text")), 13, Theme.Title);
+		}
+		for (const TCHAR* Name : { TEXT("Text_HintMove"), TEXT("Text_HintSelect"), TEXT("Text_HintBack") })
+		{
+			StyleBrightText(Blueprint, Name, 14, Theme.Title);
+		}
+		// 지도 캔버스/세 레이어의 기존 사각형과 핀 좌표는 건드리지 않는다.
+		// 정적인 두 문구는 일반 TextBlock이므로 Designer에서 문구/크기/위치를 바로 바꿀 수 있다.
+		const auto AddHeading = [&](const TCHAR* Name, const FText& Content, int32 Size,
+			const FLinearColor& Color, const FVector2D& Position)
+		{
+			if (Blueprint.WidgetTree->FindWidget(FName(Name)))
+			{
+				return true;
+			}
+			UTextBlock* Text = MakeText(Blueprint, *Blueprint.WidgetTree, FName(Name), Size, Color, Content);
+			if (!Text)
+			{
+				return false;
+			}
+			StyleText(*Text, Size, Color, Size >= 30 ? TEXT("Bold") : TEXT("Medium"));
+			Text->SetAutoWrapText(false);
+			Text->SetVisibility(ESlateVisibility::HitTestInvisible);
+			return PlaceAuto(*Root, *Text, FAnchors(0.f, 0.f), FVector2D::ZeroVector, Position) != nullptr;
+		};
+		if (!AddHeading(TEXT("Text_MapHeading"), LOCTEXT("AtlasBrightHeading", "어떤 축제로 떠날까요?"),
+			34, Theme.Title, FVector2D(36.f, 96.f))
+			|| !AddHeading(TEXT("Text_MapSubtitle"), LOCTEXT("AtlasBrightSubtitle", "지도에서 축제를 선택해 주세요"),
+			18, Theme.Sub, FVector2D(38.f, 146.f)))
+		{
+			return false;
+		}
+		if (UFF_CommonButtonBase* Start = FindBrightWidget<UFF_CommonButtonBase>(Blueprint, TEXT("Button_StartFestival")))
+		{
+			Start->ApplyGeneratedButtonDefaults(BrightPrimaryStyle, Theme.AccentText, Theme.AccentText,
+				Theme.Dim, false, true, false);
+			Start->ApplyGeneratedButtonContent(LOCTEXT("AtlasCountryStart", "축제 시작"), FSlateBrush(), FVector2D(0.f, 58.f));
+		}
+		if (UFF_CommonButtonBase* Back = FindBrightWidget<UFF_CommonButtonBase>(Blueprint, TEXT("Button_Back")))
+		{
+			Back->ApplyGeneratedButtonDefaults(nullptr, Theme.Title, Theme.AccentPressed, Theme.Dim,
+				true, true, false);
+			Back->ApplyGeneratedButtonContent(LOCTEXT("AtlasCountryBack", "지구본"), FSlateBrush(), FVector2D::ZeroVector);
+		}
+		return SaveNewBlueprint(TEXT("FF_ATLAS_BRIGHT"), Blueprint)
+			&& SetCdoValue<FBoolProperty>(Blueprint, TEXT("bUseDesignerTextAndColors"), true)
+			&& SaveBlueprintDefaults(Blueprint);
+	}
+
+	void RunAtlasCountryBrightDesign()
+	{
+		// 명시적인 재디자인 명령만 named widget의 시각값을 갱신한다.
+		// 트리 전체 재생성/카탈로그 갱신/레벨 변경은 하지 않는다.
+		UWidgetBlueprint* Country = LoadExistingBlueprint(NaturalCountryPackage);
+		UWidgetBlueprint* Pin = LoadExistingBlueprint(NaturalPinPackage);
+		UWidgetBlueprint* Primary = LoadExistingBlueprint(PrimaryButtonPackage);
+		UWidgetBlueprint* Ghost = LoadExistingBlueprint(GhostButtonPackage);
+		UTexture2D* LockIcon = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/UI/Frontend/Art/T_FF_Lock.T_FF_Lock"));
+		UTexture2D* CheckIcon = LoadObject<UTexture2D>(nullptr,
+			TEXT("/Game/FestaFiesta/UI/Frontend/Art/T_FF_Check.T_FF_Check"));
+		if (!Country || Country->ParentClass != UFF_AtlasCountryScreen::StaticClass()
+			|| !Pin || Pin->ParentClass != UFF_AtlasPinButton::StaticClass()
+			|| !Primary || Primary->ParentClass != UFF_CommonButtonBase::StaticClass()
+			|| !Ghost || Ghost->ParentClass != UFF_CommonButtonBase::StaticClass()
+			|| !LockIcon || !CheckIcon)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_ATLAS_BRIGHT_FAIL: 원본 WBP/부모/아이콘 검증 실패. 적용하지 않았다."));
+			return;
+		}
+		const FAtlasTheme Theme = MakeBrightTheme();
+		UClass* PrimaryStyle = EnsureButtonStyle(StyleFolder / TEXT("CBS_FF_AtlasBrightPrimary"), true,
+			[&Theme](UCommonButtonStyle& Style) { ConfigurePrimaryStyle(Style, Theme); });
+		if (!PrimaryStyle)
+		{
+			return;
+		}
+		for (UWidgetBlueprint* Button : { Primary, Ghost })
+		{
+			Button->Modify();
+			const bool bPrimary = Button == Primary;
+			StyleBrightText(*Button, TEXT("Text_Label"), bPrimary ? 21 : 18,
+				bPrimary ? Theme.AccentText : Theme.Title, TEXT("SemiBold"));
+			if (USizeBox* Size = FindBrightWidget<USizeBox>(*Button, TEXT("SizeBox_Root")))
+			{
+				Size->SetHeightOverride(bPrimary ? 58.f : 36.f);
+			}
+			if (UImage* Focus = FindBrightWidget<UImage>(*Button, TEXT("Image_FocusRing")))
+			{
+				PaintImage(*Focus, MakeSolidBrush(FLinearColor::Transparent, 6.f,
+					bPrimary ? Theme.AccentText : Theme.EdgeStrong, 2.f));
+				Focus->SetVisibility(ESlateVisibility::Hidden);
+			}
+			if (!SaveNewBlueprint(TEXT("FF_ATLAS_BRIGHT"), *Button)
+				|| (bPrimary && !SetCdoClass(*Button, TEXT("Style"), PrimaryStyle, true))
+				|| !SetCdoValue<FBoolProperty>(*Button, TEXT("bTintLabel"), !bPrimary)
+				|| !SetCdoLinearColor(*Button, TEXT("NormalContentColor"), Theme.Title)
+				|| !SetCdoLinearColor(*Button, TEXT("HighlightedContentColor"), Theme.AccentPressed)
+				|| !SetCdoLinearColor(*Button, TEXT("DisabledContentColor"), Theme.Dim)
+				|| !SetCdoValue<FTextProperty>(*Button, TEXT("ButtonLabel"), bPrimary
+					? LOCTEXT("AtlasCountryStart", "축제 시작") : LOCTEXT("AtlasCountryBack", "지구본"))
+				|| !SaveBlueprintDefaults(*Button))
+			{
+				return;
+			}
+		}
+		Pin->Modify();
+		Country->Modify();
+		if (!ApplyBrightPin(*Pin, Theme, LockIcon, CheckIcon) || !ApplyBrightCountry(*Country, Theme, PrimaryStyle))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_ATLAS_BRIGHT_FAIL: named widget 마감 실패. 로그를 확인한다."));
+			return;
+		}
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("FF_ATLAS_BRIGHT_END: 국가 지도/핀/버튼을 밝은 크림·청록 테마로 마감했다. "
+				 "지도 좌표·카탈로그·이벤트 그래프는 보존했다. 이후 치수와 고정 문구는 WBP Designer에서 편집한다."));
+	}
+
+	// =========================================================================
 	// 콘솔 명령
 	// =========================================================================
 
@@ -1809,6 +2119,11 @@ namespace FFAtlasNaturalWbpBuilder
 		TEXT("FF.AtlasNaturalUMG [force] - 대한민국 자연 지형 Atlas 텍스처·스타일·WBP를 만든다. "
 			 "인자 없이는 비파괴, `force` 면 Natural WBP의 위젯 트리를 다시 굽는다."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&RunAtlasNaturalUmg));
+
+	FAutoConsoleCommand AtlasCountryBrightDesignCommand(
+		TEXT("FF.ApplyAtlasCountryBrightDesign"),
+		TEXT("국가 지도 named widget의 시각값을 밝은 시안으로 적용한다. 사용자 레이아웃/그래프/카탈로그는 재생성하지 않는다."),
+		FConsoleCommandDelegate::CreateStatic(&RunAtlasCountryBrightDesign));
 
 	FAutoConsoleCommandWithWorldAndArgs AtlasNaturalDataCommand(
 		TEXT("FF.AtlasNaturalData"),

@@ -138,6 +138,13 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
 	TObjectPtr<UImage> Image_PinChevrons;
 
+	/** 밝은 지도 핀의 자물쇠/체크 문양. 없으면 기존 핀 표시를 그대로 쓴다. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
+	TObjectPtr<UImage> Image_PinLockGlyph;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Atlas|Pin")
+	TObjectPtr<UImage> Image_PinSelectedGlyph;
+
 private:
 	void RefreshPinVisual();
 

@@ -73,6 +73,32 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Loading", meta = (ClampMin = "0.0", ClampMax = "10.0", ForceUnits = "s"))
 	float MinimumLoadingScreenDisplayTime = 0.75f;
 
+	// --- Atlas 화면 전환 ---
+
+	/** 지구본과 국가 지도 사이에서 화면 전체를 덮고 교체한다. 게임 시간에는 관여하지 않는다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Atlas Transition")
+	bool bEnableAtlasTransition = true;
+
+	/** 현재 화면을 가리는 시간. 0초여도 불투명 프레임을 그린 뒤 교체한다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Atlas Transition",
+		meta = (ClampMin = "0.0", ClampMax = "5.0", ForceUnits = "s", EditCondition = "bEnableAtlasTransition"))
+	float AtlasTransitionFadeOutDuration = 0.15f;
+
+	/** 교체 뒤 새 화면이 준비되어도 이 시간만큼은 덮개를 유지한다. 최소 0.05초. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Atlas Transition",
+		meta = (ClampMin = "0.05", ClampMax = "5.0", ForceUnits = "s", EditCondition = "bEnableAtlasTransition"))
+	float AtlasTransitionOpaqueHoldDuration = 0.05f;
+
+	/** 준비된 화면을 다시 드러내는 시간. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Atlas Transition",
+		meta = (ClampMin = "0.0", ClampMax = "5.0", ForceUnits = "s", EditCondition = "bEnableAtlasTransition"))
+	float AtlasTransitionFadeInDuration = 0.25f;
+
+	/** 전환 덮개의 색. 화면 교체를 완전히 가리도록 알파는 항상 1로 사용한다. */
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Atlas Transition",
+		meta = (HideAlphaChannel, EditCondition = "bEnableAtlasTransition"))
+	FLinearColor AtlasTransitionColor = FLinearColor::Black;
+
 	// --- 화면 배선 ---
 
 	/**

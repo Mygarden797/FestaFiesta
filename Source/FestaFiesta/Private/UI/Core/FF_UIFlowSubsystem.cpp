@@ -72,6 +72,11 @@ void UFF_UIFlowSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UFF_UIFlowSubsystem::Deinitialize()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get())
+	{
+		Layout->CancelAtlasTransition();
+	}
+
 	// **해제는 조건부, 정리는 무조건.** 여기서 조기 반환하면 아래 정리를 못 한다 (안티패턴 3).
 	if (PostLoginHandle.IsValid())
 	{
@@ -380,6 +385,10 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 	{
 		return true;
 	}
+	if (UFF_UIRootLayout* PreviousLayout = RootLayout.Get())
+	{
+		PreviousLayout->CancelAtlasTransition();
+	}
 
 	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
 	if (!Settings || Settings->RootLayoutClass.IsNull())
@@ -427,6 +436,10 @@ bool UFF_UIFlowSubsystem::EnsureRootLayout(APlayerController* Controller)
 
 void UFF_UIFlowSubsystem::StartFrontend()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get())
+	{
+		Layout->CancelAtlasTransition();
+	}
 	Mode = EFF_UIFlowMode::Frontend;
 
 	// 여기서 RootLayout 을 함께 보장한다. 콘솔에서 아무 레벨에서 불러도 동작해야 하고,
@@ -444,6 +457,65 @@ void UFF_UIFlowSubsystem::StartFrontend()
 }
 
 void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
+{
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		// 연타/외부 호출이 암전 도중 화면을 한 번 더 쌓지 않게 한다.
+		return;
+	}
+	if (!BeginAtlasScreenTransition(Screen, false))
+	{
+		GoToScreenImmediate(Screen);
+	}
+}
+
+bool UFF_UIFlowSubsystem::BeginAtlasScreenTransition(EFF_UIFlowScreen Destination, bool bGoingBack)
+{
+	const bool bAtlasPair =
+		(CurrentFrontendScreen == EFF_UIFlowScreen::AtlasGlobe && Destination == EFF_UIFlowScreen::AtlasCountry)
+		|| (CurrentFrontendScreen == EFF_UIFlowScreen::AtlasCountry && Destination == EFF_UIFlowScreen::AtlasGlobe);
+	UFF_UIRootLayout* Layout = RootLayout.Get();
+	// 레벨 재진입 시 스택 바닥용 지구본은 실제 이전 화면이 아니다.
+	if (Mode != EFF_UIFlowMode::Frontend || !bAtlasPair || !Layout || bInstantCameraForNextScreen)
+	{
+		return false;
+	}
+
+	const TWeakObjectPtr<UFF_UIRootLayout> ExpectedLayout(Layout);
+	const TWeakObjectPtr<UFF_UIFlowSubsystem> WeakThis(this);
+	return Layout->BeginAtlasTransition(
+		FSimpleDelegate::CreateWeakLambda(this, [this, ExpectedLayout, Destination, bGoingBack]()
+		{
+			if (Mode != EFF_UIFlowMode::Frontend || RootLayout != ExpectedLayout)
+			{
+				if (UFF_UIRootLayout* PreviousLayout = ExpectedLayout.Get())
+				{
+					PreviousLayout->CancelAtlasTransition();
+				}
+				return;
+			}
+			// 비활성화 때 지구 중심 구도가 복원되는 프레임도 암전 안에 넣는다.
+			// 카메라는 가려진 동안 바로 맞추고, 스택 전환/새 지도 배치를 기다린다.
+			TGuardValue<bool> InstantCameraGuard(bInstantCameraForNextScreen, true);
+			if (bGoingBack)
+			{
+				GoBackImmediate();
+			}
+			else
+			{
+				GoToScreenImmediate(Destination);
+			}
+		}),
+		[WeakThis, ExpectedLayout]()
+		{
+			const UFF_UIFlowSubsystem* Flow = WeakThis.Get();
+			const UFF_UIRootLayout* CurrentLayout = ExpectedLayout.Get();
+			return !Flow || !CurrentLayout || Flow->RootLayout != ExpectedLayout
+				|| !CurrentLayout->IsScreenStackTransitioning();
+		});
+}
+
+void UFF_UIFlowSubsystem::GoToScreenImmediate(EFF_UIFlowScreen Screen)
 {
 	if (Screen == EFF_UIFlowScreen::None)
 	{
@@ -582,6 +654,18 @@ void UFF_UIFlowSubsystem::GoToScreen(EFF_UIFlowScreen Screen)
 
 bool UFF_UIFlowSubsystem::GoBack()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		// 전환 중 뒤로 입력은 소비한다. 동일 프레임의 중복 Pop을 막는다.
+		return true;
+	}
+	const EFF_UIFlowScreen Destination = FrontendHistory.IsEmpty()
+		? EFF_UIFlowScreen::None : FrontendHistory.Last();
+	return BeginAtlasScreenTransition(Destination, true) || GoBackImmediate();
+}
+
+bool UFF_UIFlowSubsystem::GoBackImmediate()
+{
 	UFF_UIRootLayout* Layout = RootLayout.Get();
 	if (!Layout || !Layout->PopScreen())
 	{
@@ -597,7 +681,7 @@ bool UFF_UIFlowSubsystem::GoBack()
 	// 그건 지구 액터가 들고 있고 여기서 건드리지 않는다 (리셋하면 답답하다).
 	if (AFF_AtlasCameraRig* CameraRig = AFF_AtlasCameraRig::Find(this, /*bLogIfMissing=*/false))
 	{
-		CameraRig->ViewForScreen(CurrentFrontendScreen);
+		CameraRig->ViewForScreen(CurrentFrontendScreen, bInstantCameraForNextScreen);
 	}
 
 	return true;
@@ -645,6 +729,10 @@ void UFF_UIFlowSubsystem::HandleFrontendBackRequested()
 
 void UFF_UIFlowSubsystem::HandleAtlasBrowseFestivals(FName CountryId)
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		return;
+	}
 	if (CountryId.IsNone())
 	{
 		UE_LOG(LogFestaFiestaUI, Warning,
@@ -712,6 +800,10 @@ const FFF_FestivalAtlasEntry* UFF_UIFlowSubsystem::FindStartableEntry(FName Fest
 
 bool UFF_UIFlowSubsystem::StartFestival(FName FestivalId)
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get(); Layout && Layout->IsAtlasTransitionActive())
+	{
+		return false;
+	}
 	const FFF_FestivalAtlasEntry* Entry = FindStartableEntry(FestivalId);
 	if (!Entry)
 	{
@@ -851,6 +943,10 @@ void UFF_UIFlowSubsystem::HandleLoadingScreenFinished()
 
 void UFF_UIFlowSubsystem::ReturnToAtlas()
 {
+	if (UFF_UIRootLayout* Layout = RootLayout.Get())
+	{
+		Layout->CancelAtlasTransition();
+	}
 	const UFF_UIFlowSettings* Settings = UFF_UIFlowSettings::Get();
 	if (!Settings || Settings->FrontendLevel.IsNull())
 	{
