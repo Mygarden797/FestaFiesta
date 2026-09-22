@@ -37,6 +37,29 @@ bool FFF_BuildDragPathStationaryTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildDragPathSampleMergeTest,
+	"FestaFiesta.Building.DragPlacement.Path.SampleMergingPreservesTurns",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildDragPathSampleMergeTest::RunTest(const FString& Parameters)
+{
+	for (const FIntPoint Direction : { FIntPoint(1, 0), FIntPoint(-1, 0), FIntPoint(0, 1), FIntPoint(0, -1) })
+	{
+		TestTrue(TEXT("Straight cursor samples can extend the queued segment"),
+			FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, Direction, Direction * 2));
+		TestFalse(TEXT("Retracing retains its turning point"),
+			FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, Direction * 2, Direction));
+		TestFalse(TEXT("A right-angle turn cannot become a diagonal shortcut"),
+			FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, Direction,
+				Direction + FIntPoint(-Direction.Y, Direction.X)));
+	}
+	TestFalse(TEXT("Diagonal sampling keeps the existing corner tie path"),
+		FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint::ZeroValue, FIntPoint(1, 1), FIntPoint(2, 2)));
+	TestTrue(TEXT("Extreme coordinates do not overflow direction comparisons"),
+		FFF_BuildDragPlacementPath::CanExtendCardinalSegment(FIntPoint(MIN_int32, 4), FIntPoint(0, 4), FIntPoint(MAX_int32, 4)));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildDragPathConnectivityTest,
 	"FestaFiesta.Building.DragPlacement.Path.CardinalConnectivity",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)

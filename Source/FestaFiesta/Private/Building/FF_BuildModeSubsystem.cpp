@@ -1235,11 +1235,12 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 			EndDragPlacement();
 			return;
 		}
-		// One ground sample per active frame, then cheap lattice math. Only new cells
-		// reach authority validation; preview rendering keeps its existing 12.5 Hz cadence.
+		// Sample and move the ghost every input frame. Full preview policy checks remain
+		// on Tick's bounded cadence; individual purchases still validate authoritatively.
 		PlacementPreview->SetPlacementGridSurface(GroundHit.ImpactPoint, GroundHit.ImpactNormal);
 		UpdateDragPlacement(GroundHit.ImpactPoint);
 		ProcessDragPlacement();
+		RefreshDragPlacementPreview(false, false, &GroundHit);
 	}
 }
 
