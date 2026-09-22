@@ -1320,10 +1320,55 @@ GetAffordableHireCount() < GetRemainingHireCap()  →  "Gold 가 부족합니다
 > ✅ **2026-08-26 백종태 님 요청 해결** — `GetRemainingHireCap()` 을 `public` +
 > `BlueprintPure` 로 열었습니다. UI 에서 같은 식을 다시 쓰실 필요 없습니다.
 
-**아직 미정 — 스태프 강화(승급)**
+### 스태프 강화(승급) — 규칙 확정, API 완성 (2026-09-22 🆕)
 
-Staff 에 개인별 레벨을 붙여 사건 처리 속도를 올리는 방향을 검토 중입니다. **세부 규칙이
-확정되지 않아 이번에는 API 도 UI 요청도 넣지 않았습니다.** 확정되면 이 절에 추가하겠습니다.
+> 설계 전체는 `staff_event_design.md`(Git 제외, 로컬 전용) 참고. 여기는 **UI 가 바로 쓸 수
+> 있는 것**만 적습니다. 사건 시스템(이정원)이 아직 없어서 **승급 버튼을 눌러도 게임 안에서
+> 체감되는 효과는 아직 없습니다** — API 는 끝났지만 "왜 눌러야 하는가"의 답은 다음 커밋에
+> 옵니다. 지금 화면을 만드셔도 나중에 API 가 바뀌어서 다시 갈아엎을 일은 없습니다.
+
+**규칙 요약** — Staff 는 개인별로 Lv1~3 을 갖습니다. 고용 직후엔 항상 Lv1이고, **고용한
+다음 날 아침부터** 승급할 수 있습니다(당일은 불가). 한 아침에 한 사람당 한 단계만 오릅니다.
+→ Day1 에 고용하면 최대 Lv3 까지, Day3 에 고용하면 Lv1 에 머뭅니다 — 이게 "일찍 고용할수록
+이득"이라는 서사를 만듭니다.
+
+**개인별 명단 조회**
+
+```cpp
+UFUNCTION(BlueprintPure) TArray<FFF_StaffMember> GetStaffRoster() const;
+```
+
+`FFF_StaffMember` 필드: `StaffId`(int32) · `TrainingLevel`(1~3) · `HiredOnDay` ·
+`LastPromotedDay`(승급한 적 없으면 `INDEX_NONE`) · `bIsBaseStaff`(무페이 기본 팀 여부).
+기본 팀 6명도 이 배열에 같이 들어 있습니다 — 기본 팀도 승급 가능합니다(Day1 부터).
+
+**승급 실행**
+
+```cpp
+UFUNCTION(BlueprintCallable) bool TryPromoteStaff(int32 StaffId);
+```
+
+거부되면(고용 당일 / 오늘 이미 승급함 / 이미 Lv3) `false`만 돌아오고 상태는 안 바뀝니다.
+세분화된 거부 사유 enum은 없습니다 — 필요하시면 요청해 주세요.
+
+**갱신 알림**
+
+```cpp
+UPROPERTY(BlueprintAssignable) FFF_OnStaffRosterChanged OnStaffRosterChanged;
+```
+
+고용·승급 둘 다 이 델리게이트 하나로 옵니다. 기존 `OnTotalStaffCountChanged`는 **총원 수만**
+바뀔 때 오므로(승급은 인원수가 안 바뀝니다), 개인별 목록 화면은 반드시 이 델리게이트를
+따로 구독해야 화면이 안 낡습니다.
+
+**화면 만드실 때 참고**
+
+- `필요 인원 3명` 같은 옛 프로그램 편성 칸과 헷갈리지 않게, 이건 "누구를 몇 레벨로 키울지"
+  고르는 화면입니다 — 최대 12행(기본 6 + 고용 6), 각 행에 레벨·승급 버튼.
+- `오늘 고용됨 — 내일부터 승급 가능` 문구는 `CurrentDay <= HiredOnDay`로 직접 판정하시거나,
+  `TryPromoteStaff` 호출 결과(`false`)로 버튼만 비활성화하는 두 방식 다 가능합니다. 서버
+  쪽에 "왜 안 되는지" API가 따로 없어서, 세분화된 문구가 필요하면 요청해 주세요.
+- 사건 트레이(어느 사건에 누가 배치됐는가)는 **이번 범위 밖**입니다 — 아래 B표·§6 참고.
 
 **시설 철거 환급은 매출이 아닙니다.** 설치비 50%가 돌아오면서 `OnGoldChanged`는 오지만
 `OnTotalRevenueChanged`는 오지 않습니다. "잔액 상승 = 매출 상승"으로 가정한 코드가 있으면 확인해 주세요.
@@ -1678,7 +1723,7 @@ HUD에는 시간, 점수, 명중률, TPS, 평균 반응시간, 빗나감·놓친
 | **Safety** | 이정원 | Overview 지표, 경고 |
 | **예상 방문객 범위·가정값 미리보기** | 김시리 | 현재 구매 상태의 하루 단일값은 구현됨. `Min`/`Max`와 구매 전 등급별 미리보기 API는 없음. 단일값을 임의 범위로 늘리지 않음 |
 | **`UFF_FestivalEventSubsystem`** — 사건 목록·심각도·필요 인력·남은 시간·`CauseId` | 이정원 | Live 우측 상단 상시 사건 트레이 (`FF_FestivalDefinition.h:146`) |
-| **스태프 배치 Command + 결과 이벤트** | 이정원 · 김시리 | 사건 트레이의 `스태프 N명 배치` |
+| **스태프 배치 Command + 결과 이벤트** | 이정원 · 김시리 | 사건 트레이의 `스태프 N명 배치`. 🟡 **2026-09-22**: 개인별 명단 조회·승급(`GetStaffRoster`/`TryPromoteStaff`)은 완성됨(위 「스태프 강화(승급)」 절) — 남은 것은 "어느 사건에 누굴 보낼지"를 정하는 배치 Command 자체이고, 이건 사건 시스템이 먼저 있어야 함 |
 | **뒷정리 등급 효과 계수** | 김시리 | Day 마감 시트. 가격 3개만 있음(`FF_FestivalDefinition.h:110` TODO) — 지금은 `효과 계수 미확정` 배지 |
 | **최종 점수 산식·등급 가중치** | 김시리 | 최종 결산 — 지금은 `가중치 잠정` 문구 |
 | **저장 슬롯 목록 + 저장·불러오기 Command** | 김시리 | ESC 수동 저장, 플레이 허브 |
@@ -1780,8 +1825,10 @@ UI 가 쓸 수 있는 변환 함수 하나면 됩니다 — `FGuid → int32` �
 
 #### 6. 사건별 스태프 배치
 
-지금은 **총원밖에 없습니다.** 어느 사건에 누가 몇 명 붙어 있는지 읽을 창구가 없어서,
-스태프 패널이 "어디에 몇 명" 을 못 말하고 총합만 말합니다.
+> 2026-09-22 갱신: **개인별 명단은 이제 읽을 수 있습니다** — 위 「스태프 강화(승급)」 절의
+> `GetStaffRoster()`. 다만 "어느 사건에 누가 붙어 있는가"(배치 상태)는 **여전히 없습니다** —
+> 그 배치 상태를 들고 있는 사건 시스템 자체가 아직 없어서입니다. 그래서 스태프 패널이
+> "레벨별 인원 구성"까지는 말할 수 있어도 "어디에 몇 명"은 여전히 못 말합니다.
 
 > 2026-09-21 정정: 예전에 여기 적혀 있던 `GetStaffAssignedToPrograms()` 는 **없어졌습니다.**
 > 프로그램이 인원을 안 쓰게 되면서 "묶인 인원" 자체가 0 이 됐습니다. 배치라는 개념은
@@ -2133,3 +2180,4 @@ UI는 별도로 `TrySpend(..., Promotion)`을 호출하지 않습니다.
 
 
 | 2026-09-21 | 김시리 | 🔴 **임대료·미납 제거 + Staff 영구 고용 + 프로그램에서 Staff 분리.** 화면에서 **빼셔야 하는 것**: ① 미납 관련 전부(`GetTotalArrears`·`OnTotalArrearsChanged` **삭제**) ② `가용 인원` 개념 전부(`GetAvailableStaffCount`·`GetStaffAssignedToPrograms`·`OnAvailableStaffCountChanged` **삭제**) — 프로그램이 인원을 안 쓰므로 `GetTotalStaffCount()` 하나면 됩니다 ③ 프로그램 카드·패널·시설 피커의 `필요 인력` 칸(`FFF_ProgramCard::RequiredStaff` **필드째 삭제**). **이름이 바뀐 것**: `TryHireTemporaryStaff`→`TryHireStaff`, `GetAffordableTemporaryStaffCount`→`GetAffordableHireCount`, `GetTemporaryStaffCount`→`GetHiredStaffCount`, `DailyStaffWageGold`→`StaffHireCostGold`(150/일 → 450/1회), `MaxHiredStaffPerDay`→`MaxHiredStaffCount`(**하루 상한이 아니라 축제 총원 상한**). `EFF_SpendReason::StaffWages` 와 결과 enum 3종의 `NotEnoughStaff` 도 삭제됐고 뒤 값이 재번호됐습니다. ✅ 8/26 요청하신 `GetRemainingHireCap()` public 전환 완료 — UI 쪽 중복 식 지우셔도 됩니다. ⚠️ **WBP 자산 9종은 재생성했습니다**(`FF.RebuildPrepHudStaffUI`·`FF.RebuildLiveHudStaffUI`·`FF.RefreshFacilityPaidProgramUMG`) — 죽은 칸이 자산에만 남아 `밀린 임대료 미납 2,400` 이 화면에 나오던 문제입니다. 스태프 강화(승급)는 **세부 미정이라 이번에 안 넣었습니다** |
+| 2026-09-22 | 김시리 | 🆕 **스태프 강화(승급) 규칙 확정 + API 완성.** 위 「스태프 강화(승급)」 절 새로 씀. 핵심 3개: `GetStaffRoster()`(개인별 명단, `FFF_StaffMember{StaffId, TrainingLevel, HiredOnDay, LastPromotedDay, bIsBaseStaff}`) · `TryPromoteStaff(int32 StaffId)`(승급 실행) · `OnStaffRosterChanged`(고용·승급 둘 다 이걸로 옴 — 승급은 `OnTotalStaffCountChanged` 로 안 옵니다, 인원수가 안 바뀌니까요). 규칙: 고용 다음 날 아침부터 승급 가능(당일 불가), 한 아침에 1인당 1단계만, 최대 Lv3. **⚠️ 아직 체감 효과는 없습니다** — 승급해도 사건 시스템(이정원)이 없어서 게임 안에서 달라지는 게 없습니다. 그래도 화면은 지금 만드셔도 나중에 API가 안 바뀝니다. 사건별 배치(`스태프 N명 배치`)는 여전히 이번 범위 밖 — §6 참고 |
