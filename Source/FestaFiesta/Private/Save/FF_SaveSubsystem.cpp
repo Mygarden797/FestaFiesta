@@ -216,12 +216,14 @@ void UFF_SaveSubsystem::HandleFestivalEnded()
 		Record.BestSatisfaction = static_cast<float>(Metrics->GetSimSatisfaction());
 	}
 
-	/* 방문객 수는 아직 못 담는다.
+	/* 방문객 수 — 경제 쪽에 누적 방문객 getter 가 생겨서 채운다(2026-09-22).
 
-	   축제 전체 누적 방문객을 밖에 내주는 창구가 없다. 만족도의 표본 수로 대신하면
-	   표본 규칙이 바뀔 때마다 기록이 조용히 달라지므로 0 으로 둔다.
-	   Crowd 쪽에 누적 방문객 getter 가 생기면 여기만 채우면 된다.
+	   Crowd 가 아니라 경제 쪽 API 다 — 입장료 일일 목표 보너스를 만들면서 이미
+	   `OnVisitorsAdmitted` 를 하루 단위로 누적하고 있었고, 그 옆에 하루 경계로
+	   안 지워지는 축제 전체 누적 칸을 하나 더 두는 것으로 해결됐다.
 	*/
+	Record.BestVisitors = Progression->GetTotalAdmittedVisitors();
+
 	Record.PlayCount = 1;
 
 	MarkFestivalCleared(Definition->FestivalId, Record);

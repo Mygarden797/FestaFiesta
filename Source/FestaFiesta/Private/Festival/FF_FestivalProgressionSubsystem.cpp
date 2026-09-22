@@ -74,6 +74,7 @@ void UFF_FestivalProgressionSubsystem::WriteSaveData(TArray<uint8>& OutBytes) co
 	State.EndedDay = EndedDay;
 	State.AdmittedVisitorsToday = AdmittedVisitorsToday;
 	State.bDailyGoalBonusPaid = bDailyGoalBonusPaid;
+	State.TotalAdmittedVisitors = TotalAdmittedVisitors;
 	State.StaffRoster = StaffPool.GetAllStaff();
 	State.PurchasedFinaleGrade = PurchasedFinaleGrade;
 	State.PurchasedPromotionGrade = PurchasedPromotionGrade;
@@ -112,6 +113,7 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 	EndedDay = State.EndedDay;
 	AdmittedVisitorsToday = FMath::Max(0, State.AdmittedVisitorsToday);
 	bDailyGoalBonusPaid = State.bDailyGoalBonusPaid;
+	TotalAdmittedVisitors = FMath::Max(0, State.TotalAdmittedVisitors);
 	StaffPool.RestoreAllStaff(State.StaffRoster);
 	PurchasedFinaleGrade = State.PurchasedFinaleGrade;
 	PurchasedPromotionGrade = State.PurchasedPromotionGrade;
@@ -224,6 +226,7 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	LastProcessedDay = 0;
 	AdmittedVisitorsToday = 0;
 	bDailyGoalBonusPaid = false;
+	TotalAdmittedVisitors = 0;
 
 	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 축제 시작: %s, 초기 Gold %d, 기본 Staff %d명"),
 		*InDefinition->FestivalId.ToString(), Funds.GetGold(), StaffPool.GetBaseStaffCount());
@@ -338,6 +341,9 @@ void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 
 
 	AdmittedVisitorsToday = static_cast<int32>(FMath::Min<int64>(MAX_int32,
 		static_cast<int64>(AdmittedVisitorsToday) + AdmittedCount));
+	// 목표 달성 여부와 무관하게 축제 전체 누적은 항상 쌓인다 — 결산 기록용.
+	TotalAdmittedVisitors = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+		static_cast<int64>(TotalAdmittedVisitors) + AdmittedCount));
 
 	const int32 Goal = Definition->DailyVisitorGoal;
 	if (bDailyGoalBonusPaid || Goal <= 0 || AdmittedVisitorsToday < Goal)

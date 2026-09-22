@@ -45,6 +45,8 @@ struct FFF_ProgressionSave
 	UPROPERTY() int32 EndedDay = 0;
 	UPROPERTY() int32 AdmittedVisitorsToday = 0;
 	UPROPERTY() bool bDailyGoalBonusPaid = false;
+	// 하루 경계로 안 지워진다 — 축제 전체 누적. 새 축제(StartFestival)에서만 0으로 돌아간다.
+	UPROPERTY() int32 TotalAdmittedVisitors = 0;
 	// 기본 팀 + 고용 인원 전체 명단. 개인별 레벨·승급 이력이 여기 담긴다.
 	UPROPERTY() TArray<FFF_StaffMember> StaffRoster;
 	UPROPERTY() EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;
@@ -137,6 +139,11 @@ public:
 
 	// 실제 입장 인원을 하루 단위로 기록하고 목표를 처음 달성했을 때만 보너스를 지급한다.
 	void RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount);
+
+	// 축제 시작부터 지금까지 입장한 누적 인원. 하루 경계로 안 지워진다.
+	// 결산·저장 기록(최고 방문객 수)이 읽는다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetTotalAdmittedVisitors() const { return TotalAdmittedVisitors; }
 
 	// 설치 시설 한 곳에 귀속되는 매출. FacilityId(종류)는 부스별 표로, FacilityInstanceId(Zone 인스턴스)는
 	// 시설별 장부로 간다. 자금·원장은 AddRevenue 와 같은 경로라 세 장부의 합이 항상 맞는다.
@@ -468,6 +475,7 @@ private:
 	int32 LastProcessedDay = 0;
 	int32 AdmittedVisitorsToday = 0;
 	bool bDailyGoalBonusPaid = false;
+	int32 TotalAdmittedVisitors = 0;
 	
 	// 구매한 피날레 등급. 축제당 1회이고 되돌릴 수 없다.
 	EFF_FinaleGrade PurchasedFinaleGrade = EFF_FinaleGrade::None;

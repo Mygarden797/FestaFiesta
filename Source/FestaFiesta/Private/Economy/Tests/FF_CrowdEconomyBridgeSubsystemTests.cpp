@@ -253,6 +253,42 @@ bool FFF_CrowdEconomyBridge_DailyGoalPaysOncePerDay::RunTest(const FString& Para
 	return true;
 }
 
+// 축제 전체 누적 방문객 — 하루 경계로 안 지워지고, 새 축제에서만 0으로 돌아간다.
+// 저장 기록(FFF_FestivalRecord::BestVisitors, FF_SaveSubsystem::HandleFestivalEnded)이
+// 이 값을 읽는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdEconomyBridge_TotalAdmittedVisitorsAccumulatesAcrossDays, "FestaFiesta.Economy.CrowdBridge.TotalAdmittedVisitorsAccumulatesAcrossDays", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdEconomyBridge_TotalAdmittedVisitorsAccumulatesAcrossDays::RunTest(const FString& Parameters)
+{
+	using namespace FFF_CrowdEconomyBridgeTestHelpers;
+
+	FCrowdEconomyHarness Harness;
+	if (!TestTrue(TEXT("격리 월드가 초기화된다"), Harness.Initialize(this)))
+	{
+		return false;
+	}
+
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(300);
+	TestEqual(TEXT("첫 입장이 누적된다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 300);
+
+	Harness.Progression->BeginNewDay(2);
+	Harness.CrowdSim->OnVisitorsAdmitted.Broadcast(200);
+	TestEqual(TEXT("하루 경계를 넘어도 누적이 안 지워지고 더해진다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 500);
+
+	TArray<uint8> Saved;
+	Harness.Progression->WriteSaveData(Saved);
+	Harness.Progression->StartFestival(Harness.Definition);
+	TestEqual(TEXT("새 축제를 시작하면 0으로 돌아간다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 0);
+
+	Harness.Progression->ReadSaveData(Saved);
+	TestEqual(TEXT("복원하면 저장 시점의 누적이 돌아온다"),
+		Harness.Progression->GetTotalAdmittedVisitors(), 500);
+
+	return true;
+}
+
 // 0명 입장·축제 시작 전에는 아무 일도 일어나지 않는다.
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival, "FestaFiesta.Economy.CrowdBridge.IgnoresZeroAndPreFestival", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdEconomyBridge_IgnoresZeroAndPreFestival::RunTest(const FString& Parameters)
