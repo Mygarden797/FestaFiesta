@@ -63,15 +63,19 @@ void UFF_SaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	if (Newest)
 	{
 		Meta = Newest->Meta;
+		MigrateMeta(Meta, Newest->Version);
 		LastUsedSlotId = NewestSlot;
 
 		// 다음 자동 저장은 방금 읽은 쪽 반대편에 쓴다. 읽은 것을 덮지 않는다.
 		bAutoSaveUsesSecondSlot = (NewestSlot == FName(TEXT("AutoSave_A")));
 
 		UE_LOG(LogFestaFiestaSave, Log,
-			TEXT("[저장] %s 를 읽었다. 튜토리얼=%s 깬 축제 %d개"),
+			TEXT("[저장] %s 를 읽었다. 로비 인트로=%s 안내 끔=%s "
+				 "튜토리얼 본 축제 %d개 / 깬 축제 %d개"),
 			*NewestSlot.ToString(),
-			WasTutorialSeen() ? TEXT("봤음") : TEXT("안 봤음"),
+			Meta.bLobbyIntroSeen ? TEXT("봤음") : TEXT("안 봤음"),
+			Meta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"),
+			Meta.TutorialSeenFestivals.Num(),
 			Meta.ClearedFestivals.Num());
 	}
 
@@ -379,14 +383,17 @@ bool UFF_SaveSubsystem::LoadFromSlot(const FName SlotId)
 	   막아버리면 구조를 조금 바꿀 때마다 그동안의 저장이 전부 무효가 된다.
 	   빠진 값은 기본값으로 들어가고, 이상하면 로그를 보고 판단할 수 있다.
 	*/
-	if (Save->Version != 1)
+	if (Save->Version > 2)
 	{
+		// 앞선 판이다. 지금 코드가 모르는 값이 들어 있다는 뜻이라 되돌려 옮길 수 없다.
 		UE_LOG(LogFestaFiestaSave, Warning,
-			TEXT("[저장] 판번호가 다르다. 저장=%d 코드=1. 빠진 값은 기본값으로 들어간다."),
+			TEXT("[저장] 저장이 코드보다 새 판이다. 저장=%d 코드=2. "
+				 "모르는 값은 무시되고, 다시 저장하면 그 값이 사라진다."),
 			Save->Version);
 	}
 
 	Meta = Save->Meta;
+	MigrateMeta(Meta, Save->Version);
 	LastUsedSlotId = SlotId;
 
 	RestorePartData(Save->PartData);
@@ -524,30 +531,101 @@ TArray<FName> UFF_SaveSubsystem::GetKnownSlotIds() const
 	return Result;
 }
 
-void UFF_SaveSubsystem::MarkTutorialCompleted(const bool bSkipped)
+void UFF_SaveSubsystem::MigrateMeta(FFF_MetaSave& InOutMeta, const int32 SavedVersion)
 {
-	// 이미 같은 상태면 저장할 것이 없다. 화면이 바뀔 때마다 불려도 괜찮게 둔다.
-	if (bSkipped ? Meta.bTutorialSkipped : Meta.bTutorialCompleted)
+	if (SavedVersion >= 2)
 	{
 		return;
 	}
 
-	if (bSkipped)
-	{
-		Meta.bTutorialSkipped = true;
-	}
-	else
-	{
-		Meta.bTutorialCompleted = true;
-	}
+	/* 판 1 에는 전역 bool 두 개뿐이라 "어느 축제의 튜토리얼을 봤는가" 를 알 수 없다.
+
+	   그래서 완료 플래그는 로비 인트로를 본 것으로만 옮긴다. 축제 튜토리얼은 다시
+	   나오는데, 그게 원래 의도한 동작이다 — 두 종류가 전역 플래그 하나를 나눠 쓴 것이
+	   버그였고, 그렇게 세워진 플래그를 "축제도 다 봤다" 로 읽으면 버그를 저장에
+	   굳히는 셈이 된다.
+
+	   건너뛰기는 그대로 옮긴다. 안내를 끄겠다는 선언이라 판이 바뀌어도 뜻이 같다.
+	*/
+	InOutMeta.bLobbyIntroSeen |= InOutMeta.bTutorialCompleted_DEPRECATED;
+	InOutMeta.bTutorialOptedOut |= InOutMeta.bTutorialSkipped_DEPRECATED;
+
+	InOutMeta.bTutorialCompleted_DEPRECATED = false;
+	InOutMeta.bTutorialSkipped_DEPRECATED = false;
 
 	UE_LOG(LogFestaFiestaSave, Log,
-		TEXT("[저장] 튜토리얼 %s."), bSkipped ? TEXT("건너뜀") : TEXT("완료"));
+		TEXT("[저장] 판 %d 저장을 판 2 로 옮겼다. 로비 인트로=%s 안내 끔=%s "
+			 "(축제별 이력은 판 1 에 없어서 비운 채로 시작한다)"),
+		SavedVersion,
+		InOutMeta.bLobbyIntroSeen ? TEXT("봤음") : TEXT("안 봤음"),
+		InOutMeta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"));
+}
 
-	// 바로 남긴다. 여기서 안 쓰면 게임을 끌 때 튜토리얼을 봤다는 사실이 사라진다.
+void UFF_SaveSubsystem::WriteAutoSave()
+{
 	// 두 슬롯을 번갈아 쓴다. 하나가 깨져도 직전 것이 남는다.
 	SaveToSlot(PickAutoSaveSlot(), true);
 	bAutoSaveUsesSecondSlot = !bAutoSaveUsesSecondSlot;
+}
+
+void UFF_SaveSubsystem::MarkLobbyIntroSeen()
+{
+	// 이미 같은 상태면 저장할 것이 없다. 화면이 바뀔 때마다 불려도 괜찮게 둔다.
+	if (Meta.bLobbyIntroSeen)
+	{
+		return;
+	}
+
+	Meta.bLobbyIntroSeen = true;
+
+	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 로비 인트로를 끝까지 봤다."));
+
+	// 바로 남긴다. 여기서 안 쓰면 게임을 끌 때 봤다는 사실이 사라진다.
+	WriteAutoSave();
+}
+
+void UFF_SaveSubsystem::MarkFestivalTutorialSeen(const FName FestivalId)
+{
+	/* 축제를 식별하지 못했으면 기록하지 않는다.
+
+	   빈 이름으로 넣어두면 어느 축제를 물어도 맞지 않는 항목이 하나 남는다.
+	   식별에 실패한 경우는 다음에 한 번 더 보여주는 편이 안전하다.
+	*/
+	if (FestivalId.IsNone())
+	{
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] 축제를 식별하지 못해 튜토리얼 이력을 남기지 않는다. "
+				 "같은 레벨에 다시 들어가면 또 나온다."));
+		return;
+	}
+
+	if (Meta.TutorialSeenFestivals.Contains(FestivalId))
+	{
+		return;
+	}
+
+	Meta.TutorialSeenFestivals.Add(FestivalId);
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] %s 튜토리얼을 끝까지 봤다. (누적 %d개)"),
+		*FestivalId.ToString(), Meta.TutorialSeenFestivals.Num());
+
+	WriteAutoSave();
+}
+
+void UFF_SaveSubsystem::MarkTutorialOptedOut()
+{
+	if (Meta.bTutorialOptedOut)
+	{
+		return;
+	}
+
+	Meta.bTutorialOptedOut = true;
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] 튜토리얼 안내를 껐다. 축제가 바뀌어도 다시 나오지 않는다."));
+
+	WriteAutoSave();
 }
 
 void UFF_SaveSubsystem::MarkFestivalCleared(
@@ -568,9 +646,7 @@ void UFF_SaveSubsystem::MarkFestivalCleared(
 		TEXT("[저장] %s 완료. 기록 갱신=%s (%d회째)"),
 		*FestivalId.ToString(), bImproved ? TEXT("예") : TEXT("아니오"), Stored.PlayCount);
 
-	// 두 슬롯을 번갈아 쓴다. 하나가 깨져도 직전 것이 남는다.
-	SaveToSlot(PickAutoSaveSlot(), true);
-	bAutoSaveUsesSecondSlot = !bAutoSaveUsesSecondSlot;
+	WriteAutoSave();
 }
 
 FFF_FestivalRecord UFF_SaveSubsystem::GetRecord(const FName FestivalId) const
@@ -619,10 +695,19 @@ void UFF_SaveSubsystem::RegisterDebugConsoleCommands()
 			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
 			{
 				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("[저장] 튜토리얼 완료=%s 건너뜀=%s / 깬 축제 %d개"),
-					Meta.bTutorialCompleted ? TEXT("예") : TEXT("아니오"),
-					Meta.bTutorialSkipped ? TEXT("예") : TEXT("아니오"),
+					TEXT("[저장] 로비 인트로=%s 안내 끔=%s / 깬 축제 %d개"),
+					Meta.bLobbyIntroSeen ? TEXT("예") : TEXT("아니오"),
+					Meta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"),
 					Meta.ClearedFestivals.Num());
+
+				// 어느 축제의 튜토리얼이 막혀 있는지 이름으로 봐야 원인을 가릴 수 있다.
+				UE_LOG(LogFestaFiestaSave, Display,
+					TEXT("  튜토리얼 본 축제 %d개: %s"),
+					Meta.TutorialSeenFestivals.Num(),
+					Meta.TutorialSeenFestivals.IsEmpty()
+						? TEXT("(없음)")
+						: *FString::JoinBy(Meta.TutorialSeenFestivals, TEXT(", "),
+							[](const FName& Id) { return Id.ToString(); }));
 
 				FFF_SessionSave Session;
 				CaptureSession(Session);

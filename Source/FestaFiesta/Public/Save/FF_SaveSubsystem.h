@@ -95,14 +95,48 @@ public:
 
 	// ── 메타 조회·기록 ──────────────────────────────────────────────────────
 
+	/* 로비 인트로를 이미 봤는가.
+
+	   안내를 끈 사람도 다시 보지 않는다. 끈다는 것은 "대사도 안내도 그만" 이라는 뜻이라
+	   오프닝만 예외로 두면 앞뒤가 안 맞는다.
+	*/
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
-	bool WasTutorialSeen() const
+	bool WasLobbyIntroSeen() const
 	{
-		return Meta.bTutorialCompleted || Meta.bTutorialSkipped;
+		return Meta.bLobbyIntroSeen || Meta.bTutorialOptedOut;
 	}
 
+	/* 이 축제의 튜토리얼을 이미 봤는가.
+
+	   축제별로 묻는 이유는 축제마다 배울 것이 다르기 때문이다. 전역 bool 하나면
+	   첫 축제를 끝낸 사람이 다음 축제의 안내를 영영 못 본다.
+
+	   [주의] 안내를 껐는지는 여기서 보지 않는다. 그건 IsTutorialOptedOut 이 답한다.
+	          두 질문을 하나로 합치면 "안 본 축제인데 왜 안 나오지" 를 로그로 못 가른다.
+
+	   FestivalId 가 비어 있으면 축제를 식별하지 못했다는 뜻이다. 그때는 안 본 것으로
+	   본다 — 잘못 막아 안내를 못 보는 쪽이, 한 번 더 보는 쪽보다 나쁘다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	bool WasFestivalTutorialSeen(FName FestivalId) const
+	{
+		return Meta.HasSeenTutorialFor(FestivalId);
+	}
+
+	// 안내를 통째로 껐는가. 축제가 바뀌어도 유지된다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	bool IsTutorialOptedOut() const { return Meta.bTutorialOptedOut; }
+
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
-	void MarkTutorialCompleted(bool bSkipped);
+	void MarkLobbyIntroSeen();
+
+	// 이 축제의 튜토리얼을 끝까지 봤다고 남긴다. FestivalId 가 비면 아무것도 하지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void MarkFestivalTutorialSeen(FName FestivalId);
+
+	// 안내를 통째로 끈다. 되돌리는 수단은 지금 없다.
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void MarkTutorialOptedOut();
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkFestivalCleared(FName FestivalId, const FFF_FestivalRecord& Record);
@@ -137,6 +171,20 @@ public:
 private:
 	// 슬롯 이름을 실제 파일 이름으로. 공백이나 기호가 섞이면 파일이 안 만들어진다.
 	static FString MakeSlotName(FName SlotId);
+
+	/* 옛 판 저장을 지금 형식으로 옮긴다. 읽어온 직후에 한 번 부른다.
+
+	   읽는 자리가 둘(Initialize 의 자동 저장 선택, LoadFromSlot)이라 함수로 뺐다.
+	   한쪽에만 넣으면 그쪽으로 안 들어온 저장이 조용히 옛 형식으로 남는다.
+	*/
+	static void MigrateMeta(FFF_MetaSave& InOutMeta, int32 SavedVersion);
+
+	/* 자동 저장 슬롯에 지금 상태를 쓰고 다음 차례를 넘긴다.
+
+	   메타를 건드리는 곳마다 같은 두 줄이 반복돼서 묶었다. 한쪽에서 차례 넘기기를
+	   빠뜨리면 한 슬롯만 계속 덮여 이중화가 무의미해진다.
+	*/
+	void WriteAutoSave();
 
 	void RegisterDebugConsoleCommands();
 	void UnregisterDebugConsoleCommands();

@@ -16,6 +16,8 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Save/FF_SaveSubsystem.h"
 #include "Tutorial/FF_TutorialMarker.h"
+#include "Engine/GameInstance.h"
+#include "UI/Core/FF_UIFlowSubsystem.h"
 #include "UI/Frontend/FF_PlayHubScreen.h"
 #include "UI/PrepHUD/FF_PrepHudBar.h"
 #include "UI/PrepHUD/FF_PrepHudTabButton.h"
@@ -126,6 +128,74 @@ int32 UFF_TutorialSubsystem::FindLineIndexByLabel(const FName Label) const
 		}
 	}
 	return INDEX_NONE;
+}
+
+FName UFF_TutorialSubsystem::ResolveCurrentFestivalId() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return NAME_None;
+	}
+
+	if (const UGameInstance* GameInstance = World->GetGameInstance())
+	{
+		if (const UFF_UIFlowSubsystem* Flow = GameInstance->GetSubsystem<UFF_UIFlowSubsystem>())
+		{
+			const FName ActiveId = Flow->GetActiveFestivalId();
+			if (!ActiveId.IsNone())
+			{
+				return ActiveId;
+			}
+		}
+	}
+
+	/* 흐름을 안 타고 레벨을 직접 열었다. 레벨 이름으로 대신한다.
+
+	   PIE 는 맵 이름 앞에 UEDPIE_0_ 같은 접두사를 붙인다. 떼지 않으면 에디터에서
+	   본 것과 패키지에서 본 것이 다른 축제로 잡혀, 에디터에서 한 번 본 튜토리얼이
+	   빌드에서 또 나온다.
+	*/
+	FString MapName = World->GetMapName();
+	MapName.RemoveFromStart(World->StreamingLevelsPrefix);
+
+	return FName(*MapName);
+}
+
+void UFF_TutorialSubsystem::SetPlaybackScope(
+	const EFF_TutorialScope Scope, const FName FestivalId)
+{
+	ActiveScope = Scope;
+	ActiveScopeFestivalId = FestivalId;
+}
+
+void UFF_TutorialSubsystem::RecordScopeCompleted()
+{
+	UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this);
+	if (!Save)
+	{
+		return;
+	}
+
+	switch (ActiveScope)
+	{
+	case EFF_TutorialScope::LobbyIntro:
+		Save->MarkLobbyIntroSeen();
+		break;
+
+	case EFF_TutorialScope::Festival:
+		Save->MarkFestivalTutorialSeen(ActiveScopeFestivalId);
+		break;
+
+	default:
+		/* 범위를 모르는 재생이다. 콘솔이나 UI 가 직접 부른 경우라 여기서 기록하면
+		   플레이어가 보지도 않은 튜토리얼이 봤다고 남는다. 로그만 남긴다.
+		*/
+		UE_LOG(LogFestaFiestaTutorial, Verbose,
+			TEXT("[튜토리얼] 범위 없는 재생이 끝났다. 저장에 남기지 않는다. Script=%s"),
+			*ActiveScriptId.ToString());
+		break;
+	}
 }
 
 bool UFF_TutorialSubsystem::StartLines(const TArray<FFF_DialogueLine>& Lines, const FName ScriptId)
@@ -432,10 +502,13 @@ void UFF_TutorialSubsystem::TryBindPlayHub()
 		return;
 	}
 
-	// 이미 봤으면 구독할 이유가 없다.
+	// 로비 인트로를 이미 봤으면 구독할 이유가 없다.
+	//
+	// 축제 튜토리얼은 여기서 보지 않는다. 이 구독은 로비의 새 게임 버튼용이고,
+	// 축제 쪽 판정은 그 레벨에 들어간 뒤 TryAutoStart 가 따로 한다.
 	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
-		if (Save->WasTutorialSeen())
+		if (Save->WasLobbyIntroSeen())
 		{
 			return;
 		}
@@ -464,10 +537,10 @@ void UFF_TutorialSubsystem::TryBindPlayHub()
 
 void UFF_TutorialSubsystem::HandleNewGameRequested()
 {
-	// 이미 봤으면 넘어간다.
+	// 로비 인트로를 이미 봤으면 넘어간다. 오프닝은 계정 단위로 한 번이다.
 	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
-		if (Save->WasTutorialSeen())
+		if (Save->WasLobbyIntroSeen())
 		{
 			return;
 		}
@@ -481,6 +554,13 @@ void UFF_TutorialSubsystem::HandleNewGameRequested()
 		// 로비 대사가 없는 것은 정상이다. 바로 지구본으로 넘어간다.
 		return;
 	}
+
+	/* 로비 인트로로 재생한다. 아직 축제를 고르기 전이라 축제 아이디는 없다.
+
+	   여기서 범위를 정해두지 않으면 끝났을 때 축제 튜토리얼로 잘못 기록되고,
+	   그게 원래 "새 축제에서 튜토리얼이 안 나온다" 의 원인이었다.
+	*/
+	SetPlaybackScope(EFF_TutorialScope::LobbyIntro, NAME_None);
 
 	/* 지구본이 먼저 뜨고 그 위에 우리 대사가 얹힌다.
 
@@ -505,14 +585,28 @@ void UFF_TutorialSubsystem::TryAutoStart()
 		return;
 	}
 
-	// 지난 판에서 이미 봤으면 다시 보여주지 않는다.
-	// 게임을 껐다 켜도 남아야 하므로 저장에서 읽는다.
+	/* 이미 봤으면 다시 보여주지 않는다. 게임을 껐다 켜도 남아야 하므로 저장에서 읽는다.
+
+	   두 가지를 따로 묻는다. 안내를 껐는지는 전역이고, 튜토리얼을 봤는지는
+	   축제별이다. 하나로 합쳐 두면 첫 축제를 끝낸 사람이 다음 축제의 안내를
+	   영영 못 보는데, 그게 고치려는 문제 자체다.
+	*/
+	const FName FestivalId = ResolveCurrentFestivalId();
+
 	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
-		if (Save->WasTutorialSeen())
+		if (Save->IsTutorialOptedOut())
 		{
 			UE_LOG(LogFestaFiestaTutorial, Log,
-				TEXT("[튜토리얼] 지난 판에서 이미 봤으므로 시작하지 않는다."));
+				TEXT("[튜토리얼] 안내를 꺼둔 상태라 시작하지 않는다."));
+			return;
+		}
+
+		if (Save->WasFestivalTutorialSeen(FestivalId))
+		{
+			UE_LOG(LogFestaFiestaTutorial, Log,
+				TEXT("[튜토리얼] %s 튜토리얼은 이미 봤으므로 시작하지 않는다."),
+				*FestivalId.ToString());
 			return;
 		}
 	}
@@ -527,6 +621,7 @@ void UFF_TutorialSubsystem::TryAutoStart()
 	{
 		if (UDataTable* Table = GameMode->TutorialStartTable.LoadSynchronous())
 		{
+			SetPlaybackScope(EFF_TutorialScope::Festival, FestivalId);
 			PlayTable(Table);
 			return;
 		}
@@ -553,6 +648,7 @@ void UFF_TutorialSubsystem::TryAutoStart()
 		return;
 	}
 
+	SetPlaybackScope(EFF_TutorialScope::Festival, FestivalId);
 	PlayScript(Script);
 }
 
@@ -831,10 +927,9 @@ void UFF_TutorialSubsystem::FinishScript()
 	*/
 	OnTutorialCompleted.Broadcast();
 
-	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
-	{
-		Save->MarkTutorialCompleted(false);
-	}
+	// 무엇을 봤는지에 따라 남기는 자리가 다르다. 범위는 재생을 시작할 때 정해뒀다.
+	// StopScript 가 범위를 지우므로 그보다 먼저 남겨야 한다.
+	RecordScopeCompleted();
 
 	StopScript();
 }
@@ -903,9 +998,14 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	// 위젯도 내린다. 건너뛴 뒤에도 대사창이 남아 있으면 화면을 가린다.
 	RemoveWidgets();
 
+	/* 안내를 통째로 끈다. 축제별이 아니라 전역이다.
+
+	   건너뛰기는 "이 축제만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
+	   축제별로 기록하면 축제를 바꿀 때마다 다시 눌러야 한다.
+	*/
 	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
-		Save->MarkTutorialCompleted(true);
+		Save->MarkTutorialOptedOut();
 	}
 
 	OnTutorialSkipped.Broadcast();
@@ -920,6 +1020,12 @@ void UFF_TutorialSubsystem::StopScript()
 
 	ActiveLines.Reset();
 	ActiveScriptId = NAME_None;
+
+	// 범위도 같이 지운다. 남겨두면 다음에 콘솔로 재생한 것이 직전 축제의
+	// 튜토리얼을 본 것으로 기록된다.
+	ActiveScope = EFF_TutorialScope::None;
+	ActiveScopeFestivalId = NAME_None;
+
 	PendingNextScript = nullptr;
 	bAwaitingSkipConfirm = false;
 	ResumeLineIndex = INDEX_NONE;

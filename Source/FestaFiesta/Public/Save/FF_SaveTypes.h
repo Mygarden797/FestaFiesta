@@ -64,15 +64,35 @@ struct FESTAFIESTA_API FFF_MetaSave
 {
 	GENERATED_BODY()
 
-	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
-	bool bTutorialCompleted = false;
+	/* 로비 인트로를 끝까지 봤는가.
 
-	// 끝까지 본 것과 건너뛴 것을 나눠 둔다.
-	//
-	// 둘 다 "다시 안 보여준다" 는 같지만, 건너뛴 사람에게는 나중에 다시 볼
-	// 기회를 주고 싶어질 수 있다. 하나로 합치면 그때 구분할 방법이 없다.
+	   축제를 고르기 전에 로비에서 도는 오프닝이라 축제별로 나눌 수 없다.
+	   계정 단위로 한 번만 보여준다.
+	*/
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
-	bool bTutorialSkipped = false;
+	bool bLobbyIntroSeen = false;
+
+	/* 안내를 통째로 껐는가.
+
+	   건너뛰기는 "이번 것만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
+	   그래서 축제가 바뀌어도 되살아나지 않는다. 끝까지 본 것과 달리 전역이다.
+
+	   끝까지 본 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
+	   건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	bool bTutorialOptedOut = false;
+
+	/* 튜토리얼을 끝까지 본 축제들.
+
+	   축제마다 배울 것이 다르므로 판정도 축제 단위다. 전역 bool 하나로 두면
+	   첫 축제를 끝낸 사람이 다음 축제의 안내를 영영 못 본다.
+
+	   Set 이 아니라 배열인 이유는 ClearedFestivals 와 같다. 수가 적고,
+	   저장 형식이 단순한 편이 나중에 눈으로 들여다볼 때 낫다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	TArray<FName> TutorialSeenFestivals;
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	TArray<FName> ClearedFestivals;
@@ -84,6 +104,28 @@ struct FESTAFIESTA_API FFF_MetaSave
 	{
 		return ClearedFestivals.Contains(FestivalId);
 	}
+
+	bool HasSeenTutorialFor(const FName FestivalId) const
+	{
+		return !FestivalId.IsNone() && TutorialSeenFestivals.Contains(FestivalId);
+	}
+
+	// ── 판 1 에서만 쓰던 값 ─────────────────────────────────────────────────
+
+	/* 판 1 에는 전역 bool 두 개뿐이었다.
+
+	   새 코드는 여기에 쓰지 않는다. 판 1 저장을 읽을 때 위의 값들로 한 번 옮기고
+	   그 뒤로는 비어 있다(UFF_SaveSubsystem::MigrateMeta).
+
+	   지우지 않고 남겨 두는 이유는, 지우면 옛 저장에서 이 값을 읽을 자리가 없어져
+	   튜토리얼 이력이 통째로 사라지기 때문이다. `_DEPRECATED` 접미사는 UHT 가
+	   떼고 맞춰주므로 파일에 적힌 이름은 예전 그대로다.
+	*/
+	UPROPERTY()
+	bool bTutorialCompleted_DEPRECATED = false;
+
+	UPROPERTY()
+	bool bTutorialSkipped_DEPRECATED = false;
 };
 
 /* 축제 도중의 상태.
@@ -234,9 +276,12 @@ public:
 
 	   구조가 바뀌면 올린다. 올리지 않으면 옛 저장을 새 코드가 읽을 때
 	   빠진 값이 기본값으로 들어가고, 그게 정상인지 오류인지 구분할 수 없다.
+
+	   판 2: 튜토리얼 판정을 전역 bool 두 개에서 축제별 목록으로 바꿨다.
+	         FFF_MetaSave 의 `판 1 에서만 쓰던 값` 항목을 볼 것.
 	*/
 	UPROPERTY()
-	int32 Version = 1;
+	int32 Version = 2;
 
 	UPROPERTY()
 	FFF_MetaSave Meta;
