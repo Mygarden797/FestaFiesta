@@ -13,6 +13,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSplinePath.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
+#include "CrowdSystem/Types/FF_CrowdCongestionSnapshot.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
@@ -54,6 +55,10 @@ struct FFF_CrowdLaneFollowInfo
 
 DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
 	const FFF_PartyDecisionContext& , FFF_PartyDecisionResult& );
+
+// 받을 쪽이 사건 판정·Heat Map·디버그로 여럿이다. 싱글캐스트면 나중에 붙는 쪽이 앞 구독을 조용히 덮어쓴다.
+DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdCongestionSampled,
+	const FFF_CrowdCongestionSnapshot& );
 
 // "도착해서 서 있는가, 가려는데 못 가는가"를 가른 집계.
 //
@@ -273,6 +278,12 @@ public:
 	const FCrowdDensityGrid& GetDensityGrid() const { return DensityGrid; }
 
 	const FFF_CrowdReadModel& GetCrowdReadModel() const { return CrowdReadModel; }
+
+	// 스냅샷 주기마다 발행. 지속시간·히스테리시스·사건 판정은 구독자 몫이다 — 그 상태를 격자에 들이면 World 없는 테스트가 깨진다
+	FFF_OnCrowdCongestionSampled OnCongestionSampled;
+
+	// 중간에 붙은 구독자가 첫 발행을 기다리지 않고 현재 상태를 읽을 때 쓴다
+	const FFF_CrowdCongestionSnapshot& GetCongestionSnapshot() const { return CongestionSnapshot; }
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	int32 GetSnapshotCount() const { return SnapshotCount; }
@@ -970,6 +981,9 @@ private:
 
 	void PublishCrowdReadModel();
 
+	// 혼잡 셀 목록을 스냅샷으로 옮기고 구독자에게 쏜다. 유량을 읽으므로 ResetThroughputWindow보다 먼저 돈다
+	void PublishCongestionSnapshot();
+
 	void UpdateAvoidanceMirrors(const CrowdSteering::FStepParams& Params, bool bWantDesiredVel);
 
 	void ComputeAvoidanceForces(const CrowdSteering::FStepParams& Params);
@@ -1186,6 +1200,9 @@ private:
 
 	// 결정·UI가 읽는 사본. 발행 주기 사이에는 값이 그대로 남아 있다
 	FFF_CrowdReadModel CrowdReadModel;
+
+	// 마지막으로 쏜 혼잡 스냅샷. 멤버로 들고 있어 발행마다 배열을 새로 할당하지 않는다
+	FFF_CrowdCongestionSnapshot CongestionSnapshot;
 
 	// 마지막 발행 이후 지난 고정 스텝 수. 프레임 수가 아니라 스텝 수다 — 프레임률로 세면 유량 집계 구간이 기기 성능에 따라 달라진다
 	int32 StepsSinceSnapshot = 0;
