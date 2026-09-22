@@ -1,8 +1,12 @@
+// FF_FacilityPaidProgramPreviewTests.cpp
+// 역할: 실제 프로그램 데이터로 구매·편성 화면을 만들고 배치를 검사한다.
+
 // Real UMG/WBP rendering with source festival/facility data and isolated sample resources.
 // No scheduling command, economy transaction, festival save or personal preference is written.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -98,13 +102,13 @@ bool FFF_FacilityPaidProgramRenderedPreview::RunTest(const FString& Parameters)
 	}
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	auto* PickerClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityPaidProgramPicker>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.WBP_FF_FacilityPaidProgramPicker_C")));
+		FFBuildUIAssetPaths::FacilityPaidProgramPickerClass));
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityPaidProgramCard>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.WBP_FF_FacilityPaidProgramCard_C")));
+		FFBuildUIAssetPaths::FacilityPaidProgramCardClass));
 	const auto* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	const auto* Facility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
 	if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Actual picker WBP"), PickerClass) ||
 		!TestNotNull(TEXT("Actual program-card WBP"), CardClass) || !TestNotNull(TEXT("Actual Busan festival definition"), Festival) ||
 		!TestNotNull(TEXT("Actual SandArt facility definition"), Facility)) { return false; }

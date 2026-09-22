@@ -1,3 +1,6 @@
+// FF_RuntimeSettingsSubsystem.h
+// 역할: 화면·음량·입력 등 사용자 설정을 읽고 저장하며 게임에 적용한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

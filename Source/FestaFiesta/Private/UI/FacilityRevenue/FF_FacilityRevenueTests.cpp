@@ -1,8 +1,12 @@
+// FF_FacilityRevenueTests.cpp
+// 역할: 시설 수입 순위·표시 금액·관련 화면의 연결을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -37,8 +41,8 @@
 
 namespace
 {
-	const TCHAR* RevenuePanelPath = TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking.WBP_FF_FacilityRevenueRanking");
-	const TCHAR* RevenueRowPath = TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.WBP_FF_FacilityRevenueRankRow");
+	const TCHAR* RevenuePanelPath = FFBuildUIAssetPaths::FacilityRevenueRankingObject;
+	const TCHAR* RevenueRowPath = FFBuildUIAssetPaths::FacilityRevenueRankRowObject;
 
 	struct FRevenueFixture
 	{

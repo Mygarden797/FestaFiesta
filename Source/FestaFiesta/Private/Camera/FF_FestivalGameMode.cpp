@@ -2,6 +2,10 @@
 
 #include "Camera/FF_FestivalGameMode.h"
 
+#include "Festival/FF_FestivalDefinition.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Save/FF_SaveSubsystem.h"
+
 #include "Camera/FF_CameraTypes.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "Camera/FF_OverviewCameraPawn.h"
@@ -21,6 +25,27 @@ AFF_FestivalGameMode::AFF_FestivalGameMode()
 void AFF_FestivalGameMode::BeginPlay()
 {
 	Super::BeginPlay();
+
+	/* 저장이 있으면 이어서 시작한다.
+
+	   여기서 부르는 이유는 서브시스템이 전부 자기 초기화를 마친 뒤이기 때문이다.
+	   Initialize 에서 부르면 다른 시스템이 아직 초기화 중이라 복원한 값을
+	   곧바로 덮어쓴다.
+	*/
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		const UFF_FestivalProgressionSubsystem* Progression = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UFF_FestivalProgressionSubsystem>()
+			: nullptr;
+
+		const UFF_FestivalDefinition* Definition =
+			Progression ? Progression->GetDefinition() : nullptr;
+
+		if (Definition)
+		{
+			Save->TryContinueFestival(Definition->FestivalId);
+		}
+	}
 
 	// 첫 플레이어만 다룬다. 이 프로젝트는 싱글 관찰 시점이다.
 	AFF_FestivalPlayerController* Controller =

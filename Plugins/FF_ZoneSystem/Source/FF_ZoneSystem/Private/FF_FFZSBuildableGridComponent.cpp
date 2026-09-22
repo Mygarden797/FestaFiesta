@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridComponent.cpp
+// 역할: 건설 가능 격자를 렌더링하고 월드·설정 변경 때만 표시 캐시를 갱신한다.
 #include "FF_FFZSBuildableGridComponent.h"
 
 #include "FF_FFZSBuildableGrid.h"
@@ -112,6 +114,7 @@ UFFZSBuildableGridComponent::UFFZSBuildableGridComponent()
     bCalculateAccurateBounds = true;
 }
 
+// 숨김 상태로 바꾸면서 선과 캐시를 무효화해 재진입 시 최신 격자를 그린다.
 void UFFZSBuildableGridComponent::HideGrid()
 {
     if (!BatchedLines.IsEmpty())
@@ -123,6 +126,7 @@ void UFFZSBuildableGridComponent::HideGrid()
     bCacheValid = false;
 }
 
+// 설치 규칙 마스크, 지면 높이, 표시 설정을 조합해 사용자에게 보일 선을 갱신한다.
 void UFFZSBuildableGridComponent::RefreshGrid(UFFZSWorldSubsystem& WorldSystem,
     const FFFZSCommand& Command, const FVector2D& CenterLocalCm,
     const FVector2D& HalfExtentCm, const int32 GridStepCm,

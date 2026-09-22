@@ -1,3 +1,6 @@
+// FF_BuildLightingCatalogTests.cpp
+// 역할: BuildLightingCatalog 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Catalog.ProductionLightingAssetsAndEconomy).
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildCatalogModel.h"
@@ -81,7 +84,7 @@ namespace FFBuildLightingCatalogTest
                 const FPrimaryAssetId PrimaryId(UFFZSFacilityDefinition::GetFacilityDefinitionAssetType(), DefinitionId);
                 const FString AssetName = FString(TEXT("PDA_FFZS_")) + DefinitionId.ToString();
                 const FSoftObjectPath ExpectedPath(FString::Printf(
-                    TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/%s.%s"), *AssetName, *AssetName));
+                    TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Lighting/%s.%s"), *AssetName, *AssetName));
                 Test->TestEqual(*FString::Printf(TEXT("%s is discovered as a production primary asset"), Expected.Name),
                     AssetManager.GetPrimaryAssetPath(PrimaryId), ExpectedPath);
                 Test->TestEqual(*FString::Printf(TEXT("%s is included in packaged builds"), Expected.Name),

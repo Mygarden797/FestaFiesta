@@ -1,0 +1,60 @@
+{
+  "number": 5,
+  "category": "Booth",
+  "subtype": "FoodStall",
+  "name_ko": "숯불 닭꼬치 부스",
+  "slug": "CharcoalChickenSkewerStall",
+  "id": "Booth_FoodStall_CharcoalChickenSkewerStall",
+  "footprint_cm": [
+    430,
+    280
+  ],
+  "height_cm": 340,
+  "description_ko": "조리 연출이 있는 먹거리 시설.",
+  "emphasis_ko": "긴 그릴과 꼬치 열을 명확히 만든다. 숯 발광 면과 연기 발생 위치를 구분하고 화염·연기는 메시에서 분리한다.",
+  "reference_image": "Design/Facitilies/05 숯불 닭꼬치 부스.png",
+  "exploded_reference_image": "Design/Facitilies/05 숯불 닭꼬치 부스 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+  "followup_features": [
+    "숯 발광 제어와 화염·연기 효과는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CharcoalChickenSkewerStall\\SM_FF_Booth_FoodStall_CharcoalChickenSkewerStall.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\05_Booth_FoodStall_CharcoalChickenSkewerStall.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CharcoalChickenSkewerStall\\iso.png",
+  "bounds_m": [
+    4.300000190734863,
+    2.63564133644104,
+    3.026106595993042
+  ],
+  "bounds_min_m": [
+    -2.1500000953674316,
+    -1.31782066822052,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.1500000953674316,
+    1.31782066822052,
+    3.026106595993042
+  ],
+  "triangles": 12656,
+  "material_names": [
+    "M_F70_DarkWood",
+    "M_F70_Cream",
+    "M_F70_DarkTeal",
+    "M_F70_Wood",
+    "M_F70_Metal",
+    "M_F70_Coral",
+    "M_F70_Sand"
+  ],
+  "collision_count": 7,
+  "editable_parts": 93,
+  "fbx_sha256": "d7006aab5311999036ef7cd0164d7a84a68b1d2c9c8c495686dc98a4714321ad",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

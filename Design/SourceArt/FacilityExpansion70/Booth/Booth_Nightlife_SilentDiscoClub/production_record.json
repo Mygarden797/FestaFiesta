@@ -1,0 +1,64 @@
+{
+  "number": 22,
+  "category": "Booth",
+  "subtype": "Nightlife",
+  "name_ko": "사일런트 디스코 클럽",
+  "slug": "SilentDiscoClub",
+  "id": "Booth_Nightlife_SilentDiscoClub",
+  "footprint_cm": [
+    900,
+    750
+  ],
+  "height_cm": 500,
+  "description_ko": "헤드폰과 춤이 특징인 야간 공간.",
+  "emphasis_ko": "헤드폰 대여대·DJ 데스크·댄스 바닥을 강조. 헤드폰은 별도 소품이며 NPC 착용·춤·채널 전환은 후속 작업이다.",
+  "reference_image": "Design/Facitilies/22 사일런트 디스코 클럽.png",
+  "exploded_reference_image": "Design/Facitilies/22 사일런트 디스코 클럽 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_Nightlife_EDMBar",
+  "followup_features": [
+    "헤드폰 소품·NPC 착용·춤·음악 채널 전환은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_SilentDiscoClub\\SM_FF_Booth_Nightlife_SilentDiscoClub.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\22_Booth_Nightlife_SilentDiscoClub.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_SilentDiscoClub\\iso.png",
+  "bounds_m": [
+    9.0,
+    7.4647064208984375,
+    4.6376471519470215
+  ],
+  "bounds_min_m": [
+    -4.5,
+    -3.7323532104492188,
+    0.0
+  ],
+  "bounds_max_m": [
+    4.5,
+    3.7323532104492188,
+    4.6376471519470215
+  ],
+  "triangles": 32024,
+  "material_names": [
+    "M_F70_DarkWood",
+    "M_F70_Wood",
+    "M_F70_Blue",
+    "M_F70_Pink",
+    "M_F70_DarkTeal",
+    "M_F70_Metal",
+    "M_F70_Teal",
+    "M_F70_Screen",
+    "M_F70_Cream",
+    "M_F70_Green",
+    "M_F70_Amber"
+  ],
+  "collision_count": 13,
+  "editable_parts": 102,
+  "fbx_sha256": "8af37990eee07731a24e529be4b0510624522c9f1db62459fd32cf28946d884b",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

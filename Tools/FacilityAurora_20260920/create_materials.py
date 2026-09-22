@@ -1,10 +1,13 @@
+# create_materials.py
+# 역할: 시설 정보·수익 화면의 테마 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create the requested green UI materials, with real UV-driven mesh and thin-film light.
 
 No source images, game-world materials, or global palette are recolored.
 """
 import unreal
 
-FOLDER = "/Game/FestaFiesta/UI/Facility/Aurora"
+FOLDER = "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/Aurora"
 NAME = "M_UI_FacilityAurora"
 unreal.EditorAssetLibrary.make_directory(FOLDER)
 tools = unreal.AssetToolsHelpers.get_asset_tools()

@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeTypes.h
+// 역할: 강화 전후 비교 정보와 안전한 강화 비용 계산 규칙을 제공한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

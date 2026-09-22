@@ -1,3 +1,6 @@
+# create_materials.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Small, static UI materials: matte sage glass, thin-film rim and a sampled SDF wheel.
 
 Run in UE 5.7. This writes only the new Building/Clarity assets. It does not change
@@ -9,7 +12,7 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
-FOLDER = '/Game/FestaFiesta/UI/Building/Clarity'
+FOLDER = '/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity'
 shader_code = (ROOT / 'Tools/BuildModeClarity/shaders/BuildSurface.ush').read_text(encoding='utf-8')
 SOURCE = ROOT / 'SourceAssets/UI/Building/Clarity/T_UI_BuildCircleSDF.tga'
 SOURCE.parent.mkdir(parents=True, exist_ok=True)

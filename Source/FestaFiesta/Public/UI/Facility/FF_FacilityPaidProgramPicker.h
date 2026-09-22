@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramPicker.h
+// 역할: 시설에서 편성할 유료 프로그램 목록과 선택 결과를 보여 준다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

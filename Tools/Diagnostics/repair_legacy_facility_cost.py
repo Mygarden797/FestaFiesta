@@ -1,3 +1,6 @@
+# repair_legacy_facility_cost.py
+# 역할: 시설·경제·UI 경고 진단 작업에서 확인된 데이터 오류만 수정한다.
+
 """Audit/fix the hidden legacy Taco's price override without migrating its identity.
 
 Run with UnrealEditor-Cmd -run=pythonscript -script=<this file>.
@@ -14,7 +17,7 @@ import unreal
 
 
 ROOT = Path(__file__).resolve().parents[2]
-BASE = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+BASE = "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
 LEGACY = BASE + "PDA_FFZS_Booth_FoodTruck_Taco"
 CURRENT = BASE + "PDA_FFZS_Booth_FoodStall_Taco"
 COSTS = "/Game/FestaFiesta/Data/Economy/DT_FacilityCosts"

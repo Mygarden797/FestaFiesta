@@ -1,8 +1,13 @@
+// FF_FacilityCodexProgressSubsystem.h
+// 역할: 발견한 조합과 받은 보상을 사용자 설정에 저장하여 중복 보상을 막는다.
+
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FF_FacilityCodexProgressSubsystem.generated.h"
+
+class UFF_FestivalProgressionSubsystem;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnFacilityCodexProgressChanged);
 
@@ -19,12 +24,17 @@ public:
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	TSet<FName> GetDiscoveredRuleIds() const { return DiscoveredRuleIds; }
 	const TSet<FName>& GetDiscoveredRuleIdsView() const { return DiscoveredRuleIds; }
-	/** Called only with confirmed live matches, never preview placement or UI selection. */
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	bool IsDiscoveryRewardClaimed(FName RuleId) const { return ClaimedDiscoveryRewardRuleIds.Contains(RuleId); }
+	/** Persists confirmed discoveries independently of the economy; never grants gold. */
 	bool RecordDiscoveries(const TSet<FName>& RuleIds);
+	/** Called with an authored amount by the world codex. Failed/duplicate claims do not consume a reward. */
+	bool ClaimDiscoveryReward(FName RuleId, int32 RewardGold, UFF_FestivalProgressionSubsystem* Economy);
 	UPROPERTY(BlueprintAssignable, Category="FestaFiesta|Facility Codex")
 	FFF_OnFacilityCodexProgressChanged OnProgressChanged;
 
 private:
 	UPROPERTY(Transient) TSet<FName> DiscoveredRuleIds;
+	UPROPERTY(Transient) TSet<FName> ClaimedDiscoveryRewardRuleIds;
 	void SaveProgress() const;
 };

@@ -1,3 +1,6 @@
+# verify_assets.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Fresh-session, read-only asset/bundle checks plus idempotent WBP migration check."""
 import hashlib
 import json
@@ -6,7 +9,7 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT/'Saved/FacilityLighting_20260910'
-PDA = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
+PDA = '/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
 RIG = '/Game/Asset/FacilitiesAsset_HKH/Performance/MainStage_Grand_20260909/BP_MainStage_Grand_Lighting'
 EXPECTED_RUNTIME_LIGHTS = {
     'Overhead_00_Spot', 'Overhead_02_Spot', 'Overhead_04_Spot',
@@ -44,7 +47,7 @@ assert actual_light_names == EXPECTED_RUNTIME_LIGHTS, {
 }
 assert all(x['intensity'] > 0 and x['movable'] for x in lights.values())
 assert preview and preview.get_editor_property('is_editor_only') and preview.get_editor_property('hidden_in_game')
-files = [ROOT/'Content/FestaFiesta/UI/Facility'/name for name in
+files = [ROOT/'Content/FestaFiesta/Building/FF_WBP_Building/Facility'/name for name in
          ('WBP_FF_FacilityInfoPanel.uasset','WBP_FF_FacilityLightingControls.uasset')]
 before = [hashlib.sha256(path.read_bytes()).hexdigest() for path in files]
 unreal.SystemLibrary.execute_console_command(None, 'FF.BuildFacilityInfoUMG')

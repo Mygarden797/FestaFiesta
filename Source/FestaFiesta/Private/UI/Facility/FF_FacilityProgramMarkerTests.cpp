@@ -1,3 +1,6 @@
+// FF_FacilityProgramMarkerTests.cpp
+// 역할: 프로그램 표시의 데이터 연결과 생성·해제 동작을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

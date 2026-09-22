@@ -1,3 +1,5 @@
+// FF_FFZSBuildRangePresentation.h
+// 역할: 시설 본체·여유 공간·대기열·배치 실패 영역의 선을 공통 규칙으로 그린다.
 #pragma once
 
 #include "CoreMinimal.h"

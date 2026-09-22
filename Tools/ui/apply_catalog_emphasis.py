@@ -1,3 +1,6 @@
+# apply_catalog_emphasis.py
+# 역할: UI 이미지·화면 에셋 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply and verify the one-time UMG catalog emphasis migration.
 
 Run in a freshly built, full Unreal Editor with -ExecutePythonScript (not a
@@ -25,9 +28,9 @@ VERSION_KEY = "FF.BuildCatalog.EmphasisVersion"
 VERSION = "20260920.v1"
 GUIDE_VERSION_KEY = "FF.BuildCatalog.RequiredGuideVersion"
 PACKAGES = {
-    "/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile": "SizeBox_Card",
-    "/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard": "Root_Size",
-    "/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild": "Border_ApprovedCatalogV9",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile": "SizeBox_Card",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard": "Root_Size",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild": "Border_ApprovedCatalogV9",
 }
 MIGRATED_WIDGETS = {
     "Overlay_RequiredStatus", "Border_RequiredMissing", "Border_RequiredSatisfied",

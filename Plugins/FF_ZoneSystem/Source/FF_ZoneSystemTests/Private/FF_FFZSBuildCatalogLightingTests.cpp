@@ -1,3 +1,5 @@
+// FF_FFZSBuildCatalogLightingTests.cpp
+// 역할: 건설 카탈로그에 등록된 시설의 조명 데이터와 프리셋 연결을 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
@@ -87,7 +89,7 @@ bool FFFZSBuildCatalogLightingTest::RunTest(const FString& Parameters)
 
     const FString AssetName = FString(TEXT("PDA_FFZS_")) + Asset->DefinitionId;
     const FSoftObjectPath DefinitionPath(FString::Printf(
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/%s.%s"), *AssetName, *AssetName));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Lighting/%s.%s"), *AssetName, *AssetName));
 
     // Inspect serialized metadata before UObject loading can rebuild missing bundles in memory.
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();

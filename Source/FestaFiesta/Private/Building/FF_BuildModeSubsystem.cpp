@@ -6,6 +6,8 @@
 // 실패/성능: 무효 권위 조건은 커밋 전에 차단하고 커서 기반 전체 검증은 제한된 주기로 실행한다.
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildingSettings.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "FF_BuildPlacementPointerPolicy.h"
 
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -130,20 +132,14 @@ namespace
 			Widget.ToSharedRef(), VisiblePath, EVisibility::Visible);
 	}
 
-	// 디자이너가 만든 기본 카탈로그 화면을 지연 참조한다. 패키지 로드 실패 시 아래 생성 함수가
-	// UFF_BuildCatalogScreen의 C++ 구현으로 폴백하므로 에셋 누락이 건축 모드 전체를 중단시키지 않는다.
-	const TSoftClassPtr<UFF_BuildCatalogScreen> BuildCatalogScreenClass(
-		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C")));
-	const TSoftClassPtr<UFF_BuildPlacementFailureFeedback> PlacementFailureFeedbackClass(
-		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
-			"WBP_FF_BuildPlacementFailureFeedback_C")));
-	// FF.BuildModeGuideUMG 콘솔 명령이 만든 좌하단 조작 안내 패널. 없으면 조용히 건너뛴다.
-	const TSoftClassPtr<UFF_BuildModeGuide> BuildModeGuideClass(
-		FSoftObjectPath(TEXT(
-			"/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide."
-			"WBP_FF_BuildModeGuide_C")));
+
+}
+
+// 기존 EditDefaultsOnly 속성은 유지하고 초기 경로만 화면 공통 경로표에서 가져온다.
+UFF_BuildModeSubsystem::UFF_BuildModeSubsystem()
+{
+	BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(FSoftObjectPath(FFBuildUIAssetPaths::DefaultBuildToolsWidgetClassPath));
+	BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(FSoftObjectPath(FFBuildUIAssetPaths::DefaultBuildSynergyWidgetClassPath));
 }
 
 bool UFF_BuildModeSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -298,7 +294,7 @@ void UFF_BuildModeSubsystem::Tick(const float DeltaTime)
 
 	// 라인트레이스와 전체 배치 정책 검증은 비용이 있으므로 렌더 프레임보다 느린 고정 간격으로 제한한다.
 	PreviewRefreshAccumulator += DeltaTime;
-	if (PreviewRefreshAccumulator >= PreviewRefreshIntervalSeconds)
+	if (PreviewRefreshAccumulator >= GetDefault<UFF_BuildingSettings>()->GetPreviewRefreshIntervalSeconds())
 	{
 		PreviewRefreshAccumulator = 0.0f;
 		if (FFBuildModeModel::IsPreviewActive(State))
@@ -619,6 +615,11 @@ void UFF_BuildModeSubsystem::OpenCatalog()
 	ResetPlacementSelection();
 	RemoveCatalogScreen();
 	SetState(EFF_BuildModeState::CatalogOpen);
+	// Opening the ordinary catalog also resets an earlier codex destination when
+	// CatalogOpen is already the current state (and therefore emits no state change).
+	// OpenCatalogForFacility sends its validated destination after this common route.
+	PendingCatalogFacilityId = NAME_None;
+	OnBuildCatalogFacilityFocusRequested.Broadcast(NAME_None);
 	bCatalogWasApplied = false;
 	bCatalogThumbnailsApplied = false;
 	if (!bExternalCatalogPresentationActive)
@@ -903,7 +904,7 @@ void UFF_BuildModeSubsystem::SetPlacementYawDegrees(const float YawDegrees)
 	CurrentPlacement.YawCentidegrees = NewYawCentidegrees;
 	CurrentPlacement.QuarterTurns = 0;
 	// 자유 회전은 매 프레임 이 함수를 호출할 수 있다. 비싼 커서 Trace와 전체 권위 검증을 여기서
-	// 강제하지 않고, Tick의 기존 0.08초 주기가 가장 최신 각도를 한 번만 반영하게 한다.
+	// 강제하지 않고, 프로젝트 설정의 미리보기 갱신 주기가 가장 최신 각도를 한 번만 반영하게 한다.
 	bPreviewWorldDirty = true;
 	RefreshBuildModeGuide();
 	OnBuildToolsChanged.Broadcast();
@@ -1234,11 +1235,12 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 			EndDragPlacement();
 			return;
 		}
-		// One ground sample per active frame, then cheap lattice math. Only new cells
-		// reach authority validation; preview rendering keeps its existing 12.5 Hz cadence.
+		// Sample and move the ghost every input frame. Full preview policy checks remain
+		// on Tick's bounded cadence; individual purchases still validate authoritatively.
 		PlacementPreview->SetPlacementGridSurface(GroundHit.ImpactPoint, GroundHit.ImpactNormal);
 		UpdateDragPlacement(GroundHit.ImpactPoint);
 		ProcessDragPlacement();
+		RefreshDragPlacementPreview(false, false, &GroundHit);
 	}
 }
 
@@ -1508,7 +1510,7 @@ void UFF_BuildModeSubsystem::SnapPlacementRotation(const int32 Direction)
 void UFF_BuildModeSubsystem::CreateCatalogScreen(APlayerController& Controller)
 {
 	// SoftClass를 여기서 동기 로드하는 이유는 건축 모드 진입 때만 UI 에셋 비용을 지불하기 위해서다.
-	UClass* ResolvedScreenClass = BuildCatalogScreenClass.LoadSynchronous();
+	UClass* ResolvedScreenClass = GetDefault<UFF_BuildingSettings>()->CatalogScreenClass.LoadSynchronous();
 	if (!ResolvedScreenClass)
 	{
 		UE_LOG(LogFFBuildMode, Warning,
@@ -1869,7 +1871,7 @@ void UFF_BuildModeSubsystem::CreateBuildModeGuide(APlayerController& Controller)
 		return;
 	}
 
-	UClass* GuideClass = BuildModeGuideClass.LoadSynchronous();
+	UClass* GuideClass = GetDefault<UFF_BuildingSettings>()->BuildModeGuideClass.LoadSynchronous();
 	if (!GuideClass || !GuideClass->IsChildOf(UFF_BuildModeGuide::StaticClass()))
 	{
 		return;
@@ -2080,7 +2082,7 @@ void UFF_BuildModeSubsystem::SetFacilityRangeVisibility(const bool bVisible) con
 		return;
 	}
 
-	// 상태가 바뀔 때만 순회한다. 배치 프리뷰의 0.08초 갱신 경로에는 전역 액터 순회를 넣지 않는다.
+	// 상태가 바뀔 때만 순회한다. 배치 프리뷰의 주기적 갱신 경로에는 전역 액터 순회를 넣지 않는다.
 	for (TActorIterator<AFFZSFacilityActor> It(World); It; ++It)
 	{
 		if (IsValid(*It))
@@ -2598,7 +2600,7 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		PlacementPreview->SetActorHiddenInGame(true);
 		OnBuildToolsChanged.Broadcast();
 		ShowStatus(TEXT("바닥 위로 마우스를 옮겨 주세요."), true,
-			PreviewRefreshIntervalSeconds * 2.5f);
+			GetDefault<UFF_BuildingSettings>()->GetPreviewRefreshIntervalSeconds() * 2.5f);
 		return false;
 	}
 
@@ -2626,7 +2628,7 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 		PlacementPreview->SetActorHiddenInGame(true);
 		OnBuildToolsChanged.Broadcast();
 		ShowStatus(TEXT("건축 구역 안쪽으로 옮겨 주세요."), true,
-			PreviewRefreshIntervalSeconds * 2.5f);
+			GetDefault<UFF_BuildingSettings>()->GetPreviewRefreshIntervalSeconds() * 2.5f);
 		return false;
 	}
 	PlacementPreview->SetPlacementGridSurface(
@@ -2711,7 +2713,7 @@ void UFF_BuildModeSubsystem::RefreshCurrentPlacementValidation()
 			bIsMoving ? TEXT("이동") : TEXT("배치"),
 			*UserFacingFailure.ToString()),
 		!LastValidation.bIsValid,
-		PreviewRefreshIntervalSeconds * 2.5f);
+		GetDefault<UFF_BuildingSettings>()->GetPreviewRefreshIntervalSeconds() * 2.5f);
 	OnBuildToolsChanged.Broadcast();
 }
 
@@ -3020,13 +3022,15 @@ UFF_BuildModeSubsystem::GetOrCreatePlacementFailureFeedback()
 	}
 
 	APlayerController* Controller = GetLocalPlayerController();
-	UClass* FeedbackClass = PlacementFailureFeedbackClass.LoadSynchronous();
+	const TSoftClassPtr<UFF_BuildPlacementFailureFeedback>& FeedbackAsset =
+		GetDefault<UFF_BuildingSettings>()->PlacementFailureFeedbackClass;
+	UClass* FeedbackClass = FeedbackAsset.LoadSynchronous();
 	if (!Controller || !FeedbackClass ||
 		!FeedbackClass->IsChildOf(UFF_BuildPlacementFailureFeedback::StaticClass()))
 	{
 		UE_LOG(LogFFBuildMode, Error,
 			TEXT("건축 실패 알림 WBP를 사용할 수 없습니다: %s"),
-			*PlacementFailureFeedbackClass.ToSoftObjectPath().ToString());
+			*FeedbackAsset.ToSoftObjectPath().ToString());
 		return nullptr;
 	}
 

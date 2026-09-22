@@ -6,10 +6,10 @@
 // 실패/수명: 기존 에셋은 보존하며 생성·컴파일·저장 실패 단계마다 로그를 남기고 중단한다.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
-#include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
 #include "CommonTextBlock.h"
@@ -17,38 +17,17 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
-#include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
-#include "Misc/Paths.h"
-#include "Modules/ModuleManager.h"
-#include "UObject/SavePackage.h"
 #include "WidgetBlueprint.h"
-#include "WidgetBlueprintFactory.h"
+#include "UI/Core/FF_UIWbpBuilderCommon.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildModeGuideWbpBuilder, Log, All);
 
 namespace FFBuildModeGuideWbpBuilder
 {
-	const FString GuidePackage(TEXT("/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide"));
-
-	template <typename TWidget>
-	TWidget* MakeWidget(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		const FName Name,
-		const bool bVariable = false)
-	{
-		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
+	using FFUIWbpBuilder::MakeWidget;
+	const FString GuidePackage(FFBuildUIAssetPaths::BuildModeGuidePackage);
 
 	void StyleRowText(UCommonTextBlock& Text, const int32 FontSize, const FLinearColor& Color)
 	{
@@ -109,39 +88,12 @@ namespace FFBuildModeGuideWbpBuilder
 		return true;
 	}
 
-	UWidgetBlueprint* LoadExistingBlueprint()
-	{
-		const FString AssetName = FPackageName::GetLongPackageAssetName(GuidePackage);
-		return LoadObject<UWidgetBlueprint>(
-			nullptr, *FString::Printf(TEXT("%s.%s"), *GuidePackage, *AssetName));
-	}
-
-	bool SaveNewBlueprint(UWidgetBlueprint& Blueprint)
-	{
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
-		if (Blueprint.Status == BS_Error)
-		{
-			return false;
-		}
-
-		Blueprint.MarkPackageDirty();
-		UPackage* Package = Blueprint.GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-		FSavePackageArgs Args;
-		Args.TopLevelFlags = RF_Public | RF_Standalone;
-		Args.SaveFlags = SAVE_NoError;
-		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
-	}
-
 	void BuildModeGuideUmg()
 	{
 		// 신규 기능 패키지만 만들며 기존 팀 UI나 기존 디자이너 편집본은 절대 저장하지 않습니다.
 		if (FPackageName::DoesPackageExist(GuidePackage))
 		{
-			UWidgetBlueprint* Existing = LoadExistingBlueprint();
+			UWidgetBlueprint* Existing = FFUIWbpBuilder::LoadExistingBlueprint(GuidePackage);
 			if (Existing && Existing->GeneratedClass &&
 				Existing->GeneratedClass->IsChildOf(UFF_BuildModeGuide::StaticClass()))
 			{
@@ -156,17 +108,10 @@ namespace FFBuildModeGuideWbpBuilder
 			return;
 		}
 
-		UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
-		Factory->ParentClass = UFF_BuildModeGuide::StaticClass();
-		FAssetToolsModule& AssetTools =
-			FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
-		const FString AssetName = FPackageName::GetLongPackageAssetName(GuidePackage);
-		const FString PackagePath = FPackageName::GetLongPackagePath(GuidePackage);
-		UWidgetBlueprint* Blueprint = Cast<UWidgetBlueprint>(AssetTools.Get().CreateAsset(
-			AssetName, PackagePath, UWidgetBlueprint::StaticClass(), Factory));
-		if (!Blueprint || !Blueprint->WidgetTree ||
-			!BuildLayout(*Blueprint, *Blueprint->WidgetTree) ||
-			!SaveNewBlueprint(*Blueprint))
+		// 생성·위젯 이름 등록·고아 위젯 검사·저장은 팀 공통 도구가 담당한다.
+		if (!FFUIWbpBuilder::EnsureWidgetBlueprint(
+			TEXT("FF_BUILD_MODE_GUIDE"), GuidePackage, FPackageName::GetLongPackagePath(GuidePackage),
+			*UFF_BuildModeGuide::StaticClass(), BuildLayout))
 		{
 			UE_LOG(LogFFBuildModeGuideWbpBuilder, Error,
 				TEXT("FF_BUILD_MODE_GUIDE_FAIL: could not create %s"), *GuidePackage);

@@ -1,0 +1,63 @@
+{
+  "number": 64,
+  "category": "Lighting",
+  "subtype": "Streetlamp",
+  "name_ko": "마린 볼라드 조명",
+  "slug": "MarineBollardLight",
+  "id": "Lighting_Streetlamp_MarineBollardLight",
+  "footprint_cm": [
+    80,
+    80
+  ],
+  "height_cm": 140,
+  "description_ko": "낮은 기둥형 경계 조명.",
+  "emphasis_ko": "짧고 두꺼운 몸체와 빛이 나오는 띠를 강조. 대량 반복 시 재질·광원을 공유하고 눈부심을 실제 카메라에서 확인한다.",
+  "reference_image": "Design/Facitilies/64 마린 볼라드 조명.png",
+  "exploded_reference_image": "Design/Facitilies/64 마린 볼라드 조명 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Streetlamp_FestivalStreetlamp",
+  "followup_features": [
+    "실제 조명 리그·밝기·색 제어·저장 복원은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Streetlamp_MarineBollardLight\\SM_FF_Lighting_Streetlamp_MarineBollardLight.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\64_Lighting_Streetlamp_MarineBollardLight.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Streetlamp_MarineBollardLight\\iso.png",
+  "bounds_m": [
+    0.6463366150856018,
+    0.6463366150856018,
+    1.399999976158142
+  ],
+  "bounds_min_m": [
+    -0.3231683075428009,
+    -0.3231683075428009,
+    0.0
+  ],
+  "bounds_max_m": [
+    0.3231683075428009,
+    0.3231683075428009,
+    1.399999976158142
+  ],
+  "triangles": 2086,
+  "material_names": [
+    "M_F70_Teal",
+    "M_F70_Wood",
+    "M_F70_Cream",
+    "M_F70_Amber"
+  ],
+  "collision_count": 2,
+  "editable_parts": 12,
+  "fbx_sha256": "8a909b5f1f245b2444145650981ee6ab0099e13496694f7a6eb33082f3d2d213",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      0.0,
+      0.0,
+      1.1643563508987427
+    ]
+  ]
+}

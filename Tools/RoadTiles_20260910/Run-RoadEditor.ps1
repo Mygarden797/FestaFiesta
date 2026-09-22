@@ -1,5 +1,9 @@
+# Run-RoadEditor.ps1
+# 역할: 도로·타일 제작 원본과 납품 작업에서 공통 실행 환경에서 해당 제작·검증 작업을 실행한다.
+
 param(
-    [ValidateSet('Import', 'Verify', 'Capture', 'Cleanup')][string]$Mode = 'Import'
+    [ValidateSet('Import', 'Verify', 'Capture', 'Cleanup')][string]$Mode = 'Import',
+    [string]$EngineRoot
 )
 $ErrorActionPreference = 'Stop'
 $roadRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -8,7 +12,8 @@ New-Item -ItemType Directory -Path $roadQA -Force | Out-Null
 $roadScripts = @{ Import = 'import_roads.py'; Verify = 'verify_roads.py'; Capture = 'capture_roads.py'; Cleanup = 'cleanup_attempts.py' }
 $roadScript = Join-Path $PSScriptRoot $roadScripts[$Mode]
 if (-not (Test-Path -LiteralPath $roadScript)) { throw ('Missing script: ' + $roadScript) }
-$roadEditor = 'C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe'
+Import-Module (Join-Path $PSScriptRoot '../Build/FestaFiesta.Build.psm1') -Force
+$roadEditor = Join-Path (Resolve-FFEngineRoot -EngineRoot $EngineRoot) 'Engine/Binaries/Win64/UnrealEditor-Cmd.exe'
 $roadLog = Join-Path $roadQA ($Mode.ToLowerInvariant() + '.log')
 [Environment]::SetEnvironmentVariable('UE-LocalDataCachePath', (Join-Path $roadQA '_cache'), 'Process')
 $roadArgs = @(

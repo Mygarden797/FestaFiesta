@@ -1,3 +1,6 @@
+# import_surfing_test_asset.py
+# 역할: 일반 건설 시설인 서핑 부스의 외형 에셋을 가져오거나 검증한다. 플레이 가능한 미니게임 엔진과 별개다.
+
 # -*- coding: utf-8 -*-
 """Import the standalone surfing Test_Asset pair into Unreal Engine.
 
@@ -30,7 +33,7 @@ TEST_ASSET_ID = "Booth_ActivityGame_Surfing"
 MESH_NAME = "SM_FFZS_" + TEST_ASSET_ID
 TEXTURE_NAME = "T_UI_BuildCatalog_" + TEST_ASSET_ID
 MESH_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
-TEXTURE_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/image"
+TEXTURE_DESTINATION = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"
 MATERIAL_DESTINATION = MESH_DESTINATION + "/Materials"
 MESH_ASSET_PATH = MESH_DESTINATION + "/" + MESH_NAME
 TEXTURE_ASSET_PATH = TEXTURE_DESTINATION + "/" + TEXTURE_NAME

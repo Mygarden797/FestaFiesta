@@ -126,9 +126,10 @@ void UFF_CrowdDecisionSubsystem::HandleStageChanged(
 {
 	if (NewStage == EFF_FestivalStage::Live)
 	{
-		// Live 진입 시점은 공연 전이므로 닫고 시작한다. 여는 것은 OnMainProgramStarted 다.
+		// 관객은 공연 전부터 와서 기다릴 수 있다. 전역 발견은 공연 시작 이벤트가 별도로 연다.
 		bMainStageGatingActive = true;
-		bMainStageOpen = false;
+		bMainStageOpen = true;
+		bMainProgramActive = false;
 		bSawMainProgramThisLive = false;
 		return;
 	}
@@ -147,6 +148,7 @@ void UFF_CrowdDecisionSubsystem::HandleStageChanged(
 
 		bMainStageGatingActive = false;
 		bMainStageOpen = false;
+		bMainProgramActive = false;
 		bSawMainProgramThisLive = false;
 	}
 }
@@ -155,6 +157,7 @@ void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
 {
 	bSawMainProgramThisLive = true;
 	bMainStageOpen = true;
+	bMainProgramActive = true;
 
 	// 무대를 여는 것만으로는 아무도 모른다. 밀어 넣지 않으면 회전율만큼 서서히 차기만 하고
 	// "공연 시간에 몰린다"가 안 나온다.
@@ -181,11 +184,10 @@ void UFF_CrowdDecisionSubsystem::HandleMainProgramStarted(FString EventLabel)
 
 void UFF_CrowdDecisionSubsystem::HandleMainProgramEnded(FString EventLabel)
 {
-	bMainStageOpen = false;
+	bMainProgramActive = false;
 
 	UE_LOG(LogCrowdDecision, Log,
-		TEXT("메인 공연 종료('%s') — 메인 무대를 후보에서 닫는다. ")
-		TEXT("이미 줄에 선 파티는 그대로 서비스를 받는다(대기열은 이 게이트와 무관하다)"), *EventLabel);
+		TEXT("메인 공연 종료('%s') — 전역 발견만 닫고 무대는 Live 동안 계속 열어 둔다"), *EventLabel);
 }
 
 void UFF_CrowdDecisionSubsystem::SetDecisionEnabled(bool bEnabled)

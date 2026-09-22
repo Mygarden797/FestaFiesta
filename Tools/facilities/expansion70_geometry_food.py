@@ -1,3 +1,6 @@
+# expansion70_geometry_food.py
+# 역할: 식음료 시설의 편집 가능한 형상을 만든다.
+
 """Reference-led silhouettes for the first seven coastal food facilities."""
 import math
 

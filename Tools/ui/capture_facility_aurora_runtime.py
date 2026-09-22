@@ -1,3 +1,6 @@
+# capture_facility_aurora_runtime.py
+# 역할: UI 이미지·화면 에셋 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """Capture the production V7 catalog over the real Test_Main PIE world.
 
 Run in an otherwise idle, disposable UE editor with rendering enabled. No actors,
@@ -58,7 +61,8 @@ def hash_files():
     # These are read-only checks: no save or editor transaction is performed.
     paths = set()
     for folder in ('Content/FestaFiesta/Maps', 'Content/FestaFiesta/Data',
-                   'Content/FestaFiesta/UI', 'Config'):
+                   'Content/FestaFiesta/UI', 'Content/FestaFiesta/Building/FF_WBP_Building',
+                   'Content/FestaFiesta/Building/FF_Data_Building', 'Config'):
         paths.update(p for p in (ROOT / folder).rglob('*') if p.is_file())
     result = {}
     for path in sorted(paths):

@@ -1,3 +1,6 @@
+# configure_sunset_audience.py
+# 역할: 공연 관람석 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 """One-time audience-only migration. Run inside UE 5.7 after compiling FF_ZoneSystem.
 
 Only the exact SunsetMainStage PDA can be saved. Subsequent runs preserve authored
@@ -13,7 +16,7 @@ import unreal
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "Saved/FacilityAudience"
-PDA = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage"
+PDA = "/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage"
 ASSET = ROOT / "Content" / (PDA.removeprefix("/Game/") + ".uasset")
 
 

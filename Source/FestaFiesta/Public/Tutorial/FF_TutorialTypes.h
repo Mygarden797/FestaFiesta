@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/Texture2D.h"
 #include "FF_TutorialTypes.generated.h"
 
 // 튜토리얼과 대화 관련 타입.
@@ -127,6 +128,21 @@ struct FFF_DialogueLine
 	// 무엇을 기다리는가. Kind 가 WaitForAction 일 때만 쓴다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	EFF_TutorialWaitCondition WaitCondition = EFF_TutorialWaitCondition::None;
+
+	/* 이 줄에서 보여줄 배경 그림.
+
+	   비어 있으면 배경을 바꾸지 않는다. 앞 줄의 그림이 그대로 남는다.
+	   줄마다 적지 않아도 되게 하려는 것이다. 한 장면이 여러 줄로 이어질 때
+	   같은 그림을 매 줄에 적으면 나중에 바꿀 때 전부 고쳐야 한다.
+
+	   비우고 싶으면 None 이라고 적는다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	TSoftObjectPtr<UTexture2D> BackgroundImage;
+
+	// 배경을 지울지. BackgroundImage 가 비어 있고 이 값이 참이면 배경이 사라진다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	bool bClearBackground = false;
 
 	/* 어느 탭이 열리기를 기다리는가. PrepTabOpened 일 때만 쓴다.
 

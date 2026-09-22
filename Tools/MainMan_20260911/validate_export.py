@@ -1,3 +1,6 @@
+# validate_export.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 저장된 산출물의 구조와 품질을 검증한다.
+
 import bpy,bmesh,json,math
 from pathlib import Path
 from mathutils import Vector

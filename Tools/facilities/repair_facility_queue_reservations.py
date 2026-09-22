@@ -1,3 +1,6 @@
+# repair_facility_queue_reservations.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 확인된 데이터 오류만 수정한다.
+
 """Repair authored Crowd body reservations without moving any facility targets.
 
 Default Unreal commandlet mode only inspects and writes a proposed-change report.
@@ -20,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFINITION_ROOT = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions'
+DEFINITION_ROOT = '/Game/FestaFiesta/Building/FF_Data_Building'
 CROWD_RADIUS_CM = 34.0
 BODY_TOLERANCE_CM = 0.01
 ROUNDING_MARGIN_CM = 1.0

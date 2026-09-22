@@ -2,6 +2,9 @@
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 
+#include "Save/FF_SaveArchive.h"
+#include "Save/FF_SaveSubsystem.h"
+
 #include "Economy/FF_EconomyLog.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
 #include "Economy/Rules/FF_BoothRevenueRules.h"
@@ -50,6 +53,66 @@ void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Coll
 		Collection.InitializeDependency<UFF_ProgramReservationSubsystem>());
 
 	StartConfiguredFestival();
+
+	/* 저장에 참여한다.
+
+	   여기서 등록하는 이유는 저장 쪽이 목록을 들고 있기 때문이다.
+	   언제 저장되는지, 파일이 어디 쓰이는지는 이 클래스가 몰라도 된다.
+	*/
+	if (UFF_SaveSubsystem* Save = GetGameInstance()->GetSubsystem<UFF_SaveSubsystem>())
+	{
+		Save->RegisterSaveable(this);
+	}
+}
+
+void UFF_FestivalProgressionSubsystem::WriteSaveData(TArray<uint8>& OutBytes) const
+{
+	FFF_ProgressionSave State;
+	State.Gold = Funds.GetGold();
+	State.TotalRevenue = Funds.GetTotalRevenue();
+	State.LastProcessedDay = LastProcessedDay;
+	State.EndedDay = EndedDay;
+
+	/* 장부와 편성은 담지 않는다.
+
+	   저장은 정산이 끝난 뒤에만 하므로 그때 장부는 비어 있고 편성은 해제돼 있다.
+	   비어 있는 것을 담으면 파일만 커지고 복원할 때 맞출 것이 늘어난다.
+
+	   알바도 마찬가지다. 매일 다시 뽑는 것이라 하루가 시작되는 시점에는 0 이다.
+	*/
+
+	UFF_SaveArchive::WriteStruct(OutBytes, State);
+}
+
+void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes)
+{
+	FFF_ProgressionSave State;
+	if (!UFF_SaveArchive::ReadStruct(InBytes, State))
+	{
+		// 저장에 경제가 없다. 첫 축제이거나 옛 저장이다. 기본 상태로 둔다.
+		return;
+	}
+
+	const int32 PreviousGold = Funds.GetGold();
+	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+
+	/* 값을 직접 되돌린다.
+
+	   AddRevenue 로 맞추면 장부에 없던 수입이 기록돼 결산이 틀어진다.
+	   복원은 "벌었다" 가 아니라 "그때 그랬다" 이므로 기록을 남기면 안 된다.
+	*/
+	Funds.RestoreFromSave(State.Gold, State.TotalRevenue);
+
+	LastProcessedDay = State.LastProcessedDay;
+	EndedDay = State.EndedDay;
+
+	// 화면이 따라오게 알린다. 값만 바꾸면 UI 가 옛 숫자를 계속 보여준다.
+	BroadcastGoldIfChanged(PreviousGold);
+	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] 저장에서 되돌렸다. 금화 %d / 누적 %d / %d일차"),
+		State.Gold, State.TotalRevenue, State.LastProcessedDay);
 }
 
 void UFF_FestivalProgressionSubsystem::StartConfiguredFestival()
@@ -282,6 +345,14 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	{
 		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
 	}
+}
+
+void UFF_FestivalProgressionSubsystem::GrantDiscoveryGold(int32 Amount)
+{
+	if (Amount <= 0 || !IsFestivalStarted()) { return; }
+	const int32 PreviousGold = Funds.GetGold();
+	Funds.Refund(Amount);
+	BroadcastGoldIfChanged(PreviousGold);
 }
 
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)

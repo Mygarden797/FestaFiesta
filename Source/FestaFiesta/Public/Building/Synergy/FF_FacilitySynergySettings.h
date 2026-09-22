@@ -1,3 +1,6 @@
+// FF_FacilitySynergySettings.h
+// 역할: 조합 데이터표와 시설당 보너스 상한을 에디터에서 설정한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

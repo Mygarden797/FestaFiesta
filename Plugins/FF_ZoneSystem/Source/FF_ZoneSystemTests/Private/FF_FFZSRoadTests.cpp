@@ -1,3 +1,5 @@
+// FF_FFZSRoadTests.cpp
+// 역할: 길과 타일의 점유, 겹침, 시설 설치 가능 여부와 저장·복원 계약을 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
@@ -16,6 +18,7 @@
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "Kismet/GameplayStatics.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "StaticMeshCompiler.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 
@@ -510,6 +513,104 @@ bool FFFZSRoadPhysicalSurfaceTest::RunTest(const FString& Parameters)
     }
     return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRoadSpatialGroundTest, "FF_ZoneSystem.Road.SpatialGroundSampling",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSRoadSpatialGroundTest::RunTest(const FString& Parameters)
+{
+    FScopedRoadSettings Settings;
+    Settings.Settings->bEnableGroundChecks = true;
+    UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+    if (!TestNotNull(TEXT("Ground sampling collision mesh"), Cube)) return false;
+    TArray<UStaticMesh*> MeshesToFinish{Cube};
+    FStaticMeshCompilingManager::Get().FinishCompilation(MeshesToFinish);
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    if (!TestNotNull(TEXT("Ground sampling world"), System) ||
+        !TestNotNull(TEXT("Terrain under both zones"), SpawnRoadTestBox(*World,
+            FVector(10000, 5000, -10), FVector(20000, 6000, 10)))) return false;
+
+    // A shared-edge neighbor can have decorative collision extending into the next road.
+    FFFZSFacilitySpec NeighborSpec = MakeRoadSpec(Cube);
+    NeighborSpec.VisualSizingMode = EFFZSVisualSizingMode::SourceMeshSize;
+    NeighborSpec.VisualOffsetCm = FVector(240, 50, 50);
+    const FFFZSCommand Neighbor = InstallAt(NeighborSpec, FIntPoint(1000, 1000));
+    if (!TestTrue(TEXT("Offset shared-edge road installs"), System->ExecuteCommand(Neighbor).bSucceeded)) return false;
+    FHitResult Hit;
+    const FCollisionQueryParams SupportQuery(SCENE_QUERY_STAT(FFZSSpatialGroundTest), false);
+    TestTrue(TEXT("A real simple-collision ray reaches the shared-edge overhang"), World->LineTraceSingleByChannel(
+        Hit, FVector(1450, 1250, 300), FVector(1450, 1250, -100), ECC_Visibility, SupportQuery));
+    TestTrue(TEXT("The shared-edge fixture physically hits the neighboring road"),
+        Hit.GetActor() == System->FindFacility(Neighbor.FacilityInstanceId));
+    const FFFZSCommand NextRoad = InstallAt(MakeRoadSpec(Cube), FIntPoint(1400, 1000));
+    const auto CheckTerrainHeight = [&](const TCHAR* Label)
+    {
+        const FFFZSPlacementValidation Result = System->ValidatePlacement(NextRoad);
+        TestTrue(FString(Label) + TEXT(" remains a valid placement"), Result.bIsValid);
+        TestTrue(FString(Label) + TEXT(" samples terrain below paving"),
+            FMath::IsNearlyZero(Result.PlacementTransform.GetLocation().Z, 0.01));
+    };
+    CheckTerrainHeight(TEXT("Touching spatial candidate"));
+
+    AFFZSGameplayZone* RemoteZone = World->SpawnActor<AFFZSGameplayZone>();
+    if (!TestNotNull(TEXT("Second zone"), RemoteZone) ||
+        !TestTrue(TEXT("Second accepted zone"), RemoteZone->ApplyAcceptedZonePreset(TEXT("GZ_SunsetBeachClub")))) return false;
+    RemoteZone->SetActorLocation(FVector(20000, 0, 0));
+    RemoteZone->bAllowAllFacilityCategories = true;
+    if (!TestTrue(TEXT("Second zone registers"), System->RegisterZone(RemoteZone))) return false;
+
+    // The index intentionally stores authoritative footprints, not arbitrary visual offsets.
+    // This other-zone tile's collision reaches the candidate while its footprint is far away.
+    FFFZSFacilitySpec RemoteSpec = MakeTileSpec(Cube);
+    RemoteSpec.VisualSizingMode = EFFZSVisualSizingMode::SourceMeshSize;
+    RemoteSpec.VisualOffsetCm = FVector(-19650, 50, 150);
+    FFFZSCommand RemoteTile = InstallAt(RemoteSpec, FIntPoint(1000, 1000));
+    RemoteTile.ZoneId = RemoteZone->ZoneId;
+    if (!TestTrue(TEXT("Other-zone offset tile installs"), System->ExecuteCommand(RemoteTile).bSucceeded)) return false;
+    TestTrue(TEXT("A real simple-collision ray hits the out-of-index tile"), World->LineTraceSingleByChannel(
+        Hit, FVector(1550, 1250, 300), FVector(1550, 1250, -100), ECC_Visibility, SupportQuery));
+    TestTrue(TEXT("Ray fixture actually reaches the remote registered tile"),
+        Hit.GetActor() == System->FindFacility(RemoteTile.FacilityInstanceId));
+    CheckTerrainHeight(TEXT("Out-of-footprint collision from another zone"));
+
+    const FFFZSPlacementValidation Moving = System->ValidatePlacement(
+        MoveTo(Neighbor.FacilityInstanceId, FIntPoint(1000, 1000)));
+    TestTrue(TEXT("Moving a road still ignores itself"), Moving.bIsValid &&
+        FMath::IsNearlyZero(Moving.PlacementTransform.GetLocation().Z, 0.01));
+    if (!TestNotNull(TEXT("Ordinary scenery obstruction"), SpawnRoadTestBox(*World,
+        FVector(1650, 1250, 60), FVector(20, 20, 60)))) return false;
+    TestFalse(TEXT("Skipping paving never skips ordinary scenery"), System->ValidatePlacement(NextRoad).bIsValid);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSPlacedFacilityCountTest, "FF_ZoneSystem.World.PlacedFacilityCount",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPlacedFacilityCountTest::RunTest(const FString& Parameters)
+{
+    FScopedRoadSettings Settings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    UFFZSWorldSubsystem* System = World ? PrepareRoadWorld(*World) : nullptr;
+    if (!TestNotNull(TEXT("Facility count world"), System)) return false;
+    TestEqual(TEXT("Empty registry has no placed facilities"), System->GetPlacedFacilityCount(), 0);
+    const FFFZSCommand Road = InstallAt(MakeRoadSpec(), FIntPoint(1000, 1000));
+    const FFFZSCommand Tile = InstallAt(MakeTileSpec(), FIntPoint(3000, 1000));
+    if (!TestTrue(TEXT("Counted road installs"), System->ExecuteCommand(Road).bSucceeded) ||
+        !TestTrue(TEXT("Counted tile installs"), System->ExecuteCommand(Tile).bSucceeded)) return false;
+    TestEqual(TEXT("Unopened road and tile both count"), System->GetPlacedFacilityCount(), 2);
+    TestTrue(TEXT("Install replay remains idempotent"), System->ExecuteCommand(Road).bWasDuplicateReplay);
+    TestEqual(TEXT("Receipt replay cannot duplicate the count"), System->GetPlacedFacilityCount(), 2);
+    FFFZSCommand Remove = MoveTo(Road.FacilityInstanceId, FIntPoint(1000, 1000));
+    Remove.Type = EFFZSCommandType::Remove;
+    if (!TestTrue(TEXT("Counted road is removed"), System->ExecuteCommand(Remove).bSucceeded)) return false;
+    TestEqual(TEXT("Removed facilities are excluded"), System->GetPlacedFacilityCount(), 1);
+    AFFZSFacilityActor* Remaining = System->FindFacility(Tile.FacilityInstanceId);
+    if (!TestNotNull(TEXT("Remaining registered tile"), Remaining)) return false;
+    Remaining->Destroy();
+    TestEqual(TEXT("Destroyed weak references are excluded"), System->GetPlacedFacilityCount(), 0);
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSRoadProductionCollisionTest, "FF_ZoneSystem.Road.ProductionRoadAndTileMeshes",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
@@ -522,16 +623,17 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("Production road world"), System)) return false;
     if (!TestNotNull(TEXT("Physical terrain"), SpawnRoadTestBox(*World,
         FVector(5000, 5000, -10), FVector(6000, 6000, 10)))) return false;
-    // Wood and Stone moved from roads to tiles; the remaining four stay roads only.
-    const TArray<FString> RoadNames = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Herringbone"), TEXT("Concrete") };
-    const TArray<FString> TileNames = { TEXT("Wood"), TEXT("Stone") };
+    const TArray<FString> RoadNames = { TEXT("Sand"), TEXT("Asphalt"), TEXT("Herringbone"), TEXT("Concrete"),
+        TEXT("BlueWhiteStripedWalkway"), TEXT("ShellPatternWalkway"), TEXT("LuminousEdgeNightPath") };
+    const TArray<FString> TileNames = { TEXT("Wood"), TEXT("Stone"), TEXT("GrassBlockPicnicTile"),
+        TEXT("OceanMosaicPlazaTile"), TEXT("ShipDeckTile") };
     for (const EFFZSFacilityCategory Category : { EFFZSFacilityCategory::Road, EFFZSFacilityCategory::Tile })
     {
         const FString SurfaceType = Category == EFFZSFacilityCategory::Tile ? TEXT("Tile") : TEXT("Road");
         const TArray<FString>& Names = Category == EFFZSFacilityCategory::Tile ? TileNames : RoadNames;
         for (int32 Index = 0; Index < Names.Num(); ++Index)
         {
-            const FString Path = TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/") + SurfaceType + TEXT("/PDA_FFZS_") + SurfaceType + TEXT("_Surface_") + Names[Index];
+            const FString Path = TEXT("/Game/FestaFiesta/Building/FF_Data_Building/") + SurfaceType + TEXT("/PDA_FFZS_") + SurfaceType + TEXT("_Surface_") + Names[Index];
             UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr, *Path);
             if (!TestNotNull(Names[Index] + TEXT(" production definition"), Definition)) return false;
             UStaticMesh* Mesh = Definition->Spec.VisualMesh.LoadSynchronous();
@@ -551,7 +653,7 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
                 for (const FText& Error : SpecErrors) AddError(Error.ToString());
                 return false;
             }
-            const FIntPoint Origin(1000 + Index * 800, Category == EFFZSFacilityCategory::Tile ? 3000 : 1000);
+            const FIntPoint Origin(1000 + Index * 1200, Category == EFFZSFacilityCategory::Tile ? 3000 : 1000);
             const FFFZSCommand Surface = InstallAt(Definition->Spec, Origin);
             if (!TestTrue(Names[Index] + TEXT(" production ground surface installs"), System->ExecuteCommand(Surface).bSucceeded)) return false;
             const AFFZSFacilityActor* Actor = System->FindFacility(Surface.FacilityInstanceId);
@@ -566,6 +668,14 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
             const FCollisionQueryParams SupportQuery(SCENE_QUERY_STAT(FFZSRoadProductionSupport), false);
             const FIntPoint Footprint = Definition->Spec.FootprintSizeCells;
             const double ExpectedSurfaceZ = Actor->GetActorLocation().Z + Definition->Spec.PlacementObstacleHeightCm;
+            const UBodySetup* BodySetup = Mesh->GetBodySetup();
+            if (!TestNotNull(Names[Index] + TEXT(" authored collision body"), BodySetup)) return false;
+            const double ExpectedCollisionZ = BodySetup->AggGeom.CalcAABB(Actor->VisualMesh->GetComponentTransform()).Max.Z;
+            // Expansion70 floors deliberately place their planar inlays up to 1.1 mm
+            // above the foundation collider (_floors). Check the collider precisely,
+            // and separately ensure that this authored visual inset stays sub-1.5 mm.
+            TestTrue(Names[Index] + TEXT(" foundation collision remains just below the visual surface"),
+                ExpectedCollisionZ <= ExpectedSurfaceZ + 0.05 && ExpectedCollisionZ >= ExpectedSurfaceZ - 0.15);
             // Keep nine interior support samples when a designer changes the PDA dimensions.
             // Fixed 50/200/350 cm samples would trace outside a smaller, correctly scaled road.
             for (const double XFraction : { 0.125, 0.5, 0.875 })
@@ -580,8 +690,8 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
                     World->LineTraceSingleByChannel(Hit, FVector(SampleWorld.X, SampleWorld.Y, ExpectedSurfaceZ + 100.0),
                         FVector(SampleWorld.X, SampleWorld.Y, Actor->GetActorLocation().Z - 100.0), ECC_Visibility, SupportQuery);
                     TestTrue(FString::Printf(TEXT("%s authored collision at %.2f,%.2f supports tile: hit=%s Z=%.6f expected=%s Z=%.6f"),
-                        *Names[Index], X, Y, *GetNameSafe(Hit.GetActor()), Hit.ImpactPoint.Z, *Actor->GetName(), ExpectedSurfaceZ),
-                        Hit.GetActor() == Actor && FMath::IsNearlyEqual(Hit.ImpactPoint.Z, ExpectedSurfaceZ, 0.05));
+                        *Names[Index], X, Y, *GetNameSafe(Hit.GetActor()), Hit.ImpactPoint.Z, *Actor->GetName(), ExpectedCollisionZ),
+                        Hit.GetActor() == Actor && FMath::IsNearlyEqual(Hit.ImpactPoint.Z, ExpectedCollisionZ, 0.05));
                 }
             }
             // A compact non-service facility fits fully on the authored tile. A fixed 6x3 m
@@ -611,6 +721,14 @@ bool FFFZSRoadProductionCollisionTest::RunTest(const FString& Parameters)
             {
                 TestTrue(Names[Index] + TEXT(" disallowed upper placement fails because its footprint is occupied"),
                     Facility.Reasons.Contains(EFFZSPlacementFailure::PlacementCollision));
+            }
+            // Exercise the same authority commands used by a drag with the real imported
+            // meshes and terrain checks enabled, including shared-edge support traces.
+            for (int32 Neighbor = 1; Neighbor <= 2; ++Neighbor)
+            {
+                TestTrue(FString::Printf(TEXT("%s continuous neighbor %d installs with real collision"), *Names[Index], Neighbor),
+                    System->ExecuteCommand(InstallAt(Definition->Spec,
+                        Origin + FIntPoint(Neighbor * Footprint.X, 0))).bSucceeded);
             }
         }
     }

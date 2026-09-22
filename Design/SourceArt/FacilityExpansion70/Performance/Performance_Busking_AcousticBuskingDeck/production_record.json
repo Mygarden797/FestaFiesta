@@ -1,0 +1,58 @@
+{
+  "number": 44,
+  "category": "Performance",
+  "subtype": "Busking",
+  "name_ko": "어쿠스틱 버스킹 데크",
+  "slug": "AcousticBuskingDeck",
+  "id": "Performance_Busking_AcousticBuskingDeck",
+  "footprint_cm": [
+    450,
+    400
+  ],
+  "height_cm": 350,
+  "description_ko": "작은 거리 공연 공간.",
+  "emphasis_ko": "목재 단상·마이크·기타 케이스를 핵심 요소로 사용. 작은 시설답게 전체 높이와 장식 밀도를 절제한다.",
+  "reference_image": "Design/Facitilies/44 어쿠스틱 버스킹 데크.png",
+  "exploded_reference_image": "Design/Facitilies/44 어쿠스틱 버스킹 데크 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_Busking_Busking",
+  "followup_features": [
+    "연주 애니메이션·음향·공연 시간표·관객 행동은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_Busking_AcousticBuskingDeck\\SM_FF_Performance_Busking_AcousticBuskingDeck.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\44_Performance_Busking_AcousticBuskingDeck.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_Busking_AcousticBuskingDeck\\iso.png",
+  "bounds_m": [
+    4.328431129455566,
+    4.0,
+    3.43137264251709
+  ],
+  "bounds_min_m": [
+    -2.164215564727783,
+    -2.0,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.1642158031463623,
+    2.0,
+    3.43137264251709
+  ],
+  "triangles": 2788,
+  "material_names": [
+    "M_F70_DarkTeal",
+    "M_F70_Wood",
+    "M_F70_Cream",
+    "M_F70_Teal",
+    "M_F70_Metal"
+  ],
+  "collision_count": 3,
+  "editable_parts": 31,
+  "fbx_sha256": "f22abf7b469ac85d85f191319e79e438eba8e032adcc86e9ef55981eb27920b2",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

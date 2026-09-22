@@ -1,3 +1,6 @@
+// FF_FacilityCatalogDataTests.cpp
+// 역할: FacilityCatalogData 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Data.FacilityDefinitions.ActiveCatalogIdentityAndPrices, FestaFiesta.Data.FacilityDefinitions.DisplayNamePreservesIdentityAndPrice).
+
 // Project content contracts. Identity and prices come from the authored data;
 // localized display names must never become persistent facility identifiers.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
@@ -44,7 +47,7 @@ bool FFFFacilityCatalogActiveDataTest::RunTest(const FString& Parameters)
     // Enumerate the registry by asset path, not the PrimaryAssetId map. Duplicate IDs can
     // hide a definition in that map, which is precisely one of the errors this test detects.
     FARFilter Filter;
-    Filter.PackagePaths.Add(TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions"));
+    Filter.PackagePaths.Add(TEXT("/Game/FestaFiesta/Building/FF_Data_Building"));
     Filter.ClassPaths.Add(UFFZSFacilityDefinition::StaticClass()->GetClassPathName());
     Filter.bRecursivePaths = true;
     Filter.bRecursiveClasses = true;

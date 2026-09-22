@@ -1,3 +1,5 @@
+// FF_FFZSProductionLightingTests.cpp
+// 역할: 프로젝트에 배포되는 시설 조명 에셋과 런타임 적용 결과를 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
@@ -26,7 +28,7 @@ bool FFFZSProductionLightingTest::RunTest(const FString& Parameters)
 {
     // UE5.7 moves AssetBundleData out of ordinary tags into TaggedAssetBundles.
     // Force disk metadata refresh before loading the UObject so PostLoad cannot repair a missing saved bundle.
-    const FSoftObjectPath DefinitionPath(TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+    const FSoftObjectPath DefinitionPath(TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
     Registry.ScanFilesSynchronous({FPackageName::LongPackageNameToFilename(
         DefinitionPath.GetLongPackageName(), FPackageName::GetAssetPackageExtension())}, true);
@@ -38,7 +40,7 @@ bool FFFZSProductionLightingTest::RunTest(const FString& Parameters)
     if (!TestNotNull(TEXT("FacilityLighting bundle is serialized on disk"), LightingBundle)) return false;
 
     UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
     if (!TestNotNull(TEXT("Production MainStage PDA exists"), Definition)) return false;
     const FFFZSFacilitySpec Spec = Definition->Spec;
     TestTrue(TEXT("Saved lighting bundle contains the exact generated rig class for cooking and async loading"),

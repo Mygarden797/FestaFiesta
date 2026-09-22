@@ -1,3 +1,6 @@
+# split_road_tiles.py
+# 역할: 설치 가능한 도로·타일 작업에서 서로 다른 기능의 데이터를 분리하고 연결한다.
+
 """Split the six authored Road definitions into Road and buildable Tile assets.
 
 Run only after compiling the Tile category, through Run-RoadEditor.ps1. Existing
@@ -22,7 +25,7 @@ from import_roads import COST_TABLE, OUT, ROADS, definition_path
 from enable_drag_placement import require_isolated_editor
 from ffzs_asset_save_transaction import AssetSaveTransaction
 
-TILE_DEFINITIONS = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile'
+TILE_DEFINITIONS = '/Game/FestaFiesta/Building/FF_Data_Building/Tile'
 TILE_LABELS = dict(Sand='모래 타일', Asphalt='아스팔트 타일', Wood='나무 데크 타일',
                    Stone='석재 타일', Herringbone='헤링본 벽돌 타일', Concrete='콘크리트 타일')
 

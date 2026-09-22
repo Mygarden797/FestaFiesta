@@ -1,3 +1,6 @@
+# apply_approved_build_ui.py
+# 역할: UI 이미지·화면 에셋 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply the approved build/inspection UI in an unattended full Unreal Editor process.
 
 Run with -ExecutePythonScript, not the Python commandlet: WBP compilation needs editor
@@ -19,12 +22,12 @@ ROOT = Path(unreal.Paths.project_dir()).resolve()
 OUT = ROOT / "Artifacts" / "Validation" / "BuildUIApproved"
 OUT.mkdir(parents=True, exist_ok=True)
 PACKAGES = (
-    "/Game/FestaFiesta/UI/Building/WBP_FF_BuildCategoryChoice",
-    "/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile",
-    "/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild",
-    "/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools",
-    "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel",
-    "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker",
 )
 COMMANDS = (
     "FF.RefreshBuildStudioUMG",

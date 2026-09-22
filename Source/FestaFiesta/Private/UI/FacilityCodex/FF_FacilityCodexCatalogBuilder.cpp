@@ -1,5 +1,9 @@
+// FF_FacilityCodexCatalogBuilder.cpp
+// 역할: 건설 카탈로그에 도감을 여는 버튼을 추가한다.
+
 // Add one authored button without rebuilding the facility catalog or its Designer layout.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -15,8 +19,8 @@
 namespace FFFacilityCodexCatalogBuilder
 {
     constexpr const TCHAR* Prefix = TEXT("FF_FACILITY_CODEX_CATALOG");
-    constexpr const TCHAR* PanelPath = TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild");
-    constexpr const TCHAR* LauncherPath = TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher");
+    constexpr const TCHAR* PanelPath = FFBuildUIAssetPaths::BuildPanelPackage;
+    constexpr const TCHAR* LauncherPath = FFBuildUIAssetPaths::FacilityCodexCatalogLauncherPackage;
     const FName LauncherName(TEXT("Widget_FacilityCodexCatalogLauncher"));
 
     void Migrate()

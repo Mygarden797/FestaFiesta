@@ -1,6 +1,10 @@
+// FF_BuildModeClaritySynergyBuilder.cpp
+// 역할: 시설 조합 미리보기 화면의 글자와 배치를 명시적으로 수정한다.
+
 // One-time refinement of the existing read-only combination preview, preserving its tree and bindings.
 #if WITH_EDITOR
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
@@ -39,7 +43,7 @@ static bool Apply(UWidgetBlueprint& BP)
     Brush.TintColor=FLinearColor::FromSRGBColor(FColor(242,247,238));
     Brush.OutlineSettings=FSlateBrushOutlineSettings(10,FSlateColor(FLinearColor::FromSRGBColor(FColor(198,214,196))),1);
     if(auto* Material=LoadObject<UMaterialInterface>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/Clarity/MI_UI_BuildClarity_Paper.MI_UI_BuildClarity_Paper")))
+        FFBuildUIAssetPaths::ClarityPaperObject))
     { Brush.SetResourceObject(Material);Brush.DrawAs=ESlateBrushDrawType::Image;Brush.TintColor=FLinearColor::White; }
     Panel->SetBrush(Brush);Panel->SetBrushColor(FLinearColor::White);Panel->SetPadding(FMargin(14,10));
     Tree->ForEachWidget([&](UWidget* Widget)
@@ -68,7 +72,7 @@ static bool Apply(UWidgetBlueprint& BP)
 }
 static void Run()
 {
-    auto* BP=LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy"));
+    auto* BP=LoadExistingBlueprint(FFBuildUIAssetPaths::BuildSynergyPackage);
     const bool Success=BP&&Apply(*BP);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_SYNERGY_%s"),Success?TEXT("PASS"):TEXT("FAIL"));
 }

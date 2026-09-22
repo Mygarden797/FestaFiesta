@@ -1,3 +1,6 @@
+# Run-EditorScript.ps1
+# 역할: 시설 조명과 조명 제어 화면 작업에서 공통 실행 환경에서 해당 제작·검증 작업을 실행한다.
+
 param(
     [Parameter(Mandatory=$true)][string]$Script,
     [string]$Label = 'lighting',

@@ -1,0 +1,65 @@
+{
+  "number": 35,
+  "category": "Rest",
+  "subtype": "Shade",
+  "name_ko": "덩굴 퍼걸러",
+  "slug": "VinePergola",
+  "id": "Rest_Shade_VinePergola",
+  "footprint_cm": [
+    550,
+    450
+  ],
+  "height_cm": 360,
+  "description_ko": "식물 지붕 아래 정원형 휴식.",
+  "emphasis_ko": "프레임 구조가 먼저 읽히게 하고 잎은 덩어리로 배치. 잎 카드의 겹침과 그림자 비용을 원거리에서 확인한다.",
+  "reference_image": "Design/Facitilies/35 덩굴 퍼걸러.png",
+  "exploded_reference_image": "Design/Facitilies/35 덩굴 퍼걸러 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade",
+  "followup_features": [
+    "식물 바람 연출·착석 애니메이션·그늘 효과는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Shade_VinePergola\\SM_FF_Rest_Shade_VinePergola.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\35_Rest_Shade_VinePergola.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Shade_VinePergola\\iso.png",
+  "bounds_m": [
+    5.227907180786133,
+    4.246511459350586,
+    3.5999999046325684
+  ],
+  "bounds_min_m": [
+    -2.6139533519744873,
+    -2.123255729675293,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.6139535903930664,
+    2.123255729675293,
+    3.5999999046325684
+  ],
+  "triangles": 48654,
+  "material_names": [
+    "M_F70_Teal",
+    "M_F70_Wood",
+    "M_F70_Green",
+    "M_F70_Cream",
+    "M_F70_Metal",
+    "M_F70_Amber"
+  ],
+  "collision_count": 13,
+  "editable_parts": 156,
+  "fbx_sha256": "400c74b38d8f3c1eeda43e495e4bafac6113390475b4b00847264151e5678487",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      -1.9999998807907104,
+      1.602325439453125,
+      2.3441858291625977
+    ]
+  ]
+}

@@ -1,5 +1,9 @@
+// FF_FacilityAuroraRevenueProgramsMigration.cpp
+// 역할: 시설 수입과 유료 프로그램 화면에 Aurora 배치를 적용한다.
+
 // Explicit V7 layout migration. Runtime continues to bind the original Designer widgets.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -403,7 +407,7 @@ bool Apply(const TCHAR* Path, UClass* Parent, bool (*Edit)(FEdit&))
 
 void MigrateWorldBadgeAmountFit()
 {
-	auto* BP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"));
+	auto* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityWorldBadgePackage);
 	if (!BP || !BP->WidgetTree || !BP->GeneratedClass ||
 		!BP->GeneratedClass->IsChildOf(UFF_FacilityProgramMarkerWidget::StaticClass())) return;
 	FEdit Context{*BP, *BP->WidgetTree};
@@ -417,14 +421,14 @@ void MigrateWorldBadgeAmountFit()
 void Migrate()
 {
 	bool Success = true;
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"), UFF_FacilityRevenueRankRow::StaticClass(), RevenueRow);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"), UFF_FacilityRevenueRankingPanel::StaticClass(), RevenuePanel);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"), UFF_FacilityProgramMarkerWidget::StaticClass(), WorldBadge);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityRevenueRankRowPackage, UFF_FacilityRevenueRankRow::StaticClass(), RevenueRow);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityRevenueRankingPackage, UFF_FacilityRevenueRankingPanel::StaticClass(), RevenuePanel);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityWorldBadgePackage, UFF_FacilityProgramMarkerWidget::StaticClass(), WorldBadge);
 	MigrateWorldBadgeAmountFit();
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"), UFF_FacilityCodexCard::StaticClass(), CodexCard);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"), UFF_FacilityCodexScreen::StaticClass(), CodexScreen);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"), UFF_FacilityPaidProgramCard::StaticClass(), ProgramCard);
-	Success &= Apply(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"), UFF_FacilityPaidProgramPicker::StaticClass(), ProgramPicker);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityCodexCardPackage, UFF_FacilityCodexCard::StaticClass(), CodexCard);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityCodexScreenPackage, UFF_FacilityCodexScreen::StaticClass(), CodexScreen);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityPaidProgramCardPackage, UFF_FacilityPaidProgramCard::StaticClass(), ProgramCard);
+	Success &= Apply(FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage, UFF_FacilityPaidProgramPicker::StaticClass(), ProgramPicker);
 	if (Success) UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_AURORA_REVENUE_PROGRAMS_DONE: V7 layouts saved; runtime ledger and scheduling authority unchanged."));
 }
 

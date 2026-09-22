@@ -1,3 +1,6 @@
+// FF_PrepPanelBuild.h
+// 역할: 건설 카탈로그의 검색·분류·선택과 배치 상태를 표시한다.
+
 // LightTeal PrepHUD facility catalog and placement-state panel.
 
 #pragma once
@@ -224,6 +227,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Build")
 	TObjectPtr<UTextBlock> Text_PageIndex;
 
+	/** Number of columns and items advanced per page; the following row is partially visible. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance|Pages", meta = (ClampMin = "1"))
 	int32 CardsPerPage = 6;
 
@@ -302,7 +306,7 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FestaFiesta|UI|Prep|Build")
 	FString CategoryChoiceFallbackPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton");
 
 private:
 #if WITH_DEV_AUTOMATION_TESTS
@@ -319,6 +323,7 @@ private:
 	bool bCatalogPointerMoved = false;
 	FName SelectedCatalogFacilityId = NAME_None;
 	void RefreshSelectedFacilityPresentation();
+	void ClearCodexFocus();
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_PlaceSelected;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectedFacility;
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_SelectedCost;
@@ -349,7 +354,7 @@ private:
 
 	/** 카탈로그를 펼쳤을 때의 패널 높이(px). `FF_PrepHudBar` 의 `PanelLayouts` 표와 같아야 한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build", meta = (ClampMin = "0.0"))
-	float CatalogHeight = 392.f;
+	float CatalogHeight = 454.f;
 
 	/** The teammate bar docks panels above its 29px status row; -41 reserves the remaining tab row and gap. */
 	UPROPERTY(EditDefaultsOnly, Category = "FestaFiesta|UI|Prep|Build")

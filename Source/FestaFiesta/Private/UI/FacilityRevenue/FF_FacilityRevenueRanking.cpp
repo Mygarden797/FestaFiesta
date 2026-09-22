@@ -1,4 +1,8 @@
+// FF_FacilityRevenueRanking.cpp
+// 역할: 시설별 수입 순위를 표시하고 선택 시설로 이동하는 요청을 전달한다.
+
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Components/Border.h"
@@ -329,8 +333,7 @@ void UFF_FacilityRevenueRankingSubsystem::Open()
 	BindEconomy();
 	if (!Panel)
 	{
-		UClass *Class = FSoftClassPath(TEXT("/Game/FestaFiesta/UI/FacilityRevenue/"
-											"WBP_FF_FacilityRevenueRanking.WBP_FF_FacilityRevenueRanking_C"))
+		UClass *Class = FSoftClassPath(FFBuildUIAssetPaths::FacilityRevenueRankingClass)
 							.TryLoadClass<UFF_FacilityRevenueRankingPanel>();
 		if (!Class)
 		{

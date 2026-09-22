@@ -282,7 +282,7 @@ public:
 	bool IsMainStageOpen() const { return !bMainStageGatingActive || bMainStageOpen; }
 
 	// Stage 없는 월드의 상시 개방과 실제 메인 공연 중 전역 안내를 구분한다.
-	bool IsGlobalMainStageDiscoveryActive() const { return bMainStageGatingActive && bMainStageOpen; }
+	bool IsGlobalMainStageDiscoveryActive() const { return bMainStageGatingActive && bMainProgramActive; }
 
 	/**
 	 * 무대가 열리는 순간 재결정을 밀어 넣을 파티 수 상한. 0 이하면 상한 없음.
@@ -350,6 +350,10 @@ private:
 
 	// 게이팅이 도는 동안 무대가 열려 있는가. 공연 시작~종료 사이에만 true 다.
 	bool bMainStageOpen = false;
+
+	// 무대의 일반 후보 개방 여부와 공연 중 전역 발견은 별개다. 무대는 Live 내내 열고,
+	// 전역 발견/강제 집결만 메인 공연 구간에 한정한다.
+	bool bMainProgramActive = false;
 
 	// 이번 Live 에서 공연 시작 신호를 한 번이라도 받았는가.
 	// Live 를 빠져나갈 때까지 false 면 표에 메인 공연이 저작되지 않은 것이다 — Warning 을 낸다.

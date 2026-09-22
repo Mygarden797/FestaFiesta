@@ -1,0 +1,58 @@
+{
+  "number": 56,
+  "category": "PhotoSpot",
+  "subtype": "Scenic",
+  "name_ko": "일몰 액자 전망대",
+  "slug": "SunsetFrameOverlook",
+  "id": "PhotoSpot_Scenic_SunsetFrameOverlook",
+  "footprint_cm": [
+    650,
+    500
+  ],
+  "height_cm": 440,
+  "description_ko": "액자 너머 일몰을 담는 장소.",
+  "emphasis_ko": "두꺼운 프레임과 열린 중앙 구도를 강조. 실제 맵의 일몰 방향을 배치 시 확인하고 통과 공간의 UCX를 분리한다.",
+  "reference_image": "Design/Facitilies/56 일몰 액자 전망대.png",
+  "exploded_reference_image": "Design/Facitilies/56 일몰 액자 전망대 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Scenic_Scenic",
+  "followup_features": [
+    "실제 일몰 방향 배치·촬영 UI·이미지 저장은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Scenic_SunsetFrameOverlook\\SM_FF_PhotoSpot_Scenic_SunsetFrameOverlook.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\56_PhotoSpot_Scenic_SunsetFrameOverlook.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Scenic_SunsetFrameOverlook\\iso.png",
+  "bounds_m": [
+    5.931558132171631,
+    5.0,
+    4.087451934814453
+  ],
+  "bounds_min_m": [
+    -2.9657790660858154,
+    -2.5,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.9657790660858154,
+    2.499999761581421,
+    4.087451934814453
+  ],
+  "triangles": 2976,
+  "material_names": [
+    "M_F70_DarkTeal",
+    "M_F70_Wood",
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Glass"
+  ],
+  "collision_count": 11,
+  "editable_parts": 28,
+  "fbx_sha256": "0beee70bd19c4e7e73f6ae296d4cc6ec30d1bbd1961502667aeccb2c6cac4c37",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

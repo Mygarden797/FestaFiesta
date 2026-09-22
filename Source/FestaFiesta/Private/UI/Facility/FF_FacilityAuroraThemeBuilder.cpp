@@ -1,6 +1,10 @@
+// FF_FacilityAuroraThemeBuilder.cpp
+// 역할: 시설 관련 화면들의 저장된 색상과 재질을 일관되게 적용한다.
+
 // Explicit editor migration: save the requested green skin in the authored facility WBPs.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -28,11 +32,11 @@ static bool IsDark(const FString& Name)
 {return Name==TEXT("Border_Tools")||Has(Name,{TEXT("PlacementHelp"),TEXT("QuickTools"),TEXT("BuildGuide"),TEXT("CameraHint")});}
 static bool IsPrimary(const FString& Name)
 {return Has(Name,{TEXT("PlaceSelected"),TEXT("ConfirmPlacement"),TEXT("Button_Upgrade"),TEXT("Button_Move"),
-    TEXT("ScheduleProgram"),TEXT("Button_Purchase"),TEXT("Button_Apply"),TEXT("LightingApply"),TEXT("Button_ViewFacility"),TEXT("Button_Inspect"),TEXT("Button_Confirm"),TEXT("Button_StartMinigame")});}
+    TEXT("ScheduleProgram"),TEXT("Button_Purchase"),TEXT("Button_Apply"),TEXT("LightingApply"),TEXT("Button_ViewFacility"),TEXT("Button_Inspect"),TEXT("Button_Confirm")});}
 static FSlateBrush MaterialBrush(const TCHAR* Role)
 {
     FString Name=FString(TEXT("MI_UI_FacilityAurora_"))+Role;
-    FString Path=FString(TEXT("/Game/FestaFiesta/UI/Facility/Aurora/"))+Name+TEXT(".")+Name;
+    FString Path=FString(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/Aurora/"))+Name+TEXT(".")+Name;
     FSlateBrush Brush; Brush.DrawAs=ESlateBrushDrawType::Image;
     Brush.SetResourceObject(LoadObject<UMaterialInterface>(nullptr,*Path));
     Brush.ImageSize=FVector2D(128,48); Brush.TintColor=FSlateColor(FLinearColor::White);
@@ -121,21 +125,21 @@ static bool Apply(UWidgetBlueprint& BP)
 static void Run()
 {
     const TCHAR* Paths[]={
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"),
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"),
-        TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge"),
-        TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
-        TEXT("/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),
-        TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"),
-        TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"),
-        TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexLauncher"),
-        TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild"),
-        TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile"),
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools"),
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy")};
+        FFBuildUIAssetPaths::FacilityInfoPanelPackage,
+        FFBuildUIAssetPaths::FacilityLightingControlsPackage,
+        FFBuildUIAssetPaths::FacilitySynergyEntryPackage,
+        FFBuildUIAssetPaths::FacilityPaidProgramCardPackage,
+        FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage,
+        FFBuildUIAssetPaths::FacilityWorldBadgePackage,
+        FFBuildUIAssetPaths::FacilityRevenueRankingPackage,
+        FFBuildUIAssetPaths::FacilityRevenueRankRowPackage,
+        FFBuildUIAssetPaths::FacilityCodexScreenPackage,
+        FFBuildUIAssetPaths::FacilityCodexCardPackage,
+        FFBuildUIAssetPaths::FacilityCodexLauncherPackage,
+        FFBuildUIAssetPaths::BuildPanelPackage,
+        FFBuildUIAssetPaths::BuildTilePackage,
+        FFBuildUIAssetPaths::BuildToolsPackage,
+        FFBuildUIAssetPaths::BuildSynergyPackage};
     bool Success=true;
     for(const TCHAR* Path:Paths)
     {

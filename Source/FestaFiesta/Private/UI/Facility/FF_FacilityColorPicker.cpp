@@ -1,3 +1,6 @@
+// FF_FacilityColorPicker.cpp
+// 역할: 시설 조명 색을 고르는 색상 선택기를 그리며 마우스 입력을 색으로 변환한다.
+
 #include "UI/Facility/FF_FacilityColorPicker.h"
 
 #include "Rendering/DrawElements.h"

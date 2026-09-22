@@ -1,5 +1,9 @@
+// FF_FacilityCodexWbpBuilder.cpp
+// 역할: 도감 화면·카드·진입 버튼의 초기 편집용 에셋을 만든다.
+
 // Editor-only UMG scaffolding. Normal builds preserve existing assets; layout migrations are explicit.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
@@ -38,7 +42,7 @@ namespace FFFacilityCodexWbpBuilder
 {
 	using namespace FFUIWbpBuilder;
 	const TCHAR* const Prefix = TEXT("FF_FACILITY_CODEX_UMG");
-	const FString Folder(TEXT("/Game/FestaFiesta/UI/FacilityCodex"));
+	const FString Folder(FFBuildUIAssetPaths::FacilityCodexFolder);
 	const FString CardPath = Folder / TEXT("WBP_FF_FacilityCodexCard");
 	const FString ScreenPath = Folder / TEXT("WBP_FF_FacilityCodexScreen");
 	const FString LauncherPath = Folder / TEXT("WBP_FF_FacilityCodexLauncher");

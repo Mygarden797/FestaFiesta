@@ -1,3 +1,6 @@
+# verify_roads.py
+# 역할: 설치 가능한 도로·타일 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Read saved surface meshes plus authored Road/Tile definitions in a fresh editor."""
 import json
 import sys

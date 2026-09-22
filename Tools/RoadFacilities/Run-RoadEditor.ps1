@@ -1,3 +1,6 @@
+# Run-RoadEditor.ps1
+# 역할: 설치 가능한 도로·타일 작업에서 공통 실행 환경에서 해당 제작·검증 작업을 실행한다.
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string] $Script,

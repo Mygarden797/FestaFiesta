@@ -1,3 +1,6 @@
+// FF_FacilitySynergyTypes.h
+// 역할: 조합 표의 행·미리보기 자료형과 작성 데이터의 유효성 규칙이다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -23,6 +26,9 @@ struct FESTAFIESTA_API FFF_FacilitySynergyRow : public FTableRowBase
 	float MaxDistanceMeters = 15.f;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="추가 수익 (%)", ClampMin="0.01", ClampMax="1000", ToolTip="10을 입력하면 이용 수수료가 10% 증가합니다. 0.1이 아닙니다. 강화 배수에 곱해집니다."))
 	float RevenueBonusPercent = 10.f;
+	/** One-time profile discovery reward, independent of the recurring proximity revenue bonus. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="최초 발견 보상 (골드)", ClampMin="0", UIMin="0", ToolTip="이 조합을 발견한 뒤 도감의 보상 받기 버튼으로 한 번 수령할 골드입니다. 0이면 보상 없음이며, 이미 수령한 보상은 다시 지급하지 않습니다."))
+	int32 DiscoveryRewardGold = 100;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="조합", meta=(DisplayName="중복 방지 그룹", ToolTip="같은 이름의 그룹에서는 가장 큰 보너스 하나만 적용합니다. 비우면 각 행이 독립적으로 더해집니다. 같은 행의 상대 시설 여러 개는 중첩되지 않습니다."))
 	FName StackingGroup;
 

@@ -1,3 +1,6 @@
+# migrate_staff_economy_ui.py
+# 역할: 시설·경제·UI 경고 진단 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Verify PR 217's staff UI; -FFApplyStaffEconomyUI repairs known old text only.
 
 Run via UnrealEditor-Cmd -run=pythonscript -script=<this file> -unattended -nullrhi.
@@ -97,7 +100,8 @@ def main():
         assets[relative] = (asset, before)
 
     allowed = {(ROOT / 'Content/FestaFiesta/UI' / (name + '.uasset')).resolve() for name in UPDATES}
-    protected = {path: digest(path) for base in ('Content/FestaFiesta/UI', 'Content/FestaFiesta/Data')
+    protected = {path: digest(path) for base in ('Content/FestaFiesta/UI', 'Content/FestaFiesta/Data',
+                 'Content/FestaFiesta/Building/FF_WBP_Building', 'Content/FestaFiesta/Building/FF_Data_Building')
                  for path in (ROOT / base).rglob('*.uasset') if path.resolve() not in allowed}
     report = {'mode': 'apply' if apply else 'verify', 'assets': {}, 'protected_packages': len(protected)}
     for relative, (asset, before) in assets.items():

@@ -1,4 +1,4 @@
-//  FF_FFZSWorldTests.cpp
+// FF_FFZSWorldTests.cpp
 
 // WorldSubsystem의 권위 상태와 여러 Actor가 함께 만드는 통합 계약을 검증한다.
 // 테스트 행렬:
@@ -34,6 +34,7 @@
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSDeveloperSettings.h"
+#include "FF_FFZSBuildPresentationSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSProtectedArea.h"
 #include "FF_FFZSPlacementPreviewActor.h"
@@ -2429,7 +2430,11 @@ bool FFFZSPlacementObstructionFeedbackLifecycleTest::RunTest(const FString& Para
     const int32 FailedLineCount = Preview->RangeLines->BatchedLines.Num();
     TestTrue(TEXT("Blocked preview has persistent geometry"), FailedLineCount > 0);
     TestFalse(TEXT("Persistent failure geometry does not expire on actor tick"), Preview->RangeLines->PrimaryComponentTick.bCanEverTick);
-    if (Preview->PlacementFeedbackMaterial.IsValid())
+    // 공통 설정 재질을 사용하는 기본 액터도 고스트/실패 면 회귀 검사에 포함한다.
+    const TSoftObjectPtr<UMaterialInterface>& FeedbackMaterial = Preview->PlacementFeedbackMaterial.IsNull()
+        ? GetDefault<UFFZSBuildPresentationSettings>()->DefaultPlacementFeedbackMaterial
+        : Preview->PlacementFeedbackMaterial;
+    if (FeedbackMaterial.IsValid())
     {
         TestNotNull(TEXT("Generated material is a separate ghost overlay"), Preview->PreviewMesh->GetOverlayMaterial());
         TestTrue(TEXT("Failed region has translucent surfaces"), !Preview->FailureSurfaces.IsEmpty());

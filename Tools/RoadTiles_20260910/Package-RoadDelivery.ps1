@@ -1,13 +1,17 @@
+# Package-RoadDelivery.ps1
+# 역할: 도로·타일 제작 원본과 납품 작업에서 검증된 결과를 지정된 배포 폴더에 복사한다.
+
 param(
-    [string]$Destination = 'C:\Users\kpo91\OneDrive\Desktop\Build\Blender\RoadTiles_20260910'
+    [Parameter(Mandatory=$true)][string]$Destination
 )
 $ErrorActionPreference = 'Stop'
 $roadProject = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $roadSource = [IO.Path]::GetFullPath((Join-Path $roadProject 'SourceArt\RoadTiles_20260910'))
 $roadOutput = [IO.Path]::GetFullPath($Destination)
-$roadAllowedParent = [IO.Path]::GetFullPath('C:\Users\kpo91\OneDrive\Desktop\Build\Blender')
-if (-not $roadOutput.StartsWith($roadAllowedParent + '\', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Delivery destination must be a child of the user-specified Blender folder'
+# 소스 자신/하위 폴더에 복사해 재귀적으로 늘어나는 경로만 차단한다.
+if ($roadOutput.Equals($roadSource, [StringComparison]::OrdinalIgnoreCase) -or
+    $roadOutput.StartsWith($roadSource + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Delivery destination must be outside the source directory'
 }
 if (Test-Path -LiteralPath $roadOutput) { throw 'Destination already exists; refusing to overwrite' }
 $roadValidation = Get-Content -LiteralPath (Join-Path $roadSource 'validation_report.json') -Raw | ConvertFrom-Json

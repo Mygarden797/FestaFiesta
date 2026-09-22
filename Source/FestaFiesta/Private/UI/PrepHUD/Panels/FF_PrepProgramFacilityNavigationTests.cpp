@@ -1,7 +1,11 @@
+// FF_PrepProgramFacilityNavigationTests.cpp
+// 역할: 준비 프로그램의 시설 찾기·열린 화면의 가격 갱신·닫힌 화면의 구독 해제를 자동 검증한다.
+
 // Exercises the saved program WBP against real facility/program content in an isolated game instance.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -59,11 +63,11 @@ namespace FFPrepProgramFacilityNavigationTest
 		bool bPrevious;
 	};
 
-	bool CaptureGuide(FAutomationTestBase& Test, UFF_PrepPanelProgram& Panel)
+	// 촬영은 호출자가 소유한 화면을 잠시 빌린다. 촬영 완료가 패널 종료로 이어지면 안 된다.
+	bool CaptureGuide(FAutomationTestBase& Test, UFF_PrepPanelProgram& Panel, const TSharedRef<SWidget>& PresentedPanel)
 	{
 		if (FParse::Param(FCommandLine::Get(), TEXT("nullrhi"))) { return true; }
 		const FIntPoint Size(880, 600);
-		const TSharedRef<SWidget> Slate = Panel.TakeWidget();
 		FWidgetRenderer Renderer(false, true);
 		TStrongObjectPtr<UTextureRenderTarget2D> Target(
 			FWidgetRenderer::CreateTargetFor(FVector2D(Size.X, Size.Y), TF_Bilinear, true));
@@ -73,7 +77,7 @@ namespace FFPrepProgramFacilityNavigationTest
 		for (int32 Frame = 0; Frame < 3; ++Frame)
 		{
 			Panel.ForceLayoutPrepass();
-			Renderer.DrawWidget(Target.Get(), Slate, FVector2D(Size.X, Size.Y), 1.f / 60.f, false);
+			Renderer.DrawWidget(Target.Get(), PresentedPanel, FVector2D(Size.X, Size.Y), 1.f / 60.f, false);
 		}
 		UScrollBox* Scroll = Cast<UScrollBox>(Panel.GetWidgetFromName(TEXT("ScrollBox_Content")));
 		UPanelWidget* Guide = Cast<UPanelWidget>(Panel.GetWidgetFromName(TEXT("Box_CatalogChoices")));
@@ -142,13 +146,13 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	auto* CardClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepProgramCard>(nullptr,
 		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepProgramCard.WBP_FF_PrepProgramCard_C")));
 	auto* ChoiceClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepChoiceButton>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C")));
+		FFBuildUIAssetPaths::PrepChoiceButtonClass));
 	const UFF_FestivalDefinition* Festival = LoadObject<UFF_FestivalDefinition>(nullptr,
 		TEXT("/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan.DA_Festival_Busan"));
 	UFFZSFacilityDefinition* WorkshopFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"));
 	UFFZSFacilityDefinition* YogaFacility = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience"));
 	if (!TestNotNull(TEXT("Isolated game instance"), Game) || !TestNotNull(TEXT("Production catalog"), Catalog) ||
 		!TestNotNull(TEXT("Production progression"), Progression) || !TestNotNull(TEXT("Production build mode"), Build) ||
 		!TestNotNull(TEXT("Production zone subsystem"), Zones) || !TestNotNull(TEXT("Saved program panel WBP"), PanelClass) ||
@@ -188,6 +192,10 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	FPlayerlessInitialization ChoiceInitialization(*ChoiceClass);
 	TStrongObjectPtr<UFF_PrepPanelProgram> Panel(CreateWidget<UFF_PrepPanelProgram>(World, PanelClass));
 	if (!TestNotNull(TEXT("Saved program panel initializes without asset regeneration"), Panel.Get())) { return false; }
+	// 실제 HUD처럼 열린 동안 Slate 화면도 소유한다. UObject만 유지하면 촬영 함수 반환 시
+	// SObjectWidget이 파괴되어 NativeDestruct가 구독을 해제한다. 아래 close 정리보다 먼저 선언해
+	// 패널을 연 뒤 조기 반환해도 패널을 닫고 Slate, UObject, 테스트 월드 순서로 정리한다.
+	const TSharedRef<SWidget> PresentedPanel = Panel->TakeWidget();
 	UPanelWidget* Guide = Cast<UPanelWidget>(Panel->GetWidgetFromName(TEXT("Box_CatalogChoices")));
 	UTextBlock* Notice = Cast<UTextBlock>(Panel->GetWidgetFromName(TEXT("Text_FacilityNotice")));
 	if (!TestNotNull(TEXT("Native initialization supplies compatible-facility guide container"), Guide) ||
@@ -221,7 +229,9 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	if (!TestEqual(TEXT("Workshop has exactly one compatible source entry"), Panel->CompatibleCatalogEntries.Num(), 1)) { return false; }
 	TestEqual(TEXT("Workshop resolves its exact source definition"),
 		Panel->CompatibleCatalogEntries[0].FacilityDefinitionId, WorkshopFacility->Spec.FacilityDefinitionId);
-	if (!CaptureGuide(*this, *Panel)) { return false; }
+	if (!CaptureGuide(*this, *Panel, PresentedPanel)) { return false; }
+	if (!TestEqual(TEXT("Capturing guidance keeps the open panel subscribed to festival changes"),
+		Panel->BoundProgression.Get(), Progression)) { return false; }
 
 	WorkshopButton->OnClicked.Broadcast();
 	TestEqual(TEXT("Deselecting clears stale guide buttons"), Guide->GetChildrenCount(), 0);
@@ -287,6 +297,8 @@ bool FFF_PrepProgramFacilityNavigationTest::RunTest(const FString& Parameters)
 	Panel->SelectedCardIndex = YogaIndex;
 	Panel->RebuildFacilityChoices();
 	Panel->RefreshAll();
+	if (!TestEqual(TEXT("The open panel listens to the replacement revenue table"),
+		Panel->BoundRevenueTable.Get(), RevenueTable.Get())) { return false; }
 	if (!TestEqual(TEXT("The real panel finds its installed yoga facility"), Panel->FacilityOptions.Num(), 1)) return false;
 	if (!TestTrue(TEXT("The installed facility selection is valid"), Panel->FacilityOptions.IsValidIndex(Panel->SelectedFacilityIndex))) return false;
 	TestEqual(TEXT("The sole installed facility is selected"), Panel->FacilityOptions[Panel->SelectedFacilityIndex].FacilityInstanceId, InstalledYogaId);

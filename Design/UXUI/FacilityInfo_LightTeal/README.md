@@ -3,9 +3,9 @@
 선택한 시설의 상태와 다음 행동을 한눈에 판단하는 비모달 운영 카드다. 지도와 하단 Build HUD를 계속 볼 수 있어야 하며, 장식보다 `상태 → 강화 → 핵심 수치 → 프로그램 → 행동` 순서를 우선한다.
 
 - 기준 시안: [FF_FacilityInfo_NoOverlap_LightTeal_v1.png](Generated/FF_FacilityInfo_NoOverlap_LightTeal_v1.png)
-- 런타임 WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel`
-- 유료 프로그램 Picker WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker`
-- 유료 프로그램 Card WBP: `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard`
+- 런타임 WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel`
+- 유료 프로그램 Picker WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker`
+- 유료 프로그램 Card WBP: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard`
 - 네이티브 계약: `UFF_FacilityInfoPanel`, `UFF_FacilityPaidProgramPicker`, `UFF_FacilityPaidProgramCard`
 - 데이터 원천: `FFF_FacilityInfoViewData`, `FFF_FacilityPaidProgramPickerViewData`, `FFF_FacilityPaidProgramCardViewData`; Designer에 운영 수치를 하드코딩하지 않는다.
 - 강화 규칙·비용·구매 API: [시설 강화 구현 문서](../../FacilityUpgrade/README_KO.md).
@@ -78,7 +78,7 @@ Picker는 `시설명 → 호환 프로그램 카드 목록 → 선택 미리보�
 - 문맥 섹션: `Panel_BuildSection`, `Panel_LiveSection`; 브러시·간격·폰트·애니메이션은 수정 가능하다.
 - 강화: `Panel_UpgradeSection`은 `VerticalBox`, `Button_Upgrade`는 `Button`이다. `Text_FacilityLevel`, `Text_UpgradeEffect`, `Text_UpgradeCost`, `Text_UpgradeReason`, `Text_Upgrade`는 `CommonTextBlock`이다. 이 이름들은 네이티브 `BindWidgetOptional` 계약이며, 생성된 WBP에서는 모두 변수로 노출한다.
 - 프로그램: `Panel_ProgramSection`, 상태/요약/사유 텍스트와 `Button_ScheduleProgram`.
-- 행동: `Panel_Actions`, `Panel_BuildActions`, `Panel_LiveActions`, `Button_Move`, `Button_Remove`, `Button_StartMinigame`; 레이블, 단축키 표기와 상태 브러시를 정리한다.
+- 행동: `Panel_Actions`, `Panel_BuildActions`, `Button_Move`, `Button_Remove`; 레이블, 단축키 표기와 상태 브러시를 정리한다.
 - Picker: `Border_Picker`, `Button_Close`, `Text_FacilityName`, `Text_Empty`, `ScrollBox_Programs`, `Text_PreviewName`, `Text_PreviewDescription`, `Text_PreviewDetails`, `Text_PreviewAvailability`, `Text_NoRefundNotice`, `Text_Feedback`, `Button_Confirm`, `Text_Confirm`.
 - Card: `Button_Select`, `Text_ProgramName`, `Text_ProgramMeta`, `Text_ProgramAvailability`.
 

@@ -1,5 +1,9 @@
+// FF_BuildStudioWidgetTests.cpp
+// 역할: 건설 카탈로그 화면의 필수 연결 위젯을 검사한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Button.h"
@@ -17,7 +21,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildStudioWidgetBindings,
 bool FFF_BuildStudioWidgetBindings::RunTest(const FString& Parameters)
 {
 	auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_PrepPanelBuild>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C")));
+		FFBuildUIAssetPaths::BuildPanelClass));
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!TestNotNull(TEXT("Actual studio WBP"), Class) || !TestNotNull(TEXT("Editor fixture world"), World)) { return false; }
 	const bool PreviousInitialization = Class->bCanCallInitializedWithoutPlayerContext;

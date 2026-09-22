@@ -1,6 +1,10 @@
+// FF_BuildToolsWidgetTests.cpp
+// 역할: 건설 도구의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/TextBlock.h"
 #include "Misc/AutomationTest.h"
 
@@ -85,7 +89,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsDesignerContractTest,
 bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
 {
     UWidgetBlueprint* Blueprint = LoadObject<UWidgetBlueprint>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools"));
+        FFBuildUIAssetPaths::BuildToolsObject);
     if (!TestNotNull(TEXT("Run FF.ApplyBuildModeClarityTools to migrate the editable toolbar"), Blueprint) ||
         !TestNotNull(TEXT("Toolbar has a designer widget tree"), Blueprint ? Blueprint->WidgetTree.Get() : nullptr))
     {
@@ -160,7 +164,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+        FFBuildUIAssetPaths::BuildToolsClass));
     if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Production compact tools"), Class)) return false;
     const bool bPrevious = Class->bCanCallInitializedWithoutPlayerContext;
     Class->bCanCallInitializedWithoutPlayerContext = true;

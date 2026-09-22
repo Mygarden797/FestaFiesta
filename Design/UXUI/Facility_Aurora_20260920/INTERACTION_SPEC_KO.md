@@ -64,8 +64,8 @@
 - `Source/FestaFiesta/Public/UI/PrepHUD/Build/FF_PrepBuildPresentationTypes.h`
 - `Source/FestaFiesta/Private/UI/PrepHUD/Build/FF_PrepBuildTileWidget.cpp`
 - `Source/FestaFiesta/Private/Building/Presentation/FF_BuildStudioWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.uasset`
-- `Content/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.uasset`
 
 첨부 카탈로그의 주 구현은 PrepHUD 경로다. 구형 `FF_BuildCatalogScreen`만 변경하고 완료 처리하지 않는다.
 
@@ -87,8 +87,8 @@
 - `Source/FestaFiesta/Public/UI/FacilityRevenue/FF_FacilityRevenueRanking.h`
 - `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueRanking.cpp`
 - `Source/FestaFiesta/Private/UI/FacilityRevenue/FF_FacilityRevenueWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking.uasset`
-- `Content/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow.uasset`
 
 ### 2.3 시설 배치 시 그리드
 
@@ -165,7 +165,7 @@
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.uasset`
 
 ### 2.6 시설 조합
 
@@ -186,7 +186,7 @@
 - `Source/FestaFiesta/Private/Building/Synergy/FF_FacilitySynergyEvaluator.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilitySynergyEntryWidget.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoPanel.cpp`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry.uasset`
 - `data/unreal/facility_synergies_v0.csv`
 
 ### 2.7 시설 운영
@@ -227,8 +227,8 @@
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityPaidProgramCard.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoSubsystem.cpp`
 - `Source/FestaFiesta/Private/UI/Facility/FF_FacilityInfoWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker.uasset`
-- `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard.uasset`
 
 ### 2.9 시설 강화
 
@@ -273,8 +273,8 @@
 - `Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexScreen.cpp`
 - `Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.cpp`
 - `Source/FestaFiesta/Private/UI/FacilityCodex/FF_FacilityCodexWbpBuilder.cpp`
-- `Content/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen.uasset`
-- `Content/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen.uasset`
+- `Content/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard.uasset`
 
 ## 3. 부가 기능 보존
 
@@ -282,11 +282,7 @@
 
 `bHasLightingRig`인 시설만 조명 영역을 보이고 `bCanEditLighting`에 따라 활성화한다. 켜기/끄기, 밝기 슬라이더, 원래 색/청록/노을/보라 프리셋, 6자리 sRGB 입력, 기본 설정으로 되돌리기를 보존한다. 색 입력이 잘못되면 권위 명령을 보내지 않는다. 입력·슬라이더 드래그 중 시설 선택이 바뀌어도 다른 시설에 이전 편집을 보내지 않는다. 준비/라이브 문맥 모두 지원한다.
 
-파일: `Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp`, `Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h`, `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.uasset`.
-
-### 미니게임
-
-데이터에 미니게임이 연결된 시설은 `bHasMinigame`과 `MinigameActionText`에 따라 행동을 표시한다. `bCanStartMinigame`과 Live 문맥을 확인한 뒤 `OnMinigameRequested`를 전달한다. 단순한 “시설 이용” 버튼으로 바꾸거나 모든 시설에 공통으로 표시하지 않는다. 세션 시작·실패·복귀 후 시설 선택과 입력 상태를 검증한다.
+파일: `Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp`, `Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h`, `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.uasset`.
 
 ### 월드 시설 배지
 
@@ -333,7 +329,6 @@
 - [ ] 강화: 탭·구매·최대 레벨·지원 없음·무료 견적·가격 없음·잔액 부족·공간 부족·프로그램 보호 상태를 확인한다.
 - [ ] 도감: 전체/발견/미발견·검색·시설 필터 해제·선택 상세·닫기와 신규 “효과 적용 중” 필터를 확인한다.
 - [ ] 조명: 켜기/끄기·밝기·모든 프리셋·색 입력·기본값 복원이 지원 시설에서만 작동한다.
-- [ ] 미니게임: 지원 시설/라이브에서만 활성화되며 시작 실패와 종료 복귀를 처리한다.
 - [ ] 이미지 또는 최종 WBP에 위 목록 밖의 버튼·아이콘·링크·탭이 있으면 기능 소유자, 이벤트, 활성 조건, 성공/실패 결과를 추가로 기록한다.
 
 ### 비용·권위 검증

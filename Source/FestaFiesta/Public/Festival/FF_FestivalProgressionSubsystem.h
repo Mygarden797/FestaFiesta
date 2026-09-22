@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Save/FF_Saveable.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Economy/Rules/FF_FestivalFunds.h"
 #include "Economy/Rules/FF_DayLedger.h"
@@ -31,13 +32,42 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnFacilityRevenueChanged, FGuid,
  * [참고] Getter + 변경 델리게이트를 쌍으로 준다
  * [참고] 전부 Gold(int32)이고 상한이 없다.
  */
+ 
+USTRUCT()
+struct FFF_ProgressionSave
+{
+	GENERATED_BODY()
+	
+ 	UPROPERTY() int32 Gold = 0;
+ 	UPROPERTY() int32 TotalRevenue = 0;
+ 	UPROPERTY() int32 LastProcessedDay = 0;
+	UPROPERTY() int32 EndedDay = 0;
+};
+ 
 UCLASS()
-class FESTAFIESTA_API UFF_FestivalProgressionSubsystem : public UGameInstanceSubsystem
+class FESTAFIESTA_API UFF_FestivalProgressionSubsystem
+	: public UGameInstanceSubsystem, public IFF_Saveable
 {
 	GENERATED_BODY()
 
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+	// ── 저장 참여 ───────────────────────────────────────────────────────────
+
+	virtual FName GetSaveKey() const override { return TEXT("Progression"); }
+
+	/* 다른 것이 기대는 값이라 가장 먼저 복원한다.
+
+	   시설을 되돌릴 때 설치 비용을 치르므로, 돈이 먼저 들어와 있어야 한다.
+	*/
+	virtual EFF_SaveLoadPhase GetSaveLoadPhase() const override
+	{
+		return EFF_SaveLoadPhase::Global;
+	}
+
+	virtual void WriteSaveData(TArray<uint8>& OutBytes) const override;
+	virtual void ReadSaveData(const TArray<uint8>& InBytes) override;
 
 	// --- 축제 시작 -------------------------------------------------------
 
@@ -118,6 +148,10 @@ public:
 	// TotalRevenue는 안 건드린다 — 환급은 새 매출이 아니라 이미 쓴 돈이 되돌아온 것이다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void Refund(int32 Amount);
+
+	/** Credits a one-time codex reward without counting it as facility sales or demolition refunds.
+	 * The codex progress subsystem owns the persistent first-discovery check. */
+	void GrantDiscoveryGold(int32 Amount);
 
 	// Report·테스트가 원인별·부스별 분해와 환급 총액을 읽는 창구.
 	const FFF_DayLedger& GetDayLedger() const { return DayLedger; }

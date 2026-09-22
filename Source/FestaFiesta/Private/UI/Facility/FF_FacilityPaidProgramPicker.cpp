@@ -1,6 +1,10 @@
+// FF_FacilityPaidProgramPicker.cpp
+// 역할: 시설에서 편성할 유료 프로그램 목록과 선택 결과를 보여 준다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
@@ -15,9 +19,7 @@
 
 FSoftClassPath UFF_FacilityPaidProgramPicker::GetDefaultCardClassPath()
 {
-	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
-		"WBP_FF_FacilityPaidProgramCard_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityPaidProgramCardClass);
 }
 
 void UFF_FacilityPaidProgramPicker::NativePreConstruct()

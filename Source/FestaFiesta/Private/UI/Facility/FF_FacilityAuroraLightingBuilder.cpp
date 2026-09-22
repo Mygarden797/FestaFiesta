@@ -1,6 +1,10 @@
+// FF_FacilityAuroraLightingBuilder.cpp
+// 역할: 시설 조명 편집 화면에 Aurora 디자인을 적용한다.
+
 // Explicit editor migration for the approved green aurora lighting inspector.
 #if WITH_EDITOR
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/Facility/FF_FacilityColorPicker.h"
 #include "UI/Facility/FF_FacilityLightingControls.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
@@ -25,8 +29,8 @@
 namespace FFFacilityAuroraLighting
 {
     using namespace FFUIWbpBuilder;
-    const FString LightingPath=TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls");
-    const FString PanelPath=TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel");
+    const FString LightingPath=FFBuildUIAssetPaths::FacilityLightingControlsPackage;
+    const FString PanelPath=FFBuildUIAssetPaths::FacilityInfoPanelPackage;
     const TCHAR* LogPrefix=TEXT("FF_AURORA_LIGHTING");
     FLinearColor Green() { return FLinearColor::FromSRGBColor(FColor(0x24,0x55,0x43)); }
     FLinearColor Paper() { return FLinearColor::FromSRGBColor(FColor(0xED,0xF5,0xEE)); }

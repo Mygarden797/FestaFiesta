@@ -1,3 +1,5 @@
+// FF_FFZSVisualGeometry.h
+// 역할: 메시의 중심과 크기를 시설 표시 규격에 맞추는 변환을 계산한다. 실제 점유 규칙은 변경하지 않는다.
 #pragma once
 
 #include "CoreMinimal.h"

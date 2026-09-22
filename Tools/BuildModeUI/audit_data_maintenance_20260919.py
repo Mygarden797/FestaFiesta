@@ -1,3 +1,6 @@
+# audit_data_maintenance_20260919.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 기존 데이터를 읽어 상태·문제를 점검한다.
+
 """Read production definitions and retain the exact pre-maintenance data assets."""
 import hashlib
 import json
@@ -9,7 +12,7 @@ root = Path(unreal.Paths.project_dir()).resolve()
 out = root / "Saved/BuildModeUI/20260919_maintenance"
 out.mkdir(parents=True, exist_ok=True)
 packages = [
-    "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_Ticketing_Ticket",
+    "/Game/FestaFiesta/Building/FF_Data_Building/Info/PDA_FFZS_Info_Ticketing_Ticket",
     "/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies",
 ]
 backup = {}
@@ -22,7 +25,7 @@ for package in packages:
     backup[package] = hashlib.sha256(saved.read_bytes()).hexdigest()
 
 definitions = []
-for path in unreal.EditorAssetLibrary.list_assets("/Game/FestaFiesta/Zone/Data/FacilityDefinitions", recursive=True, include_folder=False):
+for path in unreal.EditorAssetLibrary.list_assets("/Game/FestaFiesta/Building/FF_Data_Building", recursive=True, include_folder=False):
     if "/PDA_" not in path:
         continue
     asset = unreal.load_asset(path)

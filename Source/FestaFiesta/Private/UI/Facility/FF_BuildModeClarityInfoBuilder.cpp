@@ -1,6 +1,10 @@
+// FF_BuildModeClarityInfoBuilder.cpp
+// 역할: 시설 정보 화면을 건설 중에 읽기 쉬운 배치로 수정한다.
+
 // Explicit, additive migration for the compact build-mode facility inspector.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -40,7 +44,7 @@ static FSlateBrush Brush(const FLinearColor Color)
 static FSlateBrush Material(const TCHAR* Role, const FLinearColor Fallback)
 {
     const FString Name = FString(TEXT("MI_UI_BuildClarity_")) + Role;
-    const FString Path = FString(TEXT("/Game/FestaFiesta/UI/Building/Clarity/")) + Name + TEXT(".") + Name;
+    const FString Path = FString(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/")) + Name + TEXT(".") + Name;
     FSlateBrush Result = Brush(Fallback);
     if (UMaterialInterface* Resource = LoadObject<UMaterialInterface>(nullptr, *Path))
     {
@@ -237,7 +241,7 @@ static bool Apply(UWidgetBlueprint& BP)
         }
     if(auto* Scroll=Cast<UScrollBox>(Tree->FindWidget(TEXT("ScrollBox_Details"))))
     { Scroll->SetAnimateWheelScrolling(false); Scroll->SetScrollBarVisibility(ESlateVisibility::Collapsed); }
-    for(const TCHAR* Name:{TEXT("Button_Move"),TEXT("Button_Remove"),TEXT("Button_Upgrade"),TEXT("Button_ScheduleProgram"),TEXT("Button_StartMinigame")})
+    for(const TCHAR* Name:{TEXT("Button_Move"),TEXT("Button_Remove"),TEXT("Button_Upgrade"),TEXT("Button_ScheduleProgram")})
         if(auto* Action=Cast<UButton>(Tree->FindWidget(Name)))
             StyleButton(*Action,FCString::Strcmp(Name,TEXT("Button_Remove"))!=0);
     return SaveNewBlueprint(TEXT("FF_BUILD_CLARITY_INFO"),BP);
@@ -331,7 +335,7 @@ static bool RefineSpacing(UWidgetBlueprint& BP)
 }
 static void Run()
 {
-    auto* BP=LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
+    auto* BP=LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityInfoPanelPackage);
     const bool Success=BP&&Apply(*BP)&&RefineFit(*BP)&&RefineSpacing(*BP);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_INFO_%s"),Success?TEXT("PASS"):TEXT("FAIL"));
 }
@@ -340,7 +344,7 @@ static FAutoConsoleCommand Command(TEXT("FF.ApplyBuildModeClarityInfo"),
     FConsoleCommandDelegate::CreateStatic(&Run));
 static void RunRefine()
 {
-    auto* BP=LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
+    auto* BP=LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityInfoPanelPackage);
     const bool Success=BP&&RefineFit(*BP)&&RefineSpacing(*BP);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_INFO_FIT_%s"),Success?TEXT("PASS"):TEXT("FAIL"));
 }
@@ -349,7 +353,7 @@ static FAutoConsoleCommand RefineCommand(TEXT("FF.RefineBuildModeClarityInfoFit"
     FConsoleCommandDelegate::CreateStatic(&RunRefine));
 static void RunSpacing()
 {
-    auto* BP=LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
+    auto* BP=LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityInfoPanelPackage);
     const bool Success=BP&&RefineSpacing(*BP);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_INFO_SPACING_%s"),Success?TEXT("PASS"):TEXT("FAIL"));
 }

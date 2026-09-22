@@ -1,3 +1,6 @@
+# RoadFacilities.Runner.psm1
+# 역할: 설치 가능한 도로·타일 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 Set-StrictMode -Version Latest
 
 function Invoke-RoadEditorProcess {

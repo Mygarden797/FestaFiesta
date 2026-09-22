@@ -8,6 +8,7 @@
 #include "FF_DialogueBoxWidget.generated.h"
 
 class UButton;
+class UImage;
 class UPanelWidget;
 class UTextBlock;
 class UFF_DialogueChoiceButton;
@@ -75,6 +76,17 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UPanelWidget> ChoiceContainer;
 
+	/* 장면 배경. 화면 전체를 덮는 그림이다.
+
+	   대사창 뒤가 아니라 화면 전체를 덮는 이유는, 로비에서 지구본 위에 사무실
+	   장면을 얹어야 하기 때문이다. 새 게임을 누르면 지구본이 먼저 뜨는데
+	   그 순서를 우리가 막을 수 없어서, 덮어 가리는 편이 단순하다.
+
+	   그림이 없는 줄에서는 숨긴다.
+	*/
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
+	TObjectPtr<UImage> BackgroundImage;
+
 	// 건너뛰기 버튼. 없어도 동작한다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|Dialogue")
 	TObjectPtr<UButton> SkipButton;
@@ -109,6 +121,9 @@ private:
 
 	// 어느 클릭 판을 켤지 정한다. 선택지나 조작 대기 줄에서는 둘 다 끈다.
 	void ApplyClickArea(const FFF_DialogueLine& Line);
+
+	// 배경 그림을 바꾼다. 줄에 지정이 없으면 앞 그림을 그대로 둔다.
+	void ApplyBackground(const FFF_DialogueLine& Line);
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_DialogueChoiceButton>> ChoiceButtons;

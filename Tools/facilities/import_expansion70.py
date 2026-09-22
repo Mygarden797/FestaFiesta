@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# import_expansion70.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Import the Facility 70 production brief as native Unreal assets.
 
 Run with UnrealEditor-Cmd -run=pythonscript -unattended -script=<this file>.
@@ -29,7 +32,7 @@ from ffzs_definition_source import require_unattended_commandlet
 SOURCE = ROOT / "SourceArt/FacilityExpansion70"
 OUT = ROOT / "Saved/FacilityExpansion70"
 ART = "/Game/FestaFiesta/Art/FacilityExpansion70"
-DEFINITIONS = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions"
+DEFINITIONS = "/Game/FestaFiesta/Building/FF_Data_Building"
 OWNER = "FacilityExpansion70.v1"
 NO_SERVICE = {"Road", "Tile", "Lighting"}
 CATEGORIES = {"Booth", "Toilet", "Info", "Rest", "Performance", "Safety", "PhotoSpot", "Lighting", "Road", "Tile"}

@@ -1,0 +1,4356 @@
+{
+  "schema_version": 1,
+  "facilities": [
+    {
+      "number": 1,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "카페 트럭",
+      "slug": "CafeTruck",
+      "id": "Booth_FoodStall_CafeTruck",
+      "footprint_cm": [
+        600,
+        320
+      ],
+      "height_cm": 380,
+      "description_ko": "휴게 좌석과 어울리는 커피 매점.",
+      "emphasis_ko": "트럭 옆 판매창·컵 간판·커피 머신 실루엣을 강조. 바퀴와 차체는 공유하고 판매창 앞 접근 공간을 비운다.",
+      "reference_image": "Design/Facitilies/01 카페 트럭.png",
+      "exploded_reference_image": "Design/Facitilies/01 카페 트럭 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "커피 제공 상호작용과 제조 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CafeTruck\\SM_FF_Booth_FoodStall_CafeTruck.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\01_Booth_FoodStall_CafeTruck.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CafeTruck\\iso.png",
+      "bounds_m": [
+        5.353240013122559,
+        2.8856005668640137,
+        3.799999713897705
+      ],
+      "bounds_min_m": [
+        -2.6766197681427,
+        -1.4428002834320068,
+        2.127127629591996e-08
+      ],
+      "bounds_max_m": [
+        2.6766200065612793,
+        1.4428004026412964,
+        3.799999713897705
+      ],
+      "triangles": 22200,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Glass",
+        "M_F70_Wood",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_White",
+        "M_F70_DarkWood"
+      ],
+      "collision_count": 9,
+      "editable_parts": 85,
+      "fbx_sha256": "5d950ff7501660c8a21a4bf2666df8d2fd55879c29f9d22edd0a175fa7c42f2d",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 2,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "과일 에이드 바",
+      "slug": "FruitAdeBar",
+      "id": "Booth_FoodStall_FruitAdeBar",
+      "footprint_cm": [
+        600,
+        320
+      ],
+      "height_cm": 390,
+      "description_ko": "여름 분위기의 음료 매점.",
+      "emphasis_ko": "큰 과일 모형과 투명 디스펜서가 핵심. 유리·액체 면을 겹겹이 쌓지 말고 적은 투명 면으로 표현한다.",
+      "reference_image": "Design/Facitilies/02 과일 에이드 바.png",
+      "exploded_reference_image": "Design/Facitilies/02 과일 에이드 바 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "음료 제공 상호작용과 디스펜서 액체 연출은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_FruitAdeBar\\SM_FF_Booth_FoodStall_FruitAdeBar.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\02_Booth_FoodStall_FruitAdeBar.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_FruitAdeBar\\iso.png",
+      "bounds_m": [
+        5.355434417724609,
+        2.886784076690674,
+        3.9000000953674316
+      ],
+      "bounds_min_m": [
+        -2.677717447280884,
+        -1.4433919191360474,
+        -8.53454462657055e-09
+      ],
+      "bounds_max_m": [
+        2.6777172088623047,
+        1.443392038345337,
+        3.9000000953674316
+      ],
+      "triangles": 21428,
+      "material_names": [
+        "M_F70_Coral",
+        "M_F70_Cream",
+        "M_F70_Glass",
+        "M_F70_Wood",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_White",
+        "M_F70_Green",
+        "M_F70_DarkWood",
+        "M_F70_Amber"
+      ],
+      "collision_count": 9,
+      "editable_parts": 78,
+      "fbx_sha256": "b68cf59e76a3712f32ee57a1c485740543d259ac0ac1f44399d548fa63c78c73",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 3,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "부산 어묵 포장마차",
+      "slug": "BusanFishCakeCart",
+      "id": "Booth_FoodStall_BusanFishCakeCart",
+      "footprint_cm": [
+        420,
+        270
+      ],
+      "height_cm": 330,
+      "description_ko": "지역색을 보여 주는 야시장 먹거리.",
+      "emphasis_ko": "사각 국물통·꼬치·천막 실루엣을 강조. 꼬치는 저밀도 반복 부품으로 만들고 김은 별도 효과로 처리한다.",
+      "reference_image": "Design/Facitilies/03 부산 어묵 포장마차.png",
+      "exploded_reference_image": "Design/Facitilies/03 부산 어묵 포장마차 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "조리 김과 음식 제공 상호작용은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_BusanFishCakeCart\\SM_FF_Booth_FoodStall_BusanFishCakeCart.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\03_Booth_FoodStall_BusanFishCakeCart.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_BusanFishCakeCart\\iso.png",
+      "bounds_m": [
+        4.199999809265137,
+        2.5743470191955566,
+        2.9557316303253174
+      ],
+      "bounds_min_m": [
+        -2.0999999046325684,
+        -1.2871735095977783,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0999999046325684,
+        1.2871735095977783,
+        2.9557316303253174
+      ],
+      "triangles": 13292,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_Sand",
+        "M_F70_Amber"
+      ],
+      "collision_count": 7,
+      "editable_parts": 59,
+      "fbx_sha256": "3d2965fafa79778ed0c175bfa22f36eb15c9d9b754a5161edbc4ff45e25b2840",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 4,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "씨앗호떡 부스",
+      "slug": "SeedHotteokStall",
+      "id": "Booth_FoodStall_SeedHotteokStall",
+      "footprint_cm": [
+        350,
+        260
+      ],
+      "height_cm": 330,
+      "description_ko": "작은 면적의 회전형 간식 매점.",
+      "emphasis_ko": "원형 철판과 눌개, 종이컵 진열로 품목을 구분. 씨앗 알갱이는 텍스처로 정리하고 수령대를 눈에 띄게 만든다.",
+      "reference_image": "Design/Facitilies/04 씨앗호떡 부스.png",
+      "exploded_reference_image": "Design/Facitilies/04 씨앗호떡 부스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "철판 조리와 음식 수령 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_SeedHotteokStall\\SM_FF_Booth_FoodStall_SeedHotteokStall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\04_Booth_FoodStall_SeedHotteokStall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_SeedHotteokStall\\iso.png",
+      "bounds_m": [
+        3.499999761581421,
+        2.2088534832000732,
+        3.011350393295288
+      ],
+      "bounds_min_m": [
+        -1.7499998807907104,
+        -1.1044267416000366,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.7499998807907104,
+        1.1044267416000366,
+        3.011350393295288
+      ],
+      "triangles": 10648,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Coral",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_Sand",
+        "M_F70_White"
+      ],
+      "collision_count": 7,
+      "editable_parts": 54,
+      "fbx_sha256": "e6bef5a01a2c48baa21168656e04a4fca49de5fd00a479e62b1d47adfd61d4c9",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 5,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "숯불 닭꼬치 부스",
+      "slug": "CharcoalChickenSkewerStall",
+      "id": "Booth_FoodStall_CharcoalChickenSkewerStall",
+      "footprint_cm": [
+        430,
+        280
+      ],
+      "height_cm": 340,
+      "description_ko": "조리 연출이 있는 먹거리 시설.",
+      "emphasis_ko": "긴 그릴과 꼬치 열을 명확히 만든다. 숯 발광 면과 연기 발생 위치를 구분하고 화염·연기는 메시에서 분리한다.",
+      "reference_image": "Design/Facitilies/05 숯불 닭꼬치 부스.png",
+      "exploded_reference_image": "Design/Facitilies/05 숯불 닭꼬치 부스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "숯 발광 제어와 화염·연기 효과는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CharcoalChickenSkewerStall\\SM_FF_Booth_FoodStall_CharcoalChickenSkewerStall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\05_Booth_FoodStall_CharcoalChickenSkewerStall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CharcoalChickenSkewerStall\\iso.png",
+      "bounds_m": [
+        4.300000190734863,
+        2.63564133644104,
+        3.026106595993042
+      ],
+      "bounds_min_m": [
+        -2.1500000953674316,
+        -1.31782066822052,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.1500000953674316,
+        1.31782066822052,
+        3.026106595993042
+      ],
+      "triangles": 12656,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_Coral",
+        "M_F70_Sand"
+      ],
+      "collision_count": 7,
+      "editable_parts": 93,
+      "fbx_sha256": "d7006aab5311999036ef7cd0164d7a84a68b1d2c9c8c495686dc98a4714321ad",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 6,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "비건 샌드위치 트럭",
+      "slug": "VeganSandwichTruck",
+      "id": "Booth_FoodStall_VeganSandwichTruck",
+      "footprint_cm": [
+        600,
+        320
+      ],
+      "height_cm": 410,
+      "description_ko": "채소 중심 메뉴의 식음 시설.",
+      "emphasis_ko": "녹색 차양과 샌드위치 단면을 대표 요소로 사용. 카페 트럭 차체를 재사용하되 지붕·간판 실루엣을 바꾼다.",
+      "reference_image": "Design/Facitilies/06 비건 샌드위치 트럭.png",
+      "exploded_reference_image": "Design/Facitilies/06 비건 샌드위치 트럭 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "음식 제공 상호작용과 제조 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_VeganSandwichTruck\\SM_FF_Booth_FoodStall_VeganSandwichTruck.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\06_Booth_FoodStall_VeganSandwichTruck.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_VeganSandwichTruck\\iso.png",
+      "bounds_m": [
+        5.915863037109375,
+        3.188876152038574,
+        4.099999904632568
+      ],
+      "bounds_min_m": [
+        -2.9579312801361084,
+        -1.594438076019287,
+        -9.42765687739211e-09
+      ],
+      "bounds_max_m": [
+        2.9579315185546875,
+        1.594438076019287,
+        4.099999904632568
+      ],
+      "triangles": 13588,
+      "material_names": [
+        "M_F70_Green",
+        "M_F70_Cream",
+        "M_F70_Glass",
+        "M_F70_Wood",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_White",
+        "M_F70_Coral",
+        "M_F70_Sand"
+      ],
+      "collision_count": 9,
+      "editable_parts": 63,
+      "fbx_sha256": "e37103d08d4488898564b3d251c0ceb52afde5f89c236e0779aaecebe3800d3b",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 7,
+      "category": "Booth",
+      "subtype": "FoodStall",
+      "name_ko": "구름 솜사탕 부스",
+      "slug": "CloudCottonCandyStall",
+      "id": "Booth_FoodStall_CloudCottonCandyStall",
+      "footprint_cm": [
+        320,
+        260
+      ],
+      "height_cm": 350,
+      "description_ko": "제작 과정도 볼거리인 간식 매점.",
+      "emphasis_ko": "구름 모양 지붕·둥근 솜사탕 기계를 강조. 솜사탕은 단순 덩어리와 재질로 표현하고 털·입자 지오메트리를 남발하지 않는다.",
+      "reference_image": "Design/Facitilies/07 구름 솜사탕 부스.png",
+      "exploded_reference_image": "Design/Facitilies/07 구름 솜사탕 부스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+      "followup_features": [
+        "솜사탕 제조 회전과 음식 수령 동작은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CloudCottonCandyStall\\SM_FF_Booth_FoodStall_CloudCottonCandyStall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\07_Booth_FoodStall_CloudCottonCandyStall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CloudCottonCandyStall\\iso.png",
+      "bounds_m": [
+        3.1999998092651367,
+        1.9614075422286987,
+        2.810478925704956
+      ],
+      "bounds_min_m": [
+        -1.5999999046325684,
+        -0.9807037711143494,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.5999999046325684,
+        0.9807037711143494,
+        2.810478925704956
+      ],
+      "triangles": 12108,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_White",
+        "M_F70_Pink",
+        "M_F70_Blue"
+      ],
+      "collision_count": 7,
+      "editable_parts": 44,
+      "fbx_sha256": "1bc2ffa3ad0a2443465d5ea957465042591b672809c1a61b35d9b280e2010ca1",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 8,
+      "category": "Booth",
+      "subtype": "MarketGoods",
+      "name_ko": "로컬 기념품 편집숍",
+      "slug": "LocalSouvenirShop",
+      "id": "Booth_MarketGoods_LocalSouvenirShop",
+      "footprint_cm": [
+        620,
+        320
+      ],
+      "height_cm": 380,
+      "description_ko": "지역 작가의 작은 기념품 판매.",
+      "emphasis_ko": "엽서 벽·자석 보드·진열 선반을 구성. 작은 인쇄물은 텍스처 아틀라스로 묶고 간판 문구는 교체 가능하게 둔다.",
+      "reference_image": "Design/Facitilies/08 로컬 기념품 편집숍.png",
+      "exploded_reference_image": "Design/Facitilies/08 로컬 기념품 편집숍 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_MarketGoods_Market",
+      "followup_features": [
+        "기념품 구매 UI와 상품 데이터는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_LocalSouvenirShop\\SM_FF_Booth_MarketGoods_LocalSouvenirShop.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\08_Booth_MarketGoods_LocalSouvenirShop.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_LocalSouvenirShop\\iso.png",
+      "bounds_m": [
+        5.838648796081543,
+        3.147254705429077,
+        3.799999952316284
+      ],
+      "bounds_min_m": [
+        -2.9193243980407715,
+        -1.573627233505249,
+        -6.890925163816064e-08
+      ],
+      "bounds_max_m": [
+        2.9193243980407715,
+        1.5736274719238281,
+        3.799999952316284
+      ],
+      "triangles": 17085,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Glass",
+        "M_F70_Wood",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_White",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Sand"
+      ],
+      "collision_count": 9,
+      "editable_parts": 72,
+      "fbx_sha256": "0f2b0e2c2e602410c9fa169a69bb190a93c59ac6141306faa8193c231af55b66",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 9,
+      "category": "Booth",
+      "subtype": "MarketGoods",
+      "name_ko": "페스티벌 의류숍",
+      "slug": "FestivalClothingShop",
+      "id": "Booth_MarketGoods_FestivalClothingShop",
+      "footprint_cm": [
+        450,
+        350
+      ],
+      "height_cm": 390,
+      "description_ko": "로고 티셔츠와 모자 판매.",
+      "emphasis_ko": "티셔츠 벽걸이와 모자 진열이 핵심. 옷은 정적인 단순 접힘으로 만들고 진열마다 천 시뮬레이션을 사용하지 않는다.",
+      "reference_image": "Design/Facitilies/09 페스티벌 의류숍.png",
+      "exploded_reference_image": "Design/Facitilies/09 페스티벌 의류숍 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_MarketGoods_Market",
+      "followup_features": [
+        "의류 구매 UI와 캐릭터 의상 적용은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_FestivalClothingShop\\SM_FF_Booth_MarketGoods_FestivalClothingShop.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\09_Booth_MarketGoods_FestivalClothingShop.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_FestivalClothingShop\\iso.png",
+      "bounds_m": [
+        4.5,
+        3.210463523864746,
+        3.424494743347168
+      ],
+      "bounds_min_m": [
+        -2.25,
+        -1.605231761932373,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.25,
+        1.605231761932373,
+        3.424494743347168
+      ],
+      "triangles": 12910,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Coral",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_DarkTeal",
+        "M_F70_Teal",
+        "M_F70_Blue"
+      ],
+      "collision_count": 7,
+      "editable_parts": 49,
+      "fbx_sha256": "00ce31f33b5e5315cdba28964867a3b114a4d01e15468f68e5c1534ceedc92a2",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 10,
+      "category": "Booth",
+      "subtype": "MarketGoods",
+      "name_ko": "야광 응원용품점",
+      "slug": "GlowCheeringGoodsShop",
+      "id": "Booth_MarketGoods_GlowCheeringGoodsShop",
+      "footprint_cm": [
+        620,
+        320
+      ],
+      "height_cm": 410,
+      "description_ko": "야간 공연용 응원 도구 판매.",
+      "emphasis_ko": "응원봉 벽과 발광 팔찌 진열을 크게 표현. 발광 부위를 마스크로 묶고 개별 상품마다 실제 광원을 만들지 않는다.",
+      "reference_image": "Design/Facitilies/10 야광 응원용품점.png",
+      "exploded_reference_image": "Design/Facitilies/10 야광 응원용품점 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_MarketGoods_Market",
+      "followup_features": [
+        "응원용품 구매·착용과 발광 제어는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_GlowCheeringGoodsShop\\SM_FF_Booth_MarketGoods_GlowCheeringGoodsShop.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\10_Booth_MarketGoods_GlowCheeringGoodsShop.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_GlowCheeringGoodsShop\\iso.png",
+      "bounds_m": [
+        5.93649959564209,
+        3.200000047683716,
+        4.0726542472839355
+      ],
+      "bounds_min_m": [
+        -2.968249797821045,
+        -1.600000023841858,
+        -9.460543459738346e-09
+      ],
+      "bounds_max_m": [
+        2.968249797821045,
+        1.600000023841858,
+        4.0726542472839355
+      ],
+      "triangles": 19152,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Glass",
+        "M_F70_Wood",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_White",
+        "M_F70_Pink",
+        "M_F70_Blue",
+        "M_F70_Amber"
+      ],
+      "collision_count": 9,
+      "editable_parts": 68,
+      "fbx_sha256": "a1187b15d4663618045dc6d955bd37304e7d486462f92515abc4b05c0b0231d8",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -0.4881816804409027,
+          0.7060977220535278,
+          2.3808653354644775
+        ]
+      ]
+    },
+    {
+      "number": 11,
+      "category": "Booth",
+      "subtype": "CraftExperience",
+      "name_ko": "조개 팔찌 공방",
+      "slug": "ShellBraceletWorkshop",
+      "id": "Booth_CraftExperience_ShellBraceletWorkshop",
+      "footprint_cm": [
+        550,
+        450
+      ],
+      "height_cm": 400,
+      "description_ko": "해변 소재의 기념품 제작.",
+      "emphasis_ko": "작업 테이블·큰 조개 표식·완성 팔찌 진열로 체험임을 표현. 이용 위치를 테이블 다리와 충돌체 밖에 확보한다.",
+      "reference_image": "Design/Facitilies/11 조개 팔찌 공방.png",
+      "exploded_reference_image": "Design/Facitilies/11 조개 팔찌 공방 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
+      "followup_features": [
+        "팔찌 제작 UI와 작업 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_ShellBraceletWorkshop\\SM_FF_Booth_CraftExperience_ShellBraceletWorkshop.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\11_Booth_CraftExperience_ShellBraceletWorkshop.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_ShellBraceletWorkshop\\iso.png",
+      "bounds_m": [
+        4.973491668701172,
+        4.5,
+        3.636324644088745
+      ],
+      "bounds_min_m": [
+        -2.486745595932007,
+        -2.25,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.486745834350586,
+        2.25,
+        3.636324644088745
+      ],
+      "triangles": 16780,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Coral",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Blue",
+        "M_F70_Teal",
+        "M_F70_Sand",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 8,
+      "editable_parts": 114,
+      "fbx_sha256": "b76a25e7214f60097ac5086ea518a0fd0e1f79380206c53fb65187eeab55517a",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 12,
+      "category": "Booth",
+      "subtype": "CraftExperience",
+      "name_ko": "파도 레진 키링 공방",
+      "slug": "WaveResinKeyringWorkshop",
+      "id": "Booth_CraftExperience_WaveResinKeyringWorkshop",
+      "footprint_cm": [
+        550,
+        420
+      ],
+      "height_cm": 380,
+      "description_ko": "바다색 소품을 만드는 제작 체험.",
+      "emphasis_ko": "몰드·작업 매트·확대된 키링 간판을 배치. 레진 내부 물결은 재질로 표현하고 작은 내부 기하를 줄인다.",
+      "reference_image": "Design/Facitilies/12 파도 레진 키링 공방.png",
+      "exploded_reference_image": "Design/Facitilies/12 파도 레진 키링 공방 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
+      "followup_features": [
+        "레진 제작 체험과 결과물 선택 UI는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_WaveResinKeyringWorkshop\\SM_FF_Booth_CraftExperience_WaveResinKeyringWorkshop.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\12_Booth_CraftExperience_WaveResinKeyringWorkshop.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_WaveResinKeyringWorkshop\\iso.png",
+      "bounds_m": [
+        4.852290153503418,
+        4.199999809265137,
+        3.632178544998169
+      ],
+      "bounds_min_m": [
+        -2.42614483833313,
+        -2.0999996662139893,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.426145315170288,
+        2.0999999046325684,
+        3.632178544998169
+      ],
+      "triangles": 11864,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Sand",
+        "M_F70_Pink",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 8,
+      "editable_parts": 86,
+      "fbx_sha256": "ae14b2146816c426182cfc7632ea3ce1caa4a0b39957113621bbd6995a64c26d",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 13,
+      "category": "Booth",
+      "subtype": "CraftExperience",
+      "name_ko": "나만의 부채 공방",
+      "slug": "PersonalFanWorkshop",
+      "id": "Booth_CraftExperience_PersonalFanWorkshop",
+      "footprint_cm": [
+        550,
+        420
+      ],
+      "height_cm": 410,
+      "description_ko": "그림을 그리는 짧은 여름 체험.",
+      "emphasis_ko": "펼친 부채 지붕 장식과 채색 도구를 강조. 부채 무늬는 공통 UV·텍스처 변형으로 재사용한다.",
+      "reference_image": "Design/Facitilies/13 나만의 부채 공방.png",
+      "exploded_reference_image": "Design/Facitilies/13 나만의 부채 공방 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt",
+      "followup_features": [
+        "부채 채색·무늬 선택과 결과물 저장은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_PersonalFanWorkshop\\SM_FF_Booth_CraftExperience_PersonalFanWorkshop.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\13_Booth_CraftExperience_PersonalFanWorkshop.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_CraftExperience_PersonalFanWorkshop\\iso.png",
+      "bounds_m": [
+        4.900473594665527,
+        4.199999809265137,
+        3.7345967292785645
+      ],
+      "bounds_min_m": [
+        -2.4502365589141846,
+        -2.0999996662139893,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.4502370357513428,
+        2.0999999046325684,
+        3.7345967292785645
+      ],
+      "triangles": 12912,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Sand",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 8,
+      "editable_parts": 110,
+      "fbx_sha256": "bb315162d4667435428daba631299ee40eb831762dca8d24382f1c850a81db7f",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 14,
+      "category": "Booth",
+      "subtype": "ActivityGame",
+      "name_ko": "풍선 다트 부스",
+      "slug": "BalloonDartStall",
+      "id": "Booth_ActivityGame_BalloonDartStall",
+      "footprint_cm": [
+        450,
+        400
+      ],
+      "height_cm": 380,
+      "description_ko": "경품이 눈에 띄는 표적 놀이.",
+      "emphasis_ko": "풍선 벽·투척선·경품 선반을 분명히 구분. 터질 풍선은 정적 본체와 분리하고 표적별 식별 정보를 따로 기록한다.",
+      "reference_image": "Design/Facitilies/14 풍선 다트 부스.png",
+      "exploded_reference_image": "Design/Facitilies/14 풍선 다트 부스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+      "followup_features": [
+        "풍선 터짐·다트 투척·표적 판정·경품 지급은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_BalloonDartStall\\SM_FF_Booth_ActivityGame_BalloonDartStall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\14_Booth_ActivityGame_BalloonDartStall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_BalloonDartStall\\iso.png",
+      "bounds_m": [
+        4.488483428955078,
+        3.8373594284057617,
+        3.799999952316284
+      ],
+      "bounds_min_m": [
+        -2.244241714477539,
+        -1.9186797142028809,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.244241714477539,
+        1.9186798334121704,
+        3.799999952316284
+      ],
+      "triangles": 20296,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_DarkTeal",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Amber",
+        "M_F70_Green",
+        "M_F70_Pink",
+        "M_F70_Sand"
+      ],
+      "collision_count": 7,
+      "editable_parts": 68,
+      "fbx_sha256": "2c3987eea0b08ea9bd88880da6042eadacb9a2bdc6666bfef3ae66e703e6c167",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 15,
+      "category": "Booth",
+      "subtype": "ActivityGame",
+      "name_ko": "미니 양궁장",
+      "slug": "MiniArcheryRange",
+      "id": "Booth_ActivityGame_MiniArcheryRange",
+      "footprint_cm": [
+        750,
+        1000
+      ],
+      "height_cm": 380,
+      "description_ko": "긴 부지를 사용하는 표적 체험.",
+      "emphasis_ko": "사선·과녁·측면 보호망을 명확히 만든다. 가는 망은 단순 면으로 처리하고 화살·과녁 판정은 후속 게임 로직으로 둔다.",
+      "reference_image": "Design/Facitilies/15 미니 양궁장.png",
+      "exploded_reference_image": "Design/Facitilies/15 미니 양궁장 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+      "followup_features": [
+        "활·화살 가동 부품과 과녁 판정·점수·안전 구역 로직은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_MiniArcheryRange\\SM_FF_Booth_ActivityGame_MiniArcheryRange.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\15_Booth_ActivityGame_MiniArcheryRange.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_MiniArcheryRange\\iso.png",
+      "bounds_m": [
+        7.2177734375,
+        9.401041030883789,
+        3.799999713897705
+      ],
+      "bounds_min_m": [
+        -3.60888671875,
+        -4.7005205154418945,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.60888671875,
+        4.7005205154418945,
+        3.799999713897705
+      ],
+      "triangles": 10952,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Blue",
+        "M_F70_Coral",
+        "M_F70_Amber",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 11,
+      "editable_parts": 89,
+      "fbx_sha256": "0b06d5c0a173d3cf310c5bc157f03428f6a0cab02b3c242e09936a2792f8f08b",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 16,
+      "category": "Booth",
+      "subtype": "ActivityGame",
+      "name_ko": "농구 슛 챌린지",
+      "slug": "BasketballShotChallenge",
+      "id": "Booth_ActivityGame_BasketballShotChallenge",
+      "footprint_cm": [
+        500,
+        650
+      ],
+      "height_cm": 450,
+      "description_ko": "시간 제한 득점 놀이.",
+      "emphasis_ko": "골대·볼 회수 경사판·점수판을 강조. 공은 별도 에셋, 그물은 단순 형태로 만들고 점수판 면을 분리한다.",
+      "reference_image": "Design/Facitilies/16 농구 슛 챌린지.png",
+      "exploded_reference_image": "Design/Facitilies/16 농구 슛 챌린지 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+      "followup_features": [
+        "공 물리·득점 판정·제한 시간·점수판 UI는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_BasketballShotChallenge\\SM_FF_Booth_ActivityGame_BasketballShotChallenge.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\16_Booth_ActivityGame_BasketballShotChallenge.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_BasketballShotChallenge\\iso.png",
+      "bounds_m": [
+        4.650000095367432,
+        5.900000095367432,
+        4.5
+      ],
+      "bounds_min_m": [
+        -2.325000047683716,
+        -2.950000047683716,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.325000047683716,
+        2.950000047683716,
+        4.5
+      ],
+      "triangles": 19196,
+      "material_names": [
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Cream",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 6,
+      "editable_parts": 67,
+      "fbx_sha256": "c9ce7265513fb306c34a76e588ce6c18404cb1b595831c785b85ee0213403ced",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 17,
+      "category": "Booth",
+      "subtype": "ActivityGame",
+      "name_ko": "리듬 게임 부스",
+      "slug": "RhythmGameStall",
+      "id": "Booth_ActivityGame_RhythmGameStall",
+      "footprint_cm": [
+        550,
+        450
+      ],
+      "height_cm": 380,
+      "description_ko": "음악과 발판을 이용한 체험.",
+      "emphasis_ko": "발판의 방향 표시·화면·스피커 실루엣을 강조. 화면과 발광 발판에 독립 슬롯을 두고 판정·영상은 언리얼에서 연결한다.",
+      "reference_image": "Design/Facitilies/17 리듬 게임 부스.png",
+      "exploded_reference_image": "Design/Facitilies/17 리듬 게임 부스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+      "followup_features": [
+        "음악·영상·발판 입력·판정·점수 UI는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_RhythmGameStall\\SM_FF_Booth_ActivityGame_RhythmGameStall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\17_Booth_ActivityGame_RhythmGameStall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_RhythmGameStall\\iso.png",
+      "bounds_m": [
+        5.411250591278076,
+        4.500000476837158,
+        3.7350003719329834
+      ],
+      "bounds_min_m": [
+        -2.705625295639038,
+        -2.250000238418579,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.705625295639038,
+        2.250000238418579,
+        3.7350003719329834
+      ],
+      "triangles": 14420,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Pink",
+        "M_F70_DarkTeal",
+        "M_F70_Screen",
+        "M_F70_Amber",
+        "M_F70_Metal",
+        "M_F70_Blue",
+        "M_F70_Coral"
+      ],
+      "collision_count": 8,
+      "editable_parts": 47,
+      "fbx_sha256": "558f5727a4bf1e15d80fd239ad7537591ff01fb1936c4b83b792d962a22149b9",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 18,
+      "category": "Booth",
+      "subtype": "ActivityGame",
+      "name_ko": "보드게임 텐트",
+      "slug": "BoardGameTent",
+      "id": "Booth_ActivityGame_BoardGameTent",
+      "footprint_cm": [
+        600,
+        550
+      ],
+      "height_cm": 460,
+      "description_ko": "일행이 오래 머무르는 테이블 놀이.",
+      "emphasis_ko": "중앙 테이블·높은 천막·큰 보드게임 상자를 강조. 이용 자리마다 공간을 확보하고 작은 말은 묶거나 텍스처로 줄인다.",
+      "reference_image": "Design/Facitilies/18 보드게임 텐트.png",
+      "exploded_reference_image": "Design/Facitilies/18 보드게임 텐트 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+      "followup_features": [
+        "보드게임 규칙·말 조작·NPC 착석 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_BoardGameTent\\SM_FF_Booth_ActivityGame_BoardGameTent.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\18_Booth_ActivityGame_BoardGameTent.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_BoardGameTent\\iso.png",
+      "bounds_m": [
+        5.851496696472168,
+        5.500000476837158,
+        4.36830472946167
+      ],
+      "bounds_min_m": [
+        -2.925748109817505,
+        -2.750000238418579,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.925748348236084,
+        2.750000238418579,
+        4.36830472946167
+      ],
+      "triangles": 21612,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Coral",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_DarkTeal",
+        "M_F70_Amber",
+        "M_F70_Blue",
+        "M_F70_Sand",
+        "M_F70_DarkWood",
+        "M_F70_Green"
+      ],
+      "collision_count": 8,
+      "editable_parts": 135,
+      "fbx_sha256": "40347b8f834809bd607673a6c480e16134dcfed005b174988c2cbcbd4d8795eb",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 19,
+      "category": "Booth",
+      "subtype": "ActivityGame",
+      "name_ko": "서핑 밸런스 체험장",
+      "slug": "SurfBalanceExperience",
+      "id": "Booth_ActivityGame_SurfBalanceExperience",
+      "footprint_cm": [
+        550,
+        500
+      ],
+      "height_cm": 240,
+      "description_ko": "해안 축제를 대표하는 균형 체험.",
+      "emphasis_ko": "보드·회전 받침·착지 매트를 구분. 움직이는 보드와 고정 받침을 분리하고 회전축·가동 범위를 기록한다.",
+      "reference_image": "Design/Facitilies/19 서핑 밸런스 체험장.png",
+      "exploded_reference_image": "Design/Facitilies/19 서핑 밸런스 체험장 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+      "followup_features": [
+        "서핑보드의 회전 부품·균형 입력·점수·탑승 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_SurfBalanceExperience\\SM_FF_Booth_ActivityGame_SurfBalanceExperience.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\19_Booth_ActivityGame_SurfBalanceExperience.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_SurfBalanceExperience\\iso.png",
+      "bounds_m": [
+        5.490265846252441,
+        4.884955883026123,
+        2.4000000953674316
+      ],
+      "bounds_min_m": [
+        -2.7451329231262207,
+        -2.4424779415130615,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.7451329231262207,
+        2.4424779415130615,
+        2.4000000953674316
+      ],
+      "triangles": 13840,
+      "material_names": [
+        "M_F70_Blue",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_DarkTeal",
+        "M_F70_Wood"
+      ],
+      "collision_count": 7,
+      "editable_parts": 22,
+      "fbx_sha256": "5968856c0c6035fa1996155ef6b3b44fd48affc2d9bb4103ad9cfcd96f578153",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 20,
+      "category": "Booth",
+      "subtype": "Nightlife",
+      "name_ko": "선셋 모크테일 바",
+      "slug": "SunsetMocktailBar",
+      "id": "Booth_Nightlife_SunsetMocktailBar",
+      "footprint_cm": [
+        550,
+        420
+      ],
+      "height_cm": 380,
+      "description_ko": "일몰과 음료를 즐기는 공간.",
+      "emphasis_ko": "반원형 바·큰 파라솔·과일색 음료를 강조. 바텐더 공간과 고객 이용면을 구분하고 잔의 투명도를 절제한다.",
+      "reference_image": "Design/Facitilies/20 선셋 모크테일 바.png",
+      "exploded_reference_image": "Design/Facitilies/20 선셋 모크테일 바 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_Nightlife_EDMBar",
+      "followup_features": [
+        "음료 주문·제공과 바텐더 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_SunsetMocktailBar\\SM_FF_Booth_Nightlife_SunsetMocktailBar.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\20_Booth_Nightlife_SunsetMocktailBar.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_SunsetMocktailBar\\iso.png",
+      "bounds_m": [
+        5.236181259155273,
+        4.199999809265137,
+        3.668341875076294
+      ],
+      "bounds_min_m": [
+        -2.6180903911590576,
+        -2.0999999046325684,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.6180906295776367,
+        2.1000001430511475,
+        3.668341875076294
+      ],
+      "triangles": 17624,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Metal",
+        "M_F70_Teal",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Sand",
+        "M_F70_Glass",
+        "M_F70_Amber",
+        "M_F70_Green",
+        "M_F70_DarkTeal",
+        "M_F70_DarkWood"
+      ],
+      "collision_count": 19,
+      "editable_parts": 93,
+      "fbx_sha256": "36d462bb786e74bd250e66eaab5f72c97ab99c672c20ad40e93b92fe47da8f23",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 21,
+      "category": "Booth",
+      "subtype": "Nightlife",
+      "name_ko": "수제맥주 탭룸",
+      "slug": "CraftBeerTaproom",
+      "id": "Booth_Nightlife_CraftBeerTaproom",
+      "footprint_cm": [
+        550,
+        430
+      ],
+      "height_cm": 380,
+      "description_ko": "스탠딩 중심 야시장 공간.",
+      "emphasis_ko": "여러 탭과 맥주통, 높은 테이블로 구분. 탭 부품을 공유하고 길게 뻗은 배관은 단순화한다.",
+      "reference_image": "Design/Facitilies/21 수제맥주 탭룸.png",
+      "exploded_reference_image": "Design/Facitilies/21 수제맥주 탭룸 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_Nightlife_EDMBar",
+      "followup_features": [
+        "음료 주문·탭 작동·제공 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_CraftBeerTaproom\\SM_FF_Booth_Nightlife_CraftBeerTaproom.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\21_Booth_Nightlife_CraftBeerTaproom.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_CraftBeerTaproom\\iso.png",
+      "bounds_m": [
+        5.393673419952393,
+        4.300000190734863,
+        3.745161771774292
+      ],
+      "bounds_min_m": [
+        -2.6968367099761963,
+        -2.1500003337860107,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.6968367099761963,
+        2.1500000953674316,
+        3.745161771774292
+      ],
+      "triangles": 13856,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Sand",
+        "M_F70_DarkTeal",
+        "M_F70_Amber"
+      ],
+      "collision_count": 9,
+      "editable_parts": 65,
+      "fbx_sha256": "77dec29325da9a2f4afdc3b9feca7fcae5807ecbba51ee7a620dd97c9637b2aa",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 22,
+      "category": "Booth",
+      "subtype": "Nightlife",
+      "name_ko": "사일런트 디스코 클럽",
+      "slug": "SilentDiscoClub",
+      "id": "Booth_Nightlife_SilentDiscoClub",
+      "footprint_cm": [
+        900,
+        750
+      ],
+      "height_cm": 500,
+      "description_ko": "헤드폰과 춤이 특징인 야간 공간.",
+      "emphasis_ko": "헤드폰 대여대·DJ 데스크·댄스 바닥을 강조. 헤드폰은 별도 소품이며 NPC 착용·춤·채널 전환은 후속 작업이다.",
+      "reference_image": "Design/Facitilies/22 사일런트 디스코 클럽.png",
+      "exploded_reference_image": "Design/Facitilies/22 사일런트 디스코 클럽 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_Nightlife_EDMBar",
+      "followup_features": [
+        "헤드폰 소품·NPC 착용·춤·음악 채널 전환은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_SilentDiscoClub\\SM_FF_Booth_Nightlife_SilentDiscoClub.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\22_Booth_Nightlife_SilentDiscoClub.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_Nightlife_SilentDiscoClub\\iso.png",
+      "bounds_m": [
+        9.0,
+        7.4647064208984375,
+        4.6376471519470215
+      ],
+      "bounds_min_m": [
+        -4.5,
+        -3.7323532104492188,
+        0.0
+      ],
+      "bounds_max_m": [
+        4.5,
+        3.7323532104492188,
+        4.6376471519470215
+      ],
+      "triangles": 32024,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Wood",
+        "M_F70_Blue",
+        "M_F70_Pink",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_Teal",
+        "M_F70_Screen",
+        "M_F70_Cream",
+        "M_F70_Green",
+        "M_F70_Amber"
+      ],
+      "collision_count": 13,
+      "editable_parts": 102,
+      "fbx_sha256": "8af37990eee07731a24e529be4b0510624522c9f1db62459fd32cf28946d884b",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 23,
+      "category": "Toilet",
+      "subtype": "Standard",
+      "name_ko": "해변 목조 화장실",
+      "slug": "BeachWoodRestroom",
+      "id": "Toilet_Standard_BeachWoodRestroom",
+      "footprint_cm": [
+        500,
+        460
+      ],
+      "height_cm": 470,
+      "description_ko": "해안 경관과 어울리는 상설 화장실.",
+      "emphasis_ko": "목재 루버·큰 픽토그램·통풍 지붕을 강조. 출입구와 외벽 충돌을 구분하고 목재 결은 재질로 처리한다.",
+      "reference_image": "Design/Facitilies/23 해변 목조 화장실.png",
+      "exploded_reference_image": "Design/Facitilies/23 해변 목조 화장실 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/PDA_FFZS_Toilet_Standard_Standard",
+      "followup_features": [
+        "화장실 출입·문 가동·점유 상태 표시는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Standard_BeachWoodRestroom\\SM_FF_Toilet_Standard_BeachWoodRestroom.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\23_Toilet_Standard_BeachWoodRestroom.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Standard_BeachWoodRestroom\\iso.png",
+      "bounds_m": [
+        4.85776424407959,
+        4.155788898468018,
+        4.699999809265137
+      ],
+      "bounds_min_m": [
+        -2.428882122039795,
+        -2.077894449234009,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.428882122039795,
+        2.077894449234009,
+        4.699999809265137
+      ],
+      "triangles": 12202,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Metal",
+        "M_F70_Green",
+        "M_F70_DarkWood"
+      ],
+      "collision_count": 9,
+      "editable_parts": 78,
+      "fbx_sha256": "bcd70c11adf303adbf49251b65895a7fc90c6f68527dad39b18c9d6e9e8f40e0",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 24,
+      "category": "Toilet",
+      "subtype": "Accessible",
+      "name_ko": "넓은 회전 공간 화장실",
+      "slug": "WideAccessRestroom",
+      "id": "Toilet_Accessible_WideAccessRestroom",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 310,
+      "description_ko": "넓은 출입·내부 이동 공간 제공.",
+      "emphasis_ko": "넓은 문과 평탄한 접근면을 우선한다. 장식 기둥·문 손잡이·충돌체가 출입 폭을 좁히지 않게 한다.",
+      "reference_image": "Design/Facitilies/24 넓은 회전 공간 화장실.png",
+      "exploded_reference_image": "Design/Facitilies/24 넓은 회전 공간 화장실 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/PDA_FFZS_Toilet_Accessible_Accessible",
+      "followup_features": [
+        "문 가동·점유 상태와 접근성 이용 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Accessible_WideAccessRestroom\\SM_FF_Toilet_Accessible_WideAccessRestroom.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\24_Toilet_Accessible_WideAccessRestroom.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Accessible_WideAccessRestroom\\iso.png",
+      "bounds_m": [
+        3.894214391708374,
+        3.894214391708374,
+        3.0999996662139893
+      ],
+      "bounds_min_m": [
+        -1.947107195854187,
+        -1.947107195854187,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.947107195854187,
+        1.947107195854187,
+        3.0999996662139893
+      ],
+      "triangles": 4192,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_White",
+        "M_F70_Teal",
+        "M_F70_Glass",
+        "M_F70_Metal",
+        "M_F70_Blue"
+      ],
+      "collision_count": 6,
+      "editable_parts": 25,
+      "fbx_sha256": "55ffadb4e577e910b1b09c297706086c0c866605c935d6abd1c3bf8fcfedb4b1",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 25,
+      "category": "Toilet",
+      "subtype": "Family",
+      "name_ko": "유아 동반 화장실",
+      "slug": "InfantFamilyRestroom",
+      "id": "Toilet_Family_InfantFamilyRestroom",
+      "footprint_cm": [
+        500,
+        400
+      ],
+      "height_cm": 340,
+      "description_ko": "유아용 변기와 교환대 구성.",
+      "emphasis_ko": "성인·유아 크기 차이와 교환대 표식을 강조. 작은 가구가 출입구나 고객 위치와 겹치지 않게 한다.",
+      "reference_image": "Design/Facitilies/25 유아 동반 화장실.png",
+      "exploded_reference_image": "Design/Facitilies/25 유아 동반 화장실 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/PDA_FFZS_Toilet_Family_Family",
+      "followup_features": [
+        "성인·유아 이용 애니메이션과 문·점유 상태는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Family_InfantFamilyRestroom\\SM_FF_Toilet_Family_InfantFamilyRestroom.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\25_Toilet_Family_InfantFamilyRestroom.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Family_InfantFamilyRestroom\\iso.png",
+      "bounds_m": [
+        4.815835952758789,
+        3.689149856567383,
+        3.4000000953674316
+      ],
+      "bounds_min_m": [
+        -2.4079179763793945,
+        -1.8445749282836914,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.4079179763793945,
+        1.8445749282836914,
+        3.4000000953674316
+      ],
+      "triangles": 12868,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_White",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Glass",
+        "M_F70_Metal",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 6,
+      "editable_parts": 41,
+      "fbx_sha256": "c9f162d6e9e6a4222855ca4bbe1d5e505fc129caaa4ce57d1c8fb7691ddcb2da",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 26,
+      "category": "Toilet",
+      "subtype": "Temporary",
+      "name_ko": "이동식 화장실 캐빈",
+      "slug": "PortableRestroomCabin",
+      "id": "Toilet_Temporary_PortableRestroomCabin",
+      "footprint_cm": [
+        160,
+        170
+      ],
+      "height_cm": 270,
+      "description_ko": "작은 공간에 놓는 독립형 시설.",
+      "emphasis_ko": "플라스틱 캐빈·상부 환기구·문 상태 표시가 핵심. 모서리를 부드럽게 하고 문 가동 여부에 따라 부품을 분리한다.",
+      "reference_image": "Design/Facitilies/26 이동식 화장실 캐빈.png",
+      "exploded_reference_image": "Design/Facitilies/26 이동식 화장실 캐빈 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/PDA_FFZS_Toilet_Temporary_Temporary",
+      "followup_features": [
+        "문 가동과 점유 상태 표시는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Temporary_PortableRestroomCabin\\SM_FF_Toilet_Temporary_PortableRestroomCabin.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\26_Toilet_Temporary_PortableRestroomCabin.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Temporary_PortableRestroomCabin\\iso.png",
+      "bounds_m": [
+        1.4716569185256958,
+        1.6232376098632812,
+        2.6999998092651367
+      ],
+      "bounds_min_m": [
+        -0.7358284592628479,
+        -0.8116188049316406,
+        0.0
+      ],
+      "bounds_max_m": [
+        0.7358284592628479,
+        0.8116188049316406,
+        2.6999998092651367
+      ],
+      "triangles": 7408,
+      "material_names": [
+        "M_F70_Metal",
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Green",
+        "M_F70_DarkTeal",
+        "M_F70_White"
+      ],
+      "collision_count": 5,
+      "editable_parts": 26,
+      "fbx_sha256": "98edfdb097307283e7adb22183e28504e04ea5b895e1f28f6eb27d8a20d41df3",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 27,
+      "category": "Info",
+      "subtype": "GeneralInfo",
+      "name_ko": "등대형 종합안내소",
+      "slug": "LighthouseInformation",
+      "id": "Info_GeneralInfo_LighthouseInformation",
+      "footprint_cm": [
+        500,
+        420
+      ],
+      "height_cm": 520,
+      "description_ko": "입구의 대표 안내 시설.",
+      "emphasis_ko": "등대 실루엣 위에 큰 안내 아이콘을 배치. 창구는 낮은 높이에서 잘 보이게 하고 꼭대기 장식이 모델 중심을 흐리지 않게 한다.",
+      "reference_image": "Design/Facitilies/27 등대형 종합안내소.png",
+      "exploded_reference_image": "Design/Facitilies/27 등대형 종합안내소 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_GeneralInfo_General",
+      "followup_features": [
+        "지도·안내·상담 UI와 안내 서비스 동작은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_GeneralInfo_LighthouseInformation\\SM_FF_Info_GeneralInfo_LighthouseInformation.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\27_Info_GeneralInfo_LighthouseInformation.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_GeneralInfo_LighthouseInformation\\iso.png",
+      "bounds_m": [
+        4.071381092071533,
+        4.199999809265137,
+        4.7191009521484375
+      ],
+      "bounds_min_m": [
+        -2.0356905460357666,
+        -2.0999999046325684,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0356905460357666,
+        2.1000001430511475,
+        4.7191009521484375
+      ],
+      "triangles": 9036,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Glass",
+        "M_F70_DarkTeal",
+        "M_F70_Screen"
+      ],
+      "collision_count": 6,
+      "editable_parts": 46,
+      "fbx_sha256": "a3b72298c08eb20452740402954d246b8936b4a238a806649cffbde6cabf3035",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          0.0,
+          -0.06430928409099579,
+          4.071381092071533
+        ]
+      ]
+    },
+    {
+      "number": 28,
+      "category": "Info",
+      "subtype": "GeneralInfo",
+      "name_ko": "양면 지도 키오스크",
+      "slug": "DoubleSidedMapKiosk",
+      "id": "Info_GeneralInfo_DoubleSidedMapKiosk",
+      "footprint_cm": [
+        450,
+        220
+      ],
+      "height_cm": 340,
+      "description_ko": "갈림길 양쪽에서 지도 확인.",
+      "emphasis_ko": "양면 화면·두꺼운 프레임·작은 차양을 강조. 앞뒤 UV를 각각 확인해 글자가 반전되지 않게 한다.",
+      "reference_image": "Design/Facitilies/28 양면 지도 키오스크.png",
+      "exploded_reference_image": "Design/Facitilies/28 양면 지도 키오스크 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_GeneralInfo_General",
+      "followup_features": [
+        "양면 지도 텍스처·언어 선택·실시간 경로 안내는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_GeneralInfo_DoubleSidedMapKiosk\\SM_FF_Info_GeneralInfo_DoubleSidedMapKiosk.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\28_Info_GeneralInfo_DoubleSidedMapKiosk.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_GeneralInfo_DoubleSidedMapKiosk\\iso.png",
+      "bounds_m": [
+        4.499999523162842,
+        2.0322580337524414,
+        3.370824098587036
+      ],
+      "bounds_min_m": [
+        -2.249999761581421,
+        -1.0161290168762207,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.249999761581421,
+        1.0161290168762207,
+        3.370824098587036
+      ],
+      "triangles": 14912,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Green",
+        "M_F70_Coral",
+        "M_F70_Sand",
+        "M_F70_White"
+      ],
+      "collision_count": 6,
+      "editable_parts": 74,
+      "fbx_sha256": "8e46800b0c8b7d0606e7e2aea6205b4095b754940df63f8fe4fda5a4bf514717",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 29,
+      "category": "Info",
+      "subtype": "Ticketing",
+      "name_ko": "컨테이너 통합 매표소",
+      "slug": "ContainerTicketOffice",
+      "id": "Info_Ticketing_ContainerTicketOffice",
+      "footprint_cm": [
+        700,
+        350
+      ],
+      "height_cm": 420,
+      "description_ko": "공연·체험 이용권 창구.",
+      "emphasis_ko": "반복 판매창·요금판·큰 티켓 표식을 구성. 창구 수와 실제 서비스 지점을 별도로 일치시킨다.",
+      "reference_image": "Design/Facitilies/29 컨테이너 통합 매표소.png",
+      "exploded_reference_image": "Design/Facitilies/29 컨테이너 통합 매표소 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_Ticketing_Ticket",
+      "followup_features": [
+        "매표 UI·이용권 발급·실제 창구별 서비스 연결은 별도 작업이다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_Ticketing_ContainerTicketOffice\\SM_FF_Info_Ticketing_ContainerTicketOffice.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\29_Info_Ticketing_ContainerTicketOffice.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_Ticketing_ContainerTicketOffice\\iso.png",
+      "bounds_m": [
+        6.587377548217773,
+        3.5,
+        4.078649520874023
+      ],
+      "bounds_min_m": [
+        -3.2936887741088867,
+        -1.7499998807907104,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.293689012527466,
+        1.75,
+        4.078649520874023
+      ],
+      "triangles": 10760,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Screen",
+        "M_F70_Cream"
+      ],
+      "collision_count": 9,
+      "editable_parts": 58,
+      "fbx_sha256": "6f02772be189ffc2c4e3df11d1a260d61d1055f585bda42e79f67076f532616d",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 30,
+      "category": "Info",
+      "subtype": "LostFound",
+      "name_ko": "미아·분실물 통합센터",
+      "slug": "LostChildAndFoundCenter",
+      "id": "Info_LostFound_LostChildAndFoundCenter",
+      "footprint_cm": [
+        600,
+        400
+      ],
+      "height_cm": 390,
+      "description_ko": "보호 대기와 습득물 접수.",
+      "emphasis_ko": "접수 카운터·보관함·대기 벤치를 구분. 대기 공간을 짐 더미나 장식 충돌로 막지 않는다.",
+      "reference_image": "Design/Facitilies/30 미아·분실물 통합센터.png",
+      "exploded_reference_image": "Design/Facitilies/30 미아·분실물 통합센터 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_LostFound_Lost",
+      "followup_features": [
+        "미아 보호·분실물 접수·조회 업무는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_LostFound_LostChildAndFoundCenter\\SM_FF_Info_LostFound_LostChildAndFoundCenter.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\30_Info_LostFound_LostChildAndFoundCenter.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_LostFound_LostChildAndFoundCenter\\iso.png",
+      "bounds_m": [
+        5.311108589172363,
+        3.4296751022338867,
+        3.9000000953674316
+      ],
+      "bounds_min_m": [
+        -2.6555542945861816,
+        -1.7148375511169434,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.6555542945861816,
+        1.7148374319076538,
+        3.9000000953674316
+      ],
+      "triangles": 23936,
+      "material_names": [
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_DarkTeal",
+        "M_F70_Coral",
+        "M_F70_Blue",
+        "M_F70_Sand",
+        "M_F70_Green"
+      ],
+      "collision_count": 12,
+      "editable_parts": 82,
+      "fbx_sha256": "fbfe9bc66259396b9c3be2ea038c086fb9cfdc01c281185b5924daa4a70c2669",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 31,
+      "category": "Info",
+      "subtype": "Translation",
+      "name_ko": "다국어 안내 라운지",
+      "slug": "MultilingualInformationLounge",
+      "id": "Info_Translation_MultilingualInformationLounge",
+      "footprint_cm": [
+        600,
+        450
+      ],
+      "height_cm": 440,
+      "description_ko": "여러 언어의 안내 제공.",
+      "emphasis_ko": "언어 아이콘·지도 선반·상담 테이블을 강조. 긴 문구는 모델링하지 않고 교체 가능한 텍스처나 UI로 둔다.",
+      "reference_image": "Design/Facitilies/31 다국어 안내 라운지.png",
+      "exploded_reference_image": "Design/Facitilies/31 다국어 안내 라운지 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_Translation_Translation",
+      "followup_features": [
+        "언어 전환·번역·상담 UI는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_Translation_MultilingualInformationLounge\\SM_FF_Info_Translation_MultilingualInformationLounge.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\31_Info_Translation_MultilingualInformationLounge.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_Translation_MultilingualInformationLounge\\iso.png",
+      "bounds_m": [
+        5.704928398132324,
+        4.5,
+        4.166296482086182
+      ],
+      "bounds_min_m": [
+        -2.852464199066162,
+        -2.25,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.852464437484741,
+        2.25,
+        4.166296482086182
+      ],
+      "triangles": 25700,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Screen",
+        "M_F70_DarkTeal",
+        "M_F70_DarkWood",
+        "M_F70_Green"
+      ],
+      "collision_count": 16,
+      "editable_parts": 66,
+      "fbx_sha256": "44fc056a2710a6bba8e65d18b692586b8c1bbf58974cb6a58213754b0c88344e",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 32,
+      "category": "Rest",
+      "subtype": "Seating",
+      "name_ko": "해먹 라운지",
+      "slug": "HammockLounge",
+      "id": "Rest_Seating_HammockLounge",
+      "footprint_cm": [
+        450,
+        300
+      ],
+      "height_cm": 330,
+      "description_ko": "적은 인원이 오래 쉬는 공간.",
+      "emphasis_ko": "늘어진 천의 큰 곡선과 튼튼한 지지대를 강조. 가는 줄을 단순화하고 천 두께·뒷면·착석 위치를 점검한다.",
+      "reference_image": "Design/Facitilies/32 해먹 라운지.png",
+      "exploded_reference_image": "Design/Facitilies/32 해먹 라운지 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating",
+      "followup_features": [
+        "해먹 탑승·착석·천 움직임 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Seating_HammockLounge\\SM_FF_Rest_Seating_HammockLounge.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\32_Rest_Seating_HammockLounge.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Seating_HammockLounge\\iso.png",
+      "bounds_m": [
+        4.320000171661377,
+        2.6500000953674316,
+        3.299999952316284
+      ],
+      "bounds_min_m": [
+        -2.1600000858306885,
+        -1.3250000476837158,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.1600000858306885,
+        1.3249999284744263,
+        3.299999952316284
+      ],
+      "triangles": 6192,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Wood",
+        "M_F70_Green"
+      ],
+      "collision_count": 6,
+      "editable_parts": 34,
+      "fbx_sha256": "49a6710647fa291144547f60068564a47792bda2dbe08e45e7ccb33d00f416e2",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 33,
+      "category": "Rest",
+      "subtype": "Seating",
+      "name_ko": "해안 전망 벤치",
+      "slug": "CoastalViewBench",
+      "id": "Rest_Seating_CoastalViewBench",
+      "footprint_cm": [
+        300,
+        130
+      ],
+      "height_cm": 125,
+      "description_ko": "바다를 향하는 좁고 긴 휴식 시설.",
+      "emphasis_ko": "등받이 방향·팔걸이·목재 판재를 강조. 시설 전면과 실제 전망 방향의 관계를 제작 기록에 표시한다.",
+      "reference_image": "Design/Facitilies/33 해안 전망 벤치.png",
+      "exploded_reference_image": "Design/Facitilies/33 해안 전망 벤치 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating",
+      "followup_features": [
+        "NPC 착석 애니메이션과 실제 전망 배치는 별도 확인한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Seating_CoastalViewBench\\SM_FF_Rest_Seating_CoastalViewBench.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\33_Rest_Seating_CoastalViewBench.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Seating_CoastalViewBench\\iso.png",
+      "bounds_m": [
+        3.0,
+        0.6382978558540344,
+        1.1542552709579468
+      ],
+      "bounds_min_m": [
+        -1.5,
+        -0.3191489279270172,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.5,
+        0.3191489279270172,
+        1.1542552709579468
+      ],
+      "triangles": 1296,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal"
+      ],
+      "collision_count": 2,
+      "editable_parts": 12,
+      "fbx_sha256": "ad1ede9c73132b417c08f3526f59520ca00fef848ac996f7f99217d044e9ab7c",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 34,
+      "category": "Rest",
+      "subtype": "Shade",
+      "name_ko": "돛천 그늘 쉼터",
+      "slug": "SailShadeShelter",
+      "id": "Rest_Shade_SailShadeShelter",
+      "footprint_cm": [
+        600,
+        550
+      ],
+      "height_cm": 480,
+      "description_ko": "돛 모양 차양의 해안형 시설.",
+      "emphasis_ko": "팽팽한 삼각 천과 마스트를 강조. 천이 과도하게 얇아 사라지지 않게 하고 지지줄은 통행을 방해하지 않게 배치한다.",
+      "reference_image": "Design/Facitilies/34 돛천 그늘 쉼터.png",
+      "exploded_reference_image": "Design/Facitilies/34 돛천 그늘 쉼터 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade",
+      "followup_features": [
+        "그늘의 게임 효과와 천 움직임은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Shade_SailShadeShelter\\SM_FF_Rest_Shade_SailShadeShelter.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\34_Rest_Shade_SailShadeShelter.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Shade_SailShadeShelter\\iso.png",
+      "bounds_m": [
+        4.115135669708252,
+        3.7807931900024414,
+        4.800000190734863
+      ],
+      "bounds_min_m": [
+        -2.057567834854126,
+        -1.8903965950012207,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.057567834854126,
+        1.8903965950012207,
+        4.800000190734863
+      ],
+      "triangles": 1216,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood"
+      ],
+      "collision_count": 7,
+      "editable_parts": 18,
+      "fbx_sha256": "4654ac144c9e33d15f781a354c8c05d11d958cb60e629732ede9e3cc6902b833",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 35,
+      "category": "Rest",
+      "subtype": "Shade",
+      "name_ko": "덩굴 퍼걸러",
+      "slug": "VinePergola",
+      "id": "Rest_Shade_VinePergola",
+      "footprint_cm": [
+        550,
+        450
+      ],
+      "height_cm": 360,
+      "description_ko": "식물 지붕 아래 정원형 휴식.",
+      "emphasis_ko": "프레임 구조가 먼저 읽히게 하고 잎은 덩어리로 배치. 잎 카드의 겹침과 그림자 비용을 원거리에서 확인한다.",
+      "reference_image": "Design/Facitilies/35 덩굴 퍼걸러.png",
+      "exploded_reference_image": "Design/Facitilies/35 덩굴 퍼걸러 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade",
+      "followup_features": [
+        "식물 바람 연출·착석 애니메이션·그늘 효과는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Shade_VinePergola\\SM_FF_Rest_Shade_VinePergola.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\35_Rest_Shade_VinePergola.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Shade_VinePergola\\iso.png",
+      "bounds_m": [
+        5.227907180786133,
+        4.246511459350586,
+        3.5999999046325684
+      ],
+      "bounds_min_m": [
+        -2.6139533519744873,
+        -2.123255729675293,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.6139535903930664,
+        2.123255729675293,
+        3.5999999046325684
+      ],
+      "triangles": 48654,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Green",
+        "M_F70_Cream",
+        "M_F70_Metal",
+        "M_F70_Amber"
+      ],
+      "collision_count": 13,
+      "editable_parts": 156,
+      "fbx_sha256": "400c74b38d8f3c1eeda43e495e4bafac6113390475b4b00847264151e5678487",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -1.9999998807907104,
+          1.602325439453125,
+          2.3441858291625977
+        ]
+      ]
+    },
+    {
+      "number": 36,
+      "category": "Rest",
+      "subtype": "Picnic",
+      "name_ko": "가족 돗자리 피크닉존",
+      "slug": "FamilyMatPicnicZone",
+      "id": "Rest_Picnic_FamilyMatPicnicZone",
+      "footprint_cm": [
+        500,
+        450
+      ],
+      "height_cm": 340,
+      "description_ko": "가족 단위 음식·휴식 공간.",
+      "emphasis_ko": "큰 돗자리·바구니·신발 자리로 가족 공간을 표현. 얇은 돗자리가 바닥과 겹쳐 깜빡이지 않게 한다.",
+      "reference_image": "Design/Facitilies/36 가족 돗자리 피크닉존.png",
+      "exploded_reference_image": "Design/Facitilies/36 가족 돗자리 피크닉존 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Picnic_Picnic",
+      "followup_features": [
+        "돗자리 착석·음식 상호작용과 가족 그룹 이용은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Picnic_FamilyMatPicnicZone\\SM_FF_Rest_Picnic_FamilyMatPicnicZone.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\36_Rest_Picnic_FamilyMatPicnicZone.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Picnic_FamilyMatPicnicZone\\iso.png",
+      "bounds_m": [
+        4.8000006675720215,
+        4.195000648498535,
+        3.4000003337860107
+      ],
+      "bounds_min_m": [
+        -2.4000003337860107,
+        -2.0975003242492676,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.4000003337860107,
+        2.0975000858306885,
+        3.4000003337860107
+      ],
+      "triangles": 8720,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Wood",
+        "M_F70_DarkWood",
+        "M_F70_Metal"
+      ],
+      "collision_count": 5,
+      "editable_parts": 71,
+      "fbx_sha256": "19748b899e61a7ee1acdc0a70379555f99380c0876fdbd41bf984f126c83444c",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 37,
+      "category": "Rest",
+      "subtype": "Picnic",
+      "name_ko": "단체 피크닉 테이블",
+      "slug": "GroupPicnicTable",
+      "id": "Rest_Picnic_GroupPicnicTable",
+      "footprint_cm": [
+        420,
+        280
+      ],
+      "height_cm": 105,
+      "description_ko": "여러 명이 함께 앉는 시설.",
+      "emphasis_ko": "긴 상판·양쪽 벤치·넓은 접근면을 강조. 의자 다리마다 충돌을 복잡하게 만들지 말고 실제 접근성을 확인한다.",
+      "reference_image": "Design/Facitilies/37 단체 피크닉 테이블.png",
+      "exploded_reference_image": "Design/Facitilies/37 단체 피크닉 테이블 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Picnic_Picnic",
+      "followup_features": [
+        "여러 NPC의 착석·식사 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Picnic_GroupPicnicTable\\SM_FF_Rest_Picnic_GroupPicnicTable.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\37_Rest_Picnic_GroupPicnicTable.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Picnic_GroupPicnicTable\\iso.png",
+      "bounds_m": [
+        4.199999809265137,
+        2.7708334922790527,
+        0.9013258218765259
+      ],
+      "bounds_min_m": [
+        -2.0999999046325684,
+        -1.3854167461395264,
+        -3.725290298461914e-09
+      ],
+      "bounds_max_m": [
+        2.0999999046325684,
+        1.3854167461395264,
+        0.9013258218765259
+      ],
+      "triangles": 1364,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal"
+      ],
+      "collision_count": 6,
+      "editable_parts": 15,
+      "fbx_sha256": "76e2c4cdcf578ef33915672c7edf4a2fa150125acdb8d41f37a876dbab00df9a",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 38,
+      "category": "Rest",
+      "subtype": "Cooling",
+      "name_ko": "음수 라운지",
+      "slug": "DrinkingWaterLounge",
+      "id": "Rest_Cooling_DrinkingWaterLounge",
+      "footprint_cm": [
+        550,
+        400
+      ],
+      "height_cm": 330,
+      "description_ko": "식수 리필과 휴식을 함께 제공.",
+      "emphasis_ko": "급수대·병 받침·그늘 좌석을 강조. 수도꼭지 위치를 쉽게 읽히게 하고 물줄기는 별도 연출로 둔다.",
+      "reference_image": "Design/Facitilies/38 음수 라운지.png",
+      "exploded_reference_image": "Design/Facitilies/38 음수 라운지 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Cooling_Cooling",
+      "followup_features": [
+        "수도 물줄기·병 리필·음수 애니메이션은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Cooling_DrinkingWaterLounge\\SM_FF_Rest_Cooling_DrinkingWaterLounge.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\38_Rest_Cooling_DrinkingWaterLounge.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Cooling_DrinkingWaterLounge\\iso.png",
+      "bounds_m": [
+        5.28000020980835,
+        3.7290000915527344,
+        3.299999952316284
+      ],
+      "bounds_min_m": [
+        -2.640000104904175,
+        -1.8645000457763672,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.640000104904175,
+        1.8645000457763672,
+        3.299999952316284
+      ],
+      "triangles": 12812,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_Blue",
+        "M_F70_Wood",
+        "M_F70_Green"
+      ],
+      "collision_count": 11,
+      "editable_parts": 44,
+      "fbx_sha256": "52af9bcfb58738dfeb190e0adc1c81bca15b7e0dd6d4b8459fb5b775eb4b1b85",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 39,
+      "category": "Rest",
+      "subtype": "Cooling",
+      "name_ko": "해변 족욕 쉼터",
+      "slug": "BeachFootbathShelter",
+      "id": "Rest_Cooling_BeachFootbathShelter",
+      "footprint_cm": [
+        550,
+        500
+      ],
+      "height_cm": 420,
+      "description_ko": "발을 담그며 쉬는 공간.",
+      "emphasis_ko": "낮은 수조·둘레 좌석·발을 넣는 구간을 명확히 한다. 수면을 분리하고 통째 UCX 박스로 족욕 공간을 막지 않는다.",
+      "reference_image": "Design/Facitilies/39 해변 족욕 쉼터.png",
+      "exploded_reference_image": "Design/Facitilies/39 해변 족욕 쉼터 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Cooling_Cooling",
+      "followup_features": [
+        "수면 재질·물결·족욕 애니메이션과 냉각 효과는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Cooling_BeachFootbathShelter\\SM_FF_Rest_Cooling_BeachFootbathShelter.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\39_Rest_Cooling_BeachFootbathShelter.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Cooling_BeachFootbathShelter\\iso.png",
+      "bounds_m": [
+        5.389999866485596,
+        4.900000095367432,
+        4.199999809265137
+      ],
+      "bounds_min_m": [
+        -2.694999933242798,
+        -2.450000047683716,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.694999933242798,
+        2.450000047683716,
+        4.199999809265137
+      ],
+      "triangles": 2398,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Sand",
+        "M_F70_Cream",
+        "M_F70_Blue"
+      ],
+      "collision_count": 13,
+      "editable_parts": 35,
+      "fbx_sha256": "752551072c57630763b531484f02444ba934241ad33a04f4c16dd812b62d8fc9",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 40,
+      "category": "Performance",
+      "subtype": "MainStage",
+      "name_ko": "파도형 콘서트 무대",
+      "slug": "WaveConcertStage",
+      "id": "Performance_MainStage_WaveConcertStage",
+      "footprint_cm": [
+        1400,
+        800
+      ],
+      "height_cm": 720,
+      "description_ko": "축제 중심의 대형 공연장.",
+      "emphasis_ko": "큰 파도 지붕·화면·스피커 타워로 실루엣을 만든다. 트러스 세부를 절제하고 화면·광원 부착 위치를 분리한다.",
+      "reference_image": "Design/Facitilies/40 파도형 콘서트 무대.png",
+      "exploded_reference_image": "Design/Facitilies/40 파도형 콘서트 무대 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage",
+      "followup_features": [
+        "공연 프로그램·음악·영상 화면·무대 조명·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_MainStage_WaveConcertStage\\SM_FF_Performance_MainStage_WaveConcertStage.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\40_Performance_MainStage_WaveConcertStage.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_MainStage_WaveConcertStage\\iso.png",
+      "bounds_m": [
+        14.0,
+        8.0,
+        7.019999980926514
+      ],
+      "bounds_min_m": [
+        -7.0,
+        -4.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        7.0,
+        4.0,
+        7.019999980926514
+      ],
+      "triangles": 13250,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Screen",
+        "M_F70_Amber"
+      ],
+      "collision_count": 12,
+      "editable_parts": 120,
+      "fbx_sha256": "908629752e11f8ab5c4d1ada5b8821c1864207e84538764bcf6a18deb02556bf",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -4.900000095367432,
+          1.1999999284744263,
+          5.400000095367432
+        ],
+        [
+          -3.2666666507720947,
+          1.1999999284744263,
+          5.400000095367432
+        ],
+        [
+          -1.6333333253860474,
+          1.1999999284744263,
+          5.400000095367432
+        ],
+        [
+          0.0,
+          1.1999999284744263,
+          5.400000095367432
+        ],
+        [
+          1.6333333253860474,
+          1.1999999284744263,
+          5.400000095367432
+        ],
+        [
+          3.2666666507720947,
+          1.1999999284744263,
+          5.400000095367432
+        ],
+        [
+          4.900000095367432,
+          1.1999999284744263,
+          5.400000095367432
+        ]
+      ]
+    },
+    {
+      "number": 41,
+      "category": "Performance",
+      "subtype": "SubStage",
+      "name_ko": "가족 인형극장",
+      "slug": "FamilyPuppetTheater",
+      "id": "Performance_SubStage_FamilyPuppetTheater",
+      "footprint_cm": [
+        650,
+        600
+      ],
+      "height_cm": 450,
+      "description_ko": "가족용 낮 시간 공연 시설.",
+      "emphasis_ko": "액자형 무대·커튼·낮은 관람석을 강조. 움직일 커튼과 인형은 분리하고 무대 내부가 너무 어둡지 않게 한다.",
+      "reference_image": "Design/Facitilies/41 가족 인형극장.png",
+      "exploded_reference_image": "Design/Facitilies/41 가족 인형극장 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_SubStage_LocalArtist",
+      "followup_features": [
+        "인형·커튼 가동·공연 프로그램·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_FamilyPuppetTheater\\SM_FF_Performance_SubStage_FamilyPuppetTheater.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\41_Performance_SubStage_FamilyPuppetTheater.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_FamilyPuppetTheater\\iso.png",
+      "bounds_m": [
+        6.331606388092041,
+        5.761658191680908,
+        4.5
+      ],
+      "bounds_min_m": [
+        -3.1658031940460205,
+        -2.880829095840454,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.1658031940460205,
+        2.880829095840454,
+        4.5
+      ],
+      "triangles": 14240,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Amber",
+        "M_F70_Sand",
+        "M_F70_Coral"
+      ],
+      "collision_count": 16,
+      "editable_parts": 67,
+      "fbx_sha256": "b5640f4a6207ad3442ae15326fd8cb5e04cf0a9f36a738eb00563f36df06848b",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 42,
+      "category": "Performance",
+      "subtype": "SubStage",
+      "name_ko": "야외 영화 상영장",
+      "slug": "OutdoorCinema",
+      "id": "Performance_SubStage_OutdoorCinema",
+      "footprint_cm": [
+        1100,
+        1100
+      ],
+      "height_cm": 650,
+      "description_ko": "저녁 상영 프로그램 공간.",
+      "emphasis_ko": "큰 스크린·프로젝터 부스·관람석을 구성. 화면 UV를 반듯하게 펴고 영상 재생용 재질 슬롯을 따로 둔다.",
+      "reference_image": "Design/Facitilies/42 야외 영화 상영장.png",
+      "exploded_reference_image": "Design/Facitilies/42 야외 영화 상영장 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_SubStage_LocalArtist",
+      "followup_features": [
+        "영상 재생·음향·상영 시간표·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_OutdoorCinema\\SM_FF_Performance_SubStage_OutdoorCinema.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\42_Performance_SubStage_OutdoorCinema.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_OutdoorCinema\\iso.png",
+      "bounds_m": [
+        11.0,
+        10.170212745666504,
+        6.2234039306640625
+      ],
+      "bounds_min_m": [
+        -5.5,
+        -5.085106372833252,
+        0.0
+      ],
+      "bounds_max_m": [
+        5.5,
+        5.085106372833252,
+        6.2234039306640625
+      ],
+      "triangles": 7384,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Metal",
+        "M_F70_Screen",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Glass"
+      ],
+      "collision_count": 10,
+      "editable_parts": 58,
+      "fbx_sha256": "10ff6e3a2f263cf285dd59e75246a1b9ca1253253cf6adb3e4c8386eba6454ab",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 43,
+      "category": "Performance",
+      "subtype": "SubStage",
+      "name_ko": "로컬 밴드 쇼케이스",
+      "slug": "LocalBandShowcase",
+      "id": "Performance_SubStage_LocalBandShowcase",
+      "footprint_cm": [
+        900,
+        650
+      ],
+      "height_cm": 500,
+      "description_ko": "짧은 공연을 위한 소형 무대.",
+      "emphasis_ko": "낮은 지붕·밴드 배너·간단한 악기 구성을 강조. 악기와 스탠드를 공유하고 연주 애니메이션용 부품은 분리한다.",
+      "reference_image": "Design/Facitilies/43 로컬 밴드 쇼케이스.png",
+      "exploded_reference_image": "Design/Facitilies/43 로컬 밴드 쇼케이스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_SubStage_LocalArtist",
+      "followup_features": [
+        "악기 연주 애니메이션·음향·공연 프로그램·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_LocalBandShowcase\\SM_FF_Performance_SubStage_LocalBandShowcase.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\43_Performance_SubStage_LocalBandShowcase.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_SubStage_LocalBandShowcase\\iso.png",
+      "bounds_m": [
+        8.46846866607666,
+        5.965965747833252,
+        5.0
+      ],
+      "bounds_min_m": [
+        -4.23423433303833,
+        -2.982982873916626,
+        0.0
+      ],
+      "bounds_max_m": [
+        4.23423433303833,
+        2.982982873916626,
+        5.0
+      ],
+      "triangles": 24304,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Green",
+        "M_F70_Amber"
+      ],
+      "collision_count": 12,
+      "editable_parts": 106,
+      "fbx_sha256": "13723f33db6078aecf73f77243f2699384151694c1d8a72f226025e3abf1aeaf",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -3.6936936378479004,
+          -2.3323323726654053,
+          3.7037036418914795
+        ],
+        [
+          -3.6936936378479004,
+          1.441441535949707,
+          3.7037036418914795
+        ],
+        [
+          3.6936936378479004,
+          -2.3323323726654053,
+          3.7037036418914795
+        ],
+        [
+          3.6936936378479004,
+          1.441441535949707,
+          3.7037036418914795
+        ]
+      ]
+    },
+    {
+      "number": 44,
+      "category": "Performance",
+      "subtype": "Busking",
+      "name_ko": "어쿠스틱 버스킹 데크",
+      "slug": "AcousticBuskingDeck",
+      "id": "Performance_Busking_AcousticBuskingDeck",
+      "footprint_cm": [
+        450,
+        400
+      ],
+      "height_cm": 350,
+      "description_ko": "작은 거리 공연 공간.",
+      "emphasis_ko": "목재 단상·마이크·기타 케이스를 핵심 요소로 사용. 작은 시설답게 전체 높이와 장식 밀도를 절제한다.",
+      "reference_image": "Design/Facitilies/44 어쿠스틱 버스킹 데크.png",
+      "exploded_reference_image": "Design/Facitilies/44 어쿠스틱 버스킹 데크 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_Busking_Busking",
+      "followup_features": [
+        "연주 애니메이션·음향·공연 시간표·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_Busking_AcousticBuskingDeck\\SM_FF_Performance_Busking_AcousticBuskingDeck.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\44_Performance_Busking_AcousticBuskingDeck.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_Busking_AcousticBuskingDeck\\iso.png",
+      "bounds_m": [
+        4.328431129455566,
+        4.0,
+        3.43137264251709
+      ],
+      "bounds_min_m": [
+        -2.164215564727783,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.1642158031463623,
+        2.0,
+        3.43137264251709
+      ],
+      "triangles": 2788,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Metal"
+      ],
+      "collision_count": 3,
+      "editable_parts": 31,
+      "fbx_sha256": "f22abf7b469ac85d85f191319e79e438eba8e032adcc86e9ef55981eb27920b2",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 45,
+      "category": "Performance",
+      "subtype": "Busking",
+      "name_ko": "거리 마술 스테이지",
+      "slug": "StreetMagicStage",
+      "id": "Performance_Busking_StreetMagicStage",
+      "footprint_cm": [
+        600,
+        500
+      ],
+      "height_cm": 410,
+      "description_ko": "가까이 둘러보는 마술 공연.",
+      "emphasis_ko": "마술 테이블·큰 모자 표식·작은 커튼을 강조. 이동 소품과 고정 무대를 분리하고 관객이 설 주변 공간을 비운다.",
+      "reference_image": "Design/Facitilies/45 거리 마술 스테이지.png",
+      "exploded_reference_image": "Design/Facitilies/45 거리 마술 스테이지 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_Busking_Busking",
+      "followup_features": [
+        "마술 소품 가동·공연 동작·프로그램·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_Busking_StreetMagicStage\\SM_FF_Performance_Busking_StreetMagicStage.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\45_Performance_Busking_StreetMagicStage.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_Busking_StreetMagicStage\\iso.png",
+      "bounds_m": [
+        5.668341159820557,
+        4.783919334411621,
+        4.099999904632568
+      ],
+      "bounds_min_m": [
+        -2.8341705799102783,
+        -2.3919596672058105,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.8341705799102783,
+        2.3919594287872314,
+        4.099999904632568
+      ],
+      "triangles": 5808,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Amber",
+        "M_F70_Cream"
+      ],
+      "collision_count": 8,
+      "editable_parts": 41,
+      "fbx_sha256": "960400812fd79526c33f16cde57da1f679d89984be5e033006f5616b23d35057",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 46,
+      "category": "Performance",
+      "subtype": "ExperienceStage",
+      "name_ko": "관객 댄스 챌린지 무대",
+      "slug": "AudienceDanceChallengeStage",
+      "id": "Performance_ExperienceStage_AudienceDanceChallengeStage",
+      "footprint_cm": [
+        950,
+        800
+      ],
+      "height_cm": 520,
+      "description_ko": "관객과 함께 움직이는 프로그램.",
+      "emphasis_ko": "넓은 평탄 바닥·진행자 단상·발광 패턴을 강조. 바닥 높이 차를 줄이고 댄스·점수·화면은 후속 구현으로 둔다.",
+      "reference_image": "Design/Facitilies/46 관객 댄스 챌린지 무대.png",
+      "exploded_reference_image": "Design/Facitilies/46 관객 댄스 챌린지 무대 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_Experience",
+      "followup_features": [
+        "댄스 입력·애니메이션·점수·화면·음악·관객 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_ExperienceStage_AudienceDanceChallengeStage\\SM_FF_Performance_ExperienceStage_AudienceDanceChallengeStage.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\46_Performance_ExperienceStage_AudienceDanceChallengeStage.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Performance\\Performance_ExperienceStage_AudienceDanceChallengeStage\\iso.png",
+      "bounds_m": [
+        8.938593864440918,
+        7.166891098022461,
+        5.199999809265137
+      ],
+      "bounds_min_m": [
+        -4.469296932220459,
+        -3.5834453105926514,
+        0.0
+      ],
+      "bounds_max_m": [
+        4.469296932220459,
+        3.5834455490112305,
+        5.199999809265137
+      ],
+      "triangles": 28364,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Green",
+        "M_F70_Amber"
+      ],
+      "collision_count": 13,
+      "editable_parts": 111,
+      "fbx_sha256": "564c2f10ce9b8f0a6921e5a7bc0b6f8ab62e4b4cfa03e0b8515210d9efedaf28",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -3.8987483978271484,
+          -2.7826755046844482,
+          3.85170316696167
+        ],
+        [
+          -3.8987483978271484,
+          1.8617900609970093,
+          3.85170316696167
+        ],
+        [
+          3.8987483978271484,
+          -2.7826755046844482,
+          3.85170316696167
+        ],
+        [
+          3.8987483978271484,
+          1.8617900609970093,
+          3.85170316696167
+        ]
+      ]
+    },
+    {
+      "number": 47,
+      "category": "Safety",
+      "subtype": "FirstAid",
+      "name_ko": "소형 응급처치 카트",
+      "slug": "CompactFirstAidCart",
+      "id": "Safety_FirstAid_CompactFirstAidCart",
+      "footprint_cm": [
+        300,
+        230
+      ],
+      "height_cm": 300,
+      "description_ko": "작은 부지의 간이 구호 거점.",
+      "emphasis_ko": "의료 가방·접이식 차양·큰 구호 표식을 강조. 바퀴는 기본적으로 고정 소품이며 이동 기능으로 오해하지 않게 한다.",
+      "reference_image": "Design/Facitilies/47 소형 응급처치 카트.png",
+      "exploded_reference_image": "Design/Facitilies/47 소형 응급처치 카트 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/PDA_FFZS_Safety_FirstAid_FirstAid",
+      "followup_features": [
+        "응급처치 서비스·회복 효과와 카트 이동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_FirstAid_CompactFirstAidCart\\SM_FF_Safety_FirstAid_CompactFirstAidCart.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\47_Safety_FirstAid_CompactFirstAidCart.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_FirstAid_CompactFirstAidCart\\iso.png",
+      "bounds_m": [
+        2.969072103500366,
+        2.181443214416504,
+        3.0
+      ],
+      "bounds_min_m": [
+        -1.484536051750183,
+        -1.090721607208252,
+        -4.669973296955732e-09
+      ],
+      "bounds_max_m": [
+        1.484536051750183,
+        1.090721607208252,
+        3.0
+      ],
+      "triangles": 5296,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_White"
+      ],
+      "collision_count": 1,
+      "editable_parts": 23,
+      "fbx_sha256": "9cb432e34d09c419abaa4fe2beaed7916655dec4f9744c9f42efc68fc6c9e726",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 48,
+      "category": "Safety",
+      "subtype": "Security",
+      "name_ko": "순찰요원 초소",
+      "slug": "PatrolOfficerPost",
+      "id": "Safety_Security_PatrolOfficerPost",
+      "footprint_cm": [
+        340,
+        300
+      ],
+      "height_cm": 350,
+      "description_ko": "외곽·경계의 안전관리 거점.",
+      "emphasis_ko": "높은 표지·무전기·작은 관찰 창구를 강조. CCTV나 자동 감시 효과를 모델 존재만으로 가정하지 않는다.",
+      "reference_image": "Design/Facitilies/48 순찰요원 초소.png",
+      "exploded_reference_image": "Design/Facitilies/48 순찰요원 초소 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/PDA_FFZS_Safety_Security_Security",
+      "followup_features": [
+        "요원 순찰·보안 대응·감시 효과는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_Security_PatrolOfficerPost\\SM_FF_Safety_Security_PatrolOfficerPost.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\48_Safety_Security_PatrolOfficerPost.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_Security_PatrolOfficerPost\\iso.png",
+      "bounds_m": [
+        2.9869160652160645,
+        3.0,
+        3.2383177280426025
+      ],
+      "bounds_min_m": [
+        -1.4934580326080322,
+        -1.5,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.4934580326080322,
+        1.5,
+        3.2383177280426025
+      ],
+      "triangles": 8748,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Glass",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_Green"
+      ],
+      "collision_count": 7,
+      "editable_parts": 22,
+      "fbx_sha256": "2a6b23d1229386e4fe5696d095c05e8a9d7eef2bac01e7db5a9f738f94036d5e",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 49,
+      "category": "Safety",
+      "subtype": "FireSafety",
+      "name_ko": "소방 장비 스테이션",
+      "slug": "FireEquipmentStation",
+      "id": "Safety_FireSafety_FireEquipmentStation",
+      "footprint_cm": [
+        400,
+        180
+      ],
+      "height_cm": 300,
+      "description_ko": "소화 장비와 대응 안내를 모은 시설.",
+      "emphasis_ko": "소화기함·호스함·큰 화재 대응 아이콘을 강조. 호스는 단순 감긴 형태로 만들고 장비 식별을 우선한다.",
+      "reference_image": "Design/Facitilies/49 소방 장비 스테이션.png",
+      "exploded_reference_image": "Design/Facitilies/49 소방 장비 스테이션 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/PDA_FFZS_Safety_FireSafety_FireSafety",
+      "followup_features": [
+        "소화 장비 상호작용·화재 감지·진화 효과는 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_FireSafety_FireEquipmentStation\\SM_FF_Safety_FireSafety_FireEquipmentStation.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\49_Safety_FireSafety_FireEquipmentStation.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_FireSafety_FireEquipmentStation\\iso.png",
+      "bounds_m": [
+        3.7142858505249023,
+        1.1938774585723877,
+        3.0
+      ],
+      "bounds_min_m": [
+        -1.8571429252624512,
+        -0.5969387292861938,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.8571429252624512,
+        0.5969387292861938,
+        3.0
+      ],
+      "triangles": 10352,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Wood",
+        "M_F70_Coral",
+        "M_F70_Metal",
+        "M_F70_DarkTeal"
+      ],
+      "collision_count": 5,
+      "editable_parts": 18,
+      "fbx_sha256": "e20366f86627f9be8085a5c4631363dadd3e37f7bfa2f4d2fb86fe5bc9e5286e",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 50,
+      "category": "Safety",
+      "subtype": "Evacuation",
+      "name_ko": "야광 표지 대피 집결지",
+      "slug": "LuminousEvacuationAssembly",
+      "id": "Safety_Evacuation_LuminousEvacuationAssembly",
+      "footprint_cm": [
+        700,
+        600
+      ],
+      "height_cm": 380,
+      "description_ko": "비상시 모이는 식별 가능한 공간.",
+      "emphasis_ko": "높은 집결 표지와 넓은 빈 바닥을 강조. 중앙에 큰 충돌 장식을 두지 말고 실제 통행은 Spec과 플레이로 확인한다.",
+      "reference_image": "Design/Facitilies/50 야광 표지 대피 집결지.png",
+      "exploded_reference_image": "Design/Facitilies/50 야광 표지 대피 집결지 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/PDA_FFZS_Safety_Evacuation_Evacuation",
+      "followup_features": [
+        "비상 신호·대피 경로·NPC 집결 행동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_Evacuation_LuminousEvacuationAssembly\\SM_FF_Safety_Evacuation_LuminousEvacuationAssembly.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\50_Safety_Evacuation_LuminousEvacuationAssembly.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_Evacuation_LuminousEvacuationAssembly\\iso.png",
+      "bounds_m": [
+        7.0,
+        6.0,
+        3.7049999237060547
+      ],
+      "bounds_min_m": [
+        -3.5,
+        -3.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.5,
+        3.0,
+        3.7049999237060547
+      ],
+      "triangles": 7600,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Teal"
+      ],
+      "collision_count": 3,
+      "editable_parts": 15,
+      "fbx_sha256": "91acfa0662cf4728d4d322be57c95d86b4799c109aaf128a9db2eba94ca22483",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 51,
+      "category": "PhotoSpot",
+      "subtype": "Landmark",
+      "name_ko": "대형 모래성",
+      "slug": "GrandSandcastle",
+      "id": "PhotoSpot_Landmark_GrandSandcastle",
+      "footprint_cm": [
+        750,
+        600
+      ],
+      "height_cm": 650,
+      "description_ko": "해변 축제의 대표 상징물.",
+      "emphasis_ko": "큰 탑·아치·성벽의 단계적 실루엣을 강조. 모래 알갱이는 재질로 표현하고 탑 끝을 지나치게 가늘게 만들지 않는다.",
+      "reference_image": "Design/Facitilies/51 대형 모래성.png",
+      "exploded_reference_image": "Design/Facitilies/51 대형 모래성 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_Landmark",
+      "followup_features": [
+        "사진 포즈·촬영 UI·이미지 저장은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_GrandSandcastle\\SM_FF_PhotoSpot_Landmark_GrandSandcastle.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\51_PhotoSpot_Landmark_GrandSandcastle.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_GrandSandcastle\\iso.png",
+      "bounds_m": [
+        7.5,
+        5.632652759552002,
+        5.525510311126709
+      ],
+      "bounds_min_m": [
+        -3.75,
+        -2.816326379776001,
+        1.4901161193847656e-08
+      ],
+      "bounds_max_m": [
+        3.750000238418579,
+        2.816326379776001,
+        5.525510311126709
+      ],
+      "triangles": 5517,
+      "material_names": [
+        "M_F70_Sand",
+        "M_F70_Wood",
+        "M_F70_Teal"
+      ],
+      "collision_count": 10,
+      "editable_parts": 52,
+      "fbx_sha256": "83b79370bdc0f5463c5efa58a6e6b7d260676bca3423fbd7ca1ced56b22d5e07",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 52,
+      "category": "PhotoSpot",
+      "subtype": "Landmark",
+      "name_ko": "고래 꼬리 조형물",
+      "slug": "WhaleTailSculpture",
+      "id": "PhotoSpot_Landmark_WhaleTailSculpture",
+      "footprint_cm": [
+        750,
+        600
+      ],
+      "height_cm": 630,
+      "description_ko": "바다에서 솟은 듯한 상징물.",
+      "emphasis_ko": "꼬리의 넓은 곡선과 중심 받침을 강조. 곡면 음영·노멀을 확인하고 받침이 촬영 인물을 가리지 않게 한다.",
+      "reference_image": "Design/Facitilies/52 고래 꼬리 조형물.png",
+      "exploded_reference_image": "Design/Facitilies/52 고래 꼬리 조형물 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_Landmark",
+      "followup_features": [
+        "사진 포즈·촬영 UI·이미지 저장과 물 연출은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_WhaleTailSculpture\\SM_FF_PhotoSpot_Landmark_WhaleTailSculpture.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\52_PhotoSpot_Landmark_WhaleTailSculpture.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_WhaleTailSculpture\\iso.png",
+      "bounds_m": [
+        6.900000095367432,
+        3.4200000762939453,
+        6.300000190734863
+      ],
+      "bounds_min_m": [
+        -3.450000047683716,
+        -1.7100000381469727,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.450000047683716,
+        1.7100000381469727,
+        6.300000190734863
+      ],
+      "triangles": 522,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Blue"
+      ],
+      "collision_count": 1,
+      "editable_parts": 7,
+      "fbx_sha256": "a321e006c5ec6ed23a7029dde2efc16060986d5abec844c3820c418d4f0b5e91",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 53,
+      "category": "PhotoSpot",
+      "subtype": "Landmark",
+      "name_ko": "FESTAFIESTA 레터링",
+      "slug": "FestaFiestaLettering",
+      "id": "PhotoSpot_Landmark_FestaFiestaLettering",
+      "footprint_cm": [
+        900,
+        300
+      ],
+      "height_cm": 430,
+      "description_ko": "축제 이름을 배경으로 단체 촬영.",
+      "emphasis_ko": "굵고 단순한 글자체와 일정한 높이를 사용. 출력용 텍스트는 메시화하고 글자 구멍의 삼각화·충돌을 점검한다.",
+      "reference_image": "Design/Facitilies/53 FESTAFIESTA 레터링.png",
+      "exploded_reference_image": "Design/Facitilies/53 FESTAFIESTA 레터링 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Landmark_Landmark",
+      "followup_features": [
+        "단체 사진 포즈·촬영 UI·이미지 저장은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_FestaFiestaLettering\\SM_FF_PhotoSpot_Landmark_FestaFiestaLettering.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\53_PhotoSpot_Landmark_FestaFiestaLettering.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Landmark_FestaFiestaLettering\\iso.png",
+      "bounds_m": [
+        8.99786376953125,
+        2.4483985900878906,
+        4.300000190734863
+      ],
+      "bounds_min_m": [
+        -4.498931884765625,
+        -1.2241992950439453,
+        0.0
+      ],
+      "bounds_max_m": [
+        4.498931884765625,
+        1.2241992950439453,
+        4.300000190734863
+      ],
+      "triangles": 12260,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Teal",
+        "M_F70_Green"
+      ],
+      "collision_count": 7,
+      "editable_parts": 30,
+      "fbx_sha256": "e6ec4d1be1b51db5c942fbb0a89e70066f2cab80e562432b2a86d8c68dbb170a",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 54,
+      "category": "PhotoSpot",
+      "subtype": "Theme",
+      "name_ko": "해적선 촬영 세트",
+      "slug": "PirateShipPhotoSet",
+      "id": "PhotoSpot_Theme_PirateShipPhotoSet",
+      "footprint_cm": [
+        850,
+        450
+      ],
+      "height_cm": 620,
+      "description_ko": "가족용 해양 모험 포토존.",
+      "emphasis_ko": "배의 키·작은 돛·보물상자를 대표 요소로 사용. 촬영 데크 접근과 난간 높이를 실제 캐릭터로 확인한다.",
+      "reference_image": "Design/Facitilies/54 해적선 촬영 세트.png",
+      "exploded_reference_image": "Design/Facitilies/54 해적선 촬영 세트 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Theme_Theme",
+      "followup_features": [
+        "촬영 UI·저장과 키·소품 상호작용은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Theme_PirateShipPhotoSet\\SM_FF_PhotoSpot_Theme_PirateShipPhotoSet.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\54_PhotoSpot_Theme_PirateShipPhotoSet.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Theme_PirateShipPhotoSet\\iso.png",
+      "bounds_m": [
+        8.5,
+        3.9175257682800293,
+        6.136083126068115
+      ],
+      "bounds_min_m": [
+        -4.25,
+        -1.9587628841400146,
+        0.0
+      ],
+      "bounds_max_m": [
+        4.250000476837158,
+        1.9587630033493042,
+        6.136083126068115
+      ],
+      "triangles": 5920,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_DarkWood",
+        "M_F70_Cream",
+        "M_F70_Teal"
+      ],
+      "collision_count": 9,
+      "editable_parts": 39,
+      "fbx_sha256": "1c554788670dfdf20b184c9614099d8c0a18b3266415c28ac55f716d0a07ca67",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 55,
+      "category": "PhotoSpot",
+      "subtype": "Theme",
+      "name_ko": "서핑보드 컬러월",
+      "slug": "SurfboardColorWall",
+      "id": "PhotoSpot_Theme_SurfboardColorWall",
+      "footprint_cm": [
+        650,
+        220
+      ],
+      "height_cm": 350,
+      "description_ko": "색색의 보드가 만드는 해변 배경.",
+      "emphasis_ko": "보드 실루엣과 색 순서를 강조. 공유 보드 메시·텍스처 변형을 사용하고 앞에 인물이 설 공간을 비운다.",
+      "reference_image": "Design/Facitilies/55 서핑보드 컬러월.png",
+      "exploded_reference_image": "Design/Facitilies/55 서핑보드 컬러월 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Theme_Theme",
+      "followup_features": [
+        "사진 포즈·촬영 UI·이미지 저장은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Theme_SurfboardColorWall\\SM_FF_PhotoSpot_Theme_SurfboardColorWall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\55_PhotoSpot_Theme_SurfboardColorWall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Theme_SurfboardColorWall\\iso.png",
+      "bounds_m": [
+        6.029999732971191,
+        0.6840000152587891,
+        3.5
+      ],
+      "bounds_min_m": [
+        -3.0149998664855957,
+        -0.34200000762939453,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.0149998664855957,
+        0.34199997782707214,
+        3.5
+      ],
+      "triangles": 10236,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Amber",
+        "M_F70_Coral",
+        "M_F70_Green",
+        "M_F70_Blue"
+      ],
+      "collision_count": 7,
+      "editable_parts": 31,
+      "fbx_sha256": "7fe0ddf95ea18dd2b32d3ef5ef9886a8e0af3fc3b9818fd6d303d28e54c8dc12",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 56,
+      "category": "PhotoSpot",
+      "subtype": "Scenic",
+      "name_ko": "일몰 액자 전망대",
+      "slug": "SunsetFrameOverlook",
+      "id": "PhotoSpot_Scenic_SunsetFrameOverlook",
+      "footprint_cm": [
+        650,
+        500
+      ],
+      "height_cm": 440,
+      "description_ko": "액자 너머 일몰을 담는 장소.",
+      "emphasis_ko": "두꺼운 프레임과 열린 중앙 구도를 강조. 실제 맵의 일몰 방향을 배치 시 확인하고 통과 공간의 UCX를 분리한다.",
+      "reference_image": "Design/Facitilies/56 일몰 액자 전망대.png",
+      "exploded_reference_image": "Design/Facitilies/56 일몰 액자 전망대 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Scenic_Scenic",
+      "followup_features": [
+        "실제 일몰 방향 배치·촬영 UI·이미지 저장은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Scenic_SunsetFrameOverlook\\SM_FF_PhotoSpot_Scenic_SunsetFrameOverlook.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\56_PhotoSpot_Scenic_SunsetFrameOverlook.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Scenic_SunsetFrameOverlook\\iso.png",
+      "bounds_m": [
+        5.931558132171631,
+        5.0,
+        4.087451934814453
+      ],
+      "bounds_min_m": [
+        -2.9657790660858154,
+        -2.5,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.9657790660858154,
+        2.499999761581421,
+        4.087451934814453
+      ],
+      "triangles": 2976,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Glass"
+      ],
+      "collision_count": 11,
+      "editable_parts": 28,
+      "fbx_sha256": "0beee70bd19c4e7e73f6ae296d4cc6ec30d1bbd1961502667aeccb2c6cac4c37",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 57,
+      "category": "PhotoSpot",
+      "subtype": "Interactive",
+      "name_ko": "네컷 사진 부스",
+      "slug": "FourCutPhotoBooth",
+      "id": "PhotoSpot_Interactive_FourCutPhotoBooth",
+      "footprint_cm": [
+        350,
+        300
+      ],
+      "height_cm": 380,
+      "description_ko": "포즈를 취하는 연속 촬영 체험.",
+      "emphasis_ko": "카메라 구멍·대기 화면·촬영 커튼을 강조. 화면·커튼·카메라 위치를 분리하고 촬영·출력 기능은 별도 연결한다.",
+      "reference_image": "Design/Facitilies/57 네컷 사진 부스.png",
+      "exploded_reference_image": "Design/Facitilies/57 네컷 사진 부스 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Interactive_Interactive",
+      "followup_features": [
+        "연속 촬영·카메라·화면·출력·이미지 저장·커튼 가동은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Interactive_FourCutPhotoBooth\\SM_FF_PhotoSpot_Interactive_FourCutPhotoBooth.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\57_PhotoSpot_Interactive_FourCutPhotoBooth.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Interactive_FourCutPhotoBooth\\iso.png",
+      "bounds_m": [
+        3.1034481525421143,
+        2.7231526374816895,
+        3.799999952316284
+      ],
+      "bounds_min_m": [
+        -1.5517240762710571,
+        -1.3615763187408447,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.5517240762710571,
+        1.3615763187408447,
+        3.799999952316284
+      ],
+      "triangles": 5236,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Coral",
+        "M_F70_Pink",
+        "M_F70_Amber",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_Glass",
+        "M_F70_Screen"
+      ],
+      "collision_count": 5,
+      "editable_parts": 34,
+      "fbx_sha256": "8f7f34badca85e0bc3defcd7a6ad437e978098941ba5ca1e4282ade82543f40f",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 58,
+      "category": "PhotoSpot",
+      "subtype": "Interactive",
+      "name_ko": "그림자 놀이 벽",
+      "slug": "ShadowPlayWall",
+      "id": "PhotoSpot_Interactive_ShadowPlayWall",
+      "footprint_cm": [
+        550,
+        350
+      ],
+      "height_cm": 380,
+      "description_ko": "몸짓으로 그림자를 만드는 공간.",
+      "emphasis_ko": "단순한 밝은 벽과 촬영 공간이 핵심. 광원 방향 가이드를 남기고 실제 캐릭터 그림자와 주변 광원 간섭을 검사한다.",
+      "reference_image": "Design/Facitilies/58 그림자 놀이 벽.png",
+      "exploded_reference_image": "Design/Facitilies/58 그림자 놀이 벽 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Interactive_Interactive",
+      "followup_features": [
+        "방향성 광원·실제 캐릭터 그림자·촬영 저장은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Interactive_ShadowPlayWall\\SM_FF_PhotoSpot_Interactive_ShadowPlayWall.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\58_PhotoSpot_Interactive_ShadowPlayWall.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Interactive_ShadowPlayWall\\iso.png",
+      "bounds_m": [
+        5.1145830154418945,
+        2.0078125,
+        3.799999952316284
+      ],
+      "bounds_min_m": [
+        -2.5572915077209473,
+        -1.00390625,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.5572915077209473,
+        1.0039061307907104,
+        3.799999952316284
+      ],
+      "triangles": 2460,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Amber",
+        "M_F70_Cream"
+      ],
+      "collision_count": 5,
+      "editable_parts": 24,
+      "fbx_sha256": "623a64ab8e0f84b1871652577c20516ef8330de0ded15f80df099f0e9ba11425",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -2.2916667461395264,
+          0.694010317325592,
+          1.7020832300186157
+        ],
+        [
+          2.2916667461395264,
+          0.694010317325592,
+          1.7020832300186157
+        ]
+      ]
+    },
+    {
+      "number": 59,
+      "category": "Lighting",
+      "subtype": "Decorative",
+      "name_ko": "해파리 조명 군락",
+      "slug": "JellyfishLightCluster",
+      "id": "Lighting_Decorative_JellyfishLightCluster",
+      "footprint_cm": [
+        450,
+        350
+      ],
+      "height_cm": 460,
+      "description_ko": "몽환적인 야간 장식.",
+      "emphasis_ko": "반구 갓과 길이가 다른 촉수를 강조. 촉수 수·투명 겹침을 줄이고 군락 전체를 소수 광원으로 표현한다.",
+      "reference_image": "Design/Facitilies/59 해파리 조명 군락.png",
+      "exploded_reference_image": "Design/Facitilies/59 해파리 조명 군락 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Decorative_Festoon",
+      "followup_features": [
+        "실제 조명 리그·밝기·색 제어·저장 복원과 촉수 움직임은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_JellyfishLightCluster\\SM_FF_Lighting_Decorative_JellyfishLightCluster.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\59_Lighting_Decorative_JellyfishLightCluster.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_JellyfishLightCluster\\iso.png",
+      "bounds_m": [
+        3.986417293548584,
+        3.4010415077209473,
+        4.599999904632568
+      ],
+      "bounds_min_m": [
+        -1.993208646774292,
+        -1.7005207538604736,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.993208646774292,
+        1.7005207538604736,
+        4.599999904632568
+      ],
+      "triangles": 7298,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Teal",
+        "M_F70_Metal",
+        "M_F70_Cream",
+        "M_F70_Amber"
+      ],
+      "collision_count": 2,
+      "editable_parts": 35,
+      "fbx_sha256": "92d5b731c77affc3025ca71128d16316b2c3ee6f0d470d46841027fcb98750eb",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          8.897824354044289e-17,
+          0.9973958730697632,
+          3.347916603088379
+        ],
+        [
+          -1.2584431171417236,
+          -0.6979166865348816,
+          3.6354165077209473
+        ],
+        [
+          1.2584431171417236,
+          -0.6979166865348816,
+          3.347916603088379
+        ]
+      ]
+    },
+    {
+      "number": 60,
+      "category": "Lighting",
+      "subtype": "Decorative",
+      "name_ko": "파도 곡선 조형등",
+      "slug": "WaveCurveLight",
+      "id": "Lighting_Decorative_WaveCurveLight",
+      "footprint_cm": [
+        600,
+        300
+      ],
+      "height_cm": 440,
+      "description_ko": "광장 경계를 꾸미는 빛의 선.",
+      "emphasis_ko": "굵기 일정한 파도 곡선과 숨은 받침을 만든다. 발광 마스크를 분리하고 먼 거리에서 빛이 끊겨 보이지 않는지 확인한다.",
+      "reference_image": "Design/Facitilies/60 파도 곡선 조형등.png",
+      "exploded_reference_image": "Design/Facitilies/60 파도 곡선 조형등 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Decorative_Festoon",
+      "followup_features": [
+        "실제 조명 리그·밝기·색 제어·저장 복원은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_WaveCurveLight\\SM_FF_Lighting_Decorative_WaveCurveLight.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\60_Lighting_Decorative_WaveCurveLight.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_WaveCurveLight\\iso.png",
+      "bounds_m": [
+        5.904940128326416,
+        2.029823064804077,
+        4.40000057220459
+      ],
+      "bounds_min_m": [
+        -2.952470064163208,
+        -1.0149115324020386,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.952470064163208,
+        1.0149115324020386,
+        4.40000057220459
+      ],
+      "triangles": 2196,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Amber",
+        "M_F70_Blue"
+      ],
+      "collision_count": 4,
+      "editable_parts": 13,
+      "fbx_sha256": "23dd511b43cc9831334d5a6ad749346c94a8f0e5284880b480c48eaee8a9ab66",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -1.3839702606201172,
+          -0.30754896998405457,
+          4.276980876922607
+        ],
+        [
+          0.3383038640022278,
+          0.0,
+          3.4199442863464355
+        ],
+        [
+          2.060577869415283,
+          0.30754896998405457,
+          2.5629079341888428
+        ]
+      ]
+    },
+    {
+      "number": 61,
+      "category": "Lighting",
+      "subtype": "Decorative",
+      "name_ko": "소원등 행렬",
+      "slug": "WishLanternRow",
+      "id": "Lighting_Decorative_WishLanternRow",
+      "footprint_cm": [
+        750,
+        180
+      ],
+      "height_cm": 430,
+      "description_ko": "야시장 분위기의 연속 등 장식.",
+      "emphasis_ko": "등롱 크기·높이에 리듬을 주고 와이어 처짐을 표현. 등롱별 실제 광원 대신 발광과 대표 광원을 조합한다.",
+      "reference_image": "Design/Facitilies/61 소원등 행렬.png",
+      "exploded_reference_image": "Design/Facitilies/61 소원등 행렬 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Decorative_Festoon",
+      "followup_features": [
+        "실제 대표 광원·밝기·색 제어·저장 복원은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_WishLanternRow\\SM_FF_Lighting_Decorative_WishLanternRow.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\61_Lighting_Decorative_WishLanternRow.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_WishLanternRow\\iso.png",
+      "bounds_m": [
+        7.5,
+        1.4150943756103516,
+        3.955188751220703
+      ],
+      "bounds_min_m": [
+        -3.75,
+        -0.7075471878051758,
+        0.0
+      ],
+      "bounds_max_m": [
+        3.75,
+        0.7075471878051758,
+        3.955188751220703
+      ],
+      "triangles": 13098,
+      "material_names": [
+        "M_F70_Cream",
+        "M_F70_Green",
+        "M_F70_Teal",
+        "M_F70_DarkTeal",
+        "M_F70_Metal",
+        "M_F70_Amber"
+      ],
+      "collision_count": 4,
+      "editable_parts": 84,
+      "fbx_sha256": "4b8061f7714e47613f02ae19296fc6d81001b0486a00e4fb9684fd65deb7f666",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -1.6509435176849365,
+          0.0,
+          2.9434616565704346
+        ],
+        [
+          -4.1895210424197236e-16,
+          0.0,
+          2.609434127807617
+        ],
+        [
+          1.6509435176849365,
+          0.0,
+          2.9434616565704346
+        ]
+      ]
+    },
+    {
+      "number": 62,
+      "category": "Lighting",
+      "subtype": "Pendant",
+      "name_ko": "조개갓 펜던트",
+      "slug": "ShellShadePendant",
+      "id": "Lighting_Pendant_ShellShadePendant",
+      "footprint_cm": [
+        500,
+        500
+      ],
+      "height_cm": 450,
+      "description_ko": "음식·휴게 구역용 해안 조명.",
+      "emphasis_ko": "조개 곡면·주름·안쪽 발광 면을 강조. 매달 고리가 있는 지지대 또는 상위 구조물 연결 위치를 명시한다.",
+      "reference_image": "Design/Facitilies/62 조개갓 펜던트.png",
+      "exploded_reference_image": "Design/Facitilies/62 조개갓 펜던트 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Pendant_RattanPendant",
+      "followup_features": [
+        "지지 구조물 기준의 실제 광원·밝기·색 제어·저장 복원은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Pendant_ShellShadePendant\\SM_FF_Lighting_Pendant_ShellShadePendant.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\62_Lighting_Pendant_ShellShadePendant.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Pendant_ShellShadePendant\\iso.png",
+      "bounds_m": [
+        4.438775539398193,
+        4.234694004058838,
+        4.5
+      ],
+      "bounds_min_m": [
+        -2.2193877696990967,
+        -2.117347002029419,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.2193877696990967,
+        2.117347002029419,
+        4.5
+      ],
+      "triangles": 18258,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Sand",
+        "M_F70_Amber",
+        "M_F70_Cream",
+        "M_F70_Pink",
+        "M_F70_Green"
+      ],
+      "collision_count": 6,
+      "editable_parts": 87,
+      "fbx_sha256": "590672f3222ff2deec8aab93c05af9d6e8631c0e17e968d3d0490eafc85b0522",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -1.2244898080825806,
+          -1.1224490404129028,
+          2.6632652282714844
+        ],
+        [
+          1.0714285373687744,
+          -1.0204081535339355,
+          3.3061225414276123
+        ],
+        [
+          0.0,
+          0.5102040767669678,
+          2.6632652282714844
+        ]
+      ]
+    },
+    {
+      "number": 63,
+      "category": "Lighting",
+      "subtype": "Streetlamp",
+      "name_ko": "등대형 가로등",
+      "slug": "LighthouseStreetlamp",
+      "id": "Lighting_Streetlamp_LighthouseStreetlamp",
+      "footprint_cm": [
+        250,
+        180
+      ],
+      "height_cm": 480,
+      "description_ko": "길과 해안 테마를 보여 주는 조명.",
+      "emphasis_ko": "줄무늬 기둥·상단 등실로 작은 등대 실루엣을 만든다. 장식 받침이 보행 폭을 잠식하지 않게 한다.",
+      "reference_image": "Design/Facitilies/63 등대형 가로등.png",
+      "exploded_reference_image": "Design/Facitilies/63 등대형 가로등 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Streetlamp_FestivalStreetlamp",
+      "followup_features": [
+        "실제 가로등 리그·밝기·색 제어·저장 복원은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Streetlamp_LighthouseStreetlamp\\SM_FF_Lighting_Streetlamp_LighthouseStreetlamp.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\63_Lighting_Streetlamp_LighthouseStreetlamp.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Streetlamp_LighthouseStreetlamp\\iso.png",
+      "bounds_m": [
+        2.365178346633911,
+        0.9586235880851746,
+        4.800000190734863
+      ],
+      "bounds_min_m": [
+        -1.1825891733169556,
+        -0.4793117940425873,
+        0.0
+      ],
+      "bounds_max_m": [
+        1.1825891733169556,
+        0.4793117940425873,
+        4.800000190734863
+      ],
+      "triangles": 3514,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Cream",
+        "M_F70_Amber"
+      ],
+      "collision_count": 9,
+      "editable_parts": 40,
+      "fbx_sha256": "aa7ab08158fb835b36452d61be9c18033008fe35e54d2d321dac5d54e82f176e",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          -0.947357714176178,
+          0.0,
+          3.3428924083709717
+        ],
+        [
+          0.947357714176178,
+          0.0,
+          3.3428924083709717
+        ],
+        [
+          0.0,
+          0.0,
+          4.326096057891846
+        ]
+      ]
+    },
+    {
+      "number": 64,
+      "category": "Lighting",
+      "subtype": "Streetlamp",
+      "name_ko": "마린 볼라드 조명",
+      "slug": "MarineBollardLight",
+      "id": "Lighting_Streetlamp_MarineBollardLight",
+      "footprint_cm": [
+        80,
+        80
+      ],
+      "height_cm": 140,
+      "description_ko": "낮은 기둥형 경계 조명.",
+      "emphasis_ko": "짧고 두꺼운 몸체와 빛이 나오는 띠를 강조. 대량 반복 시 재질·광원을 공유하고 눈부심을 실제 카메라에서 확인한다.",
+      "reference_image": "Design/Facitilies/64 마린 볼라드 조명.png",
+      "exploded_reference_image": "Design/Facitilies/64 마린 볼라드 조명 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Streetlamp_FestivalStreetlamp",
+      "followup_features": [
+        "실제 조명 리그·밝기·색 제어·저장 복원은 별도 연결한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Streetlamp_MarineBollardLight\\SM_FF_Lighting_Streetlamp_MarineBollardLight.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\64_Lighting_Streetlamp_MarineBollardLight.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Streetlamp_MarineBollardLight\\iso.png",
+      "bounds_m": [
+        0.6463366150856018,
+        0.6463366150856018,
+        1.399999976158142
+      ],
+      "bounds_min_m": [
+        -0.3231683075428009,
+        -0.3231683075428009,
+        0.0
+      ],
+      "bounds_max_m": [
+        0.3231683075428009,
+        0.3231683075428009,
+        1.399999976158142
+      ],
+      "triangles": 2086,
+      "material_names": [
+        "M_F70_Teal",
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Amber"
+      ],
+      "collision_count": 2,
+      "editable_parts": 12,
+      "fbx_sha256": "8a909b5f1f245b2444145650981ee6ab0099e13496694f7a6eb33082f3d2d213",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          0.0,
+          0.0,
+          1.1643563508987427
+        ]
+      ]
+    },
+    {
+      "number": 65,
+      "category": "Road",
+      "subtype": "Surface",
+      "name_ko": "청백 스트라이프 보행로",
+      "slug": "BlueWhiteStripedWalkway",
+      "id": "Road_Surface_BlueWhiteStripedWalkway",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 8,
+      "description_ko": "해안 축제 주동선 표현.",
+      "emphasis_ko": "줄무늬 폭과 양끝 패턴이 이어지게 UV를 맞춘다. +X 진행과 90도 회전 배치에서 연결 상태를 확인한다.",
+      "reference_image": "Design/Facitilies/65 청백 스트라이프 보행로.png",
+      "exploded_reference_image": "Design/Facitilies/65 청백 스트라이프 보행로 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_Asphalt",
+      "followup_features": [
+        "반복 연결·90도 회전·NPC 통행·상부 시설 차단은 실제 배치로 검증한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_BlueWhiteStripedWalkway\\SM_FF_Road_Surface_BlueWhiteStripedWalkway.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\65_Road_Surface_BlueWhiteStripedWalkway.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_BlueWhiteStripedWalkway\\iso.png",
+      "bounds_m": [
+        4.0,
+        4.0,
+        0.07999999076128006
+      ],
+      "bounds_min_m": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0,
+        2.0,
+        0.07999999076128006
+      ],
+      "triangles": 32,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_Cream",
+        "M_F70_Blue"
+      ],
+      "collision_count": 1,
+      "editable_parts": 11,
+      "fbx_sha256": "3375802fdf86c8d9475bc0bacb691984d201b6bc5b76576fc53c7263a442629b",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 66,
+      "category": "Road",
+      "subtype": "Surface",
+      "name_ko": "조개 문양 포장길",
+      "slug": "ShellPatternWalkway",
+      "id": "Road_Surface_ShellPatternWalkway",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 8,
+      "description_ko": "산책 구역의 개성 있는 바닥.",
+      "emphasis_ko": "조개 무늬를 반복 텍스처로 처리. 돌출 조개를 대량 모델링하지 말고 타일 경계에서 무늬가 잘리는지 확인한다.",
+      "reference_image": "Design/Facitilies/66 조개 문양 포장길.png",
+      "exploded_reference_image": "Design/Facitilies/66 조개 문양 포장길 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_Asphalt",
+      "followup_features": [
+        "반복 문양·연결·NPC 통행·상부 시설 차단은 실제 배치로 검증한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_ShellPatternWalkway\\SM_FF_Road_Surface_ShellPatternWalkway.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\66_Road_Surface_ShellPatternWalkway.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_ShellPatternWalkway\\iso.png",
+      "bounds_m": [
+        4.0,
+        4.0,
+        0.07999999821186066
+      ],
+      "bounds_min_m": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0,
+        2.0,
+        0.07999999821186066
+      ],
+      "triangles": 57,
+      "material_names": [
+        "M_F70_Sand",
+        "M_F70_Cream",
+        "M_F70_Teal"
+      ],
+      "collision_count": 1,
+      "editable_parts": 34,
+      "fbx_sha256": "1f194f2200d857c960d3e2d704bed70de25b976ace29cef18b1105ff42ddcd99",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 67,
+      "category": "Road",
+      "subtype": "Surface",
+      "name_ko": "발광 경계 야간길",
+      "slug": "LuminousEdgeNightPath",
+      "id": "Road_Surface_LuminousEdgeNightPath",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 8,
+      "description_ko": "빛으로 길의 형태를 강조.",
+      "emphasis_ko": "양쪽 경계 발광 띠를 독립 마스크로 만든다. 기본 발광과 시설 조명 UI 연동은 구분해 검증한다.",
+      "reference_image": "Design/Facitilies/67 발광 경계 야간길.png",
+      "exploded_reference_image": "Design/Facitilies/67 발광 경계 야간길 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_Asphalt",
+      "followup_features": [
+        "발광 경계의 밝기·색 UI 연결과 반복 배치·NPC 통행은 별도 검증한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_LuminousEdgeNightPath\\SM_FF_Road_Surface_LuminousEdgeNightPath.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\67_Road_Surface_LuminousEdgeNightPath.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_LuminousEdgeNightPath\\iso.png",
+      "bounds_m": [
+        4.0,
+        4.0,
+        0.07999999821186066
+      ],
+      "bounds_min_m": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0,
+        2.0,
+        0.07999999821186066
+      ],
+      "triangles": 72,
+      "material_names": [
+        "M_F70_DarkTeal",
+        "M_F70_Amber",
+        "M_F70_Blue"
+      ],
+      "collision_count": 1,
+      "editable_parts": 31,
+      "fbx_sha256": "e7a6df25ae45500acb973f125758d13a175ae51b9c947349a07ca3fcc0330099",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": [
+        [
+          0.0,
+          0.0,
+          0.08010012656450272
+        ]
+      ]
+    },
+    {
+      "number": 68,
+      "category": "Tile",
+      "subtype": "Surface",
+      "name_ko": "바다 모자이크 광장 타일",
+      "slug": "OceanMosaicPlazaTile",
+      "id": "Tile_Surface_OceanMosaicPlazaTile",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 8,
+      "description_ko": "랜드마크 주변의 파도 문양 바닥.",
+      "emphasis_ko": "멀리서 읽히는 큰 파도 패턴과 연결 경계를 강조. 모자이크 조각을 별도 메시로 쪼개지 않는다.",
+      "reference_image": "Design/Facitilies/68 바다 모자이크 광장 타일.png",
+      "exploded_reference_image": "Design/Facitilies/68 바다 모자이크 광장 타일 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_Stone",
+      "followup_features": [
+        "파도 문양 연결·상부 시설 설치·NPC 통행은 실제 배치로 검증한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_OceanMosaicPlazaTile\\SM_FF_Tile_Surface_OceanMosaicPlazaTile.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\68_Tile_Surface_OceanMosaicPlazaTile.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_OceanMosaicPlazaTile\\iso.png",
+      "bounds_m": [
+        4.0,
+        4.0,
+        0.07999999821186066
+      ],
+      "bounds_min_m": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0,
+        2.0,
+        0.07999999821186066
+      ],
+      "triangles": 524,
+      "material_names": [
+        "M_F70_Sand",
+        "M_F70_Blue",
+        "M_F70_Teal"
+      ],
+      "collision_count": 1,
+      "editable_parts": 5,
+      "fbx_sha256": "1318cf37da3557efc2a301a6db31f35bda6c758adff44bc96b2854253368549c",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 69,
+      "category": "Tile",
+      "subtype": "Surface",
+      "name_ko": "선박 데크 타일",
+      "slug": "ShipDeckTile",
+      "id": "Tile_Surface_ShipDeckTile",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 8,
+      "description_ko": "목재·금속 패턴의 해양 바닥.",
+      "emphasis_ko": "판재 방향과 금속 테두리를 강조. 시설이 올라가는 상단 높이를 일정하게 하고 테두리 돌출을 절제한다.",
+      "reference_image": "Design/Facitilies/69 선박 데크 타일.png",
+      "exploded_reference_image": "Design/Facitilies/69 선박 데크 타일 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_Stone",
+      "followup_features": [
+        "판재 문양 연결·상부 시설 설치·NPC 통행은 실제 배치로 검증한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_ShipDeckTile\\SM_FF_Tile_Surface_ShipDeckTile.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\69_Tile_Surface_ShipDeckTile.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_ShipDeckTile\\iso.png",
+      "bounds_m": [
+        4.0,
+        4.0,
+        0.07999999076128006
+      ],
+      "bounds_min_m": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0,
+        2.0,
+        0.07999999076128006
+      ],
+      "triangles": 44,
+      "material_names": [
+        "M_F70_Wood",
+        "M_F70_DarkWood",
+        "M_F70_Metal",
+        "M_F70_Teal"
+      ],
+      "collision_count": 1,
+      "editable_parts": 17,
+      "fbx_sha256": "bf618d217745c20f7ab8a60dd90bb4cc394aeed13340f980e2c13a6803350adc",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    },
+    {
+      "number": 70,
+      "category": "Tile",
+      "subtype": "Surface",
+      "name_ko": "잔디블록 피크닉 타일",
+      "slug": "GrassBlockPicnicTile",
+      "id": "Tile_Surface_GrassBlockPicnicTile",
+      "footprint_cm": [
+        400,
+        400
+      ],
+      "height_cm": 8,
+      "description_ko": "휴식 구역의 잔디·포장 패턴.",
+      "emphasis_ko": "블록과 잔디를 큰 면으로 구분. 기본은 평탄하게 만들고 별도 잔디 장식을 추가할 때 상부 시설과의 겹침을 검사한다.",
+      "reference_image": "Design/Facitilies/70 잔디블록 피크닉 타일.png",
+      "exploded_reference_image": "Design/Facitilies/70 잔디블록 피크닉 타일 분해.png",
+      "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Tile/PDA_FFZS_Tile_Surface_Stone",
+      "followup_features": [
+        "상부 시설 설치·잔디 겹침·NPC 통행은 실제 배치로 검증한다."
+      ],
+      "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_GrassBlockPicnicTile\\SM_FF_Tile_Surface_GrassBlockPicnicTile.fbx",
+      "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\70_Tile_Surface_GrassBlockPicnicTile.blend",
+      "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Tile\\Tile_Surface_GrassBlockPicnicTile\\iso.png",
+      "bounds_m": [
+        4.0,
+        4.0,
+        0.07999999076128006
+      ],
+      "bounds_min_m": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max_m": [
+        2.0,
+        2.0,
+        0.07999999076128006
+      ],
+      "triangles": 52,
+      "material_names": [
+        "M_F70_Sand",
+        "M_F70_Green",
+        "M_F70_Cream"
+      ],
+      "collision_count": 1,
+      "editable_parts": 21,
+      "fbx_sha256": "161f4bbfa4f09905ee9e69711b4c60a6d7547e9ac657d84bbe2185dd54e21d56",
+      "art_status": "first_pass",
+      "views": [
+        "iso",
+        "front",
+        "rear",
+        "top"
+      ],
+      "light_positions_m": []
+    }
+  ],
+  "palette": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\palette.json"
+}

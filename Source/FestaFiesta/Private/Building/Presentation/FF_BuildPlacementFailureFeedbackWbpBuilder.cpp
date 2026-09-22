@@ -6,10 +6,10 @@
 // 실패/수명: 기존 에셋은 덮어쓰지 않고 생성 실패 단계마다 중단해 부분 저장을 피한다.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
-#include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
 #include "CommonTextBlock.h"
@@ -19,39 +19,18 @@
 #include "Components/SizeBox.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
-#include "Kismet2/BlueprintEditorUtils.h"
-#include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
-#include "Misc/Paths.h"
-#include "Modules/ModuleManager.h"
-#include "UObject/SavePackage.h"
 #include "WidgetBlueprint.h"
-#include "WidgetBlueprintFactory.h"
+#include "UI/Core/FF_UIWbpBuilderCommon.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildPlacementFailureWbpBuilder, Log, All);
 
 namespace FFBuildPlacementFailureFeedbackWbpBuilder
 {
+	using FFUIWbpBuilder::MakeWidget;
 	const FString FeedbackPackage(
-		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback"));
-
-	template <typename TWidget>
-	TWidget* MakeWidget(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		const FName Name,
-		const bool bVariable = false)
-	{
-		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
+		FFBuildUIAssetPaths::PlacementFailureFeedbackPackage);
 
 	void StyleText(
 		UCommonTextBlock& Text,
@@ -120,39 +99,12 @@ namespace FFBuildPlacementFailureFeedbackWbpBuilder
 		return true;
 	}
 
-	UWidgetBlueprint* LoadExistingBlueprint()
-	{
-		const FString AssetName = FPackageName::GetLongPackageAssetName(FeedbackPackage);
-		return LoadObject<UWidgetBlueprint>(
-			nullptr, *FString::Printf(TEXT("%s.%s"), *FeedbackPackage, *AssetName));
-	}
-
-	bool SaveNewBlueprint(UWidgetBlueprint& Blueprint)
-	{
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
-		if (Blueprint.Status == BS_Error)
-		{
-			return false;
-		}
-
-		Blueprint.MarkPackageDirty();
-		UPackage* Package = Blueprint.GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-		FSavePackageArgs Args;
-		Args.TopLevelFlags = RF_Public | RF_Standalone;
-		Args.SaveFlags = SAVE_NoError;
-		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
-	}
-
 	void BuildPlacementFailureFeedbackUmg()
 	{
 		// 신규 기능 패키지만 만들며 기존 팀 UI나 기존 디자이너 편집본은 절대 저장하지 않습니다.
 		if (FPackageName::DoesPackageExist(FeedbackPackage))
 		{
-			UWidgetBlueprint* Existing = LoadExistingBlueprint();
+			UWidgetBlueprint* Existing = FFUIWbpBuilder::LoadExistingBlueprint(FeedbackPackage);
 			if (Existing && Existing->GeneratedClass &&
 				Existing->GeneratedClass->IsChildOf(
 					UFF_BuildPlacementFailureFeedback::StaticClass()))
@@ -170,17 +122,10 @@ namespace FFBuildPlacementFailureFeedbackWbpBuilder
 			return;
 		}
 
-		UWidgetBlueprintFactory* Factory = NewObject<UWidgetBlueprintFactory>();
-		Factory->ParentClass = UFF_BuildPlacementFailureFeedback::StaticClass();
-		FAssetToolsModule& AssetTools =
-			FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools"));
-		const FString AssetName = FPackageName::GetLongPackageAssetName(FeedbackPackage);
-		const FString PackagePath = FPackageName::GetLongPackagePath(FeedbackPackage);
-		UWidgetBlueprint* Blueprint = Cast<UWidgetBlueprint>(AssetTools.Get().CreateAsset(
-			AssetName, PackagePath, UWidgetBlueprint::StaticClass(), Factory));
-		if (!Blueprint || !Blueprint->WidgetTree ||
-			!BuildLayout(*Blueprint, *Blueprint->WidgetTree) ||
-			!SaveNewBlueprint(*Blueprint))
+		// 생성·위젯 이름 등록·고아 위젯 검사·저장은 팀 공통 도구가 담당한다.
+		if (!FFUIWbpBuilder::EnsureWidgetBlueprint(
+			TEXT("FF_BUILD_FAILURE_FEEDBACK"), FeedbackPackage, FPackageName::GetLongPackagePath(FeedbackPackage),
+			*UFF_BuildPlacementFailureFeedback::StaticClass(), BuildLayout))
 		{
 			UE_LOG(LogFFBuildPlacementFailureWbpBuilder, Error,
 				TEXT("FF_BUILD_FAILURE_FEEDBACK_FAIL: could not create %s"), *FeedbackPackage);

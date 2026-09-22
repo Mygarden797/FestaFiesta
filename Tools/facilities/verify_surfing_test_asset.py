@@ -1,3 +1,6 @@
+# verify_surfing_test_asset.py
+# 역할: 일반 건설 시설인 서핑 부스의 외형 에셋을 가져오거나 검증한다. 플레이 가능한 미니게임 엔진과 별개다.
+
 # -*- coding: utf-8 -*-
 """Reload and verify the surfing Test_Asset pair in a fresh commandlet."""
 
@@ -22,7 +25,7 @@ TEST_ASSET_ID = "Booth_ActivityGame_Surfing"
 MESH_NAME = "SM_FFZS_" + TEST_ASSET_ID
 TEXTURE_NAME = "T_UI_BuildCatalog_" + TEST_ASSET_ID
 MESH_PATH = "/Game/FestaFiesta/Zone/Test_Asset/Asset/" + MESH_NAME
-TEXTURE_PATH = "/Game/FestaFiesta/Zone/Test_Asset/image/" + TEXTURE_NAME
+TEXTURE_PATH = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/" + TEXTURE_NAME
 FBX_RELATIVE = os.path.join(
     "SourceAssets", "Zone", "FacilityMeshes", MESH_NAME + ".fbx"
 )

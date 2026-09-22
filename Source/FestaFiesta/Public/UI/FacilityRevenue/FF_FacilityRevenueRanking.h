@@ -1,3 +1,6 @@
+// FF_FacilityRevenueRanking.h
+// 역할: 시설별 수입 순위를 표시하고 선택 시설로 이동하는 요청을 전달한다.
+
 #pragma once
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"

@@ -1,4 +1,4 @@
-//  FF_FFZSSaveGameTests.cpp
+// FF_FFZSSaveGameTests.cpp
 
 // Schema 5 Snapshot의 자유 Yaw와 1cm 압축 Region 값 그래프가 실제 SaveGame 바이트 왕복에서 손실되지 않는지 검증한다.
 // Spec, Transform, FText, SoftObjectPath, Queue의 Waiting/Service/Exit, Receipt와 CurrentPhase를

@@ -351,4 +351,4 @@ V7 시안은 초록 진주광과 화면 구성을 설명하는 디자인 참고 
 - 매출·도감·프로그램: `FF_FacilityRevenueRanking.cpp`, `FF_FacilityCodexScreen.cpp`, `FF_FacilityCodexModel.cpp`, `FF_FacilityPaidProgramPicker.cpp`, `FF_ProgramSchedulingSubsystem.cpp`.
 - 강화 비용과 실행 조건: `FF_FacilityUpgradeSubsystem.cpp`.
 - 매출·도감·프로그램 화면 반영 명령: `FF.ApplyFacilityAuroraRevenueAndPrograms`.
-- 공통 재질 생성: `Tools/FacilityAurora_20260920/create_materials.py`. 재질 경로: `/Game/FestaFiesta/UI/Facility/Aurora/MI_UI_FacilityAurora_*`.
+- 공통 재질 생성: `Tools/FacilityAurora_20260920/create_materials.py`. 재질 경로: `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/Aurora/MI_UI_FacilityAurora_*`.

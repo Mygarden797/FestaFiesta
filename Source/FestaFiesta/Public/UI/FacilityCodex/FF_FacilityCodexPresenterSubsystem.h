@@ -1,3 +1,6 @@
+// FF_FacilityCodexPresenterSubsystem.h
+// 역할: 도감 열기·닫기와 선택 시설·카탈로그 이동을 연결한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
@@ -5,6 +8,7 @@
 #include "Components/SlateWrapperTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Time/FF_FestivalStage.h"
+#include "TimerManager.h"
 #include "FF_FacilityCodexPresenterSubsystem.generated.h"
 
 class AActor;
@@ -49,7 +53,10 @@ public:
 	static FSoftClassPath GetDefaultScreenClassPath();
 
 private:
+	void BindSessionLifecycle(AFF_FestivalPlayerController& Controller);
 	void CloseSession(bool bRestoreFocus);
+	void HandleFacilityCatalogRequested(FName FacilityDefinitionId);
+	void CompleteCatalogNavigation(FName FacilityDefinitionId);
 	void RestoreInput(AFF_FestivalPlayerController& Controller);
 	void SuppressCatalogVisibility(AFF_FestivalPlayerController& Controller);
 	void RestoreCatalogVisibility();
@@ -79,6 +86,7 @@ private:
 	bool bCatalogWasInViewport = false;
 	bool bCatalogHadOwningBar = false;
 	TWeakPtr<SWidget> PreviousFocusedWidget;
+	FTimerHandle CatalogNavigationTimer;
 	bool bOwnsModalInput = false;
 	bool bPreviousCursorVisible = false;
 	bool bPreviousViewportIgnoredInput = false;

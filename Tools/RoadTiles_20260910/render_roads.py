@@ -1,3 +1,6 @@
+# render_roads.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 모델을 렌더링해 확인용 이미지를 만든다.
+
 """Render actual road meshes in isolated QA scenes; never edits source scenes.
 
 Execute in Blender, then call render_sheet(BUILT, path), or render_views(builder,

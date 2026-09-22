@@ -6,6 +6,7 @@
 // 실패/수명: 새 트리 생성·컴파일이 실패하면 기존 트리와 바인딩을 복구하고 에셋을 저장하지 않는다.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
@@ -40,8 +41,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFZoneLifecycleTestWbpBuilder, Log, All);
 namespace FFZoneLifecycleTestWbpBuilder
 {
 	const FString PanelPackage(
-		TEXT("/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel"));
-	const FString PanelFolder(TEXT("/Game/FestaFiesta/Building/Debug"));
+		FFBuildUIAssetPaths::ZoneLifecycleTestPanelPackage);
+	const FString PanelFolder(FFBuildUIAssetPaths::DebugFolder);
 
 	constexpr float PanelWidth = 480.0f;
 	constexpr float PanelHeight = 540.0f;

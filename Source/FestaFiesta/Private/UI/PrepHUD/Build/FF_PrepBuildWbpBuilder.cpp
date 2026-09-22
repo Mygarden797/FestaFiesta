@@ -1,8 +1,12 @@
+// FF_PrepBuildWbpBuilder.cpp
+// 역할: 준비 HUD 건설 패널의 초기 에셋과 패키징 포함 목록을 만든다.
+
 // One-shot, fail-safe WBP scaffolding for the PrepHUD LightTeal build panel.
 
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
@@ -44,13 +48,13 @@ namespace FFPrepBuildWbpBuilder
 	using namespace FFUIWbpBuilder;
 
 	constexpr const TCHAR* LogPrefix = TEXT("FF_PREPBUILD_UMG");
-	const FString BuildFolder = TEXT("/Game/FestaFiesta/UI/PrepHUD/Build");
-	const FString PanelFolder = TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels");
+	const FString BuildFolder = FFBuildUIAssetPaths::CatalogFolder;
+	const FString PanelFolder = BuildFolder;
 	const FString TilePackage = BuildFolder / TEXT("WBP_FF_PrepBuildTile");
 	const FString PanelPackage = PanelFolder / TEXT("WBP_FF_PrepPanelBuild");
 	const FString CookLabelPackage = BuildFolder / TEXT("PAL_FF_PrepBuildUI");
 	const FString ChoiceButtonPackage =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton");
+		FString(FFBuildUIAssetPaths::SharedFolder) / TEXT("WBP_FF_PrepChoiceButton");
 	const FString CategoryDependencyCookLabelPackage =
 		BuildFolder / TEXT("PAL_FF_PrepBuildCategoryDependencies");
 

@@ -39,9 +39,9 @@ public:
     TObjectPtr<UStaticMeshComponent> PreviewMesh;
     // 충돌과 권한이 없는 고스트 표현 컴포넌트다. 
 
+    // 비우면 Project Settings > Game > FF Build Presentation의 기본 재질을 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Preview|Feedback")
-    TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial = TSoftObjectPtr<UMaterialInterface>(
-        FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/Clarity/M_BuildPlacementFeedback.M_BuildPlacementFeedback")));
+    TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial;
 
     // Reused, non-colliding planes. Source facility materials and assets are never edited.
     UPROPERTY(Transient)
@@ -91,6 +91,11 @@ public:
     // 현재 PreviewCommand를 읽기 전용 검증하고 LastValidation·Transform·메시·디버그 표시를 갱신.
     // @return 호출 시점의 결과. 이후 월드 변경으로 즉시 오래된 결과가 될 수 있다.
 
+    // Follow a freshly sampled target without rerunning placement policies. The command and
+    // last validation remain unchanged; stale success/failure visuals are hidden until refresh.
+    void SetUnvalidatedPreviewTransform(const FTransform& Transform);
+    bool HasUnvalidatedPreviewTransform() const { return bHasUnvalidatedPreviewTransform; }
+
     // 권위 검증·메시·예약 영역은 건드리지 않고 로컬 격자만 다시 만든다. G 표시 토글처럼
     // 시각 상태만 바뀐 입력에서 외부 정책과 전체 배치 검증을 중복 실행하지 않게 한다.
     void RefreshPlacementGridVisual();
@@ -135,6 +140,7 @@ private:
     UPROPERTY(Transient)
     TObjectPtr<UMaterialInstanceDynamic> FailureSurfaceMaterial;
     bool bFeedbackMaterialLoadAttempted = false;
+    bool bHasUnvalidatedPreviewTransform = false;
     void RefreshGhostFeedback();
     void ShowFailureSurface(const FFFZSOrientedRect& WorldRegion, double BaseZ, int32 SurfaceIndex);
     UPROPERTY(VisibleAnywhere, Category = "Preview")

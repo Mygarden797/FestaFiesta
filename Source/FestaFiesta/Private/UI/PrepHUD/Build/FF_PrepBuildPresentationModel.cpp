@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationModel.cpp
+// 역할: 시설 목록을 화면 카드용 데이터로 바꾸고 재사용 가능한 카드 객체를 관리한다.
+
 // 카탈로그 스냅샷을 UTileView 목록 객체로 조정하는 프레젠테이션 모델 구현.
 
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
@@ -34,6 +37,7 @@ void UFF_PrepBuildPresentationModel::Reconcile(
 		}
 		Tile->Initialize(Entry, Gold, bHasAuthoritativeGold);
 		Tile->SetSynergyHighlighted(SynergyHighlightIds.Contains(FacilityId));
+		Tile->SetCodexFocused(FacilityId == CodexFocusId);
 
 		// 로딩/실패 중에는 이전 프레임 목록을 눌러 배치하지 못하게 본문을 비웁니다.
 		if (LoadState == EFF_BuildCatalogLoadState::Ready
@@ -86,6 +90,15 @@ void UFF_PrepBuildPresentationModel::SetSynergyHighlightIds(const TArray<FName>&
 	for (const FName Id : DefinitionIds)
 	{
 		if (!Id.IsNone()) { SynergyHighlightIds.Add(Id); }
+	}
+}
+
+void UFF_PrepBuildPresentationModel::SetCodexFocusId(const FName DefinitionId)
+{
+	CodexFocusId = DefinitionId;
+	for (const auto& Pair : TilePool)
+	{
+		if (Pair.Value) { Pair.Value->SetCodexFocused(!DefinitionId.IsNone() && Pair.Key == DefinitionId); }
 	}
 }
 

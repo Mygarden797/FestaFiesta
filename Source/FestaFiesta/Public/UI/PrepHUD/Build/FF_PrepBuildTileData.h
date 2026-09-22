@@ -1,3 +1,6 @@
+// FF_PrepBuildTileData.h
+// 역할: 시설 카드에 표시할 정보를 담고 그림 로딩 상태를 관리한다.
+
 // UTileView가 가상화해 소비할 시설 카드 데이터 객체를 선언한다.
 // 카탈로그 항목은 값으로 복사하고 이미지 soft reference는 동기 로드하지 않는다.
 
@@ -75,6 +78,10 @@ public:
 
 	void SetSynergyHighlighted(bool bHighlighted) { bSynergyHighlighted = bHighlighted; }
 
+	/** The codex destination is independent of placement, selection and synergy recommendations. */
+	bool IsCodexFocused() const { return bCodexFocused; }
+	void SetCodexFocused(bool bFocused) { bCodexFocused = bFocused; }
+
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	EFF_PrepBuildTileState GetTileState() const { return TileState; }
 
@@ -130,6 +137,7 @@ private:
 
 	int32 Gold = 0;
 	bool bSynergyHighlighted = false;
+	bool bCodexFocused = false;
 	bool bHasAuthoritativeGold = false;
 };
 

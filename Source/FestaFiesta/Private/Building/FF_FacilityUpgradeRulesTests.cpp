@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeRulesTests.cpp
+// 역할: FacilityUpgradeRules 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.FacilityUpgrade.PricingAndAuthoring).
+
 #include "Building/FF_FacilityUpgradeTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

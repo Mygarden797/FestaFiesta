@@ -1,3 +1,6 @@
+# Package-Win64.ps1
+# 역할: Windows 게임 패키지를 만들고 빌드·배포 검증을 묶어 실행한다.
+
 [CmdletBinding()]
 param(
     [string] $EngineRoot,

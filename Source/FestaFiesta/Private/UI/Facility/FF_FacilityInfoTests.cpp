@@ -1,6 +1,10 @@
+// FF_FacilityInfoTests.cpp
+// 역할: 시설 선택·운영 정보·화면 연결·프로그램·업그레이드 표시를 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoTypes.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -58,6 +62,7 @@
 #include "UI/Facility/FF_FacilityInfoUpgradeLayout.h"
 #include "UI/Facility/FF_FacilityInfoWbpBuilder.h"
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
+#include "UI/Facility/FF_FacilityPaidProgramLayout.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "WidgetBlueprint.h"
 
@@ -76,7 +81,7 @@ namespace
 	UTexture2D* LoadCaptureFoodTruckTexture(FAutomationTestBase& Test)
 	{
 		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr,
-			TEXT("/Game/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
+			FFBuildUIAssetPaths::FoodTruckImageObject);
 		if (!Test.TestNotNull(TEXT("실제 카탈로그 푸드트럭 썸네일"), Texture)) return nullptr;
 		TArray<UTexture*> Textures = {Texture};
 		FTextureCompilingManager::Get().FinishCompilation(Textures);
@@ -86,17 +91,13 @@ namespace
 	}
 
 	const TCHAR* FacilityInfoObjectPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
-			"WBP_FF_FacilityInfoPanel");
+		FFBuildUIAssetPaths::FacilityInfoPanelObject;
 	const TCHAR* FacilityInfoClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
-			"WBP_FF_FacilityInfoPanel_C");
+		FFBuildUIAssetPaths::FacilityInfoPanelClass;
 	const TCHAR* PaidProgramPickerClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
-			"WBP_FF_FacilityPaidProgramPicker_C");
+		FFBuildUIAssetPaths::FacilityPaidProgramPickerClass;
 	const TCHAR* PaidProgramCardClassPath =
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard."
-			"WBP_FF_FacilityPaidProgramCard_C");
+		FFBuildUIAssetPaths::FacilityPaidProgramCardClass;
 
 	class FScopedFacilityInfoPlayerlessWidgetInitialization
 	{
@@ -684,7 +685,7 @@ bool FFF_FacilityInfoSelectionGeometryTest::RunTest(const FString& Parameters)
 	// Keep the synthetic geometry stable, but inherit the current authored identity/cost
 	// contract. The retired DadaPochaFoodTruck row and category Default no longer exist.
 	const UFFZSFacilityDefinition* PricedDefinition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger."
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger."
 			"PDA_FFZS_Booth_FoodStall_Burger"));
 	if (!TestNotNull(TEXT("선택 fixture가 사용하는 현행 Burger 시설 정의"), PricedDefinition) ||
 		!TestEqual(TEXT("기하 fixture와 가격 정의의 카테고리가 같다"),
@@ -1086,7 +1087,13 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("라이브 섹션 계약"), Tree->FindWidget(TEXT("Panel_LiveSection")));
 	TestNotNull(TEXT("고정 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_Actions")));
 	TestNotNull(TEXT("건축 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_BuildActions")));
-	TestNotNull(TEXT("라이브 행동 영역 계약"), Tree->FindWidget(TEXT("Panel_LiveActions")));
+	// 삭제된 기능의 진입점이 저장된 화면에 다시 생기지 않아야 한다.
+	for (const FName Name : {FName(TEXT("Panel_LiveActions")), FName(TEXT("Button_StartMinigame")),
+		FName(TEXT("Text_StartMinigame"))})
+	{
+		TestNull(*FString::Printf(TEXT("제거된 미니게임 위젯: %s"), *Name.ToString()), Tree->FindWidget(Name));
+		TestFalse(TEXT("제거된 위젯의 변수 GUID가 남지 않는다"), Blueprint->WidgetVariableNameToGuidMap.Contains(Name));
+	}
 	TestNotNull(TEXT("유료 프로그램 섹션 계약"), Tree->FindWidget(TEXT("Panel_ProgramSection")));
 	TestNotNull(TEXT("유료 프로그램 편성 버튼 계약"),
 		Cast<UButton>(Tree->FindWidget(TEXT("Button_ScheduleProgram"))));
@@ -1126,7 +1133,7 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 		TEXT("Text_Occupancy"), TEXT("Text_RemainingService"), TEXT("Text_ExpectedWait"),
 		TEXT("Text_Throughput"), TEXT("Text_Feedback"), TEXT("Text_ProgramStatus"),
 		TEXT("Text_ScheduledProgramSummary"), TEXT("Text_ProgramScheduleReason"),
-		TEXT("Text_ScheduleProgram"), TEXT("Text_StartMinigame"), TEXT("Text_FacilityLevel"),
+		TEXT("Text_ScheduleProgram"), TEXT("Text_FacilityLevel"),
 		TEXT("Text_UpgradeEffect"), TEXT("Text_UpgradeCost"), TEXT("Text_UpgradeReason"), TEXT("Text_Upgrade"),
 		TEXT("Text_FacilityRevenue")
 	};
@@ -1137,9 +1144,9 @@ bool FFF_FacilityInfoAssetContractTest::RunTest(const FString& Parameters)
 	}
 	TArray<FName> RequiredVariableNames = {
 		TEXT("Border_Panel"), TEXT("Button_Close"), TEXT("Button_Move"),
-		TEXT("Button_Remove"), TEXT("Button_StartMinigame"), TEXT("Image_Thumbnail"),
+		TEXT("Button_Remove"), TEXT("Image_Thumbnail"),
 		TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Panel_ProgramSection"),
-		TEXT("Panel_Actions"), TEXT("Panel_BuildActions"), TEXT("Panel_LiveActions"),
+		TEXT("Panel_Actions"), TEXT("Panel_BuildActions"),
 		TEXT("Button_ScheduleProgram"), TEXT("Panel_UpgradeSection"), TEXT("Button_Upgrade")
 	};
 	RequiredVariableNames.Append(RequiredTextNames);
@@ -1858,7 +1865,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 			// A UI material's brush tint is white; its shader authors the visible color.
 			// Keep checking both the intended material and the rendered sage/readability range.
 			TestTrue(TEXT("Clarity header uses its authored material"),HeaderMaterial && HeaderMaterial->GetPathName()==
-				TEXT("/Game/FestaFiesta/UI/Building/Clarity/MI_UI_BuildClarity_Header.MI_UI_BuildClarity_Header"));
+				FFBuildUIAssetPaths::BuildClarity_HeaderObject);
 			TestTrue(TEXT("Rendered Clarity header remains opaque pale sage"),HeaderPixel.A>=245 &&
 				HeaderPixel.R>=215 && HeaderPixel.R<=245 && HeaderPixel.G>=225 && HeaderPixel.G<=250 &&
 				HeaderPixel.B>=205 && HeaderPixel.B<=242 && HeaderPixel.G>=HeaderPixel.R+3 && HeaderPixel.G>=HeaderPixel.B+6);
@@ -1900,14 +1907,12 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 	Data.RemainingServiceText = FText::FromString(TEXT("4팀"));
 	Data.ExpectedWaitText = FText::FromString(TEXT("12초"));
 	Data.ThroughputText = FText::FromString(TEXT("분당 15팀"));
-	Data.bHasMinigame = true;
-	Data.bCanStartMinigame = true;
 	Panel->ApplyViewData(Data);
 	Panel->SetInfoPage(EFF_FacilityInfoPage::Operation);
 	bSaved &= Capture(TEXT("FacilityGamePanelLive720.png"));
 	TestTrue(TEXT("컨텍스트 변경 시 새 정보의 처음으로 이동한다"), Scroll && Scroll->GetScrollOffset() < 1.0f);
-	UButton* Minigame = Cast<UButton>(Panel->GetWidgetFromName(TEXT("Button_StartMinigame")));
-	TestTrue(TEXT("게임형 운영 화면에서도 미니게임 실행을 유지한다"), Minigame && Minigame->GetIsEnabled());
+	TestTrue(TEXT("운영 화면에서는 비어 있는 건축 행동 영역을 숨긴다"),
+		Footer && Footer->GetVisibility() == ESlateVisibility::Collapsed);
 	Panel->ReleaseSlateResources(true);
 	return bSaved;
 }
@@ -1950,21 +1955,25 @@ bool FFF_FacilityPaidProgramWbpContractTest::RunTest(const FString& Parameters)
 	TestNotNull(TEXT("Picker는 전체 화면 Canvas에 우측 도킹된다"), PickerSlot);
 	if (PickerSlot)
 	{
-		const bool bClarityV2=PickerTree->FindWidget(TEXT("Button_BackToPrograms"))!=nullptr;
+		// 화면의 버전 표식으로 정확한 계약 하나만 선택한다. 임의 크기나 과거 600px 배치는 허용하지 않는다.
+		const FFFacilityPaidProgramLayout::EVariant Variant = FFFacilityPaidProgramLayout::GetVariant(*PickerTree);
+		const FFFacilityPaidProgramLayout::FDock Expected = FFFacilityPaidProgramLayout::GetDock(Variant);
 		const FAnchors Anchors = PickerSlot->GetAnchors();
 		TestTrue(TEXT("Picker uses its authored right-side anchor"),
-			Anchors.Minimum.Equals(FVector2D(1.0f, 0.0f)) &&
-			Anchors.Maximum.Equals(FVector2D(1.0f, bClarityV2?0.0f:1.0f)));
+			Anchors.Minimum.Equals(Expected.Anchors.Minimum) &&
+			Anchors.Maximum.Equals(Expected.Anchors.Maximum));
 		TestTrue(TEXT("Picker alignment는 우상단이다"),
-			PickerSlot->GetAlignment().Equals(FVector2D(1.0f, 0.0f)));
+			PickerSlot->GetAlignment().Equals(Expected.Alignment));
+		TestFalse(TEXT("Picker의 구매 내용이 늘어나도 지정한 창 크기는 유지한다"), PickerSlot->GetAutoSize());
 
 		const FMargin Offsets = PickerSlot->GetOffsets();
-		TestTrue(TEXT("Picker matches the compact inspector dock"),
-			FMath::IsNearlyEqual(Offsets.Left, -18.0f) &&
-			FMath::IsNearlyEqual(Offsets.Top, 18.0f) &&
-			FMath::IsNearlyEqual(Offsets.Right, bClarityV2?456.0f:600.0f) &&
-			FMath::IsNearlyEqual(Offsets.Bottom, bClarityV2?620.0f:70.0f));
-		TestTrue(TEXT("Picker leaves the bottom HUD clear at 720p"),bClarityV2?Offsets.Top+Offsets.Bottom<=650.f:Offsets.Bottom>=70.f);
+		TestEqual(TEXT("Picker의 우측 여백이 승인된 배치와 일치한다"), Offsets.Left, Expected.Offsets.Left);
+		TestEqual(TEXT("Picker의 상단 여백이 승인된 배치와 일치한다"), Offsets.Top, Expected.Offsets.Top);
+		TestEqual(TEXT("Picker의 폭이 승인된 배치와 일치한다"), Offsets.Right, Expected.Offsets.Right);
+		TestEqual(TEXT("Picker의 높이 또는 하단 여백이 승인된 배치와 일치한다"), Offsets.Bottom, Expected.Offsets.Bottom);
+		const float BottomClearance = Variant == FFFacilityPaidProgramLayout::EVariant::ClarityV2
+			? 720.0f - Offsets.Top - Offsets.Bottom : Offsets.Bottom;
+		TestTrue(TEXT("Picker leaves the bottom HUD clear at 720p"), BottomClearance >= 70.0f);
 	}
 	TestNotNull(TEXT("프로그램 동적 목록"),
 		Cast<UScrollBox>(PickerTree->FindWidget(TEXT("ScrollBox_Programs"))));
@@ -2356,7 +2365,7 @@ bool FFF_FacilityLightingControlsTest::RunTest(const FString& Parameters)
 {
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		FFBuildUIAssetPaths::FacilityLightingControlsClass));
 	if (!TestNotNull(TEXT("Lighting WBP class"), Class) || !TestNotNull(TEXT("Editor world"), World)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	UFF_FacilityLightingControls* Controls = CreateWidget<UFF_FacilityLightingControls>(World, Class);
@@ -2449,7 +2458,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
 	auto* LightingClass=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		FFBuildUIAssetPaths::FacilityLightingControlsClass));
 	if (!TestNotNull(TEXT("Panel WBP"), Class) || !TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Lighting child WBP"),LightingClass)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	FScopedFacilityInfoPlayerlessWidgetInitialization LightingInitializationGuard(*LightingClass);
@@ -2476,7 +2485,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	Data.LightingState.bOverrideColor = true;
 	Data.LightingState.Color = FLinearColor::FromSRGBColor(FColor(0x56, 0xDC, 0xE7));
 	UFFZSFacilityDefinition* Definition = LoadObject<UFFZSFacilityDefinition>(nullptr,
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage"));
 	if (!TestNotNull(TEXT("Current main-stage PDA"), Definition)) return false;
 	Data.DisplayName = Definition->Spec.DisplayName;
 	Data.FootprintText = FFFacilityInfoModel::FormatFootprint(Definition->Spec.FootprintSizeCells);

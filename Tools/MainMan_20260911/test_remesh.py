@@ -1,3 +1,6 @@
+# test_remesh.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 오류 경계와 기존 데이터 보존 동작을 검증한다.
+
 import bpy,bmesh
 from pathlib import Path
 from mathutils import Vector

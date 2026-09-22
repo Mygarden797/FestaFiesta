@@ -1,3 +1,6 @@
+# build_roads.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 원본 모델이나 결과물을 생성한다.
+
 """Reference-driven six editable road tiles; run build_all() through Blender MCP.
 Units are metres. Editable source +Y forward, export rotation makes +X forward.
 Only this job's new scenes/collections are created. No source image is baked.

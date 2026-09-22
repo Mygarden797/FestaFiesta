@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationModel.h
+// 역할: 시설 목록을 화면 카드용 데이터로 바꾸고 재사용 가능한 카드 객체를 관리한다.
+
 // 카탈로그 스냅샷을 UTileView용 UObject 목록으로 조정하고 객체 풀을 재사용한다.
 
 #pragma once
@@ -38,6 +41,10 @@ public:
 	/** 다음 Reconcile에서 추천 배지를 적용하고, 필터를 통과한 추천 항목을 먼저 보여 줍니다. */
 	void SetSynergyHighlightIds(const TArray<FName>& DefinitionIds);
 
+	/** Keeps the destination accent on its facility identity while rows are filtered/recycled. */
+	void SetCodexFocusId(FName DefinitionId);
+	FName GetCodexFocusId() const { return CodexFocusId; }
+
 	/** UListView/UTileView::SetListItems에 바로 넘길 수 있는 배열 복사본입니다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
 	TArray<UObject*> GetListItems() const;
@@ -56,6 +63,7 @@ public:
 
 private:
 	TSet<FName> SynergyHighlightIds;
+	FName CodexFocusId;
 
 	/** 필터에서 잠시 빠진 항목도 같은 카탈로그에 있으면 identity를 유지합니다. */
 	UPROPERTY(Transient)

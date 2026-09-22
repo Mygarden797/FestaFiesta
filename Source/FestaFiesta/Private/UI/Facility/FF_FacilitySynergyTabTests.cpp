@@ -1,6 +1,10 @@
+// FF_FacilitySynergyTabTests.cpp
+// 역할: 시설 정보의 조합 탭과 상대 시설 연결을 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "Building/Synergy/FF_FacilitySynergyEvaluator.h"
@@ -126,15 +130,15 @@ bool FFF_FacilitySynergyTabTest::RunTest(const FString& Parameters)
 {
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* PanelClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
+        FFBuildUIAssetPaths::FacilityInfoPanelClass));
     auto* EntryClass = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilitySynergyEntryWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry.WBP_FF_FacilitySynergyEntry_C")));
+        FFBuildUIAssetPaths::FacilitySynergyEntryClass));
     const auto* Burger = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"));
     const auto* Seating = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"));
     const auto* Shade = LoadObject<UFFZSFacilityDefinition>(nullptr,
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade"));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade"));
     const auto* SynergyTable = LoadObject<UDataTable>(nullptr,
         TEXT("/Game/FestaFiesta/Data/Economy/DT_FacilitySynergies.DT_FacilitySynergies"));
     if (!TestNotNull(TEXT("Editor fixture world"), World) || !TestNotNull(TEXT("Actual facility inspector WBP"), PanelClass) ||

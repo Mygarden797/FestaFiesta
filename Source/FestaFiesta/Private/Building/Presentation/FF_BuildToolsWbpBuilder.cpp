@@ -1,7 +1,11 @@
+// FF_BuildToolsWbpBuilder.cpp
+// 역할: 저장된 디자이너 편집을 보존하면서 건설 도구 화면의 초기 틀을 만든다.
+
 // One-time scaffold for the editable LightTeal toolbar. Existing WBP assets are reused;
 // subsequent layout changes belong in the Designer, not a destructive regeneration command.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
@@ -29,7 +33,7 @@
 namespace FFBuildToolsWbpBuilder
 {
     using namespace FFUIWbpBuilder;
-    const FString ToolsFolder(TEXT("/Game/FestaFiesta/UI/Building"));
+    const FString ToolsFolder(FFBuildUIAssetPaths::ControlsFolder);
     const FString ToolsPackage = ToolsFolder / TEXT("WBP_FF_BuildTools");
     const TCHAR* ApprovedLayoutKey = TEXT("FFApprovedBuildToolsLayoutVersion");
     const TCHAR* ApprovedLayoutVersion = TEXT("2");

@@ -1,3 +1,6 @@
+# report_expansion70.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 """Build an honest Korean delivery report and local gallery for Facility70.
 
 Run with the bundled rich Python (Pillow required), not Unreal or Blender Python.
@@ -13,6 +16,9 @@ import html
 import json
 import math
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from expansion70_paths import blend_directory
 import re
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -39,7 +45,7 @@ def expected_paths(entry):
     identity, category, slug = entry["id"], entry["category"], entry["slug"]
     base = f"/Game/FestaFiesta/Art/FacilityExpansion70/{category}/{slug}"
     return {
-        "definition": f"/Game/FestaFiesta/Zone/Data/FacilityDefinitions/{category}/PDA_FFZS_{identity}",
+        "definition": f"/Game/FestaFiesta/Building/FF_Data_Building/{category}/PDA_FFZS_{identity}",
         "mesh": f"{base}/SM_FF_{identity}",
         "thumbnail": f"{base}/T_UI_F70_{identity}",
         "rig": f"{base}/BP_F70_{identity}_LightingRig",
@@ -355,7 +361,7 @@ def make_markdown(rows, sources, pages, output, gallery, root, blend_dir, genera
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
-    parser.add_argument("--blend-dir", type=Path, default=Path("C:/Users/gksro/OneDrive/Desktop/Blender"))
+    parser.add_argument("--blend-dir", type=Path, default=blend_directory())
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()
     root = args.root.resolve()

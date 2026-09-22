@@ -6,6 +6,7 @@
 // 실패/수명: 콘텐츠 검사와 transient 동작 검사를 분리하고 생성한 Slate 래퍼는 범위 끝까지 유지한다.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -22,16 +23,13 @@
 namespace
 {
 	const TCHAR* TooltipPackagePath =
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip");
+		FFBuildUIAssetPaths::FacilityCostTooltipPackage;
 	const TCHAR* TooltipObjectPath =
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
-			"WBP_FF_BuildFacilityCostTooltip");
+		FFBuildUIAssetPaths::FacilityCostTooltipObject;
 	const TCHAR* TooltipClassPath =
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
-			"WBP_FF_BuildFacilityCostTooltip_C");
+		FFBuildUIAssetPaths::FacilityCostTooltipClass;
 	const TCHAR* FacilityCardClassPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard."
-			"WBP_FF_BuildFacilityCard_C");
+		FFBuildUIAssetPaths::FacilityCardClass;
 
 	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
 	class FScopedBuildFacilityCostTooltipPlayerlessWidgetInitialization
@@ -67,7 +65,7 @@ bool FFF_BuildFacilityCostTooltipAssetContractTest::RunTest(const FString& Param
 	(void)Parameters;
 
 	TestFalse(TEXT("The tooltip lives outside the team-owned Zone/UI/Building path"),
-		FString(TooltipPackagePath).StartsWith(TEXT("/Game/FestaFiesta/Zone/UI/Building")));
+		FString(TooltipPackagePath).StartsWith(FFBuildUIAssetPaths::LegacyCatalogFolder));
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, TooltipObjectPath);
 	TestNotNull(TEXT("The independent editable tooltip WBP loads"), Blueprint);
 	if (!Blueprint)

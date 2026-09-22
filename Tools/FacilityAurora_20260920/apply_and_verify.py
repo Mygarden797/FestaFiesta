@@ -1,3 +1,6 @@
+# apply_and_verify.py
+# 역할: 시설 정보·수익 화면의 테마 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply the requested facility UI revision to explicit saved assets and verify it."""
 import hashlib
 import json
@@ -6,10 +9,11 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
+UI_ROOTS = (ROOT / 'Content/FestaFiesta/UI', ROOT / 'Content/FestaFiesta/Building/FF_WBP_Building')
 OUT = ROOT / 'Saved/FacilityAurora_20260920'
 OUT.mkdir(parents=True, exist_ok=True)
 PACKAGES = [
-    '/Game/FestaFiesta/UI/' + name for name in (
+    '/Game/FestaFiesta/Building/FF_WBP_Building/' + name for name in (
         'Facility/WBP_FF_FacilityInfoPanel',
         'Facility/WBP_FF_FacilityLightingControls',
         'Facility/WBP_FF_FacilitySynergyEntry',
@@ -21,10 +25,10 @@ PACKAGES = [
         'FacilityCodex/WBP_FF_FacilityCodexScreen',
         'FacilityCodex/WBP_FF_FacilityCodexCard',
         'FacilityCodex/WBP_FF_FacilityCodexLauncher',
-        'PrepHUD/Panels/WBP_FF_PrepPanelBuild',
-        'PrepHUD/Build/WBP_FF_PrepBuildTile',
-        'Building/WBP_FF_BuildTools',
-        'Building/WBP_FF_BuildSynergy',
+        'Catalog/WBP_FF_PrepPanelBuild',
+        'Catalog/WBP_FF_PrepBuildTile',
+        'Controls/WBP_FF_BuildTools',
+        'Controls/WBP_FF_BuildSynergy',
     )
 ]
 COMMANDS = [
@@ -67,7 +71,7 @@ def snapshot(package):
 world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
 assert world and world.get_path_name().startswith('/Engine/Maps/Entry.'), 'Use Entry world.'
 allowed = {path(package).resolve() for package in PACKAGES}
-protected = {file: digest(file) for file in (ROOT / 'Content/FestaFiesta/UI').rglob('*.uasset')
+protected = {file: digest(file) for base in UI_ROOTS for file in base.rglob('*.uasset')
              if file.resolve() not in allowed and '/Aurora/' not in file.as_posix()}
 runpy.run_path(str(ROOT / 'Tools/FacilityAurora_20260920/create_materials.py'))
 for command in COMMANDS:

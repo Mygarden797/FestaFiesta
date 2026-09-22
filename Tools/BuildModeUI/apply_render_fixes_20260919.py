@@ -1,3 +1,6 @@
+# apply_render_fixes_20260919.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply only follow-up fixes verified by the 720p/1080p render tests."""
 import hashlib
 import json
@@ -15,12 +18,12 @@ for command in commands:
 runpy.run_path(str(Path(__file__).parent/"tune_revenue_after_render.py"))
 unreal.SystemLibrary.execute_console_command(world,"FF.FinalizeFacilityRevenueLayout20260919")
 packages=[
-    "/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel",
-    "/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard",
-    "/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen",
-    "/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityWorldBadge",
-    "/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRanking",
-    "/Game/FestaFiesta/UI/FacilityRevenue/WBP_FF_FacilityRevenueRankRow",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow",
 ]
 def digest(package):
     return hashlib.sha256((root/"Content"/(package[6:]+".uasset")).read_bytes()).hexdigest()

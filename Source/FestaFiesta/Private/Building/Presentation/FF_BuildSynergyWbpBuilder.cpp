@@ -1,5 +1,9 @@
+// FF_BuildSynergyWbpBuilder.cpp
+// 역할: 저장된 화면을 보존하면서 누락된 시설 조합 화면을 처음 만든다.
+
 // One-time native UMG scaffold. Designer-owned trees and defaults are never regenerated.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
@@ -22,7 +26,7 @@
 namespace FFBuildSynergyWbpBuilder
 {
 using namespace FFUIWbpBuilder;
-const FString WidgetFolder(TEXT("/Game/FestaFiesta/UI/Building"));
+const FString WidgetFolder(FFBuildUIAssetPaths::ControlsFolder);
 const FString WidgetPackage(WidgetFolder / TEXT("WBP_FF_BuildSynergy"));
 
 bool ValidateWidgetContract(const UWidgetBlueprint& Blueprint)

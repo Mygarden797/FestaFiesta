@@ -1,3 +1,6 @@
+# capture_roads.py
+# 역할: 설치 가능한 도로·타일 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """Render shared surface meshes and an existing facility above authored Tiles.
 
 Uses a transient Entry world and real GPU SceneCapture. This visual fixture is
@@ -64,7 +67,7 @@ def start():
     tile_footprint = tile_spec.get_editor_property('footprint_size_cells')
     support_height = tile_spec.get_editor_property('placement_obstacle_height_cm')
     # Keep the existing facility at its authoritative size on the Tile support plane.
-    definition = unreal.load_asset('/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream')
+    definition = unreal.load_asset('/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_IceCream')
     assert definition
     spec = definition.get_editor_property('spec')
     mesh = spec.get_editor_property('visual_mesh')

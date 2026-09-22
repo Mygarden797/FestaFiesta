@@ -1,9 +1,15 @@
+// FF_BuildDragPlacement.cpp
+// 역할: 마우스로 그린 경로를 중복 없이 제한된 작업량으로 연속 설치한다.
+
 // Mouse strokes produce bounded, deduplicated install commands. No preview actors,
 // timers, asset loads or global actor scans are created for individual samples.
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildingSettings.h"
 
 #include "FF_BuildDragPlacementPath.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
+#include "Engine/HitResult.h"
+#include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
@@ -37,10 +43,8 @@ namespace FFBuildDragPlacement
 
 struct FFF_BuildDragPlacementSession
 {
-	static constexpr int32 MaxCellsPerFrame = 8;
 	static constexpr int32 MaxStrokeCells = 4096;
 	static constexpr int32 MaxPendingTargets = 128;
-	static constexpr double FrameBudgetSeconds = 0.002;
 	FFF_BuildDragPlacementPath Path;
 	TSet<FIntPoint> AttemptedCells;
 	FIntPoint Targets[MaxPendingTargets];
@@ -161,6 +165,22 @@ void UFF_BuildModeSubsystem::UpdateDragPlacement(const FVector& CursorWorld)
 	if (!ResolveDragCursorCell(CursorWorld, Target)) { EndDragPlacement(); return; }
 	FFF_BuildDragPlacementSession& Stroke = *DragPlacementSession;
 	if (Target == Stroke.LastTarget) { return; }
+	// A straight stroke can produce hundreds of cursor samples while a single
+	// installation is expensive. Extending its queued endpoint preserves every
+	// rasterized cell without letting redundant samples fill the bounded queue.
+	if (Stroke.TargetCount > 0)
+	{
+		const int32 Tail = (Stroke.TargetHead + Stroke.TargetCount - 1) % Stroke.MaxPendingTargets;
+		const FIntPoint Previous = Stroke.TargetCount > 1
+			? Stroke.Targets[(Stroke.TargetHead + Stroke.TargetCount - 2) % Stroke.MaxPendingTargets]
+			: Stroke.Path.GetTargetCell();
+		if (FFF_BuildDragPlacementPath::CanExtendCardinalSegment(Previous, Stroke.Targets[Tail], Target))
+		{
+			Stroke.Targets[Tail] = Target;
+			Stroke.LastTarget = Target;
+			return;
+		}
+	}
 	// Retain turns while processing catches up. Never silently replace a queued bend
 	// with a straight shortcut across land that the player did not paint.
 	if (Stroke.TargetCount == Stroke.MaxPendingTargets)
@@ -248,8 +268,10 @@ bool UFF_BuildModeSubsystem::TryInstallDragCell(const FIntPoint& Cell)
 
 void UFF_BuildModeSubsystem::ProcessDragPlacement()
 {
-	const double Deadline = FPlatformTime::Seconds() + FFF_BuildDragPlacementSession::FrameBudgetSeconds;
-	for (int32 Count = 0; DragPlacementSession && Count < FFF_BuildDragPlacementSession::MaxCellsPerFrame; ++Count)
+	const UFF_BuildingSettings* Settings = GetDefault<UFF_BuildingSettings>();
+	const double Deadline = FPlatformTime::Seconds() + Settings->GetWorkBudgetSeconds();
+	const int32 MaxCellsPerFrame = Settings->GetDragPlacementsPerFrame();
+	for (int32 Count = 0; DragPlacementSession && Count < MaxCellsPerFrame; ++Count)
 	{
 		FFF_BuildDragPlacementSession& Stroke = *DragPlacementSession;
 		if (!Stroke.Path.HasPendingCells())
@@ -266,7 +288,8 @@ void UFF_BuildModeSubsystem::ProcessDragPlacement()
 	}
 }
 
-void UFF_BuildModeSubsystem::RefreshDragPlacementPreview(const bool bForceRefresh)
+void UFF_BuildModeSubsystem::RefreshDragPlacementPreview(const bool bForceRefresh, const bool bValidate,
+	const FHitResult* GroundHit)
 {
 	if (!DragPlacementSession || !PlacementPreview) { return; }
 	FName NewZoneId;
@@ -281,9 +304,46 @@ void UFF_BuildModeSubsystem::RefreshDragPlacementPreview(const bool bForceRefres
 		CurrentPlacement = NewPlacement;
 	}
 	PlacementPreview->SetActorHiddenInGame(!bHasPlacementTarget);
-	if (bHasPlacementTarget && (bChanged || bForceRefresh ||
+	if (!bHasPlacementTarget) { return; }
+	// CurrentPlacement follows input at frame rate; the command still identifies the
+	// last fully validated target. Comparing only CurrentPlacement would suppress the
+	// later periodic validation after the lightweight presentation has already moved.
+	const bool bNeedsValidation = bChanged || PlacementPreview->HasUnvalidatedPreviewTransform() ||
+		PlacementPreview->PreviewCommand.ZoneId != CurrentZoneId ||
+		!(PlacementPreview->PreviewCommand.Placement == CurrentPlacement);
+	if (bValidate && (bNeedsValidation || bForceRefresh ||
 		FPlatformTime::Seconds() - LastPreviewValidationTimeSeconds >= 0.5))
 	{
 		RefreshCurrentPlacementValidation();
+		return;
+	}
+	if (!bValidate && (bChanged || (!PlacementPreview->HasUnvalidatedPreviewTransform() &&
+		(bNeedsValidation || bPreviewWorldDirty))))
+	{
+		const UFFZSWorldSubsystem* Zones = GetZoneSystem();
+		const AFFZSGameplayZone* Zone = Zones ? Zones->FindZone(CurrentZoneId) : nullptr;
+		if (!Zone) { return; }
+		FTransform TargetTransform = Zones->BuildPlacementTransform(*Zone, SelectedSpec, CurrentPlacement);
+		FVector GroundPoint, GroundNormal;
+		if (PlacementPreview->GetPlacementGridSurface(GroundPoint, GroundNormal) && GroundNormal.Z > UE_SMALL_NUMBER)
+		{
+			const AFFZSFacilityActor* Surface = GroundHit ? Cast<AFFZSFacilityActor>(GroundHit->GetActor()) : nullptr;
+			if (SelectedSpec.IsGroundSurface() && Surface && Surface->GetFacilitySpec().IsGroundSurface() &&
+				Zones->FindFacility(Surface->GetFacilityInstanceId()) == Surface)
+			{
+				// Cursor traces can hit a pavement mesh's top. Authority ground checks ignore
+				// that surface; use its installed base to avoid bouncing by its visual height
+				// on the next validation. Keep the actual grid surface unchanged.
+				GroundPoint.Z = Surface->GetActorLocation().Z;
+				GroundNormal = FVector::UpVector;
+			}
+			// Project the snapped center onto the traced floor plane. This is visual only;
+			// authoritative ground sampling still supplies the final placement height.
+			FVector Location = TargetTransform.GetLocation();
+			Location.Z = GroundPoint.Z - ((Location.X - GroundPoint.X) * GroundNormal.X +
+				(Location.Y - GroundPoint.Y) * GroundNormal.Y) / GroundNormal.Z;
+			TargetTransform.SetLocation(Location);
+		}
+		PlacementPreview->SetUnvalidatedPreviewTransform(TargetTransform);
 	}
 }

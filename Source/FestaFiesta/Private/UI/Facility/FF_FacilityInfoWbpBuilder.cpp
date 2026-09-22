@@ -1,6 +1,11 @@
+// FF_FacilityInfoWbpBuilder.cpp
+// 역할: 시설 정보·조명·유료 프로그램 화면의 초기 생성과 명시적인 에셋 수정을 담당한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoWbpBuilder.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
+#include "UI/Facility/FF_FacilityPaidProgramLayout.h"
 
 #if WITH_EDITOR
 
@@ -44,25 +49,25 @@
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
-#include "UObject/SavePackage.h"
 #include "WidgetBlueprint.h"
+#include "WidgetBlueprintEditorUtils.h"
 #include "WidgetBlueprintFactory.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityInfoWbpBuilder, Log, All);
 
 namespace FFFacilityInfoWbpBuilder
 {
-	const FString PanelPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel"));
-	const FString LightingPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityLightingControls"));
-	const FString SynergyEntryPackage(TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilitySynergyEntry"));
+	const FString PanelPackage(FFBuildUIAssetPaths::FacilityInfoPanelPackage);
+	const FString LightingPackage(FFBuildUIAssetPaths::FacilityLightingControlsPackage);
+	const FString SynergyEntryPackage(FFBuildUIAssetPaths::FacilitySynergyEntryPackage);
 	bool SaveBlueprint(UWidgetBlueprint& Blueprint);
 	bool HasNamedVariable(const UWidgetBlueprint& Blueprint, FName Name, const UClass& ExpectedClass);
 	bool MigrateInspectorControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	bool MigratePurchaseControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	const FString PaidProgramPickerPackage(
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker"));
+		FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage);
 	const FString PaidProgramCardPackage(
-		TEXT("/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard"));
+		FFBuildUIAssetPaths::FacilityPaidProgramCardPackage);
 
 	const FLinearColor ColorPanel(0.018f, 0.047f, 0.070f, 0.985f);
 	const FLinearColor ColorSection(0.027f, 0.080f, 0.102f, 0.96f);
@@ -71,15 +76,10 @@ namespace FFFacilityInfoWbpBuilder
 	const FLinearColor ColorAccent(0.08f, 0.95f, 0.88f, 1.0f);
 	const FLinearColor ColorWarning(1.0f, 0.73f, 0.23f, 1.0f);
 
-	constexpr float PanelWidth = 405.0f;
+	constexpr float PanelWidth = FFFacilityPaidProgramLayout::InspectorWidth;
 	constexpr float PanelHeight = 500.0f;
-	constexpr float PanelRightMargin = 18.0f;
-	constexpr float PanelTopMargin = 18.0f;
-	// Inspector and purchase are mutually exclusive. Reserve the compact build shelf and HUD.
-	constexpr float PaidProgramPickerWidth = PanelWidth;
-	constexpr float PaidProgramPickerRightMargin = PanelRightMargin;
-	constexpr float PaidProgramPickerTopMargin = PanelTopMargin;
-	constexpr float PaidProgramPickerBottomReserve = 126.0f;
+	constexpr float PanelRightMargin = FFFacilityPaidProgramLayout::RightMargin;
+	constexpr float PanelTopMargin = FFFacilityPaidProgramLayout::TopMargin;
 
 	FSlateBrush MakeSolidBrush(
 		const FLinearColor& Fill,
@@ -101,23 +101,7 @@ namespace FFFacilityInfoWbpBuilder
 		Border.SetBrushColor(FLinearColor::White);
 	}
 
-	template <typename TWidget>
-	TWidget* MakeWidget(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		const FName Name,
-		const bool bVariable = false)
-	{
-		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			// UE 5.7's compiler requires a stable GUID for every WidgetTree node, not only
-			// nodes exposed as Blueprint variables.
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
+	using FFUIWbpBuilder::MakeWidget;
 
 	void StyleText(
 		UCommonTextBlock& Text,
@@ -867,18 +851,6 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			return false;
 		}
-		// New facilities get the authored button. The runtime panel also creates this button when
-		// loading the already-shipped WBP, so adding the MVP never overwrites designer work.
-		UButton* StartMinigame = MakeTextButton(
-			Blueprint, Tree, TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
-			FText::FromString(TEXT("게임 시작")),
-			FLinearColor(0.02f, 0.55f, 0.72f, 1.0f), true, true);
-		if (!StartMinigame)
-		{
-			return false;
-		}
-		AddVertical(*LiveSection, *StartMinigame, FMargin(0.0f, 10.0f, 0.0f, 0.0f));
-
 		UBorder* SectionBackground = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Section_Background"));
 		UOverlay* SectionSwitcher = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Section_Switcher"));
 		if (!SectionBackground || !SectionSwitcher)
@@ -1430,8 +1402,6 @@ namespace FFFacilityInfoWbpBuilder
 		UOverlay* Switcher = MakeWidget<UOverlay>(Blueprint, Tree, TEXT("Actions_Switcher"));
 		UHorizontalBox* BuildActions = MakeWidget<UHorizontalBox>(
 			Blueprint, Tree, TEXT("Panel_BuildActions"), true);
-		UVerticalBox* LiveActions = MakeWidget<UVerticalBox>(
-			Blueprint, Tree, TEXT("Panel_LiveActions"), true);
 		UButton* Move = MakeLightTextButton(
 			Blueprint, Tree, TEXT("Button_Move"), TEXT("Move_Label"),
 			FText::FromString(TEXT("이동  M")),
@@ -1442,13 +1412,7 @@ namespace FFFacilityInfoWbpBuilder
 			FText::FromString(TEXT("철거  Enter")),
 			Palette.InGame.Paper, Palette.InGame.PaperSunken, Palette.InGame.PaperSunken,
 			Palette.InGame.LineStrong, Palette.InGame.Danger, true, false, Palette.InGame.Line);
-		UButton* StartMinigame = MakeLightTextButton(
-			Blueprint, Tree, TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
-			FText::FromString(TEXT("게임 시작")),
-			Palette.InGame.Teal, Palette.InGame.TealDeep, Palette.InGame.TealDeep,
-			Palette.InGame.LineStrong, Palette.InGame.White, true, true);
-		if (!Actions || !Switcher || !BuildActions || !LiveActions || !Move || !Remove ||
-			!StartMinigame)
+		if (!Actions || !Switcher || !BuildActions || !Move || !Remove)
 		{
 			return nullptr;
 		}
@@ -1457,14 +1421,7 @@ namespace FFFacilityInfoWbpBuilder
 		Actions->SetPadding(FMargin(12.0f, 9.0f));
 		AddHorizontal(*BuildActions, *Move, FMargin(0.0f, 0.0f, 5.0f, 0.0f), ESlateSizeRule::Fill);
 		AddHorizontal(*BuildActions, *Remove, FMargin(5.0f, 0.0f, 0.0f, 0.0f), ESlateSizeRule::Fill);
-		AddVertical(*LiveActions, *StartMinigame);
-		LiveActions->SetVisibility(ESlateVisibility::Collapsed);
 		if (UOverlaySlot* Slot = Switcher->AddChildToOverlay(BuildActions))
-		{
-			Slot->SetHorizontalAlignment(HAlign_Fill);
-			Slot->SetVerticalAlignment(VAlign_Center);
-		}
-		if (UOverlaySlot* Slot = Switcher->AddChildToOverlay(LiveActions))
 		{
 			Slot->SetHorizontalAlignment(HAlign_Fill);
 			Slot->SetVerticalAlignment(VAlign_Center);
@@ -1919,11 +1876,10 @@ namespace FFFacilityInfoWbpBuilder
 			EnsureSynergyInspectorContract(Blueprint, Tree, bSynergyContractAdded);
 	}
 
+	// 화면 주소와 오브젝트 경로 변환은 공통 창구를 사용한다.
 	UWidgetBlueprint* LoadExistingBlueprint()
 	{
-		const FString AssetName = FPackageName::GetLongPackageAssetName(PanelPackage);
-		return LoadObject<UWidgetBlueprint>(
-			nullptr, *FString::Printf(TEXT("%s.%s"), *PanelPackage, *AssetName));
+		return FFUIWbpBuilder::LoadExistingBlueprint(PanelPackage);
 	}
 
 	bool HasRequiredLayout(const UWidgetBlueprint& Blueprint)
@@ -1946,10 +1902,10 @@ namespace FFFacilityInfoWbpBuilder
 
 		const TArray<FName> RequiredVariables = {
 			TEXT("Border_Panel"), TEXT("Button_Close"), TEXT("Button_Move"),
-			TEXT("Button_Remove"), TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame"),
+			TEXT("Button_Remove"),
 			TEXT("Image_Thumbnail"), TEXT("Text_ThumbnailPlaceholder"),
 			TEXT("Panel_BuildSection"), TEXT("Panel_LiveSection"), TEXT("Text_Context"),
-			TEXT("Panel_Actions"), TEXT("Panel_BuildActions"), TEXT("Panel_LiveActions"),
+			TEXT("Panel_Actions"), TEXT("Panel_BuildActions"),
 			TEXT("Panel_UpgradeComparison"), TEXT("Text_UpgradeCurrent"), TEXT("Text_UpgradeNext"),
 			TEXT("Text_FacilityName"), TEXT("Text_Category"), TEXT("Text_Zone"),
 			TEXT("Text_FacilityState"), TEXT("Text_RelocationWarning"), TEXT("Text_Footprint"),
@@ -1973,7 +1929,6 @@ namespace FFFacilityInfoWbpBuilder
 			Cast<UButton>(Tree->FindWidget(TEXT("Button_Close"))) &&
 			Cast<UButton>(Tree->FindWidget(TEXT("Button_Move"))) &&
 			Cast<UButton>(Tree->FindWidget(TEXT("Button_Remove"))) &&
-			Cast<UButton>(Tree->FindWidget(TEXT("Button_StartMinigame"))) &&
 			Cast<UImage>(Tree->FindWidget(TEXT("Image_Thumbnail"))) &&
 			Tree->FindWidget(TEXT("Text_ThumbnailPlaceholder")) &&
 			Tree->FindWidget(TEXT("Panel_BuildSection")) &&
@@ -1999,23 +1954,10 @@ namespace FFFacilityInfoWbpBuilder
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Feedback")));
 	}
 
+	// 부모 없는 위젯과 컴파일 오류를 검사한 뒤 팀 공통 저장 절차를 수행한다.
 	bool SaveBlueprint(UWidgetBlueprint& Blueprint)
 	{
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
-		if (Blueprint.Status == BS_Error)
-		{
-			return false;
-		}
-		Blueprint.MarkPackageDirty();
-		UPackage* Package = Blueprint.GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-		FSavePackageArgs Args;
-		Args.TopLevelFlags = RF_Public | RF_Standalone;
-		Args.SaveFlags = SAVE_NoError;
-		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
+		return FFUIWbpBuilder::SaveNewBlueprint(TEXT("FF_FACILITY_INFO_UMG"), Blueprint);
 	}
 
 	bool HasNamedVariable(
@@ -2139,14 +2081,7 @@ namespace FFFacilityInfoWbpBuilder
 		{
 			return false;
 		}
-		PickerSlot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 1.0f));
-		PickerSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-		PickerSlot->SetOffsets(FMargin(
-			-PaidProgramPickerRightMargin,
-			PaidProgramPickerTopMargin,
-			PaidProgramPickerWidth,
-			PaidProgramPickerBottomReserve));
-		PickerSlot->SetAutoSize(false);
+		FFFacilityPaidProgramLayout::Apply(*PickerSlot, FFFacilityPaidProgramLayout::EVariant::InspectorDock);
 
 		UBorder* HeaderSurface = MakeWidget<UBorder>(Blueprint, Tree, TEXT("Border_Header"));
 		UHorizontalBox* Header = MakeWidget<UHorizontalBox>(Blueprint, Tree, TEXT("Panel_Header"));
@@ -2711,12 +2646,15 @@ namespace FFFacilityInfoWbpBuilder
 		}
 		if (UCanvasPanelSlot* Slot = Cast<UCanvasPanelSlot>(Widget.Slot))
 		{
-			Slot->SetAnchors(FAnchors(1.0f, 0.0f, 1.0f, 1.0f));
-			Slot->SetAlignment(FVector2D(1.0f, 0.0f));
-			Slot->SetAutoSize(false);
-			Slot->SetOffsets(FMargin(-PanelRightMargin + (bShadow ? 4.0f : 0.0f),
-				PanelTopMargin + (bShadow ? 4.0f : 0.0f), PanelWidth,
-				PaidProgramPickerBottomReserve - (bShadow ? 4.0f : 0.0f)));
+			FFFacilityPaidProgramLayout::Apply(*Slot, FFFacilityPaidProgramLayout::EVariant::InspectorDock);
+			if (bShadow)
+			{
+				FMargin Offsets = Slot->GetOffsets();
+				Offsets.Left += 4.0f;
+				Offsets.Top += 4.0f;
+				Offsets.Bottom -= 4.0f;
+				Slot->SetOffsets(Offsets);
+			}
 		}
 	}
 
@@ -2936,6 +2874,101 @@ namespace FFFacilityInfoWbpBuilder
 				TEXT("FF_FACILITY_INSPECTOR_MIGRATION_FAIL: incompatible or partially authored contract; no destructive rebuild performed."));
 		}
 	}
+
+	// 기존 시설 화면에서 폐기된 게임 시작 영역만 제거한다. 다른 페이지나 슬롯은 재생성하지 않는다.
+	void RemoveFacilityMinigameUI()
+	{
+		UWidgetBlueprint* Inspector = LoadExistingBlueprint();
+		if (!Inspector || !Inspector->WidgetTree || !Inspector->GeneratedClass ||
+			!Inspector->GeneratedClass->IsChildOf(UFF_FacilityInfoPanel::StaticClass()))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_MINIGAME_REMOVE_FAIL: inspector or native parent contract is invalid; no save."));
+			return;
+		}
+
+		UWidgetTree& Tree = *Inspector->WidgetTree;
+		const TSet<FName> RemovedNames = {
+			TEXT("Panel_LiveActions"), TEXT("Button_StartMinigame"), TEXT("Text_StartMinigame")};
+		UWidget* ActionsWidget = Tree.FindWidget(TEXT("Panel_LiveActions"));
+		UWidget* ButtonWidget = Tree.FindWidget(TEXT("Button_StartMinigame"));
+		UWidget* TextWidget = Tree.FindWidget(TEXT("Text_StartMinigame"));
+		if (!ActionsWidget && !ButtonWidget && !TextWidget)
+		{
+			for (const FName Name : RemovedNames)
+			{
+				if (Inspector->WidgetVariableNameToGuidMap.Contains(Name))
+				{
+					UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+						TEXT("FF_FACILITY_MINIGAME_REMOVE_FAIL: orphan variable %s; no save."), *Name.ToString());
+					return;
+				}
+			}
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+				TEXT("FF_FACILITY_MINIGAME_REMOVE_REUSE: no retired widgets; no save."));
+			return;
+		}
+
+		// 저장된 전용 영역이 예상한 세 위젯일 때만 진행한다. 디자이너가 다른 내용을 넣었다면 중단한다.
+		UVerticalBox* Actions = Cast<UVerticalBox>(ActionsWidget);
+		UButton* Button = Cast<UButton>(ButtonWidget);
+		UCommonTextBlock* Label = Cast<UCommonTextBlock>(TextWidget);
+		if (!Actions || !Button || !Label || !Actions->GetParent() ||
+			Actions->GetChildrenCount() != 1 || Actions->GetChildAt(0) != Button || Button->GetContent() != Label ||
+			Actions->GetOuter() != &Tree || Button->GetOuter() != &Tree || Label->GetOuter() != &Tree)
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_MINIGAME_REMOVE_FAIL: retired subtree differs from the three-widget contract; no save."));
+			return;
+		}
+
+		TArray<UWidget*> BeforeWidgets;
+		Tree.GetAllWidgets(BeforeWidgets);
+		TMap<UWidget*, UPanelSlot*> PreservedSlots;
+		for (UWidget* Widget : BeforeWidgets)
+		{
+			if (!RemovedNames.Contains(Widget->GetFName())) PreservedSlots.Add(Widget, Widget->Slot);
+		}
+		Inspector->Modify();
+		Inspector->Bindings.RemoveAll([&RemovedNames](const FDelegateEditorBinding& Binding)
+		{
+			return RemovedNames.Contains(FName(*Binding.ObjectName));
+		});
+		// UE 편집기의 삭제 절차는 RemoveWidget, 변수/GUID 정리, 자식의 transient 패키지 이동을 함께 수행한다.
+		// 단순 RemoveFromParent와 달리 저장 패키지에 제거된 위젯 객체가 고아로 남지 않는다.
+		FWidgetBlueprintEditorUtils::DeleteWidgets(Inspector, TSet<UWidget*>{Actions},
+			FWidgetBlueprintEditorUtils::EDeleteWidgetWarningType::DeleteSilently);
+
+		TArray<UWidget*> AfterWidgets;
+		Tree.GetAllWidgets(AfterWidgets);
+		bool bPreserved = AfterWidgets.Num() == BeforeWidgets.Num() - RemovedNames.Num();
+		for (const TPair<UWidget*, UPanelSlot*>& Entry : PreservedSlots)
+		{
+			bPreserved &= AfterWidgets.Contains(Entry.Key) && Entry.Key->Slot == Entry.Value;
+		}
+		for (const FName Name : RemovedNames)
+		{
+			bPreserved &= !Tree.FindWidget(Name) && !Inspector->WidgetVariableNameToGuidMap.Contains(Name);
+		}
+		for (UWidget* Removed : {ActionsWidget, ButtonWidget, TextWidget})
+		{
+			bPreserved &= Removed->GetOutermost() == GetTransientPackage();
+		}
+		if (!bPreserved || !SaveBlueprint(*Inspector))
+		{
+			UE_LOG(LogFFFacilityInfoWbpBuilder, Error,
+				TEXT("FF_FACILITY_MINIGAME_REMOVE_FAIL: preserved widget/slot, compile, or save validation failed."));
+			return;
+		}
+		UE_LOG(LogFFFacilityInfoWbpBuilder, Display,
+			TEXT("FF_FACILITY_MINIGAME_REMOVE_SAVED: removed three widgets; other %d widgets and slots retained."),
+			AfterWidgets.Num());
+	}
+
+	FAutoConsoleCommand RemoveFacilityMinigameUICommand(
+		TEXT("FF.RemoveFacilityMinigameUI"),
+		TEXT("Removes only the retired three-widget minigame entry from the existing facility inspector; repeats do not save."),
+		FConsoleCommandDelegate::CreateStatic(&RemoveFacilityMinigameUI));
 
 	void MigrateFacilityRevenueSection()
 	{

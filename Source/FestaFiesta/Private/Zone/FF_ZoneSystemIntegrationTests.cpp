@@ -678,8 +678,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFProgramFacilityWaitingAssetsTest,
 bool FFFProgramFacilityWaitingAssetsTest::RunTest(const FString& Parameters)
 {
 	const TCHAR* Paths[] = {
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience")
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_CraftExperience_SandArt.PDA_FFZS_Booth_CraftExperience_SandArt"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_ExperienceStage_Experience.PDA_FFZS_Performance_ExperienceStage_Experience")
 	};
 	for (const TCHAR* Path : Paths)
 	{

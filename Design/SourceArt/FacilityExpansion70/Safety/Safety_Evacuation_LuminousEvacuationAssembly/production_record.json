@@ -1,0 +1,55 @@
+{
+  "number": 50,
+  "category": "Safety",
+  "subtype": "Evacuation",
+  "name_ko": "야광 표지 대피 집결지",
+  "slug": "LuminousEvacuationAssembly",
+  "id": "Safety_Evacuation_LuminousEvacuationAssembly",
+  "footprint_cm": [
+    700,
+    600
+  ],
+  "height_cm": 380,
+  "description_ko": "비상시 모이는 식별 가능한 공간.",
+  "emphasis_ko": "높은 집결 표지와 넓은 빈 바닥을 강조. 중앙에 큰 충돌 장식을 두지 말고 실제 통행은 Spec과 플레이로 확인한다.",
+  "reference_image": "Design/Facitilies/50 야광 표지 대피 집결지.png",
+  "exploded_reference_image": "Design/Facitilies/50 야광 표지 대피 집결지 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Safety/PDA_FFZS_Safety_Evacuation_Evacuation",
+  "followup_features": [
+    "비상 신호·대피 경로·NPC 집결 행동은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_Evacuation_LuminousEvacuationAssembly\\SM_FF_Safety_Evacuation_LuminousEvacuationAssembly.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\50_Safety_Evacuation_LuminousEvacuationAssembly.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Safety\\Safety_Evacuation_LuminousEvacuationAssembly\\iso.png",
+  "bounds_m": [
+    7.0,
+    6.0,
+    3.7049999237060547
+  ],
+  "bounds_min_m": [
+    -3.5,
+    -3.0,
+    0.0
+  ],
+  "bounds_max_m": [
+    3.5,
+    3.0,
+    3.7049999237060547
+  ],
+  "triangles": 7600,
+  "material_names": [
+    "M_F70_Cream",
+    "M_F70_Teal"
+  ],
+  "collision_count": 3,
+  "editable_parts": 15,
+  "fbx_sha256": "91acfa0662cf4728d4d322be57c95d86b4799c109aaf128a9db2eba94ca22483",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

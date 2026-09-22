@@ -1,3 +1,6 @@
+# enable_drag_placement.py
+# 역할: 설치 가능한 도로·타일 작업에서 해당 기능을 기존 에셋 설정에 활성화한다.
+
 """Enable drag placement once on the six shipped road Definitions.
 
 Run in an isolated, unattended editor with Run-RoadEditor.ps1 after compiling.

@@ -1,3 +1,6 @@
+// FF_KeyBindingLayoutMetrics.h
+// 역할: 키 설정 화면에서 공유하는 행 크기와 여백을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

@@ -1,3 +1,6 @@
+# verify_restored_skeleton.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Read-only verification in a fresh Unreal Editor process."""
 import json
 import sys

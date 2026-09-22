@@ -5,12 +5,12 @@
 //
 // ─── 제작 데이터와 재현 근거 ─────────────────────────────────────────────────
 // 앵커가 비어 있으면 소비 측은 존 액터 위치를 대표점으로 쓴다. Test_Main의 경계는 로컬
-// (0,0)~(10000,10000)이므로 그 위치는 중심이 아닌 모서리이며 투영 실패에 민감하다.
+// (0,0)에서 시작하므로 그 위치는 중심이 아닌 모서리이며 투영 실패에 민감하다.
 // 다만 과거 경로 단절 측정만으로 실제 지형 단차가 원인이라고 단정하면 안 된다.
-// 2026-09-11에는 지형·Agent 설정을 바꾸지 않고 저장된 NavMesh를 다시 구운 뒤,
-// 31개 존 모두 원래 대표점에서 출구에 도달했다(런타임 앵커 복구 0개).
-// 회귀 근거는 FestaFiesta.Probe.NavMeshBakeStatus의 출구 31개·방향 경로 930개 검사다.
-// 지형/충돌 변경 후 먼저 Build Paths와 맵 저장을 수행한다. 이 서브시스템은 오래된
+// 메시 컴파일·물리 등록이 끝나기 전에 검사하면 빠진 충돌 때문에 연결을 잘못 판단할 수 있다.
+// 에디터 도구는 PrepareWorldForNavigation 후 굽고, 별도 PIE에서 실제 출구·방향 경로를 검사한다.
+// Test_Main의 현재 경계와 저작 앵커는 Tools/Build/navigation_layouts의 계획 및 맵에서 관리한다.
+// 지형/충돌 변경 후 먼저 준비 완료·Build Paths·맵 저장을 수행한다. 이 서브시스템은 오래된
 // NavMesh를 자동으로 다시 굽는 기능이 아니며 유효한 베이크 위에서만 접근점을 고른다.
 //
 // ─── 이 서브시스템이 하는 일 ──────────────────────────────────────────────────
@@ -95,12 +95,14 @@ public:
 
     const TArray<FFFZSZoneAccessRepair>& GetRepairs() const { return Repairs; }
 
+    // 군중의 기본 퇴장 위치를 읽는다: 유효한 DespawnAchor 우선, 없으면
+    // 스폰 액터 위치 + Temp_ExitOffsetFromOrigin. 입장용 SpawnAchor는 사용하지 않는다.
+    // 액터 BeginPlay 전에도 조회할 수 있으며 월드·에셋을 변경하지 않는다.
+    // 스폰 액터나 필요한 속성을 찾지 못하면 false이고 OutExit는 보존한다.
+    bool ResolveExitLocation(FVector& OutExit) const;
+
 private:
     bool HasGameplayZones() const;
-
-    // 퇴장 출구의 월드 좌표. AFF_SpawnActor의 위치 + Temp_ExitOffsetFromOrigin이며,
-    // 게임 모듈에 의존하지 않도록 클래스 이름과 리플렉션으로 읽는다.
-    bool ResolveExitLocation(FVector& OutExit) const;
 
     bool ProjectToNavMesh(const FVector& Point, FVector& OutProjected) const;
 

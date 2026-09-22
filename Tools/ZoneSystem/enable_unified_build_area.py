@@ -1,3 +1,6 @@
+# enable_unified_build_area.py
+# 역할: 건설 가능 영역 작업에서 해당 기능을 기존 에셋 설정에 활성화한다.
+
 """Run in Unreal Editor's Python console with the target level open.
 
 Creates one unified construction manager, preserving every existing gameplay region and facility.

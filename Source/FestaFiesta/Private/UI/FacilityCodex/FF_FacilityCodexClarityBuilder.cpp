@@ -1,6 +1,10 @@
+// FF_FacilityCodexClarityBuilder.cpp
+// 역할: 도감 화면의 읽기 쉬운 디자인을 저장된 에셋에 적용한다.
+
 // Explicit, versioned migration of the existing authored codex. No runtime tree construction.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -45,7 +49,7 @@ static FSlateBrush Rounded(FLinearColor Fill, float Radius = 8.f)
 static FSlateBrush PanelBrush(const TCHAR* Role, FLinearColor Fallback)
 {
     const FString Name = FString(TEXT("MI_UI_BuildClarity_")) + Role;
-    const FString Path = FString(TEXT("/Game/FestaFiesta/UI/Building/Clarity/")) + Name + TEXT(".") + Name;
+    const FString Path = FString(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/")) + Name + TEXT(".") + Name;
     FSlateBrush Brush = Rounded(Fallback, 12.f);
     if (UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *Path))
     {
@@ -270,8 +274,8 @@ static bool Screen(UWidgetBlueprint& BP)
 
 static void Run()
 {
-    UWidgetBlueprint* CardBP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard"));
-    UWidgetBlueprint* ScreenBP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen"));
+    UWidgetBlueprint* CardBP = LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityCodexCardPackage);
+    UWidgetBlueprint* ScreenBP = LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityCodexScreenPackage);
     if (!CardBP || !ScreenBP || !CardBP->ParentClass || !ScreenBP->ParentClass ||
         !CardBP->ParentClass->IsChildOf(UFF_FacilityCodexCard::StaticClass()) ||
         !ScreenBP->ParentClass->IsChildOf(UFF_FacilityCodexScreen::StaticClass())) return;

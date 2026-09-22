@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGrid.cpp
+// 역할: 건설 가능한 칸을 표시용 마스크에 기록하고 이어진 경계선을 만든다. 실제 설치 점유는 변경하지 않는다.
 #include "FF_FFZSBuildableGrid.h"
 
 void FFFZSBuildableGridMask::Reset()

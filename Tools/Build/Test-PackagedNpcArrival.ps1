@@ -1,3 +1,6 @@
+# Test-PackagedNpcArrival.ps1
+# 역할: 패키징된 게임에서 NPC 입장 데이터 수명 회귀를 검사한다.
+
 <#
 .SYNOPSIS
 Runs the NPC table-lifetime regression in an existing Development package.

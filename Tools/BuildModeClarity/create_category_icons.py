@@ -1,3 +1,6 @@
+# create_category_icons.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create original SDF pictograms without modifying any existing icon artwork.
 
 Run before FF.ApplyBuildModeClarityCatalog. The project already always-cooks
@@ -7,7 +10,7 @@ from pathlib import Path
 import unreal
 
 ROOT = Path(unreal.Paths.project_dir()).resolve()
-FOLDER = '/Game/FestaFiesta/UI/Building/Clarity'
+FOLDER = '/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity'
 SOURCE = ROOT / 'Tools/BuildModeClarity/shaders/CategoryPictograms.ush'
 GLYPHS = ('All', 'Booth', 'Toilet', 'Info', 'Rest', 'Performance', 'Safety',
           'PhotoSpot', 'Lighting', 'Road', 'Tile')

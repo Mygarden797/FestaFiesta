@@ -1,3 +1,6 @@
+# expansion70_geometry_services.py
+# 역할: 체험·서비스 시설의 편집 가능한 형상을 만든다.
+
 """Editable, reference-led facility parts for brief entries 8 through 31.
 
 Geometry is in metres, customer front is +Y, and the floor sits at Z=0.

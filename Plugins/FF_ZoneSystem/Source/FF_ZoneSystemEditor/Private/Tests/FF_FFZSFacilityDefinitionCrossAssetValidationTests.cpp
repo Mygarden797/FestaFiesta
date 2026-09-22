@@ -1,3 +1,5 @@
+// FF_FFZSFacilityDefinitionCrossAssetValidationTests.cpp
+// 역할: 시설 ID 중복과 잘못된 업그레이드 참조를 에디터 검사가 탐지하는지 검증한다.
 #include "FF_FFZSFacilityDefinitionCrossAssetValidation.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -47,11 +49,11 @@ bool FFFZSFacilityDefinitionCrossAssetValidationTest::RunTest(
     TestTrue(
         TEXT("A descendant of the required root is accepted"),
         IsWithinRequiredDefinitionRoot(
-            TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Food")));
+            TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Food")));
     TestFalse(
         TEXT("A prefix lookalike outside the root is rejected"),
         IsWithinRequiredDefinitionRoot(
-            TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitionsBackup")));
+            TEXT("/Game/FestaFiesta/Building/FF_Data_BuildingBackup")));
 
     TestTrue(
         TEXT("Finite valid bounds pass"),

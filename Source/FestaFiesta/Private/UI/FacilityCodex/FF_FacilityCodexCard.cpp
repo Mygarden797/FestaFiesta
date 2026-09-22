@@ -1,6 +1,13 @@
+// FF_FacilityCodexCard.cpp
+// 역할: 시설 도감의 한 카드에 발견 상태·이미지·선택 상태를 표시한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
 
 #include "Components/Border.h"
+#include "Components/Button.h"
+#include "Components/Image.h"
+#include "Components/SizeBox.h"
+#include "Materials/MaterialInterface.h"
 #include "UI/FacilityCodex/FF_FacilityCodexPresentation.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityCodexCard"
@@ -53,10 +60,27 @@ TSharedRef<STableViewBase> UFF_FacilityCodexTileView::RebuildListWidget()
 {
 	// Preserve all authored TileView options, including whether entry size includes spacing.
 	auto View = ConstructTileView<SFFCodexTileView>();
-	// An older serialized WBP can still contain the former three-column value.
-	ColumnCount = 6;
-	View->SetColumnCount(6);
+	ColumnCount = FMath::Clamp(ColumnCount, 1, 6);
+	View->SetColumnCount(ColumnCount);
 	return View;
+}
+
+void UFF_FacilityCodexTileView::SetResponsiveColumns(int32 InColumns)
+{
+	InColumns = FMath::Clamp(InColumns, 1, 6);
+	if (ColumnCount == InColumns) return;
+	ColumnCount = InColumns;
+	if (MyTileView)
+	{
+		StaticCastSharedPtr<SFFCodexTileView<UObject*>>(MyTileView)->SetColumnCount(ColumnCount);
+		MyTileView->RequestListRefresh();
+	}
+}
+
+void UFF_FacilityCodexCard::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (Button_ClaimReward) Button_ClaimReward->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClaimReward);
 }
 
 void UFF_FacilityCodexCard::NativePreConstruct()
@@ -88,8 +112,7 @@ void UFF_FacilityCodexCard::CaptureAuthoredAppearance()
 	if (Text_Recipe) AuthoredRecipeColor = Text_Recipe->GetColorAndOpacity();
 	if (Text_Bonus) AuthoredBonusColor = Text_Bonus->GetColorAndOpacity();
 	if (Text_State) AuthoredStateColor = Text_State->GetColorAndOpacity();
-	if (Image_Target) bAuthoredTargetEnabled = Image_Target->GetIsEnabled();
-	if (Image_Partner) bAuthoredPartnerEnabled = Image_Partner->GetIsEnabled();
+	if (Text_ClaimReward) AuthoredClaimRewardColor = Text_ClaimReward->GetColorAndOpacity();
 	bCapturedAppearance = true;
 }
 
@@ -100,7 +123,7 @@ void UFF_FacilityCodexCard::RefreshDiscoveryAppearance()
 	if (CardBackground)
 	{
 		FSlateBrush Brush = AuthoredCardBrush;
-		if (bUndiscovered)
+		if (bUndiscovered && !Cast<UMaterialInterface>(Brush.GetResourceObject()))
 		{
 			Brush.TintColor = FSlateColor(UndiscoveredBackgroundColor);
 			Brush.OutlineSettings.Color = FSlateColor(UndiscoveredOutlineColor);
@@ -119,11 +142,18 @@ void UFF_FacilityCodexCard::RefreshDiscoveryAppearance()
 	if (Text_Recipe) Text_Recipe->SetColorAndOpacity(bUndiscovered ? FSlateColor(UndiscoveredBodyColor) : AuthoredRecipeColor);
 	if (Text_Bonus) Text_Bonus->SetColorAndOpacity(bUndiscovered ? FSlateColor(UndiscoveredTitleColor) : AuthoredBonusColor);
 	if (Text_State) Text_State->SetColorAndOpacity(bUndiscovered ? FSlateColor(UndiscoveredBodyColor) : AuthoredStateColor);
-	// Do not disable the row or card: unknown recipes still open their full recipe details.
-	// UE 5.7's default disabled shader lowers opacity; this deliberately promises dimming,
-	// not grayscale conversion. Async image completion changes only the brush/visibility.
-	if (Image_Target) Image_Target->SetIsEnabled(bAuthoredTargetEnabled && !(bUndiscovered && bDimUndiscoveredThumbnails));
-	if (Image_Partner) Image_Partner->SetIsEnabled(bAuthoredPartnerEnabled && !(bUndiscovered && bDimUndiscoveredThumbnails));
+	// State belongs to the thumbnail shader, never Slate's disabled/low-opacity effect.
+	// Installed facilities stay recognizable in gray; missing facilities offer a silhouette hint.
+	const auto ApplyImageState = [bUndiscovered](UFF_FacilityCodexImage* Image, bool bInstalled)
+	{
+		if (!Image) return;
+		Image->SetIsEnabled(true);
+		Image->SetDiscoveryVisualState(!bUndiscovered ? EFF_FacilityCodexDiscoveryVisualState::Color
+			: bInstalled ? EFF_FacilityCodexDiscoveryVisualState::Grayscale
+			: EFF_FacilityCodexDiscoveryVisualState::Silhouette);
+	};
+	ApplyImageState(Image_Target, Item && Item->Entry.bTargetInstalled);
+	ApplyImageState(Image_Partner, Item && Item->Entry.bPartnerInstalled);
 }
 
 void UFF_FacilityCodexCard::NativeOnListItemObjectSet(UObject* ListItemObject)
@@ -151,6 +181,7 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 {
 	using namespace FFFacilityCodexPresentation;
 	RefreshDiscoveryAppearance();
+	RefreshRewardPresentation();
 	// The selected recipe already has a dedicated detail region. A generic tooltip
 	// merely repeats the title and ingredients while covering neighbouring cards.
 	SetToolTip(nullptr);
@@ -176,6 +207,67 @@ void UFF_FacilityCodexCard::RefreshPresentation()
 	Thumbnail(Image_Target, Text_TargetFallback, Entry.TargetThumbnail, ShownTarget);
 	Thumbnail(Image_Partner, Text_PartnerFallback, Entry.PartnerThumbnail, ShownPartner);
 	if (Border_Selection) Border_Selection->SetVisibility(IsListItemSelected() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UFF_FacilityCodexCard::RefreshRewardPresentation()
+{
+	const bool bDiscovered = Item && Item->Entry.bDiscovered;
+	const bool bClaimed = bDiscovered && Item->Entry.bDiscoveryRewardClaimed;
+	// A later reward-table change must not hide an existing claim from the player's history.
+	const bool bHasReward = bDiscovered && (Item->Entry.DiscoveryRewardGold > 0 || bClaimed);
+	const bool bHasClaimedBadge = Border_RewardClaimed != nullptr;
+	const bool bShowLockedReward = Border_RewardLocked && Item && !bDiscovered && Item->Entry.DiscoveryRewardGold > 0;
+	if (Size_RewardState)
+	{
+		Size_RewardState->SetVisibility(bHasReward || bShowLockedReward
+			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (Button_ClaimReward)
+	{
+		Button_ClaimReward->SetVisibility(bHasReward && !(bClaimed && bHasClaimedBadge)
+			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_ClaimReward->SetIsEnabled(bHasReward && !bClaimed);
+		Button_ClaimReward->SetToolTipText(!bHasReward ? FText::GetEmpty() : bClaimed
+			? LOCTEXT("RewardClaimedTip", "발견 보상 수령 완료")
+			: FText::Format(LOCTEXT("RewardTip", "발견 보상 {0} 골드 받기 (1회)"), FText::AsNumber(Item->Entry.DiscoveryRewardGold)));
+	}
+	if (Border_RewardClaimed)
+	{
+		// A passive badge keeps the check and completion label at full contrast, without
+		// looking like a dimmed gift that might become available again. Visible permits its tooltip.
+		Border_RewardClaimed->SetVisibility(bClaimed ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Border_RewardClaimed->SetIsEnabled(true);
+		Border_RewardClaimed->SetToolTipText(bClaimed
+			? LOCTEXT("RewardClaimedTip", "발견 보상 수령 완료") : FText::GetEmpty());
+	}
+	if (Border_RewardLocked)
+	{
+		// Show the future reward without exposing a claim action before discovery.
+		// This passive surface stays enabled so its prerequisite and amount are readable.
+		Border_RewardLocked->SetVisibility(bShowLockedReward ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Border_RewardLocked->SetIsEnabled(true);
+		Border_RewardLocked->SetToolTipText(bShowLockedReward
+			? FText::Format(LOCTEXT("RewardLockedTip", "발견하면 보상 {0} 골드 수령 가능 (1회)"),
+				FText::AsNumber(Item->Entry.DiscoveryRewardGold)) : FText::GetEmpty());
+	}
+	// Child images never intercept interaction. Older assets retain their disabled-gift fallback.
+	if (Image_ClaimReward) Image_ClaimReward->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (Image_RewardClaimed) Image_RewardClaimed->SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (Text_ClaimReward)
+	{
+		// The new layout reserves room for a compact caption; older icon-only buttons do not.
+		Text_ClaimReward->SetVisibility(bHasClaimedBadge || !Image_ClaimReward
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Text_ClaimReward->SetText(bHasClaimedBadge ? LOCTEXT("ClaimRewardCompact", "받기")
+			: bClaimed ? LOCTEXT("RewardClaimed", "수령 완료") : LOCTEXT("ClaimReward", "보상 받기"));
+		Text_ClaimReward->SetColorAndOpacity(bClaimed ? FSlateColor(ClaimedRewardTextColor) : AuthoredClaimRewardColor);
+	}
+}
+
+void UFF_FacilityCodexCard::HandleClaimReward()
+{
+	if (!Item || !Item->Entry.bDiscovered || Item->Entry.bDiscoveryRewardClaimed || Item->Entry.DiscoveryRewardGold <= 0) return;
+	Item->OnClaimRewardRequested.ExecuteIfBound(Item->Entry.RuleId);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -1,3 +1,6 @@
+// FF_FacilitySynergyTypes.cpp
+// 역할: 조합 표의 행·미리보기 자료형과 작성 데이터의 유효성 규칙이다.
+
 #include "Building/Synergy/FF_FacilitySynergyTypes.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
 #include "Engine/AssetManager.h"
@@ -32,6 +35,8 @@ bool FFF_FacilitySynergyRow::IsUsable(FString* OutError) const
 		return Reject(TEXT("최대 거리는 0보다 크고 1000 이하인 미터 값이어야 합니다."));
 	if (!FMath::IsFinite(RevenueBonusPercent) || RevenueBonusPercent <= 0.f || RevenueBonusPercent > 1000.f)
 		return Reject(TEXT("추가 수익은 0보다 크고 1000 이하인 퍼센트 값이어야 합니다."));
+	if (DiscoveryRewardGold < 0)
+		return Reject(TEXT("최초 발견 보상은 0 이상의 골드 값이어야 합니다."));
 	return true;
 }
 

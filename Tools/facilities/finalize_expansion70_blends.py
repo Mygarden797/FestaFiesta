@@ -1,10 +1,13 @@
+# finalize_expansion70_blends.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 검증된 결과와 제작 근거를 최종 산출물로 정리한다.
+
 """Convert tracked Facility70 library writes into ordinary editable .blend files.
 
 Run only in a separate background Blender process after the complete build:
   blender.exe --background --factory-startup --python <this file>
 
 The live artist session is never contacted. Only exact, catalog-matched manifest
-paths within the requested Desktop/Blender directory may be opened or saved.
+paths within the configured Blender directory may be opened or saved.
 No renders, FBX re-exports, Unreal operations, or unrelated .blend writes occur.
 """
 from __future__ import annotations
@@ -15,6 +18,9 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from expansion70_paths import blend_directory
 import re
 import sys
 import traceback
@@ -27,7 +33,7 @@ from mathutils import Vector
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT / 'Tools/facilities/expansion70_catalog.json'
 MANIFEST = ROOT / 'SourceArt/FacilityExpansion70/build_manifest.json'
-BLEND_ROOT = Path(r'C:\Users\gksro\OneDrive\Desktop\Blender').resolve()
+BLEND_ROOT = blend_directory()
 REPORT = ROOT / 'Saved/FacilityExpansion70/blend_finalization_report.json'
 
 

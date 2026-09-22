@@ -1,3 +1,6 @@
+# inspect_assets.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 기존 에셋 상태를 읽어 기록한다.
+
 """Read-only record of the main-stage PDA, lighting templates and panel asset."""
 import json
 from pathlib import Path
@@ -6,9 +9,9 @@ import unreal
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'Saved/FacilityLighting_20260910'
 OUT.mkdir(parents=True, exist_ok=True)
-pda_path = '/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
+pda_path = '/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage'
 bp_path = '/Game/Asset/FacilitiesAsset_HKH/Performance/MainStage_Grand_20260909/BP_MainStage_Grand'
-panel_path = '/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel'
+panel_path = '/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel'
 pda = unreal.load_asset(pda_path)
 bp = unreal.load_asset(bp_path)
 panel = unreal.load_asset(panel_path)

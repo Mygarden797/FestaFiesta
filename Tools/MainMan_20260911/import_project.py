@@ -1,3 +1,6 @@
+# import_project.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Import the approved MainMan asset into the user-requested project folder."""
 import hashlib
 import json

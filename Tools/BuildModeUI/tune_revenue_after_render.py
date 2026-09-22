@@ -1,7 +1,10 @@
+# tune_revenue_after_render.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 기존 화면의 세부 표시를 조정한다.
+
 """One-time follow-up for the just-created revenue WBP, after 720p render QA."""
 import unreal
 
-BASE = "/Game/FestaFiesta/UI/FacilityRevenue/"
+BASE = "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/"
 VERSION = "FF.Revenue.Compact20260919"
 
 

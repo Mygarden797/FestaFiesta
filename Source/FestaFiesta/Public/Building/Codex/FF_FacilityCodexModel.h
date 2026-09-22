@@ -1,3 +1,6 @@
+// FF_FacilityCodexModel.h
+// 역할: 조합 도감의 발견 여부·거리 조건·실제 효과를 계산하고 검색·요약한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

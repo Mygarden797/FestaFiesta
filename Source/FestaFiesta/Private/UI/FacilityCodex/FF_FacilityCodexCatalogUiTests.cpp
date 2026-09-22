@@ -1,7 +1,11 @@
+// FF_FacilityCodexCatalogUiTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // Verifies the additive codex button in the saved production facility catalog.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -74,9 +78,9 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 	{
 		return Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(Path).TryLoadClass<UUserWidget>());
 	};
-	auto* PanelClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
-	auto* LauncherClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher.WBP_FF_FacilityCodexCatalogLauncher_C"));
-	auto* TileClass = LoadWbp(TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C"));
+	auto* PanelClass = LoadWbp(FFBuildUIAssetPaths::BuildPanelClass);
+	auto* LauncherClass = LoadWbp(FFBuildUIAssetPaths::FacilityCodexCatalogLauncherClass);
+	auto* TileClass = LoadWbp(FFBuildUIAssetPaths::PrepBuildTileClass);
 	if (!TestNotNull(TEXT("Isolated editor world"), World) || !TestNotNull(TEXT("Saved facility catalog WBP"), PanelClass) ||
 		!TestNotNull(TEXT("Saved compact codex launcher WBP"), LauncherClass) || !TestNotNull(TEXT("Saved facility tile WBP"), TileClass)) return false;
 	FPlayerlessInitialization PanelContext(*PanelClass), LauncherContext(*LauncherClass), TileContext(*TileClass);
@@ -130,10 +134,10 @@ bool FFF_FacilityCodexCatalogUiTest::RunTest(const FString& Parameters)
 
 	// Real source thumbnails make the surrounding palette visible; entries are transient view data.
 	const TCHAR* Definitions[] = {
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
-		TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade") };
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_Burger.PDA_FFZS_Booth_FoodStall_Burger"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Booth/PDA_FFZS_Booth_FoodStall_IceCream.PDA_FFZS_Booth_FoodStall_IceCream"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Seating_Seating.PDA_FFZS_Rest_Seating_Seating"),
+		TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Rest/PDA_FFZS_Rest_Shade_Shade.PDA_FFZS_Rest_Shade_Shade") };
 	TArray<UObject*> Items;
 	TArray<UTexture*> Textures;
 	for (const TCHAR* Path : Definitions)

@@ -1,3 +1,6 @@
+// FF_BuildFavoritesSubsystem.h
+// 역할: 즐겨찾기 시설을 개인 설정에 저장하고 관련 화면에 변경을 알린다.
+
 #pragma once
 
 #include "CoreMinimal.h"

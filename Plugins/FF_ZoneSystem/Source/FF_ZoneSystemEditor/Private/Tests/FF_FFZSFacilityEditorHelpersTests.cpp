@@ -1,3 +1,5 @@
+// FF_FFZSFacilityEditorHelpersTests.cpp
+// 역할: 시설 편집 도우미의 변환과 유효성 검사 결과를 자동 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "FF_FFZSFacilityEditorHelpers.h"

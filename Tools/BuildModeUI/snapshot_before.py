@@ -1,3 +1,6 @@
+# snapshot_before.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 변경 전 상태를 기록한다.
+
 """Read-only pre-migration WBP snapshot for the approved September build UI."""
 import hashlib, json
 from pathlib import Path
@@ -6,13 +9,13 @@ root = Path(unreal.Paths.project_dir()).resolve()
 out = root / "Saved/BuildModeUI/20260919"
 out.mkdir(parents=True, exist_ok=True)
 packages = [
-"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel",
-"/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexScreen",
-"/Game/FestaFiesta/UI/FacilityCodex/WBP_FF_FacilityCodexCard",
-"/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild",
-"/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile",
-"/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools",
-"/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepHudBar"]
+"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel",
+"/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen",
+"/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard",
+"/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild",
+"/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile",
+"/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools",
+"/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar"]
 result = {}
 for package in packages:
     asset = unreal.EditorAssetLibrary.load_asset(package)

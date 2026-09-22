@@ -1,4 +1,5 @@
 // FF_BuildDragPlacementPath.h
+// 역할: 드래그 경로의 격자 좌표를 빠짐없이 순서대로 생성한다.
 
 #pragma once
 
@@ -13,6 +14,20 @@
 class FFF_BuildDragPlacementPath final
 {
 public:
+	/** Merge only forward, axis-aligned samples; bends and retracing must stay queued. */
+	static bool CanExtendCardinalSegment(const FIntPoint& Start, const FIntPoint& End, const FIntPoint& Next)
+	{
+		if (Start.Y == End.Y && End.Y == Next.Y)
+		{
+			return (Start.X < End.X && End.X < Next.X) || (Start.X > End.X && End.X > Next.X);
+		}
+		if (Start.X == End.X && End.X == Next.X)
+		{
+			return (Start.Y < End.Y && End.Y < Next.Y) || (Start.Y > End.Y && End.Y > Next.Y);
+		}
+		return false;
+	}
+
 	void Reset(const FIntPoint& StartCell)
 	{
 		CurrentCell = StartCell;

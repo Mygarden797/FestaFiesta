@@ -1,3 +1,6 @@
+# create_placement_feedback.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create the isolated, non-authoritative placement overlay material in UE 5.7.
 
 Only this new asset is written. Source facility materials, maps and post-process
@@ -5,7 +8,7 @@ settings are untouched. Repeat invocation does not save an existing completed as
 """
 import unreal
 
-FOLDER = '/Game/FestaFiesta/UI/Building/Clarity'
+FOLDER = '/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity'
 NAME = 'M_BuildPlacementFeedback'
 PATH = FOLDER + '/' + NAME
 VERSION_KEY = 'FF.BuildPlacementFeedback.Version'

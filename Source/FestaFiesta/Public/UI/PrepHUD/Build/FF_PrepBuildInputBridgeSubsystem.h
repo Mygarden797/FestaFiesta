@@ -1,3 +1,6 @@
+// FF_PrepBuildInputBridgeSubsystem.h
+// 역할: 건설 상태 변화와 준비 HUD의 건설 탭 표시를 연결한다.
+
 // 기존 BuildMode 상태 이벤트와 PrepHUD 배치 탭을 연결하는 독립 표현 브리지.
 // 팀 BuildMode/PrepHUD 구현은 수정하지 않고 공개 API만 사용한다.
 
