@@ -1339,9 +1339,43 @@ void UFF_CrowdSimulationSubsystem::PublishCrowdReadModel()
 		Sample.DensityPerSqm = Density.IsValidIndex(CellIndex) ? Density[CellIndex] : 0.f;
 	}
 
+	PublishCongestionSnapshot();
+
 	DensityGrid.ResetThroughputWindow();
 
 	++SnapshotCount;
+}
+
+void UFF_CrowdSimulationSubsystem::PublishCongestionSnapshot()
+{
+	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_PublishCongestion);
+
+	const TArray<int32>& Congested = DensityGrid.GetCongestedCells();
+	const TArray<int32>& Counts = DensityGrid.GetCellCounts();
+	const TArray<int32>& Throughput = DensityGrid.GetCellThroughput();
+	const TArray<float>& Density = DensityGrid.GetDensityField();
+	const int32 NumX = FMath::Max(1, DensityGrid.GetNumX());
+
+	CongestionSnapshot.Cells.Reset(Congested.Num());
+	CongestionSnapshot.SimTimeMinutes = GetLiveMinutes();
+	CongestionSnapshot.SnapshotIndex = SnapshotCount;
+	CongestionSnapshot.CellSizeMeters = DensityGrid.GetCellSizeMeters();
+
+	for (const int32 CellIndex : Congested)
+	{
+		const int32 CellX = CellIndex % NumX;
+		const int32 CellY = CellIndex / NumX;
+
+		FFF_CrowdCongestedCell& Cell = CongestionSnapshot.Cells.AddDefaulted_GetRef();
+		Cell.Cell = FIntPoint(CellX, CellY);
+		Cell.CenterWorldUU = DensityGrid.GetCellCenterWorld(CellX, CellY);
+		Cell.DensityPerSqm = Density.IsValidIndex(CellIndex) ? Density[CellIndex] : 0.f;
+		Cell.Occupancy = Counts.IsValidIndex(CellIndex) ? Counts[CellIndex] : 0;
+		Cell.Throughput = Throughput.IsValidIndex(CellIndex) ? Throughput[CellIndex] : 0;
+	}
+
+	// 목록이 비어도 쏜다. 빈 스냅샷이 "다 풀렸다"는 신호라서, 걸러 보내면 구독자가 사건을 닫지 못한다.
+	OnCongestionSampled.Broadcast(CongestionSnapshot);
 }
 
 CrowdSteering::FStepParams UFF_CrowdSimulationSubsystem::MakeStepParams() const

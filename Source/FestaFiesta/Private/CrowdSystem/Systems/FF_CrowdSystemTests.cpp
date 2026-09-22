@@ -176,6 +176,40 @@ bool FFF_CrowdDensity_CongestedCellCountUsesLOSD::RunTest(const FString& Paramet
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdDensity_CongestedCellsReportIndices, "FestaFiesta.Crowd.Density.CongestedCellsReportIndices", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_CrowdDensity_CongestedCellsReportIndices::RunTest(const FString& Parameters)
+{
+	FCrowdDensityGrid Grid = FFF_CrowdTestHelpers::MakeTestGrid();
+
+	TArray<FUnitData> Units;
+
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(100.f, 100.f, 0.f), 4);
+
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(500.f, 100.f, 0.f), 8);
+
+	FFF_CrowdTestHelpers::AddUnitsAt(Units, FVector(900.f, 900.f, 0.f), 12);
+
+	Grid.Update(Units);
+
+	const TArray<int32>& Congested = Grid.GetCongestedCells();
+
+	TestEqual(TEXT("목록 길이와 카운트가 같다"), Congested.Num(), Grid.GetCongestedCellCount());
+	TestTrue(TEXT("(2,0) 셀이 들어 있다"), Congested.Contains(2));
+	TestTrue(TEXT("(4,4) 셀이 들어 있다"), Congested.Contains(24));
+	TestFalse(TEXT("LOS D 이하인 (0,0) 셀은 빠진다"), Congested.Contains(0));
+
+	for (FUnitData& Unit : Units)
+	{
+		Unit.Position = FVector(100.f, 900.f, 0.f);
+		Unit.bIsActive = false;
+	}
+	Grid.Update(Units);
+
+	TestEqual(TEXT("혼잡이 풀리면 목록이 비어야 한다"), Grid.GetCongestedCells().Num(), 0);
+
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_CrowdSteering_FixedStepConsumesWholeStepsOnly, "FestaFiesta.Crowd.Steering.FixedStepConsumesWholeStepsOnly", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
 bool FFF_CrowdSteering_FixedStepConsumesWholeStepsOnly::RunTest(const FString& Parameters)
 {
