@@ -1,3 +1,6 @@
+# apply_white_materials.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply the white codex palette to two existing bases and the Screen opacity.
 
 The outer migration backs up these three assets before running in idle Entry.

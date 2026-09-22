@@ -1,9 +1,13 @@
+// FF_PrepBuildVirtualizedSlateTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // Uses the saved catalog and tile WBP classes, including their real pooled Slate rows.
 // Synthetic data is confined to this fixture; no catalog, economy or building command runs.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -66,11 +70,11 @@ namespace FFPrepBuildVirtualizedSlateTest
 {
     constexpr int32 ItemCount = 144;
     constexpr const TCHAR* PanelPath =
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
+        FFBuildUIAssetPaths::BuildPanelClass;
     constexpr const TCHAR* TilePath =
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
+        FFBuildUIAssetPaths::PrepBuildTileClass;
     constexpr const TCHAR* HudPath =
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar.WBP_FF_PrepHudBar_C");
+        FFBuildUIAssetPaths::PrepHudBarClass;
 
     class FPlayerlessInitialization
     {

@@ -1,3 +1,5 @@
+// FF_FFZSSpatialHashTests.cpp
+// 역할: 공간 검색이 경계·거대 영역·잘못된 좌표에서도 후보를 놓치지 않는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

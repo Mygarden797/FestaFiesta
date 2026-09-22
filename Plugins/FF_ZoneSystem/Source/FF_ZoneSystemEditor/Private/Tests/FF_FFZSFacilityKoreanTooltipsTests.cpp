@@ -1,3 +1,5 @@
+// FF_FFZSFacilityKoreanTooltipsTests.cpp
+// 역할: 시설 속성의 한국어 표시명과 설명이 에디터 사용자에게 제공되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "FF_FFZSFacilityDefinition.h"

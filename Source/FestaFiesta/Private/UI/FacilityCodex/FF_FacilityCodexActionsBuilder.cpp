@@ -1,5 +1,9 @@
+// FF_FacilityCodexActionsBuilder.cpp
+// 역할: 도감의 기존 화면에 행동 버튼 연결 지점을 추가한다.
+
 // Explicit editor migration: retain the authored codex and add only its action seams.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -41,9 +45,9 @@ constexpr const TCHAR* StatusVersion = TEXT("FF.FacilityCodex.RewardStatus202609
 constexpr const TCHAR* IridescenceVersion = TEXT("FF.FacilityCodex.RewardIridescence20260921.1");
 constexpr const TCHAR* RewardBoundsVersion = TEXT("FF.FacilityCodex.RewardBounds20260921.1");
 constexpr const TCHAR* RewardHintVersion = TEXT("FF.FacilityCodex.RewardHint20260921.1");
-constexpr const TCHAR* IconPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Icons/T_FF_Codex_RewardGift.T_FF_Codex_RewardGift");
-constexpr const TCHAR* CardPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard");
-constexpr const TCHAR* ScreenPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen");
+constexpr const TCHAR* IconPath = FFBuildUIAssetPaths::T_FF_Codex_RewardGiftObject;
+constexpr const TCHAR* CardPath = FFBuildUIAssetPaths::FacilityCodexCardPackage;
+constexpr const TCHAR* ScreenPath = FFBuildUIAssetPaths::FacilityCodexScreenPackage;
 
 template<class T> static T* Get(UWidgetTree& Tree, const TCHAR* Name)
 { return Cast<T>(Tree.FindWidget(FName(Name))); }

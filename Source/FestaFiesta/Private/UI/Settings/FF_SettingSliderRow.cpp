@@ -1,3 +1,6 @@
+// FF_SettingSliderRow.cpp
+// 역할: 범위 안의 값을 슬라이더로 바꾸는 설정 행을 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_SettingSliderRow.h"

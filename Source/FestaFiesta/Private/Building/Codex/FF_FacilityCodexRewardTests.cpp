@@ -1,3 +1,6 @@
+// FF_FacilityCodexRewardTests.cpp
+// 역할: FacilityCodexReward 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Codex.Rewards.DiscoveryRequiresExplicitOneTimeClaim, FestaFiesta.Building.Codex.Rewards.ProfileReloadPreservesUnclaimedAndMigratesPaidHistory).
+
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

@@ -1,4 +1,8 @@
+// FF_FacilityCodexPresenterSubsystem.cpp
+// 역할: 도감 열기·닫기와 선택 시설·카탈로그 이동을 연결한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexPresenterSubsystem.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -31,8 +35,7 @@ bool UFF_FacilityCodexPresenterSubsystem::DoesSupportWorldType(const EWorldType:
 
 FSoftClassPath UFF_FacilityCodexPresenterSubsystem::GetDefaultScreenClassPath()
 {
-	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen.WBP_FF_FacilityCodexScreen_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityCodexScreenClass);
 }
 
 bool UFF_FacilityCodexPresenterSubsystem::IsCodexOpen() const

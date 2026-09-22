@@ -1,3 +1,5 @@
+// FF_FFZSAudienceLibrary.h
+// 역할: 시설의 관람 범위와 관객 수용량을 게임 코드와 블루프린트에 제공한다.
 #pragma once
 
 #include "CoreMinimal.h"

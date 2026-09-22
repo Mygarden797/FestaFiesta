@@ -1,3 +1,5 @@
+// FF_FFZSFacilityLightingRig.h
+// 역할: 시설 조명 프리셋을 컴포넌트에 적용하고 시설 운영 상태에 따라 조명을 전환한다.
 #pragma once
 
 #include "CoreMinimal.h"

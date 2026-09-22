@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# audit_facility_visual_ownership.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 기존 데이터를 읽어 상태·문제를 점검한다.
+
 """Read-only report for facility Definition visual ownership metadata."""
 
 import json

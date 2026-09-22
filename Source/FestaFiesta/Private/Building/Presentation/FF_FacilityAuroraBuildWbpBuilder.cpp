@@ -1,5 +1,9 @@
+// FF_FacilityAuroraBuildWbpBuilder.cpp
+// 역할: 시설 카탈로그와 도구 모음에 저장된 Aurora 디자인을 적용한다.
+
 // Explicit V7 migration. Existing catalog graphs, category surfaces and program badges survive.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #if WITH_EDITOR
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
@@ -26,9 +30,9 @@ namespace FFFacilityAuroraBuild
 {
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Prefix = TEXT("FF_FACILITY_AURORA_BUILD");
-const FString PanelPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild");
-const FString TilePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile");
-const FString ToolsPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools");
+const FString PanelPackage = FFBuildUIAssetPaths::BuildPanelPackage;
+const FString TilePackage = FFBuildUIAssetPaths::BuildTilePackage;
+const FString ToolsPackage = FFBuildUIAssetPaths::BuildToolsPackage;
 const FLinearColor Ink = FLinearColor::FromSRGBColor(FColor(0x2B, 0x51, 0x3C));
 const FLinearColor Paper = FLinearColor::FromSRGBColor(FColor(0xEC, 0xF5, 0xE6));
 const FLinearColor Green = FLinearColor::FromSRGBColor(FColor(0x2F, 0x63, 0x45));
@@ -353,7 +357,7 @@ void Apply()
     }
     if (!Tools->WidgetTree->FindWidget(TEXT("Canvas_AuroraBuildV7")))
     {
-        Tools = ReplaceWidgetBlueprint(Prefix, ToolsPackage, TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls"),
+        Tools = ReplaceWidgetBlueprint(Prefix, ToolsPackage, FFBuildUIAssetPaths::ControlsFolder,
             *UFF_BuildToolsWidget::StaticClass(), BuildTools);
         if (!Tools) return;
     }

@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridRenderedPreviewTest.cpp
+// 역할: 실제 격자 렌더러와 지면 충돌로 검토 이미지를 만드는 선택 실행용 시각 확인 테스트다.
 // Opt-in visual fixture: run this filter with -RenderOffscreen instead of -NullRHI.
 // Uses the shipped grid renderer and real visibility collision/ground; it exports a review
 // image without a machine-dependent golden screenshot comparison or production map edits.

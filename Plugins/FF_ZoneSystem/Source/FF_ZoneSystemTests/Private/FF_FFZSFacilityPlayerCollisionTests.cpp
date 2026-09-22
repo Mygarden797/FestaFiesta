@@ -1,3 +1,5 @@
+// FF_FFZSFacilityPlayerCollisionTests.cpp
+// 역할: 시설이 지정된 플레이어를 막되 다른 Pawn과 내비게이션 계약을 유지하는지 검증한다.
 // Existing mesh collision must block an opted-in player capsule without changing other Pawns or navigation.
 
 #if WITH_DEV_AUTOMATION_TESTS

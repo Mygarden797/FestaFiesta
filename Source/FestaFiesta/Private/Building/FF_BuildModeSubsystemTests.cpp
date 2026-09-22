@@ -8,9 +8,39 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildingSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSPlacementPreviewActor.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/StrongObjectPtr.h"
+#include <limits>
+
+// 프로젝트 ini를 직접 수정해도 한 프레임 작업량이 무제한이 되거나 미리보기가 멈추지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildRuntimeSettingsBudgetTest,
+	"FestaFiesta.Building.BuildMode.SettingsBoundedWork",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FFF_BuildRuntimeSettingsBudgetTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UFF_BuildingSettings> Settings(NewObject<UFF_BuildingSettings>());
+	Settings->WorkBudgetMilliseconds = 3.f;
+	Settings->DragPlacementsPerFrame = 12;
+	Settings->NearbyCandidatesPerFrame = 6;
+	Settings->PreviewRefreshIntervalSeconds = .1f;
+	TestEqual(TEXT("Designer time is interpreted in seconds"), Settings->GetWorkBudgetSeconds(), .003);
+	TestEqual(TEXT("Designer drag budget applies"), Settings->GetDragPlacementsPerFrame(), 12);
+	TestEqual(TEXT("Designer search budget applies"), Settings->GetNearbyCandidatesPerFrame(), 6);
+	TestEqual(TEXT("Designer preview interval applies"), Settings->GetPreviewRefreshIntervalSeconds(), .1f);
+	Settings->WorkBudgetMilliseconds = std::numeric_limits<float>::quiet_NaN();
+	Settings->PreviewRefreshIntervalSeconds = std::numeric_limits<float>::infinity();
+	Settings->DragPlacementsPerFrame = MAX_int32;
+	Settings->NearbyCandidatesPerFrame = MIN_int32;
+	TestEqual(TEXT("Non-finite work budget restores a finite default"), Settings->GetWorkBudgetSeconds(), .002);
+	TestEqual(TEXT("Non-finite preview interval restores the established cadence"), Settings->GetPreviewRefreshIntervalSeconds(), .08f);
+	TestEqual(TEXT("Unbounded drag work is capped"), Settings->GetDragPlacementsPerFrame(), 64);
+	TestEqual(TEXT("A negative search budget cannot stall the search forever"), Settings->GetNearbyCandidatesPerFrame(), 1);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_BuildFacilityInspectionInputTest,
 	"FestaFiesta.Building.BuildMode.FacilityInspectionInput",

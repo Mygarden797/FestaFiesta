@@ -1,0 +1,60 @@
+{
+  "number": 55,
+  "category": "PhotoSpot",
+  "subtype": "Theme",
+  "name_ko": "서핑보드 컬러월",
+  "slug": "SurfboardColorWall",
+  "id": "PhotoSpot_Theme_SurfboardColorWall",
+  "footprint_cm": [
+    650,
+    220
+  ],
+  "height_cm": 350,
+  "description_ko": "색색의 보드가 만드는 해변 배경.",
+  "emphasis_ko": "보드 실루엣과 색 순서를 강조. 공유 보드 메시·텍스처 변형을 사용하고 앞에 인물이 설 공간을 비운다.",
+  "reference_image": "Design/Facitilies/55 서핑보드 컬러월.png",
+  "exploded_reference_image": "Design/Facitilies/55 서핑보드 컬러월 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/PhotoSpot/PDA_FFZS_PhotoSpot_Theme_Theme",
+  "followup_features": [
+    "사진 포즈·촬영 UI·이미지 저장은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Theme_SurfboardColorWall\\SM_FF_PhotoSpot_Theme_SurfboardColorWall.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\55_PhotoSpot_Theme_SurfboardColorWall.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\PhotoSpot\\PhotoSpot_Theme_SurfboardColorWall\\iso.png",
+  "bounds_m": [
+    6.029999732971191,
+    0.6840000152587891,
+    3.5
+  ],
+  "bounds_min_m": [
+    -3.0149998664855957,
+    -0.34200000762939453,
+    0.0
+  ],
+  "bounds_max_m": [
+    3.0149998664855957,
+    0.34199997782707214,
+    3.5
+  ],
+  "triangles": 10236,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Amber",
+    "M_F70_Coral",
+    "M_F70_Green",
+    "M_F70_Blue"
+  ],
+  "collision_count": 7,
+  "editable_parts": 31,
+  "fbx_sha256": "7fe0ddf95ea18dd2b32d3ef5ef9886a8e0af3fc3b9818fd6d303d28e54c8dc12",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

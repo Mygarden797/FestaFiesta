@@ -1,3 +1,6 @@
+# split_road_tiles.py
+# 역할: 설치 가능한 도로·타일 작업에서 서로 다른 기능의 데이터를 분리하고 연결한다.
+
 """Split the six authored Road definitions into Road and buildable Tile assets.
 
 Run only after compiling the Tile category, through Run-RoadEditor.ps1. Existing

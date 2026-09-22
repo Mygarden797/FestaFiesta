@@ -1,3 +1,6 @@
+# inspect_source.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 기존 에셋 상태를 읽어 기록한다.
+
 import bpy, json, bmesh
 from pathlib import Path
 from mathutils import Vector

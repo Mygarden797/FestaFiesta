@@ -1,3 +1,6 @@
+# update_references.py
+# 역할: 건설 에셋 폴더 이관 작업에서 연결 정보나 설정을 현재 기준에 맞게 갱신한다.
+
 """Update textual asset references and move backed-up import sources after UE rename.
 
 Asset packages themselves are moved exclusively by FF.MoveBuildingAssets.

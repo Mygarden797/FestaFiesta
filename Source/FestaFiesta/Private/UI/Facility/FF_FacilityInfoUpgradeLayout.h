@@ -1,3 +1,6 @@
+// FF_FacilityInfoUpgradeLayout.h
+// 역할: 시설 업그레이드 전후 비교 영역의 화면 배치를 보조한다.
+
 #pragma once
 
 #include "Blueprint/WidgetTree.h"

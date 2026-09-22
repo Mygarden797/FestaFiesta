@@ -1,3 +1,6 @@
+// FF_FacilityCatalogDataTests.cpp
+// 역할: FacilityCatalogData 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Data.FacilityDefinitions.ActiveCatalogIdentityAndPrices, FestaFiesta.Data.FacilityDefinitions.DisplayNamePreservesIdentityAndPrice).
+
 // Project content contracts. Identity and prices come from the authored data;
 // localized display names must never become persistent facility identifiers.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

@@ -1,3 +1,6 @@
+// FF_BuildingAssetRelocation.cpp
+// 역할: 기존 건설 에셋 이동 기록을 재현·검증하는 에디터 전용 도구이다.
+
 // One explicit editor migration for the construction asset organization requested in September 2026.
 // Keep the historical source paths in this utility unchanged when rewriting live project references.
 #include "CoreMinimal.h"

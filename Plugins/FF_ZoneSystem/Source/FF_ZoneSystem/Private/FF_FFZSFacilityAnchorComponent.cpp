@@ -1,4 +1,4 @@
-//FF_FFZSFacilityAnchorComponent.cpp
+// FF_FFZSFacilityAnchorComponent.cpp
 
 
 // 데이터 전용 시설 앵커 컴포넌트의 링크 구현 단위다.

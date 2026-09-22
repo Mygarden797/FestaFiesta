@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# configure_facility_mesh_materials.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 """Create the shared FFZS low-poly material palette and assign mesh slots."""
 
 import json

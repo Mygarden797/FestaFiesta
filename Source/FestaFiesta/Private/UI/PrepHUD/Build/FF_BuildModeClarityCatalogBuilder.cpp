@@ -1,5 +1,9 @@
+// FF_BuildModeClarityCatalogBuilder.cpp
+// 역할: 건설 카탈로그의 기존 조작 연결을 유지하며 가독성 디자인을 적용한다.
+
 // Explicit, one-time migration of the existing catalog; graphs and named controls survive.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #if WITH_EDITOR
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -32,9 +36,9 @@ namespace FFBuildModeClarityCatalog
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Prefix = TEXT("FF_BUILD_CLARITY_CATALOG");
 constexpr const TCHAR* VersionKey = TEXT("FF.BuildModeClarity.CatalogV1");
-const FString PanelPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild");
-const FString TilePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile");
-const FString ChoicePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice");
+const FString PanelPackage = FFBuildUIAssetPaths::BuildPanelPackage;
+const FString TilePackage = FFBuildUIAssetPaths::BuildTilePackage;
+const FString ChoicePackage = FFBuildUIAssetPaths::CategoryChoicePackage;
 const FLinearColor Ink = FLinearColor::FromSRGBColor(FColor(0x27, 0x4C, 0x3B));
 const FLinearColor Muted = FLinearColor::FromSRGBColor(FColor(0x66, 0x7B, 0x6B));
 const FLinearColor Paper = FLinearColor::FromSRGBColor(FColor(0xF0, 0xF5, 0xEC));

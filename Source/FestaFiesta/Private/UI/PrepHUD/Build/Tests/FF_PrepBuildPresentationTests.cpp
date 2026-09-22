@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // LightTeal PrepBuild 프레젠테이션 규칙과 UTileView 데이터 재사용 계약을 검증한다.
 
 #include "Misc/AutomationTest.h"

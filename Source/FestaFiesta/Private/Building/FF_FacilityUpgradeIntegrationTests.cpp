@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeIntegrationTests.cpp
+// 역할: FacilityUpgradeIntegration 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.FacilityUpgrade.ActualServiceAndIndependentSibling, FestaFiesta.Building.FacilityUpgrade.InsufficientFundsAndForgedCommand).
+
 // Facility upgrade purchase, authoritative state, and Party queue integration contracts.
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 

@@ -1,3 +1,6 @@
+# verify_assets.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Fresh-session, read-only asset/bundle checks plus idempotent WBP migration check."""
 import hashlib
 import json

@@ -1,3 +1,6 @@
+# build_notion_facility_examples.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 원본 모델이나 결과물을 생성한다.
+
 """Build missing FacilityDefinitionId example meshes and catalog thumbnails.
 
 Run from the repository root with Blender 5.1 or newer::

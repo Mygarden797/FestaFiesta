@@ -1,3 +1,5 @@
+// FF_FFZSFacilityLevelPresentationTests.cpp
+// 역할: 시설의 등급과 운영 상태에 맞는 표시 데이터 적용을 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

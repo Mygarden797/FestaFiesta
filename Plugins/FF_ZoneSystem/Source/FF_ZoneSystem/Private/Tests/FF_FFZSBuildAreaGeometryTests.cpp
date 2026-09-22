@@ -1,3 +1,5 @@
+// FF_FFZSBuildAreaGeometryTests.cpp
+// 역할: 건설 영역 합집합과 경계 포함 판정의 기하학적 예외를 자동 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

@@ -1,3 +1,6 @@
+// FF_BuildSynergyCatalogContextTests.cpp
+// 역할: BuildSynergyCatalogContext 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.BuildMode.SynergyCatalogContext).
+
 // The source of catalog highlights survives inspector dismissal for browsing,
 // but never outlives an explicit cancellation, removed source, or restored world.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

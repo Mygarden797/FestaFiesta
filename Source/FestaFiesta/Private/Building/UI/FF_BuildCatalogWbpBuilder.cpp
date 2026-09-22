@@ -6,6 +6,7 @@
 // 실패/수명: 변경 전 원본 Tree/Slot을 보존하고 컴파일·저장 실패 시 메모리 상태까지 롤백한다.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "AssetImportTask.h"
@@ -44,23 +45,25 @@
 #include "UObject/UnrealType.h"
 #include "TextureCompiler.h"
 #include "WidgetBlueprint.h"
+#include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "WidgetBlueprintFactory.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFFBuildCatalogWbpBuilder, Log, All);
 
 namespace FFBuildCatalogWbpBuilder
 {
-	// 생성 대상의 패키지 경로와 원본 PNG 경로를 한곳에 고정한다. 런타임 화면의 soft reference 및
-	// 자동화 테스트가 이 정확한 경로를 계약으로 사용하므로 이름을 바꾸면 세 위치를 함께 갱신해야 한다.
-	const FString UiFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy"));
-	const FString ImageFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"));
-	const FString TopButtonPackage(UiFolder / TEXT("WBP_FF_BuildTopButton"));
-	const FString CategoryButtonPackage(UiFolder / TEXT("WBP_FF_BuildCategoryButton"));
-	const FString FacilityCardPackage(UiFolder / TEXT("WBP_FF_BuildFacilityCard"));
-	const FString MinorSectionPackage(UiFolder / TEXT("WBP_FF_BuildMinorSection"));
-	const FString CatalogScreenPackage(UiFolder / TEXT("WBP_FF_BuildCatalogScreen"));
-	const FString IconAtlasPackage(ImageFolder / TEXT("T_UI_BuildCatalog_IconAtlas"));
-	const FString FoodTruckPackage(ImageFolder / TEXT("T_UI_BuildCatalog_FoodTruck"));
+	using FFUIWbpBuilder::MakeWidget;
+	using FFUIWbpBuilder::LoadExistingBlueprint;
+	// 생성 대상 주소는 런타임·검증과 같은 주소록을 사용한다. 원본 PNG 위치만 이 생성기가 관리한다.
+	const FString UiFolder(FFBuildUIAssetPaths::LegacyCatalogFolder);
+	const FString ImageFolder(FFBuildUIAssetPaths::CatalogImageFolder);
+	const FString TopButtonPackage(FFBuildUIAssetPaths::TopButtonPackage);
+	const FString CategoryButtonPackage(FFBuildUIAssetPaths::CategoryButtonPackage);
+	const FString FacilityCardPackage(FFBuildUIAssetPaths::FacilityCardPackage);
+	const FString MinorSectionPackage(FFBuildUIAssetPaths::MinorSectionPackage);
+	const FString CatalogScreenPackage(FFBuildUIAssetPaths::CatalogScreenPackage);
+	const FString IconAtlasPackage(FFBuildUIAssetPaths::CategoryIconAtlasPackage);
+	const FString FoodTruckPackage(FFBuildUIAssetPaths::FoodTruckImagePackage);
 	const FString IconAtlasSource = FPaths::ProjectDir() /
 		TEXT("SourceAssets/UI/BuildCatalog/T_UI_BuildCatalog_IconAtlas.png");
 	const FString FoodTruckSource = FPaths::ProjectDir() /
@@ -74,27 +77,6 @@ namespace FFBuildCatalogWbpBuilder
 	const FLinearColor ColorAccent(0.08f, 0.95f, 0.88f, 1.0f);
 	const FLinearColor ColorText(0.91f, 0.96f, 1.0f, 1.0f);
 	const FLinearColor ColorMuted(0.58f, 0.69f, 0.78f, 1.0f);
-
-	template <typename TWidget>
-	TWidget* MakeWidget(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		const FName Name,
-		const bool bVariable = false)
-	{
-		// WidgetTree를 Outer로 하는 템플릿 위젯을 만들고, 네이티브 BindWidget 대상만 bIsVariable로 노출한다.
-		// 반환값은 모든 레이아웃 함수에서 일괄 검증하므로 생성 실패 시 nullptr을 그대로 전달한다.
-		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			// Widget Blueprint 컴파일러는 필드로 노출하지 않는 이름 있는 템플릿에도 안정적인 원본 GUID를 기대한다.
-			// OnVariableAdded가 WidgetVariableNameToGuidMap을 채워 동적 생성 트리가 컴파일/재저장 후에도
-			// 동일한 위젯 이름을 추적할 수 있게 한다.
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
 
 	template <typename TWidget>
 	TWidget* MakeWidgetOfClass(
@@ -186,49 +168,6 @@ namespace FFBuildCatalogWbpBuilder
 		return nullptr;
 	}
 
-	bool SaveNewBlueprint(UWidgetBlueprint& Blueprint)
-	{
-		// WidgetTree와 변수 GUID 변경을 구조 변경으로 알린 뒤 컴파일해야 GeneratedClass에 최신 트리가 반영된다.
-		// 컴파일 오류가 있으면 손상된 기준 에셋을 저장하지 않고 즉시 실패를 반환한다.
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
-		if (Blueprint.Status == BS_Error)
-		{
-			UE_LOG(LogFFBuildCatalogWbpBuilder, Error,
-				TEXT("FF_BUILD_CATALOG_UMG_FAIL: %s did not compile."), *Blueprint.GetPathName());
-			return false;
-		}
-
-		Blueprint.MarkPackageDirty();
-		// LongPackageName을 플랫폼 파일 경로로 변환하고, 신규 폴더까지 만든 후 공개 독립 에셋으로 저장한다.
-		UPackage* Package = Blueprint.GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-
-		FSavePackageArgs Args;
-		Args.TopLevelFlags = RF_Public | RF_Standalone;
-		Args.SaveFlags = SAVE_NoError;
-		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
-	}
-
-	UWidgetBlueprint* LoadExistingBlueprint(const FString& PackageName)
-	{
-		// 패키지명(/Game/.../Asset)을 UObject 경로(/Game/.../Asset.Asset)로 변환해 정확한 WBP만 로드한다.
-		const FString AssetName = FPackageName::GetLongPackageAssetName(PackageName);
-		const FString ObjectPath = FString::Printf(TEXT("%s.%s"), *PackageName, *AssetName);
-		return LoadObject<UWidgetBlueprint>(nullptr, *ObjectPath);
-	}
-
-	FString MakeAssetObjectPath(const FString& PackageName)
-	{
-		// WBP와 텍스처 양쪽에서 재사용하는 패키지명 -> 오브젝트 경로 변환이다.
-		return FString::Printf(
-			TEXT("%s.%s"),
-			*PackageName,
-			*FPackageName::GetLongPackageAssetName(PackageName));
-	}
-
 	bool SaveTexture(UTexture2D& Texture)
 	{
 		// 인게임 HUD용 원본 색과 선명도를 유지하도록 UI 전용 import 설정을 강제한다.
@@ -264,7 +203,7 @@ namespace FFBuildCatalogWbpBuilder
 		const FString& PackageName)
 	{
 		// 기존 텍스처는 다시 import하지 않아 소스/디자이너 변경을 보존하되, 현재 UI 설정으로 정규화해 저장한다.
-		if (UTexture2D* Existing = LoadObject<UTexture2D>(nullptr, *MakeAssetObjectPath(PackageName)))
+		if (UTexture2D* Existing = LoadObject<UTexture2D>(nullptr, *FFUIWbpBuilder::MakeObjectPath(PackageName)))
 		{
 			return SaveTexture(*Existing) ? Existing : nullptr;
 		}
@@ -417,7 +356,7 @@ namespace FFBuildCatalogWbpBuilder
 			return nullptr;
 		}
 
-		if (!SaveNewBlueprint(*Blueprint))
+		if (!FFUIWbpBuilder::SaveNewBlueprint(TEXT("FF_BUILD_CATALOG_UMG"), *Blueprint))
 		{
 			UE_LOG(LogFFBuildCatalogWbpBuilder, Error,
 				TEXT("FF_BUILD_CATALOG_UMG_FAIL: could not save %s."), *PackageName);
@@ -458,7 +397,7 @@ namespace FFBuildCatalogWbpBuilder
 		// 단축 평가로 어느 단계든 실패하면 후속 단계와 성공 로그를 실행하지 않는다.
 		if (!ResetWidgetTree(*Blueprint) ||
 			!BuildLayout(*Blueprint, *Blueprint->WidgetTree) ||
-			!SaveNewBlueprint(*Blueprint))
+			!FFUIWbpBuilder::SaveNewBlueprint(TEXT("FF_BUILD_CATALOG_UMG"), *Blueprint))
 		{
 			UE_LOG(LogFFBuildCatalogWbpBuilder, Error,
 				TEXT("FF_BUILD_CATALOG_UMG_FAIL: reference layout could not be applied to %s."),
@@ -1165,7 +1104,7 @@ namespace FFBuildCatalogWbpBuilder
 			Migration.OldWidget->SetFlags(RF_Transient);
 		}
 
-		if (!SaveNewBlueprint(*Screen))
+		if (!FFUIWbpBuilder::SaveNewBlueprint(TEXT("FF_BUILD_CATALOG_UMG"), *Screen))
 		{
 			// 대화형 에디터에서 명령을 실행한 뒤 컴파일이나 저장이 실패할 수 있으므로
 			// 원래 메모리 WidgetTree도 함께 복구한다.

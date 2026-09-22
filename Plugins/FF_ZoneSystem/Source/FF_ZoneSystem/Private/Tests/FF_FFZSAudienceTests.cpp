@@ -1,3 +1,5 @@
+// FF_FFZSAudienceTests.cpp
+// 역할: 관객 자리 생성, 관람 범위, 최대 수용 인원의 계산 계약을 자동 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

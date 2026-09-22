@@ -1,3 +1,5 @@
+// FF_ProgramAuthoringValidationLibrary.cpp
+// 역할: 프로그램 편성 데이터를 검사하고 수정할 항목을 작성자에게 설명한다.
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Economy/FF_ProgramAuthoringValidationLibrary.h"
@@ -50,7 +52,7 @@ bool UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(
 	const int32 InitialErrorCount = OutErrors.Num();
 	if (ProgramCatalog.IsEmpty())
 	{
-		OutErrors.Add(LOCTEXT("EmptyCatalog", "ProgramCatalog가 비어 있다. 유료 프로그램을 한 개 이상 저작해야 한다."));
+		OutErrors.Add(LOCTEXT("EmptyCatalog", "ProgramCatalog가 비어 있다. 프로그램을 한 개 이상 저작해야 한다."));
 		return false;
 	}
 
@@ -81,13 +83,12 @@ bool UFF_ProgramAuthoringValidationLibrary::ValidateProgramCatalog(
 				LOCTEXT("EmptyDisplayName", "{0}: 화면 표시 이름이 비어 있다."), Label));
 		}
 
-
-		if (Card.CostGold <= 0
-			|| Card.Capacity <= 0 || Card.FeePerPerson <= 0)
+		// 무료 입장도 유효한 프로그램이다. 개최 비용과 정원은 양수여야 한다.
+		// FFF_ProgramCard::IsValid와 같은 경계를 사용해 작성 검사와 실행 규칙을 맞춘다.
+		if (Card.CostGold <= 0 || Card.Capacity <= 0 || Card.FeePerPerson < 0)
 		{
 			OutErrors.Add(FText::Format(
-				LOCTEXT("NonPositiveEconomy", "{0}: CostGold, Capacity, FeePerPerson는 모두 1 이상이어야 한다."),
-
+				LOCTEXT("InvalidEconomyBounds", "{0}: CostGold와 Capacity는 1 이상, FeePerPerson은 0 이상이어야 한다."),
 				Label));
 		}
 

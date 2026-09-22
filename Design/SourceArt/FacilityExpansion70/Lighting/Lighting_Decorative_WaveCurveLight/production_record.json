@@ -1,0 +1,72 @@
+{
+  "number": 60,
+  "category": "Lighting",
+  "subtype": "Decorative",
+  "name_ko": "파도 곡선 조형등",
+  "slug": "WaveCurveLight",
+  "id": "Lighting_Decorative_WaveCurveLight",
+  "footprint_cm": [
+    600,
+    300
+  ],
+  "height_cm": 440,
+  "description_ko": "광장 경계를 꾸미는 빛의 선.",
+  "emphasis_ko": "굵기 일정한 파도 곡선과 숨은 받침을 만든다. 발광 마스크를 분리하고 먼 거리에서 빛이 끊겨 보이지 않는지 확인한다.",
+  "reference_image": "Design/Facitilies/60 파도 곡선 조형등.png",
+  "exploded_reference_image": "Design/Facitilies/60 파도 곡선 조형등 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/PDA_FFZS_Lighting_Decorative_Festoon",
+  "followup_features": [
+    "실제 조명 리그·밝기·색 제어·저장 복원은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_WaveCurveLight\\SM_FF_Lighting_Decorative_WaveCurveLight.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\60_Lighting_Decorative_WaveCurveLight.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Lighting\\Lighting_Decorative_WaveCurveLight\\iso.png",
+  "bounds_m": [
+    5.904940128326416,
+    2.029823064804077,
+    4.40000057220459
+  ],
+  "bounds_min_m": [
+    -2.952470064163208,
+    -1.0149115324020386,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.952470064163208,
+    1.0149115324020386,
+    4.40000057220459
+  ],
+  "triangles": 2196,
+  "material_names": [
+    "M_F70_Teal",
+    "M_F70_Amber",
+    "M_F70_Blue"
+  ],
+  "collision_count": 4,
+  "editable_parts": 13,
+  "fbx_sha256": "23dd511b43cc9831334d5a6ad749346c94a8f0e5284880b480c48eaee8a9ab66",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      -1.3839702606201172,
+      -0.30754896998405457,
+      4.276980876922607
+    ],
+    [
+      0.3383038640022278,
+      0.0,
+      3.4199442863464355
+    ],
+    [
+      2.060577869415283,
+      0.30754896998405457,
+      2.5629079341888428
+    ]
+  ]
+}

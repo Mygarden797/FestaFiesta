@@ -1,3 +1,6 @@
+// FF_ProgramFacilityGuide.cpp
+// 역할: 프로그램에 필요한 시설을 찾아 건설 목록이나 설치된 시설로 안내한다.
+
 #include "UI/PrepHUD/Panels/FF_ProgramFacilityGuide.h"
 
 #include "Building/FF_FacilityNamingLibrary.h"

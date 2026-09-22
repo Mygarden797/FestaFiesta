@@ -1,3 +1,6 @@
+# migrate_required_badges.py
+# 역할: 시설 조합 효과와 표시 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Add required-facility states and verify existing card/synergy authoring is preserved."""
 import hashlib
 import json

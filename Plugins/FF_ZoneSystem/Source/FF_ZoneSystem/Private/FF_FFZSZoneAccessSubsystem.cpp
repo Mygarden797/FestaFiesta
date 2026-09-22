@@ -133,9 +133,12 @@ bool UFFZSZoneAccessSubsystem::ResolveExitLocation(FVector& OutExit) const
         return false;
     }
 
-    // 출구는 AFF_SpawnActor의 위치 + Temp_ExitOffsetFromOrigin이다(AFF_SpawnActor::BeginPlay와 동일).
-    // 그 클래스는 게임 모듈에 있어 플러그인이 링크할 수 없으므로 리플렉션으로 읽는다.
+    // AFF_SpawnActor::BeginPlay의 출구 선택 규칙을 따른다. Zone 보정은 그 BeginPlay보다
+    // 먼저 실행되므로 아직 초기화되지 않은 군중 상태 대신 레벨에 지정된 속성을 읽는다.
+    // 게임 모듈은 이 플러그인에 의존한다. 역방향 의존 없이 BP 파생 액터까지 읽도록
+    // 리플렉션을 사용하며, 재컴파일 때 바뀔 수 있는 FProperty 포인터는 캐시하지 않는다.
     static const FName SpawnActorClassName(TEXT("FF_SpawnActor"));
+    static const FName ExitAnchorPropertyName(TEXT("DespawnAchor"));
     static const FName ExitOffsetPropertyName(TEXT("Temp_ExitOffsetFromOrigin"));
 
     for (TActorIterator<AActor> It(World); It; ++It)
@@ -162,23 +165,36 @@ bool UFFZSZoneAccessSubsystem::ResolveExitLocation(FVector& OutExit) const
             continue;
         }
 
-        FVector Offset(-4000.0, 0.0, 0.0);   // AFF_SpawnActor의 기본값
-        if (const FStructProperty* Prop =
-                CastField<FStructProperty>(ActorClass->FindPropertyByName(ExitOffsetPropertyName)))
-        {
-            if (Prop->Struct == TBaseStructure<FVector>::Get())
-            {
-                Offset = *Prop->ContainerPtrToValuePtr<FVector>(Actor);
-            }
-        }
-        else
+        const FObjectPropertyBase* AnchorProperty =
+            CastField<FObjectPropertyBase>(ActorClass->FindPropertyByName(ExitAnchorPropertyName));
+        if (AnchorProperty == nullptr || !AnchorProperty->PropertyClass->IsChildOf(AActor::StaticClass()))
         {
             UE_LOG(LogFFZSZoneAccess, Warning,
-                TEXT("%s에서 Temp_ExitOffsetFromOrigin을 못 찾아 기본 오프셋으로 출구를 잡는다"),
+                TEXT("%s의 DespawnAchor 속성을 읽을 수 없어 군중 출구를 결정하지 않는다"),
                 *Actor->GetName());
+            return false;
         }
 
-        OutExit = Actor->GetActorLocation() + Offset;
+        const AActor* ExitAnchor = Cast<AActor>(AnchorProperty->GetObjectPropertyValue_InContainer(Actor));
+        if (IsValid(ExitAnchor))
+        {
+            OutExit = ExitAnchor->GetActorLocation();
+            return true;
+        }
+
+        const FStructProperty* OffsetProperty =
+            CastField<FStructProperty>(ActorClass->FindPropertyByName(ExitOffsetPropertyName));
+        if (OffsetProperty == nullptr || OffsetProperty->Struct != TBaseStructure<FVector>::Get())
+        {
+            // 군중 쪽 기본값을 별도로 복제하면 변경 시 다시 다른 출구를 고르게 된다.
+            UE_LOG(LogFFZSZoneAccess, Warning,
+                TEXT("%s의 Temp_ExitOffsetFromOrigin 속성을 읽을 수 없어 군중 출구를 결정하지 않는다"),
+                *Actor->GetName());
+            return false;
+        }
+
+        // 군중과 동일한 월드 좌표 덧셈이다. 액터 회전·스케일이나 SpawnAchor를 적용하지 않는다.
+        OutExit = Actor->GetActorLocation() + *OffsetProperty->ContainerPtrToValuePtr<FVector>(Actor);
         return true;
     }
 

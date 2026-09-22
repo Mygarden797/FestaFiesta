@@ -1,3 +1,6 @@
+// FF_FacilitySynergyTableBuilder.h
+// 역할: 기존 조합 표 편집을 보존하면서 누락된 기본 행만 추가하는 에디터 도구이다.
+
 #pragma once
 
 #include "CoreMinimal.h"

@@ -1,3 +1,5 @@
+// FF_FFZSProductionLightingTests.cpp
+// 역할: 프로젝트에 배포되는 시설 조명 에셋과 런타임 적용 결과를 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

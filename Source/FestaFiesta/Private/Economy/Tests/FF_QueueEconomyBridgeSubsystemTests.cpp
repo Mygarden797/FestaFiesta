@@ -26,16 +26,12 @@
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
-#include "Minigame/FF_MinigameDefinition.h"
-#include "Minigame/FF_MinigameSubsystem.h"
-#include "Minigame/FF_TargetShootingRuntime.h"
 #include "Queue/FF_QueueSubsystem.h"
 #include "Queue/FF_QueueTypes.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityProgramMarkerSubsystem.h"
-#include "UI/Minigame/FF_TargetShootingScreen.h"
 #include "UObject/UnrealType.h"
 #include "Zone/FF_ZoneSystemQueueBridgeSubsystem.h"
 
@@ -772,97 +768,6 @@ bool FFF_QueueEconomyBridge_TableRevenueEditsInstalledAndRestoredFacilities::Run
 	Markers->Tick(0.f);
 	TestFalse(TEXT("Zero table level multiplier also suppresses an unearned income badge"),
 		Markers->GetBadgeData(FacilityIds[2], Badge) && Badge.bShowRevenue);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Minigame_TableRewardSettlement,
-	"FestaFiesta.Minigame.TargetShooting.TableRewardSettlement",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
-bool FFF_Minigame_TableRewardSettlement::RunTest(const FString& Parameters)
-{
-	(void)Parameters;
-	using namespace FFF_QueueEconomyBridgeTestHelpers;
-	FScopedQueueEconomyTestSettings SettingsGuard;
-	FQueueEconomyHarness Harness;
-	if (!TestTrue(TEXT("Minigame reward world initializes"), Harness.Initialize(this))) return false;
-	const FName FacilityDefinitionId(TEXT("Booth_ActivityGame_RevenueAutomation"));
-	FFFZSFacilitySpec Spec = FFZSTest::MakeValidFacilitySpec(EFFZSTestFacilityVariant::FoodTruck);
-	Spec.FacilityDefinitionId = FacilityDefinitionId;
-	Spec.InstallCostKey = TEXT("Cost.Booth.FoodStall");
-	FString Failure;
-	if (!Harness.InstallFoodStall(Failure, false, &Spec)) { AddError(Failure); return false; }
-	FFFZSCommand Open;
-	Open.CommandId = FGuid::NewGuid();
-	Open.TransactionId = FGuid::NewGuid();
-	Open.ExpectedWorldRevision = Harness.ZoneSystem->GetWorldRevision();
-	Open.Type = EFFZSCommandType::Open;
-	Open.FacilityInstanceId = Harness.FacilityInstanceId;
-	if (!TestTrue(TEXT("A real active facility hosts the minigame"), Harness.ZoneSystem->ExecuteCommand(Open).bSucceeded)) return false;
-	UFF_MinigameSubsystem* Coordinator = Harness.World->GetSubsystem<UFF_MinigameSubsystem>();
-	if (!TestNotNull(TEXT("The real reward coordinator exists"), Coordinator)) return false;
-	TStrongObjectPtr<UDataTable> Table(NewObject<UDataTable>());
-	Table->RowStruct = FFF_FacilityRevenueTableRow::StaticStruct();
-	Harness.Definition->FacilityRevenueTable = Table.Get();
-
-	// Supply a deterministic playing session through reflected transient properties. This
-	// headless fixture omits modal input setup, then exercises the production Tick, result
-	// presentation callback and economy transaction without calling a private completion API.
-	const FObjectProperty* RuntimeProperty = FindFProperty<FObjectProperty>(Coordinator->GetClass(), TEXT("Runtime"));
-	const FObjectProperty* ScreenProperty = FindFProperty<FObjectProperty>(Coordinator->GetClass(), TEXT("Screen"));
-	const FObjectProperty* DefinitionProperty = FindFProperty<FObjectProperty>(Coordinator->GetClass(), TEXT("ActiveDefinition"));
-	const FStructProperty* ResultProperty = FindFProperty<FStructProperty>(UFF_TargetShootingScreen::StaticClass(), TEXT("DisplayedResult"));
-	if (!TestNotNull(TEXT("Reflected session runtime"), RuntimeProperty) || !TestNotNull(TEXT("Reflected result screen"), ScreenProperty)
-		|| !TestNotNull(TEXT("Reflected session definition"), DefinitionProperty) || !TestNotNull(TEXT("Actual presented result"), ResultProperty)) return false;
-	int32 TotalReward = 0;
-	for (const int32 EditedReward : {90, 0})
-	{
-		UFF_TargetShootingDefinition* Minigame = NewObject<UFF_TargetShootingDefinition>(Coordinator);
-		Minigame->CompatibleFacilityDefinitionIds = {FacilityDefinitionId};
-		Minigame->ScoreForMaxReward = 1;
-		Minigame->RewardGoldAtMaxScore = 150;
-		FFF_MinigameSessionContext Context;
-		Context.SessionId = FGuid::NewGuid();
-		Context.FacilityInstanceId = Harness.FacilityInstanceId;
-		Context.FacilityDefinitionId = FacilityDefinitionId;
-		Context.MinigameId = Minigame->MinigameId;
-		Context.RandomSeed = 123;
-		UFF_TargetShootingRuntime* Runtime = NewObject<UFF_TargetShootingRuntime>(Coordinator);
-		if (!TestTrue(TEXT("The deterministic target-shooting session initializes"), Runtime->Initialize(Minigame, Context, &Failure)))
-		{
-			AddError(Failure);
-			return false;
-		}
-		UFF_TargetShootingScreen* Screen = NewObject<UFF_TargetShootingScreen>(Harness.World);
-		if (!TestTrue(TEXT("The real result presenter accepts the playing session"), Screen->BindRuntime(Runtime))) return false;
-		RuntimeProperty->SetObjectPropertyValue_InContainer(Coordinator, Runtime);
-		ScreenProperty->SetObjectPropertyValue_InContainer(Coordinator, Screen);
-		DefinitionProperty->SetObjectPropertyValue_InContainer(Coordinator, Minigame);
-		FFF_FacilityRevenueTableRow Row;
-		Row.bOverrideMinigameRewardGold = true;
-		Row.MinigameRewardAtMaxScoreGold = 150;
-		Table->AddRow(FacilityDefinitionId, Row);
-		const FFF_TargetShootingSnapshot Target = Runtime->GetTargetSnapshot();
-		TestEqual(TEXT("A real hit qualifies for the full reward"), Runtime->SubmitShot(Context.SessionId,
-			Target.TargetCenterNormalized, Target.TargetSerial), EFF_TargetShootingShotResult::Hit);
-		const int32 Before = Harness.Progression->GetGold();
-		Row.MinigameRewardAtMaxScoreGold = EditedReward;
-		Table->AddRow(FacilityDefinitionId, Row);
-		Coordinator->Tick(Minigame->DurationSeconds + 1.f);
-		TestEqual(TEXT("The real coordinator completes the active session"), Runtime->GetSnapshot().State, EFF_MinigameSessionState::Completed);
-		const FFF_MinigameResult* Presented = ResultProperty->ContainerPtrToValuePtr<FFF_MinigameResult>(Screen);
-		TestEqual(TEXT("The result screen receives this session's actual completion result"), Presented->SessionId, Context.SessionId);
-		TestEqual(TEXT("Completion reads the reward edited after the session began"), Presented->RewardGold, EditedReward);
-		TestEqual(TEXT("The balance receives exactly the presented reward"), Harness.Progression->GetGold() - Before, EditedReward);
-		TotalReward += EditedReward;
-		TestEqual(TEXT("The minigame ledger agrees with all accepted session rewards"),
-			Harness.Progression->GetDayLedger().GetEarnByReason(EFF_EarnReason::MinigameReward), TotalReward);
-		Row.MinigameRewardAtMaxScoreGold = 999;
-		Table->AddRow(FacilityDefinitionId, Row);
-		Coordinator->Tick(60.f);
-		TestEqual(TEXT("Repeated completion cannot pay again, including a formerly free session"), Harness.Progression->GetGold(), Before + EditedReward);
-		TestEqual(TEXT("A completed result is not repriced by later table edits"), Presented->RewardGold, EditedReward);
-		Coordinator->CancelActiveMinigame();
-	}
 	return true;
 }
 

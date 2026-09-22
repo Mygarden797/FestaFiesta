@@ -1,3 +1,6 @@
+# apply_data_maintenance_20260919.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Explicit data repair and additive synergy import; never regenerates a WBP."""
 import csv
 import hashlib

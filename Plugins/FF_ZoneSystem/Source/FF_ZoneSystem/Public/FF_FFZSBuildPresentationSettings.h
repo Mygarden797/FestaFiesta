@@ -1,8 +1,12 @@
+// FF_FFZSBuildPresentationSettings.h
+// 역할: 격자·예약 범위·배치 고스트의 색, 선 두께, 재질을 Project Settings에서 조정하게 한다.
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "FF_FFZSBuildPresentationSettings.generated.h"
+
+class UMaterialInterface;
 
 // Presentation only. These values never enter a command, placement mask, queue or save snapshot.
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "FF Build Presentation"))
@@ -12,6 +16,26 @@ class FF_ZONESYSTEM_API UFFZSBuildPresentationSettings final : public UDeveloper
 
 public:
     UFFZSBuildPresentationSettings();
+
+    // 생성자의 초기 재질을 이 설정에서 교체할 수 있다. 기존 기본 외형은 그대로 유지한다.
+    // 개별 PreviewActor가 재질을 지정한 경우에는 액터 값이 우선한다.
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback")
+    TSoftObjectPtr<UMaterialInterface> DefaultPlacementFeedbackMaterial;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback")
+    FLinearColor ValidPlacementColor = FLinearColor(0.04f, 0.65f, 0.25f);
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback")
+    FLinearColor InvalidPlacementColor = FLinearColor(0.85f, 0.035f, 0.025f);
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float ValidPlacementOpacity = 0.24f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float InvalidPlacementOpacity = 0.38f;
+
+    UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float FailureSurfaceOpacity = 0.18f;
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Grid")
     FLinearColor MinorLineColor = FLinearColor(0.36f, 0.63f, 0.60f, 0.22f);

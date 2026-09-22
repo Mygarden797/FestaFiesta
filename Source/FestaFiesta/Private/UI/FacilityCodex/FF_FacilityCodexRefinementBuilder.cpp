@@ -1,6 +1,10 @@
+// FF_FacilityCodexRefinementBuilder.cpp
+// 역할: 도감 목록의 열 구성과 시각 요소를 부분 수정한다.
+
 // Additive, explicit visual refinement of the saved six-column codex.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -145,11 +149,11 @@ static bool Apply(const TCHAR* Path, UClass* Expected, bool(*Edit)(UWidgetBluepr
 }
 static void Run()
 {
-    bool Ok = Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),Card);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),CardTooltip,TooltipVersion);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"),UFF_FacilityCodexScreen::StaticClass(),Screen);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),UFF_FacilityCodexCard::StaticClass(),CardTitleFit,TitleFitVersion);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"),UFF_FacilityCodexScreen::StaticClass(),ScreenTitleFit,TitleFitVersion);
+    bool Ok = Apply(FFBuildUIAssetPaths::FacilityCodexCardPackage,UFF_FacilityCodexCard::StaticClass(),Card);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityCodexCardPackage,UFF_FacilityCodexCard::StaticClass(),CardTooltip,TooltipVersion);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityCodexScreenPackage,UFF_FacilityCodexScreen::StaticClass(),Screen);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityCodexCardPackage,UFF_FacilityCodexCard::StaticClass(),CardTitleFit,TitleFitVersion);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityCodexScreenPackage,UFF_FacilityCodexScreen::StaticClass(),ScreenTitleFit,TitleFitVersion);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("%s_COMPLETE_%s"),Prefix,Ok ? TEXT("PASS") : TEXT("FAIL"));
 }
 static FAutoConsoleCommand Command(TEXT("FF.ApplyBuildModeClarityCodexRefinement"),

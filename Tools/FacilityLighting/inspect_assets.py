@@ -1,3 +1,6 @@
+# inspect_assets.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 기존 에셋 상태를 읽어 기록한다.
+
 """Read-only record of the main-stage PDA, lighting templates and panel asset."""
 import json
 from pathlib import Path

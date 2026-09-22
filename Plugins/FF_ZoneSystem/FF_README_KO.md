@@ -1,5 +1,9 @@
 # FF_ZoneSystem 기능 상세 가이드
 
+> **2026-09-22 유지보수 안내:** [담당 기능·설정 변경법·전체 파일 지도](../../Collaboration/Refactor_Plugin_Notes_KO.md)를 먼저 읽으세요.
+> 현재 월드 저장 스키마는 8이며 1cm 좌표, 자유 회전, 시설 등급, Road/Tile 구분을 포함합니다.
+> 아래 문서의 오래된 마이그레이션 절은 당시 이행 과정을 설명합니다. 저장 호환의 최신 기준은 `FFFZSWorldSnapshot::CurrentSchemaVersion`과 `UFFZSWorldSubsystem`입니다.
+
 > **2026-09-10 통합 건설 영역 추가:** 레벨에 `AFFZSBuildArea`를 하나 배치하면 기존 지역의
 > 공유 경계를 넘는 시설 배치를 지원한다. 기존 `AFFZSGameplayZone`은 NPC·혼잡·저장용 지역으로 유지한다.
 > 아래의 “정확히 하나의 Zone 안” 규칙은 BuildArea가 없는 기존 모드에 적용된다.
@@ -45,7 +49,7 @@
 | 시설 수명주기 | Install·Move·Remove·Open·Close·EmergencyClose | 경제·시간·UI 등 외부 의미 |
 | Queue | FIFO, 용량, 서비스, 포기, Drain, Blocked, Exit, 통계 | Character/Controller/StateTree 이동 구현 |
 | 외부 연동 | Policy 인터페이스와 원자적 예약·Commit·Rollback 순서 | 각 도메인의 실제 상태와 Adapter |
-| 저장 | Schema 4 Snapshot 생성, 검증, 논리적 원자 복원 | Save Slot·파일·클라우드 I/O |
+| 저장 | Schema 8 Snapshot 생성, 검증, 논리적 원자 복원 | Save Slot·파일·클라우드 I/O |
 | 조회·이벤트 | 정렬된 Read Model, 성공/거절 이벤트 | 운영 UI, 분석 저장소, 텔레메트리 |
 | 멀티플레이 | 구현하지 않음 | Server Authority, RPC, Replication, 재접속 |
 
@@ -56,11 +60,12 @@
 
 ## 2. 모듈과 전체 구조
 
-`FF_ZoneSystem.uplugin`은 두 모듈을 선언한다.
+`FF_ZoneSystem.uplugin`은 세 모듈을 선언한다.
 
 | 모듈 | 유형 / Loading Phase | 역할 |
 |---|---|---|
 | `FF_ZoneSystem` | Runtime / Default | 실제 게임에서 사용하는 모든 타입과 로직 |
+| `FF_ZoneSystemEditor` | Editor / PostEngineInit | 시설 상세 창·관람 수용량·에셋 데이터 검증 |
 | `FF_ZoneSystemTests` | Editor / PostEngineInit | World·Policy·Save 통합 자동화 |
 
 Runtime 모듈은 `Core`, `CoreUObject`, `Engine`, `DeveloperSettings`,
@@ -1007,7 +1012,7 @@ Dynamic Multicast Delegate:
 
 ### 13.1 현재 Schema
 
-현재 `FFFZSWorldSnapshot::SchemaVersion`은 4다.
+현재 `FFFZSWorldSnapshot::CurrentSchemaVersion`은 8이다. Schema 3~7의 기존 저장은 지원되는 필드 변환을 거쳐 복원하며, 시설 설치를 허용하던 이전 Road는 Tile로 이관한다.
 
 포함:
 

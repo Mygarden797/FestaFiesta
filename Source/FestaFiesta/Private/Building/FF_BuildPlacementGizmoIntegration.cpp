@@ -1,3 +1,6 @@
+// FF_BuildPlacementGizmoIntegration.cpp
+// 역할: 화살표·회전 원 조작을 건설 미리보기의 좌표·각도 변경으로 연결한다.
+
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/Presentation/FF_BuildPlacementGizmo.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"

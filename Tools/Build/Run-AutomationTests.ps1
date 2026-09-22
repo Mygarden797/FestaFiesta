@@ -1,3 +1,6 @@
+# Run-AutomationTests.ps1
+# 역할: 에디터를 빌드한 뒤 지정한 자동화 테스트와 선택적 에셋 검증을 실행한다.
+
 [CmdletBinding()]
 param(
     [string] $EngineRoot,

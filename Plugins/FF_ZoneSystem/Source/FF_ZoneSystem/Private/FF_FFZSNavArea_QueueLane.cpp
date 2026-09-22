@@ -1,4 +1,5 @@
 // FF_FFZSNavArea_QueueLane.cpp
+// 역할: 대기열 통로의 내비게이션 이동 비용을 정의해 NPC가 대기 공간을 무작정 가로지르지 않게 한다.
 
 #include "FF_FFZSNavArea_QueueLane.h"
 

@@ -1,3 +1,6 @@
+# validate_saved_roads.py
+# 역할: 설치 가능한 도로·타일 작업에서 저장된 산출물의 구조와 품질을 검증한다.
+
 """Read saved Blender library directories without changing the open scene."""
 import bpy,json
 from pathlib import Path

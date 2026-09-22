@@ -1,0 +1,57 @@
+{
+  "number": 39,
+  "category": "Rest",
+  "subtype": "Cooling",
+  "name_ko": "해변 족욕 쉼터",
+  "slug": "BeachFootbathShelter",
+  "id": "Rest_Cooling_BeachFootbathShelter",
+  "footprint_cm": [
+    550,
+    500
+  ],
+  "height_cm": 420,
+  "description_ko": "발을 담그며 쉬는 공간.",
+  "emphasis_ko": "낮은 수조·둘레 좌석·발을 넣는 구간을 명확히 한다. 수면을 분리하고 통째 UCX 박스로 족욕 공간을 막지 않는다.",
+  "reference_image": "Design/Facitilies/39 해변 족욕 쉼터.png",
+  "exploded_reference_image": "Design/Facitilies/39 해변 족욕 쉼터 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Rest/PDA_FFZS_Rest_Cooling_Cooling",
+  "followup_features": [
+    "수면 재질·물결·족욕 애니메이션과 냉각 효과는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Cooling_BeachFootbathShelter\\SM_FF_Rest_Cooling_BeachFootbathShelter.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\39_Rest_Cooling_BeachFootbathShelter.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Rest\\Rest_Cooling_BeachFootbathShelter\\iso.png",
+  "bounds_m": [
+    5.389999866485596,
+    4.900000095367432,
+    4.199999809265137
+  ],
+  "bounds_min_m": [
+    -2.694999933242798,
+    -2.450000047683716,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.694999933242798,
+    2.450000047683716,
+    4.199999809265137
+  ],
+  "triangles": 2398,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Sand",
+    "M_F70_Cream",
+    "M_F70_Blue"
+  ],
+  "collision_count": 13,
+  "editable_parts": 35,
+  "fbx_sha256": "752551072c57630763b531484f02444ba934241ad33a04f4c16dd812b62d8fc9",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

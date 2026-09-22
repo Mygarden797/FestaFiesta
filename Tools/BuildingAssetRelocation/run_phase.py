@@ -1,3 +1,6 @@
+# run_phase.py
+# 역할: 건설 에셋 폴더 이관 작업에서 공통 실행 환경에서 해당 제작·검증 작업을 실행한다.
+
 """Run a synchronous native relocation phase, then let the Python command exit UE."""
 import json
 import re

@@ -1,3 +1,6 @@
+// FF_BuildPlacementGizmoTests.cpp
+// 역할: 시설 조작 손잡이의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Presentation/FF_BuildPlacementGizmo.h"

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# capture_expansion70.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """GPU galleries of imported native Facility70 assets, using a transient Entry map.
 
 Run an unattended UnrealEditor-Cmd /Engine/Maps/Entry -RenderOffscreen with

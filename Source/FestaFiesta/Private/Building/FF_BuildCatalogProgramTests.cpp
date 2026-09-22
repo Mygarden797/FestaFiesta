@@ -1,3 +1,6 @@
+// FF_BuildCatalogProgramTests.cpp
+// 역할: BuildCatalogProgram 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Catalog.ProgramHighlights.Compatibility, FestaFiesta.Building.Catalog.ProgramHighlights.Validity).
+
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

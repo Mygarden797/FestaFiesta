@@ -1,3 +1,6 @@
+# FestaFiesta.Build.psm1
+# 역할: 빌드 도구가 공유하는 프로젝트·엔진 탐색, LFS 확인, 결과 기록 함수를 제공한다.
+
 Set-StrictMode -Version Latest
 
 function Get-FFProjectRoot {
@@ -37,6 +40,21 @@ function Resolve-FFEngineRoot {
         $candidates.Add($env:FESTAFIESTA_UE_ROOT)
     }
     if (-not [string]::IsNullOrWhiteSpace($association)) {
+        # Launcher manifest도 읽어 C:\Unreal 같은 팀원별 설치 위치를 자동으로 찾는다.
+        $launcherManifest = Join-Path $env:ProgramData 'Epic\UnrealEngineLauncher\LauncherInstalled.dat'
+        if (Test-Path -LiteralPath $launcherManifest -PathType Leaf) {
+            try {
+                $launcherData = Get-Content -LiteralPath $launcherManifest -Raw | ConvertFrom-Json
+                foreach ($installation in $launcherData.InstallationList) {
+                    if ($installation.AppName -eq "UE_$association") {
+                        $candidates.Add([string]$installation.InstallLocation)
+                    }
+                }
+            }
+            catch {
+                Write-Verbose "Launcher manifest could not be read: $($_.Exception.Message)"
+            }
+        }
         $candidates.Add((Join-Path $env:ProgramFiles "Epic Games\UE_$association"))
 
         try {

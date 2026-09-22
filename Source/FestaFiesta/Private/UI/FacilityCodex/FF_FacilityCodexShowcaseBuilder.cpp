@@ -1,3 +1,6 @@
+// FF_FacilityCodexShowcaseBuilder.cpp
+// 역할: 도감의 목록·큰 미리보기·상세 정보와 보상 영역을 구성한다.
+
 // Explicit saved-WBP migration: collection browser, large facility showcase, and live detail/reward panel.
 #include "CoreMinimal.h"
 

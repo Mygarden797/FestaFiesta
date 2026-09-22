@@ -1,3 +1,5 @@
+// FF_FFZSBuildRangePresentationTests.cpp
+// 역할: 표시 영역이 실제 예약 모양과 일치하고 표시가 설치 권한을 바꾸지 않는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

@@ -1,3 +1,5 @@
+// FF_FFZSFacilityDefinitionCustomization.cpp
+// 역할: 시설 데이터 에셋의 상세 창을 편집 목적별로 정리하고 디자이너용 버튼과 미리보기를 제공한다.
 #include "FF_FFZSFacilityDefinitionCustomization.h"
 #include "FF_FFZSAudienceCapacityEditor.h"
 

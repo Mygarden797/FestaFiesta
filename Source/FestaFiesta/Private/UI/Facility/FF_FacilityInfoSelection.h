@@ -1,3 +1,6 @@
+// FF_FacilityInfoSelection.h
+// 역할: 시설 선택 표시의 위치·범위와 선택 유지 규칙을 계산한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

@@ -1,3 +1,6 @@
+// FF_FacilityCodexProgressSubsystem.h
+// 역할: 발견한 조합과 받은 보상을 사용자 설정에 저장하여 중복 보상을 막는다.
+
 #pragma once
 
 #include "CoreMinimal.h"

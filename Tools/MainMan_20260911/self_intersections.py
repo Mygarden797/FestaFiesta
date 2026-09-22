@@ -1,3 +1,6 @@
+# self_intersections.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 import bpy,json
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree

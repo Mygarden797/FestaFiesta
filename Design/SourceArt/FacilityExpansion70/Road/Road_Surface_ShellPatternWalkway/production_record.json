@@ -1,0 +1,56 @@
+{
+  "number": 66,
+  "category": "Road",
+  "subtype": "Surface",
+  "name_ko": "조개 문양 포장길",
+  "slug": "ShellPatternWalkway",
+  "id": "Road_Surface_ShellPatternWalkway",
+  "footprint_cm": [
+    400,
+    400
+  ],
+  "height_cm": 8,
+  "description_ko": "산책 구역의 개성 있는 바닥.",
+  "emphasis_ko": "조개 무늬를 반복 텍스처로 처리. 돌출 조개를 대량 모델링하지 말고 타일 경계에서 무늬가 잘리는지 확인한다.",
+  "reference_image": "Design/Facitilies/66 조개 문양 포장길.png",
+  "exploded_reference_image": "Design/Facitilies/66 조개 문양 포장길 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Road/PDA_FFZS_Road_Surface_Asphalt",
+  "followup_features": [
+    "반복 문양·연결·NPC 통행·상부 시설 차단은 실제 배치로 검증한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_ShellPatternWalkway\\SM_FF_Road_Surface_ShellPatternWalkway.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\66_Road_Surface_ShellPatternWalkway.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Road\\Road_Surface_ShellPatternWalkway\\iso.png",
+  "bounds_m": [
+    4.0,
+    4.0,
+    0.07999999821186066
+  ],
+  "bounds_min_m": [
+    -2.0,
+    -2.0,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.0,
+    2.0,
+    0.07999999821186066
+  ],
+  "triangles": 57,
+  "material_names": [
+    "M_F70_Sand",
+    "M_F70_Cream",
+    "M_F70_Teal"
+  ],
+  "collision_count": 1,
+  "editable_parts": 34,
+  "fbx_sha256": "1f194f2200d857c960d3e2d704bed70de25b976ace29cef18b1105ff42ddcd99",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

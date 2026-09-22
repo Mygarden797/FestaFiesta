@@ -140,32 +140,43 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
     return LastValidation;
 }
 
+// 공통 설정과 마지막 판정으로 고스트 재질을 갱신한다. 원본 시설 재질은 수정하지 않는다.
 void AFFZSPlacementPreviewActor::RefreshGhostFeedback()
 {
+    const UFFZSBuildPresentationSettings& Style = *GetDefault<UFFZSBuildPresentationSettings>();
     if (!bFeedbackMaterialLoadAttempted)
     {
         bFeedbackMaterialLoadAttempted = true;
-        UMaterialInterface* Material = PlacementFeedbackMaterial.Get();
-        if (!Material && !PlacementFeedbackMaterial.IsNull())
-            Material = LoadObject<UMaterialInterface>(nullptr, *PlacementFeedbackMaterial.ToSoftObjectPath().ToString(),
+        // 액터별 override를 우선하고, 없으면 프로젝트의 공통 재질을 한 번만 로드한다.
+        const TSoftObjectPtr<UMaterialInterface>& MaterialReference = PlacementFeedbackMaterial.IsNull()
+            ? Style.DefaultPlacementFeedbackMaterial : PlacementFeedbackMaterial;
+        UMaterialInterface* Material = MaterialReference.Get();
+        if (!Material && !MaterialReference.IsNull())
+            Material = LoadObject<UMaterialInterface>(nullptr, *MaterialReference.ToSoftObjectPath().ToString(),
                 nullptr, LOAD_NoWarn | LOAD_Quiet);
         if (Material)
         {
             GhostFeedbackMaterial = UMaterialInstanceDynamic::Create(Material, this);
             FailureSurfaceMaterial = UMaterialInstanceDynamic::Create(Material, this);
-            FailureSurfaceMaterial->SetVectorParameterValue(TEXT("StatusColor"), FLinearColor(0.85f, 0.035f, 0.025f));
-            FailureSurfaceMaterial->SetScalarParameterValue(TEXT("Opacity"), 0.18f);
         }
+    }
+    // 색과 투명도는 새 미리보기부터 반영한다. 재질 파라미터 이름은 공용 재질 계약이다.
+    if (FailureSurfaceMaterial)
+    {
+        FailureSurfaceMaterial->SetVectorParameterValue(TEXT("StatusColor"), Style.InvalidPlacementColor);
+        FailureSurfaceMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(Style.FailureSurfaceOpacity, 0.0f, 1.0f));
     }
     if (GhostFeedbackMaterial)
     {
         GhostFeedbackMaterial->SetVectorParameterValue(TEXT("StatusColor"), LastValidation.bIsValid
-            ? FLinearColor(0.04f, 0.65f, 0.25f) : FLinearColor(0.85f, 0.035f, 0.025f));
-        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), LastValidation.bIsValid ? 0.24f : 0.38f);
+            ? Style.ValidPlacementColor : Style.InvalidPlacementColor);
+        GhostFeedbackMaterial->SetScalarParameterValue(TEXT("Opacity"), FMath::Clamp(
+            LastValidation.bIsValid ? Style.ValidPlacementOpacity : Style.InvalidPlacementOpacity, 0.0f, 1.0f));
         PreviewMesh->SetOverlayMaterial(GhostFeedbackMaterial);
     }
 }
 
+// 실패 영역 바닥의 반투명 면을 재사용하며 충돌과 내비게이션에는 참여시키지 않는다.
 void AFFZSPlacementPreviewActor::ShowFailureSurface(
     const FFFZSOrientedRect& WorldRegion, const double BaseZ, const int32 SurfaceIndex)
 {

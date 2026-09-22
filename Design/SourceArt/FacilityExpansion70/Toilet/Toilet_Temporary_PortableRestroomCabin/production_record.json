@@ -1,0 +1,59 @@
+{
+  "number": 26,
+  "category": "Toilet",
+  "subtype": "Temporary",
+  "name_ko": "이동식 화장실 캐빈",
+  "slug": "PortableRestroomCabin",
+  "id": "Toilet_Temporary_PortableRestroomCabin",
+  "footprint_cm": [
+    160,
+    170
+  ],
+  "height_cm": 270,
+  "description_ko": "작은 공간에 놓는 독립형 시설.",
+  "emphasis_ko": "플라스틱 캐빈·상부 환기구·문 상태 표시가 핵심. 모서리를 부드럽게 하고 문 가동 여부에 따라 부품을 분리한다.",
+  "reference_image": "Design/Facitilies/26 이동식 화장실 캐빈.png",
+  "exploded_reference_image": "Design/Facitilies/26 이동식 화장실 캐빈 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/PDA_FFZS_Toilet_Temporary_Temporary",
+  "followup_features": [
+    "문 가동과 점유 상태 표시는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Temporary_PortableRestroomCabin\\SM_FF_Toilet_Temporary_PortableRestroomCabin.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\26_Toilet_Temporary_PortableRestroomCabin.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Temporary_PortableRestroomCabin\\iso.png",
+  "bounds_m": [
+    1.4716569185256958,
+    1.6232376098632812,
+    2.6999998092651367
+  ],
+  "bounds_min_m": [
+    -0.7358284592628479,
+    -0.8116188049316406,
+    0.0
+  ],
+  "bounds_max_m": [
+    0.7358284592628479,
+    0.8116188049316406,
+    2.6999998092651367
+  ],
+  "triangles": 7408,
+  "material_names": [
+    "M_F70_Metal",
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Green",
+    "M_F70_DarkTeal",
+    "M_F70_White"
+  ],
+  "collision_count": 5,
+  "editable_parts": 26,
+  "fbx_sha256": "98edfdb097307283e7adb22183e28504e04ea5b895e1f28f6eb27d8a20d41df3",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

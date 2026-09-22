@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# ffzs_asset_save_transaction.py
+# 역할: 여러 에셋의 저장 실패 시 복구할 수 있도록 저장 작업을 관리한다.
+
 """Recoverable multi-package saves for FFZS Unreal Python commandlets.
 
 Unreal's package save API is not an atomic filesystem transaction.  This

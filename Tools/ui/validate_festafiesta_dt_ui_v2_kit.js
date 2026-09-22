@@ -1,3 +1,6 @@
+// validate_festafiesta_dt_ui_v2_kit.js
+// 역할: UI 이미지·화면 에셋 작업에서 저장된 산출물의 구조와 품질을 검증한다.
+
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');

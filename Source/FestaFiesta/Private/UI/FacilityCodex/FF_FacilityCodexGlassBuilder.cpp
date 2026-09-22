@@ -1,5 +1,9 @@
+// FF_FacilityCodexGlassBuilder.cpp
+// 역할: 도감의 유리 재질 디자인과 화면 배치를 적용한다.
+
 // Explicit saved-widget migration. Runtime only binds data and adapts the authored layout.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -38,8 +42,8 @@ using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Prefix = TEXT("FF_CODEX_GLASS_THEME");
 constexpr const TCHAR* Version = TEXT("FF.FacilityCodex.GlassTheme20260921.1");
 constexpr const TCHAR* ScrollbarVersion = TEXT("FF.FacilityCodex.GlassScrollbars20260921.1");
-constexpr const TCHAR* CardPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard");
-constexpr const TCHAR* ScreenPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen");
+constexpr const TCHAR* CardPath = FFBuildUIAssetPaths::FacilityCodexCardPackage;
+constexpr const TCHAR* ScreenPath = FFBuildUIAssetPaths::FacilityCodexScreenPackage;
 
 template<class T> static T* Get(UWidgetTree& Tree, const TCHAR* Name)
 { return Cast<T>(Tree.FindWidget(FName(Name))); }

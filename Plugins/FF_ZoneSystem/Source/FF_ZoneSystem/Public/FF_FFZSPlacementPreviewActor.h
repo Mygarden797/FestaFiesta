@@ -39,9 +39,9 @@ public:
     TObjectPtr<UStaticMeshComponent> PreviewMesh;
     // 충돌과 권한이 없는 고스트 표현 컴포넌트다. 
 
+    // 비우면 Project Settings > Game > FF Build Presentation의 기본 재질을 사용한다.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Preview|Feedback")
-    TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial = TSoftObjectPtr<UMaterialInterface>(
-        FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/M_BuildPlacementFeedback.M_BuildPlacementFeedback")));
+    TSoftObjectPtr<UMaterialInterface> PlacementFeedbackMaterial;
 
     // Reused, non-colliding planes. Source facility materials and assets are never edited.
     UPROPERTY(Transient)

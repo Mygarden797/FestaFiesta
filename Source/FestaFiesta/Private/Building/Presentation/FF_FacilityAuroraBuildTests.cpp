@@ -1,5 +1,9 @@
+// FF_FacilityAuroraBuildTests.cpp
+// 역할: 카탈로그에서 카드를 선택하면 해당 시설 배치로 이어지는지 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
@@ -27,7 +31,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_AuroraCatalogSelectionTest,
 bool FFF_AuroraCatalogSelectionTest::RunTest(const FString& Parameters)
 {
     UClass* PanelClass = LoadClass<UFF_PrepPanelBuild>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+        FFBuildUIAssetPaths::BuildPanelClass);
     if (!TestNotNull(TEXT("Saved production catalog class"), PanelClass)) return false;
     // Real authority and economy live in an isolated world. No install/confirm call is made.
     auto* Settings = GetMutableDefault<UFFZSDeveloperSettings>();

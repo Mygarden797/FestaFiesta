@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# verify_expansion70.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Read back saved Facility 70 native assets in a fresh Unreal process.
 
 Use the same FF70_NUMBERS pilot filter as import_expansion70.py. No packages are

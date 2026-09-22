@@ -1,3 +1,6 @@
+# capture_runtime.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """Capture Clarity build UI through the production Test_Main PIE game flow.
 
 Run in an otherwise idle, disposable UE editor with rendering enabled. No actors,

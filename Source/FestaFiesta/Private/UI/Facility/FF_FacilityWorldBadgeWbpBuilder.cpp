@@ -1,5 +1,9 @@
+// FF_FacilityWorldBadgeWbpBuilder.cpp
+// 역할: 시설 위 정보 표시 위젯의 편집용 초기 에셋을 만든다.
+
 // Editor-only authoring. The saved WBP owns all visuals; existing designer edits are preserved.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Components/Border.h"
@@ -22,7 +26,7 @@ namespace FFFacilityWorldBadgeBuilder
 {
 	using namespace FFUIWbpBuilder;
 	const TCHAR* const Prefix = TEXT("FF_FACILITY_WORLD_BADGE_UMG");
-	const FString Folder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue"));
+	const FString Folder(FFBuildUIAssetPaths::FacilityRevenueFolder);
 	const TCHAR* const AmountFitKey = TEXT("FF.FacilityWorldBadge.AmountFit20260919");
 	FSlateBrush Brush(FLinearColor Color, float Radius = 6.f)
 	{

@@ -1,3 +1,6 @@
+// FF_PrepPanelBuild.h
+// 역할: 건설 카탈로그의 검색·분류·선택과 배치 상태를 표시한다.
+
 // LightTeal PrepHUD facility catalog and placement-state panel.
 
 #pragma once

@@ -1,3 +1,6 @@
+// FF_BuildPlacementGizmo.cpp
+// 역할: 마우스로 잡아 움직이는 시설 이동 화살표와 회전 손잡이를 처리한다.
+
 #include "Building/Presentation/FF_BuildPlacementGizmo.h"
 
 #include "Components/LineBatchComponent.h"
@@ -175,6 +178,7 @@ AFF_BuildPlacementGizmo::AFF_BuildPlacementGizmo()
 	Super::SetActorHiddenInGame(true);
 }
 
+// 선택한 시설의 위치와 바닥 방향을 받아 조작 손잡이의 기준을 정한다.
 void AFF_BuildPlacementGizmo::SetPreview(APlayerController* InController,
 	const FTransform& PreviewTransform, const FIntPoint FootprintCm,
 	const FVector GroundPoint, const FVector InGroundNormal)
@@ -254,6 +258,7 @@ void AFF_BuildPlacementGizmo::Destroyed()
 	Super::Destroyed();
 }
 
+// 시설 크기와 카메라 화면을 고려하여 이동 화살표·회전 원·클릭 범위를 갱신한다.
 void AFF_BuildPlacementGizmo::RefreshGeometry()
 {
 	APlayerController* PC = Controller.Get();
@@ -342,6 +347,7 @@ bool AFF_BuildPlacementGizmo::ResolvePointerPoint(const FVector2D& ScreenPositio
 		Gesture.IsActive() ? Gesture.GetPlaneNormal() : GroundNormal, OutPoint);
 }
 
+// 누르기·끌기·놓기·취소를 이동량 또는 회전량으로 바꿔 건설 시스템에 돌려준다.
 FFF_BuildGizmoDelta AFF_BuildPlacementGizmo::HandlePointer(const FFF_BuildGizmoPointerInput& Input)
 {
 	FFF_BuildGizmoDelta Result;

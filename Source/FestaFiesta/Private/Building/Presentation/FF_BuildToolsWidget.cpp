@@ -1,3 +1,6 @@
+// FF_BuildToolsWidget.cpp
+// 역할: 건설 도구 버튼과 각도 입력을 건설 상태 및 명령에 연결한다.
+
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
@@ -21,6 +24,7 @@
 
 #define LOCTEXT_NAMESPACE "FFBuildTools"
 
+// 입력한 각도가 0~360의 유한한 숫자인지 확인한다. 잘못된 입력은 이전 값을 유지한다.
 bool FFBuildToolsModel::TryParseYawText(const FString& Text, float& OutYawDegrees)
 {
     const FString Trimmed = Text.TrimStartAndEnd();
@@ -60,6 +64,7 @@ UFF_BuildToolsActionButton::UFF_BuildToolsActionButton()
     InitIsFocusable(false);
 }
 
+// 선택 상태의 스타일만 적용하고 해제 시 디자이너가 지정한 원래 모양을 복원한다.
 void UFF_BuildToolsActionButton::ApplySelection(const bool bSelected, UTextBlock* Label)
 {
     if (!bUseSelectionStyle) { return; }
@@ -75,6 +80,7 @@ void UFF_BuildToolsActionButton::ApplySelection(const bool bSelected, UTextBlock
     bAppliedSelected = bSelected;
 }
 
+// 건설 상태·잔액 변경 알림과 화면 버튼을 연결하고 처음 값을 표시한다.
 void UFF_BuildToolsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
@@ -130,6 +136,7 @@ void UFF_BuildToolsWidget::NativeConstruct()
     RefreshTools();
 }
 
+// 회전 타이머와 외부 알림 연결을 해제해 닫힌 화면에 작업이 남지 않게 한다.
 void UFF_BuildToolsWidget::NativeDestruct()
 {
     StopPointerFreeRotation();
@@ -229,6 +236,7 @@ void UFF_BuildToolsWidget::ShowNextPlacementProblem()
     }
 }
 
+// 작은 안내 표시의 화면 위치를 갱신한다. 시설 배치 판정은 건설 시스템이 담당한다.
 void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
     Super::NativeTick(Geometry, DeltaTime);
@@ -362,6 +370,7 @@ bool UFF_BuildToolsWidget::ApplyPendingAngle()
     return !IsEditingAngle() || ApplyAngleText(Editable_Angle->GetText());
 }
 
+// 현재 시설·가격·잔액·배치 가능 여부를 한 번 읽어 버튼과 안내 문구에 반영한다.
 void UFF_BuildToolsWidget::RefreshTools()
 {
     const UFF_BuildModeSubsystem* System = BuildMode.Get();
@@ -589,6 +598,7 @@ void UFF_BuildToolsWidget::HandleGrid()
     }
 }
 
+// 입력 중인 각도를 먼저 반영한 다음 건설 시스템에 배치 확정을 요청한다.
 void UFF_BuildToolsWidget::HandleConfirm()
 {
     if (UFF_BuildModeSubsystem* System = BuildMode.Get())
@@ -643,6 +653,7 @@ void UFF_BuildToolsWidget::Nudge(const FIntPoint Direction)
     }
 }
 
+// 아래 짧은 함수들은 각 버튼을 공통 위치 맞춤·회전·이동 처리에 연결한다.
 void UFF_BuildToolsWidget::HandleSnapMeter() { SetSnap(100); }
 void UFF_BuildToolsWidget::HandleSnapPrecision() { SetSnap(25); }
 void UFF_BuildToolsWidget::HandleSnapFree() { SetSnap(1); }
@@ -677,6 +688,7 @@ void UFF_BuildToolsWidget::ReturnToCatalog()
 void UFF_BuildToolsWidget::HandleFreeRotateLeftPressed() { StartPointerFreeRotation(-1); }
 void UFF_BuildToolsWidget::HandleFreeRotateRightPressed() { StartPointerFreeRotation(1); }
 
+// 회전 버튼을 누르는 동안만 주기적으로 각도를 바꾸도록 시작한다.
 void UFF_BuildToolsWidget::StartPointerFreeRotation(const int32 Direction)
 {
     StopPointerFreeRotation();
@@ -709,6 +721,7 @@ void UFF_BuildToolsWidget::AdvancePointerFreeRotation()
     RefreshAngleText();
 }
 
+// 회전 버튼을 놓거나 화면을 닫으면 반복 회전을 즉시 멈춘다.
 void UFF_BuildToolsWidget::StopPointerFreeRotation()
 {
     if (GetWorld()) { GetWorld()->GetTimerManager().ClearTimer(FreeRotationTimer); }

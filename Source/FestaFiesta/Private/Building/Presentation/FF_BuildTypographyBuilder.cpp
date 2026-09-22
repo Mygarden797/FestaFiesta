@@ -1,5 +1,9 @@
+// FF_BuildTypographyBuilder.cpp
+// 역할: 저장된 건설 관련 화면의 글꼴만 공통 규칙으로 맞추고 결과를 검사한다.
+
 // Explicit font-only migration: authored layout, materials, bindings and actions survive.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Building/Presentation/FF_BuildTypography.h"
@@ -31,32 +35,32 @@ constexpr const TCHAR* Version = TEXT("FF.BuildMode.Typography20260921.1");
 // shared HUD / inspector surfaces reachable while constructing. Other prep
 // panels and the separately redesigned codex screen/cards are intentionally absent.
 const TCHAR* Paths[] = {
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_FF_BuildModeGuide"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Tooltips/WBP_FF_BuildFacilityCostTooltip"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCategoryButton"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildMinorSection"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildTopButton"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudBar"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepHudTabButton"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher"),
-    TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCatalogLauncher")
+    FFBuildUIAssetPaths::BuildPanelPackage,
+    FFBuildUIAssetPaths::BuildTilePackage,
+    FFBuildUIAssetPaths::CategoryChoicePackage,
+    FFBuildUIAssetPaths::BuildToolsPackage,
+    FFBuildUIAssetPaths::BuildSynergyPackage,
+    FFBuildUIAssetPaths::BuildModeGuidePackage,
+    FFBuildUIAssetPaths::FacilityCostTooltipPackage,
+    FFBuildUIAssetPaths::PlacementFailureFeedbackPackage,
+    FFBuildUIAssetPaths::CatalogScreenPackage,
+    FFBuildUIAssetPaths::FacilityCardPackage,
+    FFBuildUIAssetPaths::CategoryButtonPackage,
+    FFBuildUIAssetPaths::MinorSectionPackage,
+    FFBuildUIAssetPaths::TopButtonPackage,
+    FFBuildUIAssetPaths::FacilityInfoPanelPackage,
+    FFBuildUIAssetPaths::FacilityLightingControlsPackage,
+    FFBuildUIAssetPaths::FacilitySynergyEntryPackage,
+    FFBuildUIAssetPaths::FacilityPaidProgramCardPackage,
+    FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage,
+    FFBuildUIAssetPaths::FacilityWorldBadgePackage,
+    FFBuildUIAssetPaths::FacilityRevenueRankingPackage,
+    FFBuildUIAssetPaths::FacilityRevenueRankRowPackage,
+    FFBuildUIAssetPaths::PrepHudBarPackage,
+    FFBuildUIAssetPaths::PrepHudTabButtonPackage,
+    FFBuildUIAssetPaths::PrepChoiceButtonPackage,
+    FFBuildUIAssetPaths::FacilityCodexLauncherPackage,
+    FFBuildUIAssetPaths::FacilityCodexCatalogLauncherPackage
 };
 
 static bool Contains(const FString& Value, std::initializer_list<const TCHAR*> Tokens)

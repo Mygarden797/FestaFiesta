@@ -1,4 +1,5 @@
 // FF_BuildDragPlacementPath.h
+// 역할: 드래그 경로의 격자 좌표를 빠짐없이 순서대로 생성한다.
 
 #pragma once
 

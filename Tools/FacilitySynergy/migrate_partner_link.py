@@ -1,3 +1,6 @@
+# migrate_partner_link.py
+# 역할: 시설 조합 효과와 표시 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Add the partner-name button while preserving the existing row's authored layout."""
 import hashlib
 import json

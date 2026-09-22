@@ -1,3 +1,6 @@
+// FF_FacilityCodexSubsystem.h
+// 역할: 월드·카탈로그·발견 기록 변경을 도감 화면과 보상 청구로 연결한다.
+
 #pragma once
 
 #include "CoreMinimal.h"
