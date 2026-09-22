@@ -20,6 +20,187 @@ DECLARE_LOG_CATEGORY_EXTERN(LogFestaFiestaFinale, Log, All);
 //
 // 수치를 코드가 아니라 데이터 애셋에 두는 이유는, 이런 값은 굴려보면서 정해지기 때문이다.
 // 발수 30 이 화려한지 초라한지는 화면을 봐야 알 수 있고, 그때마다 빌드를 다시 하고 싶지 않다.
+/* 한 차례에 어떻게 쏠지.
+
+   단발만으로는 아무리 많이 쏴도 흩어진 점으로만 보인다. 사람이 "연출됐다" 고
+   느끼는 건 여러 발 사이의 관계 — 같은 순간에 터지거나, 줄지어 날아가거나,
+   한 점에서 부챗살로 퍼지거나 — 이기 때문이다.
+*/
+UENUM(BlueprintType)
+enum class EFF_FinaleVolleyPattern : uint8
+{
+	// 한 발. 지금까지의 기본 동작.
+	Single      UMETA(DisplayName = "단발"),
+
+	// 같은 순간에 여러 발. 한 점 주변에 흩어서 터진다.
+	Burst       UMETA(DisplayName = "동시"),
+
+	// 일렬. 짧은 간격을 두고 한쪽 끝에서 반대쪽으로 이어진다.
+	Line        UMETA(DisplayName = "일렬"),
+
+	// 부챗살. 한 점에서 각도를 벌려 퍼진다.
+	Fan         UMETA(DisplayName = "부챗살"),
+
+	// 원. 중심을 두고 둘러싼다.
+	Ring        UMETA(DisplayName = "원"),
+
+	/* 구워둔 모양. 하트처럼 수식으로 안 나오는 것들이다.
+
+	   위 넷과 달리 자리를 코드가 아니라 애셋이 갖는다. 수식으로 만들 수 있는 것을
+	   굳이 애셋으로 빼지 않는 이유는, 애셋이 늘면 어느 등급이 무엇을 쓰는지
+	   에디터를 열어봐야 알게 되기 때문이다.
+	*/
+	Shape       UMETA(DisplayName = "모양")
+};
+
+/* 모양을 어느 면에 그리는가.
+
+   바닥에 그린 모양은 위에서 내려다볼 때만 읽힌다. 불꽃은 하늘에 터지고 관객은
+   땅에서 올려다보므로, 읽혀야 하는 모양은 관객을 마주보는 수직면에 그려야 한다.
+
+   일렬·부챗살·원은 바닥에 눕혀도 실루엣이 남아서 지금까지 문제가 없었다.
+*/
+UENUM(BlueprintType)
+enum class EFF_FinaleShapePlane : uint8
+{
+	/* 패턴에 맞춰 고른다. 기하 패턴은 바닥면, 구워둔 모양은 수직면.
+
+	   기본값을 Ground 로 두면 모양 패턴을 새로 넣는 사람이 이 칸을 못 보고 지나쳐서
+	   하트가 바닥에 눕는다. 화면에는 선 하나로 나오는데 원인이 이 칸이라는 걸
+	   알아내기 어렵다. 그래서 의도를 기본값에 담고, 필요하면 아래 둘로 덮는다.
+	*/
+	Auto     UMETA(DisplayName = "자동"),
+
+	// 바닥과 나란한 면. 하늘을 넓게 쓰는 산개형에 맞는다.
+	Ground   UMETA(DisplayName = "바닥면"),
+
+	// 관객을 마주보는 수직면. 읽혀야 하는 모양은 이쪽이다.
+	Vertical UMETA(DisplayName = "수직면")
+};
+
+/* 한 차례의 자리를 정할 때 필요한 바깥 사정.
+
+   패턴이 월드를 직접 뒤지지 않게 값으로 받는다. 자리 계산을 순수하게 두면
+   월드 없이 테스트할 수 있고, 무엇보다 중심을 바깥에서 한 번만 정하게 강제된다.
+   발마다 중심을 다시 뽑으면 흩뿌림 반경만큼 모양이 뭉개진다.
+*/
+struct FFF_FinaleLayoutContext
+{
+	// 이 차례가 그려질 중심. 차례당 한 번만 뽑는다.
+	FVector Center = FVector::ZeroVector;
+
+	/* 모양이 마주볼 방향(중심에서 관객 쪽으로). 수직면일 때만 쓴다.
+
+	   무작위로 두면 모양이 옆을 보고 선으로 보인다. 바닥면은 이 값을 무시한다.
+	*/
+	FVector FacingDirection = FVector::ForwardVector;
+
+	/* 바닥면 모양을 통째로 돌리는 각도. 수직면은 무시한다.
+
+	   매번 같은 방향으로 일렬이 지나가면 두 번째부터는 눈에 익어 연출로 안 보인다.
+	*/
+	float GroundYawDegrees = 0.f;
+
+	// 실제로 쏠 발수. 남은 발수 때문에 Volley 의 ShellCount 보다 적을 수 있다.
+	int32 ShellCount = 1;
+};
+
+// 발사 패턴 하나.
+USTRUCT(BlueprintType)
+struct FFF_FinaleVolley
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
+	EFF_FinaleVolleyPattern Pattern = EFF_FinaleVolleyPattern::Single;
+
+	// 이 패턴이 쓰는 발수. 상한을 두지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "1"))
+	int32 ShellCount = 1;
+
+	/* 발 사이의 시간 간격(초). 0 이면 전부 같은 순간에 터진다.
+
+	   일렬 패턴에서 이 값이 0 이면 그냥 한 줄로 늘어선 동시 폭발이 된다.
+	   흐르는 느낌을 내려면 0.05 ~ 0.15 정도가 필요하다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.0"))
+	float ShellDelaySeconds = 0.f;
+
+	/* 패턴이 차지하는 크기(cm).
+
+	   일렬이면 길이, 부챗살이면 폭, 원이면 지름이다.
+	   등급 스펙의 SpreadRadius 와 별개다. 저쪽은 흩뿌리는 범위고 이건 모양의 크기다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.0"))
+	float ExtentCm = 6000.f;
+
+	// 이 패턴 안에서 색을 하나로 맞출지.
+	//
+	// 모양이 있는 패턴은 색이 섞이면 모양이 안 보인다. 단발은 섞이는 편이 화려하다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
+	bool bUniformColor = false;
+
+	// 어느 면에 그릴지. 자동이면 패턴에 맞춰 고른다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
+	EFF_FinaleShapePlane Plane = EFF_FinaleShapePlane::Auto;
+
+	/* Shape 패턴이 쓸 모양. 다른 패턴은 무시한다.
+
+	   비어 있으면 이 차례는 아무것도 안 쏜다. 한 점에 몰아서 터뜨리지 않는 이유는,
+	   그러면 "모양을 안 넣었다" 가 "이상한 연출" 로 보여서 원인을 찾기 어려워지기
+	   때문이다. 로그로 알린다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale",
+		meta = (EditCondition = "Pattern == EFF_FinaleVolleyPattern::Shape"))
+	TSoftObjectPtr<class UFF_FinaleShapeData> Shape;
+
+	// 이 패턴이 실제로 쓸 면. Auto 를 풀어준다.
+	EFF_FinaleShapePlane ResolvePlane() const
+	{
+		if (Plane != EFF_FinaleShapePlane::Auto)
+		{
+			return Plane;
+		}
+
+		// 읽혀야 하는 것만 세운다. 기하 패턴은 눕혀도 실루엣이 남는다.
+		return (Pattern == EFF_FinaleVolleyPattern::Shape)
+			? EFF_FinaleShapePlane::Vertical
+			: EFF_FinaleShapePlane::Ground;
+	}
+
+	// 뽑기 가중치. 클수록 자주 나온다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.01"))
+	float Weight = 1.f;
+
+	// 이 패턴이 끝나기까지 걸리는 시간.
+	float GetSpanSeconds() const
+	{
+		return FMath::Max(0.f, ShellDelaySeconds) * FMath::Max(0, ShellCount - 1);
+	}
+
+	/* 이 차례에 쏠 발들의 월드 좌표를 한 번에 정한다.
+
+	   발 하나씩 묻지 않고 차례 단위로 받는 이유는, 모양이 발 하나의 성질이 아니라
+	   발들 사이의 관계이기 때문이다. 한 발씩 물으면 호출부가 중심과 방향을 매번
+	   넘겨야 하고, 그러다 발마다 다른 중심을 넘기면 모양이 조용히 뭉개진다.
+
+	   높이는 Context.Center 가 이미 갖고 있다. 여기서 또 정하면 등급 스펙의
+	   높이 범위와 두 곳이 같은 값을 다투게 된다.
+
+	   자리를 정하지 않는 패턴(단발·동시)은 아무것도 채우지 않는다. 호출부가
+	   흩뿌리는 규칙을 그대로 쓰면 된다 — HasFixedLayout() 으로 미리 가른다.
+	*/
+	FESTAFIESTA_API void BuildShellLayout(
+		const FFF_FinaleLayoutContext& Context, TArray<FVector>& OutLocations) const;
+
+	// 자리를 패턴이 정하는가. 아니면 호출부가 흩뿌린다.
+	bool HasFixedLayout() const
+	{
+		return Pattern != EFF_FinaleVolleyPattern::Single
+			&& Pattern != EFF_FinaleVolleyPattern::Burst;
+	}
+};
+
 USTRUCT(BlueprintType)
 struct FFF_FinaleGradeSpec
 {
@@ -34,8 +215,33 @@ struct FFF_FinaleGradeSpec
 	float DurationSeconds = 20.f;
 
 	// 한 번에 동시에 터지는 수. 늘리면 하늘이 꽉 찬다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "1", ClampMax = "16"))
+	/* 상한을 두지 않는다.
+
+	   화면을 보면서 계속 올리게 될 값이라, 코드에 최대치를 박아두면 늘리고 싶을 때
+	   그 숫자부터 찾아야 한다. 대신 지나치게 많으면 로그로 알린다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "1"))
 	int32 SimultaneousShells = 1;
+
+	/* 카메라가 돌 시점의 최대 개수.
+
+	   1 이면 한 자리에 고정한다. 2 면 한 번 옮긴다. 0 이면 레벨에 놓인 전부를 돈다.
+
+	   등급 차이를 숫자가 아니라 연출로 벌리려는 값이다. 발수가 두 배인 것보다
+	   카메라가 움직이는 쪽이 훨씬 크게 느껴지고, 그래야 예산을 아껴서라도
+	   올려보려는 이유가 생긴다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0"))
+	int32 TourViewpointLimit = 1;
+
+	/* 이 등급에서 쓸 발사 패턴.
+
+	   비어 있으면 단발만 쏜다. 여러 개 넣으면 차례마다 무작위로 고른다.
+	   등급을 가르는 축이 발수가 아니라 패턴이다. 같은 발수여도 일렬로 날아가는
+	   것과 흩어지는 것은 전혀 다르게 보인다.
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
+	TArray<FFF_FinaleVolley> Volleys;
 
 	// 발사 지점을 중심으로 이 반경 안에 흩어서 쏜다. 0 이면 한 점에서만 터진다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale", meta = (ClampMin = "0.0"))
@@ -60,21 +266,51 @@ struct FFF_FinaleGradeSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
 	TArray<FLinearColor> Colors;
 
-	// 터질 때 재생할 이펙트. 지정하지 않으면 발사하지 않고 로그만 남긴다.
-	// 에셋이 아직 없어도 나머지 시스템이 돌아가야 해서 필수로 두지 않는다.
+	/* 터질 때 재생할 이펙트들. 발마다 무작위로 고른다.
+
+	   하나만 넣으면 예전과 같이 돈다. 여러 개 넣으면 섞여서 터진다.
+	   등급이 올라갈수록 종류를 늘리는 게 B 와 C 를 가르는 축이다.
+	   발수만 다르면 "많이 터지네" 로 끝나는데, 모양이 섞이면 눈이 계속 간다.
+
+	   비어 있어도 나머지 시스템은 돈다. 에셋이 아직 없는 단계에서 다른 파트
+	   작업이 막히면 안 되기 때문이다.
+	*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Finale")
-	TSoftObjectPtr<UNiagaraSystem> BurstEffect;
+	TArray<TSoftObjectPtr<UNiagaraSystem>> BurstEffects;
+
+	/* 이번 발에 쓸 이펙트를 고른다. 비어 있으면 nullptr.
+
+	   Seed 를 받는 이유는 한 패턴 안에서 같은 이펙트로 맞추고 싶을 때가 있어서다.
+	   모양이 있는 패턴은 종류가 섞이면 모양이 안 보인다.
+
+	   구현을 헤더에 두지 않는 이유는 로드에 UNiagaraSystem 의 정의가 필요한데,
+	   그것 때문에 이 헤더를 포함하는 모든 곳이 Niagara 를 같이 끌고 오게 되기 때문이다.
+	*/
+	FESTAFIESTA_API UNiagaraSystem* PickEffect(int32 Seed) const;
+
+	bool HasAnyEffect() const
+	{
+		for (const TSoftObjectPtr<UNiagaraSystem>& Effect : BurstEffects)
+		{
+			if (!Effect.IsNull())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	// 발사 간격. 총 발수와 지속 시간에서 계산한다.
 	// 발수가 0 이거나 하나뿐이면 간격이 의미 없으므로 전체 길이를 돌려준다.
 	float GetIntervalSeconds() const
 	{
-		const int32 Volleys = FMath::Max(1, GetVolleyCount());
-		if (Volleys <= 1)
+		// Volleys 는 패턴 배열 이름이라 지역 변수에 쓰면 가려진다.
+		const int32 VolleyCount = FMath::Max(1, GetVolleyCount());
+		if (VolleyCount <= 1)
 		{
 			return FMath::Max(0.5f, DurationSeconds);
 		}
-		return FMath::Max(0.05f, DurationSeconds / static_cast<float>(Volleys));
+		return FMath::Max(0.05f, DurationSeconds / static_cast<float>(VolleyCount));
 	}
 
 	// 몇 번에 나눠 쏘는가. 동시 발사 수가 크면 횟수가 줄어든다.
@@ -156,4 +392,7 @@ public:
 namespace FFF_FinaleDefaults
 {
 	FESTAFIESTA_API FFF_FinaleGradeSpec MakeSpec(EFF_FinaleGrade Grade);
+
+	// 등급별 기본 패턴. 데이터 애셋이 있으면 그쪽이 이긴다.
+	FESTAFIESTA_API TArray<FFF_FinaleVolley> MakeVolleys(EFF_FinaleGrade Grade);
 }

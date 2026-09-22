@@ -17,6 +17,7 @@ struct IConsoleCommand;
 
 class AFF_FinaleViewpoint;
 class AFF_FinaleLaunchSite;
+class AFF_FinaleViewpoint;
 class AFF_FestivalPlayerController;
 
 // 연출 진행 상태가 바뀔 때. UI 가 표시를 바꾸거나 다른 시스템이 멈출 때 쓴다.
@@ -136,6 +137,7 @@ private:
 	IConsoleCommand* PlayConsoleCommand = nullptr;
 	IConsoleCommand* StopConsoleCommand = nullptr;
 	IConsoleCommand* StatConsoleCommand = nullptr;
+	IConsoleCommand* SkipCameraConsoleCommand = nullptr;
 #endif
 
 	// 이펙트에 우리가 넣으려는 User 파라미터가 실제로 있는지 확인하고, 없으면 알린다.
@@ -160,11 +162,86 @@ private:
 	// 한 차례 발사. SimultaneousShells 만큼 동시에 터뜨린다.
 	void FireVolley();
 
+	/* 이번 등급에 쓸 시점을 모은다. 개수 제한을 적용한다.
+
+	   시점이 하나뿐이면 순회할 것이 없으므로 고정 연출과 같아진다.
+	   그래서 순회 여부를 따로 두지 않고 개수만으로 표현한다.
+	*/
+	void BuildTour();
+
+	// 다음 시점으로 옮긴다. 마지막이면 첫 자리로 돌아간다.
+	void AdvanceTour();
+
+	// 지금 시점으로 카메라를 옮긴다.
+	void ApplyTourViewpoint(float BlendSeconds);
+
+	/* 이번 차례에 쓸 패턴을 고른다. 없으면 단발.
+
+	   남은 발수를 받는 이유는, 모양이 있는 패턴은 발수가 곧 모양이기 때문이다.
+	   12발짜리 원을 3발로 깎으면 원이 아니라 점 세 개가 된다. 그렇게 끝나느니
+	   그 차례는 단발을 쏜다.
+	*/
+	const FFF_FinaleVolley& PickVolley(int32 RemainingShells) const;
+
+	// 한 발을 실제로 띄운다. 패턴이 정한 자리든 흩뿌린 자리든 여기로 모인다.
+	void SpawnShell(const FVector& Location, const FLinearColor& Color, class UNiagaraSystem* Effect);
+
+	// 지연 발사 대기열. 일렬이나 부챗살은 한 프레임에 다 쏘지 않는다.
+	struct FPendingShell
+	{
+		FVector Location = FVector::ZeroVector;
+		FLinearColor Color = FLinearColor::White;
+		float DelayRemaining = 0.f;
+
+		// 예약할 때 고른 이펙트를 들고 있는다.
+		//
+		// 터질 때 다시 고르면 한 패턴 안에서 종류가 섞인다. 일렬로 날아가는데
+		// 모양이 제각각이면 줄로 안 보인다.
+		TWeakObjectPtr<class UNiagaraSystem> Effect;
+	};
+
+	TArray<FPendingShell> PendingShells;
+
+	// 이번 연출에서 돌 시점들. 하나뿐이면 고정 연출이다.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AFF_FinaleViewpoint>> TourViewpoints;
+
+	int32 TourIndex = 0;
+
+	// 지금 자리에 머문 시간. 체류 시간을 채우면 다음으로 넘어간다.
+	float TourHeldSeconds = 0.f;
+
+	// 동시 발수가 지나치게 많을 때 한 번만 알린다.
+	bool bWarnedHighShellCount = false;
+
+public:
+	/* 카메라 순회를 끊고 원래 시점으로 돌아간다. 불꽃은 계속 터진다.
+
+	   두 번째 플레이부터는 영상을 다시 보고 싶지 않다. 그렇다고 연출을 통째로
+	   끝내면 마지막을 못 보므로, 카메라만 놓아준다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Finale")
+	void SkipCinematicCamera();
+
+	// 지금 카메라 순회 중인지. 스킵 안내를 띄울지 정하는 데 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Finale")
+	bool IsCinematicTourActive() const { return TourViewpoints.Num() > 1 && !bTourSkipped; }
+
+private:
+	bool bTourSkipped = false;
+
 	// 발사 지점을 구한다. 레벨에 발사대가 없으면 원점 위를 쓴다.
 	FVector ResolveLaunchOrigin() const;
 
 	// 터질 지점 하나를 뽑는다. 반경 안에 흩고 높이도 범위 안에서 고른다.
 	FVector PickBurstLocation(const FVector& Origin) const;
+
+	/* 모양이 마주봐야 할 방향. 중심에서 관객 쪽으로 향하는 수평 벡터다.
+
+	   수직면에 그리는 모양은 방향이 틀리면 선으로 보인다. 그 방향을 아는 것은
+	   지금 어느 시점을 쓰는지 아는 여기뿐이라, 패턴에 값으로 넘겨준다.
+	*/
+	FVector ResolveAudienceDirection(const FVector& Center) const;
 
 	FLinearColor PickColor(int32 Index) const;
 
