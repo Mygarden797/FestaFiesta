@@ -563,7 +563,7 @@ private:
 	bool TryInstallDragCell(const FIntPoint& Cell);
 	bool ResolveDragPlacement(const FIntPoint& Cell, FName& OutZoneId, FFFZSGridPlacement& OutPlacement) const;
 	bool ResolveDragCursorCell(const FVector& CursorWorld, FIntPoint& OutCell) const;
-	void RefreshDragPlacementPreview(bool bForceRefresh);
+	void RefreshDragPlacementPreview(bool bForceRefresh, bool bValidate = true, const FHitResult* GroundHit = nullptr);
 	// 현재 표시 중인 카탈로그 위젯. CatalogOpen 외 상태에서는 원칙적으로 null이다. 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildCatalogScreen> CatalogScreen;

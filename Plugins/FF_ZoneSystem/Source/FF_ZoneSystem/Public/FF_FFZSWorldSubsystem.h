@@ -145,6 +145,9 @@ public:
     int32 CountFacilitiesByDefinitionId(FName FacilityDefinitionId) const;
     // 현재 등록된 유효 시설 중 FacilityDefinitionId가 같은 인스턴스 수를 반환한다. None이면 0이다.
 
+    // 전체 읽기 모델의 복사와 정렬 없이, 철거되지 않은 유효 등록 시설만 집계한다.
+    int32 GetPlacedFacilityCount() const;
+
     UFUNCTION(BlueprintPure, Category = "FF Zone System|Registry")
     AFFZSFacilityActor* FindFacilityAtWorldPoint(
         const FVector& WorldPoint,
@@ -173,6 +176,9 @@ public:
     // @note 결과는 호출 시점 스냅샷이므로 ExecuteCommand가 최신 상태에서 다시 검증한.
 
     FFFZSPlacementValidation ValidatePlacement(const FFFZSCommand& Command) const;
+
+    // Computes the geometric pose only; placement acceptance and ground height still require validation.
+    FTransform BuildPlacementTransform(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement) const;
 
     // Read-only, bounded spatial overview using the same zone ownership, reservations and
     // protected areas as placement. An empty definition selects overview mode. Physical
@@ -355,7 +361,6 @@ private:
 
     FFFZSPlacementValidation ValidatePlacementLocal(const FFFZSCommand& Command, const AFFZSFacilityActor* IgnoreFacility, bool bRevalidateExisting = false) const;
     // 외부 정책 없이 플러그인 소유 데이터·기하·점유·월드 검사만 수행한다. Move는 기존 시설 점유를 IgnoreFacility로 제외한다. 
-    FTransform BuildPlacementTransform(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const FFFZSGridPlacement& Placement) const;
     void ValidateGround(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
     void ValidateWorldCollision(const AFFZSGameplayZone& Zone, const FFFZSFacilitySpec& Spec, const AFFZSFacilityActor* IgnoreFacility, FFFZSPlacementValidation& InOutValidation) const;
     void ValidateNavigation(const FFFZSFacilitySpec& Spec, FFFZSPlacementValidation& InOutValidation) const;

@@ -36,6 +36,31 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnTutorialCompleted);
 // 어디를 강조할지 바뀌었다. 비어 있으면 강조를 끈다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnHighlightAnchorChanged, FName, AnchorId);
 
+/* 지금 재생 중인 것이 어디에 속하는가.
+
+   끝까지 봤을 때 저장의 어디에 남길지가 이걸로 갈린다. 재생 자체는 같은 길을 타지만
+   "다시 안 보여준다" 의 범위가 서로 다르다.
+
+   범위를 재생 시점에 정해 두는 이유는, 끝나는 시점에는 판단할 근거가 남아 있지 않기
+   때문이다. 대사가 이어지는 씬으로 넘어가거나 축제가 끝나면 그 사이에 문맥이 바뀐다.
+*/
+UENUM()
+enum class EFF_TutorialScope : uint8
+{
+	/* 어디에도 기록하지 않는다.
+
+	   콘솔이나 UI 가 직접 재생한 경우다. 여기서 기록하면 안 본 튜토리얼까지
+	   봤다고 남는다.
+	*/
+	None,
+
+	// 로비 인트로. 축제를 고르기 전이라 계정 단위로 한 번만 본다.
+	LobbyIntro,
+
+	// 축제 레벨의 튜토리얼. 축제마다 배울 것이 달라 축제별로 남긴다.
+	Festival,
+};
+
 // 튜토리얼 대사를 굴리고 조작을 기다린다.
 //
 // ─── 왜 대사와 튜토리얼을 한 시스템에 두는가 ────────────────────────────────
@@ -122,8 +147,27 @@ public:
 	// 이번 판에서 튜토리얼을 건너뛰었는지.
 	//
 	// 한 번 건너뛰면 다시 시작하지 않는다. 레벨을 다시 들어와도 마찬가지다.
+	//
+	// [주의] 이건 이번 월드의 기억이다. 게임을 껐다 켠 뒤까지 유지되는 값은
+	//        UFF_SaveSubsystem::IsTutorialOptedOut() 이 답한다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	bool WasTutorialSkipped() const { return bTutorialSkipped; }
+
+	/* 지금 축제의 식별자. 튜토리얼을 봤는지 묻고 남길 때의 열쇠다.
+
+	   UIFlow 가 답이다. 아틀라스에서 고른 값을 들고 있고 GameInstance 스코프라
+	   레벨을 넘어 살아남는다.
+
+	   진행 서브시스템의 Definition 을 쓰지 않는 이유는, 그쪽이 Initialize 에서
+	   프로젝트 설정의 DefaultFestival 을 무조건 물기 때문이다. 실제로 고른 축제와
+	   다를 수 있어 판정 기준으로 쓸 수 없다.
+
+	   흐름을 타지 않고 레벨을 직접 열면 비어 있다(PIE 에서 흔하다). 그때는 레벨
+	   이름으로 대신한다 — 레벨과 축제가 1:1 이라 실용적으로 같은 값이고, 적어도
+	   레벨끼리는 구분된다.
+	*/
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
+	FName ResolveCurrentFestivalId() const;
 
 	// 지금 건너뛸 수 있는지. 버튼을 보일지 말지 정하는 데 쓴다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
@@ -228,6 +272,18 @@ private:
 	// 줄 배열로 재생을 시작한다. 애셋과 표가 여기로 모인다.
 	bool StartLines(const TArray<FFF_DialogueLine>& Lines, FName ScriptId);
 
+	/* 이제부터 재생할 것이 무엇에 속하는지 정한다. PlayTable/PlayScript 직전에 부른다.
+
+	   재생 함수의 인자로 받지 않는 이유는, 대사가 이어지는 씬으로 넘어갈 때
+	   FinishScript 가 PlayScript 를 다시 부르기 때문이다. 인자로 받으면 그 자리에서
+	   범위를 또 정해야 하고, 빠뜨리면 조용히 None 이 된다. 범위는 재생 한 묶음에
+	   한 번만 정하고 StopScript 에서 지운다.
+	*/
+	void SetPlaybackScope(EFF_TutorialScope Scope, FName FestivalId);
+
+	// 끝까지 본 것을 저장에 남긴다. 범위에 따라 남기는 자리가 다르다.
+	void RecordScopeCompleted();
+
 	// 라벨로 줄을 찾는다. 행 이름이 곧 라벨이다.
 	int32 FindLineIndexByLabel(FName Label) const;
 
@@ -292,6 +348,16 @@ private:
 
 	// 지금 재생 중인 것의 이름. 로그에만 쓴다.
 	FName ActiveScriptId;
+
+	// 지금 재생 중인 것이 속한 범위. 끝났을 때 무엇을 기록할지 정한다.
+	EFF_TutorialScope ActiveScope = EFF_TutorialScope::None;
+
+	/* ActiveScope 가 Festival 일 때 어느 축제인가. 재생을 시작할 때 굳혀 둔다.
+
+	   끝나는 시점에 다시 묻지 않는 이유는, 그 사이에 축제가 끝나 UIFlow 가 값을
+	   비웠을 수 있기 때문이다. 그러면 방금 본 튜토리얼이 기록되지 않는다.
+	*/
+	FName ActiveScopeFestivalId;
 
 	int32 CurrentLineIndex = INDEX_NONE;
 	bool bDialogueActive = false;
