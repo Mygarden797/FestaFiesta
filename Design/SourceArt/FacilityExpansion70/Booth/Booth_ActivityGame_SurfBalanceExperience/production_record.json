@@ -1,0 +1,59 @@
+{
+  "number": 19,
+  "category": "Booth",
+  "subtype": "ActivityGame",
+  "name_ko": "서핑 밸런스 체험장",
+  "slug": "SurfBalanceExperience",
+  "id": "Booth_ActivityGame_SurfBalanceExperience",
+  "footprint_cm": [
+    550,
+    500
+  ],
+  "height_cm": 240,
+  "description_ko": "해안 축제를 대표하는 균형 체험.",
+  "emphasis_ko": "보드·회전 받침·착지 매트를 구분. 움직이는 보드와 고정 받침을 분리하고 회전축·가동 범위를 기록한다.",
+  "reference_image": "Design/Facitilies/19 서핑 밸런스 체험장.png",
+  "exploded_reference_image": "Design/Facitilies/19 서핑 밸런스 체험장 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_ActivityGame_Game",
+  "followup_features": [
+    "서핑보드의 회전 부품·균형 입력·점수·탑승 애니메이션은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_SurfBalanceExperience\\SM_FF_Booth_ActivityGame_SurfBalanceExperience.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\19_Booth_ActivityGame_SurfBalanceExperience.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_ActivityGame_SurfBalanceExperience\\iso.png",
+  "bounds_m": [
+    5.490265846252441,
+    4.884955883026123,
+    2.4000000953674316
+  ],
+  "bounds_min_m": [
+    -2.7451329231262207,
+    -2.4424779415130615,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.7451329231262207,
+    2.4424779415130615,
+    2.4000000953674316
+  ],
+  "triangles": 13840,
+  "material_names": [
+    "M_F70_Blue",
+    "M_F70_Teal",
+    "M_F70_Metal",
+    "M_F70_Cream",
+    "M_F70_DarkTeal",
+    "M_F70_Wood"
+  ],
+  "collision_count": 7,
+  "editable_parts": 22,
+  "fbx_sha256": "5968856c0c6035fa1996155ef6b3b44fd48affc2d9bb4103ad9cfcd96f578153",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

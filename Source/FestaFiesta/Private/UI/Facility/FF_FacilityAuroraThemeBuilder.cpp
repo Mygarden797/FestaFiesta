@@ -1,6 +1,10 @@
+// FF_FacilityAuroraThemeBuilder.cpp
+// 역할: 시설 관련 화면들의 저장된 색상과 재질을 일관되게 적용한다.
+
 // Explicit editor migration: save the requested green skin in the authored facility WBPs.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -121,21 +125,21 @@ static bool Apply(UWidgetBlueprint& BP)
 static void Run()
 {
     const TCHAR* Paths[]={
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools"),
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy")};
+        FFBuildUIAssetPaths::FacilityInfoPanelPackage,
+        FFBuildUIAssetPaths::FacilityLightingControlsPackage,
+        FFBuildUIAssetPaths::FacilitySynergyEntryPackage,
+        FFBuildUIAssetPaths::FacilityPaidProgramCardPackage,
+        FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage,
+        FFBuildUIAssetPaths::FacilityWorldBadgePackage,
+        FFBuildUIAssetPaths::FacilityRevenueRankingPackage,
+        FFBuildUIAssetPaths::FacilityRevenueRankRowPackage,
+        FFBuildUIAssetPaths::FacilityCodexScreenPackage,
+        FFBuildUIAssetPaths::FacilityCodexCardPackage,
+        FFBuildUIAssetPaths::FacilityCodexLauncherPackage,
+        FFBuildUIAssetPaths::BuildPanelPackage,
+        FFBuildUIAssetPaths::BuildTilePackage,
+        FFBuildUIAssetPaths::BuildToolsPackage,
+        FFBuildUIAssetPaths::BuildSynergyPackage};
     bool Success=true;
     for(const TCHAR* Path:Paths)
     {

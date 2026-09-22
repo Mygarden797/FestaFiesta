@@ -1,3 +1,6 @@
+// FF_KeyBindingWbpBuilder.cpp
+// 역할: 키 설정 화면의 초기 위젯과 필요한 이미지 자원을 만든다.
+
 // Copyright FestaFiesta. All Rights Reserved.
 
 #include "CoreMinimal.h"

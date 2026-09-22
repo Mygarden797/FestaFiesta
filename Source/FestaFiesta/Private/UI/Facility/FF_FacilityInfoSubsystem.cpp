@@ -1,6 +1,10 @@
+// FF_FacilityInfoSubsystem.cpp
+// 역할: 현재 선택 시설의 정보를 모아 화면을 열고 시설 조작 요청을 담당 시스템에 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoSubsystem.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogTypes.h"
@@ -248,9 +252,7 @@ TStatId UFF_FacilityInfoSubsystem::GetStatId() const
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPanelClassPath()
 {
-	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
-		"WBP_FF_FacilityInfoPanel_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityInfoPanelClass);
 }
 
 bool UFF_FacilityInfoSubsystem::PrimePanel(APlayerController* InOwningController)
@@ -259,6 +261,7 @@ bool UFF_FacilityInfoSubsystem::PrimePanel(APlayerController* InOwningController
 		EnsurePanel(*InOwningController);
 }
 
+// 필요할 때 시설 정보 화면을 만들고 사용자의 명령을 담당 함수에 연결한다.
 bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningController)
 {
 	if (Panel)
@@ -1587,9 +1590,7 @@ void UFF_FacilityInfoSubsystem::HandlePanelLightingRollbackRequested(const FGuid
 
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
 {
-	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
-		"WBP_FF_FacilityPaidProgramPicker_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityPaidProgramPickerClass);
 }
 
 void UFF_FacilityInfoSubsystem::HandlePanelProgramScheduleRequested()

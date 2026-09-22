@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramCard.h
+// 역할: 유료 프로그램 하나의 이름·가격·편성 가능 여부를 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

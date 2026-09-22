@@ -1,3 +1,5 @@
+// FF_ZoneSystemEditorModule.cpp
+// 역할: 시설 상세 창과 데이터 검증 등 에디터 확장 기능을 등록하고 모듈 종료 때 해제한다.
 #include "FF_FFZSFacilityDefinition.h"
 #include "FF_FFZSAudienceCapacityEditor.h"
 #include "FF_FFZSFacilityDefinitionCustomization.h"

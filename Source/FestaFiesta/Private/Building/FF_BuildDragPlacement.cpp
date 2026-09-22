@@ -1,6 +1,10 @@
+// FF_BuildDragPlacement.cpp
+// 역할: 마우스로 그린 경로를 중복 없이 제한된 작업량으로 연속 설치한다.
+
 // Mouse strokes produce bounded, deduplicated install commands. No preview actors,
 // timers, asset loads or global actor scans are created for individual samples.
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildingSettings.h"
 
 #include "FF_BuildDragPlacementPath.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
@@ -37,10 +41,8 @@ namespace FFBuildDragPlacement
 
 struct FFF_BuildDragPlacementSession
 {
-	static constexpr int32 MaxCellsPerFrame = 8;
 	static constexpr int32 MaxStrokeCells = 4096;
 	static constexpr int32 MaxPendingTargets = 128;
-	static constexpr double FrameBudgetSeconds = 0.002;
 	FFF_BuildDragPlacementPath Path;
 	TSet<FIntPoint> AttemptedCells;
 	FIntPoint Targets[MaxPendingTargets];
@@ -248,8 +250,10 @@ bool UFF_BuildModeSubsystem::TryInstallDragCell(const FIntPoint& Cell)
 
 void UFF_BuildModeSubsystem::ProcessDragPlacement()
 {
-	const double Deadline = FPlatformTime::Seconds() + FFF_BuildDragPlacementSession::FrameBudgetSeconds;
-	for (int32 Count = 0; DragPlacementSession && Count < FFF_BuildDragPlacementSession::MaxCellsPerFrame; ++Count)
+	const UFF_BuildingSettings* Settings = GetDefault<UFF_BuildingSettings>();
+	const double Deadline = FPlatformTime::Seconds() + Settings->GetWorkBudgetSeconds();
+	const int32 MaxCellsPerFrame = Settings->GetDragPlacementsPerFrame();
+	for (int32 Count = 0; DragPlacementSession && Count < MaxCellsPerFrame; ++Count)
 	{
 		FFF_BuildDragPlacementSession& Stroke = *DragPlacementSession;
 		if (!Stroke.Path.HasPendingCells())

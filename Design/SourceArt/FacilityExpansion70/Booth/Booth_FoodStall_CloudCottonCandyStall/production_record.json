@@ -1,0 +1,61 @@
+{
+  "number": 7,
+  "category": "Booth",
+  "subtype": "FoodStall",
+  "name_ko": "구름 솜사탕 부스",
+  "slug": "CloudCottonCandyStall",
+  "id": "Booth_FoodStall_CloudCottonCandyStall",
+  "footprint_cm": [
+    320,
+    260
+  ],
+  "height_cm": 350,
+  "description_ko": "제작 과정도 볼거리인 간식 매점.",
+  "emphasis_ko": "구름 모양 지붕·둥근 솜사탕 기계를 강조. 솜사탕은 단순 덩어리와 재질로 표현하고 털·입자 지오메트리를 남발하지 않는다.",
+  "reference_image": "Design/Facitilies/07 구름 솜사탕 부스.png",
+  "exploded_reference_image": "Design/Facitilies/07 구름 솜사탕 부스 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+  "followup_features": [
+    "솜사탕 제조 회전과 음식 수령 동작은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CloudCottonCandyStall\\SM_FF_Booth_FoodStall_CloudCottonCandyStall.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\07_Booth_FoodStall_CloudCottonCandyStall.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_CloudCottonCandyStall\\iso.png",
+  "bounds_m": [
+    3.1999998092651367,
+    1.9614075422286987,
+    2.810478925704956
+  ],
+  "bounds_min_m": [
+    -1.5999999046325684,
+    -0.9807037711143494,
+    0.0
+  ],
+  "bounds_max_m": [
+    1.5999999046325684,
+    0.9807037711143494,
+    2.810478925704956
+  ],
+  "triangles": 12108,
+  "material_names": [
+    "M_F70_DarkWood",
+    "M_F70_Cream",
+    "M_F70_Teal",
+    "M_F70_Wood",
+    "M_F70_Metal",
+    "M_F70_White",
+    "M_F70_Pink",
+    "M_F70_Blue"
+  ],
+  "collision_count": 7,
+  "editable_parts": 44,
+  "fbx_sha256": "1bc2ffa3ad0a2443465d5ea957465042591b672809c1a61b35d9b280e2010ca1",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

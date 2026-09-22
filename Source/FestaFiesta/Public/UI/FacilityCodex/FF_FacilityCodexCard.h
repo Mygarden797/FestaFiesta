@@ -1,3 +1,6 @@
+// FF_FacilityCodexCard.h
+// 역할: 시설 도감의 한 카드에 발견 상태·이미지·선택 상태를 표시한다.
+
 // Facility collection presentation. Layout and default appearance belong to WBP assets.
 #pragma once
 

@@ -1,3 +1,6 @@
+// FF_FacilitySynergyTypes.h
+// 역할: 조합 표의 행·미리보기 자료형과 작성 데이터의 유효성 규칙이다.
+
 #pragma once
 
 #include "CoreMinimal.h"

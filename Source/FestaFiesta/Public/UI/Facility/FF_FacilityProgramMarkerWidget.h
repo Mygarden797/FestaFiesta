@@ -1,3 +1,6 @@
+// FF_FacilityProgramMarkerWidget.h
+// 역할: 시설 위에 프로그램과 수입 상태를 요약해서 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

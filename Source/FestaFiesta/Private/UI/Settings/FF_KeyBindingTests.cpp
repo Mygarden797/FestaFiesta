@@ -1,3 +1,6 @@
+// FF_KeyBindingTests.cpp
+// 역할: 키 변경·충돌·저장·실제 입력 연결을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"

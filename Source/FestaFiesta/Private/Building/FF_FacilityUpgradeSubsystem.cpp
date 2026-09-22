@@ -1,3 +1,6 @@
+// FF_FacilityUpgradeSubsystem.cpp
+// 역할: 강화 견적을 만들고 공간·운영 상태·잔액 확인 후 비용 예약과 확정을 연결한다.
+
 #include "Building/FF_FacilityUpgradeSubsystem.h"
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
@@ -76,6 +79,7 @@ UFF_FestivalProgressionSubsystem* UFF_FacilityUpgradeSubsystem::ResolveProgressi
 	return GameInstance ? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
 }
 
+// 현재 시설과 다음 강화 단계를 비교한다. 표시용 견적이며 이 함수 자체는 돈이나 시설을 바꾸지 않는다.
 bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	const FGuid FacilityInstanceId, FFF_FacilityUpgradePreview& OutPreview) const
 {
@@ -254,6 +258,7 @@ bool UFF_FacilityUpgradeSubsystem::GetUpgradePreview(
 	return true;
 }
 
+// 최신 견적과 사용자가 본 레벨이 일치할 때만 권위 Zone 명령을 보낸다. 중복 구매 중에는 재진입을 막는다.
 bool UFF_FacilityUpgradeSubsystem::TryUpgradeFacility(
 	const FGuid FacilityInstanceId, const int32 ExpectedCurrentLevel, FText& OutFailureReason)
 {
@@ -308,6 +313,7 @@ EFFZSPolicyDomain UFF_FacilityUpgradeSubsystem::GetFFZoneSystemPolicyDomain_Impl
 	return EFFZSPolicyDomain::Custom;
 }
 
+// 외부에서 들어온 강화 명령도 실제 데이터표와 비교해 가격·효과 조작을 차단한다.
 FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ValidatePurchase(const FFFZSPolicyContext& Context, int32& OutCost) const
 {
 	OutCost = 0;
@@ -340,6 +346,7 @@ FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::PreValidateFFZoneSystemChange_
 	return ValidatePurchase(Context, Cost);
 }
 
+// 강화가 실행되기 직전에 비용을 예약한다. 이후 다른 정책이 실패하면 Rollback이 예약을 돌려준다.
 FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ApplyTentativeFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context)
 {
 	int32 Cost = 0;
@@ -357,6 +364,7 @@ FFFZSPolicyDecision UFF_FacilityUpgradeSubsystem::ApplyTentativeFFZoneSystemChan
 	return FFFZSPolicyDecision();
 }
 
+// 권위 시설 변경이 성공했을 때만 예약한 비용을 확정한다. 화면 알림은 월드 변경 확정 뒤 전달한다.
 void UFF_FacilityUpgradeSubsystem::CommitFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context)
 {
 	if (Context.Command.Type == EFFZSCommandType::Upgrade && PendingPurchaseCommand == Context.Command.CommandId)
@@ -368,6 +376,7 @@ void UFF_FacilityUpgradeSubsystem::CommitFFZoneSystemChange_Implementation(const
 	}
 }
 
+// 강화 명령 실패 시 같은 명령의 비용 예약만 취소하여 다른 구매에 영향을 주지 않는다.
 void UFF_FacilityUpgradeSubsystem::RollbackFFZoneSystemChange_Implementation(const FFFZSPolicyContext& Context)
 {
 	if (Context.Command.Type == EFFZSCommandType::Upgrade && PendingPurchaseCommand == Context.Command.CommandId)
@@ -380,6 +389,7 @@ void UFF_FacilityUpgradeSubsystem::RollbackFFZoneSystemChange_Implementation(con
 	}
 }
 
+// 완료된 강화의 구매 상태를 먼저 정리한 후 잔액 변경을 방송해 재진입에도 중복 차감되지 않게 한다.
 void UFF_FacilityUpgradeSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	if (Event.Type == EFFZSCommandType::Upgrade && PendingPurchaseCommand == Event.CommandId)

@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridActor.h
+// 역할: 건축 모드의 전체 격자를 여러 Zone에 나누어 표시하고 지면 추적 예산을 분배한다.
 #pragma once
 
 #include "CoreMinimal.h"

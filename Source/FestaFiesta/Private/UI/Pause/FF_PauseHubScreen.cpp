@@ -1,3 +1,6 @@
+// FF_PauseHubScreen.cpp
+// 역할: 일시정지 메뉴에서 재개·설정·도움말·나가기 항목을 연결한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Pause/FF_PauseHubScreen.h"

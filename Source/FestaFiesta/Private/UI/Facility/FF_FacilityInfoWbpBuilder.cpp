@@ -1,6 +1,10 @@
+// FF_FacilityInfoWbpBuilder.cpp
+// 역할: 시설 정보·조명·유료 프로그램 화면의 초기 생성과 명시적인 에셋 수정을 담당한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoWbpBuilder.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 
@@ -44,7 +48,6 @@
 #include "UI/Facility/FF_FacilityPaidProgramCard.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
 #include "UI/Facility/FF_FacilitySynergyEntryWidget.h"
-#include "UObject/SavePackage.h"
 #include "WidgetBlueprint.h"
 #include "WidgetBlueprintFactory.h"
 
@@ -52,17 +55,17 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFFacilityInfoWbpBuilder, Log, All);
 
 namespace FFFacilityInfoWbpBuilder
 {
-	const FString PanelPackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"));
-	const FString LightingPackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"));
-	const FString SynergyEntryPackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry"));
+	const FString PanelPackage(FFBuildUIAssetPaths::FacilityInfoPanelPackage);
+	const FString LightingPackage(FFBuildUIAssetPaths::FacilityLightingControlsPackage);
+	const FString SynergyEntryPackage(FFBuildUIAssetPaths::FacilitySynergyEntryPackage);
 	bool SaveBlueprint(UWidgetBlueprint& Blueprint);
 	bool HasNamedVariable(const UWidgetBlueprint& Blueprint, FName Name, const UClass& ExpectedClass);
 	bool MigrateInspectorControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	bool MigratePurchaseControls(UWidgetBlueprint& Blueprint, UWidgetTree& Tree);
 	const FString PaidProgramPickerPackage(
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"));
+		FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage);
 	const FString PaidProgramCardPackage(
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"));
+		FFBuildUIAssetPaths::FacilityPaidProgramCardPackage);
 
 	const FLinearColor ColorPanel(0.018f, 0.047f, 0.070f, 0.985f);
 	const FLinearColor ColorSection(0.027f, 0.080f, 0.102f, 0.96f);
@@ -101,23 +104,7 @@ namespace FFFacilityInfoWbpBuilder
 		Border.SetBrushColor(FLinearColor::White);
 	}
 
-	template <typename TWidget>
-	TWidget* MakeWidget(
-		UWidgetBlueprint& Blueprint,
-		UWidgetTree& Tree,
-		const FName Name,
-		const bool bVariable = false)
-	{
-		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
-		if (Widget)
-		{
-			Widget->bIsVariable = bVariable;
-			// UE 5.7's compiler requires a stable GUID for every WidgetTree node, not only
-			// nodes exposed as Blueprint variables.
-			Blueprint.OnVariableAdded(Name);
-		}
-		return Widget;
-	}
+	using FFUIWbpBuilder::MakeWidget;
 
 	void StyleText(
 		UCommonTextBlock& Text,
@@ -1919,11 +1906,10 @@ namespace FFFacilityInfoWbpBuilder
 			EnsureSynergyInspectorContract(Blueprint, Tree, bSynergyContractAdded);
 	}
 
+	// 화면 주소와 오브젝트 경로 변환은 공통 창구를 사용한다.
 	UWidgetBlueprint* LoadExistingBlueprint()
 	{
-		const FString AssetName = FPackageName::GetLongPackageAssetName(PanelPackage);
-		return LoadObject<UWidgetBlueprint>(
-			nullptr, *FString::Printf(TEXT("%s.%s"), *PanelPackage, *AssetName));
+		return FFUIWbpBuilder::LoadExistingBlueprint(PanelPackage);
 	}
 
 	bool HasRequiredLayout(const UWidgetBlueprint& Blueprint)
@@ -1999,23 +1985,10 @@ namespace FFFacilityInfoWbpBuilder
 			Cast<UCommonTextBlock>(Tree->FindWidget(TEXT("Text_Feedback")));
 	}
 
+	// 부모 없는 위젯과 컴파일 오류를 검사한 뒤 팀 공통 저장 절차를 수행한다.
 	bool SaveBlueprint(UWidgetBlueprint& Blueprint)
 	{
-		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(&Blueprint);
-		FKismetEditorUtilities::CompileBlueprint(&Blueprint);
-		if (Blueprint.Status == BS_Error)
-		{
-			return false;
-		}
-		Blueprint.MarkPackageDirty();
-		UPackage* Package = Blueprint.GetOutermost();
-		const FString Filename = FPackageName::LongPackageNameToFilename(
-			Package->GetName(), FPackageName::GetAssetPackageExtension());
-		IFileManager::Get().MakeDirectory(*FPaths::GetPath(Filename), true);
-		FSavePackageArgs Args;
-		Args.TopLevelFlags = RF_Public | RF_Standalone;
-		Args.SaveFlags = SAVE_NoError;
-		return UPackage::SavePackage(Package, &Blueprint, *Filename, Args);
+		return FFUIWbpBuilder::SaveNewBlueprint(TEXT("FF_FACILITY_INFO_UMG"), Blueprint);
 	}
 
 	bool HasNamedVariable(

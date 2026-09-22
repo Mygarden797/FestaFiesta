@@ -1,6 +1,10 @@
+// FF_FacilityInfoTests.cpp
+// 역할: 시설 선택·운영 정보·화면 연결·프로그램·업그레이드 표시를 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoTypes.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -76,7 +80,7 @@ namespace
 	UTexture2D* LoadCaptureFoodTruckTexture(FAutomationTestBase& Test)
 	{
 		UTexture2D* Texture = LoadObject<UTexture2D>(nullptr,
-			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck"));
+			FFBuildUIAssetPaths::FoodTruckImageObject);
 		if (!Test.TestNotNull(TEXT("실제 카탈로그 푸드트럭 썸네일"), Texture)) return nullptr;
 		TArray<UTexture*> Textures = {Texture};
 		FTextureCompilingManager::Get().FinishCompilation(Textures);
@@ -86,17 +90,13 @@ namespace
 	}
 
 	const TCHAR* FacilityInfoObjectPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
-			"WBP_FF_FacilityInfoPanel");
+		FFBuildUIAssetPaths::FacilityInfoPanelObject;
 	const TCHAR* FacilityInfoClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
-			"WBP_FF_FacilityInfoPanel_C");
+		FFBuildUIAssetPaths::FacilityInfoPanelClass;
 	const TCHAR* PaidProgramPickerClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
-			"WBP_FF_FacilityPaidProgramPicker_C");
+		FFBuildUIAssetPaths::FacilityPaidProgramPickerClass;
 	const TCHAR* PaidProgramCardClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard."
-			"WBP_FF_FacilityPaidProgramCard_C");
+		FFBuildUIAssetPaths::FacilityPaidProgramCardClass;
 
 	class FScopedFacilityInfoPlayerlessWidgetInitialization
 	{
@@ -1858,7 +1858,7 @@ bool FFF_FacilityInfoGamePanelVisualPreviewTest::RunTest(const FString& Paramete
 			// A UI material's brush tint is white; its shader authors the visible color.
 			// Keep checking both the intended material and the rendered sage/readability range.
 			TestTrue(TEXT("Clarity header uses its authored material"),HeaderMaterial && HeaderMaterial->GetPathName()==
-				TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/Clarity/MI_UI_BuildClarity_Header.MI_UI_BuildClarity_Header"));
+				FFBuildUIAssetPaths::BuildClarity_HeaderObject);
 			TestTrue(TEXT("Rendered Clarity header remains opaque pale sage"),HeaderPixel.A>=245 &&
 				HeaderPixel.R>=215 && HeaderPixel.R<=245 && HeaderPixel.G>=225 && HeaderPixel.G<=250 &&
 				HeaderPixel.B>=205 && HeaderPixel.B<=242 && HeaderPixel.G>=HeaderPixel.R+3 && HeaderPixel.G>=HeaderPixel.B+6);
@@ -2356,7 +2356,7 @@ bool FFF_FacilityLightingControlsTest::RunTest(const FString& Parameters)
 {
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		FFBuildUIAssetPaths::FacilityLightingControlsClass));
 	if (!TestNotNull(TEXT("Lighting WBP class"), Class) || !TestNotNull(TEXT("Editor world"), World)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	UFF_FacilityLightingControls* Controls = CreateWidget<UFF_FacilityLightingControls>(World, Class);
@@ -2449,7 +2449,7 @@ bool FFF_FacilityLightingVisualPreviewTest::RunTest(const FString& Parameters)
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	UWidgetBlueprintGeneratedClass* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr, FacilityInfoClassPath));
 	auto* LightingClass=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+		FFBuildUIAssetPaths::FacilityLightingControlsClass));
 	if (!TestNotNull(TEXT("Panel WBP"), Class) || !TestNotNull(TEXT("World"), World) || !TestNotNull(TEXT("Lighting child WBP"),LightingClass)) return false;
 	FScopedFacilityInfoPlayerlessWidgetInitialization InitializationGuard(*Class);
 	FScopedFacilityInfoPlayerlessWidgetInitialization LightingInitializationGuard(*LightingClass);

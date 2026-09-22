@@ -1,3 +1,6 @@
+// FF_BuildDragPlacementTests.cpp
+// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 마우스로 그린 경로를 중복 없이 제한된 작업량으로 연속 설치한다.
+
 // Exercises drag input through the real installation, occupancy and economy boundaries.
 // Only cursor sampling and initial selection are seeded; no install result is mocked.
 

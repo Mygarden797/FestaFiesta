@@ -1,3 +1,6 @@
+// FF_PauseHubTests.cpp
+// 역할: 일시정지 메뉴의 입력·화면 연결·재개 동작을 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"

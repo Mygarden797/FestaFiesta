@@ -1,3 +1,6 @@
+// FF_FacilityRevenueTableRow.h
+// 역할: 시설별 매출·수수료·레벨 배율·프로그램 참가비·미니게임 보상을 편집하는 표의 행 구조이다.
+
 #pragma once
 
 #include "CoreMinimal.h"

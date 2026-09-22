@@ -1,3 +1,6 @@
+// FF_PauseWbpBuilder.cpp
+// 역할: 일시정지 메뉴의 편집 가능한 화면 틀을 만든다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"

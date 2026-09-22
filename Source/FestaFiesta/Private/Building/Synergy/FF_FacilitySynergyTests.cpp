@@ -1,12 +1,18 @@
+// FF_FacilitySynergyTests.cpp
+// 역할: FacilitySynergy 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Synergy.SharedTablePolicy, FestaFiesta.Building.Synergy.DistanceBoundaryAndInvalidData).
+
 #include "Building/Synergy/FF_FacilitySynergyEvaluator.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "Building/Codex/FF_FacilityCodexModel.h"
+#include "Building/Synergy/FF_FacilitySynergyRulePolicy.h"
+#include "Engine/DataTable.h"
 #include "Misc/AutomationTest.h"
+#include "UObject/StrongObjectPtr.h"
 #if WITH_EDITOR
 #include "FF_FacilitySynergyTableBuilder.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
 #include "Engine/AssetManager.h"
-#include "Engine/DataTable.h"
 #include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Misc/FileHelper.h"
@@ -30,6 +36,55 @@ namespace
 		Result.Row.StackingGroup = Group;
 		return Result;
 	}
+}
+
+// 데이터표 검증부터 실제 수익과 도감 표시까지 같은 조합 순서와 결과를 사용하는지 검증한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SynergySharedTablePolicyTest,
+	"FestaFiesta.Building.Synergy.SharedTablePolicy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFF_SynergySharedTablePolicyTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UDataTable> Table(NewObject<UDataTable>());
+	Table->RowStruct = FFF_FacilitySynergyRow::StaticStruct();
+	Table->AddRow(TEXT("ValidZ"), Rule(TEXT("ValidZ"), TEXT("Food"), TEXT("Rest"), 20.f).Row);
+	Table->AddRow(TEXT("ValidA"), Rule(TEXT("ValidA"), TEXT("Food"), TEXT("Rest"), 10.f).Row);
+	FFF_FacilitySynergyRow Disabled = Rule(TEXT("Disabled"), TEXT("Food"), TEXT("Rest"), 99.f).Row;
+	Disabled.bEnabled = false;
+	Table->AddRow(TEXT("Disabled"), Disabled);
+	Table->AddRow(TEXT("Invalid"), Rule(TEXT("Invalid"), TEXT("Food"), NAME_None).Row);
+	TArray<FString> Warnings;
+	const TArray<FFF_FacilitySynergyRule> Rules = FFFacilitySynergyRulePolicy::ReadTable(Table.Get(), Warnings);
+	TestEqual(TEXT("Only malformed enabled rows produce a diagnostic"), Warnings.Num(), 1);
+	if (!TestEqual(TEXT("Only valid enabled rows enter both models"), Rules.Num(), 2)) { return false; }
+	TestEqual(TEXT("The same stable first row is used by every consumer"), Rules[0].Id, FName(TEXT("ValidA")));
+	FFFZSReadModel World;
+	for (const auto& PointValue : {Point(1, TEXT("Food"), 0.), Point(2, TEXT("Rest"), 100.)})
+	{
+		FFFZSFacilityReadModel& Facility = World.Facilities.AddDefaulted_GetRef();
+		Facility.FacilityInstanceId = PointValue.InstanceId;
+		Facility.FacilityDefinitionId = PointValue.DefinitionId;
+		Facility.WorldLocation = PointValue.WorldLocation;
+		Facility.State = EFFZSFacilityState::Closed;
+		TestTrue(TEXT("Closed installations retain their combination eligibility"), FFFacilitySynergyRulePolicy::IsEligibleFacility(Facility));
+	}
+	FFF_FacilityCodexModel Codex;
+	Codex.SetRules(Rules, 50.f);
+	Codex.Evaluate(World, {});
+	FFF_FacilitySynergyEvaluator Evaluator;
+	Evaluator.SetRules(Rules, 50.f);
+	Evaluator.SetFacilities({Point(1, TEXT("Food"), 0.), Point(2, TEXT("Rest"), 100.)});
+	const auto Evaluation = Evaluator.Evaluate(Point(1, TEXT("Food"), 0.));
+	TestEqual(TEXT("Income keeps both authored bonuses"), Evaluation.TotalPercent, 30.f);
+	TestEqual(TEXT("Codex row order stays aligned with income RuleIndex"), Codex.GetEntries()[0].RuleId, Rules[0].Id);
+	TestEqual(TEXT("Codex first bonus equals the actual evaluated rule"), Codex.GetEntries()[0].AppliedBonusPercent, Evaluation.Matches[0].AppliedPercent);
+	World.Facilities[1].bNeedsRelocation = true;
+	TestFalse(TEXT("Relocation excludes the partner from live bonuses"), FFFacilitySynergyRulePolicy::IsEligibleFacility(World.Facilities[1]));
+	Codex.Evaluate(World, {});
+	TestFalse(TEXT("Codex also stops promising the excluded partner's bonus"), Codex.GetEntries()[0].bEffectApplied);
+	TStrongObjectPtr<UDataTable> WrongSchema(NewObject<UDataTable>());
+	TestTrue(TEXT("A wrong table schema cannot be reinterpreted as a rule"), FFFacilitySynergyRulePolicy::ReadTable(WrongSchema.Get(), Warnings).IsEmpty());
+	TestEqual(TEXT("A wrong table schema explains why it was rejected"), Warnings.Num(), 1);
+	return true;
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SynergyDistanceBoundaryTest,

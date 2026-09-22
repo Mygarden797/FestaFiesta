@@ -1,3 +1,6 @@
+# audit_project_fonts.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 기존 데이터를 읽어 상태·문제를 점검한다.
+
 """Read imported game fonts without modifying any source assets."""
 import json
 from pathlib import Path

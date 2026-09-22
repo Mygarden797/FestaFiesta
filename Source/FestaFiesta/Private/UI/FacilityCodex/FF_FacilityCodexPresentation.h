@@ -1,3 +1,6 @@
+// FF_FacilityCodexPresentation.h
+// 역할: 도감 카드와 상세 영역이 공유하는 글자·이미지 표시 도구를 제공한다.
+
 #pragma once
 
 #include "Components/TextBlock.h"

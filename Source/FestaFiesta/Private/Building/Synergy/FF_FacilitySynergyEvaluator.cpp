@@ -1,4 +1,8 @@
+// FF_FacilitySynergyEvaluator.cpp
+// 역할: 주변 시설을 공간 색인으로 조회해 조합 보너스와 이동 전후 효과를 계산한다.
+
 #include "Building/Synergy/FF_FacilitySynergyEvaluator.h"
+#include "Building/Synergy/FF_FacilitySynergyRulePolicy.h"
 #include <algorithm>
 
 namespace
@@ -17,11 +21,11 @@ namespace
 	}
 }
 
+// 검증·정렬한 조합에서 수익 시설과 도움 시설을 색인화한다. 카탈로그 추천에는 월드 검색이 필요 없다.
 void FFF_FacilitySynergyEvaluator::SetRules(TArray<FFF_FacilitySynergyRule> InRules, const float InMaxPercent)
 {
 	Rules = MoveTemp(InRules);
-	Rules.RemoveAll([](const FFF_FacilitySynergyRule& Rule) { return Rule.Id.IsNone() || !Rule.Row.bEnabled || !Rule.Row.IsUsable(); });
-	Rules.Sort([](const FFF_FacilitySynergyRule& A, const FFF_FacilitySynergyRule& B) { return A.Id.LexicalLess(B.Id); });
+	FFFacilitySynergyRulePolicy::Normalize(Rules);
 	MaxPercent = FMath::IsFinite(InMaxPercent) ? FMath::Clamp(InMaxPercent, 0.f, 1000.f) : 0.f;
 	TargetRules.Reset();
 	PartnerRules.Reset();
@@ -48,6 +52,7 @@ const TArray<FName>& FFF_FacilitySynergyEvaluator::GetRelatedFacilityDefinitionI
 	return Related ? *Related : Empty;
 }
 
+// 유효하고 조합에 쓰이는 시설만 공간 색인에 넣는다. 시설 변경 때 한 번 갱신하고 매 수익 계산에는 재사용한다.
 void FFF_FacilitySynergyEvaluator::SetFacilities(TArray<FFF_FacilitySynergyPoint> InFacilities)
 {
 	Points.Reset();
@@ -146,6 +151,7 @@ void FFF_FacilitySynergyEvaluator::QueryRadius(const FName DefinitionId, const F
 	if (const FTree* Tree = Trees.Find(DefinitionId)) RadiusNode(*Tree, Tree->Root, Location, RadiusCm * RadiusCm, ExcludedId, Out);
 }
 
+// 가까운 도움 시설을 찾고 같은 그룹은 가장 큰 보너스 하나만 적용한 뒤 시설당 총 상한을 제한한다.
 FFF_FacilitySynergyEvaluation FFF_FacilitySynergyEvaluator::Evaluate(const FFF_FacilitySynergyPoint& Target,
 	const FFF_FacilitySynergyPoint* Proposed, const FGuid ExcludedId) const
 {
@@ -191,6 +197,7 @@ FFF_FacilitySynergyEvaluation FFF_FacilitySynergyEvaluator::Evaluate(const FFF_F
 	return Result;
 }
 
+// 아직 설치하지 않은 위치를 임시 후보로 평가해 현재·변경 후 수익 차이를 계산한다. 월드의 실제 시설은 바꾸지 않는다.
 void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const FVector& WorldLocation,
 	const FGuid MovingId, FFF_FacilitySynergyPreview& Out) const
 {

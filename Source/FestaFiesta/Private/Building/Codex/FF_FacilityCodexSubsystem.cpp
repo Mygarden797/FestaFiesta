@@ -1,8 +1,12 @@
+// FF_FacilityCodexSubsystem.cpp
+// 역할: 월드·카탈로그·발견 기록 변경을 도감 화면과 보상 청구로 연결한다.
+
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
+#include "Building/Synergy/FF_FacilitySynergyRulePolicy.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -20,18 +24,15 @@ void UFF_FacilityCodexSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	Super::Initialize(Collection);
 	const UFF_FacilitySynergySettings* Settings = GetDefault<UFF_FacilitySynergySettings>();
 	LoadedTable = Settings->SynergyTable.LoadSynchronous();
-	TArray<FFF_FacilitySynergyRule> Rules;
-	if (LoadedTable && LoadedTable->GetRowStruct() == FFF_FacilitySynergyRow::StaticStruct())
+	TArray<FString> Warnings;
+	TArray<FFF_FacilitySynergyRule> Rules = FFFacilitySynergyRulePolicy::ReadTable(LoadedTable, Warnings);
+	if (!LoadedTable && !Settings->SynergyTable.IsNull())
 	{
-		for (const auto& Pair : LoadedTable->GetRowMap())
-		{
-			const FFF_FacilitySynergyRow& Row = *reinterpret_cast<const FFF_FacilitySynergyRow*>(Pair.Value);
-			if (Row.bEnabled && Row.IsUsable()) { Rules.Add({Pair.Key, Row}); }
-		}
+		Warnings.Add(FString::Printf(TEXT("시설 조합 데이터표를 읽을 수 없습니다: %s"), *Settings->SynergyTable.ToString()));
 	}
-	else if (!Settings->SynergyTable.IsNull())
+	for (const FString& Warning : Warnings)
 	{
-		UE_LOG(LogFacilityCodex, Warning, TEXT("시설 도감의 조합 데이터표를 읽을 수 없습니다: %s"), *Settings->SynergyTable.ToString());
+		UE_LOG(LogFacilityCodex, Warning, TEXT("%s"), *Warning);
 	}
 	Model.SetRules(MoveTemp(Rules), Settings->MaxTotalBonusPercent);
 	if (ZoneSystem)
@@ -64,6 +65,7 @@ bool UFF_FacilityCodexSubsystem::DoesSupportWorldType(const EWorldType::Type Wor
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE || WorldType == EWorldType::GamePreview;
 }
 
+// 카탈로그·발견 기록·경제의 실제 소유자를 연결하며 인스턴스가 바뀌면 이전 이벤트 구독을 해제한다.
 void UFF_FacilityCodexSubsystem::BindGameInstance()
 {
 	UGameInstance* Game = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
@@ -90,6 +92,7 @@ void UFF_FacilityCodexSubsystem::BindGameInstance()
 	}
 }
 
+// 월드의 현재 배치로 도감을 다시 계산하고 새 발견을 저장한 뒤 UI 읽기 전용 목록을 갱신한다.
 void UFF_FacilityCodexSubsystem::Refresh()
 {
 	if (bRefreshing) { return; }
@@ -120,6 +123,7 @@ void UFF_FacilityCodexSubsystem::Refresh()
 	PublishEntries();
 }
 
+// 계산 결과에 사람이 읽는 시설 이름·썸네일·보상 수령 상태를 붙여 화면에 전달한다.
 void UFF_FacilityCodexSubsystem::PublishEntries()
 {
 	CachedEntries = Model.GetEntries();
@@ -144,6 +148,7 @@ void UFF_FacilityCodexSubsystem::PublishEntries()
 	OnCodexChanged.Broadcast();
 }
 
+// 조합 조건에 영향을 줄 수 있는 배치·등록 변경만 다시 계산한다. 단순 영업 열기·닫기는 재계산을 생략한다.
 void UFF_FacilityCodexSubsystem::HandleWorldChanged(const FFFZSWorldChangeEvent& Event)
 {
 	// Open/Close changes no geometry once an instance is eligible. Planned-to-installed transitions still refresh.

@@ -1,3 +1,5 @@
+// FF_FFZSBuildArea.h
+// 역할: 여러 지역을 하나의 건설 영역으로 묶어 지역 경계를 넘어 시설을 배치하게 한다.
 #pragma once
 
 #include "CoreMinimal.h"

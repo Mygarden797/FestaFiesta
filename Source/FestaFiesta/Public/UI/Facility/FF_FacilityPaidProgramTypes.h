@@ -1,3 +1,6 @@
+// FF_FacilityPaidProgramTypes.h
+// 역할: 유료 프로그램 선택 화면에서 사용하는 표시 데이터를 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

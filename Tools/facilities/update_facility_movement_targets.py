@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# update_facility_movement_targets.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 연결 정보나 설정을 현재 기준에 맞게 갱신한다.
+
 """Atomically migrate production FacilityDefinition movement targets.
 
 The migration is intentionally data-specific.  Every production Definition,

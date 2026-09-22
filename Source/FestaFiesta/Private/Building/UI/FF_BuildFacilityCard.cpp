@@ -6,6 +6,7 @@
 // 실패/성능: 누락 BindWidget은 건너뛰고 썸네일이 메모리에 없으면 디자이너 자리표시자를 유지한다.
 
 #include "Building/UI/FF_BuildFacilityCard.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/Presentation/FF_BuildFacilityCostTooltip.h"
 #include "CommonTextBlock.h"
@@ -21,12 +22,9 @@ UFF_BuildFacilityCard::UFF_BuildFacilityCard()
 {
 	// 카탈로그 항목에 전용 썸네일이 없는 경우를 위해 공용 이미지 경로는 보관한다.
 	// 카드는 이 참조를 직접 로드하지 않으며, 이미 메모리에 없으면 WBP의 어두운 배경을 자리표시자로 사용한다.
-	DefaultThumbnail = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_FoodTruck.T_UI_BuildCatalog_FoodTruck")));
+	DefaultThumbnail = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(FFBuildUIAssetPaths::FoodTruckImageObject));
 	// 팀 소유 Zone/UI/Building 자산과 분리된 기능 전용 WBP입니다.
-	InstallCostTooltipClass = TSoftClassPtr<UFF_BuildFacilityCostTooltip>(FSoftObjectPath(TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/Tooltips/WBP_FF_BuildFacilityCostTooltip."
-		"WBP_FF_BuildFacilityCostTooltip_C")));
+	InstallCostTooltipClass = TSoftClassPtr<UFF_BuildFacilityCostTooltip>(FSoftObjectPath(FFBuildUIAssetPaths::FacilityCostTooltipClass));
 }
 
 void UFF_BuildFacilityCard::Configure(const FFF_BuildCatalogEntry& InEntry)

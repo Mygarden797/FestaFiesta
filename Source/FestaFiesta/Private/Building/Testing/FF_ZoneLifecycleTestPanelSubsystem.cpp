@@ -6,6 +6,7 @@
 // 실패/성능: 생성 전만 로드를 재시도하고 생성 뒤 Tick은 저비용 key edge 검사만 수행한다.
 
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Building/Testing/FF_ZoneLifecycleTestPanel.h"
@@ -19,8 +20,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFZoneLifecycleTestPanel, Log, All);
 namespace
 {
 	const FSoftClassPath LifecyclePanelClassPath(
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel."
-			"WBP_FF_ZoneLifecycleTestPanel_C"));
+		FFBuildUIAssetPaths::ZoneLifecycleTestPanelClass);
 }
 
 void UFF_ZoneLifecycleTestPanelSubsystem::Initialize(FSubsystemCollectionBase& Collection)

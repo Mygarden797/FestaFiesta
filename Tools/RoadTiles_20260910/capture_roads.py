@@ -1,3 +1,6 @@
+# capture_roads.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """Capture actual UE road materials/LODs and save an isolated six-tile gallery."""
 import json
 from pathlib import Path

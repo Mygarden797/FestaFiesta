@@ -1,3 +1,6 @@
+// FF_FacilityCodexTypes.h
+// 역할: 조합 도감 항목·필터·완료 집계에 쓰이는 공통 자료형이다.
+
 #pragma once
 
 #include "CoreMinimal.h"

@@ -1,3 +1,6 @@
+// FF_FacilityCodexRewardAffordanceBuilder.cpp
+// 역할: 도감 보상의 받기 가능 여부를 알아보기 쉬운 표시로 바꾼다.
+
 // Saved presentation only: authoritative discovery and wallet logic remain native.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"

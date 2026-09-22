@@ -1,3 +1,6 @@
+// FF_FacilityInfoPanel.cpp
+// 역할: 선택한 시설의 정보·업그레이드·조명·프로그램을 표시하고 조작 의도를 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
@@ -123,6 +126,7 @@ FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
+// 관리자가 모아 준 시설 정보를 각 행과 탭에 표시한다. 이 함수는 시설의 실제 상태를 변경하지 않는다.
 void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewData)
 {
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||

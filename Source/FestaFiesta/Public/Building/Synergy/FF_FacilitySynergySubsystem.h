@@ -1,3 +1,6 @@
+// FF_FacilitySynergySubsystem.h
+// 역할: 시설 변경 시 조합 색인을 갱신하고 수익 배율을 재사용 가능한 캐시로 제공한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

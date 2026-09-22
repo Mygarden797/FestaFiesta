@@ -1,3 +1,6 @@
+// FF_FacilityCodexScreen.cpp
+// 역할: 도감 목록·상세 정보·발견 보상을 표시하고 사용자 선택을 전달한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
 
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
@@ -54,6 +57,7 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 	if (TileView_Entries) TileView_Entries->OnItemSelectionChanged().AddUObject(this, &ThisClass::HandleSelectionChanged);
 }
 
+// 도감 화면의 버튼과 변경 알림을 연결한다.
 void UFF_FacilityCodexScreen::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -74,6 +78,7 @@ void UFF_FacilityCodexScreen::NativeConstruct()
 	}
 }
 
+// 도감을 닫을 때 외부 알림과 화면 자원을 정리한다.
 void UFF_FacilityCodexScreen::NativeDestruct()
 {
 	ClearRewardFeedback();

@@ -1,3 +1,6 @@
+// FF_BuildToolsWidget.h
+// 역할: 건설 도구 버튼과 각도 입력을 건설 상태 및 명령에 연결한다.
+
 #pragma once
 
 #include "Blueprint/UserWidget.h"

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# resave_facility_definitions.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 현재 클래스 구조로 에셋을 다시 저장한다.
+
 """Resave every UFFZSFacilityDefinition after reflected bundle changes."""
 
 import os

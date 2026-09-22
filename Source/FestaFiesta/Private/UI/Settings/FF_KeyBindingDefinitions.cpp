@@ -1,3 +1,6 @@
+// FF_KeyBindingDefinitions.cpp
+// 역할: 변경 가능한 조작 항목의 이름·기본 키·입력 유형을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_KeyBindingDefinitions.h"

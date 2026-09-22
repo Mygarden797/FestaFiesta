@@ -1,3 +1,6 @@
+// FF_FestivalSettingsScreen.cpp
+// 역할: 게임 중 설정 값과 조작 도움말을 표시한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_FestivalSettingsScreen.h"

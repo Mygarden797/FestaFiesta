@@ -1,0 +1,69 @@
+{
+  "number": 10,
+  "category": "Booth",
+  "subtype": "MarketGoods",
+  "name_ko": "야광 응원용품점",
+  "slug": "GlowCheeringGoodsShop",
+  "id": "Booth_MarketGoods_GlowCheeringGoodsShop",
+  "footprint_cm": [
+    620,
+    320
+  ],
+  "height_cm": 410,
+  "description_ko": "야간 공연용 응원 도구 판매.",
+  "emphasis_ko": "응원봉 벽과 발광 팔찌 진열을 크게 표현. 발광 부위를 마스크로 묶고 개별 상품마다 실제 광원을 만들지 않는다.",
+  "reference_image": "Design/Facitilies/10 야광 응원용품점.png",
+  "exploded_reference_image": "Design/Facitilies/10 야광 응원용품점 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_MarketGoods_Market",
+  "followup_features": [
+    "응원용품 구매·착용과 발광 제어는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_GlowCheeringGoodsShop\\SM_FF_Booth_MarketGoods_GlowCheeringGoodsShop.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\10_Booth_MarketGoods_GlowCheeringGoodsShop.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_GlowCheeringGoodsShop\\iso.png",
+  "bounds_m": [
+    5.93649959564209,
+    3.200000047683716,
+    4.0726542472839355
+  ],
+  "bounds_min_m": [
+    -2.968249797821045,
+    -1.600000023841858,
+    -9.460543459738346e-09
+  ],
+  "bounds_max_m": [
+    2.968249797821045,
+    1.600000023841858,
+    4.0726542472839355
+  ],
+  "triangles": 19152,
+  "material_names": [
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Glass",
+    "M_F70_Wood",
+    "M_F70_DarkTeal",
+    "M_F70_Metal",
+    "M_F70_White",
+    "M_F70_Pink",
+    "M_F70_Blue",
+    "M_F70_Amber"
+  ],
+  "collision_count": 9,
+  "editable_parts": 68,
+  "fbx_sha256": "a1187b15d4663618045dc6d955bd37304e7d486462f92515abc4b05c0b0231d8",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      -0.4881816804409027,
+      0.7060977220535278,
+      2.3808653354644775
+    ]
+  ]
+}

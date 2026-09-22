@@ -1,3 +1,6 @@
+# migrate_staff_economy_ui.py
+# 역할: 시설·경제·UI 경고 진단 작업에서 기존 데이터를 현재 구조로 이관한다.
+
 """Verify PR 217's staff UI; -FFApplyStaffEconomyUI repairs known old text only.
 
 Run via UnrealEditor-Cmd -run=pythonscript -script=<this file> -unattended -nullrhi.

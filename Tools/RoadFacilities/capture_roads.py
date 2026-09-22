@@ -1,3 +1,6 @@
+# capture_roads.py
+# 역할: 설치 가능한 도로·타일 작업에서 실행 화면이나 모델을 촬영해 시각 검증 자료를 만든다.
+
 """Render shared surface meshes and an existing facility above authored Tiles.
 
 Uses a transient Entry world and real GPU SceneCapture. This visual fixture is

@@ -1,4 +1,8 @@
+// FF_BuildPlacementAssistance.cpp
+// 역할: 설치 실패 원인을 안내하고 가까운 유효 위치를 나누어 탐색한다.
+
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildingSettings.h"
 #include "Building/Presentation/FF_BuildPlacementFailureFeedback.h"
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "FF_FFZSPlacementPreviewActor.h"
@@ -99,8 +103,10 @@ void UFF_BuildModeSubsystem::TickPlacementAssistance()
         return;
     }
     // Full authority validation is bounded per frame. Never infer validity from a green grid cell.
-    const double Deadline = FPlatformTime::Seconds() + .002;
-    for (int32 Budget = 0; Budget < 4 && NearbyCandidateIndex < NearbyOffsets.Num(); ++Budget)
+    const UFF_BuildingSettings* Settings = GetDefault<UFF_BuildingSettings>();
+    const double Deadline = FPlatformTime::Seconds() + Settings->GetWorkBudgetSeconds();
+    const int32 MaxCandidates = Settings->GetNearbyCandidatesPerFrame();
+    for (int32 Budget = 0; Budget < MaxCandidates && NearbyCandidateIndex < NearbyOffsets.Num(); ++Budget)
     {
         const FIntPoint Offset = NearbyOffsets[NearbyCandidateIndex++];
         const int64 X = static_cast<int64>(NearbySearchCommand.Placement.OriginCell.X) + Offset.X;

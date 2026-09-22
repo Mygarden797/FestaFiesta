@@ -1,3 +1,6 @@
+// FF_FacilityInfoPanel.h
+// 역할: 선택한 시설의 정보·업그레이드·조명·프로그램을 표시하고 조작 의도를 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -65,7 +68,7 @@ public:
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
 protected:
-	virtual void NativeOnInitialized() override;   
+	virtual void NativeOnInitialized() override;
 	virtual FReply NativeOnMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;

@@ -1,4 +1,5 @@
 // FF_BuildDragPlacementPathTests.cpp
+// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 드래그 경로의 격자 좌표를 빠짐없이 순서대로 생성한다.
 // Pure path contracts: edge connectivity, sparse samples, resumable work and integer bounds.
 
 #if WITH_DEV_AUTOMATION_TESTS

@@ -1,3 +1,6 @@
+// FF_BuildTypography.h
+// 역할: 제목·본문·라벨·숫자의 공통 글꼴을 선택하고 로드한 글꼴을 유지한다.
+
 // Fonts shared by construction's authored widgets and its native fallback UI.
 #pragma once
 

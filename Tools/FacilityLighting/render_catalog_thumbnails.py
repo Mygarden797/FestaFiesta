@@ -1,3 +1,6 @@
+# render_catalog_thumbnails.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 모델을 렌더링해 확인용 이미지를 만든다.
+
 """Render the six actual lighting LOD0 models like existing facility thumbnails.
 
 Run in a fresh background Blender 5.2 session::

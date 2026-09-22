@@ -1,0 +1,63 @@
+{
+  "number": 8,
+  "category": "Booth",
+  "subtype": "MarketGoods",
+  "name_ko": "로컬 기념품 편집숍",
+  "slug": "LocalSouvenirShop",
+  "id": "Booth_MarketGoods_LocalSouvenirShop",
+  "footprint_cm": [
+    620,
+    320
+  ],
+  "height_cm": 380,
+  "description_ko": "지역 작가의 작은 기념품 판매.",
+  "emphasis_ko": "엽서 벽·자석 보드·진열 선반을 구성. 작은 인쇄물은 텍스처 아틀라스로 묶고 간판 문구는 교체 가능하게 둔다.",
+  "reference_image": "Design/Facitilies/08 로컬 기념품 편집숍.png",
+  "exploded_reference_image": "Design/Facitilies/08 로컬 기념품 편집숍 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_MarketGoods_Market",
+  "followup_features": [
+    "기념품 구매 UI와 상품 데이터는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_LocalSouvenirShop\\SM_FF_Booth_MarketGoods_LocalSouvenirShop.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\08_Booth_MarketGoods_LocalSouvenirShop.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_MarketGoods_LocalSouvenirShop\\iso.png",
+  "bounds_m": [
+    5.838648796081543,
+    3.147254705429077,
+    3.799999952316284
+  ],
+  "bounds_min_m": [
+    -2.9193243980407715,
+    -1.573627233505249,
+    -6.890925163816064e-08
+  ],
+  "bounds_max_m": [
+    2.9193243980407715,
+    1.5736274719238281,
+    3.799999952316284
+  ],
+  "triangles": 17085,
+  "material_names": [
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Glass",
+    "M_F70_Wood",
+    "M_F70_DarkTeal",
+    "M_F70_Metal",
+    "M_F70_White",
+    "M_F70_Coral",
+    "M_F70_Blue",
+    "M_F70_Sand"
+  ],
+  "collision_count": 9,
+  "editable_parts": 72,
+  "fbx_sha256": "0f2b0e2c2e602410c9fa169a69bb190a93c59ac6141306faa8193c231af55b66",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

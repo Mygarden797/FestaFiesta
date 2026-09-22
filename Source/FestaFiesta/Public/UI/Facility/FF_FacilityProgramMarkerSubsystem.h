@@ -1,3 +1,6 @@
+// FF_FacilityProgramMarkerSubsystem.h
+// 역할: 월드에 설치한 시설 위의 프로그램 표시를 생성·갱신·정리한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

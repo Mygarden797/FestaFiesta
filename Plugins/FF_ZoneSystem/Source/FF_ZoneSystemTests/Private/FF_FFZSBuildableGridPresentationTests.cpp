@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridPresentationTests.cpp
+// 역할: 격자의 표시·숨김·재진입·컴포넌트 재사용과 지역 수명을 실제 테스트 월드에서 검증한다.
 // Exercises the persistent presentation through public APIs in an isolated editor world.
 // Ground/collision are disabled here: spatial mask/terrain tests own those rules, while these
 // tests protect show/hide, re-entry, component reuse and registered-zone lifetime behavior.

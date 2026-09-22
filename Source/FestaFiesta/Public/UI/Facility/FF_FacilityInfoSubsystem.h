@@ -1,3 +1,6 @@
+// FF_FacilityInfoSubsystem.h
+// 역할: 현재 선택 시설의 정보를 모아 화면을 열고 시설 조작 요청을 담당 시스템에 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

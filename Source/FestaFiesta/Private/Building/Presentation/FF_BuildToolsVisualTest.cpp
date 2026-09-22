@@ -1,6 +1,10 @@
+// FF_BuildToolsVisualTest.cpp
+// 역할: 건설 도구 모음의 상태별 화면을 실제로 렌더링해 확인한다.
+
 // Render each real authored HUD state without a player or building authority.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Blueprint/WidgetTree.h"
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
@@ -72,7 +76,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
     }
     UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
     auto* Class = Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_BuildToolsWidget>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+        FFBuildUIAssetPaths::BuildToolsClass));
     if (!TestNotNull(TEXT("Playerless editor world"), World) || !TestNotNull(TEXT("Saved compact build HUD"), Class)) return false;
     FPlayerlessInitialization Context(*Class);
     TStrongObjectPtr<UFF_BuildToolsWidget> Widget(CreateWidget<UFF_BuildToolsWidget>(World, Class));

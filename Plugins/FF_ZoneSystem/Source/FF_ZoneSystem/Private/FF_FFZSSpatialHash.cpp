@@ -1,3 +1,5 @@
+// FF_FFZSSpatialHash.cpp
+// 역할: 월드 좌표를 검색 묶음으로 나누어 충돌 가능 시설과 지역만 빠르게 찾는다. 최종 충돌 판정은 호출자가 담당한다.
 #include "FF_FFZSSpatialHash.h"
 
 namespace
@@ -25,10 +27,11 @@ namespace
 }
 
 FFFZSSpatialHash2D::FFFZSSpatialHash2D(const double InBucketSizeCm)
-    : BucketSizeCm(FMath::IsFinite(InBucketSizeCm) && InBucketSizeCm >= 1.0 ? InBucketSizeCm : 2000.0)
+    : BucketSizeCm(FMath::IsFinite(InBucketSizeCm) && InBucketSizeCm >= 1.0 ? InBucketSizeCm : DefaultBucketSizeCm)
 {
 }
 
+// 좌표와 검색 묶음 개수를 검사해 비정상 영역을 무제한 반복하지 않게 한다.
 bool FFFZSSpatialHash2D::TryGetBucketRange(const FBox2D& Bounds, const int32 MaximumBucketCount,
     FIntPoint& OutFirst, FIntPoint& OutLast) const
 {
@@ -55,6 +58,7 @@ bool FFFZSSpatialHash2D::TryGetBucketRange(const FBox2D& Bounds, const int32 Max
         Height <= MaximumBucketCount / Width;
 }
 
+// 같은 ID의 예전 위치를 지운 뒤 새 검색 묶음에 등록한다.
 bool FFFZSSpatialHash2D::InsertOrUpdate(const FGuid& Id, const FBox2D& WorldBounds)
 {
     Remove(Id);
@@ -83,6 +87,7 @@ bool FFFZSSpatialHash2D::InsertOrUpdate(const FGuid& Id, const FBox2D& WorldBoun
     return true;
 }
 
+// 시설 또는 지역이 사라지면 검색 묶음과 우회 목록의 참조를 함께 제거한다.
 void FFFZSSpatialHash2D::Remove(const FGuid& Id)
 {
     const FEntry* Entry = Entries.Find(Id);
@@ -105,6 +110,7 @@ void FFFZSSpatialHash2D::Remove(const FGuid& Id)
     Entries.Remove(Id);
 }
 
+// 검색 목록 전체를 비운다. 실제 시설 액터를 삭제하는 함수가 아니다.
 void FFFZSSpatialHash2D::Reset()
 {
     Entries.Reset();
@@ -112,6 +118,7 @@ void FFFZSSpatialHash2D::Reset()
     FallbackEntries.Reset();
 }
 
+// 겹칠 가능성이 있는 ID를 중복 없이 안정적인 순서로 반환한다.
 void FFFZSSpatialHash2D::Query(const FBox2D& WorldBounds, TArray<FGuid>& OutCandidates) const
 {
     OutCandidates.Reset();

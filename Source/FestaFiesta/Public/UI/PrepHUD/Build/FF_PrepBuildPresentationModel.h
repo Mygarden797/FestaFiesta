@@ -1,3 +1,6 @@
+// FF_PrepBuildPresentationModel.h
+// 역할: 시설 목록을 화면 카드용 데이터로 바꾸고 재사용 가능한 카드 객체를 관리한다.
+
 // 카탈로그 스냅샷을 UTileView용 UObject 목록으로 조정하고 객체 풀을 재사용한다.
 
 #pragma once

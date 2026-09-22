@@ -1,0 +1,65 @@
+{
+  "number": 27,
+  "category": "Info",
+  "subtype": "GeneralInfo",
+  "name_ko": "등대형 종합안내소",
+  "slug": "LighthouseInformation",
+  "id": "Info_GeneralInfo_LighthouseInformation",
+  "footprint_cm": [
+    500,
+    420
+  ],
+  "height_cm": 520,
+  "description_ko": "입구의 대표 안내 시설.",
+  "emphasis_ko": "등대 실루엣 위에 큰 안내 아이콘을 배치. 창구는 낮은 높이에서 잘 보이게 하고 꼭대기 장식이 모델 중심을 흐리지 않게 한다.",
+  "reference_image": "Design/Facitilies/27 등대형 종합안내소.png",
+  "exploded_reference_image": "Design/Facitilies/27 등대형 종합안내소 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_GeneralInfo_General",
+  "followup_features": [
+    "지도·안내·상담 UI와 안내 서비스 동작은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_GeneralInfo_LighthouseInformation\\SM_FF_Info_GeneralInfo_LighthouseInformation.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\27_Info_GeneralInfo_LighthouseInformation.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_GeneralInfo_LighthouseInformation\\iso.png",
+  "bounds_m": [
+    4.071381092071533,
+    4.199999809265137,
+    4.7191009521484375
+  ],
+  "bounds_min_m": [
+    -2.0356905460357666,
+    -2.0999999046325684,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.0356905460357666,
+    2.1000001430511475,
+    4.7191009521484375
+  ],
+  "triangles": 9036,
+  "material_names": [
+    "M_F70_Wood",
+    "M_F70_Teal",
+    "M_F70_Cream",
+    "M_F70_Glass",
+    "M_F70_DarkTeal",
+    "M_F70_Screen"
+  ],
+  "collision_count": 6,
+  "editable_parts": 46,
+  "fbx_sha256": "a3b72298c08eb20452740402954d246b8936b4a238a806649cffbde6cabf3035",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": [
+    [
+      0.0,
+      -0.06430928409099579,
+      4.071381092071533
+    ]
+  ]
+}

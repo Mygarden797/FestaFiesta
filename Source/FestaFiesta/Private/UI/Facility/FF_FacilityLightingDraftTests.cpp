@@ -1,5 +1,9 @@
+// FF_FacilityLightingDraftTests.cpp
+// 역할: 조명 임시 편집값의 적용·취소와 화면 종료 시 복구를 검사한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "UI/Facility/FF_FacilityLightingControls.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityColorPicker.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
@@ -40,7 +44,7 @@ bool FFFAuroraLightingDraftTest::RunTest(const FString&)
 {
     UWorld* World=GEditor?GEditor->GetEditorWorldContext().World():nullptr;
     auto* Class=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityLightingControls>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.WBP_FF_FacilityLightingControls_C")));
+        FFBuildUIAssetPaths::FacilityLightingControlsClass));
     if(!TestNotNull(TEXT("Lighting WBP"),Class)||!TestNotNull(TEXT("Editor world"),World)) return false;
     struct FInitializationScope
     {
@@ -140,7 +144,7 @@ bool FFFAuroraLightingPanelTest::RunTest(const FString&)
 {
     UWorld* World=GEditor?GEditor->GetEditorWorldContext().World():nullptr;
     auto* Class=Cast<UWidgetBlueprintGeneratedClass>(LoadClass<UFF_FacilityInfoPanel>(nullptr,
-        TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")));
+        FFBuildUIAssetPaths::FacilityInfoPanelClass));
     if(!TestNotNull(TEXT("Inspector WBP"),Class)||!TestNotNull(TEXT("Editor world"),World))return false;
     const bool Previous=Class->bCanCallInitializedWithoutPlayerContext;
     Class->bCanCallInitializedWithoutPlayerContext=true;

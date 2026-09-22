@@ -1,3 +1,6 @@
+# inspect_packaging_navigation.py
+# 역할: Windows 빌드·패키징·검증 작업에서 기존 에셋 상태를 읽어 기록한다.
+
 """Read-only Test_Main navigation/terrain inventory. Never saves the level."""
 import json
 from pathlib import Path

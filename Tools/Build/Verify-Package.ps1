@@ -1,3 +1,5 @@
+# Verify-Package.ps1
+# 역할: 패키징 결과의 필수 파일·플러그인·실행 조건을 검사한다.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]

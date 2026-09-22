@@ -1,3 +1,6 @@
+// FF_PackagingInteractionRepair.cpp
+// 역할: 에디터에서 확인된 상호작용 Blueprint 연결 오류를 수정한다.
+
 // Editor-only repair for stale native interaction references in the release map.
 #if WITH_EDITOR
 

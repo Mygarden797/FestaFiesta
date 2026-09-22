@@ -1,0 +1,59 @@
+{
+  "number": 24,
+  "category": "Toilet",
+  "subtype": "Accessible",
+  "name_ko": "넓은 회전 공간 화장실",
+  "slug": "WideAccessRestroom",
+  "id": "Toilet_Accessible_WideAccessRestroom",
+  "footprint_cm": [
+    400,
+    400
+  ],
+  "height_cm": 310,
+  "description_ko": "넓은 출입·내부 이동 공간 제공.",
+  "emphasis_ko": "넓은 문과 평탄한 접근면을 우선한다. 장식 기둥·문 손잡이·충돌체가 출입 폭을 좁히지 않게 한다.",
+  "reference_image": "Design/Facitilies/24 넓은 회전 공간 화장실.png",
+  "exploded_reference_image": "Design/Facitilies/24 넓은 회전 공간 화장실 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Toilet/PDA_FFZS_Toilet_Accessible_Accessible",
+  "followup_features": [
+    "문 가동·점유 상태와 접근성 이용 애니메이션은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Accessible_WideAccessRestroom\\SM_FF_Toilet_Accessible_WideAccessRestroom.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\24_Toilet_Accessible_WideAccessRestroom.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Toilet\\Toilet_Accessible_WideAccessRestroom\\iso.png",
+  "bounds_m": [
+    3.894214391708374,
+    3.894214391708374,
+    3.0999996662139893
+  ],
+  "bounds_min_m": [
+    -1.947107195854187,
+    -1.947107195854187,
+    0.0
+  ],
+  "bounds_max_m": [
+    1.947107195854187,
+    1.947107195854187,
+    3.0999996662139893
+  ],
+  "triangles": 4192,
+  "material_names": [
+    "M_F70_Cream",
+    "M_F70_White",
+    "M_F70_Teal",
+    "M_F70_Glass",
+    "M_F70_Metal",
+    "M_F70_Blue"
+  ],
+  "collision_count": 6,
+  "editable_parts": 25,
+  "fbx_sha256": "55ffadb4e577e910b1b09c297706086c0c866605c935d6abd1c3bf8fcfedb4b1",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

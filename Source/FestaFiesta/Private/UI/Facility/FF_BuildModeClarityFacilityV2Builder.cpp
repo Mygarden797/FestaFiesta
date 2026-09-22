@@ -1,6 +1,10 @@
+// FF_BuildModeClarityFacilityV2Builder.cpp
+// 역할: 시설 정보 화면의 기존 조작 연결을 유지하며 V2 디자인을 적용한다.
+
 // Explicit V2 authoring pass. Existing controls and transaction bindings are retained.
 #if WITH_EDITOR
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -249,10 +253,10 @@ static void Run()
 {
     struct FTarget{const TCHAR* Path;bool(*Apply)(UWidgetBlueprint&);};
     const FTarget Targets[]={
-        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls"),Lighting},
-        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel"),Inspector},
-        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard"),ProgramCard},
-        {TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker"),ProgramPicker}};
+        {FFBuildUIAssetPaths::FacilityLightingControlsPackage,Lighting},
+        {FFBuildUIAssetPaths::FacilityInfoPanelPackage,Inspector},
+        {FFBuildUIAssetPaths::FacilityPaidProgramCardPackage,ProgramCard},
+        {FFBuildUIAssetPaths::FacilityPaidProgramPickerPackage,ProgramPicker}};
     bool Success=true;
     for(const auto& Target:Targets)
     {auto* BP=LoadExistingBlueprint(Target.Path);const bool Result=BP&&BP->WidgetTree&&Target.Apply(*BP);Success&=Result;UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_CLARITY_FACILITY_V2_%s %s"),Result?TEXT("PASS"):TEXT("FAIL"),Target.Path);}

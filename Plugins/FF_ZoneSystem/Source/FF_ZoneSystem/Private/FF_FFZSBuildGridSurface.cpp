@@ -1,3 +1,5 @@
+// FF_FFZSBuildGridSurface.cpp
+// 역할: 격자 아래 실제 지면을 제한된 횟수로 추적하고 결과를 재사용해 프레임 비용을 줄인다.
 #include "FF_FFZSBuildGridSurface.h"
 
 #include "Engine/World.h"
@@ -13,17 +15,19 @@
 
 namespace
 {
-    constexpr int32 MaximumTracesPerUpdate = 512;
-    constexpr double PendingUpdateIntervalSeconds = 0.08;
+    using FFZSBuildGridSurface::MaximumTracesPerUpdate;
+    using FFZSBuildGridSurface::PendingUpdateIntervalSeconds;
+
+    // 전체 지면을 한 번 확인하는 시간을 공통 계산해 캐시 만료와 선행 갱신이 어긋나지 않게 한다.
+    double CalculateSamplingPassSeconds(const int32 RequiredVertexCount, const int32 SamplesPerUpdate)
+    {
+        return FMath::CeilToDouble(static_cast<double>(FMath::Max(0, RequiredVertexCount)) /
+            FMath::Clamp(SamplesPerUpdate, 1, MaximumTracesPerUpdate)) * PendingUpdateIntervalSeconds;
+    }
 
     double ResolveSamplePhaseSeconds(const FIntPoint& Key)
     {
         return static_cast<double>(GetTypeHash(Key) % 1009) / 1008.0 * 0.5;
-    }
-
-    double SafePositive(const double Value, const double Fallback)
-    {
-        return FMath::IsFinite(Value) && Value > 0.0 ? Value : Fallback;
     }
 
     uint32 GetSupportGeometryHash(const UPrimitiveComponent& Component, const int32 InstanceIndex)
@@ -54,22 +58,23 @@ namespace
     };
 }
 
+// 지면 전체를 다시 확인할 시간을 확보해 아직 유효한 격자가 깜빡이지 않게 한다.
 double FFZSBuildGridSurface::CalculateSampleLifetimeSeconds(
     const int32 RequiredVertexCount, const int32 SamplesPerUpdate)
 {
-    const double PassSeconds = FMath::CeilToDouble(static_cast<double>(FMath::Max(0, RequiredVertexCount)) /
-        FMath::Clamp(SamplesPerUpdate, 1, MaximumTracesPerUpdate)) * PendingUpdateIntervalSeconds;
+    const double PassSeconds = CalculateSamplingPassSeconds(RequiredVertexCount, SamplesPerUpdate);
     return FMath::Max(2.0, PassSeconds * 2.0 + 0.5);
 }
 
+// 캐시가 끝나기 전에 갱신을 시작할 여유 시간을 구한다.
 double FFZSBuildGridSurface::CalculateRefreshLeadSeconds(
     const int32 RequiredVertexCount, const int32 SamplesPerUpdate)
 {
-    const double PassSeconds = FMath::CeilToDouble(static_cast<double>(FMath::Max(0, RequiredVertexCount)) /
-        FMath::Clamp(SamplesPerUpdate, 1, MaximumTracesPerUpdate)) * PendingUpdateIntervalSeconds;
+    const double PassSeconds = CalculateSamplingPassSeconds(RequiredVertexCount, SamplesPerUpdate);
     return PassSeconds + 0.5;
 }
 
+// 월드 또는 지면 조건이 바뀌면 이전 표본과 충돌 질의를 함께 비운다.
 void FFFZSBuildGridSurfaceCache::Reset()
 {
     Samples.Reset();
@@ -88,6 +93,7 @@ void FFFZSBuildGridSurfaceCache::Reset()
     CachedWorldRevision = -1;
 }
 
+// 변경된 지면부터 예산 안에서 확인하고 표시 불가능한 칸을 마스크에서 제외한다.
 bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTransform,
     const double ReferenceWorldZ, FFFZSBuildableGridMask& InOutMask, const int32 MaxNewSamples)
 {
@@ -102,12 +108,12 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
     }
 
     const UFFZSDeveloperSettings* Settings = GetDefault<UFFZSDeveloperSettings>();
-    const double TraceAboveCm = SafePositive(Settings->GroundTraceAboveCm, 1000.0);
-    const double TraceBelowCm = SafePositive(Settings->GroundTraceBelowCm, 1000.0);
-    const double MaxSlopeDegrees = FMath::IsFinite(Settings->MaxGroundSlopeDegrees)
-        ? FMath::Clamp(static_cast<double>(Settings->MaxGroundSlopeDegrees), 0.0, 89.9) : 5.0;
-    const double MaxHeightVarianceCm = FMath::IsFinite(Settings->MaxGroundHeightVarianceCm)
-        ? FMath::Max(0.0, static_cast<double>(Settings->MaxGroundHeightVarianceCm)) : 20.0;
+    // 설치 판정과 같은 보정값을 사용해 잘못된 설정에서 격자만 다른 지면을 보지 않게 한다.
+    const FFFZSGroundValidationSettings Ground = Settings->ResolveGroundValidationSettings();
+    const double TraceAboveCm = Ground.TraceAboveCm;
+    const double TraceBelowCm = Ground.TraceBelowCm;
+    const double MaxSlopeDegrees = Ground.MaxSlopeDegrees;
+    const double MaxHeightVarianceCm = Ground.MaxHeightVarianceCm;
     const double MinimumUpDot = FMath::Cos(FMath::DegreesToRadians(MaxSlopeDegrees));
     uint32 SettingsHash = HashCombine(GetTypeHash(TraceAboveCm), GetTypeHash(TraceBelowCm));
     SettingsHash = HashCombine(SettingsHash, GetTypeHash(MaxSlopeDegrees));
@@ -363,6 +369,7 @@ bool FFFZSBuildGridSurfaceCache::Update(UWorld& World, const FTransform& ZoneTra
     return bChanged;
 }
 
+// 확인된 표본 사이를 보간해 격자 선이 지형 높이를 따라가게 한다.
 FVector FFFZSBuildGridSurfaceCache::GetWorldPoint(const FVector2D& LocalCm) const
 {
     if (LocalCm.ContainsNaN())

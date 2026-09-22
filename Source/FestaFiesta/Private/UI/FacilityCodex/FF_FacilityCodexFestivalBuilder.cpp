@@ -1,5 +1,9 @@
+// FF_FacilityCodexFestivalBuilder.cpp
+// 역할: 축제 스타일의 도감 디자인을 에디터 명령으로 적용한다.
+
 // Explicit saved-WBP theme migration. Runtime binds data; it does not rebuild this layout.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -30,9 +34,9 @@ namespace FFFacilityCodexFestivalBuilder
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Prefix = TEXT("FF_CODEX_FESTIVAL_THEME");
 constexpr const TCHAR* Version = TEXT("FF.FacilityCodex.FestivalTheme20260921.1");
-constexpr const TCHAR* CardPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard");
-constexpr const TCHAR* ScreenPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen");
-constexpr const TCHAR* ThumbnailPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_Codex_DiscoveryThumbnail.M_FF_Codex_DiscoveryThumbnail");
+constexpr const TCHAR* CardPath = FFBuildUIAssetPaths::FacilityCodexCardPackage;
+constexpr const TCHAR* ScreenPath = FFBuildUIAssetPaths::FacilityCodexScreenPackage;
+constexpr const TCHAR* ThumbnailPath = FFBuildUIAssetPaths::M_FF_Codex_DiscoveryThumbnailObject;
 
 template<class T> static T* Get(UWidgetTree& Tree, const TCHAR* Name)
 { return Cast<T>(Tree.FindWidget(FName(Name))); }

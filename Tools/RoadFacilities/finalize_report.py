@@ -1,3 +1,6 @@
+# finalize_report.py
+# 역할: 설치 가능한 도로·타일 작업에서 검증된 결과와 제작 근거를 최종 산출물로 정리한다.
+
 """Consolidate observed Blender/Unreal evidence; never infer a missing PASS."""
 import hashlib,json,shutil
 from pathlib import Path

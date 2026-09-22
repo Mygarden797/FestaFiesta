@@ -1,3 +1,6 @@
+// FF_FacilityCodexPreview.cpp
+// 역할: 도감의 시설 모형을 별도 미리보기 공간에서 표시한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexPreview.h"
 
 #include "Components/StaticMeshComponent.h"

@@ -1,4 +1,8 @@
+// FF_FacilityCodexImage.cpp
+// 역할: 도감 시설 이미지를 표시하고 이미지가 없거나 준비 중인 상태를 처리한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -46,8 +50,7 @@ void UFF_FacilityCodexImage::ApplyDiscoveryVisualState()
 		// Older authored widgets can still show the state. Saved WBP references are the
 		// primary loading/cooking path; this shared fallback never streams art per card.
 		static TWeakObjectPtr<UMaterialInterface> SharedMaterial;
-		if (!SharedMaterial.IsValid()) SharedMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT(
-			"/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_Codex_DiscoveryThumbnail.M_FF_Codex_DiscoveryThumbnail"));
+		if (!SharedMaterial.IsValid()) SharedMaterial = LoadObject<UMaterialInterface>(nullptr, FFBuildUIAssetPaths::M_FF_Codex_DiscoveryThumbnailObject);
 		DiscoveryMaterial = SharedMaterial.Get();
 	}
 	if (!DiscoveryMaterial) return; // Missing shader keeps useful source art instead of a blank card.

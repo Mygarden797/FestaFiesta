@@ -1,3 +1,6 @@
+// FF_PrepBuildWbpBuilder.cpp
+// 역할: 준비 HUD 건설 패널의 초기 에셋과 패키징 포함 목록을 만든다.
+
 // One-shot, fail-safe WBP scaffolding for the PrepHUD LightTeal build panel.
 
 #include "CoreMinimal.h"

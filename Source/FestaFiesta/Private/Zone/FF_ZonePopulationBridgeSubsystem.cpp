@@ -172,11 +172,8 @@ void UFF_ZonePopulationBridgeSubsystem::CaptureAgentSlots()
 		Sample.Location = Sample.bActive ? Crowd->GetAgentPosition(Slot) : FVector::ZeroVector;
 	}
 
-	// 풀이 줄어든 뒤 뒤쪽에 남은 원소가 활성으로 남아 있으면 유령 인원이 잡힌다.
-	for (int32 Slot = SlotCount; Slot < SlotBuffer.Num(); ++Slot)
-	{
-		SlotBuffer[Slot].bActive = false;
-	}
+	// SetNum은 용량을 보존하더라도 논리 길이를 SlotCount로 맞춘다.
+	// 축소된 뒤쪽 원소는 순회 대상이 아니므로 별도의 초기화 반복문이 필요 없다.
 }
 
 bool UFF_ZonePopulationBridgeSubsystem::RunReportCycle(const float DeltaSeconds)

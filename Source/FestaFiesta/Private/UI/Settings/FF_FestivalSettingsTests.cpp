@@ -1,3 +1,6 @@
+// FF_FestivalSettingsTests.cpp
+// 역할: 설정 화면의 수명과 게임 입력·건설 상태의 복구를 검증한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Misc/AutomationTest.h"

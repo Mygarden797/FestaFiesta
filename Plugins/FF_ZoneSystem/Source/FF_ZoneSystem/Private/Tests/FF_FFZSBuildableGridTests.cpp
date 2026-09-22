@@ -1,3 +1,5 @@
+// FF_FFZSBuildableGridTests.cpp
+// 역할: 건설 가능 칸의 마스크와 경계선 생성이 일관되는지 자동 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

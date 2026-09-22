@@ -1,3 +1,6 @@
+# apply_and_verify.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Apply the construction redesign to explicit UI packages, then verify isolation/idempotence.
 
 Use a freshly built UE 5.7 editor in /Engine/Maps/Entry with -ExecutePythonScript.

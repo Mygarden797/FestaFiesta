@@ -1,3 +1,6 @@
+# create_reward_materials.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create the codex reward button's iridescent UI material and four states.
 
 Run in the editor before applying the reward widget style.  The material draws

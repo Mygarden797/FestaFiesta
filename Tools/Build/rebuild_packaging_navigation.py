@@ -1,3 +1,6 @@
+# rebuild_packaging_navigation.py
+# 역할: Windows 빌드·패키징·검증 작업에서 제작 입력으로 결과를 다시 생성한다.
+
 """Audit/rebuild Test_Main's offline navigation without changing terrain or agents.
 
 Default: read-only audit. FESTAFIESTA_REBUILD_NAVIGATION=1 rebuilds in memory,

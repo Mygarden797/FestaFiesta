@@ -1,0 +1,63 @@
+{
+  "number": 30,
+  "category": "Info",
+  "subtype": "LostFound",
+  "name_ko": "미아·분실물 통합센터",
+  "slug": "LostChildAndFoundCenter",
+  "id": "Info_LostFound_LostChildAndFoundCenter",
+  "footprint_cm": [
+    600,
+    400
+  ],
+  "height_cm": 390,
+  "description_ko": "보호 대기와 습득물 접수.",
+  "emphasis_ko": "접수 카운터·보관함·대기 벤치를 구분. 대기 공간을 짐 더미나 장식 충돌로 막지 않는다.",
+  "reference_image": "Design/Facitilies/30 미아·분실물 통합센터.png",
+  "exploded_reference_image": "Design/Facitilies/30 미아·분실물 통합센터 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Info/PDA_FFZS_Info_LostFound_Lost",
+  "followup_features": [
+    "미아 보호·분실물 접수·조회 업무는 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_LostFound_LostChildAndFoundCenter\\SM_FF_Info_LostFound_LostChildAndFoundCenter.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\30_Info_LostFound_LostChildAndFoundCenter.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Info\\Info_LostFound_LostChildAndFoundCenter\\iso.png",
+  "bounds_m": [
+    5.311108589172363,
+    3.4296751022338867,
+    3.9000000953674316
+  ],
+  "bounds_min_m": [
+    -2.6555542945861816,
+    -1.7148375511169434,
+    0.0
+  ],
+  "bounds_max_m": [
+    2.6555542945861816,
+    1.7148374319076538,
+    3.9000000953674316
+  ],
+  "triangles": 23936,
+  "material_names": [
+    "M_F70_DarkWood",
+    "M_F70_Cream",
+    "M_F70_Teal",
+    "M_F70_Wood",
+    "M_F70_Metal",
+    "M_F70_DarkTeal",
+    "M_F70_Coral",
+    "M_F70_Blue",
+    "M_F70_Sand",
+    "M_F70_Green"
+  ],
+  "collision_count": 12,
+  "editable_parts": 82,
+  "fbx_sha256": "fbfe9bc66259396b9c3be2ea038c086fb9cfdc01c281185b5924daa4a70c2669",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

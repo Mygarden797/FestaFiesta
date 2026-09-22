@@ -1,3 +1,6 @@
+# patch_world_badge_amount.py
+# 역할: 시설 정보·수익 화면의 테마 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+
 """Root-run editor patch: constrain large V7 world-badge amounts, preserving its theme."""
 import hashlib
 import json

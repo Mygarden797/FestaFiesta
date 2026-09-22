@@ -1,3 +1,6 @@
+// FF_BuildSynergyWidget.cpp
+// 역할: 시설 조합의 예상 효과와 거리, 연결선을 표시한다.
+
 #include "Building/Presentation/FF_BuildSynergyWidget.h"
 #include "Building/Presentation/FF_BuildTypography.h"
 
@@ -13,22 +16,17 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
-#include "Engine/Font.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "UI/Data/FF_UIPalette.h"
-#include "UObject/ConstructorHelpers.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildSynergy"
 
 UFF_BuildSynergyWidget::UFF_BuildSynergyWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
-    static ConstructorHelpers::FObjectFinder<UFont> Font(
-        TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Medium_Font.NEXON_Lv2_Gothic_OTF_Medium_Font"));
-    PresentationFont = Font.Object;
     const FFF_UIPaletteInGame& Palette = UFF_UIPalette::Get()->InGame;
     ActiveTextColor = FSlateColor(Palette.Info);
     InactiveTextColor = FSlateColor(Palette.Ink);
@@ -40,6 +38,7 @@ UFF_BuildSynergyWidget::UFF_BuildSynergyWidget(const FObjectInitializer& ObjectI
     ForceVolatile(true);
 }
 
+// 저장된 WBP가 있으면 사용하고, 비어 있을 때만 기본 화면을 만든다.
 TSharedRef<SWidget> UFF_BuildSynergyWidget::RebuildWidget()
 {
     if (WidgetTree && !WidgetTree->RootWidget) { BuildNativeTree(); }
@@ -47,6 +46,7 @@ TSharedRef<SWidget> UFF_BuildSynergyWidget::RebuildWidget()
     return Super::RebuildWidget();
 }
 
+// WBP 위젯 이름으로 카드·제목·설명 연결을 찾아 보관한다.
 void UFF_BuildSynergyWidget::ResolveBindings()
 {
     // BindWidget handles authored WBP instances. Name resolution also supports the native
@@ -75,6 +75,7 @@ bool UFF_BuildSynergyWidget::HasRequiredBindings() const
         !RowTitles.Contains(nullptr) && !RowDetails.Contains(nullptr);
 }
 
+// 화면 에셋을 찾지 못했을 때 표시할 기본 조합 안내 패널을 조립한다.
 void UFF_BuildSynergyWidget::BuildNativeTree()
 {
     const FFF_UIPaletteInGame& Palette = UFF_UIPalette::Get()->InGame;
@@ -139,6 +140,7 @@ FText UFF_BuildSynergyWidget::ResolveFacilityName(const FName DefinitionId) cons
         : LOCTEXT("FacilityNameLoading", "시설 이름 불러오는 중");
 }
 
+// 계산이 끝난 조합 결과를 최대 세 행과 연결선 자료로 바꾼다.
 void UFF_BuildSynergyWidget::PresentPreview(
     const FFF_FacilitySynergyPreview& Preview, const FVector& CandidateLocation)
 {
@@ -223,6 +225,7 @@ void UFF_BuildSynergyWidget::PresentPreview(
     BP_OnPreviewChanged(PreviewData);
 }
 
+// 미리보기를 숨기고 이전 시설의 표시 데이터를 비운다.
 void UFF_BuildSynergyWidget::ClearPreview()
 {
     const bool bHadPreview = PreviewData.bRulesAvailable;
@@ -233,6 +236,7 @@ void UFF_BuildSynergyWidget::ClearPreview()
     if (bHadPreview) { BP_OnPreviewCleared(); }
 }
 
+// 저장된 위치를 화면 좌표로 바꿔 거리 원·연결선·번호를 그린다. 조합 규칙은 여기서 재계산하지 않는다.
 int32 UFF_BuildSynergyWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
     const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements,
     const int32 LayerId, const FWidgetStyle& InWidgetStyle, const bool bParentEnabled) const

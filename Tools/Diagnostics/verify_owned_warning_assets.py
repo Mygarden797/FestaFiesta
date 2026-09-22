@@ -1,3 +1,5 @@
+# verify_owned_warning_assets.py
+# 역할: 담당 에셋의 로드·설정 상태를 검사해 경고 수정 뒤 남은 문제를 보고한다.
 """Fresh-session read-only checks for the narrowly scoped warning repairs."""
 import json
 from pathlib import Path

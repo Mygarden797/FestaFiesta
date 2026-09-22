@@ -1,3 +1,5 @@
+# create_and_verify.py
+# 역할: 시설 수익표를 생성·검증하고 기존 에디터 작성값을 보존한다.
 """Create a missing revenue table; preserve existing editor-authored values on reruns.
 
 Run with UnrealEditor-Cmd -run=pythonscript -script=<this file> after building.

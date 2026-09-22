@@ -1,3 +1,6 @@
+# build_roads.py
+# 역할: 설치 가능한 도로·타일 작업에서 원본 모델이나 결과물을 생성한다.
+
 """Execute build_all() through the connected Blender MCP. Metres, +X forward.
 
 Owns only newly created FF_ROAD_* scenes and SourceArt/Roads_20260910.

@@ -19,6 +19,12 @@
 #define LOCTEXT_NAMESPACE "FFZoneSystemStageBridge"
 DEFINE_LOG_CATEGORY_STATIC(LogFFZoneStageBridge, Log, All);
 
+namespace FFZoneStageBridge
+{
+	// 재진입 중인 명령을 잠시 기다리는 안전장치다. 게임 운영 시간이 아닌 재시도 횟수다.
+	constexpr int32 MaxAutomaticLifecycleRetries = 3;
+}
+
 void UFF_ZoneSystemStageBridgeSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	// Zone 의존성을 먼저 생성한 뒤 GameInstance 수명의 Stage를 조회해 서로 다른 수명 범위를 잇는다.
@@ -258,14 +264,15 @@ void UFF_ZoneSystemStageBridgeSubsystem::RunScheduledAutomaticLifecycle()
 	if (ZoneSystem->GetChangePhase() != ExpectedPhase && !TrySynchronizeStage(false))
 	{
 		// 명령/복원 직후의 짧은 재진입 차단만 흡수하고 무한 Tick 재시도는 만들지 않습니다.
-		if (++AutomaticLifecycleRetryCount <= 3)
+		if (++AutomaticLifecycleRetryCount <= FFZoneStageBridge::MaxAutomaticLifecycleRetries)
 		{
 			ScheduleAutomaticLifecycle();
 		}
 		else
 		{
 			UE_LOG(LogFFZoneStageBridge, Error,
-				TEXT("FestivalStage 기반 시설 개폐를 3회 재시도했지만 FFZS Phase 동기화에 실패했습니다."));
+				TEXT("FestivalStage 기반 시설 개폐를 %d회 재시도했지만 FFZS Phase 동기화에 실패했습니다."),
+				FFZoneStageBridge::MaxAutomaticLifecycleRetries);
 			AutomaticLifecycleRetryCount = 0;
 			PendingAutomaticLifecycleCommand.Reset();
 		}

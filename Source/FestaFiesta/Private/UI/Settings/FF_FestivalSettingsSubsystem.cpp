@@ -1,3 +1,6 @@
+// FF_FestivalSettingsSubsystem.cpp
+// 역할: 일시정지·설정 화면의 열기·닫기, 입력 차단과 기존 건설 화면 복구를 관리한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_FestivalSettingsSubsystem.h"
@@ -201,6 +204,7 @@ bool UFF_FestivalSettingsSubsystem::HasPauseSession() const
 		SuspendedBuildMode.IsValid() || SuppressedFacilityInfo.IsValid();
 }
 
+// 다른 모달 화면이 입력을 소유하고 있는 동안 설정 메뉴를 중복해서 열지 않도록 확인한다.
 bool UFF_FestivalSettingsSubsystem::ShouldDeferOpenToActiveGameplayMode(
 	const APlayerController& Controller) const
 {

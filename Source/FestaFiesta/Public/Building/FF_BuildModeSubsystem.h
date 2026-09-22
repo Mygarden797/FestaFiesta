@@ -350,6 +350,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 #endif
 
 public:
+	UFF_BuildModeSubsystem();
 	// DeveloperSettings가 없거나 런타임 config가 범위를 벗어났을 때 사용하는 조작 안전값.
 	static constexpr float DefaultPlacementRotationSnapDegrees = 45.0f;
 	static constexpr float DefaultFreePlacementRotationSpeedDegreesPerSecond = 90.0f;
@@ -583,8 +584,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildSynergyWidget> BuildSynergyWidget;
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Synergy")
-	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass;
 	bool bHasSynergyPreviewKey = false;
 	FName SynergyPreviewDefinitionId;
 	FGuid SynergyPreviewMovingId;
@@ -593,8 +593,7 @@ private:
 	uint64 SynergyPreviewCatalogRevision = 0;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
-	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass;
 
 	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;
@@ -685,8 +684,6 @@ private:
 	// 같은 프리뷰 상태가 짧은 주기로 반복될 때 로그가 폭증하지 않도록 마지막 문구를 기억한다. 
 	mutable FString LastLoggedStatusMessage;
 
-	// 커서 추적과 전체 Zone 검증의 비용을 제한하면서도 프리뷰가 충분히 부드럽게 보이는 갱신 간격.
-	static constexpr float PreviewRefreshIntervalSeconds = 0.08f;
 
 	// 모든 상태 쓰기를 한곳에서 수행하고 실제 변경일 때만 외부 표현 계층에 방송한다.
 	void SetState(EFF_BuildModeState NewState);

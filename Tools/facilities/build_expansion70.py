@@ -1,6 +1,9 @@
+# build_expansion70.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 원본 모델이나 결과물을 생성한다.
+
 """Run through Blender MCP: import build_expansion70 as f; f.build_one(1).
 
-Creates one editable .blend in the user's requested Desktop/Blender directory.
+Creates one editable .blend in the configured FF_FACILITY_BLEND_DIR (or project default) directory.
 Reruns replace only collections/assets explicitly owned by this authoring job.
 Other open Blender scenes, objects and existing .blend files are preserved.
 """
@@ -10,12 +13,15 @@ import json
 import math
 from pathlib import Path
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from expansion70_paths import blend_directory
+import sys
 import bpy
 from mathutils import Matrix, Vector
 
 ROOT=Path(__file__).resolve().parents[2]
 ART=ROOT/'SourceArt'/'FacilityExpansion70'
-BLEND=Path(r'C:\Users\gksro\OneDrive\Desktop\Blender')
+BLEND=blend_directory()
 sys.path.insert(0,str(Path(__file__).parent))
 import expansion70_common as common
 

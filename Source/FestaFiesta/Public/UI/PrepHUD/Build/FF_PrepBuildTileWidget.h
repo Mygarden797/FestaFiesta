@@ -1,3 +1,6 @@
+// FF_PrepBuildTileWidget.h
+// 역할: 화면에 보이는 시설 카드만 재사용해 이름·가격·선택 상태를 표시한다.
+
 // PrepBuild TileView and its virtualized entry presentation.
 
 #pragma once
