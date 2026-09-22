@@ -20,12 +20,12 @@
 namespace
 {
 	const TCHAR* FeedbackPackagePath =
-		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback");
 	const TCHAR* FeedbackObjectPath =
-		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback");
 	const TCHAR* FeedbackClassPath =
-		TEXT("/Game/FestaFiesta/Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
 			"WBP_FF_BuildPlacementFailureFeedback_C");
 
 	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
@@ -62,7 +62,7 @@ bool FFF_BuildPlacementFailureFeedbackAssetContractTest::RunTest(const FString& 
 	(void)Parameters;
 
 	TestFalse(TEXT("The failure WBP lives outside the team-owned Zone/UI/Building path"),
-		FString(FeedbackPackagePath).StartsWith(TEXT("/Game/FestaFiesta/Zone/UI/Building")));
+		FString(FeedbackPackagePath).StartsWith(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy")));
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, FeedbackObjectPath);
 	TestNotNull(TEXT("The independent editable failure WBP loads"), Blueprint);
 	if (!Blueprint)

@@ -40,8 +40,8 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFZoneLifecycleTestWbpBuilder, Log, All);
 namespace FFZoneLifecycleTestWbpBuilder
 {
 	const FString PanelPackage(
-		TEXT("/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel"));
-	const FString PanelFolder(TEXT("/Game/FestaFiesta/Building/Debug"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel"));
+	const FString PanelFolder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Debug"));
 
 	constexpr float PanelWidth = 480.0f;
 	constexpr float PanelHeight = 540.0f;

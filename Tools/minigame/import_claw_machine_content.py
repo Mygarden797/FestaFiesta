@@ -31,10 +31,10 @@ FACILITY_TEXTURE_NAME = "T_UI_BuildCatalog_Booth_ActivityGame_ClawMachine"
 BACKDROP_TEXTURE_NAME = "T_MG_ClawMachine_Interior_ImageGen"
 
 MESH_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/Asset"
-FACILITY_TEXTURE_DESTINATION = "/Game/FestaFiesta/Zone/Test_Asset/image"
+FACILITY_TEXTURE_DESTINATION = "/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images"
 MINIGAME_ART_DESTINATION = "/Game/FestaFiesta/UI/Minigame/ClawMachine"
 MINIGAME_DATA_DESTINATION = "/Game/FestaFiesta/Minigame/Data"
-FACILITY_DEFINITION_DESTINATION = "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth"
+FACILITY_DEFINITION_DESTINATION = "/Game/FestaFiesta/Building/FF_Data_Building/Booth"
 
 MESH_PATH = MESH_DESTINATION + "/" + MESH_NAME
 FACILITY_TEXTURE_PATH = FACILITY_TEXTURE_DESTINATION + "/" + FACILITY_TEXTURE_NAME
@@ -46,7 +46,7 @@ PRIZE_TABLE_PATH = MINIGAME_DATA_DESTINATION + "/DT_ClawMachinePrizes"
 FACILITY_DEFINITION_NAME = "PDA_FFZS_Booth_ActivityGame_ClawMachine"
 FACILITY_DEFINITION_PATH = FACILITY_DEFINITION_DESTINATION + "/" + FACILITY_DEFINITION_NAME
 FACILITY_TEMPLATE_PATH = (
-    "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/"
+    "/Game/FestaFiesta/Building/FF_Data_Building/Booth/"
     "PDA_FFZS_Booth_ActivityGame_Surfing"
 )
 
@@ -339,7 +339,7 @@ def run() -> None:
         "SourceAssets/Zone/FacilityMeshes/" + MESH_NAME + ".fbx"
     )
     facility_texture_source = source_path(
-        "Content/FestaFiesta/Zone/Test_Asset/image/"
+        "Content/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/"
         + FACILITY_TEXTURE_NAME
         + ".png"
     )

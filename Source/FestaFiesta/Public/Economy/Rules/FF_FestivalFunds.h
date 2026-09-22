@@ -6,7 +6,11 @@
 
 /**
  * 축제 자금 - 단위는 Gold(int32)이다. Gold 잔액을 들고 지출 가능 여부를 판정한다.
- * [참고] Gold 는 음수가 되지 않는다. 잔액 부족 시 "구매 거부"를 한다.
+ *
+ * Gold 는 음수가 되지 않는다. 잔액이 모자라면 그 지출은 거부되고 상태는 그대로다 —
+ * 화면에서는 버튼이 막히는 것으로 나타난다.
+ *
+ * 거절할 수 없는 지출은 없다. 모든 지출은 플레이어가 누른 것이라 빚·미납이 생길 자리가 없다.
  * [참고] data/metadata/spec/economy_spec.md §3.1 / §4.2.
  * 
  * 상태 보관과 통지는 Festival/FF_FestivalProgressionSubsystem 이 맡는다.
@@ -25,14 +29,7 @@ struct FESTAFIESTA_API FFF_FestivalFunds
 
 	// 지출한다. 성공하면 true 이고 잔액이 그만큼 줄어든다.
 	bool TrySpend(int32 Amount);
-	
-	/* 
-	 * 임대료처럼 거절할 수 없는 비용을 지불한다. 거부하지 않는다. (TrySpend와 규칙 반대)
-	 * 잔액이 모자라면 있는 만큼만 내고 '실제 지불액'을 돌려준다.
-	 * 부족분은 호출부가 FFF_FixedCostArrears 에 미납으로 남긴다.
-	*/
-	int32 PayMandatoryCost(int32 CostAmount);
-	
+
 	// Gold 와 TotalRevenue·TodayRevenue 를 함께 늘린다.
 	void AddRevenue(int32 Amount);
 	
@@ -45,6 +42,24 @@ struct FESTAFIESTA_API FFF_FestivalFunds
 	
 	// 하루 경계에서 '오늘 매출'만 리셋한다.
 	void ResetTodayRevenue();
+
+	/* 저장에서 불러올 때 값을 그대로 되돌린다.
+
+	   Initialize 와 나누는 이유는 뜻이 다르기 때문이다. 저쪽은 축제를 처음
+	   시작하는 것이고, 이쪽은 있던 것을 되돌리는 것이다.
+
+	   AddRevenue 로 맞추면 장부에 없던 수입이 기록돼 결산이 틀어진다.
+	   그래서 값을 직접 넣는 경로를 따로 둔다. 저장 복원 말고는 쓰지 않는다.
+	*/
+	void RestoreFromSave(int32 InGold, int32 InTotalRevenue)
+	{
+		Gold = FMath::Max(0, InGold);
+		TotalRevenue = FMath::Max(0, InTotalRevenue);
+
+		// 오늘 수입은 하루가 시작될 때 0 이다. 저장은 정산 직후에만 하므로
+		// 불러온 시점은 언제나 하루의 시작이다.
+		TodayRevenue = 0;
+	}
 
 private:
 	// 잔액 (Gold). 음수가 되지 않는다.

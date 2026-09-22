@@ -32,7 +32,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFBuildModeGuideWbpBuilder, Log, All);
 
 namespace FFBuildModeGuideWbpBuilder
 {
-	const FString GuidePackage(TEXT("/Game/FestaFiesta/Building/Guide/WBP_FF_BuildModeGuide"));
+	const FString GuidePackage(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Guide/WBP_FF_BuildModeGuide"));
 
 	template <typename TWidget>
 	TWidget* MakeWidget(

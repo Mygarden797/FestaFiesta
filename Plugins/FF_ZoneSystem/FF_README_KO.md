@@ -1444,7 +1444,7 @@ UI 입력
 현재 프로젝트에는 다음 QA Slice가 준비되어 있다.
 
 - 통합 수동 QA Map: `/Game/FestaFiesta/Maps/Test_Main`
-- Lifecycle Panel: `/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel`
+- Lifecycle Panel: `/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel`
 - Definition·배치 에디터 픽스처: `/Game/FestaFiesta/Zone/Maps/FacilityDefinitionTestMap`
 - Lifecycle QA 코드: `Source/FestaFiesta/Private/Building/Testing/FF_ZoneLifecycleTestPanel*`
 

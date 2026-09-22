@@ -15,17 +15,17 @@
 namespace FFPrepBuildWidgetContractTest
 {
 	constexpr const TCHAR* TileClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
 	constexpr const TCHAR* PanelClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
 	constexpr const TCHAR* CookLabelPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/PAL_FF_PrepBuildUI.PAL_FF_PrepBuildUI");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/PAL_FF_PrepBuildUI.PAL_FF_PrepBuildUI");
 	constexpr const TCHAR* ChoiceClassPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C");
 	constexpr const TCHAR* ChoiceAssetPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton");
 	constexpr const TCHAR* CategoryDependencyCookLabelPath =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/Build/PAL_FF_PrepBuildCategoryDependencies."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/PAL_FF_PrepBuildCategoryDependencies."
 			"PAL_FF_PrepBuildCategoryDependencies");
 
 	UWidgetTree* ResolveWidgetTree(UClass* WidgetClass)
@@ -89,6 +89,12 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 			FName(TEXT("Text_State")),
 			FName(TEXT("Button_Favorite")),
 			FName(TEXT("Text_Favorite")),
+			FName(TEXT("Border_RequiredMissing")),
+			FName(TEXT("Text_RequiredMissing")),
+			FName(TEXT("Border_RequiredSatisfied")),
+			FName(TEXT("Text_RequiredSatisfied")),
+			FName(TEXT("Border_ProgramBadge")),
+			FName(TEXT("Text_ProgramBadge")),
 			FName(TEXT("SizeBox_Card")) })
 		{
 			TestNotNull(
@@ -108,6 +114,11 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	{
 		for (const FName RequiredName : {
 			FName(TEXT("Text_PanelTitle")),
+			FName(TEXT("HorizontalBox_CatalogEmphasisGuide")),
+			FName(TEXT("Border_CatalogRequiredGuide")),
+			FName(TEXT("Border_CatalogProgramLegend")),
+			FName(TEXT("Text_CatalogProgramLegend")),
+			FName(TEXT("Text_CatalogProgramGuide")),
 			FName(TEXT("Button_Close")),
 			FName(TEXT("Panel_Catalog")),
 			FName(TEXT("Panel_PlacementCompact")),

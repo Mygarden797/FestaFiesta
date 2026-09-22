@@ -322,7 +322,7 @@ $FFLabel = 'FestaFiesta-Win64-Shipping-SM5-SM6-20260911-01'
 
 코드가 에셋을 객체 참조로 갖고 있으면 쿠커가 참조를 따라갈 수 있다. 그러나 C++의 문자열 경로로 나중에 로드하는 에셋은 자동 수집에서 놓칠 수 있다. 이 프로젝트는 과거 홍보 확인창과 시간표 데이터 누락 때문에 패키지에서만 UI가 안 열리거나 개장이 진행되지 않은 기록이 있어 관련 경로를 `DirectoriesToAlwaysCook`으로 명시했다.
 
-현재 핵심 경로는 `Zone/UI`, `Building/Tooltips`, `Building/Feedback`, `Building/Debug`, `UI`, `Data`, `Building/Guide`, `Minigame`이다. 새로 문자열 경로 로딩을 추가하면 해당 에셋의 Cook 규칙도 함께 검토한다. 장기적으로는 Asset Manager의 Primary Asset, 명시적 soft reference와 규칙을 정리하여 필요한 에셋만 정확하게 포함시키는 방향으로 개선할 수 있다. **폴더 제외부터 하는 것보다 참조 설계를 먼저 고치는 것이 안전하다.**
+현재 핵심 경로는 `Zone/UI`, `Building/FF_WBP_Building`, `UI`, `Data`, `Minigame`이다. 새로 문자열 경로 로딩을 추가하면 해당 에셋의 Cook 규칙도 함께 검토한다. 장기적으로는 Asset Manager의 Primary Asset, 명시적 soft reference와 규칙을 정리하여 필요한 에셋만 정확하게 포함시키는 방향으로 개선할 수 있다. **폴더 제외부터 하는 것보다 참조 설계를 먼저 고치는 것이 안전하다.**
 
 ### 런타임 성능은 따로 측정한다
 

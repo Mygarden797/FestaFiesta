@@ -176,9 +176,9 @@ Content Browser에서 다음 DataAsset을 연다.
 
 | 화면 | WBP |
 |---|---|
-| 시설 정보와 편성 상태/버튼 | `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel` |
-| 프로그램 목록·미리보기·최종 버튼 | `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker` |
-| 목록의 프로그램 카드 한 장 | `/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramCard` |
+| 시설 정보와 편성 상태/버튼 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel` |
+| 프로그램 목록·미리보기·최종 버튼 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker` |
+| 목록의 프로그램 카드 한 장 | `/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramCard` |
 
 Designer 탭에서 위치·크기·폰트·브러시·패딩·애니메이션을 수정한다. 성공/오류 색, 카드 선택/비선택 색, 카드 WBP 클래스는 각 WBP의 **Class Defaults**에 노출되어 있다.
 

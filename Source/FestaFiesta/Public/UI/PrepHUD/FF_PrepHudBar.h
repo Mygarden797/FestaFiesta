@@ -41,7 +41,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnPrepCtaStateChanged);
  *
  * ```
  * ┌ 메뉴 행 ─ 배치 · 프로그램 · 인력 · 홍보 · 피날레 · 점검 ────────────────┐
- * ├ 상태 행 ─ 축제 | 금화 | 미납 | 관객 | 스태프 | 1일차·셋업 | 예상 | [CTA] ┤
+ * ├ 상태 행 ─ 축제 | 금화 | 관객 | 스태프 | 1일차·셋업 | 예상 | [CTA] ┤
  * └──────────────────────────────────────────────────────────────────────┘
  * ```
  *
@@ -191,9 +191,6 @@ protected:
 	void HandleGoldChanged(int32 NewValue);
 
 	UFUNCTION()
-	void HandleArrearsChanged(int32 NewValue);
-
-	UFUNCTION()
 	void HandleStaffCountChanged(int32 NewValue);
 
 	UFUNCTION()
@@ -279,17 +276,6 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UTextBlock> Text_Gold;
 
-	/**
-	 * ★ 밀린 임대료. **잔액 바로 옆에 둔다.**
-	 * 미납이 있으면 매출이 들어와도 잔액이 안 늘어나므로 이 칸이 없으면 설명이 안 된다.
-	 * 0 이면 칸을 숨긴다.
-	 */
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
-	TObjectPtr<UTextBlock> Text_Arrears;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
-	TObjectPtr<UWidget> Box_Arrears;
-
 	/** 관객 수. **소유자 없음** — 준비 단계에는 관객이 없으므로 보통 숨겨져 있다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UTextBlock> Text_VisitorCount;
@@ -297,7 +283,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UWidget> Box_VisitorCount;
 
-	/** `6명 (기본 4 · 알바 2)`. 축제 시작 전에는 숨긴다. */
+	/** `6명 (기본 4 · 고용 2)`. 축제 시작 전에는 숨긴다. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")
 	TObjectPtr<UTextBlock> Text_Staff;
 
@@ -307,7 +293,7 @@ protected:
 	/**
 	 * `1일차 · 셋업`. Day 와 Stage 표시명을 합친 한 줄이다.
 	 *
-	 * ★ 상태 행에서 **화면 정중앙**에 놓는다. 왼쪽 나열에 끼워 두면 앞의 칸(미납·관객처럼
+	 * ★ 상태 행에서 **화면 정중앙**에 놓는다. 왼쪽 나열에 끼워 두면 앞의 칸(관객처럼
 	 * 값이 없을 때 숨는 칸)이 접힐 때마다 위치가 흔들려 눈이 매번 다시 찾아야 한다.
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "FestaFiesta|UI|Prep|Status")

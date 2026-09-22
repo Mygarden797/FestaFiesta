@@ -23,7 +23,6 @@ enum class EFF_PaidProgramScheduleResult : uint8
 	FacilityUnavailable     UMETA(DisplayName = "현재 상태의 시설에는 편성할 수 없다"),
 	UnknownProgram          UMETA(DisplayName = "프로그램을 찾을 수 없다"),
 	AlreadyScheduled        UMETA(DisplayName = "오늘 이미 편성한 프로그램이다"),
-	NotEnoughStaff          UMETA(DisplayName = "배치 가능한 인원이 부족하다"),
 	InsufficientGold        UMETA(DisplayName = "Gold가 부족하다"),
 	FacilityTypeMismatch    UMETA(DisplayName = "이 시설에서 운영할 수 없는 프로그램이다"),
 	FacilityTimeConflict    UMETA(DisplayName = "이 시설의 다른 프로그램과 시간이 겹친다"),

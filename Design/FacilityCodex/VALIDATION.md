@@ -48,7 +48,7 @@ Presenter fixture를 만드는 동안 LocalPlayer에 PlayerInput이 아직 없�
 ## 파일 보존
 
 - 기존 수정 중 파일 11개의 SHA-256이 작업 시작 시점과 모두 일치합니다. `Saved/FacilityCodexTask/ExistingDirtyVerification.json`
-- 기존 파일의 의도적인 변경은 시설 담당자의 `Content/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel.uasset`과 `Content/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelBuild.uasset`입니다. 각각 기존 조합 섹션과 검색 옆에 도감 버튼 WBP만 추가했습니다.
+- 기존 파일의 의도적인 변경은 시설 담당자의 `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.uasset`과 `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.uasset`입니다. 각각 기존 조합 섹션과 검색 옆에 도감 버튼 WBP만 추가했습니다.
 - 나머지 구현·UMG 에셋·문서·도구는 새 경로에 추가했습니다. 기존 C++·조합표·시설 정의를 수정하지 않았습니다.
 - 생성 및 연결 명령을 반복해도 WBP 6개가 바이트 단위로 그대로임을 확인했습니다. `Saved/FacilityCodex/asset_verification.json`
 

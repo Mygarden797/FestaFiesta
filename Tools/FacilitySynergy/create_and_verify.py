@@ -23,8 +23,8 @@ ASSET_FILE = ROOT / "Content/FestaFiesta/Data/Economy/DT_FacilitySynergies.uasse
 COMMAND = "FF.CreateFacilitySynergyTable"
 EXPECTED_STRUCT = "/Script/FestaFiesta.FF_FacilitySynergyRow"
 OPTIONS_FUNCTION = "FestaFiesta.FF_FacilitySynergySettings.GetFacilityIdOptions"
-WIDGET_PATH = "/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy"
-WIDGET_FILE = ROOT / "Content/FestaFiesta/UI/Building/WBP_FF_BuildSynergy.uasset"
+WIDGET_PATH = "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy"
+WIDGET_FILE = ROOT / "Content/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy.uasset"
 WIDGET_COMMAND = "FF.CreateBuildSynergyWidget"
 
 
@@ -122,7 +122,7 @@ def main():
     cook_config = (ROOT / "Config/DefaultGame.ini").read_text(encoding="utf-8-sig")
     require('+DirectoriesToAlwaysCook=(Path="/Game/FestaFiesta/Data")' in cook_config,
             "DataTable folder is no longer covered by the existing packaging configuration")
-    require('+DirectoriesToAlwaysCook=(Path="/Game/FestaFiesta/UI")' in cook_config,
+    require('+DirectoriesToAlwaysCook=(Path="/Game/FestaFiesta/Building/FF_WBP_Building")' in cook_config,
             "Widget folder is no longer covered by the existing packaging configuration")
     widget_report = verify_widget()
     return {

@@ -21,7 +21,7 @@ class FESTAFIESTA_API UFF_PrepBuildPresentationModel final : public UObject
 	GENERATED_BODY()
 
 public:
-	/** 현재 카탈로그와 필터를 원자적으로 반영합니다. 입력 배열의 결정적 순서를 보존합니다. */
+	/** 필터를 반영하며 전체 보기의 필수 시설과 조합 추천을 우선합니다. 동순위의 입력 순서와 객체를 보존합니다. */
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|UI|Prep|Build")
 	void Reconcile(
 		EFF_BuildCatalogLoadState LoadState,
@@ -37,6 +37,10 @@ public:
 
 	/** 다음 Reconcile에서 추천 배지를 적용하고, 필터를 통과한 추천 항목을 먼저 보여 줍니다. */
 	void SetSynergyHighlightIds(const TArray<FName>& DefinitionIds);
+
+	/** Keeps the destination accent on its facility identity while rows are filtered/recycled. */
+	void SetCodexFocusId(FName DefinitionId);
+	FName GetCodexFocusId() const { return CodexFocusId; }
 
 	/** UListView/UTileView::SetListItems에 바로 넘길 수 있는 배열 복사본입니다. */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|UI|Prep|Build")
@@ -56,6 +60,7 @@ public:
 
 private:
 	TSet<FName> SynergyHighlightIds;
+	FName CodexFocusId;
 
 	/** 필터에서 잠시 빠진 항목도 같은 카탈로그에 있으면 identity를 유지합니다. */
 	UPROPERTY(Transient)

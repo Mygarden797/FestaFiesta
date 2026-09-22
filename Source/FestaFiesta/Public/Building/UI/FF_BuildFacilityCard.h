@@ -57,6 +57,10 @@ public:
 	bool IsRequiredFacilitySatisfied() const { return bRequiredFacilitySatisfied; }
 
 	static FText MakeRequiredFacilityToolTip(bool bSatisfied, int32 CurrentCount, int32 MinimumCount);
+	static FText MakeProgramFacilityToolTip(const FFF_BuildCatalogEntry& CatalogEntry);
+
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Building|UI|Program")
+	bool HasCompatiblePrograms() const { return Entry.CompatibleProgramCount > 0; }
 
 	// 요청 이미지가 이미 로드돼 있으면 우선 사용하고, 아니면 이미 로드된 공용 대체 이미지를 반환합니다.
 	static UTexture2D* ResolveLoadedThumbnail(
@@ -95,6 +99,7 @@ private:
 	void ApplyFacilityCostTextFallback();
 	void ApplySynergyHighlight();
 	void ApplyRequiredFacilityStatus();
+	void ApplyProgramAvailability();
 	bool bSynergyHighlighted = false;
 	bool bRequiredFacility = false;
 	bool bRequiredFacilitySatisfied = false;
@@ -132,6 +137,12 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Required", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UTextBlock> Text_RequiredSatisfied;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Program", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UBorder> Border_ProgramBadge;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Building|UI|Program", meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
+	TObjectPtr<UTextBlock> Text_ProgramBadge;
 
 	// 시설별 이미지가 아직 준비되지 않았을 때 사용하는 공용 대체 이미지입니다.
 	// 카드에서는 로드하지 않으므로 UI 클래스 등 다른 소유자가 이미 메모리에 올린 경우에만 사용합니다.

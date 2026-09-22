@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "UI/PrepHUD/FF_PrepPanelBase.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Framework/Application/SlateApplication.h"
@@ -216,7 +217,8 @@ UClass* UFF_PrepPanelBase::ResolveWidgetClass(UClass* Configured, const FString&
 	}
 
 	// 블루프린트 클래스는 `_C` 가 붙는다. 이걸 빼면 에셋은 있는데 못 찾는다.
-	const FString AssetName = FPaths::GetCleanFilename(FallbackPath);
-	const FString ObjectPath = FString::Printf(TEXT("%s.%s_C"), *FallbackPath, *AssetName);
+	const FString ResolvedPackage = FFBuildUIAssetPaths::ResolveChoicePackage(FallbackPath);
+	const FString AssetName = FPaths::GetCleanFilename(ResolvedPackage);
+	const FString ObjectPath = FString::Printf(TEXT("%s.%s_C"), *ResolvedPackage, *AssetName);
 	return LoadObject<UClass>(nullptr, *ObjectPath);
 }

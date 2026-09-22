@@ -15,7 +15,7 @@
 
 ## 기획자가 설정하는 곳
 
-콘텐츠 브라우저의 `/Game/FestaFiesta/Zone/Data/FacilityDefinitions/`에서 해당 `UFFZSFacilityDefinition` Data Asset을 엽니다. Details 상단의 **Facility Upgrade**에 필요한 항목을 모았습니다. 이 항목들은 해당 에셋의 `Spec`을 직접 편집하며, 별도의 전역 강화 표는 사용하지 않습니다.
+콘텐츠 브라우저의 `/Game/FestaFiesta/Building/FF_Data_Building/`에서 해당 `UFFZSFacilityDefinition` Data Asset을 엽니다. Details 상단의 **Facility Upgrade**에 필요한 항목을 모았습니다. 이 항목들은 해당 에셋의 `Spec`을 직접 편집하며, 별도의 전역 강화 표는 사용하지 않습니다.
 
 | Details 항목 | 뜻 |
 |---|---|

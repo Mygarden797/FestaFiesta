@@ -1,8 +1,12 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityProgramMarkerWidget.h"
+#include "Building/Presentation/FF_BuildTypography.h"
 
 #include "Brushes/SlateRoundedBoxBrush.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/TextBlock.h"
+#include "Components/WidgetSwitcher.h"
 #include "Engine/Font.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
@@ -20,15 +24,30 @@ UFF_FacilityProgramMarkerWidget::UFF_FacilityProgramMarkerWidget(
 
 TSharedRef<SWidget> UFF_FacilityProgramMarkerWidget::RebuildWidget()
 {
+	bAuthoredLayout = WidgetTree && WidgetTree->RootWidget;
+	if (bAuthoredLayout) return Super::RebuildWidget();
 	LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 11);
 	FontAsset = LoadObject<UFont>(nullptr,
-		TEXT("/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard.F_UI_Pretendard"));
+		TEXT("/Game/Asset/Font/NEXON_Lv2_Gothic_OTF_Bold_Font.NEXON_Lv2_Gothic_OTF_Bold_Font"));
 	if (FontAsset)
 	{
-		LabelFont = FSlateFontInfo(FontAsset, 11, FName(TEXT("SemiBold")));
+		LabelFont = FSlateFontInfo(FontAsset, 11, FFBuildTypography::Typeface(*CastChecked<UFont>(FontAsset.Get())));
 	}
-	return SNew(SBox).WidthOverride(156.f).HeightOverride(34.f)
+	return SAssignNew(NativeBounds, SBox).WidthOverride(bShowRevenue ? 220.f : 156.f)
+		.HeightOverride(bShowRevenue && MarkerState != EFF_FacilityProgramMarkerState::Hidden ? 70.f : 34.f)
 		.Visibility(EVisibility::HitTestInvisible);
+}
+
+void UFF_FacilityProgramMarkerWidget::NativePreConstruct()
+{
+	Super::NativePreConstruct();
+	if (!IsDesignTime()) RefreshPresentation();
+}
+
+void UFF_FacilityProgramMarkerWidget::ReleaseSlateResources(bool bReleaseChildren)
+{
+	Super::ReleaseSlateResources(bReleaseChildren);
+	NativeBounds.Reset();
 }
 
 void UFF_FacilityProgramMarkerWidget::SetMarkerState(const EFF_FacilityProgramMarkerState InState)
@@ -37,7 +56,36 @@ void UFF_FacilityProgramMarkerWidget::SetMarkerState(const EFF_FacilityProgramMa
 	Label = MarkerState == EFF_FacilityProgramMarkerState::Scheduled
 		? LOCTEXT("Scheduled", "프로그램 편성됨")
 		: LOCTEXT("Available", "프로그램 가능");
-	SetVisibility(MarkerState == EFF_FacilityProgramMarkerState::Hidden
+	RefreshPresentation();
+}
+
+void UFF_FacilityProgramMarkerWidget::SetRevenue(bool bInShowRevenue, bool bInEconomyAvailable, int32 InTodayGold)
+{
+	bShowRevenue = bInShowRevenue;
+	bEconomyAvailable = bInEconomyAvailable;
+	TodayGold = FMath::Max(0, InTodayGold);
+	RefreshPresentation();
+}
+
+FText UFF_FacilityProgramMarkerWidget::GetRevenueText() const
+{
+	return bEconomyAvailable ? FText::Format(LOCTEXT("RevenueGold", "{0} Gold"), FText::AsNumber(TodayGold))
+		: LOCTEXT("RevenueUnavailable", "—");
+}
+
+void UFF_FacilityProgramMarkerWidget::RefreshPresentation()
+{
+	const bool bShowProgram = MarkerState != EFF_FacilityProgramMarkerState::Hidden;
+	if (Panel_Program) Panel_Program->SetVisibility(bShowProgram ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (Switcher_Program) Switcher_Program->SetActiveWidgetIndex(MarkerState == EFF_FacilityProgramMarkerState::Scheduled ? 1 : 0);
+	if (Panel_Revenue) Panel_Revenue->SetVisibility(bShowRevenue ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (Text_RevenueValue) Text_RevenueValue->SetText(GetRevenueText());
+	if (NativeBounds)
+	{
+		NativeBounds->SetWidthOverride(bShowRevenue ? 220.f : 156.f);
+		NativeBounds->SetHeightOverride(bShowRevenue && bShowProgram ? 70.f : 34.f);
+	}
+	SetVisibility(!bShowProgram && !bShowRevenue
 		? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
 	InvalidateLayoutAndVolatility();
 }
@@ -49,17 +97,34 @@ int32 UFF_FacilityProgramMarkerWidget::NativePaint(const FPaintArgs& Args,
 {
 	const int32 BaseLayer = Super::NativePaint(Args, AllottedGeometry, MyCullingRect,
 		OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
-	if (MarkerState == EFF_FacilityProgramMarkerState::Hidden)
+	if (bAuthoredLayout || (MarkerState == EFF_FacilityProgramMarkerState::Hidden && !bShowRevenue))
 	{
 		return BaseLayer;
 	}
 
 	const FFF_UIPaletteInGame Palette;
+	const bool bShowProgram = MarkerState != EFF_FacilityProgramMarkerState::Hidden;
+	if (bShowRevenue)
+	{
+		const float Top = bShowProgram ? 36.f : 0.f;
+		static const FSlateRoundedBoxBrush RevenueBrush(FLinearColor::White, 7.f);
+		FSlateDrawElement::MakeBox(OutDrawElements, BaseLayer + 1,
+			AllottedGeometry.ToPaintGeometry(FVector2f(AllottedGeometry.GetLocalSize().X, 34.f), FSlateLayoutTransform(FVector2f(0, Top))),
+			&RevenueBrush, ESlateDrawEffect::None, Palette.Paper);
+		FSlateDrawElement::MakeText(OutDrawElements, BaseLayer + 2,
+			AllottedGeometry.ToPaintGeometry(FVector2f(64.f, 22.f), FSlateLayoutTransform(FVector2f(10.f, Top + 8.f))),
+			LOCTEXT("TodayRevenue", "오늘 매출"), LabelFont, ESlateDrawEffect::None, Palette.InkMuted);
+		FSlateDrawElement::MakeText(OutDrawElements, BaseLayer + 2,
+			AllottedGeometry.ToPaintGeometry(FVector2f(142.f, 22.f), FSlateLayoutTransform(FVector2f(76.f, Top + 8.f))),
+			GetRevenueText(), LabelFont, ESlateDrawEffect::None, Palette.Ink);
+	}
+	if (!bShowProgram) return BaseLayer + 2;
 	const FLinearColor Color = MarkerState == EFF_FacilityProgramMarkerState::Scheduled
 		? Palette.Info : Palette.Neutral;
 	static const FSlateRoundedBoxBrush BadgeBrush(FLinearColor::White, 17.f);
 	FSlateDrawElement::MakeBox(OutDrawElements, BaseLayer + 1,
-		AllottedGeometry.ToPaintGeometry(), &BadgeBrush, ESlateDrawEffect::None, Color);
+		AllottedGeometry.ToPaintGeometry(FVector2f(AllottedGeometry.GetLocalSize().X, 34.f), FSlateLayoutTransform()),
+		&BadgeBrush, ESlateDrawEffect::None, Color);
 
 	// Draw a calendar directly so the icon survives missing emoji fonts and cooked assets.
 	auto DrawLine = [&](TArray<FVector2f> Points)

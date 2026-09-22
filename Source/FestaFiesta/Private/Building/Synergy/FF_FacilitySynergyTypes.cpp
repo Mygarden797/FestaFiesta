@@ -32,6 +32,8 @@ bool FFF_FacilitySynergyRow::IsUsable(FString* OutError) const
 		return Reject(TEXT("최대 거리는 0보다 크고 1000 이하인 미터 값이어야 합니다."));
 	if (!FMath::IsFinite(RevenueBonusPercent) || RevenueBonusPercent <= 0.f || RevenueBonusPercent > 1000.f)
 		return Reject(TEXT("추가 수익은 0보다 크고 1000 이하인 퍼센트 값이어야 합니다."));
+	if (DiscoveryRewardGold < 0)
+		return Reject(TEXT("최초 발견 보상은 0 이상의 골드 값이어야 합니다."));
 	return true;
 }
 

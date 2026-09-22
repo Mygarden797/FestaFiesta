@@ -44,9 +44,9 @@ namespace
 {
 	// 생성기와 런타임 카드가 사용하는 정확한 패키지 경로이다. 경로 이동이나 에셋 누락도 회귀로 취급한다.
 	const TCHAR* IconAtlasPackagePath =
-		TEXT("/Game/FestaFiesta/Zone/Test_Asset/Image/T_UI_BuildCatalog_IconAtlas");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_IconAtlas");
 	const TCHAR* FoodTruckThumbnailPackagePath =
-		TEXT("/Game/FestaFiesta/Zone/Test_Asset/Image/T_UI_BuildCatalog_FoodTruck");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_FoodTruck");
 
 	struct FRequiredWidgetContract
 	{
@@ -309,7 +309,7 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 	// BindWidget 여부와 별개로 기준 디자인 계층에서 반드시 살아 있어야 하는 핵심 위젯도 열거한다.
 	const TArray<FWidgetBlueprintContract> Contracts = {
 		{
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen"),
 			UFF_BuildCatalogScreen::StaticClass(),
 			{
 				{ TEXT("Background_Dim"), UBorder::StaticClass() },
@@ -329,7 +329,7 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			{ TEXT("Background_Blur") }
 		},
 		{
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildTopButton"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildTopButton"),
 			UFF_BuildTopButton::StaticClass(),
 			{
 				{ TEXT("Text_Label"), UCommonTextBlock::StaticClass() },
@@ -339,7 +339,7 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			}
 		},
 		{
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCategoryButton"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCategoryButton"),
 			UFF_CommonButtonBase::StaticClass(),
 			{
 				{ TEXT("Surface"), UBorder::StaticClass() },
@@ -348,7 +348,7 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			}
 		},
 		{
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildMinorSection"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildMinorSection"),
 			UFF_BuildMinorSection::StaticClass(),
 			{
 				{ TEXT("Text_MinorTitle"), UCommonTextBlock::StaticClass() },
@@ -356,7 +356,7 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			}
 		},
 		{
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard"),
 			UFF_BuildFacilityCard::StaticClass(),
 			{
 				{ TEXT("Card_Surface"), UBorder::StaticClass() },
@@ -381,7 +381,7 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 
 	// 여기부터는 정적 archetype 검사를 넘어 실제 WidgetTree 초기화와 데이터 바인딩을 실행하는 스모크 테스트다.
 	const TCHAR* ScreenClassPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
 	UClass* ScreenClass = LoadClass<UFF_BuildCatalogScreen>(nullptr, ScreenClassPath);
 	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (ScreenClass && EditorWorld)
@@ -392,10 +392,10 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 		TArray<UWidgetBlueprintGeneratedClass*> PlayerlessClasses;
 		const TCHAR* GeneratedClassPaths[] = {
 			ScreenClassPath,
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildTopButton.WBP_FF_BuildTopButton_C"),
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCategoryButton.WBP_FF_BuildCategoryButton_C"),
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildMinorSection.WBP_FF_BuildMinorSection_C"),
-			TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard.WBP_FF_BuildFacilityCard_C"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildTopButton.WBP_FF_BuildTopButton_C"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCategoryButton.WBP_FF_BuildCategoryButton_C"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildMinorSection.WBP_FF_BuildMinorSection_C"),
+			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard.WBP_FF_BuildFacilityCard_C"),
 		};
 		for (const TCHAR* GeneratedClassPath : GeneratedClassPaths)
 		{
@@ -719,7 +719,7 @@ bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameter
 	// 이 회귀 테스트는 상단 바 마이그레이션에만 집중한다. 전체 기준 레이아웃 계약은
 	// 카탈로그 화면의 다른 디자이너 변경도 별도로 보고할 수 있다.
 	CheckWidgetBlueprintContract(*this, {
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen"),
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen"),
 		UFF_BuildCatalogScreen::StaticClass(),
 		{
 			{ TEXT("BTN_BuildTab"), UFF_BuildTopButton::StaticClass() },
@@ -728,7 +728,7 @@ bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameter
 		}
 	});
 	CheckWidgetBlueprintContract(*this, {
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildTopButton"),
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildTopButton"),
 		UFF_BuildTopButton::StaticClass(),
 		{
 			{ TEXT("Text_Label"), UCommonTextBlock::StaticClass() },
@@ -740,7 +740,7 @@ bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameter
 	CheckTransparentTopButtonStyleContract(*this);
 
 	const FString TopButtonObjectPath = MakeAssetObjectPath(
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildTopButton"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildTopButton"));
 	UClass* TopButtonClass = LoadClass<UFF_BuildTopButton>(
 		nullptr, *(TopButtonObjectPath + TEXT("_C")));
 	if (const UWidgetBlueprintGeneratedClass* TopGeneratedClass =
@@ -761,7 +761,7 @@ bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameter
 
 	UTexture2D* IconAtlas = CheckUiTextureContract(*this, IconAtlasPackagePath);
 	const TCHAR* ScreenClassPath =
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCatalogScreen.WBP_FF_BuildCatalogScreen_C");
 	UClass* ScreenClass = LoadClass<UFF_BuildCatalogScreen>(nullptr, ScreenClassPath);
 	UWorld* EditorWorld = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!ScreenClass || !EditorWorld)
@@ -778,10 +778,10 @@ bool FFF_BuildCatalogTransparentTopButtonsTest::RunTest(const FString& Parameter
 	TArray<FPlayerlessFlagRestore> FlagRestores;
 	const TCHAR* GeneratedClassPaths[] = {
 		ScreenClassPath,
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildTopButton.WBP_FF_BuildTopButton_C"),
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildCategoryButton.WBP_FF_BuildCategoryButton_C"),
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildMinorSection.WBP_FF_BuildMinorSection_C"),
-		TEXT("/Game/FestaFiesta/Zone/UI/Building/WBP_FF_BuildFacilityCard.WBP_FF_BuildFacilityCard_C"),
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildTopButton.WBP_FF_BuildTopButton_C"),
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildCategoryButton.WBP_FF_BuildCategoryButton_C"),
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildMinorSection.WBP_FF_BuildMinorSection_C"),
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy/WBP_FF_BuildFacilityCard.WBP_FF_BuildFacilityCard_C"),
 	};
 	for (const TCHAR* GeneratedClassPath : GeneratedClassPaths)
 	{

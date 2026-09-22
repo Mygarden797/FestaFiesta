@@ -35,7 +35,7 @@ public class FestaFiesta : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new string[]
 			{
 				// Input integration tests host a lightweight FViewport (FRenderResource).
-				"AssetTools", "UnrealEd", "UMGEditor", "BlueprintGraph", "RenderCore"
+				"AssetTools", "UnrealEd", "UMGEditor", "BlueprintGraph", "RenderCore", "Json", "AssetRegistry"
 			});
 		}
 	}

@@ -136,4 +136,62 @@ bool FFF_StageTime_DurationUsesCurrentDay::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_StageTime_MultipleMainPrograms,
+	"FestaFiesta.Time.StageClock.MultipleMainPrograms",
+	EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_StageTime_MultipleMainPrograms::RunTest(const FString& Parameters)
+{
+	FFF_StageTimeTestHelpers::FClockHarness Harness;
+	if (!TestTrue(TEXT("Stage 생성"), Harness.Initialize(EFF_FestivalStage::Live, 0.f))) return false;
+	UDataTable* Table = NewObject<UDataTable>(Harness.GameInstance);
+	Table->RowStruct = FFF_LiveTriggerEvent::StaticStruct();
+	FFF_LiveTriggerEvent Row;
+	Row.Day = 1;
+	Row.TriggerSeconds = 100.f;
+	Row.EventLabel = TEXT("첫 공연");
+	Row.bIsMainProgramLockStart = true;
+	Table->AddRow(TEXT("Main1"), Row);
+	Row.TriggerSeconds = 120.f;
+	Row.EventLabel = TEXT("첫 공연 종료");
+	Row.bIsMainProgramLockStart = false;
+	Table->AddRow(TEXT("Main1End"), Row);
+	Row.TriggerSeconds = 200.f;
+	Row.EventLabel = TEXT("두 번째 공연");
+	Row.bIsMainProgramLockStart = true;
+	Table->AddRow(TEXT("Main2"), Row);
+	Row.TriggerSeconds = 220.f;
+	Row.EventLabel = TEXT("두 번째 공연 종료");
+	Row.bIsMainProgramLockStart = false;
+	Table->AddRow(TEXT("Main2End"), Row);
+	FObjectPropertyBase* Property = FindFProperty<FObjectPropertyBase>(
+		UFF_FestivalStageSubsystem::StaticClass(), TEXT("ProgramScheduleTable"));
+	if (!TestNotNull(TEXT("일정 테이블 속성"), Property)) return false;
+	Property->SetObjectPropertyValue_InContainer(Harness.Stage, Table);
+	Harness.Stage->ElapsedLiveSeconds = 95.f;
+	TestTrue(TEXT("첫 공연 락"), Harness.Stage->IsMainProgramLocked());
+	Harness.Stage->ElapsedLiveSeconds = 150.f;
+	TestFalse(TEXT("공연 사이에는 락 해제"), Harness.Stage->IsMainProgramLocked());
+	Harness.Stage->ElapsedLiveSeconds = 195.f;
+	TestTrue(TEXT("두 번째 공연도 락"), Harness.Stage->IsMainProgramLocked());
+	Harness.Stage->ElapsedLiveSeconds = 221.f;
+	TestFalse(TEXT("두 번째 공연 종료 후 락 해제"), Harness.Stage->IsMainProgramLocked());
+
+	// 잠금 진입과 공연 시각은 리드타임만큼 떨어져 있다. 집결 구간을 아는 유일한 창구다.
+	float StartSeconds = -1.f;
+	Harness.Stage->ElapsedLiveSeconds = 95.f;
+	TestTrue(TEXT("집결 구간에서 공연 시각을 알 수 있다"),
+		Harness.Stage->TryGetActiveMainProgramStartSeconds(StartSeconds));
+	TestEqual(TEXT("공연 시각은 잠금 진입 시각이 아니라 TriggerSeconds 다"), StartSeconds, 100.f);
+	Harness.Stage->ElapsedLiveSeconds = 150.f;
+	StartSeconds = -1.f;
+	TestFalse(TEXT("공연 사이에는 활성 공연이 없다"),
+		Harness.Stage->TryGetActiveMainProgramStartSeconds(StartSeconds));
+	TestEqual(TEXT("실패하면 출력값을 건드리지 않는다"), StartSeconds, -1.f);
+	Harness.Stage->ElapsedLiveSeconds = 205.f;
+	TestTrue(TEXT("두 번째 공연도 시각을 돌려준다"),
+		Harness.Stage->TryGetActiveMainProgramStartSeconds(StartSeconds));
+	TestEqual(TEXT("두 번째 공연 시각"), StartSeconds, 200.f);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

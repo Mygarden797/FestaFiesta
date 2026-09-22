@@ -153,7 +153,7 @@ Panel Close
 ```text
 Source/FestaFiesta/Public/UI/PrepHUD/Build/
 Source/FestaFiesta/Private/UI/PrepHUD/Build/
-Content/FestaFiesta/UI/PrepHUD/Build/
+Content/FestaFiesta/Building/FF_WBP_Building/Catalog/
 Design/UXUI/PrepBuild_LightTeal/
 ```
 

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 #if WITH_EDITOR
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "AssetToolsModule.h"
 #include "Blueprint/WidgetTree.h"
@@ -28,6 +29,7 @@
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
+#include "UObject/MetaData.h"
 #include "UObject/SavePackage.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
 #include "UI/Data/FF_UIPalette.h"
@@ -43,13 +45,13 @@ namespace FFPrepBuildWbpBuilder
 	using namespace FFUIWbpBuilder;
 
 	constexpr const TCHAR* LogPrefix = TEXT("FF_PREPBUILD_UMG");
-	const FString BuildFolder = TEXT("/Game/FestaFiesta/UI/PrepHUD/Build");
-	const FString PanelFolder = TEXT("/Game/FestaFiesta/UI/PrepHUD/Panels");
+	const FString BuildFolder = FFBuildUIAssetPaths::CatalogFolder;
+	const FString PanelFolder = BuildFolder;
 	const FString TilePackage = BuildFolder / TEXT("WBP_FF_PrepBuildTile");
 	const FString PanelPackage = PanelFolder / TEXT("WBP_FF_PrepPanelBuild");
 	const FString CookLabelPackage = BuildFolder / TEXT("PAL_FF_PrepBuildUI");
 	const FString ChoiceButtonPackage =
-		TEXT("/Game/FestaFiesta/UI/PrepHUD/WBP_FF_PrepChoiceButton");
+		FString(FFBuildUIAssetPaths::SharedFolder) / TEXT("WBP_FF_PrepChoiceButton");
 	const FString CategoryDependencyCookLabelPackage =
 		BuildFolder / TEXT("PAL_FF_PrepBuildCategoryDependencies");
 
@@ -769,6 +771,155 @@ namespace FFPrepBuildWbpBuilder
 				LogPrefix);
 		}
 	}
+
+	// A targeted migration of the saved catalog, not a call to the historical full-tree scaffold.
+	// The outer border, its slots, compact placement strip, TileView class and all bindings survive.
+	void ApplyBuildCatalogV2Once()
+	{
+		constexpr const TCHAR* VersionKey = TEXT("FF.BuildCatalog.DesignVersion");
+		constexpr const TCHAR* Version = TEXT("20260919.v2");
+		constexpr const TCHAR* Prefix = TEXT("FF_BUILD_CATALOG_V2");
+		UWidgetBlueprint* Blueprint = LoadExistingBlueprint(PanelPackage);
+		if (!Blueprint || !Blueprint->WidgetTree || !Blueprint->GeneratedClass ||
+			!Blueprint->GeneratedClass->IsChildOf(UFF_PrepPanelBuild::StaticClass()))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_ABORT: saved build panel or expected parent is missing."), Prefix);
+			return;
+		}
+		FMetaData& Metadata = Blueprint->GetOutermost()->GetMetaData();
+		if (Metadata.GetValue(Blueprint, VersionKey) == Version)
+		{
+			UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: saved Designer edits preserved; already migrated."), Prefix);
+			return;
+		}
+		UWidgetTree& Tree = *Blueprint->WidgetTree;
+		UWidget* HeaderSurface = Tree.FindWidget(TEXT("Box_Header"));
+		UHorizontalBox* Header = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("HorizontalBox_CatalogHeader")));
+		if (!Header) Header = Cast<UHorizontalBox>(HeaderSurface);
+		UWidget* Ancestor = Header;
+		while (Ancestor && Ancestor != HeaderSurface) Ancestor = Ancestor->GetParent();
+		UEditableTextBox* Search = Cast<UEditableTextBox>(Tree.FindWidget(TEXT("Search_Facilities")));
+		UButton* Close = Cast<UButton>(Tree.FindWidget(TEXT("Button_Close")));
+		UWidget* ExistingRanking = Tree.FindWidget(TEXT("Button_RevenueRanking"));
+		if (!HeaderSurface || !Header || !Ancestor || !Search || !Close ||
+			!Tree.FindWidget(TEXT("TileView_Facilities")) ||
+			(ExistingRanking && !ExistingRanking->IsA<UButton>()))
+		{
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_ABORT: catalog header contract differs; nothing was changed."), Prefix);
+			return;
+		}
+
+		const auto Color = [](const TCHAR* Hex) { return FLinearColor::FromSRGBColor(FColor::FromHex(Hex)); };
+		const FLinearColor Paper = Color(TEXT("F5F8F5"));
+		const FLinearColor Card = Color(TEXT("EBF2ED"));
+		const FLinearColor Green = Color(TEXT("315F50"));
+		const FLinearColor GreenHover = Color(TEXT("3D7462"));
+		const FLinearColor Ink = Color(TEXT("183D35"));
+		const FLinearColor Muted = Color(TEXT("70877E"));
+		const FLinearColor Line = Color(TEXT("D7E3DC"));
+		const FLinearColor Hover = Color(TEXT("E1F0E8"));
+		const auto Brush = [&Line](const FLinearColor& Fill)
+		{
+			FSlateBrush Result = MakeSolidBrush(Fill, 5.0f);
+			Result.OutlineSettings.Color = FSlateColor(Line);
+			Result.OutlineSettings.Width = 1.0f;
+			return Result;
+		};
+		const auto RestyleButton = [&Brush, &Green, &GreenHover, &Paper, &Card, &Hover](UButton* Button, const bool bPrimary)
+		{
+			if (!Button) return;
+			FButtonStyle Style = Button->GetStyle();
+			Style.Normal = Brush(bPrimary ? Green : Paper);
+			Style.Hovered = Brush(bPrimary ? GreenHover : Hover);
+			Style.Pressed = Brush(bPrimary ? Green : Hover);
+			Style.Disabled = Brush(Card);
+			// Keep authored padding and input behavior; only the catalog button brushes change.
+			Button->SetStyle(Style);
+		};
+		const auto Text = [&Tree](const TCHAR* Name, const int32 Size, const FLinearColor& Tint, const FName Weight)
+		{
+			if (UTextBlock* Widget = Cast<UTextBlock>(Tree.FindWidget(Name))) StyleText(*Widget, Size, Tint, Weight);
+		};
+		const auto Border = [&Tree, &Brush](const TCHAR* Name, const FLinearColor& Fill)
+		{
+			if (UBorder* Widget = Cast<UBorder>(Tree.FindWidget(Name))) Widget->SetBrush(Brush(Fill));
+		};
+
+		Blueprint->Modify();
+		Tree.Modify();
+		UButton* RankingButton = Cast<UButton>(ExistingRanking);
+		if (!RankingButton)
+		{
+			RankingButton = MakeWidget<UButton>(*Blueprint, Tree, TEXT("Button_RevenueRanking"), true);
+			UTextBlock* Label = MakeWidget<UTextBlock>(*Blueprint, Tree, TEXT("Text_RevenueRanking"));
+			Label->SetText(LOCTEXT("RevenueRanking", "매출 순위"));
+			StyleText(*Label, 13, Ink, TEXT("SemiBold"));
+			RankingButton->SetToolTipText(LOCTEXT("RevenueRankingHint", "시설별 오늘·누적 매출을 비교합니다."));
+			if (UButtonSlot* Slot = Cast<UButtonSlot>(RankingButton->AddChild(Label)))
+			{
+				Slot->SetPadding(FMargin(10.0f, 6.0f));
+				Slot->SetHorizontalAlignment(HAlign_Center);
+				Slot->SetVerticalAlignment(VAlign_Center);
+			}
+			UWidget* Before = Tree.FindWidget(TEXT("Widget_FacilityCodexCatalogLauncher"));
+			int32 InsertIndex = Before ? Header->GetChildIndex(Before) : Header->GetChildIndex(Close);
+			if (InsertIndex == INDEX_NONE) InsertIndex = Header->GetChildrenCount();
+			if (UHorizontalBoxSlot* Slot = Cast<UHorizontalBoxSlot>(Header->InsertChildAt(InsertIndex, RankingButton)))
+			{
+				Slot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				Slot->SetVerticalAlignment(VAlign_Center);
+				Slot->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
+			}
+		}
+		RestyleButton(RankingButton, false);
+		for (const TCHAR* Name : { TEXT("Button_Close"), TEXT("Button_FavoritesOnly"), TEXT("Button_InspectFacilities"),
+			TEXT("Button_PreviousPage"), TEXT("Button_NextPage"), TEXT("Button_ResetFilters"),
+			TEXT("Button_FilterBooth"), TEXT("Button_FilterPerformance") })
+		{
+			RestyleButton(Cast<UButton>(Tree.FindWidget(Name)), false);
+		}
+		RestyleButton(Cast<UButton>(Tree.FindWidget(TEXT("Button_FilterAll"))), true);
+		Text(TEXT("Text_PanelTitle"), 20, Green, TEXT("SemiBold"));
+		Text(TEXT("Text_StudioHint"), 12, Muted, TEXT("Regular"));
+		Text(TEXT("Text_Gold"), 14, Green, TEXT("SemiBold"));
+		Text(TEXT("Text_CategoryBreadcrumb"), 13, Ink, TEXT("SemiBold"));
+		for (const TCHAR* Name : { TEXT("Text_FavoritesOnly"), TEXT("Text_FavoriteCount"), TEXT("Text_ItemCount"),
+			TEXT("Text_PageIndex"), TEXT("Text_InspectFacilities"), TEXT("Text_ResetFilters") })
+		{
+			Text(Name, 12, Ink, TEXT("Medium"));
+		}
+		Text(TEXT("Text_Status"), 12, Muted, TEXT("Regular"));
+		Text(TEXT("Text_EmptyTitle"), 16, Ink, TEXT("SemiBold"));
+		Text(TEXT("Text_EmptyHint"), 12, Muted, TEXT("Regular"));
+		Border(TEXT("Border_BuildMark"), Card);
+		Border(TEXT("Border_Gold"), Paper);
+		Border(TEXT("Border_FavoriteCount"), Hover);
+		Border(TEXT("Border_CatalogFooter"), Card);
+		for (const TCHAR* Name : { TEXT("Border_HeaderDivider"), TEXT("Border_CategoryDivider") })
+		{
+			if (UBorder* Divider = Cast<UBorder>(Tree.FindWidget(Name))) Divider->SetBrushColor(Line);
+		}
+		FEditableTextBoxStyle SearchStyle = Search->GetWidgetStyle();
+		SearchStyle.SetBackgroundImageNormal(Brush(Paper)).SetBackgroundImageHovered(Brush(Hover))
+			.SetBackgroundImageFocused(Brush(Hover)).SetForegroundColor(FSlateColor(Ink))
+			.SetFocusedForegroundColor(FSlateColor(Ink)).SetReadOnlyForegroundColor(FSlateColor(Muted));
+		Search->SetWidgetStyle(SearchStyle);
+		Search->SetHintText(LOCTEXT("CatalogV2SearchHint", "이름 · 종류 검색"));
+		Metadata.SetValue(Blueprint, VersionKey, Version);
+		if (!SaveNewBlueprint(Prefix, *Blueprint))
+		{
+			Metadata.RemoveValue(Blueprint, VersionKey);
+			UE_LOG(LogFFUIWbpBuilder, Error, TEXT("%s_FAIL: migration was not saved."), Prefix);
+			return;
+		}
+		UE_LOG(LogFFUIWbpBuilder, Display,
+			TEXT("%s_SAVED: catalog interior and revenue launcher only; outer/compact/card/shared assets preserved."), Prefix);
+	}
+
+	FAutoConsoleCommand ApplyCatalogV2Command(
+		TEXT("FF.ApplyBuildCatalogV2UMG"),
+		TEXT("Migrate the saved build catalog interior once. Preserve outer layout, compact placement UI and later Designer edits."),
+		FConsoleCommandDelegate::CreateStatic(&ApplyBuildCatalogV2Once));
 
 	FAutoConsoleCommand PrepBuildUmgCommand(
 		TEXT("FF.PrepBuildUMG"),

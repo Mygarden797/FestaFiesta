@@ -21,8 +21,8 @@
 namespace FFF_PrepStaffRulesTestHelpers
 {
 	/** 첫 축제 기준값. 규칙 자체는 이 숫자를 모른다 — 전부 인자로 들어간다. */
-	constexpr int32 WagePerStaff = 150;
-	constexpr int32 MaxHiredPerDay = 6;
+	constexpr int32 HireCostPerStaff = 450;
+	constexpr int32 MaxHiredStaff = 6;
 }
 
 // 막힌 이유가 셋으로 구분돼야 문구를 다르게 띄울 수 있다.
@@ -62,42 +62,42 @@ bool FFF_PrepStaffRules_QuoteClamps::RunTest(const FString& Parameters)
 {
 	using namespace FFF_PrepStaffRulesTestHelpers;
 
-	// 잔액 7,600 · 상한 6 → 임금 150 이면 돈으로는 50명, 상한 때문에 6명.
+	// 잔액 7,600 · 상한 6 → 고용비 450 이면 돈으로는 16명, 상한 때문에 6명.
 	// `Affordable` 은 소유자가 이미 min 을 취해 주므로 6 이 들어온다.
 	{
 		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
-			/*Desired*/ 3, /*Affordable*/ 6, /*RemainingCap*/ 6, WagePerStaff, /*Gold*/ 7600);
+			/*Desired*/ 3, /*Affordable*/ 6, /*RemainingCap*/ 6, HireCostPerStaff, /*Gold*/ 7600);
 
 		TestEqual(TEXT("최대 6명"), Quote.MaxHireable, 6);
 		TestEqual(TEXT("고른 3명 그대로"), Quote.SelectedCount, 3);
-		TestEqual(TEXT("임금 450"), Quote.WageTotal, 450);
-		TestEqual(TEXT("고용 후 잔액 7,150"), Quote.GoldAfterHire, 7150);
+		TestEqual(TEXT("고용비 1,350"), Quote.HireCostTotal, 1350);
+		TestEqual(TEXT("고용 후 잔액 6,250"), Quote.GoldAfterHire, 6250);
 		TestTrue(TEXT("고용할 수 있다"), Quote.CanHire());
 	}
 
 	// 상한을 넘겨 요청하면 잘린다.
 	{
 		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
-			/*Desired*/ 99, /*Affordable*/ 2, /*RemainingCap*/ 6, WagePerStaff, 7600);
+			/*Desired*/ 99, /*Affordable*/ 2, /*RemainingCap*/ 6, HireCostPerStaff, 7600);
 
 		TestEqual(TEXT("고용 가능 인원까지만"), Quote.SelectedCount, 2);
-		TestEqual(TEXT("임금도 잘린 인원 기준"), Quote.WageTotal, 300);
+		TestEqual(TEXT("고용비도 잘린 인원 기준"), Quote.HireCostTotal, 900);
 	}
 
 	// 음수 요청은 0 이 된다.
 	{
 		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
-			/*Desired*/ -5, /*Affordable*/ 6, /*RemainingCap*/ 6, WagePerStaff, 7600);
+			/*Desired*/ -5, /*Affordable*/ 6, /*RemainingCap*/ 6, HireCostPerStaff, 7600);
 
 		TestEqual(TEXT("음수는 0"), Quote.SelectedCount, 0);
-		TestEqual(TEXT("0명이면 임금 0"), Quote.WageTotal, 0);
+		TestEqual(TEXT("0명이면 고용비 0"), Quote.HireCostTotal, 0);
 		TestFalse(TEXT("0명은 고용 버튼이 꺼진다"), Quote.CanHire());
 	}
 
 	// 상한을 다 쓴 상태 — 인원 0, 이유는 상한.
 	{
 		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
-			/*Desired*/ 3, /*Affordable*/ 0, /*RemainingCap*/ 0, WagePerStaff, 7600);
+			/*Desired*/ 3, /*Affordable*/ 0, /*RemainingCap*/ 0, HireCostPerStaff, 7600);
 
 		TestEqual(TEXT("고를 수 있는 인원이 없다"), Quote.MaxHireable, 0);
 		TestEqual(TEXT("상한 이유"), Quote.BlockReason, EFF_PrepHireBlockReason::CapReached);
@@ -119,27 +119,27 @@ bool FFF_PrepStaffRules_UnknownStaysUnknown::RunTest(const FString& Parameters)
 
 		TestEqual(TEXT("모름"), Quote.BlockReason, EFF_PrepHireBlockReason::Unknown);
 		TestEqual(TEXT("인원을 만들지 않는다"), Quote.SelectedCount, 0);
-		TestEqual(TEXT("임금 칸은 비어 있다"), Quote.WageTotal, static_cast<int32>(INDEX_NONE));
+		TestEqual(TEXT("고용비 칸은 비어 있다"), Quote.HireCostTotal, static_cast<int32>(INDEX_NONE));
 		TestEqual(TEXT("잔액 칸도 비어 있다"), Quote.GoldAfterHire, static_cast<int32>(INDEX_NONE));
 		TestFalse(TEXT("고용 불가"), Quote.CanHire());
 	}
 
-	// 인원은 알지만 임금을 모르는 경우 — 인원은 유효하고 금액만 비운다.
+	// 인원은 알지만 단가를 모르는 경우 — 인원은 유효하고 금액만 비운다.
 	{
 		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
-			2, /*Affordable*/ 4, /*RemainingCap*/ 6, /*Wage*/ INDEX_NONE, /*Gold*/ 7600);
+			2, /*Affordable*/ 4, /*RemainingCap*/ 6, /*HireCost*/ INDEX_NONE, /*Gold*/ 7600);
 
 		TestEqual(TEXT("인원은 그대로"), Quote.SelectedCount, 2);
-		TestEqual(TEXT("임금은 비운다"), Quote.WageTotal, static_cast<int32>(INDEX_NONE));
+		TestEqual(TEXT("고용비는 비운다"), Quote.HireCostTotal, static_cast<int32>(INDEX_NONE));
 		TestEqual(TEXT("고용 후 잔액도 비운다"), Quote.GoldAfterHire, static_cast<int32>(INDEX_NONE));
 	}
 
-	// 임금은 알지만 잔액을 모르는 경우 — 임금은 계산하고 잔액만 비운다.
+	// 단가는 알지만 잔액을 모르는 경우 — 고용비는 계산하고 잔액만 비운다.
 	{
 		const FFF_PrepHireQuote Quote = FFF_PrepStaffRules::BuildQuote(
-			2, 4, MaxHiredPerDay, WagePerStaff, /*Gold*/ INDEX_NONE);
+			2, 4, MaxHiredStaff, HireCostPerStaff, /*Gold*/ INDEX_NONE);
 
-		TestEqual(TEXT("임금은 계산된다"), Quote.WageTotal, 300);
+		TestEqual(TEXT("고용비는 계산된다"), Quote.HireCostTotal, 900);
 		TestEqual(TEXT("고용 후 잔액은 비운다"), Quote.GoldAfterHire, static_cast<int32>(INDEX_NONE));
 	}
 	return true;

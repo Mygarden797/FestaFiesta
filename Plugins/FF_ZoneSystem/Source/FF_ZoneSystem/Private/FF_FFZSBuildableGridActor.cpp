@@ -59,7 +59,8 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
         Overview.ZoneId = UnifiedCoordinateZoneId;
         const FVector Local = Region->GetActorTransform().InverseTransformPosition(SurfacePointWorld);
         UnifiedGrid->RefreshGrid(WorldSystem, Overview, FVector2D(Local.X, Local.Y), FVector2D(Radius),
-            GridStepCm, SurfacePointWorld, SurfaceNormalWorld, 512);
+            GridStepCm, SurfacePointWorld, SurfaceNormalWorld, 512,
+            PlacementContext ? PlacementContext->ZoneId : NAME_None);
         SetActorHiddenInGame(false);
         return;
     }
@@ -117,7 +118,8 @@ void AFFZSBuildableGridActor::UpdateGrid(UFFZSWorldSubsystem& WorldSystem,
         FFFZSCommand Overview = PlacementContext ? *PlacementContext : FFFZSCommand();
         Overview.ZoneId = ZoneId;
         Grid->RefreshGrid(WorldSystem, Overview, Visible.Value, FVector2D(Radius), GridStepCm,
-            SurfacePointWorld, SurfaceNormalWorld, SamplesPerZone);
+            SurfacePointWorld, SurfaceNormalWorld, SamplesPerZone,
+            PlacementContext ? PlacementContext->ZoneId : NAME_None);
     }
     SetActorHiddenInGame(false);
 }

@@ -2,8 +2,12 @@
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 
+#include "Save/FF_SaveArchive.h"
+#include "Save/FF_SaveSubsystem.h"
+
 #include "Economy/FF_EconomyLog.h"
 #include "Economy/FF_EconomyDisplayTextLibrary.h"
+#include "Economy/Rules/FF_BoothRevenueRules.h"
 #include "Economy/Rules/FF_FinaleRules.h"
 #include "Economy/Rules/FF_ProgramScheduleRules.h"
 #include "Economy/Rules/FF_PromotionRules.h"
@@ -49,6 +53,66 @@ void UFF_FestivalProgressionSubsystem::Initialize(FSubsystemCollectionBase& Coll
 		Collection.InitializeDependency<UFF_ProgramReservationSubsystem>());
 
 	StartConfiguredFestival();
+
+	/* 저장에 참여한다.
+
+	   여기서 등록하는 이유는 저장 쪽이 목록을 들고 있기 때문이다.
+	   언제 저장되는지, 파일이 어디 쓰이는지는 이 클래스가 몰라도 된다.
+	*/
+	if (UFF_SaveSubsystem* Save = GetGameInstance()->GetSubsystem<UFF_SaveSubsystem>())
+	{
+		Save->RegisterSaveable(this);
+	}
+}
+
+void UFF_FestivalProgressionSubsystem::WriteSaveData(TArray<uint8>& OutBytes) const
+{
+	FFF_ProgressionSave State;
+	State.Gold = Funds.GetGold();
+	State.TotalRevenue = Funds.GetTotalRevenue();
+	State.LastProcessedDay = LastProcessedDay;
+	State.EndedDay = EndedDay;
+
+	/* 장부와 편성은 담지 않는다.
+
+	   저장은 정산이 끝난 뒤에만 하므로 그때 장부는 비어 있고 편성은 해제돼 있다.
+	   비어 있는 것을 담으면 파일만 커지고 복원할 때 맞출 것이 늘어난다.
+
+	   알바도 마찬가지다. 매일 다시 뽑는 것이라 하루가 시작되는 시점에는 0 이다.
+	*/
+
+	UFF_SaveArchive::WriteStruct(OutBytes, State);
+}
+
+void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes)
+{
+	FFF_ProgressionSave State;
+	if (!UFF_SaveArchive::ReadStruct(InBytes, State))
+	{
+		// 저장에 경제가 없다. 첫 축제이거나 옛 저장이다. 기본 상태로 둔다.
+		return;
+	}
+
+	const int32 PreviousGold = Funds.GetGold();
+	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
+
+	/* 값을 직접 되돌린다.
+
+	   AddRevenue 로 맞추면 장부에 없던 수입이 기록돼 결산이 틀어진다.
+	   복원은 "벌었다" 가 아니라 "그때 그랬다" 이므로 기록을 남기면 안 된다.
+	*/
+	Funds.RestoreFromSave(State.Gold, State.TotalRevenue);
+
+	LastProcessedDay = State.LastProcessedDay;
+	EndedDay = State.EndedDay;
+
+	// 화면이 따라오게 알린다. 값만 바꾸면 UI 가 옛 숫자를 계속 보여준다.
+	BroadcastGoldIfChanged(PreviousGold);
+	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] 저장에서 되돌렸다. 금화 %d / 누적 %d / %d일차"),
+		State.Gold, State.TotalRevenue, State.LastProcessedDay);
 }
 
 void UFF_FestivalProgressionSubsystem::StartConfiguredFestival()
@@ -109,7 +173,6 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 	// 재시작 시 등급이 지워지는데 이 셋을 안 알리면 UI 캐시가 "이미 구매함"으로 남는다
 	const int32 PreviousExpectedVisitors = GetExpectedVisitors();
@@ -126,7 +189,6 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	//        (변이 검사로 확인: 지우면 죽는 테스트가 없다). 호출 순서가 바뀔 때를 위한 방어다.
 	EndedDayLedger.Reset();
 	EndedDay = 0;
-	Arrears.ResetArrears();
 	StaffPool.Initialize(InDefinition->InitialStaffCount);
 	PurchasedFinaleGrade = EFF_FinaleGrade::None;
 	PurchasedPromotionGrade = EFF_PromotionGrade::None;
@@ -149,7 +211,6 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
 	if (PurchasedPromotionGrade != PreviousPromotionGrade)
 	{
@@ -270,7 +331,6 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalRevenue = Funds.GetTotalRevenue();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 
 	Funds.AddRevenue(Amount);
 	DayLedger.RecordEarn(Reason, Amount, FacilityId);
@@ -278,32 +338,31 @@ void UFF_FestivalProgressionSubsystem::RecordRevenue(
 	// 세 장부에 넣으므로 시설 정보 패널의 값과 결산 표의 합이 어긋날 수 없다.
 	const bool bFacilityRevenueChanged = FacilityRevenueBook.Record(FacilityInstanceId, Amount);
 
-	// 미납이 있으면 방금 들어온 돈이 잔액에 남지 않고 먼저 임대료를 갚는다.
-	RepayArrearsFromGold();
-
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalRevenueIfChanged(PreviousTotalRevenue);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	if (bFacilityRevenueChanged)
 	{
 		OnFacilityRevenueChanged.Broadcast(FacilityInstanceId);
 	}
 }
 
+void UFF_FestivalProgressionSubsystem::GrantDiscoveryGold(int32 Amount)
+{
+	if (Amount <= 0 || !IsFestivalStarted()) { return; }
+	const int32 PreviousGold = Funds.GetGold();
+	Funds.Refund(Amount);
+	BroadcastGoldIfChanged(PreviousGold);
+}
+
 void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
 {
 	const int32 PreviousGold = Funds.GetGold();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	
 	Funds.Refund(Amount);
 	DayLedger.RecordRefund(Amount);
-	
-	// 미납이 있으면 방금 들어온 돈이 잔액에 남지 않고 먼저 임대료를 갚는다.
-	RepayArrearsFromGold();
-	
+
 	BroadcastGoldIfChanged(PreviousGold);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 }
 
 bool UFF_FestivalProgressionSubsystem::HasLedgerForDay(int32 Day) const
@@ -420,7 +479,6 @@ void UFF_FestivalProgressionSubsystem::BeginNewDay(int32 NewDay)
 {
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTodayRevenue = Funds.GetTodayRevenue();
-	const int32 PreviousTotalArrears = Arrears.GetTotalArrears();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 	
 	// 실제로 정산했으면 true, 같은 날 중복 호출이라 건너뛰었으면 false.
@@ -428,41 +486,45 @@ void UFF_FestivalProgressionSubsystem::BeginNewDay(int32 NewDay)
 	
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTodayRevenueIfChanged(PreviousTodayRevenue);
-	BroadcastTotalArrearsIfChanged(PreviousTotalArrears);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
 }
 
-bool UFF_FestivalProgressionSubsystem::TryHireTemporaryStaff(int32 RequestedCount)
+bool UFF_FestivalProgressionSubsystem::TryHireStaff(int32 RequestedCount)
 {
 	if (Definition == nullptr || RequestedCount <= 0) return false;
 
-	const int32 AlreadyHired = StaffPool.GetTemporaryStaffCount();
+	const int32 AlreadyHired = StaffPool.GetHiredStaffCount();
 	const int32 RemainingCap = GetRemainingHireCap();
-	
+
 	if (RequestedCount > RemainingCap)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 알바 고용 거부: 상한 초과 (오늘 %d명 + 요청 %d명 > 상한 %d명)"),
-			AlreadyHired, RequestedCount, Definition->MaxHiredStaffPerDay);
+			TEXT("[경제] 고용 거부: 총원 상한 초과 (고용 %d명 + 요청 %d명 > 상한 %d명)"),
+			AlreadyHired, RequestedCount, Definition->MaxHiredStaffCount);
 		return false;
 	}
 
-	const int32 Wage = FFF_StaffPool::CalcTemporaryStaffWage(
-		RequestedCount, Definition->DailyStaffWageGold);
+	const int32 Cost = FFF_StaffPool::CalcHireCost(
+		RequestedCount, Definition->StaffHireCostGold);
 
 	const int32 PreviousGold = Funds.GetGold();
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 
-	// 일일 알바 채용이기 때문에 보유 Gold 내에서만 임금을 낸다. 즉, 지출 거부 가능하다.
-	if (!Funds.TrySpend(Wage))
+	// 고용은 플레이어가 고르는 지출이라 잔액 안에서만 낸다. 모자라면 거부하고 상태를 안 바꾼다.
+	if (!Funds.TrySpend(Cost))
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 알바 고용 거부: 잔액 부족 (임금 %d, 잔액 %d)"), Wage, Funds.GetGold());
+			TEXT("[경제] 고용 거부: 잔액 부족 (고용비 %d, 잔액 %d)"), Cost, Funds.GetGold());
 		return false;
 	}
 
-	StaffPool.SetTemporaryStaffCount(AlreadyHired + RequestedCount);
-	DayLedger.RecordSpend(EFF_SpendReason::StaffWages, Wage);
+	StaffPool.SetHiredStaffCount(AlreadyHired + RequestedCount);
+	DayLedger.RecordSpend(EFF_SpendReason::StaffHire, Cost);
+
+	UE_LOG(LogFestaFiestaEconomy, Log,
+		TEXT("[경제] Staff %d명 고용. 비용 %d, 총원 %d명(기본 %d + 고용 %d). 축제 끝까지 남는다"),
+		RequestedCount, Cost, StaffPool.GetTotalStaffCount(),
+		StaffPool.GetBaseStaffCount(), StaffPool.GetHiredStaffCount());
 
 	BroadcastGoldIfChanged(PreviousGold);
 	BroadcastTotalStaffCountIfChanged(PreviousTotalStaffCount);
@@ -473,16 +535,17 @@ int32 UFF_FestivalProgressionSubsystem::GetRemainingHireCap() const
 {
 	if (Definition == nullptr) return 0;
 
+	// 축제 전체 상한이다. 하루 경계에서 다시 열리지 않는다.
 	return FMath::Max(0,
-		Definition->MaxHiredStaffPerDay - StaffPool.GetTemporaryStaffCount());
+		Definition->MaxHiredStaffCount - StaffPool.GetHiredStaffCount());
 }
 
-int32 UFF_FestivalProgressionSubsystem::GetAffordableTemporaryStaffCount() const
+int32 UFF_FestivalProgressionSubsystem::GetAffordableHireCount() const
 {
 	if (Definition == nullptr) return 0;
 
-	return StaffPool.CalcAffordableTemporaryStaffCount(
-		Definition->DailyStaffWageGold, Funds.GetGold(), GetRemainingHireCap());
+	return StaffPool.CalcAffordableHireCount(
+		Definition->StaffHireCostGold, Funds.GetGold(), GetRemainingHireCap());
 }
 
 EFF_FinalePurchaseResult UFF_FestivalProgressionSubsystem::TryPurchaseFinale(EFF_FinaleGrade Grade)
@@ -586,6 +649,30 @@ TArray<FFF_ProgramCard> UFF_FestivalProgressionSubsystem::GetProgramCatalog() co
 	return Definition != nullptr ? Definition->ProgramCatalog : TArray<FFF_ProgramCard>();
 }
 
+FName UFF_FestivalProgressionSubsystem::ResolveFacilityDefinitionId(const FGuid FacilityInstanceId) const
+{
+	const UGameInstance* GameInstance = GetGameInstance();
+	const UWorld* World = GameInstance ? GameInstance->GetWorld() : nullptr;
+	const UFFZSWorldSubsystem* Zone = World ? World->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+	const AFFZSFacilityActor* Facility = Zone ? Zone->FindFacility(FacilityInstanceId) : nullptr;
+	return Facility ? Facility->GetFacilitySpec().FacilityDefinitionId : NAME_None;
+}
+
+TArray<FFF_ProgramCard> UFF_FestivalProgressionSubsystem::GetProgramCatalogForFacility(
+	const FGuid FacilityInstanceId) const
+{
+	TArray<FFF_ProgramCard> Catalog = GetProgramCatalog();
+	if (!Definition) return Catalog;
+	const FName FacilityDefinitionId = ResolveFacilityDefinitionId(FacilityInstanceId);
+	const UDataTable* RevenueTable = Definition->GetFacilityRevenueTable();
+	for (FFF_ProgramCard& Card : Catalog)
+	{
+		Card.FeePerPerson = FFF_BoothRevenueRules::ResolveProgramFeePerPerson(
+			FacilityDefinitionId, Card.ProgramId, Card.FeePerPerson, RevenueTable);
+	}
+	return Catalog;
+}
+
 void UFF_FestivalProgressionSubsystem::SetProgramReservations(
 	UFF_ProgramReservationSubsystem* InReservations)
 {
@@ -603,21 +690,6 @@ TArray<FName> UFF_FestivalProgressionSubsystem::GetScheduledProgramIds() const
 	return Ids;
 }
 
-int32 UFF_FestivalProgressionSubsystem::GetStaffAssignedToPrograms() const
-{
-	if (Definition == nullptr) return 0;
-
-	return FFF_ProgramScheduleRules::CalcStaffAssignedToPrograms(
-		Definition->ProgramCatalog, GetScheduledProgramIds());
-}
-
-int32 UFF_FestivalProgressionSubsystem::GetAvailableStaffCount() const
-{
-	// 음수로 내려가지 않게 한다. 카탈로그가 바뀌어 요구 인원이 늘어난 저장 슬롯을
-	// 불러오면 묶인 인원이 전체를 넘을 수 있다.
-	return FMath::Max(0, StaffPool.GetTotalStaffCount() - GetStaffAssignedToPrograms());
-}
-
 EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::CanScheduleProgram(
 	const FName ProgramId) const
 {
@@ -626,7 +698,7 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::CanScheduleProgram(
 	FFF_ProgramCard Unused;
 	return FFF_ProgramScheduleRules::EvaluatePurchase(
 		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
-		Funds.GetGold(), GetAvailableStaffCount(), Unused);
+		Funds.GetGold(), Unused);
 }
 
 EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
@@ -635,16 +707,19 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 	if (Definition == nullptr) return EFF_ProgramPurchaseResult::FestivalNotStarted;
 
 	FFF_ProgramCard Card;
+	const TArray<FFF_ProgramCard> Catalog = GetProgramCatalogForFacility(FacilityInstanceId);
 	const EFF_ProgramPurchaseResult Result = FFF_ProgramScheduleRules::EvaluatePurchase(
+
 		Definition->ProgramCatalog, ProgramId, GetScheduledProgramIds(),
-		Funds.GetGold(), GetAvailableStaffCount(), Card);
+		Funds.GetGold(), Card);
+
 
 	if (Result != EFF_ProgramPurchaseResult::Success)
 	{
 		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 프로그램 편성 거부: %s (요청 %s, 잔액 %d, 남은 인원 %d)"),
+			TEXT("[경제] 프로그램 편성 거부: %s (요청 %s, 잔액 %d)"),
 			*UEnum::GetValueAsString(Result), *ProgramId.ToString(),
-			Funds.GetGold(), GetAvailableStaffCount());
+			Funds.GetGold());
 		return Result;
 	}
 
@@ -666,6 +741,8 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 		return EFF_ProgramPurchaseResult::UnknownProgram;
 	}
 
+	// 이후 비용 차감 알림에서 월드가 바뀌더라도 편성 장소의 수익 행은 유지한다.
+	const FName FacilityDefinitionId = ResolveFacilityDefinitionId(FacilityInstanceId);
 	const FGuid ReservationId = ProgramReservations->RegisterProgram(
 		FacilityInstanceId, Card.StartMinutes, Card.EndMinutes, Card.Capacity);
 
@@ -691,16 +768,18 @@ EFF_ProgramPurchaseResult UFF_FestivalProgressionSubsystem::TryScheduleProgram(
 		return EFF_ProgramPurchaseResult::InsufficientGold;
 	}
 
-	ScheduledPrograms.Add(FFF_ScheduledProgram{ ProgramId, ReservationId });
+	FFF_ScheduledProgram Scheduled{ ProgramId, ReservationId };
+	Scheduled.FacilityDefinitionId = FacilityDefinitionId;
+	ScheduledPrograms.Add(Scheduled);
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] 프로그램 '%s' 편성. 비용 %d, 남은 Gold %d, 인원 %d명 묶임(남은 인원 %d), "
+		TEXT("[경제] 프로그램 '%s' 편성. 비용 %d, 남은 Gold %d, "
 			 "정원 %d명·체험비 %d, %.0f~%.0f분"),
 		*ProgramId.ToString(), Card.CostGold, Funds.GetGold(),
-		Card.RequiredStaff, GetAvailableStaffCount(), Card.Capacity, Card.FeePerPerson,
+		Card.Capacity, Card.FeePerPerson,
 		Card.StartMinutes, Card.EndMinutes);
 
-	// TrySpend 가 Gold 를 이미 쏘지만, 편성 목록·인원은 여기서만 바뀐다.
+	// TrySpend 가 Gold 를 이미 쏘지만, 편성 목록은 여기서만 바뀐다.
 	BroadcastGoldIfChanged(PreviousGold);
 	OnScheduledProgramsChanged.Broadcast();
 
@@ -724,8 +803,16 @@ int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
 		return 0;
 	}
 
+	if (Scheduled.FacilityDefinitionId.IsNone())
+	{
+		Scheduled.FacilityDefinitionId = ResolveFacilityDefinitionId(Reservation.FacilityInstanceId);
+	}
+	FFF_ProgramCard RevenueCard = *Card;
+	RevenueCard.FeePerPerson = FFF_BoothRevenueRules::ResolveProgramFeePerPerson(
+		Scheduled.FacilityDefinitionId, Scheduled.ProgramId, Card->FeePerPerson,
+		Definition->GetFacilityRevenueTable());
 	const int32 Fee = FFF_ProgramScheduleRules::CalcProgramRevenue(
-		*Card, Reservation.AssignedHeadcount);
+		RevenueCard, Reservation.AssignedHeadcount);
 
 	// 여기까지 왔으면 이 카드는 오늘 처리가 끝났다. 금액이 0 이어도 다시 걷지 않는다 —
 	// 안 그러면 아무도 안 온 프로그램을 Closing 안전망이 또 집어 Warning 이 두 번 난다.
@@ -755,10 +842,13 @@ int32 UFF_FestivalProgressionSubsystem::SettleOneProgram(
 	if (Fee > 0)
 	{
 		// 체험비는 프로그램을 연 설치 시설에도 귀속된다 — 시설 정보 패널이 "이 시설이 번 돈"으로 보여 준다.
+		const int32 PreviousRevenue = Funds.GetTotalRevenue();
 		AddFacilityRevenue(Fee, EFF_EarnReason::ProgramFee, Scheduled.ProgramId, Reservation.FacilityInstanceId);
+		// 잔액 상한이나 미납 상환이 있어도 원장에 수용된 매출만 반환한다.
+		return Funds.GetTotalRevenue() - PreviousRevenue;
 	}
 
-	return Fee;
+	return 0;
 }
 
 int32 UFF_FestivalProgressionSubsystem::SettleStartedPrograms(const float NowMinutes)
@@ -778,7 +868,8 @@ int32 UFF_FestivalProgressionSubsystem::SettleStartedPrograms(const float NowMin
 			Definition->ProgramCatalog, Scheduled.ProgramId);
 		if (Card == nullptr || NowMinutes < Card->StartMinutes) continue;
 
-		TotalFee += SettleOneProgram(Scheduled, /*bLateSettlement=*/false);
+		TotalFee = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+			static_cast<int64>(TotalFee) + SettleOneProgram(Scheduled, /*bLateSettlement=*/false)));
 		++SettledCount;
 	}
 
@@ -806,7 +897,8 @@ int32 UFF_FestivalProgressionSubsystem::SettleScheduledPrograms()
 	{
 		if (Scheduled.bFeeSettled) continue;
 
-		TotalFee += SettleOneProgram(Scheduled, /*bLateSettlement=*/true);
+		TotalFee = static_cast<int32>(FMath::Min<int64>(MAX_int32,
+			static_cast<int64>(TotalFee) + SettleOneProgram(Scheduled, /*bLateSettlement=*/true)));
 		++SettledCount;
 	}
 
@@ -920,14 +1012,6 @@ void UFF_FestivalProgressionSubsystem::BroadcastTodayRevenueIfChanged(int32 Prev
 	OnTodayRevenueChanged.Broadcast(CurrentTodayRevenue);
 }
 
-void UFF_FestivalProgressionSubsystem::BroadcastTotalArrearsIfChanged(int32 PreviousTotalArrears)
-{
-	const int32 CurrentTotalArrears = Arrears.GetTotalArrears();
-	if (CurrentTotalArrears == PreviousTotalArrears) return;
-
-	OnTotalArrearsChanged.Broadcast(CurrentTotalArrears);
-}
-
 void UFF_FestivalProgressionSubsystem::BroadcastTotalStaffCountIfChanged(int32 PreviousTotalStaffCount)
 {
 	const int32 CurrentTotalStaffCount = StaffPool.GetTotalStaffCount();
@@ -970,10 +1054,7 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	// 시설별 장부는 오늘 값만 0 으로 돌아가고 누적은 남는다 (시설 정보 패널의 "누적 매출").
 	FacilityRevenueBook.BeginNewDay();
 	
-	// 알바는 일당 계약이라 매일 0 으로 돌아간다. 플레이어가 오늘 다시 정한다.
-	StaffPool.SetTemporaryStaffCount(0);
-
-	// 프로그램 카드도 하루짜리다. 비우지 않으면 어제 편성이 오늘 인원을 계속 묶는다.
+	// 프로그램 카드도 하루짜리다. 비우지 않으면 어제 편성이 오늘 "이미 편성함" 으로 막는다.
 	// 슬롯까지 같이 지운다 — 어제 예약이 남아 있으면 오늘 스폰된 파티가 어제 시각에
 	// 잠기거나 퇴장을 막힌다.
 	const bool bHadPrograms = ScheduledPrograms.Num() > 0;
@@ -986,19 +1067,11 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	}
 	ScheduledPrograms.Reset();
 
-	SettleVenueRent();       // 거절할 수 없다 — 못 내면 미납
-	
-	ensureMsgf(Arrears.HasNoArrears() || Funds.GetGold() == 0,
-		TEXT("미납 %d 이 남았는데 잔액이 %d 다. 상환 훅을 안 부르는 유입 경로가 있다."),
-		Arrears.GetTotalArrears(), Funds.GetGold());
-	
-	RepayArrearsFromGold();  // 남은 잔액으로 밀린 것부터
-
 	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] Day %d 시작. 정산 후 Gold %d, 미납 %d, Staff %d명(기본 %d + 알바 %d)"),
-		NewDay, Funds.GetGold(), Arrears.GetTotalArrears(),
+		TEXT("[경제] Day %d 시작. Gold %d, Staff %d명(기본 %d + 고용 %d)"),
+		NewDay, Funds.GetGold(),
 		StaffPool.GetTotalStaffCount(), StaffPool.GetBaseStaffCount(),
-		StaffPool.GetTemporaryStaffCount());
+		StaffPool.GetHiredStaffCount());
 
 	if (bHadPrograms)
 	{
@@ -1019,42 +1092,3 @@ const FFF_DayLedger* UFF_FestivalProgressionSubsystem::FindLedgerForDay(int32 Da
 	return nullptr;
 }
 
-void UFF_FestivalProgressionSubsystem::SettleVenueRent()
-{
-	const int32 Rent = Definition->DailyVenueRentGold;
-	if (Rent <= 0) return;
-	
-	const int32 Paid = Funds.PayMandatoryCost(Rent);
-	if (Paid > 0)
-	{
-		// 실제로 빠져나간 금액을 기록
-		DayLedger.RecordSpend(EFF_SpendReason::VenueRent, Paid);
-	}
-	
-	// 못 낸 부분은 미납이 된다.
-	Arrears.AddArrears(Rent - Paid);
-}
-
-
-int32 UFF_FestivalProgressionSubsystem::RepayArrearsFromGold()
-{
-	// 정상적으로 미납금을 내고 있었다면 얼리 리턴
-	if (Arrears.HasNoArrears() || Funds.GetGold() <= 0) return 0;
-
-	const int32 Repaid = Arrears.RepayArrears(Funds.GetGold());
-	if (Repaid <= 0) return 0;
-
-	// 상환액은 잔액을 넘지 않게 잘라 왔으므로 전액이 빠져야 한다.
-	const int32 Deducted = Funds.PayMandatoryCost(Repaid);
-	
-	ensureMsgf(Deducted == Repaid,
-		TEXT("미납 상환액이 잔액을 넘었다. Repaid=%d Deducted=%d"), Repaid, Deducted);
-
-	// 임대료 지출로 기록
-	DayLedger.RecordSpend(EFF_SpendReason::VenueRent, Deducted);
-
-	UE_LOG(LogFestaFiestaEconomy, Log, TEXT("[경제] 밀린 임대료 %d 상환. 남은 미납 %d"),
-		Deducted, Arrears.GetTotalArrears());
-
-	return Deducted;
-}

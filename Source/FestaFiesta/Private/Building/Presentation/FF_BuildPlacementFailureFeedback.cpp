@@ -79,7 +79,7 @@ FText UFF_BuildPlacementFailureFeedback::MakeUserFacingReason(
 	case EFFZSPlacementFailure::HeightVarianceExceeded:
 		return LOCTEXT("HeightVarianceReason", "땅이 고르지 않아요 · 더 평평한 곳으로 옮겨 주세요");
 	case EFFZSPlacementFailure::PlacementCollision:
-		return LOCTEXT("PlacementCollisionReason", "다른 시설과 겹쳐요 · 빨간 영역이 겹치지 않게 옮겨 주세요");
+		return LOCTEXT("PlacementCollisionReason", "시설이나 장애물과 겹쳐요 · 붉게 표시된 대상 밖으로 옮겨 주세요");
 	case EFFZSPlacementFailure::InsufficientClearance:
 		return LOCTEXT("InsufficientClearanceReason", "시설을 이용할 공간이 부족해요 · 주변을 조금 더 비워 주세요");
 	case EFFZSPlacementFailure::QueueFootprintBlocked:

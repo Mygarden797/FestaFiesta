@@ -1,0 +1,115 @@
+﻿Name,DisplayName,RevenuePerUseGold,bOverrideCommissionRate,CommissionRate,RevenueMultiplierByLevel,ProgramFeesPerPerson,bOverrideMinigameRewardGold,MinigameRewardAtMaxScoreGold
+Booth_ActivityGame_BalloonDartStall,풍선 다트 부스,30,True,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_BasketballShotChallenge,농구 슛 챌린지,32,True,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_BoardGameTent,보드게임 텐트,34,True,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_Game,게임장,28,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_ActivityGame_MiniArcheryRange,미니 양궁장,36,True,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_RhythmGameStall,리듬 게임 부스,32,True,0.12,"((1,1.000000))",(),False,0
+Booth_ActivityGame_SurfBalanceExperience,서핑 밸런스 체험장,32,True,0.12,"((1,1.000000))",(),False,0
+Booth_CraftExperience_PersonalFanWorkshop,나만의 부채 공방,26,True,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
+Booth_CraftExperience_SandArt,모래공방,24,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000),(4,3.375000))","((Program_SandArtWorkshop,30))",False,0
+Booth_CraftExperience_ShellBraceletWorkshop,조개 팔찌 공방,28,True,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
+Booth_CraftExperience_WaveResinKeyringWorkshop,파도 레진 키링 공방,26,True,0.12,"((1,1.000000))","((Program_SandArtWorkshop,30))",False,0
+Booth_FoodStall_Burger,햄버거 가게,24,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_BusanFishCakeCart,부산 어묵 포장마차,32,True,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_CafeTruck,카페 트럭,34,True,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_CharcoalChickenSkewerStall,숯불 닭꼬치 부스,32,True,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_CloudCottonCandyStall,구름 솜사탕 부스,30,True,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_FruitAdeBar,과일 에이드 바,34,True,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_IceCream,아이스크림 가게,22,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_MainFood,메인음식 가게,28,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_Pizza,피자 가게,26,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_SeedHotteokStall,씨앗호떡 부스,32,True,0.12,"((1,1.000000))",(),False,0
+Booth_FoodStall_Taco,타코 가게,24,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_FoodStall_VeganSandwichTruck,비건 샌드위치 트럭,36,True,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_FestivalClothingShop,페스티벌 의류숍,34,True,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_GlowCheeringGoodsShop,야광 응원용품점,38,True,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_LocalSouvenirShop,로컬 기념품 편집숍,36,True,0.12,"((1,1.000000))",(),False,0
+Booth_MarketGoods_Market,굿즈 상점,32,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_Nightlife_CraftBeerTaproom,수제맥주 탭룸,38,True,0.12,"((1,1.000000))",(),False,0
+Booth_Nightlife_EdmBar,EDM 바,34,True,0.12,"((1,1.000000),(2,1.500000),(3,2.250000))",(),False,0
+Booth_Nightlife_SilentDiscoClub,사일런트 디스코 클럽,40,True,0.12,"((1,1.000000))",(),False,0
+Booth_Nightlife_SunsetMocktailBar,선셋 모크테일 바,36,True,0.12,"((1,1.000000))",(),False,0
+Info_GeneralInfo_DoubleSidedMapKiosk,양면 지도 키오스크,0,True,0.12,"((1,1.000000))",(),False,0
+Info_GeneralInfo_General,메인안내소,0,True,0.12,"((1,1.000000))",(),False,0
+Info_GeneralInfo_LighthouseInformation,등대형 종합안내소,0,True,0.12,"((1,1.000000))",(),False,0
+Info_LostFound_Lost,미아 안내소,0,True,0.12,"((1,1.000000))",(),False,0
+Info_LostFound_LostChildAndFoundCenter,미아·분실물 통합센터,0,True,0.12,"((1,1.000000))",(),False,0
+Info_Ticketing_ContainerTicketOffice,컨테이너 통합 매표소,0,True,0.12,"((1,1.000000))",(),False,0
+Info_Ticketing_Ticket,티켓 안내소,0,True,0.12,"((1,1.000000))",(),False,0
+Info_Translation_MultilingualInformationLounge,다국어 안내 라운지,0,True,0.12,"((1,1.000000))",(),False,0
+Info_Translation_Translation,관광안내소,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_CurtainArch,커튼 아치 조명,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_Festoon,페스툰 조명,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_GoldenTree,골든 트리 조명,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_JellyfishLightCluster,해파리 조명 군락,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_StarTree,스타 트리 조명,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_WaveCurveLight,파도 곡선 조형등,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Decorative_WishLanternRow,소원등 행렬,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Pendant_RattanPendant,라탄 펜던트 조명,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Pendant_ShellShadePendant,조개갓 펜던트,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Streetlamp_FestivalStreetlamp,축제 가로등,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Streetlamp_LighthouseStreetlamp,등대형 가로등,0,True,0.12,"((1,1.000000))",(),False,0
+Lighting_Streetlamp_MarineBollardLight,마린 볼라드 조명,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_Busking_AcousticBuskingDeck,어쿠스틱 버스킹 데크,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_Busking_Busking,버스킹,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_Busking_StreetMagicStage,거리 마술 스테이지,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_ExperienceStage_AudienceDanceChallengeStage,관객 댄스 챌린지 무대,0,True,0.12,"((1,1.000000))","((Program_SunsetYoga,25))",False,0
+Performance_ExperienceStage_Experience,체험장,0,True,0.12,"((1,1.000000))","((Program_SunsetYoga,25))",False,0
+Performance_MainStage_SunsetMainStage,메인공연장,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_SubStage_FamilyPuppetTheater,가족 인형극장,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_SubStage_LocalArtist,지역 예술가,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_SubStage_LocalBandShowcase,로컬 밴드 쇼케이스,0,True,0.12,"((1,1.000000))",(),False,0
+Performance_SubStage_OutdoorCinema,야외 영화 상영장,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Interactive_FourCutPhotoBooth,네컷 사진 부스,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Interactive_Interactive,상호작용 포토,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Interactive_ShadowPlayWall,그림자 놀이 벽,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Landmark_FestaFiestaLettering,FESTAFIESTA 레터링,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Landmark_GrandSandcastle,대형 모래성,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Landmark_SunsetLandmark,랜드마크,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Landmark_WhaleTailSculpture,고래 꼬리 조형물,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Scenic_Scenic,풍경,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Scenic_SunsetFrameOverlook,일몰 액자 전망대,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Theme_PirateShipPhotoSet,해적선 촬영 세트,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Theme_SurfboardColorWall,서핑보드 컬러월,0,True,0.12,"((1,1.000000))",(),False,0
+PhotoSpot_Theme_Theme,테마 포토,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Cooling_BeachFootbathShelter,해변 족욕 쉼터,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Cooling_Cooling,에어컨,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Cooling_DrinkingWaterLounge,음수 라운지,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Picnic_FamilyMatPicnicZone,가족 돗자리 피크닉존,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Picnic_GroupPicnicTable,단체 피크닉 테이블,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Picnic_Picnic,피크닉,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Seating_CoastalViewBench,해안 전망 벤치,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Seating_HammockLounge,해먹 라운지,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Seating_Seating,벤치,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Shade_SailShadeShelter,돛천 그늘 쉼터,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Shade_Shade,그늘막,0,True,0.12,"((1,1.000000))",(),False,0
+Rest_Shade_VinePergola,덩굴 퍼걸러,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_Asphalt,아스팔트길,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_BlueWhiteStripedWalkway,청백 스트라이프 보행로,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_Concrete,콘크리트길,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_Herringbone,헤링본 벽돌길,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_LuminousEdgeNightPath,발광 경계 야간길,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_Sand,모래길,0,True,0.12,"((1,1.000000))",(),False,0
+Road_Surface_ShellPatternWalkway,조개 문양 포장길,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_Evacuation_Evacuation,소개,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_Evacuation_LuminousEvacuationAssembly,야광 표지 대피 집결지,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_FireSafety_FireEquipmentStation,소방 장비 스테이션,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_FireSafety_FireSafety,소방서,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_FirstAid_CompactFirstAidCart,소형 응급처치 카트,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_FirstAid_FirstAid,응급처치,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_Security_PatrolOfficerPost,순찰요원 초소,0,True,0.12,"((1,1.000000))",(),False,0
+Safety_Security_Security,보안시설,0,True,0.12,"((1,1.000000))",(),False,0
+Tile_Surface_GrassBlockPicnicTile,잔디블록 피크닉 타일,0,True,0.12,"((1,1.000000))",(),False,0
+Tile_Surface_OceanMosaicPlazaTile,바다 모자이크 광장 타일,0,True,0.12,"((1,1.000000))",(),False,0
+Tile_Surface_ShipDeckTile,선박 데크 타일,0,True,0.12,"((1,1.000000))",(),False,0
+Tile_Surface_Stone,석재 타일,0,True,0.12,"((1,1.000000))",(),False,0
+Tile_Surface_Wood,나무 데크 타일,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Accessible_Accessible,Accessible,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Accessible_WideAccessRestroom,넓은 회전 공간 화장실,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Family_Family,Family,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Family_InfantFamilyRestroom,유아 동반 화장실,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Standard_BeachWoodRestroom,해변 목조 화장실,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Standard_Standard,Standard,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Temporary_PortableRestroomCabin,이동식 화장실 캐빈,0,True,0.12,"((1,1.000000))",(),False,0
+Toilet_Temporary_Temporary,Temporary,0,True,0.12,"((1,1.000000))",(),False,0

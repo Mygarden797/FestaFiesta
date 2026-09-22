@@ -87,7 +87,7 @@ bool FFFZSBuildCatalogLightingTest::RunTest(const FString& Parameters)
 
     const FString AssetName = FString(TEXT("PDA_FFZS_")) + Asset->DefinitionId;
     const FSoftObjectPath DefinitionPath(FString::Printf(
-        TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Lighting/%s.%s"), *AssetName, *AssetName));
+        TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Lighting/%s.%s"), *AssetName, *AssetName));
 
     // Inspect serialized metadata before UObject loading can rebuild missing bundles in memory.
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();

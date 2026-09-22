@@ -58,6 +58,11 @@ struct FFF_DialogueRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FString ExpectedTab;
 
+	// 이 줄에서 보여줄 배경 그림의 경로. 비어 있으면 앞 줄 그림이 남는다.
+	// 지우려면 None 이라고 적는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dialogue")
+	FString BackgroundImage;
+
 	// 강조할 대상 이름. 비어 있으면 강조하지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tutorial")
 	FString HighlightAnchor;

@@ -19,7 +19,7 @@ Constraints: 16:9 desktop game screen; no mobile frame; no website dashboard; no
 
 - `Saved/NotionFacilityStyledContactSheet.png`: 시설 건축·재질·조명 스타일 참조
 - `Saved/FacilityThumbnails_QA.png`: 핵심 시설의 아이소메트릭 비율 참조
-- `Content/FestaFiesta/Zone/Test_Asset/image/T_UI_BuildCatalog_Backdrop.png`: 해안 청사진·디지털 트윈 분위기 참조
+- `Content/FestaFiesta/Building/FF_WBP_Building/Catalog/Images/T_UI_BuildCatalog_Backdrop.png`: 해안 청사진·디지털 트윈 분위기 참조
 - 각 단일 `T_UI_BuildCatalog_*.png`: 해당 시설의 형태 참조
 
 ## 00 — Main Menu

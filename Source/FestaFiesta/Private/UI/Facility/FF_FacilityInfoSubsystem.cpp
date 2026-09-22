@@ -31,6 +31,7 @@
 #include "Time/FF_FestivalStageSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoPanel.h"
 #include "UI/Facility/FF_FacilityPaidProgramPicker.h"
+#include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "Building/Presentation/FF_BuildFavoritesSubsystem.h"
 #include "UI/Facility/FF_FacilityInfoSelection.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
@@ -54,7 +55,7 @@ namespace
 	FText FormatOccupancy(const int32 Occupied, const int32 Capacity)
 	{
 		return FText::Format(
-			LOCTEXT("OccupancyFormat", "{0} / {1}명"),
+			LOCTEXT("OccupancyFormat", "{0} / {1}팀"),
 			FText::AsNumber(Occupied),
 			FText::AsNumber(Capacity));
 	}
@@ -131,6 +132,7 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 
 	ReleaseThumbnailSession();
 	ClosePaidProgramPicker();
+	bRevenueRankingPresentationOpen = false;
 	bPauseMenuPresentationSuppressed = false;
 	bPanelWasVisibleBeforePause = false;
 	bPaidProgramPickerWasVisibleBeforePause = false;
@@ -148,10 +150,13 @@ void UFF_FacilityInfoSubsystem::Deinitialize()
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
+		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
 	}
@@ -244,7 +249,7 @@ TStatId UFF_FacilityInfoSubsystem::GetStatId() const
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPanelClassPath()
 {
 	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityInfoPanel."
+		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel."
 		"WBP_FF_FacilityInfoPanel_C"));
 }
 
@@ -270,10 +275,13 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
+		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel->RemoveFromParent();
 		Panel = nullptr;
 		ClosePaidProgramPicker();
@@ -307,9 +315,11 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		this, &ThisClass::HandlePanelProgramScheduleRequested);
 	Panel->OnUpgradeRequested.AddUObject(this, &ThisClass::HandlePanelUpgradeRequested);
 	Panel->OnLightingRequested.AddUObject(this, &ThisClass::HandlePanelLightingRequested);
+	Panel->OnLightingRollbackRequested.AddUObject(this, &ThisClass::HandlePanelLightingRollbackRequested);
 	Panel->OnLightingResetRequested.AddUObject(this, &ThisClass::HandlePanelLightingResetRequested);
 	Panel->OnMinigameRequested.AddUObject(this, &ThisClass::HandlePanelMinigameRequested);
 	Panel->OnCloseRequested.AddUObject(this, &ThisClass::HandlePanelCloseRequested);
+	Panel->OnRevenueRankingRequested.AddUObject(this, &ThisClass::HandlePanelRevenueRankingRequested);
 	// RootLayout and its stage HUDs use AddToViewport. AddToPlayerScreen belongs to UE's lower
 	// Player game layer, so its local Z-order can never rise above a newly-created PrepHUD in the
 	// Viewport layer (UE 5.7: Player=100, Viewport=200). Keep this card in the same global layer.
@@ -323,10 +333,13 @@ bool UFF_FacilityInfoSubsystem::EnsurePanel(APlayerController& InOwningControlle
 		Panel->OnRemoveRequested.RemoveAll(this);
 		Panel->OnProgramScheduleRequested.RemoveAll(this);
 		Panel->OnUpgradeRequested.RemoveAll(this);
-		Panel->OnLightingRequested.RemoveAll(this);
+		Panel->CancelLightingEdit();
+        Panel->OnLightingRollbackRequested.RemoveAll(this);
+        Panel->OnLightingRequested.RemoveAll(this);
 		Panel->OnLightingResetRequested.RemoveAll(this);
 		Panel->OnMinigameRequested.RemoveAll(this);
 		Panel->OnCloseRequested.RemoveAll(this);
+		Panel->OnRevenueRankingRequested.RemoveAll(this);
 		Panel = nullptr;
 		return false;
 	}
@@ -402,7 +415,7 @@ void UFF_FacilityInfoSubsystem::ClosePaidProgramPicker()
 		}
 		else
 		{
-			Panel->SetPanelOpen(true);
+			Panel->SetPanelOpen(!bRevenueRankingPresentationOpen);
 		}
 	}
 }
@@ -432,7 +445,7 @@ void UFF_FacilityInfoSubsystem::SetPaidProgramPickerOpen(const bool bOpen)
 	PaidProgramPicker->SetPickerOpen(bOpen);
 	if (Panel)
 	{
-		Panel->SetPanelOpen(!bOpen && HasSelection());
+		Panel->SetPanelOpen(!bOpen && HasSelection() && !bRevenueRankingPresentationOpen);
 	}
 }
 
@@ -483,7 +496,7 @@ bool UFF_FacilityInfoSubsystem::SelectFacility(
 	}
 	const bool bPickerOpen = PaidProgramPicker &&
 		PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
-	Panel->SetPanelOpen(!bPickerOpen);
+	Panel->SetPanelOpen(!bPickerOpen && !bRevenueRankingPresentationOpen);
 	if (Context == EFF_FacilityInfoContext::Live)
 	{
 		ApplyLiveSelectionIndicatorTargets(SelectionIndicatorHoverFacility.Get(), Facility);
@@ -527,6 +540,12 @@ void UFF_FacilityInfoSubsystem::ClearSelection()
 		bPanelWasVisibleBeforePause = false;
 		bPaidProgramPickerWasVisibleBeforePause = false;
 	}
+	if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+	{
+		if (Ranking->IsOpen()) Ranking->Close();
+	}
+	bRevenueRankingPresentationOpen = false;
 	FeedbackText = FText::GetEmpty();
 	bFeedbackIsError = false;
 	RefreshAccumulatorSeconds = 0.0f;
@@ -572,8 +591,29 @@ bool UFF_FacilityInfoSubsystem::IsPointerOverPanel() const
 	{
 		return false;
 	}
+	const UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+		? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr;
 	return (Panel && Panel->IsPointerOverInteractivePanel()) ||
-		(PaidProgramPicker && PaidProgramPicker->IsPointerOverInteractivePanel());
+		(PaidProgramPicker && PaidProgramPicker->IsPointerOverInteractivePanel()) ||
+		(Ranking && Ranking->IsPointerOverPanel());
+}
+
+bool UFF_FacilityInfoSubsystem::IsLightingTextInputFocused() const
+{ return Panel && Panel->IsLightingTextInputFocused(); }
+
+void UFF_FacilityInfoSubsystem::SetRevenueRankingPresentationOpen(const bool bOpen)
+{
+	bRevenueRankingPresentationOpen = bOpen;
+	const bool bPickerOpen = PaidProgramPicker && PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed;
+	if (Panel) Panel->SetPanelOpen(!bOpen && !bPauseMenuPresentationSuppressed && !bPickerOpen &&
+		HasSelection() && IsContextCurrentlyAllowed(SelectionContext));
+}
+
+void UFF_FacilityInfoSubsystem::HandlePanelRevenueRankingRequested()
+{
+	if (!bPauseMenuPresentationSuppressed && !bRevenueRankingPresentationOpen && Panel && HasSelection() &&
+		Panel->GetCurrentViewData().FacilityInstanceId == SelectedFacilityId && IsContextCurrentlyAllowed(SelectionContext))
+		OnRevenueRankingRequested.Broadcast();
 }
 
 void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bSuppressed)
@@ -585,6 +625,12 @@ void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bS
 
 	if (bSuppressed)
 	{
+		// Close the replacement presentation before recording the inspector surface to restore.
+		if (UFF_FacilityRevenueRankingSubsystem* Ranking = GetWorld()
+			? GetWorld()->GetSubsystem<UFF_FacilityRevenueRankingSubsystem>() : nullptr)
+		{
+			if (Ranking->IsOpen()) Ranking->Close();
+		}
 		const auto IsPresented = [](const ESlateVisibility Visibility)
 		{
 			return Visibility != ESlateVisibility::Collapsed &&
@@ -623,7 +669,7 @@ void UFF_FacilityInfoSubsystem::SetPauseMenuPresentationSuppressed(const bool bS
 	}
 	if (Panel)
 	{
-		Panel->SetPanelOpen(bRestorePanel);
+		Panel->SetPanelOpen(bRestorePanel && !bRevenueRankingPresentationOpen);
 	}
 	bPanelWasVisibleBeforePause = false;
 	bPaidProgramPickerWasVisibleBeforePause = false;
@@ -753,11 +799,13 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	OutViewData.FootprintText = FFFacilityInfoModel::FormatFootprint(Spec.FootprintSizeCells);
 	OutViewData.ClearanceText = FFFacilityInfoModel::FormatDistanceMeters(Spec.ClearanceCells);
 	OutViewData.QueueCapacityText = FText::Format(
-		LOCTEXT("QueueCapacityFormat", "대기 {0}명 · 동시 이용 {1}명"),
+		LOCTEXT("QueueCapacityFormat", "대기 {0}팀 · 동시 이용 {1}팀"),
 		FText::AsNumber(Spec.QueueRules.MaxWaitingAgents),
 		FText::AsNumber(Spec.QueueRules.ServiceCapacity));
+	OutViewData.QueueCapacityValueText=FText::Format(LOCTEXT("QueueTeamsValue","{0}팀"),FText::AsNumber(Spec.QueueRules.MaxWaitingAgents));
+	OutViewData.ServiceCapacityValueText=FText::Format(LOCTEXT("QueueTeamsValue","{0}팀"),FText::AsNumber(Spec.QueueRules.ServiceCapacity));
 	OutViewData.ServiceDurationText = FText::Format(
-		LOCTEXT("ServiceDurationFormat", "{0}초"),
+		LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 		FText::AsNumber(Spec.QueueRules.ServiceDurationSeconds));
 	const UFF_FacilityUpgradeSubsystem* Upgrades = World
 		? World->GetSubsystem<UFF_FacilityUpgradeSubsystem>() : nullptr;
@@ -769,12 +817,14 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 	if (bHasUpgradePreview && UpgradePreview.CurrentServiceDurationSeconds > 0.0f)
 	{
 		OutViewData.ServiceDurationText = FText::Format(
-			LOCTEXT("ServiceDurationFormat", "{0}초"),
+			LOCTEXT("ServiceDurationFormat", "팀당 {0}초"),
 			FText::AsNumber(UpgradePreview.CurrentServiceDurationSeconds));
 	}
 	if (Spec.Category == EFFZSFacilityCategory::Lighting || Spec.IsGroundSurface())
 	{
 		OutViewData.QueueCapacityText = LOCTEXT("LightingNoQueue", "대기열 없음");
+		OutViewData.QueueCapacityValueText=FText::FromString(TEXT("—"));
+		OutViewData.ServiceCapacityValueText=FText::FromString(TEXT("—"));
 		OutViewData.ServiceDurationText = LOCTEXT("LightingNoService", "이용 서비스 없음");
 	}
 	OutViewData.bNeedsRelocation = ReadModel.bNeedsRelocation;
@@ -845,14 +895,13 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 			Festival->FacilityCostTable,
 			InstallCost,
 			MatchedCostRow,
-			CostFailureReason) &&
-		InstallCost > 0;
+			CostFailureReason);
 	const int32 RecoveryCost = bHasInstallCost
 		? FFF_FacilityCostResolver::CalculateDemolitionRefund(
 			InstallCost, Festival->FacilityDemolitionRefundRate)
 		: 0;
 	OutViewData.InstallCostText = FFFacilityInfoModel::FormatGold(bHasInstallCost, InstallCost);
-	// A zero-Gold refund is valid when the authored refund rate is zero.
+	// A zero-Gold refund is valid for a free facility or a zero refund rate.
 	OutViewData.RecoveryCostText = FFFacilityInfoModel::FormatGold(bHasInstallCost, RecoveryCost);
 
 	const UFF_ZoneSystemQueueBridgeSubsystem* QueueBridge = World
@@ -879,10 +928,10 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 		? FormatIntegerWithSuffix(QueueState.WaitingPartyCount, LOCTEXT("TeamSuffix", "팀"))
 		: MissingQueueMetric;
 	OutViewData.OccupancyText = bQueueAvailable
-		? FormatOccupancy(QueueState.OccupiedMemberCount, QueueState.MaxCapacityMembers)
+		? FormatOccupancy(QueueState.WaitingPartyCount, QueueState.MaxCapacityParties)
 		: MissingQueueMetric;
 	OutViewData.RemainingServiceText = bQueueAvailable
-		? FormatIntegerWithSuffix(QueueState.RemainingServiceMemberCount, LOCTEXT("PeopleSuffix", "명"))
+		? FormatIntegerWithSuffix(QueueState.RemainingServicePartyCount, LOCTEXT("TeamSuffix", "팀"))
 		: MissingQueueMetric;
 	const float ExpectedWaitSeconds = bQueueAvailable && QueueState.bIsOpen
 		? QueueSystem->GetExpectedWaitSeconds(QueueFacilityId, 1)
@@ -1002,7 +1051,6 @@ bool UFF_FacilityInfoSubsystem::BuildViewData(
 
 				bHasCompatibleCard = true;
 				if (Result == EFF_PaidProgramScheduleResult::Success ||
-					Result == EFF_PaidProgramScheduleResult::NotEnoughStaff ||
 					Result == EFF_PaidProgramScheduleResult::InsufficientGold ||
 					Result == EFF_PaidProgramScheduleResult::AlreadyScheduled ||
 					Result == EFF_PaidProgramScheduleResult::FacilityTimeConflict)
@@ -1093,6 +1141,16 @@ void UFF_FacilityInfoSubsystem::RefreshPanel()
 		return;
 	}
 	Panel->ApplyViewData(ViewData);
+	if (bRevenueRankingPresentationOpen) Panel->SetPanelOpen(false);
+	if (!bPauseMenuPresentationSuppressed && PaidProgramPicker && IsValid(Facility)
+		&& PaidProgramPicker->GetVisibility() != ESlateVisibility::Collapsed)
+	{
+		FFF_FacilityPaidProgramPickerViewData PickerViewData;
+		if (BuildPaidProgramPickerViewData(*Facility, PickerViewData))
+		{
+			PaidProgramPicker->RefreshViewData(PickerViewData);
+		}
+	}
 }
 
 void UFF_FacilityInfoSubsystem::AcquireThumbnailSession()
@@ -1519,10 +1577,18 @@ void UFF_FacilityInfoSubsystem::HandlePanelLightingResetRequested(const FGuid Fa
 		: (Failure.IsEmpty() ? LOCTEXT("LightingResetFailed", "기본 조명을 복원할 수 없습니다.") : Failure), !bSucceeded);
 }
 
+void UFF_FacilityInfoSubsystem::HandlePanelLightingRollbackRequested(const FGuid FacilityId,const FFFZSFacilityLightingState& State)
+{
+	// Rollback targets the transaction's original instance, even if selection/phase changed.
+	// The Zone subsystem rejects removed instances and validates every restored value.
+	if(UFFZSWorldSubsystem* ZoneSystem=GetWorld()?GetWorld()->GetSubsystem<UFFZSWorldSubsystem>():nullptr)
+	{ FText Failure; ZoneSystem->SetFacilityLighting(FacilityId,State,Failure); }
+}
+
 FSoftClassPath UFF_FacilityInfoSubsystem::GetDefaultPaidProgramPickerClassPath()
 {
 	return FSoftClassPath(TEXT(
-		"/Game/FestaFiesta/UI/Facility/WBP_FF_FacilityPaidProgramPicker."
+		"/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityPaidProgramPicker."
 		"WBP_FF_FacilityPaidProgramPicker_C"));
 }
 
@@ -1588,13 +1654,12 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 
 	OutViewData.FacilityInstanceId = FacilityId;
 	OutViewData.AvailableGold = Progression->GetGold();
-	OutViewData.AvailableStaff = Progression->GetAvailableStaffCount();
 	OutViewData.FacilityName = Facility.GetFacilitySpec().DisplayName.IsEmpty()
 		? FText::FromName(Facility.GetFacilitySpec().FacilityDefinitionId)
 		: Facility.GetFacilitySpec().DisplayName;
 	OutViewData.FeedbackText = Feedback;
 	OutViewData.bFeedbackIsError = bIsFeedbackError;
-	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalog())
+	for (const FFF_ProgramCard& Card : Progression->GetProgramCatalogForFacility(FacilityId))
 	{
 		const EFF_PaidProgramScheduleResult Result =
 			Scheduling->CanScheduleProgramAtFacility(Card.ProgramId, FacilityId);
@@ -1615,14 +1680,10 @@ bool UFF_FacilityInfoSubsystem::BuildPaidProgramPickerViewData(
 		CardViewData.TimeText =
 			FFFacilityInfoModel::FormatProgramTimeRange(Card.StartMinutes, Card.EndMinutes);
 		CardViewData.CostGold = Card.CostGold;
-		CardViewData.RequiredStaff = Card.RequiredStaff;
 		CardViewData.CapacityPeople = Card.Capacity;
 		CardViewData.TicketFeeGold = Card.FeePerPerson;
 		CardViewData.MaxRevenueGold = Card.CalcMaxRevenue();
 		CardViewData.CostText = FFFacilityInfoModel::FormatGold(true, Card.CostGold);
-		CardViewData.StaffText = FText::Format(
-			LOCTEXT("ProgramRequiredStaff", "필요 인원 {0}명"),
-			FText::AsNumber(Card.RequiredStaff));
 		CardViewData.CapacityText = FText::Format(
 			LOCTEXT("ProgramCapacity", "정원 {0}명"), FText::AsNumber(Card.Capacity));
 		CardViewData.TicketFeeText = FText::Format(
@@ -1667,8 +1728,7 @@ void UFF_FacilityInfoSubsystem::HandlePaidProgramConfirmed(
 		const UFF_FestivalProgressionSubsystem* Progression = GameInstance
 			? GameInstance->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
 		ActivePicker->ShowPurchaseComplete(ProgramId,
-			Progression ? Progression->GetGold() : 0,
-			Progression ? Progression->GetAvailableStaffCount() : 0);
+			Progression ? Progression->GetGold() : 0);
 		SetPaidProgramPickerOpen(true);
 		SetFeedback(LOCTEXT("PaidProgramScheduled", "유료 프로그램 구매·편성이 완료되었습니다."), false);
 		RefreshPanel();

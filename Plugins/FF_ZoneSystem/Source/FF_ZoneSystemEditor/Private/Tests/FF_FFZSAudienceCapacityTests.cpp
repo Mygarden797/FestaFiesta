@@ -16,7 +16,7 @@
 
 namespace
 {
-    const TCHAR* SunsetPath = TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage");
+    const TCHAR* SunsetPath = TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/PDA_FFZS_Performance_MainStage_SunsetMainStage.PDA_FFZS_Performance_MainStage_SunsetMainStage");
 
     // Pure fixture: facility authors can change the real PDA's population, size or area limit
     // without changing the expected outcome of these geometry/transaction regression tests.
@@ -168,7 +168,7 @@ bool FFFZSAudienceCapacityPropertyTest::RunTest(const FString& Parameters)
         Source, SourceErrors, SourceWarnings, EDataValidationUsecase::Manual) == EDataValidationResult::Valid);
     // Unsaved, uniquely identified test object in the required validator root. Never edits the PDA.
     const FString Name = TEXT("AudienceCapacityTest_") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
-    UPackage* Package = CreatePackage(*(TEXT("/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Performance/") + Name));
+    UPackage* Package = CreatePackage(*(TEXT("/Game/FestaFiesta/Building/FF_Data_Building/Performance/") + Name));
     UFFZSFacilityDefinition* Asset = NewObject<UFFZSFacilityDefinition>(Package, FName(*Name), RF_Public | RF_Standalone | RF_Transactional);
     Asset->Spec = MakeCapacitySpec();
     Asset->Spec.FacilityDefinitionId = FName(*Name);

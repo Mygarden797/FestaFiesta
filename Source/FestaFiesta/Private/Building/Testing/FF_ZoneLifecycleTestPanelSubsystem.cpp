@@ -19,7 +19,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFZoneLifecycleTestPanel, Log, All);
 namespace
 {
 	const FSoftClassPath LifecyclePanelClassPath(
-		TEXT("/Game/FestaFiesta/Building/Debug/WBP_FF_ZoneLifecycleTestPanel."
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel."
 			"WBP_FF_ZoneLifecycleTestPanel_C"));
 }
 

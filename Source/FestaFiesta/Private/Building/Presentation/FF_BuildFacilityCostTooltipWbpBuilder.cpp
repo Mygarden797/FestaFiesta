@@ -35,7 +35,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogFFBuildCostTooltipWbpBuilder, Log, All);
 namespace FFBuildFacilityCostTooltipWbpBuilder
 {
 	const FString TooltipPackage(
-		TEXT("/Game/FestaFiesta/Building/Tooltips/WBP_FF_BuildFacilityCostTooltip"));
+		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Tooltips/WBP_FF_BuildFacilityCostTooltip"));
 
 	template <typename TWidget>
 	TWidget* MakeWidget(

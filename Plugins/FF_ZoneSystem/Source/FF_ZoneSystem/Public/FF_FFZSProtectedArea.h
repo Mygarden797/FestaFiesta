@@ -61,6 +61,8 @@ public:
         const FVector& WorldCenter,
         const FVector& WorldHalfExtent,
         const FQuat& WorldRotation) const;
+    // Exact box used by the SAT check, including the effective route width.
+    bool GetEffectiveWorldBox(FVector& OutCenter, FVector& OutHalfExtent, FQuat& OutRotation) const;
     // 임의 Yaw 시설 박스와 보호 영역 OBB를 정확한 SAT 좁은 단계로 비교한다.
     
     UFUNCTION(BlueprintPure, Category = "Protected Area|Validation")

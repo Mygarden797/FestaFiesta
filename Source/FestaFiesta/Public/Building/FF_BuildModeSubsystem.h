@@ -9,12 +9,14 @@
 
 #include "CoreMinimal.h"
 #include "FF_FFZSTypes.h"
+#include "Building/Presentation/FF_BuildPlacementGuidance.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Time/FF_FestivalStage.h"
 #include "FF_BuildModeSubsystem.generated.h"
 
 class AFFZSFacilityActor;
 class AFFZSPlacementPreviewActor;
+class AFF_BuildPlacementGizmo;
 class AFFZSBuildableGridActor;
 class APlayerController;
 class UFF_BuildCatalogScreen;
@@ -341,6 +343,8 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 #if WITH_DEV_AUTOMATION_TESTS
 	friend class FFF_BuildFacilityInspectionTest;
 	friend class FFF_BuildGridOverviewTest;
+	friend class FFF_AuroraCatalogSelectionTest;
+	friend class FFF_ClarityCatalogDragTest;
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildSynergyCatalogContextTest;
 #endif
@@ -477,6 +481,9 @@ public:
 	FName GetSelectedFacilityDefinitionId() const { return SelectedSpec.FacilityDefinitionId; }
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	FText GetSelectedFacilityDisplayName() const { return SelectedSpec.DisplayName; }
+	/** Current preview spec, including an existing facility's effective size when moving. */
+	const FFFZSFacilitySpec& GetSelectedFacilitySpec() const { return SelectedSpec; }
+	FFFZSQueueRules GetSelectedFacilityQueueRules() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	float GetPlacementRotationSnapDegrees() const;
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
@@ -499,9 +506,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void NudgePlacement(FIntPoint Direction);
 	void NotifyBuildToolsInteraction();
+	void RefreshBuildToolsOcclusion();
 	bool HasPlacementTarget() const { return bHasPlacementTarget; }
+	bool GetPlacementMarkerLocation(FVector& OutLocation) const;
 	bool IsCurrentPlacementValid() const { return bHasPlacementTarget && LastValidation.bIsValid; }
 	FText GetPlacementStatusText() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	FFF_BuildPlacementGuidance GetPlacementGuidance(int32 ProblemIndex = 0) const;
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void ToggleDirectPlacementAdjustment();
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsDirectPlacementAdjustment() const { return bDirectPlacementAdjustment; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	bool FindNearbyPlacement();
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsFindingNearbyPlacement() const { return bFindingNearbyPlacement; }
+	FText GetPlacementAssistanceMessage() const { return PlacementAssistanceMessage; }
 
 	// 최신 커서·revision·대상 등록을 재검증한 뒤 PreviewCommand를 Install 또는 Move로 확정한다.
 	// 명령 성공 시만 true. 설치는 연속 배치를 유지하고, 이동은 BuildMode로 복귀하며 실패 시 프리뷰를 유지한다.
@@ -514,6 +534,24 @@ public:
 	bool IsDragPlacementEnabled() const;
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_BuildPlacementAssistanceIntegrationTest;
+#endif
+	UPROPERTY(Transient) TObjectPtr<AFF_BuildPlacementGizmo> PlacementGizmo;
+	bool bDirectPlacementAdjustment = false;
+	bool bFindingNearbyPlacement = false;
+	TArray<FIntPoint> NearbyOffsets;
+	int32 NearbyCandidateIndex = 0;
+	FFFZSCommand NearbySearchCommand;
+	FText PlacementAssistanceMessage;
+	FFFZSGridPlacement GizmoStartPlacement;
+	bool bHasGizmoStartPlacement = false;
+	float GizmoStartYawDegrees = 0.0f;
+	void TickPlacementAssistance();
+	void CancelNearbyPlacementSearch();
+	void ResetPlacementAssistance();
+	void RefreshPlacementGizmo();
+	bool HandlePlacementGizmoInput(APlayerController& Controller, bool bPointerBlocked);
 	// A stroke owns bounded path/deduplication data; installed actors remain owned by ZoneSystem.
 	TSharedPtr<FFF_BuildDragPlacementSession> DragPlacementSession;
 	void HandlePlacementPrimaryPress(bool bButtonDown);
@@ -546,7 +584,7 @@ private:
 	TObjectPtr<UFF_BuildSynergyWidget> BuildSynergyWidget;
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Synergy")
 	TSoftClassPtr<UFF_BuildSynergyWidget> BuildSynergyWidgetClass = TSoftClassPtr<UFF_BuildSynergyWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy.WBP_FF_BuildSynergy_C")));
 	bool bHasSynergyPreviewKey = false;
 	FName SynergyPreviewDefinitionId;
 	FGuid SynergyPreviewMovingId;
@@ -556,7 +594,7 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Building|Tools")
 	TSoftClassPtr<UFF_BuildToolsWidget> BuildToolsWidgetClass = TSoftClassPtr<UFF_BuildToolsWidget>(
-		FSoftObjectPath(TEXT("/Game/FestaFiesta/UI/Building/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
+		FSoftObjectPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools.WBP_FF_BuildTools_C")));
 
 	// 첫 클릭으로 선택해 이동·철거·취소 액션을 기다리는 시설이다. 권위 소유권은 WorldSubsystem에 있다.
 	TWeakObjectPtr<AFFZSFacilityActor> PendingRemovalFacility;

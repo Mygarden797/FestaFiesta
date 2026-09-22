@@ -23,6 +23,8 @@
 #include "Tests/AutomationEditorCommon.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/LineBatchComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Components/SplineComponent.h"
 #include "Engine/CollisionProfile.h"
 #include "Engine/World.h"
@@ -34,6 +36,7 @@
 #include "FF_FFZSDeveloperSettings.h"
 #include "FF_FFZSGridLibrary.h"
 #include "FF_FFZSProtectedArea.h"
+#include "FF_FFZSPlacementPreviewActor.h"
 #include "FF_FFZSQueueComponent.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSTestExternalPolicy.h"
@@ -213,6 +216,17 @@ bool FFFZSWorldCommandLifecycleSnapshotTest::RunTest(const FString& Parameters)
         1);
     const FFFZSCommandResult OverlapResult = Subsystem->ExecuteCommand(OverlapInstall);
     TestEqual(TEXT("권위 Grid는 겹치는 Footprint를 거부한다"), OverlapResult.FailureReason, EFFZSPlacementFailure::PlacementCollision);
+    const int64 RevisionBeforeDiagnostic = Subsystem->GetWorldRevision();
+    const FFFZSPlacementValidation OverlapValidation = Subsystem->ValidatePlacement(OverlapInstall);
+    const FFFZSPlacementObstruction* BlockingFacility = OverlapValidation.Obstructions.FindByPredicate(
+        [&InstallFirst](const FFFZSPlacementObstruction& D) { return D.FacilityInstanceId == InstallFirst.FacilityInstanceId; });
+    if (TestNotNull(TEXT("실패 진단은 실제로 겹친 시설을 식별한다"), BlockingFacility))
+    {
+        TestEqual(TEXT("시설 진단과 월드 장애물은 구분된다"), BlockingFacility->Kind, EFFZSPlacementObstructionKind::Facility);
+        TestTrue(TEXT("기술 객체 이름 대신 저작한 시설 이름을 보존한다"), BlockingFacility->DisplayName.EqualTo(FirstFacility->GetFacilitySpec().DisplayName));
+        TestTrue(TEXT("실제 실패 OBB와 월드 경계가 유효하다"), BlockingFacility->AffectedWorldRegion.IsValid() && BlockingFacility->WorldBounds.IsValid);
+    }
+    TestEqual(TEXT("진단 조회는 월드 리비전을 변경하지 않는다"), Subsystem->GetWorldRevision(), RevisionBeforeDiagnostic);
 
     FFFZSGridPlacement StalePlacement;
     StalePlacement.OriginCell = FIntPoint(7000, 1000); // q0: 기존 70m, 10m 위치를 보존한다.
@@ -2369,6 +2383,88 @@ bool FFFZSFacilityUpgradeSizeTransactionTest::RunTest(const FString& Parameters)
     if (!TestTrue(TEXT("Explicit Lv1-only facility installs"), LevelOne.bSucceeded)) return false;
     TestFalse(TEXT("Lv1-only facility cannot purchase an unauthored tier"),
         Subsystem->ExecuteCommand(Upgrade(LevelOne.FacilityActor->GetFacilityInstanceId())).bSucceeded);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSPlacementObstructionFeedbackLifecycleTest,
+    "FF_ZoneSystem.Integration.World.PlacementObstructionFeedbackLifecycle",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFZSPlacementObstructionFeedbackLifecycleTest::RunTest(const FString& Parameters)
+{
+    FScopedZFTestSettings ScopedSettings;
+    UWorld* World = FAutomationEditorCommonUtils::CreateNewMap();
+    if (!TestNotNull(TEXT("Transient world"), World)) return false;
+    UFFZSWorldSubsystem* Subsystem = World->GetSubsystem<UFFZSWorldSubsystem>();
+    const FName ZoneId(TEXT("GZ_DadaPocha"));
+    AFFZSGameplayZone* Zone = SpawnAcceptedZone(*World, ZoneId);
+    if (!Subsystem || !Zone || !Subsystem->RegisterZone(Zone)) return false;
+    FFFZSGridPlacement Placement;
+    Placement.OriginCell = FIntPoint(1000, 1000);
+    const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(
+        FFZSTest::MakeValidFacilitySpec(), ZoneId, Placement, -1);
+    const FFFZSPlacementValidation Clear = Subsystem->ValidatePlacement(Command);
+    if (!TestTrue(TEXT("Control location is valid"), Clear.bIsValid)) return false;
+
+    AActor* Obstacle = World->SpawnActor<AActor>();
+    UBoxComponent* Box = NewObject<UBoxComponent>(Obstacle);
+    Obstacle->SetRootComponent(Box);
+    Box->SetBoxExtent(FVector(40, 40, 80));
+    Box->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+    Box->SetCollisionResponseToAllChannels(ECR_Ignore);
+    Box->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+    Box->RegisterComponent();
+    Obstacle->SetActorLocation(Clear.PlacementTransform.GetLocation() + FVector(0, 0, 80));
+    GetMutableDefault<UFFZSDeveloperSettings>()->bEnableWorldCollisionChecks = true;
+    AFFZSPlacementPreviewActor* Preview = World->SpawnActor<AFFZSPlacementPreviewActor>();
+    Preview->PreviewCommand = Command;
+    const FFFZSPlacementValidation Blocked = Preview->RefreshPreview();
+    const FFFZSPlacementObstruction* WorldBlocker = Blocked.Obstructions.FindByPredicate(
+        [](const FFFZSPlacementObstruction& D) { return D.Kind == EFFZSPlacementObstructionKind::WorldObstacle; });
+    if (TestNotNull(TEXT("The existing physics overlap records the real obstruction"), WorldBlocker))
+    {
+        TestTrue(TEXT("Diagnostic refers to the obstacle component bounds"), WorldBlocker->WorldCenter.Equals(Box->Bounds.Origin));
+        TestTrue(TEXT("Actual failed reservation is preserved"), WorldBlocker->AffectedWorldRegion.IsValid());
+    }
+    const int32 FailedLineCount = Preview->RangeLines->BatchedLines.Num();
+    TestTrue(TEXT("Blocked preview has persistent geometry"), FailedLineCount > 0);
+    TestFalse(TEXT("Persistent failure geometry does not expire on actor tick"), Preview->RangeLines->PrimaryComponentTick.bCanEverTick);
+    if (Preview->PlacementFeedbackMaterial.IsValid())
+    {
+        TestNotNull(TEXT("Generated material is a separate ghost overlay"), Preview->PreviewMesh->GetOverlayMaterial());
+        TestTrue(TEXT("Failed region has translucent surfaces"), !Preview->FailureSurfaces.IsEmpty());
+    }
+    for (const UStaticMeshComponent* Surface : Preview->FailureSurfaces)
+        TestEqual(TEXT("Failure surfaces cannot influence placement physics"), Surface->GetCollisionEnabled(), ECollisionEnabled::NoCollision);
+
+    Obstacle->SetActorLocation(FVector(100000, 100000, 0));
+    const FFFZSPlacementValidation Restored = Preview->RefreshPreview();
+    TestTrue(TEXT("Moving clear restores the original authority result"), Restored.bIsValid);
+    TestTrue(TEXT("New result drops all stale blocker identities"), Restored.Obstructions.IsEmpty());
+    TestTrue(TEXT("Old hatching and blocker brackets are removed"), Preview->RangeLines->BatchedLines.Num() < FailedLineCount);
+    for (const UStaticMeshComponent* Surface : Preview->FailureSurfaces)
+        TestFalse(TEXT("Recovered preview hides every pooled red surface"), Surface->IsVisible());
+
+    AFFZSProtectedArea* Area = World->SpawnActor<AFFZSProtectedArea>();
+    Area->ProtectedAreaId = TEXT("PA_FeedbackRoute");
+    Area->LinkedZoneId = ZoneId;
+    Area->AreaType = EFFZSProtectedAreaType::GeneralRoute;
+    Area->RequiredClearWidthCm = 300;
+    Area->AreaBounds->SetBoxExtent(FVector(20, 200, 200));
+    Area->SetActorLocation(Clear.PlacementTransform.GetLocation());
+    Area->SetActorRotation(FRotator(0, 35, 0));
+    if (!TestTrue(TEXT("Rotated protected route registers"), Subsystem->RegisterProtectedArea(Area))) return false;
+    const FFFZSPlacementValidation Protected = Preview->RefreshPreview();
+    const FFFZSPlacementObstruction* Route = Protected.Obstructions.FindByPredicate(
+        [](const FFFZSPlacementObstruction& D) { return D.Kind == EFFZSPlacementObstructionKind::ProtectedArea; });
+    if (TestNotNull(TEXT("Protection diagnostics distinguish routes from buildings"), Route))
+    {
+        TestEqual(TEXT("Displayed route includes its effective required width"), Route->WorldHalfExtent.X, 150.0);
+        TestTrue(TEXT("Displayed route retains authored yaw"), FMath::IsNearlyEqual(Route->WorldRotation.Rotator().Yaw, 35.0, 0.01));
+    }
+    Subsystem->UnregisterProtectedArea(Area);
+    TestTrue(TEXT("Removing restriction restores a clean valid preview"), Preview->RefreshPreview().bIsValid);
+    TestEqual(TEXT("Queries and presentation do not commit world changes"), Subsystem->GetWorldRevision(), int64(0));
     return true;
 }
 

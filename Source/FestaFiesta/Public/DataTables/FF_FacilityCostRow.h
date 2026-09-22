@@ -28,7 +28,7 @@ struct FFF_FacilityCostRow : public FTableRowBase
 {
 	GENERATED_BODY()
 
-	// 설치비 (Gold). 0 이하면 저작 오류 (공짜 시설은 없다)
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (ClampMin = "1"))
+	// 설치비 (Gold). 0은 무료이며 음수는 저작 오류다. 누락된 가격 행은 무료로 처리하지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cost", meta = (ClampMin = "0"))
 	int32 InstallCost = 0;
 };
