@@ -90,6 +90,13 @@ public:
 
 	void UnregisterSaveable(TScriptInterface<IFF_Saveable> Saveable);
 
+	/* 저장에서 되돌리는 중인지.
+
+	   시설은 설치 명령으로 되살아나므로, 명령을 받는 쪽이 이 값으로 복원인지 구분한다.
+	   복원은 "그때 그랬다" 를 다시 세우는 일이라 설치비·환급 같은 거래가 새로 일어나면 안 된다.
+	*/
+	bool IsRestoring() const { return bIsRestoring; }
+
 	// 지금 등록된 파트 수. 진단용.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
 	int32 GetRegisteredPartCount() const { return Saveables.Num(); }
@@ -261,6 +268,9 @@ private:
 
 	// 단계 신호에 물려 있는지. 해제할 때 중복 호출을 막는다.
 	bool bStageBound = false;
+
+	// RestorePartData 가 도는 동안만 true.
+	bool bIsRestoring = false;
 
 	IConsoleCommand* SaveConsoleCommand = nullptr;
 	IConsoleCommand* LoadConsoleCommand = nullptr;

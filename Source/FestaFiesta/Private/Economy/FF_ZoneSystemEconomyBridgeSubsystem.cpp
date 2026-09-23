@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
+#include "Save/FF_SaveSubsystem.h"
 #include "FF_FFZSFacilityActor.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "Subsystems/SubsystemCollection.h"
@@ -96,6 +97,16 @@ UFF_ZoneSystemEconomyBridgeSubsystem::ResolveFestivalProgression() const
 		: nullptr;
 }
 
+bool UFF_ZoneSystemEconomyBridgeSubsystem::IsRestoringSave() const
+{
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UFF_SaveSubsystem* Save = GameInstance
+		? GameInstance->GetSubsystem<UFF_SaveSubsystem>()
+		: nullptr;
+	return Save && Save->IsRestoring();
+}
+
 FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ValidateInstallCost(
 	const FFFZSPolicyContext& Context,
 	int32& OutInstallCost,
@@ -166,7 +177,7 @@ FFFZSPolicyDecision
 UFF_ZoneSystemEconomyBridgeSubsystem::PreValidateFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context) const
 {
-	if (Context.Command.Type != EFFZSCommandType::Install)
+	if (Context.Command.Type != EFFZSCommandType::Install || IsRestoringSave())
 	{
 		return FFFZSPolicyDecision();
 	}
@@ -183,7 +194,8 @@ FFFZSPolicyDecision
 UFF_ZoneSystemEconomyBridgeSubsystem::ApplyTentativeFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
-	if (Context.Command.Type != EFFZSCommandType::Install)
+	// 저장된 잔액은 이미 설치비가 빠진 값이다. 복원에서 다시 걷으면 두 번 낸다.
+	if (Context.Command.Type != EFFZSCommandType::Install || IsRestoringSave())
 	{
 		return FFFZSPolicyDecision();
 	}
@@ -313,6 +325,11 @@ void UFF_ZoneSystemEconomyBridgeSubsystem::CommitDemolitionRefund(const FFFZSPol
 void UFF_ZoneSystemEconomyBridgeSubsystem::CommitFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
+	// 복원 전에 치우는 시설은 판 것이 아니다. 환급하면 잔액이 저장값보다 늘어난다.
+	if (IsRestoringSave())
+	{
+		return;
+	}
 	if (Context.Command.Type == EFFZSCommandType::Remove)
 	{
 		CommitDemolitionRefund(Context);
