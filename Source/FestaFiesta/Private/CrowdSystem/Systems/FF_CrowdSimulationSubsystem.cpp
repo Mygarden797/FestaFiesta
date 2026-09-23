@@ -1,6 +1,8 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
+
+#include "DiffUtils.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
@@ -4716,6 +4718,9 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		const double DistSq = FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation);
 		Unit.Speed = (DistSq <= FMath::Square(QueueSlotArrivalRadiusUU)) ? 0.f : Unit.CruiseSpeed;
 		
+		Unit.bMissing = false;
+		Unit.MissingCount = 0;
+		
 		return true;
 	}
 	
@@ -4734,13 +4739,27 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 
 	const double DistToSlotSq = FVector::DistSquared2D(Unit.Position, Leader.Position + Offset);
 
+	
 	Unit.bCatchingUpToLeader = Unit.bCatchingUpToLeader
 		? (DistToSlotSq > FMath::Square(ReleaseRadius))
 		: (DistToSlotSq > FMath::Square(CatchUpRadius));
+	
+	if (Unit.MissingCount > MissingThreshholdSteps)
+	{
+		Unit.bMissing = true;
+		FFF_CrowdMemberMissingEvent MemberMissingEvent;
+		MemberMissingEvent.StableAgentID = Unit.StableAgentID;
+		MemberMissingEvent.PartyID = Unit.PartyID;
+		MemberMissingEvent.Actor = GetAgentActor(Unit.StableAgentID);
+		MemberMissingEvent.LocationUU = Unit.Position;
+		
+	
+	}
 
 	if (Unit.bCatchingUpToLeader)
 	{
 		Unit.Speed = Unit.MaxSpeed;
+		Unit.MissingCount++;
 
 		if (bLeaderStopped)
 		{
@@ -4748,6 +4767,11 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		}
 
 		return true;
+	}
+	else
+	{
+		Unit.MissingCount = 0;
+		Unit.bMissing = false;
 	}
 
 	Unit.Speed = bLeaderStopped
@@ -5020,6 +5044,18 @@ void UFF_CrowdSimulationSubsystem::ReleaseAgentToPool(int32 AgentIndex)
 		Actor->SetActorHiddenInGame(true);
 		Actor->SetActorEnableCollision(false);
 	}
+}
+
+AActor* UFF_CrowdSimulationSubsystem::GetAgentActor(int32 AgentIndex) const
+{
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot))
+	{
+		return nullptr;
+	}
+
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	return IsValid(Actor) ? Actor : nullptr;
 }
 
 void UFF_CrowdSimulationSubsystem::SetTemp_ExitWorldLocation(FVector NewExitWorldLocation)

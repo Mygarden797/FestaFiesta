@@ -14,6 +14,7 @@
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
 #include "CrowdSystem/Types/FF_CrowdAvoidanceConfig.h"
 #include "CrowdSystem/Types/FF_CrowdCongestionSnapshot.h"
+#include "CrowdSystem/Types/FF_CrowdMemberMissingEvent.h"
 #include "CrowdSystem/Types/FF_FestivalCrowdTypes.h"
 #include "Math/RandomStream.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
@@ -60,6 +61,9 @@ DECLARE_DELEGATE_RetVal_TwoParams(bool, FFF_OnPartyNeedsDecision,
 // 받을 쪽이 사건 판정·Heat Map·디버그로 여럿이다. 싱글캐스트면 나중에 붙는 쪽이 앞 구독을 조용히 덮어쓴다.
 DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdCongestionSampled,
 	const FFF_CrowdCongestionSnapshot& );
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FFF_OnCrowdMemberMissingChanged,
+	const TArray<FFF_CrowdMemberMissingEvent>& );
 
 // "도착해서 서 있는가, 가려는데 못 가는가"를 가른 집계.
 //
@@ -285,6 +289,10 @@ public:
 
 	// 중간에 붙은 구독자가 첫 발행을 기다리지 않고 현재 상태를 읽을 때 쓴다
 	const FFF_CrowdCongestionSnapshot& GetCongestionSnapshot() const { return CongestionSnapshot; }
+
+	FFF_OnCrowdMemberMissingChanged OnMemberMissingChanged;
+
+	AActor* GetAgentActor(int32 AgentIndex) const;
 
 	UFUNCTION(BlueprintPure, Category = "Crowd|Metrics")
 	int32 GetSnapshotCount() const { return SnapshotCount; }
@@ -956,6 +964,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
 	float PartyMemberSpeedMultiplier = 1.3f;
 	
+	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Party")
+	int32 MissingThreshholdSteps = 30;
+	
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite,Category = "Crowd|Need", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float InitialNeedMaxFraction = 0.5f;
@@ -1621,4 +1632,9 @@ private:
 
 	UFUNCTION()
 	void HandleMainProgramEnded(FString EventLabel);
+	
+	
+	//이벤트 관련
+private:
+	
 };

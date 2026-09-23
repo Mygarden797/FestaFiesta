@@ -97,9 +97,13 @@ void UFF_IncidentSubsystem::LoadDefinitions()
 		return;
 	}
 	MaxConcurrent =  Settings->MaxConcurrentIncidents;
-	if (IsValid(Settings->Catalog.Get()))
+	if (!Settings->Catalog.IsNull())
 	{
 		LoadedCatalog = Settings->Catalog.LoadSynchronous();
+	}
+
+	if (IsValid(LoadedCatalog))
+	{
 		for (FFF_IncidentCatalogEntry Entry : LoadedCatalog->Entries)
 		{
 			if (Entry.bEnabled)
@@ -108,7 +112,7 @@ void UFF_IncidentSubsystem::LoadDefinitions()
 				if (!IsValid(Def))
 				{
 					FF_INCIDENT_LOG("Definition is not exist");
-					break;
+					continue;
 				}
 				
 				FDefinitionView NewDef;
@@ -230,13 +234,6 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	FFF_IncidentHandle Handle;
 	
 	
-	if (IncidentSlots.Num() >= MaxConcurrent)
-	{
-		FF_INCIDENT_LOG("IncidentSlot is Max");
-		return FFF_IncidentHandle();
-	}
-	
-	
 	FDefinitionView* IncDef = Definitions.Find(Report.IncidentTag);
 	if (!IncDef)
 	{
@@ -262,10 +259,16 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 			FFF_IncidentRules::MergeIntensity(ExistingSlot.PeakIntensity, Report.Intensity);
 		ExistingSlot.LastSeenMinutes = Now;
 		return *Found;
-		
-		
+
+
 	}
-	
+
+	if (ActiveByKey.Num() >= MaxConcurrent)
+	{
+		FF_INCIDENT_LOG("IncidentSlot is Max");
+		return FFF_IncidentHandle();
+	}
+
 	const int32 Index = FreeSlots.Num() > 0 ? FreeSlots.Pop() : IncidentSlots.AddDefaulted();
 	
 	
@@ -296,6 +299,7 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	Slot.Urgency = IncDef->Urgency;
 	Slot.MinutesUntilLapse = IncDef->MinutesUntilLapse;
 	Slot.OccurredAtMinutes = Now;
+	Slot.LastSeenMinutes = Now;
 	
 	
 	
