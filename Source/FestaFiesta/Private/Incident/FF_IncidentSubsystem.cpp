@@ -96,35 +96,42 @@ void UFF_IncidentSubsystem::LoadDefinitions()
 		FF_INCIDENT_LOG("Setting is not exist.");
 		return;
 	}
-	MaxConcurrent =  Settings->MaxConcurrentIncidents;
-	if (IsValid(Settings->Catalog.Get()))
+	MaxConcurrent = Settings->MaxConcurrentIncidents;
+	Definitions.Reset();
+	LoadedCatalog = nullptr;
+	if (Settings->Catalog.IsNull())
 	{
-		LoadedCatalog = Settings->Catalog.LoadSynchronous();
-		for (FFF_IncidentCatalogEntry Entry : LoadedCatalog->Entries)
-		{
-			if (Entry.bEnabled)
-			{
-				UFF_IncidentDefinition* Def =  Entry.Definition.LoadSynchronous();
-				if (!IsValid(Def))
-				{
-					FF_INCIDENT_LOG("Definition is not exist");
-					break;
-				}
-				
-				FDefinitionView NewDef;
-				NewDef.Tone = Def->Tone;
-				NewDef.Urgency = Def->Urgency;
-				NewDef.MinutesUntilLapse = Def->MinuteUntileLapse;
-				NewDef.EscalateTo = Def->EscalateTo;
-				
-				Definitions.Add(Def->IncidentTag,NewDef);
-			}
-		}
-		
+		FF_INCIDENT_LOG("Incident catalog is not configured");
+		return;
 	}
-	else
+
+	LoadedCatalog = Settings->Catalog.LoadSynchronous();
+	if (!IsValid(LoadedCatalog))
 	{
-		FF_INCIDENT_LOG("Catalog is not exist");
+		FF_INCIDENT_LOG("Incident catalog failed to load: %s", *Settings->Catalog.ToSoftObjectPath().ToString());
+		return;
+	}
+
+	for (const FFF_IncidentCatalogEntry& Entry : LoadedCatalog->Entries)
+	{
+		if (!Entry.bEnabled)
+		{
+			continue;
+		}
+
+		UFF_IncidentDefinition* Def = Entry.Definition.LoadSynchronous();
+		if (!IsValid(Def))
+		{
+			FF_INCIDENT_LOG("Incident definition failed to load: %s", *Entry.Definition.ToSoftObjectPath().ToString());
+			continue;
+		}
+
+		FDefinitionView NewDef;
+		NewDef.Tone = Def->Tone;
+		NewDef.Urgency = Def->Urgency;
+		NewDef.MinutesUntilLapse = Def->MinuteUntileLapse;
+		NewDef.EscalateTo = Def->EscalateTo;
+		Definitions.Add(Def->IncidentTag, NewDef);
 	}
 }
 

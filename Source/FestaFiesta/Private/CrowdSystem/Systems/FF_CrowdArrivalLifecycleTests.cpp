@@ -132,6 +132,9 @@ bool FFF_CrowdArrivalTablesSurviveFestivalGarbageCollection::RunTest(const FStri
     }
     Crowd->InitializeSimulationWithBounds(FVector::ZeroVector, FBox::BuildAABB(FVector::ZeroVector, FVector(10000.f, 10000.f, 10000.f)), PoolSize, PoolSize, AFF_BaseCrowd::StaticClass());
     Crowd->BeginArrivalSchedule(RequestedVisitors, FVector::ZeroVector, 500.f);
+    // The production economy bridge normally supplies the festival's expected visitor count
+    // when Live begins. Keep this isolated GC test within its 64-slot fixture on both days.
+    Crowd->SetExpectedVisitorCountOverride(RequestedVisitors);
     TestTrue(TEXT("Project arrival curve was loaded during initialization"), Crowd->IsArrivalCurveActive());
     TestTrue(TEXT("The real visitor distribution contains whole parties"), Crowd->GetArrivalPlannedCount() > 0);
     TestEqual(TEXT("Setup starts with no active visitors"), Crowd->GetActiveAgentCount(), 0);
