@@ -243,7 +243,10 @@ void AFF_FinaleShapeSpline::BakeToAsset()
 
 	TArray<FVector2D> Preview;
 	Target->SamplePoints(FMath::Max(1, PreviewShellCount), Preview);
-	DrawPreview(Preview, bClosed, MeasureLongestSide(Raw));
+
+	FVector2D RawCenter = FVector2D::ZeroVector;
+	const float Longest = MeasureBounds(Raw, RawCenter);
+	DrawPreview(Preview, bClosed, Longest, RawCenter);
 }
 
 void AFF_FinaleShapeSpline::PreviewOnly()
@@ -270,11 +273,15 @@ void AFF_FinaleShapeSpline::PreviewOnly()
 	TArray<FVector2D> Preview;
 	Scratch->SamplePoints(FMath::Max(1, PreviewShellCount), Preview);
 
-	DrawPreview(Preview, Scratch->bClosed, MeasureLongestSide(Raw));
+	FVector2D RawCenter = FVector2D::ZeroVector;
+	const float Longest = MeasureBounds(Raw, RawCenter);
+	DrawPreview(Preview, Scratch->bClosed, Longest, RawCenter);
 }
 
-float AFF_FinaleShapeSpline::MeasureLongestSide(const TArray<FVector2D>& Points)
+float AFF_FinaleShapeSpline::MeasureBounds(const TArray<FVector2D>& Points, FVector2D& OutCenter)
 {
+	OutCenter = FVector2D::ZeroVector;
+
 	if (Points.Num() == 0)
 	{
 		return 0.f;
@@ -291,11 +298,14 @@ float AFF_FinaleShapeSpline::MeasureLongestSide(const TArray<FVector2D>& Points)
 		Max.Y = FMath::Max(Max.Y, Point.Y);
 	}
 
+	// UFF_FinaleShapeData::SetFromRawPoints 와 같은 가운데다. 둘이 다르면 미리보기가 비껴 찍힌다.
+	OutCenter = (Min + Max) * 0.5f;
 	return FMath::Max(Max.X - Min.X, Max.Y - Min.Y);
 }
 
 void AFF_FinaleShapeSpline::DrawPreview(
-	const TArray<FVector2D>& NormalizedPoints, const bool bClosed, const float LocalLongestSide) const
+	const TArray<FVector2D>& NormalizedPoints, const bool bClosed,
+	const float LocalLongestSide, const FVector2D& LocalCenter) const
 {
 	UWorld* World = GetWorld();
 	if (!World || NormalizedPoints.Num() == 0)
@@ -320,11 +330,15 @@ void AFF_FinaleShapeSpline::DrawPreview(
 
 	for (const FVector2D& Point : NormalizedPoints)
 	{
-		const FVector Local = (AuthorPlane == EFF_FinaleShapeAuthorPlane::LocalXZ)
-			? FVector(Point.X * Scale, 0.f, Point.Y * Scale)
-			: FVector(Point.X * Scale, Point.Y * Scale, 0.f);
+		/* 가운데를 되돌린다.
 
-		WorldPoints.Add(ToWorld.TransformPosition(Local));
+		   정규화가 경계 상자 가운데를 원점으로 옮겼다. 그대로 찍으면 액터 원점을
+		   중심으로 그려져서, 하트처럼 가운데가 원점에서 벗어난 모양은 스플라인과
+		   어긋나 보인다(기본 하트는 75cm 쯤).
+		*/
+		const FVector2D Restored = Point * Scale + LocalCenter;
+
+		WorldPoints.Add(ToWorld.TransformPosition(PlanarToLocal(Restored)));
 	}
 
 	/* 영구 드로잉으로 찍는다.

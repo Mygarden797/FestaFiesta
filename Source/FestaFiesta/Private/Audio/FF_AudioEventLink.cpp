@@ -66,7 +66,10 @@ void UFF_AudioEventLink::BindAll()
 			bBoundStage = true;
 
 			// 신호는 바뀔 때만 온다. 지금 상태를 한 번 읽어서 배경음을 맞춘다.
+			// 밤낮도 같이 읽는다. 빠뜨리면 밤에 레벨이 열렸을 때 다음 밤 신호가 올 때까지
+			// 낮 곡이 돈다 — 그 신호는 하루에 한 번뿐이다.
 			LastStage = Stage->CurrentStage;
+			bLastIsNight = Stage->GetIsNightActive();
 			RefreshAmbience();
 		}
 	}

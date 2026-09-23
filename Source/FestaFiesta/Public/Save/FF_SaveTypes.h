@@ -110,6 +110,77 @@ struct FESTAFIESTA_API FFF_MetaSave
 		return !FestivalId.IsNone() && TutorialSeenFestivals.Contains(FestivalId);
 	}
 
+	/* 다른 곳에서 읽은 메타를 합친다. 무엇이 바뀌었는지 돌려준다.
+
+	   덮어쓰지 않고 합치는 이유는, 메타가 여러 파일에 흩어져 있을 수 있어서다.
+	   옛 슬롯을 불러올 때 그 슬롯의 메타로 갈아끼우면, 그 뒤에 본 튜토리얼이나 깬
+	   축제가 통째로 사라진다. 메타는 "한 번 일어난 일" 의 기록이라 되돌아갈 일이 없다.
+
+	   그래서 규칙이 단순하다. 플래그는 OR, 목록은 합집합, 기록은 칸마다 큰 값.
+	   PlayCount 도 더하지 않고 큰 값을 쓴다. 같은 파일을 두 번 합쳐도 결과가 같아야 한다.
+	*/
+	bool MergeFrom(const FFF_MetaSave& Other)
+	{
+		bool bChanged = false;
+
+		if (Other.bLobbyIntroSeen && !bLobbyIntroSeen)
+		{
+			bLobbyIntroSeen = true; bChanged = true;
+		}
+		if (Other.bTutorialOptedOut && !bTutorialOptedOut)
+		{
+			bTutorialOptedOut = true; bChanged = true;
+		}
+
+		for (const FName& Id : Other.TutorialSeenFestivals)
+		{
+			if (!Id.IsNone() && !TutorialSeenFestivals.Contains(Id))
+			{
+				TutorialSeenFestivals.Add(Id); bChanged = true;
+			}
+		}
+		for (const FName& Id : Other.ClearedFestivals)
+		{
+			if (!Id.IsNone() && !ClearedFestivals.Contains(Id))
+			{
+				ClearedFestivals.Add(Id); bChanged = true;
+			}
+		}
+
+		for (const TPair<FName, FFF_FestivalRecord>& Pair : Other.Records)
+		{
+			// 처음 보는 축제면 통째로 옮긴다. 0 과 비교하면 적자 기록이 0 으로 올라간다.
+			FFF_FestivalRecord* Found = Records.Find(Pair.Key);
+			if (!Found)
+			{
+				Records.Add(Pair.Key, Pair.Value); bChanged = true;
+				continue;
+			}
+
+			FFF_FestivalRecord& Mine = *Found;
+			const FFF_FestivalRecord& Theirs = Pair.Value;
+
+			if (Theirs.BestVisitors > Mine.BestVisitors)
+			{
+				Mine.BestVisitors = Theirs.BestVisitors; bChanged = true;
+			}
+			if (Theirs.BestSatisfaction > Mine.BestSatisfaction)
+			{
+				Mine.BestSatisfaction = Theirs.BestSatisfaction; bChanged = true;
+			}
+			if (Theirs.BestProfit > Mine.BestProfit)
+			{
+				Mine.BestProfit = Theirs.BestProfit; bChanged = true;
+			}
+			if (Theirs.PlayCount > Mine.PlayCount)
+			{
+				Mine.PlayCount = Theirs.PlayCount; bChanged = true;
+			}
+		}
+
+		return bChanged;
+	}
+
 	// ── 판 1 에서만 쓰던 값 ─────────────────────────────────────────────────
 
 	/* 판 1 에는 전역 bool 두 개뿐이었다.
@@ -272,7 +343,7 @@ class FESTAFIESTA_API UFF_SaveGame : public USaveGame
 	GENERATED_BODY()
 
 public:
-	/* 저장 형식의 판번호.
+	/* 지금 코드가 쓰는 판번호.
 
 	   구조가 바뀌면 올린다. 올리지 않으면 옛 저장을 새 코드가 읽을 때
 	   빠진 값이 기본값으로 들어가고, 그게 정상인지 오류인지 구분할 수 없다.
@@ -280,8 +351,21 @@ public:
 	   판 2: 튜토리얼 판정을 전역 bool 두 개에서 축제별 목록으로 바꿨다.
 	         FFF_MetaSave 의 `판 1 에서만 쓰던 값` 항목을 볼 것.
 	*/
+	static constexpr int32 CurrentVersion = 2;
+
+	/* 이 파일이 쓰인 판번호. 기본값은 일부러 0 이다.
+
+	   SaveGame 은 CDO 기본값과 같은 값을 파일에 쓰지 않는다. 기본값을 지금 판으로
+	   두면 판번호가 한 번도 파일에 안 들어가고, 읽을 때는 그때 코드의 기본값이
+	   채워진다. 판 1 저장을 판 2 코드가 읽으면 2 로 보여서 옮기기가 건너뛰어졌다.
+
+	   기본값을 0 으로 두고 저장할 때마다 CurrentVersion 을 직접 넣는다. 그러면
+	   0 은 "판번호를 모르는 옛 파일" 이라는 뜻만 남는다. 이 수정 전에 쓴 파일은
+	   판 1 이든 판 2 든 전부 0 으로 읽히므로, 옮기기는 판번호가 아니라 옛 값이
+	   남아 있는지로 판단한다(UFF_SaveSubsystem::MigrateMeta).
+	*/
 	UPROPERTY()
-	int32 Version = 2;
+	int32 Version = 0;
 
 	UPROPERTY()
 	FFF_MetaSave Meta;
