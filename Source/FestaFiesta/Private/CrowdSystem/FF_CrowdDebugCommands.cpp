@@ -361,6 +361,9 @@ static void CrowdStatsCommand(const TArray<FString>& Args, UWorld* World, FOutpu
 
 	Ar.Logf(TEXT("--- 벽 ---"));
 	Ar.Logf(TEXT("선분          : %d개  (시설 %d개 × 4)"), WallSegments, FacilityWalls);
+	Ar.Logf(TEXT("대형 직선 막힘: 지금 %d명, 누적 %d회, 우회 경로 쿼리 %d건  <-- 건물에 가려 슬롯으로 직진할 수 없는 멤버"),
+		CrowdSim->GetFormationBlockedMemberCount(), CrowdSim->GetFormationBlockEvents(),
+		CrowdSim->GetFormationPathQueries());
 	Ar.Logf(TEXT("시설 벽       : %s%s"),
 		CrowdSim->bAvoidanceUseFacilityWalls ? TEXT("on") : TEXT("off"),
 		CrowdSim->bAvoidanceFacilityWallsIncludeClearance ? TEXT(" + 여유 1m 링") : TEXT(""));

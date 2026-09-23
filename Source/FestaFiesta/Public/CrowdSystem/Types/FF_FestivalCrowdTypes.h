@@ -128,6 +128,9 @@ struct FUnitData
 	// 멤버가 리더를 따라붙는 중인가. 켜는 임계와 푸는 임계가 다르다(히스테리시스)
 	bool bCatchingUpToLeader = false;
 
+	bool bFormationPathBlocked = false;
+	int32 FormationClearStreak = 0;
+
 	//Animation
 	
 	

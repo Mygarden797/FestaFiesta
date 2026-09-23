@@ -564,6 +564,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Crowd|Terrain")
 	int32 GetHeightBlockedSteps() const { return HeightBlockedSteps; }
 
+	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
+	int32 GetFormationBlockEvents() const { return FormationBlockEvents; }
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
+	int32 GetFormationBlockedMemberCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Crowd|Party")
+	int32 GetFormationPathQueries() const { return FormationPathQueries; }
+
 	// 목적지를 못 받았을 때 배회할 반경, UU. 리더의 현재 위치 기준이다.
 	UPROPERTY(BlueprintReadWrite, Category = "Crowd|Decision")
 	float WanderRadiusUU = 2000.f;
@@ -1103,6 +1112,8 @@ private:
 
 	bool BuildPathForAgent(int32 AgentIndex);
 
+	bool BuildNavMeshPath(int32 AgentIndex, const FVector& Goal);
+
 	void InvalidatePathsOnLayoutChange();
 
 	bool TryBuildLanePathForAgent(int32 AgentIndex);
@@ -1173,6 +1184,10 @@ private:
 	FVector GetPartyFormationOffset(int32 SlotIndex) const;
 
 	bool UpdatePartyMemberTarget(int32 AgentIndex, FUnitData& Unit);
+
+	void UpdateFormationBlockState(int32 AgentIndex, FUnitData& Unit);
+
+	void UpdateBlockedMemberPath(int32 AgentIndex, int32& Budget, int32& Backlog, float MinQueryDistSq);
 
 	bool AdvancePartyQueueOnArrival(int32 LeaderAgentIndex);
 
@@ -1314,7 +1329,9 @@ private:
 
 	// 시뮬레이션 누적 시간, 초
 	float SimTimeSeconds = 0.f;
-	
+
+	uint32 SimStepIndex = 0;
+
 	//라이브가 시작된 시간
 	float LiveStartSimTime = 0.f;
 
@@ -1535,6 +1552,10 @@ private:
 	// 통행 상한에 막혀 되돌린 스텝 수. 이 값이 계속 오르는데 StuckDecisionRequests가 안 오르면
 	// 상한이 목적지를 감싸고 있다는 뜻이다 — 상한을 올리거나 목적지 쪽을 봐야 한다
 	int32 HeightBlockedSteps = 0;
+
+	int32 FormationBlockEvents = 0;
+
+	int32 FormationPathQueries = 0;
 
 	// 큐 진행 감시. SampleQueueLiveness가 매 스텝 갱신한다
 	float LastObservedQueueSimTime = -1.f;
