@@ -140,6 +140,22 @@ public:
 	// 실제 입장 인원을 하루 단위로 기록하고 목표를 처음 달성했을 때만 보너스를 지급한다.
 	void RecordAdmittedVisitorsForDailyGoal(int32 AdmittedCount);
 
+	// 오늘 입장한 인원. 하루 경계에서 0 으로 돌아간다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetAdmittedVisitorsToday() const { return AdmittedVisitorsToday; }
+
+	// 하루 방문객 목표. 축제가 시작되지 않았거나 목표가 없으면 INDEX_NONE("목표 없음").
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	int32 GetDailyVisitorGoal() const;
+
+	// 오늘 목표 보너스를 이미 받았는지. 달성 여부와 같다 — 보너스는 처음 달성할 때 한 번만 준다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
+	bool IsDailyGoalBonusPaid() const { return bDailyGoalBonusPaid; }
+
+	// 오늘 입장 인원이 바뀌면 새 값을 알린다. 달성 여부는 IsDailyGoalBonusPaid 로 다시 읽는다.
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Economy")
+	FFF_OnEconomyValueChanged OnAdmittedVisitorsTodayChanged;
+
 	// 축제 시작부터 지금까지 입장한 누적 인원. 하루 경계로 안 지워진다.
 	// 결산·저장 기록(최고 방문객 수)이 읽는다.
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
@@ -326,7 +342,7 @@ public:
 	/**
 	 * 홍보를 반영한 하루 예상 방문객. 축제가 시작되지 않았으면 `INDEX_NONE`("모름").
 	 * [주의] 0 과 `INDEX_NONE` 은 다르다. 0 은 "아무도 안 온다", `INDEX_NONE` 은 "알 수 없다" 다.
-	 * 🔴 crowd 가 `AFF_SpawnActor::UnitCount` 를 쓰므로, 그쪽이 이 창구를 읽기 전까지 홍보를 사도 손님은 안 늘어난다.
+	 * Crowd 는 UFF_CrowdEconomyBridgeSubsystem 을 거쳐 이 값으로 스폰 인원을 정한다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Economy")
 	int32 GetExpectedVisitors() const;

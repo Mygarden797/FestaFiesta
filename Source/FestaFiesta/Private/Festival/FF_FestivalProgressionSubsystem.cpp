@@ -101,6 +101,7 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 	const int32 PreviousTotalStaffCount = StaffPool.GetTotalStaffCount();
 	const EFF_PromotionGrade PreviousPromotionGrade = PurchasedPromotionGrade;
 	const EFF_FinaleGrade PreviousFinaleGrade = PurchasedFinaleGrade;
+	const int32 PreviousExpectedVisitors = GetExpectedVisitors();
 
 	/* 값을 직접 되돌린다.
 
@@ -128,6 +129,9 @@ void UFF_FestivalProgressionSubsystem::ReadSaveData(const TArray<uint8>& InBytes
 	{
 		OnPromotionGradeChanged.Broadcast(PurchasedPromotionGrade);
 	}
+	// 등급만 알리면 Crowd 는 옛 방문객 수로 스폰한다. 방문객 수는 등급과 따로 구독된다.
+	BroadcastExpectedVisitorsIfChanged(PreviousExpectedVisitors);
+	OnAdmittedVisitorsTodayChanged.Broadcast(AdmittedVisitorsToday);
 	if (PurchasedFinaleGrade != PreviousFinaleGrade)
 	{
 		OnFinaleGradeChanged.Broadcast(PurchasedFinaleGrade);
@@ -247,6 +251,8 @@ void UFF_FestivalProgressionSubsystem::StartFestival(const UFF_FestivalDefinitio
 		OnFinaleGradeChanged.Broadcast(PurchasedFinaleGrade);
 	}
 	BroadcastExpectedVisitorsIfChanged(PreviousExpectedVisitors);
+	// 목표 값 자체가 축제 정의에 달려 있어서, 인원이 0 그대로여도 한 번 알린다.
+	OnAdmittedVisitorsTodayChanged.Broadcast(AdmittedVisitorsToday);
 	OnFestivalDefinitionChanged.Broadcast();
 }
 
@@ -346,19 +352,29 @@ void UFF_FestivalProgressionSubsystem::RecordAdmittedVisitorsForDailyGoal(int32 
 		static_cast<int64>(TotalAdmittedVisitors) + AdmittedCount));
 
 	const int32 Goal = Definition->DailyVisitorGoal;
-	if (bDailyGoalBonusPaid || Goal <= 0 || AdmittedVisitorsToday < Goal)
+	if (!bDailyGoalBonusPaid && Goal > 0 && AdmittedVisitorsToday >= Goal)
 	{
-		return;
+		bDailyGoalBonusPaid = true;
+		if (Definition->DailyGoalBonusGold > 0)
+		{
+			AddRevenue(Definition->DailyGoalBonusGold, EFF_EarnReason::DailyGoalBonus);
+		}
+		UE_LOG(LogFestaFiestaEconomy, Log,
+			TEXT("[경제] Day %d 방문객 목표 달성: %d/%d명, 보너스 %d Gold"),
+			LastProcessedDay, AdmittedVisitorsToday, Goal, Definition->DailyGoalBonusGold);
 	}
 
-	bDailyGoalBonusPaid = true;
-	if (Definition->DailyGoalBonusGold > 0)
+	// 달성 처리 뒤에 알린다. 받는 쪽이 IsDailyGoalBonusPaid 를 읽으면 이번 입장까지 반영돼 있어야 한다.
+	OnAdmittedVisitorsTodayChanged.Broadcast(AdmittedVisitorsToday);
+}
+
+int32 UFF_FestivalProgressionSubsystem::GetDailyVisitorGoal() const
+{
+	if (Definition == nullptr || Definition->DailyVisitorGoal <= 0)
 	{
-		AddRevenue(Definition->DailyGoalBonusGold, EFF_EarnReason::DailyGoalBonus);
+		return INDEX_NONE;
 	}
-	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] Day %d 방문객 목표 달성: %d/%d명, 보너스 %d Gold"),
-		LastProcessedDay, AdmittedVisitorsToday, Goal, Definition->DailyGoalBonusGold);
+	return Definition->DailyVisitorGoal;
 }
 
 void UFF_FestivalProgressionSubsystem::AddFacilityRevenue(
@@ -1118,6 +1134,7 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	const int32 JustEndedDay = LastProcessedDay;
 
 	LastProcessedDay = NewDay;
+	const bool bHadAdmittedVisitors = AdmittedVisitorsToday != 0 || bDailyGoalBonusPaid;
 	AdmittedVisitorsToday = 0;
 	bDailyGoalBonusPaid = false;
 
@@ -1154,6 +1171,10 @@ bool UFF_FestivalProgressionSubsystem::TryProcessNewDay(int32 NewDay)
 	if (bHadPrograms)
 	{
 		OnScheduledProgramsChanged.Broadcast();
+	}
+	if (bHadAdmittedVisitors)
+	{
+		OnAdmittedVisitorsTodayChanged.Broadcast(AdmittedVisitorsToday);
 	}
 
 	return true;
