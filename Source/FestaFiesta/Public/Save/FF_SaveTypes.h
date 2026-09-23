@@ -56,17 +56,14 @@ struct FESTAFIESTA_API FFF_FestivalRecord
 
 /* 축제 사이에 남는 것들. 어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
 
-   ─── 수명이 둘이다 ─────────────────────────────────────────────────────────
-   판 단위  : 튜토리얼 기록(로비 인트로·안내 끔·본 축제). 새 게임을 누르면 비우고,
-              이어하기를 하면 그 세이브에 담긴 값으로 돌아간다. 세이브 파일 안에 담긴다.
-   계정 단위: 깬 축제·최고 기록. 판과 상관없이 쌓인다. FF_MetaStore 에 담긴다.
+   ─── 전부 판 단위다 ────────────────────────────────────────────────────────
+   튜토리얼 기록·깬 축제·최고 기록 모두 세이브 파일 안에 담긴다. 새 게임을 누르면
+   전부 비우고, 이어하기를 하면 그 세이브에 담긴 값으로 돌아간다.
 
-   튜토리얼을 판 단위로 둔 이유: "새 게임은 처음부터, 세이브로 들어가면 그 판에서
-   본 것은 안 본다" 가 기획이다. 계정 단위로 두면 한 판에서 건너뛴 것이 다른 판,
-   심지어 새 게임까지 따라간다.
-
-   한 구조체에 둔 채로 나누는 이유는 저장 형식을 안 바꾸기 위해서다. 옛 세이브도
-   같은 자리에서 읽힌다. 나누는 규칙은 아래 ResetRunScoped / TakeRunScopedFrom 한 곳에 둔다.
+   계정 단위로 남기는 값은 없다. 기획이 "새 게임은 말 그대로 새 게임" 이라서다 —
+   튜토리얼부터 축제 진행까지 처음부터 다시 한다. 예전에는 기록·깬 축제를
+   FF_MetaStore 에 따로 두고 판과 상관없이 쌓았는데, 그러면 새 게임에 이전 판의
+   진행이 따라온다. 그 파일은 이제 읽지도 쓰지도 않는다.
 */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_MetaSave
@@ -76,7 +73,7 @@ struct FESTAFIESTA_API FFF_MetaSave
 	/* 로비 인트로를 끝까지 봤는가.
 
 	   축제를 고르기 전에 로비에서 도는 오프닝이라 축제별로 나눌 수 없다.
-	   판 단위다. 새 게임마다 한 번 보여준다.
+	   새 게임마다 한 번 보여준다.
 	*/
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	bool bLobbyIntroSeen = false;
@@ -85,7 +82,7 @@ struct FESTAFIESTA_API FFF_MetaSave
 
 	   건너뛰기는 "이번 것만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
 	   그래서 같은 판 안에서는 축제가 바뀌어도 되살아나지 않는다.
-	   판 단위라 새 게임을 누르면 풀린다.
+	   새 게임을 누르면 풀린다.
 
 	   끝까지 본 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
 	   건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
@@ -118,99 +115,6 @@ struct FESTAFIESTA_API FFF_MetaSave
 	bool HasSeenTutorialFor(const FName FestivalId) const
 	{
 		return !FestivalId.IsNone() && TutorialSeenFestivals.Contains(FestivalId);
-	}
-
-	// 판 단위 값을 비운다. 새 게임이 이것으로 시작한다.
-	void ResetRunScoped()
-	{
-		bLobbyIntroSeen = false;
-		bTutorialOptedOut = false;
-		TutorialSeenFestivals.Reset();
-
-		// 판 1 의 옛 값도 판 단위다. 남겨두면 다음 옮기기에서 되살아난다.
-		bTutorialCompleted_DEPRECATED = false;
-		bTutorialSkipped_DEPRECATED = false;
-	}
-
-	// 판 단위 값만 다른 것에서 가져온다. 계정 단위 값(기록·깬 축제)은 그대로 둔다.
-	void TakeRunScopedFrom(const FFF_MetaSave& Other)
-	{
-		bLobbyIntroSeen = Other.bLobbyIntroSeen;
-		bTutorialOptedOut = Other.bTutorialOptedOut;
-		TutorialSeenFestivals = Other.TutorialSeenFestivals;
-		bTutorialCompleted_DEPRECATED = false;
-		bTutorialSkipped_DEPRECATED = false;
-	}
-
-	/* 다른 곳에서 읽은 메타를 합친다. 무엇이 바뀌었는지 돌려준다.
-
-	   덮어쓰지 않고 합치는 이유는, 메타가 여러 파일에 흩어져 있을 수 있어서다.
-	   옛 슬롯을 불러올 때 그 슬롯의 메타로 갈아끼우면, 그 뒤에 본 튜토리얼이나 깬
-	   축제가 통째로 사라진다. 메타는 "한 번 일어난 일" 의 기록이라 되돌아갈 일이 없다.
-
-	   그래서 규칙이 단순하다. 플래그는 OR, 목록은 합집합, 기록은 칸마다 큰 값.
-	   PlayCount 도 더하지 않고 큰 값을 쓴다. 같은 파일을 두 번 합쳐도 결과가 같아야 한다.
-	*/
-	bool MergeFrom(const FFF_MetaSave& Other)
-	{
-		bool bChanged = false;
-
-		if (Other.bLobbyIntroSeen && !bLobbyIntroSeen)
-		{
-			bLobbyIntroSeen = true; bChanged = true;
-		}
-		if (Other.bTutorialOptedOut && !bTutorialOptedOut)
-		{
-			bTutorialOptedOut = true; bChanged = true;
-		}
-
-		for (const FName& Id : Other.TutorialSeenFestivals)
-		{
-			if (!Id.IsNone() && !TutorialSeenFestivals.Contains(Id))
-			{
-				TutorialSeenFestivals.Add(Id); bChanged = true;
-			}
-		}
-		for (const FName& Id : Other.ClearedFestivals)
-		{
-			if (!Id.IsNone() && !ClearedFestivals.Contains(Id))
-			{
-				ClearedFestivals.Add(Id); bChanged = true;
-			}
-		}
-
-		for (const TPair<FName, FFF_FestivalRecord>& Pair : Other.Records)
-		{
-			// 처음 보는 축제면 통째로 옮긴다. 0 과 비교하면 적자 기록이 0 으로 올라간다.
-			FFF_FestivalRecord* Found = Records.Find(Pair.Key);
-			if (!Found)
-			{
-				Records.Add(Pair.Key, Pair.Value); bChanged = true;
-				continue;
-			}
-
-			FFF_FestivalRecord& Mine = *Found;
-			const FFF_FestivalRecord& Theirs = Pair.Value;
-
-			if (Theirs.BestVisitors > Mine.BestVisitors)
-			{
-				Mine.BestVisitors = Theirs.BestVisitors; bChanged = true;
-			}
-			if (Theirs.BestSatisfaction > Mine.BestSatisfaction)
-			{
-				Mine.BestSatisfaction = Theirs.BestSatisfaction; bChanged = true;
-			}
-			if (Theirs.BestProfit > Mine.BestProfit)
-			{
-				Mine.BestProfit = Theirs.BestProfit; bChanged = true;
-			}
-			if (Theirs.PlayCount > Mine.PlayCount)
-			{
-				Mine.PlayCount = Theirs.PlayCount; bChanged = true;
-			}
-		}
-
-		return bChanged;
 	}
 
 	// ── 판 1 에서만 쓰던 값 ─────────────────────────────────────────────────
@@ -274,7 +178,24 @@ struct FESTAFIESTA_API FFF_SessionSave
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	int32 Satisfaction = 0;
 
-	bool IsValid() const { return !FestivalId.IsNone() && Day > 0; }
+	/* 로비에서 찍은 세이브인가. 축제와 축제 사이, 레벨 선택 화면에 있던 때다.
+
+	   축제가 끝나면 판은 로비로 돌아가 다음 축제를 고른다. 축제가 늘어날수록 이
+	   지점이 판의 진행(어디까지 깼는지)을 담는 자리가 된다. 이때는 축제 도중의
+	   상태(돈·시설·날짜)가 없으므로 위 값들은 비어 있고, 파트 데이터도 담지 않는다.
+	*/
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	bool bAtLobby = false;
+
+	// 로비 세이브일 때 어느 나라의 레벨 선택 화면이었는가. 이어하면 그 화면으로 돌아간다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
+	FName CountryId;
+
+	// 축제 도중의 세이브인가. 이어하면 그 축제 레벨을 연다.
+	bool IsFestivalInProgress() const { return !bAtLobby && !FestivalId.IsNone() && Day > 0; }
+
+	// 이어할 수 있는 세이브인가. 축제 도중이거나 로비다.
+	bool IsValid() const { return bAtLobby || IsFestivalInProgress(); }
 };
 
 /* 목록에 보여줄 값만 모은 것.

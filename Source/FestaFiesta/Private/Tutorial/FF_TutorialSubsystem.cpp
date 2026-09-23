@@ -694,6 +694,9 @@ void UFF_TutorialSubsystem::TryAutoStart()
 		{
 			UE_LOG(LogFestaFiestaTutorial, Log,
 				TEXT("[튜토리얼] 안내를 꺼둔 상태라 시작하지 않는다."));
+
+			// 튜토리얼 레벨이면 레벨도 볼 이유가 없다. 레벨 선택으로 돌려보낸다.
+			LeaveIfTutorialLevel(FestivalId);
 			return;
 		}
 
@@ -702,6 +705,8 @@ void UFF_TutorialSubsystem::TryAutoStart()
 			UE_LOG(LogFestaFiestaTutorial, Log,
 				TEXT("[튜토리얼] %s 튜토리얼은 이미 봤으므로 시작하지 않는다."),
 				*FestivalId.ToString());
+
+			LeaveIfTutorialLevel(FestivalId);
 			return;
 		}
 	}
@@ -1168,6 +1173,41 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	}
 
 	OnTutorialSkipped.Broadcast();
+
+	// 튜토리얼 레벨에서 건너뛰었으면 레벨도 끝낸다. 방송 뒤에 한다 — 레벨을 떠나면
+	// 이 월드의 구독자들이 곧 사라지므로, 알릴 것은 그 전에 알린다.
+	LeaveIfTutorialLevel(ResolveCurrentFestivalId());
+}
+
+bool UFF_TutorialSubsystem::LeaveIfTutorialLevel(const FName FestivalId)
+{
+	/* 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다.
+
+	   튜토리얼 레벨은 그 자체가 안내라서, 안내를 건너뛴 사람에게 레벨만 남겨두면
+	   할 일 없는 축제를 억지로 치르게 된다.
+
+	   흐름을 타고 들어온 경우(UIFlow 가 축제 중)에만 돌려보낸다. 에디터에서 레벨을
+	   직접 열어 테스트할 때 쫓겨나면 튜토리얼 레벨을 고칠 수가 없다.
+	*/
+	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
+	if (!Settings || Settings->TutorialFestivalId.IsNone() || FestivalId != Settings->TutorialFestivalId)
+	{
+		return false;
+	}
+
+	UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetMode() != EFF_UIFlowMode::Festival)
+	{
+		UE_LOG(LogFestaFiestaTutorial, Log,
+			TEXT("[튜토리얼] 튜토리얼 레벨이지만 흐름 밖에서 열려 레벨 선택으로 돌아가지 않는다."));
+		return false;
+	}
+
+	UE_LOG(LogFestaFiestaTutorial, Log,
+		TEXT("[튜토리얼] 튜토리얼을 건너뛰었거나 이미 봤다. 튜토리얼 레벨을 끝내고 레벨 선택으로 돌아간다."));
+
+	Flow->ReturnToAtlas();
+	return true;
 }
 
 void UFF_TutorialSubsystem::StopScript()

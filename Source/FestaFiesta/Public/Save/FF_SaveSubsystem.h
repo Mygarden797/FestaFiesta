@@ -32,19 +32,18 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveLoaded, FName, SlotId);
    메타(튜토리얼 기록·깬 축제·기록)는 여기서 직접 들고 있는다. 어느 파트에도
    속하지 않는 값이라서다. 축제 도중 상태는 각 파트가 IFF_Saveable 로 채운다.
 
-   튜토리얼 기록은 판 단위, 깬 축제·기록은 계정 단위다(FFF_MetaSave 주석).
-   새 게임이면 튜토리얼을 처음부터 보고, 세이브로 들어가면 그 판에서 본 것은 안 본다.
+   메타는 전부 판 단위다(FFF_MetaSave 주석). 새 게임은 말 그대로 새 게임이고,
+   세이브로 들어가면 그 판의 기록을 따른다.
 
-   ─── 메타와 판은 파일을 나눈다 ─────────────────────────────────────────────
-   메타는 계정 단위라 판이 끝나도 남아야 하고, 판(세션)은 축제가 끝나면 버린다.
-   수명이 다른 둘을 한 파일에 두면 메타 하나 바꾸려고 판 전체를 다시 찍게 된다.
-   예전에는 튜토리얼을 끝낼 때 자동 저장을 새로 써서, 한낮 상태가 아침 저장을
-   덮었고 로비에서는 빈 판이 목록에 올라왔다. 그래서 메타는 FF_MetaStore 한 파일에
-   따로 쓰고, 판 슬롯에는 참고용 사본만 담는다.
+   ─── 세이브 두 종류 ────────────────────────────────────────────────────────
+   축제 도중: 메타 + 축제 상태(돈·시설·날짜). 이어하면 그 축제 레벨이 열린다.
+   로비    : 메타 + 어느 나라의 레벨 선택 화면이었는지. 이어하면 그 화면으로 간다.
+   축제가 늘어날수록 로비 세이브가 판의 진행(어디까지 깼는지)을 잇는 자리가 된다.
 
    ─── 자동 저장 ─────────────────────────────────────────────────────────────
-   하루가 시작될 때 판을 담는다. 잃어도 하루치다. 매 단계마다 저장하면 잦고,
-   수동만 두면 사람이 잊는다. 메타는 바뀔 때마다 바로 쓴다.
+   하루가 시작될 때 축제 상태를 담고, 축제가 끝나면 로비 세이브를 담는다.
+   잃어도 하루치다. 매 단계마다 저장하면 잦고, 수동만 두면 사람이 잊는다.
+   메타(튜토리얼 기록 등)가 바뀌면 이 판의 세이브에 그것만 고쳐 쓴다.
 */
 UCLASS()
 class FESTAFIESTA_API UFF_SaveSubsystem : public UGameInstanceSubsystem
@@ -65,18 +64,30 @@ public:
 	/* 수동 저장. 저장 버튼이 이것 하나만 부르면 된다. 쓴 칸 이름을 돌려주고, 못 쓰면 None.
 
 	   빈 칸(Manual_1 ~ Manual_8)부터 쓰고 다 찼으면 가장 오래된 칸을 덮는다.
-	   축제 진행 중에만 된다. 자동 저장(하루 시작)은 그대로 돈다.
+	   축제 도중이면 축제 세이브를, 로비(판을 시작한 뒤)면 로비 세이브를 남긴다.
+	   같은 버튼을 어디에 두든 알아서 갈린다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	FName SaveManual();
 
-	/* 새 게임을 시작한다. 이 판의 튜토리얼 기록을 비운다.
+	/* 새 게임을 시작한다. 메타(튜토리얼·깬 축제·기록)를 전부 비운다.
 
 	   로비의 `새 게임` 을 누른 순간에 부른다(지금은 튜토리얼 쪽이 그 버튼을 듣고 부른다).
-	   깬 축제·기록은 계정 단위라 지우지 않는다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void BeginNewRun();
+
+	// 로비 세이브인가. 프론트엔드가 이어하기를 레벨로 열지 로비 화면으로 갈지 가를 때 쓴다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	bool IsLobbySlot(FName SlotId) const;
+
+	/* 로비 세이브로 이어한다. 메타를 그 세이브의 것으로 돌리고, 돌아갈 나라를 알려준다.
+
+	   레벨을 열지 않는다. 로비는 이미 떠 있으므로 프론트엔드가 받은 나라로
+	   레벨 선택 화면을 띄우면 된다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	bool LoadLobbySave(FName SlotId, FName& OutCountryId);
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool LoadFromSlot(FName SlotId);
@@ -214,6 +225,7 @@ public:
 	/* 이 판에서 안내를 통째로 끈다. 새 게임을 누르면 풀린다.
 
 	   같은 판 안에서 되돌리는 수단은 아직 없다. 개발 중에는 콘솔 FF.Save.ResetMeta 로 푼다.
+	   튜토리얼 레벨에서 끄면 그 레벨도 끝내고 레벨 선택으로 돌아간다(튜토리얼 쪽이 처리).
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkTutorialOptedOut();
@@ -269,13 +281,6 @@ private:
 	UFUNCTION()
 	void HandleFestivalStarted();
 
-	/* 끝난 판의 자동 저장을 버린다.
-
-	   남겨두면 `계속하기` 가 이미 끝난 축제의 마지막 날 아침을 연다. 기록은 메타에
-	   이미 옮겨졌으니 판을 지워도 잃는 것이 없다. 수동 저장은 사용자가 일부러 남긴
-	   것이라 건드리지 않는다.
-	*/
-	void DiscardFinishedRunAutoSaves(FName FestivalId);
 
 	/* 다음 틱에 자동 저장한다. 바로 담지 않는다.
 
@@ -291,24 +296,13 @@ private:
 	// 슬롯 이름을 실제 파일 이름으로. 공백이나 기호가 섞이면 파일이 안 만들어진다.
 	static FString MakeSlotName(FName SlotId);
 
-	/* 옛 판 저장을 지금 형식으로 옮긴다. AdoptMeta 안에서만 부른다.
+	/* 옛 판 저장을 지금 형식으로 옮긴다. AdoptRunMeta 안에서만 부른다.
 
 	   판번호가 아니라 옛 값이 남아 있는지로 판단한다. UFF_SaveGame::Version 주석
 	   참고 — 이 수정 전 파일은 판번호가 파일에 안 들어가 있다.
 	*/
 	static void MigrateMeta(FFF_MetaSave& InOutMeta, int32 SavedVersion);
 
-	/* 파일에서 읽은 메타를 지금 메타에 합친다. 바뀐 게 있으면 메타 파일에 쓴다.
-
-	   메타 파일이 없을 때, 옛 자동 저장의 사본을 옮겨오는 데만 쓴다.
-	   이어하기나 불러오기에서는 부르지 않는다 — 원본은 메타 파일이고, 사본을
-	   계속 합치면 한 번 켜진 값(안내 끔 등)이 지워지지 않는다.
-	*/
-	void AdoptMeta(const FFF_MetaSave& Loaded, int32 SavedVersion, const FString& Source);
-
-	// 메타 파일을 읽고 쓴다. 판 슬롯과 따로 둔다(클래스 주석 참고).
-	bool ReadMetaStore(FFF_MetaSave& OutMeta, int32& OutVersion) const;
-	void WriteMetaStore();
 
 	// 두 자동 저장 중 더 최근 것. 둘 다 못 읽으면 false.
 	bool FindNewestAutoSave(UFF_SaveGame*& OutSave, FName& OutSlotId) const;
@@ -316,7 +310,7 @@ private:
 	/* 자동 저장 슬롯에 지금 판을 쓰고 다음 차례를 넘긴다.
 
 	   차례 넘기기를 한쪽에서 빠뜨리면 한 슬롯만 계속 덮여 이중화가 무의미해진다.
-	   하루 시작에서만 부른다. 메타만 바뀐 것은 WriteMetaStore 로 간다.
+	   하루 시작에서만 부른다. 메타만 바뀐 것은 WriteRunMeta 로 간다.
 	*/
 	void WriteAutoSave();
 
@@ -353,11 +347,27 @@ private:
 	// 이어할 수 없는 슬롯(축제 정보가 없는 옛 슬롯 등)을 목록에서 뺀다. 시작할 때 한 번.
 	void PruneSlotIndex();
 
-	// 세이브에 담긴 튜토리얼 기록을 지금 판의 것으로 삼는다. 이어하기·불러오기에서 부른다.
-	void AdoptRunTutorialState(const FFF_MetaSave& FromSave, int32 SavedVersion);
+	// 세이브에 담긴 메타를 지금 판의 것으로 삼는다. 이어하기·불러오기에서 부른다.
+	void AdoptRunMeta(const FFF_MetaSave& FromSave, int32 SavedVersion);
 
-	// 튜토리얼 기록이 바뀌면 이 판의 세이브에 그것만 고쳐 쓴다. 세이브가 아직 없으면 넘어간다.
-	void WriteRunTutorialState();
+	// 메타가 바뀌면 이 판의 세이브에 그것만 고쳐 쓴다. 세이브가 아직 없으면 넘어간다.
+	void WriteRunMeta();
+
+	// 로비 세이브를 쓴다. 메타와 레벨 선택 화면의 나라만 담는다.
+	bool SaveLobbyToSlot(FName SlotId, bool bAutoSave);
+
+	// 축제가 끝났을 때 자동 저장 칸에 로비 세이브를 남긴다.
+	void WriteLobbyAutoSave();
+
+	// 지금 로비(프론트엔드)에 있는가.
+	bool IsAtLobby() const;
+
+	/* 판을 시작했는가. 새 게임을 눌렀거나 세이브로 이어한 뒤다.
+
+	   타이틀·플레이 허브는 로비지만 아직 판이 없다. 거기서 수동 저장을 받으면
+	   빈 메타로 로비 세이브가 생겨, 이어하면 아무것도 안 한 판이 열린다.
+	*/
+	bool bRunActive = false;
 
 	/* 지금 판의 세이브. 이 판에서 쓰거나 이어한 슬롯이다. 새 게임이면 비운다.
 

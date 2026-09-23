@@ -324,6 +324,9 @@ private:
 	// 레벨이 뜨면 설정에 지정된 대사를 시작한다. 지정이 없으면 아무것도 하지 않는다.
 	void TryAutoStart();
 
+	// 튜토리얼 레벨이면 레벨을 끝내고 레벨 선택으로 돌아간다. 돌아갔으면 true.
+	bool LeaveIfTutorialLevel(FName FestivalId);
+
 	// 카메라 조작을 감시한다.
 	//
 	// 카메라 쪽에서 알려주게 하면 카메라가 튜토리얼을 알아야 한다.

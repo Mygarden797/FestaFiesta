@@ -39,6 +39,18 @@ public:
 		meta = (DisplayName = "Lobby Intro Table"))
 	TSoftObjectPtr<UDataTable> LobbyIntroTable;
 
+	/* 튜토리얼 레벨의 축제 이름. 아틀라스 카탈로그의 FestivalId 와 같아야 한다.
+
+	   튜토리얼 레벨은 대사만이 아니라 레벨 자체가 튜토리얼이다. 그래서 건너뛰면
+	   레벨도 끝내고 레벨 선택으로 돌려보낸다. 이미 봤거나 건너뛴 판으로 이 레벨에
+	   들어와도 마찬가지다. 어느 레벨이 그런 레벨인지 여기서 정한다.
+
+	   비우면 그런 레벨이 없는 것으로 보고 레벨을 끝내지 않는다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial",
+		meta = (DisplayName = "Tutorial Festival Id"))
+	FName TutorialFestivalId = TEXT("Tutorial");
+
 	// 어느 레벨에서든 시작할 대사. 보통 비워둔다.
 	//
 	// 레벨마다 다른 대사가 필요하므로 GameMode 지정이 우선한다.
