@@ -326,4 +326,32 @@ bool FFF_SnsFeedGenerator_DetectsSentimentMismatch::RunTest(const FString& Param
 	return true;
 }
 
+// SNS 입장료 화제 — 비쌀 때만 15, 쌀 때만 16. 비싸면 부정 글이 는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_Sns_AdmissionFeeTopics, "FestaFiesta.NPC.SnsFeedGenerator.AdmissionFeeTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_Sns_AdmissionFeeTopics::RunTest(const FString& Parameters)
+{
+	FFF_SnsFeedSignals Signals;
+	Signals.SimSatisfaction0To100 = 60;
+	Signals.ReferenceAdmissionFeeGold = 5;
+	Signals.MaxAdmissionFeeGold = 15;
+
+	Signals.AdmissionFeeGold = 5;
+	TestFalse(TEXT("기준값이면 비쌈 화제가 안 나온다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(15, Signals));
+	TestFalse(TEXT("기준값이면 가성비 화제가 안 나온다"), FFF_SnsFeedGenerator::IsTopicEligibleNow(16, Signals));
+	TestEqual(TEXT("기준값이면 극성 추첨 만족도가 그대로"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 60);
+
+	Signals.AdmissionFeeGold = 15;
+	TestTrue(TEXT("상한이면 비쌈 화제"), FFF_SnsFeedGenerator::IsTopicEligibleNow(15, Signals));
+	TestEqual(TEXT("상한이면 점수 100"), FFF_SnsFeedGenerator::ComputeTopicScore(15, Signals), 100.f, 1e-3f);
+	TestEqual(TEXT("상한이면 부정 쪽으로 25 기운다"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 35);
+	TestEqual(TEXT("비쌈은 부정 화제"), FFF_SnsFeedGenerator::GetTopicPolarity(15), EFF_SnsSentiment::Negative);
+
+	Signals.AdmissionFeeGold = 0;
+	TestTrue(TEXT("0 Gold 면 가성비 화제"), FFF_SnsFeedGenerator::IsTopicEligibleNow(16, Signals));
+	TestEqual(TEXT("0 Gold 면 점수 100"), FFF_SnsFeedGenerator::ComputeTopicScore(16, Signals), 100.f, 1e-3f);
+	TestEqual(TEXT("가성비는 긍정 화제"), FFF_SnsFeedGenerator::GetTopicPolarity(16), EFF_SnsSentiment::Positive);
+	TestEqual(TEXT("0 Gold 면 긍정 쪽으로 10 기운다"), FFF_SnsFeedGenerator::CalcPolaritySatisfaction(Signals), 70);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

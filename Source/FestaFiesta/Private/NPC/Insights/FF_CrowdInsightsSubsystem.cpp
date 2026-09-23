@@ -13,6 +13,8 @@
 #include "CrowdSystem/Systems/FF_CrowdDecisionSubsystem.h"
 #include "CrowdSystem/Types/FF_SimulationSettings.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "Festival/FF_FestivalBuzzSubsystem.h"
+#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
 #include "FF_FFZSWorldSubsystem.h"
@@ -117,6 +119,7 @@ void UFF_CrowdInsightsSubsystem::MaybeGeneratePost(float DeltaTime)
 	Signals.bMainProgramLocked = Stage->IsMainProgramLocked();
 	Signals.CurrentDay = Stage->CurrentDay;
 	FillFacilitySignals(Signals);
+	FillAdmissionFeeSignals(Signals);
 
 	FFF_SnsPostRow NewPost = FFF_SnsFeedGenerator::GeneratePost(
 		GlobalSimulationSeed, PostSequenceIndex, Signals, TemplatesByTopic, Stage->ElapsedLiveSeconds);
@@ -135,6 +138,15 @@ void UFF_CrowdInsightsSubsystem::PushPost(const FFF_SnsPostRow& NewPost)
 	}
 
 	OnSnsPostAdded.Broadcast(NewPost);
+
+	// 글이 화제성을 움직인다. 같은 GameInstance 스코프라 매번 조회해도 된다.
+	// 화제9(피날레)는 축제가 끝난 뒤 강제로 한 번 나가는 글이라 평가 직전에 점수를 올리지 않게 뺀다.
+	UFF_FestivalBuzzSubsystem* Buzz = NewPost.TopicId != 9
+		? GetGameInstance()->GetSubsystem<UFF_FestivalBuzzSubsystem>() : nullptr;
+	if (Buzz != nullptr)
+	{
+		Buzz->ApplySnsPost(NewPost);
+	}
 }
 
 FFF_SnsPostRow UFF_CrowdInsightsSubsystem::Debug_ForceGeneratePost()
@@ -208,6 +220,23 @@ void UFF_CrowdInsightsSubsystem::EnsureTemplatesLoaded()
 			TemplatesByTopic.FindOrAdd(Row->TopicId).Add(Row);
 		}
 	}
+}
+
+void UFF_CrowdInsightsSubsystem::FillAdmissionFeeSignals(FFF_SnsFeedSignals& Signals) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
+	if (Progression == nullptr || !Progression->IsFestivalStarted())
+	{
+		return;
+	}
+	int32 MinGold = 0;
+	int32 MaxGold = 0;
+	int32 ReferenceGold = 0;
+	Progression->GetAdmissionFeeRange(MinGold, MaxGold, ReferenceGold);
+	Signals.AdmissionFeeGold = Progression->GetAdmissionFee();
+	Signals.ReferenceAdmissionFeeGold = ReferenceGold;
+	Signals.MaxAdmissionFeeGold = MaxGold;
 }
 
 void UFF_CrowdInsightsSubsystem::FillFacilitySignals(FFF_SnsFeedSignals& Signals) const
