@@ -94,9 +94,28 @@ public:
 	//        덮을 것이 없어져 3일 7,500 이 통째로 순이익이 됐다 — 초기 자금과 함께
 	//        다시 앉혀야 하는 값이다.
 
-	// 1인당 입장료 (Gold). [밸런스] 3일 7,500
+	// 1인당 입장료 기준값 (Gold). [밸런스] 3일 7,500
+	// 플레이어가 매일 아침 바꿀 수 있다. 이 값은 축제 시작 시 입장료이자 "수요 배수 1.0" 인 지점이다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
 	int32 AdmissionFeeGold = 5;
+
+	// 플레이어가 고를 수 있는 입장료 범위 (Gold). [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
+	int32 AdmissionFeeMinGold = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0"))
+	int32 AdmissionFeeMaxGold = 15;
+
+	// 입장료 수요 곡선: 배수 = 1 - Slope × (입장료 - 기준값), 아래 두 값으로 자른다. [밸런스]
+	// 0.05 면 기준보다 5 Gold 비쌀 때 방문객 ×0.75, 10 Gold 비쌀 때 ×0.5.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0.0"))
+	float AdmissionFeeDemandSlope = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "0.0"))
+	float AdmissionFeeMinVisitorMultiplier = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Revenue", meta = (ClampMin = "1.0"))
+	float AdmissionFeeMaxVisitorMultiplier = 1.15f;
 
 	// [참고] 유료 프로그램은 플레이어가 Gold 를 내서 직접 산 것이므로 체험비를 전부 받는다.
 	// 유료 프로그램 외 '부스 매출' 중 플레이어 몫 (0.0~1.0). [밸런스] 3일 9,000.
@@ -124,6 +143,47 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Promotion")
 	FFF_PromotionTier PromotionFocused;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Promotion")
+	FFF_PromotionTier PromotionInfluencer;
+
+	// 홍보를 안 샀을 때의 방문객 배수. 1.0 미만이라 "안 하면 손해" 다. [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Promotion", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float NoPromotionVisitorMultiplier = 0.85f;
+
+	// --- 화제성(Buzz) -------------------------------------------------------
+
+	// Buzz 는 0~100, 축제 시작 시 50(중립). 방문객 배수 = 1 + (Buzz - 50) / 50 × Swing. [밸런스]
+	// 0.15 면 Buzz 0 에서 ×0.85, 100 에서 ×1.15.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BuzzVisitorSwing = 0.15f;
+
+	// 하루가 바뀔 때 중립(50)과의 거리를 이 비율만큼 줄인다. 화제는 식는다. [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BuzzDailyDecayToNeutral = 0.25f;
+
+	// SNS 글 1건이 Buzz 를 움직이는 최대치. 실제 값은 × (화제 강도 / 100), 긍정 +, 부정 -. [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
+	float BuzzPerSnsPost = 0.6f;
+
+	// 유료 프로그램 1개가 열릴 때 오르는 Buzz. [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Buzz", meta = (ClampMin = "0.0"))
+	float BuzzPerProgramOpened = 3.f;
+
+	// --- 축제 평가(엔딩) ------------------------------------------------------
+
+	// 종합 점수 = 가중 평균(만족도, 방문객 달성률, 재무, 화제성). 합이 1 이 아니어도 정규화한다. [밸런스]
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0.0"))
+	float EvaluationWeightSatisfaction = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0.0"))
+	float EvaluationWeightVisitors = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0.0"))
+	float EvaluationWeightFinance = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Festival|Evaluation", meta = (ClampMin = "0.0"))
+	float EvaluationWeightBuzz = 0.15f;
 
 	// --- 뒷정리 -----------------------------------------------------------
 
