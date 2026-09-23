@@ -39,6 +39,12 @@ public:
 	/** Claims a discovered recipe's authored reward once per profile. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	bool ClaimDiscoveryReward(FName RuleId);
+	/** Global collection progress, independent of the screen's category/search filters. */
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	TArray<FFF_FacilityCodexCollectionMilestone> GetCollectionMilestones() const;
+	/** Claims one configured collection stage once per profile, using the same Gold wallet. */
+	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
+	bool ClaimCollectionReward(FName MilestoneId);
 	/** Explicit boundary refresh, useful after external registry reconstruction. Not a per-frame call. */
 	UFUNCTION(BlueprintCallable, Category="FestaFiesta|Facility Codex")
 	void Refresh();

@@ -6,8 +6,10 @@
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 #include "Components/Button.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ComboBoxString.h"
 #include "Components/EditableTextBox.h"
+#include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/SizeBox.h"
 #include "Components/StackBox.h"
@@ -55,6 +57,10 @@ void UFF_FacilityCodexScreen::NativeOnInitialized()
 	ClearRewardFeedback();
 	if (Search_Entries) Search_Entries->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleSearchChanged);
 	if (TileView_Entries) TileView_Entries->OnItemSelectionChanged().AddUObject(this, &ThisClass::HandleSelectionChanged);
+	if (Column_CollectionCategories && TileView_Entries)
+		TileView_Entries->OnItemClicked().AddUObject(this, &ThisClass::HandleCollectionClicked);
+	if (Button_CollectionPrevious) Button_CollectionPrevious->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCollectionPrevious);
+	if (Button_CollectionNext) Button_CollectionNext->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCollectionNext);
 }
 
 // 도감 화면의 버튼과 변경 알림을 연결한다.
@@ -113,11 +119,69 @@ void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
 {
 	const FVector2D Viewport = GetCachedGeometry().GetLocalSize();
 	if (Viewport.X <= 1.f || Viewport.Y <= 1.f) return;
+	if (UpdateCollectionLayout(Viewport)) return;
 	if (Size_Dialog)
 	{
 		// Fill the actual logical viewport, including DPI scale. Filtering never shrinks the screen.
 		if (!FMath::IsNearlyEqual(Size_Dialog->GetWidthOverride(), Viewport.X)) Size_Dialog->SetWidthOverride(Viewport.X);
 		if (!FMath::IsNearlyEqual(Size_Dialog->GetHeightOverride(), Viewport.Y)) Size_Dialog->SetHeightOverride(Viewport.Y);
+	}
+	// The build-reference WBP uses a translucent lower browse dock and an
+	// independent detail card. Keep the input shield full viewport while these
+	// canvas slots follow the logical size used by the UMG DPI scaler.
+	if (UWidget* Dock = GetWidgetFromName(TEXT("Border_CodexDock")))
+	{
+		UCanvasPanelSlot* DockSlot = Cast<UCanvasPanelSlot>(Dock->Slot);
+		UCanvasPanelSlot* DetailSlot = Size_Detail ? Cast<UCanvasPanelSlot>(Size_Detail->Slot) : nullptr;
+		if (!DockSlot || !DetailSlot) return;
+		const float Side = FMath::Clamp(Viewport.X * .018f, 16.f, 26.f);
+		const float Bottom = FMath::Clamp(Viewport.Y * .018f, 14.f, 22.f);
+		const bool bSideBySide = Viewport.X >= 1100.f;
+		const float DockHeight = FMath::Clamp(Viewport.Y * .55f, 400.f, 460.f);
+		const float DockTop = Viewport.Y - Bottom - DockHeight;
+		const float DetailWidth = FMath::Min(FMath::Clamp(Viewport.X * .245f, 340.f, 450.f), Viewport.X - Side * 2.f);
+		const float DockWidth = bSideBySide
+			? Viewport.X - DetailWidth - Side * 3.f : Viewport.X - Side * 2.f;
+		const float DetailHeight = bSideBySide
+			? FMath::Min(Viewport.Y - Side * 2.f, 740.f)
+			: FMath::Max(220.f, DockTop - Side * 2.f);
+		const FVector2D DockPosition(Side, DockTop), DockSize(DockWidth, DockHeight);
+		const FVector2D DetailPosition(Viewport.X - Side - DetailWidth, Side), DetailSize(DetailWidth, DetailHeight);
+		if (!DockSlot->GetPosition().Equals(DockPosition, .5f)) DockSlot->SetPosition(DockPosition);
+		if (!DockSlot->GetSize().Equals(DockSize, .5f)) DockSlot->SetSize(DockSize);
+		if (!DetailSlot->GetPosition().Equals(DetailPosition, .5f)) DetailSlot->SetPosition(DetailPosition);
+		if (!DetailSlot->GetSize().Equals(DetailSize, .5f)) DetailSlot->SetSize(DetailSize);
+		UWidget* CloseContainer = GetWidgetFromName(TEXT("Size_Refined_Button_Close"));
+		if (!CloseContainer || !Cast<UCanvasPanelSlot>(CloseContainer->Slot)) CloseContainer = Button_Close;
+		if (auto* CloseSlot = CloseContainer ? Cast<UCanvasPanelSlot>(CloseContainer->Slot) : nullptr)
+		{
+			const FVector2D ClosePosition(Viewport.X - Side - 90.f, Side + 10.f), CloseSize(78.f, 40.f);
+			if (!CloseSlot->GetPosition().Equals(ClosePosition, .5f)) CloseSlot->SetPosition(ClosePosition);
+			if (!CloseSlot->GetSize().Equals(CloseSize, .5f)) CloseSlot->SetSize(CloseSize);
+		}
+		if (Size_Showcase)
+		{
+			// The preview, page tabs, scroll content and reward must all fit the
+			// independently floating inspector at the project's 720p DPI scale.
+			const float HeroHeight = FMath::Clamp(DetailHeight * .21f, 112.f, 154.f);
+			if (!FMath::IsNearlyEqual(Size_Showcase->GetHeightOverride(), HeroHeight, .5f))
+				Size_Showcase->SetHeightOverride(HeroHeight);
+		}
+		if (Size_ShowcaseRewardInfo)
+		{
+			if (Size_ShowcaseRewardInfo->GetParent() == GetWidgetFromName(TEXT("Vertical_ShowcaseDetail")))
+			{
+				if (Size_ShowcaseRewardInfo->IsWidthOverride()) Size_ShowcaseRewardInfo->ClearWidthOverride();
+			}
+			else Size_ShowcaseRewardInfo->SetWidthOverride(FMath::Clamp(DetailWidth * .33f, 130.f, 180.f));
+		}
+		if (TileView_Entries)
+		{
+			const float Width = TileView_Entries->GetCachedGeometry().GetLocalSize().X;
+			if (Width > 1.f) TileView_Entries->SetResponsiveColumns(FMath::FloorToInt(
+				(Width - 16.f) / (MinimumCardWidth + TileView_Entries->GetHorizontalEntrySpacing())));
+		}
+		return;
 	}
 	if (!Stack_Main || !Size_Detail || Stack_Main->GetChildrenCount() != 2) return;
 	UStackBoxSlot* GridSlot = Cast<UStackBoxSlot>(Stack_Main->GetChildAt(0)->Slot);
@@ -208,6 +272,20 @@ void UFF_FacilityCodexScreen::UpdateResponsiveLayout()
 
 FReply UFF_FacilityCodexScreen::NativeOnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
+	if (Column_CollectionCategories && !KeyEvent.IsRepeat())
+	{
+		if (bCollectionDetailOpen && (KeyEvent.GetKey() == EKeys::Left || KeyEvent.GetKey() == EKeys::Right))
+		{
+			NavigateCollectionDetail(KeyEvent.GetKey() == EKeys::Right ? 1 : -1);
+			return FReply::Handled();
+		}
+		if (!bCollectionDetailOpen && TileView_Entries && TileView_Entries->HasKeyboardFocus() &&
+			(KeyEvent.GetKey() == EKeys::Enter || KeyEvent.GetKey() == EKeys::SpaceBar))
+		{
+			OpenCombinationDetail(SelectedRuleId);
+			return FReply::Handled();
+		}
+	}
 	if (KeyEvent.GetKey() == EKeys::Escape)
 	{
 		HandleClose();
@@ -375,7 +453,13 @@ void UFF_FacilityCodexScreen::RefreshFilter()
 		Text_Empty->SetText(AllItems.IsEmpty() ? LOCTEXT("NoRules", "등록된 시설 조합이 없습니다.")
 			: LOCTEXT("NoMatches", "조건에 맞는 조합이 없습니다.\n검색어나 필터를 바꿔 보세요."));
 	}
+	// A claim can remove the last result from the reward-ready filter while its
+	// detail page is open. Keep the empty state and filter controls reachable.
+	if (Column_CollectionCategories && bCollectionDetailOpen && VisibleItems.IsEmpty())
+		SetCollectionDetailOpen(false);
 	RefreshDetail();
+	RefreshCollectionNavigation();
+	RefreshCollectionMilestones();
 }
 
 void UFF_FacilityCodexScreen::HandleSelectionChanged(UObject* SelectedItem)
@@ -395,8 +479,9 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 		ShownPreviewRuleId = SelectedRuleId;
 		bPreviewPartner = false;
 	}
-	RefreshShowcase();
-	if (Panel_Detail) Panel_Detail->SetVisibility(Item ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+	if (!Column_CollectionCategories || bCollectionDetailOpen) RefreshShowcase();
+	if (Panel_Detail) Panel_Detail->SetVisibility(Item && (!Column_CollectionCategories || bCollectionDetailOpen)
+		? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
 	if (Button_TargetCatalog) Button_TargetCatalog->SetIsEnabled(Item && !Item->Entry.TargetFacilityId.IsNone());
 	if (Button_PartnerCatalog) Button_PartnerCatalog->SetIsEnabled(Item && !Item->Entry.PartnerFacilityId.IsNone());
 	if (!Item)
@@ -415,15 +500,18 @@ void UFF_FacilityCodexScreen::RefreshDetail()
 	if (Text_DetailTitle) Text_DetailTitle->SetText(Entry.DisplayName);
 	if (Text_TargetName) Text_TargetName->SetText(Entry.TargetName);
 	if (Text_PartnerName) Text_PartnerName->SetText(Entry.PartnerName);
-	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 이용 수수료\n+{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
+	if (Text_Bonus) Text_Bonus->SetText(FText::Format(LOCTEXT("DetailBonus", "{0} 수수료 +{1}%"), Entry.TargetName, Number(Entry.ConfiguredBonusPercent)));
 	if (Text_Distance) Text_Distance->SetText(FText::Format(LOCTEXT("Distance", "시설 중심 사이 {0}m 이내에 배치"), Number(Entry.MaxDistanceMeters)));
-	if (Text_Discovery) Text_Discovery->SetText(FText::Format(
-		LOCTEXT("DiscoveryRewardClaim", "{0} · 최초 발견 보상 {1} 골드 (1회) · {2}"),
-		Entry.bDiscovered ? LOCTEXT("FoundStatus", "발견 완료") : LOCTEXT("NotFoundStatus", "미발견"),
-		FText::AsNumber(Entry.DiscoveryRewardGold),
-		Entry.bDiscoveryRewardClaimed ? LOCTEXT("RewardClaimed", "수령 완료") : Entry.DiscoveryRewardGold <= 0
-			? LOCTEXT("NoReward", "보상 없음") : Entry.bDiscovered ? LOCTEXT("RewardReady", "선물 아이콘으로 수령")
-			: LOCTEXT("RewardLocked", "발견 후 수령 가능")));
+	if (Text_Discovery)
+	{
+		// The dedicated reward card owns amount, eligibility, and action. Keep this line
+		// focused on discovery; legacy WBPs without that card retain their full explanation.
+		Text_Discovery->SetText(Text_DetailRewardAmount
+			? (Entry.bDiscovered ? LOCTEXT("FoundStatus", "조합 발견 완료") : LOCTEXT("NotFoundStatus", "미발견 조합"))
+			: FText::Format(LOCTEXT("LegacyDiscoveryReward", "{0} · 최초 발견 보상 {1} 골드 (1회)"),
+				Entry.bDiscovered ? LOCTEXT("LegacyFound", "발견 완료") : LOCTEXT("LegacyNotFound", "미발견"),
+				FText::AsNumber(Entry.DiscoveryRewardGold)));
+	}
 	FText Condition;
 	if (Entry.bConditionMet)
 	{
@@ -481,13 +569,22 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 	const bool bClaimed = Entry && Entry->bDiscovered && Entry->bDiscoveryRewardClaimed;
 	const bool bReady = Entry && Entry->bDiscovered && !bClaimed && Entry->DiscoveryRewardGold > 0;
 	const bool bLocked = Entry && !Entry->bDiscovered && Entry->DiscoveryRewardGold > 0;
-	if (Text_DetailRewardLabel) Text_DetailRewardLabel->SetText(!Entry ? FText::GetEmpty() : bReady
-		? LOCTEXT("DetailRewardReadyLabel", "수령 가능") : bClaimed
-			? LOCTEXT("DetailRewardClaimedLabel", "수령 완료") : LOCTEXT("DetailRewardDiscoveryLabel", "발견 보상"));
+	if (Text_DetailRewardLabel) Text_DetailRewardLabel->SetText(Entry
+		? LOCTEXT("DiscoveryRewardHeading", "발견 보상") : FText::GetEmpty());
+	const FText RewardGold = Entry
+		? FText::Format(LOCTEXT("DiscoveryRewardRowAmount", "{0} 골드"), FText::AsNumber(Entry->DiscoveryRewardGold))
+		: FText::GetEmpty();
+	if (Text_DetailClaimReward) Text_DetailClaimReward->SetText(RewardGold);
+	if (Text_DetailRewardClaimed) Text_DetailRewardClaimed->SetText(!Entry ? FText::GetEmpty()
+		: Entry->DiscoveryRewardGold > 0
+			? FText::Format(LOCTEXT("DiscoveryRewardRowClaimed", "{0} · 수령 완료"), RewardGold)
+			: LOCTEXT("DiscoveryRewardRowReceipt", "수령 완료"));
+	if (Text_DetailRewardLocked) Text_DetailRewardLocked->SetText(Entry
+		? FText::Format(LOCTEXT("DiscoveryRewardRowLocked", "{0} · 미발견"), RewardGold) : FText::GetEmpty());
 	if (Text_DetailRewardHint) Text_DetailRewardHint->SetText(bReady
-		? LOCTEXT("DetailRewardReadyHint", "선물을 눌러 보상을 받으세요") : bClaimed
-			? LOCTEXT("DetailRewardClaimedHint", "보상을 모두 받았어요") : bLocked
-				? LOCTEXT("DetailRewardLockedHint", "조합을 발견하면 받을 수 있어요") : FText::GetEmpty());
+		? LOCTEXT("DetailRewardRowHint", "골드 보상 버튼을 눌러 수령하세요") : bClaimed
+			? LOCTEXT("DetailRewardClaimedHint", "이미 수령했어요") : bLocked
+				? LOCTEXT("DetailRewardLockedHint", "조합을 발견하면 열려요") : FText::GetEmpty());
 	if (Size_DetailRewardState) Size_DetailRewardState->SetVisibility(bReady || bClaimed || bLocked
 		? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
 	if (Button_DetailClaimReward)
@@ -508,10 +605,13 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 		Border_DetailRewardLocked->SetToolTipText(bLocked ? FText::Format(
 			LOCTEXT("DetailRewardLockedTip", "조합을 발견하면 {0} 골드 수령 가능 (1회)"), FText::AsNumber(Entry->DiscoveryRewardGold)) : FText::GetEmpty());
 	}
-	if (Text_DetailRewardAmount) Text_DetailRewardAmount->SetText(!Entry ? FText::GetEmpty() : bClaimed
-		? LOCTEXT("DetailRewardCollected", "수령 완료") : Entry->DiscoveryRewardGold > 0
-			? FText::Format(LOCTEXT("DetailRewardAmount", "{0} 골드"), FText::AsNumber(Entry->DiscoveryRewardGold))
-			: LOCTEXT("DetailRewardNone", "발견 보상 없음"));
+	if (Text_DetailRewardAmount) Text_DetailRewardAmount->SetText(!Entry ? FText::GetEmpty()
+		: Entry->DiscoveryRewardGold > 0
+			? FText::Format(LOCTEXT("DetailRewardAmount", "{0} G"), FText::AsNumber(Entry->DiscoveryRewardGold))
+			: bClaimed ? LOCTEXT("DetailRewardCollected", "수령 완료")
+				: LOCTEXT("DetailRewardNone", "보상 없음"));
+	if (Image_DetailRewardGold) Image_DetailRewardGold->SetVisibility(Entry && Entry->DiscoveryRewardGold > 0
+		? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	if (Text_ShowcaseDistance) Text_ShowcaseDistance->SetText(Entry
 		? FText::Format(LOCTEXT("ShowcaseDistance", "함께 배치 · {0}m 이내"), Number(Entry->MaxDistanceMeters)) : FText::GetEmpty());
 	if (Text_DetailStatus) Text_DetailStatus->SetText(!Entry ? FText::GetEmpty() : Entry->bEffectApplied
@@ -548,7 +648,9 @@ void UFF_FacilityCodexScreen::RefreshShowcase()
 			: FFF_PrepBuildPresentationRules::ResolveCategoryDisplayName(Entry->TargetCategory));
 	if (Viewport_Showcase)
 	{
-		bShowPreviewModel = Entry->bDiscovered && Definition && !Definition->Spec.VisualMesh.IsNull();
+		// The collection detail uses the authored transparent facility cutout, matching
+		// its stamp card and keeping the sea backdrop continuous behind the visual.
+		bShowPreviewModel = !Column_CollectionCategories && Entry->bDiscovered && Definition && !Definition->Spec.VisualMesh.IsNull();
 		if (bShowPreviewModel)
 		{
 			// Give the preview a Slate viewport even while it is loading. Hidden (not
@@ -578,7 +680,16 @@ void UFF_FacilityCodexScreen::RefreshPreviewVisibility()
 		if (Button) Button->SetIsEnabled(bModelVisible);
 }
 
-void UFF_FacilityCodexScreen::HandleClose() { OnCloseRequested.Broadcast(); }
+void UFF_FacilityCodexScreen::HandleClose()
+{
+	if (Column_CollectionCategories && bCollectionDetailOpen)
+	{
+		SetCollectionDetailOpen(false);
+		if (TileView_Entries) TileView_Entries->SetKeyboardFocus();
+		return;
+	}
+	OnCloseRequested.Broadcast();
+}
 void UFF_FacilityCodexScreen::HandleAll() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::All); }
 void UFF_FacilityCodexScreen::HandleDiscovered() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::Discovered); }
 void UFF_FacilityCodexScreen::HandleUndiscovered() { SetDiscoveryFilter(EFF_FacilityCodexFilterState::Undiscovered); }

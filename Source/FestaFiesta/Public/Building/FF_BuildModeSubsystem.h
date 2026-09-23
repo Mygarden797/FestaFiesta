@@ -8,6 +8,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "InputCoreTypes.h"
+#include "Math/Box2D.h"
 #include "FF_FFZSTypes.h"
 #include "Building/Presentation/FF_BuildPlacementGuidance.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -23,6 +25,7 @@ class UFF_BuildCatalogScreen;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeGuide;
 class UFF_BuildToolsWidget;
+class UFF_BuildMultiSelectionWidget;
 class UFF_BuildSynergyWidget;
 class UFF_BuildPlacementFailureFeedback;
 class UFF_FacilityInfoSubsystem;
@@ -56,6 +59,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 // 외부 PrepHUD 카탈로그의 exact Slate focus가 사라졌을 때 안정적인 카테고리 버튼으로 복구하도록 요청한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildCatalogFocusRestoreRequested);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildToolsChanged);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnBuildMultiSelectionChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnSynergyCatalogContextChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnBuildCatalogFacilityFocusRequested, FName, FacilityDefinitionId);
 
@@ -347,6 +351,7 @@ class FESTAFIESTA_API UFF_BuildModeSubsystem final : public UTickableWorldSubsys
 	friend class FFF_ClarityCatalogDragTest;
 	friend class FFF_BuildDragPlacementTest;
 	friend class FFF_BuildSynergyCatalogContextTest;
+	friend class FFF_BuildMultiSelectionSessionTest;
 #endif
 
 public:
@@ -494,10 +499,42 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Building|Tools")
 	FFF_OnBuildToolsChanged OnBuildToolsChanged;
 
+	/** F1 switches to world selection; the selection never performs a destructive command. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	void ToggleMultiSelection();
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	bool IsMultiSelectionActive() const { return bMultiSelectionActive; }
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	int32 GetMultiSelectionCount() const;
+	UFUNCTION(BlueprintPure, Category = "Building|Multi Selection")
+	TArray<AFFZSFacilityActor*> GetMultiSelectedFacilities() const;
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	void ClearMultiSelection();
+	/** Leaves multi-selection and opens the validated single-facility information panel. */
+	UFUNCTION(BlueprintCallable, Category = "Building|Multi Selection")
+	bool InspectMultiSelectedFacility(AFFZSFacilityActor* Facility);
+	UPROPERTY(BlueprintAssignable, Category = "Building|Multi Selection")
+	FFF_OnBuildMultiSelectionChanged OnBuildMultiSelectionChanged;
+
+	/** Compatibility no-op. Toolbar controls are activated through their buttons. */
+	bool HandleBuildToolbarKey(const FKey& Key);
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void ToggleBuildSettings();
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsBuildSettingsOpen() const;
+
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
 	bool IsPlacementGridVisible() const { return bPlacementGridVisible; }
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void SetPlacementGridVisible(bool bVisible);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool AreFacilityRangesVisible() const { return bFacilityRangesVisible; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetFacilityRangesVisible(bool bVisible);
+	UFUNCTION(BlueprintPure, Category = "Building|Tools")
+	bool IsSynergyPreviewVisible() const { return bSynergyPreviewVisible; }
+	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
+	void SetSynergyPreviewVisible(bool bVisible);
 	UFUNCTION(BlueprintCallable, Category = "Building|Tools")
 	void SetPreferredPositionSnapCm(int32 SnapCm);
 	UFUNCTION(BlueprintPure, Category = "Building|Tools")
@@ -579,6 +616,16 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFF_BuildToolsWidget> BuildToolsWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<UFF_BuildMultiSelectionWidget> MultiSelectionWidget;
+	UPROPERTY(EditDefaultsOnly, Category = "Building|Multi Selection")
+	TSoftClassPtr<UFF_BuildMultiSelectionWidget> MultiSelectionWidgetClass;
+	TArray<TWeakObjectPtr<AFFZSFacilityActor>> MultiSelectedFacilities;
+	bool bMultiSelectionActive = false;
+	bool bMultiSelectionPointerArmed = false;
+	bool bMultiSelectionMarqueeVisible = false;
+	FVector2D MultiSelectionDragStartPixels = FVector2D::ZeroVector;
+	FVector2D MultiSelectionDragCurrentPixels = FVector2D::ZeroVector;
 
 	// Read-only combo presentation shares placement validation cadence and never owns placement authority.
 	UPROPERTY(Transient)
@@ -667,6 +714,8 @@ private:
 	bool bFreeRotateRightGesture = false;
 	// G 토글은 현재 건축 세션 안에서 유지되고 새 세션은 친숙한 기본값인 표시 상태로 시작한다.
 	bool bPlacementGridVisible = true;
+	bool bFacilityRangesVisible = true;
+	bool bSynergyPreviewVisible = true;
 	// Ctrl/Alt 전환도 커서 위치가 같을 때 프리뷰와 격자를 다시 그리도록 마지막 간격을 기억한다.
 	int32 CurrentPositionSnapCm = DefaultPlacementPositionSnapCm;
 	int32 PreferredPositionSnapCm = 0;
@@ -687,6 +736,16 @@ private:
 
 	// 모든 상태 쓰기를 한곳에서 수행하고 실제 변경일 때만 외부 표현 계층에 방송한다.
 	void SetState(EFF_BuildModeState NewState);
+	void EndMultiSelection();
+	void CreateMultiSelectionWidget(APlayerController& Controller);
+	void RemoveMultiSelectionWidget();
+	bool HandleMultiSelectionInput(APlayerController& Controller, bool bBlockWorldClick,
+		bool bPointerOverTools, bool bPointerOverDebugPanel, bool bPointerOverFacilityInfo);
+	bool IsRegisteredMultiSelectionFacility(const AFFZSFacilityActor* Facility) const;
+	void AddMultiSelectedFacility(AFFZSFacilityActor* Facility);
+	void ToggleMultiSelectedFacility(AFFZSFacilityActor* Facility);
+	void SelectFacilitiesInScreenRect(APlayerController& Controller, const FBox2D& ScreenRect);
+	void PruneMultiSelectedFacilities();
 
 	// B/마우스/Q/E 키의 상태별 의미를 해석해 공개 전환 함수로 전달한다. ESC/F5는 공용 Pause Hub가 소유한다.
 	void HandleInput(APlayerController& Controller, float DeltaTime);

@@ -1758,8 +1758,11 @@ namespace FFLiveHudWbpBuilder
 					FSlateBrush IconBrush;
 					IconBrush.SetResourceObject(IconTexture);
 					IconBrush.ImageSize = FVector2D(14.f, 14.f);
-					IconBrush.TintColor = FSlateColor(Palette
-						? Palette->InGame.InkMuted : FLinearColor::White);
+					// The Gold texture is now a full-colour coin. Other metric icons
+					// remain white masks and still use the muted ink tint.
+					IconBrush.TintColor = FSlateColor(FCString::Strcmp(IconName, TEXT("Gold")) == 0
+						? FLinearColor::White
+						: (Palette ? Palette->InGame.InkMuted : FLinearColor::White));
 					Icon->SetBrush(IconBrush);
 
 					if (UHorizontalBoxSlot* Slot_Icon = Box->AddChildToHorizontalBox(Icon))

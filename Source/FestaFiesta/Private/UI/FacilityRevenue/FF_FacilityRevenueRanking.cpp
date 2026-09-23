@@ -123,7 +123,7 @@ void UFF_FacilityRevenueRankingPanel::UpdateFrameSize(const FVector2D& Viewport)
 	if (!Size_ClarityFrame || Viewport.GetMin() <= 1.f) return;
 	// The frame is a right-side floating surface. Leave the upper and lower HUD clear;
 	// only the virtualized list uses the remaining space when there are many facilities.
-	const float Width = FMath::Min(500.f, FMath::Max(1.f, Viewport.X - 48.f));
+	const float Width = FMath::Min(600.f, FMath::Max(1.f, Viewport.X - 48.f));
 	const float Height = FMath::Min(DesiredFrameHeight, FMath::Max(1.f, Viewport.Y - 176.f));
 	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetWidthOverride(), Width)) Size_ClarityFrame->SetWidthOverride(Width);
 	if (!FMath::IsNearlyEqual(Size_ClarityFrame->GetHeightOverride(), Height)) Size_ClarityFrame->SetHeightOverride(Height);
@@ -190,11 +190,10 @@ void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRa
 	if (Border_FirstRevenue)
 		Border_FirstRevenue->SetVisibility(bAvailable && !Rows.IsEmpty() && Sum == 0
 			? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
-	// The saved title, tabs, total, outer padding, and inspect action occupy up to
-	// 279 logical pixels at the project font/DPI. Reserve 290 so sparse lists keep
-	// each 88px row whole after text metrics and pixel rounding are applied.
-	DesiredFrameHeight = FMath::Min(600.f, 290.f + FMath::Clamp(Rows.Num(), 1, 4) * 88.f
-		+ (bAvailable && !Rows.IsEmpty() && Sum == 0 ? 42.f : 0.f));
+	// The Pearl title, tabs, total, padding, and inspect action use 300 logical
+	// pixels. Leave two full 88px rows and a small rounding reserve in sparse lists.
+	DesiredFrameHeight = FMath::Min(600.f, 302.f + FMath::Clamp(Rows.Num(), 1, 4) * 88.f
+		+ (bAvailable && !Rows.IsEmpty() && Sum == 0 ? 60.f : 0.f));
 	UpdateFrameSize(GetCachedGeometry().GetLocalSize());
 	UFF_FacilityRevenueRankItem *Selected = nullptr;
 	for (auto *Item : Rows)

@@ -5,6 +5,8 @@
 #include "Character/FF_FestivalCharacter.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildToolbarInput.h"
+#include "InputKeyEventArgs.h"
 #include "Building/Testing/FF_ZoneLifecycleTestPanelSubsystem.h"
 #include "Camera/FF_FinaleViewpoint.h"
 #include "Camera/FF_OverviewCameraPawn.h"
@@ -76,6 +78,18 @@ void AFF_FestivalPlayerController::BeginPlay()
 			}
 		}
 	}
+}
+
+bool AFF_FestivalPlayerController::InputKey(const FInputKeyEventArgs& Params)
+{
+	const auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+	if (Build && Build->GetBuildModeState() != EFF_BuildModeState::Closed &&
+		FFBuildToolbarInput::IsRetiredShortcut(Params.Key))
+	{
+		// Consume before PlayerInput, including the engine's F-key debug bindings.
+		return true;
+	}
+	return Super::InputKey(Params);
 }
 
 void AFF_FestivalPlayerController::SetupInputComponent()

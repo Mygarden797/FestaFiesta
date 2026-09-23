@@ -106,7 +106,7 @@ void UFF_BuildModeGuide::ApplyGuideText()
 			TextBlock->SetText(Text);
 		}
 	};
-	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("CameraAndPause", "[WASD] 카메라 이동 · [ESC/F5] 일시정지"));
+	SetNamedText(TEXT("TXT_GuideRow_0"), LOCTEXT("CameraAndPause", "카메라 이동 · 일시정지"));
 	SetNamedText(TEXT("TXT_GuideRow_1"), bPlacementGridVisible
 		? (bPlacementPreviewActive
 			? LOCTEXT("PlacementGridLegend", "격자: 빈 건축 공간 · 초록: 배치 가능 · 빨강: 배치 불가")

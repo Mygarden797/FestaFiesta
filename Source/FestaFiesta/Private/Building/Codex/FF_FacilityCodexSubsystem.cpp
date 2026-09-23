@@ -4,6 +4,7 @@
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
+#include "Building/Codex/FF_FacilityCodexSettings.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
 #include "Building/Synergy/FF_FacilitySynergyRulePolicy.h"
@@ -236,6 +237,43 @@ bool UFF_FacilityCodexSubsystem::ClaimDiscoveryReward(const FName RuleId)
 		return false;
 	}
 	return Progress->ClaimDiscoveryReward(RuleId, Entry.DiscoveryRewardGold, Economy);
+}
+
+TArray<FFF_FacilityCodexCollectionMilestone> UFF_FacilityCodexSubsystem::GetCollectionMilestones() const
+{
+	TArray<FFF_FacilityCodexCollectionMilestone> Result;
+	const TArray<FFF_FacilityCodexCollectionReward> Rewards =
+		GetDefault<UFF_FacilityCodexSettings>()->GetValidCollectionRewards(CachedSummary.TotalCount);
+	Result.Reserve(Rewards.Num());
+	for (const FFF_FacilityCodexCollectionReward& Reward : Rewards)
+	{
+		FFF_FacilityCodexCollectionMilestone& Milestone = Result.AddDefaulted_GetRef();
+		Milestone.MilestoneId = Reward.MilestoneId;
+		Milestone.RequiredDiscoveries = Reward.RequiredDiscoveries;
+		Milestone.RewardGold = Reward.RewardGold;
+		Milestone.DiscoveredCount = CachedSummary.DiscoveredCount;
+		Milestone.bReached = Milestone.DiscoveredCount >= Milestone.RequiredDiscoveries;
+		Milestone.bClaimed = Progress && Progress->IsCollectionRewardClaimed(Reward.MilestoneId);
+		Milestone.bCanClaim = Milestone.bReached && !Milestone.bClaimed && bReadyToClaimRewards
+			&& Progress && Economy && Economy->IsFestivalStarted();
+	}
+	return Result;
+}
+
+bool UFF_FacilityCodexSubsystem::ClaimCollectionReward(const FName MilestoneId)
+{
+	if (!bReadyToClaimRewards || MilestoneId.IsNone()) { return false; }
+	BindGameInstance();
+	if (!Progress) { return false; }
+	const TArray<FFF_FacilityCodexCollectionReward> Rewards =
+		GetDefault<UFF_FacilityCodexSettings>()->GetValidCollectionRewards(CachedSummary.TotalCount);
+	const FFF_FacilityCodexCollectionReward* Reward = Rewards.FindByPredicate(
+		[MilestoneId](const FFF_FacilityCodexCollectionReward& Candidate) { return Candidate.MilestoneId == MilestoneId; });
+	if (!Reward) { return false; }
+	TSet<FName> AuthoredRuleIds;
+	AuthoredRuleIds.Reserve(CachedEntries.Num());
+	for (const FFF_FacilityCodexEntry& Entry : CachedEntries) { AuthoredRuleIds.Add(Entry.RuleId); }
+	return Progress->ClaimCollectionReward(MilestoneId, Reward->RequiredDiscoveries, Reward->RewardGold, AuthoredRuleIds, Economy);
 }
 
 TArray<FFF_FacilityCodexEntry> UFF_FacilityCodexSubsystem::GetFilteredEntries(const FFF_FacilityCodexFilter& Filter) const
