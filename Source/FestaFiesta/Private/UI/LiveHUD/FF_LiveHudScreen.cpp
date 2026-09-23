@@ -112,6 +112,30 @@ void UFF_LiveHudScreen::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UFF_LiveHudScreen::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	// 배속은 외부 시스템에서도 변경된다. 실제 값이 바뀔 때만 버튼 표시를 갱신한다.
+	if (const UFF_FestivalViewModelSubsystem* VM = GetViewModel())
+	{
+		if (!FMath::IsNearlyEqual(LastShownTimeScale, VM->GetTimeScale())) { RefreshSpeed(); }
+	}
+}
+
+float UFF_LiveHudScreen::GetBottomStatusRowHeight() const
+{
+	return SizeBox_StatusRow && SizeBox_StatusRow->IsHeightOverride()
+		? SizeBox_StatusRow->GetHeightOverride() : StatusRowHeight;
+}
+
+float UFF_LiveHudScreen::GetBottomBarHeight() const
+{
+	const bool bMenuVisible = !Border_MenuRow || Border_MenuRow->GetVisibility() != ESlateVisibility::Collapsed;
+	const float MenuHeight = SizeBox_MenuRow && SizeBox_MenuRow->IsHeightOverride()
+		? SizeBox_MenuRow->GetHeightOverride() : MenuRowHeight;
+	return GetBottomStatusRowHeight() + (bMenuVisible ? MenuHeight : 0.f);
+}
+
 // =============================================================================
 // 구독
 // =============================================================================
@@ -585,7 +609,7 @@ void UFF_LiveHudScreen::ApplyPanelLayout(const FFF_LivePanelLayout& Layout)
 	// 준비 단계는 패널 아래 끝이 탭 줄 밑으로 들어가서 버튼이 패널에 얹힌 것처럼 보인다.
 	// 바가 패널보다 뒤에 추가되어 있어 탭이 위에 그려지고, 가리는 자리는 패널의 빈 아래쪽이다.
 	//   Left = X 위치, Top = Y 위치(음수 = 위로), Right = 폭, Bottom = 높이
-	const float PanelTop = -StatusRowHeight + static_cast<float>(Layout.Offset.Y);
+	const float PanelTop = -GetBottomStatusRowHeight() + static_cast<float>(Layout.Offset.Y);
 
 	switch (Layout.Dock)
 	{
@@ -663,9 +687,7 @@ void UFF_LiveHudScreen::RefreshTabs()
 	//      피날레 메뉴행  0x0  · 상태행 2020x58   ← 이것
 	if (SizeBox_Bar)
 	{
-		const float TargetHeight = bHasTabs
-			? MenuRowHeight + StatusRowHeight
-			: StatusRowHeight;
+		const float TargetHeight = GetBottomBarHeight();
 
 		SizeBox_Bar->SetHeightOverride(TargetHeight);
 
@@ -682,6 +704,15 @@ void UFF_LiveHudScreen::RefreshTabs()
 			FMargin Offsets = BarSlot->GetOffsets();
 			Offsets.Bottom = TargetHeight;
 			BarSlot->SetOffsets(Offsets);
+		}
+	}
+	if (Text_SpeedReason)
+	{
+		if (UCanvasPanelSlot* ReasonSlot = Cast<UCanvasPanelSlot>(Text_SpeedReason->Slot))
+		{
+			FMargin Offsets = ReasonSlot->GetOffsets();
+			Offsets.Top = -GetBottomBarHeight() - 4.f;
+			ReasonSlot->SetOffsets(Offsets);
 		}
 	}
 
@@ -706,15 +737,15 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 		Flow ? Flow->GetActiveFestivalDisplayName() : FText::GetEmpty());
 
 	SetGroupTextOrHide(Box_Gold, Text_Gold,
-		FText::AsNumber(ViewModel->GetGold()));
+		FText::FormatNamed(GoldTextFormat, TEXT("Amount"), FText::AsNumber(ViewModel->GetGold())));
 
 	SetGroupTextOrHide(Box_TodayRevenue, Text_TodayRevenue,
-		FText::AsNumber(ViewModel->GetTodayRevenue()));
+		FText::FormatNamed(RevenueTextFormat, TEXT("Amount"), FText::AsNumber(ViewModel->GetTodayRevenue())));
 
 	// 프로그램은 인원을 묶지 않는다. 배치 개념은 사건 시스템이 와야 생긴다.
 	const int32 TotalStaff = ViewModel->GetTotalStaffCount();
 	SetGroupTextOrHide(Box_Staff, Text_Staff, (TotalStaff >= 0)
-		? FText::Format(LOCTEXT("LiveStatus_Staff", "{0}명"), FText::AsNumber(TotalStaff))
+		? FText::FormatNamed(StaffTextFormat, TEXT("Count"), FText::AsNumber(TotalStaff))
 		: FText::GetEmpty());
 
 	// 🔴 이 값은 **동시 인원**이다 (지금 축제장 안에 있는 사람 수).
@@ -729,7 +760,7 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 	const int32 ShownVisitorCount = (VisitorCount >= 0) ? VisitorCount : LiveVisitorCount;
 
 	SetGroupTextOrHide(Box_VisitorCount, Text_VisitorCount,
-		(ShownVisitorCount >= 0) ? FText::AsNumber(ShownVisitorCount) : FText::GetEmpty());
+		(ShownVisitorCount >= 0) ? FText::FormatNamed(VisitorTextFormat, TEXT("Count"), FText::AsNumber(ShownVisitorCount)) : FText::GetEmpty());
 
 	// --- 가운데: `1일차 · 마감` ---
 	//
@@ -741,10 +772,9 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 	// 문구는 `UFF_UIDisplayTextLibrary` 하나가 소유한다. ViewModel 의
 	// `GetCurrentStageDisplayText()` 도 지금은 같은 표를 거치지만, 거기에는 표에 없는 값을
 	// 위한 대체 경로가 붙어 있다. 칩은 표에 있는 값만 쓰므로 표를 직접 읽는다.
-	SetTextOrHide(Text_DayStage, FText::Format(
-		LOCTEXT("LiveStatus_DayStage", "{0}일차 · {1}"),
-		FText::AsNumber(ViewModel->GetCurrentDay()),
-		UFF_UIDisplayTextLibrary::GetFestivalStageText(ViewModel->GetCurrentStage())));
+	SetTextOrHide(Text_DayStage, FText::FormatNamed(DayStageTextFormat,
+		TEXT("Day"), FText::AsNumber(ViewModel->GetCurrentDay()),
+		TEXT("Stage"), UFF_UIDisplayTextLibrary::GetFestivalStageText(ViewModel->GetCurrentStage())));
 
 	if (Border_DayStage)
 	{
@@ -779,9 +809,8 @@ void UFF_LiveHudScreen::RefreshStatusRow()
 
 	SetGroupTextOrHide(Box_Clock, Text_Clock, ClockText.IsEmpty()
 		? FText::GetEmpty()
-		: FText::Format(
-			LOCTEXT("LiveStatus_Clock", "{0} · 남은 {1}초"),
-			ClockText, FText::AsNumber(RemainingSeconds)));
+		: FText::FormatNamed(ClockTextFormat,
+			TEXT("Clock"), ClockText, TEXT("Seconds"), FText::AsNumber(RemainingSeconds)));
 }
 
 void UFF_LiveHudScreen::RefreshSpeed()
@@ -792,6 +821,7 @@ void UFF_LiveHudScreen::RefreshSpeed()
 	const EFF_LiveSpeedState State = FFF_LiveHudRules::ResolveSpeedState(
 		Stage,
 		ViewModel ? ViewModel->IsTimeScaleLocked() : false);
+	LastShownTimeScale = ViewModel ? ViewModel->GetTimeScale() : 1.f;
 
 	if (Box_Speed)
 	{
@@ -806,11 +836,23 @@ void UFF_LiveHudScreen::RefreshSpeed()
 	}
 
 	const bool bCanChange = (State == EFF_LiveSpeedState::Ready);
-	for (UButton* Button : { Button_Speed1.Get(), Button_Speed2.Get(), Button_Speed4.Get() })
+	const TArray<UButton*> Buttons = { Button_Speed1.Get(), Button_Speed2.Get(), Button_Speed4.Get() };
+	if (SpeedButtonStyles.IsEmpty())
 	{
+		for (const UButton* Button : Buttons) { SpeedButtonStyles.Add(Button ? Button->GetStyle() : FButtonStyle()); }
+	}
+	for (int32 Index = 0; Index < Buttons.Num(); ++Index)
+	{
+		UButton* Button = Buttons[Index];
 		if (Button)
 		{
 			Button->SetIsEnabled(bCanChange);
+			FButtonStyle Style = SpeedButtonStyles[Index];
+			if (FMath::IsNearlyEqual(LastShownTimeScale, static_cast<float>(1 << Index)))
+			{
+				Style.Normal = Style.Hovered = Style.Pressed;
+			}
+			Button->SetStyle(Style);
 		}
 	}
 
