@@ -29,8 +29,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveLoaded, FName, SlotId);
    월드 서브시스템이면 그 사이에 통째로 사라진다.
 
    ─── 무엇을 담는가 ─────────────────────────────────────────────────────────
-   메타(튜토리얼 이력·깬 축제·기록)는 여기서 직접 들고 있는다. 어느 파트에도
+   메타(튜토리얼 기록·깬 축제·기록)는 여기서 직접 들고 있는다. 어느 파트에도
    속하지 않는 값이라서다. 축제 도중 상태는 각 파트가 IFF_Saveable 로 채운다.
+
+   튜토리얼 기록은 판 단위, 깬 축제·기록은 계정 단위다(FFF_MetaSave 주석).
+   새 게임이면 튜토리얼을 처음부터 보고, 세이브로 들어가면 그 판에서 본 것은 안 본다.
 
    ─── 메타와 판은 파일을 나눈다 ─────────────────────────────────────────────
    메타는 계정 단위라 판이 끝나도 남아야 하고, 판(세션)은 축제가 끝나면 버린다.
@@ -58,6 +61,22 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool SaveToSlot(FName SlotId, bool bAutoSave = false);
+
+	/* 수동 저장. 저장 버튼이 이것 하나만 부르면 된다. 쓴 칸 이름을 돌려주고, 못 쓰면 None.
+
+	   빈 칸(Manual_1 ~ Manual_8)부터 쓰고 다 찼으면 가장 오래된 칸을 덮는다.
+	   축제 진행 중에만 된다. 자동 저장(하루 시작)은 그대로 돈다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	FName SaveManual();
+
+	/* 새 게임을 시작한다. 이 판의 튜토리얼 기록을 비운다.
+
+	   로비의 `새 게임` 을 누른 순간에 부른다(지금은 튜토리얼 쪽이 그 버튼을 듣고 부른다).
+	   깬 축제·기록은 계정 단위라 지우지 않는다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void BeginNewRun();
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool LoadFromSlot(FName SlotId);
@@ -192,7 +211,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkFestivalTutorialSeen(FName FestivalId);
 
-	// 안내를 통째로 끈다. 되돌리는 수단은 지금 없다.
+	/* 이 판에서 안내를 통째로 끈다. 새 게임을 누르면 풀린다.
+
+	   같은 판 안에서 되돌리는 수단은 아직 없다. 개발 중에는 콘솔 FF.Save.ResetMeta 로 푼다.
+	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	void MarkTutorialOptedOut();
 
@@ -278,8 +300,9 @@ private:
 
 	/* 파일에서 읽은 메타를 지금 메타에 합친다. 바뀐 게 있으면 메타 파일에 쓴다.
 
-	   메타를 읽는 자리(시작, 이어하기, 콘솔 불러오기)가 전부 여기를 지난다.
-	   옮기기와 합치기를 자리마다 따로 쓰면 한 곳에서 빠진다.
+	   메타 파일이 없을 때, 옛 자동 저장의 사본을 옮겨오는 데만 쓴다.
+	   이어하기나 불러오기에서는 부르지 않는다 — 원본은 메타 파일이고, 사본을
+	   계속 합치면 한 번 켜진 값(안내 끔 등)이 지워지지 않는다.
 	*/
 	void AdoptMeta(const FFF_MetaSave& Loaded, int32 SavedVersion, const FString& Source);
 
@@ -327,6 +350,22 @@ private:
 	// 단계 순서대로 되돌린다.
 	void RestorePartData(const TMap<FName, FFF_SaveBlob>& In);
 
+	// 이어할 수 없는 슬롯(축제 정보가 없는 옛 슬롯 등)을 목록에서 뺀다. 시작할 때 한 번.
+	void PruneSlotIndex();
+
+	// 세이브에 담긴 튜토리얼 기록을 지금 판의 것으로 삼는다. 이어하기·불러오기에서 부른다.
+	void AdoptRunTutorialState(const FFF_MetaSave& FromSave, int32 SavedVersion);
+
+	// 튜토리얼 기록이 바뀌면 이 판의 세이브에 그것만 고쳐 쓴다. 세이브가 아직 없으면 넘어간다.
+	void WriteRunTutorialState();
+
+	/* 지금 판의 세이브. 이 판에서 쓰거나 이어한 슬롯이다. 새 게임이면 비운다.
+
+	   LastUsedSlotId 와 따로 두는 이유: 그쪽은 게임을 켤 때 가장 최근 자동 저장으로
+	   채워지는데, 그건 직전 판일 수 있다. 그 세이브에 새 판의 튜토리얼 기록을 쓰면 안 된다.
+	*/
+	FName CurrentRunSlotId;
+
 	// 목록 파일을 읽고 쓴다.
 	UFF_SaveSlotIndex* LoadSlotIndex() const;
 	void UpdateSlotIndex(const UFF_SaveGame& Save, FName SlotId);
@@ -354,4 +393,5 @@ private:
 	IConsoleCommand* SaveConsoleCommand = nullptr;
 	IConsoleCommand* LoadConsoleCommand = nullptr;
 	IConsoleCommand* StatConsoleCommand = nullptr;
+	IConsoleCommand* ResetMetaConsoleCommand = nullptr;
 };
