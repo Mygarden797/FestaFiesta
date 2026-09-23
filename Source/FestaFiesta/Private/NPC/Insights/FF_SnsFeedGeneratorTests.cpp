@@ -206,10 +206,25 @@ bool FFF_SnsFeedGenerator_SalienceReflectsChosenTopicScore::RunTest(const FStrin
 	return true;
 }
 
-// {시설} 자리표시자는 화제1·10만 통과한다 — 이 둘만 가리킬 시설이 신호로 분명하기 때문
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForTopic1And10, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForTopic1And10", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
-bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForTopic1And10::RunTest(const FString& Parameters)
+// {시설} 자리표시자는 가리킬 시설이 신호로 분명한 화제(1·7·10·14)만 통과한다
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics, "FestaFiesta.NPC.SnsFeedGenerator.FacilityPlaceholderOnlyForSignaledTopics", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_SnsFeedGenerator_FacilityPlaceholderOnlyForSignaledTopics::RunTest(const FString& Parameters)
 {
+	for (const int32 TopicId : {7, 14})
+	{
+		FFF_SnsPostTemplateRow Row;
+		Row.TopicId = TopicId;
+		Row.bUsesFacilityPlaceholder = true;
+		TestTrue(FString::Printf(TEXT("화제%d의 {시설} 문장은 포함된다"), TopicId),
+			FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(Row));
+
+		Row.Text = FText::FromString(TEXT("{시설} 또 올래"));
+		FFF_SnsFeedSignals Signals;
+		Signals.MostQueuedFacilityDisplayName = TEXT("타코 트럭");
+		TestEqual(FString::Printf(TEXT("화제%d는 줄이 가장 긴 시설로 치환된다"), TopicId),
+			FFF_SnsFeedGenerator::ResolveBodyText(Row, Signals).ToString(), FString(TEXT("타코 트럭 또 올래")));
+	}
+
 	FFF_SnsPostTemplateRow Topic1;
 	Topic1.TopicId = 1;
 	Topic1.bUsesFacilityPlaceholder = true;

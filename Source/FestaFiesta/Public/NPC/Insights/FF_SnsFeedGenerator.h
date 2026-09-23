@@ -31,7 +31,7 @@ struct FFF_SnsFeedSignals
 	int32 CurrentDay = 1;
 
 	// 이하 넷은 UFFZSWorldSubsystem::BuildReadModel().Facilities에서 뽑는다
-	// 화제10·12 점수와 화제1·10의 {시설} 치환에 쓴다. 설치된 시설이 하나도 없으면 전부 기본값(0·빈 문자열)
+	// 화제10·12 점수와 화제1·7·10·14의 {시설} 치환에 쓴다. 설치된 시설이 하나도 없으면 전부 기본값(0·빈 문자열)
 
 	// 화제12(축제 초반 시설 부족) 점수 산출용 — 설치된 시설 총 수
 	int32 FacilityCount = 0;
@@ -39,7 +39,7 @@ struct FFF_SnsFeedSignals
 	// 화제1(대기시간 김)의 {시설} 치환용 — AverageCompletedWaitSeconds가 가장 큰 시설의 이름
 	FString WorstWaitFacilityDisplayName;
 
-	// 화제10(인기 시설) 점수 산출 + {시설} 치환용 — WaitingCount가 가장 큰 시설과 그 값
+	// 화제10(인기 시설) 점수 산출 + 화제7·10·14 {시설} 치환용 — WaitingCount가 가장 큰 시설과 그 값
 	FString MostQueuedFacilityDisplayName;
 	int32 MaxWaitingCount = 0;
 };

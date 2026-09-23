@@ -177,9 +177,10 @@ bool FFF_SnsFeedGenerator::ShouldIncludeTemplateRow(const FFF_SnsPostTemplateRow
 		return true;
 	}
 
-	// 화제1(최장 대기)·10(최다 대기줄)만 어떤 시설을 가리켜야 하는지가 분명하다.
+	// 화제1(최장 대기)·10(최다 대기줄)·7(만족)·14(재방문)만 어떤 시설을 가리켜야 하는지가 분명하다.
+	// 7·14 는 "줄이 가장 긴 곳 = 사람들이 좋아하는 곳" 으로 10 과 같은 신호를 쓴다.
 	// 나머지 화제는 가리킬 시설을 정할 신호가 없어 계속 뺀다
-	return Row.TopicId == 1 || Row.TopicId == 10;
+	return Row.TopicId == 1 || Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14;
 }
 
 FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, const FFF_SnsFeedSignals& Signals)
@@ -194,7 +195,7 @@ FText FFF_SnsFeedGenerator::ResolveBodyText(const FFF_SnsPostTemplateRow& Row, c
 	{
 		FacilityName = Signals.WorstWaitFacilityDisplayName;
 	}
-	else if (Row.TopicId == 10)
+	else if (Row.TopicId == 10 || Row.TopicId == 7 || Row.TopicId == 14)
 	{
 		FacilityName = Signals.MostQueuedFacilityDisplayName;
 	}
