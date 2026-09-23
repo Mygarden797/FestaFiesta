@@ -1,3 +1,6 @@
+// FF_FullscreenOptionsWbpBuilder.cpp
+// 역할: 전체 화면 옵션 메뉴의 저장된 위젯 구성을 만든다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "CoreMinimal.h"

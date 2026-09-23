@@ -1,3 +1,6 @@
+// FF_BuildFacilityInspectionTests.cpp
+// 역할: BuildFacilityInspection 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.BuildMode.FacilityInspection).
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintLibrary.h"

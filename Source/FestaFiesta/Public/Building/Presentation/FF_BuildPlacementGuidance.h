@@ -1,3 +1,6 @@
+// FF_BuildPlacementGuidance.h
+// 역할: 배치 실패 사유를 안내 문구로 바꾸고 가까운 대체 위치 후보를 만든다.
+
 #pragma once
 
 #include "CoreMinimal.h"

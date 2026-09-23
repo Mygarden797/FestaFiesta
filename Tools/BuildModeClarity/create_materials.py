@@ -1,3 +1,6 @@
+# create_materials.py
+# 역할: 건설 화면의 배치·색·가독성 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Small, static UI materials: matte sage glass, thin-film rim and a sampled SDF wheel.
 
 Run in UE 5.7. This writes only the new Building/Clarity assets. It does not change

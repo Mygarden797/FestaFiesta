@@ -1,5 +1,9 @@
+// FF_BuildStudioWbpBuilder.cpp
+// 역할: 건설 카탈로그·시설 카드·분류 버튼의 편집용 화면을 구성한다.
+
 // Explicit, editor-only migration for the build catalog's Designer surfaces.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -35,9 +39,9 @@
 namespace FFBuildStudioWbp
 {
 using namespace FFUIWbpBuilder;
-const FString ChoicePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildCategoryChoice");
-const FString TilePackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile");
-const FString PanelPackage = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild");
+const FString ChoicePackage = FFBuildUIAssetPaths::CategoryChoicePackage;
+const FString TilePackage = FFBuildUIAssetPaths::BuildTilePackage;
+const FString PanelPackage = FFBuildUIAssetPaths::BuildPanelPackage;
 constexpr const TCHAR* LogPrefix = TEXT("FF_BUILD_STUDIO_UMG");
 
 FSlateBrush Brush(const FLinearColor Color, float Radius = 6, const FLinearColor Outline = FLinearColor::Transparent)
@@ -399,7 +403,7 @@ bool ReplaceVisualTree(UWidgetBlueprint& BP, BuildFunction Build)
 void RefreshBuildStudio()
 {
 	UWidgetBlueprint* Choice = EnsureWidgetBlueprint(LogPrefix, ChoicePackage,
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Controls"), *UFF_PrepChoiceButton::StaticClass(), BuildChoice);
+		FFBuildUIAssetPaths::ControlsFolder, *UFF_PrepChoiceButton::StaticClass(), BuildChoice);
 	UWidgetBlueprint* Tile = LoadExistingBlueprint(TilePackage);
 	UWidgetBlueprint* Panel = LoadExistingBlueprint(PanelPackage);
 	if (!Choice || !Choice->GeneratedClass || !Tile || !Panel || !Panel->WidgetTree)

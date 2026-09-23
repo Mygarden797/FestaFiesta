@@ -1,3 +1,6 @@
+# verify_saved_blends.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Independently reopen the final editable .blend deliverables without saving.
 
 Run with Blender --background --factory-startup --python this_file.py.

@@ -1,3 +1,6 @@
+# compose_qa.py
+# 역할: 설치 가능한 도로·타일 작업에서 검증 이미지와 정보를 비교 가능한 형태로 묶는다.
+
 """Arrange unmodified reference and actual Blender renders for visual review."""
 from pathlib import Path
 import json

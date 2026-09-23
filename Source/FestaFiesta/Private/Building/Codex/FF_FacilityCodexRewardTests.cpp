@@ -1,9 +1,13 @@
+// FF_FacilityCodexRewardTests.cpp
+// 역할: FacilityCodexReward 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Codex.Rewards.DiscoveryRequiresExplicitOneTimeClaim, FestaFiesta.Building.Codex.Rewards.ProfileReloadPreservesUnclaimedAndMigratesPaidHistory).
+
 #include "Building/Codex/FF_FacilityCodexProgressSubsystem.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Building/Codex/FF_FacilityCodexModel.h"
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
+#include "Building/Codex/FF_FacilityCodexTestObserver.h"
 #include "Building/FF_FacilityUpgradeTestPolicy.h"
 #include "Building/Synergy/FF_FacilitySynergySettings.h"
 #include "DataTables/FF_FacilityCostRow.h"
@@ -264,6 +268,9 @@ bool FFF_FacilityCodexRewardStartupWorldTest::RunTest(const FString& Parameters)
 	Row.PartnerFacilityId = Row.TargetFacilityId;
 	Row.DiscoveryRewardGold = 333;
 	Rules->AddRow(TEXT("CodexStartupPair"), Row);
+	FFF_FacilitySynergyRow RoadRecipe = Row;
+	RoadRecipe.PartnerFacilityId = TEXT("Road_Surface_CodexRecipeAutomation");
+	Rules->AddRow(TEXT("CodexAuthoredRoadPair"), RoadRecipe);
 	TGuardValue<TSoftObjectPtr<UDataTable>> TableSetting(
 		GetMutableDefault<UFF_FacilitySynergySettings>()->SynergyTable, TSoftObjectPtr<UDataTable>(Rules.Get()));
 	FTestWorldWrapper TestWorld;
@@ -341,6 +348,74 @@ bool FFF_FacilityCodexRewardStartupWorldTest::RunTest(const FString& Parameters)
 	TArray<FText> Errors;
 	TestTrue(TEXT("The installed layout can be restored"), Zones->RestoreWorldSnapshot(Snapshot, Errors));
 	TestEqual(TEXT("Snapshot restore cannot grant a second reward"), Economy->GetGold(), 1333);
+
+	TStrongObjectPtr<UFF_FacilityCodexTestObserver> Observer(NewObject<UFF_FacilityCodexTestObserver>());
+	Codex->OnCodexChanged.AddDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
+	FFFZSFacilitySpec Road;
+	Road.FacilityDefinitionId = TEXT("Road_Surface_CodexUnrelatedAutomation");
+	Road.DisplayName = FText::FromString(TEXT("Codex road regression"));
+	Road.Category = EFFZSFacilityCategory::Road;
+	Road.FootprintSizeCells = FIntPoint(400, 400);
+	Road.ClearanceCells = 0;
+	Road.PlacementObstacleHeightCm = 8.f;
+	Road.QueueRules.MaxWaitingAgents = 0;
+	Road.QueueRules.ServiceCapacity = 0;
+	Road.InstallCostKey = CostKey;
+	TArray<FGuid> RoadIds;
+	for (const int32 X : {1000, 1500, 2000})
+	{
+		FFFZSGridPlacement Placement;
+		Placement.OriginCell = FIntPoint(X, 4000);
+		const FFFZSCommand Command = UFFZSGridLibrary::MakeInstallCommand(Road, ZoneId, Placement, Zones->GetWorldRevision());
+		const FFFZSCommandResult Result = Zones->ExecuteCommand(Command);
+		if (!TestTrue(*FString::Printf(TEXT("Unrelated surface installs: %s"), *Result.Message.ToString()), Result.bSucceeded)) { return false; }
+		RoadIds.Add(Command.FacilityInstanceId);
+	}
+	TestEqual(TEXT("Dragging unrelated roads never republishes the codex"), Observer->NotificationCount, 0);
+	TestEqual(TEXT("Unrelated roads preserve existing discoveries"), Codex->GetSummary().DiscoveredCount, 1);
+	FFFZSCommand MoveRoad;
+	MoveRoad.CommandId = FGuid::NewGuid();
+	MoveRoad.TransactionId = FGuid::NewGuid();
+	MoveRoad.Type = EFFZSCommandType::Move;
+	MoveRoad.FacilityInstanceId = RoadIds[2];
+	MoveRoad.ZoneId = ZoneId;
+	MoveRoad.Placement.OriginCell = FIntPoint(2000, 4500);
+	MoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Unrelated road can move"), Zones->ExecuteCommand(MoveRoad).bSucceeded);
+	TestEqual(TEXT("Moving an unrelated road never republishes the codex"), Observer->NotificationCount, 0);
+
+	FFFZSCommand RemoveRoad;
+	RemoveRoad.CommandId = FGuid::NewGuid();
+	RemoveRoad.TransactionId = FGuid::NewGuid();
+	RemoveRoad.Type = EFFZSCommandType::Remove;
+	RemoveRoad.FacilityInstanceId = RoadIds[0];
+	RemoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Unrelated road can be removed"), Zones->ExecuteCommand(RemoveRoad).bSucceeded);
+	TestEqual(TEXT("Removing an unrelated road never republishes the codex"), Observer->NotificationCount, 0);
+
+	const FFFZSWorldSnapshot RoadSnapshot = Zones->CaptureWorldSnapshot();
+	TestTrue(TEXT("Surface snapshot restores and reconciles the codex"), Zones->RestoreWorldSnapshot(RoadSnapshot, Errors));
+	const int32 NotificationsAfterRestore = Observer->NotificationCount;
+	TestTrue(TEXT("Snapshot restore publishes the reconciled entries"), NotificationsAfterRestore > 0);
+	RemoveRoad.CommandId = FGuid::NewGuid();
+	RemoveRoad.FacilityInstanceId = RoadIds[1];
+	RemoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Restored unrelated road can be removed"), Zones->ExecuteCommand(RemoveRoad).bSucceeded);
+	TestEqual(TEXT("Restored unrelated IDs remain excluded from repeated refresh"), Observer->NotificationCount, NotificationsAfterRestore);
+
+	Road.FacilityDefinitionId = RoadRecipe.PartnerFacilityId;
+	FFFZSGridPlacement RecipePlacement;
+	RecipePlacement.OriginCell = FIntPoint(2500, 4000);
+	const FFFZSCommand RecipeCommand = UFFZSGridLibrary::MakeInstallCommand(Road, ZoneId, RecipePlacement, Zones->GetWorldRevision());
+	TestTrue(TEXT("A road explicitly authored into a recipe installs"), Zones->ExecuteCommand(RecipeCommand).bSucceeded);
+	TestTrue(TEXT("Authored road recipes still publish immediately"), Observer->NotificationCount > NotificationsAfterRestore);
+	TestTrue(TEXT("A road recipe discovery persists synchronously"), Progress->IsDiscovered(TEXT("CodexAuthoredRoadPair")));
+	RemoveRoad.CommandId = FGuid::NewGuid();
+	RemoveRoad.FacilityInstanceId = RecipeCommand.FacilityInstanceId;
+	RemoveRoad.ExpectedWorldRevision = Zones->GetWorldRevision();
+	TestTrue(TEXT("Recipe road can be removed in the same frame"), Zones->ExecuteCommand(RemoveRoad).bSucceeded);
+	TestTrue(TEXT("Same-frame removal cannot lose a transient recipe discovery"), Progress->IsDiscovered(TEXT("CodexAuthoredRoadPair")));
+	Codex->OnCodexChanged.RemoveDynamic(Observer.Get(), &UFF_FacilityCodexTestObserver::HandleCodexChanged);
 	return true;
 }
 

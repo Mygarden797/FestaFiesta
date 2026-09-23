@@ -1,0 +1,63 @@
+{
+  "number": 2,
+  "category": "Booth",
+  "subtype": "FoodStall",
+  "name_ko": "과일 에이드 바",
+  "slug": "FruitAdeBar",
+  "id": "Booth_FoodStall_FruitAdeBar",
+  "footprint_cm": [
+    600,
+    320
+  ],
+  "height_cm": 390,
+  "description_ko": "여름 분위기의 음료 매점.",
+  "emphasis_ko": "큰 과일 모형과 투명 디스펜서가 핵심. 유리·액체 면을 겹겹이 쌓지 말고 적은 투명 면으로 표현한다.",
+  "reference_image": "Design/Facitilies/02 과일 에이드 바.png",
+  "exploded_reference_image": "Design/Facitilies/02 과일 에이드 바 분해.png",
+  "template_definition": "/Game/FestaFiesta/Zone/Data/FacilityDefinitions/Booth/PDA_FFZS_Booth_FoodStall_MainFood",
+  "followup_features": [
+    "음료 제공 상호작용과 디스펜서 액체 연출은 별도 연결한다."
+  ],
+  "fbx": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_FruitAdeBar\\SM_FF_Booth_FoodStall_FruitAdeBar.fbx",
+  "blend": "C:\\Users\\gksro\\OneDrive\\Desktop\\Blender\\02_Booth_FoodStall_FruitAdeBar.blend",
+  "preview": "C:\\Users\\gksro\\OneDrive\\Desktop\\Git\\TeamProject\\8th-Team13-Final-Project\\SourceArt\\FacilityExpansion70\\Booth\\Booth_FoodStall_FruitAdeBar\\iso.png",
+  "bounds_m": [
+    5.355434417724609,
+    2.886784076690674,
+    3.9000000953674316
+  ],
+  "bounds_min_m": [
+    -2.677717447280884,
+    -1.4433919191360474,
+    -8.53454462657055e-09
+  ],
+  "bounds_max_m": [
+    2.6777172088623047,
+    1.443392038345337,
+    3.9000000953674316
+  ],
+  "triangles": 21428,
+  "material_names": [
+    "M_F70_Coral",
+    "M_F70_Cream",
+    "M_F70_Glass",
+    "M_F70_Wood",
+    "M_F70_DarkTeal",
+    "M_F70_Metal",
+    "M_F70_White",
+    "M_F70_Green",
+    "M_F70_DarkWood",
+    "M_F70_Amber"
+  ],
+  "collision_count": 9,
+  "editable_parts": 78,
+  "fbx_sha256": "b68cf59e76a3712f32ee57a1c485740543d259ac0ac1f44399d548fa63c78c73",
+  "art_status": "first_pass",
+  "views": [
+    "iso",
+    "front",
+    "rear",
+    "top"
+  ],
+  "light_positions_m": []
+}

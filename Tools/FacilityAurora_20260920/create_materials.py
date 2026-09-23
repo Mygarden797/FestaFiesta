@@ -1,3 +1,6 @@
+# create_materials.py
+# 역할: 시설 정보·수익 화면의 테마 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create the requested green UI materials, with real UV-driven mesh and thin-film light.
 
 No source images, game-world materials, or global palette are recolored.

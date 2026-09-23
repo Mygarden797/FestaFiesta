@@ -1,6 +1,10 @@
+// FF_FacilityCodexPresenterTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildModeSubsystem.h"
@@ -217,7 +221,7 @@ bool FFF_FacilityCodexPresenterLifecycleTest::RunTest(const FString& Parameters)
 	// closing the codex must not close/recreate its browsing session or reset filters.
 	{
 		UClass* PrepClass = LoadClass<UFF_PrepPanelBuild>(nullptr,
-			TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C"));
+			FFBuildUIAssetPaths::BuildPanelClass);
 		if (!TestNotNull(TEXT("Production prep catalog WBP"), PrepClass)) return false;
 		// This fixture deliberately detaches the catalog and inspects it afterwards.
 		// A preview world requests GC when it closes, so a raw local cannot own that

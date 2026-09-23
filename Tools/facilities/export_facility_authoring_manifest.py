@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# export_facility_authoring_manifest.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 다른 제작 도구에서 사용할 입력을 내보낸다.
+
 """Export a disposable Blender/tool manifest from facility Data Assets.
 
 Run with UnrealEditor-Cmd before the offline Blender builder.  Never hand-edit

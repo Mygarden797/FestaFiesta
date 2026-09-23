@@ -1,3 +1,6 @@
+# repair_experiment.py
+# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 확인된 데이터 오류만 수정한다.
+
 import bpy,bmesh,json
 from pathlib import Path
 OUT=Path(__file__).resolve().parents[2]/'SourceArt/MainMan_20260911/qa'

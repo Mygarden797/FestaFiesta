@@ -1,3 +1,6 @@
+// FF_FacilityLightingControls.cpp
+// 역할: 조명 설정을 임시로 편집하고 적용·취소·초기화 요청을 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityLightingControls.h"

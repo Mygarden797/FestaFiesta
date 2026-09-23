@@ -1,3 +1,6 @@
+// FF_BuildPlacementGizmo.h
+// 역할: 마우스로 잡아 움직이는 시설 이동 화살표와 회전 손잡이를 처리한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

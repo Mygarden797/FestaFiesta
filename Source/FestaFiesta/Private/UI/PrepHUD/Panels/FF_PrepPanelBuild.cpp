@@ -1,3 +1,6 @@
+// FF_PrepPanelBuild.cpp
+// 역할: 건설 카탈로그의 검색·분류·선택과 배치 상태를 표시한다.
+
 // LightTeal PrepHUD build panel runtime presentation.
 
 #include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
@@ -1813,7 +1816,7 @@ void UFF_PrepPanelBuild::ApplyBuildModeState(const EFF_BuildModeState State)
 		FText Guide;
 		switch (State)
 		{
-		case EFF_BuildModeState::Placing: 
+		case EFF_BuildModeState::Placing:
 			// 🔴 **한 줄로 쓴다.** 네 줄로 쌓으면 그만큼 지면을 가리는데, 배치 중에는
 			//   지면이 보여야 시설을 놓을 수 있다 (2026-09-03 백종태 요청).
 			Guide = BuildModeSubsystem && BuildModeSubsystem->IsDragPlacementEnabled()

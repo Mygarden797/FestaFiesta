@@ -6,6 +6,7 @@
 // 실패/수명: 에셋 누락과 로직 회귀를 별도 assertion으로 보고하고 위젯 래퍼를 검사 동안 유지한다.
 
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -20,13 +21,11 @@
 namespace
 {
 	const TCHAR* FeedbackPackagePath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback");
+		FFBuildUIAssetPaths::PlacementFailureFeedbackPackage;
 	const TCHAR* FeedbackObjectPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
-			"WBP_FF_BuildPlacementFailureFeedback");
+		FFBuildUIAssetPaths::PlacementFailureFeedbackObject;
 	const TCHAR* FeedbackClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Feedback/WBP_FF_BuildPlacementFailureFeedback."
-			"WBP_FF_BuildPlacementFailureFeedback_C");
+		FFBuildUIAssetPaths::PlacementFailureFeedbackClass;
 
 	// Unity 빌드는 여러 cpp의 익명 네임스페이스를 합치므로 보조 함수 이름을 파일 고유하게 유지한다.
 	class FScopedBuildPlacementFailureFeedbackPlayerlessWidgetInitialization
@@ -62,7 +61,7 @@ bool FFF_BuildPlacementFailureFeedbackAssetContractTest::RunTest(const FString& 
 	(void)Parameters;
 
 	TestFalse(TEXT("The failure WBP lives outside the team-owned Zone/UI/Building path"),
-		FString(FeedbackPackagePath).StartsWith(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/Legacy")));
+		FString(FeedbackPackagePath).StartsWith(FFBuildUIAssetPaths::LegacyCatalogFolder));
 	UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, FeedbackObjectPath);
 	TestNotNull(TEXT("The independent editable failure WBP loads"), Blueprint);
 	if (!Blueprint)

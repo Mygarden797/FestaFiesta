@@ -1,3 +1,6 @@
+// FF_FacilityCodexPresenterSubsystem.h
+// 역할: 도감 열기·닫기와 선택 시설·카탈로그 이동을 연결한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

@@ -1,16 +1,16 @@
+// FF_FacilityCodexModel.cpp
+// 역할: 조합 도감의 발견 여부·거리 조건·실제 효과를 계산하고 검색·요약한다.
+
 #include "Building/Codex/FF_FacilityCodexModel.h"
+#include "Building/Synergy/FF_FacilitySynergyRulePolicy.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityCodexModel"
 
 void FFF_FacilityCodexModel::SetRules(TArray<FFF_FacilitySynergyRule> InRules, const float MaxTotalBonusPercent)
 {
 	Rules = MoveTemp(InRules);
-	Rules.RemoveAll([](const FFF_FacilitySynergyRule& Rule)
-	{
-		return Rule.Id.IsNone() || !Rule.Row.bEnabled || !Rule.Row.IsUsable();
-	});
-	// The production evaluator uses this exact stable order for its RuleIndex values.
-	Rules.Sort([](const FFF_FacilitySynergyRule& A, const FFF_FacilitySynergyRule& B) { return A.Id.LexicalLess(B.Id); });
+	// 도감 항목과 수익 평가 결과의 RuleIndex가 항상 같은 조합을 가리키게 한다.
+	FFFacilitySynergyRulePolicy::Normalize(Rules);
 	Evaluator.SetRules(Rules, MaxTotalBonusPercent);
 	Entries.Reset(Rules.Num());
 	for (const FFF_FacilitySynergyRule& Rule : Rules)
@@ -46,12 +46,10 @@ bool FFF_FacilityCodexModel::IsInstalledFacility(const FFFZSFacilityReadModel& F
 
 bool FFF_FacilityCodexModel::IsEligibleFacility(const FFFZSFacilityReadModel& Facility)
 {
-	// Match UFF_FacilitySynergySubsystem eligibility, including Closed and MovePending facilities.
-	return Facility.FacilityInstanceId.IsValid() && !Facility.FacilityDefinitionId.IsNone()
-		&& !Facility.WorldLocation.ContainsNaN() && !Facility.bNeedsRelocation
-		&& Facility.State != EFFZSFacilityState::Planned && Facility.State != EFFZSFacilityState::Removed;
+	return FFFacilitySynergyRulePolicy::IsEligibleFacility(Facility);
 }
 
+// 설치한 두 종류의 시설은 발견으로 기록하고 거리·중복 그룹·상한은 실제 수익 평가기로 별도 판정한다.
 void FFF_FacilityCodexModel::Evaluate(const FFFZSReadModel& World, const TSet<FName>& DiscoveredRuleIds)
 {
 	NewDiscoveries.Reset();
@@ -118,6 +116,7 @@ void FFF_FacilityCodexModel::Evaluate(const FFFZSReadModel& World, const TSet<FN
 	}
 }
 
+// 전체·발견·거리 충족·효과 적용 개수를 각각 집계해 같은 의미의 수치를 화면 전체에서 사용한다.
 FFF_FacilityCodexSummary FFF_FacilityCodexModel::Summarize(const TArray<FFF_FacilityCodexEntry>& Source)
 {
 	FFF_FacilityCodexSummary Summary;

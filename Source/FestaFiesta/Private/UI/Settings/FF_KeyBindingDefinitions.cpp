@@ -1,6 +1,10 @@
+// FF_KeyBindingDefinitions.cpp
+// 역할: 변경 가능한 조작 항목의 이름·기본 키·입력 유형을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_KeyBindingDefinitions.h"
+#include "UserSettings/EnhancedInputUserSettings.h"
 
 #define LOCTEXT_NAMESPACE "FFKeyBindingDefinitions"
 
@@ -116,10 +120,10 @@ namespace FFKeyBindingDefinitions
 				EFF_KeyBindingContext::Character
 			},
 			{
-				TEXT("FF.Character.Sprint"),
-				LOCTEXT("CharacterSprint", "전력 질주"),
+				TEXT("FF.Character.ShiftLock"),
+				LOCTEXT("CharacterShiftLock", "시점 고정 켜기 / 끄기 (Shift Lock)"),
 				EKeys::LeftShift,
-				TEXT("IA_Sprint"),
+				TEXT("IA_ShiftLock"),
 				EFF_KeyBindingContext::Character
 			}
 		};
@@ -132,6 +136,29 @@ namespace FFKeyBindingDefinitions
 		{
 			return Definition.MappingName == MappingName;
 		});
+	}
+
+	FKey ResolveCurrentKey(const UEnhancedInputUserSettings* UserSettings, const FName MappingName)
+	{
+		const FFF_KeyBindingDefinition* Definition = Find(MappingName);
+		if (!Definition)
+		{
+			// 제거된 동작의 저장 행은 보존하되 실행하거나 새 동작의 키로 옮기지 않는다.
+			// 잘못 노출되던 Sprint와 ShiftLock은 서로 다른 기능이므로 자동 변환하지 않는다.
+			return EKeys::Invalid;
+		}
+		if (UserSettings)
+		{
+			if (const FPlayerKeyMapping* Mapping = UserSettings->FindCurrentMappingForSlot(
+				MappingName, EPlayerMappableKeySlot::First))
+			{
+				if (Mapping->GetCurrentKey().IsValid())
+				{
+					return Mapping->GetCurrentKey();
+				}
+			}
+		}
+		return Definition->DefaultKey;
 	}
 
 	bool IsSystemMapping(const FName MappingName)

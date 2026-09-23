@@ -1,3 +1,5 @@
+// FF_FFZSAudienceLayout.h
+// 역할: 관객이 설 자리를 행과 열로 만들고 관람 영역에 맞는 위치와 수용 인원을 계산한다.
 #pragma once
 
 #include "CoreMinimal.h"

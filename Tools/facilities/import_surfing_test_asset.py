@@ -1,3 +1,6 @@
+# import_surfing_test_asset.py
+# 역할: 일반 건설 시설인 서핑 부스의 외형 에셋을 가져오거나 검증한다. 플레이 가능한 미니게임 엔진과 별개다.
+
 # -*- coding: utf-8 -*-
 """Import the standalone surfing Test_Asset pair into Unreal Engine.
 

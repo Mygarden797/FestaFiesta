@@ -1,3 +1,5 @@
+// FF_FFZSPlacementGridModel.h
+// 역할: 화면 격자 간격과 위치 정렬을 계산한다. 화면 선 간격과 저장용 1cm 좌표를 구분한다.
 #pragma once
 #include "CoreMinimal.h"
 

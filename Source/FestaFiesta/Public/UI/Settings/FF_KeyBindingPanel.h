@@ -1,3 +1,6 @@
+// FF_KeyBindingPanel.h
+// 역할: 키 변경 입력을 받고 충돌·초기화 결과를 사용자에게 보여 준다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

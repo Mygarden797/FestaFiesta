@@ -12,6 +12,17 @@
 #include "FF_FFZSTypes.h"
 #include "FF_FFZSDeveloperSettings.generated.h"
 
+// 화면 격자와 실제 설치 검증이 함께 쓰는 지면 규칙의 읽기 전용 복사본이다.
+// Config를 직접 읽지 않고 ResolveGroundValidationSettings()로 만들면 비정상 숫자도 방어한다.
+struct FF_ZONESYSTEM_API FFFZSGroundValidationSettings
+{
+    double SampleSpacingCm;
+    double TraceAboveCm;
+    double TraceBelowCm;
+    double MaxSlopeDegrees;
+    double MaxHeightVarianceCm;
+};
+
 // Project Settings > Game > FF_ZoneSystem에서 담당자가 조정하는 전역 규칙.
 // 값 변경은 새 검증·시뮬레이션부터 적용되므로 운영 중 변경 시 저장 데이터와 플레이 테스트 기준도 함께 갱신.
  
@@ -54,6 +65,14 @@ public:
     static constexpr int32 MaxQueueRepathAttempts = 32;
 	
     static constexpr float DefaultGroundSampleSpacingCm = 100.0f;
+
+    static constexpr float DefaultGroundTraceDistanceCm = 1000.0f;
+    static constexpr float DefaultMaxGroundSlopeDegrees = 5.0f;
+    static constexpr float DefaultMaxGroundHeightVarianceCm = 20.0f;
+
+    // 설정창의 제한을 우회한 ini/코드 입력도 같은 기준으로 보정한다.
+    // 정상 설정은 그대로 전달하며 NaN/무한대는 선언된 기본값으로 되돌린다.
+    FFFZSGroundValidationSettings ResolveGroundValidationSettings() const;
 	// 지면 검증 밀도는 1 cm 점유 해상도와 분리한다. 기본 100 cm마다 대표 표본 하나를 검사.
 
     // 시설별 저장 필드를 추가하지 않고 Footprint에서 선택 Query Box를 파생하는 전역 정책이다.
@@ -85,7 +104,7 @@ public:
 	// 선택 편의만 넓히며 물리, Navigation, Overlap 또는 권위 배치 점유에는 영향을 주지 않는다.
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", ClampMax = "89.0", Units = "deg"))
-    float MaxGroundSlopeDegrees = 5.0f;
+    float MaxGroundSlopeDegrees = DefaultMaxGroundSlopeDegrees;
 	// 모든 지면 표본의 법선으로 허용할 최대 경사각이다. 
 
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement|Controls", meta = (DisplayName = "Rotation Snap (Degrees)", ToolTip = "건축 모드에서 Q/E를 한 번 눌렀을 때 회전하는 각도입니다.", ClampMin = "0.01", ClampMax = "180.0", Units = "deg"))
@@ -116,16 +135,16 @@ public:
     float PlacementGridSurfaceLiftCm = 3.0f;
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "0.0", Units = "cm"))
-    float MaxGroundHeightVarianceCm = 20.0f;
+    float MaxGroundHeightVarianceCm = DefaultMaxGroundHeightVarianceCm;
 	// footprint 지면 표본 중 최고점과 최저점의 허용 높이 차이다. 
 
   
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "1.0", Units = "cm"))
-    float GroundTraceAboveCm = 1000.0f;
+    float GroundTraceAboveCm = DefaultGroundTraceDistanceCm;
 	// 예상 배치 높이 위에서 지면 추적을 시작할 거리다. 
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement", meta = (ClampMin = "1.0", Units = "cm"))
-    float GroundTraceBelowCm = 1000.0f;
+    float GroundTraceBelowCm = DefaultGroundTraceDistanceCm;
 	// 예상 배치 높이 아래까지 지면을 찾을 거리다. 
 	
     UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "Placement")

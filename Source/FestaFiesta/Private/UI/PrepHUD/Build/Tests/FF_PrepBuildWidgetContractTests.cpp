@@ -1,6 +1,10 @@
+// FF_PrepBuildWidgetContractTests.cpp
+// 역할: 준비 단계 건설 화면의 동작과 저장된 화면 연결을 자동 검증한다.
+
 // Generated PrepBuild WBP assets and cook-label contracts.
 
 #include "Misc/AutomationTest.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -15,18 +19,17 @@
 namespace FFPrepBuildWidgetContractTest
 {
 	constexpr const TCHAR* TileClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile.WBP_FF_PrepBuildTile_C");
+		FFBuildUIAssetPaths::PrepBuildTileClass;
 	constexpr const TCHAR* PanelClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepPanelBuild.WBP_FF_PrepPanelBuild_C");
+		FFBuildUIAssetPaths::BuildPanelClass;
 	constexpr const TCHAR* CookLabelPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/PAL_FF_PrepBuildUI.PAL_FF_PrepBuildUI");
+		FFBuildUIAssetPaths::PAL_FF_PrepBuildUIObject;
 	constexpr const TCHAR* ChoiceClassPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton_C");
+		FFBuildUIAssetPaths::PrepChoiceButtonClass;
 	constexpr const TCHAR* ChoiceAssetPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Shared/WBP_FF_PrepChoiceButton.WBP_FF_PrepChoiceButton");
+		FFBuildUIAssetPaths::PrepChoiceButtonObject;
 	constexpr const TCHAR* CategoryDependencyCookLabelPath =
-		TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/PAL_FF_PrepBuildCategoryDependencies."
-			"PAL_FF_PrepBuildCategoryDependencies");
+		FFBuildUIAssetPaths::PAL_FF_PrepBuildCategoryDependenciesObject;
 
 	UWidgetTree* ResolveWidgetTree(UClass* WidgetClass)
 	{

@@ -1,3 +1,6 @@
+// FF_BuildPlacementAssistanceTests.cpp
+// 역할: 다음 기능의 정상 동작과 오류 처리를 자동 검사한다: 설치 실패 원인을 안내하고 가까운 유효 위치를 나누어 탐색한다.
+
 // Contracts for bounded suggestions and preview-only placement assistance.
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 

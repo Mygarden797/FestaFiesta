@@ -1,5 +1,9 @@
+// FF_FacilityCodexInspectorBuilder.cpp
+// 역할: 시설 정보 화면에 도감으로 이동하는 버튼을 추가한다.
+
 // The only existing asset changed by this migration is the facility owner's inspector.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -14,8 +18,8 @@
 namespace FFFacilityCodexInspectorBuilder
 {
     constexpr const TCHAR* Prefix = TEXT("FF_FACILITY_CODEX_INSPECTOR");
-    constexpr const TCHAR* InspectorPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel");
-    constexpr const TCHAR* LauncherPath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher");
+    constexpr const TCHAR* InspectorPath = FFBuildUIAssetPaths::FacilityInfoPanelPackage;
+    constexpr const TCHAR* LauncherPath = FFBuildUIAssetPaths::FacilityCodexLauncherPackage;
     const FName LauncherName(TEXT("Widget_FacilityCodexLauncher"));
 
     void Migrate()

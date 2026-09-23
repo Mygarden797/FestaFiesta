@@ -1,3 +1,6 @@
+# import_roads.py
+# 역할: 설치 가능한 도로·타일 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Import Blender surfaces and connect six Roads and six Tiles to the catalog.
 
 Run with compiled Road and Tile categories through Run-RoadEditor.ps1. The only shared

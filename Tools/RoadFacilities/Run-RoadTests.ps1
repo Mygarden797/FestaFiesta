@@ -1,3 +1,6 @@
+# Run-RoadTests.ps1
+# 역할: 설치 가능한 도로·타일 작업에서 공통 실행 환경에서 해당 제작·검증 작업을 실행한다.
+
 [CmdletBinding()]
 param(
     [ValidatePattern('^[A-Za-z0-9_. +\-]+$')][string] $Filter = 'FF_ZoneSystem.Road+FestaFiesta.Building.Catalog.ProductionRoadAssetsAndEconomy+FestaFiesta.Building.FacilityNaming+FestaFiesta.UI.PrepBuild.CategoryContract+FestaFiesta.NPC.ZoneSystemBridge.ExcludesInfoAndSafety+FestaFiesta.Crowd.Road',

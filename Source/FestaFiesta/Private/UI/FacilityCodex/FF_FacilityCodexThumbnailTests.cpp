@@ -1,5 +1,9 @@
+// FF_FacilityCodexThumbnailTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/TextBlock.h"
 #include "Engine/Texture2D.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -24,8 +28,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FacilityCodexThumbnailTest,
 bool FFF_FacilityCodexThumbnailTest::RunTest(const FString& Parameters)
 {
 	using EState = EFF_FacilityCodexDiscoveryVisualState;
-	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, TEXT(
-		"/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/Materials/M_FF_Codex_DiscoveryThumbnail.M_FF_Codex_DiscoveryThumbnail"));
+	UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, FFBuildUIAssetPaths::M_FF_Codex_DiscoveryThumbnailObject);
 	if (!TestNotNull(TEXT("Authored discovery UI shader"), Material)) return false;
 	TestTrue(TEXT("Discovery material is authored for the UI domain"), Material->IsUIMaterial());
 

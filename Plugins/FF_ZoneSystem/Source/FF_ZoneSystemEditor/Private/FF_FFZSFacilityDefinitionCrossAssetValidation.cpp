@@ -1,3 +1,5 @@
+// FF_FFZSFacilityDefinitionCrossAssetValidation.cpp
+// 역할: 서로 다른 시설 정의 사이의 ID·업그레이드 연결을 검사하여 중복과 끊긴 참조를 찾는다.
 #include "FF_FFZSFacilityDefinitionCrossAssetValidation.h"
 
 #include "Algo/Sort.h"

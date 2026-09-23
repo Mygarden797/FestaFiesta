@@ -1,3 +1,6 @@
+# import_catalog_thumbnails.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 제작 결과를 Unreal 에셋으로 가져오고 연결한다.
+
 """Refresh the six lighting catalog textures using the existing facility format.
 
 Run in a separate unattended Unreal Editor. Set FF_LIGHTING_VERIFY_ONLY=1 for

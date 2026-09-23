@@ -1,3 +1,6 @@
+// FF_PrepBuildTileWidget.cpp
+// 역할: 화면에 보이는 시설 카드만 재사용해 이름·가격·선택 상태를 표시한다.
+
 // PrepBuild TileView entry presentation.
 
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"

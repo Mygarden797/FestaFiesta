@@ -1,9 +1,12 @@
+// FF_FFZSBuildRangePresentation.cpp
+// 역할: 시설 본체·여유 공간·대기열·배치 실패 영역의 선을 공통 규칙으로 그린다.
 #include "FF_FFZSBuildRangePresentation.h"
 
 #include "FF_FFZSBuildPresentationSettings.h"
 #include "FF_FFZSQueueGeometry.h"
 #include "SceneManagement.h"
 
+// 실패한 실제 영역 안에만 사선을 추가한다. 사선 수를 고정해 큰 시설도 비용을 제한한다.
 void FFZSBuildRangePresentation::AppendFailureHatching(TArray<FBatchedLine>& Lines,
     const FWorldCorners& Corners, const FLinearColor& Color)
 {
@@ -23,6 +26,7 @@ void FFZSBuildRangePresentation::AppendFailureHatching(TArray<FBatchedLine>& Lin
         Lines.Emplace(Corners[Edge], Corners[(Edge + 1) % 4], Color, 0.0f, 2.5f, SDPG_Foreground);
 }
 
+// 배치를 막은 물체 둘레에 모서리 표시를 추가한다.
 void FFZSBuildRangePresentation::AppendObstructionOutline(TArray<FBatchedLine>& Lines,
     const FFFZSPlacementObstruction& Obstruction, const FLinearColor& Color)
 {
@@ -47,6 +51,7 @@ void FFZSBuildRangePresentation::AppendObstructionOutline(TArray<FBatchedLine>& 
     }
 }
 
+// 설치 실패 사유를 본체·여유 공간·대기열 중 해당하는 표시 영역에 연결한다.
 bool FFZSBuildRangePresentation::HasRegionFailure(
     const FFFZSPlacementValidation& Validation, const ERegion Region)
 {
@@ -68,6 +73,7 @@ bool FFZSBuildRangePresentation::HasRegionFailure(
     }
 }
 
+// 화면에서 너무 가까운 보조선만 생략해 멀리서도 격자가 읽히게 한다.
 int32 FFZSBuildRangePresentation::ResolveMinorLineStride(
     const float ProjectedStepPixels, const float MinimumSpacingPixels)
 {
@@ -80,6 +86,7 @@ int32 FFZSBuildRangePresentation::ResolveMinorLineStride(
     return 0; // Major/boundary lines remain; selected facility detail is handled separately.
 }
 
+// 회전된 원래 범위를 실선 또는 점선으로 그리며 긴 변의 점선 수를 제한한다.
 void FFZSBuildRangePresentation::AppendOutline(TArray<FBatchedLine>& Lines,
     const FWorldCorners& Corners, const FLinearColor& Color, const bool bDashed,
     const bool bAccentCorners, const UFFZSBuildPresentationSettings& Style)
@@ -117,6 +124,7 @@ void FFZSBuildRangePresentation::AppendOutline(TArray<FBatchedLine>& Lines,
     }
 }
 
+// 실제 줄 서는 위치에만 작은 표식을 그린다. 대기 인원 제한은 변경하지 않는다.
 void FFZSBuildRangePresentation::AppendQueueSlots(TArray<FBatchedLine>& Lines,
     const FFFZSFacilitySpec& Spec, const FTransform& FacilityTransform,
     const FLinearColor& Color, const UFFZSBuildPresentationSettings& Style)

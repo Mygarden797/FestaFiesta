@@ -1,3 +1,6 @@
+// FF_FacilityCodexContrastBuilder.cpp
+// 역할: 도감의 대비와 글자 가독성을 조정한다.
+
 // A bounded saved-WBP style update; discovery, economy and layout remain data-driven.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"

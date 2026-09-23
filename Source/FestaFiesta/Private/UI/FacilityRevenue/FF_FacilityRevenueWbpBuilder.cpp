@@ -1,5 +1,9 @@
+// FF_FacilityRevenueWbpBuilder.cpp
+// 역할: 시설 수입 순위와 행 위젯의 초기 편집용 에셋을 만든다.
+
 // Editor-only scaffolding. Existing assets are always preserved.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #if WITH_EDITOR
 #include "UI/FacilityRevenue/FF_FacilityRevenueRanking.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
@@ -31,7 +35,7 @@ namespace FFRevenueBuilder
 {
 using namespace FFUIWbpBuilder;
 const TCHAR *Prefix = TEXT("FF_REVENUE_UMG");
-const FString Folder(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue"));
+const FString Folder(FFBuildUIAssetPaths::FacilityRevenueFolder);
 const FString RowPath = Folder / TEXT("WBP_FF_FacilityRevenueRankRow");
 const FString PanelPath = Folder / TEXT("WBP_FF_FacilityRevenueRanking");
 FSlateBrush Brush(FLinearColor Color, FLinearColor Line = FLinearColor::Transparent, float Width = 0.f)

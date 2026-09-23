@@ -1,6 +1,10 @@
+// FF_FacilityProgramMarkerSubsystem.cpp
+// 역할: 월드에 설치한 시설 위의 프로그램 표시를 생성·갱신·정리한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityProgramMarkerSubsystem.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #include "Building/FF_FacilityNamingLibrary.h"
 #include "Building/Synergy/FF_FacilitySynergySubsystem.h"
@@ -83,7 +87,7 @@ bool FFFacilityWorldBadgeLayout::Place(const FVector2D& Anchor, const FVector2D&
 
 FSoftClassPath UFF_FacilityProgramMarkerSubsystem::GetDefaultWidgetClassPath()
 {
-	return FSoftClassPath(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge.WBP_FF_FacilityWorldBadge_C"));
+	return FSoftClassPath(FFBuildUIAssetPaths::FacilityWorldBadgeClass);
 }
 
 void UFF_FacilityProgramMarkerSubsystem::Initialize(FSubsystemCollectionBase& Collection)

@@ -284,10 +284,6 @@
 
 파일: `Source/FestaFiesta/Private/UI/Facility/FF_FacilityLightingControls.cpp`, `Source/FestaFiesta/Public/UI/Facility/FF_FacilityLightingControls.h`, `Content/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityLightingControls.uasset`.
 
-### 미니게임
-
-데이터에 미니게임이 연결된 시설은 `bHasMinigame`과 `MinigameActionText`에 따라 행동을 표시한다. `bCanStartMinigame`과 Live 문맥을 확인한 뒤 `OnMinigameRequested`를 전달한다. 단순한 “시설 이용” 버튼으로 바꾸거나 모든 시설에 공통으로 표시하지 않는다. 세션 시작·실패·복귀 후 시설 선택과 입력 상태를 검증한다.
-
 ### 월드 시설 배지
 
 프로그램 가능 여부와 오늘 매출 등 기존 월드 배지를 유지한다. 선택한 시설과 해당 배지의 인스턴스가 일치해야 한다. 패널 뒤에 가려진 배지·장식이 클릭을 가로채지 않도록 한다. 배지 값은 화면 예시가 아니라 프로그램/매출 서브시스템을 따른다.
@@ -333,7 +329,6 @@
 - [ ] 강화: 탭·구매·최대 레벨·지원 없음·무료 견적·가격 없음·잔액 부족·공간 부족·프로그램 보호 상태를 확인한다.
 - [ ] 도감: 전체/발견/미발견·검색·시설 필터 해제·선택 상세·닫기와 신규 “효과 적용 중” 필터를 확인한다.
 - [ ] 조명: 켜기/끄기·밝기·모든 프리셋·색 입력·기본값 복원이 지원 시설에서만 작동한다.
-- [ ] 미니게임: 지원 시설/라이브에서만 활성화되며 시작 실패와 종료 복귀를 처리한다.
 - [ ] 이미지 또는 최종 WBP에 위 목록 밖의 버튼·아이콘·링크·탭이 있으면 기능 소유자, 이벤트, 활성 조건, 성공/실패 결과를 추가로 기록한다.
 
 ### 비용·권위 검증

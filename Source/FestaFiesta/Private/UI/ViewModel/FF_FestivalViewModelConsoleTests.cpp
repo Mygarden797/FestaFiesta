@@ -1,3 +1,6 @@
+// FF_FestivalViewModelConsoleTests.cpp
+// 역할: 콘솔에서 축제 화면용 데이터의 조회와 변경 알림을 검증한다.
+
 #include "Misc/AutomationTest.h"
 
 #if WITH_DEV_AUTOMATION_TESTS && !UE_BUILD_SHIPPING

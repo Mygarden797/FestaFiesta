@@ -1,6 +1,10 @@
+// FF_FacilityCodexClarityBuilder.cpp
+// 역할: 도감 화면의 읽기 쉬운 디자인을 저장된 에셋에 적용한다.
+
 // Explicit, versioned migration of the existing authored codex. No runtime tree construction.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -270,8 +274,8 @@ static bool Screen(UWidgetBlueprint& BP)
 
 static void Run()
 {
-    UWidgetBlueprint* CardBP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard"));
-    UWidgetBlueprint* ScreenBP = LoadExistingBlueprint(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen"));
+    UWidgetBlueprint* CardBP = LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityCodexCardPackage);
+    UWidgetBlueprint* ScreenBP = LoadExistingBlueprint(FFBuildUIAssetPaths::FacilityCodexScreenPackage);
     if (!CardBP || !ScreenBP || !CardBP->ParentClass || !ScreenBP->ParentClass ||
         !CardBP->ParentClass->IsChildOf(UFF_FacilityCodexCard::StaticClass()) ||
         !ScreenBP->ParentClass->IsChildOf(UFF_FacilityCodexScreen::StaticClass())) return;

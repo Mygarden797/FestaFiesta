@@ -1,6 +1,10 @@
+// FF_FacilityAuroraInfoBuilder.cpp
+// 역할: 시설 정보 화면에 Aurora 디자인을 적용한다.
+
 // Requested V7 facility inspector migration. Existing command/data bindings are retained.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "CommonTextBlock.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
@@ -17,7 +21,7 @@
 namespace FFFacilityAuroraInfo
 {
 using namespace FFUIWbpBuilder;
-static const TCHAR* Package = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel");
+static const TCHAR* Package = FFBuildUIAssetPaths::FacilityInfoPanelPackage;
 static const FLinearColor Ink = FLinearColor::FromSRGBColor(FColor(0x20,0x4c,0x36));
 
 static void Add(UVerticalBox& Box, UWidget& Child, FMargin Padding = FMargin(0,0,0,8))

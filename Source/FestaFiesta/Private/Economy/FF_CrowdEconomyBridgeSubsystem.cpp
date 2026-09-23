@@ -98,6 +98,7 @@ void UFF_CrowdEconomyBridgeSubsystem::HandleVisitorsAdmitted(int32 AdmittedCount
 
 	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
 	if (Definition == nullptr) return;
+	Progression->RecordAdmittedVisitorsForDailyGoal(AdmittedCount);
 
 	// 시설 핸들이 없는 매출이다(입장은 특정 시설에 귀속되지 않는다) — AddFacilityRevenue 가 아니라
 	// 기존 AddRevenue 를 그대로 쓴다. 일일 목표 보너스·미니게임 보상과 같은 패턴이다.

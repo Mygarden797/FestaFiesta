@@ -1,3 +1,6 @@
+// FF_FacilityInfoPanel.h
+// 역할: 선택한 시설의 정보·업그레이드·조명·프로그램을 표시하고 조작 의도를 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
@@ -34,7 +37,6 @@ public:
 	FSimpleMulticastDelegate OnRemoveRequested;
 	FSimpleMulticastDelegate OnProgramScheduleRequested;
 	FSimpleMulticastDelegate OnUpgradeRequested;
-	FSimpleMulticastDelegate OnMinigameRequested;
 	FSimpleMulticastDelegate OnCloseRequested;
 	FSimpleMulticastDelegate OnFavoriteRequested;
 	FSimpleMulticastDelegate OnRevenueRankingRequested;
@@ -65,7 +67,7 @@ public:
 	const FFF_FacilityInfoViewData& GetCurrentViewData() const { return CurrentViewData; }
 
 protected:
-	virtual void NativeOnInitialized() override;   
+	virtual void NativeOnInitialized() override;
 	virtual FReply NativeOnMouseButtonDown(
 		const FGeometry& InGeometry,
 		const FPointerEvent& InMouseEvent) override;
@@ -83,9 +85,6 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
-
-	UFUNCTION()
-	void HandleMinigameClicked();
 
 	UFUNCTION()
 	void HandleProgramScheduleClicked();
@@ -238,12 +237,6 @@ private:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UButton> Button_Remove;
 
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UButton> Button_StartMinigame;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UCommonTextBlock> Text_StartMinigame;
-
 	/** Optional during the non-destructive WBP migration; the builder authors it for new assets. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Panel_ProgramSection;
@@ -350,9 +343,6 @@ private:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
 	TObjectPtr<UWidget> Panel_BuildActions;
-
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional, AllowPrivateAccess = "true"))
-	TObjectPtr<UWidget> Panel_LiveActions;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UImage> Image_Thumbnail;

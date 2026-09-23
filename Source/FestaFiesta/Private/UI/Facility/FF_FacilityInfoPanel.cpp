@@ -1,3 +1,6 @@
+// FF_FacilityInfoPanel.cpp
+// 역할: 선택한 시설의 정보·업그레이드·조명·프로그램을 표시하고 조작 의도를 전달한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Facility/FF_FacilityInfoPanel.h"
@@ -88,10 +91,6 @@ void UFF_FacilityInfoPanel::NativeOnInitialized()
 	{
 		Button_Close->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
 	}
-	if (Button_StartMinigame)
-	{
-		Button_StartMinigame->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMinigameClicked);
-	}
 	if (Button_ScheduleProgram)
 	{
 		Button_ScheduleProgram->OnClicked.AddUniqueDynamic(
@@ -123,6 +122,7 @@ FReply UFF_FacilityInfoPanel::NativeOnMouseButtonDown(
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }
 
+// 관리자가 모아 준 시설 정보를 각 행과 탭에 표시한다. 이 함수는 시설의 실제 상태를 변경하지 않는다.
 void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewData)
 {
 	const bool bSelectionChanged = CurrentViewData.FacilityInstanceId != ViewData.FacilityInstanceId ||
@@ -292,21 +292,15 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 	{
 		Panel_LiveSection->SetVisibility(!bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
-	const bool bShowLiveActions = !bBuildContext && ViewData.bHasMinigame;
 	if (Panel_BuildActions)
 	{
 		Panel_BuildActions->SetVisibility(
 			bBuildContext ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
-	if (Panel_LiveActions)
-	{
-		Panel_LiveActions->SetVisibility(
-			bShowLiveActions ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	}
 	if (Panel_Actions)
 	{
 		Panel_Actions->SetVisibility(
-			(bBuildContext || bShowLiveActions)
+			bBuildContext
 				? ESlateVisibility::Visible
 				: ESlateVisibility::Collapsed);
 	}
@@ -365,19 +359,6 @@ void UFF_FacilityInfoPanel::ApplyViewData(const FFF_FacilityInfoViewData& ViewDa
 		ViewData.ProgramScheduleActionText.IsEmpty()
 			? LOCTEXT("ScheduleProgram", "유료 프로그램 편성")
 			: ViewData.ProgramScheduleActionText);
-	if (Button_StartMinigame)
-	{
-		Button_StartMinigame->SetVisibility(
-			!bBuildContext && ViewData.bHasMinigame
-				? ESlateVisibility::Visible
-				: ESlateVisibility::Collapsed);
-		Button_StartMinigame->SetIsEnabled(
-			!bBuildContext && ViewData.bCanStartMinigame);
-	}
-	SetText(Text_StartMinigame,
-		ViewData.MinigameActionText.IsEmpty()
-			? LOCTEXT("StartMinigame", "게임 시작")
-			: ViewData.MinigameActionText);
 
 	const bool bHasThumbnail = IsValid(ViewData.Thumbnail);
 	if (Image_Thumbnail)
@@ -513,7 +494,7 @@ void UFF_FacilityInfoPanel::RefreshPageVisibility()
 	UpdateTab(Button_TabRevenue,EFF_FacilityInfoPage::Revenue,bRevenueAvailable);
 	UpdateTab(Button_TabPrograms,EFF_FacilityInfoPage::Programs,CurrentViewData.bShowProgramSection);
 	Show(Panel_Actions, ActivePage != EFF_FacilityInfoPage::Lighting && ActivePage != EFF_FacilityInfoPage::RemoveConfirmation &&
-		(bBuild || CurrentViewData.bHasMinigame));
+		bBuild);
 	RefreshLightingPanelLayout();
 }
 
@@ -696,15 +677,6 @@ void UFF_FacilityInfoPanel::HandleRemoveClicked()
 void UFF_FacilityInfoPanel::HandleCloseClicked()
 {
 	OnCloseRequested.Broadcast();
-}
-
-void UFF_FacilityInfoPanel::HandleMinigameClicked()
-{
-	if (CurrentViewData.Context == EFF_FacilityInfoContext::Live &&
-		CurrentViewData.bCanStartMinigame)
-	{
-		OnMinigameRequested.Broadcast();
-	}
 }
 
 void UFF_FacilityInfoPanel::HandleProgramScheduleClicked()

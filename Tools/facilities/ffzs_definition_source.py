@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# ffzs_definition_source.py
+# 역할: 시설 Data Asset을 제작 입력의 기준으로 읽어 도구 간 값 중복을 줄인다.
+
 """Read facility authoring inputs from UFFZSFacilityDefinition assets.
 
 This module is intentionally usable only inside Unreal Python.  It contains no

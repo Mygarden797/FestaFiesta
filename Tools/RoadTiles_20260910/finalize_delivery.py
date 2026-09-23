@@ -1,8 +1,11 @@
+# finalize_delivery.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 검증된 결과와 제작 근거를 최종 산출물로 정리한다.
+
 """Merge actual evidence after visual review and collect reproducible source code.
 The human/agent visual verdict file is separate from automatically derived checks.
 """
 from pathlib import Path
-import json, hashlib, shutil, datetime
+import json, hashlib, shutil, datetime, os
 TOOLS=Path(__file__).resolve().parent
 ROOT=TOOLS.parents[1]/'SourceArt/RoadTiles_20260910'
 QA=ROOT/'qa'
@@ -34,7 +37,10 @@ def main():
     }
     assert all(v in ('PASS','NOT_RUN','NOT_APPLICABLE') for v in statuses.values()),statuses
     assert all(x['complete'] for x in composition['view_sheets']) and composition['lod_sheet']['complete']
-    original=Path(r'C:\Users\kpo91\OneDrive\Desktop\Build\Road.png')
+    original_value=os.environ.get('FF_ROAD_REFERENCE_IMAGE')
+    if not original_value:
+        raise RuntimeError('Set FF_ROAD_REFERENCE_IMAGE to the original road reference image for independent hash verification.')
+    original=Path(original_value).expanduser().resolve()
     sha=lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
     assert sha(original)==sha(ROOT/'References/Road.png')
     calibration=read('calibration.json')

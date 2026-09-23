@@ -1,3 +1,5 @@
+// FF_FFZSAudienceWorldTests.cpp
+// 역할: 시설 설치와 관람 영역이 실제 테스트 월드에서 서로 일관되게 연결되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

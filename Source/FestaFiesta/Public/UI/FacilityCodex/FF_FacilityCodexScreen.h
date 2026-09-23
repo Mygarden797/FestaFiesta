@@ -1,3 +1,6 @@
+// FF_FacilityCodexScreen.h
+// 역할: 도감 목록·상세 정보·발견 보상을 표시하고 사용자 선택을 전달한다.
+
 // Event-driven UMG collection screen. All layout is authored in the saved WBP.
 #pragma once
 

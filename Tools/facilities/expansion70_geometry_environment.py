@@ -1,3 +1,6 @@
+# expansion70_geometry_environment.py
+# 역할: 환경·휴식·안전 등 시설의 편집 가능한 형상을 만든다.
+
 """Editable coastal festival geometry for production brief facilities 32--70.
 
 Reference interpretation: large silhouettes from Design/Facitilies, with the

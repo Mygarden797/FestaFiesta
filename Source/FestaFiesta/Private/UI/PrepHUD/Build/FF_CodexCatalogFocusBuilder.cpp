@@ -1,5 +1,9 @@
+// FF_CodexCatalogFocusBuilder.cpp
+// 역할: 도감에서 이동해 온 시설 카드를 강조하는 표시를 추가한다.
+
 // Explicit editor migration for the codex destination accent; runtime only projects state.
 #include "CoreMinimal.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
@@ -23,7 +27,7 @@ namespace FFCodexCatalogFocus
 using namespace FFUIWbpBuilder;
 constexpr const TCHAR* Prefix = TEXT("FF_CODEX_CATALOG_FOCUS");
 constexpr const TCHAR* Version = TEXT("FF.FacilityCodex.CatalogFocus20260921.1");
-constexpr const TCHAR* TilePath = TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/Catalog/WBP_FF_PrepBuildTile");
+constexpr const TCHAR* TilePath = FFBuildUIAssetPaths::BuildTilePackage;
 
 FSlateBrush MaterialBrush(UMaterialInterface* Material)
 {

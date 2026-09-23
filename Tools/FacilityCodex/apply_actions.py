@@ -1,3 +1,6 @@
+# apply_actions.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Add authored codex actions and verify layout preservation and repeatability.
 
 Run a freshly built UE 5.7 editor on /Engine/Maps/Entry with

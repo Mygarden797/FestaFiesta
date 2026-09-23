@@ -1,3 +1,6 @@
+// FF_FacilityCodexTests.cpp
+// 역할: FacilityCodex 기능의 동작 계약을 자동 검사한다 (검사 경로: FestaFiesta.Building.Codex.DiscoverySurvivesRemovalAndRestore, FestaFiesta.Building.Codex.StackingCapAndDirectionMatchRevenue).
+
 #include "Building/Codex/FF_FacilityCodexModel.h"
 
 #if WITH_DEV_AUTOMATION_TESTS

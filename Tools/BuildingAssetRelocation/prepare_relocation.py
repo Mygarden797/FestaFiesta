@@ -1,3 +1,6 @@
+# prepare_relocation.py
+# 역할: 건설 에셋 폴더 이관 작업에서 후속 변경에 필요한 기준 자료를 준비한다.
+
 """Record the authorized building asset relocation before Unreal renames packages.
 
 This historical mapping intentionally retains old paths. Run with system Python.

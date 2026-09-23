@@ -1,3 +1,6 @@
+# verify_roads.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 저장된 결과가 요구 조건에 맞는지 검증한다.
+
 """Verify the saved assets in a second Unreal process without mutating them."""
 import json
 from pathlib import Path

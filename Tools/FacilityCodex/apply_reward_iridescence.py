@@ -1,3 +1,6 @@
+# apply_reward_iridescence.py
+# 역할: 시설 조합 도감과 보상 표시 작업에서 지정된 대상에 변경을 적용하고 결과를 확인한다.
+
 """Save the game reward shader and authored WBP styles in an idle Entry editor."""
 import hashlib
 import json

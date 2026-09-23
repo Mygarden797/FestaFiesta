@@ -1,3 +1,6 @@
+// FF_FacilityCodexImage.h
+// 역할: 도감 시설 이미지를 표시하고 이미지가 없거나 준비 중인 상태를 처리한다.
+
 #pragma once
 
 #include "CoreMinimal.h"

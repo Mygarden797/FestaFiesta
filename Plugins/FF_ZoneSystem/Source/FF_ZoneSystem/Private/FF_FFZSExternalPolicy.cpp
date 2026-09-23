@@ -1,4 +1,4 @@
-//FF_FFZSExternalPolicy.cpp
+// FF_FFZSExternalPolicy.cpp
 
 // UHT가 외부 정책 인터페이스 타입을 링크할 수 있게 하는 구현 단위다.
 // 흐름: 실제 정책 콜백 구현은 각 외부 소유자의 UObject에 있다.

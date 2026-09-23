@@ -1,3 +1,5 @@
+// FF_FFZSQueueGeometry.h
+// 역할: 대기 경로를 실제 줄 서는 위치로 바꾸고 경로·간격·예약 영역의 유효성을 검사한다.
 #pragma once
 
 #include "CoreMinimal.h"

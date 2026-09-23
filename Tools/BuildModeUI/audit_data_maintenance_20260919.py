@@ -1,3 +1,6 @@
+# audit_data_maintenance_20260919.py
+# 역할: 승인된 건설 화면 및 데이터 이관 작업에서 기존 데이터를 읽어 상태·문제를 점검한다.
+
 """Read production definitions and retain the exact pre-maintenance data assets."""
 import hashlib
 import json

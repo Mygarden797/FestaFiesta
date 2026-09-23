@@ -1,5 +1,9 @@
+// FF_FacilityCodexUiTests.cpp
+// 역할: 시설 도감의 동작과 저장된 화면 연결을 자동 검증한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "UI/FacilityCodex/FF_FacilityCodexLauncher.h"
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
 #include "UI/FacilityCodex/FF_FacilityCodexImage.h"
@@ -82,8 +86,7 @@ bool FFF_FacilityCodexUiTest::RunTest(const FString& Parameters)
     auto* ScreenClass = LoadClass(TEXT("Screen"));
     auto* CardClass = LoadClass(TEXT("Card"));
     auto* LauncherClass = LoadClass(TEXT("Launcher"));
-    auto* InspectorClass = Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(TEXT(
-        "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel.WBP_FF_FacilityInfoPanel_C")).TryLoadClass<UUserWidget>());
+    auto* InspectorClass = Cast<UWidgetBlueprintGeneratedClass>(FSoftClassPath(FFBuildUIAssetPaths::FacilityInfoPanelClass).TryLoadClass<UUserWidget>());
     if (!TestNotNull(TEXT("Editor world"), World) || !TestNotNull(TEXT("Screen WBP"), ScreenClass) ||
         !TestNotNull(TEXT("Card WBP"), CardClass) || !TestNotNull(TEXT("Launcher WBP"), LauncherClass) ||
         !TestNotNull(TEXT("Existing inspector WBP"), InspectorClass)) return false;

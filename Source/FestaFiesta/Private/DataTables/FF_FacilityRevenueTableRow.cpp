@@ -1,3 +1,6 @@
+// FF_FacilityRevenueTableRow.cpp
+// 역할: 시설별 수익 설정의 음수·잘못된 배율 등 작성 오류를 검사한다.
+
 #include "DataTables/FF_FacilityRevenueTableRow.h"
 
 bool FFF_FacilityRevenueTableRow::IsRowValid(TArray<FText>& OutErrors) const

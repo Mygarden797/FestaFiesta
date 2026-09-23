@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# claim_procedural_visual_ownership.py
+# 역할: 시설 모델·Data Asset·썸네일 작업에서 자동 생성 외형의 수정 권한을 해당 시설 정의에 연결한다.
+
 """One-time claim of the seven existing generated visuals by their Definitions.
 
 This never infers facility dimensions. It only establishes destructive-tool

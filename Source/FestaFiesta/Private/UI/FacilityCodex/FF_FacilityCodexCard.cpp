@@ -1,3 +1,6 @@
+// FF_FacilityCodexCard.cpp
+// 역할: 시설 도감의 한 카드에 발견 상태·이미지·선택 상태를 표시한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexCard.h"
 
 #include "Components/Border.h"

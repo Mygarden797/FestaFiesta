@@ -1,3 +1,6 @@
+# compose_report.py
+# 역할: 도로·타일 제작 원본과 납품 작업에서 검증 이미지와 정보를 비교 가능한 형태로 묶는다.
+
 """Arrange QA image copies using Pillow. Never modifies input/reference images."""
 import argparse
 import json

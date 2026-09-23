@@ -1,3 +1,5 @@
+// FF_FFZSWorldSubsystem.cpp
+// 역할: 월드별 시설·지역 등록, 배치 검증, 설치·이동·철거 명령, 저장·복원을 한 곳에서 관리한다.
 #include "FF_FFZSWorldSubsystem.h"
 
 #include "CollisionQueryParams.h"
@@ -970,6 +972,20 @@ AFFZSFacilityActor* UFFZSWorldSubsystem::FindFacility(const FGuid FacilityInstan
     return nullptr;
 }
 
+int32 UFFZSWorldSubsystem::GetPlacedFacilityCount() const
+{
+    int32 Count = 0;
+    for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+    {
+        const AFFZSFacilityActor* Facility = Pair.Value.Get();
+        if (IsValid(Facility) && Facility->GetFacilityState() != EFFZSFacilityState::Removed)
+        {
+            ++Count;
+        }
+    }
+    return Count;
+}
+
 int32 UFFZSWorldSubsystem::CountFacilitiesByDefinitionId(
     const FName FacilityDefinitionId) const
 {
@@ -1114,7 +1130,7 @@ void UFFZSWorldSubsystem::RebuildFacilitySpatialIndex()
 
 void UFFZSWorldSubsystem::RebuildRegionSpatialIndex()
 {
-    RegionSpatialIndex = MakeShared<FFFZSSpatialHash2D>(10000.0);
+    RegionSpatialIndex = MakeShared<FFFZSSpatialHash2D>(FFFZSSpatialHash2D::RegionBucketSizeCm);
     SpatialRegionIds = GetRegisteredZoneIds();
     for (int32 I = 0; I < SpatialRegionIds.Num(); ++I)
     {
@@ -1375,10 +1391,11 @@ bool UFFZSWorldSubsystem::BuildPlacementGridMask(
             Params.AddIgnoredActor(Moving);
         }
         FVector QueryCenter = ZoneTransform.TransformPosition(FVector(ViewRect.CenterCell, 0.0));
+        const FFFZSGroundValidationSettings Ground = Settings->ResolveGroundValidationSettings();
         const double QueryMinZ = bDeferToSurface ? ZoneTransform.GetLocation().Z -
-            FMath::Max(1.0, static_cast<double>(Settings->GroundTraceBelowCm)) : GroundWorldZ + 3.0;
+            Ground.TraceBelowCm : GroundWorldZ + 3.0;
         const double QueryMaxZ = bDeferToSurface ? ZoneTransform.GetLocation().Z +
-            FMath::Max(1.0, static_cast<double>(Settings->GroundTraceAboveCm)) + HeightCm :
+            Ground.TraceAboveCm + HeightCm :
             CollisionCenterZ + CollisionHalfHeight;
         QueryCenter.Z = (QueryMinZ + QueryMaxZ) * 0.5;
         TArray<FOverlapResult> Overlaps;
@@ -1896,16 +1913,21 @@ void UFFZSWorldSubsystem::ValidateGround(
 
     FCollisionQueryParams Params(SCENE_QUERY_STAT(FFZoneSystemGround), false);
     Params.AddIgnoredActor(&Zone);
+    TSet<const AFFZSFacilityActor*> IgnoredGroundSurfaces;
     if (Spec.IsGroundSurface())
     {
         // Repositioning a road or tile, or laying a neighbor at a shared edge, samples the underlying
-        // terrain rather than the existing paving. Same-layer occupancy still rejects stacking.
-        for (const TPair<FGuid, TWeakObjectPtr<AFFZSFacilityActor>>& Pair : FacilitiesById)
+        // terrain rather than existing paving. The world-space index includes touching neighbors
+        // across zone boundaries without scanning every installed facility for every drag sample.
+        TArray<FGuid> SurfaceCandidates;
+        QueryFacilityCandidates(ToWorldRegions(Zone.ZoneId, InOutValidation.FootprintOrientedRects), SurfaceCandidates);
+        for (const FGuid Id : SurfaceCandidates)
         {
-            if (const AFFZSFacilityActor* Facility = Pair.Value.Get(); Facility &&
+            if (const AFFZSFacilityActor* Facility = FindFacility(Id); Facility &&
                 Facility->GetFacilitySpec().IsGroundSurface())
             {
                 Params.AddIgnoredActor(Facility);
+                IgnoredGroundSurfaces.Add(Facility);
             }
         }
     }
@@ -1914,12 +1936,32 @@ void UFFZSWorldSubsystem::ValidateGround(
         Params.AddIgnoredActor(IgnoreFacility);
     }
 
+    const auto TraceGround = [&](const FVector& Start, const FVector& End, FHitResult& Hit)
+    {
+        while (World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+        {
+            const AFFZSFacilityActor* Surface = Cast<AFFZSFacilityActor>(Hit.GetActor());
+            if (!Spec.IsGroundSurface() || !Surface || !Surface->GetFacilitySpec().IsGroundSurface() ||
+                FindFacility(Surface->GetFacilityInstanceId()) != Surface)
+            {
+                return true;
+            }
+            // Authored mesh offsets and source-size collision can extend outside the indexed
+            // footprint. Ignore a registered surface reached there too, preserving terrain-only
+            // sampling. Keep the ignore for later samples and fail closed if a query repeats it.
+            if (IgnoredGroundSurfaces.Contains(Surface)) { return false; }
+            IgnoredGroundSurfaces.Add(Surface);
+            Params.AddIgnoredActor(Surface);
+        }
+        return false;
+    };
+
     const double CellSizeCm = UFFZSDeveloperSettings::DefaultPlacementCellSizeCm;
-    const double SampleSpacingCm = FMath::Clamp(
-        static_cast<double>(Settings->GroundSampleSpacingCm), 1.0, 1000.0);
+    const FFFZSGroundValidationSettings Ground = Settings->ResolveGroundValidationSettings();
+    const double SampleSpacingCm = Ground.SampleSpacingCm;
     const FTransform ZoneTransform = Zone.GetActorTransform();
-    const FVector TraceAbove = FVector::UpVector * Settings->GroundTraceAboveCm;
-    const FVector TraceBelow = FVector::UpVector * Settings->GroundTraceBelowCm;
+    const FVector TraceAbove = FVector::UpVector * Ground.TraceAboveCm;
+    const FVector TraceBelow = FVector::UpVector * Ground.TraceBelowCm;
     // 높이 통계와 최소 UpDot을 즉시 누적해 임시 배열과 샘플별 acos를 없앤다.
     int32 SuccessfulSampleCount = 0;
     float HeightSum = 0.0f;
@@ -1960,7 +2002,7 @@ void UFFZSWorldSubsystem::ValidateGround(
                 const FVector Start = Sample + TraceAbove;
                 const FVector End = Sample - TraceBelow;
                 FHitResult Hit;
-                if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+                if (!TraceGround(Start, End, Hit))
                 {
                     if (Settings->bRequireEveryGroundSample)
                     {
@@ -1988,12 +2030,12 @@ void UFFZSWorldSubsystem::ValidateGround(
         return;
     }
     const float MaximumSlope = FMath::RadiansToDegrees(FMath::Acos(MinimumUpDot));
-    if (MaximumSlope > Settings->MaxGroundSlopeDegrees)
+    if (MaximumSlope > Ground.MaxSlopeDegrees)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::ExcessSlope,
             LOCTEXT("SlopeHigh", "지면 경사가 설정된 프로토타입 제한을 초과했습니다."));
     }
-    if (MaxHeight - MinHeight > Settings->MaxGroundHeightVarianceCm)
+    if (MaxHeight - MinHeight > Ground.MaxHeightVarianceCm)
     {
         InOutValidation.AddFailure(EFFZSPlacementFailure::HeightVarianceExceeded,
             LOCTEXT("HeightVar", "지면 높이 편차가 설정된 프로토타입 제한을 초과했습니다."));

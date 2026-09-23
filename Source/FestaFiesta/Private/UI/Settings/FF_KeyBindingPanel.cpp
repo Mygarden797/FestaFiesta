@@ -1,3 +1,6 @@
+// FF_KeyBindingPanel.cpp
+// 역할: 키 변경 입력을 받고 충돌·초기화 결과를 사용자에게 보여 준다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "UI/Settings/FF_KeyBindingPanel.h"
@@ -1154,23 +1157,8 @@ bool UFF_KeyBindingPanel::FindConflictingMapping(
 
 FKey UFF_KeyBindingPanel::FindCurrentKey(const FName MappingName) const
 {
-	if (UserSettings)
-	{
-		if (const FPlayerKeyMapping* Mapping = UserSettings->FindCurrentMappingForSlot(
-			MappingName,
-			EPlayerMappableKeySlot::First))
-		{
-			const FKey UserKey = Mapping->GetCurrentKey();
-			if (UserKey.IsValid())
-			{
-				return UserKey;
-			}
-		}
-	}
-
-	// A missing/empty profile slot means "no override", not "unassigned".  The UI only
-	// says 미지정 when neither a valid user key nor a project-authored default exists.
-	return GetDefaultKeyForMapping(MappingName);
+	// 실제 입력과 같은 규칙으로 저장 키·기본 키·제거된 동작을 구분한다.
+	return FFKeyBindingDefinitions::ResolveCurrentKey(UserSettings, MappingName);
 }
 
 FText UFF_KeyBindingPanel::FindActionLabel(const FName MappingName) const

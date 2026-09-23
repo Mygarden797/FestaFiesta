@@ -77,6 +77,40 @@ FRotator AFF_FinaleViewpoint::ResolveLookRotation() const
 	return UKismetMathLibrary::FindLookAtRotation(GetActorLocation(), AimPoint);
 }
 
+void AFF_FinaleViewpoint::CollectTour(const UWorld* World, TArray<AFF_FinaleViewpoint*>& OutViewpoints)
+{
+	OutViewpoints.Reset();
+
+	if (!World)
+	{
+		return;
+	}
+
+	for (TActorIterator<AFF_FinaleViewpoint> It(const_cast<UWorld*>(World)); It; ++It)
+	{
+		AFF_FinaleViewpoint* Candidate = *It;
+		if (!IsValid(Candidate) || !Candidate->bIncludeInTour)
+		{
+			continue;
+		}
+		OutViewpoints.Add(Candidate);
+	}
+
+	/* TourOrder 로 정렬한다. 같으면 이름으로 가른다.
+
+	   같은 값일 때 기준이 없으면 액터를 훑는 순서를 타는데, 그건 레벨을 저장할
+	   때마다 달라질 수 있다. 어제와 오늘의 연출이 달라지면 조율할 수가 없다.
+	*/
+	OutViewpoints.Sort([](const AFF_FinaleViewpoint& A, const AFF_FinaleViewpoint& B)
+	{
+		if (A.TourOrder != B.TourOrder)
+		{
+			return A.TourOrder < B.TourOrder;
+		}
+		return A.GetName() < B.GetName();
+	});
+}
+
 AFF_FinaleViewpoint* AFF_FinaleViewpoint::FindBest(const UWorld* World)
 {
 	if (!World)

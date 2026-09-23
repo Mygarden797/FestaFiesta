@@ -1,3 +1,5 @@
+// FF_FFZSAudienceCapacityTests.cpp
+// 역할: 에디터에서 관객 수용량이 관람 영역 변경을 따라 갱신되는지 검증한다.
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"

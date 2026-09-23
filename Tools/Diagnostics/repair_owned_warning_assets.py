@@ -1,3 +1,6 @@
+# repair_owned_warning_assets.py
+# 역할: 시설·경제·UI 경고 진단 작업에서 확인된 데이터 오류만 수정한다.
+
 """Repair only Han Kwang Hoon's legacy Taco catalog entry and missing build guide.
 
 Run after building FestaFiestaEditor with Unreal's PythonScript commandlet.

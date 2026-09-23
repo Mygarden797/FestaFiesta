@@ -1,3 +1,6 @@
+# inspect_buildable_lights.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 기존 에셋 상태를 읽어 기록한다.
+
 """Read the authored fixture meshes/lights and shared economy table before wiring."""
 import json
 from pathlib import Path

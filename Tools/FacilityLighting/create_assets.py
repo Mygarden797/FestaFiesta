@@ -1,3 +1,6 @@
+# create_assets.py
+# 역할: 시설 조명과 조명 제어 화면 작업에서 필요한 에셋 또는 설정을 생성한다.
+
 """Create the editable main-stage lighting rig and connect the facility PDA/UMG.
 
 Run only after compiling the new native lighting classes. Existing rig components

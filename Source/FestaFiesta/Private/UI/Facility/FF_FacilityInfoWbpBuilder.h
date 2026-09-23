@@ -1,3 +1,6 @@
+// FF_FacilityInfoWbpBuilder.h
+// 역할: 시설 정보·조명·유료 프로그램 화면의 초기 생성과 명시적인 에셋 수정을 담당한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

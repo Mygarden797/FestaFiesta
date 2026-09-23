@@ -1,3 +1,5 @@
+// FF_FFZSFacilityEditorHelpers.cpp
+// 역할: 시설 데이터 편집에 필요한 공통 변환·검사·표시 함수를 모아 상세 창의 중복 작업을 줄인다.
 #include "FF_FFZSFacilityEditorHelpers.h"
 
 #include "FF_FFZSDeveloperSettings.h"

@@ -1,3 +1,6 @@
+// FF_FestivalSettingsPolicy.h
+// 역할: 게임 중 설정 메뉴를 열고 닫을 수 있는 조건과 복구 규칙을 정의한다.
+
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once

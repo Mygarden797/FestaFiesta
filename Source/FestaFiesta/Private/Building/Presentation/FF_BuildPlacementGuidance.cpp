@@ -1,7 +1,11 @@
+// FF_BuildPlacementGuidance.cpp
+// 역할: 배치 실패 사유를 안내 문구로 바꾸고 가까운 대체 위치 후보를 만든다.
+
 #include "Building/Presentation/FF_BuildPlacementGuidance.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildPlacementGuidance"
 
+// 시스템 실패 코드를 사용자가 이해할 수 있는 짧은 문장으로 바꾼다.
 FText FFBuildPlacementAssistance::ReasonTitle(const EFFZSPlacementFailure Reason)
 {
     switch (Reason)
@@ -30,6 +34,7 @@ FText FFBuildPlacementAssistance::ReasonTitle(const EFFZSPlacementFailure Reason
     }
 }
 
+// 골드·설치 한도 문제가 없는지 확인하여 주변 빈자리 찾기가 도움이 되는 경우만 허용한다.
 bool FFBuildPlacementAssistance::CanResolveByMoving(const TArray<EFFZSPlacementFailure>& Reasons)
 {
     if (Reasons.IsEmpty()) return false;
@@ -53,6 +58,7 @@ bool FFBuildPlacementAssistance::CanResolveByMoving(const TArray<EFFZSPlacementF
     return true;
 }
 
+// 현재 격자 간격에 맞는 주변 후보를 만들고 중복 없이 가까운 순서로 반환한다.
 TArray<FIntPoint> FFBuildPlacementAssistance::MakeNearbyOffsets(const int32 SnapCm)
 {
     const int32 Step = FMath::Clamp(SnapCm, 1, 100);

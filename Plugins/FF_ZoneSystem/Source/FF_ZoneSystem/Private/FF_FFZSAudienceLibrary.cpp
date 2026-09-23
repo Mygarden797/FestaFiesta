@@ -1,3 +1,5 @@
+// FF_FFZSAudienceLibrary.cpp
+// 역할: 시설의 관람 범위와 관객 수용량을 게임 코드와 블루프린트에 제공한다.
 #include "FF_FFZSAudienceLibrary.h"
 
 #include "Engine/Engine.h"

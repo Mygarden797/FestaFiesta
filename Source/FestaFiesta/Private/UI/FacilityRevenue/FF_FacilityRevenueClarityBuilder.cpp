@@ -1,6 +1,10 @@
+// FF_FacilityRevenueClarityBuilder.cpp
+// 역할: 시설 수입 화면의 가독성과 저장된 스타일을 조정한다.
+
 // Explicit refinement of saved revenue widgets. Gameplay data and bindings are retained.
 #if WITH_EDITOR
 #include "Blueprint/WidgetTree.h"
+#include "Building/Presentation/FF_BuildUIAssetPaths.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
@@ -213,15 +217,15 @@ static bool Apply(const TCHAR* Path, UClass* Expected, bool(*Edit)(UWidgetBluepr
 }
 static void Run()
 {
-    bool Ok = Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRankRow"),UFF_FacilityRevenueRankRow::StaticClass(),RankRow);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),UFF_FacilityRevenueRankingPanel::StaticClass(),Ranking);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),UFF_FacilityRevenueRankingPanel::StaticClass(),FrameFit,FrameFitVersion);
-    Ok &= Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityWorldBadge"),UFF_FacilityProgramMarkerWidget::StaticClass(),Badge);
+    bool Ok = Apply(FFBuildUIAssetPaths::FacilityRevenueRankRowPackage,UFF_FacilityRevenueRankRow::StaticClass(),RankRow);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityRevenueRankingPackage,UFF_FacilityRevenueRankingPanel::StaticClass(),Ranking);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityRevenueRankingPackage,UFF_FacilityRevenueRankingPanel::StaticClass(),FrameFit,FrameFitVersion);
+    Ok &= Apply(FFBuildUIAssetPaths::FacilityWorldBadgePackage,UFF_FacilityProgramMarkerWidget::StaticClass(),Badge);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("%s_COMPLETE_%s"),Prefix,Ok ? TEXT("PASS") : TEXT("FAIL"));
 }
 static void RunFrameFit()
 {
-    const bool Ok = Apply(TEXT("/Game/FestaFiesta/Building/FF_WBP_Building/FacilityRevenue/WBP_FF_FacilityRevenueRanking"),
+    const bool Ok = Apply(FFBuildUIAssetPaths::FacilityRevenueRankingPackage,
         UFF_FacilityRevenueRankingPanel::StaticClass(),FrameFit,FrameFitVersion);
     UE_LOG(LogFFUIWbpBuilder,Display,TEXT("FF_BUILD_CLARITY_REVENUE_FIT_COMPLETE_%s"),Ok ? TEXT("PASS") : TEXT("FAIL"));
 }
