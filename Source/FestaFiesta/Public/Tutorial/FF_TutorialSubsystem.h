@@ -315,6 +315,12 @@ private:
 	UFUNCTION()
 	void HandleNewGameRequested();
 
+	// 레벨 선택 화면이 떠 있으면 로비 인트로를 튼다. 새 게임을 누른 뒤 Tick 에서 부른다.
+	void TryStartPendingLobbyIntro();
+
+	// 새 게임을 눌렀고 아직 로비 인트로를 틀지 않았다. 레벨 선택 화면이 뜨면 튼다.
+	bool bLobbyIntroPending = false;
+
 	// 레벨이 뜨면 설정에 지정된 대사를 시작한다. 지정이 없으면 아무것도 하지 않는다.
 	void TryAutoStart();
 
@@ -428,6 +434,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> DialogueBoxWidget;
+
+	// 대사창을 올릴 때 쓴 화면 순서. 로비와 축제가 달라서 바뀌면 다시 올린다.
+	int32 DialogueBoxAppliedZOrder = 0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> OverlayWidget;

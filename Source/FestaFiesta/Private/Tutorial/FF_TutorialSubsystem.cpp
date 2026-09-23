@@ -282,6 +282,12 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 			TryBindPlayHub();
 		}
 	}
+
+	// 새 게임을 눌렀으면 레벨 선택 화면이 뜰 때까지 기다렸다가 로비 인트로를 튼다.
+	if (bLobbyIntroPending && !bDialogueActive)
+	{
+		TryStartPendingLobbyIntro();
+	}
 }
 
 void UFF_TutorialSubsystem::BindGameSignals()
@@ -495,6 +501,23 @@ void UFF_TutorialSubsystem::EnsureWidgets()
 		}
 	}
 
+	/* 대사창 순서는 무엇을 재생하느냐로 고른다. 로비 인트로와 축제 튜토리얼이 다르다.
+
+	   레벨이 아니라 범위로 가르는 이유: 범위는 재생 직전에 정해져 있고(SetPlaybackScope),
+	   "로비 레벨인가" 를 따로 묻지 않아도 된다. 이미 떠 있는 창의 순서가 다르면
+	   내렸다가 다시 올린다 — 순서는 AddToViewport 할 때만 정해진다.
+	*/
+	const int32 WantedBoxZOrder = (ActiveScope == EFF_TutorialScope::LobbyIntro)
+		? Settings->LobbyDialogueBoxZOrder
+		: Settings->DialogueBoxZOrder;
+
+	if (DialogueBoxWidget && DialogueBoxAppliedZOrder != WantedBoxZOrder)
+	{
+		DialogueBoxWidget->RemoveFromParent();
+		DialogueBoxWidget->AddToViewport(WantedBoxZOrder);
+		DialogueBoxAppliedZOrder = WantedBoxZOrder;
+	}
+
 	if (!DialogueBoxWidget)
 	{
 		if (UClass* BoxClass = Settings->DialogueBoxWidgetClass.LoadSynchronous())
@@ -502,7 +525,8 @@ void UFF_TutorialSubsystem::EnsureWidgets()
 			DialogueBoxWidget = CreateWidget<UUserWidget>(Controller, BoxClass);
 			if (DialogueBoxWidget)
 			{
-				DialogueBoxWidget->AddToViewport(Settings->DialogueBoxZOrder);
+				DialogueBoxWidget->AddToViewport(WantedBoxZOrder);
+				DialogueBoxAppliedZOrder = WantedBoxZOrder;
 			}
 		}
 	}
@@ -530,18 +554,12 @@ void UFF_TutorialSubsystem::TryBindPlayHub()
 		return;
 	}
 
-	// 로비 인트로를 이미 봤으면 구독할 이유가 없다.
-	//
-	// 축제 튜토리얼은 여기서 보지 않는다. 이 구독은 로비의 새 게임 버튼용이고,
-	// 축제 쪽 판정은 그 레벨에 들어간 뒤 TryAutoStart 가 따로 한다.
-	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
-	{
-		if (Save->WasLobbyIntroSeen())
-		{
-			return;
-		}
-	}
+	/* 봤든 안 봤든 늘 구독한다.
 
+	   예전에는 로비 인트로를 봤으면 구독하지 않았다. 지금은 이 버튼이 "새 게임" 의
+	   시작점이라 튜토리얼 기록을 비우는 일까지 맡는다(HandleNewGameRequested).
+	   구독을 안 하면 새 게임을 눌러도 기록이 안 비워져 튜토리얼이 안 나온다.
+	*/
 	TArray<UUserWidget*> FoundWidgets;
 	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
 		this, FoundWidgets, UFF_PlayHubScreen::StaticClass(), false);
@@ -565,13 +583,44 @@ void UFF_TutorialSubsystem::TryBindPlayHub()
 
 void UFF_TutorialSubsystem::HandleNewGameRequested()
 {
-	// 다른 대사가 도는 중이면 끼어들지 않는다. 범위를 덮으면 그 대사가 엉뚱하게 기록된다.
-	if (bDialogueActive)
+	/* 새 게임이다. 이 판의 튜토리얼 기록을 먼저 비운다.
+
+	   새 게임은 처음부터라서 로비 인트로도 축제 튜토리얼도 다시 봐야 한다.
+	   이 월드에서 건너뛴 기억(bTutorialSkipped)도 같이 푼다.
+	*/
+	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	{
+		Save->BeginNewRun();
+	}
+	bTutorialSkipped = false;
+
+	/* 여기서 바로 틀지 않는다. 레벨 선택 화면까지 기다린다.
+
+	   흐름은 새 게임 → 나라 선택(지구본) → 레벨 선택(국가 지도)이다. 로비 인트로는
+	   레벨을 고르는 자리에서 봐야 하는데, 이 버튼 시점에 틀면 지구본 위에 뜬다.
+	   화면 전환은 UIFlow 가 하고 우리는 그 순서를 바꿀 수 없어서, 표시만 해두고
+	   Tick 에서 화면을 보고 튼다(TryStartPendingLobbyIntro).
+	*/
+	bLobbyIntroPending = true;
+}
+
+void UFF_TutorialSubsystem::TryStartPendingLobbyIntro()
+{
+	/* UIFlow 가 지금 어느 화면인지는 공개 조회로 읽는다.
+
+	   UIFlow 에 "화면이 바뀌었다" 신호를 새로 만들면 UI 파트 파일을 고쳐야 한다.
+	   값 하나를 읽는 것으로 충분하고, 화면 전환은 드물어서 매 틱 읽어도 싸다.
+	*/
+	const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+	if (!Flow || Flow->GetFrontendScreen() != EFF_UIFlowScreen::AtlasCountry)
 	{
 		return;
 	}
 
-	// 로비 인트로를 이미 봤으면 넘어간다. 오프닝은 계정 단위로 한 번이다.
+	// 한 번 시도하면 끝이다. 뒤로 갔다 다시 와도 또 틀지 않는다.
+	bLobbyIntroPending = false;
+
+	// 방금 비웠으니 보통은 안 봤다. 저장 시스템이 없는 테스트 맵을 위해 한 번 더 묻는다.
 	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
 		if (Save->WasLobbyIntroSeen())
@@ -585,7 +634,7 @@ void UFF_TutorialSubsystem::HandleNewGameRequested()
 
 	if (!Table)
 	{
-		// 로비 대사가 없는 것은 정상이다. 바로 지구본으로 넘어간다.
+		// 로비 대사가 없는 것은 정상이다. 그대로 레벨을 고르면 된다.
 		return;
 	}
 
@@ -596,11 +645,7 @@ void UFF_TutorialSubsystem::HandleNewGameRequested()
 	*/
 	SetPlaybackScope(EFF_TutorialScope::LobbyIntro, NAME_None);
 
-	/* 지구본이 먼저 뜨고 그 위에 우리 대사가 얹힌다.
-
-	   새 게임 버튼은 우리보다 먼저 UI 플로우가 받아 화면을 바꾼다. 그 순서를
-	   우리가 바꿀 수 없으므로, 배경 그림으로 화면을 덮어 가리는 편이 단순하다.
-	*/
+	// 레벨 선택 화면 위에 대사가 얹힌다. 대사창 순서는 LobbyDialogueBoxZOrder 를 쓴다.
 	if (!PlayTable(Table))
 	{
 		// 재생이 안 됐으면 범위도 물린다. 남겨두면 다음에 콘솔로 튼 것이 로비 인트로로 기록된다.
@@ -633,6 +678,18 @@ void UFF_TutorialSubsystem::TryAutoStart()
 
 	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
+		/* 이어하기가 아직 안 끝났으면 조금 뒤에 다시 본다.
+
+		   튜토리얼 기록은 이어하기가 세이브에서 가져온다. GameMode 가 그걸 한 틱 미뤄서
+		   하므로, 시작 지연이 짧으면 이쪽이 먼저 돌아 "안 본 것" 으로 판정하고 튜토리얼을
+		   틀어버린다. 세이브에는 봤다고 적혀 있는데 또 나오는 꼴이 된다.
+		*/
+		if (Save->HasPendingContinue())
+		{
+			AutoStartCountdown = 0.1f;
+			return;
+		}
+
 		if (Save->IsTutorialOptedOut())
 		{
 			UE_LOG(LogFestaFiestaTutorial, Log,
@@ -1100,7 +1157,7 @@ void UFF_TutorialSubsystem::SkipTutorial()
 	// 위젯도 내린다. 건너뛴 뒤에도 대사창이 남아 있으면 화면을 가린다.
 	RemoveWidgets();
 
-	/* 안내를 통째로 끈다. 축제별이 아니라 전역이다.
+	/* 안내를 통째로 끈다. 축제별이 아니라 이 판 전체다. 새 게임을 누르면 풀린다.
 
 	   건너뛰기는 "이 축제만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
 	   축제별로 기록하면 축제를 바꿀 때마다 다시 눌러야 한다.

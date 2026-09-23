@@ -54,10 +54,19 @@ struct FESTAFIESTA_API FFF_FestivalRecord
 	}
 };
 
-/* 축제 사이에 남는 것들.
+/* 축제 사이에 남는 것들. 어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
 
-   게임을 껐다 켜도 유지돼야 하는 진행 상태다. 축제 도중의 상태와 달리
-   어느 파트에도 속하지 않아서 저장 시스템이 직접 들고 있는다.
+   ─── 수명이 둘이다 ─────────────────────────────────────────────────────────
+   판 단위  : 튜토리얼 기록(로비 인트로·안내 끔·본 축제). 새 게임을 누르면 비우고,
+              이어하기를 하면 그 세이브에 담긴 값으로 돌아간다. 세이브 파일 안에 담긴다.
+   계정 단위: 깬 축제·최고 기록. 판과 상관없이 쌓인다. FF_MetaStore 에 담긴다.
+
+   튜토리얼을 판 단위로 둔 이유: "새 게임은 처음부터, 세이브로 들어가면 그 판에서
+   본 것은 안 본다" 가 기획이다. 계정 단위로 두면 한 판에서 건너뛴 것이 다른 판,
+   심지어 새 게임까지 따라간다.
+
+   한 구조체에 둔 채로 나누는 이유는 저장 형식을 안 바꾸기 위해서다. 옛 세이브도
+   같은 자리에서 읽힌다. 나누는 규칙은 아래 ResetRunScoped / TakeRunScopedFrom 한 곳에 둔다.
 */
 USTRUCT(BlueprintType)
 struct FESTAFIESTA_API FFF_MetaSave
@@ -67,7 +76,7 @@ struct FESTAFIESTA_API FFF_MetaSave
 	/* 로비 인트로를 끝까지 봤는가.
 
 	   축제를 고르기 전에 로비에서 도는 오프닝이라 축제별로 나눌 수 없다.
-	   계정 단위로 한 번만 보여준다.
+	   판 단위다. 새 게임마다 한 번 보여준다.
 	*/
 	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Save")
 	bool bLobbyIntroSeen = false;
@@ -75,7 +84,8 @@ struct FESTAFIESTA_API FFF_MetaSave
 	/* 안내를 통째로 껐는가.
 
 	   건너뛰기는 "이번 것만 넘긴다" 가 아니라 "안내 없이 운영만 하겠다" 는 선언이다.
-	   그래서 축제가 바뀌어도 되살아나지 않는다. 끝까지 본 것과 달리 전역이다.
+	   그래서 같은 판 안에서는 축제가 바뀌어도 되살아나지 않는다.
+	   판 단위라 새 게임을 누르면 풀린다.
 
 	   끝까지 본 것과 나눠 두는 이유는, 둘 다 "다시 안 보여준다" 는 같지만
 	   건너뛴 사람에게는 나중에 다시 볼 기회를 주고 싶어질 수 있어서다.
@@ -108,6 +118,28 @@ struct FESTAFIESTA_API FFF_MetaSave
 	bool HasSeenTutorialFor(const FName FestivalId) const
 	{
 		return !FestivalId.IsNone() && TutorialSeenFestivals.Contains(FestivalId);
+	}
+
+	// 판 단위 값을 비운다. 새 게임이 이것으로 시작한다.
+	void ResetRunScoped()
+	{
+		bLobbyIntroSeen = false;
+		bTutorialOptedOut = false;
+		TutorialSeenFestivals.Reset();
+
+		// 판 1 의 옛 값도 판 단위다. 남겨두면 다음 옮기기에서 되살아난다.
+		bTutorialCompleted_DEPRECATED = false;
+		bTutorialSkipped_DEPRECATED = false;
+	}
+
+	// 판 단위 값만 다른 것에서 가져온다. 계정 단위 값(기록·깬 축제)은 그대로 둔다.
+	void TakeRunScopedFrom(const FFF_MetaSave& Other)
+	{
+		bLobbyIntroSeen = Other.bLobbyIntroSeen;
+		bTutorialOptedOut = Other.bTutorialOptedOut;
+		TutorialSeenFestivals = Other.TutorialSeenFestivals;
+		bTutorialCompleted_DEPRECATED = false;
+		bTutorialSkipped_DEPRECATED = false;
 	}
 
 	/* 다른 곳에서 읽은 메타를 합친다. 무엇이 바뀌었는지 돌려준다.
