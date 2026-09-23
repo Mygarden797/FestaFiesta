@@ -26,15 +26,21 @@ public:
 	const TSet<FName>& GetDiscoveredRuleIdsView() const { return DiscoveredRuleIds; }
 	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
 	bool IsDiscoveryRewardClaimed(FName RuleId) const { return ClaimedDiscoveryRewardRuleIds.Contains(RuleId); }
+	UFUNCTION(BlueprintPure, Category="FestaFiesta|Facility Codex")
+	bool IsCollectionRewardClaimed(FName MilestoneId) const { return ClaimedCollectionRewardIds.Contains(MilestoneId); }
 	/** Persists confirmed discoveries independently of the economy; never grants gold. */
 	bool RecordDiscoveries(const TSet<FName>& RuleIds);
 	/** Called with an authored amount by the world codex. Failed/duplicate claims do not consume a reward. */
 	bool ClaimDiscoveryReward(FName RuleId, int32 RewardGold, UFF_FestivalProgressionSubsystem* Economy);
+	/** Authored IDs come from the current rule table, excluding stale profile discoveries. */
+	bool ClaimCollectionReward(FName MilestoneId, int32 RequiredDiscoveries, int32 RewardGold,
+		const TSet<FName>& AuthoredRuleIds, UFF_FestivalProgressionSubsystem* Economy);
 	UPROPERTY(BlueprintAssignable, Category="FestaFiesta|Facility Codex")
 	FFF_OnFacilityCodexProgressChanged OnProgressChanged;
 
 private:
 	UPROPERTY(Transient) TSet<FName> DiscoveredRuleIds;
 	UPROPERTY(Transient) TSet<FName> ClaimedDiscoveryRewardRuleIds;
+	UPROPERTY(Transient) TSet<FName> ClaimedCollectionRewardIds;
 	void SaveProgress() const;
 };

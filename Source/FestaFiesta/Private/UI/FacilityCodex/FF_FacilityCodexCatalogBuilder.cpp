@@ -44,7 +44,9 @@ namespace FFFacilityCodexCatalogBuilder
         }
         if (UWidget* Existing = Tree.FindWidget(LauncherName))
         {
-            if (Existing->IsA(LauncherClass) && Existing->GetParent() == Header)
+            const UWidget* BottomRow = Tree.FindWidget(TEXT("Row_BuildCodexCategory"));
+            if (Existing->IsA(LauncherClass) &&
+                (Existing->GetParent() == Header || Existing->GetParent() == BottomRow))
             {
                 UE_LOG(LogFFUIWbpBuilder, Display, TEXT("%s_REUSE: Designer edits and saved bytes preserved."), Prefix);
             }

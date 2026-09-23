@@ -62,7 +62,7 @@ bool FFF_PrepBuildWidgetContract_Assets::RunTest(const FString& Parameters)
 	TestTrue(TEXT("검색창 child보다 먼저 ESC를 Pause Hub 입력으로 처리한다"),
 		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 			EKeys::Escape, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
-	TestTrue(TEXT("검색창 child보다 먼저 F5를 Pause Hub 입력으로 처리한다"),
+	TestFalse(TEXT("건축 중 F5는 Pause Hub 단축키로 처리하지 않는다"),
 		FFPrepBuildPauseModel::ShouldHandlePauseMenuKey(
 			EKeys::F5, false, true, false, EFF_BuildModeState::CatalogOpen, PauseKeys));
 	TestFalse(TEXT("키 반복은 Pause Hub를 중복 요청하지 않는다"),

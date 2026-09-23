@@ -83,6 +83,7 @@ private:
     TArray<FVector> RangePoints;
     FVector CandidateWorldLocation = FVector::ZeroVector;
     bool bFirstRangeActive = false;
+    bool bPearlStyleApplied = false;
 
     void BuildNativeTree();
     void ResolveBindings();

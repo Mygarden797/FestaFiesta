@@ -341,9 +341,9 @@ bool FFF_FacilityRevenueVirtualizedPreviewTest::RunTest(const FString& Parameter
 		const FSlateRect BodyRect = Body->GetPaintSpaceGeometry().GetLayoutBoundingRect();
 		TestTrue(TEXT("Revenue panel stays above its 70-logical-unit bottom HUD reserve at project DPI"), BodyRect.Top >= 0 && BodyRect.Bottom <= Height - 69.5f * Dpi &&
 			BodyRect.Left >= 0 && BodyRect.Right <= Width && BodyRect.GetSize().GetMin() > 0);
-		TestTrue(TEXT("Ranking stays a compact 500-wide floating surface capped at 600 logical pixels"),
-			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, 500.f, 1.f) && BodyRect.GetSize().Y / Dpi <= 601.f);
-		TestTrue(TEXT("Ranking leaves the center of the world clear"), BodyRect.Left > Width * .65f);
+		TestTrue(TEXT("Ranking stays a 600-wide floating surface capped at 600 logical pixels"),
+			FMath::IsNearlyEqual(BodyRect.GetSize().X / Dpi, 600.f, 1.f) && BodyRect.GetSize().Y / Dpi <= 601.f);
+		TestTrue(TEXT("Ranking leaves the center of the world clear"), BodyRect.Left > Width * .55f);
 		if (Rows.Num() <= 2)
 			TestTrue(TEXT("Sparse and empty rankings shrink instead of reserving a full-height blank list"), BodyRect.GetSize().Y / Dpi < 480.f);
 		TestEqual(TEXT("Every installation remains in the data source"), List->GetNumItems(), Rows.Num());

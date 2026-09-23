@@ -150,6 +150,11 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Controller->SetPlayer(Player);
     Player->Origin = FVector2D::ZeroVector;
     Player->Size = FVector2D(1.0, 1.0);
+    if (!TestFalse(TEXT("Synthetic input viewport has no Slate game viewport widget"),
+        Viewport->GetGameViewportWidget().IsValid()))
+    {
+        return false;
+    }
     Controller->PlayerInput = NewObject<UPlayerInput>(Controller);
     const TSharedPtr<SWidget> PreviousKeyboardFocus = FSlateApplication::Get().GetKeyboardFocusedWidget();
     FSlateApplication::Get().ClearKeyboardFocus();

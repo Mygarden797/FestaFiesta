@@ -129,7 +129,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Appearance",
 		meta = (AllowPrivateAccess = "true"))
 	FLinearColor FeedbackSuccessColor =
-		FLinearColor::FromSRGBColor(FColor(0x3F, 0x8F, 0x6D));
+		FLinearColor::FromSRGBColor(FColor(0x3D, 0x3C, 0x4F));
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget, AllowPrivateAccess = "true"))
 	TObjectPtr<UBorder> Border_Picker;

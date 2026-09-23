@@ -7,6 +7,7 @@
 
 #include "CoreMinimal.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/FF_BuildToolbarInput.h"
 #include "Festival/FF_RequiredFacilityTypes.h"
 #include "Styling/SlateTypes.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationTypes.h"
@@ -42,7 +43,8 @@ namespace FFPrepBuildPauseModel
 		const EFF_BuildModeState State,
 		const TArray<FKey>& OpenCloseKeys)
 	{
-		return !bIsRepeat && bPanelOpen && !bPanelClosing &&
+		return !FFBuildToolbarInput::IsRetiredShortcut(Key) &&
+			!bIsRepeat && bPanelOpen && !bPanelClosing &&
 			State == EFF_BuildModeState::CatalogOpen && OpenCloseKeys.Contains(Key);
 	}
 }
@@ -319,6 +321,11 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_ClarityCatalogDock;
 	TWeakObjectPtr<UFF_PrepBuildTileData> CatalogPressedItem;
 	FVector2D CatalogDragOrigin = FVector2D::ZeroVector;
+	FVector2D CatalogDragLastPosition = FVector2D::ZeroVector;
+	double CatalogDragLastTime = 0.0;
+	float CatalogDragStartOffset = 0.f;
+	float CatalogScrollVelocity = 0.f;
+	void ScrollCatalogBy(float ItemDelta);
 	bool bCatalogPointerDown = false;
 	bool bCatalogPointerMoved = false;
 	FName SelectedCatalogFacilityId = NAME_None;

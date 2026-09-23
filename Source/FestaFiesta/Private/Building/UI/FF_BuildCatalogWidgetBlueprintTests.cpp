@@ -475,7 +475,15 @@ bool FFF_BuildCatalogWidgetBlueprintContractTest::RunTest(const FString& Paramet
 			const FReply F5PauseMenuKeyReply = Screen->NativeOnPreviewKeyDown(
 				FGeometry(), F5PauseMenuKeyEvent);
 			TestTrue(TEXT("Focused catalog handles F5"), F5PauseMenuKeyReply.IsEventHandled());
-			TestTrue(TEXT("Focused catalog routes F5 to the same Pause Hub"), bPauseMenuKeyRequested);
+			TestFalse(TEXT("Focused catalog does not open Pause Hub from retired F5"), bPauseMenuKeyRequested);
+			for (const FKey& RetiredKey : {EKeys::F1, EKeys::F2, EKeys::F3,
+				EKeys::F4, EKeys::F6, EKeys::F7})
+			{
+				const FKeyEvent RetiredEvent(RetiredKey, FModifierKeysState(), 0, false, 0, 0);
+				TestTrue(TEXT("Focused catalog consumes every retired toolbar key"),
+					Screen->NativeOnPreviewKeyDown(FGeometry(), RetiredEvent).IsEventHandled());
+				TestFalse(TEXT("Retired toolbar keys never request Pause Hub"), bPauseMenuKeyRequested);
+			}
 			Screen->OnPauseMenuKeyRequested.Remove(PauseMenuKeyHandle);
 
 			const TCHAR* TopButtonNames[] = {
