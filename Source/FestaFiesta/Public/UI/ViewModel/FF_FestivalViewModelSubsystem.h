@@ -36,8 +36,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
  * `UFF_FestivalDefinition` 이 `PromotionBasic`·`PromotionFocused` 두 필드를 따로 들고 있을 뿐이다.
  * 차감은 `RequestPurchasePromotion` 이 `TrySpend(.., Promotion)` 으로 하고 있다.
  *
- * 🔴 **다만 `VisitorMultiplier`(1.08·1.18) 를 소비하는 곳이 아직 0곳이다** — 사면 돈만 나가고
- * 방문객은 안 늘어난다. 곱할 대상인 "오늘 예상 방문객"이 경제에 없기 때문이다.
+ * `VisitorMultiplier` 는 경제의 `GetExpectedVisitors()` 가 곱하고, Crowd 가 그 값으로 스폰한다.
  *
  * 김시리님이 `EFF_PromotionGrade` 와 구매 API 를 만들면 **이 enum 을 지우고 그것으로 바꾼다.**
  * 그때 고칠 곳은 이 파일과 홍보 패널뿐이다 — 위젯 트리는 그대로다.
@@ -238,8 +237,8 @@ struct FESTAFIESTA_API FFF_PrepFacilityOption
  * | └ 분해값 4종           | 김시리           | **진짜 값** — SimSatisfaction과 같은 1초 주기에 같이 갱신된다 |
  * | ScoreSatisfaction      | 김시리           | **진짜 값** — `Clamp(SimSatisfaction + FinaleBonus, 0, 100)`. `OnSimSatisfactionChanged`·`OnFinaleGradeChanged` 둘 다 바뀔 때 재계산한다. UI 문구의 "연출 보정" 항은 정의·계수가 없어 이번엔 포함하지 않았다(`FF_LivePanelReport.h` 참고, 백종태 소유 문구라 별도 결정 필요) |
  * | Safety                 | 이정원           | 더미 (소유자 API 없음) |
- * | TotalRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
- * | TodayRevenue           | 김시리           | 더미 — **소유자 API는 완료, 구독 연결만 남음** |
+ * | TotalRevenue           | 김시리           | **진짜 값** (`OnTotalRevenueChanged` 구독) |
+ * | TodayRevenue           | 김시리           | **진짜 값** (`OnTodayRevenueChanged` 구독) |
  *
  * `GetTotalRevenue()`/`GetTodayRevenue()`와 `OnTotalRevenueChanged`/`OnTodayRevenueChanged`가
  * `UFF_FestivalProgressionSubsystem`에 이미 있다. Gold와 같은 모양이므로 같은 Bind + Sync로 붙인다.
