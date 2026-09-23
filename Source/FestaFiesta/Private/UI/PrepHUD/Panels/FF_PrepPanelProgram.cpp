@@ -508,8 +508,12 @@ void UFF_PrepPanelProgram::RefreshAll()
 	// 카드도 안 골랐는데 `부스를 먼저 지으세요` 가 뜬다.
 	const int32 FacilityCount = SelectedCard ? FacilityOptions.Num() : INDEX_NONE;
 
+	// "하루 한 번" 은 시설 단위다. 시설을 골랐으면 그 시설 기준으로 묻는다.
 	const EFF_ProgramPurchaseResult OwnerResult = (ViewModel && SelectedCard)
-		? ViewModel->CanScheduleProgram(SelectedCard->ProgramId)
+		? (bHasFacility
+			? ViewModel->CanScheduleProgramAtFacility(
+				SelectedCard->ProgramId, FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
+			: ViewModel->CanScheduleProgram(SelectedCard->ProgramId))
 		: (ViewModel ? EFF_ProgramPurchaseResult::Success : EFF_ProgramPurchaseResult::FestivalNotStarted);
 
 	Quote = FFF_PrepProgramRules::BuildQuote(
@@ -522,7 +526,10 @@ void UFF_PrepPanelProgram::RefreshAll()
 
 
 	// --- 카드 상태 ---
-	const TArray<FName> ScheduledIds = ViewModel ? ViewModel->GetScheduledProgramIds() : TArray<FName>();
+	// 선택한 시설에 편성한 카드만 "✓ 편성함" 이다. 다른 공방에 연 카드는 여기서 또 열 수 있다.
+	const TArray<FName> ScheduledIds = (ViewModel && bHasFacility)
+		? ViewModel->GetScheduledProgramIdsAtFacility(FacilityOptions[SelectedFacilityIndex].FacilityInstanceId)
+		: TArray<FName>();
 
 	for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
 	{

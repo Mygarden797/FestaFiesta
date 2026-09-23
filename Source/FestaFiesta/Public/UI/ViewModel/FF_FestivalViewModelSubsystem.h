@@ -44,11 +44,12 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFF_OnProgramScheduleViewChanged);
 UENUM(BlueprintType)
 enum class EFF_PromotionChoice : uint8
 {
-	/** 안 함. 데이터가 아니라 미구매 상태다 (0 Gold · 배수 1.0). */
+	/** 홍보 없음. 데이터가 아니라 미구매 상태다 (0 Gold · NoPromotionVisitorMultiplier). */
 	None		UMETA(DisplayName = "안 함"),
 
-	Basic		UMETA(DisplayName = "기본"),
-	Focused		UMETA(DisplayName = "집중")
+	Basic		UMETA(DisplayName = "지역 SNS"),
+	Focused		UMETA(DisplayName = "전국 홍보"),
+	Influencer	UMETA(DisplayName = "인플루언서")
 };
 
 /** 등급이 바뀌었다. 지금은 UI 안에서만 도는 값이다. */
@@ -534,6 +535,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
 	EFF_ProgramPurchaseResult CanScheduleProgram(FName ProgramId) const;
 
+	// 이 시설에 이 카드를 오늘 편성할 수 있는지. "하루 한 번" 은 시설 단위다 — 공방이 여러 개면 같은 카드를 따로 연다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	EFF_ProgramPurchaseResult CanScheduleProgramAtFacility(FName ProgramId, FGuid FacilityInstanceId) const;
+
+	// 이 시설에 오늘 편성한 카드들. 카드의 "✓ 편성함" 표시는 선택한 시설 기준이어야 한다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|ViewModel|Program")
+	TArray<FName> GetScheduledProgramIdsAtFacility(FGuid FacilityInstanceId) const;
+
 	/**
 	 * 지금이 편성할 수 있는 단계인지 (셋업 · 개장 준비).
 	 *
@@ -588,6 +597,10 @@ public:
 	/** 예상 방문객이 바뀔 때. 홍보를 사면 온다. */
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Crowd")
 	FFF_OnIntMetricChanged OnExpectedVisitorsChanged;
+
+	/** 오늘 입장료가 바뀔 때. 새 입장료(Gold)를 싣는다. 값은 GetAdmissionFeeGold 로도 읽는다. */
+	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|ViewModel|Economy")
+	FFF_OnIntMetricChanged OnAdmissionFeeChanged;
 
 	/**
 	 * 관객 욕구 5종의 미해소율. 순서는 `EFF_NeedType` 과 같다.
@@ -920,6 +933,9 @@ protected:
 
 	UFUNCTION()
 	void HandleOwnerExpectedVisitorsChanged(int32 NewValue);
+
+	UFUNCTION()
+	void HandleOwnerAdmissionFeeChanged(int32 NewValue);
 
 	/**
 	 * 환경 상태를 받아 **날씨만** 중계한다.
