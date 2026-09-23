@@ -165,6 +165,9 @@ public:
 	   흐름을 타지 않고 레벨을 직접 열면 비어 있다(PIE 에서 흔하다). 그때는 레벨
 	   이름으로 대신한다 — 레벨과 축제가 1:1 이라 실용적으로 같은 값이고, 적어도
 	   레벨끼리는 구분된다.
+
+	   규칙은 저장 쪽(UFF_SaveSubsystem::ResolveCurrentFestivalId)이 들고 여기는
+	   그걸 부른다. 저장도 같은 이름으로 판을 담으므로 규칙이 한 곳에 있어야 한다.
 	*/
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Tutorial")
 	FName ResolveCurrentFestivalId() const;
@@ -261,10 +264,22 @@ private:
 
 	/* 탭 바를 구독한다. 화면이 만들어진 뒤에야 가능하므로 여러 번 시도한다.
 
-	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 레벨을 옮기면 다시 만들어진다.
-	   한 번만 시도하면 그 사이에 놓친다.
+	   탭 바는 축제 레벨에 들어온 뒤에 만들어지고, 단계가 바뀌면 다시 만들어진다.
+	   예전에는 탭 대기 줄에 들어가는 순간 한 번만 찾아서, 그때 화면이 없거나 뒤에
+	   새로 만들어지면 탭을 열어도 안 넘어가는 채로 멈췄다. 그래서 대기 중에는
+	   Tick 에서 주기적으로 다시 확인한다.
+
+	   화면에 올라가 있는 것을 먼저 고른다. 풀에 남은 옛 인스턴스를 물면 신호가 안 온다.
+	   새로 물었으면 true.
 	*/
-	void TryBindPrepHudBar();
+	bool TryBindPrepHudBar();
+
+	/* 원하는 탭이 이미 열려 있으면 바로 통과시킨다.
+
+	   탭 신호는 바뀔 때만 온다. 대사보다 먼저 탭을 열어둔 사람은 닫았다 다시
+	   열어야 넘어가는데, 무엇을 해야 하는지 알 수 없어 멈춘 것처럼 보인다.
+	*/
+	void CheckPrepTabAlreadyOpen();
 
 	void BindGameSignals();
 	void UnbindGameSignals();
@@ -388,6 +403,15 @@ private:
 	// 확인용으로 만든 줄. 데이터에 없는 줄이라 여기서 들고 있는다.
 	FFF_DialogueLine SkipConfirmLine;
 
+	/* 확인 창이 떠 있는 동안 원래 줄이 기다리던 조작이 들어왔다.
+
+	   확인 중에는 GetCurrentLine 이 확인 줄을 돌려줘서 NotifyAction 이 그 조작을
+	   버린다. 단계 전환처럼 시간이 가면 저절로 일어나는 것은 그 사이에 지나가
+	   버려서, 취소하고 돌아오면 다시는 안 올 신호를 기다리며 멈춘다.
+	   그래서 기억해뒀다가 취소할 때 통과시킨다.
+	*/
+	bool bActionArrivedDuringSkipConfirm = false;
+
 	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
 	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
 
@@ -395,6 +419,9 @@ private:
 
 	// 다음 구독 시도까지 남은 시간. 매 틱 훑지 않기 위한 것이다.
 	float PlayHubScanCountdown = 0.f;
+
+	// 탭 대기 중 탭 바를 다시 확인할 때까지 남은 시간.
+	float PrepBarScanCountdown = 0.f;
 
 	bool bBoundZoneWorld = false;
 	bool bBoundStage = false;

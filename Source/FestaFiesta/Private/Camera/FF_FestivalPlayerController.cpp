@@ -549,6 +549,17 @@ void AFF_FestivalPlayerController::EnsureViewTargetAlive()
 		return;
 	}
 
+	/* 연출 중이면 건드리지 않는다.
+
+	   지금 화면은 연출 시점을 비추고 있어서 보던 대상이 사라져도 화면이 원점으로
+	   가지 않는다. 여기서 관찰 시점으로 돌리면 연출 카메라를 빼앗는다.
+	   연출이 끝날 때 ExitScriptedView 가 대상이 사라진 경우를 따로 처리한다.
+	*/
+	if (bScriptedViewActive)
+	{
+		return;
+	}
+
 	// 보던 NPC 가 퇴장하거나 시설이 철거되면 뷰타깃이 사라진다.
 	// 그대로 두면 화면이 원점을 비추고 입력도 계속 막혀 있어서 조작 불능처럼 보인다.
 	if (!ViewedActor.IsValid())
@@ -667,6 +678,17 @@ void AFF_FestivalPlayerController::HandleToggleView(const FInputActionValue& Val
 	// 액터 시점으로 들어간 뒤 되돌아 나올 수가 없다.
 	// 다만 모달 UI 가 떠 있는 동안에는 화면이 바뀌면 안 된다.
 	if (GetInputBlockReason() == EFF_CameraInputBlock::ModalUi)
+	{
+		return;
+	}
+
+	/* 연출이 카메라를 쥐고 있으면 전환하지 않는다.
+
+	   여기서 바꾸면 화면은 캐릭터로 가지만 연출 중이라는 표시는 그대로 남아서,
+	   다음 순회 시점이 다시 카메라를 끌고 간다. 연출에서 빠지고 싶으면
+	   피날레의 카메라 건너뛰기(SkipCinematicCamera)가 그 길이다.
+	*/
+	if (bScriptedViewActive)
 	{
 		return;
 	}

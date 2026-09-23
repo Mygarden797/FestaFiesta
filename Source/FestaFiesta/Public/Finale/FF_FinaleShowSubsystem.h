@@ -214,6 +214,18 @@ private:
 	// 동시 발수가 지나치게 많을 때 한 번만 알린다.
 	bool bWarnedHighShellCount = false;
 
+	// 이펙트 없이 쏘고 있다는 것을 한 번만 알린다.
+	bool bWarnedMissingEffect = false;
+
+	// 발사 시간 상한을 넘겼다는 것을 한 번만 알린다.
+	bool bWarnedDeadline = false;
+
+	// 아직 쏘지도 예약하지도 않은 발수. 연출의 끝을 이것으로 정한다.
+	int32 GetRemainingShells() const;
+
+	// 이펙트 칸 상태를 한 줄로. 콘솔과 경고 로그가 같은 표기를 쓰게 한다.
+	static FString DescribeEffects(const FFF_FinaleGradeSpec& Spec);
+
 public:
 	/* 카메라 순회를 끊고 원래 시점으로 돌아간다. 불꽃은 계속 터진다.
 

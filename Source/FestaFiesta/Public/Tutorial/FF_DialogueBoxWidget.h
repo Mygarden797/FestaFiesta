@@ -128,6 +128,9 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UFF_DialogueChoiceButton>> ChoiceButtons;
 
+	// 지금 떠 있는 건너뛰기 확인 창. 연타로 창이 여러 겹 뜨는 것을 막는다.
+	TWeakObjectPtr<class UFF_SkipConfirmWidget> OpenSkipConfirm;
+
 	bool bBound = false;
 };
 

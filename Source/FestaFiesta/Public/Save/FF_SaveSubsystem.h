@@ -12,7 +12,11 @@
 
 struct IConsoleCommand;
 
-// 저장이 끝났다. 목록 화면이 이걸 받아 다시 그린다.
+/* 슬롯 목록이 바뀌었다. 목록 화면이 이걸 받아 다시 그린다.
+
+   이름은 "저장 완료" 지만 슬롯을 지울 때도 울린다. 목록 쪽이 이것만 듣고 있어서,
+   지울 때 안 울리면 지워진 슬롯이 목록에 남고 `계속하기` 가 없는 파일을 문다.
+*/
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveCompleted, FName, SlotId);
 
 // 불러오기가 끝났다.
@@ -25,12 +29,19 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnSaveLoaded, FName, SlotId);
    월드 서브시스템이면 그 사이에 통째로 사라진다.
 
    ─── 무엇을 담는가 ─────────────────────────────────────────────────────────
-   메타는 여기서 직접 들고 있는다. 어느 파트에도 속하지 않는 값이라서다.
-   축제 도중 상태는 각 파트가 채워야 해서 자리만 비워 뒀다.
+   메타(튜토리얼 이력·깬 축제·기록)는 여기서 직접 들고 있는다. 어느 파트에도
+   속하지 않는 값이라서다. 축제 도중 상태는 각 파트가 IFF_Saveable 로 채운다.
+
+   ─── 메타와 판은 파일을 나눈다 ─────────────────────────────────────────────
+   메타는 계정 단위라 판이 끝나도 남아야 하고, 판(세션)은 축제가 끝나면 버린다.
+   수명이 다른 둘을 한 파일에 두면 메타 하나 바꾸려고 판 전체를 다시 찍게 된다.
+   예전에는 튜토리얼을 끝낼 때 자동 저장을 새로 써서, 한낮 상태가 아침 저장을
+   덮었고 로비에서는 빈 판이 목록에 올라왔다. 그래서 메타는 FF_MetaStore 한 파일에
+   따로 쓰고, 판 슬롯에는 참고용 사본만 담는다.
 
    ─── 자동 저장 ─────────────────────────────────────────────────────────────
-   하루가 끝날 때와 튜토리얼이 끝날 때 자동으로 부른다. 잃어도 하루치다.
-   매 단계마다 저장하면 잦고, 수동만 두면 사람이 잊는다.
+   하루가 시작될 때 판을 담는다. 잃어도 하루치다. 매 단계마다 저장하면 잦고,
+   수동만 두면 사람이 잊는다. 메타는 바뀔 때마다 바로 쓴다.
 */
 UCLASS()
 class FESTAFIESTA_API UFF_SaveSubsystem : public UGameInstanceSubsystem
@@ -51,17 +62,56 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool LoadFromSlot(FName SlotId);
 
-	/* 이 축제의 저장이 있으면 이어서 시작한다.
+	/* 프론트엔드가 지정한 슬롯으로 이어서 시작한다.
 
 	   축제 레벨이 열리고 모든 시스템이 준비된 뒤에 부른다. 서브시스템 Initialize
 	   에서 부르면 안 되는데, 그 시점에는 다른 시스템이 아직 자기 초기화를 하는
 	   중이라 복원한 값을 곧바로 덮어쓴다.
+
+	   [주의] 지정된 슬롯이 없으면 아무것도 하지 않는다. 예전에는 그때 가장 최근
+	          자동 저장으로 떨어졌는데, 레벨이 열릴 때마다 불리는 자리라서 `새 게임`
+	          을 눌러도 어제 판이 열렸다(2026-09-03 에 고친 "3일차부터 시작" 이 이
+	          경로로 되살아났다). 이어하기는 사용자가 고른 경우에만 일어난다.
 
 	   저장된 축제와 지금 축제가 다르면 아무것도 하지 않는다. 다대포 저장으로
 	   실습장을 시작하면 엉뚱한 상태가 된다.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool TryContinueFestival(FName FestivalId);
+
+	/* 이어할 슬롯을 지정한다. 레벨을 열기 전에 프론트엔드가 부른다.
+
+	   레벨을 열면 화면이 사라져서 선택을 넘겨줄 자리가 없다. 그래서 여기 맡겨둔다.
+	   None 을 넘기면 지정을 물린다.
+
+	   한 번 쓰면 비운다. 남겨두면 다음에 새 게임으로 들어와도 그 슬롯을 물고 들어간다.
+	   지정돼 있는 동안에는 자동 저장을 걸지 않는다. 새 판의 1일차 저장이 불러올
+	   슬롯을 먼저 덮을 수 있어서다.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
+	void RequestContinueFromSlot(FName SlotId);
+
+	// 이어하기가 지정돼 레벨이 열리기를 기다리는 중인가.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	bool HasPendingContinue() const { return !PendingContinueSlotId.IsNone(); }
+
+	/* 지금 진행 중인 축제의 식별자.
+
+	   프론트엔드가 고른 축제(UIFlow 의 ActiveFestivalId)를 먼저 본다. 흐름을 안 타고
+	   레벨을 직접 열었으면 맵 이름으로 대신한다.
+
+	   Progression 의 Definition 을 쓰지 않는 이유: 그쪽은 늘 설정의 기본 축제로
+	   시작해서 어느 레벨에 들어가도 같은 이름이 나온다. 그걸로 담으면 모든 판이
+	   한 축제로 기록되고, 이어하기가 엉뚱한 레벨을 연다.
+
+	   튜토리얼도 이 함수를 쓴다. 두 곳이 규칙을 따로 들면 "튜토리얼은 봤다는데
+	   저장은 다른 축제라고 한다" 가 생긴다.
+	*/
+	static FName ResolveCurrentFestivalId(const UObject* WorldContextObject);
+
+	// 지정된 슬롯의 축제. 프론트엔드가 어느 레벨을 열지 정할 때 쓴다. 없으면 None.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Save")
+	FName PeekFestivalIdInSlot(FName SlotId) const;
 
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Save")
 	bool DeleteSlot(FName SlotId);
@@ -166,7 +216,7 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "FestaFiesta|Save")
 	FFF_OnSaveLoaded OnSaveLoaded;
 
-	// 자동 저장이 쓸 슬롯 이름.
+	// 예전 단일 자동 저장 슬롯 이름. 지금 자동 저장은 AutoSave_A / AutoSave_B 를 번갈아 쓴다.
 	static FName GetAutoSaveSlotId() { return TEXT("AutoSave"); }
 
 	/* 지금 진행 중인 축제 상태를 읽어 담는다.
@@ -193,6 +243,18 @@ private:
 	UFUNCTION()
 	void HandleFestivalEnded();
 
+	// 새 판이 시작됐다. 같은 날 두 번 막는 기준을 비운다.
+	UFUNCTION()
+	void HandleFestivalStarted();
+
+	/* 끝난 판의 자동 저장을 버린다.
+
+	   남겨두면 `계속하기` 가 이미 끝난 축제의 마지막 날 아침을 연다. 기록은 메타에
+	   이미 옮겨졌으니 판을 지워도 잃는 것이 없다. 수동 저장은 사용자가 일부러 남긴
+	   것이라 건드리지 않는다.
+	*/
+	void DiscardFinishedRunAutoSaves(FName FestivalId);
+
 	/* 다음 틱에 자동 저장한다. 바로 담지 않는다.
 
 	   하루 경계는 OnStageChanged 로 굴러가고 Zone·Crowd·경제가 모두 같은 신호를
@@ -207,17 +269,31 @@ private:
 	// 슬롯 이름을 실제 파일 이름으로. 공백이나 기호가 섞이면 파일이 안 만들어진다.
 	static FString MakeSlotName(FName SlotId);
 
-	/* 옛 판 저장을 지금 형식으로 옮긴다. 읽어온 직후에 한 번 부른다.
+	/* 옛 판 저장을 지금 형식으로 옮긴다. AdoptMeta 안에서만 부른다.
 
-	   읽는 자리가 둘(Initialize 의 자동 저장 선택, LoadFromSlot)이라 함수로 뺐다.
-	   한쪽에만 넣으면 그쪽으로 안 들어온 저장이 조용히 옛 형식으로 남는다.
+	   판번호가 아니라 옛 값이 남아 있는지로 판단한다. UFF_SaveGame::Version 주석
+	   참고 — 이 수정 전 파일은 판번호가 파일에 안 들어가 있다.
 	*/
 	static void MigrateMeta(FFF_MetaSave& InOutMeta, int32 SavedVersion);
 
-	/* 자동 저장 슬롯에 지금 상태를 쓰고 다음 차례를 넘긴다.
+	/* 파일에서 읽은 메타를 지금 메타에 합친다. 바뀐 게 있으면 메타 파일에 쓴다.
 
-	   메타를 건드리는 곳마다 같은 두 줄이 반복돼서 묶었다. 한쪽에서 차례 넘기기를
-	   빠뜨리면 한 슬롯만 계속 덮여 이중화가 무의미해진다.
+	   메타를 읽는 자리(시작, 이어하기, 콘솔 불러오기)가 전부 여기를 지난다.
+	   옮기기와 합치기를 자리마다 따로 쓰면 한 곳에서 빠진다.
+	*/
+	void AdoptMeta(const FFF_MetaSave& Loaded, int32 SavedVersion, const FString& Source);
+
+	// 메타 파일을 읽고 쓴다. 판 슬롯과 따로 둔다(클래스 주석 참고).
+	bool ReadMetaStore(FFF_MetaSave& OutMeta, int32& OutVersion) const;
+	void WriteMetaStore();
+
+	// 두 자동 저장 중 더 최근 것. 둘 다 못 읽으면 false.
+	bool FindNewestAutoSave(UFF_SaveGame*& OutSave, FName& OutSlotId) const;
+
+	/* 자동 저장 슬롯에 지금 판을 쓰고 다음 차례를 넘긴다.
+
+	   차례 넘기기를 한쪽에서 빠뜨리면 한 슬롯만 계속 덮여 이중화가 무의미해진다.
+	   하루 시작에서만 부른다. 메타만 바뀐 것은 WriteMetaStore 로 간다.
 	*/
 	void WriteAutoSave();
 
@@ -234,6 +310,9 @@ private:
 
 	// 마지막으로 쓴 슬롯. 이어하기 기본값으로 쓴다.
 	FName LastUsedSlotId;
+
+	// 프론트엔드가 고른 이어하기 슬롯. 한 번 쓰면 비운다.
+	FName PendingContinueSlotId;
 
 	/* 저장에 참여하는 시스템들.
 

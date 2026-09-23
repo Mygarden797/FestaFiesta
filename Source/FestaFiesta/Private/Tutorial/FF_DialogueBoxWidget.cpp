@@ -147,6 +147,16 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	//
 	// 확인 창을 여기서 띄우는 이유는, BP 그래프에 로직을 두면 깃에서 병합도
 	// 리뷰도 안 되기 때문이다. BP 는 배치와 모양만 맡는다.
+
+	// 이미 떠 있으면 또 만들지 않는다. 겹친 창은 하나를 닫아도 뒤에 하나가 남는다.
+	if (const UFF_SkipConfirmWidget* Existing = OpenSkipConfirm.Get())
+	{
+		if (Existing->IsInViewport())
+		{
+			return;
+		}
+	}
+
 	const UFF_TutorialSettings* Settings = UFF_TutorialSettings::Get();
 	UClass* ConfirmClass = Settings ? Settings->SkipConfirmWidgetClass.LoadSynchronous() : nullptr;
 
@@ -163,6 +173,7 @@ void UFF_DialogueBoxWidget::HandleSkipClicked()
 	if (Confirm)
 	{
 		Confirm->AddToViewport(Settings->SkipConfirmZOrder);
+		OpenSkipConfirm = Confirm;
 	}
 
 	BP_OnSkipRequested();

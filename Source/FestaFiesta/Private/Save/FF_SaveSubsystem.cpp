@@ -4,6 +4,7 @@
 
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "Festival/FF_FestivalDefinition.h"
@@ -13,6 +14,7 @@
 #include "Time/FF_FestivalStage.h"
 #include "Save/FF_SaveArchive.h"
 #include "Time/FF_FestivalStageSubsystem.h"
+#include "UI/Core/FF_UIFlowSubsystem.h"
 
 DEFINE_LOG_CATEGORY(LogFestaFiestaSave);
 
@@ -26,60 +28,58 @@ namespace
 	// 언리얼은 슬롯을 나열하는 API 를 주지 않는다. 이름을 알아야 열 수 있어서,
 	// 정해둔 규칙으로 만든 이름을 차례로 두드려 본다.
 	constexpr int32 MaxManualSlots = 8;
+
+	// 자동 저장 두 칸. 번갈아 쓴다(PickAutoSaveSlot).
+	const FName AutoSaveSlotA(TEXT("AutoSave_A"));
+	const FName AutoSaveSlotB(TEXT("AutoSave_B"));
+
+	/* 메타만 담는 파일. 슬롯 목록에 올리지 않는다.
+
+	   MakeSlotName 을 거치지 않고 이름을 따로 둔다. 거치면 콘솔로 `Meta` 라는 수동
+	   슬롯을 만들었을 때 같은 파일을 가리킨다.
+	*/
+	const TCHAR* const MetaStoreSlotName = TEXT("FF_MetaStore");
 }
 
 void UFF_SaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
-	/* 시작할 때 자동 저장을 읽어 메타를 채운다.
+	/* 시작할 때 메타를 채운다. 읽지 않으면 튜토리얼을 봤는지 알 수 없어
+	   게임을 켤 때마다 다시 나온다.
 
-	   읽지 않으면 튜토리얼을 봤는지 알 수 없어 게임을 켤 때마다 다시 나온다.
-	   파일이 없으면 기본값 그대로 두고 조용히 넘어간다. 첫 실행이 정상이다.
-	*/
-	/* 자동 저장이 둘이므로 더 최근 것을 고른다.
+	   메타 파일을 먼저 읽고, 가장 최근 자동 저장의 메타를 합친다. 메타 파일이
+	   생기기 전에 만든 저장은 메타를 자동 저장 안에만 들고 있어서, 합치지 않으면
+	   그동안의 이력이 사라진다. 합치기는 OR·합집합이라 두 번 해도 같다.
 
-	   하나가 저장 도중에 깨졌으면 그쪽은 못 읽히고, 그때는 나머지가 답이다.
-	   둘 다 못 읽으면 첫 실행으로 보고 기본값으로 시작한다.
+	   아무것도 없으면 기본값 그대로 둔다. 첫 실행이 정상이다.
 	*/
-	const FName Candidates[] = { TEXT("AutoSave_A"), TEXT("AutoSave_B") };
+	FFF_MetaSave StoredMeta;
+	int32 StoredVersion = 0;
+	if (ReadMetaStore(StoredMeta, StoredVersion))
+	{
+		// 메모리가 비어 있으니 합칠 것 없이 그대로 받는다. 합치면 같은 내용을 다시 쓴다.
+		MigrateMeta(StoredMeta, StoredVersion);
+		Meta = StoredMeta;
+	}
 
 	UFF_SaveGame* Newest = nullptr;
 	FName NewestSlot;
-
-	for (const FName& Candidate : Candidates)
+	if (FindNewestAutoSave(Newest, NewestSlot))
 	{
-		UFF_SaveGame* Found = nullptr;
-		if (!PeekSlot(Candidate, Found) || !Found)
-		{
-			continue;
-		}
-
-		if (!Newest || Found->SavedAt > Newest->SavedAt)
-		{
-			Newest = Found;
-			NewestSlot = Candidate;
-		}
-	}
-
-	if (Newest)
-	{
-		Meta = Newest->Meta;
-		MigrateMeta(Meta, Newest->Version);
+		AdoptMeta(Newest->Meta, Newest->Version, NewestSlot.ToString());
 		LastUsedSlotId = NewestSlot;
 
-		// 다음 자동 저장은 방금 읽은 쪽 반대편에 쓴다. 읽은 것을 덮지 않는다.
-		bAutoSaveUsesSecondSlot = (NewestSlot == FName(TEXT("AutoSave_A")));
-
-		UE_LOG(LogFestaFiestaSave, Log,
-			TEXT("[저장] %s 를 읽었다. 로비 인트로=%s 안내 끔=%s "
-				 "튜토리얼 본 축제 %d개 / 깬 축제 %d개"),
-			*NewestSlot.ToString(),
-			Meta.bLobbyIntroSeen ? TEXT("봤음") : TEXT("안 봤음"),
-			Meta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"),
-			Meta.TutorialSeenFestivals.Num(),
-			Meta.ClearedFestivals.Num());
+		// 다음 자동 저장은 방금 읽은 쪽 반대편에 쓴다. 최근 것을 덮지 않는다.
+		bAutoSaveUsesSecondSlot = (NewestSlot == AutoSaveSlotA);
 	}
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] 메타 준비. 로비 인트로=%s 안내 끔=%s 튜토리얼 본 축제 %d개 / 깬 축제 %d개"),
+		Meta.bLobbyIntroSeen ? TEXT("봤음") : TEXT("안 봤음"),
+		Meta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"),
+		Meta.TutorialSeenFestivals.Num(),
+		Meta.ClearedFestivals.Num());
 
 	BindFestivalStage(Collection);
 	RegisterDebugConsoleCommands();
@@ -117,6 +117,7 @@ void UFF_SaveSubsystem::BindFestivalStage(FSubsystemCollectionBase& Collection)
 
 	Stage->OnStageChanged.AddDynamic(this, &UFF_SaveSubsystem::HandleStageChanged);
 	Stage->OnFestivalEnded.AddDynamic(this, &UFF_SaveSubsystem::HandleFestivalEnded);
+	Stage->OnFestivalStarted.AddDynamic(this, &UFF_SaveSubsystem::HandleFestivalStarted);
 	bStageBound = true;
 }
 
@@ -134,10 +135,21 @@ void UFF_SaveSubsystem::UnbindFestivalStage()
 		{
 			Stage->OnStageChanged.RemoveDynamic(this, &UFF_SaveSubsystem::HandleStageChanged);
 			Stage->OnFestivalEnded.RemoveDynamic(this, &UFF_SaveSubsystem::HandleFestivalEnded);
+			Stage->OnFestivalStarted.RemoveDynamic(this, &UFF_SaveSubsystem::HandleFestivalStarted);
 		}
 	}
 
 	bStageBound = false;
+}
+
+void UFF_SaveSubsystem::HandleFestivalStarted()
+{
+	/* 날짜 기준을 비운다.
+
+	   안 비우면 1일차에 로비로 나갔다가 다른 축제를 새로 시작했을 때, 그 판의
+	   1일차가 "이미 저장한 날" 로 보여 첫 자동 저장이 빠진다.
+	*/
+	LastAutoSavedDay = 0;
 }
 
 void UFF_SaveSubsystem::HandleStageChanged(
@@ -159,6 +171,19 @@ void UFF_SaveSubsystem::HandleStageChanged(
 
 	if (!bDayStart)
 	{
+		return;
+	}
+
+	/* 이어하기를 기다리는 중이면 담지 않는다.
+
+	   레벨이 열리면 UIFlow 가 새 판(1일차 셋업)을 먼저 세우고, 그다음에 GameMode 가
+	   저장을 되돌린다. 그 사이에 1일차를 담으면 자동 저장 칸 하나를 초기 상태로
+	   덮는데, 그게 지금 불러오려는 칸일 수 있다.
+	*/
+	if (HasPendingContinue())
+	{
+		UE_LOG(LogFestaFiestaSave, Verbose,
+			TEXT("[저장] 이어하기 대기 중이라 하루 시작 저장을 건너뛴다."));
 		return;
 	}
 
@@ -193,8 +218,9 @@ void UFF_SaveSubsystem::HandleFestivalEnded()
 		return;
 	}
 
-	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
-	if (!Definition || Definition->FestivalId.IsNone())
+	// 기록은 프론트엔드가 고른 축제 이름으로 남긴다. ResolveCurrentFestivalId 주석 참고.
+	const FName FestivalId = ResolveCurrentFestivalId(this);
+	if (FestivalId.IsNone())
 	{
 		UE_LOG(LogFestaFiestaSave, Warning,
 			TEXT("[저장] 축제를 식별하지 못해 기록을 남기지 않는다."));
@@ -207,8 +233,12 @@ void UFF_SaveSubsystem::HandleFestivalEnded()
 
 	   매출만 보면 돈을 아무리 써도 숫자가 올라가서, 많이 벌고 많이 쓴 판과
 	   적게 벌고 아낀 판이 구분되지 않는다.
+
+	   초기 자금은 Progression 의 Definition 에서 읽는다. 이름과 달리 이건 실제
+	   경제가 쓰는 값이라, 돈이 그 기준으로 시작했으니 차이도 그 기준으로 잰다.
 	*/
-	Record.BestProfit = Progression->GetGold() - Definition->InitialGold;
+	const UFF_FestivalDefinition* Definition = Progression->GetDefinition();
+	Record.BestProfit = Progression->GetGold() - (Definition ? Definition->InitialGold : 0);
 
 	if (const UFF_SatisfactionMetricsSubsystem* Metrics =
 		GameInstance->GetSubsystem<UFF_SatisfactionMetricsSubsystem>())
@@ -226,7 +256,31 @@ void UFF_SaveSubsystem::HandleFestivalEnded()
 
 	Record.PlayCount = 1;
 
-	MarkFestivalCleared(Definition->FestivalId, Record);
+	// 기록을 메타에 먼저 쓴 다음 판을 버린다. 순서가 반대면 그 사이에 꺼졌을 때 둘 다 잃는다.
+	MarkFestivalCleared(FestivalId, Record);
+	DiscardFinishedRunAutoSaves(FestivalId);
+}
+
+void UFF_SaveSubsystem::DiscardFinishedRunAutoSaves(const FName FestivalId)
+{
+	for (const FName& SlotId : { AutoSaveSlotA, AutoSaveSlotB })
+	{
+		UFF_SaveGame* Found = nullptr;
+		if (!PeekSlot(SlotId, Found) || !Found)
+		{
+			continue;
+		}
+
+		// 다른 축제의 판이면 둔다. 그 축제는 아직 안 끝났다.
+		if (Found->Session.FestivalId != FestivalId)
+		{
+			continue;
+		}
+
+		DeleteSlot(SlotId);
+	}
+
+	LastAutoSavedDay = 0;
 }
 
 void UFF_SaveSubsystem::RequestDeferredAutoSave(const TCHAR* Reason)
@@ -242,6 +296,12 @@ void UFF_SaveSubsystem::RequestDeferredAutoSave(const TCHAR* Reason)
 	GameInstance->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateWeakLambda(this, [this, ReasonText]()
 		{
+			// 건 뒤 한 틱 사이에 이어하기가 지정됐을 수 있다. HandleStageChanged 와 같은 이유로 막는다.
+			if (HasPendingContinue())
+			{
+				return;
+			}
+
 			UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 자동 저장 — %s"), *ReasonText);
 			WriteAutoSave();
 		}));
@@ -255,6 +315,39 @@ UFF_SaveSubsystem* UFF_SaveSubsystem::Get(const UObject* WorldContextObject)
 
 	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 	return GameInstance ? GameInstance->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+}
+
+FName UFF_SaveSubsystem::ResolveCurrentFestivalId(const UObject* WorldContextObject)
+{
+	const UWorld* World = GEngine
+		? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull)
+		: nullptr;
+	if (!World)
+	{
+		return NAME_None;
+	}
+
+	if (const UGameInstance* GameInstance = World->GetGameInstance())
+	{
+		if (const UFF_UIFlowSubsystem* Flow = GameInstance->GetSubsystem<UFF_UIFlowSubsystem>())
+		{
+			const FName ActiveId = Flow->GetActiveFestivalId();
+			if (!ActiveId.IsNone())
+			{
+				return ActiveId;
+			}
+		}
+	}
+
+	/* 흐름을 안 타고 레벨을 직접 열었다. 레벨 이름으로 대신한다.
+
+	   PIE 는 맵 이름 앞에 UEDPIE_0_ 같은 접두사를 붙인다. 떼지 않으면 에디터에서
+	   본 것과 패키지에서 본 것이 다른 축제로 잡힌다.
+	*/
+	FString MapName = World->GetMapName();
+	MapName.RemoveFromStart(World->StreamingLevelsPrefix);
+
+	return MapName.IsEmpty() ? NAME_None : FName(*MapName);
 }
 
 FString UFF_SaveSubsystem::MakeSlotName(const FName SlotId)
@@ -282,6 +375,10 @@ bool UFF_SaveSubsystem::SaveToSlot(const FName SlotId, const bool bAutoSave)
 		return false;
 	}
 
+	// 판번호는 직접 넣는다. 기본값에 맡기면 파일에 안 들어간다(UFF_SaveGame::Version 주석).
+	Save->Version = UFF_SaveGame::CurrentVersion;
+
+	// 메타의 원본은 메타 파일이다. 여기 담는 것은 메타 파일이 깨졌을 때 쓸 사본이다.
 	Save->Meta = Meta;
 	Save->SavedAt = FDateTime::UtcNow();
 	Save->bAutoSave = bAutoSave;
@@ -506,14 +603,13 @@ void UFF_SaveSubsystem::CaptureSession(FFF_SessionSave& Out) const
 		{
 			Out.Gold = Progression->GetGold();
 			Out.TotalRevenue = Progression->GetTotalRevenue();
-
-			// 어느 축제인지 담는다. 이걸로 저장과 지금 축제가 같은지 가린다.
-			if (const UFF_FestivalDefinition* Definition = Progression->GetDefinition())
-			{
-				Out.FestivalId = Definition->FestivalId;
-			}
 		}
 	}
+
+	/* 어느 축제인지 담는다. 이걸로 저장과 지금 축제가 같은지 가리고, 이어하기가
+	   어느 레벨을 열지 정한다. Progression 의 Definition 은 늘 기본 축제라 쓰지 않는다.
+	*/
+	Out.FestivalId = ResolveCurrentFestivalId(this);
 
 	// 만족도.
 	if (const UFF_SatisfactionMetricsSubsystem* Metrics =
@@ -539,17 +635,17 @@ bool UFF_SaveSubsystem::LoadFromSlot(const FName SlotId)
 	   막아버리면 구조를 조금 바꿀 때마다 그동안의 저장이 전부 무효가 된다.
 	   빠진 값은 기본값으로 들어가고, 이상하면 로그를 보고 판단할 수 있다.
 	*/
-	if (Save->Version > 2)
+	if (Save->Version > UFF_SaveGame::CurrentVersion)
 	{
 		// 앞선 판이다. 지금 코드가 모르는 값이 들어 있다는 뜻이라 되돌려 옮길 수 없다.
 		UE_LOG(LogFestaFiestaSave, Warning,
-			TEXT("[저장] 저장이 코드보다 새 판이다. 저장=%d 코드=2. "
+			TEXT("[저장] 저장이 코드보다 새 판이다. 저장=%d 코드=%d. "
 				 "모르는 값은 무시되고, 다시 저장하면 그 값이 사라진다."),
-			Save->Version);
+			Save->Version, UFF_SaveGame::CurrentVersion);
 	}
 
-	Meta = Save->Meta;
-	MigrateMeta(Meta, Save->Version);
+	// 갈아끼우지 않고 합친다. 옛 슬롯을 읽었다고 그 뒤의 이력이 사라지면 안 된다.
+	AdoptMeta(Save->Meta, Save->Version, SlotId.ToString());
 	LastUsedSlotId = SlotId;
 
 	RestorePartData(Save->PartData);
@@ -564,59 +660,81 @@ bool UFF_SaveSubsystem::LoadFromSlot(const FName SlotId)
 
 bool UFF_SaveSubsystem::TryContinueFestival(const FName FestivalId)
 {
-	if (FestivalId.IsNone())
+	/* 프론트엔드가 고른 슬롯만 쓴다. 한 번 쓰고 비운다.
+
+	   어떤 이유로 여기서 돌아가든 먼저 비운다. 남겨두면 다음에 새 게임으로
+	   들어와도 이 슬롯을 물고 들어가고, 그동안 자동 저장도 계속 막힌다.
+	*/
+	const FName Requested = PendingContinueSlotId;
+	PendingContinueSlotId = NAME_None;
+
+	if (Requested.IsNone())
 	{
+		// 새 게임이다. 헤더 주석의 [주의] 참고 — 자동 저장으로 떨어지지 않는다.
 		return false;
 	}
 
-	// 가장 최근 자동 저장을 본다.
-	const FName Candidates[] = { TEXT("AutoSave_A"), TEXT("AutoSave_B") };
-
-	UFF_SaveGame* Newest = nullptr;
-	FName NewestSlot;
-
-	for (const FName& Candidate : Candidates)
+	if (FestivalId.IsNone())
 	{
-		UFF_SaveGame* Found = nullptr;
-		if (!PeekSlot(Candidate, Found) || !Found)
-		{
-			continue;
-		}
-		if (!Newest || Found->SavedAt > Newest->SavedAt)
-		{
-			Newest = Found;
-			NewestSlot = Candidate;
-		}
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] 지금 축제를 식별하지 못해 %s 를 이어하지 않는다."), *Requested.ToString());
+		return false;
 	}
 
-	if (!Newest)
+	UFF_SaveGame* Loaded = nullptr;
+	if (!PeekSlot(Requested, Loaded) || !Loaded)
 	{
+		// 고른 슬롯이 사라졌다. 다른 슬롯으로 떨어지지 않는다 —
+		// 사용자가 고른 것과 다른 판이 열리면 그게 더 나쁘다.
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] 고른 슬롯 %s 를 읽지 못해 이어하지 않는다."), *Requested.ToString());
 		return false;
 	}
 
 	// 다른 축제의 저장이면 건드리지 않는다.
-	if (Newest->Session.FestivalId != FestivalId)
+	if (Loaded->Session.FestivalId != FestivalId)
 	{
-		UE_LOG(LogFestaFiestaSave, Log,
+		UE_LOG(LogFestaFiestaSave, Warning,
 			TEXT("[저장] 저장된 축제(%s)와 지금 축제(%s)가 달라 이어하지 않는다."),
-			*Newest->Session.FestivalId.ToString(), *FestivalId.ToString());
+			*Loaded->Session.FestivalId.ToString(), *FestivalId.ToString());
 		return false;
 	}
 
-	if (!Newest->Session.IsValid())
+	if (!Loaded->Session.IsValid())
 	{
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] %s 에 진행 중인 판이 없어 이어하지 않는다."), *Requested.ToString());
 		return false;
 	}
 
-	Meta = Newest->Meta;
-	LastUsedSlotId = NewestSlot;
-	RestorePartData(Newest->PartData);
+	AdoptMeta(Loaded->Meta, Loaded->Version, Requested.ToString());
+	LastUsedSlotId = Requested;
+
+	/* 되돌리기 전에 날짜 기준을 맞춘다.
+
+	   Stage 가 되돌려지면서 OnStageChanged 를 울리는데, 기준이 옛 값이면 방금 읽은
+	   판을 곧바로 다시 찍는다. 해롭지는 않지만 자동 저장 두 칸이 같은 내용이 되어
+	   이중화가 사라진다.
+	*/
+	LastAutoSavedDay = Loaded->Session.Day;
+
+	// 자동 저장에서 이어했으면 다음 저장은 반대 칸에 쓴다. 읽은 칸을 바로 덮지 않는다.
+	if (Requested == AutoSaveSlotA)
+	{
+		bAutoSaveUsesSecondSlot = true;
+	}
+	else if (Requested == AutoSaveSlotB)
+	{
+		bAutoSaveUsesSecondSlot = false;
+	}
+
+	RestorePartData(Loaded->PartData);
 
 	UE_LOG(LogFestaFiestaSave, Log,
-		TEXT("[저장] %s 를 이어서 시작한다. %d일차"),
-		*FestivalId.ToString(), Newest->Session.Day);
+		TEXT("[저장] %s 를 %s 에서 이어서 시작한다. %d일차"),
+		*FestivalId.ToString(), *Requested.ToString(), Loaded->Session.Day);
 
-	OnSaveLoaded.Broadcast(NewestSlot);
+	OnSaveLoaded.Broadcast(Requested);
 	return true;
 }
 
@@ -633,6 +751,9 @@ bool UFF_SaveSubsystem::DeleteSlot(const FName SlotId)
 	{
 		RemoveFromSlotIndex(SlotId);
 		UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] %s 를 지웠다."), *SlotName);
+
+		// 목록이 바뀌었다. FFF_OnSaveCompleted 선언 주석 참고.
+		OnSaveCompleted.Broadcast(SlotId);
 	}
 	return bDeleted;
 }
@@ -687,9 +808,34 @@ TArray<FName> UFF_SaveSubsystem::GetKnownSlotIds() const
 	return Result;
 }
 
+void UFF_SaveSubsystem::RequestContinueFromSlot(const FName SlotId)
+{
+	PendingContinueSlotId = SlotId;
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] 이어할 슬롯을 %s."),
+		SlotId.IsNone() ? TEXT("물렸다") : *FString::Printf(TEXT("%s 로 지정했다"), *SlotId.ToString()));
+}
+
+FName UFF_SaveSubsystem::PeekFestivalIdInSlot(const FName SlotId) const
+{
+	UFF_SaveGame* Loaded = nullptr;
+	if (!PeekSlot(SlotId, Loaded) || !Loaded)
+	{
+		return NAME_None;
+	}
+	return Loaded->Session.FestivalId;
+}
+
 void UFF_SaveSubsystem::MigrateMeta(FFF_MetaSave& InOutMeta, const int32 SavedVersion)
 {
-	if (SavedVersion >= 2)
+	/* 판번호로 가르지 않는다. 옛 값이 남아 있으면 옮긴다.
+
+	   이 수정 전에 쓴 파일은 판 1 이든 판 2 든 판번호가 0 으로 읽힌다
+	   (UFF_SaveGame::Version 주석). 판 2 코드는 옛 값에 쓰지 않으므로, 옛 값이
+	   true 면 판 1 에서 온 것이 확실하다. 옮긴 뒤 비우므로 여러 번 불려도 같다.
+	*/
+	if (!InOutMeta.bTutorialCompleted_DEPRECATED && !InOutMeta.bTutorialSkipped_DEPRECATED)
 	{
 		return;
 	}
@@ -710,11 +856,99 @@ void UFF_SaveSubsystem::MigrateMeta(FFF_MetaSave& InOutMeta, const int32 SavedVe
 	InOutMeta.bTutorialSkipped_DEPRECATED = false;
 
 	UE_LOG(LogFestaFiestaSave, Log,
-		TEXT("[저장] 판 %d 저장을 판 2 로 옮겼다. 로비 인트로=%s 안내 끔=%s "
+		TEXT("[저장] 판 1 값을 옮겼다(파일 판번호 %d). 로비 인트로=%s 안내 끔=%s "
 			 "(축제별 이력은 판 1 에 없어서 비운 채로 시작한다)"),
 		SavedVersion,
 		InOutMeta.bLobbyIntroSeen ? TEXT("봤음") : TEXT("안 봤음"),
 		InOutMeta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"));
+}
+
+void UFF_SaveSubsystem::AdoptMeta(
+	const FFF_MetaSave& Loaded, const int32 SavedVersion, const FString& Source)
+{
+	FFF_MetaSave Incoming = Loaded;
+	MigrateMeta(Incoming, SavedVersion);
+
+	if (!Meta.MergeFrom(Incoming))
+	{
+		return;
+	}
+
+	UE_LOG(LogFestaFiestaSave, Log,
+		TEXT("[저장] %s 의 메타를 합쳤다. 튜토리얼 본 축제 %d개 / 깬 축제 %d개"),
+		*Source, Meta.TutorialSeenFestivals.Num(), Meta.ClearedFestivals.Num());
+
+	// 합쳐서 늘어난 것은 바로 남긴다. 안 쓰면 다음 실행에서 이 슬롯을 다시 읽어야만 나온다.
+	WriteMetaStore();
+}
+
+bool UFF_SaveSubsystem::ReadMetaStore(FFF_MetaSave& OutMeta, int32& OutVersion) const
+{
+	if (!UGameplayStatics::DoesSaveGameExist(MetaStoreSlotName, SaveUserIndex))
+	{
+		return false;
+	}
+
+	const UFF_SaveGame* Loaded = Cast<UFF_SaveGame>(
+		UGameplayStatics::LoadGameFromSlot(MetaStoreSlotName, SaveUserIndex));
+	if (!Loaded)
+	{
+		// 깨졌다. 자동 저장 안의 사본으로 이어지므로 여기서 멈추지 않는다.
+		UE_LOG(LogFestaFiestaSave, Warning,
+			TEXT("[저장] 메타 파일을 읽지 못했다. 자동 저장 안의 사본으로 채운다."));
+		return false;
+	}
+
+	OutMeta = Loaded->Meta;
+	OutVersion = Loaded->Version;
+	return true;
+}
+
+void UFF_SaveSubsystem::WriteMetaStore()
+{
+	UFF_SaveGame* Store = Cast<UFF_SaveGame>(
+		UGameplayStatics::CreateSaveGameObject(UFF_SaveGame::StaticClass()));
+	if (!Store)
+	{
+		return;
+	}
+
+	// 같은 그릇을 쓰되 판(Session·PartData)은 비워 둔다. 목록에도 올리지 않는다.
+	Store->Version = UFF_SaveGame::CurrentVersion;
+	Store->Meta = Meta;
+	Store->SavedAt = FDateTime::UtcNow();
+
+	if (!UGameplayStatics::SaveGameToSlot(Store, MetaStoreSlotName, SaveUserIndex))
+	{
+		UE_LOG(LogFestaFiestaSave, Error, TEXT("[저장] 메타 파일 쓰기 실패."));
+	}
+}
+
+bool UFF_SaveSubsystem::FindNewestAutoSave(UFF_SaveGame*& OutSave, FName& OutSlotId) const
+{
+	/* 자동 저장이 둘이므로 더 최근 것을 고른다.
+
+	   하나가 저장 도중에 깨졌으면 그쪽은 못 읽히고, 그때는 나머지가 답이다.
+	*/
+	OutSave = nullptr;
+	OutSlotId = NAME_None;
+
+	for (const FName& Candidate : { AutoSaveSlotA, AutoSaveSlotB })
+	{
+		UFF_SaveGame* Found = nullptr;
+		if (!PeekSlot(Candidate, Found) || !Found)
+		{
+			continue;
+		}
+
+		if (!OutSave || Found->SavedAt > OutSave->SavedAt)
+		{
+			OutSave = Found;
+			OutSlotId = Candidate;
+		}
+	}
+
+	return OutSave != nullptr;
 }
 
 void UFF_SaveSubsystem::WriteAutoSave()
@@ -736,8 +970,12 @@ void UFF_SaveSubsystem::MarkLobbyIntroSeen()
 
 	UE_LOG(LogFestaFiestaSave, Log, TEXT("[저장] 로비 인트로를 끝까지 봤다."));
 
-	// 바로 남긴다. 여기서 안 쓰면 게임을 끌 때 봤다는 사실이 사라진다.
-	WriteAutoSave();
+	/* 바로 남긴다. 여기서 안 쓰면 게임을 끌 때 봤다는 사실이 사라진다.
+
+	   메타 파일에만 쓴다. 예전처럼 자동 저장을 쓰면 로비에서 빈 판이 목록에 올라오고,
+	   축제 도중이면 한낮 상태가 아침 저장을 덮는다.
+	*/
+	WriteMetaStore();
 }
 
 void UFF_SaveSubsystem::MarkFestivalTutorialSeen(const FName FestivalId)
@@ -766,7 +1004,7 @@ void UFF_SaveSubsystem::MarkFestivalTutorialSeen(const FName FestivalId)
 		TEXT("[저장] %s 튜토리얼을 끝까지 봤다. (누적 %d개)"),
 		*FestivalId.ToString(), Meta.TutorialSeenFestivals.Num());
 
-	WriteAutoSave();
+	WriteMetaStore();
 }
 
 void UFF_SaveSubsystem::MarkTutorialOptedOut()
@@ -781,7 +1019,7 @@ void UFF_SaveSubsystem::MarkTutorialOptedOut()
 	UE_LOG(LogFestaFiestaSave, Log,
 		TEXT("[저장] 튜토리얼 안내를 껐다. 축제가 바뀌어도 다시 나오지 않는다."));
 
-	WriteAutoSave();
+	WriteMetaStore();
 }
 
 void UFF_SaveSubsystem::MarkFestivalCleared(
@@ -802,7 +1040,8 @@ void UFF_SaveSubsystem::MarkFestivalCleared(
 		TEXT("[저장] %s 완료. 기록 갱신=%s (%d회째)"),
 		*FestivalId.ToString(), bImproved ? TEXT("예") : TEXT("아니오"), Stored.PlayCount);
 
-	WriteAutoSave();
+	// 판은 여기서 담지 않는다. 끝난 판은 HandleFestivalEnded 가 버린다.
+	WriteMetaStore();
 }
 
 FFF_FestivalRecord UFF_SaveSubsystem::GetRecord(const FName FestivalId) const
@@ -816,6 +1055,8 @@ FFF_FestivalRecord UFF_SaveSubsystem::GetRecord(const FName FestivalId) const
 
 void UFF_SaveSubsystem::RegisterDebugConsoleCommands()
 {
+	// 개발용이다. 배포 빌드에서 콘솔로 저장을 덮거나 불러오면 판이 꼬인다.
+#if !UE_BUILD_SHIPPING
 	IConsoleManager& ConsoleManager = IConsoleManager::Get();
 	UnregisterDebugConsoleCommands();
 
@@ -823,11 +1064,17 @@ void UFF_SaveSubsystem::RegisterDebugConsoleCommands()
 	{
 		SaveConsoleCommand = ConsoleManager.RegisterConsoleCommand(
 			TEXT("FF.Save.Write"),
-			TEXT("지금 상태를 저장한다. 사용법: FF.Save.Write [슬롯]  생략 시 AutoSave"),
+			TEXT("지금 상태를 저장한다. 사용법: FF.Save.Write [슬롯]  생략 시 자동 저장 차례대로"),
 			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
 			{
-				const FName SlotId = Args.Num() > 0 ? FName(*Args[0]) : GetAutoSaveSlotId();
-				SaveToSlot(SlotId, Args.Num() == 0);
+				// 생략하면 실제 자동 저장과 같은 길로 간다. 따로 `AutoSave` 칸을 만들면
+				// 게임은 안 읽는 파일이 목록에만 하나 더 생긴다.
+				if (Args.Num() == 0)
+				{
+					WriteAutoSave();
+					return;
+				}
+				SaveToSlot(FName(*Args[0]), false);
 			}));
 	}
 
@@ -835,10 +1082,19 @@ void UFF_SaveSubsystem::RegisterDebugConsoleCommands()
 	{
 		LoadConsoleCommand = ConsoleManager.RegisterConsoleCommand(
 			TEXT("FF.Save.Read"),
-			TEXT("저장을 읽는다. 사용법: FF.Save.Read [슬롯]  생략 시 AutoSave"),
+			TEXT("저장을 읽는다. 사용법: FF.Save.Read [슬롯]  생략 시 가장 최근 자동 저장"),
 			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
 			{
-				const FName SlotId = Args.Num() > 0 ? FName(*Args[0]) : GetAutoSaveSlotId();
+				FName SlotId = Args.Num() > 0 ? FName(*Args[0]) : FName();
+				if (SlotId.IsNone())
+				{
+					UFF_SaveGame* Newest = nullptr;
+					if (!FindNewestAutoSave(Newest, SlotId))
+					{
+						UE_LOG(LogFestaFiestaSave, Display, TEXT("[저장] 읽을 자동 저장이 없다."));
+						return;
+					}
+				}
 				LoadFromSlot(SlotId);
 			}));
 	}
@@ -903,10 +1159,12 @@ void UFF_SaveSubsystem::RegisterDebugConsoleCommands()
 				}
 			}));
 	}
+#endif
 }
 
 void UFF_SaveSubsystem::UnregisterDebugConsoleCommands()
 {
+#if !UE_BUILD_SHIPPING
 	IConsoleManager& ConsoleManager = IConsoleManager::Get();
 
 	if (SaveConsoleCommand)
@@ -926,4 +1184,5 @@ void UFF_SaveSubsystem::UnregisterDebugConsoleCommands()
 		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
 	}
 	StatConsoleCommand = nullptr;
+#endif
 }

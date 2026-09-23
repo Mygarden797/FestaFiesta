@@ -254,8 +254,7 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 					static_cast<int32>(Grade), Spec.BurstCount, Spec.DurationSeconds,
 					Spec.SimultaneousShells, Spec.GetVolleyCount(), Spec.GetIntervalSeconds(),
 					Spec.Colors.Num(),
-					Spec.BurstEffects.Num() == 0 ? TEXT("없음")
-						: *FString::Printf(TEXT("%d종"), Spec.BurstEffects.Num()));
+					*DescribeEffects(Spec));
 			}
 
 			// 어느 애셋이 먹었는지 같이 찍는다. 세 군데서 올 수 있어서
@@ -372,8 +371,16 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	ActiveSpec = ResolveSpec(Grade);
 	if (!ActiveSpec.IsPlayable())
 	{
-		UE_LOG(LogFestaFiestaFinale, Warning,
-			TEXT("[피날레] 등급 %d 의 연출 수치가 비어 있어 시작하지 않는다."), static_cast<int32>(Grade));
+		// 미구매는 원래 안 쏜다(FFF_FinaleDefaults 주석). 그건 경고할 일이 아니다.
+		if (Grade == EFF_FinaleGrade::None)
+		{
+			UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 미구매라 불꽃을 쏘지 않는다."));
+		}
+		else
+		{
+			UE_LOG(LogFestaFiestaFinale, Warning,
+				TEXT("[피날레] 등급 %d 의 연출 수치가 비어 있어 시작하지 않는다."), static_cast<int32>(Grade));
+		}
 		return false;
 	}
 
@@ -386,6 +393,8 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	FiredVolleys = 0;
 	ColorCursor = 0;
 	TailStartedAt = -1.f;
+	bWarnedMissingEffect = false;
+	bWarnedDeadline = false;
 
 	// 연출을 새로 시작하면 검사도 다시 한다. 데이터 애셋을 고치고 재생했을 때
 	// 바뀐 이펙트를 그대로 통과시키면 안 된다.
@@ -423,6 +432,15 @@ void UFF_FinaleShowSubsystem::StopShow()
 	// 예약된 발사는 버린다. 연출이 끝난 뒤에 뒤늦게 터지면 이상하다.
 	PendingShells.Reset();
 
+	/* 순회 목록도 비운다.
+
+	   남겨두면 IsCinematicTourActive 가 연출이 끝난 뒤에도 true 를 돌려줘서
+	   `카메라 건너뛰기` 안내가 계속 떠 있다. 시점 액터를 강참조로 붙잡고 있기도 하다.
+	*/
+	TourViewpoints.Reset();
+	TourIndex = 0;
+	TourHeldSeconds = 0.f;
+
 	if (AFF_FestivalPlayerController* Controller = GetFestivalController())
 	{
 		if (Controller->IsInScriptedView())
@@ -451,8 +469,11 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 	   뒤에서 처리하면 이번 프레임에 예약된 것이 한 프레임 늦게 나간다.
 	   일렬 패턴의 간격이 0.05초 단위라 한 프레임 차이가 눈에 보인다.
 
-	   뒤에서부터 도는 이유는 중간에서 지워도 인덱스가 안 밀리기 때문이다.
+	   때가 된 것을 먼저 빼낸 뒤에 쏜다. 쏘면 OnBurst 가 울리는데, 받는 쪽이 연출을
+	   멈추면 StopShow 가 대기열을 비운다. 대기열을 돌면서 쏘면 그 순간 인덱스가
+	   배열 밖을 가리킨다.
 	*/
+	TArray<FPendingShell> DueShells;
 	for (int32 Index = PendingShells.Num() - 1; Index >= 0; --Index)
 	{
 		FPendingShell& Pending = PendingShells[Index];
@@ -460,17 +481,32 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 
 		if (Pending.DelayRemaining <= 0.f)
 		{
-			SpawnShell(Pending.Location, Pending.Color, Pending.Effect.Get());
+			DueShells.Add(Pending);
 			PendingShells.RemoveAtSwap(Index);
 		}
+	}
+
+	for (const FPendingShell& Due : DueShells)
+	{
+		if (!bShowInProgress)
+		{
+			return;
+		}
+		SpawnShell(Due.Location, Due.Color, Due.Effect.Get());
+	}
+
+	if (!bShowInProgress)
+	{
+		return;
 	}
 
 	/* 카메라 순회. 자리마다 정한 시간만큼 머물고 다음으로 넘어간다.
 
 	   스킵했으면 더 움직이지 않는다. 플레이어가 끊은 뒤에 다시 끌고 가면
-	   끊은 의미가 없다.
+	   끊은 의미가 없다. 카메라를 넘겨받지 않는 연출이면 처음부터 돌지 않는다 —
+	   안 그러면 플레이어가 보던 시점을 순회가 빼앗아 간다.
 	*/
-	if (!bTourSkipped && TourViewpoints.Num() > 1)
+	if (bTakeOverCamera && !bTourSkipped && TourViewpoints.Num() > 1)
 	{
 		TourHeldSeconds += DeltaTime;
 
@@ -485,20 +521,43 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		}
 	}
 
-	// 아직 쏠 게 남았으면 간격을 채울 때마다 한 차례씩 쏜다.
-	const int32 TotalVolleys = ActiveSpec.GetVolleyCount();
-	if (FiredVolleys < TotalVolleys)
+	/* 아직 쏠 게 남았으면 간격을 채울 때마다 한 차례씩 쏜다.
+
+	   끝은 차례 수가 아니라 남은 발수로 정한다. 차례 수는 기댓값이라(GetVolleyCount)
+	   그걸로 끊으면 발이 남았는데 끝나거나, 발이 동났는데 빈 차례가 계속 돈다.
+
+	   다만 무한히 돌지는 않게 시간으로 한 번 더 막는다. 모든 차례가 0발을 내는
+	   설정(예: 모양 애셋이 전부 비었는데 흩뿌림도 막힌 경우)이 생겨도 연출은 끝나야 한다.
+	*/
+	const float FiringDeadline = FMath::Max(ActiveSpec.DurationSeconds, 1.f) * 2.f;
+	const bool bPastDeadline = ElapsedSeconds >= FiringDeadline;
+
+	if (bPastDeadline && GetRemainingShells() > 0 && !bWarnedDeadline)
+	{
+		bWarnedDeadline = true;
+		UE_LOG(LogFestaFiestaFinale, Warning,
+			TEXT("[피날레] 지속 시간의 두 배가 지나도록 %d발이 남아 발사를 멈춘다. 볼리 설정을 볼 것."),
+			GetRemainingShells());
+	}
+
+	if (!bPastDeadline && GetRemainingShells() > 0)
 	{
 		const float Interval = ActiveSpec.GetIntervalSeconds();
 
 		// 프레임이 크게 밀렸을 때 밀린 만큼 한꺼번에 쏘면 하늘이 갑자기 꽉 찬다.
 		// 한 프레임에 최대 두 차례까지만 따라잡는다.
 		int32 CatchUp = 0;
-		while (ElapsedSeconds >= NextVolleyAt && FiredVolleys < TotalVolleys && CatchUp < 2)
+		while (bShowInProgress && ElapsedSeconds >= NextVolleyAt
+			&& GetRemainingShells() > 0 && CatchUp < 2)
 		{
 			FireVolley();
 			NextVolleyAt += Interval;
 			++CatchUp;
+		}
+
+		if (!bShowInProgress)
+		{
+			return;
 		}
 
 		// 따라잡기를 포기했으면 다음 기준을 현재 시각으로 당긴다.
@@ -506,6 +565,12 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		{
 			NextVolleyAt = ElapsedSeconds + Interval;
 		}
+		return;
+	}
+
+	// 지연 발사가 남아 있으면 기다린다. 여운을 먼저 세면 줄지어 나가던 마지막 발들이 잘린다.
+	if (PendingShells.Num() > 0 && !bPastDeadline)
+	{
 		return;
 	}
 
@@ -567,7 +632,11 @@ FVector UFF_FinaleShowSubsystem::ResolveAudienceDirection(const FVector& Center)
 	   둘 다 없으면(테스트 맵, 콘솔 재생) 기본축을 돌려준다. 방향을 모를 때
 	   모양을 안 그리는 것보다, 한 방향으로라도 세우는 편이 낫다.
 	*/
-	if (TourViewpoints.IsValidIndex(TourIndex))
+	// 순회 시점은 카메라가 실제로 거기 있을 때만 믿는다. 끊었거나 넘겨받지 않았으면
+	// 플레이어는 자기 카메라로 보고 있다.
+	const bool bViewingFromTour = bTakeOverCamera && !bTourSkipped;
+
+	if (bViewingFromTour && TourViewpoints.IsValidIndex(TourIndex))
 	{
 		if (const AFF_FinaleViewpoint* Viewpoint = TourViewpoints[TourIndex])
 		{
@@ -849,11 +918,17 @@ void UFF_FinaleShowSubsystem::SpawnShell(
 			Spawned->SetFloatParameter(FFF_FinaleParams::TrailLength, ActiveSpec.TrailLength);
 		}
 	}
-	else if (FiredBursts == 0)
+	else if (!bWarnedMissingEffect)
 	{
-		// 에셋이 아직 없는 단계다. 매 발 찍으면 로그가 넘치니 첫 발만 알린다.
-		UE_LOG(LogFestaFiestaFinale, Log,
-			TEXT("[피날레] 이펙트가 지정되지 않아 위치 신호만 보낸다. 등급 데이터의 BurstEffects 를 확인할 것."));
+		// 에셋이 아직 없는 단계다. 매 발 찍으면 로그가 넘치니 한 번만 알린다.
+		// 어느 애셋의 몇 칸이 찼는지 같이 찍는다. 칸은 채웠는데 안 나올 때 원인이 여기서 갈린다.
+		bWarnedMissingEffect = true;
+		const UFF_FinaleShowData* Data = ResolveShowData();
+		UE_LOG(LogFestaFiestaFinale, Warning,
+			TEXT("[피날레] 이펙트 없이 위치 신호만 보낸다. 데이터=%s 등급=%d 이펙트 %s. "
+				 "BurstEffects 를 확인할 것."),
+			Data ? *Data->GetName() : TEXT("없음 (코드 기본값)"),
+			static_cast<int32>(ActiveGrade), *DescribeEffects(ActiveSpec));
 	}
 
 	// 이펙트가 없어도 신호는 보낸다. 사운드나 화면 흔들림은 여기에 붙는다.
@@ -871,11 +946,19 @@ void UFF_FinaleShowSubsystem::FireVolley()
 
 	const FVector Origin = ResolveLaunchOrigin();
 
-	// 마지막 차례는 남은 발수만큼만 쏜다. 총 발수를 넘기면 등급 차이가 흐려진다.
-	const int32 Remaining = FMath::Max(0, ActiveSpec.BurstCount - FiredBursts);
+	/* 마지막 차례는 남은 발수만큼만 쏜다. 총 발수를 넘기면 등급 차이가 흐려진다.
 
-	// 남은 발수를 넘겨 고른다. 모양이 있는 패턴은 발수가 모자라면 모양이 깨진다.
-	const FFF_FinaleVolley& Volley = PickVolley(Remaining);
+	   예약만 되고 아직 안 터진 발도 뺀다. 빼지 않으면 줄지어 나가는 패턴 뒤에서
+	   같은 발수를 또 쏴서 총 발수를 넘긴다.
+	*/
+	const int32 Remaining = GetRemainingShells();
+
+	/* 남은 발수를 넘겨 고른다. 모양이 있는 패턴은 발수가 모자라면 모양이 깨진다.
+
+	   참조가 아니라 복사로 든다. 아래에서 쏘면 OnBurst 가 울리는데, 받는 쪽이 연출을
+	   멈추거나 다시 틀면 ActiveSpec 이 바뀌어 참조가 사라진 배열을 가리킨다.
+	*/
+	const FFF_FinaleVolley Volley = PickVolley(Remaining);
 
 	const int32 Requested = FMath::Max(
 		FMath::Max(1, ActiveSpec.SimultaneousShells), Volley.ShellCount);
@@ -925,6 +1008,20 @@ void UFF_FinaleShowSubsystem::FireVolley()
 		Layout.GroundYawDegrees = ShowRandom.FRandRange(0.f, 360.f);
 
 		Volley.BuildShellLayout(Layout, ShellLocations);
+
+		/* 모양을 못 그렸으면(애셋이 비었거나 깨짐) 이번 차례는 흩뿌린다.
+
+		   예전에는 이 차례를 건너뛰었다. 끝을 남은 발수로 정하게 바꾼 뒤로는 건너뛰면
+		   발수가 안 줄어 같은 볼리가 계속 뽑히고 하늘이 빈다.
+		*/
+		if (ShellLocations.Num() == 0)
+		{
+			ShellLocations.Reserve(ShellCount);
+			for (int32 Shell = 0; Shell < ShellCount; ++Shell)
+			{
+				ShellLocations.Add(PickBurstLocation(Origin));
+			}
+		}
 	}
 	else
 	{
@@ -959,7 +1056,39 @@ void UFF_FinaleShowSubsystem::FireVolley()
 		}
 
 		SpawnShell(Location, Color, Effect);
+
+		// OnBurst 를 받은 쪽이 연출을 멈췄다. 남은 발을 쏘지 않는다.
+		if (!bShowInProgress)
+		{
+			return;
+		}
 	}
 
 	++FiredVolleys;
+}
+
+int32 UFF_FinaleShowSubsystem::GetRemainingShells() const
+{
+	return FMath::Max(0, ActiveSpec.BurstCount - FiredBursts - PendingShells.Num());
+}
+
+FString UFF_FinaleShowSubsystem::DescribeEffects(const FFF_FinaleGradeSpec& Spec)
+{
+	/* 칸 수와 채워진 수를 따로 보여준다.
+
+	   `3종` 이라고만 찍으면 그중 None 이 섞여 있어도 모른다. 칸은 채웠다고 믿는데
+	   가끔 안 터지는 원인이 대개 그 빈 칸이다.
+	*/
+	const int32 Slots = Spec.BurstEffects.Num();
+	const int32 Assigned = Spec.CountAssignedEffects();
+
+	if (Slots == 0)
+	{
+		return TEXT("없음");
+	}
+	if (Assigned == Slots)
+	{
+		return FString::Printf(TEXT("%d종"), Assigned);
+	}
+	return FString::Printf(TEXT("%d칸 중 %d종 (빈 칸 %d)"), Slots, Assigned, Slots - Assigned);
 }
