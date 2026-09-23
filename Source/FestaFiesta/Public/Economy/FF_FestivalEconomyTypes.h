@@ -174,6 +174,10 @@ struct FFF_ScheduledProgram
 	// 편성 당시 시설 종류. 시설 액터가 사라져도 최신 수익 표에서 해당 참가비를 찾는다.
 	UPROPERTY(BlueprintReadOnly, Category = "Program")
 	FName FacilityDefinitionId;
+
+	// 편성한 시설. "같은 카드는 하루 한 번" 이 시설 단위라서 필요하다.
+	UPROPERTY(BlueprintReadOnly, Category = "Program")
+	FGuid FacilityInstanceId;
 };
 
 // 프로그램 편성 결과. UI 가 실패 이유를 그대로 화면에 쓸 수 있게 bool 이 아니다.
@@ -191,12 +195,64 @@ enum class EFF_ProgramPurchaseResult : uint8
 
 // 홍보 등급. 1회 선택하고 3일 전체에 적용된다.
 // UI 쪽 `EFF_PromotionChoice` 와 값이 1:1 이다.
+// [주의] 저장 슬롯에 들어가는 값이다. 이름만 바꾸고 숫자는 유지한다 — Basic 이 "지역 SNS", Focused 가 "전국 홍보" 다.
 UENUM(BlueprintType)
 enum class EFF_PromotionGrade : uint8
 {
-	None    = 0	UMETA(DisplayName = "안 함"),
-	Basic   = 1	UMETA(DisplayName = "기본"),
-	Focused = 2	UMETA(DisplayName = "집중")
+	None       = 0	UMETA(DisplayName = "홍보 없음"),
+	Basic      = 1	UMETA(DisplayName = "지역 SNS"),
+	Focused    = 2	UMETA(DisplayName = "전국 홍보"),
+	Influencer = 3	UMETA(DisplayName = "인플루언서")
+};
+
+// 입장료 변경 결과. 화면이 실패 사유를 그대로 쓴다.
+UENUM(BlueprintType)
+enum class EFF_AdmissionFeeResult : uint8
+{
+	Success             UMETA(DisplayName = "변경 완료"),
+	FestivalNotStarted  UMETA(DisplayName = "축제가 시작되지 않았다"),
+	OutOfRange          UMETA(DisplayName = "허용 범위 밖이다"),
+	LockedDuringLive    UMETA(DisplayName = "운영 중에는 바꿀 수 없다")
+};
+
+/**
+ * 하루 방문객 예보. 준비 화면의 미리보기와 결산 설명이 쓴다.
+ *
+ * 방문객 = 기본 × 홍보 배수 × 입장료 배수 × Buzz 배수 (내림).
+ * [주의] 실제 입장은 군중 동시 인원 상한(Agent 풀)에 막힐 수 있다. 이 값은 "올 사람" 이지 "들어온 사람" 이 아니다.
+ */
+USTRUCT(BlueprintType)
+struct FFF_VisitorForecast
+{
+	GENERATED_BODY()
+
+	// 최종 예상 방문객.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 ExpectedVisitors = 0;
+
+	// 입장료가 기준값이었다면 올 방문객. ExpectedVisitors 와의 차이가 "입장료 때문에 덜(더) 온 사람" 이다.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 VisitorsAtReferenceFee = 0;
+
+	// ExpectedVisitors - VisitorsAtReferenceFee. 비싸면 음수, 싸면 양수.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 VisitorDeltaFromFee = 0;
+
+	// 예상 입장료 수입 = ExpectedVisitors × AdmissionFeeGold.
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 ExpectedAdmissionRevenue = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	int32 AdmissionFeeGold = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	float PromotionMultiplier = 1.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	float AdmissionFeeMultiplier = 1.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "FestaFiesta|Economy")
+	float BuzzMultiplier = 1.f;
 };
 
 // 홍보 구매 결과. 화면이 실패 사유를 그대로 쓴다.
@@ -223,6 +279,10 @@ struct FFF_PromotionTier
 	// 일일 방문객 수에 곱한다. 1.0 이면 효과 없음
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Promotion", meta = (ClampMin = "1.0"))
 	float VisitorMultiplier = 1.f;
+
+	// 구매 순간 축제 화제성(Buzz)에 더하는 값. 0~100 척도.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Promotion", meta = (ClampMin = "0"))
+	int32 StartingBuzz = 0;
 };
 
 // 지출 원인

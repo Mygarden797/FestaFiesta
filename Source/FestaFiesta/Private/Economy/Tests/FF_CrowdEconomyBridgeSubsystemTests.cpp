@@ -386,8 +386,8 @@ bool FFF_CrowdEconomyBridge_FestivalStartFillsExpectedVisitors::RunTest(const FS
 
 	TestEqual(TEXT("홍보를 안 사도 BaseDailyVisitors 로 채워진다"),
 		Crowd->GetExpectedVisitorCountOverride(), Progression->GetExpectedVisitors());
-	TestEqual(TEXT("미구매 배수는 1.0 이라 값 자체는 BaseDailyVisitors 다"),
-		Crowd->GetExpectedVisitorCountOverride(), 500);
+	TestEqual(TEXT("미구매는 홍보 없음 배수(×0.85)라 500 × 0.85"),
+		Crowd->GetExpectedVisitorCountOverride(), 425);
 
 	return true;
 }
@@ -404,7 +404,7 @@ bool FFF_CrowdEconomyBridge_PromotionPurchaseUpdatesExpectedVisitors::RunTest(co
 		return false;
 	}
 
-	// PromotionBasic 은 Definition 생성자 기본값(500 Gold, 배수 1.08)을 그대로 쓴다 —
+	// PromotionBasic 은 Definition 생성자 기본값(600 Gold, 배수 1.00, 화제성 +6)을 그대로 쓴다 —
 	// 이 테스트가 보려는 건 구매로 인한 갱신이지, 시작 시점 채움(앞선 테스트가 이미 봄)이 아니다.
 	if (!TestEqual(TEXT("기본 홍보 구매가 성공한다"),
 		Harness.Progression->TryPurchasePromotion(EFF_PromotionGrade::Basic),
@@ -451,8 +451,9 @@ bool FFF_CrowdEconomyBridge_RestartResetsExpectedVisitors::RunTest(const FString
 
 	TestEqual(TEXT("재시작하면 등급이 비워진다"),
 		Harness.Progression->GetPurchasedPromotionGrade(), EFF_PromotionGrade::None);
-	TestEqual(TEXT("Crowd 의 override 도 기본값으로 돌아온다 — 이벤트가 실제로 나갔다는 뜻"),
-		Harness.CrowdSim->GetExpectedVisitorCountOverride(), Harness.Definition->BaseDailyVisitors);
+	TestEqual(TEXT("Crowd 의 override 도 홍보 없음 값으로 돌아온다 — 이벤트가 실제로 나갔다는 뜻"),
+		Harness.CrowdSim->GetExpectedVisitorCountOverride(), FMath::FloorToInt32(
+			Harness.Definition->BaseDailyVisitors * Harness.Definition->NoPromotionVisitorMultiplier + 1e-4f));
 
 	return true;
 }

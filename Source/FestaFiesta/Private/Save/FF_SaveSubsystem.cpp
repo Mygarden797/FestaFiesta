@@ -444,6 +444,8 @@ void UFF_SaveSubsystem::RestorePartData(const TMap<FName, FFF_SaveBlob>& In)
 		EFF_SaveLoadPhase::Presentation
 	};
 
+	TGuardValue<bool> RestoringGuard(bIsRestoring, true);
+
 	for (const EFF_SaveLoadPhase Phase : Phases)
 	{
 		for (const TWeakInterfacePtr<IFF_Saveable>& Weak : Saveables)

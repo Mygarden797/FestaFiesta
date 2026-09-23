@@ -66,6 +66,8 @@ private:
 	void EnsureTemplatesLoaded();
 	// ZoneSystem의 시설 목록을 훑어 시설 수·최장 대기 시설·최다 대기줄 시설을 Signals에 채운다
 	void FillFacilitySignals(struct FFF_SnsFeedSignals& Signals) const;
+	// 오늘 입장료와 기준값을 Signals에 채운다(화제15·16). 축제 전이면 둘 다 0 이라 두 화제 점수가 0 이다
+	void FillAdmissionFeeSignals(struct FFF_SnsFeedSignals& Signals) const;
 
 	// Report 단계 + 마지막 날이면 화제9(피날레)를 강제로 한 번만 생성
 	UFUNCTION()
