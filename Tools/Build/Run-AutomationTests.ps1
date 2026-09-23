@@ -5,6 +5,8 @@
 param(
     [string] $EngineRoot,
 
+    [string] $ProjectFile,
+
     [string[]] $TestFilter = @('FestaFiesta', 'FF_ZoneSystem'),
 
     [string] $OutputRoot,
@@ -16,6 +18,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'FestaFiesta.Build.psm1') -Force
+Set-FFProjectFileOverride -ProjectFile $ProjectFile
 
 $projectRoot = Get-FFProjectRoot
 $projectFile = Get-FFProjectFile

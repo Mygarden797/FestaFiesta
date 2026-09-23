@@ -6,7 +6,6 @@ public class FestaFiesta : ModuleRules
 {
 	public FestaFiesta(ReadOnlyTargetRules Target) : base(Target)
 	{
-		PrivateDependencyModuleNames.AddRange(new string[] { "NaniteUtilities" });
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[]

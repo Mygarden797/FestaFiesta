@@ -3,10 +3,70 @@
 
 Set-StrictMode -Version Latest
 
+$script:FFProjectFileOverride = $null
+
+function Set-FFProjectFileOverride {
+    [CmdletBinding()]
+    param(
+        [string] $ProjectFile
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ProjectFile)) {
+        $script:FFProjectFileOverride = $null
+        return
+    }
+
+    # Keep the caller's short junction path. Resolving its physical target here
+    # would put the long path back into UBT's Cook output directory.
+    $candidate = [System.IO.Path]::GetFullPath($ProjectFile)
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw "Unreal project file was not found: $candidate"
+    }
+    if ([System.IO.Path]::GetFileName($candidate) -cne 'FestaFiesta.uproject') {
+        throw "Expected FestaFiesta.uproject, got: $candidate"
+    }
+
+    $referenceFile = Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))) 'FestaFiesta.uproject'
+    $reference = Get-Content -LiteralPath $referenceFile -Raw | ConvertFrom-Json
+    $descriptor = Get-Content -LiteralPath $candidate -Raw | ConvertFrom-Json
+    $runtimeModules = @($descriptor.Modules | Where-Object { $_.Name -ceq 'FestaFiesta' -and $_.Type -ceq 'Runtime' })
+    $candidateRoot = [System.IO.Path]::GetDirectoryName($candidate)
+    $referenceConfig = Join-Path ([System.IO.Path]::GetDirectoryName($referenceFile)) 'Config\DefaultGame.ini'
+    $candidateConfig = Join-Path $candidateRoot 'Config\DefaultGame.ini'
+    $gameTarget = Join-Path $candidateRoot 'Source\FestaFiesta.Target.cs'
+    $editorTarget = Join-Path $candidateRoot 'Source\FestaFiestaEditor.Target.cs'
+    if (-not (Test-Path -LiteralPath $candidateConfig -PathType Leaf) -or
+        $runtimeModules.Count -ne 1 -or
+        -not (Test-Path -LiteralPath $gameTarget -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $editorTarget -PathType Leaf)) {
+        throw "ProjectFile is not this FestaFiesta project (runtime module, targets, or config differ): $candidate"
+    }
+    $gameTargetSource = Get-Content -LiteralPath $gameTarget -Raw
+    $editorTargetSource = Get-Content -LiteralPath $editorTarget -Raw
+    if ($gameTargetSource -notmatch '\bclass\s+FestaFiestaTarget\s*:\s*TargetRules\b' -or
+        $gameTargetSource -notmatch 'Type\s*=\s*TargetType\.Game' -or
+        $editorTargetSource -notmatch '\bclass\s+FestaFiestaEditorTarget\s*:\s*TargetRules\b' -or
+        $editorTargetSource -notmatch 'Type\s*=\s*TargetType\.Editor') {
+        throw "ProjectFile targets are not the FestaFiesta Game and Editor targets: $candidate"
+    }
+    $referenceProjectId = @(Select-String -LiteralPath $referenceConfig -Pattern '^ProjectID=(.+)$' | Select-Object -Last 1)
+    $candidateProjectId = @(Select-String -LiteralPath $candidateConfig -Pattern '^ProjectID=(.+)$' | Select-Object -Last 1)
+    if ($referenceProjectId.Count -ne 1 -or $candidateProjectId.Count -ne 1 -or
+        $referenceProjectId[0].Matches[0].Groups[1].Value -cne $candidateProjectId[0].Matches[0].Groups[1].Value -or
+        [string]$descriptor.EngineAssociation -cne [string]$reference.EngineAssociation) {
+        throw "ProjectFile is not this FestaFiesta project (project identity or EngineAssociation differs): $candidate"
+    }
+
+    $script:FFProjectFileOverride = $candidate
+}
+
 function Get-FFProjectRoot {
     [CmdletBinding()]
     param()
 
+    if ($script:FFProjectFileOverride) {
+        return [System.IO.Path]::GetDirectoryName($script:FFProjectFileOverride)
+    }
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 }
 
@@ -14,7 +74,12 @@ function Get-FFProjectFile {
     [CmdletBinding()]
     param()
 
-    $projectFile = Join-Path (Get-FFProjectRoot) 'FestaFiesta.uproject'
+    $projectFile = if ($script:FFProjectFileOverride) {
+        $script:FFProjectFileOverride
+    }
+    else {
+        Join-Path (Get-FFProjectRoot) 'FestaFiesta.uproject'
+    }
     if (-not (Test-Path -LiteralPath $projectFile -PathType Leaf)) {
         throw "Unreal project file was not found: $projectFile"
     }
@@ -125,6 +190,44 @@ function Get-FFProjectVersion {
     return $versionLine.Matches[0].Groups[1].Value.Trim()
 }
 
+function Assert-FFCookPathBudget {
+    [CmdletBinding()]
+    param()
+
+    $projectRoot = Get-FFProjectRoot
+    $contentRoot = Join-Path $projectRoot 'Content'
+    $cookedContentRoot = Join-Path $projectRoot 'Saved\Cooked\Windows\FestaFiesta\Content'
+    if (-not (Test-Path -LiteralPath $contentRoot -PathType Container)) {
+        throw "Content directory was not found: $contentRoot"
+    }
+
+    $overlong = New-Object System.Collections.Generic.List[string]
+    $longestLength = 0
+    $assetCount = 0
+    foreach ($asset in (Get-ChildItem -LiteralPath $contentRoot -Recurse -File)) {
+        if ($asset.Extension -notin @('.uasset', '.umap')) {
+            continue
+        }
+        ++$assetCount
+        $relativePath = Get-FFRelativePath -BasePath $contentRoot -Path $asset.FullName
+        $cookPath = Join-Path $cookedContentRoot $relativePath
+        $longestLength = [Math]::Max($longestLength, $cookPath.Length)
+        if ($cookPath.Length -ge 260) {
+            $overlong.Add("$($cookPath.Length) chars: $cookPath")
+        }
+    }
+
+    if ($overlong.Count -gt 0) {
+        $examples = ($overlong | Select-Object -First 3) -join [Environment]::NewLine
+        throw "Cook output path reaches Windows MAX_PATH for $($overlong.Count) asset(s). Examples:$([Environment]::NewLine)$examples$([Environment]::NewLine)Use a short checkout or junction such as C:\FFProj and pass -ProjectFile C:\FFProj\FestaFiesta.uproject. No source content needs deletion."
+    }
+
+    return [PSCustomObject]@{
+        AssetCount = $assetCount
+        LongestCookPathLength = $longestLength
+    }
+}
+
 function Get-FFGitMetadata {
     [CmdletBinding()]
     param()
@@ -132,17 +235,17 @@ function Get-FFGitMetadata {
     $projectRoot = Get-FFProjectRoot
     $safeRoot = $projectRoot.Replace('\', '/')
 
-    $commit = (& git -c "safe.directory=$safeRoot" rev-parse --short=12 HEAD 2>$null | Out-String).Trim()
+    $commit = (& git -c "safe.directory=$safeRoot" -C $projectRoot rev-parse --short=12 HEAD 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($commit)) {
         $commit = 'nogit'
     }
 
-    $branch = (& git -c "safe.directory=$safeRoot" branch --show-current 2>$null | Out-String).Trim()
+    $branch = (& git -c "safe.directory=$safeRoot" -C $projectRoot branch --show-current 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
         $branch = 'detached'
     }
 
-    $status = (& git -c "safe.directory=$safeRoot" status --porcelain --untracked-files=normal 2>$null | Out-String).Trim()
+    $status = (& git -c "safe.directory=$safeRoot" -C $projectRoot status --porcelain --untracked-files=normal 2>$null | Out-String).Trim()
     $dirty = $LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace($status)
 
     return [PSCustomObject]@{
@@ -201,7 +304,7 @@ function Assert-FFGitLfsHealth {
 
     $projectRoot = Get-FFProjectRoot
     $safeRoot = $projectRoot.Replace('\', '/')
-    $versionOutput = @(& git -c "safe.directory=$safeRoot" lfs version 2>&1)
+    $versionOutput = @(& git -c "safe.directory=$safeRoot" -C $projectRoot lfs version 2>&1)
     $versionExitCode = $LASTEXITCODE
     if ($versionExitCode -ne 0) {
         throw "Git LFS is unavailable or failed with exit code ${versionExitCode}: $($versionOutput -join ' ')"
@@ -219,7 +322,7 @@ function Assert-FFGitLfsHealth {
         throw "Git LFS is too old (minimum $MinimumVersion, found $installedVersion)."
     }
 
-    $fsckOutput = @(& git -c "safe.directory=$safeRoot" lfs fsck 2>&1)
+    $fsckOutput = @(& git -c "safe.directory=$safeRoot" -C $projectRoot lfs fsck 2>&1)
     $fsckExitCode = $LASTEXITCODE
     if ($fsckExitCode -ne 0) {
         throw "Git LFS integrity check failed with exit code ${fsckExitCode}: $($fsckOutput -join ' ')"
@@ -452,8 +555,10 @@ function Write-FFSizeReport {
 }
 
 Export-ModuleMember -Function @(
+    'Set-FFProjectFileOverride',
     'Get-FFProjectRoot',
     'Get-FFProjectFile',
+    'Assert-FFCookPathBudget',
     'Resolve-FFEngineRoot',
     'Get-FFEngineVersion',
     'Get-FFProjectVersion',
