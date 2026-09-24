@@ -42,6 +42,7 @@ constexpr const TCHAR* PearlPolishKey = TEXT("FF.BuildReferenceTools.PearlPolish
 constexpr const TCHAR* PearlReadableCardsKey = TEXT("FF.BuildReferenceTools.PearlReadableCardsV6");
 constexpr const TCHAR* IconHelpKey = TEXT("FF.BuildReferenceTools.IconHelpV7");
 constexpr const TCHAR* ActionLanguageKey = TEXT("FF.BuildReferenceTools.ActionLanguageV8");
+constexpr const TCHAR* KeyboardHelpKey = TEXT("FF.BuildReferenceTools.KeyboardHelpV9");
 const FLinearColor White = FLinearColor::White;
 
 FSlateBrush Surface(const FLinearColor Color, const float Radius, const FLinearColor Outline = FLinearColor::Transparent)
@@ -1145,7 +1146,7 @@ bool ApplyIconHelp(UWidgetBlueprint& BP)
     LegacyHelp->RemoveFromParent();
     LegacyHelp->SetVisibility(ESlateVisibility::Collapsed);
     HelpSize->SetWidthOverride(350.f);
-    auto* HelpColumn = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Column_BuildIconHelp"));
+    auto* HelpColumn = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Column_BuildIconHelp"), true);
     Help->AddChild(HelpColumn);
     auto* Heading = Label(BP, Tree, TEXT("Text_BuildIconHelpHeading"),
         LOCTEXT("IconHelpHeading", "조작 안내"), 17, FLinearColor::White);
@@ -1232,6 +1233,126 @@ bool ApplyActionLanguage(UWidgetBlueprint& BP)
     return false;
 }
 
+bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, KeyboardHelpKey) == TEXT("1")) return true;
+    UWidgetTree& Tree = *BP.WidgetTree;
+    auto* Help = Cast<UBorder>(Tree.FindWidget(TEXT("Border_PlacementHelp")));
+    auto* HelpSize = Cast<USizeBox>(Tree.FindWidget(TEXT("Size_BuildWorldHelp")));
+    auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildIconHelp")));
+    auto* Heading = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildIconHelpHeading")));
+    if (!Help || !HelpSize || !Column || !Heading) return false;
+    BP.Modify(); Tree.Modify();
+    Column->bIsVariable = true;
+
+    // An inset face and lower lip make these input labels unmistakably physical keys.
+    // Toolbar pictograms remain actions; only this guide teaches keyboard bindings.
+    auto Keycap = [&](const TCHAR* KeyName, const TCHAR* Caption) -> USizeBox*
+    {
+        const FString Stem = FString(TEXT("BuildHelpKey_")) + KeyName;
+        auto* Size = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem)));
+        Size->SetMinDesiredWidth(25.f);
+        Size->SetHeightOverride(28.f);
+        auto* Edge = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Border_") + Stem)));
+        Edge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(158, 169, 193), 5.f));
+        Edge->SetPadding(FMargin(1.f, 1.f, 1.f, 3.f));
+        auto* Face = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Face_") + Stem)));
+        Face->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(247, 249, 255), 4.f));
+        Face->SetPadding(FMargin(5.f, 1.f));
+        Face->SetHorizontalAlignment(HAlign_Center);
+        Face->SetVerticalAlignment(VAlign_Center);
+        Face->AddChild(Label(BP, Tree, FName(*(TEXT("Text_") + Stem)),
+            FText::FromString(Caption), 14, FFBuildPearl::Ink, true));
+        Edge->AddChild(Face);
+        Size->AddChild(Edge);
+        return Size;
+    };
+    auto Keys = [&](const TCHAR* IconName, const TArray<TPair<FString, FString>>& KeyList) -> bool
+    {
+        auto* Icon = Cast<USizeBox>(Tree.FindWidget(IconName));
+        if (!Icon) return false;
+        // Detaching a UMG child does not remove its Blueprint variable GUID or
+        // WidgetTree ownership. Retire the entire former pictogram subtree.
+        TArray<UWidget*> Retired;
+        UWidgetTree::GetChildWidgets(Icon, Retired);
+        Icon->ClearChildren();
+        for (int32 Index = Retired.Num() - 1; Index >= 0; --Index)
+        {
+            UWidget* Widget = Retired[Index];
+            BP.OnVariableRemoved(Widget->GetFName());
+            Widget->RemoveFromParent();
+            Widget->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
+        }
+        auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, FName(*(FString(IconName) + TEXT("Keys"))));
+        for (const auto& Key : KeyList) AddRow(*Row, *Keycap(*Key.Key, *Key.Value), 4.f);
+        Icon->SetWidthOverride(124.f);
+        Icon->SetHeightOverride(30.f);
+        auto* Slot = CastChecked<USizeBoxSlot>(Icon->AddChild(Row));
+        Slot->SetHorizontalAlignment(HAlign_Left);
+        Slot->SetVerticalAlignment(VAlign_Center);
+        return true;
+    };
+    if (!Keys(TEXT("Size_BuildHelpRotateIcon"), {{TEXT("Q"), TEXT("Q")}, {TEXT("E"), TEXT("E")}}) ||
+        !Keys(TEXT("Size_BuildHelpArrowsIcon"), {{TEXT("W"), TEXT("W")}, {TEXT("A"), TEXT("A")},
+            {TEXT("S"), TEXT("S")}, {TEXT("D"), TEXT("D")}}) ||
+        !Keys(TEXT("Size_BuildHelpPrecisionIcon"), {{TEXT("Ctrl"), TEXT("Ctrl")}}) ||
+        !Keys(TEXT("Size_BuildHelpGridIcon"), {{TEXT("G"), TEXT("G")}}) ||
+        !Keys(TEXT("Size_BuildHelpCatalogIcon"), {{TEXT("B"), TEXT("B")}}) ||
+        !Keys(TEXT("Size_BuildHelpPauseIcon"), {{TEXT("Esc"), TEXT("Esc")}})) return false;
+
+    auto* Mouse = Cast<USizeBox>(Tree.FindWidget(TEXT("Size_BuildHelpMouseIcon")));
+    auto* Primary = Cast<UHorizontalBox>(Tree.FindWidget(TEXT("Row_BuildHelpPrimary")));
+    if (!Mouse || !Primary) return false;
+    Mouse->RemoveFromParent();
+    auto* MouseRow = MakeWidget<UHorizontalBox>(BP, Tree, TEXT("Row_BuildHelpMouseInput"));
+    AddRow(*MouseRow, *Mouse, 5.f);
+    AddRow(*MouseRow, *Label(BP, Tree, TEXT("Text_BuildHelpMouseInput"),
+        LOCTEXT("HelpMouseInput", "좌클릭"), 12, FFBuildPearl::Cyan), 0.f);
+    auto* MouseSize = MakeWidget<USizeBox>(BP, Tree, TEXT("Size_BuildHelpMouseInput"));
+    MouseSize->SetWidthOverride(124.f);
+    MouseSize->AddChild(MouseRow);
+    AddRow(*Primary, *MouseSize, 10.f);
+    Primary->ShiftChild(0, MouseSize);
+
+    Heading->SetText(LOCTEXT("KeyboardHelpTitle", "조작 안내"));
+    StyleText(*Heading, 16, FLinearColor::White, TEXT("SemiBold"));
+    auto* Hint = Label(BP, Tree, TEXT("Text_BuildHelpKeyboardHint"),
+        LOCTEXT("KeyboardHelpHint", "표시된 키를 누르면 실행됩니다"), 11, FFBuildPearl::Cyan);
+    AddColumn(*Column, *Hint, 10.f);
+    Column->ShiftChild(1, Hint);
+    for (const TCHAR* Name : {TEXT("Text_BuildHelpPrimary"), TEXT("Text_BuildHelpRotate"),
+        TEXT("Text_BuildHelpMove"), TEXT("Text_BuildHelpPrecision"), TEXT("Text_BuildHelpGrid"),
+        TEXT("Text_BuildHelpCatalog"), TEXT("Text_BuildHelpPause")})
+        if (auto* Text = Cast<UTextBlock>(Tree.FindWidget(Name)))
+        {
+            StyleText(*Text, 13, FLinearColor::White, TEXT("Medium"));
+            Text->SetAutoWrapText(true);
+            Text->SetShadowOffset(FVector2D::ZeroVector);
+        }
+    if (auto* Text = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpCatalog"))))
+        Text->SetText(LOCTEXT("HelpToggleCatalog", "시설 목록 열기 / 닫기"));
+    if (auto* Text = Cast<UTextBlock>(Tree.FindWidget(TEXT("Text_BuildHelpPause"))))
+        Text->SetText(LOCTEXT("HelpOptions", "일시정지 · 옵션"));
+    Help->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(60, 59, 79, .92f), 16.f,
+        FFBuildPearl::Color(219, 222, 237, .45f), 1.f));
+    Help->SetBrushColor(FLinearColor::White);
+    Help->SetPadding(FMargin(14.f, 12.f));
+    Column->RemoveFromParent();
+    auto* Scroll = MakeWidget<UScrollBox>(BP, Tree, TEXT("Scroll_BuildHelp"));
+    Scroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+    Scroll->SetClipping(EWidgetClipping::ClipToBounds);
+    Scroll->AddChild(Column);
+    Help->AddChild(Scroll);
+    HelpSize->SetWidthOverride(360.f);
+    HelpSize->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    if (auto* Slot = Cast<UCanvasPanelSlot>(HelpSize->Slot)) Slot->SetPosition(FVector2D(32.f, 104.f));
+    Metadata.SetValue(&BP, KeyboardHelpKey, TEXT("1"));
+    if (SaveNewBlueprint(TEXT("FF_BUILD_REFERENCE_TOOLS_KEYBOARD_HELP_V9"), BP)) return true;
+    Metadata.RemoveValue(&BP, KeyboardHelpKey);
+    return false;
+}
+
 void Apply()
 {
     UWidgetBlueprint* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
@@ -1246,7 +1367,7 @@ void Apply()
         if (RefinePresentation(*BP) && AddNavigationAndProjectSettings(*BP) &&
             ApplyPearlToolbarAndDrawer(*BP) && ApplyPearlPolish(*BP) &&
             ApplyPearlReadableCards(*BP) && ApplyIconHelp(*BP) &&
-            ApplyActionLanguage(*BP))
+            ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP))
         {
             UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REFERENCE_TOOLS_REUSE"));
         }
@@ -1270,7 +1391,7 @@ void Apply()
     else if (!RefinePresentation(*BP) || !AddNavigationAndProjectSettings(*BP) ||
         !ApplyPearlToolbarAndDrawer(*BP) || !ApplyPearlPolish(*BP) ||
         !ApplyPearlReadableCards(*BP) || !ApplyIconHelp(*BP) ||
-        !ApplyActionLanguage(*BP))
+        !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP))
     {
         UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_REFERENCE_TOOLS_FAIL: refinement failed"));
     }
