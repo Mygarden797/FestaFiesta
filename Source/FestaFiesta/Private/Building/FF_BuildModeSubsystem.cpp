@@ -361,6 +361,10 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 		PauseMenuFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	}
 	ResetPlacementRotationInput();
+	// Viewport tools sit above the CommonUI root. Hide them synchronously before
+	// Pause/Options takes over; their expanded panels and selection stay intact.
+	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
+	RefreshBuildModeGuide();
 	return true;
 }
 
@@ -393,13 +397,17 @@ void UFF_BuildModeSubsystem::RestoreInputAfterPauseMenu()
 		return;
 	}
 
+	// Restore visibility before validating the saved Slate focus path. The path
+	// was intentionally hidden while Pause owned input, rather than removed.
+	bInputSuspendedForPauseMenu = false;
+	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
+	RefreshBuildModeGuide();
 	TSharedPtr<SWidget> FocusToRestore = PauseMenuFocusedWidget.Pin();
 	PauseMenuFocusedWidget.Reset();
 	if (!IsSlateWidgetOnVisiblePath(FocusToRestore))
 	{
 		FocusToRestore.Reset();
 	}
-	bInputSuspendedForPauseMenu = false;
 	if (bIsExitingBuildMode)
 	{
 		return;
@@ -2239,7 +2247,8 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 	// PrepHUD 배치 패널은 같은 조작 안내를 자체 표시한다. 외부 표현이 활성인 동안 레거시
 	// 좌하단 가이드를 함께 띄우면 하단 도킹 패널 뒤에 겹치므로 한 표현 소유자만 남긴다.
 	BuildModeGuideWidget->SetVisibility(
-		(State == EFF_BuildModeState::CatalogOpen || bExternalCatalogPresentationActive || BuildToolsWidget)
+		(bInputSuspendedForPauseMenu || State == EFF_BuildModeState::CatalogOpen ||
+			bExternalCatalogPresentationActive || BuildToolsWidget)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible);
 	BuildModeGuideWidget->SetPlacementGuideState(

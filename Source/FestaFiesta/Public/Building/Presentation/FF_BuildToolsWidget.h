@@ -44,6 +44,8 @@ namespace FFBuildToolsModel
     // Explicit degree input is finite, decimal and within the displayed 0..360 range.
     // Invalid edits leave the caller's previous value untouched; 360 wraps to 0.
     FESTAFIESTA_API bool TryParseYawText(const FString& Text, float& OutYawDegrees);
+    /** Top and height of the guide, bounded above the measured catalog edge. */
+    FESTAFIESTA_API FVector2D ResolveHelpVerticalBounds(float ContentHeight, float AvailableBottom);
 }
 
 // UButton exposes focus initialization to subclasses, avoiding deprecated property writes.
@@ -130,6 +132,7 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Border_BuildToolbarGold;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Label_BuildMode;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<USizeBox> Size_BuildWorldHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Column_BuildIconHelp;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildBack;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildBack;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UBorder> Panel_BuildSettings;
@@ -220,6 +223,8 @@ private:
     TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
     TWeakObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
     TWeakObjectPtr<UFF_BuildCatalogSubsystem> CatalogModel;
+    TWeakObjectPtr<UWidget> CatalogHelpAvoidanceSurface;
+    double NextCatalogHelpSearchTime = 0.0;
     UPROPERTY(Transient) FFF_BuildToolsViewData ViewData;
     FTimerHandle FreeRotationTimer;
     int32 PointerRotationDirection = 0;

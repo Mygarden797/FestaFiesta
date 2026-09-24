@@ -8,6 +8,29 @@
 #include "Components/TextBlock.h"
 #include "Misc/AutomationTest.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsHelpClearanceTest,
+    "FestaFiesta.Building.BuildTools.HelpCatalogClearance",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FFFBuildToolsHelpClearanceTest::RunTest(const FString& Parameters)
+{
+    // The catalog reserves its complete 326px tray plus the persistent navigation,
+    // and resized/dragged trays can supply their measured top edge instead.
+    for (const float ViewHeight : {540.f, 720.f, 900.f, 1080.f})
+        for (const float ContentHeight : {240.f, 330.f, 470.f})
+        {
+            const float CatalogTop = ViewHeight - 326.f - 84.f;
+            const FVector2D Bounds = FFBuildToolsModel::ResolveHelpVerticalBounds(ContentHeight, CatalogTop - 16.f);
+            TestTrue(TEXT("Help and catalog retain a 16px gap even when content needs scrolling"),
+                Bounds.X + Bounds.Y <= CatalogTop - 16.f + .1f);
+            TestTrue(TEXT("Help never expands beyond its content or above the viewport"),
+                Bounds.X >= 0.f && Bounds.Y >= 0.f && Bounds.Y <= ContentHeight);
+            if (CatalogTop >= 120.f)
+                TestTrue(TEXT("The top toolbar keeps its own clear space"), Bounds.X >= 104.f);
+        }
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFBuildToolsAngleInputTest,
     "FestaFiesta.Building.BuildTools.AngleInput",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -74,6 +97,7 @@ bool FFFBuildToolsDesignerStyleTest::RunTest(const FString& Parameters)
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/Image.h"
+#include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Editor.h"
@@ -213,6 +237,16 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
     const USizeBox* HelpSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildWorldHelp")));
     TestNotNull(TEXT("World shortcuts have their own canvas placement"),
         HelpSize ? Cast<UCanvasPanelSlot>(HelpSize->Slot) : nullptr);
+    TestNotNull(TEXT("Short viewports can scroll the guide inside the available space"),
+        Cast<UScrollBox>(Tree->FindWidget(TEXT("Scroll_BuildHelp"))));
+    for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
+        TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc")})
+    {
+        const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
+        const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(FName(*Name)));
+        TestTrue(*FString::Printf(TEXT("The guide shows the actual %s keyboard key in a readable keycap"), Key),
+            KeyText && KeyText->GetText().ToString() == Key && KeyText->GetFont().Size >= 14);
+    }
     const UTextBlock* LegacyHelp = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ControlHelp")));
     TestTrue(TEXT("Letter-by-letter help is retained only as a hidden compatibility binding"),
         LegacyHelp && LegacyHelp->GetVisibility() == ESlateVisibility::Collapsed);
@@ -315,6 +349,18 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Visible help has a clear close action"), HelpLabel && HelpLabel->GetText().ToString() == TEXT("안내 닫기"));
     Click(TEXT("Button_Help"));
     TestFalse(TEXT("The help close action dismisses only the instructions"), Open(TEXT("Border_PlacementHelp")));
+    if (auto* HelpBounds = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp"))))
+    {
+        // NativeTick keeps this height after the guide is closed. The empty SBox
+        // must not remain a hit-test target above the world or catalog.
+        HelpBounds->SetHeightOverride(240.f);
+        const TSharedRef<SWidget> HelpSlate = HelpBounds->TakeWidget();
+        TestFalse(TEXT("Closed help's retained layout bounds never intercept pointer input"),
+            HelpSlate->GetVisibility().IsHitTestVisible());
+        TestTrue(TEXT("Reopening the guide still permits its scroll surface to receive input"),
+            HelpSlate->GetVisibility().AreChildrenHitTestVisible());
+    }
+    else AddError(TEXT("Help has independently authored layout bounds"));
     TestTrue(TEXT("Closed instructions can be reopened by the same action"), HelpLabel && HelpLabel->GetText().ToString() == TEXT("조작 안내"));
     Click(TEXT("Button_Help"));
     Widget->ToggleRadialMenu();

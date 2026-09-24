@@ -254,7 +254,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             {
                 const FSlateRect HelpRect = Bounds(Help);
                 TestTrue(ContextName + TEXT(": help fits the viewport"), Contains(Viewport, HelpRect));
-                TestTrue(ContextName + TEXT(": white world shortcuts stay in the left scene margin"),
+                TestTrue(ContextName + TEXT(": keyboard guide stays in the left scene margin"),
                     HelpRect.Right < Resolution.X * .35f);
                 if (bInfo) TestFalse(ContextName + TEXT(": world shortcuts avoid the facility summary"),
                     Overlaps(HelpRect, InfoRect));
@@ -264,8 +264,15 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                 for (FName Name : {TEXT("Size_BuildHelpMouseIcon"), TEXT("Size_BuildHelpArrowsIcon"),
                     TEXT("Size_BuildHelpGridIcon"), TEXT("Size_BuildHelpCatalogIcon"),
                     TEXT("Size_BuildHelpPauseIcon")})
-                    TestTrue(ContextName + TEXT(": help uses a visible pictogram: ") + Name.ToString(),
+                    TestTrue(ContextName + TEXT(": help shows the input device: ") + Name.ToString(),
                         IsRendered(Widget->GetWidgetFromName(Name)));
+                for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
+                    TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc")})
+                {
+                    const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
+                    TestTrue(ContextName + TEXT(": physical keyboard key is visible: ") + Key,
+                        IsRendered(Widget->GetWidgetFromName(FName(*Name))));
+                }
                 TestFalse(ContextName + TEXT(": old letter-key legend stays hidden"),
                     IsRendered(Widget->GetWidgetFromName(TEXT("Text_ControlHelp"))));
             }
