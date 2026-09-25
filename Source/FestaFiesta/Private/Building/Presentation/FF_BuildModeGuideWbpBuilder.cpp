@@ -51,7 +51,7 @@ namespace FFBuildModeGuideWbpBuilder
 
 		// 프로덕션 건축 모드의 기본 조작 계약을 좌하단 요약으로 표시한다.
 		static const TArray<TPair<FString, FString>> RowsData = {
-			{TEXT("[WASD]"), TEXT("카메라 이동 · [ESC/F5] 일시정지")},
+			{TEXT("카메라"), TEXT("카메라 이동 · 일시정지")},
 			{TEXT("격자:"), TEXT("주변의 빈 건축 공간 · 막힌 곳은 표시하지 않아요")},
 			{TEXT("[Q] [E]"), TEXT("카메라 회전")},
 			{TEXT("[좌클릭]"), TEXT("철거/이동 대상 선택")},

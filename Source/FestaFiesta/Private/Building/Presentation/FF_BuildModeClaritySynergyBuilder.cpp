@@ -13,6 +13,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInterface.h"
 #include "UI/Core/FF_UIWbpBuilderCommon.h"
+#include "UI/Core/FF_BuildPearlStyle.h"
 #include "UObject/MetaData.h"
 #include "UObject/Package.h"
 
@@ -21,7 +22,7 @@ namespace FFBuildModeClaritySynergy
 using namespace FFUIWbpBuilder;
 static bool Apply(UWidgetBlueprint& BP)
 {
-    const TCHAR* Version=TEXT("FF.BuildClarity.SynergyV1");
+    const TCHAR* Version=TEXT("FF.BuildPearl.SynergyV3");
     if(BP.GetOutermost()->GetMetaData().GetValue(&BP,Version)==TEXT("1")) return true;
     UWidgetTree* Tree=BP.WidgetTree;
     auto* Size=Tree?Cast<USizeBox>(Tree->FindWidget(TEXT("Size_Synergy"))):nullptr;
@@ -35,9 +36,9 @@ static bool Apply(UWidgetBlueprint& BP)
     BP.Modify(); Tree->Modify();
     Size->SetWidthOverride(412); Size->ClearHeightOverride();
     Slot->SetAnchors(FAnchors(1,0));Slot->SetAlignment(FVector2D(1,0));
-    Slot->SetPosition(FVector2D(-28,56));Slot->SetAutoSize(true);
-    const FLinearColor Ink=FLinearColor::FromSRGBColor(FColor(43,72,59));
-    const FLinearColor Muted=FLinearColor::FromSRGBColor(FColor(95,115,102));
+    Slot->SetPosition(FVector2D(-28,440));Slot->SetAutoSize(true);
+    const FLinearColor Ink=FFBuildPearl::Ink;
+    const FLinearColor Muted=FFBuildPearl::Muted;
     FSlateBrush Brush;
     Brush.DrawAs=ESlateBrushDrawType::RoundedBox;
     Brush.TintColor=FLinearColor::FromSRGBColor(FColor(242,247,238));
@@ -45,7 +46,7 @@ static bool Apply(UWidgetBlueprint& BP)
     if(auto* Material=LoadObject<UMaterialInterface>(nullptr,
         FFBuildUIAssetPaths::ClarityPaperObject))
     { Brush.SetResourceObject(Material);Brush.DrawAs=ESlateBrushDrawType::Image;Brush.TintColor=FLinearColor::White; }
-    Panel->SetBrush(Brush);Panel->SetBrushColor(FLinearColor::White);Panel->SetPadding(FMargin(14,10));
+    Panel->SetBrush(FFBuildPearl::MaterialBrush(TEXT("Card")));Panel->SetBrushColor(FLinearColor::White);Panel->SetPadding(FMargin(14,10));
     Tree->ForEachWidget([&](UWidget* Widget)
     {
         auto* Text=Cast<UTextBlock>(Widget);if(!Text)return;

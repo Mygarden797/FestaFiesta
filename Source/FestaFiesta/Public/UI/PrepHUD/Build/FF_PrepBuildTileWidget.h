@@ -44,6 +44,8 @@ public:
 	void ConfigureEntryClass(TSubclassOf<UUserWidget> InEntryClass);
 	/** Saved paged catalogs route wheel input to their panel, before constructing Slate. */
 	void ConfigureCatalogWheelRouting() { ConsumeMouseWheel = EConsumeMouseWheel::Never; }
+	/** Single horizontal virtualized ribbon. Item data stays stable while scrolling. */
+	void ConfigureHorizontalRibbon();
 
 protected:
 	virtual TSharedRef<STableViewBase> RebuildListWidget() override;

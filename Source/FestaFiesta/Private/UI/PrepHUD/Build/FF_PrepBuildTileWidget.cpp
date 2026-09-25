@@ -80,6 +80,21 @@ void UFF_PrepBuildTileView::ConfigureEntryClass(TSubclassOf<UUserWidget> InEntry
 	bEnableFixedLineOffset = false;
 }
 
+void UFF_PrepBuildTileView::ConfigureHorizontalRibbon()
+{
+	Orientation = Orient_Horizontal;
+	EntryWidth = 184.f;
+	EntryHeight = 218.f;
+	SetHorizontalEntrySpacing(10.f);
+	SetVerticalEntrySpacing(0.f);
+	ConsumeMouseWheel = EConsumeMouseWheel::Never;
+	AllowOverscroll = false;
+	bEnableScrollAnimation = false; // The panel owns direct drag + exponential release inertia.
+	bInEnableTouchAnimatedScrolling = false;
+	bEnableFixedLineOffset = false;
+	TileAlignment = EListItemAlignment::LeftAligned;
+}
+
 TSharedRef<STableViewBase> UFF_PrepBuildTileView::RebuildListWidget()
 {
 	// UE's saved "entry size includes spacing" option and runtime size setters use
@@ -346,13 +361,6 @@ void UFF_PrepBuildTileWidget::RefreshFromItem()
 		FText NameAndCategory = FText::Format(
 			NSLOCTEXT("FestaFiestaPrepBuild", "TileNameAndCategory", "{0}\n{1}"),
 			Item->GetDisplayName(), Item->GetCategoryPathText());
-		const FString UniqueName = Item->GetUniqueNameToken();
-		if (!UniqueName.IsEmpty() && !UniqueName.Equals(Item->GetDisplayName().ToString(), ESearchCase::IgnoreCase))
-		{
-			NameAndCategory = FText::Format(
-				NSLOCTEXT("FestaFiestaPrepBuild", "TileUniqueName", "{0}\n고유 이름: {1}"),
-				NameAndCategory, FText::FromString(UniqueName));
-		}
 		FText Description = FText::Format(
 			NSLOCTEXT("FestaFiestaPrepBuild", "TileFullDescription", "{0}\n{1} · {2}\n{3}"),
 			NameAndCategory, Item->GetCostText(), Item->GetBuildLimitText(), Item->GetStateText());

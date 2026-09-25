@@ -251,8 +251,13 @@ bool FFF_ProgramScheduleSub_SchedulingLeavesStaffUntouched::RunTest(const FStrin
 		Harness.Progression->GetTotalStaffCount(), BaseStaff);
 	TestEqual(TEXT("예약 슬롯이 둘이다"), Harness.Reservations->GetReservationIds().Num(), 2);
 
-	TestEqual(TEXT("같은 카드는 하루에 한 번만"), Harness.Schedule(Workshop),
+	TestEqual(TEXT("같은 시설에 같은 카드는 하루에 한 번만"), Harness.Schedule(Workshop),
 		EFF_ProgramPurchaseResult::AlreadyScheduled);
+	// 공방 4종이 모두 공방 카드 한 장만 연다. 전역으로 막으면 두 번째 공방부터 편성할 게 없다.
+	TestEqual(TEXT("다른 공방에는 같은 카드를 또 편성할 수 있다"),
+		Harness.Progression->TryScheduleProgram(Workshop, FGuid::NewGuid()),
+		EFF_ProgramPurchaseResult::Success);
+	TestEqual(TEXT("예약 슬롯이 셋이다"), Harness.Reservations->GetReservationIds().Num(), 3);
 
 	return true;
 }
@@ -277,9 +282,17 @@ bool FFF_ProgramScheduleSub_CanScheduleDoesNotMutate::RunTest(const FString& Par
 	TestEqual(TEXT("예약 슬롯이 안 생긴다"), Harness.Reservations->GetReservationIds().Num(), 0);
 
 	Harness.Schedule(Workshop);
-	TestEqual(TEXT("편성 뒤에는 중복으로 바뀐다"),
-		Harness.Progression->CanScheduleProgram(Workshop),
+	const FGuid FacilityId = Harness.WorkshopFacility;
+	TestEqual(TEXT("편성 뒤에는 같은 시설에서 중복으로 바뀐다"),
+		Harness.Progression->CanScheduleProgramAtFacility(Workshop, FacilityId),
 		EFF_ProgramPurchaseResult::AlreadyScheduled);
+	// "하루 한 번" 은 시설 단위다. 공방이 여러 개면 같은 카드를 다른 공방에 또 연다.
+	TestEqual(TEXT("다른 시설에는 같은 카드를 또 열 수 있다"),
+		Harness.Progression->CanScheduleProgramAtFacility(Workshop, FGuid::NewGuid()),
+		EFF_ProgramPurchaseResult::Success);
+	TestEqual(TEXT("시설을 모르는 판정은 중복을 보지 않는다"),
+		Harness.Progression->CanScheduleProgram(Workshop),
+		EFF_ProgramPurchaseResult::Success);
 
 	return true;
 }

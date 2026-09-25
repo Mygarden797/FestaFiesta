@@ -102,14 +102,15 @@ void UFF_CrowdEconomyBridgeSubsystem::HandleVisitorsAdmitted(int32 AdmittedCount
 
 	// 시설 핸들이 없는 매출이다(입장은 특정 시설에 귀속되지 않는다) — AddFacilityRevenue 가 아니라
 	// 기존 AddRevenue 를 그대로 쓴다. 일일 목표 보너스·미니게임 보상과 같은 패턴이다.
-	const int32 Amount = AdmittedCount * Definition->AdmissionFeeGold;
+	const int32 Fee = FMath::Max(Progression->GetAdmissionFee(), 0);
+	const int32 Amount = AdmittedCount * Fee;
 	if (Amount <= 0) return;
 
 	Progression->AddRevenue(Amount, EFF_EarnReason::AdmissionFee);
 
 	UE_LOG(LogFestaFiestaEconomy, Log,
 		TEXT("[경제] 입장료: %d명 x %d Gold = %d, 총 매출 %d"),
-		AdmittedCount, Definition->AdmissionFeeGold, Amount, Progression->GetTotalRevenue());
+		AdmittedCount, Fee, Amount, Progression->GetTotalRevenue());
 }
 
 void UFF_CrowdEconomyBridgeSubsystem::HandleFestivalDefinitionChanged()

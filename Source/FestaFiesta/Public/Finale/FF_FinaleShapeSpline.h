@@ -21,6 +21,10 @@ enum class EFF_FinaleShapeAuthorPlane : uint8
 
 	   하트처럼 읽혀야 하는 모양은 세워서 그려야 눈으로 확인하며 다듬을 수 있다.
 	   바닥에 눕혀 그리면 뷰포트를 위에서 내려다봐야 한다.
+
+	   [주의] 액터의 +Y 쪽에서 -Y 방향으로 바라본 모습이 관객에게 보이는 모습이다.
+	          그 방향에서 봐야 지역 +X 가 오른쪽이다. 반대편(-Y 쪽)에서 보고 그리면
+	          글자나 화살표처럼 좌우가 있는 모양이 거울에 비친 듯 뒤집혀 나온다.
 	*/
 	LocalXZ UMETA(DisplayName = "서 있는 면 (X-Z)"),
 
@@ -161,15 +165,20 @@ private:
 	void SampleSpline(TArray<FVector2D>& OutPoints) const;
 
 #if WITH_EDITOR
-	// 점들이 차지하는 가장 긴 변. 정규화된 미리보기를 원래 크기로 되돌릴 때 쓴다.
-	static float MeasureLongestSide(const TArray<FVector2D>& Points);
+	/* 점들의 경계 상자. 가장 긴 변을 돌려주고 가운데를 OutCenter 에 담는다.
+
+	   정규화된 미리보기를 원래 크기와 자리로 되돌릴 때 쓴다. 정규화는 경계 상자
+	   가운데를 원점으로 옮기므로, 가운데를 다시 더해야 스플라인 위에 겹친다.
+	*/
+	static float MeasureBounds(const TArray<FVector2D>& Points, FVector2D& OutCenter);
 
 	/* 구워질 결과를 뷰포트에 찍는다. 그릴 월드가 없으면 아무것도 하지 않는다.
 
-	   크기를 인자로 받는 이유는 스플라인의 Bounds 가 월드 기준이기 때문이다.
+	   크기와 가운데를 인자로 받는 이유는 스플라인의 Bounds 가 월드 기준이기 때문이다.
 	   그것으로 되돌리면 액터를 돌려놓았을 때 회전이 두 번 먹는다.
 	*/
 	void DrawPreview(
-		const TArray<FVector2D>& NormalizedPoints, bool bClosed, float LocalLongestSide) const;
+		const TArray<FVector2D>& NormalizedPoints, bool bClosed,
+		float LocalLongestSide, const FVector2D& LocalCenter) const;
 #endif
 };

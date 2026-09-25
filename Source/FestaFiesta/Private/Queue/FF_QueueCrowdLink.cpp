@@ -202,7 +202,8 @@ void UFF_QueueCrowdLink::HandlePartyExited(int32 FacilityId, int32 PartyId, EFF_
 					if (!ExitLocation.IsNearlyZero())
 					{
 						// 리더에게만 준다. 멤버는 포메이션을 따라 함께 빠져나간다.
-						Crowd->SetAgentDestination(Members[0], ExitLocation);
+						// Members[0] 이 리더라는 보장은 없다. 아래 재평가와 같은 방식으로 리더를 찾는다.
+						Crowd->SetAgentDestination(Crowd->GetPartyLeader(Members[0]), ExitLocation);
 						++AppliedSlotTargets;
 						return;
 					}

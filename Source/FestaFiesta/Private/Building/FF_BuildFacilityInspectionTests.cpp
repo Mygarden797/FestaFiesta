@@ -5,6 +5,7 @@
 
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Building/FF_BuildModeSubsystem.h"
+#include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Camera/FF_FestivalPlayerController.h"
 #include "DataTables/FF_FacilityCostRow.h"
 #include "Engine/DataTable.h"
@@ -150,6 +151,11 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
     Controller->SetPlayer(Player);
     Player->Origin = FVector2D::ZeroVector;
     Player->Size = FVector2D(1.0, 1.0);
+    if (!TestFalse(TEXT("Synthetic input viewport has no Slate game viewport widget"),
+        Viewport->GetGameViewportWidget().IsValid()))
+    {
+        return false;
+    }
     Controller->PlayerInput = NewObject<UPlayerInput>(Controller);
     const TSharedPtr<SWidget> PreviousKeyboardFocus = FSlateApplication::Get().GetKeyboardFocusedWidget();
     FSlateApplication::Get().ClearKeyboardFocus();
@@ -335,6 +341,39 @@ bool FFF_BuildFacilityInspectionTest::RunTest(const FString& Parameters)
         Build->GetBuildModeState(), EFF_BuildModeState::BuildMode);
     TestEqual(TEXT("The first click from the normal preparation screen opens that facility card"),
         Info->GetSelectedFacilityId(), First->GetFacilityInstanceId());
+
+    // Pause uses a lower CommonUI layer than the viewport toolbar. Exercise the
+    // real presenter so a settings/economy refresh cannot reveal it above Options.
+    UFF_BuildToolsWidget* Tools = Build->BuildToolsWidget;
+    if (TestNotNull(TEXT("Build entry creates the production toolbar"), Tools))
+    {
+        for (const EFF_BuildModeState PausedState : { EFF_BuildModeState::CatalogOpen,
+            EFF_BuildModeState::BuildMode, EFF_BuildModeState::Placing, EFF_BuildModeState::Moving })
+        {
+            Build->State = PausedState;
+            Tools->RefreshTools();
+            UWidget* Help = Tools->GetWidgetFromName(TEXT("Border_PlacementHelp"));
+            const ESlateVisibility HelpBeforePause = Help ? Help->GetVisibility() : ESlateVisibility::Collapsed;
+            TestTrue(TEXT("Active build toolbar is visible before Pause"), Tools->IsVisible());
+            TestTrue(TEXT("Pause suspends the active build state"), Build->SuspendInputForPauseMenu());
+            TestEqual(TEXT("Pause immediately hides the complete build toolbar"),
+                Tools->GetVisibility(), ESlateVisibility::Collapsed);
+            Build->OnBuildToolsChanged.Broadcast();
+            TestEqual(TEXT("Refresh while Options is open keeps the toolbar hidden"),
+                Tools->GetVisibility(), ESlateVisibility::Collapsed);
+            TestEqual(TEXT("Pause preserves catalog/placement state"), Build->GetBuildModeState(), PausedState);
+            Build->ResumeInputAfterPauseMenu();
+            TestEqual(TEXT("Toolbar waits for Pause removal before reappearing"),
+                Tools->GetVisibility(), ESlateVisibility::Collapsed);
+            Build->SuspendInputForPauseMenu();
+            TestFalse(TEXT("Reopening Pause cancels the pending resume"), Build->bPauseMenuResumePending);
+            Build->RestoreInputAfterPauseMenu();
+            TestTrue(TEXT("Resume restores the same toolbar"), Build->BuildToolsWidget == Tools && Tools->IsVisible());
+            if (Help) TestEqual(TEXT("Resume preserves the expanded help state"), Help->GetVisibility(), HelpBeforePause);
+        }
+        Build->State = EFF_BuildModeState::BuildMode;
+        Tools->RefreshTools();
+    }
 
     Build->ExitBuildMode();
     Stage->CurrentStage = EFF_FestivalStage::Live;

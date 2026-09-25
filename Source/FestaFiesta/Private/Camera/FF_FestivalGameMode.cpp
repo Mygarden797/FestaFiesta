@@ -2,8 +2,6 @@
 
 #include "Camera/FF_FestivalGameMode.h"
 
-#include "Festival/FF_FestivalDefinition.h"
-#include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Save/FF_SaveSubsystem.h"
 
 #include "Camera/FF_CameraTypes.h"
@@ -12,6 +10,7 @@
 
 #include "EngineUtils.h"
 #include "GameFramework/PlayerStart.h"
+#include "TimerManager.h"
 
 AFF_FestivalGameMode::AFF_FestivalGameMode()
 {
@@ -26,24 +25,30 @@ void AFF_FestivalGameMode::BeginPlay()
 {
 	Super::BeginPlay();
 
-	/* 저장이 있으면 이어서 시작한다.
+	/* 프론트엔드가 이어하기를 골랐으면 그 판을 되돌린다.
 
-	   여기서 부르는 이유는 서브시스템이 전부 자기 초기화를 마친 뒤이기 때문이다.
-	   Initialize 에서 부르면 다른 시스템이 아직 초기화 중이라 복원한 값을
-	   곧바로 덮어쓴다.
+	   고르지 않았으면(새 게임) 아무것도 하지 않는다. 레벨이 열릴 때마다 이 자리를
+	   지나므로, 여기서 저장을 찾아 되돌리면 새 게임이 어제 판으로 열린다.
+
+	   한 틱 미룬다. GameMode 의 BeginPlay 가 레벨 액터들보다 먼저 돌 수 있어서,
+	   바로 되돌리면 아직 BeginPlay 전인 액터가 저장에 등록되기 전이라 그 몫이
+	   빠진다. 서브시스템 Initialize 에서 부르지 않는 것도 같은 이유다.
+
+	   축제 이름은 저장 쪽 규칙으로 구한다(ResolveCurrentFestivalId). Progression 의
+	   Definition 은 늘 기본 축제라 어느 레벨에서 불러도 같은 이름이 나온다.
 	*/
-	if (UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
+	if (const UFF_SaveSubsystem* Save = UFF_SaveSubsystem::Get(this))
 	{
-		const UFF_FestivalProgressionSubsystem* Progression = GetGameInstance()
-			? GetGameInstance()->GetSubsystem<UFF_FestivalProgressionSubsystem>()
-			: nullptr;
-
-		const UFF_FestivalDefinition* Definition =
-			Progression ? Progression->GetDefinition() : nullptr;
-
-		if (Definition)
+		if (Save->HasPendingContinue())
 		{
-			Save->TryContinueFestival(Definition->FestivalId);
+			GetWorldTimerManager().SetTimerForNextTick(
+				FTimerDelegate::CreateWeakLambda(this, [this]()
+				{
+					if (UFF_SaveSubsystem* LiveSave = UFF_SaveSubsystem::Get(this))
+					{
+						LiveSave->TryContinueFestival(UFF_SaveSubsystem::ResolveCurrentFestivalId(this));
+					}
+				}));
 		}
 	}
 

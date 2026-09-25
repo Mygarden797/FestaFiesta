@@ -283,22 +283,30 @@ struct FFF_FinaleGradeSpec
 	   Seed 를 받는 이유는 한 패턴 안에서 같은 이펙트로 맞추고 싶을 때가 있어서다.
 	   모양이 있는 패턴은 종류가 섞이면 모양이 안 보인다.
 
+	   빈 칸은 건너뛴다. 배열에 None 이 섞여 있으면 그 칸이 뽑힐 때마다 이펙트 없이
+	   신호만 나가서, "지정했는데 가끔 안 터진다" 로 보인다.
+	   Seed 를 부호 없는 수로 받는 이유는 Abs(INT_MIN) 이 음수로 남기 때문이다.
+
 	   구현을 헤더에 두지 않는 이유는 로드에 UNiagaraSystem 의 정의가 필요한데,
 	   그것 때문에 이 헤더를 포함하는 모든 곳이 Niagara 를 같이 끌고 오게 되기 때문이다.
 	*/
-	FESTAFIESTA_API UNiagaraSystem* PickEffect(int32 Seed) const;
+	FESTAFIESTA_API UNiagaraSystem* PickEffect(uint32 Seed) const;
 
-	bool HasAnyEffect() const
+	// 비어 있지 않은 이펙트 칸 수. 진단용이다.
+	int32 CountAssignedEffects() const
 	{
+		int32 Count = 0;
 		for (const TSoftObjectPtr<UNiagaraSystem>& Effect : BurstEffects)
 		{
 			if (!Effect.IsNull())
 			{
-				return true;
+				++Count;
 			}
 		}
-		return false;
+		return Count;
 	}
+
+	bool HasAnyEffect() const { return CountAssignedEffects() > 0; }
 
 	// 발사 간격. 총 발수와 지속 시간에서 계산한다.
 	// 발수가 0 이거나 하나뿐이면 간격이 의미 없으므로 전체 길이를 돌려준다.
@@ -313,11 +321,44 @@ struct FFF_FinaleGradeSpec
 		return FMath::Max(0.05f, DurationSeconds / static_cast<float>(VolleyCount));
 	}
 
-	// 몇 번에 나눠 쏘는가. 동시 발사 수가 크면 횟수가 줄어든다.
+	/* 한 차례에 평균 몇 발이 나가는가.
+
+	   실제 발수는 max(SimultaneousShells, 패턴의 ShellCount) 라서 동시 발사 수만으로
+	   나누면 틀린다. 예전에 그렇게 나눴더니 S 등급은 차례당 6발로 잡혀 100차례가
+	   됐는데, 실제로는 평균 8발 남짓이라 70차례쯤에 발이 동났다. 남은 30차례는
+	   빈 하늘로 흘렀다 — 연출의 마지막 3분의 1이 정적이었다.
+
+	   가중치로 기댓값을 낸다. PickVolley 가 뽑는 확률과 같은 식이다.
+	*/
+	float GetExpectedShellsPerVolley() const
+	{
+		const int32 Base = FMath::Max(1, SimultaneousShells);
+		if (Volleys.Num() == 0)
+		{
+			return static_cast<float>(Base);
+		}
+
+		float TotalWeight = 0.f;
+		float WeightedShells = 0.f;
+		for (const FFF_FinaleVolley& Volley : Volleys)
+		{
+			const float Weight = FMath::Max(0.01f, Volley.Weight);
+			TotalWeight += Weight;
+			WeightedShells += Weight * static_cast<float>(FMath::Max(Base, Volley.ShellCount));
+		}
+
+		return TotalWeight > 0.f ? WeightedShells / TotalWeight : static_cast<float>(Base);
+	}
+
+	/* 몇 번에 나눠 쏘는가. 간격을 정하는 데만 쓴다.
+
+	   기댓값이라 실제 차례 수와 조금 어긋난다. 그래서 연출이 언제 끝나는지는 이
+	   값이 아니라 남은 발수로 정한다(UFF_FinaleShowSubsystem::Tick).
+	*/
 	int32 GetVolleyCount() const
 	{
-		const int32 PerVolley = FMath::Max(1, SimultaneousShells);
-		return FMath::DivideAndRoundUp(FMath::Max(0, BurstCount), PerVolley);
+		const float PerVolley = FMath::Max(1.f, GetExpectedShellsPerVolley());
+		return FMath::CeilToInt(static_cast<float>(FMath::Max(0, BurstCount)) / PerVolley);
 	}
 
 	bool IsPlayable() const
@@ -387,8 +428,8 @@ public:
 
 // 데이터 애셋이 없을 때 쓰는 기본 수치.
 //
-// 미구매 등급도 최소 연출을 남긴다. 아무것도 안 터지면 "축제가 그냥 끝났다" 가 되는데,
-// 그건 예산을 못 쓴 결과이지 축제가 없었던 건 아니다.
+// 미구매 등급은 불꽃을 쏘지 않는다(BurstCount 0). 예산을 못 모은 결과를 빈 하늘로
+// 보여준다. 연출 쪽은 이 등급을 재생 불가로 보고 시작하지 않는다.
 namespace FFF_FinaleDefaults
 {
 	FESTAFIESTA_API FFF_FinaleGradeSpec MakeSpec(EFF_FinaleGrade Grade);

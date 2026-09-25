@@ -9,7 +9,8 @@ placement preview is opened and cancelled, never committed. It captures the cata
 required/program cards, dismissible default help, direct handles, real invalid
 placement, bounded nearby assistance, removal of radial tools, codex and ranking.
 Optional Saved/BuildModeClarity/runtime-capture-request.json accepts
-output (a child-directory name), width, height and timeout_seconds.
+output (a child-directory name), width, height, timeout_seconds and the optional
+focus value "codex_rewards" for a shorter catalog/collection/detail capture.
 
 Run with the editor's -ExecutePythonScript argument and rendering enabled, after
 the explicit Clarity migrations have completed. No editor is started here.
@@ -45,7 +46,8 @@ REPORT = dict(status='running', target_map=TARGET_MAP, requested_size=[WIDTH, HE
               fixture_actors_created=False, facilities_installed=False,
               physical_input_tested=False, visual_review_complete=False, actions=[], captures=[],
               cursor_position_method='PlayerController.SetMouseLocation / GetMousePosition',
-              limitations=['Public game UI actions drive this capture; physical clicking and dragging are not tested.'])
+              limitations=['Public game UI actions drive this capture; physical clicking and dragging are not tested.',
+                           'Settings and multi-selection are opened through the production subsystem actions.'])
 HANDLE = None
 
 
@@ -351,6 +353,27 @@ def tick(delta):
             assert REPORT['catalog']['visible_facilities'][0]['required'], 'All facilities must lead with the required facility'
             assert not REPORT['catalog']['visible_facilities'][0]['required_satisfied']
             REPORT['required_facility_first_on_all_catalog'] = True
+            advance('open_codex' if CONFIG.get('focus') == 'codex_rewards' else 'open_settings', 3)
+        elif stage == 'open_settings':
+            tools = live_widget(unreal.FF_BuildToolsWidget, game_world())
+            assert tools, 'Production build tools are required for the settings image'
+            drawer = find_child(tools, 'Panel_BuildSettings')
+            assert drawer, 'The authored settings drawer is missing'
+            world_subsystem(unreal.FF_BuildModeSubsystem, game_world()).toggle_build_settings()
+            advance('capture_settings', 2)
+        elif stage == 'capture_settings':
+            tools = live_widget(unreal.FF_BuildToolsWidget, game_world())
+            drawer = find_child(tools, 'Panel_BuildSettings')
+            assert drawer and drawer.get_visibility() == unreal.SlateVisibility.VISIBLE, 'Settings drawer did not render'
+            record_capture('settings', '01b-build-settings-Test_Main',
+                dict(map='Test_Main', widgets=widget_state(tools,
+                    ('Border_BuildBack', 'Panel_BuildSettings', 'Button_SettingsGrid',
+                     'Button_SettingsFacilityRanges', 'Button_SettingsSynergyPreview',
+                     'Button_SettingsZoomToCursor', 'Button_SettingsEdgeScroll'))))
+            advance('close_settings', 2)
+        elif stage == 'close_settings':
+            tools = live_widget(unreal.FF_BuildToolsWidget, game_world())
+            world_subsystem(unreal.FF_BuildModeSubsystem, game_world()).toggle_build_settings()
             advance('select_card', 3)
         elif stage == 'capture_program_catalog':
             inspect_catalog('program_catalog', '02-program-catalog-Test_Main')
@@ -491,7 +514,34 @@ def tick(delta):
             advance('capture_codex', 3)
         elif stage == 'capture_codex':
             inspect_codex()
-            advance('close_codex', 3)
+            advance('show_ready_rewards', 3)
+        elif stage == 'show_ready_rewards':
+            codex = live_widget(unreal.FF_FacilityCodexScreen, game_world())
+            codex.set_discovery_filter(unreal.FF_FacilityCodexFilterState.REWARD_READY)
+            advance('capture_ready_rewards', 3)
+        elif stage == 'capture_ready_rewards':
+            codex = live_widget(unreal.FF_FacilityCodexScreen, game_world())
+            record_capture('ready_rewards', '06a-combination-reward-ready-Test_Main',
+                           dict(visible_recipes=codex.get_visible_entry_count()))
+            advance('restore_codex_filter', 3)
+        elif stage == 'restore_codex_filter':
+            codex = live_widget(unreal.FF_FacilityCodexScreen, game_world())
+            codex.set_discovery_filter(unreal.FF_FacilityCodexFilterState.ALL)
+            advance('open_codex_detail', 2)
+        elif stage == 'open_codex_detail':
+            codex = live_widget(unreal.FF_FacilityCodexScreen, game_world())
+            codex.open_combination_detail(codex.get_selected_rule_id())
+            assert codex.is_combination_detail_open()
+            advance('capture_codex_detail', 3)
+        elif stage == 'capture_codex_detail':
+            codex = live_widget(unreal.FF_FacilityCodexScreen, game_world())
+            record_capture('codex_detail', '06b-combination-detail-Test_Main',
+                dict(selected_rule=str(codex.get_selected_rule_id()),
+                     widgets=widget_state(codex, ('Size_Showcase', 'Size_Detail', 'Button_Close',
+                         'Text_DetailRewardLabel', 'Size_DetailRewardState', 'Button_DetailClaimReward',
+                         'Text_DetailClaimReward', 'Border_DetailRewardClaimed', 'Text_DetailRewardClaimed',
+                         'Border_DetailRewardLocked', 'Text_DetailRewardLocked'))))
+            advance('wait_images' if CONFIG.get('focus') == 'codex_rewards' else 'close_codex', 3)
         elif stage == 'close_codex':
             presenter = world_subsystem(unreal.FF_FacilityCodexPresenterSubsystem, game_world())
             presenter.close_codex()
@@ -511,6 +561,21 @@ def tick(delta):
             world_subsystem(unreal.FF_BuildModeSubsystem, world).return_to_catalog()
             REPORT['default_help_reopened_on_next_placement'] = True
             action('A new placement reopened its default instructions without committing a facility')
+            advance('open_multi_selection', 2)
+        elif stage == 'open_multi_selection':
+            build = world_subsystem(unreal.FF_BuildModeSubsystem, game_world())
+            build.toggle_multi_selection()
+            assert build.is_multi_selection_active()
+            advance('capture_multi_selection', 2)
+        elif stage == 'capture_multi_selection':
+            build = world_subsystem(unreal.FF_BuildModeSubsystem, game_world())
+            record_capture('multi_selection', '07b-multi-selection-Test_Main',
+                dict(active=build.is_multi_selection_active(), count=build.get_multi_selection_count()))
+            advance('close_multi_selection', 2)
+        elif stage == 'close_multi_selection':
+            build = world_subsystem(unreal.FF_BuildModeSubsystem, game_world())
+            build.toggle_multi_selection()
+            build.return_to_catalog()
             advance('open_ranking', 2)
         elif stage == 'open_ranking':
             ranking = world_subsystem(unreal.FF_FacilityRevenueRankingSubsystem, game_world())
@@ -525,6 +590,21 @@ def tick(delta):
             row = dict(world=world.get_path_name(), widgets=widget_state(panel,
                 ('Size_ClarityFrame', 'Border_Panel', 'Text_Total', 'Text_Count', 'Button_Today', 'Button_Total')))
             record_capture('ranking', '08-revenue-ranking-Test_Main', row)
+            advance('open_program_schedule', 3)
+        elif stage == 'open_program_schedule':
+            world = game_world()
+            world_subsystem(unreal.FF_FacilityRevenueRankingSubsystem, world).close()
+            bar = live_widget(unreal.FF_PrepHudBar, world)
+            assert bar
+            bar.select_tab(unreal.FF_PrepHudTab.PROGRAM)
+            action('Opened the production program scheduling tab without purchasing or scheduling anything')
+            advance('capture_program_schedule', 3)
+        elif stage == 'capture_program_schedule':
+            world = game_world()
+            panel = live_widget(unreal.FF_PrepPanelProgram, world)
+            assert panel
+            record_capture('program_schedule', '09-program-schedule-Test_Main',
+                           dict(world=world.get_path_name()))
             advance('wait_images', 3)
         elif stage == 'wait_images':
             for key in REPORT['captures']:

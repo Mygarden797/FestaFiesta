@@ -47,6 +47,9 @@ private:
 	/** GameInstance가 WorldSubsystem보다 늦게 연결되는 테스트/PIE 수명을 위해 매 호출 시 조회한다. */
 	UFF_FestivalProgressionSubsystem* ResolveFestivalProgression() const;
 
+	/** 저장 복원이 설치 명령으로 시설을 되살리는 중이면 true. 그때는 설치비·환급을 건드리지 않는다. */
+	bool IsRestoringSave() const;
+
 	/** Install 명령의 비용 원천, 양수 비용, 현재 지불 가능 여부를 한 경로에서 검증한다. */
 	FFFZSPolicyDecision ValidateInstallCost(
 		const FFFZSPolicyContext& Context,

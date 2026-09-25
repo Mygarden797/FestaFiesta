@@ -134,7 +134,7 @@ EFF_PaidProgramScheduleResult UFF_ProgramSchedulingSubsystem::EvaluateCommand(
 	// 호환되지 않는 카드는 현재 Gold와 무관하게 picker가 일관되게 숨길 수 있도록
 	// 시설 타입을 먼저 판정하고, 그 뒤 기존 경제 규칙(중복→Gold)을 적용한다.
 	const EFF_PaidProgramScheduleResult EconomyResult =
-		MapEconomyResult(OutProgression->CanScheduleProgram(ProgramId));
+		MapEconomyResult(OutProgression->CanScheduleProgramAtFacility(ProgramId, FacilityInstanceId));
 	if (EconomyResult != EFF_PaidProgramScheduleResult::Success)
 	{
 		return EconomyResult;

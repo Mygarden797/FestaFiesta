@@ -190,6 +190,8 @@ void UFF_PrepPanelCheck::BindViewModel()
 
 	// 홍보를 사면 예상 방문객이 오른다. 그 값이 수입·목표 보너스·혼잡 판정까지 바꾼다.
 	CachedViewModel->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
+	// 입장료를 바꾸면 예상 입장 수입이 바뀐다. 예상 방문객이 그대로여도(배수 하한) 다시 그려야 한다.
+	CachedViewModel->OnAdmissionFeeChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 	CachedViewModel->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 	CachedViewModel->OnStageViewChanged.AddUniqueDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 
@@ -206,6 +208,7 @@ void UFF_PrepPanelCheck::UnbindViewModel()
 		CachedViewModel->OnWeatherChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleWeatherChanged);
 		CachedViewModel->OnGoldChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 		CachedViewModel->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
+		CachedViewModel->OnAdmissionFeeChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleGoldChanged);
 		CachedViewModel->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStaffCountChanged);
 		CachedViewModel->OnStageViewChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandleStageViewChanged);
 		CachedViewModel->OnPurchasedFinaleGradeChanged.RemoveDynamic(this, &UFF_PrepPanelCheck::HandlePurchasedFinaleGradeChanged);

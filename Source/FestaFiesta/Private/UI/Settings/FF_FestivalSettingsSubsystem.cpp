@@ -274,6 +274,13 @@ void UFF_FestivalSettingsSubsystem::RestoreSuppressedFacilityPresentation()
 
 void UFF_FestivalSettingsSubsystem::HandleOpenCloseInput(FKey PressedKey)
 {
+	// The construction toolbar has no function-key shortcuts, including the
+	// legacy global F5 pause binding. Escape and explicit UI buttons still work.
+	if (PressedKey == EKeys::F5)
+	{
+		const auto* Build = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
+		if (Build && Build->GetBuildModeState() != EFF_BuildModeState::Closed) return;
+	}
 	if (bTransitionInProgress || LastStateTransitionFrame == GFrameCounter)
 	{
 		return;

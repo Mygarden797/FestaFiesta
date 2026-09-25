@@ -85,8 +85,22 @@ public:
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
 	int32 OverlayZOrder = 100;
 
+	/* 축제 레벨에서 대사창의 화면 순서.
+
+	   튜토리얼 레벨에서는 다른 UI(준비 HUD 등)를 대사창 위에서 눌러야 해서 음수로
+	   내려 쓴다. 그 값을 로비에 그대로 쓰면 UI 루트(0) 밑에 깔려 대사가 안 보이므로
+	   로비는 아래 LobbyDialogueBoxZOrder 를 따로 쓴다.
+	*/
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
 	int32 DialogueBoxZOrder = 110;
+
+	/* 로비 인트로에서 대사창의 화면 순서.
+
+	   로비는 지구본 화면이 UI 루트(z 0) 위에 꽉 차게 뜬다. 대사가 그 위에 얹혀야
+	   하므로 0 보다 커야 한다. 로비에서는 대사 말고 누를 UI 가 없어서 위로 올려도 된다.
+	*/
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Tutorial")
+	int32 LobbyDialogueBoxZOrder = 110;
 
 	// 건너뛰기를 눌렀을 때 물어볼 문구.
 	//

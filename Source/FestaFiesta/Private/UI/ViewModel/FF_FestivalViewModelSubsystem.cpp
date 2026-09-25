@@ -54,6 +54,7 @@ void UFF_FestivalViewModelSubsystem::Deinitialize()
 		CachedProgressionSubsystem->OnTotalRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 		CachedProgressionSubsystem->OnTodayRevenueChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
 		CachedProgressionSubsystem->OnExpectedVisitorsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
+		CachedProgressionSubsystem->OnAdmissionFeeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged);
 		CachedProgressionSubsystem->OnTotalStaffCountChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 		CachedProgressionSubsystem->OnScheduledProgramsChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 		CachedProgressionSubsystem->OnFinaleGradeChanged.RemoveDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
@@ -269,6 +270,7 @@ void UFF_FestivalViewModelSubsystem::TryBindProgressionSubsystem()
 	CachedProgressionSubsystem->OnTotalRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTotalRevenueChanged);
 	CachedProgressionSubsystem->OnTodayRevenueChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerTodayRevenueChanged);
 	CachedProgressionSubsystem->OnExpectedVisitorsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged);
+	CachedProgressionSubsystem->OnAdmissionFeeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged);
 	CachedProgressionSubsystem->OnTotalStaffCountChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged);
 	CachedProgressionSubsystem->OnScheduledProgramsChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerProgramScheduleChanged);
 	CachedProgressionSubsystem->OnFinaleGradeChanged.AddUniqueDynamic(this, &UFF_FestivalViewModelSubsystem::HandleOwnerFinaleGradeChanged);
@@ -440,6 +442,12 @@ void UFF_FestivalViewModelSubsystem::HandleOwnerExpectedVisitorsChanged(int32 Ne
 	ApplyIntMetric(ExpectedVisitors, NewValue, OnExpectedVisitorsChanged);
 }
 
+void UFF_FestivalViewModelSubsystem::HandleOwnerAdmissionFeeChanged(int32 NewValue)
+{
+	// 값은 캐시하지 않는다 — GetAdmissionFeeGold 가 소유자를 바로 읽는다. 알리기만 한다.
+	OnAdmissionFeeChanged.Broadcast(NewValue);
+}
+
 void UFF_FestivalViewModelSubsystem::HandleOwnerStaffCountChanged(int32 NewValue)
 {
 	// 내역을 먼저 채운 뒤 총원을 방송한다. 순서가 반대면 위젯이 총원 방송을 받고 다시 그릴 때
@@ -506,9 +514,9 @@ int32 UFF_FestivalViewModelSubsystem::GetDailyGoalBonusGold() const
 
 int32 UFF_FestivalViewModelSubsystem::GetAdmissionFeeGold() const
 {
+	// 기준값이 아니라 오늘 입장료다. 플레이어가 매일 바꾼다.
 	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
-	const UFF_FestivalDefinition* Definition = Progression ? Progression->GetDefinition() : nullptr;
-	return Definition ? Definition->AdmissionFeeGold : INDEX_NONE;
+	return Progression ? Progression->GetAdmissionFee() : INDEX_NONE;
 }
 
 EFF_FinaleGrade UFF_FestivalViewModelSubsystem::GetPurchasedFinaleGrade() const
@@ -612,6 +620,21 @@ EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::CanScheduleProgram(FNa
 	}
 
 	return Progression->CanScheduleProgram(ProgramId);
+}
+
+EFF_ProgramPurchaseResult UFF_FestivalViewModelSubsystem::CanScheduleProgramAtFacility(
+	FName ProgramId, FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression
+		? Progression->CanScheduleProgramAtFacility(ProgramId, FacilityInstanceId)
+		: EFF_ProgramPurchaseResult::FestivalNotStarted;
+}
+
+TArray<FName> UFF_FestivalViewModelSubsystem::GetScheduledProgramIdsAtFacility(FGuid FacilityInstanceId) const
+{
+	const UFF_FestivalProgressionSubsystem* Progression = GetProgressionSubsystem();
+	return Progression ? Progression->GetScheduledProgramIdsAtFacility(FacilityInstanceId) : TArray<FName>();
 }
 
 bool UFF_FestivalViewModelSubsystem::CanScheduleProgramNow() const
@@ -908,22 +931,19 @@ TArray<FFF_PromotionOptionView> UFF_FestivalViewModelSubsystem::GetPromotionOpti
 		return Options;
 	}
 
-	// `안 함` 은 데이터가 아니라 미구매 상태다. 0 Gold · 배수 1.0 을 여기서 만든다 —
-	// 데이터에 0원짜리 등급을 넣으면 검증(`IsDefinitionValid`)이 그것을 오류로 잡는다.
-	FFF_PromotionOptionView& NoneOption = Options.AddDefaulted_GetRef();
-	NoneOption.Choice = EFF_PromotionChoice::None;
-	NoneOption.CostGold = 0;
-	NoneOption.VisitorMultiplier = 1.f;
-
-	FFF_PromotionOptionView& BasicOption = Options.AddDefaulted_GetRef();
-	BasicOption.Choice = EFF_PromotionChoice::Basic;
-	BasicOption.CostGold = Definition->PromotionBasic.CostGold;
-	BasicOption.VisitorMultiplier = Definition->PromotionBasic.VisitorMultiplier;
-
-	FFF_PromotionOptionView& FocusedOption = Options.AddDefaulted_GetRef();
-	FocusedOption.Choice = EFF_PromotionChoice::Focused;
-	FocusedOption.CostGold = Definition->PromotionFocused.CostGold;
-	FocusedOption.VisitorMultiplier = Definition->PromotionFocused.VisitorMultiplier;
+	// 비용·배수는 경제의 GetPromotionTier 가 준다. `홍보 없음` 도 거기서 0 Gold · NoPromotionVisitorMultiplier(1.0 미만) 로 온다 —
+	// 숫자를 여기서 만들면 "안 사면 손해" 가 화면에 안 드러난다.
+	const EFF_PromotionChoice Choices[] = {
+		EFF_PromotionChoice::None, EFF_PromotionChoice::Basic,
+		EFF_PromotionChoice::Focused, EFF_PromotionChoice::Influencer };
+	for (const EFF_PromotionChoice Choice : Choices)
+	{
+		const FFF_PromotionTier Tier = Progression->GetPromotionTier(ToPromotionGrade(Choice));
+		FFF_PromotionOptionView& Option = Options.AddDefaulted_GetRef();
+		Option.Choice = Choice;
+		Option.CostGold = Tier.CostGold;
+		Option.VisitorMultiplier = Tier.VisitorMultiplier;
+	}
 
 	return Options;
 }
@@ -979,9 +999,10 @@ EFF_PromotionGrade UFF_FestivalViewModelSubsystem::ToPromotionGrade(EFF_Promotio
 {
 	switch (Choice)
 	{
-	case EFF_PromotionChoice::Basic:   return EFF_PromotionGrade::Basic;
-	case EFF_PromotionChoice::Focused: return EFF_PromotionGrade::Focused;
-	default:                           return EFF_PromotionGrade::None;
+	case EFF_PromotionChoice::Basic:      return EFF_PromotionGrade::Basic;
+	case EFF_PromotionChoice::Focused:    return EFF_PromotionGrade::Focused;
+	case EFF_PromotionChoice::Influencer: return EFF_PromotionGrade::Influencer;
+	default:                              return EFF_PromotionGrade::None;
 	}
 }
 
@@ -989,9 +1010,10 @@ EFF_PromotionChoice UFF_FestivalViewModelSubsystem::ToPromotionChoice(EFF_Promot
 {
 	switch (Grade)
 	{
-	case EFF_PromotionGrade::Basic:   return EFF_PromotionChoice::Basic;
-	case EFF_PromotionGrade::Focused: return EFF_PromotionChoice::Focused;
-	default:                          return EFF_PromotionChoice::None;
+	case EFF_PromotionGrade::Basic:      return EFF_PromotionChoice::Basic;
+	case EFF_PromotionGrade::Focused:    return EFF_PromotionChoice::Focused;
+	case EFF_PromotionGrade::Influencer: return EFF_PromotionChoice::Influencer;
+	default:                             return EFF_PromotionChoice::None;
 	}
 }
 

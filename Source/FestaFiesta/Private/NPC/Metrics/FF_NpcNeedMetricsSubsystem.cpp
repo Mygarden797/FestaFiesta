@@ -100,8 +100,8 @@ void UFF_NpcNeedMetricsSubsystem::Initialize(FSubsystemCollectionBase& Collectio
 	Super::Initialize(Collection);
 
 	UE_LOG(LogFestaFiestaNpc, Log,
-		TEXT("UFF_NpcNeedMetricsSubsystem 초기화. 현재는 표본을 넣는 호출부가 없어 모든 미해소율이 0이다 ")
-		TEXT("(NPC 런타임 층 미구현). UI는 GetSampleCount()==0 을 '데이터 없음'으로 처리할 것."));
+		TEXT("UFF_NpcNeedMetricsSubsystem 초기화. 표본은 Live 중 Crowd 가 1초마다 넣는다. ")
+		TEXT("UI는 GetSampleCount()==0 을 '데이터 없음'으로 처리할 것."));
 }
 
 void UFF_NpcNeedMetricsSubsystem::Deinitialize()

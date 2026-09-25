@@ -85,6 +85,10 @@ public:
 	
 	
 private:
+	#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_IncidentCatalogLoadTest;
+	#endif
+
 	void LoadDefinitions();
 	bool TryGetNowMinutes(float& OutMinutes) const;
 	

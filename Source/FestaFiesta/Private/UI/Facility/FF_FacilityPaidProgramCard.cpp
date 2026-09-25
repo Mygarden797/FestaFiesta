@@ -7,6 +7,7 @@
 
 #include "CommonTextBlock.h"
 #include "Components/Button.h"
+#include "UI/Core/FF_BuildPearlStyle.h"
 #include "UI/Data/FF_UIPalette.h"
 
 #define LOCTEXT_NAMESPACE "FFFacilityPaidProgramCard"
@@ -52,8 +53,17 @@ void UFF_FacilityPaidProgramCard::SetSelected(const bool bSelected)
 {
 	if (Button_Select)
 	{
-		Button_Select->SetBackgroundColor(
-			bSelected ? SelectedColor : UnselectedColor);
+		FButtonStyle Style = Button_Select->GetStyle();
+		Style.Normal = bSelected
+			? FFBuildPearl::Rounded(SelectedColor, 18.f, FFBuildPearl::Cyan, 2.f)
+			: FFBuildPearl::Rounded(UnselectedColor, 18.f, FFBuildPearl::Line, 1.f);
+		Style.Hovered = bSelected
+			? Style.Normal
+			: FFBuildPearl::Rounded(FFBuildPearl::Color(237, 248, 255), 18.f,
+				FFBuildPearl::Cyan, 1.f);
+		Style.Pressed = FFBuildPearl::Rounded(FFBuildPearl::Cyan, 18.f);
+		Button_Select->SetStyle(Style);
+		Button_Select->SetBackgroundColor(FLinearColor::White);
 	}
 }
 
