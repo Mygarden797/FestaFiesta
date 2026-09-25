@@ -48,12 +48,12 @@ bool FFF_IncidentCatalogLoadTest::RunTest(const FString& Parameters)
 		if (TestNotNull(TEXT("Enabled incident definition loads"), Definition))
 		{
 			TestTrue(TEXT("Loaded definition registered by incident tag"),
-				Subsystem->Definitions.Contains(Definition->IncidentTag));
+				Subsystem->CachedDef.Contains(Definition->IncidentTag));
 		}
 	}
 
 	TestTrue(TEXT("Catalog contains enabled definitions"), EnabledDefinitions > 0);
-	TestEqual(TEXT("Every enabled definition registered"), Subsystem->Definitions.Num(), EnabledDefinitions);
+	TestEqual(TEXT("Every enabled definition registered"), Subsystem->CachedDef.Num(), EnabledDefinitions);
 	return true;
 }
 
