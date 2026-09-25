@@ -1,8 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"
-
-#include "DiffUtils.h"
 #include "NPC/IndividualVariation/FF_DeterministicRandom.h"
 #include "CrowdSystem/FF_BaseCrowd.h"
 #include "CrowdSystem/Systems/FF_CrowdSteering.h"
@@ -4750,7 +4748,7 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		FFF_CrowdMemberMissingEvent MemberMissingEvent;
 		MemberMissingEvent.StableAgentID = Unit.StableAgentID;
 		MemberMissingEvent.PartyID = Unit.PartyID;
-		MemberMissingEvent.Actor = GetAgentActor(Unit.StableAgentID);
+		MemberMissingEvent.Actor = GetAgentActor(AgentIndex);
 		MemberMissingEvent.LocationUU = Unit.Position;
 		
 	

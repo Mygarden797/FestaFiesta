@@ -27,7 +27,7 @@ private:
 	void HandleCongestionSampled(const FFF_CrowdCongestionSnapshot& Snapshot);
 
 	// --- 미아 ---
-	void HandleMemberMissingChanged(const FFF_CrowdMemberMissingEvent& Event);
+	void HandleMemberMissingChanged(const TArray<FFF_CrowdMemberMissingEvent>& Events);
 	void ReportMissing(const FFF_CrowdMemberMissingEvent& Event);
 	void WithdrawMissing(int32 StableAgentID);
 

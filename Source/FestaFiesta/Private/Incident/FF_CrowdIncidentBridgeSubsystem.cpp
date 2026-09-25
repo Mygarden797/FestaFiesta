@@ -63,31 +63,33 @@ void UFF_CrowdIncidentBridgeSubsystem::HandleCongestionSampled(const FFF_CrowdCo
 {
 }
 
-void UFF_CrowdIncidentBridgeSubsystem::HandleMemberMissingChanged(const FFF_CrowdMemberMissingEvent& Event)
+void UFF_CrowdIncidentBridgeSubsystem::HandleMemberMissingChanged(const TArray<FFF_CrowdMemberMissingEvent>& Events)
 {
-	
+
 	if (Incident == nullptr)
 	{
 		FF_CI_BRIDGE_LOG("Incident is nullptr");
 		return;
 	}
-	
-	
-	switch (Event.Change)
-	{
-	case EFF_CrowdMissingChange::Started:
-		ReportMissing(Event);
-		break;
 
-	case EFF_CrowdMissingChange::Returned:
-		WithdrawMissing(Event.StableAgentID);
-		break;
-	case EFF_CrowdMissingChange::EnteredQueue:
-		WithdrawMissing(Event.StableAgentID);
-		break;
-	case EFF_CrowdMissingChange::Despawned:
-		WithdrawMissing(Event.StableAgentID);
-		break;
+	for (const FFF_CrowdMemberMissingEvent& Event : Events)
+	{
+		switch (Event.Change)
+		{
+		case EFF_CrowdMissingChange::Started:
+			ReportMissing(Event);
+			break;
+
+		case EFF_CrowdMissingChange::Returned:
+			WithdrawMissing(Event.StableAgentID);
+			break;
+		case EFF_CrowdMissingChange::EnteredQueue:
+			WithdrawMissing(Event.StableAgentID);
+			break;
+		case EFF_CrowdMissingChange::Despawned:
+			WithdrawMissing(Event.StableAgentID);
+			break;
+		}
 	}
 }
 
