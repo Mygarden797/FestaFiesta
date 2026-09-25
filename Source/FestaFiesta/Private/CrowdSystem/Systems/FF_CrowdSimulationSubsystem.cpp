@@ -377,6 +377,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	}
 
 	ProcessPendingDespawns();
+	FlushMissingEvent();
 	UpdateArrivalSchedule();
 
 	{
@@ -4518,6 +4519,33 @@ void UFF_CrowdSimulationSubsystem::HandleMainProgramEnded(FString EventLabel)
 	UE_LOG(LogTemp, Log, TEXT("[Audience] 메인 공연 종료('%s') — 관객을 Audience 출구로 이동"), *EventLabel);
 }
 
+void UFF_CrowdSimulationSubsystem::FlushMissingEvent()
+{
+	if (CrowdMemberMissingEvents.IsEmpty())
+	{
+		return;
+	}
+
+	const TArray<FFF_CrowdMemberMissingEvent> TempArray = MoveTemp(CrowdMemberMissingEvents);
+	CrowdMemberMissingEvents.Reset();
+
+	OnMemberMissingChanged.Broadcast(TempArray);
+}
+
+void UFF_CrowdSimulationSubsystem::QueueMissingEvent(int32 AgentIndex, const FUnitData& Unit,
+	EFF_CrowdMissingChange Change)
+{
+	
+	FFF_CrowdMemberMissingEvent MemberMissingEvent;
+	MemberMissingEvent.StableAgentID = Unit.StableAgentID;
+	MemberMissingEvent.PartyID = Unit.PartyID;
+	MemberMissingEvent.Actor = GetAgentActor(AgentIndex);
+	MemberMissingEvent.LocationUU = Unit.Position;
+	MemberMissingEvent.Change = Change;
+		
+	CrowdMemberMissingEvents.Add(MemberMissingEvent);
+}
+
 void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Decisions);
@@ -4716,9 +4744,14 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		const double DistSq = FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation);
 		Unit.Speed = (DistSq <= FMath::Square(QueueSlotArrivalRadiusUU)) ? 0.f : Unit.CruiseSpeed;
 		
+		if (Unit.bMissing)
+		{
+			QueueMissingEvent(AgentIndex, Unit, EFF_CrowdMissingChange::EnteredQueue);
+		}
+
 		Unit.bMissing = false;
 		Unit.MissingCount = 0;
-		
+
 		return true;
 	}
 	
@@ -4744,13 +4777,13 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	
 	if (Unit.MissingCount > MissingThreshholdSteps)
 	{
-		Unit.bMissing = true;
-		FFF_CrowdMemberMissingEvent MemberMissingEvent;
-		MemberMissingEvent.StableAgentID = Unit.StableAgentID;
-		MemberMissingEvent.PartyID = Unit.PartyID;
-		MemberMissingEvent.Actor = GetAgentActor(AgentIndex);
-		MemberMissingEvent.LocationUU = Unit.Position;
 		
+		if (!Unit.bMissing )
+		{
+			QueueMissingEvent(AgentIndex,Unit,EFF_CrowdMissingChange::Started);
+		}
+		
+		Unit.bMissing = true;
 	
 	}
 
@@ -4768,6 +4801,11 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 	}
 	else
 	{
+		if (Unit.bMissing)
+		{
+			QueueMissingEvent(AgentIndex, Unit, EFF_CrowdMissingChange::Returned);
+		}
+
 		Unit.MissingCount = 0;
 		Unit.bMissing = false;
 	}
@@ -5591,6 +5629,12 @@ void UFF_CrowdSimulationSubsystem::DespawnAgentInternal(int32 AgentID)
 	FUnitData& Unit = UnitDatas[AgentID];
 
 	if (!Unit.bIsActive) return;
+	
+	if (Unit.bMissing)
+	{
+		QueueMissingEvent(AgentID,Unit,EFF_CrowdMissingChange::Despawned);
+	}
+	
 
 	ReleaseAgentToPool(AgentID);
 

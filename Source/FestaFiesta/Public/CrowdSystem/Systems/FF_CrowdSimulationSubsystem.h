@@ -1634,7 +1634,11 @@ private:
 	void HandleMainProgramEnded(FString EventLabel);
 	
 	
+	void FlushMissingEvent();
+	
+	void QueueMissingEvent(int32 AgentIndex, const FUnitData& Unit, EFF_CrowdMissingChange Change);
+	
 	//이벤트 관련
 private:
-	
+	TArray<FFF_CrowdMemberMissingEvent> CrowdMemberMissingEvents;
 };

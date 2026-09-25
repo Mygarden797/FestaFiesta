@@ -35,7 +35,7 @@ void UFF_IncidentSubsystem::Deinitialize()
 	IncidentSlots.Reset();
 	FreeSlots.Reset();
 	ActiveByKey.Reset();
-	Definitions.Reset();
+	CachedDef.Reset();
 	MaxConcurrent = 0;
 }
 
@@ -60,8 +60,9 @@ void UFF_IncidentSubsystem::WithdrawIncident(FName DedupeKey)
 	TryGetNowMinutes(Now);
 	
 	CloseSlot(Index,EFF_IncidentState::Expired, Now);
-	
-	ActiveByKey.Remove(DedupeKey);
+
+
+
 	
 }
 
@@ -87,6 +88,39 @@ void UFF_IncidentSubsystem::GetActiveHandle(TArray<FFF_IncidentHandle>& OutHandl
 		}
 	}
 }
+
+bool UFF_IncidentSubsystem::GetIncidentView(FFF_IncidentHandle Handle, FFF_IncidentView& OutView) const
+{
+	const FIncidentSlot* Slot = FindSlot(Handle);
+
+	
+	FFF_IncidentView View;
+	if (!Slot)
+	{
+		FF_INCIDENT_LOG("Slot is nllptr");
+		return false;
+	}
+	
+    TObjectPtr<UFF_IncidentDefinition> Def = CachedDef.FindRef(Slot->IncidentTag);
+	
+	if (!IsValid(Def))
+	{
+		FF_INCIDENT_LOG("Definition is nullptr.")
+		return false;
+	}
+	
+	
+	OutView.IncidentTag = Slot->IncidentTag;
+	OutView.MinuteUntileLapse = Slot->MinutesUntilLapse;
+	OutView.Title = Def->Title;
+	OutView.Body = Def->Body;
+	OutView.MarkerIcon = Def->MarkerIcon;
+	OutView.Anchor = Slot->Anchor;
+	
+	return true;
+}
+
+
 
 void UFF_IncidentSubsystem::LoadDefinitions()
 {
@@ -115,13 +149,7 @@ void UFF_IncidentSubsystem::LoadDefinitions()
 					continue;
 				}
 				
-				FDefinitionView NewDef;
-				NewDef.Tone = Def->Tone;
-				NewDef.Urgency = Def->Urgency;
-				NewDef.MinutesUntilLapse = Def->MinuteUntileLapse;
-				NewDef.EscalateTo = Def->EscalateTo;
-				
-				Definitions.Add(Def->IncidentTag,NewDef);
+				CachedDef.Add(Def->IncidentTag,Def);
 			}
 		}
 		
@@ -188,12 +216,27 @@ void UFF_IncidentSubsystem::CloseSlot(int32 Index, EFF_IncidentState FinalState,
 	
 	
 	FIncidentSlot& Slot = IncidentSlots[Index];
+	FFF_IncidentHandle Handle;
+	
+	Handle.Index = Index;
+	Handle.Serial = Slot.Serial;
+	
 	Slot.Serial++;
 	Slot.bInUse = false;
 	Slot.State = FinalState;
 	
+
+	
+
+	
 	ActiveByKey.Remove(Slot.DedupeKey);
 	FreeSlots.Push(Index);
+	
+	
+	OnIncidentClosed.Broadcast(Handle);
+
+	
+	
 	
 
 	
@@ -234,7 +277,7 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	FFF_IncidentHandle Handle;
 	
 	
-	FDefinitionView* IncDef = Definitions.Find(Report.IncidentTag);
+	TObjectPtr<UFF_IncidentDefinition> IncDef = CachedDef.FindRef(Report.IncidentTag);
 	if (!IncDef)
 	{
 		FF_INCIDENT_LOG("DefinitionView is Null. it is wrong IncidentTag.");
@@ -258,6 +301,8 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 		ExistingSlot.PeakIntensity = 
 			FFF_IncidentRules::MergeIntensity(ExistingSlot.PeakIntensity, Report.Intensity);
 		ExistingSlot.LastSeenMinutes = Now;
+		OnIncidentUpdated.Broadcast(*Found);
+		
 		return *Found;
 
 
@@ -297,7 +342,7 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	Slot.EscalateTo = IncDef->EscalateTo;
 	Slot.Tone = IncDef->Tone;
 	Slot.Urgency = IncDef->Urgency;
-	Slot.MinutesUntilLapse = IncDef->MinutesUntilLapse;
+	Slot.MinutesUntilLapse = IncDef->MinuteUntileLapse;
 	Slot.OccurredAtMinutes = Now;
 	Slot.LastSeenMinutes = Now;
 	
@@ -308,6 +353,7 @@ FFF_IncidentHandle UFF_IncidentSubsystem::ReportIncident(const FFF_IncidentRepor
 	
 	ActiveByKey.Add(Key, Handle);
 	
+	OnIncidentRaised.Broadcast(Handle);
 	
 	return Handle;
 }
