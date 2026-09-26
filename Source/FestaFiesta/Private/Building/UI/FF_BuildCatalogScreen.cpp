@@ -27,6 +27,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/Texture2D.h"
 #include "Engine/World.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"

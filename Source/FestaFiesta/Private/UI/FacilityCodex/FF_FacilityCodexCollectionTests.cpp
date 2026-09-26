@@ -1,3 +1,6 @@
+// 역할: 도감 목록·상세 화면 이동과 수집 보상의 중복 지급 방지를 실제 위젯으로 검증한다.
+// 임시 저장 파일을 사용하므로 테스트가 플레이어의 수집 기록을 바꾸지 않는다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"

@@ -1,5 +1,5 @@
 # delivery.py
-# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+# 역할: 최종 캐릭터를 촬영하고 검증 보고서·파일 해시를 확인한 뒤 제작 원본과 결과물을 ZIP으로 묶는다.
 
 import bpy,json,zipfile,hashlib
 from pathlib import Path

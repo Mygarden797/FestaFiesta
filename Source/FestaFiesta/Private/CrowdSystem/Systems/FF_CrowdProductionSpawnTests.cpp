@@ -2,6 +2,9 @@
 // collection, PIE restarts, and the next day's arrival schedule.
 #include "Misc/AutomationTest.h"
 
+// 역할: 실제 배포 맵에서 메모리 정리, 플레이 재시작, 날짜 변경 후에도 관객이 생성되는지 검증한다.
+// 이전 플레이 월드의 정리가 끝난 뒤 다음 검사를 시작해 세션 간 데이터가 섞이지 않게 한다.
+
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 #include "Components/SkeletalMeshComponent.h"
 #include "CrowdSystem/FF_BaseCrowd.h"

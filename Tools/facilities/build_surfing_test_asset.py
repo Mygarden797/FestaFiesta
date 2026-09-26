@@ -1,3 +1,5 @@
+# 역할: Blender에서 서핑 체험 시설 참고 모델을 만들고 크기·충돌을 검사한 뒤 FBX와 미리보기를 출력한다.
+# 실제 설치 시설 목록에는 자동 등록하지 않는다. 테스트용 참고 모델의 제작 경로다.
 """Build the standalone surfing simulator reference asset with Blender.
 
 Run from the repository root:

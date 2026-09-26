@@ -122,6 +122,13 @@ bool FFF_FacilityRevenueRankModelTest::RunTest(const FString& Parameters)
 		FFFacilityRevenueRanking::Rank(Rows, false), int64(MAX_int32) * 3);
 	TestTrue(TEXT("Large aggregate keeps a finite exact share"), First->bHasShare &&
 		FMath::IsFinite(First->Share) && FMath::IsNearlyEqual(First->Share, 1. / 3.));
+	// 문자열 변환을 없애도 번호의 각 자리를 비교하는 기존 동률 순서는 보존되어야 한다.
+	First->FacilityId = FGuid(0, 1, 0, 0);
+	Second->FacilityId = FGuid(0, 0, 1, 0);
+	Rows = {First, Second};
+	FFFacilityRevenueRanking::Rank(Rows, false);
+	TestTrue(TEXT("고유 번호의 앞자리 차이도 기존 문자 정렬과 같은 순서를 유지한다"),
+		Rows[0] == Second && Rows[1] == First);
 	return true;
 }
 

@@ -1,4 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
+// 역할: 시설 설치비가 한 번만 차감되고 철거 시 설정한 비율만큼 환급되는지 검사한다.
+// 무료·잘못된 비용·잔액 부족·명령 취소를 함께 확인하며, 이동과 개폐가 돈을 쓰지 않는지도 검사한다.
 
 #include "Economy/FF_ZoneSystemEconomyBridgeSubsystem.h"
 

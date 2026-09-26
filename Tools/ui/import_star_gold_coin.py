@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 역할: 기존 골드 아이콘 두 개를 새 이미지로 교체하고, 해당 아이콘을 쓰는 UI의 색 덧씌우기를 흰색으로 맞춘다.
+# 원본 에셋은 먼저 백업하고 경로를 유지해 화면의 기존 아이콘 연결을 보존한다.
 """Reimport the project Gold currency artwork without changing asset paths.
 
 Run in an idle Unreal editor after the new Gold PNG has been saved:

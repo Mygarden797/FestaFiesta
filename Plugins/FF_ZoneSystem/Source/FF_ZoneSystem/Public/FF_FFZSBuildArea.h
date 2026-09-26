@@ -4,18 +4,18 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "FF_FFZSTypes.h"
 #include "FF_FFZSBuildArea.generated.h"
 
 class AFFZSGameplayZone;
 class USceneComponent;
 class FFFZSBuildAreaGeometry;
 class UFFZSWorldSubsystem;
+struct FFFZSOrientedRect;
 
 /**
- * One construction authority for the existing gameplay regions. Their shared seams disappear from
- * construction checks; region IDs, local coordinates, NPC membership and density remain unchanged.
- * Place exactly one actor in the level to opt in. Levels without it keep legacy placement rules.
+ * 여러 지역의 경계를 합쳐 건설 가능한 땅을 하나로 관리한다. 지역 사이에서도 시설을 설치할 수 있다.
+ * NPC 소속과 혼잡도를 위한 기존 지역 정보는 유지한다. 레벨에 이 액터를 하나 배치하면 활성화되며,
+ * 배치하지 않은 레벨에서는 기존 지역별 건설 규칙을 사용한다.
  */
 UCLASS(Blueprintable, meta = (DisplayName = "FFZS Unified Build Area"))
 class FF_ZONESYSTEM_API AFFZSBuildArea : public AActor
@@ -51,7 +51,7 @@ public:
     UFUNCTION(BlueprintPure, Category = "Build Area")
     bool ContainsWorldPoint(const FVector& WorldPoint) const;
 
-    // Unlike region-local rectangles, these rectangle coordinates are world XY centimetres.
+    // 이 사각형은 지역 내부 좌표가 아니라 월드 전체의 XY 좌표(cm)를 사용한다.
     bool ContainsWorldOrientedRect(const FFFZSOrientedRect& WorldRectCm, double WorldZCm) const;
 
     UFUNCTION(BlueprintPure, Category = "Build Area")
@@ -64,7 +64,7 @@ protected:
 
 private:
     friend class UFFZSWorldSubsystem;
-    // Only the guarded subsystem can mutate runtime construction authority.
+    // 플레이 중 경계 변경은 재진입을 검사하는 월드 서브시스템만 수행한다.
     bool RebuildFromRegions(const TArray<AFFZSGameplayZone*>& Regions);
     TSharedPtr<FFFZSBuildAreaGeometry> Geometry;
 };

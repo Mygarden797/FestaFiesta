@@ -12,6 +12,11 @@
 				"Engine",
 				"GameplayAbilities"
 			]
+		},
+		{
+			"Name": "FestaFiestaEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
 		}
 	],
 	"Plugins": [

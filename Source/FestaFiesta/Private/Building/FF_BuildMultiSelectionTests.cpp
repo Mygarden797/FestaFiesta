@@ -1,5 +1,6 @@
 // FF_BuildMultiSelectionTests.cpp
-// F1 selection stays read-only and responds to click, marquee and session cleanup.
+// 역할: 클릭·사각형 드래그·모드 종료가 시설 선택을 올바르게 갱신하는지 검사한다.
+// 선택만으로 실제 배치가 바뀌지 않고, 폐기한 F1~F7 단축키가 도구를 실행하지 않는지도 확인한다.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 

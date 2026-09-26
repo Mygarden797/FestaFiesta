@@ -1,6 +1,9 @@
 ﻿#if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+
+// 역할: 도로와 바닥 타일의 설치·이동·복원에 맞춰 관객 발 높이와 이동 경로가 갱신되는지 검사한다.
+// 임시 맵과 간단한 지형을 사용하며 검사 중 바꾼 전역 설정은 종료 시 복구한다.
 #include "Tests/AutomationEditorCommon.h"
 #include "Components/BoxComponent.h"
 #include "CrowdSystem/Systems/FF_CrowdSimulationSubsystem.h"

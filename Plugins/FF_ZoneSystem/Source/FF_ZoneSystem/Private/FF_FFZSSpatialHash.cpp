@@ -53,7 +53,7 @@ bool FFFZSSpatialHash2D::TryGetBucketRange(const FBox2D& Bounds, const int32 Max
     OutLast = FIntPoint(static_cast<int32>(LastX), static_cast<int32>(LastY));
     const int64 Width = static_cast<int64>(OutLast.X) - OutFirst.X + 1;
     const int64 Height = static_cast<int64>(OutLast.Y) - OutFirst.Y + 1;
-    // Division avoids overflow even for a box spanning the complete int32 bucket range.
+    // 곱셈 대신 나눗셈으로 검사해 좌표 범위가 매우 커도 정수 넘침이 발생하지 않게 한다.
     return Width > 0 && Height > 0 && Width <= MaximumBucketCount &&
         Height <= MaximumBucketCount / Width;
 }
@@ -61,6 +61,15 @@ bool FFFZSSpatialHash2D::TryGetBucketRange(const FBox2D& Bounds, const int32 Max
 // 같은 ID의 예전 위치를 지운 뒤 새 검색 묶음에 등록한다.
 bool FFFZSSpatialHash2D::InsertOrUpdate(const FGuid& Id, const FBox2D& WorldBounds)
 {
+    // 같은 위치의 시설을 재등록할 때는 검색 묶음을 지웠다가 다시 만들 필요가 없다.
+    // 근사 비교를 쓰면 조금 움직인 시설을 놓칠 수 있으므로 좌표가 정확히 같을 때만 생략한다.
+    if (const FEntry* Existing = Entries.Find(Id);
+        Existing && Existing->bValidBounds && HasFiniteOrderedBounds(WorldBounds) &&
+        Existing->Bounds.Min == WorldBounds.Min && Existing->Bounds.Max == WorldBounds.Max)
+    {
+        return true;
+    }
+
     Remove(Id);
     FEntry& Entry = Entries.Add(Id);
     Entry.Bounds = WorldBounds;
@@ -74,7 +83,10 @@ bool FFFZSSpatialHash2D::InsertOrUpdate(const FGuid& Id, const FBox2D& WorldBoun
         return Entry.bValidBounds;
     }
 
-    // int64 loop counters also make a one-bucket box at MAX_int32 safe to enumerate.
+    const int64 BucketCount = (static_cast<int64>(Last.X) - First.X + 1) *
+        (static_cast<int64>(Last.Y) - First.Y + 1);
+    Entry.BucketKeys.Reserve(static_cast<int32>(BucketCount));
+    // 위 검사에서 최대 묶음 수가 보장된다. 반복 변수는 최대 int32 좌표에서도 증가할 수 있게 넓게 둔다.
     for (int64 Y = First.Y; Y <= static_cast<int64>(Last.Y); ++Y)
     {
         for (int64 X = First.X; X <= static_cast<int64>(Last.X); ++X)
@@ -132,7 +144,7 @@ void FFFZSSpatialHash2D::Query(const FBox2D& WorldBounds, TArray<FGuid>& OutCand
     FIntPoint Last;
     if (!TryGetBucketRange(WorldBounds, MaximumBucketsPerQuery, First, Last))
     {
-        // This is bounded by actual records, not map area or coordinate magnitude.
+        // 거대한 영역은 빈 묶음을 끝없이 순회하지 않고 실제 등록된 시설 수만큼만 검사한다.
         for (const TPair<FGuid, FEntry>& Pair : Entries)
         {
             if (IsCandidate(Pair.Value))

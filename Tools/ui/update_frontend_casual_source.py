@@ -1,7 +1,7 @@
 """캐주얼 프런트엔드 생성기 이행. 한 번 실행하는 소스 편집 도구."""
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
-p=root/'Source/FestaFiesta/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp'
+p=root/'Source/FestaFiestaEditor/Private/UI/Frontend/FF_FrontendSetupStyleWbpBuilder.cpp'
 s=p.read_text(encoding='utf-8-sig')
 start=s.index('// 타이틀 옵션 화면')
 end=s.index('#include "AssetToolsModule.h"')

@@ -270,7 +270,6 @@ private:
     void SetQueueState(EFFZSQueueState NewState);
     void RefreshOpenOrFullState();
     void FillServiceSlots();
-    int32 FindLowestAvailableServiceIndex() const;
     FGuid GetOwnerFacilityId() const;
     void NotifyCurrentMovementTarget(const FRuntimeEntry& Entry);
     void BeginExit(FRuntimeEntry Entry, EFFZSQueueReleaseReason Reason);

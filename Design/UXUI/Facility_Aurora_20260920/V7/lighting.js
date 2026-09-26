@@ -1,5 +1,7 @@
-// Static presentation states only. No controls are connected to game objects.
+// 역할: 조명 설정·색상 선택·카메라 확인의 세 가지 정적 화면을 구성한다.
+// ui.js 다음에 실행하며 조명과 카메라를 실제로 제어하지 않는다.
 if(id.startsWith('10-')||id.startsWith('11-')||id.startsWith('12-')){
+ // 주소로 지정한 상태에 따라 전체 색상창 또는 접힌 색상창을 선택한다.
  const spec=window.screenSpec;const cameraMode=id==='12-light-camera';const pickerOpen=id==='11-color-picker';
  const status=()=>'<span class="live-pill">실시간 미리보기</span>';
  const slider=()=>'<div class="row between small"><b>조명 밝기</b><b>100% · 기본</b></div><div class="light-slider"></div><div class="slider-ends"><span>0%</span><span>500%</span></div>';
@@ -10,5 +12,5 @@ if(id.startsWith('10-')||id.startsWith('11-')||id.startsWith('12-')){
  const cam=`<div class="overlay camera-dock" data-overlay><div><b>${cameraMode?'장면 확인 중':'설정창을 유지하며 장면 확인'}</b><div class="tiny">UI 위 드래그는 색상·창 조절에 사용</div></div><div class="tiny"><span class="key">W A S D</span> 이동　<span class="key">Q E</span> 회전　<span class="key">휠</span> 확대·축소</div>${btn(cameraMode?'색상 편집으로':'카메라로 확인')}</div>`;
  scene.innerHTML=`<img class="world" src="../V3/source/${spec.source}.png" alt="실제 프로젝트 원본 화면">${stamp()}${context('메인공연장 · 조명 편집',cameraMode?'시점을 바꾸며 조명을 확인하세요':'색상을 조절하며 장면을 확인하세요')}${settings}${pickerOpen?picker:''}${cameraMode?mini:''}${cam}${!cameraMode?'<div class="overlay selection-light" data-overlay>◈ 선택한 조명 · 메인공연장</div>':''}`;
  const badge=scene.querySelector('.identity .badge');if(badge)badge.textContent='집객 시설';
- window.ready=Promise.all([...document.images].map(i=>i.decode().catch(()=>{}))).then(()=>document.fonts.ready);
+ window.ready = waitForPreviewAssets();
 }

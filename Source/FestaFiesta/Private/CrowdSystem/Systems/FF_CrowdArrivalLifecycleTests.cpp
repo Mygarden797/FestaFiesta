@@ -1,6 +1,9 @@
 ﻿// Runtime-loaded arrival and appearance tables must survive GC for the whole festival.
 #include "Misc/AutomationTest.h"
 
+// 역할: 관객 도착 시간표와 외형 데이터가 메모리 정리 후에도 유지되는지 검증한다.
+// 원본 에셋의 임시 사본으로 검사해 에디터가 원본을 보관하는 영향은 배제한다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "CrowdSystem/FF_BaseCrowd.h"

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Summarize a UE 5.7 CSV profiler capture without third-party packages.
+# 역할: 언리얼 성능 기록 CSV에서 프레임 시간·관객 수·메모리 통계를 추출한다.
+"""실행 중 추가된 열과 중복 열을 보존하고 잘못된 값을 정상 측정으로 보고하지 않는다.
 
 UE CSV files can append columns during capture and repeat the complete header at
 the end. Column names can also occur more than once. This reader keeps column
@@ -70,6 +71,7 @@ def number_from_indices(
 
 
 def scan_header(path: pathlib.Path) -> tuple[list[str], dict[str, str], dict[str, Any]]:
+    """끝에 재기록된 최종 열 이름을 우선하고 실행 환경 정보를 함께 수집한다."""
     first_header: list[str] | None = None
     final_header: list[str] | None = None
     metadata: dict[str, str] = {}
@@ -144,6 +146,7 @@ def analyze(
     path: pathlib.Path, start_frame: int, end_frame: int | None,
     min_active_agents: int | None,
 ) -> dict[str, Any]:
+    """선택한 프레임·관객 수 조건을 만족하는 표본만 통계에 포함한다."""
     if not path.is_file():
         raise CsvAnalysisError(f"CSV file does not exist: {path}")
     header, metadata, scan = scan_header(path)

@@ -7,6 +7,7 @@
 
 namespace
 {
+	// 조합 거리는 높이를 제외한 바닥 거리다. 제곱값으로 비교해 반복 제곱근 계산을 줄인다.
 	double DistanceSq(const FVector& A, const FVector& B) { return FMath::Square(A.X - B.X) + FMath::Square(A.Y - B.Y); }
 	bool GuidLess(const FGuid& A, const FGuid& B)
 	{
@@ -62,7 +63,7 @@ void FFF_FacilitySynergyEvaluator::SetFacilities(TArray<FFF_FacilitySynergyPoint
 	for (const FFF_FacilitySynergyPoint& Point : InFacilities)
 	{
 		if (!Point.InstanceId.IsValid() || Point.DefinitionId.IsNone() || Point.WorldLocation.ContainsNaN() || PointById.Contains(Point.InstanceId)) continue;
-		// Definitions unused by any row do not occupy the runtime spatial index.
+		// 어떤 조합에도 쓰이지 않는 시설은 주변 검색용 목록에 보관하지 않는다.
 		if (!TargetRules.Contains(Point.DefinitionId) && !PartnerRules.Contains(Point.DefinitionId)) continue;
 		const int32 Index = Points.Add(Point);
 		PointById.Add(Point.InstanceId, Index);
@@ -76,6 +77,7 @@ void FFF_FacilitySynergyEvaluator::SetFacilities(TArray<FFF_FacilitySynergyPoint
 	}
 }
 
+// 시설을 가로·세로 방향으로 번갈아 반씩 나눠, 가까운 시설을 찾을 때 먼 영역을 건너뛰게 한다.
 int32 FFF_FacilitySynergyEvaluator::BuildTree(FTree& Tree, TArray<int32>& Indices, const int32 Begin, const int32 End, const uint8 Axis)
 {
 	if (Begin == End) return INDEX_NONE;
@@ -102,6 +104,7 @@ const FFF_FacilitySynergyPoint* FFF_FacilitySynergyEvaluator::FindFacility(const
 	return Index ? &Points[*Index] : nullptr;
 }
 
+// 먼저 가까운 영역을 찾고, 현재 최단 거리보다 먼 반대쪽 영역은 검사하지 않는다.
 void FFF_FacilitySynergyEvaluator::NearestNode(const FTree& Tree, const int32 NodeIndex, const FVector& Location,
 	const FGuid SelfId, const FGuid ExcludedId, int32& Best, double& BestDistanceSq) const
 {
@@ -165,7 +168,7 @@ FFF_FacilitySynergyEvaluation FFF_FacilitySynergyEvaluator::Evaluate(const FFF_F
 		FFF_FacilitySynergyMatch& Match = Result.Matches.AddDefaulted_GetRef();
 		Match.RuleIndex = RuleIndex;
 		const FFF_FacilitySynergyPoint* Partner = Nearest(Row.PartnerFacilityId, Target.WorldLocation, Target.InstanceId, ExcludedId);
-		// The proposed point is an overlay; its previous instance was excluded above. It cannot pair with itself.
+		// 이동 예정 위치를 임시로 겹쳐 평가한다. 기존 위치와 자기 자신은 짝으로 사용하지 않는다.
 		if (Proposed && Proposed->InstanceId != Target.InstanceId && Proposed->DefinitionId == Row.PartnerFacilityId &&
 			(!Partner || DistanceSq(Target.WorldLocation, Proposed->WorldLocation) < DistanceSq(Target.WorldLocation, Partner->WorldLocation))) Partner = Proposed;
 		if (Partner)
@@ -176,7 +179,7 @@ FFF_FacilitySynergyEvaluation FFF_FacilitySynergyEvaluator::Evaluate(const FFF_F
 			if (Match.bInRange) Active.Add(Result.Matches.Num() - 1);
 		}
 	}
-	// Highest benefit wins within a group; cap is distributed in the same deterministic order.
+	// 같은 그룹에서는 가장 큰 보너스만 적용하고, 정해진 순서로 전체 보너스 상한을 나눈다.
 	Active.Sort([this, &Result](const int32 A, const int32 B)
 	{
 		const FFF_FacilitySynergyRule& ARule = Rules[Result.Matches[A].RuleIndex];
@@ -207,7 +210,7 @@ void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const 
 	const TArray<int32>* AsPartner = PartnerRules.Find(DefinitionId);
 	Out.bRulesAvailable = AsTarget || AsPartner;
 	if (!Out.bRulesAvailable) return;
-	// An invalid GUID denotes a prospective install and never occurs in the indexed live world.
+	// 비어 있는 ID는 아직 설치하지 않은 후보를 뜻하며 실제 등록 시설과 겹치지 않는다.
 	const FFF_FacilitySynergyPoint Candidate{MovingId, DefinitionId, WorldLocation};
 	const FFF_FacilitySynergyPoint* Previous = FindFacility(MovingId);
 	auto Append = [this, &Out](int32 RuleIndex, const FFF_FacilitySynergyPoint& Target,
@@ -217,8 +220,8 @@ void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const 
 		const FFF_FacilitySynergyRule& Rule = Rules[RuleIndex];
 		FFF_FacilitySynergyPreviewEntry& Entry = Out.Entries.AddDefaulted_GetRef();
 		Entry.RuleId = Rule.Id;
-		// Keep text identity/localization intact. Only the presentation layer can resolve
-		// current catalog names for an absent title; a rule ID is not player-facing text.
+		// 번역 정보가 유지되도록 원래 표시 이름을 전달한다. 이름이 없을 때 대체할 문구는
+		// 최신 시설 이름을 아는 화면 쪽에서 정하며, 내부 규칙 ID는 사용자에게 표시하지 않는다.
 		Entry.DisplayName = Rule.Row.DisplayName;
 		Entry.TargetFacilityId = Rule.Row.TargetFacilityId;
 		Entry.PartnerFacilityId = Rule.Row.PartnerFacilityId;
@@ -252,7 +255,7 @@ void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const 
 	}
 	if (AsPartner)
 	{
-		// Cache per affected beneficiary so several matching rows don't repeat all rule evaluation.
+		// 같은 시설이 여러 조합의 영향을 받아도 변경 전후 계산은 한 번씩만 수행한다.
 		TMap<int32, FFF_FacilitySynergyEvaluation> BeforeByTarget, AfterByTarget;
 		for (const int32 RuleIndex : *AsPartner)
 		{
@@ -267,8 +270,8 @@ void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const 
 			}
 			if (Affected.IsEmpty())
 			{
-				// A same-type row already has its missing-counterpart entry in AsTarget.
-				// Keep real reverse beneficiaries; only suppress this duplicate empty fallback.
+				// 같은 종류끼리의 조합은 위에서 이미 '짝 없음'을 만들었으므로 중복 안내만 생략한다.
+				// 실제 영향을 받는 주변 시설의 결과는 계속 포함한다.
 				if (Row.TargetFacilityId == DefinitionId) continue;
 				const FFF_FacilitySynergyPoint Missing{FGuid(), Row.TargetFacilityId, WorldLocation};
 				Append(RuleIndex, Missing, {}, {}, nullptr, false);
@@ -292,7 +295,7 @@ void FFF_FacilitySynergyEvaluator::BuildPreview(const FName DefinitionId, const 
 		const float ADelta = A.ProposedTotalBonusPercent - A.CurrentTotalBonusPercent;
 		const float BDelta = B.ProposedTotalBonusPercent - B.CurrentTotalBonusPercent;
 		if (FMath::Abs(ADelta) != FMath::Abs(BDelta)) return FMath::Abs(ADelta) > FMath::Abs(BDelta);
-		if (ADelta != BDelta) return ADelta < BDelta; // Same-size loss before gain.
+		if (ADelta != BDelta) return ADelta < BDelta; // 변화량이 같으면 이득보다 손실을 먼저 알려 준다.
 		if (A.bInRange != B.bInRange) return A.bInRange;
 		if (A.bHasPartner != B.bHasPartner) return A.bHasPartner;
 		if (A.DistanceMeters != B.DistanceMeters) return A.DistanceMeters < B.DistanceMeters;

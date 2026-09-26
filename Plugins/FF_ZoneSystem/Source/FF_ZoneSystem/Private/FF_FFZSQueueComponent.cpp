@@ -977,8 +977,6 @@ void UFFZSFacilityQueueComponent::SetQueueState(const EFFZSQueueState NewState)
     const EFFZSQueueState Previous = QueueState;
     QueueState = NewState;
 
-    // Tick 상태는 QueueState 불변식이므로 호출자가 같은 상태를 다시 적용하더라도
-    // 복구한다(예: 스냅샷 복원 중).
     // Tick 활성 여부는 상태의 파생 불변식이다. 복원처럼 같은 상태를 다시 적용하는 호출에서도
     // 반드시 수리해야 하므로 상태 변경 이벤트 발생 여부와 분리한다. Closed만 Tick을 끈다.
     SetComponentTickEnabled(QueueState != EFFZSQueueState::Closed);
@@ -1006,24 +1004,34 @@ void UFFZSFacilityQueueComponent::RefreshOpenOrFullState()
 // 뒤 Agent가 먼저 도착해도 선두를 추월하지 않으며 Blocked/Closed에서는 배정 자체를 멈춘다.
 void UFFZSFacilityQueueComponent::FillServiceSlots()
 {
-    if (QueueState == EFFZSQueueState::Closed || QueueState == EFFZSQueueState::Blocked)
+    if (QueueState == EFFZSQueueState::Closed || QueueState == EFFZSQueueState::Blocked ||
+        Waiting.IsEmpty() || ActiveServices.Num() >= Rules.ServiceCapacity || !Waiting[0].bArrivedAtAssignedSlot)
     {
         return;
     }
 
     TArray<FRuntimeEntry> AssignedNotifications;
-    while (!Waiting.IsEmpty() && ActiveServices.Num() < Rules.ServiceCapacity && Waiting[0].bArrivedAtAssignedSlot)
+    const int32 MaximumAssignments = FMath::Min(Waiting.Num(), Rules.ServiceCapacity - ActiveServices.Num());
+    AssignedNotifications.Reserve(MaximumAssignments);
+    int32 AssignedCount = 0;
+    int32 NextServiceIndex = 0;
+    while (AssignedCount < MaximumAssignments && Waiting[AssignedCount].bArrivedAtAssignedSlot)
     {
-        const int32 ServiceIndex = FindLowestAvailableServiceIndex();
-        if (ServiceIndex == INDEX_NONE)
+        // 낮은 번호부터 빈 자리를 찾는다. 이미 확인한 번호는 다음 사람을 배정할 때 다시 검사하지 않는다.
+        while (NextServiceIndex < Rules.ServiceCapacity &&
+            ActiveServices.ContainsByPredicate([NextServiceIndex](const FRuntimeEntry& Entry)
+                { return Entry.ServiceIndex == NextServiceIndex; }))
+        {
+            ++NextServiceIndex;
+        }
+        if (NextServiceIndex >= Rules.ServiceCapacity)
         {
             break;
         }
 
-        FRuntimeEntry Entry = Waiting[0];
-        Waiting.RemoveAt(0);
+        FRuntimeEntry Entry = Waiting[AssignedCount++];
         Entry.AssignedQueueIndex = INDEX_NONE;
-        Entry.ServiceIndex = ServiceIndex;
+        Entry.ServiceIndex = NextServiceIndex++;
         Entry.ExitIndex = INDEX_NONE;
         Entry.ServiceElapsedSeconds = 0.0f;
         Entry.bArrivedAtServicePoint = false;
@@ -1032,6 +1040,10 @@ void UFFZSFacilityQueueComponent::FillServiceSlots()
         ActiveServices.Add(Entry);
         AssignedNotifications.Add(Entry);
     }
+
+    // 앞사람마다 전체 대기 배열을 당기지 않고, 배정된 연속 구간을 한 번만 제거한다.
+    // 배열 용량은 유지해 다음 방문객이 입장할 때 메모리를 다시 할당하지 않게 한다.
+    Waiting.RemoveAt(0, AssignedCount, EAllowShrinking::No);
 
     // 모든 배열 이동을 먼저 끝낸 뒤 인덱스 변경과 서비스 배정 알림을 보낸다. 알림 중 재조회 또는
     // 재진입이 발생해도 반쯤 이동된 FIFO를 관찰하지 않게 하는 순서다.
@@ -1053,21 +1065,6 @@ void UFFZSFacilityQueueComponent::FillServiceSlots()
         OnServiceAssigned.Broadcast(Notification.AgentId, Notification.TicketId, Notification.ServiceIndex);
         NotifyCurrentMovementTarget(Notification);
     }
-}
-
-int32 UFFZSFacilityQueueComponent::FindLowestAvailableServiceIndex() const
-{
-    for (int32 ServiceIndex = 0; ServiceIndex < Rules.ServiceCapacity; ++ServiceIndex)
-    {
-        if (!ActiveServices.ContainsByPredicate([ServiceIndex](const FRuntimeEntry& Entry)
-            {
-                return Entry.ServiceIndex == ServiceIndex;
-            }))
-        {
-            return ServiceIndex;
-        }
-    }
-    return INDEX_NONE;
 }
 
 FGuid UFFZSFacilityQueueComponent::GetOwnerFacilityId() const

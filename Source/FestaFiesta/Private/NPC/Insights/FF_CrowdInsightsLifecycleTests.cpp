@@ -1,6 +1,9 @@
 // The SNS template table is loaded from a soft setting before Live and must survive GC.
 #include "Misc/AutomationTest.h"
 
+// 역할: SNS 게시글 양식이 운영 시작 전에 로드되고 메모리 정리 후에도 유지되는지 검사한다.
+// 전역 설정은 검사 종료 시 복원하고 실제 제작 에셋은 변경하지 않는다.
+
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "CrowdSystem/Types/FF_SimulationSettings.h"

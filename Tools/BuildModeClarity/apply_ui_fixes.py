@@ -1,3 +1,4 @@
+# 역할: 건축 도움말·시설 조합 화면 네 개를 백업한 뒤 수정하고, 재실행 결과와 다른 UI의 보존 여부를 확인한다.
 """Apply only the build help and facility combination fixes in an idle Entry editor.
 
 Run with a freshly built UE editor and -ExecutePythonScript. Each run backs up the
@@ -91,6 +92,7 @@ def main():
         backup.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, backup)
 
+    # 첫 실행 결과를 기록한 뒤 다시 실행해 중복 적용으로 에셋이 계속 변하지 않는지 검사한다.
     execute(world, 1)
     REPORT["metadata"] = verify_metadata()
     REPORT["after"] = {package: digest(path_for(package)) for package in PACKAGES}

@@ -148,6 +148,8 @@ private:
 #endif
 
 	bool EnsurePanel(APlayerController& OwningController);
+	/** 조명 미리보기를 되돌린 뒤 이벤트 연결과 화면을 한곳에서 정리한다. */
+	void ReleasePanel();
 	bool EnsurePaidProgramPicker(APlayerController& OwningController);
 	bool BuildPaidProgramPickerViewData(
 		AFFZSFacilityActor& Facility,
