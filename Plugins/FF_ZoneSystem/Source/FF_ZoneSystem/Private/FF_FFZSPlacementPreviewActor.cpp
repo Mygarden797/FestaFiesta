@@ -114,6 +114,7 @@ void AFFZSPlacementPreviewActor::Tick(const float DeltaSeconds)
 // 플러그인의 권위 배치 상태를 커밋하지 않는다. 결과 Transform도 이 Preview Actor에만 적용.
 FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
 {
+    bUsesEffectiveBatchSpec = false;
     if (UFFZSWorldSubsystem* Subsystem = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr)
     {
         LastValidation = Subsystem->ValidatePlacement(PreviewCommand);
@@ -140,6 +141,21 @@ FFFZSPlacementValidation AFFZSPlacementPreviewActor::RefreshPreview()
         }
     }
     return LastValidation;
+}
+
+void AFFZSPlacementPreviewActor::ApplyBatchPreviewResult(const FFFZSCommand& Command,
+    const FFFZSPlacementValidation& Validation)
+{
+    PreviewCommand = Command;
+    bUsesEffectiveBatchSpec = true;
+    LastValidation = Validation;
+    bHasUnvalidatedPreviewTransform = false;
+    SetActorTransform(LastValidation.PlacementTransform);
+    RequestPreviewMesh();
+    PreviewMesh->SetRenderCustomDepth(true);
+    PreviewMesh->SetCustomDepthStencilValue(LastValidation.bIsValid ? 1 : 2);
+    RefreshGhostFeedback();
+    RefreshRangePresentation();
 }
 
 void AFFZSPlacementPreviewActor::SetUnvalidatedPreviewTransform(const FTransform& Transform)
@@ -475,7 +491,10 @@ void AFFZSPlacementPreviewActor::RefreshRangePresentation()
     }
     if (!LastValidation.QueueOrientedRects.IsEmpty())
     {
-        FFZSBuildRangePresentation::AppendQueueSlots(Lines, PreviewCommand.FacilitySpec,
+        const FFFZSFacilitySpec DisplaySpec = PreviewCommand.Type == EFFZSCommandType::Install && !bUsesEffectiveBatchSpec
+            ? FFZSFacilityUpgradeRules::BuildEffectiveSpec(PreviewCommand.FacilitySpec, 1, 1.0f)
+            : PreviewCommand.FacilitySpec;
+        FFZSBuildRangePresentation::AppendQueueSlots(Lines, DisplaySpec,
             LastValidation.PlacementTransform, Style.QueueColor, Style);
     }
     RangeLines->DrawLines(Lines);

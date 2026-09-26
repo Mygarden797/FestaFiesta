@@ -359,6 +359,31 @@ bool AFFZSFacilityActor::ApplyUpgradeState(const int32 NewLevel, const float New
     return true;
 }
 
+bool AFFZSFacilityActor::ApplyQueueLayout(const EFFZSQueueLayout Layout)
+{
+    if (!CanMoveOrRemove() || !QueueComponent || QueueComponent->IsOccupied())
+    {
+        return false;
+    }
+    FFFZSFacilitySpec NewBase = GetBaseFacilitySpec();
+    NewBase.QueueLayout = Layout;
+    FFFZSFacilitySpec EffectiveSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+        NewBase, UpgradeLevel, UpgradeSizeMultiplier);
+    TArray<FText> Errors;
+    if (!EffectiveSpec.IsValid(Errors))
+    {
+        return false;
+    }
+    const bool bNavigationWasEnabled = NavigationObstacleBounds && NavigationObstacleBounds->CanEverAffectNavigation();
+    SetNavigationObstacleEnabled(false);
+    BaseFacilitySpec = MoveTemp(NewBase);
+    FacilitySpec = MoveTemp(EffectiveSpec);
+    RebuildRuntimePresentation();
+    // Preserve completed/abandoned queue statistics; only its spatial targets changed.
+    SetNavigationObstacleEnabled(bNavigationWasEnabled);
+    return true;
+}
+
 FFFZSQueueRules AFFZSFacilityActor::BuildEffectiveQueueRules(
     const FFFZSQueueRules& BaseRules, const float ServiceDurationMultiplier)
 {

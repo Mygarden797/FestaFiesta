@@ -1,4 +1,5 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 
@@ -477,6 +478,30 @@ void UFF_FestivalProgressionSubsystem::Refund(int32 Amount)
 bool UFF_FestivalProgressionSubsystem::HasLedgerForDay(int32 Day) const
 {
 	return FindLedgerForDay(Day) != nullptr;
+}
+
+bool UFF_FestivalProgressionSubsystem::CanApplyConstructionDelta(const int64 InstallSpendDelta, const int64 RefundDelta) const
+{
+	const int64 Gold = int64(Funds.GetGold()) - InstallSpendDelta + RefundDelta;
+	return IsFestivalStarted() && Gold >= 0 && Gold <= MAX_int32 &&
+		DayLedger.CanAdjustConstruction(InstallSpendDelta, RefundDelta);
+}
+
+bool UFF_FestivalProgressionSubsystem::ApplyConstructionDelta(const int32 InstallSpendDelta, const int32 RefundDelta, const bool bPublish)
+{
+	if (!IsInGameThread() || !CanApplyConstructionDelta(InstallSpendDelta, RefundDelta)) return false;
+	const int32 PreviousGold = Funds.GetGold();
+	const int64 Delta = int64(RefundDelta) - InstallSpendDelta;
+	if (Delta < 0) Funds.TrySpend(int32(-Delta));
+	else Funds.Refund(int32(Delta));
+	DayLedger.AdjustConstruction(InstallSpendDelta, RefundDelta);
+	if (bPublish) BroadcastGoldIfChanged(PreviousGold);
+	return true;
+}
+
+void UFF_FestivalProgressionSubsystem::PublishConstructionGoldChange(const int32 PreviousGold)
+{
+	BroadcastGoldIfChanged(PreviousGold);
 }
 
 TArray<FFF_LedgerRow> UFF_FestivalProgressionSubsystem::GetEarnRowsForDay(int32 Day) const

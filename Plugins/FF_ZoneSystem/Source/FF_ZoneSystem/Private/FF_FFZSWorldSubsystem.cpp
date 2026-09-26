@@ -728,6 +728,9 @@ void UFFZSWorldSubsystem::Deinitialize()
     AgentQueueOwnership.Reset();
     CommandReceipts.Reset();
     CommandReceiptFacilityReferences.Reset();
+    ConstructionUndoStack.Reset();
+    ConstructionRedoStack.Reset();
+    ConstructionReplaySources.Reset();
     Super::Deinitialize();
 }
 
@@ -750,6 +753,7 @@ bool UFFZSWorldSubsystem::SetChangePhase(const EFFZSChangePhase NewPhase)
     {
         return false;
     }
+    if (CurrentPhase != NewPhase) ClearConstructionHistory();
     CurrentPhase = NewPhase;
     return true;
 }
@@ -1519,8 +1523,27 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacement(const FFFZSComma
     if (Existing)
     {
         EffectiveCommand.FacilitySpec = Existing->GetFacilitySpec();
+        if (Command.bChangeQueueLayout)
+        {
+            FFFZSFacilitySpec Base = Existing->GetBaseFacilitySpec();
+            Base.QueueLayout = EFFZSQueueLayout::Authored;
+            EffectiveCommand.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+                Base, Existing->GetUpgradeLevel(), Existing->GetUpgradeSizeMultiplier());
+            EffectiveCommand.FacilitySpec.QueueLayout = Command.QueueLayout;
+            FText Error;
+            if (!FFFZSQueueGeometry::ApplySelectedLayout(EffectiveCommand.FacilitySpec, Error))
+            {
+                FFFZSPlacementValidation Invalid;
+                Invalid.AddFailure(EFFZSPlacementFailure::DataInvalid, Error);
+                return Invalid;
+            }
+        }
     }
 
+    if (Command.Type == EFFZSCommandType::Install)
+    {
+        EffectiveCommand.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Command.FacilitySpec, 1, 1.0f);
+    }
     FFFZSPlacementValidation Result = ValidatePlacementLocal(EffectiveCommand, Existing);
     if (Result.bIsValid && Command.Type == EFFZSCommandType::Move && Existing)
     {
@@ -1777,7 +1800,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
     for (const FGuid Id : Candidates)
     {
         const FFFZSFacilityRegionOccupancy* Occupancy = OccupiedFacilityRegions.Find(Id);
-        if (Id == IgnoreId || !Occupancy || !IsOccupancyRelevant(Command.ZoneId, *Occupancy))
+        if (Id == IgnoreId || ConstructionIgnoredFacilities.Contains(Id) || !Occupancy || !IsOccupancyRelevant(Command.ZoneId, *Occupancy))
         {
             continue;
         }
@@ -1865,7 +1888,7 @@ FFFZSPlacementValidation UFFZSWorldSubsystem::ValidatePlacementLocal(const FFFZS
         {
             const FFFZSFacilityRegionOccupancy* Occupancy = OccupiedFacilityRegions.Find(Id);
             const AFFZSFacilityActor* Road = FindFacility(Id);
-            if (Occupancy && Occupancy->bIsGroundSurface && Occupancy->bAllowsFacilitiesOnTop && Road && IsOccupancyRelevant(Command.ZoneId, *Occupancy) &&
+            if (!ConstructionIgnoredFacilities.Contains(Id) && Occupancy && Occupancy->bIsGroundSurface && Occupancy->bAllowsFacilitiesOnTop && Road && IsOccupancyRelevant(Command.ZoneId, *Occupancy) &&
                 UFFZSGridLibrary::DoOrientedRectSetsOverlap(WorldFootprint, Occupancy->WorldRegions))
             {
                 Location.Z = FMath::Max(Location.Z, Road->GetActorLocation().Z +
@@ -1913,6 +1936,10 @@ void UFFZSWorldSubsystem::ValidateGround(
 
     FCollisionQueryParams Params(SCENE_QUERY_STAT(FFZoneSystemGround), false);
     Params.AddIgnoredActor(&Zone);
+    for (const FGuid Id : ConstructionIgnoredFacilities)
+    {
+        if (const AFFZSFacilityActor* Selected = FindFacility(Id)) Params.AddIgnoredActor(Selected);
+    }
     TSet<const AFFZSFacilityActor*> IgnoredGroundSurfaces;
     if (Spec.IsGroundSurface())
     {
@@ -2474,6 +2501,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     {
         return MakeFailure(EFFZSPlacementFailure::DataInvalid, LOCTEXT("MissingCommandIds", "CommandId와 TransactionId가 필요합니다."));
     }
+    if (Command.bChangeQueueLayout && Command.Type != EFFZSCommandType::Move)
+    {
+        return MakeFailure(EFFZSPlacementFailure::DataInvalid,
+            LOCTEXT("QueueLayoutMoveOnly", "이동 중 대기열 변경은 Move 명령으로만 확정할 수 있습니다."));
+    }
     if (!UFFZSGridLibrary::HasSafeFacilitySpecCardinality(Command.FacilitySpec))
     {
         return MakeFailure(
@@ -2531,6 +2563,12 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
         return MakeFailure(EFFZSPlacementFailure::InternalError, LOCTEXT("DifferentCommandInFlight", "다른 Zone/Facility 명령이 이미 실행 중입니다."));
     }
 
+    const bool bRecordEdit = Command.Type == EFFZSCommandType::Install || Command.Type == EFFZSCommandType::Move || Command.Type == EFFZSCommandType::Remove;
+    FFFZSFacilityInstanceSnapshot BeforeEdit;
+    if (bRecordEdit)
+    {
+        if (const AFFZSFacilityActor* BeforeActor = FindFacility(Command.FacilityInstanceId)) BeforeEdit = BeforeActor->CaptureInstanceSnapshot();
+    }
     TGuardValue<FGuid> CommandGuard(InFlightCommandId, Command.CommandId);
     TGuardValue<FString> FingerprintGuard(InFlightCommandFingerprint, PayloadFingerprint);
     DeferredWorldChangeEvent.Reset();
@@ -2588,6 +2626,11 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteCommand(const FFFZSCommand& Comma
     CompletedReceipt.bInFlight = false;
     CommandReceipts.Add(Command.CommandId, MoveTemp(CompletedReceipt));
 
+    if (Result.bSucceeded)
+    {
+        if (bRecordEdit) RecordConstructionEdit(Command, BeforeEdit);
+        else ClearConstructionHistory();
+    }
     const TOptional<FFFZSWorldChangeEvent> EventToBroadcast = DeferredWorldChangeEvent;
     DeferredWorldChangeEvent.Reset();
     if (Result.bSucceeded)
@@ -2654,6 +2697,13 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
 
     FFFZSCommand EffectiveCommand = Command;
     EffectiveCommand.FacilitySpec = Facility->GetFacilitySpec();
+    if (Command.bChangeQueueLayout)
+    {
+        FFFZSFacilitySpec Base = Facility->GetBaseFacilitySpec();
+        Base.QueueLayout = Command.QueueLayout;
+        EffectiveCommand.FacilitySpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(
+            Base, Facility->GetUpgradeLevel(), Facility->GetUpgradeSizeMultiplier());
+    }
     FFFZSPolicyContext Context;
     Context.Command = EffectiveCommand;
     Context.Validation = Validation;
@@ -2670,10 +2720,15 @@ FFFZSCommandResult UFFZSWorldSubsystem::ExecuteMove(const FFFZSCommand& Command,
     const FName PreviousZoneId = Facility->GetZoneId();
     const FFFZSGridPlacement PreviousPlacement = Facility->GetGridPlacement();
     const FTransform PreviousTransform = Facility->GetActorTransform();
+    const EFFZSQueueLayout PreviousQueueLayout = Facility->GetQueueLayout();
+    const EFFZSFacilityState PreviousState = Facility->GetFacilityState();
     ReleaseFacilityRegions(*Facility);
-    if (!Facility->ApplyPlacement(Command.ZoneId, Command.Placement, Validation.PlacementTransform))
+    if ((Command.bChangeQueueLayout && !Facility->ApplyQueueLayout(Command.QueueLayout)) ||
+        !Facility->ApplyPlacement(Command.ZoneId, Command.Placement, Validation.PlacementTransform))
     {
+        if (Facility->GetQueueLayout() != PreviousQueueLayout) Facility->ApplyQueueLayout(PreviousQueueLayout);
         Facility->ApplyPlacement(PreviousZoneId, PreviousPlacement, PreviousTransform);
+        Facility->FacilityState = PreviousState;
         OccupyFacilityRegions(*Facility);
         RollbackPolicies(Context, AppliedPolicies);
         return MakeFailure(EFFZSPlacementFailure::InvalidFacilityState, LOCTEXT("MoveApplyFailed", "이동에 실패하여 이전 Facility 배치를 복원했습니다."));
@@ -3763,7 +3818,9 @@ bool UFFZSWorldSubsystem::RestoreWorldSnapshot(const FFFZSWorldSnapshot& Snapsho
     {
         return false;
     }
-    return RestoreWorldSnapshotUnchecked(*EffectiveSnapshot, OutErrors);
+    const bool bRestored = RestoreWorldSnapshotUnchecked(*EffectiveSnapshot, OutErrors);
+    if (bRestored) ClearConstructionHistory();
+    return bRestored;
 }
 
 // ID 없이 Spawn해 BeginPlay 자동 등록을 피하고 게시 전까지 숨김·충돌 비활성 상태로 둔다.
@@ -4134,7 +4191,7 @@ bool UFFZSWorldSubsystem::DoesGroundSurfaceSupportFacility(const AFFZSFacilityAc
     {
         const AFFZSFacilityActor* Facility = FindFacility(Id);
         const FFFZSFacilityRegionOccupancy* Occupancy = OccupiedFacilityRegions.Find(Id);
-        if (!Facility || !Occupancy || Occupancy->bIsGroundSurface || !IsOccupancyRelevant(Surface.GetZoneId(), *Occupancy)) continue;
+        if (ConstructionIgnoredFacilities.Contains(Id) || !Facility || !Occupancy || Occupancy->bIsGroundSurface || !IsOccupancyRelevant(Surface.GetZoneId(), *Occupancy)) continue;
         TArray<FFFZSOrientedRect> Footprint, Clearance, Queue, Reserved;
         UFFZSGridLibrary::BuildPlacementOrientedRegions(Facility->GetFacilitySpec(), Facility->GetGridPlacement(),
             Footprint, Clearance, Queue, Reserved);

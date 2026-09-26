@@ -10,6 +10,8 @@ class UBorder;
 class UButton;
 class UHorizontalBox;
 class UTextBlock;
+class UEditableTextBox;
+class UComboBoxString;
 class UFF_BuildCatalogSubsystem;
 class UFF_BuildModeSubsystem;
 class AFFZSFacilityActor;
@@ -33,6 +35,10 @@ public:
 	/** 패널 위 클릭이 뒤쪽 월드 시설의 선택으로도 처리되지 않도록 마우스 위치를 검사한다. */
 	bool IsPointerOverStrip() const;
 
+	/** Reusable card WBP. Its layout, font and thumbnail surface are authored in Designer. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Multi Selection|Presentation")
+	TSoftClassPtr<UUserWidget> SelectedFacilityCardClass;
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
@@ -51,6 +57,8 @@ protected:
 private:
 	void BuildNativeTree();
 	void ResolveBindings();
+	void BuildNativeGroupControls();
+	void RefreshGroupControls();
 	void AddFacilityCard(const AFFZSFacilityActor& Facility, int32 DisplayIndex);
 	void AddEmptyHint();
 
@@ -59,6 +67,33 @@ private:
 	UFUNCTION() void HandleInspectClicked();
 	UFUNCTION() void HandleClearClicked();
 	UFUNCTION() void HandleExitClicked();
+	UFUNCTION() void HandleMoveGroup();
+	UFUNCTION() void HandleDuplicateGroup();
+	UFUNCTION() void HandleRemoveGroup();
+	UFUNCTION() void HandleRotateLeft();
+	UFUNCTION() void HandleRotateRight();
+	UFUNCTION() void HandleApplyGroup();
+	UFUNCTION() void HandleCancelGroup();
+	UFUNCTION() void HandleSavePreset();
+	UFUNCTION() void HandleLoadPreset();
+	UFUNCTION() void HandleDeletePreset();
+	UFUNCTION() UWidget* GeneratePresetOption(FString Name);
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_MoveGroup;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_DuplicateGroup;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RemoveGroup;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RotateLeft;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_RotateRight;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_ApplyGroup;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_CancelGroup;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_SavePreset;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_LoadPreset;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_DeletePreset;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_GroupEditingStatus;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UEditableTextBox> Edit_PresetName;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UComboBoxString> Combo_Presets;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_MultiSelectionDesignerHint;
+	TArray<FString> DisplayedPresetNames;
+	bool bPresetOptionsInitialized = false;
 
 	TWeakObjectPtr<UFF_BuildModeSubsystem> BuildMode;
 	TWeakObjectPtr<UFF_BuildCatalogSubsystem> Catalog;

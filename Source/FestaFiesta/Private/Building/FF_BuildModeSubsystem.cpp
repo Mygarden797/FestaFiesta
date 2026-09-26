@@ -776,6 +776,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
 	DismissPlacementFailureFeedback();
 	SelectedSpec = Definition->Spec;
+	PendingQueueLayout = Definition->Spec.QueueLayout;
 	CurrentPlacement = FFFZSGridPlacement{};
 	CurrentZoneId = NAME_None;
 	bHasPlacementTarget = false;
@@ -996,7 +997,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 		return false;
 	}
 	if (bIsMoving && CurrentZoneId == MoveOriginZoneId &&
-		CurrentPlacement == MoveOriginPlacement)
+		CurrentPlacement == MoveOriginPlacement && PendingQueueLayout == MoveTarget->GetQueueLayout())
 	{
 		ShowStatus(TEXT("기존 위치와 방향이 같습니다. 다른 위치로 이동해 주세요."), true);
 		return false;
@@ -1157,11 +1158,42 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	const bool bPointerOverFacilityInfo = FacilityInfo && FacilityInfo->IsPointerOverPanel();
 	const bool bControlDown = Controller.IsInputKeyDown(EKeys::LeftControl) ||
 		Controller.IsInputKeyDown(EKeys::RightControl);
+	if (bControlDown && !IsEditableSlateTextFocused() && FFBuildModeModel::IsBuildSessionActive(State))
+	{
+		const bool bShiftDown = Controller.IsInputKeyDown(EKeys::LeftShift) || Controller.IsInputKeyDown(EKeys::RightShift);
+		if (Controller.WasInputKeyJustPressed(EKeys::Y) || (bShiftDown && Controller.WasInputKeyJustPressed(EKeys::Z)))
+		{
+			RedoBuildEdit();
+			return;
+		}
+		if (Controller.WasInputKeyJustPressed(EKeys::Z))
+		{
+			UndoBuildEdit();
+			return;
+		}
+	}
 	if (FFBuildModeModel::ShouldShowPlacementGrid(State) && !bControlDown &&
 		!IsEditableSlateTextFocused() && Controller.WasInputKeyJustPressed(EKeys::G))
 	{
 		TogglePlacementGrid();
 		return;
+	}
+	const bool bQueueModifierDown = bControlDown || Controller.IsInputKeyDown(EKeys::LeftShift) ||
+		Controller.IsInputKeyDown(EKeys::RightShift) || Controller.IsInputKeyDown(EKeys::LeftAlt) ||
+		Controller.IsInputKeyDown(EKeys::RightAlt) || Controller.IsInputKeyDown(EKeys::LeftCommand) ||
+		Controller.IsInputKeyDown(EKeys::RightCommand);
+	if (CanChooseQueueLayout())
+	{
+		for (const FKey Key : {EKeys::Seven, EKeys::Eight, EKeys::Nine, EKeys::Zero})
+		{
+			EFFZSQueueLayout Layout = EFFZSQueueLayout::Authored;
+			if (Controller.WasInputKeyJustPressed(Key) && FFBuildModeModel::TryResolveQueueLayoutShortcut(
+				Key, IsEditableSlateTextFocused(), bQueueModifierDown, bInputSuspendedForPauseMenu, Layout))
+			{
+				SetSelectedFacilityQueueLayout(Layout);
+				return;
+			}
+		}
 	}
 	if (bMultiSelectionActive && HandleMultiSelectionInput(Controller, bBlockWorldClickThisFrame,
 		bPointerOverTools, bPointerOverDebugPanel, bPointerOverFacilityInfo)) return;
@@ -1327,6 +1359,8 @@ bool UFF_BuildModeSubsystem::HandleMultiSelectionInput(APlayerController& Contro
 	const bool bPointerOverStrip = MultiSelectionWidget && MultiSelectionWidget->IsPointerOverStrip();
 	const bool bBlockedByUi = bPointerOverTools || bPointerOverDebugPanel ||
 		bPointerOverFacilityInfo || bPointerOverStrip || IsPointerBlockedByUi(&Controller);
+	if (HandleGroupPlacementInput(Controller, bBlockWorldClick || bBlockedByUi ||
+		IsEditableSlateTextFocused() || !IsPlacementPointerInsideViewport(Controller))) return true;
 
 	if (bMultiSelectionPointerArmed)
 	{
@@ -2196,6 +2230,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 	ResetPlacementAssistance();
 	SelectedFacilityDefinitionId = NAME_None;
 	SelectedSpec = FFFZSFacilitySpec{};
+	PendingQueueLayout = EFFZSQueueLayout::Authored;
 	CurrentPlacement = FFFZSGridPlacement{};
 	LastValidation = FFFZSPlacementValidation{};
 	CurrentZoneId = NAME_None;
@@ -2588,6 +2623,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 	MoveOriginPlacement = SourcePlacement;
 	MoveTransactionId = FGuid::NewGuid();
 	SelectedSpec = FacilitySpec;
+	PendingQueueLayout = Facility->GetQueueLayout();
 	CurrentZoneId = SourceZoneId;
 	CurrentPlacement = SourcePlacement;
 	ClearPendingRemovalSelection();
@@ -2703,7 +2739,9 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 			ShowStatus(TEXT("선택한 시설 정의를 사용할 수 없습니다."), true);
 			return false;
 		}
-		SelectedSpec = SelectedDefinition->Spec;
+		FFFZSFacilitySpec Base = SelectedDefinition->Spec;
+		Base.QueueLayout = PendingQueueLayout;
+		SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 1, 1.0f);
 	}
 	else
 	{
@@ -2884,6 +2922,8 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		MoveCommand.FacilityInstanceId = MovingFacilityInstanceId;
 		// 프리뷰 Actor가 FacilitySpec.VisualMesh를 직접 읽으므로 기존 액터에서 복사한 전체 Spec을 반드시 담는다.
 		MoveCommand.FacilitySpec = SelectedSpec;
+		MoveCommand.bChangeQueueLayout = MovingFacility.IsValid() && PendingQueueLayout != MovingFacility->GetQueueLayout();
+		MoveCommand.QueueLayout = PendingQueueLayout;
 		MoveCommand.ZoneId = CurrentZoneId;
 		MoveCommand.Placement = CurrentPlacement;
 		PlacementPreview->PreviewCommand = MoveTemp(MoveCommand);
@@ -2904,12 +2944,13 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 	}
 
 	// 월드 revision을 명령에 넣어 프리뷰 이후 다른 설치/철거가 발생한 오래된 명령이 Commit에서 통과하지 않게 한다.
-	SelectedSpec = Definition->Spec;
 	PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
 		Definition,
 		CurrentZoneId,
 		CurrentPlacement,
 		ZoneSystem->GetWorldRevision());
+	PlacementPreview->PreviewCommand.FacilitySpec.QueueLayout = PendingQueueLayout;
+	SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(PlacementPreview->PreviewCommand.FacilitySpec, 1, 1.0f);
 }
 
 float UFF_BuildModeSubsystem::GetPlacementRotationSnapDegrees() const

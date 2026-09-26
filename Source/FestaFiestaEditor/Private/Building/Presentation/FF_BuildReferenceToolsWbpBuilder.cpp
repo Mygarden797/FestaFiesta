@@ -44,6 +44,8 @@ constexpr const TCHAR* PearlReadableCardsKey = TEXT("FF.BuildReferenceTools.Pear
 constexpr const TCHAR* IconHelpKey = TEXT("FF.BuildReferenceTools.IconHelpV7");
 constexpr const TCHAR* ActionLanguageKey = TEXT("FF.BuildReferenceTools.ActionLanguageV8");
 constexpr const TCHAR* KeyboardHelpKey = TEXT("FF.BuildReferenceTools.KeyboardHelpV9");
+constexpr const TCHAR* ConstructionHelpKey = TEXT("FF.BuildReferenceTools.ConstructionHelpV10");
+constexpr const TCHAR* QueueShortcutKey = TEXT("FF.BuildReferenceTools.QueueShortcutV11");
 const FLinearColor White = FLinearColor::White;
 
 FSlateBrush Surface(const FLinearColor Color, const float Radius, const FLinearColor Outline = FLinearColor::Transparent)
@@ -1354,6 +1356,205 @@ bool ApplyKeyboardHelp(UWidgetBlueprint& BP)
     return false;
 }
 
+
+// Simple, consistently weighted native UMG artwork stays editable in the saved WBP.
+// No raster imports, private fonts, or runtime-created toolbar controls are required.
+USizeBox* SimpleToolbarIcon(UWidgetBlueprint& BP, UWidgetTree& Tree, int32 Index)
+{
+    const FString Stem = FString::Printf(TEXT("BuildToolbarLine%d"), Index);
+    auto* Bounds = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem)));
+    Bounds->SetWidthOverride(32.f); Bounds->SetHeightOverride(32.f);
+    auto* Canvas = MakeWidget<UCanvasPanel>(BP, Tree,
+        Index == 1 ? FName(TEXT("Canvas_BuildToolbarFacilityPlus")) : FName(*(TEXT("Canvas_") + Stem)));
+    Canvas->SetVisibility(ESlateVisibility::HitTestInvisible);
+    Bounds->AddChild(Canvas);
+    int32 Part = 0;
+    auto Shape = [&](FVector2D Position, FVector2D Size, bool bFilled, float Radius) -> UBorder*
+    {
+        auto* Border = MakeWidget<UBorder>(BP, Tree, FName(*FString::Printf(TEXT("Border_%s_%d"), *Stem, Part++)));
+        Border->SetPadding(FMargin(0.f));
+        Border->SetBrush(FFBuildPearl::Rounded(bFilled ? FLinearColor::White : FLinearColor::Transparent,
+            Radius, bFilled ? FLinearColor::Transparent : FLinearColor::White, bFilled ? 0.f : 2.f));
+        auto* Slot = Canvas->AddChildToCanvas(Border);
+        Slot->SetPosition(Position); Slot->SetSize(Size);
+        return Border;
+    };
+    auto Line = [&](FVector2D From, FVector2D To)
+    {
+        const FVector2D Delta = To - From;
+        UBorder* Stroke = Shape(From - FVector2D(0.f, 1.f), FVector2D(Delta.Size(), 2.f), true, 1.f);
+        Stroke->SetRenderTransformPivot(FVector2D(0.f, .5f));
+        Stroke->SetRenderTransformAngle(FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X)));
+    };
+    switch (Index)
+    {
+    case 1: // Facility plus: roof, facade and door; unmistakably a building instead of a person.
+        Line({3.f, 13.f}, {12.f, 5.f}); Line({12.f, 5.f}, {21.f, 13.f});
+        Line({5.f, 12.f}, {5.f, 28.f}); Line({5.f, 28.f}, {22.f, 28.f}); Line({22.f, 18.f}, {22.f, 28.f});
+        Shape({11.f, 20.f}, {5.f, 8.f}, false, 1.f);
+        Line({26.f, 6.f}, {26.f, 16.f}); Line({21.f, 11.f}, {31.f, 11.f});
+        break;
+    case 2: // A compact four-cell grid.
+        Shape({5.f, 5.f}, {22.f, 22.f}, false, 2.f);
+        Line({16.f, 5.f}, {16.f, 27.f}); Line({5.f, 16.f}, {27.f, 16.f});
+        break;
+    case 3: // Position alignment.
+        Shape({11.f, 11.f}, {10.f, 10.f}, false, 2.f);
+        Line({16.f, 3.f}, {16.f, 8.f}); Line({16.f, 24.f}, {16.f, 29.f});
+        Line({3.f, 16.f}, {8.f, 16.f}); Line({24.f, 16.f}, {29.f, 16.f});
+        break;
+    case 4: // Facility influence radius.
+        Shape({4.f, 4.f}, {24.f, 24.f}, false, 12.f);
+        Shape({11.f, 11.f}, {10.f, 10.f}, false, 5.f);
+        break;
+    case 5: // Three adjustable settings sliders.
+        Line({5.f, 8.f}, {27.f, 8.f}); Line({5.f, 16.f}, {27.f, 16.f}); Line({5.f, 24.f}, {27.f, 24.f});
+        Shape({10.f, 5.f}, {4.f, 6.f}, true, 1.f); Shape({20.f, 13.f}, {4.f, 6.f}, true, 1.f);
+        Shape({8.f, 21.f}, {4.f, 6.f}, true, 1.f);
+        break;
+    case 6: // Facility catalog cards, visually distinct from the add/select building.
+        Shape({4.f, 5.f}, {10.f, 9.f}, false, 2.f); Shape({18.f, 5.f}, {10.f, 9.f}, false, 2.f);
+        Shape({4.f, 18.f}, {10.f, 9.f}, false, 2.f); Shape({18.f, 18.f}, {10.f, 9.f}, false, 2.f);
+        break;
+    case 7:
+    {
+        Shape({3.f, 3.f}, {26.f, 26.f}, false, 13.f);
+        auto* Question = Label(BP, Tree, TEXT("Text_BuildToolbarHelpMark"), FText::FromString(TEXT("?")), 21, FLinearColor::White);
+        Question->SetJustification(ETextJustify::Center);
+        auto* QuestionSlot = Canvas->AddChildToCanvas(Question);
+        QuestionSlot->SetPosition({3.f, 0.f}); QuestionSlot->SetSize({26.f, 30.f});
+        break;
+    }
+    default: break;
+    }
+    return Bounds;
+}
+
+bool ApplyConstructionEditingHelp(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, ConstructionHelpKey) == TEXT("1")) return true;
+    UWidgetTree& Tree = *BP.WidgetTree;
+    auto* Column = Cast<UVerticalBox>(Tree.FindWidget(TEXT("Column_BuildIconHelp")));
+    if (!Column) return false;
+    const TCHAR* Buttons[] = {TEXT("Button_MultiSelect"), TEXT("Button_Grid"), TEXT("Button_SnapCycle"),
+        TEXT("Button_ToolbarRanges"), TEXT("Button_BuildSettings"), TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp")};
+    for (const TCHAR* Name : Buttons) if (!Tree.FindWidget(Name)) return false;
+    BP.Modify(); Tree.Modify();
+    for (int32 Index = 0; Index < 7; ++Index)
+    {
+        auto* Button = CastChecked<UButton>(Tree.FindWidget(Buttons[Index]));
+        UWidget* Old = Button->GetContent();
+        TArray<UWidget*> Retired;
+        if (Old) { UWidgetTree::GetChildWidgets(Old, Retired); Retired.Add(Old); }
+        Button->ClearChildren();
+        for (UWidget* Widget : Retired)
+        {
+            BP.OnVariableRemoved(Widget->GetFName());
+            Widget->RemoveFromParent();
+            Widget->Rename(nullptr, GetTransientPackage(), REN_DontCreateRedirectors | REN_NonTransactional);
+        }
+        auto* Slot = CastChecked<UButtonSlot>(Button->AddChild(SimpleToolbarIcon(BP, Tree, Index + 1)));
+        Slot->SetHorizontalAlignment(HAlign_Center); Slot->SetVerticalAlignment(VAlign_Center);
+    }
+    auto Keycap = [&](const TCHAR* Name, const TCHAR* Caption) -> USizeBox*
+    {
+        const FString Stem = FString(TEXT("BuildHelpKey_")) + Name;
+        auto* Size = MakeWidget<USizeBox>(BP, Tree, FName(*(TEXT("Size_") + Stem)));
+        Size->SetMinDesiredWidth(25.f); Size->SetHeightOverride(28.f);
+        auto* Edge = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Border_") + Stem)));
+        Edge->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(158, 169, 193), 5.f));
+        Edge->SetPadding(FMargin(1.f, 1.f, 1.f, 3.f));
+        auto* Face = MakeWidget<UBorder>(BP, Tree, FName(*(TEXT("Face_") + Stem)));
+        Face->SetBrush(FFBuildPearl::Rounded(FFBuildPearl::Color(247, 249, 255), 4.f));
+        Face->SetPadding(FMargin(5.f, 1.f)); Face->SetHorizontalAlignment(HAlign_Center); Face->SetVerticalAlignment(VAlign_Center);
+        Face->AddChild(Label(BP, Tree, FName(*(TEXT("Text_") + Stem)), FText::FromString(Caption), 14, FFBuildPearl::Ink, true));
+        Edge->AddChild(Face); Size->AddChild(Edge);
+        return Size;
+    };
+    auto HelpRow = [&](const TCHAR* Stem, const TArray<TPair<FString, FString>>& Keys, const FText& Caption, const TCHAR* CaptionName = nullptr) -> UHorizontalBox*
+    {
+        auto* Row = MakeWidget<UHorizontalBox>(BP, Tree, FName(*(FString(TEXT("Row_")) + Stem)));
+        auto* KeysRow = MakeWidget<UHorizontalBox>(BP, Tree, FName(*(FString(TEXT("Keys_")) + Stem)));
+        for (const auto& Key : Keys) AddRow(*KeysRow, *Keycap(*Key.Key, *Key.Value), 4.f);
+        auto* Bounds = MakeWidget<USizeBox>(BP, Tree, FName(*(FString(TEXT("Size_")) + Stem)));
+        Bounds->SetWidthOverride(124.f); Bounds->SetHeightOverride(30.f); Bounds->AddChild(KeysRow);
+        AddRow(*Row, *Bounds, 10.f);
+        auto* CaptionWidget = Label(BP, Tree, CaptionName ? FName(CaptionName) : FName(*(FString(TEXT("Text_")) + Stem)), Caption, 13, FLinearColor::White, true);
+        CaptionWidget->SetAutoWrapText(true);
+        AddRow(*Row, *CaptionWidget, 0.f, true);
+        return Row;
+    };
+    auto HistoryAction = [&](const TCHAR* ButtonName, const TCHAR* Stem, const TCHAR* CtrlName,
+        const TCHAR* Letter, const FText& Caption, int32 Position)
+    {
+        auto* Button = MakeWidget<UFF_BuildToolsActionButton>(BP, Tree, ButtonName, true);
+        FButtonStyle Style;
+        Style.Normal = FFBuildPearl::Rounded(FLinearColor::Transparent, 5.f);
+        Style.Hovered = FFBuildPearl::Rounded(FFBuildPearl::Color(152, 190, 218, .18f), 5.f);
+        Style.Pressed = FFBuildPearl::Rounded(FFBuildPearl::Color(152, 190, 218, .28f), 5.f);
+        Style.Disabled = Style.Normal;
+        Style.NormalPadding = FMargin(0.f); Style.PressedPadding = FMargin(0.f);
+        Button->SetStyle(Style);
+        Button->SetToolTipText(FText::Format(LOCTEXT("ClickHelpAction", "클릭하거나 표시된 단축키로 {0}"), Caption));
+        auto* Row = HelpRow(Stem, {{CtrlName, TEXT("Ctrl")}, {Letter, Letter}}, Caption);
+        auto* ButtonSlot = CastChecked<UButtonSlot>(Button->AddChild(Row));
+        ButtonSlot->SetPadding(FMargin(0.f));
+        ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
+        ButtonSlot->SetVerticalAlignment(VAlign_Center);
+        if (auto* CaptionWidget = Cast<UTextBlock>(Row->GetChildAt(1))) CaptionWidget->SetAutoWrapText(false);
+        AddColumn(*Column, *Button, 4.f);
+        Column->ShiftChild(Position, Button);
+    };
+    HistoryAction(TEXT("Button_BuildHelpUndo"), TEXT("BuildHelpUndo"), TEXT("UndoCtrl"), TEXT("Z"),
+        LOCTEXT("HelpUndoAction", "실행 취소"), 2);
+    HistoryAction(TEXT("Button_BuildHelpRedo"), TEXT("BuildHelpRedo"), TEXT("RedoCtrl"), TEXT("Y"),
+        LOCTEXT("HelpRedoAction", "다시 실행"), 3);
+    auto* QueueGroup = MakeWidget<UVerticalBox>(BP, Tree, TEXT("Row_BuildHelpQueue"), true);
+    QueueGroup->SetVisibility(ESlateVisibility::Collapsed);
+    AddColumn(*QueueGroup, *HelpRow(TEXT("BuildHelpQueueKeys"), {{TEXT("1"), TEXT("7")}, {TEXT("2"), TEXT("8")},
+        {TEXT("3"), TEXT("9")}, {TEXT("4"), TEXT("0")}}, LOCTEXT("HelpQueueAction", "대기열 모양 선택"), TEXT("Text_BuildHelpQueue")), 3.f);
+    auto* QueueHint = Label(BP, Tree, TEXT("Text_BuildHelpQueueHint"),
+        LOCTEXT("QueueDigits", "7 기본 · 8 좌측 · 9 우측 · 0 U자"), 12, FFBuildPearl::Cyan, true);
+    QueueHint->SetAutoWrapText(true);
+    AddColumn(*QueueGroup, *QueueHint, 5.f);
+    AddColumn(*Column, *QueueGroup, 4.f); Column->ShiftChild(5, QueueGroup);
+    Metadata.SetValue(&BP, ConstructionHelpKey, TEXT("1"));
+    if (SaveNewBlueprint(TEXT("FF_BUILD_REFERENCE_TOOLS_CONSTRUCTION_HELP_V10"), BP)) return true;
+    Metadata.RemoveValue(&BP, ConstructionHelpKey);
+    return false;
+}
+
+// Text-only migration: preserve every existing widget, binding, font, brush and slot.
+bool ApplyQueueShortcutKeys(UWidgetBlueprint& BP)
+{
+    auto& Metadata = BP.GetOutermost()->GetMetaData();
+    if (Metadata.GetValue(&BP, QueueShortcutKey) == TEXT("1")) return true;
+    UWidgetTree& Tree = *BP.WidgetTree;
+    const TCHAR* Names[] = {TEXT("Text_BuildHelpKey_1"), TEXT("Text_BuildHelpKey_2"),
+        TEXT("Text_BuildHelpKey_3"), TEXT("Text_BuildHelpKey_4"), TEXT("Text_BuildHelpQueueHint")};
+    const FText Captions[] = {FText::FromString(TEXT("7")), FText::FromString(TEXT("8")),
+        FText::FromString(TEXT("9")), FText::FromString(TEXT("0")),
+        LOCTEXT("QueueShortcutDigits7890", "7 기본 · 8 좌측 · 9 우측 · 0 U자")};
+    TArray<UTextBlock*> Labels;
+    for (const TCHAR* Name : Names)
+    {
+        auto* LabelWidget = Cast<UTextBlock>(Tree.FindWidget(Name));
+        if (!LabelWidget) return false;
+        Labels.Add(LabelWidget);
+    }
+    BP.Modify();
+    for (int32 Index = 0; Index < Labels.Num(); ++Index)
+    {
+        Labels[Index]->Modify();
+        Labels[Index]->SetText(Captions[Index]);
+    }
+    Metadata.SetValue(&BP, QueueShortcutKey, TEXT("1"));
+    if (SaveNewBlueprint(TEXT("FF_BUILD_REFERENCE_TOOLS_QUEUE_SHORTCUT_V11"), BP)) return true;
+    Metadata.RemoveValue(&BP, QueueShortcutKey);
+    return false;
+}
+
 void Apply()
 {
     UWidgetBlueprint* BP = LoadExistingBlueprint(FFBuildUIAssetPaths::BuildToolsPackage);
@@ -1368,7 +1569,8 @@ void Apply()
         if (RefinePresentation(*BP) && AddNavigationAndProjectSettings(*BP) &&
             ApplyPearlToolbarAndDrawer(*BP) && ApplyPearlPolish(*BP) &&
             ApplyPearlReadableCards(*BP) && ApplyIconHelp(*BP) &&
-            ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP))
+            ApplyActionLanguage(*BP) && ApplyKeyboardHelp(*BP) && ApplyConstructionEditingHelp(*BP) &&
+            ApplyQueueShortcutKeys(*BP))
         {
             UE_LOG(LogFFUIWbpBuilder, Display, TEXT("FF_BUILD_REFERENCE_TOOLS_REUSE"));
         }
@@ -1392,7 +1594,8 @@ void Apply()
     else if (!RefinePresentation(*BP) || !AddNavigationAndProjectSettings(*BP) ||
         !ApplyPearlToolbarAndDrawer(*BP) || !ApplyPearlPolish(*BP) ||
         !ApplyPearlReadableCards(*BP) || !ApplyIconHelp(*BP) ||
-        !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP))
+        !ApplyActionLanguage(*BP) || !ApplyKeyboardHelp(*BP) || !ApplyConstructionEditingHelp(*BP) ||
+        !ApplyQueueShortcutKeys(*BP))
     {
         UE_LOG(LogFFUIWbpBuilder, Error, TEXT("FF_BUILD_REFERENCE_TOOLS_FAIL: refinement failed"));
     }

@@ -9,6 +9,8 @@
 #include "Building/Presentation/FF_BuildToolsWidget.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/SizeBox.h"
 #include "Components/Image.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
@@ -185,11 +187,34 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         for (FName Name : {TEXT("Text_PlacementAdvice"), TEXT("Text_PlacementObstruction"), TEXT("Text_AssistanceMessage"),
             TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem")})
             if (UWidget* Panel = Widget->GetWidgetFromName(Name)) Panel->SetVisibility(ESlateVisibility::Collapsed);
-        auto Capture = [&](const TCHAR* State)
+        auto Capture = [&](const TCHAR* State, bool bShowQueueDraft = false)
         {
+            // Freeze authority-driven refresh only for this authored presentation capture.
+            // Production state/queue behavior is covered by the BuildMode integration tests.
+            const bool bWasTicking = Slate->GetCanTick();
+            if (bShowQueueDraft)
+            {
+                Slate->SetCanTick(false);
+                if (UWidget* Queue = Widget->GetWidgetFromName(TEXT("Row_BuildHelpQueue")))
+                    Queue->SetVisibility(ESlateVisibility::HitTestInvisible);
+                Text(TEXT("Text_BuildHelpQueueHint"), TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자\n현재: U자형 · 배치 확정 시 적용"));
+            }
             for (int32 Frame = 0; Frame < 4; ++Frame)
             {
                 Widget->ForceLayoutPrepass();
+                if (bShowQueueDraft)
+                {
+                    auto* HelpSize = Cast<USizeBox>(Widget->GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
+                    UWidget* Column = Widget->GetWidgetFromName(TEXT("Column_BuildIconHelp"));
+                    if (HelpSize && Column)
+                    {
+                        const FVector2D Placement = FFBuildToolsModel::ResolveHelpVerticalBounds(
+                            Column->GetDesiredSize().Y + 24.f, Size.Y / Dpi - 100.f);
+                        HelpSize->SetHeightOverride(Placement.Y);
+                        if (auto* Slot = Cast<UCanvasPanelSlot>(HelpSize->Slot))
+                            Slot->SetPosition(FVector2D(32.f, Placement.X));
+                    }
+                }
                 Renderer.DrawWindow(Target.Get(), HitGrid, Window, 1.f, Size, .016f, false);
             }
             const FString ContextName = FString::Printf(TEXT("%s %dx%d"), State, Resolution.X, Resolution.Y);
@@ -200,6 +225,8 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             const FSlateRect DockRect = Bounds(Dock), InfoRect = Bounds(Info), SettingsRect = Bounds(Settings);
             const auto* SettingsScroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildSettings")));
             const FSlateRect SettingsViewRect = SettingsScroll ? Bounds(SettingsScroll) : SettingsRect;
+            const auto* HelpScroll = Cast<UScrollBox>(Widget->GetWidgetFromName(TEXT("Scroll_BuildHelp")));
+            const FSlateRect HelpViewRect = HelpScroll ? Bounds(HelpScroll) : Bounds(Help);
             const bool bDock = IsRendered(Dock), bInfo = IsRendered(Info), bSettings = IsRendered(Settings);
             TestTrue(ContextName + TEXT(": top toolbar fits the viewport"),
                 IsRendered(TopBar) && Contains(Viewport, TopRect));
@@ -267,11 +294,51 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     TestTrue(ContextName + TEXT(": help shows the input device: ") + Name.ToString(),
                         IsRendered(Widget->GetWidgetFromName(Name)));
                 for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
-                    TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc")})
+                    TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"), TEXT("Z"), TEXT("Y")})
                 {
                     const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
                     TestTrue(ContextName + TEXT(": physical keyboard key is visible: ") + Key,
                         IsRendered(Widget->GetWidgetFromName(FName(*Name))));
+                }
+                for (FName Name : {TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo")})
+                {
+                    const UWidget* Action = Widget->GetWidgetFromName(Name);
+                    if (!TestNotNull(ContextName + TEXT(": existing guide owns the history action"), Action)) continue;
+                    const FGeometry& ActionGeometry = Action->GetCachedGeometry();
+                    const FVector2D Center = ActionGeometry.LocalToAbsolute(ActionGeometry.GetLocalSize() * .5f);
+                    // This presentation fixture has no history. Ignore disabled status while
+                    // verifying the actual painted input path through every guide ancestor.
+                    const TArray<FWidgetAndPointer> Path = HitGrid.GetBubblePath(Center, 0.f, true);
+                    TestTrue(ContextName + TEXT(": guide history action has a pointer path: ") + Name.ToString(),
+                        Path.ContainsByPredicate([&](const FWidgetAndPointer& Entry)
+                        { return &Entry.Widget.Get() == Action->GetCachedWidget().Get(); }));
+                }
+                for (FName Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo")})
+                    if (const UWidget* Caption = Widget->GetWidgetFromName(Name))
+                        TestTrue(ContextName + TEXT(": history caption fits on one line: ") + Name.ToString(),
+                            Caption->GetCachedGeometry().GetLocalSize().Y <= 26.f &&
+                            Caption->GetCachedGeometry().GetLocalSize().X + 1.f >= Caption->GetDesiredSize().X);
+                for (FName Name : {TEXT("Size_BuildHelpKey_UndoCtrl"), TEXT("Size_BuildHelpKey_RedoCtrl")})
+                    if (const UWidget* Key = Widget->GetWidgetFromName(Name))
+                        TestTrue(ContextName + TEXT(": history keys align with the existing guide"),
+                            FMath::Abs(Bounds(Key).Left - Bounds(Widget->GetWidgetFromName(TEXT("Size_BuildHelpKey_W"))).Left) < 1.f);
+                if (bShowQueueDraft)
+                {
+                    UWidget* Queue = Widget->GetWidgetFromName(TEXT("Row_BuildHelpQueue"));
+                    TestTrue(ContextName + TEXT(": complete queue key guide fits the visible help"),
+                        IsRendered(Queue) && Contains(HelpViewRect, Bounds(Queue)));
+                    const TCHAR* Captions[] = {TEXT("7"), TEXT("8"), TEXT("9"), TEXT("0")};
+                    for (int32 Index = 0; Index < 4; ++Index)
+                    {
+                        const FName KeyName(*FString::Printf(TEXT("Text_BuildHelpKey_%d"), Index + 1));
+                        const UTextBlock* KeyText = Cast<UTextBlock>(Widget->GetWidgetFromName(KeyName));
+                        TestTrue(ContextName + TEXT(": queue guide uses the updated shortcut: ") + Captions[Index],
+                            KeyText && KeyText->GetText().ToString() == Captions[Index]);
+                    }
+                    for (FName Name : {TEXT("Text_BuildHelpKey_1"), TEXT("Text_BuildHelpKey_2"),
+                        TEXT("Text_BuildHelpKey_3"), TEXT("Text_BuildHelpKey_4"), TEXT("Text_BuildHelpQueueHint")})
+                        TestTrue(ContextName + TEXT(": queue mapping and current draft are visible: ") + Name.ToString(),
+                            IsRendered(Widget->GetWidgetFromName(Name)) && Contains(HelpViewRect, Bounds(Widget->GetWidgetFromName(Name))));
                 }
                 TestFalse(ContextName + TEXT(": old letter-key legend stays hidden"),
                     IsRendered(Widget->GetWidgetFromName(TEXT("Text_ControlHelp"))));
@@ -282,6 +349,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                 if (!IsRendered(Control)) continue;
                 const FSlateRect Rect = Bounds(Control);
                 if (IsWithin(Control, Settings) && !Overlaps(Rect, SettingsViewRect)) continue;
+                if (IsWithin(Control, Help) && !Overlaps(Rect, HelpViewRect)) continue;
                 VisibleControls.Add(Control);
                 const FString Label = ContextName + TEXT(": ") + Control->GetName();
                 TestTrue(Label + TEXT(" has a usable target"), Control->GetCachedGeometry().GetLocalSize().X >= 30 && Control->GetCachedGeometry().GetLocalSize().Y >= 20);
@@ -289,10 +357,12 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     : IsWithin(Control, TopBar) ? static_cast<UWidget*>(TopBar)
                     : IsWithin(Control, Back) ? static_cast<UWidget*>(Back)
                     : IsWithin(Control, Info) ? static_cast<UWidget*>(Info)
-                    : IsWithin(Control, Dock) ? static_cast<UWidget*>(Dock) : nullptr;
+                    : IsWithin(Control, Dock) ? static_cast<UWidget*>(Dock)
+                    : IsWithin(Control, Help) ? static_cast<UWidget*>(Help) : nullptr;
                 if (TestNotNull(Label + TEXT(" has a named interactive surface"), Surface))
                     TestTrue(Label + TEXT(" remains inside its own surface"),
-                        IsWithin(Control, Settings) ? Overlaps(SettingsViewRect, Rect) : Contains(Bounds(Surface), Rect));
+                        IsWithin(Control, Settings) ? Overlaps(SettingsViewRect, Rect) :
+                        IsWithin(Control, Help) ? Overlaps(HelpViewRect, Rect) : Contains(Bounds(Surface), Rect));
                 if (const UButton* Button = Cast<UButton>(Control))
                     if (const UWidget* Content = Button->GetContent()) TestTrue(Label + TEXT(" contains its label"), Contains(Rect, Bounds(Content)));
             }
@@ -309,12 +379,13 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
                     auto PaintedBounds = [&](UWidget* Control)
                     {
                         FSlateRect Rect = Bounds(Control);
-                        if (IsWithin(Control, Settings))
+                        if (IsWithin(Control, Settings) || IsWithin(Control, Help))
                         {
-                            Rect.Left = FMath::Max(Rect.Left, SettingsViewRect.Left);
-                            Rect.Top = FMath::Max(Rect.Top, SettingsViewRect.Top);
-                            Rect.Right = FMath::Min(Rect.Right, SettingsViewRect.Right);
-                            Rect.Bottom = FMath::Min(Rect.Bottom, SettingsViewRect.Bottom);
+                            const FSlateRect Clip = IsWithin(Control, Settings) ? SettingsViewRect : HelpViewRect;
+                            Rect.Left = FMath::Max(Rect.Left, Clip.Left);
+                            Rect.Top = FMath::Max(Rect.Top, Clip.Top);
+                            Rect.Right = FMath::Min(Rect.Right, Clip.Right);
+                            Rect.Bottom = FMath::Min(Rect.Bottom, Clip.Bottom);
                         }
                         return Rect;
                     };
@@ -355,6 +426,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
             bAllSaved &= bSaved;
             TestTrue(ContextName + TEXT(": screenshot saved"), bSaved);
             AddInfo(FString::Printf(TEXT("Saved %s"), *FPaths::ConvertRelativePathToFull(Path)));
+            if (bShowQueueDraft) Slate->SetCanTick(bWasTicking);
         };
         Dock->SetVisibility(ESlateVisibility::Collapsed);
         Info->SetVisibility(ESlateVisibility::Collapsed);
@@ -362,6 +434,7 @@ bool FFFBuildToolsRenderedPreviewTest::RunTest(const FString& Parameters)
         Dock->SetVisibility(ESlateVisibility::Visible);
         Info->SetVisibility(ESlateVisibility::Visible);
         Click(TEXT("Button_Help")); Capture(TEXT("DefaultHelp"));
+        Capture(TEXT("QueueDraftHelp"), true);
         Click(TEXT("Button_Help")); Capture(TEXT("Compact"));
         Info->SetVisibility(ESlateVisibility::Collapsed);
         Settings->SetVisibility(ESlateVisibility::Visible);
