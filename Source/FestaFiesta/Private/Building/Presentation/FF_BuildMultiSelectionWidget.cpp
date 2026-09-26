@@ -1,5 +1,6 @@
 // FF_BuildMultiSelectionWidget.cpp
-// A native fallback mirrors the editable WBP contract when its asset is unavailable.
+// 역할: 선택한 시설을 가로 목록에 보여 주고 상세 보기·선택 해제·종료 요청을 전달한다.
+// 편집용 위젯 에셋이 없어도 같은 이름의 버튼과 표시 요소를 C++로 만들어 기능을 유지한다.
 
 #include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 

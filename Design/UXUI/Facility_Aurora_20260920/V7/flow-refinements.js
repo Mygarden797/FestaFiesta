@@ -1,10 +1,12 @@
-/* Static proposal only: keep source-world pixels intact and reorganize three panels. */
+// 역할: 시설 정보·운영·매출 순위의 정보 순서를 정리한 검토용 패널을 만든다.
+// ui.js의 기본 패널만 교체하며 게임 데이터나 배경 스크린샷은 수정하지 않는다.
 (()=>{
   if(!['03-info','05-operation','08-ranking'].includes(id))return;
   const header=(title,ic='tent')=>`<div class="topline"><span class="title">${icon(ic)}${title}</span>${btn('×','iconbutton')}</div>`;
   const mini=(label,value)=>`<div class="flow-stat"><span>${label}</span><b>${value}</b></div>`;
   const slots=()=>`<div class="flow-slots" aria-hidden="true">${Array.from({length:5},()=>'<span><i></i></span>').join('')}</div>`;
   const row=(label,value)=>`<div class="flow-detail-row"><span>${label}</span><b>${value}</b></div>`;
+  // 현재 화면에 해당하는 HTML을 하나만 만든 뒤 기존 시설 패널 자리에 넣는다.
   const original=scene.querySelector('.inspector');
   let output='';
   if(id==='03-info'){
@@ -59,5 +61,5 @@
     </aside>`;
   }
   if(original)original.outerHTML=output;
-  window.ready=Promise.all([...document.images].map(img=>img.decode().catch(()=>{}))).then(()=>document.fonts.ready);
+  window.ready = waitForPreviewAssets();
 })();

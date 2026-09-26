@@ -181,6 +181,67 @@ bool FFFZSQueueFifoTest::RunTest(const FString& Parameters)
     return true;
 }
 
+// 빈 서비스 번호가 연속하지 않아도 여러 명을 한 번에 선착순으로 옮기고, 남은 줄의 도착 상태를 갱신한다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueBatchAssignmentTest, "FF_ZoneSystem.Unit.Queue.BatchAssignmentPreservesFifoAndServiceSlots", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FFFZSQueueBatchAssignmentTest::RunTest(const FString& Parameters)
+{
+    FFFZSQueueRules Rules;
+    Rules.MaxWaitingAgents = 4;
+    Rules.ServiceCapacity = 4;
+    UFFZSFacilityQueueComponent* Queue = MakeQueue(Rules);
+    FFFZSQueueSnapshot Snapshot;
+    Snapshot.State = EFFZSQueueState::Full;
+    Snapshot.StateBeforeBlocked = EFFZSQueueState::Open;
+    Snapshot.NextJoinSequence = 6;
+
+    FFFZSQueueEntrySnapshot& Existing = Snapshot.Entries.AddDefaulted_GetRef();
+    Existing.AgentId = TEXT("Batch.Existing");
+    Existing.TicketId = FGuid::NewGuid();
+    Existing.JoinSequence = 1;
+    Existing.bInService = true;
+    Existing.ServiceIndex = 1;
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        FFFZSQueueEntrySnapshot& Entry = Snapshot.Entries.AddDefaulted_GetRef();
+        Entry.AgentId = FName(*FString::Printf(TEXT("Batch.Waiting.%d"), Index));
+        Entry.TicketId = FGuid::NewGuid();
+        Entry.JoinSequence = Index + 2;
+        Entry.AssignedQueueIndex = Index;
+        Entry.bArrivedAtAssignedSlot = true;
+    }
+
+    TArray<FText> Errors;
+    if (!TestTrue(TEXT("일괄 배정 전 상태를 복원한다"),
+        FFFZSQueueTestAccess::RestoreSnapshot(*Queue, Snapshot, Errors)))
+    {
+        return false;
+    }
+    FFFZSQueueTestAccess::AdvanceSimulation(*Queue, 0.01f);
+    const FFFZSQueueSnapshot Result = Queue->CaptureSnapshot();
+    const int32 ExpectedServiceIndices[] = {0, 2, 3};
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        const FName AgentId(*FString::Printf(TEXT("Batch.Waiting.%d"), Index));
+        const FFFZSQueueEntrySnapshot* Entry = Result.Entries.FindByPredicate(
+            [AgentId](const FFFZSQueueEntrySnapshot& Candidate) { return Candidate.AgentId == AgentId; });
+        if (TestNotNull(TEXT("배정된 방문객을 보존한다"), Entry))
+        {
+            TestTrue(TEXT("선착순으로 서비스에 배정한다"), Entry->bInService);
+            TestEqual(TEXT("가장 낮은 빈 서비스 번호를 사용한다"), Entry->ServiceIndex, ExpectedServiceIndices[Index]);
+        }
+    }
+    const FFFZSQueueEntrySnapshot* Remaining = Result.Entries.FindByPredicate(
+        [](const FFFZSQueueEntrySnapshot& Entry) { return Entry.AgentId == TEXT("Batch.Waiting.3"); });
+    if (TestNotNull(TEXT("마지막 방문객은 대기열에 남는다"), Remaining))
+    {
+        TestEqual(TEXT("남은 방문객의 대기 번호를 앞으로 당긴다"), Remaining->AssignedQueueIndex, 0);
+        TestFalse(TEXT("바뀐 대기 위치에 다시 도착해야 한다"), Remaining->bArrivedAtAssignedSlot);
+    }
+    TestEqual(TEXT("기존 서비스와 새 배정을 모두 보존한다"), Queue->GetActiveServiceCount(), 4);
+    TestTrue(TEXT("일괄 이동 후에도 대기열 규칙을 만족한다"), Queue->ValidateInvariants(Errors));
+    return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFFZSQueueClosePoliciesTest, "FF_ZoneSystem.Unit.Queue.DrainAndEmergencyCancel", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FFFZSQueueClosePoliciesTest::RunTest(const FString& Parameters)
 {

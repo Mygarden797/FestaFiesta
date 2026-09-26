@@ -1,5 +1,6 @@
 # Measure-PackagedPerformance.ps1
-# Run a reproducible rendered capture from an existing Win64 Development payload.
+# 역할: 이미 만든 개발용 배포본에서 같은 화면 조건으로 성능을 측정한다.
+# 측정 시나리오와 로그·CSV·장비 정보를 별도 폴더에 기록해 팀원이 재검토할 수 있게 한다.
 
 <#
 .SYNOPSIS

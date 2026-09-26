@@ -4,8 +4,8 @@
 
 #include "CoreMinimal.h"
 
-// Sparse broad-phase index in world XY centimeters. Gameplay ownership and exact geometry
-// remain outside this index; bucket boundaries never become placement boundaries.
+// 월드 XY 좌표(cm)를 검색 묶음으로 나눈 후보 목록이다. 실제 충돌 판정과 시설 소유권은 호출자가 관리한다.
+// 묶음의 경계는 검색 속도를 위한 구분일 뿐 시설을 설치할 수 있는 경계가 아니다.
 class FF_ZONESYSTEM_API FFFZSSpatialHash2D
 {
 public:
@@ -14,16 +14,14 @@ public:
     static constexpr double RegionBucketSizeCm = 10000.0;
     explicit FFFZSSpatialHash2D(double InBucketSizeCm = DefaultBucketSizeCm);
 
-    // Replaces an existing record atomically from the caller's perspective. Invalid bounds
-    // return false but retain the ID as a conservative candidate for every query. Oversized
-    // valid bounds use a bounded fallback list and return true.
+    // 기존 위치를 새 위치로 교체한다. 잘못된 경계는 false를 반환하되 후보에서 누락되지 않게 보관한다.
+    // 너무 큰 정상 경계는 별도 목록에 저장한다. 좌표가 정확히 같으면 기존 묶음을 재사용한다.
     bool InsertOrUpdate(const FGuid& Id, const FBox2D& WorldBounds);
     void Remove(const FGuid& Id);
     void Reset();
 
-    // Replaces the output with unique candidates in numeric GUID order. Touching bounds
-    // are included. Invalid queries conservatively return every ID; oversized queries scan
-    // stored bounds rather than enumerating an unbounded number of empty buckets.
+    // 경계에 닿는 후보까지 모으고 중복을 없앤 뒤 GUID 순서로 반환한다.
+    // 잘못된 검색 영역이면 모든 ID를 반환하며, 너무 큰 검색 영역은 저장된 경계만 검사한다.
     void Query(const FBox2D& WorldBounds, TArray<FGuid>& OutCandidates) const;
 
     int32 Num() const { return Entries.Num(); }

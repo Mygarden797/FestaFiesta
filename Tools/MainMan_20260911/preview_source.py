@@ -1,5 +1,5 @@
 # preview_source.py
-# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+# 역할: 원본 캐릭터의 카메라·조명을 구성해 앞·뒤·사선 미리보기를 촬영하고 뼈대·메시 상태를 기록한다.
 
 import bpy, math, json, bmesh
 from mathutils import Vector
@@ -23,5 +23,6 @@ data={'bones':[{'name':b.name,'head':list(b.head_local),'tail':list(b.tail_local
 obj=next(o for o in bpy.data.objects if o.type=='MESH');bm=bmesh.new();bm.from_mesh(obj.data)
 bmesh.ops.remove_doubles(bm,verts=list(bm.verts),dist=0.000001)
 data['after_weld']={'verts':len(bm.verts),'faces':len(bm.faces),'nonmanifold':sum(not e.is_manifold for e in bm.edges),'boundary':sum(e.is_boundary for e in bm.edges),'noncontiguous':sum(e.is_manifold and not e.is_contiguous for e in bm.edges)}
+bm.free()
 (OUT/'rig_audit.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
 print('AUDIT',json.dumps(data))

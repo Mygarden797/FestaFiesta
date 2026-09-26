@@ -1,0 +1,143 @@
+// 에디터 전용 모듈: 제작 도구와 그 검증 코드를 게임 실행 코드에서 분리한다.
+// FF_UIWbpBuilderCommon.h
+
+#pragma once
+
+#include "CoreMinimal.h"
+
+#if WITH_EDITOR
+
+// 역할: 화면 생성기들이 위젯 생성·이름 등록·컴파일·저장을 같은 방식으로 수행하게 한다.
+// 이 헤더와 구현은 FestaFiestaEditor 안에서만 사용한다. 게임 모듈은 이 도구를 호출하지 않는다.
+//
+// 생성기는 최초 화면 구조와 C++ 연결에 필요한 위젯 이름을 만든다.
+// 이미 저장된 화면의 디자이너 수정은 각 생성기의 명시적인 변경 명령에서만 다룬다.
+// 공통 함수를 수정할 때는 기존 에셋 보존 여부와 실패 시 저장하지 않는 조건을 함께 확인한다.
+//
+// === 로그 ===
+// 카테고리는 `LogFFUIWbpBuilder` 하나를 공유하고 **어느 빌더인지는 접두어로 구분한다.**
+// `UE_LOG` 가 컴파일 타임에 카테고리 타입을 요구해서 `FLogCategoryBase&` 를 인자로 넘길 수 없다.
+// 접두어를 인자로 받는 이유는, 박아두면 다른 화면에서 그대로 써서 로그가 거짓말을 하기 때문이다.
+// 관례: `FF_<화면>_UMG` — 예) `FF_REPORT_UMG` · `FF_COMMON_UMG`
+
+#include "Blueprint/WidgetTree.h"
+#include "Templates/Function.h"
+#include "WidgetBlueprint.h"
+
+class UCanvasPanel;
+class UCanvasPanelSlot;
+class UTextBlock;
+class UUserWidget;
+class UWidget;
+
+DECLARE_LOG_CATEGORY_EXTERN(LogFFUIWbpBuilder, Log, All);
+
+namespace FFUIWbpBuilder
+{
+	/** 레이아웃 조립 콜백. false 를 돌려주면 저장하지 않고 실패로 끝낸다. */
+	using FBuildLayout = TFunction<bool(UWidgetBlueprint&, UWidgetTree&)>;
+
+	/** `/Game/A/B` → `/Game/A/B.B`. LoadObject 가 요구하는 형태다. */
+	FString MakeObjectPath(const FString& PackageName);
+
+	/** 프로젝트 UI 기본 폰트 패키지. 없어도 생성은 성공한다 — 폰트는 마감 단계 항목이다. */
+	FString GetUiFontPackage();
+
+	/**
+	 * 위젯을 만들고 이름을 블루프린트 변수로 등록한다.
+	 *
+	 * !! `Blueprint.OnVariableAdded(Name)` 을 빼면 안 된다 !!
+	 * 위젯 블루프린트 컴파일러가 `WidgetVariableNameToGuidMap` 을 보기 때문에, 없으면 동적 생성한
+	 * 트리가 컴파일·재저장 후 위젯 이름을 잃는다. 모르면 며칠 태우는 부분이다.
+	 *
+	 * `bVariable` 은 `BindWidget` 으로 잡을 대상에만 true 로 준다.
+	 */
+	template <typename TWidget>
+	TWidget* MakeWidget(UWidgetBlueprint& Blueprint, UWidgetTree& Tree, const FName Name, const bool bVariable = false)
+	{
+		TWidget* Widget = Tree.ConstructWidget<TWidget>(TWidget::StaticClass(), Name);
+		if (Widget)
+		{
+			Widget->bIsVariable = bVariable;
+			Blueprint.OnVariableAdded(Name);
+		}
+		return Widget;
+	}
+
+	/**
+	 * 이미 생성된 WBP 클래스를 자식으로 넣을 때 쓴다.
+	 * 선행 WBP 컴파일이 실패해 클래스가 없으면 **잘못된 기본 타입을 대신 만들지 않고** 실패를 전파한다.
+	 */
+	UUserWidget* MakeWidgetOfClass(
+		UWidgetBlueprint& Blueprint,
+		UWidgetTree& Tree,
+		const FName Name,
+		UClass* WidgetClass,
+		const bool bVariable = true);
+
+	/** 폰트가 없어도 크기와 색은 적용한다. */
+	void StyleText(UTextBlock& Text, const int32 FontSize, const FLinearColor& Color, const FName TypefaceName);
+
+	/**
+	 * 캔버스에 절대 좌표로 배치한다.
+	 * 앵커를 점(0,0)으로 두면 Offsets 의 Right·Bottom 이 크기로 해석되어 1920x1080 좌표와 1:1 이 된다.
+	 * 화면 배율은 `UIScaleRule=ShortestSide` 가 처리한다 (Config/DefaultEngine.ini:90).
+	 */
+	UCanvasPanelSlot* PlaceOnCanvas(
+		UCanvasPanel& Canvas,
+		UWidget& Child,
+		const float X,
+		const float Y,
+		const float W,
+		const float H);
+
+	/** 캔버스를 가득 채운다. 배경·레이어에 쓴다. */
+	UCanvasPanelSlot* StretchOnCanvas(UCanvasPanel& Canvas, UWidget& Child);
+
+	/** 없으면 nullptr. 로그를 남기지 않는다 — 없는 것이 정상인 호출부가 있다. */
+	UWidgetBlueprint* LoadExistingBlueprint(const FString& PackageName);
+
+	/** 컴파일된 클래스. 다른 WBP 를 자식으로 넣기 전에 이걸로 확인한다. */
+	UClass* LoadGeneratedClass(const FString& PackageName);
+
+	/** 구조 변경을 알린 뒤 컴파일하고 저장한다. `GeneratedClass` 에 최신 트리가 반영되게 하는 순서다. */
+	bool SaveNewBlueprint(const TCHAR* LogPrefix, UWidgetBlueprint& Blueprint);
+
+	/**
+	 * 트리를 건드리지 않고 CDO 값만 바꾼 에셋을 저장한다 (예: `CBS_` 버튼 스타일, 컴파일 뒤의 CDO 기본값).
+	 * 컴파일하지 않는다 — 구조를 바꿨다면 `SaveNewBlueprint` 를 쓴다.
+	 */
+	bool SaveAssetPackage(const TCHAR* LogPrefix, UObject& Asset);
+
+	/**
+	 * 🔴 **파괴적이다.** 기존 트리·바인딩·이름 GUID 맵을 비우고 빈 `WidgetTree` 를 새로 만든다.
+	 * 디자이너에서 손댄 배치가 전부 사라지므로 `FF.Apply...` 처럼 이름에 위험을 박은 명령에서만 부른다.
+	 */
+	bool ResetWidgetTree(const TCHAR* LogPrefix, UWidgetBlueprint& Blueprint);
+
+	/**
+	 * 🔴 **파괴적이다.** 이미 있는 WBP 의 레이아웃을 통째로 교체한다. 없으면 `EnsureWidgetBlueprint` 로 위임한다.
+	 *
+	 * 이름이 같아도 **부모 클래스가 다르면 손대지 않는다** — 우연히 이름이 겹친 사용자 에셋을 지우지 않기 위함이다.
+	 * 이벤트 그래프는 건드리지 않는다. 남은 레거시 노드는 호출부가 따로 정리한다.
+	 */
+	UWidgetBlueprint* ReplaceWidgetBlueprint(
+		const TCHAR* LogPrefix,
+		const FString& PackageName,
+		const FString& Folder,
+		UClass& ParentClass,
+		FBuildLayout&& BuildLayout);
+
+	/**
+	 * **비파괴 핵심.** 패키지가 이미 있으면 레이아웃 콜백을 **아예 실행하지 않고** 그것을 돌려준다.
+	 * 명령을 여러 번 실행해도 디자이너 수정이 보존된다. 덮어쓰는 경로를 여기 만들지 않는다.
+	 */
+	UWidgetBlueprint* EnsureWidgetBlueprint(
+		const TCHAR* LogPrefix,
+		const FString& PackageName,
+		const FString& Folder,
+		UClass& ParentClass,
+		FBuildLayout&& BuildLayout);
+}
+
+#endif // WITH_EDITOR

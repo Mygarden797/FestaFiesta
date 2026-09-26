@@ -3,6 +3,7 @@
 #include "FF_FFZSVisualGeometry.h"
 
 #include "Engine/StaticMesh.h"
+#include "FF_FFZSTypes.h"
 
 namespace
 {

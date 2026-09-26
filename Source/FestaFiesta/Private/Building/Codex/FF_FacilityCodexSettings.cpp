@@ -1,3 +1,5 @@
+// 역할: 조합 도감의 발견 개수별 기본 보상을 만들고 사용할 수 있는 보상만 골라낸다.
+// 중복 ID·중복 목표 개수·달성할 수 없는 목표를 제외한 뒤 쉬운 목표부터 정렬한다.
 #include "Building/Codex/FF_FacilityCodexSettings.h"
 
 UFF_FacilityCodexSettings::UFF_FacilityCodexSettings()

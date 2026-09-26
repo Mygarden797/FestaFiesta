@@ -1,3 +1,4 @@
+# 역할: 실제 축제 화면의 건축 도움말·옵션·시설 조합을 캡처하고, 실행 중 생긴 저장 파일 변경을 복구한다.
 """Capture catalog/help, Pause Hub/options, keycaps and an existing facility's combos.
 
 Run in a freshly built, idle Entry editor with -ExecutePythonScript and
@@ -29,7 +30,7 @@ import unreal
 ROOT = Path(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()))
 _module = runpy.run_path(str(ROOT / "Tools/BuildModeClarity/capture_runtime.py"))
 BASE_TICK = _module["tick"]
-# runpy returns a namespace copy; callbacks retain their original globals.
+# runpy가 돌려준 사전과 콜백의 전역 사전은 다르므로 실제 콜백이 읽는 상태를 공유한다.
 BASE = BASE_TICK.__globals__
 unreal.unregister_slate_post_tick_callback(BASE["HANDLE"])
 STATE, REPORT = BASE["STATE"], BASE["REPORT"]
@@ -95,8 +96,7 @@ def restore_save_games():
     assert not BASE["LEVEL"].is_in_play_in_editor(), "Save restoration requires completed PIE teardown"
     current = scan_save_games()
     REPORT["savegames_after_capture"] = current
-    # Validate every backup before replacing any original. Keep the backup and
-    # manifest after recovery so interrupted runs can be inspected manually.
+    # 모든 백업이 온전한지 먼저 검사한 뒤 기존 저장 파일을 복원한다. 백업과 목록은 복구 후에도 남긴다.
     for name, expected in SAVE_SNAPSHOT.items():
         assert save_file_state(SAVE_BACKUP / name) == expected, "Save backup is no longer intact: " + name
     SAVE_DIR.mkdir(parents=True, exist_ok=True)

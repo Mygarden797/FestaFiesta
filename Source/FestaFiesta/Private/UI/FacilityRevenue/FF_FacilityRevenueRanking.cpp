@@ -24,13 +24,16 @@
 #define LOCTEXT_NAMESPACE "FFFacilityRevenueRanking"
 int64 FFFacilityRevenueRanking::Rank(TArray<UFF_FacilityRevenueRankItem *> &Items, bool bCumulative)
 {
+	// 표시용 복사본에만 순위와 비율을 기록한다. 원본 수입 장부는 변경하지 않는다.
 	for (UFF_FacilityRevenueRankItem* Item : Items)
 		Item->Amount = FMath::Max(0, bCumulative ? Item->TotalGold : Item->TodayGold);
 	Items.Sort([](const UFF_FacilityRevenueRankItem &A, const UFF_FacilityRevenueRankItem &B) {
 		if (A.Amount != B.Amount)
 			return A.Amount > B.Amount;
 		const int32 Names = A.Name.ToString().Compare(B.Name.ToString());
-		return Names != 0 ? Names < 0 : A.FacilityId.ToString() < B.FacilityId.ToString();
+		// 같은 이름과 수입인 시설은 고유 번호로 정렬해 매번 같은 순서를 유지한다.
+		// 번호를 직접 비교하면 비교할 때마다 임시 문자열을 만들 필요가 없다.
+		return Names != 0 ? Names < 0 : A.FacilityId < B.FacilityId;
 	});
 	int64 Sum = 0;
 	for (const auto *Item : Items)
@@ -172,6 +175,7 @@ void UFF_FacilityRevenueRankingPanel::Present(const TArray<UFF_FacilityRevenueRa
 											  bool bAvailable, FGuid Preferred)
 {
 	TArray<UObject *> Objects;
+	Objects.Reserve(Rows.Num());
 	for (auto *Item : Rows)
 		Objects.Add(Item);
 	List_Ranking->SetListItems(Objects);
@@ -409,10 +413,13 @@ void UFF_FacilityRevenueRankingSubsystem::Refresh()
 	if (!Selected.IsValid() && Info)
 		Selected = Info->GetSelectedFacilityId();
 	const bool bAvailable = Progression && Progression->GetDefinition();
+	// 기존 행 객체를 재사용하면 수입이 바뀔 때 선택 상태와 가상 목록을 유지할 수 있다.
 	TMap<FGuid, UFF_FacilityRevenueRankItem *> Existing;
+	Existing.Reserve(Items.Num());
 	for (UFF_FacilityRevenueRankItem* Item : Items)
 		Existing.Add(Item->FacilityId, Item);
 	TArray<UFF_FacilityRevenueRankItem *> Rows;
+	Rows.Reserve(Items.Num());
 	auto *Zones = GetWorld()->GetSubsystem<UFFZSWorldSubsystem>();
 	if (bAvailable && Zones)
 		for (const auto &Facility : Zones->BuildReadModel().Facilities)
