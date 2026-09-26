@@ -60,10 +60,9 @@ void UFF_ZoneSystemEconomyBridgeSubsystem::Deinitialize()
 		ZoneSystem->UnregisterExternalPolicy(this);
 	}
 
-	PendingInstallCosts.Reset();
-	PendingMatchedCostRows.Reset();
-	PendingValidatedGold.Reset();
-	PendingCostTablePaths.Reset();
+	PendingReceipts.Reset();
+	CommittedReceipts.Reset();
+	GoldBeforePendingCommits.Reset();
 	bPolicyRegistered = false;
 	ZoneSystem = nullptr;
 	Super::Deinitialize();
@@ -173,75 +172,6 @@ FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ValidateInstallCost(
 	return FFFZSPolicyDecision();
 }
 
-FFFZSPolicyDecision
-UFF_ZoneSystemEconomyBridgeSubsystem::PreValidateFFZoneSystemChange_Implementation(
-	const FFFZSPolicyContext& Context) const
-{
-	if (Context.Command.Type != EFFZSCommandType::Install || IsRestoringSave())
-	{
-		return FFFZSPolicyDecision();
-	}
-
-	int32 InstallCost = 0;
-	FName MatchedCostRow = NAME_None;
-	int32 ValidatedGold = 0;
-	FString CostTablePath;
-	return ValidateInstallCost(
-		Context, InstallCost, MatchedCostRow, ValidatedGold, CostTablePath);
-}
-
-FFFZSPolicyDecision
-UFF_ZoneSystemEconomyBridgeSubsystem::ApplyTentativeFFZoneSystemChange_Implementation(
-	const FFFZSPolicyContext& Context)
-{
-	// 저장된 잔액은 이미 설치비가 빠진 값이다. 복원에서 다시 걷으면 두 번 낸다.
-	if (Context.Command.Type != EFFZSCommandType::Install || IsRestoringSave())
-	{
-		return FFFZSPolicyDecision();
-	}
-
-	int32 InstallCost = 0;
-	FName MatchedCostRow = NAME_None;
-	int32 ValidatedGold = 0;
-	FString CostTablePath;
-	const FFFZSPolicyDecision Decision = ValidateInstallCost(
-		Context, InstallCost, MatchedCostRow, ValidatedGold, CostTablePath);
-	if (!Decision.bAllowed)
-	{
-		UE_LOG(LogFestaFiestaEconomy, Warning,
-			TEXT("[경제] 시설 설치비 예약 거부: CommandId=%s, 사유=%s"),
-			*Context.Command.CommandId.ToString(),
-			*Decision.Message.ToString());
-		return Decision;
-	}
-
-	if (PendingInstallCosts.Contains(Context.Command.CommandId)
-		|| PendingMatchedCostRows.Contains(Context.Command.CommandId)
-		|| PendingValidatedGold.Contains(Context.Command.CommandId)
-		|| PendingCostTablePaths.Contains(Context.Command.CommandId))
-	{
-		UE_LOG(LogFestaFiestaEconomy, Error,
-			TEXT("[경제] 같은 CommandId의 시설 설치비 예약이 이미 존재합니다: CommandId=%s"),
-			*Context.Command.CommandId.ToString());
-		return MakeRejectedDecision(
-			EFFZSPlacementFailure::InternalError,
-			LOCTEXT("DuplicatePendingCost", "같은 건설 명령의 시설 설치비 예약이 이미 존재합니다."));
-	}
-
-	PendingInstallCosts.Add(Context.Command.CommandId, InstallCost);
-	PendingMatchedCostRows.Add(Context.Command.CommandId, MatchedCostRow);
-	PendingValidatedGold.Add(Context.Command.CommandId, ValidatedGold);
-	PendingCostTablePaths.Add(Context.Command.CommandId, CostTablePath);
-	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] 시설 설치비 예약: CommandId=%s, 비용표=%s, 매칭 행=%s, 비용=%d Gold (자금 변경 없음)"),
-		*Context.Command.CommandId.ToString(),
-		*CostTablePath,
-		*MatchedCostRow.ToString(),
-		InstallCost);
-
-	return FFFZSPolicyDecision();
-}
-
 bool UFF_ZoneSystemEconomyBridgeSubsystem::ResolveDemolitionRefund(
 	const FFFZSPolicyContext& Context,
 	int32& OutRefund,
@@ -288,165 +218,135 @@ bool UFF_ZoneSystemEconomyBridgeSubsystem::ResolveDemolitionRefund(
 	return true;
 }
 
-void UFF_ZoneSystemEconomyBridgeSubsystem::CommitDemolitionRefund(const FFFZSPolicyContext& Context)
+FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ResolveConstructionReceipt(
+	const FFFZSPolicyContext& Context, FFF_ConstructionEconomyReceipt& OutReceipt) const
 {
-	int32 Refund = 0;
-	FName MatchedCostRow = NAME_None;
-	FString FailureReason;
-	if (!ResolveDemolitionRefund(Context, Refund, MatchedCostRow, FailureReason))
+	OutReceipt = {};
+	if (IsRestoringSave()) return {};
+	FGuid OriginalId;
+	bool bUndo = false;
+	if (ZoneSystem && ZoneSystem->GetConstructionReplaySource(Context.Command.CommandId, OriginalId, bUndo))
 	{
-		// 철거는 이미 확정됐다. 여기서 되돌릴 수 없으므로 환급 0으로 두고 원인만 남긴다.
-		UE_LOG(LogFestaFiestaEconomy, Warning,
-			TEXT("[경제] 시설 철거 환급을 계산하지 못해 0 Gold를 환급합니다: CommandId=%s, 사유=%s"),
-			*Context.Command.CommandId.ToString(),
-			*FailureReason);
-		return;
+		const FFF_ConstructionEconomyReceipt* Original = CommittedReceipts.Find(OriginalId);
+		if (!Original)
+			return MakeRejectedDecision(EFFZSPlacementFailure::DataInvalid,
+				LOCTEXT("MissingBuildReceipt", "원래 건축 비용 기록을 찾을 수 없어 복구할 수 없습니다."));
+		OutReceipt.InstallSpend = bUndo ? -Original->InstallSpend : Original->InstallSpend;
+		OutReceipt.DemolitionRefund = bUndo ? -Original->DemolitionRefund : Original->DemolitionRefund;
+		return {};
 	}
-
-	UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
-	if (!Progression)
+	if (Context.Command.Type == EFFZSCommandType::Install)
 	{
-		UE_LOG(LogFestaFiestaEconomy, Error,
-			TEXT("[경제] 시설 철거 환급 중 축제 경제 서브시스템을 찾을 수 없습니다: CommandId=%s, 환급=%d Gold"),
-			*Context.Command.CommandId.ToString(),
-			Refund);
-		return;
+		FName Row; int32 Gold = 0; FString Table;
+		return ValidateInstallCost(Context, OutReceipt.InstallSpend, Row, Gold, Table);
 	}
+	if (Context.Command.Type == EFFZSCommandType::Remove)
+	{
+		FName Row; FString Error;
+		ResolveDemolitionRefund(Context, OutReceipt.DemolitionRefund, Row, Error);
+		// Record exactly what can enter the wallet, including an int32 upper bound.
+		if (const UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression())
+			OutReceipt.DemolitionRefund = FMath::Min(OutReceipt.DemolitionRefund, MAX_int32 - Progression->GetGold());
+	}
+	return {};
+}
 
-	Progression->Refund(Refund);
-	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] 시설 철거 환급 완료: CommandId=%s, 매칭 행=%s, 환급=%d Gold, 잔액=%d Gold"),
-		*Context.Command.CommandId.ToString(),
-		*MatchedCostRow.ToString(),
-		Refund,
-		Progression->GetGold());
+FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ValidateConstructionReceipt(
+	const FFF_ConstructionEconomyReceipt& Receipt) const
+{
+	int64 Spend = Receipt.InstallSpend;
+	int64 Refund = Receipt.DemolitionRefund;
+	for (const auto& Entry : PendingReceipts)
+	{
+		Spend += Entry.Value.InstallSpend;
+		Refund += Entry.Value.DemolitionRefund;
+	}
+	return ValidateConstructionTotals(Spend, Refund);
+}
+
+FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ValidateConstructionTotals(
+	const int64 Spend, const int64 Refund) const
+{
+	if (Spend == 0 && Refund == 0) return {};
+	const UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
+	if (!Progression || !Progression->CanApplyConstructionDelta(Spend, Refund))
+		return MakeRejectedDecision(EFFZSPlacementFailure::InsufficientFunds,
+			LOCTEXT("BuildHistoryFunds", "선택한 시설 전체의 비용 또는 철거 환급 회수액을 지불할 수 없습니다. 잔액을 확인하세요."));
+	return {};
+}
+
+FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::PreValidateFFZoneSystemChange_Implementation(
+	const FFFZSPolicyContext& Context) const
+{
+	if (ZoneSystem)
+	{
+		if (const TArray<FFFZSPolicyContext>* Batch = ZoneSystem->GetConstructionBatchPolicyContexts())
+		{
+			int64 Spend = 0, Refund = 0;
+			for (const FFFZSPolicyContext& Member : *Batch)
+			{
+				FFF_ConstructionEconomyReceipt Receipt;
+				const FFFZSPolicyDecision Decision = ResolveConstructionReceipt(Member, Receipt);
+				if (!Decision.bAllowed) return Decision;
+				Spend += Receipt.InstallSpend;
+				Refund += Receipt.DemolitionRefund;
+			}
+			// This is a read-only full-group calculation. Pending tentative reservations are
+			// deliberately excluded; adding them would charge the same batch twice.
+			return ValidateConstructionTotals(Spend, Refund);
+		}
+	}
+	FFF_ConstructionEconomyReceipt Receipt;
+	const FFFZSPolicyDecision Decision = ResolveConstructionReceipt(Context, Receipt);
+	return Decision.bAllowed ? ValidateConstructionReceipt(Receipt) : Decision;
+}
+
+FFFZSPolicyDecision UFF_ZoneSystemEconomyBridgeSubsystem::ApplyTentativeFFZoneSystemChange_Implementation(
+	const FFFZSPolicyContext& Context)
+{
+	if (IsRestoringSave()) return {};
+	if (PendingReceipts.Contains(Context.Command.CommandId))
+		return MakeRejectedDecision(EFFZSPlacementFailure::InternalError,
+			LOCTEXT("DuplicateBuildReceipt", "같은 건축 명령의 자금 예약이 이미 있습니다."));
+	FFF_ConstructionEconomyReceipt Receipt;
+	FFFZSPolicyDecision Decision = ResolveConstructionReceipt(Context, Receipt);
+	if (Decision.bAllowed) Decision = ValidateConstructionReceipt(Receipt);
+	if (Decision.bAllowed) PendingReceipts.Add(Context.Command.CommandId, Receipt);
+	return Decision;
 }
 
 void UFF_ZoneSystemEconomyBridgeSubsystem::CommitFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
-	// 복원 전에 치우는 시설은 판 것이 아니다. 환급하면 잔액이 저장값보다 늘어난다.
-	if (IsRestoringSave())
+	if (IsRestoringSave()) return;
+	FFF_ConstructionEconomyReceipt Receipt;
+	if (!ensure(PendingReceipts.RemoveAndCopyValue(Context.Command.CommandId, Receipt))) return;
+	// All batch reservations have succeeded before any wallet mutation is published.
+	if (Receipt.InstallSpend != 0 || Receipt.DemolitionRefund != 0)
 	{
-		return;
+		UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
+		if (!ensure(Progression)) return;
+		if (!GoldBeforePendingCommits.IsSet()) GoldBeforePendingCommits = Progression->GetGold();
+		if (!ensure(Progression->ApplyConstructionDelta(Receipt.InstallSpend, Receipt.DemolitionRefund, false))) return;
 	}
-	if (Context.Command.Type == EFFZSCommandType::Remove)
+	FGuid OriginalId; bool bUndo = false;
+	if (!ZoneSystem || !ZoneSystem->GetConstructionReplaySource(Context.Command.CommandId, OriginalId, bUndo))
+		CommittedReceipts.Add(Context.Command.CommandId, Receipt);
+	// All members (including free moves) were reserved before Commit. Notify once after the
+	// final receipt, so reentrant Gold listeners cannot spend another member's reserved funds.
+	if (PendingReceipts.IsEmpty() && GoldBeforePendingCommits.IsSet())
 	{
-		CommitDemolitionRefund(Context);
-		return;
+		const int32 PreviousGold = GoldBeforePendingCommits.GetValue();
+		GoldBeforePendingCommits.Reset();
+		if (UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression())
+			Progression->PublishConstructionGoldChange(PreviousGold);
 	}
-	if (Context.Command.Type != EFFZSCommandType::Install)
-	{
-		return;
-	}
-
-	const int32* PendingCost = PendingInstallCosts.Find(Context.Command.CommandId);
-	const FName* PendingCostRow = PendingMatchedCostRows.Find(Context.Command.CommandId);
-	const int32* ValidatedGold = PendingValidatedGold.Find(Context.Command.CommandId);
-	const FString* PendingCostTablePath = PendingCostTablePaths.Find(Context.Command.CommandId);
-	const bool bHasCompleteReservation = PendingCost && PendingCostRow && ValidatedGold
-		&& PendingCostTablePath;
-	ensureAlwaysMsgf(
-		bHasCompleteReservation,
-		TEXT("확정할 시설 설치비 예약이 완전하지 않습니다. CommandId=%s"),
-		*Context.Command.CommandId.ToString());
-	if (!bHasCompleteReservation)
-	{
-		UE_LOG(LogFestaFiestaEconomy, Error,
-			TEXT("[경제] 확정할 시설 설치비 예약을 찾을 수 없습니다: CommandId=%s"),
-			*Context.Command.CommandId.ToString());
-		PendingInstallCosts.Remove(Context.Command.CommandId);
-		PendingMatchedCostRows.Remove(Context.Command.CommandId);
-		PendingValidatedGold.Remove(Context.Command.CommandId);
-		PendingCostTablePaths.Remove(Context.Command.CommandId);
-		return;
-	}
-
-	// TrySpend의 OnGoldChanged 콜백보다 먼저 예약을 제거해 확정 처리를 정확히 한 번으로 제한한다.
-	const int32 InstallCost = *PendingCost;
-	const FName MatchedCostRow = *PendingCostRow;
-	const int32 GoldAtValidation = *ValidatedGold;
-	const FString CostTablePath = *PendingCostTablePath;
-	PendingInstallCosts.Remove(Context.Command.CommandId);
-	PendingMatchedCostRows.Remove(Context.Command.CommandId);
-	PendingValidatedGold.Remove(Context.Command.CommandId);
-	PendingCostTablePaths.Remove(Context.Command.CommandId);
-
-	UFF_FestivalProgressionSubsystem* Progression = ResolveFestivalProgression();
-	ensureAlwaysMsgf(
-		Progression != nullptr,
-		TEXT("시설 설치비 Commit 중 축제 경제 서브시스템이 사라졌습니다. CommandId=%s, 비용 키=%s, 비용=%d Gold"),
-		*Context.Command.CommandId.ToString(),
-		*MatchedCostRow.ToString(),
-		InstallCost);
-	if (!Progression)
-	{
-		UE_LOG(LogFestaFiestaEconomy, Error,
-			TEXT("[경제] 시설 설치 확정 중 축제 경제 서브시스템을 찾을 수 없습니다: CommandId=%s, 비용표=%s, 매칭 행=%s, 비용=%d Gold"),
-			*Context.Command.CommandId.ToString(),
-			*CostTablePath,
-			*MatchedCostRow.ToString(),
-			InstallCost);
-		return;
-	}
-
-	ensureAlwaysMsgf(
-		Progression->GetGold() == GoldAtValidation,
-		TEXT("ApplyTentative와 Commit 사이에 Gold가 변경되었습니다. CommandId=%s, 검증 잔액=%d, 현재 잔액=%d"),
-		*Context.Command.CommandId.ToString(),
-		GoldAtValidation,
-		Progression->GetGold());
-
-	const bool bSpent = Progression->TrySpend(InstallCost, EFF_SpendReason::FacilityInstall);
-	ensureAlwaysMsgf(
-		bSpent,
-		TEXT("검증을 통과한 시설 설치비 차감에 실패했습니다. CommandId=%s, 비용 키=%s, 비용=%d Gold, 현재 잔액=%d Gold"),
-		*Context.Command.CommandId.ToString(),
-		*MatchedCostRow.ToString(),
-		InstallCost,
-		Progression->GetGold());
-	if (!bSpent)
-	{
-		// FFZS는 동기·비재진입이므로 ApplyTentative 이후 잔액 변경은 계약 위반이다.
-		UE_LOG(LogFestaFiestaEconomy, Error,
-			TEXT("[경제] 검증을 통과한 시설 설치비 차감에 실패했습니다: CommandId=%s, 비용표=%s, 매칭 행=%s, 비용=%d Gold, 현재 잔액=%d Gold"),
-			*Context.Command.CommandId.ToString(),
-			*CostTablePath,
-			*MatchedCostRow.ToString(),
-			InstallCost,
-			Progression->GetGold());
-		return;
-	}
-
-	UE_LOG(LogFestaFiestaEconomy, Log,
-		TEXT("[경제] 시설 설치비 차감 완료: CommandId=%s, 비용표=%s, 매칭 행=%s, 비용=%d Gold, 잔액=%d Gold"),
-		*Context.Command.CommandId.ToString(),
-		*CostTablePath,
-		*MatchedCostRow.ToString(),
-		InstallCost,
-		Progression->GetGold());
 }
 
 void UFF_ZoneSystemEconomyBridgeSubsystem::RollbackFFZoneSystemChange_Implementation(
 	const FFFZSPolicyContext& Context)
 {
-	const int32* PendingCost = PendingInstallCosts.Find(Context.Command.CommandId);
-	const FName* PendingCostRow = PendingMatchedCostRows.Find(Context.Command.CommandId);
-	const FString* PendingCostTablePath = PendingCostTablePaths.Find(Context.Command.CommandId);
-	if (PendingCost && PendingCostRow && PendingCostTablePath)
-	{
-		UE_LOG(LogFestaFiestaEconomy, Log,
-			TEXT("[경제] 시설 설치비 예약 취소: CommandId=%s, 비용표=%s, 매칭 행=%s, 비용=%d Gold (자금 변경 없음)"),
-			*Context.Command.CommandId.ToString(),
-			**PendingCostTablePath,
-			*PendingCostRow->ToString(),
-			*PendingCost);
-	}
-
-	PendingInstallCosts.Remove(Context.Command.CommandId);
-	PendingMatchedCostRows.Remove(Context.Command.CommandId);
-	PendingValidatedGold.Remove(Context.Command.CommandId);
-	PendingCostTablePaths.Remove(Context.Command.CommandId);
+	PendingReceipts.Remove(Context.Command.CommandId);
 }
 
 #undef LOCTEXT_NAMESPACE

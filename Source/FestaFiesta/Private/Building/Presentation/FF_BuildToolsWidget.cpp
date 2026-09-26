@@ -2,11 +2,13 @@
 // 역할: 건설 도구 버튼과 각도 입력을 건설 상태 및 명령에 연결한다.
 
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "FF_FFZSWorldSubsystem.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -153,6 +155,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_SettingsEdgeScroll, HandleEdgeScroll)
     FF_BIND_TOOL(Button_Facts, ToggleFacts)
     FF_BIND_TOOL(Button_Help, ToggleHelp)
+    FF_BIND_TOOL(Button_BuildHelpUndo, HandleUndoConstruction)
+    FF_BIND_TOOL(Button_BuildHelpRedo, HandleRedoConstruction)
     FF_BIND_TOOL(Button_DirectAdjustment, ToggleDirectAdjustment)
     FF_BIND_TOOL(Button_FindNearby, FindNearbyPlacement)
     FF_BIND_TOOL(Button_NextPlacementProblem, ShowNextPlacementProblem)
@@ -314,6 +318,7 @@ void UFF_BuildToolsWidget::ShowNextPlacementProblem()
 void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
     Super::NativeTick(Geometry, DeltaTime);
+    RefreshEditingHelp();
     if (Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
         // Use the painted catalog edge in the same logical coordinate system.
@@ -345,6 +350,32 @@ void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime
                             }
                 }
                 if (const UWidget* Surface = CatalogHelpAvoidanceSurface.Get(); Surface && Surface->IsVisible())
+                {
+                    const FGeometry& Bounds = Surface->GetCachedGeometry();
+                    if (Bounds.GetLocalSize().Y > 0.f)
+                        Bottom = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)).Y - 16.f;
+                }
+            }
+            if (BuildMode.IsValid() && BuildMode->IsMultiSelectionActive())
+            {
+                // Keep the same guide available during group edits, above the saved group panel.
+                Bottom = FMath::Min(Bottom, Height - 450.f);
+                const double Time = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+                if (!GroupHelpAvoidanceSurface.IsValid() && Time >= NextGroupHelpSearchTime)
+                {
+                    NextGroupHelpSearchTime = Time + .5;
+                    TArray<UUserWidget*> Panels;
+                    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Panels,
+                        UFF_BuildMultiSelectionWidget::StaticClass(), false);
+                    for (UUserWidget* Panel : Panels)
+                        if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
+                            if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Border_MultiSelection")))
+                            {
+                                GroupHelpAvoidanceSurface = Surface;
+                                break;
+                            }
+                }
+                if (const UWidget* Surface = GroupHelpAvoidanceSurface.Get(); Surface && Surface->IsVisible())
                 {
                     const FGeometry& Bounds = Surface->GetCachedGeometry();
                     if (Bounds.GetLocalSize().Y > 0.f)
@@ -739,6 +770,7 @@ void UFF_BuildToolsWidget::RefreshTools()
     // The saved WBP keeps this named legacy binding collapsed for older
     // Blueprint references. The visible guide pairs physical keycaps with actions.
     if (Text_ControlHelp) Text_ControlHelp->SetText(FText::GetEmpty());
+    RefreshEditingHelp();
     const bool bDirectHelp = System && System->IsDirectPlacementAdjustment();
     if (Text_BuildHelpPrimary)
         Text_BuildHelpPrimary->SetText(!bPreview
@@ -1080,6 +1112,38 @@ bool UFF_BuildToolsWidget::ApplyYawText(const FText& Text)
     if (UFF_BuildModeSubsystem* System = BuildMode.Get()) { System->NotifyBuildToolsInteraction(); }
     return ApplyAngleText(Text);
 }
+void UFF_BuildToolsWidget::RefreshEditingHelp()
+{
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const UFFZSWorldSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+    const bool bCanInteract = System && !System->IsInputSuspendedForPauseMenu() &&
+        FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
+    if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetIsEnabled(bCanInteract && Zones && Zones->CanUndoConstruction());
+    if (Button_BuildHelpRedo) Button_BuildHelpRedo->SetIsEnabled(bCanInteract && Zones && Zones->CanRedoConstruction());
+    const bool bQueueAvailable = bCanInteract && System->CanChooseQueueLayout();
+    if (Row_BuildHelpQueue)
+        Row_BuildHelpQueue->SetVisibility(bQueueAvailable ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if (Text_BuildHelpQueue) Text_BuildHelpQueue->SetText(LOCTEXT("QueueShapeAction", "대기열 모양 선택"));
+    if (Text_BuildHelpQueueHint && bQueueAvailable)
+    {
+        const FText Hint = FText::Format(LOCTEXT("QueueShapeKeysAndCurrent", "7 기본 · 8 좌측 · 9 우측 · 0 U자\n{0}"),
+            System->GetQueueLayoutKeyHint());
+        if (!Text_BuildHelpQueueHint->GetText().EqualTo(Hint)) Text_BuildHelpQueueHint->SetText(Hint);
+    }
+}
+
+void UFF_BuildToolsWidget::HandleUndoConstruction()
+{
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->UndoBuildEdit();
+    RefreshTools();
+}
+
+void UFF_BuildToolsWidget::HandleRedoConstruction()
+{
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->RedoBuildEdit();
+    RefreshTools();
+}
+
 void UFF_BuildToolsWidget::HandleGoldChanged(const int32 Gold) { RefreshTools(); }
 
 void UFF_BuildToolsWidget::ReturnToCatalog()

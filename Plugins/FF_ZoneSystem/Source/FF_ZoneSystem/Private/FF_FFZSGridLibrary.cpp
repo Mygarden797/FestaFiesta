@@ -908,6 +908,11 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     AppendInt(TEXT("placement.origin_x"), Command.Placement.OriginCell.X);
     AppendInt(TEXT("placement.origin_y"), Command.Placement.OriginCell.Y);
     AppendInt(TEXT("placement.yaw_centidegrees"), GetEffectiveYawCentidegrees(Command.Placement));
+    if (Command.bChangeQueueLayout)
+    {
+        AppendInt(TEXT("move.change_queue_layout"), 1);
+        AppendInt(TEXT("move.queue_layout"), static_cast<int64>(Command.QueueLayout));
+    }
 
     // Preserve every existing command's v5 receipt byte for byte across the save migration.
     if (Command.Type == EFFZSCommandType::Upgrade)
@@ -955,6 +960,11 @@ FString UFFZSGridLibrary::BuildCommandFingerprint(const FFFZSCommand& Command)
     AppendInt(TEXT("spec.footprint_x"), Spec.FootprintSizeCells.X);
     AppendInt(TEXT("spec.footprint_y"), Spec.FootprintSizeCells.Y);
     AppendInt(TEXT("spec.clearance_cells"), Spec.ClearanceCells);
+    // Keep legacy command receipts byte-identical for the additive Authored default.
+    if (Spec.QueueLayout != EFFZSQueueLayout::Authored)
+    {
+        AppendInt(TEXT("spec.queue_layout"), static_cast<int64>(Spec.QueueLayout));
+    }
 
     // v5는 압축 사각형 원본과 구 호환 단일 셀을 모두 기록한다. 잘못된 사양도 서로 다른
     // 멱등성 payload가 같은 지문으로 합쳐지지 않도록 검증 전 원본 순서를 의도적으로 보존한다.

@@ -5,11 +5,17 @@
 #include "CoreMinimal.h"
 
 struct FFFZSCellRect;
+struct FFFZSFacilitySpec;
 
 // Shared, side-effect-free geometry operations for the piecewise-linear queue path stored in
 // FFFZSFacilitySpec. Distances and points use Unreal centimeters.
 struct FF_ZONESYSTEM_API FFFZSQueueGeometry
 {
+    // Applies the selected layout to a disposable, already size-adjusted spec. Authored is a no-op.
+    // Service/Exit anchors and capacity stay unchanged; Entry[0], queue slots and reservations move together.
+    // Failure leaves the spec unchanged and provides a player-facing reason.
+    static bool ApplySelectedLayout(FFFZSFacilitySpec& InOutSpec, FText& OutError);
+
     // Canonical segment predicate shared by length, sampling, runtime projection, and editor tools.
     static bool IsUsableLinearSegmentLengthCm(double SegmentLengthCm);
 

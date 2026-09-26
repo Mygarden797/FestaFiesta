@@ -184,6 +184,11 @@ protected:
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Footprint;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_Queue;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_ControlHelp;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpUndo;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UButton> Button_BuildHelpRedo;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UWidget> Row_BuildHelpQueue;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpQueue;
+    UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpQueueHint;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpPrimary;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpRotate;
     UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> Text_BuildHelpMove;
@@ -224,7 +229,9 @@ private:
     TWeakObjectPtr<UFF_BuildCatalogEconomyReadModel> Economy;
     TWeakObjectPtr<UFF_BuildCatalogSubsystem> CatalogModel;
     TWeakObjectPtr<UWidget> CatalogHelpAvoidanceSurface;
+    TWeakObjectPtr<UWidget> GroupHelpAvoidanceSurface;
     double NextCatalogHelpSearchTime = 0.0;
+    double NextGroupHelpSearchTime = 0.0;
     UPROPERTY(Transient) FFF_BuildToolsViewData ViewData;
     FTimerHandle FreeRotationTimer;
     int32 PointerRotationDirection = 0;
@@ -233,6 +240,9 @@ private:
     double LastPointerRotationTime = 0.0;
     UFUNCTION() void ToggleDetails();
     UFUNCTION() void HandleMultiSelect();
+    UFUNCTION() void HandleUndoConstruction();
+    UFUNCTION() void HandleRedoConstruction();
+    void RefreshEditingHelp();
     UFUNCTION() void HandleSnapCycle();
     UFUNCTION() void HandleBuildBack();
     UFUNCTION() void HandleFacilityRanges();

@@ -15,6 +15,10 @@ struct FESTAFIESTA_API FFF_DayLedger
 	// 시설 철거 환급 전용. TotalRevenue를 안 건드리는 Refund()와 짝이라 EarnByReason에 안 섞는다.
 	void RecordRefund(int32 Amount);
 
+	// Signed construction corrections preserve every unrelated revenue/spend entry.
+	bool CanAdjustConstruction(int64 InstallSpendDelta, int64 RefundDelta) const;
+	bool AdjustConstruction(int64 InstallSpendDelta, int64 RefundDelta);
+
 	// 하루 경계에서 호출
 	void Reset();
 

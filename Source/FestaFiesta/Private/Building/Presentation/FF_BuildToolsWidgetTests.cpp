@@ -93,6 +93,7 @@ bool FFFBuildToolsDesignerStyleTest::RunTest(const FString& Parameters)
 #include "Blueprint/WidgetTree.h"
 #include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/Border.h"
+#include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
@@ -136,6 +137,7 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         TestTrue(TEXT("The settings drawer starts closed"), Settings->GetVisibility() == ESlateVisibility::Collapsed);
     const FName ButtonNames[] = { TEXT("Button_Confirm"), TEXT("Button_Catalog"),
         TEXT("Button_Help"), TEXT("Button_Facts"), TEXT("Button_DirectAdjustment"),
+        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
         TEXT("Button_FindNearby"), TEXT("Button_NextPlacementProblem"),
         TEXT("Button_Grid"), TEXT("Button_SnapMeter"), TEXT("Button_SnapPrecision"),
         TEXT("Button_SnapFree"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
@@ -221,8 +223,13 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
         Keycaps && Keycaps->GetVisibility() == ESlateVisibility::Collapsed);
     for (int32 Index = 1; Index <= 7; ++Index)
     {
-        TestNotNull(*FString::Printf(TEXT("Toolbar action %d uses a packaged texture"), Index),
-            Cast<UImage>(Tree->FindWidget(FName(*FString::Printf(TEXT("Image_ToolbarF%d"), Index)))));
+        const FName CanvasName = Index == 1 ? FName(TEXT("Canvas_BuildToolbarFacilityPlus"))
+            : FName(*FString::Printf(TEXT("Canvas_BuildToolbarLine%d"), Index));
+        const UCanvasPanel* Icon = Cast<UCanvasPanel>(Tree->FindWidget(CanvasName));
+        TestTrue(*FString::Printf(TEXT("Toolbar action %d uses editable simple vector strokes"), Index),
+            Icon && Icon->GetChildrenCount() >= 2 && Icon->GetChildrenCount() <= 12);
+        TestNull(TEXT("Complex raster toolbar artwork is retired"),
+            Tree->FindWidget(FName(*FString::Printf(TEXT("Image_ToolbarF%d"), Index))));
     }
     const USizeBox* SettingsSize = Cast<USizeBox>(Tree->FindWidget(TEXT("Size_BuildSettings")));
     const UCanvasPanelSlot* SettingsSlot = SettingsSize ? Cast<UCanvasPanelSlot>(SettingsSize->Slot) : nullptr;
@@ -240,13 +247,31 @@ bool FFFBuildToolsDesignerContractTest::RunTest(const FString& Parameters)
     TestNotNull(TEXT("Short viewports can scroll the guide inside the available space"),
         Cast<UScrollBox>(Tree->FindWidget(TEXT("Scroll_BuildHelp"))));
     for (const TCHAR* Key : {TEXT("Q"), TEXT("E"), TEXT("W"), TEXT("A"), TEXT("S"),
-        TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc")})
+        TEXT("D"), TEXT("Ctrl"), TEXT("G"), TEXT("B"), TEXT("Esc"),
+        TEXT("Z"), TEXT("Y")})
     {
         const FString Name = FString(TEXT("Text_BuildHelpKey_")) + Key;
         const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(FName(*Name)));
         TestTrue(*FString::Printf(TEXT("The guide shows the actual %s keyboard key in a readable keycap"), Key),
             KeyText && KeyText->GetText().ToString() == Key && KeyText->GetFont().Size >= 14);
     }
+    const TCHAR* QueueKeys[] = {TEXT("7"), TEXT("8"), TEXT("9"), TEXT("0")};
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        // Existing Designer names are stable; their displayed shortcuts are migrated.
+        const FName Name(*FString::Printf(TEXT("Text_BuildHelpKey_%d"), Index + 1));
+        const UTextBlock* KeyText = Cast<UTextBlock>(Tree->FindWidget(Name));
+        TestTrue(*FString::Printf(TEXT("Queue shortcut %s is shown in the preserved keycap"), QueueKeys[Index]),
+            KeyText && KeyText->GetText().ToString() == QueueKeys[Index] && KeyText->GetFont().Size >= 14);
+    }
+    const UTextBlock* QueueHint = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_BuildHelpQueueHint")));
+    TestTrue(TEXT("Saved queue mapping matches the active number shortcuts"),
+        QueueHint && QueueHint->GetText().ToString() == TEXT("7 기본 · 8 좌측 · 9 우측 · 0 U자"));
+    for (const TCHAR* Name : {TEXT("Text_BuildHelpUndo"), TEXT("Text_BuildHelpRedo"), TEXT("Text_BuildHelpQueue"), TEXT("Text_BuildHelpQueueHint")})
+        TestNotNull(*FString::Printf(TEXT("Editing guidance belongs to the existing help: %s"), Name), Tree->FindWidget(Name));
+    const UWidget* QueueHelp = Tree->FindWidget(TEXT("Row_BuildHelpQueue"));
+    TestTrue(TEXT("Queue guidance starts hidden until a supported facility is selected"),
+        QueueHelp && QueueHelp->GetVisibility() == ESlateVisibility::Collapsed);
     const UTextBlock* LegacyHelp = Cast<UTextBlock>(Tree->FindWidget(TEXT("Text_ControlHelp")));
     TestTrue(TEXT("Letter-by-letter help is retained only as a hidden compatibility binding"),
         LegacyHelp && LegacyHelp->GetVisibility() == ESlateVisibility::Collapsed);
@@ -315,6 +340,7 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
     for (FName Name : {TEXT("Button_BuildBack"), TEXT("Button_BuildSettings"), TEXT("Button_BuildSettingsClose"),
         TEXT("Button_MultiSelect"), TEXT("Button_SnapCycle"), TEXT("Button_ToolbarRanges"),
         TEXT("Button_ToolbarCatalog"), TEXT("Button_ToolbarHelp"),
+        TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo"),
         TEXT("Button_SettingsGrid"), TEXT("Button_SettingsSnapMeter"),
         TEXT("Button_SettingsSnapPrecision"), TEXT("Button_SettingsSnapFree"),
         TEXT("Button_SettingsDirectAdjustment"), TEXT("Button_SettingsFacilityRanges"),
@@ -326,6 +352,10 @@ bool FFFBuildToolsAdaptivePanelsTest::RunTest(const FString& Parameters)
             TestTrue(*FString::Printf(TEXT("The new settings action is connected: %s"), *Name.ToString()),
                 Button->OnClicked.IsBound());
     }
+    for (FName Name : {TEXT("Button_BuildHelpUndo"), TEXT("Button_BuildHelpRedo")})
+        if (const UButton* Button = Cast<UButton>(Widget->GetWidgetFromName(Name)))
+            TestFalse(TEXT("History actions remain disabled without an active editable session"), Button->GetIsEnabled());
+    TestFalse(TEXT("Queue keys remain contextual without a queue-capable target"), Open(TEXT("Row_BuildHelpQueue")));
     // This playerless fixture has no active build session. Exercise the independent
     // drawer surface without starting placement or bypassing the runtime session guard.
     Settings->SetVisibility(ESlateVisibility::Visible);

@@ -105,6 +105,7 @@ void UFF_BuildModeSubsystem::ClearMultiSelection()
 // 드래그, 선택 표시, 전용 화면을 모두 정리한 다음 외부 화면에 한 번씩 알린다.
 void UFF_BuildModeSubsystem::EndMultiSelection()
 {
+	CancelGroupPlacement();
 	if (!bMultiSelectionActive && MultiSelectedFacilities.IsEmpty() && !MultiSelectionWidget) return;
 	bMultiSelectionPointerArmed = false;
 	bMultiSelectionMarqueeVisible = false;
