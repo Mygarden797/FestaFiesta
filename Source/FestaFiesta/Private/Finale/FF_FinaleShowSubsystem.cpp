@@ -224,6 +224,12 @@ void UFF_FinaleShowSubsystem::RegisterDebugConsoleCommands()
 				TEXT("  순회 가능 시점 %d개 / 지금 쓰는 %d개 / 끊김=%s"),
 				TourCandidates.Num(), TourViewpoints.Num(),
 				bTourSkipped ? TEXT("예") : TEXT("아니오"));
+
+			UE_LOG(LogFestaFiestaFinale, Display,
+				TEXT("  3막=%s 지금 막=%s 1막 몫=%d 발사 시계=%.1fs"),
+				bActMode ? TEXT("예") : TEXT("아니오"),
+				*UEnum::GetDisplayValueAsText(CurrentAct).ToString(),
+				ActOneQuota, FiringClock);
 		}));
 }
 
@@ -337,6 +343,7 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	TailStartedAt = -1.f;
 	bWarnedMissingEffect = false;
 	bWarnedDeadline = false;
+	FiringClock = 0.f;
 
 	// 연출을 새로 시작하면 검사도 다시 한다. 데이터 애셋을 고치고 재생했을 때
 	// 바뀐 이펙트를 그대로 통과시키면 안 된다.
@@ -347,6 +354,10 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 
 	BuildTour();
 
+	// 1막 몫. 3막이 아니면 마무리 몫이 0 이라 전부가 된다.
+	ActOneQuota = ActiveSpec.BurstCount - (bActMode ? ActiveSpec.GetGrandFinaleReserve() : 0);
+	CurrentAct = (bActMode && TourActs.Num() > 0) ? TourActs[0] : EFF_FinaleTourAct::Fireworks;
+
 	if (bTakeOverCamera)
 	{
 		// 시점이 없어도 연출은 진행한다. 카메라가 안 옮겨질 뿐 불꽃은 터져야 한다.
@@ -354,11 +365,17 @@ bool UFF_FinaleShowSubsystem::StartShowWithGrade(const EFF_FinaleGrade Grade)
 	}
 
 	UE_LOG(LogFestaFiestaFinale, Log,
-		TEXT("[피날레] 연출 시작. 등급=%d 발수=%d 지속=%.1fs 동시=%d"),
+		TEXT("[피날레] 연출 시작. 등급=%d 발수=%d 지속=%.1fs 동시=%d 3막=%s"),
 		static_cast<int32>(Grade), ActiveSpec.BurstCount, ActiveSpec.DurationSeconds,
-		ActiveSpec.SimultaneousShells);
+		ActiveSpec.SimultaneousShells, bActMode ? TEXT("예") : TEXT("아니오"));
 
 	OnShowStateChanged.Broadcast(true);
+
+	// 첫 막도 알린다. 받는 쪽이 시작 상태를 따로 추측하지 않게 한다.
+	if (bShowInProgress && bActMode)
+	{
+		OnTourActChanged.Broadcast(CurrentAct);
+	}
 	return true;
 }
 
@@ -380,8 +397,11 @@ void UFF_FinaleShowSubsystem::StopShow()
 	   `카메라 건너뛰기` 안내가 계속 떠 있다. 시점 액터를 강참조로 붙잡고 있기도 하다.
 	*/
 	TourViewpoints.Reset();
+	TourActs.Reset();
 	TourIndex = 0;
 	TourHeldSeconds = 0.f;
+	bActMode = false;
+	CurrentAct = EFF_FinaleTourAct::Fireworks;
 
 	if (AFF_FestivalPlayerController* Controller = GetFestivalController())
 	{
@@ -457,9 +477,18 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 			: nullptr;
 		const float Hold = Current ? FMath::Max(0.5f, Current->TourHoldSeconds) : 6.f;
 
-		if (TourHeldSeconds >= Hold)
+		// 3막의 마지막 자리(마무리)에서는 넘어가지 않고 끝까지 머문다.
+		const bool bAtFinalSeat = bActMode && TourIndex >= TourViewpoints.Num() - 1;
+
+		if (TourHeldSeconds >= Hold && !bAtFinalSeat)
 		{
 			AdvanceTour();
+
+			// 막이 바뀌었다는 신호를 받은 쪽이 연출을 멈췄을 수 있다.
+			if (!bShowInProgress)
+			{
+				return;
+			}
 		}
 	}
 
@@ -471,8 +500,15 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 	   다만 무한히 돌지는 않게 시간으로 한 번 더 막는다. 모든 차례가 0발을 내는
 	   설정(예: 모양 애셋이 전부 비었는데 흩뿌림도 막힌 경우)이 생겨도 연출은 끝나야 한다.
 	*/
+	const bool bGateOpen = IsFiringGateOpen();
+	if (bGateOpen || PendingShells.Num() > 0)
+	{
+		FiringClock += DeltaTime;
+	}
+
+	// 상한은 발사 시계로 잰다. 전체 경과 시간으로 재면 축제장 순회가 길 때 마무리 막에서 잘린다.
 	const float FiringDeadline = FMath::Max(ActiveSpec.DurationSeconds, 1.f) * 2.f;
-	const bool bPastDeadline = ElapsedSeconds >= FiringDeadline;
+	const bool bPastDeadline = FiringClock >= FiringDeadline;
 
 	if (bPastDeadline && GetRemainingShells() > 0 && !bWarnedDeadline)
 	{
@@ -484,13 +520,38 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 
 	if (!bPastDeadline && GetRemainingShells() > 0)
 	{
-		const float Interval = ActiveSpec.GetIntervalSeconds();
+		// 막이 발사를 막고 있다(축제장 순회 중이거나 1막 몫을 다 쐈다). 남은 발이 있으니 끝내지 않는다.
+		if (!bGateOpen)
+		{
+			return;
+		}
+
+		/* 마무리 막의 마지막 한 방.
+
+		   예약된 발이 다 터진 뒤에 쏜다. 일렬 패턴이 아직 날아가는 중에 일제 발사가
+		   겹치면 마지막이 어수선하다. 간격도 지킨다. 바로 앞 차례와 붙어 나가면 한 방으로 안 보인다.
+		*/
+		const bool bFinalSalvoDue = bActMode
+			&& CurrentAct == EFF_FinaleTourAct::GrandFinale
+			&& ActiveSpec.FinalSalvoShells > 0
+			&& GetRemainingShells() <= ActiveSpec.FinalSalvoShells
+			&& PendingShells.Num() == 0
+			&& FiringClock >= NextVolleyAt;
+
+		if (bFinalSalvoDue)
+		{
+			FireFinalSalvo();
+			return;
+		}
+
+		const float Interval = ActiveSpec.GetIntervalSeconds() * GetActIntervalScale();
 
 		// 프레임이 크게 밀렸을 때 밀린 만큼 한꺼번에 쏘면 하늘이 갑자기 꽉 찬다.
 		// 한 프레임에 최대 두 차례까지만 따라잡는다.
+		// 루프 안에서도 문을 다시 본다. 1막 몫을 채우는 순간 멈춰야 마무리 몫이 남는다.
 		int32 CatchUp = 0;
-		while (bShowInProgress && ElapsedSeconds >= NextVolleyAt
-			&& GetRemainingShells() > 0 && CatchUp < 2)
+		while (bShowInProgress && FiringClock >= NextVolleyAt
+			&& IsFiringGateOpen() && CatchUp < 2)
 		{
 			FireVolley();
 			NextVolleyAt += Interval;
@@ -503,10 +564,16 @@ void UFF_FinaleShowSubsystem::Tick(float DeltaTime)
 		}
 
 		// 따라잡기를 포기했으면 다음 기준을 현재 시각으로 당긴다.
-		if (CatchUp >= 2 && ElapsedSeconds > NextVolleyAt)
+		if (CatchUp >= 2 && FiringClock > NextVolleyAt)
 		{
-			NextVolleyAt = ElapsedSeconds + Interval;
+			NextVolleyAt = FiringClock + Interval;
 		}
+		return;
+	}
+
+	// 3막은 마무리 막에 닿기 전에는 끝내지 않는다. 상한에 걸려도 카메라가 마무리를 보여주고 끝난다.
+	if (bActMode && CurrentAct != EFF_FinaleTourAct::GrandFinale)
+	{
 		return;
 	}
 
@@ -675,35 +742,108 @@ void UFF_FinaleShowSubsystem::VerifyEffectParameters(const UNiagaraSystem& Effec
 void UFF_FinaleShowSubsystem::BuildTour()
 {
 	TourViewpoints.Reset();
+	TourActs.Reset();
 	TourIndex = 0;
 	TourHeldSeconds = 0.f;
 	bTourSkipped = false;
+	bActMode = false;
 
 	TArray<AFF_FinaleViewpoint*> Candidates;
 	AFF_FinaleViewpoint::CollectTour(GetWorld(), Candidates);
 
-	if (Candidates.Num() == 0)
+	// 막별로 나눈다. CollectTour 가 TourOrder 로 정렬해 두었으므로 막 안의 순서도 그대로 간다.
+	TArray<AFF_FinaleViewpoint*> SkySeats;
+	TArray<AFF_FinaleViewpoint*> SiteSeats;
+	TArray<AFF_FinaleViewpoint*> FinaleSeats;
+	for (AFF_FinaleViewpoint* Candidate : Candidates)
+	{
+		switch (Candidate->TourAct)
+		{
+		case EFF_FinaleTourAct::SiteTour:    SiteSeats.Add(Candidate);   break;
+		case EFF_FinaleTourAct::GrandFinale: FinaleSeats.Add(Candidate); break;
+		default:                             SkySeats.Add(Candidate);    break;
+		}
+	}
+
+	/* 3막은 카메라를 넘겨받을 때만 선다.
+
+	   막을 넘기는 건 카메라가 머문 시간이다. 카메라를 안 넘겨받으면 축제장 순회가
+	   화면에 안 나오는데 발사만 멈춰서, 플레이어는 이유 없이 빈 하늘을 보게 된다.
+	*/
+	const bool bWantActs = ActiveSpec.bSiteTour && bTakeOverCamera;
+	if (bWantActs && SkySeats.Num() > 0 && SiteSeats.Num() > 0)
+	{
+		for (AFF_FinaleViewpoint* Seat : SkySeats)
+		{
+			TourViewpoints.Add(Seat);
+			TourActs.Add(EFF_FinaleTourAct::Fireworks);
+		}
+		for (AFF_FinaleViewpoint* Seat : SiteSeats)
+		{
+			TourViewpoints.Add(Seat);
+			TourActs.Add(EFF_FinaleTourAct::SiteTour);
+		}
+
+		// 마무리 자리가 없으면 처음 불꽃을 본 자리로 돌아온다. 같은 구도로 끝나야 "다시 본다" 가 된다.
+		if (FinaleSeats.Num() == 0)
+		{
+			FinaleSeats.Add(SkySeats[0]);
+		}
+		for (AFF_FinaleViewpoint* Seat : FinaleSeats)
+		{
+			TourViewpoints.Add(Seat);
+			TourActs.Add(EFF_FinaleTourAct::GrandFinale);
+		}
+
+		bActMode = true;
+		UE_LOG(LogFestaFiestaFinale, Log,
+			TEXT("[피날레] 3막으로 진행한다. 불꽃 관람 %d / 축제장 순회 %d / 마무리 %d"),
+			SkySeats.Num(), SiteSeats.Num(), FinaleSeats.Num());
+		return;
+	}
+
+	if (bWantActs)
+	{
+		// 켜놨는데 막이 안 섰다. 레벨 배치 문제라 알려야 한다. 조용히 넘어가면 등급 차이가 사라진다.
+		UE_LOG(LogFestaFiestaFinale, Warning,
+			TEXT("[피날레] 3막을 켰지만 시점이 모자라 하늘 시점만 돈다. 불꽃 관람 %d / 축제장 순회 %d (둘 다 1개 이상 필요)"),
+			SkySeats.Num(), SiteSeats.Num());
+	}
+
+	// 3막이 아니면 하늘 시점만 쓴다. 불꽃이 터지는 동안 땅을 보고 있으면 안 된다.
+	TArray<AFF_FinaleViewpoint*> SkyOnly;
+	for (AFF_FinaleViewpoint* Candidate : Candidates)
+	{
+		if (Candidate->TourAct != EFF_FinaleTourAct::SiteTour)
+		{
+			SkyOnly.Add(Candidate);
+		}
+	}
+
+	if (SkyOnly.Num() == 0)
 	{
 		// 순회용으로 표시된 시점이 없다. 고정 연출로 쓸 자리라도 찾아본다.
 		if (AFF_FinaleViewpoint* Best = AFF_FinaleViewpoint::FindBest(GetWorld()))
 		{
 			TourViewpoints.Add(Best);
+			TourActs.Add(EFF_FinaleTourAct::Fireworks);
 		}
 		return;
 	}
 
 	// 0 이면 제한 없음. 등급이 낮으면 앞에서부터 몇 개만 쓴다.
 	const int32 Limit = ActiveSpec.TourViewpointLimit;
-	const int32 Take = (Limit <= 0) ? Candidates.Num() : FMath::Min(Limit, Candidates.Num());
+	const int32 Take = (Limit <= 0) ? SkyOnly.Num() : FMath::Min(Limit, SkyOnly.Num());
 
 	for (int32 Index = 0; Index < Take; ++Index)
 	{
-		TourViewpoints.Add(Candidates[Index]);
+		TourViewpoints.Add(SkyOnly[Index]);
+		TourActs.Add(EFF_FinaleTourAct::Fireworks);
 	}
 
 	UE_LOG(LogFestaFiestaFinale, Log,
 		TEXT("[피날레] 시점 %d개 중 %d개를 쓴다. (제한 %d)"),
-		Candidates.Num(), TourViewpoints.Num(), Limit);
+		SkyOnly.Num(), TourViewpoints.Num(), Limit);
 }
 
 void UFF_FinaleShowSubsystem::ApplyTourViewpoint(const float BlendSeconds)
@@ -720,6 +860,12 @@ void UFF_FinaleShowSubsystem::ApplyTourViewpoint(const float BlendSeconds)
 
 	// nullptr 을 넘기면 컨트롤러가 알아서 가장 나은 자리를 고른다.
 	Controller->EnterScriptedView(Viewpoint, BlendSeconds);
+
+	// 머무는 시간 동안 흘러가게 한다. 이동량이 0 인 자리는 그대로 서 있다.
+	if (Viewpoint)
+	{
+		Viewpoint->BeginTourDrift(FMath::Max(0.5f, Viewpoint->TourHoldSeconds));
+	}
 }
 
 void UFF_FinaleShowSubsystem::AdvanceTour()
@@ -729,7 +875,10 @@ void UFF_FinaleShowSubsystem::AdvanceTour()
 		return;
 	}
 
-	TourIndex = (TourIndex + 1) % TourViewpoints.Num();
+	// 3막은 한 번만 지나간다. 마무리에서 첫 자리로 돌아가면 끝난 줄 알았던 연출이 다시 시작한다.
+	TourIndex = bActMode
+		? FMath::Min(TourIndex + 1, TourViewpoints.Num() - 1)
+		: (TourIndex + 1) % TourViewpoints.Num();
 	TourHeldSeconds = 0.f;
 
 	// 다음 자리가 정한 전환 시간을 쓴다. 자리마다 컷으로 자를지 흐르게 할지 다르다.
@@ -737,6 +886,98 @@ void UFF_FinaleShowSubsystem::AdvanceTour()
 	const float Blend = Next ? Next->TourBlendSeconds : CameraBlendSeconds;
 
 	ApplyTourViewpoint(Blend);
+
+	if (bActMode && TourActs.IsValidIndex(TourIndex))
+	{
+		SetCurrentAct(TourActs[TourIndex]);
+	}
+}
+
+void UFF_FinaleShowSubsystem::SetCurrentAct(const EFF_FinaleTourAct NewAct)
+{
+	if (CurrentAct == NewAct)
+	{
+		return;
+	}
+
+	CurrentAct = NewAct;
+	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 막 전환: %s (발사 %d/%d)"),
+		*UEnum::GetDisplayValueAsText(NewAct).ToString(), FiredBursts, ActiveSpec.BurstCount);
+
+	OnTourActChanged.Broadcast(NewAct);
+}
+
+bool UFF_FinaleShowSubsystem::IsFiringGateOpen() const
+{
+	if (GetRemainingShells() <= 0)
+	{
+		return false;
+	}
+
+	if (!bActMode)
+	{
+		return true;
+	}
+
+	switch (CurrentAct)
+	{
+	case EFF_FinaleTourAct::SiteTour:
+		// 축제장을 보는 동안 하늘에서 터져봐야 화면에 없다. 그 발은 마무리에 쓴다.
+		return false;
+
+	case EFF_FinaleTourAct::Fireworks:
+		// 예약된 발까지 센다. 빼먹으면 일렬 패턴이 날아가는 동안 몫을 넘겨 또 쏜다.
+		return FiredBursts + PendingShells.Num() < ActOneQuota;
+
+	default:
+		return true;
+	}
+}
+
+float UFF_FinaleShowSubsystem::GetActIntervalScale() const
+{
+	if (bActMode && CurrentAct == EFF_FinaleTourAct::GrandFinale)
+	{
+		return FMath::Clamp(ActiveSpec.GrandFinaleIntervalScale, 0.1f, 1.f);
+	}
+	return 1.f;
+}
+
+void UFF_FinaleShowSubsystem::FireFinalSalvo()
+{
+	const int32 ShellCount = GetRemainingShells();
+	if (ShellCount <= 0)
+	{
+		return;
+	}
+
+	/* 발사대가 여럿이면 전부에서 동시에 올린다.
+
+	   평소에는 차례마다 발사대를 번갈아 쓰는데(ResolveLaunchOrigin), 마지막까지 한 곳에서만
+	   올리면 일제 발사가 한 덩어리로 뭉친다. 하늘 전체가 한꺼번에 차야 끝난다는 게 읽힌다.
+	*/
+	TArray<AFF_FinaleLaunchSite*> Sites;
+	AFF_FinaleLaunchSite::CollectAll(GetWorld(), Sites);
+
+	UE_LOG(LogFestaFiestaFinale, Log, TEXT("[피날레] 일제 발사 %d발 (발사대 %d곳)"), ShellCount, Sites.Num());
+
+	for (int32 Shell = 0; Shell < ShellCount; ++Shell)
+	{
+		const FVector Origin = Sites.Num() > 0
+			? Sites[Shell % Sites.Num()]->GetActorLocation()
+			: FVector::ZeroVector;
+
+		SpawnShell(PickBurstLocation(Origin), PickColor(ColorCursor++),
+			ActiveSpec.PickEffect(ShowRandom.GetUnsignedInt()));
+
+		// OnBurst 를 받은 쪽이 연출을 멈췄다. 남은 발을 쏘지 않는다.
+		if (!bShowInProgress)
+		{
+			return;
+		}
+	}
+
+	++FiredVolleys;
 }
 
 void UFF_FinaleShowSubsystem::SkipCinematicCamera()
@@ -747,6 +988,22 @@ void UFF_FinaleShowSubsystem::SkipCinematicCamera()
 	}
 
 	bTourSkipped = true;
+
+	/* 3막이면 곧장 마무리 막으로 넘긴다.
+
+	   막을 넘기는 건 카메라가 머문 시간인데, 끊으면 카메라가 더 움직이지 않는다.
+	   축제장 순회 중에 끊으면 발사가 닫힌 채로 남아 연출이 끝나지 않는다.
+	*/
+	if (bActMode)
+	{
+		TourIndex = TourViewpoints.Num() - 1;
+		SetCurrentAct(EFF_FinaleTourAct::GrandFinale);
+
+		if (!bShowInProgress)
+		{
+			return;
+		}
+	}
 
 	// 카메라만 놓아준다. 연출은 그대로 둔다.
 	if (AFF_FestivalPlayerController* Controller = GetFestivalController())

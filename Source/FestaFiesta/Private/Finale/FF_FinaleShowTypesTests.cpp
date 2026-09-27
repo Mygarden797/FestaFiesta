@@ -179,4 +179,29 @@ bool FFF_FinaleParamNamesAreValid::RunTest(const FString& Parameters)
 	return true;
 }
 
+// 7. 3막 마무리 몫은 총 발수를 넘지 않고, 3막이 아니면 남기지 않는다.
+//    몫이 총 발수를 넘으면 1막에서 한 발도 못 쏘고, 3막이 아닌데 남기면 연출이 끝나지 않는다.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FFF_FinaleGrandFinaleReserve, "FestaFiesta.Finale.Spec.GrandFinaleReserve", EAutomationTestFlags_ApplicationContextMask | EAutomationTestFlags::ProductFilter)
+bool FFF_FinaleGrandFinaleReserve::RunTest(const FString& Parameters)
+{
+	const FFF_FinaleGradeSpec S = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::S);
+	TestTrue(TEXT("S 등급은 3막이다"), S.bSiteTour);
+	TestTrue(TEXT("S 등급은 마무리 몫이 있다"), S.GetGrandFinaleReserve() > 0);
+	TestTrue(TEXT("마무리 몫이 총 발수보다 적다"), S.GetGrandFinaleReserve() < S.BurstCount);
+
+	const FFF_FinaleGradeSpec A = FFF_FinaleDefaults::MakeSpec(EFF_FinaleGrade::A);
+	TestEqual(TEXT("3막이 아니면 남기지 않는다"), A.GetGrandFinaleReserve(), 0);
+
+	FFF_FinaleGradeSpec Edge = S;
+	Edge.GrandFinaleShare = 1.f;
+	TestEqual(TEXT("비율 1 이면 전부 마무리 몫"), Edge.GetGrandFinaleReserve(), Edge.BurstCount);
+
+	Edge.GrandFinaleShare = 5.f;
+	TestEqual(TEXT("비율이 1 을 넘어도 총 발수에서 멈춘다"), Edge.GetGrandFinaleReserve(), Edge.BurstCount);
+
+	Edge.GrandFinaleShare = 0.f;
+	TestEqual(TEXT("비율 0 이면 남기지 않는다"), Edge.GetGrandFinaleReserve(), 0);
+	return true;
+}
+
 #endif // WITH_DEV_AUTOMATION_TESTS

@@ -421,10 +421,15 @@ private:
 	// 지금 구독 중인 탭 바. 화면이 다시 만들어지면 바뀐다.
 	TWeakObjectPtr<class UFF_PrepHudBar> BoundPrepHudBar;
 
+	// 마지막으로 구독한 허브. 로그와 디버그 확인용이다. 구독 여부는 허브 쪽 델리게이트로 판단한다.
 	TWeakObjectPtr<class UFF_PlayHubScreen> BoundPlayHub;
 
 	// 다음 구독 시도까지 남은 시간. 매 틱 훑지 않기 위한 것이다.
 	float PlayHubScanCountdown = 0.f;
+
+	// 지난 틱의 프론트엔드 화면(EFF_UIFlowScreen 값). 플레이 허브가 막 뜬 틱을 잡는 데 쓴다.
+	// 화면 타입 헤더를 여기서 끌어오지 않으려고 숫자로 든다.
+	uint8 LastSeenFrontendScreen = 0;
 
 	// 탭 대기 중 탭 바를 다시 확인할 때까지 남은 시간.
 	float PrepBarScanCountdown = 0.f;

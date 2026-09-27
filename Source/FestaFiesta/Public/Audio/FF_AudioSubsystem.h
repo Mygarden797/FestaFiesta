@@ -65,6 +65,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
 	EFF_AudioAmbience GetCurrentAmbience() const { return CurrentAmbience; }
 
+	// 뱅크에 이 상황의 곡이 들어 있는지.
+	// 없는 곡으로 갈아타면 지금 곡만 꺼지고 조용해진다. 그걸 피하고 싶은 호출부가 먼저 본다.
+	UFUNCTION(BlueprintPure, Category = "FestaFiesta|Audio")
+	bool HasAmbienceTrack(EFF_AudioAmbience Ambience) const;
+
 	// ── 진단 ────────────────────────────────────────────────────────────────
 
 	// 소리를 전부 끈다. 다른 파트를 확인할 때 방해되지 않게.

@@ -205,9 +205,8 @@ void UFF_SaveSubsystem::HandleStageChanged(
 		return;
 	}
 
-	const UGameInstance* GameInstance = GetGameInstance();
 	const UFF_FestivalStageSubsystem* Stage =
-		GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr;
+		UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(GetGameInstance());
 
 	const int32 Day = Stage ? Stage->CurrentDay : 0;
 
@@ -318,8 +317,7 @@ UFF_SaveSubsystem* UFF_SaveSubsystem::Get(const UObject* WorldContextObject)
 		? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull)
 		: nullptr;
 
-	UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	return GameInstance ? GameInstance->GetSubsystem<UFF_SaveSubsystem>() : nullptr;
+	return UGameInstance::GetSubsystem<UFF_SaveSubsystem>(World ? World->GetGameInstance() : nullptr);
 }
 
 FName UFF_SaveSubsystem::ResolveCurrentFestivalId(const UObject* WorldContextObject)
@@ -1106,9 +1104,7 @@ FName UFF_SaveSubsystem::SaveManual()
 
 bool UFF_SaveSubsystem::IsAtLobby() const
 {
-	const UGameInstance* GameInstance = GetGameInstance();
-	const UFF_UIFlowSubsystem* Flow =
-		GameInstance ? GameInstance->GetSubsystem<UFF_UIFlowSubsystem>() : nullptr;
+	const UFF_UIFlowSubsystem* Flow = UGameInstance::GetSubsystem<UFF_UIFlowSubsystem>(GetGameInstance());
 
 	return Flow && Flow->GetMode() == EFF_UIFlowMode::Frontend;
 }

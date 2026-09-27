@@ -266,17 +266,29 @@ void UFF_TutorialSubsystem::Tick(const float DeltaTime)
 		}
 	}
 
-	/* 로비 버튼 구독을 주기적으로 시도한다.
+	/* 로비 버튼 구독. 플레이 허브 화면이 뜬 틱에 바로 훑는다.
 
-	   플레이 허브는 타이틀에서 넘어올 때 만들어져서, 월드가 시작하는 시점에는
-	   아직 없다. 매 틱 훑으면 낭비라 한 번씩만 두드린다.
+	   예전에는 1초마다 한 번 훑고, 한 번 물면 더 훑지 않았다. 그래서 두 경우에 새 게임
+	   신호를 놓쳤다. 플레이 허브가 뜨고 1초 안에 새 게임을 누르면 아직 구독 전이었고,
+	   허브가 새로 만들어지면 옛 허브만 물고 있었다. 신호를 놓치면 기록도 안 비워지고
+	   로비 인트로도 안 뜬다. "빨리 넘기면 대사창이 안 켜진다" 가 이것이었다.
+
+	   화면이 바뀐 순간을 잡으면 플레이어가 누를 수 있기 전에 구독이 끝난다. 화면을
+	   띄우는 것과 누르는 것 사이에 적어도 한 틱은 있기 때문이다. 그래도 허브가 떠 있는
+	   동안 0.5초마다 한 번 더 훑는다. 허브가 화면 전환 없이 다시 만들어지는 경우를 위한 것이다.
 	*/
-	if (!bDialogueActive && !BoundPlayHub.IsValid())
+	if (!bDialogueActive)
 	{
+		const UFF_UIFlowSubsystem* Flow = UFF_UIFlowSubsystem::Get(this);
+		const uint8 Screen = Flow ? static_cast<uint8>(Flow->GetFrontendScreen()) : 0;
+		const bool bScreenChanged = Screen != LastSeenFrontendScreen;
+		LastSeenFrontendScreen = Screen;
+
 		PlayHubScanCountdown -= DeltaTime;
-		if (PlayHubScanCountdown <= 0.f)
+		if (Screen == static_cast<uint8>(EFF_UIFlowScreen::PlayHub)
+			&& (bScreenChanged || PlayHubScanCountdown <= 0.f))
 		{
-			PlayHubScanCountdown = 1.f;
+			PlayHubScanCountdown = 0.5f;
 			TryBindPlayHub();
 		}
 	}
@@ -307,9 +319,8 @@ void UFF_TutorialSubsystem::BindGameSignals()
 
 	if (!bBoundStage)
 	{
-		const UGameInstance* GameInstance = World->GetGameInstance();
 		if (UFF_FestivalStageSubsystem* Stage =
-			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance()))
 		{
 			Stage->OnStageChanged.AddDynamic(this, &UFF_TutorialSubsystem::HandleStageChanged);
 			bBoundStage = true;
@@ -345,9 +356,8 @@ void UFF_TutorialSubsystem::UnbindGameSignals()
 
 	if (bBoundStage)
 	{
-		const UGameInstance* GameInstance = World->GetGameInstance();
 		if (UFF_FestivalStageSubsystem* Stage =
-			GameInstance ? GameInstance->GetSubsystem<UFF_FestivalStageSubsystem>() : nullptr)
+			UGameInstance::GetSubsystem<UFF_FestivalStageSubsystem>(World->GetGameInstance()))
 		{
 			Stage->OnStageChanged.RemoveDynamic(this, &UFF_TutorialSubsystem::HandleStageChanged);
 		}
@@ -547,11 +557,6 @@ void UFF_TutorialSubsystem::RemoveWidgets()
 
 void UFF_TutorialSubsystem::TryBindPlayHub()
 {
-	if (BoundPlayHub.IsValid())
-	{
-		return;
-	}
-
 	/* 봤든 안 봤든 늘 구독한다.
 
 	   예전에는 로비 인트로를 봤으면 구독하지 않았다. 지금은 이 버튼이 "새 게임" 의
@@ -570,12 +575,19 @@ void UFF_TutorialSubsystem::TryBindPlayHub()
 			continue;
 		}
 
+		// 찾은 허브를 전부 문다. 화면 스택이 옛 허브를 들고 있으면 둘 다 살아 있을 수 있는데,
+		// 어느 쪽이 지금 보이는지 여기서는 모른다.
+		// 이미 문 허브는 건너뛴다. 0.5초마다 훑을 때마다 로그가 찍히지 않게 한다.
+		if (PlayHub->OnNewFestivalRequested.IsAlreadyBound(this, &UFF_TutorialSubsystem::HandleNewGameRequested))
+		{
+			continue;
+		}
+
 		PlayHub->OnNewFestivalRequested.AddUniqueDynamic(
 			this, &UFF_TutorialSubsystem::HandleNewGameRequested);
 		BoundPlayHub = PlayHub;
 
-		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 새 게임 버튼을 구독했다."));
-		return;
+		UE_LOG(LogFestaFiestaTutorial, Log, TEXT("[튜토리얼] 새 게임 버튼을 구독했다. (%s)"), *PlayHub->GetName());
 	}
 }
 

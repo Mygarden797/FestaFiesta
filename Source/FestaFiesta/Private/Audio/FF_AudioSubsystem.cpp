@@ -276,6 +276,13 @@ void UFF_AudioSubsystem::SetAmbience(const EFF_AudioAmbience Ambience)
 	}
 }
 
+bool UFF_AudioSubsystem::HasAmbienceTrack(const EFF_AudioAmbience Ambience) const
+{
+	const UFF_AudioBankData* Bank = ResolveBank();
+	const FFF_AudioAmbienceTrack* Track = Bank ? Bank->FindAmbience(Ambience) : nullptr;
+	return Track && Track->IsValid();
+}
+
 void UFF_AudioSubsystem::StopAmbience()
 {
 	if (AmbienceComponent)
