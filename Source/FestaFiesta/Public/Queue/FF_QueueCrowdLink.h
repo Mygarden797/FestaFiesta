@@ -73,8 +73,6 @@ private:
 	void BindToQueue();
 	void UnbindFromQueue();
 
-	// 이 Party 의 리더에게 재평가를 요청한다. 리더를 못 찾으면 아무것도 하지 않는다.
-	void RequestPartyDecision(int32 PartyId, EFF_QueueExit ExitType);
 
 	UFF_QueueSubsystem* GetQueue() const;
 	UFF_CrowdSimulationSubsystem* GetCrowd() const;

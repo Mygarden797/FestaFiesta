@@ -8,7 +8,6 @@
 #include "Engine/World.h"
 #include "Components/SplineComponent.h"
 #include "EngineUtils.h"
-#include "HAL/IConsoleManager.h"
 #include "FF_FFZSWorldSubsystem.h"
 #include "FF_FFZSZoneActor.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -447,52 +446,34 @@ void AFF_OverviewCameraPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AFF_OverviewCameraPawn::RegisterDebugConsoleCommands()
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
 	UnregisterDebugConsoleCommands();
 
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Camera.Bounds")))
-	{
-		BoundsConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Camera.Bounds"),
-			TEXT("카메라 이동 범위 상태를 출력한다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				LogBoundsState();
-			}));
-	}
+	DebugCommands.Add(
+		TEXT("FF.Camera.Bounds"),
+		TEXT("카메라 이동 범위 상태를 출력한다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			LogBoundsState();
+		}));
 
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Camera.RefreshBounds")))
-	{
-		BoundsRefreshCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Camera.RefreshBounds"),
-			TEXT("Zone 을 다시 훑어 카메라 이동 범위를 재계산한다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				// Zone 이 나중에 추가됐거나 처음에 못 잡은 경우를 위해 다시 시도한다.
-				bZoneBoundsApplied = false;
-				bZoneBoundsWarned = false;
-				ZoneBoundsWaitSeconds = 0.f;
-				ApplyZoneBoundsIfNeeded(0.f);
-				LogBoundsState();
-			}));
-	}
+	DebugCommands.Add(
+		TEXT("FF.Camera.RefreshBounds"),
+		TEXT("Zone 을 다시 훑어 카메라 이동 범위를 재계산한다."),
+		FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
+		{
+			// Zone 이 나중에 추가됐거나 처음에 못 잡은 경우를 위해 다시 시도한다.
+			bZoneBoundsApplied = false;
+			bZoneBoundsWarned = false;
+			ZoneBoundsWaitSeconds = 0.f;
+			ApplyZoneBoundsIfNeeded(0.f);
+			LogBoundsState();
+		}));
 }
 
 void AFF_OverviewCameraPawn::UnregisterDebugConsoleCommands()
 {
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	if (BoundsConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(BoundsConsoleCommand);
-	}
-	BoundsConsoleCommand = nullptr;
-
-	if (BoundsRefreshCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(BoundsRefreshCommand);
-	}
-	BoundsRefreshCommand = nullptr;
+	// 내가 건 것만 지운다. 규칙은 FFF_DebugConsoleCommands 주석 참고.
+	DebugCommands.UnregisterAll();
 }
 
 namespace

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Save/FF_SaveTypes.h"
 #include "Save/FF_Saveable.h"
 #include "Time/FF_FestivalStage.h"
@@ -10,7 +11,6 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "FF_SaveSubsystem.generated.h"
 
-struct IConsoleCommand;
 
 /* 슬롯 목록이 바뀌었다. 목록 화면이 이걸 받아 다시 그린다.
 
@@ -325,9 +325,6 @@ private:
 	*/
 	FFF_MetaSave Meta;
 
-	// 마지막으로 쓴 슬롯. 이어하기 기본값으로 쓴다.
-	FName LastUsedSlotId;
-
 	// 프론트엔드가 고른 이어하기 슬롯. 한 번 쓰면 비운다.
 	FName PendingContinueSlotId;
 
@@ -371,8 +368,8 @@ private:
 
 	/* 지금 판의 세이브. 이 판에서 쓰거나 이어한 슬롯이다. 새 게임이면 비운다.
 
-	   LastUsedSlotId 와 따로 두는 이유: 그쪽은 게임을 켤 때 가장 최근 자동 저장으로
-	   채워지는데, 그건 직전 판일 수 있다. 그 세이브에 새 판의 튜토리얼 기록을 쓰면 안 된다.
+	   게임을 켤 때 가장 최근 자동 저장으로 채우지 않는 이유: 그건 직전 판일 수 있다.
+	   그 세이브에 새 판의 메타를 고쳐 쓰면 남의 판을 망가뜨린다.
 	*/
 	FName CurrentRunSlotId;
 
@@ -400,8 +397,6 @@ private:
 	// RestorePartData 가 도는 동안만 true.
 	bool bIsRestoring = false;
 
-	IConsoleCommand* SaveConsoleCommand = nullptr;
-	IConsoleCommand* LoadConsoleCommand = nullptr;
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* ResetMetaConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };

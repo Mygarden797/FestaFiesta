@@ -5,7 +5,6 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "HAL/IConsoleManager.h"
 #include "TimerManager.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalProgressionSubsystem.h"
@@ -52,7 +51,6 @@ void UFF_SaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	FName NewestSlot;
 	if (FindNewestAutoSave(Newest, NewestSlot))
 	{
-		LastUsedSlotId = NewestSlot;
 		bAutoSaveUsesSecondSlot = (NewestSlot == AutoSaveSlotA);
 	}
 
@@ -406,7 +404,6 @@ bool UFF_SaveSubsystem::SaveToSlot(const FName SlotId, const bool bAutoSave)
 		return false;
 	}
 
-	LastUsedSlotId = SlotId;
 
 	// 이 판의 세이브가 됐다. 이후 튜토리얼 기록이 바뀌면 여기에 같이 남긴다(WriteRunMeta).
 	CurrentRunSlotId = SlotId;
@@ -659,7 +656,6 @@ bool UFF_SaveSubsystem::LoadFromSlot(const FName SlotId)
 
 	// 메타(튜토리얼·깬 축제·기록)는 이 세이브의 것으로 돌린다. 전부 판 단위다.
 	AdoptRunMeta(Save->Meta, Save->Version);
-	LastUsedSlotId = SlotId;
 	CurrentRunSlotId = SlotId;
 	bRunActive = true;
 
@@ -733,7 +729,6 @@ bool UFF_SaveSubsystem::TryContinueFestival(const FName FestivalId)
 	   깬 축제·기록도 그 판의 것으로 돌아간다.
 	*/
 	AdoptRunMeta(Loaded->Meta, Loaded->Version);
-	LastUsedSlotId = Requested;
 	CurrentRunSlotId = Requested;
 	bRunActive = true;
 
@@ -1153,7 +1148,6 @@ bool UFF_SaveSubsystem::SaveLobbyToSlot(const FName SlotId, const bool bAutoSave
 		return false;
 	}
 
-	LastUsedSlotId = SlotId;
 	CurrentRunSlotId = SlotId;
 	UpdateSlotIndex(*Save, SlotId);
 
@@ -1193,7 +1187,6 @@ bool UFF_SaveSubsystem::LoadLobbySave(const FName SlotId, FName& OutCountryId)
 	}
 
 	AdoptRunMeta(Loaded->Meta, Loaded->Version);
-	LastUsedSlotId = SlotId;
 	CurrentRunSlotId = SlotId;
 	bRunActive = true;
 	OutCountryId = Loaded->Session.CountryId;
@@ -1249,178 +1242,4 @@ FFF_FestivalRecord UFF_SaveSubsystem::GetRecord(const FName FestivalId) const
 		return *Found;
 	}
 	return FFF_FestivalRecord();
-}
-
-void UFF_SaveSubsystem::RegisterDebugConsoleCommands()
-{
-	// 개발용이다. 배포 빌드에서 콘솔로 저장을 덮거나 불러오면 판이 꼬인다.
-#if !UE_BUILD_SHIPPING
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-	UnregisterDebugConsoleCommands();
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Save.Write")))
-	{
-		SaveConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Save.Write"),
-			TEXT("지금 상태를 저장한다. 사용법: FF.Save.Write [슬롯]  생략 시 자동 저장 차례대로"),
-			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-			{
-				// 생략하면 실제 자동 저장과 같은 길로 간다. 따로 `AutoSave` 칸을 만들면
-				// 게임은 안 읽는 파일이 목록에만 하나 더 생긴다.
-				if (Args.Num() == 0)
-				{
-					WriteAutoSave();
-					return;
-				}
-				SaveToSlot(FName(*Args[0]), false);
-			}));
-	}
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Save.Read")))
-	{
-		LoadConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Save.Read"),
-			TEXT("저장을 읽는다. 사용법: FF.Save.Read [슬롯]  생략 시 가장 최근 자동 저장"),
-			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-			{
-				FName SlotId = Args.Num() > 0 ? FName(*Args[0]) : FName();
-				if (SlotId.IsNone())
-				{
-					UFF_SaveGame* Newest = nullptr;
-					if (!FindNewestAutoSave(Newest, SlotId))
-					{
-						UE_LOG(LogFestaFiestaSave, Display, TEXT("[저장] 읽을 자동 저장이 없다."));
-						return;
-					}
-				}
-				LoadFromSlot(SlotId);
-			}));
-	}
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Save.ResetMeta")))
-	{
-		/* 이 판의 메타를 비운다. 인자 없으면 튜토리얼 기록만, all 이면 깬 축제·기록까지.
-
-		   건너뛰기는 같은 판 안에서는 되돌릴 수 없다. 테스트하다 누르면 새 게임을 해야만
-		   튜토리얼을 다시 볼 수 있어서, 개발용 출구를 둔다. 판(돈·시설)은 건드리지 않는다.
-		*/
-		ResetMetaConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Save.ResetMeta"),
-			TEXT("이 판의 튜토리얼 기록(로비 인트로·안내 끔·본 축제)을 지운다. 사용법: FF.Save.ResetMeta [all]  all 이면 기록·깬 축제까지"),
-			FConsoleCommandWithArgsDelegate::CreateWeakLambda(this, [this](const TArray<FString>& Args)
-			{
-				const bool bAll = Args.Num() > 0 && Args[0].Equals(TEXT("all"), ESearchCase::IgnoreCase);
-
-				if (bAll)
-				{
-					Meta = FFF_MetaSave();
-				}
-				else
-				{
-					Meta.bLobbyIntroSeen = false;
-					Meta.bTutorialOptedOut = false;
-					Meta.TutorialSeenFestivals.Reset();
-				}
-
-				// 이 판의 세이브에도 반영한다. 안 하면 이어할 때 옛 기록이 돌아온다.
-				WriteRunMeta();
-
-				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("[저장] 메타를 비웠다(%s). 로비 튜토리얼은 바로, 축제 튜토리얼은 레벨을 다시 열면 나온다."),
-					bAll ? TEXT("전부") : TEXT("튜토리얼만"));
-			}));
-	}
-
-	if (!ConsoleManager.FindConsoleObject(TEXT("FF.Save.Stat")))
-	{
-		StatConsoleCommand = ConsoleManager.RegisterConsoleCommand(
-			TEXT("FF.Save.Stat"),
-			TEXT("저장 상태를 출력한다."),
-			FConsoleCommandDelegate::CreateWeakLambda(this, [this]()
-			{
-				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("[저장] 로비 인트로=%s 안내 끔=%s / 깬 축제 %d개"),
-					Meta.bLobbyIntroSeen ? TEXT("예") : TEXT("아니오"),
-					Meta.bTutorialOptedOut ? TEXT("예") : TEXT("아니오"),
-					Meta.ClearedFestivals.Num());
-
-				// 어느 축제의 튜토리얼이 막혀 있는지 이름으로 봐야 원인을 가릴 수 있다.
-				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("  튜토리얼 본 축제 %d개: %s"),
-					Meta.TutorialSeenFestivals.Num(),
-					Meta.TutorialSeenFestivals.IsEmpty()
-						? TEXT("(없음)")
-						: *FString::JoinBy(Meta.TutorialSeenFestivals, TEXT(", "),
-							[](const FName& Id) { return Id.ToString(); }));
-
-				FFF_SessionSave Session;
-				CaptureSession(Session);
-				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("  지금 진행: %d일차 %s / 금화 %d / 만족 %d"),
-					Session.Day,
-					Session.StageId.IsNone() ? TEXT("-") : *Session.StageId.ToString(),
-					Session.Gold, Session.Satisfaction);
-
-				TArray<FString> PartNames;
-				for (const TWeakInterfacePtr<IFF_Saveable>& Weak : Saveables)
-				{
-					if (const IFF_Saveable* Part = Weak.Get())
-					{
-						PartNames.Add(Part->GetSaveKey().ToString());
-					}
-				}
-				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("  참여 파트 %d개: %s"),
-					PartNames.Num(),
-					PartNames.Num() == 0 ? TEXT("없음") : *FString::Join(PartNames, TEXT(", ")));
-
-				const TArray<FName> Slots = GetKnownSlotIds();
-				UE_LOG(LogFestaFiestaSave, Display,
-					TEXT("  슬롯 %d개: %s"),
-					Slots.Num(),
-					Slots.Num() == 0 ? TEXT("없음")
-						: *FString::JoinBy(Slots, TEXT(", "),
-							[](const FName& Id) { return Id.ToString(); }));
-
-				for (const TPair<FName, FFF_FestivalRecord>& Pair : Meta.Records)
-				{
-					UE_LOG(LogFestaFiestaSave, Display,
-						TEXT("  %s — 방문 %d / 만족 %.1f / 수익 %d / %d회"),
-						*Pair.Key.ToString(), Pair.Value.BestVisitors,
-						Pair.Value.BestSatisfaction, Pair.Value.BestProfit, Pair.Value.PlayCount);
-				}
-			}));
-	}
-#endif
-}
-
-void UFF_SaveSubsystem::UnregisterDebugConsoleCommands()
-{
-#if !UE_BUILD_SHIPPING
-	IConsoleManager& ConsoleManager = IConsoleManager::Get();
-
-	if (SaveConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(SaveConsoleCommand);
-	}
-	SaveConsoleCommand = nullptr;
-
-	if (LoadConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(LoadConsoleCommand);
-	}
-	LoadConsoleCommand = nullptr;
-
-	if (StatConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(StatConsoleCommand);
-	}
-	StatConsoleCommand = nullptr;
-
-	if (ResetMetaConsoleCommand)
-	{
-		ConsoleManager.UnregisterConsoleObject(ResetMetaConsoleCommand);
-	}
-	ResetMetaConsoleCommand = nullptr;
-#endif
 }

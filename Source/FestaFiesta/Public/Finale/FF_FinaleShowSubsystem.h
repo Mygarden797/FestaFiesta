@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Economy/FF_FestivalEconomyTypes.h"
 #include "Time/FF_FestivalStage.h"
 #include "Finale/FF_FinaleShowTypes.h"
@@ -11,13 +12,8 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_FinaleShowSubsystem.generated.h"
 
-#if !UE_BUILD_SHIPPING
-struct IConsoleCommand;
-#endif
-
 class AFF_FinaleViewpoint;
 class AFF_FinaleLaunchSite;
-class AFF_FinaleViewpoint;
 class AFF_FestivalPlayerController;
 
 // 연출 진행 상태가 바뀔 때. UI 가 표시를 바꾸거나 다른 시스템이 멈출 때 쓴다.
@@ -134,10 +130,8 @@ private:
 	// 문자열을 등급으로 바꾼다. "S" "a" "none" 전부 받는다.
 	static bool TryParseGrade(const FString& Token, EFF_FinaleGrade& OutGrade);
 
-	IConsoleCommand* PlayConsoleCommand = nullptr;
-	IConsoleCommand* StopConsoleCommand = nullptr;
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* SkipCameraConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 #endif
 
 	// 이펙트에 우리가 넣으려는 User 파라미터가 실제로 있는지 확인하고, 없으면 알린다.

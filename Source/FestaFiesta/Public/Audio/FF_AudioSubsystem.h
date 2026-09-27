@@ -4,12 +4,12 @@
 
 #include "Audio/FF_AudioTypes.h"
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "FF_AudioSubsystem.generated.h"
 
 class UAudioComponent;
 class UFF_AudioBankData;
-struct IConsoleCommand;
 
 // 축제 전반의 소리를 담당한다.
 //
@@ -123,7 +123,6 @@ private:
 	int32 MissingCues = 0;
 	int32 SuppressedCues = 0;
 
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* PlayConsoleCommand = nullptr;
-	IConsoleCommand* MuteConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };

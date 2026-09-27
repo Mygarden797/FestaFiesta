@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Debug/FF_DebugConsole.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "Tickable.h"
 #include "FF_FFZSTypes.h"
@@ -16,7 +17,6 @@ class UDataTable;
 class UFF_DialogueScriptData;
 class UUserWidget;
 class UWidget;
-struct IConsoleCommand;
 
 // 지금 줄이 바뀌었다. UI 가 이걸 받아 대사창을 갱신한다.
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnDialogueLineChanged, const FFF_DialogueLine&, Line);
@@ -349,9 +349,6 @@ private:
 	// 인덱스로 이동하고 신호를 보낸다. 범위를 벗어나면 스크립트를 끝낸다.
 	void GoToLine(int32 LineIndex);
 
-	// 연출 줄처럼 멈출 필요가 없는 것들을 지나친다.
-	void SkipNonStoppingLines();
-
 	// 이어질 스크립트가 있으면 재생하고, 없으면 끝낸다.
 	void FinishScript();
 
@@ -444,8 +441,6 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> OverlayWidget;
 
-	IConsoleCommand* SkipConsoleCommand = nullptr;
-	IConsoleCommand* StatConsoleCommand = nullptr;
-	IConsoleCommand* HighlightConsoleCommand = nullptr;
-	IConsoleCommand* SkipAllConsoleCommand = nullptr;
+	// 개발용 콘솔 명령. 이름 충돌·해제 규칙은 FFF_DebugConsoleCommands 가 맡는다.
+	FFF_DebugConsoleCommands DebugCommands;
 };
