@@ -1,3 +1,5 @@
+// 역할: 시설 조합 도감의 목록·상세 화면 전환과 수집 보상 표시를 담당한다.
+
 #include "UI/FacilityCodex/FF_FacilityCodexScreen.h"
 
 #include "Building/Codex/FF_FacilityCodexSubsystem.h"
@@ -24,9 +26,7 @@
 
 namespace
 {
-// Cards occupy equal width columns. Put each reward threshold at its card's center,
-// then interpolate discoveries between those anchors so the track reaches the
-// visible reward at the same count that enables it.
+// 보상을 받을 수 있는 발견 수와 진행 막대가 보상 카드에 도달하는 시점을 맞춘다.
 float MilestoneTrackPercent(const TArray<FFF_FacilityCodexCollectionMilestone>& Milestones,
     const int32 DiscoveredCount, const int32 TotalCount)
 {
@@ -53,48 +53,55 @@ float MilestoneTrackPercent(const TArray<FFF_FacilityCodexCollectionMilestone>& 
 }
 }
 
-bool UFF_FacilityCodexScreen::UpdateCollectionLayout(const FVector2D& V)
+// 화면 크기에 맞춰 목록·분류·상세 영역을 배치하고 실제로 달라진 위치만 반영한다.
+bool UFF_FacilityCodexScreen::UpdateCollectionLayout(const FVector2D& Viewport)
 {
 	if (!Column_CollectionCategories) return false;
 	if (Size_Dialog)
 	{
-		if (!FMath::IsNearlyEqual(Size_Dialog->GetWidthOverride(),V.X)) Size_Dialog->SetWidthOverride(V.X);
-		if (!FMath::IsNearlyEqual(Size_Dialog->GetHeightOverride(),V.Y)) Size_Dialog->SetHeightOverride(V.Y);
+		if (!FMath::IsNearlyEqual(Size_Dialog->GetWidthOverride(), Viewport.X))
+			Size_Dialog->SetWidthOverride(Viewport.X);
+		if (!FMath::IsNearlyEqual(Size_Dialog->GetHeightOverride(), Viewport.Y))
+			Size_Dialog->SetHeightOverride(Viewport.Y);
 	}
-	auto Place = [this](const TCHAR* Name, FVector2D P, FVector2D S)
+	const auto Place = [this](const TCHAR* Name, const FVector2D& Position, const FVector2D& Size)
 	{
-		UWidget* W=GetWidgetFromName(Name);
-		if(auto* CanvasSlot=W?Cast<UCanvasPanelSlot>(W->Slot):nullptr)
+		UWidget* Widget = GetWidgetFromName(Name);
+		if (UCanvasPanelSlot* CanvasSlot = Widget ? Cast<UCanvasPanelSlot>(Widget->Slot) : nullptr)
 		{
-			if(!CanvasSlot->GetPosition().Equals(P,.5)) CanvasSlot->SetPosition(P);
-			if(!CanvasSlot->GetSize().Equals(S,.5)) CanvasSlot->SetSize(S);
+			if (!CanvasSlot->GetPosition().Equals(Position, .5)) CanvasSlot->SetPosition(Position);
+			if (!CanvasSlot->GetSize().Equals(Size, .5)) CanvasSlot->SetSize(Size);
 		}
 	};
-	const float Side=FMath::Clamp(V.X*.035f,24.f,64.f);
-	const float NavWidth=FMath::Clamp(V.X*.15f,174.f,240.f);
-	const float Top=118.f;
-	const float Footer=148.f;
-	const float GridX=Side+NavWidth+18.f;
-	Place(TEXT("Size_Refined_Button_Close"),{Side,24},{330,48});
-	Place(TEXT("Horizontal_Toolbar"),{V.X*.44f,26},{V.X*.56f-Side,44});
-	Place(TEXT("Size_CollectionSearch"),{Side,84},{NavWidth,36});
-	Place(TEXT("Scroll_CollectionCategories"),{Side,136},{NavWidth,V.Y-172});
-	Place(TEXT("Size_Browse"),{GridX,Top},{V.X-GridX-Side,FMath::Max(120.f,V.Y-Top-Footer-12)});
-	Place(TEXT("Row_CollectionProgress"),{GridX,V.Y-Footer},{V.X-GridX-Side,120});
-	const float DetailX=V.X*.61f;
-	Place(TEXT("Size_Showcase"),{Side+54,V.Y*.23f},{V.X*.52f-Side,V.Y*.56f});
-	Place(TEXT("Horizontal_PreviewRotation"),{V.X*.20f,V.Y*.81f},{V.X*.30f,40});
-	Place(TEXT("Size_Detail"),{DetailX,112},{V.X-DetailX-Side,V.Y-160});
-	Place(TEXT("Button_CollectionPrevious"),{Side,V.Y*.48f},{46,62});
-	Place(TEXT("Button_CollectionNext"),{V.X-Side-46,V.Y*.48f},{46,62});
+	const float SidePadding = FMath::Clamp(Viewport.X * .035f, 24.f, 64.f);
+	const float NavigationWidth = FMath::Clamp(Viewport.X * .15f, 174.f, 240.f);
+	const float TopPadding = 118.f;
+	const float FooterHeight = 148.f;
+	const float GridX = SidePadding + NavigationWidth + 18.f;
+	const float GridWidth = Viewport.X - GridX - SidePadding;
+	Place(TEXT("Size_Refined_Button_Close"), {SidePadding, 24}, {330, 48});
+	Place(TEXT("Horizontal_Toolbar"), {Viewport.X * .44f, 26}, {Viewport.X * .56f - SidePadding, 44});
+	Place(TEXT("Size_CollectionSearch"), {SidePadding, 84}, {NavigationWidth, 36});
+	Place(TEXT("Scroll_CollectionCategories"), {SidePadding, 136}, {NavigationWidth, Viewport.Y - 172});
+	Place(TEXT("Size_Browse"), {GridX, TopPadding},
+		{GridWidth, FMath::Max(120.f, Viewport.Y - TopPadding - FooterHeight - 12)});
+	Place(TEXT("Row_CollectionProgress"), {GridX, Viewport.Y - FooterHeight}, {GridWidth, 120});
+	const float DetailX = Viewport.X * .61f;
+	Place(TEXT("Size_Showcase"), {SidePadding + 54, Viewport.Y * .23f},
+		{Viewport.X * .52f - SidePadding, Viewport.Y * .56f});
+	Place(TEXT("Horizontal_PreviewRotation"), {Viewport.X * .20f, Viewport.Y * .81f}, {Viewport.X * .30f, 40});
+	Place(TEXT("Size_Detail"), {DetailX, 112}, {Viewport.X - DetailX - SidePadding, Viewport.Y - 160});
+	Place(TEXT("Button_CollectionPrevious"), {SidePadding, Viewport.Y * .48f}, {46, 62});
+	Place(TEXT("Button_CollectionNext"), {Viewport.X - SidePadding - 46, Viewport.Y * .48f}, {46, 62});
 	if (TileView_Entries)
 	{
-		const float Width=TileView_Entries->GetCachedGeometry().GetLocalSize().X;
-		if (Width>1.f) TileView_Entries->SetResponsiveColumns(FMath::FloorToInt(Width/190.f));
+		const float Width = TileView_Entries->GetCachedGeometry().GetLocalSize().X;
+		if (Width > 1.f) TileView_Entries->SetResponsiveColumns(FMath::FloorToInt(Width / 190.f));
 	}
 	return true;
 }
 
+// 분류 버튼은 항목 수가 달라질 때만 다시 만들고 선택 표시와 발견 개수만 갱신한다.
 void UFF_FacilityCodexScreen::RefreshCollectionNavigation()
 {
 	if (!Column_CollectionCategories || !CollectionCategoryClass) return;
@@ -129,6 +136,7 @@ void UFF_FacilityCodexScreen::HandleCollectionCategory(int32 Index)
 	SetCategoryFilter(CategoryChoices.IsValidIndex(Index-1),CategoryChoices.IsValidIndex(Index-1)?CategoryChoices[Index-1]:EFFZSFacilityCategory::Booth);
 }
 
+// 발견 수로 보상 가능 여부를 표시한다. 실제 골드 지급은 보상 클릭 처리에서 요청한다.
 void UFF_FacilityCodexScreen::RefreshCollectionMilestones()
 {
 	if(!Row_CollectionMilestones || !CollectionMilestoneClass) return;
@@ -138,6 +146,7 @@ void UFF_FacilityCodexScreen::RefreshCollectionMilestones()
 	if (Progress_Discovery && GetWidgetFromName(TEXT("Overlay_CollectionProgressTrack")) && !Milestones.IsEmpty())
 		Progress_Discovery->SetPercent(MilestoneTrackPercent(Milestones,Summary.DiscoveredCount,Summary.TotalCount));
 	TArray<FName> Ids;
+	Ids.Reserve(Milestones.Num());
 	for(const auto& M:Milestones) Ids.Add(M.MilestoneId);
 	if(Ids!=CollectionMilestoneIds)
 	{
@@ -194,20 +203,25 @@ void UFF_FacilityCodexScreen::RefreshCollectionMilestones()
 	}
 }
 
+// 보상 상태를 다시 확인하고 지급 결과를 표시한다. 지급 도중 화면이 닫히면 갱신을 멈춘다.
 void UFF_FacilityCodexScreen::HandleCollectionMilestone(int32 Index)
 {
-	if(!Codex||!CollectionMilestoneIds.IsValidIndex(Index)||bPreviewData) return;
-	const auto Milestones=Codex->GetCollectionMilestones();
-	const FName Id=CollectionMilestoneIds[Index];
-	const auto* M=Milestones.FindByPredicate([Id](const auto& V){return V.MilestoneId==Id;});
-	if (!M || !M->bCanClaim) return;
+	if (!Codex || !CollectionMilestoneIds.IsValidIndex(Index) || bPreviewData) return;
+	const TArray<FFF_FacilityCodexCollectionMilestone> Milestones = Codex->GetCollectionMilestones();
+	const FName MilestoneId = CollectionMilestoneIds[Index];
+	const FFF_FacilityCodexCollectionMilestone* Milestone = Milestones.FindByPredicate(
+		[MilestoneId](const FFF_FacilityCodexCollectionMilestone& Candidate)
+		{
+			return Candidate.MilestoneId == MilestoneId;
+		});
+	if (!Milestone || !Milestone->bCanClaim) return;
 	const UGameInstance* Game = GetGameInstance();
 	const auto* Economy = Game ? Game->GetSubsystem<UFF_FestivalProgressionSubsystem>() : nullptr;
 	if (!Economy) return;
-	const int32 PaidGold = static_cast<int32>(FMath::Min<int64>(M->RewardGold,
+	const int32 PaidGold = static_cast<int32>(FMath::Min<int64>(Milestone->RewardGold,
 		FMath::Max<int64>(0, int64(MAX_int32) - Economy->GetGold())));
 	UFF_FacilityCodexSubsystem* ClaimCodex = Codex;
-	const bool bClaimed = ClaimCodex->ClaimCollectionReward(Id);
+	const bool bClaimed = ClaimCodex->ClaimCollectionReward(MilestoneId);
 	// A wallet listener can close the screen or replace it with editor preview data.
 	if (Codex != ClaimCodex || bPreviewData) return;
 	if (bClaimed) ShowRewardFeedback(PaidGold);
@@ -252,14 +266,25 @@ void UFF_FacilityCodexScreen::SetCollectionDetailOpen(bool bOpen)
 		if(Viewport_Showcase) Viewport_Showcase->ResetPreview();
 	}
 }
+// 필터로 남은 항목 안에서만 앞·뒤 조합으로 이동하며 목록 끝에서는 현재 항목을 유지한다.
 void UFF_FacilityCodexScreen::NavigateCollectionDetail(int32 Direction)
 {
-	if(VisibleItems.IsEmpty()) return;
-	int32 Index=VisibleItems.IndexOfByPredicate([this](const auto& I){return I&&I->Entry.RuleId==SelectedRuleId;});
-	Index=FMath::Clamp(Index+Direction,0,VisibleItems.Num()-1);
+	if (VisibleItems.IsEmpty()) return;
+	int32 Index = VisibleItems.IndexOfByPredicate([this](const auto& Item)
+	{
+		return Item && Item->Entry.RuleId == SelectedRuleId;
+	});
+	Index = FMath::Clamp(Index + Direction, 0, VisibleItems.Num() - 1);
 	OpenCombinationDetail(VisibleItems[Index]->Entry.RuleId);
 }
-void UFF_FacilityCodexScreen::HandleCollectionPrevious(){NavigateCollectionDetail(-1);}
-void UFF_FacilityCodexScreen::HandleCollectionNext(){NavigateCollectionDetail(1);}
+void UFF_FacilityCodexScreen::HandleCollectionPrevious()
+{
+	NavigateCollectionDetail(-1);
+}
+
+void UFF_FacilityCodexScreen::HandleCollectionNext()
+{
+	NavigateCollectionDetail(1);
+}
 
 #undef LOCTEXT_NAMESPACE

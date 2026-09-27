@@ -84,6 +84,8 @@ private:
 
 	static constexpr int32 RingBufferCapacity = 80;
 
+	// The settings hold only a soft path; keep the loaded table and cached row storage alive.
+	UPROPERTY(Transient)
 	TObjectPtr<UDataTable> SnsPostTemplateTable;
 	// topic id -> 그 화제에 속한 행들. 
 	// DataTable을 매번 다시 훑지 않으려 첫 사용 시 한 번만 채운다

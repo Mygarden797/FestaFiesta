@@ -8,12 +8,14 @@
 #include "FF_IncidentSubsystem.generated.h"
 
 
+class UFF_IncidentDefinition;
 class UFF_IncidentCatalog; 
 /**
  * 
  */
-DECLARE_DELEGATE_OneParam(FFF_OnIncidentRaised, FFF_IncidentHandle);
-DECLARE_DELEGATE_OneParam(FFF_OnIncidentClosed, FFF_IncidentHandle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentRaised, FFF_IncidentHandle,IncidentHandle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentUpdated, FFF_IncidentHandle,IncidentHandle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFF_OnIncidentClosed, FFF_IncidentHandle,IncidentHandle);
 
 
 
@@ -74,12 +76,19 @@ public:
 	
 	void GetActiveHandle(TArray<FFF_IncidentHandle>& OutHandles) const;
 	
+	bool GetIncidentView(FFF_IncidentHandle Handle, FFF_IncidentView& OutView) const;
+	
 	//사건 발생, 종료 시에 전달되는 델리게이트
 	FFF_OnIncidentRaised OnIncidentRaised;
 	FFF_OnIncidentClosed OnIncidentClosed;
+	FFF_OnIncidentUpdated OnIncidentUpdated;
 	
 	
 private:
+	#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_IncidentCatalogLoadTest;
+	#endif
+
 	void LoadDefinitions();
 	bool TryGetNowMinutes(float& OutMinutes) const;
 	
@@ -98,7 +107,9 @@ private:
 	TArray<FIncidentSlot> IncidentSlots;
 	TArray<int32> FreeSlots;
 	TMap<FName, FFF_IncidentHandle> ActiveByKey;
-	TMap<FGameplayTag,FDefinitionView> Definitions;
+	
+	UPROPERTY()
+	TMap<FGameplayTag,TObjectPtr<UFF_IncidentDefinition>> CachedDef;
 	int32 MaxConcurrent = 64;
 	
 };

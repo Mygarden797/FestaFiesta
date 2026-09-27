@@ -7,6 +7,8 @@ param(
 
     [string] $EngineRoot,
 
+    [string] $ProjectFile,
+
     [ValidateSet('Shipping', 'Development')]
     [string] $Configuration = 'Shipping',
 
@@ -26,6 +28,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'FestaFiesta.Build.psm1') -Force
+Set-FFProjectFileOverride -ProjectFile $ProjectFile
 
 function Resolve-PayloadRoot {
     param(
@@ -327,19 +330,73 @@ $requiredAssets = @(
     '/Game/FestaFiesta/Data/Time/DT_DaySequence',
     '/Game/FestaFiesta/Data/Time/DT_TimeSettings',
     '/Game/FestaFiesta/Data/Time/DT_ProgramSchedule',
+    '/Game/FestaFiesta/Data/Incident/FF_IncidentCatalog',
+    '/Game/FestaFiesta/Data/Incident/FF_ID_NPCCrowded',
+    '/Game/FestaFiesta/Data/SNS/DT_SnsPostTemplates',
+    # Test_Main's placed spawn actor, its presentation class, and the configured
+    # arrival/appearance tables. The appearance table's soft mesh and animation
+    # references must be present in the actual container, not just in source.
+    '/Game/FestaFiesta/Crowd/BP_SpawnActor',
+    '/Game/FestaFiesta/Crowd/BP_Crowd',
+    '/Game/FestaFiesta/Crowd/ABP_CrowdAnimation',
+    '/Game/FestaFiesta/Data/UtilityAI/DT_VisitorArrivalCurve',
+    '/Game/FestaFiesta/Data/Crowd/FF_CrowdAppearanceTable',
+    '/Game/FestaFiesta/Character/Crowd/50_Man/50_Man_',
+    '/Game/FestaFiesta/Character/Crowd/50_Man/ABP_50_Man',
+    '/Game/FestaFiesta/Character/Crowd/Elder_Woman/Elder_woman_',
+    '/Game/FestaFiesta/Character/Crowd/Elder_Woman/ABP_Elder_Woman',
+    '/Game/FestaFiesta/Character/Crowd/Kid_Man/Kid_Boy',
+    '/Game/FestaFiesta/Character/Crowd/Kid_Man/ABP_Boy',
+    '/Game/FestaFiesta/Character/Crowd/Young_Man/30_Man',
+    '/Game/FestaFiesta/Character/Crowd/Young_Man/ABP_30_Man',
+    '/Game/FestaFiesta/Character/Crowd/Young_woman/Blue_Girl',
+    '/Game/FestaFiesta/Character/Crowd/Young_woman/ABP_Blue_Girl',
+    '/Game/FestaFiesta/Character/Crowd/Young_woman/Causal_Girl',
+    '/Game/FestaFiesta/Character/Crowd/Young_woman/ABP_Causal_Girl',
+    '/Game/FestaFiesta/UI/WBP_FF_UIRootLayout',
+    '/Game/FestaFiesta/UI/LiveHUD/WBP_FF_LiveHudScreen',
+    '/Game/FestaFiesta/UI/Fonts/F_UI_Pretendard',
+    '/Game/FestaFiesta/UI/Lv_Test/DA_FestivalAtlas',
+    '/Game/FestaFiesta/Input/IMC_Camera',
+    '/Game/FestaFiesta/Input/Character/IMC_Character',
+    '/Game/FestaFiesta/Audio/DA_AudioBank',
+    '/Game/FestaFiesta/Fireworks/DA_FinaleShow',
     '/Game/FestaFiesta/Building/FF_WBP_Building/Debug/WBP_FF_ZoneLifecycleTestPanel',
     '/Game/FestaFiesta/UI/Frontend/WBP_FF_ConfirmDialog',
     '/Game/FestaFiesta/UI/Settings/WBP_FF_FestivalSettings',
     '/Game/FestaFiesta/Data/Festivals/DA_Festival_Busan'
 )
 $ioStoreContents = (Get-Content -LiteralPath $ioStoreCsv -Raw).Replace('\', '/')
+$ioStoreEntries = @(Import-Csv -LiteralPath $ioStoreCsv)
+Assert-Condition -Condition ($ioStoreEntries.Count -gt 0 -and
+    $null -ne $ioStoreEntries[0].PSObject.Properties['Filename']) `
+    -Message "IoStore CSV is empty or lacks a Filename column: $ioStoreCsv"
+
+# Compare complete package filenames. Searching the raw CSV text could accept
+# BP_CrowdExtra.uasset when BP_Crowd.uasset is missing.
+$cookedAssetPaths = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+$mountedProjectContent = '../../../FestaFiesta/Content/'
+foreach ($entry in $ioStoreEntries) {
+    $filename = ([string]$entry.Filename).Trim().Replace('\', '/')
+    $logicalFilename = $null
+    if ($filename.StartsWith($mountedProjectContent, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $logicalFilename = '/Game/' + $filename.Substring($mountedProjectContent.Length)
+    }
+    elseif ($filename.StartsWith('/Content/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $logicalFilename = '/Game/' + $filename.Substring('/Content/'.Length)
+    }
+    elseif ($filename.StartsWith('/Game/', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $logicalFilename = $filename
+    }
+    if ($null -ne $logicalFilename -and $logicalFilename -match '\.(uasset|umap)$') {
+        [void]$cookedAssetPaths.Add($logicalFilename)
+    }
+}
+$requiredMapAssets = @('/Game/FestaFiesta/Maps/Frontend', '/Game/FestaFiesta/Maps/Test_Main')
 $missingAssets = @($requiredAssets | Where-Object {
-        $logicalPath = $_
-        # Depending on the UE point release, ListContainer emits either the
-        # logical /Game path or the mounted ../../../Project/Content path.
-        $mountedContentPath = $logicalPath -replace '^/Game/', '/Content/'
-        $ioStoreContents.IndexOf($logicalPath, [System.StringComparison]::OrdinalIgnoreCase) -lt 0 -and
-        $ioStoreContents.IndexOf($mountedContentPath, [System.StringComparison]::OrdinalIgnoreCase) -lt 0
+        $extension = if ($requiredMapAssets -contains $_) { '.umap' } else { '.uasset' }
+        -not $cookedAssetPaths.Contains("$_$extension")
     })
 Assert-Condition -Condition ($missingAssets.Count -eq 0) `
     -Message "Required cooked assets are missing from the IoStore container: $($missingAssets -join ', ')"

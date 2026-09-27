@@ -1,5 +1,7 @@
-// Design states only. No runtime facility control or tab navigation is implemented.
+// 역할: 조명 화면을 시설 정보 메뉴 안의 탭·색상 편집·축소 창으로 최종 구성한다.
+// mockup.html에서 마지막에 실행한다. 탭은 정적 표시이며 실제 화면 이동은 연결하지 않았다.
 if(['10-lighting','11-color-picker','12-light-camera'].includes(id)){
+ // 선택한 화면 상태를 읽어 같은 시설을 정보·편집·축소 형태로 보여 준다.
  const expanded=id==='11-color-picker', compact=id==='12-light-camera';
  const nav=active=>`<nav class="facility-tabs-v6" aria-label="시설 메뉴">${['시설 정보','조합','운영','강화','조명 편집'].map(label=>`<button class="facility-tab-v6 ${label===active?'active':''} ${label==='조명 편집'?'lighting-tab-v6':''}" ${label==='강화'?'disabled title="이 시설은 강화 미지원"':''} aria-current="${label===active?'page':'false'}">${label}</button>`).join('')}</nav>`;
  const header=()=>`<div class="topline"><span class="title">${icon('tent')}시설 정보</span><div class="row"><span class="tiny muted">드래그하여 이동</span>${btn('−','iconbutton')}${btn('×','iconbutton')}</div></div>`;
@@ -14,5 +16,5 @@ if(['10-lighting','11-color-picker','12-light-camera'].includes(id)){
  const cam=`<div class="overlay camera-dock" data-overlay><div><b>${compact?'장면 확인 중':'메인공연장 · 조명 편집'}</b><div class="tiny">설정창을 옮기거나 접고 확인하세요</div></div><div class="tiny"><span class="key">W A S D</span> 이동　<span class="key">Q E</span> 회전　<span class="key">휠</span> 확대·축소</div>${btn(compact?'조명 편집으로':'장면 확인')}</div>`;
  scene.innerHTML=`<img class="world" src="../V3/source/${s.source}.png" alt="실제 프로젝트 원본 장면">${stamp()}${context('메인공연장 · '+(expanded||compact?'조명 편집':'시설 정보'),compact?'조명 설정을 유지하며 장면을 확인하세요':'시설 메뉴에서 정보와 조명을 전환하세요')}${compact?mini:panel}${expanded||compact?cam:''}${!compact?'<div class="overlay selection-light" data-overlay>◈ 선택한 시설 · 메인공연장</div>':''}`;
  if(compact){const world=scene.querySelector('.world');world.style.width=(s.w/1320*100)+'%';world.style.height='auto';window.screenSpec.referenceFrame='Original screenshot enlarged by width/1320; original sidebar and lower HUD clipped by viewport. No world repaint.';}
- window.ready=Promise.all([...document.images].map(img=>img.decode().catch(()=>{}))).then(()=>document.fonts.ready);
+ window.ready = waitForPreviewAssets();
 }

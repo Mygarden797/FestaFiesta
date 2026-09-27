@@ -56,6 +56,10 @@ namespace
 	// 이 속도 이하의 리더는 서 있는 것으로 본다, UU/s. 잼에서의 미세 진동을 걷는 것으로 세지 않는다.
 	constexpr float PartyLeaderStoppedSpeedUU = 5.f;
 
+	constexpr uint32 FormationBlockCheckIntervalSteps = 6;
+	constexpr int32 FormationBlockReleaseChecks = 3;
+	constexpr float FormationRepathToleranceUU = 400.f;
+
 	// 게이트 투영 익스텐트. 공용 앵커용(300, 300, 2000)은 수평이 넓어 벽 안의 문이 옆 통로에 붙어 통과한다.
 	const FVector GateProbeExtentCm(50.0, 50.0, 250.0);
 
@@ -373,6 +377,7 @@ void UFF_CrowdSimulationSubsystem::Tick(float DeltaTime)
 	}
 
 	ProcessPendingDespawns();
+	FlushMissingEvent();
 	UpdateArrivalSchedule();
 
 	{
@@ -967,6 +972,8 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Step);
 
+	++SimStepIndex;
+
 	const float VelocityAlpha = CrowdSteering::ComputeVelocityAlpha(VelocitySmoothTime, FixedDt);
 
 	CrowdSteering::FStepParams StepParams = MakeStepParams();
@@ -1169,6 +1176,8 @@ void UFF_CrowdSimulationSubsystem::StepSimulation(float FixedDt)
 			{
 				continue;
 			}
+
+			UpdateFormationBlockState(AgentIndex, Unit);
 		}
 
 		// 공연 보러 갈 때는 걸음을 재촉한다. 리더·멤버 두 경로가 방금 Speed 를 세웠으므로
@@ -2248,7 +2257,11 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 
 		if (Unit.LeaderAgentIndex != AgentIndex)
 		{
-			if (Follower.bHasPath || Follower.bQueryFailed)
+			if (Unit.bFormationPathBlocked && UnitDatas.IsValidIndex(Unit.LeaderAgentIndex))
+			{
+				UpdateBlockedMemberPath(AgentIndex, Budget, Backlog, MinQueryDistSq);
+			}
+			else if (Follower.bHasPath || Follower.bQueryFailed)
 			{
 				Follower.Reset();
 			}
@@ -2296,6 +2309,61 @@ void UFF_CrowdSimulationSubsystem::UpdatePathFollowing()
 	}
 
 	PathQueryBacklog = Backlog;
+}
+
+void UFF_CrowdSimulationSubsystem::UpdateBlockedMemberPath(int32 AgentIndex, int32& Budget, int32& Backlog,
+	float MinQueryDistSq)
+{
+	FUnitData& Unit = UnitDatas[AgentIndex];
+	FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+	const FVector LeaderPosition = UnitDatas[Unit.LeaderAgentIndex].Position;
+
+	if ((Follower.bHasPath || Follower.bQueryFailed)
+		&& FVector::DistSquared2D(Follower.PlannedForTarget, LeaderPosition) > FMath::Square(FormationRepathToleranceUU))
+	{
+		Follower.Reset();
+	}
+
+	if (!Follower.bHasPath && !Follower.bQueryFailed)
+	{
+		if (FVector::DistSquared2D(Unit.Position, LeaderPosition) <= MinQueryDistSq)
+		{
+			Follower.PlannedForTarget = LeaderPosition;
+			Follower.bQueryFailed = true;
+		}
+		else if (Budget <= 0)
+		{
+			++Backlog;
+		}
+		else
+		{
+			--Budget;
+			PathQueryCursor = AgentIndex + 1;
+
+			Follower.PlannedForTarget = LeaderPosition;
+			AgentLaneIndices[AgentIndex] = INDEX_NONE;
+			++PathQueriesIssued;
+			++FormationPathQueries;
+
+			BuildNavMeshPath(AgentIndex, LeaderPosition);
+		}
+	}
+
+	Unit.SteerTargetLocation = LeaderPosition;
+	Unit.bHasSteerTarget = true;
+
+	if (!Follower.bHasPath)
+	{
+		return;
+	}
+
+	Follower.NextIndex = CrowdPathFollow::AdvanceToReachableWaypoint(
+		Follower.Points, Follower.NextIndex, Unit.Position, WaypointAcceptanceRadiusUU);
+
+	if (Follower.Points.IsValidIndex(Follower.NextIndex))
+	{
+		Unit.SteerTargetLocation = Follower.Points[Follower.NextIndex];
+	}
 }
 
 // 저작된 레인으로 경로를 낸다. 실패하면 호출부가 NavMesh로 떨어진다.
@@ -2373,6 +2441,14 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 		return true;
 	}
 
+	return BuildNavMeshPath(AgentIndex, Unit.TargetLocation);
+}
+
+bool UFF_CrowdSimulationSubsystem::BuildNavMeshPath(int32 AgentIndex, const FVector& Goal)
+{
+	const FUnitData& Unit = UnitDatas[AgentIndex];
+	FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+
 	UWorld* World = GetWorld();
 	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
 	const ANavigationData* NavData = NavSys ? NavSys->GetDefaultNavDataInstance() : nullptr;
@@ -2384,7 +2460,7 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 		return false;
 	}
 
-	FPathFindingQuery Query(nullptr, *NavData, Unit.Position, Unit.TargetLocation);
+	FPathFindingQuery Query(nullptr, *NavData, Unit.Position, Goal);
 
 	Query.SetAllowPartialPaths(true);
 	Query.SetRequireNavigableEndLocation(false);
@@ -2419,7 +2495,7 @@ bool UFF_CrowdSimulationSubsystem::BuildPathForAgent(int32 AgentIndex)
 	}
 	else
 	{
-		Follower.Points.Last() = Unit.TargetLocation;
+		Follower.Points.Last() = Goal;
 	}
 
 	Follower.NextIndex = 0;
@@ -4443,6 +4519,33 @@ void UFF_CrowdSimulationSubsystem::HandleMainProgramEnded(FString EventLabel)
 	UE_LOG(LogTemp, Log, TEXT("[Audience] 메인 공연 종료('%s') — 관객을 Audience 출구로 이동"), *EventLabel);
 }
 
+void UFF_CrowdSimulationSubsystem::FlushMissingEvent()
+{
+	if (CrowdMemberMissingEvents.IsEmpty())
+	{
+		return;
+	}
+
+	const TArray<FFF_CrowdMemberMissingEvent> TempArray = MoveTemp(CrowdMemberMissingEvents);
+	CrowdMemberMissingEvents.Reset();
+
+	OnMemberMissingChanged.Broadcast(TempArray);
+}
+
+void UFF_CrowdSimulationSubsystem::QueueMissingEvent(int32 AgentIndex, const FUnitData& Unit,
+	EFF_CrowdMissingChange Change)
+{
+	
+	FFF_CrowdMemberMissingEvent MemberMissingEvent;
+	MemberMissingEvent.StableAgentID = Unit.StableAgentID;
+	MemberMissingEvent.PartyID = Unit.PartyID;
+	MemberMissingEvent.Actor = GetAgentActor(AgentIndex);
+	MemberMissingEvent.LocationUU = Unit.Position;
+	MemberMissingEvent.Change = Change;
+		
+	CrowdMemberMissingEvents.Add(MemberMissingEvent);
+}
+
 void UFF_CrowdSimulationSubsystem::ProcessDecisions()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(CrowdSim_Decisions);
@@ -4641,6 +4744,14 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 		const double DistSq = FVector::DistSquared2D(Unit.Position, Unit.QueueSlotLocation);
 		Unit.Speed = (DistSq <= FMath::Square(QueueSlotArrivalRadiusUU)) ? 0.f : Unit.CruiseSpeed;
 		
+		if (Unit.bMissing)
+		{
+			QueueMissingEvent(AgentIndex, Unit, EFF_CrowdMissingChange::EnteredQueue);
+		}
+
+		Unit.bMissing = false;
+		Unit.MissingCount = 0;
+
 		return true;
 	}
 	
@@ -4659,13 +4770,27 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 
 	const double DistToSlotSq = FVector::DistSquared2D(Unit.Position, Leader.Position + Offset);
 
+	
 	Unit.bCatchingUpToLeader = Unit.bCatchingUpToLeader
 		? (DistToSlotSq > FMath::Square(ReleaseRadius))
 		: (DistToSlotSq > FMath::Square(CatchUpRadius));
+	
+	if (Unit.MissingCount > MissingThreshholdSteps)
+	{
+		
+		if (!Unit.bMissing )
+		{
+			QueueMissingEvent(AgentIndex,Unit,EFF_CrowdMissingChange::Started);
+		}
+		
+		Unit.bMissing = true;
+	
+	}
 
 	if (Unit.bCatchingUpToLeader)
 	{
 		Unit.Speed = Unit.MaxSpeed;
+		Unit.MissingCount++;
 
 		if (bLeaderStopped)
 		{
@@ -4674,12 +4799,85 @@ bool UFF_CrowdSimulationSubsystem::UpdatePartyMemberTarget(int32 AgentIndex, FUn
 
 		return true;
 	}
+	else
+	{
+		if (Unit.bMissing)
+		{
+			QueueMissingEvent(AgentIndex, Unit, EFF_CrowdMissingChange::Returned);
+		}
+
+		Unit.MissingCount = 0;
+		Unit.bMissing = false;
+	}
 
 	Unit.Speed = bLeaderStopped
 		? 0.f
 		: FMath::Min(Unit.CruiseSpeed, LeaderSpeedUU * PartyFormationSpeedHeadroom);
 
 	return true;
+}
+
+void UFF_CrowdSimulationSubsystem::UpdateFormationBlockState(int32 AgentIndex, FUnitData& Unit)
+{
+	if (Unit.bHasQueueSlot)
+	{
+		Unit.bFormationPathBlocked = false;
+		Unit.FormationClearStreak = 0;
+		return;
+	}
+
+	if ((SimStepIndex + static_cast<uint32>(Unit.StableAgentID)) % FormationBlockCheckIntervalSteps != 0)
+	{
+		return;
+	}
+
+	const FVector2f FromMeters(
+		static_cast<float>(Unit.Position.X) * FFF_CrowdUnits::MetersPerUU,
+		static_cast<float>(Unit.Position.Y) * FFF_CrowdUnits::MetersPerUU);
+	const FVector2f ToMeters(
+		static_cast<float>(Unit.TargetLocation.X) * FFF_CrowdUnits::MetersPerUU,
+		static_cast<float>(Unit.TargetLocation.Y) * FFF_CrowdUnits::MetersPerUU);
+
+	const bool bClear = FFF_CrowdWalls::IsSegmentClear(AvoidanceWalls, FromMeters, ToMeters,
+		Unit.Radius * FFF_CrowdUnits::MetersPerUU);
+
+	if (!bClear)
+	{
+		Unit.FormationClearStreak = 0;
+
+		if (!Unit.bFormationPathBlocked)
+		{
+			Unit.bFormationPathBlocked = true;
+			++FormationBlockEvents;
+
+			UE_LOG(LogFestaFiestaNpc, Verbose,
+				TEXT("[대형 막힘] 파티 %d 멤버 %d: 목표까지 직선이 건물에 막혔다 (거리 %.0fUU)"),
+				Unit.PartyID, AgentIndex, FVector::Dist2D(Unit.Position, Unit.TargetLocation));
+		}
+		return;
+	}
+
+	if (Unit.bFormationPathBlocked && ++Unit.FormationClearStreak >= FormationBlockReleaseChecks)
+	{
+		Unit.bFormationPathBlocked = false;
+		Unit.FormationClearStreak = 0;
+
+		UE_LOG(LogFestaFiestaNpc, Verbose,
+			TEXT("[대형 막힘] 파티 %d 멤버 %d: 직선이 다시 뚫렸다"), Unit.PartyID, AgentIndex);
+	}
+}
+
+int32 UFF_CrowdSimulationSubsystem::GetFormationBlockedMemberCount() const
+{
+	int32 Count = 0;
+	for (const FUnitData& Unit : UnitDatas)
+	{
+		if (Unit.bIsActive && Unit.bFormationPathBlocked)
+		{
+			++Count;
+		}
+	}
+	return Count;
 }
 
 int32 UFF_CrowdSimulationSubsystem::GetActivePartyCount() const
@@ -4882,6 +5080,18 @@ void UFF_CrowdSimulationSubsystem::ReleaseAgentToPool(int32 AgentIndex)
 		Actor->SetActorHiddenInGame(true);
 		Actor->SetActorEnableCollision(false);
 	}
+}
+
+AActor* UFF_CrowdSimulationSubsystem::GetAgentActor(int32 AgentIndex) const
+{
+	const int32 ActorSlot = PoolBinding.GetBoundSlot(AgentIndex);
+	if (ActorSlot == INDEX_NONE || !CrowdPool.IsValidIndex(ActorSlot))
+	{
+		return nullptr;
+	}
+
+	AFF_BaseCrowd* Actor = CrowdPool[ActorSlot];
+	return IsValid(Actor) ? Actor : nullptr;
 }
 
 void UFF_CrowdSimulationSubsystem::SetTemp_ExitWorldLocation(FVector NewExitWorldLocation)
@@ -5378,8 +5588,33 @@ void UFF_CrowdSimulationSubsystem::DrawDebugAgents() const
 		}
 		else if (UnitDatas.IsValidIndex(Unit.LeaderAgentIndex))
 		{
-			DrawDebugLine(World, Unit.Position + FVector(0, 0, 5.f),
-				UnitDatas[Unit.LeaderAgentIndex].Position + FVector(0, 0, 5.f), PartyColor, false, -1.f, 0, 1.5f);
+			if (!Unit.bFormationPathBlocked)
+			{
+				DrawDebugLine(World, Unit.Position + FVector(0, 0, 5.f),
+					UnitDatas[Unit.LeaderAgentIndex].Position + FVector(0, 0, 5.f), PartyColor, false, -1.f, 0, 1.5f);
+			}
+			else
+			{
+				const FColor BlockedColor = FColor::White;
+				const FVector Lift(0, 0, 10.f);
+
+				FVector Previous = Unit.Position;
+				if (PathFollowers.IsValidIndex(AgentIndex) && PathFollowers[AgentIndex].HasRemainingWaypoint())
+				{
+					const FFF_CrowdPathFollower& Follower = PathFollowers[AgentIndex];
+					for (int32 PointIndex = Follower.NextIndex; PointIndex < Follower.Points.Num(); ++PointIndex)
+					{
+						DrawDebugLine(World, Previous + Lift, Follower.Points[PointIndex] + Lift,
+							BlockedColor, false, -1.f, 0, 2.f);
+						Previous = Follower.Points[PointIndex];
+					}
+				}
+				else
+				{
+					DrawDebugLine(World, Previous + Lift, Unit.GetSteerTarget() + Lift,
+						BlockedColor, false, -1.f, 0, 2.f);
+				}
+			}
 		}
 	}
 }
@@ -5394,6 +5629,12 @@ void UFF_CrowdSimulationSubsystem::DespawnAgentInternal(int32 AgentID)
 	FUnitData& Unit = UnitDatas[AgentID];
 
 	if (!Unit.bIsActive) return;
+	
+	if (Unit.bMissing)
+	{
+		QueueMissingEvent(AgentID,Unit,EFF_CrowdMissingChange::Despawned);
+	}
+	
 
 	ReleaseAgentToPool(AgentID);
 

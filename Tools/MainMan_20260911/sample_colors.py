@@ -1,5 +1,5 @@
 # sample_colors.py
-# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+# 역할: 열린 원본 이미지를 512픽셀로 줄이고 피부·머리·옷·신발 영역의 대표 색을 추출한다. 파일은 저장하지 않는다.
 
 import bpy,numpy as np,json
 im=bpy.data.images['tripo_image_29ed07d1_0'];im.scale(512,512);a=np.array(im.pixels[:]).reshape(512,512,4)

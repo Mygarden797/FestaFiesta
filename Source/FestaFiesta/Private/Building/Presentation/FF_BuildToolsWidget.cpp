@@ -2,13 +2,16 @@
 // 역할: 건설 도구 버튼과 각도 입력을 건설 상태 및 명령에 연결한다.
 
 #include "Building/Presentation/FF_BuildToolsWidget.h"
+#include "FF_FFZSWorldSubsystem.h"
 
 #include "Building/FF_BuildModeSubsystem.h"
 #include "Building/FF_BuildCatalogSubsystem.h"
 #include "Building/FF_BuildCatalogEconomyReadModel.h"
 #include "Building/Presentation/FF_BuildModeGuide.h"
+#include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 #include "Building/Presentation/FF_BuildFeedback.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/CanvasPanelSlot.h"
 #include "FF_FFZSFacilityDefinition.h"
 #include "Components/Border.h"
@@ -18,14 +21,25 @@
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 #include "Engine/GameInstance.h"
+#include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
 #include "Misc/DefaultValueHelper.h"
+#include "UI/PrepHUD/Panels/FF_PrepPanelBuild.h"
+#include "UI/Settings/FF_KeyBindingRuntimeSubsystem.h"
 #include "TimerManager.h"
 #include "UI/Settings/FF_RuntimeSettingsSubsystem.h"
 
 #define LOCTEXT_NAMESPACE "FFBuildTools"
+
+FVector2D FFBuildToolsModel::ResolveHelpVerticalBounds(const float ContentHeight, const float AvailableBottom)
+{
+    const float Bottom = FMath::Max(0.f, AvailableBottom);
+    const float MinimumTop = FMath::Min(104.f, Bottom);
+    const float Height = FMath::Min(FMath::Max(0.f, ContentHeight), Bottom - MinimumTop);
+    return FVector2D(FMath::Max(MinimumTop, FMath::Min(525.f, Bottom - Height)), Height);
+}
 
 // 입력한 각도가 0~360의 유한한 숫자인지 확인한다. 잘못된 입력은 이전 값을 유지한다.
 bool FFBuildToolsModel::TryParseYawText(const FString& Text, float& OutYawDegrees)
@@ -88,11 +102,14 @@ void UFF_BuildToolsWidget::NativeConstruct()
 {
     Super::NativeConstruct();
     SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-    // The drawer's size box stays laid out when its child is collapsed. Let only
-    // the visible panel receive input so the world/catalog remains clickable.
+    // These bounds retain their height when their panel is collapsed. Let only
+    // visible descendants receive input so the world/catalog remains clickable.
     if (!Size_BuildSettings)
         Size_BuildSettings = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_BuildSettings")));
     if (Size_BuildSettings) Size_BuildSettings->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+    if (!Size_BuildWorldHelp)
+        Size_BuildWorldHelp = Cast<USizeBox>(GetWidgetFromName(TEXT("Size_BuildWorldHelp")));
+    if (Size_BuildWorldHelp) Size_BuildWorldHelp->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
     BuildMode = GetWorld() ? GetWorld()->GetSubsystem<UFF_BuildModeSubsystem>() : nullptr;
     Economy = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogEconomyReadModel>() : nullptr;
     CatalogModel = GetGameInstance() ? GetGameInstance()->GetSubsystem<UFF_BuildCatalogSubsystem>() : nullptr;
@@ -138,6 +155,8 @@ void UFF_BuildToolsWidget::NativeConstruct()
     FF_BIND_TOOL(Button_SettingsEdgeScroll, HandleEdgeScroll)
     FF_BIND_TOOL(Button_Facts, ToggleFacts)
     FF_BIND_TOOL(Button_Help, ToggleHelp)
+    FF_BIND_TOOL(Button_BuildHelpUndo, HandleUndoConstruction)
+    FF_BIND_TOOL(Button_BuildHelpRedo, HandleRedoConstruction)
     FF_BIND_TOOL(Button_DirectAdjustment, ToggleDirectAdjustment)
     FF_BIND_TOOL(Button_FindNearby, FindNearbyPlacement)
     FF_BIND_TOOL(Button_NextPlacementProblem, ShowNextPlacementProblem)
@@ -207,7 +226,8 @@ bool UFF_BuildToolsWidget::IsPointerOverTools() const
     // Raw BuildMode input runs before Slate's button mouse-up. Geometry also covers that
     // first mouse-down, so clicking a tool never places a building underneath the toolbar.
     for (const UBorder* Panel : { Border_Tools.Get(), Border_PlacementInfo.Get(),
-        Border_BuildTopBar.Get(), Border_BuildBack.Get(), Border_BuildToolbarGold.Get(), Panel_BuildSettings.Get() })
+        Border_BuildTopBar.Get(), Border_BuildBack.Get(), Border_BuildToolbarGold.Get(), Panel_BuildSettings.Get(),
+        Border_PlacementHelp.Get() })
     {
         if (Panel && Panel->IsVisible() && (Panel->IsHovered() || (FSlateApplication::IsInitialized() &&
             Panel->GetCachedGeometry().IsUnderLocation(FSlateApplication::Get().GetCursorPos())))) return true;
@@ -267,7 +287,7 @@ void UFF_BuildToolsWidget::ToggleHelp()
 void UFF_BuildToolsWidget::SetHelpExpanded(const bool bExpanded)
 {
     if (Border_PlacementHelp)
-        Border_PlacementHelp->SetVisibility(bExpanded ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+        Border_PlacementHelp->SetVisibility(bExpanded ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     if (Button_Help)
         if (auto* Label = Cast<UTextBlock>(Button_Help->GetContent()))
             Label->SetText(bExpanded ? LOCTEXT("ClosePlacementHelp", "안내 닫기") : LOCTEXT("OpenPlacementHelp", "조작 안내"));
@@ -298,16 +318,79 @@ void UFF_BuildToolsWidget::ShowNextPlacementProblem()
 void UFF_BuildToolsWidget::NativeTick(const FGeometry& Geometry, float DeltaTime)
 {
     Super::NativeTick(Geometry, DeltaTime);
+    RefreshEditingHelp();
     if (Size_BuildWorldHelp && Border_PlacementHelp && Border_PlacementHelp->IsVisible())
     {
-        // Keep the independent icon guide above the catalog tray even at
-        // compact window sizes. The facility card occupies the opposite side.
+        // Use the painted catalog edge in the same logical coordinate system.
+        // The old fixed 170px reservation was shorter than the 326px catalog itself.
         if (auto* HelpSlot = Cast<UCanvasPanelSlot>(Size_BuildWorldHelp->Slot))
         {
             const float Height = Geometry.GetLocalSize().Y;
-            const float HelpHeight = FMath::Max(170.f, Size_BuildWorldHelp->GetDesiredSize().Y);
-            const float MaxTop = FMath::Max(130.f, Height - HelpHeight - 170.f);
-            float Top = FMath::Min(525.f, MaxTop);
+            if (Height <= 0.f) return;
+            const bool bCatalogOpen = BuildMode.IsValid() &&
+                BuildMode->GetBuildModeState() == EFF_BuildModeState::CatalogOpen;
+            float Bottom = Height - 100.f;
+            if (bCatalogOpen)
+            {
+                // Conservative first-frame clearance before the catalog has Slate geometry.
+                Bottom = Height - 450.f;
+                const double Time = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+                if (!CatalogHelpAvoidanceSurface.IsValid() && Time >= NextCatalogHelpSearchTime)
+                {
+                    NextCatalogHelpSearchTime = Time + .5;
+                    TArray<UUserWidget*> Panels;
+                    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Panels,
+                        UFF_PrepPanelBuild::StaticClass(), false);
+                    for (UUserWidget* Panel : Panels)
+                        if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
+                            if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Border_PanelRoot")))
+                            {
+                                CatalogHelpAvoidanceSurface = Surface;
+                                break;
+                            }
+                }
+                if (const UWidget* Surface = CatalogHelpAvoidanceSurface.Get(); Surface && Surface->IsVisible())
+                {
+                    const FGeometry& Bounds = Surface->GetCachedGeometry();
+                    if (Bounds.GetLocalSize().Y > 0.f)
+                        Bottom = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)).Y - 16.f;
+                }
+            }
+            if (BuildMode.IsValid() && BuildMode->IsMultiSelectionActive())
+            {
+                // Keep the same guide available during group edits, above the saved group panel.
+                Bottom = FMath::Min(Bottom, Height - 450.f);
+                const double Time = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+                if (!GroupHelpAvoidanceSurface.IsValid() && Time >= NextGroupHelpSearchTime)
+                {
+                    NextGroupHelpSearchTime = Time + .5;
+                    TArray<UUserWidget*> Panels;
+                    UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Panels,
+                        UFF_BuildMultiSelectionWidget::StaticClass(), false);
+                    for (UUserWidget* Panel : Panels)
+                        if (Panel && Panel->GetOwningPlayer() == GetOwningPlayer() && Panel->IsVisible())
+                            if (UWidget* Surface = Panel->GetWidgetFromName(TEXT("Border_MultiSelection")))
+                            {
+                                GroupHelpAvoidanceSurface = Surface;
+                                break;
+                            }
+                }
+                if (const UWidget* Surface = GroupHelpAvoidanceSurface.Get(); Surface && Surface->IsVisible())
+                {
+                    const FGeometry& Bounds = Surface->GetCachedGeometry();
+                    if (Bounds.GetLocalSize().Y > 0.f)
+                        Bottom = Geometry.AbsoluteToLocal(Bounds.LocalToAbsolute(FVector2D::ZeroVector)).Y - 16.f;
+                }
+            }
+            const float ContentHeight = Column_BuildIconHelp
+                ? Column_BuildIconHelp->GetDesiredSize().Y + 24.f
+                : Size_BuildWorldHelp->GetDesiredSize().Y;
+            const FVector2D Placement = FFBuildToolsModel::ResolveHelpVerticalBounds(ContentHeight, Bottom);
+            const float HelpHeight = Placement.Y;
+            if (!Size_BuildWorldHelp->IsHeightOverride() ||
+                !FMath::IsNearlyEqual(Size_BuildWorldHelp->GetHeightOverride(), HelpHeight, .5f))
+                Size_BuildWorldHelp->SetHeightOverride(HelpHeight);
+            const float Top = Placement.X;
             if (!FMath::IsNearlyEqual(HelpSlot->GetPosition().Y, Top, .5f))
                 HelpSlot->SetPosition(FVector2D(32.f, Top));
         }
@@ -592,7 +675,8 @@ void UFF_BuildToolsWidget::RefreshTools()
     // The compact top bar also serves catalog browsing. Placement summary and confirm
     // controls remain visible only while a world preview is active.
     const bool bSession = System && FFBuildModeModel::IsBuildSessionActive(State);
-    SetVisibility(bSession ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+    SetVisibility(bSession && !System->IsInputSuspendedForPauseMenu()
+        ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
     if (Label_BuildMode)
         Label_BuildMode->SetText(System && System->IsMultiSelectionActive()
             ? LOCTEXT("BuildModeMultiSelectionTitle", "다중 선택")
@@ -684,13 +768,14 @@ void UFF_BuildToolsWidget::RefreshTools()
     if (Text_Footprint) Text_Footprint->SetText(ViewData.FootprintText);
     if (Text_Queue) Text_Queue->SetText(ViewData.QueueText);
     // The saved WBP keeps this named legacy binding collapsed for older
-    // Blueprint references. The visible guide uses artwork and short labels.
+    // Blueprint references. The visible guide pairs physical keycaps with actions.
     if (Text_ControlHelp) Text_ControlHelp->SetText(FText::GetEmpty());
+    RefreshEditingHelp();
     const bool bDirectHelp = System && System->IsDirectPlacementAdjustment();
     if (Text_BuildHelpPrimary)
         Text_BuildHelpPrimary->SetText(!bPreview
             ? LOCTEXT("IconHelpInspect", "시설 클릭해 정보 보기")
-            : bDirectHelp ? LOCTEXT("IconHelpRetarget", "마우스로 위치 다시 선택")
+            : bDirectHelp ? LOCTEXT("KeyHelpGizmoDrag", "핸들을 드래그해 조정")
             : ViewData.bDragPlacementEnabled ? LOCTEXT("IconHelpDrag", "드래그로 연속 설치")
             : LOCTEXT("IconHelpPlace", "클릭해 시설 배치"));
     if (Text_BuildHelpRotate)
@@ -698,13 +783,25 @@ void UFF_BuildToolsWidget::RefreshTools()
             ? LOCTEXT("IconHelpEndDrag", "회전하면 연속 배치 종료")
             : LOCTEXT("IconHelpRotateFacility", "시설 방향 회전"));
     if (Text_BuildHelpMove)
-        Text_BuildHelpMove->SetText(bDirectHelp
-            ? LOCTEXT("IconHelpMoveFacility", "시설 위치 이동")
-            : LOCTEXT("IconHelpMoveCamera", "카메라 이동"));
+        Text_BuildHelpMove->SetText(LOCTEXT("IconHelpMoveCamera", "카메라 이동"));
     if (Text_BuildHelpPrecision)
-        Text_BuildHelpPrecision->SetText(bDirectHelp
-            ? LOCTEXT("IconHelpFineMove", "위치 미세 조정")
-            : LOCTEXT("IconHelpPrecision", "정밀 위치 맞춤"));
+        Text_BuildHelpPrecision->SetText(LOCTEXT("KeyHelpPrecisionHold", "누르는 동안 정밀 맞춤"));
+    // Camera and option keys are user-remappable; show the saved input, not a stale default.
+    if (ULocalPlayer* Player = GetOwningLocalPlayer())
+        if (const auto* Bindings = Player->GetSubsystem<UFF_KeyBindingRuntimeSubsystem>())
+        {
+            const TPair<const TCHAR*, const TCHAR*> Keys[] = {
+                {TEXT("W"), TEXT("FF.Camera.Move.Forward")}, {TEXT("A"), TEXT("FF.Camera.Move.Left")},
+                {TEXT("S"), TEXT("FF.Camera.Move.Backward")}, {TEXT("D"), TEXT("FF.Camera.Move.Right")},
+                {TEXT("Esc"), TEXT("FF.System.Options.Primary")}};
+            for (const auto& Key : Keys)
+                if (auto* Text = Cast<UTextBlock>(GetWidgetFromName(
+                    FName(*(FString(TEXT("Text_BuildHelpKey_")) + Key.Key)))))
+                {
+                    const FKey Current = Bindings->GetCurrentKey(FName(Key.Value));
+                    Text->SetText(Current == EKeys::Escape ? FText::FromString(TEXT("Esc")) : Current.GetDisplayName());
+                }
+        }
     if (Row_BuildHelpRotate)
         Row_BuildHelpRotate->SetVisibility(bPreview
             ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
@@ -1015,6 +1112,38 @@ bool UFF_BuildToolsWidget::ApplyYawText(const FText& Text)
     if (UFF_BuildModeSubsystem* System = BuildMode.Get()) { System->NotifyBuildToolsInteraction(); }
     return ApplyAngleText(Text);
 }
+void UFF_BuildToolsWidget::RefreshEditingHelp()
+{
+    const UFF_BuildModeSubsystem* System = BuildMode.Get();
+    const UFFZSWorldSubsystem* Zones = GetWorld() ? GetWorld()->GetSubsystem<UFFZSWorldSubsystem>() : nullptr;
+    const bool bCanInteract = System && !System->IsInputSuspendedForPauseMenu() &&
+        FFBuildModeModel::IsBuildSessionActive(System->GetBuildModeState());
+    if (Button_BuildHelpUndo) Button_BuildHelpUndo->SetIsEnabled(bCanInteract && Zones && Zones->CanUndoConstruction());
+    if (Button_BuildHelpRedo) Button_BuildHelpRedo->SetIsEnabled(bCanInteract && Zones && Zones->CanRedoConstruction());
+    const bool bQueueAvailable = bCanInteract && System->CanChooseQueueLayout();
+    if (Row_BuildHelpQueue)
+        Row_BuildHelpQueue->SetVisibility(bQueueAvailable ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+    if (Text_BuildHelpQueue) Text_BuildHelpQueue->SetText(LOCTEXT("QueueShapeAction", "대기열 모양 선택"));
+    if (Text_BuildHelpQueueHint && bQueueAvailable)
+    {
+        const FText Hint = FText::Format(LOCTEXT("QueueShapeKeysAndCurrent", "7 기본 · 8 좌측 · 9 우측 · 0 U자\n{0}"),
+            System->GetQueueLayoutKeyHint());
+        if (!Text_BuildHelpQueueHint->GetText().EqualTo(Hint)) Text_BuildHelpQueueHint->SetText(Hint);
+    }
+}
+
+void UFF_BuildToolsWidget::HandleUndoConstruction()
+{
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->UndoBuildEdit();
+    RefreshTools();
+}
+
+void UFF_BuildToolsWidget::HandleRedoConstruction()
+{
+    if (UFF_BuildModeSubsystem* System = BuildMode.Get()) System->RedoBuildEdit();
+    RefreshTools();
+}
+
 void UFF_BuildToolsWidget::HandleGoldChanged(const int32 Gold) { RefreshTools(); }
 
 void UFF_BuildToolsWidget::ReturnToCatalog()

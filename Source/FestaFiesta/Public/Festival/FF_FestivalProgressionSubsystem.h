@@ -1,4 +1,4 @@
-﻿// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright Epic Games, Inc. All Rights Reserved.
 
 #pragma once
 
@@ -187,6 +187,11 @@ public:
 	// TotalRevenue는 안 건드린다 — 환급은 새 매출이 아니라 이미 쓴 돈이 되돌아온 것이다.
 	UFUNCTION(BlueprintCallable, Category = "FestaFiesta|Economy")
 	void Refund(int32 Amount);
+
+	// Authority economy bridge only: apply the exact original build receipt, including undo.
+	bool CanApplyConstructionDelta(int64 InstallSpendDelta, int64 RefundDelta) const;
+	bool ApplyConstructionDelta(int32 InstallSpendDelta, int32 RefundDelta, bool bPublish = true);
+	void PublishConstructionGoldChange(int32 PreviousGold);
 
 	/** Credits a one-time codex reward without counting it as facility sales or demolition refunds.
 	 * The codex progress subsystem owns the persistent first-discovery check. */

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "FF_IncidentCatalog.h"
 #include "Engine/DeveloperSettings.h"
+#include "GameplayTagContainer.h"
 #include "FF_IncidentSettings.generated.h"
 
 /**
@@ -26,4 +27,10 @@ public:
 	
 	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Incident", meta = (ClampMin = "1"))
 	int32 MaxConcurrentIncidents = 64;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Crowd Bridge")
+	FGameplayTag CrowdCongestionTag;
+
+	UPROPERTY(EditAnywhere, Config, BlueprintReadOnly, Category = "Crowd Bridge")
+	FGameplayTag CrowdMemberMissingTag;
 };

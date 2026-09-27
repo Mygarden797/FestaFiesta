@@ -1,5 +1,6 @@
 // FF_BuildMultiSelectionTests.cpp
-// F1 selection stays read-only and responds to click, marquee and session cleanup.
+// 역할: 클릭·사각형 드래그·모드 종료가 시설 선택을 올바르게 갱신하는지 검사한다.
+// 선택만으로 실제 배치가 바뀌지 않고, 폐기한 F1~F7 단축키가 도구를 실행하지 않는지도 확인한다.
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -23,6 +24,7 @@
 #include "Festival/FF_FestivalProgressionSubsystem.h"
 #include "Misc/AutomationTest.h"
 #include "Misc/ScopeExit.h"
+#include "Kismet/GameplayStatics.h"
 #include "Tests/AutomationCommon.h"
 #include "Tests/FF_FFZSTestFixtures.h"
 #include "UnrealClient.h"
@@ -229,6 +231,79 @@ bool FFF_BuildMultiSelectionSessionTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Build exit hides the facility selection indicator"),
 		First->GetSelectionIndicatorState(), EFFZSFacilitySelectionIndicatorState::Hidden);
 	TestEqual(TEXT("All selection operations leave world authority unchanged"), Zones->GetWorldRevision(), RevisionBefore);
+
+	// Group preview changes no live facility; cancelling must never produce a history entry.
+	Build->State = EFF_BuildModeState::BuildMode;
+	Build->bBuildSessionActive = true;
+	Build->ToggleMultiSelection();
+	Build->AddMultiSelectedFacility(First);
+	Build->AddMultiSelectedFacility(Second);
+	const FGuid FirstId = First->GetFacilityInstanceId();
+	const FGuid SecondId = Second->GetFacilityInstanceId();
+	const FVector FirstOriginal = First->GetActorLocation();
+	const FVector SecondOriginal = Second->GetActorLocation();
+	TestTrue(TEXT("Group movement starts with a preview"), Build->BeginGroupMove());
+	TestEqual(TEXT("Preview holds both selected IDs"), Build->GroupSourceIds.Num(), 2);
+	Build->RefreshGroupPlacement(Build->GroupTargetCenter + FVector(0.f, 3000.f, 0.f));
+	Build->RotateGroupPlacement(90.f);
+	if (TestEqual(TEXT("Rotation retains both candidate placements"), Build->GroupCommands.Num(), 2))
+	{
+		const FFFZSCommand& A = Build->GroupCommands[0];
+		const FFFZSCommand& B = Build->GroupCommands[1];
+		const FVector ACenter = Zones->BuildPlacementTransform(*Zone, A.FacilitySpec, A.Placement).GetLocation();
+		const FVector BCenter = Zones->BuildPlacementTransform(*Zone, B.FacilitySpec, B.Placement).GetLocation();
+		const FVector ExpectedOffset = FQuat(FVector::UpVector, HALF_PI).RotateVector(SecondOriginal - FirstOriginal);
+		TestTrue(TEXT("Group rotation rotates the offset around one pivot without changing spacing"),
+			(BCenter - ACenter).Equals(ExpectedOffset, 1.1f));
+	}
+	TestEqual(TEXT("Rotation preview leaves the first actor untouched"), First->GetActorLocation(), FirstOriginal);
+	TestEqual(TEXT("Rotation preview leaves authority revision untouched"), Zones->GetWorldRevision(), RevisionBefore);
+	Build->CancelGroupPlacement();
+	TestFalse(TEXT("Cancel releases group ghosts"), Build->IsGroupPlacementActive());
+	TestTrue(TEXT("Cancelled group destroys every preview actor"), Build->GroupPreviews.IsEmpty());
+	TestEqual(TEXT("Cancel keeps selected facilities"), Build->GetMultiSelectionCount(), 2);
+
+	TestTrue(TEXT("Move begins again"), Build->BeginGroupMove());
+	const FVector Target = Build->GroupTargetCenter + FVector(500.f, 500.f, 0.f);
+	TestTrue(TEXT("Batch validates nearby group placement"), Build->RefreshGroupPlacement(Target));
+	TestTrue(TEXT("Group commits as one action"), Build->CommitGroupPlacement());
+	First = Zones->FindFacility(FirstId);
+	Second = Zones->FindFacility(SecondId);
+	if (!TestNotNull(TEXT("First survives group move"), First) || !TestNotNull(TEXT("Second survives group move"), Second)) return false;
+	TestTrue(TEXT("Group movement preserves relative centers"),
+		(Second->GetActorLocation() - First->GetActorLocation()).Equals(SecondOriginal - FirstOriginal, 1.f));
+	FText HistoryError;
+	TestTrue(TEXT("One undo restores the whole move"), Zones->UndoConstruction(HistoryError));
+	First = Zones->FindFacility(FirstId);
+	Second = Zones->FindFacility(SecondId);
+	if (!TestNotNull(TEXT("First restored"), First) || !TestNotNull(TEXT("Second restored"), Second)) return false;
+	TestTrue(TEXT("First returns to original position"), First->GetActorLocation().Equals(FirstOriginal, 1.f));
+	TestTrue(TEXT("Second returns to original position"), Second->GetActorLocation().Equals(SecondOriginal, 1.f));
+
+	// Presets serialize named, reusable relative geometry without live instance IDs.
+	Build->ClearMultiSelection();
+	Build->AddMultiSelectedFacility(First);
+	Build->AddMultiSelectedFacility(Second);
+	TArray<FFF_BuildLayoutEntry> Entries;
+	FVector CapturedCenter;
+	TestTrue(TEXT("Selected layout captures"), Build->CaptureSelectedGroup(Entries, CapturedCenter));
+	UFF_BuildLayoutPresetSave* Saved = NewObject<UFF_BuildLayoutPresetSave>();
+	FFF_BuildLayoutPreset& Preset = Saved->Presets.AddDefaulted_GetRef();
+	Preset.Name = TEXT("먹거리 거리");
+	Preset.Entries = Entries;
+	TArray<uint8> Bytes;
+	TestTrue(TEXT("Layout serializes to save data"), UGameplayStatics::SaveGameToMemory(Saved, Bytes));
+	UFF_BuildLayoutPresetSave* Loaded = Cast<UFF_BuildLayoutPresetSave>(UGameplayStatics::LoadGameFromMemory(Bytes));
+	if (!TestNotNull(TEXT("Layout reloads"), Loaded)) return false;
+	TestEqual(TEXT("Named layout survives restart serialization"), Loaded->Presets[0].Name, FString(TEXT("먹거리 거리")));
+	TestEqual(TEXT("Saved group keeps both entries"), Loaded->Presets[0].Entries.Num(), 2);
+	TestEqual(TEXT("Saved group preserves spacing"), Loaded->Presets[0].Entries[1].RelativeCenter - Loaded->Presets[0].Entries[0].RelativeCenter,
+		SecondOriginal - FirstOriginal);
+	Build->LayoutPresets = Loaded;
+	TestTrue(TEXT("Saved layout starts an install preview"), Build->BeginGroupPreset(TEXT("먹거리 거리")));
+	TestTrue(TEXT("Preset uses fresh facility IDs"), !Build->GroupSourceIds.Contains(FirstId) && !Build->GroupSourceIds.Contains(SecondId));
+	Build->CancelGroupPlacement();
+	Build->ExitBuildMode();
 	return true;
 }
 

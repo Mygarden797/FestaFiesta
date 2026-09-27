@@ -1,4 +1,5 @@
-// Static placement presentation. Existing screenshot is cropped via CSS, never repainted.
+// 역할: 배치 비용·조작 안내·대기열 위치를 실제 게임 장면 위에 보여 주는 정적 시안이다.
+// ui.js의 배치 화면을 교체하며 실제 시설을 설치하거나 카메라를 움직이지 않는다.
 if(id==='02-placement'){
  const k=(text)=>`<kbd>${text}</kbd>`;
  const help=(keys,label)=>`<div class="placement-help-row"><span>${keys}</span><b>${label}</b></div>`;
@@ -30,7 +31,8 @@ if(id==='02-placement'){
   <div class="placement-quick-bottom"><span>${icon('coin')}300 Gold</span><span>설치 확정 시 차감</span></div>
  </section>
  <div class="overlay placement-queue-label" data-overlay>진입 → 대기 → 서비스 → 퇴장</div>`;
+ // 원본에 찍힌 이전 패널은 화면 밖으로 잘라낸다. 이미지 파일의 픽셀은 수정하지 않는다.
  const scale=s.h/525;const world=scene.querySelector('.world');world.style.width=(scale*100)+'%';world.style.height='auto';
  window.screenSpec.referenceFrame='Original 155437 screenshot scaled by height/525 and clipped to viewport, removing the baked lower placement panel; no world repaint.';
- window.ready=Promise.all([...document.images].map(img=>img.decode().catch(()=>{}))).then(()=>document.fonts.ready);
+ window.ready = waitForPreviewAssets();
 }

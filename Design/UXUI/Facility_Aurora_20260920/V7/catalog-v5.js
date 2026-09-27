@@ -1,10 +1,12 @@
-/* V5 review artwork only. Buttons describe proposed actions; no game events or purchases run. */
+// 역할: 시설 카탈로그 시안을 선택 시설·설치 비용·배치 요청 순서로 보여 준다.
+// ui.js의 공통 조각을 사용하며, 버튼을 눌러도 실제 구매나 게임 이벤트는 실행하지 않는다.
 (()=>{
   if(id!=='01-catalog')return;
   const items=[['game','게임장'],['basketball','농구 슛 챌린지'],['rhythm','리듬 게임 부스'],['archery','미니 양궁장'],['boardgame','보드게임 텐트'],['surf','서핑 밸런스 체험장']];
   const coin=()=>'<span class="v5-gold-coin" aria-hidden="true">G</span>';
   const categoryNames=['전체','부스','화장실','안내','휴게','공연','안전','포토스팟','조명','길','타일'];
   const categoryIcons=['grid','tent','tent','shield','people','tent','shield','tent','bulb','route','grid'];
+  // 예시 목록으로 비용과 설치 후 잔액을 비교할 수 있는 정적 패널을 만든다.
   const proposal=`<section class="overlay pearl catalog catalog-v5" data-overlay>
     <div class="topline v5-catalog-top">
       <div class="v5-catalog-heading"><span class="title">${icon('tent')}시설 건축</span><span class="v5-catalog-subtitle">시설 선택 → 배치 시작</span></div>
@@ -25,8 +27,9 @@
     </div>
     <div class="catalogfoot"><span>카드 선택 · ☆ 즐겨찾기</span><div class="row">${btn('시설 확인 B')}<span>시설 31종</span>${btn('‹')}<b>1 / 6</b>${btn('›')}</div></div>
   </section>`;
+  // 기본 패널을 새 시안으로 교체한 뒤 새 이미지의 준비 상태를 갱신한다.
   scene.querySelector('.catalog')?.remove();
   scene.querySelector('.context')?.remove();
   scene.insertAdjacentHTML('beforeend',context('시설 건축','카드 선택 → 비용 확인 → 선택해 배치')+proposal);
-  window.ready=Promise.all([...document.images].map(img=>img.decode().catch(()=>{}))).then(()=>document.fonts.ready);
+  window.ready = waitForPreviewAssets();
 })();

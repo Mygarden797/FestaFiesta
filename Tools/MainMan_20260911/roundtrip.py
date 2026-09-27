@@ -1,5 +1,5 @@
 # roundtrip.py
-# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+# 역할: 빈 Blender 장면에 내보낸 FBX를 다시 불러와 크기·뼈대·재질·가중치가 제작 결과와 같은지 검증한다.
 
 import bpy,json,math
 from pathlib import Path

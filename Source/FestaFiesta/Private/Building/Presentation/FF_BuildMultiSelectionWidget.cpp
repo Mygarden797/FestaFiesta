@@ -1,5 +1,6 @@
 // FF_BuildMultiSelectionWidget.cpp
-// A native fallback mirrors the editable WBP contract when its asset is unavailable.
+// 역할: 선택한 시설을 가로 목록에 보여 주고 상세 보기·선택 해제·종료 요청을 전달한다.
+// 편집용 위젯 에셋이 없어도 같은 이름의 버튼과 표시 요소를 C++로 만들어 기능을 유지한다.
 
 #include "Building/Presentation/FF_BuildMultiSelectionWidget.h"
 
@@ -14,6 +15,8 @@
 #include "Components/ButtonSlot.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/ComboBoxString.h"
+#include "Components/EditableTextBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
@@ -65,7 +68,7 @@ void AddToRow(UHorizontalBox& Row, UWidget& Child, const float RightPadding = 0.
 }
 
 UButton* MakeAction(UWidgetTree& Tree, const FName Name, const FText& Caption,
-	const bool bPrimary)
+	const bool bPrimary, const int32 FontSize = 12)
 {
 	UButton* Button = Tree.ConstructWidget<UButton>(UButton::StaticClass(), Name);
 	FButtonStyle Style;
@@ -76,7 +79,7 @@ UButton* MakeAction(UWidgetTree& Tree, const FName Name, const FText& Caption,
 	Style.Disabled = Surface(FFBuildPearl::Pearl, 20.0f, FFBuildPearl::Line);
 	Style.NormalPadding = Style.PressedPadding = FMargin(9.0f, 5.0f);
 	Button->SetStyle(Style);
-	UTextBlock* Label = MakeText(Tree, NAME_None, Caption, 12,
+	UTextBlock* Label = MakeText(Tree, NAME_None, Caption, FontSize,
 		bPrimary ? FLinearColor::White : FFBuildPearl::Ink, true);
 	UButtonSlot* ButtonSlot = CastChecked<UButtonSlot>(Button->AddChild(Label));
 	ButtonSlot->SetHorizontalAlignment(HAlign_Center);
@@ -108,6 +111,102 @@ void UFF_BuildMultiSelectionWidget::ResolveBindings()
 	Button_InspectSelection = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_InspectSelection")));
 	Button_ClearSelection = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_ClearSelection")));
 	Button_ExitMultiSelection = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_ExitMultiSelection")));
+	Button_MoveGroup = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_MoveGroup")));
+	Button_DuplicateGroup = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_DuplicateGroup")));
+	Button_RemoveGroup = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RemoveGroup")));
+	Button_RotateLeft = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RotateLeft")));
+	Button_RotateRight = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_RotateRight")));
+	Button_ApplyGroup = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_ApplyGroup")));
+	Button_CancelGroup = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_CancelGroup")));
+	Button_SavePreset = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_SavePreset")));
+	Button_LoadPreset = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_LoadPreset")));
+	Button_DeletePreset = Cast<UButton>(WidgetTree->FindWidget(TEXT("Button_DeletePreset")));
+	Text_GroupEditingStatus = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_GroupEditingStatus")));
+	Edit_PresetName = Cast<UEditableTextBox>(WidgetTree->FindWidget(TEXT("Edit_PresetName")));
+	Combo_Presets = Cast<UComboBoxString>(WidgetTree->FindWidget(TEXT("Combo_Presets")));
+	Text_MultiSelectionDesignerHint = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_MultiSelectionDesignerHint")));
+}
+
+// Used only when no Designer tree exists. Saved WBPs are never rewritten at runtime.
+void UFF_BuildMultiSelectionWidget::BuildNativeGroupControls()
+{
+	if (!Border_MultiSelection || Text_GroupEditingStatus) return;
+	UWidget* Existing = Border_MultiSelection->GetContent();
+	Border_MultiSelection->ClearChildren();
+	UVerticalBox* Body = WidgetTree->ConstructWidget<UVerticalBox>();
+	Border_MultiSelection->AddChild(Body);
+	if (Existing) Body->AddChildToVerticalBox(Existing);
+	UHorizontalBox* Actions = WidgetTree->ConstructWidget<UHorizontalBox>();
+	Body->AddChildToVerticalBox(Actions)->SetPadding(FMargin(0.f, 8.f, 0.f, 0.f));
+	const auto AddAction = [&](UHorizontalBox* Row, const TCHAR* Name, const FText& Caption, bool bPrimary = false)
+	{
+		UButton* Button = MakeAction(*WidgetTree, Name, Caption, bPrimary, 14);
+		AddToRow(*Row, *Button, 6.f);
+		return Button;
+	};
+	Button_MoveGroup = AddAction(Actions, TEXT("Button_MoveGroup"), LOCTEXT("MoveGroup", "묶음 이동"));
+	Button_DuplicateGroup = AddAction(Actions, TEXT("Button_DuplicateGroup"), LOCTEXT("DuplicateGroup", "복제"));
+	Button_RemoveGroup = AddAction(Actions, TEXT("Button_RemoveGroup"), LOCTEXT("RemoveGroup", "묶음 철거"));
+	Button_RotateLeft = AddAction(Actions, TEXT("Button_RotateLeft"), LOCTEXT("GroupLeft", "왼쪽 회전 Q"));
+	Button_RotateRight = AddAction(Actions, TEXT("Button_RotateRight"), LOCTEXT("GroupRight", "오른쪽 회전 E"));
+	Button_ApplyGroup = AddAction(Actions, TEXT("Button_ApplyGroup"), LOCTEXT("ApplyGroup", "확정"), true);
+	Button_CancelGroup = AddAction(Actions, TEXT("Button_CancelGroup"), LOCTEXT("CancelGroup", "취소"));
+	Button_DuplicateGroup->SetToolTipText(LOCTEXT("DuplicateCost", "기본 단계의 새 시설을 만듭니다. 설치비가 적용되며 간격과 대기열 모양을 유지합니다."));
+	Button_RemoveGroup->SetToolTipText(LOCTEXT("RemoveUndo", "선택 전체를 철거합니다. 불가능한 시설이 하나라도 있으면 전체가 취소됩니다. 실행 취소로 복구할 수 있습니다."));
+	UHorizontalBox* Presets = WidgetTree->ConstructWidget<UHorizontalBox>();
+	Body->AddChildToVerticalBox(Presets)->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+	Edit_PresetName = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("Edit_PresetName"));
+	Edit_PresetName->SetHintText(LOCTEXT("PresetHint", "먹거리 거리 / 휴게 공간"));
+	Edit_PresetName->SetToolTipText(LOCTEXT("PresetOverwrite", "1~40자. 같은 이름으로 저장하면 기존 프리셋을 덮어씁니다."));
+	FEditableTextBoxStyle NameStyle = Edit_PresetName->GetWidgetStyle();
+	NameStyle.SetFont(FFBuildTypography::Make(FFBuildTypography::ERole::Body, 14));
+	Edit_PresetName->SetWidgetStyle(NameStyle);
+	AddToRow(*Presets, *Edit_PresetName, 6.f, true);
+	Button_SavePreset = AddAction(Presets, TEXT("Button_SavePreset"), LOCTEXT("SavePreset", "이름으로 저장"));
+	Combo_Presets = WidgetTree->ConstructWidget<UComboBoxString>(UComboBoxString::StaticClass(), TEXT("Combo_Presets"));
+	Combo_Presets->OnGenerateWidgetEvent.BindDynamic(this, &ThisClass::GeneratePresetOption);
+	AddToRow(*Presets, *Combo_Presets, 6.f, true);
+	Button_LoadPreset = AddAction(Presets, TEXT("Button_LoadPreset"), LOCTEXT("LoadPreset", "불러와 배치"));
+	Button_DeletePreset = AddAction(Presets, TEXT("Button_DeletePreset"), LOCTEXT("DeletePreset", "프리셋 삭제"));
+	Text_GroupEditingStatus = MakeText(*WidgetTree, TEXT("Text_GroupEditingStatus"),
+		LOCTEXT("GroupHint", "이동·복제 후 Q/E로 묶음을 회전할 수 있습니다. 복제·프리셋은 설치비가 적용됩니다."), 14, FFBuildPearl::Muted);
+	Text_GroupEditingStatus->SetAutoWrapText(true);
+	Body->AddChildToVerticalBox(Text_GroupEditingStatus)->SetPadding(FMargin(0.f, 6.f, 0.f, 0.f));
+}
+
+void UFF_BuildMultiSelectionWidget::RefreshGroupControls()
+{
+	UFF_BuildModeSubsystem* System = BuildMode.Get();
+	if (!System || !Text_GroupEditingStatus) return;
+	const bool bPreview = System->IsGroupPlacementActive();
+	const bool bSelected = System->GetMultiSelectionCount() > 0;
+	for (UButton* Button : {Button_MoveGroup.Get(), Button_DuplicateGroup.Get(), Button_RemoveGroup.Get(), Button_SavePreset.Get()})
+		if (Button) Button->SetIsEnabled(bSelected && !bPreview);
+	for (UButton* Button : {Button_RotateLeft.Get(), Button_RotateRight.Get(), Button_ApplyGroup.Get(), Button_CancelGroup.Get()})
+		if (Button) Button->SetIsEnabled(bPreview);
+	if (Button_ClearSelection) Button_ClearSelection->SetIsEnabled(bSelected && !bPreview);
+	if (Button_InspectSelection) Button_InspectSelection->SetIsEnabled(!bPreview);
+	const TArray<FString> Names = System->GetGroupPresetNames();
+	if (Combo_Presets && (!bPresetOptionsInitialized || Names != DisplayedPresetNames))
+	{
+		bPresetOptionsInitialized = true;
+		const FString Selected = Combo_Presets->GetSelectedOption();
+		DisplayedPresetNames = Names;
+		Combo_Presets->ClearOptions();
+		for (const FString& Name : Names) Combo_Presets->AddOption(Name);
+		if (Names.Contains(Selected)) Combo_Presets->SetSelectedOption(Selected);
+		else if (!Names.IsEmpty()) Combo_Presets->SetSelectedOption(Names[0]);
+		else
+		{
+			const FString Empty = LOCTEXT("NoPresets", "저장된 프리셋 없음").ToString();
+			Combo_Presets->AddOption(Empty);
+			Combo_Presets->SetSelectedOption(Empty);
+		}
+	}
+	if (Combo_Presets) Combo_Presets->SetIsEnabled(!bPreview && !Names.IsEmpty());
+	if (Button_LoadPreset) Button_LoadPreset->SetIsEnabled(!Names.IsEmpty() && !bPreview);
+	if (Button_DeletePreset) Button_DeletePreset->SetIsEnabled(!Names.IsEmpty() && !bPreview);
+	if (!System->GetGroupEditingStatus().IsEmpty()) Text_GroupEditingStatus->SetText(System->GetGroupEditingStatus());
 }
 
 void UFF_BuildMultiSelectionWidget::BuildNativeTree()
@@ -158,6 +257,8 @@ void UFF_BuildMultiSelectionWidget::BuildNativeTree()
 	UHorizontalBox* Cards = WidgetTree->ConstructWidget<UHorizontalBox>(
 		UHorizontalBox::StaticClass(), TEXT("Row_SelectedFacilities"));
 	Scroll->AddChild(Cards);
+	Border_MultiSelection = Panel;
+	BuildNativeGroupControls();
 }
 
 void UFF_BuildMultiSelectionWidget::NativeConstruct()
@@ -186,6 +287,16 @@ void UFF_BuildMultiSelectionWidget::NativeConstruct()
 	{
 		Button_ExitMultiSelection->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleExitClicked);
 	}
+	if (Button_MoveGroup) Button_MoveGroup->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleMoveGroup);
+	if (Button_DuplicateGroup) Button_DuplicateGroup->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDuplicateGroup);
+	if (Button_RemoveGroup) Button_RemoveGroup->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRemoveGroup);
+	if (Button_RotateLeft) Button_RotateLeft->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRotateLeft);
+	if (Button_RotateRight) Button_RotateRight->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRotateRight);
+	if (Button_ApplyGroup) Button_ApplyGroup->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleApplyGroup);
+	if (Button_CancelGroup) Button_CancelGroup->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCancelGroup);
+	if (Button_SavePreset) Button_SavePreset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSavePreset);
+	if (Button_LoadPreset) Button_LoadPreset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLoadPreset);
+	if (Button_DeletePreset) Button_DeletePreset->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDeletePreset);
 	RefreshSelection();
 }
 
@@ -246,10 +357,12 @@ void UFF_BuildMultiSelectionWidget::RefreshSelection()
 		Button_InspectSelection->SetVisibility(Facilities.Num() == 1
 			? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
+	RefreshGroupControls();
 	Row_SelectedFacilities->ClearChildren();
+	if (Text_MultiSelectionDesignerHint) Text_MultiSelectionDesignerHint->SetVisibility(Facilities.IsEmpty() ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	if (Facilities.IsEmpty())
 	{
-		AddEmptyHint();
+		if (!Text_MultiSelectionDesignerHint) AddEmptyHint();
 		return;
 	}
 	int32 DisplayIndex = 0;
@@ -277,6 +390,29 @@ void UFF_BuildMultiSelectionWidget::AddFacilityCard(const AFFZSFacilityActor& Fa
 	const FText Name = bHasEntry && !Entry.DisplayName.IsEmpty() ? Entry.DisplayName
 		: !Spec.DisplayName.IsEmpty() ? Spec.DisplayName : LOCTEXT("UnnamedFacility", "시설");
 
+	if (UClass* CardClass = SelectedFacilityCardClass.LoadSynchronous())
+	{
+		if (CardClass->IsChildOf(UUserWidget::StaticClass()))
+		{
+			UUserWidget* Card = CreateWidget<UUserWidget>(GetWorld(), CardClass);
+			if (Card)
+			{
+				Card->TakeWidget();
+				if (UTextBlock* Label = Cast<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_FacilityName")))) Label->SetText(Name);
+				if (UTextBlock* Index = Cast<UTextBlock>(Card->GetWidgetFromName(TEXT("Text_FacilityIndex"))))
+					Index->SetText(FText::Format(LOCTEXT("CardIndex", "{0}번 시설"), FText::AsNumber(DisplayIndex)));
+				if (UImage* Thumbnail = Cast<UImage>(Card->GetWidgetFromName(TEXT("Image_FacilityThumbnail"))))
+				{
+					if (bHasEntry && Entry.Thumbnail.Get()) Thumbnail->SetBrushFromTexture(Entry.Thumbnail.Get(), true);
+					else Thumbnail->SetBrush(FFBuildCategoryIcons::Resolve(false, Spec.Category));
+				}
+				Card->SetToolTipText(Name);
+				AddToRow(*Row_SelectedFacilities, *Card, 8.f);
+				return;
+			}
+		}
+	}
+	// Missing optional card asset uses the same data with a minimal native presentation.
 	USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
 	Size->SetWidthOverride(180.0f);
 	Size->SetHeightOverride(52.0f);
@@ -402,6 +538,52 @@ void UFF_BuildMultiSelectionWidget::HandleClearClicked()
 void UFF_BuildMultiSelectionWidget::HandleExitClicked()
 {
 	if (UFF_BuildModeSubsystem* System = BuildMode.Get()) { System->ToggleMultiSelection(); }
+}
+
+void UFF_BuildMultiSelectionWidget::HandleMoveGroup()
+{
+	if (BuildMode.IsValid()) BuildMode->BeginGroupMove();
+}
+void UFF_BuildMultiSelectionWidget::HandleDuplicateGroup()
+{
+	if (BuildMode.IsValid()) BuildMode->BeginGroupDuplicate();
+}
+void UFF_BuildMultiSelectionWidget::HandleRemoveGroup()
+{
+	if (BuildMode.IsValid()) BuildMode->RemoveSelectedGroup();
+}
+void UFF_BuildMultiSelectionWidget::HandleRotateLeft()
+{
+	if (BuildMode.IsValid()) BuildMode->RotateGroupPlacement(-BuildMode->GetPlacementRotationSnapDegrees());
+}
+void UFF_BuildMultiSelectionWidget::HandleRotateRight()
+{
+	if (BuildMode.IsValid()) BuildMode->RotateGroupPlacement(BuildMode->GetPlacementRotationSnapDegrees());
+}
+void UFF_BuildMultiSelectionWidget::HandleApplyGroup()
+{
+	if (BuildMode.IsValid()) BuildMode->CommitGroupPlacement();
+}
+void UFF_BuildMultiSelectionWidget::HandleCancelGroup()
+{
+	if (BuildMode.IsValid()) BuildMode->CancelGroupPlacement();
+}
+void UFF_BuildMultiSelectionWidget::HandleSavePreset()
+{
+	if (BuildMode.IsValid() && Edit_PresetName) BuildMode->SaveSelectedGroupPreset(Edit_PresetName->GetText().ToString());
+}
+void UFF_BuildMultiSelectionWidget::HandleLoadPreset()
+{
+	if (BuildMode.IsValid() && Combo_Presets) BuildMode->BeginGroupPreset(Combo_Presets->GetSelectedOption());
+}
+void UFF_BuildMultiSelectionWidget::HandleDeletePreset()
+{
+	if (BuildMode.IsValid() && Combo_Presets) BuildMode->DeleteGroupPreset(Combo_Presets->GetSelectedOption());
+}
+
+UWidget* UFF_BuildMultiSelectionWidget::GeneratePresetOption(FString Name)
+{
+	return MakeText(*WidgetTree, NAME_None, FText::FromString(Name), 14, FFBuildPearl::Ink);
 }
 
 #undef LOCTEXT_NAMESPACE

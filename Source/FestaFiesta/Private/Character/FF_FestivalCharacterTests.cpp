@@ -1,5 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
+// 역할: 플레이어만 시설에 부딪히고 일반 캐릭터는 통과하는지 실제 이동으로 검증한다.
+
 #include "Character/FF_FestivalCharacter.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS

@@ -9,6 +9,7 @@
 
 #include "Building/FF_BuildCatalogModel.h"
 #include "Building/FF_FacilityNamingLibrary.h"
+#include "Festival/FF_RequiredFacilityTypes.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationModel.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildPresentationRules.h"
 #include "UI/PrepHUD/Build/FF_PrepBuildTileWidget.h"

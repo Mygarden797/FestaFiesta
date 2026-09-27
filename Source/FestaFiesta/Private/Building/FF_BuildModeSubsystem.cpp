@@ -361,6 +361,10 @@ bool UFF_BuildModeSubsystem::SuspendInputForPauseMenu()
 		PauseMenuFocusedWidget = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	}
 	ResetPlacementRotationInput();
+	// Viewport tools sit above the CommonUI root. Hide them synchronously before
+	// Pause/Options takes over; their expanded panels and selection stay intact.
+	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
+	RefreshBuildModeGuide();
 	return true;
 }
 
@@ -393,13 +397,17 @@ void UFF_BuildModeSubsystem::RestoreInputAfterPauseMenu()
 		return;
 	}
 
+	// Restore visibility before validating the saved Slate focus path. The path
+	// was intentionally hidden while Pause owned input, rather than removed.
+	bInputSuspendedForPauseMenu = false;
+	if (BuildToolsWidget) { BuildToolsWidget->RefreshTools(); }
+	RefreshBuildModeGuide();
 	TSharedPtr<SWidget> FocusToRestore = PauseMenuFocusedWidget.Pin();
 	PauseMenuFocusedWidget.Reset();
 	if (!IsSlateWidgetOnVisiblePath(FocusToRestore))
 	{
 		FocusToRestore.Reset();
 	}
-	bInputSuspendedForPauseMenu = false;
 	if (bIsExitingBuildMode)
 	{
 		return;
@@ -768,6 +776,7 @@ bool UFF_BuildModeSubsystem::StartPlacement(const FName FacilityDefinitionId)
 	SelectedFacilityDefinitionId = FacilityDefinitionId;
 	DismissPlacementFailureFeedback();
 	SelectedSpec = Definition->Spec;
+	PendingQueueLayout = Definition->Spec.QueueLayout;
 	CurrentPlacement = FFFZSGridPlacement{};
 	CurrentZoneId = NAME_None;
 	bHasPlacementTarget = false;
@@ -988,7 +997,7 @@ bool UFF_BuildModeSubsystem::CommitPlacement()
 		return false;
 	}
 	if (bIsMoving && CurrentZoneId == MoveOriginZoneId &&
-		CurrentPlacement == MoveOriginPlacement)
+		CurrentPlacement == MoveOriginPlacement && PendingQueueLayout == MoveTarget->GetQueueLayout())
 	{
 		ShowStatus(TEXT("기존 위치와 방향이 같습니다. 다른 위치로 이동해 주세요."), true);
 		return false;
@@ -1149,11 +1158,42 @@ void UFF_BuildModeSubsystem::HandleInput(APlayerController& Controller, const fl
 	const bool bPointerOverFacilityInfo = FacilityInfo && FacilityInfo->IsPointerOverPanel();
 	const bool bControlDown = Controller.IsInputKeyDown(EKeys::LeftControl) ||
 		Controller.IsInputKeyDown(EKeys::RightControl);
+	if (bControlDown && !IsEditableSlateTextFocused() && FFBuildModeModel::IsBuildSessionActive(State))
+	{
+		const bool bShiftDown = Controller.IsInputKeyDown(EKeys::LeftShift) || Controller.IsInputKeyDown(EKeys::RightShift);
+		if (Controller.WasInputKeyJustPressed(EKeys::Y) || (bShiftDown && Controller.WasInputKeyJustPressed(EKeys::Z)))
+		{
+			RedoBuildEdit();
+			return;
+		}
+		if (Controller.WasInputKeyJustPressed(EKeys::Z))
+		{
+			UndoBuildEdit();
+			return;
+		}
+	}
 	if (FFBuildModeModel::ShouldShowPlacementGrid(State) && !bControlDown &&
 		!IsEditableSlateTextFocused() && Controller.WasInputKeyJustPressed(EKeys::G))
 	{
 		TogglePlacementGrid();
 		return;
+	}
+	const bool bQueueModifierDown = bControlDown || Controller.IsInputKeyDown(EKeys::LeftShift) ||
+		Controller.IsInputKeyDown(EKeys::RightShift) || Controller.IsInputKeyDown(EKeys::LeftAlt) ||
+		Controller.IsInputKeyDown(EKeys::RightAlt) || Controller.IsInputKeyDown(EKeys::LeftCommand) ||
+		Controller.IsInputKeyDown(EKeys::RightCommand);
+	if (CanChooseQueueLayout())
+	{
+		for (const FKey Key : {EKeys::Seven, EKeys::Eight, EKeys::Nine, EKeys::Zero})
+		{
+			EFFZSQueueLayout Layout = EFFZSQueueLayout::Authored;
+			if (Controller.WasInputKeyJustPressed(Key) && FFBuildModeModel::TryResolveQueueLayoutShortcut(
+				Key, IsEditableSlateTextFocused(), bQueueModifierDown, bInputSuspendedForPauseMenu, Layout))
+			{
+				SetSelectedFacilityQueueLayout(Layout);
+				return;
+			}
+		}
 	}
 	if (bMultiSelectionActive && HandleMultiSelectionInput(Controller, bBlockWorldClickThisFrame,
 		bPointerOverTools, bPointerOverDebugPanel, bPointerOverFacilityInfo)) return;
@@ -1310,215 +1350,6 @@ bool UFF_BuildModeSubsystem::IsBuildSettingsOpen() const
 	return BuildToolsWidget && BuildToolsWidget->IsBuildSettingsOpen();
 }
 
-int32 UFF_BuildModeSubsystem::GetMultiSelectionCount() const
-{
-	return GetMultiSelectedFacilities().Num();
-}
-
-TArray<AFFZSFacilityActor*> UFF_BuildModeSubsystem::GetMultiSelectedFacilities() const
-{
-	TArray<AFFZSFacilityActor*> Result;
-	Result.Reserve(MultiSelectedFacilities.Num());
-	for (const TWeakObjectPtr<AFFZSFacilityActor>& Candidate : MultiSelectedFacilities)
-	{
-		AFFZSFacilityActor* Facility = Candidate.Get();
-		if (IsRegisteredMultiSelectionFacility(Facility)) Result.Add(Facility);
-	}
-	return Result;
-}
-
-bool UFF_BuildModeSubsystem::IsRegisteredMultiSelectionFacility(const AFFZSFacilityActor* Facility) const
-{
-	if (!IsValid(Facility) || Facility->GetFacilityState() == EFFZSFacilityState::Removed) return false;
-	const FGuid Id = Facility->GetFacilityInstanceId();
-	const UFFZSWorldSubsystem* Zones = GetZoneSystem();
-	return Zones && Id.IsValid() && Zones->FindFacility(Id) == Facility;
-}
-
-void UFF_BuildModeSubsystem::CreateMultiSelectionWidget(APlayerController& Controller)
-{
-	if (MultiSelectionWidget) return;
-	UClass* WidgetClass = MultiSelectionWidgetClass.LoadSynchronous();
-	if (!WidgetClass || !WidgetClass->IsChildOf(UFF_BuildMultiSelectionWidget::StaticClass()))
-		WidgetClass = UFF_BuildMultiSelectionWidget::StaticClass();
-	MultiSelectionWidget = CreateWidget<UFF_BuildMultiSelectionWidget>(&Controller, WidgetClass);
-	if (MultiSelectionWidget && !MultiSelectionWidget->AddToPlayerScreen(94))
-	{
-		MultiSelectionWidget = nullptr;
-	}
-}
-
-void UFF_BuildModeSubsystem::RemoveMultiSelectionWidget()
-{
-	if (!MultiSelectionWidget) return;
-	MultiSelectionWidget->RemoveFromParent();
-	MultiSelectionWidget = nullptr;
-}
-
-void UFF_BuildModeSubsystem::ClearMultiSelection()
-{
-	if (MultiSelectedFacilities.IsEmpty()) return;
-	for (const TWeakObjectPtr<AFFZSFacilityActor>& Candidate : MultiSelectedFacilities)
-	{
-		if (AFFZSFacilityActor* Facility = Candidate.Get())
-		{
-			Facility->SetBuildModeActionSelected(false);
-			Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
-		}
-	}
-	MultiSelectedFacilities.Reset();
-	OnBuildMultiSelectionChanged.Broadcast();
-	OnBuildToolsChanged.Broadcast();
-}
-
-void UFF_BuildModeSubsystem::EndMultiSelection()
-{
-	if (!bMultiSelectionActive && MultiSelectedFacilities.IsEmpty() && !MultiSelectionWidget) return;
-	bMultiSelectionPointerArmed = false;
-	bMultiSelectionMarqueeVisible = false;
-	if (MultiSelectionWidget)
-	{
-		MultiSelectionWidget->SetMarquee(false, MultiSelectionDragStartPixels, MultiSelectionDragCurrentPixels);
-	}
-	bMultiSelectionActive = false;
-	for (const TWeakObjectPtr<AFFZSFacilityActor>& Candidate : MultiSelectedFacilities)
-	{
-		if (AFFZSFacilityActor* Facility = Candidate.Get())
-		{
-			Facility->SetBuildModeActionSelected(false);
-			Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
-		}
-	}
-	MultiSelectedFacilities.Reset();
-	RemoveMultiSelectionWidget();
-	OnBuildMultiSelectionChanged.Broadcast();
-	OnBuildToolsChanged.Broadcast();
-}
-
-void UFF_BuildModeSubsystem::ToggleMultiSelection()
-{
-	if (bInputSuspendedForPauseMenu || bIsExitingBuildMode ||
-		!FFBuildModeModel::IsBuildSessionActive(State)) return;
-	NotifyBuildToolsInteraction();
-	if (bMultiSelectionActive)
-	{
-		EndMultiSelection();
-		ShowStatus(TEXT("다중 선택을 종료했습니다."), false, 1.5f);
-		return;
-	}
-	if (State != EFF_BuildModeState::BuildMode) EnterBuildMode();
-	if (State != EFF_BuildModeState::BuildMode) return;
-	ClearPendingRemovalSelection();
-	bMultiSelectionActive = true;
-	if (APlayerController* Controller = GetLocalPlayerController()) CreateMultiSelectionWidget(*Controller);
-	OnBuildMultiSelectionChanged.Broadcast();
-	OnBuildToolsChanged.Broadcast();
-	ShowStatus(TEXT("다중 선택 · 시설 클릭으로 선택/해제 · 드래그로 여러 시설 선택"), false, 3.0f);
-}
-
-bool UFF_BuildModeSubsystem::InspectMultiSelectedFacility(AFFZSFacilityActor* Facility)
-{
-	if (!bMultiSelectionActive || !IsRegisteredMultiSelectionFacility(Facility) ||
-		!MultiSelectedFacilities.Contains(TWeakObjectPtr<AFFZSFacilityActor>(Facility))) return false;
-	EndMultiSelection();
-	return InspectFacility(Facility);
-}
-
-void UFF_BuildModeSubsystem::AddMultiSelectedFacility(AFFZSFacilityActor* Facility)
-{
-	if (!bMultiSelectionActive || !IsRegisteredMultiSelectionFacility(Facility) ||
-		MultiSelectedFacilities.Contains(TWeakObjectPtr<AFFZSFacilityActor>(Facility))) return;
-	MultiSelectedFacilities.Add(Facility);
-	Facility->SetBuildModeActionSelected(true);
-	Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Selected);
-	OnBuildMultiSelectionChanged.Broadcast();
-	OnBuildToolsChanged.Broadcast();
-}
-
-void UFF_BuildModeSubsystem::ToggleMultiSelectedFacility(AFFZSFacilityActor* Facility)
-{
-	if (!bMultiSelectionActive || !IsRegisteredMultiSelectionFacility(Facility)) return;
-	if (MultiSelectedFacilities.Remove(TWeakObjectPtr<AFFZSFacilityActor>(Facility)) > 0)
-	{
-		Facility->SetBuildModeActionSelected(false);
-		Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
-		OnBuildMultiSelectionChanged.Broadcast();
-		OnBuildToolsChanged.Broadcast();
-		return;
-	}
-	AddMultiSelectedFacility(Facility);
-}
-
-void UFF_BuildModeSubsystem::PruneMultiSelectedFacilities()
-{
-	bool bChanged = false;
-	for (int32 Index = MultiSelectedFacilities.Num() - 1; Index >= 0; --Index)
-	{
-		AFFZSFacilityActor* Facility = MultiSelectedFacilities[Index].Get();
-		if (IsRegisteredMultiSelectionFacility(Facility)) continue;
-		if (Facility)
-		{
-			Facility->SetBuildModeActionSelected(false);
-			Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Hidden);
-		}
-		MultiSelectedFacilities.RemoveAtSwap(Index);
-		bChanged = true;
-	}
-	if (bChanged)
-	{
-		OnBuildMultiSelectionChanged.Broadcast();
-		OnBuildToolsChanged.Broadcast();
-	}
-}
-
-void UFF_BuildModeSubsystem::SelectFacilitiesInScreenRect(
-	APlayerController& Controller, const FBox2D& ScreenRect)
-{
-	if (!bMultiSelectionActive || State != EFF_BuildModeState::BuildMode) return;
-	UWorld* World = GetWorld();
-	if (!World) return;
-	bool bChanged = false;
-	for (TActorIterator<AFFZSFacilityActor> It(World); It; ++It)
-	{
-		AFFZSFacilityActor* Facility = *It;
-		if (!IsRegisteredMultiSelectionFacility(Facility) ||
-			MultiSelectedFacilities.Contains(TWeakObjectPtr<AFFZSFacilityActor>(Facility))) continue;
-
-		const FFFZSFacilitySpec& Spec = Facility->GetFacilitySpec();
-		const FVector Extent(FMath::Max(1, Spec.FootprintSizeCells.X) * 0.5f,
-			FMath::Max(1, Spec.FootprintSizeCells.Y) * 0.5f,
-			FMath::Max(1.0f, Spec.PlacementObstacleHeightCm));
-		const FTransform Transform = Facility->GetActorTransform();
-		FVector2D ProjectedMin(FLT_MAX, FLT_MAX);
-		FVector2D ProjectedMax(-FLT_MAX, -FLT_MAX);
-		bool bProjected = false;
-		for (const float X : { -1.0f, 1.0f })
-		for (const float Y : { -1.0f, 1.0f })
-		for (const float Z : { -1.0f, 1.0f })
-		{
-			FVector2D ScreenPoint;
-			const FVector WorldPoint = Transform.TransformPosition(
-				FVector(Extent.X * X, Extent.Y * Y, Z < 0.0f ? 0.0f : Extent.Z));
-			if (!Controller.ProjectWorldLocationToScreen(WorldPoint, ScreenPoint, true)) continue;
-			ProjectedMin.X = FMath::Min(ProjectedMin.X, ScreenPoint.X);
-			ProjectedMin.Y = FMath::Min(ProjectedMin.Y, ScreenPoint.Y);
-			ProjectedMax.X = FMath::Max(ProjectedMax.X, ScreenPoint.X);
-			ProjectedMax.Y = FMath::Max(ProjectedMax.Y, ScreenPoint.Y);
-			bProjected = true;
-		}
-		if (!bProjected || !FFBuildMultiSelectionModel::Intersects(
-			ScreenRect, ProjectedMin, ProjectedMax)) continue;
-		MultiSelectedFacilities.Add(Facility);
-		Facility->SetBuildModeActionSelected(true);
-		Facility->SetSelectionIndicatorState(EFFZSFacilitySelectionIndicatorState::Selected);
-		bChanged = true;
-	}
-	if (bChanged)
-	{
-		OnBuildMultiSelectionChanged.Broadcast();
-		OnBuildToolsChanged.Broadcast();
-	}
-}
 
 bool UFF_BuildModeSubsystem::HandleMultiSelectionInput(APlayerController& Controller,
 	const bool bBlockWorldClick, const bool bPointerOverTools,
@@ -1528,6 +1359,8 @@ bool UFF_BuildModeSubsystem::HandleMultiSelectionInput(APlayerController& Contro
 	const bool bPointerOverStrip = MultiSelectionWidget && MultiSelectionWidget->IsPointerOverStrip();
 	const bool bBlockedByUi = bPointerOverTools || bPointerOverDebugPanel ||
 		bPointerOverFacilityInfo || bPointerOverStrip || IsPointerBlockedByUi(&Controller);
+	if (HandleGroupPlacementInput(Controller, bBlockWorldClick || bBlockedByUi ||
+		IsEditableSlateTextFocused() || !IsPlacementPointerInsideViewport(Controller))) return true;
 
 	if (bMultiSelectionPointerArmed)
 	{
@@ -2239,7 +2072,8 @@ void UFF_BuildModeSubsystem::RefreshBuildModeGuide()
 	// PrepHUD 배치 패널은 같은 조작 안내를 자체 표시한다. 외부 표현이 활성인 동안 레거시
 	// 좌하단 가이드를 함께 띄우면 하단 도킹 패널 뒤에 겹치므로 한 표현 소유자만 남긴다.
 	BuildModeGuideWidget->SetVisibility(
-		(State == EFF_BuildModeState::CatalogOpen || bExternalCatalogPresentationActive || BuildToolsWidget)
+		(bInputSuspendedForPauseMenu || State == EFF_BuildModeState::CatalogOpen ||
+			bExternalCatalogPresentationActive || BuildToolsWidget)
 		? ESlateVisibility::Collapsed
 		: ESlateVisibility::HitTestInvisible);
 	BuildModeGuideWidget->SetPlacementGuideState(
@@ -2396,6 +2230,7 @@ void UFF_BuildModeSubsystem::ResetPlacementSelection()
 	ResetPlacementAssistance();
 	SelectedFacilityDefinitionId = NAME_None;
 	SelectedSpec = FFFZSFacilitySpec{};
+	PendingQueueLayout = EFFZSQueueLayout::Authored;
 	CurrentPlacement = FFFZSGridPlacement{};
 	LastValidation = FFFZSPlacementValidation{};
 	CurrentZoneId = NAME_None;
@@ -2788,6 +2623,7 @@ bool UFF_BuildModeSubsystem::StartMovingSelectedFacility()
 	MoveOriginPlacement = SourcePlacement;
 	MoveTransactionId = FGuid::NewGuid();
 	SelectedSpec = FacilitySpec;
+	PendingQueueLayout = Facility->GetQueueLayout();
 	CurrentZoneId = SourceZoneId;
 	CurrentPlacement = SourcePlacement;
 	ClearPendingRemovalSelection();
@@ -2903,7 +2739,9 @@ bool UFF_BuildModeSubsystem::UpdatePlacementFromCursor(const bool bForceCommandR
 			ShowStatus(TEXT("선택한 시설 정의를 사용할 수 없습니다."), true);
 			return false;
 		}
-		SelectedSpec = SelectedDefinition->Spec;
+		FFFZSFacilitySpec Base = SelectedDefinition->Spec;
+		Base.QueueLayout = PendingQueueLayout;
+		SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(Base, 1, 1.0f);
 	}
 	else
 	{
@@ -3084,6 +2922,8 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 		MoveCommand.FacilityInstanceId = MovingFacilityInstanceId;
 		// 프리뷰 Actor가 FacilitySpec.VisualMesh를 직접 읽으므로 기존 액터에서 복사한 전체 Spec을 반드시 담는다.
 		MoveCommand.FacilitySpec = SelectedSpec;
+		MoveCommand.bChangeQueueLayout = MovingFacility.IsValid() && PendingQueueLayout != MovingFacility->GetQueueLayout();
+		MoveCommand.QueueLayout = PendingQueueLayout;
 		MoveCommand.ZoneId = CurrentZoneId;
 		MoveCommand.Placement = CurrentPlacement;
 		PlacementPreview->PreviewCommand = MoveTemp(MoveCommand);
@@ -3104,12 +2944,13 @@ void UFF_BuildModeSubsystem::RebuildPreviewCommand()
 	}
 
 	// 월드 revision을 명령에 넣어 프리뷰 이후 다른 설치/철거가 발생한 오래된 명령이 Commit에서 통과하지 않게 한다.
-	SelectedSpec = Definition->Spec;
 	PlacementPreview->PreviewCommand = UFFZSGridLibrary::MakeInstallCommandFromDefinition(
 		Definition,
 		CurrentZoneId,
 		CurrentPlacement,
 		ZoneSystem->GetWorldRevision());
+	PlacementPreview->PreviewCommand.FacilitySpec.QueueLayout = PendingQueueLayout;
+	SelectedSpec = FFZSFacilityUpgradeRules::BuildEffectiveSpec(PlacementPreview->PreviewCommand.FacilitySpec, 1, 1.0f);
 }
 
 float UFF_BuildModeSubsystem::GetPlacementRotationSnapDegrees() const

@@ -9,6 +9,7 @@
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_FestivalSettings.h"
 #include "HAL/PlatformTime.h"

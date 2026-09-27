@@ -52,10 +52,16 @@ public:
 	static FSoftClassPath GetDefaultWidgetClassPath();
 
 private:
+#if WITH_DEV_AUTOMATION_TESTS
+	friend class FFF_FacilityProgramMarkerOrderTest;
+#endif
+
 	void EnsureReadModelBindings();
 	void RefreshMarkerStates();
 	void RefreshPresentation(APlayerController* Controller);
 	void ClearPresentation();
+	/** 시설 목록이나 선택이 바뀔 때만 선택 시설 우선 순서를 다시 계산한다. */
+	void RefreshMarkerOrder(FGuid SelectedFacilityId);
 	void UpdateMarkerLocations();
 	void RefreshOcclusionWidgets();
 
@@ -86,6 +92,9 @@ private:
 	TMap<FGuid, FFF_FacilityWorldBadgeData> BadgeStates;
 	TMap<FGuid, TWeakObjectPtr<AFFZSFacilityActor>> MarkerActors;
 	TArray<TWeakObjectPtr<UWidget>> OcclusionWidgets;
+	TArray<FGuid> MarkerOrder;
+	FGuid OrderedSelection;
+	bool bMarkerOrderDirty = true;
 	TWeakObjectPtr<APlayerController> OwningController;
 	uint64 CachedRegistryRevision = MAX_uint64;
 	bool bStateDirty = true;

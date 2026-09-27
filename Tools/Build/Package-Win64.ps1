@@ -5,6 +5,8 @@
 param(
     [string] $EngineRoot,
 
+    [string] $ProjectFile,
+
     [string] $OutputRoot,
 
     [string] $BuildLabel,
@@ -31,6 +33,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'FestaFiesta.Build.psm1') -Force
+Set-FFProjectFileOverride -ProjectFile $ProjectFile
 
 function Write-Utf8Json {
     param(
@@ -94,6 +97,7 @@ function Assert-LockedToolchainSelection {
 $gameBinaryBaseName = Get-FFGameBinaryBaseName -Configuration $Configuration
 $projectRoot = Get-FFProjectRoot
 $projectFile = Get-FFProjectFile
+$cookPathAudit = Assert-FFCookPathBudget
 $projectDescriptor = Get-Content -LiteralPath $projectFile -Raw | ConvertFrom-Json
 $resolvedEngineRoot = Resolve-FFEngineRoot -EngineRoot $EngineRoot
 $engineVersion = Get-FFEngineVersion -EngineRoot $resolvedEngineRoot
@@ -222,6 +226,29 @@ try {
             (Join-Path $metadataRoot 'source-dirty-untracked.txt'),
             [string[]]$untracked,
             (New-Object System.Text.UTF8Encoding($false)))
+        # A patch cannot reconstruct files that have not been added to Git.
+        # Keep their exact bytes beside the manifest so a dirty candidate can
+        # be reproduced without silently omitting newly added code or scripts.
+        $untrackedPaths = @($untracked | ForEach-Object { $_.Substring(3) })
+        if ($untrackedPaths.Count -gt 0) {
+            Add-Type -AssemblyName System.IO.Compression
+            $untrackedArchive = Join-Path $metadataRoot 'source-dirty-untracked.zip'
+            $zip = [System.IO.Compression.ZipFile]::Open($untrackedArchive,
+                [System.IO.Compression.ZipArchiveMode]::Create)
+            try {
+                foreach ($relativePath in $untrackedPaths) {
+                    $absolutePath = [System.IO.Path]::GetFullPath((Join-Path $projectRoot $relativePath))
+                    if (-not $absolutePath.StartsWith($projectRoot.TrimEnd('\') + '\',
+                        [System.StringComparison]::OrdinalIgnoreCase) -or
+                        -not (Test-Path -LiteralPath $absolutePath -PathType Leaf)) {
+                        throw "Unsafe or missing untracked source file: $relativePath"
+                    }
+                    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                        $zip, $absolutePath, $relativePath.Replace('\', '/')) | Out-Null
+                }
+            }
+            finally { $zip.Dispose() }
+        }
         Write-Warning 'Building from a dirty working tree; the delta is stored in Metadata/source-dirty.patch.'
     }
 
@@ -230,12 +257,14 @@ try {
     if (-not $SkipTests) {
         & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') `
             -EngineRoot $resolvedEngineRoot `
+            -ProjectFile $projectFile `
             -OutputRoot $validationRoot
     }
     else {
         # A test override never bypasses asset validation or the editor compile gate.
         & (Join-Path $PSScriptRoot 'Run-AutomationTests.ps1') `
             -EngineRoot $resolvedEngineRoot `
+            -ProjectFile $projectFile `
             -OutputRoot $validationRoot `
             -TestFilter @()
     }
@@ -382,6 +411,7 @@ try {
             branch = $git.Branch
             commit = $git.Commit
             dirty  = $git.Dirty
+            projectDescriptorSha256 = (Get-FileHash -LiteralPath $projectFile -Algorithm SHA256).Hash.ToLowerInvariant()
         }
         engine        = [ordered]@{
             association = $engineAssociation
@@ -427,6 +457,8 @@ try {
             graphicsStartupTest = [bool]$GraphicsSmokeTest
             defaultLauncherStartupTest = [bool]$GraphicsSmokeTest
             manualGameplayTest = 'not-recorded-by-this-script'
+            cookPathAssetCount = $cookPathAudit.AssetCount
+            longestCookPathLength = $cookPathAudit.LongestCookPathLength
             qualityOverride = $hasQualityOverride
             overrideReason = if ($hasQualityOverride) { $QualityOverrideReason } else { $null }
         }
@@ -450,6 +482,7 @@ try {
         PackagePath    = $archiveRoot
         Configuration  = $Configuration
         EngineRoot     = $resolvedEngineRoot
+        ProjectFile    = $projectFile
         ReportDirectory = $metadataRoot
     }
     if (-not $SkipSmokeTest) {

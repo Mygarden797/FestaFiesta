@@ -1,5 +1,5 @@
 # unreal_material_test.py
-# 역할: 플레이어 캐릭터 모델·애니메이션 작업에서 관련 도구가 공유하는 설정과 처리 함수를 제공한다.
+# 역할: 캐릭터 가져오기 도우미로 /Game/MainManQA 에셋을 갱신하고 모든 재질 슬롯의 연결 상태를 기록한다.
 
 import sys,json,unreal
 from pathlib import Path

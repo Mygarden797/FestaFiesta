@@ -124,3 +124,31 @@ struct FESTAFIESTA_API FFF_IncidentReport
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Incident")
 	FGameplayTagContainer ContextTags;
 };
+
+
+//UI 전달용으로 만들어진 View 전용 함수
+USTRUCT(BlueprintType)
+struct FESTAFIESTA_API FFF_IncidentView
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Incident|Tag")
+	FGameplayTag IncidentTag;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FestaFiesta|Incident")
+	FFF_IncidentAnchor Anchor;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
+	FText Title;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
+	FText Body;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
+	TSoftObjectPtr<UTexture2D> MarkerIcon;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category = "Incident|Display")
+	float MinuteUntileLapse = 60.f;
+	
+};
+

@@ -32,6 +32,7 @@
 #include "Engine/World.h"
 #include "Festival/FF_FestivalDefinition.h"
 #include "Festival/FF_RequiredFacilitiesSubsystem.h"
+#include "FF_FFZSFacilityDefinition.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/FileManager.h"
 #include "ImageUtils.h"

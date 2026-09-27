@@ -1,3 +1,4 @@
+# 역할: 건축 UI의 공용 진주빛 재질과 패널·카드·테두리 등 일곱 종류의 재질 인스턴스를 만든다.
 """Create seven static, resolution-aware UMG pearl surfaces for the build interface."""
 from pathlib import Path
 import unreal
@@ -31,6 +32,7 @@ if not material:
         mask.set_editor_property('a', channel)
         assert lib.connect_material_expressions(custom, '', mask, '')
         assert lib.connect_material_property(mask, '', output)
+# 이미 만든 재질도 셰이더 소스를 갱신한다. 인스턴스는 SurfaceRole 값으로 표현 종류만 구분한다.
 custom = next(n for n in unreal.ObjectIterator(unreal.MaterialExpressionCustom) if n.get_outer() == material)
 custom.set_editor_property('code', code)
 lib.recompile_material(material)

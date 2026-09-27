@@ -1,5 +1,5 @@
-# Apply the screenshot-inspired Pearl build UI to the existing production WBPs.
-# Run from an idle /Engine/Maps/Entry editor with -ExecutePythonScript.
+# 역할: 기존 건축 화면 에셋을 백업한 뒤 공용 재질과 UI 생성 명령을 순서대로 적용한다.
+# 비어 있는 Entry 맵에서 실행하며, 프레임 콜백으로 명령을 하나씩 실행하고 변경 결과를 기록한다.
 import hashlib
 import json
 import shutil
@@ -20,6 +20,8 @@ PACKAGES = (
     "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildTools",
     "/Game/FestaFiesta/Building/FF_WBP_Building/Controls/WBP_FF_BuildSynergy",
     "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilityInfoPanel",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/Facility/WBP_FF_FacilitySynergyEntry",
+    "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexLauncher",
     "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexScreen",
     "/Game/FestaFiesta/Building/FF_WBP_Building/FacilityCodex/WBP_FF_FacilityCodexCard",
     "/Game/FestaFiesta/UI/PrepHUD/Panels/WBP_FF_PrepPanelProgram",
@@ -40,6 +42,7 @@ COMMANDS = (
     "FF.CreateBuildMultiSelectionWidget",
     "FF.ApplyProgramPearlUI",
     "FF.ApplyFacilityRevenuePearlUI",
+    "FF.ApplyFacilitySynergyPearl",
 )
 STATE = {"step": -1, "next": time.monotonic() + 2.0, "before": {}, "commands": [], "busy": False}
 BACKUP = OUT / "backups" / time.strftime("%Y%m%d-%H%M%S")

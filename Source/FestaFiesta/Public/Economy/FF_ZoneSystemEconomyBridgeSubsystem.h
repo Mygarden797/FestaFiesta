@@ -10,16 +10,22 @@
 class UFF_FestivalProgressionSubsystem;
 class UFFZSWorldSubsystem;
 
+struct FFF_ConstructionEconomyReceipt
+{
+	int32 InstallSpend = 0;
+	int32 DemolitionRefund = 0;
+};
+
 /**
  * FF_ZoneSystem의 시설 설치·철거 트랜잭션을 프로젝트 축제 자금과 연결한다.
  *
  * 설치비는 PreValidate/ApplyTentative에서 읽기 전용으로 검증하고, 시설 설치가 성공한 뒤
- * Commit에서만 차감한다. FFZS 명령은 Game Thread에서 동기·비재진입으로 실행되므로 별도
- * Gold hold를 만들지 않는다.
+ * Commit에서만 차감한다. 그룹 명령은 모든 시설의 예약 비용 합계를 검사한 뒤 확정한다.
  *
  * 철거는 설치비의 UFF_FestivalDefinition::FacilityDemolitionRefundRate 만큼을 Commit에서
- * 환급한다. 환급은 잔액 검사가 필요 없어 실패할 수 없으므로 예약 단계를 두지 않는다.
- * Move와 시설 수명주기 명령은 여전히 과금·환급하지 않는다.
+ * 환급한다. 확정 영수증은 당시 실제 지출·환급액을 보관하며 실행 취소·다시 실행에 사용한다.
+ * 복구는 다른 지출과 매출을 유지하고 건축 관련 장부 항목만 수정한다.
+ * 일반 Move와 시설 수명주기 명령은 과금·환급하지 않는다.
  */
 UCLASS()
 class FESTAFIESTA_API UFF_ZoneSystemEconomyBridgeSubsystem final
@@ -65,16 +71,17 @@ private:
 		FName& OutMatchedCostRow,
 		FString& OutFailureReason) const;
 
-	/** 철거가 확정된 시설의 환급을 지급한다. 잔액 검사가 없어 실패하지 않는다. */
-	void CommitDemolitionRefund(const FFFZSPolicyContext& Context);
+	FFFZSPolicyDecision ResolveConstructionReceipt(const FFFZSPolicyContext& Context,
+		FFF_ConstructionEconomyReceipt& OutReceipt) const;
+	FFFZSPolicyDecision ValidateConstructionReceipt(const FFF_ConstructionEconomyReceipt& Receipt) const;
+	FFFZSPolicyDecision ValidateConstructionTotals(int64 InstallSpend, int64 Refund) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UFFZSWorldSubsystem> ZoneSystem;
 
 	// ApplyTentative는 자금을 바꾸지 않고 Commit에 필요한 불변 값만 CommandId별로 보관한다.
-	TMap<FGuid, int32> PendingInstallCosts;
-	TMap<FGuid, FName> PendingMatchedCostRows;
-	TMap<FGuid, int32> PendingValidatedGold;
-	TMap<FGuid, FString> PendingCostTablePaths;
+	TMap<FGuid, FFF_ConstructionEconomyReceipt> PendingReceipts;
+	TMap<FGuid, FFF_ConstructionEconomyReceipt> CommittedReceipts;
+	TOptional<int32> GoldBeforePendingCommits;
 	bool bPolicyRegistered = false;
 };

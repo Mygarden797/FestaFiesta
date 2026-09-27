@@ -90,6 +90,13 @@ bool UFFZSFacilityDefinition::DoesSpecMatchLoadedDefinition(
     Candidate.FacilityInstanceId = FGuid(5, 6, 7, 8);
     Candidate.ZoneId = TEXT("CanonicalSpecComparison");
     Candidate.FacilitySpec = Spec;
+    if (!StaticEnum<EFFZSQueueLayout>()->IsValidEnumValue(static_cast<int64>(Spec.QueueLayout)))
+    {
+        return false;
+    }
+    // The only player-owned spec field is the queue layout. All authored geometry/economy
+    // still has to match the loaded definition exactly when duplicating a facility/preset.
+    Candidate.FacilitySpec.QueueLayout = Definition->Spec.QueueLayout;
     FFFZSCommand Canonical = Candidate;
     Canonical.FacilitySpec = Definition->Spec;
     return UFFZSGridLibrary::BuildCommandFingerprint(Candidate) ==
